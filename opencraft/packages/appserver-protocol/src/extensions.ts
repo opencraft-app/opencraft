@@ -1,6 +1,23 @@
 /** Host-owned queue behavior that cannot be inferred from queue contents. */
 export const OPENCRAFT_THREAD_QUEUE_EXTENSION = "opencraft/thread-queue";
 
+/** Thread Goal operations actually implemented by this Server. */
+export const OPENCRAFT_THREAD_GOAL_EXTENSION = "opencraft/thread-goal";
+
+export interface OpenCraftThreadGoalCapability {
+  readonly version: 1;
+  readonly read: true;
+  readonly write: boolean;
+}
+
+export function parseThreadGoalCapability(value: unknown): OpenCraftThreadGoalCapability | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const candidate = value as Record<string, unknown>;
+  return candidate.version === 1 && candidate.read === true && typeof candidate.write === "boolean"
+    ? { version: 1, read: true, write: candidate.write }
+    : null;
+}
+
 export interface OpenCraftThreadQueueCapability {
   /** V2 makes queue-to-active-Turn consumption one AppServer command. */
   readonly version: 2;

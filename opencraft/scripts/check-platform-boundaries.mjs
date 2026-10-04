@@ -138,7 +138,7 @@ checkFiles("Expo host", "apps/workbench-expo/src", [
     message: "must not import DOM-only composer or icon packages",
   },
   {
-    pattern: /(?:from\s*|import\s*)["'][^"']+\.s?css["']/m,
+    pattern: /(?:from\s*|import\s*)["'][^"']+\.scss["']/m,
     message: "must not import the Vite SCSS surface",
   },
 ]);

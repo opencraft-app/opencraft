@@ -108,6 +108,7 @@ function loadEmbeddedWorkbench(url: string): Promise<void> {
       void customElements.whenDefined(ELEMENT_NAME).then(() => resolve(), reject);
     }, { once: true });
     script.addEventListener("error", () => {
+      script.remove();
       reject(new Error(`Could not load OpenCraft Embedded Workbench from ${url}`));
     }, { once: true });
     document.head.append(script);
@@ -115,6 +116,17 @@ function loadEmbeddedWorkbench(url: string): Promise<void> {
   scriptLoads.set(url, operation);
   operation.catch(() => scriptLoads.delete(url));
   return operation;
+}
+
+/** Resource preparation only: the confirmed Bot/Profile still owns Application creation. */
+export function useEmbeddedWorkbenchResourcePreparation(enabled: boolean, active: boolean): void {
+  useEffect(() => {
+    if (!enabled || !active) return;
+    const url = embeddedWorkbenchScriptUrl();
+    if (url) void loadEmbeddedWorkbench(url).catch(() => {
+      // The actual migration surface owns error UI and retries a failed load.
+    });
+  }, [enabled, active]);
 }
 
 export function AgentChatMigrationSurface({

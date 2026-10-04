@@ -681,8 +681,8 @@ export interface CodexComposerProps {
   controller: ComposerController;
   /** Composer-owned chrome rendered above attachments and the editor. */
   chromeHeader?: ReactNode;
-  /** Host-owned Radix items appended to Add; render callbacks may close the root menu after nested actions. */
-  addMenuContent?: ReactNode | ((closeMenu: () => void) => ReactNode);
+  /** Host-owned Add items. An optional continuation opens the next surface after menu focus cleanup. */
+  addMenuContent?: ReactNode | ((closeMenu: (afterClose?: () => void) => void) => ReactNode);
   /** Host-owned trusted extension actions placed before built-in end actions. */
   endActions?: ReactNode;
   catalog?: ComposerCatalog;
@@ -833,6 +833,7 @@ export const CodexComposer = forwardRef<
   } | null>(null);
   const [openPicker, setOpenPicker] = useState<SelectionPicker | null>(null);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const afterAddMenuClose = useRef<(() => void) | null>(null);
   const [editingQueuedSubmissionId, setEditingQueuedSubmissionId] = useState<
     string | null
   >(null);
@@ -1840,20 +1841,32 @@ export const CodexComposer = forwardRef<
                       ) : <CircleAlert aria-label={attachment.error ?? "Image preparation failed"} role="img" size={20} />}
                     </span>
                   ) : null}
+                  {attachment.lifecycle === "failed" ? (
+                    <span className="codex-composer-image-attachment__error" role="alert">
+                      {attachment.error ?? "Image preparation failed"}
+                    </span>
+                  ) : null}
                   <button className="codex-composer-image-attachment__remove" type="button" aria-label={`Remove ${attachment.name}`} onClick={() => removeAttachment(attachment.id)}>
                     <X aria-hidden="true" size={14} />
                   </button>
                 </div>
               );
+              const preparing = attachment.lifecycle === "pending" || attachment.lifecycle === "processing" || attachment.lifecycle === "uploading";
               return (
-                <div className="codex-composer-attachment" key={attachment.id}>
+                <div aria-busy={preparing} className="codex-composer-attachment" data-state={attachment.lifecycle} key={attachment.id}>
                   <span className="codex-composer-attachment__icon"><FileText size={15} /></span>
                   <span className="codex-composer-attachment__copy">
                     <strong>{attachment.name}</strong>
                     <small>{Math.max(1, Math.ceil(attachment.size / 1024))} KB</small>
-                    {attachment.error ? <small>{attachment.error}</small> : null}
+                    {preparing ? <small role="status">Adding file…</small> : null}
+                    {attachment.lifecycle === "failed" ? <small role="alert">Could not add file</small> : null}
                   </span>
-                  <button type="button" aria-label={`Remove ${attachment.name}`} onClick={() => removeAttachment(attachment.id)}><X size={13} /></button>
+                  <span className="codex-composer-attachment__actions">
+                    {attachment.lifecycle === "failed" && attachmentSession.canRetry(composerSnapshot.draft.id, attachment.id) && onResolveAttachment !== undefined ? (
+                      <button type="button" aria-label={`Retry ${attachment.name}`} onClick={() => attachmentSession.retry(composerSnapshot.draft.id, attachment.id, onResolveAttachment)}><RotateCcw size={13} /></button>
+                    ) : null}
+                    <button type="button" aria-label={`Remove ${attachment.name}`} onClick={() => removeAttachment(attachment.id)}><X size={13} /></button>
+                  </span>
                 </div>
               );
             })}
@@ -1989,7 +2002,10 @@ export const CodexComposer = forwardRef<
                 <Plus size={16} />
               </button>
             ) : (
-              <DropdownMenu.Root modal={false} open={addMenuOpen} onOpenChange={setAddMenuOpen}>
+              <DropdownMenu.Root modal={false} open={addMenuOpen} onOpenChange={(open) => {
+                if (open) afterAddMenuClose.current = null;
+                setAddMenuOpen(open);
+              }}>
                 <DropdownMenu.Trigger asChild>
                   <button
                     className="codex-composer-icon-button"
@@ -2005,6 +2021,14 @@ export const CodexComposer = forwardRef<
                     align="start"
                     sideOffset={6}
                     collisionPadding={6}
+                    onCloseAutoFocus={(event) => {
+                      const afterClose = afterAddMenuClose.current;
+                      afterAddMenuClose.current = null;
+                      if (afterClose !== null) {
+                        event.preventDefault();
+                        afterClose();
+                      }
+                    }}
                   >
                     <DropdownMenu.Item
                       className="codex-composer-selection-menu__item codex-composer-add-menu__item"
@@ -2014,7 +2038,10 @@ export const CodexComposer = forwardRef<
                       <FormattedMessage id="chat.attach" defaultMessage="Attach files" />
                     </DropdownMenu.Item>
                     {typeof addMenuContent === "function"
-                      ? addMenuContent(() => setAddMenuOpen(false))
+                      ? addMenuContent((afterClose) => {
+                          afterAddMenuClose.current = afterClose ?? null;
+                          setAddMenuOpen(false);
+                        })
                       : addMenuContent}
                   </DropdownMenu.Content>
                 </DropdownMenu.Portal>
@@ -2335,7 +2362,7 @@ export const CodexComposer = forwardRef<
                       ) : null}
                       {selectionCatalog?.permissionProfileError ? (
                         <div className="codex-composer-selection-menu__status is-error">
-                          Permission profiles are unavailable on this host.
+                          Could not refresh permission profiles. Try again when connected.
                           Current permissions remain unchanged.
                         </div>
                       ) : null}

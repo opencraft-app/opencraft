@@ -9,6 +9,10 @@ import {
   sidebarActivityMetadata,
   type SidebarActivityThread,
 } from "../apps/workbench-web/src/sidebar-activity";
+import {
+  isSidebarThreadMenuOpen,
+  updateOpenSidebarThreadMenu,
+} from "../apps/workbench-web/src/components/sidebar-thread-menu-state";
 
 const seconds = (value: Date) => value.getTime() / 1_000;
 
@@ -66,6 +70,24 @@ test("Server origin identity is independent from mutable label, Hub route and ac
   assert.throws(() => threadServerOrigin({ serverId: " ", label: "Local" }), /Server ID/u);
 });
 
+test("Sidebar owns one menu across rows and input paths; a stale close cannot dismiss its successor", () => {
+  const first = { hostId: "host-a", threadId: "thread-a", kind: "dropdown" } as const;
+  const second = { hostId: "host-a", threadId: "thread-b", kind: "dropdown" } as const;
+  const context = { hostId: "host-a", threadId: "thread-b", kind: "context" } as const;
+  let current = updateOpenSidebarThreadMenu(null, first, true);
+  assert.equal(isSidebarThreadMenuOpen(current, first), true);
+  current = updateOpenSidebarThreadMenu(current, second, true);
+  assert.equal(isSidebarThreadMenuOpen(current, first), false);
+  assert.equal(isSidebarThreadMenuOpen(current, second), true);
+  current = updateOpenSidebarThreadMenu(current, first, false);
+  assert.equal(isSidebarThreadMenuOpen(current, second), true);
+  current = updateOpenSidebarThreadMenu(current, context, true);
+  assert.equal(isSidebarThreadMenuOpen(current, second), false);
+  assert.equal(isSidebarThreadMenuOpen(current, context), true);
+  assert.equal(isSidebarThreadMenuOpen(current, { ...context, hostId: "host-b" }), false);
+  assert.equal(updateOpenSidebarThreadMenu(current, context, false), null);
+});
+
 test("Sidebar consumes the shared two-line Activity item instead of Host group rows", () => {
   const sidebar = readFileSync(
     new URL("../apps/workbench-web/src/components/sidebar.tsx", import.meta.url),
@@ -91,12 +113,19 @@ test("Sidebar consumes the shared two-line Activity item instead of Host group r
   assert.match(item, /<ThreadActivity/u);
   assert.doesNotMatch(item, /host === null/u);
   assert.match(item, /aria-current=\{selected \? "page" : undefined\}/u);
-  assert.match(menu, /在 \$\{hostActions\.label\} 上新建任务/u);
-  assert.match(menu, /\$\{hostActions\.label\} 设置/u);
-  assert.match(menu, /ContextMenu\.Separator/u);
+  assert.doesNotMatch(menu, /hostActions|hostItems|ThreadHostActionCallbacks/u);
+  assert.doesNotMatch(sidebar, /onNewTaskForTarget|onOpenTargetSettings/u);
+  assert.doesNotMatch(menu, /ContextMenu\.Separator/u);
   assert.match(menu, /aria-busy=\{forking \|\| undefined\}/u);
   assert.match(menu, /data-forking=\{forking \|\| undefined\}/u);
   assert.match(menu, /正在新建分支/u);
+  assert.match(menu, /<\/ContextMenu\.Root>\s*<DropdownMenu\.Root open=\{openMenuKind === "dropdown"\}/u);
+  assert.match(menu, /<ContextMenu\.Trigger asChild>\s*<div className="sidebar-activity-row__target">\{children\}<\/div>/u);
+  assert.match(menu, /modalHandoff\.current = true; setDraft\(target\.title\)/u);
+  assert.match(menu, /onCloseAutoFocus=\{onMenuCloseAutoFocus\}/u);
+  assert.match(sidebar, /updateOpenSidebarThreadMenu/u);
+  assert.match(menu, /<DropdownMenu\.Root open=\{openMenuKind === "dropdown"\}/u);
+  assert.match(menu, /<ContextMenu\.Root open=\{openMenuKind === "context"\}/u);
 });
 
 test("Activity hover is mouse-only and touch retains a reachable independent menu", () => {
@@ -117,7 +146,7 @@ test("Activity hover is mouse-only and touch retains a reachable independent men
   assert.match(styles, /\.sidebar-activity-item\s*\{\s*@include controls\.quiet-control\(\$hover: false\)/u);
   assert.match(controls, /@mixin quiet-control\(\$hover: true\)/u);
   assert.match(controls, /@if \$hover\s*\{\s*@include hover-capable/u);
-  assert.match(styles, /@media \(any-hover: hover\) and \(any-pointer: fine\)[\s\S]*?:root:not\(\[data-touch-interaction\]\) \.sidebar-activity-list \.sidebar-activity-row:hover > \.sidebar-activity-item:not\(\.is-selected\)/u);
+  assert.match(styles, /@media \(any-hover: hover\) and \(any-pointer: fine\)[\s\S]*?:root:not\(\[data-touch-interaction\]\) \.sidebar-activity-list \.sidebar-activity-row:hover > \.sidebar-activity-row__target > \.sidebar-activity-item:not\(\.is-selected\)/u);
   const menuTriggerRule = styles.slice(styles.indexOf(".sidebar-activity-item__menu-trigger {"), styles.indexOf("@media (any-hover: hover) and (any-pointer: fine)"));
   assert.match(menuTriggerRule, /background: transparent;/u);
   assert.doesNotMatch(styles, /\.sidebar-activity-row:has\(> \.sidebar-activity-item\.is-selected\) \.sidebar-activity-item__menu-trigger/u);

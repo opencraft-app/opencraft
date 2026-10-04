@@ -224,12 +224,21 @@ test("headless Codex inherits the packaged Linux browse root instead of claiming
       requestHost: async () => { throw new Error("No Host requests during activation"); },
       createTransport: () => { throw new Error("No transport during activation"); },
       workspaceBrowseRoots: ["/"],
+      sshServers: [{ serverId: "ssh:dev", displayName: "Development", workspaceBrowseRoots: ["/remote/projects"] }],
     }));
     assert.deepEqual(profiles.list().find(({ hostId }) => hostId === "local-codex")?.workspaceBrowseRoots, ["/"]);
+    const remote = profiles.list().find(({ hostId }) => hostId === "ssh:dev")!;
+    assert.equal(remote.hostKind, "remote-ssh");
+    assert.equal(remote.displayName, "Development");
+    assert.deepEqual(remote.workspaceBrowseRoots, ["/remote/projects"]);
+    assert.equal(remote.credentialRef, null);
+    assert.deepEqual(remote.providerConfig, {});
+    assert.equal(remote.autoConnect, false);
   } finally {
     await extensions.dispose();
     await providers.close();
   }
+  assert.equal(profiles.list().length, 0);
 });
 
 test("an older bundled Host gains its Linux root without overwriting user profile fields", async () => {

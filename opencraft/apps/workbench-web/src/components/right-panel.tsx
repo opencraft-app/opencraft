@@ -192,6 +192,7 @@ function PanelCreationMenu({
 }
 
 function PanelIcon({ tab }: { readonly tab: PanelTabDescriptor }) {
+  if (tab.showTabIcon !== true || tab.icon === undefined) return null;
   if (tab.icon === "chat") return <MessageSquare size={13} />;
   if (tab.icon === "changes") return <GitBranch size={13} />;
   if (tab.icon === "terminal") return <TerminalSquare size={13} />;

@@ -9,7 +9,19 @@ Application Supervisor owns multiple lifecycle-scoped runtimes: Host
 connections, browser resources, renderer services, extensions, panels and Query clients.
 The Vite renderer is the precision desktop surface used by browsers and
 Electron. The Expo Router app owns iOS, Android, and an independent Expo Web
-build. Neither renderer is a wrapper around the other.
+build. Android and Expo Web use native-shaped workbench views; iOS signs in
+natively, then presents the first-party `lightvela.ai/agents` site in a WebView.
+The iOS site shell does not create a native Host or duplicate the site's chat
+state. Its native account owns the sign-in token, and the WebView receives it
+only on the `https://lightvela.ai` origin.
+Expo Go skips the custom-scheme native login gate and opens the website's own
+login flow. The site Service Worker caches only versioned static assets for the
+iOS shell; it never caches authenticated API or chat responses.
+The Expo Metro server gzips JavaScript bundle responses for clients that accept
+gzip. Physical iOS Expo Go tests require the CLI and phone to use the same Expo
+account; an HTTPS reverse proxy uses an `exps://` launch URL. For remote Expo
+Go discovery, the Expo tunnel can retain the manifest and list entry while
+redirecting bundle downloads to a faster HTTPS origin for the same Metro server.
 
 The distributed product model is `Client / Hub / Server`. A Client is a
 protocol participant and may use an Electron renderer, a static Web page or
@@ -74,6 +86,51 @@ add explicit Hub, tenant and Server coordinates without changing the domain
 contract or Sidebar presentation again.
 
 ## Package ownership
+
+### Backend SSH Codex connections
+
+The Node backend can attach to existing Linux or Desktop-compatible HyperNode
+AppServers through OpenSSH exec and WebSocket-in-SSH. The existing Codex routing
+adapter shares initialize, request isolation, Thread readers and interaction
+ownership across local stdio and remote physical transports. Remote mode never
+constructs local account/queue/attachment services or resolves remote files on
+this machine. Backend SQLite owns administrator-managed recipes, pinned trust and
+encrypted credentials. Settings drafts are transient; a live read-only profile
+overlay never duplicates these recipes in IndexedDB. A separate installation-owner
+HttpOnly session protects management and `/ssh-apphost`, with exact Origin and
+frame-level revocation checks. Public access requires explicit fixed-HTTPS-origin
+or changing-address opt-in; sessions stay bound to their unlock Origin. The
+explicit management Connect command uses AppHost's service-owned admission, not
+a synthetic Client or separate SSH transport. It grants no execution/answer lease;
+connection status remains a projection of the shared physical slot.
+The application catalog separately consumes authenticated physical readiness to
+admit its logical reader through the registry. It does not change the selected
+chat target, auto-connect policy or Thread subscriptions. Catalog publication
+checks configuration revision and authorization incarnation across async
+boundaries; a locked/disabled/removed recipe cannot regain visibility through
+a late result. Settings navigation and chat navigation consume this same
+application projection rather than issuing menu-local history refreshes. Reconnect
+awaits the old physical close before admitting a successor, and failed activation
+remains observable after cleanup. Anonymous `/apphost` rejects SSH IDs; Renderer IDs and LightVela login
+projections are not administrator authority. Only public fingerprints/configuration
+are returned, never saved passwords. Static private key/agent recipes remain a
+read-only compatibility source. This is single-installation administrator access,
+not member-specific Server sharing. Reset has a physical close/claim barrier.
+Closing a page or proxy does not stop the remote daemon, and reconnection does not
+replay mutations. Scope, configuration, compatibility gates and limitations are
+specified in [SSH Codex Servers](ssh-codex-servers.md).
+
+### Workspace file Explorer ownership
+
+Workbench Web's workspace resource panel owns the selected Host/path, the
+filesystem query, and unsaved drafts. A query result is only a server snapshot:
+refreshing or switching files must not replace a dirty draft. Draft identity is
+Host plus path; saving captures that identity and submitted text before the
+asynchronous write, and a changed server snapshot blocks saving until the user
+reconciles the draft. The extension registry in the resource model supplies
+both file-type cues and the CodeMirror language choice. The code editor owns
+only its document view and edit events; it does not write files or own drafts.
+Binary and oversized files remain outside the text-editor path.
 
 ### Typography ownership
 
@@ -276,10 +333,20 @@ resume buffer. Detach/disconnect invalidates the provisional target, and a late
 reply cannot reattach it or acquire the separate interaction-response owner.
 The Host keeps the physical subscription while any logical reader, admitted
 Turn, unsettled queue item or unanswered AppServer request still needs events.
-Only an idle, demand-free native Thread is released (30-minute grace for
+Only an idle, demand-free native Thread is released (2-minute grace for
 durable Threads, immediate for ephemeral Threads); release and new native work
 serialize per Thread. This is live fan-out plus snapshot/replay during resume,
 not a durable event log or multi-tenant authorization boundary.
+
+The packaged Codex runtime is pinned to `0.157.0`: its loaded paginated-Thread
+resume path can attach a new Client with `excludeTurns` without materializing
+the full persisted history. OpenCraft still sends the physical `thread/resume`;
+skipping it would lose atomic subscription and interaction ownership. A
+server-rejected Resume is retained for the current connection generation so
+automatic View reacquisition does not replay the same failed native request.
+An explicit user retry and a new physical generation may retry; transport
+failures are not memoized. The shorter Host grace is an additional release
+policy, not a substitute for Codex's own idle-thread cleanup.
 
 Native Fork copies a complete, validated event/context prefix with opaque
 provider state, not the currently loaded UI turns. Turn boundaries use logical
@@ -297,6 +364,12 @@ visible pending state while that acknowledgment is outstanding;
 once acknowledged, it opens the child without waiting for a background thread
 catalog refresh. A changed route scope prevents the late result from stealing
 navigation, while the catalog refresh still runs for eventual list freshness.
+Ordinary Fork keeps the native AppServer parameter semantics and has no
+Workbench request deadline; unlike short reads, a large-history Fork must not
+be declared failed after the generic 30 seconds. A transport loss still leaves
+the outcome unknown, so the UI warns against blind retry rather than claiming
+that the child was not created. Identical concurrent durable Fork intents
+share one pending AppServer request within the Host runtime.
 Temporary Side Chat requires explicit fork, ephemeral, inject-items and
 unsubscribe support. Codex
 Fork is only recoverable after the source's first Turn has been accepted;
@@ -321,6 +394,10 @@ Codex Host exposes rename through `thread/name/set`; the native `thread.name`
 is readable from list/read and survives an AppServer restart. The Workbench
 title writer keeps optimistic edits scoped to the same Host/Thread until the
 native acknowledgement or failure arrives.
+The application shell alone projects the current page title to `document.title`
+as `<page title> · OpenCraft`, sharing the header's task/extension title rather
+than introducing a second title cache. Draft and Settings pages use `OpenCraft`;
+background conversations and panels cannot overwrite the document title.
 Codex Host advertises archive only when its native AppServer path is wired:
 `thread/archive` and `thread/unarchive` pass through the logical-client adapter,
 and archived Settings reads native `thread/list {archived:true}`. A Codex Thread
@@ -452,6 +529,13 @@ its cross-restart authority. Future account/workspace keys must supply their
 own HTTP/AppServer authority adapter with revision/CAS.
 Temporary interaction state such as peek, hover, drag projection and animation
 never enters the preference store.
+
+`chat.defaultFollowUpAction` is an installation-scoped `steer | queue`
+preference, defaulting to `steer`. Chat settings and the main conversation
+Composer consume the same runtime snapshot. The preference chooses the default
+intent only while a response is active; idle sends remain normal Turn starts.
+It neither creates a Host capability nor enables atomic queued-message steering.
+Temporary Side Chat has no durable queue and retains immediate follow-ups.
 
 Shell Navigation is the first migrated consumer. Applications Pin, Account
 Pin, rail detent, last visible detent, navigation-rail width and left context
@@ -598,6 +682,36 @@ requested after rollout enablement. The release build fails closed when the
 reviewed Embedded artifact is unavailable, so legacy fallback cannot disguise
 an incomplete production artifact.
 
+Resource preparation starts at the enabled host Chat route, alongside Bot
+discovery, through the same deduplicated loader used by the migration surface.
+It registers the component but creates no Application or Host; the confirmed
+instance/Profile binding still gates the single canvas owner. Failed speculative
+loads are retryable by the surface. Optional Host Proxy startup runs independently
+of chat readiness. Remote loopback Browser navigation instead waits for its own
+proxy registration to activate; it never falls back to client-local localhost.
+Embedded Vite `assets/a-[hash][extname]` resources have immutable one-year cache
+headers in the Pages artifact. Stable loaders, version files and Service Workers
+remain revalidated; publishing must continue retaining old content-hash closures.
+
+The Embedded Application owns one deferred startup lane for Voice,
+Collaboration, Bot Chat/Management presentation and the Terminal panel module.
+The element releases that lane after its first visible `show()` handoff has
+painted; repeated `show()` calls do not activate a second copy. The required
+account/instance/Profile validation, WebSocket and Hermes providers remain in
+bootstrap, as do Terminal session/tool services needed by protocol capabilities.
+Only optional presentation modules move behind chat readiness. They activate in
+dependency order through the existing ExtensionSupervisor/Panel runtime; failure
+does not revoke an already usable chat. Full Workbench defaults to its existing
+eager startup policy. This is an Application startup plan, not a second
+Application, speculative Host, or general extension activation-event dispatcher.
+
+Retirement aborts pending optional module scopes before factories can acquire
+resources. An in-flight activation is drained before borrowed services,
+registries or the Host are disposed; its own Supervisor owns activation and
+rollback deadlines. Module waits are bounded, and late imports after timeout or
+retirement cannot install into the retired Application. A hidden/disposed element
+cannot release a stale paint callback's startup lane.
+
 `show()` is a browser-origin-scoped persisted toggle, not a one-way component
 callback. One shared feature-state controller owns versioned storage, in-page
 events, cross-tab storage reconciliation and a ref-counted global command.
@@ -735,6 +849,9 @@ priority order; recovery of an earlier account does not pull new Threads back.
 The loopback HTTP bridge owns each response stream until completion. When its
 client disconnects, it aborts the upstream request and consumes the resulting
 stream error without terminating the Host process or replaying the request.
+The bridge accepts request bodies up to 32 MiB. It drains an oversized body
+without forwarding it and returns HTTP 413, so a large Codex history produces
+an explicit size error instead of a disconnected stream.
 Account order, enablement, quota and accepted affinity survive Host restart.
 Affinity expires after 30 idle minutes and storage retains only the 4,096 most
 recent bindings, matching the bounded BB scheduling contract.
@@ -926,6 +1043,17 @@ and visibility, and includes the old inheritance as a failing control. Its
 rounding budget accounts for pinned xterm's 32-glyph integer-width measurement;
 it does not add layout padding or silently remove columns.
 
+Terminal paste belongs to the panel's input presentation. Desktop keyboard paste
+continues through xterm's helper textarea; the explicit paste action uses the
+browser clipboard only while the current terminal is running. If clipboard
+reading is unavailable or denied, a native text field lets touch users invoke
+the system paste menu and confirm before sending. Both paths call xterm's
+`paste()` so line-ending and bracketed-paste handling remain with xterm, then
+flow through the existing `onData`/PTY writer. A late clipboard result must
+not be delivered after the panel changes terminal or the session stops. The
+entry field is View-scoped, cleared on cancellation or terminal change, and
+never persists clipboard contents.
+
 ### Conversation terminal semantics
 
 The Host remains the sole owner of PTYs and retained process output. The
@@ -968,11 +1096,46 @@ back/forward. Web saves that key projection per browser session and verifies the
 current Router key when restoring it; it is not another path authority. Desktop
 memory history lasts for the window, not across process restarts.
 
+History contains resource references, not evidence that a Draft still exists.
+At Web bootstrap, the URL/current Router entry is resolved before choosing a
+global last-used conversation, and the Router and initial activation consume the
+same effective target. Host profiles validate Host availability, ScopeRegistry
+validates retained Drafts, and BindingStore resolves durable promotion aliases
+to canonical Threads. An expired unsubmitted Draft is not recreated under its
+old ID. Global last-used preferences (including changes from another tab) cannot
+override a valid current-entry target. Explicit embedded memory navigation starts
+at Home and never reads or writes the containing page's conversation history.
+
+The same resource projection validates later restored entries. Invalid references
+fall back to the actual retained View, keeping its Composer; promoted aliases may
+retain their original View. A View already bound to another Scope must not be
+reused. Only the Router REPLACEs corrected entry metadata, preserving the current
+Settings/Extension destination. The transaction consumes these corrections as
+restoration events even when a POP is normalized into REPLACE.
+
 `WorkbenchNavigationTransaction` fences preparation by intent epoch, commits only
 accepted destinations, and restores the complete prior entry after a failed POP.
 Changing routes cancels pending readiness without stopping a live turn. A late
 Thread lease is released; late success/error cannot take navigation ownership.
 POP to a different View of the same conversation must still restore that View.
+Returning to the already retained View, by Chat or POP, presents it locally and
+resumes readiness in the background; a newer intent or disposal fences and
+releases late preparations. Selecting the current sidebar conversation from
+Settings uses this same return operation, not a new View or a network-gated
+selection. Submission ownership guards remain in force.
+Sidebar and other selection adapters express only `selectConversation`; they do
+not decide whether a Thread is already selected, whether pending hydration should
+be deduplicated, or whether Settings requires Chat return. The transaction owns
+that decision: reuse the remembered entry's View (or the actual retained View),
+coalesce an in-flight destination only when its View also matches, and no-op only for the presented View with no
+competing destination. `navigate` remains a distinct explicit-open operation, so
+different history Views of one Thread keep independent Composer documents.
+All preparations use one intent/lifetime/Router-revision eligibility check and
+one accept-or-release path, including local Draft readiness and promotion. A
+promotion must originate from the still-active Draft and capture its View before
+awaiting; an inactive Draft cannot supersede a newer navigation. Last-used
+preferences are written only for still-current accepted command results, never
+used as a second selected-conversation or route authority.
 Thread/Draft stores, composer state, Host connections and background execution
 remain resource owners independent of route history. Shell divider hit targets
 start below the toolbar, so pane geometry cannot intercept history controls.
@@ -1093,6 +1256,17 @@ not a zero-height absolute overlay. Scrollable navigation is constrained above
 that row even with docked DevTools or long lists. Floating sidebars use the same
 content/footer ownership split. The entrance is locally anchored within this row.
 Sidecar paints one continuous material plane behind both panes and the footer.
+There is no edge gradient. Header projects the main surface's upper lip from
+the same live primary/context frames and context visibility progress, moving
+left across the compact rail without waiting for the context owner to unmount.
+Its horizontal hairline and Sidecar's vertical divider share the same paint
+progress. No independent CSS animation or terminal boolean controls painting.
+Content lifetime still belongs to the physical pane exit owner.
+Expanded/context materials remain unchanged. The adjacent main surface keeps
+its theme-owned stroke/elevation, including soft and flat variants; titlebar
+paint must not override it. Floating overlays keep their own elevation.
+This is paint-only: pane geometry, resize targets, content identity and focus
+ownership do not change. See `docs/workbench-design-language.md`.
 Those children do not paint additional backgrounds or stack backdrop filters:
 this avoids both a white entrance strip and exposed gray window material under
 the neighboring context pane. Floating footer rows inherit their owner's surface.
@@ -1168,6 +1342,17 @@ application actions or overwriting saved widths. Its Applications entrance chang
 the in-overlay rail (or opens the existing drawer on very narrow widths), never
 implicitly docks the entire Sidecar. Docking remains a separate header action.
 Escape/outside dismissal retires both explicit peek and pointer-hover intent.
+While floating, AppShell owns a transparent outside hit surface behind the
+sidebar and above the conversation. A tap dismisses the transient presentation
+without dispatching the same activation to the covered conversation; it does
+not change the saved dock intent. Because this hit surface covers the viewport,
+its touch highlight must remain transparent rather than flashing the whole
+screen. Touch movement does not acquire hover intent.
+Dismissal changes the requested presentation first, but the floating panel
+continues to own its shared content, navigation projection and outside hit
+surface until its exit animation completes. Only then may those portals move
+back to the docked slots. Docking is a separate transaction and transfers the
+owner immediately because the floating presence owner itself is removed.
 
 The primary pane has three semantic detents: `expanded`, `compact` and `hidden`.
 Expanded width remains a separately persisted preference; compact is
@@ -1416,6 +1601,35 @@ records the page URL, Thread ID, messages, credentials, IP address, Origin,
 raw exception or close reason. These events locate the failing layer; a
 browser WebSocket `error` cannot itself reveal an HTTP upgrade status. No
 diagnostic event changes Host or Thread ownership or retries.
+
+Weak-network recovery separates shared connection reachability, per-Host protocol
+readiness and per-resource restoration. Web foreground, pageshow and online hints
+are coalesced by the shared AppHost socket owner. A negotiated `connectionProbe`
+capability enables a bounded, correlated `connection/probe` exchange; old peers
+receive no unknown probe message. The server answers probes outside its business
+queues. Probe success proves bridge reachability, not engine or Thread readiness.
+Hidden pages cancel probe deadlines; old sockets and cancelled probe replies
+cannot affect successor connections. The server's protocol Ping/Pong remains a
+fallback for detecting half-open connections. Failed probes revoke only Client
+attachments, never service-owned execution.
+
+AppHost ready and Host claim waits have finite control deadlines. Timed-out claim
+acknowledgements release their original lease; each subsequent attempt uses a new
+lease. Business envelopes serialize per Host, allowing another Host on the same
+socket and connection probes to progress during a slow activation. Local send
+cancellation releases its pending acknowledgement without cancelling or replaying
+remote execution. AppServer initialization rejects results from a revoked transport.
+
+Workbench Host readiness ends at lease acquisition plus AppServer initialize.
+Thread restoration uses bounded concurrency with retained Views first; a semantic
+Thread failure stays local, while transient failures retry locally. PTY and file
+watch recovery do not gate Host readiness. The application binds Host readiness to
+host-scoped read-query cancellation and invalidation: active queries refresh,
+inactive queries become stale, and existing data remains visible. Stable resource
+query keys are retained across connections. This coordination is independent of
+menu mounting; late cancelled reads cannot overwrite recovered catalog data.
+Execution requests keep their existing admission and reconciliation policies and
+are not replayed by connection or cache recovery.
 
 The app-like iPhone Web surface requests a fixed viewport scale for embedded
 browsers and keeps focused editable text at a 16px minimum on coarse-pointer

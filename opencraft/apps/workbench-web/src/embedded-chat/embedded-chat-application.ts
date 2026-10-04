@@ -27,6 +27,7 @@ export async function createEmbeddedChatApplication(
     lightVelaApiBase: options.apiBase,
     lightVelaRegion: options.region,
     navigationMode: "memory",
+    deferOptionalFeatures: true,
   });
   try {
     if (application.supervisor.mode !== "active") {

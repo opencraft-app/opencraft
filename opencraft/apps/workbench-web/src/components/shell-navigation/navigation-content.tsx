@@ -66,12 +66,12 @@ export function NavigationContent({ config, surface, compact = false, onInvoke }
   onInvoke: (action: () => void) => void;
 }) {
   const intl = useIntl();
-  return surface === "applications" ? <nav aria-label="Applications" className="shell-navigation__items">
+  return surface === "applications" ? <nav aria-label="Applications" className="shell-navigation__items shell-navigation__items--applications">
     {config.actions.map(action => <button type="button" key={action.id}
       aria-current={action.active ? "page" : undefined} title={compact ? action.title : undefined} onClick={() => onInvoke(action.onInvoke)}>
-      <NavigationIcon name={action.icon} /><span className="shell-navigation__item-label">{action.title}</span>
+      <NavigationIcon name={action.icon} selected={action.active} /><span className="shell-navigation__item-label">{action.title}</span>
     </button>)}
-    <button type="button" aria-current={config.settingsActive ? "page" : undefined} title={compact ? intl.formatMessage({ id: "settings.title", defaultMessage: "Settings" }) : undefined} onClick={() => onInvoke(config.onOpenSettings)}><Settings size={16} /><span className="shell-navigation__item-label"><FormattedMessage id="settings.title" defaultMessage="Settings" /></span></button>
+    <button type="button" aria-current={config.settingsActive ? "page" : undefined} title={compact ? intl.formatMessage({ id: "settings.title", defaultMessage: "Settings" }) : undefined} onClick={() => onInvoke(config.onOpenSettings)}><NavigationIcon name="settings" selected={config.settingsActive} /><span className="shell-navigation__item-label"><FormattedMessage id="settings.title" defaultMessage="Settings" /></span></button>
   </nav> : <AccountContent compact={compact} config={config} onInvoke={onInvoke} />;
 }
 

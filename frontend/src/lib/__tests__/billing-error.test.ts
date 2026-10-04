@@ -111,6 +111,7 @@ describe("billing-error", () => {
         "PASS_ISOLATING",
         "PASS_ISOLATED",
         "PASS_RENEWING",
+        "PASS_RENEWAL_PERIOD_TOO_SHORT",
         "PASS_NOT_RENEWABLE",
         "PASS_DELETING",
         "PASS_TERMINATING",

@@ -11,6 +11,8 @@ import {
   createCodexV3ConversationNavigationSource,
   createEmptyThreadView,
   createThreadViewReplicaProjectionBarrier,
+  mergeTurns,
+  reconcileHydratedTurn,
   type ThreadView,
   type ThreadViewProjectionReplica,
 } from "@opencraft/appserver-session";
@@ -192,14 +194,11 @@ test("V3 source enumerates lightweight Turns and hydrates only the hovered Turn"
           return 23;
         },
       },
-      commitHydratedTurn(hydrated, chronologicalTurnIds) {
-        const order = new Map(chronologicalTurnIds.map((id, index) => [id, index]));
+      commitHydratedTurn(hydrated, chronologicalTurnIds, baselineTurn) {
         view = {
           ...view,
           revision: view.revision + 1,
-          turns: [...view.turns.filter((candidate) => candidate.id !== hydrated.id), hydrated]
-            .sort((left, right) => (order.get(left.id) ?? Number.MAX_SAFE_INTEGER)
-              - (order.get(right.id) ?? Number.MAX_SAFE_INTEGER)),
+          turns: reconcileHydratedTurn(view.turns, hydrated, chronologicalTurnIds, { turn: baselineTurn }),
         };
         for (const listener of listeners) listener();
         return {
@@ -265,6 +264,50 @@ test("V3 source enumerates lightweight Turns and hydrates only the hovered Turn"
   );
   assert.equal(calls.length, 4, "target preparation reuses the preview hydration");
   source.dispose();
+});
+
+test("V3 navigation carries the pre-read baseline through cached preview hydration", async () => {
+  const baseline: AppServerTurn = { id: "target", status: "inProgress", itemsView: "summary",
+    items: [{ id: "answer", type: "agentMessage", text: "A" }] };
+  let view: ThreadView = { ...createEmptyThreadView("local", "thread-one"), resumeState: "resumed",
+    connectionGeneration: 7, turns: [turn("older", "Earlier"), baseline, turn("newer", "Later")] };
+  let release: (value: ThreadTurnsListResponse) => void = () => undefined;
+  const held = new Promise<ThreadTurnsListResponse>(resolve => { release = resolve; });
+  let readStarted = false;
+  const source = createCodexV3ConversationNavigationSource({ threadId: "thread-one", port: {
+    getView: () => view,
+    subscribeView: () => () => undefined,
+    listTurns: async params => {
+      if (params.itemsView === "notLoaded") return { data: [{ id: "target", items: [] }], nextCursor: null };
+      readStarted = true;
+      return held;
+    },
+    projectionBarrier: { waitUntilProjected: async () => 10 },
+    commitHydratedTurn(hydrated, positions, baselineTurn) {
+      assert.strictEqual(baselineTurn, baseline, "the cached preview must retain its request baseline, not current View");
+      view = { ...view, revision: view.revision + 1,
+        turns: reconcileHydratedTurn(view.turns, hydrated, positions, { turn: baselineTurn }) };
+      return { hostId: view.hostId, threadId: view.threadId, connectionGeneration: 7, viewRevision: view.revision };
+    },
+  } });
+  try {
+    await source.prepare();
+    const marker = source.getSnapshot().anchors.find(anchor => anchor.turnKey === "target")!;
+    const preview = source.loadPreview(marker.id);
+    await waitFor(() => readStarted);
+    view = { ...view, turns: mergeTurns(view.turns, [{ id: "target", items: [
+      { id: "answer", type: "agentMessage", text: "AB" },
+      { id: "next", type: "agentMessage", text: "New reply" },
+    ] }]) };
+    release({ data: [{ ...baseline, itemsView: "full", items: [
+      { id: "user", type: "userMessage", content: "Prompt" }, ...baseline.items!,
+    ] }], nextCursor: null });
+    await preview;
+    assert.ok(await source.prepareTarget(marker.id));
+    assert.deepEqual(view.turns.map(turn => turn.id), ["older", "target", "newer"]);
+    assert.deepEqual(view.turns[1]?.items?.map(item => item.id), ["user", "answer", "next"]);
+    assert.equal(view.turns[1]?.items?.[1]?.text, "AB");
+  } finally { release({ data: [], nextCursor: null }); source.dispose(); }
 });
 
 test("V3 source fails closed when the bounded prompt-index scan is incomplete", async () => {

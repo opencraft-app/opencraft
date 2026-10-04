@@ -46,6 +46,19 @@ test("headless command accepts a private data root and rejects unsupported flags
   }), /--data-dir is required/u);
 });
 
+test("SSH Servers are private backend bindings, never an anonymous public feature", async () => {
+  assert.equal(parseHeadlessArguments(["--ssh-servers", "/private/ssh.json", "--data-dir", "/tmp/private"], {}).sshServersFile, "/private/ssh.json");
+  assert.throws(() => parseHeadlessArguments(["--ssh-servers", "relative"], {}), /absolute/u);
+  assert.throws(() => parseHeadlessArguments(["--ssh-servers", "/private/ssh.json", "--host", "0.0.0.0", "--allow-unauthenticated-public"], {}), /protected listener/u);
+  await assert.rejects(startHeadlessServer({ host: "0.0.0.0", allowUnauthenticatedPublic: true, sshServers: [{ descriptor: { serverId: "ssh:fixture" } }] }), /cannot be exposed/u);
+});
+
+test("public SSH can explicitly allow changing addresses without removing authentication", () => {
+  const argv = ["--host", "0.0.0.0", "--allow-unauthenticated-public", "--ssh-public-access", "--ssh-servers", "/private/ssh.json", "--data-dir", "/tmp/private"];
+  assert.equal(parseHeadlessArguments(argv, {}).sshPublicAccess, true);
+  assert.throws(() => parseHeadlessArguments([...argv, "--ssh-public-origin", "https://fixture.invalid"], {}), /Choose either/u);
+});
+
 test("public headless mode requires explicit acknowledgement and keeps one HTTP and WebSocket server", async (context) => {
   const root = await mkdtemp(join(tmpdir(), "opencraft-public-headless-test-"));
   context.after(() => rm(root, { recursive: true, force: true }));
@@ -73,6 +86,13 @@ test("public headless mode requires explicit acknowledgement and keeps one HTTP 
   assert.equal(webOptions.sameOriginOnly, undefined);
   assert.equal(server.url, "http://127.0.0.1:8089");
   await server.close();
+  const managed = await startHeadlessServer({ root, webRoot, dataDirectory, host: "0.0.0.0", port: 8089,
+    allowUnauthenticatedPublic: true, sshPublicAccess: true, startAgentHost, createWebServer });
+  try {
+    assert.equal(webOptions.sshManagement.options.publicAccess, true);
+    assert.equal(webOptions.sshManagement.authorized({ headers: { host: "preview.invalid" } }), false);
+    await access(join(dataDirectory, "ssh", "access.key"));
+  } finally { await managed.close(); }
 });
 
 test("Linux tar packaging refuses foreign native build hosts before touching outputs", () => {
@@ -288,7 +308,12 @@ test("browser AppHost bridge routes Codex frames through one leased Server trans
     throw new Error(`Missing AppHost frame: ${JSON.stringify(frames)}`);
   };
   socket.send(JSON.stringify({ type: "hello", protocolVersion: 1, rendererId: "web-client" }));
-  assert.equal((await waitFor(frame => frame.type === "ready")).connectionId, "web-client");
+  const ready = await waitFor(frame => frame.type === "ready");
+  assert.equal(ready.connectionId, "web-client");
+  assert.equal(ready.capabilities.connectionProbe, true);
+  socket.send(JSON.stringify({ type: "connection/probe", requestId: "foreground-probe" }));
+  assert.equal((await waitFor(frame => frame.type === "response" && frame.requestId === "foreground-probe")).ok, true);
+  assert.equal(transportCount, 0, "probe must not activate an engine");
   socket.send(JSON.stringify({ type: "host/connect", requestId: "connect", hostId: "local-codex", leaseId: "lease" }));
   const connected = await waitFor(frame => frame.type === "response" && frame.requestId === "connect");
   assert.equal(connected.ok, true);

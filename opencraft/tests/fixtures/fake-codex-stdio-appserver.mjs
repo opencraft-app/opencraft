@@ -6,6 +6,7 @@ let nextServerRequestId = 901;
 let nextTurnId = 1;
 const turns = new Map();
 const history = new Map();
+const deferredSteerHistory = new Map();
 const loadedThreads = new Set();
 // stdio is one physical AppServer connection even when OpenCraft has many logical Clients.
 const subscribedThreads = new Set();
@@ -101,9 +102,11 @@ input.on("line", line => {
       return;
     }
     if (message.params.clientUserMessageId) {
-      const entries = history.get(threadId) ?? [];
+      const targetHistory = process.env.OPENCRAFT_TEST_STEER_RESPONSE === "defer-history"
+        ? deferredSteerHistory : history;
+      const entries = targetHistory.get(threadId) ?? [];
       entries.push({ turnId, item: { type: "userMessage", id: `user-${entries.length}`, clientId: message.params.clientUserMessageId, content: message.params.input } });
-      history.set(threadId, entries);
+      targetHistory.set(threadId, entries);
     }
     send({ id: message.id, result: { turnId } });
     return;
@@ -112,6 +115,11 @@ input.on("line", line => {
     const threadId = message.params.threadId;
     const turnId = turns.get(threadId);
     turns.delete(threadId);
+    const deferred = deferredSteerHistory.get(threadId) ?? [];
+    if (deferred.length > 0) {
+      history.set(threadId, [...(history.get(threadId) ?? []), ...deferred]);
+      deferredSteerHistory.delete(threadId);
+    }
     send({ id: message.id, result: {} });
     if (turnId && subscribedThreads.has(threadId)) {
       send({ method: "turn/completed", params: { threadId, turn: { id: turnId, status: "completed", items: [] } } });

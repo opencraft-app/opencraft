@@ -79,9 +79,21 @@ try {
     assert.deepEqual(Object.values(metrics).map((m:any)=>m.height),[32,40,44,32,32,32,32]);
     assert.deepEqual(Object.values(metrics).map((m:any)=>m.font),["12px","14px","16px","13px","13px","13px","13px"]);
     assert.deepEqual(Object.values(metrics).map((m:any)=>m.weight),["600","600","600","500","500","400","400"]);
-    for (const id of ["standard","settings","name","model"]) {
+    for (const id of ["standard","settings"]) {
       await page.locator(`#${id}`).focus();
       assert.equal(await page.locator(id==="model"?".settings-control-select-shell:has(#model)":`#${id}`).evaluate((el:any)=>getComputedStyle(el).outlineStyle),"solid");
+    }
+    for (const id of ["name","model"]) {
+      await page.locator(`#${id}`).focus();
+      const target = page.locator(id === "model" ? ".settings-control-select-shell:has(#model)" : `#${id}`);
+      const focus = await target.evaluate((el:any) => {
+        const css = getComputedStyle(el), probe = document.createElement("span");
+        probe.style.color = "var(--color-border-focus)"; document.body.append(probe);
+        const color = getComputedStyle(probe).color; probe.remove();
+        return { outline: css.outlineStyle, border: css.borderTopColor, color };
+      });
+      assert.equal(focus.outline, "none");
+      assert.equal(focus.border, focus.color);
     }
     const invalid = await page.evaluate(()=>({input:getComputedStyle(document.getElementById('invalid')!).borderColor,select:getComputedStyle(document.getElementById('invalid-select')!.parentElement!).borderColor,expected:getComputedStyle(document.getElementById('error')!).color}));
     assert.equal(invalid.input,invalid.expected); assert.equal(invalid.select,invalid.expected);

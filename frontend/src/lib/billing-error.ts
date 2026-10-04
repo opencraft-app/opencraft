@@ -47,6 +47,7 @@ const BILLING_ERROR_MESSAGES: Readonly<Record<string, (t: BillingTranslator) => 
   PASS_ISOLATING: t => t("套餐正在隔离，请稍候再试。"),
   PASS_ISOLATED: t => t("套餐已隔离，请前往续费。"),
   PASS_RENEWING: t => t("续费正在处理中，请稍候。"),
+  PASS_RENEWAL_PERIOD_TOO_SHORT: t => t("所选续费时长不足以覆盖已过期时间，请选择更长时长或联系客服。"),
   PASS_NOT_RENEWABLE: t => t("当前套餐状态不支持续费。"),
   PASS_DELETING: t => t("销毁操作正在执行中，请稍候。"),
   PASS_TERMINATING: t => t("套餐正在销毁中，请稍候。"),

@@ -6,7 +6,7 @@ import {
   SquarePen,
 } from "lucide-react-native";
 import { ScrollView, Text, View } from "react-native";
-import { StyleSheet, useUnistyles } from "react-native-unistyles";
+import { StyleSheet, useWorkbenchTheme } from "../styles/workbench-styles";
 import { IconButton } from "./ui/button";
 import { InteractiveSurface } from "./ui/interactive-surface";
 
@@ -40,7 +40,7 @@ export function WorkbenchSidebar({
   onNewTask,
   onClose,
 }: WorkbenchSidebarProps) {
-  const { theme } = useUnistyles();
+  const { theme } = useWorkbenchTheme();
   const secondary = theme.color.icon.secondary;
   const metrics = theme.metrics;
 

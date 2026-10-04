@@ -4,6 +4,7 @@ export type ShellNavigationVisibleDetent = Exclude<ShellNavigationDetent, "hidde
 
 export interface UiPreferenceValues {
   readonly "locale.override": string;
+  readonly "chat.defaultFollowUpAction": "steer" | "queue";
   readonly "shell.applicationsPinned": boolean;
   readonly "shell.accountPinned": boolean;
   readonly "shell.navigationDetent": ShellNavigationDetent;
@@ -31,6 +32,13 @@ const widthValue = (value: unknown): number | null =>
   typeof value === "number" && Number.isFinite(value) ? value : null;
 
 export const uiPreferenceDefinitions = Object.freeze({
+  "chat.defaultFollowUpAction": {
+    key: "chat.defaultFollowUpAction",
+    scope: "installation",
+    defaultValue: "steer",
+    parse: (value: unknown): "steer" | "queue" | null =>
+      value === "steer" || value === "queue" ? value : null,
+  },
   "locale.override": {
     key: "locale.override",
     scope: "installation",

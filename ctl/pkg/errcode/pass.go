@@ -5,6 +5,7 @@ var (
 	ErrPassInvalidParam              = Register(New("PASS_INVALID_PARAM", 400, "invalid pass parameters"))
 	ErrPassInvalidTimeUnit           = Register(New("PASS_INVALID_TIME_UNIT", 400, "invalid time unit, must be m"))
 	ErrPassExpired                   = Register(New("PASS_EXPIRED", 403, "pass has expired"))
+	ErrPassRenewalPeriodTooShort     = Register(New("PASS_RENEWAL_PERIOD_TOO_SHORT", 409, "renewal period would still leave pass expired"))
 	ErrPassBundleOffline             = Register(New("PASS_BUNDLE_OFFLINE", 400, "cannot create pass for offline bundle"))
 	ErrPassNoFieldToUpdate           = Register(New("PASS_NO_FIELD_TO_UPDATE", 400, "no field to update"))
 	ErrPassShadowBindingNotFound     = Register(New("PASS_SHADOW_BINDING_NOT_FOUND", 404, "shadow binding not found for user"))

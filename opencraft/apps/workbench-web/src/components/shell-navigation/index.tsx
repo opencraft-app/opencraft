@@ -1,6 +1,6 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { useIntl } from "@opencraft/i18n/react";
-import { LayoutGrid } from "lucide-react";
+import { NavigationIcon } from "./navigation-action";
 import { AccountSignInMenu } from "./account-sign-in-menu";
 import {
   motion,
@@ -129,7 +129,6 @@ interface ShellNavigationMotionStyle extends MotionStyle {
   "--shell-navigation-heading-height": MotionValue<string>;
   "--shell-navigation-heading-opacity": MotionValue<number>;
   "--shell-navigation-heading-y": MotionValue<string>;
-  "--shell-navigation-icon-scale": MotionValue<number>;
   "--shell-navigation-label-opacity": MotionValue<number>;
   "--shell-navigation-label-x": MotionValue<string>;
   "--shell-navigation-row-gap": MotionValue<string>;
@@ -158,11 +157,10 @@ function ShellNavigationMotionFrame({ children, expandedWidth, frameWidth }: {
     "--shell-navigation-heading-height": useTransform(headingProgress, value => `${value * 34}px`),
     "--shell-navigation-heading-opacity": headingProgress,
     "--shell-navigation-heading-y": useTransform(headingProgress, value => `${(1 - value) * -5}px`),
-    "--shell-navigation-icon-scale": useTransform(progress, value => 1 + (1 - value) * 0.04),
     "--shell-navigation-label-opacity": labelOpacity,
     "--shell-navigation-label-x": useTransform(labelOpacity, value => `${(1 - value) * -6}px`),
     "--shell-navigation-row-gap": useTransform(progress, value => `${value * 9}px`),
-    "--shell-navigation-row-padding": useTransform(progress, value => `${10 - value * 2}px`),
+    "--shell-navigation-row-padding": useTransform(progress, () => "8px"),
     "--shell-navigation-row-inset": useTransform(progress, value => {
       const compactInset = (shellNavigationMetrics.compactWidth - shellNavigationMetrics.compactActionSize) / 2;
       return `${compactInset + value * (12 - compactInset)}px`;
@@ -249,7 +247,7 @@ export function ShellNavigationFooter({ config, controller, visible = true, entr
           aria-expanded={surface === "applications" ? projection.docked.applications || projection.peek === "applications" : undefined}
           data-pinned={surface === "applications" && projection.primaryNavigation ? visible : directSignIn ? false : state.pinned[surface]}
           title={surface === "applications" && projection.primaryNavigation ? "Applications" : `${surfaceLabel}${!directSignIn && state.pinned[surface] ? " · Pinned" : ""}`}>
-          {surface === "applications" ? <LayoutGrid aria-hidden="true" size={18} />
+          {surface === "applications" ? <NavigationIcon name="applications" selected={projection.docked.applications || projection.peek === "applications"} />
             : <><AccountLeadingVisual account={config.account} /><span className="shell-navigation__name">{surfaceLabel}</span></>}
         </button>
       </Dialog.Trigger>

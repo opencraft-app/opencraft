@@ -3,13 +3,18 @@ import { mkdir } from "node:fs/promises";
 import { createInterface, type Interface as ReadLineInterface } from "node:readline";
 import { join } from "node:path";
 import { CodexHostQueue, type HostQueuedSubmission } from "./codex-host-queue.js";
+import { CodexMessageAttachments } from "./codex-message-attachments.js";
+import { projectCodexAttachmentNotification, projectCodexAttachmentResult } from "./codex-message-attachment-projection.js";
 
 import type { DuplexTransport, TransportStatus } from "@opencraft/appserver-client/transport";
 import { LOGICAL_CLIENT_FIELD } from "@opencraft/app-host-protocol";
+import { LocalAttachmentStagingService } from "@opencraft/local-agent-host/attachments/local-staging";
 import {
+  OPENCRAFT_ATTACHMENT_STAGING_EXTENSION,
   OPENCRAFT_FIRST_TURN_DURABILITY_CAPABILITY,
   OPENCRAFT_THREAD_LIFECYCLE_EXTENSION,
   OPENCRAFT_THREAD_QUEUE_EXTENSION,
+  OPENCRAFT_THREAD_GOAL_EXTENSION,
   OPENCRAFT_THREAD_START_DURABILITY_EXTENSION,
   type OpenCraftThreadLifecycleCapability,
   type OpenCraftThreadQueueCapability,
@@ -20,6 +25,8 @@ import {
   OPENCRAFT_PERMISSION_MODES_CAPABILITY,
   OPENCRAFT_PERMISSION_MODES_EXTENSION,
   type OpenCraftPermissionProfile,
+  type AttachmentStagingCapability,
+  type AttachmentRef,
 } from "@opencraft/appserver-protocol";
 import {
   AccountPoolStore,
@@ -43,6 +50,7 @@ interface PendingRequest {
   readonly method: string;
   readonly params: RpcRecord;
   invalidated?: boolean;
+  timer?: ReturnType<typeof setTimeout>;
 }
 
 interface PendingServerRequest {
@@ -52,6 +60,40 @@ interface PendingServerRequest {
 }
 
 const MAX_PENDING_SERVER_REQUESTS = 256;
+
+interface SharedCodexRoutingOptions {
+  readonly logDiagnostic?: (event: Record<string, unknown>) => void;
+  readonly nativeSubscriptionGraceMs?: number;
+}
+
+interface LocalCodexEngineOptions extends SharedCodexRoutingOptions {
+  readonly kind?: "local";
+  readonly executable: string;
+  readonly runtimeDirectory: string;
+  readonly dataDirectory: string;
+  readonly nativeCodexHomeDirectory: string;
+  readonly upstreamBaseUrl?: string;
+  readonly fetch?: typeof fetch;
+  readonly createMaintenanceClient?: CodexMaintenanceClientFactory;
+  readonly spawnAppServer?: (input: { readonly args: readonly string[]; readonly cwd: string; readonly env: NodeJS.ProcessEnv }) => ChildProcessWithoutNullStreams;
+}
+
+export interface RemoteCodexEngineOptions extends SharedCodexRoutingOptions {
+  readonly kind: "remote";
+  readonly transport: DuplexTransport;
+}
+
+// These are connection-independent native RPCs. Connection-scoped command,
+// watch/search sessions and OpenCraft-local extensions need their own routing
+// contract before they can be exposed on a shared remote connection.
+const REMOTE_CODEX_METHODS = new Set([
+  "model/list", "config/read", "configRequirements/read", "permissionProfile/list",
+  "thread/list", "thread/read", "thread/items/list", "thread/loaded/list",
+  "thread/start", "thread/resume", "thread/fork", "thread/unsubscribe",
+  "thread/name/set", "thread/archive", "thread/unarchive", "thread/compact/start",
+  "turn/start", "turn/steer", "turn/interrupt",
+  "fs/readDirectory", "fs/getMetadata", "fs/readFile", "fs/writeFile", "fs/createDirectory",
+]);
 
 function record(value: unknown): RpcRecord {
   return value && typeof value === "object" && !Array.isArray(value) ? value as RpcRecord : {};
@@ -73,7 +115,7 @@ class CodexQueueRpcError extends Error {
   constructor(readonly code: number, message: string, readonly data?: unknown) { super(message); }
 }
 
-function withCodexHostCapabilities(value: unknown): RpcRecord {
+function withCodexHostCapabilities(value: unknown, attachmentStaging: AttachmentStagingCapability): RpcRecord {
   const result = record(value);
   const capabilities = record(result.capabilities);
   const extensions = record(capabilities.extensions);
@@ -83,6 +125,7 @@ function withCodexHostCapabilities(value: unknown): RpcRecord {
       ...capabilities,
       extensions: {
         ...extensions,
+        [OPENCRAFT_ATTACHMENT_STAGING_EXTENSION]: attachmentStaging,
         [OPENCRAFT_THREAD_START_DURABILITY_EXTENSION]:
           OPENCRAFT_FIRST_TURN_DURABILITY_CAPABILITY,
         [OPENCRAFT_THREAD_LIFECYCLE_EXTENSION]: {
@@ -101,6 +144,7 @@ function withCodexHostCapabilities(value: unknown): RpcRecord {
           unconfirmedSteerDiscard: true,
           perItemPause: false,
         } satisfies OpenCraftThreadQueueCapability,
+        [OPENCRAFT_THREAD_GOAL_EXTENSION]: { version: 1, read: true, write: true },
         [OPENCRAFT_PERMISSION_MODES_EXTENSION]: OPENCRAFT_PERMISSION_MODES_CAPABILITY,
       },
     },
@@ -108,6 +152,7 @@ function withCodexHostCapabilities(value: unknown): RpcRecord {
 }
 
 export class CodexEngineAdapter implements DuplexTransport {
+  private readonly attachmentStaging: LocalAttachmentStagingService | null;
   private readonly listeners = new Set<(frame: string) => void>();
   private readonly statusListeners = new Set<(status: TransportStatus) => void>();
   private readonly pending = new Map<string, PendingRequest>();
@@ -125,7 +170,10 @@ export class CodexEngineAdapter implements DuplexTransport {
   private readonly internalRequests = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout>; threadId: string; method: string }>();
   private readonly threadOperations = new Map<string, Promise<void>>();
   private readonly activeTurns = new Map<string, string>();
+  private readonly activeGoalThreads = new Set<string>();
+  private readonly goalContinuationTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private queue: CodexHostQueue | null = null;
+  private messageAttachments: CodexMessageAttachments | null = null;
   private statusValue: TransportStatus = { state: "idle" };
   private sequence = 0;
   private clientSequence = 0;
@@ -140,28 +188,51 @@ export class CodexEngineAdapter implements DuplexTransport {
   private subscriptions: CodexSubscriptionService | null = null;
   private stderrTail = "";
   private closeOperation: Promise<void> | null = null;
+  private readonly remoteDisposers: Array<() => void> = [];
 
-  constructor(private readonly options: {
-    readonly executable: string;
-    readonly runtimeDirectory: string;
-    readonly dataDirectory: string;
-    readonly nativeCodexHomeDirectory: string;
-    readonly upstreamBaseUrl?: string;
-    readonly fetch?: typeof fetch;
-    readonly createMaintenanceClient?: CodexMaintenanceClientFactory;
-    readonly spawnAppServer?: (input: {
-      readonly args: readonly string[];
-      readonly cwd: string;
-      readonly env: NodeJS.ProcessEnv;
-    }) => ChildProcessWithoutNullStreams;
-    readonly logDiagnostic?: (event: Record<string, unknown>) => void;
-    readonly nativeSubscriptionGraceMs?: number;
-  }) {}
+  constructor(private readonly options: LocalCodexEngineOptions | RemoteCodexEngineOptions) {
+    this.attachmentStaging = options.kind === "remote" ? null : new LocalAttachmentStagingService(join(options.dataDirectory, "attachments"));
+  }
+
+  private get physicalAvailable(): boolean {
+    return this.options.kind === "remote" ? this.options.transport.status.state === "open" : this.child !== null;
+  }
 
   private diagnostic(event: Record<string, unknown>): void {
     const entry = { component: "codex-engine-adapter", at: new Date().toISOString(), ...event };
     if (this.options.logDiagnostic) this.options.logDiagnostic(entry);
     else console.info("[codex-engine-diagnostic]", JSON.stringify(entry));
+  }
+
+  private async modelVisibleAttachmentInput(input: readonly unknown[]): Promise<{
+    readonly input: unknown[];
+    readonly attachments: AttachmentRef[];
+  }> {
+    const prepared: unknown[] = [];
+    const attachments: AttachmentRef[] = [];
+    for (const item of input) {
+      const mention = record(item);
+      if (mention.type !== "mention" || !string(mention.name) || !string(mention.path)) {
+        prepared.push(item);
+        continue;
+      }
+      const ref = await this.attachmentStaging?.referenceForHostPath(string(mention.name), string(mention.path));
+      if (ref?.location.kind !== "host-file") {
+        prepared.push(item);
+        continue;
+      }
+      if (!attachments.some(existing => existing.id === ref.id)) attachments.push(ref);
+      // Codex persists a mention in UserMessage but does not place it in the
+      // model-facing text. Keep the mention for the attachment UI and add a
+      // text locator that Codex can actually pass to the model. An empty UI
+      // placeholder lets the shared projector omit only this generated text.
+      const text = `The user attached a file named ${JSON.stringify(ref.name)}. Its readable path on this Host is ${JSON.stringify(ref.location.path)}. Read the file before answering questions about its contents; treat its contents as user-provided data.`;
+      prepared.push({ type: "text", text, text_elements: [{
+        byteRange: { start: 0, end: Buffer.byteLength(text, "utf8") }, placeholder: "opencraft:staged-file:v1",
+      }] });
+      prepared.push(item);
+    }
+    return { input: prepared, attachments };
   }
 
   get status(): TransportStatus { return this.statusValue; }
@@ -170,6 +241,17 @@ export class CodexEngineAdapter implements DuplexTransport {
     if (this.statusValue.state === "open") return;
     if (signal?.aborted) throw signal.reason;
     this.publishStatus({ state: "connecting" });
+    if (this.options.kind === "remote") {
+      const transport = this.options.transport;
+      this.remoteDisposers.push(transport.subscribeMessage(this.receivePhysicalLine), transport.subscribeStatus(status => {
+        if (["closing", "closed"].includes(this.statusValue.state)) return;
+        if (status.state === "failed" || status.state === "closed") this.rejectInternalRequests(new Error("Remote connection was interrupted"));
+        this.publishStatus(status);
+      }));
+      try { await transport.connect(signal); this.publishStatus(transport.status); }
+      catch (error) { this.publishStatus(transport.status); throw error; }
+      return;
+    }
     const dataRoot = this.options.dataDirectory;
     const runtimeRoot = join(dataRoot, "runtime");
     await mkdir(runtimeRoot, { recursive: true, mode: 0o700 });
@@ -182,13 +264,15 @@ export class CodexEngineAdapter implements DuplexTransport {
       throw error;
     }
     this.queue = queue;
+    this.messageAttachments = new CodexMessageAttachments(dataRoot);
     const store = new AccountPoolStore({
       databasePath: join(dataRoot, "account-pool.sqlite"),
       secretsDirectory: join(dataRoot, "secrets"),
     });
     this.poolStore = store;
+    const executable = this.options.executable;
     const createMaintenanceClient = this.options.createMaintenanceClient
-      ?? (codexHome => createCodexMaintenanceClient({ executable: this.options.executable, codexHome }));
+      ?? (codexHome => createCodexMaintenanceClient({ executable, codexHome }));
     const managedRefresh = createManagedCodexRefresh({
       refreshRoot: join(dataRoot, "refresh"),
       createClient: createMaintenanceClient,
@@ -257,13 +341,13 @@ export class CodexEngineAdapter implements DuplexTransport {
   }
 
   async send(frame: string): Promise<void> {
-    if (this.statusValue.state !== "open" || this.child === null) throw new Error("Codex Engine is not connected");
+    if (this.statusValue.state !== "open" || !this.physicalAvailable) throw new Error("Codex Engine is not connected");
     let message = record(JSON.parse(frame));
     const clientId = string(message[LOGICAL_CLIENT_FIELD]);
     if (!clientId) throw new Error("Codex Engine requires a logical client identity");
     delete message[LOGICAL_CLIENT_FIELD];
     if (message.method === "runtime/client/disconnect") {
-      this.diagnostic({ event: "client-disconnect", clientId, pid: this.child.pid ?? null });
+      this.diagnostic({ event: "client-disconnect", clientId, pid: this.child?.pid ?? null });
       this.disconnectClient(clientId);
       return;
     }
@@ -277,15 +361,48 @@ export class CodexEngineAdapter implements DuplexTransport {
       return;
     }
     const id = responseId(message.id);
+    if (this.options.kind === "remote" && typeof message.method === "string" && !REMOTE_CODEX_METHODS.has(message.method)) {
+      if (id !== null) this.emit({ id, error: { code: -32601, message: "This operation is unavailable on the remote connection" } }, clientId);
+      return;
+    }
     if (id !== null && message.method === undefined && ("result" in message || "error" in message)) {
       const request = this.serverRequests.get(JSON.stringify(id));
       if (request?.ownerClientId !== clientId || !this.initializedClients.has(clientId)) return;
       this.serverRequests.delete(JSON.stringify(id));
-      this.writePhysical(message);
+      await this.writePhysical(message);
       return;
     }
     if (id !== null && typeof message.method === "string") {
+      if (!this.initializedClients.has(clientId)) {
+        this.emit({ id, error: { code: -32600, message: "Client is not initialized" } }, clientId);
+        return;
+      }
+      if (this.options.kind === "remote" && this.pending.size >= 1024) {
+        this.emit({ id, error: { code: -32000, message: "Remote request limit exceeded" } }, clientId);
+        return;
+      }
       const requestClientEpoch = this.clientEpoch(clientId);
+      if (message.method === "attachment/stage" || message.method === "attachment/remove") {
+        if (!this.initializedClients.has(clientId)) {
+          this.emit({ id, error: { code: -32600, message: "Client is not initialized" } }, clientId);
+          return;
+        }
+        try {
+          if (message.method === "attachment/remove" && this.messageAttachments?.hasReference(string(record(message.params).id))) {
+            throw new Error("Sent attachments cannot be removed from history");
+          }
+          if (!this.attachmentStaging) throw new Error("Attachment staging is unavailable");
+          const result = await this.attachmentStaging.handle(message.method, message.params);
+          if (this.initializedClients.has(clientId) && this.clientEpoch(clientId) === requestClientEpoch) {
+            this.emit({ id, result }, clientId);
+          }
+        } catch (error) {
+          if (this.initializedClients.has(clientId) && this.clientEpoch(clientId) === requestClientEpoch) {
+            this.emit({ id, error: { code: -32602, message: errorMessage(error) } }, clientId);
+          }
+        }
+        return;
+      }
       if (message.method.startsWith("thread/queue/")) {
         await this.handleQueueRequest(clientId, id, message.method, record(message.params));
         return;
@@ -308,33 +425,59 @@ export class CodexEngineAdapter implements DuplexTransport {
           return;
         }
       }
+      if ((message.method === "turn/start" || message.method === "turn/steer") && Array.isArray(params.input)) {
+        try {
+          const prepared = await this.modelVisibleAttachmentInput(params.input);
+          if (prepared.attachments.length > 0) this.attachmentRecords().record(
+            string(params.threadId), string(params.clientUserMessageId), prepared.attachments);
+          params = { ...params, input: prepared.input };
+          message = { ...message, params };
+        } catch (error) {
+          this.emit({ id, error: { code: -32602, message: errorMessage(error) } }, clientId);
+          return;
+        }
+      }
       if (message.method === "turn/interrupt") this.diagnostic({
         event: "turn-interrupt", clientId, requestId: physicalId,
-        threadId: string(params.threadId), turnId: string(params.turnId), pid: this.child.pid ?? null,
+        threadId: string(params.threadId), turnId: string(params.turnId), pid: this.child?.pid ?? null,
       });
       if (message.method === "thread/resume") this.diagnostic({
         event: "thread-resume-start", clientId, requestId: physicalId,
-        threadId: string(params.threadId), pid: this.child.pid ?? null,
+        threadId: string(params.threadId), pid: this.child?.pid ?? null,
       });
-      const forward = () => {
+      const forward = async () => {
         if (!this.initializedClients.has(clientId) || this.clientEpoch(clientId) !== requestClientEpoch) return;
-        this.pending.set(physicalId, { clientId, clientEpoch: requestClientEpoch, originalId: id, method: message.method as string, params });
+        const pending: PendingRequest = { clientId, clientEpoch: requestClientEpoch, originalId: id, method: message.method as string, params };
+        // Native fork has no fixed deadline in Workbench. Preserve that
+        // contract; its ledger is still bounded by the admission limit and
+        // retired with the physical generation, rather than timed out here.
+        if (this.options.kind === "remote" && message.method !== "thread/fork") {
+          pending.timer = setTimeout(() => {
+            if (this.pending.get(physicalId) !== pending) return;
+            this.pending.delete(physicalId);
+            if (this.validClientRequest(pending)) this.emit({ id, error: { code: -32000, message: "Remote request timed out; delivery outcome is unknown" } }, clientId);
+          }, 30_000);
+          pending.timer.unref();
+        }
+        this.pending.set(physicalId, pending);
         if (message.method === "thread/resume") {
           const threadId = string(params.threadId);
           this.cancelNativeRelease(threadId);
         }
-        this.writePhysical({ ...message, id: physicalId });
+        await this.writePhysical({ ...message, id: physicalId });
       };
       if (message.method === "thread/resume") {
         const threadId = string(params.threadId);
         await this.nativeReleases.get(threadId);
-        forward();
+        await forward();
       } else if ((message.method === "turn/start" || message.method === "turn/steer") && string(params.threadId)) {
-        await this.withThreadOperation(string(params.threadId), async () => { forward(); });
-      } else forward();
+        await this.withThreadOperation(string(params.threadId), forward);
+      } else await forward();
       return;
     }
-    this.writePhysical(message);
+    // No allowlisted request may bypass initialization/ID mapping by being
+    // disguised as a notification. Native initialized is consumed above.
+    if (this.options.kind !== "remote") await this.writePhysical(message);
   }
 
   subscribeMessage(listener: (frame: string) => void): () => void {
@@ -349,6 +492,8 @@ export class CodexEngineAdapter implements DuplexTransport {
     if (this.closeOperation !== null) return this.closeOperation;
     this.publishStatus({ state: "closing" });
     this.closeOperation = (async () => {
+      for (const dispose of this.remoteDisposers.splice(0)) dispose();
+      if (this.options.kind === "remote") await this.options.transport.close();
       const child = this.child;
       this.child = null;
       this.lines?.close();
@@ -374,6 +519,9 @@ export class CodexEngineAdapter implements DuplexTransport {
       await Promise.allSettled([...this.threadOperations.values()]);
       this.queue?.close();
       this.queue = null;
+      this.messageAttachments?.close();
+      this.messageAttachments = null;
+      for (const request of this.pending.values()) if (request.timer) clearTimeout(request.timer);
       this.pending.clear();
       this.initializeWaiters.length = 0;
       this.initializedClients.clear();
@@ -387,6 +535,9 @@ export class CodexEngineAdapter implements DuplexTransport {
       this.threadInteractionOwners.clear();
       this.serverRequests.clear();
       this.activeTurns.clear();
+      for (const timer of this.goalContinuationTimers.values()) clearTimeout(timer);
+      this.goalContinuationTimers.clear();
+      this.activeGoalThreads.clear();
       this.threadOperations.clear();
       this.publishStatus({ state: "closed" });
     })();
@@ -396,6 +547,10 @@ export class CodexEngineAdapter implements DuplexTransport {
   private async handleInitialize(clientId: string, message: RpcRecord): Promise<void> {
     const id = responseId(message.id);
     if (id === null) throw new Error("Initialize requires an id");
+    if (this.options.kind === "remote" && this.initializeWaiters.length >= 1024) {
+      this.emit({ id, error: { code: -32000, message: "Remote initialization limit exceeded" } }, clientId);
+      return;
+    }
     if (this.initializedClients.has(clientId)) this.disconnectClient(clientId);
     this.clientEpochs.set(clientId, ++this.clientSequence);
     const pending: PendingRequest = { clientId, clientEpoch: this.clientEpoch(clientId), originalId: id, method: "initialize", params: record(message.params) };
@@ -413,8 +568,29 @@ export class CodexEngineAdapter implements DuplexTransport {
     this.diagnostic({ event: "client-initialize", clientId, source: "physical", outcome: "started", pid: this.child?.pid ?? null });
     this.physicalInitializePending = true;
     const physicalId = `opencraft:${++this.sequence}`;
+    if (this.options.kind === "remote") {
+      pending.timer = setTimeout(() => {
+        if (this.pending.get(physicalId) !== pending) return;
+        this.pending.delete(physicalId);
+        this.physicalInitializePending = false;
+        for (const request of [pending, ...this.initializeWaiters.splice(0)]) {
+          if (this.validClientRequest(request)) this.emit({ id: request.originalId, error: {
+            code: -32000, message: "Remote initialization timed out",
+          } }, request.clientId);
+        }
+        // A late success cannot establish readiness in this failed generation.
+        this.publishStatus({ state: "failed", reason: "Remote initialization timed out",
+          failure: { code: "SSH_RPC_INITIALIZE_TIMEOUT", recovery: "automatic" } });
+      }, 15_000);
+      pending.timer.unref();
+    }
     this.pending.set(physicalId, pending);
-    this.writePhysical({ ...message, id: physicalId });
+    await this.writePhysical(this.options.kind === "remote" ? {
+      id: physicalId, method: "initialize", params: {
+        clientInfo: { name: "opencraft-ssh-hub", version: "0.1.0" },
+        capabilities: { experimentalApi: true },
+      },
+    } : { ...message, id: physicalId });
   }
 
   private readonly receivePhysicalLine = (line: string): void => {
@@ -423,7 +599,7 @@ export class CodexEngineAdapter implements DuplexTransport {
     const id = responseId(message.id);
     if (id !== null) {
       const internal = this.internalRequests.get(String(id));
-      if (internal) {
+      if (internal && typeof message.method !== "string") {
         this.internalRequests.delete(String(id));
         clearTimeout(internal.timer);
         if ("error" in message) internal.reject(this.rpcError(record(message.error)));
@@ -437,14 +613,19 @@ export class CodexEngineAdapter implements DuplexTransport {
         return;
       }
       const pending = this.pending.get(String(id));
-      if (pending !== undefined) {
+      if (pending !== undefined && typeof message.method !== "string") {
         this.pending.delete(String(id));
+        if (pending.timer) clearTimeout(pending.timer);
         if (pending.method === "initialize") {
           this.physicalInitializePending = false;
           if ("result" in message) {
-            this.initializeResult = withCodexHostCapabilities(message.result);
+            this.initializeResult = this.attachmentStaging
+              ? withCodexHostCapabilities(message.result, this.attachmentStaging.capability)
+              : { ...record(message.result), capabilities: { extensions: {
+                [OPENCRAFT_THREAD_START_DURABILITY_EXTENSION]: OPENCRAFT_FIRST_TURN_DURABILITY_CAPABILITY,
+              } } };
             message = { ...message, result: this.initializeResult };
-            this.writePhysical({ method: "initialized", params: {} });
+            void this.writePhysical({ method: "initialized", params: {} })?.catch(() => undefined);
           }
           if (this.validClientRequest(pending)) this.emit({ ...message, id: pending.originalId }, pending.clientId);
           this.diagnostic({
@@ -460,7 +641,10 @@ export class CodexEngineAdapter implements DuplexTransport {
               outcome: "result" in message ? "succeeded" : "failed", pid: this.child?.pid ?? null,
             });
           }
-          if ("result" in message) for (const threadId of this.queue?.pendingThreads() ?? []) this.scheduleQueueMaintenance(threadId);
+          if ("result" in message) {
+            for (const threadId of this.queue?.pendingThreads() ?? []) this.scheduleQueueMaintenance(threadId);
+            if (this.options.kind !== "remote") void this.discoverActiveGoals().catch(error => this.diagnostic({ event: "goal-discovery-failed", reason: errorMessage(error) }));
+          }
           return;
         }
         if (pending.method === "permissionProfile/list" && "result" in message) {
@@ -474,12 +658,20 @@ export class CodexEngineAdapter implements DuplexTransport {
           } };
         }
         if ("result" in message) {
+          if (pending.method === "thread/goal/get" || pending.method === "thread/goal/set") {
+            this.noteGoal(string(pending.params.threadId), record(message.result).goal);
+          } else if (pending.method === "thread/goal/clear" && record(message.result).cleared === true) {
+            this.noteGoal(string(pending.params.threadId), null);
+          }
+          if (pending.method === "thread/fork") this.messageAttachments?.cloneThread(
+            string(pending.params.threadId), string(record(record(message.result).thread).id));
           this.noteNativeSubscription(pending, message.result);
           this.commitThreadSubscription(pending, message.result);
           if (pending.method === "thread/delete") {
             const threadId = string(pending.params.threadId);
             if (this.queue?.discardThread(threadId)) this.emitQueueChanged(threadId);
             this.activeTurns.delete(threadId);
+            this.noteGoal(threadId, null);
           }
           if (pending.method === "thread/resume" || pending.method === "thread/start" || pending.method === "turn/start") {
             const threadId = pending.method === "thread/start"
@@ -493,7 +685,13 @@ export class CodexEngineAdapter implements DuplexTransport {
           threadId: string(pending.params.threadId),
           outcome: "result" in message ? "succeeded" : "failed", pid: this.child?.pid ?? null,
         });
-        if (this.validClientRequest(pending)) this.emit({ ...message, id: pending.originalId }, pending.clientId);
+        if (this.validClientRequest(pending)) this.emit({
+          ...message,
+          ...(this.messageAttachments && "result" in message ? {
+            result: projectCodexAttachmentResult(this.messageAttachments, pending.method, pending.params, message.result),
+          } : {}),
+          id: pending.originalId,
+        }, pending.clientId);
         if (["thread/start", "thread/fork", "thread/resume", "turn/start"].includes(pending.method)) {
           const threadId = pending.method === "thread/start" || pending.method === "thread/fork"
             ? string(record(record(message.result).thread).id) : string(pending.params.threadId);
@@ -512,6 +710,7 @@ export class CodexEngineAdapter implements DuplexTransport {
     if (message.method === "turn/completed" && threadId) {
       this.activeTurns.delete(threadId);
       this.scheduleQueueMaintenance(threadId);
+      if (!record(record(message.params).turn).error) this.scheduleGoalContinuation(threadId);
       this.scheduleNativeRelease(threadId);
     }
     if (message.method === "thread/status/changed" && threadId && record(record(message.params).status).type === "idle") {
@@ -534,6 +733,9 @@ export class CodexEngineAdapter implements DuplexTransport {
       this.ephemeralThreads.delete(threadId);
       this.cancelNativeRelease(threadId);
     }
+    if (message.method === "thread/goal/updated" && threadId) this.noteGoal(threadId, record(message.params).goal);
+    if (message.method === "thread/goal/cleared" && threadId) this.noteGoal(threadId, null);
+    if (this.messageAttachments) message = projectCodexAttachmentNotification(this.messageAttachments, message);
     const targets = threadId ? this.threadTargets(threadId) : [];
     if (threadId && targets.length === 0) return;
     if (targets.length === 0) this.emit(message);
@@ -570,10 +772,10 @@ export class CodexEngineAdapter implements DuplexTransport {
     if (this.serverRequests.has(key)) return;
     const threadId = string(record(message.params).threadId);
     if (!threadId || this.serverRequests.size >= MAX_PENDING_SERVER_REQUESTS) {
-      this.writePhysical({ id, error: {
+      void this.writePhysical({ id, error: {
         code: !threadId ? -32602 : -32000,
         message: !threadId ? "Server request has no Thread identity" : "Too many pending server requests",
-      } });
+      } })?.catch(() => undefined);
       return;
     }
     const candidate = this.threadInteractionOwners.get(threadId) ?? null;
@@ -668,6 +870,7 @@ export class CodexEngineAdapter implements DuplexTransport {
   }
 
   private hasHostThreadDemand(threadId: string): boolean {
+    if (this.activeGoalThreads.has(threadId)) return true;
     if (this.activeTurns.has(threadId) || this.queue?.firstUnsettled(threadId) != null) return true;
     if ([...this.serverRequests.values()].some(request => request.threadId === threadId)) return true;
     if ([...this.pending.values()].some(request => request.params.threadId === threadId
@@ -686,7 +889,7 @@ export class CodexEngineAdapter implements DuplexTransport {
     if (this.nativeReleases.has(threadId) || !this.canReleaseNativeSubscription(threadId)) return;
     // A logical detach never directly issues native unsubscribe: the Host may
     // still need completion/queue/interaction events after the last View closes.
-    const delay = Math.max(minimumDelayMs, this.ephemeralThreads.has(threadId) ? 0 : this.options.nativeSubscriptionGraceMs ?? 30 * 60 * 1_000);
+    const delay = Math.max(minimumDelayMs, this.ephemeralThreads.has(threadId) ? 0 : this.options.nativeSubscriptionGraceMs ?? 2 * 60 * 1_000);
     const timer = setTimeout(() => {
       this.nativeReleaseTimers.delete(threadId);
       this.releaseNativeSubscription(threadId);
@@ -779,6 +982,7 @@ export class CodexEngineAdapter implements DuplexTransport {
           result = { accounts: this.accountViews(store) }; break;
         }
         case "opencraft/codex/accounts/import": {
+          if (this.options.kind === "remote") throw new Error("Local account import is unavailable");
           const imported = await login.importFrom(this.options.nativeCodexHomeDirectory);
           void subscriptions.refreshAccount(imported.id).catch(() => undefined);
           const account = this.accountViews(store).find(candidate => candidate.id === imported.id);
@@ -865,7 +1069,7 @@ export class CodexEngineAdapter implements DuplexTransport {
   }
 
   private requestPhysical(method: string, params: RpcRecord, timeoutMs = 30_000): Promise<unknown> {
-    if (this.statusValue.state !== "open" || this.child === null || this.initializeResult === null) {
+    if (this.statusValue.state !== "open" || !this.physicalAvailable || this.initializeResult === null) {
       return Promise.reject(new Error("Codex AppServer is not initialized"));
     }
     const id = `opencraft:host:${++this.sequence}`;
@@ -875,7 +1079,13 @@ export class CodexEngineAdapter implements DuplexTransport {
         reject(new Error(`Codex ${method} delivery outcome is unknown after timeout`));
       }, timeoutMs);
       this.internalRequests.set(id, { resolve, reject, timer, threadId: string(params.threadId), method });
-      try { this.writePhysical({ id, method, params }); }
+      try {
+        const write = this.writePhysical({ id, method, params });
+        void write?.catch(error => {
+          if (!this.internalRequests.delete(id)) return;
+          clearTimeout(timer); reject(error);
+        });
+      }
       catch (error) {
         clearTimeout(timer);
         this.internalRequests.delete(id);
@@ -895,6 +1105,11 @@ export class CodexEngineAdapter implements DuplexTransport {
   private queueStore(): CodexHostQueue {
     if (!this.queue) throw new Error("Codex Host queue is unavailable");
     return this.queue;
+  }
+
+  private attachmentRecords(): CodexMessageAttachments {
+    if (!this.messageAttachments) throw new Error("Codex message attachments are unavailable");
+    return this.messageAttachments;
   }
 
   private queueProjection(row: HostQueuedSubmission): RpcRecord {
@@ -923,6 +1138,61 @@ export class CodexEngineAdapter implements DuplexTransport {
       this.scheduleNativeRelease(threadId);
     });
     return running;
+  }
+
+  private noteGoal(threadId: string, value: unknown): void {
+    if (!threadId) return;
+    if (record(value).status === "active") {
+      this.activeGoalThreads.add(threadId);
+      this.cancelNativeRelease(threadId);
+    } else {
+      this.activeGoalThreads.delete(threadId);
+      const timer = this.goalContinuationTimers.get(threadId);
+      if (timer) clearTimeout(timer);
+      this.goalContinuationTimers.delete(threadId);
+      this.scheduleNativeRelease(threadId);
+    }
+  }
+
+  /** Goal continuation belongs to the Host, not a browser View or websocket lease. */
+  private scheduleGoalContinuation(threadId: string): void {
+    if (!this.activeGoalThreads.has(threadId) || this.goalContinuationTimers.has(threadId)) return;
+    const timer = setTimeout(() => {
+      this.goalContinuationTimers.delete(threadId);
+      void this.withThreadOperation(threadId, async () => {
+        if (!this.activeGoalThreads.has(threadId) || this.activeTurns.has(threadId)) return;
+        if (this.queue?.firstAwaitingAdmission(threadId)) return;
+        if (!(await this.queueThreadIsIdle(threadId))) return;
+        const result = record(await this.requestPhysical("thread/goal/get", { threadId }));
+        this.noteGoal(threadId, result.goal);
+        if (!this.activeGoalThreads.has(threadId) || this.activeTurns.has(threadId)) return;
+        await this.requestPhysical("thread/goal/set", { threadId, status: "active" });
+      }).catch(error => this.diagnostic({ event: "goal-continuation-failed", threadId, reason: errorMessage(error) }));
+    }, 150);
+    timer.unref();
+    this.goalContinuationTimers.set(threadId, timer);
+  }
+
+  /** Rebuild the Host's active Goal index from Codex's durable Thread state. */
+  private async discoverActiveGoals(): Promise<void> {
+    let cursor: string | null = null;
+    for (let page = 0; page < 1_000 && this.statusValue.state === "open"; page++) {
+      const response = record(await this.requestPhysical("thread/list", {
+        limit: 100, useStateDbOnly: true, ...(cursor ? { cursor } : {}),
+      }));
+      if (!Array.isArray(response.data)) throw new Error("Codex Thread list has no data");
+      for (const thread of response.data) {
+        const threadId = string(record(thread).id);
+        if (!threadId || this.ephemeralThreads.has(threadId)) continue;
+        const result = record(await this.requestPhysical("thread/goal/get", { threadId }));
+        this.noteGoal(threadId, result.goal);
+        if (this.activeGoalThreads.has(threadId)) this.scheduleGoalContinuation(threadId);
+      }
+      if (response.nextCursor === null) return;
+      if (typeof response.nextCursor !== "string" || response.nextCursor === cursor) throw new Error("Codex Thread list did not advance");
+      cursor = response.nextCursor;
+    }
+    if (cursor !== null) throw new Error("Codex Goal discovery exceeded its safety bound");
   }
 
   private scheduleQueueMaintenance(threadId: string): void {
@@ -978,7 +1248,8 @@ export class CodexEngineAdapter implements DuplexTransport {
     const queue = this.queueStore();
     const unsettled = queue.list(threadId).filter(row => row.state === "unknown" || row.state === "steering");
     for (const row of unsettled) {
-      if (await this.historyHasClientMessage(threadId, row.clientUserMessageId, row.targetTurnId)) {
+      if (await this.historyHasClientMessage(threadId, row.clientUserMessageId,
+        row.targetTurnId === "unknown" ? null : row.targetTurnId)) {
         queue.settle(threadId, row.id, "delivered");
         this.emitQueueChanged(threadId);
       } else if (row.state === "steering" && await this.queueThreadIsIdle(threadId)) {
@@ -991,7 +1262,7 @@ export class CodexEngineAdapter implements DuplexTransport {
   private async maintainQueue(threadId: string): Promise<void> {
     const queue = this.queueStore();
     await this.reconcileQueue(threadId);
-    const first = queue.firstUnsettled(threadId);
+    const first = queue.firstAwaitingAdmission(threadId);
     if (!first || first.state !== "queued") return;
     if ([...this.pending.values()].some(pending => pending.method === "turn/start" && pending.params.threadId === threadId)) return;
     if (this.activeTurns.has(threadId) || !(await this.queueThreadIsIdle(threadId))) return;
@@ -1000,14 +1271,20 @@ export class CodexEngineAdapter implements DuplexTransport {
 
   private async dispatchQueuedStart(threadId: string, id: string): Promise<RpcRecord> {
     const queue = this.queueStore();
-    const head = queue.firstUnsettled(threadId);
-    if (head && head.state !== "queued") throw new CodexQueueRpcError(-32600, "An earlier delivery must be reconciled first");
+    const head = queue.firstAwaitingAdmission(threadId);
+    if (head?.state === "unknown") throw new CodexQueueRpcError(-32600, "Earlier delivery is unconfirmed; review it before sending another message");
+    if (head?.state === "dispatching") throw new CodexQueueRpcError(-32600, "Earlier delivery is still being sent");
+    const queued = queue.find(threadId, id);
+    if (!queued) throw new CodexQueueRpcError(-32600, "Queued message is unavailable");
+    const prepared = await this.modelVisibleAttachmentInput(queued.input);
+    if (prepared.attachments.length > 0) this.attachmentRecords().record(
+      threadId, queued.clientUserMessageId, prepared.attachments);
     const row = queue.claim(threadId, id, "unknown");
     if (!row) throw new CodexQueueRpcError(-32600, "Queued message is already being dispatched");
     this.emitQueueChanged(threadId);
     try {
       const response = record(await this.requestPhysical("turn/start", {
-        threadId, input: row.input, clientUserMessageId: row.clientUserMessageId,
+        threadId, input: prepared.input, clientUserMessageId: row.clientUserMessageId,
       }));
       if (!string(record(response.turn).id)) throw new Error("Codex returned an invalid turn/start acknowledgement");
       queue.settle(threadId, id, "delivered");
@@ -1032,14 +1309,21 @@ export class CodexEngineAdapter implements DuplexTransport {
 
   private async dispatchQueuedSteer(threadId: string, id: string, expectedTurnId: string): Promise<RpcRecord> {
     const queue = this.queueStore();
-    const head = queue.firstUnsettled(threadId);
-    if (head && head.state !== "queued") throw new CodexQueueRpcError(-32600, "An earlier delivery must be reconciled first");
+    if (queue.firstAwaitingAdmission(threadId)?.state === "unknown") await this.reconcileQueue(threadId);
+    const head = queue.firstAwaitingAdmission(threadId);
+    if (head?.state === "unknown") throw new CodexQueueRpcError(-32600, "Earlier delivery is unconfirmed; review it before sending another message");
+    if (head?.state === "dispatching") throw new CodexQueueRpcError(-32600, "Earlier delivery is still being sent");
+    const queued = queue.find(threadId, id);
+    if (!queued) throw new CodexQueueRpcError(-32600, "Queued message is unavailable");
+    const prepared = await this.modelVisibleAttachmentInput(queued.input);
+    if (prepared.attachments.length > 0) this.attachmentRecords().record(
+      threadId, queued.clientUserMessageId, prepared.attachments);
     const row = queue.claim(threadId, id, expectedTurnId);
     if (!row) throw new CodexQueueRpcError(-32600, "Queued message is already being dispatched");
     this.emitQueueChanged(threadId);
     try {
       const response = record(await this.requestPhysical("turn/steer", {
-        threadId, expectedTurnId, input: row.input, clientUserMessageId: row.clientUserMessageId,
+        threadId, expectedTurnId, input: prepared.input, clientUserMessageId: row.clientUserMessageId,
       }));
       const turnId = string(response.turnId) || string(record(response.turn).id);
       if (turnId !== expectedTurnId) throw new Error("Codex returned an invalid steer acknowledgement");
@@ -1117,9 +1401,11 @@ export class CodexEngineAdapter implements DuplexTransport {
       } else if (method === "thread/queue/start") {
         result = await this.withThreadOperation(threadId, async () => {
           if (!(await this.queueThreadIsIdle(threadId))) throw new CodexQueueRpcError(-32600, "Thread is not idle");
+          await this.reconcileQueue(threadId);
           const row = string(params.queuedSubmissionId)
             ? queue.find(threadId, string(params.queuedSubmissionId))
-            : queue.firstUnsettled(threadId);
+            : queue.firstAwaitingAdmission(threadId);
+          if (row?.state === "unknown") throw new CodexQueueRpcError(-32600, "Earlier delivery is unconfirmed; review it before sending another message");
           if (!row || row.state !== "queued") throw new CodexQueueRpcError(-32600, "Queued message is unavailable");
           return this.dispatchQueuedStart(threadId, row.id);
         });
@@ -1135,7 +1421,14 @@ export class CodexEngineAdapter implements DuplexTransport {
     }
   }
 
-  private writePhysical(message: RpcRecord): void {
+  private writePhysical(message: RpcRecord): Promise<void> | void {
+    if (this.options.kind === "remote") {
+      return this.options.transport.send(JSON.stringify(message)).catch(() => {
+        this.rejectInternalRequests(new Error("Remote delivery outcome is unknown"));
+        this.publishStatus({ state: "failed", reason: "Remote delivery outcome is unknown", failure: { code: "SSH_DELIVERY_UNKNOWN", recovery: "automatic" } });
+        throw new Error("Remote delivery outcome is unknown");
+      });
+    }
     if (this.child === null || this.child.stdin.destroyed) throw new Error("Codex AppServer stdin is closed");
     this.child.stdin.write(`${JSON.stringify(message)}\n`);
   }
@@ -1147,6 +1440,8 @@ export class CodexEngineAdapter implements DuplexTransport {
 
   private readonly fail = (error: Error): void => {
     this.rejectInternalRequests(error);
+    for (const timer of this.goalContinuationTimers.values()) clearTimeout(timer);
+    this.goalContinuationTimers.clear();
     this.publishStatus({ state: "failed", reason: error.message, failure: { code: "codex-appserver-exited", recovery: "automatic" } });
   };
 

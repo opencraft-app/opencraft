@@ -114,6 +114,23 @@
       "command": ["npm", "run", "build:expo:ios"],
       "artifacts": ["apps/workbench-expo/dist/ios/main.jsbundle"],
       "description": "Deterministic JavaScript/assets bundle; native archive remains a macOS job"
+    },
+    {
+      "id": "expo-android-internal-apk",
+      "platforms": ["linux", "darwin"],
+      "command": ["npm", "run", "build:expo:android:apk"],
+      "artifacts": ["apps/workbench-expo/release/OpenCraft-android-internal.apk"],
+      "description": "Standalone Android release APK signed with the generated development key for internal testing"
+    },
+    {
+      "id": "expo-android-release-apk",
+      "platforms": ["linux"],
+      "command": ["npm", "run", "build:expo:android:release"],
+      "artifacts": [
+        "apps/workbench-expo/release/LightVela-com.tencent.vela-android-release.apk",
+        "apps/workbench-expo/release/LightVela-com.tencent.vela-filing.txt"
+      ],
+      "description": "LightVela com.tencent.vela APK signed with an external production keystore; requires signing environment"
     }
   ]
 }

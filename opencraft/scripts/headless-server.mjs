@@ -9,6 +9,8 @@ import lockfile from "proper-lockfile";
 
 import { AppHostServer } from "../packages/app-host-server/src/index.ts";
 import { CodexEngineAdapter } from "../apps/opencraft-daemon/src/codex-engine-adapter.ts";
+import { readSshCodexServerBindings, createSshCodexEngineAdapter } from "../apps/opencraft-daemon/src/ssh-codex-connections.ts";
+import { SshManagement } from "../apps/opencraft-daemon/src/ssh-management.ts";
 import { startLocalAgentHost } from "../apps/local-agent-host/src/main.ts";
 import { createWorkbenchWebServer } from "./serve-workbench-web.mjs";
 import { assertHeadlessWebRelease } from "./headless-web-release.mjs";
@@ -28,6 +30,10 @@ export function parseHeadlessArguments(argv, env = process.env, getHomeDirectory
   let host = "127.0.0.1";
   let allowUnauthenticatedPublic = false;
   let dataDirectory = env.OPENCRAFT_SERVER_DATA_DIR;
+  let sshServersFile;
+  let sshPublicOrigin;
+  let sshPublicAccess = false;
+  let sshAccessFile;
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (argument === "--help" || argument === "-h") return { help: true };
@@ -42,6 +48,18 @@ export function parseHeadlessArguments(argv, env = process.env, getHomeDirectory
       const value = argv[++index];
       if (!value || value.startsWith("--")) throw new Error("--data-dir requires a path");
       dataDirectory = value;
+    } else if (argument === "--ssh-servers") {
+      sshServersFile = argv[++index];
+      if (!sshServersFile || !sshServersFile.startsWith("/")) throw new Error("--ssh-servers requires an absolute private configuration path");
+    } else if (argument === "--ssh-public-origin") {
+      sshPublicOrigin = argv[++index];
+      const url = new URL(sshPublicOrigin);
+      if (url.protocol !== "https:" || url.origin !== sshPublicOrigin) throw new Error("--ssh-public-origin requires a fixed HTTPS origin");
+    } else if (argument === "--ssh-public-access") {
+      sshPublicAccess = true;
+    } else if (argument === "--ssh-access-file") {
+      sshAccessFile = argv[++index];
+      if (!sshAccessFile?.startsWith("/")) throw new Error("--ssh-access-file requires a private absolute path");
     } else {
       throw new Error(`Unknown option ${argument}`);
     }
@@ -56,7 +74,10 @@ export function parseHeadlessArguments(argv, env = process.env, getHomeDirectory
   if (host !== "0.0.0.0" && allowUnauthenticatedPublic) {
     throw new Error("--allow-unauthenticated-public requires --host 0.0.0.0");
   }
-  return { help: false, host, port, dataDirectory: resolve(dataDirectory), allowUnauthenticatedPublic };
+  if (sshPublicAccess && sshPublicOrigin) throw new Error("Choose either --ssh-public-access or --ssh-public-origin");
+  if (sshServersFile && host !== "127.0.0.1" && !sshPublicOrigin && !sshPublicAccess) throw new Error("SSH Servers require a protected listener");
+  return { help: false, host, port, dataDirectory: resolve(dataDirectory), allowUnauthenticatedPublic,
+    ...(sshServersFile ? { sshServersFile } : {}), ...(sshPublicOrigin ? { sshPublicOrigin } : {}), ...(sshPublicAccess ? { sshPublicAccess: true } : {}), ...(sshAccessFile ? { sshAccessFile } : {}) };
 }
 
 async function secureDataDirectory(path) {
@@ -79,6 +100,11 @@ export async function startHeadlessServer(options = {}) {
   if (host === "0.0.0.0" && options.allowUnauthenticatedPublic !== true) {
     throw new Error("Public headless listener requires explicit unauthenticated-public acknowledgement");
   }
+  const sshServers = options.sshServers ?? (options.sshServersFile ? await readSshCodexServerBindings(options.sshServersFile) : []);
+  if (options.sshPublicAccess && options.sshPublicOrigin) throw new Error("Choose either SSH public access or a fixed origin");
+  if (sshServers.length && host !== "127.0.0.1" && !options.sshPublicOrigin && !options.sshPublicAccess) throw new Error("SSH Servers cannot be exposed through an unauthenticated public listener");
+  const remoteServers = new Map(sshServers.map(binding => [binding.descriptor.serverId, binding]));
+  if (remoteServers.size !== sshServers.length) throw new Error("Duplicate SSH Server identity");
   await access(join(webRoot, "index.html"));
   await assertHeadlessWebRelease(webRoot);
   await secureDataDirectory(dataDirectory);
@@ -86,11 +112,13 @@ export async function startHeadlessServer(options = {}) {
   let agent;
   let web;
   let appHostServer;
+  let sshManagement;
   let closing = null;
   const close = () => {
     if (closing !== null) return closing;
     closing = (async () => {
       const results = await Promise.allSettled([web?.close(), appHostServer?.close(), agent?.close()]);
+      sshManagement?.close();
       await releaseLock();
       const failures = results.filter((result) => result.status === "rejected").map((result) => result.reason);
       if (failures.length > 0) throw new AggregateError(failures, "OpenCraft server shutdown failed");
@@ -113,6 +141,9 @@ export async function startHeadlessServer(options = {}) {
       logicalClientRouting: true,
       physicalHostLifetime: "server",
       createTransport(hostId) {
+        const remote = remoteServers.get(hostId);
+        if (remote) return createSshCodexEngineAdapter(remote);
+        if (hostId.startsWith("ssh:")) return createSshCodexEngineAdapter(sshManagement.store.binding(hostId));
         if (hostId !== "local-codex") throw new Error(`Unknown server Host ${hostId}`);
         return options.createCodexTransport?.() ?? new CodexEngineAdapter({
           executable: options.codexExecutable ?? join(root, "runtime/codex/bin/codex"),
@@ -122,12 +153,22 @@ export async function startHeadlessServer(options = {}) {
         });
       },
     });
+    // Local anonymous features remain usable. Public remote access is enabled
+    // only with explicit operator opt-in; all remote sockets require a session.
+    if (host === "127.0.0.1" || options.sshPublicOrigin || options.sshPublicAccess) sshManagement = new SshManagement({
+      directory: join(dataDirectory, "ssh"), publicOrigin: options.sshPublicOrigin, publicAccess: options.sshPublicAccess, accessFile: options.sshAccessFile,
+      resetConnection: id => appHostServer.resetHost(id), connectionState: id => appHostServer.hostState(id),
+      connectConnection: (id, assertAdmission) => appHostServer.ensureHostConnected(id, assertAdmission),
+      legacyServers: sshServers.map(binding => binding.descriptor),
+    });
     const createWeb = options.createWebServer ?? createWorkbenchWebServer;
     web = await createWeb({
       root: webRoot,
       appServerTarget: agent.websocketUrl,
       loopbackOnly: host === "127.0.0.1",
       appHostServer,
+      sshServerDescriptors: sshServers.map(binding => binding.descriptor),
+      sshManagement,
     });
     const address = await web.listen({ host, port });
     return { url: `http://127.0.0.1:${address.port}`, listenHost: host, listenPort: address.port, close };
@@ -143,7 +184,7 @@ if (isMain) {
   void (async () => {
     const args = parseHeadlessArguments(process.argv.slice(2));
     if (args.help) {
-      process.stdout.write("Usage: opencraft-server [--host 127.0.0.1|0.0.0.0] [--port 10000] [--data-dir PATH] [--allow-unauthenticated-public]\nDefault: loopback only. Public mode has no TLS or access control.\n");
+      process.stdout.write("Usage: opencraft-server [--host 127.0.0.1|0.0.0.0] [--port 10000] [--data-dir PATH] [--ssh-servers PRIVATE_JSON] [--ssh-public-origin HTTPS_ORIGIN | --ssh-public-access] [--ssh-access-file PRIVATE_FILE] [--allow-unauthenticated-public]\nDefault: loopback only. SSH management requires a private access key. Public SSH requires explicit opt-in; HTTP access exposes credentials without transport encryption.\n");
       return;
     }
     const server = await startHeadlessServer(args);

@@ -1,6 +1,9 @@
 import { ChevronRight } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import { workingShimmerMotion } from "@opencraft/design-system/tokens";
+import { OverlayDisclosureTrigger } from "../../overlay-disclosure-trigger";
+import { useDisclosureReflow } from "../../use-disclosure-reflow";
+import { useDisclosureHeight } from "../../use-disclosure-height";
 import {
   useCallback,
   useId,
@@ -84,11 +87,16 @@ export function ActivityDisclosure({
   unmountBodyWhenCollapsed = false,
 }: ActivityDisclosureProps) {
   const prefersReducedMotion = useReducedMotion();
+  const reflow = useDisclosureReflow();
   const summaryId = useId();
   const hasBody = children !== null && children !== undefined;
+  useLayoutEffect(() => {
+    if (!hasBody) reflow.cancel();
+  }, [hasBody, reflow.cancel]);
   const [bodyMounted, setBodyMounted] = useState(!unmountBodyWhenCollapsed || open);
   const bodyRef = useRef<HTMLDivElement>(null);
   const [bodyHeightPx, setBodyHeightPx] = useState(0);
+  const animatedHeight = useDisclosureHeight(0);
   useLayoutEffect(() => {
     if (open && !bodyMounted) setBodyMounted(true);
   }, [bodyMounted, open]);
@@ -106,28 +114,27 @@ export function ActivityDisclosure({
   }, [bodyMounted]);
   return (
     <div className="thread-activity-item" data-body-variant={bodyVariant} data-open={open || undefined} data-status={status}>
-      <div className="thread-activity-item__header" data-interactive={hasBody || undefined}>
-        {hasBody ? (
-          <button
-            aria-expanded={open}
-            aria-labelledby={summaryId}
-            className="thread-activity-item__hit-target"
-            onClick={() => {
-              if (!open && unmountBodyWhenCollapsed) setBodyMounted(true);
-              onOpenChange(!open);
-            }}
-            type="button"
-          />
-        ) : null}
-        <span className="thread-activity-item__header-content">
+      <OverlayDisclosureTrigger
+        buttonClassName="thread-activity-item__hit-target"
+        className="thread-activity-item__header"
+        contentClassName="thread-activity-item__header-content"
+        interactive={hasBody}
+        labelId={summaryId}
+        reflowOwned
+        onToggle={(anchor) => {
+          reflow.begin(anchor);
+          if (!open && unmountBodyWhenCollapsed) setBodyMounted(true);
+          onOpenChange(!open);
+        }}
+        open={open}
+      >
           {icon == null ? null : <span className="thread-activity-item__icon">{icon}</span>}
           <CadencedShimmer active={running} className="thread-activity-item__summary" id={summaryId}>{summary}</CadencedShimmer>
           {detail ? <span className="thread-activity-item__detail">{detail}</span> : null}
           {trailing ? <span className="thread-activity-item__trailing">{trailing}</span> : null}
           {accessory ? <span className="thread-activity-item__accessory">{accessory}</span> : null}
           {hasBody ? <ChevronRight aria-hidden="true" className="thread-activity-item__chevron" size={13} /> : null}
-        </span>
-      </div>
+      </OverlayDisclosureTrigger>
       {hasBody ? (
         <motion.div
           animate={{ height: open ? bodyHeightPx : 0, opacity: open ? 1 : 0 }}
@@ -135,10 +142,13 @@ export function ActivityDisclosure({
           className="thread-activity-item__body-clip"
           initial={false}
           inert={!open}
-          onAnimationComplete={() => {
+          onAnimationComplete={(definition) => {
+            if (typeof definition !== "object" || Array.isArray(definition)
+              || definition.height !== (open ? bodyHeightPx : 0)) return;
+            reflow.complete();
             if (!open && unmountBodyWhenCollapsed) setBodyMounted(false);
           }}
-          style={{ overflow: open ? "visible" : "hidden", pointerEvents: open ? "auto" : "none" }}
+          style={{ height: animatedHeight, overflow: open ? "visible" : "hidden", pointerEvents: open ? "auto" : "none" }}
           transition={{ duration: prefersReducedMotion ? 0 : 0.3, ease: [0.19, 1, 0.22, 1] }}
         >
           <div className="thread-activity-item__body" ref={bodyRef}>{bodyMounted ? children : null}</div>

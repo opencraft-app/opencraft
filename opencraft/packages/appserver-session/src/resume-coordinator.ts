@@ -1,5 +1,5 @@
 import { Context, Service } from "@deepseek-ai/cordis";
-import type { AppServerClient } from "@opencraft/appserver-client";
+import { AppServerRpcError, type AppServerClient } from "@opencraft/appserver-client";
 import { buildResumeHistoryRequest, type AppServerThread, type ThreadResumeParams, type ThreadResumeResponse, type ThreadForkResponse } from "@opencraft/appserver-protocol";
 
 import type { HydratedThreadHistory, ResumeHistoryContext } from "./history-strategies";
@@ -29,6 +29,8 @@ export interface ThreadResumeCoordinatorConfig {
 export interface ResumeThreadOptions {
   threadId: string;
   force?: boolean;
+  /** Explicit user retry may reattempt a server-rejected resume in this connection generation. */
+  retryRejected?: boolean;
   history?: unknown;
   path?: string | null;
   model?: string | null;
@@ -93,6 +95,7 @@ export class ThreadResumeCoordinatorService extends Service {
   private readonly requestTimeoutMs: number;
   private readonly drainTailHistory: boolean;
   private readonly inFlight = new Map<string, Promise<ThreadView>>();
+  private readonly rejectedResumes = new Map<string, { generation: number; error: AppServerRpcError }>();
   private readonly historyContexts = new Map<string, ResumeHistoryContext>();
   private readonly backgroundHistory = new Map<string, Promise<void>>();
   private readonly olderPageRequests = new Map<string, Promise<ThreadView>>();
@@ -129,6 +132,7 @@ export class ThreadResumeCoordinatorService extends Service {
     });
     const removeStatus = this.client.subscribeStatus((status) => {
       if (status.state !== "closed" && status.state !== "failed") return;
+      this.rejectedResumes.clear();
       ctx.threadStreamOwnership.resetAfterReconnect();
       for (const view of ctx.threadViews.getAll()) {
         ctx.threadViews.update(view.threadId, (current) => ({
@@ -143,6 +147,7 @@ export class ThreadResumeCoordinatorService extends Service {
       removeNotification();
       removeStatus();
       this.inFlight.clear();
+      this.rejectedResumes.clear();
       this.historyContexts.clear();
       this.backgroundHistory.clear();
       this.olderPageRequests.clear();
@@ -153,6 +158,12 @@ export class ThreadResumeCoordinatorService extends Service {
   resume(options: ResumeThreadOptions): Promise<ThreadView> {
     const existing = this.inFlight.get(options.threadId);
     if (existing !== undefined) return existing;
+    if (options.retryRejected) this.rejectedResumes.delete(options.threadId);
+    else {
+      const rejected = this.rejectedResumes.get(options.threadId);
+      if (rejected?.generation === this.client.connectionGeneration) return Promise.reject(rejected.error);
+      if (rejected !== undefined) this.rejectedResumes.delete(options.threadId);
+    }
     const operation = this.resumeOnce(options).finally(() => {
       if (this.inFlight.get(options.threadId) === operation) this.inFlight.delete(options.threadId);
     });
@@ -165,6 +176,7 @@ export class ThreadResumeCoordinatorService extends Service {
     this.ensureGeneration(generation);
     const thread = requireThread(response.thread, "thread/fork");
     const baseline = requireResumeResponse({ ...response, thread }, thread.id);
+    this.rejectedResumes.delete(thread.id);
     this.ctx.threadStreamOwnership.set(thread.id, { role: "owner" });
     const view = this.ctx.threadViews.update(thread.id, current => ({
       ...this.ctx.threadResumeProjectors.project(current, { metadata: thread, response: baseline }),
@@ -362,6 +374,7 @@ export class ThreadResumeCoordinatorService extends Service {
         };
       });
       this.ctx.threadStreamOwnership.set(threadId, { role: "owner" });
+      this.rejectedResumes.delete(threadId);
       this.ctx.resumeNotificationBuffer.release(threadId);
       if (this.drainTailHistory && history.drainRemaining !== undefined) {
         this.startBackgroundDrain(threadId, generation, history);
@@ -369,6 +382,11 @@ export class ThreadResumeCoordinatorService extends Service {
       return committed;
     } catch (error) {
       const failure = error instanceof Error ? error : new Error(String(error));
+      // A server rejection cannot be fixed by reacquiring the same View.
+      // Preserve explicit retry and a new physical connection as recovery paths.
+      if (failure instanceof AppServerRpcError && generation === this.client.connectionGeneration) {
+        this.rejectedResumes.set(threadId, { generation, error: failure });
+      }
       if (provisionalOwner && this.ctx.threadStreamOwnership.get(threadId)?.role === "owner") {
         this.ctx.threadStreamOwnership.set(threadId, null);
       }
@@ -391,6 +409,7 @@ export class ThreadResumeCoordinatorService extends Service {
     history: HydratedThreadHistory,
   ): void {
     const views = this.ctx.threadViews;
+    const baselineTurns = views.get(threadId)?.turns ?? [];
     const operation = history.drainRemaining?.().then((olderTurns) => {
       if (
         this.disposed
@@ -399,7 +418,7 @@ export class ThreadResumeCoordinatorService extends Service {
       ) return;
       views.update(threadId, (current) => ({
         ...current,
-        turns: reconcileHistoryTurns(current.turns, olderTurns, "older"),
+        turns: reconcileHistoryTurns(current.turns, olderTurns, "older", { baselineTurns }),
         tailHydrationComplete: true,
         turnsPagination: {
           olderCursor: null,
@@ -450,7 +469,7 @@ export class ThreadResumeCoordinatorService extends Service {
         ...view,
         turns: page.source === "message-window"
           ? reconcileHistoryWindow(view.turns, page.turns)
-          : reconcileHistoryTurns(view.turns, page.turns, "older"),
+          : reconcileHistoryTurns(view.turns, page.turns, "older", { baselineTurns: current.turns }),
         tailHydrationComplete: page.complete,
         turnsPagination: {
           olderCursor: page.olderCursor,

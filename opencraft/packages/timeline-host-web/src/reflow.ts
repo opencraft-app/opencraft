@@ -6,6 +6,13 @@ export interface TimelineReflowPreservationOptions {
   readonly zoomScale?: number;
 }
 
+export interface TimelineReflowLease {
+  /** Finish only after the disclosure's final layout has been committed. */
+  complete(): void;
+  /** Cancel immediately when input, replacement or unmount supersedes it. */
+  cancel(): void;
+}
+
 export function timelineReflowScrollAdjustment(
   initialElementTopPx: number,
   nextElementTopPx: number,
@@ -22,18 +29,21 @@ export function timelineReflowScrollAdjustment(
  * the viewport, while this adapter stabilizes the user's local interaction
  * anchor through an animated disclosure.
  */
-export function preserveTimelineElementPositionOnReflow(
+export function beginTimelineElementReflow(
   element: HTMLElement,
   scrollElement: HTMLElement,
-  options: TimelineReflowPreservationOptions = {},
-): () => void {
+  options: Pick<TimelineReflowPreservationOptions, "turnSelector" | "zoomScale"> = {},
+): TimelineReflowLease {
   const initialTop = element.getBoundingClientRect().top;
   const zoomScale = Number.isFinite(options.zoomScale) && (options.zoomScale ?? 0) > 0
     ? options.zoomScale!
     : 1;
-  const durationMs = Math.max(0, options.durationMs ?? CODEX_REFLOW_PRESERVATION_MS);
   let frame: number | null = null;
   let disposed = false;
+  let completing = false;
+  let layoutRevision = 0;
+  let settledRevision = -1;
+  let settledFrames = 0;
 
   const adjust = () => {
     if (disposed || !element.isConnected || !scrollElement.isConnected) return;
@@ -47,10 +57,24 @@ export function preserveTimelineElementPositionOnReflow(
     if (frame !== null || disposed) return;
     frame = window.requestAnimationFrame(() => {
       frame = null;
+      if (!element.isConnected || !scrollElement.isConnected) {
+        dispose();
+        return;
+      }
       adjust();
+      if (completing) {
+        settledFrames = settledRevision === layoutRevision ? settledFrames + 1 : 0;
+        settledRevision = layoutRevision;
+        if (settledFrames >= 2) {
+          dispose();
+          return;
+        }
+      }
+      schedule();
     });
   };
   const handleResize = () => {
+    layoutRevision += 1;
     if (frame !== null) window.cancelAnimationFrame(frame);
     frame = null;
     adjust();
@@ -64,16 +88,39 @@ export function preserveTimelineElementPositionOnReflow(
   if (turn !== null) observer?.observe(turn);
   schedule();
 
-  let timeout: number | null = null;
   const dispose = () => {
     if (disposed) return;
     disposed = true;
-    if (timeout !== null) window.clearTimeout(timeout);
-    timeout = null;
     if (frame !== null) window.cancelAnimationFrame(frame);
     frame = null;
     observer?.disconnect();
   };
-  timeout = window.setTimeout(dispose, durationMs);
-  return dispose;
+  return {
+    complete: () => {
+      if (disposed || completing) return;
+      completing = true;
+      // A synchronous collapse may commit after this frame's RAF callbacks.
+      // Compensate in its layout completion, before the first collapsed paint.
+      adjust();
+      schedule();
+    },
+    cancel: dispose,
+  };
+}
+
+/** Legacy expanders without an animation lifecycle retain their bounded policy. */
+export function preserveTimelineElementPositionOnReflow(
+  element: HTMLElement,
+  scrollElement: HTMLElement,
+  options: TimelineReflowPreservationOptions = {},
+): () => void {
+  const lease = beginTimelineElementReflow(element, scrollElement, options);
+  const timeout = window.setTimeout(
+    lease.complete,
+    Math.max(0, options.durationMs ?? CODEX_REFLOW_PRESERVATION_MS),
+  );
+  return () => {
+    window.clearTimeout(timeout);
+    lease.cancel();
+  };
 }

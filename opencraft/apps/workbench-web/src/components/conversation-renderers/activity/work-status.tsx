@@ -7,6 +7,8 @@ import { useIntl } from "@opencraft/i18n/react";
 import { defineMessages } from "@opencraft/i18n";
 import { ChevronRight } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
+import { useId } from "react";
+import { OverlayDisclosureTrigger } from "../../overlay-disclosure-trigger";
 
 const statusMessages = defineMessages({
   working: { id: "chat.working", defaultMessage: "Working" },
@@ -57,22 +59,24 @@ export function ActivityDisclosureHeader({
   readonly durationMs: number | null;
   readonly count: number;
   readonly open: boolean;
-  readonly onToggle: () => void;
+  readonly onToggle: (anchor: HTMLButtonElement) => void;
 }) {
+  const labelId = useId();
   return (
     <div className="thread-agent-activity__turn-header">
-      <div>
-        <button aria-expanded={open} onClick={onToggle} type="button">
-          <span>
-            <ActivityDisclosureLabel
-              item={item}
-              durationMs={durationMs}
-              count={count}
-            />
+      <OverlayDisclosureTrigger
+        className="thread-agent-activity__turn-toggle"
+        contentClassName="thread-agent-activity__turn-toggle-content"
+        labelId={labelId}
+        onToggle={onToggle}
+        open={open}
+        reflowOwned
+      >
+          <span id={labelId}>
+            <ActivityDisclosureLabel item={item} durationMs={durationMs} count={count} />
           </span>
-          <ChevronRight className={open ? "is-open" : undefined} size={12} />
-        </button>
-      </div>
+          <ChevronRight aria-hidden="true" className={open ? "is-open" : undefined} size={12} />
+      </OverlayDisclosureTrigger>
       <div className="thread-agent-activity__rule-row">
         <div className="thread-work-status__rule" />
       </div>

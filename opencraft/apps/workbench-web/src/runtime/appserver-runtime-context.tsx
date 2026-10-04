@@ -14,6 +14,7 @@ import {
 import { composerCapabilitiesOptions, invalidateComposerCapabilities, changesComposerCapabilities } from "./composer-capabilities-query";
 import { changesThreadCatalog } from "./thread-catalog-query";
 import {
+  AppServerRpcError,
   createCordisAppServerRegistry,
   type CordisAppServerRegistryRuntime,
 } from "@opencraft/appserver-client";
@@ -86,6 +87,7 @@ import {
   createConversationKey,
 } from "@opencraft/chat-core";
 import {
+  asRouteScopeId,
   createCordisHostConnectionProviderRuntime,
   EnvironmentDirectoryService,
   EnvironmentProfileStore,
@@ -99,6 +101,7 @@ import {
   createConversationViewRegistry,
   createWorkbenchSubmissionPipeline,
   draftSubmissionOwnsNavigation,
+  equalWorkbenchLocation,
   createWorkbenchCoordinator,
   createWorkbenchDraftLocation,
   createWorkbenchThreadLocation,
@@ -144,12 +147,15 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { parseWorkbenchLocationUrl, createApplicationNavigation, type ApplicationNavigation } from "./workbench-navigation";
+import { readWorkbenchBootstrapLocation, createRouteScopeId, createApplicationNavigation, type ApplicationNavigation } from "./workbench-navigation";
+import { createWorkbenchEntryResolver, resolveRetainedWorkbenchLocation } from "./workbench-location-restoration";
 import { IndexedDbHostConnectionProfileStore } from "./indexeddb-host-profile-store";
+import { ServerManagedProfileStore } from "./server-managed-profile-store";
 import { environmentSourceAdapter } from "./environment-directory/contribution-adapter";
 import { openClientExtensionPersistence } from "./client-extension-persistence";
 import { IndexedDbSidebarLayoutStorage } from "./indexeddb-sidebar-layout-storage";
 import { BrowserModuleUrlExtensionLoader } from "./module-url-extension-loader";
+import { loadOptionalFeatureModule, type OptionalFeatureStartup } from "./optional-feature-startup";
 import { connectElectronAppHost } from "./electron-app-host";
 import { connectWebSocketAppHost } from "./websocket-app-host";
 import {
@@ -163,6 +169,9 @@ import { createComposerActionRendererContributionAdapter } from "./composer-acti
 import { HostProfileContributionRegistry } from "./host-profile-contributions";
 import { PlatformAccountContributionRegistry } from "./platform-account-contributions";
 import { subscribeHostCatalogReadiness } from "./host-catalog-readiness";
+import { canReadHostThreadCatalog, readHostThreadCatalog, type ManagedHostCatalogSource } from "./host-thread-catalog";
+
+import { bindHostQueryRecovery } from "./host-query-recovery";
 import { connectAppearanceThemeContributions } from "../appearance-theme";
 import { workbenchProductId } from "../workbench-product";
 import {
@@ -170,6 +179,9 @@ import {
   type WorkbenchHistoryMode,
   type WorkbenchNavigationTransaction,
 } from "./workbench-navigation-transaction";
+
+const subscribeNoManagedCatalog = () => () => {};
+const readNoManagedCatalog = () => null;
 
 // The Context object itself is part of the renderer's hot-reload state.
 export interface AppServerHostCatalog {
@@ -211,6 +223,7 @@ export interface AppServerHostCatalog {
   readonly currentLocation: WorkbenchLocation;
   selectHost(hostId: string): Promise<void>;
   navigate(location: WorkbenchLocation, mode?: WorkbenchHistoryMode): Promise<boolean>;
+  selectConversation(location: WorkbenchLocation): Promise<boolean>;
   promoteDraft(draftId: string, receipt: SubmissionReceipt): Promise<WorkbenchLocation>;
   navigateToHome(options: {
     readonly execution: ComposerExecutionTarget;
@@ -233,6 +246,7 @@ export interface AppServerHostCatalog {
 export interface WebWorkbenchCommands {
   selectHost(hostId: string): Promise<void>;
   navigate(location: WorkbenchLocation, mode?: WorkbenchHistoryMode): Promise<boolean>;
+  selectConversation(location: WorkbenchLocation): Promise<boolean>;
   navigateToHome(options: {
     readonly execution: ComposerExecutionTarget;
     readonly entrypoint?: "home" | "new-chat";
@@ -251,6 +265,8 @@ export interface WebWorkbenchCommands {
 }
 
 interface AppServerApplicationContextValue extends AppServerHostCatalog {
+  readonly managedHostCatalog: ManagedHostCatalogSource | null;
+  readonly hostProfiles: HostConnectionProfileStore;
   readonly blobs: BlobResourceService;
   readonly images: ImageProcessingService;
   readonly registry: HostRuntimeRegistry<AppServerWorkbenchRuntime>;
@@ -554,6 +570,7 @@ export interface HostlessWebWorkbenchApplicationSupervisor extends WebWorkbenchA
 
 export interface ActiveWebWorkbenchApplicationSupervisor extends WebWorkbenchApplicationBase {
   readonly mode: "active";
+  readonly managedHostCatalog: ManagedHostCatalogSource | null;
   readonly registry: HostRuntimeRegistry<AppServerWorkbenchRuntime>;
   readonly coordinator: WorkbenchCoordinator<AppServerWorkbenchRuntime>;
   readonly conversationActivation: ConversationActivationCoordinator<AppServerWorkbenchRuntime>;
@@ -574,6 +591,8 @@ export type WebWorkbenchApplicationSupervisor =
   | ActiveWebWorkbenchApplicationSupervisor;
 
 export interface WebWorkbenchSupervisorOptions {
+  /** Internal Application-owned lane; absent keeps full Workbench eager behavior. */
+  readonly optionalFeatureStartup?: OptionalFeatureStartup;
   /** Application-owned profiles that must never enter the durable Host store. */
   readonly ephemeralHostProfiles?: readonly HostConnectionProfile[];
   /** Embedded products keep the outer page URL under their host's authority. */
@@ -684,6 +703,17 @@ function createWebWorkbenchCommands(input: {
   let commands: WebWorkbenchCommands;
   let submissionPipeline: ReturnType<typeof createWorkbenchSubmissionPipeline>;
   let hostSelectionEpoch = 0;
+  const navigateAndRemember = async (location: WorkbenchLocation, action: () => Promise<boolean>) => {
+    const epoch = ++hostSelectionEpoch;
+    const activated = await action();
+    if (activated && epoch === hostSelectionEpoch
+      && equalWorkbenchLocation(input.navigation.getSnapshot().location, location)) {
+      const hostId = location.kind === "thread" ? location.key.hostId : location.hostId;
+      setLocalPreference(currentProductStorageKey("vela.active-host-id"), hostId);
+      setLocalPreference(activeThreadStorageKey(hostId), location.kind === "thread" ? location.key.threadId : null);
+    }
+    return activated;
+  };
   commands = {
     async selectHost(hostId) {
       const epoch = ++hostSelectionEpoch;
@@ -725,17 +755,11 @@ function createWebWorkbenchCommands(input: {
       input.coordinator.setSelectedHostId(hostId);
       setLocalPreference(currentProductStorageKey("vela.active-host-id"), hostId);
     },
-    async navigate(location, mode = "push") {
-      ++hostSelectionEpoch;
-      const hostId = location.kind === "thread" ? location.key.hostId : location.hostId;
-      const activated = await input.navigation.navigate(location, mode);
-      if (!activated) return false;
-      setLocalPreference(currentProductStorageKey("vela.active-host-id"), hostId);
-      setLocalPreference(
-        activeThreadStorageKey(hostId),
-        location.kind === "thread" ? location.key.threadId : null,
-      );
-      return true;
+    navigate(location, mode = "push") {
+      return navigateAndRemember(location, () => input.navigation.navigate(location, mode));
+    },
+    selectConversation(location) {
+      return navigateAndRemember(location, () => input.navigation.selectConversation(location));
     },
     navigateToHome(options) {
       ++hostSelectionEpoch;
@@ -986,6 +1010,10 @@ export async function createWebWorkbenchApplicationSupervisor(
     const headlessAppHost = platform === "web" && import.meta.env.VITE_INCLUDE_HEADLESS_CODEX === "true"
       ? connectWebSocketAppHost() : null;
     if (headlessAppHost !== null) startupRollback.push(() => headlessAppHost.close());
+    const remoteAppHost = headlessAppHost ? connectWebSocketAppHost(undefined, { path: "/ssh-apphost" }) : null;
+    if (remoteAppHost) startupRollback.push(() => remoteAppHost.close());
+    const sshManagement = headlessAppHost ? new (await import("@opencraft/plugin-builtin-agents")).SshConnectionsController() : null;
+    if (sshManagement) { startupRollback.push(() => sshManagement.dispose()); await sshManagement.refresh(); }
     const [lightVelaPlatform, lightVela, createLightVelaHermesExtension] = await Promise.all([
       import("@opencraft/plugin-lightvela-platform"),
       import("@opencraft/plugin-lightvela-hermes"),
@@ -1037,10 +1065,37 @@ export async function createWebWorkbenchApplicationSupervisor(
     startupRollback.push(() => sidebarLayout.close());
     await extensions.activate(BuiltinWebSocketHostConnectionExtension);
     await extensions.activateOptional(BuiltinThemePackExtension);
-    await extensions.loadOptional("vela.voice-input", async () => {
+    const loadPresentationExtension = async (
+      id: string,
+      load: (signal?: AbortSignal) => ReturnType<Parameters<ExtensionSupervisor["loadOptional"]>[1]>,
+    ): Promise<void> => {
+      const activate = async (signal?: AbortSignal) => {
+        const moduleScope = new AbortController();
+        const abortModule = () => moduleScope.abort(signal?.reason);
+        if (signal?.aborted) abortModule();
+        else signal?.addEventListener("abort", abortModule, { once: true });
+        try {
+          return await extensions.loadOptional(id, () => loadOptionalFeatureModule(
+            moduleSignal => Promise.resolve().then(() => load(moduleSignal)), moduleScope.signal,
+          ));
+        } finally {
+          // The Supervisor's own deadline may finish before the module timer.
+          // Revoke that factory scope before accepting any late import result.
+          moduleScope.abort();
+          signal?.removeEventListener("abort", abortModule);
+        }
+      };
+      if (options.optionalFeatureStartup !== undefined) {
+        options.optionalFeatureStartup.add(id, activate);
+      } else {
+        await activate();
+      }
+    };
+    await loadPresentationExtension("vela.voice-input", async signal => {
       const createVoiceInputExtension = (
         await import("@opencraft/plugin-voice-input/runtime-entry")
       ).default;
+      signal?.throwIfAborted();
       return createVoiceInputExtension();
     });
     if (import.meta.env.VITE_INCLUDE_BUILTIN_AGENTS_PLUGIN === "true") {
@@ -1074,11 +1129,17 @@ export async function createWebWorkbenchApplicationSupervisor(
     }
     if (headlessAppHost !== null) {
       await extensions.loadOptional("vela.headless-codex", async () => {
+        const { readSshServerCatalog } = await import("./ssh-server-catalog");
+        // Only this headless product queries its backend catalog. Credentials,
+        // host-key trust and remote commands never enter a Renderer profile.
+        const sshServers = await readSshServerCatalog();
         const { createHeadlessCodexExtension } = await import("@opencraft/plugin-builtin-agents");
         return createHeadlessCodexExtension({
           requestHost: (hostId, method, params) => agentRuntimes.request(hostId, method, params),
-          createTransport: hostId => headlessAppHost.createTransport(hostId),
+          createTransport: hostId => (hostId.startsWith("ssh:") && sshManagement && sshManagement.getSnapshot().available !== false ? remoteAppHost! : headlessAppHost).createTransport(hostId),
           workspaceBrowseRoots: bootstrapDefinitions.find((host) => host.hostId === "opencraft-server")?.workspaceBrowseRoots ?? [],
+          sshServers: sshManagement!.getSnapshot().available !== false ? [] : sshServers,
+          sshManagement: sshManagement!,
         });
       });
     }
@@ -1108,19 +1169,21 @@ export async function createWebWorkbenchApplicationSupervisor(
       ]);
     }
     if (platform === "web") {
-      await extensions.loadOptional("lightvela.collaboration", async () => {
+      await loadPresentationExtension("lightvela.collaboration", async signal => {
         const createLightVelaCollaborationExtension = (
           await import("@opencraft/plugin-lightvela-collaboration/runtime-entry")
         ).default;
+        signal?.throwIfAborted();
         return createLightVelaCollaborationExtension({ account: lightVelaAccount });
       });
     }
     const botSource = new AppServerBotConversationSource(botConversations.service);
     startupRollback.push(() => botSource.dispose());
-    await extensions.loadOptional("vela.bot-chat", async () => {
+    await loadPresentationExtension("vela.bot-chat", async signal => {
       const createBotChatExtension = (
         await import("@opencraft/plugin-bot-chat/runtime-entry")
       ).default;
+      signal?.throwIfAborted();
       return createBotChatExtension({
         source: botSource,
         resolver: new AppServerBotConversationResolver(botConversations.service),
@@ -1128,8 +1191,9 @@ export async function createWebWorkbenchApplicationSupervisor(
       });
     });
     let connectBotHost: (hostId: string) => Promise<void> = async () => { throw new Error("暂无可连接的实例。"); };
-    await extensions.loadOptional("vela.bot-management", async () => {
+    await loadPresentationExtension("vela.bot-management", async signal => {
       const { createBotManagementExtension } = await import("./bot-management-extension");
+      signal?.throwIfAborted();
       return createBotManagementExtension(botDirectory, botConversations.service, hostId => connectBotHost(hostId));
     });
     const extensionInstallationFiber = cordis.plugin(
@@ -1151,8 +1215,15 @@ export async function createWebWorkbenchApplicationSupervisor(
     const queryClient = createWorkbenchQueryClient();
     startupRollback.push(() => queryClient.clear());
     const routeCheckpoints = new BoundedCheckpointMap(32);
-    const requestedBootstrapLocation = parseWorkbenchLocationUrl(new URL(window.location.href));
-  const configuredHostProfiles = await IndexedDbHostConnectionProfileStore.open({
+    const requestedBootstrapLocation = readWorkbenchBootstrapLocation(
+      new URL(window.location.href), window.history.state, options.navigationMode,
+    );
+    const routerOptions = {
+      mode: options.navigationMode,
+      // The containing page owns its URL. Embedded Workbench starts at Home.
+      ...(options.navigationMode === "memory" ? { initialEntries: ["/"] } : {}),
+    };
+  const storedHostProfiles = await IndexedDbHostConnectionProfileStore.open({
     databaseName: currentProductDatabaseName("vela-host-connections"),
     seed: bootstrapDefinitions.map(hostDefinitionProfile),
     ephemeral: [
@@ -1160,6 +1231,16 @@ export async function createWebWorkbenchApplicationSupervisor(
       ...(options.ephemeralHostProfiles ?? []),
     ],
   });
+  const configuredHostProfiles = sshManagement && sshManagement.getSnapshot().available !== false
+    ? new ServerManagedProfileStore(storedHostProfiles, sshManagement, () => [
+      ...sshManagement!.getSnapshot().items,
+      ...sshManagement!.getSnapshot().legacyServers.map(server => ({ ...server, enabled: true, revision: 1 })),
+    ].map(server => ({
+        hostId: server.serverId, displayName: server.displayName, providerId: "vela.headless-codex", providerConfig: {}, providerConfigVersion: 1,
+        hostKind: "remote-ssh", enabled: server.enabled, autoConnect: false, includeInSidebar: true, credentialRef: null,
+        transportEndpoint: null, executionLocation: server.displayName, workspaceBrowseRoots: server.workspaceBrowseRoots, revision: server.revision,
+      })))
+    : storedHostProfiles;
   await refreshBundledHostBrowseRoots(configuredHostProfiles, bootstrapDefinitions);
   const hostProfiles: HostConnectionProfileStore = options.hostProfileMode === "configured"
     ? configuredHostProfiles
@@ -1170,7 +1251,7 @@ export async function createWebWorkbenchApplicationSupervisor(
   }
   const profiles = hostProfiles.getSnapshot().profiles.filter((profile) => profile.enabled);
   if (profiles.length === 0) {
-    const navigation = createApplicationNavigation(null, { mode: options.navigationMode });
+    const navigation = createApplicationNavigation(null, routerOptions);
     startupRollback.push(() => navigation.dispose());
     agentRuntimes.markUnavailable(new Error("No Agent Runtime is configured"));
     const provisionHost = (input: ProvisionHostInput) => persistProvisionedHost(
@@ -1231,6 +1312,8 @@ export async function createWebWorkbenchApplicationSupervisor(
           () => appServerRegistry.dispose(),
           () => electronAppHost?.close(),
           () => headlessAppHost?.close(),
+          () => remoteAppHost?.close(),
+          () => sshManagement?.dispose(),
           () => connectionProviders.dispose(),
           () => blobFiber.dispose(),
           () => imageFiber.dispose(),
@@ -1240,14 +1323,10 @@ export async function createWebWorkbenchApplicationSupervisor(
     startupRollback.length = 0;
     return hostless;
   }
-  const bootstrapLocation = requestedBootstrapLocation !== null
-    && profiles.some((profile) => profile.hostId === (
-      requestedBootstrapLocation.kind === "thread"
-        ? requestedBootstrapLocation.key.hostId
-        : requestedBootstrapLocation.hostId
-    ))
-    ? requestedBootstrapLocation
-    : null;
+  const bootstrapLocation = requestedBootstrapLocation === null ? null : resolveRetainedWorkbenchLocation(
+    requestedBootstrapLocation,
+    { hasHost: hostId => profiles.some(profile => profile.hostId === hostId), bindings: conversationBindings, scopes: null },
+  );
   const persistedHostId = window.localStorage.getItem(currentProductStorageKey("vela.active-host-id"));
   const requestedHostId = bootstrapLocation?.kind === "thread"
     ? bootstrapLocation.key.hostId
@@ -1319,6 +1398,7 @@ export async function createWebWorkbenchApplicationSupervisor(
         providerLease.release();
         throw error;
       }
+      const stopQueryRecovery = bindHostQueryRecovery(runtime, profile.hostId, queryClient);
       let disposed = false;
       return {
         ...runtime,
@@ -1329,6 +1409,7 @@ export async function createWebWorkbenchApplicationSupervisor(
         async dispose() {
           if (disposed) return;
           disposed = true;
+          stopQueryRecovery();
           try {
             await runtime.dispose();
           } finally {
@@ -1354,10 +1435,10 @@ export async function createWebWorkbenchApplicationSupervisor(
       ? createWorkbenchThreadLocation(initialHostId, persistedThreadId)
       : null;
   const conversationScopes = createConversationScopeRegistry({
-    initialDraft: bootstrapLocation?.kind === "draft"
-      && bootstrapLocation.hostId === active.hostId
+    // A process-local Draft cannot be resurrected from a history ID. Only a
+    // durable promotion alias can recover its canonical Thread on bootstrap.
+    initialDraft: initialThreadLocation === null
       ? {
-          draftId: bootstrapLocation.draftId,
           entrypoint: "home",
           execution: {
             hostId: active.hostId,
@@ -1367,27 +1448,15 @@ export async function createWebWorkbenchApplicationSupervisor(
             },
           },
         }
-      : initialThreadLocation === null
-        ? {
-            entrypoint: "home",
-            execution: {
-              hostId: active.hostId,
-              workspace: {
-                cwd: initialWorkspaceRoot,
-                runtimeWorkspaceRoots: initialWorkspaceRoot === null ? [] : [initialWorkspaceRoot],
-              },
-            },
-          }
-        : null,
+      : null,
   });
   startupRollback.push(() => conversationScopes.dispose());
   const draft = conversationScopes.getActiveDraft();
-  const initialLocation = bootstrapLocation
-    ?? (initialThreadLocation !== null
-      ? initialThreadLocation
-      : draft !== null
-        ? createWorkbenchDraftLocation(active.hostId, draft.id)
-        : null);
+  const initialLocation = initialThreadLocation !== null
+    ? initialThreadLocation
+    : draft !== null
+      ? createWorkbenchDraftLocation(active.hostId, draft.id)
+      : null;
   if (initialLocation === null) throw new Error("Workbench has no initial Conversation identity");
   const coordinator = createWorkbenchCoordinator(registry, initialLocation, initialHostId);
   startupRollback.push(() => coordinator.dispose());
@@ -1418,7 +1487,19 @@ export async function createWebWorkbenchApplicationSupervisor(
     initialLocation,
     conversationActivation,
     conversationScopes,
-    { mode: options.navigationMode },
+    {
+      ...routerOptions,
+      resolveRestoredEntry: createWorkbenchEntryResolver({
+        hasHost: hostId => hostProfiles.getSnapshot().profiles.some(profile => profile.enabled && profile.hostId === hostId),
+        bindings: conversationBindings,
+        scopes: conversationScopes,
+        views: conversationViews,
+        fallback: () => {
+          const current = coordinator.getSnapshot();
+          return { location: current.location, routeScopeId: current.viewId === null ? createRouteScopeId() : asRouteScopeId(current.viewId) };
+        },
+      }),
+    },
   );
   startupRollback.push(() => navigation.dispose());
   // Browser startup owns only local identity construction. Physical Host
@@ -1447,6 +1528,7 @@ export async function createWebWorkbenchApplicationSupervisor(
     blobs,
     images,
     mode: "active",
+    managedHostCatalog: sshManagement,
     cordis,
     appServerRegistry,
     agentRuntimes,
@@ -1489,6 +1571,8 @@ export async function createWebWorkbenchApplicationSupervisor(
         () => registry.dispose(),
         () => electronAppHost?.close(),
         () => headlessAppHost?.close(),
+        () => remoteAppHost?.close(),
+        () => sshManagement?.dispose(),
         () => hostProfiles.close(),
         () => queryClient.clear(),
         () => extensionManager.dispose(),
@@ -1625,6 +1709,8 @@ export function AppServerRuntimeProvider({
     };
   }, [registry]);
   const applicationContextValue = useMemo<AppServerApplicationContextValue>(() => ({
+    managedHostCatalog: supervisor.managedHostCatalog,
+    hostProfiles,
     agentRuntimes: supervisor.agentRuntimes,
     threadManagement,
     environmentDirectory: supervisor.environmentDirectory,
@@ -1658,6 +1744,7 @@ export function AppServerRuntimeProvider({
     connectionProviders: connectionProviderSnapshot.providers,
     selectHost: commands.selectHost,
     navigate: commands.navigate,
+    selectConversation: commands.selectConversation,
     navigateToHome: commands.navigateToHome,
     promoteDraft: commands.promoteDraft,
     submit: commands.submit,
@@ -1665,6 +1752,8 @@ export function AppServerRuntimeProvider({
     addWebSocketHost: commands.addWebSocketHost,
     removeHost: commands.removeHost,
   }), [
+    supervisor.managedHostCatalog,
+    hostProfiles,
     supervisor.blobs,
     supervisor.images,
     conversationBindings,
@@ -1891,6 +1980,11 @@ export function useMultiHostThreadCatalog(): {
   const application = useContext(ApplicationRuntimeContext);
   const [, setReadinessRevision] = useState(0);
   if (application === null) throw new Error("AppServerRuntimeProvider is missing");
+  const management = useSyncExternalStore(
+    application.managedHostCatalog?.subscribe ?? subscribeNoManagedCatalog,
+    application.managedHostCatalog?.getSnapshot ?? readNoManagedCatalog,
+    application.managedHostCatalog?.getSnapshot ?? readNoManagedCatalog,
+  );
   const visibleHostIds = useMemo(() => new Set(
     application.profiles
       .filter((profile) => profile.enabled && profile.includeInSidebar)
@@ -1905,22 +1999,27 @@ export function useMultiHostThreadCatalog(): {
   useEffect(() => subscribeHostCatalogReadiness(
     application.registry,
     hostIds,
-    (hostId) => {
+    () => {
       setReadinessRevision(value => value + 1);
-      void queryClient.invalidateQueries({
-        queryKey: ["appserver", hostId, "threads"],
-      });
     },
   ), [application.registry, hostIds, queryClient]);
   const queries = useQueries({
     queries: hosts.map((host) => ({
-      // Discovery must not establish a remote connection merely to paint Chat.
-      enabled: application.profiles.find(profile => profile.hostId === host.hostId)?.autoConnect === true
-        || application.registry.peekRuntime(host.hostId)?.getSnapshot().phase === "ready",
+      // Discovery may attach a reader to an explicitly connected managed
+      // Server, but cannot dial an idle remote merely to paint Chat.
+      enabled: canReadHostThreadCatalog(
+        application.profiles.find(profile => profile.hostId === host.hostId)!,
+        application.registry.peekRuntime(host.hostId)?.getSnapshot().phase,
+        management,
+      ),
       queryKey: ["appserver", host.hostId, "threads", "sidebar", "updated_at", "desc", false] as const,
       queryFn: async () => {
-        const runtime = await application.registry.ensureConnected(host.hostId);
-        return runtime.resources.threads.list({ cursor: null, limit: 50 });
+        return readHostThreadCatalog({
+          profile: application.profiles.find(profile => profile.hostId === host.hostId)!,
+          currentProfile: () => application.hostProfiles.getSnapshot().profiles.find(profile => profile.hostId === host.hostId),
+          management: application.managedHostCatalog,
+          registry: application.registry,
+        });
       },
       staleTime: 30_000,
       retry: retryQuery,
@@ -2017,7 +2116,7 @@ export function useComposerCatalog(
 ): ComposerCatalogSnapshot {
   const runtime = useAppServerRuntime();
   const snapshot = useAppServerSnapshot();
-  const enabled = snapshot.phase === "ready" || snapshot.phase === "reconnecting";
+  const enabled = snapshot.phase === "ready";
   const supportsScopedModelCatalog =
     runtime.resources.host.getInitializeResult()?.capabilities?.extensions?.[
       OPENCRAFT_SCOPED_MODEL_CATALOG_EXTENSION
@@ -2043,8 +2142,11 @@ export function useComposerCatalog(
           supported: true as const,
           ...(await runtime.resources.composerCatalog.readNewThreadDefaults(cwd)),
         };
-      } catch {
-        return { supported: false as const, model: null, effort: null };
+      } catch (cause) {
+        if (cause instanceof AppServerRpcError && cause.code === -32601) {
+          return { supported: false as const, model: null, effort: null };
+        }
+        throw cause;
       }
     },
     staleTime: 60_000,

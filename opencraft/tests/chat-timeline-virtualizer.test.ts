@@ -33,6 +33,7 @@ import {
   normalizeWheelDeltaPx,
   reconcileRenderedRangeForEntries,
   reconcileTurnLayoutViewport,
+  rekeyTurnMeasurements,
   keyboardScrollDirection,
   directionForTouchDelta,
   distanceExcludingBottomPadding,
@@ -576,6 +577,47 @@ test("a prepended history page re-anchors the render window before viewport stat
   assert.deepEqual(reconciled, { startIndex: 2_003, endIndex: 2_008 });
   assert.equal(anchoredSlice.entries[0]?.turnKey, "turn-3");
   assert.equal(anchoredSlice.marginTopPx, nextLayout.topOffsetsPx[2_003]);
+});
+
+test("hydration inside a mounted window preserves its last row before viewport commit", () => {
+  const current = { distanceFromBottomPx: 0, viewportHeightPx: 1800,
+    renderedRange: { startIndex: 0, endIndex: 4 }, turnKeys: ["older", "a", "c", "live"] };
+  const entries = ["older", "a", "b", "c", "live"].map(turnKey => ({ turnKey }));
+  const next = buildTurnLayout(entries);
+  const range = reconcileRenderedRangeForEntries(current, next);
+  assert.deepEqual(range, { startIndex: 0, endIndex: 5 });
+  assert.deepEqual(createTurnWindowSlice(entries, next, range).entries.map(entry => entry.turnKey),
+    ["older", "a", "b", "c", "live"]);
+  const removedStart = buildTurnLayout(entries.slice(1));
+  assert.deepEqual(reconcileRenderedRangeForEntries(current, removedStart), { startIndex: 0, endIndex: 4 },
+    "the remaining mounted identities own the window even when its first anchor disappears");
+});
+
+test("same-count identity handoff retains the replaced window edge as well as surviving rows", () => {
+  const current = { distanceFromBottomPx: 0, viewportHeightPx: 500,
+    renderedRange: { startIndex: 1, endIndex: 4 }, turnKeys: ["older", "a", "b", "optimistic"] };
+  const latest = buildTurnLayout(["older", "a", "b", "authority"].map(turnKey => ({ turnKey })));
+  assert.deepEqual(reconcileRenderedRangeForEntries(current, latest), { startIndex: 1, endIndex: 4 },
+    "a canonical ID handoff must not exclude the latest slot while count is unchanged");
+  const first = buildTurnLayout(["older", "replacement", "b", "optimistic"].map(turnKey => ({ turnKey })));
+  assert.deepEqual(reconcileRenderedRangeForEntries(current, first), { startIndex: 1, endIndex: 4 },
+    "a surviving row's previous relative position also retains a replaced first slot");
+});
+
+test("identity handoff transfers measured geometry without fabricating content growth", () => {
+  const previous = [{ turnKey: "older", identity: "older" }, { turnKey: "optimistic", identity: "client-message" }];
+  const next = [{ turnKey: "older", identity: "older" }, { turnKey: "authority", identity: "client-message" }];
+  const heights = { older: 600, optimistic: 306 };
+  const transferred = rekeyTurnMeasurements(previous, next, heights, entry => entry.identity);
+  assert.deepEqual(transferred, { ...heights, authority: 306 });
+  assert.deepEqual(heights, { older: 600, optimistic: 306 }, "the prior height map is immutable");
+  assert.equal(buildTurnLayout(previous, heights).totalHeightPx, buildTurnLayout(next, transferred).totalHeightPx);
+  assert.equal(rekeyTurnMeasurements(next, next, transferred, entry => entry.identity), transferred);
+  const authoritative = { ...heights, authority: 400 };
+  assert.equal(rekeyTurnMeasurements(previous, next, authoritative, entry => entry.identity), authoritative,
+    "already observed authority geometry wins over the old locator");
+  assert.equal(rekeyTurnMeasurements(previous, [{ turnKey: "new", identity: "different-client" }], heights, entry => entry.identity), heights,
+    "unrelated messages cannot inherit a previous row's height");
 });
 
 test("the recovered prework follow state machine is shared by Web and RN adapters", () => {

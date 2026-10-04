@@ -334,7 +334,6 @@ function UserMessageStatusRow({ block, hookStatsAccessory }: {
 }) {
   const chips: ReactNode[] = [];
   if (block.deliveryStatus === "not-sent") chips.push(<span data-status-kind="hook-blocked" key="hook-blocked"><AlertCircle aria-hidden="true" size={11} />Hook blocked this message</span>);
-  else if (block.deliveryStatus === "sending") chips.push(<span data-status-kind="sending" key="sending"><LoaderCircle aria-hidden="true" className="is-spinning" size={11} />Sending</span>);
   else if (block.deliveryStatus === "failed") chips.push(<span data-status-kind="failed" key="failed"><AlertCircle aria-hidden="true" size={11} />Not sent</span>);
   else if (block.deliveryStatus === "unknown") chips.push(<span data-status-kind="unknown" key="unknown"><AlertCircle aria-hidden="true" size={11} />Delivery unconfirmed</span>);
   else if (block.goal) chips.push(<span data-status-kind="goal" key="goal"><Circle aria-hidden="true" size={8} />Sent as goal</span>);

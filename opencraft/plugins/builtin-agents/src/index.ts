@@ -11,6 +11,9 @@ import { ModelServicesController } from "./model-services/controller";
 import { createModelServicesView } from "./model-services/view";
 import { CodexAccountsService } from "./codex-accounts/service";
 import { createCodexAccountsView } from "./codex-accounts/view";
+import { SshConnectionsController } from "./ssh-connections/controller";
+import { createSshConnectionsView } from "./ssh-connections/view";
+export { SshConnectionsController } from "./ssh-connections/controller";
 
 type LocalAgentConfig = Readonly<Record<string, never>>;
 
@@ -26,6 +29,8 @@ export interface BuiltinAgentsExtensionOptions {
 
 export interface HeadlessCodexExtensionOptions extends BuiltinAgentsExtensionOptions {
   readonly workspaceBrowseRoots: readonly string[];
+  readonly sshServers?: readonly { readonly serverId: string; readonly displayName: string; readonly workspaceBrowseRoots: readonly string[] }[];
+  readonly sshManagement?: SshConnectionsController;
 }
 
 export function createHeadlessModelServicesExtension(options: {
@@ -81,6 +86,11 @@ export function createHeadlessCodexExtension(options: HeadlessCodexExtensionOpti
     },
     activate(api) {
       const accounts = new CodexAccountsService(options.requestHost, "local-codex");
+      if (options.sshManagement && options.sshManagement.getSnapshot().available !== false) {
+        api.views.register({ id: "vela.headless-codex.ssh-view", title: "远程连接", viewType: "vela.headless-codex.ssh", platforms: ["web"] });
+        api.settings.registerPage({ id: "vela.headless-codex.ssh", title: "远程连接", viewId: "vela.headless-codex.ssh-view", group: "服务器", icon: "server", platforms: ["web"] });
+        api.internal.register("platformViewRenderer", { viewType: "vela.headless-codex.ssh", Component: createSshConnectionsView(options.sshManagement) });
+      }
       api.views.register({ id: "vela.headless-codex.accounts-view", title: "Codex 账户", viewType: "vela.headless-codex.accounts", platforms: ["web"] });
       api.settings.registerPage({ id: "vela.headless-codex.accounts", title: "Codex 账户", viewId: "vela.headless-codex.accounts-view", group: "服务器", icon: "user-round-cog", platforms: ["web"] });
       api.internal.register("platformViewRenderer", { viewType: "vela.headless-codex.accounts", Component: createCodexAccountsView(accounts, { allowImport: false, credentialLocation: "服务器" }) });
@@ -101,6 +111,24 @@ export function createHeadlessCodexExtension(options: HeadlessCodexExtensionOpti
           transportEndpoint: "OpenCraft Server",
           executionLocation: "This server · Codex",
           workspaceBrowseRoots: options.workspaceBrowseRoots,
+          revision: 0,
+        },
+      });
+      for (const server of options.sshServers ?? []) api.internal.register(HOST_PROFILE_CONTRIBUTION_CHANNEL, {
+        profile: {
+          hostId: server.serverId,
+          displayName: server.displayName,
+          providerId: hostProvider.id,
+          providerConfig: config,
+          providerConfigVersion: 1,
+          hostKind: "remote-ssh",
+          enabled: true,
+          autoConnect: false,
+          includeInSidebar: true,
+          credentialRef: null,
+          transportEndpoint: null,
+          executionLocation: server.displayName,
+          workspaceBrowseRoots: server.workspaceBrowseRoots,
           revision: 0,
         },
       });

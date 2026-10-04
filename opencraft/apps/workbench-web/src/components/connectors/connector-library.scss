@@ -18,7 +18,7 @@
     border: 1px solid var(--color-border-subtle); border-radius: var(--radius-lg);
     color: var(--color-text-secondary); background: var(--color-background-surface);
     .settings-control-input { border: 0; box-shadow: none; background: transparent; padding-inline: 0; }
-    &:focus-within { outline: 2px solid var(--color-border-focus); outline-offset: 2px; }
+    :root:not([data-touch-interaction]) &:focus-within { outline: 2px solid var(--color-border-focus); outline-offset: 2px; }
     svg { flex-shrink: 0; }
   }
   &__result-label { @include typography.role(metadata, secondary); padding-block: calc(var(--spacing) * 4) calc(var(--spacing) * 3); }

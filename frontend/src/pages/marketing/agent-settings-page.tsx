@@ -186,6 +186,7 @@ import { trackDatongClick, trackDatongEvent } from "@/observability/datong-track
 import { DATONG_EVENTS, DATONG_PAGE_IDS } from "@/observability/datong";
 import {
   AgentChatMigrationSurface,
+  useEmbeddedWorkbenchResourcePreparation,
   type EmbeddedSessionMutationState,
 } from "@/pages/marketing/opencraft-embedded-workbench";
 
@@ -2711,6 +2712,7 @@ export const AgentSettingsPage = ({
   const activeSection = !IS_BUDDY_ONBOARDING_ENABLED && requestedSection === "overview"
     ? DEFAULT_AGENT_SECTION
     : requestedSection;
+  useEmbeddedWorkbenchResourcePreparation(showHiddenAgentTools, activeSection === "chat");
   const isEmptyAgentPage = !isModifying
     && !passesLoading && !isCreating && !botsLoading && visibleBots.length === 0;
 

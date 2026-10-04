@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
+  canHoverRevealSidebar,
   resolveSidebarFloatingIntent,
   resolveSidebarPresentation,
   shouldMountFloatingSidebarPresenceOwner,
@@ -160,8 +161,8 @@ test("one Sidecar owns two platform panes with independent frame, clip, and view
     assert.match(source, /usePersistedSidebarWidth\(\)/u);
     assert.doesNotMatch(source, /localStorage\.getItem\("sidebar-width"\)|localStorage\.setItem\("sidebar-width"/u);
   }
-  assert.match(navigationSource, /surface === "applications" \? <LayoutGrid aria-hidden="true" size=\{18\}/u,
-    "the Applications entrance uses the shared Lucide app-grid glyph rather than a sidebar-state icon");
+  assert.match(navigationSource, /surface === "applications" \? <NavigationIcon name="applications" selected=/u,
+    "the Applications entrance consumes the shared semantic app-grid glyph and open-state projection");
   assert.match(navigationStyles, /--shell-navigation-label-opacity/u);
   assert.match(navigationStyles, /--sidebar-leading-slot-size:\s*28px/u);
   assert.doesNotMatch(navigationStyles, /&:last-child/u,
@@ -232,6 +233,35 @@ const floatingIntent = (
   triggerPeeked: false,
   triggerSuppressed: false,
   ...overrides,
+});
+
+test("touch and pen movement cannot acquire a hover-only sidebar", () => {
+  assert.equal(canHoverRevealSidebar("mouse"), true);
+  assert.equal(canHoverRevealSidebar("touch"), false);
+  assert.equal(canHoverRevealSidebar("pen"), false);
+  assert.equal(canHoverRevealSidebar(""), false);
+});
+
+test("floating dismissal has one Shell hit surface above the conversation", () => {
+  const shell = readFileSync(new URL("../apps/workbench-web/src/components/app-shell.tsx", import.meta.url), "utf8");
+  const dismiss = workbenchStyles.match(/\.app-shell-floating-sidebar-dismiss\s*\{([^}]+)\}/u)?.[1];
+  const panel = workbenchStyles.match(/\.app-shell-floating-left-panel\s*\{([^}]+)\}/u)?.[1];
+  const overlay = workbenchStyles.match(/\.app-shell-floating-overlay-root\s*\{([^}]+)\}/u)?.[1];
+  const browser = workbenchStyles.match(/\.web-browser-presentation-root\s*\{([^}]+)\}/u)?.[1];
+  assert.match(shell, /createPortal\(\s*<div className="app-shell-floating-overlay-root"[\s\S]*?floatingOwnsContent \? \(\s*<button[\s\S]*?className="app-shell-floating-sidebar-dismiss"[\s\S]*?onClick=\{dismissFloatingSidebar\}/u);
+  assert.match(shell, /<\/div>, document\.body/u);
+  assert.doesNotMatch(shell, /window\.addEventListener\("pointerdown"/u);
+  assert.ok(dismiss && panel && overlay && browser);
+  assert.match(dismiss, /background:\s*transparent/u);
+  assert.match(dismiss, /-webkit-tap-highlight-color:\s*transparent/u);
+  assert.match(shell, /floatingOwnsContent \? floatingContextHost : dockedContextHost/u);
+  assert.match(shell, /onExitComplete=\{finishFloatingExit\}/u);
+  const floatingPanel = readFileSync(new URL("../apps/workbench-web/src/components/floating-left-panel.tsx", import.meta.url), "utf8");
+  assert.match(floatingPanel, /useIsPresent\(\)/u);
+  assert.match(floatingPanel, /inert=\{!isPresent \|\| undefined\}/u);
+  assert.match(floatingPanel, /pointerEvents: isPresent \? "auto" : "none"/u);
+  assert.ok(Number(overlay.match(/z-index:\s*(\d+)/u)?.[1]) > Number(browser.match(/z-index:\s*(\d+)/u)?.[1]));
+  assert.ok(Number(dismiss.match(/z-index:\s*(\d+)/u)?.[1]) < Number(panel.match(/z-index:\s*(\d+)/u)?.[1]));
 });
 
 test("a hidden desktop sidebar is acquired only from Codex's four-pixel edge", () => {

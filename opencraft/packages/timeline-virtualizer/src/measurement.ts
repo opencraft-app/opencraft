@@ -66,6 +66,32 @@ export interface ReconcileTurnLayoutViewportOptions {
   readonly restorePending: boolean;
 }
 
+/** Transfer known geometry when a stable row acquires a new protocol locator. */
+export function rekeyTurnMeasurements<TEntry extends VirtualizedTurnEntry>(
+  previousEntries: readonly TEntry[],
+  nextEntries: readonly TEntry[],
+  measuredHeightsByKey: Readonly<Record<string, number>>,
+  stableIdentity: (entry: TEntry) => string,
+): Readonly<Record<string, number>> {
+  if (previousEntries.length === nextEntries.length
+    && previousEntries.every((entry, index) => entry.turnKey === nextEntries[index]?.turnKey))
+    return measuredHeightsByKey;
+  const previousHeights = new Map<string, number>();
+  for (const entry of previousEntries) {
+    const height = measuredHeightsByKey[entry.turnKey];
+    if (height !== undefined) previousHeights.set(stableIdentity(entry), height);
+  }
+  let nextHeights = measuredHeightsByKey;
+  for (const entry of nextEntries) {
+    if (measuredHeightsByKey[entry.turnKey] !== undefined) continue;
+    const height = previousHeights.get(stableIdentity(entry));
+    if (height === undefined) continue;
+    if (nextHeights === measuredHeightsByKey) nextHeights = { ...measuredHeightsByKey };
+    (nextHeights as Record<string, number>)[entry.turnKey] = height;
+  }
+  return nextHeights;
+}
+
 /**
  * Reconcile an entry-list layout change that did not originate in a
  * measurement batch. This is the virtualizer's only non-measurement scroll

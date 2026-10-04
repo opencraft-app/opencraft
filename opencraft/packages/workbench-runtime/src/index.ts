@@ -48,6 +48,7 @@ export * from "./connectors/approvals";
 export * from "./connectors/configuration";
 export * from "./connectors/managed-controller";
 export * from "./host-document-persistence";
+export * from "./thread-goal-resource";
 export * from "./connectors/feedback";
 export * from "./connectors/oauth";
 export * from "./connectors/manager";

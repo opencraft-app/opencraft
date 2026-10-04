@@ -29,6 +29,28 @@ test("Host queue claims survive restart as delivery-unknown and never re-enter t
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
+test("accepted steer remains visible for reconciliation without blocking admission of the next queued item", async () => {
+  const root = await mkdtemp(join(tmpdir(), "opencraft-codex-queue-admission-"));
+  try {
+    const queue = new CodexHostQueue(root);
+    const first = queue.add("thread-1", "message-1", [{ type: "text", text: "first" }]);
+    const second = queue.add("thread-1", "message-2", [{ type: "text", text: "second" }]);
+    assert.equal(queue.firstAwaitingAdmission("thread-1")?.id, first.id);
+    queue.claim("thread-1", first.id, "turn-1");
+    assert.equal(queue.firstAwaitingAdmission("thread-1")?.state, "dispatching");
+    queue.settle("thread-1", first.id, "steering");
+    assert.equal(queue.firstUnsettled("thread-1")?.id, first.id);
+    assert.equal(queue.firstAwaitingAdmission("thread-1")?.id, second.id);
+    queue.reorder("thread-1", [second.id]);
+    queue.claim("thread-1", second.id, "turn-1");
+    queue.settle("thread-1", second.id, "unknown", "steer-delivery-unconfirmed");
+    assert.equal(queue.firstAwaitingAdmission("thread-1")?.id, second.id);
+    assert.equal(queue.firstAwaitingAdmission("thread-1")?.state, "unknown");
+    assert.throws(() => queue.reorder("thread-1", []), /Reconcile in-flight/);
+    queue.close();
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("native queued rows migrate before Codex starts and replaying migration is idempotent", async () => {
   const root = await mkdtemp(join(tmpdir(), "opencraft-codex-queue-migrate-"));
   const nativeRoot = join(root, "runtime");

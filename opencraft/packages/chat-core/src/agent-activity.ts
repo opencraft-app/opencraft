@@ -12,7 +12,7 @@ import type {
 import type { TimelineTurnView } from "./timeline-turns";
 import type { WorkStatusItem } from "./work-status";
 import type { ConversationDetailLevel } from "./conversation-presentation";
-import { skillReadPresentation } from "./conversation-presentation";
+import { isAssistantAnswerContent, skillReadPresentation } from "./conversation-presentation";
 import { summarizeAutomaticApprovalReviewAction } from "./automatic-approval-review";
 import { parseSkillPath } from "./skill-path";
 import {
@@ -103,6 +103,9 @@ export interface AgentActivityRenderUnit {
   readonly status: TimelineStatus;
   readonly workedDurationMs: number | null;
   readonly hasFinalAssistantStarted: boolean;
+  /** A semantic input/question/interaction boundary can close this disclosure,
+   * independently of final-answer eligibility and execution completion. */
+  readonly hasDisclosureBoundary: boolean;
   readonly hasRenderableAgentItems: boolean;
   readonly isTurnCancelled: boolean;
   readonly forceExpanded: boolean;
@@ -134,6 +137,7 @@ export type AgentActivityContentUnit = AgentActivityGroupContentUnit | AgentActi
 
 export interface AgentActivityDisclosureInput {
   readonly hasFinalAssistantStarted: boolean;
+  readonly hasDisclosureBoundary?: boolean;
   readonly isTurnCancelled: boolean;
   readonly hasRenderableAgentItems: boolean;
   readonly forceExpanded?: boolean;
@@ -201,8 +205,8 @@ export type TimelineTurnThinkingOwner =
  *
  * Protocol projection may produce several assistant Frames as Items arrive or
  * cross semantic lanes. Those Frames are storage/provenance boundaries, not UI
- * ownership boundaries. Codex classifies the complete Turn once, then owns one
- * Activity disclosure, one final-answer surface, and at most one live Thinking
+ * ownership boundaries. A Turn has one execution owner but can contain several
+ * ordered Activity disclosures and responses, with at most one live Thinking
  * placeholder. Web and Native renderers must consume this plan instead of
  * independently deriving presentation from individual Frames.
  */
@@ -238,7 +242,7 @@ export function isAgentActivityBlock(block: TimelineBlock): boolean {
     || (block.type === "image" && block.generated
       && (block.status === "pending" || block.status === "running"))
     || (block.type === "user-message" && (block.steeringStatus !== null || block.hookFeedback))
-    || (block.type === "text" && block.phase === "commentary");
+    || (block.type === "text" && block.phase === "commentary" && block.delivery !== "async" && (block.asyncQuestions?.length ?? 0) === 0);
 }
 
 /** Codex classifies each activity Item before building the collapsible group. */
@@ -518,10 +522,10 @@ function isDisplayableAssistantText(block: TimelineBlock): block is TextTimeline
     && block.phase !== "commentary";
 }
 
-function isFinalAssistantText(block: TimelineBlock): block is TextTimelineBlock {
+function isFinalAssistantText(block: TimelineBlock): boolean {
   // r3562 hasDisplayableContent / isFinalAnswerPhase are separate predicates.
   // Rendering unphased text does not give it authority to close work.
-  return isDisplayableAssistantText(block) && block.phase === "final_answer";
+  return isDisplayableAssistantText(block) && isAssistantAnswerContent(block) && block.phase === "final_answer";
 }
 
 function summarize(blocks: readonly TimelineBlock[]): AgentActivitySummary {
@@ -771,6 +775,20 @@ function isPendingNonActivityBlock(block: TimelineBlock): boolean {
   return false;
 }
 
+/** Only the suffix after the latest input/response can describe current work. */
+function currentResponseBlocks(blocks: readonly TimelineBlock[]): readonly TimelineBlock[] {
+  let boundary = -1;
+  blocks.forEach((block, index) => {
+    if (block.type === "user-message" || (block.type === "text" && (isAssistantAnswerContent(block)
+      || block.delivery === "async" || (block.asyncQuestions?.length ?? 0) > 0))) boundary = index;
+  });
+  if (boundary < 0) return blocks;
+  const block = blocks[boundary]!;
+  // A live answer (or unanswered question) at the tail owns its own surface.
+  return block.type === "text" && boundary === blocks.length - 1
+    ? blocks.slice(boundary) : blocks.slice(boundary + 1);
+}
+
 /**
  * Renderer-neutral form of Codex's trailing Thinking placeholder decision.
  * Completed list/read calls can deliberately bridge the gap to the next call.
@@ -782,7 +800,10 @@ export function shouldRenderAgentThinkingPlaceholder(
   registry?: ToolActivityPresenterRegistry,
 ): boolean {
   if (frame.status !== "pending" && frame.status !== "streaming") return false;
+  frame = { ...frame, blocks: currentResponseBlocks(frame.blocks) };
   if (frame.blocks.some(isDisplayableAssistantText)) return false;
+  if (frame.blocks.some((block) => block.type === "text"
+    && (block.delivery === "async" || (block.asyncQuestions?.length ?? 0) > 0))) return false;
   if (frame.blocks.some(isPendingNonActivityBlock)) return false;
   // Recovered `renderableAgentItems` deliberately excludes bare reasoning.
   // Reasoning therefore cannot suppress the Turn-level fallback by itself.
@@ -807,17 +828,17 @@ export function shouldRenderAgentThinkingPlaceholder(
 /**
  * Codex resolves the Activity-local fallback before mounting the Turn-level
  * placeholder. This selector mirrors the recovered `innerThinkingCandidate`
- * boundary: only the latest group in the still-open pre-answer Activity slice
- * can take ownership.
+ * boundary: only the latest group in the still-open current response Activity
+ * slice can take ownership, never a historical answer's group.
  */
 function findAgentActivityThinkingOwner(
   assistant: AssistantTurnPresentationPlan | null,
   registry?: ToolActivityPresenterRegistry,
 ): Extract<TimelineTurnThinkingOwner, { readonly type: "activity" }> | null {
   if (assistant === null) return null;
-  const activity = assistant.slots.find((slot): slot is AgentActivityRenderUnit =>
-    slot.type === "agent-activity" && slot.phase === "before-final-answer");
-  if (activity === undefined || activity.hasFinalAssistantStarted) return null;
+  const activity = assistant.slots.at(-1);
+  if (activity?.type !== "agent-activity"
+    || (activity.status !== "pending" && activity.status !== "streaming")) return null;
   const latestUnit = [...activity.contentUnits]
     .reverse()
     .find((unit) => unit.type !== "worked-for");
@@ -831,12 +852,13 @@ function findAgentActivityThinkingOwner(
 export function resolveAgentActivityDisclosure({
   forceExpanded = false,
   hasFinalAssistantStarted,
+  hasDisclosureBoundary = hasFinalAssistantStarted,
   hasRenderableAgentItems,
   isTurnCancelled,
   persistedCollapsed,
   preventAutoCollapse = false,
 }: AgentActivityDisclosureInput): AgentActivityDisclosureState {
-  if (!hasFinalAssistantStarted || isTurnCancelled || !hasRenderableAgentItems) {
+  if (!hasDisclosureBoundary || isTurnCancelled || !hasRenderableAgentItems) {
     return { shouldAllowCollapse: false, isCollapsed: false };
   }
   return {
@@ -846,40 +868,56 @@ export function resolveAgentActivityDisclosure({
 }
 
 /**
- * Renderer-neutral reconstruction of Codex's Turn entry ordering.
- *
- * All renderable agent work before the final assistant message belongs to one
- * Turn-level Agent Activity unit. Whether an individual Item is grouped or
- * standalone is an inner projection concern handled by
- * `createAgentActivityContentUnits`; it must not split the outer disclosure.
- * Work emitted after the final answer remains in order but is not
- * auto-collapsed, matching Codex's post-assistant activity slice.
+ * Ordered semantic segments, not global before/answer/after buckets.
+ * Execution belongs to the Turn; disclosure belongs to contiguous activity.
+ * A user input, question, answer or auxiliary interaction closes that segment
+ * without closing the execution. Streaming updates keep their source slot.
  */
 export function createAssistantTurnPresentationPlan(
   frame: AssistantTimelineFrame,
   registry?: ToolActivityPresenterRegistry,
   partitionOptions: AgentActivityPartitionOptions = {},
 ): AssistantTurnPresentationPlan {
-  const slots: AssistantRenderUnit[] = [];
-  const beforeFinalActivity: TimelineBlock[] = [];
-  const afterFinalActivity: TimelineBlock[] = [];
-  const inlineSubagentBlocks: SubagentTimelineBlock[] = [];
-  const postAssistantSubagentBlocks: SubagentTimelineBlock[] = [];
-  const automationBlocks: TimelineBlock[] = [];
-  const assistantContentBlocks: TimelineBlock[] = [];
-  let proposedPlan: Extract<TimelineBlock, { type: "plan" }> | null = null;
-  const hasFinalAssistantStarted = frame.blocks.some(isFinalAssistantText);
+  interface ActivitySegment {
+    readonly type: "activity-segment";
+    readonly blocks: readonly TimelineBlock[];
+    readonly subagents: readonly SubagentTimelineBlock[];
+    readonly boundaryId: string | null;
+    readonly phase: AgentActivityPhase;
+    readonly endedByContent: boolean;
+    readonly endedByAnswer: boolean;
+    readonly disclosureBoundary: boolean;
+  }
+  const segments: (ActivitySegment | AssistantContentRenderUnit)[] = [];
+  let pendingBlocks: TimelineBlock[] = [];
+  let pendingSubagents: SubagentTimelineBlock[] = [];
+  let boundaryId: string | null = null;
+  const latestPlan = frame.blocks.filter((block) => block.type === "plan").at(-1);
   let passedFinalAssistant = false;
+  const flushActivity = (endedByContent: boolean, endedByAnswer = false, disclosureBoundary = false) => {
+    if (pendingBlocks.length === 0 && pendingSubagents.length === 0) return;
+    segments.push({ type: "activity-segment", blocks: pendingBlocks, subagents: pendingSubagents,
+      boundaryId, phase: passedFinalAssistant ? "after-final-answer" : "before-final-answer",
+      endedByContent, endedByAnswer, disclosureBoundary });
+    pendingBlocks = [];
+    pendingSubagents = [];
+  };
 
   const createActivitySlot = (
-    blocks: readonly TimelineBlock[],
-    phase: AgentActivityPhase,
-    subagentBlocks: readonly SubagentTimelineBlock[],
+    segment: ActivitySegment,
+    ownsWorkStatus: boolean,
   ): AgentActivityRenderUnit | null => {
-    const isActivitySliceClosed = frame.status !== "pending" && frame.status !== "streaming"
-      || (phase === "before-final-answer" && hasFinalAssistantStarted);
-    const contentUnits = [...createAgentActivityContentUnits(blocks, frame.status, registry, isActivitySliceClosed)];
-    const workStatus = phase !== "before-final-answer" ? null
+    const { blocks, phase, subagents: subagentBlocks } = segment;
+    const turnIsActive = frame.status === "pending" || frame.status === "streaming";
+    const isActivitySliceClosed = segment.endedByContent || !turnIsActive;
+    const status = segment.endedByContent ? "complete" : frame.status;
+    const hasFinalAssistantStarted = segment.endedByAnswer || phase === "after-final-answer";
+    const id = segment.boundaryId === null ? `${frame.turnId}:slot:agent-activity`
+      : `${frame.turnId}:slot:activity-after:${segment.boundaryId}`;
+    const contentUnits = [...createAgentActivityContentUnits(blocks, status, registry, isActivitySliceClosed)];
+    // One Turn total, not a fabricated elapsed time for each response. A new
+    // input awaiting work must not animate an already-closed historical slice.
+    const workStatus = !ownsWorkStatus || (turnIsActive && segment.endedByContent && !segment.endedByAnswer) ? null
       : frame.status === "interrupted" && frame.interruptedByThisClient && frame.durationMs !== null
         ? { type: "worked-for" as const, status: "stopped" as const, startedAtMs: 0, completedAtMs: frame.durationMs }
         : frame.workStatus ?? null;
@@ -895,7 +933,7 @@ export function createAssistantTurnPresentationPlan(
         const unitBlocks = unit.type === "group" ? unit.blocks : unit.type === "standalone" ? [unit.block] : [];
         return unitBlocks.some((block) => blocks.indexOf(block) >= firstWorkBlockIndex);
       });
-      const insertionIndex = frame.status === "streaming" || frame.status === "pending"
+      const insertionIndex = workStatus.status === "working"
         ? firstWorkIndex < 0 ? contentUnits.length : firstWorkIndex : contentUnits.length;
       contentUnits.splice(insertionIndex, 0, workUnit);
     }
@@ -903,12 +941,12 @@ export function createAssistantTurnPresentationPlan(
     const partitions = partitionAgentActivityContentUnits(contentUnits, partitionOptions);
     const inlineSubagentActivity = subagentBlocks.length === 0 ? null : {
       type: "subagent-activity" as const,
-      id: `${frame.turnId}:slot:${phase === "before-final-answer" ? "inline-subagent-activity" : "post-assistant-subagent-activity"}`,
+      id: `${id}:subagents`,
       blocks: subagentBlocks,
     };
     return {
       type: "agent-activity",
-      id: `${frame.turnId}:slot:${phase === "before-final-answer" ? "agent-activity" : "post-assistant-activity"}`,
+      id,
       blocks,
       contentUnits,
       inlineSubagentActivity,
@@ -916,18 +954,19 @@ export function createAssistantTurnPresentationPlan(
       collapsedItemCount: countAgentActivityContentItems(partitions.collapsibleUnits)
         + (inlineSubagentActivity === null ? 0 : 1),
       phase,
-      status: frame.status,
-      workedDurationMs: phase === "before-final-answer" ? frame.durationMs : null,
+      status,
+      workedDurationMs: ownsWorkStatus ? frame.durationMs : null,
       hasFinalAssistantStarted,
+      hasDisclosureBoundary: segment.disclosureBoundary || phase === "after-final-answer",
       // Partitioning is a disclosure-only projection. When the Turn cannot
       // collapse, Codex renders the original Unit stream, including a leading
       // realtime transcript that intentionally does not appear in expandedUnits.
       hasRenderableAgentItems: contentUnits.length > 0 || inlineSubagentActivity !== null,
-      isTurnCancelled: frame.status === "interrupted",
+      isTurnCancelled: !segment.endedByContent && frame.status === "interrupted",
       forceExpanded: false,
-      disableCollapse: phase === "after-final-answer",
-      preventAutoCollapse: blocks.some((block) => isActiveAgentActivityBlock(block, registry))
-        || subagentBlocks.some((block) => block.status === "pending" || block.status === "running"),
+      disableCollapse: phase === "after-final-answer" && !segment.endedByContent,
+      preventAutoCollapse: !isActivitySliceClosed && (blocks.some((block) => isActiveAgentActivityBlock(block, registry))
+        || subagentBlocks.some((block) => block.status === "pending" || block.status === "running")),
       summary: {
         ...summarize(blocks),
         subagentCount: subagentBlocks.length,
@@ -936,10 +975,9 @@ export function createAssistantTurnPresentationPlan(
   };
 
   for (const block of frame.blocks) {
-    // Original Turn classifier extracts the latest proposal into its own slot;
-    // implementation records remain facts and never become a second card.
+    // Only the latest proposal is visible, but it retains its source position.
     if (block.type === "plan-implementation") continue;
-    if (block.type === "plan") { proposedPlan = block; continue; }
+    if (block.type === "plan" && block !== latestPlan) continue;
     // Plan updates are immutable protocol observations. Codex selects the
     // latest snapshot into fixed in-progress chrome; snapshots never become
     // transcript Activity rows.
@@ -965,39 +1003,39 @@ export function createAssistantTurnPresentationPlan(
     // Codex item classifier returns null, so they cannot split Activity.
     if (block.type === "automatic-approval-review" && block.review.status === "approved") continue;
     if (block.type === "subagent") {
-      (passedFinalAssistant ? postAssistantSubagentBlocks : inlineSubagentBlocks).push(block);
+      pendingSubagents.push(block);
       continue;
     }
-    if (isAgentActivityBlock(block)) {
-      (passedFinalAssistant ? afterFinalActivity : beforeFinalActivity).push(block);
+    // Steering is a chronological boundary, never a persistent row pulled
+    // out of a disclosure spanning older work and newer answers.
+    if (isAgentActivityBlock(block) && block.type !== "user-message") {
+      pendingBlocks.push(block);
       continue;
     }
-    if (block.type === "automation-update") automationBlocks.push(block);
-    else assistantContentBlocks.push(block);
-    if (isDisplayableAssistantText(block)) passedFinalAssistant = true;
+    flushActivity(true, isFinalAssistantText(block), block.type !== "text" || isFinalAssistantText(block)
+      || block.delivery === "async" || (block.asyncQuestions?.length ?? 0) > 0);
+    segments.push({ type: "assistant-content", id: `${frame.turnId}:slot:assistant-content:${block.id}`, block });
+    boundaryId = block.id;
+    if (isFinalAssistantText(block)) passedFinalAssistant = true;
+    else if (block.type === "user-message") passedFinalAssistant = false;
   }
-
-  const before = createActivitySlot(beforeFinalActivity, "before-final-answer", inlineSubagentBlocks);
-  if (before !== null) slots.push(before);
-  for (const block of automationBlocks) {
-    slots.push({ type: "assistant-content", id: `${frame.turnId}:slot:automation:${block.id}`, block });
-  }
-  for (const block of assistantContentBlocks) {
-    slots.push({ type: "assistant-content", id: `${frame.turnId}:slot:assistant-content:${block.id}`, block });
-  }
-  const after = createActivitySlot(afterFinalActivity, "after-final-answer", postAssistantSubagentBlocks);
-  if (after !== null) slots.push(after);
-  if (proposedPlan !== null) slots.push({ type: "assistant-content", id: `${frame.turnId}:slot:proposed-plan`, block: proposedPlan });
+  flushActivity(false);
+  let workStatusOwner = -1;
+  segments.forEach((segment, index) => { if (segment.type === "activity-segment") workStatusOwner = index; });
+  const slots = segments.flatMap<AssistantRenderUnit>((segment, index) => {
+    if (segment.type !== "activity-segment") return [segment];
+    const activity = createActivitySlot(segment, index === workStatusOwner);
+    return activity === null ? [] : [activity];
+  });
   return { slots };
 }
 
 /**
  * Classify a complete Turn into stable renderer surfaces.
  *
- * This is intentionally a lossy UI projection: all assistant provenance Frames
- * are folded into one stable assistant surface. The original Frames remain in
- * the TimelineSnapshot for navigation and diagnostics, while presentation gets
- * exactly one owner for Activity, final-answer actions, and live Thinking.
+ * Provenance frames remain in the snapshot. Only the contiguous user intro is
+ * outside the ordered surface; later user/interaction frames retain their
+ * chronological slots inside it. One parent arbitrates live state and extras.
  */
 export function createTimelineTurnPresentationPlan(
   turn: TimelineTurnView,
@@ -1010,15 +1048,18 @@ export function createTimelineTurnPresentationPlan(
   const userFrames: UserTimelineFrame[] = [];
   const assistantFrames: AssistantTimelineFrame[] = [];
   const auxiliaryFrames: (EventTimelineFrame | InteractionTimelineFrame)[] = [];
+  const orderedBlocks: TimelineBlock[] = [];
+  let inUserIntro = true;
 
   for (const frame of turn.frames) {
-    if (frame.type === "user") userFrames.push(frame);
-    else if (frame.type === "assistant") assistantFrames.push(frame);
-    else auxiliaryFrames.push(frame);
+    if (inUserIntro && frame.type === "user") { userFrames.push(frame); continue; }
+    inUserIntro = false;
+    orderedBlocks.push(...frame.blocks);
+    if (frame.type === "assistant") assistantFrames.push(frame);
   }
 
   const turnIsActive = turn.status === "pending" || turn.status === "streaming";
-  const materializeAssistantSurface = assistantFrames.length > 0
+  const materializeAssistantSurface = orderedBlocks.length > 0
     || (isMostRecentTurn && turnIsActive);
   const assistantFrame: AssistantTimelineFrame | null = materializeAssistantSurface
     ? {
@@ -1031,7 +1072,7 @@ export function createTimelineTurnPresentationPlan(
         interruptedByThisClient: turn.frames.some((frame) => frame.interruptedByThisClient),
         hookStats: [...assistantFrames].reverse().find((frame) => frame.hookStats !== null)?.hookStats ?? null,
         anchors: assistantFrames.flatMap((frame) => frame.anchors),
-        blocks: assistantFrames.flatMap((frame) => frame.blocks),
+        blocks: orderedBlocks,
       }
     : null;
   const assistant = assistantFrame === null
@@ -1041,11 +1082,11 @@ export function createTimelineTurnPresentationPlan(
     (block): block is TodoTimelineBlock => block.type === "todo",
   ).at(-1) ?? null;
   const activeTodo = isMostRecentTurn && turnIsActive ? latestTodo : null;
-  const hasPendingInteraction = auxiliaryFrames.some((frame) =>
-    frame.type === "interaction" && frame.blocks.some(isPendingNonActivityBlock));
-  const latestProposal = assistantFrame?.blocks.filter((block) => block.type === "plan").at(-1);
+  const currentBlocks = currentResponseBlocks(orderedBlocks);
+  const hasPendingInteraction = currentBlocks.some(isPendingNonActivityBlock);
+  const latestProposal = currentBlocks.filter((block) => block.type === "plan").at(-1);
   const isPlanning = turnIsActive && latestProposal?.type === "plan" && !latestProposal.completed
-    && !assistantFrame?.blocks.some((block) => block.type === "command-execution"
+    && !currentBlocks.some((block) => block.type === "command-execution"
       && block.actions.some((action) => action.type === "read" || action.type === "search" || action.type === "list-files")
       && isActiveAgentActivityBlock(block, registry));
   const turnThinkingCandidate = isMostRecentTurn

@@ -298,6 +298,54 @@ try {
   assert.ok(await page.evaluate(() => Math.abs(document.querySelector(".thread-scroll")!.scrollTop) < 1), "restored user-follow must keep following the same long Turn");
   assert.deepEqual(errors, []);
   console.log(`Continuous submit passed: stable DOM, once-only placement, retained spacer, frame-by-frame motion, completion, signed shrink, reading anchor, replica-only updates, long-Turn static/follow/wheel/restore. ${JSON.stringify(rounds)}`);
+  for (const policy of ["natural", "response-placement"]) {
+    await page.goto(`http://127.0.0.1:${(vite.httpServer!.address() as { port: number }).port}/?submissions&handoff${policy === "natural" ? "&natural" : ""}`);
+    await page.waitForFunction(() => (window as any).api && document.querySelector('[data-probe="text-5"]'));
+    await settle();
+    await page.evaluate(() => (window as any).api.scrollToBottom());
+    await settle();
+    for (let index = 6; index < 9; index++) {
+      await page.evaluate(() => (window as any).submit());
+      await settle();
+      await page.evaluate((index: number) => {
+        const row = document.querySelector(`[data-virtualized-turn-key="turn-${index}"]`);
+        if (row === null) throw new Error("optimistic latest row must be mounted");
+        (window as any).handoffRow = row;
+        (window as any).handoffBubble = row.querySelector(".thread-user-message");
+        (window as any).acknowledge();
+      }, index);
+      await settle();
+      const identity = await page.evaluate((index: number) => {
+        const row = document.querySelector(`[data-virtualized-turn-key="authority-${index}"]`);
+        return { mounted: row !== null, sameRow: row === (window as any).handoffRow,
+          sameBubble: row?.querySelector(".thread-user-message") === (window as any).handoffBubble };
+      }, index);
+      assert.deepEqual(identity, { mounted: true, sameRow: true, sameBubble: true },
+        `${policy}: canonical ID acknowledgement must retain the actual latest DOM without a scroll event`);
+      await page.evaluate((index: number) => { (window as any).setPhase("commentary"); (window as any).change(index, 600); }, index);
+      await settle();
+      assert.equal(await page.locator(`[data-probe="text-${index}"]`).count(), 1,
+        `${policy}: streaming after acknowledgement cannot remain outside the window`);
+      await page.evaluate(() => (window as any).complete());
+      await settle();
+    }
+    // Canonical acknowledgement while reading history cannot acquire bottom
+    // ownership. Its height correction must retain the reader's anchor.
+    await page.evaluate(() => (window as any).owner.scrollController.scrollToDistanceFromBottomPx(800, "instant", "user"));
+    await settle();
+    await page.evaluate(() => (window as any).submit({ phase: "final_answer", height: 224 }));
+    await settle();
+    const readingTop = await page.locator('[data-probe="text-8"]').evaluate((element: HTMLElement) => element.getBoundingClientRect().top);
+    const distanceBeforeAck = await page.evaluate(() => -(document.querySelector(".thread-scroll") as HTMLElement).scrollTop);
+    await page.evaluate(() => (window as any).acknowledge());
+    await settle();
+    const readingAfterAck = await page.locator('[data-probe="text-8"]').evaluate((element: HTMLElement) => element.getBoundingClientRect().top);
+    const distanceAfterAck = await page.evaluate(() => -(document.querySelector(".thread-scroll") as HTMLElement).scrollTop);
+    assert.ok(Math.abs(readingTop - readingAfterAck) < 2,
+      `${policy}: identity handoff must preserve the user's history-reading anchor: ${JSON.stringify({ readingTop, readingAfterAck, distanceBeforeAck, distanceAfterAck })}`);
+    assert.deepEqual(await page.evaluate(() => (window as any).resizeWarnings), []);
+  }
+  console.log("Canonical handoff passed in both policies: three consecutive sends retain exact latest row/bubble, stream without scroll, preserve history-reading anchor, zero resize warnings.");
   for (const policy of ["response-placement", "natural"]) {
     await page.goto(`http://127.0.0.1:${(vite.httpServer!.address() as { port: number }).port}/?history${policy === "natural" ? "&natural" : ""}`);
     await page.waitForFunction(() => (window as any).api && document.querySelector('[data-probe="text-5"]'));

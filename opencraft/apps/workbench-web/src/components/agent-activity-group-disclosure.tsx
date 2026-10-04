@@ -1,5 +1,8 @@
 import { ChevronRight } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
+import { OverlayDisclosureTrigger } from "./overlay-disclosure-trigger";
+import { useDisclosureReflow } from "./use-disclosure-reflow";
+import { useDisclosureHeight } from "./use-disclosure-height";
 import {
   type ReactNode,
   useCallback,
@@ -102,6 +105,7 @@ export function AgentActivityGroupDisclosure({
   summaryTransition?: AgentActivitySummaryTransition;
 }) {
   const reduceMotion = useReducedMotion();
+  const reflow = useDisclosureReflow();
   const summaryId = useId();
   const [phase, setPhase] = useState<AgentActivityDisclosurePhase>(() => {
     if (!canExpand) return "collapsed";
@@ -112,6 +116,7 @@ export function AgentActivityGroupDisclosure({
   });
   const expanded = phase === "opening" || phase === "expanded";
   const fullyExpanded = phase === "expanded";
+  const animatedHeight = useDisclosureHeight(fullyExpanded ? "auto" : 0);
 
   useEffect(() => {
     if (phase !== "opening") return;
@@ -122,13 +127,17 @@ export function AgentActivityGroupDisclosure({
   }, [phase]);
 
   useEffect(() => {
-    if (!canExpand) setPhase((current) => reduceAgentActivityDisclosurePhase(current, "disable"));
-  }, [canExpand]);
+    if (!canExpand) {
+      reflow.cancel();
+      setPhase((current) => reduceAgentActivityDisclosurePhase(current, "disable"));
+    }
+  }, [canExpand, reflow.cancel]);
 
-  const toggle = useCallback(() => {
+  const toggle = useCallback((anchor: HTMLButtonElement) => {
+    reflow.begin(anchor);
     if (!expanded) onExpand?.();
     setPhase((current) => reduceAgentActivityDisclosurePhase(current, "toggle"));
-  }, [expanded, onExpand]);
+  }, [expanded, onExpand, reflow.begin]);
 
   const visibleSummary = summaryTransition === "static"
     ? summary
@@ -146,10 +155,13 @@ export function AgentActivityGroupDisclosure({
         data-disclosure-phase={phase}
         initial={false}
         inert={!fullyExpanded}
-        onAnimationComplete={() => {
+        onAnimationComplete={(definition) => {
+          if (phase === "opening" || typeof definition !== "object" || Array.isArray(definition)
+            || definition.height !== (fullyExpanded ? "auto" : 0)) return;
+          reflow.complete();
           setPhase((current) => reduceAgentActivityDisclosurePhase(current, "animation-complete"));
         }}
-        style={{ overflow: "hidden", pointerEvents: fullyExpanded ? "auto" : "none" }}
+        style={{ height: animatedHeight, overflow: "hidden", pointerEvents: fullyExpanded ? "auto" : "none" }}
         transition={{ duration: reduceMotion ? 0 : 0.3, ease: [0.19, 1, 0.22, 1] }}
       >
         <div className="thread-activity-item__body">
@@ -166,22 +178,20 @@ export function AgentActivityGroupDisclosure({
       data-disclosure-phase={phase}
       data-open={expanded || undefined}
     >
-      <div className="thread-activity-item__header" data-interactive={canExpand || undefined}>
-        {canExpand ? (
-          <button
-            aria-expanded={expanded}
-            aria-labelledby={summaryId}
-            className="thread-activity-item__hit-target"
-            onClick={toggle}
-            type="button"
-          />
-        ) : null}
-        <span className="thread-activity-item__header-content">
+      <OverlayDisclosureTrigger
+        buttonClassName="thread-activity-item__hit-target"
+        className="thread-activity-item__header"
+        contentClassName="thread-activity-item__header-content"
+        interactive={canExpand}
+        labelId={summaryId}
+        onToggle={toggle}
+        open={expanded}
+        reflowOwned
+      >
           {icon == null ? null : <span className="thread-activity-item__icon">{icon}</span>}
           <span className="thread-activity-item__summary" id={summaryId}>{visibleSummary}</span>
           {canExpand ? <ChevronRight aria-hidden="true" className="thread-activity-item__chevron" size={13} /> : null}
-        </span>
-      </div>
+      </OverlayDisclosureTrigger>
       {body}
     </div>
   );

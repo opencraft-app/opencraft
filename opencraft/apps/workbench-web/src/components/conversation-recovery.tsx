@@ -1,5 +1,6 @@
 import { FormattedMessage } from "@opencraft/i18n/react";
 import React from "react";
+import { LoadingSpinner } from "./ui/loading-spinner";
 
 export type ConversationRecoveryPresentation = "none" | "cold-loading" | "cold-error" | "warm-loading" | "warm-error";
 
@@ -13,7 +14,7 @@ export function conversationRecoveryPresentation(input: {
   return `${input.hasVisibleHistory ? "warm" : "cold"}-${input.failed ? "error" : "loading"}`;
 }
 
-export function ConversationRecoverySkeleton({ failed, onRetry }: {
+export function ConversationRecoveryEmptyState({ failed, onRetry }: {
   readonly failed: boolean;
   readonly onRetry?: () => void;
 }) {
@@ -24,11 +25,9 @@ export function ConversationRecoverySkeleton({ failed, onRetry }: {
     </div>
   );
   return (
-    <div className="conversation-recovery-skeleton thread-layout-width" role="status">
-      <span className="conversation-recovery-skeleton__label"><FormattedMessage id="chat.restore.loading" defaultMessage="Loading conversation history…" /></span>
-      <span aria-hidden="true" className="conversation-recovery-skeleton__line" />
-      <span aria-hidden="true" className="conversation-recovery-skeleton__line" />
-      <span aria-hidden="true" className="conversation-recovery-skeleton__line" />
+    <div className="conversation-recovery-loading" role="status">
+      <span className="conversation-recovery-loading__label"><FormattedMessage id="chat.restore.loading" defaultMessage="Loading conversation history…" /></span>
+      <LoadingSpinner />
     </div>
   );
 }

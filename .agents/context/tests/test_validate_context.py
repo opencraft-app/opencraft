@@ -104,6 +104,17 @@ class RepositoryContextContract(unittest.TestCase):
         route = json.loads(result.stdout)["route"]
         self.assertNotIn("release-gitops", route["pack_ids"], route)
 
+    def test_local_android_release_apk_does_not_load_gitops_pack(self) -> None:
+        result = run_validator(
+            "--route",
+            "OpenCraft Android release APK com.tencent.vela 本地打包备案",
+            "--format",
+            "json",
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        route = json.loads(result.stdout)["route"]
+        self.assertNotIn("release-gitops", route["pack_ids"], route)
+
     def test_service_specific_queries_select_service_surface_packs(self) -> None:
         cases = {
             "修复国际站 trade Billing 测试域名": {

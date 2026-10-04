@@ -207,12 +207,52 @@ func makeHandler(deps Deps) jifei.Handler {
 		if msg := verifyCurDeadline(para.GoodsDetail, pass.ExpiredTime); msg != "" {
 			return errFramework(ReturnCodeCurDeadlineMismatch, msg), nil
 		}
+		// Do not let jifei create a payable order when the purchased period,
+		// measured from the original expiry, would already be over. CTL repeats
+		// this check before creating its own order and at delivery time.
+		span, _ := goodsDetailIntField(para.GoodsDetail, "timeSpan")
+		unit, _ := goodsDetailStringField(para.GoodsDetail, "timeUnit")
+		if !renewalPeriodUseful(pass.ExpiredTime, span, unit, time.Now()) {
+			return errFramework(ReturnCodePassNotRenewable,
+				"renewal period would still leave pass expired"), nil
+		}
 
 		// (5) 全部校验通过。
 		// data 字段按 PDF §3.1 checkRenew 出参约定填 `{"status": 0}`
 		// (0=可购买；缺失 status 字段 jifei 会判定为协议不合规拒绝下单)。
 		return deps.Builder.NewSuccess(map[string]any{"status": 0}), nil
 	}
+}
+
+// renewalPeriodUseful mirrors CTL CalcExpiredTime's natural-month arithmetic.
+// checkRenew runs before provider order creation, so this is a billing safety
+// gate, not a change to curDeadline or the provider's pricing baseline.
+func renewalPeriodUseful(expired time.Time, span int, unit string, now time.Time) bool {
+	if expired.IsZero() || span <= 0 {
+		return false
+	}
+	var next time.Time
+	switch unit {
+	case "d":
+		next = expired.AddDate(0, 0, span)
+	case "y":
+		next = expired.AddDate(span, 0, 0)
+	case "m":
+		year, month, day := expired.Date()
+		month += time.Month(span)
+		for month > 12 {
+			month -= 12
+			year++
+		}
+		lastDay := time.Date(year, month+1, 0, 0, 0, 0, 0, time.UTC).Day()
+		if day > lastDay {
+			day = lastDay
+		}
+		next = time.Date(year, month, day, expired.Hour(), expired.Minute(), expired.Second(), expired.Nanosecond(), expired.Location())
+	default:
+		return false
+	}
+	return next.After(now)
 }
 
 // validatePara 做参数级校验（Q14=a InvalidPara 落点 + Q12=a timeUnit 严格白名单）。

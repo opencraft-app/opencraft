@@ -26,7 +26,7 @@ export function isNativeLoginCallback(raw: string): boolean {
 }
 
 /** Owns one login transaction; only an exact, correlated callback may exchange it. */
-export function createNativeLogin(ports: NativeLoginPorts, apiBase: string) {
+export function createNativeLogin(ports: NativeLoginPorts, apiBase: string | (() => string)) {
   let disposed = false;
   let flight: Promise<string | null> | null = null;
   let flightURL: string | null = null;
@@ -85,7 +85,7 @@ export function createNativeLogin(ports: NativeLoginPorts, apiBase: string) {
       const stored = JSON.stringify(pending);
       await ports.write(stored);
       ensureAlive();
-      const start = new URL("/oauth2/authorize", apiBase);
+      const start = new URL("/oauth2/authorize", typeof apiBase === "string" ? apiBase : apiBase());
       start.search = new URLSearchParams({ client_id: "opencraft-native-v1", response_type: "code", scope: "openid profile", nonce: ports.random(), redirect_uri: NATIVE_LOGIN_REDIRECT, state: pending.state, code_challenge: challenge, code_challenge_method: "S256" }).toString();
       try {
         const result = await ports.open(start.toString(), NATIVE_LOGIN_REDIRECT);

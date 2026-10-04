@@ -31,6 +31,7 @@ test("Workbench passes the Host queue capability into the Composer prop", () => 
   const composerTag = app.match(/<CodexComposer\b[\s\S]*?\/>/u)?.[0];
   assert.ok(composerTag, "Workbench should render CodexComposer");
   assert.match(composerTag, /supportsQueuedSteer=\{queueAtomicSteer\}/u);
+  assert.match(composerTag, /defaultFollowUpAction=\{defaultFollowUpAction\}/u);
 });
 
 test("normal queued follow-ups render as messages rather than transport UI", () => {
@@ -72,6 +73,20 @@ test("unconfirmed steering claim offers review and explicit discard, never Send 
   );
   assert.match(markup, /Review &amp; discard/);
   assert.doesNotMatch(markup, /Start queued message|Resume|Edit queued message|Delete queued message/);
+});
+
+test("a queued item behind an unconfirmed delivery does not offer a Resume that cannot clear the claim", () => {
+  const markup = renderToStaticMarkup(
+    <ComposerQueueTray items={[
+      { ...pendingItem, state: "queued", actionable: true, pausedReason: "Earlier delivery is unconfirmed; review it before sending another message" },
+      { ...pendingItem, id: "claim-1", state: "queued", pausedReason: "Delivery unconfirmed", unconfirmedTargetTurnId: "turn-one" },
+    ]} isResponseInProgress atomicSteer />,
+  );
+  assert.match(markup, /Earlier delivery is unconfirmed/);
+  assert.match(markup, /Review &amp; discard/);
+  assert.doesNotMatch(markup, /Resume/);
+  assert.match(markup, /aria-label="Steer with queued message"[^>]*disabled=""/);
+  assert.match(markup, /aria-label="Reorder queued message"[^>]*disabled=""/);
 });
 
 test("queued Steer is disabled without Host atomic support while idle Send remains available", () => {

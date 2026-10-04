@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 import { LOGICAL_CLIENT_FIELD } from "@opencraft/app-host-protocol";
 import { AccountPoolStore } from "@opencraft/account-pool-host";
-import { OPENCRAFT_THREAD_LIFECYCLE_EXTENSION, OPENCRAFT_THREAD_QUEUE_EXTENSION, OPENCRAFT_THREAD_START_DURABILITY_EXTENSION, OPENCRAFT_PERMISSION_MODES_EXTENSION } from "@opencraft/appserver-protocol";
+import { OPENCRAFT_ATTACHMENT_STAGING_EXTENSION, OPENCRAFT_THREAD_LIFECYCLE_EXTENSION, OPENCRAFT_THREAD_QUEUE_EXTENSION, OPENCRAFT_THREAD_START_DURABILITY_EXTENSION, OPENCRAFT_PERMISSION_MODES_EXTENSION } from "@opencraft/appserver-protocol";
 import { CodexEngineAdapter } from "../apps/opencraft-daemon/src/codex-engine-adapter.js";
 import { CodexHostQueue } from "../apps/opencraft-daemon/src/codex-host-queue.js";
 
@@ -48,6 +48,90 @@ async function initializeClient(adapter: CodexEngineAdapter, frames: Array<Recor
   await adapter.send(JSON.stringify({ id: `${clientId}:init`, method: "initialize", params: {}, [LOGICAL_CLIENT_FIELD]: clientId }));
   await waitFor(frames, frame => frame.id === `${clientId}:init`);
 }
+
+test("Codex Host stages ordinary files for its native process without forwarding the extension", async () => {
+  const root = await mkdtemp(join(tmpdir(), "opencraft-codex-attachment-"));
+  const frames: Array<Record<string, unknown>> = [];
+  const adapter = createRoutingAdapter(root, frames);
+  const clientId = "attachment-client";
+  const request = {
+    clientAttachmentId: "markdown-attachment",
+    name: "notes.md",
+    mimeType: "text/markdown",
+    size: 11,
+    source: { kind: "client-bytes", dataBase64: Buffer.from("hello world").toString("base64") },
+  };
+  try {
+    await adapter.connect();
+    await initializeClient(adapter, frames, clientId);
+    const initialized = await waitFor(frames, frame => frame.id === `${clientId}:init`);
+    assert.deepEqual((initialized.result as any).capabilities.extensions[OPENCRAFT_ATTACHMENT_STAGING_EXTENSION], {
+      version: 1, sources: ["client-bytes"], locations: ["host-file"], maxBytes: 32 * 1024 * 1024,
+    });
+    await adapter.send(JSON.stringify({ id: "stage-1", method: "attachment/stage", params: request, [LOGICAL_CLIENT_FIELD]: clientId }));
+    const staged = await waitFor(frames, frame => frame.id === "stage-1");
+    assert.equal(staged[LOGICAL_CLIENT_FIELD], clientId);
+    const path = (staged.result as any).ref.location.path as string;
+    assert.ok(path.startsWith(join(root, "data", "attachments") + "/"));
+    assert.equal((await readFile(path)).toString("utf8"), "hello world");
+    await adapter.send(JSON.stringify({ id: "stage-replay", method: "attachment/stage", params: request, [LOGICAL_CLIENT_FIELD]: clientId }));
+    assert.deepEqual((await waitFor(frames, frame => frame.id === "stage-replay")).result, staged.result);
+    await adapter.send(JSON.stringify({ id: "thread-1", method: "thread/start", params: {}, [LOGICAL_CLIENT_FIELD]: clientId }));
+    const threadId = (await waitFor(frames, frame => frame.id === "thread-1")).result as any;
+    const actualThreadId = threadId.thread.id as string;
+    await adapter.send(JSON.stringify({ id: "turn-1", method: "turn/start", params: {
+      threadId: actualThreadId, clientUserMessageId: "with-file", input: [
+        { type: "text", text: "What is in this file?" }, { type: "mention", name: "notes.md", path },
+      ],
+    }, [LOGICAL_CLIENT_FIELD]: clientId }));
+    const turn = await waitFor(frames, frame => frame.id === "turn-1");
+    assert.ok(turn.result);
+    await adapter.send(JSON.stringify({ id: "items-1", method: "thread/items/list", params: { threadId: actualThreadId }, [LOGICAL_CLIENT_FIELD]: clientId }));
+    const items = (await waitFor(frames, frame => frame.id === "items-1")).result as any;
+    const content = items.data[0].item.content;
+    assert.equal(content[0].text, "What is in this file?");
+    assert.match(content[1].text, /notes\.md/);
+    assert.ok(content[1].text.includes(path));
+    assert.equal(content[1].text_elements[0].placeholder, "opencraft:staged-file:v1");
+    assert.deepEqual(content[2], { type: "mention", name: "notes.md", path });
+    assert.deepEqual(items.data[0].item.attachments, [{
+      id: request.clientAttachmentId, name: "notes.md", mimeType: "text/markdown",
+      size: 11, path,
+    }]);
+    await adapter.send(JSON.stringify({ id: "queue-add", method: "thread/queue/add", params: {
+      threadId: actualThreadId, clientUserMessageId: "queued-file", input: [{ type: "mention", name: "notes.md", path }],
+    }, [LOGICAL_CLIENT_FIELD]: clientId }));
+    const queued = (await waitFor(frames, frame => frame.id === "queue-add")).result as any;
+    await adapter.send(JSON.stringify({ id: "queue-steer", method: "thread/queue/steer", params: {
+      threadId: actualThreadId, queuedSubmissionId: queued.queuedSubmission.id,
+      expectedTurnId: (turn.result as any).turn.id,
+    }, [LOGICAL_CLIENT_FIELD]: clientId }));
+    assert.ok((await waitFor(frames, frame => frame.id === "queue-steer")).result);
+    await adapter.send(JSON.stringify({ id: "items-2", method: "thread/items/list", params: { threadId: actualThreadId }, [LOGICAL_CLIENT_FIELD]: clientId }));
+    const steeredItems = (await waitFor(frames, frame => frame.id === "items-2")).result as any;
+    assert.ok(steeredItems.data[1].item.content[0].text.includes(path));
+    assert.deepEqual(steeredItems.data[1].item.content[1], { type: "mention", name: "notes.md", path });
+    assert.deepEqual(steeredItems.data[1].item.attachments, items.data[0].item.attachments);
+    await adapter.send(JSON.stringify({ id: "remove-1", method: "attachment/remove", params: { id: request.clientAttachmentId }, [LOGICAL_CLIENT_FIELD]: clientId }));
+    assert.equal(((await waitFor(frames, frame => frame.id === "remove-1")).error as any).code, -32602);
+    assert.equal((await readFile(path)).toString("utf8"), "hello world");
+    await adapter.send(JSON.stringify({ id: "stage-unsent", method: "attachment/stage", params: {
+      ...request, clientAttachmentId: "unsent-file",
+    }, [LOGICAL_CLIENT_FIELD]: clientId }));
+    const unsentPath = ((await waitFor(frames, frame => frame.id === "stage-unsent")).result as any).ref.location.path as string;
+    await adapter.send(JSON.stringify({ id: "remove-unsent", method: "attachment/remove", params: { id: "unsent-file" }, [LOGICAL_CLIENT_FIELD]: clientId }));
+    assert.deepEqual((await waitFor(frames, frame => frame.id === "remove-unsent")).result, { removed: true });
+    await assert.rejects(() => readFile(unsentPath));
+    await adapter.send(JSON.stringify({ id: "stale-file", method: "turn/steer", params: {
+      threadId: actualThreadId, expectedTurnId: (turn.result as any).turn.id,
+      clientUserMessageId: "stale-file", input: [{ type: "mention", name: "notes.md", path: unsentPath }],
+    }, [LOGICAL_CLIENT_FIELD]: clientId }));
+    assert.equal(((await waitFor(frames, frame => frame.id === "stale-file")).error as any).code, -32602);
+  } finally {
+    await adapter.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 test("Codex Engine shares one physical initialize and restores logical client routing", async () => {
   const root = await mkdtemp(join(tmpdir(), "opencraft-codex-engine-"));
@@ -112,9 +196,10 @@ test("Codex Engine shares one physical initialize and restores logical client ro
     assert.ok(diagnostics.some(event => event.event === "appserver-start" && typeof event.pid === "number"));
     assert.deepEqual(diagnostics.find(event => event.event === "turn-interrupt"), {
       component: "codex-engine-adapter", at: diagnostics.find(event => event.event === "turn-interrupt")?.at,
-      event: "turn-interrupt", clientId: "client-a", requestId: "opencraft:3",
+      event: "turn-interrupt", clientId: "client-a", requestId: diagnostics.find(event => event.event === "turn-interrupt")?.requestId,
       threadId: "thread-a", turnId: "turn-a", pid: diagnostics.find(event => event.event === "appserver-start")?.pid,
     });
+    assert.match(String(diagnostics.find(event => event.event === "turn-interrupt")?.requestId), /^opencraft:\d+$/);
     assert.ok(diagnostics.some(event => event.event === "client-disconnect" && event.clientId === "client-b"));
     assert.ok(diagnostics.some(event => event.event === "client-initialize" && event.clientId === "client-a" && event.outcome === "succeeded"));
     assert.doesNotMatch(JSON.stringify(diagnostics), /must not be logged/);
@@ -455,10 +540,10 @@ test("older native queue marker does not change Host queue capabilities", async 
   }
 });
 
-test("Host-owned Codex queue steers through standard turn/steer and reconciles the accepted message", async () => {
+test("Host-owned Codex queue admits a second steer before the first appears in history", async () => {
   const root = await mkdtemp(join(tmpdir(), "opencraft-codex-host-queue-"));
   const frames: Array<Record<string, unknown>> = [];
-  const adapter = createRoutingAdapter(root, frames);
+  const adapter = createRoutingAdapter(root, frames, 0, "defer-history");
   const client = "client-a";
   const request = async (id: string, method: string, params: Record<string, unknown>) => {
     await adapter.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: client }));
@@ -476,6 +561,10 @@ test("Host-owned Codex queue steers through standard turn/steer and reconciles t
       threadId: "codex-thread-1", input: [{ type: "text", text: "follow up" }], clientUserMessageId: "queued-1",
     });
     const queuedId = (added.result as any).queuedSubmission.id;
+    const secondAdded = await request("add-2", "thread/queue/add", {
+      threadId: "codex-thread-1", input: [{ type: "text", text: "another follow up" }], clientUserMessageId: "queued-2",
+    });
+    const secondQueuedId = (secondAdded.result as any).queuedSubmission.id;
     const queued = await request("list-1", "thread/queue/list", { threadId: "codex-thread-1" });
     assert.equal((queued.result as any).data[0].id, queuedId);
     const steered = await request("steer", "thread/queue/steer", {
@@ -483,8 +572,15 @@ test("Host-owned Codex queue steers through standard turn/steer and reconciles t
     });
     assert.deepEqual(steered.result, { turnId: activeTurnId });
     const afterSteer = await request("list-2", "thread/queue/list", { threadId: "codex-thread-1" });
-    assert.deepEqual((afterSteer.result as any).data, []);
+    assert.equal((afterSteer.result as any).data[0].id, secondQueuedId);
     assert.equal((afterSteer.result as any).steering[0].clientUserMessageId, "queued-1");
+    const secondSteer = await request("steer-2", "thread/queue/steer", {
+      threadId: "codex-thread-1", queuedSubmissionId: secondQueuedId, expectedTurnId: activeTurnId,
+    });
+    assert.deepEqual(secondSteer.result, { turnId: activeTurnId });
+    const afterSecondSteer = await request("list-3", "thread/queue/list", { threadId: "codex-thread-1" });
+    assert.deepEqual((afterSecondSteer.result as any).data, []);
+    assert.deepEqual((afterSecondSteer.result as any).steering.map((item: any) => item.clientUserMessageId), ["queued-1", "queued-2"]);
     await request("complete", "test/completeTurn", { threadId: "codex-thread-1" });
     for (let attempt = 0; attempt < 30; attempt += 1) {
       const listed = await request(`list-final-${attempt}`, "thread/queue/list", { threadId: "codex-thread-1" });
@@ -520,12 +616,21 @@ test("ambiguous Codex queue steer stays claimed until explicit history-checked d
       threadId: "codex-thread-1", input: [{ type: "text", text: "possibly delivered" }], clientUserMessageId: "maybe-1",
     });
     const queuedId = (added.result as any).queuedSubmission.id;
+    const next = await request("add-next", "thread/queue/add", {
+      threadId: "codex-thread-1", input: [{ type: "text", text: "must wait" }], clientUserMessageId: "next-1",
+    });
     const steer = await request("steer", "thread/queue/steer", {
       threadId: "codex-thread-1", queuedSubmissionId: queuedId, expectedTurnId: targetTurnId,
     });
     assert.ok(steer.error);
     const unknown = await request("unknown", "thread/queue/list", { threadId: "codex-thread-1" });
     assert.equal((unknown.result as any).steering[0].pausedReason, "steer-delivery-unconfirmed");
+    const blocked = await request("blocked", "thread/queue/steer", {
+      threadId: "codex-thread-1", queuedSubmissionId: (next.result as any).queuedSubmission.id, expectedTurnId: targetTurnId,
+    });
+    assert.match((blocked.error as any).message, /Earlier delivery is unconfirmed/);
+    const stillQueued = await request("still-queued", "thread/queue/list", { threadId: "codex-thread-1" });
+    assert.equal((stillQueued.result as any).data[0].clientUserMessageId, "next-1");
     await request("complete", "test/completeTurn", { threadId: "codex-thread-1" });
     const deleted = await request("discard", "thread/queue/delete", {
       threadId: "codex-thread-1", queuedSubmissionId: queuedId,
@@ -534,6 +639,41 @@ test("ambiguous Codex queue steer stays claimed until explicit history-checked d
     assert.deepEqual(deleted.result, { deleted: true });
     const settled = await request("settled", "thread/queue/list", { threadId: "codex-thread-1" });
     assert.deepEqual((settled.result as any).steering, []);
+  } finally {
+    await adapter.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a queued start with an unknown target reconciles against all Turn history by client message identity", async () => {
+  const root = await mkdtemp(join(tmpdir(), "opencraft-codex-host-unknown-start-"));
+  const dataRoot = join(root, "data");
+  await mkdir(dataRoot);
+  const queue = new CodexHostQueue(dataRoot);
+  const claim = queue.add("codex-thread-1", "accepted-before-restart", [{ type: "text", text: "same input" }]);
+  queue.claim("codex-thread-1", claim.id, "unknown");
+  queue.settle("codex-thread-1", claim.id, "unknown", "steer-delivery-unconfirmed");
+  queue.close();
+  const frames: Array<Record<string, unknown>> = [];
+  const adapter = createRoutingAdapter(root, frames);
+  const request = async (id: string, method: string, params: Record<string, unknown>) => {
+    await adapter.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: "client-a" }));
+    return waitFor(frames, frame => frame.id === id);
+  };
+  try {
+    await adapter.connect();
+    await initializeClient(adapter, frames, "client-a");
+    await request("thread", "thread/start", { cwd: root });
+    await request("turn", "turn/start", {
+      threadId: "codex-thread-1", input: [{ type: "text", text: "same input" }], clientUserMessageId: "accepted-before-restart",
+    });
+    let reconciled = false;
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      const listed = await request(`list-${attempt}`, "thread/queue/list", { threadId: "codex-thread-1" });
+      if ((listed.result as any).steering.length === 0) { reconciled = true; break; }
+      await new Promise(resolve => setTimeout(resolve, 5));
+    }
+    assert.equal(reconciled, true);
   } finally {
     await adapter.close();
     await rm(root, { recursive: true, force: true });

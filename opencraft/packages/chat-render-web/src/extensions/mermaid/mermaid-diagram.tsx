@@ -16,6 +16,7 @@ import {
 } from "react";
 
 import { writeTextToClipboard } from "../../clipboard";
+import { usePreviewFocusOrigin } from "../../preview-focus-origin";
 import { CodeBlockSurface } from "../../renderers/code/code-block";
 import type { ChatEnhancementService } from "../../services/chat-enhancement-service";
 import {
@@ -407,9 +408,13 @@ function serializeSvgForPreview(
 function MermaidPreview({
   svg,
   onClose,
+  openedByPointer,
+  onKeyboardNavigation,
 }: {
   readonly svg: string;
   readonly onClose: () => void;
+  readonly openedByPointer: boolean;
+  readonly onKeyboardNavigation: ReturnType<typeof usePreviewFocusOrigin>["onPreviewKeyDown"];
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -422,8 +427,10 @@ function MermaidPreview({
     <dialog
       aria-label="Mermaid diagram preview"
       className="chat-mermaid-preview"
+      data-opened-by-pointer={openedByPointer || undefined}
       onCancel={onClose}
       onClose={onClose}
+      onKeyDown={onKeyboardNavigation}
       ref={dialogRef}
     >
       <div
@@ -468,6 +475,7 @@ function MermaidDiagram({
   const blockRef = useRef<HTMLDivElement>(null);
   const surfaceRef = useRef<HTMLDivElement>(null);
   const [previewSvg, setPreviewSvg] = useState<string | null>(null);
+  const previewFocus = usePreviewFocusOrigin();
   const presentedState = useMemo(
     () =>
       state.activeKey === renderKey
@@ -581,7 +589,10 @@ function MermaidDiagram({
       <div className="chat-mermaid-actions" data-markdown-copy="exclude">
         <button
           aria-label="Expand Mermaid diagram"
-          onClick={openPreview}
+          onClick={(event) => { previewFocus.recordOpen(event); openPreview(); }}
+          onKeyDown={previewFocus.onTriggerKeyDown}
+          onPointerCancel={previewFocus.onTriggerPointerCancel}
+          onPointerDown={previewFocus.onTriggerPointerDown}
           type="button"
         >
           <ExpandIcon />
@@ -597,7 +608,7 @@ function MermaidDiagram({
       <span className="sr-only">Mermaid source code</span>
       <pre className="sr-only">{code}</pre>
       {previewSvg === null ? null : (
-        <MermaidPreview onClose={() => setPreviewSvg(null)} svg={previewSvg} />
+        <MermaidPreview onClose={() => setPreviewSvg(null)} onKeyboardNavigation={previewFocus.onPreviewKeyDown} openedByPointer={previewFocus.openedByPointer} svg={previewSvg} />
       )}
     </div>
   );

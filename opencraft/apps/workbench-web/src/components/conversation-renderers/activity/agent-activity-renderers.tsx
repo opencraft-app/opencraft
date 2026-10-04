@@ -14,11 +14,12 @@ import {
 } from "@opencraft/chat-core";
 import { TimelineBlockView } from "@opencraft/timeline-render-react";
 import { ChevronRight } from "lucide-react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { motion, useReducedMotion } from "motion/react";
 import {
   Fragment,
   useContext,
   useId,
+  useLayoutEffect,
   useMemo,
   useSyncExternalStore,
   type ReactNode,
@@ -33,6 +34,7 @@ import {
 import { SubagentActivityGroup } from "../tool/tool-renderers";
 import { ToolActivityPresenterContext, ConversationDetailContext } from "../render-contexts";
 import { ActivityDisclosureHeader, WorkStatusDivider } from "./work-status";
+import { useDisclosureReflow } from "../../use-disclosure-reflow";
 
 function GenericBlock({ block, onRetry, richText = true }: { block: TimelineBlock; onRetry?: () => void; richText?: boolean }): ReactNode {
   return <TimelineBlockView block={block} onRetry={onRetry} richText={richText} />;
@@ -138,6 +140,13 @@ function AgentActivity({
   const layout = resolveAgentActivityLayout(unit, persistedCollapsed);
   const open = !layout.isCollapsed;
   const inlineSubagentActivity = unit.inlineSubagentActivity;
+  const reflow = useDisclosureReflow();
+  const hasAnimatedContent = layout.visibleUnits.length > 0 || inlineSubagentActivity !== null;
+  useLayoutEffect(() => {
+    // Closing removes this body synchronously; opening an empty body has no
+    // animation. Both still need the viewport's final layout settlement.
+    if (!open || !hasAnimatedContent) reflow.complete();
+  }, [hasAnimatedContent, open, reflow.complete]);
   return (
     <section
       className="thread-agent-activity"
@@ -157,7 +166,10 @@ function AgentActivity({
         durationMs={unit.workedDurationMs}
         count={layout.collapsedItemCount}
         open={open}
-        onToggle={() => onCollapsedChange(open)}
+        onToggle={(anchor) => {
+          reflow.begin(anchor);
+          onCollapsedChange(open);
+        }}
       /> : null}
       {layout.persistentUnits.length > 0 ? (
         <div className="thread-agent-activity__persistent-content">
@@ -165,13 +177,18 @@ function AgentActivity({
           <AgentActivityContent contentUnits={layout.persistentUnits} onRetry={onRetry} />
         </div>
       ) : null}
-      <AnimatePresence initial={false}>
-        {open && (layout.visibleUnits.length > 0 || inlineSubagentActivity !== null) ? (
+      {/* This disclosure only animates entry. A presence owner without an exit
+          animation would defer removal past our collapsed layout completion. */}
+      {open && hasAnimatedContent ? (
           <motion.div
             animate={{ opacity: 1, y: 0 }}
             className="thread-agent-activity__outer-content"
             initial={{ opacity: 0, y: prefersReducedMotion ? 0 : -8 }}
             key="content"
+            onAnimationComplete={(definition) => {
+              if (open && typeof definition === "object" && !Array.isArray(definition)
+                && definition.opacity === 1) reflow.complete();
+            }}
             transition={{ duration: prefersReducedMotion ? 0.12 : 0.22, ease: [0.33, 1, 0.68, 1] }}
           >
             {layout.showToggle ? <div aria-hidden="true" className="thread-agent-activity__section-divider" /> : null}
@@ -185,8 +202,7 @@ function AgentActivity({
               </>
             )}
           </motion.div>
-        ) : null}
-      </AnimatePresence>
+      ) : null}
     </section>
   );
 }

@@ -1,6 +1,7 @@
 import type { ChatNodeRendererProps, ChatResourcePolicyService } from "@opencraft/chat-render-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { usePreviewFocusOrigin } from "../../preview-focus-origin";
 import "./image.scss";
 
 function CloseGlyph() {
@@ -29,6 +30,7 @@ export function createImageRenderer(resources: ChatResourcePolicyService) {
       readonly status: "loading" | "ready" | "unavailable";
     } | null>(null);
     const dialogRef = useRef<HTMLDialogElement>(null);
+    const previewFocus = usePreviewFocusOrigin();
     useEffect(() => {
       const dialog = dialogRef.current;
       if (dialog === null) return;
@@ -138,7 +140,7 @@ export function createImageRenderer(resources: ChatResourcePolicyService) {
     const showNext = gallery !== null && gallery.index + 1 < gallery.items.length;
     return (
       <>
-        <button aria-label={node.alt || "Preview image"} className="chat-markdown-image-button" data-markdown-image-preview-trigger="true" onClick={(event) => openGallery(event.currentTarget)} type="button">
+        <button aria-label={node.alt || "Preview image"} className="chat-markdown-image-button" data-markdown-image-preview-trigger="true" onClick={(event) => { previewFocus.recordOpen(event); openGallery(event.currentTarget); }} onKeyDown={previewFocus.onTriggerKeyDown} onPointerCancel={previewFocus.onTriggerPointerCancel} onPointerDown={previewFocus.onTriggerPointerDown} type="button">
           <img
             alt={node.alt}
             className="chat-markdown-image"
@@ -149,7 +151,8 @@ export function createImageRenderer(resources: ChatResourcePolicyService) {
             title={node.title ?? undefined}
           />
         </button>
-        <dialog aria-label={currentImage.alt || "Image preview"} className="chat-markdown-image-preview" onCancel={(event) => { event.preventDefault(); close(); }} onClose={close} onKeyDown={(event) => {
+        <dialog aria-label={currentImage.alt || "Image preview"} className="chat-markdown-image-preview" data-opened-by-pointer={previewFocus.openedByPointer || undefined} onCancel={(event) => { event.preventDefault(); close(); }} onClose={close} onKeyDown={(event) => {
+          previewFocus.onPreviewKeyDown(event);
           if (gallery === null) return;
           if (event.key === "ArrowLeft" && showPrevious) setGallery({ ...gallery, index: gallery.index - 1 });
           if (event.key === "ArrowRight" && showNext) setGallery({ ...gallery, index: gallery.index + 1 });

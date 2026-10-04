@@ -2840,6 +2840,7 @@
   "k_ee1dfef6": "I have read and agree to the",
   "k_ee2eae45": "No details yet",
   "k_ef130960": "Select batch install {{name}}",
+  "k_ef304ccc": "The selected renewal period is too short to cover the time since expiry. Choose a longer period or contact support.",
   "k_ef3385fa": "App Secret of the Feishu app",
   "k_ef357e21": "Hermes reset succeeded",
   "k_ef71c627": "Target plan",

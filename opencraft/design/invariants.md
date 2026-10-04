@@ -1,6 +1,26 @@
 # 工作区不变量
 
+## SSH connection management
+
+- SSH-01：部署后端数据库是管理连接的配置/凭据唯一 authority，字段和 revision/CAS 同事务；秘密只写不回读，密钥留在私有后端文件。未知或冲突 schema 历史保留原数据并拒绝写入。
+- SSH-02：安装管理员会话同时保护 HTTP 与远端 WebSocket；每帧/回传及过期撤销不能只依赖握手。匿名本机通道拒绝所有 SSH ID；Renderer ID、同源或界面登录投影不冒充授权主体。
+- SSH-02 地址策略补充：固定 HTTPS Origin 是默认公开策略；部署 owner 可显式选择不固定地址，但每个管理员会话仍绑定解锁时的 Origin。不同地址独立解锁，不能复用另一 Origin 的会话；HTTP 模式不冒称传输加密，不能因为域名可变而取消凭据、会话或主机身份校验。
+- SSH-03：信任绑定端点、会话、指纹和期限；扫描不是认领。服务器/用户身份变更建立新 Server ID，不把旧会话身份重定向到不同机器。
+- SSH-04：AppHost 是物理通道 owner；重连屏障先撤销旧认领、完成关闭再准入新认领。显式管理连接通过同一后端通道准入，不伪造 Client、不取得 Thread 或执行权限；建立失败清理资源后仍保留失败状态。设置页不停止远端服务，失联回执不自动重放业务或文件写入。
+- SSH-05：Application 只维护后端只读投影，View 只维护当前编辑草稿、单一菜单和行级操作；菜单复用共享 surface/item 契约，不依赖控件内部 DOM 属性定位布局。旧查询、认证失败或取消结果不得复活已锁定连接；暂时无法发现不等于不支持。
+- SSH-06：物理连接就绪、逻辑读取就绪与 Thread 交互订阅分开。已认证且 revision 匹配的显式 open 连接允许侧栏通过唯一 registry 取得目录 reader；不能改 autoConnect 偏好、切换聊天目标或 resume/执行 Thread，idle 配置不能擅自拨号。目录读取在连接前、连接后和发布前核对配置有效性与认证代次；锁定、停用、删除、替换及 logout/unlock 不接受旧准入的迟到结果。
+
+证据/边界见 [SSH 管理 Task Pack](../../docs/context/tasks/2026-10-05-opencraft-ssh-management.md)，不以源码声明替代实际准入验收。
+
 状态：实施及验证中。下表记录目标与责任，不把测试名称当成已运行的证据。最新结果在 [progress.md](progress.md)。
+
+## Application navigation restoration
+
+历史记录只持有聊天引用，不拥有草稿的存活事实。启动与历史恢复必须先由 Host 配置、ScopeRegistry 和 BindingStore 校验/规范化，再让 Router 与激活层消费同一个目标；有效当前 entry 优先于跨标签页共享的最后使用偏好。失效 Draft 不按旧 ID 重建，已提交 Draft 经持久 alias 找回 Thread。Router 唯一写回纠正结果并保留 Settings/Extension 目的地；失效引用回到当前实际保留的 View 与输入，View 不能跨 Scope 复用。规范化为 REPLACE 的 POP 仍须被资源事务消费。
+
+返回同一个保留 View 不依赖远端就绪：Chat、当前会话入口与 POP 共用本地呈现/后台续接语义，晚到结果受导航代次和释放约束；提交中的草稿仍拥有导航。侧栏只表达 `selectConversation`，不自行解释活动 Thread、pending 或设置页返回；重复目标合并、保留 View 复用与可见项早退都由导航事务决定。显式 `navigate` 不等于选择，不能按 Thread ID 合并独立历史 View 的输入。后台草稿准备、返回、POP 与提交转换共享 intent/释放/Router revision 资格及接受或释放路径；非活动草稿不得获得当前导航权。嵌入式 memory Router 不读写外层页面历史。责任与入口见 [Application Router authority](../docs/platform-architecture.md#application-router-authority)、`workbench-location-restoration`；验证使用 `test:application-route-restoration` 与 `smoke:application-route-restoration`，不将隔离 Host 替身验收冒充手机或完整账号启动实测。
+
+## 工作区契约
 
 | ID | 不变量 | 责任/验证 |
 |---|---|---|
@@ -14,7 +34,7 @@
 | WSP-08 | 已取消/已退出的 fork 结果不能重新挂载；释放原运行时订阅，不新建连接清理 | SideChatService 代次检查；聚焦单测 |
 | WSP-09 | Side Chat 关闭确认绑定准确 owner/tab；取消确认不影响任务 | Shell ModalRequest；UI smoke 待验证 |
 | WSP-10 | Browser 物理 slot 使用实际 region/visibility；旧 lease 不覆盖新 slot | BrowserPresentationCoordinator；迁移 smoke 待验证 |
-| WSP-11 | 右侧/侧栏拖动实时改变几何；显隐 target、progress、mounted 分离 | 既有 usePanelAnimation；侧栏及浮层验证 |
+| WSP-11 | 右侧/侧栏拖动实时改变几何；显隐 target、progress、mounted 分离。浮动侧栏与外侧命中层由 AppShell 共同 Portal 到 body 级覆盖宿主，成为窄屏唯一交互前景，盖过独立 Browser Surface portal；关闭时直到退出动画结束，其内容 Portal、导航投影与外侧命中层仍归浮动呈现所有，首次外侧触摸只关闭侧栏、不点穿浏览器或正文。右面板状态不因遮盖而重建，侧栏关闭后恢复呈现 | usePanelAnimation、FloatingLeftPanel、AppShell、BrowserPresentation；侧栏模型/真实组件帧采样及手机触摸验证 |
 | WSP-12 | Thread 菜单与 Side Chat 只消费版本匹配、显式声明的 Host 生命周期能力；菜单 Fork 仅需 fork，Side Chat 须同时声明 fork/ephemeral/injectItems/unsubscribe。不支持时明确失败，不用空会话模拟或删除父历史。菜单 Fork 等待 Host 回执时有可见状态，收到 child ID 后不等待目录刷新即可打开；若用户已切换 route scope，迟到结果不得抢回导航 | 协议能力解析、Workbench 门控、forkAndOpenThread；Codex/DSH 真实 Host 与负例验证 |
 | WSP-13 | ephemeral fork 返回结果是 baseline，不请求持久 Resume/queue；旧连接代次不能被采用 | Session.adoptFork + HostRuntime；appserver-session.test.ts 与 smoke-side-chat-appserver.ts |
 | WSP-14 | 当前产品没有下方面板、移动到下方/Show bottom panel 入口或底部占位；旧标签无损归回右侧 | AppShell/RightPanel、restoreRightPanelTabs；类型、聚焦测试、Web/native smoke |
@@ -38,8 +58,35 @@
 | WSP-31 | Electron 主窗口与 Renderer Shell 消费同一 `workbenchWindowMetrics.minimumWidth=480`；达到下限时进入 immersive fallback，临时隐藏 navigation/context/right，不改写保存的开关、Pin 或宽度。业务内容最大宽度不得反向成为原生窗口下限 | shell-space、Electron Main；320/480 几何矩阵、480px 真实 Electron Header/Composer/Settings/Skills/Panel 验收 |
 | WSP-32 | 目录选择只消费当前 Server 的 browse root 与目录读取；选择器保留暂态路径/加载/错误，读取失败须清旧条目并禁用确认，Project 创建和 Draft 绑定仍归 Application。ModalSurface 与共享 Button 拥有焦点、按钮语义状态和主题前景/背景，不允许业务 CSS 推导反色或复制主按钮；浅深及扩展主题下启用/禁用/处理中/焦点均须可读 | WorkspaceDirectoryPicker、AppServer file/project port、Button/ModalSurface；目录模型与真实 Web computed-style/键盘/长路径验证 |
 | WSP-33 | Web 文档唯一记录当前触摸/笔或真实鼠标输入；媒体 hover 能力不能代替当前输入。共享 quiet/navigation/menu/Settings 控件只在细指针且非触摸输入时显示瞬时 hover，键盘 `focus-visible` 与选中/菜单打开状态独立；粗指针 Settings 操作与菜单命中区至少 44px。Codex 账户行滚动不粘 hover，独立操作入口触控可见。所有主题只替换语义色，不复制交互规则；未迁移的功能局部 hover 不得声称全控件已验收 | pointer-modality、controls.web/menu.web、Settings/Codex Account、Activity；状态单测、Web CSS 构建、触屏/鼠标与明暗扩展主题真实呈现待验收 |
+| WSP-34 | 面板插件注册标签不自动取得右侧标签栏图标；`icon` 仅指定图标语义，`showTabIcon: true` 才在标签栏及其切换列表显示。插件恢复的标签必须保留同一声明；缺失声明不画默认图标 | PanelTabDescriptor、RightPanel、各面板插件；类型检查、面板聚焦测试与 Web 呈现待验收 |
+| WSP-35 | Conversation 活动折叠标题统一为“原生按钮覆盖独立呈现内容”：按钮拥有鼠标、触控和键盘激活，`aria-labelledby` 指向可见标题，内容层不接管指针；无可展开内容时不渲染按钮。`Worked for`、普通活动项和分组各自保留展开状态与动画 owner。触控设备上的 Worked-for 助手消息操作栏必须在首次触摸前稳定可见、无 hover 显隐过渡；桌面鼠标 hover 与键盘焦点规则保持独立。不以 `pointerup` 补发点击替代原生激活 | OverlayDisclosureTrigger、三个活动消费者、消息操作栏；DOM/状态测试与手机首次轻触对照 |
+| WSP-36 | OpenCraft 自有 Web DOM 的焦点描边由 Design System 统一拥有，不露出浏览器默认蓝框：低优先级规则压住包括浏览器自动聚焦滚动容器在内的 UA outline；主题化兜底只在当前为键盘模式且 `:focus-visible` 时绘制。iPhone 触摸文本框或弹窗自动聚焦按钮也可能匹配 `:focus-visible`，不能单独用它判定键盘输入；触控模式必须压住组件后续自定义的 focus outline/shadow，硬件 Tab 恢复可见键盘焦点。原生预览弹窗共享打开来源模型：触摸打开时自动聚焦按钮不画键盘环，进入 Tab 导航后恢复；不能依赖全局最近输入方式始终正确。`:focus-within` 画在容器上的焦点环也必须受输入模式约束。非交互内容不添加无用途 `tabIndex`；Markdown 表格操作按钮可聚焦，滚动区与代码滚动区只保留键盘焦点的自定义内描边。触控按下、键盘焦点、选中态分别呈现；强制颜色模式仍有焦点轮廓。第三方 iframe 与浏览器 chrome 不属于应用 CSS 所有权 | focus.web、pointer-modality、Table/Image/Mermaid preview、CodeBlock；焦点契约测试、Web 构建、手机触控与键盘 Tab/浅深/强制颜色验收 |
+| WSP-37 | Conversation 折叠交互期间，被操作标题的屏幕纵坐标保持稳定；Web 共享动画适配器将数值高度样本投影到整 CSS 像素网格，避免分数高度与滚动取整形成往返抖动，不锁定自然 auto/流式布局，不另加 DOM 高度写入者。控件报告动画完成，视口唯一拥有滚动锚点与补偿，最终布局连续稳定后才释放。快速反向或切换标题先撤销旧 lease，旧完成回调不能释放新交互；用户主动滚动、控件卸载与视口替换立即取消。减少动态效果与同步收起也须完成末帧测量，不以固定超时替代动画生命周期；验收测可见标题全程及往返振幅，不能只看最终位置或以每帧半像素误差放行一像素振荡 | useDisclosureHeight、DisclosureReflowContext/useDisclosureReflow、WebConversationViewportOwner、TimelineReflowLease；真实组件、多 Turn 测量、分数初始几何、鼠标/触控、长正文展开/收起、快速反向、减少动态效果、取消与视口替换验证 |
+
+WSP-32 远端目录补充：目录选择与持久 Project 记录是独立能力。Server 明确返回方法不支持时，Application 可只将已浏览的同 Server 路径绑定到当前 Draft；不得构造本机 Project、伪造 projectId 或声称已保存远端项目。权限拒绝、网络失败与未知创建结果不能降级为成功，旧选择结果仍受原 Draft/Server/导航代次约束。真实界面验收包含无 Project API 的 SSH Server，以及选择期间草稿保持；整页刷新后的草稿持久化不是当前内存 Draft 的承诺。
+
+## Conversation loading presentation
+
+会话首次加载只在无可见历史的空槽中显示居中中性圆环，不显示加载文字；辅助技术可读取本地化状态名。Thread runtime 拥有加载/失败事实，视图不添加恢复计时器或第二套 authority。Design System 拥有共享圆环、主题色与减少动态效果规则；Conversation 拥有空槽几何和滚动。后台重连保留历史、输入和 View 身份，失败切换为可操作的重试而非永久转圈。
+
+## Application navigation glyphs（Codex 26.930.31428 参考）
+
+- Navigation contribution 只声明图标语义和当前目的地；Web/Electron 的 NavigationIcon 拥有轮廓/选中图形投影，Design System 拥有 20px 图标、36px 基础控件、圆角、间距和状态色。不得套用菜单行的 14px 图标或独立次要颜色，也不以收缩时整体 scale 改变图标物理大小。
+- 选中态仅对明确支持的闭合图形填充；Bot 面部、Server 指示灯和 Gear 中心等内部细节保留轮廓，不能统一 `svg { fill }` 抹掉。不同状态共享同一 SVG 盒子，不改变页面意图；不恢复 Home 或添加参考产品的未接通入口。
+- Shell 的 compact/expanded 内容保持同一实例，应用行的视觉盒子与触控命中区分离；粗指针或当前触摸输入时至少 44px，仍容纳于原 52px 紧凑栏中。鼠标 hover、键盘焦点、当前目的地与菜单打开分别投影。账户菜单保持其独立密度与反馈。
+- 证据：`workbench-navigation-icons.test.ts`、`smoke-navigation-icons.ts` 检查尺寸、图形、状态色继承、明暗/扩展主题、紧凑/展开、触控/鼠标、普通菜单负例与键盘/强制颜色；真实手机和当前预览替换须另行记录。
 
 ## 证据纪律
+
+会话菜单仅呈现该会话的操作，不提供“在 Host 上新建任务”或“Host 设置”捷径；
+这些能力继续通过应用原有的新建任务与设置导航进入，删除菜单入口不删除能力。
+
+目标入口契约：无目标的可写会话通过 Composer 的“＋”菜单设置持续目标，
+不保留独立创建胶囊或空白占位。Goal surface 拥有编辑草稿、弹窗和既有目标
+进度；Composer 仅呈现标准菜单项。只读或没有有效会话时不提供创建入口，
+切换会话撤销旧目标编辑但不得重挂载 Composer 或丢失输入草稿。
+
+WSP-36 焦点视觉补充：普通焦点颜色独立于品牌 accent，使用共享中性 token；旧 focus-ring 别名投影同一颜色。全局兜底的整个选择器为零优先级，组件自己拥有焦点呈现，不能被兜底重画外框。Composer 编辑区只保留光标/选区，不画外框；键盘按钮仍有可见中性提示，强制颜色模式尊重系统配色。真实 Composer 的鼠标点击、Tab、触摸以及无局部样式按钮的 fallback 必须同时验收，不能仅凭源码中的 `outline: none` 判定成功。
 
 WSP-29/30 所有权补充：Renderer 的 capability 声明接受与 Engine 挂载 ready 分开。执行准备与替换共用 Host Thread 队列，停止/审批回复/队列删除不等待工具准备；owner 先撤销后清理，迟到提交失效；首次 native setup 挂载失败不发布新会话，已有历史不参与回滚。Bridge 仅透传允许列表错误码，不以截断字符串代替脱敏。
 
@@ -77,6 +124,7 @@ WSP-29/30 所有权补充：Renderer 的 capability 声明接受与 Engine 挂�
 | SHL-02 | Viewport 是 flex 裁切区域；Frame 宽度为 max(0,W-min(R,A))，并且 min-width:100%；聊天容器查询归 Frame | AppShell + app.scss；最大化中间帧 Frame≥普通并排下界 |
 | SHL-03 | 显隐与全宽进度分离，由一个 Shell 事务入口写入；模式切换先终止残余显隐，scope/reduced-motion 直接落到端点；旧完成回调被清理 | useWorkspacePaneAnimation；快速反向及 reduced-motion native trace |
 | SHL-04 | 退出阶段保留同 scope 的主布局描述，完成后更新；模式交接不卸载聊天草稿或浏览器 backing；普通 resize 仍实时改变排版宽度 | mainLayoutSnapshot；草稿/WebContents身份＋held resize验证 |
+| SHL-05 | 不绘制 Sidecar/main 边缘渐变。Header 的主表面上沿随既有 primary/context 实时宽度与 context 显隐进度向左延伸，形成包含原生按钮预留区的连续标题栏；不得等 context 卸载再切换绘制，或另设 CSS 动画时钟。上沿下边缘消费同一主面板主题 elevation，连接边裁切避免重复接缝，flat 不额外加阴影。横向细线与 Sidecar 标题栏下方的竖分界共用绘制进度；内容生命周期仍由 pane exit owner 独立保留。safe-area/几何/命中区不改、不复制原生按钮；主面板主题阴影/描边/flat、expanded/context 材质与浮动阴影保留，强制颜色使用系统分界 | Header + Sidecar + live motion + Design System/theme tokens；真实 AppShell 前 100ms 与中间帧上沿跟手、native reservation、十种主题 shadow authority/下沿像素与白色接缝负例、快速反向/held resize/显隐与浮动回归 |
 
 边界：当前 OpenCraft 普通并排使用自身 shellSpaceMetrics.mainMinimum（480），不是将 Codex regular 的352或 unified 的320暗中替换产品空间策略。这里迁移的是同版本 Wba/Xba 的几何与过渡所有权，不宣称旧 ref/codex 与新安装包的所有 API 相同。状态：63项聚焦测试、完整门禁、最终包556帧验收通过；Frame最低480而Viewport可到0，普通held resize及取消恢复通过。证据 /tmp/oc-pane-4aFgS4；草稿和WebContents ID保留。
 
@@ -109,6 +157,7 @@ Connector 目录浏览不套用设置行：采用限宽品牌卡片，已配置�
 - 临时 Side Chat 分支完整原生上下文，继承历史边界在获取 view 前提交；创建/关闭失败保留清理身份，旧失败不得覆盖主要错误。
 - 两个 renderer 共享物理 Host 时，订阅和审批仍按逻辑客户端隔离；后台卸载与新订阅序列化，SDK 迟到退订必须重新订阅。
 - 菜单和 Settings 归档页消费唯一 Host 命令及共享 Radix/主题控件；主 Sidebar 只展示活跃会话，不持有归档入口或撤销提示。归档是可恢复目录状态，不删除 workspace。
+- Sidebar 会话行的右键菜单触发区与触控“…”下拉入口互不包含；两者共享操作项、各自处理输入事件，但整个 Sidebar 只允许一个按 Host/Thread/入口标识的菜单打开。切换行或入口须关闭旧菜单，旧入口迟到的关闭回调不得关闭新菜单。选择菜单项不能重新触发另一菜单，重命名/删除的后续交互由 Modal 持有。
 - 当前证据：聚焦模型/SDK 测试、真实隔离 DSH Fork/边界/落盘审计、归档重启、完整门禁及实际签名桌面菜单/恢复窗口验收通过；不代表发行或生产发布。见 [本轮账本](thread-lifecycle/progress.md)。
 
 ## 会话权限目录（2026-09-26）
@@ -117,6 +166,13 @@ Connector 目录浏览不套用设置行：采用限宽品牌卡片，已配置�
 - 目录的 `openCraftMode`/`openCraftLabel` 只在 Host 声明 `opencraft/permission-modes` v1 时有效。缺失能力时，客户端不得自行猜测标准档位。
 - DSH 的 Thread 创建、Turn 执行与 Fork 必须先校验所选 preset；新建 Thread 在创建时应用并回读生效值，不能等到首轮 Turn。DSH 的外部沙箱投影不能冒充 Codex 沙箱。
 - 标准档位用稳定的 `opencraft:permission-mode:*` 提交值，Host 在每次提交时解析当前引擎目录并翻译为原生 profile；会话恢复后原生生效 profile 由目录重新映射为产品档位。产品级权限上限与独立的请求值/生效值持久对账尚未建立，不得声称已实现 bb 的完整权限策略。
+
+## 会话顺序与展示分段（2026-10-05）
+
+- 一个执行轮次可以有多个有序问答与活动片段；执行所有者唯一，不等于折叠组唯一。问答、追问与交互边界不得被“回答区/活动区”重新分桶。Renderer 只消费共享呈现计划。
+- 异步提问的可见文字与原生 phase 不赋予最终回答资格；折叠边界、最终回答资格和执行完成相互独立。折叠只控制连续片段的显隐，不改变消息位置。
+- 源消息与边界身份决定显示 key；流式、完成与补历史不按数组索引重建已有回复。历史片段保持结束状态，当前响应最多一个 Thinking owner；总用时与完成信息不因分段而重复。
+- 回归须覆盖同轮次的异步提问→用户回答→工作→回答→多次追问，包含桌面/触控、折叠、刷新、补历史和正在输出期间的 DOM 身份。
 
 ## 图片附件呈现（2026-09-27）
 

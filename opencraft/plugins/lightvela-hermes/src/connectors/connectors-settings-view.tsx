@@ -19,6 +19,8 @@ export function ConnectorBrowser({ session, canManage, onProbe, onInstall, onCan
   onAuthorize(card: BrowseConnector, values: Record<string, string>): void; onDisable(instanceId: string): void;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const pointerActivationRef = useRef(false);
+  const [detailOpenedByPointer, setDetailOpenedByPointer] = useState(false);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"all" | "available" | "installed">("all");
   const [limit, setLimit] = useState(12);
@@ -71,7 +73,11 @@ export function ConnectorBrowser({ session, canManage, onProbe, onInstall, onCan
     <div className="hermes-connectors__grid">{matching.slice(0, limit).map((card) => {
       const instance = instanceFor(card.id);
       const state = session.states.find((item) => item.id === instance?.instanceId);
-      return <button className="hermes-connectors__card" key={card.id} onClick={() => setSelected(card)}>
+      return <button className="hermes-connectors__card" key={card.id}
+        onPointerDown={() => { pointerActivationRef.current = true; }}
+        onPointerCancel={() => { pointerActivationRef.current = false; }}
+        onKeyDown={() => { pointerActivationRef.current = false; }}
+        onClick={(event) => { setDetailOpenedByPointer(event.detail > 0 || pointerActivationRef.current); pointerActivationRef.current = false; setSelected(card); }}>
         <span className="hermes-connectors__icon">{card.icon ? <img src={card.icon} alt="" loading="lazy" /> : <Plug size={22} />}</span>
         <strong>{card.name}</strong><p>{card.description}</p>
         <span>{ready && state?.status === "connected" ? "已连接" : ready && instance ? "已配置"
@@ -86,7 +92,7 @@ export function ConnectorBrowser({ session, canManage, onProbe, onInstall, onCan
       <label>产物地址<input type="url" value={archiveUrl} onChange={(e) => setArchiveUrl(e.target.value)} /></label>
       <label>SHA256<input value={sha256} onChange={(e) => setSha256(e.target.value.trim())} spellCheck={false} /></label>
     </details>}
-    {selected && <dialog ref={dialogRef} className="hermes-connectors__detail" aria-label="连接器详情" onCancel={() => setSelected(null)}>
+    {selected && <dialog ref={dialogRef} className="hermes-connectors__detail" data-opened-by-pointer={detailOpenedByPointer || undefined} aria-label="连接器详情" onCancel={() => setSelected(null)} onKeyDown={(event) => { if (event.key === "Tab") setDetailOpenedByPointer(false); }}>
       <div className="hermes-connectors__toolbar"><h3>{selected.name}</h3><button aria-label="关闭详情" onClick={() => setSelected(null)}><X size={18} /></button></div>
       <p>{selected.description}</p>
       {selected.definition.examples_zh?.length ? <ul>{selected.definition.examples_zh.slice(0, 3).map((example) => <li key={example}>{example}</li>)}</ul> : null}

@@ -1,0 +1,8 @@
+# Message-window repair checkpoint
+
+- User authorized implementation via “继续”, not commit/push/deployment/restart. Actual source edits in /data/mono2 dirty checkout; preserve prior shared edits. Source-only delivery, current running preview unchanged.
+- Added canonical edge handoff test failed endIndex3 vs4 before fix; now 59 virtualizer tests pass. Both relevant typechecks and boundaries pass. Full chat suite passes (dot reporter). Real consecutive-send DOM retention tests in natural/response modes passed; history-hydration desktop/touch smoke passed.
+- Supplementary history-reading ack test exposed a 26px fabricated correction when the new locator lost its known 306px height and fell back to 280px. Added pure rekeyTurnMeasurements and Web committed-entry handoff to retain measured geometry by stable client-message identity. Full final smoke now passes both policies, exact DOM continuity, streaming and reading-anchor retention; 60 virtualizer tests/full chat suite/typechecks pass.
+- First full smoke failure was Vite HMR reload caused by editing a comment during the run, not product behavior; subsequent main flow passed. Initial virtualizer typecheck was run in monorepo root by mistake, retried successfully in opencraft.
+- Final Web release build succeeds at /tmp/opencraft-message-window-final-6JlLp8/web; never deployed. Docs validator and explicit-path/staged impact guard pass. Initial build ns5pM1 predates height transfer and must not be delivered.
+- Source implementation complete, pending separate user authorization for frontend preview replacement or Git delivery. No running diagnostic processes. Safari real-device not verified. Preserve existing history insertion/stream-order changes and other dirty work; do not reset the checkout.

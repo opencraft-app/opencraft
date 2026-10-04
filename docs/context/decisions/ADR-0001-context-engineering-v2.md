@@ -8,9 +8,9 @@ authority: primary
 source_of_truth:
   - docs/context/decisions/ADR-0001-context-engineering-v2.md
 status: active
-reviewed_at: 2026-09-14
+reviewed_at: 2026-09-29
 review_due: 2026-11-23
-revision: 2.2.0
+revision: 2.3.0
 precedence: project
 derived: false
 ---
@@ -42,6 +42,14 @@ Server/Member/腾讯 IM 映射控制面，后者是下发到托管 Computer 的 
 ## 2026-09-16 应用：OpenCraft 工作台入口
 
 根 `AGENTS.md` 只登记 OpenCraft 的路径和局部入口，不承载桌面运行手册；根 `README.md` 给人类可执行的本地与隔离预览步骤，`opencraft/AGENTS.md` 仅补充服务内所有权、参考仓库和验收约束。完整平台契约仍由 OpenCraft 正式文档与构建矩阵拥有。这保持了根路由、服务局部规则与人类操作说明的单一权威关系。
+
+## 2026-09-29 应用：本地移动包与 GitOps 路由
+
+本地 APK/IPA 打包不等于集群发布。`release-gitops` 的英文 `release`
+单词过宽，会把 Android release APK 的任务误路由到 Argo 文档；路由改用
+`release promotion` 等明确的部署或晋级词，保留 `gitops`、`argo`、
+`publish`、`发布` 和路径命中。OpenCraft 移动交付步骤由局部 `AGENTS.md`
+路由到 Expo README 与构建矩阵，不复制到根 Team 入口。
 
 ## 2026-09-22 应用：nextgen-dashboard 服务下线
 

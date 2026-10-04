@@ -35,12 +35,15 @@ import {
   createWorkbenchPanelRuntime,
 } from "./panel-runtime-context";
 import type { WorkbenchPanelReactRuntime } from "@opencraft/workbench-panels-react";
+import { OptionalFeatureStartup, loadOptionalFeatureModule } from "./optional-feature-startup";
 import {
   bootstrapLightVelaOAuthCallback,
   bootstrapLightVelaWebLoginCallback,
 } from "@opencraft/plugin-lightvela-platform";
 
 export interface WebWorkbenchApplication {
+  /** Idempotent; never creates another Application or Host. */
+  startOptionalFeatures(): Promise<void>;
   readonly cordis: Context;
   readonly browserPages: WebBrowserPageRuntime;
   readonly browserSurfaces: BrowserSurfaceHost;
@@ -80,7 +83,9 @@ function loadConversationBindings(storage: BrowserMetadataStorage = window.local
 }
 
 /** Single application owner for every long-lived renderer service. */
-export interface CreateWebWorkbenchApplicationOptions extends WebWorkbenchSupervisorOptions {}
+export interface CreateWebWorkbenchApplicationOptions extends Omit<WebWorkbenchSupervisorOptions, "optionalFeatureStartup"> {
+  readonly deferOptionalFeatures?: boolean;
+}
 
 export async function createWebWorkbenchApplication(
   options: CreateWebWorkbenchApplicationOptions = {},
@@ -97,6 +102,7 @@ export async function createWebWorkbenchApplication(
   // Desktop account restoration is independent of local Host startup. The
   // local Host and its environment configuration must remain usable meanwhile.
   const cordis = new Context();
+  const optionalFeatures = options.deferOptionalFeatures ? new OptionalFeatureStartup() : null;
   const conversationBindings = createConversationBindingStore({
     persistence: {
       load: () => loadConversationBindings(browserStorage ?? window.localStorage),
@@ -195,7 +201,7 @@ export async function createWebWorkbenchApplication(
         }
       },
       (viewId) => browserWorkbench.releaseView(viewId),
-      options,
+      { ...options, optionalFeatureStartup: optionalFeatures ?? undefined },
     );
     releaseSupervisor = () => supervisor.dispose();
     if (supervisor.mode === "active") {
@@ -207,26 +213,31 @@ export async function createWebWorkbenchApplication(
         globalThis as typeof globalThis & { readonly opencraftDesktop?: { readonly kind?: string } }
       ).opencraftDesktop?.kind;
       if (desktopKind !== "electron") {
-        try {
-          const proxyReady = await hostProxy.start();
+        // Preview owns proxy readiness; optional SW activation never gates chat.
+        void hostProxy.start().then((proxyReady) => {
           if (!proxyReady) {
             console.warn("[host-proxy] Service Worker is unavailable; remote loopback previews are disabled");
           } else {
             console.info("[host-proxy] Service Worker broker ready", { brokerId: hostProxy.brokerId });
           }
-        } catch (error) {
+        }).catch((error) => {
           console.warn("[host-proxy] Service Worker registration failed", error);
-        }
+        });
       }
-      const {
-        createTerminalWorkbenchPanelPlugin,
-      } = await import("@opencraft/plugin-terminal");
-      await panelRuntime.install(
-        createTerminalWorkbenchPanelPlugin(terminalSessions),
-      );
+      const sessions = terminalSessions;
+      const installTerminal = async (signal?: AbortSignal) => {
+        const { createTerminalWorkbenchPanelPlugin } = await loadOptionalFeatureModule(
+          () => import("@opencraft/plugin-terminal"), signal,
+        );
+        signal?.throwIfAborted();
+        await panelRuntime.install(createTerminalWorkbenchPanelPlugin(sessions));
+      };
+      if (optionalFeatures === null) await installTerminal();
+      else optionalFeatures.add("terminal-presentation", installTerminal);
       browserWorkbench.restorePersistedTabs();
     }
   } catch (error) {
+    await optionalFeatures?.dispose();
     hostProxy.dispose();
     browserPresentations.dispose();
     browserPages.dispose();
@@ -240,6 +251,7 @@ export async function createWebWorkbenchApplication(
   }
   let disposed = false;
   return {
+    startOptionalFeatures: () => optionalFeatures?.start() ?? Promise.resolve(),
     cordis,
     browserPages,
     browserSurfaces,
@@ -254,6 +266,7 @@ export async function createWebWorkbenchApplication(
       if (disposed) return;
       disposed = true;
       const failures: unknown[] = [];
+      await optionalFeatures?.dispose();
       // Retire consumers before their Host transport provider.
       hostProxy.dispose();
       try {

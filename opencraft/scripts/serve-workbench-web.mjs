@@ -147,6 +147,7 @@ function validAppHostFrame(message) {
   if (message.type === "hello") {
     return message.protocolVersion === 1 && validId(message.rendererId);
   }
+  if (message.type === "connection/probe") return validId(message.requestId);
   if (!validId(message.requestId) || !validId(message.hostId) || !validId(message.leaseId)) return false;
   if (message.type === "host/connect") return true;
   if (message.type !== "host/send" && message.type !== "host/disconnect") return false;
@@ -155,7 +156,7 @@ function validAppHostFrame(message) {
 }
 
 const appHostAttemptPattern = /^(?:[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}|client-[0-9]{10,15}-[a-z0-9]{1,20})$/iu;
-const appHostFailureKinds = new Set(["socket-error", "socket-close", "handshake-timeout", "invalid-response"]);
+const appHostFailureKinds = new Set(["socket-error", "socket-close", "handshake-timeout", "probe-timeout", "invalid-response"]);
 const appHostPhases = new Set(["connecting", "socket-open", "ready"]);
 const appHostDiagnosticKeys = new Set(["attemptId", "failure", "phase", "readyState", "ageMs", "closeCode"]);
 
@@ -170,12 +171,13 @@ function validAppHostDiagnostic(report) {
     && (report.closeCode === undefined || (Number.isInteger(report.closeCode) && report.closeCode >= 0 && report.closeCode <= 4999));
 }
 
-function bridgeAppHostSocket(client, appHostServer, logDiagnostic) {
+function bridgeAppHostSocket(client, appHostServer, logDiagnostic, authorize = () => true) {
   const listeners = new Set();
   const pendingConnects = new Set();
   let connection = null;
   const port = {
     postMessage(message) {
+      if (!authorize(message)) { client.close(1008, "Connection access expired"); return; }
       if (message?.type === "response" && pendingConnects.delete(message.requestId)) {
         logDiagnostic("host-connect", { ok: message.ok === true });
       }
@@ -196,6 +198,11 @@ function bridgeAppHostSocket(client, appHostServer, logDiagnostic) {
     try { message = JSON.parse(raw.toString()); }
     catch { logDiagnostic("invalid-frame", { code: 1003 }); client.close(1003, "Invalid App Host frame"); return; }
     if (!validAppHostFrame(message)) { logDiagnostic("invalid-frame", { code: 1008 }); client.close(1008, "Invalid App Host request"); return; }
+    if (!authorize(message)) {
+      client.send(JSON.stringify({ type: "response", requestId: message.requestId, ok: false,
+        error: { code: "SSH_ACCESS_REQUIRED", message: "Unlock remote connections in settings", retryable: false } }));
+      return;
+    }
     if (connection === null) {
       if (message?.type !== "hello" || typeof message.rendererId !== "string" || !message.rendererId) {
         logDiagnostic("hello-required", { code: 1008 });
@@ -264,10 +271,13 @@ export async function createWorkbenchWebServer({
   hyperNodeUser = "",
   loopbackOnly = false,
   appHostServer = null,
+  sshServerDescriptors = [],
+  sshManagement = null,
   webSocketHeartbeatIntervalMs = 15_000,
   onAppHostDiagnostic = diagnostic => console.info("[opencraft apphost connection]", JSON.stringify(diagnostic)),
 } = {}) {
   const staticRoot = await realpath(resolve(root || join(repositoryRoot, "apps/workbench-web/dist")));
+  if (sshServerDescriptors.length && !loopbackOnly && !sshManagement?.options.publicOrigin && !sshManagement?.options.publicAccess) throw new Error("SSH Server catalog requires a protected listener");
   const normalizedTarget = appServerTarget === null ? null : normalizeTarget(appServerTarget);
   const runtimeReports = [];
   const emitAppHostDiagnostic = diagnostic => {
@@ -282,8 +292,22 @@ export async function createWorkbenchWebServer({
         return;
       }
       const url = new URL(request.url || "/", "http://vela.invalid");
+      if (sshManagement && await sshManagement.handle(request, response)) return;
+      if (!sshManagement && (url.pathname === "/__opencraft_ssh" || url.pathname.startsWith("/__opencraft_ssh/"))) {
+        sendJson(response, 404, { error: "missing" }); return;
+      }
       if (url.pathname === "/__opencraft_health") {
         sendJson(response, 200, { ok: true, appServerConfigured: normalizedTarget !== null });
+        return;
+      }
+      if (url.pathname === "/__opencraft_ssh_servers") {
+        if (request.method !== "GET") { sendJson(response, 405, { ok: false }); return; }
+        if (sshManagement) {
+          sendJson(response, 200, sshManagement.authorized(request) ? [...sshServerDescriptors, ...sshManagement.catalog(request)] : []);
+        } else {
+          if (!loopbackOnly && sshServerDescriptors.length) { sendJson(response, 403, { ok: false }); return; }
+          sendJson(response, 200, sshServerDescriptors);
+        }
         return;
       }
       if (url.pathname === "/__opencraft_runtime_error") {
@@ -328,7 +352,7 @@ export async function createWorkbenchWebServer({
         sendJson(response, 426, { ok: false, error: "WebSocket upgrade required" });
         return;
       }
-      if (url.pathname === "/apphost") {
+      if (url.pathname === "/apphost" || url.pathname === "/ssh-apphost") {
         sendJson(response, appHostServer === null ? 404 : 426,
           appHostServer === null
             ? { ok: false, error: "App Host is not available in this host" }
@@ -375,12 +399,18 @@ export async function createWorkbenchWebServer({
   const activeAppHostSockets = new Set();
   const liveWebSockets = new WeakSet();
   const appHostSocketDiagnostics = new WeakMap();
+  const privateSockets = new Map();
+  const revokePrivateSockets = () => {
+    for (const [client, request] of privateSockets) if (!sshManagement?.authorized(request)) client.close(1008, "Connection access expired");
+  };
+  const unsubscribeRevocation = sshManagement?.onRevocation(revokePrivateSockets);
   const trackWebSocket = (client, logDiagnostic) => {
     liveWebSockets.add(client);
     client.on("pong", () => liveWebSockets.add(client));
     if (logDiagnostic) appHostSocketDiagnostics.set(client, logDiagnostic);
   };
   const heartbeat = webSocketHeartbeatIntervalMs > 0 ? setInterval(() => {
+    revokePrivateSockets();
     for (const client of websocketServer.clients) {
       if (!liveWebSockets.has(client)) {
         appHostSocketDiagnostics.get(client)?.("heartbeat-timeout");
@@ -402,6 +432,7 @@ export async function createWorkbenchWebServer({
       return;
     }
     const pathname = url.pathname;
+    const privateConnection = pathname === "/ssh-apphost";
     const attemptId = pathname === "/apphost" && appHostAttemptPattern.test(url.searchParams.get("attempt") || "")
       ? url.searchParams.get("attempt") : randomUUID();
     const startedAt = Date.now();
@@ -415,16 +446,26 @@ export async function createWorkbenchWebServer({
       socket.destroy();
       return;
     }
-    if (pathname === "/apphost" && appHostServer !== null) {
+    if (privateConnection && (!sshManagement || !sshManagement.sameOrigin(request, true) || !sshManagement.authorized(request))) {
+      socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n"); socket.destroy(); return;
+    }
+    if ((pathname === "/apphost" || privateConnection) && appHostServer !== null) {
       websocketServer.handleUpgrade(request, socket, head, (client) => {
         trackWebSocket(client, logAppHost);
         activeAppHostSockets.add(client);
+        if (privateConnection) privateSockets.set(client, request);
         logAppHost("upgrade-accepted", { active: activeAppHostSockets.size });
         client.once("close", code => {
           activeAppHostSockets.delete(client);
+          privateSockets.delete(client);
           logAppHost("closed", { code, active: activeAppHostSockets.size });
         });
-        bridgeAppHostSocket(client, appHostServer, logAppHost);
+        bridgeAppHostSocket(client, appHostServer, logAppHost, message => {
+          // The anonymous channel cannot guess a remote ID. Private sockets
+          // bind the server-validated cookie, never the renderer-supplied ID.
+          if (privateConnection) return sshManagement.authorized(request);
+          return !sshManagement || !message.hostId?.startsWith("ssh:");
+        });
       });
       return;
     }
@@ -460,6 +501,7 @@ export async function createWorkbenchWebServer({
       });
     },
     close() {
+      unsubscribeRevocation?.();
       if (heartbeat !== null) clearInterval(heartbeat);
       for (const client of websocketServer.clients) client.terminate();
       websocketServer.close();

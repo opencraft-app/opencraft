@@ -88,6 +88,20 @@ function intent(
   };
 }
 
+test("a ready staged Markdown file can be the whole Codex submission", () => {
+  const compiled = compileSubmitIntent(intent(
+    { type: "existing-thread", key: existingKey },
+    {
+      document: { version: 1, blocks: [{ type: "paragraph", children: [] }] },
+      attachments: [{
+        id: "notes", name: "notes.md", mimeType: "text/markdown", size: 11,
+        uri: "file:///host/attachments/notes/content-notes.md", lifecycle: "ready", error: null,
+      }],
+    },
+  ));
+  assert.deepEqual(compiled.input, [{ type: "mention", name: "notes.md", path: "/host/attachments/notes/content-notes.md" }]);
+});
+
 test("rich Composer documents compile into ordered native Codex UserInput entries", () => {
   const compiled = compileSubmitIntent(
     intent(

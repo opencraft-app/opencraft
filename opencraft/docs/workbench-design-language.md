@@ -18,6 +18,28 @@ typography and surfaces, not a separate LightVela theme.
 
 ## Shared presentation
 
+Docked Sidecar and main content keep their theme-owned material and elevation.
+There is no Sidebar/main edge gradient. The main surface's upper lip extends
+left through the compact rail as the existing pane motion runs, completing the
+continuous titlebar including the native window-control reservation. Header
+owns this paint-only extension and its horizontal hairline; Sidecar owns the
+vertical divider below it. Both project the same live geometry/progress with no
+second animation clock or mount-completion switch. Pane retirement still owns
+content lifetime, never paint timing. Expanded/context and floating materials
+remain unchanged; main content retains its surface and edge-scroll policy.
+Child navigation and conversation components do not paint their own seam.
+The main surface always consumes the existing theme's
+`--codex-main-surface-elevation`: soft shadows, thin strokes and flat variants
+must all survive unchanged. The titlebar treatment cannot disable full-surface
+elevation. Its compact titlebar lip consumes that same elevation, including
+flat/none; only the lower exposed edge casts into Sidecar, with the joining
+edge clipped to avoid a second seam within the continuous main surface. Shadow
+geometry follows the existing lip motion, not a separate animation or theme list.
+Floating Sidebar overlays also retain their own elevation. The divider
+never adds layout space, owns pointer input, or changes resize targets; it follows
+live Sidecar geometry. Header remains the sole native safe-area/drag/control
+owner and never duplicates native buttons. Forced colors use a system divider.
+
 `packages/design-system/src/tokens.web.scss` owns navigation row height, group
 spacing, control radius and connection status colors. The theme engine exposes
 one navigation state family: `navigation-hover` is transient,

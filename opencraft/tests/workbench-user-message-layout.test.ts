@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import type { UserMessageTimelineBlock } from "@opencraft/chat-core";
@@ -35,6 +36,39 @@ test("a truly empty UserMessage retains Codex's no-content bubble", () => {
   assert.equal(layout.hasText, false);
   assert.equal(layout.showBubble, true);
   assert.equal(layout.showBody, true);
+});
+
+test("a user message containing only a fenced code block is not empty", () => {
+  const layout = deriveUserMessageWebLayout(message({
+    message: "```text\nstream=false\n```",
+  }));
+  assert.equal(layout.hasText, true);
+  assert.equal(layout.showBubble, true);
+  assert.equal(layout.showBody, true);
+});
+
+test("sending is a transport state, not a visible user-message status", () => {
+  const layout = deriveUserMessageWebLayout(message({
+    message: "Hello",
+    deliveryStatus: "sending",
+  }));
+  assert.equal(layout.hasText, true);
+  assert.equal(layout.hasStatus, false);
+  assert.equal(layout.showBubble, true);
+  assert.equal(layout.showBody, true);
+  assert.equal(deriveUserMessageWebLayout(message({ message: "Hello", deliveryStatus: "failed" })).hasStatus, true);
+  assert.equal(deriveUserMessageWebLayout(message({ message: "Hello", deliveryStatus: "unknown" })).hasStatus, true);
+});
+
+test("only user bubbles lift code-block size containment while code remains scrollable", () => {
+  const bubbleStyles = readFileSync(new URL("../apps/workbench-web/src/styles/app.scss", import.meta.url), "utf8");
+  const sharedCodeStyles = readFileSync(new URL("../packages/chat-render-web/src/renderers/code/code-block.scss", import.meta.url), "utf8");
+  const bubbleStart = bubbleStyles.indexOf("  &__bubble {");
+  const bubbleEnd = bubbleStyles.indexOf("  &__collapsible {", bubbleStart);
+  assert.ok(bubbleStart >= 0 && bubbleEnd > bubbleStart);
+  assert.match(bubbleStyles.slice(bubbleStart, bubbleEnd), /\.chat-code-block\s*\{\s*contain:\s*none;/u);
+  assert.match(sharedCodeStyles, /\.chat-code-block\s*\{[^}]*contain:\s*inline-size;/u);
+  assert.match(sharedCodeStyles, /\.chat-code-block__scroller\s*\{[^}]*overflow:\s*auto;/u);
 });
 
 test("attachment-only UserMessages render media without an empty bubble", () => {
@@ -112,4 +146,17 @@ test("typed media and context inputs are partitioned without losing order within
   assert.deepEqual(layout.audio.map((part) => part.type), ["audio"]);
   assert.equal(layout.showBubble, true);
   assert.equal(layout.showBody, true);
+});
+
+test("a staged file renders in the file row without a duplicate @ context chip", () => {
+  const layout = deriveUserMessageWebLayout(message({
+    content: [
+      { type: "mention", name: "受众广.md", path: "/host/file.md" },
+      { type: "mention", name: "src", path: "/workspace/src" },
+    ],
+    attachments: [{ type: "file", id: "/host/file.md", name: "受众广.md", target: "/host/file.md", mimeType: null, startLine: null, endLine: null }],
+    hasExternalAttachments: true,
+  }));
+  assert.deepEqual(layout.files.map(file => file.name), ["受众广.md"]);
+  assert.deepEqual(layout.contexts.map(context => context.name), ["src"]);
 });

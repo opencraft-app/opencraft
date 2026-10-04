@@ -1,4 +1,5 @@
 import {
+  AppServerClientError,
   createCordisAppServerRegistry,
   type AppServerClient,
   type AppServerClientRegistryService,
@@ -41,6 +42,7 @@ import type {
 import {
   OPENCRAFT_ATTACHMENT_STAGING_EXTENSION,
   OPENCRAFT_THREAD_QUEUE_EXTENSION,
+  OPENCRAFT_THREAD_GOAL_EXTENSION,
   OPENCRAFT_THREAD_LIFECYCLE_EXTENSION,
   OPENCRAFT_THREAD_START_DURABILITY_EXTENSION,
   OPENCRAFT_SCOPED_MODEL_CATALOG_EXTENSION,
@@ -48,6 +50,7 @@ import {
   parseThreadLifecycleCapability,
   supportsAtomicQueuedSteer,
   supportsUnconfirmedSteerDiscard,
+  parseThreadGoalCapability,
 } from "@opencraft/appserver-protocol";
 import { OPENCRAFT_RESUME_HISTORY_EXTENSION } from "@opencraft/appserver-protocol";
 import { reasoningCapability, modelInputModalities } from "@opencraft/composer-core";
@@ -61,7 +64,9 @@ import type {
   Thread as ProtocolThread,
   ThreadInjectItemsParams,
   UserInput,
+  ThreadGoal,
 } from "@opencraft/appserver-protocol/generated/v2";
+import { ThreadGoalResource } from "./thread-goal-resource";
 import {
   ReplicaClient,
   type ReplicaClientStorage,
@@ -72,7 +77,7 @@ import {
   createCodexThreadReplicaSource,
   createCordisThreadSessionRuntime,
   createThreadViewReplicaProjectionBarrier,
-  mergeTurns,
+  reconcileHydratedTurn,
   projectThreadViewForReplica,
   type AppServerHostKind,
   type CordisThreadSessionRuntime,
@@ -333,6 +338,7 @@ export interface AppServerWorkbenchRuntime {
     readonly projects: AppServerProjectResourcePort;
     readonly fileSystem: AppServerFileSystemResourcePort;
     readonly attachments: AppServerAttachmentResourcePort;
+    readonly goals: ThreadGoalResource;
     readonly composerCatalog: AppServerComposerCatalogResourcePort;
     readonly terminal: AppServerTerminalResourcePort;
   };
@@ -392,6 +398,7 @@ interface ConversationBinding {
   touchedAt: number;
   hydrationOperation: Promise<void> | null;
   hydrationForReconnect: boolean;
+  hydrationConnectionRevision: number;
   capabilityRegistrationOperation: Promise<void> | null;
   capabilityRegistrationClient: AppServerClient | null;
   capabilityRegistrationGeneration: number | null;
@@ -463,6 +470,7 @@ export function createAppServerWorkbenchRuntime(
   const ephemeralThreadIds = new Set<string>();
   // Acknowledged durable forks can precede Codex's first child-Turn catalog entry.
   const unlistedForks = new Map<string, ProtocolThread>();
+  const forkOperations = new Map<string, Promise<ProtocolThread>>();
   const bindingOperations = new Map<string, Promise<ConversationBinding>>();
   let revision = 0;
   let phase: AppServerWorkbenchPhase = "idle";
@@ -475,6 +483,8 @@ export function createAppServerWorkbenchRuntime(
   let initializeServicesOperation: Promise<void> | null = null;
   let reconnectAttempt = 0;
   let reconnectTimer: unknown = null;
+  let connectionRevision = 0;
+  const resourceRetryTimers = new Map<ConversationBinding, unknown>();
   let automaticReconnectBlock: TransportStatus | null = null;
   let loggedReconnectStopCode: string | null = null;
   let logicalClock = 0;
@@ -493,9 +503,17 @@ export function createAppServerWorkbenchRuntime(
   > | null = null;
   let terminalController: AppServerTerminalController | null = null;
   let removeTransportListener: (() => void) | null = null;
+  let removeRecoveryHintListener: (() => void) | null = null;
   let removeClientHandlers: (() => void) | null = null;
   let removeFileSystemNotificationListener: (() => void) | null = null;
   let removeSkillsNotificationListener: (() => void) | null = null;
+  let removeGoalNotificationListener: (() => void) | null = null;
+  const goals = new ThreadGoalResource({
+    capability: () => parseThreadGoalCapability(client?.initializeResult?.capabilities?.extensions?.[OPENCRAFT_THREAD_GOAL_EXTENSION]),
+    get: (threadId) => requireClient().request("thread/goal/get", { threadId }),
+    set: (threadId, change) => requireClient().request("thread/goal/set", { threadId, ...change }),
+    clear: (threadId) => requireClient().request("thread/goal/clear", { threadId }),
+  });
   let fileSystemWatchSequence = 0;
   const fileSystemWatches = new Map<string, {
     readonly path: string;
@@ -619,6 +637,9 @@ export function createAppServerWorkbenchRuntime(
   };
 
   const disposeBinding = (binding: ConversationBinding) => {
+    const retry = resourceRetryTimers.get(binding);
+    if (retry !== undefined) clock.clearTimeout(retry);
+    resourceRetryTimers.delete(binding);
     if (binding.disposed) return;
     binding.phase = "disposing";
     binding.disposed = true;
@@ -823,27 +844,12 @@ export function createAppServerWorkbenchRuntime(
                 priority: "background",
               }),
             projectionBarrier,
-            commitHydratedTurn: (turn, chronologicalTurnIds) => {
-              const order = new Map(
-                chronologicalTurnIds.map((turnId, index) => [turnId, index]),
-              );
+            commitHydratedTurn: (turn, chronologicalTurnIds, baselineTurn) => {
               const committedView = currentSession.views.update(
                 threadId,
                 (current) => ({
                   ...current,
-                  turns: [
-                    ...mergeTurns(current.turns, [turn], {
-                      placement: "prepend",
-                    }),
-                  ].sort((left, right) => {
-                    const leftOrder = order.get(left.id);
-                    const rightOrder = order.get(right.id);
-                    if (leftOrder === undefined && rightOrder === undefined)
-                      return 0;
-                    if (leftOrder === undefined) return 1;
-                    if (rightOrder === undefined) return -1;
-                    return leftOrder - rightOrder;
-                  }),
+                  turns: reconcileHydratedTurn(current.turns, turn, chronologicalTurnIds, { turn: baselineTurn }),
                 }),
               );
               return {
@@ -869,6 +875,7 @@ export function createAppServerWorkbenchRuntime(
         touchedAt: ++logicalClock,
         hydrationOperation: null,
         hydrationForReconnect: false,
+        hydrationConnectionRevision: connectionRevision,
         capabilityRegistrationOperation: null,
         capabilityRegistrationClient: null,
         capabilityRegistrationGeneration: null,
@@ -990,19 +997,23 @@ export function createAppServerWorkbenchRuntime(
   const hydrateBinding = (
     binding: ConversationBinding,
     force: boolean,
+    retryRejected = false,
   ): Promise<void> => {
     if (binding.disposed)
       return Promise.reject(
         new Error(`Thread ${binding.threadId} is disposed`),
       );
     if (binding.hydrationOperation !== null) {
-      if (!force || binding.hydrationForReconnect)
+      if (binding.hydrationConnectionRevision === connectionRevision && (!force || binding.hydrationForReconnect))
         return binding.hydrationOperation;
       return binding.hydrationOperation
         .catch(() => undefined)
-        .then(() => hydrateBinding(binding, true));
+        .then(() => hydrateBinding(binding, true, retryRejected));
     }
     binding.hydrationForReconnect = force;
+    const revision = connectionRevision;
+    binding.hydrationConnectionRevision = revision;
+    const current = () => !disposed && !binding.disposed && revision === connectionRevision;
     binding.phase = force ? "reconnecting" : "hydrating";
     binding.replica.reportSyncStarted();
     touchBinding(binding);
@@ -1023,7 +1034,8 @@ export function createAppServerWorkbenchRuntime(
             if (view?.resumeState !== "resumed" || view.connectionGeneration !== requireClient().connectionGeneration) {
               throw new Error("This temporary side chat expired after disconnect. Start a new side chat.");
             }
-          } else await currentSession.resume.resume({ threadId: binding.threadId, force });
+          } else await currentSession.resume.resume({ threadId: binding.threadId, force, retryRejected });
+          if (!current()) throw new AppServerClientError("ABORTED", "Thread recovery was superseded");
           // Prewarm execution readiness, but do not keep already-restored
           // history behind a slow connector/tool registration request.
           void ensureBindingCapabilities(binding).catch(() => undefined);
@@ -1034,12 +1046,12 @@ export function createAppServerWorkbenchRuntime(
           binding.threadId,
         );
         await binding.replica.synchronize(source);
-        if (binding.disposed || disposed) return;
+        if (!current()) return;
         binding.phase = "resident";
         touchBinding(binding);
       })
       .catch((cause) => {
-        if (!binding.disposed && !disposed) {
+        if (current()) {
           binding.phase = "error";
           if (binding.replica.getSnapshot().lastError === null) {
             binding.replica.reportSyncFailure(cause);
@@ -1069,6 +1081,42 @@ export function createAppServerWorkbenchRuntime(
     await currentClient.connect(config.initialize ?? defaultInitialize);
     ensureLifecycle(generation);
     clearReconnectTimer();
+  };
+
+  // Resource restoration is not part of Host readiness. A missing Thread
+  // must not reconnect the Host or delay another Thread's restoration.
+  const restoreResources = () => {
+    const revision = connectionRevision;
+    const current = () => !disposed && revision === connectionRevision && phase === "ready";
+    void terminalController?.reconnect().catch(() => undefined);
+    void restoreFileSystemWatches().catch(() => undefined);
+    const pending = [...bindings.values()].filter(binding => !binding.disposed)
+      .sort((a, b) => b.retainCount - a.retainCount || b.touchedAt - a.touchedAt);
+    const restore = async (binding: ConversationBinding, attempt = 0): Promise<void> => {
+      if (!current() || binding.disposed) return;
+      try {
+        requireSession().resume.markNeedsResume(binding.threadId);
+        await hydrateBinding(binding, true);
+      } catch (cause) {
+        if (!current() || binding.disposed) return;
+        // Semantic errors need a local retry/user decision, not endless traffic.
+        if (!(cause instanceof AppServerClientError) || !["TIMEOUT", "QUEUE_FULL", "TRANSPORT_ERROR", "NOT_CONNECTED"].includes(cause.code)) return;
+        if (resourceRetryTimers.has(binding)) return;
+        resourceRetryTimers.set(binding, clock.setTimeout(() => {
+          resourceRetryTimers.delete(binding);
+          void restore(binding, attempt + 1);
+        }, reconnectDelays[Math.min(attempt, reconnectDelays.length - 1)] ?? 5_000));
+      }
+    };
+    const worker = async () => {
+      while (current()) {
+        const binding = pending.shift();
+        if (!binding) return;
+        await restore(binding);
+      }
+    };
+    const workerCount = Math.min(4, pending.length);
+    for (let index = 0; index < workerCount; index++) void worker();
   };
 
   const restoreFileSystemWatches = async (): Promise<void> => {
@@ -1115,6 +1163,15 @@ export function createAppServerWorkbenchRuntime(
           try { listener(); } catch { /* One View cannot break the shared notification pump. */ }
         }
       });
+      removeGoalNotificationListener = client.subscribeNotification((notification) => {
+        if (notification.method === "thread/goal/updated") {
+          const params = notification.params as { threadId: string; goal: ThreadGoal };
+          goals.observe(params.threadId, params.goal);
+        } else if (notification.method === "thread/goal/cleared") {
+          const params = notification.params as { threadId: string };
+          goals.observe(params.threadId, null);
+        }
+      });
       removeFileSystemNotificationListener = client.subscribeNotification((notification) => {
         if (notification.method !== "fs/changed") return;
         const changed = notification.params as FsChangedNotification;
@@ -1141,6 +1198,9 @@ export function createAppServerWorkbenchRuntime(
         )
           return;
         if (status.state === "closed" || status.state === "failed") {
+          connectionRevision += 1;
+          for (const timer of resourceRetryTimers.values()) clock.clearTimeout(timer);
+          resourceRetryTimers.clear();
           if (status.failure?.recovery === "manual") automaticReconnectBlock = status;
           console.log("[appserver-reconnect] transport-unavailable", { hostId, state: status.state });
           phase = status.failure?.recovery === "manual" ? "error" : "reconnecting";
@@ -1150,8 +1210,15 @@ export function createAppServerWorkbenchRuntime(
           scheduleReconnect(status);
         }
       });
+      removeRecoveryHintListener = currentTransport?.subscribeRecoveryHint?.(() => {
+        if (disposed || config.autoReconnect === false || automaticReconnectBlock?.failure?.recovery === "manual") return;
+        if (phase !== "ready" && startOperation === null && reconnectOperation === null) {
+          void runtime.reconnect().catch(() => undefined);
+        }
+      }) ?? null;
       await connectPhysicalHost(generation);
       ensureLifecycle(generation);
+      goals.reset();
       const resumeHistoryCapability = client.initializeResult?.capabilities?.extensions?.[
         OPENCRAFT_RESUME_HISTORY_EXTENSION
       ] as { version?: unknown; mode?: unknown } | undefined;
@@ -1228,12 +1295,16 @@ export function createAppServerWorkbenchRuntime(
         }
         removeTransportListener?.();
         removeTransportListener = null;
+        removeRecoveryHintListener?.();
+        removeRecoveryHintListener = null;
         removeClientHandlers?.();
         removeClientHandlers = null;
         removeFileSystemNotificationListener?.();
         removeFileSystemNotificationListener = null;
         removeSkillsNotificationListener?.();
         removeSkillsNotificationListener = null;
+        removeGoalNotificationListener?.();
+        removeGoalNotificationListener = null;
         interactions?.dispose();
         interactions = null;
         fuzzyFileSearch?.dispose();
@@ -1271,6 +1342,7 @@ export function createAppServerWorkbenchRuntime(
           return requireClient().request(method, params);
         },
       },
+      goals,
       host: {
         getConnectionGeneration() { return client?.connectionGeneration ?? 0; },
         getInitializeResult() {
@@ -1321,16 +1393,30 @@ export function createAppServerWorkbenchRuntime(
           await requireClient().request("thread/inject_items", { threadId, items: [...items] });
         },
         async fork(params) {
-          const generation = requireClient().connectionGeneration;
-          const response = await requireClient().request("thread/fork", params);
-          if (generation !== requireClient().connectionGeneration) throw new Error("Fork response belongs to an earlier Host generation");
-          if (params.ephemeral === true) {
-            requireSession().resume.adoptFork(response, generation);
-            ephemeralThreadIds.add(response.thread.id);
-          } else {
-            unlistedForks.set(response.thread.id, { ...response.thread, turns: [] });
+          const forkKey = JSON.stringify(params);
+          const existing = params.ephemeral === true ? undefined : forkOperations.get(forkKey);
+          if (existing) return existing;
+          const operation = (async () => {
+            const currentClient = requireClient();
+            const generation = currentClient.connectionGeneration;
+            const response = await currentClient.request("thread/fork", params, { timeoutMs: 0 });
+            if (client !== currentClient || generation !== currentClient.connectionGeneration) {
+              throw new AppServerClientError("TRANSPORT_ERROR", "Fork response belongs to an earlier Host generation");
+            }
+            if (params.ephemeral === true) {
+              requireSession().resume.adoptFork(response, generation);
+              ephemeralThreadIds.add(response.thread.id);
+            } else {
+              unlistedForks.set(response.thread.id, { ...response.thread, turns: [] });
+            }
+            return response.thread;
+          })();
+          if (params.ephemeral !== true) {
+            forkOperations.set(forkKey, operation);
+            const clear = () => { if (forkOperations.get(forkKey) === operation) forkOperations.delete(forkKey); };
+            void operation.then(clear, clear);
           }
-          return response.thread;
+          return operation;
         },
         async unsubscribe(threadId) {
           const binding = bindings.get(threadId);
@@ -1616,15 +1702,9 @@ export function createAppServerWorkbenchRuntime(
         try {
           await initializeServices();
           await connectPhysicalHost(generation);
-          await terminalController?.reconnect();
-          await restoreFileSystemWatches();
           ensureLifecycle(generation);
-          const currentSession = requireSession();
-          for (const binding of bindings.values()) {
-            if (binding.disposed) continue;
-            currentSession.resume.markNeedsResume(binding.threadId);
-            await hydrateBinding(binding, true);
-            ensureLifecycle(generation);
+          if (currentTransport?.status.state !== "open" || client?.initializeResult == null) {
+            throw new AppServerClientError("NOT_CONNECTED", "Host disconnected during initialization");
           }
           phase = "ready";
           error = null;
@@ -1632,6 +1712,7 @@ export function createAppServerWorkbenchRuntime(
           reconnectAttempt = 0;
           console.log("[appserver-reconnect] succeeded", { hostId, attempt, elapsedMs: Date.now() - reconnectStartedAt });
           publish();
+          restoreResources();
         } catch (cause) {
           console.log("[appserver-reconnect] failed", {
             hostId,
@@ -1673,7 +1754,7 @@ export function createAppServerWorkbenchRuntime(
         getSnapshot: binding.runtime.getSnapshot,
         retryRestore() {
           if (released || binding.disposed) return Promise.reject(new Error(`Thread ${threadId} lease is released`));
-          return hydrateBinding(binding, false);
+          return hydrateBinding(binding, false, true);
         },
         subscribe(listener) {
           if (released || binding.disposed)
@@ -1789,6 +1870,9 @@ export function createAppServerWorkbenchRuntime(
       const operation = (async () => {
         if (disposed) return;
         clearReconnectTimer();
+        connectionRevision += 1;
+        for (const timer of resourceRetryTimers.values()) clock.clearTimeout(timer);
+        resourceRetryTimers.clear();
         phase = "disposed";
         error = null;
         publish();
@@ -1796,12 +1880,16 @@ export function createAppServerWorkbenchRuntime(
         lifecycleGeneration += 1;
         removeTransportListener?.();
         removeTransportListener = null;
+        removeRecoveryHintListener?.();
+        removeRecoveryHintListener = null;
         removeClientHandlers?.();
         removeClientHandlers = null;
         removeFileSystemNotificationListener?.();
         removeFileSystemNotificationListener = null;
         removeSkillsNotificationListener?.();
         removeSkillsNotificationListener = null;
+        removeGoalNotificationListener?.();
+        removeGoalNotificationListener = null;
         skillsChangedListeners.clear();
 
         const pending = [
