@@ -15,26 +15,47 @@ label to a standard CVM is not qualification.
 
 ## 探索阶段的快速 Host 缩容
 
+后续新的开发/修复验收先以 `exploration` 做第一道功能与收敛门禁，通过后再以
+`production` 配置做发布/容量资格。两类结果分开记录，探索通过不等于生产准入；
+当前已运行任务不切换模式、不缩短其观察窗口。云上接线未完成验证前，不能
+用手工 patch 提前启用探索；此顺序也不要求重编未改变的二进制。
+
 快速缩容与 `e2e-fast` 是不同配置维度：前者仅改变 Host drain 的稳定窗口和
 协调间隔，不改变 Actor 配额、存储参数、三 AZ、PDB、UID fencing 或逐台排空。
 生产为 `5m/5s`，探索为 `30s/2s`；排空超时仍是 `10m`，到期取消而不是强删。
 缩短窗口可能增加扩缩容抖动，也不能解决缺少目标 AZ 容量或 ordinal 拓扑阻塞。
 
-`host-drain-profile.py` 当前仅提供离线 JSON Deployment 转换/检查，尚未接入
-installer、Argo 或生产资格入口，因此不能直接启用该模式：
+`host-drain-profile.py` 提供离线 JSON 转换/检查；安装入口现已接入源码，但尚未发布
+或做云上模式切换验收。可在本地检查已渲染资源：
 
 ```sh
 python3 host-drain-profile.py render exploration < /data/review/host-drain.json
 python3 host-drain-profile.py check production < /data/review/host-drain.json
 ```
 
-输入必须是已渲染的单个 Host drain Deployment，不是 List、Secret 或 kubeconfig。
+`check` 只接受单个已渲染 Host drain Deployment。`render` 还接受最多 32 个资源的
+manifest List，要求恰好一个目标 Deployment，其他资源仅允许现有 SA/RBAC/HPA 类型，
+保持结构不变；拒绝 Secret、kubeconfig、嵌套 List 或重复身份。
 探索输出在 Pod template 上标记 `fleet.actor.dev/host-drain-profile=exploration`。
 检查同时核对两项 timer 和固定安全字段，不只信任标记；非法或漂移输入不会被转换
 成看似有效的生产配置。工具不访问 Kubernetes、不发布或删除资源；输出不是准入收据。
-后续接线必须从实际 Deployment 读取配置并拒绝以探索策略生成生产容量资格，不能
-只检查调用者环境变量。模式切换也必须走受锁 desired-state 流程，不直接 apply 此输出。
-现有生产 manifest 与部署保持不变，原 strict10k supervisor 的观察窗口也不改变。
+安装时 `RUNTIME_HOST_DRAIN_PROFILE` 默认为 `production`。`exploration` 要求现有整段
+operation lock，并且 `install.sh` 要求运行时配额维持 `RIVET_RUNTIME_PROFILE=production`；
+不会暗中切换为 `e2e-fast`。`install-host-autoscaling.sh` 使用 client dry-run 将同一份
+已渲染 YAML 转为 JSON List、转换 profile，再沿用现有 SSA server dry-run/apply、rollout
+与 HPA floor 检查；返回前重新读取实际 Deployment 校验 profile。生产默认不经过转换，
+沿用原 YAML，不改变 SA/RBAC/HPA 权限或唯一缩容 writer。
+
+`release-runtime.sh` 只接受 production profile。`qualify-runtime.sh` 的 production 与
+production-cell 路径在取得 operation lock 后读取实际 Deployment，拒绝探索、配置
+漂移、畸形 JSON 或 API 失败；不能用调用者环境覆盖实际配置。strict10k 入口也在任何
+负载启动前核对两 Cell 的实际 production profile。`e2e-fast` 仍是独立开发数据路径，
+不是生产资格。模式切换必须走受锁部署流程，不直接 apply 离线工具输出。
+
+本地 `test_host_drain_scripts.py` 用严格 double 运行真实 shell 入口，证明默认 manifest
+不变、探索→生产恢复、模式/锁早拒绝、live drift fail-closed、持锁后才检查并在取得
+scale-in hold/启动负载前拒绝。该回归不证明真实 Kubernetes API、Argo 持续收敛或云上
+缩容资格；原 strict10k 的冻结源码和观察窗口不变，当前未发布新的探索配置。
 
 ## 安装与构建前提
 

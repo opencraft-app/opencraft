@@ -2,6 +2,20 @@
 set -euo pipefail
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+case "${RUNTIME_HOST_DRAIN_PROFILE:-production}" in
+production) ;;
+exploration)
+	[[ ${RIVET_RUNTIME_PROFILE:-production} == production ]] || {
+		echo "exploration Host drain requires unchanged production runtime quotas" >&2
+		exit 2
+	}
+	[[ ${AUTONOMY_OPERATION_LOCK_HELD:-0} == 1 ]] || {
+		echo "exploration runtime installation requires the whole-operation lock" >&2
+		exit 75
+	}
+	;;
+*) echo "RUNTIME_HOST_DRAIN_PROFILE must be production or exploration" >&2; exit 2 ;;
+esac
 namespace=${RIVET_CELL_NAMESPACE:-actor-fdb-cell-system}
 controller_namespace=${RIVET_CONTROLLER_NAMESPACE:-fdb-operator-actor-fleet-controller-system}
 : "${RIVET_CELL_NAME:?RIVET_CELL_NAME must name the exact Cell}"

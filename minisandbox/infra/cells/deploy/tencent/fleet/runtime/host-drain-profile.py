@@ -106,6 +106,41 @@ def render_profile(document, profile):
     return result
 
 
+def render_bundle(document, profile):
+    if not isinstance(document, dict) or document.get("kind") != "List":
+        return render_profile(document, profile)
+    if document.get("apiVersion") != "v1" or set(document) - {"apiVersion", "kind", "metadata", "items"}:
+        raise ValueError("invalid manifest List")
+    items = document.get("items")
+    if not isinstance(items, list) or not 1 <= len(items) <= 32:
+        raise ValueError("bounded manifest List required")
+    allowed = {
+        "ServiceAccount", "Role", "ClusterRole", "RoleBinding", "ClusterRoleBinding",
+        "HorizontalPodAutoscaler", "Deployment",
+    }
+    identities, targets = set(), []
+    for index, item in enumerate(items):
+        if not isinstance(item, dict) or item.get("kind") not in allowed:
+            raise ValueError("unexpected manifest resource")
+        metadata = item.get("metadata", {})
+        if not isinstance(metadata, dict):
+            raise ValueError("resource metadata required")
+        name, namespace = metadata.get("name"), metadata.get("namespace", "")
+        if not isinstance(name, str) or not name or not isinstance(namespace, str):
+            raise ValueError("resource identity missing")
+        identity = (item["kind"], namespace, name)
+        if identity in identities:
+            raise ValueError("duplicate manifest resource")
+        identities.add(identity)
+        if item["kind"] == "Deployment":
+            targets.append(index)
+    if len(targets) != 1:
+        raise ValueError("exactly one controller required")
+    result = copy.deepcopy(document)
+    result["items"][targets[0]] = render_profile(items[targets[0]], profile)
+    return result
+
+
 def unique_object(pairs):
     result = {}
     for name, value in pairs:
@@ -130,7 +165,7 @@ def main():
             raise ValueError("input too large")
         document = json.loads(raw, object_pairs_hook=unique_object, parse_constant=reject_constant)
         if args[0] == "render":
-            rendered = render_profile(document, args[1])
+            rendered = render_bundle(document, args[1])
             encoded = json.dumps(rendered, ensure_ascii=False, allow_nan=False)
             sys.stdout.write(encoded + "\n")
         else:

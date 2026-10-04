@@ -15,11 +15,13 @@ runner=$source_root/infra/cells/deploy/tencent/fleet/load/shared-agent-scale/run
 observer=$source_root/infra/cells/deploy/tencent/fleet/load/agent-upload-soak/observe.py
 verifier=$source_root/infra/cells/deploy/tencent/fleet/load/ten-thousand-active/verify.py
 cleanup_tool=$source_root/infra/cells/deploy/tencent/fleet/load/shared-agent-scale/cleanup.py
+drain_profile_checker=$source_root/infra/cells/deploy/tencent/fleet/runtime/host-drain-profile.py
 lock=$base/load-tests/ten-thousand-active.lock
 cells=(actor-bj-a01 actor-bj-b01)
 
 test -x "$node"
 test -f "$runner" && test -f "$observer" && test -f "$verifier" && test -f "$cleanup_tool"
+test -f "$drain_profile_checker"
 test ! -e "$out"
 install -d -m 0700 "$out" "$out/observer-input/cells/actor-bj-a01" "$out/observer-input/cells/actor-bj-b01"
 exec 9>"$lock"
@@ -29,6 +31,8 @@ for cell in "${cells[@]}"; do
 	config=$base/cells/$cell/cell.kubeconfig
 	test -f "$config"
 	install -m 0600 "$config" "$out/observer-input/cells/$cell/cell.kubeconfig"
+	kubectl --kubeconfig "$config" -n "$namespace" get deployment "${cell}-host-drain" -o json \
+		| python3.11 "$drain_profile_checker" check production
 done
 for cell in "${cells[@]}"; do
 	test -f "$incoming/${cell}-federation-endpoint.json"

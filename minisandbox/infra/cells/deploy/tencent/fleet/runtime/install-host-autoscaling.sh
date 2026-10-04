@@ -1,7 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+drain_profile=${RUNTIME_HOST_DRAIN_PROFILE:-production}
+case "$drain_profile" in
+production) ;;
+exploration)
+	[[ ${AUTONOMY_OPERATION_LOCK_HELD:-0} == 1 ]] || {
+		echo "exploration Host drain installation requires the whole-operation lock" >&2
+		exit 75
+	}
+	;;
+*) echo "RUNTIME_HOST_DRAIN_PROFILE must be production or exploration" >&2; exit 2 ;;
+esac
 namespace=${RIVET_CELL_NAMESPACE:-actor-fdb-cell-system}
 cell_name=${RIVET_CELL_NAME:?RIVET_CELL_NAME is required}
 controller_image=${RIVET_REPORTER_IMAGE:?RIVET_REPORTER_IMAGE is required}
@@ -50,7 +62,7 @@ done
 	exit 2
 }
 
-for command in kubectl sed; do
+for command in kubectl sed python3; do
 	command -v "$command" >/dev/null || {
 		echo "required command is missing: $command" >&2
 		exit 2
@@ -82,6 +94,16 @@ if grep -Eq '__[A-Z0-9_]+__' "$rendered"; then
 	exit 1
 fi
 
+if [[ $drain_profile == exploration ]]; then
+	# Client conversion preserves every reviewed RBAC/HPA resource. The pure
+	# transformer changes only the single controller's profile fields.
+	kubectl "${kubeconfig_args[@]}" create --dry-run=client --validate=false \
+		-f "$rendered" -o json >"$temporary/host-autoscaling.json"
+	python3 "$script_dir/host-drain-profile.py" render "$drain_profile" \
+		<"$temporary/host-autoscaling.json" >"$temporary/host-autoscaling-profile.json"
+	rendered=$temporary/host-autoscaling-profile.json
+fi
+
 kubectl "${kubeconfig_args[@]}" apply --server-side --force-conflicts --dry-run=server \
 	--field-manager="$field_manager" -f "$rendered" >/dev/null
 # This installer is the sole declarative owner of the Host drain controller.
@@ -98,6 +120,8 @@ kubectl "${kubeconfig_args[@]}" -n "$namespace" rollout status \
 	"${cell_name}-host-drain" -o jsonpath='{.spec.template.metadata.annotations.fleet\.actor\.dev/runtime-release-hold-protocol}') == statefulset-uid-cas-v1 ]]
 [[ $(kubectl "${kubeconfig_args[@]}" -n "$namespace" get deployment \
 	"${cell_name}-host-drain" -o jsonpath='{.spec.template.spec.containers[0].image}') == "$controller_image" ]]
+kubectl "${kubeconfig_args[@]}" -n "$namespace" get deployment "${cell_name}-host-drain" -o json \
+	| python3 "$script_dir/host-drain-profile.py" check "$drain_profile"
 kubectl "${kubeconfig_args[@]}" -n "$namespace" get hpa \
 	"${cell_name}-runtime-hosts-actor-capacity" >/dev/null
 
@@ -128,4 +152,4 @@ read -r desired ready updated < <(
 	exit 1
 }
 
-echo "runtime Host autoscaling converged: cell=$cell_name min=$min_replicas max=$max_replicas"
+echo "runtime Host autoscaling converged: cell=$cell_name min=$min_replicas max=$max_replicas profile=$drain_profile"

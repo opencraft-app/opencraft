@@ -29,6 +29,29 @@ class HostDrainProfileTests(unittest.TestCase):
         self.assertEqual(PROFILE.render_profile(self.production, "production"), self.production)
         PROFILE.check_profile(self.production, "production")
 
+    def test_bundle_preserves_every_non_controller_resource(self):
+        items = manifests.HostAutoscalingManifestTests().render()
+        before = {"apiVersion": "v1", "kind": "List", "items": items}
+        original = copy.deepcopy(before)
+        after = PROFILE.render_bundle(before, "exploration")
+        self.assertEqual(before, original)
+        for old, new in zip(before["items"], after["items"]):
+            if old["kind"] == "Deployment":
+                PROFILE.check_profile(new, "exploration")
+            else:
+                self.assertEqual(old, new)
+        self.assertEqual(PROFILE.render_bundle(after, "production"), before)
+
+    def test_ambiguous_bundle_rejected(self):
+        for items in (
+            [], [self.production, self.production],
+            [{"apiVersion": "v1", "kind": "Secret", "metadata": {"name": "not-allowed"}}, self.production],
+            [{"apiVersion": "v1", "kind": "List", "items": [self.production]}],
+            [{"apiVersion": "v1", "kind": "Role", "metadata": []}, self.production],
+        ):
+            with self.subTest(count=len(items)), self.assertRaises(ValueError):
+                PROFILE.render_bundle({"apiVersion": "v1", "kind": "List", "items": items}, "exploration")
+
     def test_exploration_changes_only_two_timers_and_own_annotation(self):
         before = copy.deepcopy(self.production)
         explored = PROFILE.render_profile(self.production, "exploration")

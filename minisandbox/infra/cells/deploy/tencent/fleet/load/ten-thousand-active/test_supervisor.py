@@ -12,6 +12,8 @@ import subprocess
 import tempfile
 import unittest
 
+import yaml
+
 from test_verify import sample
 
 
@@ -21,7 +23,7 @@ RUN_ID = "a" * 32
 
 class SupervisorTests(unittest.TestCase):
     def run_supervisor(self, load_status=0, cleanup_status=0, final_timeout=False,
-                       missing_load_receipt=False):
+                       missing_load_receipt=False, deployed_profile="production"):
         with tempfile.TemporaryDirectory(dir=os.environ.get("TMPDIR", "/data/tmp")) as temporary:
             base = Path(temporary)
             source = base / "source"
@@ -35,6 +37,25 @@ class SupervisorTests(unittest.TestCase):
             verifier = fleet / "load/ten-thousand-active/verify.py"
             verifier.parent.mkdir(parents=True)
             shutil.copyfile(ROOT / "verify.py", verifier)
+            runtime = ROOT.parents[1] / "runtime"
+            checker = fleet / "runtime/host-drain-profile.py"
+            checker.parent.mkdir(parents=True)
+            shutil.copyfile(runtime / "host-drain-profile.py", checker)
+            raw = (runtime / "host-autoscaling.yaml").read_text()
+            for name, value in {
+                "__CELL_NAME__": "actor-bj-a01", "__NAMESPACE__": "actor-fdb-cell-system",
+                "__CONTROLLER_IMAGE__": "registry.example/actor-fleet/actor-fleet-controller@sha256:" + "1" * 64,
+                "__MIN_REPLICAS__": "4", "__MAX_REPLICAS__": "301", "__TARGET_ACTIVE_ACTORS__": "16",
+                "__TOPOLOGY_MAX_SKEW__": "2", "__TOPOLOGY_REPAIR_ENABLED__": "false", "__RUNTIME_MACHINE_SET__": "np-runtime0",
+            }.items():
+                raw = raw.replace(name, value)
+            deployment = next(value for value in yaml.safe_load_all(raw) if value["kind"] == "Deployment")
+            if deployed_profile == "exploration":
+                deployment["spec"]["template"]["metadata"]["annotations"]["fleet.actor.dev/host-drain-profile"] = "exploration"
+                env = {entry["name"]: entry for entry in deployment["spec"]["template"]["spec"]["containers"][0]["env"]}
+                env["HOST_DRAIN_STABILIZATION"]["value"] = "30s"
+                env["HOST_DRAIN_RECONCILE_INTERVAL"]["value"] = "2s"
+            (base / "drain.fixture").write_text(json.dumps(deployment))
             for name in ("actor-bj-a01", "actor-bj-b01"):
                 config = base / f"cells/{name}/cell.kubeconfig"
                 config.parent.mkdir(parents=True)
@@ -96,6 +117,7 @@ kubectl() {
     echo 'offline API unavailable' >&2; return 1
   fi
   case " $* " in
+    *" get deployment "*) command cat "$TEST_BASE/drain.fixture" ;;
     *" get statefulset "*) printf '%s\\n' '{"metadata":{"annotations":{"fleet.actor.dev/workerd-host-drain-state":"{\\"phase\\":\\"Idle\\"}"}},"spec":{"replicas":4},"status":{"readyReplicas":4,"currentReplicas":4,"currentRevision":"r1","updateRevision":"r1"}}' ;;
     *" get machineset np-runtime0 "*) printf '%s\\n' '{"metadata":{},"spec":{"replicas":4},"status":{"replicas":4,"readyReplicas":4}}' ;;
     *" get machineset np-runtime1 "*) echo 'NotFound' >&2; return 1 ;;
@@ -105,6 +127,7 @@ kubectl() {
 }
 python3.11() {
   case "$1" in
+    */host-drain-profile.py) command python3 "$@" ;;
     */observe.py)
       cp "$TEST_BASE/trace.fixture" "$TEST_OUT/capacity.ndjson"
       touch "$TEST_BASE/observer-ready"
@@ -130,6 +153,13 @@ python3.11() {
                        TEST_MISSING_LOAD=str(int(missing_load_receipt)), PYTHONDONTWRITEBYTECODE="1")
             result = subprocess.run(["bash", str(ROOT / "run-on-builder.sh"), RUN_ID],
                                     env=env, capture_output=True, text=True, timeout=10)
+            if deployed_profile == "exploration":
+                self.assertFalse((base / "load-finished").exists())
+                self.assertFalse((base / "observer-ready").exists())
+                self.assertFalse((base / "cleanup-called").exists())
+                self.assertFalse((base / "verifier-called").exists())
+                self.assertFalse((out / "receipt.json").exists())
+                return result, None
             self.assertTrue((base / "verifier-called").exists(), result.stderr)
             self.assertTrue((base / "observer-stopped").exists(), result.stderr)
             self.assertEqual((base / "cleanup-called").exists(), not missing_load_receipt)
@@ -146,6 +176,12 @@ python3.11() {
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(receipt["verdict"], "passed")
         self.assertIn("ten_thousand_active_qualification=passed", result.stdout)
+
+    def test_exploration_deployment_rejected_before_any_load(self):
+        result, receipt = self.run_supervisor(deployed_profile="exploration")
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIsNone(receipt)
+        self.assertIn("Host drain profile input rejected", result.stderr)
 
     def test_final_timeout_writes_failed_receipt_and_stops_observer(self):
         result, receipt = self.run_supervisor(final_timeout=True)

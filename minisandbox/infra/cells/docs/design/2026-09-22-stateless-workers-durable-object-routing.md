@@ -994,11 +994,16 @@ Registry claim rate 与 cache miss 而不是请求 QPS 成正比。
 探索缩容是独立配置维度，不是 `e2e-fast` 的别名：只将 Host drain 稳定窗口/协调间隔
 从生产 `5m/5s` 调整为 `30s/2s`，保留排空取消期限、freshness、三AZ、PDB、UID fencing
 与逐台收敛。短窗口可能增加抖动，不承诺Node释放时长，也不能绕过拓扑或资源售罄阻塞。
-`runtime/host-drain-profile.py` 先提供离线Deployment JSON转换/检查：探索标记与实际timer
-必须一致，仅改两个字段及自己的Pod template annotation，重复/混合配置拒绝。
-这是配置工具，不是生产资格或已安装能力；installer/Argo/资格入口尚未接线。后续生产
-容量门禁必须核对live Deployment，不能仅信任caller环境。现有manifest和原strict10k
-监督任务不变；探索通过也不替代生产低容量→万活跃→安全缩回的完整证据。
+`runtime/host-drain-profile.py` 提供离线Deployment/受限manifest List转换与单Deployment
+检查：探索标记与实际timer必须一致，仅改两个字段及自己的Pod template annotation，
+重复/混合配置拒绝。installer源码已接入 `RUNTIME_HOST_DRAIN_PROFILE`，生产默认沿用
+原manifest；探索要求整段operation lock、不改变生产运行时配额，返回前检查live配置。
+production runtime qualification及strict10k源码入口读取实际Deployment拒绝探索，
+不能仅信任caller环境；标准生产release也拒绝探索。真实shell子进程回归使用本地
+API double，不能等同云API/Argo收敛资格；尚未发布云上探索配置或改变冻结的原strict10k。
+探索通过不替代生产低容量→万活跃→安全缩回的完整证据。
+后续开发/修复先以探索模式运行第一道功能与收敛验收，再进入生产参数资格；两类结果
+独立标记，模式只在受锁部署流程中切换，不中途改变正在运行的任务。
 
 ### Phase 5：资格与演进决策
 

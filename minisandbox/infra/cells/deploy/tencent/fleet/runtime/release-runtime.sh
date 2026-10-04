@@ -2,6 +2,10 @@
 set -euo pipefail
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+[[ ${RUNTIME_HOST_DRAIN_PROFILE:-production} == production ]] || {
+	echo "production runtime release requires the production Host drain profile" >&2
+	exit 2
+}
 namespace=${RIVET_CELL_NAMESPACE:-actor-fdb-cell-system}
 : "${RIVET_CELL_NAME:?RIVET_CELL_NAME must name the exact Cell}"
 cell_name=$RIVET_CELL_NAME
