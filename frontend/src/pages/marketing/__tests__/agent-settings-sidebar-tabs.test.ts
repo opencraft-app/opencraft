@@ -267,7 +267,7 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).not.toContain('title={t("新会话")}');
     expect(page).toContain('pendingNewChatSessionBotId = activeBot.id');
     expect(page).toContain('chatSessionCommands.createSession()');
-    expect(page).toContain("chatSessions.map");
+    expect(page).toContain("chatSessionPagination.visibleSessions.map");
     expect(page).toContain('<span className="lv-agents-nav-icon"><MessageSquare className="h-4 w-4" aria-hidden="true" /></span>');
     expect(page).toContain('!isChatTabDisabled && chatSessionsExpanded && !isSidebarCollapsed');
   });
@@ -475,7 +475,7 @@ describe("agent settings sidebar chat/settings tabs", () => {
   it("shows activity only for a session reported as running", () => {
     const page = readPageSource();
     const styles = readStylesSource();
-    const sessions = page.slice(page.indexOf("chatSessions.map((session) => {"), page.indexOf("chatSessionMutationState !== null"));
+    const sessions = page.slice(page.indexOf("chatSessionPagination.visibleSessions.map((session) => {"), page.indexOf("chatSessionMutationState !== null"));
 
     expect(sessions).toContain('const isRunning = "running" in session && session.running === true;');
     expect(sessions).toContain('isRunning ? <span className="lv-agents-session-running" role="img" aria-label={t("执行中")} /> : null');
@@ -540,8 +540,8 @@ describe("agent settings sidebar chat/settings tabs", () => {
     const page = readPageSource();
 
     // SDK 对接注意事项 3：实例切换时重置会话受控状态，防旧实例数据闪现。
-    expect(page).toContain("[sdkInstance?.InstanceId]");
-    expect(page).toMatch(/setChatSessions\(\[\]\);\s*\n\s*setChatSessionsLoading\(false\);\s*\n\s*setChatSessionMutationState\(null\);\s*\n\s*setSelectedChatId\(undefined\);\s*\n\s*setChatSessionActions\(null\);/);
+    expect(page).toContain("[sdkInstance?.InstanceId, sdkInstance?.ProfileId, chatSessionPagination.reset]");
+    expect(page).toMatch(/setChatSessions\(\[\]\);\s*\n\s*setChatSessionsLoading\(false\);\s*\n\s*setChatSessionsHasMore\(false\);\s*\n\s*setChatSessionMutationState\(null\);\s*\n\s*setSelectedChatId\(undefined\);\s*\n\s*setChatSessionActions\(null\);/);
   });
 
   it("never uses truthiness to test chatId validity (empty string is a legal default session)", () => {
@@ -602,7 +602,7 @@ describe("agent settings sidebar chat/settings tabs", () => {
 
     const emptyBranch = page.slice(
       page.indexOf(") : chatSessions.length === 0 ? ("),
-      page.indexOf("chatSessions.map((session) => {"),
+      page.indexOf("chatSessionPagination.visibleSessions.map((session) => {"),
     );
 
     expect(emptyBranch).toContain('title={t("默认对话")}');

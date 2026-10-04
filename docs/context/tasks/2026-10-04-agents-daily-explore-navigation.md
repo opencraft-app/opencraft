@@ -101,6 +101,8 @@ derived: false
 | `opencraft/docs/platform-architecture.md@f3db0e91f` | OpenCraft 邻接设计 | 确认嵌入部署边界 |
 | `opencraft/docs/chat-ui-architecture.md@f3db0e91f` | 会话 UI 设计 | 对齐执行状态来源 |
 | `opencraft/.agents/skills/opencraft-maintenance/SKILL.md` | 嵌入桥接变更验证 | 核对工作台构建与测试边界 |
+| `docs/context/flows/tapd-gongfeng-delivery.md`、`.agents/skills/gongfeng/SKILL.md` | MR !4969 冲突路由 | 确认合并与远端复核流程 |
+| `frontend/AGENTS.md`、`opencraft/AGENTS.md`、`opencraft/.agents/skills/opencraft-maintenance/SKILL.md` | 最新 master 合并后服务规则 | 执行双站、同步和嵌入门禁 |
 
 ## evidence
 
@@ -134,6 +136,8 @@ derived: false
 - 按 `frontend/AGENTS.md` 检查 OpenCraft Agent Console 生成副本时发现前端 i18n 与模型 locale 真源漂移；在提交前端真源后运行同步脚本，生成副本与 `UPSTREAM.json` 已更新，复跑只读同步检查及 Hermes 插件 typecheck 均通过。
 - Hermes 插件完整测试 88/88（含三项删除生命周期测试）、37 项前端侧栏测试、OpenCraft 插件 typecheck/边界检查、`pnpm check`、国内站构建、嵌入工作台构建和文档验证通过；5174 页面与同源嵌入脚本均返回 HTTP 200。未对真实执行中的用户会话执行删除。
 - 2026-10-05 会话列表改为初始 20 条、每次增减 20 条；OpenCraft 嵌入桥接公开后端下一页状态和加载动作，避免初始 30 条数据截断。分页 hook 的 20→40→60→65、逐批收起、服务端继续加载与失败保持原数量测试通过（3/3）；桥接测试 14/14、工作台 Web typecheck、前端 `pnpm check`（新增 TypeScript 诊断 0 项）、双站构建和文档校验通过。Chrome/Whistle 登录态当前只有 15 条真实会话，确认没有多余的「查看更多」；超过 20 条的浏览器视觉暂无真实数据可验证。
+- 2026-10-05 MR !4969 合入 `origin/master@efc37fe08`，仅 `opencraft/plugins/lightvela-hermes/src/upstream/mono2/UPSTREAM.json` 出现文本冲突；合并提交 `decb2cd2d` 后用官方 `sync:mono2-agent-console` 重生成清单，并通过只读同步检查。将四条因会话分页后源码标识变化而失效的侧栏守卫断言对齐实际实现。
+- 合并后验证：前端 `pnpm check`、63 项侧栏/分页聚焦测试、23 项嵌入桥接测试、国内站与国际站构建均通过；OpenCraft 工作台与 Hermes 插件 typecheck、88 项 Hermes 插件测试、30 项连接/导航测试、边界检查及嵌入工作台 release 构建通过；文档检查零错误零告警。完整前端 Vitest 并行运行出现 worker OOM，改为串行聚焦测试后通过。
 
 ## risks
 
@@ -166,4 +170,4 @@ derived: false
 
 ## handoff
 
-- 本地实现完成，5174 经 Chrome/Whistle 可访问并加载真实会话；转圈状态仍需执行中会话进行目视验证。移动端国内站 320/390px 已核对，国际站构建通过。待提交 MR，未合并、未发布。
+- MR !4969 已提交；本轮已解决与最新 master 的冲突并完成本地门禁，待推送及远端 MR/CI 复核。5174 的既有 Chrome/Whistle 登录态证据、移动端国内站 320/390px 检查仍对应前一版本；本轮未重新做登录态视觉验证。未合并、未发布。

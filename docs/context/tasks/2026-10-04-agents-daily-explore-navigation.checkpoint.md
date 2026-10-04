@@ -1,6 +1,6 @@
 ## stage
 
-MR !4969 的独立 worktree 中已完成日常/探索导航改造；2026-10-05 增加会话列表 20 条分批展示与 OpenCraft 后端继续加载。Bot 无关的实验室功能范围仍待确认。
+MR !4969 的独立 worktree 中已完成日常/探索导航改造及会话列表 20 条分批展示。2026-10-05 已合入最新 master，解决同步清单冲突并完成本地验证；Bot 无关的实验室功能范围仍待确认。
 
 ## verified
 
@@ -33,6 +33,8 @@ MR !4969 的独立 worktree 中已完成日常/探索导航改造；2026-10-05 �
 - 本轮 CSS 将桌面长会话列表限制在侧栏可用高度内并显示 6px 纵向滚动条。Chrome/Whistle 登录态用 15 条会话验证：列表从顶部滚到底时中部容器 `scrollTop` 保持 0，「对话」标题和底部账户入口位置不变；末尾会话菜单完整显示。390px 移动抽屉仍整体滚动，无横向溢出。
 - 本轮 `pnpm check`、44 项聚焦导航测试、`pnpm build:cn`、`pnpm build:global`、文档检查和 OpenCraft 生成副本只读检查均通过。
 - 会话分页 hook 聚焦测试 3/3、嵌入桥接 14/14、工作台 typecheck、前端 `pnpm check` 及双站构建通过；真实账号 15 条会话时未出现不必要的「查看更多」，更多条目的浏览器交互仍缺真实数据。
+- 当前 worktree 合并提交 `decb2cd2d` 包含 `origin/master@efc37fe08`；冲突仅在 OpenCraft 生成清单，已由 `sync:mono2-agent-console` 重生成，`check:mono2-agent-console` 通过。
+- 合并后的前端 `pnpm check`、63 项侧栏/分页与 23 项嵌入桥接聚焦测试、CN/global 构建通过。OpenCraft Web/Hermes typecheck、88 项 Hermes 与 30 项连接/导航测试、边界检查、嵌入工作台 release 构建通过。文档验证零错误零告警；构建附带的 `next-env.d.ts` 和字体子集改动已恢复。
 
 ## unverified
 
@@ -57,4 +59,4 @@ MR !4969 的独立 worktree 中已完成日常/探索导航改造；2026-10-05 �
 
 ## next_action
 
-复跑最终门禁，提交真源后检查并同步 OpenCraft 生成副本，推送更新到 MR !4969；保留 5174 本地预览。
+检查暂存变更的 change-impact 与 diff；提交同步清单、守卫断言和本 checkpoint，推送原 MR 分支并确认远端冲突与 CI 状态。
