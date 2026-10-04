@@ -4,6 +4,7 @@ const userCode = `
 let counter = 0;
 export default {
   async fetch(request, env, ctx) {
+    if (new URL(request.url).pathname === "/throw") throw new Error("fixture user failure");
     const count = ++counter;
     if (new URL(request.url).pathname === "/stream") {
       const { readable, writable } = new TransformStream();
@@ -25,11 +26,16 @@ export default {
 `;
 
 export default {
-	fetch() {
+	fetch(request) {
+		const path = new URL(request.url).pathname;
+		if (path.includes("/code-unavailable/")) return new Response(null, { status: 503 });
+		let source = userCode;
+		if (path.includes("/bad-syntax/")) source = "export default {";
+		if (path.includes("/missing-default/")) source = "export function named() {}";
 		return Response.json({
 			compatibilityDate: "2026-08-07",
 			mainModule: "worker.js",
-			modules: { "worker.js": userCode },
+			modules: { "worker.js": source },
 		});
 	},
 };

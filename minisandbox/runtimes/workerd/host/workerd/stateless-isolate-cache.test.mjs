@@ -6,7 +6,47 @@ const source = `${readFileSync(new URL("./stateless-worker.js", import.meta.url)
 const module = await import(
 	`data:text/javascript;base64,${Buffer.from(source).toString("base64")}`
 );
-const { StatelessIsolateCache } = module;
+const { StatelessIsolateCache, StatelessRuntimeMetrics } = module;
+
+test("cold-start histograms use the shared buckets and retain no per-Worker state", () => {
+	const bucketSource = readFileSync(
+		new URL("../../../../engine/packages/metrics/src/buckets.rs", import.meta.url), "utf8",
+	);
+	const sharedBuckets = bucketSource.match(/pub const BUCKETS: &[\s\S]*?= &\[([\s\S]*?)\];/)[1]
+		.replace(/\/\/[^\n]*/g, "").split(",").map((n) => n.trim()).filter(Boolean).map(Number);
+	let clock = 1000;
+	const metrics = new StatelessRuntimeMetrics({ now: () => clock });
+	const first = metrics.begin();
+	clock = 1250;
+	metrics.finish(first, "ready");
+	const second = metrics.begin();
+	clock = 1750;
+	metrics.finish(second, "failed");
+	const snapshot = metrics.snapshot();
+	assert.deepEqual(snapshot.coldStarts.bucketUpperBoundsSeconds, sharedBuckets);
+	assert.equal(snapshot.coldStarts.started, 2);
+	for (const [result, seconds] of [["ready", 0.25], ["failed", 0.5]]) {
+		const histogram = snapshot.coldStarts.results[result];
+		assert.equal(histogram.count, 1);
+		assert.equal(histogram.sum, seconds);
+		assert.deepEqual(histogram.buckets, sharedBuckets.map((le) => Number(seconds <= le)));
+	}
+	snapshot.coldStarts.results.ready.buckets.fill(99);
+	assert.notDeepEqual(snapshot, metrics.snapshot());
+	assert.deepEqual(Object.keys(metrics.results), ["ready", "failed"]);
+});
+
+test("clock regression cannot emit negative cold-start latency", () => {
+	let clock = 1000;
+	const metrics = new StatelessRuntimeMetrics({ now: () => clock });
+	const started = metrics.begin();
+	clock = 900;
+	metrics.finish(started, "ready");
+	const snapshot = metrics.snapshot().coldStarts;
+	assert.equal(snapshot.clockRegressions, 1);
+	assert.equal(snapshot.results.ready.sum, 0);
+	assert.deepEqual(snapshot.results.ready.buckets, snapshot.bucketUpperBoundsSeconds.map(() => 1));
+});
 
 function fixture(maxEntries = 2, idleTtlMs = 100) {
 	let clock = 0;

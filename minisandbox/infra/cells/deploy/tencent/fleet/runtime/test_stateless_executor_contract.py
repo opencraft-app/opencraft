@@ -43,6 +43,7 @@ class StatelessExecutorContractTest(unittest.TestCase):
         build = (ROOT / "build-image.sh").read_text()
         self.assertIn('"$stage_dir/workerd" test --experimental --no-verbose --gc-stress', build)
         self.assertIn("stateless-isolate-cache-native.wd-test cache-test", build)
+        self.assertIn("stateless-isolate-cache-native.wd-test metrics-test", build)
         host = ROOT.parents[5] / "runtimes/workerd/host/workerd"
         with tempfile.TemporaryDirectory(prefix="stateless-config-") as directory:
             root = Path(directory)

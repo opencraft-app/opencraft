@@ -1262,6 +1262,18 @@ wake 三项语义的完整 producer。必须补真实执行生命周期观测、
 这不是降低原观测要求，也不否定已有 queue/active 指标；当前发布或万级验收通过仍不能
 自动证明完整设计已经完成。
 
+同日的 root producer 实现推进了冷启动这一项：受信 loopback
+`GET /__rivet/stateless-runtime-stats` 返回固定 histogram 聚合，起点为原生 WorkerLoader
+实际取代码回调，终点为发起者观察到 `WorkerStub.ready()` 成功或失败；包括代码获取与
+编译/链接，不含 Host queue 和用户 handler。热调用不计、20 并发首次调用只计一次；
+用户 handler 抛错与加载失败分开。Node 检查桶与 Engine BUCKETS 一致，实际 locked-fork
+binary 的 metrics-test 检查这些语义，cache-test 继续检查旧流和新同名实例并存。
+readiness 的 request-local waitUntil 不改变响应流，也不跨请求保留原生 stub。
+runtime 终止/后台取消可打断观察，started 减 completed 不能成为活跃 gauge；时钟回退
+夹零且计数。本 producer 尚未接 Host Prometheus exporter 和可信 namespace/pool 标签，
+未发布；native live isolate 与 DO wake producer 仍缺失。此为完整观测要求的增量实现，
+不是将其缩小成 JSON 计数或开发测试。
+
 ### 性能劣化的模型与验收口径
 
 分别建模交互请求、placement/唤醒和持久化后台，不能以一个总 CPU 指标替代。对每个阶段

@@ -157,10 +157,12 @@ sha256sum "$source_manifest" | cut -d' ' -f1 >"$stage_dir/source-manifest-sha256
 	--compat-date=2026-08-14 \
 	runtimes/workerd/host/workerd/worker-loader-abi-test.wd-test
 
-# Check named-cache retirement and in-flight response ownership with the exact
-# staged binary and production root JS before an image can be published.
+# Check named-cache retirement, in-flight response ownership, and cold-start
+# observations with the exact staged binary and production root JS.
 "$stage_dir/workerd" test --experimental --no-verbose --gc-stress \
 	runtimes/workerd/host/workerd/stateless-isolate-cache-native.wd-test cache-test
+"$stage_dir/workerd" test --experimental --no-verbose --gc-stress \
+	runtimes/workerd/host/workerd/stateless-isolate-cache-native.wd-test metrics-test
 
 # This is the cheapest release-compatibility gate: the exact freshly built
 # Engine must deserialize and validate the exact config that will be applied.

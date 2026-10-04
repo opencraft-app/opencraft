@@ -124,6 +124,7 @@ stateless 全局变量可重置，同名旧在途实例和新实例可暂时并�
 node --test runtimes/workerd/host/workerd/stateless-isolate-cache.test.mjs
 workerd test --experimental runtimes/workerd/host/workerd/stateless-isolate-cache-native.wd-test cache-test
 workerd test --experimental --gc-stress runtimes/workerd/host/workerd/stateless-isolate-cache-native.wd-test cache-test
+workerd test --experimental --gc-stress runtimes/workerd/host/workerd/stateless-isolate-cache-native.wd-test metrics-test
 TMPDIR=/data/tmp python3 -m unittest discover -s infra/cells/deploy/tencent/fleet/runtime -p test_stateless_executor_contract.py
 ```
 
@@ -131,6 +132,26 @@ native gate 加载实际 production root JS，验证热复用、LRU/TTL 重载�
 淘汰与同名重载后旧 1 MiB 响应流仍完整，以及旧流取消不破坏新缓存。Node gate 覆盖
 10,000 个历史名字、时钟回退、卸载异常与无效输入。它们是本地开发证据，不代替镜像发布、
 云上容量或生命周期指标门禁。
+
+### 无状态 Worker 冷启动观测
+
+受信 root 的 `GET /__rivet/stateless-runtime-stats` 使用同一 Workerd token，仅返回固定大小的
+`rivet-stateless-runtime-stats/v1` 聚合 JSON；没有 Worker/Version/Object ID、代码或请求内容。
+该路由只在 loopback workerd 入口上，不是公共 API 或 Prometheus endpoint。
+
+`coldStarts.started` 在原生 WorkerLoader 实际调用取代码回调时增加，不依赖 JS 命名表或
+Host 代码缓存是否命中。`results.ready/failed` 的 histogram 从该回调开始，到原生
+`WorkerStub.ready()` 观察完成，包含取代码、解析、编译、链接和默认入口可用检查；不包含
+Host admission queue 或用户 handler 执行。20 个并发首次请求只记录一次；热 prepare/fetch
+不重复记录。语法/缺入口/取代码失败记为 failed，已就绪的用户 handler 抛错不记为冷启动失败。
+桶与 Engine `BUCKETS` 相同；时钟回退夹到零并单独计数。没有高精度 CPU 时间承诺。
+
+readiness observation 仅由发起加载请求的 `waitUntil` 保持，JS 不跨请求保存 WorkerStub 或
+IoOwn promise，也不包装用户响应流。进程结束或 runtime 取消后台任务可能打断观察，
+所以 `started - completed` 不是 live isolate/in-flight gauge。这份 JSON 是真实 root producer；
+Host `/metrics` 接线、可信 namespace/pool 标签、完整 native live-isolate 和 DO wake producer
+仍待完成，不用本地 native test 冒充已发布的持续观测。发布构建分别执行 cache-test 和
+metrics-test，使用实际 staged binary 与 production root JS。
 
 ### 持久 Actor 的动态加载
 

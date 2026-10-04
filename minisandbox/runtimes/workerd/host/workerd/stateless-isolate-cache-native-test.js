@@ -79,5 +79,12 @@ export default {
 		// retry or readiness poll; the Node suite covers the exact boundary.
 		await new Promise((resolve) => setTimeout(resolve, 100));
 		assert.equal(await count(env.TTL_ROOT, "idle"), 1);
+		const ttlStats = await env.TTL_ROOT.fetch("http://root/__rivet/stateless-runtime-stats", {
+			headers: { "X-Rivet-Workerd-Token": "test-token" },
+		});
+		const ttlColdStarts = (await ttlStats.json()).coldStarts;
+		assert.equal(ttlColdStarts.started, 2);
+		assert.equal(ttlColdStarts.results.ready.count, 2);
+		assert.equal(ttlColdStarts.results.failed.count, 0);
 	},
 };
