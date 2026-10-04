@@ -149,6 +149,7 @@ Pages 制品对嵌入内容哈希资源声明 immutable，稳定 loader/version/
 - OpenCraft 的 DSH HTTP deadline 由 `DshClient` 按请求拥有；调用方 lifecycle signal 只能进一步取消，不能替换 deadline。History routed client 只合并有界窗口请求且必须在任意结束路径释放 flight，Thread lifecycle 只串行化，不再叠加超时。Workbench 仅投影 AppServer 状态：`notLoaded/idle` 中立、`active` 运行、`systemError` 错误；只有真实 attention source 才能显示待审阅。运行中文字的扫光频率由 Web/Native renderer 的共享设计 token 控制，高光色由主题完整 ink 拥有，底层文字保持原语义颜色；这些呈现属性不参与 AppServer 状态、执行租约或恢复判定。见 [DSH / AppServer 边界](../../../opencraft/docs/dsh-appserver-boundaries.md)与 [ChatUI 视觉账本](../../../opencraft/docs/codex-chatui-fidelity.md)。
 
 - OpenCraft 的 AppServer 历史恢复以有序 Turn/Item 页面为快照权威：完整 Item 快照决定成员与顺序，分页窗口只决定其覆盖区间的顺序；恢复期间的新通知在历史提交后重放。稳定 ID 仅用于对账，不能让先到的 final 永久占据较早进度之前的位置；旧的 in-progress 历史也不能回退已经确认的完成状态。此规则由共享 `appserver-session` 负责，Renderer 不另行按时间戳排序。
+- OpenCraft 的消息虚拟窗口在补历史与 Turn ID 认领时同时保留原槽位和存续行；主用户消息的 client ID 拥有稳定 DOM 身份，canonical Turn ID 仍只定位协议对象，实测高度随身份交接而非回退估算。相同条数的布局变化也必须更新窗口，不依赖下一次滚动事件，更不能抢走历史阅读者的锚点或强制滚到底。见 [Turn identity handoff](../../../opencraft/docs/chat-ui-architecture.md#turn-identity-handoff-and-mounted-window)。
 
 - OpenCraft 的 DSH steer 按 `queued → steering → user/message` 交接所有权：unary RPC accepted 即完成命令回执，`session/queue` 的用户 `steering` placement 负责刷新/重连恢复，匹配的 durable message 最终接管 transcript。Workbench 不等待后续 queue snapshot 才返回，也不把 next-step steer 宣称为对当前 provider 请求或工具 step 的硬中断。见 [ChatUI 集成架构](../../../opencraft/docs/chat-ui-architecture.md#non-negotiable-boundaries)。
 

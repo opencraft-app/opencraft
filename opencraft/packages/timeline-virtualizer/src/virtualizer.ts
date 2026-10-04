@@ -66,10 +66,31 @@ export function reconcileRenderedRangeForEntries(
   layout: TurnLayout,
 ): TurnRange {
   if (equalKeys(current.turnKeys, layout.turnKeys)) return current.renderedRange;
-  const anchorKey = current.turnKeys[current.renderedRange.startIndex];
-  return anchorKey === undefined
-    ? current.renderedRange
-    : anchorRange(layout, anchorKey, current.renderedRange) ?? current.renderedRange;
+  // This is a mounted-window handoff, not persisted restoration by count.
+  // An insertion between existing rows must not evict the old last row for
+  // one render before the viewport effect commits the new geometry.
+  let startIndex = layout.turnKeys.length;
+  let endIndex = 0;
+  let anchoredStartIndex: number | null = null;
+  for (let index = current.renderedRange.startIndex; index < current.renderedRange.endIndex; index += 1) {
+    const key = current.turnKeys[index];
+    const position = key === undefined ? undefined : layout.turnIndexByKey.get(key);
+    if (position === undefined) continue;
+    if (anchoredStartIndex === null) {
+      // A replaced edge still owns its previous slot. Anchoring only the
+      // surviving identities would drop an acknowledged optimistic Turn.
+      anchoredStartIndex = Math.max(0, position - (index - current.renderedRange.startIndex));
+    }
+    startIndex = Math.min(startIndex, position);
+    endIndex = Math.max(endIndex, position + 1);
+  }
+  if (anchoredStartIndex === null)
+    return computeTurnRange(layout, current.distanceFromBottomPx, current.viewportHeightPx);
+  return {
+    startIndex: Math.min(startIndex, anchoredStartIndex),
+    endIndex: Math.max(endIndex, Math.min(layout.turnKeys.length,
+      anchoredStartIndex + current.renderedRange.endIndex - current.renderedRange.startIndex)),
+  };
 }
 
 /** First Turn whose bottom edge is inside or above the viewport's top edge. */
