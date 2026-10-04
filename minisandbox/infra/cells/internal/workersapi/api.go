@@ -383,7 +383,14 @@ func NewAPI(config Config) (*API, error) {
 		// A conversational fetch may stream for much longer than control-plane
 		// operations. Its lifetime is owned by the caller context and the Agent
 		// execution policy, not the control client timeout.
-		fetchClient:     &http.Client{Transport: fetchTransport},
+		fetchClient: &http.Client{
+			Transport: fetchTransport,
+			// Worker redirects belong to the caller. Never forward platform
+			// capabilities to an address supplied by a Worker response.
+			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		},
 		mux:             http.NewServeMux(),
 		internalMux:     http.NewServeMux(),
 		deployments:     newDeploymentCache(deploymentCacheCapacity),

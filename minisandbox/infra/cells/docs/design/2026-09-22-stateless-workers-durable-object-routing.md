@@ -793,6 +793,20 @@ Fetcher、内部 token 或可修改 namespace/class 的接口。
 `indeterminate_result` 或等价的可识别错误。Object 单活只能防止双 owner，不能证明一次 HTTP
 调用没有产生副作用。
 
+### 用户重定向不改变平台路由
+
+Worker 返回的 3xx、Location、header 和 body 属于用户响应，Router 必须直接交还调用方。
+内部 fetch client 不自动跟随 Location；用户响应不得使平台携带 executor capability、Engine
+Authorization 或 original-URL metadata 向另一地址发请求。是否跟随由外部调用方决定，平台
+placement 不因此变化。prepare 同样禁止跟随，3xx 是验证失败，不能用重定向目标的 204 激活
+Deployment。这只限制数据面 fetch client，不改变控制面 client 的策略。
+
+2026-10-04 的真实 TCP HTTP 回归在修复前复现了 stateless/DO 的五种常用重定向状态产生第二次
+请求及内部 header 外泄，另五例 prepare 通过重定向错误激活版本。fetch client 使用
+`http.ErrUseLastResponse` 后原响应保持打开，prepare 返回非 retryable 的
+`worker_prepare_failed`，旧 active Version 不变。测试见 `internal/workersapi/fetch_redirect_test.go`。
+本地回归不等于云端发布，也不覆盖 CCN 丢包或 TLS 身份故障资格。
+
 ### 典型故障行为
 
 | 故障 | 行为 |
