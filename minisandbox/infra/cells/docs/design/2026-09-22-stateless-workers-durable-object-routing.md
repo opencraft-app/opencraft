@@ -2294,6 +2294,16 @@ server-side create dry-run并逐字段核对返回spec。metadata白名单、JSO
 版本、云topic归属、安全API镜像、Argo权限和CLS正反查询。真实CLI协议double验证顺序与
 失败不外泄服务端信息；尚未执行TKE dry-run，也没有安装collector或修改原strict10k任务。
 
+官方collector的可重建声明补在management `cls.tf`：storage与collector分别默认关闭，开
+storage不安装agent；collector需要storage前置条件。固定北京catalog的1.1.25 chart和三个
+实际registry manifest digest，显式关Kafka/alternate规则controller/自动role创建。TKE
+addon manager拥有工作负载与CRD，Argo只拥有独立规则，旧bootstrap/topic binding不改，
+另出unqualified且canaryAuthorized=false的collector binding。只查Kind=log会漏掉other下的
+官方addon；未安装时DescribeAddonValues也返回非空Values，必须用DescribeAddon与实际
+Kubernetes资源证明安装。见CLS/evidence/beijing-collector-discovery-20261004.json。
+Native mock plan直接核对production文件与观察pins；实际registry读取不是cold pull或云
+安装，chart实际使用digest、Pod/CRD、安全API探索发布与CLS正反查询均待锁内资格。
+
 严格负载后的自然缩容还暴露一个独立liveness缺口：A在111 Ready Host、active0、无release
 hold时停于35/35/41，最高ordinal110在较小AZ；下一前缀34/35/41的skew7超过当前缩容
 边界6。低前缀最终可平衡不代表中间删除已被授权，等待也不会改变现有ordinal到AZ映射。

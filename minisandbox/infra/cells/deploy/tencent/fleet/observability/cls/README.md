@@ -10,6 +10,9 @@
 - Terraform 拥有日志集/topic 生命周期、保留期、分区与索引；不启用匿名写、自动分裂、
   自动索引或全文索引。固定分区和保留期限制成本，但不是请求量或总账单的硬上限。
 - `platform_cls_binding` 是独立 credential-free output，不改变严格 bootstrap inventory。
+- `platform_cls_collector_enabled` 也默认 `false`，开 topic 不隐式安装 collector；开 collector
+  必须同时声明 topic/index。management Terraform 只拥有 C 的官方 `tke-log-agent` addon，
+  TKE addon manager 拥有其工作负载/CRD，Argo 只拥有另外准入的 LogConfig，不创建第二套 agent。
 - LogConfig 只引用精确 topic/logset ID，拥有容器选择及 JSON/级别解析，不按名字创建资源。
   根据[官方 LogConfig 文档](https://cloud.tencent.com/document/product/457/111541)，
   各 topic/index 创建参数用于自动创建路径；本规则仍全部省略，以免形成模糊所有权。
@@ -88,8 +91,39 @@ create 冲突并拒绝，不能自动替换现有采集规则。所需 create �
 5. 用无敏感值的相关 ID 注入受控平台失败，查询 exact topic；证明 WARN/ERROR 可查且
    INFO、解析失败、其他容器日志不进入 topic。保留 Argo revision、镜像、CRD 与查询 receipt。
 
-renderer 的 annotation 只是声明，不是 live UID 或安全镜像的证明。本轮没有实现安装/发布
-入口或完成上述云 gate；不得把 Terraform validate 或本地测试当成 CLS 已上线。
+renderer 的 annotation 只是声明，不是 live UID 或安全镜像的证明。本轮没有执行安装/发布
+或完成上述云 gate；不得把 Terraform validate 或本地测试当成 CLS 已上线。
+
+### 固定官方 collector 的可重建声明
+
+management `cls.tf` 已包含默认关闭的 addon resource，固定 chart `1.1.25` 和三个官方
+registry manifest digest，关闭默认 Kafka listener、alternate rule controllers 和自动创建 role。
+当前北京 catalog 在 `other` 下列出此 addon；只查 `Kind=log` 会得到空列表。
+`DescribeAddonValues` 在未安装时也返回非空 Values，不能以此证明安装完成，必须核对
+`DescribeAddon` 和实际 Kubernetes 资源。白名单证据见
+[北京官方组件观察](evidence/beijing-collector-discovery-20261004.json)。
+
+开启条件是受锁审核的完整 management plan/apply，不是另一条 tccli 安装路径：
+
+```hcl
+platform_cls_enabled           = true
+platform_cls_collector_enabled = true
+```
+
+这两项是显式部署意图，不是本轮已 apply。旧严格 bootstrap inventory 和 topic binding
+不加字段，另出 `platform_cls_collector_binding`，始终 `unqualified/canaryAuthorized=false`。
+RawValues 为 JSON，provider `1.83.11` 的
+[create/update 实现](https://github.com/tencentcloudstack/terraform-provider-tencentcloud/blob/v1.83.11/tencentcloud/services/tke/resource_tc_kubernetes_addon.go)
+自行做 base64，不能二次编码；[官方 InstallAddon](https://cloud.tencent.com/document/product/457/94181)
+明确不传版本会安装最新版本。三个 tag-plus-digest 都固定，不能只信 chart 版本或 bare tag。
+[Kubernetes 镜像规则](https://kubernetes.io/docs/concepts/containers/images/#image-names)允许
+同时携带 tag/digest 并按 digest 拉取；这不能证明 addon chart 会保留传入的 tag 字符串。
+
+实际 skopeo registry manifest 读取已通过；没有镜像 cold pull、容器执行或 TKE 安装。
+必须在探索发布中证明 chart 保留 tag-plus-digest、Pod 使用预期实际镜像、addon/CRD就绪，
+再跑前述 server rule roundtrip 和真实 CLS canary。native mock test 只核对生产声明与归档
+catalog/manifest pins、默认关闭、字段和前置条件，不证明这些云行为。Addon 删除或升级也
+必须持整段 operation lock，先停止/处置实际规则，不能靠禁 Argo sync 假定采集已停止。
 
 ## 独立中央 Argo 发布准备
 

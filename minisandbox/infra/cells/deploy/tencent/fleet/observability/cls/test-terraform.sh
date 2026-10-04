@@ -15,10 +15,12 @@ task_dir=$(mktemp -d /data/tmp/cls-terraform-test.XXXXXX)
 cp -- "$script_dir/terraform-tests/main.tf" "$task_dir/main.tf"
 cp -- "$script_dir/terraform-tests/cls.tftest.hcl" "$task_dir/cls.tftest.hcl"
 cp -- "$fleet_dir/terraform/create-first/management/cls.tf" "$task_dir/cls.tf"
+cp -- "$fleet_dir/terraform/create-first/management/.terraform.lock.hcl" "$task_dir/.terraform.lock.hcl"
+cp -- "$script_dir/evidence/beijing-collector-discovery-20261004.json" "$task_dir/collector-discovery.json"
 export TF_DATA_DIR="$task_dir/provider-data" TMPDIR=/data/tmp TF_IN_AUTOMATION=1
 
 # There is no backend or credentials in this fixture. The native mock provider
 # is declared in the test file; no apply command is permitted by this entry.
-"$terraform" -chdir="$task_dir" init -backend=false -input=false -plugin-dir="$plugin_dir" >/dev/null
+"$terraform" -chdir="$task_dir" init -backend=false -input=false -lockfile=readonly -plugin-dir="$plugin_dir" >/dev/null
 "$terraform" -chdir="$task_dir" test -no-color
 printf 'retained_test_root=%s\n' "$task_dir"

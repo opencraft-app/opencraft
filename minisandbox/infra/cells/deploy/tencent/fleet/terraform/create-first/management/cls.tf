@@ -18,6 +18,87 @@ variable "platform_cls_retention_days" {
   }
 }
 
+variable "platform_cls_collector_enabled" {
+  description = "Install the separately pinned official collector in C only. Does not create LogConfig or authorize collection. Requires platform_cls_enabled."
+  type        = bool
+  default     = false
+}
+
+locals {
+  # Beijing's 2026-10-04 catalog and default values select this chart. These
+  # registry-reported digests are not collector behavior qualification.
+  platform_cls_collector_version = "1.1.25"
+  platform_cls_collector_images = {
+    log_agent   = "ccr.ccs.tencentyun.com/tkeimages/log-agent:v1.1.25@sha256:6b3be6d2df3597fecb186fd75d9312df59345c1e052ef66e267e24caed5dc879"
+    loglistener = "ccr.ccs.tencentyun.com/tkeimages/loglistener:v2.10.1.2@sha256:9350d197d22d6ffe279574e29c119408851a7048a06720e6c424e824fab5a602"
+    provisioner = "ccr.ccs.tencentyun.com/tkeimages/cls-provisioner:v1.1.25@sha256:813e404648cef4b9183263914237755306d826361ad95f7e0b90de470ab08a37"
+  }
+  platform_cls_collector_values = {
+    global = {
+      registry            = "ccr.ccs.tencentyun.com"
+      logconfigproEnabled = false
+      logconfigv2Enabled  = false
+    }
+    kafkalistener = { enabled = false }
+    logAgent = {
+      image = {
+        repository = "tkeimages/log-agent"
+        tag        = "v${split(":v", local.platform_cls_collector_images.log_agent)[1]}"
+      }
+    }
+    loglistener = {
+      enabled = true
+      image = {
+        repository = "tkeimages/loglistener"
+        tag        = "v${split(":v", local.platform_cls_collector_images.loglistener)[1]}"
+      }
+    }
+    provisioner = {
+      addRole = false
+      image = {
+        repository = "tkeimages/cls-provisioner"
+        tag        = "v${split(":v", local.platform_cls_collector_images.provisioner)[1]}"
+      }
+    }
+  }
+}
+
+# TKE's addon manager owns the agent, provisioner and CRD. Argo owns only the
+# separately admitted LogConfig, never a second copy of these workloads.
+resource "tencentcloud_kubernetes_addon" "platform_cls" {
+  count         = var.platform_cls_collector_enabled ? 1 : 0
+  cluster_id    = tencentcloud_kubernetes_cluster.management.id
+  addon_name    = "tke-log-agent"
+  addon_version = local.platform_cls_collector_version
+  # Provider 1.83.11 encodes JSON for InstallAddon; do not double-base64 it.
+  raw_values = jsonencode(local.platform_cls_collector_values)
+
+  depends_on = [tencentcloud_cls_index.workers_api]
+
+  lifecycle {
+    precondition {
+      condition     = var.platform_cls_enabled
+      error_message = "Provision the separately owned CLS topic/index before enabling the C collector."
+    }
+  }
+}
+
+output "platform_cls_collector_binding" {
+  description = "Pinned collector intent only. No API safety, live image, CRD, cloud ownership or CLS query qualification."
+  value = var.platform_cls_collector_enabled ? {
+    schema              = "actor-platform-cls-collector-binding/v1"
+    managementId        = var.management_id
+    clusterId           = tencentcloud_kubernetes_cluster.management.id
+    region              = var.region
+    addonName           = "tke-log-agent"
+    addonVersion        = local.platform_cls_collector_version
+    images              = local.platform_cls_collector_images
+    valuesDigest        = "sha256:${sha256(jsonencode(local.platform_cls_collector_values))}"
+    collectionAdmission = "unqualified"
+    canaryAuthorized    = false
+  } : null
+}
+
 # Terraform owns topic lifecycle, retention and index policy. LogConfig selects
 # an exact existing topic and must not repeat these fields or create by name.
 resource "tencentcloud_cls_logset" "platform" {

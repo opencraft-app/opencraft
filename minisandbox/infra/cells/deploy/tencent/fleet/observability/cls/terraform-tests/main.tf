@@ -18,6 +18,10 @@ variable "region" {
   default = "ap-beijing"
 }
 
+locals {
+  expected_collector_discovery = jsondecode(file("${path.module}/collector-discovery.json"))
+}
+
 # Schema-only fixture: all runs use Terraform's native mock provider. There is
 # no backend, credential, network call, or real Kubernetes cluster operation.
 resource "tencentcloud_kubernetes_cluster" "management" {

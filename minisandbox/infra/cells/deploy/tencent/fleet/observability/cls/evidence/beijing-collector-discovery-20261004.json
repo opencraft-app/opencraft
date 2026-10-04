@@ -1,0 +1,47 @@
+{
+  "schema": "actor-platform-cls-collector-discovery/v1",
+  "region": "ap-beijing",
+  "clusterId": "cls-b2lt3ed9",
+  "managementId": "actor-bj-c01",
+  "observedAt": "2026-10-04T05:35:04Z",
+  "installed": false,
+  "claimEligible": false,
+  "collectionEnabled": false,
+  "catalog": {
+    "requestId": "2d92f84f-dbbd-4e25-8703-77fe57da98d5",
+    "addonName": "tke-log-agent",
+    "version": "1.1.25",
+    "kind": "other",
+    "scope": "GetTkeAppChartList ClusterType=tke without Kind filter; region catalog is not an installed-addon proof"
+  },
+  "installedAddons": {
+    "requestId": "e3b2540e-1099-46e3-a4a8-f3d03d1f252e",
+    "targetCount": 0,
+    "targetDirectQueryError": "ResourceNotFound",
+    "targetDirectQueryRequestId": "a1ad43c5-8567-4565-993b-0fec3620912f"
+  },
+  "defaultValues": {
+    "requestId": "58c8d6d7-9856-436c-b9bd-d8efff5df396",
+    "kafkaEnabled": true,
+    "registry": "ccr.ccs.tencentyun.com",
+    "logAgentTag": "v1.1.25",
+    "loglistenerTag": "v2.10.1.2",
+    "provisionerTag": "v1.1.25",
+    "scope": "Defaults only. Nonempty Values was also returned for the absent addon and is not installation evidence."
+  },
+  "images": {
+    "log_agent": "ccr.ccs.tencentyun.com/tkeimages/log-agent:v1.1.25@sha256:6b3be6d2df3597fecb186fd75d9312df59345c1e052ef66e267e24caed5dc879",
+    "loglistener": "ccr.ccs.tencentyun.com/tkeimages/loglistener:v2.10.1.2@sha256:9350d197d22d6ffe279574e29c119408851a7048a06720e6c424e824fab5a602",
+    "provisioner": "ccr.ccs.tencentyun.com/tkeimages/cls-provisioner:v1.1.25@sha256:813e404648cef4b9183263914237755306d826361ad95f7e0b90de470ab08a37"
+  },
+  "imageInspection": {
+    "invocationId": "inv-e9fuk40v24",
+    "taskStatus": "SUCCESS",
+    "exitCode": 0,
+    "tool": "skopeo inspect --override-os linux --override-arch amd64 --format .Digest",
+    "registryManifestRead": true,
+    "coldPullVerified": false,
+    "scope": "Registry-reported manifests only; no container execution, cloud rollout, rendered-addon or collector behavior qualification."
+  },
+  "mutations": []
+}
