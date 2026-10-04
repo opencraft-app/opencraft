@@ -222,6 +222,30 @@ describe("BuddyPanel P1 stability", () => {
     expect(screen.queryByText("MUM · 妈妈（旧快照）")).not.toBeInTheDocument();
   });
 
+  it("removes LOVE-R, SOLO and GRASS from new domestic candidates while keeping saved cards", async () => {
+    const riskySouls = ["LOVE-R", "SOLO", "GRASS"].map((slug, index) => ({
+      ...fixtures.agentA,
+      id: index + 10,
+      slug,
+      displayName: `${slug}（最新）`,
+    }));
+    const savedSouls = riskySouls.map((soul) => ({ ...soul, displayName: `${soul.slug}（旧快照）` }));
+    const yyds = { ...fixtures.agentB, slug: "YYDS", displayName: "YYDS · 神人" };
+    mockedFetchSouls.mockResolvedValue({ total: 4, souls: [...riskySouls, yyds] });
+    mockedLoadBuddyState.mockResolvedValue({ drawnSouls: savedSouls, appliedSlug: "LOVE-R" });
+
+    render(<BuddyPanel botId="agent-a" />);
+
+    await waitFor(() => {
+      expect(candidateState.draw).toEqual(["YYDS"]);
+      expect(candidateState.test).toEqual(["YYDS"]);
+    });
+    for (const soul of riskySouls) {
+      expect(await screen.findByText(soul.displayName)).toBeInTheDocument();
+      expect(screen.queryByText(`${soul.slug}（旧快照）`)).not.toBeInTheDocument();
+    }
+  });
+
   it("removes MOMMY from both international candidate flows", async () => {
     regionState.isGlobal = true;
     const savedMum = { ...fixtures.agentA, slug: "MUM", displayName: "MUM · 妈妈" };

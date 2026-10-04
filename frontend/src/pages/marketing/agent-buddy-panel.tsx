@@ -237,7 +237,10 @@ export function BuddyPanel({
   const soulsResource = useAsyncResource(soulsFetcher, [soulDataLocale]);
   // 历史卡片仍从完整目录本地化；新抽卡与测试只使用筛选后的候选。
   const sourceSouls = soulsResource.data?.souls;
-  const souls = useMemo(() => getRecommendableSouls(sourceSouls ?? []), [sourceSouls]);
+  const souls = useMemo(
+    () => getRecommendableSouls(sourceSouls ?? [], soulDataLocale),
+    [sourceSouls, soulDataLocale],
+  );
   const localizedDrawnSouls = useMemo(
     () => localizeDrawnSouls(
       drawnSouls,

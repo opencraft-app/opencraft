@@ -173,6 +173,9 @@ type ClientInterface interface {
 	// CreateHumanImSession request
 	CreateHumanImSession(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetHumanProfile request
+	GetHumanProfile(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetRuntimeChannelMembers request
 	GetRuntimeChannelMembers(ctx context.Context, channelId ChannelId, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -836,6 +839,18 @@ func (c *Client) GetMe(ctx context.Context, reqEditors ...RequestEditorFn) (*htt
 
 func (c *Client) CreateHumanImSession(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewCreateHumanImSessionRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetHumanProfile(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetHumanProfileRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -3044,6 +3059,33 @@ func NewCreateHumanImSessionRequest(server string) (*http.Request, error) {
 	}
 
 	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetHumanProfileRequest generates requests for GetHumanProfile
+func NewGetHumanProfileRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/me/profile")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -7463,6 +7505,9 @@ type ClientWithResponsesInterface interface {
 	// CreateHumanImSessionWithResponse request
 	CreateHumanImSessionWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*CreateHumanImSessionResponse, error)
 
+	// GetHumanProfileWithResponse request
+	GetHumanProfileWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetHumanProfileResponse, error)
+
 	// GetRuntimeChannelMembersWithResponse request
 	GetRuntimeChannelMembersWithResponse(ctx context.Context, channelId ChannelId, reqEditors ...RequestEditorFn) (*GetRuntimeChannelMembersResponse, error)
 
@@ -8202,6 +8247,29 @@ func (r CreateHumanImSessionResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r CreateHumanImSessionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetHumanProfileResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *HumanProfile
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r GetHumanProfileResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetHumanProfileResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -10275,6 +10343,15 @@ func (c *ClientWithResponses) CreateHumanImSessionWithResponse(ctx context.Conte
 	return ParseCreateHumanImSessionResponse(rsp)
 }
 
+// GetHumanProfileWithResponse request returning *GetHumanProfileResponse
+func (c *ClientWithResponses) GetHumanProfileWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetHumanProfileResponse, error) {
+	rsp, err := c.GetHumanProfile(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetHumanProfileResponse(rsp)
+}
+
 // GetRuntimeChannelMembersWithResponse request returning *GetRuntimeChannelMembersResponse
 func (c *ClientWithResponses) GetRuntimeChannelMembersWithResponse(ctx context.Context, channelId ChannelId, reqEditors ...RequestEditorFn) (*GetRuntimeChannelMembersResponse, error) {
 	rsp, err := c.GetRuntimeChannelMembers(ctx, channelId, reqEditors...)
@@ -11808,6 +11885,39 @@ func ParseCreateHumanImSessionResponse(rsp *http.Response) (*CreateHumanImSessio
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest ImSession
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetHumanProfileResponse parses an HTTP response from a GetHumanProfileWithResponse call
+func ParseGetHumanProfileResponse(rsp *http.Response) (*GetHumanProfileResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetHumanProfileResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest HumanProfile
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

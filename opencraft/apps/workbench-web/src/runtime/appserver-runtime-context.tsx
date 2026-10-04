@@ -12,6 +12,7 @@ import {
   useQuery,
 } from "@tanstack/react-query";
 import { composerCapabilitiesOptions, invalidateComposerCapabilities, changesComposerCapabilities } from "./composer-capabilities-query";
+import { requiresEmbeddedLightVelaAccountPreflight } from "./lightvela-web-bootstrap";
 import { changesThreadCatalog } from "./thread-catalog-query";
 import {
   AppServerRpcError,
@@ -1148,7 +1149,7 @@ export async function createWebWorkbenchApplicationSupervisor(
       profileSkills: profileSkills.service,
       profileDirectory: botDirectory,
     }));
-    if (options.lightVelaRegion !== undefined) {
+    if (requiresEmbeddedLightVelaAccountPreflight(options)) {
       // An explicit embedded Host binds both physical instance and account.
       // Do not race provider preflight against the platform extension's
       // fire-and-forget account restoration.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/mail"
 	"strings"
 
 	"git.woa.com/wisp/mono2/collaboration/internal/api/openapi"
@@ -54,6 +55,26 @@ func (handler *MeHandler) GetMe(
 		return nil, err
 	}
 	return openapi.GetMe200JSONResponse(body), nil
+}
+
+// GetHumanProfile 返回不依赖本地邮箱资料的当前 Human 身份。
+func (handler *MeHandler) GetHumanProfile(
+	ctx context.Context,
+	_ openapi.GetHumanProfileRequestObject,
+) (openapi.GetHumanProfileResponseObject, error) {
+	principal, ok := CurrentHumanPrincipal(ctx)
+	if !ok {
+		return nil, apperror.New("unauthenticated", "登录凭证无效", nil)
+	}
+	account, err := handler.service.Get(ctx, principal.AccountID())
+	if err != nil {
+		return nil, err
+	}
+	body, err := humanProfileDTO(account)
+	if err != nil {
+		return nil, err
+	}
+	return openapi.GetHumanProfile200JSONResponse(body), nil
 }
 
 // CreateHumanImSession 只为当前账号持久化的 IM UserID 签发短期 UserSig。
@@ -431,6 +452,7 @@ func newHumanRoutes(
 	mux.HandleFunc("POST /v1/auth/refresh", authStrict.RefreshAuth)
 	mux.HandleFunc("POST /v1/auth/logout", authStrict.Logout)
 	mux.HandleFunc("GET /v1/me", meStrict.GetMe)
+	mux.HandleFunc("GET /v1/me/profile", meStrict.GetHumanProfile)
 	mux.HandleFunc("POST /v1/me/im/session", meStrict.CreateHumanImSession)
 	if serverWrapper != nil {
 		mux.HandleFunc("GET /v1/servers", serverWrapper.ListServers)
@@ -708,26 +730,43 @@ func newHumanRoutes(
 func humanAccountDTO(
 	value humanaccountport.Account,
 ) (openapi.Account, error) {
+	if _, err := mail.ParseAddress(value.Email); err != nil {
+		return openapi.Account{}, apperror.New("internal_error", "账号邮箱资料不可用", err)
+	}
+	profile, err := humanProfileDTO(value)
+	if err != nil {
+		return openapi.Account{}, err
+	}
+	return openapi.Account{
+		Id:          profile.Id,
+		Email:       openapi_types.Email(value.Email),
+		DisplayName: profile.DisplayName,
+		ImUserId:    profile.ImUserId,
+		ImState:     openapi.AccountImState(profile.ImState),
+		Revision:    profile.Revision,
+	}, nil
+}
+
+func humanProfileDTO(value humanaccountport.Account) (openapi.HumanProfile, error) {
 	id, err := uuid.Parse(value.ID)
 	if err != nil || id == uuid.Nil {
-		return openapi.Account{}, apperror.New(
+		return openapi.HumanProfile{}, apperror.New(
 			"internal_error",
 			"账号数据无效",
 			err,
 		)
 	}
 	if value.Revision > uint64(^uint64(0)>>1) {
-		return openapi.Account{}, apperror.New(
+		return openapi.HumanProfile{}, apperror.New(
 			"internal_error",
 			"账号版本无效",
 			nil,
 		)
 	}
-	result := openapi.Account{
+	result := openapi.HumanProfile{
 		Id:          id,
-		Email:       openapi_types.Email(value.Email),
 		DisplayName: value.DisplayName,
-		ImState:     openapi.AccountImState(value.IMState),
+		ImState:     openapi.HumanProfileImState(value.IMState),
 		Revision:    int64(value.Revision),
 	}
 	if imUserID := strings.TrimSpace(value.IMUserID); imUserID != "" {

@@ -40,6 +40,7 @@ export interface ImDirectoryServiceOptions {
 export class ImDirectoryService {
   private readonly listeners = new Set<() => void>();
   private generation = 0;
+  private disposed = false;
   private readonly createRequestId: () => string;
   private loadOperation: Promise<void> | null = null;
   private loadingServerId: string | null = null;
@@ -69,6 +70,7 @@ export class ImDirectoryService {
   };
 
   load(serverId: string): Promise<void> {
+    if (this.disposed) return Promise.reject(new Error("IM directory service is disposed"));
     const normalized = serverId.trim();
     if (!normalized) return Promise.reject(new RangeError("Server ID must not be empty"));
     if (this.loadOperation !== null && this.loadingServerId === normalized) {
@@ -117,6 +119,8 @@ export class ImDirectoryService {
   }
 
   async startPrivateConversation(memberId: string): Promise<string | null> {
+    if (this.disposed) throw new Error("IM directory service is disposed");
+    const startingGeneration = this.generation;
     const normalized = memberId.trim();
     const { serverId, directConversations, channels, phase } = this.snapshot;
     if (!normalized || serverId === null || phase !== "ready") return null;
@@ -129,12 +133,22 @@ export class ImDirectoryService {
       normalized,
       this.createRequestId(),
     );
+    if (this.disposed) throw new Error("IM directory service is disposed");
+    if (startingGeneration !== this.generation) return null;
     if (result.kind === "accepted") return null;
     const next = Object.freeze([...directConversations, result.resource]);
     const generation = ++this.generation;
     await this.applyScope(generation, channels, next);
+    if (this.disposed) throw new Error("IM directory service is disposed");
+    if (generation !== this.generation) return null;
     this.publish({ directConversations: next, error: null });
     return result.resource.id;
+  }
+
+  dispose(): void {
+    this.disposed = true;
+    this.generation += 1;
+    this.listeners.clear();
   }
 
   private applyScope(

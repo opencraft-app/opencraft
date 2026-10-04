@@ -147,7 +147,7 @@ func TestHumanAPIMeAndIMSessionUseCurrentAuthenticatedAccount(t *testing.T) {
 	}
 }
 
-func TestHumanAPIMeJITMapsVerifiedLightVelaAccountWithoutLocalSession(t *testing.T) {
+func TestHumanAPIProfileJITMapsVerifiedLightVelaAccountWithoutLocalSession(t *testing.T) {
 	handle := openHumanAPIDatabase(t)
 	handler, err := NewHumanAPIHandler(HumanAPIConfig{
 		Auth: AuthAPIConfig{
@@ -168,7 +168,7 @@ func TestHumanAPIMeJITMapsVerifiedLightVelaAccountWithoutLocalSession(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := httptest.NewRequest(http.MethodGet, "/v1/me", nil)
+	request := httptest.NewRequest(http.MethodGet, "/v1/me/profile", nil)
 	request.Header.Set("Authorization", "Bearer service-gateway-internal-token")
 	request.Header.Set("X-Lightclaw-User-ID", "usr_0123456789abcdef01234567")
 	response := httptest.NewRecorder()
@@ -176,7 +176,11 @@ func TestHumanAPIMeJITMapsVerifiedLightVelaAccountWithoutLocalSession(t *testing
 	handler.ServeHTTP(response, request)
 
 	if response.Code != http.StatusOK {
-		t.Fatalf("GET /me status = %d body=%s", response.Code, response.Body)
+		t.Fatalf("GET /me/profile status = %d body=%s", response.Code, response.Body)
+	}
+	var profile openapi.HumanProfile
+	if err := json.Unmarshal(response.Body.Bytes(), &profile); err != nil || profile.Id.String() == "00000000-0000-0000-0000-000000000000" || profile.DisplayName != "LightVela user" {
+		t.Fatalf("delegated profile body = %s, error=%v", response.Body, err)
 	}
 	if count, err := handle.Client().Account.Query().Count(context.Background()); err != nil || count != 1 {
 		t.Fatalf("account count = %d, %v", count, err)

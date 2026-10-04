@@ -79,7 +79,7 @@ describe("SoulTestModal", () => {
     render(
       <SoulTestModal
         open
-        souls={getRecommendableSouls(ENGLISH_SOULS)}
+        souls={getRecommendableSouls(ENGLISH_SOULS, "en")}
         maxDrawsReached={false}
         drawnSlugs={[]}
         useEnglishSoulData
