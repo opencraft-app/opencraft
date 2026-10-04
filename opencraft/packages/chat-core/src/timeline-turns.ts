@@ -78,6 +78,15 @@ export function deriveTimelineLatestTurnActivityKey(
   return turn.turnKey;
 }
 
+/** React presentation identity; `turnKey` remains the protocol Turn locator. */
+export function timelineTurnRenderKey(turn: TimelineTurnView): string {
+  const primaryUserMessage = turn.frames.flatMap(frame => frame.blocks).find(block =>
+    block.type === "user-message" && block.messageKind === "user" && block.clientId !== null);
+  return primaryUserMessage?.type === "user-message"
+    ? `user-message:${primaryUserMessage.clientId}:turn`
+    : turn.turnKey;
+}
+
 export interface TimelineHistoryGapView {
   readonly type: "history-gap";
   readonly turnKey: string;

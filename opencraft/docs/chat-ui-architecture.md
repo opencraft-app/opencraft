@@ -482,6 +482,22 @@ and follow-up queue so a second subscriber or a reconnect sees the same result.
   Turn-count overscan, measured-height anchor compensation, route restore,
   common geometry/scroll API, and parent latest-Turn follow reducer.
 
+### Turn identity handoff and mounted window
+
+The canonical `turnKey` remains the protocol locator. When a submitted Turn
+acquires its authoritative ID, its primary user-message client ID owns the
+stable React row identity. Known measured height transfers across that identity
+handoff before estimating the new layout; an already measured target height
+wins, and unrelated messages never inherit geometry.
+
+The intermediate mounted window retains both its anchored slots and every
+surviving mounted row. History insertion cannot evict its former last row, and
+a same-count ID replacement cannot exclude a newly acknowledged edge. The
+viewport refresh consumes layout identity, not only entry count or a later
+platform scroll event. Natural and response-placement policies share this rule
+without acquiring bottom ownership from a reader, forcing scroll, reordering
+history, or remounting the Conversation.
+
 ### Compatibility boundary
 
 - `appserver-session` currently materializes a Thread View before exposing it
