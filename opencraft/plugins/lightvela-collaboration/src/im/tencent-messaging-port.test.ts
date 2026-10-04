@@ -34,7 +34,7 @@ const normalizedMessage: Message = {
 };
 
 describe("TencentMessagingPort", () => {
-  it("filters live messages to the current Server scope", async () => {
+  it("filters live messages and clears the old account scope on close", async () => {
     let rawMessageHandler: ((messages: SdkMessage[]) => void) | undefined;
     const port = new TencentMessagingPort({
       chat: {
@@ -82,12 +82,24 @@ describe("TencentMessagingPort", () => {
           targetId: "topic-1",
         },
       ],
-      generation: 1,
+      generation: 5,
     });
 
     rawMessageHandler?.([]);
 
     expect(updates).toEqual([[normalizedMessage]]);
+    await port.close();
+    rawMessageHandler?.([]);
+    expect(updates.length).toEqual(1);
+    await port.setScope({
+      generation: 1,
+      allowedConversations: [{
+        channelId: "channel-outside", conversationId: "GROUPtopic-outside",
+        imGroupId: "community-outside", imTopicId: "topic-outside", targetId: "topic-outside",
+      }],
+    });
+    rawMessageHandler?.([]);
+    expect(updates.at(-1)?.map((message) => message.id)).toEqual(["message-outside"]);
   });
 
   it("exposes Tencent lifecycle and live messages through client-core", async () => {

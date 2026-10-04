@@ -2,6 +2,7 @@ package httptransport
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -13,6 +14,54 @@ import (
 	authnport "git.woa.com/wisp/mono2/collaboration/internal/ports/authn"
 	humanaccountport "git.woa.com/wisp/mono2/collaboration/internal/ports/humanaccount"
 )
+
+func TestHumanRoutesSerializeDelegatedProfileWithoutEmail(t *testing.T) {
+	service := &fakeHumanAccountService{account: humanaccountport.Account{
+		ID: handlerAccountID, Email: "", DisplayName: "LightVela user",
+		IMUserID: "u_OPAQUE", IMState: "ready", Revision: 2,
+	}}
+	handler, err := NewHumanRoutes(
+		&fakeAccountAuthService{}, service,
+		NewErrorEncoder(fixedRequestIDGenerator{value: "request-1"}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodGet, "/v1/me/profile", nil).
+		WithContext(currentHumanContext(t))
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+	var response struct {
+		ID    string          `json:"id"`
+		Email json.RawMessage `json:"email"`
+		Error json.RawMessage `json:"error"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if recorder.Code != http.StatusOK || response.ID != handlerAccountID ||
+		len(response.Email) != 0 || len(response.Error) != 0 {
+		t.Fatalf("delegated /me response: status=%d body=%s", recorder.Code, recorder.Body)
+	}
+}
+
+func TestLegacyMeRejectsMissingEmailBeforeWritingSuccess(t *testing.T) {
+	service := &fakeHumanAccountService{account: humanaccountport.Account{
+		ID: handlerAccountID, Email: "", DisplayName: "LightVela user",
+		IMState: "ready", Revision: 2,
+	}}
+	handler, err := NewHumanRoutes(&fakeAccountAuthService{}, service,
+		NewErrorEncoder(fixedRequestIDGenerator{value: "request-1"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodGet, "/v1/me", nil).WithContext(currentHumanContext(t))
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusInternalServerError {
+		t.Fatalf("legacy /me committed success before encoding error: status=%d body=%s", recorder.Code, recorder.Body)
+	}
+}
 
 type fakeHumanAccountService struct {
 	getAccountID     string
@@ -109,6 +158,10 @@ func TestMeHandlerRequiresCurrentHumanPrincipal(t *testing.T) {
 	if response != nil || apperror.CodeOf(err) != "unauthenticated" {
 		t.Fatalf("GetMe() = (%#v, %v)", response, err)
 	}
+	profile, err := handler.GetHumanProfile(context.Background(), openapi.GetHumanProfileRequestObject{})
+	if profile != nil || apperror.CodeOf(err) != "unauthenticated" {
+		t.Fatalf("GetHumanProfile() = (%#v, %v)", profile, err)
+	}
 }
 
 func TestHumanRoutesExposeAuthAndMeButNotFutureOperations(t *testing.T) {
@@ -125,6 +178,7 @@ func TestHumanRoutesExposeAuthAndMeButNotFutureOperations(t *testing.T) {
 	}{
 		{method: http.MethodPost, path: "/v1/auth/login"},
 		{method: http.MethodGet, path: "/v1/me"},
+		{method: http.MethodGet, path: "/v1/me/profile"},
 		{method: http.MethodPost, path: "/v1/me/im/session"},
 	} {
 		request := httptest.NewRequest(route.method, route.path, nil)

@@ -3,6 +3,7 @@ import test from "node:test";
 
 import type {
   Channel,
+  CreateDirectConversationResult,
   DirectConversationResource,
   Member,
   MessagingScope,
@@ -108,4 +109,21 @@ test("Member selection can create one private IM Group and add it to the shared 
   assert.deepEqual(service.getSnapshot().directConversations, [direct]);
   assert.equal(scopes.length, 2);
   assert.equal(scopes[1]?.allowedConversations.at(-1)?.conversationId, "GROUPdirect-group-1");
+});
+
+test("an old account directory cannot publish a late private conversation", async () => {
+  let finish!: (result: CreateDirectConversationResult) => void;
+  const scopes: MessagingScope[] = [];
+  const service = new ImDirectoryService({
+    createDirectConversation: async () => new Promise<CreateDirectConversationResult>((resolve) => { finish = resolve; }),
+    listChannels: async () => [channel],
+    listMembers: async () => [member],
+    listDirectConversations: async () => [],
+  }, { setScope: async (scope) => { scopes.push(scope); } });
+  await service.load("server-1");
+  const creating = service.startPrivateConversation("member-1");
+  service.dispose();
+  finish({ kind: "ready", resource: direct });
+  await assert.rejects(creating, /disposed/);
+  assert.equal(scopes.length, 1);
 });
