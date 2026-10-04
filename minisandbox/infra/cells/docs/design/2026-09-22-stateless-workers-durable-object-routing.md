@@ -2312,6 +2312,13 @@ wrapper回归通过，并经当前management模板COS relay落地builder；
 candidate相同，不重复构建controller/workerd。此证据仅source preparation，cloud fixture
 未执行、claimEligible=false；原持锁supervisor及111Host缩容状态没有被改动。
 
+执行前提检查发现builder没有native Go，容器内构建成功不能证明该入口可运行。
+从同一locked Go base离线准备Go 1.25.4及经frozen module校验的cache后，builder原生
+三项intent/target fake-client race回归通过、source manifest未变；
+[工具准备回执](../../deploy/tencent/fleet/qualification/host-eviction-api/evidence/tooling-prepared-20261004.json)
+保留exact SDK selector/hash与非资格scope。没有新runtime/controller构建、public下载或
+真实TKE fixture；工具就绪仍不构成Actor fencing、缩容或Phase5资格。
+
 - Worker Version、Deployment、GC 与 Durable Object storage identity 继续遵循
   `2026-08-31-workers-durable-objects.md`；
 - Rivet Actor V1 ID、Guard peer forwarding 和未来迁移遵循

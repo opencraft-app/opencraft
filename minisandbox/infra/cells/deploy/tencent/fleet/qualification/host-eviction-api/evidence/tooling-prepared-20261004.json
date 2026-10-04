@@ -1,0 +1,45 @@
+{
+  "schema": "minisandbox-tke-go-tooling-preparation/v1",
+  "verdict": "passed",
+  "scope": "offline-tooling-preparation-not-cloud-gate-or-admission",
+  "claimEligible": false,
+  "image": "actor-fleet-beijing.tencentcloudcr.com/actor-fleet/base-golang@sha256:7aecd68f34e3511fe56affcff87c28464823964358daf4c6a7929f9c837fe8ed",
+  "goVersion": "go1.25.4",
+  "goOs": "linux",
+  "goArch": "amd64",
+  "goBinary": "/data/actor-build/go-toolchains/base-7aecd68f34e3511fe56affcff87c28464823964358daf4c6a7929f9c837fe8ed/go/bin/go",
+  "goBinarySha256": "06c386d4ead3c7e28565a544d0e7693d5998f060bc75029a5e86b52b4f824767",
+  "source": "/data/actor-build/deploy/tke-eviction-src-d2037c0ef940199dc347287277dbe98875b014cc-65a6c306a61a0372429bcaabc39e22882893bdf7ef2055eb00454571d94f070f",
+  "goModSha256": "bdc49c57a97747d9cdc80150e81173bb2c285da2a5b5ad1b4740434429675f27",
+  "goSumSha256": "082090d431a56c3e68f47e01a10a6362dbfa8738ee8c194f33f9c9419f4a144a",
+  "moduleCache": "/data/build-cache/go-mod",
+  "publicNetworkUsed": false,
+  "cloudFixtureExecuted": false,
+  "runtimeBuilt": false,
+  "controllerBuilt": false,
+  "checks": {
+    "lockedBaseIdentity": true,
+    "exactSdkContents": true,
+    "nativeGoVersion": true,
+    "offlineModulesVerified": true,
+    "sourceModFilesUnchanged": true,
+    "dataFreeReserveEightGiB": true
+  },
+  "seedInvocation": "inv-c9fj9wgqhx",
+  "cacheInspectionInvocation": "inv-d9fj7t0wuj",
+  "offlinePolicy": {
+    "invocation": "inv-e9fjb2gn91",
+    "status": "SUCCESS",
+    "exitCode": 0,
+    "tests": [
+      "TestTKEEvictionIntentRejectsAmbiguousOrUnboundedJSON",
+      "TestTKEEvictionIntentRequiresCompletePrivateIdentity",
+      "TestTKEEvictionTargetFailuresRemainReadOnly"
+    ],
+    "race": true,
+    "maxCpus": 2,
+    "memoryMaxBytes": 2147483648,
+    "sourceManifestUnchanged": true,
+    "cloudFixtureExecuted": false
+  }
+}
