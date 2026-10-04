@@ -25,6 +25,8 @@ Kubernetes eviction 的内部 Update/Delete 不经过外部 DELETE admission web
 
 先将已有 k3d kubeconfig 保存到 `/data/tmp` 的 `0600` 文件，禁止输出内容。桥接地址用
 本机 Docker 网络的实际 gateway，不是猜测地址。所有工作目录、cache 和 receipt 在 `/data`。
+`k3d cluster list -o json` 包含 env/join token，禁止直接输出；仅经 `jq` 投影已审核的
+cluster/node name 与 running 计数。不要打印 Docker/kubeconfig 或完整环境。
 
 ```bash
 cd minisandbox/infra/cells
@@ -43,3 +45,9 @@ webhook 短时 barrier 仅作用于新建测试 namespace 的 eviction，不影�
 本机 `v1.35.5+k3s1` 已通过一次（143.35秒），完整非敏感receipt在
 [20261004-k3s-v1.35.5.json](evidence/20261004-k3s-v1.35.5.json)，11项checks通过且自己的
 namespace/webhook已清理。云上TKE为`v1.30.0-tke.22`，本地结果不能转为云Claim资格。
+
+共享 fixture 重构后的本地真实 API 回归也通过（147.43秒），见
+[新回执](evidence/20261004-k3s-v1.35.5-shared-fixture.json)。12项检查包括新增 Node UID
+全程不变；仍是 local scope/claimEligible=false。原 loopback/context/single-node guard
+未放宽。云上使用[独立受锁入口](../../../tencent/fleet/qualification/host-eviction-api/README.md)，
+不得把这里的本地通过转成 TKE 通过；新回执路径拒绝覆盖旧文件。
