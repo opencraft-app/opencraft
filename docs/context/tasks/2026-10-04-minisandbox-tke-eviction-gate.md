@@ -96,6 +96,20 @@ derived: false
 - 归档JSON字段与实际remote stage及local export一致；本轮最终docs0错误/警告、context4970
   与上轮逐项相同，root26测试仍同4个历史失败、audit33通过，discovery仍not_assessed。
   secret/impact覆盖全部5个变更（含新增source evidence），不以未快照Git diff遗漏新增文件。
+- 执行前提复核inv-c9fj5bg5wh SUCCESS/0：ops x86_64、18GB free，五个标准selector没有
+  native Go；locked cached base与当前module哈希相同，不能据此认定native gate已可运行。
+  inv-c9fj6tg9ct FAILED/125：Buildah chroot不支持network=none，未执行Go/SDK检查且自身
+  临时container已正常清理；不以换host网络来绕过失败。后续仅mount读取已缓存SDK，不建网络。
+  Dockerfile两次假设locator失败，已按bounded rg找到实际cells根build-base，不扩大读Secret。
+  inv-a9fj6u0m41 SUCCESS/0，00:13:44Z原unit仍同PID/InvocationID live，A111/115、B4/4。
+- inv-d9fj7t0wuj SUCCESS/0离线mount证实cached Go1.25.4 SDK及module cache；
+  inv-c9fj9wgqhx SUCCESS/0将exact SDK落地独立/data目录，本地file proxy下载+mod verify
+  全通过，原source mod文件未改、8GiB reserve保留；没有public下载或新controller/runtime构建。
+- inv-e9fjb2gn91 SUCCESS/0：builder native Go的三项intent/target fake-client race通过，
+  2CPU/2GiB scope、GOPROXY=off，SDK hash及前后source manifest已校验，不运行实际TKE entry。
+  工具selector/SDK/base/module哈希归档tooling receipt，不能把fake-client当cloud协议资格。
+- inv-d9fjce0gph SUCCESS/0，00:19:40Z原unit同PID/InvocationID仍live，采样00:19:27Z
+  A111/115、B4/4、active0；下一常规观察不早于00:24:45Z。
 
 ## scan_scope / scan_output
 
@@ -106,7 +120,7 @@ derived: false
 
 ## checkpoint / handoff
 
-- stage：受锁TKE入口完整冻结源码已送达builder，local shared fixture真实复验通过。
+- stage：受锁TKE入口完整冻结源码/原生Go工具已落地builder，native离线policy也通过。
 - verified：readonly target guard、source/receipt wrapper、local 12 primitive检查及remote完整源码closure。
 - unverified：cloud callback/gate、真正Actor/目的AZ缩容及完整Phase5；join token需独立维护。
 - next_action：归档source preparation证据并完成source/context/impact/secret门禁与授权FF push；

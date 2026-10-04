@@ -50,3 +50,12 @@ race 与 8 项 wrapper/verifier 回归通过，已经当前管理模板的 COS r
 与 exact destination；builder 核验完整 closure 和执行位，不依赖工作目录或旧节点拷贝。
 与 `03e7e7b7` 候选相比全部非测试 Go 源码没有差异，不重复构建 controller/workerd。
 这份回执的 `claimEligible=false`、`cloudFixtureExecuted=false`，不是 TKE primitive 通过。
+
+builder 原本只有容器内 Go，没有可供此原生入口使用的 `/data` toolchain。准备工具时必须
+从当前完整 inventory 的 locked Go base 验证两项 module label，再离线 mount 读取 SDK；
+不把 Buildah chroot 的网络参数错误转成 host-network 绕过。SDK 放独立 `/data` 目录，
+仅用缓存镜像的 `file://.../go/pkg/mod/cache/download` 填充标准 module cache，
+以冻结 `go.mod/go.sum` 验证，保留 8 GiB 磁盘余量，不修改 source 或清理其他 cache。
+[工具准备回执](evidence/tooling-prepared-20261004.json)给出已验证的 `ACTOR_GO_BINARY`
+selector、Go 1.25.4/binary hash 与 locked base。builder 原生 Go 的三项 intent/target
+fake-client race 单测已通过，编译限制 2 核/2 GiB，实际 TKE entry 没有运行。

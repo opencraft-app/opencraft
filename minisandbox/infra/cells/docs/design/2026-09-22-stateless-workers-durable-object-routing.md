@@ -991,6 +991,15 @@ Registry claim rate 与 cache miss 而不是请求 QPS 成正比。
 验收：从低容量自动扩到目标负载后安全缩回；扩容期间不把未 admitted 节点加入调度；一次最多
 自动修复一台 durable 节点。
 
+探索缩容是独立配置维度，不是 `e2e-fast` 的别名：只将 Host drain 稳定窗口/协调间隔
+从生产 `5m/5s` 调整为 `30s/2s`，保留排空取消期限、freshness、三AZ、PDB、UID fencing
+与逐台收敛。短窗口可能增加抖动，不承诺Node释放时长，也不能绕过拓扑或资源售罄阻塞。
+`runtime/host-drain-profile.py` 先提供离线Deployment JSON转换/检查：探索标记与实际timer
+必须一致，仅改两个字段及自己的Pod template annotation，重复/混合配置拒绝。
+这是配置工具，不是生产资格或已安装能力；installer/Argo/资格入口尚未接线。后续生产
+容量门禁必须核对live Deployment，不能仅信任caller环境。现有manifest和原strict10k
+监督任务不变；探索通过也不替代生产低容量→万活跃→安全缩回的完整证据。
+
 ### Phase 5：资格与演进决策
 
 - 运行百万 dormant Object 元数据和万级 active Object 的分片容量测试；
@@ -2311,6 +2320,13 @@ wrapper回归通过，并经当前management模板COS relay落地builder；
 绑定archive/tree/manifest/exact destination及执行位。全部非测试Go源码与已构建controller
 candidate相同，不重复构建controller/workerd。此证据仅source preparation，cloud fixture
 未执行、claimEligible=false；原持锁supervisor及111Host缩容状态没有被改动。
+
+执行前提检查发现builder没有native Go，容器内构建成功不能证明该入口可运行。
+从同一locked Go base离线准备Go 1.25.4及经frozen module校验的cache后，builder原生
+三项intent/target fake-client race回归通过、source manifest未变；
+[工具准备回执](../../deploy/tencent/fleet/qualification/host-eviction-api/evidence/tooling-prepared-20261004.json)
+保留exact SDK selector/hash与非资格scope。没有新runtime/controller构建、public下载或
+真实TKE fixture；工具就绪仍不构成Actor fencing、缩容或Phase5资格。
 
 - Worker Version、Deployment、GC 与 Durable Object storage identity 继续遵循
   `2026-08-31-workers-durable-objects.md`；

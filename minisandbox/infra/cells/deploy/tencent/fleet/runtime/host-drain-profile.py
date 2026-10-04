@@ -1,0 +1,146 @@
+#!/usr/bin/env python3
+"""Offline Host drain profile transformation/check. Never contacts Kubernetes."""
+
+import copy
+import json
+import sys
+
+
+PROFILE_ANNOTATION = "fleet.actor.dev/host-drain-profile"
+PROFILES = {"production": ("5m", "5s"), "exploration": ("30s", "2s")}
+TIMERS = ("HOST_DRAIN_STABILIZATION", "HOST_DRAIN_RECONCILE_INTERVAL")
+FIXED_GUARDS = {
+    "HOST_DRAIN_TIMEOUT": "10m",
+    "HOST_DRAIN_METRICS_FRESHNESS": "45s",
+    "HOST_DRAIN_REQUIRED_ZONES": "3",
+    "HOST_DRAIN_TOPOLOGY_KEY": "topology.kubernetes.io/zone",
+    "HOST_DRAIN_MAX_REMAINING_USAGE_PERCENT": "70",
+}
+MAX_INPUT_BYTES = 1024 * 1024
+
+
+def controller_parts(document):
+    if (
+        not isinstance(document, dict)
+        or document.get("apiVersion") != "apps/v1"
+        or document.get("kind") != "Deployment"
+    ):
+        raise ValueError("expected Host drain Deployment")
+    metadata = document.get("metadata", {})
+    if (
+        not isinstance(metadata, dict)
+        or metadata.get("labels", {}).get("fleet.actor.dev/component") != "host-drain-controller"
+    ):
+        raise ValueError("wrong controller component")
+    template = document["spec"]["template"]
+    annotations = template["metadata"]["annotations"]
+    if (
+        not isinstance(annotations, dict)
+        or annotations.get("fleet.actor.dev/runtime-release-hold-protocol") != "statefulset-uid-cas-v1"
+    ):
+        raise ValueError("release hold protocol missing")
+    containers = template["spec"]["containers"]
+    if not isinstance(containers, list) or len(containers) != 1:
+        raise ValueError("expected one controller container")
+    container = containers[0]
+    if (
+        container.get("name") != "controller"
+        or container.get("command") != ["/usr/local/bin/workerd-host-drain-controller"]
+    ):
+        raise ValueError("wrong controller entrypoint")
+    entries = container["env"]
+    if not isinstance(entries, list):
+        raise ValueError("environment list required")
+    env = {}
+    for entry in entries:
+        if (
+            not isinstance(entry, dict)
+            or not isinstance(entry.get("name"), str)
+            or not entry["name"]
+            or entry["name"] in env
+        ):
+            raise ValueError("invalid or duplicate environment entry")
+        env[entry["name"]] = entry
+    for name, value in FIXED_GUARDS.items():
+        if env.get(name) != {"name": name, "value": value}:
+            raise ValueError("fixed drain guard changed")
+    for name in TIMERS:
+        if (
+            name not in env
+            or set(env[name]) != {"name", "value"}
+            or not isinstance(env[name]["value"], str)
+        ):
+            raise ValueError("literal drain timers required")
+    return annotations, env
+
+
+def profile_of(document):
+    annotations, env = controller_parts(document)
+    # Existing production manifests have no annotation. Never infer exploration
+    # from short timers alone; only the complete named contract is classifiable.
+    profile = annotations.get(PROFILE_ANNOTATION, "production")
+    if not isinstance(profile, str) or profile not in PROFILES:
+        raise ValueError("unknown profile")
+    if tuple(env[name]["value"] for name in TIMERS) != PROFILES[profile]:
+        raise ValueError("profile marker and timers disagree")
+    return profile
+
+
+def check_profile(document, expected):
+    if expected not in PROFILES or profile_of(document) != expected:
+        raise ValueError("unexpected profile")
+
+
+def render_profile(document, profile):
+    if profile not in PROFILES:
+        raise ValueError("unknown profile")
+    profile_of(document)  # Reject drift instead of silently overwriting it.
+    result = copy.deepcopy(document)
+    annotations, env = controller_parts(result)
+    for name, value in zip(TIMERS, PROFILES[profile]):
+        env[name]["value"] = value
+    if profile == "production":
+        annotations.pop(PROFILE_ANNOTATION, None)
+    else:
+        annotations[PROFILE_ANNOTATION] = profile
+    return result
+
+
+def unique_object(pairs):
+    result = {}
+    for name, value in pairs:
+        if name in result:
+            raise ValueError("duplicate JSON field")
+        result[name] = value
+    return result
+
+
+def reject_constant(_value):
+    raise ValueError("non-finite JSON constant")
+
+
+def main():
+    args = sys.argv[1:]
+    if len(args) != 2 or args[0] not in ("render", "check") or args[1] not in PROFILES:
+        print("usage: host-drain-profile.py render|check production|exploration < deployment.json", file=sys.stderr)
+        return 2
+    try:
+        raw = sys.stdin.buffer.read(MAX_INPUT_BYTES + 1)
+        if len(raw) > MAX_INPUT_BYTES:
+            raise ValueError("input too large")
+        document = json.loads(raw, object_pairs_hook=unique_object, parse_constant=reject_constant)
+        if args[0] == "render":
+            rendered = render_profile(document, args[1])
+            encoded = json.dumps(rendered, ensure_ascii=False, allow_nan=False)
+            sys.stdout.write(encoded + "\n")
+        else:
+            check_profile(document, args[1])
+        return 0
+    except (ValueError, TypeError, KeyError, AttributeError, RecursionError):
+        # Do not echo the supplied object, raw values, URL, or exception text.
+        print("Host drain profile input rejected", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

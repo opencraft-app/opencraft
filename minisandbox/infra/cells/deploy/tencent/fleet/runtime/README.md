@@ -13,6 +13,31 @@ workerd compute and deliberately does not advertise PVM support. PVM sbxlet
 requires a separately qualified node that proves a usable `/dev/kvm`; adding a
 label to a standard CVM is not qualification.
 
+## 探索阶段的快速 Host 缩容
+
+快速缩容与 `e2e-fast` 是不同配置维度：前者仅改变 Host drain 的稳定窗口和
+协调间隔，不改变 Actor 配额、存储参数、三 AZ、PDB、UID fencing 或逐台排空。
+生产为 `5m/5s`，探索为 `30s/2s`；排空超时仍是 `10m`，到期取消而不是强删。
+缩短窗口可能增加扩缩容抖动，也不能解决缺少目标 AZ 容量或 ordinal 拓扑阻塞。
+
+`host-drain-profile.py` 当前仅提供离线 JSON Deployment 转换/检查，尚未接入
+installer、Argo 或生产资格入口，因此不能直接启用该模式：
+
+```sh
+python3 host-drain-profile.py render exploration < /data/review/host-drain.json
+python3 host-drain-profile.py check production < /data/review/host-drain.json
+```
+
+输入必须是已渲染的单个 Host drain Deployment，不是 List、Secret 或 kubeconfig。
+探索输出在 Pod template 上标记 `fleet.actor.dev/host-drain-profile=exploration`。
+检查同时核对两项 timer 和固定安全字段，不只信任标记；非法或漂移输入不会被转换
+成看似有效的生产配置。工具不访问 Kubernetes、不发布或删除资源；输出不是准入收据。
+后续接线必须从实际 Deployment 读取配置并拒绝以探索策略生成生产容量资格，不能
+只检查调用者环境变量。模式切换也必须走受锁 desired-state 流程，不直接 apply 此输出。
+现有生产 manifest 与部署保持不变，原 strict10k supervisor 的观察窗口也不改变。
+
+## 安装与构建前提
+
 Before creating auth Secrets or changing admission/runtime workloads, the
 installer reads the Cell's actual control Nodes and validates Ready status,
 scheduling fences, role isolation, unique identities and the required zone
