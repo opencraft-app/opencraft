@@ -59,8 +59,12 @@ user JavaScript console output, request bodies, headers, or raw URL/error text.
 The Workers API library uses finite typed error classes for transport, stream,
 cleanup, placement, and deployment-watch diagnostics; real HTTP regressions
 cover disconnects without replay and truncated-response aborts. This does not
-qualify startup logs, net/http's default server errors, or other containers for
-collection, and source changes alone do not prove a live CLS channel.
+qualify other containers for collection, and source changes alone do not prove
+a live CLS channel. The Workers API process now also has a finite-error JSON
+handler and a bounded net/http error adapter. The opt-in Terraform resources,
+narrow LogConfig renderer, tests and pending installation gates are under
+[`cls/`](cls/README.md). Existing cloud images must be qualified and released
+before that collection rule is enabled.
 
 ```sh
 # Run once from a Docker host that can reach the upstream registries and has

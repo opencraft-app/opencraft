@@ -2209,8 +2209,17 @@ socket阶段；fetch继续保留目标host和相关request ID，不新增payload
 断连返回502且`indeterminate_result`不可透明重试，截断仍`http.ErrAbortHandler`。
 两种cleanup与watch回归用真实HTTP返回任意错误message/code，证明不进入结构化日志。
 这是源码日志边界，不是CLS通道已部署、503已定位或全进程stdout已安全的声明。
-`cmd/workers-api`启动错误、HTTP server默认错误输出及其他容器仍需单独审计；不能据此
-放开所有容器采集。request ID为既有的有界客户端相关标识，不是可信租户身份。
+后续`cmd/workers-api`接`NewPlatformLogger`有限错误JSON handler与`PlatformHTTPErrorLog`，
+实际CLI配置失败及真实TCP panic回归证明原始error、panic文字和堆栈不进入这些日志。
+非JSON的flag/runtime stderr与其他容器仍不能作为采集兜底。request ID为既有的有界客户端
+相关标识，不是可信租户身份，也不是任意字段脱敏器的授权。
+
+management Terraform已增加默认关闭的CLS日志集/topic/有限索引与独立binding output；
+保留默认7天、范围1–30天，关闭匿名写、自动分裂、自动/全文索引。独立renderer只选择C的
+Workers API容器，使用精确topic/logset ID、显式metadata白名单、JSON WARN/ERROR过滤、
+解析失败不上传与增量采集；不写Terraform拥有的topic/index字段。见observability/cls/README。
+声明与本地mock provider plan不是云collector资格：尚未安装agent或发布安全API镜像，
+后续需在operation lock空闲后核验addon/CRD/实际topic归属、独立Argo及查询收据。
 
 严格负载后的自然缩容还暴露一个独立liveness缺口：A在111 Ready Host、active0、无release
 hold时停于35/35/41，最高ordinal110在较小AZ；下一前缀34/35/41的skew7超过当前缩容

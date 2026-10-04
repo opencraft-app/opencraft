@@ -99,7 +99,7 @@ func main() {
 	flag.StringVar(&qualificationDatacenter, "qualification-datacenter", "", "qualification-only fixed Engine datacenter")
 	flag.Parse()
 
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	logger := workersapi.NewPlatformLogger(os.Stdout)
 	slog.SetDefault(logger)
 	shutdownSignal, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -205,6 +205,7 @@ func main() {
 	server := &http.Server{
 		Addr:              listenAddress,
 		Handler:           api,
+		ErrorLog:          workersapi.PlatformHTTPErrorLog(logger, "public"),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		// Conversational responses may stream for much longer than control
@@ -219,6 +220,7 @@ func main() {
 		servers = append(servers, &http.Server{
 			Addr:              internalListenAddress,
 			Handler:           api.InternalHandler(),
+			ErrorLog:          workersapi.PlatformHTTPErrorLog(logger, "internal"),
 			ReadHeaderTimeout: 5 * time.Second,
 			ReadTimeout:       30 * time.Second,
 			WriteTimeout:      0,
