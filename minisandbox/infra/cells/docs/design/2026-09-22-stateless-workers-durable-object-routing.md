@@ -568,7 +568,13 @@ CellServingRoute {
 - admission/`accepting` 与 serving route 分离。Cell 关闭新 placement 后仍必须服务已有 Object；
 - route 只有在 placement count 为零且 retirement proof 完成后才能撤销；
 - 同名重建 Cell 会产生新 UID，绝不能继承旧 placement；
-- endpoint 变更通过新 revision 和 CAS 发布，Router 拒绝 revision 回退。
+- endpoint 变更通过新 revision 和 CAS 发布，Router 拒绝 revision 回退；同一 Cell UID/revision
+  只允许一个 manifest digest，不能重新计算合法 digest 后悄悄换 endpoint 或 Service UID。
+
+Router 的进程内 high-water 同时保存 revision 与内容摘要；撤销当前 inventory 不清除此记录。
+整份 inventory 验证失败时不更新 high-water。实际 client-go/TCP 本地回归覆盖同 revision
+改写、精确重读、新 revision、撤销后重写和失败 inventory；它不是云上路由发布、TLS/CCN
+故障资格或跨 Router 重启的持久防回退证明。重启后的受信发布仍依赖既有 Publisher CAS。
 
 现有 `actor-cell-route-*` immutable ConfigMap 可以扩展/派生该记录。C 中 Fleet/Argo 拥有发布权；
 Cell 只能报告自身身份与健康，不能自行把任意 endpoint 写入受信路由。
