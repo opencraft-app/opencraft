@@ -647,6 +647,10 @@ func newAuthAndMeAPIHandler(
 			implementedRoutes,
 			httptransport.ImplementedRoute{
 				Method: http.MethodPost,
+				Path:   "/v1/join-links/accept",
+			},
+			httptransport.ImplementedRoute{
+				Method: http.MethodPost,
 				Path:   "/v1/invites/accept",
 			},
 			httptransport.ImplementedRoute{
