@@ -1,4 +1,5 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { OpenClawBot } from "@/contexts/agent-context";
@@ -180,12 +181,18 @@ describe("AgentSettingsPage 实验室导航", () => {
   it("将实验室作为独立分组并标记 DeepSeek Harness 当前页", async () => {
     renderLabPage();
 
-    const navigation = await screen.findByRole("navigation", { name: "实例配置导航" });
+    const navigation = await screen.findByRole("navigation", { name: "探索" });
+    const growthGroup = within(navigation).getByRole("group", { name: "成长" });
     const manageGroup = within(navigation).getByRole("group", { name: "管理" });
     const labsGroup = within(navigation).getByRole("group", { name: "实验室" });
 
-    expect(labsGroup.parentElement).toBe(manageGroup.parentElement);
-    expect(within(manageGroup).queryByText("实验室")).not.toBeInTheDocument();
+    expect(labsGroup.parentElement).toBe(growthGroup.parentElement);
+    expect(manageGroup.parentElement).toBe(growthGroup.parentElement);
+    expect([...navigation.querySelectorAll('[role="group"]')]).toEqual([growthGroup, manageGroup, labsGroup]);
+    expect(within(manageGroup).getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual([
+      "/agents/models", "/agents/diagnostics", "/agents/settings",
+    ]);
+    expect(within(growthGroup).queryByText("实验室")).not.toBeInTheDocument();
     expect(within(labsGroup).queryByRole("button", { name: "实验室" })).not.toBeInTheDocument();
 
     const deepSeekLink = within(labsGroup).getByRole("link", { name: "DeepSeek Harness" });
@@ -203,46 +210,28 @@ describe("AgentSettingsPage 实验室导航", () => {
     expect(screen.queryByRole("button", { name: "更多操作" })).toBeNull();
   });
 
-  it("将通道、模型、技能和定时任务统一到使用分组", async () => {
+  it("在日常中显示通道、技能、定时任务和对话", async () => {
     renderLabPage();
 
-    const navigation = await screen.findByRole("navigation", { name: "实例配置导航" });
-    const useGroup = within(navigation).getByRole("group", { name: "使用" });
-
-    expect(within(navigation).queryByRole("group", { name: "配置" })).not.toBeInTheDocument();
-    expect(within(useGroup).getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual([
-      "/agents/channels",
-      "/agents/models",
-      "/agents/skills",
-      "/agents/automations",
-    ]);
-  });
-
-  it("在 ai 类型套餐的使用分组中隐藏模型入口", async () => {
-    activePass = buildPass("ai");
-    renderLabPage();
-
-    const navigation = await screen.findByRole("navigation", { name: "实例配置导航" });
-    const useGroup = within(navigation).getByRole("group", { name: "使用" });
-
-    expect(within(useGroup).queryByRole("link", { name: "模型" })).not.toBeInTheDocument();
-    expect(within(useGroup).getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual([
+    await userEvent.click(screen.getByRole("tab", { name: "日常" }));
+    const navigation = await screen.findByRole("navigation", { name: "日常" });
+    expect(within(navigation).getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual(expect.arrayContaining([
       "/agents/channels",
       "/agents/skills",
       "/agents/automations",
-    ]);
+    ]));
+    expect(within(navigation).getByText("对话")).toBeInTheDocument();
+    expect(within(navigation).queryByRole("link", { name: "模型" })).not.toBeInTheDocument();
   });
 
-  it.each([undefined, "free", "general", "unknown"])(
-    "在 %s 类型套餐的使用分组中保留模型入口",
+  it.each([undefined, "ai", "free", "general", "unknown"])(
+    "在 %s 类型套餐的日常中不显示模型入口",
     async (bundleType) => {
       activePass = buildPass(bundleType);
       renderLabPage();
-
-      const navigation = await screen.findByRole("navigation", { name: "实例配置导航" });
-      const useGroup = within(navigation).getByRole("group", { name: "使用" });
-
-      expect(within(useGroup).getByRole("link", { name: "模型" })).toHaveAttribute("href", "/agents/models");
+      await userEvent.click(screen.getByRole("tab", { name: "日常" }));
+      const navigation = await screen.findByRole("navigation", { name: "日常" });
+      expect(within(navigation).queryByRole("link", { name: "模型" })).not.toBeInTheDocument();
     },
   );
 });

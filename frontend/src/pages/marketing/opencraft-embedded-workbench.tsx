@@ -54,6 +54,7 @@ function isEmbeddedWorkbenchElement(element: HTMLElement): element is EmbeddedWo
 
 interface AgentChatMigrationSurfaceProps extends Omit<EmbeddedWorkbenchConfig, "getSessionToken"> {
   readonly active: boolean;
+  readonly preloadSessions?: boolean;
   readonly agentPaused?: boolean;
   /** Explicit rollout authority. Route visibility alone must never adopt OpenCraft. */
   readonly enabled: boolean;
@@ -151,6 +152,7 @@ export function useEmbeddedWorkbenchResourcePreparation(enabled: boolean, active
 
 export function AgentChatMigrationSurface({
   active,
+  preloadSessions = false,
   agentPaused = false,
   accountId,
   apiBase,
@@ -185,7 +187,7 @@ export function AgentChatMigrationSurface({
   const [retrying, setRetrying] = useState(false);
   const [sessionRevision, setSessionRevision] = useState(0);
   const [owner, setOwner] = useState<"loading" | "legacy" | "opencraft">("loading");
-  const [started, setStarted] = useState(active && enabled);
+  const [started, setStarted] = useState((active || preloadSessions) && enabled);
   const presentedOwner = enabled ? owner : "legacy";
 
   const unavailable = enabled && (agentPaused || owner !== "opencraft" || connection.phase !== "ready");
@@ -214,8 +216,8 @@ export function AgentChatMigrationSurface({
       setStarted(false);
       return;
     }
-    if (active) setStarted(true);
-  }, [active, enabled]);
+    if (active || preloadSessions) setStarted(true);
+  }, [active, enabled, preloadSessions]);
 
   useEffect(() => {
     if (!started || !enabled) return;
@@ -255,14 +257,21 @@ export function AgentChatMigrationSurface({
     window.addEventListener(AUTH_SESSION_CHANGED_EVENT, handleSessionChange);
     window.addEventListener("storage", handleSessionChange);
     let latestSessions: EmbeddedSessionsDetail | null = null;
+    let hasPublishedSessions = false;
     const publishSessions = () => {
       if (!adopted || latestSessions === null) return;
+      const hostSelectedChatId = multiSessionRef.current.selectedChatId;
+      const preserveHostSelection = !hasPublishedSessions
+        && typeof hostSelectedChatId === "string"
+        && hostSelectedChatId !== ""
+        && latestSessions.sessions.some((session) => session.chatId === hostSelectedChatId);
+      hasPublishedSessions = true;
       multiSessionRef.current.onSessionStateChange({
         sessions: latestSessions.sessions,
         loading: latestSessions.loading,
         historyLoading: false,
       });
-      if (latestSessions.selectedChatId !== null) {
+      if (latestSessions.selectedChatId !== null && !preserveHostSelection) {
         multiSessionRef.current.onSelectedChatIdChange(latestSessions.selectedChatId);
       }
     };

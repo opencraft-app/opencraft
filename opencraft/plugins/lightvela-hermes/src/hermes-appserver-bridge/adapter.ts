@@ -1015,21 +1015,40 @@ export class HermesAppServerAdapter {
 
   async deleteThread(threadId: string): Promise<void> {
     const profile = await this.resolveThreadProfile(threadId);
-    const live = this.liveByStored.get(threadId);
-    if (live !== undefined) {
-      await this.gateway.call("session.close", { session_id: live, profile });
+    const live = await this.ensureLive(threadId, profile);
+    const snapshot = await this.gateway.call<HermesSessionPayload>("session.activate", {
+      session_id: live,
+      omit_messages: true,
+    });
+    if (snapshot.running !== false || snapshot.pending_clarify !== undefined) {
+      await this.composerQueue.pauseAll(threadId, "Conversation is being deleted.");
+      await this.gateway.call("session.interrupt", { session_id: live });
+      const deadline = Date.now() + 15_000;
+      let stopped = false;
+      do {
+        const current = await this.gateway.call<HermesSessionPayload>("session.activate", {
+          session_id: live,
+          omit_messages: true,
+        });
+        if (current.running === false && current.pending_clarify === undefined) {
+          stopped = true;
+          break;
+        }
+        if (Date.now() >= deadline) break;
+        await new Promise<void>((resolve) => setTimeout(resolve, 200));
+      } while (true);
+      if (!stopped) throw new Error("Hermes session did not stop; conversation was not deleted");
     }
+    await this.gateway.call("session.close", { session_id: live, profile });
     await this.gateway.call("session.delete", { session_id: threadId, profile });
-    if (live !== undefined) {
-      this.liveByStored.delete(threadId);
-      this.storedByLive.delete(live);
-      this.activeByLive.delete(live);
-      this.pendingByLive.delete(live);
-      this.queuedBoundaryPendingByLive.delete(live);
-      this.submissionTailByLive.delete(live);
-      this.admissionByLive.delete(live);
-      this.clearSettlementTimer(live);
-    }
+    this.liveByStored.delete(threadId);
+    this.storedByLive.delete(live);
+    this.activeByLive.delete(live);
+    this.pendingByLive.delete(live);
+    this.queuedBoundaryPendingByLive.delete(live);
+    this.submissionTailByLive.delete(live);
+    this.admissionByLive.delete(live);
+    this.clearSettlementTimer(live);
     this.payloadByStored.delete(threadId);
     this.profileByStored.delete(threadId);
     this.provisionalSummaryByStored.delete(threadId);
@@ -1065,7 +1084,12 @@ export class HermesAppServerAdapter {
     const offset = params.cursor?.startsWith("hermes:") ? Number(params.cursor.slice(7)) || 0 : 0;
     const limit = Math.min(Math.max(params.limit ?? 50, 1), 200);
     return {
-      data: rows.slice(offset, offset + limit).map((row) => makeThread(row, this.payloadByStored.get(row.id)?.info?.cwd ?? this.defaultCwd)),
+      data: rows.slice(offset, offset + limit).map((row) => makeThread(
+        row,
+        this.payloadByStored.get(row.id)?.info?.cwd ?? this.defaultCwd,
+        [],
+        this.payloadByStored.get(row.id)?.running === true,
+      )),
       nextCursor: offset + limit < rows.length ? `hermes:${offset + limit}` : null,
       backwardsCursor: offset > 0 ? `hermes:${Math.max(0, offset - limit)}` : null,
     };

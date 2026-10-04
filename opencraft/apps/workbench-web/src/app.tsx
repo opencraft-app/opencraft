@@ -199,6 +199,7 @@ export interface EmbeddedWorkbenchAppSession {
   readonly createdAt: number;
   readonly updatedAt: number;
   readonly readOnly: boolean;
+  readonly running: boolean;
 }
 
 export interface EmbeddedWorkbenchAppActions {
@@ -1088,6 +1089,7 @@ export function App({
         createdAt: updatedAt,
         updatedAt,
         readOnly: false,
+        running: thread.status === "running",
       };
     });
   }, [catalog.protocolThreads, catalog.threads, embedded]);

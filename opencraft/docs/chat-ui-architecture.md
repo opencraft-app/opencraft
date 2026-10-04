@@ -371,6 +371,9 @@ infer a second conversation model, and the embedded surface must not inject
 Sidebar DOM or rewrite the host page route. The right canvas is an
 OpenCraft-owned presentation and may reuse the standard Header, Composer,
 and Timeline implementations. The embedded product projects a collapsed preview panel with a Header toggle.
+The session snapshot also carries the AppServer Thread catalog's running state
+for each Thread. The host Sidebar may show activity from that field; selected
+Thread identity and session-list loading are not execution status.
 Only webpage tabs and read-only files linked from the conversation are exposed.
 
 For LightVela multi-Bot instances, one embedded Host is identified by
@@ -388,9 +391,12 @@ into the recent-conversation list.
 
 Hermes-backed session mutations stay on that same authority path. Rename uses
 `thread/name/set` and the bridge's native `session.title`; irreversible
-delete uses `thread/delete`, closes a live Hermes session, then invokes
-`session.delete`. UI adapters must retain the operation Promise long enough
-to expose pending and failure state.
+delete uses `thread/delete`. The bridge reads the live Hermes session first;
+if it is running, it pauses queued submissions, sends `session.interrupt`, and
+waits for `session.activate` to confirm `running: false` before closing the
+session and invoking `session.delete`. An interrupt failure or missing idle
+confirmation leaves the conversation intact. UI adapters must retain the
+operation Promise long enough to expose pending and failure state.
 
 The embedded canvas permits the existing `vela.voice-input.toggle` Composer
 action. Dictation uses the platform speech provider and the same transient input

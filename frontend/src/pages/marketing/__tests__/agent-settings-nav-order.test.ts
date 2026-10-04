@@ -22,44 +22,44 @@ describe("Agent settings navigation groups", () => {
     return page.slice(settingsGroupsStart, settingsGroupsEnd);
   };
 
-  it("orders the task-oriented groups as use, growth, manage, and labs", () => {
+  it("orders the navigation groups as daily, growth, management, and labs", () => {
     const settingsGroups = readNavigationSource();
-    const labels = ['t("使用")', 't("成长")', 't("管理")', 't("实验室")'];
+    const labels = ['t("日常")', 't("成长")', 't("管理")', 't("实验室")'];
     const indexes = labels.map((label) => settingsGroups.indexOf(label));
 
     indexes.forEach((index) => expect(index).toBeGreaterThanOrEqual(0));
     expect(indexes).toEqual([...indexes].sort((left, right) => left - right));
-    expect(settingsGroups).not.toContain('t("配置")');
+    expect(settingsGroups).toContain('id: "manage"');
   });
 
   it("places every visible section in its approved group", () => {
     const settingsGroups = readNavigationSource();
-    const useStart = settingsGroups.indexOf('id: "use"');
+    const dailyStart = settingsGroups.indexOf('id: "daily"');
     const growthStart = settingsGroups.indexOf('id: "growth"');
     const manageStart = settingsGroups.indexOf('id: "manage"');
     const labsStart = settingsGroups.indexOf('id: "labs"');
 
-    [useStart, growthStart, manageStart, labsStart].forEach((index) => {
+    [dailyStart, growthStart, manageStart, labsStart].forEach((index) => {
       expect(index).toBeGreaterThanOrEqual(0);
     });
 
-    const use = settingsGroups.slice(useStart, growthStart);
+    const daily = settingsGroups.slice(dailyStart, growthStart);
     const growth = settingsGroups.slice(growthStart, manageStart);
     const manage = settingsGroups.slice(manageStart, labsStart);
     const labs = settingsGroups.slice(labsStart);
 
-    // 「对话」菜单项已移除：入口改由侧边栏顶部「探索/对话」双 tab 承担（sidebar-tabs 改造）。
-    expect(use).toMatch(/id: "channel"[\s\S]*id: "model"[\s\S]*id: "skill"[\s\S]*id: "automations"/);
-    expect(use).not.toContain('id: "website"');
-    expect(use).not.toContain('id: "chat"');
+    expect(daily).toMatch(/id: "channel"[\s\S]*id: "skill"[\s\S]*id: "automations"/);
+    expect(daily).not.toContain('id: "model"');
+    expect(daily).not.toContain('id: "website"');
     expect(growth.match(/id: "(buddy|memory|achievement)"/g)).toEqual([
       'id: "buddy"',
       'id: "memory"',
       'id: "achievement"',
     ]);
-    expect(manage).not.toContain('id: "files"');
-    expect(manage).toMatch(/id: "diagnostics"[\s\S]*id: "settings"/);
-    expect(manage).not.toContain('id: "labs"');
+    expect(growth).toContain('label: t("持久记忆")');
+    expect(growth).not.toContain('id: "diagnostics"');
+    expect(manage).toMatch(/id: "model"[\s\S]*id: "diagnostics"[\s\S]*id: "settings"/);
+    expect(manage).toContain('label: t("高级设置")');
     expect(labs).toMatch(/id: "website"[\s\S]*id: "deepseek-harness"/);
   });
 

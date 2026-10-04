@@ -963,6 +963,9 @@ function createHermesHistoryHarness(options: {
   readonly messages?: readonly HermesMessage[];
   readonly attachmentMetadata?: AttachmentMetadataResolver;
   readonly profileScope?: string;
+  readonly running?: boolean;
+  readonly onActivate?: () => boolean | Promise<boolean>;
+  readonly onInterrupt?: () => void | Promise<void>;
 } = {}) {
   const calls: Array<{ method: string; params: unknown }> = [];
   const historyCalls: Array<{ sessionId: string; limit: number; offset: number; order: string }> = [];
@@ -975,6 +978,7 @@ function createHermesHistoryHarness(options: {
           stored_session_id: "stored-1",
           message_count: 2,
           messages: [],
+          running: options.running ?? false,
           info: { cwd: "/workspace/projects/demo", reasoning_effort: "high" },
         } as T;
       }
@@ -1010,6 +1014,13 @@ function createHermesHistoryHarness(options: {
       }
       if (method === "session.title") {
         return { title: String((params as { title?: unknown })?.title ?? "") } as T;
+      }
+      if (method === "session.activate") {
+        return { session_id: "live-1", message_count: 2, messages: [], running: await options.onActivate?.() ?? options.running ?? false } as T;
+      }
+      if (method === "session.interrupt") {
+        await options.onInterrupt?.();
+        return { status: "interrupted" } as T;
       }
       if (method === "session.close") return { closed: true } as T;
       if (method === "session.delete") {
@@ -1094,6 +1105,41 @@ test("Hermes Thread lifecycle maps rename and delete to native session RPC", asy
   ]);
 });
 
+test("Hermes deletes a running Thread only after interrupt and idle confirmation", async () => {
+  let running = true;
+  let confirmStop!: () => void;
+  const stopConfirmed = new Promise<void>((resolve) => { confirmStop = resolve; });
+  const harness = createHermesHistoryHarness({
+    running: true,
+    onActivate: async () => {
+      if (!running) await stopConfirmed;
+      return running;
+    },
+    onInterrupt: () => { running = false; },
+  });
+  const deletion = harness.adapter.deleteThread("stored-1");
+  await flush();
+  assert.deepEqual(harness.calls.map(({ method }) => method).slice(-3), [
+    "session.activate", "session.interrupt", "session.activate",
+  ]);
+  assert.equal(harness.calls.some(({ method }) => method === "session.close" || method === "session.delete"), false);
+
+  confirmStop();
+  await deletion;
+  assert.deepEqual(harness.calls.map(({ method }) => method).slice(-5), [
+    "session.activate", "session.interrupt", "session.activate", "session.close", "session.delete",
+  ]);
+});
+
+test("Hermes keeps a running Thread when interrupt fails", async () => {
+  const harness = createHermesHistoryHarness({
+    running: true,
+    onInterrupt: () => { throw new Error("interrupt unavailable"); },
+  });
+  await assert.rejects(harness.adapter.deleteThread("stored-1"), /interrupt unavailable/);
+  assert.equal(harness.calls.some(({ method }) => method === "session.close" || method === "session.delete"), false);
+});
+
 test("Hermes scoped Host applies one Profile to Thread listing and creation", async () => {
   const harness = createHermesHistoryHarness({ profileScope: "sales-123" });
 
@@ -1116,6 +1162,14 @@ test("Hermes scoped Host applies one Profile to Thread listing and creation", as
     method: "session.create",
     params: { cwd: "/workspace/sales", source: "desktop", profile: "sales-123" },
   }]);
+});
+
+test("Hermes Thread listing retains the active status of a resumed session", async () => {
+  const harness = createHermesHistoryHarness({ running: true });
+  await harness.adapter.loadThread("stored-1", false);
+
+  const page = await harness.adapter.listThreads();
+  assert.equal(page.data.find((thread) => thread.id === "stored-1")?.status.type, "active");
 });
 
 test("Hermes paginated resume exposes a cursor and hydrates stored history", async () => {

@@ -1107,7 +1107,68 @@ a {
   outline-offset: 1px;
 }
 
-/* ── 「对话」tab 会话列表 ── */
+/* ── 日常栏的可折叠对话列表 ── */
+.lv-agents-chat-group {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid #e9ecf1;
+}
+
+.lv-agents-chat-header {
+  display: flex;
+  width: 100%;
+  min-height: 34px;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px 0 20px;
+}
+
+.lv-agents-chat-toggle {
+  display: flex;
+  min-width: 0;
+  height: 32px;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  color: rgb(0 0 0 / 60%);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lv-agents-chat-create {
+  display: flex;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  color: rgb(0 0 0 / 60%);
+  cursor: pointer;
+}
+
+.lv-agents-chat-toggle:hover:not([aria-disabled="true"]),
+.lv-agents-chat-create:hover:not(:disabled) {
+  color: #1f1f1f;
+}
+
+.lv-agents-chat-create:hover:not(:disabled) {
+  background: rgb(0 0 0 / 5%);
+}
+
+.lv-agents-chat-toggle:focus-visible,
+.lv-agents-chat-create:focus-visible {
+  outline: 2px solid rgb(0 0 0 / 30%);
+  outline-offset: 2px;
+}
+
+.lv-agents-chat-create:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
 .lv-agents-session-hint {
   padding: 8px 12px 8px 20px;
   color: rgb(0 0 0 / 40%);
@@ -1125,8 +1186,24 @@ a {
   padding-right: 8px;
 }
 
+.lv-agents-chat-group .lv-agents-session-item .lv-agents-nav-icon {
+  width: 18px;
+  height: 18px;
+  flex-basis: 18px;
+  color: rgb(0 0 0 / 55%);
+}
+
+.lv-agents-chat-group .lv-agents-session-item .lv-agents-nav-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
 .lv-agents-session-item--opencraft.lv-agents-nav-item {
   padding-right: 44px;
+}
+
+.lv-agents-session-item--running.lv-agents-nav-item {
+  padding-right: 52px;
 }
 
 .lv-agents-session-item .lv-agents-session-title {
@@ -1143,7 +1220,26 @@ a {
   right: 4px;
   display: flex;
   align-items: center;
+  gap: 4px;
   height: 36px;
+}
+
+.lv-agents-session-running {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  border: 1.5px solid rgb(0 0 0 / 20%);
+  border-top-color: rgb(0 0 0 / 55%);
+  border-radius: 50%;
+  animation: lv-agents-session-spin 800ms linear infinite;
+}
+
+@keyframes lv-agents-session-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lv-agents-session-running { animation: none; }
 }
 
 .lv-agents-session-menu-btn {
@@ -1159,6 +1255,12 @@ a {
     opacity 0.15s ease,
     color 0.15s ease,
     background 0.15s ease;
+}
+
+@media (hover: none) {
+  .lv-agents-session-menu-btn {
+    opacity: 1;
+  }
 }
 
 .lv-agents-session-item-wrap:hover .lv-agents-session-menu-btn,
@@ -1519,6 +1621,10 @@ a {
   .lv-agent-sidebar-collapsed .lv-agents-nav-group + .lv-agents-nav-group {
     padding-top: 8px;
     border-top: 1px solid #e9ecf1;
+  }
+
+  .lv-agent-sidebar-collapsed .lv-agents-chat-group {
+    margin-top: 0;
   }
 
   .lv-agent-sidebar-collapsed .lv-agent-account-footer,
