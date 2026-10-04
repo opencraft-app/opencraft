@@ -1,6 +1,6 @@
 {
   "source": "frontend/src",
-  "sourceRevision": "10ceff9cac4bd328a8f4dc8aedb6767606806a7b",
+  "sourceRevision": "cda3c5c9e27062775136e4382fdaee74a526722a",
   "generatedBy": "scripts/sync-mono2-agent-console.mjs",
   "files": [
     {
@@ -513,11 +513,11 @@
     },
     {
       "file": "repositories/http-repositories.ts",
-      "sourceSha256": "72c777d34d8bd1fffbc3c1af182f256d1f0349d778e1625df8b6958184fe0acb"
+      "sourceSha256": "91d7bd8c9dfde852f1745a16ef7cda413eed9a2c7706aef4b10fa59d685e2859"
     },
     {
       "file": "repositories/types.ts",
-      "sourceSha256": "16d7c6b014fa3f4e7e7773339d3375e0ecf0a173de18655fca7ff5999e27da75"
+      "sourceSha256": "5170e5eef5d95a0a03e30a648b8d04cb15933fc090e5a6e310032a7c5f6aea43"
     },
     {
       "file": "services/use-async-resource.ts",

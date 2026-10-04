@@ -578,7 +578,7 @@ const request = async <T>(
 const requestEnvelope = async <T>(
   baseUrl: string,
   path: string,
-  init?: Omit<RequestInit, "body"> & { body?: unknown },
+  init?: Omit<RequestInit, "body"> & { body?: unknown; suppressUnauthorizedBroadcast?: boolean },
 ): Promise<T> => {
   const payload = await request<APIEnvelope<T>>(baseUrl, path, init);
   return payload.data;
@@ -928,7 +928,7 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
     ]);
   };
 
-  const listBots = async (): Promise<Bot[]> => {
+  const listBots = async (onInstances?: (instances: readonly { instanceId: string; running: boolean }[]) => void): Promise<Bot[]> => {
     const response = await requestEnvelope<CtlListInstancesPayload>(baseUrl, "/v1/instances", {
       method: "GET",
     });
@@ -936,6 +936,10 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
     const instances = Array.isArray(response.items) ? response.items : [];
     instanceCache.clear();
     instances.forEach((instance) => instanceCache.set(instance.instance_id, instance));
+    onInstances?.(instances.map(instance => ({
+      instanceId: instance.instance_id,
+      running: mapInstanceStatusToBotStatus(instance.status) === "active",
+    })));
     // Instances whose Bot list came from the single-instance projection instead of
     // /bots, mapped to why the real list was unavailable. Their root Bot must not be
     // treated as a legacy single-Bot instance: sibling Bots may exist on the server
@@ -1010,8 +1014,8 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
   });
 
   return {
-    async getDashboardSnapshot() {
-      const bots = await listBots();
+    async getDashboardSnapshot(_mode, options) {
+      const bots = await listBots(options?.onInstances);
       const primaryBot = bots[0] ?? null;
 
       return {
@@ -1249,10 +1253,13 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
       } satisfies SettingsSnapshot;
     },
 
-    async getTerminalSession(botId) {
+    async getTerminalSession(botId, options) {
       const { instanceId } = await resolveBotScope(botId);
+      options?.signal?.throwIfAborted();
       return requestEnvelope<BotTerminalSession>(baseUrl, `/v1/instances/${encodeURIComponent(instanceId)}/tat/session`, {
         method: "POST",
+        signal: options?.signal,
+        suppressUnauthorizedBroadcast: options?.suppressUnauthorizedBroadcast,
       });
     },
 
