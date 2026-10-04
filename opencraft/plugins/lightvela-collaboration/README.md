@@ -2,7 +2,11 @@
 
 OpenCraft 的 first-party Trusted Extension，目标是在 `chat.lightvela.com` 提供 Server、
 统一 IM Chat + Members 与 Computer 产品界面。当前 Workspace 已提供 Server 切换、Channel、
-Members、群聊/私聊、消息发送，以及只读 Computer 列表/详情；Tasks/Reminders 暂不进入插件。
+Members、群聊/私聊、消息发送与更早消息加载。空账户可在界面创建 Server，
+或用一次性邀请令牌加入已有 Server；Owner/Admin 可在 Members 目录生成一天有效、
+仅一次使用的成员邀请。默认全员 Channel 就绪后才进入聊天；Computer 默认隐藏，启用时可从已有实例目录加入
+并查看 Server 下的映射。
+Tasks/Reminders 暂不进入插件。
 
 边界：
 

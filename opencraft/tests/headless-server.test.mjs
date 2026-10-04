@@ -392,11 +392,19 @@ test("AppHost diagnostics correlate two browser sockets and reject payload field
     },
   });
   const diagnostics = [];
+  let resolveBothClosed;
+  const bothClosed = new Promise(resolve => { resolveBothClosed = resolve; });
   const web = await createWorkbenchWebServer({
     root,
     appServerTarget: null,
     appHostServer: appHost,
-    onAppHostDiagnostic: diagnostic => diagnostics.push(diagnostic),
+    onAppHostDiagnostic: diagnostic => {
+      diagnostics.push(diagnostic);
+      if (diagnostic.event === "closed" &&
+        diagnostics.filter(item => item.event === "closed").length === 2) {
+        resolveBothClosed();
+      }
+    },
   });
   const address = await web.listen({ host: "127.0.0.1", port: 0 });
   const origin = `http://127.0.0.1:${address.port}`;
@@ -449,5 +457,16 @@ test("AppHost diagnostics correlate two browser sockets and reject payload field
     socket.once("close", resolvePromise);
     socket.close();
   })));
+  let closeTimeout;
+  try {
+    await Promise.race([
+      bothClosed,
+      new Promise((_, reject) => {
+        closeTimeout = setTimeout(() => reject(new Error("Server close diagnostics were not emitted")), 2000);
+      }),
+    ]);
+  } finally {
+    clearTimeout(closeTimeout);
+  }
   assert.deepEqual(diagnostics.filter(item => item.event === "closed").map(item => item.active).sort(), [0, 1]);
 });

@@ -17,6 +17,16 @@
 | `collaboration` | Server、Member、Channel、Task、Reminder 与腾讯 IM 资源映射控制面 |
 | `vela-computer` | 托管 Computer 内的 Agent Chat Client、IM 入站恢复与受控回复能力 |
 
+OpenCraft 独立 Web 入口在创建应用级 `LightVelaAccountService` 前解析显式的
+`VITE_LIGHTVELA_API_BASE_URL` 与 `VITE_LIGHTVELA_REGION`，并将结果传入应用启动边界。
+Collaboration 与 Hermes 复用该账户 authority；北京本地预览的 Collaboration 请求因此走配置的
+北京 Gateway，而非国内 Auth 默认域名。未提供覆盖值时沿用既有区域默认值；OAuth 回调仍由
+同一账户服务接收，不建立第二份登录状态。国内 Auth 域名对协作路径返回的 404 不能替代
+北京 Gateway 的路由验收。
+独立 Web 即使显式设置 Region，也不能因此把账户资料刷新变成应用启动门禁；
+该同步预检只属于绑定了配置式 Host 的嵌入式 Chat。登录态过期时，独立 Web
+仍应启动并由账户入口和 Collaboration View 给出可恢复的登录提示。
+
 OpenCraft Web 输入框在当前 Host 的 provider 为 `lightvela.hermes` 时展示 Hermes 指令库；选择指令只写入可编辑草稿。用户发送时，普通指令沿既有 Composer → AppServer → Hermes `prompt.submit` 链路处理。单独发送 `/stop` 走 Hermes Host 的 `hermes/stop` 请求：已有运行中 Turn 先经 `session.interrupt` 中断，再调用 `process.stop` 清理后台进程；空闲或新会话直接调用 `process.stop`。输入框停止按钮仍只走 `turn/interrupt`，其他 Host 不展示 Hermes 指令库。
 
 OpenCraft 的 Codex Host 持有排队 steer 的持久投递权，同一 Thread 的物理准入串行化。匹配目标 Turn 的 `turn/steer` 获确认后先持久化为 `steering`，后续消息即可继续准入；历史物化和 client-message ID 对账在后台完成。只有正在投递或结果未知的前序投递阻止后续准入，未知结果不得自动重发或交给普通 Resume 猜测恢复。具体状态与回归边界见 [OpenCraft ChatUI 架构](../../../opencraft/docs/chat-ui-architecture.md)。

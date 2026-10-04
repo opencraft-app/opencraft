@@ -1,10 +1,12 @@
 import type {
-  Account,
+  HumanProfile,
   AcceptedResource,
   Channel,
   DirectConversationResource,
   CreateDirectConversationResult,
   HumanImSession,
+  InviteSecret,
+  JoinResult,
   Member,
 } from "@lightvela/vela-chat-client-core";
 
@@ -26,6 +28,10 @@ export interface CollaborationServerPage {
   readonly items: readonly CollaborationServer[];
   readonly nextCursor: string | null;
 }
+
+export type CollaborationServerCreateResult =
+  | { readonly kind: "ready"; readonly resource: CollaborationServer }
+  | { readonly kind: "accepted"; readonly accepted: AcceptedResource };
 
 export interface CollaborationComputer {
   readonly id: string;
@@ -64,19 +70,64 @@ export class CollaborationClient {
   constructor(private readonly account: LightVelaAccountRequestPort) {}
 
   listServers(): Promise<CollaborationServerPage> {
-    return this.account.requestRaw<CollaborationServerPage>(collaborationPath("/servers"), {
+    return this.request<CollaborationServerPage>(collaborationPath("/servers"), {
       method: "GET",
     });
   }
 
-  createHumanImSession(): Promise<HumanImSession> {
-    return this.account.requestRaw<HumanImSession>(collaborationPath("/me/im/session"), {
-      method: "POST",
-    });
+  getServer(serverId: string): Promise<CollaborationServer> {
+    return this.request<CollaborationServer>(
+      collaborationPath(`/servers/${encodeURIComponent(serverId)}`),
+      { method: "GET" },
+    );
   }
 
-  getMe(): Promise<Account> {
-    return this.account.requestRaw<Account>(collaborationPath("/me"), { method: "GET" });
+  async createServer(
+    name: string,
+    slug: string,
+    idempotencyKey: string,
+  ): Promise<CollaborationServerCreateResult> {
+    const value = await this.request<CollaborationServer | AcceptedResource>(
+      collaborationPath("/servers"),
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": idempotencyKey,
+        },
+        body: JSON.stringify({ name, slug }),
+      },
+    );
+    return "resourceId" in value
+      ? { kind: "accepted", accepted: value }
+      : { kind: "ready", resource: value };
+  }
+
+  async createHumanImSession(): Promise<HumanImSession> {
+    const result = await this.request<unknown>(collaborationPath("/me/im/session"), {
+      method: "POST",
+    });
+    if (result === null || typeof result !== "object" || Array.isArray(result)) {
+      throw new Error("IM 会话响应无效，请稍后重试。");
+    }
+    const session = result as Partial<HumanImSession>;
+    if (typeof session.sdkAppId !== "number" || session.sdkAppId <= 0 ||
+      typeof session.userId !== "string" || !session.userId ||
+      typeof session.userSig !== "string" || !session.userSig ||
+      typeof session.expiresAt !== "string") {
+      throw new Error("IM 会话响应无效，请稍后重试。");
+    }
+    return session as HumanImSession;
+  }
+
+  async getMe(): Promise<HumanProfile> {
+    const result = await this.request<unknown>(collaborationPath("/me/profile"), { method: "GET" });
+    if (result === null || typeof result !== "object" || Array.isArray(result) ||
+      typeof (result as Partial<HumanProfile>).id !== "string" ||
+      typeof (result as Partial<HumanProfile>).displayName !== "string") {
+      throw new Error("协作账户响应无效，请稍后重试。");
+    }
+    return result as HumanProfile;
   }
 
   listComputersV2(serverId: string): Promise<readonly CollaborationComputer[]> {
@@ -91,7 +142,7 @@ export class CollaborationClient {
     name: string | null,
     idempotencyKey: string,
   ): Promise<CollaborationComputer> {
-    return this.account.requestRaw<CollaborationComputer>(
+    return this.request<CollaborationComputer>(
       collaborationPath(`/servers/${encodeURIComponent(serverId)}/computers-v2`),
       {
         method: "POST",
@@ -106,7 +157,7 @@ export class CollaborationClient {
   }
 
   listChannels(serverId: string): Promise<readonly Channel[]> {
-    return this.account.requestRaw<readonly Channel[]>(
+    return this.request<readonly Channel[]>(
       collaborationPath(`/servers/${encodeURIComponent(serverId)}/channels`),
       { method: "GET" },
     );
@@ -116,6 +167,38 @@ export class CollaborationClient {
     return this.drainCursor<Member>(
       collaborationPath(`/servers/${encodeURIComponent(serverId)}/members`),
     );
+  }
+
+  async createInvite(serverId: string, expiresAt: string): Promise<InviteSecret> {
+    const result = await this.request<unknown>(
+      collaborationPath(`/servers/${encodeURIComponent(serverId)}/invites`),
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role: "member", maxUses: 1, expiresAt }),
+      },
+    );
+    if (result === null || typeof result !== "object" || Array.isArray(result) ||
+      typeof (result as Partial<InviteSecret>).token !== "string" ||
+      !(result as InviteSecret).token ||
+      typeof (result as Partial<InviteSecret>).invite?.id !== "string") {
+      throw new Error("邀请响应无效，请稍后重试。");
+    }
+    return result as InviteSecret;
+  }
+
+  async acceptJoinLink(token: string, idempotencyKey: string): Promise<JoinResult> {
+    const result = await this.request<unknown>(collaborationPath("/join-links/accept"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
+      body: JSON.stringify({ token }),
+    });
+    if (result === null || typeof result !== "object" || Array.isArray(result) ||
+      typeof (result as Partial<JoinResult>).serverId !== "string" ||
+      !(result as JoinResult).serverId) {
+      throw new Error("加入响应无效，请保留邀请令牌并重试。");
+    }
+    return result as JoinResult;
   }
 
   listDirectConversations(
@@ -131,7 +214,7 @@ export class CollaborationClient {
     peerMemberId: string,
     idempotencyKey: string,
   ): Promise<CreateDirectConversationResult> {
-    const value = await this.account.requestRaw<DirectConversationResource | AcceptedResource>(
+    const value = await this.request<DirectConversationResource | AcceptedResource>(
       collaborationPath(`/servers/${encodeURIComponent(serverId)}/direct-conversations`),
       {
         method: "POST",
@@ -147,13 +230,25 @@ export class CollaborationClient {
       : { kind: "accepted", accepted: value };
   }
 
+  private async request<T>(path: string, init: RequestInit): Promise<T> {
+    const response = await this.account.requestRaw<unknown>(path, init);
+    if (response !== null && typeof response === "object" && "error" in response) {
+      const error = response.error;
+      if (error !== null && typeof error === "object" && "code" in error &&
+        typeof error.code === "string") {
+        throw new Error("协作服务返回错误，请稍后重试。");
+      }
+    }
+    return response as T;
+  }
+
   private async drainCursor<T>(path: string): Promise<readonly T[]> {
     const items: T[] = [];
     const seen = new Set<string>();
     let cursor: string | null = null;
     do {
       const suffix: string = cursor === null ? "" : `?cursor=${encodeURIComponent(cursor)}`;
-      const page: CursorPage<T> = await this.account.requestRaw<CursorPage<T>>(`${path}${suffix}`, {
+      const page: CursorPage<T> = await this.request<CursorPage<T>>(`${path}${suffix}`, {
         method: "GET",
       });
       items.push(...page.items);

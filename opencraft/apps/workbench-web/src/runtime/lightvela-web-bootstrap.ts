@@ -5,6 +5,13 @@ export interface LightVelaWebBootstrapOptions {
   readonly lightVelaRegion?: "cn" | "intl";
 }
 
+export function requiresEmbeddedLightVelaAccountPreflight(options: {
+  readonly hostProfileMode?: "environment" | "configured";
+  readonly lightVelaRegion?: LightVelaWebBootstrapOptions["lightVelaRegion"];
+}): boolean {
+  return options.hostProfileMode === "configured" && options.lightVelaRegion !== undefined;
+}
+
 export interface BrowserProcessTarget {
   process?: { env?: Record<string, unknown> };
 }

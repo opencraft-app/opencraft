@@ -33,6 +33,32 @@ test("Collaboration messaging obtains a Human IM session and owns transport clos
   assert.equal(closes, 1);
 });
 
+test("a failed IM login can be retried without creating a second connection owner", async () => {
+  let sessionRequests = 0;
+  let logins = 0;
+  const service = new CollaborationMessagingService(
+    {
+      createHumanImSession: async () => {
+        sessionRequests += 1;
+        return session;
+      },
+    },
+    {
+      connect: async () => {
+        logins += 1;
+        if (logins === 1) throw new Error("temporary IM error");
+      },
+      close: async () => {},
+    },
+  );
+
+  await assert.rejects(service.connect(), /temporary IM error/);
+  await service.connect();
+  assert.equal(sessionRequests, 2);
+  assert.equal(logins, 2);
+  await service.dispose();
+});
+
 test("Collaboration workspace loads Servers and connects messaging through one owner", async () => {
   let messagingConnects = 0;
   let messagingDisposals = 0;
@@ -58,6 +84,8 @@ test("Collaboration workspace loads Servers and connects messaging through one o
         }],
         nextCursor: null,
       }),
+	  getServer: async () => { throw new Error("not used"); },
+	  createServer: async () => { throw new Error("not used"); },
 	  listComputersV2: async () => [],
 	  attachComputerV2: async () => { throw new Error("Computer is disabled"); },
     },
@@ -100,6 +128,7 @@ test("Collaboration workspace loads Servers and connects messaging through one o
 	availableInstances: [],
 	computersByServer: {},
     error: null,
+    errorKind: null,
     revision: 2,
   });
   assert.equal(messagingConnects, 1);

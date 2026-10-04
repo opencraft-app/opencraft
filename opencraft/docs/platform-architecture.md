@@ -687,12 +687,44 @@ resource loading failure as logout.
 
 `lightvela.collaboration` owns one routed Collaboration Workspace and the Human
 Tencent IM Web data plane for Server, Channel, private Group and Member surfaces.
+The current Human is read from `GET /v1/collaboration/me/profile`; the delegated
+actor profile does not require a locally stored email. The legacy email-based
+`/me` response remains available under its published contract.
 Its activation-scoped service obtains a short-lived
 session from `POST /v1/me/im/session`, logs in through `@tencentcloud/chat`, and
 owns SDK close. View mount/unmount only subscribes to the service snapshot; it
 cannot recreate or dispose the IM connection. This conversation state is
 separate from AppServer Agent conversations and does not register a
 `BotContribution`.
+The empty Workspace offers Server creation through the same authenticated
+account request port; one idempotency key is retained across uncertain
+submissions, and both immediate and accepted creation responses lead to the
+Server's default Channel only once its IM state is ready. A transient failed IM
+login can be retried without creating a second connection owner. Channel and
+private Group drafts are scoped to their conversation identities; older
+message pages are loaded from Tencent IM cursors rather than a second message
+store.
+An Owner or Admin can create a one-use, 24-hour member invite from the Server
+directory. An account with no Server can accept the join link with a retained
+idempotency key and navigate to the returned Server ID. The one-time token stays
+in View state, is cleared on Server switch, and is never placed in a route or
+log. Both account and IM-session responses are checked for their required
+fields so a malformed HTTP 200 error envelope cannot masquerade as a valid
+Human account or Tencent IM credential.
+Realtime messages received while the initial history page is in flight are
+merged with that page for the active conversation, never replaced by it;
+switching conversations invalidates late history results.
+An uncertain text-send outcome retains the original client request ID for
+that conversation. The View presents a confirmation action, which reconciles
+the existing Tencent IM attempt before allowing another send; it cannot
+silently turn an unknown result into a second message.
+Failed root Channel initialization is rendered as a failed state rather than
+indefinite preparation; the View keeps sending disabled until IM readiness.
+An explicit API base/region in standalone Web config selects the account
+authority but must not activate the blocking embedded-Host account preflight.
+Only a configured embedded Host performs that preflight. An expired standalone
+session leaves the workbench running and makes Collaboration offer a sign-in
+and retry path instead of crashing the application.
 
 `AgentCapabilityRuntime` is an optional AI-facing consumer of that platform. It exposes
 searchable capabilities rather than packages, progressively loads model

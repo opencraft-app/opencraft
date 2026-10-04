@@ -29,7 +29,10 @@ export class CollaborationMessagingService {
       if (this.disposed) return;
       await this.messaging.connect(session);
       if (this.disposed) await this.close();
-    })();
+    })().catch((error: unknown) => {
+      this.connectOperation = null;
+      throw error;
+    });
     this.connectOperation = operation;
     return operation;
   }

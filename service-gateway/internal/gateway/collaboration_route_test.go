@@ -127,3 +127,45 @@ func TestCollaborationRouteRequiresConfiguredInternalTokenAtStartup(t *testing.T
 		t.Fatal("NewHandler() error = nil")
 	}
 }
+
+func TestCollaborationRoutePublishesMemberInvitesAndOperationStatus(t *testing.T) {
+	t.Setenv("COLLABORATION_GATEWAY_TOKEN", "test-collaboration-internal-token")
+	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"session":{"user":{"id":"usr_0123456789abcdef","email":"human@example.test"}}}`))
+	}))
+	defer auth.Close()
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Lightclaw-User-ID") != "usr_0123456789abcdef" {
+			t.Errorf("upstream user = %q", r.Header.Get("X-Lightclaw-User-ID"))
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer upstream.Close()
+	handler, err := NewHandler(Config{
+		AuthServiceURL: auth.URL,
+		Collaboration: &CollaborationRouteConfig{
+			Upstream:               upstream.URL,
+			UpstreamBearerTokenEnv: "COLLABORATION_GATEWAY_TOKEN",
+			AllowedOrigins:         []string{"http://localhost:*"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range []struct{ method, path string }{
+		{http.MethodGet, "/v1/collaboration/me/profile"},
+		{http.MethodPost, "/v1/collaboration/servers/server-1/invites"},
+		{http.MethodPost, "/v1/collaboration/join-links/accept"},
+		{http.MethodGet, "/v1/collaboration/servers/server-1/operations/operation-1"},
+	} {
+		t.Run(item.method+" "+item.path, func(t *testing.T) {
+			req := httptest.NewRequest(item.method, item.path, nil)
+			req.Header.Set("Authorization", "Bearer human-session")
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			if rec.Code != http.StatusNoContent {
+				t.Fatalf("status = %d body=%s", rec.Code, rec.Body)
+			}
+		})
+	}
+}

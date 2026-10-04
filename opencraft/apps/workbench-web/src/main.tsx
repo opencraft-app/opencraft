@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { initializeAppearanceTheme } from "./appearance-theme";
 import { RuntimeErrorBoundary } from "./components/runtime-error-boundary";
 import { reportRuntimeError } from "./runtime-error-reporting";
+import { resolveLightVelaWebBootstrapOptions } from "./runtime/lightvela-web-bootstrap";
 import { bindPageLifecycle } from "./runtime/page-lifecycle";
 import { bindTouchInteractionMode } from "./runtime/pointer-modality";
 import {
@@ -106,7 +107,7 @@ function ApplicationBootstrap() {
           await preferences.close();
           return;
         }
-        const created = await module.a();
+        const created = await module.a(resolveLightVelaWebBootstrapOptions(import.meta.env));
         application = created;
         if (disposed) {
           locale.dispose();

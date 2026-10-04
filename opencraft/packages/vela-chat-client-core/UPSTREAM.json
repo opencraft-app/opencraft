@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "source": "shared/vela-chat-client-core",
-  "digest": "a59b3b36c601ff4026357be1cd3a787eacbfcdfa0bc9b99670f08512ed88b224",
+  "digest": "cc8f2a67046669d25bcc55668f8b39841d7dbac0421a3ca79f0c46bc60fa52e1",
   "files": [
     {
       "file": "README.md",
@@ -13,7 +13,7 @@
     },
     {
       "file": "contracts/platform-v1.openapi.yaml",
-      "sha256": "399d3cc0e0f6dcd98f4037b52943c07ec946894b0a3e92de17a09ae942ae088b"
+      "sha256": "25cf0e2c0acc12c7652fa40ef7e9bf93c050b07d353b2cf418a1634c1332fbaf"
     },
     {
       "file": "package.json",
@@ -25,11 +25,11 @@
     },
     {
       "file": "src/generated/openapi-lock.ts",
-      "sha256": "d766b294b752a067689950d8f878ec941efed3f05528324155b248c746ddd868"
+      "sha256": "448e4b1e323d51a5dd3ee9da7b02c4f7ba9654ff5849150a6b704fa486703df7"
     },
     {
       "file": "src/generated/openapi.ts",
-      "sha256": "64b3c4adce8083ef132e2c61e74e821eb5f339d2cbd4f370f1c92bcca1c4873b"
+      "sha256": "7be826056d3becb76119e379dc03f0f3be4a46333388dd766cb90357bb5cf293"
     },
     {
       "file": "src/index.ts",
@@ -57,7 +57,7 @@
     },
     {
       "file": "src/platform/api.ts",
-      "sha256": "36eee0bdc31a0a36717ece30722174a6b72688f54b4bfa5f374e9ca037489304"
+      "sha256": "f0c60b7512db285600ad6dc1c4d77cab324b814ff3d3a33a2222990203fe3a03"
     },
     {
       "file": "src/platform/base-url.ts",

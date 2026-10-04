@@ -1,8 +1,9 @@
 import type {
-  Account,
+  HumanProfile,
   DirectConversationResource,
   Member,
 } from "@lightvela/vela-chat-client-core";
+import { channelAddress, directAddress } from "@lightvela/vela-chat-client-core";
 import type { ExtensionSettingsViewProps } from "@opencraft/extension-react";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 
@@ -24,7 +25,7 @@ export interface CollaborationWorkspaceViewServices {
 	readonly computersEnabled: boolean;
 }
 
-function isSelf(member: Member, account: Account | null): boolean {
+function isSelf(member: Member, account: HumanProfile | null): boolean {
   if (account === null) return false;
   return member.accountId === account.id || (
     Boolean(account.imUserId) && member.imUserId === account.imUserId
@@ -33,7 +34,7 @@ function isSelf(member: Member, account: Account | null): boolean {
 
 function directPeer(
   conversation: DirectConversationResource,
-  account: Account | null,
+  account: HumanProfile | null,
 ): Member {
   if (isSelf(conversation.memberA, account)) return conversation.memberB;
   if (isSelf(conversation.memberB, account)) return conversation.memberA;
@@ -67,6 +68,16 @@ export function createCollaborationWorkspaceView(
       [activation.resourceUri],
     );
     const [activationError, setActivationError] = useState<string | null>(null);
+	const [serverName, setServerName] = useState("");
+	const [creationError, setCreationError] = useState<string | null>(null);
+	const [creatingServer, setCreatingServer] = useState(false);
+	const [joinToken, setJoinToken] = useState("");
+	const [joiningServer, setJoiningServer] = useState(false);
+	const [joinError, setJoinError] = useState<string | null>(null);
+	const [inviteSecret, setInviteSecret] = useState<{ serverId: string; token: string } | null>(null);
+	const [creatingInvite, setCreatingInvite] = useState(false);
+	const [inviteError, setInviteError] = useState<string | null>(null);
+	const [refreshing, setRefreshing] = useState(false);
 	const [instanceToAttach, setInstanceToAttach] = useState("");
 	const [attaching, setAttaching] = useState(false);
 
@@ -87,8 +98,32 @@ export function createCollaborationWorkspaceView(
       );
     }, [activation.viewId, host, route.kind, workspace.phase, workspace.servers]);
 
+    useEffect(() => {
+      if (route.kind !== "chat" || directory.phase !== "ready" ||
+        directory.serverId !== route.serverId) return;
+      const first = directory.channels.find((channel) => channel.joined && channel.imState === "ready");
+      if (first === undefined) return;
+      host.replaceViewResource(
+        activation.viewId,
+        serializeCollaborationWorkspaceRoute({
+          kind: "channel",
+          serverId: route.serverId,
+          channelId: first.id,
+        }),
+      );
+    }, [activation.viewId, directory.channels, directory.phase, directory.serverId, host, route]);
+
     const serverId = route.kind === "home" ? null : route.serverId;
     const activeServer = workspace.servers.find((server) => server.id === serverId) ?? null;
+	const ownMember = directory.serverId === serverId
+	  ? directory.members.find((member) => isSelf(member, workspace.account))
+	  : undefined;
+	const canInvite = ownMember?.role === "owner" || ownMember?.role === "admin";
+
+	useEffect(() => {
+	  setInviteSecret(null);
+	  setInviteError(null);
+	}, [serverId]);
 	const computers = serverId === null ? [] : (workspace.computersByServer[serverId] ?? []);
 	const attachedInstanceIds = new Set(computers.map((computer) => computer.instanceId));
 	const attachableInstances = workspace.availableInstances.filter(
@@ -98,16 +133,38 @@ export function createCollaborationWorkspaceView(
 	  ? computers.find((computer) => computer.id === route.computerId) ?? null
       : null;
     const selectedChannel = route.kind === "channel" || route.kind === "im-thread"
-      ? directory.channels.find((channel) => channel.id === route.channelId) ?? null
+      ? directory.serverId === serverId
+        ? directory.channels.find((channel) => channel.id === route.channelId) ?? null
+        : null
       : null;
     const selectedDirect = route.kind === "direct"
-      ? directory.directConversations.find(
+      ? directory.serverId === serverId ? directory.directConversations.find(
           (conversation) => conversation.id === route.directConversationId,
-        ) ?? null
+        ) ?? null : null
       : null;
     const selectedMember = route.kind === "member"
-      ? directory.members.find((member) => member.id === route.memberId) ?? null
+      ? directory.serverId === serverId
+        ? directory.members.find((member) => member.id === route.memberId) ?? null
+        : null
       : null;
+    const selectedAddress = route.kind === "channel" || route.kind === "im-thread"
+      ? selectedChannel === null ? null : channelAddress(selectedChannel)
+      : route.kind === "direct" && selectedDirect !== null
+        ? directAddress({
+            directConversationId: selectedDirect.id,
+            imGroupId: selectedDirect.imGroupId,
+            imState: selectedDirect.imState,
+          })
+        : null;
+    const chatMatchesRoute = selectedAddress !== null &&
+      chat.address?.conversationId === selectedAddress.conversationId;
+    const chatPreparing = activeServer?.imState !== "ready" ||
+      (directory.phase === "ready" && directory.serverId === serverId &&
+        !directory.channels.some((channel) => channel.joined && channel.imState === "ready"));
+    const chatFailed = activeServer?.imState === "error" ||
+      (directory.serverId === serverId && directory.channels.some(
+        (channel) => channel.joined && channel.systemKey === "all" && channel.imState === "error",
+      ));
 
     const navigate = (next: CollaborationWorkspaceRoute) => {
       host.pushViewResource(
@@ -120,10 +177,98 @@ export function createCollaborationWorkspaceView(
       return <div className="collaboration-status" role="status">正在加载 Collaboration…</div>;
     }
     if (workspace.phase === "error") {
-      return <div className="collaboration-status" role="alert">{workspace.error}</div>;
+      const signedOut = workspace.errorKind === "authentication";
+      return (
+        <div className="collaboration-status collaboration-status--error" role="alert">
+          <h1>{signedOut ? "登录后开始协作" : "暂时无法打开协作空间"}</h1>
+          <p>{signedOut
+            ? "请从左下角登录 LightVela，完成后点击重试。"
+            : "检查连接后重试，已输入的内容会保留。"}</p>
+          <button
+            type="button"
+            onClick={() => {
+              void services.controller.activate(route).catch(() => {
+                setActivationError("重试失败，请稍后再试。");
+              });
+            }}
+          >重试</button>
+        </div>
+      );
     }
     if (workspace.servers.length === 0) {
-      return <div className="collaboration-status">还没有 Server。</div>;
+      return (
+        <main className="collaboration-onboarding">
+          <div className="collaboration-onboarding__intro">
+            <span>LIGHTVELA · COLLABORATION</span>
+            <h1>从一个 Server 开始协作</h1>
+            <p>Server 会自动准备全员频道。之后，你可以在这里与成员或 Agent 聊天。</p>
+          </div>
+          <div className="collaboration-onboarding__actions">
+          <form
+            className="collaboration-onboarding__form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (creatingServer || !serverName.trim()) return;
+              setCreatingServer(true);
+              setCreationError(null);
+              void services.workspace.createServer(serverName)
+                .then((createdServerId) => navigate({ kind: "chat", serverId: createdServerId }))
+                .catch(() => setCreationError("暂时无法确认创建结果，请重试。"))
+                .finally(() => setCreatingServer(false));
+            }}
+          >
+            <label htmlFor="collaboration-server-name">Server 名称</label>
+            <input
+              id="collaboration-server-name"
+              autoComplete="off"
+              disabled={creatingServer}
+              maxLength={100}
+              placeholder="例如：项目协作"
+              required
+              value={serverName}
+              onChange={(event) => setServerName(event.currentTarget.value)}
+            />
+            {creationError ? <p role="alert">{creationError}</p> : null}
+            <button disabled={!serverName.trim() || creatingServer} type="submit">
+              {creatingServer ? "创建中…" : "创建 Server"}
+            </button>
+          </form>
+          <form
+            className="collaboration-onboarding__form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (joiningServer || !joinToken.trim()) return;
+              setJoiningServer(true);
+              setJoinError(null);
+              void services.workspace.acceptJoinLink(joinToken)
+                .then((joinedServerId) => {
+                  setJoinToken("");
+                  navigate({ kind: "chat", serverId: joinedServerId });
+                })
+                .catch(() => setJoinError("暂时无法确认加入结果，请保留令牌并重试。"))
+                .finally(() => setJoiningServer(false));
+            }}
+          >
+            <h2>加入已有 Server</h2>
+            <label htmlFor="collaboration-join-token">邀请令牌</label>
+            <input
+              id="collaboration-join-token"
+              autoComplete="off"
+              disabled={joiningServer}
+              required
+              spellCheck={false}
+              type="password"
+              value={joinToken}
+              onChange={(event) => setJoinToken(event.currentTarget.value)}
+            />
+            {joinError ? <p role="alert">{joinError}</p> : null}
+            <button disabled={!joinToken.trim() || joiningServer} type="submit">
+              {joiningServer ? "加入中…" : "加入 Server"}
+            </button>
+          </form>
+          </div>
+        </main>
+      );
     }
 	if (!services.computersEnabled && (route.kind === "computers" || route.kind === "computer")) {
 	  return <div className="collaboration-status">Computer 功能尚未启用。</div>;
@@ -139,13 +284,25 @@ export function createCollaborationWorkspaceView(
           </div>
           <select
             aria-label="选择 Server"
-            value={serverId ?? ""}
+            value={activeServer?.id ?? workspace.servers[0]?.id ?? ""}
             onChange={(event) => navigate({ kind: "chat", serverId: event.currentTarget.value })}
           >
             {workspace.servers.map((server) => (
               <option key={server.id} value={server.id}>{server.name}</option>
             ))}
           </select>
+          <button
+            className="collaboration-workspace__refresh"
+            disabled={refreshing}
+            type="button"
+            onClick={() => {
+              setRefreshing(true);
+              setActivationError(null);
+              void services.controller.activate(route)
+                .catch(() => setActivationError("刷新失败，请稍后重试。"))
+                .finally(() => setRefreshing(false));
+            }}
+          >{refreshing ? "刷新中…" : "刷新"}</button>
           <nav aria-label="Collaboration sections">
 			<button
               className={chatActive ? "is-active" : undefined}
@@ -165,6 +322,10 @@ export function createCollaborationWorkspaceView(
         <div className="collaboration-workspace__body">
           {chatActive ? (
             <aside className="collaboration-directory">
+              {directory.phase === "loading" && directory.serverId === serverId
+                ? <p role="status">正在加载频道…</p> : null}
+              {directory.phase === "error" && directory.serverId === serverId
+                ? <p role="alert">频道加载失败，请刷新重试。</p> : null}
               <section>
                 <h2>Channels</h2>
                 {directory.channels.map((channel) => (
@@ -174,7 +335,11 @@ export function createCollaborationWorkspaceView(
                     key={channel.id}
                     type="button"
                     onClick={() => serverId && navigate({ kind: "channel", serverId, channelId: channel.id })}
-                  ># {channel.name}</button>
+                  ><span># {channel.name}</span>
+                    {channel.imState !== "ready"
+                      ? <small>{channel.imState === "error" ? "初始化失败" : "准备中"}</small>
+                      : null}
+                  </button>
                 ))}
               </section>
               <section>
@@ -197,6 +362,30 @@ export function createCollaborationWorkspaceView(
               </section>
               <section>
                 <h2>Members</h2>
+                {canInvite && serverId ? (
+                  <div className="collaboration-directory__invite">
+                    <button
+                      disabled={creatingInvite}
+                      type="button"
+                      onClick={() => {
+                        setCreatingInvite(true);
+                        setInviteSecret(null);
+                        setInviteError(null);
+                        void services.workspace.createInvite(serverId)
+                          .then((token) => setInviteSecret({ serverId, token }))
+                          .catch(() => setInviteError("邀请创建失败，请稍后重试。"))
+                          .finally(() => setCreatingInvite(false));
+                      }}
+                    >{creatingInvite ? "生成中…" : "生成一次性邀请"}</button>
+                    {inviteSecret?.serverId === serverId ? (
+                      <div className="collaboration-directory__invite-secret">
+                        <label htmlFor="collaboration-invite-token">邀请令牌（仅显示一次，24 小时内有效）</label>
+                        <input id="collaboration-invite-token" readOnly value={inviteSecret.token} />
+                      </div>
+                    ) : null}
+                    {inviteError ? <p role="alert">{inviteError}</p> : null}
+                  </div>
+                ) : null}
                 {directory.members.map((member) => (
                   <button
                     className={selectedMember?.id === member.id ? "is-selected" : undefined}
@@ -263,15 +452,44 @@ export function createCollaborationWorkspaceView(
 
           <main className="collaboration-stage">
             {route.kind === "channel" || route.kind === "direct" || route.kind === "im-thread" ? (
-              <>
+              selectedAddress === null ? (
+                <section className="collaboration-detail collaboration-detail--empty">
+                  <h1>{directory.phase === "loading" ? "正在打开聊天" : "此聊天暂不可用"}</h1>
+                  <p>{directory.phase === "loading"
+                    ? "正在同步频道和成员。"
+                    : "请刷新频道列表后重试。"}</p>
+                </section>
+              ) : <>
                 <header>
                   <span>{route.kind === "direct" ? "Private message" : "Channel"}</span>
                   <h1>{selectedChannel?.name ?? (selectedDirect ? directPeer(selectedDirect, workspace.account).displayName : "Conversation")}</h1>
                 </header>
-                {chat.error ? <div role="alert">{chat.error}</div> : null}
                 <ol className="collaboration-messages" aria-live="polite">
-                  {chat.messages.map((message) => (
-                    <li key={message.id}>
+                  {chatMatchesRoute && (chat.error || chat.sendResolution === "uncertain")
+                    ? <li className="collaboration-messages__error" role="alert">
+                        {chat.sendResolution === "uncertain"
+                          ? "发送结果待确认，请先确认状态。"
+                          : "消息处理失败，请重试。"}
+                      </li>
+                    : null}
+                  {chatMatchesRoute && !chat.historyCompleted && chat.historyCursor !== null
+                    ? <li className="collaboration-messages__older">
+                        <button
+                          disabled={chat.historyLoading}
+                          type="button"
+                          onClick={() => { void services.chat.loadOlder(); }}
+                        >{chat.historyLoading ? "加载中…" : "查看更早消息"}</button>
+                      </li>
+                    : null}
+                  {!chatMatchesRoute || chat.phase === "loading"
+                    ? <li className="collaboration-messages__state" role="status">正在加载消息…</li>
+                    : chat.messages.length === 0
+                      ? <li className="collaboration-messages__state">还没有消息，发出第一条吧。</li>
+                      : chat.messages.map((message) => (
+                    <li
+                      className={message.direction === "outgoing" ? "is-outgoing" : undefined}
+                      key={message.id}
+                    >
                       <strong>{message.senderName}</strong>
                       <p>{message.text}</p>
                     </li>
@@ -286,13 +504,20 @@ export function createCollaborationWorkspaceView(
                 >
                   <textarea
                     aria-label="发送消息"
-                    disabled={chat.phase === "loading"}
+                    disabled={!chatMatchesRoute || chat.phase === "loading"}
                     placeholder="发送消息"
                     value={chat.draft}
                     onChange={(event) => services.chat.setDraft(event.currentTarget.value)}
                   />
-                  <button disabled={!chat.draft.trim() || chat.phase === "sending"} type="submit">
-                    {chat.phase === "sending" ? "发送中…" : "发送"}
+                  <button
+                    disabled={!chatMatchesRoute ||
+                      (chat.sendResolution !== "uncertain" && !chat.draft.trim()) ||
+                      chat.phase === "sending"}
+                    type="submit"
+                  >
+                    {chat.phase === "sending"
+                      ? chat.sendResolution === "uncertain" ? "确认中…" : "发送中…"
+                      : chat.sendResolution === "uncertain" ? "确认状态" : "发送"}
                   </button>
                 </form>
               </>
@@ -343,8 +568,16 @@ export function createCollaborationWorkspaceView(
               </section>
             ) : (
               <section className="collaboration-detail collaboration-detail--empty">
-                <h1>{chatActive ? "选择一个 Channel 或成员" : "选择一台 Computer"}</h1>
-                <p>{chatActive ? "群聊和私聊共用同一套腾讯 IM 体验。" : "从已有 LightVela 实例中选择 Computer。"}</p>
+                <h1>{chatActive
+                  ? chatFailed ? "聊天初始化失败" : chatPreparing ? "正在准备聊天" : "选择一个频道或成员"
+                  : "选择一台 Computer"}</h1>
+                <p>{chatActive
+                  ? chatFailed
+                    ? "全员频道暂时无法使用，请稍后刷新或联系 Server 管理员。"
+                    : chatPreparing
+                    ? "Server 准备完成后，点击刷新即可进入全员频道。"
+                    : "群聊和私聊在这里统一管理。"
+                  : "从已有 LightVela 实例中选择 Computer。"}</p>
               </section>
             )}
           </main>

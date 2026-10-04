@@ -426,11 +426,15 @@ func collaborationRoute(config CollaborationRouteConfig) Route {
 	const prefix = "/v1/collaboration"
 	paths := []PublicRule{
 		{Method: http.MethodGet, Path: prefix + "/me"},
+		{Method: http.MethodGet, Path: prefix + "/me/profile"},
 		{Method: http.MethodPost, Path: prefix + "/me/im/session"},
 		{Method: http.MethodGet, Path: prefix + "/servers"},
 		{Method: http.MethodPost, Path: prefix + "/servers"},
 		{Method: http.MethodGet, Path: prefix + "/servers/{serverId}"},
 		{Method: http.MethodGet, Path: prefix + "/servers/{serverId}/members"},
+		{Method: http.MethodPost, Path: prefix + "/servers/{serverId}/invites"},
+		{Method: http.MethodPost, Path: prefix + "/join-links/accept"},
+		{Method: http.MethodGet, Path: prefix + "/servers/{serverId}/operations/{operationId}"},
 		{Method: http.MethodGet, Path: prefix + "/servers/{serverId}/channels"},
 		{Method: http.MethodGet, Path: prefix + "/servers/{serverId}/computers-v2"},
 		{Method: http.MethodPost, Path: prefix + "/servers/{serverId}/computers-v2"},
