@@ -44,6 +44,7 @@ Settings V1 刻意不包含 global/host/workspace 多层 scope、自定义 migra
 
 - 扩展管理主入口为 Skills 的“扩展”Tab。应用通过 `PlatformViewRegions.ExtensionLibrary` 提供内容；不受技能 Host 选择影响。目录只读合并 Supervisor、Manager 与公开贡献，区分内建/安装、启用意图、运行故障和当前版本仍运行时的操作失败。列表搜索/来源筛选，详情复用 Manager 操作；内建项暂不开放停用/移除，URL 安装仅开发者模式。旧 Settings 插件路由保留兼容，导航不再展示入口。
 - Web bootstrap 保留 WebSocket 基础连接扩展为关键依赖；主题、语音、模型管理、产品接入等第一方扩展使用可选激活，失败记录在 Supervisor，继续其他扩展。语音、Builtin Agents、HyperNode、Collaboration、Bot Chat/Management 的动态 import 和工厂也通过 `loadOptional` 有界执行；平台账户服务模块仍属于 Application bootstrap 的必需依赖。
+- Embedded Chat 在同一 Application 内将语音、Collaboration、Bot Chat/Management 呈现和 Terminal 面板模块放入延后启动队列，首屏可用并完成 `show()` 的可见帧后才按依赖顺序激活；Full Workbench 默认保留 eager 策略。必需 Host/provider、账户身份和 Terminal 协议服务不后移。队列不拥有第二份扩展 registry；销毁先撤销未完成 import 的工厂 scope，再排空已开始激活，最后释放其借用的服务。该计划不是通用 activation event dispatcher。
 - 持久化产物独立存入 `system/artifacts/<sha256>`；安装集合只保存引用，CAS 成功后才切换安装指针，候选写入失败保留旧指针。缺失产物不自动联网换版本，插件提示显式重新加载修复。旧产物暂时保留，后续 GC 不影响正确性。
 - Module Loader、`activate` 工厂与每个内部 adapter prepare/commit 等待默认各 15 秒；subscription/internal disposer、rollback 与 command drain 默认每次 5 秒。超时撤销旧 API，继续剩余清理；工厂或 commit 迟到返回的 disposer 仍被调用，退休后命令结果不再成功返回。不隔离 trusted 模块同步死循环，也不能强制终止任意插件自行创建的副作用；prepare 必须无副作用。
 - 公共 `OpenCraftExtensionDefinition` 只引用公共 API，第一方 Theme Pack 已消费；`api.signal` 在失败或停用时先于清理 abort，运行中的插件可继续登记资源 subscription（贡献本身仍只在激活期登记）。自包含示例见 `examples/extensions/hello.mjs`，测试覆盖注册导航、调用公告与卸载中的待决结果。

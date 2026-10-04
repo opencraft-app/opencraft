@@ -173,6 +173,9 @@ function writeEdgeOneBuildOutput() {
 
   const routes = [
     { src: '^/__releases/([^/]+)/_next/static/(.*)$', headers: nextStaticCacheHeaders, continue: true },
+    // Embedded Vite output uses assets/a-[hash][extname] (default eight-character hash).
+    { src: '^/__opencraft/assets/a-[A-Za-z0-9_-]{8}\\.[A-Za-z0-9]+$', headers: nextStaticCacheHeaders, continue: true },
+    { src: '^/__opencraft/(embedded-workbench\\.js|version\\.json|preview-bridge\\.js)$', headers: htmlCacheHeaders, continue: true },
     { src: '^/__opencraft/opencraft-host-proxy-sw\\.js$', headers: htmlCacheHeaders, continue: true },
     { src: '^/(.*)\\.html$', headers: htmlCacheHeaders, continue: true },
     { src: '^/\\.txt$', dest: '/index.txt', headers: htmlCacheHeaders },

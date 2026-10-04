@@ -56,28 +56,47 @@ export class WebHostProxyBroker {
   private removeWorkerMessageListener: (() => void) | null = null;
   private ready = false;
   private disposed = false;
+  private startOperation: Promise<boolean> | null = null;
+  private readonly lifetime = new AbortController();
 
   constructor(private readonly fetchHost: HostProxyFetch) {}
 
-  async start(): Promise<boolean> {
+  start(): Promise<boolean> {
+    if (this.startOperation) return this.startOperation;
+    const operation = this.initialize();
+    this.startOperation = operation;
+    void operation.then((ready) => {
+      if (!ready && this.startOperation === operation) this.startOperation = null;
+    }, () => {
+      if (this.startOperation === operation) this.startOperation = null;
+    });
+    return operation;
+  }
+
+  /** Only remote loopback navigation depends on this optional capability. */
+  prepareNavigation(url: BrowserUrl): Promise<void> | null {
+    if (!isLoopbackHttpUrl(url) || (this.ready && !this.disposed)) return null;
+    return this.start().then((ready) => {
+      if (!ready || this.disposed) throw new Error("Host proxy is unavailable; remote loopback previews are disabled");
+    });
+  }
+
+  private async initialize(): Promise<boolean> {
     if (this.disposed) throw new Error("Host proxy broker is disposed");
     if (!("serviceWorker" in navigator) || globalThis.isSecureContext !== true) return false;
     const registration = await navigator.serviceWorker.register(HOST_PROXY_SERVICE_WORKER_URL, {
       scope: HOST_PROXY_SERVICE_WORKER_SCOPE,
       updateViaCache: "none",
     });
-    const readyRegistration = await Promise.race([
-      navigator.serviceWorker.ready,
-      new Promise<null>((resolve) => globalThis.setTimeout(() => resolve(null), 4_000)),
-    ]);
-    await registration.update().catch(() => undefined);
-    this.bind(
-      navigator.serviceWorker.controller
-      ?? readyRegistration?.active
-      ?? registration.active
-      ?? registration.waiting,
-    );
-    const controllerChanged = () => this.bind(navigator.serviceWorker.controller);
+    // The embedding document is outside this registration's scope. Container.ready
+    // waits for the document's controller and may never resolve (or be another SW).
+    const worker = await waitForProxyWorker(registration, this.lifetime.signal);
+    if (this.disposed || worker === null) return false;
+    this.bind(worker);
+    void registration.update().catch(() => undefined);
+    const controllerChanged = () => {
+      if (registration.active?.state === "activated") this.bind(registration.active);
+    };
     navigator.serviceWorker.addEventListener("controllerchange", controllerChanged);
     this.removeControllerListener = () =>
       navigator.serviceWorker.removeEventListener("controllerchange", controllerChanged);
@@ -85,9 +104,7 @@ export class WebHostProxyBroker {
       const message = event.data as { readonly type?: unknown; readonly brokerId?: unknown } | null;
       if (message?.type !== "opencraft-host-proxy:rebind-needed"
         || message.brokerId !== this.brokerId) return;
-      this.bind(event.source instanceof ServiceWorker
-        ? event.source
-        : navigator.serviceWorker.controller);
+      if (event.source === registration.active) controllerChanged();
     };
     navigator.serviceWorker.addEventListener("message", workerMessage);
     this.removeWorkerMessageListener = () =>
@@ -97,7 +114,8 @@ export class WebHostProxyBroker {
   }
 
   toPhysicalUrl(url: BrowserUrl, hostId: string): BrowserUrl {
-    if (!this.ready || !isLoopbackHttpUrl(url)) return url;
+    if (!isLoopbackHttpUrl(url)) return url;
+    if (!this.ready || this.disposed) throw new Error("Host proxy is not ready");
     this.allowedHostIds.add(hostId);
     return encodeHostProxyUrl({
       appOrigin: window.location.origin,
@@ -122,6 +140,7 @@ export class WebHostProxyBroker {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.lifetime.abort();
     this.ready = false;
     this.removeControllerListener?.();
     this.removeControllerListener = null;
@@ -232,4 +251,32 @@ export class WebHostProxyBroker {
       this.requests.delete(message.requestId);
     }
   }
+}
+
+function waitForProxyWorker(registration: ServiceWorkerRegistration, signal: AbortSignal): Promise<ServiceWorker | null> {
+  return new Promise((resolve) => {
+    const watched = new Set<ServiceWorker>();
+    const finish = (worker: ServiceWorker | null) => {
+      clearTimeout(timer);
+      registration.removeEventListener("updatefound", check);
+      signal.removeEventListener("abort", aborted);
+      for (const candidate of watched) candidate.removeEventListener("statechange", check);
+      resolve(worker);
+    };
+    const aborted = () => finish(null);
+    const check = () => {
+      if (signal.aborted) { finish(null); return; }
+      if (registration.active?.state === "activated") { finish(registration.active); return; }
+      for (const candidate of [registration.installing, registration.waiting, registration.active]) {
+        if (candidate && !watched.has(candidate)) {
+          watched.add(candidate);
+          candidate.addEventListener("statechange", check);
+        }
+      }
+    };
+    const timer = setTimeout(() => finish(null), 4_000);
+    registration.addEventListener("updatefound", check);
+    signal.addEventListener("abort", aborted, { once: true });
+    check();
+  });
 }

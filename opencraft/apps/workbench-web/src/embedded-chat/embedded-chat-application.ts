@@ -40,6 +40,7 @@ export async function createEmbeddedChatApplication(
       : undefined,
     lightVelaRegion: options.region,
     navigationMode: "memory",
+    deferOptionalFeatures: true,
   });
   try {
     if (application.supervisor.mode !== "active") {

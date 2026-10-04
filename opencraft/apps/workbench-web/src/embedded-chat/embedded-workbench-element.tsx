@@ -223,6 +223,13 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
     this.dataset.visible = "true";
     this.inert = false;
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    const application = this.application;
+    // Let the host finish its show() handoff and paint before optional imports.
+    requestAnimationFrame(() => {
+      if (!this.disposed && !this.inert && this.application === application) {
+        void application?.application.startOptionalFeatures();
+      }
+    });
   }
 
   hide(): void {

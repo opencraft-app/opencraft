@@ -16,7 +16,7 @@
     "node-pty@1.1.0": true
   },
   "scripts": {
-    "pretest:extensions": "tsx --test tests/extension-artifacts.test.ts tests/extension-catalog.test.ts",
+    "pretest:extensions": "tsx --test tests/extension-artifacts.test.ts tests/extension-catalog.test.ts tests/optional-feature-startup.test.ts tests/embedded-workbench-host-profile.test.ts tests/embedded-workbench-authority.test.ts",
     "smoke:extensions": "tsx scripts/smoke-extension-lifecycle.ts",
     "smoke:sidebar-execution-owner": "tsx scripts/smoke-sidebar-execution-owner.ts",
     "smoke:sent-image-preview": "tsx scripts/smoke-sent-image-preview.ts",

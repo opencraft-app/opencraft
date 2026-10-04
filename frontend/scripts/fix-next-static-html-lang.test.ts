@@ -49,7 +49,17 @@ describe("fix-next-static-html-lang", () => {
       expect(Math.max(...flightRoutes.map((route) => config.routes.indexOf(route)))).toBeLessThan(textHeaderIndex);
       expect(textHeaderIndex).toBeLessThan(filesystemIndex);
       expect(filesystemIndex).toBeLessThan(htmlFallbackIndex);
-      expect(config.routes).toHaveLength(8);
+      expect(config.routes).toHaveLength(10);
+      const cacheFor = (path: string) => config.routes
+        .filter((route) => route.src && new RegExp(route.src).test(path))
+        .map((route) => route.headers?.["cache-control"]);
+      for (const path of ["/__opencraft/assets/a-Uy7F6TvN.js", "/__opencraft/assets/a-BqXstsm-.css"]) {
+        expect(cacheFor(path)).toEqual(["public, max-age=31536000, immutable"]);
+      }
+      for (const path of ["/__opencraft/embedded-workbench.js", "/__opencraft/version.json", "/__opencraft/preview-bridge.js", "/__opencraft/opencraft-host-proxy-sw.js"]) {
+        expect(cacheFor(path)).toEqual(["no-cache"]);
+      }
+      expect(cacheFor("/__opencraft/assets/stable.js")).toEqual([]);
       expect(Buffer.byteLength(JSON.stringify(config))).toBeLessThan(16 * 1024);
       expect(Math.max(...config.routes.filter((route) => route.src).map((route) => Buffer.byteLength(route.src)))).toBeLessThanOrEqual(480);
       expect(existsSync(join(out, ".edgeone", "assets", "docs", "overview", "index.txt"))).toBe(true);
