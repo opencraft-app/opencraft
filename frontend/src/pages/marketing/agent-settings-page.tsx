@@ -56,7 +56,7 @@ import { useMultiBotEnabled, usePaidBillingEnabled, useRealnamePhoneVerification
 import { useCurrentLocale, useT, t as rawT } from "@/i18n/t";
 import { useTranslation } from "react-i18next";
 import { isGlobal } from "@/lib/region";
-import { bindChatVisualViewportHeight } from "./agent-chat-visual-viewport";
+import { agentChatPageMinHeightClass, bindChatVisualViewportHeight } from "./agent-chat-visual-viewport";
 import { isConsoleShowEnabled, subscribeConsoleShow } from "@/lib/console-show-event";
 import { resolveBotCloneIntent } from "@lightvela/agent-core";
 // agent-config 本地模块统一从 barrel 导入。
@@ -5033,7 +5033,8 @@ export const AgentSettingsPage = ({
     <div
       ref={chatPageRef}
       className={cn(
-        "flex min-h-dvh flex-col bg-white",
+        "flex flex-col bg-white",
+        agentChatPageMinHeightClass(useMobileChatLayout),
         activeSection === "chat" && "lv-agent-chat-page",
         activeSection === "chat" && openCraftChatEnabled && hasSidebarLayout && "lv-agent-embedded-chat-page",
         useMobileChatLayout && mobileChatNavOpen && "lv-agent-mobile-nav-open",

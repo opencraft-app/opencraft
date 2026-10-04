@@ -1,8 +1,30 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 
-import { bindChatVisualViewportHeight } from "../agent-chat-visual-viewport";
+import { agentChatPageMinHeightClass, bindChatVisualViewportHeight } from "../agent-chat-visual-viewport";
 
 afterEach(() => vi.unstubAllGlobals());
+
+it("allows embedded chat to shrink without removing ordinary pages' viewport minimum", () => {
+  expect(agentChatPageMinHeightClass(true)).toBe("min-h-0");
+  expect(agentChatPageMinHeightClass(false)).toBe("min-h-dvh");
+});
+
+it("uses the viewport minimum selector on the root that owns the height binding", () => {
+  const source = readFileSync(resolve(process.cwd(), "src/pages/marketing/agent-settings-page.tsx"), "utf8");
+  const rootClasses = source.match(/ref=\{chatPageRef\}[\s\S]*?style=/)?.[0];
+  expect(rootClasses).toContain("agentChatPageMinHeightClass(useMobileChatLayout)");
+  expect(rootClasses).not.toContain("min-h-dvh");
+});
+
+it("retains the CSS fallback when visualViewport is unavailable", () => {
+  vi.stubGlobal("visualViewport", null);
+  const page = document.createElement("div");
+  const stop = bindChatVisualViewportHeight(page);
+  expect(page.style.getPropertyValue("--lv-agent-chat-viewport-height")).toBe("");
+  expect(() => stop()).not.toThrow();
+});
 
 it("keeps the chat bottom at the visible keyboard edge and restores its CSS fallback", () => {
   const viewport = Object.assign(new EventTarget(), { height: 700, offsetTop: 0, pageTop: 0 });
