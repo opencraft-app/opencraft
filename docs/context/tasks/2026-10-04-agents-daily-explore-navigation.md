@@ -25,7 +25,7 @@ derived: false
 
 - 不更改通道、技能、定时任务、诊断或实验室页面功能。
 - `show()` 隐藏工具和连接器的归属暂不额外重设计。
-- 不提交、推送、创建 MR、发布或修改外部服务。
+- 不合并 MR、发布或修改生产服务。
 
 ## requirement_ids / requirement_refs / requirement_excerpt
 
@@ -55,6 +55,7 @@ derived: false
 - 探索按成长、管理、实验室排列；管理内依次为模型、诊断中心、高级设置；实验室既有 Beta 与云桌面条件保留。
 - 实验室上方使用与日常对话区相同的分隔线，在桌面和移动导航中保持可见。
 - 桌面侧栏的长会话列表在「对话」标题下独立滚动并显示纵向滚动条；日常入口、标题及底部账号入口保持可见，末尾会话操作菜单不被裁剪。
+- 会话按最近更新顺序初始仅展示 20 条；每次「查看更多」最多增加 20 条，「收起」逐批减少 20 条。仍有下一批时两个操作并列，超过 OpenCraft 初始 30 条时继续向后端翻页。
 - 侧栏底部小箭头菜单保留云存储，移除模型、诊断中心和高级设置的重复入口。
 - 聚焦交互测试、`pnpm check`、`pnpm test`、`pnpm build` 和相关 Context 检查取得结果。
 
@@ -99,6 +100,7 @@ derived: false
 | `opencraft/AGENTS.md@f3db0e91f` | 嵌入工作台服务入口 | 执行状态桥接与验证 |
 | `opencraft/docs/platform-architecture.md@f3db0e91f` | OpenCraft 邻接设计 | 确认嵌入部署边界 |
 | `opencraft/docs/chat-ui-architecture.md@f3db0e91f` | 会话 UI 设计 | 对齐执行状态来源 |
+| `opencraft/.agents/skills/opencraft-maintenance/SKILL.md` | 嵌入桥接变更验证 | 核对工作台构建与测试边界 |
 
 ## evidence
 
@@ -131,6 +133,7 @@ derived: false
 - 长会话列表已在桌面侧栏内独立滚动并显示 6px 滚动条；Chrome/Whistle 登录态用 15 条真实会话确认列表滚动到末尾时标题、日常入口和底部账号入口位置不变，末尾会话操作菜单完整可见。390px 移动端继续使用原抽屉整体滚动，实测内容高度超过抽屉高度时可滚动。
 - 按 `frontend/AGENTS.md` 检查 OpenCraft Agent Console 生成副本时发现前端 i18n 与模型 locale 真源漂移；在提交前端真源后运行同步脚本，生成副本与 `UPSTREAM.json` 已更新，复跑只读同步检查及 Hermes 插件 typecheck 均通过。
 - Hermes 插件完整测试 88/88（含三项删除生命周期测试）、37 项前端侧栏测试、OpenCraft 插件 typecheck/边界检查、`pnpm check`、国内站构建、嵌入工作台构建和文档验证通过；5174 页面与同源嵌入脚本均返回 HTTP 200。未对真实执行中的用户会话执行删除。
+- 2026-10-05 会话列表改为初始 20 条、每次增减 20 条；OpenCraft 嵌入桥接公开后端下一页状态和加载动作，避免初始 30 条数据截断。分页 hook 的 20→40→60→65、逐批收起、服务端继续加载与失败保持原数量测试通过（3/3）；桥接测试 14/14、工作台 Web typecheck、前端 `pnpm check`（新增 TypeScript 诊断 0 项）、双站构建和文档校验通过。Chrome/Whistle 登录态当前只有 15 条真实会话，确认没有多余的「查看更多」；超过 20 条的浏览器视觉暂无真实数据可验证。
 
 ## risks
 

@@ -1199,6 +1199,40 @@ a {
   height: 16px;
 }
 
+.lv-agents-session-list-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 8px 4px 20px;
+}
+
+.lv-agents-session-list-actions button {
+  padding: 4px 6px;
+  border-radius: 6px;
+  color: #596273;
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.lv-agents-session-list-actions button:last-child {
+  margin-left: auto;
+}
+
+.lv-agents-session-list-actions button:hover:not(:disabled) {
+  background: #f7f7f5;
+  color: #1f1f1f;
+}
+
+.lv-agents-session-list-actions button:focus-visible {
+  outline: 2px solid rgb(0 0 0 / 30%);
+  outline-offset: 2px;
+}
+
+.lv-agents-session-list-actions button:disabled {
+  cursor: wait;
+  opacity: 0.5;
+}
+
 .lv-agents-session-item--opencraft.lv-agents-nav-item {
   padding-right: 44px;
 }
@@ -1559,7 +1593,8 @@ a {
     background: #c5c9d0;
   }
 
-  .lv-agents-session-list:has(> li:nth-child(5)) > li:nth-last-child(-n + 3) .lv-agents-session-menu {
+  .lv-agents-session-list:not(:has(> .lv-agents-session-list-actions)):has(> li:nth-child(5)) > li:nth-last-child(-n + 3) .lv-agents-session-menu,
+  .lv-agents-session-list:has(> .lv-agents-session-list-actions) > li:nth-last-child(-n + 4) .lv-agents-session-menu {
     top: auto;
     bottom: 26px;
   }

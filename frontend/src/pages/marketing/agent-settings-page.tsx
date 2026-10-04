@@ -192,6 +192,7 @@ import {
   type EmbeddedSessionCommands,
   type EmbeddedSessionMutationState,
 } from "@/pages/marketing/opencraft-embedded-workbench";
+import { useAgentSessionPagination } from "@/pages/marketing/agent-session-pagination";
 
 const MAX_BOT_NAME_LENGTH = 60;
 
@@ -2779,8 +2780,10 @@ export const AgentSettingsPage = ({
   const showConnectorsEntry = connectorsRevealed && !isGlobal;
   const [chatSessions, setChatSessions] = useState<LightVelaSession[]>([]);
   const [chatSessionsLoading, setChatSessionsLoading] = useState(false);
+  const [chatSessionsHasMore, setChatSessionsHasMore] = useState(false);
   const [chatSessionMutationState, setChatSessionMutationState] = useState<EmbeddedSessionMutationState | null>(null);
   const [chatSessionCommands, setChatSessionCommands] = useState<EmbeddedSessionCommands | null>(null);
+  const chatSessionPagination = useAgentSessionPagination(chatSessions, chatSessionsHasMore, chatSessionCommands?.loadMoreSessions);
   const chatSurfaceOwnerRef = useRef<"legacy" | "opencraft">("legacy");
   const legacyChatSessionStateRef = useRef<Parameters<
     NonNullable<LightVelaMultiSessionOptions["onSessionStateChange"]>
@@ -2877,7 +2880,10 @@ export const AgentSettingsPage = ({
     NonNullable<LightVelaMultiSessionOptions["onSessionStateChange"]>
   >((state) => {
     legacyChatSessionStateRef.current = state;
-    if (chatSurfaceOwnerRef.current === "legacy") applyChatSessionState(state);
+    if (chatSurfaceOwnerRef.current === "legacy") {
+      applyChatSessionState(state);
+      setChatSessionsHasMore(false);
+    }
   }, [applyChatSessionState]);
   const handleLegacyChatSelectedChatIdChange = useCallback<
     NonNullable<LightVelaMultiSessionOptions["onSelectedChatIdChange"]>
@@ -2918,6 +2924,7 @@ export const AgentSettingsPage = ({
   const handleChatSurfaceOwnerChange = useCallback((owner: "legacy" | "opencraft") => {
     chatSurfaceOwnerRef.current = owner;
     if (owner !== "legacy") return;
+    setChatSessionsHasMore(false);
     if (legacyChatSessionStateRef.current !== null) {
       applyChatSessionState(legacyChatSessionStateRef.current);
     }
@@ -4165,12 +4172,14 @@ export const AgentSettingsPage = ({
    * 重置后 selectedChatId 回到 undefined，SDK 按新实例重新下发默认会话。
    */
   useEffect(() => {
+    chatSessionPagination.reset();
     chatSurfaceOwnerRef.current = "legacy";
     legacyChatSessionStateRef.current = null;
     legacySelectedChatIdRef.current = null;
     legacyChatSessionActionsRef.current = null;
     setChatSessions([]);
     setChatSessionsLoading(false);
+    setChatSessionsHasMore(false);
     setChatSessionMutationState(null);
     setSelectedChatId(undefined);
     setChatSessionActions(null);
@@ -4179,7 +4188,7 @@ export const AgentSettingsPage = ({
     setRenamingDraft("");
     setOpenSessionMenuChatId(null);
     setSessionToDelete(null);
-  }, [sdkInstance?.InstanceId]);
+  }, [sdkInstance?.InstanceId, sdkInstance?.ProfileId, chatSessionPagination.reset]);
 
   const sdkFeatureFlags = useMemo<TeaSdkFeatureFlags>(() => ({
     gateway: true,
@@ -6405,7 +6414,7 @@ export const AgentSettingsPage = ({
                                     </AppLink>
                                   </li>
                                 ) : (
-                                  chatSessions.map((session) => {
+                                  chatSessionPagination.visibleSessions.map((session) => {
                                     const isSelected = selectedChatId === session.chatId;
                                     const isRenaming = renamingChatId === session.chatId;
                                     const isMenuOpen = openSessionMenuChatId === session.chatId;
@@ -6505,7 +6514,22 @@ export const AgentSettingsPage = ({
                                     );
                                   })
                                 )}
+                                {chatSessions.length > 0 && (chatSessionPagination.hasMoreVisible || chatSessionPagination.hasExpanded) ? (
+                                  <li className="lv-agents-session-list-actions">
+                                    {chatSessionPagination.hasMoreVisible ? (
+                                      <button type="button" disabled={chatSessionPagination.loadingMore || (chatSessionsHasMore && !chatSessionCommands?.loadMoreSessions)} aria-busy={chatSessionPagination.loadingMore} onClick={() => { void chatSessionPagination.showMore(); }}>
+                                        {t("查看更多")}
+                                      </button>
+                                    ) : null}
+                                    {chatSessionPagination.hasExpanded ? (
+                                      <button type="button" disabled={chatSessionPagination.loadingMore} onClick={chatSessionPagination.collapse}>
+                                        {t("收起")}
+                                      </button>
+                                    ) : null}
+                                  </li>
+                                ) : null}
                               </ul>
+                              {chatSessionPagination.pageError ? <p className="lv-agents-session-hint" role="alert">{t("会话加载失败，请重试")}</p> : null}
                               {chatSessionMutationState !== null ? (
                                 <p
                                   className={cn(
@@ -6780,6 +6804,7 @@ export const AgentSettingsPage = ({
                               multiSession={openCraftChatMultiSessionBridge}
                               onOwnerChange={handleChatSurfaceOwnerChange}
                               onSessionCommandsChange={setChatSessionCommands}
+                              onHasMoreSessionsChange={setChatSessionsHasMore}
                               onSessionMutationStateChange={setChatSessionMutationState}
                               legacy={isActiveBotDefault ? (
                                 <AgentChatPanel

@@ -37,6 +37,7 @@ describe("AgentChatMigrationSurface", () => {
     const onSessionStateChange = vi.fn();
     const onSelectedChatIdChange = vi.fn();
     const onOwnerChange = vi.fn();
+    const onHasMoreSessionsChange = vi.fn();
     const onSessionMutationStateChange = vi.fn();
     let resolveShow!: () => void;
     const shown = new Promise<void>((resolve) => { resolveShow = resolve; });
@@ -46,6 +47,7 @@ describe("AgentChatMigrationSurface", () => {
       hide = vi.fn();
       dispose = vi.fn(async () => undefined);
       createConversation = vi.fn(async () => undefined);
+      loadMoreConversations = vi.fn(async () => undefined);
       selectConversation = vi.fn();
       renameConversation = vi.fn(async () => undefined);
       deleteConversation = vi.fn(async () => undefined);
@@ -54,6 +56,7 @@ describe("AgentChatMigrationSurface", () => {
           detail: {
             sessions: [{ chatId: "thread-1", title: "First", createdAt: 1, updatedAt: 2 }],
             loading: false,
+            hasMoreSessions: true,
             error: null,
             selectedChatId: "thread-1",
           },
@@ -83,6 +86,7 @@ describe("AgentChatMigrationSurface", () => {
         legacy={<div>Legacy AgentChat</div>}
         multiSession={multiSession}
         onOwnerChange={onOwnerChange}
+        onHasMoreSessionsChange={onHasMoreSessionsChange}
         onSessionCommandsChange={(next) => { commands = next; }}
         onSessionMutationStateChange={onSessionMutationStateChange}
       />
@@ -119,6 +123,7 @@ describe("AgentChatMigrationSurface", () => {
       loading: false,
     }));
     expect(onSelectedChatIdChange).toHaveBeenCalledWith("thread-1");
+    expect(onHasMoreSessionsChange).toHaveBeenCalledWith(true);
     expect(actions).not.toBeNull();
     const embedded = container.querySelector("opencraft-embedded-workbench");
     expect(embedded).not.toBeNull();
@@ -131,6 +136,8 @@ describe("AgentChatMigrationSurface", () => {
       expect(surface).toHaveClass("border-0", "rounded-none");
     }
     expect(commands).not.toBeNull();
+    await requireCommands().loadMoreSessions?.();
+    expect((embedded as FakeEmbeddedWorkbench).loadMoreConversations).toHaveBeenCalledOnce();
     await requireCommands().createSession();
     expect((embedded as FakeEmbeddedWorkbench).createConversation).toHaveBeenCalledOnce();
     expect(onSessionMutationStateChange).toHaveBeenCalledWith({
@@ -155,6 +162,7 @@ describe("AgentChatMigrationSurface", () => {
     expect(onOwnerChange).toHaveBeenLastCalledWith("legacy");
     expect(actions).toBeNull();
     expect(commands).toBeNull();
+    expect(onHasMoreSessionsChange).toHaveBeenLastCalledWith(false);
 
     rerender(renderSurface(true));
     const replacement = await waitFor(() => {

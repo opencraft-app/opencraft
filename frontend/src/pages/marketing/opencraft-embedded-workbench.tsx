@@ -37,6 +37,7 @@ interface EmbeddedWorkbenchElement extends HTMLElement {
   hide(): void;
   dispose(): Promise<void>;
   createConversation(): Promise<void>;
+  loadMoreConversations?(): Promise<void>;
   selectConversation(conversationId: string): void;
   renameConversation(conversationId: string, title: string): Promise<void>;
   deleteConversation(conversationId: string): Promise<void>;
@@ -62,6 +63,7 @@ interface AgentChatMigrationSurfaceProps extends Omit<EmbeddedWorkbenchConfig, "
   readonly multiSession: LightVelaMultiSessionOptions;
   readonly onOwnerChange?: (owner: "legacy" | "opencraft") => void;
   readonly onSessionCommandsChange?: (commands: EmbeddedSessionCommands | null) => void;
+  readonly onHasMoreSessionsChange?: (hasMore: boolean) => void;
   readonly onSessionMutationStateChange?: (state: EmbeddedSessionMutationState | null) => void;
 }
 
@@ -74,11 +76,13 @@ export interface EmbeddedSessionMutationState {
 
 export interface EmbeddedSessionCommands {
   createSession(): Promise<void>;
+  loadMoreSessions?(): Promise<void>;
 }
 
 interface EmbeddedSessionsDetail {
   readonly sessions: LightVelaSessionState["sessions"];
   readonly loading: boolean;
+  readonly hasMoreSessions?: boolean;
   readonly error: string | null;
   readonly selectedChatId: string | null;
   readonly isDraft?: boolean;
@@ -162,6 +166,7 @@ export function AgentChatMigrationSurface({
   multiSession,
   onOwnerChange,
   onSessionCommandsChange,
+  onHasMoreSessionsChange,
   onSessionMutationStateChange,
   profileId,
   region,
@@ -177,6 +182,8 @@ export function AgentChatMigrationSurface({
   onOwnerChangeRef.current = onOwnerChange;
   const onSessionCommandsChangeRef = useRef(onSessionCommandsChange);
   onSessionCommandsChangeRef.current = onSessionCommandsChange;
+  const onHasMoreSessionsChangeRef = useRef(onHasMoreSessionsChange);
+  onHasMoreSessionsChangeRef.current = onHasMoreSessionsChange;
   const onSessionMutationStateChangeRef = useRef(onSessionMutationStateChange);
   onSessionMutationStateChangeRef.current = onSessionMutationStateChange;
   const activeRef = useRef(active);
@@ -271,11 +278,18 @@ export function AgentChatMigrationSurface({
         loading: latestSessions.loading,
         historyLoading: false,
       });
+      onHasMoreSessionsChangeRef.current?.(latestSessions.hasMoreSessions === true);
       if (latestSessions.selectedChatId !== null && !preserveHostSelection) {
         multiSessionRef.current.onSelectedChatIdChange(latestSessions.selectedChatId);
       }
     };
     const sessionCommands: EmbeddedSessionCommands = {
+      async loadMoreSessions() {
+        if (typeof element?.loadMoreConversations !== "function") {
+          throw new Error("Embedded Workbench cannot load more conversations");
+        }
+        await element.loadMoreConversations();
+      },
       async createSession() {
         onSessionMutationStateChangeRef.current?.({
           operation: "create", chatId: "", pending: true, error: null,
@@ -386,6 +400,7 @@ export function AgentChatMigrationSurface({
       onOwnerChangeRef.current?.("legacy");
       if (adopted) multiSessionRef.current.onSessionActionsChange?.(null);
       onSessionCommandsChangeRef.current?.(null);
+      onHasMoreSessionsChangeRef.current?.(false);
       onSessionMutationStateChangeRef.current?.(null);
       const current = element;
       element = null;

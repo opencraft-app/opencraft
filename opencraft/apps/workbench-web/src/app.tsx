@@ -206,6 +206,7 @@ export interface EmbeddedWorkbenchAppActions {
   submitPrompt(text: string): boolean;
   selectThread(threadId: string): Promise<void>;
   createThread(): Promise<void>;
+  loadMoreThreads(): Promise<void>;
   renameThread(threadId: string, title: string): Promise<void>;
   deleteThread(threadId: string): Promise<void>;
 }
@@ -217,6 +218,7 @@ export interface EmbeddedWorkbenchAppPresentation {
   readonly onSessionsChange: (detail: {
     readonly sessions: readonly EmbeddedWorkbenchAppSession[];
     readonly loading: boolean;
+    readonly hasMoreSessions: boolean;
     readonly selectedChatId: string | null;
     readonly isDraft: boolean;
   }) => void;
@@ -1098,10 +1100,11 @@ export function App({
     embedded.onSessionsChange({
       sessions: embeddedSessions,
       loading: catalog.isFetching,
+      hasMoreSessions: catalog.hasNextPage,
       selectedChatId: snapshot.hostId === embedded.hostId ? activeThreadId : null,
       isDraft: draft !== null && draft.submission === null,
     });
-  }, [activeThreadId, catalog.isFetching, draft, embedded, embeddedSessions, snapshot.hostId]);
+  }, [activeThreadId, catalog.hasNextPage, catalog.isFetching, draft, embedded, embeddedSessions, snapshot.hostId]);
   useEffect(() => {
     if (embedded === undefined) return;
     if (conversationViewActivation.phase === "error") {
@@ -1129,6 +1132,12 @@ export function App({
         await hostCatalog.navigate(createWorkbenchThreadLocation(embedded.hostId, threadId));
       },
       createThread: async () => { navigateToHome(); },
+      loadMoreThreads: async () => {
+        const result = await catalog.fetchNextPage();
+        if (result !== null && typeof result === "object" && "isError" in result && result.isError) {
+          throw "error" in result ? result.error : new Error("Failed to load conversations");
+        }
+      },
       renameThread: async (threadId, title) => {
         await hostCatalog.threadManagement.rename(embedded.hostId, threadId, title);
         await queryClient.invalidateQueries({ queryKey: ["appserver", embedded.hostId, "threads"] });
@@ -1139,7 +1148,7 @@ export function App({
         if (activeThreadId === threadId) navigateToHome();
       },
     });
-  }, [activeThreadId, composerController, embedded, hostCatalog, navigateToHome, queryClient, sendMessage, snapshot.phase]);
+  }, [activeThreadId, catalog.fetchNextPage, composerController, embedded, hostCatalog, navigateToHome, queryClient, sendMessage, snapshot.phase]);
   const workspaceSelectionEpoch = useRef(0);
   useLayoutEffect(() => {
     workspaceSelectionEpoch.current++;

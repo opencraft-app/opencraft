@@ -57,6 +57,7 @@ export interface EmbeddedWorkbenchSession extends EmbeddedWorkbenchAppSession {}
 export interface EmbeddedWorkbenchSessionsDetail {
   readonly sessions: readonly EmbeddedWorkbenchSession[];
   readonly loading: boolean;
+  readonly hasMoreSessions: boolean;
   readonly error: string | null;
   readonly selectedChatId: string | null;
   readonly isDraft: boolean;
@@ -162,6 +163,7 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
   private readyDetail: EmbeddedWorkbenchReadyDetail | null = null;
   private selectedConversationId: string | null = null;
   private isDraft = true;
+  private hasMoreSessions = false;
   private sessions = new Map<string, EmbeddedWorkbenchSession>();
   private stopThemeSubscription: (() => void) | null = null;
   private disposed = false;
@@ -264,6 +266,10 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
 
   async createConversation(): Promise<void> {
     await this.requireActions().createThread();
+  }
+
+  async loadMoreConversations(): Promise<void> {
+    await this.requireActions().loadMoreThreads();
   }
 
   /** Host-controlled locale updates retain the application and draft identity. */
@@ -369,10 +375,12 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
   private handleSessions(detail: {
     readonly sessions: readonly EmbeddedWorkbenchSession[];
     readonly loading: boolean;
+    readonly hasMoreSessions: boolean;
     readonly selectedChatId: string | null;
     readonly isDraft: boolean;
   }): void {
     this.sessions = new Map(detail.sessions.map((session) => [session.chatId, session]));
+    this.hasMoreSessions = detail.hasMoreSessions;
     this.selectedConversationId = detail.selectedChatId;
     this.isDraft = detail.isDraft;
     this.publishSessions(detail.loading, null);
@@ -441,6 +449,7 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
         detail: Object.freeze({
           sessions: Object.freeze([...this.sessions.values()]),
           loading,
+          hasMoreSessions: this.hasMoreSessions,
           error,
           selectedChatId: this.selectedConversationId,
           isDraft: this.isDraft,
