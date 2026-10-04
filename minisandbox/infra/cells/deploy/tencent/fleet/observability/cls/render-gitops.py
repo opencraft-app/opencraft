@@ -74,6 +74,9 @@ def prepare(repository: Path, revision: str, binding: dict, expected_cluster_id:
             "sourceRepos": [REPOSITORY],
             "destinations": [{"server": "https://kubernetes.default.svc", "namespace": "workers-api-system"}],
             "clusterResourceWhitelist": [{"group": "cls.cloud.tencent.com", "kind": "LogConfig", "name": name}],
+            # A preparation Project cannot authorize even a manual Sync.
+            # Argo's resource blacklist takes precedence over its whitelist.
+            "clusterResourceBlacklist": [{"group": "cls.cloud.tencent.com", "kind": "LogConfig", "name": name}],
             "namespaceResourceBlacklist": [{"group": "*", "kind": "*"}],
             "namespaceResourceWhitelist": [],
         },
@@ -88,8 +91,8 @@ def prepare(repository: Path, revision: str, binding: dict, expected_cluster_id:
                 "directory": {"recurse": False, "include": "logconfig.json"},
             },
             "destination": {"server": "https://kubernetes.default.svc", "namespace": "workers-api-system"},
-            # Preparation never authorizes the first collection. Manual sync is
-            # also forbidden until the independent live release gates pass.
+            # Auto-sync is disabled independently of the Project deny policy.
+            # Removing this option alone never authorizes first collection.
             "syncPolicy": {
                 "automated": {"enabled": False, "prune": False, "selfHeal": False},
                 "syncOptions": ["CreateNamespace=false", "FailOnSharedResource=true"],

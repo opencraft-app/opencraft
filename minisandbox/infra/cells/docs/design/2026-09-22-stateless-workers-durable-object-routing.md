@@ -2226,8 +2226,13 @@ Workers API容器，使用精确topic/logset ID、显式metadata白名单、JSON
 回归覆盖脏工作树、较新HEAD和Git replace均不得改变旧固定commit。独立Project按基座Argo
 v3.5.2的group/kind/name限定单份LogConfig，拒绝所有namespaced资源；Application只解析该
 文件，固定C destination，明确unqualified且不自动sync/selfHeal/prune。它不发布Git、安装
-组件或证明云身份；auto-sync关闭也不阻止手工Sync。实际collector、Argo版本/CRD、仅C
+组件或证明云身份；Project另以同名clusterResourceBlacklist拒绝自己的LogConfig，不能只靠
+关闭auto-sync防止手工Sync。该deny不依赖Application同步选项或时钟，不能以annotation
+冒充权限边界。实际collector、Argo版本/CRD、仅C
 resource inclusions、安全API镜像和CLS正反查询仍需独立锁内门禁，不能从准备声明晋升资格。
+受控首次canary应在安全镜像/collector/topic前置门禁之后、正反查询之前放行，避免循环。
+查询失败时需停止实际规则或恢复已验证规则；恢复Project deny不会让现有采集自动停止。
+canary发布、清理及实际Argo拒绝回执尚未实现或取得，不改变完整目标未完成的判断。
 
 严格负载后的自然缩容还暴露一个独立liveness缺口：A在111 Ready Host、active0、无release
 hold时停于35/35/41，最高ordinal110在较小AZ；下一前缀34/35/41的skew7超过当前缩容

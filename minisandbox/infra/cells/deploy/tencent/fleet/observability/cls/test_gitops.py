@@ -67,6 +67,7 @@ class CLSGitPreparationTests(unittest.TestCase):
         self.assertEqual(project["spec"]["clusterResourceWhitelist"], [
             {"group": "cls.cloud.tencent.com", "kind": "LogConfig", "name": "actor-bj-c01-workers-api-errors"},
         ])
+        self.assertEqual(project["spec"]["clusterResourceBlacklist"], project["spec"]["clusterResourceWhitelist"])
         self.assertEqual(project["spec"]["namespaceResourceBlacklist"], [{"group": "*", "kind": "*"}])
         self.assertEqual(project["spec"]["namespaceResourceWhitelist"], [])
         source = application["spec"]["source"]
@@ -78,6 +79,18 @@ class CLSGitPreparationTests(unittest.TestCase):
         self.assertEqual(application["metadata"]["annotations"]["fleet.actor.dev/collection-admission"], "unqualified")
         self.assertNotIn("finalizers", application["metadata"])
         self.assertNotIn("ignoreDifferences", application["spec"])
+
+    def test_unqualified_project_retains_resource_deny_independent_of_auto_sync(self) -> None:
+        # This checks the rendered admission policy, not a live Argo server.
+        # v3.5.2 IsGroupKindNamePermitted requires whitelist AND NOT blacklist.
+        project, application = self.prepare()
+        selected = {"group": "cls.cloud.tencent.com", "kind": "LogConfig",
+                    "name": self.rule["metadata"]["name"]}
+        self.assertIn(selected, project["spec"]["clusterResourceBlacklist"])
+        application["spec"].pop("syncPolicy")
+        restored_project = list(yaml.safe_load_all(yaml.safe_dump_all([project, application])))[0]
+        self.assertIn(selected, restored_project["spec"]["clusterResourceBlacklist"])
+        self.assertEqual(restored_project["metadata"]["annotations"]["fleet.actor.dev/collection-admission"], "unqualified")
 
     def test_exact_commit_ignores_dirty_tree_and_later_head(self) -> None:
         expected = self.prepare()

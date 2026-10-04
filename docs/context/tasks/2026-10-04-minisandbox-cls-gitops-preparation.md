@@ -11,7 +11,7 @@ source_of_truth:
 status: active
 reviewed_at: 2026-10-04
 review_due: 2026-11-03
-revision: 1.0.0
+revision: 1.1.0
 precedence: task
 derived: false
 ---
@@ -29,6 +29,8 @@ derived: false
 - 规则必须来自中央既有desired Git的精确commit，且与当前Storage binding完整一致。
 - 仅LogConfig，不能顺带部署namespace、Secret、CRD、agent或runtime。
 - 准备阶段禁用自动同步和prune；真实发布仍独立持整段operation lock。
+- 源码复核：仅关闭auto-sync仍允许手工Sync。准备Project另拒绝同名LogConfig，
+  避免unqualified annotation被当作强制权限门禁。这里不增加放行/跳过资格开关。
 
 ## interface_refs / data_structure_refs / history_context
 
@@ -68,6 +70,13 @@ derived: false
 - JSON规则比对采用规范序列化而不是Python对象相等，避免0被当作false而绕过类型检查。
 - 官方v3.5.2源码确认ClusterResourceRestrictionItem.Name及isNamedResourceInList；旧版
   v3.1.3仅GroupKind，不能宣称同样精确name权限。本轮没有改变已部署Argo版本。
+- 后续修正核对官方app_project_types.go的IsGroupKindNamePermitted，确认blacklist拒绝
+  优先于whitelist；不用定时sync window、时钟或另造准入服务。
+- 同期本地CLS测试12项、完整邻接GitOps测试24项通过；新增测试证明渲染出的deny
+  不依赖Application是否保留syncPolicy，不冒充实际Argo server拒绝Sync证据。
+- 原任务03:24:13Z inv-a9fqrggqxf SUCCESS/0，PID261665/原InvocationID仍active/running，
+  final drain已23456秒。首次waiter路径少了fleet，退出127且未提交新调用；修正路径后
+  恢复同一invocation。整段锁仍由原任务持有，无部署或并行云负载。
 - 原任务03:14:49Z inv-d9fqgkgvd7 SUCCESS/0，PID261665/原InvocationID仍active/running。
   cloud-environment skill及networking reference已读；status工具与policy snapshot仍不可用，
   不据此宣称managed setup ready，仅使用既有配置selector完成原观察命令。
@@ -80,13 +89,14 @@ derived: false
 ## checkpoint
 
 - stage：源码门禁收尾；声明默认inactive，不等于发布、采集或完整goal已完成。
-- verified：上述真实本地Git/CLI及邻接15项测试；未重编任何二进制。
+- verified：本轮12项CLS和24项完整邻接GitOps测试；未重编任何二进制。
 - unverified：当前topic云身份、安全API镜像、collector/Argo兼容性、C-only discovery和正反查询。
 - discard：旧版GroupKind支持name限制的假设；不能用通用stable文档代替基座精确版本。
 - restore：071c3d10父基线、唯一mono2工作树当前修订及本Task；不回写旧仓库。
-- artifacts：/data/tmp/cls-gitops-tests-20261004.log、cls-gitops-neighbor-tests-20261004.log；
-  云只读观察在strict10k-original-verified-wait-20261004T0315Z.log，根检查回执在
-  cls-gitops-root-context-receipt-20261004.json及cls-gitops-root-audit-receipt-20261004.json。
+- artifacts：/data/tmp/cls-preparation-deny-tests-20261004.log及同前缀neighbor-tests日志；
+  云只读观察在strict10k-original-verified-wait-20261004T0326Z.log，hash留在本地回执。
+  根检查回执使用cls-preparation-deny-root-context及root-audit前缀；历史回执不覆盖。
+  本轮26项根Context测试仍为上述4项历史失败，33项audit测试通过；文档无错误/警告。
 - next_action：有界敏感扫描、Context基线对比和普通FF source push；锁空闲后仍先探索。
 
 ## scan_scope / scan_output / handoff

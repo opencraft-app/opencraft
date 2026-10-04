@@ -89,8 +89,16 @@ namespaced 资源拒绝，固定 C 的 in-cluster destination；Application 固�
 旧 Argo 不得忽略未知 name 字段后继续安装，实际版本/CRD仍需上线核验。
 
 准备声明明确为 `collection-admission=unqualified`，自动同步、自愈、prune 默认关闭，
-不加级联删除 finalizer。禁用 auto-sync 不会禁止操作员手工 Sync；本入口不是安全镜像/
-agent/云身份/查询验证器，未通过上节门禁仍不能安装或手工同步。origin 字符串与 annotation
-不证明 clone 来源或集群 UID；可信发布链、实际精确版本和实时重新核对不可省略。
+不加级联删除 finalizer。Project 还用同名 `clusterResourceBlacklist` 拒绝自己的 LogConfig：
+只禁用 auto-sync 无法防止手工 Sync；独立 deny 不依赖 Application 的同步选项或时钟。
+判定依据[Argo v3.5.2 的资源权限实现](https://github.com/argoproj/argo-cd/blob/v3.5.2/pkg/apis/application/v1alpha1/app_project_types.go)。
+本入口没有放行开关，不是安全镜像/agent/云身份/查询验证器；能够修改 Project 的管理员仍能
+改变策略。origin 字符串与 annotation 不证明 clone 来源或集群 UID；可信发布链、实际
+精确版本和实时重新核对不可省略，当前测试不是实际 Argo Sync 拒绝回执。
+
+真实发布不能形成“先查 CLS、才能第一次采集”的死循环。顺序是前置门禁通过后，在同一
+整段 operation lock 内受控放行 canary，再验证正反查询，最后才晋升自动自愈。canary 失败
+必须停止实际规则或恢复之前已验证的规则；重新加回 Project deny 只阻止后续同步，不会
+停止已存在 LogConfig 的采集。这里尚未实现 canary 发布器或故障清理，不授权手工绕过。
 后续还要将 LogConfig discovery 纳入仅 C 的 Argo resource inclusions，并在整段 operation
 lock 内证明规则归属与正反查询，再通过正式发布打开自愈。当前没有修改共享 Argo policy。
