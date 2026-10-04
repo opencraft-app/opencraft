@@ -157,7 +157,9 @@ def normalized(sample):
     }
 
 
-def main():
+def main(*, evidence_mode="production"):
+    if evidence_mode not in ("production", "exploration"):
+        raise ValueError("unknown capacity evidence mode")
     parser = argparse.ArgumentParser()
     parser.add_argument("--trace", type=Path, required=True)
     parser.add_argument("--load-receipt", type=Path, required=True)
@@ -170,12 +172,20 @@ def main():
     parser.add_argument("--load-exit-status", type=int, required=True)
     parser.add_argument("--cleanup-exit-status", type=int, required=True)
     parser.add_argument("--final-capacity-exit-status", type=int, required=True)
+    parser.add_argument("--drain-profile-exit-status", type=int, required=True)
+    if evidence_mode == "exploration":
+        parser.set_defaults(expected_active=320, expected_objects=352)
     args = parser.parse_args()
+    if evidence_mode == "exploration" and (
+            args.expected_active != 320 or args.expected_objects != 352
+            or args.floor_per_cell != 4 or args.hard_active_per_host != 32):
+        parser.error("exploration capacity bounds are fixed")
     if (args.expected_active < 1 or args.expected_objects < args.expected_active
             or args.floor_per_cell < 1 or args.hard_active_per_host < 1):
         parser.error("invalid qualification bounds")
     exit_statuses = {"load": args.load_exit_status, "cleanup": args.cleanup_exit_status,
-                     "finalCapacity": args.final_capacity_exit_status}
+                     "finalCapacity": args.final_capacity_exit_status,
+                     "drainProfile": args.drain_profile_exit_status}
     if any(status < 0 or status > 255 for status in exit_statuses.values()):
         parser.error("exit statuses must be integers from 0 through 255")
     if args.output.exists():
@@ -276,12 +286,13 @@ def main():
     )
     checks = {
         "executionSucceeded": all(status == 0 for status in exit_statuses.values()),
+        "hostDrainProfilePassed": args.drain_profile_exit_status == 0,
         "capacityTraceValid": trace_valid,
         "capacityIdentityStable": bool(identity_stable),
         "loadReceiptPassed": load_passed,
         "exactObjectCleanupPassed": cleanup_passed,
         "initialLowCapacity": baseline is not None and baseline < peak_index,
-        "tenThousandActiveSustained": sustained,
+        ("tenThousandActiveSustained" if evidence_mode == "production" else "activeTargetSustained"): sustained,
         "automaticScaleUpObserved": max_hosts > args.floor_per_cell * len(CELLS)
             and max_ready_hosts > args.floor_per_cell * len(CELLS)
             and max_machines > args.floor_per_cell * len(CELLS)
@@ -316,6 +327,12 @@ def main():
             "finalObservedAt": samples[final]["observedAt"] if final is not None else None,
         },
     }
+    if evidence_mode == "exploration":
+        receipt.update({
+            "schema": "actor-exploration-capacity/v1",
+            "evidenceScope": "development-exploration", "claimEligible": False,
+            "hostDrainProfile": "exploration",
+        })
     args.output.parent.mkdir(parents=True, exist_ok=True)
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
     descriptor = os.open(args.output, flags, 0o600)

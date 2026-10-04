@@ -57,6 +57,10 @@ production-cell 路径在取得 operation lock 后读取实际 Deployment，拒�
 scale-in hold/启动负载前拒绝。该回归不证明真实 Kubernetes API、Argo 持续收敛或云上
 缩容资格；原 strict10k 的冻结源码和观察窗口不变，当前未发布新的探索配置。
 
+开发容量第一道入口见 [exploration-capacity](../load/exploration-capacity/README.md)：
+固定 320 活跃/352 总对象、4 Version，复用同一容量周期，输出独立开发收据。真实云
+模式切换与 Argo 收敛仍需验证，不能把该本地入口视为当前已能启动的云任务。
+
 ## 安装与构建前提
 
 Before creating auth Secrets or changing admission/runtime workloads, the

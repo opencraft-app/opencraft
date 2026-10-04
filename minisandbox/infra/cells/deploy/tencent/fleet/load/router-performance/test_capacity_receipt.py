@@ -96,6 +96,14 @@ class CapacityReceiptTest(unittest.TestCase):
             value[key] = wrong
             self.assert_rejected(value)
 
+    def test_exploration_receipt_cannot_open_production_performance_gate(self):
+        value = capacity()
+        value.update({"schema": "actor-exploration-capacity/v1",
+                      "evidenceScope": "development-exploration", "claimEligible": False})
+        value["expected"]["active"] = 320
+        value["checks"]["activeTargetSustained"] = value["checks"].pop("tenThousandActiveSustained")
+        self.assert_rejected(value)
+
 
 if __name__ == "__main__":
     unittest.main()

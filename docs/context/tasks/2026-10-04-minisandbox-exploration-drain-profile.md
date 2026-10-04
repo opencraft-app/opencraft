@@ -1,7 +1,7 @@
 ---
 id: minisandbox-exploration-drain-profile-2026-10-04
 type: task
-scope: 探索阶段快速Host缩容的配置身份与离线转换校验，不改变云上原任务。
+scope: 探索Host缩容配置、共享容量周期与独立开发证据，不改变云上原任务。
 triggers: ["探索缩容", "host drain profile", "快速缩容模式"]
 owner: wisp/mono2-maintainers
 authority: primary
@@ -9,10 +9,12 @@ source_of_truth:
   - minisandbox/infra/cells/deploy/tencent/fleet/runtime/host-drain-profile.py
   - minisandbox/infra/cells/deploy/tencent/fleet/runtime/install-host-autoscaling.sh
   - minisandbox/infra/cells/deploy/tencent/fleet/runtime/qualify-runtime.sh
+  - minisandbox/infra/cells/deploy/tencent/fleet/load/capacity-cycle/run-on-builder.sh
+  - minisandbox/infra/cells/deploy/tencent/fleet/load/exploration-capacity/run-on-builder.sh
 status: active
 reviewed_at: 2026-10-04
 review_due: 2026-11-03
-revision: 1.0.0
+revision: 1.1.0
 precedence: task
 derived: false
 ---
@@ -20,6 +22,7 @@ derived: false
 ## goal / non_goals
 
 为生产参数下的探索缩容建立独立profile，只改变Host drain的等待节奏。
+第一道容量验收使用固定较小真实负载，复用生产编排/校验，不能晋升为生产证据。
 不改Actor/存储配额，不切换e2e-fast，不改AZ/PDB/UID/单活或逐台排空；不发布、不缩短
 原strict10k的36h观察窗口、不停止或重启原supervisor，不重编workerd或Go controller。
 
@@ -27,6 +30,7 @@ derived: false
 
 - 用户：探索阶段能否增加快速缩容模式；原stateless/DO设计Phase4安全缩容仍适用。
 - 用户最新要求：后续先用探索模式作为第一道验收，加快推进；生产资格仍独立验收。
+- 本轮延伸：建立独立探索容量入口，复用现有真实负载/清理/采样/验证逻辑，输出明确开发证据。
 - profile不得混入生产容量资格，短稳定窗口不能解决111Host的拓扑liveness卡点。
 - 用户另问AZ售罄：供应不足不是健康节点故障；本任务不自动降低三AZ约束。
 
@@ -59,6 +63,9 @@ derived: false
 | hostdrain/state_machine.go@8c0b6a8d | stabilization/converging段 | 连续低负载只需一次稳定窗口，仍逐台收敛 |
 | AGENTS.md、infra/cells/AGENTS.md、upstream-subtrees.md、adjacency/argocd-ci-secrets.md@fbd675d2 | 最新要求后重读全文；test_host_drain_profile.py邻居 | 持久化探索优先、不混用生产结果 |
 | minisandbox/AGENTS.md（指向CLAUDE.md）、release-gitops.md、TASK/CHECKPOINT模板@fbd675d2 | 本轮全文 | jj连续当前变更、真实进程double、源码交付不是发布 |
+| release-gitops.md、upstream-subtrees.md、adjacency/argocd-ci-secrets.md@227681a2 | route全文及test_supervisor/test_capacity_receipt邻居 | 共享实际shell入口、不同scope、生产拒绝开发证据 |
+| shared-agent-scale/runner.mjs与README、strict10k入口/verify/tests@227681a2 | recipe段及完整编排/校验 | 保留真实代码上传、SQLite、稳态3秒及精确清理 |
+| operations/with-autonomy-operation-lock.sh与assert-autonomy-control.sh@227681a2 | 全文 | 真整段flock、两Cell控制门禁、不新增bypass |
 
 ## evidence / risks / validation / decisions
 
@@ -97,6 +104,28 @@ derived: false
   初次exact cmp失败后已核对diff并压缩新增操作指令，未重建历史catalog。
 - 01:33:37Z inv-d9fmhqg067 SUCCESS/0：原unit同PID/InvocationID仍live，A111/115、B4/4、
   active0，原load失败/cleanup通过不变。没有部署、缩容或平行负载。
+- 探索入口已源码实现：320活跃/352总Object/4Version；共用capacity-cycle、同一JS负载器、
+  cleanup和verifier谓词。begin/end profile读取，drainProfile独立exit status；开发schema
+  与claimEligible=false，生产参数/36h窗口保持，原冻结snapshot不变。
+- 探索默认沿用真实operation-lock wrapper；两Cell autonomy control先于输出/API/负载。
+  73 strict10k目录测试通过，含真实flock冲突、控制block、模式互拒、生产argv不变、
+  开发成功与各种终态失败；Router邻接11项通过，开发收据在任何性能输出/查询前拒绝。
+- 01:46:24Z inv-e9fmvpg61d SUCCESS/0：原unit仍同PID/InvocationID，A111/115、B4/4、
+  active0。本轮仅正常selector的只读TAT；没有安装、Argo发布、probe或新producer。
+- 本轮locator失败已收敛：launch-on-builder.sh不存在，实际在evidence的launch-prepared；
+  operations/policy.json不存在，实际autonomy-policy.json。没有扩大到租户日志或secret内容。
+- 共享JS负载器13项真实HTTP/heartbeat测试通过；docs仍0错误/警告，context4970项
+  sorted errors与227681a2基线逐项cmp一致。root26仍相同4个历史失败，audit33通过；
+  discovery为needs_agent_review/not_assessed/Unknown，不声称全仓green或生产资格。
+- impact覆盖当前14文件；shell语法与diff check通过。仅本次文件和当前catalog行进行
+  secret扫描，不读取历史catalog或租户内容。根scripts路径未命中，实际校验器在
+  .agents/context/scripts，已收敛到该有界路径。
+- 02:00:42Z inv-e9fnb5056w SUCCESS/0：原unit同PID261665/InvocationID仍live，A111/115、
+  B4/4、active0；原load request_retry失败/cleanup通过不变。本轮没有云mutation。
+- 初次普通push因远端master前进被拒绝，已fetch并将仅本轮未发布revision置于
+  50b1af24之后；保留团队30个文件变更，无重叠冲突、无force，minisandbox tree逐字不变。
+  重读当前docs仍0错误/警告；context新增56项全部来自该远端新增的4个sidebar Task文件，
+  其余4970项与原基线一致；不替其他团队修改或重建历史catalog。
 
 ## scan_scope / scan_output
 
@@ -107,11 +136,11 @@ derived: false
 
 ## checkpoint / handoff
 
-- stage：安装与生产入口源码已接线、聚焦及邻接回归和交付门禁完成；准备FF交付。
-- verified：无需二进制重编；24 runtime+64 strict10k本地测试通过，shell语法通过；
+- stage：独立探索入口和共享容量周期已实现、本轮门禁已完成；准备FF源码交付。
+- verified：无需二进制重编；73容量+11 Router+13 JS本地测试通过，shell语法通过；
   不改原live任务，未运行云installer/qualifier/probe。
 - unverified：真实云安装/转换与Argo收敛、探索扩缩容、生产容量与完整Phase5、CLS采集。
 - discard：不存在的上述locator与把e2e-fast当快速缩容的方案。
 - restore：仅编辑mono2隔离工作副本，继续原unit/InvocationID观察，不运行云probe。
-- next_action：FF交付源码；原任务释放锁后，先探索功能收敛，
-  再实际TKE身份绑定故障门禁及生产容量验收，不启动平行producer。
+- next_action：完成本轮交付门禁并FF源码；原任务释放锁后
+  再探索功能收敛、实际TKE身份绑定故障门禁与生产容量验收，不启动平行producer。

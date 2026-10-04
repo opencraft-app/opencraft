@@ -42,6 +42,17 @@ Bash entrypoint with offline boundary doubles and a synthetic clock; it does not
 accelerate cloud policy or qualify TKE. Existing live immutable tools snapshots
 are not edited/restarted by this source change.
 
+The production entry delegates to the single `capacity-cycle/run-on-builder.sh`
+recipe with an explicit production argument; extra arguments cannot select a
+development mode. Its workload, 3-second SLO, zero ordinary retries, cleanup,
+12-hour initial ceiling and 36-hour final ceiling remain unchanged. The separate
+[exploration entry](../exploration-capacity/README.md) uses smaller, fixed load
+and a distinct development-only receipt; it cannot satisfy this 10k gate.
+Both modes read the actual Host drain profile before load and at finalization.
+The verifier now also requires `--drain-profile-exit-status` and fails on drift
+or API failure even when prior load/capacity documents pass. These source changes
+do not modify archived receipts or the frozen tools graph of the live run.
+
 The archived `evidence/c631-runtime-tools120-admission-20261003.sh` binds the
 point-read runtime to the unchanged tools-120 load graph. Before load it verifies
 both original Bottomless/HA receipts, activation -> control -> audit byte hashes,

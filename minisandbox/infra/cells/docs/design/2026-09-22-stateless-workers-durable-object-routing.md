@@ -1004,6 +1004,13 @@ API double，不能等同云API/Argo收敛资格；尚未发布云上探索配�
 探索通过不替代生产低容量→万活跃→安全缩回的完整证据。
 后续开发/修复先以探索模式运行第一道功能与收敛验收，再进入生产参数资格；两类结果
 独立标记，模式只在受锁部署流程中切换，不中途改变正在运行的任务。
+`load/exploration-capacity` 提供独立开发入口，固定320活跃/352总Object及4个Version。
+320超过八台基础Host的256硬槽位，仍要求真实扩容→精确清理→自然缩回，保留3秒稳态
+就绪、零稳态重试和原有UID/健康/容量/单活谓词。生产与探索共用一个capacity-cycle
+编排与验证实现；生产10k recipe和36h最终窗口不变。探索入口持整段锁并通过两Cell
+autonomy control，两端读取实际profile；drift/API失败保留独立exit status且最终失败。
+开发收据使用独立schema、`claimEligible=false`，不能进入生产Router性能门禁；本地真实
+子进程/flock回归不证明云上模式切换、Argo收敛或实际扩缩容速度，原live任务不变。
 
 ### Phase 5：资格与演进决策
 

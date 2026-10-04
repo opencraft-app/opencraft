@@ -7,7 +7,7 @@ import unittest
 
 
 ROOT = Path(__file__).parent
-RUNNER = ROOT / "run-on-builder.sh"
+RUNNER = ROOT.parent / "capacity-cycle" / "run-on-builder.sh"
 
 
 def cell(name, active, hosts, machines, phase="Idle", legacy=0):
@@ -60,7 +60,9 @@ class VerifyTest(unittest.TestCase):
         self.assertIn("else\n\t\treturn 1\n\tfi", script)
 
     def run_verifier(self, remove_final=False, warmup_timeouts=0, degrade_fdb=False,
-                     cleanup_pending=0, mutate=None, exit_statuses=(0, 0, 0)):
+                     cleanup_pending=0, mutate=None, exit_statuses=(0, 0, 0, 0)):
+        if len(exit_statuses) == 3:
+            exit_statuses = (*exit_statuses, 0)
         root = os.environ.get("TMPDIR", "/data/tmp")
         with tempfile.TemporaryDirectory(dir=root) as temporary:
             temporary = Path(temporary)
@@ -102,6 +104,7 @@ class VerifyTest(unittest.TestCase):
                 "--load-exit-status", str(exit_statuses[0]),
                 "--cleanup-exit-status", str(exit_statuses[1]),
                 "--final-capacity-exit-status", str(exit_statuses[2]),
+                "--drain-profile-exit-status", str(exit_statuses[3]),
             ], capture_output=True, text=True)
             return result.returncode, json.loads(output.read_text())
 
@@ -118,14 +121,14 @@ class VerifyTest(unittest.TestCase):
         self.assertFalse(receipt["checks"]["finalLowCapacity"])
 
     def test_process_failures_cannot_be_hidden_by_passed_input_receipts(self):
-        for statuses in ((42, 0, 0), (0, 1, 0), (0, 0, 1)):
+        for statuses in ((42, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, 0, 0, 1)):
             with self.subTest(statuses=statuses):
                 status, receipt = self.run_verifier(exit_statuses=statuses)
                 self.assertEqual(status, 1)
                 self.assertEqual(receipt["verdict"], "failed")
                 self.assertFalse(receipt["checks"]["executionSucceeded"])
                 self.assertEqual(receipt["executionExitStatuses"], dict(
-                    zip(("load", "cleanup", "finalCapacity"), statuses)))
+                    zip(("load", "cleanup", "finalCapacity", "drainProfile"), statuses)))
                 if statuses[2]:
                     self.assertFalse(receipt["checks"]["finalLowCapacity"])
 
@@ -136,16 +139,30 @@ class VerifyTest(unittest.TestCase):
         result = subprocess.run(base, capture_output=True, text=True)
         self.assertEqual(result.returncode, 2)
         self.assertIn("required", result.stderr)
-        for index in range(3):
+        for index in range(4):
             for value in (-1, 256):
-                statuses = [0, 0, 0]
+                statuses = [0, 0, 0, 0]
                 statuses[index] = value
                 flags = [item for name, status in zip(
-                    ("load", "cleanup", "final-capacity"), statuses)
+                    ("load", "cleanup", "final-capacity", "drain-profile"), statuses)
                     for item in (f"--{name}-exit-status", str(status))]
                 result = subprocess.run([*base, *flags], capture_output=True, text=True)
                 self.assertEqual(result.returncode, 2)
                 self.assertIn("exit statuses", result.stderr)
+
+    def test_exploration_bounds_cannot_be_promoted_or_reduced(self):
+        base = ["python3", str(ROOT.parent / "exploration-capacity/verify.py"),
+                "--trace", "offline-missing", "--load-receipt", "offline-missing",
+                "--cleanup-receipt", "offline-missing", "--output", "offline-missing",
+                "--load-exit-status", "0", "--cleanup-exit-status", "0",
+                "--final-capacity-exit-status", "0", "--drain-profile-exit-status", "0"]
+        for flags in (("--expected-active", "10000"), ("--expected-active", "1"),
+                      ("--expected-objects", "11000"), ("--floor-per-cell", "1"),
+                      ("--hard-active-per-host", "128")):
+            with self.subTest(flags=flags):
+                result = subprocess.run([*base, *flags], capture_output=True, text=True)
+                self.assertEqual(result.returncode, 2)
+                self.assertIn("exploration capacity bounds are fixed", result.stderr)
 
     def test_rejects_warmup_backpressure_timeout(self):
         status, receipt = self.run_verifier(warmup_timeouts=1)
