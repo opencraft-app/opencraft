@@ -127,6 +127,7 @@ derived: false
 - Chrome/Whistle 登录态已确认探索中依次显示「成长 → 管理 → 实验室」，管理内依次是「模型 → 诊断中心 → 高级设置」；展开右下账号菜单仅显示云存储、套餐与费用、账号。5174 预览返回 HTTP 200。
 - 移动端 Chrome/Whistle 登录态分别用 390px 和 320px 视口检查探索布局；320px 下日常的对话区默认展开，探索的模型入口可点击并进入模型页，`documentElement.scrollWidth` 与视口宽度同为 320px。国际站使用同一侧栏组件，`pnpm build:global` 已通过；本地未配置国际站的登录态代理，未做国际站浏览器视觉验证。
 - 实验室上方已复用日常对话区的 1px 分隔线与上下间距；Chrome/Whistle 登录态在桌面和 390px 视口均能看到，移动页面宽度与视口相同。实验室现有 DSH、云桌面仍接收 `activeBot.id`；用户提出“不区分 Bot”的范围正在确认，未将视觉分隔误认为功能已解耦。
+- 按 `frontend/AGENTS.md` 检查 OpenCraft Agent Console 生成副本时发现前端 i18n 与模型 locale 真源漂移；在提交前端真源后运行同步脚本，生成副本与 `UPSTREAM.json` 已更新，复跑只读同步检查及 Hermes 插件 typecheck 均通过。
 - Hermes 插件完整测试 88/88（含三项删除生命周期测试）、37 项前端侧栏测试、OpenCraft 插件 typecheck/边界检查、`pnpm check`、国内站构建、嵌入工作台构建和文档验证通过；5174 页面与同源嵌入脚本均返回 HTTP 200。未对真实执行中的用户会话执行删除。
 
 ## risks

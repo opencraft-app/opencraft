@@ -29,6 +29,7 @@ MR !4969 的独立 worktree 中已完成日常/探索导航改造；最新反馈
 - 本轮导航与账号菜单聚焦测试 60/60、`pnpm check`（新增 TypeScript 诊断 0 项）、国内站及国际站构建、文档检查和 `git diff --check` 通过；5174 页面返回 HTTP 200。完整页面导航测试在 Vitest worker 导入阶段 OOM。
 - 国内站 Chrome/Whistle 在 390px 与 320px 视口确认导航排布；320px 的日常会话区默认展开，探索内模型入口可达且无横向溢出。国际站复用同一侧栏组件，国际构建已通过；国际站本地登录态视觉仍未验证。
 - 实验室上方的分隔线已在 Chrome/Whistle 登录态的桌面和 390px 移动视口确认；`pnpm check` 新增 TypeScript 诊断 0 项，文档检查零错误、零告警。
+- 国内站与国际站构建通过。已将前端 i18n、模型 locale 真源同步到 OpenCraft 生成副本；`check:mono2-agent-console` 与 Hermes 插件 typecheck 通过。
 
 ## unverified
 
@@ -38,7 +39,6 @@ MR !4969 的独立 worktree 中已完成日常/探索导航改造；最新反馈
 - 未缓存的其他客户端 Hermes 会话缺乏执行状态来源；本地匿名预览无法目视验证真实运行中的会话。
 - Chrome 开发覆盖层记录一次 `[hermes-appserver-bridge] request failed {}`，但会话列表与历史仍加载成功；该请求的方法和原因在浏览器日志中未展开，不能据此宣称后端全链路无误。
 - DSH 与云桌面页面现有实现依赖 `activeBot.id`；「实验室不区分 Bot」是否要求功能改动待用户明确，暂只做视觉分隔。
-- `check:mono2-agent-console` 报生成副本与前端 i18n 真源漂移；需先提交前端真源，再运行同步脚本，并以独立后续提交纳入 MR。
 
 ## discard
 
