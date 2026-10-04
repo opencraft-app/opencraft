@@ -84,6 +84,15 @@ derived: false
 | `docs/context/domains/release-gitops.md` | 发布边界 | 合入 master 不等于生产发布 |
 | `.agents/skills/gongfeng/SKILL.md` 与 `DEPENDENCIES.md` | 工蜂接口与鉴权 | mcporter-internal 不可用，使用已验证的仓库 CI API 路径 |
 
+## 2026-10-05 Follow-up Git 交付复验（最新）
+
+- 用户明确授权提交/推送/合入master，不发布生产、不使用任务卡。旧MR!4961实查已merged，不再复用；当前新分支 `perf/opencraft-startup-followup-20261005`。
+- 真源提交 `cda3c5c9e` 共31个相关文件，随后 `6fb303c4c` 正常合入最新master33b29c515，无冲突，保留手机竖屏键盘/输入框高度以及仅显式Embedded账户预检的修复。机械AgentConsole同步提交 `3c48fbb5f` 独立保留，130文件检查通过，sourceRevision准确指向cda3c5c9e27062775136e4382fdaee74a526722a；未手改生成层。
+- 整合后前端10文件168/168通过（含手机visual-viewport邻居）；Host/TAT/Embedded/bootstrap authority9文件121/121通过；CTL全服务go test、go vet和gofmt通过。前端check0new/5resolved、所有OpenCraft workspace类型检查、平台/typography边界、实际分支docs-impact通过。bounded凭据/私钥扫描34文件无命中，MR差异不包含.kube和历史queue修改，后两者仍原样留在工作区。
+- 源码3c48fbb5f匹配Embedded release及完整国内Next生产组合构建通过（106页/194HTML/155版本资源引用/13路由），隔离制品 `/tmp/opencraft-startup-delivery-20261005-srRoIL/embed`。构建生成next-env/font已精确恢复到预构建备份，不提交制品或生成噪声。
+- 新整合制品真实授权API/TAT启动cold/warm2/2通过：editor4772/4693ms、sessions4803/4730ms，17条会话、焦点正确、一个Application/canvas/TAT、提前SessionAuth/正式接管后PtyStart均断言通过；页面/API/静态错误为空，诊断会话撤销204，自有进程/监听已结束。安全结果 `startup-delivery-20261005.json`。仍是线上旧CTL和回环静态服务，非手机/CDN/联合新CTL效果；旧12样本中位数只作先前匹配对照，不与这2条独立复验拼接算收益。
+- 全量gate既有extension-artifacts失败保持公开，不伪称全绿、不在本项修复独立测试。当前源码/生成闭包/整合构建就绪；外部推送、MR和正常合并结果以下一条实际平台/Git回读为准，不把本地merge origin/master当成已合入远端master。
+
 ## 2026-10-04 Git 交付复验
 
 - 交付回执：功能提交 `ee7ddd3f9` 已推送；[MR !4961](https://git.woa.com/wisp/mono2/-/merge_requests/4961) 已创建，目标 master。首次平台回读 `can_be_merged`、commit check `success`、block=false；按最新授权继续正常合并，合并结果以随后平台及 Git readback 为准。
