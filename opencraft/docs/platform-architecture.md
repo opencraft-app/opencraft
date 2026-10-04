@@ -1132,11 +1132,46 @@ back/forward. Web saves that key projection per browser session and verifies the
 current Router key when restoring it; it is not another path authority. Desktop
 memory history lasts for the window, not across process restarts.
 
+History contains resource references, not evidence that a Draft still exists.
+At Web bootstrap, the URL/current Router entry is resolved before choosing a
+global last-used conversation, and the Router and initial activation consume the
+same effective target. Host profiles validate Host availability, ScopeRegistry
+validates retained Drafts, and BindingStore resolves durable promotion aliases
+to canonical Threads. An expired unsubmitted Draft is not recreated under its
+old ID. Global last-used preferences (including changes from another tab) cannot
+override a valid current-entry target. Explicit embedded memory navigation starts
+at Home and never reads or writes the containing page's conversation history.
+
+The same resource projection validates later restored entries. Invalid references
+fall back to the actual retained View, keeping its Composer; promoted aliases may
+retain their original View. A View already bound to another Scope must not be
+reused. Only the Router REPLACEs corrected entry metadata, preserving the current
+Settings/Extension destination. The transaction consumes these corrections as
+restoration events even when a POP is normalized into REPLACE.
+
 `WorkbenchNavigationTransaction` fences preparation by intent epoch, commits only
 accepted destinations, and restores the complete prior entry after a failed POP.
 Changing routes cancels pending readiness without stopping a live turn. A late
 Thread lease is released; late success/error cannot take navigation ownership.
 POP to a different View of the same conversation must still restore that View.
+Returning to the already retained View, by Chat or POP, presents it locally and
+resumes readiness in the background; a newer intent or disposal fences and
+releases late preparations. Selecting the current sidebar conversation from
+Settings uses this same return operation, not a new View or a network-gated
+selection. Submission ownership guards remain in force.
+Sidebar and other selection adapters express only `selectConversation`; they do
+not decide whether a Thread is already selected, whether pending hydration should
+be deduplicated, or whether Settings requires Chat return. The transaction owns
+that decision: reuse the remembered entry's View (or the actual retained View),
+coalesce an in-flight destination only when its View also matches, and no-op only for the presented View with no
+competing destination. `navigate` remains a distinct explicit-open operation, so
+different history Views of one Thread keep independent Composer documents.
+All preparations use one intent/lifetime/Router-revision eligibility check and
+one accept-or-release path, including local Draft readiness and promotion. A
+promotion must originate from the still-active Draft and capture its View before
+awaiting; an inactive Draft cannot supersede a newer navigation. Last-used
+preferences are written only for still-current accepted command results, never
+used as a second selected-conversation or route authority.
 Thread/Draft stores, composer state, Host connections and background execution
 remain resource owners independent of route history. Shell divider hit targets
 start below the toolbar, so pane geometry cannot intercept history controls.

@@ -1502,20 +1502,7 @@ export function App({
                   : null
               }
               onSelectThread={(hostId, id) => {
-                if (
-                  hostId === snapshot.hostId &&
-                  id === activeThreadId &&
-                  hostCatalog.pendingLocation === null
-                )
-                  return;
-                if (
-                  hostCatalog.pendingLocation?.kind === "thread" &&
-                  hostCatalog.pendingLocation.key.hostId === hostId &&
-                  hostCatalog.pendingLocation.key.threadId === id
-                )
-                  return;
-                const location = createWorkbenchThreadLocation(hostId, id);
-                void hostCatalog.navigate(location).catch((error) => {
+                void hostCatalog.selectConversation(createWorkbenchThreadLocation(hostId, id)).catch((error) => {
                   console.error("Failed to activate selected Thread", error);
                 });
               }}

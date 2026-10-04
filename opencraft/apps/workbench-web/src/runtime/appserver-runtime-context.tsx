@@ -88,6 +88,7 @@ import {
   createConversationKey,
 } from "@opencraft/chat-core";
 import {
+  asRouteScopeId,
   createCordisHostConnectionProviderRuntime,
   EnvironmentDirectoryService,
   EnvironmentProfileStore,
@@ -101,6 +102,7 @@ import {
   createConversationViewRegistry,
   createWorkbenchSubmissionPipeline,
   draftSubmissionOwnsNavigation,
+  equalWorkbenchLocation,
   createWorkbenchCoordinator,
   createWorkbenchDraftLocation,
   createWorkbenchThreadLocation,
@@ -146,7 +148,8 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { parseWorkbenchLocationUrl, createApplicationNavigation, type ApplicationNavigation } from "./workbench-navigation";
+import { readWorkbenchBootstrapLocation, createRouteScopeId, createApplicationNavigation, type ApplicationNavigation } from "./workbench-navigation";
+import { createWorkbenchEntryResolver, resolveRetainedWorkbenchLocation } from "./workbench-location-restoration";
 import { IndexedDbHostConnectionProfileStore } from "./indexeddb-host-profile-store";
 import { environmentSourceAdapter } from "./environment-directory/contribution-adapter";
 import { openClientExtensionPersistence } from "./client-extension-persistence";
@@ -215,6 +218,7 @@ export interface AppServerHostCatalog {
   readonly currentLocation: WorkbenchLocation;
   selectHost(hostId: string): Promise<void>;
   navigate(location: WorkbenchLocation, mode?: WorkbenchHistoryMode): Promise<boolean>;
+  selectConversation(location: WorkbenchLocation): Promise<boolean>;
   promoteDraft(draftId: string, receipt: SubmissionReceipt): Promise<WorkbenchLocation>;
   navigateToHome(options: {
     readonly execution: ComposerExecutionTarget;
@@ -237,6 +241,7 @@ export interface AppServerHostCatalog {
 export interface WebWorkbenchCommands {
   selectHost(hostId: string): Promise<void>;
   navigate(location: WorkbenchLocation, mode?: WorkbenchHistoryMode): Promise<boolean>;
+  selectConversation(location: WorkbenchLocation): Promise<boolean>;
   navigateToHome(options: {
     readonly execution: ComposerExecutionTarget;
     readonly entrypoint?: "home" | "new-chat";
@@ -704,6 +709,17 @@ function createWebWorkbenchCommands(input: {
   let commands: WebWorkbenchCommands;
   let submissionPipeline: ReturnType<typeof createWorkbenchSubmissionPipeline>;
   let hostSelectionEpoch = 0;
+  const navigateAndRemember = async (location: WorkbenchLocation, action: () => Promise<boolean>) => {
+    const epoch = ++hostSelectionEpoch;
+    const activated = await action();
+    if (activated && epoch === hostSelectionEpoch
+      && equalWorkbenchLocation(input.navigation.getSnapshot().location, location)) {
+      const hostId = location.kind === "thread" ? location.key.hostId : location.hostId;
+      setLocalPreference(currentProductStorageKey("vela.active-host-id"), hostId);
+      setLocalPreference(activeThreadStorageKey(hostId), location.kind === "thread" ? location.key.threadId : null);
+    }
+    return activated;
+  };
   commands = {
     async selectHost(hostId) {
       const epoch = ++hostSelectionEpoch;
@@ -745,17 +761,11 @@ function createWebWorkbenchCommands(input: {
       input.coordinator.setSelectedHostId(hostId);
       setLocalPreference(currentProductStorageKey("vela.active-host-id"), hostId);
     },
-    async navigate(location, mode = "push") {
-      ++hostSelectionEpoch;
-      const hostId = location.kind === "thread" ? location.key.hostId : location.hostId;
-      const activated = await input.navigation.navigate(location, mode);
-      if (!activated) return false;
-      setLocalPreference(currentProductStorageKey("vela.active-host-id"), hostId);
-      setLocalPreference(
-        activeThreadStorageKey(hostId),
-        location.kind === "thread" ? location.key.threadId : null,
-      );
-      return true;
+    navigate(location, mode = "push") {
+      return navigateAndRemember(location, () => input.navigation.navigate(location, mode));
+    },
+    selectConversation(location) {
+      return navigateAndRemember(location, () => input.navigation.selectConversation(location));
     },
     navigateToHome(options) {
       ++hostSelectionEpoch;
@@ -1205,7 +1215,14 @@ export async function createWebWorkbenchApplicationSupervisor(
     const queryClient = createWorkbenchQueryClient();
     startupRollback.push(() => queryClient.clear());
     const routeCheckpoints = new BoundedCheckpointMap(32);
-    const requestedBootstrapLocation = parseWorkbenchLocationUrl(new URL(window.location.href));
+    const requestedBootstrapLocation = readWorkbenchBootstrapLocation(
+      new URL(window.location.href), window.history.state, options.navigationMode,
+    );
+    const routerOptions = {
+      mode: options.navigationMode,
+      // The containing page owns its URL. Embedded Workbench starts at Home.
+      ...(options.navigationMode === "memory" ? { initialEntries: ["/"] } : {}),
+    };
   const configuredHostProfiles = await IndexedDbHostConnectionProfileStore.open({
     databaseName: currentProductDatabaseName("vela-host-connections"),
     seed: bootstrapDefinitions.map(hostDefinitionProfile),
@@ -1224,7 +1241,7 @@ export async function createWebWorkbenchApplicationSupervisor(
   }
   const profiles = hostProfiles.getSnapshot().profiles.filter((profile) => profile.enabled);
   if (profiles.length === 0) {
-    const navigation = createApplicationNavigation(null, { mode: options.navigationMode });
+    const navigation = createApplicationNavigation(null, routerOptions);
     startupRollback.push(() => navigation.dispose());
     agentRuntimes.markUnavailable(new Error("No Agent Runtime is configured"));
     const provisionHost = (input: ProvisionHostInput) => persistProvisionedHost(
@@ -1294,14 +1311,10 @@ export async function createWebWorkbenchApplicationSupervisor(
     startupRollback.length = 0;
     return hostless;
   }
-  const bootstrapLocation = requestedBootstrapLocation !== null
-    && profiles.some((profile) => profile.hostId === (
-      requestedBootstrapLocation.kind === "thread"
-        ? requestedBootstrapLocation.key.hostId
-        : requestedBootstrapLocation.hostId
-    ))
-    ? requestedBootstrapLocation
-    : null;
+  const bootstrapLocation = requestedBootstrapLocation === null ? null : resolveRetainedWorkbenchLocation(
+    requestedBootstrapLocation,
+    { hasHost: hostId => profiles.some(profile => profile.hostId === hostId), bindings: conversationBindings, scopes: null },
+  );
   const persistedHostId = window.localStorage.getItem(currentProductStorageKey("vela.active-host-id"));
   const requestedHostId = bootstrapLocation?.kind === "thread"
     ? bootstrapLocation.key.hostId
@@ -1414,10 +1427,10 @@ export async function createWebWorkbenchApplicationSupervisor(
       ? createWorkbenchThreadLocation(initialHostId, persistedThreadId)
       : null;
   const conversationScopes = createConversationScopeRegistry({
-    initialDraft: bootstrapLocation?.kind === "draft"
-      && bootstrapLocation.hostId === active.hostId
+    // A process-local Draft cannot be resurrected from a history ID. Only a
+    // durable promotion alias can recover its canonical Thread on bootstrap.
+    initialDraft: initialThreadLocation === null
       ? {
-          draftId: bootstrapLocation.draftId,
           entrypoint: "home",
           execution: {
             hostId: active.hostId,
@@ -1427,27 +1440,15 @@ export async function createWebWorkbenchApplicationSupervisor(
             },
           },
         }
-      : initialThreadLocation === null
-        ? {
-            entrypoint: "home",
-            execution: {
-              hostId: active.hostId,
-              workspace: {
-                cwd: initialWorkspaceRoot,
-                runtimeWorkspaceRoots: initialWorkspaceRoot === null ? [] : [initialWorkspaceRoot],
-              },
-            },
-          }
-        : null,
+      : null,
   });
   startupRollback.push(() => conversationScopes.dispose());
   const draft = conversationScopes.getActiveDraft();
-  const initialLocation = bootstrapLocation
-    ?? (initialThreadLocation !== null
-      ? initialThreadLocation
-      : draft !== null
-        ? createWorkbenchDraftLocation(active.hostId, draft.id)
-        : null);
+  const initialLocation = initialThreadLocation !== null
+    ? initialThreadLocation
+    : draft !== null
+      ? createWorkbenchDraftLocation(active.hostId, draft.id)
+      : null;
   if (initialLocation === null) throw new Error("Workbench has no initial Conversation identity");
   const coordinator = createWorkbenchCoordinator(registry, initialLocation, initialHostId);
   startupRollback.push(() => coordinator.dispose());
@@ -1478,7 +1479,19 @@ export async function createWebWorkbenchApplicationSupervisor(
     initialLocation,
     conversationActivation,
     conversationScopes,
-    { mode: options.navigationMode },
+    {
+      ...routerOptions,
+      resolveRestoredEntry: createWorkbenchEntryResolver({
+        hasHost: hostId => hostProfiles.getSnapshot().profiles.some(profile => profile.enabled && profile.hostId === hostId),
+        bindings: conversationBindings,
+        scopes: conversationScopes,
+        views: conversationViews,
+        fallback: () => {
+          const current = coordinator.getSnapshot();
+          return { location: current.location, routeScopeId: current.viewId === null ? createRouteScopeId() : asRouteScopeId(current.viewId) };
+        },
+      }),
+    },
   );
   startupRollback.push(() => navigation.dispose());
   // Browser startup owns only local identity construction. Physical Host
@@ -1718,6 +1731,7 @@ export function AppServerRuntimeProvider({
     connectionProviders: connectionProviderSnapshot.providers,
     selectHost: commands.selectHost,
     navigate: commands.navigate,
+    selectConversation: commands.selectConversation,
     navigateToHome: commands.navigateToHome,
     promoteDraft: commands.promoteDraft,
     submit: commands.submit,
