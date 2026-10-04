@@ -991,6 +991,15 @@ Registry claim rate 与 cache miss 而不是请求 QPS 成正比。
 验收：从低容量自动扩到目标负载后安全缩回；扩容期间不把未 admitted 节点加入调度；一次最多
 自动修复一台 durable 节点。
 
+探索缩容是独立配置维度，不是 `e2e-fast` 的别名：只将 Host drain 稳定窗口/协调间隔
+从生产 `5m/5s` 调整为 `30s/2s`，保留排空取消期限、freshness、三AZ、PDB、UID fencing
+与逐台收敛。短窗口可能增加抖动，不承诺Node释放时长，也不能绕过拓扑或资源售罄阻塞。
+`runtime/host-drain-profile.py` 先提供离线Deployment JSON转换/检查：探索标记与实际timer
+必须一致，仅改两个字段及自己的Pod template annotation，重复/混合配置拒绝。
+这是配置工具，不是生产资格或已安装能力；installer/Argo/资格入口尚未接线。后续生产
+容量门禁必须核对live Deployment，不能仅信任caller环境。现有manifest和原strict10k
+监督任务不变；探索通过也不替代生产低容量→万活跃→安全缩回的完整证据。
+
 ### Phase 5：资格与演进决策
 
 - 运行百万 dormant Object 元数据和万级 active Object 的分片容量测试；
