@@ -35,6 +35,8 @@ service scope。身份变化立即废弃旧聊天/目录并将 View 回到协作
 
 OpenCraft Web 输入框在当前 Host 的 provider 为 `lightvela.hermes` 时展示 Hermes 指令库；选择指令只写入可编辑草稿。用户发送时，普通指令沿既有 Composer → AppServer → Hermes `prompt.submit` 链路处理。单独发送 `/stop` 走 Hermes Host 的 `hermes/stop` 请求：已有运行中 Turn 先经 `session.interrupt` 中断，再调用 `process.stop` 清理后台进程；空闲或新会话直接调用 `process.stop`。输入框停止按钮仍只走 `turn/interrupt`，其他 Host 不展示 Hermes 指令库。
 
+国内站嵌入式 Chat 的手机输入区由 OpenCraft Shadow DOM 内的 Composer 样式负责：窄屏下编辑区最小高度为 48px，宽屏保持 74px，底部操作按钮尺寸不随之缩小。宿主页面负责跟随 iOS 可视视口调整聊天容器高度，避免键盘遮住输入区。
+
 OpenCraft 的 Codex Host 持有排队 steer 的持久投递权，同一 Thread 的物理准入串行化。匹配目标 Turn 的 `turn/steer` 获确认后先持久化为 `steering`，后续消息即可继续准入；历史物化和 client-message ID 对账在后台完成。只有正在投递或结果未知的前序投递阻止后续准入，未知结果不得自动重发或交给普通 Resume 猜测恢复。具体状态与回归边界见 [OpenCraft ChatUI 架构](../../../opencraft/docs/chat-ui-architecture.md)。
 
 OpenCraft Composer 的排队消息预览保留正文提示；其排序、插入、编辑、取消编辑和删除按钮的悬浮提示由各自操作定义，不继承消息正文。无确认投递的丢弃入口单独显示其操作提示。
