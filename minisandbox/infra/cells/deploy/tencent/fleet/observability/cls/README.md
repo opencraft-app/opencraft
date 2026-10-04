@@ -47,6 +47,34 @@ Terraform 测试用原生 mock provider 只做 plan/schema/参数边界检查，
 不配置 backend、不执行云 apply；不是云 API 或 agent 兼容性证据。管理模块另需用独立
 TF_DATA_DIR 做 `init -backend=false` 和 `validate`，不要接旧 COS state 来做本地检查。
 
+### API server 规则往返检查
+
+collector/CRD 安装就绪后，先运行独立 `preflight-rule.py`，再考虑首次 canary：
+
+```sh
+python3 infra/cells/deploy/tencent/fleet/observability/cls/preflight-rule.py \
+  --binding /protected/platform-cls-binding.json \
+  --expected-cluster-id cls-exactcluster \
+  --expected-kube-system-uid <reviewed-C-kube-system-namespace-uid> \
+  --kubeconfig /protected/management.kubeconfig
+```
+
+入口在前后重新读取 `kube-system` Namespace UID，检查 exact cluster-scoped、served v1、
+Established/NamesAccepted 的 LogConfig CRD，再执行 `kubectl create --dry-run=server
+--validate=strict`，之后复核 CRD UID/定义/status 不变且未进入删除。不 apply/patch/delete
+规则，也不读取日志或 Secret。已有同名规则会令
+create 冲突并拒绝，不能自动替换现有采集规则。所需 create 权限仅用于 server dry-run；
+如果 admission webhook 不支持 dry-run，检查失败，不降级到 client dry-run 或真实创建。
+
+返回对象必须保留完整 spec 和精确名称/annotations；过滤、metadata 白名单、topic 绑定
+被裁掉、改写或扩大都拒绝。server metadata/status 不当作规则语义。只输出固定身份/hash
+与时间，不输出 API server stderr、完整 CRD 或任意响应字段。回执明确为
+`server-side-logconfig-roundtrip-only`、`collectionAdmission=unqualified`、
+`canaryAuthorized=false`。这不是 addon 行为、topic 归属、API 安全镜像、Argo 或 CLS 查询
+资格；expected UID/kubeconfig 必须由可信管理发布链提供，文件本身不能证明云 cluster ID。
+首次 canary 前仍需实时复核这些独立门禁。CLI 协议 double 只验证请求顺序和拒绝路径，
+不代表已在真实 TKE 执行；本轮没有执行云 dry-run 或开启采集。
+
 ## 待上线接线
 
 只有现有 operation lock 空闲后，才能独立执行：

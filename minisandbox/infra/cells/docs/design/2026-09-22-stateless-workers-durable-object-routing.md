@@ -2286,6 +2286,14 @@ resource inclusions、安全API镜像和CLS正反查询仍需独立锁内门禁�
 查询失败时需停止实际规则或恢复已验证规则；恢复Project deny不会让现有采集自动停止。
 canary发布、清理及实际Argo拒绝回执尚未实现或取得，不改变完整目标未完成的判断。
 
+CLS首次canary前增加独立`observability/cls/preflight-rule.py`：前后绑定C的kube-system
+Namespace UID，要求exact cluster-scoped/served v1/Established LogConfig CRD，运行实际
+server-side create dry-run并逐字段核对返回spec。metadata白名单、JSON过滤或topic绑定被
+裁剪/改写均拒绝，同名现有规则冲突不自动覆盖；不降级到client dry-run或真实创建。
+此回执仅证明API server规则往返，明确unqualified且canaryAuthorized=false，不替代collector
+版本、云topic归属、安全API镜像、Argo权限和CLS正反查询。真实CLI协议double验证顺序与
+失败不外泄服务端信息；尚未执行TKE dry-run，也没有安装collector或修改原strict10k任务。
+
 严格负载后的自然缩容还暴露一个独立liveness缺口：A在111 Ready Host、active0、无release
 hold时停于35/35/41，最高ordinal110在较小AZ；下一前缀34/35/41的skew7超过当前缩容
 边界6。低前缀最终可平衡不代表中间删除已被授权，等待也不会改变现有ordinal到AZ映射。
