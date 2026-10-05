@@ -94,6 +94,8 @@ OpenCraft Daemon/AppHost/协议/Workbench runtime、builtin Settings 与固定�
 
 ### 2026-10-05 source-and-preview-delivery authorization
 
+- DSH依赖补齐后复验DSH、Lab、Chat通过；master新只读资源面板测试夹具未包含必有host资源，造成两例TypeError。只补该渲染夹具准确的method admission，新增不支持搜索时disabled断言，不改变产品必有host contract。聚焦2/2通过，继续Workbench及剩余gate。
+
 - 集成提交 `41615e60d` 的gate前半段通过：全workspace typecheck、i18n/边界、扩展221、连接器32、AppServer257、SSH65pass/1skip及项目/Thread/语音测试。DSH四例缺独立运行时依赖；按锁文件prepare安装0.1.1-rc.2后复跑该阶段及后续gate，无产品源码绕过。工蜂MCP本地未配置（Unknown MCP server）；仅使用已验证Git授权，不宣称MCP认证通过。两次单文件frame/client猜测不存在，实际为各包src/index.ts。
 
 - 源码提交 `468da9350` 已推送修复分支；原基线完整 `npm run gate` 退出0，包含Web/Expo Web/iOS构建。最新master为 `7698f334f`，在独立checkout合并避免碰无关dirty。冲突只涉及嵌入账号preflight import及资源面板preview enabled；同时保留master行为与SSH能力准入。集成后验证、远端master合并和实际临时预览切换尚未完成。
