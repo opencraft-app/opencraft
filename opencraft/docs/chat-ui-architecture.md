@@ -121,6 +121,8 @@ exact-locator compatibility path, not a general path or filename heuristic.
 
 The Turn's existing unified diff remains the read authority for its changed-file summary. ChatUI renders an in-progress inline Review entry and a completed resource card; it only emits an open intent. The Workbench owns the read-only Review dialog, keeps it tied to the active Thread, and projects the current Timeline block while streaming. File selection filters that existing diff for display; it does not create a second TurnDiff model or mutate the workspace. Undo/Reapply is not advertised until a real Host apply-patch capability is connected.
 
+Changed-file row geometry belongs to its renderer: line counts retain their intrinsic width while the path consumes the remaining space. The directory yields first to the basename, but the basename is capped at its path slot and truncates when even the filename cannot fit. Neither path segment may paint over the counts. Truncation affects presentation only; the complete path remains the accessible row label and Review target. Regression coverage includes long basenames without directories, deep directories, both counts, narrow containers and expanding/collapsing the file list.
+
 Skill autocomplete treats a bare `$` as catalog browsing, not an empty file
 search. The Composer, runtime catalog and Skill search share this policy;
 `@` remains query-gated. Skills are scoped to the current Host/root set,

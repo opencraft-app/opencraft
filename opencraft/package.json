@@ -148,6 +148,7 @@
     "smoke:url-presentation": "tsx scripts/smoke-url-presentation.ts",
     "smoke:async-question-markdown": "tsx scripts/smoke-async-question-markdown.ts",
     "smoke:conversation-history-order": "tsx scripts/smoke-conversation-history-order.ts",
+    "smoke:turn-diff-layout": "tsx tests/workbench-turn-diff-layout.browser.ts",
     "test:environments": "tsx --test tests/workbench-environments.test.ts tests/lightvela-environment-creation.test.ts tests/environment-directory.test.ts",
     "test:desktop-login": "tsx --test tests/desktop-lightvela-login.test.ts tests/lightvela-account-auth.test.ts tests/authentication-flows.test.ts",
     "smoke:account-controls": "tsx scripts/smoke-account-controls.ts",

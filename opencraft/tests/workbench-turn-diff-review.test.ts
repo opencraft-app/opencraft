@@ -40,3 +40,12 @@ test("workbench wires Review and does not advertise an unavailable Undo action",
   assert.doesNotMatch(conversation, /onApplyTurnDiff|Reapply|Undo2/gu);
   assert.match(conversation, /className="thread-turn-diff__header-target"/gu);
 });
+
+test("changed-file basenames yield within their own slot rather than overpainting line counts", () => {
+  const styles = readFileSync(new URL("../apps/workbench-web/src/styles/app.scss", import.meta.url), "utf8");
+  const pathRules = styles.slice(styles.indexOf("  &__path {", styles.indexOf(".thread-turn-diff {")));
+  const basenameRules = pathRules.match(/> b \{([^}]+)\}/u)?.[1] ?? "";
+  for (const rule of ["flex: 0 0 auto", "max-width: 100%", "overflow: hidden", "text-overflow: ellipsis", "white-space: nowrap"]) {
+    assert.ok(basenameRules.includes(rule), `basename requires ${rule}`);
+  }
+});
