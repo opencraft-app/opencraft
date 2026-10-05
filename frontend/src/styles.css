@@ -428,6 +428,7 @@ html.lw-settings-scrollbar-stable {
 }
 
 .lv-agent-sidebar-toggle {
+  display: none;
   position: relative;
   width: 36px;
   height: 36px;
@@ -437,6 +438,13 @@ html.lw-settings-scrollbar-stable {
   border-radius: 8px;
   color: #737373;
   background: transparent;
+}
+
+/* The embedded workbench ships an unlayered .hidden utility, so this button uses its own display rule. */
+@media (min-width: 1024px) {
+  .lv-agent-sidebar-toggle {
+    display: inline-flex;
+  }
 }
 
 .lv-agent-sidebar-toggle:hover,
