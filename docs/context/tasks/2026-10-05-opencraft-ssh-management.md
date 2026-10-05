@@ -94,6 +94,9 @@ OpenCraft Daemon/AppHost/协议/Workbench runtime、builtin Settings 与固定�
 
 ### 2026-10-05 source-and-preview-delivery authorization
 
+- 最终独立切换 `opencraft-ssh-native-cutover-20261005.service` 退出0且Result=success，未回退。重连后再次核对80端口PID2324487、unit `opencraft-ssh-native-20261005-preview.service` active/NRestarts0、cwd/cgroup/runtime SHA与候选一致，buildId `20261005-ssh-native-844b7ce8e`、health ok，原6G high/8G max与数据根均保留。
+- 切换脚本和重连后各执行一次当前运行后端的真实SSH只读恢复：批准“文档”会话authoritative=true/phase live，原生thread/turns/list、thread/items/list真实穿过当前WebSocket/AppHost/SSH，queue未声明；无推理、配置写入或远端文件写入。旧包/旧unit保留，生产/GitOps/永久指针不变。公网HTTPS和物理手机未独立实测，用户刷新验收；原工作区其他dirty不动。
+
 - 远端master已接收 `844b7ce8e`，`git ls-remote`复核一致。合并后全部gate步骤完成，DSH独立依赖补齐/测试夹具修正后，Workbench331/331及后续检查与Web/Expo Web/iOS构建退出0；文档全仓0错误。平台接受普通Git master推送，没有强推或修改保护设置。
 - 干净提交构建候选 `/data/opencraft-ssh-native-release-ZQr7oa/opencraft-server`，buildId `20261005-ssh-native-844b7ce8e`。官方headless打包、最终manifest归档启动smoke通过，完整Workbench idle/active桌面/触屏浅深色烟测通过；仅合成SSH exec，无真实推理/远端写入。保留382个旧hashed资源并按官方规则重新生成manifest，归档 `2cd66a3d953a26cc9e184df56f27d71855ab8bffe68f4e8c02f2f51bacad23ee`。
 - 独立切换脚本已核验旧owner PID2120682及新旧runtime/版本，维持现有6G high/8G max与原数据根，失败恢复旧unit；准备提交timer，未在当前工具中同步停止承载本会话的服务。重连后必须验证实际运行后端的真实SSH分页恢复才能宣称已替换完成。

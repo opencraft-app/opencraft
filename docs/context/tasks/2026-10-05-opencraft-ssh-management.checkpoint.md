@@ -16,6 +16,7 @@ derived: true
 ---
 
 ## stage
+最终交付完成：独立cutover Result=success/ExecMainStatus=0，无回退。重连后80端口PID2324487，opencraft-ssh-native-20261005-preview.service active/NRestarts0；cwd、cgroup、runtime SHA、Web buildId、health与候选一致，6G high/8G max保留。独立脚本及重连后再次运行实际后端只读恢复均成功：批准SSH“文档”authoritative=true、phase live，turns/items原生分页实际经过当前WebSocket/AppHost/SSH，queue未声明；未推理/远端文件写入。master已接收844b7ce8e产品代码，后续996b23c13仅交付文档；保留旧包与数据根，不改永久指针/生产/GitOps。公网HTTPS/物理手机未单独实测，需用户刷新实机确认。
 master已真实接收844b7ce8e（git ls-remote确认）。集成后gate所有步骤已完成，前半日志integration-gate.log，中间DSH/Lab/Chat通过，最后integration-gate-final.log退出0；Workbench331/331、后续套件以及Web/Expo Web/iOS均通过。最新candidate `/data/opencraft-ssh-native-release-ZQr7oa/opencraft-server` 来自干净已提交844b7ce8e，buildId=20261005-ssh-native-844b7ce8e；官方打包及最终归档smoke通过，完整Workbench idle/active桌面/触屏浅深色通过。保留382个旧hashed assets且重新inventory，无immutable collision。runtime hash=eec43f80850ce272a5abadf48e4d79b2dd4d6254a6d93e489500d99a6fbf10c6，归档2cd66a3d953a26cc9e184df56f27d71855ab8bffe68f4e8c02f2f51bacad23ee。独立切换脚本已语法检查，旧PID2120682/unit/hash/Web身份再次一致；新unit维持既有MemoryHigh6G/MemoryMax8G和数据根。下一步提交独立timer切换，随后核验实际进程及通过运行中后端的真实SSH分页恢复；当前尚未切换。MCP未配置不阻止用户已授权且Git平台接受的正常master推送，未绕过保护规则。
 复验DSH与AppServer lab/Chat已通过，Workbench新增master只读面板渲染测试的fixture没有host资源，引起两例TypeError。产品Runtime的host为必有字段，不扩大optional contract掩盖fixture缺失；给真实渲染fixture补准确的method admission，并新增不支持搜索时disabled断言。聚焦两例2/2通过，正在继续完整Workbench及后续gate步骤。尚未推master/切服务。
 集成检查：41615e60d合并提交已生成。i18n/边界、所有workspace类型检查、扩展221/221、连接器32/32、AppServer257/257、SSH65pass/1skip及后续项目/Thread/语音均通过；DSH四例因该隔离checkout尚未安装独立runtime依赖失败。已按锁文件prepare:dsh-runtime安装并验证0.1.1-rc.2，继续复跑DSH以及其后剩余gate步骤，不重跑已通过且源码未改变的检查。工蜂MCP只读鉴权探测报告Unknown MCP server（本地未配置），Git既有凭据已证明可推送修复分支；没有API写入。额外两次猜测frame/client单独文件不存在，改读实际src/index.ts，不扩大搜索。
@@ -55,6 +56,7 @@ master已真实接收844b7ce8e（git ls-remote确认）。集成后gate所有步
 保留广泛 dirty worktree；本任务仅修改相关边界。隔离构建 /data/opencraft-ssh-management-ui-wMFF9v/web。错误路径猜测后改为有界文件发现；初次 DB 测试失败为夹具权限 0644，已修为 0600。页面管理缺失原因是浏览器 fetch 被错误绑定，已修且完整管理复验通过。不存在的 Back to app 按钮改用实际路由导航。一次 npx 缺失已补任务 PATH；一次无内容 patch hunk 被拒绝，改为有效 patch。旧入口 3 轮停在初始 target=Codex；检查定位为夹具虚构 draftId，但当前用户导航改动明确拒绝未保留 Draft（workbench-location-restoration.test）；已改用真实选择器，不篡改导航。API absence 增加明确 JSON 404；初次其测试失败为 fetch 缺 HTML Accept，已按真实页面修正夹具，不改产品。
 
 ## next_action
+交付已完成，用户刷新当前预览验收SSH会话恢复即可。若有新故障用当前实际进程/请求回执定位，不继续盲目重启。原工作区无关dirty保留，发布来源为独立已提交master集成checkout；下方为旧阶段历史。
 本轮可交接源码修复和验证结果。用户要求替换时再读自托管Skill，构建新后端与Web一致候选、实包验收，再独立切换/失败回退并核对实际owner；当前后台未含本轮修复，不能请用户仅刷新当作已交付。下方为先前阶段历史。
 完成实际 Workbench 分页与跟进能力桌面/触屏验收，更新正式 SSH/架构文档与不变量，交接源码/隔离 Web 产物/旧运行后端分别说明。用户另授权替换时，必须同时更新后端和 Web；不能仅换 Web 声称恢复修复已上线。
 针对已确认的历史读取放行缺口修复remote adapter，并补真实paginated history恢复的跨层回归（旧夹具无historyMode/cursor，只测thread/read，不能证明当前服务器兼容）。如用户授权实施再修改产品；后端发布/重启单独获授权并按自托管Skill执行，单换Web不能修此缺口。更旧的侧栏待截图阶段已被最新截图与协议证据取代。
