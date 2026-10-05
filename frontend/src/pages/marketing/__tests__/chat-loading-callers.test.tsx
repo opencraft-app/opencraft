@@ -64,12 +64,12 @@ it("uses regional prompts while the chat SDK chunk loads", () => {
   expect(screen.queryByText("你的 AI 伙伴，马上就来")).toBeNull();
 });
 
-it("keeps the original global embedded workbench loading prompt", () => {
+it("uses the shared loading state for the global embedded workbench", () => {
   region.isCN = false;
   render(<AgentChatMigrationSurface active enabled instanceId="ins-1" profileId="main" region="intl"
     legacy={<div>Legacy chat</div>}
     multiSession={{ onSessionStateChange: vi.fn(), onSelectedChatIdChange: vi.fn() }} />);
 
-  expect(screen.getByRole("status")).toHaveTextContent("正在加载会话…");
-  expect(screen.queryByText("你的 AI 伙伴，马上就来")).toBeNull();
+  expect(screen.getByRole("status")).toHaveTextContent("你的 AI 伙伴，马上就来");
+  expect(document.querySelectorAll(".lv-chat-loading-dot")).toHaveLength(3);
 });

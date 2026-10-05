@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -7,6 +7,7 @@ import type { User } from "@/domain/types";
 import { AppNavigationProvider, type AppNavigationValue } from "@/lib/app-navigation";
 import { AgentSettingsPage } from "@/pages/marketing/agent-settings-page";
 import { journeyHref, resolveCtaRoute } from "@/lib/cta-journey";
+import { setConsoleShowEnabled } from "@/lib/console-show-event";
 
 const addBot = vi.fn();
 const deleteBot = vi.fn();
@@ -155,8 +156,11 @@ vi.mock("@/pages/marketing/agent-chat-panel", () => ({
 }));
 
 vi.mock("@/pages/marketing/opencraft-embedded-workbench", () => ({
-  AgentChatMigrationSurface: ({ enabled, legacy }: { enabled: boolean; legacy: ReactNode }) =>
-    enabled ? <div data-testid="opencraft-chat" /> : legacy,
+  AgentChatMigrationSurface: ({ enabled, legacy, locale, profileId, region }: {
+    enabled: boolean; legacy: ReactNode; locale: string; profileId: string; region: string;
+  }) => enabled
+    ? <div data-testid="opencraft-chat" data-locale={locale} data-profile-id={profileId} data-region={region} />
+    : legacy,
 }));
 
 vi.mock("@/pages/marketing/agent-overview-panel", () => ({
@@ -178,6 +182,7 @@ describe("international Bot onboarding", () => {
     multiBotEnabled = true;
     testRegion.isCN = false;
     testRegion.isGlobal = true;
+    setConsoleShowEnabled(false);
     currentLocale = "en-US";
     activePass = null;
     bots = [buildBot()];
@@ -190,10 +195,34 @@ describe("international Bot onboarding", () => {
   });
   afterEach(cleanup);
 
-  it("keeps international Chat on AgentChat", async () => {
+  it("reveals international OpenCraft Chat only after show() and hides it on the next toggle", async () => {
     render(page("?bot=ins-372", "chat"));
-    expect(await screen.findByTestId("agent-chat")).toBeInTheDocument();
     expect(screen.queryByTestId("opencraft-chat")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("agent-chat")).not.toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "对话" })).not.toBeInTheDocument();
+    const show = (window as Window & { show?: () => boolean }).show;
+    expect(show).toBeTypeOf("function");
+    act(() => { show?.(); });
+    const chat = await screen.findByTestId("opencraft-chat");
+    expect(chat).toHaveAttribute("data-region", "intl");
+    expect(chat).toHaveAttribute("data-locale", "en-US");
+    expect(screen.getByRole("group", { name: "对话" })).toBeInTheDocument();
+    expect(screen.queryByTestId("agent-chat")).not.toBeInTheDocument();
+    act(() => { show?.(); });
+    expect(screen.queryByTestId("opencraft-chat")).not.toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "对话" })).not.toBeInTheDocument();
+  });
+
+  it("uses OpenCraft for an international non-default Bot", async () => {
+    bots = [buildBot(), { ...buildBot(), id: "bot-child", profileId: "research", isDefault: false, name: "Research Bot" }];
+    currentLocale = "ja-JP";
+    setConsoleShowEnabled(true);
+    render(page("?bot=bot-child", "chat"));
+    const chat = await screen.findByTestId("opencraft-chat");
+    expect(chat).toHaveAttribute("data-region", "intl");
+    expect(chat).toHaveAttribute("data-profile-id", "research");
+    expect(chat).toHaveAttribute("data-locale", "ja-JP");
+    expect(screen.queryByTestId("agent-chat")).not.toBeInTheDocument();
   });
 
   describe("domestic multi-Bot overview", () => {

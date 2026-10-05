@@ -4,7 +4,7 @@ import { useT } from "@/i18n/t";
 import { cn } from "@/lib/utils";
 import { DEFAULT_AVATAR_COLOR, GeometricAvatar } from "@/pages/marketing/agent-avatar-shapes";
 
-/** Domestic Chat loading state; callers keep the global site on its original prompts. */
+/** Shared Chat loading state; copy follows the host locale. */
 export function ChatLoadingState({ className }: { className?: string }) {
   const t = useT();
 
