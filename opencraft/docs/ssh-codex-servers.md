@@ -75,10 +75,11 @@ This is OS permission isolation, not encryption against same-user processes.
 
 The default management authority is the backend installation administrator, not
 the Renderer or a LightVela account projection. The Settings **远程连接** page
-uses a separate administrator access key to obtain an eight-hour HttpOnly,
-SameSite=Strict session. This session authorizes the installation's configured
+automatically obtains an eight-hour HttpOnly, SameSite=Strict session in the
+default `shared` access mode. Operators can select `access-key` protection with
+`--ssh-require-access-key` or `--ssh-access-file`. This session authorizes the installation's configured
 Servers; there is no per-member sharing ACL yet. Management HTTP writes require
-an exact Origin matching the session's unlock address. `/ssh-apphost` verifies the same session at upgrade, every frame
+an exact Origin matching the session's admission address. `/ssh-apphost` verifies the same session at upgrade, every frame
 and outgoing reply; logout/expiry closes the socket. Anonymous `/apphost` rejects
 all SSH IDs, including guessed IDs and forged Renderer names. Local anonymous
 features remain separate and usable.
@@ -86,15 +87,18 @@ features remain separate and usable.
 Public SSH requires an explicit opt-in: a fixed HTTPS origin via
 `--ssh-public-origin`, or `--ssh-public-access` for operator-approved changing
 addresses. The latter accepts HTTP and HTTPS without an installation-wide
-domain pin, but still requires the access key and binds each session to the
-Origin that unlocked it. Invalid/opaque Origin and cross-site requests are
-rejected; credentials do not become anonymous capabilities. Cookies remain
-HttpOnly/SameSite=Strict and use Secure when unlocked through HTTPS. Plain HTTP
-provides no transport encryption and exposes the access key/session to network
+domain pin and binds each session to the admission Origin. In shared mode every
+visitor allowed to reach this entry can use the installation's saved SSH connections;
+it is not an account-level permission system. Invalid/opaque Origin and cross-site
+requests are rejected; possession of a Renderer ID alone grants nothing. Cookies remain
+HttpOnly/SameSite=Strict and use Secure when admitted through HTTPS. Plain HTTP
+provides no transport encryption and exposes the session (and optional access key) to network
 observers; this explicit option is not a secure public multi-user deployment.
 Forwarded headers, hiding controls, or putting an anonymous endpoint behind a
 reverse proxy do not grant remote authority. A backend restart revokes sessions
-but preserves saved connections; users unlock management again. Revoking browser
+but preserves saved connections. Shared clients automatically obtain a new session;
+protected clients unlock management again. Session bootstrap is not SSH Connect,
+Thread execution, or replay of a lost mutation. Revoking browser
 access or deleting a connection does not stop remote work or erase remote files.
 
 Settings-created connections are saved transactionally in
@@ -168,17 +172,21 @@ outcomes, never automatic retries; refresh and inspect before resubmitting.
 
 ## Backend configuration
 
-For a loopback deployment, management is enabled by default. Its generated access
-key is at `<data-dir>/ssh/access.key` (0600) and is never printed by the service.
-Supply `--ssh-access-file /private/access.key` to use an existing high-entropy
+For a loopback deployment, management is enabled with shared access by default.
+No extra access key is created or read in this mode; existing key files are left
+untouched. Set `--ssh-require-access-key` to enable protection and generate/reuse
+`<data-dir>/ssh/access.key` (0600), never printed by the service.
+Supply `--ssh-access-file /private/access.key` to enable protection using an existing high-entropy
 private key. It is independent of the remote SSH password. Deliver it only through
 a trusted administrator channel. Public deployments choose a fixed HTTPS origin
-or explicitly enable changing addresses; neither enables anonymous remote root.
+or explicitly enable changing addresses. Shared mode intentionally grants every
+allowed entry visitor use of saved remote credentials. Choose key protection or
+an authenticated private entry when that is not acceptable.
 
 The first management form supports password authentication. Existing backend
 key/agent recipes remain compatible through a private (0600), owner-owned JSON
 file using `--ssh-servers /absolute/path`. These appear as read-only
-configuration-file connections after unlock; they are not silently imported into
+configuration-file connections after session admission; they are not silently imported into
 the database or copied into browser storage. Example (documentation-only paths):
 
 ```json
@@ -230,6 +238,7 @@ npm run test:ssh-codex
 npm run smoke:ssh-codex-browser
 OPENCRAFT_SSH_UI_WEB_ROOT=/absolute/isolated/headless-web-build npm run smoke:ssh-codex-workbench
 OPENCRAFT_SSH_UI_WEB_ROOT=/absolute/isolated/headless-web-build npm run smoke:ssh-management
+OPENCRAFT_SSH_UI_WEB_ROOT=/absolute/isolated/headless-web-build OPENCRAFT_SSH_UI_SHARED_ACCESS=true npm run smoke:ssh-management
 npx tsx scripts/probe-ssh-codex.ts --host HOST --port PORT --user USER --known-hosts VERIFIED_FILE
 ```
 

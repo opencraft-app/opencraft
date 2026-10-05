@@ -86,6 +86,7 @@ test("SSH Servers are private backend bindings, never an anonymous public featur
 test("public SSH can explicitly allow changing addresses without removing authentication", () => {
   const argv = ["--host", "0.0.0.0", "--allow-unauthenticated-public", "--ssh-public-access", "--ssh-servers", "/private/ssh.json", "--data-dir", "/tmp/private"];
   assert.equal(parseHeadlessArguments(argv, {}).sshPublicAccess, true);
+  assert.equal(parseHeadlessArguments([...argv, "--ssh-require-access-key"], {}).sshRequireAccessKey, true);
   assert.throws(() => parseHeadlessArguments([...argv, "--ssh-public-origin", "https://fixture.invalid"], {}), /Choose either/u);
 });
 
@@ -121,8 +122,15 @@ test("public headless mode requires explicit acknowledgement and keeps one HTTP 
   try {
     assert.equal(webOptions.sshManagement.options.publicAccess, true);
     assert.equal(webOptions.sshManagement.authorized({ headers: { host: "preview.invalid" } }), false);
-    await access(join(dataDirectory, "ssh", "access.key"));
+    assert.equal(webOptions.sshManagement.accessMode, "shared");
+    await assert.rejects(access(join(dataDirectory, "ssh", "access.key")), { code: "ENOENT" });
   } finally { await managed.close(); }
+  const protectedServer = await startHeadlessServer({ root, webRoot, dataDirectory, host: "0.0.0.0", port: 8089,
+    allowUnauthenticatedPublic: true, sshPublicAccess: true, sshRequireAccessKey: true, startAgentHost, createWebServer });
+  try {
+    assert.equal(webOptions.sshManagement.accessMode, "access-key");
+    await access(join(dataDirectory, "ssh", "access.key"));
+  } finally { await protectedServer.close(); }
 });
 
 test("Linux tar packaging refuses foreign native build hosts before touching outputs", () => {

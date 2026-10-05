@@ -7,6 +7,88 @@ const json = (value: unknown, status = 200) => new Response(JSON.stringify(value
 const row = { serverId: "ssh:fixture", revision: 1, displayName: "Fixture", hostname: "fixture.invalid", port: 22, username: "fixture", enabled: true, workspaceBrowseRoots: ["/remote"], fingerprint: `SHA256:${"a".repeat(43)}`, state: "idle" } as const;
 
 const flush = () => new Promise<void>(resolve => setImmediate(resolve));
+
+test("shared discovery bootstraps and renews one backend session, never an SSH command", async () => {
+  const methods: string[] = []; let authenticated = false;
+  const controller = new SshConnectionsController(async (input, init) => {
+    methods.push(`${init?.method ?? "GET"} ${input}`);
+    if (init?.method === "POST") {
+      assert.equal(String(input), "/__opencraft_ssh/session"); assert.equal(init.body, "{}");
+      authenticated = true; return json({ authenticated: true });
+    }
+    if (String(input).endsWith("/session")) return json({ available: true, authenticated, accessMode: "shared" });
+    return json(String(input).endsWith("/legacy-connections") ? [] : [row]);
+  });
+  try {
+    const first = controller.refresh(); assert.equal(controller.refresh(), first); await first;
+    assert.equal(controller.getSnapshot().accessMode, "shared");
+    assert.equal(controller.getSnapshot().authenticated, true);
+    const incarnation = controller.getAuthorizationEpoch();
+    await controller.refresh(); assert.equal(controller.getAuthorizationEpoch(), incarnation);
+    authenticated = false; await controller.refresh();
+    assert.ok(controller.getAuthorizationEpoch() > incarnation);
+    assert.equal(controller.getSnapshot().authenticated, true);
+    await controller.lock(); assert.equal(controller.getSnapshot().authenticated, true);
+    assert.deepEqual(methods.filter(method => !method.startsWith("GET ")), ["POST /__opencraft_ssh/session", "POST /__opencraft_ssh/session"]);
+  } finally { controller.dispose(); }
+});
+
+test("failed shared renewal revokes stale catalog and uses discovery backoff", async () => {
+  const clock = discoveryClock(); let authenticated = true, grants = 0;
+  const controller = new SshConnectionsController(async (input, init) => {
+    if (init?.method === "POST") { grants++; throw new Error("lost bootstrap reply"); }
+    if (String(input).endsWith("/session")) return json({ available: true, authenticated, accessMode: "shared" });
+    return json(String(input).endsWith("/legacy-connections") ? [] : [row]);
+  });
+  try {
+    await controller.startDiscovery(clock.lifecycle); authenticated = false; await clock.tick();
+    assert.equal(grants, 1); assert.equal(controller.getSnapshot().authenticated, false);
+    assert.deepEqual(controller.getSnapshot().items, []); assert.ok(controller.getSnapshot().error);
+    assert.equal([...clock.timers.values()][0]?.delay, 10000);
+  } finally { controller.dispose(); }
+});
+
+test("legacy and malformed policies never enable shared admission", async () => {
+  for (const session of [{ available: true, authenticated: false }, { available: true, authenticated: false, accessMode: "unknown" }]) {
+    let grants = 0;
+    const controller = new SshConnectionsController(async (_input, init) => {
+      if (init?.method === "POST") grants++;
+      return json(session);
+    });
+    try {
+      await controller.refresh(); assert.equal(grants, 0); assert.equal(controller.getSnapshot().authenticated, false);
+      assert.equal(Boolean(controller.getSnapshot().error), "accessMode" in session);
+    } finally { controller.dispose(); }
+  }
+});
+
+test("disposed shared admission fences a late bootstrap and cannot read private rows", async () => {
+  const gate = deferred<Response>(); const methods: string[] = [];
+  const controller = new SshConnectionsController(async (input, init) => {
+    methods.push(`${init?.method ?? "GET"} ${input}`);
+    if (init?.method === "POST") return gate.promise;
+    return json({ available: true, authenticated: false, accessMode: "shared" });
+  });
+  const pending = controller.refresh(); await flush(); controller.dispose();
+  gate.resolve(json({ authenticated: true })); await pending;
+  assert.equal(controller.getSnapshot().authenticated, false);
+  assert.deepEqual(methods, ["GET /__opencraft_ssh/session", "POST /__opencraft_ssh/session"]);
+});
+
+test("a shared command rejected after expiry asks for refresh, never a key or automatic replay", async () => {
+  let writes = 0;
+  const controller = new SshConnectionsController(async (input, init) => {
+    if (init?.method === "POST") { writes++; return json({ error: "locked" }, 401); }
+    if (String(input).endsWith("/session")) return json({ available: true, authenticated: true, accessMode: "shared" });
+    return json(String(input).endsWith("/legacy-connections") ? [] : [row]);
+  });
+  try {
+    await controller.refresh();
+    await assert.rejects(controller.probe("fixture.invalid", 22), /连接已失效，请刷新后重试/);
+    assert.equal(controller.getSnapshot().authenticated, false);
+    assert.deepEqual(controller.getSnapshot().items, []); assert.equal(writes, 1);
+  } finally { controller.dispose(); }
+});
 function discoveryClock() {
   let active = true;
   const wakes = new Set<() => void>();

@@ -97,9 +97,17 @@ constructs local account/queue/attachment services or resolves remote files on
 this machine. Backend SQLite owns administrator-managed recipes, pinned trust and
 encrypted credentials. Settings drafts are transient; a live read-only profile
 overlay never duplicates these recipes in IndexedDB. A separate installation-owner
-HttpOnly session protects management and `/ssh-apphost`, with exact Origin and
+HttpOnly session gates management and `/ssh-apphost`, with exact Origin and
 frame-level revocation checks. Public access requires explicit fixed-HTTPS-origin
-or changing-address opt-in; sessions stay bound to their unlock Origin. The
+or changing-address opt-in; sessions stay bound to their admission Origin.
+Default shared installation access bootstraps this session automatically without
+an additional key, including after expiry/restart. Every permitted entry visitor
+can use saved SSH credentials in this mode; it is not a member ACL. Operators
+can require an extra key with `--ssh-require-access-key` or `--ssh-access-file`.
+The Application owns bootstrap/renewal and authorization incarnation, not a
+Settings mount; known session loss clears old private projections before renewal.
+Legacy servers without the policy declaration still require manual key admission.
+Bootstrap never dials SSH or replays connection/execution/file mutations. The
 explicit management Connect command uses AppHost's service-owned admission, not
 a synthetic Client or separate SSH transport. It grants no execution/answer lease;
 connection status remains a projection of the shared physical slot.

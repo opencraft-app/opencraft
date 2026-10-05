@@ -1,5 +1,20 @@
 export const APP_HOST_PROTOCOL_VERSION = 1 as const;
 export const LOGICAL_CLIENT_FIELD = "__opencraftClient";
+export type SshManagementAccessMode = "shared" | "access-key";
+export interface SshManagementSessionView {
+  readonly available: true;
+  readonly authenticated: boolean;
+  readonly accessMode: SshManagementAccessMode;
+}
+export function parseSshManagementSessionView(value: unknown): SshManagementSessionView {
+  if (!value || typeof value !== "object" || Array.isArray(value)
+    || !("available" in value) || value.available !== true
+    || !("authenticated" in value) || typeof value.authenticated !== "boolean") throw new Error("Invalid SSH management session");
+  // Legacy backends require a key. Missing/invalid metadata never opts in.
+  const mode = "accessMode" in value ? value.accessMode : "access-key";
+  if (mode !== "shared" && mode !== "access-key") throw new Error("Invalid SSH management access mode");
+  return { available: true, authenticated: value.authenticated, accessMode: mode };
+}
 /** Public projection only. No endpoint, shell, credential or trust controls. */
 export interface SshCodexServerDescriptor {
   readonly serverId: string;
