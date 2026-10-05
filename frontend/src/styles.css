@@ -1211,7 +1211,7 @@ a {
   border-radius: 6px;
   color: #596273;
   font-size: 12px;
-  line-height: 20px;
+  line-height: 16px;
 }
 
 .lv-agents-session-list-actions button:hover:not(:disabled) {
