@@ -5839,13 +5839,13 @@ export const AgentSettingsPage = ({
                                 "lv-agent-profile",
                                 visibleBots.length <= 1 && "cursor-default",
                               )}
-                              aria-label={isGlobal ? agentProfileDisplayName : `${agentProfileDisplayName}，${isActiveBotRestarting ? t("重启中...") : getBotStatusLabel(activeBot.status)}`}
+                              aria-label={`${agentProfileDisplayName}，${isActiveBotRestarting ? t("重启中...") : getBotStatusLabel(activeBot.status)}`}
                               title={isSidebarCollapsed ? agentProfileDisplayName : undefined}
                               aria-expanded={visibleBots.length > 1 ? isAgentMenuOpen : undefined}
                             >
                               {/* Demo：头像与名称跟随新手引导里设置的资料（几何体头像）；
                                   未设置过时回落到原有的 bot 头像与名称。 */}
-                              <span className={cn("lv-agent-avatar", !isGlobal && "lv-agent-avatar--status")}>
+                              <span className="lv-agent-avatar lv-agent-avatar--status">
                                 {demoProfileIsCustom ? (
                                   <GeometricAvatar
                                     shapeId={buddyProfileState.profile.shapeId}
@@ -5855,34 +5855,27 @@ export const AgentSettingsPage = ({
                                 ) : (
                                   <img src={avatarUrl} alt="" />
                                 )}
-                                {!isGlobal && (
-                                  <span
-                                    className={cn(
-                                      "lv-agent-avatar-status",
-                                      !isActiveBotRestarting && ["provisioning", "deleting", "draft"].includes(activeBot.status) && "lv-agent-avatar-status--blinking",
-                                    )}
-                                    role="img"
-                                    aria-label={isActiveBotRestarting ? t("重启中...") : getBotStatusLabel(activeBot.status)}
-                                    title={isActiveBotRestarting ? t("重启中...") : getBotStatusLabel(activeBot.status)}
-                                    style={{ background: isActiveBotRestarting ? "#FF9500" : getBotStatusColor(activeBot.status) }}
-                                  />
-                                )}
+                                <span
+                                  className={cn(
+                                    "lv-agent-avatar-status",
+                                    !isActiveBotRestarting && ["provisioning", "deleting", "draft"].includes(activeBot.status) && "lv-agent-avatar-status--blinking",
+                                  )}
+                                  role="img"
+                                  aria-label={isActiveBotRestarting ? t("重启中...") : getBotStatusLabel(activeBot.status)}
+                                  title={isActiveBotRestarting ? t("重启中...") : getBotStatusLabel(activeBot.status)}
+                                  style={{ background: isActiveBotRestarting ? "#FF9500" : getBotStatusColor(activeBot.status) }}
+                                />
                               </span>
                               <span className="lv-agent-profile-text">
                                 <span className="lv-agent-profile-name" title={agentProfileDisplayName}>
                                   {truncateBotName(agentProfileDisplayName)}
                                 </span>
-                                {(isGlobal || isActiveBotRestarting || activeBot.status !== "running" || (passExpiryReminder && passExpiryReminderCopy && activePass)) && <span className="lv-agent-status-row">
-                                  {(isGlobal || isActiveBotRestarting || activeBot.status !== "running") && (
+                                {(isActiveBotRestarting || activeBot.status !== "running" || (passExpiryReminder && passExpiryReminderCopy && activePass)) && <span className="lv-agent-status-row">
+                                  {(isActiveBotRestarting || activeBot.status !== "running") && (
                                     <WorkspaceActionTooltip content={pausedStatusTooltip} side="bottom">
                                       <span className="lv-agent-status">
                                         {isActiveBotRestarting ? (
                                           <Loader2 className="h-3 w-3 animate-spin" />
-                                        ) : isGlobal ? (
-                                          <span
-                                            className="inline-block h-1.5 w-1.5 rounded-full"
-                                            style={{ background: getBotStatusColor(activeBot.status) }}
-                                          />
                                         ) : null}
                                         {isActiveBotRestarting ? t("重启中...") : getBotStatusLabel(activeBot.status)}
                                       </span>
