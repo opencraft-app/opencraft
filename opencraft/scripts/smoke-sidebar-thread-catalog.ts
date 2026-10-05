@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createServer } from "vite";
 
-// Real Sidebar + shared theme/Intl/Spinner, no duplicate test-only rendering.
+// Real Sidebar + shared theme/Intl, no duplicate test-only rendering.
 const source = `
 import React,{useState}from'react';
 import{createIntlTestRoot}from'/tests/fixtures/intl-root.tsx';
@@ -46,10 +46,11 @@ try {
     const errors: string[] = [];
     page.on("pageerror", (error: Error) => errors.push(error.message));
     await page.goto(origin);
-    await page.locator(".sidebar-catalog-feedback .workbench-loading-spinner").waitFor();
+    await page.locator('.sidebar-tasks[aria-busy="true"]').waitFor({ state: "attached" });
     await page.evaluate(theme => (window as any).fixture.setThemePreference(theme), theme);
     assert.equal(await page.locator(".sidebar-activity-empty").count(), 0, "pending is not empty");
-    assert.equal(await page.locator(".sidebar-catalog-feedback").innerText(), "", "spinner has no visible technical loading text");
+    assert.equal(await page.locator(".sidebar-catalog-feedback").count(), 0, "loading has no feedback row or spacer");
+    assert.equal(await page.locator(".sidebar-tasks .workbench-loading-spinner").count(), 0, "catalog loading has no visible spinner");
     await page.evaluate(() => {
       const f = (window as any).fixture;
       f.setThreads([f.row(0)]);
@@ -61,7 +62,8 @@ try {
     await page.evaluate(() => { (window as any).healthyRow = document.querySelector(".sidebar-activity-item"); });
     if (process.env.OPENCRAFT_SSH_UI_ARTIFACT_DIR) await page.screenshot({ path: `${process.env.OPENCRAFT_SSH_UI_ARTIFACT_DIR}/catalog-error-${touch ? "touch" : "desktop"}-${theme}.png` });
     if (touch) await retry.tap(); else await retry.click();
-    await page.locator(".sidebar-catalog-feedback .workbench-loading-spinner").waitFor();
+    await page.locator('.sidebar-tasks[aria-busy="true"]').waitFor({ state: "attached" });
+    assert.equal(await page.locator(".sidebar-catalog-feedback").count(), 0, "retry removes the error without adding loading chrome");
     assert.deepEqual(await page.evaluate(() => (window as any).fixture.actions), ["ssh:remote"], "retry is host-scoped and does not select a Thread");
     assert.equal(await page.locator(".sidebar-activity-item").count(), 1);
     assert.equal(await page.evaluate(() => (window as any).healthyRow === document.querySelector(".sidebar-activity-item")), true, "retry must not remount a healthy row");
@@ -69,8 +71,14 @@ try {
     await page.getByText("Couldn't load remote connections", { exact: true }).waitFor();
     assert.equal(await page.locator('.sidebar-activity-item').count(), 1, "discovery failure retains healthy local history");
     if (touch) await retry.tap(); else await retry.click();
-    await page.locator('.sidebar-catalog-feedback .workbench-loading-spinner').waitFor();
+    await page.locator('.sidebar-tasks[aria-busy="true"]').waitFor({ state: "attached" });
+    assert.equal(await page.locator('.sidebar-catalog-feedback').count(), 0);
     assert.deepEqual(await page.evaluate(() => (window as any).fixture.actions), ["ssh:remote", "discovery-read"]);
+    assert.equal(await page.evaluate(() => (window as any).healthyRow === document.querySelector('.sidebar-activity-item')), true);
+    const loadingTop = (await page.locator('.sidebar-activity-item').boundingBox())!.y;
+    await page.evaluate(() => (window as any).fixture.setDiscovery(null));
+    await page.locator('.sidebar-tasks[aria-busy="false"]').waitFor({ state: "attached" });
+    assert.equal((await page.locator('.sidebar-activity-item').boundingBox())!.y, loadingTop, "loading completion must not move healthy history");
     assert.equal(await page.evaluate(() => (window as any).healthyRow === document.querySelector('.sidebar-activity-item')), true);
     await page.evaluate(() => {
       const f = (window as any).fixture;
@@ -89,7 +97,7 @@ try {
     await page.evaluate(() => (window as any).fixture.setThreads([]));
     await page.locator(".sidebar-activity-empty").waitFor();
     assert.deepEqual(errors, []);
-    evidence.push({ touch, theme, reducedMotion: true, loadingNotEmpty: true, failedHostIsolation: true, scopedRetry: true, discoveryRetryWithoutProfiles: true, hiddenRemoteEntry: true, successfulEmpty: true });
+    evidence.push({ touch, theme, reducedMotion: true, quietLoading: true, loadingNotEmpty: true, stableHistoryGeometry: true, failedHostIsolation: true, scopedRetry: true, discoveryRetryWithoutProfiles: true, hiddenRemoteEntry: true, successfulEmpty: true });
     await context.close();
   }
   console.log(JSON.stringify({ ok: true, realSidebar: true, evidence }));

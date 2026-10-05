@@ -25,6 +25,8 @@ SSH Codex 恢复仍遵循原生 Turn/Item 分页，不因 SSH 传输丢失历史
 
 OpenCraft 的 Codex Account Pool 在 Host 本机回环地址转发 Responses 请求，接收正文上限为 32 MiB。超限时读完并丢弃剩余正文，再返回明确的 HTTP 413；不把本地大小拒绝呈现成流式连接中断，也不将超限正文送往模型上游。
 
+OpenCraft 侧栏目录读取的加载状态不占可见行：不显示额外转圈、文字或空白占位，也不改变既有历史行位置或身份。状态仍由 Application 查询拥有，Sidebar 保留 `aria-busy`，加载未完成不冒充成功空列表；失败仍提供当前目录的重试入口。此呈现约束不改变目录读取或会话正文加载行为，详见 [SSH-07](../../../opencraft/design/invariants.md#ssh-connection-management)。
+
 ## 验证
 
 OpenCraft 的执行轮次与展示片段分开：同一轮次内的异步提问、回答、Steer 与后续工作按原有记录顺序投影，活动只在连续范围内折叠，不把所有回答集中到旧工作记录之前。共享 `chat-core` 拥有顺序分段和当前响应判定；Web/Native 不独立重排。异步提问即使带最终回答 phase 也不能结束工作计时，历史回答不得压住后续响应的运行状态。具体契约见 [ChatUI 顺序与所有权](../../../opencraft/docs/chat-ui-architecture.md#history-positions-and-concurrent-observations)。
