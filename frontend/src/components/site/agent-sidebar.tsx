@@ -1,5 +1,5 @@
 import { PanelLeft } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type HTMLAttributes, type ReactNode } from "react";
 
 import { useT } from "@/i18n/t";
 
@@ -61,7 +61,7 @@ export function AgentSidebarToggle({ collapsed, onToggle }: { collapsed: boolean
 }
 
 /** Owns only desktop sidebar scrolling; page controllers retain navigation and Bot actions. */
-export function AgentSidebar({ children }: { children: ReactNode }) {
+export function AgentSidebar({ children, ...props }: { children: ReactNode } & HTMLAttributes<HTMLElement>) {
   const sidebarRef = useRef<HTMLElement>(null);
   const [edges, setEdges] = useState({ above: false, below: false });
   useEffect(() => {
@@ -94,6 +94,7 @@ export function AgentSidebar({ children }: { children: ReactNode }) {
       className="lv-agents-sidebar lv-agents-sidebar-scroll-isolated"
       data-scroll-above={edges.above}
       data-scroll-below={edges.below}
+      {...props}
     >
       {children}
     </aside>
