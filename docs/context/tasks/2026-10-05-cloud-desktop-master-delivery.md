@@ -28,7 +28,7 @@ Desktop contract 与 Host Desktop capability、本机 Thread 授权服务、CTL 
 
 ## history_context
 current_design_refs：opencraft/docs/cloud-desktop-plugin.md、opencraft/docs/platform-architecture.md、docs/engineering/domains/agent-gateway-runtime.md、docs/engineering/journeys/agent-request-streaming.md。
-relevant_evolution：原实现工作区提交为 0f6b4f647；独立融合工作区以 origin/master ebba1eacf 为基线，保留主线 SSH、附件 staging、异步回答与全局焦点模型。
+relevant_evolution：原实现工作区提交为 0f6b4f647；独立融合工作区以 origin/master ebba1eacf 为基线，保留主线 SSH、附件 staging、异步回答与全局焦点模型。首次融合提交 d7f35377a；推送前发现主线前进至 36871b713（移动导航 MR !4999），5 个 frontend/task 文件与桌面实现无重叠，另行无冲突融合并重验 Web 构建与 i18n。
 superseded_refs：先前云桌面 Task Pack 仅为各阶段历史收据，不能作为当前线上版本证明。
 
 ## acceptance / validation

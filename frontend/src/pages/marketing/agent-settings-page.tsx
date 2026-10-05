@@ -9,6 +9,7 @@ import {
   Copy,
   Globe2,
   LayoutDashboard,
+  PanelLeft,
   MessageCircle,
   Plug,
   MessageSquare,
@@ -2761,14 +2762,26 @@ export const AgentSettingsPage = ({
   );
   const [chatSessionsExpanded, setChatSessionsExpanded] = useState(true);
   const [mobileChatNavOpen, setMobileChatNavOpen] = useState(false);
+  const mobileNavTriggerRef = useRef<HTMLButtonElement>(null);
+  const mobileNavCloseRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
-    if (!mobileChatNavOpen) return undefined;
+    if (!mobileChatNavOpen || isDesktop) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    mobileNavCloseRef.current?.focus();
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") setMobileChatNavOpen(false);
     };
     window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [mobileChatNavOpen]);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+      mobileNavTriggerRef.current?.focus();
+    };
+  }, [isDesktop, mobileChatNavOpen]);
+  useEffect(() => {
+    if (isDesktop) setMobileChatNavOpen(false);
+  }, [isDesktop]);
   /**
    * 连接器入口默认隐藏（灰度）：控制台执行 show() 后显示（与工作台 reveal
    * 同款机制——window.show 劫持 toggle 持久化状态并广播）。初始读持久化值
@@ -5066,7 +5079,7 @@ export const AgentSettingsPage = ({
         agentChatPageMinHeightClass(useMobileChatLayout),
         activeSection === "chat" && "lv-agent-chat-page",
         activeSection === "chat" && openCraftChatEnabled && hasSidebarLayout && "lv-agent-embedded-chat-page",
-        useMobileChatLayout && mobileChatNavOpen && "lv-agent-mobile-nav-open",
+        mobileChatNavOpen && "lv-agent-mobile-nav-open",
         isEmptyAgentPage && "lv-agent-empty-page",
         isModifying && "lv-agent-upgrading-page",
         isSidebarCollapsed && "lv-agent-sidebar-collapsed",
@@ -5951,6 +5964,11 @@ export const AgentSettingsPage = ({
               const agentProfileDisplayName = demoProfileIsCustom
                 ? buddyProfileState.profile.name
                 : activeBotDisplayName;
+              const mobileSectionLabel = activeSection === "chat"
+                ? t("对话")
+                : activeSection === "overview"
+                  ? t("总览")
+                  : settingsGroups.flatMap((group) => group.sections).find((section) => section.id === activeSection)?.label ?? activeBotDisplayName;
 
               return (
                 <div
@@ -5966,19 +5984,23 @@ export const AgentSettingsPage = ({
                       配置完成后导航才出现（避免一进来就面对点不了的入口） */}
                   {hasSidebarLayout ? (
                   <>
-                  {useMobileChatLayout && (
-                    <>
-                      <button
-                        type="button"
-                        className="lv-agent-chat-mobile-nav-toggle"
-                        aria-expanded={mobileChatNavOpen}
-                        onClick={() => setMobileChatNavOpen(true)}
-                      >
-                        <MessageSquare className="size-4 shrink-0" aria-hidden="true" />
-                        <span className="min-w-0 flex-1 truncate text-left">{agentProfileDisplayName}</span>
-                        <span className="shrink-0 text-xs text-black/50">{t("最近会话")}</span>
-                        <ChevronDown className="size-4 shrink-0" aria-hidden="true" />
-                      </button>
+                      <div className="lv-agent-mobile-toolbar">
+                        <button
+                          ref={mobileNavTriggerRef}
+                          type="button"
+                          className="lv-agent-chat-mobile-nav-toggle"
+                          aria-label={mobileChatNavOpen ? t("收起导航") : t("展开导航")}
+                          aria-controls="lv-agent-sidebar-navigation"
+                          aria-expanded={mobileChatNavOpen}
+                          onClick={() => setMobileChatNavOpen(true)}
+                        >
+                          <PanelLeft className="size-5" aria-hidden="true" />
+                        </button>
+                        <div className="lv-agent-mobile-toolbar-copy">
+                          <span className="lv-agent-mobile-toolbar-section">{mobileSectionLabel}</span>
+                          {activeSection === "chat" && <span className="lv-agent-mobile-toolbar-bot">{agentProfileDisplayName}</span>}
+                        </div>
+                      </div>
                       {mobileChatNavOpen && (
                         <button
                           type="button"
@@ -5987,11 +6009,29 @@ export const AgentSettingsPage = ({
                           onClick={() => setMobileChatNavOpen(false)}
                         />
                       )}
-                    </>
-                  )}
-                  <AgentSidebar>
-                    {useMobileChatLayout && (
+                  <AgentSidebar
+                    role={!isDesktop && mobileChatNavOpen ? "dialog" : undefined}
+                    aria-modal={!isDesktop && mobileChatNavOpen ? true : undefined}
+                    aria-label={!isDesktop && mobileChatNavOpen ? t("侧边栏视图切换") : undefined}
+                    onClickCapture={(event) => {
+                      if ((event.target as HTMLElement).closest("a")) setMobileChatNavOpen(false);
+                    }}
+                    onKeyDown={(event) => {
+                      if (isDesktop || !mobileChatNavOpen || event.key !== "Tab") return;
+                      const focusable = Array.from(event.currentTarget.querySelectorAll<HTMLElement>("a[href], button:not(:disabled), input:not(:disabled)"));
+                      const first = focusable[0];
+                      const last = focusable[focusable.length - 1];
+                      if (event.shiftKey && document.activeElement === first) {
+                        event.preventDefault();
+                        last?.focus();
+                      } else if (!event.shiftKey && document.activeElement === last) {
+                        event.preventDefault();
+                        first?.focus();
+                      }
+                    }}
+                  >
                       <button
+                        ref={mobileNavCloseRef}
                         type="button"
                         className="lv-agent-chat-mobile-nav-close"
                         aria-label={t("关闭")}
@@ -5999,7 +6039,6 @@ export const AgentSettingsPage = ({
                       >
                         <X className="size-4" aria-hidden="true" />
                       </button>
-                    )}
                     <div className="lv-agents-sidebar-profile">
                     {fleetOverviewEnabled && (
                       <div className="mb-2 pb-2 lg:mb-1.5 lg:pb-1.5">
