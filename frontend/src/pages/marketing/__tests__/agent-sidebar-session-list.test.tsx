@@ -1,0 +1,50 @@
+import { act, renderHook } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
+
+import { useAgentSidebarSessionList } from "@/pages/marketing/agent-sidebar-session-list";
+
+const session = (chatId: string) => ({ chatId, title: chatId });
+const state = (chatId: string | null, loading = false) => ({
+  sessions: chatId === null ? [] : [session(chatId)],
+  loading,
+  historyLoading: false,
+});
+
+describe("Agents sidebar session list", () => {
+  it("keeps the same Bot's list across page remounts and during a background reload", () => {
+    const first = renderHook(() => useAgentSidebarSessionList("account-a:bot-a"));
+    act(() => first.result.current.onSessionStateChange(state("chat-a")));
+    first.unmount();
+
+    const next = renderHook(() => useAgentSidebarSessionList("account-a:bot-a"));
+    expect(next.result.current.sessions).toEqual([session("chat-a")]);
+    expect(next.result.current.loading).toBe(false);
+
+    act(() => next.result.current.onSessionStateChange(state(null, true)));
+    expect(next.result.current.sessions).toEqual([session("chat-a")]);
+    act(() => next.result.current.onSessionStateChange(state("chat-new")));
+    expect(next.result.current.sessions).toEqual([session("chat-new")]);
+  });
+
+  it("isolates Bot and account lists, and clears a list when the server confirms it is empty", () => {
+    const view = renderHook(({ botKey }) => useAgentSidebarSessionList(botKey), {
+      initialProps: { botKey: "account-b:bot-a" },
+    });
+    act(() => view.result.current.onSessionStateChange(state("chat-a")));
+    view.rerender({ botKey: "account-b:bot-b" });
+    expect(view.result.current.sessions).toEqual([]);
+    act(() => view.result.current.onSessionStateChange(state("chat-b")));
+
+    view.rerender({ botKey: "account-b:bot-a" });
+    expect(view.result.current.sessions).toEqual([session("chat-a")]);
+    view.rerender({ botKey: "account-c:bot-a" });
+    expect(view.result.current.sessions).toEqual([]);
+
+    view.rerender({ botKey: "account-b:bot-b" });
+    act(() => view.result.current.onSessionStateChange(state(null)));
+    expect(view.result.current.sessions).toEqual([]);
+    view.unmount();
+    const remounted = renderHook(() => useAgentSidebarSessionList("account-b:bot-b"));
+    expect(remounted.result.current.sessions).toEqual([]);
+  });
+});

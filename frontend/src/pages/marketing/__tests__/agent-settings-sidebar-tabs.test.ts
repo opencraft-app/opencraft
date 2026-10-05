@@ -536,12 +536,14 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).not.toContain('sidebarTab === "chat" && activeSection');
   });
 
-  it("resets session state when the agent instance switches", () => {
+  it("isolates the visible list by Bot and resets session actions when the instance switches", () => {
     const page = readPageSource();
 
-    // SDK 对接注意事项 3：实例切换时重置会话受控状态，防旧实例数据闪现。
+    // 列表按账号、实例和 Profile 隔离；操作句柄仍须在实例切换时失效。
+    expect(page).toContain("const sidebarSessionBotKey = activeBot && accountId");
+    expect(page).toContain("useAgentSidebarSessionList(sidebarSessionBotKey)");
     expect(page).toContain("[sdkInstance?.InstanceId, sdkInstance?.ProfileId, chatSessionPagination.reset]");
-    expect(page).toMatch(/setChatSessions\(\[\]\);\s*\n\s*setChatSessionsLoading\(false\);\s*\n\s*setChatSessionsHasMore\(false\);\s*\n\s*setChatSessionMutationState\(null\);\s*\n\s*setSelectedChatId\(undefined\);\s*\n\s*setChatSessionActions\(null\);/);
+    expect(page).toMatch(/setChatSessionsHasMore\(false\);\s*\n\s*setChatSessionMutationState\(null\);\s*\n\s*setSelectedChatId\(undefined\);\s*\n\s*setChatSessionActions\(null\);/);
   });
 
   it("never uses truthiness to test chatId validity (empty string is a legal default session)", () => {

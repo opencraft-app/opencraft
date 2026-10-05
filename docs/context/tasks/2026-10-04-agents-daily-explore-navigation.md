@@ -49,6 +49,7 @@ derived: false
 
 - 日常和探索 Tab 在支持的 locale 中显示正确文案，深链与 Bot 切换打开相应导航。
 - 对话与会话列表在日常栏可达；不可聊天的 Bot 仍显示准确禁用反馈。
+- 在通道、技能、定时任务之间切换时，同一账号和 Bot 的会话列表保持可见；后台重新加载不清空已有条目，切换 Bot 或账号仍隔离列表。
 - 对话标题在日常各页面默认展开，也可手动收起；加号从日常任意页面可新建会话，每个会话有图标，原重命名和删除入口保持可用。
 - 执行中的会话在对应列表项显示转圈状态，任务完成后停止；状态与会话真实执行状态一致。
 - 国内站执行中会话确认删除后先中断任务，等 Hermes 明确报告停止才关闭和删除；中断失败或超时保留会话。
@@ -63,6 +64,8 @@ derived: false
 ## affected_paths
 
 - `frontend/src/pages/marketing/agent-settings-page.tsx`
+- `frontend/src/pages/marketing/agent-sidebar-session-list.ts`
+- `frontend/src/pages/marketing/__tests__/agent-sidebar-session-list.test.tsx`
 - `frontend/src/pages/marketing/opencraft-embedded-workbench.tsx`
 - `frontend/src/pages/marketing/__tests__/opencraft-embedded-workbench-preload.cn.test.tsx`
 - `frontend/src/styles.css`
@@ -104,6 +107,7 @@ derived: false
 | `opencraft/.agents/skills/opencraft-maintenance/SKILL.md` | 嵌入桥接变更验证 | 核对工作台构建与测试边界 |
 | `docs/context/flows/tapd-gongfeng-delivery.md`、`.agents/skills/gongfeng/SKILL.md` | MR !4969 冲突路由 | 确认合并与远端复核流程 |
 | `frontend/AGENTS.md`、`opencraft/AGENTS.md`、`opencraft/.agents/skills/opencraft-maintenance/SKILL.md` | 最新 master 合并后服务规则 | 执行双站、同步和嵌入门禁 |
+| `docs/context/project/services/frontend.md`、`docs/context/domains/site-environment-routing.md`、`docs/context/domains/identity-access.md`、`docs/context/project/adjacency/frontend-runtime-openspec-i18n.md`、`frontend/AGENTS.md` | 2026-10-05 会话列表跨路由稳定性 | 确认仅改前端呈现，按账号和 Bot 隔离，验证双站 |
 
 ## evidence
 
@@ -140,12 +144,14 @@ derived: false
 - 2026-10-05 MR !4969 合入 `origin/master@efc37fe08`，仅 `opencraft/plugins/lightvela-hermes/src/upstream/mono2/UPSTREAM.json` 出现文本冲突；合并提交 `decb2cd2d` 后用官方 `sync:mono2-agent-console` 重生成清单，并通过只读同步检查。将四条因会话分页后源码标识变化而失效的侧栏守卫断言对齐实际实现。
 - 合并后验证：前端 `pnpm check`、63 项侧栏/分页聚焦测试、23 项嵌入桥接测试、国内站与国际站构建均通过；OpenCraft 工作台与 Hermes 插件 typecheck、88 项 Hermes 插件测试、30 项连接/导航测试、边界检查及嵌入工作台 release 构建通过；文档检查零错误零告警。完整前端 Vitest 并行运行出现 worker OOM，改为串行聚焦测试后通过。
 - 2026-10-05 按截图将「查看更多／收起」操作行改为整体居中，移除末项自动右推和不对称左内边距。`pnpm check`、双站构建、OpenCraft 同步检查与 `git diff --check` 通过；Chrome/Whistle 预览已加载新的 `justify-content: center` 规则，账号现有 15 条会话，没有分页按钮可做真实截图。
+- 2026-10-05 修正 Agents 子页面重挂时会话侧栏先清空再加载的问题：按账号、实例、Profile 和站点缓存最近一次列表；后台加载中的空快照保留现有条目，服务端确认空列表后正常清空。侧栏相关聚焦测试 54/54、`pnpm check`（新增 TypeScript 诊断 0）、国内站和国际站构建、OpenCraft 生成副本只读检查通过。
 
 ## risks
 
 - 最新 `master` 的 AI 套餐模型入口曾在侧栏右下的账号菜单，其他套餐曾在主导航；本次统一移动到探索「管理」，模型页面自身的套餐权限逻辑保持不变。
 - 日常合并会话列表后，需保留非主 Bot 的聊天禁用反馈、移动导航与会话操作。
 - 国内站展开的日常栏会提前初始化隐藏的 OpenCraft 聊天实例以获取会话；跨路由会随主面板重新挂载。Chrome/Whistle 登录态已验证真实会话列表，但未对真实执行中的用户会话做破坏性删除验证。
+- 跨路由保留的是最近一次列表呈现；聊天实例及其操作句柄仍按当前页面重新建立，后台返回后会更新列表。首次进入或切换到从未加载过的 Bot 时仍需正常加载。
 - 原工作区存在大量未提交改动；所有实现仅在独立 worktree 完成。
 - Hermes 仅能为本工作台已缓存的会话提供 `running` 状态；未缓存的其他客户端会话暂没有可信执行状态来源。匿名本地预览无法验证真实执行中的可视效果。
 
@@ -173,3 +179,4 @@ derived: false
 ## handoff
 
 - MR !4969 已合并到 master。随后用户要求将「查看更多／收起」居中；从合并后的 master 单独提交该样式调整，后续 MR !4990 已创建。按后续反馈将操作行左移约 8px、顶部内边距从 8px 缩至 2px，再将按钮行高从 20px 缩至 16px；可用按钮 hover 时增加 `font-weight: 600`。桌面会话条目高度 36px→32px、垂直内边距 6px→4px；滚动条保留 6px 槽位，在鼠标离开对话区域时隐藏滑块，触屏设备保持原样。`pnpm check`、10 项聚焦测试、`pnpm build:cn` 与 OpenCraft 生成副本只读检查通过。此前 5174 的 Chrome/Whistle 预览加载了居中规则；最新滚动条交互仍待真实列表目视核对。
+- 最新会话列表跨路由稳定性修复准备更新至现有 MR !4990；同 Bot 切页继续显示旧列表，重新加载后更新，Bot/账号切换不复用其他列表。
