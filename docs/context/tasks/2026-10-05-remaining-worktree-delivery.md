@@ -7,7 +7,7 @@ owner: wisp/mono2-maintainers
 authority: primary
 source_of_truth:
   - docs/context/tasks/2026-10-05-remaining-worktree-delivery.md
-status: active
+status: complete
 reviewed_at: 2026-10-05
 review_due: 2026-11-05
 revision: 1.0.0
@@ -66,7 +66,7 @@ User: "其他改动都提交一下推送呗？"
 - Context tests, staged documentation impact/link checks, whitespace and credential scan.
 
 ## stage
-427-file source snapshot committed as `1a53b96c36571a1094c45ef2cd84266468172370` and pushed to `fix/remaining-worktree-20261005`. Normal three-way integration with master `2c9369ca696ed178cd08d9b560a431c7a4858410` is resolved in `/data/mono2-remaining-integration-T1ZVel`, including 82 initially conflicting files. Newer master behavior and unique source improvements are preserved. Merged-source validation has completed; remote master delivery awaits the final commit/push. Running preview untouched.
+427-file source snapshot committed as `1a53b96c36571a1094c45ef2cd84266468172370` and pushed to `fix/remaining-worktree-20261005`. Normal three-way integration, including 82 initially conflicting files and newer master navigation `b9117f63b159bd12b83dd55df8916697307ad376`, completed as `e20478ae7ed8c0c5d6aa404f082ce0b7d66898b6`. Push and fresh ls-remote confirmed that both master and `integrate/remaining-worktree-20261005` contain that merge; ancestry checks include the full source snapshot and latest master. This receipt and the post-merge manifest provenance refresh are a source-only follow-up. Running preview untouched.
 
 ## verified
 - Found 235 tracked changed files at initial inventory, plus new code/test/docs files.
@@ -83,10 +83,11 @@ User: "其他改动都提交一下推送呗？"
 - Dependencies were installed in this isolated worktree, not borrowed from another checkout. Rebuilt node-pty for terminal tests; used pnpm 10.28.2 with the frozen frontend lock. Regenerated Agent Console copies and the font subset from merged source.
 - The final remote check discovered newer master `b9117f63b159bd12b83dd55df8916697307ad376` (daily/explore navigation). Integrated it normally, retaining both documentation additions and regenerating the derived manifest. Final frontend check again has zero new diagnostics; seven navigation/embedded-session test files passed (95 cases), Hermes plugin passed (88 cases), Web/Hermes types and generated-copy drift check passed.
 - The original development checkout acquired subsequent SSH changes after the 427-file snapshot commit. Those concurrent changes are left untouched and are not part of this delivery snapshot.
+- After committing the source merge, the generated manifest check correctly detected sourceRevision provenance moving from `bb8d68b4f` to `e20478ae7`. Mechanically regenerated the manifest in the source-only receipt follow-up; no runtime or preview service was changed.
 
 ## unverified
 - Complete gate is not green: OpenCraft's bounded gate timed out during workspace types, frontend full tests had failures and timed out, and the context governance suite had failures. No unrelated behavior fix was improvised to conceal these results.
-- Actual integrated branch/master remote refs remain pending until push and a fresh remote read. Earlier full-gate failures are not superseded by the narrower passing checks above; no complete product gate pass is claimed.
+- Earlier full-gate failures are not superseded by the narrower passing checks above; no complete product gate pass is claimed. No deployment, native device acceptance or physical weak-network test was performed for this source delivery.
 - A nine-file navigation combination including rendered AgentSettingsPage tests exhausted the Node worker heap and was stopped. The seven-file bounded rerun passed; the two full-page rendering files are not claimed to pass. Context governance remains non-green (5690 reported errors after incorporating newer master); documentation structure/link validation is a separate passing check.
 
 ## discard
@@ -103,4 +104,4 @@ User: "其他改动都提交一下推送呗？"
 - Keep original sources and local-only files intact; do not reset or clean the working tree.
 
 ## next_action
-Commit the validated normal merge, push the integration and fast-forward master with fresh remote verification; no deployment or preview mutation.
+Delivery complete. Any subsequent source development or deployment is a separate task; preserve concurrent original-worktree edits.
