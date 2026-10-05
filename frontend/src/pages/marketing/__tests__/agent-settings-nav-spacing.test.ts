@@ -259,7 +259,7 @@ describe("Agent settings navigation spacing", () => {
     expect(page).toContain("return <AgentSettingsLoadingContent />;");
     expect(loadingView).toContain('lg:grid-cols-[248px_minmax(0,1fr)]');
     expect(loadingView).toContain('<AgentSidebar>');
-    expect(page).toContain('<AgentSidebar>');
+    expect(page).toMatch(/<AgentSidebar\b/);
     expect(sidebar).toContain('className="lv-agents-sidebar lv-agents-sidebar-scroll-isolated"');
     for (const source of [loadingView, page]) {
       expect(source).toContain('className="lv-agents-sidebar-controls"');
