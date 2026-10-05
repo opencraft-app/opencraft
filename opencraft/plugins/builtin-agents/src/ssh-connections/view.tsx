@@ -87,7 +87,7 @@ export function createSshConnectionsView(controller: SshConnectionsController) {
     };
     return <div className="ssh-connections">
       <SettingsPageHeader title="远程连接" description="连接由 OpenCraft 服务器保存和管理。" />
-      {!snapshot.available ? <><SettingsNotice>{snapshot.available === false ? "当前服务器尚未开放远程连接管理。" : "暂时无法读取连接设置，请重试。"}</SettingsNotice><SettingsActions><SettingsButton disabled={snapshot.refreshing} onClick={() => { void controller.refresh(); }}>重试</SettingsButton></SettingsActions></> : !snapshot.authenticated ? <SettingsSection title="解锁远程连接" description="使用管理员提供的访问密钥，保护远端服务器。">
+      {!snapshot.available || (!snapshot.authenticated && snapshot.accessMode !== "access-key") ? <><SettingsNotice>{snapshot.available === false ? "当前服务器尚未开放远程连接管理。" : "暂时无法读取连接设置，请重试。"}</SettingsNotice><SettingsActions><SettingsButton disabled={snapshot.refreshing} onClick={() => { void controller.refresh(); }}>重试</SettingsButton></SettingsActions></> : !snapshot.authenticated ? <SettingsSection title="解锁远程连接" description="使用管理员提供的访问密钥，保护远端服务器。">
         <form onSubmit={event => { event.preventDefault(); if (unlocking) return; setUnlocking(true); setUnlockError(null);
           void controller.unlock(accessKey).then(() => { if (alive.current) setAccessKey(""); }).catch(cause => { if (alive.current) setUnlockError(cause.message); }).finally(() => { if (alive.current) setUnlocking(false); }); }}>
           <SettingsGroup><SettingsRow label="访问密钥" htmlFor="ssh-access"><SettingsTextInput id="ssh-access" type="password" autoComplete="off" value={accessKey} required disabled={unlocking} onChange={event => setAccessKey(event.target.value)} /></SettingsRow></SettingsGroup>
@@ -110,7 +110,7 @@ export function createSshConnectionsView(controller: SshConnectionsController) {
               </Menu.Root></>} />)}
         </SettingsGroup>}
         <SettingsActions align="between"><SettingsButton variant="quiet" disabled={snapshot.refreshing} onClick={() => { void controller.refresh(); }}><RefreshCw size={16} />刷新</SettingsButton>
-          <SettingsButton variant="quiet" onClick={() => { void runRow("session", () => controller.lock()); }} disabled={pending.has("session")}>锁定管理</SettingsButton></SettingsActions>
+          {snapshot.accessMode === "access-key" ? <SettingsButton variant="quiet" onClick={() => { void runRow("session", () => controller.lock()); }} disabled={pending.has("session")}>锁定管理</SettingsButton> : null}</SettingsActions>
         {errors.session ? <SettingsNotice tone="error">{errors.session}</SettingsNotice> : null}
         {snapshot.legacyServers.length ? <SettingsSection title="配置文件中的连接" description="这些连接由服务器配置文件管理。"><SettingsGroup>{snapshot.legacyServers.map(server => <SettingsListItem key={server.serverId} label={server.displayName} icon={<Globe2 size={20} />} />)}</SettingsGroup></SettingsSection> : null}
       </SettingsSection>}

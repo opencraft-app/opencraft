@@ -38,6 +38,7 @@ export function parseHeadlessArguments(argv, env = process.env, getHomeDirectory
   let sshPublicOrigin;
   let sshPublicAccess = false;
   let sshAccessFile;
+  let sshRequireAccessKey = false;
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (argument === "--help" || argument === "-h") return { help: true };
@@ -63,6 +64,8 @@ export function parseHeadlessArguments(argv, env = process.env, getHomeDirectory
       if (url.protocol !== "https:" || url.origin !== sshPublicOrigin) throw new Error("--ssh-public-origin requires a fixed HTTPS origin");
     } else if (argument === "--ssh-public-access") {
       sshPublicAccess = true;
+    } else if (argument === "--ssh-require-access-key") {
+      sshRequireAccessKey = true;
     } else if (argument === "--ssh-access-file") {
       sshAccessFile = argv[++index];
       if (!sshAccessFile?.startsWith("/")) throw new Error("--ssh-access-file requires a private absolute path");
@@ -85,7 +88,7 @@ export function parseHeadlessArguments(argv, env = process.env, getHomeDirectory
   if (localDesktop && host !== "127.0.0.1") throw new Error("Local desktop requires a loopback-only listener");
   return { help: false, host, port, dataDirectory: resolve(dataDirectory), allowUnauthenticatedPublic,
     ...(localDesktop ? { localDesktop: true } : {}),
-    ...(sshServersFile ? { sshServersFile } : {}), ...(sshPublicOrigin ? { sshPublicOrigin } : {}), ...(sshPublicAccess ? { sshPublicAccess: true } : {}), ...(sshAccessFile ? { sshAccessFile } : {}) };
+    ...(sshServersFile ? { sshServersFile } : {}), ...(sshPublicOrigin ? { sshPublicOrigin } : {}), ...(sshPublicAccess ? { sshPublicAccess: true } : {}), ...(sshAccessFile ? { sshAccessFile } : {}), ...(sshRequireAccessKey ? { sshRequireAccessKey: true } : {}) };
 }
 
 async function secureDataDirectory(path) {
@@ -177,6 +180,7 @@ export async function startHeadlessServer(options = {}) {
     // only with explicit operator opt-in; all remote sockets require a session.
     if (host === "127.0.0.1" || options.sshPublicOrigin || options.sshPublicAccess) sshManagement = new SshManagement({
       directory: join(dataDirectory, "ssh"), publicOrigin: options.sshPublicOrigin, publicAccess: options.sshPublicAccess, accessFile: options.sshAccessFile,
+      accessMode: options.sshRequireAccessKey || options.sshAccessFile ? "access-key" : "shared",
       resetConnection: id => appHostServer.resetHost(id), connectionState: id => appHostServer.hostState(id),
       connectConnection: (id, assertAdmission) => appHostServer.ensureHostConnected(id, assertAdmission),
       legacyServers: sshServers.map(binding => binding.descriptor),
@@ -205,7 +209,7 @@ if (isMain) {
   void (async () => {
     const args = parseHeadlessArguments(process.argv.slice(2));
     if (args.help) {
-      process.stdout.write("Usage: opencraft-server [--host 127.0.0.1|0.0.0.0] [--port 10000] [--data-dir PATH] [--ssh-servers PRIVATE_JSON] [--ssh-public-origin HTTPS_ORIGIN | --ssh-public-access] [--ssh-access-file PRIVATE_FILE] [--allow-unauthenticated-public] [--local-desktop]\nDefault: loopback only. SSH management requires a private access key. Public SSH requires explicit opt-in; HTTP access exposes credentials without transport encryption. Local desktop requires loopback and an installed verified observer.\n");
+      process.stdout.write("Usage: opencraft-server [--host 127.0.0.1|0.0.0.0] [--port 10000] [--data-dir PATH] [--ssh-servers PRIVATE_JSON] [--ssh-public-origin HTTPS_ORIGIN | --ssh-public-access] [--ssh-require-access-key] [--ssh-access-file PRIVATE_FILE] [--allow-unauthenticated-public] [--local-desktop]\nDefault: loopback only; SSH management uses shared installation access without an extra key. --ssh-require-access-key or --ssh-access-file enables key protection. Public SSH requires explicit opt-in; every permitted visitor can use saved connections in shared mode. HTTP provides no transport encryption. Local desktop requires loopback and an installed verified observer.\n");
       return;
     }
     const server = await startHeadlessServer(args);

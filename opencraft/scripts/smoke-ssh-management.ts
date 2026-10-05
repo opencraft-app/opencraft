@@ -13,6 +13,7 @@ import { assertHeadlessWebRelease } from "./headless-web-release.mjs";
 
 const webRoot = process.env.OPENCRAFT_SSH_UI_WEB_ROOT;
 const publicAccess = process.env.OPENCRAFT_SSH_UI_PUBLIC_ACCESS === "true";
+const sharedAccess = process.env.OPENCRAFT_SSH_UI_SHARED_ACCESS === "true";
 const colorScheme = process.env.OPENCRAFT_SSH_UI_COLOR_SCHEME ?? "light";
 assert.ok(colorScheme === "light" || colorScheme === "dark");
 assert.ok(webRoot, "Provide an isolated headless Web build");
@@ -32,7 +33,7 @@ const appHost = new AppHostServer({ logicalClientRouting: true, physicalHostLife
       },
     }) });
 } });
-management = new SshManagement({ directory, publicAccess, scanHostKey: async () => hostKey, resetConnection: id => appHost.resetHost(id), connectConnection: (id, assertAdmission) => appHost.ensureHostConnected(id, assertAdmission), connectionState: id => appHost.hostState(id) });
+management = new SshManagement({ directory, publicAccess, accessMode: sharedAccess ? "shared" : "access-key", scanHostKey: async () => hostKey, resetConnection: id => appHost.resetHost(id), connectConnection: (id, assertAdmission) => appHost.ensureHostConnected(id, assertAdmission), connectionState: id => appHost.hostState(id) });
 const second = management.store.save(null, 0, { displayName: "Second fixture", hostname: "fixture.invalid", port: 22, username: "fixture", enabled: false, workspaceBrowseRoots: ["/remote"], password: "synthetic" }, hostKey);
 const web = await createWorkbenchWebServer({ root: resolve(webRoot), appServerTarget: null, appHostServer: appHost, loopbackOnly: !publicAccess, sshManagement: management, onAppHostDiagnostic: () => undefined });
 let browser: any;
@@ -40,7 +41,7 @@ let activePage: any;
 try {
   const address = await web.listen({ host: "127.0.0.1", port: 0 });
   const origin = `http://127.0.0.1:${address.port}`;
-  const access = await readFile(join(directory, "access.key"), "utf8");
+  const access = sharedAccess ? null : await readFile(join(directory, "access.key"), "utf8");
   const { chromium } = await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE ?? "playwright");
   browser = await chromium.launch({ headless: true, executablePath: process.env.OPENCRAFT_CHROMIUM_EXECUTABLE });
   const errors: string[] = [];
@@ -65,10 +66,24 @@ try {
     };
     page.on("pageerror", (error: Error) => errors.push(error.message));
     await page.goto(`${origin}/settings/vela.headless-codex.ssh`);
-    await page.getByLabel("访问密钥", { exact: true }).waitFor({ timeout: 30000 });
-    await page.getByLabel("访问密钥", { exact: true }).fill(access);
-    await page.getByRole("button", { name: "解锁", exact: true }).click();
+    if (!sharedAccess) {
+      await page.getByLabel("访问密钥", { exact: true }).waitFor({ timeout: 30000 });
+      await page.getByLabel("访问密钥", { exact: true }).fill(access!);
+      await page.getByRole("button", { name: "解锁", exact: true }).click();
+    }
     await page.getByRole("button", { name: "添加", exact: true }).waitFor();
+    if (sharedAccess) {
+      assert.equal(await page.getByLabel("访问密钥", { exact: true }).count(), 0);
+      assert.equal(await page.getByRole("button", { name: "锁定管理", exact: true }).count(), 0);
+      await page.route("**/__opencraft_ssh/session", (route: any) => route.request().method() === "POST" ? route.abort("failed") : route.continue());
+      await context.clearCookies(); await page.reload();
+      await page.getByText("无法刷新连接，请稍后重试。", { exact: true }).waitFor();
+      assert.equal(await page.getByLabel("访问密钥", { exact: true }).count(), 0, "shared renewal failure is retryable, not a key challenge");
+      await page.unroute("**/__opencraft_ssh/session");
+      await page.getByRole("button", { name: "重试", exact: true }).click();
+      await page.getByRole("button", { name: "添加", exact: true }).waitFor();
+      assert.equal(await page.getByLabel("访问密钥", { exact: true }).count(), 0);
+    }
     assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), colorScheme);
     await page.getByRole("button", { name: "添加", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "添加远程连接", exact: true });
@@ -220,8 +235,13 @@ try {
     await renamed.click(); await page.getByRole("menuitem", { name: "删除", exact: true }).click();
     const remove = page.getByRole("dialog", { name: "删除连接", exact: true }); await remove.getByRole("button", { name: "删除", exact: true }).click();
     await remove.waitFor({ state: "hidden" }); await renamed.waitFor({ state: "hidden" });
-    await page.getByRole("button", { name: "锁定管理", exact: true }).click();
-    await page.getByLabel("访问密钥", { exact: true }).waitFor();
+    if (sharedAccess) {
+      await context.clearCookies(); await page.reload();
+      await page.getByRole("button", { name: "添加", exact: true }).waitFor();
+    } else {
+      await page.getByRole("button", { name: "锁定管理", exact: true }).click();
+      await page.getByLabel("访问密钥", { exact: true }).waitFor();
+    }
     await openChat();
     await page.locator('.sidebar-tasks').waitFor({ state: "attached" });
     await page.waitForFunction(() => [...document.querySelectorAll('.sidebar-tasks')].every(sidebar => !sidebar.textContent?.includes("Remote history fixture")));
@@ -230,7 +250,7 @@ try {
   assert.deepEqual(errors, []);
   assert.equal(calls.some(call => ["turn/start", "turn/steer", "thread/start", "fs/writeFile"].includes(call.method)), false);
   assert.equal(management.store.list().length, 1); assert.equal(management.store.get(second.serverId).displayName, "Second fixture");
-  console.log(JSON.stringify({ ok: true, fullWorkbench: true, desktop: true, touch: true, colorScheme, publicAccess, databaseCrud: true, explicitTrust: true, remoteCatalogWithoutSelection: true, catalogReloadAndRevocation: true, discoveryRecoveryWithoutSettings: ["automatic", "retry", "online"], recoveryDoesNotDial: true, liveTargetSelection: true, menuToDialog: true, writeOnlyCredential: true, remoteWrites: false }));
+  console.log(JSON.stringify({ ok: true, fullWorkbench: true, desktop: true, touch: true, colorScheme, publicAccess, sharedAccess, databaseCrud: true, explicitTrust: true, remoteCatalogWithoutSelection: true, catalogReloadAndRevocation: true, discoveryRecoveryWithoutSettings: ["automatic", "retry", "online"], recoveryDoesNotDial: true, liveTargetSelection: true, menuToDialog: true, writeOnlyCredential: true, remoteWrites: false }));
 } catch (error) {
   console.error("Synthetic SSH management UI failure", await activePage?.locator("body").innerText().catch(() => "unavailable"));
   throw error;

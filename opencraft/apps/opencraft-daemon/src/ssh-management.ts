@@ -3,7 +3,7 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { SshCodexServerDescriptor } from "@opencraft/app-host-protocol";
+import type { SshCodexServerDescriptor, SshManagementAccessMode } from "@opencraft/app-host-protocol";
 import { SshConnectionStore, SshManagementError, hostKeyFingerprint, parseSshConnectionInput, readPrivateSshFile } from "./ssh-connection-store.js";
 
 const COOKIE = "opencraft_ssh_session";
@@ -55,7 +55,8 @@ export async function scanSshHostKey(hostname: string, port: number): Promise<st
 /** Installation-owner control plane. Not a browser-owned credential/config cache. */
 export class SshManagement {
   readonly store: SshConnectionStore;
-  private readonly accessHash: Buffer;
+  readonly accessMode: SshManagementAccessMode;
+  private readonly accessHash: Buffer | null;
   private readonly sessions = new Map<string, Session>();
   private readonly challenges = new Map<string, Challenge>();
   private readonly revocations = new Set<() => void>();
@@ -67,6 +68,8 @@ export class SshManagement {
     /** Explicit operator opt-in: no installation-wide origin pin; sessions still bind their unlock origin. */
     publicAccess?: boolean;
     accessFile?: string;
+    /** Shared installation access by default; operators may require an additional key. */
+    accessMode?: SshManagementAccessMode;
     sessionTtlMs?: number;
     scanHostKey?: (hostname: string, port: number) => Promise<string>;
     resetConnection: (serverId: string) => Promise<void>;
@@ -75,11 +78,16 @@ export class SshManagement {
     legacyServers?: readonly SshCodexServerDescriptor[];
   }) {
     if (options.publicAccess && options.publicOrigin) throw new Error("Choose either SSH public access or a fixed origin");
+    this.accessMode = options.accessMode ?? (options.accessFile ? "access-key" : "shared");
+    if (this.accessMode !== "shared" && this.accessMode !== "access-key") throw new Error("Invalid SSH management access mode");
+    if (this.accessMode === "shared" && options.accessFile) throw new Error("SSH access file requires access-key mode");
     if (options.publicOrigin) {
       const url = new URL(options.publicOrigin);
       if (url.protocol !== "https:" || url.origin !== options.publicOrigin) throw new Error("SSH public access requires a fixed HTTPS origin");
     }
     this.store = new SshConnectionStore(options.directory);
+    this.accessHash = null;
+    if (this.accessMode === "shared") return;
     const accessPath = options.accessFile ?? join(options.directory, "access.key");
     if (!options.accessFile) {
       try { writeFileSync(accessPath, randomBytes(32).toString("base64url"), { flag: "wx", mode: 0o600 }); }
@@ -126,13 +134,15 @@ export class SshManagement {
     if (path !== API && !path.startsWith(`${API}/`)) return false;
     try {
       if (!this.sameOrigin(request, request.method !== "GET")) throw new SshManagementError("locked", 403);
-      if (path === `${API}/session` && request.method === "GET") { json(response, 200, { available: true, authenticated: this.authorized(request) }); return true; }
+      if (path === `${API}/session` && request.method === "GET") { json(response, 200, { available: true, authenticated: this.authorized(request), accessMode: this.accessMode }); return true; }
       if (path === `${API}/session` && request.method === "POST") {
         const data = await body(request);
-        this.failedAttempts = this.failedAttempts.filter(t => t > Date.now() - 60_000);
-        if (this.failedAttempts.length >= 10) { json(response, 429, { error: "locked" }); return true; }
-        if (typeof data.accessKey !== "string" || data.accessKey.length > 4096 || !timingSafeEqual(digest(data.accessKey), this.accessHash)) {
-          this.failedAttempts.push(Date.now()); throw new SshManagementError("locked", 401);
+        if (this.accessMode === "access-key") {
+          this.failedAttempts = this.failedAttempts.filter(t => t > Date.now() - 60_000);
+          if (this.failedAttempts.length >= 10) { json(response, 429, { error: "locked" }); return true; }
+          if (typeof data.accessKey !== "string" || data.accessKey.length > 4096 || !this.accessHash || !timingSafeEqual(digest(data.accessKey), this.accessHash)) {
+            this.failedAttempts.push(Date.now()); throw new SshManagementError("locked", 401);
+          }
         }
         for (const [id, entry] of this.sessions) if (entry.expiresAt <= Date.now()) this.sessions.delete(id);
         if (this.sessions.size >= 64) throw new SshManagementError("unavailable", 503);
@@ -217,5 +227,5 @@ export class SshManagement {
       json(response, safe.status, { error: safe.code }); return true;
     }
   }
-  close() { this.sessions.clear(); this.challenges.clear(); this.revocations.clear(); this.accessHash.fill(0); this.store.close(); }
+  close() { this.sessions.clear(); this.challenges.clear(); this.revocations.clear(); this.accessHash?.fill(0); this.store.close(); }
 }

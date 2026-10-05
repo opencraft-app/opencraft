@@ -102,7 +102,7 @@ test("missing credential key stops recovery without generating a replacement", a
   assert.equal(preserved.prepare("SELECT server_id FROM ssh_connections").get()!.server_id, row.serverId); preserved.close();
 });
 
-async function fixture(context: any, sessionTtlMs?: number, publicAccess = false, beforeReset?: () => Promise<void>, beforeConnect?: () => Promise<void>) {
+async function fixture(context: any, sessionTtlMs?: number, publicAccess = false, beforeReset?: () => Promise<void>, beforeConnect?: () => Promise<void>, accessMode: "shared" | "access-key" = "access-key") {
   const root = await mkdtemp(join(tmpdir(), "opencraft-ssh-http-"));
   const calls: string[] = [], resets: string[] = [];
   const appHost = new AppHostServer({ physicalHostLifetime: "server", createTransport: host => {
@@ -110,7 +110,7 @@ async function fixture(context: any, sessionTtlMs?: number, publicAccess = false
     return { status: { state: "open" as const }, async connect() {}, async send() {}, subscribeMessage() { return () => undefined; }, subscribeStatus() { return () => undefined; }, async close() {} };
   } });
   const hostKey = key();
-  const management = new SshManagement({ directory: join(root, "private"), sessionTtlMs, publicAccess,
+  const management = new SshManagement({ directory: join(root, "private"), sessionTtlMs, publicAccess, ...(accessMode === "access-key" ? { accessMode } : {}),
     scanHostKey: async () => hostKey, resetConnection: async id => { resets.push(id); await beforeReset?.(); await appHost.resetHost(id); }, connectConnection: async (id, assertAdmission) => { await beforeConnect?.(); await appHost.ensureHostConnected(id, assertAdmission); }, connectionState: id => appHost.hostState(id) });
   const web = await createWorkbenchWebServer({ root, loopbackOnly: !publicAccess, appServerTarget: null, appHostServer: appHost, sshManagement: management, webSocketHeartbeatIntervalMs: 20, onAppHostDiagnostic: () => undefined });
   const address = await web.listen({ host: "127.0.0.1", port: 0 });
@@ -121,8 +121,8 @@ async function fixture(context: any, sessionTtlMs?: number, publicAccess = false
     return { response, value: await response.json() as any };
   };
   const unlock = async () => {
-    const accessKey = await readFile(join(root, "private/access.key"), "utf8");
-    const result = await request("session", "POST", { accessKey });
+    const data = accessMode === "access-key" ? { accessKey: await readFile(join(root, "private/access.key"), "utf8") } : {};
+    const result = await request("session", "POST", data);
     assert.equal(result.response.status, 200);
     cookie = result.response.headers.get("set-cookie")!.split(";")[0]!;
     assert.match(result.response.headers.get("set-cookie")!, /HttpOnly; SameSite=Strict/u);
@@ -134,8 +134,45 @@ async function fixture(context: any, sessionTtlMs?: number, publicAccess = false
     return (await request("connections", "POST", { revision: 0, input, ...trust })).value;
   };
   context.after(async () => { await web.close(); await appHost.close(); management.close(); });
-  return { request, unlock, add, origin, management, calls, resets };
+  return { request, unlock, add, origin, management, calls, resets, root };
 }
+
+test("default shared admission needs no key but still requires an origin-bound session", async context => {
+  const f = await fixture(context, undefined, false, undefined, undefined, "shared");
+  assert.equal(f.management.accessMode, "shared");
+  await assert.rejects(access(join(f.root, "private/access.key")), { code: "ENOENT" });
+  assert.deepEqual((await f.request("session")).value, { available: true, authenticated: false, accessMode: "shared" });
+  assert.equal((await f.request("connections")).response.status, 401);
+  assert.equal((await f.request("session", "POST", {}, "https://foreign.invalid")).response.status, 403);
+  const cookie = await f.unlock(); const row = await f.add();
+  assert.equal((await f.request("session")).value.authenticated, true);
+  assert.equal((await f.request("connections")).value[0].serverId, row.serverId);
+  assert.equal((await f.request("connections", "GET", undefined, "https://foreign.invalid")).response.status, 403);
+  await f.request("session", "DELETE");
+  assert.equal((await f.request("connections")).response.status, 401);
+  assert.notEqual(await f.unlock(), cookie);
+  assert.equal((await f.request("connections")).value[0].fingerprint, row.fingerprint);
+  assert.deepEqual(f.calls, [], "session renewal must not dial SSH");
+});
+
+test("shared expiry can renew without a key and restart preserves credentials but not sessions", async context => {
+  const f = await fixture(context, 20, false, undefined, undefined, "shared");
+  const cookie = await f.unlock();
+  await new Promise(resolve => setTimeout(resolve, 30));
+  assert.equal((await f.request("session")).value.authenticated, false);
+  assert.notEqual(await f.unlock(), cookie);
+  const directory = await mkdtemp(join(tmpdir(), "opencraft-shared-restart-"));
+  const options = { directory, resetConnection: async () => {}, connectConnection: async () => {} };
+  let management = new SshManagement(options);
+  const row = management.store.save(null, 0, input, key()); management.close();
+  management = new SshManagement(options);
+  try {
+    assert.deepEqual(management.store.list(), [row]);
+    assert.equal(await (management.store.binding(row.serverId).connection.authentication as any).resolvePassword(), input.password);
+    assert.equal(management.authorized({ headers: { host: "127.0.0.1", cookie } } as any), false);
+    await assert.rejects(access(join(directory, "access.key")), { code: "ENOENT" });
+  } finally { management.close(); }
+});
 
 for (const revokedBy of ["logout", "configuration"] as const) {
   test(`SSH connect rechecks ${revokedBy} at delayed physical admission`, async context => {
@@ -267,16 +304,17 @@ test("fixed-origin public access remains strict and never trusts forwarded heade
   } finally { management.close(); }
 });
 
-test("flexible addresses require a key and bind each HTTP/WS session to its unlock origin", async context => {
-  const f = await fixture(context, undefined, true);
+for (const accessMode of ["shared", "access-key"] as const) {
+test(`flexible ${accessMode} admission binds each HTTP/WS session to its origin`, async context => {
+  const f = await fixture(context, undefined, true, undefined, undefined, accessMode);
   assert.equal((await f.request("connections")).response.status, 401);
-  assert.equal((await f.request("session", "POST", { accessKey: "wrong" }, "https://one.invalid")).response.status, 401);
+  if (accessMode === "access-key") assert.equal((await f.request("session", "POST", { accessKey: "wrong" }, "https://one.invalid")).response.status, 401);
   assert.equal((await f.request("session", "POST", {}, "null")).response.status, 403);
   assert.equal(f.management.sameOrigin({ headers: { origin: "https://one.invalid", "sec-fetch-site": "cross-site" } } as any, true), false);
-  const accessKey = await readFile(join(f.management.options.directory, "access.key"), "utf8");
+  const data = accessMode === "access-key" ? { accessKey: await readFile(join(f.management.options.directory, "access.key"), "utf8") } : {};
   const url = `${f.origin}/__opencraft_ssh`;
   const login = async (origin: string) => {
-    const response = await fetch(`${url}/session`, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify({ accessKey }) });
+    const response = await fetch(`${url}/session`, { method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify(data) });
     assert.equal(response.status, 200);
     assert.match(response.headers.get("set-cookie")!, /; Secure/u);
     return response.headers.get("set-cookie")!.split(";")[0]!;
@@ -291,7 +329,21 @@ test("flexible addresses require a key and bind each HTTP/WS session to its unlo
   assert.equal((await fetch(`${url}/connections`, { headers: { cookie: one } })).status, 200, "same-origin GET may omit Origin, while cookie remains HttpOnly/SameSite");
   const crossed = new WebSocket(`${f.origin.replace("http", "ws")}/ssh-apphost`, { origin: "https://two.invalid", headers: { cookie: one } });
   await once(crossed, "error");
-  const plain = await f.request("session", "POST", { accessKey });
+  const plain = await f.request("session", "POST", data);
   assert.equal(plain.response.status, 200);
   assert.doesNotMatch(plain.response.headers.get("set-cookie")!, /; Secure/u, "explicit plain-HTTP access is usable, not silently pinned to HTTPS");
+});
+}
+
+test("shared default preserves an existing key; explicit access file enables protection", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "opencraft-access-mode-"));
+  const options = { directory, resetConnection: async () => {}, connectConnection: async () => {} };
+  let management = new SshManagement({ ...options, accessMode: "access-key" }); management.close();
+  const accessPath = join(directory, "access.key"), before = await readFile(accessPath);
+  management = new SshManagement(options);
+  try { assert.equal(management.accessMode, "shared"); assert.equal((await readFile(accessPath)).equals(before), true); }
+  finally { management.close(); }
+  management = new SshManagement({ ...options, accessFile: accessPath });
+  try { assert.equal(management.accessMode, "access-key"); }
+  finally { management.close(); }
 });

@@ -1,13 +1,15 @@
-import { parseSshConnectionViews, parseSshCodexServerDescriptors, type SshCodexServerDescriptor, type SshConnectionView, type SshConnectionEdit } from "@opencraft/app-host-protocol";
+import { parseSshConnectionViews, parseSshCodexServerDescriptors, parseSshManagementSessionView, type SshManagementAccessMode, type SshCodexServerDescriptor, type SshConnectionView, type SshConnectionEdit } from "@opencraft/app-host-protocol";
 
 export type SshConnectionSnapshot = {
   available: boolean | null; authenticated: boolean; items: readonly SshConnectionView[];
   refreshing: boolean; error: string | null;
   legacyServers: readonly SshCodexServerDescriptor[];
+  accessMode: SshManagementAccessMode | null;
 };
 const messages: Record<string, string> = {
   invalid: "请检查连接信息。", locked: "请先解锁远程连接。", conflict: "连接已被修改，请刷新后重新编辑。",
   missing: "连接已被移除，请刷新列表。", trust: "请重新核对服务器身份。", unavailable: "暂时无法连接，请稍后重试。",
+  sessionExpired: "连接已失效，请刷新后重试。",
 };
 
 /** The Application supplies platform wake events and timers, never a View. */
@@ -19,7 +21,7 @@ export interface SshDiscoveryLifecycle {
 
 /** Application-owned backend projection. View drafts and credentials are not retained here. */
 export class SshConnectionsController {
-  private snapshot: SshConnectionSnapshot = { available: null, authenticated: false, items: [], legacyServers: [], refreshing: false, error: null };
+  private snapshot: SshConnectionSnapshot = { available: null, authenticated: false, items: [], legacyServers: [], refreshing: false, error: null, accessMode: null };
   private readonly listeners = new Set<() => void>();
   private epoch = 0;
   private authEpoch = 0;
@@ -75,19 +77,34 @@ export class SshConnectionsController {
         if (epoch === this.epoch && !this.closed) {
           if (this.snapshot.authenticated) ++this.authEpoch;
           this.readFailures = 0;
-          this.publish({ available: false, authenticated: false, items: [], legacyServers: [], refreshing: false, error: null });
+          this.publish({ available: false, authenticated: false, items: [], legacyServers: [], refreshing: false, error: null, accessMode: null });
         }
         return;
       }
-      const session: unknown = await response.json();
-      if (!response.ok || !session || typeof session !== "object" || !("available" in session) || session.available !== true || !("authenticated" in session) || typeof session.authenticated !== "boolean") throw new Error("bad-session");
+      if (!response.ok) throw new Error("bad-session");
+      let session = parseSshManagementSessionView(await response.json());
       if (epoch !== this.epoch || this.closed) return;
+      if (!session.authenticated) {
+        if (this.snapshot.authenticated) ++this.authEpoch;
+        this.publish({ ...this.snapshot, available: true, authenticated: false, items: [], legacyServers: [], accessMode: session.accessMode });
+      }
+      let renewed = false;
+      if (!session.authenticated && session.accessMode === "shared") {
+        // This is a server-issued installation session, not an execution or
+        // connection command. Renew it automatically after expiry/restart.
+        const grant = await this.request("session", "POST", {}, abort.signal);
+        if (epoch !== this.epoch || this.closed) return;
+        if (!grant || typeof grant !== "object" || !("authenticated" in grant) || grant.authenticated !== true) throw new Error("bad-session");
+        ++this.authEpoch;
+        renewed = true;
+        session = { ...session, authenticated: true };
+      }
       const [records, legacy] = session.authenticated ? await Promise.all([this.request("connections", "GET", undefined, abort.signal), this.request("legacy-connections", "GET", undefined, abort.signal)]) : [[], []];
       const items = parseSshConnectionViews(records), legacyServers = parseSshCodexServerDescriptors(legacy);
       if (epoch === this.epoch && !this.closed) {
-        if (this.snapshot.authenticated !== session.authenticated) ++this.authEpoch;
+        if (!renewed && this.snapshot.authenticated !== session.authenticated) ++this.authEpoch;
         this.readFailures = 0;
-        this.publish({ available: true, authenticated: session.authenticated, items, legacyServers, refreshing: false, error: null });
+        this.publish({ available: true, authenticated: session.authenticated, items, legacyServers, refreshing: false, error: null, accessMode: session.accessMode });
       }
     } catch {
       if (epoch === this.epoch && !this.closed) {
@@ -105,6 +122,7 @@ export class SshConnectionsController {
     if (authEpoch === this.authEpoch && !this.closed) await this.refresh();
   }
   async lock() {
+    if (this.snapshot.accessMode === "shared") return;
     const authEpoch = ++this.authEpoch; this.invalidateReads(); ++this.authorizationChanges;
     try { await this.request("session", "DELETE"); }
     finally { --this.authorizationChanges; }
@@ -147,7 +165,7 @@ export class SshConnectionsController {
       if (!response.ok) {
         if (response.status === 401 && authEpoch === this.authEpoch) { ++this.authEpoch; this.invalidateReads(); this.publish({ ...this.snapshot, authenticated: false, items: [], legacyServers: [], refreshing: false, error: null }); }
         const code = result && typeof result === "object" && "error" in result && typeof result.error === "string" ? result.error : "unavailable";
-        throw new Error(messages[code] ?? messages.unavailable);
+        throw new Error(code === "locked" && this.snapshot.accessMode === "shared" ? messages.sessionExpired : messages[code] ?? messages.unavailable);
       }
       return result;
     } catch (error) {
