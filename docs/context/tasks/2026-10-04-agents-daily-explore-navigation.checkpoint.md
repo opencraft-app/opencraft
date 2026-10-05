@@ -1,6 +1,6 @@
 ## stage
 
-MR !4969 已合并到 master。2026-10-05 用户追加「查看更多／收起」居中要求；本次从最新 master 单独准备后续 MR。Bot 无关的实验室功能范围仍待确认。
+MR !4969 已合并到 master。2026-10-05 用户追加「查看更多／收起」居中要求；已从最新 master 创建后续 MR !4990。Bot 无关的实验室功能范围仍待确认。
 
 ## verified
 
@@ -36,6 +36,7 @@ MR !4969 已合并到 master。2026-10-05 用户追加「查看更多／收起�
 - 当前 worktree 合并提交 `decb2cd2d` 包含 `origin/master@efc37fe08`；冲突仅在 OpenCraft 生成清单，已由 `sync:mono2-agent-console` 重生成，`check:mono2-agent-console` 通过。
 - 合并后的前端 `pnpm check`、63 项侧栏/分页与 23 项嵌入桥接聚焦测试、CN/global 构建通过。OpenCraft Web/Hermes typecheck、88 项 Hermes 与 30 项连接/导航测试、边界检查、嵌入工作台 release 构建通过。文档验证零错误零告警；构建附带的 `next-env.d.ts` 和字体子集改动已恢复。
 - 本轮会话列表操作行已居中：单独「查看更多」及并列「查看更多／收起」使用同一 flex 居中规则。`pnpm check`、CN/global 构建、OpenCraft 只读同步检查通过；Chrome/Whistle 已读到更新 CSS。当前真实账号只有 15 条会话，未出现分页按钮，视觉位置由布局规则验证。
+- 后续 MR !4990 指向 `master`，从已合并基线仅引入本次居中样式和任务记录；创建时可合并，提交检查随后进入 pending。
 
 ## unverified
 
@@ -60,4 +61,4 @@ MR !4969 已合并到 master。2026-10-05 用户追加「查看更多／收起�
 
 ## next_action
 
-居中样式已从合并后的 master 单独提交并推送；创建后续 MR，核对远端状态及 CI。
+等待 MR !4990 的 CI 完成；若失败，按日志修复。真实账号超过 20 条会话时可补充浏览器视觉验证。
