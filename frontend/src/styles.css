@@ -1596,6 +1596,16 @@ a {
     background: #c5c9d0;
   }
 
+  @media (hover: hover) and (pointer: fine) {
+    .lv-agents-sidebar-middle .lv-agents-chat-group:not(:hover) .lv-agents-session-list {
+      scrollbar-color: transparent transparent;
+    }
+
+    .lv-agents-sidebar-middle .lv-agents-chat-group:not(:hover) .lv-agents-session-list::-webkit-scrollbar-thumb {
+      background: transparent;
+    }
+  }
+
   .lv-agents-session-list:not(:has(> .lv-agents-session-list-actions)):has(> li:nth-child(5)) > li:nth-last-child(-n + 3) .lv-agents-session-menu,
   .lv-agents-session-list:has(> .lv-agents-session-list-actions) > li:nth-last-child(-n + 4) .lv-agents-session-menu {
     top: auto;

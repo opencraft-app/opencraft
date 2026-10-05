@@ -41,6 +41,7 @@ MR !4969 已合并到 master。2026-10-05 用户追加「查看更多／收起�
 - 用户继续要求缩小「查看更多」整行高度；按钮行高由 20px 改为 16px，操作行整体约缩短 4px，左右位置和顶部留白保持不变。`pnpm check`、10 项聚焦测试、`pnpm build:cn` 与 OpenCraft 生成副本只读检查通过。
 - 用户要求分页操作 hover 时文字加粗；在现有 hover 规则内给可用按钮增加 `font-weight: 600`，禁用态保持原样。`pnpm check`、10 项聚焦测试、`pnpm build:cn` 与 OpenCraft 生成副本只读检查通过。
 - 用户要求稍微缩小每行对话之间的间距；桌面会话条目最小高度由 36px 收紧至 32px，垂直内边距由 6px 调至 4px，移动端保持原尺寸。`pnpm check`、10 项聚焦测试、`pnpm build:cn` 与 OpenCraft 生成副本只读检查通过。
+- 用户要求桌面会话滚动条仅在鼠标移入「对话」区域时显示。保留 6px 滚动槽，在支持 hover 且为精细指针的设备上让非 hover 状态的滑块透明；触屏设备不套用隐藏规则。`pnpm check`、10 项聚焦测试、`pnpm build:cn` 与 OpenCraft 生成副本只读检查通过。
 
 ## unverified
 
