@@ -20,6 +20,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from typing import Any, Dict, Optional
 import urllib.parse
 import urllib.request
@@ -191,16 +192,78 @@ def cmd_stop(args: argparse.Namespace) -> None:
     取消指定的构建任务，通常用于停止运行中或排队中的构建
     """
     access_token = get_access_token(args.access_token)
-
+    current = read_build_status(args, access_token)
+    channel = resolve_build_channel(current, getattr(args, "channel", None))
+    if current.get("status") == "CANCELED":
+        print_data({"buildId": args.build_id, "channel": channel,
+                    "status": "CANCELED", "stopRequested": False, "cancellationVerified": True})
+        return
+    if current.get("status") not in {"RUNNING", "QUEUE", "STAGE_SUCCESS", "PAUSE", "PREPARE_ENV"}:
+        raise SystemExit("目标构建已结束或状态未知；未发起停止请求")
     url = f"{BASE_URL}/projects/{args.project_id}/build_stop"
     params = {"buildId": args.build_id, "pipelineId": args.pipeline_id}
 
     full_url = build_url(url, params)
 
     result = make_request(
-        full_url, method="POST", data={}, access_token=access_token
+        full_url, method="POST", data={}, access_token=access_token,
+        headers={"X-DEVOPS-CHANNEL": channel},
     )
-    print_data(result)
+    if result.get("status") not in (0, "0") or result.get("result") is False or result.get("data") is not True:
+        raise SystemExit("CI 未接受停止请求；未确认中止，不自动重试")
+    deadline = time.monotonic() + getattr(args, "wait_seconds", 30)
+    while True:
+        latest = read_build_status(args, access_token)
+        status = latest.get("status")
+        verified = status == "CANCELED"
+        if verified or status in {"SUCCEED", "FAILED", "TERMINATE"} or time.monotonic() >= deadline:
+            print_data({"buildId": args.build_id, "channel": channel, "status": status,
+                        "stopRequested": True, "cancellationVerified": verified})
+            if not verified:
+                raise SystemExit(2)
+            return
+        time.sleep(min(2, max(0, deadline - time.monotonic())))
+
+
+def read_build_status(args: argparse.Namespace, access_token: str) -> Dict[str, Any]:
+    url = build_url(f"{BASE_URL}/projects/{args.project_id}/build_status",
+                    {"pipelineId": args.pipeline_id, "buildId": args.build_id})
+    response = make_request(url, access_token=access_token)
+    data = response.get("data")
+    if response.get("status") not in (0, "0") or response.get("result") is False or not isinstance(data, dict):
+        raise SystemExit("无法读取构建状态；不猜测渠道，不发起或重复停止请求")
+    if data.get("id") != args.build_id or data.get("pipelineId", args.pipeline_id) != args.pipeline_id:
+        raise SystemExit("构建身份不匹配；不发起或重复停止请求")
+    return data
+
+
+def resolve_build_channel(data: Dict[str, Any], explicit: Optional[str] = None) -> str:
+    """Match the authenticated target's routing channel; never default Stream to BS."""
+    supported = {"BS", "GIT", "CREATIVE_STREAM"}
+    webhook = data.get("webhookInfo")
+    variables = data.get("variables")
+    if webhook is None:
+        webhook = {}
+    if variables is None:
+        variables = {}
+    if not isinstance(webhook, dict) or not isinstance(variables, dict):
+        raise SystemExit("构建渠道元数据格式异常；未发起停止请求")
+    observed = [data.get("channelCode"), webhook.get("channelCode"),
+                variables.get("pipeline.start.channel"), variables.get("BK_CI_START_CHANNEL")]
+    channels = set()
+    for value in observed:
+        if value is None or value == "":
+            continue
+        if not isinstance(value, str) or value not in supported:
+            raise SystemExit("构建渠道未知或不受支持；未发起停止请求")
+        channels.add(value)
+    if explicit is not None:
+        if explicit not in supported:
+            raise SystemExit("指定渠道不受支持；未发起停止请求")
+        channels.add(explicit)
+    if len(channels) != 1:
+        raise SystemExit("构建渠道缺失或冲突；先核对实际归属，禁止猜测或切换渠道重试")
+    return channels.pop()
 
 
 def cmd_status(args: argparse.Namespace) -> None:
@@ -568,6 +631,10 @@ def main():
     stop_parser.add_argument(
         "--build-id", required=True, help="构建 ID（b-开头）"
     )
+    stop_parser.add_argument("--channel", choices=["BS", "GIT", "CREATIVE_STREAM"],
+                             help="仅在另有可靠证据确认实际渠道时指定；必须与响应中的渠道一致")
+    stop_parser.add_argument("--wait-seconds", type=int, default=30,
+                             help="停止后的有限状态复查时长，0–60 秒，默认30；不自动重发停止")
 
     # status 子命令
     status_parser = subparsers.add_parser(
@@ -651,6 +718,8 @@ def main():
     )
 
     args = parser.parse_args()
+    if args.command in {"stop", "cancel"} and not 0 <= args.wait_seconds <= 60:
+        parser.error("--wait-seconds must be between 0 and 60")
 
     if args.command == "pipelines":
         cmd_pipelines(args)
