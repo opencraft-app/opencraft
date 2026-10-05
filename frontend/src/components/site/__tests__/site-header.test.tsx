@@ -102,6 +102,20 @@ describe("PublicSiteHeader", () => {
     expect(screen.getByTestId("site-header-actions")).toContainElement(action);
   });
 
+  it("keeps an injected header action available while authentication is unresolved", () => {
+    render(
+      <PublicSiteHeader
+        authSnapshot={{ authReady: false, isAuthenticated: false }}
+        beforeUserMenu={<button type="button">Toggle sidebar</button>}
+        showNav={false}
+        showUnauthenticatedActions={false}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Toggle sidebar" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "avatar menu" })).not.toBeInTheDocument();
+  });
+
   it("uses Home wording for international homepage navigation", () => {
     const { rerender } = render(<PublicSiteHeader locale="zh-SG" />);
 

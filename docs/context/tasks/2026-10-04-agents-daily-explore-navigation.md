@@ -109,6 +109,7 @@ derived: false
 | `docs/context/flows/tapd-gongfeng-delivery.md`、`.agents/skills/gongfeng/SKILL.md` | MR !4969 冲突路由 | 确认合并与远端复核流程 |
 | `frontend/AGENTS.md`、`opencraft/AGENTS.md`、`opencraft/.agents/skills/opencraft-maintenance/SKILL.md` | 最新 master 合并后服务规则 | 执行双站、同步和嵌入门禁 |
 | `docs/context/project/services/frontend.md`、`docs/context/domains/site-environment-routing.md`、`docs/context/domains/identity-access.md`、`docs/context/project/adjacency/frontend-runtime-openspec-i18n.md`、`frontend/AGENTS.md` | 2026-10-05 会话列表跨路由稳定性 | 确认仅改前端呈现，按账号和 Bot 隔离，验证双站 |
+| `docs/context/project/services/frontend.md`、`docs/context/project/adjacency/frontend-runtime-openspec-i18n.md`、`frontend/AGENTS.md` | 2026-10-05 侧栏顶部按钮缺失 | 确认前端渲染边界、相邻测试与双站门禁 |
 
 ## evidence
 
@@ -147,6 +148,7 @@ derived: false
 - 2026-10-05 按截图将「查看更多／收起」操作行改为整体居中，移除末项自动右推和不对称左内边距。`pnpm check`、双站构建、OpenCraft 同步检查与 `git diff --check` 通过；Chrome/Whistle 预览已加载新的 `justify-content: center` 规则，账号现有 15 条会话，没有分页按钮可做真实截图。
 - 2026-10-05 修正 Agents 子页面重挂时会话侧栏先清空再加载的问题：按账号、实例、Profile 和站点缓存最近一次列表；后台加载中的空快照保留现有条目，服务端确认空列表后正常清空。侧栏相关聚焦测试 54/54、`pnpm check`（新增 TypeScript 诊断 0）、国内站和国际站构建、OpenCraft 生成副本只读检查通过。
 - 2026-10-05 修正首次进入时「默认对话」先于加载态闪现：缓存未命中时加载标记从首帧即为 true；账号键尚未确定时侧栏也显示加载态。确认空列表后恢复默认对话入口，缓存命中时保持原列表。相关聚焦测试 43/43、`pnpm check`（新增 TypeScript 诊断 0）、国内和国际站构建、OpenCraft 生成副本只读检查通过。
+- 2026-10-05 侧栏顶部按钮：当前分支与远端 master 的按钮调用、组件和相关 CSS 相同；公共 Header 把 `beforeUserMenu` 放在鉴权完成且已登录的条件中，聚焦测试复现鉴权未完成时按钮从 DOM 消失。改为始终保留注入的按钮，头像与语言入口仍遵守原鉴权条件。16 项聚焦测试、`pnpm check`（新增 TypeScript 诊断 0）、双站构建、OpenCraft 只读同步检查和文档验证通过；5174 国内预览已重启。受浏览器访问策略限制，尚未直接验证用户截图中的实际浏览器状态。
 
 ## risks
 
@@ -183,3 +185,4 @@ derived: false
 - MR !4969 已合并到 master。随后用户要求将「查看更多／收起」居中；从合并后的 master 单独提交该样式调整，后续 MR !4990 已创建。按后续反馈将操作行左移约 8px、顶部内边距从 8px 缩至 2px，再将按钮行高从 20px 缩至 16px；可用按钮 hover 时增加 `font-weight: 600`。桌面会话条目高度 36px→32px、垂直内边距 6px→4px；滚动条保留 6px 槽位，在鼠标离开对话区域时隐藏滑块，触屏设备保持原样。`pnpm check`、10 项聚焦测试、`pnpm build:cn` 与 OpenCraft 生成副本只读检查通过。此前 5174 的 Chrome/Whistle 预览加载了居中规则；最新滚动条交互仍待真实列表目视核对。
 - 最新会话列表跨路由稳定性修复已更新至现有 MR !4990；同 Bot 切页继续显示旧列表，重新加载后更新，Bot/账号切换不复用其他列表。5174 国内站预览已恢复 HTTP 200；登录态切页视觉仍待人工核对。
 - 本轮首次加载态修正沿用 MR !4990；本地验证已通过，远端 SHA 和 CI 状态以交接前的即时核验为准。
+- 顶部按钮修正沿用 MR !4990；提交并推送后复核远端状态。浏览器策略阻止直接读取 5174 页面，若用户环境仍缺失按钮，需用户提供刷新后截图与登录状态以区分其他遮挡原因。

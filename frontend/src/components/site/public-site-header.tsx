@@ -419,14 +419,12 @@ export function PublicSiteHeader({
           )}
 
           {!usesAuthControlsSlot
-            && !authLoading
-            && isAuthenticated
-            && (!isDesktop || showLanguageSwitcher || showDesktopUserMenu || beforeUserMenu)
+            && (beforeUserMenu || (!authLoading && isAuthenticated && (!isDesktop || showLanguageSwitcher || showDesktopUserMenu)))
             && (
             <div className={cn("flex shrink-0 items-center gap-3", isDesktop ? "ml-0" : "ml-auto")}>
-              {showLanguageSwitcher && isDesktop && renderLanguage("dropdown")}
+              {!authLoading && isAuthenticated && showLanguageSwitcher && isDesktop && renderLanguage("dropdown")}
               {beforeUserMenu}
-              {(!isDesktop || showDesktopUserMenu) && (
+              {!authLoading && isAuthenticated && (!isDesktop || showDesktopUserMenu) && (
                 <UserAvatarMenu showLanguageSwitcher={showAccountLanguageSwitcher} />
               )}
             </div>
