@@ -2,7 +2,7 @@
 
 ## Summary
 
-**LightVela is a cloud-hosted agent platform from the Tencent Lighthouse team, and its current product is Hermes Agent — an AI agent built on large language models. LightVela takes care of deployment, operations, and 24/7 uptime in the cloud, so you never write config files or SSH into a server: you set everything up by pointing and clicking in a visual panel, then talk to your agent through the messaging apps you already use. It remembers you across conversations, and you choose the model, tools, and persona. Current plans and introductory offers are listed on the [Subscribe page](/subscribe/).**
+**LightVela is a cloud-hosted agent platform from the Tencent Lighthouse team, and its current product is Hermes Agent — an AI agent built on large language models. LightVela takes care of deployment, operations, and 24/7 uptime in the cloud, so you never write config files or SSH into a server: you set everything up by pointing and clicking in a visual panel, then chat with your Bot directly in Daily → Chat or connect the messaging apps you already use. It remembers you across conversations, and you choose the model, tools, and persona. Current plans and introductory offers are listed on the [Subscribe page](/subscribe/).**
 
 ---
 
@@ -60,23 +60,23 @@ The current LightVela product is **Hermes Agent**, an AI Agent powered by large 
 
 ## How it works
 
-LightVela runs a dedicated Hermes Agent instance for each user in the cloud, then connects it to the messaging platform selected by the user through an adapter layer.
+LightVela runs Hermes Agent in the cloud. You can send messages from Web Chat or connect an external messaging platform when needed.
 
 ```
-User (sends a message in Telegram / WhatsApp / Discord / Slack / WeChat)
+User (sends a message in Web Chat or a connected messaging app)
       ↓
 User-dedicated Hermes Agent instance in the LightVela cloud
       ↓
 Calls the configured large language model (GPT / Claude / Gemin / ...)
       ↓
-Response returns through the original channel
+Response returns to the same conversation entry point
 ```
 
-A complete conversation loop requires three configurations:
+A conversation in Web Chat does not require an external channel:
 
 1. **Model**: The large language model called by Hermes Agent. The Launch plan includes trial credits and can be used directly; you can also configure your own API Key
 
-2. **Channel**: The messaging platform used to chat with Hermes Agent (Telegram / WhatsApp / Discord / Slack / WeChat)
+2. **Chat entry point**: Use Daily → Chat in My Agent to talk to the selected Bot. Configure a channel only when you want to use Telegram, WhatsApp, Discord, WeChat, or another messaging app
 
 3. **Skill** (optional): Additional capabilities for Hermes Agent
 

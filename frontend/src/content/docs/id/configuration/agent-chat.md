@@ -2,42 +2,27 @@
 
 ## Ringkasan
 
-**Halaman Percakapan adalah jendela obrolan bawaan di konsol LightVela yang memungkinkan Anda berbicara langsung dengan Hermes Agent tanpa menghubungkan kanal eksternal — praktis untuk memastikan Agent bekerja tepat setelah model dikonfigurasi. Halaman ini memakai Agent, persona, dan memori jangka panjang yang sama dengan kanal pesan eksternal, sehingga preferensi yang Anda sebutkan di sini juga berlaku di kanal lain, dan sebaliknya.**
+**Setelah masuk dan mengaktifkan paket LightVela, Anda dapat berbicara dengan Bot yang dipilih melalui Daily → Chat di My Agent tanpa menghubungkan kanal pesan terlebih dahulu. Daftar di sidebar menyimpan percakapan Bot tersebut, sehingga Anda dapat memulai percakapan baru atau kembali ke percakapan sebelumnya. Sebelum mengirim pesan, pastikan Bot online dan kredit model paket tersedia atau model sudah dikonfigurasi.**
 
----
+![Percakapan baru di konsol LightVela internasional, dengan sidebar diciutkan](../../images/chat-overview-en.webp)
 
-Buka halaman "Chat" untuk berinteraksi dengan Hermes Agent Anda melalui jendela percakapan.
+## Memulai percakapan
 
-> ℹ️ **Perlu diketahui**
->
-> Panduan antarmuka Chat saat ini masih sebagian besar berbahasa Tiongkok; pelokalan penuh sedang dikerjakan.
+1. Buka My Agent dan pilih Bot yang ingin digunakan di bagian atas sidebar.
+2. Di Daily, buka Chat lalu pilih New conversation. Anda juga dapat memulai percakapan untuk Bot tertentu dari kartunya di halaman Overview.
+3. Tulis pertanyaan atau tugas di kolom “Share your thoughts, or ask me to help with something”, lalu kirim.
+4. Baca balasan di percakapan. Saat pertama kali dimuat, pesan “Your AI companion will be right here” mungkin muncul sebentar; tunggu hingga kolom pesan tampil.
 
-![Halaman Chat di konsol LightVela](../../images/chat-overview-en.webp)
+Chat di web tidak memerlukan kanal pesan. Jika ingin menggunakan Bot yang sama di Telegram, WhatsApp, Discord, atau WeChat, hubungkan platform tersebut melalui Channels.
 
----
+## Melanjutkan atau mengelola percakapan
 
-## Memori percakapan
+Percakapan terbaru untuk Bot yang dipilih muncul di bawah Chat. Pilih judul untuk melanjutkan; gunakan Show more untuk menampilkan percakapan lama. Menu di samping percakapan memungkinkan Anda mengganti nama atau menghapusnya. Setelah berpindah Bot, sidebar menampilkan percakapan Bot yang dipilih.
 
-Hermes Agent dapat berkembang dan menyesuaikan diri sendiri seiring percakapan berlanjut. Pelajari memori Agent Anda lebih lanjut dengan membuka halaman "Memory".
+Hermes menyimpan preferensi dan informasi proyek jangka panjang yang berguna bila sesuai. Lihat [Memory](./memory.md) untuk memeriksa memori jangka panjang Bot yang dipilih; memulai percakapan baru tidak menghapus memori tersebut.
 
-![](../../images/agentchat-2-global-en.webp)
+## Memeriksa hasil dan mengatasi masalah
 
-### Cara kerja memori
-
-Hermes Agent membangun memori jangka panjang secara otomatis melalui dua mekanisme:
-
-- **Kompresi konteks**: menyaring informasi kunci dari percakapan panjang menjadi memori yang bertahan lama.
-
-- **Simpul memori penting**: secara otomatis menangkap preferensi pribadi, kebiasaan penggunaan, dan informasi terkait proyek yang layak dipakai ulang nanti.
-
-### Cara memori disimpan
-
-Memori dipertahankan ke dalam dua jenis dokumen:
-
-- `MEMORY.md`: informasi proyek, lingkungan runtime, dan konvensi kolaborasi
-
-- `USER.md`: preferensi pribadi, kebiasaan penggunaan, dan gaya komunikasi pengguna
-
-Hanya konten yang bernilai jangka panjang yang dipertahankan, sehingga Hermes Agent dapat memberikan balasan yang koheren dan personal pada percakapan berikutnya.
-
----
+- **Hasil yang diharapkan:** Pesan muncul dalam percakapan, Bot membalas, dan percakapan dapat dibuka kembali dari sidebar setelah halaman dimuat ulang.
+- **Pesan pemuatan tetap tampil:** Pastikan Bot online, lalu muat ulang halaman. Tunggu kolom pesan muncul sebelum menyimpulkan Chat tidak tersedia.
+- **Tidak dapat mengirim atau menerima balasan:** Periksa kredit model paket atau [konfigurasi model](./model.md), dan pastikan Bot tidak dijeda. Kanal eksternal tidak diperlukan untuk Chat di web.

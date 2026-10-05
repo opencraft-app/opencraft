@@ -2,7 +2,7 @@
 
 ## Ringkasan
 
-**Konsol Agent menampilkan halaman Channels, Models, Skills, dan Scheduled Tasks secara terpisah di sidebar. Pilih Bot yang benar sebelum mengubah pengaturannya. Hubungkan kanal dari kartunya, pilih model atau gunakan kredit paket, lalu pasang Skill dari Skills.sh atau ClawHub saat dibutuhkan. Soul, Memory, Diagnostics, Advanced Settings, dan Labs ada di bagian lain; Cloud Storage dibuka dari menu pengguna.**
+**Konsol Agent menampilkan halaman Channels, Models, Skills, dan Scheduled Tasks secara terpisah di sidebar. Pilih Bot yang benar sebelum mengubah pengaturannya. Hubungkan kanal dari kartunya, pilih model atau gunakan kredit paket, lalu pasang Skill dari Skills.sh atau ClawHub saat dibutuhkan. Soul, Memory, Diagnostics, Advanced Settings, dan Labs ada di bagian lain; Cloud Storage dibuka dari menu pengguna. Saat Bot online dan kredit model paket tersedia atau model sudah dikonfigurasi, gunakan Daily → Chat tanpa menghubungkan kanal terlebih dahulu.**
 
 ---
 
@@ -26,6 +26,8 @@ Konsol Agent mengatur konfigurasi harian dalam halaman sidebar **Channels**, **M
 
 Setelah masuk, buka [konsol Agent](/agents/overview/) dan pilih Hermes Agent serta Bot yang ingin diatur.
 
+
+Chat web ada di Daily; hubungkan kanal eksternal hanya saat ingin memakai aplikasi pesan.
 ---
 
 ## Bot dan informasi Bot yang dipilih

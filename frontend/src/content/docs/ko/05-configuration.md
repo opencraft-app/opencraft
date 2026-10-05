@@ -2,7 +2,7 @@
 
 ## 요약
 
-**Agent 콘솔 사이드바에는 Channels, Models, Skills, Scheduled Tasks가 각각 별도 페이지로 있습니다. 설정을 바꾸기 전에 대상 Bot을 선택하세요. 채널 카드에서 메시징 앱을 연결하고 모델을 선택하거나 플랜 크레딧을 사용하며, 필요하면 Skills.sh 또는 ClawHub의 스킬을 설치합니다. Soul, Memory, Diagnostics, Advanced Settings, Labs는 다른 섹션에 있고 Cloud Storage는 사용자 메뉴에서 엽니다.**
+**Agent 콘솔 사이드바에는 Channels, Models, Skills, Scheduled Tasks가 각각 별도 페이지로 있습니다. 설정을 바꾸기 전에 대상 Bot을 선택하세요. 채널 카드에서 메시징 앱을 연결하고 모델을 선택하거나 플랜 크레딧을 사용하며, 필요하면 Skills.sh 또는 ClawHub의 스킬을 설치합니다. Soul, Memory, Diagnostics, Advanced Settings, Labs는 다른 섹션에 있고 Cloud Storage는 사용자 메뉴에서 엽니다. Bot이 온라인이고 플랜의 모델 크레딧을 사용할 수 있거나 모델이 설정되어 있다면 채널을 먼저 연결하지 않고 일상 → 채팅에서 메시지를 보낼 수 있습니다.**
 
 ---
 
@@ -26,6 +26,8 @@ Agent 콘솔은 사이드바의 **Channels**, **Models**, **Skills**, **Schedule
 
 로그인한 뒤 [Agent 콘솔](/agents/overview/)을 열고 설정할 Hermes Agent와 Bot을 선택하세요.
 
+
+웹 채팅은 일상 영역에 있습니다. 메시징 앱을 사용할 때만 외부 채널을 연결하세요.
 ---
 
 ## Bot과 선택한 Bot 정보
