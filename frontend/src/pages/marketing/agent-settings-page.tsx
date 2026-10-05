@@ -2789,7 +2789,12 @@ export const AgentSettingsPage = ({
   const [chatSessionsHasMore, setChatSessionsHasMore] = useState(false);
   const [chatSessionMutationState, setChatSessionMutationState] = useState<EmbeddedSessionMutationState | null>(null);
   const [chatSessionCommands, setChatSessionCommands] = useState<EmbeddedSessionCommands | null>(null);
-  const chatSessionPagination = useAgentSessionPagination(chatSessions, chatSessionsHasMore, chatSessionCommands?.loadMoreSessions);
+  const chatSessionPagination = useAgentSessionPagination(
+    chatSessions,
+    chatSessionsHasMore,
+    chatSessionCommands?.loadMoreSessions,
+    isGlobal ? 20 : 5,
+  );
   const chatSurfaceOwnerRef = useRef<"legacy" | "opencraft">("legacy");
   const legacyChatSessionStateRef = useRef<Parameters<
     NonNullable<LightVelaMultiSessionOptions["onSessionStateChange"]>
@@ -6032,13 +6037,13 @@ export const AgentSettingsPage = ({
                                 "lv-agent-profile",
                                 visibleBots.length <= 1 && "cursor-default",
                               )}
-                              aria-label={agentProfileDisplayName}
+                              aria-label={isGlobal ? agentProfileDisplayName : `${agentProfileDisplayName}，${isActiveBotRestarting ? t("重启中...") : getBotStatusLabel(activeBot.status)}`}
                               title={isSidebarCollapsed ? agentProfileDisplayName : undefined}
                               aria-expanded={visibleBots.length > 1 ? isAgentMenuOpen : undefined}
                             >
                               {/* Demo：头像与名称跟随新手引导里设置的资料（几何体头像）；
                                   未设置过时回落到原有的 bot 头像与名称。 */}
-                              <span className="lv-agent-avatar">
+                              <span className={cn("lv-agent-avatar", !isGlobal && "lv-agent-avatar--status")}>
                                 {demoProfileIsCustom ? (
                                   <GeometricAvatar
                                     shapeId={buddyProfileState.profile.shapeId}
@@ -6048,25 +6053,39 @@ export const AgentSettingsPage = ({
                                 ) : (
                                   <img src={avatarUrl} alt="" />
                                 )}
+                                {!isGlobal && (
+                                  <span
+                                    className={cn(
+                                      "lv-agent-avatar-status",
+                                      !isActiveBotRestarting && ["provisioning", "deleting", "draft"].includes(activeBot.status) && "lv-agent-avatar-status--blinking",
+                                    )}
+                                    role="img"
+                                    aria-label={isActiveBotRestarting ? t("重启中...") : getBotStatusLabel(activeBot.status)}
+                                    title={isActiveBotRestarting ? t("重启中...") : getBotStatusLabel(activeBot.status)}
+                                    style={{ background: isActiveBotRestarting ? "#FF9500" : getBotStatusColor(activeBot.status) }}
+                                  />
+                                )}
                               </span>
                               <span className="lv-agent-profile-text">
                                 <span className="lv-agent-profile-name" title={agentProfileDisplayName}>
                                   {truncateBotName(agentProfileDisplayName)}
                                 </span>
-                                <span className="lv-agent-status-row">
-                                  <WorkspaceActionTooltip content={pausedStatusTooltip} side="bottom">
-                                    <span className="lv-agent-status">
-                                      {isActiveBotRestarting ? (
-                                        <Loader2 className="h-3 w-3 animate-spin" />
-                                      ) : (
-                                        <span
-                                          className="inline-block h-1.5 w-1.5 rounded-full"
-                                          style={{ background: getBotStatusColor(activeBot.status) }}
-                                        />
-                                      )}
-                                      {isActiveBotRestarting ? t("重启中...") : getBotStatusLabel(activeBot.status)}
-                                    </span>
-                                  </WorkspaceActionTooltip>
+                                {(isGlobal || isActiveBotRestarting || activeBot.status !== "running" || (passExpiryReminder && passExpiryReminderCopy && activePass)) && <span className="lv-agent-status-row">
+                                  {(isGlobal || isActiveBotRestarting || activeBot.status !== "running") && (
+                                    <WorkspaceActionTooltip content={pausedStatusTooltip} side="bottom">
+                                      <span className="lv-agent-status">
+                                        {isActiveBotRestarting ? (
+                                          <Loader2 className="h-3 w-3 animate-spin" />
+                                        ) : isGlobal ? (
+                                          <span
+                                            className="inline-block h-1.5 w-1.5 rounded-full"
+                                            style={{ background: getBotStatusColor(activeBot.status) }}
+                                          />
+                                        ) : null}
+                                        {isActiveBotRestarting ? t("重启中...") : getBotStatusLabel(activeBot.status)}
+                                      </span>
+                                    </WorkspaceActionTooltip>
+                                  )}
                                   {passExpiryReminder && passExpiryReminderCopy && activePass && (
                                     renewalAvailable ? (
                                       <span className="group relative inline-flex">
@@ -6124,7 +6143,7 @@ export const AgentSettingsPage = ({
                                       </span>
                                     )
                                   )}
-                                </span>
+                                </span>}
                               </span>
                               <div
                                 className="lv-agent-actions"
@@ -6387,7 +6406,7 @@ export const AgentSettingsPage = ({
                               {!isChatTabDisabled && chatSessionsExpanded && !isSidebarCollapsed ? <>
                               <ul className="lv-agents-nav-group-items lv-agents-session-list">
                                 {(chatSessionsLoading || sidebarSessionBotKey === null) && chatSessions.length === 0 ? (
-                                  <li className="lv-agents-session-hint">{t("正在加载会话…")}</li>
+                                  <li className="lv-agents-session-hint">{isGlobal ? t("正在加载会话…") : t("正在加载...")}</li>
                                 ) : chatSessions.length === 0 ? (
                                   /*
                                    * 首次读取尚未完成时由 loading 分支承接；确认空列表后
