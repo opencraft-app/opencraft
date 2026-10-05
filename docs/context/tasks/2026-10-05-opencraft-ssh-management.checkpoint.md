@@ -16,6 +16,7 @@ derived: true
 ---
 
 ## stage
+集成检查：41615e60d合并提交已生成。i18n/边界、所有workspace类型检查、扩展221/221、连接器32/32、AppServer257/257、SSH65pass/1skip及后续项目/Thread/语音均通过；DSH四例因该隔离checkout尚未安装独立runtime依赖失败。已按锁文件prepare:dsh-runtime安装并验证0.1.1-rc.2，继续复跑DSH以及其后剩余gate步骤，不重跑已通过且源码未改变的检查。工蜂MCP只读鉴权探测报告Unknown MCP server（本地未配置），Git既有凭据已证明可推送修复分支；没有API写入。额外两次猜测frame/client单独文件不存在，改读实际src/index.ts，不扩大搜索。
 交付进展：源码提交468da9350已推送fix/opencraft-ssh-native-surface-20261005；原基线完整gate退出0（含Web/Expo Web/iOS构建）。为保留其他dirty并吸收master新改动，在独立worktree集成origin/master=7698f334f。两处冲突保留最新嵌入账号preflight、预览模式enabled与本次SSH能力/目录恢复规则；正在安装该checkout自身依赖并复验。未合入远端master、未替换预览。一次全仓diff输出超出Node缓冲区（ENOBUFS），已停止全仓输出，改限定任务路径与独立worktree。
 最新用户授权提交/推送/master合并后替换当前临时预览。已暂存本任务37文件（SSH目录恢复+native surface），无关dirty/ref/.kube保留；真实staged文档影响与秘密扫描通过。使用已有私有credential helper进行限定mono2 fetch成功，origin/master=7698f334f，当前基线已在master中。完整gate正在跑；须集成最新master、核验实际临时owner/独立候选实包后切换。不得把上一阶段“未授权替换”作为当前边界；生产/GitOps/永久指针仍不在范围。
 实现与验证已完成，未发布/重启：真实已批准 SSH“文档”新源码恢复 live/authoritative=true；实际构建 Workbench 桌面/触屏浅深色 idle/active 两组烟测通过，包括 paginated items、刷新、Queue 偏好下按钮/Control+Enter 仅原生 Steer。SSH65pass/1skip、AppServer全套/Chat471pass、聚焦新增41/41、受影响包及protocol typecheck、边界/i18n/diff/doc通过。正式文档和SSH-09已同步，候选Web `/data/opencraft-ssh-native-surface-eWGxoW/web`。当前80端口仍旧Web/后端hash；只读检查PID已外部变化为2120682（同unit同bundle），原因未调查，不能声称PID不变。本轮源码修改授权不包含预览替换。最新具体边界/证据在Task native_surface_implementation_result。

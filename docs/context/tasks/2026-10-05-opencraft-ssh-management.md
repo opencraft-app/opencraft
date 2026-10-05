@@ -94,6 +94,8 @@ OpenCraft Daemon/AppHost/协议/Workbench runtime、builtin Settings 与固定�
 
 ### 2026-10-05 source-and-preview-delivery authorization
 
+- 集成提交 `41615e60d` 的gate前半段通过：全workspace typecheck、i18n/边界、扩展221、连接器32、AppServer257、SSH65pass/1skip及项目/Thread/语音测试。DSH四例缺独立运行时依赖；按锁文件prepare安装0.1.1-rc.2后复跑该阶段及后续gate，无产品源码绕过。工蜂MCP本地未配置（Unknown MCP server）；仅使用已验证Git授权，不宣称MCP认证通过。两次单文件frame/client猜测不存在，实际为各包src/index.ts。
+
 - 源码提交 `468da9350` 已推送修复分支；原基线完整 `npm run gate` 退出0，包含Web/Expo Web/iOS构建。最新master为 `7698f334f`，在独立checkout合并避免碰无关dirty。冲突只涉及嵌入账号preflight import及资源面板preview enabled；同时保留master行为与SSH能力准入。集成后验证、远端master合并和实际临时预览切换尚未完成。
 - 检索失败：全仓diff name-only经Node默认buffer读取出现ENOBUFS；不重试巨大输出，改限定任务路径与独立worktree。无秘密输出；原工作区其他改动保持原状。
 
