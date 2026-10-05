@@ -119,7 +119,7 @@ describe("AppRouteShell document metadata", () => {
     });
   });
 
-  it("uses My Agent for English and switches the title back to Chinese", async () => {
+  it("uses My AI Companion for English and switches the title back to Chinese", async () => {
     currentLanguage = "en-US";
     const { rerender } = render(
       <AppRouteShell requireAuth={false}>
@@ -128,7 +128,7 @@ describe("AppRouteShell document metadata", () => {
     );
 
     await waitFor(() => {
-      expect(document.title).toBe("My Agent | LightVela");
+      expect(document.title).toBe("My AI Companion | LightVela");
       expect(document.documentElement.lang).toBe("en-US");
     });
 
@@ -144,7 +144,7 @@ describe("AppRouteShell document metadata", () => {
       expect(document.documentElement.lang).toBe("zh-CN");
     });
 
-    document.title = "My Agent | LightVela";
+    document.title = "My AI Companion | LightVela";
 
     await waitFor(() => {
       expect(document.title).toBe("我的智能体伙伴 | LightVela");

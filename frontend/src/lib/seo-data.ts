@@ -119,7 +119,7 @@ const DEFAULT_OG_IMAGE_PATH = "/lightvela-social-preview.png";
 
 const DEFAULT_SEO_TITLE_BY_REGION: Record<SeoRegion, string> = {
   cn: "LightVela｜云端专属个人 Agent",
-  global: "LightVela | Your Personal Cloud AI Agent",
+  global: "My AI Companion | LightVela",
 };
 
 const SEO_TITLE_SUFFIX_BY_REGION: Record<SeoRegion, string> = {
@@ -485,7 +485,7 @@ const AGENT_SECTION_TITLES_BY_REGION: Record<SeoRegion, Record<string, string>> 
 
 const AGENTS_HOME_TITLE_BY_REGION: Record<SeoRegion, string> = {
   cn: "我的智能体伙伴",
-  global: "My Agent",
+  global: "My AI Companion",
 };
 
 const APP_PAGE_TITLES_BY_REGION: Record<
@@ -763,9 +763,11 @@ export function getSeoMeta(pathname: string, region?: SeoRegion): SeoMeta {
   const pageDescription = PAGE_DESCRIPTIONS_BY_REGION[lookupRegion][bare];
 
   return {
-    title: pageTitle
-      ? `${pageTitle} | ${SEO_TITLE_SUFFIX_BY_REGION[lookupRegion]}`
-      : DEFAULT_SEO_TITLE_BY_REGION[lookupRegion],
+    title: lookupRegion === "global" && bare === "/agents"
+      ? "My AI Companion | LightVela"
+      : pageTitle
+        ? `${pageTitle} | ${SEO_TITLE_SUFFIX_BY_REGION[lookupRegion]}`
+        : DEFAULT_SEO_TITLE_BY_REGION[lookupRegion],
     description: pageDescription ?? SEO_DESCRIPTION_BY_REGION[lookupRegion],
     /* keywords 始终用 region 自身（与原行为一致）：国际站 keywords 是英文站
        SEO 关键词，不随 URL 前缀切换——/zh/ 也想被英文关键词命中。 */

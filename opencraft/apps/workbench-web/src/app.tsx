@@ -1339,9 +1339,13 @@ export function App({
         : null;
   const documentTitle = formatDocumentTitle(settingsOpen ? null : pageTitle);
   useEffect(() => {
+    if (embedded !== undefined) return;
     document.title = documentTitle;
-  }, [documentTitle]);
-  useEffect(() => () => { document.title = "OpenCraft"; }, []);
+  }, [documentTitle, embedded]);
+  useEffect(() => {
+    if (embedded !== undefined) return;
+    return () => { document.title = "OpenCraft"; };
+  }, [embedded]);
   const header = (
     <AppShellHeader
       showProjectIcon={embedded === undefined}

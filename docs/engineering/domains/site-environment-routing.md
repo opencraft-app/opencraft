@@ -78,6 +78,10 @@ Pass 升配微信桥通过精确的 `POST /v1/passes/{pass_id}/modify/order-url`
 - 双站 `announcements/public-beta` 以及国际站 `use-cases/telegram-whatsapp-safety-boundaries`、`use-cases/lifelike-im-agent-rhythm-social-memory`、`use-cases/im-agent-skill-scenarios`、`use-cases/whatsapp-24-7-customer-service` 暂时下线但保留源稿。下线需同时移除 sidebar、slug 映射与 Fumadocs 注册，并重新生成 route manifest、搜索与公开索引；旧 URL 返回 404，不跨语言回退，公开正文不得继续链接到这些页面。恢复时重新评审源稿并成套恢复注册和链接。
 - 首页静态 fragment 的链接、图片版本参数、合规信息和客户端演示外壳属于站点路由责任面；修改后必须同步更新正式设计文档，并用静态链接检查、前端测试和本地/预览环境证明没有跨站点串链。
 
+## 国际站浏览器标题
+
+国际站英文首页 `/` 与智能体入口 `/agents/`（含其产品路由）统一显示 `My AI Companion | LightVela`。内嵌 OpenCraft 只呈现对话内容，不写入宿主页面的 `document.title`；独立 OpenCraft Web/Electron 仍由自身 Shell 管理标题。国内站与其他语言沿用各自的本地化标题。
+
 ## 订阅页交互边界
 
 - 国内站与国际站复用套餐卡的可购买状态。已有权益或 Agent 导致新购 CTA 锁定时，按钮保持禁用，并通过可悬停、可键盘聚焦的 Tooltip 解释已有套餐状态；后端确认的升级目标保持可用，售罄、即将上线、询价中和暂无报价继续由按钮自身文案说明，不叠加冲突提示。

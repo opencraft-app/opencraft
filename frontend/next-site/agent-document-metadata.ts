@@ -7,7 +7,7 @@ import {
 import { DEFAULT_PUBLIC_SITE_LOCALE } from './public-locale';
 
 const AGENT_DOCUMENT_TITLE_BY_LOCALE: Record<I18nDictKey, string> = {
-  'en-US': 'My Agent',
+  'en-US': 'My AI Companion',
   'zh-CN': '我的智能体伙伴',
   'zh-Hant': '我的智能體夥伴',
   'id-ID': 'Agent Saya',

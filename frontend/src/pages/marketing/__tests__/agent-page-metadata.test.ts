@@ -22,8 +22,8 @@ async function loadAgentMetadata(isGlobal: boolean) {
 describe("Agent page metadata", () => {
   it("uses English titles in the international build", async () => {
     await expect(loadAgentMetadata(true)).resolves.toEqual({
-      homeTitle: "My Agent",
-      sectionTitle: "My Agent",
+      homeTitle: "My AI Companion",
+      sectionTitle: "My AI Companion",
     });
   });
 
