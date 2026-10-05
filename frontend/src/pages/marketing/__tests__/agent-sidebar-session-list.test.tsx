@@ -11,6 +11,21 @@ const state = (chatId: string | null, loading = false) => ({
 });
 
 describe("Agents sidebar session list", () => {
+  it("shows loading immediately for a Bot without a confirmed list", () => {
+    const view = renderHook(() => useAgentSidebarSessionList("account-fresh:bot-fresh"));
+    expect(view.result.current.sessions).toEqual([]);
+    expect(view.result.current.loading).toBe(true);
+
+    act(() => view.result.current.onSessionStateChange(state(null, true)));
+    expect(view.result.current.loading).toBe(true);
+    act(() => view.result.current.onSessionStateChange(state(null)));
+    expect(view.result.current.loading).toBe(false);
+
+    view.unmount();
+    const remounted = renderHook(() => useAgentSidebarSessionList("account-fresh:bot-fresh"));
+    expect(remounted.result.current.loading).toBe(false);
+  });
+
   it("keeps the same Bot's list across page remounts and during a background reload", () => {
     const first = renderHook(() => useAgentSidebarSessionList("account-a:bot-a"));
     act(() => first.result.current.onSessionStateChange(state("chat-a")));
@@ -33,6 +48,7 @@ describe("Agents sidebar session list", () => {
     act(() => view.result.current.onSessionStateChange(state("chat-a")));
     view.rerender({ botKey: "account-b:bot-b" });
     expect(view.result.current.sessions).toEqual([]);
+    expect(view.result.current.loading).toBe(true);
     act(() => view.result.current.onSessionStateChange(state("chat-b")));
 
     view.rerender({ botKey: "account-b:bot-a" });

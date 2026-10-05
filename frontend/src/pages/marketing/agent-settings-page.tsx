@@ -6377,19 +6377,13 @@ export const AgentSettingsPage = ({
                               )}
                               {!isChatTabDisabled && chatSessionsExpanded && !isSidebarCollapsed ? <>
                               <ul className="lv-agents-nav-group-items lv-agents-session-list">
-                                {chatSessionsLoading && chatSessions.length === 0 ? (
+                                {(chatSessionsLoading || sidebarSessionBotKey === null) && chatSessions.length === 0 ? (
                                   <li className="lv-agents-session-hint">{t("正在加载会话…")}</li>
                                 ) : chatSessions.length === 0 ? (
                                   /*
-                                   * 列表为空是正常状态，不做异常处理，只给默认对话入口。
-                                   * 成因有三，对用户而言表现一致（都只有一个会话可进）：
-                                   *   - 桥接还没建立：sidebarTab 与 activeSection 是独立状态，
-                                   *     且 AgentChatPanel 需 activeSection === "chat" 且
-                                   *     launchToken ready 才挂载，切换过程中会短暂走到这里；
-                                   *   - 实例不支持会话协议（SDK 5s 超时，见对接注意事项 6），
-                                   *     即单会话形态，老实例/特定镜像版本的合法状态；
-                                   *   - 确实还没有任何会话。
-                                   * 三者都不该阻断用户进聊天页——消息收发不依赖会话协议。
+                                   * 首次读取尚未完成时由 loading 分支承接；确认空列表后
+                                   * 才显示默认对话入口。实例不支持会话协议（SDK 5s 超时）
+                                   * 也可合法回落到单会话形态，不阻断进入聊天页。
                                    * 要区分需看 WebSocket 有无 chat:response，不是 UI 的职责。
                                    */
                                   <li>

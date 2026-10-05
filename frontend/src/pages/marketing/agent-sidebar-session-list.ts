@@ -9,11 +9,13 @@ export function useAgentSidebarSessionList(botKey: string | null) {
   const [current, setCurrent] = useState(() => ({
     botKey,
     sessions: botKey ? sessionsByBot.get(botKey) ?? [] : [],
-    loading: false,
+    loading: botKey !== null && !sessionsByBot.has(botKey),
   }));
   const cachedSessions = botKey ? sessionsByBot.get(botKey) ?? [] : [];
   const sessions = current.botKey === botKey ? current.sessions : cachedSessions;
-  const loading = current.botKey === botKey && current.loading;
+  const loading = current.botKey === botKey
+    ? current.loading
+    : botKey !== null && !sessionsByBot.has(botKey);
 
   const onSessionStateChange = useCallback((state: LightVelaSessionState) => {
     const previousSessions = botKey ? sessionsByBot.get(botKey) ?? [] : [];
