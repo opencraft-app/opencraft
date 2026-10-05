@@ -22,6 +22,9 @@ test("one registry owns Web and Native typography role identities", () => {
     fontWeight: "400",
   });
   assert.equal(typographyRegistry.families.ui.web.startsWith("ui-sans-serif, system-ui"), true);
+  assert.deepEqual(typographyRole("panelEmptyTitle", "web"), {
+    family: "ui", fontSize: 18, lineHeight: 24, fontWeight: "500",
+  });
 });
 
 test("generated Web typography is checked in and feature styles consume semantic roles", () => {

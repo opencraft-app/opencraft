@@ -43,6 +43,18 @@ OpenCraft iOS 入口由原生登录与底栏承载所选区域的 LightVela 网�
 
 ## 稳定不变量
 
+- 本机桌面观看的自动恢复只有在 adapter 声明可安全重复获取短期观看授权、且 wire/media 将已建立流的异常中断分类为可恢复时启用。观看 controller 先撤销旧输入/流/attachment，再按有限退避重新授权；不复用一次性票据、不自动接管控制权、不重建执行引擎。Vela 资源准备的未知 POST 结果不能由恢复流程重放。详见 [有限观看恢复](../../../opencraft/docs/cloud-desktop-plugin.md#bounded-viewing-recovery)。
+- 云桌面面板的连接/失败反馈只是观看 controller 的投影，不重建媒体宿主、不创建第二个输入 owner。通用插件拥有短用户文案和领域操作，设计系统拥有空态尺度/主题，Shell 拥有标签与最大化；控制请求可取消，只有有效后端 grant 才确认控制。视觉验收必须消费实际生成的主题属性与当前构建 CSS，不能把透明空态或零面积角色当通过。见 [面板呈现](../../../opencraft/docs/cloud-desktop-plugin.md#panel-presentation)。
+
+- OpenCraft 的本机桌面路径不依赖 Vela/TAT：执行 Host 从 native Codex Thread 元数据和后端机器/主体注册构造观看授权，客户端 Scope/Host 别名只用于定位请求，不能提交任意实例/端点。一次性 attachment 按逻辑 Client 代次撤权，物理桌面只读策略由原生进程执行；观看关闭不停止 Agent。显式 `--local-desktop` 只允许 exact-Origin 回环入口，公开/DevCloud 多租户组合仍需独立可信鉴权和目录，不能据此声称 TAT 已验收。详见 [本机 Host 授权](../../../opencraft/docs/cloud-desktop-plugin.md#local-execution-server-authority)。
+
+- 云桌面后端观看底座使用独立回环、原生只读 x11vnc 入口及后端专用 TAT 物理 socket；原四 unit 的启动保持不变。固定观看端口/本地原生测试不等于用户授权、可信桌面 incarnation 或云上验收。CTL 安装文件与 Sandbox provider 字节通道尚未接入公开 broker；生产 attachment 必须核验绑定、到期与撤权，页面不得获得任意 TCP TAT 凭据。详见 [桌面资源契约](../../../ctl/docs/cloud-desktop-resource.md)。
+- 云桌面插件与 Vela 插件单向依赖：cloud-desktop 拥有通用 contract、面板和 noVNC 媒体；lightvela-platform/desktop 拥有账户/目录绑定校验、一次 POST 准备及 GET 观察、后端观看 attachment 交接，不读取 activeBotId 猜测会话目标，也不消费 Chat 物理隧道。换机/权限代次变更直接回收旧观看连接，即使稳定 target ID 不变。默认缺少真实 viewer port 与目录组合，生产后端观看授权/输入门禁未实现，能力入口仍隐藏；本地浏览器 framebuffer/input 回归不替代云上安全验收。
+
+- 云桌面传输不从“未开放 UDP”直接推导不可用，也不把 TURN/TLS 当 HTTP/WSS 隧道。当前 ingressproxy 是 HTTP/WebSocket 代理；TAT session 另有 TCP 字节流代理，可复用为 WSS 适配边界，不能直接注入浏览器 ICE。初期采用 WSS 候选，但真实媒体、授权 attachment 和服务端输入门禁尚未接通。桌面应独立拥有物理连接，避免共享 Chat 隧道的媒体排队；逻辑通道隔离关闭不等于隔离吞吐。客户端 `viewOnly` 不代替后端输入仲裁。见 [传输评估](../../../opencraft/docs/cloud-desktop-plugin.md#transport-assessment-2026-10-04)。
+
+- OpenCraft 云桌面框架以 Conversation 为标签作用域，后端按 Server、账户主体、环境和实例代次解析资源并授权；legacy Host 路由不拥有资源身份。可信插件自行注册入口，未接通真实适配器时不宣称可用；视图关闭仅释放观看/控制租约，不停止桌面或 Agent。独占输入由后端仲裁，客户端等待授权后才绑定输入；迟到结果和权限变更按连接代次失效。CTL 源码已增加显式桌面资源准备与只读查询：后台任务不依赖 HTTP 请求和 GET 推进，缓存核验用户/Sandbox 绑定，换机和重试替换状态对象；响应不包含 VNC 密码。编排 generation 不等于媒体 incarnation，当前进程内锁不保证跨副本唯一执行。媒体、Conversation 授权适配与真实输入仲裁仍未接通，入口继续隐藏。新路径尚未加入五个环境的精确 Gateway path_allow；JP/KR 测试环境仍是实例前缀路由，部署新版 CTL 前需另核对。见 [云桌面插件契约](../../../opencraft/docs/cloud-desktop-plugin.md)和 [CTL 准备契约](../../../ctl/docs/cloud-desktop-resource.md)。
+
 - NewAPI 在选渠道失败时区分配置缺失与运行时不可用：当前授权分组（`auto` 为其可用分组集合）没有该模型的任何 `ability`，返回 HTTP 404 与 `model_not_found`；已配置但禁用的渠道、路径筛选后无候选、选渠道出错或配置查询失败继续返回 HTTP 503 与 `get_channel_failed`。正常选渠道路径不增加数据库查询。404 文案同时保留 `model_not_found` 标识，以兼容只保留异常 message 的 Hermes provider wrapper。
 
 - OpenCraft macOS 分发由下游 GitHub 镜像的 `macos-release` Environment 承载，但不取得源码权威。arm64 与 x64 必须在对应原生 Runner 组装，最终 job 才可读取 Developer ID 与 Apple 公证凭据；Universal 合并后依次完成签名、公证、staple、DMG/ZIP 封包和完整性验证。手工主分支运行只生成 Actions artifact，只有 `v*` tag 创建 GitHub Release；源码进入 mono2、镜像导出和公开制品发布仍是三个独立状态。镜像依赖的 mono2-parent shared package 使用带哈希清单的机械 workspace 快照，`shared/` 保持唯一真源，禁止用 Vite external 掩盖缺包。详细运行契约见 [OpenCraft Build Matrix](../../../opencraft/docs/build-matrix.md)。
@@ -317,8 +329,13 @@ OpenCraft iOS 入口由原生登录与底栏承载所选区域的 LightVela 网�
 
 ## 云桌面（CTL Desktop）provision 语义
 
+- 桌面观看就绪必须来自实际媒体绘制，不是握手、资源 prepared 或 socket open。通用插件持有分阶段有界等待与安全原因分类，用户界面只呈现简短任务文案；输入焦点与剪贴板传输受同一有效控制授权约束，取消/撤销/重连隔离迟到读取。解码器固定版本公共事件补丁须在安装时核验摘要与完整替换，不能用任意延时或读取私有字段掩盖首帧问题。详情与真实/合成验收边界见 [桌面契约](../../../opencraft/docs/cloud-desktop-plugin.md#focus-clipboard-and-diagnostics)；当前本机仍为后端不可变只读，未增加原生控制执行器或公网授权。
+
+- OpenCraft 桌面观看与远端资源分开：Sandbox 的授权 [viewer broker](../../../sandbox/docs/desktop-viewer-broker.md) 使用一次性、主体与物理绑定固定的短凭证和独立 WSS；通用桌面插件拥有媒体/确认式控制协议，Vela 插件拥有账号与产品绑定。Provider 的 verified observer 经独立回环代理校验实际 Xvfb/x11vnc、socket 归属与每连接 root-key 挑战，不提供控制；新 resource 准备才启动它，旧四 unit provision 不变。Handler 尚未挂载公共路由，生产会话权威目录与原生控制执行器仍未接入；CTL 只有用户/实例/Sandbox DAO，不能把客户端 Server 投影、模拟 grant、CTL prepared 或前端 viewOnly 当成会话/输入授权。
+
 - 桌面 provision/probe/install 脚本与上层判定之间以 stdout marker 传递状态（`DESKTOP_LAYER_MISSING`、`DESKTOP_PROBE_OK`/`DESKTOP_PROBE_PENDING`、`DESKTOP_PROVISION_FAILED`、install STARTED/进度/DONE/FAIL）。provision 脚本不得使用 errexit 选项：PTY 流式执行下检测行里 `systemctl` 等非零返回会污染会话最终退出码，导致上层误判命令失败、永远走不到按需安装分支（现网 bj-7 复现）。上层判定顺序必须是 marker 优先于 `sandboxCommandSucceeded`：stdout 含 `DESKTOP_LAYER_MISSING` 时无论退出码一律触发按需安装；只有图形层缺失（Missing）和探测未就绪（Pending）是正常业务信号可返回成功——密码写入、服务启动等关键步骤失败必须输出 `DESKTOP_PROVISION_FAILED <reason>` 并 exit 非零，不得用 `|| true` 吞掉，否则会被当成 Pending 反复轮询、永久卡 Provisioning 且无可见原因（旧 noVNC 甚至可能误报 Ready）。
-- 桌面 systemd units（`vela-xvfb`/`vela-desktop-wm`/`vela-x11vnc`/`vela-novnc`）以 agent 运行用户（`agentuser`）运行：镜像预装（`images/build.sh --with-desktop`）与按需 apt 安装（`renderDesktopInstallCommand` 生成的脚本）两套 unit 必须保持一致——`User=agentuser`、显式注入 `HOME` 与 `DISPLAY=:1`、WM 用 `dbus-run-session` 包裹 `startxfce4`、`Requires/After` 补齐依赖链、`Restart=on-failure`。`images/build.sh --with-desktop` 在 `install_desktop_layer` 入口强制校验 `RUNTIME_USER` 必须与 CTL 契约（`desktopRuntimeUser=agentuser`）一致，不一致直接失败；这防止 openclaw 默认 `lightclaw` 用户跑 `--with-desktop` 生成错配镜像（unit 属 lightclaw 而 CTL 往 agentuser home 写密码，导致 x11vnc 读不到密码、桌面起不来且无报错）。不允许回退为 root 会话：root 会话会造成"桌面里创建的文件属主 root、agent 读不了"的错配，并放大公网 noVNC 暴露 root 的风险。
+- 桌面 systemd units（`vela-xvfb`/`vela-desktop-wm`/`vela-x11vnc`/`vela-novnc`）以 agent 运行用户（`agentuser`）运行：镜像预装（`images/build.sh --with-desktop`）与按需安装（`renderDesktopInstallCommand` 生成的脚本）两套 unit 必须保持一致——`User=agentuser`、显式注入 `HOME` 与 `DISPLAY=:1`、WM 用 `dbus-run-session` 包裹 `startxfce4`、`Requires/After` 补齐依赖链、`Restart=on-failure`。`images/build.sh --with-desktop` 在 `install_desktop_layer` 入口强制校验 `RUNTIME_USER` 必须与 CTL 契约（`desktopRuntimeUser=agentuser`）一致，不一致直接失败；这防止 openclaw 默认 `lightclaw` 用户跑 `--with-desktop` 生成错配镜像（unit 属 lightclaw 而 CTL 往 agentuser home 写密码，导致 x11vnc 读不到密码、桌面起不来且无报错）。不允许回退为 root 会话：root 会话会造成"桌面里创建的文件属主 root、agent 读不了"的错配，并放大公网 noVNC 暴露 root 的风险。
+- 按需安装只将包选择交给发行版分支：Ubuntu/Debian 保留 apt；`ID=tencentos` 且 `VERSION_ID=4.4` 使用 dnf 和目标配置的 BaseOS/AppStream/EPOL 原生包，不从 `ID_LIKE` 推断兼容性、不安装第三方仓库、不关闭 SELinux/防火墙。安装前验证非交互 sudo、运行中的 systemd、既有非 root agentuser 与 `/home/agentuser`；安装后核验 unit 使用的二进制和 noVNC 静态资源。包安装、unit 写入、daemon-reload 任一步失败均写 FAIL、不得写 DONE。镜像构建仍为 Ubuntu 专用；包查询和模拟测试不替代真机安装/连接验收。依赖和验收见 [云桌面验证文档](../../../ctl/docs/cloud-desktop-vnc-verification.md#腾讯-os-44-按需安装前提)。
 - 品牌壁纸采用"随镜像打包"方式预置：壁纸文件由 `images/build.sh` 打进镜像，不在 provision/install 脚本中网络下发；脚本只负责激活桌面环境。
 
 ## 定时任务执行模式

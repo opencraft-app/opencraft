@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { access, chmod, mkdir, stat } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -12,6 +13,8 @@ import { CodexEngineAdapter } from "../apps/opencraft-daemon/src/codex-engine-ad
 import { startLocalAgentHost } from "../apps/local-agent-host/src/main.ts";
 import { createWorkbenchWebServer } from "./serve-workbench-web.mjs";
 import { assertHeadlessWebRelease } from "./headless-web-release.mjs";
+import { LocalDesktopService } from "../apps/local-agent-host/src/desktop/local-desktop-service.ts";
+import { createNativeObserver, localDesktopMachineIdentity } from "../apps/local-agent-host/src/desktop/native-observer.ts";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -27,6 +30,7 @@ export function parseHeadlessArguments(argv, env = process.env, getHomeDirectory
   let port = 10000;
   let host = "127.0.0.1";
   let allowUnauthenticatedPublic = false;
+  let localDesktop = false;
   let dataDirectory = env.OPENCRAFT_SERVER_DATA_DIR;
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
@@ -38,6 +42,8 @@ export function parseHeadlessArguments(argv, env = process.env, getHomeDirectory
       if (host !== "127.0.0.1" && host !== "0.0.0.0") throw new Error("--host must be 127.0.0.1 or 0.0.0.0");
     } else if (argument === "--allow-unauthenticated-public") {
       allowUnauthenticatedPublic = true;
+    } else if (argument === "--local-desktop") {
+      localDesktop = true;
     } else if (argument === "--data-dir") {
       const value = argv[++index];
       if (!value || value.startsWith("--")) throw new Error("--data-dir requires a path");
@@ -56,7 +62,9 @@ export function parseHeadlessArguments(argv, env = process.env, getHomeDirectory
   if (host !== "0.0.0.0" && allowUnauthenticatedPublic) {
     throw new Error("--allow-unauthenticated-public requires --host 0.0.0.0");
   }
-  return { help: false, host, port, dataDirectory: resolve(dataDirectory), allowUnauthenticatedPublic };
+  if (localDesktop && host !== "127.0.0.1") throw new Error("Local desktop requires a loopback-only listener");
+  return { help: false, host, port, dataDirectory: resolve(dataDirectory), allowUnauthenticatedPublic,
+    ...(localDesktop ? { localDesktop: true } : {}) };
 }
 
 async function secureDataDirectory(path) {
@@ -79,6 +87,7 @@ export async function startHeadlessServer(options = {}) {
   if (host === "0.0.0.0" && options.allowUnauthenticatedPublic !== true) {
     throw new Error("Public headless listener requires explicit unauthenticated-public acknowledgement");
   }
+  if (options.localDesktop && host !== "127.0.0.1") throw new Error("Local desktop requires a loopback-only listener");
   await access(join(webRoot, "index.html"));
   await assertHeadlessWebRelease(webRoot);
   await secureDataDirectory(dataDirectory);
@@ -86,10 +95,12 @@ export async function startHeadlessServer(options = {}) {
   let agent;
   let web;
   let appHostServer;
+  let desktop;
   let closing = null;
   const close = () => {
     if (closing !== null) return closing;
     closing = (async () => {
+      desktop?.close(); // Retire viewers before the execution provider; never stop the desktop.
       const results = await Promise.allSettled([web?.close(), appHostServer?.close(), agent?.close()]);
       await releaseLock();
       const failures = results.filter((result) => result.status === "rejected").map((result) => result.reason);
@@ -98,6 +109,14 @@ export async function startHeadlessServer(options = {}) {
     return closing;
   };
   try {
+    if (options.localDesktop === true) {
+      const observer = createNativeObserver();
+      await observer.inspect(AbortSignal.timeout(5_000));
+      const environmentId = await localDesktopMachineIdentity();
+      const principalId = `local-owner:${process.getuid()}`;
+      const serverId = `local-codex:${createHash("sha256").update(JSON.stringify([dataDirectory, principalId])).digest("hex")}`;
+      desktop = new LocalDesktopService({ serverId, environmentId, principalId, observer });
+    }
     const startAgent = options.startAgentHost ?? startLocalAgentHost;
     agent = await startAgent({
       dshExecutable: join(root, "runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js"),
@@ -119,6 +138,7 @@ export async function startHeadlessServer(options = {}) {
           runtimeDirectory: join(root, "runtime"),
           dataDirectory: join(dataDirectory, "codex"),
           nativeCodexHomeDirectory: join(dataDirectory, "native-codex"),
+          desktop,
         });
       },
     });
@@ -128,6 +148,7 @@ export async function startHeadlessServer(options = {}) {
       appServerTarget: agent.websocketUrl,
       loopbackOnly: host === "127.0.0.1",
       appHostServer,
+      desktopService: desktop ?? null,
     });
     const address = await web.listen({ host, port });
     return { url: `http://127.0.0.1:${address.port}`, listenHost: host, listenPort: address.port, close };
@@ -143,7 +164,7 @@ if (isMain) {
   void (async () => {
     const args = parseHeadlessArguments(process.argv.slice(2));
     if (args.help) {
-      process.stdout.write("Usage: opencraft-server [--host 127.0.0.1|0.0.0.0] [--port 10000] [--data-dir PATH] [--allow-unauthenticated-public]\nDefault: loopback only. Public mode has no TLS or access control.\n");
+      process.stdout.write("Usage: opencraft-server [--host 127.0.0.1|0.0.0.0] [--port 10000] [--data-dir PATH] [--allow-unauthenticated-public] [--local-desktop]\nDefault: loopback only. Public mode has no TLS or access control. Local desktop requires loopback and an installed verified observer.\n");
       return;
     }
     const server = await startHeadlessServer(args);

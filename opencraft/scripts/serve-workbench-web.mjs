@@ -265,9 +265,11 @@ export async function createWorkbenchWebServer({
   hyperNodeUser = "",
   loopbackOnly = false,
   appHostServer = null,
+  desktopService = null,
   webSocketHeartbeatIntervalMs = 15_000,
   onAppHostDiagnostic = diagnostic => console.info("[opencraft apphost connection]", JSON.stringify(diagnostic)),
 } = {}) {
+  if (desktopService !== null && !loopbackOnly) throw new Error("Local desktop requires a loopback-only gateway");
   const staticRoot = await realpath(resolve(root || join(repositoryRoot, "apps/workbench-web/dist")));
   const normalizedTarget = appServerTarget === null ? null : normalizeTarget(appServerTarget);
   const runtimeReports = [];
@@ -318,6 +320,10 @@ export async function createWorkbenchWebServer({
           failure: report.failure, phase: report.phase, readyState: report.readyState,
           ageMs: report.ageMs, ...(report.closeCode === undefined ? {} : { closeCode: report.closeCode }) });
         sendJson(response, 202, { ok: true });
+        return;
+      }
+      if (url.pathname === "/desktop/connect") {
+        sendJson(response, desktopService === null ? 404 : 426, { ok: false, error: "Desktop connection unavailable" });
         return;
       }
       if (url.pathname === "/appserver") {
@@ -373,6 +379,7 @@ export async function createWorkbenchWebServer({
   });
 
   const websocketServer = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024 * 1024 });
+  const desktopWebSockets = new WebSocketServer({ noServer: true, maxPayload: 1 << 20 });
   const activeAppHostSockets = new Set();
   const liveWebSockets = new WeakSet();
   const appHostSocketDiagnostics = new WeakMap();
@@ -382,7 +389,7 @@ export async function createWorkbenchWebServer({
     if (logDiagnostic) appHostSocketDiagnostics.set(client, logDiagnostic);
   };
   const heartbeat = webSocketHeartbeatIntervalMs > 0 ? setInterval(() => {
-    for (const client of websocketServer.clients) {
+    for (const client of [...websocketServer.clients, ...desktopWebSockets.clients]) {
       if (!liveWebSockets.has(client)) {
         appHostSocketDiagnostics.get(client)?.("heartbeat-timeout");
         client.terminate();
@@ -414,6 +421,14 @@ export async function createWorkbenchWebServer({
       logAppHost("upgrade-rejected", { reason: "origin", code: 403 });
       socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
       socket.destroy();
+      return;
+    }
+    if (pathname === "/desktop/connect") {
+      if (desktopService === null || url.search || !loopbackOnly) { socket.destroy(); return; }
+      desktopWebSockets.handleUpgrade(request, socket, head, client => {
+        trackWebSocket(client);
+        desktopService.accept(client);
+      });
       return;
     }
     if (pathname === "/apphost" && appHostServer !== null) {
@@ -452,6 +467,7 @@ export async function createWorkbenchWebServer({
     staticRoot,
     appServerTarget: normalizedTarget,
     listen({ host = "0.0.0.0", port = 10000 } = {}) {
+      if (desktopService !== null && host !== "127.0.0.1") return Promise.reject(new Error("Local desktop requires loopback"));
       return new Promise((resolvePromise, reject) => {
         server.once("error", reject);
         server.listen(port, host, () => {
@@ -463,7 +479,9 @@ export async function createWorkbenchWebServer({
     close() {
       if (heartbeat !== null) clearInterval(heartbeat);
       for (const client of websocketServer.clients) client.terminate();
+      for (const client of desktopWebSockets.clients) client.terminate();
       websocketServer.close();
+      desktopWebSockets.close();
       return new Promise((resolvePromise, reject) => {
         server.close((error) => error ? reject(error) : resolvePromise());
       });

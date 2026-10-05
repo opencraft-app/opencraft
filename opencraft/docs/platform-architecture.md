@@ -87,6 +87,45 @@ contract or Sidebar presentation again.
 
 ## Package ownership
 
+### Conversation desktop plugin
+
+The trusted `plugins/cloud-desktop` panel registers its own renderer and entry.
+The application may inject an authorized backend/media adapter pair; absence
+means no advertised desktop capability. Conversation owns tab identity, the
+mounted presentation owns its transient viewing connection, and the backend
+owns the remote desktop incarnation and exclusive input authorization. Closing
+the viewer cannot stop the desktop or Agent. See the [desktop plugin contract](cloud-desktop-plugin.md)
+for framework invariants and the remaining production integration boundaries.
+
+The neutral desktop plugin now owns the lazy noVNC media adapter; Vela's
+`lightvela-platform/desktop` provider owns account/directory validation, CTL
+preparation and attachment handoff through narrow ports. Dependencies point
+from product to neutral contract/media/session-wire, never in reverse. Vela's
+viewer port consumes configured authenticated broker endpoints and never owns
+desktop framing or rendering. Sandbox has a bounded attachment broker with
+one-use scoped credentials and confirmed remote control handoff. Its production
+authority composition, native input executor and default directory remain absent;
+an account or prepared VM alone cannot advertise the entry. The backend observer
+transport now verifies native process/socket ownership and a fresh root-key MAC
+before exposing immutable read-only RFB; this proof does not authorize a Conversation.
+
+Local Linux Codex Hosts have a separate explicit `--local-desktop` composition:
+`local-agent-host/desktop` owns authoritative native Thread checks, short grants
+and root-verified streams; `CodexEngineAdapter` binds grants to server-stamped
+logical Client epochs. Workbench's `HostDesktopBackend` maps Scope aliases to
+native Thread IDs and consumes the neutral media/session-wire. It is independent
+of Vela accounts and TAT. The dedicated WebSocket gateway is exact-Origin and
+loopback-only; this is trusted local-owner access, not public DevCloud auth.
+Default/public Hosts do not advertise it. Viewer teardown cannot stop Codex or
+desktop processes. Full lifecycle and bounds are in the
+[local authority contract](cloud-desktop-plugin.md#local-execution-server-authority).
+
+Local viewing recovery opts in only because preparing a new attachment cannot
+replay resource creation or Agent work. Wire/media classify established transport
+loss; the viewing controller owns bounded backoff and fresh-grant replacement,
+never inherited input. Vela preparation remains manual on failure. See the
+[viewing recovery contract](cloud-desktop-plugin.md#bounded-viewing-recovery).
+
 ### Workspace file Explorer ownership
 
 Workbench Web's workspace resource panel owns the selected Host/path, the

@@ -313,6 +313,14 @@ func (s *stubLogic) GetDesktopSession(_ pctx.Context, _ string) (*transport.Desk
 	return nil, errors.New("unexpected call")
 }
 
+func (s *stubLogic) EnsureDesktopResource(_ pctx.Context, _ string) (*transport.DesktopResourceResponse, error) {
+	return nil, errors.New("unexpected call")
+}
+
+func (s *stubLogic) GetDesktopResource(_ pctx.Context, _ string) (*transport.DesktopResourceResponse, error) {
+	return nil, errors.New("unexpected call")
+}
+
 func (s *stubLogic) ListInstances(ctx pctx.Context, page, pageSize int) (*transport.ListInstancesResponse, error) {
 	return nil, errors.New("unexpected call")
 }

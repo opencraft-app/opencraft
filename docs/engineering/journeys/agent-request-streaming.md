@@ -23,6 +23,10 @@ Headless OpenCraft 的入口校验先于运行时健康判断：包内 Web relea
 
 ## 验证
 
+OpenCraft 会话云桌面的观看连接不是 Agent Turn 的执行宿主。面板关闭、账户切换或观看失败只撤销自己的短期连接与输入租约，不中断 Turn 或删除远端桌面。云桌面插件框架用模拟后端验证此分离；生产 CTL/TAT 和媒体接通须另验资源代次、授权撤销及手动控制与 Agent 的仲裁。
+
+CTL 桌面准备源码以 POST 明确启动，独立有界后台编排持续安装/拉起/探测；新 GET 只观察，不创建状态或续期。换用户、换 Sandbox 与失败重试隔离旧状态，短 TAT 命令按进程内绑定锁串行化。此阶段不提供观看凭据或 WebRTC：prepared 只证明既有桌面 HTTP 探测，编排代次不是媒体 incarnation。验证需分开记录 CTL 直连、Gateway 路径策略及真实 TAT/媒体；五个精确 allowlist 环境尚未放行新路径，JP/KR 前缀路由不能靠“没新增规则”推断阻断。见 [CTL 桌面资源契约](../../../ctl/docs/cloud-desktop-resource.md)。
+
 覆盖普通响应、流式分片、客户端取消、provider 超时/限流、fallback、渠道发送失败和重连。OpenCraft 还必须覆盖 steer/queue 可见性、断线恢复不重复投影、完成瞬间组件身份和滚动所有权；工具终态必须有结果证据，不可恢复的资源缺失不得自动重连，Web/Expo 消息折叠需在宽度变化后重新测量自然高度。Host 从失败恢复到 ready 时应在无消息提交条件下重载 Catalog，BFCache 往返不得销毁应用所有权图。跨 gateway/runtime artifact 的变更分别验证镜像 pin 与 runtime SHA。
 
 Web 图片附件的浏览器 `File` 与预览 URL 属于 Composer View/Controller 生命周期，不进入可序列化的 AppServer 请求或重放事件。异步图片处理必须按草稿和附件身份回写；切换目标不能串写，删除、清空或释放 Controller 后的迟到结果不能复活附件。发送后的图片只按已获准的会话媒体资源解析，并以可关闭、可恢复焦点的查看器呈现。

@@ -11,6 +11,8 @@ export interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement
   readonly loading?: boolean;
   readonly size?: ButtonSize;
   readonly variant?: ButtonVariant;
+  /** Web presentation density; shared geometry lives in the design system. */
+  readonly density?: "default" | "compact";
 }
 
 /** Web adapter for the same button contract used by the Expo renderer. */
@@ -19,6 +21,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     className,
     disabled = false,
     loading = false,
+    density = "default",
     size = defaultButtonSize,
     type = "button",
     variant = defaultButtonVariant,
@@ -32,6 +35,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
         aria-busy={loading || undefined}
         className={classes}
         data-size={size}
+        data-density={density}
         data-variant={variant}
         disabled={disabled || loading}
         type={type}

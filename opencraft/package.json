@@ -23,7 +23,7 @@
     "check:i18n": "node scripts/check-i18n.mjs",
     "test:i18n": "tsx --test tests/i18n-runtime.test.ts tests/i18n-controller.test.ts",
     "smoke:i18n": "tsx scripts/smoke-i18n.ts",
-    "postinstall": "node scripts/patch-expo-modules-jsi.mjs",
+    "postinstall": "node scripts/patch-expo-modules-jsi.mjs && node scripts/patch-novnc-desktop-events.mjs",
     "protocol:refresh": "node scripts/refresh-codex-protocol.mjs",
     "sync:mono2-agent-console": "node scripts/sync-mono2-agent-console.mjs",
     "check:mono2-agent-console": "node scripts/sync-mono2-agent-console.mjs --check",
@@ -136,6 +136,10 @@
     "smoke:codex-account-pool": "tsx scripts/smoke-codex-account-pool.ts",
     "smoke:codex-engine": "tsx scripts/smoke-codex-engine.ts",
     "smoke:url-presentation": "tsx scripts/smoke-url-presentation.ts",
+    "test:cloud-desktop": "tsx --test tests/cloud-desktop-plugin.test.tsx tests/cloud-desktop-tat-transport.test.ts tests/cloud-desktop-rfb.test.ts tests/cloud-desktop-session-wire.test.ts tests/lightvela-desktop-provider.test.ts tests/lightvela-desktop-viewer.test.ts tests/local-desktop-service.test.ts tests/host-desktop-backend.test.ts tests/browser-smoke-preflight.test.mjs tests/novnc-desktop-events.test.mjs",
+    "smoke:cloud-desktop": "tsx scripts/smoke-cloud-desktop-rfb.ts",
+    "smoke:local-desktop": "tsx scripts/smoke-local-desktop.ts",
+    "smoke:desktop-panel": "tsx scripts/smoke-desktop-panel-ui.ts",
     "test:environments": "tsx --test tests/workbench-environments.test.ts tests/lightvela-environment-creation.test.ts tests/environment-directory.test.ts",
     "test:desktop-login": "tsx --test tests/desktop-lightvela-login.test.ts tests/lightvela-account-auth.test.ts tests/authentication-flows.test.ts",
     "smoke:account-controls": "tsx scripts/smoke-account-controls.ts",
@@ -144,7 +148,7 @@
     "test:chat": "tsx --test tests/chat-*.test.ts tests/composer-core.test.ts tests/codex-composer-codec.test.ts tests/codex-composer-attachment-focus.test.ts tests/codex-composer-attachment-preview.test.ts",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "check:boundaries": "npm run check:typography && node scripts/check-platform-boundaries.mjs",
-    "gate": "npm run check:i18n && npm run test:i18n && npm run check:boundaries && npm run typecheck && npm run test:electron-launch && npm run test:extensions && npm run test:connectors && npm run test:appserver && npm run test:projects && npm run test:thread-lifecycle && npm run test:native-speech && npm run test:dsh-bridge && npm run test:appserver:lab && npm run test:chat && npm run test:workbench:unit && npm run test:shell-space && npm run test:workspace-presentation && npm run test:environments && npm run test:desktop-login && npm run test:headless-server && npm run test:web-release && npm run build:web && npm run build:expo:web && npm run build:expo:ios"
+    "gate": "npm run check:i18n && npm run test:i18n && npm run check:boundaries && npm run typecheck && npm run test:cloud-desktop && npm run test:electron-launch && npm run test:extensions && npm run test:connectors && npm run test:appserver && npm run test:projects && npm run test:thread-lifecycle && npm run test:native-speech && npm run test:dsh-bridge && npm run test:appserver:lab && npm run test:chat && npm run test:workbench:unit && npm run test:shell-space && npm run test:workspace-presentation && npm run test:environments && npm run test:desktop-login && npm run test:headless-server && npm run test:web-release && npm run build:web && npm run build:expo:web && npm run build:expo:ios"
   },
   "dependencies": {
     "react": "19.2.3",
@@ -153,6 +157,7 @@
   "devDependencies": {
     "@formatjs/icu-messageformat-parser": "2.11.4",
     "@types/node": "^24.3.0",
+    "@types/react-dom": "~19.2.2",
     "@types/ws": "^8.18.1",
     "esbuild": "0.28.2",
     "expo": "57.0.18",

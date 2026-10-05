@@ -1,4 +1,5 @@
 import { Context } from "@deepseek-ai/cordis";
+import { createCloudDesktopWorkbenchPanelPlugin, type CloudDesktopPluginAdapter } from "@opencraft/plugin-cloud-desktop";
 import {
   createWebChatRenderRuntime,
   type ChatRenderRuntime,
@@ -15,6 +16,7 @@ import {
 import { asHostId, createConversationKey } from "@opencraft/chat-core";
 
 import { createBrowserWorkbenchPanelPlugin } from "../browser/browser-panel-plugin";
+import { HostDesktopBackend } from "./host-desktop-backend";
 import { BrowserPresentationCoordinator } from "../browser/browser-presentation-coordinator";
 import { BrowserWorkbenchCoordinator } from "../browser/browser-workbench-coordinator";
 import { WebBrowserPageRuntime } from "../browser/web-browser-runtime";
@@ -82,6 +84,8 @@ function loadConversationBindings(storage: BrowserMetadataStorage = window.local
 /** Single application owner for every long-lived renderer service. */
 export interface CreateWebWorkbenchApplicationOptions extends WebWorkbenchSupervisorOptions {
   readonly browserMetadataStorage?: BrowserMetadataStorage;
+  /** Product override; otherwise use the capability-gated local Host adapter. */
+  readonly cloudDesktop?: CloudDesktopPluginAdapter;
 }
 
 export async function createWebWorkbenchApplication(
@@ -114,6 +118,7 @@ export async function createWebWorkbenchApplication(
   let supervisor: WebWorkbenchApplicationSupervisor;
   let resolveTerminalRuntime: ((hostId: string) => AppServerWorkbenchRuntime) | null = null;
   let releaseSupervisor: (() => Promise<void>) | undefined;
+  let hostDesktop: HostDesktopBackend | undefined;
   const hostProxy = new WebHostProxyBroker(async (hostId, targetUrl, init) => {
     if (supervisor.mode !== "active") {
       throw new Error("Host proxy is unavailable without an active AppServer runtime");
@@ -149,6 +154,7 @@ export async function createWebWorkbenchApplication(
     await panelRuntime.install(TimelineBlockRendererRegistryService);
     await panelRuntime.install(BuiltinTimelineRendererPlugin);
     await panelRuntime.install(BuiltinWorkbenchPanelPlugin);
+    if (options.cloudDesktop) await panelRuntime.install(createCloudDesktopWorkbenchPanelPlugin(options.cloudDesktop));
     browserWorkbench = new BrowserWorkbenchCoordinator(
       browserPages,
       panelRuntime.panels,
@@ -202,6 +208,11 @@ export async function createWebWorkbenchApplication(
     releaseSupervisor = () => supervisor.dispose();
     if (supervisor.mode === "active") {
       const activeSupervisor = supervisor;
+      if (!options.cloudDesktop) {
+        hostDesktop = new HostDesktopBackend({ bindings: conversationBindings, registry: activeSupervisor.registry,
+          origin: window.location.origin });
+        await panelRuntime.install(createCloudDesktopWorkbenchPanelPlugin({ backend: hostDesktop, surfaces: hostDesktop.surfaces }));
+      }
       resolveTerminalRuntime = (hostId) => activeSupervisor.registry.getRuntime(hostId);
       await panelRuntime.install(SideChatService, { resolveHost: (hostId: string) => activeSupervisor.registry.ensureConnected(hostId) });
       await panelRuntime.install(createSideChatPanelPlugin(panelRuntime.context.sideChats, conversationBindings));
@@ -229,6 +240,7 @@ export async function createWebWorkbenchApplication(
       browserWorkbench.restorePersistedTabs();
     }
   } catch (error) {
+    hostDesktop?.dispose();
     hostProxy.dispose();
     browserPresentations.dispose();
     browserPages.dispose();
@@ -268,6 +280,7 @@ export async function createWebWorkbenchApplication(
       } catch (error) {
         failures.push(error);
       }
+      hostDesktop?.dispose();
       try {
         await chatRenderRuntime.dispose();
       } catch (error) {

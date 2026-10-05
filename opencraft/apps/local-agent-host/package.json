@@ -4,7 +4,9 @@
   "version": "0.1.0",
   "type": "module",
   "exports": {
-    ".": "./src/main.ts"
+    ".": "./src/main.ts",
+    "./desktop": "./src/desktop/local-desktop-service.ts",
+    "./desktop-native": "./src/desktop/native-observer.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

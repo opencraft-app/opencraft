@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "node ../../scripts/patch-novnc-desktop-events.mjs && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit"
   },
@@ -50,6 +50,7 @@
     "@opencraft/image-processing": "0.1.0",
     "@opencraft/plugin-bot-chat": "0.1.0",
     "@opencraft/plugin-builtin-agents": "0.1.0",
+    "@opencraft/plugin-cloud-desktop": "0.1.0",
     "@opencraft/plugin-hypernode": "0.1.0",
     "@opencraft/plugin-lightvela-collaboration": "0.1.0",
     "@opencraft/plugin-lightvela-hermes": "0.1.0",

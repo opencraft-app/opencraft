@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { createInterface, type Interface as ReadLineInterface } from "node:readline";
 import { join } from "node:path";
@@ -6,6 +7,8 @@ import { CodexHostQueue, type HostQueuedSubmission } from "./codex-host-queue.js
 
 import type { DuplexTransport, TransportStatus } from "@opencraft/appserver-client/transport";
 import { LOGICAL_CLIENT_FIELD } from "@opencraft/app-host-protocol";
+import type { LocalDesktopService, LocalDesktopOwner } from "@opencraft/local-agent-host/desktop";
+import { OPENCRAFT_DESKTOP_ATTACH, OPENCRAFT_DESKTOP_RELEASE, OPENCRAFT_DESKTOP_EXTENSION, type HostDesktopCapability } from "@opencraft/appserver-protocol/desktop";
 import {
   OPENCRAFT_FIRST_TURN_DURABILITY_CAPABILITY,
   OPENCRAFT_THREAD_LIFECYCLE_EXTENSION,
@@ -73,16 +76,18 @@ class CodexQueueRpcError extends Error {
   constructor(readonly code: number, message: string, readonly data?: unknown) { super(message); }
 }
 
-function withCodexHostCapabilities(value: unknown): RpcRecord {
+function withCodexHostCapabilities(value: unknown, desktop?: HostDesktopCapability): RpcRecord {
   const result = record(value);
   const capabilities = record(result.capabilities);
-  const extensions = record(capabilities.extensions);
+  const extensions = { ...record(capabilities.extensions) };
+  delete extensions[OPENCRAFT_DESKTOP_EXTENSION]; // This extension belongs to this Host, not native Codex.
   return {
     ...result,
     capabilities: {
       ...capabilities,
       extensions: {
         ...extensions,
+        ...(desktop ? { [OPENCRAFT_DESKTOP_EXTENSION]: desktop } : {}),
         [OPENCRAFT_THREAD_START_DURABILITY_EXTENSION]:
           OPENCRAFT_FIRST_TURN_DURABILITY_CAPABILITY,
         [OPENCRAFT_THREAD_LIFECYCLE_EXTENSION]: {
@@ -140,6 +145,7 @@ export class CodexEngineAdapter implements DuplexTransport {
   private subscriptions: CodexSubscriptionService | null = null;
   private stderrTail = "";
   private closeOperation: Promise<void> | null = null;
+  private readonly desktopOwnerNamespace = randomUUID();
 
   constructor(private readonly options: {
     readonly executable: string;
@@ -156,6 +162,7 @@ export class CodexEngineAdapter implements DuplexTransport {
     }) => ChildProcessWithoutNullStreams;
     readonly logDiagnostic?: (event: Record<string, unknown>) => void;
     readonly nativeSubscriptionGraceMs?: number;
+    readonly desktop?: LocalDesktopService;
   }) {}
 
   private diagnostic(event: Record<string, unknown>): void {
@@ -286,6 +293,10 @@ export class CodexEngineAdapter implements DuplexTransport {
     }
     if (id !== null && typeof message.method === "string") {
       const requestClientEpoch = this.clientEpoch(clientId);
+      if (message.method === OPENCRAFT_DESKTOP_ATTACH || message.method === OPENCRAFT_DESKTOP_RELEASE) {
+        await this.handleDesktopRequest(clientId, requestClientEpoch, id, message.method, message.params);
+        return;
+      }
       if (message.method.startsWith("thread/queue/")) {
         await this.handleQueueRequest(clientId, id, message.method, record(message.params));
         return;
@@ -348,6 +359,7 @@ export class CodexEngineAdapter implements DuplexTransport {
   close(): Promise<void> {
     if (this.closeOperation !== null) return this.closeOperation;
     this.publishStatus({ state: "closing" });
+    this.revokeDesktopOwners();
     this.closeOperation = (async () => {
       const child = this.child;
       this.child = null;
@@ -442,7 +454,7 @@ export class CodexEngineAdapter implements DuplexTransport {
         if (pending.method === "initialize") {
           this.physicalInitializePending = false;
           if ("result" in message) {
-            this.initializeResult = withCodexHostCapabilities(message.result);
+            this.initializeResult = withCodexHostCapabilities(message.result, this.options.desktop?.capability());
             message = { ...message, result: this.initializeResult };
             this.writePhysical({ method: "initialized", params: {} });
           }
@@ -731,6 +743,7 @@ export class CodexEngineAdapter implements DuplexTransport {
   }
 
   private disconnectClient(clientId: string): void {
+    this.options.desktop?.revoke(this.desktopOwnerKey(clientId, this.clientEpoch(clientId)));
     this.clientEpochs.delete(clientId);
     this.initializedClients.delete(clientId);
     const affected = new Set<string>();
@@ -748,6 +761,45 @@ export class CodexEngineAdapter implements DuplexTransport {
     }
     this.releaseServerRequests(clientId);
     for (const threadId of affected) this.scheduleNativeRelease(threadId);
+  }
+
+  private desktopOwnerKey(clientId: string, epoch: number): string {
+    return JSON.stringify([this.desktopOwnerNamespace, clientId, epoch]);
+  }
+
+  private revokeDesktopOwners(): void {
+    for (const [clientId, epoch] of this.clientEpochs) this.options.desktop?.revoke(this.desktopOwnerKey(clientId, epoch));
+  }
+
+  private async handleDesktopRequest(clientId: string, epoch: number, id: string | number, method: string, rawParams: unknown): Promise<void> {
+    const service = this.options.desktop;
+    const current = () => this.statusValue.state === "open" && this.initializedClients.has(clientId)
+      && this.clientEpoch(clientId) === epoch;
+    const key = this.desktopOwnerKey(clientId, epoch);
+    try {
+      if (!service || !current() || !rawParams || typeof rawParams !== "object" || Array.isArray(rawParams)) throw new Error();
+      const params = record(rawParams);
+      let result: unknown;
+      if (method === OPENCRAFT_DESKTOP_ATTACH) {
+        if (Object.keys(params).length !== 1 || typeof params.threadId !== "string") throw new Error();
+        const owner: LocalDesktopOwner = { key, isCurrent: current, readThread: async threadId => {
+          const response = record(await this.requestPhysical("thread/read", { threadId, includeTurns: false }, 5_000));
+          const thread = record(response.thread);
+          if (thread.id !== threadId || typeof thread.path !== "string" || typeof thread.createdAt !== "number") throw new Error();
+          return { id: threadId, path: thread.path, createdAt: thread.createdAt };
+        } };
+        const credential = await service.prepare(owner, params.threadId);
+        if (!current()) { service.release(key, credential.attachmentId); return; }
+        result = credential;
+      } else {
+        if (Object.keys(params).length !== 1 || typeof params.attachmentId !== "string") throw new Error();
+        service.release(key, params.attachmentId);
+        result = {};
+      }
+      if (current()) this.emit({ id, result }, clientId);
+    } catch {
+      if (current()) this.emit({ id, error: { code: -32600, message: "Desktop is unavailable" } }, clientId);
+    }
   }
 
   private async handleAccountRequest(clientId: string, message: RpcRecord): Promise<void> {
@@ -1152,6 +1204,7 @@ export class CodexEngineAdapter implements DuplexTransport {
   }
 
   private readonly fail = (error: Error): void => {
+    this.revokeDesktopOwners();
     this.rejectInternalRequests(error);
     this.publishStatus({ state: "failed", reason: error.message, failure: { code: "codex-appserver-exited", recovery: "automatic" } });
   };

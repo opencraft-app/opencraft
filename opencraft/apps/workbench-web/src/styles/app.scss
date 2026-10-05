@@ -13,6 +13,7 @@
 @use "./codex-accounts";
 @use "./thread-workspace";
 @use "./model-services";
+@use "@opencraft/plugin-cloud-desktop/panel.web";
 
 .settings-search-select__trigger {
   display: flex;

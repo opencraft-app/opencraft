@@ -1,0 +1,44 @@
+@use "@opencraft/design-system/empty-state.web" as empty-state;
+@use "@opencraft/design-system/typography.web" as typography;
+@use "@opencraft/design-system/panel-controls.web";
+
+.cloud-desktop-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--color-background-surface);
+}
+.cloud-desktop-panel__toolbar {
+  &[hidden] { display: none; }
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap-control-group);
+  padding: var(--padding-control-inline);
+  @include typography.role(body, secondary);
+  user-select: none;
+  [role="status"] { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  button { flex: 0 0 auto; }
+}
+.cloud-desktop-panel__actions { display: flex; flex: 0 0 auto; gap: var(--gap-control-group); }
+.cloud-desktop-panel__body { position: relative; display: flex; flex: 1; min-height: 0; min-width: 0; }
+.cloud-desktop-panel__surface {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  outline: none;
+  // The adapter owns media scaling; Shell owns available panel geometry.
+}
+.cloud-desktop-panel__feedback {
+  @include empty-state.compact;
+  position: absolute;
+  inset: 0;
+  background: var(--color-background-surface);
+}

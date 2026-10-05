@@ -682,3 +682,19 @@ type DesktopSessionResponse struct {
 	// Failed 时的原因摘要
 	Reason string `json:"reason,omitempty" example:"desktop provision command failed"`
 }
+
+const (
+	DesktopResourceStateUnprepared = "unprepared"
+	DesktopResourceStatePreparing  = "preparing"
+	DesktopResourceStatePrepared   = "prepared"
+	DesktopResourceStatePaused     = "paused"
+	DesktopResourceStateFailed     = "failed"
+)
+
+// Resource preparation only; not media readiness, viewer credentials or input authorization.
+type DesktopResourceResponse struct {
+	ResourceID   string `json:"resource_id"`
+	GenerationID string `json:"generation_id,omitempty"`
+	State        string `json:"state"`
+	Progress     int    `json:"progress,omitempty"`
+}

@@ -56,6 +56,7 @@ for (const directory of [
   "packages/extension-runtime/src",
   "packages/timeline-virtualizer/src",
   "packages/workbench-runtime/src",
+  "plugins/cloud-desktop/src/contract.ts",
 ]) {
   checkFiles("shared package", directory, purePackageRules);
 }
@@ -178,6 +179,39 @@ const forbiddenUiAuthorityImports = [
   "@opencraft/appserver-transport-replay",
   "@opencraft/appserver-transport-websocket",
 ];
+
+checkFiles("cloud desktop plugin", "plugins/cloud-desktop/src", [
+  {
+    pattern: /(?:from\s*|import\s*\(?)["'][^"']*(?:lightvela|tencent-tat|tat-websocket|\/apps\/)/m,
+    message: "must not import product, TAT or application authority; use an authorized provider port",
+  },
+  {
+    pattern: /\b(?:fetch|localStorage|sessionStorage)\s*\(|\b(?:localStorage|sessionStorage)\s*\./m,
+    message: "must not own product HTTP or credentials",
+  },
+]);
+
+checkFiles("Vela desktop provider", "plugins/lightvela-platform/src/desktop", [
+  {
+    pattern: /\b(?:HTMLElement|HTMLCanvasElement)\b|\b(?:window|document)\s*\./m,
+    message: "must not own desktop DOM or media rendering",
+  },
+  {
+    pattern: /(?:from\s*|import\s*\(?)["'](?:react|react-dom|@novnc\/novnc|[^"']*lightvela-hermes|[^"']*\/apps\/)/m,
+    message: "must not own desktop presentation, Chat transport or application placement",
+  },
+  {
+    pattern: /(?:from\s*|import\s*\(?)["']@opencraft\/plugin-cloud-desktop["']/m,
+    message: "must consume only desktop contract/media subpaths, not the panel renderer entry",
+  },
+]);
+
+const desktopPackage = JSON.parse(readFileSync(resolve(repositoryRoot, "plugins/cloud-desktop/package.json"), "utf8"));
+for (const dependency of Object.keys(desktopPackage.dependencies ?? {})) {
+  if (/^(?:@lightvela\/|@opencraft\/plugin-lightvela-)/.test(dependency)) {
+    violations.push(`plugins/cloud-desktop/package.json: product dependency ${dependency} inverts the provider boundary`);
+  }
+}
 
 for (const directory of ["apps/workbench-web/src/components", "apps/workbench-expo/src/components"]) {
   checkFiles("ChatUI host", directory, forbiddenUiAuthorityImports.map((specifier) => ({

@@ -21,6 +21,7 @@
 
 - DSH 是可替换的执行引擎，不是 Bot、模型、会话、凭据或产品配置的唯一真源。先确认对象身份、生命周期和唯一写入者，再修改页面或 adapter。
 - 宿主只声明并呈现已接通的能力；不得用开关、菜单项或前端状态冒充协议、运行时或后端能力。
+- 云桌面通用插件拥有桌面 contract、媒体和面板，不依赖 Vela 账号、Bot、TAT 或 CTL。产品 provider 只消费通用 contract/media 子入口，拥有授权绑定、资源准备和观看 attachment 交接，不拥有桌面 DOM、Shell 或 Chat 连接。依赖方向与回收顺序见 [云桌面插件边界](docs/cloud-desktop-plugin.md#cloud-desktop--vela-plugin-boundary)；客户端只读状态不得代替后端输入授权。
 - 分布式工作台的顶层协议对象是 Client / Hub / Server：Hub 是多租户 attachment、route、subscription 与 lease owner，Client 和 Server 通过 Hub 多对多连接并可经 Hub 级联。Renderer 只是 Client 的呈现机制（包括静态 Web），Host 只是 Server 的部署和资源载体；二者不得进入 Server/Thread 的稳定身份。完整不变量见 [执行所有权](docs/execution-ownership.md#client--hub--server-拓扑)。
 
 ## 按需加载

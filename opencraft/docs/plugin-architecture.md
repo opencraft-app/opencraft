@@ -335,6 +335,18 @@ UNLOADING / DISPOSED`，非常适合实现 Activation 内核。`ctx.effect()` �
 
 ### 6.3 不合并成一个巨大 Context
 
+云桌面第一阶段使用现有可信内建 Panel definition / renderer / toolbar 注册，
+由 Workbench Application 显式注入后端与媒体适配器；不增加公共权限或新的全局 Context。
+未接通适配器时不发布可用入口，桌面进程、观看连接和独占控制租约分开所有权。
+框架及后续接入条件见 [Conversation desktop plugin](cloud-desktop-plugin.md)。
+
+云桌面与 Vela 产品插件保持单向依赖：通用插件拥有桌面 contract、面板和 noVNC
+媒体适配，不读取账号或调用 TAT/CTL；`lightvela-platform/desktop` 只消费通用
+contract/media 子入口，拥有精确绑定校验、资源准备及后端 attachment 交接，
+不导入桌面 React renderer、noVNC 或 Hermes Chat 隧道。生产观看授权/输入门禁
+尚未实现，缺失 viewer port 时不发布能力。源码和 package dependency guard
+固化此边界；可信插件仍不是安全沙箱。
+
 当前 Chat、Panel、Session、Replica 的 Context 可以继续独立存在。跨域原子卸载由
 Contribution Broker 完成：
 

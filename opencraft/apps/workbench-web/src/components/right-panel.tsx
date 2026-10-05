@@ -10,6 +10,7 @@ import type { PanelRendererRegistration } from "@opencraft/workbench-panels-reac
 import {
   FileCode2,
   Globe2,
+  Monitor,
   GitBranch,
   Maximize2,
   Minimize2,
@@ -70,6 +71,7 @@ function ToolbarActionIcon({ icon }: { readonly icon: string }) {
   if (icon === "chat") return <MessageSquare size={14} />;
   if (icon === "terminal") return <TerminalSquare size={14} />;
   if (icon === "browser") return <Globe2 size={14} />;
+  if (icon === "desktop") return <Monitor size={14} />;
   return <Plus size={14} />;
 }
 
@@ -201,6 +203,7 @@ function PanelIcon({ tab }: { readonly tab: PanelTabDescriptor }) {
   if (tab.icon === "changes") return <GitBranch size={13} />;
   if (tab.icon === "terminal") return <TerminalSquare size={13} />;
   if (tab.icon === "browser") return <Globe2 size={13} />;
+  if (tab.icon === "desktop") return <Monitor size={13} />;
   return <FileCode2 size={13} />;
 }
 

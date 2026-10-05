@@ -18,6 +18,8 @@
     "./menu.web": "./src/menu.web.scss",
     "./selection.web": "./src/selection.web.scss",
     "./controls.web": "./src/controls.web.scss",
+    "./empty-state.web": "./src/empty-state.web.scss",
+    "./panel-controls.web": "./src/panel-controls.web.scss",
     "./identity-color": "./src/identity-color.ts"
   },
   "scripts": {

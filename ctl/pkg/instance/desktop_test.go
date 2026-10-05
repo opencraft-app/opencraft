@@ -259,10 +259,10 @@ func TestRenderDesktopProvisionCommandFailsHardOnKeySteps(t *testing.T) {
 // TestDesktopProvisionFailureDetail CR-P1#2：从 fail marker 行提取可诊断原因。
 func TestDesktopProvisionFailureDetail(t *testing.T) {
 	cases := map[string]string{
-		"DESKTOP_PROVISION_FAILED store vnc password":       "desktop provision failed: store vnc password",
+		"DESKTOP_PROVISION_FAILED store vnc password":               "desktop provision failed: store vnc password",
 		"noise\nDESKTOP_PROVISION_FAILED enable desktop services\n": "desktop provision failed: enable desktop services",
-		"DESKTOP_PROVISION_FAILED":                          "desktop provision failed",
-		"no marker here":                                    "desktop provision failed",
+		"DESKTOP_PROVISION_FAILED":                                  "desktop provision failed",
+		"no marker here":                                            "desktop provision failed",
 	}
 	for out, want := range cases {
 		if got := desktopProvisionFailureDetail(out); got != want {
@@ -625,6 +625,9 @@ func TestRenderDesktopInstallCommand(t *testing.T) {
 	cmd := renderDesktopInstallCommand()
 	for _, want := range []string{
 		"apt-get install",
+		"dnf install",
+		"xorg-x11-server-Xvfb",
+		"python3-websockify",
 		"vela-xvfb.service",
 		"vela-novnc.service",
 		desktopInstallDoneMarker,
