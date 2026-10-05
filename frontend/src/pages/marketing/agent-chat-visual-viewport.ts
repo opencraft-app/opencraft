@@ -1,3 +1,9 @@
+export function agentChatPageMinHeightClass(usesEmbeddedViewport: boolean): string {
+  // A full layout-viewport minimum would override the smaller visual viewport
+  // when the keyboard opens; both choices must live in Tailwind's utility layer.
+  return usesEmbeddedViewport ? "min-h-0" : "min-h-dvh";
+}
+
 export function bindChatVisualViewportHeight(element: HTMLElement): () => void {
   const viewport = window.visualViewport;
   if (!viewport) return () => {};
