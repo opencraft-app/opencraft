@@ -2,7 +2,7 @@
 
 ## Resumen
 
-**La consola de Agent separa Channels, Models, Skills y Scheduled Tasks en páginas de la barra lateral. Selecciona el Bot adecuado antes de cambiar sus ajustes. Conecta un canal desde su tarjeta, elige un modelo o usa los créditos del plan y, cuando lo necesites, instala Skills de Skills.sh o ClawHub. Soul, Memory, Diagnostics, Advanced Settings y Labs aparecen en otras secciones; Cloud Storage se abre desde el menú de usuario.**
+**La consola de Agent separa Channels, Models, Skills y Scheduled Tasks en páginas de la barra lateral. Selecciona el Bot adecuado antes de cambiar sus ajustes. Conecta un canal desde su tarjeta, elige un modelo o usa los créditos del plan y, cuando lo necesites, instala Skills de Skills.sh o ClawHub. Soul, Memory, Diagnostics, Advanced Settings y Labs aparecen en otras secciones; Cloud Storage se abre desde el menú de usuario. Cuando el Bot esté en línea y haya créditos disponibles o un modelo configurado, use Chat directamente sin conectar antes un canal.**
 
 ---
 
@@ -26,6 +26,8 @@ La consola de Agent organiza la configuración cotidiana en las páginas **Chann
 
 Después de iniciar sesión, abre la [consola del Agent](/agents/overview/) y selecciona el Hermes Agent y el Bot que quieres configurar.
 
+
+El Chat web está en la sección de uso diario; conecte un canal externo solo si desea utilizar una aplicación de mensajería.
 ---
 
 ## Bots e información del Bot seleccionado

@@ -52,7 +52,7 @@ Workbenchページには、現在の使用量、利用可能なテンプレー�
 
 現在のワークフローでは、生成サイトにReact、TypeScript、Tailwind CSS、一般的なUIライブラリを使用します。
 
-![AgentチャットでWorkbenchを作成](../../images/workbench-04.webp)
+![国際サイトの新しいチャット。Workbench作成の依頼文を入力済みで、まだ送信していない状態](../../images/workbench-04.webp)
 
 Agentには、内容を編集可能に保ち、事前に用意した架空のビジネスデータを避け、適切な場合はブラウザーのlocal storageを一時的なローカルデータに使うよう指示されています。
 

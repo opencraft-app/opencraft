@@ -2,11 +2,11 @@
 
 ## Resumen
 
-**Poner en marcha su primera conversación con LightVela toma aproximadamente 5 minutos: inicie sesión en LightVela, active un plan, permita que la plataforma cree su instancia de Hermes Agent, configure un modelo (o utilice simplemente los créditos de modelo mensuales incluidos con su plan), conecte un canal de mensajería, luego envíe un mensaje y reciba una respuesta. Todo ocurre en el navegador — no necesita comprar servidores ni desplegar nada localmente. La ruta más rápida es utilizar los créditos de su plan junto con WeChat, que se conecta escaneando un código QR, y agregar más tarde su propia clave de API de modelo y otros canales.**
+**Para iniciar la primera conversación en LightVela, inicie sesión y active un plan, espere a que el Bot esté listo y envíe un mensaje desde Chat en My Agent. El Chat web no requiere un canal de mensajería; si hay créditos de modelo disponibles, tampoco necesita una clave de API propia. Si desea usar el mismo Bot en WeChat, siga después los pasos de conexión mediante código QR.**
 
 ---
 
-Este tutorial guía a través del proceso completo desde el inicio de sesión hasta recibir una respuesta de Hermes en WeChat. Toma aproximadamente 5 minutos.
+Este tutorial comienza con el Chat web y después explica cómo conectar WeChat si lo desea. Reserve tiempo adicional para activar el plan y preparar el Bot.
 
 ## ¿Qué cubre esta página?
 
@@ -14,7 +14,9 @@ Este tutorial guía a través del proceso completo desde el inicio de sesión ha
 
 - Activar el plan Launch y crear una instancia de Hermes
 
-- Conectar canales de Telegram / WhatsApp / Discord / Slack / WeChat
+- Enviar el primer mensaje en el Chat web
+
+- Conectar WeChat si lo desea
 
 - Enviar un mensaje en WeChat y recibir una respuesta
 
@@ -52,13 +54,17 @@ Después de activar el plan, abre la [consola de Agent](/agents/overview/). Ligh
 
 ---
 
-## 4. Conectar WeChat
+## 4. Iniciar una conversación en el Chat web
+
+Cuando el Bot esté listo, abra Chat en la sección de uso diario, cree una conversación nueva y envíe «Hola». Una respuesta confirma que el Chat web funciona; consulte [Chat](./configuration/agent-chat.md) para gestionar conversaciones.
+
+## 5. Conectar WeChat si lo desea
 
 Abre **Channels** en la barra lateral de Agent. En la tarjeta **WeChat**, selecciona **+ Connect** y sigue las instrucciones del código QR. Escanéalo con WeChat en el teléfono y termina la autorización. Confirma que WeChat aparece como conectado antes de enviar un mensaje. Consulta la [guía de WeChat](./configuration/channel-wechat.md) si caduca el código o falla la conexión.
 
 ---
 
-## 5. Enviar su primer mensaje
+## 6. Enviar un mensaje en WeChat
 
 Encuentre la cuenta de bot agregada en WeChat y envíe un mensaje de prueba:
 

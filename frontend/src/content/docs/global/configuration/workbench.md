@@ -52,7 +52,7 @@ LightVela 负责托管流程，因此你不需要单独配置托管服务器或�
 
 当前流程使用 React、TypeScript、Tailwind CSS 和常见 UI 库生成网站。
 
-![使用 Agent 对话创建工作台](../../images/workbench-04-zh.webp)
+![国际站简体中文新对话页面，展示工作台需求输入入口](../../images/chat-overview.webp)
 
 Agent 还会被要求保持内容可编辑，避免预置虚构业务数据，并在适合临时保存本地数据时使用浏览器 localStorage。
 

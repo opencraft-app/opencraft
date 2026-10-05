@@ -2,7 +2,7 @@
 
 ## 概要
 
-**AgentコンソールのサイドバーにはChannels、Models、Skills、Scheduled Tasksがそれぞれ独立したページとして表示されます。設定を変える前に対象のBotを選び、チャネルのカードから接続し、モデルを選ぶかプランのクレジットを利用します。必要に応じてSkills.shまたはClawHubのスキルを追加できます。Soul、Memory、Diagnostics、Advanced Settings、Labsは別のセクションにあり、Cloud Storageはユーザーメニューから開きます。**
+**AgentコンソールのサイドバーにはChannels、Models、Skills、Scheduled Tasksがそれぞれ独立したページとして表示されます。設定を変える前に対象のBotを選び、チャネルのカードから接続し、モデルを選ぶかプランのクレジットを利用します。必要に応じてSkills.shまたはClawHubのスキルを追加できます。Soul、Memory、Diagnostics、Advanced Settings、Labsは別のセクションにあり、Cloud Storageはユーザーメニューから開きます。 Botがオンラインで、プランのモデルクレジットを利用できるかモデルが設定済みなら、チャネルを先に接続せずに日常のチャットから送信できます。**
 
 ---
 
@@ -26,6 +26,8 @@ Agentコンソールのサイドバーには日常的な設定用の**Channels**
 
 サインイン後、[Agent コンソール](/agents/overview/)を開き、設定する Hermes Agent と Bot を選択します。
 
+
+Webチャットは日常にあります。外部アプリを使う場合のみチャネルを接続します。
 ---
 
 ## Botと選択中Botの情報

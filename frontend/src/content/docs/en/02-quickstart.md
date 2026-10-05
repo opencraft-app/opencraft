@@ -2,11 +2,11 @@
 
 ## Summary
 
-**Getting your first LightVela conversation running takes about 5 minutes: sign in to LightVela, activate a plan, let the platform create your Hermes Agent instance, configure a model (or just use the monthly model credits included with your plan), connect one messaging channel, then send a message and get a reply. Everything happens in the browser — no servers to buy, nothing to deploy locally. The fastest path is to use your plan credits together with WeChat, which connects by scanning a QR code, and add your own model API key and more channels later.**
+**To start your first conversation in LightVela, sign in and activate a plan, wait until your Bot is ready, then open Daily → Chat in My Agent and send a message. No messaging channel is required for Web Chat, and available plan model credits let you begin without adding your own API key. If you also want to use the same Bot in WeChat, follow the QR-code steps later on this page.**
 
 ---
 
-This tutorial walks through the full process from signing in to receiving a Hermes reply in WeChat. Allow extra time for plan checkout and Agent provisioning.
+This tutorial starts with Web Chat, then shows how to connect WeChat if needed. Allow extra time for plan checkout and Agent provisioning.
 
 ## This page covers
 
@@ -14,7 +14,9 @@ This tutorial walks through the full process from signing in to receiving a Herm
 
 - Activating a Launch option and opening your Hermes instance
 
-- Connecting Telegram / WhatsApp / Discord / Slack / WeChat channels
+- Sending your first message in Web Chat
+
+- Connecting WeChat if needed
 
 - Sending a message in WeChat and receiving a reply
 
@@ -50,13 +52,17 @@ After plan activation, open the [Agent console](/agents/overview/). LightVela pr
 
 ---
 
-## 4. Connect WeChat
+## 4. Start a conversation in Web Chat
+
+Once the Bot is ready, open Daily → Chat in the sidebar, choose New conversation, and send “Hi.” A reply completes your first Web Chat; see [Chat](./configuration/agent-chat.md) for conversation controls.
+
+## 5. Connect WeChat if needed
 
 Open **Channels** in the Agent sidebar. On the **WeChat** card, select **+ Connect** and follow the QR-code instructions. Scan the code with WeChat on your phone and finish authorization there. Confirm that WeChat appears as connected in the console before sending a message. See [Configure Channel - WeChat](./configuration/channel-wechat.md) if the code expires or connection fails.
 
 ---
 
-## 5. Send your first message
+## 6. Send a message in WeChat
 
 Find the added bot account in WeChat and send a test message:
 

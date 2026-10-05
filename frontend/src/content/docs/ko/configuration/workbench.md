@@ -52,7 +52,7 @@ Workbench 페이지에는 현재 사용량, 이용 가능한 템플릿, 기존 �
 
 현재 작업 흐름은 생성된 웹사이트에 React, TypeScript, Tailwind CSS 및 일반적인 UI 라이브러리를 사용합니다.
 
-![Agent 채팅으로 Workbench 만들기](../../images/workbench-04.webp)
+![국제 사이트의 새 채팅에서 Workbench 제작 요청을 입력했지만 아직 전송하지 않은 화면](../../images/workbench-04.webp)
 
 Agent는 콘텐츠를 편집 가능하게 유지하고 미리 입력된 가상 비즈니스 데이터를 사용하지 않으며, 임시 로컬 데이터가 적절한 경우 브라우저 로컬 저장소를 사용하도록 안내됩니다.
 

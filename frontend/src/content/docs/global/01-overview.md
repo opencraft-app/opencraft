@@ -2,7 +2,7 @@
 
 ## 摘要
 
-**LightVela 是腾讯轻量云团队推出的云端 Agent 托管产品，当前提供的产品是 Hermes Agent——一个基于大语言模型的 AI Agent。它把 Agent 的部署、运维与 7×24 小时运行全部交给云端托管，你无需写配置文件或登录服务器，在可视化面板上点选即可完成搭建，然后通过日常聊天软件与自己的 Agent 对话。它跨会话持续记忆，模型、工具、人设都由你决定。当前套餐与首购优惠以[订阅页](/subscribe/)展示为准。**
+**LightVela 是腾讯轻量云团队推出的云端 Agent 托管产品，当前提供的产品是 Hermes Agent——一个基于大语言模型的 AI Agent。它把 Agent 的部署、运维与 7×24 小时运行全部交给云端托管，你无需写配置文件或登录服务器，在可视化面板上点选即可完成搭建，然后从「日常 → 对话」直接在网页聊天，或按需接入日常聊天软件。它跨会话持续记忆，模型、工具、人设都由你决定。当前套餐与首购优惠以[订阅页](/subscribe/)展示为准。**
 
 ---
 
@@ -60,23 +60,23 @@ LightVela 目前提供的产品是 **Hermes Agent**，一个基于大语言模�
 
 ## 工作原理
 
-LightVela 在云端为用户运行一个专属的 Hermes Agent 实例，并通过适配层接入用户指定的聊天平台。
+LightVela 在云端运行 Hermes Agent。用户可从网页「对话」发送消息，也可按需接入外部聊天平台。
 
 ```
-用户（在 Telegram / WhatsApp / Discord / Slack / WeChat 中发送消息）
+用户（在网页「对话」或已接入的聊天平台中发送消息）
       ↓
 LightVela 云端的 Hermes Agent 实例（用户专属）
       ↓
 调用用户配置的大语言模型（GPT / Claude / Gemini / ...）
       ↓
-响应经由原通道返回至用户
+响应返回原来的对话入口
 ```
 
-完成一次对话闭环需配置三项：
+网页内完成一次对话，不要求先接入外部通道：
 
 1. **模型**：Hermes Agent 调用的大语言模型。启航套餐预置体验积分，可直接使用；也可配置自有 API Key
 
-2. **通道**：与 Hermes Agent 对话的聊天平台（Telegram / WhatsApp / Discord / Slack / WeChat）
+2. **对话入口**：在「我的 AI 伙伴」的「日常 → 对话」与当前 Bot 聊天；只有在 Telegram、WhatsApp、Discord、WeChat 等聊天软件中使用时才需要配置相应通道
 
 3. **技能**（可选）：扩展 Hermes Agent 的能力
 

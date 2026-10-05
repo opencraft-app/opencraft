@@ -52,7 +52,7 @@ You can also select the blank option and let the Agent clarify the requirements 
 
 The current workflow uses React, TypeScript, Tailwind CSS, and common UI libraries for generated websites.
 
-![Create a Workbench with Agent chat](../../images/workbench-04.webp)
+![A website request drafted in international Web Chat, before sending](../../images/workbench-04.webp)
 
 The Agent is also instructed to keep content editable, avoid preset mock business data, and use browser local storage when temporary local data is appropriate.
 

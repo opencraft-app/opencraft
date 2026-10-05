@@ -2,7 +2,7 @@
 
 ## 概要
 
-**LightVelaはTencent Lighthouseチームによるクラウドホスト型エージェントプラットフォームであり、現在の製品はHermes Agentです — 大規模言語モデル上に構築されたAIエージェントです。LightVelaはクラウドでの展開、運用、24/7の稼働時間を管理するため、設定ファイルを書いたりサーバーにSSHで接続する必要はありません：すべてをビジュアルパネルでポイント＆クリックで設定し、その後、すでに使用しているメッセージングアプリを通じてエージェントと会話します。会話を通じてユーザーを記憶し、モデル、ツール、ペルソナを選択できます。現在のプランと新規ユーザー向け特典は[サブスクライブページ](/subscribe/)で確認できます。**
+**LightVelaはTencent Lighthouseチームによるクラウドホスト型エージェントプラットフォームであり、現在の製品はHermes Agentです — 大規模言語モデル上に構築されたAIエージェントです。LightVelaはクラウドでの展開、運用、24/7の稼働時間を管理するため、設定ファイルを書いたりサーバーにSSHで接続する必要はありません：すべてをビジュアルパネルでポイント＆クリックで設定し、その後、Webの「日常 → チャット」でBotと直接会話するか、普段使うメッセージングアプリを接続できます。会話を通じてユーザーを記憶し、モデル、ツール、ペルソナを選択できます。現在のプランと新規ユーザー向け特典は[サブスクライブページ](/subscribe/)で確認できます。**
 
 ---
 
@@ -60,23 +60,23 @@ LightVelaはTencent Lighthouseチームによるクラウドエージェント�
 
 ## 仕組み
 
-LightVela は各ユーザーのためにクラウド上で専用の Hermes Agent インスタンスを実行し、その後アダプタレイヤーを通じてユーザーが選択したメッセージングプラットフォームに接続します。
+LightVelaはHermes Agentをクラウドで実行します。Webチャットから送信でき、必要に応じて外部のメッセージングアプリも接続できます。
 
 ```
-User (sends a message in Telegram / WhatsApp / Discord / Slack / WeChat)
+User (sends a message in Web Chat or a connected messaging app)
       ↓
 User-dedicated Hermes Agent instance in the LightVela cloud
       ↓
 Calls the configured large language model (GPT / Claude / Gemin / ...)
       ↓
-Response returns through the original channel
+Response returns to the same conversation entry point
 ```
 
-完全な会話ループには3つの設定が必要です:
+Webチャットでの会話に外部チャネルは不要です:
 
 1. **モデル**: Hermes Agent により呼び出される大規模言語モデル。Launchプランには試用クレジットが含まれており、そのまま使用可能です。また、独自のAPIキーを設定することもできます
 
-2. **チャンネル**: Hermes Agent とチャットするために使用されるメッセージングプラットフォーム (Telegram / WhatsApp / Discord / Slack / WeChat)
+2. **チャット入口**: My Agentのチャットで選択中のBotと会話します。Telegram、WhatsApp、Discord、WeChatなどのアプリで使う場合だけチャネルを設定します
 
 3. **スキル**（オプション）: Hermes Agent の追加機能
 

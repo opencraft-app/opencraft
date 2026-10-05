@@ -2,7 +2,7 @@
 
 ## Summary
 
-**The Agent console separates Channels, Models, Skills, and Scheduled Tasks into pages in its sidebar. Select the intended Bot before changing its settings. Connect a messaging channel from its card, choose a model or use plan credits, and install Skills from Skills.sh or ClawHub when needed. Soul, Memory, Diagnostics, Advanced Settings, and Labs are available in separate sections. Cloud Storage opens from the user menu.**
+**The Agent console separates Channels, Models, Skills, and Scheduled Tasks into pages in its sidebar. Select the intended Bot before changing its settings. Connect a messaging channel from its card, choose a model or use plan credits, and install Skills from Skills.sh or ClawHub when needed. Soul, Memory, Diagnostics, Advanced Settings, and Labs are available in separate sections. Cloud Storage opens from the user menu. When the Bot is online and plan model credits are available or a model is configured, use Daily → Chat to send a message without connecting a channel first.**
 
 ---
 
@@ -26,6 +26,8 @@ The Agent console organizes everyday setup in sidebar pages for **Channels**, **
 
 After signing in, open the [Agent console](/agents/overview/). Choose the Hermes Agent and Bot you want to configure.
 
+
+Web Chat is under Daily; connect an external Channel only when you want to use a messaging app.
 ---
 
 ## Bots and selected Bot information
