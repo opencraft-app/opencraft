@@ -31,7 +31,7 @@ Default SSH Settings and catalog access without typing an extra management key.
 
 ## history_context
 - current_design_refs: `opencraft/docs/ssh-codex-servers.md`, `opencraft/docs/platform-architecture.md`, `docs/engineering/journeys/agent-request-streaming.md`.
-- relevant_evolution: isolated checkout baseline `b2a4d7ae0`; prior SSH delivery complete, current running preview remains old build `20261005-ssh-native-844b7ce8e`.
+- relevant_evolution: isolated checkout baseline `b2a4d7ae0`; scoped SSH commit `3056e63bf` merged into master as `cd9be26fe`. Preview delivery preserves the existing desktop-control overlay without committing it.
 - superseded_refs: prior mandatory access-key default; key protection remains optional.
 
 ## acceptance
@@ -61,6 +61,9 @@ Default SSH Settings and catalog access without typing an extra management key.
 - Full workspace typecheck, boundaries/i18n, headless 29, controller 20 and management API 21 tests passed.
 - Built desktop/touch UI passed shared and protected policies in light/dark themes; shared renewal failure displays retry, not a key challenge.
 - Full gate stopped at `extension-artifacts.test.ts:38`: actual persisted projection adds `artifactRef` after failed update, expected snapshot lacks it. An isolated `node --import tsx` run passed; `tsx --test` reproduced failure. Relevant extension sources and test are unchanged in this diff. No claim of full gate success.
+- Combined preview verified: SSH 75 passed / one platform skip, headless 30 and desktop 100 passed; full workspace typecheck, boundaries/i18n, official package smoke and desktop/touch packaged UI checks passed.
+- Independent cutover completed at `2026-10-05T12:05:03.318Z`. After reconnection, actual port-80 owner is `opencraft-ssh-shared-desktop-20261005-preview.service`, PID `3327884`, build `20261005-ssh-shared-desktop-cd9be26fe`; runtime SHA-256 `dc1859312676a6bba83efe964176f085b8d5fd87ff851795a02fed94a0e650f8`.
+- Live health, empty-body shared SSH admission, saved SSH native conversation recovery and preserved native desktop viewer/control grant-release checks passed. No inference or user-application input was performed. Existing data and key were preserved; old package retained. Rollback is implemented but was not deliberately triggered.
 
 ## risks
 - Anonymous shared entry intentionally exposes use of saved SSH authority to every allowed visitor. Optional key/private entry restores extra protection.
@@ -79,4 +82,4 @@ Default SSH Settings and catalog access without typing an extra management key.
 - Verification logs outside repository under `/data/opencraft-ssh-native-release-ZQr7oa/`.
 
 ## handoff
-- Source implemented and relevant verification passed. User explicitly authorized commit, push, merge master and preview restart. Current 80-port owner is now the native-desktop-control preview, not the previously recorded SSH preview; switch must preserve this actual old package. Full gate has the extension artifact failure recorded above.
+- Source committed, pushed and merged into master as `cd9be26fe`. User-authorized combined temporary preview is running and independently verified after reconnection. Desktop-control overlay remains outside the scoped Git delivery; old package retained for rollback. Full gate has the extension artifact failure recorded above.
