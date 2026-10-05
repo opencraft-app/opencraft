@@ -175,7 +175,7 @@ Pass 升配微信桥通过精确的 `POST /v1/passes/{pass_id}/modify/order-url`
 
 ### 双站控制台 Chat
 
-OpenCraft Chat 在国内控制台默认加载；国际控制台的 Chat 入口与内嵌工作台由浏览器控制台 `show()` 的持久化开关控制，未开启时不挂载工作台或读取侧栏会话，再次执行 `show()` 会收起。启用后，两站主 Bot 与其他 Bot 的对话均进入 OpenCraft，且不请求旧 AgentChat 启动 token。准备阶段只呈现中性聊天加载态，不挂载旧 AgentChat；就绪后显示 OpenCraft，连接异常保留同一会话并提供重试，首次资源加载失败提供重新加载入口。其他隐藏工具仍由 `show()` 控制；站点选择不替代服务端认证或资源归属校验。控制台认证 repository 在 token 替换/清除后广播不含 token 的 `lightclaw:auth-session-changed`，供同页内嵌消费者释放旧身份，跨标签仍由 storage 事件通知。制品复用同源 `/__opencraft/` 的现有发布链路。内嵌 Chat 不展示独立模型选择器，发送前读取当前 Bot/Profile 的 Hermes 默认模型；旧草稿模型与思考设置不得覆盖宿主配置，缺少可用默认模型时在发送前报错。
+国内站和国际站的 Chat 入口均默认可见，对话页使用 OpenCraft 内嵌工作台；执行浏览器控制台 `show()` 不改变 Chat 的可见性。两站主 Bot 与其他 Bot 的对话均进入 OpenCraft，且不请求旧 AgentChat 启动 token。准备阶段只呈现中性聊天加载态，不挂载旧 AgentChat；就绪后显示 OpenCraft，连接异常保留同一会话并提供重试，首次资源加载失败提供重新加载入口。其他隐藏工具仍由 `show()` 控制；站点选择不替代服务端认证或资源归属校验。控制台认证 repository 在 token 替换/清除后广播不含 token 的 `lightclaw:auth-session-changed`，供同页内嵌消费者释放旧身份，跨标签仍由 storage 事件通知。制品复用同源 `/__opencraft/` 的现有发布链路。内嵌 Chat 不展示独立模型选择器，发送前读取当前 Bot/Profile 的 Hermes 默认模型；旧草稿模型与思考设置不得覆盖宿主配置，缺少可用默认模型时在发送前报错。
 
 双站 OpenCraft 会话侧栏为绝对定位的更多按钮预留独立空间，长标题在按钮前 8px 截断；该样式随 OpenCraft 启用条件生效。
 

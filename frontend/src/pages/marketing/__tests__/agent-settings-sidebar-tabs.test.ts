@@ -227,11 +227,11 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain("AGENT_SECTION_PATH_BY_ID[target]");
   });
 
-  it("shows OpenCraft Chat by default domestically and behind show() internationally", () => {
+  it("shows OpenCraft Chat by default on both sites", () => {
     const page = readPageSource();
     const styles = readStylesSource();
 
-    expect(page).toContain("const openCraftChatEnabled = !isGlobal || showHiddenAgentTools;");
+    expect(page).toContain("const openCraftChatEnabled = true;");
     expect(page).toContain("locale={locale}");
     expect(page).toContain("const isActiveBotChatAvailable = openCraftChatEnabled;");
     expect(page).toContain("const sidebarSessionBotKey = openCraftChatEnabled && activeBot && accountId");
