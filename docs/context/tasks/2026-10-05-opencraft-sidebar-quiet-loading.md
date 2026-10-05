@@ -62,6 +62,11 @@ Remove the extra loading spinner/row above sidebar conversation history.
 - Real Sidebar browser smoke passed light/dark × desktop/touch: no loading row/spinner, no false empty state, healthy row geometry/identity preserved, errors retryable, hidden remote rows and successful-empty behavior retained.
 - Initial browser smoke waited for an empty zero-height section to be visible and timed out; corrected the assertion to wait for attachment/aria-busy instead. The complete rerun passed.
 - Documentation validation and diff whitespace checks passed.
+- Feature commit `04edbe807` pushed; master merge `634fcdab5` pushed and remote revision confirmed. Full change-impact check passed with the mapped journey updated.
+- Build `20261005-sidebar-quiet-634fcdab5` uses exact committed master plus the previously approved uncommitted desktop-control overlay. Official final-package smoke, desktop/touch packaged UI with held catalog reads, shared SSH management and native desktop viewer/control grant-release checks passed. Runtime/native helper hashes unchanged from the previous preview.
+- Initial SSH UI run failed its enabled-switch computed background assertion; full rerun passed without unrelated source changes. Initial live Sidebar assertion incorrectly required all feedback absent, including valid existing error/retry rows; corrected the probe to distinguish error feedback from loading chrome, then desktop/touch checks passed on actual port 80.
+- Independent cutover completed `2026-10-05T13:48:58.575Z`; actual owner verified after reconnection: `opencraft-sidebar-quiet-20261005-preview.service`, PID `3533066`, runtime SHA-256 `dc1859312676a6bba83efe964176f085b8d5fd87ff851795a02fed94a0e650f8`. Live health, SSH native history recovery, desktop control and real browser quiet-loading checks passed; no inference/user-application input.
+- Old package and persistent data preserved. Switch rollback is implemented but was not deliberately triggered; no production/GitOps changes made.
 
 ## risks
 - Hiding feedback must not convert unfinished loading into success/empty; keep `aria-busy` and empty-state guard.
@@ -79,4 +84,4 @@ Remove the extra loading spinner/row above sidebar conversation history.
 - No secrets, remote writes or inference required.
 
 ## handoff
-- Source implemented and verified. User now authorized commit, push, master integration and current preview replacement. Preserve the running preview's desktop-control overlay and saved SSH data; switch verification pending.
+- Source committed, pushed and merged into master as `634fcdab5`. Current temporary preview replaced and independently verified after reconnection. Desktop control and saved SSH data preserved; old package retained for rollback. Refresh existing browser pages to load the new entry.
