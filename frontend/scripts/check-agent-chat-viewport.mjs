@@ -55,11 +55,17 @@ try {
       layoutHeight: innerHeight, visualTop: viewport.pageTop, visualBottom: viewport.pageTop + viewport.height,
       chat: bounds("chat"), composer: bounds("composer"),
       minHeight: getComputedStyle(document.getElementById("chat")).minHeight,
+      rootPosition: getComputedStyle(document.documentElement).position,
+      bodyPosition: getComputedStyle(document.body).position,
+      rootOverflow: getComputedStyle(document.documentElement).overflowY,
       focused: document.activeElement === document.querySelector("textarea"),
       draft: document.querySelector("textarea").value,
     };
   });
   const results = { initial: await measure() };
+  assert.equal(results.initial.rootPosition, "fixed");
+  assert.equal(results.initial.bodyPosition, "fixed");
+  assert.equal(results.initial.rootOverflow, "hidden");
   await page.evaluate(() => {
     window.viewportFixture.viewport.height = 460;
     window.viewportFixture.viewport.dispatchEvent(new Event("resize"));
@@ -88,8 +94,16 @@ try {
   assert.equal(results.panned.chat.height, 500);
   assert.ok(results.panned.composer.bottom <= results.panned.visualBottom);
   await page.evaluate(() => {
-    Object.assign(window.viewportFixture.viewport, { height: 844, pageTop: 0 });
+    // Explicit reverse-order model: the keyboard closes before pageTop clears.
+    // This is not a claim that this ordering occurred on a native iPhone.
+    window.viewportFixture.viewport.height = 844;
     window.viewportFixture.viewport.dispatchEvent(new Event("resize"));
+  });
+  results.closeWithStaleOffset = await measure();
+  assert.equal(results.closeWithStaleOffset.chat.height, 844);
+  await page.evaluate(() => {
+    window.viewportFixture.viewport.pageTop = 0;
+    window.viewportFixture.viewport.dispatchEvent(new Event("scroll"));
   });
   results.restored = await measure();
   assert.equal(results.restored.chat.height, 844);
@@ -105,6 +119,16 @@ try {
   });
   assert.equal(await page.locator("#chat").evaluate(el => el.getBoundingClientRect().height), 844);
   assert.equal(await page.locator("#chat").evaluate(el => el.style.getPropertyValue("--lv-agent-chat-viewport-height")), "");
+  assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).position), "static");
+  // Declarative chat scope must not revoke a separate, still-present modal lock.
+  await page.evaluate(() => {
+    const modal = document.createElement("div");
+    modal.id = "modal-lock-fixture";
+    modal.className = "lv-persona-modal-scroll-lock";
+    document.body.append(modal);
+  });
+  assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).overflowY), "hidden");
+  await page.evaluate(() => document.getElementById("modal-lock-fixture").remove());
   await page.setViewportSize({ width: 1280, height: 844 });
   await page.evaluate(() => {
     const chat = document.getElementById("chat");
@@ -114,6 +138,7 @@ try {
     chat.style.setProperty("--lv-agent-chat-viewport-height", "460px");
   });
   assert.equal(await page.locator("#chat").evaluate(el => el.getBoundingClientRect().height), 844);
+  assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).position), "static");
   console.log(JSON.stringify({ passed: true, stylesheetCount: links.length, results }, null, 2));
 } finally {
   await browser.close();
