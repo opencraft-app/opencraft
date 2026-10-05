@@ -1,7 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 
-const PAGE_SIZE = 20;
-
 interface TimedSession {
   readonly createdAt?: number;
   readonly updatedAt?: number;
@@ -11,8 +9,9 @@ export function useAgentSessionPagination<T extends TimedSession>(
   sessions: readonly T[],
   hasMoreOnServer: boolean,
   loadMoreOnServer?: () => Promise<void>,
+  pageSize = 20,
 ) {
-  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [visibleCount, setVisibleCount] = useState(pageSize);
   const [loadingMore, setLoadingMore] = useState(false);
   const [pageError, setPageError] = useState(false);
   const generationRef = useRef(0);
@@ -25,14 +24,14 @@ export function useAgentSessionPagination<T extends TimedSession>(
 
   const reset = useCallback(() => {
     generationRef.current += 1;
-    setVisibleCount(PAGE_SIZE);
+    setVisibleCount(pageSize);
     setLoadingMore(false);
     setPageError(false);
-  }, []);
+  }, [pageSize]);
 
   const showMore = async () => {
     if (loadingMore || !hasMoreVisible) return;
-    const nextCount = visibleCount + PAGE_SIZE;
+    const nextCount = visibleCount + pageSize;
     if (nextCount <= sessions.length || !hasMoreOnServer) {
       setVisibleCount(nextCount);
       return;
@@ -52,14 +51,14 @@ export function useAgentSessionPagination<T extends TimedSession>(
   };
 
   const collapse = () => {
-    setVisibleCount((count) => Math.max(PAGE_SIZE, count - PAGE_SIZE));
+    setVisibleCount((count) => Math.max(pageSize, count - pageSize));
     setPageError(false);
   };
 
   return {
     visibleSessions,
     hasMoreVisible,
-    hasExpanded: visibleCount > PAGE_SIZE,
+    hasExpanded: visibleCount > pageSize,
     loadingMore,
     pageError,
     showMore,

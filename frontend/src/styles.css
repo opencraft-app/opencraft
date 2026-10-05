@@ -909,6 +909,25 @@ a {
   object-fit: contain;
 }
 
+.lv-agent-avatar--status {
+  position: relative;
+  overflow: visible;
+}
+
+.lv-agent-avatar--status img {
+  border-radius: 50%;
+}
+
+.lv-agent-avatar-status {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 11px;
+  height: 11px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+}
+
 .lv-agent-profile-text {
   min-width: 0;
   flex: 1 1 auto;
