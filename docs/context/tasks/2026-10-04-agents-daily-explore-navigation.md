@@ -172,4 +172,4 @@ derived: false
 
 ## handoff
 
-- MR !4969 已合并到 master。随后用户要求将「查看更多／收起」居中；从合并后的 master 单独提交该样式调整，后续 MR !4990 已创建。按后续反馈将操作行左移约 8px、顶部内边距从 8px 缩至 2px，再将按钮行高从 20px 缩至 16px；`pnpm check`、10 项聚焦测试、`pnpm build:cn` 与 OpenCraft 生成副本只读检查通过。此前 5174 的 Chrome/Whistle 预览加载了居中规则；最新行高尚未在显示分页按钮的真实列表中目视核对。
+- MR !4969 已合并到 master。随后用户要求将「查看更多／收起」居中；从合并后的 master 单独提交该样式调整，后续 MR !4990 已创建。按后续反馈将操作行左移约 8px、顶部内边距从 8px 缩至 2px，再将按钮行高从 20px 缩至 16px；可用按钮 hover 时增加 `font-weight: 600`。`pnpm check`、10 项聚焦测试、`pnpm build:cn` 与 OpenCraft 生成副本只读检查通过。此前 5174 的 Chrome/Whistle 预览加载了居中规则；最新 hover 仍待真实列表目视核对。
