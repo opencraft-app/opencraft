@@ -38,6 +38,7 @@ async function scan(directory) {
 // their own extraction authority and must not be silently imported here.
 await scan(join(root, "apps/workbench-web/src"));
 await scan(join(root, "packages/codex-composer/src"));
+await scan(join(root, "plugins/cloud-desktop/src"));
 function parameters(message) {
   const found = new Set();
   function visit(elements) {

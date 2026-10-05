@@ -121,6 +121,8 @@ type Logic interface {
 	// 云桌面（VNC）：POST 触发（幂等 provision）/ GET 轮询（Provisioning→Ready 状态机）。
 	EnsureDesktopSession(ctx pctx.Context, instanceID string) (*transport.DesktopSessionResponse, error)
 	GetDesktopSession(ctx pctx.Context, instanceID string) (*transport.DesktopSessionResponse, error)
+	EnsureDesktopResource(ctx pctx.Context, instanceID string) (*transport.DesktopResourceResponse, error)
+	GetDesktopResource(ctx pctx.Context, instanceID string) (*transport.DesktopResourceResponse, error)
 }
 
 type logic struct {

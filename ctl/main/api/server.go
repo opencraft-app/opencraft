@@ -438,6 +438,9 @@ func normalizePath(path string) string {
 	if strings.HasPrefix(path, "/v1/instances/") && strings.HasSuffix(path, "/desktop/session") {
 		return "/v1/instances/{id}/desktop/session"
 	}
+	if strings.HasPrefix(path, "/v1/instances/") && strings.HasSuffix(path, "/desktop/resource") {
+		return "/v1/instances/{id}/desktop/resource"
+	}
 	if strings.HasPrefix(path, "/internal/instances/") && strings.HasSuffix(path, "/gateway/migrate") {
 		return "/internal/instances/{id}/gateway/migrate"
 	}
@@ -718,6 +721,28 @@ func (h *instanceHandler) handleInstance(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		writeSuccess(w, r, http.StatusOK, resp)
+	case len(parts) == 3 && parts[1] == "desktop" && parts[2] == "resource" && (r.Method == http.MethodPost || r.Method == http.MethodGet):
+		ctx, ok := newRequestContext(r)
+		if !ok {
+			writeHTTPError(w, r, errcode.ErrInstanceMissingUserID)
+			return
+		}
+		var resp *transport.DesktopResourceResponse
+		var err error
+		if r.Method == http.MethodPost {
+			resp, err = h.logic.EnsureDesktopResource(ctx, instanceID)
+		} else {
+			resp, err = h.logic.GetDesktopResource(ctx, instanceID)
+		}
+		if err != nil {
+			writeHTTPError(w, r, err)
+			return
+		}
+		status := http.StatusOK
+		if r.Method == http.MethodPost && resp.State == transport.DesktopResourceStatePreparing {
+			status = http.StatusAccepted
+		}
+		writeSuccess(w, r, status, resp)
 	case len(parts) == 3 && parts[1] == "desktop" && parts[2] == "session" && r.Method == http.MethodPost:
 		// 云桌面（VNC）：POST 幂等触发 provision（Provisioning→Ready 状态机入口）。
 		ctx, ok := newRequestContext(r)

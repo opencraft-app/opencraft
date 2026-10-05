@@ -58,7 +58,7 @@ input.on("line", line => {
   if (message.method === "thread/read") {
     const active = turns.get(message.params.threadId);
     const type = !loadedThreads.has(message.params.threadId) ? "notLoaded" : active ? "active" : "idle";
-    send({ id: message.id, result: { thread: { id: message.params.threadId, name: threadNames.get(message.params.threadId) ?? null, status: { type, ...(active ? { activeFlags: [] } : {}) }, turns: [] } } });
+    send({ id: message.id, result: { thread: { id: message.params.threadId, path: loadedThreads.has(message.params.threadId) ? `/synthetic/${message.params.threadId}.jsonl` : null, createdAt: 123, name: threadNames.get(message.params.threadId) ?? null, status: { type, ...(active ? { activeFlags: [] } : {}) }, turns: [] } } });
     return;
   }
   if (message.method === "thread/items/list") {

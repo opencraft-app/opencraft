@@ -1,5 +1,6 @@
 import type { AppServerProcessMethodMap } from "./process";
 import type { AppServerAttachmentMethodMap } from "./attachments";
+import type { HostDesktopCredential } from "./desktop";
 import type {
   ThreadUnsubscribeParams, ThreadUnsubscribeResponse,
   ThreadGoalGetParams, ThreadGoalGetResponse,
@@ -423,6 +424,8 @@ export interface AppServerMethodMap extends AppServerBotMethodMap, AppServerCode
     result: { status: number; statusText: string; headers: Record<string,string>; bodyBase64: string };
   };
   "runtime/http/cancel": { params: { requestId: string }; result: { cancelled: boolean } };
+  "opencraft/desktop/attachment/create": { params: { threadId: string }; result: HostDesktopCredential };
+  "opencraft/desktop/attachment/release": { params: { attachmentId: string }; result: Record<string, never> };
   "runtime/diagnostics/read": {
     params: Record<string, never>;
     result: { presentation: Record<string, unknown>; executions: Array<Record<string, unknown>> };

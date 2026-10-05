@@ -8,6 +8,7 @@ import {
   OPENCRAFT_ATTACHMENT_STAGING_EXTENSION,
   OPENCRAFT_PERMISSION_MODES_EXTENSION,
 } from "@opencraft/appserver-protocol";
+import { OPENCRAFT_DESKTOP_EXTENSION } from "@opencraft/appserver-protocol/desktop";
 
 // Native operations with Server/Thread/file identities. The shared broker can
 // route these independently of stdio/SSH. Connection-local handles (PTY, watch,
@@ -33,7 +34,7 @@ export function projectSharedNativeCodexInitialize(value: unknown): Record<strin
   const capabilities = record(result.capabilities);
   const extensions = { ...record(capabilities.extensions) };
   for (const extension of [OPENCRAFT_THREAD_QUEUE_EXTENSION, OPENCRAFT_THREAD_GOAL_EXTENSION,
-    OPENCRAFT_ATTACHMENT_STAGING_EXTENSION, OPENCRAFT_PERMISSION_MODES_EXTENSION,
+    OPENCRAFT_ATTACHMENT_STAGING_EXTENSION, OPENCRAFT_PERMISSION_MODES_EXTENSION, OPENCRAFT_DESKTOP_EXTENSION,
     "opencraft/host-capabilities", "opencraft/loopback-http", "opencraft/browser"]) delete extensions[extension];
   // Only these lifecycle operations are routed by this shared-native surface.
   extensions[OPENCRAFT_THREAD_LIFECYCLE_EXTENSION] = {

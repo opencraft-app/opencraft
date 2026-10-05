@@ -273,9 +273,11 @@ export async function createWorkbenchWebServer({
   appHostServer = null,
   sshServerDescriptors = [],
   sshManagement = null,
+  desktopService = null,
   webSocketHeartbeatIntervalMs = 15_000,
   onAppHostDiagnostic = diagnostic => console.info("[opencraft apphost connection]", JSON.stringify(diagnostic)),
 } = {}) {
+  if (desktopService !== null && !loopbackOnly) throw new Error("Local desktop requires a loopback-only gateway");
   const staticRoot = await realpath(resolve(root || join(repositoryRoot, "apps/workbench-web/dist")));
   if (sshServerDescriptors.length && !loopbackOnly && !sshManagement?.options.publicOrigin && !sshManagement?.options.publicAccess) throw new Error("SSH Server catalog requires a protected listener");
   const normalizedTarget = appServerTarget === null ? null : normalizeTarget(appServerTarget);
@@ -343,6 +345,10 @@ export async function createWorkbenchWebServer({
         sendJson(response, 202, { ok: true });
         return;
       }
+      if (url.pathname === "/desktop/connect") {
+        sendJson(response, desktopService === null ? 404 : 426, { ok: false, error: "Desktop connection unavailable" });
+        return;
+      }
       if (url.pathname === "/appserver") {
         if (normalizedTarget === null) {
           sendJson(response, 404, { ok: false, error: "AppServer proxy is not available in this host" });
@@ -396,6 +402,7 @@ export async function createWorkbenchWebServer({
   });
 
   const websocketServer = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024 * 1024 });
+  const desktopWebSockets = new WebSocketServer({ noServer: true, maxPayload: 1 << 20 });
   const activeAppHostSockets = new Set();
   const liveWebSockets = new WeakSet();
   const appHostSocketDiagnostics = new WeakMap();
@@ -411,7 +418,7 @@ export async function createWorkbenchWebServer({
   };
   const heartbeat = webSocketHeartbeatIntervalMs > 0 ? setInterval(() => {
     revokePrivateSockets();
-    for (const client of websocketServer.clients) {
+    for (const client of [...websocketServer.clients, ...desktopWebSockets.clients]) {
       if (!liveWebSockets.has(client)) {
         appHostSocketDiagnostics.get(client)?.("heartbeat-timeout");
         client.terminate();
@@ -448,6 +455,14 @@ export async function createWorkbenchWebServer({
     }
     if (privateConnection && (!sshManagement || !sshManagement.sameOrigin(request, true) || !sshManagement.authorized(request))) {
       socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n"); socket.destroy(); return;
+    }
+    if (pathname === "/desktop/connect") {
+      if (desktopService === null || url.search || !loopbackOnly) { socket.destroy(); return; }
+      desktopWebSockets.handleUpgrade(request, socket, head, client => {
+        trackWebSocket(client);
+        desktopService.accept(client);
+      });
+      return;
     }
     if ((pathname === "/apphost" || privateConnection) && appHostServer !== null) {
       websocketServer.handleUpgrade(request, socket, head, (client) => {
@@ -492,6 +507,7 @@ export async function createWorkbenchWebServer({
     staticRoot,
     appServerTarget: normalizedTarget,
     listen({ host = "0.0.0.0", port = 10000 } = {}) {
+      if (desktopService !== null && host !== "127.0.0.1") return Promise.reject(new Error("Local desktop requires loopback"));
       return new Promise((resolvePromise, reject) => {
         server.once("error", reject);
         server.listen(port, host, () => {
@@ -504,7 +520,9 @@ export async function createWorkbenchWebServer({
       unsubscribeRevocation?.();
       if (heartbeat !== null) clearInterval(heartbeat);
       for (const client of websocketServer.clients) client.terminate();
+      for (const client of desktopWebSockets.clients) client.terminate();
       websocketServer.close();
+      desktopWebSockets.close();
       return new Promise((resolvePromise, reject) => {
         server.close((error) => error ? reject(error) : resolvePromise());
       });

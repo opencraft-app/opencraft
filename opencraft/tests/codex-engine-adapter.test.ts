@@ -10,6 +10,8 @@ import { AccountPoolStore } from "@opencraft/account-pool-host";
 import { OPENCRAFT_ATTACHMENT_STAGING_EXTENSION, OPENCRAFT_THREAD_LIFECYCLE_EXTENSION, OPENCRAFT_THREAD_QUEUE_EXTENSION, OPENCRAFT_THREAD_START_DURABILITY_EXTENSION, OPENCRAFT_PERMISSION_MODES_EXTENSION } from "@opencraft/appserver-protocol";
 import { CodexEngineAdapter } from "../apps/opencraft-daemon/src/codex-engine-adapter.js";
 import { CodexHostQueue } from "../apps/opencraft-daemon/src/codex-host-queue.js";
+import { LocalDesktopService } from "../apps/local-agent-host/src/desktop/local-desktop-service.js";
+import { OPENCRAFT_DESKTOP_ATTACH, OPENCRAFT_DESKTOP_RELEASE, OPENCRAFT_DESKTOP_EXTENSION } from "@opencraft/appserver-protocol/desktop";
 
 function waitFor(frames: Array<Record<string, unknown>>, predicate: (frame: Record<string, unknown>) => boolean): Promise<Record<string, unknown>> {
   const existing = frames.find(predicate);
@@ -27,7 +29,7 @@ function waitFor(frames: Array<Record<string, unknown>>, predicate: (frame: Reco
   });
 }
 
-function createRoutingAdapter(root: string, frames: Array<Record<string, unknown>>, nativeQueueSteerVersion: 0 | 1 | 2 = 0, steerResponse?: string, nativeSubscriptionGraceMs?: number): CodexEngineAdapter {
+function createRoutingAdapter(root: string, frames: Array<Record<string, unknown>>, nativeQueueSteerVersion: 0 | 1 | 2 = 0, steerResponse?: string, nativeSubscriptionGraceMs?: number, desktop?: LocalDesktopService): CodexEngineAdapter {
   const adapter = new CodexEngineAdapter({
     executable: process.execPath,
     runtimeDirectory: root,
@@ -39,6 +41,7 @@ function createRoutingAdapter(root: string, frames: Array<Record<string, unknown
     createMaintenanceClient: async () => { throw new Error("not used"); },
     logDiagnostic: () => undefined,
     nativeSubscriptionGraceMs,
+    desktop,
   });
   adapter.subscribeMessage(frame => frames.push(JSON.parse(frame)));
   return adapter;
@@ -131,6 +134,55 @@ test("Codex Host stages ordinary files for its native process without forwarding
     await adapter.close();
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("Codex desktop authorization reads the engine Thread and retires logical Client grants", async t => {
+  const root = await mkdtemp(join(tmpdir(), "opencraft-desktop-codex-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  let inspections = 0;
+  const desktop = new LocalDesktopService({ serverId: "backend-server", environmentId: "backend-machine", principalId: "local-owner",
+    observer: { inspect: async () => { inspections++; return "a".repeat(64); }, open: async () => { throw new Error("not needed"); } } });
+  t.after(() => desktop.close());
+  const revoked: string[] = [], release: string[] = [];
+  const originalRevoke = desktop.revoke.bind(desktop), originalRelease = desktop.release.bind(desktop);
+  desktop.revoke = key => { revoked.push(key); originalRevoke(key); };
+  desktop.release = (key, id) => { release.push(key); originalRelease(key, id); };
+  const frames: Array<Record<string, unknown>> = [];
+  const adapter = createRoutingAdapter(root, frames, 0, undefined, undefined, desktop);
+  t.after(() => adapter.close());
+  await adapter.connect();
+  await initializeClient(adapter, frames, "client-a");
+  const init = frames.find(frame => frame.id === "client-a:init")!;
+  assert.deepEqual((init.result as any).capabilities.extensions[OPENCRAFT_DESKTOP_EXTENSION], desktop.capability());
+  const request = async (id: string, method: string, params: unknown, client = "client-a") => {
+    await adapter.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: client }));
+    return waitFor(frames, frame => frame.id === id);
+  };
+  assert.ok((await request("not-durable", OPENCRAFT_DESKTOP_ATTACH, { threadId: "missing-thread" })).error);
+  assert.equal(inspections, 0, "native observer must not run for nonexistent/ephemeral Thread");
+  await request("resume-desktop", "thread/resume", { threadId: "desktop-thread" });
+  assert.ok((await request("forged-instance", OPENCRAFT_DESKTOP_ATTACH, { threadId: "desktop-thread", instanceId: "attacker" })).error);
+  await adapter.send(JSON.stringify({ id: "uninitialized", method: OPENCRAFT_DESKTOP_ATTACH,
+    params: { threadId: "desktop-thread" }, [LOGICAL_CLIENT_FIELD]: "client-b" }));
+  assert.equal(((await waitFor(frames, frame => frame.id === "uninitialized")).error as any).code, -32600);
+  assert.equal(inspections, 0);
+  const attached = await request("grant", OPENCRAFT_DESKTOP_ATTACH, { threadId: "desktop-thread" });
+  const credential = attached.result as any;
+  assert.equal(credential.target.conversationId, "desktop-thread");
+  assert.equal(credential.target.serverId, "backend-server");
+  assert.equal(credential.instanceId, "backend-machine");
+  await initializeClient(adapter, frames, "client-b");
+  await request("foreign-release", OPENCRAFT_DESKTOP_RELEASE, { attachmentId: credential.attachmentId }, "client-b");
+  const foreignKey = release.at(-1)!;
+  await adapter.send(JSON.stringify({ method: "runtime/client/disconnect", [LOGICAL_CLIENT_FIELD]: "client-a" }));
+  assert.notEqual(revoked.at(-1), foreignKey);
+  const oldKey = revoked.at(-1);
+  // Reusing the same Client ID is a different authorization epoch.
+  frames.splice(0);
+  await initializeClient(adapter, frames, "client-a");
+  await request("new-grant", OPENCRAFT_DESKTOP_ATTACH, { threadId: "desktop-thread" });
+  await adapter.close();
+  assert.ok(revoked.some(key => key !== oldKey && key !== foreignKey));
 });
 
 test("Codex Engine shares one physical initialize and restores logical client routing", async () => {

@@ -4,6 +4,7 @@ import { LOGICAL_CLIENT_FIELD } from "@opencraft/app-host-protocol";
 import type { DuplexTransport, TransportStatus } from "@opencraft/appserver-client/transport";
 import { CodexEngineAdapter } from "../apps/opencraft-daemon/src/codex-engine-adapter.js";
 import { OPENCRAFT_ATTACHMENT_STAGING_EXTENSION, OPENCRAFT_THREAD_QUEUE_EXTENSION, OPENCRAFT_THREAD_GOAL_EXTENSION } from "@opencraft/appserver-protocol";
+import { OPENCRAFT_DESKTOP_EXTENSION, OPENCRAFT_DESKTOP_ATTACH, OPENCRAFT_DESKTOP_RELEASE } from "@opencraft/appserver-protocol/desktop";
 
 class Physical implements DuplexTransport {
   status: TransportStatus = { state: "idle" };
@@ -41,10 +42,13 @@ test("shared remote broker initializes once with backend policy; no local extens
     await f.send("b", "1", "initialize");
     assert.equal(f.physical.sent.length, 1);
     assert.deepEqual(f.physical.sent[0].params.capabilities, { experimentalApi: true });
-    f.physical.receive({ id: f.physical.sent[0].id, result: { platform: "linux" } });
+    f.physical.receive({ id: f.physical.sent[0].id, result: { platform: "linux", capabilities: { extensions: { [OPENCRAFT_DESKTOP_EXTENSION]: { version: 1 } } } } });
     const [a, b] = f.frames;
     assert.equal(a.id, 1); assert.equal(b.id, "1");
-    for (const extension of [OPENCRAFT_ATTACHMENT_STAGING_EXTENSION, OPENCRAFT_THREAD_QUEUE_EXTENSION, OPENCRAFT_THREAD_GOAL_EXTENSION]) assert.equal(a.result.capabilities.extensions[extension], undefined);
+    for (const extension of [OPENCRAFT_ATTACHMENT_STAGING_EXTENSION, OPENCRAFT_THREAD_QUEUE_EXTENSION, OPENCRAFT_THREAD_GOAL_EXTENSION, OPENCRAFT_DESKTOP_EXTENSION]) {
+      assert.equal(a.result.capabilities.extensions[extension], undefined);
+      assert.equal(b.result.capabilities.extensions[extension], undefined);
+    }
     await f.detach("a");
     assert.equal(f.physical.sent.filter(message => message.method === "initialize").length, 1);
     assert.ok(f.physical.sent.every(message => !message[LOGICAL_CLIENT_FIELD]));
@@ -135,6 +139,21 @@ test("no local extension or unowned connection-resource RPC is forwarded remotel
     await f.adapter.send(JSON.stringify({ method: "turn/start", params: { threadId: "t", input: [] }, [LOGICAL_CLIENT_FIELD]: "not-initialized" }));
     await f.adapter.send(JSON.stringify({ method: "turn/start", params: { threadId: "t", input: [] }, [LOGICAL_CLIENT_FIELD]: "a" }));
     assert.equal(f.physical.sent.length, count, "RPC notification cannot bypass logical request ownership");
+  } finally { await f.adapter.close(); }
+});
+test("remote clients cannot attach or release this host's local desktop", async () => {
+  const f = setup();
+  try {
+    await f.initialize();
+    const count = f.physical.sent.length;
+    for (const [method, params] of [
+      [OPENCRAFT_DESKTOP_ATTACH, { threadId: "remote-thread" }],
+      [OPENCRAFT_DESKTOP_RELEASE, { attachmentId: "local-attachment" }],
+    ] as const) {
+      await f.send("a", method, method, params);
+      assert.ok(f.frames.at(-1).error, "local desktop must not be available through a remote binding");
+    }
+    assert.equal(f.physical.sent.length, count, "desktop RPC must not reach remote native Codex");
   } finally { await f.adapter.close(); }
 });
 test("transport acknowledgement waits for write; failed mutation is unknown and never replayed", async () => {

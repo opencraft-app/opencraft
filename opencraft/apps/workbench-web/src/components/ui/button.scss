@@ -1,5 +1,6 @@
 @use "@opencraft/design-system/typography.web" as typography;
 @use "@opencraft/design-system/controls.web" as controls;
+@use "@opencraft/design-system/panel-controls.web" as panel-controls;
 
 .ui-button {
   @include typography.role(control, null);
@@ -61,6 +62,9 @@
     min-height: 0;
     padding-inline: 0;
   }
+
+  // Explicit density owns geometry after legacy size/variant defaults.
+  &[data-density="compact"] { @include panel-controls.compact-action; }
 
   &[data-variant="destructive"] {
     background: var(--color-status-error);

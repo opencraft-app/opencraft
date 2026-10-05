@@ -27,6 +27,7 @@
 
 | ID | 不变量 | 责任/验证 |
 |---|---|---|
+| WSP-36 | 云桌面标签属于 Conversation；短期观看连接属于已挂载视图；远端桌面与独占输入授权属于后端。未接通真实适配器不发布入口；观看默认无输入，两项就绪与有效授权缺一不可，握手不能冒充首帧；关闭、换账户、取消后迟到结果只释放，不复活连接，也不停止 Agent。自动恢复仅限 adapter 声明安全的新观看授权与已分类的传输中断，有限退避，不继承控制权、不重放资源创建。连接/错误空态只是反馈投影，不能替换媒体宿主；申请期间取消仍可用，确认后才呈现控制态和聚焦画面；剪贴板只由显式手势读取、按原 grant 失效、先发送文本再发送粘贴按键；空态、进度和紧凑控件尺度由设计系统拥有 | cloud-desktop plugin / DesktopViewController；模型、真实 React 和主题/窄屏浏览器验证；本机真实媒体/授权已验收，公网授权、原生控制与手机实机/弱网待验收 |
 | WSP-01 | 同一主会话只有一个可交互主 Composer；普通/工具展开分支互斥，Side Chat 不叠加父输入 | ThreadComposerPresentation；Web smoke |
 | WSP-02 | 显示位置不改变草稿/附件/提交目标；Host 相同裸 threadId 不得碰撞 | composer-core + ConversationScope；既有 composer/binding 测试及新 smoke |
 | WSP-03 | 兼容恢复旧标签时不调用关闭资源；MRU/active 有效 | panel reducer/service；workbench-workspace-presentation.test.ts |

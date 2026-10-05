@@ -44,6 +44,36 @@ test("headless command accepts a private data root and rejects unsupported flags
   assert.throws(() => parseHeadlessArguments([], {}, () => {
     throw new Error("No home directory");
   }), /--data-dir is required/u);
+  assert.equal(parseHeadlessArguments(["--local-desktop", "--data-dir", "/tmp/local-desktop"]).localDesktop, true);
+  assert.throws(() => parseHeadlessArguments(["--local-desktop", "--host", "0.0.0.0", "--allow-unauthenticated-public"]), /loopback-only/u);
+});
+
+test("local desktop gateway requires loopback, exact Origin and credential-free URL", async context => {
+  const root = await mkdtemp(join(tmpdir(), "opencraft-desktop-gateway-"));
+  context.after(() => rm(root, { recursive: true, force: true }));
+  await writeFile(join(root, "index.html"), "<!doctype html>");
+  let accepted = 0;
+  const desktopService = { accept(socket) { accepted++; socket.close(); } };
+  await assert.rejects(createWorkbenchWebServer({ root, desktopService }), /loopback-only/u);
+  await assert.rejects(startHeadlessServer({ root, host: "0.0.0.0", allowUnauthenticatedPublic: true, localDesktop: true }), /loopback-only/u);
+  const web = await createWorkbenchWebServer({ root, appServerTarget: null, loopbackOnly: true, desktopService });
+  context.after(() => web.close());
+  await assert.rejects(web.listen({ host: "0.0.0.0", port: 0 }), /loopback/u);
+  const address = await web.listen({ host: "127.0.0.1", port: 0 });
+  const origin = `http://127.0.0.1:${address.port}`;
+  const endpoint = `${origin.replace("http", "ws")}/desktop/connect`;
+  const connect = (url, options) => new Promise((resolve, reject) => {
+    const socket = new WebSocket(url, options);
+    socket.once("error", reject); socket.once("open", () => resolve(socket));
+  });
+  await assert.rejects(connect(endpoint, { origin: "https://foreign.example" }), /403/u);
+  await assert.rejects(connect(endpoint), /403/u);
+  await assert.rejects(connect(`${endpoint}?ticket=must-not-be-in-url`, { origin }));
+  assert.equal(accepted, 0);
+  const socket = await connect(endpoint, { origin });
+  await new Promise(resolve => socket.once("close", resolve));
+  assert.equal(accepted, 1);
+  assert.equal((await fetch(`${origin}/desktop/connect`)).status, 426);
 });
 
 test("SSH Servers are private backend bindings, never an anonymous public feature", async () => {

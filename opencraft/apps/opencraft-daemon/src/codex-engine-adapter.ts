@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { createInterface, type Interface as ReadLineInterface } from "node:readline";
 import { join } from "node:path";
@@ -10,6 +11,8 @@ import { projectCodexAttachmentNotification, projectCodexAttachmentResult } from
 import type { DuplexTransport, TransportStatus } from "@opencraft/appserver-client/transport";
 import { LOGICAL_CLIENT_FIELD } from "@opencraft/app-host-protocol";
 import { LocalAttachmentStagingService } from "@opencraft/local-agent-host/attachments/local-staging";
+import type { LocalDesktopService, LocalDesktopOwner } from "@opencraft/local-agent-host/desktop";
+import { OPENCRAFT_DESKTOP_ATTACH, OPENCRAFT_DESKTOP_RELEASE, OPENCRAFT_DESKTOP_EXTENSION, type HostDesktopCapability } from "@opencraft/appserver-protocol/desktop";
 import {
   OPENCRAFT_ATTACHMENT_STAGING_EXTENSION,
   OPENCRAFT_FIRST_TURN_DURABILITY_CAPABILITY,
@@ -68,6 +71,7 @@ interface SharedCodexRoutingOptions {
 }
 
 interface LocalCodexEngineOptions extends SharedCodexRoutingOptions {
+  readonly desktop?: LocalDesktopService;
   readonly kind?: "local";
   readonly executable: string;
   readonly runtimeDirectory: string;
@@ -106,10 +110,11 @@ class CodexQueueRpcError extends Error {
   constructor(readonly code: number, message: string, readonly data?: unknown) { super(message); }
 }
 
-function withCodexHostCapabilities(value: unknown, attachmentStaging: AttachmentStagingCapability): RpcRecord {
+function withCodexHostCapabilities(value: unknown, attachmentStaging: AttachmentStagingCapability, desktop?: HostDesktopCapability): RpcRecord {
   const result = record(value);
   const capabilities = record(result.capabilities);
-  const extensions = record(capabilities.extensions);
+  const extensions = { ...record(capabilities.extensions) };
+  delete extensions[OPENCRAFT_DESKTOP_EXTENSION]; // This extension belongs to this Host, not native Codex.
   return {
     ...result,
     capabilities: {
@@ -117,6 +122,7 @@ function withCodexHostCapabilities(value: unknown, attachmentStaging: Attachment
       extensions: {
         ...extensions,
         [OPENCRAFT_ATTACHMENT_STAGING_EXTENSION]: attachmentStaging,
+        ...(desktop ? { [OPENCRAFT_DESKTOP_EXTENSION]: desktop } : {}),
         [OPENCRAFT_THREAD_START_DURABILITY_EXTENSION]:
           OPENCRAFT_FIRST_TURN_DURABILITY_CAPABILITY,
         [OPENCRAFT_THREAD_LIFECYCLE_EXTENSION]: {
@@ -179,6 +185,7 @@ export class CodexEngineAdapter implements DuplexTransport {
   private subscriptions: CodexSubscriptionService | null = null;
   private stderrTail = "";
   private closeOperation: Promise<void> | null = null;
+  private readonly desktopOwnerNamespace = randomUUID();
   private readonly remoteDisposers: Array<() => void> = [];
 
   constructor(private readonly options: LocalCodexEngineOptions | RemoteCodexEngineOptions) {
@@ -187,6 +194,9 @@ export class CodexEngineAdapter implements DuplexTransport {
 
   private get physicalAvailable(): boolean {
     return this.options.kind === "remote" ? this.options.transport.status.state === "open" : this.child !== null;
+  }
+  private get desktopService(): LocalDesktopService | undefined {
+    return this.options.kind === "remote" ? undefined : this.options.desktop;
   }
 
   private diagnostic(event: Record<string, unknown>): void {
@@ -394,6 +404,10 @@ export class CodexEngineAdapter implements DuplexTransport {
         }
         return;
       }
+      if (message.method === OPENCRAFT_DESKTOP_ATTACH || message.method === OPENCRAFT_DESKTOP_RELEASE) {
+        await this.handleDesktopRequest(clientId, requestClientEpoch, id, message.method, message.params);
+        return;
+      }
       if (message.method.startsWith("thread/queue/")) {
         await this.handleQueueRequest(clientId, id, message.method, record(message.params));
         return;
@@ -482,6 +496,7 @@ export class CodexEngineAdapter implements DuplexTransport {
   close(): Promise<void> {
     if (this.closeOperation !== null) return this.closeOperation;
     this.publishStatus({ state: "closing" });
+    this.revokeDesktopOwners();
     this.closeOperation = (async () => {
       for (const dispose of this.remoteDisposers.splice(0)) dispose();
       if (this.options.kind === "remote") await this.options.transport.close();
@@ -611,7 +626,7 @@ export class CodexEngineAdapter implements DuplexTransport {
           this.physicalInitializePending = false;
           if ("result" in message) {
             this.initializeResult = this.attachmentStaging
-              ? withCodexHostCapabilities(message.result, this.attachmentStaging.capability)
+              ? withCodexHostCapabilities(message.result, this.attachmentStaging.capability, this.desktopService?.capability())
               : projectSharedNativeCodexInitialize(message.result);
             message = { ...message, result: this.initializeResult };
             void this.writePhysical({ method: "initialized", params: {} })?.catch(() => undefined);
@@ -923,6 +938,7 @@ export class CodexEngineAdapter implements DuplexTransport {
   }
 
   private disconnectClient(clientId: string): void {
+    this.desktopService?.revoke(this.desktopOwnerKey(clientId, this.clientEpoch(clientId)));
     this.clientEpochs.delete(clientId);
     this.initializedClients.delete(clientId);
     const affected = new Set<string>();
@@ -940,6 +956,45 @@ export class CodexEngineAdapter implements DuplexTransport {
     }
     this.releaseServerRequests(clientId);
     for (const threadId of affected) this.scheduleNativeRelease(threadId);
+  }
+
+  private desktopOwnerKey(clientId: string, epoch: number): string {
+    return JSON.stringify([this.desktopOwnerNamespace, clientId, epoch]);
+  }
+
+  private revokeDesktopOwners(): void {
+    for (const [clientId, epoch] of this.clientEpochs) this.desktopService?.revoke(this.desktopOwnerKey(clientId, epoch));
+  }
+
+  private async handleDesktopRequest(clientId: string, epoch: number, id: string | number, method: string, rawParams: unknown): Promise<void> {
+    const service = this.desktopService;
+    const current = () => this.statusValue.state === "open" && this.initializedClients.has(clientId)
+      && this.clientEpoch(clientId) === epoch;
+    const key = this.desktopOwnerKey(clientId, epoch);
+    try {
+      if (!service || !current() || !rawParams || typeof rawParams !== "object" || Array.isArray(rawParams)) throw new Error();
+      const params = record(rawParams);
+      let result: unknown;
+      if (method === OPENCRAFT_DESKTOP_ATTACH) {
+        if (Object.keys(params).length !== 1 || typeof params.threadId !== "string") throw new Error();
+        const owner: LocalDesktopOwner = { key, isCurrent: current, readThread: async threadId => {
+          const response = record(await this.requestPhysical("thread/read", { threadId, includeTurns: false }, 5_000));
+          const thread = record(response.thread);
+          if (thread.id !== threadId || typeof thread.path !== "string" || typeof thread.createdAt !== "number") throw new Error();
+          return { id: threadId, path: thread.path, createdAt: thread.createdAt };
+        } };
+        const credential = await service.prepare(owner, params.threadId);
+        if (!current()) { service.release(key, credential.attachmentId); return; }
+        result = credential;
+      } else {
+        if (Object.keys(params).length !== 1 || typeof params.attachmentId !== "string") throw new Error();
+        service.release(key, params.attachmentId);
+        result = {};
+      }
+      if (current()) this.emit({ id, result }, clientId);
+    } catch {
+      if (current()) this.emit({ id, error: { code: -32600, message: "Desktop is unavailable" } }, clientId);
+    }
   }
 
   private async handleAccountRequest(clientId: string, message: RpcRecord): Promise<void> {
@@ -1428,6 +1483,7 @@ export class CodexEngineAdapter implements DuplexTransport {
   }
 
   private readonly fail = (error: Error): void => {
+    this.revokeDesktopOwners();
     this.rejectInternalRequests(error);
     for (const timer of this.goalContinuationTimers.values()) clearTimeout(timer);
     this.goalContinuationTimers.clear();

@@ -120,6 +120,7 @@ type TencentCloudProvider struct {
 
 	startTerminalSessionFunc func(context.Context, string, string) (TerminalSession, error)
 	tatForwardURLFunc        func(string) string
+	desktopObserverCommands  CommandRunner // Test seam; production uses this provider's TAT runner.
 }
 
 const (

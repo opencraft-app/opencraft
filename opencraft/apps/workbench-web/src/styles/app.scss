@@ -15,6 +15,7 @@
 @use "./thread-workspace";
 @use "./model-services";
 @use "./ssh-connections";
+@use "@opencraft/plugin-cloud-desktop/panel.web";
 
 .settings-search-select__trigger {
   display: flex;

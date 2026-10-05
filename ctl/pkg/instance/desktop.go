@@ -50,18 +50,18 @@ const (
 	// desktopProvisionRetryAfter：Provisioning 态 GET 轮询只走轻量探测的时间窗。
 	// 超过该时长仍未就绪，才允许重发一次 provision 兜底（CR-C：避免秒级轮询
 	// 反复下发 120s 超时的重命令：storepasswd + 4 个 unit + 探测）。
-	desktopProvisionRetryAfter    = 60 * time.Second
-	desktopNoVNCPort              = 6080
-	desktopWidth                  = 1440
-	desktopHeight                 = 900
-	desktopProbeOKMarker          = "DESKTOP_PROBE_OK"
-	desktopProbePendingMarker     = "DESKTOP_PROBE_PENDING"
-	desktopMissingLayerMarker     = "DESKTOP_LAYER_MISSING"
+	desktopProvisionRetryAfter = 60 * time.Second
+	desktopNoVNCPort           = 6080
+	desktopWidth               = 1440
+	desktopHeight              = 900
+	desktopProbeOKMarker       = "DESKTOP_PROBE_OK"
+	desktopProbePendingMarker  = "DESKTOP_PROBE_PENDING"
+	desktopMissingLayerMarker  = "DESKTOP_LAYER_MISSING"
 	// desktopProvisionFailedMarker：provision 关键步骤（写 VNC 密码 / 拉起桌面服务）
 	// 真失败时输出并 exit 非零（CR-P1#2）。只有「图形层缺失(Missing)」和「探测未就绪
 	// (Pending)」是正常业务信号可返回成功；密码写入/服务启动失败必须显式暴露，否则会被
 	// 当成 Pending 反复轮询、永久卡在 Provisioning 且无可见原因（旧 noVNC 甚至可能误报 Ready）。
-	desktopProvisionFailedMarker = "DESKTOP_PROVISION_FAILED"
+	desktopProvisionFailedMarker  = "DESKTOP_PROVISION_FAILED"
 	desktopDefaultIdleMinutes     = 30
 	desktopDefaultReapIntervalMin = 5
 
@@ -96,14 +96,20 @@ const (
 // 两把锁不嵌套获取（provisionMu 临界区内获取 mu 是允许的短暂持有；反之禁止），
 // 避免死锁。
 type desktopSession struct {
-	provisionMu sync.Mutex
+	provisionMu *sync.Mutex // Shared by replacement generations of this instance.
 
-	mu         sync.Mutex
-	sandboxID  string
-	password   string
-	status     string // transport.DesktopSessionStatus*
-	reason     string
-	lastActive time.Time
+	mu               sync.Mutex
+	instanceID       string
+	userID           string
+	generation       string
+	preparing        bool
+	observerPrepared bool // Successful optional observer startup, NOT incarnation proof.
+	prepareCancel    context.CancelFunc
+	sandboxID        string
+	password         string
+	status           string // transport.DesktopSessionStatus*
+	reason           string
+	lastActive       time.Time
 	// provisionStartedAt：进入 Provisioning 态的时刻。GET 轮询据此判断
 	// 是否仍在「轻量探测窗口」内（CR-C），避免每次轮询重发 provision 命令。
 	provisionStartedAt time.Time
@@ -134,6 +140,9 @@ func (s *desktopSession) setStatus(status, reason string) {
 		s.provisionStartedAt = time.Time{}
 	}
 	s.status = status
+	if status != transport.DesktopSessionStatusReady {
+		s.observerPrepared = false
+	}
 	s.reason = reason
 }
 
@@ -193,6 +202,11 @@ func (s *desktopSession) endInstall(status, reason string) {
 	s.installing = false
 	s.status = status
 	s.reason = reason
+	if status == transport.DesktopSessionStatusProvisioning {
+		// Installation only creates units; startup must run immediately, not
+		// inherit the earlier missing-layer command's pending-probe window.
+		s.provisionStartedAt = time.Time{}
+	}
 	if status != transport.DesktopSessionStatusInstalling {
 		s.installMessage = ""
 	}
@@ -217,13 +231,16 @@ func resetDesktopSessionsForTest() {
 }
 
 // EnsureDesktopSession POST /v1/instances/{id}/desktop/session
-// 幂等触发：已 Ready 直接返回；无会话则建桌面沙箱 + TAT 拉起桌面服务。
+// 幂等触发：复用实例主 sandbox，通过 TAT 拉起桌面服务。
 func (l *logic) EnsureDesktopSession(ctx pctx.Context, instanceID string) (*transport.DesktopSessionResponse, error) {
 	entity, err := l.loadDesktopInstance(ctx, instanceID)
 	if err != nil {
 		return nil, err
 	}
-	session := l.desktopSessionOf(instanceID)
+	session, err := l.desktopSessionForEntity(ctx, entity)
+	if err != nil {
+		return nil, err
+	}
 
 	session.mu.Lock()
 	status := session.status
@@ -250,7 +267,10 @@ func (l *logic) GetDesktopSession(ctx pctx.Context, instanceID string) (*transpo
 	if err != nil {
 		return nil, err
 	}
-	session := l.desktopSessionOf(instanceID)
+	session, err := l.desktopSessionForEntity(ctx, entity)
+	if err != nil {
+		return nil, err
+	}
 
 	session.mu.Lock()
 	status := session.status
@@ -282,8 +302,8 @@ func (l *logic) GetDesktopSession(ctx pctx.Context, instanceID string) (*transpo
 	}
 }
 
-// loadDesktopInstance 校验用户与实例归属。桌面沙箱独立于实例主沙箱，
-// 不要求实例 Running——入口契约只要求「实例属于该用户」。
+// loadDesktopInstance 校验用户与实例归属。桌面复用主 sandbox；
+// 是否能启动由实际 sandbox/TAT 结果判断，而非实例展示状态。
 func (l *logic) loadDesktopInstance(ctx pctx.Context, instanceID string) (*modelinstance.Entity, error) {
 	if ctx == nil || strings.TrimSpace(ctx.GetUserID()) == "" {
 		return nil, errcode.ErrInstanceMissingUserID
@@ -308,7 +328,7 @@ func (l *logic) desktopSessionOf(instanceID string) *desktopSession {
 			return session
 		}
 	}
-	session := &desktopSession{}
+	session := &desktopSession{instanceID: instanceID}
 	actual, loaded := desktopSessions.LoadOrStore(instanceID, session)
 	if loaded {
 		if s, ok := actual.(*desktopSession); ok {
@@ -323,9 +343,18 @@ func (l *logic) desktopSessionOf(instanceID string) *desktopSession {
 // v3（§12 TB.1）：不再 CreateSandbox 新建独立 CVM，直接在实例自己的机器上拉桌面。
 // 全程持 provisionMu：把「读状态 → 拉起服务 → 写回」收敛为临界区，避免并发请求
 // 重复下发 provision 命令与状态竞争（CR-A 保留语义）。进入前若已 Ready 直接返回。
-func (l *logic) provisionDesktop(ctx pctx.Context, session *desktopSession, entity *modelinstance.Entity) (*transport.DesktopSessionResponse, error) {
-	session.provisionMu.Lock()
-	defer session.provisionMu.Unlock()
+func (l *logic) provisionDesktop(ctx pctx.Context, session *desktopSession, entity *modelinstance.Entity) (resp *transport.DesktopSessionResponse, err error) {
+	operationMu := session.operationMutex()
+	operationMu.Lock()
+	defer operationMu.Unlock()
+	if err := l.validateDesktopSession(ctx, session); err != nil {
+		return nil, err
+	}
+	defer func() {
+		if scopeErr := l.validateDesktopSession(ctx, session); scopeErr != nil {
+			resp, err = nil, scopeErr
+		}
+	}()
 
 	// 双检：拿到锁后重新读状态，可能已被前一个持锁者推到 Ready / 正在安装。
 	session.mu.Lock()
@@ -340,8 +369,10 @@ func (l *logic) provisionDesktop(ctx pctx.Context, session *desktopSession, enti
 		return l.desktopSessionResponse(session)
 	}
 
-	// 复用主 sandbox：sandboxID 直接取自实例 entity，不新建机器。
-	sandboxID := strings.TrimSpace(entity.SandboxId)
+	// 使用已绑定并重新核验的目标，不使用等待锁之前的 entity 快照。
+	session.mu.Lock()
+	sandboxID := session.sandboxID
+	session.mu.Unlock()
 	if sandboxID == "" {
 		// 实例主机尚未就绪（无 sandbox），桌面无处可跑。
 		session.setStatus(transport.DesktopSessionStatusFailed, "instance sandbox not ready")
@@ -394,7 +425,7 @@ func (l *logic) provisionDesktop(ctx pctx.Context, session *desktopSession, enti
 	// 因此只要 stdout 含该标记，无论退出码，一律走按需安装。
 	// 启动后台安装 goroutine，本次请求立即返回 Installing，前端轮询看进度。
 	if strings.Contains(out, desktopMissingLayerMarker) {
-		l.startDesktopInstall(session, sandboxID)
+		l.startDesktopInstall(ctx, session, sandboxID)
 		return l.desktopSessionResponse(session)
 	}
 	// 【标记优先】provision 关键步骤失败（写密码/拉起服务）显式暴露：置 Failed 并带原因，
@@ -414,11 +445,27 @@ func (l *logic) provisionDesktop(ctx pctx.Context, session *desktopSession, enti
 		return l.desktopSessionResponse(session)
 	}
 	// 命令成功但桌面仍在启动（provision 探测 pending）：交由 GET 轮询继续判定。
-	return l.probeDesktop(ctx, session)
+	return l.probeDesktopLocked(ctx, session)
 }
 
 // probeDesktop 快速探测 noVNC 端口就绪；就绪则置 Ready。
-func (l *logic) probeDesktop(ctx pctx.Context, session *desktopSession) (*transport.DesktopSessionResponse, error) {
+func (l *logic) probeDesktop(ctx pctx.Context, session *desktopSession) (resp *transport.DesktopSessionResponse, err error) {
+	operationMu := session.operationMutex()
+	operationMu.Lock()
+	defer operationMu.Unlock()
+	if err := l.validateDesktopSession(ctx, session); err != nil {
+		return nil, err
+	}
+	defer func() {
+		if scopeErr := l.validateDesktopSession(ctx, session); scopeErr != nil {
+			resp, err = nil, scopeErr
+		}
+	}()
+	return l.probeDesktopLocked(ctx, session)
+}
+
+// Caller holds the shared operation mutex and validates the target on exit.
+func (l *logic) probeDesktopLocked(ctx pctx.Context, session *desktopSession) (*transport.DesktopSessionResponse, error) {
 	session.mu.Lock()
 	sandboxID := session.sandboxID
 	session.mu.Unlock()
@@ -599,11 +646,12 @@ else
 fi`, desktopNoVNCPort, desktopProbeOKMarker, desktopProbePendingMarker)
 }
 
-// renderDesktopStopServicesCommand idle 回收用：只停桌面 4 个服务，不动主机（TB.4）。
+// renderDesktopStopServicesCommand idle 回收用：包含可选的只读观看服务，不动主机。
 // systemctl stop 幂等（已停/不存在都不报错），总是 exit 0。
 func renderDesktopStopServicesCommand() string {
 	return fmt.Sprintf(`sudo systemctl stop %s >/dev/null 2>&1 || systemctl stop %s >/dev/null 2>&1 || true`,
-		desktopSystemdUnits, desktopSystemdUnits)
+		desktopSystemdUnits+" "+desktopObserverUnit+" "+desktopObserverProxyUnit,
+		desktopSystemdUnits+" "+desktopObserverUnit+" "+desktopObserverProxyUnit)
 }
 
 // startDesktopInstall 触发按需安装图形层（§12 TB.2，范式 C）。
@@ -611,19 +659,21 @@ func renderDesktopStopServicesCommand() string {
 // 抢占 installing 标记后起后台 goroutine：用独立 context（请求早已返回）经 TAT
 // 发起「后台安装脚本 + 进度文件」，再周期轮询进度文件；装完转 Provisioning、
 // 失败/超时转 Failed。前端在此期间轮询 GET 看 Installing 进度。
-func (l *logic) startDesktopInstall(session *desktopSession, sandboxID string) {
+func (l *logic) startDesktopInstall(parent pctx.Context, session *desktopSession, sandboxID string) {
 	if !session.tryBeginInstall("正在安装桌面环境（首次约 2-5 分钟）…") {
 		return // 已有安装在进行
 	}
-	go l.runDesktopInstall(sandboxID, session)
+	job, cancel := context.WithTimeout(context.Background(), desktopInstallTimeoutS*time.Second)
+	ctx := pctx.NewContext(job).WithUserID(parent.GetUserID()).WithRegion(parent.GetRegion())
+	ctx.SetGormDB(parent.GormDB())
+	go func() { defer cancel(); l.runDesktopInstall(ctx, sandboxID, session) }()
 }
 
 // runDesktopInstall 后台安装主体：发起安装 → 轮询进度 → 收敛状态。
-func (l *logic) runDesktopInstall(sandboxID string, session *desktopSession) {
-	ctx := context.Background()
+func (l *logic) runDesktopInstall(ctx pctx.Context, sandboxID string, session *desktopSession) {
 
 	// 1. 发起后台安装（TAT 命令秒回：脚本用 nohup 丢后台，避免撞 300s 上限）。
-	startRes, err := l.sandboxAdapter.ExecCommand(ctx, sandboxID, renderDesktopInstallCommand(), desktopProbeTimeoutS)
+	startRes, err := l.execDesktopInstallCommand(ctx, session, sandboxID, renderDesktopInstallCommand())
 	if err != nil || !sandboxCommandSucceeded(startRes) {
 		detail := "dispatch desktop install"
 		if err != nil {
@@ -638,10 +688,21 @@ func (l *logic) runDesktopInstall(sandboxID string, session *desktopSession) {
 	// 2. 轮询进度文件，直到 DONE / FAIL / 超时。
 	deadline := time.Now().Add(desktopInstallTimeoutS * time.Second)
 	for time.Now().Before(deadline) {
-		time.Sleep(desktopInstallPollInterval)
+		timer := time.NewTimer(desktopInstallPollInterval)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			session.endInstall(transport.DesktopSessionStatusFailed, "desktop install timed out")
+			return
+		case <-timer.C:
+		}
 
-		res, perr := l.sandboxAdapter.ExecCommand(ctx, sandboxID, renderDesktopInstallProgressCommand(), desktopProbeTimeoutS)
+		res, perr := l.execDesktopInstallCommand(ctx, session, sandboxID, renderDesktopInstallProgressCommand())
 		if perr != nil || !sandboxCommandSucceeded(res) {
+			if l.validateDesktopSession(ctx, session) != nil {
+				session.endInstall(transport.DesktopSessionStatusFailed, "desktop target changed")
+				return
+			}
 			continue // 单次轮询失败不致命，继续重试直至超时
 		}
 		out := desktopCommandOutput(res)
@@ -662,6 +723,18 @@ func (l *logic) runDesktopInstall(sandboxID string, session *desktopSession) {
 	session.endInstall(transport.DesktopSessionStatusFailed, "desktop install timed out")
 }
 
+// Serialize local TAT dispatches and fence detached jobs. This cannot revoke an
+// already dispatched remote nohup installer; its file lock remains authoritative.
+func (l *logic) execDesktopInstallCommand(ctx pctx.Context, session *desktopSession, sandboxID, command string) (*psandbox.ExecCommandResult, error) {
+	op := session.operationMutex()
+	op.Lock()
+	defer op.Unlock()
+	if err := l.validateDesktopSession(ctx, session); err != nil {
+		return nil, err
+	}
+	return l.sandboxAdapter.ExecCommand(ctx, sandboxID, command, desktopProbeTimeoutS)
+}
+
 // renderDesktopInstallCommand 后台安装脚本（§12 TB.2）：nohup 丢后台立即返回，
 // 分阶段写进度到进度文件；落盘 4 个 systemd unit（与镜像预装等价）。
 // 幂等：重复执行覆盖脚本、重启安装。所有网络/apt 失败写 FAIL marker。
@@ -670,14 +743,14 @@ func (l *logic) runDesktopInstall(sandboxID string, session *desktopSession) {
 // 问题 3 修复：进度文件加 flock 独占写，清空旧残留。
 func renderDesktopInstallCommand() string {
 	// 说明：进度文件按阶段写 "PROGRESS=<n>"；成功尾附 DONE、失败尾附 FAIL。
-	// 具体图形层安装步骤（apt 包名 / unit 内容）与 images/build.sh --with-desktop 对齐；
-	// 此处为运行时等价实现，供未预装镜像按需补齐。
+	// Ubuntu 包名与 images/build.sh --with-desktop 对齐；TencentOS 4.4 仅分叉包安装。
+	// 两种系统共享 agentuser、unit 与进度协议，供未预装镜像按需补齐。
 	return fmt.Sprintf(`set +e
 PF=%q
 LOG=/tmp/vela-desktop-install.log
 # 问题 3 修复：清空进度文件残留，防止跨阶段复读
-: > "$PF"; : > "$LOG"
-cat > /tmp/vela-desktop-install.sh <<'INSTALL'
+: > "$PF" && : > "$LOG" || exit 1
+cat > /tmp/vela-desktop-install.sh <<'INSTALL' || exit 1
 #!/usr/bin/env bash
 set +e
 PF=%q
@@ -685,12 +758,19 @@ LOG=/tmp/vela-desktop-install.log
 # 问题 3 修复：flock 独占锁，单次写入，避免 echo >> 累积旧进度
 say(){ (flock -x 9; echo "PROGRESS=$1" > "$PF"; echo "[install] $2" >> "$LOG") 9>"$PF.lock"; }
 fail(){ (flock -x 9; echo "%s" >> "$PF"; echo "[install][FAIL] $1" >> "$LOG") 9>"$PF.lock"; exit 1; }
-say 5 "apt update"
-sudo apt-get update -y >>"$LOG" 2>&1 || fail "apt update"
-say 30 "install xvfb/xfce/x11vnc/novnc"
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-  xvfb x11vnc novnc websockify xfce4 xfce4-terminal dbus-x11 \
-  fonts-wqy-zenhei fonts-noto-cjk curl >>"$LOG" 2>&1 || fail "apt install"
+sudo -n true >>"$LOG" 2>&1 || fail "non-interactive sudo required"
+[ -d /run/systemd/system ] || fail "systemd is not running"
+DESKTOP_USER=%q
+DESKTOP_HOME=%q
+DESKTOP_UID=$(id -u "$DESKTOP_USER" 2>/dev/null) || fail "desktop runtime user missing"
+[ "$DESKTOP_UID" != 0 ] || fail "desktop runtime user must not be root"
+[ "$(getent passwd "$DESKTOP_USER" | cut -d: -f6)" = "$DESKTOP_HOME" ] || fail "desktop runtime home mismatch"
+%s
+# 验证两种发行版实际安装结果，不能仅凭包管理器返回值报告成功。
+for executable in /usr/bin/Xvfb /usr/bin/x11vnc /usr/bin/websockify /usr/bin/dbus-run-session /usr/bin/startxfce4; do
+  [ -x "$executable" ] || fail "desktop executable missing: $executable"
+done
+[ -r /usr/share/novnc/vnc.html ] || fail "noVNC assets missing"
 say 70 "write systemd units"
 # 阻塞 2 修复：4 个 unit 统一 DISPLAY :1（与镜像预装对齐）。
 # agentuser 对齐（与 images/build.sh --with-desktop 预装版本一致）：
@@ -698,7 +778,7 @@ say 70 "write systemd units"
 #     修掉「桌面里创建的文件属主 root、agent 读不了」的错配，并降低公网 noVNC 暴露 root 的风险）。
 #   - HOME/DISPLAY 显式注入；WM 用 dbus-run-session 包裹 startxfce4（非 root 下起 XFCE 会话的关键）。
 #   - Requires/After 补齐依赖链，与预装 unit 对齐。
-sudo tee /etc/systemd/system/vela-xvfb.service >/dev/null <<'U1'
+sudo -n tee /etc/systemd/system/vela-xvfb.service >/dev/null <<'U1' || fail "write vela-xvfb unit"
 [Unit]
 Description=vela Xvfb
 After=network.target
@@ -711,7 +791,7 @@ RestartSec=2
 [Install]
 WantedBy=multi-user.target
 U1
-sudo tee /etc/systemd/system/vela-desktop-wm.service >/dev/null <<'U2'
+sudo -n tee /etc/systemd/system/vela-desktop-wm.service >/dev/null <<'U2' || fail "write vela-desktop-wm unit"
 [Unit]
 Description=vela WM
 Requires=vela-xvfb.service
@@ -727,7 +807,7 @@ RestartSec=3
 [Install]
 WantedBy=multi-user.target
 U2
-sudo tee /etc/systemd/system/vela-x11vnc.service >/dev/null <<'U3'
+sudo -n tee /etc/systemd/system/vela-x11vnc.service >/dev/null <<'U3' || fail "write vela-x11vnc unit"
 [Unit]
 Description=vela x11vnc
 Requires=vela-xvfb.service
@@ -743,7 +823,7 @@ RestartSec=3
 [Install]
 WantedBy=multi-user.target
 U3
-sudo tee /etc/systemd/system/vela-novnc.service >/dev/null <<'U4'
+sudo -n tee /etc/systemd/system/vela-novnc.service >/dev/null <<'U4' || fail "write vela-novnc unit"
 [Unit]
 Description=vela noVNC
 After=network.target vela-x11vnc.service
@@ -757,28 +837,35 @@ RestartSec=3
 [Install]
 WantedBy=multi-user.target
 U4
+sudo -n tee /etc/systemd/system/vela-desktop-observer.service >/dev/null <<'U5' || fail "write vela-desktop-observer unit"
+%s
+U5
 say 90 "daemon-reload"
-sudo systemctl daemon-reload >>"$LOG" 2>&1 || fail "daemon-reload"
+sudo -n systemctl daemon-reload >>"$LOG" 2>&1 || fail "daemon-reload"
 say 100 "done"
 (flock -x 9; echo "%s" >> "$PF") 9>"$PF.lock"
 INSTALL
-chmod +x /tmp/vela-desktop-install.sh
+chmod +x /tmp/vela-desktop-install.sh || exit 1
 echo "%s"
 nohup bash /tmp/vela-desktop-install.sh >>"$LOG" 2>&1 &
 exit 0`,
-		desktopInstallProgressFile, // 外层 PF=%q
-		desktopInstallProgressFile, // heredoc 内 PF=%q
-		desktopInstallFailMarker,   // fail(){ echo "%s" }
-		desktopRuntimeUser,         // vela-xvfb   User=%s
-		desktopRuntimeUser,         // vela-desktop-wm User=%s
+		desktopInstallProgressFile,  // 外层 PF=%q
+		desktopInstallProgressFile,  // heredoc 内 PF=%q
+		desktopInstallFailMarker,    // fail(){ echo "%s" }
+		desktopRuntimeUser,          // DESKTOP_USER=%q
+		"/home/"+desktopRuntimeUser, // DESKTOP_HOME=%q
+		renderDesktopInstallPackagesCommand(),
+		desktopRuntimeUser,          // vela-xvfb   User=%s
+		desktopRuntimeUser,          // vela-desktop-wm User=%s
 		"/home/"+desktopRuntimeUser, // vela-desktop-wm HOME=%s
-		desktopRuntimeUser,         // vela-x11vnc User=%s
+		desktopRuntimeUser,          // vela-x11vnc User=%s
 		"/home/"+desktopRuntimeUser, // vela-x11vnc HOME=%s
 		"/home/"+desktopRuntimeUser, // vela-x11vnc -rfbauth %s/.vnc/passwd
-		desktopRuntimeUser,         // vela-novnc  User=%s
-		desktopNoVNCPort,           // vela-novnc  websockify %d
-		desktopInstallDoneMarker,   // 尾部 DONE marker
-		desktopInstallStartedMark,  // echo "%s"（STARTED）
+		desktopRuntimeUser,          // vela-novnc  User=%s
+		desktopNoVNCPort,            // vela-novnc  websockify %d
+		renderDesktopObserverUnit(), // Separate, not auto-enabled by legacy provision.
+		desktopInstallDoneMarker,    // 尾部 DONE marker
+		desktopInstallStartedMark,   // echo "%s"（STARTED）
 	)
 }
 
@@ -883,6 +970,12 @@ func reapIdleDesktops(logger *zap.Logger) {
 		instanceID, _ := key.(string)
 		session, ok := value.(*desktopSession)
 		if !ok || session == nil {
+			return true
+		}
+		operationMu := session.operationMutex()
+		operationMu.Lock()
+		defer operationMu.Unlock()
+		if current, _ := desktopSessions.Load(instanceID); current != session {
 			return true
 		}
 		sandboxID, _, status, _, lastActive := session.snapshot()

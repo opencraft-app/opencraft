@@ -491,85 +491,97 @@ func TestShardHandlerClearsLifecycleKeyOnRouteMiss(t *testing.T) {
 
 func TestEndToEndWebSocketViaRouterAndShard(t *testing.T) {
 	t.Parallel()
+	for _, tc := range []struct {
+		name        string
+		messageType int
+		payload     []byte
+	}{
+		{"text", websocket.TextMessage, []byte("hello")},
+		{"desktop-binary", websocket.BinaryMessage, []byte{'R', 'F', 'B', 0, 255, 128, 13, 10}},
+		{"desktop-large-binary", websocket.BinaryMessage, bytes.Repeat([]byte{0, 255, 128, 42}, 256*1024)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 
-	upgrader := websocket.Upgrader{}
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := upgrader.Upgrade(w, r, nil)
-		if err != nil {
-			t.Errorf("upgrade upstream websocket: %v", err)
-			return
-		}
-		defer conn.Close()
-
-		mt, msg, err := conn.ReadMessage()
-		if err != nil {
-			t.Errorf("read websocket message: %v", err)
-			return
-		}
-		if err := conn.WriteMessage(mt, append([]byte("echo:"), msg...)); err != nil {
-			t.Errorf("write websocket message: %v", err)
-		}
-	}))
-	defer upstream.Close()
-
-	upstreamURL, err := url.Parse(upstream.URL)
-	if err != nil {
-		t.Fatalf("parse upstream url: %v", err)
-	}
-
-	shardHandler, err := NewShardHandler(ShardConfig{
-		Routes: stubRouteStore{
-			get: func(sandboxID string) (Rule, error) {
-				if sandboxID != "sandbox-a" {
-					t.Fatalf("unexpected sandbox id %q", sandboxID)
+			upgrader := websocket.Upgrader{}
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				conn, err := upgrader.Upgrade(w, r, nil)
+				if err != nil {
+					t.Errorf("upgrade upstream websocket: %v", err)
+					return
 				}
-				return Rule{InstanceID: "instance-a", Address: upstreamURL.Hostname()}, nil
-			},
-		},
-		Proxies: NewProxyPool(ProxyPoolOptions{}),
-	})
-	if err != nil {
-		t.Fatalf("new shard handler: %v", err)
-	}
-	shardServer := httptest.NewServer(shardHandler)
-	defer shardServer.Close()
+				defer conn.Close()
 
-	routerHandler, err := NewRouterHandler(RouterConfig{
-		ShardCount: 1,
-		ShardServiceURLFn: func(int) (*url.URL, error) {
-			return url.Parse(shardServer.URL)
-		},
-		Proxies: NewProxyPool(ProxyPoolOptions{}),
-	})
-	if err != nil {
-		t.Fatalf("new router handler: %v", err)
-	}
-	routerServer := httptest.NewServer(routerHandler)
-	defer routerServer.Close()
+				mt, msg, err := conn.ReadMessage()
+				if err != nil {
+					t.Errorf("read websocket message: %v", err)
+					return
+				}
+				if err := conn.WriteMessage(mt, append([]byte("echo:"), msg...)); err != nil {
+					t.Errorf("write websocket message: %v", err)
+				}
+			}))
+			defer upstream.Close()
 
-	routerURL, err := url.Parse(routerServer.URL)
-	if err != nil {
-		t.Fatalf("parse router url: %v", err)
-	}
+			upstreamURL, err := url.Parse(upstream.URL)
+			if err != nil {
+				t.Fatalf("parse upstream url: %v", err)
+			}
 
-	wsURL := "ws://" + routerURL.Host + "/ws"
-	headers := http.Header{}
-	headers.Set("Host", fmt.Sprintf("%s-sandbox-a.e2b.app", upstreamURL.Port()))
-	conn, _, err := websocket.DefaultDialer.Dial(wsURL, headers)
-	if err != nil {
-		t.Fatalf("dial websocket via router: %v", err)
-	}
-	defer conn.Close()
+			shardHandler, err := NewShardHandler(ShardConfig{
+				Routes: stubRouteStore{
+					get: func(sandboxID string) (Rule, error) {
+						if sandboxID != "sandbox-a" {
+							t.Fatalf("unexpected sandbox id %q", sandboxID)
+						}
+						return Rule{InstanceID: "instance-a", Address: upstreamURL.Hostname()}, nil
+					},
+				},
+				Proxies: NewProxyPool(ProxyPoolOptions{}),
+			})
+			if err != nil {
+				t.Fatalf("new shard handler: %v", err)
+			}
+			shardServer := httptest.NewServer(shardHandler)
+			defer shardServer.Close()
 
-	if err := conn.WriteMessage(websocket.TextMessage, []byte("hello")); err != nil {
-		t.Fatalf("write websocket message: %v", err)
-	}
-	_, msg, err := conn.ReadMessage()
-	if err != nil {
-		t.Fatalf("read websocket response: %v", err)
-	}
-	if got := string(msg); got != "echo:hello" {
-		t.Fatalf("unexpected websocket response %q", got)
+			routerHandler, err := NewRouterHandler(RouterConfig{
+				ShardCount: 1,
+				ShardServiceURLFn: func(int) (*url.URL, error) {
+					return url.Parse(shardServer.URL)
+				},
+				Proxies: NewProxyPool(ProxyPoolOptions{}),
+			})
+			if err != nil {
+				t.Fatalf("new router handler: %v", err)
+			}
+			routerServer := httptest.NewServer(routerHandler)
+			defer routerServer.Close()
+
+			routerURL, err := url.Parse(routerServer.URL)
+			if err != nil {
+				t.Fatalf("parse router url: %v", err)
+			}
+
+			wsURL := "ws://" + routerURL.Host + "/ws"
+			headers := http.Header{}
+			headers.Set("Host", fmt.Sprintf("%s-sandbox-a.e2b.app", upstreamURL.Port()))
+			conn, _, err := websocket.DefaultDialer.Dial(wsURL, headers)
+			if err != nil {
+				t.Fatalf("dial websocket via router: %v", err)
+			}
+			defer conn.Close()
+
+			if err := conn.WriteMessage(tc.messageType, tc.payload); err != nil {
+				t.Fatalf("write websocket message: %v", err)
+			}
+			messageType, msg, err := conn.ReadMessage()
+			if err != nil {
+				t.Fatalf("read websocket response: %v", err)
+			}
+			if messageType != tc.messageType || !bytes.Equal(msg, append([]byte("echo:"), tc.payload...)) {
+				t.Fatalf("websocket response corrupted: type=%d bytes=%d", messageType, len(msg))
+			}
+		})
 	}
 }
 
