@@ -2690,7 +2690,7 @@ export const AgentSettingsPage = ({
     [bots, t, user.plan.maxBots],
   );
   const [showHiddenAgentTools, setShowHiddenAgentTools] = useState(false);
-  const openCraftChatEnabled = !isGlobal || showHiddenAgentTools;
+  const openCraftChatEnabled = true;
   /** 多 bot 创建引导（取代原先的「创建 Bot」弹窗） */
   const [showMultiBotOnboarding, setShowMultiBotOnboarding] = useState(false);
   /** 「从其他 Bot 复制」选中的来源 bot id */

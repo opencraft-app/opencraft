@@ -195,28 +195,25 @@ describe("international Bot onboarding", () => {
   });
   afterEach(cleanup);
 
-  it("reveals international OpenCraft Chat only after show() and hides it on the next toggle", async () => {
+  it("shows international OpenCraft Chat by default and keeps it visible when show() toggles", async () => {
     render(page("?bot=ins-372", "chat"));
-    expect(screen.queryByTestId("opencraft-chat")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("agent-chat")).not.toBeInTheDocument();
-    expect(screen.queryByRole("group", { name: "对话" })).not.toBeInTheDocument();
-    const show = (window as Window & { show?: () => boolean }).show;
-    expect(show).toBeTypeOf("function");
-    act(() => { show?.(); });
     const chat = await screen.findByTestId("opencraft-chat");
     expect(chat).toHaveAttribute("data-region", "intl");
     expect(chat).toHaveAttribute("data-locale", "en-US");
     expect(screen.getByRole("group", { name: "对话" })).toBeInTheDocument();
     expect(screen.queryByTestId("agent-chat")).not.toBeInTheDocument();
+    const show = (window as Window & { show?: () => boolean }).show;
+    expect(show).toBeTypeOf("function");
     act(() => { show?.(); });
-    expect(screen.queryByTestId("opencraft-chat")).not.toBeInTheDocument();
-    expect(screen.queryByRole("group", { name: "对话" })).not.toBeInTheDocument();
+    expect(screen.getByTestId("opencraft-chat")).toBe(chat);
+    act(() => { show?.(); });
+    expect(screen.getByTestId("opencraft-chat")).toBe(chat);
+    expect(screen.getByRole("group", { name: "对话" })).toBeInTheDocument();
   });
 
   it("uses OpenCraft for an international non-default Bot", async () => {
     bots = [buildBot(), { ...buildBot(), id: "bot-child", profileId: "research", isDefault: false, name: "Research Bot" }];
     currentLocale = "ja-JP";
-    setConsoleShowEnabled(true);
     render(page("?bot=bot-child", "chat"));
     const chat = await screen.findByTestId("opencraft-chat");
     expect(chat).toHaveAttribute("data-region", "intl");
