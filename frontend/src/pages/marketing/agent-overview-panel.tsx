@@ -395,7 +395,7 @@ export const ProfileEditDialog = ({
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="rounded-[0.875rem] md:w-[32rem]">
         <div className="pr-6">
-          <DialogTitle className="text-lg font-semibold leading-7 text-black/[0.92]">{t("编辑资料")}</DialogTitle>
+          <DialogTitle className="text-lg font-semibold leading-7 text-black/[0.92]">{t("修改资料")}</DialogTitle>
           <DialogDescription className="mt-1 text-[13px] leading-5 text-black/50">
             {t("修改你的智能伙伴的头像、名字与描述")}
           </DialogDescription>
@@ -546,7 +546,7 @@ const BuddyProfileSection = ({
 
       <button
         type="button"
-        aria-label={t("编辑资料")}
+        aria-label={t("修改资料")}
         disabled={!canEdit}
         title={canEdit ? undefined : t("正在加载...")}
         onClick={() => setEditOpen(true)}

@@ -56,7 +56,7 @@ describe("agent overview panel affordances", () => {
      * 资料卡片是整张可点的，必须是真 button：
      * 用 div + onClick 会丢掉键盘可达性与 aria 语义。
      */
-    const cardIndex = panel.indexOf('aria-label={t("编辑资料")}');
+    const cardIndex = panel.indexOf('aria-label={t("修改资料")}');
     expect(cardIndex).toBeGreaterThan(0);
     const card = panel.slice(cardIndex - 200, cardIndex + 600);
     expect(card).toContain("<button");

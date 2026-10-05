@@ -1737,6 +1737,40 @@ html[data-codex-window-type="browser"] .main-content-top-fade {
   }
 }
 
+.opencraft-embedded-workbench-root .new-thread-draft-hero {
+  h1 {
+    position: relative;
+    width: max-content;
+    max-width: calc(100% - 86px);
+    margin-right: 86px;
+    text-align: left;
+
+    &::before {
+      position: absolute;
+      right: -12px;
+      bottom: -4px;
+      left: calc(100% - 3em);
+      height: 2px;
+      background: #67509a;
+      content: "";
+      mask-image: linear-gradient(to right, #000 calc(100% - 14px), transparent);
+      pointer-events: none;
+    }
+
+    &::after {
+      position: absolute;
+      top: -16px;
+      left: calc(100% - 34px);
+      width: 110px;
+      height: 85px;
+      background: url("/lightvela-intl-home/assets/lv-cover-lavender.webp") center / contain no-repeat;
+      content: "";
+      mask-image: linear-gradient(to right, transparent, #000 14px);
+      pointer-events: none;
+    }
+  }
+}
+
 .pending-conversation-page,
 .pending-conversation-scroll {
   width: 100%;
@@ -3696,6 +3730,24 @@ html[data-codex-window-type="browser"] .main-content-top-fade {
   .new-thread-context-trigger {
     max-width: 210px;
   }
+
+  .opencraft-embedded-workbench-root .new-thread-draft-hero h1 {
+    max-width: calc(100% - 62px);
+    margin-right: 62px;
+
+    &::before {
+      right: -8px;
+      mask-image: linear-gradient(to right, #000 calc(100% - 10px), transparent);
+    }
+
+    &::after {
+      top: calc(100% - 36px);
+      left: calc(100% - 20px);
+      width: 76px;
+      height: 59px;
+      mask-image: linear-gradient(to right, transparent, #000 10px);
+    }
+  }
 }
 
 @container new-thread-main (max-height: 540px) {
@@ -3705,6 +3757,12 @@ html[data-codex-window-type="browser"] .main-content-top-fade {
 
   .new-thread-draft-hero {
     padding-bottom: 28px;
+  }
+
+  .opencraft-embedded-workbench-root .new-thread-draft-hero h1::after {
+    top: calc(100% - 27px);
+    width: 56px;
+    height: 44px;
   }
 
   .new-thread-draft-composer-zone {

@@ -4616,6 +4616,14 @@ export const AgentSettingsPage = ({
     handleCreateNew();
     if (sourceBotId) setCloneSourceBotId(sourceBotId);
   };
+  const handleOpenFleetBotChat = (botId: string) => {
+    pendingNewChatSessionBotId = botId;
+    setChatSessionCommands(null);
+    setActiveTabId(botId);
+    setSidebarTab("daily");
+    setChatSessionsExpanded(true);
+    navigate(getAgentBotSectionHref(AGENT_SECTION_PATH_BY_ID.chat, botId));
+  };
   const fleetOverview = (
     <AgentFleetOverview
       bots={bots}
@@ -4624,6 +4632,7 @@ export const AgentSettingsPage = ({
       canCreate={activeBot ? canCreateAdditionalBot : canCreateInitialAgent}
       createLimitMessage={createLimitMessage || ""}
       onCreate={handleCreateFleetBot}
+      onOpenChat={handleOpenFleetBotChat}
       onChanged={buddyProfileState.reload}
       getAvatarForBot={getAvatarForBot}
       onDelete={(bot) => {

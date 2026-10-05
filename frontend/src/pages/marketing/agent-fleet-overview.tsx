@@ -24,12 +24,13 @@ export type FleetOverviewProps = {
   canCreate: boolean;
   createLimitMessage: string;
   onCreate: (sourceBotId?: string) => void;
+  onOpenChat: (botId: string) => void;
   onChanged: () => void;
   onDelete: (bot: OpenClawBot) => void;
   getAvatarForBot: (botId: string) => string | undefined;
 };
 
-function FleetBotCard({ bot, isCurrent, canDelete, fallbackAvatarUrl, canCreate, onCreate, onAction, onDelete }: {
+function FleetBotCard({ bot, isCurrent, canDelete, fallbackAvatarUrl, canCreate, onCreate, onOpenChat, onAction, onDelete }: {
   bot: OpenClawBot;
   isCurrent: boolean;
   canDelete: boolean;
@@ -37,6 +38,7 @@ function FleetBotCard({ bot, isCurrent, canDelete, fallbackAvatarUrl, canCreate,
   onDelete: FleetOverviewProps["onDelete"];
   canCreate: boolean;
   onCreate: FleetOverviewProps["onCreate"];
+  onOpenChat: FleetOverviewProps["onOpenChat"];
   onAction: (action: Action) => void;
 }) {
   const t = useT();
@@ -64,9 +66,9 @@ function FleetBotCard({ bot, isCurrent, canDelete, fallbackAvatarUrl, canCreate,
       {isCurrent && <span className="pointer-events-none absolute left-0 top-0 rounded-br-[4px] rounded-tl-[3px] bg-black px-2 py-0.5 text-xs leading-4 text-white">{t("当前 Bot")}</span>}
       <button
         type="button"
-        aria-label={`${t("修改资料")}: ${name}`}
-        disabled={!canEdit}
-        onClick={() => editProfile()}
+        aria-label={`${t("新建对话")}: ${name}`}
+        disabled={transitioning}
+        onClick={() => onOpenChat(bot.id)}
         className="absolute inset-0 rounded-[4px] enabled:cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/30 focus-visible:ring-offset-2"
       />
       <div className="pointer-events-none flex items-start gap-3">
@@ -105,7 +107,7 @@ function FleetBotCard({ bot, isCurrent, canDelete, fallbackAvatarUrl, canCreate,
   );
 }
 
-export function AgentFleetOverview({ bots, currentBotId, heroStats, canCreate, createLimitMessage, onCreate, onChanged, onDelete, getAvatarForBot }: FleetOverviewProps) {
+export function AgentFleetOverview({ bots, currentBotId, heroStats, canCreate, createLimitMessage, onCreate, onOpenChat, onChanged, onDelete, getAvatarForBot }: FleetOverviewProps) {
   const t = useT();
   const repositories = useRepositories();
   const { refreshBots, botsError, botsLoading } = useOpenClaw();
@@ -194,7 +196,7 @@ export function AgentFleetOverview({ bots, currentBotId, heroStats, canCreate, c
                 ? "grid-cols-1 md:grid-cols-2"
                 : "md:grid-cols-2 lg:grid-cols-3")}
         >
-          {bots.map((bot) => <FleetBotCard key={`${bot.id}:${revision}`} bot={bot} isCurrent={bot.id === currentBotId} canDelete={!bot.isDefault || !bots.some((other) => other.id !== bot.id && (other.instanceId ?? other.id) === (bot.instanceId ?? bot.id))} fallbackAvatarUrl={getAvatarForBot(bot.id) ?? ""} canCreate={canCreate} onCreate={onCreate} onAction={setAction} onDelete={onDelete} />)}
+          {bots.map((bot) => <FleetBotCard key={`${bot.id}:${revision}`} bot={bot} isCurrent={bot.id === currentBotId} canDelete={!bot.isDefault || !bots.some((other) => other.id !== bot.id && (other.instanceId ?? other.id) === (bot.instanceId ?? bot.id))} fallbackAvatarUrl={getAvatarForBot(bot.id) ?? ""} canCreate={canCreate} onCreate={onCreate} onOpenChat={onOpenChat} onAction={setAction} onDelete={onDelete} />)}
         </div>
         {scrollable && pagination.positions.length > 1 && <div className="mt-2 flex items-center justify-center gap-0">
           {pagination.positions.map((position, index) => (
