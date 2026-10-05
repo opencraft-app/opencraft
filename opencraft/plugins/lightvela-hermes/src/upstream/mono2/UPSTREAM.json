@@ -1,6 +1,6 @@
 {
   "source": "frontend/src",
-  "sourceRevision": "397c8a6a811ae451ff68364764ab34e637d0c99b",
+  "sourceRevision": "b6fcfeb44c2ad76af5045687db619ae195078982",
   "generatedBy": "scripts/sync-mono2-agent-console.mjs",
   "files": [
     {
@@ -89,7 +89,7 @@
     },
     {
       "file": "i18n/generated/en-US.json",
-      "sourceSha256": "302a4972b728c397cac99fbe7bfbaaf96005f17174639de1da4d127cccd866e0"
+      "sourceSha256": "c4632de6390167ca24a6e4a47485b8a8e5d075142cce65a873654856064b1cfd"
     },
     {
       "file": "i18n/generated/es.json",
