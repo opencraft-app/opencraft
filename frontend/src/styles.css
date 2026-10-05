@@ -928,6 +928,14 @@ a {
   border-radius: 50%;
 }
 
+.lv-agent-avatar-status--blinking {
+  animation: lv-agent-avatar-status-blink 1.6s ease-in-out infinite;
+}
+
+@keyframes lv-agent-avatar-status-blink {
+  50% { opacity: 0.2; }
+}
+
 .lv-agent-profile-text {
   min-width: 0;
   flex: 1 1 auto;

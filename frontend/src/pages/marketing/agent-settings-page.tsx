@@ -6055,7 +6055,10 @@ export const AgentSettingsPage = ({
                                 )}
                                 {!isGlobal && (
                                   <span
-                                    className="lv-agent-avatar-status"
+                                    className={cn(
+                                      "lv-agent-avatar-status",
+                                      !isActiveBotRestarting && ["provisioning", "deleting", "draft"].includes(activeBot.status) && "lv-agent-avatar-status--blinking",
+                                    )}
                                     role="img"
                                     aria-label={isActiveBotRestarting ? t("重启中...") : getBotStatusLabel(activeBot.status)}
                                     title={isActiveBotRestarting ? t("重启中...") : getBotStatusLabel(activeBot.status)}
