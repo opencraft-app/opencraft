@@ -20,7 +20,7 @@ await assertHeadlessWebRelease(resolve(webRoot));
 const directory = await mkdtemp(join(tmpdir(), "opencraft-ssh-management-smoke-"));
 const key = Buffer.concat([Buffer.from([0, 0, 0, 11]), Buffer.from("ssh-ed25519"), Buffer.from([0, 0, 0, 32]), randomBytes(32)]).toString("base64");
 const hostKey = `fixture.invalid ssh-ed25519 ${key}`;
-const calls: Array<{ hostId: string; method: string }> = [];
+const calls: Array<{ hostId: string; method: string; params: any }> = [];
 let management: SshManagement;
 const appHost = new AppHostServer({ logicalClientRouting: true, physicalHostLifetime: "server", createTransport(hostId) {
   if (hostId.startsWith("ssh:")) management.store.binding(hostId); // Enforce real saved enablement/trust/credential boundary.
@@ -28,7 +28,7 @@ const appHost = new AppHostServer({ logicalClientRouting: true, physicalHostLife
     transport: new SshCodexTransport({ hostname: "fixture.invalid", port: 22, username: "fixture", knownHostsFile: "/synthetic/known_hosts", authentication: { kind: "agent" },
       spawnSsh: (args, env) => {
         const child = spawn(process.execPath, [new URL("../tests/fixtures/fake-codex-ssh-proxy.mjs", import.meta.url).pathname, args.at(-1)!], { stdio: ["pipe", "pipe", "pipe", "ipc"], env: { ...env, FIXTURE_WORKBENCH_UI: "1", ...(!hostId.startsWith("ssh:") ? { FIXTURE_WORKBENCH_UI_EMPTY_HISTORY: "1" } : {}) } });
-        child.on("message", (frame: any) => calls.push({ hostId, method: frame.method })); return child;
+        child.on("message", (frame: any) => calls.push({ hostId, method: frame.method, params: frame.params })); return child;
       },
     }) });
 } });
@@ -124,6 +124,8 @@ try {
       await new Promise(resolve => setTimeout(resolve, 50));
     }
     assert.ok(calls.some(call => call.hostId === serverId && call.method === "thread/list"));
+    assert.ok(calls.filter(call => call.hostId === serverId && call.method === "thread/list").every(call => call.params.useStateDbOnly === true),
+      "Actual Workbench SSH catalog reads must use the native index, not scan rollouts");
     assert.equal(calls.some(call => call.hostId === serverId && call.method === "thread/resume"), false);
     // Settings has its own navigation sidebar. Return through the actual
     // Chat command to inspect the history list without changing chat target.
@@ -137,6 +139,39 @@ try {
     await page.getByRole("button", { name: "Choose execution node", exact: true }).waitFor();
     await showSidebar();
     await page.waitForFunction(() => [...document.querySelectorAll('.sidebar-tasks')].some(sidebar => sidebar.textContent?.includes("Remote history fixture")));
+    // Reload directly into Chat with an authorized physical connection, but
+    // fail startup management reads. No Settings View is mounted to poll.
+    let unavailable = true, discoveryReads = 0, explicitConnects = 0;
+    const countConnect = (request: any) => {
+      if (request.method() === "POST" && /\/(connect|reconnect)$/.test(new URL(request.url()).pathname)) explicitConnects++;
+    };
+    page.on("request", countConnect);
+    await page.route("**/__opencraft_ssh/connections", (route: any) => {
+      discoveryReads++;
+      return unavailable ? route.abort("failed") : route.continue();
+    });
+    for (const recovery of ["automatic", "retry", "online"] as const) {
+      unavailable = true;
+      await page.reload();
+      await page.getByRole("button", { name: "Choose execution node", exact: true }).waitFor();
+      await showSidebar();
+      await page.getByText("Couldn't load remote connections", { exact: true }).waitFor();
+      if (recovery === "automatic" && process.env.OPENCRAFT_SSH_UI_ARTIFACT_DIR) {
+        await page.screenshot({ path: join(process.env.OPENCRAFT_SSH_UI_ARTIFACT_DIR, `ssh-discovery-error-${touch ? "touch" : "desktop"}-${colorScheme}.png`) });
+      }
+      const readsBefore = discoveryReads;
+      assert.ok(!new URL(page.url()).pathname.startsWith('/settings'), 'Settings cannot own recovery');
+      unavailable = false;
+      if (recovery === "retry") await page.getByRole("button", { name: "Retry", exact: true }).click();
+      if (recovery === "online") await page.evaluate(() => window.dispatchEvent(new Event("online")));
+      await page.waitForFunction(() => [...document.querySelectorAll('.sidebar-tasks')].some(sidebar => sidebar.textContent?.includes("Remote history fixture")), null, { timeout: 20000 });
+      assert.ok(discoveryReads > readsBefore);
+      assert.equal(await page.getByText("Couldn't load remote connections", { exact: true }).count(), 0);
+      assert.doesNotMatch(await page.getByRole("button", { name: "Choose execution node", exact: true }).innerText(), new RegExp(name));
+      assert.equal(explicitConnects, 0, 'Read recovery must not silently connect or reconnect');
+    }
+    await page.unroute("**/__opencraft_ssh/connections");
+    page.off("request", countConnect);
     await page.goto(`${origin}/settings/vela.headless-codex.ssh`);
     await menu.waitFor({ timeout: 30000 });
     await menu.click();
@@ -195,7 +230,7 @@ try {
   assert.deepEqual(errors, []);
   assert.equal(calls.some(call => ["turn/start", "turn/steer", "thread/start", "fs/writeFile"].includes(call.method)), false);
   assert.equal(management.store.list().length, 1); assert.equal(management.store.get(second.serverId).displayName, "Second fixture");
-  console.log(JSON.stringify({ ok: true, fullWorkbench: true, desktop: true, touch: true, colorScheme, publicAccess, databaseCrud: true, explicitTrust: true, remoteCatalogWithoutSelection: true, catalogReloadAndRevocation: true, liveTargetSelection: true, menuToDialog: true, writeOnlyCredential: true, remoteWrites: false }));
+  console.log(JSON.stringify({ ok: true, fullWorkbench: true, desktop: true, touch: true, colorScheme, publicAccess, databaseCrud: true, explicitTrust: true, remoteCatalogWithoutSelection: true, catalogReloadAndRevocation: true, discoveryRecoveryWithoutSettings: ["automatic", "retry", "online"], recoveryDoesNotDial: true, liveTargetSelection: true, menuToDialog: true, writeOnlyCredential: true, remoteWrites: false }));
 } catch (error) {
   console.error("Synthetic SSH management UI failure", await activePage?.locator("body").innerText().catch(() => "unavailable"));
   throw error;

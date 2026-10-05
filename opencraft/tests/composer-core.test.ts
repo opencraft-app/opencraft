@@ -8,6 +8,7 @@ import {
   invertComposerFollowUpAction,
   legacyContentBlocksToComposer,
   resolveComposerPrimaryAction,
+  resolveComposerFollowUpAction,
   retargetSubmitIntentForFollowUp,
   type ComposerDocument,
   type ComposerTarget,
@@ -458,6 +459,16 @@ test("the primary Composer action changes from Stop to Queue or Steer when a fol
     }),
     "send",
   );
+});
+
+test("follow-up preferences cannot enable a denied queue operation", () => {
+  assert.equal(resolveComposerFollowUpAction("queue", ["steer"]), "steer");
+  assert.equal(resolveComposerFollowUpAction("steer", ["queue"]), "queue");
+  assert.equal(resolveComposerFollowUpAction("queue", []), null);
+  assert.equal(resolveComposerPrimaryAction({ isResponseInProgress: true, canSubmit: true,
+    defaultFollowUpAction: "queue", availableFollowUpActions: ["steer"] }), "steer");
+  assert.equal(resolveComposerPrimaryAction({ isResponseInProgress: true, canSubmit: true,
+    defaultFollowUpAction: "steer", availableFollowUpActions: [] }), "stop");
 });
 
 test("the inverse follow-up shortcut changes one immutable intent without changing its draft target", () => {

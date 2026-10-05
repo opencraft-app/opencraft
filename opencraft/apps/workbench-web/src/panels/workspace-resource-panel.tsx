@@ -169,6 +169,7 @@ function useWorkspaceFileWatches(paths: readonly string[]) {
     let active = true;
     const leases: Array<{ dispose(): Promise<void> }> = [];
     const uniquePaths = [...new Set(paths.filter(Boolean))];
+    if (runtime.resources.host.canRequest?.("fs/watch") === false) return;
     void Promise.all(uniquePaths.map(async (path) => {
       const lease = await runtime.resources.fileSystem.watch(path, (changedPaths) => {
         void Promise.all(changedPaths.map(changed => blobs.invalidate(fileBlobResource(runtime, snapshot.hostId, changed)))).then(() => queryClient.invalidateQueries({
@@ -196,11 +197,12 @@ function useFuzzyWorkspaceFiles(roots: readonly string[], query: string, enabled
     typeof runtime.resources.fileSystem.createFuzzyFileSearchSession
   >> | null>(null);
   const rootsKey = roots.join("\u0000");
+  const supported = runtime.resources.host.canRequest?.("fuzzyFileSearch/sessionStart") !== false;
 
   useEffect(() => {
     let active = true;
     setResults([]);
-    if (!enabled) return;
+    if (!enabled || !supported) { setSearching(false); return; }
     void runtime.resources.fileSystem.createFuzzyFileSearchSession({
       roots,
       onUpdated(update) {
@@ -225,10 +227,11 @@ function useFuzzyWorkspaceFiles(roots: readonly string[], query: string, enabled
       sessionRef.current = null;
       if (session !== null) void session.stop();
     };
-  }, [rootsKey, runtime, enabled]);
+  }, [rootsKey, runtime, enabled, supported]);
 
   useEffect(() => {
     const normalized = query.trim();
+    if (!enabled || !supported) { setSearching(false); return; }
     if (normalized.length === 0) {
       setResults([]);
       setSearching(false);
@@ -239,9 +242,9 @@ function useFuzzyWorkspaceFiles(roots: readonly string[], query: string, enabled
       void sessionRef.current?.update(normalized).catch(() => setSearching(false));
     }, 100);
     return () => window.clearTimeout(timer);
-  }, [query]);
+  }, [query, enabled, supported]);
 
-  return { results, searching };
+  return { results, searching, supported };
 }
 
 export function WorkspaceResourcePreviewPanel(props: PanelRendererProps) {
@@ -382,6 +385,7 @@ export function WorkspaceResourcePanel({ tab, previewOnly = false }: PanelRender
           <Search size={13} />
           <input
             aria-label="Search workspace files"
+            disabled={!search.supported}
             onChange={(event) => setSearchQuery(event.currentTarget.value)}
             placeholder="Search files"
             value={searchQuery}
@@ -389,7 +393,7 @@ export function WorkspaceResourcePanel({ tab, previewOnly = false }: PanelRender
           {search.searching ? <LoaderCircle className="is-spinning" size={12} /> : null}
         </label>
         <div className="workspace-file-tree">
-          {searchQuery.trim().length > 0 ? (
+          {search.supported && searchQuery.trim().length > 0 ? (
             search.results.length === 0 && !search.searching ? (
               <div className="workspace-file-tree__empty">No matching files</div>
             ) : search.results.map((result) => {

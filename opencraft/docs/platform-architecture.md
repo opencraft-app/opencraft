@@ -103,13 +103,39 @@ or changing-address opt-in; sessions stay bound to their unlock Origin. The
 explicit management Connect command uses AppHost's service-owned admission, not
 a synthetic Client or separate SSH transport. It grants no execution/answer lease;
 connection status remains a projection of the shared physical slot.
+The native broker's method-admission policy is independent of SSH framing.
+It forwards paginated Turn/Item history as well as native Skills/config writes
+and preserves unrelated upstream initialization metadata. The same validated
+`opencraft/method-access` extension feeds Runtime resources, submission admission,
+command compilation and Composer action resolution. Admission is not upstream
+support discovery; unavailable local stores/connection resources remain excluded.
+Preferences never manufacture capabilities: an SSH follow-up uses admitted Steer
+instead of unsupported Queue, without overwriting the preference; rejection is
+before optimistic adoption and cannot consume a draft. Legacy manifest absence
+is compatible, while a malformed declaration fails closed.
 The application catalog separately consumes authenticated physical readiness to
 admit its logical reader through the registry. It does not change the selected
 chat target, auto-connect policy or Thread subscriptions. Catalog publication
 checks configuration revision and authorization incarnation across async
 boundaries; a locked/disabled/removed recipe cannot regain visibility through
 a late result. Settings navigation and chat navigation consume this same
-application projection rather than issuing menu-local history refreshes. Reconnect
+application projection rather than issuing menu-local history refreshes. Management
+discovery is started and disposed by the Application, not the Settings
+View. Visible/online reads are single-flight, completion-scheduled and back off
+after transient failures (10/20/30 seconds, capped at 30); successful reads poll
+every five seconds. Foreground/online hints probe promptly without dialing a
+Server. Authorization changes supersede old reads; command receipts require a
+fresh post-command status read rather than joining an earlier poll. A missing
+management source due to read failure has its own sidebar retry, even before
+there are any SSH Host profiles; unsupported or successfully locked sources are
+not errors. Healthy background discovery does not flash a loading indicator.
+Runtime
+uses the shared read boundary for native indexed SSH discovery, not rollout
+reconciliation. Each admitted Host query owns loading/failure and scoped retry;
+the sidebar never substitutes an empty success for pending/error or lets one
+failed Host erase the others. Cached rows are not painted after admission is
+revoked, and expansion discloses hidden remote rows within the fetched catalog.
+Reconnect
 awaits the old physical close before admitting a successor, and failed activation
 remains observable after cleanup. Anonymous `/apphost` rejects SSH IDs; Renderer IDs and LightVela login
 projections are not administrator authority. Only public fingerprints/configuration

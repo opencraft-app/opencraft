@@ -13,7 +13,8 @@ import {
 } from "@tanstack/react-query";
 import { composerCapabilitiesOptions, invalidateComposerCapabilities, changesComposerCapabilities } from "./composer-capabilities-query";
 import { requiresEmbeddedLightVelaAccountPreflight } from "./lightvela-web-bootstrap";
-import { changesThreadCatalog } from "./thread-catalog-query";
+import { changesThreadCatalog, sidebarThreadCatalogQueryKey, threadCatalogPhase, managedCatalogDiscoveryPhase, type HostThreadCatalogState } from "./thread-catalog-query";
+import { webSshDiscoveryLifecycle } from "./web-ssh-discovery";
 import {
   AppServerRpcError,
   createCordisAppServerRegistry,
@@ -1028,7 +1029,7 @@ export async function createWebWorkbenchApplicationSupervisor(
     const remoteAppHost = headlessAppHost ? connectWebSocketAppHost(undefined, { path: "/ssh-apphost" }) : null;
     if (remoteAppHost) startupRollback.push(() => remoteAppHost.close());
     const sshManagement = headlessAppHost ? new (await import("@opencraft/plugin-builtin-agents")).SshConnectionsController() : null;
-    if (sshManagement) { startupRollback.push(() => sshManagement.dispose()); await sshManagement.refresh(); }
+    if (sshManagement) { startupRollback.push(() => sshManagement.dispose()); await sshManagement.startDiscovery(webSshDiscoveryLifecycle); }
     const [lightVelaPlatform, lightVela, createLightVelaHermesExtension] = await Promise.all([
       import("@opencraft/plugin-lightvela-platform"),
       import("@opencraft/plugin-lightvela-hermes"),
@@ -1999,6 +2000,10 @@ export interface MultiHostWorkbenchThread extends WorkbenchThread {
 export function useMultiHostThreadCatalog(): {
   readonly threads: readonly MultiHostWorkbenchThread[];
   readonly isFetching: boolean;
+  readonly catalogs: readonly HostThreadCatalogState[];
+  readonly retry: (hostId: string) => Promise<void>;
+  readonly discovery: "loading" | "error" | null;
+  readonly retryDiscovery: () => Promise<void>;
 } {
   const application = useContext(ApplicationRuntimeContext);
   const [, setReadinessRevision] = useState(0);
@@ -2026,16 +2031,20 @@ export function useMultiHostThreadCatalog(): {
       setReadinessRevision(value => value + 1);
     },
   ), [application.registry, hostIds, queryClient]);
+  const admitted = hosts.map(host => canReadHostThreadCatalog(
+    application.profiles.find(profile => profile.hostId === host.hostId)!,
+    application.registry.peekRuntime(host.hostId)?.getSnapshot().phase,
+    management,
+  ));
   const queries = useQueries({
-    queries: hosts.map((host) => ({
+    queries: hosts.map((host, index) => ({
       // Discovery may attach a reader to an explicitly connected managed
       // Server, but cannot dial an idle remote merely to paint Chat.
-      enabled: canReadHostThreadCatalog(
-        application.profiles.find(profile => profile.hostId === host.hostId)!,
-        application.registry.peekRuntime(host.hostId)?.getSnapshot().phase,
-        management,
-      ),
-      queryKey: ["appserver", host.hostId, "threads", "sidebar", "updated_at", "desc", false] as const,
+      enabled: admitted[index],
+      queryKey: sidebarThreadCatalogQueryKey(host.hostId, {
+        revision: application.profiles.find(profile => profile.hostId === host.hostId)!.revision,
+        authorizationEpoch: host.kind === "remote-ssh" ? application.managedHostCatalog?.getAuthorizationEpoch() ?? null : null,
+      }),
       queryFn: async () => {
         return readHostThreadCatalog({
           profile: application.profiles.find(profile => profile.hostId === host.hostId)!,
@@ -2048,9 +2057,9 @@ export function useMultiHostThreadCatalog(): {
       retry: retryQuery,
     })),
   });
-  const querySignature = queries.map((query) => `${query.dataUpdatedAt}:${query.fetchStatus}`).join("|");
+  const querySignature = queries.map((query, index) => `${admitted[index]}:${query.dataUpdatedAt}:${query.fetchStatus}`).join("|");
   const threads = useMemo(() => hosts.flatMap((host, index) =>
-    (queries[index]?.data?.data ?? []).map((thread) => {
+    (admitted[index] ? queries[index]?.data?.data ?? [] : []).map((thread) => {
       const server = legacyDirectServerProjectionFromHost({
         hostId: host.hostId,
         hostKind: host.kind,
@@ -2065,7 +2074,25 @@ export function useMultiHostThreadCatalog(): {
     })).sort((left, right) => right.updatedAt - left.updatedAt), [hosts, querySignature]);
   return {
     threads,
+    discovery: managedCatalogDiscoveryPhase(management),
+    retryDiscovery: () => application.managedHostCatalog?.refresh() ?? Promise.resolve(),
     isFetching: queries.some((query) => query.isFetching),
+    catalogs: hosts.map((host, index) => ({
+      hostId: host.hostId,
+      label: host.label,
+      phase: threadCatalogPhase({ admitted: admitted[index]!, status: queries[index]!.status, isFetching: queries[index]!.isFetching }),
+    })),
+    retry: async hostId => {
+      // A view may retry its reader, never establish an idle SSH connection
+      // or change the selected execution target. Recheck live admission.
+      const profile = application.hostProfiles.getSnapshot().profiles.find(profile => profile.hostId === hostId);
+      const currentManagement = application.managedHostCatalog?.getSnapshot() ?? management;
+      if (!profile || !canReadHostThreadCatalog(profile, application.registry.peekRuntime(hostId)?.getSnapshot().phase, currentManagement)) return;
+      await queryClient.refetchQueries({ queryKey: sidebarThreadCatalogQueryKey(hostId, {
+        revision: profile.revision,
+        authorizationEpoch: profile.hostKind === "remote-ssh" ? application.managedHostCatalog?.getAuthorizationEpoch() ?? null : null,
+      }), exact: true, type: "active" }, { cancelRefetch: false });
+    },
   };
 }
 
@@ -2178,7 +2205,7 @@ export function useComposerCatalog(
     readonly model: string;
     readonly effort: string | null;
   }) => {
-    if (defaults.data?.supported !== true) return;
+    if (defaults.data?.supported !== true || runtime.resources.host.canRequest?.("config/batchWrite") === false) return;
     const revision = ++defaultsWriteRevision.current;
     queryClient.setQueryData(defaultsKey, { supported: true as const, ...next });
     defaultsWriteQueue.current = defaultsWriteQueue.current
@@ -2240,7 +2267,7 @@ export function useComposerCatalog(
     newThreadDefaults: defaults.data?.supported === true
       ? { model: defaults.data.model, effort: defaults.data.effort }
       : null,
-    rememberModelDefaults: defaults.data?.supported === true
+    rememberModelDefaults: defaults.data?.supported === true && runtime.resources.host.canRequest?.("config/batchWrite") !== false
       ? rememberModelDefaults
       : undefined,
     ...catalogActions,
@@ -2359,6 +2386,7 @@ export function useAppServerComposerCatalog(workspaceRoots: readonly string[]): 
     const roots = JSON.parse(rootKey) as string[];
     const state = searchStateRef.current;
     const ensureFileSearchSession = (): Promise<FuzzyFileSearchSession> => {
+      if (runtime.resources.host.canRequest?.("fuzzyFileSearch/sessionStart") === false) return Promise.reject(new Error("此连接暂不支持文件搜索"));
       if (state.session !== null) return state.session;
       state.session = runtime.resources.composerCatalog.createFuzzyFileSearchSession({
         roots,

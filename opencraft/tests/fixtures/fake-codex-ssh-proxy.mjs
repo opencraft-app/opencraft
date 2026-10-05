@@ -30,21 +30,28 @@ stream.setTimeout = stream.setNoDelay = stream.setKeepAlive = () => stream;
 const server = createServer();
 const sockets = new WebSocketServer({ noServer: true, autoPong: process.env.FIXTURE_NO_PONG !== "1" });
 const workbenchFixture = process.env.FIXTURE_WORKBENCH_UI === "1";
+const activeFixture = process.env.FIXTURE_WORKBENCH_UI_ACTIVE === "1";
 const fixtureThread = {
   id: "ssh-ui-thread", sessionId: "ssh-ui-thread", name: "Remote history fixture",
   preview: "Remote history fixture", modelProvider: "openai", model: "fixture-model",
   cwd: "/remote", createdAt: 1_800_000_000, updatedAt: 1_800_000_001,
-  status: { type: "idle" }, turns: [], source: "appServer", cliVersion: "fixture",
+  status: activeFixture ? { type: "active", activeFlags: [] } : { type: "idle" }, turns: [], source: "appServer", cliVersion: "fixture",
+  historyMode: "paginated",
 };
 const fixtureHistory = { ...fixtureThread, turns: [{
-  id: "fixture-turn", status: "completed", error: null, startedAt: 1_800_000_000,
-  completedAt: 1_800_000_001, durationMs: 1000,
+  id: "fixture-turn", status: activeFixture ? "inProgress" : "completed", error: null, startedAt: 1_800_000_000,
+  completedAt: activeFixture ? null : 1_800_000_001, durationMs: activeFixture ? null : 1000,
   itemsView: "full",
   items: [
     { type: "userMessage", id: "fixture-user", clientId: null, content: [{ type: "text", text: "Historical remote question", text_elements: [] }] },
-    { type: "agentMessage", id: "fixture-answer", text: "Historical remote answer", phase: "final_answer", memoryCitation: null, delivery: null, questions: null },
+    { type: "agentMessage", id: "fixture-answer", text: "Historical remote answer", phase: activeFixture ? "commentary" : "final_answer", memoryCitation: null, delivery: null, questions: null },
   ],
 }] };
+const olderTurn = { ...fixtureHistory.turns[0], id: "fixture-older-turn", status: "completed", startedAt: 1_799_999_998,
+  completedAt: 1_799_999_999, durationMs: 1000, items: [
+    { ...fixtureHistory.turns[0].items[0], id: "fixture-older-user", content: [{ type: "text", text: "Older remote question", text_elements: [] }] },
+    { ...fixtureHistory.turns[0].items[1], id: "fixture-older-answer", text: "Older remote answer", phase: "final_answer" },
+  ] };
 function workbenchResult(message) {
   switch (message.method) {
     case "model/list": return { data: [{
@@ -56,12 +63,21 @@ function workbenchResult(message) {
     }], nextCursor: null };
     case "thread/list": return { data: process.env.FIXTURE_WORKBENCH_UI_EMPTY_HISTORY === "1" ? [] : [fixtureThread], nextCursor: null };
     case "thread/read": return { thread: fixtureHistory };
-    case "thread/resume": return { thread: fixtureHistory, model: "fixture-model", modelProvider: "openai",
+    case "thread/resume": return { thread: { ...fixtureThread, turns: [] }, model: "fixture-model", modelProvider: "openai",
       cwd: "/remote", runtimeWorkspaceRoots: ["/remote"], instructionSources: [],
       serviceTier: null, disabledPluginIds: [], approvalPolicy: "never", approvalsReviewer: "user",
       sandbox: { type: "readOnly" }, activePermissionProfile: null, reasoningEffort: "medium",
       collaborationMode: null, multiAgentMode: "explicitRequestOnly", initialTurnsPage: null,
-      turnsBackwardsCursor: null, itemsBackwardsCursor: null };
+      turnsBackwardsCursor: "fixture-latest", itemsBackwardsCursor: null };
+    case "thread/turns/list": return { data: [(message.params.cursor === "fixture-older" ? olderTurn : fixtureHistory.turns[0])].map(turn => ({ ...turn, items: [], itemsView: "notLoaded" })),
+      nextCursor: message.params.cursor === "fixture-older" ? null : "fixture-older", backwardsCursor: null };
+    case "thread/items/list": {
+      const turn = message.params.turnId === olderTurn.id ? olderTurn : fixtureHistory.turns[0];
+      return { data: (message.params.sortDirection === "desc" ? [...turn.items].reverse() : turn.items).map(item => ({ turnId: turn.id, item })), nextCursor: null, backwardsCursor: null };
+    }
+    case "skills/list": return { data: [{ cwd: "/remote", skills: [], errors: [] }] };
+    case "turn/steer": return activeFixture ? { turnId: "fixture-turn" } : undefined;
+    case "config/batchWrite": return { status: "ok", version: "fixture-version", filePath: "/synthetic/config.toml", overriddenMetadata: null };
     case "thread/loaded/list": return { data: [] };
     case "config/read": return { config: { model: "fixture-model", model_provider: "openai" }, origins: {}, layers: null };
     case "configRequirements/read": return { requirements: null };

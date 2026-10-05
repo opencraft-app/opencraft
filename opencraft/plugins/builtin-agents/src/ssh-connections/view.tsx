@@ -75,8 +75,7 @@ export function createSshConnectionsView(controller: SshConnectionsController) {
     const alive = useRef(true);
     useEffect(() => {
       alive.current = true;
-      const timer = setInterval(() => { if (document.visibilityState !== "hidden") void controller.refresh(); }, 5000);
-      return () => { alive.current = false; clearInterval(timer); };
+      return () => { alive.current = false; };
     }, []);
     useEffect(() => { if (!snapshot.authenticated) { setEditor(null); setMenuId(null); } }, [snapshot.authenticated]);
     const runRow = async (id: string, action: () => Promise<void>) => {

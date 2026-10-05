@@ -710,6 +710,9 @@ export function App({
       // Re-check at the semantic boundary as the status can change between a
       // rendered enabled button and its click handler.
       if (snapshot.phase !== "ready") return false;
+      if (context.followUpAction !== null && runtime.resources.host.canRequest?.(
+        context.followUpAction === "queue" ? "thread/queue/add" : "turn/steer",
+      ) === false) return false;
       const currentConversation = activeThreadLease?.getSnapshot() ?? null;
       const intentHostId = intent.target.type === "new-thread"
         ? intent.target.execution.hostId
@@ -805,6 +808,7 @@ export function App({
       clearLatestTurnPlacement,
       snapshot.hostId,
       snapshot.phase,
+      runtime,
     ],
   );
   const answerAsyncQuestion = useCallback(async (question: AsyncQuestion, answer: string) => {
@@ -1439,6 +1443,10 @@ export function App({
           leftPanel={!presentation.contextSidebar ? null : (
             routeSettingsOpen ? settingsNavigation : (conversationSurfaceVisible || standaloneManagementOpen) ? <Sidebar
               threads={multiHostCatalog.threads}
+              threadCatalogs={multiHostCatalog.catalogs}
+              threadCatalogDiscovery={multiHostCatalog.discovery}
+              onRetryThreadCatalogDiscovery={() => { void multiHostCatalog.retryDiscovery(); }}
+              onRetryThreadCatalog={hostId => { void multiHostCatalog.retry(hostId); }}
               managementNavigation={conversationRouteOpen || standaloneManagementOpen ? (
                 <LightVelaWorkNavigation
                   section={standaloneManagementOpen ? settingsSection : null}
@@ -1681,6 +1689,7 @@ export function App({
                       <CodexComposer
                         controller={composerController}
                         defaultFollowUpAction={defaultFollowUpAction}
+                        availableFollowUpActions={(["steer", "queue"] as const).filter(action => runtime.resources.host.canRequest?.(action === "queue" ? "thread/queue/add" : "turn/steer") !== false)}
                         portalContainer={portalContainer}
                         isStreaming={isStreaming}
                         submissionDisabled={snapshot.phase !== "ready" || snapshot.conversation?.authoritative !== true}

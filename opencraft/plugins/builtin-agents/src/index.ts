@@ -13,7 +13,7 @@ import { CodexAccountsService } from "./codex-accounts/service";
 import { createCodexAccountsView } from "./codex-accounts/view";
 import { SshConnectionsController } from "./ssh-connections/controller";
 import { createSshConnectionsView } from "./ssh-connections/view";
-export { SshConnectionsController } from "./ssh-connections/controller";
+export { SshConnectionsController, type SshDiscoveryLifecycle } from "./ssh-connections/controller";
 
 type LocalAgentConfig = Readonly<Record<string, never>>;
 

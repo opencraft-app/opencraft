@@ -8,12 +8,15 @@ export interface ManagedHostCatalogSnapshot {
   readonly authenticated: boolean;
   readonly items: readonly SshConnectionView[];
   readonly legacyServers: readonly SshCodexServerDescriptor[];
+  readonly refreshing: boolean;
+  readonly error: string | null;
 }
 
 export interface ManagedHostCatalogSource {
   getSnapshot(): ManagedHostCatalogSnapshot;
   subscribe(listener: () => void): () => void;
   getAuthorizationEpoch(): number;
+  refresh(): Promise<void>;
 }
 
 export function canReadHostThreadCatalog(
