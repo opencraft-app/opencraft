@@ -47,7 +47,7 @@ Pass 升配微信桥通过精确的 `POST /v1/passes/{pass_id}/modify/order-url`
 
 国内站新增配置指南时，`frontend/src/config/docs-sidebar.ts` 中的 `CN_SIDEBAR`、`CN_SLUG_TO_FILE` 与 `frontend/scripts/sync-fumadocs-content.mjs` 中的 `cnDocs` 必须同时注册同一 slug。钉钉指南使用 `configuration/channel-dingtalk`，仅进入国内站目录；国际站目录与映射单独维护。
 
-国内站任务文档导航按“开始使用 → Bot 与模型 → 通道与技能 → 自动化与资料 → 管理与排障 → 实验功能”组织，场景、对比和 Hermes 原理长文继续保留独立分类。分组标题与组内顺序必须在 `CN_SIDEBAR`、`cnDocs` 和 `CN_GROUP_ORDER` 中一致；原有 slug 保持稳定。网页对话当前仅开放主 Bot，额外 Bot 创建受运行时多 Bot 开关与套餐额度约束；实验功能的 Beta 标记属于单项功能。云存储保留 `/agents/files` 路由，当前控制台侧栏没有独立菜单项，文档应提供直接入口。
+国内站任务文档导航按“开始使用 → Bot 与模型 → 通道与技能 → 自动化与资料 → 管理与排障 → 实验功能”组织，场景、对比和 Hermes 原理长文继续保留独立分类。分组标题与组内顺序必须在 `CN_SIDEBAR`、`cnDocs` 和 `CN_GROUP_ORDER` 中一致；原有 slug 保持稳定。网页对话支持主 Bot 和额外 Bot，额外 Bot 创建受运行时多 Bot 开关与套餐额度约束；实验功能的 Beta 标记属于单项功能。云存储保留 `/agents/files` 路由，当前控制台侧栏没有独立菜单项，文档应提供直接入口。
 
 ## 官网首页展示产物
 
