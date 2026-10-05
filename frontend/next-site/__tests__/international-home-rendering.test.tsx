@@ -4,6 +4,7 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Pass } from "@/domain/types";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 const headerAuthMock = vi.hoisted(() => vi.fn(() => null));
@@ -40,6 +41,7 @@ vi.mock("@/contexts/session-context", () => ({
 const openClawMock = vi.hoisted(() => ({
   bots: [] as Array<{ id: string }>,
   isSubscribed: false,
+  latestPass: null as Pass | null,
   hasResolvedPasses: true,
   passesLoading: false,
   passesError: false,
@@ -59,6 +61,7 @@ vi.mock("@/lib/region", () => ({
 
 import { InternationalHomePage } from "@next-site/international-home-page";
 import {
+  INTERNATIONAL_HOME_ASSET_VERSION,
   INTERNATIONAL_HOME_SCRIPT_SOURCES,
   InternationalHomeRuntime,
 } from "@next-site/international-home-runtime";
@@ -76,6 +79,7 @@ beforeEach(() => {
   sessionMock.isAuthenticated = false;
   openClawMock.bots = [];
   openClawMock.isSubscribed = false;
+  openClawMock.latestPass = null;
   openClawMock.hasResolvedPasses = true;
   openClawMock.passesLoading = false;
   openClawMock.passesError = false;
@@ -123,7 +127,7 @@ describe("international v2 homepage rendering", () => {
     (globalThis as { React?: typeof React }).React = React;
     const markup = renderToStaticMarkup(<InternationalHomePage locale="en-US" />);
 
-    expect(markup).toContain('href="/lightvela-intl-home/style.css?v=20260930-feature-loops-v109"');
+    expect(markup).toContain(`href="/lightvela-intl-home/style.css?v=${INTERNATIONAL_HOME_ASSET_VERSION}"`);
     expect(markup).not.toContain('rel="preload" as="image"');
     expect(markup).toContain('id="lightvela-intl-home"');
     expect(markup).toContain("Your AI companion—always on, always evolving with you.");
@@ -345,6 +349,29 @@ describe("international v2 homepage rendering", () => {
       expect(document.querySelector("[data-domestic-home-hero-cta-label]")).toHaveTextContent("免费试用");
     });
     expect(document.querySelector("[data-domestic-home-hero-cta]")).toHaveAttribute("href", "/subscribe");
+  });
+
+  it.each([
+    { locale: 'en-US', isolated: false, label: 'My AI Companion' },
+    { locale: 'zh-CN', isolated: true, label: '我的智能体伙伴' },
+  ] as const)('returns a signed-in account with a lapsed pass to Agents ($locale)', async ({ locale, isolated, label }) => {
+    regionMock.isGlobal = locale === 'en-US';
+    sessionMock.isAuthenticated = true;
+    openClawMock.isSubscribed = false;
+    openClawMock.latestPass = {
+      pass_id: 'previous', user_id: 'user-1', bundle_id: 'launch', bundle_name: 'Launch',
+      created_time: '2020-01-01', expired_time: '2020-02-01',
+      isolated_time: isolated ? '2020-02-02' : null,
+      credit_total: 0, credit_available: 0,
+    };
+    const markup = '<main id="lightvela-intl-home"><div class="hero__cta"><a href="/subscribe">Free trial</a></div><div class="cta__acts"><a href="/subscribe">Free trial</a></div><div class="foot__cta"><a href="/subscribe">Free trial</a></div></main>';
+
+    render(<InternationalHomeRuntime locale={locale} markup={markup} />);
+
+    for (const selector of ['.hero__cta a', '.cta__acts a', '.foot__cta a']) {
+      await waitFor(() => expect(document.querySelector(selector)).toHaveTextContent(label));
+      expect(document.querySelector(selector)).toHaveAttribute('href', '/agents');
+    }
   });
 
   it("sends subscribed visitors from the hero CTA straight to the console", async () => {

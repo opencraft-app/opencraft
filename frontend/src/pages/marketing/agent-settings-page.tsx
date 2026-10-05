@@ -87,7 +87,7 @@ import type {
   LightVelaSession,
   LightVelaSessionActions,
 } from "./agent-chat-panel";
-import { useAgentSidebarSessionList } from "./agent-sidebar-session-list";
+import { resolveAgentSidebarEmptySessionState, useAgentSidebarSessionList } from "./agent-sidebar-session-list";
 import { AUTH_SERVICE_UNAVAILABLE_MESSAGE, readStoredAuthToken } from "@/repositories/http-repositories";
 import {
   AGENTS_HOME_PATH,
@@ -2548,8 +2548,8 @@ const getBotStatusColor = (status: OpenClawBot["status"]) => {
 };
 
 const getBotStatusLabel = (status: OpenClawBot["status"]) => {
-  if (status === "running") return rawT("运行中");
-  if (status === "paused") return rawT("已暂停");
+  if (status === "running") return rawT("在线");
+  if (status === "paused") return rawT("离线");
   if (status === "failed") return rawT("创建失败");
   if (status === "deleting") return rawT("删除中");
   if (status === "provisioning") return rawT("创建中");
@@ -2795,6 +2795,12 @@ export const AgentSettingsPage = ({
     loading: chatSessionsLoading,
     onSessionStateChange: applyChatSessionState,
   } = useAgentSidebarSessionList(sidebarSessionBotKey);
+  const emptyChatSessionState = resolveAgentSidebarEmptySessionState({
+    botPaused: activeBot?.status === "paused",
+    loading: chatSessionsLoading,
+    botKey: sidebarSessionBotKey,
+    sessionCount: chatSessions.length,
+  });
   const [chatSessionsHasMore, setChatSessionsHasMore] = useState(false);
   const [chatSessionMutationState, setChatSessionMutationState] = useState<EmbeddedSessionMutationState | null>(null);
   const [chatSessionCommands, setChatSessionCommands] = useState<EmbeddedSessionCommands | null>(null);
@@ -6201,9 +6207,9 @@ export const AgentSettingsPage = ({
                               )}
                               {!isChatTabDisabled && chatSessionsExpanded && !isSidebarCollapsed ? <>
                               <ul className="lv-agents-nav-group-items lv-agents-session-list">
-                                {(chatSessionsLoading || sidebarSessionBotKey === null) && chatSessions.length === 0 ? (
+                                {emptyChatSessionState === "loading" ? (
                                   <li className="lv-agents-session-hint">{isGlobal ? t("正在加载会话…") : t("正在加载...")}</li>
-                                ) : chatSessions.length === 0 ? (
+                                ) : emptyChatSessionState === "default" ? (
                                   /*
                                    * 首次读取尚未完成时由 loading 分支承接；确认空列表后
                                    * 才显示默认对话入口。实例不支持会话协议（SDK 5s 超时）
@@ -6603,7 +6609,7 @@ export const AgentSettingsPage = ({
                           {isActiveBotChatAvailable && (
                             <AgentChatMigrationSurface
                               active={activeSection === "chat"}
-                              preloadSessions={sidebarTab === "daily" && chatSessionsExpanded && !isSidebarCollapsed}
+                              preloadSessions={activeBot.status !== "paused" && sidebarTab === "daily" && chatSessionsExpanded && !isSidebarCollapsed}
                               agentPaused={activeBot.status === "paused" && activeBot.siblingsUnknown === "instance_stopped"}
                               accountId={accountId}
                               apiBase={resolveConfiguredAuthApiBaseUrl() || undefined}

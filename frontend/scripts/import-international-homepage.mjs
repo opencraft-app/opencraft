@@ -4604,7 +4604,8 @@ const editorialLocaleSelector = "#lightvela-intl-home:is([data-locale^='en'], [d
 const localizedBaseCss = isolateHomepageBaseStyles(cssSource)
   .replaceAll("html[lang='en']", "#lightvela-intl-home[data-locale^='en']")
   .replaceAll("#lightvela-intl-home[data-locale^='en']", editorialLocaleSelector)
-  .replaceAll(`${editorialLocaleSelector} .scenes__title,\n`, "");
+  .replaceAll(`${editorialLocaleSelector} .scenes__title,\n`, "")
+  .replaceAll(`${editorialLocaleSelector} .deploy__lead,\n`, "");
 const heroChromeStart = cssSource.indexOf("/* Hero messaging previews: one monochrome system and one medium information density. */");
 const heroChromeEnd = cssSource.indexOf("@media (prefers-reduced-motion: reduce)", heroChromeStart);
 if (heroChromeStart < 0 || heroChromeEnd < 0) {

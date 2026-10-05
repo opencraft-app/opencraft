@@ -4,10 +4,10 @@
  * 需求：issue #73 —— 登录按钮与 Hero/Footer CTA 按订阅状态分流（国内站 + 国际站）。
  *
  * 红线（PRD：wiki/prd-docs/2026-09-14-user-journey-cta-login-redirect.md）：
- * - 订阅前统一走 /subscribe（未登录、已登录未订阅都一样）；
+ * - 首次订阅前统一走 /subscribe（未登录、已登录且从未订阅都一样）；
  * - 订阅后统一走 /agents（已有 Agent 进控制台，无 Agent 时打开创建向导）；
  * - 登录成功后必须按订阅状态分流：未订阅去 /subscribe，已订阅去 /agents；
- * - Hero CTA 与 Footer CTA 必须一致：同状态下文案一致、路径一致；
+ * - 已过期或隔离期的现有套餐仍可返回 Agents；Hero CTA 与 Footer CTA 在同状态下文案、路径一致；
  * - 国内站与国际站逻辑一致，只做语言差异，不做路径差异。
  */
 
@@ -26,12 +26,13 @@ export type JourneyState = {
   isAuthenticated: boolean;
   isSubscribed: boolean;
   hasBots: boolean;
+  hasLapsedPass?: boolean;
 };
 
 /** 已登录用户的订阅态（登录成功分流只取决于它）。 */
 export type SubscriptionState = Pick<JourneyState, "isSubscribed" | "hasBots">;
 
-/** 链路落点：订阅页 / 控制台 / 首个 Bot 创建向导（已订阅但尚无 Agent）。 */
+/** 链路落点：订阅页 / 控制台 / 首个 Bot 创建向导。 */
 export type JourneyRoute = "subscribe" | "agents" | "agents-creating";
 
 /**
@@ -65,16 +66,20 @@ export const resolvePostLoginRoute = ({
 
 /**
  * CTA 分流（Hero / Footer 共用）：
- * - 未登录、已登录未订阅 → /subscribe
+ * - 未登录、已登录且从未订阅 → /subscribe
+ * - 已登录且套餐已过期或隔离 → /agents（保留已有 Bot 的管理入口）
  * - 已登录且已订阅 → /agents
  */
 export const resolveCtaRoute = ({
   isAuthenticated,
   isSubscribed,
   hasBots,
+  hasLapsedPass,
 }: JourneyState): JourneyRoute =>
   isAuthenticated && isSubscribed
     ? resolveSubscribedRoute(hasBots)
+    : isAuthenticated && hasLapsedPass
+      ? JOURNEY_ROUTE.AGENTS
     : JOURNEY_ROUTE.SUBSCRIBE;
 
 /** 落点转 href：国际站按语种前缀本地化，国内站保持原路径（双站只差语言）。 */
@@ -96,12 +101,13 @@ export const journeyHref = (
 
 export type CtaCopyKey = "startFree" | "myCompanion";
 
-/** CTA 文案状态：已登录且已订阅 →「我的智能体伙伴」，其余（含未登录）→「免费试用」。 */
+/** CTA 文案状态：已有或曾有套餐的登录用户展示伙伴，其余展示免费试用。 */
 export const resolveCtaCopyKey = ({
   isAuthenticated,
   isSubscribed,
-}: Pick<JourneyState, "isAuthenticated" | "isSubscribed">): CtaCopyKey =>
-  isAuthenticated && isSubscribed ? "myCompanion" : "startFree";
+  hasLapsedPass,
+}: Pick<JourneyState, "isAuthenticated" | "isSubscribed" | "hasLapsedPass">): CtaCopyKey =>
+  isAuthenticated && (isSubscribed || hasLapsedPass) ? "myCompanion" : "startFree";
 
 /**
  * CTA 文案兜底表 —— 仅当静态片段里取不到官方译文时使用（例如片段没有对应按钮、单测夹具为空）。
@@ -155,7 +161,7 @@ const FALLBACK_COPY: Record<CtaCopyKey, string> = {
  */
 export const getCtaCopy = (
   locale: PublicSiteLocale,
-  state: Pick<JourneyState, "isAuthenticated" | "isSubscribed">,
+  state: Pick<JourneyState, "isAuthenticated" | "isSubscribed" | "hasLapsedPass">,
 ): string => {
   const key = resolveCtaCopyKey(state);
   return (

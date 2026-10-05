@@ -1,7 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import { useAgentSidebarSessionList } from "@/pages/marketing/agent-sidebar-session-list";
+import { resolveAgentSidebarEmptySessionState, useAgentSidebarSessionList } from "@/pages/marketing/agent-sidebar-session-list";
 
 const session = (chatId: string) => ({ chatId, title: chatId });
 const state = (chatId: string | null, loading = false) => ({
@@ -11,6 +11,15 @@ const state = (chatId: string | null, loading = false) => ({
 });
 
 describe("Agents sidebar session list", () => {
+  it("shows no empty-session placeholder while a Bot is paused and restores loading after resume", () => {
+    const freshBot = { botKey: "account-paused:bot-a", sessionCount: 0, loading: true };
+
+    expect(resolveAgentSidebarEmptySessionState({ ...freshBot, botPaused: true })).toBeNull();
+    expect(resolveAgentSidebarEmptySessionState({ ...freshBot, botPaused: false })).toBe("loading");
+    expect(resolveAgentSidebarEmptySessionState({ ...freshBot, loading: false, botPaused: false })).toBe("default");
+    expect(resolveAgentSidebarEmptySessionState({ ...freshBot, sessionCount: 1, botPaused: true })).toBeNull();
+  });
+
   it("shows loading immediately for a Bot without a confirmed list", () => {
     const view = renderHook(() => useAgentSidebarSessionList("account-fresh:bot-fresh"));
     expect(view.result.current.sessions).toEqual([]);

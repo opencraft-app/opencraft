@@ -39,6 +39,12 @@ describe('resolveCtaRoute', () => {
     );
   });
 
+  it('returns an expired subscriber to the existing Agent space', () => {
+    expect(resolveCtaRoute({ isAuthenticated: true, isSubscribed: false, hasBots: true, hasLapsedPass: true })).toBe(
+      JOURNEY_ROUTE.AGENTS,
+    );
+  });
+
   it('sends subscribed visitors straight to the console', () => {
     expect(resolveCtaRoute({ isAuthenticated: true, isSubscribed: true, hasBots: true })).toBe(
       JOURNEY_ROUTE.AGENTS,
@@ -76,6 +82,8 @@ describe('CTA copy', () => {
     expect(getCtaCopy('zh-CN', guest)).toBe('免费试用');
     expect(getCtaCopy('en-US', subscribed)).toBe('My AI Companion');
     expect(getCtaCopy('en-US', guest)).toBe('Free trial');
+    expect(getCtaCopy('en-US', { isAuthenticated: true, isSubscribed: false, hasLapsedPass: true })).toBe('My AI Companion');
+    expect(getCtaCopy('zh-CN', { isAuthenticated: true, isSubscribed: false, hasLapsedPass: true })).toBe('我的智能体伙伴');
   });
 
   it('uses one English casing for every locale entry', () => {
@@ -95,10 +103,10 @@ describe('CTA copy', () => {
    * 写成了旧 "Free Trial" 概念的机翻文案，跟首页实际按钮文案不一致。
    */
   it('matches the official translations already shipped on the international homepage', () => {
-    expect(CTA_COPY_BY_LOCALE['id-ID']).toEqual({ startFree: 'Mulai gratis', myCompanion: 'Pendamping AI saya' });
-    expect(CTA_COPY_BY_LOCALE.es).toEqual({ startFree: 'Empieza gratis', myCompanion: 'Mi compañero de IA' });
-    expect(CTA_COPY_BY_LOCALE['ja-JP']).toEqual({ startFree: '無料で開始', myCompanion: '私のAIパートナー' });
-    expect(CTA_COPY_BY_LOCALE['ko-KR']).toEqual({ startFree: '무료 시작', myCompanion: '내 AI 파트너' });
+    expect(CTA_COPY_BY_LOCALE['id-ID']).toMatchObject({ startFree: 'Mulai gratis', myCompanion: 'Pendamping AI saya' });
+    expect(CTA_COPY_BY_LOCALE.es).toMatchObject({ startFree: 'Empieza gratis', myCompanion: 'Mi compañero de IA' });
+    expect(CTA_COPY_BY_LOCALE['ja-JP']).toMatchObject({ startFree: '無料で開始', myCompanion: '私のAIパートナー' });
+    expect(CTA_COPY_BY_LOCALE['ko-KR']).toMatchObject({ startFree: '무료 시작', myCompanion: '내 AI 파트너' });
   });
 
   /**

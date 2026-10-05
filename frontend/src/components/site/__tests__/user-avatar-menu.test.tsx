@@ -239,7 +239,7 @@ describe("UserAvatarMenu", () => {
     expect(screen.getByRole("link", { name: "我的智能体" })).toHaveAttribute("href", "/agents");
   });
 
-  it("hides My Agents in the public dropdown until subscription status is confirmed", () => {
+  it("hides My AI Companion in the public dropdown until subscription status is confirmed", () => {
     useSession.mockReturnValue({
       session: { user: { id: "pending-user", name: "User" }, currentSubscription: null },
       signOut: vi.fn(),
@@ -618,7 +618,7 @@ describe("UserAvatarMenu", () => {
   });
 
   it.each([
-    ["en-US", "My Agents", "Back to Agents"],
+    ["en-US", "My AI Companion", "Back to Agents"],
     ["zh-CN", "我的智能体", "返回智能体"],
     ["zh-Hant", "我的智能體", "返回智能體"],
     ["ja-JP", "マイエージェント", "エージェントに戻る"],
@@ -640,7 +640,8 @@ describe("UserAvatarMenu", () => {
 
     expect(companionKey).toBeDefined();
     expect(accountKey).toBeDefined();
-    expect(english[companionKey!]).toBe("My Agents");
+    expect(english[companionKey!]).toBe("My AI Companion");
+    expect(english[companionKey!]).toBe(english[keys["我的智能体伙伴"]!]);
     expect(english[accountKey!]).toBe("Account");
   });
 

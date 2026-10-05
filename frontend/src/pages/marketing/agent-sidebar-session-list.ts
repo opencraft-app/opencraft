@@ -5,6 +5,21 @@ import type { LightVelaSession, LightVelaSessionState } from "./agent-chat-panel
 // Agents 子页面会重挂载；只缓存列表数据，操作句柄仍由当前页面的聊天实例提供。
 const sessionsByBot = new Map<string, LightVelaSession[]>();
 
+export function resolveAgentSidebarEmptySessionState({
+  botPaused,
+  loading,
+  botKey,
+  sessionCount,
+}: {
+  botPaused: boolean;
+  loading: boolean;
+  botKey: string | null;
+  sessionCount: number;
+}): "loading" | "default" | null {
+  if (sessionCount > 0 || botPaused) return null;
+  return loading || botKey === null ? "loading" : "default";
+}
+
 export function useAgentSidebarSessionList(botKey: string | null) {
   const [current, setCurrent] = useState(() => ({
     botKey,

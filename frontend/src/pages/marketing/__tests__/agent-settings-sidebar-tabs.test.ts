@@ -412,12 +412,11 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain("{sessionDisplayTitle}");
   });
 
-  it("shows a default-chat entry when the SDK has no sessions yet", () => {
+  it("shows a default-chat entry after a running Bot confirms an empty list", () => {
     const page = readPageSource();
 
-    // 空态：列表里渲染「默认对话」可点入口（行为对齐之前的对话菜单项），
-    // 让用户无论 SDK 是否已加载都至少有一个进入对话主区的入口。
-    expect(page).toContain('chatSessions.length === 0 ?');
+    // 运行中确认空列表后仍可进入聊天；暂停时则不显示无效的空态入口。
+    expect(page).toContain('emptyChatSessionState === "default" ? (');
     expect(page).toContain('AGENT_SECTION_PATH_BY_ID.chat');
   });
 
@@ -604,7 +603,7 @@ describe("agent settings sidebar chat/settings tabs", () => {
     const page = readPageSource();
 
     const emptyBranch = page.slice(
-      page.indexOf(") : chatSessions.length === 0 ? ("),
+      page.indexOf(') : emptyChatSessionState === "default" ? ('),
       page.indexOf("chatSessionPagination.visibleSessions.map((session) => {"),
     );
 

@@ -152,24 +152,22 @@ function PublicHeaderAuthControls({
     onEntitlementUnavailable: () => setPostLoginError(true),
   });
 
-  const renderProductEntry = (surface: 'desktop' | 'mobile') => {
+  const renderProductEntry = () => {
     /* 购买前不暴露「我的智能体」入口（PRD 2026-09-30）。
        与 /agents 门禁同口径：已订阅、有历史订阅或 Bot 才显示。 */
     const hasExistingAssets = (bots?.length ?? 0) > 0 || Boolean(latestPass);
     if (!showProductEntry || !isAuthenticated || !hasResolvedPasses || passesLoading || passesError || botsLoading || botsError || (!isSubscribed && !hasExistingAssets)) return null;
-    const isMobile = surface === 'mobile';
     return (
       <a
         href={AGENTS_HOME_PATH}
         onClick={() => {
           trackDatongClick('agent_enter_console_btn', {
             pgid: DATONG_PAGE_IDS.HOME,
-            params: { surface, target: AGENTS_HOME_PATH },
+            params: { surface: window.innerWidth < 1024 ? 'mobile' : 'desktop', target: AGENTS_HOME_PATH },
           });
         }}
         className={cn(
-          'inline-flex cursor-pointer items-center justify-center whitespace-nowrap rounded-[100px] border border-black/90 bg-black/90 font-heading font-medium text-white shadow-[0_2px_0_rgba(187,187,187,0.05)] hover:bg-black/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2',
-          isMobile ? 'h-[32px] px-3 text-[13px]' : 'h-[36px] px-4 text-sm xl:px-5',
+          'inline-flex h-[32px] cursor-pointer items-center justify-center whitespace-nowrap rounded-[100px] border border-black/90 bg-black/90 px-3 font-heading text-[13px] font-medium text-white shadow-[0_2px_0_rgba(187,187,187,0.05)] hover:bg-black/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 lg:h-[36px] lg:px-4 lg:text-sm xl:px-5',
         )}
       >
         {copy.enterProduct}
@@ -248,13 +246,13 @@ function PublicHeaderAuthControls({
             </button>
           </div>
         )}
-        <div className="hidden shrink-0 items-center gap-2 lg:flex xl:gap-3">
-          {showLanguageSwitcher && renderNextLanguageSwitcher({ activeLocale: activeLocale, reloadAfterSwitch: false, variant: 'dropdown' })}
-          {renderProductEntry('desktop')}
-          <UserAvatarMenu />
-        </div>
-        <div className="ml-auto flex items-center gap-2 lg:hidden">
-          {renderProductEntry('mobile')}
+        <div className="ml-auto flex shrink-0 items-center gap-2 lg:ml-0 xl:gap-3">
+          {showLanguageSwitcher && (
+            <div className="hidden lg:block">
+              {renderNextLanguageSwitcher({ activeLocale: activeLocale, reloadAfterSwitch: false, variant: 'dropdown' })}
+            </div>
+          )}
+          {renderProductEntry()}
           <UserAvatarMenu />
         </div>
       </>
