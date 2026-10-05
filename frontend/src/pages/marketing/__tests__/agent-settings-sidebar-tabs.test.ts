@@ -143,6 +143,27 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(statusRow).toContain('className="lv-agent-status"');
   });
 
+  it("uses the avatar status indicator on both sites without an online subtitle", () => {
+    const page = readPageSource();
+    const profile = page.slice(
+      page.indexOf('className="lv-agent-avatar lv-agent-avatar--status"'),
+      page.indexOf('className="lv-agents-sidebar-controls"'),
+    );
+    const avatar = profile.slice(
+      profile.indexOf('className="lv-agent-avatar lv-agent-avatar--status"'),
+      profile.indexOf('className="lv-agent-profile-text"'),
+    );
+    const statusRowCondition = profile.slice(
+      profile.indexOf('className="lv-agent-profile-name"'),
+      profile.indexOf('className="lv-agent-status-row"'),
+    );
+
+    expect(avatar).toContain('"lv-agent-avatar-status"');
+    expect(avatar).not.toContain("!isGlobal");
+    expect(statusRowCondition).toContain('activeBot.status !== "running"');
+    expect(statusRowCondition).not.toContain("isGlobal ||");
+  });
+
   it("removes the legacy SHOW_AGENTCHAT_ENTRY gate", () => {
     expect(readPageSource()).not.toContain("SHOW_AGENTCHAT_ENTRY");
   });
