@@ -40,6 +40,7 @@ test("Workbench passes the Host queue capability into the Composer prop", () => 
   const composerTag = app.match(/<CodexComposer\b[\s\S]*?\/>/u)?.[0];
   assert.ok(composerTag, "Workbench should render CodexComposer");
   assert.match(composerTag, /supportsQueuedSteer=\{queueAtomicSteer\}/u);
+  assert.match(composerTag, /defaultFollowUpAction=\{defaultFollowUpAction\}/u);
 });
 
 test("normal queued follow-ups render as messages rather than transport UI", () => {

@@ -1398,6 +1398,32 @@ func TestEnsurePoolForCapacityBundleCreatesDerivedPoolAndBinding(t *testing.T) {
 	if bundle.LineageTags["pool_id"] != pool.ID {
 		t.Fatalf("expected bundle reserved to pool %s, got %+v", pool.ID, bundle.LineageTags)
 	}
+	if _, err := svc.UpsertCapacityBundle(ctx, core.CapacityBundle{
+		ID:               "bundle-sa5",
+		Region:           "ap-beijing",
+		Zone:             testZone,
+		VpcID:            testVpcID,
+		SubnetID:         testSubnetID,
+		SecurityGroupIDs: testSecurityGroups,
+		Status:           core.CapacityBundleStatusWarm,
+		LineageTags: map[string]string{
+			"template_class_id": "openclaw-default",
+			"sku_id":            "sku-default",
+		},
+	}); err != nil {
+		t.Fatalf("upsert variant bundle: %v", err)
+	}
+	variant, created, err := svc.ensurePoolForCapacityBundle(ctx, binding, sku, "bundle-sa5", "SA5.MEDIUM2")
+	if err != nil {
+		t.Fatalf("ensure variant pool: %v", err)
+	}
+	if !created || variant.InstanceType != "SA5.MEDIUM2" {
+		t.Fatalf("expected SA5 variant pool, got created=%v pool=%+v", created, variant)
+	}
+	variantAgain, created, err := svc.ensurePoolForCapacityBundle(ctx, binding, sku, "bundle-sa5", "SA9.MEDIUM2")
+	if err != nil || created || variantAgain.InstanceType != "SA5.MEDIUM2" {
+		t.Fatalf("re-entry must preserve existing variant: created=%v pool=%+v err=%v", created, variantAgain, err)
+	}
 }
 
 func TestWarmingPoolCountsTowardCapacityGrowthWithoutAdmission(t *testing.T) {

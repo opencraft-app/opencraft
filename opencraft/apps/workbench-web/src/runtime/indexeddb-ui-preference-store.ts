@@ -1,8 +1,9 @@
-import type {
-  CompareAndSetPreferenceResult,
-  StoredUiPreference,
-  UiPreferenceKey,
-  UiPreferenceStore,
+import {
+  UI_PREFERENCE_KEYS,
+  type CompareAndSetPreferenceResult,
+  type StoredUiPreference,
+  type UiPreferenceKey,
+  type UiPreferenceStore,
 } from "@opencraft/ui-preferences";
 
 const DATABASE_VERSION = 1;
@@ -25,12 +26,7 @@ function transactionComplete(transaction: IDBTransaction): Promise<void> {
 }
 
 function isPreferenceKey(value: unknown): value is UiPreferenceKey {
-  return value === "shell.applicationsPinned"
-    || value === "shell.accountPinned"
-    || value === "shell.navigationDetent"
-    || value === "shell.lastVisibleNavigationDetent"
-    || value === "shell.navigationWidth"
-    || value === "shell.contextSidebarWidth";
+  return typeof value === "string" && UI_PREFERENCE_KEYS.includes(value as UiPreferenceKey);
 }
 
 export class IndexedDbUiPreferenceStore implements UiPreferenceStore {

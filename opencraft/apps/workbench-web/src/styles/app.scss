@@ -1,5 +1,6 @@
 @use "@opencraft/design-system/tokens.web";
 @use "@opencraft/design-system/controls.web" as controls;
+@use "@opencraft/design-system/focus.web";
 @use "@opencraft/design-system/menu.web" as menu;
 @use "@opencraft/design-system/toolbar.web" as toolbar;
 @use "@opencraft/design-system/typography.web" as typography;
@@ -13,6 +14,7 @@
 @use "./codex-accounts";
 @use "./thread-workspace";
 @use "./model-services";
+@use "./ssh-connections";
 
 .settings-search-select__trigger {
   display: flex;
@@ -88,6 +90,9 @@
 // terminal/use-app-shell-layout-motion-04358.ts (r822).
 * {
   box-sizing: border-box;
+  // Safari's rectangular tap flash ignores our control shapes. The app owns
+  // pressed feedback; keep keyboard focus indicators in their own rules.
+  -webkit-tap-highlight-color: transparent;
   // Codex keeps the platform scrollbar and only themes its native chrome.
   // Overlay visibility and idle fading remain owned by Chromium/macOS.
   scrollbar-color: var(--scrollbar-thumb) transparent;
@@ -137,20 +142,6 @@ body {
   place-items: center;
 }
 
-.startup-shell__spinner {
-  width: 18px;
-  height: 18px;
-  border: 1.5px solid
-    color-mix(in srgb, var(--color-text, #202020) 14%, transparent);
-  border-top-color: color-mix(
-    in srgb,
-    var(--color-text, #202020) 62%,
-    transparent
-  );
-  border-radius: 50%;
-  animation: startup-shell-spin 720ms linear infinite;
-}
-
 @keyframes startup-shell-spin {
   to {
     transform: rotate(1turn);
@@ -158,44 +149,37 @@ body {
 }
 
 .conversation-recovery-cold-stage {
-  display: grid;
-  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
   padding-top: var(--thread-content-top-inset);
-  align-content: start;
 }
 
-.conversation-recovery-skeleton,
 .conversation-recovery-empty-error {
   width: 100%;
   box-sizing: border-box;
   padding: 28px var(--padding-toolbar);
 }
 
-.conversation-recovery-skeleton {
+.conversation-recovery-loading {
   display: grid;
-  gap: 14px;
+  flex: 1 0 auto;
+  width: 100%;
+  place-items: center;
+  pointer-events: none;
   opacity: 0;
   animation: conversation-recovery-appear 1ms 200ms forwards;
 }
 
-.conversation-recovery-skeleton__label {
+.conversation-recovery-loading__label {
   position: absolute;
   width: 1px;
   height: 1px;
   overflow: hidden;
   clip-path: inset(50%);
   white-space: nowrap;
-}
-
-.conversation-recovery-skeleton__line {
-  display: block;
-  width: 64%;
-  height: 14px;
-  border-radius: 7px;
-  background: var(--color-background-secondary);
-
-  &:nth-last-child(2) { width: 83%; }
-  &:last-child { width: 48%; }
 }
 
 .conversation-recovery-empty-error {
@@ -345,16 +329,6 @@ html[data-timeline-tracks-visual-viewport="true"] .app-shell-root {
     pointer-events: none;
   }
 
-  // Physical Codex CSS extends the translucent panel beneath the main
-  // surface so its edge reads as one native window rather than two columns.
-  &::after {
-    position: absolute;
-    inset: 0 calc(-1 * var(--radius-2xl)) 0 auto;
-    width: var(--radius-2xl);
-    background: inherit;
-    content: "";
-    pointer-events: none;
-  }
 }
 
 // Codex's renderer leaves the Electron layout panel unpainted. The native
@@ -676,6 +650,38 @@ html[data-codex-window-type="browser"] .main-content-top-fade {
     pointer-events: auto;
     -webkit-app-region: no-drag;
   }
+}
+
+// The main surface's upper lip keeps moving left across the compact rail. Only
+// this overhang is painted: main content retains its own surface/edge-scroll
+// policy. Existing Header owns native controls, drag regions and hit testing.
+.app-shell-header::before {
+  position: absolute;
+  z-index: -1;
+  inset-block: 0;
+  left: var(--app-shell-titlebar-extension-left, 0px);
+  width: var(--app-shell-titlebar-extension-width, 0px);
+  background: var(--background-shell-compact-titlebar);
+  // This lip belongs to the same raised main surface. Reveal its lower edge
+  // toward Sidecar only; its joining edge must not draw a second white seam.
+  box-shadow: var(--codex-main-surface-elevation);
+  clip-path: inset(0 0 calc(-1 * var(--height-toolbar)) 0);
+  content: "";
+  pointer-events: none;
+}
+
+.app-shell-header::after {
+  position: absolute;
+  z-index: -1;
+  right: 0;
+  bottom: 0;
+  left: var(--app-shell-titlebar-extension-left, 0px);
+  height: 1px;
+  background: var(--color-border-subtle);
+  opacity: var(--app-shell-titlebar-divider-progress, 0);
+  content: "";
+  pointer-events: none;
+  @media (forced-colors: active) { background: CanvasText; }
 }
 
 .app-shell-header__window-controls {
@@ -2432,7 +2438,7 @@ html[data-codex-window-type="browser"] .main-content-top-fade {
   background: var(--color-background-surface);
   color: var(--color-text-tertiary);
 
-  &:focus-within {
+  :root:not([data-touch-interaction]) &:focus-within {
     border-color: var(--color-border-focus, var(--color-text-secondary));
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-border-focus, var(--color-text)) 14%, transparent);
   }
@@ -2592,8 +2598,8 @@ html[data-codex-window-type="browser"] .main-content-top-fade {
   resize: vertical;
 }
 
-.lightvela-management-textarea:focus {
-  outline: 2px solid color-mix(in srgb, var(--color-accent) 28%, transparent);
+:root:not([data-touch-interaction]) .lightvela-management-textarea:focus-visible {
+  outline: 2px solid var(--color-border-focus);
   outline-offset: 1px;
 }
 
@@ -2976,12 +2982,13 @@ html[data-codex-window-type="browser"] .main-content-top-fade {
     background: color-mix(in srgb, var(--color-background-input, var(--color-surface-secondary)) 82%, var(--color-text) 4%);
   }
 
-  &:focus-visible,
-  &:has(.settings-control-select:focus-visible) {
+  :root:not([data-touch-interaction]) &:focus-visible,
+  :root:not([data-touch-interaction]) &:has(.settings-control-select:focus-visible) {
     // Input focus favors a quieter affordance than the global focus ring:
-    // accent border + retained baseline shadow, no outer glow.
+    // neutral border + retained baseline shadow, no outer glow.
     border-color: var(--color-border-focus);
     box-shadow: 0 1px 2px rgb(0 0 0 / 3%);
+    @media (forced-colors: active) { border-color: Highlight; }
   }
 
   &[aria-invalid="true"], &:has(.settings-control-select[aria-invalid="true"]) {
@@ -3150,6 +3157,17 @@ html[data-codex-window-type="browser"] .main-content-top-fade {
   background: var(--color-border-default);
   cursor: pointer;
   transition: background var(--transition-duration-basic) var(--ease-standard);
+
+  // The switch owns its track and touch target even inside a list action slot.
+  &::before {
+    content: "";
+    position: absolute;
+    width: 44px;
+    height: 44px;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+  }
 
   span {
     display: block;
@@ -3362,7 +3380,7 @@ html[data-codex-window-type="browser"] .main-content-top-fade {
   align-items: center;
   gap: 4px;
 
-  > button:not(.settings-control-button) {
+  > button:not(.settings-control-button):not(.settings-control-switch) {
     display: grid;
     min-width: 28px;
     height: 28px;
@@ -4298,6 +4316,15 @@ html[data-codex-window-type="electron"] .thread-scroll {
     text-align: start;
     word-break: break-word;
 
+    // A code fence must contribute to this auto-sized bubble's intrinsic
+    // width. The shared code renderer contains inline size for full-width
+    // assistant prose; keep that containment there, but lift it here so a
+    // code-only user message cannot collapse to a clipped empty sliver.
+    // Long lines remain bounded by the bubble and scroll inside the code block.
+    .chat-code-block {
+      contain: none;
+    }
+
     &.is-empty {
       line-height: 1;
     }
@@ -5067,11 +5094,15 @@ html[data-codex-window-type="electron"] .thread-scroll {
     border: 0;
   }
 
-  legend {
-    width: 100%;
-    padding: 0;
-    font: var(--font-weight-semibold) var(--codex-chat-font-size)/21px var(--font-family-ui);
+  &__title {
+    min-width: 0;
     overflow-wrap: anywhere;
+
+    > .opencraft-chat-document {
+      font-family: var(--font-family-ui);
+      font-weight: var(--font-weight-semibold);
+      line-height: 21px;
+    }
   }
 
   &__options {
@@ -5090,7 +5121,7 @@ html[data-codex-window-type="electron"] .thread-scroll {
       cursor: pointer;
 
       &:has(input:checked) { border-color: var(--color-border-strong); }
-      &:has(input:focus-visible) { outline: 2px solid var(--color-border-strong); outline-offset: 2px; }
+      :root:not([data-touch-interaction]) &:has(input:focus-visible) { outline: 2px solid var(--color-border-strong); outline-offset: 2px; }
       input { width: 17px; height: 17px; flex: 0 0 auto; accent-color: var(--color-background-button-primary); }
       span { min-width: 0; overflow-wrap: anywhere; }
     }
@@ -6119,7 +6150,7 @@ html[data-codex-window-type="electron"] .thread-scroll {
     }
 
     &:focus-visible {
-      outline: 2px solid var(--color-accent-blue);
+      outline: 2px solid var(--color-border-focus);
       outline-offset: 2px;
     }
   }
@@ -8631,6 +8662,90 @@ html[data-codex-window-type="electron"] .thread-scroll {
   width: 100%;
 }
 
+.thread-goal {
+  position: relative;
+  z-index: 3;
+  min-width: 0;
+  margin: 0 0 8px;
+
+  &__bar { display: flex; justify-content: center; min-width: 0; }
+  &__summary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 9px;
+    max-width: 100%;
+    min-height: 38px;
+    padding: 0 15px;
+    border: 0;
+    border-radius: 999px;
+    background: var(--color-background-button-primary);
+    color: var(--color-text-button-primary);
+    box-shadow: 0 5px 18px color-mix(in srgb, #000 18%, transparent);
+    cursor: pointer;
+  }
+  &__summary:hover { background: var(--color-background-button-primary-hover); }
+  &__summary:active { background: var(--color-background-button-primary-active); }
+  &__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  &__time { flex: none; font-variant-numeric: tabular-nums; opacity: .78; }
+  &__chevron { flex: none; transition: transform 150ms ease; }
+  &__summary[aria-expanded="true"] &__chevron { transform: rotate(180deg); }
+  &__detail {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    width: min(430px, 100%);
+    max-height: min(45dvh, 320px);
+    overflow-y: auto;
+    transform: translateX(-50%);
+    padding: 16px;
+    border: 1px solid var(--color-border-default);
+    border-radius: 18px;
+    background: var(--color-background-elevated-primary-opaque, var(--color-background-surface));
+    box-shadow: 0 12px 34px rgb(0 0 0 / 14%);
+    color: var(--color-text);
+  }
+  &__detail p { margin: 0 0 9px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  &__detail small { color: var(--color-text-secondary); }
+  &__actions, &__editor-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+  &__actions { padding-top: 10px; border-top: 1px solid var(--color-border-subtle); }
+  &__actions button, &__editor-actions button {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    min-height: 36px; padding: 0 10px; border: 0; border-radius: 9px;
+    background: transparent; color: var(--color-text);
+  }
+  &__actions button:hover, &__editor-actions button:hover { background: var(--color-background-button-secondary-hover); }
+  button:focus-visible { outline: 2px solid var(--color-border-focus); outline-offset: 2px; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  &__error { color: var(--color-text-secondary); margin: 6px 0 0; }
+  &__editor { display: grid; gap: 14px; width: 100%; min-width: 0; padding: 22px; }
+  &__editor h2, &__editor p { margin: 0; }
+  &__editor h2 { padding-right: 42px; font-size: 18px; line-height: 26px; font-weight: 600; }
+  &__editor p { color: var(--color-text-secondary); }
+  &__editor textarea {
+    width: 100%; min-height: 120px; resize: vertical; padding: 12px;
+    border: 1px solid var(--color-border-default); border-radius: 12px;
+    background: var(--color-background-input); color: var(--color-text);
+    font: inherit;
+  }
+  &__editor textarea:focus-visible { outline: 2px solid var(--color-border-focus); outline-offset: 1px; }
+  &__editor-actions { justify-content: flex-end; margin-top: 2px; }
+  &__editor-actions button:last-child { background: var(--color-background-button-primary); color: var(--color-text-button-primary); }
+  &__editor-actions button:last-child:hover { background: var(--color-background-button-primary-hover); }
+}
+
+.modal-surface.thread-goal-dialog { overflow: visible; }
+
+@media (max-width: 640px) {
+  .thread-goal__summary { min-height: 40px; padding-inline: 14px; }
+  .thread-goal__detail { width: calc(100% - 12px); }
+  .thread-goal__editor { padding: 20px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thread-goal__chevron { transition: none; }
+}
+
 // Composer surface: the editor owns draft behavior; Thread state supplies
 // activity and queue projections. Visual layers must not infer either.
 .codex-composer-stack {
@@ -9901,14 +10016,16 @@ html[data-codex-window-type="electron"] .thread-scroll {
   display: grid;
   min-width: 172px;
   max-width: 230px;
-  height: 48px;
-  grid-template-columns: 30px minmax(0, 1fr) 22px;
+  min-height: 48px;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
   align-items: center;
   gap: 7px;
   padding: 5px 5px 5px 7px;
   border: 1px solid var(--color-border-subtle);
   border-radius: 9px;
   background: var(--color-background-elevated-secondary);
+
+  &[data-state="failed"] { border-color: var(--color-border-danger, var(--color-border-default)); }
 
   button {
     display: grid;
@@ -9924,6 +10041,12 @@ html[data-codex-window-type="electron"] .thread-scroll {
       background: var(--color-background-button-tertiary-hover);
     }
   }
+}
+
+.codex-composer-attachment__actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
 }
 
 .codex-composer-attachment__icon {
@@ -10713,7 +10836,7 @@ html[data-codex-window-type="electron"] .thread-scroll {
   color: var(--color-text-tertiary);
   box-shadow: 0 1px 1px rgb(0 0 0 / 3%);
 
-  &:focus-within {
+  :root:not([data-touch-interaction]) &:focus-within {
     border-color: color-mix(in srgb, var(--color-text) 24%, transparent);
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-text) 6%, transparent);
   }

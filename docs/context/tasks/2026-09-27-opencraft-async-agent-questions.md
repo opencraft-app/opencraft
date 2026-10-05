@@ -6,6 +6,7 @@ Show and answer Codex `request_user_input_async` questions in OpenCraft Web/Elec
 
 ## requirement_ids / requirement_refs / requirement_excerpt
 - User, 2026-09-27: Agent questions never appeared in OpenCraft; desktop and ordinary Web previously showed question UI. Clarified that mobile itself does not choose async mode. User authorized implementation with “搞” and running Web replacement with “替换吧”.
+- User, 2026-09-30: Async question card displayed an MR Markdown link literally. Authorized adopting the existing Markdown rendering invariant and implementing it; no live preview replacement requested.
 
 ## interface_refs / data_structure_refs
 - Codex `rust-v0.157.0` (`00c972e`): `ThreadItem::AgentMessage { delivery: Async, questions }`; question ID is JSON of `["request_user_input_async", messageId, index]`.
@@ -22,6 +23,7 @@ Show and answer Codex `request_user_input_async` questions in OpenCraft Web/Elec
 - Answer uses Codex's stable question identity and normal user submission; duplicate taps and uncertain delivery do not silently create duplicate answers.
 - History/reconnect and another client's answer update question state; two same-title questions retain distinct identities.
 - Existing blocking `item/tool/requestUserInput` remains unchanged.
+- Model-authored question titles use the shared safe Markdown resource pipeline; links open by Host intent, while option values and reply envelopes remain unchanged. The form retains an accessible name without nesting block Markdown in a legend.
 
 ## affected_paths
 - `opencraft/packages/chat-core`, `opencraft/apps/workbench-web`, focused tests and chat architecture docs.
@@ -38,6 +40,7 @@ Show and answer Codex `request_user_input_async` questions in OpenCraft Web/Elec
 | `opencraft/docs/platform-architecture.md`, `opencraft/docs/chat-ui-architecture.md` | Formal design | Shared protocol semantics, renderer adaptation |
 | `docs/context/domains/release-gitops.md`, `opencraft/docs/build-matrix.md` | Delivery boundary | Isolated headless archive and live cutover |
 | `/data/codex-native-review-EpSNWz/repo/codex-rs/...` at `00c972e` | Exact bundled Codex revision | Async message and answer envelope behavior |
+| `ref/codex/conversations/app-server-manager-class-04231.ts`, `ref/codex/lazy/app-initial/resolve-account-provider.js`, `ref/codex/modules/ui-islands-v10/card-header.js` | Recovered reference request-panel path | Confirm native blocking questions use a plain title and differ from async AgentMessage cards |
 
 ## evidence
 - Generated `ThreadItem` has `delivery` and `questions`; current `agentMessage` projector maps only text/phase.
@@ -54,10 +57,12 @@ Show and answer Codex `request_user_input_async` questions in OpenCraft Web/Elec
 - `npm run test:chat`: 436/436 passed; affected workspace typechecks and Web build passed.
 - Formal docs-impact and repository documentation checks passed. Full `npm run gate` passed, including Web, Expo Web and Expo iOS builds. No physical mobile/browser acceptance has been performed.
 - Isolated release worktree focused test and Web typecheck passed; its headless archive passed package smoke with DSH and Codex Host.
+- 2026-09-30 Markdown-title follow-up: 439/439 current Chat tests, Web and Web-renderer typechecks, platform-boundary check, Web build, and isolated fixture bundle passed. The dedicated Playwright smoke could not run on this machine because the Playwright package is absent; installed Chromium also cannot start due to missing `libgbm.so.1`. No live/phone visual acceptance yet.
 
 ## decisions
 - Preserve async question identity on the AgentMessage text block; derive answered/dismissed state from user-message history and keep the ordinary Composer mounted.
 - Submit answers via the existing Host submission path with a Codex-compatible reply envelope; do not send an interaction RPC.
+- Codex's blocking request panel uses a plain-text `CardHeader`, so it is not a precedent for Markdown in async question titles. Reuse OpenCraft's existing assistant Chat Document pipeline and resource policy at the card presentation boundary; the form remains owner of answer state.
 
 ## scan_scope
 - Bounded OpenCraft chat-core/runtime/Web renderer and exact bundled Codex `00c972e` sources.
@@ -67,6 +72,7 @@ Show and answer Codex `request_user_input_async` questions in OpenCraft Web/Elec
 
 ## handoff
 - Local implementation and automated validation complete. User authorized running Web replacement; assets were hot-switched without restarting the active Host. No commit or push authorized. Physical mobile acceptance remains.
+- The Markdown-title follow-up is source-only in the current checkout. It has not replaced the running preview and has not been committed or pushed.
 
 ## checkpoint
 ### stage
@@ -85,3 +91,11 @@ Show and answer Codex `request_user_input_async` questions in OpenCraft Web/Elec
 - Preserve dirty activity renderer, gateway doc and HEIC files. Old Web directory is recoverable at `/opt/opencraft-server/releases/20260927025646-33abd12d5ad6/web.before-20260927044131`; `current` points at `/opt/opencraft-server/releases/20260927044131-36119ed931e2`.
 ### next_action
 - User refreshes the phone page and exercises a new async question. If live UI fails, restore the old Web directory and `current` pointer through a checked rollback; do not touch the persistent data directory.
+- For the 2026-09-30 title follow-up, run `smoke:async-question-markdown` in an environment with Playwright/Chromium, then publish a separately authorized Web preview before claiming phone acceptance.
+
+### 2026-09-30 Markdown-title checkpoint
+- Stage: shared Web Chat Document is wired into async question title presentation; card still owns only answer controls and state.
+- Verified: 439 Chat tests, Web/Web-renderer typechecks, platform boundaries, fixture bundle, Web build, `git diff --check`, and repository documentation validation passed.
+- Unverified: real browser/phone link and form interaction; no running preview replacement. Playwright is absent and local Chromium lacks `libgbm.so.1`.
+- Restore: preserve the current dirty worktree and live build `20260930-bubble-handoff`; do not restart the conversation-bearing service for this source-only change.
+- Next: run the dedicated browser smoke where dependencies are available, then obtain explicit preview-replacement authorization if the user wants to test on phone.

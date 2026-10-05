@@ -42,6 +42,7 @@ import { useStableEvent } from "@opencraft/react-runtime";
 import { useTurnHistoryBackfill } from "@opencraft/timeline-react";
 import type { TimelineBlockRendererProps } from "@opencraft/timeline-render-react";
 import { UserMessageNavigationRail } from "./user-message-navigation-rail";
+import { DisclosureReflowContext } from "./use-disclosure-reflow";
 import { useLatestTurnFollowContentRef } from "./latest-turn-follow-content";
 import {
   AlertCircle,
@@ -373,7 +374,23 @@ function TextTimelineRenderer({ block, richText }: TimelineBlockRendererProps) {
         theme={documentContext.theme}
       />
       : <p>{block.text}</p>)}
-    {block.asyncQuestions?.map((question) => <AsyncQuestionCard key={question.id} question={question} />)}
+    {block.asyncQuestions?.map((question) => (
+      <AsyncQuestionCard
+        key={question.id}
+        question={question}
+        title={<WebChatDocument
+          conversationId={documentContext.conversationId}
+          cwd={documentContext.cwd}
+          documentId={`async-question:${question.id}`}
+          hostId={documentContext.hostId}
+          loadMediaSource={documentContext.loadMediaSource}
+          onMeasurementRequest={documentContext.onMeasurementRequest}
+          onOpenResource={documentContext.onOpenResource}
+          source={question.title}
+          theme={documentContext.theme}
+        />}
+      />
+    ))}
   </>;
 }
 
@@ -1027,6 +1044,7 @@ export function Conversation({
     </div>
   );
   return (
+    <DisclosureReflowContext.Provider value={viewportOwner.beginReflowAnchor}>
     <ConversationDetailContext.Provider value={threadDetailLevel}>
     <ToolActivityPresenterContext.Provider value={toolActivityPresenterRegistry}>
       <ToolCallIconRendererContext.Provider value={renderToolCallIcon ?? null}>
@@ -1111,5 +1129,6 @@ export function Conversation({
       </ToolCallIconRendererContext.Provider>
     </ToolActivityPresenterContext.Provider>
     </ConversationDetailContext.Provider>
+    </DisclosureReflowContext.Provider>
   );
 }

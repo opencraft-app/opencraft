@@ -33,6 +33,7 @@ interface HarnessOptions {
   fallbackTurns?: readonly Record<string, unknown>[];
   resumeDelayMs?: number;
   turnsDelayMs?: number;
+  holdTurnsResponse?: (respond: () => void) => void;
   failResume?: boolean;
   malformedResume?: boolean;
   emitDuringResume?: boolean;
@@ -168,7 +169,8 @@ async function createHarness(options: HarnessOptions = {}): Promise<{
           ? { ...selected, nextCursor: params.cursor }
           : selected;
         const respond = () => peer.send(encodeJsonRpcMessage({ id: message.id, result: page }));
-        if ((options.turnsDelayMs ?? 0) > 0) setTimeout(respond, options.turnsDelayMs);
+        if (options.holdTurnsResponse) options.holdTurnsResponse(respond);
+        else if ((options.turnsDelayMs ?? 0) > 0) setTimeout(respond, options.turnsDelayMs);
         else respond();
         return;
       }
@@ -322,6 +324,47 @@ test("Resume orders hydrated Items before an already painted final answer and re
     await harness.close();
   }
 });
+
+for (const background of [false, true]) {
+  test(`${background ? "background drain" : "older page"} preserves concurrent streaming and Thread identity through the transport`, async () => {
+    let release = () => {};
+    let captured = () => {};
+    const requested = new Promise<void>(resolve => { captured = resolve; });
+    const active = {
+      id: "active", status: "inProgress", itemsView: "full", items: [
+        { id: "user", type: "userMessage", content: [{ type: "text", text: "Current prompt" }] },
+        { id: "reply", type: "agentMessage", phase: "commentary", text: "A" },
+      ],
+    };
+    const harness = await createHarness({
+      drainTailHistory: background,
+      initialTurnsPage: { data: [active], nextCursor: "older" },
+      turnsPages: { older: { data: [active, { id: "older", status: "completed", itemsView: "full", items: [] }], nextCursor: null } },
+      holdTurnsResponse: respond => { release = respond; captured(); },
+    });
+    try {
+      await harness.runtime.resume.resume({ threadId: "thread-one" });
+      const loading = background ? harness.runtime.resume.waitForBackgroundHistory("thread-one")
+        : harness.runtime.resume.loadOlder("thread-one");
+      await requested;
+      await harness.emit("item/agentMessage/delta", { threadId: "thread-one", turnId: "active", itemId: "reply", delta: "B" });
+      await harness.emit("item/started", { threadId: "thread-one", turnId: "active", item: {
+        id: "final", type: "agentMessage", phase: "final_answer", text: "New answer",
+      } });
+      await harness.emit("item/agentMessage/delta", { threadId: "thread-other", turnId: "active", itemId: "reply", delta: "Foreign" });
+      await harness.emit("turn/completed", { threadId: "thread-one", turn: { id: "active", status: "completed", itemsView: "summary", durationMs: 120, items: [] } });
+      release();
+      await loading;
+      const view = harness.runtime.views.get("thread-one")!;
+      assert.deepEqual(view.turns.map(turn => turn.id), ["older", "active"]);
+      assert.deepEqual(view.turns[1]?.items?.map(item => item.id), ["user", "reply", "final"]);
+      assert.equal(view.turns[1]?.items?.[1]?.text, "AB");
+      assert.equal(view.turns[1]?.items?.[2]?.text, "New answer");
+      assert.equal(view.turns[1]?.status, "completed");
+      assert.equal(view.turns[1]?.durationMs, 120);
+    } finally { release(); await harness.close(); }
+  });
+}
 
 test("paginated Resume respects the ordered Item page when the cached View contains final first", async () => {
   const harness = await createHarness({
@@ -1204,15 +1247,33 @@ test("Resume request extensions cannot override Coordinator-owned identity and h
   }
 });
 
-test("a failed Resume can retry the same ID without leaked ownership or buffers", async () => {
+test("a server-rejected Resume pauses automatic retries but permits explicit retry", async () => {
   const options: HarnessOptions = { failResume: true, initialTurnsPage: { data: [], nextCursor: null } };
   const harness = await createHarness(options);
   try {
     await assert.rejects(harness.runtime.resume.resume({ threadId: "thread-one" }), /resume failed/);
     options.failResume = false;
-    const recovered = await harness.runtime.resume.resume({ threadId: "thread-one" });
+    await assert.rejects(harness.runtime.resume.resume({ threadId: "thread-one", force: true }), /resume failed/);
+    assert.equal(harness.requests.filter((entry) => entry.method === "thread/resume").length, 1);
+    const recovered = await harness.runtime.resume.resume({ threadId: "thread-one", retryRejected: true });
     assert.equal(recovered.resumeState, "resumed");
     assert.deepEqual(recovered.streamRole, { role: "owner" });
+    assert.equal(harness.requests.filter((entry) => entry.method === "thread/resume").length, 2);
+  } finally {
+    await harness.close();
+  }
+});
+
+test("a new connection generation can retry a previously rejected Resume", async () => {
+  const options: HarnessOptions = { failResume: true, initialTurnsPage: { data: [], nextCursor: null } };
+  const harness = await createHarness(options);
+  try {
+    await assert.rejects(harness.runtime.resume.resume({ threadId: "thread-one" }), /resume failed/);
+    await harness.transport.close();
+    options.failResume = false;
+    await harness.client.connect({ clientInfo: { name: "session-test", version: "1" } });
+    const recovered = await harness.runtime.resume.resume({ threadId: "thread-one" });
+    assert.equal(recovered.connectionGeneration, 2);
     assert.equal(harness.requests.filter((entry) => entry.method === "thread/resume").length, 2);
   } finally {
     await harness.close();

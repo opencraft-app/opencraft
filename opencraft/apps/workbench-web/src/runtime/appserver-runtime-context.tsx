@@ -151,6 +151,7 @@ import {
 import { readWorkbenchBootstrapLocation, createRouteScopeId, createApplicationNavigation, type ApplicationNavigation } from "./workbench-navigation";
 import { createWorkbenchEntryResolver, resolveRetainedWorkbenchLocation } from "./workbench-location-restoration";
 import { IndexedDbHostConnectionProfileStore } from "./indexeddb-host-profile-store";
+import { ServerManagedProfileStore } from "./server-managed-profile-store";
 import { environmentSourceAdapter } from "./environment-directory/contribution-adapter";
 import { openClientExtensionPersistence } from "./client-extension-persistence";
 import { IndexedDbSidebarLayoutStorage } from "./indexeddb-sidebar-layout-storage";
@@ -169,6 +170,8 @@ import { createComposerActionRendererContributionAdapter } from "./composer-acti
 import { HostProfileContributionRegistry } from "./host-profile-contributions";
 import { PlatformAccountContributionRegistry } from "./platform-account-contributions";
 import { subscribeHostCatalogReadiness } from "./host-catalog-readiness";
+import { canReadHostThreadCatalog, readHostThreadCatalog, type ManagedHostCatalogSource } from "./host-thread-catalog";
+
 import { bindHostQueryRecovery } from "./host-query-recovery";
 import { connectAppearanceThemeContributions } from "../appearance-theme";
 import { workbenchProductId } from "../workbench-product";
@@ -177,6 +180,9 @@ import {
   type WorkbenchHistoryMode,
   type WorkbenchNavigationTransaction,
 } from "./workbench-navigation-transaction";
+
+const subscribeNoManagedCatalog = () => () => {};
+const readNoManagedCatalog = () => null;
 
 // The Context object itself is part of the renderer's hot-reload state.
 export interface AppServerHostCatalog {
@@ -260,6 +266,8 @@ export interface WebWorkbenchCommands {
 }
 
 interface AppServerApplicationContextValue extends AppServerHostCatalog {
+  readonly managedHostCatalog: ManagedHostCatalogSource | null;
+  readonly hostProfiles: HostConnectionProfileStore;
   readonly blobs: BlobResourceService;
   readonly images: ImageProcessingService;
   readonly registry: HostRuntimeRegistry<AppServerWorkbenchRuntime>;
@@ -573,6 +581,7 @@ export interface HostlessWebWorkbenchApplicationSupervisor extends WebWorkbenchA
 
 export interface ActiveWebWorkbenchApplicationSupervisor extends WebWorkbenchApplicationBase {
   readonly mode: "active";
+  readonly managedHostCatalog: ManagedHostCatalogSource | null;
   readonly registry: HostRuntimeRegistry<AppServerWorkbenchRuntime>;
   readonly coordinator: WorkbenchCoordinator<AppServerWorkbenchRuntime>;
   readonly conversationActivation: ConversationActivationCoordinator<AppServerWorkbenchRuntime>;
@@ -1016,6 +1025,10 @@ export async function createWebWorkbenchApplicationSupervisor(
     const headlessAppHost = platform === "web" && import.meta.env.VITE_INCLUDE_HEADLESS_CODEX === "true"
       ? connectWebSocketAppHost() : null;
     if (headlessAppHost !== null) startupRollback.push(() => headlessAppHost.close());
+    const remoteAppHost = headlessAppHost ? connectWebSocketAppHost(undefined, { path: "/ssh-apphost" }) : null;
+    if (remoteAppHost) startupRollback.push(() => remoteAppHost.close());
+    const sshManagement = headlessAppHost ? new (await import("@opencraft/plugin-builtin-agents")).SshConnectionsController() : null;
+    if (sshManagement) { startupRollback.push(() => sshManagement.dispose()); await sshManagement.refresh(); }
     const [lightVelaPlatform, lightVela, createLightVelaHermesExtension] = await Promise.all([
       import("@opencraft/plugin-lightvela-platform"),
       import("@opencraft/plugin-lightvela-hermes"),
@@ -1133,11 +1146,17 @@ export async function createWebWorkbenchApplicationSupervisor(
     }
     if (headlessAppHost !== null) {
       await extensions.loadOptional("vela.headless-codex", async () => {
+        const { readSshServerCatalog } = await import("./ssh-server-catalog");
+        // Only this headless product queries its backend catalog. Credentials,
+        // host-key trust and remote commands never enter a Renderer profile.
+        const sshServers = await readSshServerCatalog();
         const { createHeadlessCodexExtension } = await import("@opencraft/plugin-builtin-agents");
         return createHeadlessCodexExtension({
           requestHost: (hostId, method, params) => agentRuntimes.request(hostId, method, params),
-          createTransport: hostId => headlessAppHost.createTransport(hostId),
+          createTransport: hostId => (hostId.startsWith("ssh:") && sshManagement && sshManagement.getSnapshot().available !== false ? remoteAppHost! : headlessAppHost).createTransport(hostId),
           workspaceBrowseRoots: bootstrapDefinitions.find((host) => host.hostId === "opencraft-server")?.workspaceBrowseRoots ?? [],
+          sshServers: sshManagement!.getSnapshot().available !== false ? [] : sshServers,
+          sshManagement: sshManagement!,
         });
       });
     }
@@ -1223,7 +1242,7 @@ export async function createWebWorkbenchApplicationSupervisor(
       // The containing page owns its URL. Embedded Workbench starts at Home.
       ...(options.navigationMode === "memory" ? { initialEntries: ["/"] } : {}),
     };
-  const configuredHostProfiles = await IndexedDbHostConnectionProfileStore.open({
+  const storedHostProfiles = await IndexedDbHostConnectionProfileStore.open({
     databaseName: currentProductDatabaseName("vela-host-connections"),
     seed: bootstrapDefinitions.map(hostDefinitionProfile),
     ephemeral: [
@@ -1231,6 +1250,16 @@ export async function createWebWorkbenchApplicationSupervisor(
       ...(options.ephemeralHostProfiles ?? []),
     ],
   });
+  const configuredHostProfiles = sshManagement && sshManagement.getSnapshot().available !== false
+    ? new ServerManagedProfileStore(storedHostProfiles, sshManagement, () => [
+      ...sshManagement!.getSnapshot().items,
+      ...sshManagement!.getSnapshot().legacyServers.map(server => ({ ...server, enabled: true, revision: 1 })),
+    ].map(server => ({
+        hostId: server.serverId, displayName: server.displayName, providerId: "vela.headless-codex", providerConfig: {}, providerConfigVersion: 1,
+        hostKind: "remote-ssh", enabled: server.enabled, autoConnect: false, includeInSidebar: true, credentialRef: null,
+        transportEndpoint: null, executionLocation: server.displayName, workspaceBrowseRoots: server.workspaceBrowseRoots, revision: server.revision,
+      })))
+    : storedHostProfiles;
   await refreshBundledHostBrowseRoots(configuredHostProfiles, bootstrapDefinitions);
   const hostProfiles: HostConnectionProfileStore = options.hostProfileMode === "configured"
     ? configuredHostProfiles
@@ -1302,6 +1331,8 @@ export async function createWebWorkbenchApplicationSupervisor(
           () => appServerRegistry.dispose(),
           () => electronAppHost?.close(),
           () => headlessAppHost?.close(),
+          () => remoteAppHost?.close(),
+          () => sshManagement?.dispose(),
           () => connectionProviders.dispose(),
           () => blobFiber.dispose(),
           () => imageFiber.dispose(),
@@ -1520,6 +1551,7 @@ export async function createWebWorkbenchApplicationSupervisor(
     blobs,
     images,
     mode: "active",
+    managedHostCatalog: sshManagement,
     cordis,
     appServerRegistry,
     agentRuntimes,
@@ -1562,6 +1594,8 @@ export async function createWebWorkbenchApplicationSupervisor(
         () => registry.dispose(),
         () => electronAppHost?.close(),
         () => headlessAppHost?.close(),
+        () => remoteAppHost?.close(),
+        () => sshManagement?.dispose(),
         () => hostProfiles.close(),
         () => queryClient.clear(),
         () => extensionManager.dispose(),
@@ -1698,6 +1732,8 @@ export function AppServerRuntimeProvider({
     };
   }, [registry]);
   const applicationContextValue = useMemo<AppServerApplicationContextValue>(() => ({
+    managedHostCatalog: supervisor.managedHostCatalog,
+    hostProfiles,
     agentRuntimes: supervisor.agentRuntimes,
     threadManagement,
     environmentDirectory: supervisor.environmentDirectory,
@@ -1739,6 +1775,8 @@ export function AppServerRuntimeProvider({
     addWebSocketHost: commands.addWebSocketHost,
     removeHost: commands.removeHost,
   }), [
+    supervisor.managedHostCatalog,
+    hostProfiles,
     supervisor.blobs,
     supervisor.images,
     conversationBindings,
@@ -1965,6 +2003,11 @@ export function useMultiHostThreadCatalog(): {
   const application = useContext(ApplicationRuntimeContext);
   const [, setReadinessRevision] = useState(0);
   if (application === null) throw new Error("AppServerRuntimeProvider is missing");
+  const management = useSyncExternalStore(
+    application.managedHostCatalog?.subscribe ?? subscribeNoManagedCatalog,
+    application.managedHostCatalog?.getSnapshot ?? readNoManagedCatalog,
+    application.managedHostCatalog?.getSnapshot ?? readNoManagedCatalog,
+  );
   const visibleHostIds = useMemo(() => new Set(
     application.profiles
       .filter((profile) => profile.enabled && profile.includeInSidebar)
@@ -1985,13 +2028,21 @@ export function useMultiHostThreadCatalog(): {
   ), [application.registry, hostIds, queryClient]);
   const queries = useQueries({
     queries: hosts.map((host) => ({
-      // Discovery must not establish a remote connection merely to paint Chat.
-      enabled: application.profiles.find(profile => profile.hostId === host.hostId)?.autoConnect === true
-        || application.registry.peekRuntime(host.hostId)?.getSnapshot().phase === "ready",
+      // Discovery may attach a reader to an explicitly connected managed
+      // Server, but cannot dial an idle remote merely to paint Chat.
+      enabled: canReadHostThreadCatalog(
+        application.profiles.find(profile => profile.hostId === host.hostId)!,
+        application.registry.peekRuntime(host.hostId)?.getSnapshot().phase,
+        management,
+      ),
       queryKey: ["appserver", host.hostId, "threads", "sidebar", "updated_at", "desc", false] as const,
       queryFn: async () => {
-        const runtime = await application.registry.ensureConnected(host.hostId);
-        return runtime.resources.threads.list({ cursor: null, limit: 50 });
+        return readHostThreadCatalog({
+          profile: application.profiles.find(profile => profile.hostId === host.hostId)!,
+          currentProfile: () => application.hostProfiles.getSnapshot().profiles.find(profile => profile.hostId === host.hostId),
+          management: application.managedHostCatalog,
+          registry: application.registry,
+        });
       },
       staleTime: 30_000,
       retry: retryQuery,

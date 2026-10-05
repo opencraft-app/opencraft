@@ -18,6 +18,7 @@ const createSilentChannel = () => ({
 test("UI preference defaults keep Applications unpinned", async () => {
   const runtime = await UiPreferencesRuntime.open({ installation: new MemoryUiPreferenceStore() });
   assert.equal(runtime.get("shell.applicationsPinned"), false);
+  assert.equal(runtime.get("chat.defaultFollowUpAction"), "steer");
   assert.equal(runtime.get("shell.accountPinned"), false);
   assert.equal(runtime.get("shell.navigationDetent"), "expanded");
   assert.equal(runtime.get("shell.navigationWidth"), 137);
@@ -35,6 +36,7 @@ test("IndexedDB installation preferences survive runtime recreation", async () =
   const first = await UiPreferencesRuntime.open({ installation: firstStore });
   await Promise.all([
     first.set("shell.applicationsPinned", true),
+    first.set("chat.defaultFollowUpAction", "queue"),
     first.set("shell.navigationDetent", "compact"),
     first.set("shell.navigationWidth", 132),
     first.set("shell.contextSidebarWidth", 360),
@@ -48,6 +50,7 @@ test("IndexedDB installation preferences survive runtime recreation", async () =
   });
   const second = await UiPreferencesRuntime.open({ installation: secondStore });
   assert.equal(second.get("shell.applicationsPinned"), true);
+  assert.equal(second.get("chat.defaultFollowUpAction"), "queue");
   assert.equal(second.get("shell.navigationDetent"), "compact");
   assert.equal(second.get("shell.navigationWidth"), 132);
   assert.equal(second.get("shell.contextSidebarWidth"), 360);
@@ -82,5 +85,29 @@ test("legacy shell migration resets the contaminated Applications default", asyn
   assert.equal(runtime.get("shell.navigationWidth"), 132);
   assert.equal(runtime.get("shell.contextSidebarWidth"), 360);
   assert.equal(values.size, 0);
+  await runtime.close();
+});
+
+test("follow-up preference validates input and publishes live changes", async () => {
+  const runtime = await UiPreferencesRuntime.open({ installation: new MemoryUiPreferenceStore() });
+  const observed: string[] = [];
+  const unsubscribe = runtime.subscribe(() => observed.push(runtime.get("chat.defaultFollowUpAction")));
+  await runtime.set("chat.defaultFollowUpAction", "queue");
+  await runtime.set("chat.defaultFollowUpAction", "steer");
+  await assert.rejects(runtime.set("chat.defaultFollowUpAction", "invalid" as "queue"), TypeError);
+  assert.equal(runtime.get("chat.defaultFollowUpAction"), "steer");
+  assert.ok(observed.includes("queue"));
+  assert.equal(observed.at(-1), "steer");
+  unsubscribe();
+  await runtime.close();
+});
+
+test("invalid stored follow-up preference falls back to the authority default", async () => {
+  const installation = new MemoryUiPreferenceStore();
+  await installation.compareAndSet("chat.defaultFollowUpAction", 0, '"invalid"');
+  const runtime = await UiPreferencesRuntime.open({ installation });
+  assert.equal(runtime.get("chat.defaultFollowUpAction"), "steer");
+  await runtime.set("chat.defaultFollowUpAction", "queue");
+  assert.equal(runtime.get("chat.defaultFollowUpAction"), "queue");
   await runtime.close();
 });

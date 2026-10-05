@@ -161,8 +161,8 @@ test("one Sidecar owns two platform panes with independent frame, clip, and view
     assert.match(source, /usePersistedSidebarWidth\(\)/u);
     assert.doesNotMatch(source, /localStorage\.getItem\("sidebar-width"\)|localStorage\.setItem\("sidebar-width"/u);
   }
-  assert.match(navigationSource, /surface === "applications" \? <LayoutGrid aria-hidden="true" size=\{18\}/u,
-    "the Applications entrance uses the shared Lucide app-grid glyph rather than a sidebar-state icon");
+  assert.match(navigationSource, /surface === "applications" \? <NavigationIcon name="applications" selected=/u,
+    "the Applications entrance consumes the shared semantic app-grid glyph and open-state projection");
   assert.match(navigationStyles, /--shell-navigation-label-opacity/u);
   assert.match(navigationStyles, /--sidebar-leading-slot-size:\s*28px/u);
   assert.doesNotMatch(navigationStyles, /&:last-child/u,

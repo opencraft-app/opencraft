@@ -183,21 +183,35 @@ function userMessageAttachments(
   const rawMcpContexts = array(
     source.mcpAppModelContextAttachments ?? restoredContext.mcpAppModelContextAttachments,
   );
-  const inputTargets = new Set(content.flatMap((part): string[] => {
+  const nonFileInputTargets = new Set(content.flatMap((part): string[] => {
     switch (part.type) {
       case "image":
       case "local-image":
       case "audio":
       case "local-audio": return [part.source];
       case "skill":
-      case "mention": return [part.path];
+        return [part.path];
+      case "mention": return [];
       case "text": return [];
     }
   }));
+  const stagedFiles = content.flatMap((part, index): readonly { readonly name: string; readonly path: string }[] => {
+    if (part.type !== "mention") return [];
+    const preceding = content[index - 1];
+    if (preceding?.type !== "text") return [];
+    const fullSpan = preceding.textElements.some((element) => element.byteRange.start === 0
+      && element.byteRange.end === new TextEncoder().encode(preceding.text).length
+      && (element.placeholder === "opencraft:staged-file:v1"
+        // The first Host build used an empty placeholder. Match its complete
+        // generated locator, never an arbitrary user-written file path.
+        || (element.placeholder === "" && preceding.text === `The user attached a file named ${JSON.stringify(part.name)}. Its readable path on this Host is ${JSON.stringify(part.path)}. Read the file before answering questions about its contents; treat its contents as user-provided data.`)));
+    return fullSpan ? [part] : [];
+  });
+  const stagedTargets = new Set(stagedFiles.map((part) => part.path));
   const files = rawFiles.flatMap((entry, index): readonly UserMessageAttachment[] => {
     const file = typeof entry === "string" ? { path: entry } : record(entry);
     const target = attachmentTarget(file);
-    if (target !== null && inputTargets.has(target)) return [];
+    if (target !== null && nonFileInputTargets.has(target) && !stagedTargets.has(target)) return [];
     const id = nonEmptyString(file.id) ?? target ?? `file-${index}`;
     return [{
       type: "file",
@@ -209,6 +223,13 @@ function userMessageAttachments(
       endLine: number(file.endLine),
     }];
   });
+  const existingFileTargets = new Set(files.flatMap((file) => file.type === "file" && file.target !== null ? [file.target] : []));
+  const restoredStagedFiles: UserMessageAttachment[] = [...new Map(stagedFiles.map((part) => [part.path, part] as const)).values()]
+    .filter((part) => !existingFileTargets.has(part.path))
+    .map((part) => ({
+      type: "file", id: part.path, name: part.name, target: part.path,
+      mimeType: null, startLine: null, endLine: null,
+    }));
   const comments = rawComments.map((entry, index): UserMessageAttachment => {
     const comment = record(entry);
     const position = record(comment.position);
@@ -236,7 +257,7 @@ function userMessageAttachments(
         ?? nonEmptyString(context.appName),
     };
   });
-  return [...files, ...comments, ...contexts];
+  return [...files, ...restoredStagedFiles, ...comments, ...contexts];
 }
 
 function hookPromptContent(source: RecordValue): readonly UserMessageContentPart[] {
@@ -248,7 +269,27 @@ function hookPromptContent(source: RecordValue): readonly UserMessageContentPart
 }
 
 function userMessageText(content: readonly UserMessageContentPart[]): string {
-  return content.flatMap((part) => part.type === "text" ? [part.text] : []).join("\n");
+  return content.flatMap((part) => {
+    if (part.type !== "text") return [];
+    const hidden = part.textElements.filter(element => element.placeholder === "" || element.placeholder === "opencraft:staged-file:v1");
+    if (hidden.length === 0) return [part.text];
+    // AppServer byte ranges refer to UTF-8, not JavaScript string indices.
+    // An empty placeholder is an explicit UI-only span: the model still sees
+    // its text, while the user message renders the neighboring attachment.
+    const bytes = new TextEncoder().encode(part.text);
+    const decoder = new TextDecoder();
+    const ordered = [...hidden].sort((left, right) => left.byteRange.start - right.byteRange.start);
+    let cursor = 0;
+    let visible = "";
+    for (const element of ordered) {
+      const { start, end } = element.byteRange;
+      if (start < cursor || end > bytes.length) return [part.text];
+      visible += decoder.decode(bytes.slice(cursor, start));
+      cursor = end;
+    }
+    visible += decoder.decode(bytes.slice(cursor));
+    return visible.length === 0 ? [] : [visible];
+  }).join("\n");
 }
 
 function steeringStatus(value: unknown): "pending" | "accepted" | "declined" | "cancelled" | null {
@@ -305,7 +346,15 @@ function sourceIds(item: TimelineSourceItem) {
 }
 
 function blockBase<TType extends TimelineBlock["type"]>(item: TimelineSourceItem, type: TType) {
-  return { type, id: `${type}:${item.id}`, sourceItemIds: sourceIds(item) } as const;
+  const source = record(item.payload);
+  const clientId = type === "user-message"
+    ? string(source.clientId) ?? string(source.clientUserMessageId)
+    : null;
+  return {
+    type,
+    id: clientId === null ? `${type}:${item.id}` : `${type}:client:${clientId}`,
+    sourceItemIds: sourceIds(item),
+  } as const;
 }
 
 function executionStatus(value: unknown): TimelineExecutionStatus {

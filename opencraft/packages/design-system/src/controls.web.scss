@@ -83,6 +83,30 @@
   }
 }
 
+// Application rail glyphs are not menu-leading icons. Preserve a shared box
+// across outline/selected variants and inherit state color from the button.
+@mixin application-navigation-glyph {
+  > svg {
+    flex: 0 0 var(--size-application-navigation-icon);
+    width: var(--size-application-navigation-icon);
+    height: var(--size-application-navigation-icon);
+    color: inherit;
+  }
+}
+
+@mixin application-navigation-control {
+  @include navigation-control;
+  @include application-navigation-glyph;
+  min-width: var(--size-application-navigation-hit-min);
+  min-height: var(--size-application-navigation-hit-min);
+  border-radius: var(--radius-application-navigation-control);
+  color: var(--color-text-tertiary);
+  @include hover-capable {
+    &:hover:not(:disabled) { color: var(--color-text); }
+  }
+  &[aria-current="page"] { color: var(--color-text); }
+}
+
 // Footer entrances are sidebar items, not raised buttons. Keep the resting
 // row quiet; open/pinned states use the same soft fill as navigation rows.
 @mixin sidebar-entrance {
@@ -113,4 +137,21 @@
     background: var(--color-status-pending); border-color: transparent;
   }
   &[data-phase="error"] { background: var(--color-status-error); border-color: transparent; }
+}
+
+// Passive resource feedback; consumers own its placement, visibility and label.
+.workbench-loading-spinner {
+  display: block;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  color: var(--color-text-secondary, #666);
+  pointer-events: none;
+  animation: workbench-loading-spin 1s linear infinite;
+  @media (prefers-reduced-motion: reduce) { animation: none; }
+  @media (forced-colors: active) { color: CanvasText; }
+}
+
+@keyframes workbench-loading-spin {
+  to { transform: rotate(1turn); }
 }

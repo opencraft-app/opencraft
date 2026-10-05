@@ -21,6 +21,8 @@ VelaGW 到 NewAPI 的转发由网关覆盖写入一次性 `X-VelaGW-Trace-ID`，
 
 Headless OpenCraft 的入口校验先于运行时健康判断：包内 Web release 必须声明 headless 构建身份和 `opencraft-server` Host 入口，否则即使同包 Codex AppServer 可启动，也不应让 Host 认领数据目录并对外提供 Web。打包、包级 smoke 和服务启动复用这一不变量；不要把通用 Web 构建的进程健康误判为 Codex 会话可用。
 
+OpenCraft 的 Codex Account Pool 在 Host 本机回环地址转发 Responses 请求，接收正文上限为 32 MiB。超限时读完并丢弃剩余正文，再返回明确的 HTTP 413；不把本地大小拒绝呈现成流式连接中断，也不将超限正文送往模型上游。
+
 ## 验证
 
 OpenCraft 的执行轮次与展示片段分开：同一轮次内的异步提问、回答、Steer 与后续工作按原有记录顺序投影，活动只在连续范围内折叠，不把所有回答集中到旧工作记录之前。共享 `chat-core` 拥有顺序分段和当前响应判定；Web/Native 不独立重排。异步提问即使带最终回答 phase 也不能结束工作计时，历史回答不得压住后续响应的运行状态。具体契约见 [ChatUI 顺序与所有权](../../../opencraft/docs/chat-ui-architecture.md#history-positions-and-concurrent-observations)。

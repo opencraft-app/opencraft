@@ -62,6 +62,45 @@ function itemClientId(item: TimelineSourceItem): string | null {
   return string(source.clientId) ?? string(source.clientUserMessageId);
 }
 
+/** The Host may enrich Codex input after Turn.params was captured. In that
+ * case the acknowledged UserMessage is the only source of the UI-only span. */
+function hasStagedFileDisplaySpan(value: unknown): boolean {
+  const entries = inputEntries(value);
+  return entries.some((entry, index) => {
+    const source = record(entry);
+    if (source.type !== "text") return false;
+    const elements = source.text_elements ?? source.textElements;
+    if (!Array.isArray(elements)) return false;
+    const following = record(entries[index + 1]);
+    const legacyLocator = following.type === "mention" && typeof source.text === "string"
+      && typeof following.name === "string" && typeof following.path === "string"
+      && source.text === `The user attached a file named ${JSON.stringify(following.name)}. Its readable path on this Host is ${JSON.stringify(following.path)}. Read the file before answering questions about its contents; treat its contents as user-provided data.`;
+    return elements.some((element) => {
+      const display = record(element);
+      const range = record(display.byteRange ?? display.byte_range);
+      const fullSpan = range.start === 0 && range.end === new TextEncoder().encode(String(source.text)).length;
+      return fullSpan && (display.placeholder === "opencraft:staged-file:v1"
+        || (display.placeholder === "" && legacyLocator));
+    });
+  });
+}
+
+/** Reconcile one client-authored message with its matching AppServer receipt.
+ * Delivery mode (new Turn or steer) does not change attachment presentation. */
+function acknowledgedDisplayInput(
+  localInput: unknown,
+  localAttachments: unknown,
+  serverItem: TimelineSourceItem | null | undefined,
+): { readonly input: unknown; readonly attachments: unknown } {
+  const server = record(serverItem?.payload);
+  return {
+    input: serverItem != null && hasStagedFileDisplaySpan(server.content)
+      ? server.content
+      : localInput,
+    attachments: localAttachments ?? server.attachments,
+  };
+}
+
 function sourceIds(item: TimelineSourceItem, additionalId?: string): readonly string[] {
   const source = record(item.payload);
   const existing = Array.isArray(source.__velaSourceItemIds)
@@ -175,7 +214,7 @@ export function normalizeCodexTurnUserMessages(turn: TimelineSourceTurn): Timeli
     const serverItem = composerServerIndex < 0 ? null : turn.items[composerServerIndex] ?? null;
     const serverSource = record(serverItem?.payload);
     const syntheticId = serverItem?.id ?? `${turn.id}:composer-user-message`;
-    const attachments = params.attachments ?? serverSource.attachments;
+    const display = acknowledgedDisplayInput(paramsInput, params.attachments, serverItem);
     const commentAttachments = params.commentAttachments ?? serverSource.commentAttachments;
     normalized.push({
       id: syntheticId,
@@ -184,9 +223,9 @@ export function normalizeCodexTurnUserMessages(turn: TimelineSourceTurn): Timeli
         ...serverSource,
         id: syntheticId,
         type: "userMessage",
-        content: paramsInput,
+        content: display.input,
         clientId: paramsClientId ?? itemClientId(serverItem ?? { id: syntheticId, type: "userMessage", payload: serverSource }),
-        attachments,
+        attachments: display.attachments,
         commentAttachments,
         mcpAppModelContextAttachments: turn.mcpAppModelContextAttachments,
         __velaMessageKind: "user",
@@ -218,10 +257,18 @@ export function normalizeCodexTurnUserMessages(turn: TimelineSourceTurn): Timeli
     }
     if (item.type === "steeringUserMessage") {
       const server = steeringServerByOwnerIndex.get(index);
+      const steeringSource = record(item.payload);
+      const display = acknowledgedDisplayInput(
+        steeringSource.input ?? steeringSource.content,
+        steeringSource.attachments,
+        server,
+      );
       normalized.push(withProjectionMetadata(item, {
+        input: display.input,
+        attachments: display.attachments,
         __velaMessageKind: "steering",
         __velaSourceItemIds: sourceIds(item, server?.id),
-        serverUserMessageId: string(record(item.payload).serverUserMessageId) ?? server?.id ?? null,
+        serverUserMessageId: string(steeringSource.serverUserMessageId) ?? server?.id ?? null,
       }));
       continue;
     }

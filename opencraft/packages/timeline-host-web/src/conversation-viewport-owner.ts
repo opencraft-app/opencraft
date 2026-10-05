@@ -16,7 +16,7 @@ import {
   type LatestTurnMeasurementChange,
 } from "@opencraft/timeline-virtualizer";
 
-import { preserveTimelineElementPositionOnReflow } from "./reflow";
+import { beginTimelineElementReflow, preserveTimelineElementPositionOnReflow, type TimelineReflowLease } from "./reflow";
 import {
   observeBorderBoxHeight,
   resizeObserverBlockSize,
@@ -119,6 +119,7 @@ export class WebConversationViewportOwner {
   private footerObservationDispose: (() => void) | null = null;
   private footerHeightPx: number | null = null;
   private footerResizeViewportPreserveDisabled = false;
+  private reflowLease: TimelineReflowLease | null = null;
 
   constructor(initialDistanceFromBottomPx: number) {
     this.scrollController = new TurnScrollController({
@@ -153,6 +154,7 @@ export class WebConversationViewportOwner {
   readonly attachScrollElement = (element: HTMLDivElement | null): void => {
     if (this.disposed) return;
     if (this.scrollElementRef.current === element) return;
+    this.cancelReflowAnchor();
     this.scrollElementRef.current?.style.removeProperty("--thread-scroll-padding-bottom");
     this.scrollElementRef.current = element;
     this.rebindFooterObservation();
@@ -351,6 +353,7 @@ export class WebConversationViewportOwner {
         : null;
     };
     const handleWheel = (event: WheelEvent) => {
+      this.cancelReflowAnchor();
       callbacks.onUserInput?.();
       const delta = normalizeWheelDeltaPx(
         event.deltaY,
@@ -379,11 +382,13 @@ export class WebConversationViewportOwner {
       ) return;
       const direction = keyboardScrollDirection(event);
       if (direction === null) return;
+      this.cancelReflowAnchor();
       callbacks.onUserInput?.();
       this.scrollController.cancelPendingLayoutPreservation();
       markDirection(direction);
     };
     const handlePointerDown = (event: PointerEvent) => {
+      this.cancelReflowAnchor();
       callbacks.onUserInput?.();
       inputDirection = null;
       pointerSnapshot = event.pointerType === "mouse" && event.target === element
@@ -417,6 +422,7 @@ export class WebConversationViewportOwner {
       );
       if (direction === null) return;
       touchPoint = null;
+      this.cancelReflowAnchor();
       this.scrollController.cancelPendingLayoutPreservation();
       markDirection(direction);
       if (direction === "away") loadOlderAtTop();
@@ -544,9 +550,27 @@ export class WebConversationViewportOwner {
     );
     if (
       anchor === null
+      || anchor.dataset.timelineReflowOwned === "true"
       || anchor.closest("[data-thread-user-message-navigation-content='true']") === null
     ) return;
-    preserveTimelineElementPositionOnReflow(anchor, scrollElement);
+    this.cancelReflowAnchor();
+    const cancel = preserveTimelineElementPositionOnReflow(anchor, scrollElement);
+    this.reflowLease = { complete: cancel, cancel };
+  }
+
+  /** One interaction owns the local anchor; old callbacks can only release their lease. */
+  readonly beginReflowAnchor = (anchor: HTMLElement): TimelineReflowLease | null => {
+    this.cancelReflowAnchor();
+    const scrollElement = this.scrollElementRef.current;
+    if (this.disposed || scrollElement === null || !scrollElement.contains(anchor)) return null;
+    const lease = beginTimelineElementReflow(anchor, scrollElement);
+    this.reflowLease = lease;
+    return lease;
+  };
+
+  private cancelReflowAnchor(): void {
+    this.reflowLease?.cancel();
+    this.reflowLease = null;
   }
 
   getScrollSnapshot(): TurnScrollControllerSnapshot {
@@ -556,6 +580,7 @@ export class WebConversationViewportOwner {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.cancelReflowAnchor();
     this.generation += 1;
     this.measurementListener = null;
     this.latestTurnMeasurementListener = null;

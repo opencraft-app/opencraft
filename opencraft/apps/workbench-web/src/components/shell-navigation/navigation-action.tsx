@@ -1,4 +1,5 @@
-import { Blocks, Bot, Cloud, Database, Folder, HardDrive, MessageSquare, Server } from "lucide-react";
+import { Blocks, Bot, Cloud, Database, Folder, HardDrive, LayoutGrid, MessageCircle, MessageSquare, Server, Settings, type LucideIcon } from "lucide-react";
+import { createElement } from "react";
 
 export interface NavigationAction {
   readonly id: string;
@@ -8,16 +9,36 @@ export interface NavigationAction {
   readonly onInvoke: () => void;
 }
 
-/** Shared by contributed catalogs, application lists and their entrance preview. */
-export function NavigationIcon({ name, size = 15 }: { name?: string; size?: number }) {
+/** Semantic glyph mapping is platform-owned; CSS tokens own the physical scale. */
+export function NavigationIcon({ name, size = 15, selected = false }: {
+  name?: string;
+  size?: number;
+  selected?: boolean;
+}) {
+  let icon: LucideIcon;
+  // Only closed silhouettes can be filled. A server's lights, a Bot's face or
+  // a gear's hub must not disappear under a generic `svg { fill }` rule.
+  let silhouette = false;
   switch (name) {
-    case "chat": return <MessageSquare size={size} />;
-    case "cloud": return <Cloud size={size} />;
-    case "database": return <Database size={size} />;
-    case "folder": return <Folder size={size} />;
-    case "hard-drive": return <HardDrive size={size} />;
-    case "server": return <Server size={size} />;
-    case "bot": return <Bot size={size} />;
-    default: return <Blocks size={size} />;
+    case "chat": icon = MessageSquare; silhouette = true; break;
+    case "message-circle": icon = MessageCircle; silhouette = true; break;
+    case "cloud": icon = Cloud; silhouette = true; break;
+    case "database": icon = Database; break;
+    case "folder": icon = Folder; silhouette = true; break;
+    case "hard-drive": icon = HardDrive; break;
+    case "server": icon = Server; break;
+    case "bot": icon = Bot; break;
+    case "settings": icon = Settings; break;
+    case "applications": icon = LayoutGrid; silhouette = true; break;
+    default: icon = Blocks; break;
   }
+  const props = {
+    size,
+    "aria-hidden": true,
+    focusable: false,
+    "data-navigation-glyph-variant": selected ? "selected" : "outline",
+    fill: selected && silhouette ? "currentColor" : "none",
+    strokeWidth: selected && !silhouette ? 2.5 : 2,
+  };
+  return createElement(icon, props);
 }

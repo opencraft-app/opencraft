@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 import { LOGICAL_CLIENT_FIELD } from "@opencraft/app-host-protocol";
 import { AccountPoolStore } from "@opencraft/account-pool-host";
-import { OPENCRAFT_THREAD_LIFECYCLE_EXTENSION, OPENCRAFT_THREAD_QUEUE_EXTENSION, OPENCRAFT_THREAD_START_DURABILITY_EXTENSION, OPENCRAFT_PERMISSION_MODES_EXTENSION } from "@opencraft/appserver-protocol";
+import { OPENCRAFT_ATTACHMENT_STAGING_EXTENSION, OPENCRAFT_THREAD_LIFECYCLE_EXTENSION, OPENCRAFT_THREAD_QUEUE_EXTENSION, OPENCRAFT_THREAD_START_DURABILITY_EXTENSION, OPENCRAFT_PERMISSION_MODES_EXTENSION } from "@opencraft/appserver-protocol";
 import { CodexEngineAdapter } from "../apps/opencraft-daemon/src/codex-engine-adapter.js";
 import { CodexHostQueue } from "../apps/opencraft-daemon/src/codex-host-queue.js";
 
@@ -48,6 +48,90 @@ async function initializeClient(adapter: CodexEngineAdapter, frames: Array<Recor
   await adapter.send(JSON.stringify({ id: `${clientId}:init`, method: "initialize", params: {}, [LOGICAL_CLIENT_FIELD]: clientId }));
   await waitFor(frames, frame => frame.id === `${clientId}:init`);
 }
+
+test("Codex Host stages ordinary files for its native process without forwarding the extension", async () => {
+  const root = await mkdtemp(join(tmpdir(), "opencraft-codex-attachment-"));
+  const frames: Array<Record<string, unknown>> = [];
+  const adapter = createRoutingAdapter(root, frames);
+  const clientId = "attachment-client";
+  const request = {
+    clientAttachmentId: "markdown-attachment",
+    name: "notes.md",
+    mimeType: "text/markdown",
+    size: 11,
+    source: { kind: "client-bytes", dataBase64: Buffer.from("hello world").toString("base64") },
+  };
+  try {
+    await adapter.connect();
+    await initializeClient(adapter, frames, clientId);
+    const initialized = await waitFor(frames, frame => frame.id === `${clientId}:init`);
+    assert.deepEqual((initialized.result as any).capabilities.extensions[OPENCRAFT_ATTACHMENT_STAGING_EXTENSION], {
+      version: 1, sources: ["client-bytes"], locations: ["host-file"], maxBytes: 32 * 1024 * 1024,
+    });
+    await adapter.send(JSON.stringify({ id: "stage-1", method: "attachment/stage", params: request, [LOGICAL_CLIENT_FIELD]: clientId }));
+    const staged = await waitFor(frames, frame => frame.id === "stage-1");
+    assert.equal(staged[LOGICAL_CLIENT_FIELD], clientId);
+    const path = (staged.result as any).ref.location.path as string;
+    assert.ok(path.startsWith(join(root, "data", "attachments") + "/"));
+    assert.equal((await readFile(path)).toString("utf8"), "hello world");
+    await adapter.send(JSON.stringify({ id: "stage-replay", method: "attachment/stage", params: request, [LOGICAL_CLIENT_FIELD]: clientId }));
+    assert.deepEqual((await waitFor(frames, frame => frame.id === "stage-replay")).result, staged.result);
+    await adapter.send(JSON.stringify({ id: "thread-1", method: "thread/start", params: {}, [LOGICAL_CLIENT_FIELD]: clientId }));
+    const threadId = (await waitFor(frames, frame => frame.id === "thread-1")).result as any;
+    const actualThreadId = threadId.thread.id as string;
+    await adapter.send(JSON.stringify({ id: "turn-1", method: "turn/start", params: {
+      threadId: actualThreadId, clientUserMessageId: "with-file", input: [
+        { type: "text", text: "What is in this file?" }, { type: "mention", name: "notes.md", path },
+      ],
+    }, [LOGICAL_CLIENT_FIELD]: clientId }));
+    const turn = await waitFor(frames, frame => frame.id === "turn-1");
+    assert.ok(turn.result);
+    await adapter.send(JSON.stringify({ id: "items-1", method: "thread/items/list", params: { threadId: actualThreadId }, [LOGICAL_CLIENT_FIELD]: clientId }));
+    const items = (await waitFor(frames, frame => frame.id === "items-1")).result as any;
+    const content = items.data[0].item.content;
+    assert.equal(content[0].text, "What is in this file?");
+    assert.match(content[1].text, /notes\.md/);
+    assert.ok(content[1].text.includes(path));
+    assert.equal(content[1].text_elements[0].placeholder, "opencraft:staged-file:v1");
+    assert.deepEqual(content[2], { type: "mention", name: "notes.md", path });
+    assert.deepEqual(items.data[0].item.attachments, [{
+      id: request.clientAttachmentId, name: "notes.md", mimeType: "text/markdown",
+      size: 11, path,
+    }]);
+    await adapter.send(JSON.stringify({ id: "queue-add", method: "thread/queue/add", params: {
+      threadId: actualThreadId, clientUserMessageId: "queued-file", input: [{ type: "mention", name: "notes.md", path }],
+    }, [LOGICAL_CLIENT_FIELD]: clientId }));
+    const queued = (await waitFor(frames, frame => frame.id === "queue-add")).result as any;
+    await adapter.send(JSON.stringify({ id: "queue-steer", method: "thread/queue/steer", params: {
+      threadId: actualThreadId, queuedSubmissionId: queued.queuedSubmission.id,
+      expectedTurnId: (turn.result as any).turn.id,
+    }, [LOGICAL_CLIENT_FIELD]: clientId }));
+    assert.ok((await waitFor(frames, frame => frame.id === "queue-steer")).result);
+    await adapter.send(JSON.stringify({ id: "items-2", method: "thread/items/list", params: { threadId: actualThreadId }, [LOGICAL_CLIENT_FIELD]: clientId }));
+    const steeredItems = (await waitFor(frames, frame => frame.id === "items-2")).result as any;
+    assert.ok(steeredItems.data[1].item.content[0].text.includes(path));
+    assert.deepEqual(steeredItems.data[1].item.content[1], { type: "mention", name: "notes.md", path });
+    assert.deepEqual(steeredItems.data[1].item.attachments, items.data[0].item.attachments);
+    await adapter.send(JSON.stringify({ id: "remove-1", method: "attachment/remove", params: { id: request.clientAttachmentId }, [LOGICAL_CLIENT_FIELD]: clientId }));
+    assert.equal(((await waitFor(frames, frame => frame.id === "remove-1")).error as any).code, -32602);
+    assert.equal((await readFile(path)).toString("utf8"), "hello world");
+    await adapter.send(JSON.stringify({ id: "stage-unsent", method: "attachment/stage", params: {
+      ...request, clientAttachmentId: "unsent-file",
+    }, [LOGICAL_CLIENT_FIELD]: clientId }));
+    const unsentPath = ((await waitFor(frames, frame => frame.id === "stage-unsent")).result as any).ref.location.path as string;
+    await adapter.send(JSON.stringify({ id: "remove-unsent", method: "attachment/remove", params: { id: "unsent-file" }, [LOGICAL_CLIENT_FIELD]: clientId }));
+    assert.deepEqual((await waitFor(frames, frame => frame.id === "remove-unsent")).result, { removed: true });
+    await assert.rejects(() => readFile(unsentPath));
+    await adapter.send(JSON.stringify({ id: "stale-file", method: "turn/steer", params: {
+      threadId: actualThreadId, expectedTurnId: (turn.result as any).turn.id,
+      clientUserMessageId: "stale-file", input: [{ type: "mention", name: "notes.md", path: unsentPath }],
+    }, [LOGICAL_CLIENT_FIELD]: clientId }));
+    assert.equal(((await waitFor(frames, frame => frame.id === "stale-file")).error as any).code, -32602);
+  } finally {
+    await adapter.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 test("Codex Engine shares one physical initialize and restores logical client routing", async () => {
   const root = await mkdtemp(join(tmpdir(), "opencraft-codex-engine-"));
@@ -112,9 +196,10 @@ test("Codex Engine shares one physical initialize and restores logical client ro
     assert.ok(diagnostics.some(event => event.event === "appserver-start" && typeof event.pid === "number"));
     assert.deepEqual(diagnostics.find(event => event.event === "turn-interrupt"), {
       component: "codex-engine-adapter", at: diagnostics.find(event => event.event === "turn-interrupt")?.at,
-      event: "turn-interrupt", clientId: "client-a", requestId: "opencraft:3",
+      event: "turn-interrupt", clientId: "client-a", requestId: diagnostics.find(event => event.event === "turn-interrupt")?.requestId,
       threadId: "thread-a", turnId: "turn-a", pid: diagnostics.find(event => event.event === "appserver-start")?.pid,
     });
+    assert.match(String(diagnostics.find(event => event.event === "turn-interrupt")?.requestId), /^opencraft:\d+$/);
     assert.ok(diagnostics.some(event => event.event === "client-disconnect" && event.clientId === "client-b"));
     assert.ok(diagnostics.some(event => event.event === "client-initialize" && event.clientId === "client-a" && event.outcome === "succeeded"));
     assert.doesNotMatch(JSON.stringify(diagnostics), /must not be logged/);

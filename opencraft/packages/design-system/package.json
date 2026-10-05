@@ -18,6 +18,7 @@
     "./menu.web": "./src/menu.web.scss",
     "./selection.web": "./src/selection.web.scss",
     "./controls.web": "./src/controls.web.scss",
+    "./focus.web": "./src/focus.web.scss",
     "./identity-color": "./src/identity-color.ts"
   },
   "scripts": {

@@ -89,35 +89,35 @@
     },
     {
       "file": "i18n/generated/en-US.json",
-      "sourceSha256": "37ac8df6ca72c2810dde3135b88223b42a0bef103f12989e19ca42497ba51007"
+      "sourceSha256": "5223183b85c6d818b845a2263cd6ee2fe58240cff06ae9633ff469a27d5754bd"
     },
     {
       "file": "i18n/generated/es.json",
-      "sourceSha256": "8a9faf0b79a528df074d8e7b506e4bb484a4528bfc09f488340e9d47d8b9eb46"
+      "sourceSha256": "6a64cbfd178de4278953ddddd746621b2dccb28c73173f2c1478c03d37ef02f5"
     },
     {
       "file": "i18n/generated/id-ID.json",
-      "sourceSha256": "32b7242fb6716bd58fa38591c8abeb3b4ecf897ff8a58491345e61d31717ad64"
+      "sourceSha256": "ba4ae4fe040ee2581f34267f192a0c68e7891d690262420423b326128adac005"
     },
     {
       "file": "i18n/generated/ja-JP.json",
-      "sourceSha256": "d9034504bfa5876c4f54600cbbc0f020151773eef2b850778f1be27fbf9260d8"
+      "sourceSha256": "a1da45e33458fc19df87420a8dae252a8eb0b43bb266b97cdd169337b167fb5d"
     },
     {
       "file": "i18n/generated/ko-KR.json",
-      "sourceSha256": "a4ea07612e82b1b8d5188055fd90562737048d8c9fc3000f26720559da58a9f2"
+      "sourceSha256": "e46c7e7146bc07d8f8d639f2b0735bfcaf30ddf854545e55169173d007fc0bbe"
     },
     {
       "file": "i18n/generated/zh-CN.json",
-      "sourceSha256": "96ded84c3f0ce28ab73d90078cb9a533405d28c8701d43790a6e4cd3b8c61d9e"
+      "sourceSha256": "b4d05970d09234d5799f85cc07425735d0f81f3037bdf015676dd05fee72eabd"
     },
     {
       "file": "i18n/generated/zh-Hant.json",
-      "sourceSha256": "9b3e6d8d47508e2b3cba5ae0e038e14ed240e7443c9dfeaf3e9a041b9cd70395"
+      "sourceSha256": "fd8168b0f0c901a1c66a98cca4596cc21376bfbf2975085be09c9fd12c185c4d"
     },
     {
       "file": "i18n/generated/zh-to-key.json",
-      "sourceSha256": "52b8d088386bbd71a25ca31a287dc69ee890dabcd84922d3834c0bcc442e8585"
+      "sourceSha256": "597398ca1d30b6f631b882713c7c2ac49a77d770e6826ecf5323bed7d01de675"
     },
     {
       "file": "i18n/index.ts",

@@ -2,7 +2,7 @@
 id: release-gitops
 type: domain
 scope: 镜像构建、晋级、GitOps、Argo CD 和线上发布验证。
-triggers: ["release", "gitops", "argo", "promotion", "deployment"]
+triggers: ["release promotion", "gitops", "argo", "promotion", "deployment"]
 owner: mingyuxiao
 authority: derived
 source_of_truth:

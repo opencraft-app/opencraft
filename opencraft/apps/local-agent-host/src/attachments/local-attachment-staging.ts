@@ -1,13 +1,14 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
   mkdir,
+  lstat,
   readFile,
   rename,
   rm,
   stat,
   writeFile,
 } from "node:fs/promises";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import type {
   AttachmentRef,
@@ -88,6 +89,29 @@ export class LocalAttachmentStagingService {
 
   constructor(root: string) {
     this.root = resolve(root);
+  }
+
+  /** Resolve only a file this staging owner actually committed. Other mentions are not ours. */
+  async referenceForHostPath(name: string, candidatePath: string): Promise<AttachmentRef | null> {
+    if (!isAbsolute(candidatePath)) return null;
+    const filePath = resolve(candidatePath);
+    const ownedPath = relative(this.root, filePath);
+    if (ownedPath === "" || ownedPath.startsWith("..") || isAbsolute(ownedPath)) return null;
+    const [id, filename, extra] = ownedPath.split(sep);
+    if (!id || !filename || extra !== undefined || !filename.startsWith("content-")) {
+      throw new Error("Invalid staged attachment path");
+    }
+    validateIdentity(id);
+    const manifest = JSON.parse(await readFile(join(this.root, id, "manifest.json"), "utf8")) as AttachmentManifest;
+    if (manifest.protocolVersion !== 1 || manifest.ref.id !== id || manifest.ref.name !== name
+      || manifest.ref.location.kind !== "host-file" || resolve(manifest.ref.location.path) !== filePath) {
+      throw new Error("Staged attachment reference does not match its manifest");
+    }
+    const file = await lstat(filePath);
+    if (!file.isFile() || file.size !== manifest.ref.size) {
+      throw new Error("Staged attachment bytes are unavailable");
+    }
+    return manifest.ref;
   }
 
   async stage(request: AttachmentStageParams): Promise<AttachmentStageResponse> {

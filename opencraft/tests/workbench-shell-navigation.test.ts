@@ -6,6 +6,7 @@ const project = (state = createShellNavigationState(), viewportWidth = 1400, pre
   projectShellNavigation({ state, viewportWidth, contextWidth: 275, contextAvailable: true, sidecarOpen: true, previouslyAvailable });
 
 test("application width preferences are bounded and invalid storage falls back safely", () => {
+  assert.equal(shellNavigationMetrics.compactActionSize, 36, "compact rail uses the shared 36px control rather than the 34px text row");
   assert.deepEqual({
     compact: shellNavigationMetrics.compactWidth,
     expanded: shellNavigationMetrics.columnWidth,

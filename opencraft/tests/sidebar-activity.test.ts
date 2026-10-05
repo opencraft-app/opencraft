@@ -113,9 +113,9 @@ test("Sidebar consumes the shared two-line Activity item instead of Host group r
   assert.match(item, /<ThreadActivity/u);
   assert.doesNotMatch(item, /host === null/u);
   assert.match(item, /aria-current=\{selected \? "page" : undefined\}/u);
-  assert.match(menu, /在 \$\{hostActions\.label\} 上新建任务/u);
-  assert.match(menu, /\$\{hostActions\.label\} 设置/u);
-  assert.match(menu, /ContextMenu\.Separator/u);
+  assert.doesNotMatch(menu, /hostActions|hostItems|ThreadHostActionCallbacks/u);
+  assert.doesNotMatch(sidebar, /onNewTaskForTarget|onOpenTargetSettings/u);
+  assert.doesNotMatch(menu, /ContextMenu\.Separator/u);
   assert.match(menu, /aria-busy=\{forking \|\| undefined\}/u);
   assert.match(menu, /data-forking=\{forking \|\| undefined\}/u);
   assert.match(menu, /正在新建分支/u);

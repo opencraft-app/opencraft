@@ -24,6 +24,7 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { FormattedMessage, useIntl } from "@opencraft/i18n/react";
 import { defineMessages } from "@opencraft/i18n";
 import { LanguageSetting } from "../i18n/language-setting";
+import { ChatSettings } from "./chat-settings";
 
 const appearanceMessages = defineMessages({
   light: { id: "settings.light", defaultMessage: "Light" },
@@ -225,6 +226,14 @@ export function SettingsNavigation({
         </button> : null}
         <div className="settings-page__navigation-heading"><FormattedMessage id="settings.title" defaultMessage="Settings" /></div>
         <div className="settings-page__navigation-list">
+          <button
+            type="button"
+            aria-current={section === "chat" ? "page" : undefined}
+            onClick={() => onSectionChange("chat")}
+          >
+            <MessageCircle size={16} />
+            <span><FormattedMessage id="settings.chat" defaultMessage="Chat" /></span>
+          </button>
           <button
             type="button"
             aria-current={section === "appearance" ? "page" : undefined}
@@ -436,6 +445,8 @@ export function SettingsContent({
                   load={archivedConversations.load}
                   restore={archivedConversations.restore}
                 />
+              ) : section === "chat" ? (
+                <ChatSettings />
               ) : section === "appearance" ? (
                 <>
                   <SettingsPageHeader title={intl.formatMessage({ id: "settings.appearance", defaultMessage: "Appearance" })} description={intl.formatMessage({ id: "settings.appearance.description", defaultMessage: "Choose how OpenCraft looks across the workbench." })} />

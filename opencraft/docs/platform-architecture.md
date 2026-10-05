@@ -87,6 +87,39 @@ contract or Sidebar presentation again.
 
 ## Package ownership
 
+### Backend SSH Codex connections
+
+The Node backend can attach to existing Linux or Desktop-compatible HyperNode
+AppServers through OpenSSH exec and WebSocket-in-SSH. The existing Codex routing
+adapter shares initialize, request isolation, Thread readers and interaction
+ownership across local stdio and remote physical transports. Remote mode never
+constructs local account/queue/attachment services or resolves remote files on
+this machine. Backend SQLite owns administrator-managed recipes, pinned trust and
+encrypted credentials. Settings drafts are transient; a live read-only profile
+overlay never duplicates these recipes in IndexedDB. A separate installation-owner
+HttpOnly session protects management and `/ssh-apphost`, with exact Origin and
+frame-level revocation checks. Public access requires explicit fixed-HTTPS-origin
+or changing-address opt-in; sessions stay bound to their unlock Origin. The
+explicit management Connect command uses AppHost's service-owned admission, not
+a synthetic Client or separate SSH transport. It grants no execution/answer lease;
+connection status remains a projection of the shared physical slot.
+The application catalog separately consumes authenticated physical readiness to
+admit its logical reader through the registry. It does not change the selected
+chat target, auto-connect policy or Thread subscriptions. Catalog publication
+checks configuration revision and authorization incarnation across async
+boundaries; a locked/disabled/removed recipe cannot regain visibility through
+a late result. Settings navigation and chat navigation consume this same
+application projection rather than issuing menu-local history refreshes. Reconnect
+awaits the old physical close before admitting a successor, and failed activation
+remains observable after cleanup. Anonymous `/apphost` rejects SSH IDs; Renderer IDs and LightVela login
+projections are not administrator authority. Only public fingerprints/configuration
+are returned, never saved passwords. Static private key/agent recipes remain a
+read-only compatibility source. This is single-installation administrator access,
+not member-specific Server sharing. Reset has a physical close/claim barrier.
+Closing a page or proxy does not stop the remote daemon, and reconnection does not
+replay mutations. Scope, configuration, compatibility gates and limitations are
+specified in [SSH Codex Servers](ssh-codex-servers.md).
+
 ### Workspace file Explorer ownership
 
 Workbench Web's workspace resource panel owns the selected Host/path, the
@@ -300,10 +333,20 @@ resume buffer. Detach/disconnect invalidates the provisional target, and a late
 reply cannot reattach it or acquire the separate interaction-response owner.
 The Host keeps the physical subscription while any logical reader, admitted
 Turn, unsettled queue item or unanswered AppServer request still needs events.
-Only an idle, demand-free native Thread is released (30-minute grace for
+Only an idle, demand-free native Thread is released (2-minute grace for
 durable Threads, immediate for ephemeral Threads); release and new native work
 serialize per Thread. This is live fan-out plus snapshot/replay during resume,
 not a durable event log or multi-tenant authorization boundary.
+
+The packaged Codex runtime is pinned to `0.157.0`: its loaded paginated-Thread
+resume path can attach a new Client with `excludeTurns` without materializing
+the full persisted history. OpenCraft still sends the physical `thread/resume`;
+skipping it would lose atomic subscription and interaction ownership. A
+server-rejected Resume is retained for the current connection generation so
+automatic View reacquisition does not replay the same failed native request.
+An explicit user retry and a new physical generation may retry; transport
+failures are not memoized. The shorter Host grace is an additional release
+policy, not a substitute for Codex's own idle-thread cleanup.
 
 Native Fork copies a complete, validated event/context prefix with opaque
 provider state, not the currently loaded UI turns. Turn boundaries use logical
@@ -486,6 +529,13 @@ its cross-restart authority. Future account/workspace keys must supply their
 own HTTP/AppServer authority adapter with revision/CAS.
 Temporary interaction state such as peek, hover, drag projection and animation
 never enters the preference store.
+
+`chat.defaultFollowUpAction` is an installation-scoped `steer | queue`
+preference, defaulting to `steer`. Chat settings and the main conversation
+Composer consume the same runtime snapshot. The preference chooses the default
+intent only while a response is active; idle sends remain normal Turn starts.
+It neither creates a Host capability nor enables atomic queued-message steering.
+Temporary Side Chat has no durable queue and retains immediate follow-ups.
 
 Shell Navigation is the first migrated consumer. Applications Pin, Account
 Pin, rail detent, last visible detent, navigation-rail width and left context
@@ -1295,6 +1345,17 @@ not a zero-height absolute overlay. Scrollable navigation is constrained above
 that row even with docked DevTools or long lists. Floating sidebars use the same
 content/footer ownership split. The entrance is locally anchored within this row.
 Sidecar paints one continuous material plane behind both panes and the footer.
+There is no edge gradient. Header projects the main surface's upper lip from
+the same live primary/context frames and context visibility progress, moving
+left across the compact rail without waiting for the context owner to unmount.
+Its horizontal hairline and Sidecar's vertical divider share the same paint
+progress. No independent CSS animation or terminal boolean controls painting.
+Content lifetime still belongs to the physical pane exit owner.
+Expanded/context materials remain unchanged. The adjacent main surface keeps
+its theme-owned stroke/elevation, including soft and flat variants; titlebar
+paint must not override it. Floating overlays keep their own elevation.
+This is paint-only: pane geometry, resize targets, content identity and focus
+ownership do not change. See `docs/workbench-design-language.md`.
 Those children do not paint additional backgrounds or stack backdrop filters:
 this avoids both a white entrance strip and exposed gray window material under
 the neighboring context pane. Floating footer rows inherit their owner's surface.

@@ -2583,6 +2583,9 @@ func (l *logic) RenewPassPrice(userID, passID string, req *transport.RenewPassPr
 	if passEntity.UserID != userID {
 		return nil, errcode.Wrap(errcode.ErrPassNotFound, "pass not owned by user")
 	}
+	if err := validateRenewalPeriod(passEntity.ExpiredTime, req.Period, req.TimeUnit, time.Now()); err != nil {
+		return nil, err
+	}
 
 	// 步骤 3：校验 Bundle 存在 (v1.7.22 B17 修订)
 	//
@@ -2733,6 +2736,9 @@ func (l *logic) prepareRenewPassOrder(
 	if passEntity.UserID != userID {
 		// 防越权续费：当前用户不持有此 pass
 		return nil, logger, errcode.Wrap(errcode.ErrPassNotFound, "pass not owned by user")
+	}
+	if err := validateRenewalPeriod(passEntity.ExpiredTime, req.Period, req.TimeUnit, time.Now()); err != nil {
+		return nil, logger, err
 	}
 
 	// 步骤 3：校验 Bundle 存在 (v1.7.22 B17 修订)

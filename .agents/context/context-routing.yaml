@@ -58,7 +58,7 @@
     {
       "id": "release-gitops",
       "scope": "镜像构建、制品晋级、GitOps、Argo CD、发布 rollout 和线上发布验证。",
-      "triggers": ["release", "deploy", "deployment", "gitops", "argo", "promote", "image", "publish", "上线", "发布", "镜像", "部署", "灰度", "生产环境"],
+      "triggers": ["release promotion", "deploy", "deployment", "gitops", "argo", "promote", "image", "publish", "上线", "发布", "镜像", "部署", "灰度", "生产环境"],
       "symbols": ["build_release_image.py", "targetRevision", "Synced", "Healthy", "gitops"],
       "path_prefixes": ["argocd/", ".ci/", "infra_pulumi/"],
       "must_read": ["docs/context/domains/release-gitops.md"],

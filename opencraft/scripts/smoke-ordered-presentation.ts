@@ -43,17 +43,17 @@ try {
       assert(await page.evaluate(() => (window as any).originalAnswer === document.querySelector('[data-source-item-id="answer3"]')), `${action} must retain the streamed DOM row`);
     }
     assert.equal(await page.locator("[data-assistant-copy-content]").count(), 1, "only the current response is copied as HTML");
-    const activity = page.locator('[data-activity-id="turn:slot:activity-after:user-message:reply"]');
+    const activity = page.locator('[data-activity-id="turn:slot:activity-after:user-message:client:client:reply"]');
     const button = activity.locator(".thread-agent-activity__turn-toggle button");
     if (mobile) await button.tap(); else await button.click();
-    await page.waitForFunction(() => document.querySelector('[data-activity-id="turn:slot:activity-after:user-message:reply"]')?.getAttribute("data-collapsed") === "true");
+    await page.waitForFunction(() => document.querySelector('[data-activity-id="turn:slot:activity-after:user-message:client:client:reply"]')?.getAttribute("data-collapsed") === "true");
     assert.deepEqual(await sourceOrder(), expected.filter(id => id !== "old"));
     if (mobile) await button.tap(); else await button.click();
-    await page.waitForFunction(() => !document.querySelector('[data-activity-id="turn:slot:activity-after:user-message:reply"]')?.hasAttribute("data-collapsed"));
+    await page.waitForFunction(() => !document.querySelector('[data-activity-id="turn:slot:activity-after:user-message:client:client:reply"]')?.hasAttribute("data-collapsed"));
     await update("await-work");
-    const liveActivity = page.locator('[data-activity-id="turn:slot:activity-after:user-message:steer2"]');
+    const liveActivity = page.locator('[data-activity-id="turn:slot:activity-after:user-message:client:client:steer2"]');
     assert.equal(await liveActivity.locator(".is-shimmering").count() > 0, true);
-    const earlierActivities = page.locator('.thread-agent-activity:not([data-activity-id="turn:slot:activity-after:user-message:steer2"])');
+    const earlierActivities = page.locator('.thread-agent-activity:not([data-activity-id="turn:slot:activity-after:user-message:client:client:steer2"])');
     assert.equal(await earlierActivities.locator(".is-shimmering").count(), 0, "no historical group becomes live");
     assert.equal(await page.locator(".thread-thinking-placeholder").count(), 0, "activity owns the live gap");
     await update("await-input");

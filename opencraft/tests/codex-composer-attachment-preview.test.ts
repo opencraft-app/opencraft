@@ -82,6 +82,23 @@ test("a failed image remains visible and retries from the same selected File", a
   assert.equal(session.previewUrl(draft.id, attachment.id), null);
 });
 
+test("ordinary file stays in its Draft, blocks sending until staged, and retries without reselection", async () => {
+  const composer = createController();
+  const session = attachmentPreviewSession(composer);
+  const file = new File(["# Notes"], "notes.md", { type: "text/markdown" });
+  let complete!: (attachment: ComposerAttachment) => void;
+  session.addFiles([file], () => new Promise<ComposerAttachment>(resolve => { complete = resolve; }));
+  const pending = composer.getSnapshot().draft.attachments[0]!;
+  assert.equal(pending.lifecycle, "uploading");
+  assert.equal(composer.getSnapshot().canSubmit, false);
+  await Promise.resolve();
+  complete({ ...pending, uri: "file:///host/attachments/notes.md", lifecycle: "ready" });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(composer.getSnapshot().canSubmit, true);
+  assert.equal(composer.getSnapshot().draft.attachments[0]?.uri, "file:///host/attachments/notes.md");
+  composer.dispose();
+});
+
 test("a HEIC filename without browser MIME still enters image preparation with a preview", async () => {
   const composer = createController();
   const session = attachmentPreviewSession(composer);

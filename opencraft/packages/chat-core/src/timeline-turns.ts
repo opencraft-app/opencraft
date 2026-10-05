@@ -53,6 +53,15 @@ export interface TimelineTurnView {
   readonly frames: readonly TimelineFrame[];
 }
 
+/** React presentation identity; `turnKey` remains the protocol Turn locator. */
+export function timelineTurnRenderKey(turn: TimelineTurnView): string {
+  const primaryUserMessage = turn.frames.flatMap((frame) => frame.blocks).find((block) =>
+    block.type === "user-message" && block.messageKind === "user" && block.clientId !== null);
+  return primaryUserMessage?.type === "user-message"
+    ? `user-message:${primaryUserMessage.clientId}:turn`
+    : turn.turnKey;
+}
+
 /**
  * Identity of the latest visual Activity inside a Turn.
  *
@@ -72,19 +81,10 @@ export function deriveTimelineLatestTurnActivityKey(
       const block = frame.blocks[blockIndex];
       if (block?.type !== "user-message" || block.messageKind !== "steering") continue;
       const steeringKey = block.sourceItemIds[0] ?? block.id;
-      return `${turn.turnKey}:${steeringKey}`;
+      return `${timelineTurnRenderKey(turn)}:${steeringKey}`;
     }
   }
-  return turn.turnKey;
-}
-
-/** React presentation identity; `turnKey` remains the protocol Turn locator. */
-export function timelineTurnRenderKey(turn: TimelineTurnView): string {
-  const primaryUserMessage = turn.frames.flatMap(frame => frame.blocks).find(block =>
-    block.type === "user-message" && block.messageKind === "user" && block.clientId !== null);
-  return primaryUserMessage?.type === "user-message"
-    ? `user-message:${primaryUserMessage.clientId}:turn`
-    : turn.turnKey;
+  return timelineTurnRenderKey(turn);
 }
 
 export interface TimelineHistoryGapView {

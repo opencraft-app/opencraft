@@ -10,6 +10,7 @@ export function OverlayDisclosureTrigger({
   labelId,
   onToggle,
   open,
+  reflowOwned = false,
 }: {
   readonly buttonClassName?: string;
   readonly children: ReactNode;
@@ -17,8 +18,9 @@ export function OverlayDisclosureTrigger({
   readonly contentClassName: string;
   readonly interactive?: boolean;
   readonly labelId: string;
-  readonly onToggle: () => void;
+  readonly onToggle: (anchor: HTMLButtonElement) => void;
   readonly open: boolean;
+  readonly reflowOwned?: boolean;
 }) {
   return (
     <div className={`overlay-disclosure-trigger ${className}`} data-interactive={interactive || undefined}>
@@ -27,7 +29,8 @@ export function OverlayDisclosureTrigger({
           aria-expanded={open}
           aria-labelledby={labelId}
           className={`overlay-disclosure-trigger__hit-target ${buttonClassName ?? ""}`.trim()}
-          onClick={onToggle}
+          data-timeline-reflow-owned={reflowOwned || undefined}
+          onClick={(event) => onToggle(event.currentTarget)}
           type="button"
         />
       ) : null}

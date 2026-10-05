@@ -52,8 +52,6 @@ interface SidebarProps {
   botCreation?: SidebarEntityCreationCommand | null;
   onSelectThread(hostId: string, id: string): void;
   onNewTask(): void;
-  onNewTaskForTarget?(hostId: string): Promise<unknown>;
-  onOpenTargetSettings?(hostId: string): void;
   onOpenSettings(): void;
   showFooter?: boolean;
   threadActions?: ThreadActionCallbacks;
@@ -98,8 +96,6 @@ export function Sidebar({
   botCreation = null,
   onSelectThread,
   onNewTask,
-  onNewTaskForTarget,
-  onOpenTargetSettings,
   onOpenSettings,
   showFooter = true,
   threadActions,
@@ -200,11 +196,6 @@ export function Sidebar({
                         key={threadKey}
                         target={{ hostId: thread.connectionHostId, threadId: thread.id, title }}
                         capabilities={threadCapabilities(thread.connectionHostId)}
-                        hostActions={{
-                          label: thread.connectionHostLabel,
-                          onNewTask: onNewTaskForTarget,
-                          onOpenSettings: onOpenTargetSettings,
-                        }}
                         openMenuKind={openThreadMenu?.hostId === thread.connectionHostId && openThreadMenu.threadId === thread.id
                           ? openThreadMenu.kind
                           : null}

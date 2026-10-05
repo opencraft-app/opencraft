@@ -4,6 +4,7 @@ import { EditableThreadTitle } from "./components/editable-thread-title";
 import { shouldTypeToCompose } from "./type-to-compose";
 import { isStandaloneHermesStop } from "./hermes-stop-command";
 import { useQueryClient } from "@tanstack/react-query";
+import { useDefaultFollowUpAction } from "./runtime/use-default-follow-up-action";
 import { FormattedMessage, useIntl } from "@opencraft/i18n/react";
 import {
   createClientId,
@@ -82,12 +83,13 @@ import {
 } from "./components/conversation";
 import {
   ConversationRecoveryNotice,
-  ConversationRecoverySkeleton,
+  ConversationRecoveryEmptyState,
   conversationRecoveryPresentation,
 } from "./components/conversation-recovery";
 import { ConversationPendingInteractionPanel } from "./components/conversation-renderers/interaction/interaction-renderers";
 import { RightPanel } from "./components/right-panel";
 import { ThreadComposerPresentation } from "./components/thread-composer-presentation";
+import { ThreadGoalSurface } from "./components/thread-goal-surface";
 import { TurnDiffReviewDialog } from "./components/conversation/turn-diff-review-dialog";
 import { Button } from "./components/ui/button";
 import { NewThreadDraftPage } from "./components/new-thread-draft-page";
@@ -136,7 +138,7 @@ import { createAppServerMediaSourceLoader } from "./runtime/appserver-media-load
 import { useBlobResources, useImageProcessing } from "./runtime/appserver-runtime-context";
 import {
   buildDraftWorkspaceOptions,
-  resolveProjectCwd,
+  resolveDraftDirectorySelection,
 } from "./runtime/draft-workspace-model";
 
 import {
@@ -249,6 +251,7 @@ export function App({
           (candidate) => candidate.id === draftSnapshot.activeDraftId,
         ) ?? null);
   const composerController = useRootComposerController();
+  const defaultFollowUpAction = useDefaultFollowUpAction();
   const hostCatalog = useAppServerHosts();
   const conversationViewIdentity = useConversationViewIdentity();
   const connectorPresentation = useConnectorPresentation(hostCatalog.connectorManager, hostCatalog.connectorApprovals,
@@ -523,13 +526,12 @@ export function App({
     (workspace: {
       readonly cwd: string;
       readonly runtimeWorkspaceRoots: readonly string[];
-      readonly projectId: string;
+      readonly projectId?: string;
     }) => {
       lastDraftWorkspaceRef.current = workspace;
-      window.localStorage.setItem(
-        selectedProjectStorageKey(draft?.target.execution.hostId ?? snapshot.hostId),
-        workspace.projectId,
-      );
+      const key = selectedProjectStorageKey(draft?.target.execution.hostId ?? snapshot.hostId);
+      if (workspace.projectId !== undefined) window.localStorage.setItem(key, workspace.projectId);
+      else window.localStorage.removeItem(key);
       if (draft === null) throw new Error("No active Draft can be retargeted");
       hostCatalog.retargetDraft(draft.id, {
         hostId: draft.target.execution.hostId,
@@ -1153,34 +1155,23 @@ export function App({
     async (path: string) => {
       if (draft === null || draftSubmissionOwnsNavigation(draft.phase) || !conversationRouteOpen || settingsOpen) return;
       const epoch = workspaceSelectionEpoch.current;
-      let project = projectCatalog.projects.find((candidate) =>
-        candidate.roots.some((root) => root.path === path),
-      );
-      if (project === undefined) {
-        const name = path.split(/[\\/]+/u).filter(Boolean).at(-1) ?? "Project";
-        const created = await runtime.resources.projects.create({
-          name,
-          roots: [{ path }],
-          idempotencyKey: `opencraft-web:add-project:${path}`,
-          metadata: { origin: "opencraft-web-directory-picker" },
-        });
-        project = created.project;
+      const selected = await resolveDraftDirectorySelection({ path,
+        projects: projectCatalog.projects,
+        projectCatalogError: projectCatalog.error,
+        createProject: params => runtime.resources.projects.create(params),
+      });
+      if (selected.createdProject) {
         await queryClient.invalidateQueries({
           queryKey: ["appserver", snapshot.hostId, "projects"],
         });
       }
       if (epoch !== workspaceSelectionEpoch.current) return;
-      const projectRoots = project.roots.map((root) => root.path);
-      const cwd = resolveProjectCwd(project, path);
-      selectDraftWorkspace({
-        cwd,
-        runtimeWorkspaceRoots: projectRoots,
-        projectId: project.id,
-      });
+      selectDraftWorkspace(selected.workspace);
       setWorkspacePickerOpen(false);
     },
     [
       projectCatalog.projects,
+      projectCatalog.error,
       queryClient,
       runtime,
       selectDraftWorkspace,
@@ -1437,22 +1428,6 @@ export function App({
           leftPanel={!presentation.contextSidebar ? null : (
             routeSettingsOpen ? settingsNavigation : (conversationSurfaceVisible || standaloneManagementOpen) ? <Sidebar
               threads={multiHostCatalog.threads}
-              onNewTaskForTarget={async (hostId) => hostCatalog.navigateToHome({
-                  execution: {
-                    hostId: asHostId(hostId),
-                    workspace: { cwd: null, runtimeWorkspaceRoots: [] },
-                  },
-                  entrypoint: "new-chat",
-                })}
-              onOpenTargetSettings={(hostId) => {
-                const providerId = hostCatalog.profiles.find(
-                  (profile) => profile.hostId === hostId,
-                )?.providerId;
-                const settingsPageId = hostCatalog.connectionProviders.find(
-                  (provider) => provider.id === providerId,
-                )?.settingsPageId;
-                workbenchNavigation.openSettings(settingsPageId ?? "appearance");
-              }}
               managementNavigation={conversationRouteOpen || standaloneManagementOpen ? (
                 <LightVelaWorkNavigation
                   section={standaloneManagementOpen ? settingsSection : null}
@@ -1604,7 +1579,7 @@ export function App({
           <div className="local-conversation-page">
             {activeThreadLease === null ? (
                 <div className="conversation-recovery-cold-stage">
-                  <ConversationRecoverySkeleton
+                  <ConversationRecoveryEmptyState
                     failed={recoveryPresentation === "cold-error"}
                     onRetry={retryColdActivation}
                   />
@@ -1614,7 +1589,7 @@ export function App({
                 <Conversation
                   scrollPolicy="natural"
                   emptyState={recoveryPresentation === "cold-loading" || recoveryPresentation === "cold-error"
-                    ? <ConversationRecoverySkeleton
+                    ? <ConversationRecoveryEmptyState
                         failed={recoveryPresentation === "cold-error"}
                         onRetry={retryConversationRecovery}
                       />
@@ -1687,8 +1662,14 @@ export function App({
                       <p role="alert">{snapshot.conversation.continuation.error.message}</p>
                     ) : null}
                     {pendingInteraction === null ? (
+                      <ThreadGoalSurface
+                        threadId={snapshot.phase === "ready" ? activeThreadId : null}
+                        goals={runtime.resources.goals}
+                        portalContainer={portalContainer}
+                      >{(goalMenuItem) => (
                       <CodexComposer
                         controller={composerController}
+                        defaultFollowUpAction={defaultFollowUpAction}
                         portalContainer={portalContainer}
                         isStreaming={isStreaming}
                         submissionDisabled={snapshot.phase !== "ready" || snapshot.conversation?.authoritative !== true}
@@ -1728,7 +1709,10 @@ export function App({
                         onResumeQueuedSubmissions={resumeQueuedSubmissions}
                         onResolveAttachment={resolveActiveHostAttachment}
                         onRemoveAttachment={removeActiveHostAttachment}
-                        addMenuContent={composerAddMenuContent}
+                        addMenuContent={goalMenuItem === null ? composerAddMenuContent : (closeMenu) => <>
+                          {typeof composerAddMenuContent === "function" ? composerAddMenuContent(closeMenu) : composerAddMenuContent}
+                          {goalMenuItem(closeMenu)}
+                        </>}
                         shortcutCommands={hermesShortcutCommands}
                         endActions={composerEndActions}
                         modelSelectionPolicy={embedded ? "host-default" : "user"}
@@ -1748,6 +1732,7 @@ export function App({
                         onSubmit={sendMessage}
                         onCancel={cancelStream}
                       />
+                      )}</ThreadGoalSurface>
                     ) : (
                       <ConversationPendingInteractionPanel
                         block={pendingInteraction}

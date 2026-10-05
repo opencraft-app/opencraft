@@ -893,6 +893,22 @@ function sourceClientMessageIds(turns: readonly TimelineSourceTurn[]): Set<strin
   return ids;
 }
 
+function authoritativeUserMessageVisible(
+  turn: TimelineSourceTurn,
+  state: OptimisticSubmissionState,
+): boolean {
+  const params = isRecord(turn.params as ReplicaJsonValue) ? turn.params as JsonRecord : {};
+  const paramsId = string(params.clientUserMessageId) ?? string(params.clientId);
+  const paramsInput = params.input;
+  if (paramsId === state.clientMessageId
+    && (Array.isArray(paramsInput) ? paramsInput.length > 0 : paramsInput != null)) return true;
+  return turn.items.some((item) => {
+    if (item.type !== "userMessage" || !isRecord(item.payload as ReplicaJsonValue)) return false;
+    const payload = item.payload as JsonRecord;
+    return (string(payload.clientUserMessageId) ?? string(payload.clientId)) === state.clientMessageId;
+  });
+}
+
 function sameUserMessageInput(left: unknown, right: unknown): boolean {
   const leftKey = codexUserMessageCompareKey(left);
   const rightKey = codexUserMessageCompareKey(right);
@@ -954,7 +970,6 @@ function mergeOptimisticSubmissions(
   submissions: Iterable<OptimisticSubmissionState>,
 ): readonly TimelineSourceTurn[] {
   const result = turns.map((turn) => ({ ...turn, items: [...turn.items] }));
-  const clientIds = sourceClientMessageIds(turns);
   const turnIds = new Set(turns.map((turn) => String(turn.id)));
   const localTurns: Array<{
     readonly state: OptimisticSubmissionState;
@@ -965,13 +980,18 @@ function mergeOptimisticSubmissions(
     // target binding, never acknowledgement of this user message. Keep the
     // local steering item as display owner until the Turn settles; the server
     // UserMessage is then joined to it by client id/compare key.
-    if (state.kind === "turn" && (
-      clientIds.has(state.clientMessageId)
-      || (state.turnId !== null && turnIds.has(String(state.turnId)))
-    )) {
+    const authoritativeTurn = state.kind === "turn"
+      ? authoritativeTurnForSubmission(turns, state)
+      : undefined;
+    if (authoritativeTurn !== undefined && authoritativeUserMessageVisible(authoritativeTurn, state)) {
       continue;
     }
     const item = optimisticItem(state);
+    if (authoritativeTurn !== undefined && state.kind === "turn") {
+      const target = result.find((turn) => String(turn.id) === String(authoritativeTurn.id));
+      if (target !== undefined) target.items.unshift(item);
+      continue;
+    }
     if (state.kind === "steer") {
       const target = result.find(
         (turn) => String(turn.id) === String(state.targetTurnId),
@@ -1112,7 +1132,6 @@ function pruneAcknowledgedSubmissions(
   confirmedSteers: Map<string, OptimisticSubmissionState>,
 ): void {
   const clientIds = sourceClientMessageIds(turns);
-  const turnIds = new Set(turns.map((turn) => String(turn.id)));
   for (const [commandId, state] of submissions) {
     if (state.state !== "accepted" && state.state !== "unknown") continue;
     const target = state.targetTurnId === null
@@ -1121,12 +1140,12 @@ function pruneAcknowledgedSubmissions(
     const acknowledged = state.kind === "steer"
       ? target !== undefined && steeringAcknowledgementIndex(target, state) >= 0
       : clientIds.has(state.clientMessageId);
-    const turnAcknowledged = state.turnId !== null && turnIds.has(String(state.turnId));
     const targetSettled = target !== undefined
       && target.status !== "streaming"
       && target.status !== "pending";
     if (
-      (state.kind === "turn" && (acknowledged || turnAcknowledged))
+      (state.kind === "turn" && acknowledged
+        && turns.some((turn) => authoritativeUserMessageVisible(turn, state)))
     ) {
       submissions.delete(commandId);
     } else if (state.kind === "steer" && acknowledged && targetSettled) {

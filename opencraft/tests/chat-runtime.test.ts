@@ -3,7 +3,7 @@ import test from "node:test";
 
 import type { ReplicaJsonValue } from "@opencraft/appserver-protocol";
 import type { ReplicaClientSnapshot } from "@opencraft/appserver-replica";
-import { asTurnId, createConversationKey } from "@opencraft/chat-core";
+import { asTurnId, createConversationKey, groupTimelineFramesByTurn, timelineTurnRenderKey } from "@opencraft/chat-core";
 import {
   createReplicaConversationRuntime,
   ContinuationCommandError,
@@ -1581,6 +1581,71 @@ test("authoritative Turn acknowledgement retires the optimistic submission", asy
       ).length,
     1,
   );
+  runtime.dispose();
+});
+
+test("outgoing bubble remains mounted while Turn acknowledgement arrives before its user Item", async () => {
+  let resolveSubmission!: (receipt: SubmissionReceipt) => void;
+  const pending = new Promise<SubmissionReceipt>((resolve) => { resolveSubmission = resolve; });
+  const replica = new FakeReplica(threadView({ turns: [], pendingInteractions: [] }));
+  const key = createConversationKey("local", "thread-one");
+  const runtime = createReplicaConversationRuntime({
+    key,
+    replica,
+    commands: commands({ submit: async () => pending }),
+    history: { async loadOlder() {} },
+  });
+  const composer = createComposerController(
+    { type: "existing-thread", key },
+    { now: () => 100, createId: () => "handoff" },
+  );
+  composer.dispatch({
+    type: "set-document",
+    document: { version: 1, blocks: [{ type: "paragraph", children: [{ type: "text", text: "Hello" }] }] },
+  });
+  const intent = composer.createSubmitIntent();
+  const operation = runtime.submit(intent);
+  const visibleIdentity = () => {
+    const timeline = runtime.getSnapshot().timeline;
+    const messages = timeline.frames.flatMap((frame) => frame.blocks)
+      .filter((block) => block.type === "user-message" && block.message === "Hello");
+    assert.equal(messages.length, 1, "the outgoing bubble must never disappear or duplicate");
+    const frame = timeline.frames.find((candidate) => candidate.blocks.includes(messages[0]!));
+    assert.ok(frame);
+    const turn = groupTimelineFramesByTurn(timeline).find((candidate) => candidate.turnId === frame.turnId);
+    assert.ok(turn);
+    return { blockId: messages[0]!.id, frameId: frame.id, renderKey: timelineTurnRenderKey(turn) };
+  };
+  const optimistic = visibleIdentity();
+  resolveSubmission(receipt(intent.commandId, intent.clientMessageId));
+  await operation;
+  assert.deepEqual(visibleIdentity(), optimistic, "the RPC receipt must not remount the bubble");
+  assert.equal(groupTimelineFramesByTurn(runtime.getSnapshot().timeline)[0]?.turnKey, "turn-two",
+    "the navigation and measurement locator remains the authoritative Turn ID");
+
+  replica.setEntity(threadView({ turns: [{ id: "turn-two", status: "inProgress", items: [] }], pendingInteractions: [] }));
+  assert.deepEqual(visibleIdentity(), optimistic, "an empty acknowledged Turn must keep the optimistic bubble");
+
+  replica.setEntity(threadView({ turns: [{ id: "turn-two", status: "inProgress", params: {
+    clientUserMessageId: intent.clientMessageId,
+  }, items: [] }], pendingInteractions: [] }));
+  assert.deepEqual(visibleIdentity(), optimistic, "a client ID without message content is not a display acknowledgement");
+
+  const params = { clientUserMessageId: intent.clientMessageId, input: [{ type: "text", text: "Hello" }] };
+  replica.setEntity(threadView({ turns: [{ id: "turn-two", status: "inProgress", params, items: [] }], pendingInteractions: [] }));
+  assert.deepEqual(visibleIdentity(), optimistic, "Turn.params must inherit the same display identity");
+
+  replica.setEntity(threadView({ turns: [{ id: "turn-two", status: "inProgress", items: [{
+    id: "user-two", type: "userMessage", clientId: intent.clientMessageId,
+    content: [{ type: "text", text: "Hello" }],
+  }] }], pendingInteractions: [] }));
+  assert.deepEqual(visibleIdentity(), optimistic, "an Item-only snapshot must keep the same display identity");
+
+  replica.setEntity(threadView({ turns: [{ id: "turn-two", status: "inProgress", params, items: [{
+    id: "user-two", type: "userMessage", clientId: intent.clientMessageId,
+    content: [{ type: "text", text: "Hello" }],
+  }] }], pendingInteractions: [] }));
+  assert.deepEqual(visibleIdentity(), optimistic, "the authoritative Item must not remount the bubble");
   runtime.dispose();
 });
 

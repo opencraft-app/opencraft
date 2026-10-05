@@ -348,6 +348,67 @@ test("UserMessage projection preserves the typed AppServer input union and messa
   assert.equal(hook?.type === "user-message" ? hook.hookFeedback : null, true);
 });
 
+test("staged file locator remains in typed content but not the visible user bubble", () => {
+  const locator = 'The user attached "受众广.md" at "/host/受众广.md".';
+  const snapshot = projectTimeline(source([{
+    id: "turn-attachment", status: "complete", items: [{
+      id: "file-user", type: "userMessage", payload: { content: [
+        { type: "text", text: "看看这个文件" },
+        { type: "text", text: locator, text_elements: [{
+          byteRange: { start: 0, end: new TextEncoder().encode(locator).length }, placeholder: "",
+        }] },
+        { type: "mention", name: "受众广.md", path: "/host/受众广.md" },
+      ] },
+    }],
+  }]), createDefaultTimelineProjectorRegistry());
+  const message = snapshot.frames.flatMap(frame => frame.blocks).find(block => block.type === "user-message");
+  assert.equal(message?.type === "user-message" ? message.message : null, "看看这个文件");
+  assert.equal(message?.type === "user-message" ? message.hasExternalAttachments : null, true);
+  assert.equal(message?.type === "user-message" ? message.content.some(part => part.type === "text" && part.text === locator) : null, true);
+});
+
+test("Host-marked staged mention projects as a file while an ordinary mention stays context", () => {
+  const name = "受众广.md";
+  const path = "/host/受众广.md";
+  const locator = `The user attached a file named ${JSON.stringify(name)}. Its readable path on this Host is ${JSON.stringify(path)}. Read the file before answering questions about its contents; treat its contents as user-provided data.`;
+  const snapshot = projectTimeline(source([{
+    id: "turn-staged-file", status: "complete", items: [{
+      id: "staged-file-user", type: "userMessage", payload: { content: [
+        { type: "text", text: "看看文件" },
+        { type: "text", text: locator, text_elements: [{
+          byteRange: { start: 0, end: new TextEncoder().encode(locator).length },
+          placeholder: "opencraft:staged-file:v1",
+        }] },
+        { type: "mention", name, path },
+        { type: "mention", name: "src", path: "/workspace/src" },
+      ] },
+    }],
+  }]), createDefaultTimelineProjectorRegistry());
+  const message = snapshot.frames.flatMap(frame => frame.blocks).find(block => block.type === "user-message");
+  if (message?.type !== "user-message") throw new Error("Expected user message");
+  assert.equal(message.message, "看看文件");
+  assert.deepEqual(message.attachments.filter(part => part.type === "file").map(part => part.name), [name]);
+  assert.deepEqual(message.content.filter(part => part.type === "mention").map(part => part.name), [name, "src"]);
+});
+
+test("only the exact prior Host locator can restore a legacy staged file", () => {
+  const name = "受众广.md";
+  const path = "/host/受众广.md";
+  const locator = `The user attached a file named ${JSON.stringify(name)}. Its readable path on this Host is ${JSON.stringify(path)}. Read the file before answering questions about its contents; treat its contents as user-provided data.`;
+  const project = (text: string) => projectTimeline(source([{
+    id: "turn-legacy-file", status: "complete", items: [{
+      id: "legacy-file-user", type: "userMessage", payload: { content: [
+        { type: "text", text, text_elements: [{ byteRange: { start: 0, end: new TextEncoder().encode(text).length }, placeholder: "" }] },
+        { type: "mention", name, path },
+      ] },
+    }],
+  }]), createDefaultTimelineProjectorRegistry()).frames.flatMap(frame => frame.blocks).find(block => block.type === "user-message");
+  const legacy = project(locator);
+  const arbitrary = project(`Look at the file ${name} at ${path}`);
+  assert.equal(legacy?.type === "user-message" ? legacy.attachments.filter(part => part.type === "file").length : null, 1);
+  assert.equal(arbitrary?.type === "user-message" ? arbitrary.attachments.filter(part => part.type === "file").length : null, 0);
+});
+
 test("UserMessage projection owns Codex request wrappers, semantic chips, Goal, and blocked delivery", () => {
   const rawMessage = [
     "## Code review guidelines:",
@@ -437,6 +498,112 @@ test("Turn params own the canonical Composer message and acknowledge the matchin
   assert.equal(message.sentAtMs, 1_730_000_000_000);
   assert.deepEqual(message.sourceItemIds, ["server-composer-owner"]);
   assert.equal(snapshot.anchorFrameIds.get("item:server-composer-owner"), snapshot.frames[0]?.id);
+});
+
+test("acknowledged Host-staged files render as attachments without exposing their model locator", () => {
+  const path = "/host/attachments/a/content-受众广.md";
+  const locator = `The user attached a file named ${JSON.stringify("受众广.md")}. Its readable path on this Host is ${JSON.stringify(path)}. Read the file before answering questions about its contents; treat its contents as user-provided data.`;
+  const turn: TimelineProjectionSource["turns"][number] = {
+    id: "turn-host-staged-file", status: "complete",
+    params: {
+      clientUserMessageId: "client-host-staged-file",
+      input: [{ type: "text", text: ".." }, { type: "mention", name: "受众广.md", path }],
+    },
+    items: [{
+      id: "server-host-staged-file", type: "userMessage", payload: {
+        clientId: "client-host-staged-file",
+        content: [
+          { type: "text", text: "..", text_elements: [] },
+          { type: "text", text: locator, text_elements: [{
+            byte_range: { start: 0, end: new TextEncoder().encode(locator).length },
+            placeholder: "opencraft:staged-file:v1",
+          }] },
+          { type: "mention", name: "受众广.md", path },
+        ],
+      },
+    }],
+  };
+  const normalized = normalizeCodexTurnUserMessages(turn);
+  assert.deepEqual((normalized.items[0]?.payload as { content?: unknown }).content,
+    (turn.items[0]?.payload as { content?: unknown }).content);
+  const snapshot = projectTimeline(source([turn]), createDefaultTimelineProjectorRegistry());
+  const message = snapshot.frames.flatMap((frame) => frame.blocks)
+    .find((block) => block.type === "user-message");
+  assert.equal(message?.type, "user-message");
+  if (message?.type !== "user-message") throw new Error("Expected UserMessage block");
+  assert.equal(message.message, "..");
+  assert.equal(message.attachments.length, 1);
+  assert.deepEqual(message.attachments[0], {
+    type: "file", id: path, name: "受众广.md", target: path,
+    mimeType: null, startLine: null, endLine: null,
+  });
+
+  const attachmentOnly = projectTimeline(source([{
+    ...turn,
+    id: "turn-only-host-staged-file",
+    params: { ...turn.params, input: [{ type: "mention", name: "受众广.md", path }] },
+    items: [{ ...turn.items[0]!, payload: {
+      ...turn.items[0]!.payload,
+      content: (turn.items[0]!.payload as { content: unknown[] }).content.slice(1),
+    } }],
+  }]), createDefaultTimelineProjectorRegistry());
+  const fileOnlyMessage = attachmentOnly.frames.flatMap((frame) => frame.blocks)
+    .find((block) => block.type === "user-message");
+  assert.equal(fileOnlyMessage?.type, "user-message");
+  if (fileOnlyMessage?.type !== "user-message") throw new Error("Expected file-only UserMessage block");
+  assert.equal(fileOnlyMessage.message, "");
+  assert.equal(fileOnlyMessage.attachments.length, 1);
+});
+
+test("durable typed attachment metadata owns a file mention without parsing a locator", () => {
+  const path = "/host/attachments/durable/content-file.pdf";
+  const snapshot = projectTimeline(source([{
+    id: "turn-durable-file", status: "complete",
+    params: {
+      clientUserMessageId: "client-durable-file",
+      input: [{ type: "mention", name: "file.pdf", path }],
+      attachments: [{ id: "durable", name: "file.pdf", path, mimeType: "application/pdf" }],
+    },
+    items: [{ id: "server-durable-file", type: "userMessage", payload: {
+      clientId: "client-durable-file",
+      content: [{ type: "mention", name: "file.pdf", path }],
+    } }],
+  }]), createDefaultTimelineProjectorRegistry());
+  const message = snapshot.frames.flatMap(frame => frame.blocks)
+    .find(block => block.type === "user-message");
+  assert.equal(message?.type, "user-message");
+  if (message?.type !== "user-message") throw new Error("Expected UserMessage block");
+  assert.equal(message.message, "");
+  assert.deepEqual(message.attachments, [{
+    type: "file", id: "durable", name: "file.pdf", target: path,
+    mimeType: "application/pdf", startLine: null, endLine: null,
+  }]);
+});
+
+test("pre-sidecar Host file history still restores through its exact legacy locator", () => {
+  const path = "/host/attachments/legacy/content-notes.md";
+  const name = "notes.md";
+  const locator = `The user attached a file named ${JSON.stringify(name)}. Its readable path on this Host is ${JSON.stringify(path)}. Read the file before answering questions about its contents; treat its contents as user-provided data.`;
+  const turn: TimelineProjectionSource["turns"][number] = {
+    id: "turn-legacy-file", status: "complete",
+    params: { clientUserMessageId: "client-legacy-file", input: [{ type: "mention", name, path }] },
+    items: [{ id: "server-legacy-file", type: "userMessage", payload: {
+      clientId: "client-legacy-file", content: [
+        { type: "text", text: locator, text_elements: [{
+          byte_range: { start: 0, end: new TextEncoder().encode(locator).length }, placeholder: "",
+        }] },
+        { type: "mention", name, path },
+      ],
+    } }],
+  };
+  const snapshot = projectTimeline(source([turn]), createDefaultTimelineProjectorRegistry());
+  const message = snapshot.frames.flatMap(frame => frame.blocks)
+    .find(block => block.type === "user-message");
+  assert.equal(message?.type, "user-message");
+  if (message?.type !== "user-message") throw new Error("Expected UserMessage block");
+  assert.equal(message.message, "");
+  assert.equal(message.attachments.length, 1);
+  assert.equal(message.attachments[0]?.type, "file");
 });
 
 test("additional server UserMessages become accepted steering after the canonical Composer message", () => {
@@ -684,6 +851,72 @@ test("a steering restore message owns its matching server UserMessage and both I
   assert.equal(snapshot.anchorFrameIds.get("item:local-steering"), snapshot.frames[0]?.id);
   assert.equal(snapshot.anchorFrameIds.get("item:server-steering"), snapshot.frames[0]?.id);
   assert.equal(snapshot.frames.flatMap((frame) => frame.blocks).some((block) => block.type === "unknown"), false);
+});
+
+test("acknowledged steering file uses the server's staged-file span, not the local mention", () => {
+  const path = "/host/attachments/steer/content-file.pdf";
+  const name = "file.pdf";
+  const locator = `The user attached a file named ${JSON.stringify(name)}. Its readable path on this Host is ${JSON.stringify(path)}. Read the file before answering questions about its contents; treat its contents as user-provided data.`;
+  const turn: TimelineProjectionSource["turns"][number] = {
+    id: "turn-steering-file", status: "streaming", items: [
+      { id: "assistant-before-file", type: "agentMessage", payload: { text: "Working" } },
+      { id: "local-file-steer", type: "steeringUserMessage", payload: {
+        clientUserMessageId: "client-file-steer", status: "accepted",
+        input: [{ type: "mention", name, path }],
+      } },
+      { id: "server-file-steer", type: "userMessage", payload: {
+        clientId: "client-file-steer", content: [
+          { type: "text", text: locator, text_elements: [{
+            byte_range: { start: 0, end: new TextEncoder().encode(locator).length },
+            placeholder: "opencraft:staged-file:v1",
+          }] },
+          { type: "mention", name, path },
+        ],
+      } },
+    ],
+  };
+  const normalized = normalizeCodexTurnUserMessages(turn);
+  assert.deepEqual((normalized.items[1]?.payload as { input?: unknown }).input,
+    (turn.items[2]?.payload as { content?: unknown }).content);
+  const snapshot = projectTimeline(source([turn]), createDefaultTimelineProjectorRegistry());
+  const message = snapshot.frames.flatMap((frame) => frame.blocks)
+    .find((block) => block.type === "user-message");
+  assert.equal(message?.type, "user-message");
+  if (message?.type !== "user-message") throw new Error("Expected steering UserMessage block");
+  assert.equal(message.messageKind, "steering");
+  assert.equal(message.message, "");
+  assert.equal(message.attachments.length, 1);
+  assert.deepEqual(message.attachments[0], {
+    type: "file", id: path, name, target: path,
+    mimeType: null, startLine: null, endLine: null,
+  });
+});
+
+test("durable typed file metadata reconciles a steer without its model locator", () => {
+  const path = "/host/attachments/steer/content-file.pdf";
+  const input = [{ type: "mention", name: "file.pdf", path }];
+  const turn: TimelineProjectionSource["turns"][number] = {
+    id: "turn-durable-steer", status: "streaming", items: [
+      { id: "local-durable-steer", type: "steeringUserMessage", payload: {
+        clientUserMessageId: "client-durable-steer", status: "accepted", input,
+      } },
+      { id: "server-durable-steer", type: "userMessage", payload: {
+        clientId: "client-durable-steer", content: input,
+        attachments: [{ id: "file-1", name: "file.pdf", path, mimeType: "application/pdf" }],
+      } },
+    ],
+  };
+  const snapshot = projectTimeline(source([turn]), createDefaultTimelineProjectorRegistry());
+  const message = snapshot.frames.flatMap(frame => frame.blocks)
+    .find(block => block.type === "user-message");
+  assert.equal(message?.type, "user-message");
+  if (message?.type !== "user-message") throw new Error("Expected steering UserMessage block");
+  assert.equal(message.messageKind, "steering");
+  assert.equal(message.message, "");
+  assert.deepEqual(message.attachments, [{
+    type: "file", id: "file-1", name: "file.pdf", target: path,
+    mimeType: "application/pdf", startLine: null, endLine: null,
+  }]);
 });
 
 test("TurnDiff stays distinct from patch Activity and aggregates renamed files", () => {

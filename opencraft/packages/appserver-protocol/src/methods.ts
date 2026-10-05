@@ -1,6 +1,11 @@
 import type { AppServerProcessMethodMap } from "./process";
 import type { AppServerAttachmentMethodMap } from "./attachments";
-import type { ThreadUnsubscribeParams, ThreadUnsubscribeResponse } from "./generated/v2";
+import type {
+  ThreadUnsubscribeParams, ThreadUnsubscribeResponse,
+  ThreadGoalGetParams, ThreadGoalGetResponse,
+  ThreadGoalSetParams, ThreadGoalSetResponse,
+  ThreadGoalClearParams, ThreadGoalClearResponse,
+} from "./generated/v2";
 import type {
   ThreadResumeHistoryRequest,
   ThreadResumeHistoryResponse,
@@ -306,6 +311,9 @@ export interface ThreadArchiveParams {
  * signature into the core client.
  */
 export interface AppServerMethodMap extends AppServerBotMethodMap, AppServerCodexAccountMethodMap, AppServerProcessMethodMap, AppServerAttachmentMethodMap, ProfileSkillsMethodMap {
+  "thread/goal/get": { params: ThreadGoalGetParams; result: ThreadGoalGetResponse };
+  "thread/goal/set": { params: ThreadGoalSetParams; result: ThreadGoalSetResponse };
+  "thread/goal/clear": { params: ThreadGoalClearParams; result: ThreadGoalClearResponse };
   "runtime/status/read": {
     params: Record<string, never>;
     result: RuntimeStatusResponse;

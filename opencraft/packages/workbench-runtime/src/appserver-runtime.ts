@@ -42,6 +42,7 @@ import type {
 import {
   OPENCRAFT_ATTACHMENT_STAGING_EXTENSION,
   OPENCRAFT_THREAD_QUEUE_EXTENSION,
+  OPENCRAFT_THREAD_GOAL_EXTENSION,
   OPENCRAFT_THREAD_LIFECYCLE_EXTENSION,
   OPENCRAFT_THREAD_START_DURABILITY_EXTENSION,
   OPENCRAFT_SCOPED_MODEL_CATALOG_EXTENSION,
@@ -49,6 +50,7 @@ import {
   parseThreadLifecycleCapability,
   supportsAtomicQueuedSteer,
   supportsUnconfirmedSteerDiscard,
+  parseThreadGoalCapability,
 } from "@opencraft/appserver-protocol";
 import { OPENCRAFT_RESUME_HISTORY_EXTENSION } from "@opencraft/appserver-protocol";
 import { reasoningCapability, modelInputModalities } from "@opencraft/composer-core";
@@ -62,7 +64,9 @@ import type {
   Thread as ProtocolThread,
   ThreadInjectItemsParams,
   UserInput,
+  ThreadGoal,
 } from "@opencraft/appserver-protocol/generated/v2";
+import { ThreadGoalResource } from "./thread-goal-resource";
 import {
   ReplicaClient,
   type ReplicaClientStorage,
@@ -73,7 +77,7 @@ import {
   createCodexThreadReplicaSource,
   createCordisThreadSessionRuntime,
   createThreadViewReplicaProjectionBarrier,
-  mergeTurns,
+  reconcileHydratedTurn,
   projectThreadViewForReplica,
   type AppServerHostKind,
   type CordisThreadSessionRuntime,
@@ -335,6 +339,7 @@ export interface AppServerWorkbenchRuntime {
     readonly projects: AppServerProjectResourcePort;
     readonly fileSystem: AppServerFileSystemResourcePort;
     readonly attachments: AppServerAttachmentResourcePort;
+    readonly goals: ThreadGoalResource;
     readonly composerCatalog: AppServerComposerCatalogResourcePort;
     readonly terminal: AppServerTerminalResourcePort;
   };
@@ -503,6 +508,13 @@ export function createAppServerWorkbenchRuntime(
   let removeClientHandlers: (() => void) | null = null;
   let removeFileSystemNotificationListener: (() => void) | null = null;
   let removeSkillsNotificationListener: (() => void) | null = null;
+  let removeGoalNotificationListener: (() => void) | null = null;
+  const goals = new ThreadGoalResource({
+    capability: () => parseThreadGoalCapability(client?.initializeResult?.capabilities?.extensions?.[OPENCRAFT_THREAD_GOAL_EXTENSION]),
+    get: (threadId) => requireClient().request("thread/goal/get", { threadId }),
+    set: (threadId, change) => requireClient().request("thread/goal/set", { threadId, ...change }),
+    clear: (threadId) => requireClient().request("thread/goal/clear", { threadId }),
+  });
   let fileSystemWatchSequence = 0;
   const fileSystemWatches = new Map<string, {
     readonly path: string;
@@ -834,27 +846,12 @@ export function createAppServerWorkbenchRuntime(
                 priority: "background",
               }),
             projectionBarrier,
-            commitHydratedTurn: (turn, chronologicalTurnIds) => {
-              const order = new Map(
-                chronologicalTurnIds.map((turnId, index) => [turnId, index]),
-              );
+            commitHydratedTurn: (turn, chronologicalTurnIds, baselineTurn) => {
               const committedView = currentSession.views.update(
                 threadId,
                 (current) => ({
                   ...current,
-                  turns: [
-                    ...mergeTurns(current.turns, [turn], {
-                      placement: "prepend",
-                    }),
-                  ].sort((left, right) => {
-                    const leftOrder = order.get(left.id);
-                    const rightOrder = order.get(right.id);
-                    if (leftOrder === undefined && rightOrder === undefined)
-                      return 0;
-                    if (leftOrder === undefined) return 1;
-                    if (rightOrder === undefined) return -1;
-                    return leftOrder - rightOrder;
-                  }),
+                  turns: reconcileHydratedTurn(current.turns, turn, chronologicalTurnIds, { turn: baselineTurn }),
                 }),
               );
               return {
@@ -1002,6 +999,7 @@ export function createAppServerWorkbenchRuntime(
   const hydrateBinding = (
     binding: ConversationBinding,
     force: boolean,
+    retryRejected = false,
   ): Promise<void> => {
     if (binding.disposed)
       return Promise.reject(
@@ -1012,7 +1010,7 @@ export function createAppServerWorkbenchRuntime(
         return binding.hydrationOperation;
       return binding.hydrationOperation
         .catch(() => undefined)
-        .then(() => hydrateBinding(binding, true));
+        .then(() => hydrateBinding(binding, true, retryRejected));
     }
     binding.hydrationForReconnect = force;
     const revision = connectionRevision;
@@ -1038,7 +1036,7 @@ export function createAppServerWorkbenchRuntime(
             if (view?.resumeState !== "resumed" || view.connectionGeneration !== requireClient().connectionGeneration) {
               throw new Error("This temporary side chat expired after disconnect. Start a new side chat.");
             }
-          } else await currentSession.resume.resume({ threadId: binding.threadId, force });
+          } else await currentSession.resume.resume({ threadId: binding.threadId, force, retryRejected });
           if (!current()) throw new AppServerClientError("ABORTED", "Thread recovery was superseded");
           // Prewarm execution readiness, but do not keep already-restored
           // history behind a slow connector/tool registration request.
@@ -1167,6 +1165,15 @@ export function createAppServerWorkbenchRuntime(
           try { listener(); } catch { /* One View cannot break the shared notification pump. */ }
         }
       });
+      removeGoalNotificationListener = client.subscribeNotification((notification) => {
+        if (notification.method === "thread/goal/updated") {
+          const params = notification.params as { threadId: string; goal: ThreadGoal };
+          goals.observe(params.threadId, params.goal);
+        } else if (notification.method === "thread/goal/cleared") {
+          const params = notification.params as { threadId: string };
+          goals.observe(params.threadId, null);
+        }
+      });
       removeFileSystemNotificationListener = client.subscribeNotification((notification) => {
         if (notification.method !== "fs/changed") return;
         const changed = notification.params as FsChangedNotification;
@@ -1213,6 +1220,7 @@ export function createAppServerWorkbenchRuntime(
       }) ?? null;
       await connectPhysicalHost(generation);
       ensureLifecycle(generation);
+      goals.reset();
       const resumeHistoryCapability = client.initializeResult?.capabilities?.extensions?.[
         OPENCRAFT_RESUME_HISTORY_EXTENSION
       ] as { version?: unknown; mode?: unknown } | undefined;
@@ -1310,6 +1318,8 @@ export function createAppServerWorkbenchRuntime(
         removeFileSystemNotificationListener = null;
         removeSkillsNotificationListener?.();
         removeSkillsNotificationListener = null;
+        removeGoalNotificationListener?.();
+        removeGoalNotificationListener = null;
         interactions?.dispose();
         interactions = null;
         fuzzyFileSearch?.dispose();
@@ -1347,6 +1357,7 @@ export function createAppServerWorkbenchRuntime(
           return requireClient().request(method, params);
         },
       },
+      goals,
       host: {
         getConnectionGeneration() { return client?.connectionGeneration ?? 0; },
         getInitializeResult() {
@@ -1760,7 +1771,7 @@ export function createAppServerWorkbenchRuntime(
         getSnapshot: binding.runtime.getSnapshot,
         retryRestore() {
           if (released || binding.disposed) return Promise.reject(new Error(`Thread ${threadId} lease is released`));
-          return hydrateBinding(binding, false);
+          return hydrateBinding(binding, false, true);
         },
         subscribe(listener) {
           if (released || binding.disposed)
@@ -1894,6 +1905,8 @@ export function createAppServerWorkbenchRuntime(
         removeFileSystemNotificationListener = null;
         removeSkillsNotificationListener?.();
         removeSkillsNotificationListener = null;
+        removeGoalNotificationListener?.();
+        removeGoalNotificationListener = null;
         skillsChangedListeners.clear();
 
         const pending = [

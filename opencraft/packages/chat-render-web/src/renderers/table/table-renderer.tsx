@@ -3,6 +3,7 @@ import type { ChatNodeRendererProps } from "@opencraft/chat-render-react";
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 
 import { writeToClipboard } from "../../clipboard";
+import { usePreviewFocusOrigin } from "../../preview-focus-origin";
 import "./table.scss";
 
 type TableNode = Extract<ChatDocumentNode, { kind: "table" }>;
@@ -39,10 +40,12 @@ function TableContents({ node, renderNodes }: {
   );
 }
 
-function TablePreview({ children, onClose, open }: {
+function TablePreview({ children, onClose, onKeyboardNavigation, open, openedByPointer }: {
   readonly children: ReactNode;
   readonly onClose: () => void;
+  readonly onKeyboardNavigation: ReturnType<typeof usePreviewFocusOrigin>["onPreviewKeyDown"];
   readonly open: boolean;
+  readonly openedByPointer: boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -52,7 +55,7 @@ function TablePreview({ children, onClose, open }: {
     if (!open && dialog.open) dialog.close();
   }, [open]);
   return (
-    <dialog aria-label="Table preview" className="chat-table-preview" onCancel={(event) => { event.preventDefault(); onClose(); }} onClose={onClose} ref={ref}>
+    <dialog aria-label="Table preview" className="chat-table-preview" data-opened-by-pointer={openedByPointer || undefined} onCancel={(event) => { event.preventDefault(); onClose(); }} onClose={onClose} onKeyDown={onKeyboardNavigation} ref={ref}>
       <div className="chat-table-preview__toolbar"><span>Table preview</span><button aria-label="Close table preview" onClick={onClose} type="button"><CloseGlyph /></button></div>
       <div className="chat-table-preview__content">{children}</div>
     </dialog>
@@ -62,6 +65,7 @@ function TablePreview({ children, onClose, open }: {
 export function TableRenderer({ context, node, renderNodes }: ChatNodeRendererProps) {
   const [copied, setCopied] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const previewFocus = usePreviewFocusOrigin();
   if (node.kind !== "table") return null;
 
   const copy = async (event: ReactMouseEvent<HTMLButtonElement>) => {
@@ -76,17 +80,17 @@ export function TableRenderer({ context, node, renderNodes }: ChatNodeRendererPr
   };
 
   return (
-    <div className="chat-table-container" data-markdown-table="true" data-wide-block={context.allowWideBlocks || undefined} tabIndex={-1}>
+    <div className="chat-table-container" data-markdown-table="true" data-wide-block={context.allowWideBlocks || undefined}>
       <div className={`chat-table-scroller${context.allowWideBlocks ? " horizontal-scroll-fade-mask" : ""}`}>
         <div className="chat-table-wrapper"><TableContents node={node} renderNodes={renderNodes} /></div>
       </div>
       <div className="chat-table-actions" data-markdown-copy="exclude">
         <div className="chat-table-actions__bar">
-          {context.allowWideBlocks ? <button aria-label="Expand table" aria-expanded={previewOpen} onClick={() => setPreviewOpen(true)} title="Expand table" type="button"><ExpandGlyph /></button> : null}
+          {context.allowWideBlocks ? <button aria-label="Expand table" aria-expanded={previewOpen} onClick={(event) => { previewFocus.recordOpen(event); setPreviewOpen(true); }} onKeyDown={previewFocus.onTriggerKeyDown} onPointerCancel={previewFocus.onTriggerPointerCancel} onPointerDown={previewFocus.onTriggerPointerDown} title="Expand table" type="button"><ExpandGlyph /></button> : null}
           <button aria-label={copied ? "Copied table" : "Copy table"} onClick={(event) => void copy(event)} title={copied ? "Copied" : "Copy table"} type="button"><CopyGlyph copied={copied} /></button>
         </div>
       </div>
-      <TablePreview onClose={() => setPreviewOpen(false)} open={previewOpen}><TableContents node={node} renderNodes={renderNodes} /></TablePreview>
+      <TablePreview onClose={() => setPreviewOpen(false)} onKeyboardNavigation={previewFocus.onPreviewKeyDown} open={previewOpen} openedByPointer={previewFocus.openedByPointer}><TableContents node={node} renderNodes={renderNodes} /></TablePreview>
     </div>
   );
 }

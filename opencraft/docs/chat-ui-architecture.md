@@ -44,6 +44,79 @@ ProseMirror adapter                 Native editor adapter
 
 ## Non-negotiable boundaries
 
+### Thread goals
+
+Sidebar Thread menus contain Thread-scoped mutations only. Creating a new task
+and opening Host settings remain ordinary application navigation; neither is
+advertised as a Thread menu action.
+
+A Goal is durable Codex Thread state, not a Composer draft or a Web timer. The
+Codex AppServer owns objective, status, and usage counters. The Codex Host
+advertises the supported Goal methods, keeps a replaceable index of active
+Threads, and owns continuation after Turn completion, including when no browser
+is connected. Queued user input has priority over autonomous continuation;
+continuation is serialized with other per-Thread Host operations. The DSH Host
+currently advertises read-only Goal support, never a simulated write path.
+
+Workbench Runtime owns a per-Thread Goal resource: get-on-view activation,
+notification projection, revision-fenced reads, reconnect invalidation, and
+single-flight writes followed by a confirming read. A failed confirmation is
+not reported as success. Web owns only disclosure and an unsaved editor draft;
+its card cannot schedule a Turn or become a second authority for Goal state.
+
+When a writable Thread has no goal, its creation entry is a standard item in
+the Composer's Add menu, not a separate capsule above the editor. The Goal
+surface supplies this action to the existing menu and retains ownership of
+the editor draft and dialog. Existing goals keep their status and progress
+surface. Read-only or unavailable Threads do not advertise creation; switching
+Threads resets the local editor without remounting the Composer. Menu actions
+can supply a scope-fenced continuation to the Add menu's close callback: Radix
+finishes its focus cleanup before a target dialog opens, rather than racing two
+focus scopes or relying on an arbitrary delay.
+
+
+### User message code-block sizing
+
+The Web user-message bubble owns its content-sized width and maximum width.
+Fenced code inside it must participate in intrinsic width sizing, including
+when the fence is the entire message; an inline-size containment used by the
+shared code renderer must be lifted only at this bubble boundary. Long code
+remains within the bubble's maximum width and scrolls in the code block's own
+scroller. Empty-message presentation is based on actual text presence, not on
+whether Markdown happens to produce visible inline prose. The shared code
+renderer keeps its containment for assistant prose and other full-width hosts.
+
+### Outgoing message handoff
+
+The Conversation Runtime owns the outgoing message from local submit until an
+authoritative Composer input or UserMessage Item can actually render it. A Turn
+receipt or an empty authoritative Turn is not a visible-message acknowledgement:
+the optimistic item is projected into that Turn until its display owner exists.
+The client message ID is the stable display identity of the user block, its
+frame, and the React Turn row across optimistic, Turn.params, and server Item
+phases; the virtualizer's Turn locator and protocol Turn/Item IDs remain
+canonical for navigation, measurements, commands and anchors. Web may suppress
+the transient sending label, but failed and uncertain
+delivery retain visible feedback. This prevents a receipt from briefly removing
+or remounting an outgoing bubble while ordinary text and attachments settle.
+For Codex Host-staged files, the Host may add a model-visible locator after
+`Turn.params` was captured. Once the matching server `UserMessage` acknowledges
+that input with the Host-owned display span, its content owns presentation;
+the unaugmented Composer params must not overwrite the span or the attachment
+type. Ordinary messages continue to use Composer params. This is a projection
+choice under one message identity, not a second sent-message branch.
+The same acknowledgement rule applies to a locally owned steer: its matching
+server `UserMessage` supplies a Host-staged file span to the steering input
+projection, while the steering row retains its client identity and status.
+The Codex Host now persists the validated attachment refs by Thread and client
+message ID before direct or queued dispatch. Native Codex input retains its
+supported `mention` plus model-visible locator, but those bytes are never the
+display authority. The Host enriches live UserMessage Items and paged/resumed
+history with typed attachment metadata from that durable record; a fork copies
+the mapping to its new Thread identity. A sent file cannot be removed through
+draft cleanup. Pre-existing messages without this record retain a narrow
+exact-locator compatibility path, not a general path or filename heuristic.
+
 ### Changed-file review
 
 The Turn's existing unified diff remains the read authority for its changed-file summary. ChatUI renders an in-progress inline Review entry and a completed resource card; it only emits an open intent. The Workbench owns the read-only Review dialog, keeps it tied to the active Thread, and projects the current Timeline block while streaming. File selection filters that existing diff for display; it does not create a second TurnDiff model or mutate the workspace. Undo/Reapply is not advertised until a real Host apply-patch capability is connected.
@@ -142,6 +215,14 @@ produce neither a blank interval nor a duplicate row. This does not redefine
 steer as a hard interrupt: the current provider request and tool step remain
 owned by DSH and may finish before the next-step inbox is consumed.
 
+The main conversation defaults fresh follow-up input to direct steering during
+an active response. Chat settings can persist `queue` instead through
+`UiPreferencesRuntime` (`chat.defaultFollowUpAction`, installation scope).
+Ctrl/Cmd+Enter temporarily chooses the opposite action; idle input still starts
+a normal response. A preference change does not replace the Composer document,
+editor or selections, and submission rechecks the actual active Turn. Side Chat
+retains direct steering because it does not own a durable next-turn queue.
+
 Queued-message steering is gated by the Host's
 `opencraft/thread-queue: { version: 2, atomicSteer: true }` declaration. DSH
 provides the one native `session.updateQueue(steer)` operation. Stock Codex
@@ -188,6 +269,27 @@ adapters may later return `host-file` or `object-url` through the same contract,
 but are unsupported until their Host advertises them. Failed or unresolved
 attachments block submission and retain their precise error; removing an
 unsubmitted ready attachment asks its owning Host to release the staged ref.
+The local Codex Host uses the same staging service beneath its own data root,
+intercepts `attachment/stage` and `attachment/remove` before forwarding to the
+stock Codex AppServer, and advertises the capability only with that handler.
+An ordinary staged file compiles to Codex's native `mention` path. That item
+preserves attachment identity in Codex history, but Codex does not include it
+in model-facing text. At direct or queued Turn dispatch, the Codex Host verifies
+that each mention still belongs to its staging service, then adds a model-visible
+text locator beside the mention. Its UI-only text-element marker explicitly
+identifies the following `mention` as a staged file; the shared projector
+renders a file card without exposing the Host path or duplicating an `@` chip.
+Ordinary mentions remain context chips. The first preview's exact generated
+locator with an empty placeholder is recognized for history compatibility,
+but arbitrary paths or filenames are never inferred to be attachments.
+The queue retains the original input; validation and
+augmentation happen before claiming delivery, so a removed file cannot become
+an uncertain claim. A ready file alone is valid input. A browser-selected file is not ready merely because its
+name and byte count are visible. The Composer retains the original `File` for
+retry within its Draft owner, shows ordinary-file preparation/failure in the
+card itself, and does not expose raw Host errors in the primary UI. An ambiguous
+response after disconnect is retried under the same attachment ID instead of
+blindly deleting a potentially accepted resource.
 Durable history treats `AttachmentLocation` as opaque resource identity. The
 owning staging service persists a location-keyed metadata index and implements
 an `AttachmentMetadataResolver` that restores the authoritative `AttachmentRef`
@@ -254,6 +356,38 @@ and response-copy actions exclude questions and earlier inputs' answers.
 Tests cover async-final questions, multiple answers and follow-ups, in-place
 streaming, phase/completion changes, disclosure, history prepend and refresh.
 
+The virtualizer separately owns the mounted window: when history inserts rows
+inside that window, the intermediate render retains both the previous slots
+anchored by a surviving row and every surviving mounted identity. Count alone
+can evict the old last row during insertion; surviving keys alone can evict a
+replaced edge when an optimistic Turn acquires its authoritative ID. The stable
+client-message subtree and its measured height must survive that handoff;
+changing a protocol locator cannot fabricate content growth or reset known
+geometry to an estimate. The committed viewport is
+reconciled for layout changes, including same-count identity changes and height
+transactions, without requiring a platform scroll event. Persisted restoration
+by anchor/count remains a different operation; neither rule sorts the transcript
+or takes over response following.
+
+In the Codex V3 compatibility reader, an established Turn/Item slot is not
+derived from status, update time, or opaque ID. Live updates merge by identity
+without moving that slot. Ordered history owns topology only within its fetched
+window; a navigation locator index is a placement hint for one unloaded Turn,
+not permission to globally sort the loaded conversation or move unindexed rows
+behind the live tail. Session owns both policies; Workbench commits its result
+without implementing a second ordering rule.
+
+Background history and navigation reads capture their immutable pre-request
+Turn baseline. On commit, Items and lifecycle fields observed since that
+baseline take precedence over the delayed snapshot. Missing concurrent rows
+retain their existing neighbour; unchanged covered membership may still be
+replaced by full history. Resume continues to commit its ordered snapshot before
+releasing buffered notifications. Baselines belong to that read and connection
+generation, not to durable transcript storage. V3 supplies no comparable server
+revision per Item: this protects observed updates, not a claim of server-wide
+causal sequencing or a V4 Journal. Dot and task-chat renderers may differ while
+consuming this same identity-versus-position distinction.
+
 ### Embedded submission and recovery
 
 Embedded workbench templates enter through `submitPrompt(requestId, text)`, not
@@ -276,8 +410,12 @@ The Web recovery presentation does not equate non-authoritative with invisible.
 When a Thread already has painted Timeline frames, reconnect and retry preserve
 those frames, their scroll position and Composer draft; a small local connection
 notice shows the pending or failed state while commands remain disabled until
-authority returns. Only a Thread without visible frames gets a delayed skeleton
-in the Timeline's empty slot. A definite restore failure replaces that slot with
+authority returns. Only a Thread without visible frames gets a centered neutral
+loading ring in the Timeline's empty slot (delayed 200 ms to avoid fast-load
+flashes). It has no visible copy; the localized status name is screen-reader
+only. The shared Web spinner owns its glyph and theme-aware, reduced-motion
+presentation, not Thread authority, timeouts, focus or scroll writes. Startup
+uses the same passive primitive. A definite restore failure replaces that slot with
 an inline retry action. Neither state mounts an opaque page overlay or changes
 the Conversation View identity.
 
@@ -447,6 +585,14 @@ question index, stay visible in the Timeline, and do not replace the Composer
 or suspend the Turn. The latter use the existing blocking interaction response
 port. Device type must not select between these two protocol forms.
 
+An async question's title is model-authored Markdown, not a form-control label
+string. Web renders it through the same Chat Document and resource policy as
+assistant content, so safe links are usable and unsafe targets stay inert. The
+card gives its fieldset an accessible name from the rendered title instead of
+placing block Markdown inside a `legend`. Suggested answer strings remain
+literal labels and submission values; presentation must not rewrite the answer
+envelope or create a second Markdown/link policy.
+
 An async answer is a normal user submission carrying Codex's
 `send_user_message_question_reply` envelope. The active Turn uses the steer
 submission path; an idle Thread starts a normal Turn. The reply is rendered
@@ -456,6 +602,40 @@ queued, sending, uncertain and answered states derive from the shared Timeline
 and follow-up queue so a second subscriber or a reconnect sees the same result.
 
 ## Current migration ledger
+
+### Disclosure scroll anchor lifetime
+
+While a user expands or collapses an activity, its heading retains its screen
+Y coordinate. Numeric disclosure height samples are projected onto whole CSS
+pixels by the shared Web animation adapter before Motion commits layout,
+matching the scrollport's conservative pixel grid. Otherwise rounded scroll
+writes can leave the heading oscillating by almost a pixel even when its final
+position is correct. Natural `auto` layout and later streaming growth are not
+fixed or rounded by a second observer. The disclosure owns its
+animation and reports completion through a View-scoped reflow lease; the Web
+conversation viewport is the sole owner of scroll writes and observation. It
+keeps the anchor through the animation and final stable layout frames, including
+body removal and reduced motion. No fixed timeout decides completion for the
+activity row, group or Worked-for controls.
+
+Worked-for animates entry only. Its closed branch removes content in the same
+React commit; it must not add an exit-presence owner that defers unmount after
+the parent reports synchronous layout completion. Completing a reflow lease
+applies the committed layout compensation immediately, then waits for stable
+frames before retiring observation.
+
+Each viewport has at most one interaction anchor. Reversal or a new heading
+supersedes the old lease; delayed completion can only complete the lease from
+its own render. User scrolling, control unmount and viewport replacement cancel
+preservation immediately. Unmigrated expanders keep their separate bounded
+compatibility policy and cannot create a second owner alongside an activity lease.
+
+Browser regression measures the visible label's entire path and peak-to-peak
+movement, not only final position or each frame's distance from the starting
+point. It covers measured multi-Turn layout, fractional starting geometry,
+mouse/touch input, reduced motion and interrupted/reversed animations. A
+separate nonvirtualized control checks retirement of the interaction anchor;
+normal virtualizer compensation during later growth is not evidence of a leak.
 
 ### Established
 

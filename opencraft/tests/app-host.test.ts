@@ -125,6 +125,104 @@ class ControlledTransport extends TestTransport {
   }
 }
 
+test("service connection revalidates its authority after waiting for a physical reset", async () => {
+  const physical = new ControlledTransport(); physical.waitForConnect = false; physical.waitForClose = true;
+  let created = 0; let authorized = true;
+  const server = new AppHostServer({ physicalHostLifetime: "server", createTransport: () => { created++; return physical; } });
+  try {
+    await server.ensureHostConnected("remote");
+    const reset = server.resetHost("remote");
+    const successor = server.ensureHostConnected("remote", () => { if (!authorized) throw new Error("revoked service admission"); });
+    const rejected = assert.rejects(successor, /revoked service admission/);
+    authorized = false;
+    physical.closeGate.resolve(); await reset; await rejected;
+    assert.equal(created, 1, "a revoked control request cannot construct a successor transport");
+    assert.equal(server.hostState("remote"), "closed");
+  } finally { physical.closeGate.resolve(); await server.close(); }
+});
+
+test("service connection shares physical startup, grants no Client lease, and survives page detach", async () => {
+  const physical = new ControlledTransport(); let created = 0;
+  const server = new AppHostServer({ physicalHostLifetime: "server", createTransport: () => { created++; return physical; } });
+  const pair = createPortPair(), connection = server.accept(pair.host, "browser");
+  try {
+    const first = server.ensureHostConnected("ssh:fixture"), second = server.ensureHostConnected("ssh:fixture");
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(server.hostState("ssh:fixture"), "connecting");
+    assert.equal(created, 1);
+    physical.connectGate.resolve(); await Promise.all([first, second]);
+    assert.equal(server.hostState("ssh:fixture"), "open");
+    await assert.rejects(server.handle(connection, { type: "host/send", hostId: "ssh:fixture", leaseId: "guessed", generation: 1, requestId: "unauthorized", frame: "not admitted" }), /does not own/);
+    await server.handle(connection, { type: "host/connect", hostId: "ssh:fixture", leaseId: "real", requestId: "connect" });
+    assert.equal(created, 1); assert.equal(physical.connectCount, 1);
+    connection.close(); await new Promise(resolve => setImmediate(resolve));
+    assert.equal(physical.closeCount, 0);
+  } finally { physical.connectGate.resolve(); await server.close(); }
+});
+
+test("failed service activation remains failed, and reset fences its late success", async () => {
+  const previous = new ControlledTransport(), successor = new TestTransport(); let created = 0;
+  const server = new AppHostServer({ physicalHostLifetime: "server", createTransport: () => ++created === 1 ? previous : successor });
+  try {
+    const connecting = server.ensureHostConnected("ssh:fixture");
+    const rejected = assert.rejects(connecting, /no longer has an owner/);
+    await new Promise(resolve => setImmediate(resolve));
+    const reset = server.resetHost("ssh:fixture");
+    const next = server.ensureHostConnected("ssh:fixture");
+    await new Promise(resolve => setImmediate(resolve)); assert.equal(created, 1);
+    previous.connectGate.resolve(); await rejected; await reset; await next;
+    assert.equal(previous.closeCount, 1); assert.equal(server.hostState("ssh:fixture"), "open");
+    assert.equal(created, 2);
+  } finally { previous.connectGate.resolve(); await server.close(); }
+  const failing = new AppHostServer({ physicalHostLifetime: "server", createTransport: () => { throw new Error("synthetic connection failure"); } });
+  try { await assert.rejects(failing.ensureHostConnected("ssh:fixture")); assert.equal(failing.hostState("ssh:fixture"), "failed"); }
+  finally { await failing.close(); }
+});
+
+test("trusted reset fences old claims and preserves reconnects arriving during close", async () => {
+  const previous = new ControlledTransport(); previous.waitForConnect = false; previous.waitForClose = true;
+  const successor = new TestTransport(); let created = 0;
+  const server = new AppHostServer({ physicalHostLifetime: "server", createTransport: () => ++created === 1 ? previous : successor });
+  const pair = createPortPair(); const connection = server.accept(pair.host, "reset-owner");
+  try {
+    const old = await server.handle(connection, { type: "host/connect", hostId: "ssh:fixture", leaseId: "old", requestId: "first" }) as { generation: number };
+    const resetting = server.resetHost("ssh:fixture");
+    await assert.rejects(server.handle(connection, { type: "host/send", hostId: "ssh:fixture", leaseId: "old", generation: old.generation, requestId: "stale", frame: "must not send" }), /not connected/);
+    let connected = false;
+    const arriving = server.handle(connection, { type: "host/connect", hostId: "ssh:fixture", leaseId: "next", requestId: "next" }).then(result => { connected = true; return result as { generation: number }; });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(connected, false); assert.equal(created, 1); assert.equal(server.hostState("ssh:fixture"), "closing");
+    previous.closeGate.resolve(); await resetting; const next = await arriving;
+    assert.notEqual(next.generation, old.generation);
+    await server.handle(connection, { type: "host/send", hostId: "ssh:fixture", leaseId: "next", generation: next.generation, requestId: "send", frame: "new owner" });
+    assert.deepEqual(previous.sent, []); assert.deepEqual(successor.sent, ["new owner"]);
+    await assert.rejects(server.handle(connection, { type: "host/send", hostId: "ssh:fixture", leaseId: "old", generation: next.generation, requestId: "lost", frame: "old claim" }), /does not own/);
+    assert.equal(previous.closeCount, 1);
+  } finally { previous.closeGate.resolve(); await server.close(); }
+});
+
+test("SSH failure disposition survives AppHost wire and changes even when state/reason match", async () => {
+  class FailingTransport extends TestTransport {
+    change(status: TransportStatus) { this.publish(status); }
+  }
+  const physical = new FailingTransport();
+  const server = new AppHostServer({ createTransport: () => physical });
+  const pair = createPortPair(); server.accept(pair.host, "ssh-client");
+  const client = new MessagePortAppHostClient(pair.browser, "ssh-client");
+  const transport = client.createTransport("ssh:fixture");
+  const states: TransportStatus[] = [];
+  transport.subscribeStatus(status => states.push(status));
+  try {
+    await transport.connect();
+    physical.change({ state: "failed", reason: "Remote unavailable", failure: { code: "SSH_LINK_LOST", recovery: "automatic" } });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    physical.change({ state: "failed", reason: "Remote unavailable", failure: { code: "SSH_HOST_KEY", recovery: "manual" } });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.deepEqual(transport.status.failure, { code: "SSH_HOST_KEY", recovery: "manual" });
+    assert.equal(states.filter(status => status.state === "failed").length, 2);
+  } finally { await client.close(); await server.close(); }
+});
+
 test("probe and another Host remain responsive during a slow Host activation", async () => {
   const ports = createPortPair();
   const slow = new ControlledTransport();

@@ -3,18 +3,19 @@ import test from "node:test";
 
 import { bindTouchInteractionMode } from "../apps/workbench-web/src/runtime/pointer-modality.js";
 
-test("touch or pen suppresses hover until a real mouse move, including portals", () => {
-  const listeners = new Map<string, (event: { pointerType: string }) => void>();
+test("touch suppresses hover and fallback focus rings until mouse or hardware Tab navigation", () => {
+  const listeners = new Map<string, (event: { pointerType?: string; key?: string }) => void>();
   const root = { dataset: {} as Record<string, string> };
   const document = {
     documentElement: root,
-    addEventListener(type: string, listener: (event: { pointerType: string }) => void) {
+    addEventListener(type: string, listener: (event: { pointerType?: string; key?: string }) => void) {
       listeners.set(type, listener);
     },
     removeEventListener(type: string) { listeners.delete(type); },
   } as unknown as Document;
   const dispose = bindTouchInteractionMode(document);
   const emit = (type: string, pointerType: string) => listeners.get(type)?.({ pointerType });
+  const key = (value: string) => listeners.get("keydown")?.({ key: value });
 
   emit("pointerdown", "touch");
   assert.equal(root.dataset.touchInteraction, "true");
@@ -25,6 +26,12 @@ test("touch or pen suppresses hover until a real mouse move, including portals",
   emit("pointermove", "mouse");
   assert.equal(root.dataset.touchInteraction, undefined);
   emit("pointerdown", "pen");
+  assert.equal(root.dataset.touchInteraction, "true");
+  key("a"); // virtual-keyboard text entry retains touch presentation
+  assert.equal(root.dataset.touchInteraction, "true");
+  key("Tab");
+  assert.equal(root.dataset.touchInteraction, undefined);
+  emit("pointerdown", "touch");
   assert.equal(root.dataset.touchInteraction, "true");
 
   dispose();

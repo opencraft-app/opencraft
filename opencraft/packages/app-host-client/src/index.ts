@@ -331,7 +331,10 @@ class AppHostChannelTransport implements DuplexTransport {
       })
       .catch((cause) => {
         const reason = cause instanceof Error ? cause.message : String(cause);
-        this.setStatus({ state: "failed", reason });
+        const error = cause as { code?: unknown; retryable?: unknown };
+        this.setStatus({ state: "failed", reason, ...(typeof error.code === "string" && error.code.startsWith("SSH_") ? {
+          failure: { code: error.code, recovery: error.retryable === true ? "automatic" : "manual" },
+        } : {}) });
         throw cause;
       })
       .finally(() => {
@@ -390,7 +393,9 @@ class AppHostChannelTransport implements DuplexTransport {
   }
 
   private setStatus(status: TransportStatus): void {
-    if (this.currentStatus.state === status.state && this.currentStatus.reason === status.reason) return;
+    if (this.currentStatus.state === status.state && this.currentStatus.reason === status.reason
+      && this.currentStatus.failure?.code === status.failure?.code
+      && this.currentStatus.failure?.recovery === status.failure?.recovery) return;
     this.currentStatus = status;
     for (const listener of this.statusListeners) listener(status);
   }

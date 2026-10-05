@@ -11,6 +11,21 @@ import {
   velaThemePalette,
 } from "@opencraft/design-system/theme-engine";
 
+test("keyboard focus is neutral and independent of brand accent, including legacy aliases", () => {
+  for (const mode of ["light", "dark"] as const) {
+    for (const base of [codexThemePalette[mode], velaThemePalette[mode], lavenderThemePalette[mode]]) {
+      const css = buildCodexThemeCssProperties(mode, base);
+      const recolored = buildCodexThemeCssProperties(mode, { ...base, accent: "#ff0088" });
+      const focus = css["--color-border-focus"];
+      assert.match(focus, mode === "light" ? /^rgba\(0, 0, 0, /u : /^rgba\(255, 255, 255, /u);
+      assert.equal(recolored["--color-border-focus"], focus);
+      assert.equal(css["--color-focus-ring"], focus);
+      assert.equal(css["--focus-ring"], focus);
+      assert.equal(css["--color-accent-blue"], base.accent);
+    }
+  }
+});
+
 test("utility controls receive semantic status colors in both themes and accept theme overrides", () => {
   for (const mode of ["light", "dark"] as const) {
     for (const definition of [codexThemePalette[mode], velaThemePalette[mode], frostThemePalette[mode], lavenderThemePalette[mode]]) {

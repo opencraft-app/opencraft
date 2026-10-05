@@ -4,7 +4,8 @@
   "version": "0.1.0",
   "type": "module",
   "exports": {
-    ".": "./src/main.ts"
+    ".": "./src/main.ts",
+    "./attachments/local-staging": "./src/attachments/local-attachment-staging.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

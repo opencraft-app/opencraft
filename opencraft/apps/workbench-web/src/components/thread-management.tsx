@@ -29,15 +29,8 @@ export interface ThreadActionCallbacks {
   readonly onDelete: (target: ThreadActionTarget) => Promise<void>;
 }
 
-export interface ThreadHostActionCallbacks {
-  readonly label: string;
-  readonly onNewTask?: (hostId: string) => Promise<unknown>;
-  readonly onOpenSettings?: (hostId: string) => void;
-}
-
-export function ThreadRowMenu({ target, capabilities, children, hostActions, openMenuKind, onOpenMenuChange, onRename, onFork, onArchive, onDelete }: ThreadActionCallbacks & {
+export function ThreadRowMenu({ target, capabilities, children, openMenuKind, onOpenMenuChange, onRename, onFork, onArchive, onDelete }: ThreadActionCallbacks & {
   target: ThreadActionTarget; capabilities: ThreadActionCapabilities; children: ReactNode;
-  hostActions?: ThreadHostActionCallbacks;
   openMenuKind: SidebarThreadMenuKind | null;
   onOpenMenuChange: (kind: SidebarThreadMenuKind, open: boolean) => void;
 }) {
@@ -61,16 +54,7 @@ export function ThreadRowMenu({ target, capabilities, children, hostActions, ope
     capabilities.archive ? { key: "archive", label: "归档", onSelect: () => { void run(() => onArchive(target)); } } : null,
     capabilities.delete ? { key: "delete", label: "删除", onSelect: () => { modalHandoff.current = true; setError(null); setDeleting(target); } } : null,
   ].filter((item): item is NonNullable<typeof item> => item !== null);
-  const hostItems = [
-    hostActions?.onNewTask ? { key: "new-task", label: `在 ${hostActions.label} 上新建任务`, onSelect: () => {
-      void run(async () => { await hostActions.onNewTask?.(target.hostId); });
-    } } : null,
-    hostActions?.onOpenSettings ? { key: "host-settings", label: `${hostActions.label} 设置`, onSelect: () => {
-      hostActions.onOpenSettings?.(target.hostId);
-    } } : null,
-  ].filter((item): item is NonNullable<typeof item> => item !== null);
-  if (menuItems.length === 0 && hostItems.length === 0) return children;
-  const showSeparator = menuItems.length > 0 && hostItems.length > 0;
+  if (menuItems.length === 0) return children;
   const onMenuCloseAutoFocus = (event: Event) => {
     if (!modalHandoff.current) return;
     event.preventDefault();
@@ -85,8 +69,6 @@ export function ThreadRowMenu({ target, capabilities, children, hostActions, ope
         </ContextMenu.Trigger>
         <ContextMenu.Portal container={portalContainer}><ContextMenu.Content className="workbench-context-menu" onCloseAutoFocus={onMenuCloseAutoFocus}>
           {menuItems.map(({ key, label, onSelect }) => <ContextMenu.Item key={key} disabled={busy} onSelect={onSelect}>{label}</ContextMenu.Item>)}
-          {showSeparator ? <ContextMenu.Separator className="workbench-context-menu__separator" /> : null}
-          {hostItems.map(({ key, label, onSelect }) => <ContextMenu.Item key={key} disabled={busy} onSelect={onSelect}>{label}</ContextMenu.Item>)}
         </ContextMenu.Content></ContextMenu.Portal>
       </ContextMenu.Root>
       <DropdownMenu.Root open={openMenuKind === "dropdown"} onOpenChange={open => onOpenMenuChange("dropdown", open)}>
@@ -98,8 +80,6 @@ export function ThreadRowMenu({ target, capabilities, children, hostActions, ope
         <DropdownMenu.Portal container={portalContainer}>
           <DropdownMenu.Content className="workbench-context-menu" align="end" sideOffset={4} onCloseAutoFocus={onMenuCloseAutoFocus}>
             {menuItems.map(({ key, label, onSelect }) => <DropdownMenu.Item key={key} disabled={busy} onSelect={onSelect}>{label}</DropdownMenu.Item>)}
-            {showSeparator ? <DropdownMenu.Separator className="workbench-context-menu__separator" /> : null}
-            {hostItems.map(({ key, label, onSelect }) => <DropdownMenu.Item key={key} disabled={busy} onSelect={onSelect}>{label}</DropdownMenu.Item>)}
           </DropdownMenu.Content>
         </DropdownMenu.Portal>
       </DropdownMenu.Root>

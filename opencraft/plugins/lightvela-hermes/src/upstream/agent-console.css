@@ -1033,3 +1033,18 @@
   color: var(--text-tertiary);
   background: var(--color-background-button-primary-inactive);
 }
+
+/* The embedded upstream controls own their palette, but touch must not make
+ * their focus-within/glow rules look like a keyboard ring. Keep the upstream
+ * files untouched; this adapter owns the interaction-mode correction. */
+:root[data-touch-interaction] .lightvela-agent-console .lv-option:focus-within {
+  outline: none;
+}
+
+:root[data-touch-interaction] .lightvela-agent-console .lv-agent-search-box-input:focus,
+:root[data-touch-interaction] ._lh-claw-bot-panel .tea-input:focus,
+:root[data-touch-interaction] ._lh-claw-bot-panel .tea-input:focus-within,
+:root[data-touch-interaction] ._lh-claw-bot-panel .tea-dropdown__header:focus,
+:root[data-touch-interaction] .lh-std-model-panel__json-input:focus {
+  box-shadow: none;
+}

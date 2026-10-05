@@ -245,9 +245,13 @@ export function projectTimeline(
       const firstBlock = blocks[0];
       if (pendingLane === null || firstBlock === undefined) return;
       const itemIds = blocks.flatMap((block) => block.sourceItemIds);
+      const userClientId = pendingLane === "user" && firstBlock.type === "user-message"
+        && firstBlock.messageKind === "user" ? firstBlock.clientId : null;
       frames.push({
         type: pendingLane,
-        id: frameId(turn.id, pendingLane, itemIds[0] ?? asItemId(firstBlock.id)),
+        id: userClientId === null
+          ? frameId(turn.id, pendingLane, itemIds[0] ?? asItemId(firstBlock.id))
+          : `user-message:${userClientId}:frame`,
         turnId: asTurnId(turn.id),
         status: turn.status,
         durationMs: turn.durationMs ?? null,

@@ -6,7 +6,7 @@ import { LocaleRuntime } from "@opencraft/i18n";
 import { IntlRuntimeProvider } from "@opencraft/i18n/react";
 import {
   ConversationRecoveryNotice,
-  ConversationRecoverySkeleton,
+  ConversationRecoveryEmptyState,
   conversationRecoveryPresentation,
 } from "../apps/workbench-web/src/components/conversation-recovery";
 
@@ -18,18 +18,26 @@ test("recovery presentation retains painted history across syncing and failure",
   assert.equal(conversationRecoveryPresentation({ authoritative: true, hasVisibleHistory: true, failed: false }), "none");
 });
 
-test("warm recovery is a local notice, while only empty history gets a skeleton", () => {
+test("only cold loading gets a passive ring; failures keep an actionable retry", () => {
   const runtime = new LocaleRuntime([]);
   const render = (child: ReactElement) => renderToStaticMarkup(createElement(IntlRuntimeProvider, { runtime, children: child }));
   const notice = render(createElement(ConversationRecoveryNotice, { failed: false, reconnecting: true }));
   const syncing = render(createElement(ConversationRecoveryNotice, { failed: false, reconnecting: false }));
   const error = render(createElement(ConversationRecoveryNotice, { failed: true, reconnecting: true, onRetry() {} }));
-  const skeleton = render(createElement(ConversationRecoverySkeleton, { failed: false }));
+  const loading = render(createElement(ConversationRecoveryEmptyState, { failed: false }));
+  const coldError = render(createElement(ConversationRecoveryEmptyState, { failed: true, onRetry() {} }));
   assert.match(notice, /conversation-recovery-notice/);
-  assert.doesNotMatch(notice, /conversation-recovery-skeleton|conversation-hydration-stage/);
+  assert.doesNotMatch(notice, /workbench-loading-spinner|conversation-hydration-stage/);
   assert.match(syncing, /Syncing/);
   assert.match(error, /role="alert"/);
   assert.match(error, /<button/);
-  assert.match(skeleton, /conversation-recovery-skeleton__line/);
+  assert.match(loading, /role="status"/);
+  assert.match(loading, /conversation-recovery-loading__label/);
+  assert.match(loading, /<svg[^>]*aria-hidden="true"[^>]*focusable="false"/);
+  assert.match(loading, /<circle[^>]*opacity="0.3"/);
+  assert.doesNotMatch(loading, /<button|tabindex|skeleton__line/);
+  assert.match(coldError, /role="alert"/);
+  assert.match(coldError, /<button/);
+  assert.doesNotMatch(coldError, /workbench-loading-spinner/);
   runtime.dispose();
 });
