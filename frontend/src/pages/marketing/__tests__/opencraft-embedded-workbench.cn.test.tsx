@@ -44,6 +44,7 @@ describe("AgentChatMigrationSurface", () => {
 
     class FakeEmbeddedWorkbench extends HTMLElement {
       configure = vi.fn();
+      setLocalization = vi.fn(async () => undefined);
       hide = vi.fn();
       dispose = vi.fn(async () => undefined);
       createConversation = vi.fn(async () => undefined);
@@ -75,12 +76,13 @@ describe("AgentChatMigrationSurface", () => {
       onSessionActionsChange: (next) => { actions = next; },
     };
 
-    const renderSurface = (enabled: boolean) => (
+    const renderSurface = (enabled: boolean, locale = "en-US") => (
       <AgentChatMigrationSurface
         active
         accountId="account-1"
         enabled={enabled}
         instanceId="ins-1"
+        locale={locale}
         profileId="sales-123"
         region="intl"
         legacy={<div>Legacy AgentChat</div>}
@@ -110,12 +112,16 @@ describe("AgentChatMigrationSurface", () => {
       instanceId: "ins-1",
       profileId: "sales-123",
       region: "intl",
+      localization: { ideLocale: "en-US", localeSource: "IDE" },
     });
     expect(screen.queryByText("Legacy AgentChat")).toBeNull();
     expect(screen.getByRole("status")).toHaveTextContent("你的 AI 伙伴，马上就来");
     expect(screen.getByRole("status")).not.toHaveTextContent("正在准备我们的对话");
     resolveShow();
     await waitFor(() => expect(onOwnerChange).toHaveBeenCalledWith("opencraft"));
+    rerender(renderSurface(true, "ja-JP"));
+    await waitFor(() => expect(prepared.setLocalization).toHaveBeenCalledWith({ ideLocale: "ja-JP", localeSource: "IDE" }));
+    expect(container.querySelector("opencraft-embedded-workbench")).toBe(prepared);
     expect(screen.queryByText("Legacy AgentChat")).toBeNull();
     expect(screen.queryByRole("status")).toBeNull();
     expect(onSessionStateChange).toHaveBeenCalledWith(expect.objectContaining({

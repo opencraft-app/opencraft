@@ -173,22 +173,22 @@ Pass 升配微信桥通过精确的 `POST /v1/passes/{pass_id}/modify/order-url`
 
 - 双站 HTTP Repository 的网络错误 message 保持产品友好文案，供页面与 toast 展示；原始 fetch 异常仅保留在 Error.cause 供诊断，不能把 TypeError、CORS 或底层连接详情拼进用户可见消息。命令执行超时仍由原有 debug_exec_timeout 语义区分。
 
-### 国内控制台 Chat
+### 双站控制台 Chat
 
-OpenCraft Chat 在国内控制台默认加载，不依赖 `show()`；国内主 Bot 与其他 Bot 的对话均进入 OpenCraft，且不请求旧 AgentChat 启动 token。准备阶段只呈现中性聊天加载态，不挂载旧 AgentChat；就绪后显示 OpenCraft，连接异常保留同一会话并提供重试，首次资源加载失败提供重新加载入口。国际站继续使用 AgentChat，其他隐藏工具仍由 `show()` 控制；站点选择不替代服务端认证或资源归属校验。控制台认证 repository 在 token 替换/清除后广播不含 token 的 `lightclaw:auth-session-changed`，供同页内嵌消费者释放旧身份，跨标签仍由 storage 事件通知。制品复用同源 `/__opencraft/` 的现有发布链路。内嵌 Chat 不展示独立模型选择器，发送前读取当前 Bot/Profile 的 Hermes 默认模型；旧草稿模型与思考设置不得覆盖宿主配置，缺少可用默认模型时在发送前报错。
+OpenCraft Chat 在国内控制台默认加载；国际控制台的 Chat 入口与内嵌工作台由浏览器控制台 `show()` 的持久化开关控制，未开启时不挂载工作台或读取侧栏会话，再次执行 `show()` 会收起。启用后，两站主 Bot 与其他 Bot 的对话均进入 OpenCraft，且不请求旧 AgentChat 启动 token。准备阶段只呈现中性聊天加载态，不挂载旧 AgentChat；就绪后显示 OpenCraft，连接异常保留同一会话并提供重试，首次资源加载失败提供重新加载入口。其他隐藏工具仍由 `show()` 控制；站点选择不替代服务端认证或资源归属校验。控制台认证 repository 在 token 替换/清除后广播不含 token 的 `lightclaw:auth-session-changed`，供同页内嵌消费者释放旧身份，跨标签仍由 storage 事件通知。制品复用同源 `/__opencraft/` 的现有发布链路。内嵌 Chat 不展示独立模型选择器，发送前读取当前 Bot/Profile 的 Hermes 默认模型；旧草稿模型与思考设置不得覆盖宿主配置，缺少可用默认模型时在发送前报错。
 
-国内站 OpenCraft 会话侧栏为绝对定位的更多按钮预留独立空间，长标题在按钮前 8px 截断；该样式随 OpenCraft 启用条件生效。
+双站 OpenCraft 会话侧栏为绝对定位的更多按钮预留独立空间，长标题在按钮前 8px 截断；该样式随 OpenCraft 启用条件生效。
 
-内嵌 Chat 新会话的伙伴标题与输入占位文案覆盖控制台七套字典（en-US、zh-CN、zh-Hant、id-ID、es、ja-JP、ko-KR）；zh-SG 复用简体中文。额外语言由内嵌专用 catalog 注入，宿主 lang 变化沿现有 LocaleController 更新，不改变国际站功能启用条件或独立工作台语言列表。
+内嵌 Chat 新会话的伙伴标题与输入占位文案覆盖控制台七套字典（en-US、zh-CN、zh-Hant、id-ID、es、ja-JP、ko-KR）；zh-SG 复用简体中文。额外语言由内嵌专用 catalog 注入，宿主以当前路由语言配置工作台并在切换语言时调用 `setLocalization()`，保留会话和草稿；独立工作台语言列表不变。未翻译的通用工作台文案回落英文。
 
-国内站启用内嵌 Chat 时，加载、新会话和已有会话均不呈现宿主圆角外框。工作台保留已有会话标题、重命名入口和输入框，移除主内容表面的阴影。草稿状态仍由工作台拥有。
+双站启用内嵌 Chat 时，加载、新会话和已有会话均不呈现宿主圆角外框。工作台保留已有会话标题、重命名入口和输入框，移除主内容表面的阴影。草稿状态仍由工作台拥有。
 
-### 国内会话连接恢复
+### 双站会话连接恢复
 
 启用内嵌会话后，连接失败不再自动退回 AgentChat；由同一个 Host runtime 继续自动重连。
 宿主通过 opencraft-connection 投影连接状态，超过 30 秒显示网络/重试提示，提供重新连接按钮。
 已展示的会话组件不因连接错误卸载，保留当前页面内文字与附件；不承诺刷新/退出登录后的草稿恢复。
 首次资源加载失败允许重新加载组件，Bot/账号切换撤销旧回调。固定 Profile 连接尝试 90 秒超时并清理资源。
-国际站开关不变；这些变更不构成线上发布。
+这些变更不构成线上发布。
 
-国内 OpenCraft Chat 同时提供默认收起的右侧预览面板：网页标签和会话文件只读预览。国际站旧入口不变。网页受目标站点 iframe 策略约束，可使用外部打开入口；此能力不是 Hermes 远端浏览器画面。Bot/账号切换销毁整个内嵌 Application 及其内存网页元数据，文件读取沿当前 Host 归属执行；不新增实例文件系统权限隔离保证。
+双站 OpenCraft Chat 同时提供默认收起的右侧预览面板：网页标签和会话文件只读预览。网页受目标站点 iframe 策略约束，可使用外部打开入口；此能力不是 Hermes 远端浏览器画面。Bot/账号切换销毁整个内嵌 Application 及其内存网页元数据，文件读取沿当前 Host 归属执行；不新增实例文件系统权限隔离保证。

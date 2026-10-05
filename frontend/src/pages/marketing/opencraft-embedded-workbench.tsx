@@ -8,7 +8,6 @@ import {
 
 import { useT } from "@/i18n/t";
 import { ChatLoadingState } from "@/components/site/chat-loading-state";
-import { isCN } from "@/lib/region";
 
 import { AUTH_SESSION_CHANGED_EVENT, readStoredAuthToken } from "@/repositories/http-repositories";
 import { cn } from "@/lib/utils";
@@ -32,12 +31,14 @@ interface EmbeddedWorkbenchConfig {
   readonly instanceId: string;
   readonly profileId: string;
   readonly region: "cn" | "intl";
+  readonly localization?: { readonly ideLocale: string; readonly localeSource: "IDE" };
   readonly physicalConnection?: unknown;
 }
 
 interface EmbeddedWorkbenchElement extends HTMLElement {
   submitPrompt?(requestId: string, text: string): boolean;
   configure(config: EmbeddedWorkbenchConfig): void;
+  setLocalization?(options: { readonly ideLocale: string; readonly localeSource: "IDE" }): Promise<void>;
   prepare(): Promise<void>;
   reconnect?(): Promise<void>;
   show(): Promise<void>;
@@ -62,6 +63,7 @@ function isEmbeddedWorkbenchElement(element: HTMLElement): element is EmbeddedWo
 
 interface AgentChatMigrationSurfaceProps extends Omit<EmbeddedWorkbenchConfig, "getSessionToken"> {
   readonly active: boolean;
+  readonly locale?: string;
   readonly preloadSessions?: boolean;
   readonly agentPaused?: boolean;
   /** Explicit rollout authority. Route visibility alone must never adopt OpenCraft. */
@@ -114,6 +116,7 @@ export function AgentChatMigrationSurface({
   apiBase,
   enabled,
   instanceId,
+  locale,
   legacy,
   multiSession,
   onOwnerChange,
@@ -127,6 +130,8 @@ export function AgentChatMigrationSurface({
   const physicalConnection = useEmbeddedPhysicalConnectionPreparation();
   const physicalConnectionRef = useRef(physicalConnection);
   physicalConnectionRef.current = physicalConnection;
+  const localeRef = useRef(locale);
+  localeRef.current = locale;
   const [promptRevision, setPromptRevision] = useState(0);
   const mountRef = useRef<HTMLDivElement>(null);
   const legacyRef = useRef<HTMLDivElement>(null);
@@ -326,6 +331,7 @@ export function AgentChatMigrationSurface({
       element.addEventListener("opencraft-error", handleEmbeddedError);
       element.addEventListener("opencraft-connection", handleConnection);
       element.configure({ accountId, apiBase, instanceId, profileId, region, getSessionToken,
+        ...(localeRef.current ? { localization: { ideLocale: localeRef.current, localeSource: "IDE" as const } } : {}),
         physicalConnection: physicalConnectionRef.current ?? undefined });
       mount.append(element);
       await candidate.prepare();
@@ -371,6 +377,11 @@ export function AgentChatMigrationSurface({
       }
     };
   }, [accountId, apiBase, enabled, instanceId, profileId, region, sessionRevision, started]);
+
+  useEffect(() => {
+    if (!locale) return;
+    void elementRef.current?.setLocalization?.({ ideLocale: locale, localeSource: "IDE" }).catch(() => undefined);
+  }, [locale]);
 
   useEffect(() => {
     if (!active || !enabled || owner !== "opencraft" || connection.phase !== "ready") return;
@@ -440,17 +451,7 @@ export function AgentChatMigrationSurface({
           "absolute z-10 flex items-center justify-center gap-3 bg-white/95 px-4 py-3 text-sm text-black/60",
           presentedOwner === "loading" ? "inset-0 flex-col" : "inset-x-0 top-0 border-b border-black/[0.08]",
         )}>
-          {connectionMessage === null ? (isCN ? <ChatLoadingState /> : (
-            <span role="status">
-              <span className="sr-only">{t("正在加载会话…")}</span>
-              <span aria-hidden="true">
-                {t("正在加载会话…").replace(/(?:…|\.{3})$/u, "")}
-                <span className="inline-flex w-[1em] justify-between">{[0, 1, 2].map(dot => (
-                  <span key={dot} className="motion-safe:animate-pulse" style={{ animationDelay: `${dot * 200}ms`, animationDuration: "1.2s" }}>.</span>
-                ))}</span>
-              </span>
-            </span>
-          )) : <span role="status">{connectionMessage}</span>}
+          {connectionMessage === null ? <ChatLoadingState /> : <span role="status">{connectionMessage}</span>}
           {!agentPaused && (startupFailed || connectionSlow || connection.phase === "error" || presentedOwner === "opencraft") && (
             <button type="button" disabled={retrying} onClick={() => { void retryConnection(); }}
               className="shrink-0 rounded-md border border-black/15 px-3 py-1 text-black/80 hover:bg-black/5 disabled:opacity-50">
