@@ -6,10 +6,10 @@ triggers: ["云桌面合入", "cloud desktop master delivery", "云桌面源码�
 owner: wisp/mono2-maintainers
 authority: primary
 source_of_truth: ["opencraft/docs/cloud-desktop-plugin.md", "docs/engineering/domains/agent-gateway-runtime.md"]
-status: active
+status: retired
 reviewed_at: 2026-10-05
 review_due: 2027-01-03
-revision: 1.0.0
+revision: 1.1.0
 precedence: task
 derived: false
 ---
@@ -28,7 +28,7 @@ Desktop contract 与 Host Desktop capability、本机 Thread 授权服务、CTL 
 
 ## history_context
 current_design_refs：opencraft/docs/cloud-desktop-plugin.md、opencraft/docs/platform-architecture.md、docs/engineering/domains/agent-gateway-runtime.md、docs/engineering/journeys/agent-request-streaming.md。
-relevant_evolution：原实现工作区提交为 0f6b4f647；独立融合工作区以 origin/master ebba1eacf 为基线，保留主线 SSH、附件 staging、异步回答与全局焦点模型。首次融合提交 d7f35377a；推送前发现主线前进至 36871b713（移动导航 MR !4999），5 个 frontend/task 文件与桌面实现无重叠，另行无冲突融合并重验 Web 构建与 i18n。
+relevant_evolution：原实现工作区提交为 0f6b4f647；独立融合工作区以 origin/master ebba1eacf 为基线，保留主线 SSH、附件 staging、异步回答与全局焦点模型。首次融合提交 d7f35377a；推送前发现主线前进至 36871b713（移动导航 MR !4999），5 个 frontend/task 文件与桌面实现无重叠，另行无冲突融合并重验 Web 构建与 i18n。首次 master 推送因主线前进被正常拒绝，未强推；再融合 6e7c0f8c2（国际 Chat MR !5000，10 个 frontend/design/task 文件，无桌面代码重叠），形成 d40dc028a。
 superseded_refs：先前云桌面 Task Pack 仅为各阶段历史收据，不能作为当前线上版本证明。
 
 ## acceptance / validation
@@ -44,7 +44,7 @@ opencraft、ctl、sandbox、service-gateway、映射设计文档与本轮交付 
 独立 worktree 融合，不 reset/stash 用户工作区。13 处冲突按两边所有权保留而非选整份 ours/theirs。Desktop 仅加入 LocalCodexEngineOptions；RemoteCodexEngineOptions 不得到本机服务。共享原生 initialize 投影删除 desktop 扩展，测试注入伪造上游扩展并确认两客户端都不宣告；远端 create/release 也不能转发。正式设计保留主线 Bot/预热变更与新桌面段。Owner review 由平台执行，不绕过分支保护。
 
 ## evidence / handoff
-融合工作区已独立 npm ci，固定 noVNC 绘制/剪贴板事件补丁验证成功。CTL 全包、Sandbox 全包、Service Gateway internal/gateway 测试通过。融合后的 Codex adapter、SSH routing/native surface、headless 共 50 项通过；Web 构建通过，包含 rfb-DG7aOt7u.js。功能分支已推送；融合提交与 master 推送待核对。未部署。
+融合工作区已独立 npm ci，固定 noVNC 绘制/剪贴板事件补丁验证成功。CTL 全包、Sandbox 全包、Service Gateway internal/gateway 测试通过。融合后的 Codex adapter、SSH routing/native surface、headless 共 50 项通过；Web 构建通过，包含 rfb-DG7aOt7u.js。功能分支 0f6b4f647 和融合分支已推送；master 正常推送到 d40dc028a，ls-remote 确认同一完整提交，merge-base 确认它包含功能提交。未重启预览、未部署；此收据关闭提交另随 master 推送。
 
 - 完整 gate 通过 i18n、全 workspace typecheck、平台边界、92 项桌面测试及 Electron launch 后，在 pretest:extensions 的 pinned artifact 回滚断言失败；测试未回收资源而挂起，主动停止。独立未改动的 master ebba1eacf、独立 npm ci 复现同一 artifactRef 差异，60 秒截止退出 124。本轮未修改相关实现与测试，不把此门禁写成全绿。
 - 单独执行扩展主测试（明确不执行已失败的 pre-hook）221/221、协作 workspace 76/76 通过。其余 gate 各项逐一执行：connectors、appserver/SSH、projects、thread lifecycle、speech、AppServer lab、chat、workbench、shell、workspace presentation、environments、desktop login、headless、web release 全部通过；Web、Expo Web/iOS 构建通过。SSH 真实 runtime 用例有一个既有 skip，未当成执行通过。
@@ -54,8 +54,8 @@ opencraft、ctl、sandbox、service-gateway、映射设计文档与本轮交付 
 - 根 context 单测 27 项仍有 4 项失败，在未修改 master 的独立工作区同样复现；全局 validator 5810 项报错，其中既有 desktop-assessment 缺元数据，不属于此次暂存变更。新交付 Task Pack 和重建 catalog 报错 0；context audit 单测 33/33，发现报告 not_assessed，不伪造质量评分。
 
 ## checkpoint
-stage：功能分支已推送，融合树回归完成，等待提交并核对远端主线。
-verified：上述服务测试、桥接回归、Web/Expo 构建、桌面浏览器验收及基线失败对照；原始工作区仅留下既有 catalog 漂移。
-unverified：远端主线状态与平台 Owner review；完整 gate 有已复现的主线失败；生产 authority/executor/手机实机沿用前任务未验收边界。
+stage：源码提交、推送和 master 合入已完成，关闭交付收据。
+verified：上述服务测试、桥接回归、Web/Expo 构建、桌面浏览器验收及基线失败对照；远端 master 和功能提交包含关系；原始工作区仅留下既有 catalog 漂移。
+unverified：平台 CI/独立 Owner review 不以本地测试或服务器接受推送冒充；完整 gate 有已复现的主线失败；生产 authority/executor/手机实机沿用前任务未验收边界。
 discard：此前工作区测试不是本次融合树门禁，未用它替代当前验证；没有执行 GitOps MR 发布助手。
-next_action：提交融合并按保护规则推送，核对远端后关闭本任务收据。
+next_action：如用户另行授权，按维护流程替换预览；本轮只交付源码，不隐式执行运行时升级。
