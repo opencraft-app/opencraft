@@ -19,7 +19,6 @@ import { groupThreadsByActivityDate, sidebarActivityMetadata } from "../sidebar-
 import { NavigationIcon as SidebarContributionIcon, type NavigationAction as SidebarActionItem } from "./shell-navigation/navigation-action";
 import { SidebarActivityItem } from "./sidebar-activity-item";
 import { SidebarNavigationItem } from "./sidebar-navigation-item";
-import { LoadingSpinner } from "./ui/loading-spinner";
 import type { HostThreadCatalogState } from "../runtime/thread-catalog-query";
 export type { NavigationAction as SidebarActionItem } from "./shell-navigation/navigation-action";
 
@@ -126,10 +125,12 @@ export function Sidebar({
     : orderedThreads.filter((thread, index) =>
       index < 10 || `${thread.connectionHostId}:${thread.id}` === selectedThreadKey);
   const activityGroups = groupThreadsByActivityDate(visibleThreads);
+  const catalogLoading = threadCatalogDiscovery === "loading"
+    || threadCatalogs.some(catalog => catalog.phase === "loading");
   const feedback = [
-    ...(threadCatalogDiscovery ? [{ key: "discovery", phase: threadCatalogDiscovery, label: null, retry: onRetryThreadCatalogDiscovery }] : []),
-    ...threadCatalogs.filter(catalog => catalog.phase === "loading" || catalog.phase === "error").map(catalog => ({
-      key: `host:${catalog.hostId}`, phase: catalog.phase, label: catalog.label,
+    ...(threadCatalogDiscovery === "error" ? [{ key: "discovery", label: null, retry: onRetryThreadCatalogDiscovery }] : []),
+    ...threadCatalogs.filter(catalog => catalog.phase === "error").map(catalog => ({
+      key: `host:${catalog.hostId}`, label: catalog.label,
       retry: onRetryThreadCatalog ? () => onRetryThreadCatalog(catalog.hostId) : undefined,
     })),
   ];
@@ -181,25 +182,18 @@ export function Sidebar({
           <ExtensionCatalog key={catalog.id} catalog={catalog} />
         ))}
 
-        <section className="sidebar-tasks" aria-label="Tasks">
+        <section className="sidebar-tasks" aria-label="Tasks" aria-busy={catalogLoading}>
           {feedback.map(catalog => (
-            <div className="sidebar-catalog-feedback" key={catalog.key} role="status"
-              aria-label={catalog.phase === "loading" ? (catalog.label === null
-                ? intl.formatMessage({ id: "sidebar.catalog.discoveryLoading", defaultMessage: "Loading remote connections" })
-                : intl.formatMessage({ id: "sidebar.catalog.loading", defaultMessage: "Loading conversations from {server}" }, { server: catalog.label })) : undefined}>
-              {catalog.phase === "loading" ? (
-                <LoadingSpinner />
-              ) : <>
+            <div className="sidebar-catalog-feedback" key={catalog.key} role="status">
                 <span className="sidebar-catalog-feedback__message" title={catalog.label ?? undefined}>{catalog.label === null
                   ? intl.formatMessage({ id: "sidebar.catalog.discoveryError", defaultMessage: "Couldn't load remote connections" })
                   : intl.formatMessage({ id: "sidebar.catalog.error", defaultMessage: "Couldn't load {server} conversations" }, { server: catalog.label })}</span>
                 <button type="button" className="sidebar-catalog-feedback__retry" onClick={catalog.retry} disabled={!catalog.retry}>
                   {intl.formatMessage({ id: "sidebar.catalog.retry", defaultMessage: "Retry" })}
                 </button>
-              </>}
             </div>
           ))}
-          {activityGroups.length === 0 && feedback.length === 0 ? <div className="sidebar-activity-empty">{intl.formatMessage({ id: "sidebar.empty", defaultMessage: "No tasks yet" })}</div> : null}
+          {activityGroups.length === 0 && feedback.length === 0 && !catalogLoading ? <div className="sidebar-activity-empty">{intl.formatMessage({ id: "sidebar.empty", defaultMessage: "No tasks yet" })}</div> : null}
           <div className="sidebar-activity-list">
             {activityGroups.map(group => (
               <section className="sidebar-activity-group" key={group.key} aria-label={group.label}>
