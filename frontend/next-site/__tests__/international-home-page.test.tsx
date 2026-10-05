@@ -1105,6 +1105,7 @@ describe("international v2 homepage artifact", () => {
     expect(css).toContain(`${editorialSelector} .hero__line--main`);
     expect(css).toContain(`${editorialSelector} .about__head .k`);
     expect(css).not.toContain(`${editorialSelector} .scenes__title`);
+    expect(css).not.toContain(`${editorialSelector} .deploy__lead`);
     expect(css).toContain(`${editorialSelector} .cta__title`);
     expect(editorialSelector).not.toContain("data-locale^='zh'");
     expect(css).toMatch(/#lightvela-intl-home \.foot__title,[\s\S]*font-family:\s*"STXingkai"/);
