@@ -1201,9 +1201,9 @@ a {
 
 .lv-agents-session-list-actions {
   display: flex;
-  justify-content: space-between;
+  justify-content: center;
   gap: 8px;
-  padding: 8px 8px 4px 20px;
+  padding: 8px 8px 4px;
 }
 
 .lv-agents-session-list-actions button {
@@ -1212,10 +1212,6 @@ a {
   color: #596273;
   font-size: 12px;
   line-height: 20px;
-}
-
-.lv-agents-session-list-actions button:last-child {
-  margin-left: auto;
 }
 
 .lv-agents-session-list-actions button:hover:not(:disabled) {

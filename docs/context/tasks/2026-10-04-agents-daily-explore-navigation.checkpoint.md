@@ -35,6 +35,7 @@ MR !4969 的独立 worktree 中已完成日常/探索导航改造及会话列表
 - 会话分页 hook 聚焦测试 3/3、嵌入桥接 14/14、工作台 typecheck、前端 `pnpm check` 及双站构建通过；真实账号 15 条会话时未出现不必要的「查看更多」，更多条目的浏览器交互仍缺真实数据。
 - 当前 worktree 合并提交 `decb2cd2d` 包含 `origin/master@efc37fe08`；冲突仅在 OpenCraft 生成清单，已由 `sync:mono2-agent-console` 重生成，`check:mono2-agent-console` 通过。
 - 合并后的前端 `pnpm check`、63 项侧栏/分页与 23 项嵌入桥接聚焦测试、CN/global 构建通过。OpenCraft Web/Hermes typecheck、88 项 Hermes 与 30 项连接/导航测试、边界检查、嵌入工作台 release 构建通过。文档验证零错误零告警；构建附带的 `next-env.d.ts` 和字体子集改动已恢复。
+- 本轮会话列表操作行已居中：单独「查看更多」及并列「查看更多／收起」使用同一 flex 居中规则。`pnpm check`、CN/global 构建、OpenCraft 只读同步检查通过；Chrome/Whistle 已读到更新 CSS。当前真实账号只有 15 条会话，未出现分页按钮，视觉位置由布局规则验证。
 
 ## unverified
 
@@ -59,4 +60,4 @@ MR !4969 的独立 worktree 中已完成日常/探索导航改造及会话列表
 
 ## next_action
 
-检查暂存变更的 change-impact 与 diff；提交同步清单、守卫断言和本 checkpoint，推送原 MR 分支并确认远端冲突与 CI 状态。
+检查本轮居中样式的暂存 diff、change-impact 和文档门禁；提交并推送到原 MR !4969，核对远端状态。
