@@ -8,7 +8,7 @@ authority: primary
 source_of_truth:
   - opencraft/apps/workbench-web/src/styles/app.scss
   - opencraft/docs/chat-ui-architecture.md
-status: active
+status: complete
 reviewed_at: 2026-10-05
 review_due: 2026-11-05
 revision: 1.1.0
@@ -51,4 +51,6 @@ User: "改 然后提交推送合入maater". Fix long filenames painting over lin
 ## stage / handoff
 Implemented four basename boundary properties; no runtime state, data model or interaction changes. Four Review unit tests and Web typecheck passed. Web/preview-bridge build passed (5728 modules), retaining existing dynamic-import/chunk warnings. Browser regression passed all eight width/theme combinations, each with five real Conversation rows, full-path Review intent, accessible labels and expansion/collapse; a 390px negative control reproduces the original overlap with the old rules. No iPhone Safari or packaged Electron acceptance is claimed.
 
-Source delivery uses `fix/changed-file-path-boundary-20261005`; commit/push and fresh master ref verification are pending. Running preview is not replaced. No separate lint script exists in the touched Web workspace.
+Source fix committed as `3d20f20d2` and pushed on `fix/changed-file-path-boundary-20261005`. A concurrent master update required a normal conflict-free merge (`7888894a741438dea617ef4640b10581ef48ba1b`); it only brought independent devops files and did not change the validated OpenCraft source. Push plus fresh ls-remote confirmed both the fix branch and master at that merge. Ancestry checks retain the source fix and latest independent master `a70155855`. This final delivery receipt is a documentation-only follow-up. Running preview is not replaced. No separate lint script exists in the touched Web workspace.
+
+Documentation/link validation passed with zero errors, warnings or broken first-party links; staged documentation impact and whitespace checks passed. The full repository gate was not rerun for this scoped CSS fix. All unrelated original-worktree changes remain intact.
