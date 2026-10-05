@@ -19,6 +19,8 @@
 
 Headless OpenCraft 的入口校验先于运行时健康判断：包内 Web release 必须声明 headless 构建身份和 `opencraft-server` Host 入口，否则即使同包 Codex AppServer 可启动，也不应让 Host 认领数据目录并对外提供 Web。打包、包级 smoke 和服务启动复用这一不变量；不要把通用 Web 构建的进程健康误判为 Codex 会话可用。
 
+SSH Codex 恢复仍遵循原生 Turn/Item 分页，不因 SSH 传输丢失历史方法或上游 metadata。共享 broker 的方法准入清单同时约束 Runtime 和 Composer；准入不是上游实现保证，尚无远端所有权的本机队列、附件及连接句柄不得假冒远端能力。偏好只在可用动作中选择：只有原生 Steer 时，排队偏好不制造 Queue 请求；拒绝早于草稿与乐观队列收养。目录发现由 Application 单飞恢复，页面挂载不拥有连接/后台恢复生命周期。详见 [SSH Codex Servers](../../../opencraft/docs/ssh-codex-servers.md#ownership-and-supported-surface)。
+
 OpenCraft 的 Codex Account Pool 在 Host 本机回环地址转发 Responses 请求，接收正文上限为 32 MiB。超限时读完并丢弃剩余正文，再返回明确的 HTTP 413；不把本地大小拒绝呈现成流式连接中断，也不将超限正文送往模型上游。
 
 ## 验证

@@ -1,10 +1,175 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { SshConnectionsController } from "../plugins/builtin-agents/src/ssh-connections/controller.js";
+import { SshConnectionsController, type SshDiscoveryLifecycle } from "../plugins/builtin-agents/src/ssh-connections/controller.js";
 
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(r => { resolve = r; }); return { promise, resolve }; }
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json" } });
 const row = { serverId: "ssh:fixture", revision: 1, displayName: "Fixture", hostname: "fixture.invalid", port: 22, username: "fixture", enabled: true, workspaceBrowseRoots: ["/remote"], fingerprint: `SHA256:${"a".repeat(43)}`, state: "idle" } as const;
+
+const flush = () => new Promise<void>(resolve => setImmediate(resolve));
+function discoveryClock() {
+  let active = true;
+  const wakes = new Set<() => void>();
+  const timers = new Map<number, { run: () => void; delay: number }>();
+  let sequence = 0;
+  const lifecycle: SshDiscoveryLifecycle = {
+    isActive: () => active,
+    subscribeWake(listener) { wakes.add(listener); return () => { wakes.delete(listener); }; },
+    schedule(run, delay) { const id = ++sequence; timers.set(id, { run, delay }); return () => { timers.delete(id); }; },
+  };
+  return { lifecycle, timers, wakes,
+    setActive(value: boolean) { active = value; },
+    async wake() { for (const listener of wakes) listener(); await flush(); },
+    async tick() { const entry = [...timers.entries()][0]; assert.ok(entry, "one read-completion timer must be pending"); timers.delete(entry[0]); entry[1].run(); await flush(); },
+  };
+}
+
+test("Application discovery recovers a failed startup without mounting Settings or dialing a Server", async () => {
+  const clock = discoveryClock(), methods: string[] = []; let unavailable = true;
+  const controller = new SshConnectionsController(async (input, init) => {
+    methods.push(`${init?.method ?? "GET"} ${input}`);
+    if (unavailable) throw new Error("synthetic offline startup");
+    if (String(input).endsWith("/session")) return json({ available: true, authenticated: true });
+    return json(String(input).endsWith("/legacy-connections") ? [] : [row]);
+  });
+  try {
+    await controller.startDiscovery(clock.lifecycle);
+    assert.equal(controller.getSnapshot().available, null); assert.ok(controller.getSnapshot().error);
+    assert.equal([...clock.timers.values()][0]?.delay, 10000);
+    unavailable = false; await clock.tick();
+    assert.equal(controller.getSnapshot().error, null);
+    assert.equal(controller.getSnapshot().items[0]?.state, "idle");
+    assert.equal(clock.timers.size, 1); assert.equal([...clock.timers.values()][0]?.delay, 5000);
+    await controller.startDiscovery(clock.lifecycle);
+    assert.equal(clock.wakes.size, 1, "starting the owner twice cannot create another poller");
+    assert.ok(methods.every(method => method.startsWith("GET ")), "discovery never connects/reconnects or replays mutations");
+  } finally { controller.dispose(); }
+  assert.equal(clock.wakes.size, 0); assert.equal(clock.timers.size, 0);
+});
+
+test("wake events and manual retry join one slow read instead of cancelling each other", async () => {
+  const clock = discoveryClock(), gate = deferred<Response>(); let reads = 0;
+  const controller = new SshConnectionsController(async input => {
+    if (String(input).endsWith("/session")) { reads++; return gate.promise; }
+    return json([]);
+  });
+  try {
+    const start = controller.startDiscovery(clock.lifecycle);
+    await flush();
+    const first = controller.refresh(), second = controller.refresh();
+    assert.equal(first, second);
+    await clock.wake(); await clock.wake();
+    assert.equal(reads, 1); assert.equal(clock.timers.size, 0);
+    gate.resolve(json({ available: true, authenticated: false })); await start;
+    assert.equal(clock.timers.size, 1); assert.equal(controller.getSnapshot().error, null);
+  } finally { controller.dispose(); }
+});
+
+test("discovery pauses in inactive pages and refreshes immediately on return", async () => {
+  const clock = discoveryClock(); let reads = 0;
+  const controller = new SshConnectionsController(async () => { reads++; return json({ available: true, authenticated: false }); });
+  try {
+    await controller.startDiscovery(clock.lifecycle);
+    clock.setActive(false); await clock.wake();
+    assert.equal(clock.timers.size, 0); assert.equal(reads, 1);
+    clock.setActive(true); await clock.wake();
+    assert.equal(reads, 2); assert.equal(clock.timers.size, 1);
+  } finally { controller.dispose(); }
+});
+
+test("discovery backoff is capped, and unsupported backends stop periodic reads", async () => {
+  const clock = discoveryClock(); let unsupported = false;
+  const controller = new SshConnectionsController(async () => {
+    if (unsupported) return json({}, 404);
+    throw new Error("synthetic prolonged outage");
+  });
+  try {
+    await controller.startDiscovery(clock.lifecycle);
+    for (const expected of [10000, 20000, 30000, 30000]) {
+      assert.equal([...clock.timers.values()][0]?.delay, expected); await clock.tick();
+    }
+    unsupported = true; await clock.wake();
+    assert.equal(controller.getSnapshot().available, false); assert.equal(clock.timers.size, 0);
+  } finally { controller.dispose(); }
+});
+
+test("dispose aborts the in-flight discovery and fences a signal-ignoring late reply", async () => {
+  const clock = discoveryClock(), gate = deferred<Response>(); let signal: AbortSignal | null = null, reads = 0;
+  const controller = new SshConnectionsController(async (_input, init) => { reads++; signal = init?.signal ?? null; return gate.promise; });
+  const start = controller.startDiscovery(clock.lifecycle); await flush();
+  controller.dispose(); assert.equal((signal as AbortSignal | null)?.aborted, true);
+  gate.resolve(json({ available: true, authenticated: true })); await start;
+  await clock.wake(); await controller.refresh();
+  assert.equal(reads, 1); assert.equal(controller.getSnapshot().available, null);
+  assert.equal(clock.timers.size, 0); assert.equal(clock.wakes.size, 0);
+});
+
+test("background reads cannot race an unresolved authorization change", async () => {
+  const clock = discoveryClock(), gate = deferred<Response>(); let authenticated = true, reads = 0;
+  const controller = new SshConnectionsController(async (input, init) => {
+    if (init?.method === "DELETE") return gate.promise;
+    reads++;
+    if (String(input).endsWith("/session")) return json({ available: true, authenticated });
+    return json(String(input).endsWith("/legacy-connections") ? [] : [row]);
+  });
+  try {
+    await controller.startDiscovery(clock.lifecycle); const before = reads;
+    const lock = controller.lock(); await clock.wake(); await controller.refresh();
+    assert.equal(reads, before, "no background GET while logout acknowledgement is outstanding");
+    authenticated = false; gate.resolve(json({})); await lock; await clock.wake();
+    assert.equal(controller.getSnapshot().authenticated, false); assert.deepEqual(controller.getSnapshot().items, []);
+    assert.equal(reads, before + 1, "a locked page may read session status, never private rows");
+  } finally { controller.dispose(); }
+});
+
+test("periodic session expiry advances authorization incarnation and clears private history", async () => {
+  const clock = discoveryClock(); let authenticated = true;
+  const controller = new SshConnectionsController(async input => {
+    if (String(input).endsWith("/session")) return json({ available: true, authenticated });
+    return json(String(input).endsWith("/legacy-connections") ? [] : [row]);
+  });
+  try {
+    await controller.startDiscovery(clock.lifecycle); const incarnation = controller.getAuthorizationEpoch();
+    authenticated = false; await clock.tick();
+    assert.equal(controller.getSnapshot().authenticated, false); assert.deepEqual(controller.getSnapshot().items, []);
+    assert.ok(controller.getAuthorizationEpoch() > incarnation);
+  } finally { controller.dispose(); }
+});
+
+test("post-command status refresh supersedes an earlier held poll, without replaying the command", async () => {
+  const gate = deferred<Response>(); let hold = false, connected = false, writes = 0;
+  const controller = new SshConnectionsController(async (input, init) => {
+    if (init?.method === "POST") { connected = true; writes++; return json({}); }
+    if (String(input).endsWith("/session")) return json({ available: true, authenticated: true });
+    if (String(input).endsWith("/legacy-connections")) return json([]);
+    if (hold && !connected) return gate.promise; // Old server response deliberately ignores cancellation.
+    return json([{ ...row, state: connected ? "open" : "idle" }]);
+  });
+  try {
+    await controller.refresh(); hold = true;
+    const earlierPoll = controller.refresh(); await flush();
+    await controller.connect(row);
+    assert.equal(controller.getSnapshot().items[0]?.state, "open");
+    gate.resolve(json([row])); await earlierPoll;
+    assert.equal(controller.getSnapshot().items[0]?.state, "open"); assert.equal(writes, 1);
+  } finally { controller.dispose(); }
+});
+
+test("temporary polling failure keeps the last valid source projection until successful recovery", async () => {
+  const clock = discoveryClock(); let unavailable = false;
+  const controller = new SshConnectionsController(async input => {
+    if (unavailable) throw new Error("synthetic network loss");
+    if (String(input).endsWith("/session")) return json({ available: true, authenticated: true });
+    return json(String(input).endsWith("/legacy-connections") ? [] : [row]);
+  });
+  try {
+    await controller.startDiscovery(clock.lifecycle); const incarnation = controller.getAuthorizationEpoch();
+    unavailable = true; await clock.tick();
+    assert.equal(controller.getSnapshot().authenticated, true); assert.ok(controller.getSnapshot().error);
+    assert.deepEqual(controller.getSnapshot().items, [row]); assert.equal(controller.getAuthorizationEpoch(), incarnation);
+    unavailable = false; await clock.wake(); assert.equal(controller.getSnapshot().error, null);
+  } finally { controller.dispose(); }
+});
 
 test("SSH controller uses a browser-compatible fetch call and never retains credentials", async () => {
   const previous = globalThis.fetch; const bodies: string[] = [];

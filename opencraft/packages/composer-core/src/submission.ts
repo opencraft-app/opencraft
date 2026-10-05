@@ -16,6 +16,15 @@ export interface ResolveComposerPrimaryActionOptions {
   readonly isResponseInProgress: boolean;
   readonly canSubmit: boolean;
   readonly defaultFollowUpAction: ComposerFollowUpAction;
+  readonly availableFollowUpActions?: readonly ComposerFollowUpAction[];
+}
+
+/** Preferences choose among admitted operations; they never create abilities. */
+export function resolveComposerFollowUpAction(
+  preferred: ComposerFollowUpAction,
+  available: readonly ComposerFollowUpAction[] = ["queue", "steer"],
+): ComposerFollowUpAction | null {
+  return available.includes(preferred) ? preferred : available[0] ?? null;
 }
 
 /**
@@ -27,9 +36,10 @@ export function resolveComposerPrimaryAction({
   isResponseInProgress,
   canSubmit,
   defaultFollowUpAction,
+  availableFollowUpActions,
 }: ResolveComposerPrimaryActionOptions): ComposerPrimaryAction {
   if (!isResponseInProgress) return "send";
-  return canSubmit ? defaultFollowUpAction : "stop";
+  return canSubmit ? resolveComposerFollowUpAction(defaultFollowUpAction, availableFollowUpActions) ?? "stop" : "stop";
 }
 
 export function invertComposerFollowUpAction(

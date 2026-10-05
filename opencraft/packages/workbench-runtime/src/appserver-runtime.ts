@@ -51,6 +51,7 @@ import {
   supportsAtomicQueuedSteer,
   supportsUnconfirmedSteerDiscard,
   parseThreadGoalCapability,
+  allowsAppServerMethod,
 } from "@opencraft/appserver-protocol";
 import { OPENCRAFT_RESUME_HISTORY_EXTENSION } from "@opencraft/appserver-protocol";
 import { reasoningCapability, modelInputModalities } from "@opencraft/composer-core";
@@ -271,6 +272,8 @@ export interface AppServerProjectResourcePort {
 /** Host-scoped facts and capabilities; it never owns Conversation state. */
 export interface AppServerHostResourcePort {
   getInitializeResult(): AppServerInitializeResponse | null;
+  /** Bridge admission only; native rejection still remains authoritative. */
+  canRequest?(method: AppServerMethod): boolean;
   getConnectionGeneration?(): number;
   /**
    * Fetches an HTTP endpoint in the physical Host's loopback namespace.
@@ -631,6 +634,13 @@ export function createAppServerWorkbenchRuntime(
     return client;
   };
 
+  const canRequest = (method: AppServerMethod): boolean => allowsAppServerMethod(
+    client?.initializeResult?.capabilities?.extensions, method,
+  );
+  const assertMethodAccess = (method: AppServerMethod): void => {
+    if (!canRequest(method)) throw new Error("此连接暂不支持该操作");
+  };
+
   const requireSession = (): CordisThreadSessionRuntime => {
     if (session === null) throw new Error("AppServer Session has not started");
     return session;
@@ -915,6 +925,7 @@ export function createAppServerWorkbenchRuntime(
         });
       });
       const refreshQueue = (): Promise<void> => {
+        if (!canRequest("thread/queue/list")) return Promise.resolve();
         if (binding.queueRefreshOperation !== null) {
           binding.queueRefreshRequested = true;
           return binding.queueRefreshOperation;
@@ -1246,6 +1257,7 @@ export function createAppServerWorkbenchRuntime(
       commandPort = createAppServerConversationCommandPort({
         hostId,
         client,
+        canRequest,
         interactions,
         queueAtomicSteer: supportsAtomicQueuedSteer(
           client.initializeResult?.capabilities?.extensions?.[OPENCRAFT_THREAD_QUEUE_EXTENSION],
@@ -1339,11 +1351,13 @@ export function createAppServerWorkbenchRuntime(
     resources: {
       protocol: {
         request(method, params) {
+          assertMethodAccess(method);
           return requireClient().request(method, params);
         },
       },
       goals,
       host: {
+        canRequest: method => client?.initializeResult != null && canRequest(method),
         getConnectionGeneration() { return client?.connectionGeneration ?? 0; },
         getInitializeResult() {
           return client?.initializeResult ?? null;
@@ -1444,6 +1458,10 @@ export function createAppServerWorkbenchRuntime(
             limit: 30,
             sortDirection: "desc",
             sortKey: "updated_at",
+            // SSH Codex discovery is a hot catalog read, not a filesystem
+            // reconciliation. Keep the policy here so all catalog consumers
+            // share it; an explicit repair caller can still override it.
+            ...(config.hostKind === "remote-ssh" ? { useStateDbOnly: true } : {}),
             ...params,
           });
           const defaultCatalog = Object.keys(params).every(key => key === "cursor" || key === "limit")
@@ -1514,6 +1532,7 @@ export function createAppServerWorkbenchRuntime(
           return requireClient().request("fs/writeFile", { path, dataBase64 });
         },
         async watch(path, listener) {
+          assertMethodAccess("fs/watch");
           const watchId = `opencraft:${hostId}:fs:${++fileSystemWatchSequence}`;
           fileSystemWatches.set(watchId, { path, listener });
           let response: FsWatchResponse;
@@ -1536,6 +1555,7 @@ export function createAppServerWorkbenchRuntime(
           };
         },
         createFuzzyFileSearchSession(options) {
+          assertMethodAccess("fuzzyFileSearch/sessionStart");
           if (fuzzyFileSearch === null) {
             return Promise.reject(
               new Error("AppServer fuzzy file search is unavailable"),
@@ -1594,6 +1614,7 @@ export function createAppServerWorkbenchRuntime(
           };
         },
         async writeNewThreadDefaults(defaults) {
+          assertMethodAccess("config/batchWrite");
           await requireClient().request("config/batchWrite", {
             edits: [
               { keyPath: "model", value: defaults.model, mergeStrategy: "replace" },
@@ -1609,6 +1630,7 @@ export function createAppServerWorkbenchRuntime(
           });
         },
         async listSkills(params = {}) {
+          assertMethodAccess("skills/list");
           return requireClient().request("skills/list", {
             cwds: [],
             forceReload: false,
@@ -1616,6 +1638,7 @@ export function createAppServerWorkbenchRuntime(
           });
         },
         createFuzzyFileSearchSession(options) {
+          assertMethodAccess("fuzzyFileSearch/sessionStart");
           if (fuzzyFileSearch === null) {
             return Promise.reject(
               new Error("AppServer fuzzy file search is unavailable"),
@@ -1631,14 +1654,17 @@ export function createAppServerWorkbenchRuntime(
       },
       terminal: {
         attach(processId) {
+          assertMethodAccess("process/attach");
           if (phase !== "ready" || terminalController === null) throw new Error("Terminal Host is not ready");
           return terminalController.attach(processId);
         },
         list() {
+          assertMethodAccess("process/list");
           if (phase !== "ready" || terminalController === null) throw new Error("Terminal Host is not ready");
           return terminalController.list();
         },
         open(options) {
+          assertMethodAccess("process/spawn");
           if (phase !== "ready") {
             throw new Error(`AppServer Host is not ready for a terminal (${phase})`);
           }
@@ -1776,6 +1802,10 @@ export function createAppServerWorkbenchRuntime(
         },
         submit: (intent) =>
           runBindingCommand(binding, async () => {
+            // Refuse before Conversation adopts the immutable draft/optimistic
+            // queue. Transport failure after adoption is a different boundary.
+            assertMethodAccess(intent.target.type === "enqueue-follow-up" ? "thread/queue/add"
+              : intent.target.type === "steer-active-turn" ? "turn/steer" : "turn/start");
             const receipt = await binding.runtime.submit(intent);
             if (receipt.turnId !== null)
               retainAcceptedTurn(binding, receipt.turnId);

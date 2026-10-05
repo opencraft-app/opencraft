@@ -4,6 +4,7 @@ import { createInterface, type Interface as ReadLineInterface } from "node:readl
 import { join } from "node:path";
 import { CodexHostQueue, type HostQueuedSubmission } from "./codex-host-queue.js";
 import { CodexMessageAttachments } from "./codex-message-attachments.js";
+import { CODEX_NATIVE_SHARED_METHODS, projectSharedNativeCodexInitialize } from "./codex-native-surface.js";
 import { projectCodexAttachmentNotification, projectCodexAttachmentResult } from "./codex-message-attachment-projection.js";
 
 import type { DuplexTransport, TransportStatus } from "@opencraft/appserver-client/transport";
@@ -83,17 +84,7 @@ export interface RemoteCodexEngineOptions extends SharedCodexRoutingOptions {
   readonly transport: DuplexTransport;
 }
 
-// These are connection-independent native RPCs. Connection-scoped command,
-// watch/search sessions and OpenCraft-local extensions need their own routing
-// contract before they can be exposed on a shared remote connection.
-const REMOTE_CODEX_METHODS = new Set([
-  "model/list", "config/read", "configRequirements/read", "permissionProfile/list",
-  "thread/list", "thread/read", "thread/items/list", "thread/loaded/list",
-  "thread/start", "thread/resume", "thread/fork", "thread/unsubscribe",
-  "thread/name/set", "thread/archive", "thread/unarchive", "thread/compact/start",
-  "turn/start", "turn/steer", "turn/interrupt",
-  "fs/readDirectory", "fs/getMetadata", "fs/readFile", "fs/writeFile", "fs/createDirectory",
-]);
+const SHARED_NATIVE_METHODS: ReadonlySet<string> = new Set(CODEX_NATIVE_SHARED_METHODS);
 
 function record(value: unknown): RpcRecord {
   return value && typeof value === "object" && !Array.isArray(value) ? value as RpcRecord : {};
@@ -361,7 +352,7 @@ export class CodexEngineAdapter implements DuplexTransport {
       return;
     }
     const id = responseId(message.id);
-    if (this.options.kind === "remote" && typeof message.method === "string" && !REMOTE_CODEX_METHODS.has(message.method)) {
+    if (this.options.kind === "remote" && typeof message.method === "string" && !SHARED_NATIVE_METHODS.has(message.method)) {
       if (id !== null) this.emit({ id, error: { code: -32601, message: "This operation is unavailable on the remote connection" } }, clientId);
       return;
     }
@@ -621,9 +612,7 @@ export class CodexEngineAdapter implements DuplexTransport {
           if ("result" in message) {
             this.initializeResult = this.attachmentStaging
               ? withCodexHostCapabilities(message.result, this.attachmentStaging.capability)
-              : { ...record(message.result), capabilities: { extensions: {
-                [OPENCRAFT_THREAD_START_DURABILITY_EXTENSION]: OPENCRAFT_FIRST_TURN_DURABILITY_CAPABILITY,
-              } } };
+              : projectSharedNativeCodexInitialize(message.result);
             message = { ...message, result: this.initializeResult };
             void this.writePhysical({ method: "initialized", params: {} })?.catch(() => undefined);
           }

@@ -10,6 +10,13 @@ const messages: Record<string, string> = {
   missing: "连接已被移除，请刷新列表。", trust: "请重新核对服务器身份。", unavailable: "暂时无法连接，请稍后重试。",
 };
 
+/** The Application supplies platform wake events and timers, never a View. */
+export interface SshDiscoveryLifecycle {
+  isActive(): boolean;
+  subscribeWake(listener: () => void): () => void;
+  schedule(listener: () => void, delayMs: number): () => void;
+}
+
 /** Application-owned backend projection. View drafts and credentials are not retained here. */
 export class SshConnectionsController {
   private snapshot: SshConnectionSnapshot = { available: null, authenticated: false, items: [], legacyServers: [], refreshing: false, error: null };
@@ -18,32 +25,91 @@ export class SshConnectionsController {
   private authEpoch = 0;
   private closed = false;
   private readAbort: AbortController | null = null;
+  private refreshOperation: Promise<void> | null = null;
+  private stopDiscovery: (() => void) | null = null;
+  private readFailures = 0;
+  private authorizationChanges = 0;
   private readonly operations = new Set<AbortController>();
   constructor(private readonly fetcher: typeof fetch = (input, init) => globalThis.fetch(input, init)) {}
   getSnapshot = () => this.snapshot;
   /** Process-local authorization incarnation; never a credential or a lease. */
   getAuthorizationEpoch = () => this.authEpoch;
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
-  async refresh(): Promise<void> {
+  startDiscovery(lifecycle: SshDiscoveryLifecycle): Promise<void> {
+    if (this.closed || this.stopDiscovery) return this.refreshOperation ?? Promise.resolve();
+    let stopped = false;
+    let cancelScheduled: (() => void) | null = null;
+    const poll = (): Promise<void> => {
+      cancelScheduled?.(); cancelScheduled = null;
+      if (stopped || this.closed || !lifecycle.isActive() || this.snapshot.available === false) return Promise.resolve();
+      return this.refresh().then(() => {
+        if (stopped || this.closed || !lifecycle.isActive() || this.snapshot.available === false) return;
+        cancelScheduled?.();
+        // Completion-based polling cannot interrupt a slow read. Temporary
+        // failures back off, but a foreground/online hint can probe sooner.
+        const delayMs = Math.min(5000 * 2 ** Math.min(this.readFailures, 3), 30000);
+        cancelScheduled = lifecycle.schedule(() => { void poll(); }, delayMs);
+      });
+    };
+    const unsubscribe = lifecycle.subscribeWake(() => { void poll(); });
+    this.stopDiscovery = () => { stopped = true; cancelScheduled?.(); unsubscribe(); };
+    return poll();
+  }
+  refresh(): Promise<void> {
+    if (this.closed || this.authorizationChanges > 0) return Promise.resolve();
+    if (this.refreshOperation) return this.refreshOperation;
     const epoch = ++this.epoch;
     this.readAbort?.abort(); const abort = new AbortController(); this.readAbort = abort;
+    const operation = Promise.resolve().then(() => this.readSnapshot(epoch, abort)).finally(() => {
+      if (this.refreshOperation === operation) this.refreshOperation = null;
+    });
+    this.refreshOperation = operation;
+    return operation;
+  }
+  private async readSnapshot(epoch: number, abort: AbortController): Promise<void> {
+    if (epoch !== this.epoch || this.closed) return;
     this.publish({ ...this.snapshot, refreshing: true });
     try {
       const response = await this.fetcher("/__opencraft_ssh/session", { credentials: "same-origin", cache: "no-store", signal: AbortSignal.any([abort.signal, AbortSignal.timeout(5000)]) });
-      if (response.status === 404) { if (epoch === this.epoch && !this.closed) this.publish({ available: false, authenticated: false, items: [], legacyServers: [], refreshing: false, error: null }); return; }
+      if (response.status === 404) {
+        if (epoch === this.epoch && !this.closed) {
+          if (this.snapshot.authenticated) ++this.authEpoch;
+          this.readFailures = 0;
+          this.publish({ available: false, authenticated: false, items: [], legacyServers: [], refreshing: false, error: null });
+        }
+        return;
+      }
       const session: unknown = await response.json();
       if (!response.ok || !session || typeof session !== "object" || !("available" in session) || session.available !== true || !("authenticated" in session) || typeof session.authenticated !== "boolean") throw new Error("bad-session");
+      if (epoch !== this.epoch || this.closed) return;
       const [records, legacy] = session.authenticated ? await Promise.all([this.request("connections", "GET", undefined, abort.signal), this.request("legacy-connections", "GET", undefined, abort.signal)]) : [[], []];
       const items = parseSshConnectionViews(records), legacyServers = parseSshCodexServerDescriptors(legacy);
-      if (epoch === this.epoch && !this.closed) this.publish({ available: true, authenticated: session.authenticated, items, legacyServers, refreshing: false, error: null });
+      if (epoch === this.epoch && !this.closed) {
+        if (this.snapshot.authenticated !== session.authenticated) ++this.authEpoch;
+        this.readFailures = 0;
+        this.publish({ available: true, authenticated: session.authenticated, items, legacyServers, refreshing: false, error: null });
+      }
     } catch {
-      if (epoch === this.epoch && !this.closed) this.publish({ ...this.snapshot, refreshing: false, error: "无法刷新连接，请稍后重试。" });
+      if (epoch === this.epoch && !this.closed) {
+        ++this.readFailures;
+        this.publish({ ...this.snapshot, refreshing: false, error: "无法刷新连接，请稍后重试。" });
+      }
     }
   }
-  async unlock(accessKey: string) { ++this.authEpoch; ++this.epoch; this.readAbort?.abort(); await this.request("session", "POST", { accessKey }); await this.refresh(); }
+  private invalidateReads() { ++this.epoch; this.readAbort?.abort(); this.refreshOperation = null; }
+  private refreshAfterMutation() { this.invalidateReads(); return this.refresh(); }
+  async unlock(accessKey: string) {
+    const authEpoch = ++this.authEpoch; this.invalidateReads(); ++this.authorizationChanges;
+    try { await this.request("session", "POST", { accessKey }); }
+    finally { --this.authorizationChanges; }
+    if (authEpoch === this.authEpoch && !this.closed) await this.refresh();
+  }
   async lock() {
-    ++this.authEpoch; ++this.epoch; this.readAbort?.abort();
-    await this.request("session", "DELETE"); ++this.epoch; this.readAbort?.abort();
+    const authEpoch = ++this.authEpoch; this.invalidateReads(); ++this.authorizationChanges;
+    try { await this.request("session", "DELETE"); }
+    finally { --this.authorizationChanges; }
+    if (authEpoch !== this.authEpoch || this.closed) return;
+    this.invalidateReads();
     this.publish({ ...this.snapshot, authenticated: false, items: [], legacyServers: [], refreshing: false, error: null });
   }
   async probe(hostname: string, port: number): Promise<{ challengeId: string; fingerprint: string }> {
@@ -53,7 +119,7 @@ export class SshConnectionsController {
   }
   async save(row: SshConnectionView | null, input: SshConnectionEdit, trust?: { challengeId: string; fingerprint: string }) {
     await this.request(`connections${row ? `/${row.serverId}` : ""}`, row ? "PUT" : "POST", { revision: row?.revision ?? 0, input, ...trust });
-    await this.refresh();
+    await this.refreshAfterMutation();
   }
   async toggle(row: SshConnectionView, enabled: boolean) {
     const { displayName, hostname, port, username, workspaceBrowseRoots } = row;
@@ -61,14 +127,14 @@ export class SshConnectionsController {
   }
   async reconnect(row: SshConnectionView) {
     try { await this.request(`connections/${row.serverId}/reconnect`, "POST", { revision: row.revision }); }
-    finally { await this.refresh(); }
+    finally { await this.refreshAfterMutation(); }
   }
   async connect(row: SshConnectionView) {
     try { await this.request(`connections/${row.serverId}/connect`, "POST", { revision: row.revision }); }
-    finally { await this.refresh(); }
+    finally { await this.refreshAfterMutation(); }
   }
-  async remove(row: SshConnectionView) { await this.request(`connections/${row.serverId}`, "DELETE", { revision: row.revision }); await this.refresh(); }
-  dispose() { this.closed = true; ++this.epoch; this.readAbort?.abort(); for (const abort of this.operations) abort.abort(); this.operations.clear(); this.listeners.clear(); }
+  async remove(row: SshConnectionView) { await this.request(`connections/${row.serverId}`, "DELETE", { revision: row.revision }); await this.refreshAfterMutation(); }
+  dispose() { this.closed = true; this.stopDiscovery?.(); this.stopDiscovery = null; this.invalidateReads(); for (const abort of this.operations) abort.abort(); this.operations.clear(); this.listeners.clear(); }
   private async request(path: string, method: string, data?: unknown, signal?: AbortSignal): Promise<unknown> {
     if (this.closed) throw new Error("连接页面已关闭。");
     const authEpoch = this.authEpoch;
@@ -79,7 +145,7 @@ export class SshConnectionsController {
         signal: AbortSignal.any([abort.signal, ...(signal ? [signal] : []), AbortSignal.timeout(12000)]) });
       const result: unknown = await response.json();
       if (!response.ok) {
-        if (response.status === 401 && authEpoch === this.authEpoch) { ++this.authEpoch; ++this.epoch; this.readAbort?.abort(); this.publish({ ...this.snapshot, authenticated: false, items: [], legacyServers: [], refreshing: false }); }
+        if (response.status === 401 && authEpoch === this.authEpoch) { ++this.authEpoch; this.invalidateReads(); this.publish({ ...this.snapshot, authenticated: false, items: [], legacyServers: [], refreshing: false, error: null }); }
         const code = result && typeof result === "object" && "error" in result && typeof result.error === "string" ? result.error : "unavailable";
         throw new Error(messages[code] ?? messages.unavailable);
       }

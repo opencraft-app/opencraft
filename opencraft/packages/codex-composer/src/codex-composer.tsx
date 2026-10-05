@@ -69,6 +69,7 @@ import {
   encodeComposerTarget,
   invertComposerFollowUpAction,
   resolveComposerPrimaryAction,
+  resolveComposerFollowUpAction,
   shouldSearchComposerCatalog,
   type ComposerAttachment,
   type ComposerCatalog,
@@ -703,6 +704,7 @@ export interface CodexComposerProps {
   effectiveSelections?: ComposerEffectiveSelections;
   executionTarget?: ComposerExecutionTarget;
   defaultFollowUpAction?: ComposerFollowUpAction;
+  availableFollowUpActions?: readonly ComposerFollowUpAction[];
   /** Thread-owned queue projection. The Composer only renders this state. */
   queuedSubmissions?: readonly ComposerQueuedSubmissionPresentation[];
   supportsQueuedSteer?: boolean;
@@ -759,7 +761,8 @@ export const CodexComposer = forwardRef<
     selectionCatalog,
     effectiveSelections,
     executionTarget,
-    defaultFollowUpAction = "queue",
+    defaultFollowUpAction: preferredFollowUpAction = "queue",
+    availableFollowUpActions,
     queuedSubmissions = [],
     supportsQueuedSteer = false,
     onUpdateQueuedSubmission,
@@ -775,6 +778,8 @@ export const CodexComposer = forwardRef<
   },
   forwardedRef,
 ) {
+  const admittedFollowUpAction = resolveComposerFollowUpAction(preferredFollowUpAction, availableFollowUpActions);
+  const defaultFollowUpAction = admittedFollowUpAction ?? preferredFollowUpAction;
   const intl = useIntl();
   const placeholder = suppliedPlaceholder ?? intl.formatMessage({ id: "chat.placeholder", defaultMessage: "Ask for follow-up changes", description: "Follow-up composer placeholder" });
   const placeholderRef = useRef(placeholder);
@@ -805,9 +810,11 @@ export const CodexComposer = forwardRef<
   const refocusEditorAfterIntelligenceMenuRef = useRef(false);
   const isStreamingRef = useRef(isStreaming);
   const defaultFollowUpActionRef = useRef(defaultFollowUpAction);
+  const availableFollowUpActionsRef = useRef(availableFollowUpActions);
   const disabledRef = useRef(disabled);
   isStreamingRef.current = isStreaming;
   defaultFollowUpActionRef.current = defaultFollowUpAction;
+  availableFollowUpActionsRef.current = availableFollowUpActions;
   disabledRef.current = disabled;
   const [suggestionQuery, setSuggestionQuery] =
     useState<SuggestionQuery | null>(null);
@@ -853,7 +860,7 @@ export const CodexComposer = forwardRef<
       event.preventDefault(); event.stopPropagation();
       if (action === "cancel") { inputInteraction.cancel(); controller.focus(); }
       else { void submitActionRef.current(isStreamingRef.current && (event.metaKey || event.ctrlKey)
-        ? invertComposerFollowUpAction(defaultFollowUpActionRef.current) : undefined); }
+        ? resolveComposerFollowUpAction(invertComposerFollowUpAction(defaultFollowUpActionRef.current), availableFollowUpActionsRef.current) ?? undefined : undefined); }
     };
     window.addEventListener("keydown", handleDictationKey, true);
     return () => window.removeEventListener("keydown", handleDictationKey, true);
@@ -1139,6 +1146,8 @@ export const CodexComposer = forwardRef<
         type: "set-document",
         document: proseMirrorToComposerDocument(view.state.doc),
       });
+      if (isStreaming && (admittedFollowUpAction === null
+        || (followUpActionOverride !== undefined && availableFollowUpActions?.includes(followUpActionOverride) === false))) return;
       let intent: SubmitIntent;
       try {
         intent = controller.createSubmitIntent();
@@ -1240,6 +1249,8 @@ export const CodexComposer = forwardRef<
       composerSnapshot.canSubmit,
       controller,
       defaultFollowUpAction,
+      admittedFollowUpAction,
+      availableFollowUpActions,
       disabled,
       submissionDisabled,
       isStreaming,
@@ -1369,8 +1380,8 @@ export const CodexComposer = forwardRef<
           "Mod-Enter": () => {
             submitActionRef.current(
               isStreamingRef.current
-                ? invertComposerFollowUpAction(defaultFollowUpActionRef.current)
-                : undefined,
+                ? resolveComposerFollowUpAction(invertComposerFollowUpAction(defaultFollowUpActionRef.current), availableFollowUpActionsRef.current) ?? undefined
+              : undefined,
             );
             return true;
           },
@@ -1740,6 +1751,7 @@ export const CodexComposer = forwardRef<
     isResponseInProgress: isStreaming,
     canSubmit: !disabled && !submissionDisabled && composerSnapshot.canSubmit,
     defaultFollowUpAction,
+    availableFollowUpActions,
   });
   const primaryActionLabel =
     editingQueuedSubmissionId !== null
@@ -1751,12 +1763,10 @@ export const CodexComposer = forwardRef<
           : primaryAction === "steer"
             ? "Steer active response"
             : intl.formatMessage({ id: "chat.send", defaultMessage: "Send message" });
-  const inverseFollowUpAction = invertComposerFollowUpAction(
-    defaultFollowUpAction,
-  );
+  const inverseFollowUpAction = resolveComposerFollowUpAction(invertComposerFollowUpAction(defaultFollowUpAction), availableFollowUpActions);
   const primaryActionTitle = submissionDisabled && primaryAction !== "stop"
     ? "Waiting for execution host"
-    : isStreaming && primaryAction !== "stop"
+    : isStreaming && primaryAction !== "stop" && inverseFollowUpAction !== null && inverseFollowUpAction !== defaultFollowUpAction
       ? `${primaryActionLabel} (⌘/Ctrl+Enter to ${inverseFollowUpAction})`
       : primaryActionLabel;
   return (

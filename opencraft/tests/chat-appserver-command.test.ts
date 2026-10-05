@@ -715,6 +715,22 @@ test("host identity is enforced before any network request", async () => {
   await h.close();
 });
 
+test("bridge-denied follow-ups never compile assets or touch the upstream", async () => {
+  const h = await harness();
+  let compiled = false;
+  const port = createAppServerConversationCommandPort({
+    hostId, client: h.client,
+    interactions: { respond: async () => undefined },
+    canRequest: method => method !== "thread/queue/add",
+    resolveCompilerOptions: async () => { compiled = true; return {}; },
+  });
+  try {
+    await assert.rejects(port.submit(intent({ type: "enqueue-follow-up", key: existingKey })), /暂不支持/);
+    assert.equal(compiled, false);
+    assert.equal(h.requests.length, 0);
+  } finally { await h.close(); }
+});
+
 test("queued-message command port preserves the AppServer queue ABI", async () => {
   const h = await harness();
   const port = commandPort(h);

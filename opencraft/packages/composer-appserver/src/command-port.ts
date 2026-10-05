@@ -1,6 +1,7 @@
 import { AppServerClientError, AppServerRpcError, type AppServerClient } from "@opencraft/appserver-client";
 import { ContinuationCommandError, SubmissionOutcomeUnknownError } from "@opencraft/chat-runtime";
 import type {
+  AppServerMethod,
   ThreadForkParams,
   TurnStartParams,
 } from "@opencraft/appserver-protocol";
@@ -39,6 +40,7 @@ export interface AppServerConversationCommandPortConfig {
   /** Only a Host with one queue-to-active-Turn operation may consume a queued steer. */
   readonly queueAtomicSteer?: boolean;
   readonly queueUnconfirmedSteerDiscard?: boolean;
+  readonly canRequest?: (method: AppServerMethod) => boolean;
   readonly compiler?: SubmitCompilerOptions;
   readonly resolveCompilerOptions?: (intent: SubmitIntent) => Promise<SubmitCompilerOptions>;
   /** Product-owned tools installed on every newly-created Thread. */
@@ -173,6 +175,9 @@ export function createAppServerConversationCommandPort(
   const execute = async (
     intent: SubmitIntent,
   ): Promise<SubmissionReceipt> => {
+    const method = intent.target.type === "enqueue-follow-up" ? "thread/queue/add"
+      : intent.target.type === "steer-active-turn" ? "turn/steer" : "turn/start";
+    if (config.canRequest?.(method) === false) throw new Error("此连接暂不支持该操作");
     const hostId = targetHostId(intent);
     if (hostId !== config.hostId || config.client.hostId !== config.hostId) {
       throw new AppServerConversationCommandError(

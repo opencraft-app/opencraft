@@ -26,6 +26,27 @@ OpenCraft installation on the remote machine.
   connection resources are **not exposed** until their remote ownership paths exist.
   The first-turn durability extension is a broker policy for native Codex, not a
   claim that remote storage is transactional.
+- SSH framing is transport, not a second definition of native Thread history.
+  The shared-native broker surface owns one method-admission list, including
+  `thread/turns/list` and `thread/items/list` for paginated recovery, `skills/list`
+  and `config/batchWrite`. Its `opencraft/method-access` v1 initialization extension
+  projects that same list to Runtime and Composer. This is **bridge admission**,
+  not a guarantee that every upstream version implements every native method:
+  an upstream rejection remains authoritative. Upstream initialization metadata
+  and unrelated extensions are preserved; extensions requiring unavailable local
+  stores or connection-handle routing are omitted rather than advertised falsely.
+- Runtime refuses unavailable submissions before Conversation adopts a draft or
+  creates an optimistic queue item. The command port also checks before compiling
+  attachments/context. Queue refreshes, watch/search and configuration controls
+  consume the same admission fact, not `hostKind` guesses or successful reads.
+  Composer resolves a follow-up preference among admitted actions: native SSH
+  currently offers Steer, not OpenCraft queue operations, even when Queue is the
+  saved preference. The button and inverse shortcut agree; the preference itself
+  is not rewritten. No available follow-up action means the draft stays editable.
+  Legacy Servers without a manifest retain existing behavior; malformed manifests
+  fail closed. Read-only schema/real-target probes are not mutation or inference
+  verification. Regression coverage is in `tests/ssh-native-surface.test.ts` and
+  the built Workbench SSH smoke (synthetic SSH exec, real broker/client/UI).
 - Initialization expires silent upstreams and bounds logical waiters. The remote
   request ledger is capped at 1,024. Short requests have a 30-second expiry;
   native `thread/fork` preserves Workbench's no-fixed-deadline contract and is
@@ -109,6 +130,34 @@ rechecks recipe presence/enablement/revision and the authorization incarnation
 before reading and before publishing. Lock, deletion, disablement or logout/unlock
 cannot publish a late response from the old admission. This lists native history;
 it does not resume a Thread or claim execution/interaction ownership.
+Discovery has Application lifetime: leaving Settings does not stop reading
+connection status. One in-flight status read is shared by manual retry and
+foreground/online hints, with the next poll scheduled after completion (five
+seconds on success, 10/20/30-second capped backoff on temporary failure).
+Hidden/offline pages pause polling and probe when active again; disposal removes
+timers/listeners and aborts reads. Authorization changes fence and cancel old
+reads; no background read races an unresolved unlock/logout receipt. Mutations
+still run only explicitly and are never replayed; their status refresh supersedes
+pre-command reads. When startup discovery fails before SSH profiles exist, the
+sidebar offers a source-level read retry instead of silently treating them as
+absent. Healthy status polling is visually quiet, and unsupported/locked success
+is not shown as an error. The backend remains the connection/configuration owner.
+SSH Runtime catalog reads use native `thread/list` with `useStateDbOnly: true`:
+interactive discovery reads the existing index instead of scanning/reconciling
+rollout files. This policy is shared by sidebar, selected-Host paging and archive
+readers; explicit repair callers may override it, but empty/error results never
+silently trigger a scan. Provider/source filters keep their native defaults.
+The sidebar owns presentation only: admitted loading shows the shared neutral
+spinner, failure has a Host-scoped read retry, and neither is reported as an
+empty catalog. A failed refresh retains cached rows from that Host and successful
+rows from others. Retry rechecks live admission without connecting an idle
+recipe or selecting/resuming a Thread. Revoked readers cannot paint cached rows.
+Cache keys include the profile revision and SSH authorization incarnation, so
+unlocking again does not reuse results from the prior session. Non-SSH caches
+are independent of SSH authorization changes.
+The default merged ten-row view explicitly counts hidden remote rows in its
+expansion entry. It expands the fetched catalog (currently the first 50 per
+Host), not all filesystem history; indexed discovery is not an index repair tool.
 Failed startup remains visible after cleanup instead of reverting to idle.
 Reconnect resets and then establishes the successor backend attachment, not the
 remote daemon; active clients can reacquire it. The management list continues to

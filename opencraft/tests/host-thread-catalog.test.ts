@@ -15,7 +15,7 @@ const row: SshConnectionView = { serverId: profile.hostId, displayName: "Fixture
 
 function harness(initialProfile: HostConnectionProfile = profile) {
   let current: HostConnectionProfile | undefined = initialProfile;
-  let snapshot: ManagedHostCatalogSnapshot = { available: true, authenticated: true, items: [row], legacyServers: [] };
+  let snapshot: ManagedHostCatalogSnapshot = { available: true, authenticated: true, items: [row], legacyServers: [], refreshing: false, error: null };
   let authorizationEpoch = 0;
   const calls: string[] = [];
   let phase = "idle";
@@ -29,7 +29,7 @@ function harness(initialProfile: HostConnectionProfile = profile) {
   } as unknown as AppServerWorkbenchRuntime;
   const registry = new HostRuntimeRegistry([{ descriptor: { hostId: profile.hostId, label: "Fixture", kind: "remote-ssh",
     transportEndpoint: null, executionLocation: "Fixture", workspaceBrowseRoots: ["/remote"] }, createRuntime: () => runtime }]);
-  const source = { getSnapshot: () => snapshot, getAuthorizationEpoch: () => authorizationEpoch, subscribe: () => () => {} };
+  const source = { getSnapshot: () => snapshot, getAuthorizationEpoch: () => authorizationEpoch, subscribe: () => () => {}, refresh: async () => {} };
   return { calls, registry, source, read: () => readHostThreadCatalog({ profile: initialProfile, currentProfile: () => current, management: source, registry }),
     setCurrent: (value: HostConnectionProfile | undefined) => { current = value; },
     setSnapshot: (value: Partial<ManagedHostCatalogSnapshot>) => { snapshot = { ...snapshot, ...value }; },
@@ -85,7 +85,7 @@ test("logout followed by unlock cannot publish an old authorization's late histo
 });
 
 test("local discovery, explicit logical selection and static SSH compatibility retain their admission rules", () => {
-  const management = { available: true, authenticated: true, items: [{ ...row, state: "idle" as const }], legacyServers: [] };
+  const management = { available: true, authenticated: true, items: [{ ...row, state: "idle" as const }], legacyServers: [], refreshing: false, error: null };
   assert.equal(canReadHostThreadCatalog(profile, "ready", management), true);
   assert.equal(canReadHostThreadCatalog(profile, "idle", management), false);
   assert.equal(canReadHostThreadCatalog(profile, "ready", { ...management, authenticated: false }), false);
@@ -96,7 +96,7 @@ test("local discovery, explicit logical selection and static SSH compatibility r
 });
 
 test("one Server's open state cannot admit another Server's history", () => {
-  const management = { available: true, authenticated: true, items: [row], legacyServers: [] };
+  const management = { available: true, authenticated: true, items: [row], legacyServers: [], refreshing: false, error: null };
   assert.equal(canReadHostThreadCatalog({ ...profile, hostId: "ssh:second" }, "idle", management), false);
   assert.equal(canReadHostThreadCatalog(profile, "idle", management), true);
 });

@@ -19,6 +19,8 @@ import { groupThreadsByActivityDate, sidebarActivityMetadata } from "../sidebar-
 import { NavigationIcon as SidebarContributionIcon, type NavigationAction as SidebarActionItem } from "./shell-navigation/navigation-action";
 import { SidebarActivityItem } from "./sidebar-activity-item";
 import { SidebarNavigationItem } from "./sidebar-navigation-item";
+import { LoadingSpinner } from "./ui/loading-spinner";
+import type { HostThreadCatalogState } from "../runtime/thread-catalog-query";
 export type { NavigationAction as SidebarActionItem } from "./shell-navigation/navigation-action";
 
 interface SidebarThread extends WorkbenchThread {
@@ -57,6 +59,10 @@ interface SidebarProps {
   threadActions?: ThreadActionCallbacks;
   threadCapabilities?(hostId: string): ThreadActionCapabilities;
   pendingTitle?(hostId: string, threadId: string): string | null;
+  threadCatalogs?: readonly HostThreadCatalogState[];
+  onRetryThreadCatalog?(hostId: string): void;
+  threadCatalogDiscovery?: "loading" | "error" | null;
+  onRetryThreadCatalogDiscovery?(): void;
 }
 
 
@@ -101,6 +107,10 @@ export function Sidebar({
   threadActions,
   threadCapabilities,
   pendingTitle,
+  threadCatalogs = [],
+  onRetryThreadCatalog,
+  threadCatalogDiscovery = null,
+  onRetryThreadCatalogDiscovery,
 }: SidebarProps) {
   const intl = useIntl();
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
@@ -116,6 +126,16 @@ export function Sidebar({
     : orderedThreads.filter((thread, index) =>
       index < 10 || `${thread.connectionHostId}:${thread.id}` === selectedThreadKey);
   const activityGroups = groupThreadsByActivityDate(visibleThreads);
+  const feedback = [
+    ...(threadCatalogDiscovery ? [{ key: "discovery", phase: threadCatalogDiscovery, label: null, retry: onRetryThreadCatalogDiscovery }] : []),
+    ...threadCatalogs.filter(catalog => catalog.phase === "loading" || catalog.phase === "error").map(catalog => ({
+      key: `host:${catalog.hostId}`, phase: catalog.phase, label: catalog.label,
+      retry: onRetryThreadCatalog ? () => onRetryThreadCatalog(catalog.hostId) : undefined,
+    })),
+  ];
+  const visibleKeys = new Set(visibleThreads.map(thread => `${thread.connectionHostId}:${thread.id}`));
+  const hiddenRemoteCount = orderedThreads.filter(thread => thread.serverRouteLocality === "remote"
+    && !visibleKeys.has(`${thread.connectionHostId}:${thread.id}`)).length;
 
   useLayoutEffect(() => {
     const container = scrollContainerRef.current;
@@ -162,7 +182,24 @@ export function Sidebar({
         ))}
 
         <section className="sidebar-tasks" aria-label="Tasks">
-          {activityGroups.length === 0 ? <div className="sidebar-activity-empty">{intl.formatMessage({ id: "sidebar.empty", defaultMessage: "No tasks yet" })}</div> : null}
+          {feedback.map(catalog => (
+            <div className="sidebar-catalog-feedback" key={catalog.key} role="status"
+              aria-label={catalog.phase === "loading" ? (catalog.label === null
+                ? intl.formatMessage({ id: "sidebar.catalog.discoveryLoading", defaultMessage: "Loading remote connections" })
+                : intl.formatMessage({ id: "sidebar.catalog.loading", defaultMessage: "Loading conversations from {server}" }, { server: catalog.label })) : undefined}>
+              {catalog.phase === "loading" ? (
+                <LoadingSpinner />
+              ) : <>
+                <span className="sidebar-catalog-feedback__message" title={catalog.label ?? undefined}>{catalog.label === null
+                  ? intl.formatMessage({ id: "sidebar.catalog.discoveryError", defaultMessage: "Couldn't load remote connections" })
+                  : intl.formatMessage({ id: "sidebar.catalog.error", defaultMessage: "Couldn't load {server} conversations" }, { server: catalog.label })}</span>
+                <button type="button" className="sidebar-catalog-feedback__retry" onClick={catalog.retry} disabled={!catalog.retry}>
+                  {intl.formatMessage({ id: "sidebar.catalog.retry", defaultMessage: "Retry" })}
+                </button>
+              </>}
+            </div>
+          ))}
+          {activityGroups.length === 0 && feedback.length === 0 ? <div className="sidebar-activity-empty">{intl.formatMessage({ id: "sidebar.empty", defaultMessage: "No tasks yet" })}</div> : null}
           <div className="sidebar-activity-list">
             {activityGroups.map(group => (
               <section className="sidebar-activity-group" key={group.key} aria-label={group.label}>
@@ -218,9 +255,14 @@ export function Sidebar({
               <button
                 type="button"
                 className="sidebar-activity-more"
+                aria-expanded={activityExpanded}
                 onClick={() => setActivityExpanded(value => !value)}
               >
-                {activityExpanded ? "Show less" : "Show more"}
+                {activityExpanded
+                  ? intl.formatMessage({ id: "sidebar.catalog.less", defaultMessage: "Show less" })
+                  : hiddenRemoteCount > 0
+                    ? intl.formatMessage({ id: "sidebar.catalog.moreRemote", defaultMessage: "Show more ({count} remote)" }, { count: hiddenRemoteCount })
+                    : intl.formatMessage({ id: "sidebar.catalog.more", defaultMessage: "Show more" })}
               </button>
             ) : null}
           </div>
