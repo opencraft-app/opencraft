@@ -68,7 +68,7 @@ describe("sidebar account controller boundary", () => {
 
   const menuOrderCases: Array<[string, string | undefined, string[]]> = [
     ["ordinary plans", undefined, ["云存储", "套餐与费用", "账号"]],
-    ["AI plans", "ai", ["模型", "云存储", "套餐与费用", "账号"]],
+    ["AI plans", "ai", ["云存储", "套餐与费用", "账号"]],
   ];
   it.each(menuOrderCases)("keeps the sidebar account menu order for %s", async (_name, bundleType, expected) => {
     currentPass = pass(bundleType ? { bundle_type: bundleType } : {});
@@ -79,6 +79,7 @@ describe("sidebar account controller boundary", () => {
       .map((link) => link.textContent?.trim())
       .filter((label): label is string => expected.includes(label));
     expect(labels).toEqual(expected);
+    expect(within(screen.getByRole("dialog", { name: "账号管理" })).queryByRole("link", { name: /模型|诊断中心|高级设置/ })).not.toBeInTheDocument();
   });
 
   it("does not mount billing or upgrade hooks for the unchanged header", () => {

@@ -1,6 +1,6 @@
 {
   "source": "frontend/src",
-  "sourceRevision": "cda3c5c9e27062775136e4382fdaee74a526722a",
+  "sourceRevision": "bb8d68b4ffe18141ded9513abde9b521011566fb",
   "generatedBy": "scripts/sync-mono2-agent-console.mjs",
   "files": [
     {
@@ -89,35 +89,35 @@
     },
     {
       "file": "i18n/generated/en-US.json",
-      "sourceSha256": "5223183b85c6d818b845a2263cd6ee2fe58240cff06ae9633ff469a27d5754bd"
+      "sourceSha256": "b2d7d818106c2f28f40f84b23d6dad1a87f485bd0ce1384db5022b79b2120d3a"
     },
     {
       "file": "i18n/generated/es.json",
-      "sourceSha256": "6a64cbfd178de4278953ddddd746621b2dccb28c73173f2c1478c03d37ef02f5"
+      "sourceSha256": "95b0cb808cf44ffd348e74e000689e7c5b221802fef8b31ddcd261daa960c2f7"
     },
     {
       "file": "i18n/generated/id-ID.json",
-      "sourceSha256": "ba4ae4fe040ee2581f34267f192a0c68e7891d690262420423b326128adac005"
+      "sourceSha256": "3188cfbbd66ced692814c94dcea15ebc7784babafa9fce2b1a6156fae93e9b2f"
     },
     {
       "file": "i18n/generated/ja-JP.json",
-      "sourceSha256": "a1da45e33458fc19df87420a8dae252a8eb0b43bb266b97cdd169337b167fb5d"
+      "sourceSha256": "7bbc576b3a2c6d3cad11c27f098d2ee7fa7988522e54ba105e7000201582bbf0"
     },
     {
       "file": "i18n/generated/ko-KR.json",
-      "sourceSha256": "e46c7e7146bc07d8f8d639f2b0735bfcaf30ddf854545e55169173d007fc0bbe"
+      "sourceSha256": "a76995077efee5661433f8c12470578adb6d0c89f2f6ac8113e1149c63f934af"
     },
     {
       "file": "i18n/generated/zh-CN.json",
-      "sourceSha256": "b4d05970d09234d5799f85cc07425735d0f81f3037bdf015676dd05fee72eabd"
+      "sourceSha256": "1c85b9672c86a886b674dc2c7d9790c045bd3096f4681e8803597d1972d6bfc6"
     },
     {
       "file": "i18n/generated/zh-Hant.json",
-      "sourceSha256": "fd8168b0f0c901a1c66a98cca4596cc21376bfbf2975085be09c9fd12c185c4d"
+      "sourceSha256": "3f755502c36370d4115b4249d1b43673ffc3ce3f7cb181cebeeb5270860e78a8"
     },
     {
       "file": "i18n/generated/zh-to-key.json",
-      "sourceSha256": "597398ca1d30b6f631b882713c7c2ac49a77d770e6826ecf5323bed7d01de675"
+      "sourceSha256": "417f6550b4396f8efa358581701930d0f04d953ced9aacaaf42d1500ba88dbbe"
     },
     {
       "file": "i18n/index.ts",
@@ -393,7 +393,7 @@
     },
     {
       "file": "pages/marketing/agent-provider-locale.ts",
-      "sourceSha256": "05b8271fccbae1e8d5a114ae133c67b7990695c2efac08a55cff93cd1580bd2b"
+      "sourceSha256": "87c4b5bdc5b50dafb6897d0fe5cb62b03f6db2ef12c3e5a2167d4747bc676cd8"
     },
     {
       "file": "pages/marketing/agent-reset-config.ts",

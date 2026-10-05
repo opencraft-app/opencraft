@@ -81,10 +81,13 @@ User: "其他改动都提交一下推送呗？"
 - Integrated Web and preview-bridge builds passed. Frontend build passed; final frontend check reports 166 existing diagnostics against a 171-diagnostic baseline, zero new and five resolved. The 54 focused frontend tests passed. Integrated CTL, NewAPI, Sandbox and Trade affected Go tests and Trade vet passed; quota Python tests passed (10).
 - Integration validation exposed a duplicate timeline key helper and an obsolete frontend resource-preparation call introduced by automatic merging. Removed the duplicate and legacy call without weakening the newer master ownership model; reruns passed.
 - Dependencies were installed in this isolated worktree, not borrowed from another checkout. Rebuilt node-pty for terminal tests; used pnpm 10.28.2 with the frozen frontend lock. Regenerated Agent Console copies and the font subset from merged source.
+- The final remote check discovered newer master `b9117f63b159bd12b83dd55df8916697307ad376` (daily/explore navigation). Integrated it normally, retaining both documentation additions and regenerating the derived manifest. Final frontend check again has zero new diagnostics; seven navigation/embedded-session test files passed (95 cases), Hermes plugin passed (88 cases), Web/Hermes types and generated-copy drift check passed.
+- The original development checkout acquired subsequent SSH changes after the 427-file snapshot commit. Those concurrent changes are left untouched and are not part of this delivery snapshot.
 
 ## unverified
 - Complete gate is not green: OpenCraft's bounded gate timed out during workspace types, frontend full tests had failures and timed out, and the context governance suite had failures. No unrelated behavior fix was improvised to conceal these results.
 - Actual integrated branch/master remote refs remain pending until push and a fresh remote read. Earlier full-gate failures are not superseded by the narrower passing checks above; no complete product gate pass is claimed.
+- A nine-file navigation combination including rendered AgentSettingsPage tests exhausted the Node worker heap and was stopped. The seven-file bounded rerun passed; the two full-page rendering files are not claimed to pass. Context governance remains non-green (5690 reported errors after incorporating newer master); documentation structure/link validation is a separate passing check.
 
 ## discard
 - Initial shell omitted Node/Go toolchain paths; use task-local PATH, never overwrite HOME.
