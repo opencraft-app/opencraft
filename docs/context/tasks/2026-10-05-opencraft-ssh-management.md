@@ -94,6 +94,10 @@ OpenCraft Daemon/AppHost/协议/Workbench runtime、builtin Settings 与固定�
 
 ### 2026-10-05 source-and-preview-delivery authorization
 
+- 远端master已接收 `844b7ce8e`，`git ls-remote`复核一致。合并后全部gate步骤完成，DSH独立依赖补齐/测试夹具修正后，Workbench331/331及后续检查与Web/Expo Web/iOS构建退出0；文档全仓0错误。平台接受普通Git master推送，没有强推或修改保护设置。
+- 干净提交构建候选 `/data/opencraft-ssh-native-release-ZQr7oa/opencraft-server`，buildId `20261005-ssh-native-844b7ce8e`。官方headless打包、最终manifest归档启动smoke通过，完整Workbench idle/active桌面/触屏浅深色烟测通过；仅合成SSH exec，无真实推理/远端写入。保留382个旧hashed资源并按官方规则重新生成manifest，归档 `2cd66a3d953a26cc9e184df56f27d71855ab8bffe68f4e8c02f2f51bacad23ee`。
+- 独立切换脚本已核验旧owner PID2120682及新旧runtime/版本，维持现有6G high/8G max与原数据根，失败恢复旧unit；准备提交timer，未在当前工具中同步停止承载本会话的服务。重连后必须验证实际运行后端的真实SSH分页恢复才能宣称已替换完成。
+
 - DSH依赖补齐后复验DSH、Lab、Chat通过；master新只读资源面板测试夹具未包含必有host资源，造成两例TypeError。只补该渲染夹具准确的method admission，新增不支持搜索时disabled断言，不改变产品必有host contract。聚焦2/2通过，继续Workbench及剩余gate。
 
 - 集成提交 `41615e60d` 的gate前半段通过：全workspace typecheck、i18n/边界、扩展221、连接器32、AppServer257、SSH65pass/1skip及项目/Thread/语音测试。DSH四例缺独立运行时依赖；按锁文件prepare安装0.1.1-rc.2后复跑该阶段及后续gate，无产品源码绕过。工蜂MCP本地未配置（Unknown MCP server）；仅使用已验证Git授权，不宣称MCP认证通过。两次单文件frame/client猜测不存在，实际为各包src/index.ts。
