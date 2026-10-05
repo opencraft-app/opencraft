@@ -48,7 +48,7 @@ export function AgentSidebarToggle({ collapsed, onToggle }: { collapsed: boolean
   return (
     <button
       type="button"
-      className="lv-agent-sidebar-toggle hidden lg:inline-flex"
+      className="lv-agent-sidebar-toggle"
       aria-label={label}
       aria-controls="lv-agent-sidebar-navigation"
       aria-expanded={!collapsed}

@@ -428,6 +428,7 @@ html.lw-settings-scrollbar-stable {
 }
 
 .lv-agent-sidebar-toggle {
+  display: none;
   position: relative;
   width: 36px;
   height: 36px;
@@ -437,6 +438,13 @@ html.lw-settings-scrollbar-stable {
   border-radius: 8px;
   color: #737373;
   background: transparent;
+}
+
+/* The embedded workbench ships an unlayered .hidden utility, so this button uses its own display rule. */
+@media (min-width: 1024px) {
+  .lv-agent-sidebar-toggle {
+    display: inline-flex;
+  }
 }
 
 .lv-agent-sidebar-toggle:hover,
@@ -1201,9 +1209,9 @@ a {
 
 .lv-agents-session-list-actions {
   display: flex;
-  justify-content: space-between;
+  justify-content: center;
   gap: 8px;
-  padding: 8px 8px 4px 20px;
+  padding: 2px 24px 4px 8px;
 }
 
 .lv-agents-session-list-actions button {
@@ -1211,16 +1219,13 @@ a {
   border-radius: 6px;
   color: #596273;
   font-size: 12px;
-  line-height: 20px;
-}
-
-.lv-agents-session-list-actions button:last-child {
-  margin-left: auto;
+  line-height: 16px;
 }
 
 .lv-agents-session-list-actions button:hover:not(:disabled) {
   background: #f7f7f5;
   color: #1f1f1f;
+  font-weight: 600;
 }
 
 .lv-agents-session-list-actions button:focus-visible {
@@ -1584,6 +1589,12 @@ a {
     overscroll-behavior: contain;
   }
 
+  .lv-agents-sidebar-middle .lv-agents-session-item {
+    min-height: 32px;
+    padding-top: 4px;
+    padding-bottom: 4px;
+  }
+
   .lv-agents-sidebar-middle .lv-agents-session-list::-webkit-scrollbar {
     width: 6px;
   }
@@ -1591,6 +1602,16 @@ a {
   .lv-agents-sidebar-middle .lv-agents-session-list::-webkit-scrollbar-thumb {
     border-radius: 6px;
     background: #c5c9d0;
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .lv-agents-sidebar-middle .lv-agents-chat-group:not(:hover) .lv-agents-session-list {
+      scrollbar-color: transparent transparent;
+    }
+
+    .lv-agents-sidebar-middle .lv-agents-chat-group:not(:hover) .lv-agents-session-list::-webkit-scrollbar-thumb {
+      background: transparent;
+    }
   }
 
   .lv-agents-session-list:not(:has(> .lv-agents-session-list-actions)):has(> li:nth-child(5)) > li:nth-last-child(-n + 3) .lv-agents-session-menu,

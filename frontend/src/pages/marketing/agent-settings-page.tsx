@@ -86,6 +86,7 @@ import type {
   LightVelaSession,
   LightVelaSessionActions,
 } from "./agent-chat-panel";
+import { useAgentSidebarSessionList } from "./agent-sidebar-session-list";
 import { AUTH_SERVICE_UNAVAILABLE_MESSAGE, readStoredAuthToken } from "@/repositories/http-repositories";
 import {
   AGENTS_HOME_PATH,
@@ -2745,6 +2746,7 @@ export const AgentSettingsPage = ({
 
   /* Tab 切换 */
   const [activeTabId, setActiveTabId] = useState((requestedBotId || visibleBots[0]?.id || requestedCreatingBotId) || "creating");
+  const activeBot = isModifying ? undefined : visibleBots.find((bot) => bot.id === activeTabId) ?? visibleBots[0];
   const [isAgentMenuOpen, setIsAgentMenuOpen] = useState(false);
   const [renewPassModalOpen, setRenewPassModalOpen] = useState(false);
 
@@ -2776,8 +2778,14 @@ export const AgentSettingsPage = ({
   const [connectorsRevealed, setConnectorsRevealed] = useState(() => isConsoleShowEnabled());
   useEffect(() => subscribeConsoleShow(setConnectorsRevealed), []);
   const showConnectorsEntry = connectorsRevealed && !isGlobal;
-  const [chatSessions, setChatSessions] = useState<LightVelaSession[]>([]);
-  const [chatSessionsLoading, setChatSessionsLoading] = useState(false);
+  const sidebarSessionBotKey = activeBot && accountId
+    ? JSON.stringify([accountId, activeBot.instanceId ?? activeBot.id, activeBot.profileId ?? "main", isGlobal])
+    : null;
+  const {
+    sessions: chatSessions,
+    loading: chatSessionsLoading,
+    onSessionStateChange: applyChatSessionState,
+  } = useAgentSidebarSessionList(sidebarSessionBotKey);
   const [chatSessionsHasMore, setChatSessionsHasMore] = useState(false);
   const [chatSessionMutationState, setChatSessionMutationState] = useState<EmbeddedSessionMutationState | null>(null);
   const [chatSessionCommands, setChatSessionCommands] = useState<EmbeddedSessionCommands | null>(null);
@@ -2853,13 +2861,6 @@ export const AgentSettingsPage = ({
    * 另两个回调 SDK 内部走 ref（onSelectedChatIdChangeRef），本就不受引用变化影响，
    * 但一并稳定化以免后续版本改成直接依赖。
    */
-  const applyChatSessionState = useCallback<
-    NonNullable<LightVelaMultiSessionOptions["onSessionStateChange"]>
-  >(({ sessions, loading }) => {
-    setChatSessions(sessions);
-    setChatSessionsLoading(loading);
-  }, []);
-
   const applyChatSelectedChatId = useCallback<
     NonNullable<LightVelaMultiSessionOptions["onSelectedChatIdChange"]>
   >((chatId) => {
@@ -3019,7 +3020,6 @@ export const AgentSettingsPage = ({
       setActiveTabId((visibleBots.find((bot) => hasUnfinishedBuddySetup(bot.id)) ?? visibleBots[0])!.id);
     }
   }, [visibleBots, activeTabId, isCreating, requestedBotId]);
-  const activeBot = isModifying ? undefined : visibleBots.find((b) => b.id === activeTabId) ?? visibleBots[0];
   const defaultBot = visibleBots.find((bot) => bot.isDefault) ?? visibleBots[0];
   const isActiveBotDefault = Boolean(activeBot && defaultBot && activeBot.id === defaultBot.id);
 
@@ -4164,10 +4164,9 @@ export const AgentSettingsPage = ({
   }, [activeBot?.id, activeBot?.instanceId, activeBot?.profileId]);
 
   /**
-   * 实例切换时重置会话受控状态（SDK 对接注意事项 3）。
-   * Why：切换 Agent 走 setActiveTabId，组件不重挂载；旧实例的会话列表/选中值/actions
-   * 若不清理，会在新实例回调覆盖前闪现旧数据，且 rename 句柄可能指向旧实例。
-   * 重置后 selectedChatId 回到 undefined，SDK 按新实例重新下发默认会话。
+   * 实例切换时重置会话操作状态（SDK 对接注意事项 3）。
+   * 列表由账号与 Bot 键隔离；选中值和 actions 仍须清理，避免旧实例的
+   * rename 句柄指向新实例。selectedChatId 回到 undefined 后由 SDK 下发默认会话。
    */
   useEffect(() => {
     chatSessionPagination.reset();
@@ -4175,8 +4174,6 @@ export const AgentSettingsPage = ({
     legacyChatSessionStateRef.current = null;
     legacySelectedChatIdRef.current = null;
     legacyChatSessionActionsRef.current = null;
-    setChatSessions([]);
-    setChatSessionsLoading(false);
     setChatSessionsHasMore(false);
     setChatSessionMutationState(null);
     setSelectedChatId(undefined);
@@ -6380,19 +6377,13 @@ export const AgentSettingsPage = ({
                               )}
                               {!isChatTabDisabled && chatSessionsExpanded && !isSidebarCollapsed ? <>
                               <ul className="lv-agents-nav-group-items lv-agents-session-list">
-                                {chatSessionsLoading && chatSessions.length === 0 ? (
+                                {(chatSessionsLoading || sidebarSessionBotKey === null) && chatSessions.length === 0 ? (
                                   <li className="lv-agents-session-hint">{t("正在加载会话…")}</li>
                                 ) : chatSessions.length === 0 ? (
                                   /*
-                                   * 列表为空是正常状态，不做异常处理，只给默认对话入口。
-                                   * 成因有三，对用户而言表现一致（都只有一个会话可进）：
-                                   *   - 桥接还没建立：sidebarTab 与 activeSection 是独立状态，
-                                   *     且 AgentChatPanel 需 activeSection === "chat" 且
-                                   *     launchToken ready 才挂载，切换过程中会短暂走到这里；
-                                   *   - 实例不支持会话协议（SDK 5s 超时，见对接注意事项 6），
-                                   *     即单会话形态，老实例/特定镜像版本的合法状态；
-                                   *   - 确实还没有任何会话。
-                                   * 三者都不该阻断用户进聊天页——消息收发不依赖会话协议。
+                                   * 首次读取尚未完成时由 loading 分支承接；确认空列表后
+                                   * 才显示默认对话入口。实例不支持会话协议（SDK 5s 超时）
+                                   * 也可合法回落到单会话形态，不阻断进入聊天页。
                                    * 要区分需看 WebSocket 有无 chat:response，不是 UI 的职责。
                                    */
                                   <li>

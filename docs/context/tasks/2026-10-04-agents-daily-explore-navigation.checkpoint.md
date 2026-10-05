@@ -1,6 +1,6 @@
 ## stage
 
-MR !4969 的独立 worktree 中已完成日常/探索导航改造及会话列表 20 条分批展示。2026-10-05 已合入最新 master，解决同步清单冲突并完成本地验证；Bot 无关的实验室功能范围仍待确认。
+MR !4969 已合并到 master。2026-10-05 后续 MR !4990 已创建；本轮继续修复侧栏顶部按钮缺失的问题。Bot 无关的实验室功能范围仍待确认。
 
 ## verified
 
@@ -35,6 +35,16 @@ MR !4969 的独立 worktree 中已完成日常/探索导航改造及会话列表
 - 会话分页 hook 聚焦测试 3/3、嵌入桥接 14/14、工作台 typecheck、前端 `pnpm check` 及双站构建通过；真实账号 15 条会话时未出现不必要的「查看更多」，更多条目的浏览器交互仍缺真实数据。
 - 当前 worktree 合并提交 `decb2cd2d` 包含 `origin/master@efc37fe08`；冲突仅在 OpenCraft 生成清单，已由 `sync:mono2-agent-console` 重生成，`check:mono2-agent-console` 通过。
 - 合并后的前端 `pnpm check`、63 项侧栏/分页与 23 项嵌入桥接聚焦测试、CN/global 构建通过。OpenCraft Web/Hermes typecheck、88 项 Hermes 与 30 项连接/导航测试、边界检查、嵌入工作台 release 构建通过。文档验证零错误零告警；构建附带的 `next-env.d.ts` 和字体子集改动已恢复。
+- 本轮会话列表操作行已居中：单独「查看更多」及并列「查看更多／收起」使用同一 flex 居中规则。`pnpm check`、CN/global 构建、OpenCraft 只读同步检查通过；Chrome/Whistle 已读到更新 CSS。当前真实账号只有 15 条会话，未出现分页按钮，视觉位置由布局规则验证。
+- 后续 MR !4990 指向 `master`，从已合并基线仅引入本次居中样式和任务记录；创建时可合并，提交检查随后进入 pending。
+- 根据新截图，操作行用不对称水平内边距将单个或并列按钮整体左移约 8px，顶部内边距从 8px 缩至 2px。`pnpm check`、10 项导航/分页聚焦测试、`pnpm build:cn` 和 OpenCraft 生成副本只读检查通过；原 MR 提交检查在本轮推送前为 success。
+- 用户继续要求缩小「查看更多」整行高度；按钮行高由 20px 改为 16px，操作行整体约缩短 4px，左右位置和顶部留白保持不变。`pnpm check`、10 项聚焦测试、`pnpm build:cn` 与 OpenCraft 生成副本只读检查通过。
+- 用户要求分页操作 hover 时文字加粗；在现有 hover 规则内给可用按钮增加 `font-weight: 600`，禁用态保持原样。`pnpm check`、10 项聚焦测试、`pnpm build:cn` 与 OpenCraft 生成副本只读检查通过。
+- 用户要求稍微缩小每行对话之间的间距；桌面会话条目最小高度由 36px 收紧至 32px，垂直内边距由 6px 调至 4px，移动端保持原尺寸。`pnpm check`、10 项聚焦测试、`pnpm build:cn` 与 OpenCraft 生成副本只读检查通过。
+- 用户要求桌面会话滚动条仅在鼠标移入「对话」区域时显示。保留 6px 滚动槽，在支持 hover 且为精细指针的设备上让非 hover 状态的滑块透明；触屏设备不套用隐藏规则。`pnpm check`、10 项聚焦测试、`pnpm build:cn` 与 OpenCraft 生成副本只读检查通过。
+- Agents 路由切换会重挂页面；新增账号+实例+Profile+站点键的内存列表缓存。聚焦测试验证路由重挂、后台加载保留原列表、Bot/账号隔离和服务端确认为空的清理，侧栏测试 54/54 通过；`pnpm check`、双站构建与 OpenCraft 同步只读检查通过。
+- 首次进入且未缓存会话时，侧栏第一帧即显示「正在加载会话…」；确认列表为空后才出现「默认对话」。账号键暂未确定也保持加载态。聚焦测试 43/43、`pnpm check`、双站构建及 OpenCraft 同步只读检查通过。
+- 最新分支与远端 master 的顶部按钮调用一致。首次鉴权条件假设修正后用户截图仍显示按钮缺失；已撤回该公共 Header 变更。预览加载的 OpenCraft CSS 含未分层的全局 `.hidden{display:none}`，覆盖按钮上的 Tailwind `lg:inline-flex`；按钮现改为独立类和媒体查询控制显示。用户的 Chrome/Whistle 截图已确认图标及「收起导航」提示恢复；15 项聚焦测试、`pnpm check`、双站构建和 OpenCraft 只读同步检查通过，5174 已恢复。
 
 ## unverified
 
@@ -59,4 +69,4 @@ MR !4969 的独立 worktree 中已完成日常/探索导航改造及会话列表
 
 ## next_action
 
-检查暂存变更的 change-impact 与 diff；提交同步清单、守卫断言和本 checkpoint，推送原 MR 分支并确认远端冲突与 CI 状态。
+推送 CSS 冲突修正至 MR !4990，核对远端分支与 CI 状态；用户已在实际登录态预览确认按钮恢复。

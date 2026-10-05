@@ -49,6 +49,8 @@ derived: false
 
 - 日常和探索 Tab 在支持的 locale 中显示正确文案，深链与 Bot 切换打开相应导航。
 - 对话与会话列表在日常栏可达；不可聊天的 Bot 仍显示准确禁用反馈。
+- 在通道、技能、定时任务之间切换时，同一账号和 Bot 的会话列表保持可见；后台重新加载不清空已有条目，切换 Bot 或账号仍隔离列表。
+- 首次进入且尚无该 Bot 的已确认会话数据时直接显示「正在加载会话…」；收到空列表确认后才显示「默认对话」，已有缓存的切页场景继续直接显示会话。
 - 对话标题在日常各页面默认展开，也可手动收起；加号从日常任意页面可新建会话，每个会话有图标，原重命名和删除入口保持可用。
 - 执行中的会话在对应列表项显示转圈状态，任务完成后停止；状态与会话真实执行状态一致。
 - 国内站执行中会话确认删除后先中断任务，等 Hermes 明确报告停止才关闭和删除；中断失败或超时保留会话。
@@ -56,12 +58,15 @@ derived: false
 - 实验室上方使用与日常对话区相同的分隔线，在桌面和移动导航中保持可见。
 - 桌面侧栏的长会话列表在「对话」标题下独立滚动并显示纵向滚动条；日常入口、标题及底部账号入口保持可见，末尾会话操作菜单不被裁剪。
 - 会话按最近更新顺序初始仅展示 20 条；每次「查看更多」最多增加 20 条，「收起」逐批减少 20 条。仍有下一批时两个操作并列，超过 OpenCraft 初始 30 条时继续向后端翻页。
+- 「查看更多／收起」操作行在会话列表中居中；单按钮和双按钮均居中显示。
 - 侧栏底部小箭头菜单保留云存储，移除模型、诊断中心和高级设置的重复入口。
 - 聚焦交互测试、`pnpm check`、`pnpm test`、`pnpm build` 和相关 Context 检查取得结果。
 
 ## affected_paths
 
 - `frontend/src/pages/marketing/agent-settings-page.tsx`
+- `frontend/src/pages/marketing/agent-sidebar-session-list.ts`
+- `frontend/src/pages/marketing/__tests__/agent-sidebar-session-list.test.tsx`
 - `frontend/src/pages/marketing/opencraft-embedded-workbench.tsx`
 - `frontend/src/pages/marketing/__tests__/opencraft-embedded-workbench-preload.cn.test.tsx`
 - `frontend/src/styles.css`
@@ -103,6 +108,8 @@ derived: false
 | `opencraft/.agents/skills/opencraft-maintenance/SKILL.md` | 嵌入桥接变更验证 | 核对工作台构建与测试边界 |
 | `docs/context/flows/tapd-gongfeng-delivery.md`、`.agents/skills/gongfeng/SKILL.md` | MR !4969 冲突路由 | 确认合并与远端复核流程 |
 | `frontend/AGENTS.md`、`opencraft/AGENTS.md`、`opencraft/.agents/skills/opencraft-maintenance/SKILL.md` | 最新 master 合并后服务规则 | 执行双站、同步和嵌入门禁 |
+| `docs/context/project/services/frontend.md`、`docs/context/domains/site-environment-routing.md`、`docs/context/domains/identity-access.md`、`docs/context/project/adjacency/frontend-runtime-openspec-i18n.md`、`frontend/AGENTS.md` | 2026-10-05 会话列表跨路由稳定性 | 确认仅改前端呈现，按账号和 Bot 隔离，验证双站 |
+| `docs/context/project/services/frontend.md`、`docs/context/project/adjacency/frontend-runtime-openspec-i18n.md`、`frontend/AGENTS.md` | 2026-10-05 侧栏顶部按钮缺失 | 确认前端渲染边界、相邻测试与双站门禁 |
 
 ## evidence
 
@@ -138,12 +145,17 @@ derived: false
 - 2026-10-05 会话列表改为初始 20 条、每次增减 20 条；OpenCraft 嵌入桥接公开后端下一页状态和加载动作，避免初始 30 条数据截断。分页 hook 的 20→40→60→65、逐批收起、服务端继续加载与失败保持原数量测试通过（3/3）；桥接测试 14/14、工作台 Web typecheck、前端 `pnpm check`（新增 TypeScript 诊断 0 项）、双站构建和文档校验通过。Chrome/Whistle 登录态当前只有 15 条真实会话，确认没有多余的「查看更多」；超过 20 条的浏览器视觉暂无真实数据可验证。
 - 2026-10-05 MR !4969 合入 `origin/master@efc37fe08`，仅 `opencraft/plugins/lightvela-hermes/src/upstream/mono2/UPSTREAM.json` 出现文本冲突；合并提交 `decb2cd2d` 后用官方 `sync:mono2-agent-console` 重生成清单，并通过只读同步检查。将四条因会话分页后源码标识变化而失效的侧栏守卫断言对齐实际实现。
 - 合并后验证：前端 `pnpm check`、63 项侧栏/分页聚焦测试、23 项嵌入桥接测试、国内站与国际站构建均通过；OpenCraft 工作台与 Hermes 插件 typecheck、88 项 Hermes 插件测试、30 项连接/导航测试、边界检查及嵌入工作台 release 构建通过；文档检查零错误零告警。完整前端 Vitest 并行运行出现 worker OOM，改为串行聚焦测试后通过。
+- 2026-10-05 按截图将「查看更多／收起」操作行改为整体居中，移除末项自动右推和不对称左内边距。`pnpm check`、双站构建、OpenCraft 同步检查与 `git diff --check` 通过；Chrome/Whistle 预览已加载新的 `justify-content: center` 规则，账号现有 15 条会话，没有分页按钮可做真实截图。
+- 2026-10-05 修正 Agents 子页面重挂时会话侧栏先清空再加载的问题：按账号、实例、Profile 和站点缓存最近一次列表；后台加载中的空快照保留现有条目，服务端确认空列表后正常清空。侧栏相关聚焦测试 54/54、`pnpm check`（新增 TypeScript 诊断 0）、国内站和国际站构建、OpenCraft 生成副本只读检查通过。
+- 2026-10-05 修正首次进入时「默认对话」先于加载态闪现：缓存未命中时加载标记从首帧即为 true；账号键尚未确定时侧栏也显示加载态。确认空列表后恢复默认对话入口，缓存命中时保持原列表。相关聚焦测试 43/43、`pnpm check`（新增 TypeScript 诊断 0）、国内和国际站构建、OpenCraft 生成副本只读检查通过。
+- 2026-10-05 侧栏顶部按钮：当前分支与远端 master 的按钮调用相同。首次按公共 Header 鉴权条件修正并推送后，用户刷新预览仍看不到按钮，证明该假设未解决问题；已撤回这项公共 Header 改动。继续检查发现预览中加载的 OpenCraft CSS 含无作用域、未分层的 `.hidden{display:none}`，会盖过 Tailwind 分层的 `lg:inline-flex`；侧栏按钮原本同时使用这两个工具类。现改为专用类在 CSS 断点控制显示，避开 `.hidden` 冲突。用户在 Chrome/Whistle 预览截图中确认顶部图标及「收起导航」提示恢复；15 项聚焦测试、`pnpm check`（新增 TypeScript 诊断 0）、双站构建、OpenCraft 只读同步检查通过，5174 国内预览已恢复。
 
 ## risks
 
 - 最新 `master` 的 AI 套餐模型入口曾在侧栏右下的账号菜单，其他套餐曾在主导航；本次统一移动到探索「管理」，模型页面自身的套餐权限逻辑保持不变。
 - 日常合并会话列表后，需保留非主 Bot 的聊天禁用反馈、移动导航与会话操作。
 - 国内站展开的日常栏会提前初始化隐藏的 OpenCraft 聊天实例以获取会话；跨路由会随主面板重新挂载。Chrome/Whistle 登录态已验证真实会话列表，但未对真实执行中的用户会话做破坏性删除验证。
+- 跨路由保留的是最近一次列表呈现；聊天实例及其操作句柄仍按当前页面重新建立，后台返回后会更新列表。首次进入或切换到从未加载过的 Bot 时仍需正常加载。
 - 原工作区存在大量未提交改动；所有实现仅在独立 worktree 完成。
 - Hermes 仅能为本工作台已缓存的会话提供 `running` 状态；未缓存的其他客户端会话暂没有可信执行状态来源。匿名本地预览无法验证真实执行中的可视效果。
 
@@ -170,4 +182,7 @@ derived: false
 
 ## handoff
 
-- MR !4969 已提交；本轮已解决与最新 master 的冲突并完成本地门禁，待推送及远端 MR/CI 复核。5174 的既有 Chrome/Whistle 登录态证据、移动端国内站 320/390px 检查仍对应前一版本；本轮未重新做登录态视觉验证。未合并、未发布。
+- MR !4969 已合并到 master。随后用户要求将「查看更多／收起」居中；从合并后的 master 单独提交该样式调整，后续 MR !4990 已创建。按后续反馈将操作行左移约 8px、顶部内边距从 8px 缩至 2px，再将按钮行高从 20px 缩至 16px；可用按钮 hover 时增加 `font-weight: 600`。桌面会话条目高度 36px→32px、垂直内边距 6px→4px；滚动条保留 6px 槽位，在鼠标离开对话区域时隐藏滑块，触屏设备保持原样。`pnpm check`、10 项聚焦测试、`pnpm build:cn` 与 OpenCraft 生成副本只读检查通过。此前 5174 的 Chrome/Whistle 预览加载了居中规则；最新滚动条交互仍待真实列表目视核对。
+- 最新会话列表跨路由稳定性修复已更新至现有 MR !4990；同 Bot 切页继续显示旧列表，重新加载后更新，Bot/账号切换不复用其他列表。5174 国内站预览已恢复 HTTP 200；登录态切页视觉仍待人工核对。
+- 本轮首次加载态修正沿用 MR !4990；本地验证已通过，远端 SHA 和 CI 状态以交接前的即时核验为准。
+- 顶部按钮的 CSS 冲突修正沿用 MR !4990；提交并推送后复核远端状态。用户已在登录态预览截图确认图标恢复。

@@ -32,7 +32,8 @@ describe("Agent sidebar collapse", () => {
     expect(button).toHaveAttribute("data-tooltip", "收起导航");
     expect(button).toHaveAttribute("aria-expanded", "true");
     expect(button).toHaveAttribute("aria-controls", "lv-agent-sidebar-navigation");
-    expect(button).toHaveClass("hidden", "lg:inline-flex");
+    expect(button).toHaveClass("lv-agent-sidebar-toggle");
+    expect(button).not.toHaveClass("hidden");
     fireEvent.click(button);
     expect(onToggle).toHaveBeenCalledOnce();
 
