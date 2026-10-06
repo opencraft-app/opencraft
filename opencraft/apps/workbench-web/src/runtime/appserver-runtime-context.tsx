@@ -1147,6 +1147,10 @@ export async function createWebWorkbenchApplicationSupervisor(
       });
     }
     if (headlessAppHost !== null) {
+      await extensions.loadOptional("tencentoa.identity", async () => {
+        const { createTencentOaExtension } = await import("@opencraft/plugin-tencentoa");
+        return createTencentOaExtension();
+      });
       await extensions.loadOptional("vela.headless-codex", async () => {
         const { readSshServerCatalog } = await import("./ssh-server-catalog");
         // Only this headless product queries its backend catalog. Credentials,

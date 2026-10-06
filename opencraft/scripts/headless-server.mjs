@@ -21,6 +21,7 @@ import { createNativeDesktopControl } from "../apps/local-agent-host/src/desktop
 import { ModelConfigurationRepository, ModelCredentialRepository } from "../apps/local-agent-host/src/model-config/repository.ts";
 import { SpeechModelConfiguration } from "../apps/local-agent-host/src/model-config/speech.ts";
 import { SpeechTranscriptionService } from "./speech-transcription-service.mjs";
+import { TencentOaServerPlugin } from "../plugins/tencentoa/src/server.ts";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -45,6 +46,7 @@ export function parseHeadlessArguments(argv, env = process.env, getHomeDirectory
   let sshPublicAccess = false;
   let sshAccessFile;
   let sshRequireAccessKey = false;
+  let tencentOaTokenFile;
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (argument === "--help" || argument === "-h") return { help: true };
@@ -65,6 +67,9 @@ export function parseHeadlessArguments(argv, env = process.env, getHomeDirectory
       const value = argv[++index];
       if (!value || value.startsWith("--")) throw new Error("--data-dir requires a path");
       dataDirectory = value;
+    } else if (argument === "--tencentoa-token-file") {
+      tencentOaTokenFile = argv[++index];
+      if (!tencentOaTokenFile?.startsWith("/")) throw new Error("--tencentoa-token-file requires an absolute private path");
     } else if (argument === "--ssh-servers") {
       sshServersFile = argv[++index];
       if (!sshServersFile || !sshServersFile.startsWith("/")) throw new Error("--ssh-servers requires an absolute private configuration path");
@@ -99,6 +104,7 @@ export function parseHeadlessArguments(argv, env = process.env, getHomeDirectory
   if (desktopControl && !localDesktop && !trustedInternalDesktop) throw new Error("Desktop control requires an explicit desktop access policy");
   if (localDesktop && host !== "127.0.0.1") throw new Error("Local desktop requires a loopback-only listener");
   return { help: false, host, port, dataDirectory: resolve(dataDirectory), allowUnauthenticatedPublic,
+    ...(tencentOaTokenFile ? { tencentOaTokenFile } : {}),
     ...(localDesktop || trustedInternalDesktop ? { localDesktop: true } : {}),
     ...(trustedInternalDesktop ? { desktopAccess: "trusted-internal" } : {}),
     ...(desktopControl ? { desktopControl: true } : {}),
@@ -144,6 +150,7 @@ export async function startHeadlessServer(options = {}) {
   let appHostServer;
   let sshManagement;
   let desktop;
+  let tencentOa;
   let closing = null;
   const close = () => {
     if (closing !== null) return closing;
@@ -151,6 +158,7 @@ export async function startHeadlessServer(options = {}) {
       desktop?.close(); // Retire viewers before the execution provider; never stop the desktop.
       const results = await Promise.allSettled([web?.close(), appHostServer?.close(), agent?.close()]);
       sshManagement?.close();
+      tencentOa?.close();
       await releaseLock();
       const failures = results.filter((result) => result.status === "rejected").map((result) => result.reason);
       if (failures.length > 0) throw new AggregateError(failures, "OpenCraft server shutdown failed");
@@ -158,6 +166,8 @@ export async function startHeadlessServer(options = {}) {
     return closing;
   };
   try {
+    // Invalid configured credentials fail startup before any execution resource is created.
+    if (options.tencentOaTokenFile) tencentOa = await TencentOaServerPlugin.fromTokenFile(options.tencentOaTokenFile);
     if (options.localDesktop === true) {
       const observer = createNativeObserver();
       const incarnation = await observer.inspect(AbortSignal.timeout(5_000));
@@ -217,6 +227,7 @@ export async function startHeadlessServer(options = {}) {
       sshManagement,
       desktopService: desktop ?? null,
       desktopAccess,
+      tencentOaService: tencentOa ?? null,
       speechService: new SpeechTranscriptionService({ configuration: new SpeechModelConfiguration(
         new ModelConfigurationRepository(join(dataDirectory, "models")), new ModelCredentialRepository(join(dataDirectory, "models"))) }),
     });
@@ -234,6 +245,7 @@ if (isMain) {
   void (async () => {
     const args = parseHeadlessArguments(process.argv.slice(2));
     if (args.help) {
+      process.stdout.write("Optional employee recognition: --tencentoa-token-file ABSOLUTE_PRIVATE_FILE (raw 32-byte TAI application token; same-user 0600 regular file). Recognition does not grant shared resource permissions.\n");
       process.stdout.write("Usage: opencraft-server [--host 127.0.0.1|0.0.0.0] [--port 10000] [--data-dir PATH] [--ssh-servers PRIVATE_JSON] [--ssh-public-origin HTTPS_ORIGIN | --ssh-public-access] [--ssh-require-access-key] [--ssh-access-file PRIVATE_FILE] [--allow-unauthenticated-public] [--local-desktop | --trusted-internal-desktop] [--desktop-control]\nDefault: loopback only; SSH management uses shared installation access without an extra key. --ssh-require-access-key or --ssh-access-file enables key protection. Public SSH requires explicit opt-in; every permitted visitor can use saved connections in shared mode. HTTP provides no transport encryption. Desktop requires an installed verified observer. Trusted-internal desktop trusts everyone able to access this deployment; operator-owned network admission is required. Optional desktop control requires a separate installed private native executor.\n");
       return;
     }

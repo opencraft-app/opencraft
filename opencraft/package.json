@@ -160,13 +160,15 @@
     "smoke:desktop-panel": "tsx scripts/smoke-desktop-panel-ui.ts",
     "test:environments": "tsx --test tests/workbench-environments.test.ts tests/lightvela-environment-creation.test.ts tests/environment-directory.test.ts",
     "test:desktop-login": "tsx --test tests/desktop-lightvela-login.test.ts tests/lightvela-account-auth.test.ts tests/authentication-flows.test.ts",
+    "test:tencentoa": "tsx --test tests/tencentoa.test.ts",
+    "smoke:tencentoa": "tsx scripts/smoke-tencentoa.ts",
     "smoke:account-controls": "tsx scripts/smoke-account-controls.ts",
     "check:lightvela-web-product": "node scripts/assert-lightvela-web-product.mjs",
     "test:appserver:lab": "tsx --test tests/appserver-lab*.test.ts",
     "test:chat": "tsx --test tests/chat-*.test.ts tests/conversation-history-order.test.ts tests/composer-core.test.ts tests/codex-composer-codec.test.ts tests/codex-composer-attachment-focus.test.ts tests/codex-composer-attachment-preview.test.ts",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "check:boundaries": "npm run check:typography && node scripts/check-platform-boundaries.mjs",
-    "gate": "npm run check:i18n && npm run test:i18n && npm run check:boundaries && npm run typecheck && npm run test:cloud-desktop && npm run test:electron-launch && npm run test:extensions && npm run test:connectors && npm run test:appserver && npm run test:projects && npm run test:thread-lifecycle && npm run test:native-speech && npm run test:hunyuan-speech && npm run test:dsh-bridge && npm run test:appserver:lab && npm run test:chat && npm run test:workbench:unit && npm run test:shell-space && npm run test:workspace-presentation && npm run test:environments && npm run test:desktop-login && npm run test:headless-server && npm run test:web-release && npm run build:web && npm run build:expo:web && npm run build:expo:ios"
+    "gate": "npm run check:i18n && npm run test:i18n && npm run check:boundaries && npm run typecheck && npm run test:cloud-desktop && npm run test:electron-launch && npm run test:extensions && npm run test:connectors && npm run test:appserver && npm run test:projects && npm run test:thread-lifecycle && npm run test:native-speech && npm run test:hunyuan-speech && npm run test:dsh-bridge && npm run test:appserver:lab && npm run test:chat && npm run test:workbench:unit && npm run test:shell-space && npm run test:workspace-presentation && npm run test:environments && npm run test:desktop-login && npm run test:tencentoa && npm run test:headless-server && npm run test:web-release && npm run build:web && npm run build:expo:web && npm run build:expo:ios"
   },
   "dependencies": {
     "react": "19.2.3",

@@ -1420,6 +1420,13 @@ and late restoration from undoing sign-out.
 
 ### Authentication ownership
 
+The optional `tencentoa.identity` plugin contributes a separate employee provider
+and settings page, not the singleton LightVela account footer. Its Node-only
+verifier owns the private TAI application key and independently validates each
+request's signature, authenticated JWE and expiration. Browser projections are
+memory-only and generation-fenced. Recognition does not authorize shared resources.
+See [Tencent OA authentication](tencentoa-authentication.md).
+
 The application supervisor installs two renderer-neutral Cordis services before
 activating extensions, and disposes them with the application (including startup
 rollback). They are not per-Host, per-Conversation or per-React-View state:

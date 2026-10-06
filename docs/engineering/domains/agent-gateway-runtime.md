@@ -16,6 +16,12 @@ Web 与 Native 消费同一呈现计划；运行中 diff 更新不得关闭活�
 
 ## 服务与责任
 
+OpenCraft 的可选 `tencentoa.identity` 插件按每个 HTTP 请求核验太湖签名、
+解密 TOF 员工身份并检查有效期。安装级私有密钥仅属于后端，员工身份仅投影到
+当前客户端的独立 Authentication provider，不取代 LightVela 账户，不写入全局
+“当前员工”缓存，也不自动授权共享 SSH、桌面或会话。未配置时不贡献界面入口。
+详见 [Tencent OA 身份边界](../../../opencraft/docs/tencentoa-authentication.md)。
+
 OpenCraft Headless 的云听写复用安装级模型配置与凭据仓库，Model Services 管连接/密钥，语音设置只选择独立转写模型。转写模型及其密钥不进入聊天目录或 DSH 执行投影，也不跟随当前 SSH/Thread/Bot。录音开始固定配置票据，停止和重试保持同一绑定，配置变化在计费前拒绝旧录音。旧语音环境配置仅显式导入，不作为运行时第二真源；源码实现、实际迁移和预览替换分别验证。详见 [模型所有权](../../../opencraft/design/model-configuration.md#语音模型与应用服务)。
 
 OpenCraft 本机只读桌面由部署入口显式选择信任边界：默认 `--local-desktop`
