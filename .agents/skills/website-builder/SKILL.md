@@ -34,7 +34,7 @@ description: 当用户要求建站、发布网页、制作个人主页或产品�
 - 部署过程中用一句简单的话报告进度即可，不要输出中间步骤的代码或日志
 
 **能力限制必须明确告知**：用户想要保存共享数据时，先检查实际的数据能力。
-数据门禁开放且需求符合所有者写入、分享访客只读的范围时，可以实现共享 Todo 等网站；
+数据门禁开放且需求符合所有者写入、分享访客只读的范围时，可以实现共享持久数据的网站；
 数据门禁未开放，或需求需要公开访客写入时，必须说明具体限制，获得用户确认后才可提供替代方案。
 不要把已开放的后端或持久数据也描述成不可用。
 这是能力边界，必须说清楚，见「能力边界」一节。
@@ -166,30 +166,21 @@ GET {API_BASE}/v1/websites/capability
 1. **先确认范围匹配。** 本版为 `fetch(Request, env, ctx) -> Response`。先独立检查数据能力：只有 `data.data.enabled === true` 且 `data.data.contract === "rivet-sql-v1"` 才有下面的持久 SQL；否则仍为无状态。JS 模块内存不保证保留。持久化后端写入须所有者登录；有效分享码会话可 GET/HEAD 读取同一网站的数据，不能写入。分享站点给别人时必须沿用平台分享码设置及链接，不能把所有者登录 Cookie、实例凭据或平台 Token 给别人。没有任意出网、定时任务、WebSocket、任意 Node 进程、文件系统或 Secret 绑定。需求不匹配时停止并解释，不静默降级。
 2. 目录必须分离：`public/` 放静态文件，`backend/app.mjs` 放单个预打包 ES module。不要把后台源码、`.env`、私钥、平台凭据或后端 source map 放进 public。后端形态：
 
-```js
-export default {
-  async fetch(request) {
-    const url = new URL(request.url);
-    if (url.pathname === "/api/sum" && request.method === "POST") {
-      const { a, b } = await request.json();
-      if (!Number.isFinite(a) || !Number.isFinite(b)) {
-        return Response.json({ error: "invalid input" }, { status: 400 });
-      }
-      return Response.json({ sum: a + b });
-    }
-    return new Response("Not found", { status: 404 });
-  }
-};
-```
+后端必须是单个 ESM 文件，默认导出含 `async fetch(request, env, ctx)` 方法的对象，返回标准 `Response`。
+根据用户需求实现 `/api` 范围内的路由、HTTP 方法、输入校验和错误响应；未知路由返回 404，未知方法返回 405。
+平台网关已在进入后端前校验登录、分享权限、真实 Origin 和发布版本。传入用户后端的 Request 仅保留 `Content-Type`、`Accept` 请求头；`X-Website-Release`、Authorization、Cookie、Origin 及内部控制头不会传入。后端不要因这些头缺失再次拒绝请求，也不要根据请求体中的身份字段替代平台鉴权；只处理业务路由、方法、输入和持久数据。前端仍须按下文发送发布版本头，分享访客的写入与 SQL 权限继续由平台拒绝。
+不要预置固定业务示例，不依赖 Node.js 模块、实例文件系统或 JS 全局变量保存业务状态。
 
 #### 持久 SQL：仅在 rivet-sql-v1 数据门禁通过时使用
 
 - 使用 `await env.RIVET_STORAGE.sql.exec(sql, bindings)`，返回 `{ rows, columnNames, rowsRead, rowsWritten }`；使用参数绑定，不能拼接用户输入到 SQL。`await env.RIVET_STORAGE.sql.databaseSize()` 返回数据库字节数。
 - 数据库绑定网站身份，而不是 release、浏览器或 JS 全局变量；同一网站的重新部署、回滚和运行时实例替换应保留数据。网站删除会终止其持久对象，不能重新创建旧身份。
 - 当前上限：单站数据库 16 MiB，SQL 64 KiB，256 个绑定且共 1 MiB，结果最多 1000 行且共 1 MiB。超额显示保存失败，不能用 localStorage 作兜底。
-- 有效分享会话仅允许一个 SELECT 读取；不支持分享会话执行 DDL、INSERT、UPDATE、DELETE、WITH 或多语句。不要在 GET 内初始化数据库或写业务数据；在所有者写请求中初始化 schema。空库 GET 应返回空列表。
-- 随 Skill 提供 `templates/todo-backend.mjs`，可复制到 `backend/app.mjs` 开始构建共享 Todo。前端每个创建意图生成一次 `crypto.randomUUID()` 作为 `id`，发送 `{id,title}`；失败后不自动重放写请求。重新部署的 schema 变更必须向后兼容，代码回滚不等于数据 schema 回滚。
-- 用户要求“我添加，另一浏览器刷新能看到”：创建网站并启用平台分享码，将第二个独立浏览器作为分享者打开；所有者添加一条 Todo，分享者刷新 GET 读到相同 id/title，退出/重启或新发布后仍在。仅截图、自己刷新或浏览器 localStorage 不算验收。
+- 有效分享会话仅允许一个 SELECT 读取；不支持分享会话执行 DDL、INSERT、UPDATE、DELETE、WITH 或多语句。不要在 GET 内初始化数据库或写业务数据；在所有者写请求中初始化 schema。仅首次建站且业务表尚未创建时，GET 可返回空列表；存储超时、权限、配额或其他 SQL 错误必须明确报错，不得吞掉错误伪装成空数据。
+- 按用户实际需求设计数据实体、字段、接口和页面，不复制预设业务应用。持久化代码写在 `backend/app.mjs`，只通过平台提供的 SQL 接口访问本站数据；不要预置与需求无关的表、路由或业务字段。
+- 每个创建意图生成一次稳定的业务标识或幂等键；同一次意图重复提交时不得重复写入或更换标识。校验输入并使用参数绑定，以数据库约束和原子 SQL 保证一致性。写请求失败后先确认结果，不自动重放或偷偷新建记录。
+- 重新部署的 schema 变更必须向后兼容，不删除已有业务数据；读请求不能承担迁移或初始化。代码回滚不等于数据 schema 回滚，旧版本必须仍能读取升级后的数据。
+- 共享数据验收：用站点所有者登录会话执行需求规定的写入，再用第二个独立浏览器建立有效分享会话，刷新后核对同一条记录的业务标识和内容。重新部署、运行时恢复以及代码回滚后，继续通过页面和 API 验证原数据保留；分享访客写入必须拒绝。仅截图、自己刷新或浏览器 localStorage 不算验收。
 
 3. `public/index.html` 在应用 JS 执行之前声明版本标记，deployer 只在私有校验成功后把完整引号包裹的标记值替换为本次 release ID，保留同名 JavaScript 变量。标记必须使用普通单引号或双引号，不能只声明同名变量而不赋值：
 
@@ -199,20 +190,15 @@ export default {
 
 所有前端 API 请求必须同源并带 `X-Website-Release`；不要在浏览器里加入平台 Authorization 或实例密钥。写请求由浏览器自动提供真实 Origin，不要通过伪造 Origin 绕过验证：
 
-```js
-const response = await fetch("/api/sum", {
-  method: "POST",
-  credentials: "same-origin",
-  headers: {
-    "Content-Type": "application/json",
-    "X-Website-Release": globalThis.__LIGHTVELA_RELEASE_ID__
-  },
-  body: JSON.stringify({ a: 2, b: 3 })
-});
-// 401: 引导所有者完成站点登录后重新操作；不要自动重放写请求。
-// 409: 页面版本已过期，提示重新加载；不要用旧页面重试写操作。
-// 429/502/503: 显示暂时不可用，不把失败提示成已保存成功。
-```
+按实际需求确定 API 路径、HTTP 方法和请求数据；所有请求共用以下调用约束，不预置业务路由或字段：
+
+- 请求路径限定为本站 `/api` 或 `/api/*`，不能指向外部地址。
+- 使用 `credentials: "same-origin"`，并传入 `"X-Website-Release": globalThis.__LIGHTVELA_RELEASE_ID__`。
+- 有 JSON 请求体时才添加 `Content-Type: application/json`，对实际业务数据执行 `JSON.stringify`；GET/HEAD 不发送请求体。
+- 401：引导所有者完成站点登录后重新操作；不要自动重放写请求。
+- 409：页面版本已过期，提示重新加载；不要用旧页面重试写操作。
+- 429/502/503：显示暂时不可用，不把失败提示成已保存成功。
+
 
 4. 使用随 Skill 安装的打包器，按 capability 传入实际大小/文件数上限。打包器不上传、不运行后端；输出仅包含可用于 CreateRelease 的非敏感元数据：
 
@@ -241,7 +227,7 @@ python3 ~/.hermes/skills/website-builder/scripts/package_fullstack.py \
 - 主要内容板块
 - 语言（中文/英文/双语）
 
-**在澄清阶段就要识别出"需要保存数据"的需求**（留言、报名、投票、待办、计数器这类），
+**在澄清阶段就要识别出“需要保存数据”的需求**，明确数据由谁写入、谁读取以及是否需要跨浏览器共享，
 先查询「后端与数据能力检查」，判断能否按当前数据门禁和读写权限实现；
 只有能力未开放或需求超出范围时，才说明限制并征求用户是否接受替代方案。
 不要先答应下来、生成完了再解释。
@@ -668,9 +654,9 @@ DELETE {API_BASE}/v1/websites/{siteId}
 |---|---|
 | 后端未开放 | 静态展示；不能生成假后端接口 |
 | 仅 `fetch-v1` 后端开放 | 所有者访问的计算与校验 API；不能保存共享数据 |
-| 后端与 `rivet-sql-v1` 数据都开放 | 按网站隔离的持久数据，如所有者维护的 Todo、记账或内容；持有效分享码的访客可只读同一份数据 |
+| 后端与 `rivet-sql-v1` 数据都开放 | 按网站隔离的持久数据；所有者维护数据，持有效分享码的访客只读同一份数据 |
 
-后端与持久数据都开放时，**所有者新增 Todo，另一独立浏览器通过有效分享会话刷新看到它**，才是共享数据验收；同一浏览器刷新不是这个验收的替代品。重新部署同一站点不能清空数据。
+后端与持久数据都开放时，**所有者写入后，另一独立浏览器通过有效分享会话刷新读到同一份服务端数据**，才是共享数据验收；同一浏览器刷新不是这个验收的替代品。重新部署同一站点不能清空数据。
 
 ### 当前仍不能做的功能
 
@@ -690,7 +676,7 @@ DELETE {API_BASE}/v1/websites/{siteId}
 | 访客报名 / 问卷 / 预约 | 链接到受信任的第三方表单 |
 | 在线支付 / 下单 | 商品展示和询价联系方式 |
 | 自建账号体系 | 无自建账号的内容页 |
-| 数据门禁未开放的 Todo | 说明共享数据暂不可用，不默认为单机版 |
+| 需要共享持久数据但数据门禁未开放 | 说明共享数据暂不可用，不默认为单机版 |
 
 **不要替用户假装做到了。** 必须以实际能力和跨浏览器、重新部署验收为准。
 

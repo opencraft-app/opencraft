@@ -556,6 +556,32 @@ separate stateless compatibility path, not the persistent implementation.
   and `rivet-sql-v1` only when `WEBSITE_BACKEND_DATA_ENABLED=1`, a configured backend
   runtime and the exact user beta allowlist all pass. Static sites are unchanged;
   frontend visibility still follows its existing hidden `show()` boundary.
+- A static candidate may replace a fullstack site without deleting its backend data or history.
+  Before legacy static-prefix cleanup, the worker requires the authenticated manager to confirm
+  zero retained backend bytes; nonempty backend history is reclaimed only by control-plane
+  retention, not by inferring deletion authority from the new candidate's kind. An unavailable
+  configured manager fails publication closed. An unconfigured runtime is not evidence of zero
+  backend bytes: legacy static publication remains available, but the worker skips prefix pruning
+  and preserves history rather than interpreting the optional storage client's default as deletion
+  authority. Static-only cleanup resumes only after authenticated empty-store confirmation.
+- Offline release bindings use schema2 to declare the regional runtime driver and a boolean
+  `data_enabled` input. Persistent data is rejected for `runsc`. The explicit `enable` phase
+  requires a nonempty owner allowlist and renders CTL `WEBSITE_BACKEND_DATA_ENABLED=1` with
+  gateway `SITE_GATEWAY_BACKEND_SHARED_READ=true` together. `prepare`, legacy schema1 and a
+  false data input explicitly override inherited gates to closed values; they never establish
+  live runtime/storage readiness. See [regional release bindings](../../../site-runtime/deploy/RELEASE-BINDINGS.md).
+- Regional infrastructure can consume expiring, bucket-scoped storage sessions without
+  placing the issuer's root credentials in runtime Pods. Worker Registry opts in through
+  `ACTOR_CODE_STORAGE_SESSION_FILE` and rereads the bounded projected file for each COS
+  request; the third session token is signed with the request. Depot opts in through
+  `ACTOR_COLD_STORAGE_SESSION_FILE` and supplies expiry-aware credentials to its S3 client.
+  Missing, malformed or expiring session files fail closed rather than falling back to
+  static environment credentials. Without these options, the existing credential path
+  is unchanged. Projected Secret volumes must not use `subPath`; issuer renewal and
+  consumer refresh must be qualified on the actual regional runtime. FoundationDB backup
+  uses its native token-bearing credential file, not a two-part key substituted for STS.
+  Role creation, Secret delivery and a successful source build are separate preparation
+  evidence, not proof of runtime renewal or regional business readiness.
 - A trusted `(environment scope, site ID)` deterministically identifies one
   Worker and one `VelaSite` Durable Object. Releases select a verified backend
   digest within the retained Worker package; they do not create a new database.
@@ -589,6 +615,13 @@ separate stateless compatibility path, not the persistent implementation.
   readiness. External deployment and filesystem writes are not one transaction.
   Each DataDir has one manager; the service executable holds a nonblocking
   exclusive OS file lock for its lifetime.
+- Explicit site deletion is terminal rather than transaction recovery. Only the
+  reviewed native adapter may supersede a pending publication: it first validates
+  the journal/receipt's original endpoint/scope identity, then acknowledges the
+  permanent Object tombstone and Actor deletion. Local journal/artifact removal
+  is fsynced before releasing the in-memory fence. Failure or foreign identity
+  stays closed; no activation replay, inferred ownership, hand-erased lock or
+  Worker deletion is used. A late activation cannot recreate the Object identity.
 - Gateway freshly verifies share policy, generation and expiration before a
   GET/HEAD backend read. `SITE_GATEWAY_BACKEND_SHARED_READ=true` is separately
   required. Browser-supplied internal headers are discarded; the gateway creates
@@ -604,9 +637,26 @@ separate stateless compatibility path, not the persistent implementation.
   retention removes code artifacts only, not the site database. Worker hard delete
   is not used to bypass the upstream historical Object inventory requirement.
 - New-image and single-instance Skill delivery use the same content-addressed
-  bundle, including the Todo backend template. Previous two-file bundle manifests
-  remain verifiable for exact rollback; existing credentials are not part of that
-  bundle. Data capability is queried independently; absent/unknown fields are off.
+  business-agnostic bundle containing only the Skill and fullstack packager.
+  The Skill describes only generic execution, data and same-origin request contracts;
+  it carries no predetermined application routes, entities or request fields.
+  Application fixtures remain in runtime tests and are never installed on user
+  machines. Previous bundle manifests remain verifiable for exact rollback;
+  existing credentials are not part of that bundle. Data capability is queried independently; absent/unknown fields are off.
+
+Native dispatch retains only plain generation/Worker/class bindings and code recipes
+in module state. Worker and Durable Object handles are recreated per request;
+reusing them violates workerd I/O ownership. Eviction uses the validated same-class
+recipe without a registry lookup, fences pending readiness by epoch, and retains
+the immutable generation binding after unloading. Different Worker versions require
+a new admitted generation; native containers retain their first class. Deployment-bound
+Host execution fences user dispatch while requesting normal Engine-owned sleep.
+Only StopActor performs eviction and SQLite capability cleanup; StartActor resolves
+the active Deployment for its newly admitted generation, preserving the stable
+Actor/database identity. Generation-scoped sleep intents have bounded recovery;
+private preparation may poll an observed transition, never replay application work.
+Local native
+dispatch qualification is not a regional Workers/Depot/FDB rollout receipt.
 
 This is a source design, not a launch receipt. Release gates require a real healthy
 regional Workers/Depot/FDB path, persistence across deployment and host replacement,
@@ -630,8 +680,9 @@ complete the same workflow. These source changes are not evidence of live routin
 
 ### Website fullstack revision retention (candidate implementation)
 
-Fullstack publication retains historical static and backend artifacts together;
-legacy static-only publication retains its existing two-prefix behavior. Cleanup
+Fullstack publication retains historical static and backend artifacts together.
+Legacy static publication keeps its two-prefix layout; unconfigured runtime storage
+cannot authorize prefix pruning, so publication preserves history in that case. Cleanup
 requires a CTL transaction to mark a non-active historical release `pruning`, removing
 rollback eligibility before remote deletion. The worker deletes only that revision,
 checks current lease/generation between stages, and finalizes `pruned`; partial COS
@@ -671,3 +722,36 @@ snapshot has no unsettled work. Successful history is considered first. Failed
 releases do not count toward the rollback window. Cleanup includes the exact
 private upload ZIP key as well as the exact static/backend revision; unknown runtime
 directories without authoritative release records are not automatically removed.
+
+Website native response stamping captures brand-checked getters across the pristine Response/Body prototype chain. workerd inherits body from Body.prototype; Node-only own-property assumptions must not prevent native Worker preparation. User response properties/proxies are never used to obtain execution identity.
+
+User backend Request boundary is distinct from the browser request: the gateway checks owner/share authorization, Origin and release identity before invocation. The Native wrapper forwards only Content-Type and Accept headers into generated application code, preserving the URL, method and body; it does not expose Cookie, Authorization, browser release headers or private control headers. Application handlers must not reject an otherwise accepted request merely because those platform headers are absent. The shipped website-builder Skill documents this boundary while continuing to require the browser release header and retaining platform write restrictions.
+
+
+Native deployment readiness must be qualified at both the management registry
+read path and the private stateless/durable execution path. Ready runtime Hosts
+and matching binaries do not establish a readable active-deployment pointer.
+A management GET503 before preparation is not evidence of a package mismatch
+or permission to replay activation, application writes, Sleep or rollback.
+The manager's bounded startup reconciliation preserves unresolved per-site
+journals as invocation fences; actual normal journal recovery and private package
+validation remain separate acceptance requirements from Pod health.
+
+### Website share generation cache consistency
+
+Site share form policy and authenticated share cookies must use fresh CTL metadata, not the ordinary site metadata TTL. A newly rotated valid share session otherwise conflicts with the cached generation and redirects back to the share form; revocation must not wait for the positive cache TTL either. Owner sessions retain their existing fresh-owner check, backend API reads retain their existing fresh generation gate, and share writes remain denied. This correction is not deployment evidence.
+
+### Final regional test candidate consistency (2026-10-06)
+
+The final manager r12, website worker r13 and gateway share-cache candidate are
+source-bound test overlays, not formal production CI images. Beijing final manager
+and gateway observation accepted both exact deployments and actual executable
+bindings; the final real website passed independent owner/share browser refresh,
+original record preservation and visitor write denial with ordinary DNS/strict TLS.
+Korean real code upgrade, joint rollback, static publication and static-to-fullstack
+rollback preserved the same original complete record. Generic Skill delivery is
+qualified in fresh test images in both regions; no production image/pool adoption
+is implied. Exact final Native lifecycle/isolation and regional release bindings
+remain separate gates. A local international TLS handshake failure does not prove
+a production service outage. The current task authorization is preparation only,
+without production, GitOps promotion or stock Skill rollout.

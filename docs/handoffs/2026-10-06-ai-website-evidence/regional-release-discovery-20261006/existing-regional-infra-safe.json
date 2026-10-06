@@ -1,0 +1,33 @@
+{
+  "scope": "only existing SH/SG production control clusters; read-only workloads/services and fleet CRD presence; no Secrets/no writes",
+  "productionMutations": 0,
+  "regions": [
+    {
+      "region": "shprod",
+      "context": "cls-a0ol7bit-100045199955-context-default",
+      "workloads": [],
+      "services": [],
+      "fleetCells": [],
+      "clusterIdentityRead": true,
+      "kubeSystemUID": "a6116150-8900-451b-8421-4c99c2edec98",
+      "workloadListSucceeded": true,
+      "serviceListSucceeded": true,
+      "rivetCellCRDReadSucceeded": true,
+      "rivetCellCRDPresent": false
+    },
+    {
+      "region": "sgprod",
+      "context": "cls-j350bwok-100045199955-context-default",
+      "workloads": [],
+      "services": [],
+      "fleetCells": [],
+      "clusterIdentityRead": true,
+      "kubeSystemUID": "ad02b792-24fb-437e-b527-fbf583cfd2b6",
+      "workloadListSucceeded": true,
+      "serviceListSucceeded": true,
+      "rivetCellCRDReadSucceeded": true,
+      "rivetCellCRDPresent": false
+    }
+  ],
+  "checkedAt": "2026-10-06T10:00:07.692363+00:00"
+}

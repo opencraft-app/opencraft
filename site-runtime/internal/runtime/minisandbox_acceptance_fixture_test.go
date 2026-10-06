@@ -17,7 +17,7 @@ func TestMinisandboxEmitAcceptanceFixtures(t *testing.T) {
 	if !filepath.IsAbs(root) {
 		t.Fatal("absolute fixture directory required")
 	}
-	code, err := os.ReadFile("../../../.agents/skills/website-builder/templates/todo-backend.mjs")
+	code, err := os.ReadFile("../../tests/fixtures/todo-backend.mjs")
 	if err != nil {
 		t.Fatal(err)
 	}

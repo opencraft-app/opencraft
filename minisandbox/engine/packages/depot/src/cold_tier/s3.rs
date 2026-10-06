@@ -148,10 +148,12 @@ impl S3ColdTier {
 		queue_timeout_ms: u64,
 		write_debt_policy: FdbWriteDebtPolicy,
 	) -> anyhow::Result<Self> {
-		let shared_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
-			.region(Region::new(region.into()))
-			.load()
-			.await;
+        let mut config = aws_config::defaults(aws_config::BehaviorVersion::latest())
+            .region(Region::new(region.into()));
+        if let Some(path) = std::env::var_os("ACTOR_COLD_STORAGE_SESSION_FILE") {
+            config = config.credentials_provider(ProjectedStorageSession { path: path.into() });
+        }
+        let shared_config = config.load().await;
 		let mut s3_config =
 			aws_sdk_s3::config::Builder::from(&shared_config).force_path_style(force_path_style);
 		if let Some(endpoint_url) = endpoint_url {
@@ -393,4 +395,35 @@ fn backend(operation: &'static str, key: &str, source: anyhow::Error) -> ColdTie
 		key: key.to_string(),
 		source,
 	}
+}
+
+// Explicit provider bypasses static environment credentials when enabled.
+#[derive(Debug)]
+struct ProjectedStorageSession { path: std::path::PathBuf }
+#[derive(serde::Deserialize)]
+struct StorageSession {
+    access_key_id: String,
+    secret_access_key: String,
+    session_token: String,
+    expires_at: u64,
+}
+impl aws_credential_types::provider::ProvideCredentials for ProjectedStorageSession {
+    fn provide_credentials<'a>(&'a self) -> aws_credential_types::provider::future::ProvideCredentials<'a> where Self: 'a {
+        use aws_credential_types::{Credentials, provider::{future, error::CredentialsError}};
+        future::ProvideCredentials::new(async move {
+            let failure = || CredentialsError::provider_error("projected storage session unavailable, invalid or expiring");
+            let file = tokio::fs::File::open(&self.path).await.map_err(|_| failure())?;
+            let mut bytes = Vec::new();
+            file.take(16385).read_to_end(&mut bytes).await.map_err(|_| failure())?;
+            if bytes.len() > 16384 { return Err(failure()); }
+            let session: StorageSession = serde_json::from_slice(&bytes).map_err(|_| failure())?;
+            let expiry = std::time::UNIX_EPOCH.checked_add(std::time::Duration::from_secs(session.expires_at)).ok_or_else(failure)?;
+            if session.access_key_id.is_empty() || session.secret_access_key.is_empty() || session.session_token.is_empty()
+                || expiry.duration_since(std::time::SystemTime::now()).map_err(|_| failure())? < std::time::Duration::from_secs(30) {
+                return Err(failure());
+            }
+            Ok(Credentials::new(session.access_key_id, session.secret_access_key,
+                Some(session.session_token), Some(expiry), "KRProjectedStorageSession"))
+        })
+    }
 }

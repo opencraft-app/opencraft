@@ -1,10 +1,10 @@
-// Offline template regressions only: this adapter is not native persistence acceptance.
+// Offline business-fixture regressions only: this adapter is not native persistence acceptance.
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
-import app from "../templates/todo-backend.mjs";
+import app from "./fixtures/todo-backend.mjs";
 
-const templateURL = new URL("../templates/todo-backend.mjs", import.meta.url);
+const templateURL = new URL("./fixtures/todo-backend.mjs", import.meta.url);
 const legacySchema = "CREATE TABLE todos (id TEXT PRIMARY KEY, title TEXT NOT NULL, done INTEGER NOT NULL CHECK(done IN (0, 1)), created_at INTEGER NOT NULL)";
 const uuid = (n) => `00000000-0000-4000-8000-${n.toString(16).padStart(12, "0")}`;
 

@@ -29,7 +29,7 @@ class SkillDeliveryTests(unittest.TestCase):
     def test_bundle_reproducible_and_complete(self):
         first = bundle.build(self.source)
         self.assertEqual(first, bundle.build(self.source))
-        self.assertEqual(set(first['files']), {'SKILL.md', 'scripts/package_fullstack.py', 'templates/todo-backend.mjs'})
+        self.assertEqual(set(first['files']), {'SKILL.md', 'scripts/package_fullstack.py'})
         self.assertEqual(bundle.decode(bundle.encode(first)), first)
 
     def test_install_upgrade_rollback_preserves_credentials(self):
@@ -55,19 +55,19 @@ class SkillDeliveryTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             bundle.build(self.source)
 
-    def test_upgrade_previous_two_file_bundle_can_rollback(self):
+    def test_upgrade_removes_previous_business_fixture_and_can_rollback(self):
         previous = bundle.build(self.source, bundle.LEGACY_FILES)
         bundle.install(previous, self.home)
         current = bundle.build(self.source)
         bundle.install(current, self.home)
         active = self.home / '.hermes/skills/website-builder'
-        self.assertEqual((active / 'templates/todo-backend.mjs').read_text(), 'export default { fetch() {} };')
-        self.assertEqual(bundle.rollback(current['version'], self.home)['active'], previous['version'])
         self.assertFalse((active / 'templates').exists())
+        self.assertEqual(bundle.rollback(current['version'], self.home)['active'], previous['version'])
+        self.assertEqual((active / 'templates/todo-backend.mjs').read_text(), 'export default { fetch() {} };')
         self.assertEqual(self.credentials.read_text(), 'fixture credential bytes\n')
 
     def test_refuses_template_directory_symlink(self):
-        data = bundle.build(self.source)
+        data = bundle.build(self.source, bundle.LEGACY_FILES)
         (self.source / 'templates/todo-backend.mjs').unlink()
         (self.source / 'templates').rmdir()
         foreign = self.root / 'foreign'
@@ -75,7 +75,7 @@ class SkillDeliveryTests(unittest.TestCase):
         (foreign / 'todo-backend.mjs').write_text('foreign template')
         (self.source / 'templates').symlink_to(foreign, target_is_directory=True)
         with self.assertRaises(ValueError):
-            bundle.build(self.source)
+            bundle.build(self.source, bundle.LEGACY_FILES)
 
     def test_refuses_corrupt_installed_version(self):
         data = bundle.build(self.source)

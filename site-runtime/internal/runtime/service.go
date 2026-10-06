@@ -513,8 +513,13 @@ func (s *Service) siteRequest(w http.ResponseWriter, r *http.Request, site strin
 	lock.Lock()
 	defer lock.Unlock()
 	if s.pendingDeployment(site) {
-		http.Error(w, "deployment transaction pending", 503)
-		return
+		// An uncertain publication remains fenced for reads, writes and rollback.
+		// Explicit irreversible deletion is different: the native DO tombstone
+		// wins over even a late activation, without guessing its ownership.
+		if r.Method != "DELETE" || !s.pendingSiteDeletionBound(site) {
+			http.Error(w, "deployment transaction pending", 503)
+			return
+		}
 	}
 	s.storeLock.Lock()
 	defer s.storeLock.Unlock()
@@ -533,6 +538,11 @@ func (s *Service) siteRequest(w http.ResponseWriter, r *http.Request, site strin
 			http.Error(w, "delete failed", 500)
 			return
 		}
+		if err := s.syncDeploymentDir(s.dataDir); err != nil {
+			http.Error(w, "delete sync failed", 500)
+			return
+		}
+		s.pendingDeployments.Delete(site)
 		w.WriteHeader(204)
 		return
 	}

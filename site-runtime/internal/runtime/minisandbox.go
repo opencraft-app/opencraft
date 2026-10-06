@@ -355,9 +355,16 @@ func (c *minisandboxClient) verifyPrivatePackageMode(parent context.Context, end
 	if !digestPattern.MatchString(packageID) {
 		return fmt.Errorf("invalid compiled package ID")
 	}
-	ctx, cancel := context.WithTimeout(parent, 3*time.Second)
+	probeTimeout := 3 * time.Second
+	if durable {
+		// Normal Engine stop/checkpoint/reallocation is not a three-second
+		// stateless watcher-cache refresh. Parent context still bounds this wait.
+		probeTimeout = 20 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(parent, probeTimeout)
 	defer cancel()
 	resetArmed := false
+	rotationArmed := false
 	for {
 		req, err := http.NewRequestWithContext(ctx, "GET", c.base+endpoint, nil)
 		if err != nil {
@@ -369,7 +376,7 @@ func (c *minisandboxClient) verifyPrivatePackageMode(parent context.Context, end
 		}
 		resp, requestErr := c.http.Do(req)
 		if requestErr != nil {
-			if !resetArmed || ctx.Err() != nil {
+			if (!resetArmed && !rotationArmed) || ctx.Err() != nil {
 				return fmt.Errorf("minisandbox package unavailable")
 			}
 		} else {
@@ -378,8 +385,28 @@ func (c *minisandboxClient) verifyPrivatePackageMode(parent context.Context, end
 			// Native state.abort breaks the stale class container without deleting its
 			// Depot database. Only an armed, private control probe may retry its transient
 			// failure. No application handler or SQL is ever replayed by this fence.
-			resetting := resetArmed && (resp.StatusCode == http.StatusInternalServerError || resp.StatusCode == http.StatusBadGateway || resp.StatusCode == http.StatusServiceUnavailable || resp.StatusCode == http.StatusGatewayTimeout)
-			if !resetting {
+			resetting := (resetArmed || rotationArmed) && (resp.StatusCode == http.StatusInternalServerError || resp.StatusCode == http.StatusBadGateway || resp.StatusCode == http.StatusServiceUnavailable || resp.StatusCode == http.StatusGatewayTimeout)
+			// Executor admission/cold preparation can briefly be unavailable while
+			// the platform itself stays Ready. Only the native, explicitly retryable
+			// 503 envelope may be polled, within the bounded preparation fence.
+			// This endpoint is the wrapper's private preparation path: it never
+			// invokes application fetch or SQL and cannot arm a durable reset.
+			// Native generation rotation is also safe to poll here: Host emits this
+			// exact code before dispatch, and Workers API strips internal headers.
+			var unavailable struct {
+				Error struct {
+					Code      string `json:"code"`
+					Retryable bool   `json:"retryable"`
+				} `json:"error"`
+			}
+			preparing := readErr == nil && len(data) <= 1024 && resp.StatusCode == http.StatusServiceUnavailable &&
+				json.Unmarshal(data, &unavailable) == nil && unavailable.Error.Retryable &&
+				((resp.Header.Get("X-Workers-Error") == "true" && (unavailable.Error.Code == "executor_unavailable" || unavailable.Error.Code == "worker_prepare_failed" || unavailable.Error.Code == "executor_overloaded")) ||
+					(durable && unavailable.Error.Code == "worker_version_rotating"))
+			if preparing && durable && unavailable.Error.Code == "worker_version_rotating" {
+				rotationArmed = true
+			}
+			if !resetting && !preparing {
 				var compiled struct {
 					PackageID string `json:"package_id"`
 				}
@@ -490,6 +517,39 @@ func (c *minisandboxClient) DeleteSite(ctx context.Context, site string) error {
 	// inventory and its durable tombstone must not be bypassed for recreation.
 	return err
 }
+
+const minisandboxExecutionPackageHeader = "X-Lightvela-Execution-Package-ID"
+const minisandboxExecutionDigestHeader = "X-Lightvela-Execution-Backend-SHA256"
+
+// Run cannot rely on a previous private probe: native execution can drift after
+// readiness. Bind this one application response to control-owned schema2 state,
+// the validated stored bundle and the original invocation before contacting DO.
+func (c *minisandboxClient) executionReceipt(dir, digest string) (deploymentReceipt, error) {
+	var receipt deploymentReceipt
+	bundle, err := load(dir)
+	if err != nil || bundle.SHA256 != digest {
+		return receipt, fmt.Errorf("minisandbox stored execution identity mismatch")
+	}
+	data, err := readDeploymentFile(filepath.Join(filepath.Dir(dir), ".minisandbox.json"), 8192)
+	if err != nil {
+		return receipt, fmt.Errorf("minisandbox execution receipt unavailable")
+	}
+	receipt, err = parseDeploymentReceipt(data)
+	if err != nil || receipt.Schema != 2 {
+		return receipt, fmt.Errorf("invalid minisandbox execution receipt")
+	}
+	identity, err := c.DeploymentIdentity(filepath.Base(filepath.Dir(dir)))
+	if err != nil || identity != receipt.Identity {
+		return receipt, fmt.Errorf("minisandbox execution receipt identity mismatch")
+	}
+	for _, retained := range receipt.Digests {
+		if retained == digest {
+			return receipt, nil
+		}
+	}
+	return receipt, fmt.Errorf("minisandbox execution backend is not retained")
+}
+
 func (c *minisandboxClient) Run(ctx context.Context, dir string, in Invocation) (Result, error) {
 	var result Result
 	site := filepath.Base(filepath.Dir(dir))
@@ -500,14 +560,22 @@ func (c *minisandboxClient) Run(ctx context.Context, dir string, in Invocation) 
 	if err != nil {
 		return result, err
 	}
+	receipt, err := c.executionReceipt(dir, in.SHA256)
+	if err != nil {
+		return result, err
+	}
 	// Stable PUT is idempotent and completes Actor readiness before user fetch.
 	if _, err = c.jsonRequest(ctx, "PUT", object, nil, nil); err != nil {
 		return result, err
 	}
-	req, err := http.NewRequestWithContext(ctx, in.Method, c.base+object+"/fetch", bytes.NewReader(in.Body))
+	// GET/HEAD handlers can write SQL too. A non-rewindable body (even when
+	// empty) prevents net/http's implicit replay on a reused connection after
+	// an application response is lost; no GetBody/idempotency escape hatch.
+	req, err := http.NewRequestWithContext(ctx, in.Method, c.base+object+"/fetch", io.NopCloser(bytes.NewReader(in.Body)))
 	if err != nil {
 		return result, err
 	}
+	req.ContentLength = int64(len(in.Body))
 	for k, v := range allowedHeaders(in.Headers, false) {
 		req.Header.Set(k, v)
 	}
@@ -521,6 +589,14 @@ func (c *minisandboxClient) Run(ctx context.Context, dir string, in Invocation) 
 		return result, fmt.Errorf("minisandbox invocation unavailable")
 	}
 	defer resp.Body.Close()
+	// Missing, conflicting or foreign execution markers fail closed even on
+	// HTTP 200 (including native fixture JSON). Never probe, reset or replay the
+	// application request after it may already have committed SQL side effects.
+	packages := resp.Header.Values(minisandboxExecutionPackageHeader)
+	digests := resp.Header.Values(minisandboxExecutionDigestHeader)
+	if len(packages) != 1 || packages[0] != receipt.PackageID || len(digests) != 1 || digests[0] != in.SHA256 {
+		return result, fmt.Errorf("minisandbox response execution identity mismatch")
+	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, MaxResponseBytes+1))
 	if err != nil || len(body) > MaxResponseBytes {
 		return result, fmt.Errorf("minisandbox response too large")

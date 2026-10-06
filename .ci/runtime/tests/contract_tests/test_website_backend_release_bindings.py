@@ -233,9 +233,13 @@ class WebsiteBackendSourceRenderTests(unittest.TestCase):
                             self.assertEqual(env[other], {'name': other, 'value': ''})
                             self.assertEqual(env['WEBSITE_RUNTIME_BASE_URL']['value'], cfg['runtime']['base_url'])
                             self.assertEqual(env['SSL_CERT_FILE']['value'], self.api.CA_PATH)
+                            data_enabled = phase == 'enable' and cfg.get('data_enabled', False)
                             if service == 'ctl':
                                 self.assertEqual(env['WEBSITE_BACKEND_BETA_USERS']['value'],
                                                  'usr_testowner' if phase == 'enable' else '')
+                                self.assertEqual(env['WEBSITE_BACKEND_DATA_ENABLED']['value'], '1' if data_enabled else '0')
+                            if service == 'site-gateway':
+                                self.assertEqual(env['SITE_GATEWAY_BACKEND_SHARED_READ']['value'], str(data_enabled).lower())
                             volume = next(x for x in pod['volumes'] if x['name'] == 'website-runtime-ca')
                             self.assertEqual(volume['secret'], {'secretName': 'website-runtime-ca',
                                 'defaultMode': 292, 'items': [{'key': 'ca-bundle.pem', 'path': 'ca-bundle.pem'}]})
@@ -250,12 +254,14 @@ class WebsiteBackendSourceRenderTests(unittest.TestCase):
                             if not annotations and 'annotations' not in before['spec']['template']['metadata']:
                                 dep['spec']['template']['metadata'].pop('annotations')
                             container['env'] = [x for x in container['env'] if x['name'] not in
-                                {own, other, 'WEBSITE_RUNTIME_BASE_URL', 'SSL_CERT_FILE', 'WEBSITE_BACKEND_BETA_USERS'}]
+                                {own, other, 'WEBSITE_RUNTIME_BASE_URL', 'SSL_CERT_FILE', 'WEBSITE_BACKEND_BETA_USERS',
+                                 'WEBSITE_BACKEND_DATA_ENABLED', 'SITE_GATEWAY_BACKEND_SHARED_READ'}]
                             prior_container = next(c for c in before['spec']['template']['spec']['containers']
                                                    if c['name'] == container_name)
                             container['env'].extend(copy.deepcopy(v) for v in prior_container.get('env', [])
                                                     if v['name'] in {own, other, 'WEBSITE_RUNTIME_BASE_URL',
-                                                                     'SSL_CERT_FILE', 'WEBSITE_BACKEND_BETA_USERS'})
+                                                                     'SSL_CERT_FILE', 'WEBSITE_BACKEND_BETA_USERS',
+                                 'WEBSITE_BACKEND_DATA_ENABLED', 'SITE_GATEWAY_BACKEND_SHARED_READ'})
                             if not container['env'] and 'env' not in next(c for c in before['spec']['template']['spec']['containers']
                                                                        if c['name'] == container_name):
                                 container.pop('env')

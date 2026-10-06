@@ -1,0 +1,134 @@
+{
+  "status": "DUAL_REGION_FULL_SOURCE_SERVICE_TEST_IMAGES_AND_RETAINED_BUSINESS_PASS",
+  "checkedAt": "2026-10-06T09:40:41.806658+00:00",
+  "productionChanged": false,
+  "sourcePushOrMerge": false,
+  "newModelCalls": 0,
+  "newSites": 0,
+  "originalAppWrites": 0,
+  "shareRotations": 0,
+  "images": {
+    "beijing": {
+      "receipt": ".tmp/minisandbox-integration/full-source-final-test-rollout-20261006/bj-observe-20261006T093752Z-safe.json",
+      "receiptSHA256": "af75997feaf0ffc19d58a6d2290a9cff8d1c0e07adf924c73711a274f5928e41",
+      "targets": [
+        {
+          "role": "manager",
+          "uid": "984b9f09-9c91-47e0-9b1c-e1b308b5fe4e",
+          "ready": true,
+          "accepted": true,
+          "samples": [
+            {
+              "podUID": "b41036e8-bd67-451f-95e4-4bd18827c8db",
+              "imageID": "lightclaw-bj8.tencentcloudcr.com/lightclaw/site-gateway@sha256:7d90ddd6d174ffcbc0baed7badcb568ed3d188c7c9eed09d5205c13b9382121d",
+              "binarySHA256": "a0855be92317413424e104465d34ee1594eb32c912493bdb3a6fb632541cefa0",
+              "restartCount": 0
+            }
+          ],
+          "preservedSpec": true
+        },
+        {
+          "role": "gateway",
+          "uid": "25541b6a-6c34-4531-aceb-91c9faf21654",
+          "ready": true,
+          "accepted": true,
+          "samples": [
+            {
+              "podUID": "06d6b8d3-e199-4bf3-9540-77e278e36a5f",
+              "imageID": "lightclaw-bj8.tencentcloudcr.com/lightclaw/site-gateway@sha256:05702147218e457838502368c9378906c31e1104d5a8777cd12eea94ffc27bdf",
+              "binarySHA256": "011be6974de5b0215f853e644d66b28b0df8fec762ba36a0ea429a70afae2dbb",
+              "restartCount": 0
+            }
+          ],
+          "preservedSpec": true
+        },
+        {
+          "role": "worker",
+          "uid": "c0024f8d-dc9a-402a-b23e-4ceb2085bbea",
+          "ready": true,
+          "accepted": true,
+          "samples": [
+            {
+              "podUID": "8580ff0c-4936-4dd4-9e5d-650bd2c4385c",
+              "imageID": "lightclaw-bj8.tencentcloudcr.com/lightclaw/workers@sha256:f7867cfba6a3fc3b7d95aa383b87e6b71f0b56166998541516499e9acf490a5a",
+              "binarySHA256": "565304124f8d2f628c8f7eec4a90ff51c45fd69aebed09137813965310ae1217",
+              "restartCount": 0
+            }
+          ],
+          "preservedSpec": true
+        }
+      ],
+      "configPVCCommandsPreserved": true
+    },
+    "korea": {
+      "receipt": ".tmp/minisandbox-integration/full-source-final-test-rollout-20261006/kr-v2-observe-20261006T093412Z-safe.json",
+      "receiptSHA256": "c7a186db8e70d64c8baf79540bf60886fb690fed89e7292566eba1512f918ad0",
+      "targets": [
+        {
+          "role": "manager",
+          "uid": "17db92d5-5fe5-4966-a51e-2fdf24a544b0",
+          "ready": true,
+          "accepted": true,
+          "samples": [
+            {
+              "podUID": "ff8549d1-4ed7-44cb-a487-a3c91005ccb5",
+              "imageID": "lightclaw-kr1.tencentcloudcr.com/actor-fleet/website-runtime@sha256:7d90ddd6d174ffcbc0baed7badcb568ed3d188c7c9eed09d5205c13b9382121d",
+              "binarySHA256": "a0855be92317413424e104465d34ee1594eb32c912493bdb3a6fb632541cefa0",
+              "restartCount": 0
+            }
+          ],
+          "preservedSpec": true
+        },
+        {
+          "role": "gateway",
+          "uid": "7daa7319-987c-499c-bd14-2e376efc57f7",
+          "ready": true,
+          "accepted": true,
+          "samples": [
+            {
+              "podUID": "46b15c06-a018-42dc-99a3-1e39ce9d5f2a",
+              "imageID": "lightclaw-kr1.tencentcloudcr.com/actor-fleet/website-gateway@sha256:05702147218e457838502368c9378906c31e1104d5a8777cd12eea94ffc27bdf",
+              "binarySHA256": "011be6974de5b0215f853e644d66b28b0df8fec762ba36a0ea429a70afae2dbb",
+              "restartCount": 0
+            }
+          ],
+          "preservedSpec": true
+        },
+        {
+          "role": "worker",
+          "uid": "d1dac5bd-84f2-4386-9341-5b51b922be7c",
+          "ready": true,
+          "accepted": true,
+          "samples": [
+            {
+              "podUID": "0a26b4ad-5313-4e08-a67a-77acd3a9921b",
+              "imageID": "lightclaw-kr1.tencentcloudcr.com/actor-fleet/website-workers@sha256:f7867cfba6a3fc3b7d95aa383b87e6b71f0b56166998541516499e9acf490a5a",
+              "binarySHA256": "565304124f8d2f628c8f7eec4a90ff51c45fd69aebed09137813965310ae1217",
+              "restartCount": 0
+            }
+          ],
+          "preservedSpec": true
+        }
+      ],
+      "configPVCCommandsPreserved": true
+    }
+  },
+  "business": {
+    "beijing": {
+      "receipt": ".tmp/minisandbox-integration/full-source-final-test-rollout-20261006/business-final-result.json",
+      "checksPassed": 15,
+      "independentOwnerAndShareBrowser": true,
+      "ordinaryDNSAndStrictTLS": true,
+      "shareWriteHTTP": 401,
+      "originalRecordIdentityPreserved": true
+    },
+    "korea": {
+      "receipt": ".tmp/minisandbox-integration/full-source-final-test-rollout-20261006/browser-after-receipt.json",
+      "twoIndependentOwnerBrowserProcesses": true,
+      "originalFullRecordSHA256": "b29923c7cff5e5922bcc914172f678b01777ece886955745433be63a2a85169a",
+      "originalRecordVisibleAfterRefresh": true,
+      "finalImagesFreshShareRetest": false,
+      "scope": "Final-image persistence checked with two owner browsers; existing independently qualified share read/write boundary remains earlier separate evidence."
+    }
+  }
+}

@@ -101,3 +101,46 @@ func TestNativeLegacyVerifyFencesCompetitionAfterProbe(t *testing.T) {
 		t.Errorf("legacy verifier omitted control fence: stateless=%d durable=%d", stateless, durable)
 	}
 }
+
+// A real native facade may stay Ready while the stateless executor is warming.
+// The private probe can poll that bounded condition without replaying app SQL.
+func TestMinisandboxPrivateProbeWaitsForRetryableExecutor(t *testing.T) {
+	probes := 0
+	target := strings.Repeat("a", 64)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		probes++
+		if r.Method != "GET" || !strings.HasSuffix(r.URL.Path, "/dispatch") || r.Header.Get("X-Workers-Original-URL") != "https://website.invalid/__platform_prepare" || r.Header.Get("X-Lightvela-Expected-Package-ID") != "" {
+			t.Error("non-control request or unobserved reset during executor preparation")
+		}
+		if probes == 1 {
+			w.Header().Set("X-Workers-Error", "true")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"code": "executor_unavailable", "retryable": true}})
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"package_id": target})
+	}))
+	defer upstream.Close()
+	c, _ := newMinisandboxClient(upstream.URL, "cn-test", upstream.Client())
+	if err := c.verifyPrivatePackage(context.Background(), "/v1/workers/fixture/dispatch", target); err != nil {
+		t.Fatalf("explicitly retryable native preparation did not converge: %v", err)
+	}
+	if probes != 2 {
+		t.Fatalf("expected failed control probe and exact-marker verification, got %d", probes)
+	}
+}
+
+func TestMinisandboxPrivateProbeRejectsNonRetryableNativeError(t *testing.T) {
+	probes := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		probes++
+		w.Header().Set("X-Workers-Error", "true")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]any{"error": map[string]any{"code": "indeterminate_result", "retryable": false}})
+	}))
+	defer upstream.Close()
+	c, _ := newMinisandboxClient(upstream.URL, "cn-test", upstream.Client())
+	if err := c.verifyPrivatePackage(context.Background(), "/v1/workers/fixture/dispatch", strings.Repeat("a", 64)); err == nil || probes != 1 {
+		t.Fatalf("nonretryable error was replayed/accepted: probes=%d err=%v", probes, err)
+	}
+}

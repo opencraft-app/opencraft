@@ -109,6 +109,7 @@ func TestMinisandboxDeployUsesRegistryCASAndDoesNotInvokeApp(t *testing.T) {
 func sha256HexForTest(code string) string { return sha256Hex([]byte(code)) }
 
 func TestMinisandboxInvocationUsesStableDOAndStripsSecrets(t *testing.T) {
+	var receipt deploymentReceipt
 	var target string
 	calls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -132,12 +133,16 @@ func TestMinisandboxInvocationUsesStableDOAndStripsSecrets(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Set-Cookie", "secret=1")
+		w.Header().Set(minisandboxExecutionPackageHeader, receipt.PackageID)
+		w.Header().Set(minisandboxExecutionDigestHeader, fixture().SHA256)
 		w.Write([]byte(`{"todos":[]}`))
 	}))
 	defer server.Close()
 	client, _ := newMinisandboxClient(server.URL, "cn-test", server.Client())
 	for _, release := range []string{"wr-old", "wr-next"} {
-		result, err := client.Run(context.Background(), "/trusted/ws-owner/"+release, Invocation{SHA256: fixture().SHA256, Method: "GET", Path: "/api/todos", ReadOnly: true})
+		dir, stored := executionIdentityStore(t, client, "ws-owner", release)
+		receipt = stored
+		result, err := client.Run(context.Background(), dir, Invocation{SHA256: fixture().SHA256, Method: "GET", Path: "/api/todos", ReadOnly: true})
 		if err != nil || result.Status != 200 || len(result.Headers) != 1 {
 			t.Fatalf("result=%+v error=%v", result, err)
 		}

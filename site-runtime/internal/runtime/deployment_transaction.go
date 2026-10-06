@@ -385,6 +385,35 @@ func (s *Service) pendingDeployment(site string) bool {
 	}
 	return false
 }
+
+// pendingSiteDeletionBound permits only the reviewed native driver's terminal
+// Object deletion, under this site's exclusive management lock. A corrupt or
+// foreign-endpoint journal/receipt never authorizes deleting another database.
+// This is not transaction reconciliation and never retries activation or SQL.
+func (s *Service) pendingSiteDeletionBound(site string) bool {
+	native, ok := s.runner.(*minisandboxClient)
+	if !ok {
+		return false
+	}
+	identity, err := native.DeploymentIdentity(site)
+	if err != nil {
+		return false
+	}
+	t, err := s.loadDeploymentTransaction(site)
+	if err != nil || t == nil || t.Identity != identity {
+		return false
+	}
+	data, err := readDeploymentFile(filepath.Join(s.dataDir, site, ".minisandbox.json"), 8192)
+	if errors.Is(err, os.ErrNotExist) {
+		return !t.HasBeforeReceipt
+	}
+	if err != nil {
+		return false
+	}
+	receipt, err := parseDeploymentReceipt(data)
+	return err == nil && receipt.Schema == 2 && receipt.Identity == identity
+}
+
 func (s *Service) loadDeploymentTransaction(site string) (*deploymentTransaction, error) {
 	data, err := readDeploymentFile(filepath.Join(s.dataDir, site, deploymentJournalName), maxDeploymentJournalBytes)
 	var t *deploymentTransaction

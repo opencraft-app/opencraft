@@ -1826,6 +1826,7 @@ dependencies = [
  "async-channel",
  "async-trait",
  "aws-config",
+ "aws-credential-types",
  "aws-sdk-s3",
  "base64 0.22.1",
  "futures-util",

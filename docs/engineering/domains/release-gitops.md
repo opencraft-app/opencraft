@@ -23,6 +23,22 @@ master 源码
   → 服务健康、路由和业务 E2E
 ```
 
+## AI 建站后端隐藏发布绑定
+
+- 离线绑定生成器 `.ci/runtime/support/prepare_website_backend_release.py` 只生成最终 overlay
+  patch，不读取 Secret 值、不部署、不自动授权发布。真实 consumer 变更仍走上述源码到 GitOps 链。
+- Schema1 保留旧无状态输入且关闭持久化/分享读取；Schema2 显式声明地域 runtime driver 与
+  布尔 `data_enabled`。只有已完成该地域资格验收的 `minisandbox` 可以申请持久化，`runsc` 拒绝该组合。
+- `prepare` 明确清空 CTL owner allowlist、设置 data=0 与 gateway shared-read=false，覆盖历史
+  envFrom 门禁；不会触碰静态站或鉴权配置。收紧已有 Beta 会影响分享链接，仍须 owner 审核。
+- `enable` 要求非空的已批准 owner allowlist；在 data=true 时同时生成 CTL data=1 与 gateway
+  shared-read=true。分享仍要求有效 generation-bound session，写入仍要求 owner；不开放匿名建站。
+- 生成器的语法、双区域源 overlay 合并与无关配置保留检查不能证明 live driver、TLS、Secret、
+  schema、持久化或 Argo 收敛。国内/国际分别完成真实闭环后才可按独立发布授权晋级。
+- 发布前读取真实地域 schema，migration32 仅在确实未应用时执行；不能因 Git 中存在该文件而重跑。
+  详见 [发布绑定](../../../site-runtime/deploy/RELEASE-BINDINGS.md) 与
+  [验收和回退契约](../../../site-runtime/deploy/RELEASE-CHECKLIST.md)。
+
 ## 权威分工
 
 - `.ci`：流水线与可复用构建/晋级命令。
@@ -719,3 +735,22 @@ Owner review、生产 DB 备份/迁移门禁、Argo 手工 sync 及静态兼容�
 `.ci/workers.yml` push trigger 中排除，避免隐藏发布触发上海 rescue-exporter /
 hermes-importer 的自动 pin。建站继续走 `.ci/workers-website-deployer.yml` 的双区域
 人工 production 通道；共享 go.mod/go.sum/Dockerfile 和其他 worker 目录触发规则保留。
+
+
+### 建站持久化运行时的短期存储身份（待发布）
+
+`minisandbox/infra/cells/cmd/storage-session-renewer` 是集群内短期存储会话的正式
+实现入口，不依赖开发机 STS 循环或长期云密钥。配置绑定真实 namespace/Cell/Lease
+及三枚既有 Secret 的 UID、精确 role/provider/audience；投射 ServiceAccount OIDC
+JWT 每次重新读取，通过严格 TLS 调用 STS。三枚 Secret 分别完整 CAS 更新，
+没有跨 Secret 事务；部分更新、租约丢失或会话余量不足都不能标记 Ready。
+
+Go registry 与 Rust Depot 的 file-session 消费者必须和 renewer 配套：整目录
+只读挂载，禁止 `subPath` 和静态凭据回退，使用真实 STS 到期时间。构建通过、
+角色建好和 Secret 已写入均不等于运行时已接通；验收必须包含实际身份换取、
+真实续签后 code/cold/backup 请求，以及对应地域 Agent 和独立浏览器的共享
+持久化路径。短测试续签窗口与最终配置分别冻结，不伪造到期时间。
+
+部署与配置细节见 [renewer 入口](../../../minisandbox/infra/cells/cmd/storage-session-renewer/README.md)
+和 [建站发布清单](../../../site-runtime/deploy/RELEASE-CHECKLIST.md)。当前工作仅
+准备国内/国际待隐藏发布，不授权生产、GitOps 晋级或存量全量 Skill 下发。

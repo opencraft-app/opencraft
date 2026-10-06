@@ -61,22 +61,40 @@ def endpoint(value):
         raise ValueError('runtime base URL is required')
     try:
         url = urlsplit(value)
-        address = ipaddress.ip_address(url.hostname or '')
+        hostname = url.hostname or ''
         port = url.port
-    except ValueError as error:
-        raise ValueError('runtime URL requires a private IP HTTPS origin') from None
+    except ValueError:
+        raise ValueError('runtime URL requires a private HTTPS origin') from None
+    # Accept only canonical Kubernetes Service FQDNs, not arbitrary DNS names.
+    # Certificate SAN verification remains the live consumer's responsibility.
+    labels = hostname.split('.')
+    service_dns = (len(labels) == 5 and labels[2:] == ['svc', 'cluster', 'local']
+                   and all(len(part) <= 63 and re.fullmatch(
+                       r'[a-z0-9](?:[a-z0-9-]*[a-z0-9])?', part)
+                       for part in labels[:2]))
+    try:
+        address = ipaddress.ip_address(hostname)
+        private_ip = any(address.version == network.version and address in network
+                         for network in PRIVATE_NETWORKS)
+    except ValueError:
+        private_ip = False
     if (url.scheme != 'https' or url.username is not None or url.password is not None
             or url.path not in {'', '/'} or url.query or url.fragment
             or (port is not None and not 1 <= port <= 65535)
-            or not any(address.version == network.version and address in network for network in PRIVATE_NETWORKS)):
-        raise ValueError('runtime URL requires a private IP HTTPS origin without credentials or extra paths')
+            or not (private_ip or service_dns)):
+        raise ValueError('runtime URL requires a private HTTPS origin without credentials or extra paths')
     return value.rstrip('/')
 
 
 def prepare(config, phase='prepare'):
-    cfg = mapping(config, {'schema_version', 'environment', 'source_tree_sha256', 'runtime', 'beta_users'}, 'release config')
-    if type(cfg['schema_version']) is not int or cfg['schema_version'] != 1:
+    if not isinstance(config, dict) or type(config.get('schema_version')) is not int or config['schema_version'] not in {1, 2}:
         raise ValueError('unsupported release config schema')
+    schema = config['schema_version']
+    fields = {'schema_version', 'environment', 'source_tree_sha256', 'runtime', 'beta_users'}
+    cfg = mapping(config, fields | ({'data_enabled'} if schema == 2 else set()), 'release config')
+    data_requested = cfg['data_enabled'] if schema == 2 else False
+    if type(data_requested) is not bool:
+        raise ValueError('data_enabled must be an explicit boolean')
     env = cfg['environment']
     if not isinstance(env, str) or env not in TARGETS:
         raise ValueError('unsupported release environment')
@@ -85,7 +103,13 @@ def prepare(config, phase='prepare'):
     sha = cfg['source_tree_sha256']
     if not isinstance(sha, str) or not re.fullmatch(r'[a-f0-9]{64}', sha):
         raise ValueError('fixed source tree SHA256 is required')
-    runtime = mapping(cfg['runtime'], {'environment', 'base_url', 'ca', 'deploy_token', 'invoke_token'}, 'runtime binding')
+    runtime_fields = {'environment', 'base_url', 'ca', 'deploy_token', 'invoke_token'}
+    runtime = mapping(cfg['runtime'], runtime_fields | ({'driver'} if schema == 2 else set()), 'runtime binding')
+    driver = runtime['driver'] if schema == 2 else 'runsc'
+    if not isinstance(driver, str) or driver not in {'runsc', 'minisandbox'}:
+        raise ValueError('unsupported regional runtime driver')
+    if data_requested and driver != 'minisandbox':
+        raise ValueError('persistent data requires the qualified minisandbox driver')
     if runtime['environment'] != env:
         raise ValueError('runtime provenance environment does not match release environment')
     base = endpoint(runtime['base_url'])
@@ -102,6 +126,7 @@ def prepare(config, phase='prepare'):
     if phase == 'enable' and not users:
         raise ValueError('enable requires a nonempty approved owner allowlist')
     users_value = ','.join(sorted(users)) if phase == 'enable' else ''
+    data_enabled = phase == 'enable' and data_requested
     service_patches = {}
     for service, namespace, name, container, role in TARGETS[env]:
         own = 'WEBSITE_RUNTIME_' + role.upper() + '_TOKEN'
@@ -117,6 +142,10 @@ def prepare(config, phase='prepare'):
         ]
         if service == 'ctl':
             variables.append({'name': 'WEBSITE_BACKEND_BETA_USERS', 'value': users_value, 'valueFrom': None})
+            # Explicit values override stale envFrom gates, including legacy schema1 inputs.
+            variables.append({'name': 'WEBSITE_BACKEND_DATA_ENABLED', 'value': '1' if data_enabled else '0', 'valueFrom': None})
+        elif service == 'site-gateway':
+            variables.append({'name': 'SITE_GATEWAY_BACKEND_SHARED_READ', 'value': 'true' if data_enabled else 'false', 'valueFrom': None})
         patch = {
             'apiVersion': 'apps/v1', 'kind': 'Deployment',
             'metadata': {'name': name, 'namespace': namespace},
@@ -136,7 +165,8 @@ def prepare(config, phase='prepare'):
             'target': {'group': 'apps', 'version': 'v1', 'kind': 'Deployment', 'namespace': namespace, 'name': name},
             'patch': json.dumps(patch, sort_keys=True),
         })
-    return {'schema_version': 1, 'environment': env, 'phase': phase, 'source_tree_sha256': sha,
+    return {'schema_version': schema, 'environment': env, 'phase': phase, 'source_tree_sha256': sha,
+            'runtime_driver': driver, 'data_enabled': data_enabled,
             'production_environment': env in PRODUCTION, 'apply_executed': False,
             'secret_values_read': False,
             'integration_method': 'append-to-final-source-overlay-patches',

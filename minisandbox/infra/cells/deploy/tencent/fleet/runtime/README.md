@@ -30,6 +30,16 @@ selected by `RIVET_CONTROLLER_NAMESPACE` and defaults to
 cluster may point it at its Cell namespace after copying the Secret through an
 API-to-API pipe; registry passwords are never accepted as installer arguments.
 
+For clusters whose admission webhook adds registry pull references, both admission
+installers accept `RUNTIME_ADMISSION_INJECTED_IMAGE_PULL_SECRETS` as a comma-separated
+list of exact, regionally verified Secret names. Verify their namespace, UID and
+platform ownership before opting in; never use a prefix wildcard or infer names
+from another region. The default is empty and retains the single-primary contract.
+The primary `actor-fleet-tcr` remains mandatory, unknown/duplicate references are
+rejected, and the selected list participates in the rendered manifest identity.
+This adapts platform injection only; it does not disable node/image identity,
+probe security, pending taints, or the production three-zone gate.
+
 On a clean builder, first produce the runtime stage directly from the bundled
 workerd fork and checksum-locked FoundationDB client. It requires verified Zig
 and Bazel executables but never extracts files from an older runtime image:

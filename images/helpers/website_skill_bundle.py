@@ -17,8 +17,9 @@ import tempfile
 import uuid
 import zlib
 
-LEGACY_FILES = ('SKILL.md', 'scripts/package_fullstack.py')
-FILES = (*LEGACY_FILES, 'templates/todo-backend.mjs')
+FILES = ('SKILL.md', 'scripts/package_fullstack.py')
+# Historical manifests are accepted only to verify existing installs and rollback.
+LEGACY_FILES = (*FILES, 'templates/todo-backend.mjs')
 HEX = re.compile(r'[0-9a-f]{64}')
 
 

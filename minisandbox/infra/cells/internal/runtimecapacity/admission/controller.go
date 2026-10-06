@@ -60,10 +60,13 @@ type ControllerConfig struct {
 	ProbeComponent    string
 	BootstrapImage    string
 	ImagePullSecret   string
-	ProbeTimeout      time.Duration
-	RetryBackoff      time.Duration
-	ReconcileInterval time.Duration
-	RequiredZones     int
+	// InjectedImagePullSecrets permits only explicitly qualified platform additions.
+	// Empty retains the legacy single-primary-secret contract.
+	InjectedImagePullSecrets []string
+	ProbeTimeout             time.Duration
+	RetryBackoff             time.Duration
+	ReconcileInterval        time.Duration
+	RequiredZones            int
 }
 
 type Controller struct {
@@ -913,8 +916,24 @@ func (c *Controller) validateProbe(probe *corev1.Pod, node *corev1.Node, state S
 		container.SecurityContext.Capabilities.Drop[0] != corev1.Capability("ALL") {
 		return fmt.Errorf("runtime admission probe %s executable contract mismatch", probe.Name)
 	}
-	if c.Config.ImagePullSecret != "" && (len(probe.Spec.ImagePullSecrets) != 1 || probe.Spec.ImagePullSecrets[0].Name != c.Config.ImagePullSecret) {
-		return fmt.Errorf("runtime admission probe %s pull credential contract mismatch", probe.Name)
+	if c.Config.ImagePullSecret != "" {
+		allowed := map[string]bool{c.Config.ImagePullSecret: true}
+		for _, name := range c.Config.InjectedImagePullSecrets {
+			if name == "" || allowed[name] {
+				return fmt.Errorf("runtime admission injected pull credential configuration invalid")
+			}
+			allowed[name] = true
+		}
+		seen := make(map[string]bool, len(probe.Spec.ImagePullSecrets))
+		for _, ref := range probe.Spec.ImagePullSecrets {
+			if !allowed[ref.Name] || seen[ref.Name] {
+				return fmt.Errorf("runtime admission probe %s pull credential contract mismatch", probe.Name)
+			}
+			seen[ref.Name] = true
+		}
+		if !seen[c.Config.ImagePullSecret] {
+			return fmt.Errorf("runtime admission probe %s primary pull credential missing", probe.Name)
+		}
 	}
 	if state.ProbePodUID != "" && state.ProbePodUID != string(probe.UID) {
 		return fmt.Errorf("runtime admission probe %s UID changed", probe.Name)

@@ -11,6 +11,22 @@ const TextEncoder = globalThis.TextEncoder;
 const TypeError = globalThis.TypeError, RangeError = globalThis.RangeError;
 const Promise = globalThis.Promise;
 const setTimeout = globalThis.setTimeout, clearTimeout = globalThis.clearTimeout;
+// Capture brand-checked accessors before any backend is imported. workerd
+// inherits body from Body.prototype rather than defining it on Response.prototype.
+// Walk only the pristine native prototype chain; never inspect a user instance.
+function responseGetter(name) {
+  for (let prototype = Response.prototype; prototype !== null; prototype = Object.getPrototypeOf(prototype)) {
+    const descriptor = Object.getOwnPropertyDescriptor(prototype, name);
+    if (descriptor && typeof descriptor.get === "function") return descriptor.get;
+  }
+  throw new TypeError("native Response accessor unavailable: " + name);
+}
+const responseHeaders = responseGetter("headers");
+const responseStatus = responseGetter("status");
+const responseStatusText = responseGetter("statusText");
+const responseBody = responseGetter("body");
+const headersForEach = Headers.prototype.forEach;
+const apply = globalThis.Reflect.apply;
 const MAX_HANDLER_MS = 3500; // Finish before the outer five-second invocation deadline.
 for (const intrinsic of [Object, Array, String, Number, RegExp, ArrayBuffer, Headers, Request, Response, URL, TextEncoder, TypeError, RangeError, globalThis.Function, globalThis.Promise, DurableObject]) {
   if (intrinsic.prototype) Object.freeze(intrinsic.prototype);
@@ -21,6 +37,21 @@ const MAX_QUERY_BYTES = 65536;
 const MAX_BINDINGS_BYTES = 1048576;
 const MAX_RESULT_BYTES = 1048576;
 const MAX_DATABASE_BYTES = 16777216;
+
+function executionResponse(response, digest) {
+  const headers = new Headers();
+  // Getter/method functions themselves can have a user-defined own `call`;
+  // invoke captured builtins directly through captured Reflect.apply instead.
+  apply(headersForEach, apply(responseHeaders, response, []), [(value, name) => headers.set(name, value)]);
+  headers.set("X-Lightvela-Execution-Package-ID", platformPackageID);
+  headers.set("X-Lightvela-Execution-Backend-SHA256", digest);
+  // A new response detaches the stamped headers from any object retained by
+  // user code, including immutable responses. Native getters ignore subclasses
+  // and own-property forgeries, and reject non-Response objects by brand.
+  return new Response(apply(responseBody, response, []), {
+    status: apply(responseStatus, response, []), statusText: apply(responseStatusText, response, []), headers
+  });
+}
 
 function valueBytes(value) {
   if (value === null || typeof value === "number") return 8;
@@ -142,14 +173,14 @@ export class VelaSite extends DurableObject {
       const response = await Promise.race([
         (async () => {
           const backend = (await loader()).default;
+          if (!active) throw new TypeError("application invocation has ended");
           if (!backend || typeof backend.fetch !== "function") throw new TypeError("fetch export required");
           return await backend.fetch(safeRequest, env, ctx);
         })(),
         new Promise((_, reject) => { timer = setTimeout(() => reject(new TypeError("application deadline exceeded")), MAX_HANDLER_MS); })
       ]);
-      if (!(response instanceof Response)) throw new TypeError("fetch must return a Response");
-      return response;
-    } catch { return new Response("application execution failed", {status: 500}); }
+      return executionResponse(response, digest);
+    } catch { return executionResponse(new Response("application execution failed", {status: 500}), digest); }
     finally {
       active = false;
       this.#active = false;

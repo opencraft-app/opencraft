@@ -328,6 +328,14 @@ func (h *SiteHandler) authorizeSiteRequest(w http.ResponseWriter, r *http.Reques
 			return true
 		}
 	}
+	// Fresh policy is required even without a cookie: a newly enabled share
+	// must not send an anonymous reader into owner login until the cache expires.
+	// It also validates rotated share cookies and makes revocation immediate.
+	site, err = h.lookupSiteByIDFresh(r.Context(), siteID)
+	if err != nil || site == nil {
+		writeAuthFailure(w, http.StatusBadGateway, "site authentication is unavailable")
+		return false
+	}
 	if site.ShareAccessActiveAt(h.authNow()) {
 		shareCookie, err := r.Cookie(shareSessionCookie)
 		if err == nil && strings.TrimSpace(shareCookie.Value) != "" && h.auth.TokenCodec != nil {

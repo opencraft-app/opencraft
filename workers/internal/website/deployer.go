@@ -621,10 +621,20 @@ func (d *Deployer) publishRelease(op Operation, waitForArtifact bool) error {
 	// site remains public.
 	// Fullstack history is reclaimed only by control-plane retention, which
 	// removes rollback eligibility before deleting BOTH static and backend data.
-	// Keep legacy static-site behavior unchanged.
-	if op.Kind != "fullstack" {
-		if err := d.pruneSiteReleases(siteCos, op.SiteID, op.ReleaseID, op.ActiveCloudPath); err != nil {
-			return d.failOperation(op, fmt.Sprintf("prune stale releases before activation: %v", err))
+	// A static candidate can replace a site with retained backend releases.
+	// Only a runtime-confirmed empty backend store permits legacy cleanup;
+	// otherwise retained COS history must stay eligible for joint rollback.
+	// An unconfigured runtime is not proof of an empty backend: preserve
+	// history while allowing legacy static publication to remain available.
+	if op.Kind != "fullstack" && d.runtimeURL != "" {
+		backendBytes, err := d.backendStorage(op.SiteID)
+		if err != nil {
+			return d.failOperation(op, "inspect retained backend before static cleanup: "+err.Error())
+		}
+		if backendBytes == 0 {
+			if err := d.pruneSiteReleases(siteCos, op.SiteID, op.ReleaseID, op.ActiveCloudPath); err != nil {
+				return d.failOperation(op, fmt.Sprintf("prune stale releases before activation: %v", err))
+			}
 		}
 	}
 

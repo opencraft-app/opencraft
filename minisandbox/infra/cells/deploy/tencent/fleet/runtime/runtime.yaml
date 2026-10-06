@@ -194,6 +194,7 @@ spec:
           imagePullPolicy: IfNotPresent
           command: [/opt/actor/bin/rivet-engine]
           args: [--config, /etc/actor/runtime/config.jsonc, start]
+          # Legacy default; render-cold-session.py opts this Engine into file sessions.
           env:
             - name: AWS_ACCESS_KEY_ID
               valueFrom:
