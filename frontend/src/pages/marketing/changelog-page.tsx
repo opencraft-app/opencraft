@@ -398,6 +398,18 @@ function ChangelogContent() {
   };
 
   const changelogGroups: ChangelogMonthGroup[] = [
+    {
+      id: "2026-10",
+      month: t("2026 年 10 月"),
+      entries: [
+        {
+          id: "multi-bot-web-chat",
+          title: t("LightVela 支持与多个 Bot 网页对话"),
+          desc: t("现在可以在 LightVela 网页中直接与主 Bot 之外的其他 Bot 对话，无需切换到外部聊天通道。"),
+          visual: "none",
+        },
+      ],
+    },
     ...(isGlobal
       ? [
           {
