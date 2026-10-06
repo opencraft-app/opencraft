@@ -1416,6 +1416,8 @@ export function App({
           onSidebarExpand={expandSidebar}
           onSidebarResizeEnd={commitSidebarWidth}
           rightPanelOpen={conversationSurfaceVisible && presentedRightPanelOpen}
+          rightPanelKeepMounted={presentation.rightPanel && panelState.right.tabs.some(tab =>
+            presentedPanelRenderers.some(renderer => renderer.kind === tab.kind && renderer.residency === "while-tab-open"))}
           rightPanelFullWidth={conversationSurfaceVisible && presentedRightPanelFullWidth}
           rightPanelDefaultSize={presentation.rightPanelDefaultSize}
           onRightPanelOpenChange={(open) =>

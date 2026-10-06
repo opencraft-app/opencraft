@@ -1,7 +1,7 @@
 import type { Context } from "@deepseek-ai/cordis";
 import { useIntl } from "@opencraft/i18n/react";
 import type { PanelRendererProps } from "@opencraft/workbench-panels-react";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ClipboardPaste, MonitorOff } from "lucide-react";
 import { ProgressIndicator } from "@opencraft/design-system-web/progress";
 import type { DesktopBackend } from "./contract";
@@ -22,7 +22,7 @@ export interface CloudDesktopPluginAdapter {
 
 function createDesktopPanel(adapter: CloudDesktopPluginAdapter | undefined,
   controllers: Map<DesktopViewController, string>) {
-  return function DesktopPanel({ tab, ownerId }: PanelRendererProps) {
+  return function DesktopPanel({ tab, ownerId, active = true }: PanelRendererProps) {
     const intl = useIntl();
     const element = useRef<HTMLDivElement>(null);
     const controller = useRef<DesktopViewController | null>(null);
@@ -38,7 +38,7 @@ function createDesktopPanel(adapter: CloudDesktopPluginAdapter | undefined,
     const controlAction = useDesktopControlAction(controller, snapshot.control === "observing" ? "take" : "stop");
     const controlLabels = {
       observing: intl.formatMessage({ id: "desktop.control", defaultMessage: "Take control" }),
-      requesting: intl.formatMessage({ id: "desktop.cancel", defaultMessage: "Cancel" }),
+      requesting: intl.formatMessage({ id: "desktop.release", defaultMessage: "Stop controlling" }),
       controlling: intl.formatMessage({ id: "desktop.release", defaultMessage: "Stop controlling" }),
     };
     useEffect(() => {
@@ -46,6 +46,7 @@ function createDesktopPanel(adapter: CloudDesktopPluginAdapter | undefined,
       const current = new DesktopViewController(adapter.backend, adapter.surfaces, tab.resource, element.current);
       controller.current = current;
       controllers.set(current, ownerId);
+      current.setActive(active);
       const unsubscribe = current.subscribe(() => setSnapshot(current.getSnapshot()));
       const release = () => current.releaseControl();
       const visibility = () => { if (document.visibilityState !== "visible") release(); };
@@ -62,6 +63,9 @@ function createDesktopPanel(adapter: CloudDesktopPluginAdapter | undefined,
         current.dispose();
       };
     }, [tab.resource, ownerId]);
+    useLayoutEffect(() => {
+      controller.current?.setActive(active);
+    }, [active]);
 
     const status = snapshot.phase === "unavailable"
       ? intl.formatMessage({ id: "desktop.unavailable", defaultMessage: "Desktop is not available here." })
@@ -87,9 +91,7 @@ function createDesktopPanel(adapter: CloudDesktopPluginAdapter | undefined,
             ? intl.formatMessage({ id: "desktop.pasteFailed", defaultMessage: "Unable to paste." })
           : snapshot.controlFailed
             ? intl.formatMessage({ id: "desktop.controlFailed", defaultMessage: "Unable to take control." })
-            : snapshot.control === "requesting"
-              ? intl.formatMessage({ id: "desktop.requesting", defaultMessage: "Requesting control…" })
-              : intl.formatMessage({ id: "desktop.connected", defaultMessage: "Connected" });
+            : intl.formatMessage({ id: "desktop.connected", defaultMessage: "Connected" });
     const feedbackTitle = snapshot.phase === "connecting"
       ? intl.formatMessage({ id: "desktop.connectingTitle", defaultMessage: "Connecting to desktop…" })
       : intl.formatMessage({ id: "desktop.unavailableTitle", defaultMessage: "Desktop unavailable" });
@@ -113,7 +115,8 @@ function createDesktopPanel(adapter: CloudDesktopPluginAdapter | undefined,
       </div>
     </div>;
     return <section className="cloud-desktop-panel" data-phase={snapshot.phase} data-stage={snapshot.stage}
-      data-control={snapshot.control} aria-label={intl.formatMessage({ id: "desktop.panel", defaultMessage: "Desktop" })}
+      data-control={snapshot.control} inert={!active || undefined}
+      aria-label={intl.formatMessage({ id: "desktop.panel", defaultMessage: "Desktop" })}
       onBlurCapture={event => {
       if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)) {
         controller.current?.releaseControl();
@@ -132,8 +135,8 @@ function createDesktopPanel(adapter: CloudDesktopPluginAdapter | undefined,
           <span className="ui-button__label"><ClipboardPaste size={16} aria-hidden="true" /></span>
         </button> : null}
         <button type="button" className="ui-button" data-density="compact"
-          data-variant="outline" disabled={snapshot.phase !== "ready" || !snapshot.canControl}
-          aria-pressed={snapshot.control === "controlling"}
+          data-variant="outline" disabled={!active || snapshot.phase !== "ready" || !snapshot.canControl}
+          aria-pressed={snapshot.control !== "observing"}
           {...controlAction}>
           <span className="ui-button__label cloud-desktop-panel__control-label">
             {Object.entries(controlLabels).map(([state, label]) => <span key={state}
@@ -175,7 +178,7 @@ export function createCloudDesktopWorkbenchPanelPlugin(adapter?: CloudDesktopPlu
       },
     }));
     ctx.effect(() => ctx.workbenchPanelRenderers.register({
-      kind: "cloud-desktop", Component: createDesktopPanel(adapter, controllers),
+      kind: "cloud-desktop", Component: createDesktopPanel(adapter, controllers), residency: "while-tab-open",
     }));
     if (adapter) ctx.effect(() => {
       const register = () => ctx.workbenchPanels.registerToolbarAction({

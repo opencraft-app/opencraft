@@ -11,6 +11,8 @@ export interface HostDesktopCapability {
   readonly serverId: string;
   readonly environmentId: string;
   readonly principalId: string;
+  /** Explicit support for reauthorizing an already claimed viewer in place. */
+  readonly renewable?: boolean;
 }
 
 const object = (value: unknown): Record<string, unknown> => value && typeof value === "object" && !Array.isArray(value)
@@ -22,9 +24,11 @@ export function parseHostDesktopCapability(value: unknown): HostDesktopCapabilit
   const dto = object(value);
   if (dto.version !== 1 || dto.observe !== true || typeof dto.control !== "boolean"
     || (dto.transport !== "same-origin-loopback" && dto.transport !== "same-origin-trusted-internal")
-    || !id(dto.serverId) || !id(dto.environmentId) || !id(dto.principalId)) return null;
+    || !id(dto.serverId) || !id(dto.environmentId) || !id(dto.principalId)
+    || (dto.renewable !== undefined && typeof dto.renewable !== "boolean")) return null;
   return Object.freeze({ version: 1, observe: true, control: dto.control, transport: dto.transport,
-    serverId: dto.serverId, environmentId: dto.environmentId, principalId: dto.principalId });
+    serverId: dto.serverId, environmentId: dto.environmentId, principalId: dto.principalId,
+    ...(dto.renewable === undefined ? {} : { renewable: dto.renewable }) });
 }
 
 export interface HostDesktopTarget {

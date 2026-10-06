@@ -159,7 +159,7 @@ specified in [SSH Codex Servers](ssh-codex-servers.md).
 The trusted `plugins/cloud-desktop` panel registers its own renderer and entry.
 The application may inject an authorized backend/media adapter pair; absence
 means no advertised desktop capability. Conversation owns tab identity, the
-mounted presentation owns its transient viewing connection, and the backend
+explicitly resident desktop presentation owns its transient viewing connection, and the backend
 owns the remote desktop incarnation and exclusive input authorization. Closing
 the viewer cannot stop the desktop or Agent. See the [desktop plugin contract](cloud-desktop-plugin.md)
 for framework invariants and the remaining production integration boundaries.
@@ -170,6 +170,13 @@ intent epochs. Focus loss still revokes immediately, but cannot turn a pressed
 Stop into Take after rendering changes, or release a successor grant. Physical
 clipboard capability and currently authorized paste are separate projections;
 unsupported adapters do not render a dead toolbar action.
+
+The desktop renderer alone opts into `while-tab-open` residency. Shell hiding
+and tool-tab selection project logical `active=false`: the controller releases
+input immediately, while viewing stays mounted. Reopening never reacquires input;
+closing the tab or changing the panel owner disposes the viewer. Other tools keep
+their existing physical-presentation lifetime. The control button projects the
+user's intention immediately as Stop; only a valid backend grant enables input.
 
 The neutral desktop plugin now owns the lazy noVNC media adapter; Vela's
 `lightvela-platform/desktop` provider owns account/directory validation, CTL
@@ -216,6 +223,12 @@ replay resource creation or Agent work. Wire/media classify established transpor
 loss; the viewing controller owns bounded backoff and fresh-grant replacement,
 never inherited input. Vela preparation remains manual on failure. See the
 [viewing recovery contract](cloud-desktop-plugin.md#bounded-viewing-recovery).
+Local viewer expiry is renewable through explicit discovery plus wire capability,
+not a removed timeout: the dedicated viewing socket requests reauthorization,
+the Host rechecks native Thread/Client/incarnation, and a matching confirmation
+re-arms both expiry owners. Failure remains bounded and cannot reacquire control.
+Legacy and Vela providers are not implicitly opted in. See
+[confirmed viewing renewal](cloud-desktop-plugin.md#confirmed-viewing-renewal).
 
 ### Workspace file Explorer ownership
 

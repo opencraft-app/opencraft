@@ -19,11 +19,13 @@ trusts those users to request exclusive input on that same machine.
 | Desktop process / incarnation | Backend, independent of Chat turn and renderer | Backend policy only; no stop operation exposed to the panel |
 | `cloud-desktop` tab | Conversation Panel service, singleton within one panel owner | Descriptor contains only Conversation ID, never credentials |
 | Attachment | Backend-authorized short-lived viewer lease for exact target/resource/incarnation | Release on bootstrap failure or viewer teardown |
-| Media transport + surface | One mounted desktop presentation | Unmount, target change, timeout, connection end or plugin retirement closes transport and releases attachment |
+| Media transport + surface | One desktop tab's opted-in resident presentation | Hiding or switching tabs retains viewing but disables input; tab closure, owner replacement, timeout, connection end or plugin retirement releases viewing |
 | Control grant | Server-authorized, exclusive and revocable input lease | Disable input before release on cancel, blur, hidden page, revocation or teardown |
 | Button activation | Mounted presentation captures the pressed action; controller issues a single-use command bound to viewing/control epochs | Cancelled physical gestures, focus/page loss, revoked readiness and replaced ownership cannot reinterpret or replay a press |
 
-The UI only requests control. Requesting is not confirmed control. Both video and
+The UI immediately projects control intention as Stop controlling, including
+while a request awaits authorization. This is not confirmed input ownership.
+Both video and
 input-channel readiness must be true before requesting a grant, independent of
 arrival order. Input is not bound before a valid lease arrives. A late result
 after cancellation is released without enabling input. Independent peers and
@@ -33,9 +35,9 @@ inside this boundary. Moving focus between toolbar and surface is not blur of
 the desktop owner. Losing focus outside it releases control.
 
 One native activation has a fixed action, not a toggle of the latest rendered
-state. Pointer/Enter/Space press captures Take or Stop/Cancel; native click consumes
+state. Pointer/Enter/Space press captures Take or Stop; native click consumes
 it once. An accessibility click without a physical press remains supported.
-Control confirmation stays within the same intent, so a held Cancel can still
+Control confirmation stays within the same intent, so a held Stop can still
 stop its confirmed grant. Release, revocation, lost readiness or connection
 replacement retires earlier commands: a Stop followed by null focusout cannot
 turn the same click into Take, or revoke a later user's grant. Window/page loss
@@ -71,7 +73,7 @@ These are source-referenced Codex motion rules, not a Mac runtime parity claim.
 The shared controls retain compact 14/18 regular capsule actions and a 44px coarse-pointer
 target. Toolbar feedback is single-line and cannot push the media down when
 control or clipboard operations are pending.
-The localized control labels share an intrinsic sizing slot, so Take/Cancel/Stop
+The localized control labels share an intrinsic sizing slot, so Take/Stop
 do not move adjacent buttons. Ready status is short; unsupported clipboard
 capability hides Paste altogether. Physical clipboard availability is separate
 from whether the current control grant enables pasting; supported providers keep
@@ -83,8 +85,9 @@ The media mount element stays the same across ready, failed, unavailable and
 retry states. Feedback overlays do not instantiate a second controller or attach
 input. Control is disabled until both channels are ready and the provider permits
 it; local immutable observation remains visibly read-only. While requesting,
-the toolbar reports busy and the Cancel action remains visible and usable; a
-request is never displayed as confirmed control. Window/panel blur and logical
+the toolbar reports busy and Stop controlling remains visible and usable. The
+pressed state represents intent; input is still blocked until the backend grants
+control. Window/panel blur and logical
 closure preserve the existing immediate revocation semantics. Shell continues
 to own the tab, close action and maximize presentation.
 
@@ -135,8 +138,16 @@ must return an authorized exact-Conversation target; null remains hidden.
 Capability invalidation republishes toolbar contributions and retires active
 viewers if their target changes. No local machine is implicitly substituted.
 Repeated opens focus the existing tab. Shell still owns placement, navigation,
-responsive geometry and tab closure. A physical viewer may unmount when its
-outlet disappears; the remote desktop does not.
+responsive geometry and tab closure. Desktop explicitly registers renderer
+`residency: "while-tab-open"`; the Shell retains that viewer when its pane is
+hidden or another tool tab is selected. Its `active` projection is logical
+visibility, not exit-animation progress: becoming inactive immediately cancels
+control intention, releases the grant and makes the DOM inert. Reopening retains
+the media connection but never automatically takes control. Removing the tab or
+changing its owner disposes the viewer. This is current-Shell residency, not
+cross-route/process persistence. Non-opted-in tools retain their normal active
+tab and physical-presentation lifetime; a resident desktop cannot keep another
+tool alive after the pane finishes closing. The remote desktop is never stopped.
 
 The platform-free `contract.ts` models canonical Conversation, Server,
 environment and principal identity separately from transient resource incarnation.
@@ -185,8 +196,9 @@ capability identifies a namespace, not permission to an arbitrary Thread.
 
 The grant contains a one-use ticket bound to Thread revision, local registration,
 process preparation generation and physical incarnation. Server storage keeps
-only the ticket hash. Unclaimed grants expire after 30 seconds; a viewer expires
-after 5 minutes. Per-Client budget is 4 grants including preparations; total is
+only the ticket hash. Unclaimed grants expire after 30 seconds; a claimed viewer
+has a five-minute authorization window, renewable only by backend confirmation.
+Per-Client budget is 4 grants including preparations; total is
 128. Disconnect/reinitialization, engine failure and Host shutdown revoke old
 grants; late preparation cannot resurrect them. Physical identity remains
 verified by the native proxy, while the Host rechecks Thread metadata every
@@ -196,6 +208,30 @@ The separate same-Origin `/desktop/connect` WebSocket follows the selected
 loopback or trusted-internal policy, rejects query credentials, limits frames/backpressure to 1 MiB and
 retires stalled writes after 10 seconds. The first text frame uses the neutral
 `desktop/attach` protocol; binary RFB begins only after matching `desktop/ready`.
+
+### Confirmed viewing renewal
+
+Local discovery and matching `desktop/ready` must both explicitly advertise
+`renewable: true`. Thirty seconds before the current deadline, the wire sends
+`desktop/renew` with a unique request ID on the independent viewing socket.
+The backend rechecks the current logical Client, native Thread revision before
+and after observer inspection, and the same physical desktop incarnation within
+five seconds. Only the same still-claimed, live, unexpired attachment can receive
+`desktop/renewed` with a new five-minute deadline. The ticket remains consumed;
+renewal neither creates a desktop nor reopens media nor obtains input control.
+
+The client updates its own expiry only from that matching, bounded confirmation.
+No confirmation within ten seconds retires the transport and allows the existing
+bounded fresh-authorization recovery; identity/policy failures remain fail-closed.
+Invalid receipts and callbacks after closure/owner replacement cannot extend a
+viewer or enable input. Both sides retain expiry timers. Legacy discovery/ready
+without the capability sends no unknown message and retains the original expiry
+behavior. Vela/TAT providers are not silently opted into this local contract.
+
+Composition regression uses the real Host backend, wire and viewing controller
+with synthetic media: repeated five-minute deadlines retain one attachment and
+surface, with no automatic control. Socket tests exercise the real local service
+and authoritative revision/incarnation checks, not live native desktop input.
 
 ### Local native control authority
 

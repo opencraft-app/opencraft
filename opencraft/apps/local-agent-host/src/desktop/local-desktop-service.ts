@@ -28,6 +28,8 @@ interface Attachment {
   readonly claimBefore: number;
   timer: ReturnType<typeof setTimeout>;
   claimed: boolean;
+  expiresAt: number;
+  renewing?: boolean;
   socket?: Socket;
   viewer?: WebSocket;
   control?: { readonly id: string; readonly abort: AbortController; confirmed: boolean; lease?: NativeControlLease };
@@ -67,7 +69,8 @@ export class LocalDesktopService {
   /** Discovery identifies the backend namespace; it is not a Thread grant. */
   capability(): HostDesktopCapability {
     return Object.freeze({ version: 1, observe: true, control: !!this.registration.control, transport: this.registration.transport ?? "same-origin-loopback",
-      serverId: this.registration.serverId, environmentId: this.registration.environmentId, principalId: this.registration.principalId });
+      serverId: this.registration.serverId, environmentId: this.registration.environmentId, principalId: this.registration.principalId,
+      renewable: true });
   }
 
   private async revision(owner: LocalDesktopOwner, threadId: string, signal: AbortSignal): Promise<string> {
@@ -111,6 +114,7 @@ export class LocalDesktopService {
       const { ticket: _ticket, ...metadata } = credential;
       const item: Attachment = { credential: metadata, owner, threadRevision: revision, ticketHash: hash(ticket),
         abort: new AbortController(), claimBefore: Date.now() + 30_000, claimed: false, requests: new Set(),
+        expiresAt: credential.expiresAt,
         timer: setTimeout(() => this.release(owner.key, id), 30_000) };
       item.timer.unref(); this.attachments.set(id, item);
       return credential;
@@ -129,6 +133,24 @@ export class LocalDesktopService {
   }
   revoke(ownerKey: string): void {
     for (const [id, item] of this.attachments) if (item.owner.key === ownerKey) this.release(ownerKey, id);
+  }
+  /** Reauthorize THIS claimed viewer; no new resource, ticket or input grant. */
+  private async renew(item: Attachment, requestId: string): Promise<void> {
+    const id = item.credential.attachmentId;
+    if (item.renewing || !item.claimed || Date.now() >= item.expiresAt) throw unavailable();
+    item.renewing = true;
+    const signal = AbortSignal.any([item.abort.signal, AbortSignal.timeout(5_000)]);
+    try {
+      if (await this.revision(item.owner, item.credential.target.conversationId, signal) !== item.threadRevision
+        || await this.registration.observer.inspect(signal) !== item.credential.incarnation
+        || await this.revision(item.owner, item.credential.target.conversationId, signal) !== item.threadRevision) throw unavailable();
+      signal.throwIfAborted();
+      if (this.attachments.get(id) !== item || item.viewer?.readyState !== 1 || Date.now() >= item.expiresAt) throw unavailable();
+      const expiresAt = Date.now() + 300_000;
+      clearTimeout(item.timer); item.expiresAt = expiresAt;
+      item.timer = setTimeout(() => this.release(item.owner.key, id), expiresAt - Date.now()); item.timer.unref();
+      item.viewer.send(JSON.stringify({ event: "desktop/renewed", requestId, expiresAt }));
+    } finally { item.renewing = false; }
   }
   close(): void {
     if (this.closed) return; this.closed = true;
@@ -195,12 +217,12 @@ export class LocalDesktopService {
     if (!proof || Object.keys(proof).length !== 4 || proof.event !== "desktop/attach" || proof.version !== 1
       || typeof proof.attachmentId !== "string" || typeof proof.ticket !== "string" || proof.ticket.length > 128) throw unavailable();
     const item = this.attachments.get(proof.attachmentId);
-    if (!item || item.claimed || Date.now() >= item.claimBefore || Date.now() >= item.credential.expiresAt
+    if (!item || item.claimed || Date.now() >= item.claimBefore || Date.now() >= item.expiresAt
       || !item.owner.isCurrent() || !timingSafeEqual(hash(proof.ticket), item.ticketHash)) throw unavailable();
     item.claimed = true; item.ticketHash.fill(0); item.viewer = viewer;
     clearTimeout(item.timer);
     item.timer = setTimeout(() => this.release(item.owner.key, item.credential.attachmentId),
-      Math.max(0, item.credential.expiresAt - Date.now())); item.timer.unref();
+      Math.max(0, item.expiresAt - Date.now())); item.timer.unref();
     viewer.once("close", () => this.release(item.owner.key, item.credential.attachmentId));
     const signal = AbortSignal.any([item.abort.signal, AbortSignal.timeout(10_000)]);
     const premature = () => this.release(item.owner.key, item.credential.attachmentId);
@@ -222,7 +244,7 @@ export class LocalDesktopService {
       };
       const decoder = this.registration.control ? new RfbInputDecoder(() => item.control?.confirmed ? item.control.lease : undefined) : undefined;
       viewer.send(JSON.stringify({ event: "desktop/ready", version: 1, attachmentId: item.credential.attachmentId,
-        controlAvailable: !!this.registration.control, clipboardAvailable: false }));
+        controlAvailable: !!this.registration.control, clipboardAvailable: false, renewable: true }));
       stream.on("data", (chunk: Buffer) => {
         stream.pause();
         if (chunk.length > 1 << 20 || viewer.bufferedAmount > 1 << 20) { this.release(item.owner.key, item.credential.attachmentId); return; }
@@ -242,7 +264,9 @@ export class LocalDesktopService {
             const message = JSON.parse(chunk.toString("utf8"));
             if (!message || Object.keys(message).length !== 2 || typeof message.requestId !== "string"
               || !/^[1-9][0-9]{0,15}$/.test(message.requestId)) throw unavailable();
-            if (message.event === "control/request") void this.requestControl(item, message.requestId);
+            if (message.event === "desktop/renew") void this.renew(item, message.requestId)
+              .catch(() => this.release(item.owner.key, item.credential.attachmentId));
+            else if (message.event === "control/request") void this.requestControl(item, message.requestId);
             else if (message.event === "control/release") this.releaseControl(item, message.requestId);
             else throw unavailable();
             return;

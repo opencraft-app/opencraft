@@ -79,6 +79,7 @@ interface AppShellProps {
   /** Optional application context. Chat supplies a conversation list; other apps may omit it. */
   leftPanel?: ReactNode;
   rightPanel: ReactNode;
+  rightPanelKeepMounted?: boolean;
   rightPanelOpen: boolean;
   rightPanelFullWidth: boolean;
   rightPanelDefaultSize?: "standard" | "compact";
@@ -216,6 +217,7 @@ export function AppShell({
   floatingSidebarHeader,
   leftPanel,
   rightPanel,
+  rightPanelKeepMounted = false,
   rightPanelOpen: requestedRightPanelOpen,
   rightPanelFullWidth: requestedRightPanelFullWidth,
   rightPanelDefaultSize = "standard",
@@ -828,6 +830,7 @@ export function AppShell({
                 </motion.div>
               </div>
               <AppShellRightPanel
+                keepMounted={rightPanelKeepMounted}
                 animation={rightPanelAnimation}
                 fullWidth={rightPanelFullWidth}
                 mainContentWidth={mainContentWidth}

@@ -13,7 +13,11 @@ const css = (await Promise.all((await readdir(assets)).filter(name => name.endsW
   .map(name => readFile(join(assets, name), "utf8")))).join("\n");
 assert.ok(css.includes(".cloud-desktop-panel__feedback"), "Build current production CSS first");
 const bundle = await build({ entryPoints: ["tests/fixtures/cloud-desktop-panel-ui.tsx"],
-  bundle: true, write: false, format: "esm", platform: "browser", jsx: "automatic" });
+  bundle: true, write: false, format: "esm", platform: "browser", jsx: "automatic",
+  // Styles are the complete current release CSS above, not a second fixture
+  // compilation. The Shell's unused announcement asset remains a real data URL.
+  loader: { ".scss": "empty", ".css": "empty", ".svg": "dataurl" },
+  define: { "import.meta.env": JSON.stringify({ DEV: false, PROD: true, MODE: "production" }) } });
 const directory = await mkdtemp(join(tmpdir(), "opencraft-desktop-ui-"));
 const server = createServer((request, response) => {
   if (request.url === "/fixture.js") { response.setHeader("Content-Type", "text/javascript"); response.end(bundle.outputFiles[0]!.contents); }
@@ -25,7 +29,7 @@ const receipts: unknown[] = [];
 try {
   await new Promise<void>(yes => server.listen(0, "127.0.0.1", yes));
   browser = await chromium.launch({ headless: true, executablePath: process.env.OPENCRAFT_CHROMIUM_EXECUTABLE });
-  for (const theme of ["light", "dark", "custom"]) for (const width of [720, 320]) {
+  for (const theme of (process.env.OPENCRAFT_DESKTOP_SHELL_ONLY === "true" ? [] : ["light", "dark", "custom"])) for (const width of [720, 320]) {
     const page = await browser.newPage({ viewport: { width, height: 480 }, hasTouch: width === 320,
       reducedMotion: theme === "light" ? "no-preference" : "reduce" });
     const activate = (button: any) => width === 320 ? button.tap() : button.click();
@@ -173,7 +177,7 @@ try {
       // Keep this fixture-page session until page.close: detaching CDP can
       // reset Chromium's coarse-pointer emulation mid-geometry assertion.
     } else await page.mouse.up();
-    const cancel = page.getByRole("button", { name: "Cancel", exact: true }); await cancel.waitFor();
+    const cancel = page.getByRole("button", { name: "Stop controlling", exact: true }); await cancel.waitFor();
     assert.equal(await cancel.locator(".ui-button__label").evaluate(element => getComputedStyle(element).opacity), "1");
     assert.deepEqual(await cancel.boundingBox(), controlBounds, "pending cannot move or resize the action");
     assert.deepEqual(await page.getByRole("button", { name: "Paste", exact: true }).boundingBox(), pasteBefore);
@@ -208,13 +212,13 @@ try {
     for (const key of ["Enter", "Space"]) {
       const take = page.getByRole("button", { name: "Take control", exact: true });
       await take.focus(); await page.keyboard.press(key);
-      await page.getByRole("button", { name: "Cancel", exact: true }).waitFor();
+      await page.getByRole("button", { name: "Stop controlling", exact: true }).waitFor();
       await page.evaluate(() => (window as any).__desktopUi.grant());
       const release = page.getByRole("button", { name: "Stop controlling", exact: true });
       await release.waitFor(); await release.focus(); await page.keyboard.press(key);
       await take.waitFor();
       await take.focus(); await page.keyboard.press(key);
-      await page.getByRole("button", { name: "Cancel", exact: true }).waitFor();
+      await page.getByRole("button", { name: "Stop controlling", exact: true }).waitFor();
       await page.evaluate(() => (window as any).__desktopUi.grant());
       await release.waitFor(); await release.focus();
       await release.evaluate(element => element.addEventListener("keydown", () => (element as HTMLElement).blur(), { once: true }));
@@ -229,6 +233,7 @@ try {
     await page.evaluate(() => window.dispatchEvent(new Event("blur")));
     await page.getByRole("button", { name: "Take control", exact: true }).waitFor();
     await page.evaluate(() => (window as any).__desktopUi.ready(false));
+    await page.waitForFunction(() => document.querySelector<HTMLButtonElement>('.cloud-desktop-panel__actions button[aria-pressed]')?.disabled);
     assert.equal(await page.getByRole("button", { name: "Take control", exact: true }).isDisabled(), true);
     await page.evaluate(() => (window as any).__desktopUi.fail());
     await page.getByRole("heading", { name: "Desktop unavailable" }).waitFor();
@@ -251,7 +256,7 @@ try {
     await chineseTake.waitFor();
     const chineseBounds = await chineseTake.boundingBox();
     await activate(chineseTake);
-    const chineseCancel = page.getByRole("button", { name: "取消", exact: true });
+    const chineseCancel = page.getByRole("button", { name: "停止控制", exact: true });
     await chineseCancel.waitFor();
     assert.deepEqual(await chineseCancel.boundingBox(), chineseBounds);
     await page.evaluate(() => (window as any).__desktopUi.grant());
@@ -269,6 +274,78 @@ try {
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
     assert.deepEqual(errors, []);
     receipts.push({ theme, width, feedbackStyle, motion, frameSamples, heldStyle, counts });
+    await page.evaluate(() => (window as any).__desktopUi.dispose()); await page.close();
+  }
+  for (const width of [1280, 390]) {
+    const page = await browser.newPage({ viewport: { width, height: 800 }, hasTouch: width === 390, reducedMotion: "reduce" });
+    const errors: string[] = []; page.on("pageerror", (error: Error) => errors.push(error.message));
+    await page.goto(`http://127.0.0.1:${(server.address() as { port: number }).port}/?shell`);
+    await page.waitForFunction(() => Boolean((window as any).__desktopUi));
+    await page.evaluate(() => (window as any).__desktopUi.show());
+    try { await page.locator('[data-phase="connecting"]').waitFor({ timeout: 5000 }); }
+    catch { throw new Error(JSON.stringify({ width, errors, fixture: await page.locator('body').innerText() })); }
+    await page.evaluate(() => {
+      (window as any).__desktopUi.ready(true, false);
+      (window as any).__surfaceBefore = document.querySelector(".cloud-desktop-panel__surface");
+    });
+    const take = page.getByRole("button", { name: "Take control", exact: true });
+    try { await take.waitFor({ timeout: 5000 }); }
+    catch { throw new Error(JSON.stringify({ width, errors, fixture: await page.locator('body').innerText(), geometry: await page.evaluate(() =>
+      [...document.querySelectorAll('.app-shell-right-panel,.right-panel-view,.right-panel-resident,.cloud-desktop-panel,.cloud-desktop-panel__toolbar')].map(element => ({
+        class: element.className, rect: element.getBoundingClientRect().toJSON(), phase: element.getAttribute('data-phase'),
+        hidden: element.getAttribute('aria-hidden'), inert: element.hasAttribute('inert'), display: getComputedStyle(element).display,
+      }))) })); }
+    if (width === 390) await take.tap(); else await take.click();
+    await page.evaluate(() => (window as any).__desktopUi.grant());
+    await page.waitForFunction(() => document.querySelector('.cloud-desktop-panel')?.getAttribute('data-control') === 'controlling');
+    await page.evaluate(() => (window as any).__desktopUi.hide());
+    await page.waitForFunction(() => {
+      const panel = document.querySelector('.cloud-desktop-panel'), shell = document.querySelector('.app-shell-right-panel');
+      return panel?.getAttribute('data-control') === 'observing' && shell?.hasAttribute('inert')
+        && shell.getBoundingClientRect().width < 1;
+    });
+    assert.deepEqual(await page.evaluate(() => {
+      const counts = (window as any).__desktopUi.counts();
+      return { mounts: counts.mounts, preparations: counts.preparations, releases: counts.releases,
+        connectionCloses: counts.connectionCloses, attachmentReleases: counts.attachmentReleases };
+    }), { mounts: 1, preparations: 1, releases: 1, connectionCloses: 0, attachmentReleases: 0 });
+    await page.evaluate(() => (window as any).__desktopUi.show());
+    await take.waitFor();
+    await page.waitForFunction(() => {
+      const shell = document.querySelector('.app-shell-right-panel'), surface = document.querySelector('.cloud-desktop-panel__surface');
+      if (!shell || !surface || shell.hasAttribute('inert')) return false;
+      const frame = shell.getBoundingClientRect(), media = surface.getBoundingClientRect();
+      return frame.width > 100 && media.x >= 0 && media.right <= innerWidth + 1 && media.height > 100;
+    });
+    const bounds = await page.locator('.cloud-desktop-panel__surface').boundingBox();
+    assert.ok(bounds && bounds.width > 100 && bounds.height > 100, "resident surface must fill the reopened panel");
+    assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= width + 1, "reopened media must be inside the visible viewport, not merely attached");
+    assert.equal(await page.evaluate(() => (window as any).__surfaceBefore === document.querySelector('.cloud-desktop-panel__surface')), true);
+    assert.equal(await take.getAttribute('aria-pressed'), 'false', "reopening must not reacquire input");
+    await page.screenshot({ path: join(directory, `shell-${width}-reopened.png`) });
+    await page.evaluate(() => (window as any).__desktopUi.other());
+    await page.locator('[data-other-tool]').waitFor();
+    assert.equal(await page.locator('.right-panel-view').evaluate(element => getComputedStyle(element).overflowY), 'auto',
+      "hidden desktop cannot take ownership of another tool's scroll policy");
+    assert.equal(await page.locator('.right-panel-resident').getAttribute('hidden'), '');
+    assert.equal(await page.locator('.cloud-desktop-panel').getAttribute('inert'), '');
+    await page.evaluate(() => (window as any).__desktopUi.hide());
+    await page.waitForFunction(() => !document.querySelector('[data-other-tool]'));
+    assert.equal(await page.locator('.cloud-desktop-panel').count(), 1, "desktop residency cannot keep a normal tool alive after hiding");
+    await page.evaluate(() => (window as any).__desktopUi.show());
+    await page.locator('[data-other-tool]').waitFor();
+    await page.evaluate(() => (window as any).__desktopUi.desktop());
+    await take.waitFor();
+    await page.waitForFunction(() => !document.querySelector('[data-other-tool]'));
+    assert.equal(await page.evaluate(() => (window as any).__surfaceBefore === document.querySelector('.cloud-desktop-panel__surface')), true);
+    const toolCounts = await page.evaluate(() => (window as any).__desktopUi.counts());
+    assert.equal(toolCounts.toolMounts, 2); assert.equal(toolCounts.toolCloses, 2);
+    await page.evaluate(() => (window as any).__desktopUi.close());
+    await page.waitForFunction(() => !document.querySelector('.cloud-desktop-panel'));
+    const counts = await page.evaluate(() => (window as any).__desktopUi.counts());
+    assert.equal(counts.connectionCloses, 1); assert.equal(counts.attachmentReleases, 1);
+    assert.equal(counts.toolMounts, 3); assert.equal(counts.toolCloses, 2, "closing desktop selects the remaining ordinary tool");
+    assert.deepEqual(errors, []); receipts.push({ shell: true, width, bounds, counts });
     await page.evaluate(() => (window as any).__desktopUi.dispose()); await page.close();
   }
   console.log(JSON.stringify({ passed: true, directory, receipts,
