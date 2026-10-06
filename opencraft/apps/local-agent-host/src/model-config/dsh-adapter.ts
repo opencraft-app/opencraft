@@ -28,7 +28,7 @@ function protocol(id:string){if(id==='anthropic')return 'anthropic-messages';if(
 export function fromDshProfile(id:string,value:unknown,disabled:unknown,catalogId?:string):ConfiguredProvider{
   const p=object(value), off=new Set(Array.isArray(disabled)?disabled:[]);
   return {id,name:p.displayName|| (catalogId==='deepseek'?'DeepSeek':id),...(catalogId?{catalogId}:{}),protocol:p.api||protocol(id),baseUrl:p.baseURL||(catalogId==='deepseek'?'https://api.deepseek.com':''),credentialRef:p.apiKeyEnv||null,enabled:p.enabled!==false,
-    models:(Array.isArray(p.models)?p.models:[]).map((m:any)=>({id:m.id,...(m.name?{name:m.name}:{}),enabled:!off.has(m.id),...(m.contextWindow?{contextWindow:m.contextWindow}:{}),...(m.maxTokens?{maxTokens:m.maxTokens}:{}),...((m.input??m.inputModalities)?.length?{input:m.input??m.inputModalities}:{})}))};
+    models:(Array.isArray(p.models)?p.models:[]).map((m:any)=>({id:m.id,...(m.type?{type:m.type}:{}),...(m.name?{name:m.name}:{}),enabled:!off.has(m.id),...(m.contextWindow?{contextWindow:m.contextWindow}:{}),...(m.maxTokens?{maxTokens:m.maxTokens}:{}),...((m.input??m.inputModalities)?.length?{input:m.input??m.inputModalities}:{})}))};
 }
 
 export class DshModelEngineAdapter implements ModelEnginePort {
@@ -38,6 +38,9 @@ export class DshModelEngineAdapter implements ModelEnginePort {
     const raw=await this.client.call<RuntimeSettingsDescribeResponse>('settings.describe');
     // Resolve everything before changing engine configuration. Values never enter the product document.
     const execution=structuredClone(doc);
+    // Speech belongs to the application service. Neither its profiles nor secrets reach DSH.
+    execution.providers=execution.providers.filter(p=>p.protocol!=='hunyuan-asr');
+    for(const p of execution.providers)p.models=p.models.map(({type,...m})=>m);
     const wanted=new Map<string,string>();let missing=false;
     for(const p of execution.providers){const value=p.credentialRef?await credentials.resolve(p.credentialRef):undefined;if(p.enabled&&!value)missing=true;if(p.credentialRef){const ref=`OPENCRAFT_EXEC_${createHash('sha256').update(p.credentialRef).digest('hex').toUpperCase()}`;if(value)wanted.set(ref,value);p.credentialRef=ref;}}
     const oldProfiles=object(raw.namespaces.find(n=>n.ns==='llm-pi-ai')?.value).providers;
@@ -71,7 +74,8 @@ export class DshModelConfigurationBridge {
   }
   async call<T>(method:string,payload:Record<string,any>={}):Promise<T>{
     if(method==='credentials.describe'){
-      const credentials:Record<string,unknown>={};for(const ref of payload.refs??[])credentials[ref]={configured:!!(await this.config.credentials.resolve(ref)??process.env[ref]),writable:true,source:'opencraft'};
+      const doc=await this.config.repository.read(),speechRefs=new Set(doc.providers.filter(p=>p.protocol==='hunyuan-asr').map(p=>p.credentialRef));
+      const credentials:Record<string,unknown>={};for(const ref of payload.refs??[])credentials[ref]={configured:!!(await this.config.credentials.resolve(ref)??(payload.storedOnly===true||speechRefs.has(ref)?undefined:process.env[ref])),writable:true,source:'opencraft'};
       return {credentials} as T;
     }
     if(method==='credentials.set'){await this.config.credentials.set(payload.ref,payload.value);this.config.application={state:'pending',revision:-1};return {} as T;}
@@ -99,7 +103,7 @@ export class DshModelConfigurationBridge {
     if(method==='llm.providers'){
       try{this.rawProviders=await this.client.call('llm.providers')}catch{/* Use last known catalog metadata. */}
       const doc=await this.config.repository.read();
-      const providers=this.rawProviders.providers.filter(p=>!p.declared||doc.providers.some(v=>v.id===p.provider)).map(p=>({...p,displayName:doc.providers.find(v=>v.id===p.provider)?.name??p.displayName,active:this.config.application.state==='applied'&&p.active}));
+      const providers=this.rawProviders.providers.filter(p=>!doc.providers.some(v=>v.id===p.provider&&v.protocol==='hunyuan-asr')&&(!p.declared||doc.providers.some(v=>v.id===p.provider))).map(p=>({...p,displayName:doc.providers.find(v=>v.id===p.provider)?.name??p.displayName,active:this.config.application.state==='applied'&&p.active}));
       for(const p of doc.providers)if(!providers.some(v=>v.provider===p.id))providers.push({provider:p.id,displayName:p.name,declared:!p.catalogId,settingsNs:native(p)?'llm-deepseek':'llm-pi-ai',settingsPath:native(p)?[]:['providers',p.id],active:false});
       return {providers} as T;
     }

@@ -388,9 +388,18 @@ back to another recognizer on error. Mac's existing semantic native port is unch
 
 The backend owns the API credential and normalizes vendor failures without raw
 payloads. Paid public access is separately opt-in, not inherited from public SSH.
+Speech model connections and write-only credentials reuse the installation's
+ModelConfigurationRepository/ModelCredentialRepository and existing Model Services
+commands. The voice page selects an independent defaultSpeechModel; chat defaults,
+catalogs and DSH execution projections exclude ASR models and credentials. Only a
+Host with the application speech service advertises ASR creation. Speech does not
+follow selected SSH Servers. Legacy environment credentials require an explicit
+one-time import, never runtime fallback. Capture pins an opaque configuration
+binding, checked before billing; model/key changes reject old recordings instead
+of redirecting them. Display-only renames do not invalidate captures.
 Uploads and vendor calls share a two-operation concurrency bound; admitted paid
 calls are bounded to ten per minute. Same session/attempt replays are bound to the
-audio digest/language and use a bounded, five-minute in-memory result receipt;
+audio digest/language/configuration binding and use a bounded, five-minute in-memory result receipt;
 there is no cross-restart task durability or vendor idempotency claim. Client
 disconnect/shutdown aborts local work, without claiming upstream cancellation or
 refunded usage. Voice recordings are not conversation attachments or database rows.

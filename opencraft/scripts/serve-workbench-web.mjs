@@ -8,7 +8,6 @@ import { dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import WebSocket, { WebSocketServer } from "ws";
-import { speechServiceFromEnvironment } from "./speech-transcription-service.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const contentTypes = new Map([
@@ -286,7 +285,7 @@ export async function createWorkbenchWebServer({
   sshManagement = null,
   desktopService = null,
   desktopAccess = "loopback",
-  speechService = speechServiceFromEnvironment(),
+  speechService = null,
   speechPublicAccess = process.env.OPENCRAFT_SPEECH_PUBLIC_ACCESS === "1",
   webSocketHeartbeatIntervalMs = 15_000,
   onAppHostDiagnostic = diagnostic => console.info("[opencraft apphost connection]", JSON.stringify(diagnostic)),

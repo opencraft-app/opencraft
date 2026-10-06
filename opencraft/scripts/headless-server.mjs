@@ -18,6 +18,9 @@ import { assertHeadlessWebRelease } from "./headless-web-release.mjs";
 import { LocalDesktopService } from "../apps/local-agent-host/src/desktop/local-desktop-service.ts";
 import { createNativeObserver, localDesktopMachineIdentity } from "../apps/local-agent-host/src/desktop/native-observer.ts";
 import { createNativeDesktopControl } from "../apps/local-agent-host/src/desktop/native-control.ts";
+import { ModelConfigurationRepository, ModelCredentialRepository } from "../apps/local-agent-host/src/model-config/repository.ts";
+import { SpeechModelConfiguration } from "../apps/local-agent-host/src/model-config/speech.ts";
+import { SpeechTranscriptionService } from "./speech-transcription-service.mjs";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -173,6 +176,7 @@ export async function startHeadlessServer(options = {}) {
       runtimeDirectory: join(root, "runtime"),
       dataDirectory: join(dataDirectory, "agent"),
       modelStorageDirectory: join(dataDirectory, "models"),
+      speechModelManagement: true,
       projectStorageDirectory: join(dataDirectory, "projects"),
       projectlessWorkspaceDirectory: join(dataDirectory, "workspaces"),
       skillsDirectory: join(dataDirectory, "skills"),
@@ -213,6 +217,8 @@ export async function startHeadlessServer(options = {}) {
       sshManagement,
       desktopService: desktop ?? null,
       desktopAccess,
+      speechService: new SpeechTranscriptionService({ configuration: new SpeechModelConfiguration(
+        new ModelConfigurationRepository(join(dataDirectory, "models")), new ModelCredentialRepository(join(dataDirectory, "models"))) }),
     });
     const address = await web.listen({ host, port });
     return { url: `http://127.0.0.1:${address.port}`, listenHost: host, listenPort: address.port, close };
