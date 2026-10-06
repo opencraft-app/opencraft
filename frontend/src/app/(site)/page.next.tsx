@@ -8,7 +8,7 @@ export const metadata: Metadata = createPublicMetadata({
   locale: DEFAULT_PUBLIC_ROUTE_LOCALE.locale,
   title:
     DEFAULT_PUBLIC_ROUTE_LOCALE.locale === 'en-US'
-      ? 'LightVela | Your Personal Cloud AI Agent'
+      ? 'My AI Companion | LightVela'
       : 'LightVela｜长期在线的云端 AI 伙伴',
   /* 首页 title 已自带品牌名，跳过 root 模板，避免重复的 `| LightVela` 后缀 */
   titleAbsolute: true,

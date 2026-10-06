@@ -15,10 +15,10 @@ test("leaving a task clears its title instead of preserving the previous task", 
   }
 });
 
-test("the shell shares its page title with the document and resets settings/unmount", () => {
+test("the standalone shell owns its document title without overriding an embedded host", () => {
   const app = readFileSync(new URL("../apps/workbench-web/src/app.tsx", import.meta.url), "utf8");
   assert.match(app, /title=\{pageTitle\}/);
   assert.match(app, /formatDocumentTitle\(settingsOpen \? null : pageTitle\)/);
-  assert.match(app, /document\.title = documentTitle;\s*\}, \[documentTitle\]\)/);
-  assert.match(app, /useEffect\(\(\) => \(\) => \{ document\.title = "OpenCraft"; \}, \[\]\)/);
+  assert.match(app, /if \(embedded !== undefined\) return;\s*document\.title = documentTitle;/);
+  assert.match(app, /if \(embedded !== undefined\) return;\s*return \(\) => \{ document\.title = "OpenCraft"; \};/);
 });
