@@ -185,6 +185,8 @@ export type AssistantRenderUnit = AgentActivityRenderUnit | AssistantContentRend
  */
 export interface AssistantTurnPresentationPlan {
   readonly slots: readonly AssistantRenderUnit[];
+  /** Fixed Turn resource surface; not a response/disclosure/Thinking owner. */
+  readonly changeSummary: Extract<TimelineBlock, { type: "turn-diff" }> | null;
 }
 
 export type TimelineTurnThinkingOwner =
@@ -878,6 +880,9 @@ export function createAssistantTurnPresentationPlan(
   registry?: ToolActivityPresenterRegistry,
   partitionOptions: AgentActivityPartitionOptions = {},
 ): AssistantTurnPresentationPlan {
+  const changeSummary = frame.changeSummary !== undefined ? frame.changeSummary
+    : frame.blocks.filter((block): block is Extract<TimelineBlock, { type: "turn-diff" }> => block.type === "turn-diff").at(-1) ?? null;
+  frame = { ...frame, blocks: frame.blocks.filter(block => block.type !== "turn-diff") };
   interface ActivitySegment {
     readonly type: "activity-segment";
     readonly blocks: readonly TimelineBlock[];
@@ -1027,7 +1032,7 @@ export function createAssistantTurnPresentationPlan(
     const activity = createActivitySlot(segment, index === workStatusOwner);
     return activity === null ? [] : [activity];
   });
-  return { slots };
+  return { slots, changeSummary };
 }
 
 /**
@@ -1050,16 +1055,20 @@ export function createTimelineTurnPresentationPlan(
   const auxiliaryFrames: (EventTimelineFrame | InteractionTimelineFrame)[] = [];
   const orderedBlocks: TimelineBlock[] = [];
   let inUserIntro = true;
+  const resourceFrame = turn.frames.find(frame => frame.changeSummary !== undefined);
+  const changeSummary = resourceFrame !== undefined ? resourceFrame.changeSummary ?? null
+    : turn.frames.flatMap(frame => frame.blocks).filter((block): block is Extract<TimelineBlock, { type: "turn-diff" }> => block.type === "turn-diff").at(-1) ?? null;
 
   for (const frame of turn.frames) {
     if (inUserIntro && frame.type === "user") { userFrames.push(frame); continue; }
     inUserIntro = false;
-    orderedBlocks.push(...frame.blocks);
+    orderedBlocks.push(...frame.blocks.filter(block => block.type !== "turn-diff"));
     if (frame.type === "assistant") assistantFrames.push(frame);
   }
 
   const turnIsActive = turn.status === "pending" || turn.status === "streaming";
   const materializeAssistantSurface = orderedBlocks.length > 0
+    || changeSummary !== null
     || (isMostRecentTurn && turnIsActive);
   const assistantFrame: AssistantTimelineFrame | null = materializeAssistantSurface
     ? {
@@ -1069,6 +1078,7 @@ export function createTimelineTurnPresentationPlan(
         status: turn.status,
         durationMs: [...assistantFrames].reverse().find((frame) => frame.durationMs !== null)?.durationMs ?? null,
         workStatus: assistantFrames.find((frame) => frame.workStatus != null)?.workStatus ?? null,
+        changeSummary,
         interruptedByThisClient: turn.frames.some((frame) => frame.interruptedByThisClient),
         hookStats: [...assistantFrames].reverse().find((frame) => frame.hookStats !== null)?.hookStats ?? null,
         anchors: assistantFrames.flatMap((frame) => frame.anchors),
@@ -1109,6 +1119,7 @@ export function createTimelineTurnPresentationPlan(
     (count, frame) => count + (frame.blocks.length > 0 ? 1 : 0),
     0,
   ) + (assistant?.slots.length ?? 0)
+    + (assistant?.changeSummary == null ? 0 : 1)
     + (thinkingOwner.type === "turn" ? 1 : 0)
     + auxiliaryFrames.reduce((count, frame) => count + frame.blocks.length, 0);
 

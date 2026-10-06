@@ -91,6 +91,7 @@ import { RightPanel } from "./components/right-panel";
 import { ThreadComposerPresentation } from "./components/thread-composer-presentation";
 import { ThreadGoalSurface } from "./components/thread-goal-surface";
 import { TurnDiffReviewDialog } from "./components/conversation/turn-diff-review-dialog";
+import { ComposerTurnChangeSummary } from "./components/conversation/turn-diff-resource";
 import { Button } from "./components/ui/button";
 import { NewThreadDraftPage } from "./components/new-thread-draft-page";
 import { isLightVelaStandaloneManagementSection } from "./components/lightvela-management-route";
@@ -606,7 +607,7 @@ export function App({
     if (activeThreadId !== null) setTurnDiffReview({ block, path: path ?? null, threadId: activeThreadId });
   }, [activeThreadId]);
   const reviewedBlock = turnDiffReview?.threadId === activeThreadId
-    ? timeline?.frames.flatMap((frame) => frame.blocks).find((block): block is TurnDiffTimelineBlock =>
+    ? timeline?.frames.flatMap((frame) => frame.changeSummary == null ? frame.blocks : [frame.changeSummary, ...frame.blocks]).find((block): block is TurnDiffTimelineBlock =>
       block.type === "turn-diff" && block.id === turnDiffReview.block.id) ?? turnDiffReview.block
     : null;
   const recoveryPresentation = conversationRecoveryPresentation({
@@ -1621,6 +1622,7 @@ export function App({
                     loadMediaSource,
                     onOpenResource: openChatResource,
                     onReviewTurnDiff: openTurnDiffReview,
+                    composerChangeSummaryTurnId: snapshot.conversation?.activeTurn?.turnId ?? null,
                     theme: appearanceTheme.resolvedTheme,
                   }}
                   timeline={timeline}
@@ -1671,12 +1673,15 @@ export function App({
                       activeTabId={presentation.rightPanel ? panelState.right.activeTabId : null}
                       enabled={conversationRouteOpen}
                       timeline={timeline}
-                      documentContext={{ conversationId: activeThreadId, cwd: activeProtocolThread?.cwd ?? null, hostId: snapshot.hostId, loadMediaSource, onOpenResource: openChatResource, onReviewTurnDiff: openTurnDiffReview, theme: appearanceTheme.resolvedTheme }}
+                      documentContext={{ conversationId: activeThreadId, cwd: activeProtocolThread?.cwd ?? null, hostId: snapshot.hostId, loadMediaSource, onOpenResource: openChatResource, onReviewTurnDiff: openTurnDiffReview, composerChangeSummaryTurnId: snapshot.conversation?.activeTurn?.turnId ?? null, theme: appearanceTheme.resolvedTheme }}
                     >
                     <div
                       className="thread-composer-region"
                       data-thread-find-composer="true"
                     >
+                    <ComposerTurnChangeSummary timeline={timeline} turnId={snapshot.conversation?.activeTurn?.turnId ?? null}
+                      documentContext={{ conversationId: activeThreadId, cwd: activeProtocolThread?.cwd ?? null, hostId: snapshot.hostId,
+                        onOpenResource: openChatResource, onReviewTurnDiff: openTurnDiffReview, theme: appearanceTheme.resolvedTheme }} />
                     {snapshot.conversation?.continuation.error ? (
                       <p role="alert">{snapshot.conversation.continuation.error.message}</p>
                     ) : null}

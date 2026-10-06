@@ -133,6 +133,7 @@ export function deriveTimelineLatestTurnPhase(
   let phase: TimelineLatestTurnPhase = "idle";
   for (const frame of turn.frames) {
     for (const block of frame.blocks) {
+      if (block.type === "turn-diff") continue;
       if (block.type === "user-message") phase = block.messageKind === "steering" ? "prework" : "idle";
       else if (isAssistantAnswerContent(block)) phase = "final_answer";
       else if (frame.type !== "user") phase = "prework";

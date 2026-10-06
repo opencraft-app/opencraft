@@ -5,11 +5,11 @@ import { WorkbenchLocaleController, WorkbenchIntlProvider } from "../../apps/wor
 import { UiPreferencesProvider } from "../../apps/workbench-web/src/runtime/ui-preferences-runtime";
 
 /** Isolated component fixtures have the same required Intl boundary as the app. */
-export function createIntlTestRoot(container: Container, options?: RootOptions) {
+export function createIntlTestRoot(container: Container, options?: RootOptions, locale: "en-US" | "zh-CN" = "en-US") {
   const root = createRoot(container, options);
   let closed = false;
   const ready = UiPreferencesRuntime.open({ installation: new MemoryUiPreferenceStore() }).then(async preferences => {
-    const runtime = new WorkbenchLocaleController(preferences, { ideLocale: "en-US" });
+    const runtime = new WorkbenchLocaleController(preferences, { ideLocale: locale });
     await runtime.initialize();
     return { preferences, runtime };
   });

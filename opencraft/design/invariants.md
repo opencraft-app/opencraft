@@ -158,6 +158,8 @@ WSP-29/30 所有权补充：Renderer 的 capability 声明接受与 Engine 挂�
 模型成立、编译通过、真实控件通过、真实 Host 通过、Mac 产物通过是不同级别。未经相应验证不得提升状态。恢复源码没有明确承诺的行为不得擅自增加约束；结构互斥、稳定前缀和同步移交本身可构成合法保证。
 # 会话生命周期补充（2026-09-15）
 
+文件更改呈现补充（2026-10-06）：Turn 变更汇总是独立资源，不是消息或工作结束边界。Web 实际 Composer 是指定 active Turn 的唯一运行中入口 presenter，主/浮动 mini transcript 按相同身份避免重复；结束卡再进入消息区。资源更新保留数字、展开与 Review 的身份，展开重排由 viewport lease 协调；卡片/悬浮用主题与成熟 Button/Radix，不新增 Host 写权。实现与真实组件验收见 [ChatUI Changed-file review](../docs/chat-ui-architecture.md#changed-file-review)，当前不是生产替换或 Native 实机验收。
+
 Connector 交互不变量：Composer 入口消费应用级 Manager；授权完成、连接、会话选择与写审批分别表达用户意图。面板卸载不销毁已就绪共享连接；审批由共享 Modal/Radix 管理焦点和层级，配置恢复不恢复执行授权。见 [Connector 设计](../docs/platform-connectors.md) 与 `smoke:connector-controls`。
 
 Connector 目录属于 Skills 能力页的同级 Tab；配置弹窗复用 Settings 原语，不引入 Octop 的 Antd/Less。共享 SettingsListItem 显式投影是否有图标，无图标不能保留空图标列挤压正文；配置弹窗内容按本征高度滚动，检测结果不能压掉必填字段。凭据不出现在会话、Skill 或持久 UI 状态里；第三方服务运行结果与静态目录说明分别呈现。

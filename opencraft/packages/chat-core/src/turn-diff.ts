@@ -1,4 +1,17 @@
-import type { TurnDiffFileSummary } from "./timeline";
+import type { TimelineStatus, TurnDiffFileSummary, TurnDiffTimelineBlock } from "./timeline";
+
+/** Resource identity belongs to the Turn, never to an invented protocol Item. */
+export function createTurnChangeSummary(
+  turnId: string, status: TimelineStatus, unifiedDiff: string | null,
+): TurnDiffTimelineBlock | null {
+  if (unifiedDiff === null || unifiedDiff.trim().length === 0) return null;
+  return {
+    type: "turn-diff", id: `${turnId}:turn-diff`, sourceItemIds: [], unifiedDiff,
+    ...summarizeTurnDiff(unifiedDiff),
+    status: status === "streaming" || status === "pending" ? "running"
+      : status === "failed" ? "failed" : status === "interrupted" ? "interrupted" : "complete",
+  };
+}
 
 export interface TurnDiffSummary {
   readonly files: readonly TurnDiffFileSummary[];

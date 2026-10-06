@@ -1746,7 +1746,7 @@ function Frame({
   const visibleBlocks = frame.blocks;
   const visibleFrame = frame;
   const units = assistantPlan?.slots ?? null;
-  if (visibleBlocks.length === 0 && thinkingId === null) return null;
+  if (visibleBlocks.length === 0 && thinkingId === null && assistantPlan?.changeSummary == null) return null;
   if (frame.type === "user") {
     return <View style={styles.userFrame}>{visibleBlocks.map((block) => block.type === "user-message" ? <NativeUserMessageBlock block={block} key={block.id} /> : <View key={block.id}><Block block={block} richText={false} /></View>)}</View>;
   }
@@ -1759,6 +1759,7 @@ function Frame({
           : unit.type === "subagent-activity"
             ? <NativeSubagentActivity key={unit.id} unit={unit} />
             : <View key={unit.id}><Block block={unit.block} /></View>)}
+      {assistantPlan?.changeSummary == null ? null : <View key={assistantPlan.changeSummary.id}><Block block={assistantPlan.changeSummary} /></View>}
       {thinkingId === null ? null : <NativeThinkingPlaceholder key={thinkingId} label={thinkingLabel} />}
       {frame.type === "assistant" && showActions && (actions?.completed || frame.hookStats != null) ? (
         <>
