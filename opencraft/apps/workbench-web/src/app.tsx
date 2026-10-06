@@ -490,7 +490,7 @@ export function App({
     (profile) => profile.hostId === activeHost.hostId,
   )?.providerId ?? null;
   const hermesShortcutCommands = activeHost.hostId === snapshot.hostId && activeHostProviderId === "lightvela.hermes" ? [
-    { name: "new", description: intl.formatMessage({ id: "composer.commands.new", defaultMessage: "New conversation" }) },
+    { name: "new", description: intl.formatMessage({ id: "composer.commands.new", defaultMessage: "New chat" }) },
     { name: "compress", description: intl.formatMessage({ id: "composer.commands.compress", defaultMessage: "Compress context" }) },
     { name: "status", description: intl.formatMessage({ id: "composer.commands.status", defaultMessage: "View status" }) },
     { name: "usage", description: intl.formatMessage({ id: "composer.commands.usage", defaultMessage: "View usage" }) },

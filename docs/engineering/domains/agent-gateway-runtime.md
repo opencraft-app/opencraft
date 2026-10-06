@@ -66,6 +66,8 @@ service scope。身份变化立即废弃旧聊天/目录并将 View 回到协作
 
 OpenCraft Web 输入框在当前 Host 的 provider 为 `lightvela.hermes` 时展示 Hermes 指令库；选择指令只写入可编辑草稿。用户发送时，普通指令沿既有 Composer → AppServer → Hermes `prompt.submit` 链路处理。单独发送 `/stop` 走 Hermes Host 的 `hermes/stop` 请求：已有运行中 Turn 先经 `session.interrupt` 中断，再调用 `process.stop` 清理后台进程；空闲或新会话直接调用 `process.stop`。输入框停止按钮仍只走 `turn/interrupt`，其他 Host 不展示 Hermes 指令库。
 
+国际站面向用户的 Chat 新建入口、列表操作、删除确认及 Hermes `/new` 命令说明统一使用 “chat”（如 “New chat”）；协议、登录与运行时对象仍使用各自的 session 语义。这是界面文案约定，不改变会话操作的执行归属。
+
 国内站嵌入式 Chat 的手机输入区由 OpenCraft Shadow DOM 内的 Composer 样式负责：窄屏下编辑区最小高度为 48px，宽屏保持 74px，底部操作按钮尺寸不随之缩小。宿主页面负责根据 iOS 可视视口底部和自身相对视口的实际位置调整聊天容器高度；输入法聚焦导致整页滚动时，输入区仍需贴近键盘上沿。
 
 国内站嵌入式聊天删除执行中的 Hermes 会话时，先请求 `session.interrupt`，再通过 `session.activate` 确认会话已停止，然后才执行 `session.close` 与 `session.delete`；停止失败或未获确认时保留会话。此删除流程只停止目标会话，不调用全局 `process.stop`。
