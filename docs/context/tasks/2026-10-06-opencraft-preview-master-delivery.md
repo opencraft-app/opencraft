@@ -6,7 +6,7 @@ triggers: ["opencraft master delivery", "预览源码合入master", "desktop spe
 owner: wisp/mono2-maintainers
 authority: primary
 source_of_truth: ["opencraft/docs/cloud-desktop-plugin.md", "opencraft/docs/cloud-dictation.md", "scripts/scan_secrets.py"]
-status: active
+status: retired
 reviewed_at: 2026-10-06
 review_due: 2027-01-04
 revision: 1.0.0
@@ -44,8 +44,9 @@ superseded_refs：旧b2a分支和旧预览PID只作历史；源码合入不等�
 集成基线7d946；本轮fetch更新远端master到f3046979d，新增站点文档/Bot状态和共享翻译，不能直接推旧基线覆盖。采用普通合并保留历史与并发保护，不使用force。
 
 ## checkpoint
-stage：源码已提交，最新master已自动合并，全部门禁验证完成，准备提交合并并推送。
+stage：源码与合并结果已推送，远端master交付完成。
 verified：前序集成VALIDATION已通过；70文件限定暂存、敏感扫描0命中、设计影响检查及diff通过；源码提交47d7720d8。已合并远端f3046979d，无冲突，保留站点/Bot状态/翻译更新。完整gate分两段执行：全部阶段通过，2183项测试中2182通过/1跳过/0失败；听写额外14项通过，Web/Expo Web/iOS bundle构建通过。桌面UI6组（浅/深/扩展主题、桌面/触控）及听写UI4组（浅/深、桌面/触控）通过，真实组件与当前CSS，外部输入/供应商为合成边界，不宣称手机真机/付费接口验收。文档0错误/0断链。最初普通验证进程被终止，后以独立验证服务运行，不修改预览；DSH首次4项失败均为独立运行时模块未安装，按当前锁文件npm ci完成后从失败阶段续跑成功。
-unverified：远端合入与仓库级既有Context基线问题；Mac/iPhone实机权限、外部ASR质量/计费不在本次Git交付范围。
+remote_receipt：普通push通过远端permission/watch-path/push检查；集成分支与master均收到9eeaef47c，再次fetch后master仍为该提交，merge-base确认包含源码47d7720d8。没有force、MR绕过、GitOps或镜像写入。
+unverified：仓库级Context检查仍有6174个既有错误，本次70个受影响文件及新增任务无相关诊断，不宣称全仓Context门禁通过；Mac/iPhone实机权限、外部ASR质量/计费不在本次Git交付范围。
 restore：不修改其他工作树和正在运行的服务，提交/合并仅在统一集成分支完成。
-next_action：提交合并并普通推送，确认远端master包含源码提交；成功后补归档回执。远端如发生并发更新则再合并验证，不强推。
+next_action：仅提交本归档回执与派生目录更新并普通推送，最终核对远端包含源码与合并提交；不重新构建或替换预览。
