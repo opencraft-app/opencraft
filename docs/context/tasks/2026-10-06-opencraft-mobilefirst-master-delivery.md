@@ -47,7 +47,7 @@
 - Chat 537/537，Native 171 通过/1 跳过，手机 Shell/键盘等模型 22/22，Frontend 账号/人设/会话 108/108，导航 61/61，模型失败回退聚焦 4/4。
 - Frontend check 通过：166 current / 171 baseline / 0 new；生产 build 通过。
 - 集成 Auth cmd/lightclaw-auth 与 internal/oidc Go 测试通过；稀疏 checkout 补充 Argo 只读配置后生产 registry 用例也通过，未修改部署。
-- OpenCraft Web build、Expo Web export、内置 Bot DOM build/smoke 通过；iOS bundle 最终平台入口复验中。
+- OpenCraft Web build、Expo Web export、内置 Bot DOM build/smoke 通过；iOS bundle 最终平台入口复验通过（4913 modules / 25 assets）。
 - 完整 gate 未通过：停在未变更的 extension artifactRef 深比较用例；该测试及其相关 extension owner 与 origin/master 一致。
 - Frontend 全量测试仍有失败和 worker OOM，已停止该运行；隔离 master checkout 对照复现 7 项已有失败（实名手机号提示、诊断弹层、头像菜单、国际路由及工作台 loading），另有 2 项 changelog 源码断言也在 baseline 失败。本次新增的内嵌侧栏边界断言已适配并通过，模型 discovery 等 4 个全量失败用例独立复验通过。不宣称全量门禁通过。
 
@@ -63,4 +63,7 @@
 - 运行日志 /tmp/opencraft-mobilefirst-gate-20261006.log、/tmp/mobilefirst-frontend-{check,test,build}-20261006.log；日志留仓库外。
 
 ## handoff
-- 源分支 6ede0c1d5 与集成分支 5cf62fac9/00f653aa8 已推送；平台入口/测试断言修复待提交、同步、最终合入并读取远端 master 核验。
+- 源分支 6ede0c1d5 已推送；集成提交 5cf62fac9、00f653aa8、555189f8b 已推送并 fast-forward 合入 master。
+- SSH push 成功，随后 ls-remote 核验 master 与集成分支同为 555189f8be9d9513495c516ec1eb6667f3526edd；该记录为交付证据，后续文档提交可继续推进 master。
+- 306 个变更文件敏感信息扫描 0 命中；只读同步检查 130 文件通过。
+- 完整门禁失败与未验证实机范围见 validation；未发布 App/主站/GitOps/GitHub。

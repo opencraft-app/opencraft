@@ -1,26 +1,25 @@
 ## stage
-源提交 6ede0c1d5 和集成提交 5cf62fac9/00f653aa8 已推送；正在提交平台入口隔离和测试断言修复，随后最终合入 master。
+已完成源码提交、推送与 master 合入；归档交付记录。
 
 ## verified
-- source worktree /data/mono2-mobilefirst-20260930 保留当前 systemd Expo 预览；生成 next-env.d.ts 不提交。
-- integration worktree /data/mono2-mobilefirst-integration-20261006，branch integrate/opencraft-mobilefirst-20261006。
-- 20 处冲突按源码责任解决；保留 master 的侧栏折叠/Chat 跳转/媒体焦点/消息身份逻辑及手机端 DOM 容器能力。
-- 集成依赖独立 npm ci 安装，不借其他 worktree 的 node_modules。
-- 原分支 frontend check/Auth Go 测试通过；原分支 full gate 和 frontend 全量测试未通过。
+- 源分支 6ede0c1d5 已推送；最新 master 5b9f70ea2 上集成的 5cf62fac9/00f653aa8/555189f8b 已推送。
+- SSH fast-forward master 成功，ls-remote 核验 master 与集成分支同为 555189f8be9d9513495c516ec1eb6667f3526edd。
+- 集成 OpenCraft 全类型/边界/i18n、Chat、Native、Shell/键盘，Frontend 聚焦回归及 check/build、Auth Go 测试通过；Web build / Expo Web export / iOS bundle / 内置 Bot DOM smoke 通过。
+- 306 文件敏感扫描无命中，Agent Console 130 文件只读检查通过；测试源码更新后重新同步，无生成漂移。
+- 源预览 worktree 继续运行；其生成 next-env.d.ts 与集成同类本地文件不提交。所有代码工作在隔离集成 worktree 完成。
 
 ## unverified
-- 最终平台入口 iOS bundle；Expo Web 导出已通过。
-- 最终集成分支与 master 写入和远端读取核验。
-- iPad 横竖屏、分屏、浮动键盘及外接键盘实机矩阵；仅设置退出已被用户确认。
+- iPad 横竖屏、分屏、窗口连续缩放、浮动键盘及外接键盘实机矩阵。设置退出动画已被用户确认。
+- 完整门禁未通过：未变更的扩展 artifactRef 用例失败；Frontend 全量测试失败和 OOM，对照 baseline 及聚焦复验见主 Task Pack。
 
 ## discard
-- 原分支及集成 broad gate/test 的失败运行已停止；已保存失败日志和 baseline 对照，不能作为通过证据。
-- 生成副本已在 00f653aa8 按集成真源同步；后续 frontend 测试源码提交须再次同步 sourceRevision。
+- 已停止失败的 broad gate/test 运行，不宣称门禁全绿。
+- 不拿此源码交付当 App、主站、GitOps 或 GitHub 发布。
 
 ## restore
-- SSH git@git.woa.com:wisp/mono2.git 已验证；HTTPS 未配置凭证，不新增/输出 token。
-- 验证日志 /tmp/mobilefirst-integration-*-20261006.log。
-- 用户已授权提交、推送与合入 master；无 App/主站/GitOps/GitHub 发布授权。
+- Source /data/mono2-mobilefirst-20260930；integration /data/mono2-mobilefirst-integration-20261006；baseline /data/mono2-mobilefirst-baseline-20261006。
+- 日志 /tmp/mobilefirst-integration-*-20261006.log、/tmp/mobilefirst-baseline-*-20261006.log。
+- 工蜂仓库 git@git.woa.com:wisp/mono2.git，普通 SSH push；无 force，无新增令牌。
 
 ## next_action
-完成集成源码提交，机械同步 Agent Console 并独立提交，复验后推送并核对远端 master。
+本次交付结束；后续实机矩阵或既有全量门禁失败作为独立任务处理。
