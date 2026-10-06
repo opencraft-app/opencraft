@@ -11,7 +11,7 @@ source_of_truth:
 status: retired
 reviewed_at: 2026-10-06
 review_due: 2026-11-05
-revision: 1.1.0
+revision: 1.2.0
 precedence: task
 derived: false
 ---
@@ -100,6 +100,7 @@ Separate chronological Activity boundaries from disclosure authority so new inpu
 
 ## handoff
 - Implementation and scoped verification complete in the isolated `refactor/activity-disclosure-20261006` checkout, based on `3cefebe3e`.
-- Twelve scoped source/test/design/task files changed; unrelated Tencent OA work and current port-80 preview unchanged. User-authorized Git delivery is in progress; no preview replacement or restart is included.
+- Twelve scoped source/test/design/task files committed as `71e545c6d`; source branch pushed and remote master fast-forwarded from the verified baseline. Independent `ls-remote` confirmed master and `refactor/activity-disclosure-20261006` at that commit; subsequent fetch/ancestry check confirmed source containment. Only this delivery receipt follows as a documentation-only commit.
+- Unrelated Tencent OA work and current port-80 preview are unchanged. No preview replacement/restart, public mirror or GitOps operation was performed.
 - Long-lived contract is recorded in Chat architecture, UI invariants and mapped engineering design. This pack is bounded history, not a default task route.
 - Runtime deployment and real device acceptance remain separate authorization/verification steps. Repository-wide context cleanup is outside this task.
