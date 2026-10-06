@@ -111,7 +111,7 @@ export class ModelServicesController {
   addModel(provider: RuntimeProviderView, model: RuntimeDiscoveredModelView) { return this.run(async () => {
     const draft = this.draft(provider);
     if (draft.config.models.some(m => m.id === model.id)) throw new Error("此模型已存在");
-    this.edit(provider, { models: [...draft.config.models, model] });
+    this.edit(provider, { models: [...draft.config.models, provider.configuration?.modelType === "asr" ? { ...model, type: "asr" } : model] });
     await this.commit(provider);
   }); }
   async setModelImageInput(provider: RuntimeProviderView, modelId: string, enabled: boolean) {
@@ -119,7 +119,7 @@ export class ModelServicesController {
     if (this.disposed || this.pendingModelCapabilities.has(pendingKey)) return;
     this.pendingModelCapabilities.add(pendingKey); this.error = null; this.message = null; this.notify();
     try {
-      if (provider.configuration?.modelDeclarations !== true) throw new Error("此模型的能力由运行时管理");
+      if (provider.configuration?.modelDeclarations !== true || provider.configuration.modelType === "asr") throw new Error("此模型不支持设置聊天输入能力");
       const draft = this.draft(provider);
       if (draft.dirty) throw new Error("请先保存或取消连接配置的修改");
       const model = draft.config.models.find(entry => entry.id === modelId);
@@ -142,16 +142,20 @@ export class ModelServicesController {
       if (!this.disposed) this.notify();
     }
   }
-  create(name: string) { return this.run(async () => {
-    const previous = this.creationIds.get(name);
+  create(name: string, type: "chat" | "asr" = "chat") { return this.run(async () => {
+    const creationKey = JSON.stringify([type, name]);
+    const speech = this.service.getSnapshot().providers?.creation?.speech;
+    if (type === "asr" && !speech) throw new Error("此服务器暂不支持语音模型管理");
+    const previous = this.creationIds.get(creationKey);
     const id = previous ?? `custom-${crypto.randomUUID()}`;
-    this.creationIds.set(name, id);
+    this.creationIds.set(creationKey, id);
     if (previous) {
       await this.service.refresh();
-      if (this.service.getSnapshot().providers?.providers.some(provider => provider.provider === id)) { this.select(id); this.creationIds.delete(name); return; }
+      if (this.service.getSnapshot().providers?.providers.some(provider => provider.provider === id)) { this.select(id); this.creationIds.delete(creationKey); return; }
     }
-    await this.service.createProvider(id, { displayName: name, baseURL: "", api: "openai-completions", models: [], credential: { kind: "keep" }, enabled: false });
-    this.select(id); this.creationIds.delete(name);
+    await this.service.createProvider(id, { displayName: name, baseURL: type === "asr" ? speech!.baseURL : "",
+      api: type === "asr" ? speech!.api : "openai-completions", models: type === "asr" ? [{ id: speech!.model, type: "asr" }] : [], credential: { kind: "keep" }, enabled: false });
+    this.select(id); this.creationIds.delete(creationKey);
   }); }
   changeModel(provider: RuntimeProviderView, model: string, enabled: boolean) { return this.run(async () => {
     await this.commit(provider);

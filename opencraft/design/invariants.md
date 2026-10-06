@@ -108,6 +108,8 @@ WSP-29/30 所有权补充：Renderer 的 capability 声明接受与 Engine 挂�
 - DIC-07：dictation追加文末并同步确认真实View已应用；泛用输入默认selection。原Draft/View/contentEpoch在写入前后须一致，replace-content/目标重置/View交接令旧lease失效；false/commit-rejected禁止自动发送，不用文字非空伪装成功。
 - DIC-08：Web云听写的录音、转写attempt和草稿写入分属平台、应用服务、Composer。后端验证真实WAV字节和时长；凭据不进入Renderer，所选SSH/Agent Host不拥有语音输入。捕获结束后释放麦克风，完成/取消/失去所有权/过期释放临时音频。
 - DIC-09：转写失败使旧发送意图失效；显式重试复用原音频、创建新attempt，不重启麦克风、不延续旧发送。重试/失败反馈使用原Footer槽位，仍受原Draft/View/contentEpoch约束。暂停等待上游不等于云端取消或退款。
+- DIC-10：语音连接复用模型配置与凭据仓库，语音默认与聊天默认独立；转写模型/密钥不得进入聊天目录与引擎投影。应用服务绑定安装级配置，SSH/Thread/Bot 选择不得改变语音所有者；旧环境密钥不得作为运行时第二真源。
+- DIC-11：录音与显式重试绑定开始时的语音配置票据；转写前比较当前模型/凭据，变更时拒绝，不静默转投。配置缺失、停用或删除保留不可用选择，不隐式选择目录首项。配置页面不得自动触发计费探测。
 
 本次证据与恢复源码边界见 [听写整改计划](dictation-interaction/task_plan.md)。
 

@@ -412,9 +412,9 @@ export class DshAppServerAdapter {
 
   private readonly providers: RuntimeProviderService;
   private readonly admission: DshNativeAdmission | undefined;
-  constructor(readonly client: DshClient, readonly modelConfiguration?: import('./model-config/dsh-adapter.js').DshModelConfigurationBridge, readonly authority?: DshExecutionAuthority, readonly hostCapabilities = false, readonly permissions?: DshPermissionPort) {
+  constructor(readonly client: DshClient, readonly modelConfiguration?: import('./model-config/dsh-adapter.js').DshModelConfigurationBridge, readonly authority?: DshExecutionAuthority, readonly hostCapabilities = false, readonly permissions?: DshPermissionPort, speechModelManagement = false) {
     this.admission = authority ? new DshNativeAdmission(authority) : undefined;
-    this.providers = new RuntimeProviderService(modelConfiguration ?? client);
+    this.providers = new RuntimeProviderService(modelConfiguration ?? client, !!modelConfiguration && speechModelManagement);
     this.interactions = new DshInteractions(client, async (sessionId, callId) => {
       const position = this.livePosition.get(sessionId);
       if (position && position.turn >= 0) {
@@ -1209,7 +1209,7 @@ export class DshAppServerAdapter {
       case "runtime/credentials/unset":
         return (this.modelConfiguration ?? this.client).call("credentials.unset", value);
       case "runtime/providers/list":
-        { const result=await this.providers.list();return {...result,providers:result.providers.map(p=>({...p,...(p.configuration?{configuration:{...p.configuration,canCheckSaved:!!this.modelConfiguration}}:{})})),...(this.modelConfiguration?{application:this.modelConfiguration.config.application}:{})}; }
+        { const result=await this.providers.list();return {...result,providers:result.providers.map(p=>({...p,...(p.configuration?{configuration:{...p.configuration,canCheckSaved:!!this.modelConfiguration&&p.configuration.modelType!=="asr"}}:{})})),...(this.modelConfiguration?{application:this.modelConfiguration.config.application}:{})}; }
       case "runtime/providers/reapply":
         return this.modelConfiguration ? this.modelConfiguration.config.synchronize(true) : null;
       case "runtime/providers/apply":

@@ -64,17 +64,18 @@ export interface RuntimeProviderView {
   readonly configured?: boolean;
   readonly enabled?: boolean;
   readonly declared?: boolean;
-  readonly configuration?: { readonly modelDeclarations: boolean; readonly apis: readonly RuntimeOpenAIProtocol[]; readonly canToggle?: boolean; readonly canProbe?: boolean; readonly canCheckSaved?: boolean;
-    readonly defaultBaseURL?: string; readonly defaultApi?: RuntimeOpenAIProtocol };
+  readonly configuration?: { readonly modelDeclarations: boolean; readonly apis: readonly RuntimeProviderProtocol[]; readonly modelType?: "chat" | "asr"; readonly canToggle?: boolean; readonly canProbe?: boolean; readonly canCheckSaved?: boolean;
+    readonly defaultBaseURL?: string; readonly defaultApi?: RuntimeProviderProtocol };
 }
 
 export interface RuntimeProvidersListResponse {
   readonly application?: { readonly state: "pending" | "applied" | "failed"; readonly revision: number; readonly error?: string };
   readonly providers: readonly RuntimeProviderView[];
-  readonly creation?: { readonly kind: "openai-compatible"; readonly revision: number; readonly apis: readonly RuntimeOpenAIProtocol[]; readonly canProbe?: boolean; readonly canEnableOnCreate?: boolean };
+  readonly creation?: { readonly kind: "openai-compatible"; readonly revision: number; readonly apis: readonly RuntimeOpenAIProtocol[]; readonly speech?: { readonly api: "hunyuan-asr"; readonly baseURL: string; readonly model: string }; readonly canProbe?: boolean; readonly canEnableOnCreate?: boolean };
 }
 
 export type RuntimeOpenAIProtocol = "openai-completions" | "openai-responses";
+export type RuntimeProviderProtocol = RuntimeOpenAIProtocol | "hunyuan-asr";
 
 /** Host application command: credentials and settings are coordinated behind this boundary. */
 export interface RuntimeProviderApplyParams {
@@ -84,7 +85,7 @@ export interface RuntimeProviderApplyParams {
   readonly expectedRevision: number;
   readonly baseURL: string;
   readonly displayName?: string;
-  readonly api?: RuntimeOpenAIProtocol;
+  readonly api?: RuntimeProviderProtocol;
   readonly models?: readonly RuntimeDiscoveredModelView[];
   readonly enabled?: boolean;
   readonly credential: { readonly kind: "keep"; readonly allowEndpointChange?: boolean }
@@ -107,6 +108,7 @@ export interface RuntimeProviderSetEnabledParams {
 }
 
 export interface RuntimeModelView {
+  readonly type?: "chat" | "asr";
   readonly contextWindow?: number;
   readonly maxTokens?: number;
   readonly input?: readonly ("text" | "image")[];
@@ -150,6 +152,7 @@ export interface RuntimeModelsDiscoverParams {
 }
 
 export interface RuntimeDiscoveredModelView {
+  readonly type?: "chat" | "asr";
   readonly id: string;
   readonly name?: string;
   readonly contextWindow?: number;

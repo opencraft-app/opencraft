@@ -126,8 +126,10 @@
     "smoke:thread-management": "tsx scripts/smoke-thread-management.ts",
     "smoke:model-capabilities": "tsx scripts/smoke-model-capabilities.ts",
     "test:native-speech": "tsx --test tests/native-speech.test.ts tests/dictation-ledger.test.ts tests/composer-core.test.ts",
-    "test:hunyuan-speech": "tsx --test tests/hunyuan-speech.test.ts",
+    "test:hunyuan-speech": "tsx --test tests/hunyuan-speech.test.ts tests/speech-model-configuration.test.ts",
+    "migrate:speech-models": "tsx scripts/migrate-speech-models.ts",
     "smoke:hunyuan-dictation": "tsx scripts/smoke-hunyuan-dictation.ts",
+    "smoke:speech-model-settings": "tsx scripts/smoke-speech-model-settings.ts",
     "test:native-speech:lifecycle": "tsx --test tests/native-speech-lifecycle.test.ts",
     "smoke:native-speech": "tsx scripts/smoke-native-speech.ts",
     "smoke:dictation-interaction": "tsx scripts/smoke-dictation-interaction.ts",
@@ -164,7 +166,7 @@
     "test:chat": "tsx --test tests/chat-*.test.ts tests/conversation-history-order.test.ts tests/composer-core.test.ts tests/codex-composer-codec.test.ts tests/codex-composer-attachment-focus.test.ts tests/codex-composer-attachment-preview.test.ts",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "check:boundaries": "npm run check:typography && node scripts/check-platform-boundaries.mjs",
-    "gate": "npm run check:i18n && npm run test:i18n && npm run check:boundaries && npm run typecheck && npm run test:cloud-desktop && npm run test:electron-launch && npm run test:extensions && npm run test:connectors && npm run test:appserver && npm run test:projects && npm run test:thread-lifecycle && npm run test:native-speech && npm run test:dsh-bridge && npm run test:appserver:lab && npm run test:chat && npm run test:workbench:unit && npm run test:shell-space && npm run test:workspace-presentation && npm run test:environments && npm run test:desktop-login && npm run test:headless-server && npm run test:web-release && npm run build:web && npm run build:expo:web && npm run build:expo:ios"
+    "gate": "npm run check:i18n && npm run test:i18n && npm run check:boundaries && npm run typecheck && npm run test:cloud-desktop && npm run test:electron-launch && npm run test:extensions && npm run test:connectors && npm run test:appserver && npm run test:projects && npm run test:thread-lifecycle && npm run test:native-speech && npm run test:hunyuan-speech && npm run test:dsh-bridge && npm run test:appserver:lab && npm run test:chat && npm run test:workbench:unit && npm run test:shell-space && npm run test:workspace-presentation && npm run test:environments && npm run test:desktop-login && npm run test:headless-server && npm run test:web-release && npm run build:web && npm run build:expo:web && npm run build:expo:ios"
   },
   "dependencies": {
     "react": "19.2.3",

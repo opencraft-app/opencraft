@@ -16,6 +16,8 @@ Web 与 Native 消费同一呈现计划；运行中 diff 更新不得关闭活�
 
 ## 服务与责任
 
+OpenCraft Headless 的云听写复用安装级模型配置与凭据仓库，Model Services 管连接/密钥，语音设置只选择独立转写模型。转写模型及其密钥不进入聊天目录或 DSH 执行投影，也不跟随当前 SSH/Thread/Bot。录音开始固定配置票据，停止和重试保持同一绑定，配置变化在计费前拒绝旧录音。旧语音环境配置仅显式导入，不作为运行时第二真源；源码实现、实际迁移和预览替换分别验证。详见 [模型所有权](../../../opencraft/design/model-configuration.md#语音模型与应用服务)。
+
 OpenCraft 本机只读桌面由部署入口显式选择信任边界：默认 `--local-desktop`
 仍仅回环可用；`--trusted-internal-desktop` 只适用于网络准入已可信的安装，
 信任所有能访问该页面的用户查看同一台机器。Host 声明不同传输范围，Web 只消费

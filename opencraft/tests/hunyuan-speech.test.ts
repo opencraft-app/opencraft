@@ -129,7 +129,7 @@ test("public speech requires separate operator opt-in even with an API credentia
 
 async function providerFixture(run: (body: any, signal: AbortSignal) => Promise<Response>) {
   let captures = 0, stops = 0, releases = 0;
-  const service = new SpeechServiceClient(async (url, init) => url === "/__opencraft_speech/capabilities" ? Response.json({ available: true, provider: "hunyuan", maxDurationMs: 120_000, maxAudioBytes: 3_840_044 }) : run(init, init!.signal!));
+  const service = new SpeechServiceClient(async (url, init) => url === "/__opencraft_speech/capabilities" ? Response.json({ available: true, binding: "a".repeat(64), provider: "hunyuan", maxDurationMs: 120_000, maxAudioBytes: 3_840_044 }) : run(init, init!.signal!));
   await service.refresh();
   const capture: AudioCapturePort = { isAvailable: () => true, async start() {
     captures++; return { async stop() { stops++; return audio(); }, cancel() { releases++; } };
@@ -182,7 +182,7 @@ test("capability contract mismatch, closed service and provider cannot record or
 test("pending microphone completion after cancel is released and cannot publish listening or submit", async () => {
   let complete!: (session: any) => void, releases = 0, calls = 0;
   const service = new SpeechServiceClient(async url => {
-    if (url === "/__opencraft_speech/capabilities") return Response.json({ available: true, provider: "hunyuan", maxDurationMs: 120_000, maxAudioBytes: 3_840_044 });
+    if (url === "/__opencraft_speech/capabilities") return Response.json({ available: true, binding: "a".repeat(64), provider: "hunyuan", maxDurationMs: 120_000, maxAudioBytes: 3_840_044 });
     calls++; throw new Error("must not upload");
   });
   await service.refresh();

@@ -131,6 +131,8 @@ export async function startLocalAgentHost(options: {
   readonly dshCapabilityPlugin?: string;
   readonly dataDirectory?: string;
   readonly modelStorageDirectory?: string;
+  /** Application speech service is installed by Headless; not inferred for desktop/remote engines. */
+  readonly speechModelManagement?: boolean;
   readonly projectStorageDirectory?: string;
   /** Host-owned root for Projectless Threads; defaults to ~/OpenCraft. */
   readonly projectlessWorkspaceDirectory?: string;
@@ -239,7 +241,7 @@ export async function startLocalAgentHost(options: {
       if (!capabilityLink) throw new Error("DSH permission service is not ready");
       return capabilityLink.permissions(threadId, preset);
     },
-  } : undefined);
+  } : undefined, options.speechModelManagement === true);
   const projectlessWorkspaceRoot = (
     options.projectlessWorkspaceDirectory
     ?? process.env.OPENCRAFT_PROJECTLESS_WORKSPACE_DIRECTORY

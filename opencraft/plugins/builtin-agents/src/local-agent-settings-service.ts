@@ -3,7 +3,7 @@ import type {
   RuntimeDiscoveredModelView, RuntimeModelsListResponse, RuntimeProviderView,
   RuntimeProvidersListResponse, RuntimeSettingsDescribeResponse, RuntimeSettingsNamespaceView,
   RuntimeStatusResponse,
-  RuntimeProviderApplyParams, RuntimeOpenAIProtocol,
+  RuntimeProviderApplyParams, RuntimeProviderProtocol,
   RuntimeModelProbeResponse,
 } from "@opencraft/appserver-protocol";
 export type HostProtocolRequest = <TMethod extends AppServerMethod>(hostId: string, method: TMethod,
@@ -20,7 +20,7 @@ export interface LocalAgentSettingsSnapshot {
 
 export interface RuntimeProviderConfiguration {
   readonly baseURL: string; readonly credentialRef: string;
-  readonly displayName: string; readonly api?: RuntimeOpenAIProtocol;
+  readonly displayName: string; readonly api?: RuntimeProviderProtocol;
   readonly models: readonly RuntimeDiscoveredModelView[];
 }
 export interface SaveRuntimeProviderInput {
@@ -28,7 +28,7 @@ export interface SaveRuntimeProviderInput {
   readonly enabled?: boolean;
   readonly baseURL: string;
   readonly credential: RuntimeProviderApplyParams["credential"];
-  readonly api?: RuntimeOpenAIProtocol;
+  readonly api?: RuntimeProviderProtocol;
   readonly displayName?: string;
   readonly models?: readonly RuntimeDiscoveredModelView[];
 }
@@ -88,7 +88,7 @@ export class LocalAgentSettingsService {
     return {
       baseURL: typeof profile.baseURL === "string" ? profile.baseURL : "",
       displayName: typeof profile.displayName === "string" ? profile.displayName : provider.displayName,
-      api: profile.api === "openai-completions" || profile.api === "openai-responses" ? profile.api : undefined,
+      api: profile.api === "openai-completions" || profile.api === "openai-responses" || profile.api === "hunyuan-asr" ? profile.api : undefined,
       // DSH materializes an omitted optional modality array as []. The public
       // command uses omission for inherited capabilities and rejects explicit
       // empty declarations. Normalize the read projection, not the stored data.
@@ -118,7 +118,7 @@ export class LocalAgentSettingsService {
   }
 
   async probeModel(input: SaveRuntimeProviderInput, model: string): Promise<RuntimeModelProbeResponse> {
-    if (!input.api || !input.baseURL.trim()) throw new Error("Specify the draft endpoint and protocol before testing");
+    if (!input.api || input.api === "hunyuan-asr" || !input.baseURL.trim()) throw new Error("此连接不支持文本连通性检查");
     if (input.credential.kind === "replace" && !input.credential.value.trim()) throw new Error("Enter the test key before testing");
     if (input.credential.kind !== "replace" && input.credential.kind !== "none") throw new Error("Enter a test key explicitly. Saved credentials are not used for draft endpoint tests.");
     return this.requestHost(this.hostId, "runtime/models/probe", {
@@ -134,6 +134,7 @@ export class LocalAgentSettingsService {
     const namespace = this.namespace("agent-default-model");
     const selected = this.snapshot.models?.groups.find(group => group.id === provider)?.models.find(entry => entry.id === model);
     if (!selected || selected.enabled === false) throw new Error("Selected model is unavailable. Refresh the model catalog.");
+    if (selected.type === "asr") throw new Error("转写模型不能设为聊天默认");
     if (reasoningEffort !== undefined && !selected.reasoning?.efforts.some(entry => entry.id === reasoningEffort)) {
       throw new Error(`Selected model does not support reasoning effort "${reasoningEffort}"`);
     }

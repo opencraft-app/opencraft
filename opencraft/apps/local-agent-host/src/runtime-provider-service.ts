@@ -12,6 +12,7 @@ import { probeRuntimeModel } from "./runtime-model-probe.js";
 import { modelBaseUrlError } from "@opencraft/appserver-protocol";
 import { DshClientError, type DshClient } from "./dsh-client.js";
 import { modelInputModalities } from "@opencraft/composer-core";
+import { HUNYUAN_SPEECH, isHunyuanSpeechEndpoint } from "./model-config/speech.js";
 
 const CUSTOM_NS = "llm-pi-ai";
 const supportsProviderLifecycle = (ns: string) => ns === CUSTOM_NS || ns === "llm-deepseek";
@@ -37,7 +38,7 @@ function endpoint(value: string, validateOperation = true): string {
 export class RuntimeProviderService {
   private modelInfoReader?: RuntimeModelInfoReader;
   setModelInfoReader(reader: RuntimeModelInfoReader) { this.modelInfoReader = reader; }
-  constructor(private readonly client: Pick<DshClient, "call">) {}
+  constructor(private readonly client: Pick<DshClient, "call">, private readonly applicationModels = false) {}
 
   probe(input: RuntimeModelProbeParams) { return probeRuntimeModel(input); }
 
@@ -71,8 +72,11 @@ export class RuntimeProviderService {
     ]);
     const config = object(settings.namespaces.find(entry => entry.ns === CUSTOM_NS)?.value);
     const policy = object(config.modelSelection);
-    const liveModels = new Set(catalog.groups.flatMap(group => group.models.map(model => JSON.stringify([group.id, model.id]))));
-    let groups = [...catalog.groups];
+    // Defensive projection even if an engine briefly returns a stale cached catalog.
+    const chatGroups = catalog.groups.filter(group => object(object(config.providers)[group.id]).api !== HUNYUAN_SPEECH.api)
+      .map(group => ({ ...group, models: group.models.filter(model => model.type !== "asr") }));
+    const liveModels = new Set(chatGroups.flatMap(group => group.models.map(model => JSON.stringify([group.id, model.id]))));
+    let groups = [...chatGroups];
     if (includeDisabled) {
       for (const provider of directory.providers) {
         if (!supportsProviderLifecycle(provider.settingsNs) || groups.some(group => group.id === provider.provider)) continue;
@@ -81,6 +85,7 @@ export class RuntimeProviderService {
           : object(at(section?.value, provider.settingsPath)).models;
         if (Array.isArray(declared)) groups = [...groups, { id: provider.provider, name: provider.displayName,
           models: declared.map(entry => { const model = object(entry); return { id: String(model.id), name: String(model.name ?? model.id),
+            ...(model.type === "asr" ? { type: "asr" as const } : {}),
             ...(typeof model.contextWindow === "number" ? { contextWindow: model.contextWindow } : {}),
             ...(typeof model.maxTokens === "number" ? { maxTokens: model.maxTokens } : {}),
             ...(Array.isArray(model.input ?? model.inputModalities) ? { input: (model.input ?? model.inputModalities) as ("text" | "image")[] } : {}),
@@ -91,7 +96,7 @@ export class RuntimeProviderService {
     return { ...catalog, groups: await Promise.all(groups.map(async group => {
       const provider = directory.providers.find(entry => entry.provider === group.id && entry.active) ?? directory.providers.find(entry => entry.provider === group.id);
       const declared = object(object(config.providers)[group.id]).models;
-      const builtin = provider?.settingsNs === CUSTOM_NS && Array.isArray(declared) && declared.length
+      const builtin = object(object(config.providers)[group.id]).api !== HUNYUAN_SPEECH.api && provider?.settingsNs === CUSTOM_NS && Array.isArray(declared) && declared.length
         ? provider.declared ? new Set<string>() : new Set((await this.client.call<RuntimeModelsDiscoverResponse>("llm.discoverModels", { settingsNs: CUSTOM_NS, provider: group.id })).models.map(model => model.id))
         : null;
       const disabled = new Set(Array.isArray(policy[group.id]) ? policy[group.id] as string[] : []);
@@ -103,10 +108,10 @@ export class RuntimeProviderService {
           ?? (model as { inputModalities?: readonly string[] }).inputModalities;
         return { ...model,
         ...(info ? { reasoning: info.reasoning ?? undefined } : {}),
-        input: modelInputModalities(input)
+        input: model.type === "asr" ? undefined : modelInputModalities(input)
           .filter((modality): modality is "text" | "image" => modality !== "audio"),
         enabled: !disabled.has(model.id),
-        source: builtin && !builtin.has(model.id) ? "custom" as const : "builtin" as const,
+        source: model.type === "asr" || (builtin && !builtin.has(model.id)) ? "custom" as const : "builtin" as const,
       }; }))).filter(model => includeDisabled || model.enabled) };
     })) };
   }
@@ -152,8 +157,10 @@ export class RuntimeProviderService {
       const section = settings.namespaces.find((entry) => entry.ns === provider.settingsNs);
       const value = at(section?.value, provider.settingsPath);
       const configured = value !== undefined;
+      const speech = object(value).api === HUNYUAN_SPEECH.api;
       return { ...provider, configured, enabled: configured && object(value).enabled !== false,
-        ...(provider.settingsNs === CUSTOM_NS ? { configuration: { modelDeclarations: true, apis: APIS, canToggle: true, canProbe: true } } : {}),
+        ...(provider.settingsNs === CUSTOM_NS ? { configuration: { modelDeclarations: true, apis: speech ? [HUNYUAN_SPEECH.api] : APIS,
+          modelType: speech ? "asr" as const : "chat" as const, canToggle: true, canProbe: !speech } } : {}),
         // The pinned native DeepSeek adapter speaks Chat Completions. These are
         // public draft-probe defaults, never a readback of credentials or env overrides.
         ...(provider.settingsNs === "llm-deepseek" && provider.provider === "deepseek-official" ? { configuration: {
@@ -161,7 +168,7 @@ export class RuntimeProviderService {
         } } : {}),
       };
     }), ...(settings.writable && namespace ? {
-      creation: { kind: "openai-compatible" as const, revision: namespace.revision, apis: APIS, canProbe: true, canEnableOnCreate: true },
+      creation: { kind: "openai-compatible" as const, revision: namespace.revision, apis: APIS, ...(this.applicationModels ? { speech: HUNYUAN_SPEECH } : {}), canProbe: true, canEnableOnCreate: true },
     } : {}) };
   }
 
@@ -192,14 +199,20 @@ export class RuntimeProviderService {
     if (create && at(namespace.value, path) !== undefined) throw new Error("Provider ID already exists");
     const current = object(at(namespace.value, path));
     const baseURL = input.baseURL.trim() ? endpoint(input.baseURL.trim()) : "";
+    const api = input.api ?? current.api;
+    const speech = api === HUNYUAN_SPEECH.api;
+    if (speech && (!this.applicationModels || !isHunyuanSpeechEndpoint(baseURL))) throw new Error("语音连接请使用混元转写服务地址");
+    if (!create && input.api !== undefined && (current.api === HUNYUAN_SPEECH.api) !== speech) throw new Error("连接用途不能更改，请创建新连接");
     if (create && !input.displayName?.trim()) throw new Error("New providers require a name");
-    if (input.api !== undefined && (ns !== CUSTOM_NS || !APIS.includes(input.api))) throw new Error("Unsupported protocol for this adapter");
+    if (input.api !== undefined && (ns !== CUSTOM_NS || (!speech && !APIS.some(api => api === input.api)))) throw new Error("Unsupported protocol for this adapter");
     if (input.models !== undefined) {
       if (ns !== CUSTOM_NS || !Array.isArray(input.models) || input.models.length > 1000) throw new Error("Invalid model declarations");
       const seen = new Set<string>();
       for (const model of input.models) {
         if (!model || typeof model.id !== "string" || !model.id.trim() || model.id !== model.id.trim() || seen.has(model.id)) throw new Error("Model IDs must be nonempty and unique");
         seen.add(model.id);
+        if ((model.type === "asr") !== speech || (model.type !== undefined && model.type !== "chat" && model.type !== "asr")) throw new Error("模型用途与连接不匹配");
+        if (speech && (!/^[a-zA-Z0-9._-]{1,100}$/u.test(model.id) || model.input !== undefined || model.maxTokens !== undefined || model.contextWindow !== undefined)) throw new Error("语音模型请仅填写模型名称");
         for (const n of [model.contextWindow, model.maxTokens]) if (n !== undefined && (!Number.isInteger(n) || n <= 0)) throw new Error("Model limits must be positive integers");
         if (model.name !== undefined && (typeof model.name !== "string" || !model.name.trim())) throw new Error("Model display names must be nonempty");
         if (model.contextWindow !== undefined && model.maxTokens !== undefined && model.maxTokens > model.contextWindow) throw new Error("Output limit cannot exceed the context window");
@@ -275,7 +288,7 @@ export class RuntimeProviderService {
     if (input.enabled === true && input.credential.kind !== "replace") {
       const ref = input.credential.kind === "reference" ? input.credential.ref : current.apiKeyEnv;
       if (input.credential.kind === "none" || typeof ref !== "string") throw new Error("Configure authentication before enabling this provider");
-      const credentials = await this.client.call<{ credentials: Record<string, { configured: boolean }> }>("credentials.describe", { refs: [ref] });
+      const credentials = await this.client.call<{ credentials: Record<string, { configured: boolean }> }>("credentials.describe", { refs: [ref], ...(speech ? { storedOnly: true } : {}) });
       if (!credentials.credentials[ref]?.configured) throw new Error("Configure authentication before enabling this provider");
     }
     if (stagedRef && input.credential.kind === "replace") {
@@ -333,6 +346,7 @@ export class RuntimeProviderService {
   }
 
   async discover(input: RuntimeModelsDiscoverParams): Promise<RuntimeModelsDiscoverResponse> {
+    if (input.api === HUNYUAN_SPEECH.api || (this.applicationModels && input.source === "catalog" && input.provider && (await this.list()).providers.find(p => p.provider === input.provider)?.configuration?.modelType === "asr")) throw new Error("请手动添加语音模型名称");
     if (input.source === "catalog") {
       if (!input.provider) throw new Error("Catalog lookup requires a provider");
       // No draft endpoint or secret is sent for catalog lookup.
