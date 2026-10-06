@@ -6,10 +6,10 @@ triggers: ["desktop interaction git delivery", "桌面整改合入master", "desk
 owner: wisp/mono2-maintainers
 authority: primary
 source_of_truth: ["opencraft/docs/cloud-desktop-plugin.md", "opencraft/plugins/cloud-desktop/src/controller.ts", "opencraft/apps/local-agent-host/src/desktop/local-desktop-service.ts"]
-status: active
+status: retired
 reviewed_at: 2026-10-06
 review_due: 2027-01-04
-revision: 1.0.0
+revision: 1.1.0
 precedence: task
 derived: false
 ---
@@ -33,12 +33,15 @@ superseded_refs：旧五分钟退休、申请期间Cancel；此次Git授权替�
 已读根/OpenCraft AGENTS、maintenance Skill及verification；router本轮无命中，随后有界核对remediation Task、邻接卡及i18n测试邻居。未读取或打印Git凭据，既有private文件仅供Git credential helper使用。
 
 ## decisions / risks
-远端master已在7b7afb30c之后增加9个提交，最新6061eb5c1。当前dirty catalog和另一预览回执不属于本轮，保留原状；使用独立merge工作区，不借其他checkout的依赖或产物。
+开始时远端master已在7b7afb30c之后增加9个提交，最新6061eb5c1；验证期间又增加网页标题与产品动态更新至4a8c4019f，均普通合并保留。当前dirty catalog和另一预览回执不属于本轮，保留原状；使用独立merge工作区，执行自己的npm ci，不借其他checkout的依赖或产物。
 根Context门禁仍有已记录历史问题，不宣称全仓gate通过。Git集成不等于部署。
+新增语音配置测试在与构建/typecheck并行时，固定50轮setImmediate等待请求的断言曾失败；单文件及整组串行复验通过，未修改该测试或语音实现。此结果不宣称该上游用例在任意负载下稳定。
 
 ## checkpoint / evidence / handoff
-stage：明确授权与变更范围核对完成，准备提交并合并验证。
-verified：HEAD及feature远端均为7b7afb30c；已凭据helper成功fetch，master为6061eb5c1；实现阶段验证见remediation Task。
-unverified：新commit/merge与远端回执。
-restore：未触碰在线服务；既有未提交记录继续保留。
-next_action：提交精确文件集合，在隔离工作区合并最新master并验证。
+stage：源码提交、推送、合入master及远端验证完成；本回执只补文档，不改变已验证源码。
+verified：源码commit为4fab073db391dbf8c88440ff55400d30e3b67124，已推送integrate/opencraft-preview-unified-20261006；合并6061eb5c1为38497be35，再合并4a8c4019f为4b677c23073c0165651e73fa696403b645b03eef。普通push成功，ls-remote确认master与integrate/opencraft-desktop-master-20261006均为4b677c230；merge-base确认源码commit及4a8c4019f均为其祖先。
+merged_validation：桌面107项通过；Panel/Shell/workspace/语音/变更卡片相关69项串行通过；5个受影响workspace类型检查、boundaries、i18n、Web release构建通过。后续仅网页标题入口变更，补验3项标题测试、Web类型及release构建通过。documentation validator零错误、零失效一方链接；相对master的change-impact检查通过。
+browser_evidence：/tmp/opencraft-desktop-ui-rkzrKx；真实Panel/controller/AppShell/RightPanel与当前完整生产CSS通过三主题、桌面/触屏、隐藏/重开/切tab、停止控制及迟到结果验证。仅媒体/授权边界合成，不代表真实本机输入或生产授权验收。
+unverified：在线预览仍是原版本；真实控制、剪贴板及100%复刻Codex不在本轮Git验证结论内。
+restore：未触碰在线服务；原工作区dirty catalog与既有预览回执继续保留，不提交。本回执后续普通推送，不强推或改写历史。
+next_action：如需上线须另行明确授权，同时更新Host和Web；仅静态前端替换不能交付观看续期能力。
