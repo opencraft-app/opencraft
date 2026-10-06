@@ -1,5 +1,5 @@
 ## stage
-源提交 6ede0c1d5 已完成，最新 master 5b9f70ea2 的独立集成分支正在完成 cherry-pick 与复验，尚未推送。
+源提交 6ede0c1d5 和集成提交 5cf62fac9/00f653aa8 已推送；正在提交平台入口隔离和测试断言修复，随后最终合入 master。
 
 ## verified
 - source worktree /data/mono2-mobilefirst-20260930 保留当前 systemd Expo 预览；生成 next-env.d.ts 不提交。
@@ -9,13 +9,13 @@
 - 原分支 frontend check/Auth Go 测试通过；原分支 full gate 和 frontend 全量测试未通过。
 
 ## unverified
-- 当前集成类型检查、模型用例、frontend 依赖及服务验证。
-- 远端 branch/master 写入结果。
+- 最终平台入口 iOS bundle；Expo Web 导出已通过。
+- 最终集成分支与 master 写入和远端读取核验。
 - iPad 横竖屏、分屏、浮动键盘及外接键盘实机矩阵；仅设置退出已被用户确认。
 
 ## discard
-- 原分支 full gate/build/test 任务已停止，不作为集成完成证据。
-- 生成副本在 cherry-pick 暂保留 master 冲突版本；必须源提交后重新生成并独立提交，不可停在此状态。
+- 原分支及集成 broad gate/test 的失败运行已停止；已保存失败日志和 baseline 对照，不能作为通过证据。
+- 生成副本已在 00f653aa8 按集成真源同步；后续 frontend 测试源码提交须再次同步 sourceRevision。
 
 ## restore
 - SSH git@git.woa.com:wisp/mono2.git 已验证；HTTPS 未配置凭证，不新增/输出 token。

@@ -137,3 +137,7 @@ For gesture changes, additionally open → immediately close before the spring
 settles, close → immediately reopen, drag vertically in the Bot WebView →
 continue sideways without lifting, then lift → immediately swipe sideways
 during scroll momentum. Check a WebView horizontal control separately.
+
+## 平台入口与路由扫描
+
+`src/app/index.tsx` 与 `_layout` 系列是薄路由，委托给 `mobile-home-route` 和 `workbench-route-layout` 的平台实现。Expo Router 的基础路由可能和平台 override 一起进入扫描；模块边界由 Metro 平台解析隔离，不能依靠 JSX 分支阻止导入。iOS 的 DOM 容器、账号 SQLite 与原生导航不进入 Web 模块图；Android/Web 沿用各自 Workbench 运行时。验证覆盖 Expo Web 导出与 iOS bundle。

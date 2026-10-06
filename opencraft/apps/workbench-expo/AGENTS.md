@@ -33,3 +33,5 @@ iOS「对话」由 OpenCraft 原生 Chat/Composer 呈现，连接侧栏选中 Bo
 LightVela 正式移动端按 `OPENCRAFT_LIGHTVELA_EDITION=cn|intl` 构建两包，包标识、URL scheme 和 OIDC 回调必须成套匹配；Expo Go 保留开发标识及旧回调。登录页不显示地区选择。站点覆盖只放在开发者模式，需登出后切换，不能将旧站点的凭证、Bot 或缓存带入新站点。改发行身份时同步核对 `app.config.js`、构建脚本、认证服务回调清单及 [Expo README](README.md)，并验证两包可同时安装且各自收到回调。
 
 文档维护按“一个事实、一处权威”处理：改现有过时段落，再加必要的短规则；README 讲使用方式，本文件讲 Agent 工作边界，设计文档讲不变量，源码与测试讲当前行为。不要叠加一次性故障禁令或保留与现状冲突的旧描述。
+
+平台路由的默认文件也会被 Expo Router 扫描：`src/app/` 入口只委托给平台解析的组件，iOS Shell/SQLite/WebView 依赖放在 `.ios.tsx` 实现中，不能在默认路由显式导入 `.ios`/`.native`。Android/Web 消费各自运行时；涉及入口导入图的改动须运行 Expo Web 导出和 iOS bundle，避免仅凭 `Platform.OS` 的渲染条件误判模块隔离。

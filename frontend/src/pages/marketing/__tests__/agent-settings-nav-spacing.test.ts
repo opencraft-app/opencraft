@@ -183,7 +183,7 @@ describe("Agent settings navigation spacing", () => {
      * 而不是放宽成只检查基类 —— 漏掉任一分支都会布局错位。
      */
     expect(page).toContain('"lv-agent-settings-content min-w-0"');
-    expect(page).toContain('hasSidebarLayout ? "lg:col-start-2" : "mx-auto w-full max-w-[860px]"');
+    expect(page).toContain('hasSidebarLayout && !embedded ? "lg:col-start-2" : "mx-auto w-full max-w-[860px]"');
     // 创建 Loading 视图没有侧边栏问题，仍是固定写法
     expect(loadingView).toContain('className="lv-agent-settings-content min-w-0 lg:col-start-2"');
     expect(styles).toContain("width: min(1440px, calc(100vw - 160px));");
