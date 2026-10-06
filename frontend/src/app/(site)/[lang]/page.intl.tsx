@@ -14,7 +14,7 @@ import { koreanRouteDescription, koreanRouteTitle } from '@/lib/seo-data.ko';
 
 // 首页元数据文案表：以 locale 常量为键，避免 `=== 'en-US'` 类魔法字符串。
 const TITLE_BY_LOCALE: Record<PublicSiteLocale, string> = {
-  [PUBLIC_SITE_LOCALES.EN_US]: 'LightVela | Your Personal Cloud AI Agent',
+  [PUBLIC_SITE_LOCALES.EN_US]: 'My AI Companion | LightVela',
   [PUBLIC_SITE_LOCALES.ZH_CN]: 'LightVela｜云端专属个人 Agent',
   [PUBLIC_SITE_LOCALES.ZH_SG]: 'LightVela｜云端专属个人 Agent',
   [PUBLIC_SITE_LOCALES.ZH_HANT]: 'LightVela｜雲端專屬個人 Agent',

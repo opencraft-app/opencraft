@@ -47,7 +47,7 @@ Pass 升配微信桥通过精确的 `POST /v1/passes/{pass_id}/modify/order-url`
 
 国内站新增配置指南时，`frontend/src/config/docs-sidebar.ts` 中的 `CN_SIDEBAR`、`CN_SLUG_TO_FILE` 与 `frontend/scripts/sync-fumadocs-content.mjs` 中的 `cnDocs` 必须同时注册同一 slug。钉钉指南使用 `configuration/channel-dingtalk`，仅进入国内站目录；国际站目录与映射单独维护。
 
-国内站任务文档导航按“开始使用 → Bot 与模型 → 通道与技能 → 自动化与资料 → 管理与排障 → 实验功能”组织，场景、对比和 Hermes 原理长文继续保留独立分类。分组标题与组内顺序必须在 `CN_SIDEBAR`、`cnDocs` 和 `CN_GROUP_ORDER` 中一致；原有 slug 保持稳定。网页对话当前仅开放主 Bot，额外 Bot 创建受运行时多 Bot 开关与套餐额度约束；实验功能的 Beta 标记属于单项功能。云存储保留 `/agents/files` 路由，当前控制台侧栏没有独立菜单项，文档应提供直接入口。
+国内站任务文档导航按“开始使用 → Bot 与模型 → 通道与技能 → 自动化与资料 → 管理与排障 → 实验功能”组织，场景、对比和 Hermes 原理长文继续保留独立分类。分组标题与组内顺序必须在 `CN_SIDEBAR`、`cnDocs` 和 `CN_GROUP_ORDER` 中一致；原有 slug 保持稳定。网页对话支持主 Bot 和额外 Bot，额外 Bot 创建受运行时多 Bot 开关与套餐额度约束；实验功能的 Beta 标记属于单项功能。云存储保留 `/agents/files` 路由，当前控制台侧栏没有独立菜单项，文档应提供直接入口。
 
 ## 官网首页展示产物
 
@@ -77,6 +77,10 @@ Pass 升配微信桥通过精确的 `POST /v1/passes/{pass_id}/modify/order-url`
 - 国际站首页各语言静态 fragment 与共享 Footer 恢复 Blog 入口，链接跟随界面语言；国内站继续隐藏导流入口。当前活跃文章仅包含 2026-09-28 用户提供的三篇中文和一篇英文，旧稿保存在归档模块；被替换的相同 slug 展示新稿，其余旧 slug 返回 404，并从 sitemap 与 llms.txt 移除。四篇文章现均提供完整中文（简体与繁体）、英文、印尼语、西班牙语、日语、韩语版本：国内站默认中文、国际站默认英文，国际站任一已发布语言的标题、摘要、正文与社群引导均同步切换，配图保持原语言。国际站英文文章 canonical 使用裸路径，其他语言分别使用 /zh-sg、/zh-hant、/id-id、/es、/ja-jp、/ko-kr 前缀；文章 hreflang 与 sitemap 登记国内 zh-CN 及国际站全部七种语言版本，列表继续声明界面语言。文末统一按站点展示微信或 Discord / WhatsApp 入群方式；试用链接去除追踪参数并指向当前站点首页，分享链接使用当前站点域名。缺失封面或正文图片允许留空。
 - 双站 `announcements/public-beta` 以及国际站 `use-cases/telegram-whatsapp-safety-boundaries`、`use-cases/lifelike-im-agent-rhythm-social-memory`、`use-cases/im-agent-skill-scenarios`、`use-cases/whatsapp-24-7-customer-service` 暂时下线但保留源稿。下线需同时移除 sidebar、slug 映射与 Fumadocs 注册，并重新生成 route manifest、搜索与公开索引；旧 URL 返回 404，不跨语言回退，公开正文不得继续链接到这些页面。恢复时重新评审源稿并成套恢复注册和链接。
 - 首页静态 fragment 的链接、图片版本参数、合规信息和客户端演示外壳属于站点路由责任面；修改后必须同步更新正式设计文档，并用静态链接检查、前端测试和本地/预览环境证明没有跨站点串链。
+
+## 国际站浏览器标题
+
+国际站英文首页 `/` 与智能体入口 `/agents/`（含其产品路由）统一显示 `My AI Companion | LightVela`。内嵌 OpenCraft 只呈现对话内容，不写入宿主页面的 `document.title`；独立 OpenCraft Web/Electron 仍由自身 Shell 管理标题。国内站与其他语言沿用各自的本地化标题。
 
 ## 订阅页交互边界
 
