@@ -28,6 +28,15 @@ RFB 分片保留起始字节时的授权，不把旧缓存晋升为新输入。�
 动画不确认控制权、不延迟停止，也不重建媒体或 Host。参考来源与真实组件验收范围见
 [桌面面板呈现](../../../opencraft/docs/cloud-desktop-plugin.md#panel-presentation)。
 
+本机观看的五分钟期限由后端重新核验后续接，而非删除超时：discovery 与
+独立观看 socket 都声明能力后，才可申请续期；Host 前后复核 native Thread、
+逻辑 Client 和物理代次，匹配确认才更新两端期限。它不创建桌面、不重开媒体、
+不获取输入权限；旧端保持原协议，Vela/TAT 不被隐式接入。
+桌面 renderer 单独声明标签存续期间保留观看：隐藏或切换工具立即撤销输入，
+重新打开保留画面但不接管，关闭标签/更换 owner 才回收观看。
+按钮立即投影“停止控制”的意图，确认授权前仍禁止输入。详见
+[观看续期](../../../opencraft/docs/cloud-desktop-plugin.md#confirmed-viewing-renewal)。
+
 OpenCraft 后端 SSH Codex 接入复用既有 logical Client 路由、Thread 读者与交互
 owner，物理通道由 AppHost 持有；普通 Linux 与 HyperNode 共用 SSH exec 内的
 WebSocket 契约。远端模式不构造本机账号池、附件或队列，不自动安装/杀远端服务，

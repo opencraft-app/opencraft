@@ -112,6 +112,35 @@ test("revocation retires a held stop before a successor control grant", async ()
   } finally { f.controller.dispose(); }
 });
 
+test("inactive presentation keeps viewing but retires control intent and late grants", async () => {
+  const f = fixture();
+  try {
+    f.controller.start(); await flush(); f.setState({ videoReady: true, inputReady: true });
+    const oldTake = f.controller.prepareControlAction("take");
+    f.controller.setActive(false); f.controller.setActive(true); oldTake(); await flush();
+    assert.equal(f.calls.includes("control:request"), false, "reopening cannot replay a Take captured before hiding");
+    await f.controller.requestControl();
+    f.controller.setActive(false);
+    assert.equal(f.controller.getSnapshot().phase, "ready");
+    assert.equal(f.controller.getSnapshot().control, "observing");
+    assert.ok(f.calls.includes("input:disable")); assert.ok(f.calls.includes("control:release"));
+    assert.equal(f.calls.includes("connection:close"), false);
+    assert.equal(f.calls.includes("attachment:release"), false);
+    const count = f.calls.filter(call => call === "control:request").length;
+    await f.controller.requestControl(); assert.equal(f.calls.filter(call => call === "control:request").length, count);
+    f.controller.setActive(true);
+    const grant = deferred<DesktopControlLease>(); f.connection.requestControl = () => grant.promise;
+    const take = f.controller.prepareControlAction("take");
+    const pending = f.controller.requestControl(); f.controller.setActive(false); f.controller.setActive(true);
+    const callsBefore = f.calls.length;
+    grant.resolve({ ...f.lease, isValid: () => true }); await pending;
+    take(); await flush();
+    assert.equal(f.controller.getSnapshot().control, "observing");
+    assert.equal(f.calls.slice(callsBefore).includes("input:enable"), false);
+    assert.equal(f.calls.filter(call => call === "surface:mount").length, 1);
+  } finally { f.controller.dispose(); }
+});
+
 test("paste availability is a surface capability, not an exclusive control state", async () => {
   for (const supported of [true, false]) {
     const f = fixture();
@@ -476,6 +505,7 @@ test("real panel component mounts observe-only, releases on blur, and cleans up 
     const installed = await runtime.install(createCloudDesktopWorkbenchPanelPlugin(f));
     const tab = runtime.panels.open("panel:a", "cloud-desktop", { conversationId: "thread:a" });
     const Panel = runtime.renderers.getSnapshot()[0]!.Component;
+    assert.equal(runtime.renderers.getSnapshot()[0]!.residency, "while-tab-open");
     await act(async () => { root.render(<IntlRuntimeProvider runtime={locale}>
       <Panel tab={tab} ownerId="panel:a" presentationId="view:a" />
     </IntlRuntimeProvider>); await flush(); });
@@ -489,10 +519,10 @@ test("real panel component mounts observe-only, releases on blur, and cleans up 
     const grant = deferred<DesktopControlLease>();
     f.connection.requestControl = () => grant.promise;
     await act(async () => { button.click(); await flush(); });
-    assert.equal(button.getAttribute("aria-pressed"), "false");
+    assert.equal(button.getAttribute("aria-pressed"), "true", "pressed projects control intent, not authorization");
     assert.equal(dom.window.document.querySelector(".cloud-desktop-panel__toolbar")!.getAttribute("aria-busy"), "true");
-    assert.equal(button.getAttribute("aria-busy"), null, "Cancel remains a visible, actionable button, not a busy mutation button");
-    assert.equal(button.querySelector('[data-current="true"]')!.textContent, "Cancel");
+    assert.equal(button.getAttribute("aria-busy"), null, "stop intent remains actionable while awaiting authorization");
+    assert.equal(button.querySelector('[data-current="true"]')!.textContent, "Stop controlling");
     assert.equal(f.calls.includes("input:enable"), false);
     await act(async () => { grant.resolve(f.lease); await flush(); });
     assert.equal(button.getAttribute("aria-pressed"), "true");
@@ -517,7 +547,7 @@ test("real panel component mounts observe-only, releases on blur, and cleans up 
     const freshGrant = deferred<DesktopControlLease>();
     f.connection.requestControl = () => freshGrant.promise;
     await act(async () => { button.click(); await flush(); });
-    assert.equal(button.querySelector('[data-current="true"]')!.textContent, "Cancel");
+    assert.equal(button.querySelector('[data-current="true"]')!.textContent, "Stop controlling");
     await act(async () => {
       button.dispatchEvent(new dom.window.KeyboardEvent("keydown", { bubbles: true, key: " " }));
       freshGrant.resolve({ ...f.lease, isValid: () => true }); await flush();
@@ -553,6 +583,22 @@ test("real panel component mounts observe-only, releases on blur, and cleans up 
       button.click(); await flush();
     });
     assert.equal(dom.window.document.querySelector(".cloud-desktop-panel__toolbar")!.getAttribute("aria-busy"), "false");
+    // Logical hiding retains the media DOM and connection, but revokes input
+    // before an animated Shell has physically hidden its aperture.
+    f.connection.requestControl = async () => ({ ...f.lease, isValid: () => true });
+    await act(async () => { button.click(); await flush(); });
+    assert.equal(button.getAttribute("aria-pressed"), "true");
+    const renderActive = async (active: boolean) => act(async () => {
+      root.render(<IntlRuntimeProvider runtime={locale}><Panel tab={tab} ownerId="panel:a" presentationId="view:a" active={active} /></IntlRuntimeProvider>);
+      await flush();
+    });
+    await renderActive(false);
+    assert.equal(button.disabled, true); assert.equal(button.getAttribute("aria-pressed"), "false");
+    assert.equal(dom.window.document.querySelector(".cloud-desktop-panel__surface"), surface);
+    assert.equal(f.calls.includes("connection:close"), false);
+    await renderActive(true);
+    assert.equal(button.disabled, false); assert.equal(button.getAttribute("aria-pressed"), "false");
+    assert.equal(f.calls.filter(call => call === "surface:mount").length, 1);
     // Logical close revokes before an animated Shell has physically unmounted.
     await act(async () => { runtime.panels.close("panel:a", "right", tab.id); });
     assert.ok(dom.window.document.body.textContent?.includes("not available"));

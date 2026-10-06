@@ -399,6 +399,12 @@ export function RightPanel({
       ? null
       : (renderers.find((renderer) => renderer.kind === activeTab.kind)
           ?.Component ?? null);
+  const activeRegistration = renderers.find(renderer => renderer.kind === activeTab?.kind);
+  const interactive = presentation?.rightPanelOpen ?? regionState.open;
+  const residentTabs = regionState.tabs.flatMap(tab => {
+    const registration = renderers.find(renderer => renderer.kind === tab.kind);
+    return registration?.residency === "while-tab-open" ? [{ tab, Component: registration.Component }] : [];
+  });
   const closeTab = (tab: PanelTabDescriptor) => {
     onCloseTab(tab);
   };
@@ -639,14 +645,21 @@ export function RightPanel({
               <strong>{intl.formatMessage({ id: "panel.unavailable", defaultMessage: "{title} is unavailable" }, { title: activeTab.title })}</strong>
               <p>{intl.formatMessage({ id: "panel.unavailableHint", defaultMessage: "This content cannot be previewed here." })}</p>
             </div>
-          ) : (
+          ) : activeRegistration?.residency === "while-tab-open" || !rightPanelPresentationActive ? null : (
             <ActivePanel
               key={activeTab.id}
               tab={activeTab}
               ownerId={state.ownerId}
               presentationId={presentationId}
+              active={interactive}
             />
           )}
+          {residentTabs.map(({ tab, Component }) => <div key={`${state.ownerId}:${tab.id}`}
+            className="right-panel-resident" hidden={tab.id !== activeTab?.id}
+            inert={!interactive || tab.id !== activeTab?.id || undefined}>
+            <Component tab={tab} ownerId={state.ownerId} presentationId={presentationId}
+              active={interactive && tab.id === activeTab?.id} />
+          </div>)}
         </div>
       </div>
       {typeof document === "undefined"

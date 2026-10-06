@@ -53,7 +53,8 @@ export class HostDesktopBackend implements DesktopBackend {
       const target: DesktopTarget = Object.freeze({ conversationId: scope, serverId: capability.serverId,
         environmentId: capability.environmentId, principalId: capability.principalId });
       const threadId = binding.conversationKey.threadId;
-      return { runtime, threadId, target, key: JSON.stringify([desktopTargetKey(target), threadId, generation]) };
+      return { runtime, threadId, target, renewable: capability.renewable === true,
+        key: JSON.stringify([desktopTargetKey(target), threadId, generation, capability.renewable === true]) };
     } catch { return null; }
   }
 
@@ -109,7 +110,7 @@ export class HostDesktopBackend implements DesktopBackend {
         || credential.expiresAt <= Date.now() || credential.expiresAt > Date.now() + 600_000) throw unavailable();
       const lifetime = new AbortController();
       let released = false, connected = false, ticket = credential.ticket;
-      const timer = setTimeout(() => attachment.release(), credential.expiresAt - Date.now());
+      let timer = setTimeout(() => attachment.release(), credential.expiresAt - Date.now());
       const attachment: DesktopAttachment = {
         target: authority.target, resourceId: credential.resourceId, incarnation: credential.incarnation,
         connect: async openSignal => {
@@ -118,6 +119,10 @@ export class HostDesktopBackend implements DesktopBackend {
           const linked = AbortSignal.any([openSignal, lifetime.signal]); linked.throwIfAborted();
           const endpoint = `${this.options.origin.replace(/^http:/, "ws:").replace(/^https:/, "wss:")}/desktop/connect`;
           const session = createDesktopWireSession({ attachmentId: credential.attachmentId, signal: linked,
+            ...(authority.renewable ? { renewal: { expiresAt: credential.expiresAt, confirmed: (expiresAt: number) => {
+              if (released || linked.aborted || !current()) { attachment.release(); return; }
+              clearTimeout(timer); timer = setTimeout(() => attachment.release(), expiresAt - Date.now());
+            } } } : {}),
             openSocket: () => {
               if (!current() || released) throw unavailable();
               return this.options.openSocket?.(endpoint) ?? new WebSocket(endpoint);

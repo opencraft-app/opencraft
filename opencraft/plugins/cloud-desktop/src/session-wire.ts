@@ -10,6 +10,8 @@ export interface DesktopWireOptions {
   readonly signal: AbortSignal;
   readonly timeoutMs?: number;
   readonly controlTimeoutMs?: number;
+  /** Both discovery and wire ready must explicitly permit renewal. */
+  readonly renewal?: { readonly expiresAt: number; confirmed(expiresAt: number): void };
 }
 
 function cleanup(action: () => void): void { try { action(); } catch { /* Retire every owner. */ } }
@@ -49,6 +51,9 @@ export function createDesktopWireSession(options: DesktopWireOptions): DesktopRf
   let closed = false, available = false, clipboardAvailable = true, sequence = 0;
   let termination: "transport-lost" | "retired" | null = null;
   let openingTimer: ReturnType<typeof setTimeout> | undefined;
+  let renewalTimer: ReturnType<typeof setTimeout> | undefined;
+  let renewalDeadline: ReturnType<typeof setTimeout> | undefined;
+  let renewalId: string | null = null;
   const listeners = new Set<() => void>();
   const removers: (() => void)[] = [];
   let pending: { id: string; cancel(): void; resolve(lease: DesktopControlLease): void } | null = null;
@@ -68,6 +73,7 @@ export function createDesktopWireSession(options: DesktopWireOptions): DesktopRf
     if (closed) return;
     closed = true; termination = cause; available = false;
     clearTimeout(openingTimer);
+    clearTimeout(renewalTimer); clearTimeout(renewalDeadline); renewalId = null;
     const request = pending; pending = null; request?.cancel();
     const current = grant; grant = null; current?.lease.release();
     for (const remove of removers.splice(0).reverse()) cleanup(remove);
@@ -83,6 +89,18 @@ export function createDesktopWireSession(options: DesktopWireOptions): DesktopRf
   options.signal.addEventListener("abort", abort, { once: true });
   removers.push(() => options.signal.removeEventListener("abort", abort));
   if (options.signal.aborted) close();
+
+  const scheduleRenewal = (expiresAt: number) => {
+    clearTimeout(renewalTimer);
+    renewalTimer = setTimeout(() => {
+      if (closed || media?.readyState !== 1) return;
+      renewalId = String(++sequence);
+      // A peer that no longer answers is a liveness failure, not an input grant.
+      renewalDeadline = setTimeout(() => close("transport-lost"), 10_000);
+      try { send({ event: "desktop/renew", requestId: renewalId }); }
+      catch { close("transport-lost"); }
+    }, Math.max(0, expiresAt - Date.now() - 30_000));
+  };
 
   const receive = (event: MessageEvent) => {
     if (closed || !media) return;
@@ -101,12 +119,22 @@ export function createDesktopWireSession(options: DesktopWireOptions): DesktopRf
         if (media.readyState !== 0 || message.version !== 1 || message.attachmentId !== options.attachmentId
           || typeof message.controlAvailable !== "boolean") throw new Error("Desktop attachment changed");
         if (message.clipboardAvailable !== undefined && typeof message.clipboardAvailable !== "boolean") throw new Error("Invalid desktop capability");
+        if (message.renewable !== undefined && typeof message.renewable !== "boolean") throw new Error("Invalid desktop capability");
         clearTimeout(openingTimer); available = message.controlAvailable; clipboardAvailable = message.clipboardAvailable !== false;
-        media.readyState = 1; media.emit("open", new Event("open")); notify(); return;
+        media.readyState = 1; media.emit("open", new Event("open")); notify();
+        if (!closed && options.renewal && message.renewable === true) scheduleRenewal(options.renewal.expiresAt);
+        return;
       }
       if (media.readyState !== 1 || typeof message.requestId !== "string") throw new Error("Invalid desktop control");
       const id = message.requestId;
-      if (message.event === "control/locked") {
+      if (message.event === "desktop/renewed") {
+        if (!options.renewal || renewalId !== id || typeof message.expiresAt !== "number"
+          || !Number.isSafeInteger(message.expiresAt) || message.expiresAt <= Date.now() + 30_000
+          || message.expiresAt > Date.now() + 600_000) throw new Error("Invalid viewer renewal");
+        clearTimeout(renewalDeadline); renewalId = null;
+        options.renewal.confirmed(message.expiresAt);
+        if (!closed) scheduleRenewal(message.expiresAt);
+      } else if (message.event === "control/locked") {
         if (grant?.id === id) return; // Duplicate confirmation does not replace a valid grant.
         if (!pending || pending.id !== id) { releaseRemote(id); return; }
         const request = pending; pending = null;

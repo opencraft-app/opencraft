@@ -11,7 +11,7 @@ test("desktop access is explicitly advertised without enabling input", () => {
   for (const transport of ["same-origin-loopback", "same-origin-trusted-internal"] as const) {
     const service = new LocalDesktopService({ ...registration, transport });
     try { assert.deepEqual(service.capability(), { version: 1, observe: true, control: false, transport,
-      serverId: "server", environmentId: "machine", principalId: "owner" }); }
+      serverId: "server", environmentId: "machine", principalId: "owner", renewable: true }); }
     finally { service.close(); }
   }
 });
@@ -61,9 +61,9 @@ test("local one-use viewer streams independently, rechecks native metadata and r
   const port=(tcp.address() as {port:number}).port;
   t.after(()=>tcp.close());
   const f=fixture();f.service.close();
-  let opens=0;
+  let opens=0, incarnation="a".repeat(64);
   const service=new LocalDesktopService({serverId:"server-1",environmentId:"machine-1",principalId:"local-user",
-    observer:{inspect:async()=>"a".repeat(64),open:async()=>{opens++;const s=connect(port,"127.0.0.1");s.pause();await new Promise<void>(resolve=>s.once("connect",resolve));return s;}}});
+    observer:{inspect:async()=>incarnation,open:async()=>{opens++;const s=connect(port,"127.0.0.1");s.pause();await new Promise<void>(resolve=>s.once("connect",resolve));return s;}}});
   t.after(()=>service.close());
   const sockets=new WebSocketServer({host:"127.0.0.1",port:0,maxPayload:1<<20});
   await new Promise<void>(resolve=>sockets.once("listening",resolve));
@@ -84,10 +84,22 @@ test("local one-use viewer streams independently, rechecks native metadata and r
   first.socket.send(Buffer.from([0,1,2,255]));await wait(()=>first.frames.length===3);assert.deepEqual(first.frames[2]!.bytes,Buffer.from([0,1,2,255]));
   const replay=await viewer(grant);await replay.closed;assert.equal(opens,1);
   const next=await service.prepare(f.owner,"thread-1");const second=await viewer(next);await wait(()=>second.frames.length===2);
+  t.mock.timers.enable({apis:["Date"],now:next.expiresAt-30_000});
+  const readsBefore=f.reads.length;
+  second.socket.send(JSON.stringify({event:"desktop/renew",requestId:"1"}));
+  await wait(()=>second.frames.some(frame=>!frame.binary&&JSON.parse(frame.text).event==="desktop/renewed"));
+  const receipt=second.frames.find(frame=>!frame.binary&&JSON.parse(frame.text).event==="desktop/renewed")!;
+  assert.deepEqual(JSON.parse(receipt.text),{event:"desktop/renewed",requestId:"1",expiresAt:Date.now()+300_000});
+  assert.equal(f.reads.length,readsBefore+2,"renewal rechecks the authoritative Thread on both sides of observer inspection");
+  assert.equal(opens,2,"renewal neither reopens media nor reacquires control");
   service.release("wrong-owner",next.attachmentId);assert.equal(second.socket.readyState,1);
   service.release(f.owner.key,grant.attachmentId);await first.closed;assert.equal(second.socket.readyState,1);
+  incarnation="b".repeat(64);
+  second.socket.send(JSON.stringify({event:"desktop/renew",requestId:"2"}));
+  await second.closed;
+  assert.equal(second.frames.filter(frame=>!frame.binary&&JSON.parse(frame.text).event==="desktop/renewed").length,1,
+    "a new physical desktop cannot renew an earlier attachment");
   const stale=await service.prepare(f.owner,"thread-1");f.replace();const rejected=await viewer(stale);await rejected.closed;assert.equal(opens,2);
-  service.revoke(f.owner.key);await second.closed;
 });
 
 test("control has one owner, confirms after binding checks, fences late grants and releases on disconnect", async t => {
@@ -138,6 +150,9 @@ test("control has one owner, confirms after binding checks, fences late grants a
   second.send("control/request", "1"); await wait(() => second.messages.some(m => m.event === "control/denied"));
   second.socket.send(key); first.socket.send(key); await wait(() => inputs.length === 1);
   assert.deepEqual(inputs, [[97, true]]);
+  const granted=grants[0]!.lease;
+  first.send("desktop/renew", "4"); await wait(()=>first.messages.some(m=>m.event==="desktop/renewed"));
+  assert.equal(grants.length,1);assert.equal(grants[0]!.lease,granted);assert.equal(granted.isValid(),true);
   second.send("control/release", "1"); await new Promise(resolve => setTimeout(resolve, 10)); assert.equal(grants[0]!.valid, true);
   first.send("control/release", "1"); await wait(() => !grants[0]!.valid);
   delay = true; second.send("control/request", "2"); await wait(() => !!complete);

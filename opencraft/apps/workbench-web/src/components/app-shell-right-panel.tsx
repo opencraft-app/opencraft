@@ -26,6 +26,7 @@ interface AppShellRightPanelProps {
   readonly fullWidth: boolean;
   readonly mainContentWidth: MotionValue<number>;
   readonly open: boolean;
+  readonly keepMounted?: boolean;
   readonly rightPanelWidth: MotionValue<number>;
   readonly rightPanelWidthRatio: MotionValue<number>;
   readonly rightPanelLayoutTick: MotionValue<number>;
@@ -48,6 +49,7 @@ export function AppShellRightPanel({
   fullWidth,
   mainContentWidth,
   open,
+  keepMounted = false,
   rightPanelWidth,
   rightPanelWidthRatio,
   rightPanelLayoutTick,
@@ -143,7 +145,7 @@ export function AppShellRightPanel({
     [mainContentWidth, rightPanelWidthRatio],
   );
 
-  if (!isMounted && !open && !resizing) return null;
+  if (!isMounted && !open && !resizing && !keepMounted) return null;
 
   return (
     <motion.aside
@@ -151,6 +153,7 @@ export function AppShellRightPanel({
       data-app-shell-focus-area="right-panel"
       data-full-width={fullWidth}
       aria-hidden={!open}
+      inert={!open || undefined}
       style={motionStyle}
     >
       {!fullWidth ? (

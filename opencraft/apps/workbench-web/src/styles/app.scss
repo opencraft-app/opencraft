@@ -10555,9 +10555,17 @@ html[data-codex-window-type="electron"] .thread-scroll {
   background: var(--color-background-surface);
 
   &:has(.browser-panel),
+  &:has(.right-panel-resident:not([hidden]) .cloud-desktop-panel),
   &:has(.terminal-panel) {
     overflow: hidden;
   }
+}
+
+.right-panel-resident {
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  &[hidden] { display: none; }
 }
 
 .terminal-panel {

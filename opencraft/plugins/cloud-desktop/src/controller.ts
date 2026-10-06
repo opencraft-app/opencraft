@@ -36,6 +36,7 @@ export class DesktopViewController {
   private target: DesktopTarget | null = null;
   private generation = 0;
   private started = false;
+  private active = true;
   private disposed = false;
   private abort: AbortController | null = null;
   private controlAbort: AbortController | null = null;
@@ -74,6 +75,17 @@ export class DesktopViewController {
     if (this.started || this.disposed) return;
     this.started = true;
     if (this.watchBackend()) this.refreshTarget();
+  }
+
+  /** Hidden is still watching, but cannot retain or reacquire input. */
+  setActive(active: boolean): void {
+    if (this.disposed || this.active === active) return;
+    this.active = active;
+    if (!active) {
+      // Retire even a Take captured while observing, before it created a grant.
+      this.controlEpoch++;
+      this.releaseControl();
+    }
   }
 
   retry(): void {
@@ -199,14 +211,14 @@ export class DesktopViewController {
     return () => {
       if (spent) return;
       spent = true;
-      if (!this.current(generation) || this.controlEpoch !== epoch) return;
+      if (!this.active || !this.current(generation) || this.controlEpoch !== epoch) return;
       if (action === "stop") this.releaseControl();
       else void this.requestControl();
     };
   }
 
   async requestControl(): Promise<void> {
-    if (this.disposed || !this.snapshot.canControl || this.connection === null
+    if (this.disposed || !this.active || !this.snapshot.canControl || this.connection === null
       || this.snapshot.control !== "observing") return;
     const generation = this.generation;
     const connection = this.connection;
@@ -218,7 +230,7 @@ export class DesktopViewController {
     try {
       const lease = await connection.requestControl(abort.signal);
       if (!this.current(generation) || abort.signal.aborted || this.controlAbort !== abort
-        || !this.snapshot.canControl) { this.cleanup(() => lease.release()); return; }
+        || !this.active || !this.snapshot.canControl) { this.cleanup(() => lease.release()); return; }
       this.lease = lease;
       const unsubscribe = lease.subscribeRevoked(() => {
         if (this.lease === lease) this.releaseControl();

@@ -11,14 +11,16 @@ class Socket extends EventTarget {
   open() { this.readyState = 1; this.dispatchEvent(new Event("open")); }
   receive(data: unknown) { this.dispatchEvent(new MessageEvent("message", { data: typeof data === "object" && !(data instanceof ArrayBuffer) ? JSON.stringify(data) : data })); }
 }
-function fixture(controlAvailable = true, timeoutMs = 1000, controlTimeoutMs = 1000) {
+function fixture(controlAvailable = true, timeoutMs = 1000, controlTimeoutMs = 1000,
+  renewal?: { expiresAt: number; confirmed(expiresAt: number): void }, renewable?: boolean) {
   const socket = new Socket(), abort = new AbortController();
-  const session = createDesktopWireSession({ attachmentId: "viewer", signal: abort.signal, timeoutMs, controlTimeoutMs,
+  const session = createDesktopWireSession({ attachmentId: "viewer", signal: abort.signal, timeoutMs, controlTimeoutMs, renewal,
     openSocket: () => socket as unknown as WebSocket,
     authenticate: send => send({ event: "desktop/attach", attachmentId: "viewer", ticket: "synthetic" }) });
   const channel = session.openChannel();
   socket.open();
-  const ready = () => socket.receive({ event: "desktop/ready", version: 1, attachmentId: "viewer", controlAvailable });
+  const ready = () => socket.receive({ event: "desktop/ready", version: 1, attachmentId: "viewer", controlAvailable,
+    ...(renewable === undefined ? {} : { renewable }) });
   return { socket, abort, session, channel, ready };
 }
 test("wire waits for bound ready and sends only binary media to noVNC", t => {
@@ -32,6 +34,49 @@ test("wire waits for bound ready and sends only binary media to noVNC", t => {
   const media = new Uint8Array([1, 2, 3]).buffer;
   f.socket.receive(media); assert.deepEqual(messages, [media]);
   assert.equal(f.session.control!.isAvailable(), false);
+});
+
+test("viewer renewal requires both capabilities, preserves a grant, and stops on retirement", async t => {
+  t.mock.timers.enable({ apis: ["Date", "setTimeout"], now: 1_000_000 });
+  const confirmed: number[] = [];
+  for (const enabled of [false, true]) {
+    const f = fixture(true, 1000, 1000, { expiresAt: Date.now() + 300_000,
+      confirmed: expiresAt => confirmed.push(expiresAt) }, enabled);
+    f.ready();
+    const operation = f.session.control!.request(new AbortController().signal);
+    f.socket.receive({ event: "control/locked", requestId: "1" }); const lease = await operation;
+    t.mock.timers.tick(270_000);
+    const renewals = f.socket.sent.filter((m: any) => m.event === "desktop/renew") as any[];
+    assert.equal(renewals.length, enabled ? 1 : 0);
+    if (enabled) {
+      const expiresAt = Date.now() + 300_000;
+      f.socket.receive({ event: "desktop/renewed", requestId: renewals[0].requestId, expiresAt });
+      assert.deepEqual(confirmed, [expiresAt]); assert.equal(lease.isValid(), true);
+      t.mock.timers.tick(30_001); assert.equal(f.channel.readyState, 1, "old viewing deadline cannot close the renewed stream");
+    }
+    f.session.close(); const count = f.socket.sent.length;
+    t.mock.timers.tick(600_000); assert.equal(f.socket.sent.length, count);
+  }
+  const old = fixture(true, 1000, 1000, undefined, true); old.ready();
+  t.mock.timers.tick(300_000); assert.equal(old.socket.sent.length, 1, "old client never sends unsupported renewal"); old.session.close();
+});
+
+test("renewal timeout is bounded liveness loss; forged and late receipts never extend a viewer", t => {
+  t.mock.timers.enable({ apis: ["Date", "setTimeout"], now: 1_000_000 });
+  for (const bad of ["timeout", "wrong-id", "invalid-expiry", "retired"] as const) {
+    let confirmations = 0;
+    const f = fixture(true, 1000, 1000, { expiresAt: Date.now() + 300_000, confirmed: () => confirmations++ }, true);
+    f.ready(); t.mock.timers.tick(270_000);
+    const request = f.socket.sent.at(-1) as any;
+    if (bad === "timeout") t.mock.timers.tick(10_000);
+    else {
+      if (bad === "retired") f.session.close();
+      f.socket.receive({ event: "desktop/renewed", requestId: bad === "wrong-id" ? "999" : request.requestId,
+        expiresAt: bad === "invalid-expiry" ? Date.now() + 1 : Date.now() + 300_000 });
+    }
+    assert.equal(confirmations, 0); assert.equal(f.channel.readyState, 3);
+    assert.equal(f.session.getTermination!(), bad === "timeout" ? "transport-lost" : "retired");
+  }
 });
 test("wire advertises absent clipboard execution independently from mouse/keyboard control", t => {
   const f = fixture(); t.after(() => f.session.close());
