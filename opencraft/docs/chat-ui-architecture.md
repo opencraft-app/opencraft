@@ -430,6 +430,43 @@ revision per Item: this protects observed updates, not a claim of server-wide
 causal sequencing or a V4 Journal. Dot and task-chat renderers may differ while
 consuming this same identity-versus-position distinction.
 
+### Activity closure and disclosure authority
+
+`AgentActivitySegmentEnd` records why a contiguous slice ended (`user-input`,
+`content`, `final-answer`, `turn-terminal`, or still `open`). This is chronology
+and live-header ownership, not permission to hide content. Ordinary task
+disclosure is eligible only when that slice reaches its own displayable,
+non-async final answer. A Steer, hook, question, approval, image, unphased text,
+terminal Turn, or a final answer in an earlier response cannot grant eligibility.
+No phase is inferred to make a disclosure work. Earlier completed commentary
+therefore stays visible when the user follows up, rather than becoming a stack
+of default-collapsed historical-message headings. Cancelled work stays visible.
+
+Eligibility, automatic default, explicit View choice and temporary expansion
+constraints are independent. `resolveAgentActivityDisclosure` is the shared
+pure policy; `resolveAgentActivityLayout` applies `forceExpanded`/`disableCollapse`
+before selecting partition regions. A no-toggle surface must not expose only
+the collapsible subset or duplicate persistent items. Displayable non-async
+final answers are persistent even if supplied to the inner partition, although
+the ordinary ordered plan renders them in separate source-owned slots.
+
+Only user actions write collapse choice. Defaults and constraints never write
+it back; old saved choices cannot manufacture eligibility. Web's existing
+View restore receipt and Native's component choice remain their presentation
+owners, not Thread storage or an execution preference. Stable segment/Item
+keys, the single Turn clock/Thinking owner and viewport reflow leases are
+unchanged. No new scroll writer, timeout, renderer sorting or remount is added.
+
+This ordinary task policy follows Codex 26.930.31428/build 12913's EO/DO
+separation, adapted to OpenCraft's ordered multi-response slices. Codex's
+Activity view may separately allow collapse before final; its continuous
+transcript caller does not equate input boundaries with fold grants. The
+distinct Bot chat renderer/viewport is not forcibly unified with task chat.
+The portable reviewed EO oracle validates only the pure task-state contract,
+not the complete original application. `chat-activity-disclosure` tests and
+`scripts/smoke-activity-disclosure.ts` cover the input sequences and real
+Conversation; deployment and native-device acceptance remain separate.
+
 ### Embedded submission and recovery
 
 Embedded workbench templates enter through `submitPrompt(requestId, text)`, not

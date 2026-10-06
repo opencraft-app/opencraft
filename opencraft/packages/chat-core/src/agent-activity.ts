@@ -26,6 +26,9 @@ import {
 
 export type AgentActivityPhase = "before-final-answer" | "after-final-answer";
 
+/** Why a chronological slice ended; never a grant to collapse its content. */
+export type AgentActivitySegmentEnd = "open" | "user-input" | "final-answer" | "content" | "turn-terminal";
+
 export interface AgentActivitySummary {
   readonly commandCount: number;
   readonly patchCount: number;
@@ -65,7 +68,7 @@ export type AgentActivityHeaderSummary =
 export interface AgentActivityGroupLifecycle {
   /** Only the last visible unit in an open slice may own a live header. */
   readonly isLatestVisibleUnit: boolean;
-  /** A final answer or terminal Turn permanently closes the live slice. */
+  /** A content/input boundary or terminal Turn closes the live slice, not the disclosure. */
   readonly isActivitySliceClosed: boolean;
   readonly isExploring: boolean;
   readonly inProgress: boolean;
@@ -102,10 +105,9 @@ export interface AgentActivityRenderUnit {
   readonly phase: AgentActivityPhase;
   readonly status: TimelineStatus;
   readonly workedDurationMs: number | null;
+  /** A qualifying answer terminating this slice, never a Turn-wide historical flag. */
   readonly hasFinalAssistantStarted: boolean;
-  /** A semantic input/question/interaction boundary can close this disclosure,
-   * independently of final-answer eligibility and execution completion. */
-  readonly hasDisclosureBoundary: boolean;
+  readonly segmentEnd: AgentActivitySegmentEnd;
   readonly hasRenderableAgentItems: boolean;
   readonly isTurnCancelled: boolean;
   readonly forceExpanded: boolean;
@@ -137,7 +139,6 @@ export type AgentActivityContentUnit = AgentActivityGroupContentUnit | AgentActi
 
 export interface AgentActivityDisclosureInput {
   readonly hasFinalAssistantStarted: boolean;
-  readonly hasDisclosureBoundary?: boolean;
   readonly isTurnCancelled: boolean;
   readonly hasRenderableAgentItems: boolean;
   readonly forceExpanded?: boolean;
@@ -420,6 +421,9 @@ function isPersistentAgentActivityUnit(
 ): boolean {
   if (unit.type !== "standalone") return false;
   const block = unit.block;
+  // A qualifying answer is never hidden by an outer task disclosure, even
+  // when a caller supplies it through the inner Unit projection.
+  if (isFinalAssistantText(block)) return true;
   if (block.type === "user-message") return block.steeringStatus !== null || block.hookFeedback;
   return options.keepMcpAppEntriesPersistent === true
     && options.renderMcpApps === true
@@ -850,17 +854,18 @@ function findAgentActivityThinkingOwner(
     : null;
 }
 
-/** Renderer-neutral Turn-level disclosure reducer, audited against Codex r2440. */
+/** Task disclosure policy, matching Codex 26.930.31428 EO (ordinary chat mode).
+ * Closure/status do not grant eligibility. Explicit intent beats the automatic
+ * default; a temporary expansion constraint beats both without writing intent. */
 export function resolveAgentActivityDisclosure({
   forceExpanded = false,
   hasFinalAssistantStarted,
-  hasDisclosureBoundary = hasFinalAssistantStarted,
   hasRenderableAgentItems,
   isTurnCancelled,
   persistedCollapsed,
   preventAutoCollapse = false,
 }: AgentActivityDisclosureInput): AgentActivityDisclosureState {
-  if (!hasDisclosureBoundary || isTurnCancelled || !hasRenderableAgentItems) {
+  if (!hasFinalAssistantStarted || isTurnCancelled || !hasRenderableAgentItems) {
     return { shouldAllowCollapse: false, isCollapsed: false };
   }
   return {
@@ -889,9 +894,7 @@ export function createAssistantTurnPresentationPlan(
     readonly subagents: readonly SubagentTimelineBlock[];
     readonly boundaryId: string | null;
     readonly phase: AgentActivityPhase;
-    readonly endedByContent: boolean;
-    readonly endedByAnswer: boolean;
-    readonly disclosureBoundary: boolean;
+    readonly end: AgentActivitySegmentEnd;
   }
   const segments: (ActivitySegment | AssistantContentRenderUnit)[] = [];
   let pendingBlocks: TimelineBlock[] = [];
@@ -899,11 +902,11 @@ export function createAssistantTurnPresentationPlan(
   let boundaryId: string | null = null;
   const latestPlan = frame.blocks.filter((block) => block.type === "plan").at(-1);
   let passedFinalAssistant = false;
-  const flushActivity = (endedByContent: boolean, endedByAnswer = false, disclosureBoundary = false) => {
+  const flushActivity = (end: AgentActivitySegmentEnd) => {
     if (pendingBlocks.length === 0 && pendingSubagents.length === 0) return;
     segments.push({ type: "activity-segment", blocks: pendingBlocks, subagents: pendingSubagents,
       boundaryId, phase: passedFinalAssistant ? "after-final-answer" : "before-final-answer",
-      endedByContent, endedByAnswer, disclosureBoundary });
+      end });
     pendingBlocks = [];
     pendingSubagents = [];
   };
@@ -914,15 +917,20 @@ export function createAssistantTurnPresentationPlan(
   ): AgentActivityRenderUnit | null => {
     const { blocks, phase, subagents: subagentBlocks } = segment;
     const turnIsActive = frame.status === "pending" || frame.status === "streaming";
-    const isActivitySliceClosed = segment.endedByContent || !turnIsActive;
-    const status = segment.endedByContent ? "complete" : frame.status;
-    const hasFinalAssistantStarted = segment.endedByAnswer || phase === "after-final-answer";
+    const endedByContent = segment.end !== "open" && segment.end !== "turn-terminal";
+    const endedByAnswer = segment.end === "final-answer";
+    const isActivitySliceClosed = segment.end !== "open";
+    const status = endedByContent ? "complete" : frame.status;
+    // Eligibility belongs to this contiguous slice, not to a final observed
+    // elsewhere in the Turn. Work resumed after an answer must earn its own
+    // final boundary; a later Steer cannot collapse it through inherited phase.
+    const hasFinalAssistantStarted = endedByAnswer;
     const id = segment.boundaryId === null ? `${frame.turnId}:slot:agent-activity`
       : `${frame.turnId}:slot:activity-after:${segment.boundaryId}`;
     const contentUnits = [...createAgentActivityContentUnits(blocks, status, registry, isActivitySliceClosed)];
     // One Turn total, not a fabricated elapsed time for each response. A new
     // input awaiting work must not animate an already-closed historical slice.
-    const workStatus = !ownsWorkStatus || (turnIsActive && segment.endedByContent && !segment.endedByAnswer) ? null
+    const workStatus = !ownsWorkStatus || (turnIsActive && endedByContent && !endedByAnswer) ? null
       : frame.status === "interrupted" && frame.interruptedByThisClient && frame.durationMs !== null
         ? { type: "worked-for" as const, status: "stopped" as const, startedAtMs: 0, completedAtMs: frame.durationMs }
         : frame.workStatus ?? null;
@@ -962,14 +970,14 @@ export function createAssistantTurnPresentationPlan(
       status,
       workedDurationMs: ownsWorkStatus ? frame.durationMs : null,
       hasFinalAssistantStarted,
-      hasDisclosureBoundary: segment.disclosureBoundary || phase === "after-final-answer",
+      segmentEnd: segment.end,
       // Partitioning is a disclosure-only projection. When the Turn cannot
       // collapse, Codex renders the original Unit stream, including a leading
       // realtime transcript that intentionally does not appear in expandedUnits.
       hasRenderableAgentItems: contentUnits.length > 0 || inlineSubagentActivity !== null,
-      isTurnCancelled: !segment.endedByContent && frame.status === "interrupted",
+      isTurnCancelled: frame.status === "interrupted",
       forceExpanded: false,
-      disableCollapse: phase === "after-final-answer" && !segment.endedByContent,
+      disableCollapse: phase === "after-final-answer" && !endedByContent,
       preventAutoCollapse: !isActivitySliceClosed && (blocks.some((block) => isActiveAgentActivityBlock(block, registry))
         || subagentBlocks.some((block) => block.status === "pending" || block.status === "running")),
       summary: {
@@ -1017,14 +1025,17 @@ export function createAssistantTurnPresentationPlan(
       pendingBlocks.push(block);
       continue;
     }
-    flushActivity(true, isFinalAssistantText(block), block.type !== "text" || isFinalAssistantText(block)
-      || block.delivery === "async" || (block.asyncQuestions?.length ?? 0) > 0);
+    flushActivity(isFinalAssistantText(block) ? "final-answer"
+      : block.type === "user-message" || block.type === "realtime-transcript" ? "user-input" : "content");
     segments.push({ type: "assistant-content", id: `${frame.turnId}:slot:assistant-content:${block.id}`, block });
     boundaryId = block.id;
     if (isFinalAssistantText(block)) passedFinalAssistant = true;
-    else if (block.type === "user-message") passedFinalAssistant = false;
+    else if (block.type === "user-message" || block.type === "realtime-transcript"
+      || (block.type === "text" && (block.delivery === "async" || (block.asyncQuestions?.length ?? 0) > 0))) {
+      passedFinalAssistant = false;
+    }
   }
-  flushActivity(false);
+  flushActivity(frame.status === "pending" || frame.status === "streaming" ? "open" : "turn-terminal");
   let workStatusOwner = -1;
   segments.forEach((segment, index) => { if (segment.type === "activity-segment") workStatusOwner = index; });
   const slots = segments.flatMap<AssistantRenderUnit>((segment, index) => {
@@ -1138,14 +1149,15 @@ export function shouldAllowAgentActivityCollapse(unit: AgentActivityRenderUnit):
   return resolveAgentActivityLayout(unit, false).showToggle;
 }
 
-/** Pure reconstruction of r3562 DA's final node-ownership calculation. */
+/** Shared partition/visibility calculation, matching current Codex DO regions. */
 export function resolveAgentActivityLayout(
   unit: AgentActivityRenderUnit,
-  persistedCollapsed: boolean | undefined,
+  persistedCollapsed?: boolean,
 ): AgentActivityLayout {
-  // r3562 DA: preserve raw user intent through partitioning. The effective
+  // Preserve raw user intent through partitioning. The effective
   // visibility of the toggle/body is an OUTPUT, never fed back as a choice.
-  const disclosure = resolveAgentActivityDisclosure({ ...unit, persistedCollapsed });
+  const disclosure = resolveAgentActivityDisclosure({ ...unit, persistedCollapsed,
+    forceExpanded: unit.forceExpanded || unit.disableCollapse });
   const partitioned = !unit.forceExpanded && disclosure.shouldAllowCollapse;
   let visibleUnits = partitioned
     ? disclosure.isCollapsed ? unit.partitions.collapsibleUnits : unit.partitions.expandedUnits

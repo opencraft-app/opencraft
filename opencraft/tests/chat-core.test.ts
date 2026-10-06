@@ -3145,8 +3145,8 @@ test("steering and hook feedback retain their own slots outside Activity disclos
     "user-message:steering", "user-message:hook", "text:answer",
   ]);
   const collapsedLayout = resolveAgentActivityLayout(outer, true);
-  assert.equal(collapsedLayout.showToggle, true);
-  assert.equal(collapsedLayout.isCollapsed, true);
+  assert.equal(collapsedLayout.showToggle, false, "Steer is not a final-answer fold grant");
+  assert.equal(collapsedLayout.isCollapsed, false);
   assert.deepEqual(collapsedLayout.visibleUnits.map((unit) => unit.id), ["agent-activity-group:command-execution:command"]);
   assert.deepEqual(collapsedLayout.persistentUnits, []);
   const expandedLayout = resolveAgentActivityLayout(outer, false);
