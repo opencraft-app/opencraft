@@ -586,6 +586,8 @@ interface TimelineFrameBase<TType extends string> {
   /** AppServer Turn duration: disclosure-label fallback only, not the work clock. */
   readonly durationMs: number | null;
   readonly workStatus?: WorkStatusItem | null;
+  /** Turn-owned resource, never an ordered message or disclosure boundary. */
+  readonly changeSummary?: TurnDiffTimelineBlock | null;
   readonly interruptedByThisClient?: boolean;
   /** Turn-scoped hook lifecycle summary rendered in the response action row. */
   readonly hookStats: HookStats | null;

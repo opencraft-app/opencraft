@@ -15,7 +15,6 @@ import {
   type ToolActivityPresentation,
   type ToolActivityPresenterRegistry,
   type TimelineTurnView,
-  type TurnDiffTimelineBlock,
   type TurnId,
 } from "@opencraft/chat-core";
 import type { ConversationNavigationSource } from "@opencraft/chat-navigation";
@@ -48,7 +47,6 @@ import {
   AlertCircle,
   ArrowRight,
   CalendarClock,
-  ChevronDown,
   FileCode2,
   RotateCcw,
 } from "lucide-react";
@@ -81,6 +79,7 @@ import {
   type ConversationDocumentContextValue,
 } from "./conversation/document-context";
 import { UserMessageBlock } from "./conversation/user-message";
+import { TurnDiffBlock } from "./conversation/turn-diff-resource";
 import { AsyncQuestionCard } from "./conversation/async-question-card";
 import { UnifiedDiffPreview } from "./conversation-renderers/unified-diff-preview";
 import {
@@ -221,108 +220,6 @@ function PatchBlock({ block }: { block: Extract<TimelineBlock, { type: "patch" }
       ))}
       <AutomaticApprovalReviewList reviews={block.automaticApprovalReviews} />
     </div>
-  );
-}
-
-function turnDiffDisplayPath(path: string): { readonly basename: string; readonly directory: string } {
-  const normalized = path.replaceAll("\\", "/");
-  const separator = normalized.lastIndexOf("/");
-  return separator < 0
-    ? { basename: normalized, directory: "" }
-    : { basename: normalized.slice(separator + 1), directory: normalized.slice(0, separator + 1) };
-}
-
-function TurnDiffStats({ additions, deletions }: { readonly additions: number; readonly deletions: number }) {
-  if (additions === 0 && deletions === 0) return null;
-  return (
-    <span className="thread-turn-diff__stats" aria-label={`${additions} lines added, ${deletions} lines removed`}>
-      {additions > 0 ? <b>+{additions}</b> : null}
-      {deletions > 0 ? <i>−{deletions}</i> : null}
-    </span>
-  );
-}
-
-function TurnDiffBlock({ block }: { readonly block: TurnDiffTimelineBlock }) {
-  const documentContext = useContext(ConversationDocumentContext);
-  const [expandedFiles, setExpandedFiles] = useState(false);
-  const inProgress = block.status === "pending" || block.status === "running";
-  const files = expandedFiles ? block.files : block.files.slice(0, 3);
-  const hiddenFileCount = block.files.length - files.length;
-
-  const openPath = useCallback((path: string) => {
-    const decision = resolveStandardChatResource(path, {
-      cwd: documentContext.cwd,
-      externalResourcePolicy: "allow",
-    });
-    if (decision.allowed && decision.target !== null) {
-      documentContext.onOpenResource?.(decision.target, decision);
-    }
-  }, [documentContext]);
-  const review = useCallback((path?: string) => {
-    if (documentContext.onReviewTurnDiff !== undefined) documentContext.onReviewTurnDiff(block, path);
-    else if (path !== undefined) openPath(path);
-  }, [block, documentContext, openPath]);
-
-  if (block.files.length === 0) return null;
-  if (inProgress) {
-    return (
-      <motion.button
-        animate={{ opacity: 1 }}
-        className="thread-turn-diff-live"
-        initial={{ opacity: 0 }}
-        disabled={documentContext.onReviewTurnDiff === undefined}
-        onClick={() => review()}
-        transition={{ duration: 0.18, ease: "easeOut" }}
-        type="button"
-      >
-        <span>{block.files.length === 1 ? "1 file changed" : `${block.files.length} files changed`}</span>
-        <TurnDiffStats additions={block.additions} deletions={block.deletions} />
-      </motion.button>
-    );
-  }
-
-  const singleFile = block.files.length === 1 ? block.files[0]! : null;
-  const title = singleFile === null
-    ? `Edited ${block.files.length} files`
-    : `Edited ${turnDiffDisplayPath(singleFile.path).basename}`;
-  return (
-    <section className="thread-turn-diff" data-status={block.status}>
-      <div className="thread-turn-diff__header">
-        <button
-          aria-label="Review changed files"
-          className="thread-turn-diff__header-target"
-          disabled={documentContext.onReviewTurnDiff === undefined}
-          onClick={() => review(singleFile?.path)}
-          type="button"
-        />
-        <span className="thread-turn-diff__icon"><FileCode2 aria-hidden="true" size={24} /></span>
-        <span className="thread-turn-diff__copy">
-          <strong>{title}</strong>
-          <span className="thread-turn-diff__subtitle">
-            <span className="thread-turn-diff__default-subtitle"><TurnDiffStats additions={block.additions} deletions={block.deletions} /></span>
-            <span className="thread-turn-diff__hover-subtitle">Review changes <ArrowRight aria-hidden="true" size={12} /></span>
-          </span>
-        </span>
-        <span className="thread-turn-diff__actions">
-          {documentContext.onReviewTurnDiff === undefined ? null : <button className="is-review" onClick={(event) => { event.stopPropagation(); review(singleFile?.path); }} type="button">Review</button>}
-        </span>
-      </div>
-      {block.files.length > 1 ? (
-        <div className="thread-turn-diff__files">
-          {files.map((file) => {
-            const display = turnDiffDisplayPath(file.path);
-            return (
-              <button aria-label={`Open ${file.path}`} key={file.path} onClick={() => review(file.path)} type="button">
-                <span className="thread-turn-diff__path"><span>{display.directory}</span><b>{display.basename}</b></span>
-                <TurnDiffStats additions={file.additions} deletions={file.deletions} />
-              </button>
-            );
-          })}
-          {hiddenFileCount > 0 ? <button className="thread-turn-diff__more" onClick={() => setExpandedFiles(true)} type="button">Show {hiddenFileCount} more {hiddenFileCount === 1 ? "file" : "files"}<ChevronDown size={12} /></button> : null}
-          {expandedFiles && block.files.length > 3 ? <button className="thread-turn-diff__more" onClick={() => setExpandedFiles(false)} type="button">Collapse files<ChevronDown className="is-expanded" size={12} /></button> : null}
-        </div>
-      ) : null}
-    </section>
   );
 }
 
@@ -507,9 +404,10 @@ function Frame({
 }) {
   const intl = useIntl();
   const followContentRef = useLatestTurnFollowContentRef();
+  const documentContext = useContext(ConversationDocumentContext);
   const frameRef = useRef<HTMLDivElement>(null);
   const visibleFrame = frame;
-  if (visibleFrame.blocks.length === 0 && thinkingId === null) return null;
+  if (visibleFrame.blocks.length === 0 && thinkingId === null && assistantPlan?.changeSummary == null) return null;
   if (visibleFrame.type === "user") {
     const itemId = visibleFrame.anchors.find((anchor) => anchor.type === "item")?.id ?? visibleFrame.id;
     return (
@@ -537,6 +435,7 @@ function Frame({
   const hasMessageActions = assistantCopyText.length > 0 || onRetry !== undefined || visibleFrame.hookStats !== null;
   if (visibleFrame.type === "assistant"
     && units.length === 0
+    && assistantPlan?.changeSummary == null
     && thinkingId === null
     && !hasMessageActions
     && actions?.sentAtMs == null) return null;
@@ -579,6 +478,15 @@ function Frame({
             <GenericBlock block={block} onRetry={onRetry} />
           </div>
         ))}
+      {assistantPlan?.changeSummary == null
+        || (documentContext.composerChangeSummaryTurnId === frame.turnId
+          && (assistantPlan.changeSummary.status === "pending" || assistantPlan.changeSummary.status === "running")) ? null : (
+        <div className="thread-frame__slot" data-turn-resource-id={assistantPlan.changeSummary.id}
+          data-virtualized-turn-content={virtualizeSingleSlot ? "" : undefined}
+          key={assistantPlan.changeSummary.id}>
+          <GenericBlock block={assistantPlan.changeSummary} />
+        </div>
+      )}
       {thinkingId === null ? null : (
         <div
           aria-live="polite"

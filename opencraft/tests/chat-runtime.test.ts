@@ -3,7 +3,7 @@ import test from "node:test";
 
 import type { ReplicaJsonValue } from "@opencraft/appserver-protocol";
 import type { ReplicaClientSnapshot } from "@opencraft/appserver-replica";
-import { asTurnId, createConversationKey, groupTimelineFramesByTurn, timelineTurnRenderKey } from "@opencraft/chat-core";
+import { asTurnId, createConversationKey, createTimelineTurnPresentationPlan, groupTimelineFramesByTurn, resolveAgentActivityLayout, timelineTurnRenderKey } from "@opencraft/chat-core";
 import {
   createReplicaConversationRuntime,
   ContinuationCommandError,
@@ -476,9 +476,9 @@ test("Conversation Runtime projects the authoritative Turn aggregate diff as a t
       .timeline.frames.flatMap((frame) => frame.blocks);
     assert.deepEqual(
       blocks.map((block) => block.type),
-      ["patch", "turn-diff"],
+      ["patch"],
     );
-    const turnDiff = blocks[1];
+    const turnDiff = runtime.getSnapshot().timeline.frames[0]?.changeSummary;
     assert.equal(turnDiff?.type, "turn-diff");
     if (turnDiff?.type === "turn-diff") {
       assert.deepEqual(turnDiff.files, [
@@ -488,6 +488,36 @@ test("Conversation Runtime projects the authoritative Turn aggregate diff as a t
   } finally {
     runtime.dispose();
   }
+});
+
+test("Replica diff updates leave active work open across later Items and restored runtimes", () => {
+  const diff = "diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-old\n+new";
+  const work = [{ id: "progress", type: "agentMessage", phase: "commentary", text: "Progress", completed: true },
+    { id: "command", type: "commandExecution", command: "test", status: "inProgress", completed: false }];
+  const entity = (changes: string | null, later = false) => threadView({ pendingInteractions: [], turns: [{
+    id: "active", status: "inProgress", turnStartedAtMs: 1000, firstTurnWorkItemStartedAtMs: 1100,
+    diff: changes, unifiedDiff: diff, items: later ? [...work, { id: "later", type: "reasoning", summary: [], completed: false }] : work,
+  }] });
+  const replica = new FakeReplica(entity(null));
+  const create = () => createReplicaConversationRuntime({ key: createConversationKey("local", "thread-one"), replica,
+    commands: commands(), history: { async loadOlder() {} } });
+  const runtime = create();
+  const presentation = () => createTimelineTurnPresentationPlan(groupTimelineFramesByTurn(runtime.getSnapshot().timeline)[0]!, undefined, { isMostRecentTurn: true });
+  try {
+    const initial = presentation();
+    replica.setEntity(entity(diff));
+    assert.deepEqual(presentation().assistant!.slots, initial.assistant!.slots);
+    assert.equal(presentation().assistant!.changeSummary?.status, "running");
+    replica.setEntity(entity(diff, true));
+    const updated = presentation();
+    const activity = updated.assistant!.slots.find(s => s.type === "agent-activity")!;
+    if (activity.type === "agent-activity") assert.equal(resolveAgentActivityLayout(activity, true).isCollapsed, false);
+    const restored = create();
+    try { assert.deepEqual(createTimelineTurnPresentationPlan(groupTimelineFramesByTurn(restored.getSnapshot().timeline)[0]!, undefined, { isMostRecentTurn: true }), updated); }
+    finally { restored.dispose(); }
+    replica.setEntity(entity(null, true));
+    assert.equal(presentation().assistant!.changeSummary, null);
+  } finally { runtime.dispose(); }
 });
 
 test("Guardian auto-reviews attach to target tools and keep unmatched failures standalone", () => {

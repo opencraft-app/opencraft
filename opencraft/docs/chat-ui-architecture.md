@@ -119,7 +119,47 @@ exact-locator compatibility path, not a general path or filename heuristic.
 
 ### Changed-file review
 
-The Turn's existing unified diff remains the read authority for its changed-file summary. ChatUI renders an in-progress inline Review entry and a completed resource card; it only emits an open intent. The Workbench owns the read-only Review dialog, keeps it tied to the active Thread, and projects the current Timeline block while streaming. File selection filters that existing diff for display; it does not create a second TurnDiff model or mutate the workspace. Undo/Reapply is not advertised until a real Host apply-patch capability is connected.
+The Turn's existing unified diff remains the read authority for its changed-file summary. ChatUI renders a lightweight in-progress entry and a completed resource card; it only emits an open intent. In the Web Workbench, the actual Composer owns the active Turn's live entry above the editor, including when that Composer floats over a panel. Its exact Turn identity suppresses duplicate live resources in the main and mini transcript; it is presentation routing, not a second execution or resource owner. Standalone Conversation consumers retain inline presentation. On completion, the same resource appears as the transcript's completed card. The Workbench owns the read-only Review dialog, keeps it tied to the active Thread, and projects the current Timeline block while streaming. File selection filters that existing diff for display; it does not create a second TurnDiff model or mutate the workspace. Undo/Reapply is not advertised until a real Host apply-patch capability is connected.
+
+The Web resource presentation follows Codex 26.930.31428/build 12913's original
+Renderer, not recovered analysis modules: square-plus-minus glyph in a 40px
+slot, 12px header padding, 10px gaps and theme-owned `radius-lg` (10px in its
+default theme). The title uses chat typography; both signed counts are shown,
+including zero, in chat-minus-one typography with tabular digits and 4px gaps.
+Running counters retain columns and animate their transform, with reduced-motion
+support. Completed multi-file cards show three 36px rows by default and an
+explicit expanded state; disclosure reflow belongs to the viewport owner.
+The shared outline toolbar Button emits “View changes”. Desktop hover offers
+an interactive live file list or a bounded small-file diff preview after 800ms;
+more than 5000 rendered/change lines bypass inline preview. File clicks close
+the live list before opening Review. Modifier-click opens a file only when a
+real resource opener exists. Touch does not force hover copy or browser rings.
+Diff sections are indexed once per completed resource revision, not reparsed
+for every filename. These are Web adapter details; Native preserves its own
+touch surfaces while sharing the Turn resource and Review intent.
+
+The aggregate is a **Turn-owned resource**, not an ordered transcript Item.
+`chat-runtime` passes `unifiedDiff` separately from source Items; `chat-core`
+projects it as `changeSummary` metadata and the assistant presentation plan's
+fixed resource surface. Its stable identity is `${turnId}:turn-diff`, without
+source Item anchors. Web and Native render that surface separately from ordered
+slots. Arrival, update or removal cannot end an Activity segment, alter its work
+clock, qualify a final answer, claim Thinking ownership, or move a response.
+The live Review lookup includes this resource; ordinary transcript Blocks are
+not a second read authority. A resource-only recovered Turn may have an empty
+carrier Frame, never a fabricated message. Inline resource surfaces count toward
+the virtualizer's top-level geometry; Composer-routed live resources count toward
+footer geometry instead. Neither becomes a latest activity follow anchor.
+
+Old `turnDiff` Items are lowered at the shared projection boundary and excluded
+from transcript/work-status derivation. An explicitly supplied Turn value,
+including null, wins over those compatibility Items; a null canonical `diff`
+also wins over a stale `unifiedDiff` alias. This is a narrow compatibility path,
+not a new generic resource registry or another persistence store. Regression
+tests cover running diff updates, later work, saved collapse choices, reload,
+final answers, resource clearing and completed Review cards. The browser fixture
+uses the real Conversation and Review dialog in desktop/mobile-width light/dark
+views; it is not a production deployment or native-device acceptance claim.
 
 Changed-file row geometry belongs to its renderer: line counts retain their intrinsic width while the path consumes the remaining space. The directory yields first to the basename, but the basename is capped at its path slot and truncates when even the filename cannot fit. Neither path segment may paint over the counts. Truncation affects presentation only; the complete path remains the accessible row label and Review target. Regression coverage includes long basenames without directories, deep directories, both counts, narrow containers and expanding/collapsing the file list.
 

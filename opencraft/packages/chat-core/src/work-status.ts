@@ -29,6 +29,9 @@ function timestamp(value: unknown): number | null {
 export function deriveTurnWorkStatus(
   turn: TimelineSourceTurn,
 ): WorkStatusItem | null {
+  // Old snapshots may encode the aggregate as an Item. A resource cannot
+  // extend work, hide the final answer, or supply a work-start observation.
+  turn = { ...turn, items: turn.items.filter(item => item.type !== "turnDiff") };
   const active = turn.status === "streaming" || turn.status === "pending";
   if (
     turn.status === "interrupted" ||
