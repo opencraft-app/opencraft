@@ -90,6 +90,17 @@ checkFiles("Web timeline host", "packages/timeline-host-web/src", [
   },
 ]);
 
+checkFiles("Web design system adapter", "packages/design-system-web/src", [
+  {
+    pattern: /(?:from\s*|import\s*)["'](?:react-native|expo(?:\/|["'])|expo-router)/m,
+    message: "must not import Native renderers",
+  },
+  {
+    pattern: /(?:from\s*|import\s*)["'][^"']*\/apps\//m,
+    message: "must not import from an app host",
+  },
+]);
+
 checkFiles("Native chat renderer", "packages/chat-render-native/src", [
   {
     pattern: /(?:from\s*|import\s*)["'](?:react-dom|shiki|katex|mermaid)/m,

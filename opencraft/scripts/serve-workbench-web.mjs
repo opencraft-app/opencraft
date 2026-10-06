@@ -8,6 +8,7 @@ import { dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import WebSocket, { WebSocketServer } from "ws";
+import { speechServiceFromEnvironment } from "./speech-transcription-service.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const contentTypes = new Map([
@@ -77,6 +78,16 @@ function allowedSameOriginRequest(request, requireOrigin, loopbackOnly) {
   const origin = request.headers.origin;
   if (requireOrigin) return origin === expected;
   return origin === undefined || origin === expected;
+}
+
+// TLS may terminate at the trusted deployment's reverse proxy. Compare the
+// browser's exact Origin authority with Host, never trust forwarded headers.
+function allowedInternalDesktopOrigin(request) {
+  try {
+    const origin = new URL(request.headers.origin);
+    return ["http:", "https:"].includes(origin.protocol)
+      && origin.origin === request.headers.origin && origin.host === request.headers.host;
+  } catch { return false; }
 }
 
 function bridgeAppServerSocket(client, request, options) {
@@ -274,10 +285,14 @@ export async function createWorkbenchWebServer({
   sshServerDescriptors = [],
   sshManagement = null,
   desktopService = null,
+  desktopAccess = "loopback",
+  speechService = speechServiceFromEnvironment(),
+  speechPublicAccess = process.env.OPENCRAFT_SPEECH_PUBLIC_ACCESS === "1",
   webSocketHeartbeatIntervalMs = 15_000,
   onAppHostDiagnostic = diagnostic => console.info("[opencraft apphost connection]", JSON.stringify(diagnostic)),
 } = {}) {
-  if (desktopService !== null && !loopbackOnly) throw new Error("Local desktop requires a loopback-only gateway");
+  if (!["loopback", "trusted-internal"].includes(desktopAccess)) throw new Error("Invalid desktop access policy");
+  if (desktopService !== null && desktopAccess === "loopback" && !loopbackOnly) throw new Error("Local desktop requires a loopback-only gateway");
   const staticRoot = await realpath(resolve(root || join(repositoryRoot, "apps/workbench-web/dist")));
   if (sshServerDescriptors.length && !loopbackOnly && !sshManagement?.options.publicOrigin && !sshManagement?.options.publicAccess) throw new Error("SSH Server catalog requires a protected listener");
   const normalizedTarget = appServerTarget === null ? null : normalizeTarget(appServerTarget);
@@ -294,6 +309,22 @@ export async function createWorkbenchWebServer({
         return;
       }
       const url = new URL(request.url || "/", "http://vela.invalid");
+      if (url.pathname.startsWith("/__opencraft_speech/")) {
+        if (speechService === null) {
+          const probe = url.pathname === "/__opencraft_speech/capabilities" && request.method === "GET";
+          sendJson(response, probe ? 200 : 503, probe ? { available: false } : { error: { code: "unavailable", retryable: false } }); return;
+        }
+        await speechService.handle(request, response, (req, mutation) => {
+          if (!loopbackOnly && !speechPublicAccess) return false;
+          const origin = requestOrigin(req, loopbackOnly);
+          if (origin === null) return false;
+          // An HTTPS reverse proxy may retain the public Host; never trust forwarded Origin headers.
+          const supplied = req.headers.origin;
+          return mutation ? supplied === origin || (!loopbackOnly && supplied === origin.replace(/^http:/u, "https:"))
+            : supplied === undefined || supplied === origin || (!loopbackOnly && supplied === origin.replace(/^http:/u, "https:"));
+        });
+        return;
+      }
       if (sshManagement && await sshManagement.handle(request, response)) return;
       if (!sshManagement && (url.pathname === "/__opencraft_ssh" || url.pathname.startsWith("/__opencraft_ssh/"))) {
         sendJson(response, 404, { error: "missing" }); return;
@@ -457,7 +488,12 @@ export async function createWorkbenchWebServer({
       socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n"); socket.destroy(); return;
     }
     if (pathname === "/desktop/connect") {
-      if (desktopService === null || url.search || !loopbackOnly) { socket.destroy(); return; }
+      if (desktopService === null || url.search) { socket.destroy(); return; }
+      const allowed = desktopAccess === "trusted-internal"
+        ? allowedInternalDesktopOrigin(request) : allowedSameOriginRequest(request, true, true);
+      if (!allowed) {
+        socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n"); socket.destroy(); return;
+      }
       desktopWebSockets.handleUpgrade(request, socket, head, client => {
         trackWebSocket(client);
         desktopService.accept(client);
@@ -507,7 +543,7 @@ export async function createWorkbenchWebServer({
     staticRoot,
     appServerTarget: normalizedTarget,
     listen({ host = "0.0.0.0", port = 10000 } = {}) {
-      if (desktopService !== null && host !== "127.0.0.1") return Promise.reject(new Error("Local desktop requires loopback"));
+      if (desktopService !== null && desktopAccess === "loopback" && host !== "127.0.0.1") return Promise.reject(new Error("Local desktop requires loopback"));
       return new Promise((resolvePromise, reject) => {
         server.once("error", reject);
         server.listen(port, host, () => {
@@ -517,6 +553,7 @@ export async function createWorkbenchWebServer({
       });
     },
     close() {
+      speechService?.close();
       unsubscribeRevocation?.();
       if (heartbeat !== null) clearInterval(heartbeat);
       for (const client of websocketServer.clients) client.terminate();

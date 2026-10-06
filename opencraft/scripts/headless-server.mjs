@@ -17,6 +17,7 @@ import { createWorkbenchWebServer } from "./serve-workbench-web.mjs";
 import { assertHeadlessWebRelease } from "./headless-web-release.mjs";
 import { LocalDesktopService } from "../apps/local-agent-host/src/desktop/local-desktop-service.ts";
 import { createNativeObserver, localDesktopMachineIdentity } from "../apps/local-agent-host/src/desktop/native-observer.ts";
+import { createNativeDesktopControl } from "../apps/local-agent-host/src/desktop/native-control.ts";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -33,6 +34,8 @@ export function parseHeadlessArguments(argv, env = process.env, getHomeDirectory
   let host = "127.0.0.1";
   let allowUnauthenticatedPublic = false;
   let localDesktop = false;
+  let trustedInternalDesktop = false;
+  let desktopControl = false;
   let dataDirectory = env.OPENCRAFT_SERVER_DATA_DIR;
   let sshServersFile;
   let sshPublicOrigin;
@@ -51,6 +54,10 @@ export function parseHeadlessArguments(argv, env = process.env, getHomeDirectory
       allowUnauthenticatedPublic = true;
     } else if (argument === "--local-desktop") {
       localDesktop = true;
+    } else if (argument === "--trusted-internal-desktop") {
+      trustedInternalDesktop = true;
+    } else if (argument === "--desktop-control") {
+      desktopControl = true;
     } else if (argument === "--data-dir") {
       const value = argv[++index];
       if (!value || value.startsWith("--")) throw new Error("--data-dir requires a path");
@@ -85,9 +92,13 @@ export function parseHeadlessArguments(argv, env = process.env, getHomeDirectory
   }
   if (sshPublicAccess && sshPublicOrigin) throw new Error("Choose either --ssh-public-access or --ssh-public-origin");
   if (sshServersFile && host !== "127.0.0.1" && !sshPublicOrigin && !sshPublicAccess) throw new Error("SSH Servers require a protected listener");
+  if (localDesktop && trustedInternalDesktop) throw new Error("Choose either local or trusted-internal desktop access");
+  if (desktopControl && !localDesktop && !trustedInternalDesktop) throw new Error("Desktop control requires an explicit desktop access policy");
   if (localDesktop && host !== "127.0.0.1") throw new Error("Local desktop requires a loopback-only listener");
   return { help: false, host, port, dataDirectory: resolve(dataDirectory), allowUnauthenticatedPublic,
-    ...(localDesktop ? { localDesktop: true } : {}),
+    ...(localDesktop || trustedInternalDesktop ? { localDesktop: true } : {}),
+    ...(trustedInternalDesktop ? { desktopAccess: "trusted-internal" } : {}),
+    ...(desktopControl ? { desktopControl: true } : {}),
     ...(sshServersFile ? { sshServersFile } : {}), ...(sshPublicOrigin ? { sshPublicOrigin } : {}), ...(sshPublicAccess ? { sshPublicAccess: true } : {}), ...(sshAccessFile ? { sshAccessFile } : {}), ...(sshRequireAccessKey ? { sshRequireAccessKey: true } : {}) };
 }
 
@@ -116,7 +127,11 @@ export async function startHeadlessServer(options = {}) {
   if (sshServers.length && host !== "127.0.0.1" && !options.sshPublicOrigin && !options.sshPublicAccess) throw new Error("SSH Servers cannot be exposed through an unauthenticated public listener");
   const remoteServers = new Map(sshServers.map(binding => [binding.descriptor.serverId, binding]));
   if (remoteServers.size !== sshServers.length) throw new Error("Duplicate SSH Server identity");
-  if (options.localDesktop && host !== "127.0.0.1") throw new Error("Local desktop requires a loopback-only listener");
+  const desktopAccess = options.desktopAccess ?? "loopback";
+  if (!["loopback", "trusted-internal"].includes(desktopAccess)) throw new Error("Invalid desktop access policy");
+  if (options.desktopAccess !== undefined && options.localDesktop !== true) throw new Error("Desktop access requires local desktop");
+  if (options.desktopControl && options.localDesktop !== true) throw new Error("Desktop control requires local desktop");
+  if (options.localDesktop && desktopAccess === "loopback" && host !== "127.0.0.1") throw new Error("Local desktop requires a loopback-only listener");
   await access(join(webRoot, "index.html"));
   await assertHeadlessWebRelease(webRoot);
   await secureDataDirectory(dataDirectory);
@@ -142,11 +157,14 @@ export async function startHeadlessServer(options = {}) {
   try {
     if (options.localDesktop === true) {
       const observer = createNativeObserver();
-      await observer.inspect(AbortSignal.timeout(5_000));
+      const incarnation = await observer.inspect(AbortSignal.timeout(5_000));
+      const control = options.desktopControl ? createNativeDesktopControl() : undefined;
+      if (control && await control.inspect(AbortSignal.timeout(5_000)) !== incarnation) throw new Error("Desktop control incarnation mismatch");
       const environmentId = await localDesktopMachineIdentity();
       const principalId = `local-owner:${process.getuid()}`;
       const serverId = `local-codex:${createHash("sha256").update(JSON.stringify([dataDirectory, principalId])).digest("hex")}`;
-      desktop = new LocalDesktopService({ serverId, environmentId, principalId, observer });
+      desktop = new LocalDesktopService({ serverId, environmentId, principalId, observer, control,
+        transport: desktopAccess === "trusted-internal" ? "same-origin-trusted-internal" : "same-origin-loopback" });
     }
     const startAgent = options.startAgentHost ?? startLocalAgentHost;
     agent = await startAgent({
@@ -194,6 +212,7 @@ export async function startHeadlessServer(options = {}) {
       sshServerDescriptors: sshServers.map(binding => binding.descriptor),
       sshManagement,
       desktopService: desktop ?? null,
+      desktopAccess,
     });
     const address = await web.listen({ host, port });
     return { url: `http://127.0.0.1:${address.port}`, listenHost: host, listenPort: address.port, close };
@@ -209,7 +228,7 @@ if (isMain) {
   void (async () => {
     const args = parseHeadlessArguments(process.argv.slice(2));
     if (args.help) {
-      process.stdout.write("Usage: opencraft-server [--host 127.0.0.1|0.0.0.0] [--port 10000] [--data-dir PATH] [--ssh-servers PRIVATE_JSON] [--ssh-public-origin HTTPS_ORIGIN | --ssh-public-access] [--ssh-require-access-key] [--ssh-access-file PRIVATE_FILE] [--allow-unauthenticated-public] [--local-desktop]\nDefault: loopback only; SSH management uses shared installation access without an extra key. --ssh-require-access-key or --ssh-access-file enables key protection. Public SSH requires explicit opt-in; every permitted visitor can use saved connections in shared mode. HTTP provides no transport encryption. Local desktop requires loopback and an installed verified observer.\n");
+      process.stdout.write("Usage: opencraft-server [--host 127.0.0.1|0.0.0.0] [--port 10000] [--data-dir PATH] [--ssh-servers PRIVATE_JSON] [--ssh-public-origin HTTPS_ORIGIN | --ssh-public-access] [--ssh-require-access-key] [--ssh-access-file PRIVATE_FILE] [--allow-unauthenticated-public] [--local-desktop | --trusted-internal-desktop] [--desktop-control]\nDefault: loopback only; SSH management uses shared installation access without an extra key. --ssh-require-access-key or --ssh-access-file enables key protection. Public SSH requires explicit opt-in; every permitted visitor can use saved connections in shared mode. HTTP provides no transport encryption. Desktop requires an installed verified observer. Trusted-internal desktop trusts everyone able to access this deployment; operator-owned network admission is required. Optional desktop control requires a separate installed private native executor.\n");
       return;
     }
     const server = await startHeadlessServer(args);

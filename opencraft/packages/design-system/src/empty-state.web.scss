@@ -22,8 +22,13 @@
   }
   .ui-empty-state__icon {
     display: flex;
-    color: var(--color-text-secondary);
-    svg { width: calc(var(--spacing) * 8); height: calc(var(--spacing) * 8); }
+    // Only direct empty-state glyphs get the larger, secondary treatment.
+    // A wrapped progress primitive owns its own geometry and inherited tone.
+    > svg {
+      color: var(--color-text-secondary);
+      width: calc(var(--spacing) * 8);
+      height: calc(var(--spacing) * 8);
+    }
   }
   .ui-empty-state__copy {
     display: flex;

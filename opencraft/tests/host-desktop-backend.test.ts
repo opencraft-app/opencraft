@@ -4,9 +4,10 @@ import { asHostId, createConversationKey } from "@opencraft/chat-core";
 import { asConversationScopeId, createConversationBindingStore, HostRuntimeRegistry,
   type AppServerWorkbenchRuntime } from "@opencraft/workbench-runtime";
 import { HostDesktopBackend } from "../apps/workbench-web/src/runtime/host-desktop-backend.js";
-import { OPENCRAFT_DESKTOP_ATTACH, OPENCRAFT_DESKTOP_EXTENSION } from "@opencraft/appserver-protocol/desktop";
+import { OPENCRAFT_DESKTOP_ATTACH, OPENCRAFT_DESKTOP_EXTENSION, parseHostDesktopCapability } from "@opencraft/appserver-protocol/desktop";
+import type { RfbDesktopAdapter } from "../plugins/cloud-desktop/src/rfb";
 
-function fixture(origin = "http://127.0.0.1:10000") {
+function fixture(origin = "http://127.0.0.1:10000", transport = "same-origin-loopback", openSocket?: (url: string) => WebSocket) {
   const bindings = createConversationBindingStore(), listeners = new Set<() => void>();
   const scope = asConversationScopeId("view-scope");
   bindings.register(scope, asHostId("transport-alias"));
@@ -20,14 +21,18 @@ function fixture(origin = "http://127.0.0.1:10000") {
   const runtime = { subscribe(listener: () => void) { listeners.add(listener); return () => listeners.delete(listener); },
     getSnapshot: () => ({ phase }), connect: async () => {}, dispose: async () => {}, resources: {
       host: { getConnectionGeneration: () => generation, getInitializeResult: () => ({ capabilities: { extensions: advertised
-        ? { [OPENCRAFT_DESKTOP_EXTENSION]: { version: 1, observe: true, control: false, transport: "same-origin-loopback",
+        ? { [OPENCRAFT_DESKTOP_EXTENSION]: { version: 1, observe: true, control: false, transport,
           serverId: "server", environmentId: "machine", principalId: "local-user" } } : {} } }) },
       protocol: { request: async (method: string, params: unknown) => { calls.push({ method, params }); return method === OPENCRAFT_DESKTOP_ATTACH ? respond() : {}; } },
     } } as unknown as AppServerWorkbenchRuntime;
   const registry = new HostRuntimeRegistry([{ descriptor: { hostId: "transport-alias", label: "Fixture", kind: "codex",
     transportEndpoint: null, executionLocation: null, workspaceBrowseRoots: [] }, createRuntime: () => runtime }]);
   registry.getRuntime("transport-alias");
-  const backend = new HostDesktopBackend({ bindings, registry, origin });
+  // Socket address belongs to this adapter, not noVNC module loading. Open the
+  // real wire channel through a media boundary so Node does not need a DOM.
+  const media: RfbDesktopAdapter | undefined = openSocket ? { surfaces: { mount() { throw new Error("not mounted"); } },
+    async connect(session) { try { session.openChannel(); throw new Error("fixture stop"); } finally { session.close(); } } } : undefined;
+  const backend = new HostDesktopBackend({ bindings, registry, origin, openSocket, media });
   return { backend, bindings, registry, calls, setResponse(value: () => Promise<unknown>) { respond = value; },
     retire() { generation++; phase = "idle"; for (const listener of listeners) listener(); },
     hide() { advertised = false; for (const listener of listeners) listener(); },
@@ -50,6 +55,29 @@ test("local adapter projects presentation Scope but requests only the native Thr
 test("public pages cannot infer a local desktop from a capability", async () => {
   const f = fixture("https://join.example"); try { assert.equal(f.backend.resolveTarget("view-scope"), null); }
   finally { await f.close(); }
+});
+
+test("only an explicit trusted-internal capability admits non-loopback pages and uses wss for HTTPS", async () => {
+  for (const origin of ["https://workspace.internal", "http://10.0.0.5:8080"]) {
+    let endpoint = "";
+    const f = fixture(origin, "same-origin-trusted-internal", url => { endpoint = url; throw new Error("fixture stop before media"); });
+    try {
+      const target = f.backend.resolveTarget("view-scope")!;
+      assert.ok(target);
+      const attachment = await f.backend.prepare(target, new AbortController().signal);
+      await assert.rejects(attachment.connect(new AbortController().signal));
+      assert.equal(endpoint, `${origin.replace(/^http/, "ws")}/desktop/connect`);
+    } finally { await f.close(); }
+  }
+  for (const [origin, transport] of [["https://workspace.internal", "unknown"], ["file:///workspace", "same-origin-trusted-internal"],
+    ["https://workspace.internal/path", "same-origin-trusted-internal"]]) {
+    const f = fixture(origin, transport); try { assert.equal(f.backend.resolveTarget("view-scope"), null); }
+    finally { await f.close(); }
+  }
+  assert.equal(parseHostDesktopCapability({ version: 1, observe: true, control: true,
+    transport: "same-origin-trusted-internal", serverId: "server", environmentId: "machine", principalId: "user" })?.control, true);
+  assert.equal(parseHostDesktopCapability({ version: 1, observe: true, control: "true",
+    transport: "same-origin-trusted-internal", serverId: "server", environmentId: "machine", principalId: "user" }), null);
 });
 
 test("cancelled late grant is released, while successor Client must not release an old grant", async () => {

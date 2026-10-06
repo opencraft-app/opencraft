@@ -187,6 +187,7 @@
   "desktop.connecting": "正在连接…",
   "desktop.controlFailed": "暂时无法取得控制。",
   "desktop.controlling": "你正在控制桌面。",
+  "desktop.connected": "已连接",
   "desktop.viewing": "正在观看桌面。",
   "desktop.requesting": "正在请求控制…",
   "desktop.cancel": "取消",

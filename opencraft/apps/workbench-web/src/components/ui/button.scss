@@ -85,7 +85,7 @@
     background: var(--color-background-button-tertiary-hover);
   }
 
-  &[data-variant="outline"]:hover:not(:disabled) {
+  &[data-variant="outline"]:not([data-density="compact"]):hover:not(:disabled) {
     background: var(--color-background-button-tertiary-hover);
   }
 

@@ -29,6 +29,12 @@ OpenCraft 侧栏目录读取的加载状态不占可见行：不显示额外转�
 
 ## 验证
 
+OpenCraft Web 混元听写在提交 Agent 请求之前完成，属于客户端输入服务。
+平台适配器拥有录音，应用后端拥有凭据与有界同步转写，Composer 拥有原草稿写入确认。
+停止只插入；发送必须等待同一草稿的写入确认。失败撤销旧发送意图，显式重试复用音频而不重录，
+取消或换 View 后的迟到结果不能提交。转写既不使用聊天模型配置，也不路由到所选 SSH Server；
+付费公网入口独立 opt-in。详见 [云听写契约](../../../opencraft/docs/cloud-dictation.md)。
+
 OpenCraft 的执行轮次与展示片段分开：同一轮次内的异步提问、回答、Steer 与后续工作按原有记录顺序投影，活动只在连续范围内折叠，不把所有回答集中到旧工作记录之前。共享 `chat-core` 拥有顺序分段和当前响应判定；Web/Native 不独立重排。异步提问即使带最终回答 phase 也不能结束工作计时，历史回答不得压住后续响应的运行状态。具体契约见 [ChatUI 顺序与所有权](../../../opencraft/docs/chat-ui-architecture.md#history-positions-and-concurrent-observations)。
 
 OpenCraft 会话云桌面的观看连接不是 Agent Turn 的执行宿主。面板关闭、账户切换或观看失败只撤销自己的短期连接与输入租约，不中断 Turn 或删除远端桌面。云桌面插件框架用模拟后端验证此分离；生产 CTL/TAT 和媒体接通须另验资源代次、授权撤销及手动控制与 Agent 的仲裁。

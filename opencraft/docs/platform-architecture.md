@@ -164,6 +164,13 @@ owns the remote desktop incarnation and exclusive input authorization. Closing
 the viewer cannot stop the desktop or Agent. See the [desktop plugin contract](cloud-desktop-plugin.md)
 for framework invariants and the remaining production integration boundaries.
 
+The mounted presentation captures one physical activation's fixed control action;
+the viewing controller fences its single-use command by connection and control
+intent epochs. Focus loss still revokes immediately, but cannot turn a pressed
+Stop into Take after rendering changes, or release a successor grant. Physical
+clipboard capability and currently authorized paste are separate projections;
+unsupported adapters do not render a dead toolbar action.
+
 The neutral desktop plugin now owns the lazy noVNC media adapter; Vela's
 `lightvela-platform/desktop` provider owns account/directory validation, CTL
 preparation and attachment handoff through narrow ports. Dependencies point
@@ -182,10 +189,24 @@ and root-verified streams; `CodexEngineAdapter` binds grants to server-stamped
 logical Client epochs. Workbench's `HostDesktopBackend` maps Scope aliases to
 native Thread IDs and consumes the neutral media/session-wire. It is independent
 of Vela accounts and TAT. The dedicated WebSocket gateway is exact-Origin and
-loopback-only; this is trusted local-owner access, not public DevCloud auth.
-Default/public Hosts do not advertise it. Viewer teardown cannot stop Codex or
+loopback-only by default; an explicit `--trusted-internal-desktop` deployment
+instead trusts everyone admitted to that installation's network access. That
+deployment advertises a distinct same-origin trusted-internal transport, supports
+TLS-terminated HTTPS without trusting forwarded headers, and retains immutable
+read-only native observation and Thread/Client-bound grants. Neither mode is
+public DevCloud authentication. Hosts without either explicit mode do not
+advertise it. Viewer teardown cannot stop Codex or
 desktop processes. Full lifecycle and bounds are in the
 [local authority contract](cloud-desktop-plugin.md#local-execution-server-authority).
+
+Optional `--desktop-control` composes a separate root-private Unix XTest executor,
+verified against the same physical incarnation; the observation stream remains
+read-only. LocalDesktopService owns Thread/Client-bound control intent and
+confirmation, while the native executor owns physical exclusivity, renewable
+leases and held-key/button cleanup. Bounded RFB input decoding retains the grant
+at each message's first byte, including fragments. Viewing recovery never
+reacquires control; clipboard is explicitly unavailable in this local composition.
+See [native control authority](cloud-desktop-plugin.md#local-native-control-authority).
 SSH bindings do not inherit the local desktop service: the shared-native
 initialize projection removes any upstream desktop extension, and desktop
 attachment RPCs cannot be forwarded through the remote binding.
@@ -284,8 +305,9 @@ Following BB's capture/transcription/Composer separation does not imply reusing
 its Codex authentication or transcription endpoint. On Mac Electron, Main owns
 one physical capture through a bundled Speech/AVAudioEngine/CoreAudio helper.
 A trusted top-level preload port exposes semantic probe/start/stop/cancel events,
-never executable paths, audio buffers or credentials. Web retains its browser
-speech adapter; other Electron platforms explicitly report unsupported input.
+never executable paths, audio buffers or credentials. Web supports a selectable
+browser speech adapter or the application-owned Hunyuan transcription service;
+other Electron platforms explicitly report unsupported input.
 
 The voice extension owns platform selection and a dictation-session result ledger.
 Native recognition tasks supply stable utterance IDs, monotonic sequences and
@@ -353,6 +375,33 @@ and feed a View-owned, bounded waveform buffer. No raw audio or second capture
 crosses into the renderer; meters without actual samples show a quiet baseline.
 See [the dictation interaction plan](../design/dictation-interaction/task_plan.md)
 for the recovered-Codex/BB comparison and acceptance evidence.
+
+Web cloud dictation separates `AudioCapturePort`, `SpeechServiceClient` and the
+existing `SpeechInputProvider`/Composer transaction. Browser capture owns a single
+MediaStream/MediaRecorder, drains the final recording event and converts decoded
+audio to canonical mono 16kHz PCM WAV. The backend validates the actual container,
+length and duration (250ms–120s), not a client-supplied duration or filename.
+It calls TokenHub synchronous ASR with Base64 only after explicit stop; recording
+is not routed to the selected Agent/SSH Server. Capability discovery never steals
+or replaces an active capture. Explicit Hunyuan selection does not silently fall
+back to another recognizer on error. Mac's existing semantic native port is unchanged.
+
+The backend owns the API credential and normalizes vendor failures without raw
+payloads. Paid public access is separately opt-in, not inherited from public SSH.
+Uploads and vendor calls share a two-operation concurrency bound; admitted paid
+calls are bounded to ten per minute. Same session/attempt replays are bound to the
+audio digest/language and use a bounded, five-minute in-memory result receipt;
+there is no cross-restart task durability or vendor idempotency claim. Client
+disconnect/shutdown aborts local work, without claiming upstream cancellation or
+refunded usage. Voice recordings are not conversation attachments or database rows.
+
+A retryable failure keeps the original transient input and the same ephemeral
+audio, offering up to two explicit retries and expiring after two minutes idle.
+Every retry gets a new attempt identity. Failure settles any old send completion
+negatively: retry alone can insert, never revive the failed send intent. Cancel,
+target/View loss, expiry or extension disposal releases the audio and fences
+late results. UI retry/status replaces the existing Footer slots and does not
+remount the editor. Deployment and acceptance are in [cloud dictation](cloud-dictation.md).
 
 Input device UID and optional recognition language are client/profile preferences
 in Main's private JSON storage, independent of model configuration and DSH.
@@ -613,6 +662,13 @@ intent only while a response is active; idle sends remain normal Turn starts.
 It neither creates a Host capability nor enables atomic queued-message steering.
 Temporary Side Chat has no durable queue and retains immediate follow-ups.
 
+`voice.inputProvider` is an installation-scoped `auto | system | hunyuan`
+preference. Web's default `auto` chooses Hunyuan only after the backend contract
+and local recording capability are available, otherwise the browser adapter.
+The choice is read once per capture and is independent of model/Host selection;
+it grants neither microphone permission nor paid-service access. No speech
+credential enters UI preference storage.
+
 Shell Navigation is the first migrated consumer. Applications Pin, Account
 Pin, rail detent, last visible detent, navigation-rail width and left context
 sidebar width are installation-scoped.
@@ -694,6 +750,7 @@ protocol adaptations are tracked there rather than implied by a successful build
 | `capability-core` (proposed) | AI-facing Spec, Offering, ModelView, Lease, Invocation and Receipt | none |
 | `capability-runtime` (proposed) | catalog, progressive disclosure, resolver, policy, execution router, journal and Draft Lab | none |
 | `design-system` | semantic colors, spacing, radii and theme computation | none |
+| `design-system-web` | shared Web/SVG progress projection, document animation phase and motion preference cleanup; consumes renderer-free geometry | React and DOM only |
 | `codex-composer` | ProseMirror/DOM composer view | DOM only |
 | `workbench-web` | Codex frame, SCSS, Electron/browser adapters | React DOM |
 | `workbench-expo` | Expo Router routes, native views, Expo Web view | React Native |

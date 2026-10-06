@@ -6,8 +6,8 @@ export const OPENCRAFT_DESKTOP_RELEASE = "opencraft/desktop/attachment/release";
 export interface HostDesktopCapability {
   readonly version: 1;
   readonly observe: true;
-  readonly control: false;
-  readonly transport: "same-origin-loopback";
+  readonly control: boolean;
+  readonly transport: "same-origin-loopback" | "same-origin-trusted-internal";
   readonly serverId: string;
   readonly environmentId: string;
   readonly principalId: string;
@@ -20,9 +20,10 @@ const id = (value: unknown): value is string => typeof value === "string" && val
 
 export function parseHostDesktopCapability(value: unknown): HostDesktopCapability | null {
   const dto = object(value);
-  if (dto.version !== 1 || dto.observe !== true || dto.control !== false || dto.transport !== "same-origin-loopback"
+  if (dto.version !== 1 || dto.observe !== true || typeof dto.control !== "boolean"
+    || (dto.transport !== "same-origin-loopback" && dto.transport !== "same-origin-trusted-internal")
     || !id(dto.serverId) || !id(dto.environmentId) || !id(dto.principalId)) return null;
-  return Object.freeze({ version: 1, observe: true, control: false, transport: "same-origin-loopback",
+  return Object.freeze({ version: 1, observe: true, control: dto.control, transport: dto.transport,
     serverId: dto.serverId, environmentId: dto.environmentId, principalId: dto.principalId });
 }
 

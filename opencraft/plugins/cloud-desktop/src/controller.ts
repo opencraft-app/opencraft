@@ -21,6 +21,8 @@ export interface DesktopViewSnapshot {
   readonly stage?: DesktopStage;
   readonly failure?: DesktopFailureReason;
   readonly canPaste?: boolean;
+  /** Physical capability, independent of the current exclusive input grant. */
+  readonly pasteAvailable?: boolean;
   readonly clipboardBusy?: boolean;
   readonly clipboardFailed?: boolean;
 }
@@ -37,6 +39,7 @@ export class DesktopViewController {
   private disposed = false;
   private abort: AbortController | null = null;
   private controlAbort: AbortController | null = null;
+  private controlEpoch = 0;
   private attachment: DesktopAttachment | null = null;
   private connection: DesktopConnection | null = null;
   private surface: DesktopSurface | null = null;
@@ -161,7 +164,11 @@ export class DesktopViewController {
       if (state.ended) { this.fail(state.retryable === true, state.failure ?? "transport"); return; }
       const ready = state.videoReady && state.inputReady;
       const canControl = ready && state.controlAvailable;
-      if (!canControl) this.releaseControl();
+      if (!canControl) {
+        // Even an observe-mode press cannot survive withdrawn readiness/access.
+        if (this.snapshot.canControl) this.controlEpoch++;
+        this.releaseControl();
+      }
       if (!this.current(generation)) return;
       this.setStage(ready ? "connected" : !state.videoReady && state.inputReady ? "video"
         : state.videoReady ? "input" : "connecting");
@@ -179,8 +186,23 @@ export class DesktopViewController {
       if (!ready && this.timer === null) this.timer = setTimeout(() => {
         if (this.current(generation)) this.fail(false, "timeout");
       }, this.timeoutMs);
-      this.publish({ ...this.snapshot, phase: ready ? "ready" : "connecting", canControl });
+      this.publish({ ...this.snapshot, phase: ready ? "ready" : "connecting", canControl,
+        pasteAvailable: ready && Boolean(this.surface?.pasteText) });
     } catch { if (this.current(generation)) this.fail(); }
+  }
+
+  /** A press owns a fixed action, not a toggle of the state at click time.
+   * Confirmation belongs to the same intent; cancellation/replacement retires it. */
+  prepareControlAction(action: "take" | "stop"): () => void {
+    const generation = this.generation, epoch = this.controlEpoch;
+    let spent = false;
+    return () => {
+      if (spent) return;
+      spent = true;
+      if (!this.current(generation) || this.controlEpoch !== epoch) return;
+      if (action === "stop") this.releaseControl();
+      else void this.requestControl();
+    };
   }
 
   async requestControl(): Promise<void> {
@@ -189,6 +211,7 @@ export class DesktopViewController {
     const generation = this.generation;
     const connection = this.connection;
     const abort = new AbortController();
+    this.controlEpoch++;
     this.controlAbort = abort;
     this.publish({ ...this.snapshot, control: "requesting", controlFailed: false });
     if (!this.current(generation) || this.controlAbort !== abort) return;
@@ -286,6 +309,7 @@ export class DesktopViewController {
     this.clipboardEpoch++;
     const abort = this.controlAbort;
     const lease = this.lease;
+    if (abort || lease) this.controlEpoch++;
     const unsubscribe = this.unwatchControl;
     const surface = this.surface;
     this.controlAbort = null;

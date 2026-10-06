@@ -2,12 +2,15 @@
 export interface ComposerAudioLevels {
   subscribe(listener: (level: number) => void): () => void;
 }
-export interface ComposerDictationInteraction {
+interface ComposerDictationInteractionBase {
   readonly kind: "dictation";
-  readonly phase: "starting" | "listening" | "transcribing";
   readonly startedAt: number | null;
   readonly audioLevels: ComposerAudioLevels;
   /** True only after this input transaction has committed its final text. */
   finish(): Promise<boolean>;
   cancel(): void;
 }
+export type ComposerDictationInteraction = ComposerDictationInteractionBase & (
+  | { readonly phase: "starting" | "listening" | "transcribing" }
+  | { readonly phase: "failed"; readonly message: string; retry(): void }
+);

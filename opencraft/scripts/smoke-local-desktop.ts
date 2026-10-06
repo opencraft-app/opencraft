@@ -1,23 +1,31 @@
 import assert from "node:assert/strict";
 import { build } from "esbuild";
-import { mkdtemp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { access, mkdtemp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "node:http";
+import { spawn, execFile, type ChildProcess } from "node:child_process";
+import { promisify } from "node:util";
 import type { Socket } from "node:net";
 import { AccountPoolStore } from "@opencraft/account-pool-host";
 import { AppHostServer } from "@opencraft/app-host-server";
 import { CodexEngineAdapter } from "../apps/opencraft-daemon/src/codex-engine-adapter.js";
 import { LocalDesktopService } from "../apps/local-agent-host/src/desktop/local-desktop-service.js";
 import { createNativeObserver, localDesktopMachineIdentity } from "../apps/local-agent-host/src/desktop/native-observer.js";
+import { createNativeDesktopControl } from "../apps/local-agent-host/src/desktop/native-control.js";
 import { createWorkbenchWebServer } from "./serve-workbench-web.mjs";
 import { assertBrowserRuntimeDependencies } from "./browser-smoke-preflight.mjs";
 
 if (!process.env.OPENCRAFT_CODEX_EXECUTABLE || !process.env.OPENCRAFT_PLAYWRIGHT_MODULE) {
   throw new Error("Explicit Codex executable and Playwright module required; installed observer must already be running");
 }
+await access(process.env.OPENCRAFT_CODEX_EXECUTABLE);
 const { chromium } = await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE);
 assertBrowserRuntimeDependencies(process.env.OPENCRAFT_CHROMIUM_EXECUTABLE ?? chromium.executablePath());
+const desktopAccess = process.env.OPENCRAFT_DESKTOP_ACCESS ?? "loopback";
+assert.ok(["loopback", "trusted-internal"].includes(desktopAccess), "Explicit supported desktop access required");
+const trustedInternal = desktopAccess === "trusted-internal";
+const desktopControl = process.env.OPENCRAFT_DESKTOP_CONTROL === "true";
 // Use this checkout's actual built styles. A decoded but zero-sized canvas is
 // not visual acceptance, and test-only layout CSS would hide that omission.
 const assets = join(process.cwd(), "apps/workbench-web/dist/assets");
@@ -53,10 +61,18 @@ const model = createServer((request, response) => {
   response.end();
 });
 let browser: any, web: any, appHost: AppHostServer | undefined, desktop: LocalDesktopService | undefined;
+let inputWindow: ChildProcess | undefined;
+const inputEvents: { event: string; down?: boolean; symbol?: number; x?: number; y?: number }[] = [];
+const waitInput = async (predicate: () => boolean) => {
+  for (let i = 0; i < 200 && !predicate(); i++) await new Promise(resolve => setTimeout(resolve, 10));
+  assert.ok(predicate(), "Input must reach only the self-owned native test window");
+};
 try {
   await new Promise<void>(resolve => model.listen(0, "127.0.0.1", resolve));
   const port = (model.address() as { port: number }).port;
-  const nativeObserver = createNativeObserver(); await nativeObserver.inspect(AbortSignal.timeout(5_000));
+  const nativeObserver = createNativeObserver(); const incarnation = await nativeObserver.inspect(AbortSignal.timeout(5_000));
+  const control = desktopControl ? createNativeDesktopControl() : undefined;
+  if (control) assert.equal(await control.inspect(AbortSignal.timeout(5000)), incarnation);
   const viewingStreams: Socket[] = [];
   // Fault injection is confined to this isolated Host's viewer, never Chat or
   // the observer service. All native proof and authorization remain real.
@@ -68,7 +84,8 @@ try {
     },
   };
   desktop = new LocalDesktopService({ serverId: "isolated-local-codex", environmentId: await localDesktopMachineIdentity(),
-    principalId: `local-owner:${process.getuid!()}`, observer });
+    principalId: `local-owner:${process.getuid!()}`, observer, control,
+    transport: trustedInternal ? "same-origin-trusted-internal" : "same-origin-loopback" });
   let engines = 0;
   appHost = new AppHostServer({ logicalClientRouting: true, physicalHostLifetime: "server", createTransport(hostId) {
     assert.equal(hostId, "local-codex"); engines++;
@@ -85,14 +102,26 @@ try {
   await writeFile(join(webRoot, "fixture.css"), css);
   await writeFile(join(webRoot, "index.html"), '<!doctype html><html><head><link rel="stylesheet" href="/fixture.css"></head><body><div id="root" style="width:720px;height:480px"></div><script type="module" src="/fixture.js"></script></body></html>');
   web = await createWorkbenchWebServer({ root: webRoot, appServerTarget: null, appHostServer: appHost,
-    loopbackOnly: true, desktopService: desktop, onAppHostDiagnostic: () => {} });
-  const address = await web.listen({ host: "127.0.0.1", port: 0 });
-  browser = await chromium.launch({ headless: true, executablePath: process.env.OPENCRAFT_CHROMIUM_EXECUTABLE });
+    loopbackOnly: !trustedInternal, desktopAccess, desktopService: desktop, onAppHostDiagnostic: () => {} });
+  const address = await web.listen({ host: trustedInternal ? "0.0.0.0" : "127.0.0.1", port: 0 });
+  browser = await chromium.launch({ headless: true, executablePath: process.env.OPENCRAFT_CHROMIUM_EXECUTABLE,
+    args: trustedInternal ? ["--host-resolver-rules=MAP desktop.internal.test 127.0.0.1", "--no-proxy-server"] : [] });
   const page = await browser.newPage({ viewport: { width: 1000, height: 700 } });
   page.setDefaultTimeout(20_000);
   const errors: string[] = []; page.on("pageerror", (error: Error) => errors.push(error.message));
-  await page.goto(`http://127.0.0.1:${address.port}`);
-  await page.getByRole("status").filter({ hasText: "Viewing desktop." }).waitFor();
+  await page.goto(`http://${trustedInternal ? "desktop.internal.test" : "127.0.0.1"}:${address.port}`);
+  await page.getByRole("status").filter({ hasText: "Viewing desktop." }).waitFor().catch(async error => {
+    await page.screenshot({ path: join(root, "desktop-failure.png") });
+    // This fixture has only synthetic credentials/Thread content. Diagnostics
+    // stay in its private local evidence, never the user-facing panel or log.
+    await writeFile(join(root, "fixture-errors.json"), JSON.stringify(errors), { mode: 0o600 });
+    console.info(JSON.stringify({ result: "failed", access: desktopAccess, evidenceDirectory: root,
+      pageErrors: errors.map(message => ["randomUUID", "initialize", "Thread", "WebSocket", "discovery", "RFB"]
+        .find(category => message.includes(category)) ?? "unclassified"),
+      panelState: await page.locator(".cloud-desktop-panel").evaluateAll((elements: HTMLElement[]) =>
+        elements.map(element => ({ phase: element.dataset.phase, stage: element.dataset.stage }))) }));
+    throw error;
+  });
   const canvas = page.locator("canvas");
   const assertVisibleFramebuffer = async () => {
     await canvas.waitFor({ state: "visible" });
@@ -112,9 +141,70 @@ try {
     return element?.getContext("2d")?.getImageData(2, 2, 1, 1).data[3] === 255;
   });
   const pixel = await canvas.evaluate((element: HTMLCanvasElement) => Array.from(element.getContext("2d")!.getImageData(2, 2, 1, 1).data));
-  assert.deepEqual(pixel, [32, 128, 224, 255], "real Xvfb root pixel must survive the authenticated native/RFB/browser chain");
+  if (!trustedInternal) assert.deepEqual(pixel, [32, 128, 224, 255], "real Xvfb root pixel must survive the authenticated native/RFB/browser chain");
+  else assert.equal(pixel[3], 255, "real installed desktop must paint an opaque framebuffer");
   await assertVisibleFramebuffer();
-  assert.equal(await page.getByRole("button", { name: "Take control" }).isDisabled(), true);
+  assert.equal(await page.getByRole("button", { name: "Take control" }).isDisabled(), !desktopControl);
+  if (control) {
+    inputWindow = spawn("/usr/bin/python3", ["tests/fixtures/desktop-input-window.py"], { stdio: ["ignore", "pipe", "pipe"] });
+    let buffered = "";
+    inputWindow.stdout!.on("data", bytes => {
+      buffered += String(bytes); let end: number;
+      while ((end = buffered.indexOf("\n")) >= 0) { inputEvents.push(JSON.parse(buffered.slice(0, end))); buffered = buffered.slice(end + 1); }
+    });
+    await waitInput(() => inputEvents.some(event => event.event === "ready"));
+    const position = inputEvents.find(event => event.event === "ready")!;
+    const clickWindow = async () => {
+      const box = await canvas.boundingBox(); assert.ok(box);
+      await page.mouse.click(box.x + position.x! * box.width / 1440, box.y + position.y! * box.height / 900);
+    };
+    await clickWindow(); await new Promise(resolve => setTimeout(resolve, 100));
+    assert.equal(inputEvents.filter(event => event.event === "button").length, 0, "Viewing is read-only");
+    await page.getByRole("button", { name: "Take control" }).click();
+    await page.getByRole("button", { name: "Stop controlling" }).waitFor();
+    await assert.rejects(control.acquire(incarnation, AbortSignal.timeout(3000)), "Executor must deny a second controller, even from another Host");
+    await clickWindow(); await waitInput(() => inputEvents.some(event => event.event === "button" && event.down));
+    await page.keyboard.press("a"); await waitInput(() => inputEvents.some(event => event.event === "key" && event.symbol === 97 && event.down));
+    await page.screenshot({ path: join(root, "desktop-control-acceptance.png") });
+    await new Promise(resolve => setTimeout(resolve, 5200));
+    assert.equal(await page.getByRole("button", { name: "Stop controlling" }).count(), 1, "Renewal must keep this confirmed grant alive");
+    await page.keyboard.down("Shift"); await waitInput(() => inputEvents.some(event => event.event === "key" && event.symbol === 0xffe1 && event.down));
+    await page.getByRole("button", { name: "Stop controlling" }).click();
+    await waitInput(() => inputEvents.some(event => event.event === "key" && event.symbol === 0xffe1 && event.down === false));
+    await page.keyboard.up("Shift");
+    const before = inputEvents.length; await clickWindow(); await new Promise(resolve => setTimeout(resolve, 100));
+    assert.equal(inputEvents.length, before, "Stopping control must stop native input");
+    // An unmapped Unicode keysym uses a temporary native mapping, restored on release.
+    const lease = await control.acquire(incarnation, new AbortController().signal);
+    try {
+      lease.key(0x0101f600, true);
+      await waitInput(() => inputEvents.some(event => event.event === "key" && event.symbol === 0x0101f600 && event.down));
+      lease.key(0x0101f600, false);
+    } finally { lease.release(); }
+    if (process.env.OPENCRAFT_DESKTOP_CONTROL_FAULTS === "true") {
+      // This is ONLY the task-owned private executor, never the self-hosted
+      // OpenCraft service. Its lease exclusively belongs to our test window.
+      const crashed = await control.acquire(incarnation, new AbortController().signal);
+      try {
+        const start = inputEvents.length;
+        crashed.key(0xffe1, true); crashed.key(0x0101f601, true);
+        await waitInput(() => inputEvents.slice(start).some(event => event.event === "key" && event.symbol === 0x0101f601 && event.down));
+        await promisify(execFile)("/usr/bin/systemctl", ["kill", "--kill-whom=main", "--signal=SIGKILL", "opencraft-desktop-control.service"]);
+        await waitInput(() => !crashed.isValid());
+        for (let i = 0; i < 30; i++) {
+          try { assert.equal(await control.inspect(AbortSignal.timeout(1000)), incarnation); break; }
+          catch { if (i === 29) throw new Error("Native executor did not recover"); await new Promise(resolve => setTimeout(resolve, 100)); }
+        }
+        await waitInput(() => inputEvents.slice(start).some(event => event.event === "key" && event.symbol === 0xffe1 && event.down === false));
+        const journal = JSON.parse(await readFile("/run/opencraft-desktop-control/held.json", "utf8"));
+        assert.deepEqual(journal.keys, {}); assert.deepEqual(journal.temporary, {}); assert.equal(journal.buttons, 0);
+      } finally { crashed.release(); }
+    }
+    await page.getByRole("button", { name: "Take control" }).click();
+    await page.getByRole("button", { name: "Stop controlling" }).waitFor();
+    await clickWindow(); await page.keyboard.down("Control");
+    await waitInput(() => inputEvents.some(event => event.event === "key" && event.symbol === 0xffe3 && event.down));
+  }
   assert.equal(viewingStreams.length, 1);
   const previousCanvas = await canvas.elementHandle();
   viewingStreams[0]!.destroy();
@@ -124,10 +214,15 @@ try {
   await page.waitForFunction(() => document.querySelector("canvas")?.getContext("2d")?.getImageData(2, 2, 1, 1).data[3] === 255);
   assert.equal(await previousCanvas!.evaluate((element: HTMLElement) => element.isConnected), false);
   await previousCanvas!.dispose();
-  assert.deepEqual(await canvas.evaluate((element: HTMLCanvasElement) => Array.from(element.getContext("2d")!.getImageData(2, 2, 1, 1).data)), pixel);
+  if (!trustedInternal) assert.deepEqual(await canvas.evaluate((element: HTMLCanvasElement) => Array.from(element.getContext("2d")!.getImageData(2, 2, 1, 1).data)), pixel);
   assert.equal(viewingStreams.length, 2, "recovery must open a new authorized physical stream");
   assert.equal(viewingStreams[0]!.destroyed, true);
-  assert.equal(await page.getByRole("button", { name: "Take control" }).isDisabled(), true);
+  assert.equal(await page.getByRole("button", { name: "Take control" }).isDisabled(), !desktopControl);
+  if (control) {
+    assert.equal(await page.getByRole("button", { name: "Stop controlling" }).count(), 0, "Recovery never reacquires control");
+    await waitInput(() => inputEvents.some(event => event.event === "key" && event.symbol === 0xffe3 && event.down === false));
+    await page.keyboard.up("Control");
+  }
   const displayed = await assertVisibleFramebuffer();
   await page.screenshot({ path: join(root, "desktop-acceptance.png") });
   assert.equal(await page.evaluate(() => (window as any).__localDesktopFixture.closeViewer()), true, "closing viewer must preserve the native Thread");
@@ -137,9 +232,13 @@ try {
   await page.evaluate(() => (window as any).__localDesktopFixture.dispose());
   console.info(JSON.stringify({ result: "passed", realCodex: true, realThread: true, realNativeDesktop: true,
     framebuffer: [1440, 900], displayed, pixel, automaticRecovery: true, viewingConnections: viewingStreams.length,
-    model: "local synthetic only", tat: "not exercised", evidenceDirectory: root }));
+    access: desktopAccess, origin: new URL(page.url()).hostname,
+    model: "local synthetic only", tat: "not exercised", nativeInput: desktopControl,
+    executorCrashRecovery: process.env.OPENCRAFT_DESKTOP_CONTROL_FAULTS === "true",
+    inputEvents: inputEvents.length, evidenceDirectory: root }));
 } finally {
   await browser?.close(); desktop?.close();
+  inputWindow?.kill("SIGTERM");
   await web?.close(); await appHost?.close();
   await new Promise<void>(resolve => model.close(() => resolve()));
 }

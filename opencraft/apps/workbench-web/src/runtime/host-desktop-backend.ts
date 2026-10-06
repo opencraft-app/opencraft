@@ -39,14 +39,15 @@ export class HostDesktopBackend implements DesktopBackend {
     if (this.closed) return null;
     try {
       const origin = new URL(this.options.origin);
-      if (origin.origin !== this.options.origin || origin.protocol !== "http:"
-        || !["127.0.0.1", "localhost"].includes(origin.hostname)) return null;
+      if (origin.origin !== this.options.origin || !["http:", "https:"].includes(origin.protocol)) return null;
       const binding = this.options.bindings.resolve(asConversationScopeId(scope));
       if (!binding?.conversationKey) return null;
       const runtime = this.options.registry.peekRuntime(binding.hostId);
       if (!runtime || runtime.getSnapshot().phase !== "ready") return null;
       const capability = parseHostDesktopCapability(runtime.resources.host.getInitializeResult()?.capabilities?.extensions?.[OPENCRAFT_DESKTOP_EXTENSION]);
       if (!capability) return null;
+      if (capability.transport === "same-origin-loopback" && (origin.protocol !== "http:"
+        || !["127.0.0.1", "localhost"].includes(origin.hostname))) return null;
       const generation = runtime.resources.host.getConnectionGeneration?.();
       if (!generation) return null;
       const target: DesktopTarget = Object.freeze({ conversationId: scope, serverId: capability.serverId,
@@ -115,7 +116,7 @@ export class HostDesktopBackend implements DesktopBackend {
           if (released || connected || !current()) throw unavailable();
           connected = true;
           const linked = AbortSignal.any([openSignal, lifetime.signal]); linked.throwIfAborted();
-          const endpoint = `${this.options.origin.replace(/^http:/, "ws:")}/desktop/connect`;
+          const endpoint = `${this.options.origin.replace(/^http:/, "ws:").replace(/^https:/, "wss:")}/desktop/connect`;
           const session = createDesktopWireSession({ attachmentId: credential.attachmentId, signal: linked,
             openSocket: () => {
               if (!current() || released) throw unavailable();

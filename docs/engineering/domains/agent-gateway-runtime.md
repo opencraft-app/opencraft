@@ -8,6 +8,26 @@ OpenCraft 的聊天跟进偏好由客户端 `UiPreferencesRuntime` 持有：运�
 
 ## 服务与责任
 
+OpenCraft 本机只读桌面由部署入口显式选择信任边界：默认 `--local-desktop`
+仍仅回环可用；`--trusted-internal-desktop` 只适用于网络准入已可信的安装，
+信任所有能访问该页面的用户查看同一台机器。Host 声明不同传输范围，Web 只消费
+真实能力；HTTP(S) 同源观看可经过保留外部 Host 的 TLS 代理，不能信任任意转发头。
+原生观察服务仍回环且不可输入，native Thread / logical Client 绑定、一次性短票据
+和观看回收保持不变；关闭面板不停止桌面或 Agent。不接 TAT，也不冒充 Vela
+多租户认证。详见 [桌面授权边界](../../../opencraft/docs/cloud-desktop-plugin.md#local-execution-server-authority)。
+
+本机输入单独以 `--desktop-control` 接入：Host 校验已安装的 root 私有 Unix
+执行器与观察器属于同一物理代次，控制意图在异步准备前独占，Thread/Client 复核后
+才确认。原生执行器拥有跨 Host 的物理独占、三秒续租、断线松键和崩溃恢复日志；
+RFB 分片保留起始字节时的授权，不把旧缓存晋升为新输入。观看恢复不自动接管，
+本机剪贴板未接通，不显示可用粘贴动作。详见
+[原生输入所有权](../../../opencraft/docs/cloud-desktop-plugin.md#local-native-control-authority)。
+
+桌面加载动效与控制授权分离：纯 Design System 持有矢量数据，Web adapter
+投影 SVG、同相旋转和减少动态效果时的动画回收；紧凑按钮即时消费主题状态。
+动画不确认控制权、不延迟停止，也不重建媒体或 Host。参考来源与真实组件验收范围见
+[桌面面板呈现](../../../opencraft/docs/cloud-desktop-plugin.md#panel-presentation)。
+
 OpenCraft 后端 SSH Codex 接入复用既有 logical Client 路由、Thread 读者与交互
 owner，物理通道由 AppHost 持有；普通 Linux 与 HyperNode 共用 SSH exec 内的
 WebSocket 契约。远端模式不构造本机账号池、附件或队列，不自动安装/杀远端服务，
@@ -114,6 +134,7 @@ Pages 制品对嵌入内容哈希资源声明 immutable，稳定 loader/version/
 
 - 本机桌面观看的自动恢复只有在 adapter 声明可安全重复获取短期观看授权、且 wire/media 将已建立流的异常中断分类为可恢复时启用。观看 controller 先撤销旧输入/流/attachment，再按有限退避重新授权；不复用一次性票据、不自动接管控制权、不重建执行引擎。Vela 资源准备的未知 POST 结果不能由恢复流程重放。详见 [有限观看恢复](../../../opencraft/docs/cloud-desktop-plugin.md#bounded-viewing-recovery)。
 - 云桌面面板的连接/失败反馈只是观看 controller 的投影，不重建媒体宿主、不创建第二个输入 owner。通用插件拥有短用户文案和领域操作，设计系统拥有空态尺度/主题，Shell 拥有标签与最大化；控制请求可取消，只有有效后端 grant 才确认控制。视觉验收必须消费实际生成的主题属性与当前构建 CSS，不能把透明空态或零面积角色当通过。见 [面板呈现](../../../opencraft/docs/cloud-desktop-plugin.md#panel-presentation)。
+- 桌面按钮的一次原生激活拥有固定动作；View 在按下时捕获接管或停止/取消，controller 按连接/控制意图代次消费一次。中途失焦仍立即撤销，不能把同一停止 click 翻成新接管或释放后继授权；取消物理手势和页面失焦也撤销旧激活。媒体的剪贴板能力与当前是否授权粘贴分开，不支持时隐藏入口，操作标签共享本征槽位防止 pending 推动邻项。见 [桌面所有权](../../../opencraft/docs/cloud-desktop-plugin.md#ownership)。
 
 - OpenCraft 的本机桌面路径不依赖 Vela/TAT：执行 Host 从 native Codex Thread 元数据和后端机器/主体注册构造观看授权，客户端 Scope/Host 别名只用于定位请求，不能提交任意实例/端点。一次性 attachment 按逻辑 Client 代次撤权，物理桌面只读策略由原生进程执行；观看关闭不停止 Agent。显式 `--local-desktop` 只允许 exact-Origin 回环入口，公开/DevCloud 多租户组合仍需独立可信鉴权和目录，不能据此声称 TAT 已验收。详见 [本机 Host 授权](../../../opencraft/docs/cloud-desktop-plugin.md#local-execution-server-authority)。
 

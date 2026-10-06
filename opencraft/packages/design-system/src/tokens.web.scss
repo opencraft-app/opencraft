@@ -8,6 +8,9 @@
   --padding-sidebar-entrances: calc(var(--spacing) * 3);
   --radius-control: 7px;
   --opacity-control-disabled: 0.5;
+  --opacity-control-compact-disabled: 0.4;
+  --duration-progress-cycle: 2s;
+  --timing-progress-cycle: steps(60, end);
   --width-control-focus-ring: 2px;
   --offset-control-focus-ring: 2px;
   --height-navigation-row: 34px;

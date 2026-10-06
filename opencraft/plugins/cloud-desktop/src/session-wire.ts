@@ -46,7 +46,7 @@ class MediaChannel extends EventTarget {
  * the input authority; no local state can grant control. */
 export function createDesktopWireSession(options: DesktopWireOptions): DesktopRfbSession {
   let socket: WebSocket | null = null, media: MediaChannel | null = null;
-  let closed = false, available = false, sequence = 0;
+  let closed = false, available = false, clipboardAvailable = true, sequence = 0;
   let termination: "transport-lost" | "retired" | null = null;
   let openingTimer: ReturnType<typeof setTimeout> | undefined;
   const listeners = new Set<() => void>();
@@ -100,7 +100,8 @@ export function createDesktopWireSession(options: DesktopWireOptions): DesktopRf
       if (message.event === "desktop/ready") {
         if (media.readyState !== 0 || message.version !== 1 || message.attachmentId !== options.attachmentId
           || typeof message.controlAvailable !== "boolean") throw new Error("Desktop attachment changed");
-        clearTimeout(openingTimer); available = message.controlAvailable;
+        if (message.clipboardAvailable !== undefined && typeof message.clipboardAvailable !== "boolean") throw new Error("Invalid desktop capability");
+        clearTimeout(openingTimer); available = message.controlAvailable; clipboardAvailable = message.clipboardAvailable !== false;
         media.readyState = 1; media.emit("open", new Event("open")); notify(); return;
       }
       if (media.readyState !== 1 || typeof message.requestId !== "string") throw new Error("Invalid desktop control");
@@ -156,6 +157,7 @@ export function createDesktopWireSession(options: DesktopWireOptions): DesktopRf
     },
     control: {
       isAvailable: () => !closed && available && media?.readyState === 1,
+      canPaste: () => clipboardAvailable,
       subscribe: listener => { listeners.add(listener); return () => { listeners.delete(listener); }; },
       request(signal) {
         if (closed || !available || media?.readyState !== 1 || pending || grant || signal.aborted) {

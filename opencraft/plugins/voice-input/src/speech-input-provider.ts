@@ -20,6 +20,8 @@ export interface SpeechInputObserver {
   commit(text: string): void;
   end(): void;
   error(error: SpeechInputError): void;
+  /** Retains this input transaction for explicit same-audio retry; never authorizes a send. */
+  recover?(error: SpeechInputError, retry: () => void): void;
 }
 
 export interface SpeechInputSession {

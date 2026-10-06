@@ -46,6 +46,14 @@ test("headless command accepts a private data root and rejects unsupported flags
   }), /--data-dir is required/u);
   assert.equal(parseHeadlessArguments(["--local-desktop", "--data-dir", "/tmp/local-desktop"]).localDesktop, true);
   assert.throws(() => parseHeadlessArguments(["--local-desktop", "--host", "0.0.0.0", "--allow-unauthenticated-public"]), /loopback-only/u);
+  const internal = parseHeadlessArguments(["--trusted-internal-desktop", "--host", "0.0.0.0", "--allow-unauthenticated-public"]);
+  assert.equal(internal.localDesktop, true);
+  assert.equal(internal.desktopAccess, "trusted-internal");
+  assert.throws(() => parseHeadlessArguments(["--local-desktop", "--trusted-internal-desktop"]), /Choose either/u);
+  assert.throws(() => parseHeadlessArguments(["--desktop-control"]), /explicit desktop access policy/u);
+  assert.equal(parseHeadlessArguments(["--desktop-control", "--trusted-internal-desktop"]).desktopControl, true);
+  assert.equal(parseHeadlessArguments(["--local-desktop"]).desktopControl, undefined);
+  assert.throws(() => parseHeadlessArguments(["--trusted-internal-desktop", "--host", "0.0.0.0"]), /allow-unauthenticated-public/u);
 });
 
 test("local desktop gateway requires loopback, exact Origin and credential-free URL", async context => {
@@ -74,6 +82,37 @@ test("local desktop gateway requires loopback, exact Origin and credential-free 
   await new Promise(resolve => socket.once("close", resolve));
   assert.equal(accepted, 1);
   assert.equal((await fetch(`${origin}/desktop/connect`)).status, 426);
+});
+
+test("trusted-internal desktop is explicit and still requires same-origin, credential-free viewing", async context => {
+  const root = await mkdtemp(join(tmpdir(), "opencraft-internal-desktop-gateway-"));
+  context.after(() => rm(root, { recursive: true, force: true }));
+  await writeFile(join(root, "index.html"), "<!doctype html>");
+  let accepted = 0;
+  const desktopService = { accept(socket) { accepted++; setImmediate(() => socket.close()); } };
+  await assert.rejects(createWorkbenchWebServer({ root, desktopService, desktopAccess: "public" }), /Invalid desktop access/u);
+  await assert.rejects(startHeadlessServer({ desktopAccess: "trusted-internal" }), /requires local desktop/u);
+  await assert.rejects(startHeadlessServer({ localDesktop: true, desktopAccess: "public" }), /Invalid desktop access/u);
+  const web = await createWorkbenchWebServer({ root, appServerTarget: null, desktopService, desktopAccess: "trusted-internal" });
+  context.after(() => web.close());
+  const address = await web.listen({ host: "0.0.0.0", port: 0 });
+  const endpoint = `ws://127.0.0.1:${address.port}/desktop/connect`;
+  const headers = { Host: "workspace.internal" };
+  const connect = (url, options = {}) => new Promise((resolve, reject) => {
+    const socket = new WebSocket(url, { handshakeTimeout: 2000, ...options });
+    socket.once("error", reject); socket.once("open", () => resolve(socket));
+  });
+  for (const origin of [undefined, "null", "https://foreign.internal", "https://workspace.internal/extra", "https://workspace.internal:444"]) {
+    await assert.rejects(connect(endpoint, { headers, ...(origin ? { origin } : {}) }), /403/u);
+  }
+  await assert.rejects(connect(`${endpoint}?ticket=never-in-url`, { headers, origin: "https://workspace.internal" }));
+  await assert.rejects(connect(endpoint, { headers: { ...headers, "x-forwarded-host": "foreign.internal" }, origin: "https://foreign.internal" }), /403/u);
+  assert.equal(accepted, 0);
+  for (const origin of ["http://workspace.internal", "https://workspace.internal"]) {
+    const socket = await connect(endpoint, { headers, origin });
+    await new Promise(resolve => socket.once("close", resolve));
+  }
+  assert.equal(accepted, 2, "HTTP and TLS-terminated same-origin pages can view, not cross-site pages");
 });
 
 test("SSH Servers are private backend bindings, never an anonymous public feature", async () => {

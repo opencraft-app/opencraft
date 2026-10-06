@@ -51,8 +51,63 @@ try {
       const style = getComputedStyle(element); return { width: style.borderTopWidth, style: style.borderTopStyle, color: style.borderTopColor };
     });
     assert.equal(outline.width, "1px"); assert.equal(outline.style, "solid"); assert.notEqual(outline.color, "rgba(0, 0, 0, 0)");
-    const ring = await page.locator(".ui-progress-ring").evaluate(element => getComputedStyle(element).animationName);
-    assert.equal(ring, theme === "light" ? "ui-progress-rotate" : "none");
+    const progress = page.locator(".cloud-desktop-panel .ui-progress-indicator");
+    const motion = await progress.evaluate(element => {
+      const style = getComputedStyle(element);
+      return { name: style.animationName, duration: style.animationDuration,
+        easing: style.animationTimingFunction, width: style.width, height: style.height };
+    });
+    assert.equal(motion.name, theme === "light" ? "ui-progress-rotate" : "none");
+    assert.equal(motion.width, "24px"); assert.equal(motion.height, "24px");
+    assert.deepEqual(await progress.locator("svg").evaluate(element => {
+      const style = getComputedStyle(element); return { width: style.width, height: style.height };
+    }), { width: "24px", height: "24px" }, "empty-state glyph sizing cannot enlarge a nested progress vector");
+    assert.equal(await progress.evaluate(element => getComputedStyle(element).color),
+      await page.locator(".cloud-desktop-panel__feedback").evaluate(element => getComputedStyle(element).color));
+    assert.equal(await progress.locator("circle").getAttribute("opacity"), "0.3");
+    let frameSamples: { time: number; matrix: string }[] = [];
+    if (theme === "light") {
+      assert.equal(motion.duration, "2s"); assert.equal(motion.easing, "steps(60)");
+      // Deliberately mount later: all indicators must use the same clock phase.
+      await page.waitForTimeout(120);
+      await page.evaluate(() => (window as any).__desktopUi.mountProgressProbe());
+      await page.waitForFunction(() => {
+        const elements = [...document.querySelectorAll(".ui-progress-indicator")];
+        return elements.length === 2 && elements.every(element => element.getAnimations()[0]?.startTime === 0);
+      });
+      const frames = await progress.evaluate(element => {
+        // Sample the real CSS keyframes on the real DOM, without turning the
+        // stylesheet-owned animation into a script-controlled persistent one.
+        const effect = element.getAnimations()[0]!.effect as KeyframeEffect;
+        const animation = new Animation(new KeyframeEffect(element, effect.getKeyframes(), effect.getTiming()), document.timeline);
+        animation.pause();
+        try {
+          return [0, 16, 34, 1000, 1999].map(time => {
+            animation.currentTime = time;
+            return { time, matrix: getComputedStyle(element).transform };
+          });
+        } finally { animation.cancel(); }
+      });
+      frameSamples = frames;
+      assert.equal(frames[0].matrix, frames[1].matrix, "steps must hold a frame, not interpolate");
+      assert.notEqual(frames[1].matrix, frames[2].matrix);
+      assert.equal(frames[3].matrix, "matrix(-1, 0, 0, -1, 0, 0)", "half-cycle is exactly a half-turn");
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.waitForFunction(() => [...document.querySelectorAll(".ui-progress-indicator")]
+        .every(element => getComputedStyle(element).animationName === "none" && element.getAnimations().length === 0));
+      assert.equal(await progress.evaluate(element => element.getAnimations().length), 0);
+      assert.equal(await progress.evaluate(element => getComputedStyle(element).transform), "none");
+      await page.emulateMedia({ reducedMotion: "no-preference" });
+      await page.waitForFunction(() => [...document.querySelectorAll(".ui-progress-indicator")]
+        .every(element => element.getAnimations()[0]?.startTime === 0));
+    }
+    const disabledFeedback = await page.getByRole("button", { name: "Take control", exact: true }).evaluate(element => {
+      const style = getComputedStyle(element);
+      return { opacity: style.opacity, property: style.transitionProperty, transform: style.transform };
+    });
+    // Global reduced-motion CSS shortens duration to 0.01ms. The meaningful
+    // invariant is no transitioned property, regardless of that fallback.
+    assert.deepEqual(disabledFeedback, { opacity: "0.4", property: "none", transform: "none" });
     const buttonStyle = await page.getByRole("button", { name: "Take control", exact: true }).evaluate(element => {
       const style = getComputedStyle(element); return { size: style.fontSize, line: style.lineHeight,
         weight: style.fontWeight, radius: style.borderRadius, height: element.getBoundingClientRect().height };
@@ -71,19 +126,57 @@ try {
         `compact density must override ${size} size`);
     }
     await page.getByRole("button", { name: "Take control", exact: true }).evaluate(element => delete (element as HTMLElement).dataset.size);
+    await page.screenshot({ path: join(directory, `${theme}-${width}-connecting.png`) });
+    await page.evaluate(() => (window as any).__desktopUi.ready());
+    await page.locator('[data-phase="ready"]').waitFor();
     if (width === 320) {
       const pasteBounds = await page.getByRole("button", { name: "Paste", exact: true }).boundingBox();
       assert.ok(pasteBounds && pasteBounds.width >= 44 && pasteBounds.height >= 44,
         "icon-only touch actions also need a two-dimensional 44px hit target");
     }
-    await page.screenshot({ path: join(directory, `${theme}-${width}-connecting.png`) });
-    await page.evaluate(() => (window as any).__desktopUi.ready());
-    await page.locator('[data-phase="ready"]').waitFor();
     const surfaceBefore = await page.locator(".cloud-desktop-panel__surface").boundingBox();
     const toolbarBefore = await page.locator(".cloud-desktop-panel__toolbar").boundingBox();
-    await activate(page.getByRole("button", { name: "Take control", exact: true }));
+    const controlBounds = await page.getByRole("button", { name: "Take control", exact: true }).boundingBox();
+    const pasteBefore = await page.getByRole("button", { name: "Paste", exact: true }).boundingBox();
+    const takeAction = page.getByRole("button", { name: "Take control", exact: true });
+    const expectedColors = await takeAction.evaluate(element => {
+      const probe = document.createElement("span"); element.append(probe);
+      probe.style.transition = "none";
+      probe.style.backgroundColor = "var(--color-background-button-secondary)";
+      const base = getComputedStyle(probe).backgroundColor;
+      probe.style.backgroundColor = "var(--color-background-button-secondary-hover)";
+      const hover = getComputedStyle(probe).backgroundColor;
+      const rawHover = getComputedStyle(element).getPropertyValue("--color-background-button-secondary-hover");
+      probe.remove(); return { base, hover, rawHover };
+    });
+    // Sample a real held press, not just its post-click state. No scaling or
+    // delayed visual feedback may move the action or the media viewport.
+    const center = { x: controlBounds!.x + controlBounds!.width / 2, y: controlBounds!.y + controlBounds!.height / 2 };
+    const touchSession = width === 320 ? await page.context().newCDPSession(page) : null;
+    if (touchSession) await touchSession.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [center] });
+    else { await page.mouse.move(center.x, center.y); await page.mouse.down(); }
+    const heldStyle = await takeAction.evaluate(element => {
+      const style = getComputedStyle(element); return { background: style.backgroundColor,
+        property: style.transitionProperty, transform: style.transform };
+    });
+    assert.deepEqual(heldStyle, { background: width === 320 ? expectedColors.base : expectedColors.hover,
+      property: "none", transform: "none" }, JSON.stringify({ theme, width, expectedColors, modality: await page.evaluate(() => ({
+        touch: document.documentElement.dataset.touchInteraction,
+        hover: matchMedia("(any-hover: hover)").matches,
+        coarse: matchMedia("(any-pointer: coarse)").matches,
+        focused: document.activeElement?.tagName,
+      })) }));
+    assert.deepEqual(await takeAction.boundingBox(), controlBounds);
+    assert.deepEqual(await page.locator(".cloud-desktop-panel__surface").boundingBox(), surfaceBefore);
+    if (touchSession) {
+      await touchSession.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      // Keep this fixture-page session until page.close: detaching CDP can
+      // reset Chromium's coarse-pointer emulation mid-geometry assertion.
+    } else await page.mouse.up();
     const cancel = page.getByRole("button", { name: "Cancel", exact: true }); await cancel.waitFor();
     assert.equal(await cancel.locator(".ui-button__label").evaluate(element => getComputedStyle(element).opacity), "1");
+    assert.deepEqual(await cancel.boundingBox(), controlBounds, "pending cannot move or resize the action");
+    assert.deepEqual(await page.getByRole("button", { name: "Paste", exact: true }).boundingBox(), pasteBefore);
     assert.deepEqual(await page.locator(".cloud-desktop-panel__surface").boundingBox(), surfaceBefore,
       "pending control cannot move the desktop");
     await activate(cancel);
@@ -94,6 +187,45 @@ try {
     assert.equal(await page.evaluate(() => document.activeElement?.tagName), "CANVAS");
     assert.deepEqual(await page.locator(".cloud-desktop-panel__toolbar").boundingBox(), toolbarBefore);
     await page.screenshot({ path: join(directory, `${theme}-${width}-ready.png`) });
+    // Complete native activation, not just direct controller/window-blur calls.
+    const requestsBeforeStop = (await page.evaluate(() => (window as any).__desktopUi.counts())).requests;
+    await activate(page.getByRole("button", { name: "Stop controlling", exact: true }));
+    await page.getByRole("button", { name: "Take control", exact: true }).waitFor();
+    assert.equal((await page.evaluate(() => (window as any).__desktopUi.counts())).requests, requestsBeforeStop);
+    await activate(page.getByRole("button", { name: "Take control", exact: true }));
+    await page.evaluate(() => (window as any).__desktopUi.grant());
+    const stop = page.getByRole("button", { name: "Stop controlling", exact: true });
+    await stop.waitFor();
+    await stop.evaluate(element => element.addEventListener("pointerdown", () => {
+      (document.activeElement as HTMLElement)?.blur();
+    }, { once: true }));
+    const requestsBeforeBlur = (await page.evaluate(() => (window as any).__desktopUi.counts())).requests;
+    await activate(stop); // pointerdown → real null focusout → click
+    await page.getByRole("button", { name: "Take control", exact: true }).waitFor();
+    assert.equal((await page.evaluate(() => (window as any).__desktopUi.counts())).requests, requestsBeforeBlur,
+      "a single stop activation must never turn into a fresh control request");
+    assert.deepEqual(await page.locator(".cloud-desktop-panel__surface").boundingBox(), surfaceBefore);
+    for (const key of ["Enter", "Space"]) {
+      const take = page.getByRole("button", { name: "Take control", exact: true });
+      await take.focus(); await page.keyboard.press(key);
+      await page.getByRole("button", { name: "Cancel", exact: true }).waitFor();
+      await page.evaluate(() => (window as any).__desktopUi.grant());
+      const release = page.getByRole("button", { name: "Stop controlling", exact: true });
+      await release.waitFor(); await release.focus(); await page.keyboard.press(key);
+      await take.waitFor();
+      await take.focus(); await page.keyboard.press(key);
+      await page.getByRole("button", { name: "Cancel", exact: true }).waitFor();
+      await page.evaluate(() => (window as any).__desktopUi.grant());
+      await release.waitFor(); await release.focus();
+      await release.evaluate(element => element.addEventListener("keydown", () => (element as HTMLElement).blur(), { once: true }));
+      const beforeKeyBlur = (await page.evaluate(() => (window as any).__desktopUi.counts())).requests;
+      await page.keyboard.press(key); await take.waitFor();
+      assert.equal((await page.evaluate(() => (window as any).__desktopUi.counts())).requests, beforeKeyBlur,
+        "keyboard stop followed by null blur cannot become a take");
+    }
+    await activate(page.getByRole("button", { name: "Take control", exact: true }));
+    await page.evaluate(() => (window as any).__desktopUi.grant());
+    await page.getByRole("button", { name: "Stop controlling", exact: true }).waitFor();
     await page.evaluate(() => window.dispatchEvent(new Event("blur")));
     await page.getByRole("button", { name: "Take control", exact: true }).waitFor();
     await page.evaluate(() => (window as any).__desktopUi.ready(false));
@@ -106,18 +238,37 @@ try {
     await title.waitFor();
     await page.evaluate(() => (window as any).__desktopUi.ready());
     await page.locator('[data-phase="ready"]').waitFor();
+    // Local native control explicitly has no clipboard capability: no dead icon.
+    await page.evaluate(() => (window as any).__desktopUi.ready(true, false));
+    await page.waitForFunction(() => !document.querySelector('button[aria-label="Paste"]'));
+    assert.equal(await page.locator(".cloud-desktop-panel__actions button").count(), 1);
+    await page.screenshot({ path: join(directory, `${theme}-${width}-native-toolbar.png`) });
     const counts = await page.evaluate(() => (window as any).__desktopUi.counts());
     assert.equal(counts.preparations, 2); assert.equal(counts.mounts, 2);
     assert.equal(await page.evaluate(() => (window as any).__surfaceBefore === document.querySelector(".cloud-desktop-panel__surface")), true);
-    await page.evaluate(() => (window as any).__desktopUi.unavailable());
-    await page.getByRole("heading", { name: "Desktop unavailable" }).waitFor();
-    await page.screenshot({ path: join(directory, `${theme}-${width}-unavailable.png`) });
     await page.evaluate(() => (window as any).__desktopUi.locale("zh-CN"));
+    const chineseTake = page.getByRole("button", { name: "接管桌面", exact: true });
+    await chineseTake.waitFor();
+    const chineseBounds = await chineseTake.boundingBox();
+    await activate(chineseTake);
+    const chineseCancel = page.getByRole("button", { name: "取消", exact: true });
+    await chineseCancel.waitFor();
+    assert.deepEqual(await chineseCancel.boundingBox(), chineseBounds);
+    await page.evaluate(() => (window as any).__desktopUi.grant());
+    const chineseStop = page.getByRole("button", { name: "停止控制", exact: true });
+    await chineseStop.waitFor();
+    assert.deepEqual(await chineseStop.boundingBox(), chineseBounds);
+    await page.screenshot({ path: join(directory, `${theme}-${width}-zh-control.png`) });
+    await activate(chineseStop); await chineseTake.waitFor();
+    assert.equal(await page.locator(".cloud-desktop-panel__toolbar [role=status]").textContent(), "已连接");
+    await page.evaluate(() => (window as any).__desktopUi.unavailable());
+    await page.getByRole("heading", { name: "桌面暂不可用" }).waitFor();
+    await page.screenshot({ path: join(directory, `${theme}-${width}-unavailable.png`) });
     await page.getByRole("heading", { name: "桌面暂不可用" }).waitFor();
     await page.screenshot({ path: join(directory, `${theme}-${width}-zh-unavailable.png`) });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
     assert.deepEqual(errors, []);
-    receipts.push({ theme, width, feedbackStyle, counts });
+    receipts.push({ theme, width, feedbackStyle, motion, frameSamples, heldStyle, counts });
     await page.evaluate(() => (window as any).__desktopUi.dispose()); await page.close();
   }
   console.log(JSON.stringify({ passed: true, directory, receipts,

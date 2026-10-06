@@ -33,6 +33,11 @@ test("wire waits for bound ready and sends only binary media to noVNC", t => {
   f.socket.receive(media); assert.deepEqual(messages, [media]);
   assert.equal(f.session.control!.isAvailable(), false);
 });
+test("wire advertises absent clipboard execution independently from mouse/keyboard control", t => {
+  const f = fixture(); t.after(() => f.session.close());
+  f.socket.receive({ event: "desktop/ready", version: 1, attachmentId: "viewer", controlAvailable: true, clipboardAvailable: false });
+  assert.equal(f.session.control!.isAvailable(), true); assert.equal(f.session.control!.canPaste!(), false);
+});
 test("control requires remote confirmation and remote revocation invalidates it synchronously", async t => {
   const f = fixture(); t.after(() => f.session.close()); f.ready();
   let confirmed = false;

@@ -108,6 +108,15 @@ test("RFB attachment without a control authority remains observable but cannot c
   assert.equal(connection.getSnapshot().controlAvailable, false);
   await assert.rejects(connection.requestControl(abort.signal)); connection.close();
 });
+test("RFB surface exposes paste only when the native capability really supports clipboard", async () => {
+  const f = fixture(), abort = new AbortController();
+  let clipboard = true; f.session.control!.canPaste = () => clipboard;
+  const connection = await f.adapter.connect(f.session, abort.signal);
+  const surface = f.adapter.surfaces.mount(element, connection); ready(f);
+  assert.equal(typeof surface.pasteText, "function"); clipboard = false;
+  assert.equal(surface.pasteText, undefined); assert.equal(connection.getSnapshot().controlAvailable, true);
+  connection.close();
+});
 
 test("RFB releases late grants after close and does not allow parallel grant requests", async () => {
   const f = fixture(); const pending = deferred<DesktopControlLease>(); const abort = new AbortController();

@@ -7,6 +7,8 @@ import { loadRfbClient, type RfbClient, type RfbClientConstructor } from "./rfb-
  * A missing control port means an observe-only server attachment. */
 export interface DesktopRfbControlPort {
   isAvailable(): boolean;
+  /** Absent retains legacy RFB clipboard support. Explicit false disables paste. */
+  canPaste?(): boolean;
   subscribe(listener: () => void): () => void;
   request(signal: AbortSignal): Promise<DesktopControlLease>;
 }
@@ -120,7 +122,7 @@ class RfbConnection implements DesktopConnection {
       const focus = () => { if (!this.closed && this.snapshot.videoReady) client.focus({ preventScroll: true }); };
       let pasteKey = false;
       const keyDown = (event: KeyboardEvent) => {
-        if (!this.activeInput?.isValid() || !this.pasteHandler || event.key.toLowerCase() !== "v"
+        if (this.session.control?.canPaste?.() === false || !this.activeInput?.isValid() || !this.pasteHandler || event.key.toLowerCase() !== "v"
           || !(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return;
         event.preventDefault(); event.stopImmediatePropagation(); pasteKey = true;
         if (event.repeat) return;
@@ -134,7 +136,7 @@ class RfbConnection implements DesktopConnection {
         }
       };
       const paste = (event: ClipboardEvent) => {
-        if (!this.activeInput?.isValid() || !this.pasteHandler || !event.clipboardData) return;
+        if (this.session.control?.canPaste?.() === false || !this.activeInput?.isValid() || !this.pasteHandler || !event.clipboardData) return;
         event.preventDefault(); event.stopImmediatePropagation();
         const text = event.clipboardData.getData("text/plain");
         this.pasteHandler(async () => text);
@@ -149,9 +151,11 @@ class RfbConnection implements DesktopConnection {
         element.removeEventListener("keyup", keyUp, true);
         element.removeEventListener("paste", paste, true);
       });
+      const connection = this;
       return { enableInput: lease => this.enableInput(lease), disableInput: () => this.disableInput(),
         focus, setPasteHandler: handler => { this.pasteHandler = handler; },
-        pasteText: (text, lease, signal) => this.pasteText(text, lease, signal),
+        get pasteText() { return connection.session.control?.canPaste?.() === false ? undefined
+          : (text: string, lease: DesktopControlLease, signal: AbortSignal) => connection.pasteText(text, lease, signal); },
         dispose: () => this.close() };
     } catch (error) { this.close(); throw error; }
   }

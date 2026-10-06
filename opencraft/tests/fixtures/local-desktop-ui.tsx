@@ -1,3 +1,4 @@
+import "../../apps/workbench-web/src/runtime/web-crypto-compat";
 import React from "react";
 import { createRoot } from "react-dom/client";
 import { LocaleRuntime } from "@opencraft/i18n";

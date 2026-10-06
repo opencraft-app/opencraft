@@ -3,6 +3,7 @@ export type ShellNavigationDetent = "expanded" | "compact" | "hidden";
 export type ShellNavigationVisibleDetent = Exclude<ShellNavigationDetent, "hidden">;
 
 export interface UiPreferenceValues {
+  readonly "voice.inputProvider": "auto" | "system" | "hunyuan";
   readonly "locale.override": string;
   readonly "chat.defaultFollowUpAction": "steer" | "queue";
   readonly "shell.applicationsPinned": boolean;
@@ -32,6 +33,11 @@ const widthValue = (value: unknown): number | null =>
   typeof value === "number" && Number.isFinite(value) ? value : null;
 
 export const uiPreferenceDefinitions = Object.freeze({
+  "voice.inputProvider": {
+    key: "voice.inputProvider", scope: "installation", defaultValue: "auto",
+    parse: (value: unknown): "auto" | "system" | "hunyuan" | null =>
+      value === "auto" || value === "system" || value === "hunyuan" ? value : null,
+  },
   "chat.defaultFollowUpAction": {
     key: "chat.defaultFollowUpAction",
     scope: "installation",

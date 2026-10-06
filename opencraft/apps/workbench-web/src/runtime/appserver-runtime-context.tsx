@@ -1,4 +1,5 @@
 // @refresh reset
+import { useVoiceInputPreference } from "./use-voice-input-preference";
 import {
   preflightHostConnection,
   type ConversationTerminalToolHost,
@@ -1114,7 +1115,7 @@ export async function createWebWorkbenchApplicationSupervisor(
         await import("@opencraft/plugin-voice-input/runtime-entry")
       ).default;
       signal?.throwIfAborted();
-      return createVoiceInputExtension();
+      return createVoiceInputExtension(undefined, platform === "web" ? { webSpeech: { usePreferences: useVoiceInputPreference } } : {});
     });
     if (import.meta.env.VITE_INCLUDE_BUILTIN_AGENTS_PLUGIN === "true") {
       await extensions.loadOptional("vela.builtin-agents", async () => {

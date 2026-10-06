@@ -4,6 +4,8 @@ import type WebSocket from "ws";
 import type { RawData } from "ws";
 import type { HostDesktopCredential, HostDesktopCapability } from "@opencraft/appserver-protocol/desktop";
 import type { NativeObserver } from "./native-observer.js";
+import type { NativeDesktopControl, NativeControlLease } from "./native-control.js";
+import { RfbInputDecoder } from "./rfb-input-decoder.js";
 
 export interface LocalDesktopThread {
   readonly id: string;
@@ -28,6 +30,8 @@ interface Attachment {
   claimed: boolean;
   socket?: Socket;
   viewer?: WebSocket;
+  control?: { readonly id: string; readonly abort: AbortController; confirmed: boolean; lease?: NativeControlLease };
+  readonly requests?: Set<string>;
 }
 const unavailable = () => new Error("Desktop is unavailable");
 const hash = (value: string) => createHash("sha256").update(value).digest();
@@ -38,26 +42,31 @@ const bytes = (data: RawData): Buffer => Array.isArray(data) ? Buffer.concat(dat
 
 /** One backend owner for local bindings and viewers. Registration is backend
  * configuration, not browser IDs. This service is exposed only on an explicitly
- * loopback-only Host; it is not Vela auth or a public multi-tenant authority. */
+ * loopback or trusted-internal Host; it is not Vela auth or a public multi-tenant authority. */
 export class LocalDesktopService {
   private readonly attachments = new Map<string, Attachment>();
   private readonly preparing = new Map<string, number>();
   private readonly pending = new Set<WebSocket>();
   private readonly generation = randomUUID();
   private closed = false;
+  private controller?: Attachment;
   constructor(private readonly registration: {
     readonly serverId: string;
     readonly environmentId: string;
     readonly principalId: string;
     readonly observer: NativeObserver;
+    readonly control?: NativeDesktopControl;
+    readonly transport?: HostDesktopCapability["transport"];
   }) {
     if (![registration.serverId, registration.environmentId, registration.principalId].every(validId)) throw unavailable();
+    if (registration.transport !== undefined && registration.transport !== "same-origin-loopback"
+      && registration.transport !== "same-origin-trusted-internal") throw unavailable();
     this.registration = Object.freeze({ ...registration });
   }
 
   /** Discovery identifies the backend namespace; it is not a Thread grant. */
   capability(): HostDesktopCapability {
-    return Object.freeze({ version: 1, observe: true, control: false, transport: "same-origin-loopback",
+    return Object.freeze({ version: 1, observe: true, control: !!this.registration.control, transport: this.registration.transport ?? "same-origin-loopback",
       serverId: this.registration.serverId, environmentId: this.registration.environmentId, principalId: this.registration.principalId });
   }
 
@@ -101,7 +110,7 @@ export class LocalDesktopService {
         attachmentId: id, ticket, expiresAt: Date.now() + 300_000 });
       const { ticket: _ticket, ...metadata } = credential;
       const item: Attachment = { credential: metadata, owner, threadRevision: revision, ticketHash: hash(ticket),
-        abort: new AbortController(), claimBefore: Date.now() + 30_000, claimed: false,
+        abort: new AbortController(), claimBefore: Date.now() + 30_000, claimed: false, requests: new Set(),
         timer: setTimeout(() => this.release(owner.key, id), 30_000) };
       item.timer.unref(); this.attachments.set(id, item);
       return credential;
@@ -115,6 +124,7 @@ export class LocalDesktopService {
     const item = this.attachments.get(id);
     if (!item || item.owner.key !== ownerKey) return;
     this.attachments.delete(id); clearTimeout(item.timer); item.abort.abort();
+    this.releaseControl(item);
     item.socket?.destroy(); item.viewer?.terminate(); item.ticketHash.fill(0);
   }
   revoke(ownerKey: string): void {
@@ -124,6 +134,46 @@ export class LocalDesktopService {
     if (this.closed) return; this.closed = true;
     for (const [id, item] of this.attachments) this.release(item.owner.key, id);
     for (const socket of this.pending) socket.terminate(); this.pending.clear();
+  }
+
+  private releaseControl(item: Attachment, id?: string): void {
+    const control = item.control;
+    if (!control || id !== undefined && control.id !== id) return;
+    item.control = undefined;
+    if (this.controller === item) this.controller = undefined;
+    control.abort.abort(); control.lease?.release();
+  }
+
+  private async requestControl(item: Attachment, id: string): Promise<void> {
+    const send = (event: string) => {
+      try {
+        if (!item.abort.signal.aborted && item.viewer?.readyState === 1) item.viewer.send(JSON.stringify({ event, requestId: id }));
+      } catch { this.release(item.owner.key, item.credential.attachmentId); }
+    };
+    if (!this.registration.control || this.controller || item.requests!.has(id) || item.requests!.size >= 256) {
+      send("control/denied"); return;
+    }
+    item.requests!.add(id);
+    const intent = { id, abort: new AbortController(), confirmed: false, lease: undefined as NativeControlLease | undefined };
+    item.control = intent; this.controller = item; // Reserve BEFORE asynchronous preparation.
+    const signal = AbortSignal.any([intent.abort.signal, item.abort.signal]);
+    const preparationTimeout = setTimeout(() => intent.abort.abort(), 5000); preparationTimeout.unref();
+    try {
+      if (await this.revision(item.owner, item.credential.target.conversationId, signal) !== item.threadRevision) throw unavailable();
+      const lease = await this.registration.control.acquire(item.credential.incarnation, signal);
+      // The acquisition timeout only fences preparation, not the lease lifetime.
+      intent.lease = lease;
+      if (signal.aborted || item.control !== intent || !lease.isValid()
+        || await this.revision(item.owner, item.credential.target.conversationId, signal) !== item.threadRevision) throw unavailable();
+      lease.subscribeRevoked(() => {
+        if (item.control !== intent) return;
+        this.releaseControl(item, id); send("control/release");
+      });
+      if (item.control !== intent || !lease.isValid()) throw unavailable();
+      intent.confirmed = true;
+      send("control/locked");
+    } catch { if (item.control === intent) this.releaseControl(item, id); else intent.lease?.release(); send("control/denied"); }
+    finally { clearTimeout(preparationTimeout); }
   }
 
   /** Caller must enforce exact same Origin and loopback before upgrading. */
@@ -170,7 +220,9 @@ export class LocalDesktopService {
         item.abort.signal.addEventListener("abort", done, { once: true });
         return done;
       };
-      viewer.send(JSON.stringify({ event: "desktop/ready", version: 1, attachmentId: item.credential.attachmentId, controlAvailable: false }));
+      const decoder = this.registration.control ? new RfbInputDecoder(() => item.control?.confirmed ? item.control.lease : undefined) : undefined;
+      viewer.send(JSON.stringify({ event: "desktop/ready", version: 1, attachmentId: item.credential.attachmentId,
+        controlAvailable: !!this.registration.control, clipboardAvailable: false }));
       stream.on("data", (chunk: Buffer) => {
         stream.pause();
         if (chunk.length > 1 << 20 || viewer.bufferedAmount > 1 << 20) { this.release(item.owner.key, item.credential.attachmentId); return; }
@@ -183,7 +235,20 @@ export class LocalDesktopService {
       });
       viewer.on("message", (data, isBinary) => {
         const chunk = bytes(data);
-        if (!isBinary || chunk.length > 1 << 20 || item.abort.signal.aborted) { this.release(item.owner.key, item.credential.attachmentId); return; }
+        if (chunk.length > 1 << 20 || item.abort.signal.aborted) { this.release(item.owner.key, item.credential.attachmentId); return; }
+        try {
+          if (!isBinary) {
+            if (chunk.length > 4096) throw unavailable();
+            const message = JSON.parse(chunk.toString("utf8"));
+            if (!message || Object.keys(message).length !== 2 || typeof message.requestId !== "string"
+              || !/^[1-9][0-9]{0,15}$/.test(message.requestId)) throw unavailable();
+            if (message.event === "control/request") void this.requestControl(item, message.requestId);
+            else if (message.event === "control/release") this.releaseControl(item, message.requestId);
+            else throw unavailable();
+            return;
+          }
+          decoder?.push(chunk);
+        } catch { this.release(item.owner.key, item.credential.attachmentId); return; }
         if (!stream.write(chunk)) {
           viewer.pause(); const finish = stall();
           stream.once("drain", () => { finish(); if (!item.abort.signal.aborted) viewer.resume(); });

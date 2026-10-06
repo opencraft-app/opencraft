@@ -1,4 +1,5 @@
 @use "./typography.web" as typography;
+@use "./controls.web" as controls;
 
 // Compact secondary actions belong to the design system, not desktop CSS.
 @mixin compact-action {
@@ -7,18 +8,30 @@
   min-height: 24px;
   padding: 2px 8px;
   border-radius: 999px;
-  &[data-variant="outline"] { background: var(--color-background-button-secondary); }
+  // The reference outline action changes state immediately, without a tween.
+  transition: none;
+  &:disabled { opacity: var(--opacity-control-compact-disabled); }
+  &[data-variant="outline"] {
+    background: var(--color-background-button-secondary);
+    @include controls.hover-capable {
+      &:hover:not(:disabled) { background: var(--color-background-button-secondary-hover); }
+    }
+    &[data-state="open"] { background: var(--color-background-button-secondary-hover); }
+  }
   @media (any-pointer: coarse) { min-width: 44px; min-height: 44px; }
 }
 
-.ui-progress-ring {
-  display: inline-block;
+.ui-progress-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 24px;
   height: 24px;
-  box-sizing: border-box;
-  border: 2px solid currentColor;
-  border-right-color: transparent;
-  border-radius: 50%;
-  @media (prefers-reduced-motion: no-preference) { animation: ui-progress-rotate 800ms linear infinite; }
+  line-height: 0;
+  contain: layout paint style;
+  > svg { display: block; flex: 0 0 auto; }
+  @media (prefers-reduced-motion: no-preference) {
+    animation: ui-progress-rotate var(--duration-progress-cycle) var(--timing-progress-cycle) infinite;
+  }
 }
 @keyframes ui-progress-rotate { to { transform: rotate(1turn); } }

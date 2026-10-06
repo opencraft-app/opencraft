@@ -28,7 +28,7 @@
 
 | ID | 不变量 | 责任/验证 |
 |---|---|---|
-| WSP-36 | 云桌面标签属于 Conversation；短期观看连接属于已挂载视图；远端桌面与独占输入授权属于后端。未接通真实适配器不发布入口；观看默认无输入，两项就绪与有效授权缺一不可，握手不能冒充首帧；关闭、换账户、取消后迟到结果只释放，不复活连接，也不停止 Agent。自动恢复仅限 adapter 声明安全的新观看授权与已分类的传输中断，有限退避，不继承控制权、不重放资源创建。连接/错误空态只是反馈投影，不能替换媒体宿主；申请期间取消仍可用，确认后才呈现控制态和聚焦画面；剪贴板只由显式手势读取、按原 grant 失效、先发送文本再发送粘贴按键；空态、进度和紧凑控件尺度由设计系统拥有 | cloud-desktop plugin / DesktopViewController；模型、真实 React 和主题/窄屏浏览器验证；本机真实媒体/授权已验收，公网授权、原生控制与手机实机/弱网待验收 |
+| WSP-36 | 云桌面标签属于 Conversation；短期观看连接属于已挂载视图；远端桌面与独占输入授权属于后端。未接通真实适配器不发布入口；观看默认无输入，两项就绪与有效授权缺一不可，握手不能冒充首帧；关闭、换账户、取消后迟到结果只释放，不复活连接，也不停止 Agent。自动恢复仅限 adapter 声明安全的新观看授权与已分类的传输中断，有限退避，不继承控制权、不重放资源创建。连接/错误空态只是反馈投影，不能替换媒体宿主；申请期间取消仍可用，确认后才呈现控制态和聚焦画面。View 捕获一次原生激活的固定动作，controller 按连接/控制意图代次消费一次；停止按下后失焦不能把随后 click 翻成接管，旧动作不能撤销后继授权。失焦立即释放，不补发 pointerup 点击、不延时撤销；剪贴板只由显式手势读取、按原 grant 失效、先发送文本再发送粘贴按键；物理能力与当前输入授权分开，不支持粘贴不画无效入口。空态、进度和紧凑控件尺度由设计系统拥有，短状态及本征操作槽位保持相邻几何稳定 | cloud-desktop plugin / DesktopViewController；模型、真实 React 和主题/窄屏浏览器验证；本机媒体/授权与前序原生输入已验收，本轮完整按钮使用合成授权/媒体边界，公网授权和手机实机/弱网未验收 |
 | WSP-01 | 同一主会话只有一个可交互主 Composer；普通/工具展开分支互斥，Side Chat 不叠加父输入 | ThreadComposerPresentation；Web smoke |
 | WSP-02 | 显示位置不改变草稿/附件/提交目标；Host 相同裸 threadId 不得碰撞 | composer-core + ConversationScope；既有 composer/binding 测试及新 smoke |
 | WSP-03 | 兼容恢复旧标签时不调用关闭资源；MRU/active 有效 | panel reducer/service；workbench-workspace-presentation.test.ts |
@@ -93,6 +93,8 @@ WSP-32 远端目录补充：目录选择与持久 Project 记录是独立能力�
 
 WSP-36 焦点视觉补充：普通焦点颜色独立于品牌 accent，使用共享中性 token；旧 focus-ring 别名投影同一颜色。全局兜底的整个选择器为零优先级，组件自己拥有焦点呈现，不能被兜底重画外框。Composer 编辑区只保留光标/选区，不画外框；键盘按钮仍有可见中性提示，强制颜色模式尊重系统配色。真实 Composer 的鼠标点击、Tab、触摸以及无局部样式按钮的 fallback 必须同时验收，不能仅凭源码中的 `outline: none` 判定成功。
 
+桌面面板 motion：共享 Design System 拥有加载矢量、两秒60步旋转与 Document timeline 同相；减少动态效果只撤销旋转，不改反馈盒几何。紧凑 outline 按钮状态即时投影主题色，不新增缩放或文字/连接遮罩淡入；触屏保留44px命中区且不粘 hover。插件只投影状态，不在动画结束后确认授权或撤销控制。真实组件验收包括分离挂载的相位、采样中间帧、按住反馈、减少动态效果和接管/停止几何；不把源码参考称为 Mac/iPhone 逐帧等同。
+
 WSP-29/30 所有权补充：Renderer 的 capability 声明接受与 Engine 挂载 ready 分开。执行准备与替换共用 Host Thread 队列，停止/审批回复/队列删除不等待工具准备；owner 先撤销后清理，迟到提交失效；首次 native setup 挂载失败不发布新会话，已有历史不参与回滚。Bridge 仅透传允许列表错误码，不以截断字符串代替脱敏。
 
 ## 听写输入所有权
@@ -100,10 +102,12 @@ WSP-29/30 所有权补充：Renderer 的 capability 声明接受与 Engine 挂�
 - DIC-01：听写Footer由当前Composer瞬时输入事务拥有；切换草稿、清空、物理View替换或卸载同时释放文本与呈现。旧事务不能更新新Footer。
 - DIC-02：普通与听写操作互斥；普通内容保持挂载但inert/aria-hidden，不重建编辑器。Composer拥有区域几何、主题控件和提交编译，插件只提供状态/采样/完成动作。
 - DIC-03：停止只写入；Enter/确认发送必须等最终文本，并核对同一草稿与View。取消、失败或失去归属不能迟到发送；重复停止复用同一完成事务。
-- DIC-04：客户端原生层唯一拥有物理录音，renderer只接收有界数值音量采样；波形不发布草稿snapshot、不二次录音，没有采样时不伪造声音。
+- DIC-04：平台录音适配器唯一拥有物理录音；Mac Main拥有原生录音，Web浏览器适配器拥有MediaStream，波形只消费有界数值采样。波形不发布草稿snapshot、不二次录音，没有采样时不伪造声音。
 - DIC-05：单击与150ms长按分开；长按释放完成听写，合成click不能再次开始；Escape取消。真实权限/识别与合成UI验收分别报告。
 - DIC-06：听写session与识别task/片段不是同一对象。真实task ID/sequence隔离final账本，片段确认不能终止Capture；用户stop后完整收尾才交付一次。录音保留原草稿/选区且只读，partial不参与编辑或提交；失败/取消不得自动写入部分结果。Browser result index是实际身份，不以文本长度/公共前缀猜分段。
 - DIC-07：dictation追加文末并同步确认真实View已应用；泛用输入默认selection。原Draft/View/contentEpoch在写入前后须一致，replace-content/目标重置/View交接令旧lease失效；false/commit-rejected禁止自动发送，不用文字非空伪装成功。
+- DIC-08：Web云听写的录音、转写attempt和草稿写入分属平台、应用服务、Composer。后端验证真实WAV字节和时长；凭据不进入Renderer，所选SSH/Agent Host不拥有语音输入。捕获结束后释放麦克风，完成/取消/失去所有权/过期释放临时音频。
+- DIC-09：转写失败使旧发送意图失效；显式重试复用原音频、创建新attempt，不重启麦克风、不延续旧发送。重试/失败反馈使用原Footer槽位，仍受原Draft/View/contentEpoch约束。暂停等待上游不等于云端取消或退款。
 
 本次证据与恢复源码边界见 [听写整改计划](dictation-interaction/task_plan.md)。
 

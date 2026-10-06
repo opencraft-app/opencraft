@@ -65,6 +65,72 @@ function fixture(timeoutMs = 120_000) {
   };
 }
 
+test("control activations are single-use fixed actions and cannot affect a successor intent", async () => {
+  const f = fixture();
+  try {
+    f.controller.start(); await flush(); f.setState({ videoReady: true, inputReady: true });
+    const take = f.controller.prepareControlAction("take");
+    take(); take(); await flush();
+    assert.equal(f.calls.filter(call => call === "control:request").length, 1);
+    const stop = f.controller.prepareControlAction("stop");
+    f.controller.releaseControl(); // A null focusout can retire input before click.
+    stop();
+    assert.equal(f.controller.getSnapshot().control, "observing");
+    assert.equal(f.calls.filter(call => call === "control:request").length, 1);
+    const withdrawnTake = f.controller.prepareControlAction("take");
+    f.setState({ controlAvailable: false }); f.setState({ controlAvailable: true });
+    withdrawnTake();
+    assert.equal(f.controller.getSnapshot().control, "observing", "restored readiness cannot revive an old take press");
+    const pending = deferred<DesktopControlLease>();
+    f.connection.requestControl = () => pending.promise;
+    const newRequest = f.controller.requestControl();
+    const cancel = f.controller.prepareControlAction("stop");
+    stop(); // The old stop cannot cancel a later explicit take.
+    assert.equal(f.controller.getSnapshot().control, "requesting");
+    const freshLease = { ...f.lease, isValid: () => true };
+    pending.resolve(freshLease); await newRequest;
+    assert.equal(f.controller.getSnapshot().control, "controlling");
+    cancel(); // A grant confirmation does not replace the original intent.
+    assert.equal(f.controller.getSnapshot().control, "observing");
+    const oldTake = f.controller.prepareControlAction("take");
+    f.setState({ ended: true }); f.controller.retry(); await flush();
+    oldTake();
+    assert.equal(f.controller.getSnapshot().control, "observing", "connection replacement fences old presses");
+  } finally { f.controller.dispose(); }
+});
+
+test("revocation retires a held stop before a successor control grant", async () => {
+  const f = fixture();
+  try {
+    f.controller.start(); await flush(); f.setState({ videoReady: true, inputReady: true });
+    await f.controller.requestControl();
+    const stop = f.controller.prepareControlAction("stop");
+    f.revoke();
+    f.connection.requestControl = async () => ({ ...f.lease, isValid: () => true });
+    await f.controller.requestControl(); stop();
+    assert.equal(f.controller.getSnapshot().control, "controlling");
+  } finally { f.controller.dispose(); }
+});
+
+test("paste availability is a surface capability, not an exclusive control state", async () => {
+  for (const supported of [true, false]) {
+    const f = fixture();
+    const controller = new DesktopViewController(f.backend, { mount() {
+      const surface = f.surfaces.mount();
+      return { ...surface, pasteText: supported ? surface.pasteText : undefined };
+    } }, "thread:a", {} as HTMLElement);
+    try {
+      controller.start(); await flush(); f.setState({ videoReady: true, inputReady: true });
+      assert.equal(controller.getSnapshot().pasteAvailable, supported);
+      assert.equal(Boolean(controller.getSnapshot().canPaste), false);
+      await controller.requestControl();
+      assert.equal(controller.getSnapshot().canPaste, supported);
+      controller.releaseControl();
+      assert.equal(controller.getSnapshot().pasteAvailable, supported);
+    } finally { controller.dispose(); }
+  }
+});
+
 test("first-frame timeout retains its stage and emits only safe diagnostic fields", async t => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const f = fixture(20);
@@ -426,7 +492,7 @@ test("real panel component mounts observe-only, releases on blur, and cleans up 
     assert.equal(button.getAttribute("aria-pressed"), "false");
     assert.equal(dom.window.document.querySelector(".cloud-desktop-panel__toolbar")!.getAttribute("aria-busy"), "true");
     assert.equal(button.getAttribute("aria-busy"), null, "Cancel remains a visible, actionable button, not a busy mutation button");
-    assert.equal(button.textContent, "Cancel");
+    assert.equal(button.querySelector('[data-current="true"]')!.textContent, "Cancel");
     assert.equal(f.calls.includes("input:enable"), false);
     await act(async () => { grant.resolve(f.lease); await flush(); });
     assert.equal(button.getAttribute("aria-pressed"), "true");
@@ -437,8 +503,56 @@ test("real panel component mounts observe-only, releases on blur, and cleans up 
       (dom.window.document.querySelector(".cloud-desktop-panel__surface") as HTMLElement).focus();
     });
     assert.equal(button.getAttribute("aria-pressed"), "true", "toolbar to media focus stays in the desktop owner");
+    await act(async () => {
+      const down = new dom.window.MouseEvent("pointerdown", { bubbles: true, button: 0 });
+      Object.defineProperties(down, { pointerId: { value: 1 }, isPrimary: { value: true } });
+      button.dispatchEvent(down);
+      (surface as HTMLElement).blur();
+    });
+    assert.equal(button.getAttribute("aria-pressed"), "false");
+    await act(async () => { button.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true, detail: 1 })); await flush(); });
+    assert.equal(button.getAttribute("aria-pressed"), "false", "a held stop cannot flip into take after null blur");
+    assert.equal(dom.window.document.querySelector(".cloud-desktop-panel__toolbar")!.getAttribute("aria-busy"), "false");
+    // Independent accessibility click still starts a new request.
+    const freshGrant = deferred<DesktopControlLease>();
+    f.connection.requestControl = () => freshGrant.promise;
+    await act(async () => { button.click(); await flush(); });
+    assert.equal(button.querySelector('[data-current="true"]')!.textContent, "Cancel");
+    await act(async () => {
+      button.dispatchEvent(new dom.window.KeyboardEvent("keydown", { bubbles: true, key: " " }));
+      freshGrant.resolve({ ...f.lease, isValid: () => true }); await flush();
+    });
+    assert.equal(button.getAttribute("aria-pressed"), "true");
+    await act(async () => { button.click(); await flush(); });
+    assert.equal(button.getAttribute("aria-pressed"), "false", "Space cancel keeps its action across grant confirmation");
     await act(async () => { dom.window.dispatchEvent(new dom.window.Event("blur")); });
     assert.equal(button.getAttribute("aria-pressed"), "false");
+    const pointer = (name: string, target: Element = button) => {
+      const event = new dom.window.MouseEvent(name, { bubbles: true, button: 0 });
+      Object.defineProperties(event, { pointerId: { value: 2 }, isPrimary: { value: true } });
+      target.dispatchEvent(event);
+    };
+    for (const cancel of ["pointercancel", "outside", "window-blur"]) {
+      await act(async () => {
+        pointer("pointerdown");
+        if (cancel === "outside") pointer("pointerup", dom.window.document.body);
+        else if (cancel === "pointercancel") pointer("pointercancel");
+        else dom.window.dispatchEvent(new dom.window.Event("blur"));
+        button.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true, detail: 1 }));
+        await flush();
+      });
+      assert.equal(dom.window.document.querySelector(".cloud-desktop-panel__toolbar")!.getAttribute("aria-busy"), "false",
+        `${cancel} retires the held take activation, not just its control grant`);
+    }
+    await act(async () => {
+      button.dispatchEvent(new dom.window.KeyboardEvent("keydown", { bubbles: true, key: "Enter" }));
+      const repeat = new dom.window.KeyboardEvent("keydown", { bubbles: true, cancelable: true, key: "Enter", repeat: true });
+      button.dispatchEvent(repeat);
+      assert.equal(repeat.defaultPrevented, true, "held Enter cannot alternate take and stop");
+      dom.window.dispatchEvent(new dom.window.Event("blur"));
+      button.click(); await flush();
+    });
+    assert.equal(dom.window.document.querySelector(".cloud-desktop-panel__toolbar")!.getAttribute("aria-busy"), "false");
     // Logical close revokes before an animated Shell has physically unmounted.
     await act(async () => { runtime.panels.close("panel:a", "right", tab.id); });
     assert.ok(dom.window.document.body.textContent?.includes("not available"));

@@ -310,6 +310,51 @@ rtk proxy shasum -a 256 "$signed_dmg_path" "$signed_zip_path"
 
 ## Linux browser smoke prerequisites
 
+### Trusted internal desktop deployment
+
+For an installation where every network-admitted user is trusted to view this
+machine's desktop, choose `--trusted-internal-desktop` instead of `--local-desktop`.
+Keep the existing `--host 0.0.0.0 --allow-unauthenticated-public` acknowledgement
+for a non-loopback listener. No TAT or separate account service is needed. The
+verified native observer must already be installed/running; legacy interactive
+VNC/noVNC ports need not be started or exposed. A TLS reverse proxy must preserve
+the browser-facing Host and forward `/desktop/connect` WebSocket upgrades.
+Open an existing local Codex conversation, then select Desktop in the right-panel
+toolbar. It is observe-only, and closing it does not stop Agent work or the desktop.
+For mouse/keyboard control, additionally install the root-owned helper/unit from
+`apps/local-agent-host/native/linux/` and explicitly start
+`opencraft-desktop-control.service`, then add `--desktop-control`. The server
+must run as the trusted root backend peer. It fails startup if the verified input
+executor does not match the observer incarnation. The unit opens no TCP listener;
+neither mode requires enabling legacy interactive VNC/noVNC. Users still must
+click Take control, and only one viewer can control the shared machine. Closing
+or leaving releases it; refresh/recovery returns to viewing. Clipboard paste is
+not included in this local input capability.
+
+From the extracted server package, after the verified observation services are
+already installed, the operator can install the optional input service explicitly:
+
+```bash
+sudo install -o root -g root -m 0755 runtime/native-desktop/desktop-control.py /usr/local/libexec/opencraft/desktop-control.py
+sudo install -o root -g root -m 0644 runtime/native-desktop/opencraft-desktop-control.service /etc/systemd/system/opencraft-desktop-control.service
+sudo systemctl daemon-reload
+sudo systemctl start opencraft-desktop-control.service
+```
+
+Updating an already-running input helper requires an explicit service restart;
+that revokes active input. The main OpenCraft service is not restarted by installation.
+Default installations remain hidden. This explicit network-trust mode is not a
+multi-tenant or anonymous Internet deployment; see the
+[authority boundary](cloud-desktop-plugin.md#local-execution-server-authority).
+`OPENCRAFT_DESKTOP_ACCESS=trusted-internal npm run smoke:local-desktop` verifies
+the same real native/Thread chain at a non-loopback browser hostname with
+isolated synthetic inference, including viewing recovery and disabled input.
+It uses the already-running desktop rather than recoloring its root window.
+Explicit Codex/browser tools must exist before the smoke creates any resources.
+Add `OPENCRAFT_DESKTOP_CONTROL=true` to that smoke to verify real mouse/key
+delivery in a self-owned native test window, physical mutual exclusion, renewal,
+Unicode mapping, forced key release and no control reacquisition after recovery.
+
 浏览器二进制存在不代表本机可以启动。Linux 浏览器验收在创建测试资源、启动模型/Host 和
 桌面连接前，必须检查**实际选定的 Chromium**及它运行时使用的系统库环境：
 

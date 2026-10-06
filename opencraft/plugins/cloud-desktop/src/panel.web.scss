@@ -27,6 +27,13 @@
   button { flex: 0 0 auto; }
 }
 .cloud-desktop-panel__actions { display: flex; flex: 0 0 auto; gap: var(--gap-control-group); }
+// Reserve the localized action's intrinsic size through pending/confirmation.
+// The shared button still owns typography, padding, shape and touch density.
+.cloud-desktop-panel__control-label {
+  display: grid;
+  > span { grid-area: 1 / 1; }
+  > [data-current="false"] { visibility: hidden; }
+}
 .cloud-desktop-panel__body { position: relative; display: flex; flex: 1; min-height: 0; min-width: 0; }
 .cloud-desktop-panel__surface {
   flex: 1;

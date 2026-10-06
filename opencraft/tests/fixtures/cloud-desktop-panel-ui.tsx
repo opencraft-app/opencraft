@@ -4,6 +4,8 @@ import { LocaleRuntime } from "@opencraft/i18n";
 import { IntlRuntimeProvider } from "@opencraft/i18n/react";
 import { createWorkbenchPanelReactRuntime } from "@opencraft/workbench-panels-react";
 import { buildCodexThemeCssProperties, codexThemePalette } from "@opencraft/design-system/theme-engine";
+import { ProgressIndicator } from "@opencraft/design-system-web/progress";
+import { bindTouchInteractionMode } from "../../apps/workbench-web/src/runtime/pointer-modality";
 import chineseMessages from "../../apps/workbench-web/src/i18n/locales/zh-CN.json";
 import { createCloudDesktopWorkbenchPanelPlugin, type DesktopConnectionSnapshot,
   type DesktopControlLease } from "../../plugins/cloud-desktop/src/index";
@@ -12,13 +14,14 @@ import { createCloudDesktopWorkbenchPanelPlugin, type DesktopConnectionSnapshot,
 // panel registry and production CSS render every state; never import from bootstrap.
 let state: DesktopConnectionSnapshot = { videoReady: false, inputReady: false,
   controlAvailable: true, ended: false };
-let authorized = true, valid = false, mounts = 0, preparations = 0;
+let authorized = true, valid = false, mounts = 0, preparations = 0, requests = 0, releases = 0;
+let pasteAvailable = true;
 let grant: ((lease: DesktopControlLease) => void) | null = null;
 const listeners = new Set<() => void>(), authorityListeners = new Set<() => void>();
 const revoked = new Set<() => void>();
 const lease: DesktopControlLease = { isValid: () => valid,
   subscribeRevoked: listener => { revoked.add(listener); return () => { revoked.delete(listener); }; },
-  release: () => { valid = false; } };
+  release: () => { releases++; valid = false; } };
 const notify = () => { for (const listener of listeners) listener(); };
 function theme(name: string) {
   const mode = name === "light" ? "light" : "dark";
@@ -29,6 +32,8 @@ function theme(name: string) {
   }
 }
 theme("light");
+const unbindPointerMode = bindTouchInteractionMode(document);
+let progressProbe: { root: ReturnType<typeof createRoot>; element: HTMLElement } | null = null;
 const target = { conversationId: "fixture", environmentId: "environment:test", serverId: "server:test", principalId: "account:test" };
 const runtime = await createWorkbenchPanelReactRuntime();
 await runtime.install(createCloudDesktopWorkbenchPanelPlugin({
@@ -41,7 +46,7 @@ await runtime.install(createCloudDesktopWorkbenchPanelPlugin({
         async connect() { return {
           getSnapshot: () => state,
           subscribe: listener => { listeners.add(listener); return () => { listeners.delete(listener); }; },
-          requestControl: () => new Promise(resolve => { grant = resolve; }), close() {},
+          requestControl: () => new Promise(resolve => { requests++; grant = resolve; }), close() {},
         }; } };
     },
   },
@@ -54,7 +59,7 @@ await runtime.install(createCloudDesktopWorkbenchPanelPlugin({
     element.append(canvas);
     canvas.tabIndex = 0;
     return { enableInput() {}, disableInput() {}, focus() { canvas.focus({ preventScroll: true }); },
-      async pasteText() {}, dispose() { canvas.remove(); } };
+      get pasteText() { return pasteAvailable ? async () => {} : undefined; }, dispose() { canvas.remove(); } };
   } },
 }));
 const locale = new LocaleRuntime([{ locale: "zh-CN", label: "简体中文", load: async () => chineseMessages }]);
@@ -65,15 +70,27 @@ const Panel = runtime.renderers.getSnapshot().find(item => item.kind === "cloud-
 root.render(<IntlRuntimeProvider runtime={locale}><Panel tab={tab} ownerId="fixture-panel"
   presentationId="fixture-view" /></IntlRuntimeProvider>);
 Object.assign(window, { __desktopUi: {
+  mountProgressProbe() {
+    const element = document.createElement("div");
+    element.style.cssText = "position:fixed;left:-10000px;top:0;pointer-events:none";
+    document.body.append(element);
+    const root = createRoot(element);
+    root.render(<ProgressIndicator className="motion-probe" />);
+    progressProbe = { root, element };
+  },
   theme,
   locale: (value: string) => locale.update({ localeOverride: value }),
-  ready(controlAvailable = true) {
+  ready(controlAvailable = true, supportsPaste = true) {
+    pasteAvailable = supportsPaste;
     state = { videoReady: true, inputReady: true, controlAvailable, ended: false }; notify();
   },
   fail() { state = { ...state, ended: true }; notify(); },
   connecting() { state = { videoReady: false, inputReady: false, controlAvailable: true, ended: false }; },
   grant() { valid = true; const resolve = grant; grant = null; resolve?.(lease); },
   unavailable() { authorized = false; for (const listener of authorityListeners) listener(); },
-  counts: () => ({ mounts, preparations }),
-  async dispose() { root.unmount(); await runtime.dispose(); locale.dispose(); },
+  counts: () => ({ mounts, preparations, requests, releases }),
+  async dispose() {
+    progressProbe?.root.unmount(); progressProbe?.element.remove();
+    unbindPointerMode(); root.unmount(); await runtime.dispose(); locale.dispose();
+  },
 } });

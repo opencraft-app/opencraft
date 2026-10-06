@@ -2,11 +2,14 @@
 
 Status: source framework, noVNC media adapter, Vela provider/viewer port, bounded
 backend attachment broker and CTL resource-preparation API. Local Linux Codex
-Hosts now have an explicit observe-only authority/transport composition. The
+Hosts now have an explicit observation composition and an opt-in private native
+mouse/keyboard executor. The
 multi-tenant Vela broker is not mounted in production: its canonical directory
 and a native control executor still require integration. No WebRTC service, real
-TAT command or preview rollout is included. Local capability is opt-in; default
-and public compositions hide the entry.
+TAT command is included. Local capability is opt-in; default compositions hide
+the entry. Explicit trusted-internal deployments can share read-only viewing
+with everyone who can access that deployment; enabling control additionally
+trusts those users to request exclusive input on that same machine.
 
 ## Ownership
 
@@ -18,6 +21,7 @@ and public compositions hide the entry.
 | Attachment | Backend-authorized short-lived viewer lease for exact target/resource/incarnation | Release on bootstrap failure or viewer teardown |
 | Media transport + surface | One mounted desktop presentation | Unmount, target change, timeout, connection end or plugin retirement closes transport and releases attachment |
 | Control grant | Server-authorized, exclusive and revocable input lease | Disable input before release on cancel, blur, hidden page, revocation or teardown |
+| Button activation | Mounted presentation captures the pressed action; controller issues a single-use command bound to viewing/control epochs | Cancelled physical gestures, focus/page loss, revoked readiness and replaced ownership cannot reinterpret or replay a press |
 
 The UI only requests control. Requesting is not confirmed control. Both video and
 input-channel readiness must be true before requesting a grant, independent of
@@ -27,6 +31,16 @@ Agent automation must be arbitrated by the backend, not `viewOnly` CSS.
 The surface is a focusable child of the panel; adapters keep media/input focus
 inside this boundary. Moving focus between toolbar and surface is not blur of
 the desktop owner. Losing focus outside it releases control.
+
+One native activation has a fixed action, not a toggle of the latest rendered
+state. Pointer/Enter/Space press captures Take or Stop/Cancel; native click consumes
+it once. An accessibility click without a physical press remains supported.
+Control confirmation stays within the same intent, so a held Cancel can still
+stop its confirmed grant. Release, revocation, lost readiness or connection
+replacement retires earlier commands: a Stop followed by null focusout cannot
+turn the same click into Take, or revoke a later user's grant. Window/page loss
+and cancelled/outside pointer release also retire the presentation's press.
+There is no pointerup-synthesized click, debounce or delayed safety release.
 
 Preparation is bounded (120 seconds by default); media startup and first-frame
 readiness share a separate 20-second deadline (or the shorter injected bound).
@@ -43,10 +57,25 @@ feedback and a full-panel unavailable state with explicit reconnect on failure.
 This is source-referenced presentation, not an official Mac pixel-comparison.
 Empty-state geometry and the 18/24 medium panel-title role belong to the shared
 Design System; desktop-specific layout belongs to the neutral plugin stylesheet.
-The design system also owns a 24px rotating progress indicator (static under
-reduced motion), compact 14/18 regular capsule actions and a 44px coarse-pointer
+The design system also owns a decorative 24px vector progress indicator (a
+16px ring with a 0.3-opacity track and a 270-degree foreground arc). Its two-second,
+60-step rotation follows the shared document timeline; separately mounted
+indicators stay in phase. Reduced motion keeps the same geometry without rotation.
+Vector geometry remains in the renderer-free `design-system/progress` contract;
+`design-system-web/progress` projects it to React/SVG and owns animation phase.
+Empty-state sizing and secondary tone apply only to direct glyphs, not nested
+progress primitives, so the spinner is neither enlarged nor clipped.
+Compact outline controls apply theme feedback immediately, without a color tween
+or press scaling; disabled opacity is 0.4 and touch does not inherit sticky hover.
+These are source-referenced Codex motion rules, not a Mac runtime parity claim.
+The shared controls retain compact 14/18 regular capsule actions and a 44px coarse-pointer
 target. Toolbar feedback is single-line and cannot push the media down when
 control or clipboard operations are pending.
+The localized control labels share an intrinsic sizing slot, so Take/Cancel/Stop
+do not move adjacent buttons. Ready status is short; unsupported clipboard
+capability hides Paste altogether. Physical clipboard availability is separate
+from whether the current control grant enables pasting; supported providers keep
+their explicit disabled/enabled action without adding it only after confirmation.
 The application supplies the complete theme properties, not merely a light/dark
 attribute. Raw errors and credentials never enter feedback copy.
 
@@ -62,7 +91,9 @@ to own the tab, close action and maximize presentation.
 `npm run smoke:desktop-panel` renders the actual plugin/controller/current built
 CSS with synthetic backend/media boundaries. It checks light/dark/custom themes,
 720px/320px geometry, connection/failure/retry/withdrawal, control cancellation,
-blur, grant-confirmed focus, coarse-pointer tap sequences/geometry, motion preferences and
+normal and null-focusout stop activations, Enter/Space, blur, grant-confirmed focus,
+unsupported clipboard, stable action geometry, held pointer/touch feedback,
+sampled progress frames and shared phase, coarse-pointer tap sequences, motion preferences and
 stable media DOM. Its screenshots are not native-input or production
 authorization acceptance; those require the separate runtime tests below.
 
@@ -123,6 +154,20 @@ unauthenticated-public acknowledgement. Loopback access is trusted local-owner
 access, **not** DevCloud multi-tenant authentication. Reverse-proxying this listener
 publicly would violate its trust boundary and is not an approved deployment.
 
+An operator can instead choose `--trusted-internal-desktop` for a deployment whose
+network admission is already trusted. It permits a non-loopback listener with the
+existing explicit listener acknowledgement; the two desktop modes are mutually
+exclusive. This means **everyone able to access that deployment is trusted to view
+the same local machine desktop**. It adds no Vela login, TAT or multi-tenant policy.
+The Host advertises `same-origin-trusted-internal` only after native observation is
+verified. Default/public deployments without this flag still hide the entry.
+The gateway requires an exact HTTP(S) Origin authority matching Host, including
+port. TLS termination is supported without trusting forwarded headers: the proxy
+must preserve the external Host. Missing/cross-site Origin and URL credentials are
+rejected. HTTPS renderers use `wss`, HTTP uses `ws`. Native observation remains
+loopback-only and immutable read-only; Thread checks, one-use grants, budgets and
+recovery are unchanged. This flag is not safe as anonymous Internet deployment.
+
 The backend registration owns Server ID (data-root/local-owner digest), local
 machine ID (hashed `/etc/machine-id`) and principal (execution UID). The Codex
 adapter stamps the logical Client namespace/epoch and implements two Host RPCs:
@@ -147,10 +192,51 @@ grants; late preparation cannot resurrect them. Physical identity remains
 verified by the native proxy, while the Host rechecks Thread metadata every
 5 seconds and fails closed on deletion/replacement or a read timeout.
 
-The separate same-Origin `/desktop/connect` WebSocket requires an exact loopback
-Host/Origin, rejects query credentials, limits frames/backpressure to 1 MiB and
+The separate same-Origin `/desktop/connect` WebSocket follows the selected
+loopback or trusted-internal policy, rejects query credentials, limits frames/backpressure to 1 MiB and
 retires stalled writes after 10 seconds. The first text frame uses the neutral
 `desktop/attach` protocol; binary RFB begins only after matching `desktop/ready`.
+
+### Local native control authority
+
+Observation remains immutable read-only. Optional `--desktop-control` requires
+one explicit desktop access mode and a preinstalled, running
+`opencraft-desktop-control.service`. Startup verifies the root-owned Unix endpoint
+and checks its physical incarnation matches the observer. Without the flag,
+capability and ready remain observe-only. This does not mount Vela/TAT control.
+
+`LocalDesktopService` reserves one controller before asynchronous Thread checks
+and native acquisition; it confirms only after another revision check. Each
+intent is bound to the current viewer/Client/Thread/incarnation. Cancellation,
+expiry, disconnect, native failure and revision withdrawal retire it; late
+acquisitions are released, not installed. Preparation is bounded at five seconds,
+but a confirmed lease is not subject to that preparation timer. Recovery opens
+a new viewing attachment and never automatically reacquires input.
+
+The native executor listens only at root-private
+`/run/opencraft-desktop-control/control.sock`, accepts only root peers, verifies
+the fixed Xvfb/observer identity and owns one physical controller across Host
+processes. It has no network, shell, arbitrary display or clipboard command.
+It renews a three-second native lease once per second; EOF/expiry releases held
+keys/buttons. A private incarnation-bound journal records injection ownership
+and original temporary Unicode mappings before injection; executor restart
+clears only its recorded inputs and restores mappings on the same physical X
+server. Observation-process restart does not erase input cleanup ownership;
+replacing Xvfb does. Control authorization still uses the full verified incarnation.
+
+The Host mirrors the ordered media stream to the still-read-only observer and
+decodes only bounded pinned noVNC/RFB key/pointer messages for native input.
+Each fragmented message retains the confirmed grant at its first byte and
+requires the identical current grant at completion. Buffered input from before
+acquire or an older grant cannot execute. Clipboard frames are parsed but not
+executed; local ready advertises `clipboardAvailable:false`, disabling the paste
+action independently of mouse/keyboard control. The client input toggle remains
+UX, not authorization. Physical executor ownership is separate from panel state.
+
+Install the reviewed helper and unit from
+`apps/local-agent-host/native/linux/` as root-owned files; do not enable legacy
+interactive VNC/noVNC. The unit is not automatically enabled at boot. Explicit
+native acceptance uses only a newly created test window, not user applications.
 The native x11vnc process enforces immutable observe-only input; no client flag,
 account login, Vela adapter or TAT credential is trusted as an input gate.
 Closing the viewer leaves native desktop services and Codex work running.
