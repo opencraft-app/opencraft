@@ -41,6 +41,7 @@ describe("multi Bot overview", () => {
   });
   it("keeps header creation and card chat navigation alongside the management menu", () => {
     render(<AgentFleetOverview {...props} />);
+    expect(screen.getAllByText("在线")).toHaveLength(2);
     expect(api.renderHero).toHaveBeenLastCalledWith({ stats: props.heroStats, botCount: 2 });
     expect(screen.getByRole("heading", { name: "定时任务推荐" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "查看全部" })).toHaveAttribute("href", "/agents/automations");
@@ -144,6 +145,7 @@ describe("multi Bot overview", () => {
   it("allows a paused Bot to open chat even when its profile cannot be edited", () => {
     props.bots = [bot("paused", { status: "paused" })];
     render(<AgentFleetOverview {...props} />);
+    expect(screen.getByText("离线")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "新建对话: paused" }));
     expect(props.onOpenChat).toHaveBeenCalledExactlyOnceWith("paused");
     manage("paused");

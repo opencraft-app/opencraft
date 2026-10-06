@@ -1,6 +1,6 @@
 {
   "source": "frontend/src",
-  "sourceRevision": "e20478ae7ed8c0c5d6aa404f082ce0b7d66898b6",
+  "sourceRevision": "397c8a6a811ae451ff68364764ab34e637d0c99b",
   "generatedBy": "scripts/sync-mono2-agent-console.mjs",
   "files": [
     {
@@ -89,35 +89,35 @@
     },
     {
       "file": "i18n/generated/en-US.json",
-      "sourceSha256": "b2d7d818106c2f28f40f84b23d6dad1a87f485bd0ce1384db5022b79b2120d3a"
+      "sourceSha256": "302a4972b728c397cac99fbe7bfbaaf96005f17174639de1da4d127cccd866e0"
     },
     {
       "file": "i18n/generated/es.json",
-      "sourceSha256": "95b0cb808cf44ffd348e74e000689e7c5b221802fef8b31ddcd261daa960c2f7"
+      "sourceSha256": "2ce82a7ecf3d0d3fda3543cefa8b9e2527b1a2cd8ff6fc49bb4d89cdce10868d"
     },
     {
       "file": "i18n/generated/id-ID.json",
-      "sourceSha256": "3188cfbbd66ced692814c94dcea15ebc7784babafa9fce2b1a6156fae93e9b2f"
+      "sourceSha256": "e20cdf4cc0794c410b26bb0d90060b62a6ab69e95e9d995b8b206edd826cfdd9"
     },
     {
       "file": "i18n/generated/ja-JP.json",
-      "sourceSha256": "7bbc576b3a2c6d3cad11c27f098d2ee7fa7988522e54ba105e7000201582bbf0"
+      "sourceSha256": "f72eb552a2976a680119c9bcf17191f234bb462fb081de85f5395dff5b3aa66a"
     },
     {
       "file": "i18n/generated/ko-KR.json",
-      "sourceSha256": "a76995077efee5661433f8c12470578adb6d0c89f2f6ac8113e1149c63f934af"
+      "sourceSha256": "65d4eeef80953b58ce19d928a54d472c81a3ebd98928e8dc72aaf2f596bba1ff"
     },
     {
       "file": "i18n/generated/zh-CN.json",
-      "sourceSha256": "1c85b9672c86a886b674dc2c7d9790c045bd3096f4681e8803597d1972d6bfc6"
+      "sourceSha256": "fe6185896cf4b0a5701d0fa86e0cdfcf84108668d80c13b289eb93d8388efd07"
     },
     {
       "file": "i18n/generated/zh-Hant.json",
-      "sourceSha256": "3f755502c36370d4115b4249d1b43673ffc3ce3f7cb181cebeeb5270860e78a8"
+      "sourceSha256": "9a393e421587387d26c06d029e95e779683a28ed18255ee334cfe15964d75582"
     },
     {
       "file": "i18n/generated/zh-to-key.json",
-      "sourceSha256": "417f6550b4396f8efa358581701930d0f04d953ced9aacaaf42d1500ba88dbbe"
+      "sourceSha256": "afc1c645d1c1023c41bb0d5e488dd9ee3880018c4a0f4aba92ae59462c605a47"
     },
     {
       "file": "i18n/index.ts",

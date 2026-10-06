@@ -87,7 +87,7 @@ import type {
   LightVelaSession,
   LightVelaSessionActions,
 } from "./agent-chat-panel";
-import { useAgentSidebarSessionList } from "./agent-sidebar-session-list";
+import { resolveAgentSidebarEmptySessionState, useAgentSidebarSessionList } from "./agent-sidebar-session-list";
 import { AUTH_SERVICE_UNAVAILABLE_MESSAGE, readStoredAuthToken } from "@/repositories/http-repositories";
 import {
   AGENTS_HOME_PATH,
@@ -2548,8 +2548,8 @@ const getBotStatusColor = (status: OpenClawBot["status"]) => {
 };
 
 const getBotStatusLabel = (status: OpenClawBot["status"]) => {
-  if (status === "running") return rawT("运行中");
-  if (status === "paused") return rawT("已暂停");
+  if (status === "running") return rawT("在线");
+  if (status === "paused") return rawT("离线");
   if (status === "failed") return rawT("创建失败");
   if (status === "deleting") return rawT("删除中");
   if (status === "provisioning") return rawT("创建中");
@@ -2795,6 +2795,12 @@ export const AgentSettingsPage = ({
     loading: chatSessionsLoading,
     onSessionStateChange: applyChatSessionState,
   } = useAgentSidebarSessionList(sidebarSessionBotKey);
+  const emptyChatSessionState = resolveAgentSidebarEmptySessionState({
+    botPaused: activeBot?.status === "paused",
+    loading: chatSessionsLoading,
+    botKey: sidebarSessionBotKey,
+    sessionCount: chatSessions.length,
+  });
   const [chatSessionsHasMore, setChatSessionsHasMore] = useState(false);
   const [chatSessionMutationState, setChatSessionMutationState] = useState<EmbeddedSessionMutationState | null>(null);
   const [chatSessionCommands, setChatSessionCommands] = useState<EmbeddedSessionCommands | null>(null);
@@ -5833,13 +5839,13 @@ export const AgentSettingsPage = ({
                                 "lv-agent-profile",
                                 visibleBots.length <= 1 && "cursor-default",
                               )}
-                              aria-label={isGlobal ? agentProfileDisplayName : `${agentProfileDisplayName}，${isActiveBotRestarting ? t("重启中...") : getBotStatusLabel(activeBot.status)}`}
+                              aria-label={`${agentProfileDisplayName}，${isActiveBotRestarting ? t("重启中...") : getBotStatusLabel(activeBot.status)}`}
                               title={isSidebarCollapsed ? agentProfileDisplayName : undefined}
                               aria-expanded={visibleBots.length > 1 ? isAgentMenuOpen : undefined}
                             >
                               {/* Demo：头像与名称跟随新手引导里设置的资料（几何体头像）；
                                   未设置过时回落到原有的 bot 头像与名称。 */}
-                              <span className={cn("lv-agent-avatar", !isGlobal && "lv-agent-avatar--status")}>
+                              <span className="lv-agent-avatar lv-agent-avatar--status">
                                 {demoProfileIsCustom ? (
                                   <GeometricAvatar
                                     shapeId={buddyProfileState.profile.shapeId}
@@ -5849,34 +5855,27 @@ export const AgentSettingsPage = ({
                                 ) : (
                                   <img src={avatarUrl} alt="" />
                                 )}
-                                {!isGlobal && (
-                                  <span
-                                    className={cn(
-                                      "lv-agent-avatar-status",
-                                      !isActiveBotRestarting && ["provisioning", "deleting", "draft"].includes(activeBot.status) && "lv-agent-avatar-status--blinking",
-                                    )}
-                                    role="img"
-                                    aria-label={isActiveBotRestarting ? t("重启中...") : getBotStatusLabel(activeBot.status)}
-                                    title={isActiveBotRestarting ? t("重启中...") : getBotStatusLabel(activeBot.status)}
-                                    style={{ background: isActiveBotRestarting ? "#FF9500" : getBotStatusColor(activeBot.status) }}
-                                  />
-                                )}
+                                <span
+                                  className={cn(
+                                    "lv-agent-avatar-status",
+                                    !isActiveBotRestarting && ["provisioning", "deleting", "draft"].includes(activeBot.status) && "lv-agent-avatar-status--blinking",
+                                  )}
+                                  role="img"
+                                  aria-label={isActiveBotRestarting ? t("重启中...") : getBotStatusLabel(activeBot.status)}
+                                  title={isActiveBotRestarting ? t("重启中...") : getBotStatusLabel(activeBot.status)}
+                                  style={{ background: isActiveBotRestarting ? "#FF9500" : getBotStatusColor(activeBot.status) }}
+                                />
                               </span>
                               <span className="lv-agent-profile-text">
                                 <span className="lv-agent-profile-name" title={agentProfileDisplayName}>
                                   {truncateBotName(agentProfileDisplayName)}
                                 </span>
-                                {(isGlobal || isActiveBotRestarting || activeBot.status !== "running" || (passExpiryReminder && passExpiryReminderCopy && activePass)) && <span className="lv-agent-status-row">
-                                  {(isGlobal || isActiveBotRestarting || activeBot.status !== "running") && (
+                                {(isActiveBotRestarting || activeBot.status !== "running" || (passExpiryReminder && passExpiryReminderCopy && activePass)) && <span className="lv-agent-status-row">
+                                  {(isActiveBotRestarting || activeBot.status !== "running") && (
                                     <WorkspaceActionTooltip content={pausedStatusTooltip} side="bottom">
                                       <span className="lv-agent-status">
                                         {isActiveBotRestarting ? (
                                           <Loader2 className="h-3 w-3 animate-spin" />
-                                        ) : isGlobal ? (
-                                          <span
-                                            className="inline-block h-1.5 w-1.5 rounded-full"
-                                            style={{ background: getBotStatusColor(activeBot.status) }}
-                                          />
                                         ) : null}
                                         {isActiveBotRestarting ? t("重启中...") : getBotStatusLabel(activeBot.status)}
                                       </span>
@@ -6201,9 +6200,9 @@ export const AgentSettingsPage = ({
                               )}
                               {!isChatTabDisabled && chatSessionsExpanded && !isSidebarCollapsed ? <>
                               <ul className="lv-agents-nav-group-items lv-agents-session-list">
-                                {(chatSessionsLoading || sidebarSessionBotKey === null) && chatSessions.length === 0 ? (
+                                {emptyChatSessionState === "loading" ? (
                                   <li className="lv-agents-session-hint">{isGlobal ? t("正在加载会话…") : t("正在加载...")}</li>
-                                ) : chatSessions.length === 0 ? (
+                                ) : emptyChatSessionState === "default" ? (
                                   /*
                                    * 首次读取尚未完成时由 loading 分支承接；确认空列表后
                                    * 才显示默认对话入口。实例不支持会话协议（SDK 5s 超时）
@@ -6603,7 +6602,7 @@ export const AgentSettingsPage = ({
                           {isActiveBotChatAvailable && (
                             <AgentChatMigrationSurface
                               active={activeSection === "chat"}
-                              preloadSessions={sidebarTab === "daily" && chatSessionsExpanded && !isSidebarCollapsed}
+                              preloadSessions={activeBot.status !== "paused" && sidebarTab === "daily" && chatSessionsExpanded && !isSidebarCollapsed}
                               agentPaused={activeBot.status === "paused" && activeBot.siblingsUnknown === "instance_stopped"}
                               accountId={accountId}
                               apiBase={resolveConfiguredAuthApiBaseUrl() || undefined}

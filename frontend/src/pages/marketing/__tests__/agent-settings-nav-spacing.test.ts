@@ -272,6 +272,7 @@ describe("Agent settings navigation spacing", () => {
 
   it("keeps the requested desktop sidebar separators and bottom actions aligned", () => {
     const profileSeparator = getBlockBody(styles, "\n.lv-agent-profile-wrap {");
+    const desktopProfile = getBlockBody(styles, "\n  .lv-agents-sidebar-profile .lv-agent-profile-wrap {");
     const controls = getBlockBody(styles, "\n  .lv-agents-sidebar-controls {");
     const middle = getBlockBody(styles, "\n  .lv-agents-sidebar-middle {");
     const accountSeparator = getBlockBody(styles, "\n.lv-agent-account-footer {");
@@ -283,6 +284,7 @@ describe("Agent settings navigation spacing", () => {
     expect(profileSeparator).toContain("width: auto;");
     expect(profileSeparator).toContain("padding-bottom: 8px;");
     expect(profileSeparator).not.toContain("border-bottom:");
+    expect(desktopProfile).toContain("padding: 4px 8px;");
     expect(controls).toContain("padding-top: 16px;");
     expect(middle).toContain("padding-top: var(--lv-agents-sidebar-middle-padding-block);");
     expect(styles).toContain('.lv-agents-sidebar[data-scroll-above="true"] .lv-agents-sidebar-controls::after');

@@ -2,7 +2,7 @@
 
 ## 摘要
 
-**Agent 管理台在侧边栏分别提供 Channels、Models、Skills 和 Scheduled Tasks 页面。修改配置前应先选中目标 Bot；在通道卡片接入聊天平台，配置模型或使用套餐积分，再按需安装来自 Skills.sh 或 ClawHub 的技能。Soul、Memory、Diagnostics、Advanced Settings 和 Labs 分别位于其他分区；Cloud Storage 从用户菜单进入。**
+**Agent 管理台在侧边栏分别提供 Channels、Models、Skills 和 Scheduled Tasks 页面。修改配置前应先选中目标 Bot；在通道卡片接入聊天平台，配置模型或使用套餐积分，再按需安装来自 Skills.sh 或 ClawHub 的技能。Soul、Memory、Diagnostics、Advanced Settings 和 Labs 分别位于其他分区；Cloud Storage 从用户菜单进入。 Bot 在线且有可用套餐模型积分或已配置模型时，可先在「日常 → 对话」直接聊天，无需先接入外部通道。**
 
 ---
 
@@ -26,6 +26,8 @@ Agent 管理台通过侧边栏的 **Channels**、**Models**、**Skills** 和 **S
 
 登录后打开 [Agent 管理台](/agents/overview/)，选择要配置的 Hermes Agent 与 Bot。
 
+
+网页「对话」在「日常」中，外部通道可稍后按需接入。
 ---
 
 ## Bot 切换与当前 Bot 信息

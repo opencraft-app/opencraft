@@ -38,14 +38,14 @@ superseded_refs：旧b2a分支和旧预览PID只作历史；源码合入不等�
 前序统一源码清单、相关正式文档和本任务记录；不纳入依赖、构建产物、私有服务配置或临时机器路径。
 
 ## required_context / context_receipt
-根/OpenCraft AGENTS、maintenance Skill与verification、pre-commit配置及scan_secrets全文；Router query opencraft source integration commit merge master 无匹配后有界检索交付入口和当前差异。frontend-runtime-openspec-i18n邻接及前序读取的build-release-artifacts测试邻居。默认凭据不可用，使用用户先前指定的本机credential store，不输出值。
+根/OpenCraft AGENTS、maintenance Skill与verification、pre-commit配置及scan_secrets全文；Router query opencraft source integration commit merge master 无匹配后有界检索交付入口和当前差异。frontend-runtime-openspec-i18n邻接及前序读取的build-release-artifacts测试邻居。工蜂Skill及DEPENDENCIES要求优先发现已有连接，MCP仅通过mcporter-internal；当前无已有MCP配置，Git认证可用。默认凭据不可用，使用用户先前指定的本机credential store，不输出值。
 
 ## evidence / decisions
 集成基线7d946；本轮fetch更新远端master到f3046979d，新增站点文档/Bot状态和共享翻译，不能直接推旧基线覆盖。采用普通合并保留历史与并发保护，不使用force。
 
 ## checkpoint
-stage：准备提交，尚未push或合入master。
-verified：前序集成VALIDATION已通过；最新远端master已获取。
-unverified：最新master合并后完整gate、敏感信息检查和远端合入。
+stage：源码已提交，最新master已自动合并，全部门禁验证完成，准备提交合并并推送。
+verified：前序集成VALIDATION已通过；70文件限定暂存、敏感扫描0命中、设计影响检查及diff通过；源码提交47d7720d8。已合并远端f3046979d，无冲突，保留站点/Bot状态/翻译更新。完整gate分两段执行：全部阶段通过，2183项测试中2182通过/1跳过/0失败；听写额外14项通过，Web/Expo Web/iOS bundle构建通过。桌面UI6组（浅/深/扩展主题、桌面/触控）及听写UI4组（浅/深、桌面/触控）通过，真实组件与当前CSS，外部输入/供应商为合成边界，不宣称手机真机/付费接口验收。文档0错误/0断链。最初普通验证进程被终止，后以独立验证服务运行，不修改预览；DSH首次4项失败均为独立运行时模块未安装，按当前锁文件npm ci完成后从失败阶段续跑成功。
+unverified：远端合入与仓库级既有Context基线问题；Mac/iPhone实机权限、外部ASR质量/计费不在本次Git交付范围。
 restore：不修改其他工作树和正在运行的服务，提交/合并仅在统一集成分支完成。
-next_action：清理任务记录中的临时机器路径，限定暂存并扫描，提交后合并最新master并验证。
+next_action：提交合并并普通推送，确认远端master包含源码提交；成功后补归档回执。远端如发生并发更新则再合并验证，不强推。

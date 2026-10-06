@@ -53,7 +53,7 @@ function FleetBotCard({ bot, isCurrent, canDelete, fallbackAvatarUrl, canCreate,
   const name = profile.profile.name;
   const description = profile.soulExists !== null ? profile.profile.description : bot.description || bot.intro || "";
   const status = {
-    running: t("运行中"), paused: t("已暂停"), draft: t("草稿"),
+    running: t("在线"), paused: t("离线"), draft: t("草稿"),
     provisioning: t("创建中"), failed: t("创建失败"), deleting: t("删除中"),
   }[bot.status];
   const transitioning = bot.status === "provisioning" || bot.status === "deleting";

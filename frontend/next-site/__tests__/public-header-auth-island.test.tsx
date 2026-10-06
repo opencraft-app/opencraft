@@ -21,7 +21,7 @@ vi.mock("react-i18next", () => ({
   useTranslation: () => ({ i18n: { language: runtimeMock.language } }),
 }));
 vi.mock("@/components/site/login-modal", () => ({ LoginModal: () => <div data-testid="current-login-modal" /> }));
-vi.mock("@/components/site/user-avatar-menu", () => ({ UserAvatarMenu: () => null }));
+vi.mock("@/components/site/user-avatar-menu", () => ({ UserAvatarMenu: () => <button data-testid="header-avatar">Account</button> }));
 vi.mock("@/contexts/agent-context", () => ({
   useOpenClaw: () => ({
     bots: runtimeMock.bots,
@@ -68,6 +68,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
   window.history.replaceState(null, "", "/");
   routerMock.push.mockReset();
   trackDatongClickMock.mockReset();
@@ -137,11 +138,8 @@ describe("PublicHeaderAuthIsland", () => {
       />,
     );
 
-    const links = screen.getAllByRole("link", { name: label });
-    expect(links).toHaveLength(2);
-    for (const link of links) {
-      expect(link).toHaveAttribute("href", "/agents");
-    }
+    expect(screen.getByRole("link", { name: label })).toHaveAttribute("href", "/agents");
+    expect(screen.getAllByTestId("header-avatar")).toHaveLength(1);
   });
 
   it("keeps the product entry off non-home public pages", () => {
@@ -192,13 +190,30 @@ describe("PublicHeaderAuthIsland", () => {
       <PublicHeaderAuthIsland locale="en-US" showLanguageSwitcher={false} showProductEntry />,
     );
 
-    const link = screen.getAllByRole("link", { name: "Enter LightVela" })[0]!;
+    const link = screen.getByRole("link", { name: "Enter LightVela" });
     link.addEventListener("click", (event) => event.preventDefault());
     fireEvent.click(link);
 
     expect(trackDatongClickMock).toHaveBeenCalledWith("agent_enter_console_btn", {
       pgid: "home",
       params: { surface: "desktop", target: "/agents" },
+    });
+  });
+
+  it("tracks the single product entry as mobile on a narrow viewport", () => {
+    vi.stubGlobal("innerWidth", 390);
+    runtimeMock.isAuthenticated = true;
+    runtimeMock.isSubscribed = true;
+    render(<PublicHeaderAuthIsland locale="en-US" showLanguageSwitcher={false} showProductEntry />);
+
+    const link = screen.getByRole("link", { name: "Enter LightVela" });
+    link.addEventListener("click", (event) => event.preventDefault());
+    fireEvent.click(link);
+
+    expect(screen.getAllByTestId("header-avatar")).toHaveLength(1);
+    expect(trackDatongClickMock).toHaveBeenCalledWith("agent_enter_console_btn", {
+      pgid: "home",
+      params: { surface: "mobile", target: "/agents" },
     });
   });
 

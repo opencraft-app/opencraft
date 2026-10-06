@@ -2,7 +2,7 @@
 
 ## Resumen
 
-**LightVela es una plataforma de Agents alojada en la nube del equipo de Tencent Lighthouse, y su producto actual es Hermes Agent — un Agent de IA construido sobre modelos de lenguaje grandes. LightVela se encarga de la implementación, la operación y la disponibilidad 24/7 en la nube, por lo que nunca tienes que escribir archivos de configuración ni conectarte por SSH a un servidor: todo lo configuras haciendo clic y arrastrar en un panel visual, y luego hablas con tu Agent a través de las aplicaciones de mensajería que ya utilizas. Se recuerda a través de las conversaciones, y tú eliges el modelo, las herramientas y la personalidad. Los planes y las ofertas para nuevos usuarios se muestran en la [página de suscripción](/subscribe/).**
+**LightVela es una plataforma de Agents alojada en la nube del equipo de Tencent Lighthouse, y su producto actual es Hermes Agent — un Agent de IA construido sobre modelos de lenguaje grandes. LightVela se encarga de la implementación, la operación y la disponibilidad 24/7 en la nube, por lo que nunca tienes que escribir archivos de configuración ni conectarte por SSH a un servidor: todo lo configuras haciendo clic y arrastrar en un panel visual, y luego conversas con tu Bot desde Chat en la web o conectas las aplicaciones de mensajería que ya utilizas. Se recuerda a través de las conversaciones, y tú eliges el modelo, las herramientas y la personalidad. Los planes y las ofertas para nuevos usuarios se muestran en la [página de suscripción](/subscribe/).**
 
 ---
 
@@ -60,23 +60,23 @@ El producto actual de LightVela es **Hermes Agent**, un Agent de IA impulsado po
 
 ## Cómo funciona
 
-LightVela ejecuta una instancia dedicada de Hermes Agent para cada usuario en la nube, y luego la conecta a la plataforma de mensajería seleccionada por el usuario a través de una capa de adaptador.
+LightVela ejecuta Hermes Agent en la nube. Puede enviar mensajes desde el Chat web o conectar una aplicación de mensajería externa cuando la necesite.
 
 ```
-User (sends a message in Telegram / WhatsApp / Discord / Slack / WeChat)
+User (sends a message in Web Chat or a connected messaging app)
       ↓
 User-dedicated Hermes Agent instance in the LightVela cloud
       ↓
 Calls the configured large language model (GPT / Claude / Gemin / ...)
       ↓
-Response returns through the original channel
+Response returns to the same conversation entry point
 ```
 
-Un ciclo de conversación completo requiere tres configuraciones:
+Una conversación en el Chat web no requiere un canal externo:
 
 1. **Modelo**: El modelo de lenguaje grande llamado por Hermes Agent. El plan Launch incluye créditos de prueba y se puede utilizar directamente; también puedes configurar tu propia API Key
 
-2. **Canal**: La plataforma de mensajería utilizada para chatear con Hermes Agent (Telegram / WhatsApp / Discord / Slack / WeChat)
+2. **Entrada de Chat**: Use Chat en My Agent para hablar con el Bot seleccionado. Configure un canal solo para usar Telegram, WhatsApp, Discord, WeChat u otra aplicación de mensajería
 
 3. **Skill** (opcional): Capacidades adicionales para Hermes Agent
 

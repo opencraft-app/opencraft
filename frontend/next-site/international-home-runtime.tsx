@@ -19,6 +19,7 @@ import {
 import type { PublicSiteLocale } from '@/lib/public-site-navigation';
 import { PUBLIC_SITE_LOCALES } from '@/lib/public-site-routing';
 import { isGlobal } from '@/lib/region';
+import { getPassStatus } from '@/lib/billing-flow';
 
 export const INTERNATIONAL_HOME_SCRIPT_SOURCES = [
   '/lightvela-intl-home/runtime.js',
@@ -27,7 +28,7 @@ export const INTERNATIONAL_HOME_SCRIPT_SOURCES = [
   '/lightvela-intl-home/assets/feature-motion.js',
 ] as const;
 
-export const INTERNATIONAL_HOME_ASSET_VERSION = '20260930-feature-loops-v109';
+export const INTERNATIONAL_HOME_ASSET_VERSION = '20261005-heading-font-v110';
 
 function versionedInternationalHomeAsset(source: string) {
   return `${source}?v=${INTERNATIONAL_HOME_ASSET_VERSION}`;
@@ -113,11 +114,13 @@ function readOfficialCtaLabels(): Partial<Record<CtaCopyKey, string>> {
 
 export function InternationalHomeRuntime({ locale, markup }: { locale: PublicSiteLocale; markup: string }) {
   const { authReady, isAuthenticated, session } = useSession();
-  const { bots, hasResolvedPasses, isSubscribed, passesError, passesLoading } = useOpenClaw();
+  const { bots, hasResolvedPasses, isSubscribed, latestPass, passesError, passesLoading } = useOpenClaw();
   const officialCtaLabelsRef = useRef<Partial<Record<CtaCopyKey, string>>>({});
   const [readyCtaKey, setReadyCtaKey] = useState<string | null>(null);
   const entitlementReady = !isAuthenticated || (hasResolvedPasses && !passesLoading && !passesError);
-  const ctaKey = JSON.stringify([locale, authReady, isAuthenticated, entitlementReady, isSubscribed, bots.length, session?.user?.id]);
+  const passStatus = latestPass ? getPassStatus(latestPass) : null;
+  const hasLapsedPass = passStatus === 'expired' || passStatus === 'isolated';
+  const ctaKey = JSON.stringify([locale, authReady, isAuthenticated, entitlementReady, isSubscribed, hasLapsedPass, bots.length, session?.user?.id]);
 
   // 先于下面的改写 effect 执行：抢在 href / 文案被改写前，从片段里取出该语种官方文案。
   useEffect(() => {
@@ -182,21 +185,22 @@ export function InternationalHomeRuntime({ locale, markup }: { locale: PublicSit
       isAuthenticated,
       isSubscribed,
       hasBots: bots.length > 0,
+      hasLapsedPass,
     };
     const ctaHref = journeyHref(resolveCtaRoute(journeyState), locale, { localized: isGlobal });
     // 优先用片段里的官方译文，取不到（例如片段没有对应按钮）才回退到兜底文案表。
     const copyKey = resolveCtaCopyKey(journeyState);
     const ctaLabel = officialCtaLabelsRef.current[copyKey] ?? getCtaCopy(locale, journeyState);
 
-    // 方案 A：CTA 落点已由 ctaHref 表达——未登录 / 已登录未订阅 → /subscribe（在订阅页点“订阅”
-    // 时才引导登录，先让用户看套餐），已登录已订阅 → /agents。因此这里只改写 href 与文案，
+    // CTA 落点已由 ctaHref 表达：未订阅新用户 → /subscribe，曾有套餐的老用户 → /agents。
+    // 因此这里只改写 href 与文案，
     // 不再拦截点击强制登录（登录入口保留在 Header 的「登录 / Sign In」按钮，见 public-header-auth-island）。
     for (const anchor of collectCtaAnchors()) {
       anchor.setAttribute('href', ctaHref);
       applyCtaLabel(anchor, ctaLabel);
     }
     setReadyCtaKey(ctaKey);
-  }, [authReady, bots.length, ctaKey, entitlementReady, isAuthenticated, isSubscribed, locale, markup, session?.user?.id]);
+  }, [authReady, bots.length, ctaKey, entitlementReady, hasLapsedPass, isAuthenticated, isSubscribed, locale, markup, session?.user?.id]);
 
   return (
     <>

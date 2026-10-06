@@ -52,7 +52,7 @@ Anda juga dapat memilih opsi kosong dan membiarkan Agent mengklarifikasi kebutuh
 
 Alur kerja saat ini menggunakan React, TypeScript, Tailwind CSS, dan library UI umum untuk membuat situs web.
 
-![Membuat Workbench dengan chat Agent](../../images/workbench-04.webp)
+![Draf permintaan situs web di Chat web internasional, sebelum dikirim](../../images/workbench-04.webp)
 
 Agent juga diarahkan untuk menjaga konten tetap dapat diedit, menghindari data bisnis contoh yang sudah ditentukan, dan menggunakan penyimpanan lokal browser jika data lokal sementara sesuai untuk digunakan.
 
