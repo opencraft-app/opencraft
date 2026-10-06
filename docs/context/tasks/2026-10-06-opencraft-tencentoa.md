@@ -98,9 +98,13 @@ Own changed source and docs only; report classifications, never credential value
 - Own plugin, fixture, tests and plugin documentation contain no literal API key/Bearer credential findings.
 
 ## handoff
-Source implementation and scoped/browser/regression verification complete. User authorized Git delivery; scoped commit and latest-master integration are in progress. No preview restart or real credential configuration.
+Source implementation, scoped/browser/regression verification and user-authorized Git delivery are complete. Remote master contains the scoped source commit and integration commit. No preview restart or real credential configuration.
 
 ## git_delivery
 - Read root/OpenCraft instructions, maintenance skill and verification, Gongfeng skill/dependencies, delivery flow and adjacency/test neighbor.
 - Reused existing private Git credential helper without printing credential values; no existing mcporter connection is available.
 - Latest fetched master is 5d9c122c5, with activity disclosure changes to preserve. Other untracked task records stay outside this commit.
+- Source commit `615cf25b8` pushed to `feat/opencraft-tencentoa-20261006`.
+- Merged latest master without conflicts in an independent worktree; integration commit `a0b2aa8f566bf1abe63a4c3b3a199f7c7b1741d0` pushed atomically to master and `integrate/opencraft-tencentoa-master-20261006`.
+- Fresh merged-result verification passed: plugin/Web typecheck, boundaries, i18n, chat tests, login 47/47, Tencent OA 11/11, headless 30/30, real browser Tencent OA smoke and Headless-profile Web build. Built the independent worktree preview bridge prerequisite before the final Web build.
+- Authenticated fetch after push and ancestry checks confirm remote master contains both source and integration commits. No force push, deployment or credential persistence.

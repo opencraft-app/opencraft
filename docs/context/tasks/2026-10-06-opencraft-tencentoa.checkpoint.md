@@ -16,7 +16,7 @@ derived: false
 ---
 
 ## stage
-Plugin source verified; user-authorized commit/push/master integration.
+Plugin source verified, pushed and integrated into remote master.
 
 ## verified
 - Baseline 3cefebe3e clean; isolated branch feat/opencraft-tencentoa-20261006.
@@ -29,6 +29,8 @@ Plugin source verified; user-authorized commit/push/master integration.
 - Full gate commands passed in segments after own DSH runtime installation, including Web/Expo Web/iOS bundles.
 - Own task/checkpoint metadata has zero context-validator errors.
 - Headless-profile Web bundle passed with the real opencraft-server Host definition.
+- Source `615cf25b8` pushed; integration `a0b2aa8f566bf1abe63a4c3b3a199f7c7b1741d0` preserves latest master `5d9c122c5`. Remote master ancestry verified after atomic push.
+- Fresh integration typechecks, chat/login/Tencent OA/headless tests, browser smoke, boundary/i18n checks and Headless-profile Web build passed.
 
 ## unverified
 - Context validator has 6291 baseline violations; do not claim full repository context validation passed.
@@ -43,4 +45,4 @@ Plugin source verified; user-authorized commit/push/master integration.
 - No real TAI token stored anywhere by this task.
 
 ## next_action
-Commit only Tencent OA files, integrate latest master in an isolated worktree and verify remote ancestry. No deployment/configuration authorized.
+Git delivery complete. Preview restart and real credential configuration require a separate user request; neither was performed.
