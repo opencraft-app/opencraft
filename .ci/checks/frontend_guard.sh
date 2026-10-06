@@ -48,8 +48,12 @@ tar \
   --exclude="velalink/crates/*/target" \
   --exclude="shared/lightvela-agent-core/node_modules" \
   --exclude="shared/lightvela-agent-core/dist" \
+  --exclude="opencraft/packages/mobile-account-sdk/node_modules" \
+  --exclude="opencraft/packages/mobile-account-sdk/dist" \
+  --exclude="opencraft/packages/mobile-bot-bridge/node_modules" \
+  --exclude="opencraft/packages/mobile-bot-bridge/dist" \
   -C "$REPO_ROOT" \
-  -cf - frontend velalink shared/lightvela-agent-core | tar -C "$FRONTEND_GUARD_ROOT" -xf -
+  -cf - frontend velalink shared/lightvela-agent-core opencraft/packages/mobile-account-sdk opencraft/packages/mobile-bot-bridge | tar -C "$FRONTEND_GUARD_ROOT" -xf -
 
 cd "$FRONTEND_GUARD_DIR"
 if [[ ! -f pnpm-lock.yaml ]]; then
