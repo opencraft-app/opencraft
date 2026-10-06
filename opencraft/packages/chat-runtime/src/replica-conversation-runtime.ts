@@ -183,14 +183,6 @@ function sourceTurns(
       }
       items.push(item);
     }
-    const turnDiff = string(candidate.diff) ?? string(candidate.unifiedDiff);
-    if (turnDiff !== null && turnDiff.trim().length > 0) {
-      items.push({
-        id: `${id}:turn-diff`,
-        type: "turnDiff",
-        payload: { diff: turnDiff },
-      });
-    }
     const turnError = isRecord(candidate.error) ? candidate.error : null;
     if (
       status === "failed" &&
@@ -222,6 +214,9 @@ function sourceTurns(
         durationMs: number(candidate.durationMs),
         firstTurnWorkItemStartedAtMs: number(candidate.firstTurnWorkItemStartedAtMs),
         finalAssistantStartedAtMs: number(candidate.finalAssistantStartedAtMs),
+        ...(candidate.diff !== undefined || candidate.unifiedDiff !== undefined ? {
+          unifiedDiff: candidate.diff !== undefined ? string(candidate.diff) : string(candidate.unifiedDiff),
+        } : {}),
         hookStats: summarizeHookRuns(candidate.hookRuns),
         params: candidate.params,
         mcpAppModelContextAttachments: candidate.mcpAppModelContextAttachments,

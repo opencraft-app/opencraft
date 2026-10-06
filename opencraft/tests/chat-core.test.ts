@@ -957,8 +957,8 @@ test("TurnDiff stays distinct from patch Activity and aggregates renamed files",
     ],
   }]), createDefaultTimelineProjectorRegistry());
   const blocks = snapshot.frames.flatMap((frame) => frame.blocks);
-  assert.deepEqual(blocks.map((block) => block.type), ["patch", "turn-diff"]);
-  const turnDiff = blocks[1];
+  assert.deepEqual(blocks.map((block) => block.type), ["patch"]);
+  const turnDiff = snapshot.frames[0]?.changeSummary;
   assert.equal(turnDiff?.type, "turn-diff");
   if (turnDiff?.type === "turn-diff") {
     assert.equal(turnDiff.status, "complete");

@@ -6,6 +6,14 @@ OpenCraft 的聊天跟进偏好由客户端 `UiPreferencesRuntime` 持有：运�
 
 本领域覆盖 Agent 请求进入、实例/渠道编排、Sandbox 分配、CloudAgent 执行、模型网关/provider 路由、流式响应和后台 workflow。
 
+OpenCraft 的轮次文件变更汇总由 Turn 的 diff 字段持有，属于附属资源，不是
+消息顺序中的 Item。共享 chat-core 在 transcript 分段之外派生 changeSummary，
+Web 与 Native 消费同一呈现计划；运行中 diff 更新不得关闭活动段、清空工作时钟
+或取得最终回答/Thinking 所有权。旧 turnDiff Item 只在共享入口降为资源，显式
+空值清除优先于旧记录。Review 沿同一轮次资源读取流式更新，完成卡仍按执行状态
+展示。详见 [Chat UI Changed-file review](../../../opencraft/docs/chat-ui-architecture.md#changed-file-review)；
+源码验证不等于当前预览已经替换。
+
 ## 服务与责任
 
 OpenCraft 本机只读桌面由部署入口显式选择信任边界：默认 `--local-desktop`
@@ -75,6 +83,8 @@ OpenCraft Web 输入框在当前 Host 的 provider 为 `lightvela.hermes` 时展
 OpenCraft 的 Codex Host 持有排队 steer 的持久投递权，同一 Thread 的物理准入串行化。匹配目标 Turn 的 `turn/steer` 获确认后先持久化为 `steering`，后续消息即可继续准入；历史物化和 client-message ID 对账在后台完成。只有正在投递或结果未知的前序投递阻止后续准入，未知结果不得自动重发或交给普通 Resume 猜测恢复。具体状态与回归边界见 [OpenCraft ChatUI 架构](../../../opencraft/docs/chat-ui-architecture.md)。
 
 OpenCraft Composer 的排队消息预览保留正文提示；其排序、插入、编辑、取消编辑和删除按钮的悬浮提示由各自操作定义，不继承消息正文。无确认投递的丢弃入口单独显示其操作提示。
+
+OpenCraft Web 文件更改入口消费同一 Turn-owned changeSummary：实际 Composer 唯一呈现 active Turn 的运行中入口（含浮动位置），主/mini transcript 按该 Turn 身份抑制重复，完成后恢复为消息区资源卡。卡片对齐 Codex 26.930 原始 Renderer 的图标、主题几何、正负计数、前三文件和查看交互；悬浮状态与展开状态只属于 View，不能改变执行、排序、折叠或资源身份。点击悬浮子项先关闭列表，再交给已有 Review；没有真实回退能力不显示撤销。见 [Changed-file review](../../../opencraft/docs/chat-ui-architecture.md#changed-file-review)。
 
 OpenCraft 右侧预览面板的图标按钮（包括关闭标签、浮动输入框切换及浏览器视口调整）使用操作名称作悬浮提示；文件列表保留路径提示，便于查看被截断的路径。
 
