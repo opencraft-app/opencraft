@@ -590,7 +590,7 @@ const normalizeProgress = (achievement: HermesAchievement) => {
 };
 
 const StatTile = ({ label, value, hint }: { label: string; value: string | number; hint: string }) => (
-  <div className="rounded-lg border border-black/[0.06] bg-white px-4 py-3 shadow-[0_8px_28px_rgba(15,23,42,0.035)]">
+  <div className="min-w-0 rounded-lg border border-black/[0.06] bg-white px-4 py-3 shadow-[0_8px_28px_rgba(15,23,42,0.035)]">
     <p className="text-xs font-medium text-black/40">{label}</p>
     <p className="mt-1 text-xl font-semibold text-black/90">{value}</p>
     <p className="mt-1 truncate text-xs text-black/38">{hint}</p>
@@ -816,7 +816,7 @@ export const AchievementsPanel = ({ botId, botName }: AchievementsPanelProps) =>
       />
 
       <section className="rounded-lg border border-black/[0.06] bg-white p-5 shadow-[0_8px_28px_rgba(15,23,42,0.04)]">
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <StatTile label={t("已解锁")} value={`${snapshot?.unlocked_count ?? 0} / ${snapshot?.total_count ?? 0}`} hint={t("获得的成就")} />
           <StatTile label={t("已发现")} value={snapshot?.discovered_count ?? 0} hint={t("已有进度但未解锁")} />
           <StatTile label={t("隐藏成就")} value={snapshot?.secret_count ?? 0} hint={t("等待相关行为揭示")} />

@@ -1,4 +1,4 @@
-import { resolveStandardChatResource, type ChatMeasurementReason, type ChatResourceDecision } from "@opencraft/chat-render-react";
+import { chatMediaPresentationKey, resolveChatConversationMediaSource, type ChatMeasurementReason, type ChatConversationMediaResolution } from "@opencraft/chat-render-react";
 import { useContext, useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -7,11 +7,7 @@ import {
   type ConversationDocumentContextValue,
 } from "./document-context";
 
-export interface ConversationMediaResolution {
-  readonly decision: ChatResourceDecision;
-  readonly directSource: string | null;
-  readonly loadThroughHost: boolean;
-}
+export type ConversationMediaResolution = ChatConversationMediaResolution;
 
 /**
  * One resource decision for every conversation-owned media surface. A Host
@@ -24,19 +20,9 @@ export function resolveConversationMediaSource(
   resolveDirect: ConversationDocumentContextValue["resolveImageSource"],
   hasHostLoader: boolean,
 ): ConversationMediaResolution {
-  const directSource = browserReadableImageSource(source, resolveDirect);
-  const decision = resolveStandardChatResource(source, {
-    cwd,
-    externalResourcePolicy: "allow",
-  });
-  const loadThroughHost = directSource === null
-    && hasHostLoader
-    && decision.allowed
-    && decision.target !== null
-    && (decision.kind === "file"
-      || decision.kind === "workspace-file"
-      || decision.kind === "resource");
-  return { decision, directSource, loadThroughHost };
+  return resolveChatConversationMediaSource(
+    source, cwd, browserReadableImageSource(source, resolveDirect), hasHostLoader,
+  );
 }
 
 export function useConversationMediaSource(
@@ -64,7 +50,9 @@ export function useConversationMediaSource(
     () => resolveConversationMediaSource(source, context.cwd, resolveDirect, context.loadMediaSource !== undefined),
     [context.cwd, context.loadMediaSource, resolveDirect, source],
   );
-  const loadKey = `${resolution.decision.kind ?? "blocked"}:${resolution.decision.target ?? source}`;
+  const loadKey = chatMediaPresentationKey(source, resolution.decision, {
+    hostId: context.hostId, conversationId: context.conversationId, cwd: context.cwd, documentId,
+  });
   const [loaded, setLoaded] = useState<{
     readonly key: string;
     readonly source: string | null;

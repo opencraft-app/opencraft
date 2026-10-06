@@ -3,7 +3,7 @@ import {
   deriveTimelineLatestTurnPhase,
   type TimelineTurnView,
 } from "@opencraft/chat-core";
-import { NativeConversationViewportOwner } from "@opencraft/timeline-host-native";
+import { NativeConversationViewportOwner, nativeFollowContentOverflowPx } from "@opencraft/timeline-host-native";
 import {
   CODEX_LATEST_TURN_PLACEMENT_SPRING,
   createLatestTurnPlacementSnapshot,
@@ -54,6 +54,7 @@ export interface WorkbenchConversationRestoreSnapshot {
 
 export interface NativeResponsePositionedTurnsProps {
   readonly entries: readonly TimelineTurnView[];
+  readonly timelineRevision: number;
   readonly historyKey: string | null;
   readonly footerScrollPaddingPx: number;
   readonly initialRestoreSnapshot: WorkbenchConversationRestoreSnapshot | null;
@@ -88,6 +89,7 @@ export interface NativeResponsePositionedTurnsProps {
  */
 export function NativeResponsePositionedTurns({
   entries,
+  timelineRevision,
   historyKey,
   footerScrollPaddingPx,
   initialRestoreSnapshot,
@@ -136,9 +138,8 @@ export function NativeResponsePositionedTurns({
   const responsePositioning = responsePositioningRef.current;
   const scrollRef = useRef<ScrollView>(null);
   const virtualizerRef = useRef<NativeVirtualizedConversationTurnsHandle>(null);
-  const virtualizerRestoreStateRef = useRef<VirtualizedTurnRestoreState | null>(
-    initialRestoreSnapshot?.virtualizedTurnList ?? null,
-  );
+  const virtualizerRestoreCaptureRef = useRef<(() => VirtualizedTurnRestoreState | null) | null>(null);
+  const initialVirtualizerRestoreStateRef = useRef(initialRestoreSnapshot?.virtualizedTurnList ?? null);
   const footerPaddingRef = useRef(footerScrollPaddingPx);
   footerPaddingRef.current = footerScrollPaddingPx;
   const latestTurnKeyRef = useRef(latestTurnKey);
@@ -169,6 +170,7 @@ export function NativeResponsePositionedTurns({
       : null,
   );
   const latestTurnFollowContentBottomRef = useRef<number | null>(null);
+  const virtualizerTopOffsetRef = useRef<number | null>(null);
   const responseSpacerHeight = useRef(new Animated.Value(0)).current;
   const latestTurnOffset = useRef(new Animated.Value(0)).current;
   const viewportOwnerRef = useRef<NativeConversationViewportOwner | null>(null);
@@ -190,7 +192,10 @@ export function NativeResponsePositionedTurns({
   }, [viewportOwner]);
 
   useLayoutEffect(() => {
-    viewportOwner.setUserInputListener(() => responsePositioning.userTakeover());
+    viewportOwner.setUserInputListener(() => {
+      responsePositioning.userTakeover();
+      virtualizerRef.current?.cancelPositioning();
+    });
     return () => viewportOwner.setUserInputListener(null);
   }, [responsePositioning, viewportOwner]);
 
@@ -328,31 +333,37 @@ export function NativeResponsePositionedTurns({
     viewportOwner,
   ]);
 
-  const handleLatestTurnFollowContentLayout = useCallback((
-    event: LayoutChangeEvent,
-  ) => {
+  const considerFollowContentOverflow = useCallback(() => {
     if (!viewportOwner.isCurrentGeneration(viewportGeneration)) return;
-    const { height, y } = event.nativeEvent.layout;
-    latestTurnFollowContentHeightRef.current = Math.max(0, height);
-    latestTurnFollowContentBottomRef.current = Math.max(0, y + height);
+    const followMode = responsePositioning.getFollowState().followMode;
     if (
       latestTurnKey === null
-      || latestTurnPhase !== "prework"
-      || responsePositioning.getFollowState().followMode !== "prework_watch"
-      || responseSpacerHeightRef.current <= 24
+      || latestTurnFollowContentBottomRef.current === null
+      || virtualizerTopOffsetRef.current === null
+      || (followMode !== "response_watch" && (
+        latestTurnPhase !== "prework"
+        || followMode !== "prework_watch"
+        || responseSpacerHeightRef.current <= 24
+      ))
     ) return;
     const latestGeometry = virtualizerRef.current?.getEntryGeometry(latestTurnKey);
     if (latestGeometry === null || latestGeometry === undefined) return;
     const metrics = viewportOwner.getPlatformMetrics();
-    const followContentOverflowPx = latestGeometry.startPx
-      + latestTurnFollowContentBottomRef.current
-      - (metrics.topOffsetPx + metrics.viewportHeightPx - footerPaddingRef.current);
+    const followContentOverflowPx = nativeFollowContentOverflowPx({
+      virtualizerTopPx: virtualizerTopOffsetRef.current,
+      latestTurnTopPx: latestGeometry.startPx,
+      contentBottomWithinTurnPx: latestTurnFollowContentBottomRef.current,
+      viewportTopPx: metrics.topOffsetPx,
+      viewportHeightPx: metrics.viewportHeightPx,
+      footerPaddingPx: footerPaddingRef.current,
+    });
     const next = reduceFollow({
       type: "latest_turn_follow_content_changed",
       latestTurnPhase,
       followContentOverflowPx,
     });
-    if (next.followMode === "prework_follow") {
+    if (next.followMode === "prework_follow" || next.followMode === "user_follow") {
+      responsePositioning.settleRestoreForFollowMode();
       clearResponseSpacerAndScrollBottom();
     }
   }, [
@@ -364,6 +375,18 @@ export function NativeResponsePositionedTurns({
     viewportGeneration,
     viewportOwner,
   ]);
+  const handleLatestTurnFollowContentLayout = useCallback((
+    event: LayoutChangeEvent,
+  ) => {
+    const { height, y } = event.nativeEvent.layout;
+    latestTurnFollowContentHeightRef.current = Math.max(0, height);
+    latestTurnFollowContentBottomRef.current = Math.max(0, y + height);
+    considerFollowContentOverflow();
+  }, [considerFollowContentOverflow]);
+  const handleVirtualizerContentLayout = useCallback((event: LayoutChangeEvent) => {
+    virtualizerTopOffsetRef.current = event.nativeEvent.layout.y;
+    considerFollowContentOverflow();
+  }, [considerFollowContentOverflow]);
 
   const handleUserScroll = useCallback((
     distanceFromBottomPx: number,
@@ -470,7 +493,9 @@ export function NativeResponsePositionedTurns({
     updateVirtualViewport(
       scrollController.getLastScrollDistanceFromBottomPx(),
     );
+    considerFollowContentOverflow();
   }, [
+    considerFollowContentOverflow,
     scrollController,
     shrinkResponseSpacer,
     updateVirtualViewport,
@@ -532,10 +557,10 @@ export function NativeResponsePositionedTurns({
     responsePositioning.userTakeover();
     responsePositioning.resetFollowToStatic();
   }, [responsePositioning]);
-  const handleVirtualizerRestoreStateChange = useCallback((
-    state: VirtualizedTurnRestoreState | null,
+  const handleVirtualizerRestoreCaptureReady = useCallback((
+    capture: () => VirtualizedTurnRestoreState | null,
   ) => {
-    virtualizerRestoreStateRef.current = state;
+    virtualizerRestoreCaptureRef.current = capture;
   }, []);
 
   const conversationScrollApi = useMemo<TurnConversationScrollApi>(() => ({
@@ -601,11 +626,9 @@ export function NativeResponsePositionedTurns({
           && placement === null
         ) ownsLatestTurnPolicy = false;
         else {
-          reduceFollow({
-            type: latestTurnKey === null
-              ? "latest_turn_removed"
-              : "latest_turn_placed",
-          });
+          reduceFollow(latestTurnKey === null
+            ? { type: "latest_turn_removed" }
+            : { type: "latest_turn_placed", watchForOverflow: placement?.shouldPlaceLatestTurn === true });
           if (latestTurnKey === null) clearResponseSpacer();
           else if (!(placement?.shouldPlaceLatestTurn ?? true)) {
             pendingNonPlacementRef.current = placement;
@@ -702,11 +725,13 @@ export function NativeResponsePositionedTurns({
       scrollPaddingBottomPx: footerPaddingRef.current,
     });
     const currentLatestTurnKey = latestTurnKeyRef.current;
+    const captureVirtualizer = virtualizerRef.current?.captureRestoreState
+      ?? virtualizerRestoreCaptureRef.current;
     restoreCallbackRef.current?.({
       distanceFromBottomPx: normalized.distanceFromBottomPx,
-      virtualizedTurnList:
-        virtualizerRef.current?.captureRestoreState()
-          ?? virtualizerRestoreStateRef.current,
+      virtualizedTurnList: captureVirtualizer === null
+        ? initialVirtualizerRestoreStateRef.current
+        : captureVirtualizer(),
       turnFollow: currentLatestTurnKey === null
         ? null
         : {
@@ -728,7 +753,8 @@ export function NativeResponsePositionedTurns({
 
   useLayoutEffect(() => {
     viewportOwner.reportFooterScrollPadding(footerScrollPaddingPx);
-  }, [footerScrollPaddingPx, viewportOwner]);
+    considerFollowContentOverflow();
+  }, [considerFollowContentOverflow, footerScrollPaddingPx, viewportOwner]);
 
   return (
     <ScrollView
@@ -749,6 +775,9 @@ export function NativeResponsePositionedTurns({
       onScrollBeginDrag={() => viewportOwner.beginUserGesture()}
       onScrollEndDrag={() => viewportOwner.endUserGesture()}
       onScroll={handleScroll}
+      onTouchStart={() => viewportOwner.noteUserTouch()}
+      onTouchEnd={() => viewportOwner.endUserTouch()}
+      onTouchCancel={() => viewportOwner.endUserTouch()}
       overScrollMode={viewportPolicy.threadOverscroll === "none" ? "never" : "auto"}
       scrollEventThrottle={16}
       showsVerticalScrollIndicator={false}
@@ -758,6 +787,7 @@ export function NativeResponsePositionedTurns({
         <NativeVirtualizedConversationTurns
           ref={virtualizerRef}
           entries={entries}
+          timelineRevision={timelineRevision}
           getBottomPaddingPx={getBottomPaddingPx}
           getPendingRestoreDistanceFromBottomPx={
             getPendingRestoreDistanceFromBottomPx
@@ -771,7 +801,8 @@ export function NativeResponsePositionedTurns({
           onApiChange={onVirtualizedTurnListApiChange}
           onBeforeTargetPosition={onBeforeTargetPosition}
           onLatestTurnMeasurement={handleLatestTurnHeightMeasurement}
-          onRestoreStateChange={handleVirtualizerRestoreStateChange}
+          onContentLayout={handleVirtualizerContentLayout}
+          onRestoreCaptureReady={handleVirtualizerRestoreCaptureReady}
           preserveMeasuredTurnViewport={!isLatestTurnInProgress}
           renderEmpty={renderEmpty}
           renderTurn={(turn, isLatest) => renderTurn(

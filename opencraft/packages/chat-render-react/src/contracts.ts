@@ -1,4 +1,4 @@
-import type { ChatDocumentNode } from "@opencraft/chat-document";
+import type { ChatDocumentDialect, ChatDocumentNode } from "@opencraft/chat-document";
 import type { ComponentType, ReactNode } from "react";
 import type { ChatFadeTimeline } from "./fade-timeline";
 
@@ -34,6 +34,7 @@ export interface ChatMeasurementEvent extends ChatMeasurementRequest {
 
 export interface ChatRenderContext {
   readonly documentId: string;
+  readonly dialect?: ChatDocumentDialect;
   readonly conversationId?: string | null;
   readonly turnId?: string | null;
   readonly hostId?: string | null;
@@ -54,6 +55,8 @@ export interface ChatRenderContext {
     decision: ChatResourceDecision,
     intent?: ChatResourceOpenIntent,
   ) => void;
+  /** Host may expose only a subset of the policy's allowed navigation kinds. */
+  readonly canOpenResource?: (target: string, decision: ChatResourceDecision) => boolean;
   /**
    * Product-host byte boundary for resources that a browser cannot load
    * directly (for example an AppServer-local `file://` image). The renderer
@@ -66,7 +69,13 @@ export interface ChatRenderContext {
 export interface ChatNodeRendererProps {
   readonly node: ChatDocumentNode;
   readonly context: ChatRenderContext;
-  readonly renderNodes: (nodes: readonly ChatDocumentNode[]) => ReactNode;
+  readonly position?: {
+    readonly parentKind: ChatDocumentNode["kind"] | null;
+    readonly previousSiblingKind: ChatDocumentNode["kind"] | null;
+    readonly nextSiblingKind: ChatDocumentNode["kind"] | null;
+    readonly nextSibling: ChatDocumentNode | null;
+  };
+  readonly renderNodes: (nodes: readonly ChatDocumentNode[], parentKind?: ChatDocumentNode["kind"] | null) => ReactNode;
 }
 
 export interface ChatNodeRenderer {

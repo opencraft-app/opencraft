@@ -630,6 +630,14 @@ describe("AccountPage nickname audit state", () => {
     expect(await screen.findByRole("dialog", { name: "实名认证" })).toBeInTheDocument();
   });
 
+  it("opens the existing realname flow from the native account deep link", async () => {
+    const navigation = { ...createNavigationValue(), search: "?open=realname" };
+    renderAccountPageWithNavigation(navigation);
+
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    expect(navigation.setSearchParams).toHaveBeenCalledWith(new URLSearchParams(), { replace: true });
+  });
+
   it("shows the pending nickname privately while keeping the active nickname explicit", async () => {
     currentUser = {
       ...currentUser,

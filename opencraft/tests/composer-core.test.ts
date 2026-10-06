@@ -83,6 +83,56 @@ test("late attachment results update only their owning cached Draft and clear re
   assert.equal(disposed, 1);
 });
 
+test("a late submission settles its originating Draft without clearing the conversation now on screen", () => {
+  const controller = createComposerController(existing("send-a"), services());
+  controller.dispatch({ type: "set-document", document: richDocument });
+  controller.dispatch({ type: "set-selections", patch: { model: "selected-model" } });
+  const originId = controller.getSnapshot().draft.id;
+  const intent = controller.createSubmitIntent();
+  controller.dispatch({ type: "set-lifecycle", phase: "submitting" });
+  controller.dispatch({ type: "switch-target", target: existing("send-b") });
+  controller.dispatch({ type: "set-document", document: { version: 1, blocks: [
+    { type: "paragraph", children: [{ type: "text", text: "Keep B" }] },
+  ] } });
+  const visibleId = controller.getSnapshot().draft.id;
+
+  assert.equal(controller.settleSubmission(originId, intent, { status: "accepted" }), true);
+  assert.equal(controller.getSnapshot().draft.id, visibleId);
+  assert.equal(composerDocumentToPlainText(controller.getSnapshot().draft.document), "Keep B");
+  controller.dispatch({ type: "switch-target", target: existing("send-a") });
+  assert.notEqual(controller.getSnapshot().draft.id, originId);
+  assert.equal(composerDocumentToPlainText(controller.getSnapshot().draft.document), "");
+  assert.equal(controller.getSnapshot().draft.selections.model, "selected-model");
+  assert.equal(controller.settleSubmission(originId, intent, { status: "accepted" }), false);
+});
+
+test("a rejected or edited in-flight Draft remains editable on its own target", () => {
+  const controller = createComposerController(existing("retry-a"), services());
+  controller.dispatch({ type: "set-document", document: richDocument });
+  const originId = controller.getSnapshot().draft.id;
+  const intent = controller.createSubmitIntent();
+  controller.dispatch({ type: "set-lifecycle", phase: "submitting" });
+  controller.dispatch({ type: "switch-target", target: existing("retry-b") });
+  assert.equal(controller.settleSubmission(originId, intent, { status: "rejected" }), true);
+  controller.dispatch({ type: "switch-target", target: existing("retry-a") });
+  assert.equal(controller.getSnapshot().draft.id, originId);
+  assert.equal(controller.getSnapshot().draft.lifecycle.phase, "editing");
+  assert.equal(controller.getSnapshot().draft.document, richDocument);
+
+  controller.dispatch({ type: "set-lifecycle", phase: "submitting" });
+  assert.equal(controller.settleSubmission(originId, intent, { status: "failed", error: "Try again" }), true);
+  assert.deepEqual(controller.getSnapshot().draft.lifecycle, { phase: "failed", error: "Try again" });
+
+  controller.dispatch({ type: "set-lifecycle", phase: "submitting" });
+  controller.dispatch({ type: "set-document", document: { version: 1, blocks: [
+    { type: "paragraph", children: [{ type: "text", text: "New unsent text" }] },
+  ] } });
+  assert.equal(controller.settleSubmission(originId, intent, { status: "accepted" }), true);
+  assert.equal(controller.getSnapshot().draft.id, originId);
+  assert.equal(controller.getSnapshot().draft.lifecycle.phase, "editing");
+  assert.equal(composerDocumentToPlainText(controller.getSnapshot().draft.document), "New unsent text");
+});
+
 test("dictation presentation is owned by its transient input and never by a replaced draft", () => {
   const controller = createComposerController(existing("voice-owner"), services());
   const unregister = controller.registerView({ focus() {}, blur() {}, insertText() {}, undo() {}, redo() {},

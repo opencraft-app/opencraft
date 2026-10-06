@@ -29,6 +29,26 @@ export interface NativeConversationViewportOwnerOptions {
 
 type NativeScrollWriter = (command: NativeScrollCommand) => void;
 
+/** Translate nested Native onLayout coordinates to the visible answer edge. */
+export function nativeFollowContentOverflowPx({
+  virtualizerTopPx,
+  latestTurnTopPx,
+  contentBottomWithinTurnPx,
+  viewportTopPx,
+  viewportHeightPx,
+  footerPaddingPx,
+}: {
+  readonly virtualizerTopPx: number;
+  readonly latestTurnTopPx: number;
+  readonly contentBottomWithinTurnPx: number;
+  readonly viewportTopPx: number;
+  readonly viewportHeightPx: number;
+  readonly footerPaddingPx: number;
+}): number {
+  return virtualizerTopPx + latestTurnTopPx + contentBottomWithinTurnPx
+    - (viewportTopPx + viewportHeightPx - footerPaddingPx);
+}
+
 /**
  * Native counterpart of WebConversationViewportOwner.
  *
@@ -47,6 +67,7 @@ export class NativeConversationViewportOwner {
   #writer: NativeScrollWriter | null = null;
   #userInputListener: (() => void) | null = null;
   #gestureActive = false;
+  #touchNotified = false;
   #momentumActive = false;
   #gestureGraceUntilMs = 0;
   #pendingSystemTopOffsetPx: number | null = null;
@@ -74,7 +95,10 @@ export class NativeConversationViewportOwner {
           this.#metrics.viewportHeightPx,
           distance,
         );
-        this.#metrics = { ...this.#metrics, topOffsetPx };
+        // An animated ScrollView command only requests a destination. Keep
+        // physical metrics at the last observed offset until onScroll reports
+        // movement, so target positioning cannot settle before arrival.
+        if (behavior !== "smooth") this.#metrics = { ...this.#metrics, topOffsetPx };
         this.#pendingSystemTopOffsetPx = topOffsetPx;
         this.#writer?.({
           topOffsetPx,
@@ -109,19 +133,31 @@ export class NativeConversationViewportOwner {
     this.#userInputListener = listener;
   }
 
-  beginUserGesture(): void {
-    if (this.#disposed) return;
-    this.#gestureActive = true;
-    this.#gestureGraceUntilMs = Number.POSITIVE_INFINITY;
+  /** A touch takes over pending motion before ScrollView decides it is a drag. */
+  noteUserTouch(): void {
+    if (this.#disposed || this.#touchNotified) return;
+    this.#touchNotified = true;
     this.#pendingSystemTopOffsetPx = null;
     this.scrollController.cancelPendingLayoutPreservation();
     this.scrollController.cancelScrollAnimation();
     this.#userInputListener?.();
   }
 
+  endUserTouch(): void {
+    this.#touchNotified = false;
+  }
+
+  beginUserGesture(): void {
+    if (this.#disposed) return;
+    this.noteUserTouch();
+    this.#gestureActive = true;
+    this.#gestureGraceUntilMs = Number.POSITIVE_INFINITY;
+  }
+
   endUserGesture(): void {
     if (this.#disposed) return;
     this.#gestureActive = false;
+    this.#touchNotified = false;
     // Native may emit a final scroll between drag-end and momentum-begin.
     this.#gestureGraceUntilMs = this.#now() + 160;
   }
@@ -140,10 +176,15 @@ export class NativeConversationViewportOwner {
 
   reportViewportHeight(viewportHeightPx: number): void {
     if (this.#disposed) return;
+    const nextHeightPx = Number.isFinite(viewportHeightPx) ? Math.max(0, viewportHeightPx) : 0;
+    if (this.#metrics.viewportHeightPx === nextHeightPx) return;
     this.#metrics = {
       ...this.#metrics,
-      viewportHeightPx: Math.max(0, viewportHeightPx),
+      viewportHeightPx: nextHeightPx,
     };
+    // Before the first content geometry exists, the controller's distance is
+    // the saved restore intent. An empty startup viewport cannot revoke it.
+    if (this.#metrics.contentHeightPx > 0) this.scrollController.reportGeometry();
   }
 
   reportContentHeight(contentHeightPx: number): void {
@@ -174,7 +215,10 @@ export class NativeConversationViewportOwner {
       inheritedDistanceFromBottomPx,
       metrics: this.getMetrics(),
     });
-    if (requestedDistanceFromBottomPx === null) return null;
+    if (requestedDistanceFromBottomPx === null) {
+      this.scrollController.reportGeometry();
+      return null;
+    }
     const distanceFromBottomPx = Math.max(0, requestedDistanceFromBottomPx);
     this.writeDistanceFromBottomPx(distanceFromBottomPx, "instant");
     return distanceFromBottomPx;
@@ -261,6 +305,7 @@ export class NativeConversationViewportOwner {
     this.#generation += 1;
     this.#writer = null;
     this.#userInputListener = null;
+    this.#touchNotified = false;
     this.#pendingSystemTopOffsetPx = null;
     this.#pendingFooterCompensationDistancePx = null;
     this.#pendingPolicyDistancePx = null;

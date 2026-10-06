@@ -4,10 +4,12 @@ import {
   type ComposerController,
   type ComposerStoreServices,
   type ComposerTarget,
+  encodeComposerTarget,
 } from "@opencraft/composer-core";
 
 import type { ConversationScopeId } from "./conversation-binding";
 import type { ConversationScopeLeaseRegistry } from "./conversation-scope-lease";
+import type { ConversationDraftContinuity } from "./conversation-draft-continuity";
 
 export type ConversationViewId = string;
 
@@ -25,6 +27,7 @@ interface MutableConversationViewLease {
   readonly hostId: HostId;
   readonly composer: ComposerController;
   unsubscribeComposer: () => void;
+  stopDraftContinuity: () => void;
   readonly releaseScope: () => void;
   readonly retainers: Map<symbol, string>;
   touchedAt: number;
@@ -39,6 +42,7 @@ export interface ConversationViewRegistry {
   ): ConversationViewLease;
   get(viewId: ConversationViewId): ConversationViewLease | null;
   bindScopeTarget(scopeId: ConversationScopeId, target: ComposerTarget): void;
+  replaceDraftContinuity(next: ConversationDraftContinuity | undefined): void;
   retain(viewId: ConversationViewId, reason: string): () => void;
   close(viewId: ConversationViewId): boolean;
   dispose(): void;
@@ -47,6 +51,7 @@ export interface ConversationViewRegistry {
 export interface ConversationViewRegistryConfig {
   readonly scopeLeases: ConversationScopeLeaseRegistry;
   readonly composerServices: ComposerStoreServices;
+  readonly draftContinuity?: ConversationDraftContinuity;
   readonly onDisposeView?: (viewId: ConversationViewId) => void;
   readonly onDisposeError?: (error: AggregateError, viewId: ConversationViewId) => void;
   readonly maxInactiveViews?: number;
@@ -65,6 +70,7 @@ export function createConversationViewRegistry(
   const entries = new Map<ConversationViewId, MutableConversationViewLease>();
   let disposed = false;
   let logicalClock = 0;
+  let draftContinuity = config.draftContinuity;
   const maxInactiveViews = config.maxInactiveViews ?? 20;
 
   const ensureOpen = () => {
@@ -80,6 +86,11 @@ export function createConversationViewRegistry(
   const destroy = (entry: MutableConversationViewLease): AggregateError | null => {
     entries.delete(entry.viewId);
     const failures: unknown[] = [];
+    try {
+      entry.stopDraftContinuity();
+    } catch (error) {
+      failures.push(error);
+    }
     try {
       entry.unsubscribeComposer();
     } catch (error) {
@@ -138,6 +149,7 @@ export function createConversationViewRegistry(
         hostId,
         composer: createComposerController(target, config.composerServices),
         unsubscribeComposer: () => {},
+        stopDraftContinuity: () => {},
         releaseScope: config.scopeLeases.retain(scopeId, `conversation-view:${viewId}`),
         retainers: new Map(),
         touchedAt: ++logicalClock,
@@ -160,6 +172,7 @@ export function createConversationViewRegistry(
         if (Object.keys(selections).length === 0) return;
         config.scopeLeases.writeSelections(scopeId, selections);
       });
+      created.stopDraftContinuity = draftContinuity?.attach(viewId, created.composer) ?? (() => {});
       entries.set(viewId, created);
       prune();
       return snapshot(created);
@@ -172,7 +185,18 @@ export function createConversationViewRegistry(
       ensureOpen();
       for (const entry of entries.values()) {
         if (entry.scopeId !== scopeId) continue;
+        const previousTarget = entry.composer.getSnapshot().draft.target;
+        if (encodeComposerTarget(previousTarget) === encodeComposerTarget(target)) {
+          entry.composer.dispatch({ type: "switch-target", target });
+          entry.touchedAt = ++logicalClock;
+          continue;
+        }
+        entry.stopDraftContinuity();
+        if (previousTarget.type === "new-thread" && target.type === "existing-thread") {
+          draftContinuity?.discard(entry.viewId, previousTarget);
+        }
         entry.composer.dispatch({ type: "switch-target", target });
+        entry.stopDraftContinuity = draftContinuity?.attach(entry.viewId, entry.composer) ?? (() => {});
         // A promoted Draft target has no cached Composer draft; restore the
         // Scope's chosen selections so they carry into the canonical Thread.
         const draftSelections = entry.composer.getSnapshot().draft.selections;
@@ -181,6 +205,20 @@ export function createConversationViewRegistry(
           entry.composer.dispatch({ type: "set-selections", patch: storedSelections });
         }
         entry.touchedAt = ++logicalClock;
+      }
+    },
+    replaceDraftContinuity(next) {
+      ensureOpen();
+      config.scopeLeases.clearSelections();
+      for (const entry of entries.values()) {
+        const target = entry.composer.getSnapshot().draft.target;
+        entry.stopDraftContinuity();
+        draftContinuity?.discard(entry.viewId, target);
+        entry.composer.dispatch({ type: "reset-all" });
+      }
+      draftContinuity = next;
+      for (const entry of entries.values()) {
+        entry.stopDraftContinuity = draftContinuity?.attach(entry.viewId, entry.composer) ?? (() => {});
       }
     },
     retain(viewId, reason) {

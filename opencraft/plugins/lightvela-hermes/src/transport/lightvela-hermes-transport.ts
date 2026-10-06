@@ -17,6 +17,7 @@ import {
   HermesTatTerminalService,
   browserProfileSkillsJournalStorage,
   browserHermesComposerQueueService,
+  type BrowserHermesBridgeOptions,
   type HermesComposerQueueStorage,
   type HermesComposerQueueService,
   type ProfileSkillsJournalStorage,
@@ -47,11 +48,13 @@ export interface LightVelaAccountPort {
   getSnapshot(): { readonly phase: string; readonly activeBotId: string | null; readonly authGeneration?: number; readonly credentialScope?: string };
   subscribe(listener: () => void): () => void;
   request<T>(path: string, init?: RequestInit): Promise<T>;
-  resolveActiveBot(): Promise<LightVelaBotInstance>;
+  resolveActiveBot(): Promise<Pick<LightVelaBotInstance, "instanceId">>;
 }
 
 export interface LightVelaHermesTransportOptions {
   readonly account: LightVelaAccountPort;
+  /** Platform-owned, privacy-safe diagnostics for handled AppServer failures. */
+  readonly onRequestFailure?: BrowserHermesBridgeOptions["onRequestFailure"];
   readonly dashboardUrl?: string;
   /** Startup deadline; fixed Profile embeds default to 90 seconds. */
   readonly connectTimeoutMs?: number;
@@ -59,6 +62,8 @@ export interface LightVelaHermesTransportOptions {
   readonly profile?: string;
   readonly WebSocketImpl?: typeof WebSocket;
   readonly sha1?: Rfc6455Sha1;
+  /** Platform digest for attachment staging; browsers use Web Crypto by default. */
+  readonly sha256?: (data: Uint8Array) => Promise<Uint8Array>;
   /** React Native Response cannot consume a custom streaming response body. */
   readonly bufferHttpResponses?: boolean;
   readonly sessionTokenCache?: HermesSessionTokenCache;
@@ -233,7 +238,7 @@ export class LightVelaHermesTransport implements DuplexTransport {
     ) {
       this.logConnection("appserver:request-failed", this.generation, {
         method,
-        responseError: (response as { error?: unknown }).error,
+        errorCode: (response as { error?: { code?: unknown } }).error?.code,
       });
     }
     // A response from an expired request or detached bridge has no owner.
@@ -501,6 +506,8 @@ export class LightVelaHermesTransport implements DuplexTransport {
       sessionToken,
     );
     const bridge = new BrowserHermesAppServerBridge(socket, {
+      onRequestFailure: this.options.onRequestFailure,
+      sha256: this.options.sha256,
       defaultCwd: bootstrap.workingDirectory ?? "/",
       projectionRecovery: this.replayCheckpoint,
       fileSystem: new HermesDashboardFileSystem(

@@ -145,7 +145,11 @@ OpenCraft 的 Hermes Agent Console 暂时消费 `frontend/src` 的有界生成�
 
 OpenCraft 账户管理订阅与套餐额度阻塞恢复入口按当前账号区域打开官网 `/account/billing`（国内 `lightvela.com`、国际 `lightvela.ai`），不再使用旧的 `/account?tab=billing`；外部套餐页返回后仍刷新账户资料。此兼容不新增桌面总览、不改变实例创建权限或执行归属。
 
-OpenCraft iOS 入口由原生登录与底栏承载所选区域的 LightVela 网站 WebView。App 验证并保存本区域会话，仅向同源页面的既有浏览器 token store 注入凭据；外部站点交给系统浏览器，切换区域前须退出当前会话。底栏在同一 WebView 中导航智能体、账号和套餐页，网页自身的路由与语言决定当前标签。预热仅限同源版本化 `/_next/static/` 资源；站点 Service Worker 可缓存这类静态资源，不缓存私有 API、对话或其他站点内容。Android 内测 APK 仍承载独立原生工作台。运行与真机预览步骤见 [Expo README](../../../opencraft/apps/workbench-expo/README.md)。
+OpenCraft iOS 入口由原生登录和 `react-native-gesture-handler` 的 ReanimatedDrawerLayout 智能体滑动侧栏承载；没有底部 Tab。侧栏的功能列表独立滚动，个人与设置入口固定在左下角，符合桌面 Sidecar Footer 的归属；侧栏内的操作控件使用 HeroUI Native。抽屉与上浮 Bot 内容铺满 iPhone 窗口，状态栏及 Home Indicator 的安全区域作为各自面板内部留白，避免在动画外留下独立横条。当前安装的 HeroUI Native 1.0.10 没有左侧抽屉容器，不能把该侧栏称为 HeroUI Native 抽屉。智能体业务页由 `frontend/src/mobile-dom/entry.tsx` 从现有 `AgentSettingsPage`、`AgentsWorkbenchPage`、Repository/Session/OpenClaw providers 与 CSS 生成 App 内的 DOM runtime；功能执行仍归 frontend，原生只拥有 Bot/section 选择、创建和删除意图、容器生命周期和外部导航。删除意图由 frontend 的原有命名确认弹窗执行，原生不直接调用删除 API；删除后目录更新也驱动原生选中项回退。人设等业务页继续复用主站组件和响应式 CSS，嵌入容器不另造页面。生成资源随 App 打包，不将远端 `/agents` 作为主页面；所有既有 section 共用这一个容器。App 验证并保存所选区域会话，并在 DOM 脚本运行前提供区域、API base、语言和 token。生成物包含 frontend 代码，保持 Git 忽略且仅从 mono2 的两个 workspace 显式构建；公开的独立 OpenCraft 镜像不能独自重建该资源。移动端 WKWebView 的本地 HTML origin、跨域 API 和全部 Bot 操作仍需真机登录验证。
+
+`@opencraft/mobile-account-sdk` 共享资料、实名状态、邀请数据解析，以及昵称、安全手机、头像和退出操作的接口约定；iOS 用 HeroUI Native 独立呈现账号、邀请与编辑控件，主站继续使用完整的原有账号页和邀请返利组件。iOS 头像先在本地压缩，再通过现有账号 API 上传；账号 ID 使用系统剪贴板复制；退出先尝试注销服务端会话，再清除原生会话。两个页面各自持有认证、数据加载和导航；iOS 国内站未实名时由主站实名流程绑定手机，已实名可在原生页短信改绑；实名认证及支付仍由主站现有流程负责。原生个人页合并语言、开源授权和开发者设置，并提供“订阅管理”按钮，点击后在第一方 WebView 打开所选区域的主站账单页；“管理账号”同样进入主站完整账号页。外部站点交给系统浏览器，切换区域前须退出当前会话。仅把固定事件名及数值状态写入本机最近 100 行诊断日志，该日志只在开发者模式可见。预热仅限同源版本化 `/_next/static/` 资源；不缓存私有 API、对话或其他站点内容。Android 内测 APK 仍承载独立原生工作台。运行与真机预览步骤见 [Expo README](../../../opencraft/apps/workbench-expo/README.md)。
+
+iOS 原生账号页与设置详情页共用 `NativeNavigationSurface`：进入和退出使用同一导航动效，左边缘右滑跟手，松手后按距离或速度完成退出，否则弹回；返回按钮调用同一退出路径。位移和阈值以当前页面容器宽度计算，布局变化后重新测量，可用于手机、iPad 和折叠屏的不同承载方式。从 Bot 侧栏进入个人与设置时保留侧栏打开状态，使拖动与返回露出原侧栏；底层 Bot 或账号页面始终保持挂载，系统减少动态效果设置由动画库遵从。页面的画布、卡片、分隔线和文字使用 OpenCraft Native 语义 token，操作控件保持 HeroUI Native。HeroUI Native 1.0.10 没有对应导航页面容器，这一交互容器由 Expo Go 支持的 Gesture Handler 与 Reanimated 实现。面向手机用户保留清晰的信息分组与适合触摸的尺寸，不直接复制桌面 Sidecar 或参考截图的视觉。
 
 ## 稳定不变量
 
@@ -439,7 +443,7 @@ Pages 制品对嵌入内容哈希资源声明 immutable，稳定 loader/version/
 - OpenCraft 的客户端 Turn、queue、steer、工具活动和滚动投影遵循 Codex 生命周期；Hermes 事件游标、durable history 与投影状态遵循 Hermes Desktop 生命周期。断线恢复不得只保留 replay 游标却重建空投影状态。
 - OpenCraft 的 Hermes 工具完成状态只能来自明确结果证据：终端退出、结构化结果或后端失败。Turn 完成本身不得制造工具成功；后台命令保留运行中进程句柄，缺失结果保持未确认。实时与历史恢复必须复用同一工具身份和终态归并规则。
 - AppServer 传输失败必须保留结构化恢复策略。瞬态失败可由既有策略重连；远端资源已删除等不可恢复错误标记为手动恢复，Workbench 不得自动重建同一失效传输并形成重连循环。
-- Web 与 Expo 的用户消息折叠共享同一领域判定：仅自然内容高度越界后才允许折叠，裁剪后的视觉高度不能撤销已确认判定；原生宽度变化必须使旧测量 generation 失效，避免跨布局复用过期高度。
+- Web 与 Expo 的用户消息折叠共享同一领域判定：仅自然内容高度越界后才允许折叠，裁剪后的视觉高度不能撤销已确认判定；原生测量按内容、宽度代次、节点及生命周期隔离。Turn 定位保留语义目标，先确认当前投影与实测布局，远处目标以额外有界窗口测量；原生动画期间的布局变化重新计算目标。几何事实由唯一 viewport owner 发布，不能另建客户端滚动状态或把位置校正当作执行请求重投。详见 [ChatUI 滚动与定位契约](../../../opencraft/docs/chat-ui-architecture.md#跨桌面手机和平板的会话连续性)。
 - Workbench 的 Host Catalog readiness 由 Host runtime 状态转换驱动：失败/重连后的首次 `ready` 必须主动重载 Thread Catalog，不依赖用户再次发送消息；订阅时已经处于 `ready` 不得制造重复重载。浏览器 BFCache 的 persisted `pagehide` 必须保留应用所有权图，仅真正离开页面时才 dispose。
 - VelaGW 执行 NewAPI 控制面写操作时，单次操作内复用一个临时管理员登录 session，并在成功或失败后主动注销；不得把短期登录 session 当作持久管理凭据，也不得让周期性配置收敛持续消耗 NewAPI 活跃 session 配额。
 - DesiredConfig 导出读取渠道明文 Key 时同样必须创建一次临时管理员登录 session、完成 2FA，并在完整快照成功或失败后注销；不得使用 Set 中持久化的历史 access token 执行 `/api/verify`。

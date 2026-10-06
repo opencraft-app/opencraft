@@ -34,6 +34,11 @@ function getConnectedApplication(account: MobileLightVelaAccount) {
         bytes.set(data);
         return new Uint8Array(await Crypto.digest(Crypto.CryptoDigestAlgorithm.SHA1, bytes));
       },
+      sha256: async data => {
+        const bytes = new Uint8Array(data.byteLength);
+        bytes.set(data);
+        return new Uint8Array(await Crypto.digest(Crypto.CryptoDigestAlgorithm.SHA256, bytes));
+      },
     }),
     transportEndpoint: null,
   });

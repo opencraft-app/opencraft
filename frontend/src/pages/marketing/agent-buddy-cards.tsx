@@ -6,7 +6,8 @@
  * 视觉对齐 SkillHub `/hermes` DrawModal 与 `/hermes/edit-soul`。
  */
 
-import { Eye } from "lucide-react";
+import { Eye, Puzzle } from "lucide-react";
+import { useState } from "react";
 import { useT } from "@/i18n/t";
 import type { SkillHubSoul } from "@/lib/skillhub-api";
 import { getSoulVisuals } from "@/lib/soul-visuals";
@@ -38,6 +39,8 @@ export function CardBack({
   /** 拼图 icon 尺寸的 tailwind 类，默认 h-8 w-8（32px）。slot 槽位用更大的 icon。 */
   iconClassName?: string;
 }) {
+  const [textureFailed, setTextureFailed] = useState(false);
+  const [iconFailed, setIconFailed] = useState(false);
   return (
     <div
       className="relative aspect-[112/157] w-full overflow-hidden rounded transition-shadow duration-200"
@@ -47,19 +50,24 @@ export function CardBack({
         boxShadow: active ? "0 32px 54px rgba(0,0,0,0.05)" : "none",
       }}
     >
-      <div className="relative h-full w-full overflow-hidden rounded-[3px] bg-white">
-        <img
+      <div className="relative h-full w-full overflow-hidden rounded-[3px] bg-gradient-to-br from-white to-neutral-100">
+        {!textureFailed ? <img
           src={CARD_BACK_IMG}
           alt=""
           draggable={false}
+          onError={() => setTextureFailed(true)}
           className="absolute inset-0 h-full w-full object-cover"
+        /> : null}
+        <Puzzle aria-hidden="true"
+          className={`pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-neutral-400 ${iconClassName}`}
         />
-        <img
+        {!iconFailed ? <img
           src={PUZZLE_ICON}
           alt=""
           draggable={false}
+          onError={() => setIconFailed(true)}
           className={`pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 ${iconClassName}`}
-        />
+        /> : null}
         <div
           className="pointer-events-none absolute rounded-[3px] border"
           style={{

@@ -20,6 +20,7 @@ var (
 // adapter.
 const NativeClientID = "opencraft-native-v1"
 const NativeRedirectURI = "opencraft://auth/lightvela"
+const NativeInternationalRedirectURI = "opencraft-intl://auth/lightvela"
 const WebClientID = "opencraft-web-v1"
 const WebCNRedirectURI = "https://chat.lightvela.com/auth/lightvela/callback"
 const WebInternationalRedirectURI = "https://chat.lightvela.ai/auth/lightvela/callback"
@@ -54,7 +55,7 @@ func NewRegistry(clients []Client) (*Registry, error) {
 		if client.ID == "" || client.DisplayName == "" || len(client.RedirectURIs) == 0 {
 			return nil, fmt.Errorf("%w: incomplete client", ErrInvalidClient)
 		}
-		if client.ID == NativeClientID && (len(client.RedirectURIs) != 1 || client.RedirectURIs[0] != NativeRedirectURI) {
+		if client.ID == NativeClientID && !isAllowedNativeRedirectSet(client.RedirectURIs) {
 			return nil, fmt.Errorf("%w: native client requires its exact callback", ErrInvalidClient)
 		}
 		if client.ID == WebClientID && !equalStringSets(client.RedirectURIs, []string{WebCNRedirectURI, WebInternationalRedirectURI}) {
@@ -65,7 +66,7 @@ func NewRegistry(clients []Client) (*Registry, error) {
 		}
 		for i, redirectURI := range client.RedirectURIs {
 			normalized, err := normalizeRedirectURI(redirectURI)
-			if client.ID == NativeClientID && redirectURI == NativeRedirectURI {
+			if client.ID == NativeClientID && isNativeRedirect(redirectURI) {
 				normalized, err = redirectURI, nil
 			}
 			if err != nil {
@@ -95,6 +96,15 @@ func equalStringSets(left, right []string) bool {
 	return true
 }
 
+func isNativeRedirect(uri string) bool {
+	return uri == NativeRedirectURI || uri == NativeInternationalRedirectURI
+}
+
+func isAllowedNativeRedirectSet(redirects []string) bool {
+	return equalStringSets(redirects, []string{NativeRedirectURI}) ||
+		equalStringSets(redirects, []string{NativeRedirectURI, NativeInternationalRedirectURI})
+}
+
 func (r *Registry) Client(clientID string) (Client, bool) {
 	if r == nil {
 		return Client{}, false
@@ -108,7 +118,7 @@ func (r *Registry) ValidateRedirectURI(clientID string, redirectURI string) (str
 	if !ok {
 		return "", ErrInvalidClient
 	}
-	if err := validateRedirectURIStructure(redirectURI); err != nil && !(client.ID == NativeClientID && redirectURI == NativeRedirectURI) {
+	if err := validateRedirectURIStructure(redirectURI); err != nil && !(client.ID == NativeClientID && isNativeRedirect(redirectURI)) {
 		return "", ErrInvalidClient
 	}
 	for _, allowed := range client.RedirectURIs {

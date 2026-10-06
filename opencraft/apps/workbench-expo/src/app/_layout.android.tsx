@@ -1,6 +1,9 @@
+import "../../global.css";
 import { Slot } from "expo-router";
 import * as Crypto from "expo-crypto";
 import { StatusBar } from "expo-status-bar";
+import { HeroUINativeProvider } from "heroui-native";
+import { NativeChatMathProvider, NativeChatMermaidProvider } from "@opencraft/chat-render-native";
 import { Suspense } from "react";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
@@ -16,6 +19,8 @@ import { LightVelaHermesTransport } from "@opencraft/plugin-lightvela-hermes/tra
 import { LightVelaAccountGate } from "../components/lightvela-account-gate";
 import type { MobileLightVelaAccount } from "../runtime/lightvela-account";
 import { mobileAccount } from "../runtime/mobile-account-instance";
+import { loadMobileChatMermaidHtml } from "../runtime/mobile-chat-mermaid-asset.native";
+import { loadMobileChatMathHtml } from "../runtime/mobile-chat-math-asset.native";
 
 // The application graph exists before the React root. React presents external
 // stores; it does not create or own Host/Thread/Replica lifetimes.
@@ -34,6 +39,11 @@ function getConnectedApplication(account: MobileLightVelaAccount) {
         bytes.set(data);
         return new Uint8Array(await Crypto.digest(Crypto.CryptoDigestAlgorithm.SHA1, bytes));
       },
+      sha256: async data => {
+        const bytes = new Uint8Array(data.byteLength);
+        bytes.set(data);
+        return new Uint8Array(await Crypto.digest(Crypto.CryptoDigestAlgorithm.SHA256, bytes));
+      },
     }),
     transportEndpoint: null,
   });
@@ -44,8 +54,12 @@ function ConnectedWorkbench({ account }: { readonly account: MobileLightVelaAcco
   const application = getConnectedApplication(account);
   return (
     <WorkbenchRuntimeProvider application={application}>
-      <StatusBar style="dark" />
-      <Slot />
+      <NativeChatMermaidProvider loadHtml={loadMobileChatMermaidHtml}>
+        <NativeChatMathProvider loadHtml={loadMobileChatMathHtml}>
+          <StatusBar style="dark" />
+          <Slot />
+        </NativeChatMathProvider>
+      </NativeChatMermaidProvider>
     </WorkbenchRuntimeProvider>
   );
 }
@@ -53,13 +67,15 @@ function ConnectedWorkbench({ account }: { readonly account: MobileLightVelaAcco
 export default function RootLayout() {
   return (
     <SafeAreaProvider>
-      <Suspense fallback={null}>
-        <ExpoPresentationRuntimeProvider runtime={presentationRuntime}>
-          <LightVelaAccountGate account={mobileAccount}>
-            <ConnectedWorkbench account={mobileAccount} />
-          </LightVelaAccountGate>
-        </ExpoPresentationRuntimeProvider>
-      </Suspense>
+      <HeroUINativeProvider>
+        <Suspense fallback={null}>
+          <ExpoPresentationRuntimeProvider runtime={presentationRuntime}>
+            <LightVelaAccountGate account={mobileAccount}>
+              <ConnectedWorkbench account={mobileAccount} />
+            </LightVelaAccountGate>
+          </ExpoPresentationRuntimeProvider>
+        </Suspense>
+      </HeroUINativeProvider>
     </SafeAreaProvider>
   );
 }

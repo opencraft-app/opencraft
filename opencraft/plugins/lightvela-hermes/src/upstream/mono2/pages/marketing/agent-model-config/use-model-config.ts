@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   createHermesModelConfigClient,
+  HermesModelConfigResponseError,
   type HermesConnectionProbeResult,
   type HermesConfiguredModel,
   type HermesModelConfigExecDebugCommand,
@@ -77,7 +78,15 @@ export function useModelConfig({
       const nextSnapshot = await client.read();
       if (revision === requestRevision.current) setSnapshot(nextSnapshot);
     } catch (error) {
-      if (revision === requestRevision.current) setLoadError(getErrorMessage(error));
+      if (revision === requestRevision.current) {
+        setLoadError(getErrorMessage(error));
+        if (typeof window !== "undefined") {
+          const kind = error instanceof HermesModelConfigResponseError
+            ? error.code === "command_failed" ? 1 : error.code === "invalid_response" ? 2 : 3
+            : 0;
+          window.dispatchEvent(new CustomEvent("opencraft-mobile-model-load-failed", { detail: { kind } }));
+        }
+      }
     } finally {
       if (revision === requestRevision.current) setLoading(false);
     }

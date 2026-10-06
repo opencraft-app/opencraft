@@ -22,7 +22,11 @@ if [[ "${OPENCRAFT_IOS_RELEASE:-0}" == "1" ]]; then
     echo "The iOS native project already exists; use a clean checkout for the LightVela build." >&2
     exit 1
   fi
-  product_name="LightVela"
+  case "${OPENCRAFT_LIGHTVELA_EDITION:-cn}" in
+    cn) product_name="LightVela" ;;
+    intl) product_name="LightVela-International" ;;
+    *) echo "OPENCRAFT_LIGHTVELA_EDITION must be cn or intl." >&2; exit 1 ;;
+  esac
   prebuild_mode="--clean"
 else
   product_name="OpenCraft"

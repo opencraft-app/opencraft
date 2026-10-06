@@ -23,7 +23,7 @@ export const CODEX_LATEST_TURN_PLACEMENT_SPRING = Object.freeze({
 });
 
 export type LatestTurnPhase = "idle" | "prework" | "final_answer";
-export type TurnFollowMode = "static" | "prework_watch" | "prework_follow" | "user_follow";
+export type TurnFollowMode = "static" | "response_watch" | "prework_watch" | "prework_follow" | "user_follow";
 
 export interface TurnFollowState {
   readonly followMode: TurnFollowMode;
@@ -40,7 +40,7 @@ export type TurnFollowEvent =
       readonly previousLatestTurnPhase: LatestTurnPhase;
       readonly latestTurnPhase: LatestTurnPhase;
     }
-  | { readonly type: "latest_turn_placed" }
+  | { readonly type: "latest_turn_placed"; readonly watchForOverflow?: boolean }
   | { readonly type: "latest_turn_removed" }
   | {
       readonly type: "scroll_distance_changed";
@@ -89,7 +89,9 @@ export function createInitialTurnFollowState({
   if (isLatestTurnInProgress && distanceFromBottomPx <= CODEX_FOLLOW_DISTANCE_THRESHOLD_PX) {
     return createTurnFollowState(latestTurnPhase === "prework" ? "prework_follow" : "user_follow");
   }
-  return createTurnFollowState(restoredFollowMode ?? "static");
+  // A local submit watch cannot take ownership after a route restore away
+  // from the bottom; only the live submission is allowed to create it.
+  return createTurnFollowState(restoredFollowMode === "response_watch" ? "static" : restoredFollowMode ?? "static");
 }
 
 /** Exact typed form of the recovered Codex OD reducer. */
@@ -99,6 +101,14 @@ export function reduceTurnFollowState(
 ): TurnFollowState {
   switch (event.type) {
     case "latest_turn_follow_content_changed":
+      if (state.followMode === "response_watch"
+        && event.latestTurnPhase !== "idle"
+        && event.followContentOverflowPx > 0) {
+        return withFollowMode(
+          state,
+          event.latestTurnPhase === "prework" ? "prework_follow" : "user_follow",
+        );
+      }
       return event.latestTurnPhase === "prework"
         && state.followMode === "prework_watch"
         && event.followContentOverflowPx > 0
@@ -112,7 +122,9 @@ export function reduceTurnFollowState(
         if (next.followMode === "user_follow") next = withFollowMode(next, "prework_follow");
       }
       if (event.previousLatestTurnPhase === "prework" && event.latestTurnPhase === "final_answer") {
-        next = withFollowMode(next, next.followMode === "prework_follow" ? "user_follow" : "static");
+        next = withFollowMode(next,
+          next.followMode === "prework_follow" ? "user_follow"
+            : next.followMode === "response_watch" ? "response_watch" : "static");
       }
       if (
         event.previousLatestTurnPhase !== "idle"
@@ -125,11 +137,13 @@ export function reduceTurnFollowState(
     }
 
     case "latest_turn_placed":
+      return withFollowMode(state, event.watchForOverflow ? "response_watch" : "static");
     case "latest_turn_removed":
       return withFollowMode(state, "static");
 
     case "scroll_distance_changed":
       if (event.distanceFromBottomPx <= CODEX_FOLLOW_DISTANCE_THRESHOLD_PX) return state;
+      if (state.followMode === "response_watch") return withFollowMode(state, "static");
       if (state.followMode === "prework_follow") return withFollowMode(state, "prework_watch");
       if (state.followMode === "user_follow") {
         return withFollowMode(
@@ -147,9 +161,9 @@ export function reduceTurnFollowState(
   }
 }
 
-/** Codex disables normal viewport preservation in these two modes. */
+/** Preserve the reading viewport until the response actually reaches its edge. */
 export function isViewportPreservingTurnFollowMode(followMode: TurnFollowMode): boolean {
-  return followMode === "static" || followMode === "prework_watch";
+  return followMode === "static" || followMode === "response_watch" || followMode === "prework_watch";
 }
 
 export function shouldFollowLatestTurn(

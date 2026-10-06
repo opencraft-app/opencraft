@@ -112,14 +112,4 @@ export function isMermaidRenderRevealed(state: MermaidRenderState): boolean {
   return state.status === "rendered" && state.revealedKey === state.activeKey;
 }
 
-/**
- * Strip directives that would make an assistant-authored diagram interactive
- * or mutate Mermaid's process-global configuration. Product theme and security
- * are owned by the renderer, never by fenced Markdown.
- */
-export function prepareMermaidSource(source: string): string {
-  return source
-    .replace(/%%\{[\s\S]*?\}%%/gu, "")
-    .replace(/^\s*click\s+.*$/gimu, "")
-    .trim();
-}
+export { prepareMermaidSource } from "@opencraft/chat-render-react";

@@ -62,6 +62,13 @@ export function timelineTurnRenderKey(turn: TimelineTurnView): string {
     : turn.turnKey;
 }
 
+/** The Item anchor used by both hosts for a visible user-message frame. */
+export function getTimelineUserMessageTargetKey(frame: TimelineFrame): string | null {
+  return frame.type === "user" && frame.blocks.length > 0
+    ? frame.anchors.find((anchor) => anchor.type === "item")?.id ?? frame.id
+    : null;
+}
+
 /**
  * Identity of the latest visual Activity inside a Turn.
  *

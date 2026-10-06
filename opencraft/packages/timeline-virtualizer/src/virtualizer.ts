@@ -65,7 +65,11 @@ export function reconcileRenderedRangeForEntries(
   current: VirtualizedTurnViewportState,
   layout: TurnLayout,
 ): TurnRange {
-  if (equalKeys(current.turnKeys, layout.turnKeys)) return current.renderedRange;
+  if (equalKeys(current.turnKeys, layout.turnKeys)) {
+    const visibleRange = computeTurnRange(layout, current.distanceFromBottomPx, current.viewportHeightPx);
+    // A retained window must still cover the viewport after height changes.
+    return rangeContains(current.renderedRange, visibleRange) ? current.renderedRange : visibleRange;
+  }
   // This is a mounted-window handoff, not persisted restoration by count.
   // An insertion between existing rows must not evict the old last row for
   // one render before the viewport effect commits the new geometry.
@@ -302,10 +306,13 @@ export function createTurnViewportState(
           computedRange.endIndex - computedRange.startIndex,
         ),
       });
+  const renderedRange = restoredRange !== null && rangeContains(restoredRange, computedRange)
+    ? restoredRange
+    : computedRange;
   return {
     distanceFromBottomPx: distance,
     viewportHeightPx: height,
-    renderedRange: restoredRange ?? computedRange,
+    renderedRange,
     turnKeys: layout.turnKeys,
   };
 }

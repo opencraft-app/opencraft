@@ -1,7 +1,7 @@
 import type { Context } from "@deepseek-ai/cordis";
 import {
   createChatRenderRuntime,
-  resolveStandardChatResource,
+  registerStandardChatResourcePolicy,
   type ChatRenderRuntime,
 } from "@opencraft/chat-render-react";
 
@@ -74,14 +74,7 @@ const WebBuiltinRenderers = Object.assign(function WebBuiltinRenderers(ctx: Cont
       priority: 0,
       component: createFileCitationRenderer(ctx.chatResourcePolicies),
     }),
-    ctx.chatResourcePolicies.register({
-      name: "web-standard-url",
-      priority: 0,
-      matches: () => true,
-      resolve(target, context) {
-        return resolveStandardChatResource(target, context);
-      },
-    }),
+    registerStandardChatResourcePolicy(ctx.chatResourcePolicies, "web-standard-url"),
   ];
   ctx.effect(() => () => remove.reverse().forEach((dispose) => dispose()));
 }, {

@@ -49,16 +49,17 @@ export function ChatDocumentSessionView({
   );
   const resolvedContext: ChatRenderContext = useMemo(() => ({
     ...context,
+    dialect,
     documentId,
     fadeTimeline,
     streaming,
-  }), [context, documentId, fadeTimeline, streaming]);
+  }), [context, dialect, documentId, fadeTimeline, streaming]);
 
-  const renderNodes = useCallback((nodes: readonly ChatDocumentNode[]): ReactNode => nodes.map((node) => {
+  const renderNodes = useCallback((nodes: readonly ChatDocumentNode[], parentKind: ChatDocumentNode["kind"] | null = null): ReactNode => nodes.map((node, index) => {
     const directive = node.kind === "directive" ? runtime.directives.resolve(node.name) : null;
     const renderer = directive ?? runtime.renderers.resolve(renderers, node, resolvedContext);
     if (renderer === null) {
-      if ("children" in node) return <Fragment key={node.stableKey}>{renderNodes(node.children)}</Fragment>;
+      if ("children" in node) return <Fragment key={node.stableKey}>{renderNodes(node.children, node.kind)}</Fragment>;
       if (node.kind === "text" || node.kind === "reference" || node.kind === "color-swatch") return <Fragment key={node.stableKey}>{node.text}</Fragment>;
       if (node.kind === "code-fence") return <Fragment key={node.stableKey}>{node.code}</Fragment>;
       if (node.kind === "math") return <Fragment key={node.stableKey}>{node.source}</Fragment>;
@@ -71,6 +72,12 @@ export function ChatDocumentSessionView({
         context={resolvedContext}
         key={node.stableKey}
         node={node}
+        position={{
+          parentKind,
+          previousSiblingKind: nodes[index - 1]?.kind ?? null,
+          nextSiblingKind: nodes[index + 1]?.kind ?? null,
+          nextSibling: nodes[index + 1] ?? null,
+        }}
         renderNodes={renderNodes}
       />
     );

@@ -4,13 +4,18 @@
   "version": "0.1.0",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./code-highlight": "./src/code-highlight-engine.ts",
+    "./code-highlight-themes": "./src/code-highlight-themes.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@deepseek-ai/cordis": "4.0.1",
+    "@shikijs/core": "4.4.3",
+    "@shikijs/engine-javascript": "4.4.3",
+    "@shikijs/langs": "4.4.3",
     "@opencraft/chat-document": "0.1.0",
     "react": "19.2.3"
   },

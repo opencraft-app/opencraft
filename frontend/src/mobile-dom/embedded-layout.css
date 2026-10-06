@@ -1,0 +1,190 @@
+/* The native drawer handles horizontal gestures; the DOM owns vertical content. */
+html.lv-mobile-bot-runtime,
+html.lv-mobile-bot-runtime body,
+html.lv-mobile-bot-runtime #root {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+html.lv-mobile-bot-runtime .lw-settings-shell {
+  box-sizing: border-box;
+  width: min(100%, 860px);
+  max-width: 100%;
+  padding-inline: 16px;
+}
+
+html.lv-mobile-bot-runtime .lv-agent-settings-grid {
+  grid-template-columns: minmax(0, 1fr);
+  width: 100%;
+  min-width: 0;
+}
+
+html.lv-mobile-bot-runtime .lv-agent-settings-content,
+html.lv-mobile-bot-runtime ._lh-claw-bot-panel,
+html.lv-mobile-bot-runtime ._lh-claw-bot-panel__cards {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+/* The WebView width, rather than the device window, owns mobile layout. */
+html.lv-mobile-bot-runtime .lv-agent-settings-content > *,
+html.lv-mobile-bot-runtime ._lh-claw-bot-panel__cards > *,
+html.lv-mobile-bot-runtime .lv-buddy-panel,
+html.lv-mobile-bot-runtime .lv-buddy-panel__body,
+html.lv-mobile-bot-runtime .lv-buddy-panel__grid {
+  min-width: 0;
+  max-width: 100%;
+}
+
+html.lv-mobile-bot-runtime .lv-buddy-panel__heading {
+  min-width: 0;
+  text-align: center;
+}
+
+html.lv-mobile-bot-runtime .lv-buddy-panel__actions,
+html.lv-mobile-bot-runtime .lv-buddy-panel__action-buttons {
+  min-width: 0;
+  width: 100%;
+}
+
+/* Keep file controls within the content column; only the list may scroll. */
+html.lv-mobile-bot-runtime .lv-agent-settings-content input,
+html.lv-mobile-bot-runtime .lv-agent-settings-content button {
+  max-width: 100%;
+}
+
+/* File action buttons already have accessible labels. Their hover tooltips
+   extend outside narrow path controls even while invisible. */
+html.lv-mobile-bot-runtime .lv-tat-files-panel [role="tooltip"] {
+  display: none;
+}
+
+/* Three Soul cards need about 200px each; the 600px viewport switch made
+   601px split-screen containers narrower per card than a phone layout. */
+@media (max-width: 740px) {
+  html.lv-mobile-bot-runtime .lv-buddy-panel__toolbar,
+  html.lv-mobile-bot-runtime .lv-buddy-panel__body,
+  html.lv-mobile-bot-runtime .lv-buddy-panel__actions {
+    padding-inline: 12px;
+  }
+
+  html.lv-mobile-bot-runtime .lv-buddy-panel__toolbar-inner {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  html.lv-mobile-bot-runtime .lv-buddy-panel__source {
+    position: static;
+    justify-content: center;
+    width: 100%;
+  }
+
+  html.lv-mobile-bot-runtime .lv-buddy-panel__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  html.lv-mobile-bot-runtime .lv-buddy-panel__actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  html.lv-mobile-bot-runtime .lv-buddy-panel__action-buttons > .group {
+    flex: 1 1 100%;
+  }
+
+  html.lv-mobile-bot-runtime .lv-buddy-panel__action-buttons > .group > button {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+/* Drawn cards need room for their name and summary. Keep empty slots compact. */
+@container (max-width: 360px) {
+  html.lv-mobile-bot-runtime .lv-buddy-panel__grid > .lv-buddy-card--filled {
+    grid-column: 1 / -1;
+    justify-self: center;
+    width: min(100%, 240px);
+  }
+}
+
+/* The media fallback keeps filled cards readable in older WebViews that do
+   not implement container queries. The WebView viewport is the mobile pane. */
+@supports not (container-type: inline-size) {
+  @media (max-width: 440px) {
+    html.lv-mobile-bot-runtime .lv-buddy-panel__grid > .lv-buddy-card--filled {
+      grid-column: 1 / -1;
+      justify-self: center;
+      width: min(100%, 240px);
+    }
+  }
+}
+
+/* The website's touch rule lives in a lower CSS layer than Tailwind utilities.
+   Reapply it here so touch users can reach per-card reroll and delete actions. */
+@media (hover: none) and (pointer: coarse) {
+  /* A 640px iPad split view is still touch operated; do not require a
+     desktop double click to enter a folder there. */
+  html.lv-mobile-bot-runtime .lv-tat-files-open-entry {
+    display: inline-flex;
+  }
+
+  /* Hover-only card tips still affect grid scroll width at 320px. The card
+     buttons already carry accessible names on touch devices. */
+  html.lv-mobile-bot-runtime .lv-buddy-panel__grid [role="tooltip"] {
+    display: none;
+  }
+
+  html.lv-mobile-bot-runtime .lv-buddy-card__preview {
+    min-height: 2.75rem;
+    width: 100%;
+    margin-top: 0.375rem;
+  }
+
+  html.lv-mobile-bot-runtime .lv-buddy-card__quick-actions {
+    position: static;
+    justify-content: center;
+    width: 100%;
+    margin-top: 0.375rem;
+    opacity: 1;
+  }
+
+  html.lv-mobile-bot-runtime .lv-buddy-card__quick-actions > button {
+    width: 2.75rem;
+    height: 2.75rem;
+  }
+
+  html.lv-mobile-bot-runtime .lv-buddy-panel__applied button {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+  }
+
+  html.lv-mobile-bot-runtime .lv-buddy-panel__applied [role="tooltip"] {
+    display: none;
+  }
+}
+
+/* A long press on page chrome must not select arbitrary DOM text. */
+html.lv-mobile-bot-runtime body,
+html.lv-mobile-bot-runtime body * {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Editing still needs a cursor, selection handles and the native edit menu. */
+html.lv-mobile-bot-runtime body input,
+html.lv-mobile-bot-runtime body textarea,
+html.lv-mobile-bot-runtime body [contenteditable=""],
+html.lv-mobile-bot-runtime body [contenteditable=""] *,
+html.lv-mobile-bot-runtime body [contenteditable="true"],
+html.lv-mobile-bot-runtime body [contenteditable="true"] * {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}

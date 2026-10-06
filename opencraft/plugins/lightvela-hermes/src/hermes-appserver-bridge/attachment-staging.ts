@@ -20,6 +20,9 @@ export const HERMES_ATTACHMENT_STAGING_CAPABILITY: AttachmentStagingCapability =
     maxBytes: HERMES_ATTACHMENT_MAX_BYTES,
   });
 
+/** The Host platform owns the digest implementation; it must not mutate input. */
+export type HermesSha256 = (data: Uint8Array) => Promise<Uint8Array>;
+
 interface AttachmentManifest {
   readonly protocolVersion: 1;
   readonly ref: AttachmentRef;
@@ -50,15 +53,32 @@ function decodeBase64(value: string, maxBytes = HERMES_ATTACHMENT_MAX_BYTES): Ui
     || /\s/u.test(value)
     || !/^[A-Za-z0-9+/]*={0,2}$/u.test(value)
   ) throw new Error("Attachment bytes are not valid base64");
-  let binary: string;
+  const lastQuartet = value.slice(-4);
+  const padding = value.endsWith("==") ? 2 : value.endsWith("=") ? 1 : 0;
+  const decodedLength = value.length / 4 * 3 - padding;
+  if (decodedLength <= 0 || decodedLength > maxBytes) {
+    throw new Error("Attachment bytes are not valid base64");
+  }
+  const bytes = new Uint8Array(decodedLength);
+  // atob, a binary string and a full re-encode used to coexist in memory with
+  // the 32 MiB output. Decode aligned chunks and validate only the final
+  // quartet, where non-canonical unused bits can occur.
+  const chunkChars = 1024 * 1024;
+  let offset = 0;
   try {
-    binary = atob(value);
+    if (btoa(atob(lastQuartet)) !== lastQuartet) {
+      throw new Error("non-canonical base64");
+    }
+    for (let start = 0; start < value.length; start += chunkChars) {
+      const binary = atob(value.slice(start, start + chunkChars));
+      for (let index = 0; index < binary.length; index += 1) {
+        bytes[offset++] = binary.charCodeAt(index);
+      }
+    }
   } catch {
     throw new Error("Attachment bytes are not valid base64");
   }
-  const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
-  const canonical = bytesToBase64(bytes).replace(/=+$/u, "");
-  if (canonical !== value.replace(/=+$/u, "")) {
+  if (offset !== decodedLength) {
     throw new Error("Attachment bytes are not valid base64");
   }
   return bytes;
@@ -72,12 +92,16 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-async function sha256(bytes: Uint8Array): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", bytes.slice().buffer as ArrayBuffer);
-  return [...new Uint8Array(digest)]
+async function sha256(bytes: Uint8Array, digest: HermesSha256): Promise<string> {
+  const hash = await digest(bytes);
+  if (hash.byteLength !== 32) throw new Error("SHA-256 digest must contain 32 bytes");
+  return [...hash]
     .map((value) => value.toString(16).padStart(2, "0"))
     .join("");
 }
+
+const webCryptoSha256: HermesSha256 = async (bytes) =>
+  new Uint8Array(await crypto.subtle.digest("SHA-256", bytes.slice().buffer as ArrayBuffer));
 
 function ownedDirectory(fileSystem: HermesHostFileSystem, id: string): string {
   const root = fileSystem.codexHome.replace(/\/+$/u, "");
@@ -109,10 +133,11 @@ function locationIdentity(location: AttachmentLocation): string {
 async function metadataIndexPath(
   fileSystem: HermesHostFileSystem,
   location: AttachmentLocation,
+  digest: HermesSha256,
 ): Promise<string> {
-  const digest = await sha256(new TextEncoder().encode(locationIdentity(location)));
+  const hash = await sha256(new TextEncoder().encode(locationIdentity(location)), digest);
   const root = fileSystem.codexHome.replace(/\/+$/u, "");
-  return `${root}/opencraft-attachment-metadata/${digest}.json`;
+  return `${root}/opencraft-attachment-metadata/${hash}.json`;
 }
 
 function sameRequest(manifest: AttachmentManifest, request: AttachmentStageParams): boolean {
@@ -131,7 +156,10 @@ function missingFile(error: unknown): boolean {
 export class HermesAttachmentStagingService {
   readonly capability = HERMES_ATTACHMENT_STAGING_CAPABILITY;
 
-  constructor(private readonly fileSystem: HermesHostFileSystem) {}
+  constructor(
+    private readonly fileSystem: HermesHostFileSystem,
+    private readonly digest: HermesSha256 = webCryptoSha256,
+  ) {}
 
   async stage(request: AttachmentStageParams): Promise<AttachmentStageResponse> {
     validateIdentity(request.clientAttachmentId);
@@ -152,7 +180,7 @@ export class HermesAttachmentStagingService {
     }
     const bytes = decodeBase64(request.source.dataBase64);
     if (bytes.byteLength !== request.size) throw new Error("Attachment size does not match its bytes");
-    const contentSha256 = await sha256(bytes);
+    const contentSha256 = await sha256(bytes, this.digest);
     const directory = ownedDirectory(this.fileSystem, request.clientAttachmentId);
     const manifestPath = `${directory}/manifest.json`;
     const existing = await this.readManifest(manifestPath);
@@ -168,7 +196,7 @@ export class HermesAttachmentStagingService {
         || !existing.ref.location.path.startsWith(`${directory}/`)
       ) throw new Error("Hermes attachment manifest escaped its owned directory");
       const stagedBytes = decodeBase64((await this.fileSystem.readFile(existing.ref.location.path)).dataBase64);
-      if (stagedBytes.byteLength !== request.size || await sha256(stagedBytes) !== contentSha256) {
+      if (stagedBytes.byteLength !== request.size || await sha256(stagedBytes, this.digest) !== contentSha256) {
         throw new Error("Hermes attachment manifest does not match staged bytes");
       }
       await this.writeMetadataIndex(existing);
@@ -198,13 +226,13 @@ export class HermesAttachmentStagingService {
     const directory = ownedDirectory(this.fileSystem, params.id);
     const manifest = await this.readManifest(`${directory}/manifest.json`);
     if (manifest !== null) {
-      await this.fileSystem.remove(await metadataIndexPath(this.fileSystem, manifest.ref.location));
+      await this.fileSystem.remove(await metadataIndexPath(this.fileSystem, manifest.ref.location, this.digest));
     }
     return { removed: await this.fileSystem.remove(directory, true) };
   }
 
   async resolve(location: AttachmentLocation): Promise<AttachmentRef | null> {
-    const indexed = await this.readManifest(await metadataIndexPath(this.fileSystem, location));
+    const indexed = await this.readManifest(await metadataIndexPath(this.fileSystem, location, this.digest));
     if (indexed !== null) {
       return locationIdentity(indexed.ref.location) === locationIdentity(location)
         ? indexed.ref
@@ -243,7 +271,7 @@ export class HermesAttachmentStagingService {
 
   private async writeMetadataIndex(manifest: AttachmentManifest): Promise<void> {
     await this.fileSystem.writeFile(
-      await metadataIndexPath(this.fileSystem, manifest.ref.location),
+      await metadataIndexPath(this.fileSystem, manifest.ref.location, this.digest),
       bytesToBase64(new TextEncoder().encode(`${JSON.stringify(manifest)}\n`)),
     );
   }

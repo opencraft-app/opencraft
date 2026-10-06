@@ -1,5 +1,8 @@
 .expo/
 dist/
+assets/mobile-bot-runtime.html
+assets/mobile-chat-mermaid.html
+assets/mobile-chat-math.html
 android/
 release/
 node_modules/

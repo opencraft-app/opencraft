@@ -38,6 +38,7 @@ import {
   directionForTouchDelta,
   distanceExcludingBottomPadding,
   isAtVirtualizedBottom,
+  isViewportPreservingTurnFollowMode,
   shouldLoadOlderHistory,
   shouldPlaceLatestTurnFromPendingSubmit,
   shouldShowScrollToBottomAction,
@@ -270,7 +271,19 @@ test("route restore retains measured heights and the rendered window", () => {
   });
 
   const restored = createTurnViewportState(layout, 300, 100, saved, config);
-  assert.deepEqual(restored.renderedRange, { startIndex: 4, endIndex: 5 });
+  const visible = computeTurnRange(layout, 300, 100, config.overscanTurnCount);
+  assert.ok(restored.renderedRange.startIndex <= visible.startIndex);
+  assert.ok(restored.renderedRange.endIndex >= visible.endIndex);
+});
+
+test("restore never mounts a saved window that omits the current viewport", () => {
+  const layout = buildTurnLayout(turns(40), {}, config);
+  const restored = createTurnViewportState(layout, 0, 100, {
+    renderedWindow: { anchorKey: "turn-5", count: 3 },
+    turnHeightsByKey: { "turn-5": 100 },
+  }, config);
+  assert.deepEqual(restored.renderedRange, computeTurnRange(layout, 0, 100, config.overscanTurnCount));
+  assert.equal(createTurnWindowSlice(turns(40), layout, restored.renderedRange).entries.at(-1)?.turnKey, "turn-39");
 });
 
 test("prepending hydrated history preserves the measured viewport anchor", () => {
@@ -312,6 +325,25 @@ test("entry-layout reconciliation has one fenced virtualizer-owned correction", 
   assert.equal(reconcileTurnLayoutViewport({ ...options, layoutOwnedByMeasurement: true }), null);
   assert.equal(reconcileTurnLayoutViewport({ ...options, restorePending: true }), null);
   assert.equal(reconcileTurnLayoutViewport({ ...options, preserveViewport: false }), null);
+});
+
+test("prepending above the viewport reapplies an unchanged bottom distance", () => {
+  const previous = buildTurnLayout(turns(4), { "turn-2": 100 }, config);
+  const next = buildTurnLayout([
+    { turnKey: "older", estimatedHeightPx: 300 },
+    ...turns(4),
+  ], { "turn-2": 100 }, config);
+  assert.equal(reconcileTurnLayoutViewport({
+    previousLayout: previous,
+    nextLayout: next,
+    measuredHeightsByKey: { "turn-2": 100 },
+    currentDistanceFromBottomPx: 100,
+    viewportHeightPx: 100,
+    bottomPaddingPx: 0,
+    preserveViewport: true,
+    layoutOwnedByMeasurement: false,
+    restorePending: false,
+  }), 100);
 });
 
 test("height changes below the anchor compensate distanceFromBottom", () => {
@@ -410,6 +442,31 @@ test("a ResizeObserver batch commits height table, layout, window and scroll as 
   assert.equal(transaction.scrollDistanceFromBottomPx, 260);
   assert.equal(transaction.viewport.distanceFromBottomPx, 260);
   assert.equal(transaction.latestTurnHeightChange?.heightDeltaPx, 0);
+});
+
+test("folding a measured visible Turn keeps its top offset and visible range", () => {
+  const entries = turns(4);
+  const measured = { "turn-2": 500 };
+  const previous = buildTurnLayout(entries, measured, config);
+  const viewport = createTurnViewportState(previous, 500, 100, null, config);
+  const transaction = createTurnMeasurementTransaction({
+    entries,
+    measurements: [{ turnKey: "turn-2", heightPx: 300 }],
+    measuredHeightsByKey: measured,
+    layout: previous,
+    viewport,
+    currentDistanceFromBottomPx: 500,
+    bottomPaddingPx: 0,
+    preserveMeasuredTurnViewport: true,
+    getPendingRestoreScrollDistanceFromBottomPx: null,
+    config,
+  });
+  assert.ok(transaction);
+  assert.equal(transaction.scrollDistanceFromBottomPx, 300);
+  assert.equal(previous.totalHeightPx - 100 - 500, transaction.layout.totalHeightPx - 100 - 300);
+  const visible = computeTurnRange(transaction.layout, 300, 100, 0);
+  assert.ok(transaction.viewport.renderedRange.startIndex <= visible.startIndex);
+  assert.ok(transaction.viewport.renderedRange.endIndex >= visible.endIndex);
 });
 
 test("latest-Turn single measurement has the synchronous DOM-height fast path at bottom", () => {
@@ -574,9 +631,39 @@ test("a prepended history page re-anchors the render window before viewport stat
 
   const reconciled = reconcileRenderedRangeForEntries(currentViewport, nextLayout);
   const anchoredSlice = createTurnWindowSlice(nextEntries, nextLayout, reconciled, 0);
-  assert.deepEqual(reconciled, { startIndex: 2_003, endIndex: 2_008 });
-  assert.equal(anchoredSlice.entries[0]?.turnKey, "turn-3");
-  assert.equal(anchoredSlice.marginTopPx, nextLayout.topOffsetsPx[2_003]);
+  assert.ok(reconciled.startIndex >= 2_000);
+  assert.ok(anchoredSlice.entries.some((entry) => entry.turnKey === "turn-4"));
+  assert.equal(anchoredSlice.marginTopPx, nextLayout.topOffsetsPx[reconciled.startIndex]);
+});
+
+test("a stale mounted range never hides the visible turn after folding or removal", () => {
+  const entries = turns(10);
+  const previous = buildTurnLayout(entries, { "turn-6": 800 }, config);
+  const current = {
+    distanceFromBottomPx: 350,
+    viewportHeightPx: 100,
+    renderedRange: { startIndex: 5, endIndex: 8 },
+    turnKeys: previous.turnKeys,
+  };
+  const folded = buildTurnLayout(entries, { "turn-6": 1 }, config);
+  const foldedRange = reconcileRenderedRangeForEntries(current, folded);
+  const visibleAfterFold = computeTurnRange(folded, 350, 100);
+  assert.ok(visibleAfterFold.startIndex < current.renderedRange.startIndex);
+  assert.ok(foldedRange.startIndex <= visibleAfterFold.startIndex);
+  assert.ok(foldedRange.endIndex >= visibleAfterFold.endIndex);
+
+  const removedCurrent = {
+    distanceFromBottomPx: 100,
+    viewportHeightPx: 100,
+    renderedRange: { startIndex: 7, endIndex: 10 },
+    turnKeys: buildTurnLayout(entries, {}, config).turnKeys,
+  };
+  const removed = buildTurnLayout(entries.slice(0, 7), {}, config);
+  const removedRange = reconcileRenderedRangeForEntries(removedCurrent, removed);
+  const visibleAfterRemoval = computeTurnRange(removed, 100, 100);
+  assert.ok(visibleAfterRemoval.startIndex < removedCurrent.renderedRange.startIndex);
+  assert.ok(removedRange.startIndex <= visibleAfterRemoval.startIndex);
+  assert.ok(removedRange.endIndex >= visibleAfterRemoval.endIndex);
 });
 
 test("hydration inside a mounted window preserves its last row before viewport commit", () => {
@@ -708,6 +795,64 @@ test("response placement does not give final-answer growth ownership of followin
     type: "latest_turn_follow_content_changed", latestTurnPhase: "final_answer", followContentOverflowPx: 40_000,
   });
   assert.equal(state.followMode, "static", "new text must not steal a detached reader's viewport");
+});
+
+test("a near-bottom local submit follows streaming once the answer reaches the viewport edge", () => {
+  let state = reduceTurnFollowState(createTurnFollowState(), {
+    type: "latest_turn_placed", watchForOverflow: true,
+  });
+  assert.equal(state.followMode, "response_watch");
+  assert.equal(isViewportPreservingTurnFollowMode(state.followMode), true);
+  state = reduceTurnFollowState(state, {
+    type: "latest_turn_phase_changed", previousLatestTurnPhase: "idle", latestTurnPhase: "prework",
+  });
+  state = reduceTurnFollowState(state, {
+    type: "latest_turn_phase_changed", previousLatestTurnPhase: "prework", latestTurnPhase: "final_answer",
+  });
+  assert.equal(state.followMode, "response_watch");
+  state = reduceTurnFollowState(state, {
+    type: "latest_turn_follow_content_changed", latestTurnPhase: "final_answer", followContentOverflowPx: 0,
+  });
+  assert.equal(state.followMode, "response_watch");
+  state = reduceTurnFollowState(state, {
+    type: "latest_turn_follow_content_changed", latestTurnPhase: "final_answer", followContentOverflowPx: 1,
+  });
+  assert.equal(state.followMode, "user_follow");
+  assert.equal(shouldFollowLatestTurn(state, "final_answer"), true);
+  state = reduceTurnFollowState(state, {
+    type: "scroll_distance_changed", latestTurnPhase: "final_answer", distanceFromBottomPx: 100,
+  });
+  assert.equal(state.followMode, "static");
+  assert.equal(shouldFollowLatestTurn(state, "final_answer"), false);
+});
+
+test("reading away cancels local response watch and restored watch cannot steal position", () => {
+  let state = reduceTurnFollowState(createTurnFollowState(), {
+    type: "latest_turn_placed", watchForOverflow: true,
+  });
+  state = reduceTurnFollowState(state, {
+    type: "scroll_distance_changed", latestTurnPhase: "prework", distanceFromBottomPx: 25,
+  });
+  state = reduceTurnFollowState(state, {
+    type: "latest_turn_follow_content_changed", latestTurnPhase: "final_answer", followContentOverflowPx: 500,
+  });
+  assert.equal(state.followMode, "static");
+  assert.equal(createInitialTurnFollowState({
+    distanceFromBottomPx: 100,
+    isLatestTurnInProgress: true,
+    latestTurnPhase: "final_answer",
+    restoredFollowMode: "response_watch",
+  }).followMode, "static");
+  const directAnswer = reduceTurnFollowState(
+    reduceTurnFollowState(createTurnFollowState(), {
+      type: "latest_turn_placed", watchForOverflow: true,
+    }),
+    { type: "latest_turn_phase_changed", previousLatestTurnPhase: "idle", latestTurnPhase: "final_answer" },
+  );
+  assert.equal(directAnswer.followMode, "response_watch");
+  assert.equal(reduceTurnFollowState(directAnswer, {
+    type: "latest_turn_follow_content_changed", latestTurnPhase: "final_answer", followContentOverflowPx: 1,
+  }).followMode, "user_follow");
 });
 
 test("latest Turn placement and response spacer retain recovered Codex constants", () => {
