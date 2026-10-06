@@ -13,6 +13,8 @@
 5. `ai-gateway`、`velagw` 或 `new-api` 根据 contract 选择 provider 并处理流式/非流式响应。
 6. CloudAgent/渠道把输出送回原入口；OpenCraft 以 durable replay 游标和同生命周期投影状态去重、续接并完成 Turn，`workers` 可承担异步恢复作业。
 
+国内站嵌入式 Agent Chat 的侧栏将 OpenCraft 的 `turn/completed` 终态事件投影为后台会话未读提示：完成时若用户正在查看其他会话或已离开聊天页，宿主为该会话显示蓝点；打开会话后清除。后台 Hermes 会话可能只在目录中更新运行状态、没有经过当前视图的 Turn 投影，因此宿主还比较已加载会话列表的 `running=true → false`，为遗漏的终态事件补蓝点；首次历史加载和正在刷新的目录不触发。这个兜底只能判断执行已结束，无法仅凭目录区分正常完成和主动中断。手动“标记为未读”仍由宿主维护。
+
 ## 诊断顺序
 
 按“入口是否收到 → 编排是否找到实例 → runtime 是否健康 → provider 是否生成 → 流/渠道是否送出”定位，不从最终沉默直接归因模型。每层使用同一 request/session/instance 关联标识，日志不得包含密钥或完整敏感内容。

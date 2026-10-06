@@ -1265,7 +1265,7 @@ a {
   min-height: 34px;
   align-items: center;
   gap: 4px;
-  padding: 0 8px 0 20px;
+  padding: 0 5px 0 20px;
 }
 
 .lv-agents-chat-toggle {
@@ -1331,18 +1331,6 @@ a {
   padding-right: 8px;
 }
 
-.lv-agents-chat-group .lv-agents-session-item .lv-agents-nav-icon {
-  width: 18px;
-  height: 18px;
-  flex-basis: 18px;
-  color: rgb(0 0 0 / 55%);
-}
-
-.lv-agents-chat-group .lv-agents-session-item .lv-agents-nav-icon svg {
-  width: 16px;
-  height: 16px;
-}
-
 .lv-agents-session-list-actions {
   display: flex;
   justify-content: center;
@@ -1379,7 +1367,7 @@ a {
 }
 
 .lv-agents-session-item--running.lv-agents-nav-item {
-  padding-right: 52px;
+  padding-right: 60px;
 }
 
 .lv-agents-session-item .lv-agents-session-title {
@@ -1388,6 +1376,23 @@ a {
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-weight: 400;
+}
+
+.lv-agents-session-item--unread .lv-agents-session-title {
+  color: #171717;
+}
+
+.lv-agents-session-unread-dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 6px;
+  border-radius: 50%;
+  background: #4775d1;
+}
+
+.lv-agents-session-item--unread:not(.lv-agents-session-item--running) .lv-agents-session-unread-dot {
+  transform: translateX(8px);
 }
 
 .lv-agents-session-menu-anchor {
@@ -1396,8 +1401,8 @@ a {
   right: 4px;
   display: flex;
   align-items: center;
-  gap: 4px;
-  height: 36px;
+  gap: 0;
+  height: 100%;
 }
 
 .lv-agents-session-running {
@@ -1456,6 +1461,8 @@ a {
   right: 0;
   z-index: 30;
   min-width: 112px;
+  width: max-content;
+  max-width: 220px;
   padding: 4px;
   border: 1px solid rgb(15 23 42 / 8%);
   border-radius: 8px;

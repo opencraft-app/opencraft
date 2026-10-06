@@ -38,6 +38,7 @@ import {
 } from "./embedded-chat-root";
 
 import { observeEmbeddedConnection } from "./embedded-connection";
+import { observeEmbeddedTurnCompletions, type EmbeddedWorkbenchTurnCompletedDetail } from "./embedded-turn-completion";
 import { HermesPhysicalConnectionPreparation, type HermesPhysicalConnectionPreparationOptions } from "@opencraft/plugin-lightvela-hermes/physical-connection";
 
 const ELEMENT_NAME = "opencraft-embedded-workbench";
@@ -171,6 +172,7 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
   private hasMoreSessions = false;
   private sessions = new Map<string, EmbeddedWorkbenchSession>();
   private stopThemeSubscription: (() => void) | null = null;
+  private stopTurnCompletionSubscription: (() => void) | null = null;
   private disposed = false;
   private failed = false;
 
@@ -306,6 +308,8 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
     }
     this.connection?.dispose();
     this.connection = null;
+    this.stopTurnCompletionSubscription?.();
+    this.stopTurnCompletionSubscription = null;
     this.root.unmount();
     this.locale?.dispose();
     this.localeObserver?.disconnect();
@@ -342,6 +346,17 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
       if (this.disposed) return;
       const supervisor = application.application.supervisor;
       if (supervisor.mode !== "active") throw new Error("Embedded Host is unavailable");
+      this.stopTurnCompletionSubscription = observeEmbeddedTurnCompletions(
+        supervisor.appServerRegistry.clients,
+        application.hostId,
+        (detail) => {
+          if (this.disposed) return;
+          this.dispatchEvent(new CustomEvent<EmbeddedWorkbenchTurnCompletedDetail>(
+            "opencraft-turn-completed",
+            { detail },
+          ));
+        },
+      );
       const runtime = supervisor.registry.getRuntime(application.hostId);
       this.connection = observeEmbeddedConnection(runtime, detail => {
         this.dispatchEvent(new CustomEvent("opencraft-connection", { detail }));

@@ -87,7 +87,7 @@ import type {
   LightVelaSession,
   LightVelaSessionActions,
 } from "./agent-chat-panel";
-import { resolveAgentSidebarEmptySessionState, useAgentSidebarSessionList } from "./agent-sidebar-session-list";
+import { resolveAgentSidebarEmptySessionState, useAgentSidebarSessionList, useAgentSidebarUnreadSessions } from "./agent-sidebar-session-list";
 import { AUTH_SERVICE_UNAVAILABLE_MESSAGE, readStoredAuthToken } from "@/repositories/http-repositories";
 import {
   AGENTS_HOME_PATH,
@@ -2808,6 +2808,7 @@ export const AgentSettingsPage = ({
     loading: chatSessionsLoading,
     onSessionStateChange: applyChatSessionState,
   } = useAgentSidebarSessionList(sidebarSessionBotKey);
+  const { unreadChatIds, setUnread } = useAgentSidebarUnreadSessions(sidebarSessionBotKey);
   const emptyChatSessionState = resolveAgentSidebarEmptySessionState({
     botPaused: activeBot?.status === "paused",
     loading: chatSessionsLoading,
@@ -2825,6 +2826,14 @@ export const AgentSettingsPage = ({
   );
   /** 宿主持有的选中会话（受控值）；undefined 表示尚未指定。 */
   const [selectedChatId, setSelectedChatId] = useState<string | undefined>(undefined);
+  const lastVisibleChatIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const visibleChatId = activeSection === "chat" ? selectedChatId ?? null : null;
+    if (visibleChatId !== null && lastVisibleChatIdRef.current !== visibleChatId) {
+      setUnread(visibleChatId, false);
+    }
+    lastVisibleChatIdRef.current = visibleChatId;
+  }, [activeSection, selectedChatId, setUnread]);
   /** 内嵌会话动作句柄（renameSession / deleteSession）。 */
   const [chatSessionActions, setChatSessionActions] = useState<LightVelaSessionActions | null>(null);
   /** 行内重命名状态：renamingChatId 非空表示该项处于编辑态。 */
@@ -2906,6 +2915,11 @@ export const AgentSettingsPage = ({
     setOpenSessionMenuChatId(null);
     setRenamingChatId(session.chatId);
     setRenamingDraft(session.title || "");
+  };
+
+  const markSessionUnread = (chatId: string) => {
+    setUnread(chatId, true);
+    setOpenSessionMenuChatId(null);
   };
 
   const commitSessionRename = () => {
@@ -6278,7 +6292,6 @@ export const AgentSettingsPage = ({
                                         activeSection === "chat" && "is-active",
                                       )}
                                     >
-                                      <span className="lv-agents-nav-icon"><MessageSquare className="h-4 w-4" aria-hidden="true" /></span>
                                       <span className="lv-agents-session-title" title={t("默认对话")}>
                                         {t("默认对话")}
                                       </span>
@@ -6287,6 +6300,7 @@ export const AgentSettingsPage = ({
                                 ) : (
                                   chatSessionPagination.visibleSessions.map((session) => {
                                     const isSelected = selectedChatId === session.chatId;
+                                    const isUnread = unreadChatIds.includes(session.chatId);
                                     const isRenaming = renamingChatId === session.chatId;
                                     const isMenuOpen = openSessionMenuChatId === session.chatId;
                                     const isDeletable = canDeleteSession(session);
@@ -6322,23 +6336,25 @@ export const AgentSettingsPage = ({
                                             <AppLink
                                               to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.chat, searchParams)}
                                               aria-current={isSelected ? "page" : undefined}
-                                              aria-label={sessionDisplayTitle}
+                                              aria-label={isUnread ? `${sessionDisplayTitle} (${t("未读")})` : sessionDisplayTitle}
                                               title={isSidebarCollapsed ? sessionDisplayTitle : undefined}
                                               onClick={() => {
                                                 setSelectedChatId(session.chatId);
+                                                setUnread(session.chatId, false);
                                                 setMobileChatNavOpen(false);
                                               }}
                                               className={cn(
                                                 "lv-agents-session-item lv-agents-nav-item",
                                                 openCraftChatEnabled && "lv-agents-session-item--opencraft",
                                                 isRunning && "lv-agents-session-item--running",
+                                                isUnread && "lv-agents-session-item--unread",
                                                 isSelected && "is-active",
                                               )}
                                             >
-                                              <span className="lv-agents-nav-icon"><MessageSquare className="h-4 w-4" aria-hidden="true" /></span>
                                               <span className="lv-agents-session-title" title={sessionDisplayTitle}>
                                                 {sessionDisplayTitle}
                                               </span>
+                                              {isUnread ? <span className="lv-agents-session-unread-dot" aria-hidden="true" /> : null}
                                             </AppLink>
                                             <div ref={isMenuOpen ? sessionMenuRef : undefined} className="lv-agents-session-menu-anchor">
                                               {isRunning ? <span className="lv-agents-session-running" role="img" aria-label={t("执行中")} /> : null}
@@ -6365,6 +6381,14 @@ export const AgentSettingsPage = ({
                                                     onClick={() => startSessionRename(session)}
                                                   >
                                                     {t("重命名")}
+                                                  </button>
+                                                  <button
+                                                    type="button"
+                                                    role="menuitem"
+                                                    className="lv-agents-session-menu-item"
+                                                    onClick={() => markSessionUnread(session.chatId)}
+                                                  >
+                                                    {t("标记为未读")}
                                                   </button>
                                                   <button
                                                     type="button"
@@ -6673,6 +6697,7 @@ export const AgentSettingsPage = ({
                               onSessionCommandsChange={setChatSessionCommands}
                               onHasMoreSessionsChange={setChatSessionsHasMore}
                               onSessionMutationStateChange={setChatSessionMutationState}
+                              onTurnCompleted={(chatId) => setUnread(chatId, true)}
                               legacy={null}
                             />
                           )}
