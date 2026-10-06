@@ -6415,11 +6415,11 @@ export const AgentSettingsPage = ({
                       </div>
                     </div>
                     <div className="lv-agents-sidebar-footer">
-                      {isDesktop ? (
-                        <div className="lv-agent-account-footer">
+                      <div className="lv-agent-account-footer">
+                        {(isDesktop || mobileChatNavOpen) && (
                           <UserAvatarMenu showLanguageSwitcher={isGlobal} variant="sidebar" />
-                        </div>
-                      ) : null}
+                        )}
+                      </div>
                     </div>
                   </AgentSidebar>
                   </>

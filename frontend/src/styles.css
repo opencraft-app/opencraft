@@ -597,6 +597,12 @@ html.lw-settings-scrollbar-stable {
     overscroll-behavior: contain;
   }
 
+  .lv-agent-mobile-nav-open .lv-agent-account-footer {
+    width: 100%;
+    margin-left: 0;
+    padding-left: 0;
+  }
+
   .lv-agent-mobile-nav-open .lv-agents-nav-group-items {
     display: flex;
     flex-direction: column;

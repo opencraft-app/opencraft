@@ -9,6 +9,7 @@ import { AgentSettingsPage } from "@/pages/marketing/agent-settings-page";
 
 const execDebugCommand = vi.fn();
 const refreshProfile = vi.fn();
+const listMyPasses = vi.fn().mockResolvedValue([]);
 
 let currentSessionUser: User;
 let bots: OpenClawBot[] = [];
@@ -94,7 +95,7 @@ vi.mock("@/contexts/repository-context", () => ({
     plans: {
       getRenewPrice: vi.fn(),
       createRenewOrder: vi.fn(),
-      listMyPasses: vi.fn(),
+      listMyPasses,
     },
   }),
 }));
@@ -176,6 +177,31 @@ describe("AgentSettingsPage 实验室导航", () => {
 
   afterEach(() => {
     cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  it("keeps account, billing, and cloud storage reachable at the bottom of the mobile drawer", async () => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({
+      matches: false,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })));
+    renderLabPage();
+
+    await userEvent.click(screen.getByRole("button", { name: "展开导航" }));
+    const drawer = screen.getByRole("dialog", { name: "侧边栏视图切换" });
+    const footer = drawer.querySelector(".lv-agents-sidebar-footer");
+    expect(footer).toBeInTheDocument();
+    expect(footer?.previousElementSibling).toHaveClass("lv-agents-sidebar-middle");
+    await userEvent.click(within(drawer).getByRole("button", { name: "打开用户菜单" }));
+
+    expect(screen.getByRole("link", { name: "云存储" })).toHaveAttribute("href", "/agents/files");
+    expect(screen.getByRole("link", { name: "套餐与费用" })).toHaveAttribute("href", "/account/billing");
+    expect(screen.getByRole("link", { name: "账号" })).toHaveAttribute("href", "/account");
+
+    await userEvent.click(within(drawer).getByRole("button", { name: "关闭" }));
+    expect(drawer.querySelector(".lv-agent-account-trigger")).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "账号管理" })).not.toBeInTheDocument();
   });
 
   it("将实验室作为独立分组并标记 DeepSeek Harness 当前页", async () => {
