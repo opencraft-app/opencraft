@@ -6,6 +6,14 @@ OpenCraft 的聊天跟进偏好由客户端 `UiPreferencesRuntime` 持有：运�
 
 本领域覆盖 Agent 请求进入、实例/渠道编排、Sandbox 分配、CloudAgent 执行、模型网关/provider 路由、流式响应和后台 workflow。
 
+OpenCraft 的活动分段结束原因与折叠资格分别建模。插话/异步问题等只关闭
+连续时序段，不隐藏先前文字；普通任务过程必须到达自身有效非异步最终回答
+才获得折叠资格，不能继承旧响应的 final phase 或以 Turn 完成冒充回答。
+共享 chat-core 唯一计算资格/默认显隐，View 只写显式展开选择；临时展开及
+无折叠按钮时完整保留正文，不反写选择。执行、稳定消息身份和滚动 owner
+不变；独立 Bot 聊天不强行复用任务折叠。详见
+[Activity disclosure authority](../../../opencraft/docs/chat-ui-architecture.md#activity-closure-and-disclosure-authority)。
+
 OpenCraft 的轮次文件变更汇总由 Turn 的 diff 字段持有，属于附属资源，不是
 消息顺序中的 Item。共享 chat-core 在 transcript 分段之外派生 changeSummary，
 Web 与 Native 消费同一呈现计划；运行中 diff 更新不得关闭活动段、清空工作时钟
