@@ -461,6 +461,7 @@ func TestProductionChatOriginsAreGloballyAllowed(t *testing.T) {
 	wantGlobalOrigins := map[string]struct{}{
 		"https://chat.lightvela.com": {},
 		"https://chat.lightvela.ai":  {},
+		"https://*.devcloud.woa.com": {},
 	}
 	wantScopedRules := map[string]map[string]struct{}{
 		http.MethodGet + " /v1/instances": {

@@ -811,6 +811,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 "redirect_uris": [
                     "https://chat.lightvela.com/auth/lightvela/callback",
                     "https://chat.lightvela.ai/auth/lightvela/callback",
+                    "https://*.devcloud.woa.com/auth/lightvela/callback",
                 ],
             },
         )

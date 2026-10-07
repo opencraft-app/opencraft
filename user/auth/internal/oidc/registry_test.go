@@ -62,6 +62,59 @@ func TestWebClientRequiresOnlyTheTwoCanonicalCallbacks(t *testing.T) {
 	}
 }
 
+func TestDevCloudCallbacksRequireOptInAndCanonicalWebOrigin(t *testing.T) {
+	legacy, err := NewRegistry([]Client{{ID: WebClientID, DisplayName: "Web", RedirectURIs: []string{WebCNRedirectURI, WebInternationalRedirectURI}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := legacy.ValidateRedirectURI(WebClientID, "https://join.devcloud.woa.com/auth/lightvela/callback"); err == nil {
+		t.Fatal("DevCloud enabled without registration")
+	}
+	registry, err := NewRegistry([]Client{{ID: WebClientID, DisplayName: "Web", RedirectURIs: []string{WebCNRedirectURI, WebInternationalRedirectURI, WebDevCloudRedirectURI}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, raw := range []string{WebCNRedirectURI, WebInternationalRedirectURI, "https://join.devcloud.woa.com/auth/lightvela/callback", "https://preview-42.team.devcloud.woa.com/auth/lightvela/callback"} {
+		if got, err := registry.ValidateRedirectURI(WebClientID, raw); err != nil || got != raw {
+			t.Fatalf("valid callback %q rejected or rewritten: %q, %v", raw, got, err)
+		}
+	}
+	for _, raw := range []string{
+		WebDevCloudRedirectURI,
+		"https://devcloud.woa.com/auth/lightvela/callback",
+		"https://join.devcloud.woa.com.evil.example/auth/lightvela/callback",
+		"https://evildevcloud.woa.com/auth/lightvela/callback",
+		"http://join.devcloud.woa.com/auth/lightvela/callback",
+		"https://join.devcloud.woa.com:443/auth/lightvela/callback",
+		"https://join.devcloud.woa.com:8443/auth/lightvela/callback",
+		"https://JOIN.devcloud.woa.com/auth/lightvela/callback",
+		"https://join.devcloud.woa.com./auth/lightvela/callback",
+		"https://join..devcloud.woa.com/auth/lightvela/callback",
+		"https://-join.devcloud.woa.com/auth/lightvela/callback",
+		"https://join_.devcloud.woa.com/auth/lightvela/callback",
+		"https://user@join.devcloud.woa.com/auth/lightvela/callback",
+		"https://join.devcloud.woa.com/auth/lightvela/callback/",
+		"https://join.devcloud.woa.com/auth/lightvela/%63allback",
+		"https://join.devcloud.woa.com/auth/lightvela/callback?",
+		"https://join.devcloud.woa.com/auth/lightvela/callback?next=evil",
+		"https://join.devcloud.woa.com/auth/lightvela/callback#",
+		"https://join.devcloud.woa.com/other",
+	} {
+		if _, err := registry.ValidateRedirectURI(WebClientID, raw); err == nil {
+			t.Errorf("unsafe callback accepted: %q", raw)
+		}
+	}
+	for _, client := range []Client{
+		{ID: "site-gateway", DisplayName: "Sites", RedirectURIs: []string{WebDevCloudRedirectURI}},
+		{ID: WebClientID, DisplayName: "Web", RedirectURIs: []string{WebCNRedirectURI, WebInternationalRedirectURI, "https://*.woa.com/auth/lightvela/callback"}},
+		{ID: WebClientID, DisplayName: "Web", RedirectURIs: []string{WebCNRedirectURI, WebInternationalRedirectURI, WebDevCloudRedirectURI, WebDevCloudRedirectURI}},
+	} {
+		if _, err := NewRegistry([]Client{client}); err == nil {
+			t.Errorf("unsafe registration accepted: %+v", client)
+		}
+	}
+}
+
 func TestRegistryAcceptsExactRedirectURIsOnly(t *testing.T) {
 	t.Parallel()
 
