@@ -1,5 +1,5 @@
 ## stage
-- 欢迎横幅修复已进入 MR !5041；正在补充“我的 Bots”卡片 8px 圆角。
+- 欢迎横幅修复和“我的 Bots”卡片 8px 圆角已推送到 MR !5041，卡片代码提交为 `e48b8a1b13d7bbd3728934384501130f5ddb990c`。
 
 ## verified
 - 欢迎横幅改为宽屏固定最大 480px 的统计列，窄屏上下排列。
@@ -18,4 +18,4 @@
 - MR 工作树：`/Users/pablozhong/.codex/worktrees/chat-file-download/lightvela`；代码改动：`frontend/src/pages/marketing/agent-overview-panel.tsx`、`frontend/src/pages/marketing/agent-fleet-overview.tsx`。
 
 ## next_action
-- 验证整合后的分支并更新 MR !5041。
+- 等待 MR !5041 的阻塞式 CI 完成；尚未合并或发布。
