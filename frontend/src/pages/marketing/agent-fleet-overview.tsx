@@ -25,7 +25,7 @@ export type FleetOverviewProps = {
   createLimitMessage: string;
   onCreate: (sourceBotId?: string) => void;
   onOpenChat: (botId: string) => void;
-  onChanged: () => void;
+  onChanged: (botId: string) => void;
   onDelete: (bot: OpenClawBot) => void;
   getAvatarForBot: (botId: string) => string | undefined;
 };
@@ -127,7 +127,7 @@ export function AgentFleetOverview({ bots, currentBotId, heroStats, canCreate, c
   const [revision, setRevision] = useState(0);
   const [action, setAction] = useState<Action | null>(null);
   const limitId = useId();
-  const changed = () => { void refreshBots(); setRevision((v) => v + 1); onChanged(); setAction(null); };
+  const changed = () => { void refreshBots(); setRevision((v) => v + 1); if (action) onChanged(action.bot.id); setAction(null); };
   const { steps, writeError, isReadingSoul, applyProfile } = useOverviewProfileEditor({
     botId: action?.bot.id ?? "",
     profileId: action?.bot.profileId,

@@ -68,7 +68,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { VirtualizedConversationTurns, type WebVirtualizedTurnListApi } from "./conversation/virtualized-conversation-turns";
-import { assistantMessageActions } from "@opencraft/chat-core";
+import { assistantMessageActions, getTimelineUserMessageTargetKey } from "@opencraft/chat-core";
 import { extractMarkdownElement } from "@opencraft/chat-render-web";
 import { PlanBlock, TodoBlock, CompactionBlock } from "./conversation-renderers/plan-and-compaction";
 
@@ -409,7 +409,7 @@ function Frame({
   const visibleFrame = frame;
   if (visibleFrame.blocks.length === 0 && thinkingId === null && assistantPlan?.changeSummary == null) return null;
   if (visibleFrame.type === "user") {
-    const itemId = visibleFrame.anchors.find((anchor) => anchor.type === "item")?.id ?? visibleFrame.id;
+    const itemId = getTimelineUserMessageTargetKey(visibleFrame) ?? visibleFrame.id;
     return (
       <div
         className="thread-user-message-anchor"

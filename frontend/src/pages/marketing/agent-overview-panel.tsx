@@ -173,12 +173,15 @@ export const HeroBanner = ({ stats, botCount, invitedFriends }: { stats: HeroSta
         </div>
 
         {/* 右：数据卡 */}
-        <div className={cn("grid shrink-0 gap-3", statItems.length === 2 ? "grid-cols-2" : "grid-cols-3")}>
-          {statItems.map((stat) => (
+        <div className={cn("grid w-full min-w-0 grid-cols-2 gap-3 lg:w-auto lg:shrink-0", statItems.length >= 3 && "sm:grid-cols-3")}>
+          {statItems.map((stat, index) => (
             <AppLink
               key={stat.id}
               to={stat.to}
-              className="min-w-[104px] rounded-[10px] bg-white/70 px-4 py-3 shadow-[0_2px_10px_rgba(15,23,42,0.04)] backdrop-blur-sm transition hover:bg-white/90 hover:shadow-[0_4px_16px_rgba(15,23,42,0.08)]"
+              className={cn(
+                "min-w-0 rounded-[10px] bg-white/70 px-4 py-3 shadow-[0_2px_10px_rgba(15,23,42,0.04)] backdrop-blur-sm transition hover:bg-white/90 hover:shadow-[0_4px_16px_rgba(15,23,42,0.08)] sm:min-w-[104px]",
+                statItems.length === 3 && index === 2 && "col-span-2 sm:col-span-1",
+              )}
             >
               <p className="text-xs font-medium text-black/45">{stat.label}</p>
               <p className="lw-font-din-num mt-1 text-[32px] leading-10 tracking-tight text-black/[0.88]">
@@ -292,14 +295,14 @@ export const LatestNewsSection = () => {
 
       {/* 有配图时贴齐卡片边缘；无配图的套餐升配沿用 Changelog 页的文字呈现。 */}
       <div className={cn(CARD_CLASS, "overflow-hidden")}>
-        <div className={cn("grid items-stretch", entry.image ? "sm:grid-cols-[minmax(0,300px)_minmax(0,1fr)]" : "sm:min-h-[169px]")}>
+        <div className={cn("grid min-w-0 items-stretch", entry.image ? "sm:grid-cols-[minmax(0,300px)_minmax(0,1fr)]" : "sm:min-h-[169px]")}>
           {/*
             左：功能配图（撑满左侧，无左/上/下留白）。
             截图沿用 Changelog 页素材；竖向的任务截图从顶部裁切，
             保留任务类型区域。
           */}
           {entry.image ? (
-            <div className="aspect-[16/9] overflow-hidden bg-black/[0.015]">
+            <div className="aspect-[16/9] w-full min-w-0 overflow-hidden bg-black/[0.015]">
               <img
                 src={entry.image}
                 alt={entry.imageAlt ?? entry.title}

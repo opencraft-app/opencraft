@@ -42,6 +42,8 @@
   "dependencies": {
     "@babel/runtime-corejs3": "7.29.7",
     "@lightvela/agent-core": "file:../shared/lightvela-agent-core",
+    "@opencraft/mobile-account-sdk": "file:../opencraft/packages/mobile-account-sdk",
+    "@opencraft/mobile-bot-bridge": "file:../opencraft/packages/mobile-bot-bridge",
     "@orama/orama": "3.1.18",
     "@orama/tokenizers": "3.1.18",
     "@radix-ui/react-dialog": "^1.1.23",

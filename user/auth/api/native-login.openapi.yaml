@@ -31,6 +31,7 @@ paths:
                   oneOf:
                     - enum:
                         - opencraft://auth/lightvela
+                        - opencraft-intl://auth/lightvela
                         - https://chat.lightvela.com/auth/lightvela/callback
                         - https://chat.lightvela.ai/auth/lightvela/callback
                     - pattern: '^https://(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+devcloud\.woa\.com/auth/lightvela/callback$'
@@ -62,7 +63,7 @@ paths:
               properties:
                 code: { type: string, pattern: '^[A-Za-z0-9_-]{43}$' }
                 code_verifier: { type: string, pattern: '^[A-Za-z0-9._~-]{43,128}$' }
-                redirect_uri: { type: string, enum: ['opencraft://auth/lightvela'] }
+                redirect_uri: { type: string, enum: ['opencraft://auth/lightvela', 'opencraft-intl://auth/lightvela'] }
       responses:
         '200':
           description: New normal session. Cache-Control no-store; Pragma no-cache. Never sets a browser session cookie.

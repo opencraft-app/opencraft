@@ -114,7 +114,10 @@ function parseDataImage(url: string, index: number): HermesImageInput | null {
   if (match === null) return null;
   const contentBase64 = match[2]!.replace(/\s/gu, "");
   if (contentBase64.length === 0) throw new Error("Hermes image attachment is empty");
-  const decodedBytes = Math.floor(contentBase64.length * 3 / 4);
+  // The final padded quartet represents one or two bytes, not three. Match
+  // the native picker limit exactly instead of rejecting images at its edge.
+  const padding = contentBase64.endsWith("==") ? 2 : contentBase64.endsWith("=") ? 1 : 0;
+  const decodedBytes = Math.floor(contentBase64.length * 3 / 4) - padding;
   if (decodedBytes > MAX_IMAGE_BYTES) throw new Error(`Hermes image attachment exceeds ${MAX_IMAGE_BYTES} bytes`);
   return {
     kind: "bytes",

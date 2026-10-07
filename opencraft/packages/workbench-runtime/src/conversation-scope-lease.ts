@@ -28,6 +28,7 @@ export interface ConversationScopeLeaseRegistry {
   readSelections(scopeId: ConversationScopeId): ComposerSelections | null;
   /** Replaces the stored selections; callers pass the authoritative snapshot. */
   writeSelections(scopeId: ConversationScopeId, selections: ComposerSelections): ConversationScopeLease;
+  clearSelections(): void;
   retain(scopeId: ConversationScopeId, reason: string): () => void;
   close(scopeId: ConversationScopeId): boolean;
   dispose(): void;
@@ -139,6 +140,10 @@ export function createConversationScopeLeaseRegistry(
       entry.selections = { ...selections };
       entry.touchedAt = ++logicalClock;
       return snapshot(entry);
+    },
+    clearSelections() {
+      ensureOpen();
+      for (const entry of entries.values()) entry.selections = null;
     },
     retain(scopeId, reason) {
       ensureOpen();

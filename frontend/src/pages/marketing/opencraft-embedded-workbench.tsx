@@ -74,6 +74,7 @@ interface AgentChatMigrationSurfaceProps extends Omit<EmbeddedWorkbenchConfig, "
   readonly onSessionCommandsChange?: (commands: EmbeddedSessionCommands | null) => void;
   readonly onHasMoreSessionsChange?: (hasMore: boolean) => void;
   readonly onSessionMutationStateChange?: (state: EmbeddedSessionMutationState | null) => void;
+  readonly onTurnCompleted?: (chatId: string) => void;
 }
 
 export interface EmbeddedSessionMutationState {
@@ -95,6 +96,11 @@ interface EmbeddedSessionsDetail {
   readonly error: string | null;
   readonly selectedChatId: string | null;
   readonly isDraft?: boolean;
+}
+
+interface EmbeddedTurnCompletedDetail {
+  readonly chatId: string;
+  readonly turnId: string;
 }
 
 /** Resource preparation only: the confirmed Bot/Profile still owns Application creation. */
@@ -123,6 +129,7 @@ export function AgentChatMigrationSurface({
   onSessionCommandsChange,
   onHasMoreSessionsChange,
   onSessionMutationStateChange,
+  onTurnCompleted,
   profileId,
   region,
 }: AgentChatMigrationSurfaceProps) {
@@ -146,6 +153,8 @@ export function AgentChatMigrationSurface({
   onHasMoreSessionsChangeRef.current = onHasMoreSessionsChange;
   const onSessionMutationStateChangeRef = useRef(onSessionMutationStateChange);
   onSessionMutationStateChangeRef.current = onSessionMutationStateChange;
+  const onTurnCompletedRef = useRef(onTurnCompleted);
+  onTurnCompletedRef.current = onTurnCompleted;
   const activeRef = useRef(active);
   activeRef.current = active;
   const [connection, setConnection] = useState<{ phase: string; failureCode: string | null }>({ phase: "connecting", failureCode: null });
@@ -224,6 +233,7 @@ export function AgentChatMigrationSurface({
     window.addEventListener(AUTH_SESSION_CHANGED_EVENT, handleSessionChange);
     window.addEventListener("storage", handleSessionChange);
     let latestSessions: EmbeddedSessionsDetail | null = null;
+    let previousRunningSessions: Map<string, boolean> | null = null;
     let hasPublishedSessions = false;
     const publishSessions = () => {
       if (!adopted || latestSessions === null) return;
@@ -303,8 +313,26 @@ export function AgentChatMigrationSurface({
     const handleSessions = (event: Event) => {
       if (retired) return;
       latestSessions = (event as CustomEvent<EmbeddedSessionsDetail>).detail;
+      if (!latestSessions.loading) {
+        const runningSessions = new Map(latestSessions.sessions.map((session) => [session.chatId, "running" in session && session.running === true]));
+        if (previousRunningSessions !== null && adopted) {
+          for (const [chatId, wasRunning] of previousRunningSessions) {
+            if (!wasRunning || runningSessions.get(chatId) !== false) continue;
+            if (activeRef.current && multiSessionRef.current.selectedChatId === chatId) continue;
+            onTurnCompletedRef.current?.(chatId);
+          }
+        }
+        previousRunningSessions = runningSessions;
+      }
       publishSessions();
       setPromptRevision(revision => revision + 1);
+    };
+    const handleTurnCompleted = (event: Event) => {
+      if (retired || !adopted) return;
+      const detail = (event as CustomEvent<EmbeddedTurnCompletedDetail>).detail;
+      if (!detail || typeof detail.chatId !== "string" || typeof detail.turnId !== "string") return;
+      if (activeRef.current && multiSessionRef.current.selectedChatId === detail.chatId) return;
+      onTurnCompletedRef.current?.(detail.chatId);
     };
     const handleConnection = (event: Event) => {
       if (retired) return;
@@ -328,6 +356,7 @@ export function AgentChatMigrationSurface({
       elementRef.current = element;
       element.className = "block size-full";
       element.addEventListener("opencraft-sessions", handleSessions);
+      element.addEventListener("opencraft-turn-completed", handleTurnCompleted);
       element.addEventListener("opencraft-error", handleEmbeddedError);
       element.addEventListener("opencraft-connection", handleConnection);
       element.configure({ accountId, apiBase, instanceId, profileId, region, getSessionToken,
@@ -369,6 +398,7 @@ export function AgentChatMigrationSurface({
       elementRef.current = null;
       if (current !== null) {
         current.removeEventListener("opencraft-sessions", handleSessions);
+        current.removeEventListener("opencraft-turn-completed", handleTurnCompleted);
         current.removeEventListener("opencraft-error", handleEmbeddedError);
         current.removeEventListener("opencraft-connection", handleConnection);
         current.hide();

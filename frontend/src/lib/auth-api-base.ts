@@ -48,6 +48,10 @@ export const PAGES_DEV_SUBDOMAIN_TO_API_HOST: Record<string, string> = {
 };
 
 export const resolveConfiguredAuthApiBaseUrl = () => {
+  if (typeof window !== "undefined") {
+    const embedded = (window as Window & { __LIGHTVELA_EMBEDDED_API_BASE__?: string }).__LIGHTVELA_EMBEDDED_API_BASE__;
+    if (embedded === "https://api.lightvela.ai" || embedded === "https://api.lightvela.com") return embedded;
+  }
   const configured = (
     (typeof process !== "undefined" ? process.env.NEXT_PUBLIC_AUTH_API_BASE_URL : undefined)
     ?? import.meta.env?.VITE_AUTH_API_BASE_URL

@@ -183,7 +183,7 @@ describe("Agent settings navigation spacing", () => {
      * 而不是放宽成只检查基类 —— 漏掉任一分支都会布局错位。
      */
     expect(page).toContain('"lv-agent-settings-content min-w-0"');
-    expect(page).toContain('hasSidebarLayout ? "lg:col-start-2" : "mx-auto w-full max-w-[860px]"');
+    expect(page).toContain('hasSidebarLayout && !embedded ? "lg:col-start-2" : "mx-auto w-full max-w-[860px]"');
     // 创建 Loading 视图没有侧边栏问题，仍是固定写法
     expect(loadingView).toContain('className="lv-agent-settings-content min-w-0 lg:col-start-2"');
     expect(styles).toContain("width: min(1440px, calc(100vw - 160px));");
@@ -214,6 +214,8 @@ describe("Agent settings navigation spacing", () => {
       desktopStyles ?? "",
       "\n  .lv-agents-sidebar-middle .lv-agents-nav-item {",
     );
+    const desktopProfile = getBlockBody(desktopStyles ?? "", "\n  .lv-agents-sidebar-profile .lv-agent-profile {");
+    const desktopProfileName = getBlockBody(desktopStyles ?? "", "\n  .lv-agents-sidebar-profile .lv-agent-profile-name {");
     const responsiveStyles = getBlockBody(styles, "@media (max-width: 1023px) {\n  .lv-agents-sidebar {");
     const mobileNavigation = getBlockBody(responsiveStyles ?? "", "\n  .lv-agents-nav {\n    gap:");
     const mobileItem = getBlockBody(responsiveStyles ?? "", "\n  .lv-agents-nav-item {");
@@ -225,6 +227,9 @@ describe("Agent settings navigation spacing", () => {
     expect(desktopItem).toContain("height: var(--lv-agents-nav-item-height);");
     expect(profileName).toContain("font-size: 14px;");
     expect(profileName).toContain("line-height: 20px;");
+    expect(desktopProfile).toContain("min-height: 40px;");
+    expect(desktopProfileName).toContain("font-size: 13px;");
+    expect(desktopProfileName).toContain("line-height: 18px;");
     expect(desktopMiddle).toContain("--lv-agents-nav-group-gap: 2px;");
     expect(desktopMiddle).toContain("--lv-agents-nav-item-gap: 0;");
     expect(desktopMiddleNavigation).toContain("gap: var(--lv-agents-nav-group-gap);");
@@ -284,7 +289,7 @@ describe("Agent settings navigation spacing", () => {
     expect(profileSeparator).toContain("width: auto;");
     expect(profileSeparator).toContain("padding-bottom: 8px;");
     expect(profileSeparator).not.toContain("border-bottom:");
-    expect(desktopProfile).toContain("padding: 4px 8px;");
+    expect(desktopProfile).toContain("padding: 3px 8px;");
     expect(controls).toContain("padding-top: 16px;");
     expect(middle).toContain("padding-top: var(--lv-agents-sidebar-middle-padding-block);");
     expect(styles).toContain('.lv-agents-sidebar[data-scroll-above="true"] .lv-agents-sidebar-controls::after');

@@ -2294,6 +2294,37 @@ class FakeHermesRpcSocket extends EventTarget {
   }
 }
 
+test("Hermes model catalog timeout remains a retryable response without a native RedBox", async () => {
+  const socket = new FakeHermesRpcSocket();
+  const failures: Array<{ method: string; kind: string }> = [];
+  const bridge = new BrowserHermesAppServerBridge(socket, {
+    timeoutMs: 40,
+    onRequestFailure: failure => failures.push(failure),
+  });
+  const previousConsoleError = console.error;
+  const redboxes: unknown[][] = [];
+  console.error = (...args: unknown[]) => { redboxes.push(args); };
+  try {
+    const first = await bridge.handle({ jsonrpc: "2.0", id: 1, method: "model/list", params: {} });
+    assert.equal("error" in first && first.error.code, -32000);
+    assert.deepEqual(failures, [{ method: "model/list", kind: "timeout" }]);
+    assert.deepEqual(redboxes, []);
+
+    const retry = bridge.handle({ jsonrpc: "2.0", id: 2, method: "model/list", params: {} });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const request = socket.requests.at(-1)!;
+    assert.equal(request.method, "model.options");
+    assert.equal(socket.requests.filter(candidate => candidate.method === "model.options").length, 2);
+    socket.receive({ jsonrpc: "2.0", id: request.id, result: { providers: [] } });
+    const recovered = await retry;
+    assert.deepEqual("result" in recovered && recovered.result, { data: [], nextCursor: null });
+    assert.deepEqual(redboxes, []);
+  } finally {
+    console.error = previousConsoleError;
+    bridge.dispose();
+  }
+});
+
 test("Hermes RPC transport owns the advertised Gateway heartbeat lifecycle", async () => {
   const socket = new FakeHermesRpcSocket();
   const rpc = new HermesRpcWebSocketTransport(socket, {
@@ -2910,6 +2941,36 @@ test("Hermes adapter publishes accepted work without waiting for message.start",
     "item/started",
     "item/agentMessage/delta",
   ]);
+});
+
+test("Hermes accepts an inline image exactly at the native 20 MiB limit", async () => {
+  let submitted = false;
+  const rpc: HermesRpcClient = {
+    async call<T>(method: string): Promise<T> {
+      if (method === "session.create") return {
+        session_id: "live-image-limit",
+        stored_session_id: "stored-image-limit",
+        message_count: 0,
+        messages: [],
+        info: { cwd: "/workspace" },
+      } as T;
+      if (method === "image.attach_bytes") return {
+        attached: true,
+        path: "/workspace/image-limit.png",
+      } as T;
+      if (method === "prompt.submit") {
+        submitted = true;
+        return { status: "accepted" } as T;
+      }
+      throw new Error(`Unexpected ${method}`);
+    },
+    onEvent: () => () => undefined,
+  };
+  const adapter = new HermesAppServerAdapter(rpc, "/workspace");
+  const thread = await adapter.startThread();
+  const image = Buffer.alloc(20 * 1024 * 1024).toString("base64");
+  await adapter.startTurn(thread.id, [{ type: "image", url: `data:image/png;base64,${image}` }]);
+  assert.equal(submitted, true);
 });
 
 test("Hermes AppServer turn/start preserves the client message identity before its receipt", async () => {

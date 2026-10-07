@@ -8,6 +8,7 @@ const config = withUniwindConfig(getDefaultConfig(__dirname), {
   cssEntryFile: "./global.css",
   dtsFile: "./src/uniwind-types.d.ts",
 });
+config.resolver.assetExts.push("html");
 
 const enhanceMiddleware = config.server.enhanceMiddleware;
 const gzipBundle = compression({ level: 1 });

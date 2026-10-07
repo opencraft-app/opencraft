@@ -10,9 +10,28 @@ func TestNativeRedirectIsAnExplicitClientCapability(t *testing.T) {
 	if _, err := registry.ValidateRedirectURI(NativeClientID, NativeRedirectURI); err != nil {
 		t.Fatal(err)
 	}
+	dual, err := NewRegistry([]Client{{ID: NativeClientID, DisplayName: "Vela", RedirectURIs: []string{NativeRedirectURI, NativeInternationalRedirectURI}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := dual.ValidateRedirectURI(NativeClientID, NativeInternationalRedirectURI); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := registry.ValidateRedirectURI(NativeClientID, NativeInternationalRedirectURI); err == nil {
+		t.Fatal("international callback accepted before registration")
+	}
 	for _, raw := range []string{"opencraft://evil/lightvela", NativeRedirectURI + "?x=1", NativeRedirectURI + "/", "opencraft://auth/%6cightvela", "opencraft://user@auth/lightvela"} {
-		if _, err := registry.ValidateRedirectURI(NativeClientID, raw); err == nil {
+		if _, err := dual.ValidateRedirectURI(NativeClientID, raw); err == nil {
 			t.Fatal("nonexact callback accepted")
+		}
+	}
+	for _, redirects := range [][]string{
+		{NativeInternationalRedirectURI},
+		{NativeRedirectURI, NativeInternationalRedirectURI + "?x=1"},
+		{NativeRedirectURI, NativeRedirectURI},
+	} {
+		if _, err := NewRegistry([]Client{{ID: NativeClientID, DisplayName: "Vela", RedirectURIs: redirects}}); err == nil {
+			t.Fatalf("accepted native redirects: %v", redirects)
 		}
 	}
 	if _, err := NewRegistry([]Client{{ID: "web", DisplayName: "Web", RedirectURIs: []string{NativeRedirectURI}}}); err == nil {

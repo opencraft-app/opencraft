@@ -67,6 +67,7 @@ derived: false
 - 修改前公开 CORS OPTIONS：join 无 ACAO，chat.lightvela.com 有具体 ACAO。
 - MR !5037 首次 guard 在 104 项发布契约中失败 1 项：上海 federation 测试仍断言两个 Web 回调。补充新增回调的精确期望，保持已有客户端断言。
 - 修正后同款 service-gateway guard 通过（104 项契约与网关 Go 测试）；`bash .ci/runtime/check_ci_runtime.sh` 全部通过（655 项测试，4 项 skipped，装配 smoke、语法与 YAML 检查通过）。
+- 远端修正提交 ff0e67269 的 commit check 已 success。master 4620dff30 新增国际原生回调，与本分支 OpenAPI 相交；合并保留 `opencraft-intl://auth/lightvela` 和 DevCloud 固定路径模式。
 
 ## risks
 - 覆盖整个子域族意味着信任所有子域；必须由第一方控制其分配，防止子域接管。

@@ -12,13 +12,20 @@
     },
     "android": {
       "package": "dev.vela.workbench",
-      "versionCode": 1
+      "versionCode": 1,
+      "softwareKeyboardLayoutMode": "resize"
     },
     "plugins": [
       "expo-router",
+      "expo-image",
       "expo-sqlite",
       "expo-secure-store",
-      "expo-web-browser"
+      "expo-web-browser",
+      ["expo-image-picker", {
+        "photosPermission": "Allow LightVela to choose a profile photo.",
+        "cameraPermission": false,
+        "microphonePermission": false
+      }]
     ],
     "experiments": {
       "typedRoutes": true

@@ -87,7 +87,7 @@ import type {
   LightVelaSession,
   LightVelaSessionActions,
 } from "./agent-chat-panel";
-import { resolveAgentSidebarEmptySessionState, useAgentSidebarSessionList } from "./agent-sidebar-session-list";
+import { resolveAgentSidebarEmptySessionState, useAgentSidebarSessionList, useAgentSidebarUnreadSessions } from "./agent-sidebar-session-list";
 import { AUTH_SERVICE_UNAVAILABLE_MESSAGE, readStoredAuthToken } from "@/repositories/http-repositories";
 import {
   AGENTS_HOME_PATH,
@@ -2606,6 +2606,13 @@ const isRescueExportRunning = (status: WorkerActionStatusResult | null | undefin
 };
 
 type AgentSettingsPageProps = {
+  /** Native shell owns navigation; reuse existing section controllers. */
+  embedded?: boolean;
+  createRequestId?: number;
+  onCreateRequestHandled?: () => void;
+  deleteRequestId?: number;
+  deleteRequestBotId?: string;
+  onDeleteRequestHandled?: () => void;
   initialSectionSlug?: string;
   sectionId?: AgentSettingsSectionId;
 } & ({ showHeader?: true; sidebarCollapsed?: never } | { showHeader: false; sidebarCollapsed?: boolean });
@@ -2615,6 +2622,12 @@ export const AgentSettingsPage = ({
   sectionId,
   showHeader = true,
   sidebarCollapsed,
+  embedded = false,
+  createRequestId = 0,
+  onCreateRequestHandled,
+  deleteRequestId = 0,
+  deleteRequestBotId,
+  onDeleteRequestHandled,
 }: AgentSettingsPageProps = {}) => {
   const t = useT();
   const localSidebar = useAgentSidebarCollapse(sidebarCollapsed === undefined);
@@ -2795,6 +2808,7 @@ export const AgentSettingsPage = ({
     loading: chatSessionsLoading,
     onSessionStateChange: applyChatSessionState,
   } = useAgentSidebarSessionList(sidebarSessionBotKey);
+  const { unreadChatIds, setUnread } = useAgentSidebarUnreadSessions(sidebarSessionBotKey);
   const emptyChatSessionState = resolveAgentSidebarEmptySessionState({
     botPaused: activeBot?.status === "paused",
     loading: chatSessionsLoading,
@@ -2812,6 +2826,14 @@ export const AgentSettingsPage = ({
   );
   /** 宿主持有的选中会话（受控值）；undefined 表示尚未指定。 */
   const [selectedChatId, setSelectedChatId] = useState<string | undefined>(undefined);
+  const lastVisibleChatIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const visibleChatId = activeSection === "chat" ? selectedChatId ?? null : null;
+    if (visibleChatId !== null && lastVisibleChatIdRef.current !== visibleChatId) {
+      setUnread(visibleChatId, false);
+    }
+    lastVisibleChatIdRef.current = visibleChatId;
+  }, [activeSection, selectedChatId, setUnread]);
   /** 内嵌会话动作句柄（renameSession / deleteSession）。 */
   const [chatSessionActions, setChatSessionActions] = useState<LightVelaSessionActions | null>(null);
   /** 行内重命名状态：renamingChatId 非空表示该项处于编辑态。 */
@@ -2893,6 +2915,11 @@ export const AgentSettingsPage = ({
     setOpenSessionMenuChatId(null);
     setRenamingChatId(session.chatId);
     setRenamingDraft(session.title || "");
+  };
+
+  const markSessionUnread = (chatId: string) => {
+    setUnread(chatId, true);
+    setOpenSessionMenuChatId(null);
   };
 
   const commitSessionRename = () => {
@@ -3501,6 +3528,7 @@ export const AgentSettingsPage = ({
   const [deleteTargetBot, setDeleteTargetBot] = useState<OpenClawBot | null>(null);
   const deleteDialogBot = deleteTargetBot ?? activeBot;
   const [repairingBotIds, setRepairingBotIds] = useState<Set<string>>(new Set());
+  const consumedDeleteRequest = useRef(0);
 
   const handleRetryBot = async () => {
     if (!activeBot || activeBot.status !== "failed") return;
@@ -3546,7 +3574,8 @@ export const AgentSettingsPage = ({
       setDeleteError(
         errorCode === "INSTANCE_BOTS_REMAIN"
           ? t("请先删除其他 Bot，再删除整个 Agent。")
-          : err instanceof Error ? err.message : t("删除失败，请稍后重试。"),
+          : embedded ? t("删除失败，请稍后重试。")
+            : err instanceof Error ? err.message : t("删除失败，请稍后重试。"),
       );
     }
   };
@@ -3559,6 +3588,27 @@ export const AgentSettingsPage = ({
   const [resettingInstanceIds, setResettingInstanceIds] = useState<Set<string>>(new Set());
   const [resetConsoleByInstanceId, setResetConsoleByInstanceId] = useState<Record<string, string[]>>({});
   const resettingAcli = Boolean(activeRuntimeInstanceId && resettingInstanceIds.has(activeRuntimeInstanceId));
+  useEffect(() => {
+    if (!embedded || !deleteRequestId || deleteRequestId === consumedDeleteRequest.current || botsLoading) return;
+    consumedDeleteRequest.current = deleteRequestId;
+    onDeleteRequestHandled?.();
+    const target = visibleBots.find((bot) => bot.id === deleteRequestBotId);
+    if (!target) return;
+    if (resettingAcli || isCreating || isModifying || resettingInstanceIds.has(target.instanceId ?? target.id)) {
+      toast.error(t("删除失败，请稍后重试。"));
+      return;
+    }
+    if (target.isDefault && bots.some((bot) => (
+      bot.id !== target.id && (bot.instanceId ?? bot.id) === (target.instanceId ?? target.id)
+    ))) {
+      toast.error(t("请先删除其他 Bot，再删除主 Bot"));
+      return;
+    }
+    setDeleteTargetBot(target);
+    setDeleteInput("");
+    setDeleteError(null);
+    setShowDeleteConfirm(true);
+  }, [embedded, deleteRequestId, deleteRequestBotId, onDeleteRequestHandled, botsLoading, visibleBots, bots, resettingAcli, isCreating, isModifying, resettingInstanceIds, t]);
   const acliResetConsole = activeRuntimeInstanceId ? resetConsoleByInstanceId[activeRuntimeInstanceId] ?? [] : [];
   const acliResetConsoleRef = useRef<HTMLPreElement | null>(null);
   useEffect(() => {
@@ -4326,7 +4376,7 @@ export const AgentSettingsPage = ({
     }
   };
 
-  const handleCreateNew = () => {
+  const handleCreateNew = useCallback(() => {
     trackDatongClick("agent_create_start_btn", {
       pgid: DATONG_PAGE_IDS.AGENTS_HOME,
       params: { bots_count: bots.length },
@@ -4389,7 +4439,26 @@ export const AgentSettingsPage = ({
       setCreateBotMode("clone-current");
       setShowCreateConfirm(true);
     }
-  };
+  }, [activeBot, bots.length, canCreateAdditionalBot, createLimitMessage, isSubscribed, navigate]);
+
+  const nativeCreateVisible = !activeBot || multiBotEnabled;
+  const nativeCreateEnabled = nativeCreateVisible
+    && !botsLoading && !passesLoading && !isCreating && !isModifying && !directCreating
+    && (activeBot ? canCreateAdditionalBot : canCreateInitialAgent);
+  useEffect(() => {
+    if (!embedded) return;
+    window.dispatchEvent(new CustomEvent("opencraft-mobile-bot-create-state", {
+      detail: { visible: nativeCreateVisible, enabled: nativeCreateEnabled },
+    }));
+  }, [embedded, nativeCreateVisible, nativeCreateEnabled]);
+  const consumedCreateRequest = useRef(0);
+  useEffect(() => {
+    if (!embedded || !createRequestId || createRequestId === consumedCreateRequest.current) return;
+    if (botsLoading || passesLoading || isCreating || isModifying || directCreating) return;
+    consumedCreateRequest.current = createRequestId;
+    onCreateRequestHandled?.();
+    if (nativeCreateEnabled) handleCreateNew();
+  }, [embedded, createRequestId, botsLoading, passesLoading, isCreating, isModifying, directCreating, nativeCreateEnabled, onCreateRequestHandled, handleCreateNew]);
 
   const handleCreateFleetBot = (sourceBotId?: string) => {
     if (createLimitMessage || (activeBot ? !canCreateAdditionalBot : !canCreateInitialAgent)) return;
@@ -4414,7 +4483,10 @@ export const AgentSettingsPage = ({
       createLimitMessage={createLimitMessage || ""}
       onCreate={handleCreateFleetBot}
       onOpenChat={handleOpenFleetBotChat}
-      onChanged={buddyProfileState.reload}
+      onChanged={(changedBotId) => {
+        buddyProfileState.reload();
+        if (embedded) window.dispatchEvent(new CustomEvent("opencraft-mobile-bot-profile-changed", { detail: changedBotId }));
+      }}
       getAvatarForBot={getAvatarForBot}
       onDelete={(bot) => {
         if (resettingInstanceIds.has(bot.instanceId ?? bot.id)) return;
@@ -5453,7 +5525,7 @@ export const AgentSettingsPage = ({
            * 按 96px 顶距 + 居中窄容器排版，数据到位后再跳成 68px + 左对齐宽
            * 容器 —— 那一下横竖双向的位移就是加载图跟成品对不齐的原因。
            */
-          (hasSidebarLayout || shouldShowDataLoading) && "lv-agent-settings-main",
+          !embedded && (hasSidebarLayout || shouldShowDataLoading) && "lv-agent-settings-main",
           /* 聊天页自己铺满到底，不留外层的 pb-6（来自 master） */
           activeSection === "chat" && "lg:pb-0",
         )}
@@ -5466,7 +5538,7 @@ export const AgentSettingsPage = ({
              * 264px 侧边栏让位。没有侧边栏时沿用会让内容整体偏左，
              * 所以退回 lw-settings-shell 的居中布局。
              */
-            (hasSidebarLayout || shouldShowDataLoading) && "lv-agent-settings-shell",
+            !embedded && (hasSidebarLayout || shouldShowDataLoading) && "lv-agent-settings-shell",
           )}
         >
           {/* ── Loading 状态 ── */}
@@ -5740,12 +5812,12 @@ export const AgentSettingsPage = ({
                     "lv-agent-settings-grid grid items-start",
                     activeSection === "chat" && openCraftChatEnabled ? "gap-y-0 lg:gap-y-6" : "gap-6",
                     /* 引导态不给侧边栏留列，内容区自己撑满并居中 */
-                    hasSidebarLayout && (isSidebarCollapsed ? "lg:grid-cols-[56px_minmax(0,1fr)]" : "lg:grid-cols-[248px_minmax(0,1fr)]"),
+                    hasSidebarLayout && !embedded && (isSidebarCollapsed ? "lg:grid-cols-[56px_minmax(0,1fr)]" : "lg:grid-cols-[248px_minmax(0,1fr)]"),
                   )}
                 >
                   {/* 引导态隐藏整个侧边栏：新用户先专注建伙伴，
                       配置完成后导航才出现（避免一进来就面对点不了的入口） */}
-                  {hasSidebarLayout ? (
+                  {hasSidebarLayout && !embedded ? (
                   <>
                       <div className="lv-agent-mobile-toolbar">
                         <button
@@ -5804,7 +5876,7 @@ export const AgentSettingsPage = ({
                       </button>
                     <div className="lv-agents-sidebar-profile">
                     {fleetOverviewEnabled && (
-                      <div className="mb-2 pb-2 lg:mb-1.5 lg:pb-1.5">
+                      <div className="mb-2 pb-2 lg:mb-1 lg:pb-0.5">
                         <AppLink
                           to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.overview, searchParams)}
                           aria-current={activeSection === "overview" ? "page" : undefined}
@@ -6220,7 +6292,6 @@ export const AgentSettingsPage = ({
                                         activeSection === "chat" && "is-active",
                                       )}
                                     >
-                                      <span className="lv-agents-nav-icon"><MessageSquare className="h-4 w-4" aria-hidden="true" /></span>
                                       <span className="lv-agents-session-title" title={t("默认对话")}>
                                         {t("默认对话")}
                                       </span>
@@ -6229,6 +6300,7 @@ export const AgentSettingsPage = ({
                                 ) : (
                                   chatSessionPagination.visibleSessions.map((session) => {
                                     const isSelected = selectedChatId === session.chatId;
+                                    const isUnread = unreadChatIds.includes(session.chatId);
                                     const isRenaming = renamingChatId === session.chatId;
                                     const isMenuOpen = openSessionMenuChatId === session.chatId;
                                     const isDeletable = canDeleteSession(session);
@@ -6264,23 +6336,25 @@ export const AgentSettingsPage = ({
                                             <AppLink
                                               to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.chat, searchParams)}
                                               aria-current={isSelected ? "page" : undefined}
-                                              aria-label={sessionDisplayTitle}
+                                              aria-label={isUnread ? `${sessionDisplayTitle} (${t("未读")})` : sessionDisplayTitle}
                                               title={isSidebarCollapsed ? sessionDisplayTitle : undefined}
                                               onClick={() => {
                                                 setSelectedChatId(session.chatId);
+                                                setUnread(session.chatId, false);
                                                 setMobileChatNavOpen(false);
                                               }}
                                               className={cn(
                                                 "lv-agents-session-item lv-agents-nav-item",
                                                 openCraftChatEnabled && "lv-agents-session-item--opencraft",
                                                 isRunning && "lv-agents-session-item--running",
+                                                isUnread && "lv-agents-session-item--unread",
                                                 isSelected && "is-active",
                                               )}
                                             >
-                                              <span className="lv-agents-nav-icon"><MessageSquare className="h-4 w-4" aria-hidden="true" /></span>
                                               <span className="lv-agents-session-title" title={sessionDisplayTitle}>
                                                 {sessionDisplayTitle}
                                               </span>
+                                              {isUnread ? <span className="lv-agents-session-unread-dot" aria-hidden="true" /> : null}
                                             </AppLink>
                                             <div ref={isMenuOpen ? sessionMenuRef : undefined} className="lv-agents-session-menu-anchor">
                                               {isRunning ? <span className="lv-agents-session-running" role="img" aria-label={t("执行中")} /> : null}
@@ -6307,6 +6381,14 @@ export const AgentSettingsPage = ({
                                                     onClick={() => startSessionRename(session)}
                                                   >
                                                     {t("重命名")}
+                                                  </button>
+                                                  <button
+                                                    type="button"
+                                                    role="menuitem"
+                                                    className="lv-agents-session-menu-item"
+                                                    onClick={() => markSessionUnread(session.chatId)}
+                                                  >
+                                                    {t("标记为未读")}
                                                   </button>
                                                   <button
                                                     type="button"
@@ -6415,11 +6497,11 @@ export const AgentSettingsPage = ({
                       </div>
                     </div>
                     <div className="lv-agents-sidebar-footer">
-                      {isDesktop ? (
-                        <div className="lv-agent-account-footer">
+                      <div className="lv-agent-account-footer">
+                        {(isDesktop || mobileChatNavOpen) && (
                           <UserAvatarMenu showLanguageSwitcher={isGlobal} variant="sidebar" />
-                        </div>
-                      ) : null}
+                        )}
+                      </div>
                     </div>
                   </AgentSidebar>
                   </>
@@ -6429,7 +6511,7 @@ export const AgentSettingsPage = ({
                     className={cn(
                       "lv-agent-settings-content min-w-0",
                       /* 有侧边栏时占第二列；引导态没有侧边栏，内容自己居中 */
-                      hasSidebarLayout ? "lg:col-start-2" : "mx-auto w-full max-w-[860px]",
+                      hasSidebarLayout && !embedded ? "lg:col-start-2" : "mx-auto w-full max-w-[860px]",
                     )}
                   >
                     {/*
@@ -6615,6 +6697,7 @@ export const AgentSettingsPage = ({
                               onSessionCommandsChange={setChatSessionCommands}
                               onHasMoreSessionsChange={setChatSessionsHasMore}
                               onSessionMutationStateChange={setChatSessionMutationState}
+                              onTurnCompleted={(chatId) => setUnread(chatId, true)}
                               legacy={null}
                             />
                           )}

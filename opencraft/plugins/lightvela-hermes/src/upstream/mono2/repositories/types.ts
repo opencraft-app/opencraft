@@ -1,4 +1,5 @@
 // @ts-nocheck -- mechanically vendored from mono2; typechecked in its source repository.
+import type { ReferralOverview, ReferralStats } from "@opencraft/mobile-account-sdk";
 import type {
   AlertItem,
   AuthSessionSnapshot,
@@ -187,21 +188,7 @@ export interface PaymentMethodSignOrder {
   redirectUrl: string;
 }
 
-export interface ReferralOverview {
-  code: string;
-  url: string;
-  campaignId: string;
-  campaignName: string;
-  startsAt: string;
-  endsAt: string;
-}
-
-export interface ReferralStats {
-  successfulReferrals: number;
-  grantedCredits: number;
-  pendingRewards: number;
-  grantedRewards: number;
-}
+export type { ReferralOverview, ReferralStats };
 
 export interface AuthRepository {
   signInWithCode(input: { phone: string; code?: string; inviteCode?: string }): Promise<AuthSessionSnapshot>;

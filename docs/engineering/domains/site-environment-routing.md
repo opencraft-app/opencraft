@@ -37,6 +37,8 @@ Pass 升配微信桥通过精确的 `POST /v1/passes/{pass_id}/modify/order-url`
 
 国内站与国际站复用定时任务卡片操作界面：横向省略号在桌面悬停、点击、移动端点按或键盘激活后显示纵向的图标与本地化操作名称列表；两站沿用相同任务状态门控，文案由各自 locale 提供。
 
+OpenCraft iOS 的内置 Bot DOM runtime 同时包含国内与国际的 frontend 组件，但区域不是从生成物的构建环境推断。原生登录会话选择 `cn` 或 `intl` 后，在 DOM 脚本运行前显式设置 frontend 的 region、对应的 `api.lightvela.com` 或 `api.lightvela.ai` API base、站点 base 和 locale；Bot 仓储请求沿用 frontend 的现有实现，不跨区回退。站点账号与订阅网页只在匹配会话区域的第一方 WebView 打开。真机需分别核对两区的 DOM origin 和 API 请求；本地 HTML 打包成功不能证明跨域请求已通过。
+
 ## 产品文档区域
 
 `frontend/src/content/docs/` 保留 cn/global/en/id 源；生成的 zh-cn/zh-sg/en-us/zh-hant/id-id 输出不直接编辑。区域差异必须通过 parity 测试和真实路由共同证明。

@@ -226,10 +226,10 @@ describe("multi-bot creation goes through the onboarding panel", () => {
      */
     expect(page).toContain("}) && !showBuddyOnboarding && !showMultiBotOnboarding;");
     // 侧边栏本体与它占的栅格列都要跟着条件走，只藏一个会留下空白列
-    expect(page).toMatch(/\{hasSidebarLayout \? \(\s*<AgentSidebar>/);
-    expect(page).toContain('hasSidebarLayout && "lg:grid-cols-[248px_minmax(0,1fr)]"');
+    expect(page).toContain("{hasSidebarLayout && !embedded ? (");
+    expect(page).toContain('hasSidebarLayout && !embedded && (isSidebarCollapsed ? "lg:grid-cols-[56px_minmax(0,1fr)]" : "lg:grid-cols-[248px_minmax(0,1fr)]")');
     // 没有侧边栏时内容区自己居中
-    expect(page).toContain('hasSidebarLayout ? "lg:col-start-2" : "mx-auto w-full max-w-[860px]"');
+    expect(page).toContain('hasSidebarLayout && !embedded ? "lg:col-start-2" : "mx-auto w-full max-w-[860px]"');
   });
 
   it("keeps clone options collapsed behind an Advanced toggle", () => {

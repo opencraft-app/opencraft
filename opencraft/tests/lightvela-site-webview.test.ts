@@ -4,7 +4,7 @@ import test from "node:test";
 
 import * as webviewModule from "../apps/workbench-expo/src/runtime/lightvela-site-webview";
 
-const { createLightVelaMobileShellBootstrap, createLightVelaLocaleBootstrap, createLightVelaLocaleChange, createLightVelaSiteBootstrap, createLightVelaStaticPrefetch, lightVelaSiteTabForUrl, lightVelaSiteTabUrl, lightVelaSiteUrl, LIGHTVELA_STATIC_PREFETCH } =
+const { createLightVelaMobileShellBootstrap, createLightVelaLocaleBootstrap, createLightVelaLocaleChange, createLightVelaSiteBootstrap, createLightVelaPageDiagnostics, createLightVelaStaticPrefetch, lightVelaSiteTabForUrl, lightVelaSiteTabUrl, lightVelaSiteUrl, LIGHTVELA_STATIC_PREFETCH } =
   ("default" in webviewModule ? webviewModule.default : webviewModule) as typeof import("../apps/workbench-expo/src/runtime/lightvela-site-webview");
 
 test("native language reaches only the selected first-party site before its i18n starts", () => {
@@ -100,6 +100,25 @@ test("mobile shell hides only the selected site's duplicate header", () => {
   runInNewContext(createLightVelaMobileShellBootstrap("cn"), { window, document });
   assert.match(appended[0]?.textContent ?? "", /\.lw-public-site-header \{ display: none !important/);
   assert.match(appended[0]?.textContent ?? "", /\.lw-app-top-pad \{ padding-top: 0 !important/);
+});
+
+test("page diagnostics report only first-party visible text length", () => {
+  const messages: unknown[] = [];
+  let sample: (() => void) | undefined;
+  const window = {
+    location: { origin: "https://other.example" },
+    ReactNativeWebView: { postMessage: (raw: string) => messages.push(JSON.parse(raw)) },
+    addEventListener: () => undefined,
+    setTimeout: (callback: () => void) => { sample = callback; },
+  };
+  const document = { body: { innerText: "private page content" } };
+  runInNewContext(createLightVelaPageDiagnostics("intl"), { window, document });
+  assert.equal(sample, undefined);
+  window.location.origin = "https://lightvela.ai";
+  runInNewContext(createLightVelaPageDiagnostics("intl"), { window, document });
+  sample?.();
+  assert.deepEqual(messages, [{ type: "site-health", visibleChars: 20 }]);
+  assert.equal(JSON.stringify(messages).includes("private"), false);
 });
 
 test("native tabs observe in-site history changes without remounting the WebView", () => {

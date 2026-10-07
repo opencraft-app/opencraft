@@ -90,6 +90,13 @@ export class TurnScrollController {
     return () => this.#userListeners.delete(listener);
   }
 
+  /** Publish geometry facts without consuming a pending content-layout preservation. */
+  reportGeometry(): void {
+    if (this.#disposed) return;
+    this.#distanceFromBottomPx = Math.max(0, this.#host.getMetrics().distanceFromBottomPx);
+    this.#publish();
+  }
+
   /**
    * Atomically reconciles a physical scroll event. Pending layout preservation
    * is applied before the platform is measured and before origin is resolved,

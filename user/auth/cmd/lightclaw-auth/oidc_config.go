@@ -170,7 +170,7 @@ func validateSiteGatewayOIDCClients(clients []oidc.Client) error {
 	for _, client := range clients {
 		switch client.ID {
 		case oidc.NativeClientID:
-			if len(client.RedirectURIs) != 1 || client.RedirectURIs[0] != oidc.NativeRedirectURI {
+			if !equalNativeRedirects(client.RedirectURIs) {
 				return fmt.Errorf("invalid native client redirect")
 			}
 			continue
@@ -201,6 +201,18 @@ func validateSiteGatewayOIDCClients(clients []oidc.Client) error {
 		}
 	}
 	return nil
+}
+
+func equalNativeRedirects(redirects []string) bool {
+	if len(redirects) == 1 {
+		return redirects[0] == oidc.NativeRedirectURI
+	}
+	if len(redirects) != 2 {
+		return false
+	}
+	return slices.Contains(redirects, oidc.NativeRedirectURI) &&
+		slices.Contains(redirects, oidc.NativeInternationalRedirectURI) &&
+		redirects[0] != redirects[1]
 }
 
 func validateOIDCIssuer(raw string) (string, error) {

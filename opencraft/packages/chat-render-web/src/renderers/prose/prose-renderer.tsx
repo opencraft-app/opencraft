@@ -1,5 +1,5 @@
 import type { ChatDocumentNode } from "@opencraft/chat-document";
-import type { ChatNodeRendererProps } from "@opencraft/chat-render-react";
+import { containsHanText, type ChatNodeRendererProps } from "@opencraft/chat-render-react";
 import { Fragment, type CSSProperties, type ReactNode } from "react";
 
 import "./prose.scss";
@@ -32,18 +32,6 @@ function SegmentedText({ node, props }: { readonly node: SegmentedTextNode; read
 
 function children(props: ChatNodeRendererProps): ReactNode {
   return "children" in props.node ? props.renderNodes(props.node.children) : null;
-}
-
-function plainText(nodes: readonly ChatDocumentNode[]): string {
-  return nodes.map((node) => {
-    if (node.kind === "text") return node.text;
-    if (node.kind === "inline-code") return node.code;
-    return "children" in node ? plainText(node.children) : "";
-  }).join("");
-}
-
-function containsHanText(nodes: readonly ChatDocumentNode[]): boolean {
-  return /\p{Script=Han}/u.test(plainText(nodes));
 }
 
 function paragraphMediaKind(nodes: readonly ChatDocumentNode[]): "grid" | "single" | null {

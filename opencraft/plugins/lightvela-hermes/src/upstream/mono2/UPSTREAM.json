@@ -1,6 +1,6 @@
 {
   "source": "frontend/src",
-  "sourceRevision": "b6fcfeb44c2ad76af5045687db619ae195078982",
+  "sourceRevision": "ae5fd5db6077a72fb132c4eb7befe085c0d0f3b6",
   "generatedBy": "scripts/sync-mono2-agent-console.mjs",
   "files": [
     {
@@ -9,7 +9,7 @@
     },
     {
       "file": "components/domain/tat-file-manager-panel.tsx",
-      "sourceSha256": "552f576d75d800216631c7a57dfc2ee6d8e3311fb2cf463497b605fdbb3fc25f"
+      "sourceSha256": "a1747345009e0209e51d7df3e77d5f69d150667c3b8b3669f7cdcd318b32a71c"
     },
     {
       "file": "components/ui/badge.tsx",
@@ -89,35 +89,35 @@
     },
     {
       "file": "i18n/generated/en-US.json",
-      "sourceSha256": "c4632de6390167ca24a6e4a47485b8a8e5d075142cce65a873654856064b1cfd"
+      "sourceSha256": "f176d224794b809d31441aff2c47e547ba0e74dff70af379817d9001c53c8e68"
     },
     {
       "file": "i18n/generated/es.json",
-      "sourceSha256": "2ce82a7ecf3d0d3fda3543cefa8b9e2527b1a2cd8ff6fc49bb4d89cdce10868d"
+      "sourceSha256": "b367dee095f6a7248a1e9331a6e9ce7ed82c69108cdc29a8c782aa7d8ab9cf57"
     },
     {
       "file": "i18n/generated/id-ID.json",
-      "sourceSha256": "e20cdf4cc0794c410b26bb0d90060b62a6ab69e95e9d995b8b206edd826cfdd9"
+      "sourceSha256": "4fcf3f6eddba9c3959b7dd186d644e215f115b056a64b895829dc8800251e7cc"
     },
     {
       "file": "i18n/generated/ja-JP.json",
-      "sourceSha256": "f72eb552a2976a680119c9bcf17191f234bb462fb081de85f5395dff5b3aa66a"
+      "sourceSha256": "f520d4712b8a717e84e0a662342b88e9af7ccf2fd10fd654844d98f366b3645e"
     },
     {
       "file": "i18n/generated/ko-KR.json",
-      "sourceSha256": "65d4eeef80953b58ce19d928a54d472c81a3ebd98928e8dc72aaf2f596bba1ff"
+      "sourceSha256": "ca1815b191b6432f8d8472fd5b5ebb0826bd79f6110e1c6f318e49368336b51a"
     },
     {
       "file": "i18n/generated/zh-CN.json",
-      "sourceSha256": "fe6185896cf4b0a5701d0fa86e0cdfcf84108668d80c13b289eb93d8388efd07"
+      "sourceSha256": "d6382cb1892764172ca2c3310c883f5b52bd68ac89c52be896902f6d05e4cee7"
     },
     {
       "file": "i18n/generated/zh-Hant.json",
-      "sourceSha256": "9a393e421587387d26c06d029e95e779683a28ed18255ee334cfe15964d75582"
+      "sourceSha256": "7635a325981d4a60b4619b60f9fe7324f84bc8bcb3f55be31e1bdca21c36254c"
     },
     {
       "file": "i18n/generated/zh-to-key.json",
-      "sourceSha256": "afc1c645d1c1023c41bb0d5e488dd9ee3880018c4a0f4aba92ae59462c605a47"
+      "sourceSha256": "3a8d4a6369c8fe83e7300985ef54a2d040c5bb141b066df9a667017c0adaec8d"
     },
     {
       "file": "i18n/index.ts",
@@ -141,7 +141,7 @@
     },
     {
       "file": "lib/auth-api-base.ts",
-      "sourceSha256": "be54d0bd937d532d4d4413aa365e08652207537fc094a55a81964a6172ee747c"
+      "sourceSha256": "e6dbf89f7f9f9c87c0d02f0d53f05758bcd69ba8261a421bcbdefdd5945b037f"
     },
     {
       "file": "lib/cookie-consent.ts",
@@ -177,7 +177,7 @@
     },
     {
       "file": "lib/region.ts",
-      "sourceSha256": "f7dc3ece86c2ee834c54e1bc2bdc04e980b4e6e4d96199f4c5933f8c8b667c3f"
+      "sourceSha256": "cf1ed75c528f2ae4ebbcd138a98d552982fecbf3970dc3347e998a9b7fca9a69"
     },
     {
       "file": "lib/skillhub-api.ts",
@@ -345,7 +345,7 @@
     },
     {
       "file": "pages/marketing/agent-diagnostics-panel.tsx",
-      "sourceSha256": "dfd042efe5bc6f8f29186edc8370da2f1cb1783682ce8939ab98486294b2b598"
+      "sourceSha256": "edae20c97a11f928d808a6875531a3a04f5006be0252dc343e2ba4056962c6f2"
     },
     {
       "file": "pages/marketing/agent-experts-panel.tsx",
@@ -389,7 +389,7 @@
     },
     {
       "file": "pages/marketing/agent-model-config/use-model-config.ts",
-      "sourceSha256": "26e44e68cd1e1c41dc03fd5687f304272995e403b25b402c9ba2e3f34dad7392"
+      "sourceSha256": "dadf55fc634c4699eedbc7b4662e2389fe961cd562cbf3150de185a77f9d5f5c"
     },
     {
       "file": "pages/marketing/agent-provider-locale.ts",
@@ -461,7 +461,7 @@
     },
     {
       "file": "pages/marketing/skills-demo/SkillsDemoPanel.tsx",
-      "sourceSha256": "d0d2ee465e345bb3f7e659c6c216cb8f150d3466520a438e726166f58783c413"
+      "sourceSha256": "ab0c8690ef047a61526bda5e24dda93312d826cb8a463d2a8c2729a09d538966"
     },
     {
       "file": "pages/marketing/skills-demo/curated-skill-categories.ts",
@@ -513,11 +513,11 @@
     },
     {
       "file": "repositories/http-repositories.ts",
-      "sourceSha256": "91d7bd8c9dfde852f1745a16ef7cda413eed9a2c7706aef4b10fa59d685e2859"
+      "sourceSha256": "1d537491ae17b35a73ac6b853362993c3b0facc513aee9975993a1d6a7baa640"
     },
     {
       "file": "repositories/types.ts",
-      "sourceSha256": "5170e5eef5d95a0a03e30a648b8d04cb15933fc090e5a6e310032a7c5f6aea43"
+      "sourceSha256": "77df985ea14413bd9290513e433a79eebfc54dd0b8fc087ea4034cbf175d991c"
     },
     {
       "file": "services/use-async-resource.ts",

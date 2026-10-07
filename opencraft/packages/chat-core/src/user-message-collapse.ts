@@ -87,6 +87,16 @@ export function observeUserMessageNaturalHeight(
   transactionOpen: boolean,
 ): UserMessageNaturalMeasurementTransaction {
   const owned = reconcileUserMessageNaturalMeasurement(measurement, contentIdentity, collapsedHeight);
-  if (!transactionOpen || owned.contentHeight !== null) return owned;
+  if (
+    !Number.isFinite(contentHeight)
+    || contentHeight < 0
+    || owned.contentHeight === contentHeight
+  ) return owned;
+  // A clipped RN container may still report its child's natural size after
+  // async media layout. Growth beyond the previously accepted natural size is
+  // trustworthy; a smaller clipped observation cannot prove shrinkage.
+  if (!transactionOpen && (
+    owned.contentHeight === null || contentHeight <= owned.contentHeight
+  )) return owned;
   return { ...owned, contentHeight };
 }

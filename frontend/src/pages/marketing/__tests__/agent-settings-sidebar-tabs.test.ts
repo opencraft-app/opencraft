@@ -279,7 +279,7 @@ describe("agent settings sidebar chat/settings tabs", () => {
     );
   });
 
-  it("renders an expandable chat header with a create action and session icons under daily", () => {
+  it("renders an expandable chat header with a create action and icon-free sessions under daily", () => {
     const page = readPageSource();
 
     expect(page).toContain('sidebarTab === "daily"');
@@ -293,7 +293,8 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain('pendingNewChatSessionBotId = activeBot.id');
     expect(page).toContain('chatSessionCommands.createSession()');
     expect(page).toContain("chatSessionPagination.visibleSessions.map");
-    expect(page).toContain('<span className="lv-agents-nav-icon"><MessageSquare className="h-4 w-4" aria-hidden="true" /></span>');
+    const sessionList = page.slice(page.indexOf('className="lv-agents-nav-group-items lv-agents-session-list"'), page.indexOf("chatSessionMutationState !== null"));
+    expect(sessionList).not.toContain('<MessageSquare');
     expect(page).toContain('!isChatTabDisabled && chatSessionsExpanded && !isSidebarCollapsed');
   });
 
@@ -476,15 +477,18 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain('(hasSidebarLayout || shouldShowDataLoading) && "lv-agent-settings-main"');
     expect(page).toContain("lv-agent-settings-grid grid items-start");
     expect(page).toContain('activeSection === "chat" && openCraftChatEnabled ? "gap-y-0 lg:gap-y-6" : "gap-6"');
-    expect(page).toContain('hasSidebarLayout && (isSidebarCollapsed ? "lg:grid-cols-[56px_minmax(0,1fr)]" : "lg:grid-cols-[248px_minmax(0,1fr)]")');
+    expect(page).toContain('hasSidebarLayout && !embedded && (isSidebarCollapsed ? "lg:grid-cols-[56px_minmax(0,1fr)]" : "lg:grid-cols-[248px_minmax(0,1fr)]")');
   });
 
-  it("exposes rename and delete in the session menu (delete needs confirmation)", () => {
+  it("places mark as unread between rename and delete in the session menu", () => {
     const page = readPageSource();
+    const menu = page.slice(page.indexOf('className="lv-agents-session-menu" role="menu"'), page.indexOf("chatSessionMutationState !== null"));
 
-    expect(page).toContain('role="menuitem"');
-    expect(page).toContain('t("重命名")');
-    expect(page).toContain('t("删除")');
+    expect(menu).toContain('role="menuitem"');
+    expect(menu.indexOf('t("重命名")')).toBeLessThan(menu.indexOf('t("标记为未读")'));
+    expect(menu.indexOf('t("标记为未读")')).toBeLessThan(menu.indexOf('t("删除")'));
+    expect(page).toContain('setUnread(session.chatId, false)');
+    expect(page).toContain('lv-agents-session-unread-dot');
     // SDK 1.4.1 提供 renameSession / deleteSession。
     expect(page).toContain("renameSession");
     expect(page).toContain("deleteSession");

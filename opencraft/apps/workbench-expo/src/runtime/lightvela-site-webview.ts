@@ -97,6 +97,27 @@ export function createLightVelaSiteBootstrap(token: string, region: LightVelaReg
   })(); true;`;
 }
 
+/** Report only page health measurements to the native, local developer log. */
+export function createLightVelaPageDiagnostics(region: LightVelaRegion): string {
+  const siteOrigin = LIGHTVELA_REGIONS[region].frontendBase;
+  return `(() => {
+    if (window.location.origin !== ${JSON.stringify(siteOrigin)}) return;
+    const report = (type, extra = {}) => window.ReactNativeWebView?.postMessage(JSON.stringify({ type, ...extra }));
+    let reportedFailure = false;
+    const reportFailure = () => {
+      if (reportedFailure) return;
+      reportedFailure = true;
+      report('site-script-failed');
+    };
+    window.addEventListener('error', reportFailure);
+    window.addEventListener('unhandledrejection', reportFailure);
+    window.setTimeout(() => {
+      const visibleChars = Math.min(100000, document.body?.innerText?.trim().length ?? 0);
+      report('site-health', { visibleChars });
+    }, 8000);
+  })(); true;`;
+}
+
 /** Keep website content usable under the native tab bar without its duplicate header. */
 export function createLightVelaMobileShellBootstrap(region: LightVelaRegion): string {
   const siteOrigin = LIGHTVELA_REGIONS[region].frontendBase;

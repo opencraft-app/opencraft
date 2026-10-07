@@ -1377,7 +1377,7 @@ function FeaturedSkillCard({
   const t = useT();
 
   return (
-    <li className="group relative grid h-[202px] grid-rows-[2fr_1fr] overflow-hidden rounded-lg border border-black/[0.06] bg-white transition-colors hover:border-black/[0.12] hover:bg-black/[0.025]">
+    <li className="group relative grid h-[202px] min-w-0 grid-cols-1 grid-rows-[2fr_1fr] overflow-hidden rounded-lg border border-black/[0.06] bg-white transition-colors hover:border-black/[0.12] hover:bg-black/[0.025]">
       <button
         type="button"
         onClick={() => onOpenDetails(entry.skill)}

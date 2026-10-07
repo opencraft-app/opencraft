@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import test from "node:test";
 import { createRequire } from "node:module";
 import type { NativeLoginPorts } from "../apps/workbench-expo/src/runtime/native-login";
-const { createNativeLogin, NATIVE_LOGIN_REDIRECT } = createRequire(import.meta.url)("../apps/workbench-expo/src/runtime/native-login.ts") as typeof import("../apps/workbench-expo/src/runtime/native-login");
+const { createNativeLogin, NATIVE_LOGIN_REDIRECT, NATIVE_LOGIN_INTL_REDIRECT } = createRequire(import.meta.url)("../apps/workbench-expo/src/runtime/native-login.ts") as typeof import("../apps/workbench-expo/src/runtime/native-login");
 
 function fixture() {
   let saved: string | null = null;
@@ -53,6 +53,23 @@ test("native login opens the selected region's authorization service", async () 
   };
   const flow = createNativeLogin(f.ports, () => "https://api.lightvela.com");
   assert.equal(await flow.signIn(), "test-session");
+});
+
+test("international package uses its own callback throughout authorization and exchange", async () => {
+  const f = fixture();
+  f.ports.open = async (raw, redirect) => {
+    assert.equal(redirect, NATIVE_LOGIN_INTL_REDIRECT);
+    assert.equal(new URL(raw).searchParams.get("redirect_uri"), NATIVE_LOGIN_INTL_REDIRECT);
+    return { type: "success", url: `${redirect}?state=${"s".repeat(43)}&code=${"a".repeat(43)}` };
+  };
+  f.ports.exchange = async input => {
+    assert.equal(input.redirect_uri, NATIVE_LOGIN_INTL_REDIRECT);
+    return "international-session";
+  };
+  const flow = createNativeLogin(f.ports, "https://api.lightvela.ai", NATIVE_LOGIN_INTL_REDIRECT);
+  assert.equal(await flow.signIn(), "international-session");
+  f.seed();
+  await assert.rejects(flow.consume(`${NATIVE_LOGIN_REDIRECT}?state=${"s".repeat(43)}&code=${"a".repeat(43)}`), /Invalid login callback address/);
 });
 
 test("retiring login cannot erase the next owner's transaction", async () => {
@@ -106,6 +123,27 @@ test("expired login and browser cancellation clear pending credentials", async (
   assert.equal(f.saved, null);
   f.ports.open = async () => ({ type: "cancel" });
   assert.equal(await flow.signIn(), null); assert.equal(f.saved, null); assert.equal(f.calls, 0);
+});
+
+test("cancelled browser login ignores a late successful callback", async () => {
+  const f = fixture();
+  let finish!: (value: { type: string; url?: string }) => void;
+  let started!: () => void;
+  const opened = new Promise<void>(resolve => { started = resolve; });
+  f.ports.open = async (_url, redirect) => new Promise(resolve => {
+    finish = value => resolve({ ...value, url: value.url ?? `${redirect}?state=${"s".repeat(43)}&code=${"a".repeat(43)}` });
+    started();
+  });
+  const flow = createNativeLogin(f.ports, "https://api.lightvela.ai");
+  const pending = flow.signIn();
+  await opened;
+  await flow.cancel();
+  finish({ type: "success" });
+  assert.equal(await pending, null);
+  assert.equal(f.calls, 0);
+  assert.equal(f.saved, null);
+  f.ports.open = async (_url, redirect) => ({ type: "success", url: `${redirect}?state=${"s".repeat(43)}&code=${"a".repeat(43)}` });
+  assert.equal(await flow.signIn(), "test-session");
 });
 
 test("disposal aborts exchange and rejects late completion", async () => {
