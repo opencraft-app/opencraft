@@ -280,7 +280,7 @@ describe("international docs publication inventory", () => {
     it("uses Japanese page, navigation, breadcrumb, and search controls", () => {
       const overview = readFileSync(join(generatedJaRoot, "overview.mdx"), "utf8");
       expect(frontmatterValue(overview, "title")).toBe("LightVelaとは何ですか");
-      expect(frontmatterValue(overview, "description")).toContain("クラウドホスト型エージェントプラットフォーム");
+      expect(frontmatterValue(overview, "description")).toContain("クラウド型AIエージェント製品");
 
       const meta = JSON.parse(readFileSync(join(generatedJaRoot, "meta.json"), "utf8")) as {
         title: string;

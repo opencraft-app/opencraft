@@ -84,7 +84,7 @@ const defaultDocsOutputPrefix = buildRegion === 'global' ? 'en-us' : 'zh-cn';
  */
 const cnDocs = [
   // 开始使用
-  { slug: 'overview', title: 'LightVela 是什么', file: '01-overview.md', group: '开始使用', description: 'LightVela 是腾讯轻量云团队推出的云端 Agent 托管产品，让每个人都能拥有认识你、记得你、越聊越懂你的专属 AI 伙伴。你的 Agent 7×24 小时在线、独立运行、随时可对话，模型、工具、人设都由你自己决定。', hideDescription: true },
+  { slug: 'overview', title: 'LightVela 是什么', file: '01-overview.md', group: '开始使用', description: 'LightVela 是腾讯轻量云团队推出的云端 AI Agent 产品，让每个人都能拥有认识你、记得你、越聊越懂你的专属 AI 伙伴。你的 Agent 7×24 小时在线、独立运行、随时可对话，模型、工具、人设都由你自己决定。', hideDescription: true },
   { slug: 'quickstart', title: '快速开始', file: '02-quickstart.md', group: '开始使用', description: '5 分钟跑通第一个 LightVela 对话。', hideDescription: true },
   { slug: 'create-first-hermes', title: '开通第一个 Hermes Agent', file: 'create-first-hermes.md', group: '开始使用', description: '登录并实名认证、开通套餐、为首个 Bot 命名，然后按引导完成初始配置。', hideDescription: true },
   { slug: 'core-concepts', title: '核心概念', file: '04-core-concepts.md', group: '开始使用', description: '理解 Hermes、模型、通道和技能。', hideDescription: true },

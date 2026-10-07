@@ -242,14 +242,14 @@ const DEFAULT_KEYWORDS: Record<SeoLocale, readonly string[]> = {
 };
 
 export const SOFTWARE_APPLICATION_DESCRIPTIONS: Record<SeoLocale, string> = {
-  'en-US': 'LightVela is a cloud Agent hosting product for creating a long-term personal AI companion.',
-  'zh-CN': 'LightVela 是云端 Agent 托管产品，用于创建长期在线、越聊越懂你的个人 AI 伙伴。',
-  'zh-SG': 'LightVela 是云端 Agent 托管产品，用于创建长期在线、越聊越懂你的个人 AI 伙伴。',
-  'zh-Hant': 'LightVela 是雲端 Agent 託管產品，用於建立長期在線、越聊越懂你的個人 AI 夥伴。',
-  'id-ID': 'LightVela adalah produk hosting Agent berbasis cloud untuk membuat pendamping AI pribadi jangka panjang.',
-  es: 'LightVela es una plataforma de agentes de IA en la nube para crear un asistente personal siempre disponible.',
-  'ja-JP': 'LightVelaは、長期的に使える自分専用のAIアシスタントを作成するためのクラウドAIエージェント基盤です。',
-  'ko-KR': 'LightVela는 장기간 사용할 수 있는 개인 AI 어시스턴트를 만드는 클라우드 AI 에이전트 플랫폼입니다.',
+  'en-US': 'LightVela is a cloud AI agent product for creating a long-term personal AI companion.',
+  'zh-CN': 'LightVela 是云端 AI Agent 产品，用于创建长期在线、越聊越懂你的个人 AI 伙伴。',
+  'zh-SG': 'LightVela 是云端 AI Agent 产品，用于创建长期在线、越聊越懂你的个人 AI 伙伴。',
+  'zh-Hant': 'LightVela 是雲端 AI Agent 產品，用於建立長期在線、越聊越懂你的個人 AI 夥伴。',
+  'id-ID': 'LightVela adalah produk AI Agent berbasis cloud untuk membuat pendamping AI pribadi jangka panjang.',
+  es: 'LightVela es un producto de agentes de IA en la nube para crear un asistente personal siempre disponible.',
+  'ja-JP': 'LightVelaは、長期的に使える自分専用のAIアシスタントを作成するためのクラウド型AIエージェント製品です。',
+  'ko-KR': 'LightVela는 장기간 사용할 수 있는 개인 AI 어시스턴트를 만드는 클라우드 AI 에이전트 제품입니다.',
 };
 
 const GLOBAL_PUBLISHED_URL_LANGS = PUBLIC_URL_LANGS.filter((lang) => lang !== ZH_CN_URL_LANG);

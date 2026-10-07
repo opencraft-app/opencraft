@@ -6,7 +6,7 @@
 
 ---
 
-LightVela는 Tencent Cloud Lighthouse 팀의 클라우드 호스팅 에이전트 제품입니다. **서버, 컨테이너 또는 API 인증을 관리할 필요 없이 온라인 상태를 유지하고 상황을 학습하며 시간이 지남에 따라 더욱 도움이 되는 개인 AI 동반자를 원하는 사람들**을 위해 설계되었습니다. LightVela는 클라우드에서 배포, 운영 및 24/7 가용성을 처리합니다. 웹 콘솔에서 에이전트를 구성한 다음 Telegram, WhatsApp, Discord, Slack 또는 WeChat을 통해 Hermes Agent와 통신합니다.
+LightVela는 Tencent Cloud Lighthouse 팀의 클라우드 AI 에이전트 제품입니다. **서버, 컨테이너 또는 API 인증을 관리할 필요 없이 온라인 상태를 유지하고 상황을 학습하며 시간이 지남에 따라 더욱 도움이 되는 개인 AI 동반자를 원하는 사람들**을 위해 설계되었습니다. LightVela는 클라우드에서 배포, 운영 및 24/7 가용성을 처리합니다. 웹 콘솔에서 에이전트를 구성한 다음 Telegram, WhatsApp, Discord, Slack 또는 WeChat을 통해 Hermes Agent와 통신합니다.
 
 아직 잘 모르겠다면 [LightVela란 무엇인가](./01-overview.md)부터 시작해 보세요.
 

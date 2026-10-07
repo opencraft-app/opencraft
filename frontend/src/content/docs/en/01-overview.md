@@ -2,19 +2,19 @@
 
 ## Summary
 
-**LightVela is a cloud-hosted agent platform from the Tencent Lighthouse team, and its current product is Hermes Agent — an AI agent built on large language models. LightVela takes care of deployment, operations, and 24/7 uptime in the cloud, so you never write config files or SSH into a server: you set everything up by pointing and clicking in a visual panel, then chat with your Bot directly in Daily → Chat or connect the messaging apps you already use. It remembers you across conversations, and you choose the model, tools, and persona. Current plans and introductory offers are listed on the [Subscribe page](/subscribe/).**
+**LightVela is a cloud AI agent product from the Tencent Lighthouse team. The personal AI assistants you create currently run on Hermes Agent. LightVela takes care of deployment, operations, and 24/7 uptime in the cloud, so you never write config files or SSH into a server: you set everything up by pointing and clicking in a visual panel, then chat with your Bot directly in Daily → Chat or connect the messaging apps you already use. It remembers you across conversations, and you choose the model, tools, and persona. Current plans and introductory offers are listed on the [Subscribe page](/subscribe/).**
 
 ---
 
 > A cloud-hosted Hermes Agent that understands you better over time.
 
-LightVela is a cloud Agent hosting product from the Tencent Lighthouse team. It is designed to let everyone own an **AI companion that truly belongs to them**—not a tool that asks you to introduce yourself every time, but a long-term presence that **knows you, remembers you, and understands you better over time**.
+LightVela is a cloud AI agent product from the Tencent Lighthouse team. It is designed to let everyone own an **AI companion that truly belongs to them**—not a tool that asks you to introduce yourself every time, but a long-term presence that **knows you, remembers you, and understands you better over time**.
 
 Your Agent stays online 24/7, runs independently, and is always ready to chat. You decide its model, tools, and persona.
 
 We lower the configuration barrier through a visual console: no config files, no server login, just select options on the web page to complete setup.
 
-The current LightVela product is **Hermes Agent**, an AI Agent powered by large language models. More ready-to-use products may be added in the future. This documentation focuses on Hermes Agent.
+The personal AI assistants you create currently run on Hermes Agent. This documentation explains how to configure their models, tools, personas, and chat channels.
 
 ![1.00](../images/1-1.webp)
 
