@@ -6,6 +6,7 @@
 
 - [上游 README](../README.md)、[Agent 约束](../AGENTS.md)、[目录记录](../catalog-info.yaml)
 - [Subtree 契约](../MONO2_SUBTREE.md)
+- [Hunyuan ASR 本地协议适配](hunyuan-asr.md)
 - [上游服务治理](../../docs/engineering/platform/README.md)
 
 ## 关键边界

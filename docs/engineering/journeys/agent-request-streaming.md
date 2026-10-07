@@ -31,6 +31,36 @@ OpenCraft 侧栏目录读取的加载状态不占可见行：不显示额外转�
 
 ## 验证
 
+NewAPI 的 Hunyuan ASR 是独立的同步语音协议适配，不属于普通 LLM 转换。
+高级自定义渠道仅在 `/v1/audio/transcriptions` 路由允许
+`openai_transcriptions_to_hunyuan_asr`，将 multipart 音频增量编码为 Base64 JSON，
+复用模型映射、渠道凭据与现有转写的时长估算记账。容器格式沿既有纯 Go 时长解析器，
+不把 OpenCraft 的 PCM16 单声道 16kHz WAV 策略当作供应商格式限制；使用
+`voice_encode_format=auto`。WebM/Opus 时长在内存中按块时间戳与 RFC 6716 包时长
+计算，支持浏览器常见的缺省 Duration、未知 Segment/Cluster 长度、lacing、
+CodecDelay 与尾部 DiscardPadding；不信任声明的 Duration 来低估计费，
+拒绝重叠时间线、截断结构和非单一 Opus 音轨。解析无 ffprobe、解码或临时文件；
+不接受缺少采样率/布局元数据的裸 PCM。响应仅 `json`/`text`，不生成时间戳或流事件。
+模型、地址与密钥由渠道管理，不硬编码；上传音频不写磁盘、不上传对象存储，也不接受 URL 输入。
+
+渠道选择前也要解析上传的 model，因此标准转写入口统一强制内存 BodyStorage 与
+multipart 解析；其它协议的磁盘缓存不变。转写入口在鉴权后、模型解析前获取整请求
+内存并发租约：`TRANSCRIPTION_MAX_CONCURRENT` 默认 4（有效范围 1–64），超限
+在读取请求体前返回带 Retry-After 的 429；保留 MAX_REQUEST_BODY_MB 大小限制。
+适配器直接在已有 multipart 文件上校验时长并 rewind；发送端使用拉取式固定
+24KiB 原始块/32KiB 编码块，无后台生产 goroutine，不生成完整 Base64 字符串或 JSON
+正文。JSON 元数据单独正确转义，根据音频长度计算 Content-Length，不依赖 chunked。
+取消和源读取错误终止上传，HTTP 完成/失败后关闭文件；不改变计费和重试策略。
+部署前仍须按该大小与并发、multipart 解析副本和有界编码缓冲核算 Pod 内存，不能只按
+压缩音频大小估算路由前的内存。该准入只作用于转写，不限制普通 LLM。
+
+Hunyuan 上游使用独立 HTTP client 配置副本，90 秒为含响应体读取的最大时长
+（更短的全局 relay timeout 仍生效），传播调用方取消、不跟随重定向、不修改共享 LLM client。
+供应商响应最多 128KiB，转写文本最多 32,000 UTF-8 字节；异常响应不暴露供应商
+原始正文，传输结果不明或异常成功正文不自动重试，避免重复转写计费。
+上游明确非 200 拒绝仍交由既有 relay 状态码/重试策略处理。适配器测试不是生产公共入口验收。
+配置、WebM/Opus 实测证据及浏览器切换边界见 [Hunyuan ASR](../../../new-api/docs/hunyuan-asr.md)。
+
 OpenCraft Web 混元听写在提交 Agent 请求之前完成，属于客户端输入服务。
 平台适配器拥有录音，应用后端拥有凭据与有界同步转写，Composer 拥有原草稿写入确认。
 停止只插入；发送必须等待同一草稿的写入确认。失败撤销旧发送意图，显式重试复用音频而不重录，

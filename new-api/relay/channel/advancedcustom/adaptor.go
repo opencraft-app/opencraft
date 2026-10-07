@@ -32,10 +32,11 @@ type Adaptor struct {
 	claudeAdaptor claude.Adaptor
 	geminiAdaptor gemini.Adaptor
 
-	resolved  bool
-	converted bool
-	route     dto.AdvancedCustomRoute
-	converter string
+	resolved              bool
+	converted             bool
+	route                 dto.AdvancedCustomRoute
+	converter             string
+	hunyuanResponseFormat string
 }
 
 func (a *Adaptor) Init(info *relaycommon.RelayInfo) {
@@ -164,6 +165,13 @@ func (a *Adaptor) ConvertAudioRequest(c *gin.Context, info *relaycommon.RelayInf
 	if err != nil {
 		return nil, err
 	}
+	if converter == relayconvert.ConverterHunyuanASR {
+		body, err := a.convertHunyuanASR(c, info, request)
+		if err != nil {
+			return nil, types.NewOpenAIError(err, types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
+		}
+		return body, nil
+	}
 	if converter != relayconvert.ConverterNone {
 		return nil, fmt.Errorf("converter %q does not support audio requests", converter)
 	}
@@ -272,6 +280,9 @@ func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, request
 	if !a.converted && a.converter != relayconvert.ConverterNone {
 		return nil, errors.New("advanced custom converter routes cannot be used with pass-through request body")
 	}
+	if a.converter == relayconvert.ConverterHunyuanASR {
+		return a.doHunyuanASRRequest(c, info, requestBody)
+	}
 
 	if info.RelayMode == relayconstant.RelayModeAudioTranscription ||
 		info.RelayMode == relayconstant.RelayModeAudioTranslation ||
@@ -290,6 +301,8 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycom
 	}
 
 	switch a.converter {
+	case relayconvert.ConverterHunyuanASR:
+		return a.doHunyuanASRResponse(c, resp, info)
 	case relayconvert.ConverterNone:
 		return a.doNativeResponse(c, resp, info)
 	case relayconvert.ConverterClaudeMessagesToOpenAIChat,

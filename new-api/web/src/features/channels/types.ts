@@ -128,6 +128,7 @@ export interface AdvancedCustomRouteAuth {
 }
 
 export type AdvancedCustomConverter =
+  | 'openai_transcriptions_to_hunyuan_asr'
   | 'none'
   | 'anthropic_messages_to_openai_chat_completions'
   | 'openai_chat_completions_to_anthropic_messages'
