@@ -7,7 +7,7 @@ LightVela 的 Next.js（App Router）+ React 19 + TypeScript + Tailwind v4 前�
 - 最近的服务入口就是本文件；规划非简单变更前先读取路由到的 Domain Pack。
 - 深层架构与流程细节延后至 [frontend 服务详情](../docs/context/project/services/frontend.md)。
 - `frontend/openspec/` 下的 OpenSpec 是已归档前端规格的权威来源。
-- 修改前端视觉样式时先读 [DESIGN.md](DESIGN.md)。
+- 新增页面或组件，以及修改布局、样式、交互或响应式行为前，先读 [DESIGN.md](DESIGN.md)。
 
 ## UI 组件与样式约定（vibecoding 优先复用）
 
