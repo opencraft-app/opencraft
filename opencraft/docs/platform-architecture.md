@@ -371,6 +371,15 @@ owns the region. Editors are not remounted to switch modes. The voice extension
 provides semantic status, cancellation and a single completion promise, not a
 React replacement toolbar or access to the root controller.
 
+While a provider is starting, this same Footer shows only the shared decorative
+progress indicator and a neutral screen-reader announcement. Startup includes
+microphone acquisition, audio-context activation and provider readiness; it does
+not prove that an operating-system permission prompt is open. Only a confirmed
+listening event replaces progress with the waveform and starts elapsed recording
+time. Cancellation stays available before readiness and fences late completion.
+This feedback adds no minimum wait, microphone prewarming or background capture;
+it does not shorten or claim to measure physical-device startup latency.
+
 Stop-and-insert completes recognition without submitting. Transcribe-and-send
 and Enter wait for final text and revalidate the same draft and physical View
 before invoking the existing submission compiler. The read-only editor's Enter
