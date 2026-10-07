@@ -1,6 +1,6 @@
 {
   "source": "frontend/src",
-  "sourceRevision": "3403d3e005c2781295e0109e28d85a23acedbf8e",
+  "sourceRevision": "2196bee462a1b6bcfef71019c6b078a77da5f711",
   "generatedBy": "scripts/sync-mono2-agent-console.mjs",
   "files": [
     {
@@ -89,7 +89,7 @@
     },
     {
       "file": "i18n/generated/en-US.json",
-      "sourceSha256": "9819803559a13d2d6af4f26cdfdee8bbb8c122711ad5abc4d69d14440849e848"
+      "sourceSha256": "676e99ea2d4e60ed4beeb6ed9b41b0bd1f659da76224a2e24068b8886c511a42"
     },
     {
       "file": "i18n/generated/es.json",
@@ -97,7 +97,7 @@
     },
     {
       "file": "i18n/generated/id-ID.json",
-      "sourceSha256": "c1cb4109f0b30198e9ffe9a82c209f0978207e1a71d954fe1f14f516b962158e"
+      "sourceSha256": "3328624c3febb91c45c120d86d79604782c72eed5bd36b989f0d03a9ece42856"
     },
     {
       "file": "i18n/generated/ja-JP.json",
@@ -493,7 +493,7 @@
     },
     {
       "file": "pages/marketing/skills-demo/domestic-skill-catalog.ts",
-      "sourceSha256": "0839042bebac292c9b64540b83fea8e2313807d3caa4bfb5975bc6399d83bb0b"
+      "sourceSha256": "18270a2024d78045f59f6f5fc8926a266aee9196073eaf0bb22df21498133bde"
     },
     {
       "file": "pages/marketing/skills-demo/skill-registries.ts",
