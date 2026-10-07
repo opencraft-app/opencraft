@@ -12,6 +12,9 @@ const runtimeMock = vi.hoisted(() => ({
   isSubscribed: false,
   bots: [] as Array<{ id: string }>,
   hasResolvedPasses: true,
+  latestPass: null as { pass_id: string } | null,
+  botsLoading: false,
+  botsError: false,
 }));
 const trackDatongClickMock = vi.hoisted(() => vi.fn());
 const prepareReferralCodeMock = vi.hoisted(() => vi.fn());
@@ -27,6 +30,9 @@ vi.mock("@/contexts/agent-context", () => ({
     bots: runtimeMock.bots,
     isSubscribed: runtimeMock.isSubscribed,
     hasResolvedPasses: runtimeMock.hasResolvedPasses,
+    latestPass: runtimeMock.latestPass,
+    botsLoading: runtimeMock.botsLoading,
+    botsError: runtimeMock.botsError,
     passesLoading: false,
     passesError: false,
     refreshPasses: vi.fn(),
@@ -63,6 +69,9 @@ beforeEach(() => {
   runtimeMock.isSubscribed = false;
   runtimeMock.bots = [];
   runtimeMock.hasResolvedPasses = true;
+  runtimeMock.latestPass = null;
+  runtimeMock.botsLoading = false;
+  runtimeMock.botsError = false;
   prepareReferralCodeMock.mockReset().mockResolvedValue(undefined);
 });
 
@@ -166,6 +175,25 @@ describe("PublicHeaderAuthIsland", () => {
     runtimeMock.hasResolvedPasses = false;
     render(<PublicHeaderAuthIsland locale="en-US" showLanguageSwitcher={false} showProductEntry />);
     expect(screen.queryByRole("link", { name: "Enter LightVela" })).not.toBeInTheDocument();
+  });
+
+  it("shows a confirmed subscriber before the Bot request finishes", () => {
+    runtimeMock.isAuthenticated = true;
+    runtimeMock.isSubscribed = true;
+    runtimeMock.botsLoading = true;
+    render(<PublicHeaderAuthIsland locale="zh-CN" showLanguageSwitcher={false} showProductEntry />);
+    expect(screen.getByRole("link", { name: "开始使用" })).toHaveAttribute("href", "/agents");
+  });
+
+  it("waits for Bot evidence when the account has no pass", () => {
+    runtimeMock.isAuthenticated = true;
+    runtimeMock.bots = [{ id: "existing" }];
+    runtimeMock.botsLoading = true;
+    const { rerender } = render(<PublicHeaderAuthIsland locale="zh-CN" showLanguageSwitcher={false} showProductEntry />);
+    expect(screen.queryByRole("link", { name: "开始使用" })).not.toBeInTheDocument();
+    runtimeMock.botsLoading = false;
+    rerender(<PublicHeaderAuthIsland locale="zh-CN" showLanguageSwitcher={false} showProductEntry />);
+    expect(screen.getByRole("link", { name: "开始使用" })).toHaveAttribute("href", "/agents");
   });
 
   it("keeps anonymous homepage actions unchanged", () => {

@@ -162,7 +162,7 @@ describe("UserAvatarMenu", () => {
 
     render(<UserAvatarMenu />);
 
-    expect(screen.getByRole("link", { name: "avatar" })).toHaveAttribute("href", "/account");
+    expect(screen.getByRole("link", { name: "avatar" })).toHaveAttribute("href", "/agents");
     expect(screen.getByRole("button", { name: "打开用户菜单" })).toBeInTheDocument();
   });
 
@@ -228,7 +228,7 @@ describe("UserAvatarMenu", () => {
     const { unmount } = render(<UserAvatarMenu variant="sidebar" />);
     fireEvent.click(screen.getByRole("button", { name: "打开用户菜单" }));
 
-    expect(screen.queryByRole("link", { name: "我的智能体" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "我的智能体伙伴" })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "账号" })).toHaveAttribute("href", "/account");
     expect(screen.getByRole("link", { name: "套餐与费用" })).toHaveAttribute("href", "/account/billing");
 
@@ -236,7 +236,7 @@ describe("UserAvatarMenu", () => {
     render(<UserAvatarMenu />);
     fireEvent.mouseEnter(screen.getByRole("link", { name: "avatar" }).parentElement!);
 
-    expect(screen.getByRole("link", { name: "我的智能体" })).toHaveAttribute("href", "/agents");
+    expect(screen.getByRole("link", { name: "我的智能体伙伴" })).toHaveAttribute("href", "/agents");
   });
 
   it("hides My AI Companion in the public dropdown until subscription status is confirmed", () => {
@@ -248,7 +248,21 @@ describe("UserAvatarMenu", () => {
 
     render(<UserAvatarMenu />);
     fireEvent.mouseEnter(screen.getByRole("link", { name: "avatar" }).parentElement!);
-    expect(screen.queryByRole("link", { name: "我的智能体" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "我的智能体伙伴" })).not.toBeInTheDocument();
+  });
+
+  it("shows My AI Companion for a confirmed subscriber while Bots load", () => {
+    useSession.mockReturnValue({
+      session: { user: { id: "subscribed-user", name: "User" }, currentSubscription: null },
+      signOut: vi.fn(),
+    });
+    useOpenClaw.mockReturnValue({
+      activePass: null, bots: [], isSubscribed: true, botsLoading: true,
+    });
+
+    render(<UserAvatarMenu />);
+    fireEvent.mouseEnter(screen.getByRole("link", { name: "avatar" }).parentElement!);
+    expect(screen.getByRole("link", { name: "我的智能体伙伴" })).toHaveAttribute("href", "/agents");
   });
 
   it("places the Model link before Plans & billing for ai bundles", () => {
@@ -606,7 +620,7 @@ describe("UserAvatarMenu", () => {
 
     fireEvent.mouseEnter(screen.getByRole("link", { name: "avatar" }).parentElement!);
 
-    const companionLink = screen.getByRole("link", { name: "我的智能体" });
+    const companionLink = screen.getByRole("link", { name: "我的智能体伙伴" });
     const accountLink = screen.getByRole("link", { name: "账号" });
     const workbenchLink = screen.getByRole("link", { name: "工作台" });
 
@@ -619,29 +633,28 @@ describe("UserAvatarMenu", () => {
 
   it.each([
     ["en-US", "My AI Companion", "Back to Agents"],
-    ["zh-CN", "我的智能体", "返回智能体"],
-    ["zh-Hant", "我的智能體", "返回智能體"],
-    ["ja-JP", "マイエージェント", "エージェントに戻る"],
-    ["ko-KR", "내 에이전트", "에이전트로 돌아가기"],
-    ["es", "Mis agentes", "Volver a Agentes"],
-    ["id-ID", "Agen Saya", "Kembali ke Agen"],
+    ["zh-CN", "我的智能体伙伴", "返回智能体"],
+    ["zh-Hant", "我的智能體夥伴", "返回智能體"],
+    ["ja-JP", "私のAIパートナー", "エージェントに戻る"],
+    ["ko-KR", "내 인공지능 파트너", "에이전트로 돌아가기"],
+    ["es", "Mis compañeros Agent", "Volver a Agentes"],
+    ["id-ID", "Agent Saya", "Kembali ke Agen"],
   ])("distinguishes the Agents menu and return action in %s", (locale, menu, back) => {
     const keys = readGeneratedDictionary("zh-to-key");
     const dictionary = readGeneratedDictionary(locale);
-    expect(dictionary[keys["我的智能体"]!]).toBe(menu);
+    expect(dictionary[keys["我的智能体伙伴"]!]).toBe(menu);
     expect(dictionary[keys["返回智能体"]!]).toBe(back);
   });
 
   it("uses natural English labels for the agents and account entries", () => {
     const keys = readGeneratedDictionary("zh-to-key");
     const english = readGeneratedDictionary("en-US");
-    const companionKey = keys["我的智能体"];
+    const companionKey = keys["我的智能体伙伴"];
     const accountKey = keys["账号"];
 
     expect(companionKey).toBeDefined();
     expect(accountKey).toBeDefined();
     expect(english[companionKey!]).toBe("My AI Companion");
-    expect(english[companionKey!]).toBe(english[keys["我的智能体伙伴"]!]);
     expect(english[accountKey!]).toBe("Account");
   });
 

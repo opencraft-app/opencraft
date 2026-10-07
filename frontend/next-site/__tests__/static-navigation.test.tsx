@@ -41,7 +41,8 @@ vi.mock("@/lib/avatar-image", () => ({
   avatarImageUrl: () => "https://example.com/avatar.png",
 }));
 
-vi.mock("@/lib/region", () => ({
+vi.mock("@/lib/region", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/region")>()),
   isGlobal: true,
 }));
 
@@ -49,7 +50,8 @@ vi.mock("next/navigation", () => ({
   usePathname: () => "/en-us",
 }));
 
-vi.mock("react-i18next", () => ({
+vi.mock("react-i18next", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("react-i18next")>()),
   useTranslation: () => ({
     i18n: { language: "en-US" },
   }),
@@ -84,7 +86,7 @@ describe("static navigation links", () => {
     render(<UserAvatarMenu />);
 
     const avatarLink = screen.getByRole("link", { name: "avatar" });
-    expect(avatarLink).toHaveAttribute("href", "/account");
+    expect(avatarLink).toHaveAttribute("href", "/agents");
     expect(avatarLink.tagName).toBe("A");
     expect(nextLinkMock).not.toHaveBeenCalled();
   });
