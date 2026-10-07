@@ -32,6 +32,31 @@ export type JourneyState = {
 /** 已登录用户的订阅态（登录成功分流只取决于它）。 */
 export type SubscriptionState = Pick<JourneyState, "isSubscribed" | "hasBots">;
 
+/** 公共页“我的智能体伙伴”入口：套餐已证明资格时无需等待 Bot 列表。/agents 的页面准入仍由 NextAgentEntitlementGate 独立处理。 */
+export const canShowMyAgentsEntry = ({
+  hasResolvedPasses,
+  passesLoading,
+  passesError,
+  isSubscribed,
+  hasHistoricalPass,
+  hasBots,
+  botsLoading,
+  botsError,
+}: {
+  hasResolvedPasses: boolean;
+  passesLoading: boolean;
+  passesError: boolean;
+  isSubscribed: boolean;
+  hasHistoricalPass: boolean;
+  hasBots: boolean;
+  botsLoading: boolean;
+  botsError: boolean;
+}): boolean => {
+  if (!hasResolvedPasses || passesLoading || passesError) return false;
+  if (isSubscribed || hasHistoricalPass) return true;
+  return !botsLoading && !botsError && hasBots;
+};
+
 /** 链路落点：订阅页 / 控制台 / 首个 Bot 创建向导。 */
 export type JourneyRoute = "subscribe" | "agents" | "agents-creating";
 

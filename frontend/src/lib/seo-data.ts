@@ -118,7 +118,7 @@ const DEFAULT_OG_IMAGE_PATH = "/lightvela-social-preview.png";
  */
 
 const DEFAULT_SEO_TITLE_BY_REGION: Record<SeoRegion, string> = {
-  cn: "LightVela｜云端专属个人 Agent",
+  cn: "我的智能体伙伴 | LightVela",
   global: "My AI Companion | LightVela",
 };
 
