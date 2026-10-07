@@ -3525,6 +3525,7 @@ export const AgentSettingsPage = ({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteInput, setDeleteInput] = useState("");
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deletingBot, setDeletingBot] = useState(false);
   const [deleteTargetBot, setDeleteTargetBot] = useState<OpenClawBot | null>(null);
   const deleteDialogBot = deleteTargetBot ?? activeBot;
   const [repairingBotIds, setRepairingBotIds] = useState<Set<string>>(new Set());
@@ -3556,12 +3557,13 @@ export const AgentSettingsPage = ({
   };
 
   const handleDelete = async () => {
-    if (!deleteDialogBot || deleteInput !== deleteDialogBot.name) return;
+    if (!deleteDialogBot || deleteInput !== deleteDialogBot.name || deletingBot) return;
     trackDatongClick("agent_delete_btn", {
       pgid: DATONG_PAGE_IDS.AGENTS_HOME,
       params: { bot_id: deleteDialogBot.id },
     });
     setDeleteError(null);
+    setDeletingBot(true);
     try {
       await deleteBot(deleteDialogBot.id);
       setShowDeleteConfirm(false);
@@ -3577,6 +3579,8 @@ export const AgentSettingsPage = ({
           : embedded ? t("删除失败，请稍后重试。")
             : err instanceof Error ? err.message : t("删除失败，请稍后重试。"),
       );
+    } finally {
+      setDeletingBot(false);
     }
   };
 
@@ -5090,7 +5094,7 @@ export const AgentSettingsPage = ({
       {showDeleteConfirm && deleteDialogBot && createPortal(
         <div
           className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm"
-          onClick={() => setShowDeleteConfirm(false)}
+          onClick={() => { if (!deletingBot) setShowDeleteConfirm(false); }}
         >
           <motion.div
             initial={{ opacity: 0, y: 20, scale: 0.95 }}
@@ -5140,6 +5144,7 @@ export const AgentSettingsPage = ({
               placeholder={t("请输入 {{name}}", { name: deleteDialogBot.name })}
               value={deleteInput}
               onChange={(e) => setDeleteInput(e.target.value)}
+              disabled={deletingBot}
               className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none transition-all focus:border-[#DC2626]"
               style={{ borderColor: "var(--lw-border)", color: "var(--lw-fg)", marginBottom: "20px" }}
             />
@@ -5147,17 +5152,19 @@ export const AgentSettingsPage = ({
             <div className="flex flex-col gap-2">
               <button
                 onClick={() => void handleDelete()}
-                disabled={deleteInput !== deleteDialogBot.name}
-                className="w-full rounded-xl px-4 py-2.5 text-[16px] font-semibold text-white transition-all"
+                disabled={deleteInput !== deleteDialogBot.name || deletingBot}
+                aria-busy={deletingBot}
+                className="flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-[16px] font-semibold text-white transition-all"
                 style={{
                   backgroundColor: deleteInput === deleteDialogBot.name ? "#DC2626" : "#E5E7EB",
-                  cursor: deleteInput === deleteDialogBot.name ? "pointer" : "not-allowed",
+                  cursor: deleteInput === deleteDialogBot.name && !deletingBot ? "pointer" : "not-allowed",
                   fontSize: "16px",
                 }}
               >
-                {deleteDialogBot.isDefault ? t("确认删除 Agent") : t("确认删除 Bot")}
+                {deletingBot && <Loader2 className="h-4 w-4 motion-safe:animate-spin" aria-hidden="true" />}
+                {deletingBot ? t("删除中...") : deleteDialogBot.isDefault ? t("确认删除 Agent") : t("确认删除 Bot")}
               </button>
-              <button onClick={() => setShowDeleteConfirm(false)} className="py-2 text-[16px] transition-colors hover:opacity-70" style={{ color: "#999", background: "none", border: "none", cursor: "pointer", fontSize: "16px" }}>
+              <button onClick={() => setShowDeleteConfirm(false)} disabled={deletingBot} className="py-2 text-[16px] transition-colors hover:opacity-70" style={{ color: "#999", background: "none", border: "none", cursor: deletingBot ? "not-allowed" : "pointer", fontSize: "16px" }}>
                 {t("取消")}
               </button>
             </div>
