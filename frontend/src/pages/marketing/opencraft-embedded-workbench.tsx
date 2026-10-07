@@ -8,6 +8,7 @@ import {
 
 import { useT } from "@/i18n/t";
 import { ChatLoadingState } from "@/components/site/chat-loading-state";
+import { ChatFileDownloadMenu } from "./chat-file-download-menu";
 
 import { AUTH_SESSION_CHANGED_EVENT, readStoredAuthToken } from "@/repositories/http-repositories";
 import { cn } from "@/lib/utils";
@@ -499,6 +500,7 @@ export function AgentChatMigrationSurface({
         )}
         inert={!active || presentedOwner !== "opencraft" ? true : undefined}
       />
+      {enabled && <ChatFileDownloadMenu botId={instanceId} active={active && presentedOwner === "opencraft"} mountRef={mountRef} />}
     </div>
   );
 }

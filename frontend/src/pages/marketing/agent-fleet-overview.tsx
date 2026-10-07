@@ -62,14 +62,14 @@ function FleetBotCard({ bot, isCurrent, canDelete, fallbackAvatarUrl, canCreate,
   const editProfile = () => { setMenuOpen(false); onAction({ bot, name, profile: { ...profile.profile, description } }); };
 
   return (
-    <Card className="relative min-w-0 snap-start rounded-[4px] border border-black/[0.06] bg-white p-5 pt-8 shadow-none">
-      {isCurrent && <span className="pointer-events-none absolute left-0 top-0 rounded-br-[4px] rounded-tl-[3px] bg-black px-2 py-0.5 text-xs leading-4 text-white">{t("当前 Bot")}</span>}
+    <Card className="relative min-w-0 snap-start rounded-[8px] border border-black/[0.06] bg-white p-5 pt-8 shadow-none">
+      {isCurrent && <span className="pointer-events-none absolute left-0 top-0 rounded-br-[4px] rounded-tl-[8px] bg-black px-2 py-0.5 text-xs leading-4 text-white">{t("当前 Bot")}</span>}
       <button
         type="button"
         aria-label={`${t("新建对话")}: ${name}`}
         disabled={transitioning}
         onClick={() => onOpenChat(bot.id)}
-        className="absolute inset-0 rounded-[4px] enabled:cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/30 focus-visible:ring-offset-2"
+        className="absolute inset-0 rounded-[8px] enabled:cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/30 focus-visible:ring-offset-2"
       />
       <div className="pointer-events-none flex items-start gap-3">
         <BuddyProfileAvatar profile={profile.profile} hasCustomAvatar={profile.hasBuddyConfig === true} fallbackAvatarUrl={fallbackAvatarUrl} size={48} />

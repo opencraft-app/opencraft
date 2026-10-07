@@ -144,7 +144,7 @@ export const HeroBanner = ({ stats, botCount, invitedFriends }: { stats: HeroSta
         backgroundPosition: "center",
       }}
     >
-      <div className="flex flex-col gap-4 px-5 py-4 lg:flex-row lg:items-center lg:justify-between lg:gap-6">
+      <div className="grid gap-4 px-5 py-4 xl:grid-cols-[minmax(0,1fr)_minmax(336px,480px)] xl:items-center xl:gap-6">
         {/* 左：徽章 + 陪伴天数 */}
         <div className="flex min-w-0 items-center gap-4">
           <img
@@ -173,7 +173,7 @@ export const HeroBanner = ({ stats, botCount, invitedFriends }: { stats: HeroSta
         </div>
 
         {/* 右：数据卡 */}
-        <div className={cn("grid w-full min-w-0 grid-cols-2 gap-3 lg:w-auto lg:shrink-0", statItems.length >= 3 && "sm:grid-cols-3")}>
+        <div className={cn("grid min-w-0 grid-cols-2 gap-3", statItems.length >= 3 && "sm:grid-cols-3")}>
           {statItems.map((stat, index) => (
             <AppLink
               key={stat.id}
