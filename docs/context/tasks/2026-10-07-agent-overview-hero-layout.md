@@ -1,11 +1,12 @@
 ## goal
-修复 Agent 总览欢迎横幅中文字被压成竖排、统计卡片覆盖文案的布局。
+修复 Agent 总览欢迎横幅布局，并将“我的 Bots”卡片改为 8px 圆角。
 
 ## non_goals
-- 不改变统计数据、跳转、文案或其他总览板块。
+- 不改变统计数据、跳转、文案或卡片操作。
 
 ## requirement_ids / requirement_refs / requirement_excerpt
 - 用户截图（2026-10-07）：总览欢迎横幅文案窄列换行，统计卡片与文案重叠。
+- 用户后续要求（2026-10-07）：“我的 Bots”中的 Bot 卡片使用 8px 圆角。
 
 ## interface_refs / data_structure_refs
 - `frontend/src/pages/marketing/agent-overview-panel.tsx` 的 `HeroBanner` 与 `HeroStats`；保留三个统计入口的行为。
@@ -17,10 +18,12 @@
 
 ## acceptance
 - 宽屏下欢迎文案保持可读，统计卡片与文案不重叠；窄屏上下排列。
+- “我的 Bots”卡片外框、整卡点击层和左上角当前 Bot 标记采用一致的 8px 外角。
 - 前端 lint、typecheck、聚焦测试和 build 通过，并提供布局截图或组件验证。
 
 ## affected_paths
 - `frontend/src/pages/marketing/agent-overview-panel.tsx`
+- `frontend/src/pages/marketing/agent-fleet-overview.tsx`
 
 ## required_context
 - `frontend-product-surface`；前端服务规则。
