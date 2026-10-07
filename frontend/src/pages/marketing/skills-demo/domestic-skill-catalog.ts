@@ -89,6 +89,8 @@ const DOMESTIC_ICON_SNAPSHOT: Readonly<Record<string, string>> = {
   "novel-evaluator": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/9bcddb03-161b-42cd-bf2e-cf0159d85bd7.png",
 };
 
+const PARENTING_EXPERT_DESCRIPTION = "按年龄阶段梳理养育困惑，提供亲子沟通、行为引导和家庭教育建议。";
+
 function skill(
   rawId: string,
   name: string,
@@ -236,7 +238,7 @@ export const DOMESTIC_FEATURED_SKILLS: readonly DomesticFeaturedSkill[] = [
     skill: skill(
       "@indiv-ebandao/parenting-expert",
       "育儿大师.Skill",
-      "按年龄阶段梳理养育困惑，提供亲子沟通、行为引导和家庭教育建议。",
+      PARENTING_EXPERT_DESCRIPTION,
       undefined,
       {
         slug: "parenting-expert",
@@ -312,7 +314,7 @@ export const DOMESTIC_SKILL_CATEGORIES: readonly DomesticSkillCategory[] = [
       skill(
         "@indiv-ebandao/parenting-expert",
         "育儿大师.Skill",
-        "围绕育儿和家庭教育问题提供分阶段建议，帮助家长整理情况、制定陪伴方案并识别需要进一步关注的问题。",
+        PARENTING_EXPERT_DESCRIPTION,
         undefined,
         {
           slug: "parenting-expert",
