@@ -2,19 +2,19 @@
 
 ## Ringkasan
 
-**LightVela adalah produk hosting Agent berbasis cloud dari tim Tencent Lighthouse, dan produk yang tersedia saat ini adalah Hermes Agent — sebuah AI Agent yang dibangun di atas model bahasa besar. LightVela menangani deployment, operasional, dan ketersediaan 24/7 sepenuhnya di cloud, sehingga Anda tidak perlu menulis file konfigurasi atau masuk ke server: cukup atur semuanya dengan mengeklik pada panel visual, lalu berbicara dengan Bot melalui Daily → Chat di web atau menghubungkan aplikasi pesan yang sudah Anda gunakan. Agent mengingat Anda lintas percakapan, dan Anda yang menentukan model, alat, serta persona. Paket dan penawaran pengguna baru saat ini dapat dilihat di [halaman Subscribe](/subscribe/).**
+**LightVela adalah produk AI Agent berbasis cloud dari tim Tencent Lighthouse. Asisten AI pribadi yang Anda buat saat ini berjalan dengan Hermes Agent. LightVela menangani deployment, operasional, dan ketersediaan 24/7 sepenuhnya di cloud, sehingga Anda tidak perlu menulis file konfigurasi atau masuk ke server: cukup atur semuanya dengan mengeklik pada panel visual, lalu berbicara dengan Bot melalui Daily → Chat di web atau menghubungkan aplikasi pesan yang sudah Anda gunakan. Agent mengingat Anda lintas percakapan, dan Anda yang menentukan model, alat, serta persona. Paket dan penawaran pengguna baru saat ini dapat dilihat di [halaman Subscribe](/subscribe/).**
 
 ---
 
 > Hermes Agent berbasis cloud yang makin memahami Anda seiring waktu.
 
-LightVela adalah produk hosting Agent berbasis cloud dari tim Tencent Lighthouse. Tujuannya sederhana: membantu setiap orang memiliki **pendamping AI yang benar-benar terasa milik sendiri**. Bukan alat yang setiap kali harus diajak berkenalan dari awal, melainkan kehadiran jangka panjang yang **mengenal Anda, mengingat Anda, dan makin memahami kebutuhan Anda seiring waktu**.
+LightVela adalah produk AI Agent berbasis cloud dari tim Tencent Lighthouse. Tujuannya sederhana: membantu setiap orang memiliki **pendamping AI yang benar-benar terasa milik sendiri**. Bukan alat yang setiap kali harus diajak berkenalan dari awal, melainkan kehadiran jangka panjang yang **mengenal Anda, mengingat Anda, dan makin memahami kebutuhan Anda seiring waktu**.
 
 Agent Anda tetap online 24/7, berjalan mandiri, dan selalu siap diajak bicara. Anda yang menentukan model, alat, dan personanya.
 
 LightVela menurunkan hambatan konfigurasi lewat konsol visual. Tidak perlu menulis file konfigurasi, tidak perlu masuk ke server, cukup pilih opsi yang tersedia di halaman web.
 
-Produk LightVela saat ini adalah **Hermes Agent**, AI Agent yang didukung large language model. Produk siap pakai lain dapat ditambahkan di masa mendatang. Dokumentasi ini berfokus pada Hermes Agent.
+Asisten AI pribadi yang Anda buat saat ini berjalan dengan Hermes Agent. Dokumentasi ini menjelaskan cara mengatur model, alat, persona, dan saluran percakapannya.
 
 ![1.00](../images/1-1.webp)
 
