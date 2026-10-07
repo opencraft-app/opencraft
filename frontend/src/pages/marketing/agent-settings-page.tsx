@@ -5876,7 +5876,7 @@ export const AgentSettingsPage = ({
                       </button>
                     <div className="lv-agents-sidebar-profile">
                     {fleetOverviewEnabled && (
-                      <div className="mb-2 pb-2 lg:mb-1 lg:pb-0.5">
+                      <div className="lv-agent-overview-nav mb-2 pb-2 lg:mb-0 lg:pb-0">
                         <AppLink
                           to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.overview, searchParams)}
                           aria-current={activeSection === "overview" ? "page" : undefined}

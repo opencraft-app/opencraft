@@ -911,6 +911,34 @@ it("puts the new skills.sh skills in the last international Featured batch", () 
   ]);
 });
 
+it("replaces the anniversary promotion with the development skill in domestic Featured", () => {
+  renderPanel("domestic");
+
+  const featuredSection = screen.getByText("精选").closest("section") as HTMLElement;
+  const featuredBatches = featuredSection.querySelectorAll("ul");
+  const firstFeaturedBatch = featuredBatches[0] as HTMLElement;
+  const secondFeaturedBatch = featuredBatches[1] as HTMLElement;
+  const lastFeaturedBatch = featuredBatches[2] as HTMLElement;
+  const parentingBatch = featuredBatches[3] as HTMLElement;
+  expect(within(featuredSection).queryByRole("button", { name: "查看轻量云六周年送祝福详情" })).not.toBeInTheDocument();
+  expect(featuredBatches).toHaveLength(4);
+  expect(within(firstFeaturedBatch).getAllByRole("button", { name: /查看.*详情/ }).map((button) => button.getAttribute("aria-label"))).toEqual([
+    "查看find skill详情",
+    "查看提示词生成大师详情",
+    "查看编程专家.Skill详情",
+  ]);
+  expect(within(secondFeaturedBatch).getAllByRole("button", { name: /查看.*详情/, hidden: true }).map((button) => button.getAttribute("aria-label"))).toEqual([
+    "查看海报设计skill详情",
+    "查看腾讯文档 TENCENT DOCS详情",
+    "查看电商选品详情",
+  ]);
+  expect(lastFeaturedBatch.querySelectorAll("li")).toHaveLength(3);
+  expect(within(lastFeaturedBatch).getByRole("button", { name: "查看防诈专家详情", hidden: true })).toBeInTheDocument();
+  expect(parentingBatch.querySelectorAll("li")).toHaveLength(2);
+  expect(within(parentingBatch).getByRole("button", { name: "查看中文公文写作详情", hidden: true })).toBeInTheDocument();
+  expect(within(parentingBatch).getByRole("button", { name: "查看育儿大师.Skill详情", hidden: true })).toBeInTheDocument();
+});
+
 it("uses Spanish category and overview copy when the international locale is es", async () => {
   mocks.language = "es";
   renderPanel("global");
@@ -938,6 +966,35 @@ describe("SkillsDemoPanel installed identity boundaries", () => {
     vi.clearAllMocks();
     window.localStorage.clear();
     Element.prototype.scrollIntoView = vi.fn();
+  });
+
+  it("marks a skill featured and categorized under the same canonical ID as installed from a short ACLI ID", async () => {
+    const dataLayer = makeDataLayer("domestic");
+    vi.mocked(dataLayer.listInstalled).mockResolvedValue({
+      failedSources: [],
+      skills: [{
+        registry: "skillhub",
+        rawId: "parenting-expert",
+        slug: "parenting-expert",
+        name: "育儿大师.Skill",
+        registries: ["skillhub", "hermes"],
+        sourceLabel: "SkillHub / Hermes",
+      }],
+    });
+    mocks.createSkillsDataLayer.mockReturnValue(dataLayer);
+
+    render(<SkillsDemoPanel botId="bot-1" execDebugCommand={vi.fn()} mode="domestic" initialTab="discover" />);
+    const featuredSection = screen.getByText("精选").closest("section") as HTMLElement;
+    const featuredCard = within(featuredSection)
+      .getByRole("button", { name: "查看育儿大师.Skill详情", hidden: true })
+      .closest("li") as HTMLElement;
+    const educationSection = screen.getByText("教育学习").closest("section") as HTMLElement;
+    const categoryCard = within(educationSection)
+      .getByRole("button", { name: "查看育儿大师.Skill详情" })
+      .closest("li") as HTMLElement;
+
+    await waitFor(() => expect(within(featuredCard).getByLabelText("已安装")).toBeInTheDocument());
+    expect(within(categoryCard).getByLabelText("已安装")).toBeInTheDocument();
   });
 
   it("renders one installed row with both marketplace source badges", async () => {

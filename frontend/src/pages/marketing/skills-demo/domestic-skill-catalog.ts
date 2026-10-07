@@ -41,7 +41,7 @@ const DOMESTIC_DOWNLOAD_SNAPSHOT: Readonly<Record<string, number>> = {
   "weixin-article-writer": 10_734,
   "lingyi-wx-viral-script-generator": 10_503,
   "govwriter-pro": 7_434,
-  "tencent-docs": 149_853,
+  "@tencent-adm/tencent-docs": 149_853,
   "pdf-image-text-extractor": 30_994,
   "gongwenformat-pro": 12_046,
   "bid-tender-master": 3_740,
@@ -53,6 +53,8 @@ const DOMESTIC_DOWNLOAD_SNAPSHOT: Readonly<Record<string, number>> = {
 };
 
 const DOMESTIC_ICON_SNAPSHOT: Readonly<Record<string, string>> = {
+  "@indiv-ebandao/dev-expert": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/e9a58ede-ead5-43fd-9523-d1ba7f1b78cd.png",
+  "@indiv-ebandao/parenting-expert": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/0c9b068f-f22e-44e2-96fe-d2b6f5b43b07.png",
   "find-skill-skillhub": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/a00e31c7-8d6a-4e65-84fc-16a177f95674.png",
   "image-prompt-skill": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/e9a58ede-ead5-43fd-9523-d1ba7f1b78cd.png",
   poster: "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/e9a58ede-ead5-43fd-9523-d1ba7f1b78cd.png",
@@ -75,18 +77,16 @@ const DOMESTIC_ICON_SNAPSHOT: Readonly<Record<string, string>> = {
   "weixin-article-writer": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/5a1e9830-80e4-4cbb-8d00-cee893ca9555.png",
   "lingyi-wx-viral-script-generator": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/f7fabcfa-0496-4dc7-9258-df9b7c751850.png",
   "govwriter-pro": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/a4e49550-e527-4406-b761-c4f2e607b757.png",
-  "tencent-docs": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/a4e49550-e527-4406-b761-c4f2e607b757.png",
+  "@tencent-adm/tencent-docs": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/a4e49550-e527-4406-b761-c4f2e607b757.png",
   "pdf-image-text-extractor": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/5a1e9830-80e4-4cbb-8d00-cee893ca9555.png",
   "gongwenformat-pro": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/e9a58ede-ead5-43fd-9523-d1ba7f1b78cd.png",
   "multi-search-engine": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/0860fda4-ff95-4bbc-b3ad-f6b7ad8e0774.png",
   "bid-tender-master": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/c5e5faab-b8e1-489d-a489-8b56ffc52c07.png",
   "k12-smart-teacher": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/a78375f1-773e-4817-b4f3-0557b6afd777.png",
   "interview-simulator": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/401a454b-4b16-4aee-a18c-4e3467ca48f1.png",
-  "parenting-expert": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/0c9b068f-f22e-44e2-96fe-d2b6f5b43b07.png",
   "subject-hyn": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/e9a58ede-ead5-43fd-9523-d1ba7f1b78cd.png",
   "academic-paper-writing-assistant": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/0c9b068f-f22e-44e2-96fe-d2b6f5b43b07.png",
   "novel-evaluator": "https://cloudcache.tencent-cloud.com/qcloud/ui/static/other_external_resource/9bcddb03-161b-42cd-bf2e-cf0159d85bd7.png",
-  "lh6-anniversary-blessing": "/assets/skills/featured-domestic-lh6-icon.svg",
 };
 
 function skill(
@@ -112,17 +112,6 @@ function skill(
 
 export const DOMESTIC_FEATURED_SKILLS: readonly DomesticFeaturedSkill[] = [
   {
-    id: "lh6-anniversary-blessing",
-    skill: skill(
-      "lh6-anniversary-blessing",
-      "轻量云六周年送祝福",
-      "为轻量云六周年生成祝福文案与祝福海报，支持多场景、多风格的祝福语定制。",
-      0,
-    ),
-    heroImageSrc: "/assets/skills/featured-domestic-lh6-anniversary.jpg",
-    heroClassName: "bg-[#2B2F5C]",
-  },
-  {
     id: "find-skill-skillhub",
     skill: skill(
       "find-skill-skillhub",
@@ -145,6 +134,21 @@ export const DOMESTIC_FEATURED_SKILLS: readonly DomesticFeaturedSkill[] = [
     heroClassName: "bg-[#347566]",
   },
   {
+    id: "dev-expert",
+    skill: skill(
+      "@indiv-ebandao/dev-expert",
+      "编程专家.Skill",
+      "拆解编程问题，提供代码实现、调试、重构和工程实践建议。",
+      undefined,
+      {
+        slug: "dev-expert",
+        sourceUrl: "https://skillhub.cn/skills/indiv-ebandao/dev-expert",
+      },
+    ),
+    heroImageSrc: "/assets/skills/featured-domestic-dev-expert.webp",
+    heroClassName: "bg-[#173C61]",
+  },
+  {
     id: "poster",
     skill: skill(
       "poster",
@@ -154,6 +158,21 @@ export const DOMESTIC_FEATURED_SKILLS: readonly DomesticFeaturedSkill[] = [
     ),
     heroImageSrc: "/assets/skills/featured-domestic-poster.jpg",
     heroClassName: "bg-[#B87821]",
+  },
+  {
+    id: "tencent-docs",
+    skill: skill(
+      "@tencent-adm/tencent-docs",
+      "腾讯文档 TENCENT DOCS",
+      "创建、编辑、搜索和管理腾讯文档、表格、幻灯片、知识库和云端文件。",
+      8107,
+      {
+        slug: "tencent-docs",
+        sourceUrl: "https://skillhub.cn/skills/tencent-adm/tencent-docs",
+      },
+    ),
+    heroImageSrc: "/assets/skills/featured-domestic-tencent-docs.webp",
+    heroClassName: "bg-[#4382D9]",
   },
   {
     id: "ecommerce-product-selector",
@@ -212,6 +231,21 @@ export const DOMESTIC_FEATURED_SKILLS: readonly DomesticFeaturedSkill[] = [
     heroImageSrc: "/assets/skills/featured-domestic-chinese-official-writing.jpg",
     heroClassName: "bg-[#5A151A]",
   },
+  {
+    id: "parenting-expert",
+    skill: skill(
+      "@indiv-ebandao/parenting-expert",
+      "育儿大师.Skill",
+      "按年龄阶段梳理养育困惑，提供亲子沟通、行为引导和家庭教育建议。",
+      undefined,
+      {
+        slug: "parenting-expert",
+        sourceUrl: "https://skillhub.cn/skills/indiv-ebandao/parenting-expert",
+      },
+    ),
+    heroImageSrc: "/assets/skills/featured-domestic-parenting-expert.webp",
+    heroClassName: "bg-[#4E655B]",
+  },
 ] as const;
 
 export const DOMESTIC_SKILL_CATEGORIES: readonly DomesticSkillCategory[] = [
@@ -243,7 +277,16 @@ export const DOMESTIC_SKILL_CATEGORIES: readonly DomesticSkillCategory[] = [
     id: "common-tools",
     label: { en: "Common Tools", zh: "常用工具" },
     skills: [
-      skill("tencent-docs", "腾讯文档 TENCENT DOCS", "创建、编辑、搜索和管理腾讯文档、表格、幻灯片、知识库和云端文件。", 8107),
+      skill(
+        "@tencent-adm/tencent-docs",
+        "腾讯文档 TENCENT DOCS",
+        "创建、编辑、搜索和管理腾讯文档、表格、幻灯片、知识库和云端文件。",
+        8107,
+        {
+          slug: "tencent-docs",
+          sourceUrl: "https://skillhub.cn/skills/tencent-adm/tencent-docs",
+        },
+      ),
       skill("pdf-image-text-extractor", "PDF和图片文字提取", "从图片和 PDF 中识别、提取文字，并保留结构化结果。", 378),
       skill(
         "@indiv-ebandao/anti-fraud",
@@ -266,7 +309,16 @@ export const DOMESTIC_SKILL_CATEGORIES: readonly DomesticSkillCategory[] = [
     skills: [
       skill("k12-smart-teacher", "K12智能老师", "支持作业批改、错题分析和基础/提高/挑战三层练习生成，覆盖多个学段和学科。", 207),
       skill("interview-simulator", "Interview Simulator", "模拟不同职位和经验水平的面试，提供技术、行为和案例问题以及反馈评分。", 981),
-      skill("parenting-expert", "育儿大师.Skill", "围绕育儿和家庭教育问题提供分阶段建议，帮助家长整理情况、制定陪伴方案并识别需要进一步关注的问题。"),
+      skill(
+        "@indiv-ebandao/parenting-expert",
+        "育儿大师.Skill",
+        "围绕育儿和家庭教育问题提供分阶段建议，帮助家长整理情况、制定陪伴方案并识别需要进一步关注的问题。",
+        undefined,
+        {
+          slug: "parenting-expert",
+          sourceUrl: "https://skillhub.cn/skills/indiv-ebandao/parenting-expert",
+        },
+      ),
       skill("subject-hyn", "课题小助手", "辅助教师修改、优化和规范课题申请评审书及课题申报材料。", 36),
       skill("academic-paper-writing-assistant", "学术论文全能写作助手", "根据提纲和研究材料辅助生成实证或定性案例论文，并整理数据、图表和文献内容。", 0),
       skill("novel-evaluator", "小说评分系统", "从情节、人物、文笔、世界观、情感和创新六个维度量化评估小说。", 614),
