@@ -56,6 +56,7 @@ derived: false
 - 顶部总览原先使用桌面侧栏 12px 顶距及独立 wrapper 的下方 margin/padding；下方导航项字号为 13px，顶部总览继承 14px。
 - 聚焦 Vitest 2 文件 9/9 通过；`pnpm check` 通过（166 current / 171 baseline / 0 new）；`pnpm build` 通过；`git diff --check` 通过。
 - 本地 5175 预览已重启，技能页和更新后的 CSS 返回 HTTP 200；浏览器仍显示登录门槛，不能目视确认登录态侧栏。
+- MR !5059 的 CR 指出缺少直接覆盖总览留白和字号的断言；已补入 `agent-settings-nav-spacing.test.ts`。合入当前 master 后，技能页与侧栏聚焦测试 119/119、`pnpm check`、国内与国际站构建均通过。
 
 ## risks
 - 顶部总览仅在特定开关下显示；用专用 class 限定桌面样式，避免影响其他侧栏状态。
@@ -74,4 +75,4 @@ derived: false
 - 命中 `fleetOverviewEnabled` 总览入口、桌面侧栏间距规则和相邻导航间距测试。
 
 ## handoff
-- 源码已提交至 MR !5059，5175 端口预览持续运行；未合并、未发布。
+- CR 修正已提交至 MR !5059，等待新一轮 CI；本地 5175 端口预览持续运行。未合并、未发布，登录后的侧栏视觉验收仍待完成。

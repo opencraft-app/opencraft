@@ -76,6 +76,8 @@ derived: false
 - 育儿大师追加后 `pnpm i18n:check`、定向 Vitest 72/72、`pnpm check`（166 current / 171 baseline / 0 new）与 `pnpm build` 通过；组件测试覆盖末页单卡和精选/分类短 ID 已安装状态一致。
 - 腾讯文档的 SkillHub 页面确认完整身份 `@tencent-adm/tencent-docs`；第 5 张精选与常用工具分类共用该身份和用户提供的来源 URL。
 - 腾讯文档生成独立 1200×600 WebP 横幅；定向 Vitest 73/73、`pnpm i18n:check`、`pnpm check`（166 current / 171 baseline / 0 new）、`pnpm build` 与 `git diff --check` 通过，构建产物包含新横幅路径。
+- MR !5059 的 CI 失败由 OpenCraft vendored 副本漂移引起；前端真源提交后已单独同步 130 个文件和 3 张横幅，清理两张不再引用的周年资源，只读同步检查通过。
+- CR 后续将育儿大师的精选/分类描述统一，统一腾讯文档英文与印尼文精选标题；合入当前 master 后，聚焦测试 119/119、`pnpm check`、国内与国际站构建、OpenCraft 插件类型检查与 i18n 测试通过。
 
 ## risks
 - 精选十一张，末页两张；需验证分页和两个入口的已安装状态一致。
@@ -96,4 +98,4 @@ derived: false
 - 精确查询命中卡片配置、定制文案、特殊遮罩、详情模板和测试。
 
 ## handoff
-- 技能页源码已提交至 MR !5059；CI 发现 OpenCraft 生成副本漂移，正在作为后续独立提交同步。未合并、未发布。
+- 技能页、OpenCraft 同步和 CR 修正已提交至 MR !5059，等待新一轮 CI。未合并、未发布。
