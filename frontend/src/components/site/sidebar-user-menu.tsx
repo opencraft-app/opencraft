@@ -25,7 +25,7 @@ export interface SidebarUserMenuProps {
 
 const icons = { agent: Bot, account: User, files: Files, workbench: LayoutDashboard, feedback: MessageSquare };
 
-function SidebarLanguagePopover({ label, children }: { label: string; children: ReactNode }) {
+function SidebarLanguagePopover({ label, children, onMouseEnter, onMouseLeave }: { label: string; children: ReactNode; onMouseEnter: () => void; onMouseLeave: () => void }) {
   const [wide, setWide] = useState(false);
   useEffect(() => {
     if (typeof window.matchMedia !== "function") return;
@@ -38,6 +38,7 @@ function SidebarLanguagePopover({ label, children }: { label: string; children: 
   return <Popover>
     <PopoverTrigger asChild><button type="button" className="lv-sidebar-user-menu-item w-full"><Globe className="size-4 shrink-0" aria-hidden="true" /><span className="flex-1 text-left">{label}</span><ChevronRight className="size-3.5" aria-hidden="true" /></button></PopoverTrigger>
     <PopoverContent aria-label={label} data-lv-agent-language-menu="true" side={wide ? "right" : "top"} align="start" sideOffset={8} collisionPadding={8}
+      onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave}
       className={`${agentPortalClassName} lv-sidebar-user-menu lv-sidebar-user-language w-52 rounded-md bg-white p-0 shadow-lg`}>{children}</PopoverContent>
   </Popover>;
 }
@@ -46,15 +47,32 @@ function SidebarLanguagePopover({ label, children }: { label: string; children: 
 export function SidebarUserMenu({ open, onOpenChange, name, email, avatarSrc, planLabel, status, credit, upgrade, entries, labels, languageContent, onSignOut }: SidebarUserMenuProps) {
   const headingRef = useRef<HTMLHeadingElement>(null);
   const triggerHoveredRef = useRef(false);
-  const close = () => onOpenChange(false);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelClose = () => {
+    if (closeTimerRef.current !== null) clearTimeout(closeTimerRef.current);
+    closeTimerRef.current = null;
+  };
+  const close = () => { cancelClose(); onOpenChange(false); };
+  const scheduleClose = () => {
+    cancelClose();
+    closeTimerRef.current = setTimeout(() => { closeTimerRef.current = null; onOpenChange(false); }, 180);
+  };
   useEffect(() => {
-    if (!open) triggerHoveredRef.current = false;
+    if (!open) {
+      triggerHoveredRef.current = false;
+      if (closeTimerRef.current !== null) clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
   }, [open]);
+  useEffect(() => () => {
+    if (closeTimerRef.current !== null) clearTimeout(closeTimerRef.current);
+  }, []);
   return <div className="lv-agent-account-menu">
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
         <button type="button" className="lv-agent-account-trigger" aria-label={labels.trigger}
-          onMouseEnter={() => { triggerHoveredRef.current = true; onOpenChange(true); }}
+          onMouseEnter={() => { cancelClose(); triggerHoveredRef.current = true; onOpenChange(true); }}
+          onMouseLeave={scheduleClose}
           onClickCapture={(event) => { if (triggerHoveredRef.current) event.stopPropagation(); }}>
           <img src={avatarSrc} alt="" className="size-9 shrink-0 rounded-full border border-[var(--border-subtle)] object-cover" />
           <span className="min-w-0 flex-1 text-left">
@@ -66,6 +84,7 @@ export function SidebarUserMenu({ open, onOpenChange, name, email, avatarSrc, pl
       </PopoverTrigger>
       <PopoverContent aria-label={labels.menu} side="top" align="start" sideOffset={8} collisionPadding={8}
         onOpenAutoFocus={(event) => { event.preventDefault(); headingRef.current?.focus(); }}
+        onMouseEnter={cancelClose} onMouseLeave={scheduleClose}
         className={`${agentPortalClassName} lv-sidebar-user-menu w-72 rounded-md bg-white p-1 shadow-lg`}>
         <div className="space-y-1 border-b border-[var(--border-subtle)] px-3 py-3">
           <h2 ref={headingRef} tabIndex={-1} className="truncate text-sm font-semibold text-[var(--text-primary)] outline-none">{name}</h2>
@@ -90,7 +109,7 @@ export function SidebarUserMenu({ open, onOpenChange, name, email, avatarSrc, pl
             return <a key={entry.id} href={entry.href} target={entry.external ? "_blank" : undefined} rel={entry.external ? "noopener noreferrer" : undefined}
               onClick={close} className="lv-sidebar-user-menu-item"><Icon className="size-4 shrink-0" aria-hidden="true" /><span>{entry.label}</span></a>;
           })}
-          {languageContent && <SidebarLanguagePopover label={labels.language}>{languageContent}</SidebarLanguagePopover>}
+          {languageContent && <SidebarLanguagePopover label={labels.language} onMouseEnter={cancelClose} onMouseLeave={scheduleClose}>{languageContent}</SidebarLanguagePopover>}
         </div>
         <div className="border-t border-[var(--border-subtle)] pt-1">
           <button type="button" className="lv-sidebar-user-menu-item w-full" onClick={() => { close(); onSignOut(); }}><LogOut className="size-4 shrink-0" aria-hidden="true" /><span>{labels.logout}</span></button>

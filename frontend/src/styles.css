@@ -207,7 +207,7 @@ html.lw-settings-scrollbar-stable {
   border-radius: 6px;
   font-size: 13px;
   line-height: 20px;
-  color: var(--text-secondary);
+  color: rgb(0 0 0 / 82%);
 }
 
 .lv-sidebar-user-menu-item:hover,
@@ -248,7 +248,7 @@ html.lw-settings-scrollbar-stable {
   overflow-wrap: anywhere;
   transition: none;
   /* Preserve the local palette over the link's text/hover utilities. */
-  color: var(--text-secondary) !important;
+  color: rgb(0 0 0 / 82%) !important;
   background: #fff;
 }
 
@@ -595,6 +595,12 @@ html.lw-settings-scrollbar-stable {
     flex: 1;
     overflow-y: auto;
     overscroll-behavior: contain;
+  }
+
+  .lv-agent-mobile-nav-open .lv-agent-account-footer {
+    width: 100%;
+    margin-left: 0;
+    padding-left: 0;
   }
 
   .lv-agent-mobile-nav-open .lv-agents-nav-group-items {
@@ -1275,7 +1281,7 @@ a {
   flex: 1;
   align-items: center;
   gap: 6px;
-  color: rgb(0 0 0 / 60%);
+  color: rgb(0 0 0 / 82%);
   font-size: 13px;
   font-weight: 500;
   text-align: left;
@@ -1635,7 +1641,7 @@ a {
 
   .lv-agents-sidebar-profile .lv-agent-profile-wrap {
     width: auto;
-    padding: 4px 8px;
+    padding: 3px 8px;
     border: 1px solid #dedee2;
     border-radius: 16px;
     background: #fff;
@@ -1643,7 +1649,13 @@ a {
 
   .lv-agents-sidebar-profile .lv-agent-profile {
     width: 100%;
+    min-height: 40px;
     gap: 8px;
+  }
+
+  .lv-agents-sidebar-profile .lv-agent-profile-name {
+    font-size: 13px;
+    line-height: 18px;
   }
 
   .lv-agents-sidebar-controls {

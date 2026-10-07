@@ -1,7 +1,7 @@
 import type { HTMLAttributes, ReactNode } from "react";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { UserAvatarMenu } from "@/components/site/user-avatar-menu";
 import {
@@ -166,7 +166,7 @@ describe("UserAvatarMenu", () => {
     expect(screen.getByRole("button", { name: "打开用户菜单" })).toBeInTheDocument();
   });
 
-  it("opens the sidebar account menu on hover and preserves identity and account navigation", () => {
+  it("opens the sidebar account menu on hover and preserves identity and account navigation", async () => {
     useSession.mockReturnValue({
       session: {
         user: {
@@ -207,8 +207,8 @@ describe("UserAvatarMenu", () => {
     expect(screen.getByRole("link", { name: "账号" })).toHaveAttribute("href", "/account");
     expect(screen.getByRole("link", { name: "套餐与费用" })).toHaveAttribute("href", "/account/billing");
 
-    fireEvent.mouseLeave(trigger.parentElement!);
-    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    fireEvent.mouseLeave(trigger);
+    await waitFor(() => expect(trigger).toHaveAttribute("aria-expanded", "false"));
   });
 
   it.each([

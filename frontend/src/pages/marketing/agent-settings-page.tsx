@@ -5876,7 +5876,7 @@ export const AgentSettingsPage = ({
                       </button>
                     <div className="lv-agents-sidebar-profile">
                     {fleetOverviewEnabled && (
-                      <div className="mb-2 pb-2 lg:mb-1.5 lg:pb-1.5">
+                      <div className="mb-2 pb-2 lg:mb-1 lg:pb-0.5">
                         <AppLink
                           to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.overview, searchParams)}
                           aria-current={activeSection === "overview" ? "page" : undefined}
@@ -6497,11 +6497,11 @@ export const AgentSettingsPage = ({
                       </div>
                     </div>
                     <div className="lv-agents-sidebar-footer">
-                      {isDesktop ? (
-                        <div className="lv-agent-account-footer">
+                      <div className="lv-agent-account-footer">
+                        {(isDesktop || mobileChatNavOpen) && (
                           <UserAvatarMenu showLanguageSwitcher={isGlobal} variant="sidebar" />
-                        </div>
-                      ) : null}
+                        )}
+                      </div>
                     </div>
                   </AgentSidebar>
                   </>
