@@ -39,6 +39,7 @@ describe("AgentChatMigrationSurface", () => {
     const onOwnerChange = vi.fn();
     const onHasMoreSessionsChange = vi.fn();
     const onSessionMutationStateChange = vi.fn();
+    const onTurnCompleted = vi.fn();
     let resolveShow!: () => void;
     const shown = new Promise<void>((resolve) => { resolveShow = resolve; });
 
@@ -76,9 +77,9 @@ describe("AgentChatMigrationSurface", () => {
       onSessionActionsChange: (next) => { actions = next; },
     };
 
-    const renderSurface = (enabled: boolean, locale = "en-US") => (
+    const renderSurface = (enabled: boolean, locale = "en-US", selectedChatId?: string, active = true) => (
       <AgentChatMigrationSurface
-        active
+        active={active}
         accountId="account-1"
         enabled={enabled}
         instanceId="ins-1"
@@ -86,7 +87,8 @@ describe("AgentChatMigrationSurface", () => {
         profileId="sales-123"
         region="intl"
         legacy={<div>Legacy AgentChat</div>}
-        multiSession={multiSession}
+        multiSession={{ ...multiSession, selectedChatId }}
+        onTurnCompleted={onTurnCompleted}
         onOwnerChange={onOwnerChange}
         onHasMoreSessionsChange={onHasMoreSessionsChange}
         onSessionCommandsChange={(next) => { commands = next; }}
@@ -130,6 +132,41 @@ describe("AgentChatMigrationSurface", () => {
     }));
     expect(onSelectedChatIdChange).toHaveBeenCalledWith("thread-1");
     expect(onHasMoreSessionsChange).toHaveBeenCalledWith(true);
+    rerender(renderSurface(true, "ja-JP", "thread-1"));
+    act(() => prepared.dispatchEvent(new CustomEvent("opencraft-turn-completed", {
+      detail: { chatId: "thread-1", turnId: "turn-1" },
+    })));
+    expect(onTurnCompleted).not.toHaveBeenCalled();
+    rerender(renderSurface(true, "ja-JP", "thread-2"));
+    act(() => prepared.dispatchEvent(new CustomEvent("opencraft-turn-completed", {
+      detail: { chatId: "thread-1", turnId: "turn-2" },
+    })));
+    expect(onTurnCompleted).toHaveBeenCalledExactlyOnceWith("thread-1");
+    rerender(renderSurface(true, "ja-JP", "thread-1", false));
+    act(() => prepared.dispatchEvent(new CustomEvent("opencraft-turn-completed", {
+      detail: { chatId: "thread-1", turnId: "turn-3" },
+    })));
+    expect(onTurnCompleted).toHaveBeenCalledTimes(2);
+    rerender(renderSurface(true, "ja-JP", "thread-2"));
+    const publishRunning = (running: boolean, loading = false) => {
+      act(() => prepared.dispatchEvent(new CustomEvent("opencraft-sessions", {
+        detail: {
+          sessions: [
+            { chatId: "thread-1", title: "Background", createdAt: 1, updatedAt: 2, running },
+            { chatId: "thread-2", title: "Current", createdAt: 1, updatedAt: 2, running: false },
+          ],
+          loading, hasMoreSessions: false, error: null, selectedChatId: "thread-2",
+        },
+      })));
+    };
+    publishRunning(true);
+    publishRunning(false, true);
+    expect(onTurnCompleted).toHaveBeenCalledTimes(2);
+    publishRunning(false);
+    expect(onTurnCompleted).toHaveBeenCalledTimes(3);
+    expect(onTurnCompleted).toHaveBeenLastCalledWith("thread-1");
+    publishRunning(false);
+    expect(onTurnCompleted).toHaveBeenCalledTimes(3);
     expect(actions).not.toBeNull();
     const embedded = container.querySelector("opencraft-embedded-workbench");
     expect(embedded).not.toBeNull();
