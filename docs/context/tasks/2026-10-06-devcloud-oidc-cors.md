@@ -58,10 +58,15 @@ derived: false
 | `docs/context/project/services/service-gateway.md` | 路由 must_read | CORS 实现入口 |
 | `docs/context/project/adjacency/argocd-ci-secrets.md` | 部署邻居 | 检查两地注册与构建管线 |
 | `docs/engineering/domains/identity-access.md` | 正式设计 | 同步通配例外契约 |
+| `.ci/AGENTS.md` | MR guard 回归 | CI 运行时边界 |
+| `docs/context/project/services/ci.md` | CI 路由 must_read | 发布契约验证入口 |
+| `docs/context/domains/release-gitops.md` | CI 路由 must_read | 源码与发布证据区分 |
 
 ## evidence
 - 修改前公开 authorize 探测：join 子域 400 unauthorized_client，chat.lightvela.com 302。
 - 修改前公开 CORS OPTIONS：join 无 ACAO，chat.lightvela.com 有具体 ACAO。
+- MR !5037 首次 guard 在 104 项发布契约中失败 1 项：上海 federation 测试仍断言两个 Web 回调。补充新增回调的精确期望，保持已有客户端断言。
+- 修正后同款 service-gateway guard 通过（104 项契约与网关 Go 测试）；`bash .ci/runtime/check_ci_runtime.sh` 全部通过（655 项测试，4 项 skipped，装配 smoke、语法与 YAML 检查通过）。
 
 ## risks
 - 覆盖整个子域族意味着信任所有子域；必须由第一方控制其分配，防止子域接管。
@@ -82,12 +87,12 @@ derived: false
 - 无敏感数据产物。
 
 ## handoff
-- 实现与服务验证完成；未提交、推送、发布。待用户授权交付。
+- 已提交推送并创建 MR !5037；收到用户提供的失败日志后同步修正发布契约测试。生产未发布。
 
 ## checkpoint
-- stage: 本地实现完成，等待提交/发布授权。
+- stage: 补齐 MR CI 发布契约回归，继续原 MR 交付。
 - verified: 两服务全量测试与 vet、文档检查通过；两地配置与具体回调绑定回归通过。
 - unverified: 生产构建、Argo 收敛、真实浏览器登录未执行。
 - discard: 不通过更换客户端 ID 或任意通配回调解决。
 - restore: 隔离分支 fix/opencraft-devcloud-oidc-20261006，基线见 history_context。
-- next_action: 获准后提交 MR，通过两服务发布路径配对交付镜像与配置。
+- next_action: 运行 CI 同款 guard，将契约修正推送至原 MR；镜像与配置发布仍另行验收。
