@@ -9,7 +9,7 @@
  * 四个板块（自上而下）：
  * 0. 陪伴横幅 —— 徽章 + 陪伴天数 + 右侧数据卡
  * 1. 快速配置个人助手 —— 场景卡片，点击开弹窗（改名 / 改描述 / 删技能 / 创建或切换）
- * 2. 最新动态   —— 左图右文，自动轮播
+ * 2. 产品动态   —— 最近 5 条更新，每屏 2 条，自动滚动轮播
  * 3. 推荐自动化 —— 3 张任务卡 + 「查看全部」跳转自动任务页
  */
 
@@ -23,13 +23,11 @@ import {
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
-import { useCurrentLocale, useT, type TranslateFn } from "@/i18n/t";
+import { useCurrentLocale, useT } from "@/i18n/t";
 import { ACCOUNT_BILLING_PATH, ACCOUNT_PATH, AGENT_SECTION_PATH_BY_ID } from "@/lib/agent-routes";
 import { AppLink } from "@/lib/app-navigation";
 import { assetUrl } from "@/lib/asset-url";
-import { isGlobal } from "@/lib/region";
 import { cn } from "@/lib/utils";
-import { getChangelogUpgradeCopy } from "@/pages/marketing/changelog-upgrade-copy";
 import {
   AVATAR_SHAPES,
   getAvatarShapeLabel,
@@ -50,13 +48,15 @@ import {
   buildHermesSoulContentReadCommand,
   parseHermesSoulContent,
 } from "@/pages/marketing/agent-buddy-command";
+import { getRecentChangelogEntries } from "@/pages/marketing/changelog-data";
+import { ModelActionTooltip } from "@/pages/marketing/agent-model-config/model-action-tooltip";
 
 /** 读 SOUL 原文的超时，与 agent-buddy-profile 保持一致 */
 const SOUL_READ_TIMEOUT_MS = 30_000;
 
 /** 统一卡片外观：对齐成就 / 自动任务面板 */
 const CARD_CLASS =
-  "rounded-[4px] border border-black/[0.06] bg-white shadow-[0_8px_28px_rgba(15,23,42,0.04)]";
+  "rounded-[10px] border border-black/[0.06] bg-white shadow-[0_8px_28px_rgba(15,23,42,0.04)]";
 
 /** 板块小标题 + 副标题 */
 const SectionTitle = ({
@@ -65,13 +65,13 @@ const SectionTitle = ({
   actions,
 }: {
   title: string;
-  subtitle: string;
+  subtitle?: string;
   actions?: ReactNode;
 }) => (
   <div className="mb-3 flex min-w-0 items-end justify-between gap-3">
     <div className="min-w-0">
       <h3 className="text-[15px] font-semibold leading-6 text-black/[0.88]">{title}</h3>
-      <p className="mt-0.5 text-[13px] font-medium leading-5 text-black/45">{subtitle}</p>
+      {subtitle ? <p className="mt-0.5 text-[13px] font-medium leading-5 text-black/45">{subtitle}</p> : null}
     </div>
     {actions ? <div className="shrink-0">{actions}</div> : null}
   </div>
@@ -85,7 +85,7 @@ export interface HeroStats {
   servedDays: number | null;
   /** 有效期至（已本地化的日期串） */
   expiresAt: string | null;
-  /** 剩余积分（activePass.credit_available） */
+  /** 剩余 AI 积分（activePass.credit_available） */
   credits: number | null;
   /** 生效中的定时任务数 */
   automations: number | null;
@@ -106,7 +106,7 @@ export const HeroBanner = ({ stats, botCount, invitedFriends }: { stats: HeroSta
   const statItems = [
     {
       id: "credits",
-      label: t("剩余积分"),
+      label: t("剩余 AI 积分"),
       value: formatCount(stats.credits),
       to: ACCOUNT_BILLING_PATH,
     },
@@ -137,7 +137,7 @@ export const HeroBanner = ({ stats, botCount, invitedFriends }: { stats: HeroSta
 
   return (
     <section
-      className="relative overflow-hidden rounded-[4px] border border-black/[0.04]"
+      className="relative overflow-hidden rounded-xl border border-black/[0.04]"
       style={{
         backgroundImage: `url(${assetUrl("/agent-overview/hero-bg.png")})`,
         backgroundSize: "cover",
@@ -195,74 +195,48 @@ export const HeroBanner = ({ stats, botCount, invitedFriends }: { stats: HeroSta
   );
 };
 
-/* ────────────────────────────── 2. 最新动态 ────────────────────────────── */
+/* ────────────────────────────── 2. 产品动态 ────────────────────────────── */
 
 /*
- * changelog 条目。
- *
- * date 用结构化的 y/m 而不是「2026年9月」整串；界面只显示年月：
- * 日期格式各语言不同（en 是 "September 2026"、ja 是「2026年9月」），
- * 整串进词典等于每加一条动态都要翻 8 个语种。这里存数字，渲染时用
- * Intl.DateTimeFormat 按当前 locale 格式化。
- *
- * 每次渲染通过当前 t 构造标题、正文和图片说明；字面量调用可被提取器收录，
- * 并随语言切换重新生成，避免动态 key 漏译或模块级翻译缓存旧语言。
+ * 取更新日志（changelog-data.ts，国内站 / 国际站各自维护）的最近 5 条，
+ * 只展示月份、标题与描述，不带配图。
+ * 每屏 2 张卡片，每次向左滚动 1 张：5 条共 4 个停靠位，末位后回到开头。
  */
-type ChangelogEntry = {
-  date: { y: number; m: number };
-  title: string;
-  body: string;
-  image?: string;
-  imageAlt?: string;
-};
-
-const zeroTokenGlobalImages: Record<string, string> = {
-  "zh-CN": "/assets/changelog/scheduled-tasks-notification-global-zh-CN.webp",
-  "zh-Hant": "/assets/changelog/scheduled-tasks-notification-zh-Hant.webp",
-  "en-US": "/assets/changelog/scheduled-tasks-notification-en-US.webp",
-  "id-ID": "/assets/changelog/scheduled-tasks-notification-id-ID.webp",
-  es: "/assets/changelog/scheduled-tasks-notification-es.webp",
-  "ja-JP": "/assets/changelog/scheduled-tasks-notification-ja-JP.webp",
-  "ko-KR": "/assets/changelog/scheduled-tasks-notification-ko-KR.webp",
-};
-
-/** TODO(demo): 接真实 changelog 数据源后替换；展示 9 月动态中选定的三条。 */
-const getChangelogEntries = (t: TranslateFn, locale: string): ChangelogEntry[] => {
-  const isChinese = locale.startsWith("zh");
-  const upgradeCopy = getChangelogUpgradeCopy(locale, isGlobal);
-  return [
-    {
-      date: { y: 2026, m: 9 },
-      title: upgradeCopy.title,
-      body: upgradeCopy.desc,
-      image: assetUrl(isGlobal
-        ? "/assets/changelog/lightvela-plan-upgrade-global-en.png"
-        : "/assets/changelog/lightvela-plan-upgrade-cn.png"),
-      imageAlt: upgradeCopy.title,
-    },
-    {
-      date: { y: 2026, m: 9 },
-      title: t("LightVela 支持创建多个 Bot"),
-      body: t("在同一个 Agent 中创建多个 Bot，让它们各司其职；每个 Bot 的记忆、技能、定时任务、模型和通道配置相互隔离。"),
-      image: assetUrl(isGlobal && !isChinese
-        ? "/docs-images/bots-switching-create-en.webp"
-        : "/docs-images/bots-switching-create.webp"),
-      imageAlt: t("LightVela 支持创建多个 Bot"),
-    },
-    {
-      date: { y: 2026, m: 9 },
-      title: t("定时任务新增通知任务和脚本任务"),
-      body: t("支持创建通知任务和脚本任务：按原文发送通知，或按计划运行预设脚本。两种任务均不调用模型，模型 Token 消耗为 0。"),
-      image: assetUrl(isGlobal
-        ? zeroTokenGlobalImages[locale] ?? "/assets/changelog/scheduled-tasks-notification-en-US.webp"
-        : "/assets/changelog/scheduled-tasks-notification-zh-CN.webp"),
-      imageAlt: t("定时任务新增通知任务和脚本任务"),
-    },
-  ];
-};
+const NEWS_LIMIT = 5;
+const NEWS_PER_VIEW = 2;
+/** 卡片间距，与 gap-3 一致 */
+const NEWS_GAP_PX = 12;
 
 /** 自动轮播间隔（毫秒） */
 const CAROUSEL_INTERVAL_MS = 5000;
+
+/**
+ * 动态描述最多两行，超出用省略号；仅在确实被截断时挂 hover tooltip 展示全文。
+ * tooltip 走 Portal（DESIGN.md · Hover Tooltip），不会被轮播视口的 overflow-hidden 裁掉。
+ */
+const NewsDescription = ({ text }: { text: string }) => {
+  const ref = useRef<HTMLParagraphElement>(null);
+  const [truncated, setTruncated] = useState(false);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return undefined;
+    const measure = () => setTruncated(el.scrollHeight > el.clientHeight + 1);
+    measure();
+    if (typeof ResizeObserver === "undefined") return undefined;
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [text]);
+
+  return (
+    <div className="mt-1.5 flex">
+      <ModelActionTooltip content={truncated ? text : undefined} preserveWrapper>
+        <p ref={ref} className="line-clamp-2 text-[13px] leading-5 text-black/50">{text}</p>
+      </ModelActionTooltip>
+    </div>
+  );
+};
 
 export const LatestNewsSection = () => {
   const t = useT();
@@ -270,90 +244,74 @@ export const LatestNewsSection = () => {
   const [index, setIndex] = useState(0);
   /** 用户手动点过指示器后暂停自动轮播，避免和用户操作打架 */
   const [paused, setPaused] = useState(false);
-  const entries = getChangelogEntries(t, locale);
-  const total = entries.length;
-  const activeIndex = index >= 0 && index < total ? index : 0;
-  const entry = entries[activeIndex];
+  /** 鼠标停在动态区（含描述 tooltip）时暂停，避免读全文时卡片被滑走 */
+  const [hovering, setHovering] = useState(false);
+  const entries = getRecentChangelogEntries(t, locale, NEWS_LIMIT);
+  const positions = Math.max(entries.length - NEWS_PER_VIEW + 1, 1);
+  const activeIndex = index >= 0 && index < positions ? index : 0;
 
   useEffect(() => {
-    if (paused || total <= 1) return undefined;
+    if (paused || hovering || positions <= 1) return undefined;
     const timer = window.setInterval(() => {
-      setIndex((current) => (current + 1) % total);
+      setIndex((current) => (current + 1) % positions);
     }, CAROUSEL_INTERVAL_MS);
     return () => window.clearInterval(timer);
-  }, [paused, total]);
+  }, [paused, hovering, positions]);
 
   // An empty feed has no card to render; keep hooks unconditional.
-  if (!entry) return null;
+  if (entries.length === 0) return null;
 
   return (
     <section>
       <SectionTitle
-        title={t("最新动态")}
-        subtitle={t("LightVela 的新功能、改进和修复更新")}
+        title={t("产品动态")}
       />
 
-      {/* 有配图时贴齐卡片边缘；无配图的套餐升配沿用 Changelog 页的文字呈现。 */}
-      <div className={cn(CARD_CLASS, "overflow-hidden")}>
-        <div className={cn("grid min-w-0 items-stretch", entry.image ? "sm:grid-cols-[minmax(0,300px)_minmax(0,1fr)]" : "sm:min-h-[169px]")}>
-          {/*
-            左：功能配图（撑满左侧，无左/上/下留白）。
-            截图沿用 Changelog 页素材；竖向的任务截图从顶部裁切，
-            保留任务类型区域。
-          */}
-          {entry.image ? (
-            <div className="aspect-[16/9] w-full min-w-0 overflow-hidden bg-black/[0.015]">
-              <img
-                src={entry.image}
-                alt={entry.imageAlt ?? entry.title}
-                loading="lazy"
-                decoding="async"
-                width={900}
-                height={506}
-                className="h-full w-full object-cover object-top"
-              />
-            </div>
-          ) : null}
+      {/* 视口裁切 + 轨道平移；轨道宽 = 视口宽，所以 100% 即一屏 */}
+      <div className="overflow-hidden" onMouseEnter={() => setHovering(true)} onMouseLeave={() => setHovering(false)}>
+        <ul
+          className="flex gap-3 transition-transform duration-500 ease-out motion-reduce:transition-none"
+          style={{ transform: `translateX(calc(${-activeIndex} * (100% + ${NEWS_GAP_PX}px) / ${NEWS_PER_VIEW}))` }}
+        >
+          {entries.map((entry, entryIndex) => {
+            const visible = entryIndex >= activeIndex && entryIndex < activeIndex + NEWS_PER_VIEW;
+            return (
+              <li
+                key={entry.id}
+                aria-hidden={!visible}
+                inert={!visible}
+                className={cn(CARD_CLASS, "flex w-[calc((100%-12px)/2)] shrink-0 flex-col p-4")}
+              >
+                <p className="text-xs font-medium text-black/40">{entry.month}</p>
+                <p className="mt-1.5 text-[15px] font-semibold leading-6 text-black/[0.88]">{entry.title}</p>
+                {entry.desc ? <NewsDescription text={entry.desc} /> : null}
+              </li>
+            );
+          })}
+        </ul>
+      </div>
 
-          {/* 右：文案 */}
-          <div className="flex min-w-0 flex-col justify-center p-4">
-            {/*
-              日期按当前 locale 格式化，不进词典。
-              月份用 long 而不是数字：en 得到 "September 2026"，
-              ja/zh 得到「2026年9月」，都是各自的习惯写法。
-            */}
-            <p className="text-xs font-medium text-black/40">
-              {new Intl.DateTimeFormat(locale, {
-                year: "numeric", month: "long",
-              }).format(new Date(entry.date.y, entry.date.m - 1, 1))}
-            </p>
-            <p className="mt-1.5 text-[15px] font-semibold leading-6 text-black/[0.88]">
-              {entry.title}
-            </p>
-            <p className="mt-1.5 text-[13px] leading-5 text-black/50">{entry.body}</p>
-          </div>
+      {/* 轮播指示器：每个停靠位一个，名称为该屏两条标题 */}
+      {positions > 1 ? (
+        <div className="mt-3 flex items-center justify-center gap-1.5">
+          {Array.from({ length: positions }, (_, position) => (
+            <button
+              key={position}
+              type="button"
+              aria-label={entries.slice(position, position + NEWS_PER_VIEW).map((item) => item.title).join(" / ")}
+              aria-current={position === activeIndex ? "true" : undefined}
+              onClick={() => {
+                setIndex(position);
+                setPaused(true);
+              }}
+              className={cn(
+                "h-1.5 cursor-pointer rounded-full transition-all",
+                position === activeIndex ? "w-5 bg-black/45" : "w-1.5 bg-black/15 hover:bg-black/25",
+              )}
+            />
+          ))}
         </div>
-      </div>
-
-      {/* 轮播指示器：移到卡片外，避免在卡片内引入下边距破坏配图铺满 */}
-      <div className="mt-3 flex items-center justify-center gap-1.5">
-        {entries.map((item, itemIndex) => (
-          <button
-            key={item.title}
-            type="button"
-            aria-label={item.title}
-            aria-current={itemIndex === activeIndex ? "true" : undefined}
-            onClick={() => {
-              setIndex(itemIndex);
-              setPaused(true);
-            }}
-            className={cn(
-              "h-1.5 cursor-pointer rounded-full transition-all",
-              itemIndex === activeIndex ? "w-5 bg-black/45" : "w-1.5 bg-black/15 hover:bg-black/25",
-            )}
-          />
-        ))}
-      </div>
+      ) : null}
     </section>
   );
 };
@@ -445,7 +403,7 @@ export const ProfileEditDialog = ({
             id="lv-profile-name"
             value={name}
             onChange={(event) => setName(event.target.value)}
-            className="mt-1 w-full rounded-[3px] border border-black/[0.1] px-3 py-2 text-sm font-medium text-black/[0.88] outline-none transition focus:border-black/25"
+            className="mt-1 w-full rounded-md border border-black/[0.1] px-3 py-2 text-sm font-medium text-black/[0.88] outline-none transition focus:border-black/25"
           />
         </div>
 
@@ -460,7 +418,7 @@ export const ProfileEditDialog = ({
             rows={3}
             placeholder={t(BUDDY_DESCRIPTION_PLACEHOLDER)}
             onChange={(event) => setDescription(event.target.value)}
-            className="mt-1 w-full resize-none rounded-[3px] border border-black/[0.1] px-3 py-2 text-[13px] leading-5 text-black/70 outline-none transition placeholder:text-black/30 focus:border-black/25"
+            className="mt-1 w-full resize-none rounded-md border border-black/[0.1] px-3 py-2 text-[13px] leading-5 text-black/70 outline-none transition placeholder:text-black/30 focus:border-black/25"
           />
         </div>
 
@@ -653,9 +611,7 @@ export const RecommendedAutomationsSection = () => {
   return (
     <section>
       <SectionTitle
-        title={t("定时任务推荐")}
-        subtitle={t("按计划运行可重复任务，LightVela 帮你搞定一切")}
-        actions={(
+        title={t("定时任务推荐")}        actions={(
           <AppLink
             to={AGENT_SECTION_PATH_BY_ID.automations}
             className="group inline-flex items-center gap-0.5 text-[13px] font-medium text-black/50 transition hover:text-black/80"
@@ -669,17 +625,17 @@ export const RecommendedAutomationsSection = () => {
         )}
       />
 
-      {/* 卡片样式对齐「定时任务」tab 的任务模板：无边框、裸图标、hover 变底色。
-          那边已经从「色块图标 + 箭头页脚」改成了这套更轻的写法，两处同名同图标，
-          视觉不该再有差异。整卡可点，点击跳到定时任务页并预选模板。 */}
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+      {/* 内容沿用「定时任务」tab 的任务模板（同名同图标、裸图标）；
+          外框按 DESIGN.md 与本页其他卡片统一为 CARD_CLASS（10px 圆角 + 浅边框 + 轻阴影）。
+          整卡可点，点击跳到定时任务页并预选模板。 */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {DEMO_AUTOMATIONS.map((automation) => (
           /* 跳到定时任务页并预选该模板（?template=<id>），由那边弹出创建表单 */
           <AppLink
             key={automation.id}
             to={`${AGENT_SECTION_PATH_BY_ID.automations}?template=${encodeURIComponent(automation.id)}`}
             aria-label={t("启用{{name}}", { name: t(automation.name) })}
-            className="flex min-h-[64px] items-start gap-2.5 rounded-sm border-0 bg-white p-3 text-left transition hover:bg-black/[0.03]"
+            className={cn(CARD_CLASS, "flex min-h-[64px] items-start gap-2.5 p-3 text-left transition hover:border-black/[0.12] hover:bg-black/[0.015]")}
           >
             <span className={cn("mt-0.5 shrink-0", automation.iconClass)}>
               {automation.icon}
