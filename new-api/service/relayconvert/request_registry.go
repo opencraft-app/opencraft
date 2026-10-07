@@ -72,6 +72,7 @@ const (
 )
 
 const (
+	ConverterHunyuanASR                  = "openai_transcriptions_to_hunyuan_asr"
 	ConverterNone                        = "none"
 	ConverterClaudeMessagesToOpenAIChat  = "anthropic_messages_to_openai_chat_completions"
 	ConverterOpenAIChatToClaudeMessages  = "openai_chat_completions_to_anthropic_messages"

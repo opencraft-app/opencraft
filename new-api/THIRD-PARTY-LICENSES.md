@@ -16,6 +16,7 @@ Transitive dependencies should be audited before a final external release.
 | backend     | production  | Go        | `github.com/andybalholm/brotli`                       | `v1.1.1`                             | MIT                                                |
 | backend     | production  | Go        | `github.com/anknown/ahocorasick`                      | `v0.0.0-20190904063843-d75dbd5169c0` | MIT                                                |
 | backend     | production  | Go        | `github.com/aws/aws-sdk-go-v2`                        | `v1.41.5`                            | Apache-2.0                                         |
+| backend     | production  | Go        | `github.com/at-wat/ebml-go`                           | `v0.19.4`                            | Apache-2.0                                         |
 | backend     | production  | Go        | `github.com/aws/aws-sdk-go-v2/credentials`            | `v1.19.10`                           | Apache-2.0                                         |
 | backend     | production  | Go        | `github.com/aws/aws-sdk-go-v2/service/bedrockruntime` | `v1.50.4`                            | Apache-2.0                                         |
 | backend     | production  | Go        | `github.com/aws/smithy-go`                            | `v1.24.2`                            | Apache-2.0                                         |

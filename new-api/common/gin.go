@@ -33,10 +33,27 @@ func IsRequestBodyTooLargeError(err error) bool {
 	return errors.As(err, &mbe)
 }
 
+// Transcription bodies must never enter either the disk cache or multipart
+// temporary files, including reads performed before channel selection.
+func IsMemoryOnlyTranscription(c *gin.Context) bool {
+	return c.Request.Method == "POST" && c.Request.URL.Path == "/v1/audio/transcriptions"
+}
+
 func GetRequestBody(c *gin.Context) (io.Seeker, error) {
+	maxMB := constant.MaxRequestBodyMB
+	if maxMB <= 0 {
+		maxMB = 128
+	}
+	maxBytes := int64(maxMB) << 20
 	// 首先检查是否有 BodyStorage 缓存
 	if storage, exists := c.Get(KeyBodyStorage); exists && storage != nil {
 		if bs, ok := storage.(BodyStorage); ok {
+			if IsMemoryOnlyTranscription(c) && bs.Size() > maxBytes {
+				return nil, ErrRequestBodyTooLarge
+			}
+			if IsMemoryOnlyTranscription(c) && bs.IsDisk() {
+				return nil, errors.New("transcription body must use memory storage")
+			}
 			if _, err := bs.Seek(0, io.SeekStart); err != nil {
 				return nil, fmt.Errorf("failed to seek body storage: %w", err)
 			}
@@ -48,7 +65,16 @@ func GetRequestBody(c *gin.Context) (io.Seeker, error) {
 	cached, exists := c.Get(KeyRequestBody)
 	if exists && cached != nil {
 		if b, ok := cached.([]byte); ok {
-			bs, err := CreateBodyStorage(b)
+			var bs BodyStorage
+			var err error
+			if IsMemoryOnlyTranscription(c) {
+				if int64(len(b)) > maxBytes {
+					return nil, ErrRequestBodyTooLarge
+				}
+				bs = newMemoryStorage(b)
+			} else {
+				bs, err = CreateBodyStorage(b)
+			}
 			if err != nil {
 				return nil, err
 			}
@@ -57,16 +83,27 @@ func GetRequestBody(c *gin.Context) (io.Seeker, error) {
 		}
 	}
 
-	maxMB := constant.MaxRequestBodyMB
-	if maxMB <= 0 {
-		maxMB = 128 // 默认 128MB
-	}
-	maxBytes := int64(maxMB) << 20
-
 	contentLength := c.Request.ContentLength
 
 	// 使用新的存储系统
-	storage, err := CreateBodyStorageFromReader(c.Request.Body, contentLength, maxBytes)
+	var storage BodyStorage
+	var err error
+	if IsMemoryOnlyTranscription(c) {
+		var data []byte
+		if contentLength > maxBytes {
+			err = ErrRequestBodyTooLarge
+		} else {
+			data, err = io.ReadAll(io.LimitReader(c.Request.Body, maxBytes+1))
+		}
+		if err == nil && int64(len(data)) > maxBytes {
+			err = ErrRequestBodyTooLarge
+		}
+		if err == nil {
+			storage = newMemoryStorage(data)
+		}
+	} else {
+		storage, err = CreateBodyStorageFromReader(c.Request.Body, contentLength, maxBytes)
+	}
 	_ = c.Request.Body.Close()
 
 	if err != nil {
@@ -277,7 +314,7 @@ func ParseMultipartFormReusable(c *gin.Context) (*multipart.Form, error) {
 	}
 
 	reader := multipart.NewReader(bytes.NewReader(requestBody), boundary)
-	form, err := reader.ReadForm(multipartMemoryLimit())
+	form, err := reader.ReadForm(requestMultipartMemoryLimit(c, len(requestBody)))
 	if err != nil {
 		return nil, err
 	}
@@ -338,7 +375,7 @@ func parseMultipartFormData(c *gin.Context, data []byte, v any) error {
 	}
 
 	reader := multipart.NewReader(bytes.NewReader(data), boundary)
-	form, err := reader.ReadForm(multipartMemoryLimit())
+	form, err := reader.ReadForm(requestMultipartMemoryLimit(c, len(data)))
 	if err != nil {
 		return err
 	}
@@ -353,6 +390,15 @@ func parseMultipartFormData(c *gin.Context, data []byte, v any) error {
 	}
 
 	return processFormMap(formMap, v)
+}
+
+func requestMultipartMemoryLimit(c *gin.Context, bodySize int) int64 {
+	if IsMemoryOnlyTranscription(c) {
+		// The sum of all file parts cannot exceed the buffered body size.
+		// ReadForm therefore cannot spill any file part to disk.
+		return int64(bodySize)
+	}
+	return multipartMemoryLimit()
 }
 
 var errBoundaryNotFound = errors.New("multipart boundary not found")
