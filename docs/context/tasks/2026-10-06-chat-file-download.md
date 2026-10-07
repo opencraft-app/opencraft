@@ -1,11 +1,12 @@
 ## goal
-Allow users to download files generated in LightVela Chat from a file link's right-click menu.
+Allow users to download files generated in LightVela Chat from a file link's right-click menu or a touch-accessible file action menu.
 
 ## non_goals
 - Change file creation, cloud storage navigation, or publish the change.
 
 ## requirement_ids / requirement_refs / requirement_excerpt
 - User request, 2026-10-06: add download in the conversation UI on right click; use cloud storage download as reference.
+- User follow-up, 2026-10-07: mobile browser users need a way to download files from the conversation page.
 
 ## interface_refs / data_structure_refs
 - `opencraft/packages/chat-render-web/src/renderers/resource-link/resource-link.tsx`: rendered file links expose `data-chat-resource-kind` and a resolved `href`.
@@ -19,6 +20,7 @@ Allow users to download files generated in LightVela Chat from a file link's rig
 
 ## acceptance
 - Right-clicking a Chat file link or a plain generated path in a message offers Download, and selection saves the remote file with its basename.
+- On touch screens, tapping a managed file link offers View and Download; tapping a plain generated path offers Download. A normal mouse click still opens file preview, and unrelated web links retain their click behavior.
 - Hovering a generated file link or plain path shows a dashed underline directly beneath the file path; moving away removes it.
 - Download status toasts appear at the top center of the page.
 - Other links keep their current context menus. Only paths inside `/home/agentuser` can be requested.
@@ -58,9 +60,11 @@ Allow users to download files generated in LightVela Chat from a file link's rig
 - Authenticated Chrome preview at port 5174 showed the dashed underline under the exact generated Markdown path. Evidence: `/Users/pablozhong/.codex/visualizations/2026/10/06/01a1115b-7a5c-7fb3-8ac6-6e3762890f47/chat-file-hover-underline.jpg`; listener PID 51781 has cwd in this worktree's `frontend`.
 - 2026-10-07 toast placement follow-up: moved the shared download status toast from the bottom of the Chat pane to the top center of the viewport. `pnpm check` passed with 0 new diagnostics, 7 focused download tests passed, and authenticated Chrome showed `准备下载...` at the top. Evidence: `/Users/pablozhong/.codex/visualizations/2026/10/06/01a1115b-7a5c-7fb3-8ac6-6e3762890f47/chat-file-toast-top.jpg`.
 - Before MR submission, `npm --prefix opencraft run check:mono2-agent-console` and the final `pnpm build` passed. The user's authenticated Chrome screenshot displayed `下载完成。` after selecting the file; the saved file itself was not inspected on disk.
+- 2026-10-07 mobile follow-up: the host captures a touch click on a managed file path, opens the same download action menu, and leaves View available for file links. Touch cancellation and unrelated web links remain unaffected. Focused Chat/Cloud Storage tests passed 57/57, `pnpm check` reported 0 new diagnostics, `pnpm build` generated 106 pages, and the OpenCraft sync and documentation checks passed.
 
 ## risks
 - The browser reported a completed download, but the saved file was not inspected on disk. International Chat was not browser-tested.
+- Mobile Safari/Chrome have not been tested on real devices; the local browser tool blocks the preview URL, so touch behavior currently has component-test evidence only.
 
 ## validation
 - Focused tests, typecheck, i18n check, build, documentation validation and staged change-impact check.
@@ -76,4 +80,4 @@ Allow users to download files generated in LightVela Chat from a file link's rig
 - Bounded `rg` output was inspected directly.
 
 ## handoff
-- The isolated worktree is based on `master` revision `4620dff30`. Source, tests, and local preview are ready for MR submission; merge and deployment remain outside this task.
+- The mobile follow-up extends MR !5041 from the isolated worktree. Merge and deployment remain outside this task.

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
-import { Download } from "lucide-react";
+import { Download, Eye } from "lucide-react";
 
 import { useRepositories } from "@/contexts/repository-context";
 import { useT } from "@/i18n/t";
@@ -16,7 +16,8 @@ export function ChatFileDownloadMenu({ botId, active, mountRef }: ChatFileDownlo
   const repositories = useRepositories();
   const downloaderRef = useRef<ChatFileDownloader | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
-  const [menu, setMenu] = useState<{ path: string; x: number; y: number } | null>(null);
+  const [menu, setMenu] = useState<{ path: string; x: number; y: number; openAnchor?: HTMLAnchorElement } | null>(null);
+  const touchHitRef = useRef<{ path: string; x: number; y: number; time: number } | null>(null);
   const [hover, setHover] = useState<ChatFileHit | null>(null);
   const [status, setStatus] = useState<string | null>(null);
 
@@ -39,6 +40,7 @@ export function ChatFileDownloadMenu({ botId, active, mountRef }: ChatFileDownlo
       if (!hit) return;
       event.preventDefault();
       event.stopPropagation();
+      touchHitRef.current = null;
       setMenu({
         path: hit.path,
         x: Math.max(8, Math.min(event.clientX, window.innerWidth - 160)),
@@ -47,7 +49,37 @@ export function ChatFileDownloadMenu({ botId, active, mountRef }: ChatFileDownlo
       setHover(null);
       setStatus(null);
     };
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.pointerType !== "touch") return;
+      const hit = chatFileHitFromEvent(event);
+      touchHitRef.current = hit ? { path: hit.path, x: event.clientX, y: event.clientY, time: Date.now() } : null;
+    };
+    const onTouchClick = (event: MouseEvent) => {
+      const pending = touchHitRef.current;
+      touchHitRef.current = null;
+      if (!pending || Date.now() - pending.time > 1_000) return;
+      const hit = chatFileHitFromEvent(event);
+      if (hit?.path !== pending.path) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const anchor = event.composedPath().find((node): node is HTMLAnchorElement =>
+        node instanceof HTMLAnchorElement && ["file", "workspace-file"].includes(node.dataset.chatResourceKind ?? ""),
+      );
+      setMenu({
+        path: hit.path,
+        x: Math.max(8, Math.min(pending.x, window.innerWidth - 160)),
+        y: Math.max(8, Math.min(pending.y, window.innerHeight - 88)),
+        openAnchor: anchor,
+      });
+      setHover(null);
+      setStatus(null);
+    };
     const onPointerMove = (event: PointerEvent) => {
+      if (event.pointerType === "touch") {
+        const pending = touchHitRef.current;
+        if (pending && Math.hypot(event.clientX - pending.x, event.clientY - pending.y) > 10) touchHitRef.current = null;
+        return;
+      }
       const hit = chatFileHitFromEvent(event);
       setHover((previous) => {
         if (!hit?.rects.length) return null;
@@ -60,13 +92,20 @@ export function ChatFileDownloadMenu({ botId, active, mountRef }: ChatFileDownlo
       });
     };
     const clearHover = () => setHover(null);
+    const onPointerCancel = () => { touchHitRef.current = null; clearHover(); };
     mount.addEventListener("contextmenu", onContextMenu);
+    mount.addEventListener("pointerdown", onPointerDown);
     mount.addEventListener("pointermove", onPointerMove);
+    mount.addEventListener("pointercancel", onPointerCancel);
+    mount.addEventListener("click", onTouchClick, true);
     mount.addEventListener("pointerleave", clearHover);
     window.addEventListener("scroll", clearHover, true);
     return () => {
       mount.removeEventListener("contextmenu", onContextMenu);
+      mount.removeEventListener("pointerdown", onPointerDown);
       mount.removeEventListener("pointermove", onPointerMove);
+      mount.removeEventListener("pointercancel", onPointerCancel);
+      mount.removeEventListener("click", onTouchClick, true);
       mount.removeEventListener("pointerleave", clearHover);
       window.removeEventListener("scroll", clearHover, true);
     };
@@ -93,6 +132,7 @@ export function ChatFileDownloadMenu({ botId, active, mountRef }: ChatFileDownlo
       setMenu(null);
       setHover(null);
       setStatus(null);
+      touchHitRef.current = null;
     }
   }, [active]);
 
@@ -126,10 +166,22 @@ export function ChatFileDownloadMenu({ botId, active, mountRef }: ChatFileDownlo
       <div
         ref={menuRef}
         role="menu"
-        aria-label={t("下载")}
+        aria-label={menu.openAnchor ? `${t("查看")} / ${t("下载")}` : t("下载")}
         className="fixed z-[100] min-w-36 rounded-lg border border-black/10 bg-white p-1 shadow-lg"
         style={{ left: menu.x, top: menu.y }}
       >
+        {menu.openAnchor ? <button
+          type="button"
+          role="menuitem"
+          className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-black/80 hover:bg-black/5 focus:bg-black/5 focus:outline-none"
+          onClick={() => {
+            const anchor = menu.openAnchor;
+            setMenu(null);
+            anchor?.click();
+          }}
+        >
+          <Eye className="size-4" aria-hidden="true" />{t("查看")}
+        </button> : null}
         <button
           type="button"
           role="menuitem"

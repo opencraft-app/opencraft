@@ -67,6 +67,84 @@ describe("Chat file download", () => {
     expect(container.querySelector('[role="menu"]')).toBeNull();
   });
 
+  it("opens file actions on a touch tap while keeping file preview available", () => {
+    const mountRef = createRef<HTMLDivElement>();
+    render(<>
+      <div ref={mountRef} />
+      <ChatFileDownloadMenu botId="bot-1" active mountRef={mountRef} />
+    </>);
+    const host = document.createElement("div");
+    const shadow = host.attachShadow({ mode: "open" });
+    const anchor = document.createElement("a");
+    anchor.dataset.chatResourceKind = "file";
+    anchor.href = "file:///home/agentuser/output/report.csv";
+    anchor.textContent = "report.csv";
+    const open = vi.fn((event: MouseEvent) => event.preventDefault());
+    anchor.addEventListener("click", open);
+    shadow.append(anchor);
+    mountRef.current!.append(host);
+
+    fireEvent.click(anchor);
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("menuitem", { name: "下载" })).not.toBeInTheDocument();
+
+    fireEvent.pointerDown(anchor, { pointerType: "touch", clientX: 30, clientY: 20 });
+    fireEvent.click(anchor, { clientX: 30, clientY: 20 });
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("menuitem", { name: "查看" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("menuitem", { name: "查看" }));
+    expect(open).toHaveBeenCalledTimes(2);
+
+    fireEvent.pointerDown(anchor, { pointerType: "touch", clientX: 30, clientY: 20 });
+    fireEvent.click(anchor, { clientX: 30, clientY: 20 });
+    fireEvent.click(screen.getByRole("menuitem", { name: "下载" }));
+    expect(download).toHaveBeenCalledWith("/home/agentuser/output/report.csv");
+
+    const webLink = document.createElement("a");
+    webLink.dataset.chatResourceKind = "external";
+    webLink.href = "https://example.com/report.csv";
+    const openWebLink = vi.fn((event: MouseEvent) => event.preventDefault());
+    webLink.addEventListener("click", openWebLink);
+    shadow.append(webLink);
+    fireEvent.pointerDown(webLink, { pointerType: "touch", clientX: 30, clientY: 20 });
+    fireEvent.click(webLink, { clientX: 30, clientY: 20 });
+    expect(openWebLink).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("menuitem", { name: "下载" })).not.toBeInTheDocument();
+  });
+
+  it("offers Download when tapping a plain path but ignores a cancelled touch", () => {
+    const mountRef = createRef<HTMLDivElement>();
+    render(<>
+      <div ref={mountRef} />
+      <ChatFileDownloadMenu botId="bot-1" active mountRef={mountRef} />
+    </>);
+    const host = document.createElement("div");
+    const shadow = host.attachShadow({ mode: "open" });
+    const message = document.createElement("div");
+    message.className = "opencraft-chat-document";
+    const path = document.createElement("strong");
+    path.textContent = "/home/agentuser/output/report.csv";
+    message.append(path);
+    shadow.append(message);
+    mountRef.current!.append(host);
+    Object.defineProperty(Range.prototype, "getClientRects", {
+      configurable: true,
+      value: () => [{ left: 10, right: 260, top: 10, bottom: 35 }] as unknown as DOMRectList,
+    });
+
+    fireEvent.pointerDown(path, { pointerType: "touch", clientX: 30, clientY: 20 });
+    fireEvent.pointerCancel(path);
+    fireEvent.click(path, { clientX: 30, clientY: 20 });
+    expect(screen.queryByRole("menuitem", { name: "下载" })).not.toBeInTheDocument();
+
+    fireEvent.pointerDown(path, { pointerType: "touch", clientX: 30, clientY: 20 });
+    fireEvent.click(path, { clientX: 30, clientY: 20 });
+    expect(screen.queryByRole("menuitem", { name: "查看" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("menuitem", { name: "下载" }));
+    expect(download).toHaveBeenCalledWith("/home/agentuser/output/report.csv");
+    Reflect.deleteProperty(Range.prototype, "getClientRects");
+  });
+
   it("recognizes a plain generated path in assistant text only under the pointer", () => {
     const mountRef = createRef<HTMLDivElement>();
     const { container } = render(<>
