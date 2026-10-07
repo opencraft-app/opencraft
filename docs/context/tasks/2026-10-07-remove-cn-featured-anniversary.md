@@ -1,9 +1,26 @@
+---
+id: remove-cn-featured-anniversary-2026-10-07
+type: task
+scope: 国内站技能精选调整与 SkillHub 技能接入。
+triggers: ["domestic skills featured", "SkillHub curation", "featured skill order"]
+owner: pablozhong
+authority: primary
+source_of_truth:
+  - docs/context/tasks/2026-10-07-remove-cn-featured-anniversary.md
+status: active
+reviewed_at: 2026-10-07
+review_due: 2026-11-07
+revision: 1.0.0
+precedence: task
+derived: false
+---
+
 ## goal
 将国内站技能页精选列表中的周年活动卡替换为「编程专家.Skill」，追加「育儿大师.Skill」，并把「腾讯文档 TENCENT DOCS」放在第 5 位。
 
 ## non_goals
 - 不改国际站精选、国内站分类的展示内容与顺序、SkillHub 搜索或已安装技能数据源。
-- 不提交、发布或修改线上服务。
+- 不合并、发布或修改线上服务。
 
 ## requirement_ids / requirement_refs / requirement_excerpt
 - 用户 2026-10-07 截图圈选国内站 `lightvela.com/agents/skills/` 第一张精选卡片，要求去掉。
@@ -79,4 +96,4 @@
 - 精确查询命中卡片配置、定制文案、特殊遮罩、详情模板和测试。
 
 ## handoff
-- 腾讯文档第 5 位、育儿大师末位与门禁完成；未提交、未发布。
+- 技能页源码已提交至 MR !5059；CI 发现 OpenCraft 生成副本漂移，正在作为后续独立提交同步。未合并、未发布。

@@ -1,9 +1,26 @@
+---
+id: agent-sidebar-overview-spacing-2026-10-07
+type: task
+scope: 国内站 Agent 左导航总览间距与字号调整。
+triggers: ["Agent sidebar", "overview spacing", "left navigation typography"]
+owner: pablozhong
+authority: primary
+source_of_truth:
+  - docs/context/tasks/2026-10-07-agent-sidebar-overview-spacing.md
+status: active
+reviewed_at: 2026-10-07
+review_due: 2026-11-07
+revision: 1.0.0
+precedence: task
+derived: false
+---
+
 ## goal
 收紧国内站 Agent 左导航顶部「总览」入口的上下留白，使其两侧留白等高，并与下方「通道」「技能」使用相同字号。
 
 ## non_goals
 - 不改导航顺序、交互、移动端间距或登录逻辑。
-- 不提交、发布或修改线上服务。
+- 不合并、发布或修改线上服务。
 
 ## requirement_ids / requirement_refs / requirement_excerpt
 - 用户 2026-10-07 截图标注侧栏「总览」上下两处留白，要求稍微缩小并等高；「总览」字号与下方导航一致。
@@ -57,4 +74,4 @@
 - 命中 `fleetOverviewEnabled` 总览入口、桌面侧栏间距规则和相邻导航间距测试。
 
 ## handoff
-- 本地改动与代码门禁完成，5175 端口预览持续运行；未提交、未发布。
+- 源码已提交至 MR !5059，5175 端口预览持续运行；未合并、未发布。

@@ -1,3 +1,20 @@
+---
+id: agent-sidebar-overview-spacing-checkpoint-2026-10-07
+type: task
+scope: 国内站 Agent 左导航任务的历史恢复点。
+triggers: ["Agent sidebar checkpoint", "overview spacing recovery", "navigation handoff"]
+owner: pablozhong
+authority: primary
+source_of_truth:
+  - docs/context/tasks/2026-10-07-agent-sidebar-overview-spacing.checkpoint.md
+status: stale
+reviewed_at: 2026-10-07
+review_due: 2026-11-07
+revision: 1.0.0
+precedence: task
+derived: false
+---
+
 ## stage
 桌面侧栏总览间距与字号已调整，本地预览持续运行，待用户登录后目视查看。
 

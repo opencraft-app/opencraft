@@ -1,3 +1,20 @@
+---
+id: remove-cn-featured-anniversary-checkpoint-2026-10-07
+type: task
+scope: 国内站技能精选任务的历史恢复点。
+triggers: ["domestic skills featured checkpoint", "SkillHub curation recovery", "skills page handoff"]
+owner: pablozhong
+authority: primary
+source_of_truth:
+  - docs/context/tasks/2026-10-07-remove-cn-featured-anniversary.checkpoint.md
+status: stale
+reviewed_at: 2026-10-07
+review_due: 2026-11-07
+revision: 1.0.0
+precedence: task
+derived: false
+---
+
 ## stage
 国内站精选卡片替换、追加育儿大师并把腾讯文档插入第 5 位完成，待用户审阅本地差异。
 
