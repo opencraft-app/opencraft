@@ -19,6 +19,7 @@ vi.mock("@next-site/legal-pages", () => ({
 }));
 vi.mock("@next-site/subscribe-page-client", () => ({ SubscribePageClient: () => null }));
 vi.mock("@next-site/support-page-client", () => ({ SupportPageClient: () => null }));
+vi.mock("@next-site/international-home-page", () => ({ InternationalHomePage: () => null }));
 
 async function importSeoWithRegion(region: "cn" | "global") {
   vi.resetModules();
@@ -78,6 +79,17 @@ describe("next-site SEO origin", () => {
     const { siteUrl } = await importSeoWithRegion("cn");
 
     expect(siteUrl()).toBe("https://lightvela.com");
+  });
+
+  it("keeps domestic homepage metadata aligned with the client SEO title", async () => {
+    await importSeoWithRegion("cn");
+    const { getSeoMeta } = await import("@/lib/seo-data");
+    const { metadata } = await import("@/app/(site)/page.next");
+    const title = getSeoMeta("/", "cn").title;
+
+    expect(metadata.title).toEqual({ absolute: title });
+    expect(metadata.openGraph?.title).toBe(title);
+    expect(metadata.twitter?.title).toBe(title);
   });
 
   it("omits international social sameAs links from cn structured data", async () => {

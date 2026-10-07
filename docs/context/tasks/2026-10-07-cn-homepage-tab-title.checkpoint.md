@@ -8,6 +8,7 @@
 - 国际站构建产物：首页及 `/agents` 均保持英文原标题。
 - SEO/页面标题测试 62/62 通过，`pnpm check` 与双站构建通过。
 - OpenCraft 同步、文档和 change-impact 检查通过。
+- MR !5052 CR 后新增 Next metadata 与客户端 SEO 标题同值测试，1/1 通过。
 
 ## unverified
 - 真实站点需要发布后才能验证；本轮没有发布授权。

@@ -178,7 +178,7 @@ const HeaderUserAvatarMenu = ({
           onMouseEnter={() => setOpen(true)}
           className="flex items-center gap-2 rounded-full transition-all duration-200 hover:opacity-90"
         >
-          <a href={AGENTS_HOME_PATH} onClick={() => setOpen(false)} className="inline-flex shrink-0">
+          <a href={shouldShowMyAgents ? AGENTS_HOME_PATH : "/account"} onClick={() => setOpen(false)} className="inline-flex shrink-0">
             <img
               src={avatarSrc}
               alt="avatar"

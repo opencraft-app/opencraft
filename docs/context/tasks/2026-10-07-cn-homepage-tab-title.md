@@ -23,6 +23,7 @@
 - `frontend/src/app/(site)/page.next.tsx`
 - `frontend/src/lib/seo-data.ts`
 - `frontend/src/lib/__tests__/seo.test.ts`
+- `frontend/next-site/seo.test.ts`
 - `docs/engineering/domains/site-environment-routing.md`
 
 ## required_context
@@ -43,6 +44,7 @@
 - `pnpm build:cn`、`pnpm build:global` 通过。国内站生成的首页 `<title>`、`og:title`、`twitter:title` 均为“我的智能体伙伴 | LightVela”，`/agents` 标题相同；国际站首页与 `/agents` 均保持“My AI Companion | LightVela”。
 - OpenCraft 同步只读检查与 `validate_documentation.py` 通过。
 - `validate_change_impact.py --staged` 与 `git diff --check` 通过。
+- MR !5052 CR 后增加首页 Next metadata 与客户端 SEO 标题的同值断言，聚焦测试 1/1 通过。
 
 ## risks
 - 首页 metadata 和客户端 SEO 数据若分离，会在页面切换后显示不一致；两处同步调整。

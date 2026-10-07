@@ -32,7 +32,7 @@ export type JourneyState = {
 /** 已登录用户的订阅态（登录成功分流只取决于它）。 */
 export type SubscriptionState = Pick<JourneyState, "isSubscribed" | "hasBots">;
 
-/** 公共页“我的智能体”入口：套餐已证明资格时无需等待 Bot 列表。 */
+/** 公共页“我的智能体伙伴”入口：套餐已证明资格时无需等待 Bot 列表。/agents 的页面准入仍由 NextAgentEntitlementGate 独立处理。 */
 export const canShowMyAgentsEntry = ({
   hasResolvedPasses,
   passesLoading,

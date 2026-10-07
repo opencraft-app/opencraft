@@ -30,7 +30,7 @@ vi.mock("@/contexts/session-context", () => ({
 }));
 
 vi.mock("@/contexts/agent-context", () => ({
-  useOpenClaw: () => ({ activePass: null }),
+  useOpenClaw: () => ({ activePass: null, hasResolvedPasses: true, isSubscribed: true }),
 }));
 
 vi.mock("@/i18n/t", () => ({

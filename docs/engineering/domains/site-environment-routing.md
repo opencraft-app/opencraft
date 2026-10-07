@@ -66,7 +66,7 @@ OpenCraft iOS 的内置 Bot DOM runtime 同时包含国内与国际的 frontend 
 - 国际站首页页脚 Community 优先展示 `X / Twitter`，其后依次为 `Discord`、`WhatsApp`、`YouTube`；所有开放 locale 共用该顺序。
 - 国内站与国际站共享产品名时仍属于两套展示产物，验证时应分别启动对应区域构建或预览，不能用单站截图替代双站边界确认。
 - 国内站与国际站首页在登录态均显示直达 `/agents` 的本地化产品入口；国际站新版首页由 `InternationalHomeRuntime` 显式开启该入口，同时保留未登录态仅展示语言切换与登录动作的 `loginOnly` 规则。
-- 首页顶部产品入口与头像菜单“我的智能体伙伴”共用资格判断：会话和套餐状态确认后，已有有效或历史套餐的用户无需等待 Bot 列表即可看到入口；仅靠现存 Bot 证明资格的用户需等待列表成功返回。权益未确认或失败、没有任何资格的账号继续隐藏入口。入口仍由 `/agents` 自身门禁保护。
+- 首页顶部产品入口与头像菜单“我的智能体伙伴”共用资格判断：会话和套餐状态确认后，已有有效或历史套餐的用户无需等待 Bot 列表即可看到入口；仅靠现存 Bot 证明资格的用户需等待列表成功返回。权益未确认或失败、没有任何资格的账号继续隐藏入口。已确认有套餐资格而 Bot 列表失败时仍显示入口，由 `/agents` 展示错误和重试操作；入口仍由该页面自身门禁保护。
 - 国内站 V2 首页不使用国际站的 `loginOnly` 规则：未登录 Header 与 Hero 展示“免费试用”并进入 `/subscribe`，登录态 Header 与 Hero 展示“开始使用”并进入 `/agents`；静态 Hero 默认输出未登录态，认证恢复后再同步登录态入口。
 - 国内站与国际站 `/subscribe` 的未登录 Header 统一启用 `loginOnly`：隐藏创建入口，仅保留登录主动作（国际站同时保留语言切换）；套餐卡“立即订阅”继续承担转化并触发登录。
 - 根首页的初始 HTML、Flight、Next 脚本数量与 raw/gzip 体积由 `pnpm check:homepage-performance` 对真实 `out/index.html` 执行预算检查，同时拒绝旧 `PublicHomePage` / `LandingPageView` chunk 回流；国内与国际构建仍须分别验证，预算通过不能替代浏览器回归或线上 Web Vitals。
@@ -139,7 +139,7 @@ OpenCraft iOS 的内置 Bot DOM runtime 同时包含国内与国际的 frontend 
 
 ## 公共账号菜单边界
 
-- 登录态公开页 Header 的头像图片链接到 `/agents`，旁边的箭头继续展开头像菜单。菜单提供“账号”（`/account`）与“套餐与费用”（`/account/billing`），并在底部保留退出登录。Agent 控制台沿用左侧导航底部的账号触发器与向上展开菜单；当前有效 Pass 的 `bundle_type` 严格等于 `ai` 时，该侧栏菜单额外展示“模型”（`/agents/models`），同时从 Agent 的 Use 分组移除重复入口。其他类型以及字段缺失或未知时，模型入口保留在 Use 分组。公共页 Header 保留“我的智能体伙伴”入口，且不展示该套餐专属“模型”入口。
+- 登录态公开页 Header 的头像图片在已有套餐或 Bot 资格确认后链接到 `/agents`，资格未确认或不存在时链接到 `/account`，旁边的箭头继续展开头像菜单。菜单提供“账号”（`/account`）与“套餐与费用”（`/account/billing`），并在底部保留退出登录。Agent 控制台沿用左侧导航底部的账号触发器与向上展开菜单；当前有效 Pass 的 `bundle_type` 严格等于 `ai` 时，该侧栏菜单额外展示“模型”（`/agents/models`），同时从 Agent 的 Use 分组移除重复入口。其他类型以及字段缺失或未知时，模型入口保留在 Use 分组。公共页 Header 保留“我的智能体伙伴”入口，且不展示该套餐专属“模型”入口。
 - Agent 侧栏账号菜单在 AI 套餐下按“模型”→“套餐与费用”→“账号”→“语言”（仅国际站）排列；其他套餐下按“套餐与费用”→“账号”→“语言”（仅国际站）排列。公共页 Header 账号菜单保持“账号”先于“套餐与费用”。
 - 国际站英文分别使用 `Account`、`Plans & billing` 与 `My AI Companion`。两个账号私域页面均要求登录、保持 noindex/nofollow；账号页承载资料与身份管理，套餐与费用页承载订阅和国际站支付方式，购买入口仍为 `/subscribe`。
 - 订阅失败后的套餐管理/续费引导进入 `/account/billing`；创建前的实名认证引导与邮箱绑定回调仍进入 `/account`，仅账号视图消费对应 query。国内续费的实名子流程由 `RenewPassModal` 自己承载，不依赖账号页资料卡的认证入口。

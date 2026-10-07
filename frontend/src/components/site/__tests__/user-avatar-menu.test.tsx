@@ -162,7 +162,7 @@ describe("UserAvatarMenu", () => {
 
     render(<UserAvatarMenu />);
 
-    expect(screen.getByRole("link", { name: "avatar" })).toHaveAttribute("href", "/agents");
+    expect(screen.getByRole("link", { name: "avatar" })).toHaveAttribute("href", "/account");
     expect(screen.getByRole("button", { name: "打开用户菜单" })).toBeInTheDocument();
   });
 
@@ -248,7 +248,42 @@ describe("UserAvatarMenu", () => {
 
     render(<UserAvatarMenu />);
     fireEvent.mouseEnter(screen.getByRole("link", { name: "avatar" }).parentElement!);
+    expect(screen.getByRole("link", { name: "avatar" })).toHaveAttribute("href", "/account");
     expect(screen.queryByRole("link", { name: "我的智能体伙伴" })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["no pass or Bot", { activePass: null, latestPass: null, bots: [], isSubscribed: false }],
+    ["Bot-only while loading", { activePass: null, latestPass: null, bots: [{ id: "bot-1" }], botsLoading: true, isSubscribed: false }],
+  ])("keeps the avatar on Account for %s", (_state, entitlement) => {
+    useSession.mockReturnValue({
+      session: { user: { id: "new-user", name: "User" }, currentSubscription: null },
+      signOut: vi.fn(),
+    });
+    useOpenClaw.mockReturnValue(entitlement);
+
+    render(<UserAvatarMenu />);
+    fireEvent.mouseEnter(screen.getByRole("link", { name: "avatar" }).parentElement!);
+
+    expect(screen.getByRole("link", { name: "avatar" })).toHaveAttribute("href", "/account");
+    expect(screen.queryByRole("link", { name: "我的智能体伙伴" })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["a confirmed Bot", { activePass: null, latestPass: null, bots: [{ id: "bot-1" }], isSubscribed: false }],
+    ["a historical pass during a Bot error", { activePass: null, latestPass: { pass_id: "old-pass" }, bots: [], botsError: true, isSubscribed: false }],
+  ])("routes the avatar to Agents for %s", (_state, entitlement) => {
+    useSession.mockReturnValue({
+      session: { user: { id: "existing-user", name: "User" }, currentSubscription: null },
+      signOut: vi.fn(),
+    });
+    useOpenClaw.mockReturnValue(entitlement);
+
+    render(<UserAvatarMenu />);
+    fireEvent.mouseEnter(screen.getByRole("link", { name: "avatar" }).parentElement!);
+
+    expect(screen.getByRole("link", { name: "avatar" })).toHaveAttribute("href", "/agents");
+    expect(screen.getByRole("link", { name: "我的智能体伙伴" })).toHaveAttribute("href", "/agents");
   });
 
   it("shows My AI Companion for a confirmed subscriber while Bots load", () => {
@@ -262,6 +297,7 @@ describe("UserAvatarMenu", () => {
 
     render(<UserAvatarMenu />);
     fireEvent.mouseEnter(screen.getByRole("link", { name: "avatar" }).parentElement!);
+    expect(screen.getByRole("link", { name: "avatar" })).toHaveAttribute("href", "/agents");
     expect(screen.getByRole("link", { name: "我的智能体伙伴" })).toHaveAttribute("href", "/agents");
   });
 

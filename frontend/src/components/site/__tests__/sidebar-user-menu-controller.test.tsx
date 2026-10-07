@@ -17,7 +17,7 @@ const plans = { listMyPasses: mocks.listMyPasses, listModifyBundles: mocks.listM
 vi.mock("@/contexts/repository-context", () => ({ useRepositories: () => { mocks.repositories(); return { plans }; } }));
 vi.mock("@/contexts/runtime-config-context", () => ({ usePaidBillingEnabled: () => { mocks.paidBilling(); return paidBilling; } }));
 vi.mock("@/contexts/session-context", () => ({ useSession: () => ({ session: { user: userId ? { id: userId, name: `Owner ${userId}`, email: `${userId}@example.com` } : null, currentSubscription }, signOut: mocks.signOut }) }));
-vi.mock("@/contexts/agent-context", () => ({ useOpenClaw: () => ({ activePass: currentPass, modifyingPass, passUpgradeFailed: false, passesLoading: false, passesError: false, user: { plan: { name: "STALE PLAN SHOULD NOT LEAK" } } }) }));
+vi.mock("@/contexts/agent-context", () => ({ useOpenClaw: () => ({ activePass: currentPass, modifyingPass, passUpgradeFailed: false, hasResolvedPasses: true, isSubscribed: Boolean(currentPass), passesLoading: false, passesError: false, user: { plan: { name: "STALE PLAN SHOULD NOT LEAK" } } }) }));
 vi.mock("@/lib/app-navigation", () => ({
   useAppNavigate: () => mocks.navigate,
   useAppSearchParams: () => [new URLSearchParams()],
@@ -82,9 +82,9 @@ describe("sidebar account controller boundary", () => {
     expect(within(screen.getByRole("dialog", { name: "账号管理" })).queryByRole("link", { name: /模型|诊断中心|高级设置/ })).not.toBeInTheDocument();
   });
 
-  it("does not mount billing or upgrade hooks for the unchanged header", () => {
+  it("does not mount billing or upgrade hooks for the eligible header", () => {
     render(<UserAvatarMenu />);
-    expect(screen.getByRole("link", { name: "avatar" })).toHaveAttribute("href", "/account");
+    expect(screen.getByRole("link", { name: "avatar" })).toHaveAttribute("href", "/agents");
     expect(mocks.repositories).not.toHaveBeenCalled();
     expect(mocks.paidBilling).not.toHaveBeenCalled();
     expect(mocks.listMyPasses).not.toHaveBeenCalled();
