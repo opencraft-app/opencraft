@@ -32,6 +32,11 @@ OpenCraft 的可选 `tencentoa.identity` 插件按每个 HTTP 请求核验太湖
 
 OpenCraft Headless 的云听写复用安装级模型配置与凭据仓库，Model Services 管连接/密钥，语音设置只选择独立转写模型。转写模型及其密钥不进入聊天目录或 DSH 执行投影，也不跟随当前 SSH/Thread/Bot。录音开始固定配置票据，停止和重试保持同一绑定，配置变化在计费前拒绝旧录音。旧语音环境配置仅显式导入，不作为运行时第二真源；源码实现、实际迁移和预览替换分别验证。详见 [模型所有权](../../../opencraft/design/model-configuration.md#语音模型与应用服务)。
 
+听写启动阶段包含麦克风获取与平台就绪，不等于正在弹出系统授权。
+Composer 在原 Footer 槽位使用共享进度图标和中性读屏提示，只有平台确认录音
+就绪后才显示波形并计时；启动中取消仍使迟到结果失效。该反馈不增加等待时间，
+不预热或常驻麦克风。详见 [Client voice input ownership](../../../opencraft/docs/platform-architecture.md#client-voice-input-ownership)。
+
 OpenCraft 本机只读桌面由部署入口显式选择信任边界：默认 `--local-desktop`
 仍仅回环可用；`--trusted-internal-desktop` 只适用于网络准入已可信的安装，
 信任所有能访问该页面的用户查看同一台机器。Host 声明不同传输范围，Web 只消费

@@ -125,7 +125,7 @@
     "smoke:thread-lifecycle": "tsx scripts/smoke-thread-lifecycle.ts",
     "smoke:thread-management": "tsx scripts/smoke-thread-management.ts",
     "smoke:model-capabilities": "tsx scripts/smoke-model-capabilities.ts",
-    "test:native-speech": "tsx --test tests/native-speech.test.ts tests/dictation-ledger.test.ts tests/composer-core.test.ts",
+    "test:native-speech": "tsx --test tests/native-speech.test.ts tests/dictation-ledger.test.ts tests/dictation-startup-feedback.test.tsx tests/composer-core.test.ts",
     "test:hunyuan-speech": "tsx --test tests/hunyuan-speech.test.ts tests/speech-model-configuration.test.ts",
     "migrate:speech-models": "tsx scripts/migrate-speech-models.ts",
     "smoke:hunyuan-dictation": "tsx scripts/smoke-hunyuan-dictation.ts",
