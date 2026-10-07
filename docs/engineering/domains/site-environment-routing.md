@@ -35,6 +35,8 @@ Pass 升配微信桥通过精确的 `POST /v1/passes/{pass_id}/modify/order-url`
 | 部署期望 | `argocd/apps/<env>/`、`argocd/services/*/<env>/` |
 | 真实运行 | Argo、集群、域名与浏览器 E2E 的现场证据 |
 
+国内站与国际站共用的前端组件视觉规范由 [Frontend Design Notes](../../../frontend/DESIGN.md) 维护；同类组件在两站使用一致的圆角规则，区域差异需有明确的设计依据。
+
 国内站与国际站复用定时任务卡片操作界面：横向省略号在桌面悬停、点击、移动端点按或键盘激活后显示纵向的图标与本地化操作名称列表；两站沿用相同任务状态门控，文案由各自 locale 提供。
 
 OpenCraft iOS 的内置 Bot DOM runtime 同时包含国内与国际的 frontend 组件，但区域不是从生成物的构建环境推断。原生登录会话选择 `cn` 或 `intl` 后，在 DOM 脚本运行前显式设置 frontend 的 region、对应的 `api.lightvela.com` 或 `api.lightvela.ai` API base、站点 base 和 locale；Bot 仓储请求沿用 frontend 的现有实现，不跨区回退。站点账号与订阅网页只在匹配会话区域的第一方 WebView 打开。真机需分别核对两区的 DOM origin 和 API 请求；本地 HTML 打包成功不能证明跨域请求已通过。
