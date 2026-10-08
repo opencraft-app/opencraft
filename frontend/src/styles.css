@@ -1061,6 +1061,7 @@ a {
   background: transparent;
   color: #596171;
   cursor: pointer;
+  text-decoration: none;
 }
 
 .lv-agent-bot-rail-button:hover {

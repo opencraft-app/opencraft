@@ -16,7 +16,7 @@ derived: false
 ---
 
 ## stage
-跟进修复已实现；聚焦测试、前端与双站构建已通过，MR 交付仍在进行。
+!5099 已创建；首开无痕 Bot 头像切换修复已实现并通过聚焦测试、类型检查与双站构建，待追加提交和远端核验。
 
 ## verified
 - !5097 已合入 `master`，merge commit `3fa43b017`；独立干净 worktree 已基于当前 `origin/master` 建分支。
@@ -26,10 +26,11 @@ derived: false
 - 无 Bot 跳转新增双站用例先红后绿；恢复临期续费到桌面账户入口，并在竖栏管理菜单恢复重启错误提示。
 - 旧导航测试已迁移到 Bot 管理菜单；删除中不可重复提交、失败可重试断言仍在。最终聚焦合集 6 个文件 96 条通过。
 - `pnpm check` 通过（0 新增 TypeScript 诊断）；文档校验、staged change-impact 和 OpenCraft 同步检查通过；国内和国际站最终构建均通过。
+- 用户报告 Chrome 无痕首次打开无法切换 Bot，刷新后正常；正常 Chrome 可切换。未选中头像现为原生链接，避免依赖首屏客户端路由；有效 `?bot=` 驱动选中态，修复旧 URL 回写竞态。最终聚焦 5 文件 101 条通过，双站构建和 `pnpm check` 通过。
 - Context catalog 全量检查被历史 Task Pack 元信息缺项阻塞；本次新文件被提示的字段已补齐，需复核新文件不再产生缺项。
 
 ## unverified
-- 远端 MR 与 CI 快照；未做生产站验收。
+- 本次追加提交后的远端 MR 与 CI 快照；修复尚未做生产站验收。
 
 ## discard
 - 不把用户提供的复审结论当作无需验证的源码事实。
@@ -38,7 +39,7 @@ derived: false
 - Task Pack：`docs/context/tasks/2026-10-08-agents-post-merge-regressions.md`；失败日志：`/tmp/agents-post-merge-red-tests.log`；最新门禁日志：`/tmp/agents-post-merge-*`。
 
 ## next_action
-- 完成最终门禁，核对 staged diff 与 change-impact，提交分支并创建新 MR；核验远端 SHA 和即时 CI 状态。
+- 核对 staged diff 与 change-impact，追加提交并推送现有 !5099；核验远端 SHA 和即时 MR 状态。
 
 ## requirement_ids / requirement_refs / requirement_excerpt
 - requirement_ids: !5097 post-merge follow-up；requirement_refs: `wiki/prd-docs/2026-10-08-agents-bot-rail.md`；requirement_excerpt: 无 Bot 停留入口、临期续费保留账户入口。
