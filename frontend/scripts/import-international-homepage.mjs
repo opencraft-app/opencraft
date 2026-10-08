@@ -47,6 +47,16 @@ const preservedHarnessAssetNames = [
   "figma-feature-chat-orbit.webp",
   "hermes-door.webp",
   "hermes-door-background.webp",
+  "hermes-door-white.webp",
+  "footer-group-portrait.webp",
+  ...["bean-lilac", "round-coral", "square-mint", "drop-sky", "cloud-butter", "round-peach", "bean-periwinkle"].map(name => `peek-friends/${name}.webp`),
+  "hero-poses/manifest.json",
+  ...["bean-lilac", "round-coral", "square-mint", "drop-sky", "cloud-butter", "round-peach", "bean-periwinkle"].flatMap(name => [
+    ...[0, 1, 2].map(frame => `hero-poses/${name}-${frame}.webp`),
+    ...[0, 1].map(frame => `hero-poses/${name}-wave-${frame}.webp`),
+  ]),
+  "footer-parade/manifest.json",
+  ...["bean-lilac", "round-coral", "square-mint", "drop-sky", "cloud-butter", "round-peach", "bean-periwinkle"].flatMap(name => Array.from({ length: 12 }, (_, frame) => `footer-parade/${name}-v3-${frame}.webp`)),
   "hermes-door-character.webp",
   "wcard-cloud-runtime-v2.webp",
   "wcard-skills-atlas-v1.webp",
@@ -138,6 +148,17 @@ const trialTitleCopyByLocale = {
   "en-US": "Try it free, activate in 10 seconds",
   "zh-SG": "免费体验，10秒极速开通",
   "zh-Hant": "免費體驗，10秒極速開通",
+};
+// The user voice section has no heading in the approved source pages.
+const voiceTitleCopyByLocale = {
+  "en-US": "See what they're saying",
+  "zh-CN": "看看他们怎么说？",
+  "zh-SG": "看看他们怎么说？",
+  "zh-Hant": "看看他們怎麼說？",
+  "id-ID": "Lihat kata mereka",
+  es: "Mira lo que dicen",
+  "ja-JP": "みんなの声を聞いてみよう",
+  "ko-KR": "그들의 이야기를 들어보세요",
 };
 const soulStripSecondaryCopyByLocale = {
   "en-US": {
@@ -4220,6 +4241,16 @@ function prepareDocumentForLocale(document, locale) {
   if (trialTitle && trialTitleCopyByLocale[locale]) {
     trialTitle.textContent = trialTitleCopyByLocale[locale];
   }
+  const voice = document.querySelector("#voice");
+  if (voice && !voice.querySelector(".voice__head")) {
+    const head = document.createElement("header");
+    head.className = "voice__head sr";
+    const title = document.createElement("h2");
+    title.className = "voice__title";
+    title.textContent = voiceTitleCopyByLocale[locale] ?? voiceTitleCopyByLocale["en-US"];
+    head.append(title);
+    voice.prepend(head);
+  }
   const root = document.querySelector("#lightvela-intl-home");
   const rotator = document.querySelector("#hero-rotator");
   const words = rotatorWordsByLocale[locale] ?? rotatorWordsByLocale["en-US"];
@@ -4531,7 +4562,8 @@ for (const locale of supportedLocales) {
 
   const companionDecorations = [
     [".hero__rotator-line", "afterend", "home-cover-mascot", "lv-cover-lavender.webp", 528, 410],
-    [".cta", "afterbegin", "home-cta-mascot", "hermes-black-companion.webp", 460, 500],
+    // The companion rides on the primary trial button, not the section edge.
+    [".cta__acts .btn-dark", "afterbegin", "home-cta-mascot", "hermes-black-companion.webp", 460, 500],
   ];
   for (const [selector, position, className, asset, width, height] of companionDecorations) {
     if (!document.querySelector(`.${className}`)) {

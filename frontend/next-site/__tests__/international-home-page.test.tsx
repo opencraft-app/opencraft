@@ -91,6 +91,19 @@ describe("international v2 homepage selection", () => {
 });
 
 describe("international v2 homepage artifact", () => {
+  it.each(generatedFragmentNames)("places the original peek mascot on the trial button in %s", (name) => {
+    const document = new DOMParser().parseFromString(readFileSync(path.join(homeRoot, name), "utf8"), "text/html");
+    const button = document.querySelector('.cta__acts > .btn-dark');
+    const mascots = document.querySelectorAll('.home-cta-mascot');
+    expect(mascots).toHaveLength(1);
+    expect(mascots[0].parentElement).toBe(button);
+    expect(mascots[0].getAttribute('aria-hidden')).toBe('true');
+    expect(mascots[0].querySelector('img')?.getAttribute('src')).toContain('hermes-black-companion.webp');
+    expect(button?.textContent?.trim()).toBeTruthy();
+    expect(button?.getAttribute('href')).toContain('/subscribe');
+    expect(document.querySelector('.cta > .home-cta-mascot')).toBeNull();
+  });
+
   it("does not render a literal newline escape below the footer in any locale", () => {
     for (const name of generatedFragmentNames) {
       const document = new DOMParser().parseFromString(readFileSync(path.join(homeRoot, name), "utf8"), "text/html");
@@ -606,6 +619,47 @@ describe("international v2 homepage artifact", () => {
     expect(css).toMatch(/#lightvela-intl-home \.voice\s*\{[^}]*padding:\s*96px 0 104px;/s);
     expect(css).toMatch(/#lightvela-intl-home \.voice \.marquee__rows\s*\{[^}]*min-height:\s*420px;/s);
     expect(css).toMatch(/#lightvela-intl-home \.voice \.tcard\s*\{[^}]*width:\s*260px;[^}]*min-height:\s*116px;/s);
+  });
+
+  it("turns the user voice cards into a center-mode carousel that advances one card at a time", () => {
+    vi.useFakeTimers();
+    const fragment = new DOMParser().parseFromString(readLocaleFragment("zh-SG"), "text/html");
+    const voice = fragment.querySelector("#voice")!;
+    document.body.innerHTML = `<main id="lightvela-intl-home">${voice.outerHTML}</main>`;
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: vi.fn().mockReturnValue({ matches: false, addEventListener() {}, removeEventListener() {} }),
+    });
+    window.eval(readFileSync(runtimePath, "utf8"));
+
+    const names = new Set(Array.from(voice.querySelectorAll(".tcard__head b")).map((b) => b.textContent!.trim()));
+    const cards = Array.from(document.querySelectorAll<HTMLElement>(".vcar__card"));
+    expect(document.querySelector(".voice")!.classList.contains("has-voice-carousel")).toBe(true);
+    expect(cards).toHaveLength(names.size);
+    const positions = () => cards.map((card) => card.dataset.pos);
+    expect(positions().slice(0, 3)).toEqual(["side", "center", "side"]);
+    expect(positions().filter((pos) => pos === "side")).toHaveLength(2);
+    expect(cards[0]!.querySelector("img")!.getAttribute("src")).toMatch(/-128\.webp$/);
+    // The carousel sits under the section heading, not above it.
+    const section = document.querySelector(".voice")!;
+    expect(section.firstElementChild!.matches(".voice__head")).toBe(true);
+    expect(section.querySelector(".voice__head + .vcar")).not.toBeNull();
+    // Each indicator is a doll ID photo; neighbouring photos never repeat.
+    const dolls = Array.from(document.querySelectorAll<HTMLImageElement>(".vcar__dot .vcar__face img"))
+      .map((image) => image.getAttribute("src")!);
+    expect(dolls).toHaveLength(cards.length);
+    expect(dolls.every((src) => /\/peek-friends\/[a-z-]+\.webp$/.test(src))).toBe(true);
+    expect(dolls.every((src, i) => i === 0 || src !== dolls[i - 1])).toBe(true);
+
+    vi.advanceTimersByTime(1499);
+    expect(positions().slice(0, 3)).toEqual(["side", "center", "side"]);
+    vi.advanceTimersByTime(1);
+    expect(positions().slice(1, 4)).toEqual(["side", "center", "side"]);
+    expect(cards[0]!.dataset.pos).toBe("off");
+
+    cards[1]!.click();
+    expect(cards[1]!.dataset.pos).toBe("center");
+    vi.useRealTimers();
   });
 
   it("activates all 18 native scene buttons by click as well as hover", () => {

@@ -44,7 +44,7 @@ afterEach(() => {
 describe('door character peek', () => {
   it('preloads both layers without replacing or hiding the original artwork', async () => {
     expect(images.map((image) => image.src)).toEqual([
-      '/lightvela-intl-home/assets/hermes-door-background.webp?v=20260930-home-visual-v1',
+      '/lightvela-intl-home/assets/hermes-door-white.webp?v=20260930-home-visual-v1',
       '/lightvela-intl-home/assets/hermes-door-character.webp?v=20260930-home-visual-v1',
     ]);
     expect(portal.querySelector('.home-door-peek-layers')).toBeNull();
@@ -76,12 +76,12 @@ describe('door character peek', () => {
     expect(portal.querySelectorAll('.home-portal-halo,.home-portal-shutter')).toHaveLength(0);
   });
 
-  it('ends on the exact original image rather than a permanently changed composition', async () => {
+  it('keeps the character visible against the white doorway at completion', async () => {
     await loaded();
     const timeline = ScrollTrigger.getAll().find((trigger) => trigger.trigger === portal)!.animation!;
     timeline.progress(1);
     expect(portal.dataset.doorPeek).toBe('complete');
-    expect(portal.querySelector<SVGElement>('.home-door-peek-layers')!.style.display).toBe('none');
+    expect(portal.querySelector<SVGElement>('.home-door-peek-layers')!.style.display).not.toBe('none');
     expect(portal.querySelector('svg > image')?.getAttribute('href')).toBe('/lightvela-intl-home/assets/hermes-door.webp');
     expect(timeline.repeat()).toBe(0);
   });
@@ -115,7 +115,7 @@ describe('door character peek', () => {
 
   it('retains the layered assets in subsequent homepage imports', () => {
     const importer = readFileSync('scripts/import-international-homepage.mjs', 'utf8');
-    for (const name of ['hermes-door-background.webp', 'hermes-door-character.webp']) {
+    for (const name of ['hermes-door-white.webp', 'hermes-door-character.webp']) {
       expect(importer).toContain(`"${name}"`);
       expect(readFileSync(`public/lightvela-intl-home/assets/${name}`).length).toBeGreaterThan(0);
     }

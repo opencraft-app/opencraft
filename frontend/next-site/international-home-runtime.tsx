@@ -4,6 +4,7 @@ import { memo, useEffect, useRef, useState } from 'react';
 
 import { PublicHeaderAuthIsland } from '@next-site/public-header-auth-island';
 import { HomeMobileNavigation } from '@next-site/home-mobile-navigation';
+import { HomePointerMascot } from '@next-site/home-pointer-mascot';
 import { PublicSiteLocaleBridge } from '@next-site/public-site-providers';
 import { MaintenanceAnnouncementBanner } from '@/components/site/maintenance-announcement-banner';
 import { BrowserLanguageSuggestion } from '@/components/site/browser-language-suggestion';
@@ -28,7 +29,7 @@ export const INTERNATIONAL_HOME_SCRIPT_SOURCES = [
   '/lightvela-intl-home/assets/feature-motion.js',
 ] as const;
 
-export const INTERNATIONAL_HOME_ASSET_VERSION = '20261005-heading-font-v110';
+export const INTERNATIONAL_HOME_ASSET_VERSION = '20261008-play-card-v117';
 
 function versionedInternationalHomeAsset(source: string) {
   return `${source}?v=${INTERNATIONAL_HOME_ASSET_VERSION}`;
@@ -133,6 +134,8 @@ export function InternationalHomeRuntime({ locale, markup }: { locale: PublicSit
 
     function loadScripts() {
       document.querySelectorAll('script[data-lightvela-intl-home-script]').forEach((script) => script.remove());
+      const home = document.getElementById('lightvela-intl-home');
+      if (home) home.dataset.homeMotionMode = isGlobal ? 'gsap' : 'css';
 
       for (const source of INTERNATIONAL_HOME_SCRIPT_SOURCES) {
         if (cancelled) return;
@@ -159,16 +162,18 @@ export function InternationalHomeRuntime({ locale, markup }: { locale: PublicSit
   }, [locale, markup]);
 
   useEffect(() => {
-    if (!isGlobal) return;
     const root = document.getElementById('lightvela-intl-home');
     if (!root) return;
     let cancelled = false;
     let stopMotion: (() => void) | undefined;
     const frame = requestAnimationFrame(() => {
-      void import('./international-home-motion').then(({ mountInternationalHomeMotion }) => {
-        if (!cancelled && root.isConnected) stopMotion = mountInternationalHomeMotion(root);
+      const loadMotion = isGlobal
+        ? import('./international-home-motion').then(({ mountInternationalHomeMotion }) => mountInternationalHomeMotion)
+        : import('./domestic-home-mascot-motion').then(({ mountDomesticHomeMascotMotion }) => mountDomesticHomeMascotMotion);
+      void loadMotion.then((mountMotion) => {
+        if (!cancelled && root.isConnected) stopMotion = mountMotion(root);
       }).catch((error: unknown) => {
-        console.error('Failed to load international homepage motion', error);
+        console.error('Failed to load homepage motion', error);
       });
     });
     return () => {
@@ -223,6 +228,7 @@ export function InternationalHomeRuntime({ locale, markup }: { locale: PublicSit
       <div className={authReady && entitlementReady && readyCtaKey === ctaKey ? undefined : '[&_.hero__cta]:invisible [&_.foot__cta]:invisible'}>
         <InternationalHomeMarkup markup={markup} />
       </div>
+      <HomePointerMascot />
       <div className="international-home-header-actions-layer">
         <PublicHeaderAuthIsland
           appearance="immersive"

@@ -285,8 +285,22 @@ html:has(#lightvela-intl-home), body:has(#lightvela-intl-home) { background-colo
 #lightvela-intl-home .track::after { left: 49%; right: auto; top: -58px; transform: rotate(-3deg); transform-origin: left top; }
 #lightvela-intl-home .cta { display: grid; grid-template-columns: minmax(0, 1fr); }
 #lightvela-intl-home .cta__stage { grid-area: 1 / 1; }
-#lightvela-intl-home .home-cta-mascot { position: relative; grid-area: 1 / 1; align-self: start; top: auto; right: auto; left: max(64px, calc((100% - var(--shell)) / 2 + 80px)); width: 96px; transform: translateY(calc(-100% + 3px)); }
+#lightvela-intl-home .cta__acts .btn-dark { position: relative; overflow: visible; }
+#lightvela-intl-home .home-cta-mascot {
+  position: absolute;
+  top: auto;
+  right: auto;
+  bottom: calc(100% - 5px);
+  left: 50%;
+  width: 72px;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
 #lightvela-intl-home .home-cta-mascot img { display: block; width: 100%; height: auto; aspect-ratio: 120 / 88; object-fit: contain; }
+@media (max-width: 640px) {
+  #lightvela-intl-home .home-cta-mascot { width: 56px; }
+  #lightvela-intl-home .cta__acts { margin-top: 48px; }
+}
 #lightvela-intl-home .foot { padding: 104px 24px 64px; background: #111 !important; color: #f7f5fa; }
 #lightvela-intl-home .foot__top {
   position: relative;
@@ -581,7 +595,6 @@ html:has(#lightvela-intl-home), body:has(#lightvela-intl-home) { background-colo
   #lightvela-intl-home .track::after { display: none; }
   #lightvela-intl-home .track__item { display: grid; grid-template-columns: 44px 1fr; align-items: start; gap: 16px; }
   #lightvela-intl-home .home-step-mascot { top: 72px; right: 22px; width: 58px; }
-  #lightvela-intl-home .home-cta-mascot { top: auto; right: auto; left: 48px; width: 80px; }
   #lightvela-intl-home .about__cards {
     display: flex !important;
     grid-template-columns: none !important;
@@ -823,6 +836,7 @@ html:has(#lightvela-intl-home), body:has(#lightvela-intl-home) { background-colo
   #lightvela-intl-home .about__inner,
   #lightvela-intl-home .scenes,
   #lightvela-intl-home .deploy__lead,
+  #lightvela-intl-home .voice__head,
   #lightvela-intl-home .track,
   #lightvela-intl-home .plays,
   #lightvela-intl-home .foot__top,
@@ -834,6 +848,7 @@ html:has(#lightvela-intl-home), body:has(#lightvela-intl-home) { background-colo
   #lightvela-intl-home .about { padding-block: 80px !important; }
   #lightvela-intl-home .about__head { margin-bottom: 36px !important; }
   #lightvela-intl-home .about__head .k,
+  #lightvela-intl-home .voice__title,
   #lightvela-intl-home .scenes__title { font-size: clamp(30px, 2.4vw, 48px) !important; line-height: 1.2 !important; letter-spacing: -0.035em !important; font-weight: 400 !important; }
   #lightvela-intl-home .scenes__head { position: relative !important; display: flex !important; align-items: center !important; justify-content: space-between !important; }
   #lightvela-intl-home .scenes__mascot { display: block !important; flex: 0 0 auto !important; }
@@ -1036,6 +1051,11 @@ html:has(#lightvela-intl-home), body:has(#lightvela-intl-home) { background-colo
 }
 #lightvela-intl-home .plays__stage { margin-top: 36px; }
 #lightvela-intl-home .play { padding: clamp(24px, 3vw, 48px); border-radius: 20px; box-shadow: 0 10px 40px rgb(33 26 42 / 6%); }
+/* Same surface language as the capability cards, the hero window and the trial
+   card: a flat light-grey panel with no outline and a faint shadow. The white
+   screenshot inside is what stands out from it. */
+#lightvela-intl-home .plays .play { border: 0; background: #f5f5f7; box-shadow: 0 10px 30px rgb(42 16 82 / 5%); }
+#lightvela-intl-home .plays .play__list b { background: #fff; }
 #lightvela-intl-home .foot { padding: 0 0 56px !important; background: #111 !important; }
 #lightvela-intl-home .foot__top { width: 100% !important; max-width: none !important; min-height: 0; padding: 48px 24px 72px !important; margin: 0; background: #111; text-align: center; align-items: center; box-sizing: border-box; }
 #lightvela-intl-home .foot .foot__title,
@@ -1097,16 +1117,16 @@ html:has(#lightvela-intl-home), body:has(#lightvela-intl-home) { background-colo
 #lightvela-intl-home .hero .home-cover-mascot img {
   top: -2px;
   transform: translateY(-67%);
-  /* Feather only the ribbon's transparent tail; never hard-crop its edge. */
-  mask-image: linear-gradient(to right, transparent, #000 48px);
+  /* The artwork already has a transparent tail; keep its natural edge over the line. */
+  mask-image: none;
 }
 #lightvela-intl-home .hero .hero__rotator-line {
   bottom: 0 !important;
   right: 0;
-  background: #67509a;
+  background: linear-gradient(to right, #67509a 0%, #38285f 100%);
   opacity: 1;
   border-radius: 0;
-  mask-image: linear-gradient(to right, #000 calc(100% - 48px), transparent);
+  mask-image: none;
 }
 #lightvela-intl-home .about .about__head .k,
 #lightvela-intl-home .about .wcard__body h4 { font-family: var(--font-sans) !important; text-wrap: balance; }
@@ -1124,8 +1144,8 @@ html:has(#lightvela-intl-home), body:has(#lightvela-intl-home) { background-colo
   #lightvela-intl-home .hero .hero__title { gap: 24px; }
   #lightvela-intl-home .hero .hero__line--dynamic { flex-wrap: wrap; justify-content: center; white-space: normal; max-width: 100%; padding: 0 96px 24px 0; }
   #lightvela-intl-home .hero .home-cover-mascot { left: calc(100% - 36px) !important; width: 132px !important; }
-  #lightvela-intl-home .hero .home-cover-mascot img { left: 0 !important; width: 132px !important; top: -1px; mask-image: linear-gradient(to right, transparent, #000 36px); }
-  #lightvela-intl-home .hero .hero__rotator-line { right: 0; mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent); }
+  #lightvela-intl-home .hero .home-cover-mascot img { left: 0 !important; width: 132px !important; top: -1px; }
+  #lightvela-intl-home .hero .hero__rotator-line { right: 0; }
   #lightvela-intl-home .hero .hero__rotator { white-space: normal; }
   #lightvela-intl-home .hero .hero__rotator-wrap { width: auto !important; max-width: 100%; }
   #lightvela-intl-home .about .wcard .wcard__body { height: auto !important; min-height: 104px; }
@@ -1174,6 +1194,19 @@ html:has(#lightvela-intl-home), body:has(#lightvela-intl-home) { background-colo
 #lightvela-intl-home .plays .play__list li { white-space: normal !important; flex-wrap: wrap; }
 #lightvela-intl-home .plays .play__screen { align-self: center; height: auto; min-height: 0; aspect-ratio: 16 / 10; }
 #lightvela-intl-home .plays .play__screen img { width: 100%; height: 100%; object-fit: contain; }
+/* Harness captures vary slightly by locale; let each image set the frame height. */
+#lightvela-intl-home .plays .play__screen--harness {
+  aspect-ratio: auto;
+  padding: 0;
+}
+#lightvela-intl-home .plays .play__screen--harness .harness-visual-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  max-height: none;
+  object-fit: contain;
+}
 #lightvela-intl-home .foot { margin-top: 96px; }
 @media (min-width: 900px) {
   #lightvela-intl-home .home-step-mascot { width: clamp(160px, 16vw, 220px); height: auto; left: var(--step-left); top: var(--step-top, 80px); right: auto; }
@@ -1422,4 +1455,309 @@ html:has(#lightvela-intl-home), body:has(#lightvela-intl-home) { background-colo
 }
 @media (min-width: 900px) and (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
   #lightvela-intl-home[data-home-motion-ready='active'] .about .about__cards .wcard .wcard__inner { transform: none; transition: none !important; }
+}
+
+/* Cursor companion shared by domestic and international homepages. */
+#lightvela-home-pointer-mascot {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 80px;
+  height: 80px;
+  z-index: 80;
+  pointer-events: none;
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+#lightvela-home-pointer-mascot.is-visible { visibility: visible; opacity: 1; }
+#lightvela-home-pointer-mascot.is-visible.is-idle { opacity: 0; }
+#lightvela-home-pointer-mascot img {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  user-select: none;
+}
+#lightvela-home-pointer-mascot .home-pointer-mascot__wink { opacity: 0; }
+#lightvela-home-pointer-mascot.is-winking .home-pointer-mascot__open { opacity: 0; }
+#lightvela-home-pointer-mascot.is-winking .home-pointer-mascot__wink { opacity: 1; }
+@media (hover: none), (pointer: coarse), (prefers-reduced-motion: reduce) {
+  #lightvela-home-pointer-mascot { display: none; }
+}
+
+
+/* Keep scene motion separate from each artwork's existing layout transform. */
+#lightvela-intl-home .home-mascot-life { display: block; transform-origin: 50% 85%; }
+#lightvela-intl-home .home-mascot-life--ribbon { position: absolute; inset: 0; transform-origin: 67% 0; }
+#lightvela-intl-home .voice.has-peek-friends { position: relative; isolation: isolate; overflow: hidden; }
+/* Keep card text out of the cast's edge space; the original tracks keep their timing. */
+#lightvela-intl-home .voice.has-peek-friends .marquee__rows {
+  mask-image: linear-gradient(to right, transparent, #000 150px, #000 calc(100% - 150px), transparent);
+}
+@media (max-width: 899px) {
+  #lightvela-intl-home .voice.has-peek-friends .marquee__rows {
+    mask-image: linear-gradient(to right, transparent, #000 66px, #000 calc(100% - 66px), transparent);
+  }
+}
+#lightvela-intl-home .home-testimonial-friends { position: absolute; inset: 0; z-index: 3; pointer-events: none; overflow: hidden; }
+#lightvela-intl-home .home-testimonial-friend { position: absolute; display: block; width: var(--peek-size); aspect-ratio: 1; transform: translateY(-50%) rotate(var(--peek-angle)); transform-origin: 50% 74%; }
+#lightvela-intl-home .home-testimonial-friend--left { left: var(--peek-edge); }
+#lightvela-intl-home .home-testimonial-friend--right { right: var(--peek-edge); }
+#lightvela-intl-home .home-testimonial-friend img { display: block; width: 100%; height: 100%; object-fit: contain; pointer-events: auto; transform-origin: 50% 75%; }
+@media (max-width: 899px) {
+  #lightvela-intl-home .home-testimonial-friend { width: calc(var(--peek-size) * .64); }
+  #lightvela-intl-home .home-testimonial-friend--left { left: calc(var(--peek-edge) * .64); }
+  #lightvela-intl-home .home-testimonial-friend--right { right: calc(var(--peek-edge) * .64); }
+  #lightvela-intl-home .home-testimonial-friend[data-slot="1"],
+  #lightvela-intl-home .home-testimonial-friend[data-slot="2"],
+  #lightvela-intl-home .home-testimonial-friend[data-slot="5"] { display: none; }
+  #lightvela-intl-home .home-testimonial-friend[data-slot="0"] { top: 43% !important; }
+  #lightvela-intl-home .home-testimonial-friend[data-slot="3"] { top: 54% !important; }
+  #lightvela-intl-home .home-testimonial-friend[data-slot="4"] { top: 40% !important; }
+  #lightvela-intl-home .home-testimonial-friend[data-slot="6"] { top: 52% !important; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #lightvela-intl-home .home-mascot-life,
+  #lightvela-intl-home .home-testimonial-friend img { transform: none !important; will-change: auto !important; }
+}
+
+
+/* Scroll-linked articulated cast: fixed to the viewport, below navigation/dialogs. */
+canvas.home-scroll-cast { position: fixed; inset: 0; display: block; width: 100%; height: 100%; z-index: 8; pointer-events: none; contain: strict; }
+
+.hero-artwork-cast { position: absolute; left: 0; top: 0; width: 100%; height: 0; z-index: 8; pointer-events: none; overflow: hidden; animation: hero-artwork-reveal .8s cubic-bezier(.16, 1, .3, 1) var(--frame-delay, .68s) backwards; }
+@keyframes hero-artwork-reveal { from { opacity: 0; } to { opacity: 1; } }
+.hero-artwork-friend { position: absolute; bottom: 0; padding: 0; border: 0; background: transparent; pointer-events: auto; cursor: pointer; transform-origin: 50% 80%; }
+.hero-artwork-friend[hidden] { display: none; }
+.hero-artwork-friend:disabled { pointer-events: none; }
+.hero-artwork-friend img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.hero-artwork-friend:focus-visible { outline: 2px solid #8b66d9; outline-offset: -24px; border-radius: 40%; }
+
+/* Keep the original peeking artwork intact as the cast leaves the frame. */
+.hero-artwork-life { display: block; position: relative; width: 100%; height: 100%; transform-origin: 50% 82%; }
+.hero-artwork-life img { position: absolute; inset: 0; }
+.hero-artwork-life img[hidden] { display: none; }
+
+/* White sign-off and a separate, optional little end-credit parade. */
+#lightvela-intl-home .foot { display: flex; flex-direction: column; position: relative; padding: 0 !important; background: #fff !important; color: #211c2b; }
+#lightvela-intl-home .foot > .foot__top { order: 0; width: 100%; padding: 88px 24px 64px !important; align-items: center; text-align: center; background: #fff; }
+#lightvela-intl-home .foot .foot__title { margin-inline: auto; max-width: 780px; font-size: clamp(28px,3.1vw,44px); }
+#lightvela-intl-home .foot .foot__title,
+#lightvela-intl-home .foot .foot__title .row,
+#lightvela-intl-home .foot .foot__title em { color: #211c2b !important; }
+#lightvela-intl-home .foot__cta { justify-content: center; }
+#lightvela-intl-home .foot__cta a { background: #211c2b; color: #fff; }
+#lightvela-intl-home .foot__cta a span { background: #fff; color: #211c2b; }
+#lightvela-intl-home .foot > .home-footer-boundary { order: 1; width: 200px; height: 200px; margin: -30px auto 12px; background: #fff url('/lightvela-intl-home/assets/hermes-door-white.webp') center/contain no-repeat; }
+#lightvela-intl-home .home-footer-boundary svg > image { visibility: hidden; }
+#lightvela-intl-home .foot > .foot__links { order: 2; width: calc(100% - 48px) !important; max-width: 1280px !important; margin: 0 auto !important; padding: 40px 0 32px; border-top: 1px solid #eeedf1; }
+#lightvela-intl-home .foot__links h3 { color: #211c2b !important; }
+#lightvela-intl-home .foot__links a { color: #716b79 !important; }
+#lightvela-intl-home .foot__links a:hover { color: #6f49b8 !important; }
+#lightvela-intl-home .foot__brand-copy,
+#lightvela-intl-home .foot__copyright { color: #817a89 !important; }
+#lightvela-intl-home .foot__brand-link img { filter: brightness(0); }
+@media(min-width:1200px) {
+ #lightvela-intl-home .foot > .home-footer-boundary { position:absolute; top:48px; right:max(12px,calc((100vw - 1400px)/2)); width:230px; height:260px; margin:0; }
+}
+#lightvela-intl-home .footer-parade { order: 3; width: 100%; position:relative; margin-top:8px; }
+.footer-parade__stage { position:relative; height:210px; overflow:hidden; border-bottom:1px solid #f1eef5; }
+.footer-parade__actor { position:absolute; bottom:0; left:0; width:var(--parade-size,186px); height:var(--parade-size,186px); }
+.footer-parade__actor[hidden], .footer-parade__actor img[hidden] { display:none; }
+.footer-parade__actor img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; }
+@media(max-width:600px){ .footer-parade__stage{height:145px;} }
+
+/* The generated cast video and footer share one lavender surface. */
+#lightvela-intl-home .foot.has-footer-portrait {
+ background:linear-gradient(180deg,#fff 0%,#fff 24%,#f4f0fa 34%,#ece7f6 46%,#e9e5f4 55%,#e6e1f2 64%,#d6c8eb 100%) !important;
+}
+#lightvela-intl-home .foot.has-footer-portrait > .foot__links {
+ position:relative; z-index:1; width:calc(100% - 128px) !important; max-width:1200px !important; padding:28px 0 4px; border-top:0;
+}
+#lightvela-intl-home .home-footer-cast { order:3; position:relative; z-index:0; width:100%; margin:-72px 0 0; padding-top:12px; overflow:hidden; pointer-events:none; background:transparent; }
+.home-footer-cast__scene { position:relative; width:min(100%, 1180px); margin:0 auto; aspect-ratio:1920 / 880; }
+.home-footer-cast__video, .home-footer-cast__loop, .home-footer-cast__still { position:absolute; inset:0; display:block; width:100%; height:100%; object-fit:cover; object-position:center top; -webkit-mask-image:linear-gradient(90deg,transparent,#000 2%,#000 98%,transparent),linear-gradient(180deg,transparent,#000 12%,#000 100%); -webkit-mask-composite:source-in; mask-image:linear-gradient(90deg,transparent,#000 2%,#000 98%,transparent),linear-gradient(180deg,transparent,#000 12%,#000 100%); mask-composite:intersect; }
+.home-footer-cast__loop { opacity:0; }
+.home-footer-cast__scene.is-looping .home-footer-cast__video { opacity:0; }
+.home-footer-cast__scene.is-looping .home-footer-cast__loop { opacity:1; }
+.home-footer-cast__still { display:none; }
+@media(prefers-reduced-motion:reduce) {
+ .home-footer-cast__video, .home-footer-cast__loop { display:none; }
+ .home-footer-cast__still { display:block; }
+}
+@media(max-width:1023px) {
+ #lightvela-intl-home .home-footer-cast { margin-top:0; }
+}
+@media(max-width:600px) {
+ #lightvela-intl-home .foot.has-footer-portrait > .foot__links { width:calc(100% - 40px) !important; padding:32px 0 8px; }
+ #lightvela-intl-home .home-footer-cast { margin-top:0; padding-top:10px; }
+ .home-footer-cast__scene { width:100%; }
+}
+/* Keep the link columns and cast visible in a single desktop viewport. */
+@media(min-width:1024px) {
+ #lightvela-intl-home .foot.has-footer-portrait .foot__links ul { gap:8px; margin-top:16px; }
+ #lightvela-intl-home .home-footer-cast { padding-top:12px; padding-bottom:0; }
+}
+
+/* One continuous sign-off surface; avoid stacked section/CTA spacing. */
+#lightvela-intl-home #get-started.cta { padding-bottom:32px; }
+#lightvela-intl-home .foot.has-footer-portrait > .foot__top {
+ padding:48px 24px 40px !important;
+ min-height:0;
+ gap:28px;
+ background:transparent;
+}
+#lightvela-intl-home .foot.has-footer-portrait .foot__cta { margin-top:0; }
+@media(max-width:600px) {
+ #lightvela-intl-home #get-started.cta { padding-bottom:20px; }
+ #lightvela-intl-home .foot.has-footer-portrait > .foot__top { padding:32px 20px 28px !important; gap:24px; }
+}
+
+/* Retire the doorway illustration; distribute the four domestic link groups. */
+#lightvela-intl-home .foot > .home-footer-boundary { display:none; }
+@media(min-width:1024px) {
+ #lightvela-intl-home .foot--domestic .foot__links-grid {
+  grid-template-columns:minmax(140px, 1.15fr) repeat(4,minmax(0,1.25fr));
+ }
+}
+@media(prefers-reduced-motion:reduce) { .hero-artwork-cast { animation:none; } }
+
+/* Hero revision: keep the lead beside the role line and give the headline priority. */
+@media (min-width: 900px) {
+  #lightvela-intl-home .hero .hero__line--main {
+    font-size: clamp(38px, 3.35vw, 48px) !important;
+    font-weight: 650 !important;
+    line-height: 1.18;
+  }
+  #lightvela-intl-home .hero .hero__line--dynamic { padding-right: 220px; }
+  #lightvela-intl-home .hero .home-cover-mascot {
+    left: calc(100% + 42px) !important;
+    width: 270px !important;
+  }
+  #lightvela-intl-home .hero .hero__rotator-line { right: -90px !important; }
+  #lightvela-intl-home .hero .home-cover-mascot img {
+    width: 270px !important;
+  }
+}
+@media (max-width: 899px) {
+  #lightvela-intl-home .hero .hero__line--main {
+    font-size: clamp(32px, 5vw, 46px) !important;
+    font-weight: 650 !important;
+  }
+  #lightvela-intl-home .hero .home-cover-mascot {
+    width: 198px !important;
+  }
+  #lightvela-intl-home .hero .home-cover-mascot img {
+    width: 198px !important;
+  }
+}
+@media (max-width: 600px) {
+  #lightvela-intl-home .hero .home-cover-mascot,
+  #lightvela-intl-home .hero .home-cover-mascot img { width: 150px !important; }
+}
+
+/* User voice: center-mode carousel. One wide flat stage card, each
+   neighbour peeking in from the viewport edge at a smaller scale. */
+/* Below 900px the shared section-heading rule does not apply, so mirror the
+   "How to get started" heading: same gutter, scale and weight. */
+#lightvela-intl-home .voice__head { box-sizing: border-box; max-width: 1280px; margin: 0 auto 10px; padding-inline: 32px; }
+#lightvela-intl-home .voice__title {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-weight: 400;
+  font-size: clamp(30px, 2.4vw, 48px);
+  line-height: 1.2;
+  letter-spacing: -0.035em;
+  text-align: left;
+  color: var(--ink);
+}
+@media (min-width: 900px) {
+  /* The shared rule sets the content width; drop the phone gutter. */
+  #lightvela-intl-home .voice__head { padding-inline: 0; }
+}
+@media (max-width: 600px) {
+  #lightvela-intl-home .voice__head { padding-inline: 16px; }
+  #lightvela-intl-home .voice__title { font-size: 28px; }
+}
+#lightvela-intl-home .voice.has-voice-carousel .marquee__rows,
+#lightvela-intl-home .voice.has-voice-carousel .marquee__fade { display: none; }
+#lightvela-intl-home .vcar { --vcar-w: clamp(360px, 42vw, 580px); --vcar-gap: 24px; --vcar-side: .58; position: relative; z-index: 1; }
+#lightvela-intl-home .vcar__viewport {
+  display: grid;
+  align-items: center;
+  justify-items: center;
+  width: min(100%, calc(var(--vcar-w) * (1 + var(--vcar-side)) + var(--vcar-gap) * 2));
+  margin: 0 auto;
+  padding: 20px 0 32px;
+  overflow: hidden;
+  touch-action: pan-y;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 9%, #000 91%, transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0, #000 9%, #000 91%, transparent 100%);
+}
+#lightvela-intl-home .vcar__card {
+  grid-area: 1 / 1;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 10px;
+  width: var(--vcar-w);
+  min-height: 0;
+  padding: clamp(20px, 1.8vw, 26px);
+  border: 1px solid rgb(33 26 42 / 8%);
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 2px 6px rgb(33 26 42 / 4%), 0 18px 48px rgb(33 26 42 / 8%);
+  transform: translateX(calc(var(--vcar-pos, 0) * (var(--vcar-w) * (1 + var(--vcar-side)) / 2 + var(--vcar-gap)))) scale(var(--vcar-scale, 1));
+  transition: transform .7s cubic-bezier(.22, .8, .24, 1), opacity .7s ease;
+  user-select: none;
+}
+#lightvela-intl-home .vcar__card[data-pos='center'] { --vcar-scale: 1; z-index: 3; }
+#lightvela-intl-home .vcar__card[data-pos='side'] { --vcar-scale: var(--vcar-side); z-index: 2; cursor: pointer; }
+#lightvela-intl-home .vcar__card[data-pos='off'] { --vcar-scale: .66; z-index: 1; opacity: 0; pointer-events: none; }
+#lightvela-intl-home .vcar__head { display: flex; align-items: center; gap: 12px; }
+#lightvela-intl-home .vcar__avatar { flex: none; width: 48px; height: 48px; overflow: hidden; border-radius: 50%; background: #f1eff5; }
+#lightvela-intl-home .vcar__avatar img { display: block; width: 100%; height: 100%; object-fit: cover; }
+#lightvela-intl-home .vcar__who { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+#lightvela-intl-home .vcar__name { display: inline-flex; align-items: center; gap: 5px; color: #211a2a; font-size: 16px; font-weight: 600; line-height: 1.3; }
+#lightvela-intl-home .vcar__badge { flex: none; width: 15px; height: 15px; fill: #7b61ff; }
+#lightvela-intl-home .vcar__place { color: #8a8494; font-size: 13px; line-height: 1.4; }
+#lightvela-intl-home .vcar__stars { display: flex; gap: 3px; }
+#lightvela-intl-home .vcar__stars svg { width: 16px; height: 16px; fill: #f6b41b; }
+#lightvela-intl-home .vcar__quote { margin: 0; color: #2b2533; font-size: 16px; line-height: 1.7; }
+/* Indicators are doll "ID photos": grey until selected, then full colour
+   with a brand ring and a pointer up to the card they belong to. */
+#lightvela-intl-home .vcar__dots { --vcar-dot: 40px; --vcar-dot-on: 52px; display: flex; align-items: center; justify-content: center; gap: 10px; min-height: calc(var(--vcar-dot-on) + 18px); padding-top: 14px; }
+#lightvela-intl-home .vcar__dot { position: relative; flex: none; width: var(--vcar-dot); height: var(--vcar-dot); padding: 0; border: 0; border-radius: 50%; background: #e7e4ec; cursor: pointer; transition: width .35s ease, height .35s ease, box-shadow .35s ease, background-color .35s ease; }
+#lightvela-intl-home .vcar__dot::before { content: ''; position: absolute; left: 50%; top: -13px; border: 6px solid transparent; border-bottom-color: #7b61ff; transform: translateX(-50%); opacity: 0; transition: opacity .25s ease; }
+#lightvela-intl-home .vcar__face { position: absolute; inset: 0; overflow: hidden; border-radius: 50%; }
+/* Square 300px crop of the 512px artwork (centre 256, 272): eyes, mouth, hat
+   and the top of the shoulders all stay inside the circle. */
+#lightvela-intl-home .vcar__face img { position: absolute; left: -35.3%; top: -40.7%; width: 170.7%; max-width: none; height: auto; filter: grayscale(1) brightness(.94) contrast(1.08); opacity: .78; transition: filter .35s ease, opacity .35s ease; pointer-events: none; }
+#lightvela-intl-home .vcar__dot:hover .vcar__face img { filter: grayscale(.35); opacity: .9; }
+#lightvela-intl-home .vcar__dot[aria-current='true'] { width: var(--vcar-dot-on); height: var(--vcar-dot-on); background: #f3efff; box-shadow: 0 0 0 2px #fff, 0 0 0 4px #7b61ff; }
+#lightvela-intl-home .vcar__dot[aria-current='true']::before { opacity: 1; }
+#lightvela-intl-home .vcar__dot[aria-current='true'] .vcar__face img { filter: none; opacity: 1; }
+#lightvela-intl-home .vcar__dot:focus-visible { outline: 2px solid #7b61ff; outline-offset: 4px; }
+@media (prefers-reduced-motion: reduce) {
+  #lightvela-intl-home .vcar__card, #lightvela-intl-home .vcar__dot, #lightvela-intl-home .vcar__face img { transition: none; }
+}
+@media (max-width: 640px) {
+  #lightvela-intl-home .vcar { --vcar-w: 72vw; --vcar-gap: 12px; }
+  /* The narrow stage leaves no clear margin for the peeking friends. */
+  #lightvela-intl-home .voice.has-voice-carousel .home-testimonial-friends { display: none; }
+  #lightvela-intl-home .vcar__viewport { width: 100%; padding: 16px 0 24px; }
+  #lightvela-intl-home .vcar__card { aspect-ratio: auto; min-height: 260px; padding: 22px; gap: 14px; border-radius: 20px; }
+  #lightvela-intl-home .vcar__avatar { width: 48px; height: 48px; }
+  #lightvela-intl-home .vcar__name { font-size: 16px; }
+  #lightvela-intl-home .vcar__place { font-size: 13px; }
+  #lightvela-intl-home .vcar__stars svg { width: 18px; height: 18px; }
+  #lightvela-intl-home .vcar__quote { font-size: 15px; line-height: 1.65; }
+  /* 13 photos share one row on any phone: they shrink rather than overflow. */
+  #lightvela-intl-home .vcar__dots { --vcar-dot: 22px; --vcar-dot-on: 32px; gap: 4px; padding-inline: 12px; }
+  #lightvela-intl-home .vcar__dot { flex: 0 1 var(--vcar-dot); min-width: 14px; width: auto; height: auto; aspect-ratio: 1; }
+  #lightvela-intl-home .vcar__dot[aria-current='true'] { flex: 0 0 var(--vcar-dot-on); width: auto; height: auto; box-shadow: 0 0 0 1.5px #fff, 0 0 0 3px #7b61ff; }
 }

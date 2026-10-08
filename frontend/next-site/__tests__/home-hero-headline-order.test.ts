@@ -14,6 +14,10 @@ const headlineRuntime = runtime.slice(
   runtime.indexOf("(function () {\n    var el = document.getElementById('hero-rotator');"),
   runtime.indexOf("(function () {\n    var els = document.querySelectorAll('.sr');"),
 );
+const heroReplayRuntime = runtime.slice(
+  runtime.indexOf("(function () {\n    var home = document.getElementById('lightvela-intl-home');"),
+  runtime.indexOf("(function () {\n    var els = document.querySelectorAll('.sr');"),
+);
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -108,5 +112,27 @@ describe("homepage hero headline order", () => {
     expect(css).toMatch(
       /#lightvela-intl-home \.hero__line--dynamic \.hero__suffix \{[\s\S]*animation: hero-in[^;]*var\(--rotator-delay/,
     );
+  });
+
+  it("replays the domestic hero after scrolling away and back", () => {
+    const home = document.getElementById('lightvela-intl-home')!;
+    const hero = document.createElement('section');
+    hero.className = 'hero';
+    home.appendChild(hero);
+    let onIntersection: IntersectionObserverCallback | undefined;
+    vi.stubGlobal('IntersectionObserver', class {
+      constructor(callback: IntersectionObserverCallback) { onIntersection = callback; }
+      observe() {}
+      disconnect() {}
+    });
+    new Function(heroReplayRuntime)();
+    const notify = (isIntersecting: boolean) => onIntersection?.([{ target: hero, isIntersecting } as IntersectionObserverEntry], {} as IntersectionObserver);
+    notify(true);
+    expect(home).not.toHaveClass('hero-sequence-away');
+    notify(false);
+    expect(home).toHaveClass('hero-sequence-away');
+    notify(true);
+    expect(home).not.toHaveClass('hero-sequence-away');
+    expect(css).toContain('#lightvela-intl-home.hero-sequence-away .hero__char');
   });
 });
