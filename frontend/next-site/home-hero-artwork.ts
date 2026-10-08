@@ -170,9 +170,32 @@ export function mountHeroArtwork(root: HTMLElement): () => void {
   }
   const frameObserver = frame ? new MutationObserver(syncFrameEntrance) : undefined;
   if (frameObserver && frame) frameObserver.observe(frame, { attributes: true, attributeFilter: ['style', 'class'] });
-  // GSAP can animate computed opacity without a DOM mutation at every tick.
-  // Mirror the frame throughout its entrance and when that entrance replays.
-  if (frame) gsap.ticker.add(syncFrameEntrance);
+  // GSAP can animate computed opacity without a DOM mutation at every tick, so a
+  // ticker mirrors the frame throughout its entrance and when that entrance
+  // replays. Reading layout every frame is only worthwhile while the hero is on
+  // screen; once the user scrolls past the first screen an observer pauses the
+  // ticker and resumes it when the hero returns, so it no longer adds per-frame
+  // getBoundingClientRect/getComputedStyle work to every scroll. Environments
+  // without IntersectionObserver (e.g. jsdom) keep the ticker running, which
+  // preserves the original behaviour.
+  let tickerRunning = false;
+  const startTicker = () => {
+    if (frame && !tickerRunning && !disposed) { gsap.ticker.add(syncFrameEntrance); tickerRunning = true; }
+  };
+  const stopTicker = () => {
+    if (tickerRunning) { gsap.ticker.remove(syncFrameEntrance); tickerRunning = false; }
+  };
+  let heroVisibility: IntersectionObserver | undefined;
+  if (frame) {
+    if (typeof IntersectionObserver === 'function') {
+      heroVisibility = new IntersectionObserver((entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) startTicker();
+        else stopTicker();
+      }, { rootMargin: '120px 0px' });
+      heroVisibility.observe(heroElement);
+    }
+    startTicker();
+  }
   function draw() {
     const mobile = window.innerWidth < 900;
     const frameEdge = frame?.querySelector<HTMLElement>('.im') ?? frame ?? heroElement;
@@ -260,7 +283,7 @@ export function mountHeroArtwork(root: HTMLElement): () => void {
   reduce.addEventListener('change', draw);
   draw();
   return () => { disposed = true; trigger.kill(); frameObserver?.disconnect();
-    if (frame) gsap.ticker.remove(syncFrameEntrance);
+    heroVisibility?.disconnect(); stopTicker();
     actors.forEach(actor => actor.stop()); layer.remove();
     window.removeEventListener('scroll', follow);
     document.removeEventListener('visibilitychange', draw);
