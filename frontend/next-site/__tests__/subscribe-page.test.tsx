@@ -699,6 +699,43 @@ describe("SubscribePage", () => {
     expect(await screen.findByRole("heading", { name: "正在开通套餐" })).toBeInTheDocument();
   });
 
+  it("shows the original WeChat QR code when a zero-price Dianshi order already exists", async () => {
+    openClawState.isLoggedIn = true;
+    sessionState.isAuthenticated = true;
+    sessionState.user = { realnameVerified: true };
+    createDianshiPassOrderAndPayMock.mockRejectedValue({ code: "DIANSHI_LEGACY_ORDER_PENDING" });
+    listBundlesMock.mockResolvedValue([{
+      bundle_id: "bundle_launch_zero",
+      bundle_name: "启航 Launch",
+      description: [],
+      bundle_state: "ONLINE",
+      bundle_type: "general",
+      agent_quota: 1,
+      credit: 100,
+      price: { price: 750, total_cost: 750, real_total_cost: 0, currency: "CNY", discount: 0 },
+      time_span: 1,
+      time_unit: "m",
+      bundle_sales_available_count: 100,
+      bundle_sales_total_count: 100,
+      bundle_sales_state: "AVAILABLE",
+    }]);
+
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    const user = userEvent.setup();
+    render(<SubscribePage />);
+
+    await user.click(await screen.findByRole("button", { name: "免费订阅" }));
+    await user.click(screen.getByRole("button", { name: "确认开通" }));
+
+    await waitFor(() => expect(createPassOrderMock).toHaveBeenCalledWith({
+      bundle_id: "bundle_launch_zero",
+      period: 1,
+      time_unit: "m",
+    }));
+    expect(await screen.findByText("请使用微信扫描下方二维码完成支付")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "请完成支付" })).toBeInTheDocument();
+  });
+
   it("keeps nonzero CN orders on the WeChat payment flow", async () => {
     openClawState.isLoggedIn = true;
     sessionState.isAuthenticated = true;

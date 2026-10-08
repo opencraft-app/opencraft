@@ -3345,7 +3345,7 @@ export const SubscribePage = ({
    * **PC 端不再调 getPassOrderUrl** —— 因为 jifei pay_url 生成时绑定 wx_open_id，
    * PC 端没有 wx_open_id，提前调只能拿到错误的 url（与 CodeBuddy 一致）。
    *
-   * 计费开关开启后的零元点石订单走独立的下单并支付入口；本链路只处理非零元订单。
+   * 计费开关开启后的零元点石新单走独立入口；旧 do_goods 订单仍用本链路继续扫码。
    *
    * 安全：二维码里**只有 deal_name + auth_code + expires_at**，无 Bearer token、无 pay_url；
    * auth_code 是一次性 ticket（TTL ≤10 分钟），截图泄漏的最坏后果是替受害者发起一次支付。
@@ -3405,11 +3405,18 @@ export const SubscribePage = ({
       return;
     }
 
-    const order = await repositories.plans.createDianshiPassOrderAndPay({
-      bundle_id: plan.raw.bundle_id,
-      period: aiDuration.period,
-      time_unit: aiDuration.time_unit,
-    });
+    let order;
+    try {
+      order = await repositories.plans.createDianshiPassOrderAndPay({
+        bundle_id: plan.raw.bundle_id,
+        period: aiDuration.period,
+        time_unit: aiDuration.time_unit,
+      });
+    } catch (err) {
+      if (isGlobal || getBillingErrorCode(err) !== "DIANSHI_LEGACY_ORDER_PENDING") throw err;
+      await startPaidPassOrder(plan);
+      return;
+    }
     setPaymentContext({
       userId: currentUserId,
       plan,
@@ -3419,7 +3426,7 @@ export const SubscribePage = ({
     setSelectedPlan(plan);
     setModalStep("paying");
     await refreshPasses();
-  }, [aiDuration, finalizeBot, isSubscribed, refreshPasses, repositories.plans, currentUserId]);
+  }, [aiDuration, finalizeBot, isSubscribed, refreshPasses, repositories.plans, currentUserId, startPaidPassOrder]);
 
   /**
    * 国际站信用卡支付链路（正式）。

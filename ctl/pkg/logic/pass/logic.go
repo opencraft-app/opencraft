@@ -1877,6 +1877,8 @@ func mapTradePlaceOrderError(err error) error {
 			return errcode.ErrPassBillingAccountOpenFailed
 		case "DianshiActivityRequired":
 			return errcode.Wrap(errcode.ErrPassInvalidParam, "%s", tradeErr.Message)
+		case "LegacyDianshiOrderPending":
+			return errcode.ErrPassLegacyDianshiOrderPending
 		}
 	}
 	return nil

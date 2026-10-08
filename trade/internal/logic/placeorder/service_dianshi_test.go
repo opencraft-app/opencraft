@@ -548,6 +548,43 @@ func TestPlaceDianshiOrderAndPay_HappyPath(t *testing.T) {
 	}
 }
 
+func TestPlaceDianshiOrderAndPay_ExistingLegacyOrderRequiresPayment(t *testing.T) {
+	d, _, dc := newDianshiDeps()
+	d.store.findReusableFn = func(context.Context, string, int64, string, int64, time.Time) (*store.TradeOrder, error) {
+		return &store.TradeOrder{
+			DealName: "legacy-deal",
+			Status:   store.OrderStatusPaidPendingProvision,
+		}, nil
+	}
+
+	_, err := d.service.PlaceDianshiOrderAndPay(context.Background(), stdPlaceOrderReq())
+	if err == nil {
+		t.Fatal("expected legacy order payment signal")
+	}
+	if dc.doGoodsAndPayCalls.Load() != 0 {
+		t.Fatal("must not create a new Dianshi order while a legacy order is pending")
+	}
+	if d.writer.createOrderCalls.Load() != 0 {
+		t.Fatal("must not persist another trade order")
+	}
+}
+
+func TestPlaceDianshiOrderAndPay_IntlLegacyOrderKeepsExistingBehavior(t *testing.T) {
+	d, _, dc := newDianshiDeps()
+	d.service.deps.SiteKind = "intl"
+	d.store.findReusableFn = func(context.Context, string, int64, string, int64, time.Time) (*store.TradeOrder, error) {
+		return &store.TradeOrder{DealName: "intl-legacy-deal", Status: store.OrderStatusPaidPendingProvision}, nil
+	}
+
+	result, err := d.service.PlaceDianshiOrderAndPay(context.Background(), stdPlaceOrderReq())
+	if err != nil || result == nil || result.DealName != "intl-legacy-deal" {
+		t.Fatalf("international legacy order should keep its existing response, result=%+v err=%v", result, err)
+	}
+	if dc.doGoodsAndPayCalls.Load() != 0 {
+		t.Fatal("must not create another order for an international legacy order")
+	}
+}
+
 func TestGrantDianshiSubscriptionUsesExplicitCampaignWithoutResolver(t *testing.T) {
 	d, r, dc := newDianshiDeps()
 	r.err = errors.New("grant path must not resolve trade_bundle_activity")

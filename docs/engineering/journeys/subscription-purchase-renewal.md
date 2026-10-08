@@ -20,6 +20,17 @@
 - 权益应用失败：保留可重试状态，不重复创建外部订单。
 - CTL 开通失败：订单/支付事实不可丢失，补偿与重试单独记录。
 
+## 国内站 Pass 零元新购
+
+- 国内站付费开关开启且询价实付为 0 元时，前端在订单确认后调用
+  `POST /v1/passes/dianshi/order-and-pay`。Trade 仍须校验在线 Bundle、影子账号及 `purchase`
+  活动参与资格；符合条件的新单调用点石 `do_goods_and_pay`，同步发货后再等待 Pass 权益可见。
+- 若同用户、同活动、同 Bundle 存在可复用的旧 `do_goods` 未完成单，Trade 不再把它当作
+  `do_goods_and_pay` 成功结果，而是返回 `LegacyDianshiOrderPending`（HTTP 409）。CTL 映射为
+  `DIANSHI_LEGACY_ORDER_PENDING`；国内站前端仅对该码回退原 `POST /v1/passes/order`，复用旧单并获取
+  `auth_code`，随后展示微信扫码中转页。其他点石错误不触发重新下单。
+- 该兼容回退只用于国内站；国际站沿用既有行为。发布顺序为 Trade、CTL、前端，避免前端先收到尚未映射的冲突码。
+
 ## 国内站 Pass 续费点石
 
 - Pass 续费仍以原 `expired_time` 为计费与延长基线。询价与下单必须在收款前校验
