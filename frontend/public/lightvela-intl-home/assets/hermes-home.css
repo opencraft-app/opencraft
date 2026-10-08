@@ -1680,15 +1680,17 @@ canvas.home-scroll-cast { position: fixed; inset: 0; display: block; width: 100%
   }
 }
 @media (min-width: 769px) and (max-width: 899px) {
-  #lightvela-intl-home:is([data-locale^='id'], [data-locale='es']) .hero .hero__line--main {
-    font-size: clamp(16px, 2vw, 18px) !important;
-    white-space: nowrap;
-    max-width: 100%;
-  }
-  #lightvela-intl-home[data-locale^='ko'] .hero .hero__line--main {
-    font-size: clamp(22px, 3.5vw, 30px) !important;
-    white-space: nowrap;
-    max-width: 100%;
+  /* Match the two-line wrapping used at >=900px and <=768px. The retired
+     single-line approach forced nowrap here and shrank id/es to 16px -- smaller
+     than both neighbouring breakpoints (28px at <=768px, 26-32px at >=900px),
+     so the headline got smaller as the window widened past 768px. Wrap instead
+     at a size consistent with its neighbours. */
+  #lightvela-intl-home:is([data-locale^='id'], [data-locale='es'], [data-locale^='ko']) .hero .hero__line--main {
+    font-size: clamp(26px, 3.6vw, 30px) !important;
+    white-space: normal;
+    text-wrap: balance;
+    overflow-wrap: break-word;
+    max-width: min(560px, calc(100vw - 280px));
   }
   #lightvela-intl-home:is([data-locale^='id'], [data-locale='es'], [data-locale^='ko']) .hero .hero__title {
     gap: 80px;
