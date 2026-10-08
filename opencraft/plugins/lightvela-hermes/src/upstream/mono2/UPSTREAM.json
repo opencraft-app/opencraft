@@ -1,6 +1,6 @@
 {
   "source": "frontend/src",
-  "sourceRevision": "f2267d87301baca6dddcead71e84e2cdad0f76ab",
+  "sourceRevision": "595b7743a6e8a2e2b2c0c77edad8a12d797df6ae",
   "generatedBy": "scripts/sync-mono2-agent-console.mjs",
   "files": [
     {
@@ -89,23 +89,23 @@
     },
     {
       "file": "i18n/generated/en-US.json",
-      "sourceSha256": "f589a70eb55ed43bb07151599cf30d8bd08854628135f0259442ffb14f0d548e"
+      "sourceSha256": "5ff4e69fa5056cbdbfc22d13db296d5ad726ea9f5c0e8730e5c42a05e334a3b8"
     },
     {
       "file": "i18n/generated/es.json",
-      "sourceSha256": "f272b3f8b45a255b96667342ef47f4835df509cc7ecda63febba68ff3d689175"
+      "sourceSha256": "2c5e36b7e821cbd4c19d0fdf8cbd76182328d96bdad6f48657c18bcb48044192"
     },
     {
       "file": "i18n/generated/id-ID.json",
-      "sourceSha256": "281b7cfbe27652ac4d963fbf24853d7dbe255e586b90ece4c845e2789862a7f8"
+      "sourceSha256": "68820518818bc0537cdf7eb24729286541e977f85a021f837296f1dbf01fee7c"
     },
     {
       "file": "i18n/generated/ja-JP.json",
-      "sourceSha256": "43612b1d711fd3a8a09a13f9c167f165925a6381cbfe10346fa4deda3ac3a93b"
+      "sourceSha256": "61957d079fce7a9d03a1c34e0b2cc775578cda20a96832b4d8420c623656e638"
     },
     {
       "file": "i18n/generated/ko-KR.json",
-      "sourceSha256": "7b063d34dfe8272596612b5e47735ad36a86b9488c167d762bcca08fb926fd91"
+      "sourceSha256": "e73e088c1d897f6d298070866de43bb6a86d5bf0a88611a9e6c20271683b8d6d"
     },
     {
       "file": "i18n/generated/zh-CN.json",
