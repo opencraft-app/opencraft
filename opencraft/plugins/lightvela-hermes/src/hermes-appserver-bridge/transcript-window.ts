@@ -55,7 +55,14 @@ export class HermesTranscriptWindow {
     const messages = index > 0
       ? [...this.snapshot.messages.slice(0, index), ...page.messages]
       : page.messages;
-    this.snapshot = { messages, ...pageState(page) };
+    const state = pageState(page);
+    this.snapshot = {
+      messages,
+      nextOffset: state.nextOffset + Math.max(0, index),
+      // An anchored refresh extends the tail of the same loaded prefix; its
+      // oldest edge has not changed, including a previously exhausted edge.
+      possiblyTruncated: state.possiblyTruncated && (index >= 0 ? this.snapshot.possiblyTruncated : true),
+    };
     return this.snapshot;
   }
 

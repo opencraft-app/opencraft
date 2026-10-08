@@ -130,6 +130,14 @@ WSP-32 远端目录补充：目录选择与持久 Project 记录是独立能力�
 
 会话首次加载只在无可见历史的空槽中显示居中中性圆环，不显示加载文字；辅助技术可读取本地化状态名。Thread runtime 拥有加载/失败事实，视图不添加恢复计时器或第二套 authority。Design System 拥有共享圆环、主题色与减少动态效果规则；Conversation 拥有空槽几何和滚动。后台重连保留历史、输入和 View 身份，失败切换为可操作的重试而非永久转圈。
 
+Bot 的空展示页与历史耗尽分开：仍有更早源记录时，视口可在没有滚动手势的情况下
+按一次恢复意图最多推进三页，串行且有界；额度耗尽或失败在原状态槽提供继续／重试，
+不呈现新会话欢迎页、不自动排空全历史。重同步保留有持久锚点的已加载前缀及独立
+本地提交，不以展示缓存恢复执行权限。协议所有权见
+[Hermes message windows](../docs/chat-ui-architecture.md#hermes-message-windows-and-bot-history-continuity)；
+`hermes-bot-history-integration.test.ts` 和 `smoke-hermes-bot-history.ts` 验证真实组件与模拟远端端口，
+不代表已替换运行预览或实测远端 Hermes。
+
 ## Application navigation glyphs（Codex 26.930.31428 参考）
 
 - Navigation contribution 只声明图标语义和当前目的地；Web/Electron 的 NavigationIcon 拥有轮廓/选中图形投影，Design System 拥有 20px 图标、36px 基础控件、圆角、间距和状态色。不得套用菜单行的 14px 图标或独立次要颜色，也不以收缩时整体 scale 改变图标物理大小。

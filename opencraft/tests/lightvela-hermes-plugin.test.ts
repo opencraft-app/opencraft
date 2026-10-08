@@ -1647,7 +1647,7 @@ test("Hermes resume does not hide a missing durable history that should contain 
   );
 });
 
-test("Hermes history cursor pages by durable message offset from the bounded transcript window", async () => {
+test("Hermes short row window stays complete when the caller requests fewer Turns", async () => {
   const allMessages = [
     { role: "user", text: "one", row_id: 1 },
     { role: "assistant", text: "first", row_id: 2 },
@@ -1686,17 +1686,9 @@ test("Hermes history cursor pages by durable message offset from the bounded tra
     method: "thread/turns/list",
     params: { threadId: "stored", cursor: "hermes-messages:0", limit: 2, sortDirection: "desc" },
   }) as { data: Array<{ items: Array<{ content?: Array<{ text?: string }> }> }>; nextCursor: string | null };
-  assert.deepEqual(newest.data.map((turn) => turn.items[0]?.content?.[0]?.text), ["three", "two"]);
-  assert.equal(newest.nextCursor, "hermes-messages:4");
-
-  const older = await dispatchAppServerRequest(adapter, {
-    id: 2,
-    method: "thread/turns/list",
-    params: { threadId: "stored", cursor: newest.nextCursor, limit: 2, sortDirection: "desc" },
-  }) as { data: Array<{ items: Array<{ content?: Array<{ text?: string }> }> }>; nextCursor: string | null };
-  assert.deepEqual(older.data.map((turn) => turn.items[0]?.content?.[0]?.text), ["one"]);
-  assert.equal(older.nextCursor, null);
-  assert.deepEqual(requests.map(({ offset }) => offset), [0]);
+  assert.deepEqual(newest.data.map((turn) => turn.items[0]?.content?.[0]?.text), ["three", "two", "one"]);
+  assert.equal(newest.nextCursor, null, "a short source page exhausts history regardless of its Turn count");
+  assert.deepEqual(requests, [{ offset: 0, limit: 120 }]);
 });
 
 test("Hermes model.options is projected as a provider-safe AppServer catalog", async () => {

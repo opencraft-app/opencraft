@@ -17,6 +17,13 @@
 
 ## 诊断顺序
 
+Hermes 历史恢复与执行流分开：REST 的 120 条源记录窗口和 offset 拥有分页，
+OpenCraft 桥接器返回完整累计投影，不按 Turn 数二次截断。Bot 聊天可能不展示
+已完成的工具记录，空展示页不能冒充空历史；视口按一次恢复意图最多连续请求三页，
+仍有历史或读取失败时提供原位加载／重试。重同步仅凭同会话的持久消息锚点保留
+已加载前缀，新的读取独占权限与执行状态；本地提交和同代次实时消息独立保留，
+旧代次迟到页不得覆盖。详见 [Hermes 历史连续性](../../../opencraft/docs/chat-ui-architecture.md#hermes-message-windows-and-bot-history-continuity)。
+
 按“入口是否收到 → 编排是否找到实例 → runtime 是否健康 → provider 是否生成 → 流/渠道是否送出”定位，不从最终沉默直接归因模型。每层使用同一 request/session/instance 关联标识，日志不得包含密钥或完整敏感内容。
 
 VelaGW 到 NewAPI 的转发由网关覆盖写入一次性 `X-VelaGW-Trace-ID`，同时在网关 access log 记录 `trace_id`、上游响应头与首字节时间；`streaming` 字段表示上游**响应**是否为 SSE，不等于请求的 `stream` 参数。NewAPI 仅对携带有效关联 ID、耗时至少 30 秒或失败的请求记录从发起 provider 请求到获得响应头的 `relay_upstream_timeline`；流结束时，仅对总耗时至少 30 秒或异常的流记录首个有效 SSE 事件时间、事件数和结束原因。两侧按 `trace_id` 对账，区分 NewAPI 尚未获得 provider 响应头、已获得响应头但首事件迟到，以及客户端取消。诊断 ID 不经通配或正则请求头透传规则自动转发给 provider。诊断日志只含白名单 ID、时长、状态码、计数和枚举，不含请求体、密钥或原始错误文本；这些字段不改变 ping、超时、重试或流式输出行为。日志缺失不能单独证明请求未到达，仍须结合网关状态与服务实例日志判断。

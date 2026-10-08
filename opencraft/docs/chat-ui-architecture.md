@@ -609,6 +609,38 @@ revision per Item: this protects observed updates, not a claim of server-wide
 causal sequencing or a V4 Journal. Dot and task-chat renderers may differ while
 consuming this same identity-versus-position distinction.
 
+### Hermes message windows and Bot history continuity
+
+Hermes REST pagination owns source-row offsets, not rendered Turn or Bot-message
+counts. Each read adds one 120-row page to the scoped chronological window;
+the bridge returns that complete loaded projection. AppServer `limit` must not
+slice it again. A tail refresh grafts at a durable row anchor, accounts for the
+preserved prefix in its next offset, and does not reopen a known exhausted edge.
+Partial Turn regrouping can change execution/causal associations while retaining
+message IDs. Bot backfill therefore refreshes covered durable message metadata,
+rather than keeping stale associations merely because those IDs already exist.
+
+The Bot Source keeps durable history separate from local/live overlays. Resync
+may preserve an older prefix only within the same conversation incarnation and
+with a shared durable anchor; descriptor, execution and interaction authority
+always comes from the new read. A new cursor is opaque and cannot be calculated
+from visible message count. Delayed older reads are generation-scoped and cannot
+commit after resync, deletion or disposal. Old-epoch remote events are discarded;
+unadopted local submissions retain their independent client-message ownership.
+Once a durable row confirms that client-message identity, it adopts the local
+overlay, whether obtained by refresh or backfill. A delayed send failure or
+receipt then settles from the confirmed receipt; it cannot restore a failed
+optimistic row or regress completed execution. Concurrent reuse of an in-flight
+client-message identity does not issue another request.
+
+An empty display projection is not proof of empty source history. Completed
+tool-only rows can legitimately produce no Bot-chat units. The viewport requests
+at most three older pages per recovery intent, one page at a time, without
+requiring a physical top-scroll gesture. Remaining history or a failed read
+offers an explicit load/retry action in the existing status slot; unchanged or
+cyclic cursors stop automatic traversal. This is bounded display demand, not
+eager draining, transcript persistence, or execution readiness.
+
 ### Activity closure and disclosure authority
 
 `AgentActivitySegmentEnd` records why a contiguous slice ended (`user-input`,
