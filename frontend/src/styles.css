@@ -1622,6 +1622,19 @@ a {
     gap: 0;
   }
 
+  .lv-agents-sidebar:has(.lv-agent-overview-nav) {
+    padding-top: 0;
+  }
+
+  .lv-agent-overview-nav {
+    padding-block: 8px;
+  }
+
+  .lv-agent-overview-nav .lv-agents-nav-item {
+    font-size: 13px;
+    line-height: 20px;
+  }
+
   .lv-agents-sidebar-profile,
   .lv-agents-sidebar-controls,
   .lv-agents-sidebar-footer {
