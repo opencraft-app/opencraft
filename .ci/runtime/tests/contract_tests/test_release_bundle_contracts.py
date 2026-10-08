@@ -2874,7 +2874,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual(approval_reviews.get("name"), "确认发起 frontend EdgeOne 正式站发布候选")
         self.assertEqual(
             approval_reviews.get("reviewers"),
-            ["skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang", "mingyuxiao"],
+            ["skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang", "mingyuxiao", "xinqishang"],
         )
         self.assertIn("本阶段确认是否允许本次 frontend 构建发起 EdgeOne 正式站发布候选", workflow_text)
         self.assertIn("本阶段只控制是否允许从本次构建发起生产发布候选", workflow_text)
@@ -2914,7 +2914,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         release_reviews = (((stages[0].get("check-in") or {}).get("reviews") or {}).get("flows") or [])[0]
         self.assertEqual(
             release_reviews.get("reviewers"),
-            ["skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang", "mingyuxiao"],
+            ["skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang", "mingyuxiao", "xinqishang"],
         )
         self.assertNotIn("if:", template_text)
         self.assertIn("release_frontend_edgeone_artifact.sh", template_text)
@@ -4218,18 +4218,19 @@ refresh_skus http://unused img-jhb "$pools_json" ap-johorbahru
         self.assertIn('value: "shprod"', template_text)
         self.assertIn('value: "sgprod"', template_text)
 
-    def test_frontend_template_consumers_keep_frontend_prod_reviewers(self) -> None:
-        frontend_reviewers = '["skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang"]'
-        workflows = [
-            ".ci/tokyo-gateway-dashboard.yml",
-            ".ci/tokyo-frontend.yml",
-        ]
+    def test_frontend_template_consumer_and_owner_include_prod_reviewer(self) -> None:
+        reviewers_by_workflow = {
+            ".ci/tokyo-gateway-dashboard.yml": '["skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang"]',
+            ".ci/tokyo-frontend.yml": '["skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang", "xinqishang"]',
+        }
 
-        for workflow_path in workflows:
+        for workflow_path, reviewers in reviewers_by_workflow.items():
             with self.subTest(workflow=workflow_path):
                 workflow = yaml.safe_load((REPO_ROOT / workflow_path).read_text())
                 parameters = (workflow.get("extends") or {}).get("parameters") or {}
-                self.assertEqual(parameters.get("PROD_REVIEWERS"), frontend_reviewers)
+                self.assertEqual(parameters.get("PROD_REVIEWERS"), reviewers)
+
+        self.assertIn("xinqishang", (REPO_ROOT / "frontend/OWNERS").read_text().splitlines())
 
     def test_gateway_dashboard_adds_service_prod_reviewer(self) -> None:
         workflow = yaml.safe_load((REPO_ROOT / ".ci/gateway-dashboard.yml").read_text())
