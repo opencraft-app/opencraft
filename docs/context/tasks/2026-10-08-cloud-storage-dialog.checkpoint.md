@@ -1,21 +1,20 @@
 ## stage
-云存储弹窗实现及聚焦验证完成；用户已授权提交 MR。
+云存储弹窗的桌面高度已缩至视口的 85%，待更新现有 MR !5104。
 
 ## verified
-- 左下角账号菜单在存在当前 Bot 时以按钮打开当前页 Dialog；文件管理器复用原面板。
-- 聚焦组件测试 71/71、`pnpm check`、`pnpm build`、文档校验、`git diff --check` 通过。
-- 完整测试的模型配置失败由本机缺少 Python `cryptography` 触发；OpenCraft 检查因真源改动报告副本漂移。
+- 国内站本地预览在 932px 高视口下，弹窗高度约 792px；内容区可滚动到底部，无横向溢出。
+- `pnpm check`、`pnpm build:cn`、OpenCraft 同步只读检查和 `git diff --check` 通过。
+- 5174 国内站开发服务已在构建后恢复。
 
 ## unverified
-- 未用真实登录态操作云存储文件；未在国内与国际站浏览器实际截图验收。
-- 未执行完整通过的 Vitest 门禁或 OpenCraft 同步后的复检。
+- 远端 MR source commit 与 CI 状态待推送后核验。
 
 ## discard
-- Vitest 的临时 `127.0.0.1` 配置已删除；构建生成的无关文件已恢复。
+- 构建生成的 `next-env.d.ts` 和字体变化已恢复。
 
 ## restore
-- 隔离工作树 `/Users/pablozhong/.codex/worktrees/cloud-storage-dialog/lightvela`。
-- `docs/context/tasks/2026-10-08-cloud-storage-dialog.md` 记录需求、设计和验证。
+- 工作树 `/Users/pablozhong/.codex/worktrees/cloud-storage-dialog/lightvela`，分支 `codex/cloud-storage-dialog`，MR !5104。
+- 调整仅位于 `frontend/src/components/site/sidebar-user-menu-controller.tsx` 的云存储 Dialog 最大高度。
 
 ## next_action
-- 提交前端真源后同步 OpenCraft 副本，再推送分支并创建 MR。
+- 提交并推送高度调整，核对 MR source commit，重新打开本地预览弹窗。
