@@ -18,7 +18,22 @@ const LAYOUT = [
 // The lilac friend lets go first; the blue one stays on the edge longest.
 const HERO_DELAYS = [0, .08, .15, .25] as const;
 export const HERO_ARTWORK_TRIGGER_ID = 'hero-artwork-position';
+// The homepage is served in several locales, so the decorative friend buttons
+// must not hardcode a Chinese accessible name. Mirror the per-locale copy table
+// used by hero-chat.js and fall back to English for any unlisted locale.
+function heroFriendLabel(locale: string, index: number): string {
+  const n = index + 1;
+  const lower = (locale || '').toLowerCase();
+  if (lower.startsWith('zh-hant')) return `和第 ${n} 位 Hermes 揮手打招呼`;
+  if (lower.startsWith('zh')) return `和第 ${n} 位 Hermes 挥手打招呼`;
+  if (lower.startsWith('id')) return `Lambaikan tangan ke teman Hermes ke-${n}`;
+  if (lower.startsWith('es')) return `Saluda al amigo Hermes ${n}`;
+  if (lower.startsWith('ja')) return `${n}体目のHermesに手を振って挨拶する`;
+  if (lower.startsWith('ko')) return `${n}번째 Hermes에게 손 흔들어 인사하기`;
+  return `Wave hello to Hermes friend ${n}`;
+}
 export function mountHeroArtwork(root: HTMLElement): () => void {
+  const locale = root.dataset.locale || document.documentElement.lang || 'en-US';
   const hero = root.querySelector<HTMLElement>('.hero');
   if (!hero) return () => {};
   const heroElement: HTMLElement = hero;
@@ -48,7 +63,7 @@ export function mountHeroArtwork(root: HTMLElement): () => void {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'hero-artwork-friend';
-    button.setAttribute('aria-label', `和第 ${i + 1} 位 Hermes 挥手打招呼`);
+    button.setAttribute('aria-label', heroFriendLabel(locale, i));
     button.style.setProperty('--friend-size', `${size}px`);
     const life = document.createElement('span');
     life.className = 'hero-artwork-life';

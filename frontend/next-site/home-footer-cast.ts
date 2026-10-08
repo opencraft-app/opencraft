@@ -26,7 +26,10 @@ export function mountFooterCast(root: HTMLElement): () => void {
   const loop = document.createElement('video');
   loop.className = 'home-footer-cast__loop';
   loop.src = PINGPONG;
-  loop.preload = 'auto';
+  // preload='none' so the browser does not fetch this ~1.2MB loop while the
+  // footer is still off-screen; it is requested on the first play(), which only
+  // happens once the footer scrolls into view.
+  loop.preload = 'none';
   loop.muted = true;
   loop.defaultMuted = true;
   loop.playsInline = true;
