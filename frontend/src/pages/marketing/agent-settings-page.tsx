@@ -6352,7 +6352,9 @@ export const AgentSettingsPage = ({
                                     return (
                                       <Fragment key={session.chatId}>
                                       {chatSessionPagination.pinnedCount > 0 && index === 0 ? (
-                                        <li className="lv-agents-session-group-label">{t("已置顶")}</li>
+                                        <li className="lv-agents-session-group-label">
+                                          {locale.startsWith("zh") ? t("置顶") : t("已置顶")}
+                                        </li>
                                       ) : null}
                                       {chatSessionPagination.pinnedCount > 0 && index === chatSessionPagination.pinnedCount ? (
                                         <li className="lv-agents-session-group-label">{t("最近对话")}</li>
