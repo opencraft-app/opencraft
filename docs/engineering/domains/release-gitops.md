@@ -592,6 +592,7 @@ sgprod 旧 Auth 镜像（源码 `bf1c36960ed4`）只接受一个 Sites client，
 
 - 环境 Secret 的长期真源是 SSM；`master` 中的 SOPS 文件是 source-facing 快照，`gitops` 中的 SOPS 文件是 deploy-facing 期望。修复顺序必须是 SSM → `master` → `gitops`，不能只 patch live 或只修改 `gitops`。
 - SSM manifest 应声明运行时必填键。重新导出时缺少 required key 必须失败，避免后续 promotion 静默删除 live 已有凭据。
+- Service Gateway 云语音按上海、新加坡独立启用。区域 manifest 从同地域 CTL 的固定 SSM 版本仅投影 `CTL_LLMGATEWAY_ADMIN_TOKEN` 为 `VELAGW_SPEECH_ADMIN_TOKEN`，以专用 SOPS Secret、KSOPS generator 和该区域 bundle publish paths 一起晋级；不复制其他 CTL 密钥，不跨区域复用令牌。区域 control/traffic origin 与具体浏览器 origin 必须随配置交付，镜像与 Secret 完整校验后才同步对应 Gateway Application。
 
 ## nextgen-dashboard 下线的 GitOps 处置（2026-09-22）
 

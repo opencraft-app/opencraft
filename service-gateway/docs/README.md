@@ -51,9 +51,11 @@ speech:
 ```
 
 地址必须是同一区域的固定 origin，不接受客户端 upstream；管理令牌由运行时 Secret 提供。
-上海部署通过独立的 `service-gateway-speech-secrets` 投影令牌；
-`scripts/ssm_manifest.service-gateway.shprod.yaml` 从现有区域 SSM 凭据仅映射
+上海与新加坡分别通过本地域的 `service-gateway-speech-secrets` 投影令牌；
+`scripts/ssm_manifest.service-gateway.{shprod,sgprod}.yaml` 从现有区域 SSM 凭据仅映射
 `CTL_LLMGATEWAY_ADMIN_TOKEN`，不复制 CTL 的其他密钥，也不引入第二凭据真源。
+上海使用 `token-admin.lightvela.com` / `token.lightvela.com`，新加坡使用
+`token-admin.lightvela.ai` / `token.lightvela.ai`，分别晋级区域配置与加密 Secret。
 未配置时路由不启用，配置但没有令牌时启动失败。默认 Key 存在时复用；缺失时
 现有管理接口可能创建 Key，但不重置实例配置或自行授予套餐权益。
 202 只代表 Key 请求受理，缓存其未就绪结果 60 秒，不自动重复提交或重放音频。
