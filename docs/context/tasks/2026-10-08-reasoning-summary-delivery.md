@@ -6,7 +6,7 @@ triggers: ["reasoning summary delivery", "思考摘要合入预览", "returned t
 owner: skipzhang
 authority: derived
 source_of_truth: ["opencraft/docs/build-matrix.md", "opencraft/docs/chat-ui-architecture.md"]
-status: active
+status: retired
 reviewed_at: 2026-10-08
 review_due: 2027-01-06
 revision: 1.0.0
@@ -56,10 +56,12 @@ The actual runtime candidate preserves all 571 Web files, native Codex 0.160.0 a
 Current source branch is behind master and dirty; do not reset or merge in place. Default git fetch lacked a credential helper; retry uses the user-provided existing private helper file without displaying its contents. Runtime switch interrupts the hosting turn; preserve data and independently verify restart or rollback. Real-provider summary generation and iPhone acceptance remain separate.
 
 ## stage
-Scoped source and isolated runtime candidate verified; publication and independent preview cutover are the remaining delivery actions. No service switch yet.
+Delivered. Source commit 2e5792cf0670aadb07e9d61a8ce177457b15d7a2 was published atomically to the feature branch and master using ordinary fast-forward protections, without force. A subsequent independent merge advanced master to 171d505b45d71b68c0d411483daf4ccad9f62362; ancestry read-back confirms the delivered source remains included. No original dirty checkout changes were reset or discarded.
+
+The independent supervisor completed preview cutover at 2026-10-08T11:38:06.435Z with state switched and new port80 PID283271. Root read-back at 2026-10-08T11:44Z confirms that PID owns the listener, original unit and cwd, runtime/manifest hashes exactly match the candidate, and the health interface reports ok with AppServer configured. All 571 Web files and original data directory remain unchanged. The supervisor exited successfully and retained private rollback artifacts. No rollback was required or fault-injected on live. Existing active/history turns are not retroactively given summary text; real-provider and iPhone acceptance remain separate.
 
 ## restore
-Original source checkout and running package remain intact. Do not re-run old switch scripts or use old source snapshots as current Git authority. Preserve exact live version/digest/PID checks immediately before switch.
+Original source checkout remains intact. Private runtime and manifest backups are retained by the successful supervisor receipt. Do not re-run this or older one-shot switch scripts: their guards intentionally require the preceding PID/digests. Future rollback or delivery must inspect the actual current owner and artifacts, rather than using old source snapshots as Git authority.
 
 ## next_action
-Commit the scoped source, publish with ordinary fast-forward remote protection and read back the master commit; then submit the reviewed independent preview supervisor and verify its actual post-cutover or rollback receipt.
+No required source or preview delivery remains. A new real turn can exercise the missing-summary default; show a disclosure only when the engine actually returns readable text, with independent initially-collapsed thinking/tool controls. Real-provider summary generation and native iPhone acceptance are not guaranteed by synthetic checks. Keep the unrelated SSH baseline fixture failure visible for its own follow-up.
