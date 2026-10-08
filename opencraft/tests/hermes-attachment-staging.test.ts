@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 
 import type { HermesHostFileSystem } from "../plugins/lightvela-hermes/src/hermes-appserver-bridge/dashboard-file-system";
@@ -86,5 +87,48 @@ test("Hermes attachment staging rejects unowned identities and malformed bytes",
     () => service.stage({ ...request, source: { kind: "client-bytes", dataBase64: "%%%=" } }),
     /base64/iu,
   );
+  await assert.rejects(
+    () => service.stage({ ...request, source: { kind: "client-bytes", dataBase64: "aGVsbG9=" } }),
+    /base64/iu,
+  );
   await assert.rejects(() => service.stage({ ...request, size: 4 }), /does not match/iu);
+});
+
+test("Hermes attachment staging decodes across Base64 chunks and replays the same bytes", async () => {
+  const fileSystem = new MemoryHermesFileSystem();
+  const service = new HermesAttachmentStagingService(fileSystem);
+  const size = 1024 * 1024 + 4;
+  const request = {
+    clientAttachmentId: "attachment-chunk-boundary",
+    name: "notes.bin",
+    mimeType: "application/octet-stream",
+    size,
+    source: { kind: "client-bytes" as const, dataBase64: Buffer.alloc(size, 0x61).toString("base64") },
+  };
+  const staged = await service.stage(request);
+  assert.deepEqual(await service.stage(request), staged);
+  assert.equal(staged.ref.location.kind, "host-file");
+  if (staged.ref.location.kind !== "host-file") throw new Error("Expected Host file");
+  assert.equal(fileSystem.files.get(staged.ref.location.path), request.source.dataBase64);
+});
+
+test("Hermes attachment staging uses the Host platform SHA-256 provider", async () => {
+  const fileSystem = new MemoryHermesFileSystem();
+  let digestCalls = 0;
+  const service = new HermesAttachmentStagingService(fileSystem, async (bytes) => {
+    digestCalls += 1;
+    return createHash("sha256").update(bytes).digest();
+  });
+  const request = {
+    clientAttachmentId: "attachment-native-digest",
+    name: "notes.txt",
+    mimeType: "text/plain",
+    size: 5,
+    source: { kind: "client-bytes" as const, dataBase64: "aGVsbG8=" },
+  };
+  const staged = await service.stage(request);
+  assert.equal(staged.ref.location.kind, "host-file");
+  assert.ok(digestCalls >= 2, "content and metadata hashes use the injected provider");
+  assert.deepEqual(await service.resolve(staged.ref.location), staged.ref);
+  assert.deepEqual(await service.remove({ id: request.clientAttachmentId }), { removed: true });
 });

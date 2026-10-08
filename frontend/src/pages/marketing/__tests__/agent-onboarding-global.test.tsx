@@ -349,6 +349,45 @@ describe("international Bot onboarding", () => {
     expect(navigateMock).not.toHaveBeenCalled();
   });
 
+  it("opens the same named delete confirmation from the embedded native request", async () => {
+    bots = [buildBot(), { ...buildBot(), id: "bot-child", profileId: "child", isDefault: false, name: "Research Bot" }];
+    const onDeleteRequestHandled = vi.fn();
+    render(<AppNavigationProvider value={createNavigation("?bot=bot-child")}>
+      <AgentSettingsPage
+        showHeader={false}
+        sectionId="overview"
+        embedded
+        deleteRequestId={1}
+        deleteRequestBotId="bot-child"
+        onDeleteRequestHandled={onDeleteRequestHandled}
+      />
+    </AppNavigationProvider>);
+    expect(await screen.findByText("风险提示：")).toBeInTheDocument();
+    expect(onDeleteRequestHandled).toHaveBeenCalledOnce();
+    expect(screen.getByRole("button", { name: "确认删除 Bot" })).toBeDisabled();
+    fireEvent.change(screen.getByPlaceholderText("请输入 {{name}}"), { target: { value: "Research Bot" } });
+    fireEvent.click(screen.getByRole("button", { name: "确认删除 Bot" }));
+    await waitFor(() => expect(deleteBot).toHaveBeenCalledWith("bot-child"));
+  });
+
+  it("keeps the main Bot deletion blocked while another Bot shares its instance", async () => {
+    bots = [buildBot(), { ...buildBot(), id: "bot-child", profileId: "child", isDefault: false, name: "Research Bot" }];
+    const onDeleteRequestHandled = vi.fn();
+    render(<AppNavigationProvider value={createNavigation("?bot=ins-372")}>
+      <AgentSettingsPage
+        showHeader={false}
+        sectionId="overview"
+        embedded
+        deleteRequestId={1}
+        deleteRequestBotId="ins-372"
+        onDeleteRequestHandled={onDeleteRequestHandled}
+      />
+    </AppNavigationProvider>);
+    await waitFor(() => expect(onDeleteRequestHandled).toHaveBeenCalledOnce());
+    expect(screen.queryByText("风险提示：")).not.toBeInTheDocument();
+    expect(deleteBot).not.toHaveBeenCalled();
+  });
+
   it("keeps every Bot visible when the selected Bot changes", async () => {
     bots = [buildBot(), { ...buildBot(), id: "bot-child", profileId: "child", isDefault: false, name: "Research Bot" }];
     const view = render(page("?bot=ins-372"));

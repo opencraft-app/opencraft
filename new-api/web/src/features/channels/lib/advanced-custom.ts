@@ -34,6 +34,11 @@ export const ADVANCED_CUSTOM_CONVERTER_OPTIONS: Array<{
   triggerLabel: string
 }> = [
   {
+    value: 'openai_transcriptions_to_hunyuan_asr',
+    label: 'Hunyuan ASR',
+    triggerLabel: 'Hunyuan ASR',
+  },
+  {
     value: 'none',
     label: 'Native forwarding',
     triggerLabel: 'Native forwarding',
@@ -377,6 +382,13 @@ export function getAdvancedCustomConverterDefaults(
 ): AdvancedCustomConverterDefaults {
   const normalizedIncomingPath =
     incomingPath.trim() || getDefaultAdvancedCustomIncomingPath(converter)
+
+  if (converter === 'openai_transcriptions_to_hunyuan_asr') {
+    return {
+      upstream_path: '/v1/wand/asrproxy/sync_transcribe',
+      auth: bearerHeaderAuth(),
+    }
+  }
 
   if (converter === 'none') {
     return {
@@ -833,6 +845,9 @@ function isConverterPathAllowed(
   incomingPath: string,
   converter: AdvancedCustomConverter
 ): boolean {
+  if (converter === 'openai_transcriptions_to_hunyuan_asr') {
+    return incomingPath === '/v1/audio/transcriptions'
+  }
   if (converter === 'none') return true
   if (converter === 'anthropic_messages_to_openai_chat_completions') {
     return incomingPath === '/v1/messages'

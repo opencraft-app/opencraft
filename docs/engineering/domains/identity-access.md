@@ -107,11 +107,23 @@ GET `/oauth2/authorize`，统一 `/auth/federation/authorize` 页面复用 Login
 POST `/oauth2/authorize` 签发 code。不新增登录页、Google 专属启动入口或 provider 回调分支。
 
 在 `LIGHTCLAW_OIDC_CLIENTS_JSON` 中显式注册：
-`{"id":"opencraft-native-v1","display_name":"Vela","redirect_uris":["opencraft://auth/lightvela"]}`。
+`{"id":"opencraft-native-v1","display_name":"Vela","redirect_uris":["opencraft://auth/lightvela","opencraft-intl://auth/lightvela"]}`。
+双包由构建 edition 选择国内或国际的精确原生 callback；服务兼容仅注册国内 callback 的既有配置，
+新增双包时须显式注册这两个地址。区域切换只在开发者模式中提供，不从当前页面、缓存或错误推断区域。
 以及 `opencraft-web-v1` 的两个精确 HTTPS callback：
 `https://chat.lightvela.com/auth/lightvela/callback`、
 `https://chat.lightvela.ai/auth/lightvela/callback`。保留 site-gateway 原有两个精确 HTTPS callback。只有 native client 的精确
 自定义协议地址被允许；通用 Web return_to 不变，不支持通配、查询、fragment 或路径变体。
+
+`opencraft-web-v1` 可额外显式注册
+`https://*.devcloud.woa.com/auth/lightvela/callback`，作为第一方开发环境的有界例外。
+仅匹配合法 DNS 子域（含多级子域），必须 HTTPS、无显式端口，且路径完全一致；
+不允许根域、查询、fragment、userinfo 或其他通配模式。国内与国际 Auth 均注册此项，
+两地 service-gateway 的全局 CORS 同步允许 `https://*.devcloud.woa.com`，响应反射具体 Origin
+并保留 `Vary: Origin`，不返回通配星号。此授权意味着信任整个子域族作为第一方客户端；
+域名管理方必须控制子域分配与回收，不能将不可信租户放入此命名空间。
+授权码保存并严格匹配实际发起授权的具体 callback，而非注册模式；跨子域兑换、错误 PKCE
+和重复兑换均被拒绝。其他客户端及 readiness issuer 的精确注册限制保持不变。
 OIDC 未启用、无 MySQL 或客户端未注册时不降级到其他认证实现。
 
 App 持有随机 state/verifier，使用 S256、nonce、response_type=code、scope=openid profile。

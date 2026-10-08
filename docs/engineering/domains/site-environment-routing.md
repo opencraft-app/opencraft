@@ -35,11 +35,19 @@ Pass 升配微信桥通过精确的 `POST /v1/passes/{pass_id}/modify/order-url`
 | 部署期望 | `argocd/apps/<env>/`、`argocd/services/*/<env>/` |
 | 真实运行 | Argo、集群、域名与浏览器 E2E 的现场证据 |
 
+国内站与国际站共用的前端组件视觉规范由 [Frontend Design Notes](../../../frontend/DESIGN.md) 维护；同类组件在两站使用一致的圆角规则，区域差异需有明确的设计依据。
+
 国内站与国际站复用定时任务卡片操作界面：横向省略号在桌面悬停、点击、移动端点按或键盘激活后显示纵向的图标与本地化操作名称列表；两站沿用相同任务状态门控，文案由各自 locale 提供。
+
+OpenCraft iOS 的内置 Bot DOM runtime 同时包含国内与国际的 frontend 组件，但区域不是从生成物的构建环境推断。原生登录会话选择 `cn` 或 `intl` 后，在 DOM 脚本运行前显式设置 frontend 的 region、对应的 `api.lightvela.com` 或 `api.lightvela.ai` API base、站点 base 和 locale；Bot 仓储请求沿用 frontend 的现有实现，不跨区回退。站点账号与订阅网页只在匹配会话区域的第一方 WebView 打开。真机需分别核对两区的 DOM origin 和 API 请求；本地 HTML 打包成功不能证明跨域请求已通过。
 
 ## 产品文档区域
 
 `frontend/src/content/docs/` 保留 cn/global/en/id 源；生成的 zh-cn/zh-sg/en-us/zh-hant/id-id 输出不直接编辑。区域差异必须通过 parity 测试和真实路由共同证明。
+
+跨区域产品定义文案使用“云端 AI Agent 产品”及对应语言表达；部署与运行的云端托管能力仍按功能事实描述。
+
+国内站 overview 的产品简介以个人 AI 助理与伙伴、云端独立运行及 7×24 小时在线为主；Hermes Agent 是当前 Agent 的实现基础，不作为 LightVela 的产品名称。
 
 国内站文档的产品阶段口径与同区域 `llms.txt` 事实摘要保持一致。已开放订阅后，概览和套餐说明不再展示产品级公测提示；首购活动及价格以订阅页为准。单项功能的 Beta 标记仍按实际产品入口核对。
 
@@ -64,6 +72,7 @@ Pass 升配微信桥通过精确的 `POST /v1/passes/{pass_id}/modify/order-url`
 - 国际站首页页脚 Community 优先展示 `X / Twitter`，其后依次为 `Discord`、`WhatsApp`、`YouTube`；所有开放 locale 共用该顺序。
 - 国内站与国际站共享产品名时仍属于两套展示产物，验证时应分别启动对应区域构建或预览，不能用单站截图替代双站边界确认。
 - 国内站与国际站首页在登录态均显示直达 `/agents` 的本地化产品入口；国际站新版首页由 `InternationalHomeRuntime` 显式开启该入口，同时保留未登录态仅展示语言切换与登录动作的 `loginOnly` 规则。
+- 首页顶部产品入口与头像菜单“我的智能体伙伴”共用资格判断：会话和套餐状态确认后，已有有效或历史套餐的用户无需等待 Bot 列表即可看到入口；仅靠现存 Bot 证明资格的用户需等待列表成功返回。权益未确认或失败、没有任何资格的账号继续隐藏入口。已确认有套餐资格而 Bot 列表失败时仍显示入口，由 `/agents` 展示错误和重试操作；入口仍由该页面自身门禁保护。
 - 国内站 V2 首页不使用国际站的 `loginOnly` 规则：未登录 Header 与 Hero 展示“免费试用”并进入 `/subscribe`，登录态 Header 与 Hero 展示“开始使用”并进入 `/agents`；静态 Hero 默认输出未登录态，认证恢复后再同步登录态入口。
 - 国内站与国际站 `/subscribe` 的未登录 Header 统一启用 `loginOnly`：隐藏创建入口，仅保留登录主动作（国际站同时保留语言切换）；套餐卡“立即订阅”继续承担转化并触发登录。
 - 根首页的初始 HTML、Flight、Next 脚本数量与 raw/gzip 体积由 `pnpm check:homepage-performance` 对真实 `out/index.html` 执行预算检查，同时拒绝旧 `PublicHomePage` / `LandingPageView` chunk 回流；国内与国际构建仍须分别验证，预算通过不能替代浏览器回归或线上 Web Vitals。
@@ -78,9 +87,11 @@ Pass 升配微信桥通过精确的 `POST /v1/passes/{pass_id}/modify/order-url`
 - 双站 `announcements/public-beta` 以及国际站 `use-cases/telegram-whatsapp-safety-boundaries`、`use-cases/lifelike-im-agent-rhythm-social-memory`、`use-cases/im-agent-skill-scenarios`、`use-cases/whatsapp-24-7-customer-service` 暂时下线但保留源稿。下线需同时移除 sidebar、slug 映射与 Fumadocs 注册，并重新生成 route manifest、搜索与公开索引；旧 URL 返回 404，不跨语言回退，公开正文不得继续链接到这些页面。恢复时重新评审源稿并成套恢复注册和链接。
 - 首页静态 fragment 的链接、图片版本参数、合规信息和客户端演示外壳属于站点路由责任面；修改后必须同步更新正式设计文档，并用静态链接检查、前端测试和本地/预览环境证明没有跨站点串链。
 
-## 国际站浏览器标题
+## 双站浏览器标题
 
-国际站英文首页 `/` 与智能体入口 `/agents/`（含其产品路由）统一显示 `My AI Companion | LightVela`。内嵌 OpenCraft 只呈现对话内容，不写入宿主页面的 `document.title`；独立 OpenCraft Web/Electron 仍由自身 Shell 管理标题。国内站与其他语言沿用各自的本地化标题。
+国际站英文首页 `/` 与智能体入口 `/agents/`（含其产品路由）统一显示 `My AI Companion | LightVela`。内嵌 OpenCraft 只呈现对话内容，不写入宿主页面的 `document.title`；独立 OpenCraft Web/Electron 仍由自身 Shell 管理标题。
+
+国内站首页 `/` 与智能体入口 `/agents/` 统一显示 `我的智能体伙伴 | LightVela`；首页的 Next metadata 和客户端 SEO 标题数据保持一致。其他语言继续沿用各自的本地化标题。
 
 ## 订阅页交互边界
 
@@ -134,7 +145,7 @@ Pass 升配微信桥通过精确的 `POST /v1/passes/{pass_id}/modify/order-url`
 
 ## 公共账号菜单边界
 
-- 登录态头像菜单提供“账号”（`/account`）与“套餐与费用”（`/account/billing`），并在底部保留退出登录。Agent 控制台沿用左侧导航底部的账号触发器与向上展开菜单；当前有效 Pass 的 `bundle_type` 严格等于 `ai` 时，该侧栏菜单额外展示“模型”（`/agents/models`），同时从 Agent 的 Use 分组移除重复入口。其他类型以及字段缺失或未知时，模型入口保留在 Use 分组。公共页 Header 保留“我的智能体伙伴”入口，且不展示该套餐专属“模型”入口。
+- 登录态公开页 Header 的头像图片在已有套餐或 Bot 资格确认后链接到 `/agents`，资格未确认或不存在时链接到 `/account`，旁边的箭头继续展开头像菜单。菜单提供“账号”（`/account`）与“套餐与费用”（`/account/billing`），并在底部保留退出登录。Agent 控制台沿用左侧导航底部的账号触发器与向上展开菜单；当前有效 Pass 的 `bundle_type` 严格等于 `ai` 时，该侧栏菜单额外展示“模型”（`/agents/models`），同时从 Agent 的 Use 分组移除重复入口。其他类型以及字段缺失或未知时，模型入口保留在 Use 分组。公共页 Header 保留“我的智能体伙伴”入口，且不展示该套餐专属“模型”入口。
 - Agent 侧栏账号菜单在 AI 套餐下按“模型”→“套餐与费用”→“账号”→“语言”（仅国际站）排列；其他套餐下按“套餐与费用”→“账号”→“语言”（仅国际站）排列。公共页 Header 账号菜单保持“账号”先于“套餐与费用”。
 - 国际站英文分别使用 `Account`、`Plans & billing` 与 `My AI Companion`。两个账号私域页面均要求登录、保持 noindex/nofollow；账号页承载资料与身份管理，套餐与费用页承载订阅和国际站支付方式，购买入口仍为 `/subscribe`。
 - 订阅失败后的套餐管理/续费引导进入 `/account/billing`；创建前的实名认证引导与邮箱绑定回调仍进入 `/account`，仅账号视图消费对应 query。国内续费的实名子流程由 `RenewPassModal` 自己承载，不依赖账号页资料卡的认证入口。

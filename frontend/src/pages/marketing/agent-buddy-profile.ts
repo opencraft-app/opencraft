@@ -54,7 +54,7 @@ export type BuddyProfileState = {
   /**
    * 是否已走过本引导流程写入过配置。
    *
-   * 判据是 SOUL 里有没有 `LightVela-Avatar` 自定义字段 —— 后端建 bot 时
+   * 判据是 profile.yaml 或旧 SOUL 中有没有头像字段。后端建 Bot 时
    * 会写一个默认 SOUL.md，所以「SOUL 存在」不能代表「用户配过」。
    * null 表示还没读到（沙箱未就绪等）。
    */

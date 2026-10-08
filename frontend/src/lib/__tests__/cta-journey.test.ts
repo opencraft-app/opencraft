@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  canShowMyAgentsEntry,
   CTA_COPY_BY_LOCALE,
   getCtaCopy,
   journeyHref,
@@ -9,6 +10,36 @@ import {
   resolvePostLoginRoute,
 } from '@/lib/cta-journey';
 import { AGENTS_HOME_PATH, SUBSCRIBE_PATH } from '@/lib/agent-routes';
+
+describe('canShowMyAgentsEntry', () => {
+  const pendingBots = {
+    hasResolvedPasses: true,
+    passesLoading: false,
+    passesError: false,
+    isSubscribed: false,
+    hasHistoricalPass: false,
+    hasBots: false,
+    botsLoading: true,
+    botsError: false,
+  };
+
+  it('shows a confirmed subscriber or former subscriber while Bots load or fail', () => {
+    expect(canShowMyAgentsEntry({ ...pendingBots, isSubscribed: true })).toBe(true);
+    expect(canShowMyAgentsEntry({ ...pendingBots, hasHistoricalPass: true, botsError: true })).toBe(true);
+  });
+
+  it('waits for Bots only when they are the remaining proof of entry', () => {
+    expect(canShowMyAgentsEntry({ ...pendingBots, hasBots: true })).toBe(false);
+    expect(canShowMyAgentsEntry({ ...pendingBots, hasBots: true, botsLoading: false })).toBe(true);
+    expect(canShowMyAgentsEntry({ ...pendingBots, hasBots: true, botsLoading: false, botsError: true })).toBe(false);
+    expect(canShowMyAgentsEntry({ ...pendingBots, botsLoading: false })).toBe(false);
+  });
+
+  it('keeps the entry hidden until pass status is confirmed', () => {
+    expect(canShowMyAgentsEntry({ ...pendingBots, isSubscribed: true, hasResolvedPasses: false })).toBe(false);
+    expect(canShowMyAgentsEntry({ ...pendingBots, isSubscribed: true, passesError: true })).toBe(false);
+  });
+});
 
 describe('resolvePostLoginRoute', () => {
   it('sends unsubscribed users to the subscribe page', () => {

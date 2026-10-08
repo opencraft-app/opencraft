@@ -53,7 +53,7 @@ func TestNativeOIDCUsesUnifiedAuthorizationAndSessionAdapter(t *testing.T) {
 	now := time.Now().UTC()
 	registry, err := oidc.NewRegistry([]oidc.Client{
 		{ID: oidc.NativeClientID, DisplayName: "Vela", RedirectURIs: []string{oidc.NativeRedirectURI}},
-		{ID: oidc.WebClientID, DisplayName: "OpenCraft Web", RedirectURIs: []string{oidc.WebCNRedirectURI, oidc.WebInternationalRedirectURI}},
+		{ID: oidc.WebClientID, DisplayName: "OpenCraft Web", RedirectURIs: []string{oidc.WebCNRedirectURI, oidc.WebInternationalRedirectURI, oidc.WebDevCloudRedirectURI}},
 		{ID: "web", DisplayName: "Web", RedirectURIs: []string{"https://web.example/callback"}},
 	})
 	if err != nil {
@@ -201,6 +201,38 @@ func TestNativeOIDCUsesUnifiedAuthorizationAndSessionAdapter(t *testing.T) {
 	decodeJSONResponse(t, webResult, &webBody)
 	if _, err := svc.CurrentSession(context.Background(), webBody.Token); err != nil {
 		t.Fatal("invalid web session")
+	}
+	// A registered family only admits the authorize request. The resulting code
+	// remains bound to its concrete subdomain, verifier, and one-time exchange.
+	callback := "https://join.devcloud.woa.com/auth/lightvela/callback"
+	devCode, err := provider.CreateAuthorizationCode(context.Background(), webSession.User.ID, oidc.AuthorizeRequest{
+		ClientID: oidc.WebClientID, RedirectURI: callback, ResponseType: "code",
+		Scope: "openid profile", State: "devcloud-state", Nonce: "devcloud-nonce",
+		CodeChallenge: oidc.S256Challenge(strings.Repeat("d", 43)), CodeChallengeMethod: "S256",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	devInput := map[string]any{"client_id": oidc.WebClientID, "code": devCode.Code, "code_verifier": strings.Repeat("d", 43), "redirect_uri": "https://other.devcloud.woa.com/auth/lightvela/callback"}
+	if result := performJSONRequest(t, other, "POST", "/auth/session/exchange", devInput); result.Code != http.StatusBadRequest {
+		t.Fatal("code exchanged by another subdomain")
+	}
+	devInput["redirect_uri"] = callback
+	devInput["code_verifier"] = strings.Repeat("x", 43)
+	if result := performJSONRequest(t, other, "POST", "/auth/session/exchange", devInput); result.Code != http.StatusBadRequest {
+		t.Fatal("code exchanged with wrong verifier")
+	}
+	devInput["code_verifier"] = strings.Repeat("d", 43)
+	devResult := performJSONRequest(t, other, "POST", "/auth/session/exchange", devInput)
+	if devResult.Code != http.StatusOK || devResult.Header().Get("Cache-Control") != "no-store" || len(devResult.Result().Cookies()) != 0 {
+		t.Fatalf("DevCloud exchange: %d", devResult.Code)
+	}
+	decodeJSONResponse(t, devResult, &webBody)
+	if _, err := svc.CurrentSession(context.Background(), webBody.Token); err != nil {
+		t.Fatal("invalid DevCloud session")
+	}
+	if result := performJSONRequest(t, other, "POST", "/auth/session/exchange", devInput); result.Code != http.StatusBadRequest {
+		t.Fatal("DevCloud code replay accepted")
 	}
 	if result := performJSONRequest(t, router, "GET", "/auth/native/start", nil); result.Code != 404 {
 		t.Fatal("legacy Google entry still exposed")

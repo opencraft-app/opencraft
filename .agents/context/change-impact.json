@@ -24,7 +24,7 @@
     {
       "id": "agent-gateway-runtime",
       "paths": ["cloudagent/**", "ai-gateway/**", "ctl/**", "sandbox/**", "velagw/**", "velalink/**", "workers/**", "new-api/**", "opencraft/**"],
-      "exclude_paths": ["**/*_test.go", "**/testdata/**", "**/__tests__/**", "**/*.test.*", "**/*.spec.*", "**/tests/**", "**/*.md", "ctl/pkg/model/instancespec/spec.go", "opencraft/plugins/lightvela-hermes/src/upstream/**", "opencraft/scripts/smoke-console-embedded.mjs", "opencraft/apps/workbench-expo/**", "opencraft/config/build-matrix.json", "opencraft/package.json", "opencraft/apps/workbench-web/src/window-chrome.ts", "opencraft/apps/workbench-web/src/components/app-shell-header.tsx", "opencraft/apps/workbench-web/src/styles/app.scss", "opencraft/apps/workbench-web/src/i18n/locales/**"],
+      "exclude_paths": ["**/*_test.go", "**/testdata/**", "**/__tests__/**", "**/*.test.*", "**/*.spec.*", "**/tests/**", "**/*.md", "ctl/pkg/model/instancespec/spec.go", "opencraft/plugins/lightvela-hermes/src/upstream/**", "opencraft/apps/workbench-web/public/assets/skills/**", "opencraft/scripts/smoke-console-embedded.mjs", "opencraft/apps/workbench-expo/**", "opencraft/config/build-matrix.json", "opencraft/package.json", "opencraft/apps/workbench-web/src/window-chrome.ts", "opencraft/apps/workbench-web/src/components/app-shell-header.tsx", "opencraft/apps/workbench-web/src/styles/app.scss", "opencraft/apps/workbench-web/src/i18n/locales/**"],
       "design_docs": ["docs/engineering/domains/agent-gateway-runtime.md", "docs/engineering/journeys/agent-request-streaming.md"],
       "risk": "high",
       "owner": "wisp/mono2-maintainers"

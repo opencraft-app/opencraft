@@ -1222,7 +1222,11 @@ describe("BuddyPanel P1 stability", () => {
 
     render(<BuddyPanel botId="agent-a" />);
     await screen.findByText("Agent A Soul");
-    fireEvent.click(screen.getByText("人设解读"));
+    const selectCard = screen.getByRole("button", { name: "选中此人设" });
+    const preview = screen.getByRole("button", { name: "人设解读" });
+    expect(selectCard.contains(preview)).toBe(false);
+    fireEvent.click(preview);
+    expect(selectCard).toHaveAttribute("aria-pressed", "false");
     expect(await screen.findByText("加载失败：network unavailable")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "重试" }));

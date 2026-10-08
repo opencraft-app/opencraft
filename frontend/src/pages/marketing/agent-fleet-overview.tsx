@@ -25,7 +25,7 @@ export type FleetOverviewProps = {
   createLimitMessage: string;
   onCreate: (sourceBotId?: string) => void;
   onOpenChat: (botId: string) => void;
-  onChanged: () => void;
+  onChanged: (botId: string) => void;
   onDelete: (bot: OpenClawBot) => void;
   getAvatarForBot: (botId: string) => string | undefined;
 };
@@ -62,14 +62,14 @@ function FleetBotCard({ bot, isCurrent, canDelete, fallbackAvatarUrl, canCreate,
   const editProfile = () => { setMenuOpen(false); onAction({ bot, name, profile: { ...profile.profile, description } }); };
 
   return (
-    <Card className="relative min-w-0 snap-start rounded-[4px] border border-black/[0.06] bg-white p-5 pt-8 shadow-none">
-      {isCurrent && <span className="pointer-events-none absolute left-0 top-0 rounded-br-[4px] rounded-tl-[3px] bg-black px-2 py-0.5 text-xs leading-4 text-white">{t("当前 Bot")}</span>}
+    <Card className="relative min-w-0 snap-start rounded-[8px] border border-black/[0.06] bg-white p-5 pt-8 shadow-none">
+      {isCurrent && <span className="pointer-events-none absolute left-0 top-0 rounded-br-[4px] rounded-tl-[8px] bg-black px-2 py-0.5 text-xs leading-4 text-white">{t("当前 Bot")}</span>}
       <button
         type="button"
         aria-label={`${t("新建对话")}: ${name}`}
         disabled={transitioning}
         onClick={() => onOpenChat(bot.id)}
-        className="absolute inset-0 rounded-[4px] enabled:cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/30 focus-visible:ring-offset-2"
+        className="absolute inset-0 rounded-[8px] enabled:cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/30 focus-visible:ring-offset-2"
       />
       <div className="pointer-events-none flex items-start gap-3">
         <BuddyProfileAvatar profile={profile.profile} hasCustomAvatar={profile.hasBuddyConfig === true} fallbackAvatarUrl={fallbackAvatarUrl} size={48} />
@@ -127,7 +127,7 @@ export function AgentFleetOverview({ bots, currentBotId, heroStats, canCreate, c
   const [revision, setRevision] = useState(0);
   const [action, setAction] = useState<Action | null>(null);
   const limitId = useId();
-  const changed = () => { void refreshBots(); setRevision((v) => v + 1); onChanged(); setAction(null); };
+  const changed = () => { void refreshBots(); setRevision((v) => v + 1); if (action) onChanged(action.bot.id); setAction(null); };
   const { steps, writeError, isReadingSoul, applyProfile } = useOverviewProfileEditor({
     botId: action?.bot.id ?? "",
     profileId: action?.bot.profileId,
@@ -173,7 +173,7 @@ export function AgentFleetOverview({ bots, currentBotId, heroStats, canCreate, c
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 id="overview-bots-title" className="flex items-center gap-2 text-balance text-base font-semibold">{t("我的 Bots")}<span className="rounded bg-black/[0.04] px-2 py-0.5 text-xs tabular-nums">{bots.length}</span></h3>
-            <p className="mt-1 text-pretty text-sm text-[var(--text-secondary)]">{scrollable ? t("左右滑动查看更多 Bot") : t("在这里查看和管理你的所有 Bot")}</p>
+            {scrollable && <p className="mt-1 text-pretty text-sm text-[var(--text-secondary)]">{t("左右滑动查看更多 Bot")}</p>}
           </div>
           <div className="flex items-center gap-2">
             <Button className={cn(compactButton, "rounded-full")} disabled={!canCreate || botsError || botsLoading} aria-describedby={createLimitMessage ? limitId : undefined} onClick={() => onCreate()}><Plus className="size-4" aria-hidden="true" />{t("创建 Bot")}</Button>

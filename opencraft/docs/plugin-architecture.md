@@ -9,6 +9,10 @@
 
 已实现并进入仓库质量门：
 
+- 可选 `tencentoa.identity`：后端逐请求太湖验签与 TOF 身份解密，独立员工
+  Authentication provider 与共享控件设置页；不取代平台账户，不自动授权资源。
+  详见 [员工身份插件](./tencentoa-authentication.md)。
+
 - `packages/extension-contract`：renderer-free manifest V1、activation identity、Command、Settings、
   location-neutral View、Navigation、Sidebar Catalog、Settings Page、Workbench Surface、双明暗
   语义 Theme palette 与 disposer API；

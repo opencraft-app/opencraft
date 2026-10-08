@@ -56,6 +56,7 @@
     "@opencraft/plugin-lightvela-hermes": "0.1.0",
     "@opencraft/plugin-lightvela-platform": "0.1.0",
     "@opencraft/plugin-terminal": "0.1.0",
+    "@opencraft/plugin-tencentoa": "0.1.0",
     "@opencraft/plugin-voice-input": "0.1.0",
     "@opencraft/profile-skills-appserver": "0.1.0",
     "@opencraft/react-runtime": "0.1.0",

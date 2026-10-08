@@ -286,6 +286,7 @@ export async function createWorkbenchWebServer({
   desktopService = null,
   desktopAccess = "loopback",
   speechService = null,
+  tencentOaService = null,
   speechPublicAccess = process.env.OPENCRAFT_SPEECH_PUBLIC_ACCESS === "1",
   webSocketHeartbeatIntervalMs = 15_000,
   onAppHostDiagnostic = diagnostic => console.info("[opencraft apphost connection]", JSON.stringify(diagnostic)),
@@ -308,6 +309,11 @@ export async function createWorkbenchWebServer({
         return;
       }
       const url = new URL(request.url || "/", "http://vela.invalid");
+      if (url.pathname.startsWith("/__opencraft_tencentoa/")) {
+        if (tencentOaService !== null) tencentOaService.handle(request, response);
+        else sendJson(response, 404, { error: "missing" });
+        return;
+      }
       if (url.pathname.startsWith("/__opencraft_speech/")) {
         if (speechService === null) {
           const probe = url.pathname === "/__opencraft_speech/capabilities" && request.method === "GET";

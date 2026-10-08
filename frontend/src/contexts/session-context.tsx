@@ -12,6 +12,7 @@ import type { AuthSessionSnapshot, CurrentSubscription, InviteCodeValidation, Pl
 import { useRepositories } from "@/contexts/repository-context";
 import { AUTH_UNAUTHORIZED_EVENT, bootstrapStoredAuthTokenFromLocation } from "@/repositories/http-repositories";
 import { compressAvatarFile } from "@/lib/avatar-image";
+import { ACCOUNT_UPDATED_EVENT } from "@opencraft/mobile-account-sdk";
 
 type AuthStage = "anonymous" | "authenticated";
 
@@ -319,6 +320,12 @@ export const SessionProvider = ({ children }: PropsWithChildren) => {
     const user = await repositories.auth.getProfile();
     dispatch({ type: "SET_USER", payload: user });
   }, [repositories.auth]);
+
+  useEffect(() => {
+    const refresh = () => { void refreshProfile().catch(() => undefined); };
+    window.addEventListener(ACCOUNT_UPDATED_EVENT, refresh);
+    return () => window.removeEventListener(ACCOUNT_UPDATED_EVENT, refresh);
+  }, [refreshProfile]);
 
   const deleteAccount = useCallback<SessionContextValue["deleteAccount"]>(async () => {
     authRequestVersion.current += 1;

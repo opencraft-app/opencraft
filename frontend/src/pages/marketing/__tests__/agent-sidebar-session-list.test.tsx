@@ -1,7 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import { resolveAgentSidebarEmptySessionState, useAgentSidebarSessionList } from "@/pages/marketing/agent-sidebar-session-list";
+import { resolveAgentSidebarEmptySessionState, useAgentSidebarSessionList, useAgentSidebarUnreadSessions } from "@/pages/marketing/agent-sidebar-session-list";
 
 const session = (chatId: string) => ({ chatId, title: chatId });
 const state = (chatId: string | null, loading = false) => ({
@@ -11,6 +11,34 @@ const state = (chatId: string | null, loading = false) => ({
 });
 
 describe("Agents sidebar session list", () => {
+  it("persists unread markers per account and Bot until the conversation is opened", () => {
+    window.localStorage.clear();
+    const first = renderHook(({ botKey }) => useAgentSidebarUnreadSessions(botKey), {
+      initialProps: { botKey: "account-unread-a:bot-a" },
+    });
+
+    act(() => first.result.current.setUnread("chat-a", true));
+    act(() => first.result.current.setUnread("", true));
+    expect(first.result.current.unreadChatIds).toEqual(["chat-a", ""]);
+    first.unmount();
+
+    const remounted = renderHook(({ botKey }) => useAgentSidebarUnreadSessions(botKey), {
+      initialProps: { botKey: "account-unread-a:bot-a" },
+    });
+    expect(remounted.result.current.unreadChatIds).toEqual(["chat-a", ""]);
+    remounted.rerender({ botKey: "account-unread-b:bot-a" });
+    expect(remounted.result.current.unreadChatIds).toEqual([]);
+    remounted.rerender({ botKey: "account-unread-a:bot-b" });
+    expect(remounted.result.current.unreadChatIds).toEqual([]);
+    remounted.rerender({ botKey: "account-unread-a:bot-a" });
+    expect(remounted.result.current.unreadChatIds).toEqual(["chat-a", ""]);
+
+    act(() => remounted.result.current.setUnread("chat-a", false));
+    expect(remounted.result.current.unreadChatIds).toEqual([""]);
+    remounted.unmount();
+    window.localStorage.clear();
+  });
+
   it("shows no empty-session placeholder while a Bot is paused and restores loading after resume", () => {
     const freshBot = { botKey: "account-paused:bot-a", sessionCount: 0, loading: true };
 

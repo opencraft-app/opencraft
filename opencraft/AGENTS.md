@@ -31,7 +31,7 @@
 | 平台、AppServer、Chat Runtime、Workbench、扩展 | [platform-architecture](docs/platform-architecture.md) 与命中的专题文档 |
 | 工作区、工具面板、浮动聊天、Side Chat | [design](design/README.md)；实现变更同步维护 `design/invariants.md` |
 | OpenCraft 架构、交互、布局、平台适配或预览 | [opencraft-maintenance](.agents/skills/opencraft-maintenance/SKILL.md)，按任务读取其验证清单 |
-| iPhone 通过 Cloudflare Tunnel 打开 Expo Go 开发预览 | [opencraft-expo-cf-preview](.agents/skills/opencraft-expo-cf-preview/SKILL.md)；先核对外网 manifest 和完整 bundle，再给 `exps://` 链接，提醒用 Safari 打开。手机操作见 [Expo README](apps/workbench-expo/README.md#iphone-真机快速体验) |
+| iPhone 通过 Cloudflare Tunnel 打开 Expo Go 开发预览 | [opencraft-expo-cf-preview](.agents/skills/opencraft-expo-cf-preview/SKILL.md)；先轻量核对 Metro、隧道与外网 iOS manifest，再给完整明文 `exps://` 链接，提醒用 Safari 打开；不为日常预览下载完整 bundle。手机操作见 [Expo README](apps/workbench-expo/README.md#iphone-真机快速体验) |
 | Android 内测、正式 APK，或 iOS 测试 IPA | 先读 [手机端路线](apps/workbench-expo/README.md#手机端路线) 和 [构建矩阵](docs/build-matrix.md)；按目标选择签名、包名及验证步骤 |
 | Android 备案资料或临时内网下载 | [Android 正式 APK](apps/workbench-expo/README.md#android-lightvela-release-apk)；从最终 APK 核对包名、签名证书和文件摘要，只开放 APK 下载路径 |
 | 承载当前代理的 headless 预览服务切换或重启 | [opencraft-self-hosted-preview](.agents/skills/opencraft-self-hosted-preview/SKILL.md)；由独立服务完成切换与回退，重连后核对实际进程 |
@@ -42,8 +42,15 @@
 
 ## 手机端入口
 
-- iOS 当前是 HeroUI Native 登录与底栏，加 LightVela 网站 WebView；Android 是独立 React Native 工作台。手机平台、构建方式和产物先按 [Expo 路线表](apps/workbench-expo/README.md#手机端路线) 选择，不能把 Expo Go 预览当作可安装包。
-- iPhone 外网预览使用已核验的 `exps://` 链接，在 Safari 打开并跳转 Expo Go；Metro 与 Cloudflare Tunnel 必须持续运行，链接失效时重新生成并核验。
+- iOS 由 HeroUI Native 登录和操作控件、原生导航页面及 Bot 侧栏承载；账号与设置入口固定在侧栏底部，没有底栏。Bot 功能在 App 内打包的 frontend DOM runtime 中呈现；Android 是独立 React Native 工作台。手机平台、构建方式和产物先按 [Expo 路线表](apps/workbench-expo/README.md#手机端路线) 选择，不能把 Expo Go 预览当作可安装包。
+- 修改 iOS Shell 或内置 Bot 功能时，先读 [Expo 局部 Agent 入口](apps/workbench-expo/AGENTS.md)，由它路由 [Shell 状态](docs/mobile-shell.md)与[原生／DOM 桥接](docs/mobile-bot-bridge.md)；优先修改现有过时规则，避免把旧底栏、旧网页套壳等已失效方案追加成并列事实。
+- 手机端请求、缓存和离线写入先按 [移动数据协调契约](docs/mobile-data-architecture.md) 区分读取、在线事务与可持久化草稿；不得把 TanStack Query 的内存缓存、WebView 的独立 JS 环境或普通重试称为全 App 持久请求队列。账号展示缓存必须按会话与区域隔离，退出登录清除。
+- 会话连续性按 [ChatUI 架构](docs/chat-ui-architecture.md#跨桌面手机和平板的会话连续性)维护一个共享语义模型：Scope/View 身份、草稿保存与丢弃、前台追平条件属于共享包；桌面浏览器和手机/平板只适配存储、生命周期、手势与布局。V3 连接代次不能当持久 Replica 游标，旧消息缓存只可展示，不能授权发送或交互；任何私有缓存都要按账号和 Host 隔离，退出账号撤销对应作用域。不要因屏幕宽度另造一套业务状态机。
+- 手机端读取状态按“可展示数据、最后成功时间、后台刷新、错误、会话有效性”分别建模：已有同会话数据时，后台刷新不得清空数据或切回全屏 loading；短暂失败保留旧布局并给轻量重试。只有冷启动且没有可用数据时显示与最终页面结构接近的静态占位，避免卡片消失、列表跳动和闪动菊花。缓存身份只能用于展示；实名、支付及账号安全操作在当前服务端状态核实前不可凭旧缓存放行。成功写入后精确失效相关查询，401、退出或切换账号/区域清除对应作用域。头像等媒体的缓存键只在资源确实改变时更新，不能每次普通刷新都强制重载。
+- 修改手机读取页时先列出 `cold-loading / cached-refreshing / fresh / cached-error / session-expired` 五态，确认每态的数据来源、占位几何、可用动作和退出条件；实现中把 `data` 与 `isFetching` 分开，刷新只更新数据和轻量状态槽位，不能卸载整页、重置滚动位置或清空已渲染列表。重复进入时，首帧就从当前会话的内存缓存取值；不能等 `useEffect` 异步读取后才用缓存，否则仍会闪一帧占位。真正冷启动的占位按实际卡片和行高排布，禁用未核实的敏感操作。验收至少覆盖首次进入、30 秒内重复进入、后台恢复、断网再联网、刷新失败、401 与切换账号；逐帧查看是否出现短页、跳动或旧账号资料。细化策略见 [移动数据协调契约](docs/mobile-data-architecture.md)。
+- 当需求指定 HeroUI Native/NextUI Native 的抽屉、弹层或其他交互控件时，要求涵盖**容器本身**的手势、遮罩、关闭、可访问性和动画；仅在手写 `Animated.View`、`PanResponder` 或普通 `View` 里放 HeroUI 按钮，不算使用该原生控件。实现前核对当前安装版本实际导出的组件及 Expo Go 支持；若库没有对应控件，选用可在 Expo Go 运行的成熟原生交互原语，并在 Task Pack 与交接中明确组件来源及例外，不能把它标为 HeroUI Native 抽屉。禁止引入 Unistyles。
+- iOS 页面前进和返回统一经过可复用的原生导航页面容器：按钮返回与左边缘右滑必须走同一完成路径；拖动要跟手、未达阈值回弹、松手后补完动画。按当前**容器**宽度计算位移和阈值，窗口尺寸变化后重新测量，不能写死 iPhone 宽度或假定所有页面都是手机全屏 Stack。尊重系统减少动态效果设置，动画期间保留底层页面和 Bot runtime；从侧栏进入个人与设置时还必须保留侧栏的打开状态，返回应露出原侧栏，不能先关闭再推页面。状态栏与 Home Indicator 属于同一移动页面，不得留下独立横条。新增页面先复用这一层，再选择具体的手机、iPad 或折叠屏呈现方式。
+- iPhone 外网预览提供完整明文 `exps://` 链接，在 Safari 打开并跳转 Expo Go；Metro 与 Cloudflare Tunnel 必须持续运行。为加快迭代，新链接只做轻量可用性检查（Metro 监听、隧道连接和 iOS manifest 响应），**不下载完整 bundle 校验**；源码的 Expo 类型检查和 iOS 打包仍按改动风险运行。链接失效时重新生成并做同样的轻量检查；不要把服务端检查表述为真机已验证。
 - Android 内测包为 `dev.vela.workbench`，使用开发签名；正式包为 `com.tencent.vela`，必须使用仓库外的正式密钥。iOS 测试 IPA 须在有 Xcode 和 Apple 签名的 Mac 上构建。更换包名或密钥后，从**新成品**重新提取备案值。
 - 本地 APK/IPA 打包、备案资料和临时内网下载不等于 GitOps 发布。交接时分别报告源码 checkout、包名、签名证书摘要、APK 文件摘要、安装验证和下载进程状态；私钥与密码不得进入仓库、日志或下载目录。
 
@@ -79,7 +86,7 @@
 - OpenCraft 自有 Web DOM 不得暴露浏览器默认焦点描边。`focus.web` 压住 UA outline；主题化兜底焦点环只在键盘输入模式且 `:focus-visible` 时绘制，因为 iPhone 触摸输入框及弹窗自动聚焦按钮也可能匹配 `:focus-visible`。功能组件的 `:focus-visible`/`:focus-within` 描边或阴影必须服从触控模式，不能仅靠低优先级全局 reset；键盘 Tab 后须恢复可见焦点。原生 `showModal()` 预览统一记录打开来源，触摸打开时自动聚焦的按钮不画键盘环，Tab 导航后恢复。自动可聚焦的滚动容器也须检查；不要给不需要键盘/程序化焦点的内容容器添加 `tabIndex`。触屏按下反馈、键盘焦点与选中态分别建模。验收同时检查触控轻点、Tab 键、浅深主题和强制颜色模式；第三方 iframe/浏览器 chrome 不在此 CSS 所有权内。
 - 焦点提示不使用蓝色或品牌 accent；普通键盘提示消费共享中性 focus token，强制颜色模式尊重系统配色。全局兜底选择器必须整体零优先级，不得压过组件自己的焦点呈现：Composer 编辑区保留光标/选区，不画外框。禁止用不断追加局部 `!important` 的方式争夺所有权；验收要在真实编辑器 DOM 上检查鼠标点击和 Tab，不能只断言 CSS 中出现了 `outline: none`。
 - 跨扩展边界传递 `value/options/action`、`local/remote` 等稳定语义，不传具体图标组件、像素尺寸或 Feature CSS class。Web、Electron、Expo 可有不同物理实现，但消费同一 contract。
-- 用户可见的按钮、菜单、弹窗、通知和状态文案只描述用户任务、处理结果与可采取的动作；不得把内部类型、协议、方法、状态名（包括 `pending`）或原始诊断信息直接写到界面上。技术细节需要排障时放在显式的详情或日志入口，不占主要操作位。
+- 用户可见的按钮、菜单、弹窗、通知和状态文案只描述用户任务、处理结果与可采取的动作；不得把内部类型、协议、方法、状态名（包括 `pending`）或原始诊断信息直接写到界面上。缓存命中、旧数据、后台刷新和重试次数属于实现状态，不作为姓名、头像或业务状态旁的标签；仅在用户需要处理失败时给简短提示与动作。排障细节写入开发者模式可见的安全日志，不占主要操作位，也不泄露私密数据。
 - 处理中反馈在原控件或原反馈槽位使用简短、尺寸稳定的文案或图标；不得追加技术状态说明或动态长文案，撑大弹窗、按钮、菜单、列表项，或造成相邻布局跳动。窄屏和触屏也须验证该约束。
 - 局部 loading、retry、badge 和错误反馈优先在既有槽位原位替换，不改变窗口、标题栏、正文起点或相邻布局；确需改变宿主几何时先说明影响并取得用户确认。
 - Mutation 的状态与反馈作用域必须和用户操作一致：行级/控件级操作使用独立 pending key，并在原控件槽位反馈；不得借用父级表单的 `dirty`、全页 `busy` 或路由 loading，导致无关编辑区展开、折叠、禁用、滚动或焦点变化。只有用户实际编辑父级表单字段时，父级 draft 才能变脏；用 held-promise 测试断言请求进行中布局与 draft 不变。

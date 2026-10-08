@@ -6,6 +6,7 @@ allowed_origins:
   - https://www.lightvela.com
   - https://chat.lightvela.com
   - https://chat.lightvela.ai
+  - https://*.devcloud.woa.com
 trusted_proxy_cidrs:
   - 100.64.0.0/10
 worker_actions:

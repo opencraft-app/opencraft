@@ -215,7 +215,7 @@ export function createVoiceInputAction(provider: SpeechInputProvider) {
     const active = listening || phase === "starting" || phase === "transcribing" || phase === "failed";
     const label = !available
       ? provider.unavailableMessage ?? "Voice input is unavailable in this browser"
-      : phase === "starting" ? "正在等待系统语音权限，点击取消"
+      : phase === "starting" ? "正在准备录音，点击取消"
       : phase === "transcribing" ? "正在完成语音识别，点击取消"
       : listening
         ? "Stop voice input"

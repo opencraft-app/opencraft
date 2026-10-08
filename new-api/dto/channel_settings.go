@@ -63,6 +63,7 @@ func (s *ChannelOtherSettings) IsOpenRouterEnterprise() bool {
 }
 
 const (
+	advancedCustomConverterHunyuanASR                  = "openai_transcriptions_to_hunyuan_asr"
 	advancedCustomConverterNone                        = "none"
 	advancedCustomConverterClaudeMessagesToOpenAIChat  = "anthropic_messages_to_openai_chat_completions"
 	advancedCustomConverterOpenAIChatToClaudeMessages  = "openai_chat_completions_to_anthropic_messages"
@@ -301,7 +302,7 @@ func matchAdvancedCustomIncomingPathTemplate(configuredPath string, requestPath 
 
 func IsAdvancedCustomConverterAllowed(converter string) bool {
 	switch converter {
-	case advancedCustomConverterNone,
+	case advancedCustomConverterHunyuanASR, advancedCustomConverterNone,
 		advancedCustomConverterClaudeMessagesToOpenAIChat,
 		advancedCustomConverterOpenAIChatToClaudeMessages,
 		advancedCustomConverterOpenAIChatToOpenAIResponses,
@@ -476,6 +477,10 @@ func validateAdvancedCustomUpstreamTarget(index int, upstreamPath string) error 
 
 func validateAdvancedCustomConverterPath(index int, incomingPath string, converter string) error {
 	switch converter {
+	case advancedCustomConverterHunyuanASR:
+		if incomingPath == "/v1/audio/transcriptions" {
+			return nil
+		}
 	case advancedCustomConverterNone:
 		return nil
 	case advancedCustomConverterClaudeMessagesToOpenAIChat:

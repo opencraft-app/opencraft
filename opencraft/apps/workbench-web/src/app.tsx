@@ -21,7 +21,7 @@ import {
   CodexComposer,
   type ComposerSelectionCatalog,
 } from "@opencraft/codex-composer";
-import { asHostId, asTurnId, deriveAsyncQuestionStates, findPendingInteraction, parseAsyncQuestionReply, renderAsyncQuestionReply, type AsyncQuestion, type TurnDiffTimelineBlock } from "@opencraft/chat-core";
+import { asHostId, asTurnId, deriveAsyncQuestionStates, findPendingInteraction, parseAsyncQuestionReply, renderAsyncQuestionReply, type AsyncQuestion, type TimelineSnapshot, type TurnDiffTimelineBlock } from "@opencraft/chat-core";
 import type { ChatResourceDecision, ChatResourceOpenIntent } from "@opencraft/chat-render-web";
 import type { PlatformViewHost } from "@opencraft/extension-react";
 import type {
@@ -598,6 +598,33 @@ export function App({
     });
   }, [dispatchPanel, panelState.right.open, panelState.right.tabs.length]);
   const timeline = snapshot.conversation?.timeline ?? null;
+  const displayScope = useSyncExternalStore(
+    hostCatalog.displayContinuity.subscribe,
+    hostCatalog.displayContinuity.getScope,
+    hostCatalog.displayContinuity.getScope,
+  );
+  const [cachedTimeline, setCachedTimeline] = useState<{ scope: string; timeline: TimelineSnapshot } | null>(null);
+  useEffect(() => {
+    let current = true;
+    setCachedTimeline(null);
+    if (activeThreadId !== null) {
+      void hostCatalog.displayContinuity.load(snapshot.hostId, activeThreadId).then(value => {
+        if (current) setCachedTimeline(value === null ? null : { scope: displayScope, timeline: value });
+      });
+    }
+    return () => { current = false; };
+  }, [activeThreadId, displayScope, hostCatalog.displayContinuity, snapshot.hostId]);
+  useEffect(() => {
+    if (timeline?.authoritative) void hostCatalog.displayContinuity.observe(timeline).catch(() => undefined);
+  }, [hostCatalog.displayContinuity, timeline]);
+  const visibleTimeline = timeline?.authoritative || (timeline?.frames.length ?? 0) > 0
+    ? timeline
+    : cachedTimeline?.scope === displayScope
+      && cachedTimeline.timeline.key.hostId === snapshot.hostId
+      && cachedTimeline.timeline.key.threadId === activeThreadId
+      ? cachedTimeline.timeline
+      : timeline;
+  const showingDisplayCache = visibleTimeline !== null && visibleTimeline !== timeline;
   const [turnDiffReview, setTurnDiffReview] = useState<{
     readonly block: TurnDiffTimelineBlock;
     readonly path: string | null;
@@ -612,7 +639,7 @@ export function App({
     : null;
   const recoveryPresentation = conversationRecoveryPresentation({
     authoritative: snapshot.conversation?.authoritative === true,
-    hasVisibleHistory: (timeline?.frames.length ?? 0) > 0,
+    hasVisibleHistory: (visibleTimeline?.frames.length ?? 0) > 0,
     failed: snapshot.phase === "error" || (activeThreadLease === null
       ? conversationViewActivation.phase === "error"
       : snapshot.conversation?.error != null),
@@ -1631,9 +1658,9 @@ export function App({
                     composerChangeSummaryTurnId: snapshot.conversation?.activeTurn?.turnId ?? null,
                     theme: appearanceTheme.resolvedTheme,
                   }}
-                  timeline={timeline}
+                  timeline={visibleTimeline}
                   consumePendingLatestTurnSubmitPlacement={consumeLatestTurnPlacement}
-                  navigationSource={navigationSource}
+                  navigationSource={showingDisplayCache ? null : navigationSource}
                   initialRestoreSnapshot={
                     activeThreadId === null
                       ? null
@@ -1647,24 +1674,24 @@ export function App({
                       );
                   }}
                   onLoadOlder={
-                    snapshot.conversation?.history.hasOlder
+                    !showingDisplayCache && snapshot.conversation?.history.hasOlder
                       ? loadOlderConversation
                       : undefined
                   }
-                  onOpenSubagent={(threadId) => {
+                  onOpenSubagent={showingDisplayCache ? undefined : (threadId) => {
                     void hostCatalog.navigate(
                       createWorkbenchThreadLocation(snapshot.hostId, threadId),
                     );
                   }}
-                  continuableTurnId={snapshot.conversation?.continuation.turnId}
-                  onContinueTurn={(turnId) => {
+                  continuableTurnId={showingDisplayCache ? null : snapshot.conversation?.continuation.turnId}
+                  onContinueTurn={showingDisplayCache ? undefined : (turnId) => {
                     const placement = captureLatestTurnPlacement();
                     void activeThreadLease?.continueTurn(turnId).catch(() => {
                       clearLatestTurnPlacement(placement);
                     });
                   }}
-                  onRespondInteraction={respondToInteraction}
-                  onAnswerAsyncQuestion={snapshot.phase === "ready" ? answerAsyncQuestion : undefined}
+                  onRespondInteraction={showingDisplayCache ? undefined : respondToInteraction}
+                  onAnswerAsyncQuestion={!showingDisplayCache && snapshot.phase === "ready" ? answerAsyncQuestion : undefined}
                   queuedAsyncQuestionIds={queuedAsyncQuestionIds}
                   onConversationScrollApiChange={(api) => {
                     conversationScrollApiRef.current = api;

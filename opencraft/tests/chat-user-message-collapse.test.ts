@@ -89,6 +89,36 @@ test("a clipped visual height cannot revoke an accepted natural measurement", ()
   assert.equal(afterVisualClip, "collapsed");
 });
 
+test("unclipped async growth updates collapse eligibility without accepting a later clipped height", () => {
+  const initial = observeUserMessageNaturalHeight(
+    observeUserMessageViewportWidth(null, "message", 400, 320),
+    "message",
+    400,
+    280,
+    true,
+  );
+  assert.equal(deriveUserMessageCollapseState({
+    contentIdentity: "message", expandedContentIdentity: null, measurement: initial,
+  }), "uncollapsible");
+  const grown = observeUserMessageNaturalHeight(initial, "message", 400, 720, true);
+  assert.equal(deriveUserMessageCollapseState({
+    contentIdentity: "message", expandedContentIdentity: null, measurement: grown,
+  }), "collapsed");
+  assert.equal(observeUserMessageNaturalHeight(grown, "message", 400, 400, false).contentHeight, 720);
+  assert.equal(observeUserMessageNaturalHeight(grown, "message", 400, Number.NaN, true).contentHeight, 720);
+});
+
+test("clipped layout accepts only growth beyond the confirmed natural height", () => {
+  const natural = observeUserMessageNaturalHeight(
+    observeUserMessageViewportWidth(null, "message", 400, 320),
+    "message", 400, 900, true,
+  );
+  assert.equal(observeUserMessageNaturalHeight(natural, "message", 400, 400, false).contentHeight, 900);
+  assert.equal(observeUserMessageNaturalHeight(natural, "message", 400, 960, false).contentHeight, 960);
+  const widthChanged = observeUserMessageViewportWidth(natural, "message", 400, 260);
+  assert.equal(observeUserMessageNaturalHeight(widthChanged, "message", 400, 960, false).contentHeight, null);
+});
+
 test("native width invalidation rejects the old clipped callback before accepting a new natural height", () => {
   const initial = observeUserMessageNaturalHeight(
     observeUserMessageViewportWidth(null, "message", 400, 320),

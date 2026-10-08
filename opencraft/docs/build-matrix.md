@@ -23,7 +23,7 @@ so each surface is an explicit matrix target with its own artifact contract.
 | `expo-web` | Expo Router + Metro Web | Expo static export | Linux/macOS/Windows |
 | `expo-ios-bundle` | React Native + Metro | JS bundle and assets | Linux/macOS; native archive on macOS |
 | `expo-android-internal-apk` | Expo prebuild + Gradle release | Installable internal APK | Linux/macOS with JDK and Android SDK |
-| `expo-android-release-apk` | Expo prebuild + Gradle, external PKCS12 signing | `com.tencent.vela` APK and filing text | Linux with JDK, Android SDK and release key |
+| `expo-android-release-apk` | Expo prebuild + Gradle, external PKCS12 signing | Mainland `com.tencent.vela` or international `com.tencent.vela.intl` APK and filing text | Linux with JDK, Android SDK and release key |
 
 The browser and Electron targets intentionally do not share a built `index.html`.
 They share source and chunks, but have different origin contracts. Electron
@@ -61,7 +61,8 @@ and downloadable Actions artifact after this subtree reaches the standalone
 GitHub mirror; the nested workflow does not run in mono2. The local
 requirements and install command are in `apps/workbench-expo/README.md`.
 
-The separate Android release target selects `com.tencent.vela`, requires a
+The separate Android release target defaults to `com.tencent.vela`; setting
+`OPENCRAFT_LIGHTVELA_EDITION=intl` selects `com.tencent.vela.intl`. It requires a
 repository-external production keystore, verifies the package ID and APK
 signature against that keystore, and writes both the APK and filing values.
 It never falls back to the internal development key. The certificate MD5 and

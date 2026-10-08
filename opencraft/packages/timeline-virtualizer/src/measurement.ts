@@ -128,7 +128,14 @@ export function reconcileTurnLayoutViewport({
     previousLayout,
     nextLayout,
   );
-  if (compensated === null || compensated === virtualDistance) return null;
+  if (compensated === null) return null;
+  // A prepend can leave the bottom-relative distance unchanged while moving
+  // the native ScrollView's physical top offset. Reapply that same distance
+  // after the new content height commits so the measured anchor stays put.
+  if (
+    compensated === virtualDistance
+    && previousLayout.totalHeightPx === nextLayout.totalHeightPx
+  ) return null;
   return compensated + Math.max(0, bottomPaddingPx);
 }
 

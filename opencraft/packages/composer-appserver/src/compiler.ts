@@ -10,6 +10,7 @@ import type {
   ComposerContextReference,
   ComposerInline,
   ComposerSelections,
+  ComposerTextInline,
   SubmitIntent,
 } from "@opencraft/composer-core";
 import { resolveReasoningEffort, unsupportedModelInput, type ReasoningCapability } from "@opencraft/composer-core";
@@ -85,6 +86,26 @@ function appendText(input: UserInput[], text: string): void {
   }
 }
 
+function markdownCodeSpan(text: string): string {
+  let fenceLength = 1;
+  for (const run of text.match(/`+/gu) ?? []) fenceLength = Math.max(fenceLength, run.length + 1);
+  const fence = "`".repeat(fenceLength);
+  return text.split("\n").map(line => {
+    const pad = line.startsWith("`") || line.endsWith("`") || (line.startsWith(" ") && line.endsWith(" "));
+    return `${fence}${pad ? " " : ""}${line}${pad ? " " : ""}${fence}`;
+  }).join("\n");
+}
+
+function markedText(inline: ComposerTextInline): string {
+  if (!inline.marks?.length || inline.text.length === 0) return inline.text;
+  let text = inline.marks.includes("code")
+    ? markdownCodeSpan(inline.text)
+    : inline.text.replace(/\\/gu, "\\\\").replace(/\*/gu, "\\*");
+  if (inline.marks.includes("emphasis")) text = `*${text}*`;
+  if (inline.marks.includes("strong")) text = `**${text}**`;
+  return text;
+}
+
 function appendInline(
   input: UserInput[],
   inline: ComposerInline,
@@ -92,13 +113,13 @@ function appendInline(
 ): void {
   switch (inline.type) {
     case "text":
-      appendText(input, inline.text);
+      appendText(input, markedText(inline));
       return;
     case "hard-break":
       appendText(input, "\n");
       return;
     case "link":
-      appendText(input, `[${inline.children.map((child) => child.text).join("")}](${inline.href})`);
+      appendText(input, `[${inline.children.map(markedText).join("")}](${inline.href})`);
       return;
     case "command":
       appendText(input, `/${inline.name}${inline.argument === undefined ? "" : ` ${inline.argument}`}`);
@@ -184,6 +205,13 @@ function appendAttachment(
     throw new SubmitCompileError("ASSET_NOT_READY", `Attachment ${attachment.name} is not ready`);
   }
   const path = localPath(attachment.uri);
+  // A staged host file is a file reference even when its MIME type is audio.
+  // Hosts such as Hermes can read that path without declaring audio input.
+  if (path !== null && !attachment.mimeType.startsWith("image/")
+    && attachment.metadata?.transport === "opencraft-attachment-staging") {
+    input.push({ type: "mention", name: attachment.name, path });
+    return;
+  }
   if (attachment.mimeType.startsWith("image/")) {
     input.push(path === null
       ? { type: "image", url: attachment.uri }

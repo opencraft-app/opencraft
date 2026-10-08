@@ -1,5 +1,5 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CheckCircle, Download, Eye, EyeOff, File, FileArchive, FileCode2, FileText, Folder, FolderPlus, Loader2, PencilLine, RefreshCw, Trash2, Undo2, Upload, XCircle } from "lucide-react";
+import { CheckCircle, ChevronRight, Download, Eye, EyeOff, File, FileArchive, FileCode2, FileText, Folder, FolderPlus, Loader2, PencilLine, RefreshCw, Trash2, Undo2, Upload, XCircle } from "lucide-react";
 import { AgentSectionHeader } from "@/components/domain/agent-section-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -42,9 +42,7 @@ const ActionTooltip = ({ children, label }: ActionTooltipProps) => {
           className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden -translate-x-1/2 whitespace-nowrap rounded-md border border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium text-[var(--text-primary)] opacity-0 shadow-[0_8px_24px_rgba(15,23,42,0.12)] transition-opacity duration-150 sm:block group-focus-within:opacity-100 group-hover:opacity-100"
         >
           {label}
-          <span
-            className="absolute left-1/2 top-full h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-[var(--border-subtle)] bg-white"
-          />
+          <span className="absolute left-1/2 top-full hidden h-2 w-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-b border-r border-[var(--border-subtle)] bg-white sm:block" />
         </span>
       ) : null}
     </span>
@@ -1092,7 +1090,7 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
     : 0;
 
   return (
-    <div className="space-y-5">
+    <div className="lv-tat-files-panel w-full min-w-0 max-w-full space-y-5 overflow-x-clip">
       <AgentSectionHeader
         title={t("云存储")}
         description={t("查看、管理云存储中的文件")}
@@ -1194,7 +1192,7 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
                 <Undo2 className="size-5" />
               </Button>
             </ActionTooltip>
-            <div className="relative min-w-[min(100%,18rem)] flex-1">
+            <div className="relative min-w-0 basis-0 flex-1 sm:basis-[12rem]">
               <Input
                 ref={pathInputRef}
                 className={pathEditing ? undefined : "pr-11"}
@@ -1306,20 +1304,20 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
       {notice ? <div className="rounded-md border border-[color-mix(in_oklab,var(--success)_24%,white)] bg-[color-mix(in_oklab,var(--success)_8%,white)] px-3 py-2 text-sm text-[var(--success)]">{notice}</div> : null}
       {progress ? <div className="rounded-md border border-[var(--border-subtle)] bg-[var(--surface-muted)] px-3 py-2 text-sm text-[var(--text-secondary)]">{progress}</div> : null}
 
-      <div className="overflow-hidden rounded-md border border-[var(--border-subtle)]">
-        <div className="grid grid-cols-[minmax(0,1fr)_104px_116px] bg-[var(--surface-muted)] px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-[var(--text-tertiary)]">
+      <div className="min-w-0 max-w-full overflow-hidden rounded-md border border-[var(--border-subtle)]">
+        <div className="grid grid-cols-1 bg-[var(--surface-muted)] px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-[var(--text-tertiary)] sm:grid-cols-[minmax(0,1fr)_104px_116px]">
           <span>{t("名称")}</span>
-          <span>{t("大小")}</span>
-          <span>{t("修改时间")}</span>
+          <span className="hidden sm:block">{t("大小")}</span>
+          <span className="hidden sm:block">{t("修改时间")}</span>
         </div>
-        <div className="max-h-[615px] overflow-auto bg-white">
+        <div className="max-h-[615px] overflow-x-hidden overflow-y-auto bg-white">
           {creatingFolder ? (
-            <div className="grid w-full grid-cols-[minmax(0,1fr)_104px_116px] items-center border-t border-[var(--border-subtle)] px-3 py-2.5 text-left text-sm">
+            <div className="grid w-full grid-cols-1 items-center border-t border-[var(--border-subtle)] px-3 py-2.5 text-left text-sm sm:grid-cols-[minmax(0,1fr)_104px_116px]">
               <span className="flex min-w-0 items-center gap-2">
                 <Folder className="size-4 text-[#b7791f]" />
                 <Input
                   ref={createFolderInputRef}
-                  className="h-9 max-w-sm"
+                  className="h-9 min-w-0 flex-1"
                   value={newFolderDraft}
                   onChange={(event) => setNewFolderDraft(event.target.value)}
                   onKeyDown={(event) => {
@@ -1338,7 +1336,7 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
                 />
                 <button
                   type="button"
-                  className="inline-flex h-7 w-7 items-center justify-center rounded-full text-blue-500 transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-blue-500 transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-40"
                   onClick={() => void createFolder()}
                   disabled={busy || !newFolderDraft.trim()}
                   aria-label={t("确认新建文件夹")}
@@ -1347,7 +1345,7 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
                 </button>
                 <button
                   type="button"
-                  className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[var(--text-tertiary)] transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[var(--text-tertiary)] transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-40"
                   onClick={cancelCreateFolder}
                   disabled={busy}
                   aria-label={t("取消新建文件夹")}
@@ -1355,8 +1353,8 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
                   <XCircle className="size-4" />
                 </button>
               </span>
-              <span className="text-[var(--text-secondary)]">-</span>
-              <span className="text-[var(--text-secondary)]">-</span>
+              <span className="hidden text-[var(--text-secondary)] sm:block">-</span>
+              <span className="hidden text-[var(--text-secondary)] sm:block">-</span>
             </div>
           ) : null}
           {displayedFiles.length === 0 && !creatingFolder ? (
@@ -1370,7 +1368,7 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
               return (
                 <div
                   key={`${file.type}:${file.name}`}
-                  className="grid w-full cursor-pointer grid-cols-[minmax(0,1fr)_104px_116px] items-center border-t border-[var(--border-subtle)] px-3 py-2.5 text-left text-sm transition hover:bg-[var(--surface-muted)]"
+                  className="grid w-full cursor-pointer grid-cols-1 items-center border-t border-[var(--border-subtle)] px-3 py-2.5 text-left text-sm transition hover:bg-[var(--surface-muted)] sm:grid-cols-[minmax(0,1fr)_104px_116px]"
                   style={selected ? { background: "color-mix(in oklab, var(--brand-500) 9%, white)" } : undefined}
                   onClick={() => setSelectedName(file.name)}
                   onDoubleClick={() => openEntry(file)}
@@ -1381,7 +1379,7 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
                       <>
                         <Input
                           ref={renameInputRef}
-                          className="h-9 max-w-sm"
+                          className="h-9 min-w-0 flex-1"
                           value={renameDraft}
                           onClick={(event) => event.stopPropagation()}
                           onChange={(event) => setRenameDraft(event.target.value)}
@@ -1401,7 +1399,7 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
                         />
                         <button
                           type="button"
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-full text-blue-500 transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-40"
+                          className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-blue-500 transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-40"
                           onClick={(event) => {
                             event.stopPropagation();
                             void renameSelected();
@@ -1413,7 +1411,7 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
                         </button>
                         <button
                           type="button"
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[var(--text-tertiary)] transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-40"
+                          className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[var(--text-tertiary)] transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-40"
                           onClick={(event) => {
                             event.stopPropagation();
                             cancelRename();
@@ -1425,11 +1423,30 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
                         </button>
                       </>
                     ) : (
-                      <span className="truncate font-medium text-[var(--text-primary)]">{file.name}</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate font-medium text-[var(--text-primary)]">{file.name}</span>
+                        <span className="block text-xs text-[var(--text-tertiary)] sm:hidden">
+                          {isDirectory(file) ? formatTime(file.modifyTime) : `${formatBytes(file.size)} · ${formatTime(file.modifyTime)}`}
+                        </span>
+                      </span>
                     )}
+                    {!renaming && isDirectory(file) ? (
+                      <button
+                        type="button"
+                        className="lv-tat-files-open-entry -my-1 -mr-1 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[var(--text-secondary)] active:bg-[var(--surface-muted)] sm:hidden"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          openEntry(file);
+                        }}
+                        disabled={busy}
+                        aria-label={`${t("进入")} ${file.name}`}
+                      >
+                        <ChevronRight className="size-5" />
+                      </button>
+                    ) : null}
                   </span>
-                  <span className="text-[var(--text-secondary)]">{isDirectory(file) ? "-" : formatBytes(file.size)}</span>
-                  <span className="text-[var(--text-secondary)]">{formatTime(file.modifyTime)}</span>
+                  <span className="hidden text-[var(--text-secondary)] sm:block">{isDirectory(file) ? "-" : formatBytes(file.size)}</span>
+                  <span className="hidden text-[var(--text-secondary)] sm:block">{formatTime(file.modifyTime)}</span>
                 </div>
               );
             })

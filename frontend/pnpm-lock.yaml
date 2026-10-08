@@ -20,6 +20,12 @@ importers:
       '@novnc/novnc':
         specifier: 1.5.0
         version: 1.5.0
+      '@opencraft/mobile-account-sdk':
+        specifier: file:../opencraft/packages/mobile-account-sdk
+        version: file:../opencraft/packages/mobile-account-sdk
+      '@opencraft/mobile-bot-bridge':
+        specifier: file:../opencraft/packages/mobile-bot-bridge
+        version: file:../opencraft/packages/mobile-bot-bridge
       '@orama/orama':
         specifier: 3.1.18
         version: 3.1.18
@@ -1804,6 +1810,12 @@ packages:
 
   '@novnc/novnc@1.5.0':
     resolution: {integrity: sha512-4yGHOtUCnEJUCsgEt/L78eeJu00kthurLBWXFiaXfonNx0pzbs6R/3gJb1byZe6iAE8V9MF0syQb0xIL8MSOtQ==}
+
+  '@opencraft/mobile-account-sdk@file:../opencraft/packages/mobile-account-sdk':
+    resolution: {directory: ../opencraft/packages/mobile-account-sdk, type: directory}
+
+  '@opencraft/mobile-bot-bridge@file:../opencraft/packages/mobile-bot-bridge':
+    resolution: {directory: ../opencraft/packages/mobile-bot-bridge, type: directory}
 
   '@opentelemetry/api@1.9.1':
     resolution: {integrity: sha512-gLyJlPHPZYdAk1JENA9LeHejZe1Ti77/pTeFm/nMXmQH/HFZlcS/O2XJB+L8fkbrNSqhdtlvjBVjxwUYanNH5Q==}
@@ -9679,6 +9691,10 @@ snapshots:
     optional: true
 
   '@novnc/novnc@1.5.0': {}
+
+  '@opencraft/mobile-account-sdk@file:../opencraft/packages/mobile-account-sdk': {}
+
+  '@opencraft/mobile-bot-bridge@file:../opencraft/packages/mobile-bot-bridge': {}
 
   '@opentelemetry/api@1.9.1': {}
 

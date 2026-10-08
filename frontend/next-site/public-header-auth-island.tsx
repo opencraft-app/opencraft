@@ -13,7 +13,7 @@ import { type PublicSiteLocale } from '@/lib/public-site-navigation';
 import { isGlobal } from '@/lib/region';
 import { cn } from '@/lib/utils';
 import { AGENTS_HOME_PATH } from '@/lib/agent-routes';
-import { CTA_COPY_BY_LOCALE, journeyHref, resolveCtaRoute } from '@/lib/cta-journey';
+import { canShowMyAgentsEntry, CTA_COPY_BY_LOCALE, journeyHref, resolveCtaRoute } from '@/lib/cta-journey';
 import {
   armPostLoginRedirect,
   disarmPostLoginRedirect,
@@ -155,8 +155,11 @@ function PublicHeaderAuthControls({
   const renderProductEntry = () => {
     /* 购买前不暴露「我的智能体」入口（PRD 2026-09-30）。
        与 /agents 门禁同口径：已订阅、有历史订阅或 Bot 才显示。 */
-    const hasExistingAssets = (bots?.length ?? 0) > 0 || Boolean(latestPass);
-    if (!showProductEntry || !isAuthenticated || !hasResolvedPasses || passesLoading || passesError || botsLoading || botsError || (!isSubscribed && !hasExistingAssets)) return null;
+    if (!showProductEntry || !isAuthenticated || !canShowMyAgentsEntry({
+      hasResolvedPasses, passesLoading, passesError, isSubscribed,
+      hasHistoricalPass: Boolean(latestPass), hasBots: (bots?.length ?? 0) > 0,
+      botsLoading, botsError,
+    })) return null;
     return (
       <a
         href={AGENTS_HOME_PATH}

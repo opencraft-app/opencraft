@@ -23,6 +23,24 @@ running background processes. An idle or new chat still calls `process.stop`.
 The Composer Stop button continues to use `turn/interrupt` only. Other Hosts
 retain their own suggestions and have no Hermes shortcut menu.
 
+## 跨桌面、手机和平板的会话连续性
+
+Conversation Scope 是会话身份，View 是一个具体窗口或页面的输入与滚动状态。`workbench-runtime` 的 `ConversationDraftContinuity` 管理 View 文档的保存、恢复、发送成功后的丢弃和迟到读取仲裁；平台只提供本地存储。移动端用 SQLite，并以区域、凭证摘要和 Bot 实例/Profile 分区；Web/Electron 用浏览器本地存储，并以产品和账号服务的凭证作用域分区。退出登录或切换凭证时撤销旧存储、清除 View 与其内部目标缓存。附件与临时文件引用不在这个文档缓存中恢复，避免把已失效的本地 URI 当成可发送资产。
+
+`ConversationReturnProbe` 统一短暂离开、较长前台恢复和断网恢复的触发条件。iOS 把 AppState/Expo Network 事件交给它，Web/Electron 把 visibility/online 事件交给它；真正的追平仍调用当前 Thread lease 的 `retryRestore()`。追平不创建新会话，不重置可读历史。已经显示的内容是否权威，仍由 Replica/Session 决定。
+
+手机、iPad、折叠屏和桌面共享上述身份及状态转换。屏幕宽度、安全区、键盘和指针决定各自布局，不决定另一套业务流程。V3 ThreadView 的 revision/epoch 属于连接代次，不能把它写进持久 Replica 检查点。`ConversationDisplayContinuity` 只从权威时间线保存有界、已完成的用户消息与回答文本；冷启动重建 `painted / authoritative: false` 的只读 Timeline 供两端原有渲染器展示，当前 Host 恢复后整体替换。工具、审批、附件、交互以及 Replica 游标不进入展示缓存，不能从该缓存授权发送或其他操作。缓存按账号、Bot/Host 和 Thread 分区，并在退出登录时清除。
+
+会话定位共享 Turn 身份、最小时间线 revision 和对齐意图。Web 与 Native 都先挂载目标 Turn，等平台实测高度进入虚拟布局后才滚动；用户接管或 View 卸载会取消等待。两端用户消息使用共享 `getTimelineUserMessageTargetKey` 的 Item 锚点；Web 注册 DOM，Native 注册当前挂载行的局部布局。投影确定目标不存在时返回 unavailable；目标存在但尚未测量时继续等待，不能用经过几帧或整条 Turn 的估计位置冒充精确命中。Native 行高度是否已测量与项内锚点是否已注册是独立事实。
+
+Native 远处定位使用两个有界挂载窗口：保留当前可见行，同时挂载目标邻域测量；行按共享布局的绝对 top 放置，重叠行只挂载一次，窗口之间的历史不挂载。执行位置写入后才切换可见窗口。平滑定位只允许请求发起时已挂载且距当前位置不超过一个视口的目标，动画期间可见窗口跟随平台实际位置。`NativeTargetPositionTransaction` 持有语义目标的布局签名和本次请求坐标；内容、锚点、视口或底部占位变化时重新求值，已开始的动画使用瞬时校正收尾。完成依据当前布局与当前位置的匹配，不永久等待旧坐标；目标删除、取消和卸载均释放订阅及帧回调。
+
+虚拟窗口在折叠、历史插入和恢复首帧时必须覆盖当前距离对应的可见 Turn；保存的窗口只能在仍覆盖可见区域时复用。测量批次一次提交高度表、窗口和滚动目标。Web 以当前 DOM 节点、Native 以当前挂载行的测量租约识别高度来源；卸载行及旧实例的迟到回调不能写入新窗口。Native 在内容高度改变而距底部数值不变时仍要于内容尺寸提交后重写物理偏移，保证插入于视口上方的历史不把屏幕推走。用户触摸会中断待执行的自动定位。
+滚动帧只更新当前距离与有界可见窗口；完整 Turn 高度快照在离开会话时按需生成。Native 父容器持有可在虚拟列表卸载后调用的捕获函数，避免每次滑动都遍历整条时间线，也避免子组件 ref 先释放时丢失恢复状态。
+Native viewport owner 在视口高度变化及没有位置写入的内容尺寸提交时发布同一份几何事实，控制器与虚拟列表不能等下一次滚动事件才同步；几何发布不消费待提交的内容恢复事务，也不触发用户接管。启动尚无内容尺寸时保留初始恢复意图。
+
+用户消息折叠资格只由已确认的自然高度决定。Web 持续观察内层内容尺寸；Native 在内层未裁剪时接受后续 `onLayout`，折叠后只接受超过已确认自然高度的增长，拒绝可能来自裁剪的缩小值及旧内容身份的迟到布局。宽度变化会使旧自然高度失效并重新测量。Native 测量绑定内容、宽度代次、原生节点及挂载生命周期；`measure` 的异步返回使用启动时的观察器，并在回调和状态提交时复核代次。即使宽度由 A 变为 B 又变回 A，旧结果也无效；重测不依赖 RN 再次发送相同尺寸的 `onLayout`。
+
 ```text
 WebSocket / Replay Transport
           |
@@ -117,6 +135,8 @@ the mapping to its new Thread identity. A sent file cannot be removed through
 draft cleanup. Pre-existing messages without this record retain a narrow
 exact-locator compatibility path, not a general path or filename heuristic.
 
+Native 的实时 Thinking 在 Turn 等待占位与 Activity 组之间交接时使用同一文字 primitive、字重、行高、行容器及扫光呈现。交接只是状态所有者变化，不播放纵向进入动画；Activity 的位移动效只在可折叠历史的展开场景使用。不能用几像素的补偿偏移掩盖两条显示路径的几何差异。
+
 ### Changed-file review
 
 The Turn's existing unified diff remains the read authority for its changed-file summary. ChatUI renders a lightweight in-progress entry and a completed resource card; it only emits an open intent. In the Web Workbench, the actual Composer owns the active Turn's live entry above the editor, including when that Composer floats over a panel. Its exact Turn identity suppresses duplicate live resources in the main and mini transcript; it is presentation routing, not a second execution or resource owner. Standalone Conversation consumers retain inline presentation. On completion, the same resource appears as the transcript's completed card. The Workbench owns the read-only Review dialog, keeps it tied to the active Thread, and projects the current Timeline block while streaming. File selection filters that existing diff for display; it does not create a second TurnDiff model or mutate the workspace. Undo/Reapply is not advertised until a real Host apply-patch capability is connected.
@@ -205,6 +225,134 @@ menu focus are presentation state only and never enter Timeline, Replica or
 history. `smoke:url-presentation` verifies the real renderer, heading
 preservation, fallback favicon, tooltip, menu, clipboard and delayed streaming
 activation in Chromium.
+
+React Native consumes the same list and resource decisions. Ordered Markdown
+lists retain their authored start number; task items use checkbox markers.
+Both renderers resolve links, workspace references, citations and images through
+the same priority-ordered resource policy service. Their standard URL policy
+is registered as a fallback, so Host restrictions and rewrites apply before
+either platform performs an open or media load. Image-only data URLs remain a
+local media exception and do not become navigable links.
+On Native, a Host resource denial is final: a denied HTTP(S) link cannot fall
+through to the system browser. The system URL opener is only a fallback when no
+Host opener owns the action and the resource policy allows the target.
+Nested unordered lists use the Web marker progression (disc, circle, square)
+and nested spacing; user-message lists keep their compact Composer rhythm.
+Tables keep the authored rows and column alignment on both surfaces. Web uses
+its dialog to expand a wide table; Native uses a full-screen preview with its
+own horizontal and vertical scrolling, sized from the actual container so the
+same content works on a phone or tablet. Both keep the original Markdown copy
+source available from the inline table.
+Native task items use the same compact, read-only checkbox geometry as Web;
+ordered markers reserve one shared column width across digit boundaries.
+The shared renderer call also carries neighboring node kinds so Native can
+apply the Web user-message paragraph rhythm without adding a trailing gap.
+It also carries the next document node: Web and Native use one Han-text test
+to tighten adjacent root paragraphs, while first/last heading and divider
+margins follow the same document-edge rules.
+Native Markdown images retain their intrinsic ratio within the current
+container and use a document-scoped native preview for adjacent images in
+source order. Its modal exists only while previewing; no browser page or
+conversation route is created.
+Native links stay inside the surrounding text flow and share the 500ms
+streaming URL settle rule. The native shell can open HTTP(S), mail and contact
+links directly; workspace files, app routes and other resources require an
+explicit Host opener and are otherwise inert. Native images accept HTTP(S) and
+image data sources directly. File and resource images require the Host media
+loader; when unavailable or blocked, the renderer shows the alt text instead
+of attempting to load a device-local path. Physical scroll, keyboard and
+viewport geometry remain the Native viewport owner's responsibility. It receives
+touch-down before `ScrollView` recognizes a drag, cancelling auto-scroll and
+pending layout restoration as the Web owner does on pointer-down. Only a
+recognized drag changes the origin of physical scroll events to user input.
+
+The Expo Workbench now supplies a Host opener for resolved workspace files and
+external URLs. It passes the active Thread's cwd and Host identity to ChatUI,
+reads file bytes through `fs/readFile`, and displays bounded UTF-8 text in a
+native resource surface. It never sends a Host `file://` target to the phone's
+URL handler. The Host advertises which allowed policy decisions it can open;
+app routes, unsupported resource schemes, unresolved relative files, binary
+files and oversized text remain unavailable until an owning surface exists.
+Changing Thread or Host closes the preview and aborts its read. These resource
+capabilities are independent of the renderer's URL policy and must not be
+inferred from whether a URL merely parses.
+The same active Host supplies raster Markdown images through `fs/readFile`,
+with a shared Web/Native MIME hint and a Native 10 MiB byte bound. Only PNG,
+JPEG, GIF and WebP receive a Native data source; SVG and unknown formats stay
+unavailable rather than being treated as device-local files. The renderer
+aborts stale reads and drops its source when its document unmounts. The Expo
+loader merges concurrent reads for one Host path, retains a 10-second,
+24-MiB-weighted in-memory cache, and discards it when the Host connection
+generation changes. The last departing consumer aborts an unfinished read;
+the cache does not authorize file access or extend a session's lifetime.
+Web and Native image presentation keys include Host, conversation, cwd and
+document identity as well as the resolved target. A context switch cannot
+reuse the previous image's loading result or keep its gallery open while the
+new Host media request settles. This applies to Markdown images, user
+attachments, generated images and tool image results.
+User-message image attachments, generated images and image-view tool results
+consume the same conversation-media decision and Host loader. A Host file path
+is never rewritten to a phone-local `file://` URI; direct HTTP(S) and image
+data remain direct sources. Native preview opens the resolved image source in
+the conversation's gallery when no product-specific preview owner is supplied.
+
+Web and Native derive file citation labels/targets and workspace mention
+targets from one renderer-neutral model. Native presents workspace mentions
+as inline code and file citations with a separate citation tone; it makes
+either actionable only when the host supplies resource navigation. External
+Native links use system long-press actions; a delayed action must still match
+the current settled URL before it opens or copies anything.
+Image-bearing Native paragraphs keep prose in selectable text runs and place
+images in block containers so the text engine cannot collapse their layout to
+an inline placeholder. In the iOS drawer host, code/table/math surfaces retain
+a horizontal stroke only while their measured content exceeds the viewport;
+short content leaves the stroke to the drawer. Before measurement completes,
+the local scroller retains the stroke so wide content is not stranded.
+Native user bubbles compile with the same `user-message` dialect as Web,
+including Composer link and adjacent-list rules; assistant output continues
+to use the assistant dialect.
+Native list-item paragraphs and quoted paragraphs follow Web's child spacing:
+the list or following block owns its own gap, and quoted paragraphs have no
+extra margins. At the document level, heading and rule leading margins account
+for the previous block's trailing margin because RN adds margins where CSS
+collapses them. User-message paragraphs and lists have no trailing margin, so
+their following heading or rule keeps its full leading space.
+
+Code fence language labels, wrap policy and wrap preference come from the same
+renderer-neutral model on Web and Native. Native keeps horizontal overflow
+inside the code surface and offers code copying. Native tables retain Markdown
+column alignment and one width per column across every row; columns fill their
+actual container until the minimum readable width requires local horizontal
+scrolling. Both platforms copy the table's canonical Markdown source, while
+their preview controls remain platform-specific.
+Unspecified table-cell alignment and prose/heading writing direction are
+natural rather than forced LTR, matching Web's `dir="auto"` intent; explicit
+Markdown column alignment remains authoritative.
+
+Web and Native code fences now consume one Shiki grammar registry and Codex
+syntax theme. Web turns that result into HTML; Native projects its token colors
+and font emphasis into selectable `Text`, preserving exactly the original code
+string, wrap mode and horizontal scroll geometry. Native delays enhancement
+until a complete fence is present and caps tokenization at 12,000 characters;
+larger or still-streaming fences remain plain text. Highlighting is presentation
+only and never changes the copied code or Timeline content.
+
+Complete Mermaid fences share Web's source preparation rule. Native reads a
+bundled, offline renderer only when a diagram is present and runs it inside a
+network-disabled WebView document; this is a document renderer, not a page
+navigation or a second Bot runtime. The transcript keeps a bounded preview
+slot, and a native full-screen viewer owns panning and source inspection.
+Invalid, oversized, streaming or failed diagrams stay readable as source code.
+The HTML asset and Mermaid library are packaged with the app; the document
+cannot fetch scripts, fonts, images or data from the network. Each visible
+diagram currently owns its own WebView, so long conversations with many
+diagrams require device memory and scroll testing before calling it equivalent
+to Web. Display math uses a separate packaged, network-disabled KaTeX document
+with embedded fonts and the same `renderToString` safety options as Web. Its
+horizontal overflow belongs to the formula surface and its measured height is
+bounded in the transcript. Inline math remains in Native `Text` as readable
+source because RN text cannot host the DOM typesetter without breaking inline
+flow and selection; a true inline equivalent remains open work.
 
 Open pickers subscribe to catalog invalidation. Host/root/revision query keys
 prevent pre-change RPC completions from entering the new directory. Browsing
@@ -429,6 +577,43 @@ generation, not to durable transcript storage. V3 supplies no comparable server
 revision per Item: this protects observed updates, not a claim of server-wide
 causal sequencing or a V4 Journal. Dot and task-chat renderers may differ while
 consuming this same identity-versus-position distinction.
+
+### Activity closure and disclosure authority
+
+`AgentActivitySegmentEnd` records why a contiguous slice ended (`user-input`,
+`content`, `final-answer`, `turn-terminal`, or still `open`). This is chronology
+and live-header ownership, not permission to hide content. Ordinary task
+disclosure is eligible only when that slice reaches its own displayable,
+non-async final answer. A Steer, hook, question, approval, image, unphased text,
+terminal Turn, or a final answer in an earlier response cannot grant eligibility.
+No phase is inferred to make a disclosure work. Earlier completed commentary
+therefore stays visible when the user follows up, rather than becoming a stack
+of default-collapsed historical-message headings. Cancelled work stays visible.
+
+Eligibility, automatic default, explicit View choice and temporary expansion
+constraints are independent. `resolveAgentActivityDisclosure` is the shared
+pure policy; `resolveAgentActivityLayout` applies `forceExpanded`/`disableCollapse`
+before selecting partition regions. A no-toggle surface must not expose only
+the collapsible subset or duplicate persistent items. Displayable non-async
+final answers are persistent even if supplied to the inner partition, although
+the ordinary ordered plan renders them in separate source-owned slots.
+
+Only user actions write collapse choice. Defaults and constraints never write
+it back; old saved choices cannot manufacture eligibility. Web's existing
+View restore receipt and Native's component choice remain their presentation
+owners, not Thread storage or an execution preference. Stable segment/Item
+keys, the single Turn clock/Thinking owner and viewport reflow leases are
+unchanged. No new scroll writer, timeout, renderer sorting or remount is added.
+
+This ordinary task policy follows Codex 26.930.31428/build 12913's EO/DO
+separation, adapted to OpenCraft's ordered multi-response slices. Codex's
+Activity view may separately allow collapse before final; its continuous
+transcript caller does not equate input boundaries with fold grants. The
+distinct Bot chat renderer/viewport is not forcibly unified with task chat.
+The portable reviewed EO oracle validates only the pure task-state contract,
+not the complete original application. `chat-activity-disclosure` tests and
+`scripts/smoke-activity-disclosure.ts` cover the input sequences and real
+Conversation; deployment and native-device acceptance remain separate.
 
 ### Embedded submission and recovery
 
@@ -741,7 +926,12 @@ history, or remounting the Conversation.
   `<codexHome>/opencraft-attachments/<client-id>` directory with a durable
   manifest, a location-keyed display-metadata index, replay/content checks and
   bounded recursive removal. Images may continue to use the independent inline
-  data-URL path.
+  data-URL path. Host-staged non-image assets, including audio files, compile as
+  file mentions; their MIME type alone must not turn a server-readable file into
+  an audio modality that the Host does not support. The staging service receives
+  its SHA-256 digest from the Host platform: browsers use Web Crypto, while Expo
+  supplies its native crypto module. It does not assume React Native exposes
+  `crypto.subtle`.
 
 ### Browser image attachment presentation
 
@@ -772,15 +962,209 @@ URLs. The viewer uses the Workbench Presentation Root so embedded Shadow DOM
 keeps its modal styles and focus behavior; an explicit modal portal target
 still takes precedence. No generic resource-policy exception is introduced. Full page reload
 does not preserve an unsent browser `File`; that requires a separate durable
-draft/blob storage contract. Native Expo has the same semantic Draft but not
-this Web-only picker/presentation implementation.
+draft/blob storage contract.
+
+### Native Composer input boundary
+
+The Expo Composer uses the same Controller, Draft, attachment lifecycle, model
+catalog and Host attachment-staging capability as the desktop renderer. The
+Hermes bridge returns catalog timeouts as AppServer request failures, so a
+later catalog read can retry without resetting the conversation. The Expo Host
+records only a fixed failure category in its developer log; handled RPC
+failures must not be reported through `console.error`, which Expo Go renders
+as a full-screen development error.
+workspace and permission controls consume the same AppServer project and
+permission-profile catalogs; they appear only when the connected Host returns
+actionable entries. The current LightVela Hermes bridge returns empty catalogs
+for both methods, so its iOS Bot chat has no workspace or permission choice
+until that Host implements the corresponding capability. The renderer does not
+manufacture selectable projects or permission profiles.
+
+The platform picker produces a local `File` URI; supported images become bounded
+inline data URLs, while non-image files use `client-bytes` staging only when the
+connected Host advertises it. Pending work is bound to the initiating Draft ID.
+The native attachment sheet exposes the file picker only while that Host
+advertises `client-bytes`; the photo picker remains available independently.
+An OS photo/file picker result is also bound to the Draft and mounted Composer
+that opened it; a result arriving after navigation or unmount is discarded
+before adding any attachment. After admission, a Controller-owned native
+attachment session retains the local source URI and in-flight task across
+input remounts and target switches. A failed attachment can retry from that
+same source; removing it aborts the task and releases a late Host result.
+Picker jobs are serialized within one Controller-owned session: a waiting file
+stays pending in its Draft while only one source is read, encoded and staged at
+a time. This bounds concurrent Base64 memory on iOS without changing Draft
+ownership. Removing a waiting file takes it out of the queue; removing the
+active file still waits for any in-flight Host response so its late ref can be
+released before the next job starts.
+The native image chip previews that same local URI while the attachment belongs
+to its Draft; it does not decode the staged base64 payload for display. Switching
+Drafts or removing the attachment removes its preview from the active input.
+Disposing the Controller releases unsent ready Host refs. A Draft already in
+`submitting` retains its staged refs until that asynchronous send settles, even
+if the Controller is disposed during navigation. Acceptance transfers ownership
+to the conversation; failure or rejection releases refs that can no longer be
+retried from the disposed View. Picker metadata is
+normalized before entering
+the Draft: a photo with no MIME
+uses its original name or URI extension, and an unidentifiable photo remains an
+image for JPEG conversion. This avoids routing such photos through the Host's
+ordinary file-staging capability.
+Unsupported native image formats are converted into a temporary JPEG. The
+resolver removes that conversion file after encoding, including on cancellation
+or size failure; the Draft's preview continues to use the original picker URI.
+The Hermes staging bridge decodes Base64 in bounded chunks and checks canonical
+padding in the final quartet. This avoids keeping an extra full-size binary
+string and re-encoded copy beside a large file before its Host write; its
+platform SHA-256 provider must not mutate the supplied bytes.
+Removing an attachment aborts the job; the Host release callback receives only
+a ready ref, including one returned after cancellation, never a pending item.
+Late completions cannot mutate a different conversation. Picker and staging
+errors shown in the client remain generic and do not expose internal details;
+the iOS developer log records only fixed failure events.
+Once a `client-bytes` request reaches the Host, the native resolver keeps
+waiting for its reply even if the local picker item is removed. Aborting only
+the RPC wait would hide a successful Host write and leave no ref to release;
+the attachment session instead receives the late ref and removes it.
+
+Native text edit bounds use one full suffix scan to resolve ambiguous changes
+in repeated text near the last native selection. This keeps per-keystroke
+work linear in the draft length while retaining the existing mark ownership.
+The mobile paragraph-format action transforms contiguous selected top-level
+paragraphs, quotes and simple lists in the shared document without replacing
+inline marks or list item identity. Its visible selection maps across generated
+list markers and the separators between blocks. A
+native Return inside a simple list item splits it into a new item; Return on
+an empty item exits the list. Unsupported nested blocks remain unchanged rather
+than being flattened. The same action can create a code block from plain text
+or convert an existing code block to paragraphs, quotes or lists. Converting
+marked or atomic inline content to code is rejected because code blocks cannot
+retain those identities. The input's native buffer is reconciled to the new text
+projection, and the caret update is scoped to the same Draft generation. A pure
+native text transaction decides whether an input event is accepted, rejected or
+rewritten by a structural list or quote operation before the View publishes it. The
+iOS Fabric adapter records the native event count and text before invoking the
+parent callback, so a synchronous Draft update uses that event's generation
+when it writes the controlled projection back.
+
+At the start of a simple list item, native Backspace changes the first item
+to a paragraph or joins a later item to its predecessor. Both operations keep
+surviving inline marks and untouched item IDs; ordered markers are regenerated
+from the remaining items. A complex item still rejects marker deletion rather
+than losing its nested blocks.
+
+On a quote's trailing empty paragraph, a second Return moves that paragraph
+outside the quote while preserving earlier quoted content and its inline marks.
+The plain-text projection can remain unchanged even though the block structure
+changes; the native input reconciles the extra Return to the shared Draft and
+keeps the caret in the new paragraph. Other quote edits still use the normal
+paragraph path.
+Backspace at the beginning of a quote following an ordinary paragraph joins
+its first paragraph to the preceding paragraph. The remaining quoted children
+stay in the quote, and each inline mark stays with its original text. The
+resulting projection already matches the native deletion, so it needs no text
+buffer rewrite. A quote after another structured block remains protected.
+
+An async send settlement carries the initiating Draft ID and immutable
+`SubmitIntent`. The shared Controller clears or restores only that active or
+target-cached Draft; a late A result never mutates the B Draft now on screen.
+If A acquired new content while its submission was pending, a successful
+settlement preserves that content and returns it to editing instead of
+clearing it. The native input is noneditable during its Draft's submission.
+
+The shared AppServer compiler lowers Composer strong, emphasis and code marks
+to Markdown in `UserInput.text`, because the AppServer text-element wire type
+does not carry those marks. Desktop and Expo therefore submit the same
+formatting semantics, while unmarked text remains byte-for-byte unchanged.
+
+The native TextInput edits a text projection of the shared `ComposerDocument`.
+Its adapter preserves inline marks and untouched mention identities for edits
+within a paragraph, supports one format selection across ordinary paragraphs,
+keeps marks when joining adjacent paragraphs, and turns Return or pasted line
+breaks into paragraph blocks without dropping surrounding blocks. A selection
+inside a link edits its text and marks while retaining the link destination;
+text replaced across the entire link without surviving linked characters
+becomes ordinary text. Link text in nested quote/list paragraphs uses the same
+shared document reconstruction. A selection entirely inside a quote or list
+leaf can edit and format that leaf, including splitting its paragraph. Edits
+across two paragraph leaves within the same quote
+or list item can join them while retaining the parent structure and surviving
+text marks. Generated list markers and separators between distinct parents
+remain protected. The iOS attributed editor uses the same exact text projection
+for paragraph, quote, list and code-block Drafts, so nested marks appear at
+their input positions. Other platforms show those marks in a read-only preview.
+The native selection toolbar also creates or removes Web links across selected
+paragraph text, including quote and list leaves. It retains the selected text's
+strong, emphasis and code marks, plus surrounding block and inline identities;
+generated list markers, code blocks, dividers and atomic inlines stay protected.
+A keyboard-aware
+native sheet accepts only HTTP(S) destinations; it percent-encodes Markdown
+destination parentheses before the shared AppServer compiler serializes the
+link. The selected range is bound to its Draft ID while the sheet is open, so
+switching conversations cannot write a link into another Draft. Linked runs
+are underlined and tinted in the attributed input.
+React Native 0.86.3's public iOS `TextInput` wrapper drops rich Text children,
+although its Fabric multiline
+shadow node accepts them. The pinned iOS adapter forwards document text runs
+to that native component and tracks its event count, focus and selection;
+this is the path for displaying strong, emphasis and code marks while editing,
+pending device verification. It also provides React Native's `TextAncestorContext`
+around the native component so nested runs render as virtual text. Without that
+context Fabric treats the nested `Text` view as an inline attachment character.
+Because this adapter bypasses the public `TextInput` wrapper, it also compares
+the last native text event with the shared Draft projection after rendering and
+uses the current event generation to restore rejected edits or apply external
+Composer text changes. The native command temporarily uses default text
+attributes, so the adapter then refreshes the attributed child tree to restore
+the document's marks without remounting the input host. The visible native
+buffer must not diverge from the document that will be submitted.
+When its Draft or Bot unmounts, the attributed input also clears the focused
+native host before release, mirroring React Native's own TextInput cleanup so
+the keyboard and focus do not remain attached to a previous conversation.
+Native text, focus and selection callbacks carry the Draft ID of the input
+instance that produced them. A late event from an unmounted input cannot edit
+the newly active Draft or replace its focus/selection; accepted selection
+offsets are bounded by that Draft's current plain-text projection.
+Shared Composer `insertText` actions replace the current native selection or
+insert at its caret; when no selection has been reported, they append. The
+view then asks the native input to place the caret after the inserted text.
+Native undo and redo record the full shared document and caret for each edit,
+format action and external text insertion, keyed by Draft ID. The history stays
+with the Composer Controller across input remounts, is bounded, and refuses to
+replay when another action has replaced the document. Attachment refs remain
+under their separate Host lifecycle and are never restored by text undo.
+Between native text and selection events, the view rebases its last known
+selection across the accepted text edit. The document adapter also uses that
+selection to distinguish edits of identical adjacent characters with different
+marks, so the unchanged run keeps its formatting.
+Rebuilding an atomic inline requires every projected character in its span;
+editing inside a mention, command or resource converts only the edited span to
+text instead of duplicating the full inline. Before a native edit enters the
+shared Draft, the adapter checks that the rebuilt document projects to the
+exact text received from the input; an unrepresentable edit keeps the previous
+document. The auxiliary controls scroll within the Composer on narrow windows
+while the send action remains visible.
+Other platforms retain the controlled text input and a read-only format
+preview. Changing Drafts remounts the input so an empty Draft
+cannot retain the previous visual text. Text edits that cross distinct quote,
+list item or divider boundaries are rejected with a simple editing prompt rather than
+flattening the Draft. A format selection can cross paragraph and quote
+boundaries or multiple paragraphs inside one list item; generated list markers,
+dividers, code blocks and atomic inlines remain protected. Model effort, Host permission profiles
+and AppServer projects are selected through the shared Draft and catalogs.
+Project choices appear only for a new-thread Draft and retarget its execution
+workspace without replacing its content. Existing threads keep their bound
+workspace. The iOS adapter uses a private React Native component and must be
+checked after React Native upgrades; inline behavior, Chinese IME and selection
+still need device verification. Native editing across distinct structured block
+boundaries remains an editor gap.
 
 ### Production hardening, not architecture blockers
 
-- Implement a fully rich Native text editor adapter rather than flattening rich
-  display into the current native text-input surface.
-- Add Remote RPC/SFTP and Cloud object-store attachment-staging adapters, plus a
-  Native client-bytes producer, without changing Composer lifecycle semantics.
+- Extend the native rich editor to structured `ComposerDocument` block types
+  and edits across their boundaries without flattening them.
+- Add Remote RPC/SFTP and Cloud object-store attachment-staging adapters
+  without changing Composer lifecycle semantics.
 - Tune platform-specific response-spacer animation curves while retaining the
   shared Codex placement and follow state machine.
 - Split the large desktop renderer chunk at explicit capability boundaries.

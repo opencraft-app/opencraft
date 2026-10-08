@@ -27,6 +27,7 @@ import {
 } from "@/lib/console-show-event";
 import { cn } from "@/lib/utils";
 import { resolveAgentConsoleCollectionLabel } from "@/pages/marketing/agent-provider-locale";
+import { canShowMyAgentsEntry } from "@/lib/cta-journey";
 
 type UserAvatarMenuProps = {
   showLanguageSwitcher?: boolean;
@@ -50,7 +51,11 @@ const HeaderUserAvatarMenu = ({
   const navigate = useAppNavigate();
   const [searchParams] = useAppSearchParams();
   const user = session.user;
-  const shouldShowMyAgents = isSubscribed || (bots?.length ?? 0) > 0 || Boolean(latestPass);
+  const shouldShowMyAgents = canShowMyAgentsEntry({
+    hasResolvedPasses, passesLoading, passesError, isSubscribed,
+    hasHistoricalPass: Boolean(latestPass), hasBots: (bots?.length ?? 0) > 0,
+    botsLoading, botsError,
+  });
   const [open, setOpen] = useState(false);
   const [languageMenuOpen, setLanguageMenuOpen] = useState(false);
   const [hiddenEntriesRevealed, setHiddenEntriesRevealed] = useState(false);
@@ -173,7 +178,7 @@ const HeaderUserAvatarMenu = ({
           onMouseEnter={() => setOpen(true)}
           className="flex items-center gap-2 rounded-full transition-all duration-200 hover:opacity-90"
         >
-          <a href="/account" onClick={() => setOpen(false)} className="inline-flex shrink-0">
+          <a href={shouldShowMyAgents ? AGENTS_HOME_PATH : "/account"} onClick={() => setOpen(false)} className="inline-flex shrink-0">
             <img
               src={avatarSrc}
               alt="avatar"
@@ -238,19 +243,17 @@ const HeaderUserAvatarMenu = ({
 
             {/* Menu items */}
             <div className="py-1.5">
-              {/* 购买前不暴露「我的智能体」入口（PRD 2026-09-30）。
+              {/* 购买前不暴露「我的智能体伙伴」入口（PRD 2026-09-30）。
                   口径与 /agents 门禁一致：已订阅、有历史订阅或 Bot 才显示，
                   否则过期老用户会在菜单里找不到入口、却能直接输 URL 进来。 */}
-              {!isSidebar
-                && hasResolvedPasses && !passesLoading && !passesError && !botsLoading && !botsError
-                && shouldShowMyAgents && (
+              {!isSidebar && shouldShowMyAgents && (
                 <a
                   href={AGENTS_HOME_PATH}
                   onClick={() => setOpen(false)}
                   className={menuItemClass}
                 >
                   <Bot className={menuIconClass} />
-                  {t("我的智能体")}
+                  {t("我的智能体伙伴")}
                 </a>
               )}
               {!isSidebar && accountMenuItem}

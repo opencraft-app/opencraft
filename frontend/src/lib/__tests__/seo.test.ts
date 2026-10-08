@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_SEO_TITLE, SEO_DESCRIPTION, SEO_KEYWORDS, getFullSeoMeta, getSeoMeta } from "@/lib/seo";
 
 describe("seo meta", () => {
-  it("keeps the landing page title unchanged", () => {
+  it("uses the AI companion title for the domestic landing page", () => {
     const meta = getSeoMeta("/");
 
+    expect(meta.title).toBe("我的智能体伙伴 | LightVela");
     expect(meta.title).toBe(DEFAULT_SEO_TITLE);
     expect(meta.description).toBe(SEO_DESCRIPTION);
     expect(meta.keywords).toBe(SEO_KEYWORDS);

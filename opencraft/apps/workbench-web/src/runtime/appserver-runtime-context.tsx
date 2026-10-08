@@ -102,6 +102,9 @@ import {
   createConversationScopeLeaseRegistry,
   createConversationScopeRegistry,
   createConversationViewRegistry,
+  createConversationDraftContinuity,
+  createConversationDisplayContinuity,
+  createConversationReturnProbe,
   createWorkbenchSubmissionPipeline,
   draftSubmissionOwnsNavigation,
   equalWorkbenchLocation,
@@ -123,6 +126,7 @@ import {
   type AppServerWorkbenchViewSnapshot,
   type AppServerThreadRuntimeLease,
   type ConversationBindingStore,
+  type ConversationDisplayContinuity,
   type ConversationActivationCoordinator,
   type ConversationScopeLeaseRegistry,
   type ConversationScopeId,
@@ -177,6 +181,7 @@ import { canReadHostThreadCatalog, readHostThreadCatalog, type ManagedHostCatalo
 import { bindHostQueryRecovery } from "./host-query-recovery";
 import { connectAppearanceThemeContributions } from "../appearance-theme";
 import { workbenchProductId } from "../workbench-product";
+import { createBrowserConversationDraftStorage } from "./browser-conversation-drafts";
 import {
   createWorkbenchNavigationTransaction,
   type WorkbenchHistoryMode,
@@ -188,6 +193,7 @@ const readNoManagedCatalog = () => null;
 
 // The Context object itself is part of the renderer's hot-reload state.
 export interface AppServerHostCatalog {
+  readonly displayContinuity: BrowserDisplayContinuity;
   readonly extensionRuntime: Pick<ExtensionSupervisor, "subscribe" | "getSnapshot" | "contributions">;
   readonly connectors: ConnectorRuntime;
   readonly connectorManager: ConnectorManager;
@@ -576,12 +582,18 @@ interface WebWorkbenchApplicationBase {
   dispose(): Promise<void>;
 }
 
+export interface BrowserDisplayContinuity extends ConversationDisplayContinuity {
+  getScope(): string;
+  subscribe(listener: () => void): () => void;
+}
+
 export interface HostlessWebWorkbenchApplicationSupervisor extends WebWorkbenchApplicationBase {
   readonly mode: "hostless";
   readonly navigation: ApplicationNavigation<null>;
 }
 
 export interface ActiveWebWorkbenchApplicationSupervisor extends WebWorkbenchApplicationBase {
+  readonly displayContinuity: BrowserDisplayContinuity;
   readonly mode: "active";
   readonly managedHostCatalog: ManagedHostCatalogSource | null;
   readonly registry: HostRuntimeRegistry<AppServerWorkbenchRuntime>;
@@ -1147,6 +1159,10 @@ export async function createWebWorkbenchApplicationSupervisor(
       });
     }
     if (headlessAppHost !== null) {
+      await extensions.loadOptional("tencentoa.identity", async () => {
+        const { createTencentOaExtension } = await import("@opencraft/plugin-tencentoa");
+        return createTencentOaExtension();
+      });
       await extensions.loadOptional("vela.headless-codex", async () => {
         const { readSshServerCatalog } = await import("./ssh-server-catalog");
         // Only this headless product queries its backend catalog. Credentials,
@@ -1491,15 +1507,63 @@ export async function createWebWorkbenchApplicationSupervisor(
     },
   });
   startupRollback.push(() => conversationLeases.dispose());
+  let draftCredentialScope = lightVelaAccount.getSnapshot().credentialScope;
+  let browserDraftStore = createBrowserConversationDraftStorage(`${workbenchProductId}.${draftCredentialScope}`);
+  let currentDisplayContinuity = createConversationDisplayContinuity({
+    namespace: `${workbenchProductId}.${draftCredentialScope}`,
+    storage: browserDraftStore.displayStorage,
+  });
+  const displayListeners = new Set<() => void>();
+  let displayWritesSuspended = false;
+  let displayResumeAfterGeneration = -1;
+  const displayContinuity: BrowserDisplayContinuity = {
+    load: (hostId, threadId) => currentDisplayContinuity.load(hostId, threadId),
+    observe(snapshot) {
+      if (displayWritesSuspended) {
+        if (coordinator.getRuntime().getSnapshot().connectionGeneration <= displayResumeAfterGeneration) {
+          return Promise.resolve();
+        }
+        displayWritesSuspended = false;
+      }
+      return currentDisplayContinuity.observe(snapshot);
+    },
+    getScope: () => draftCredentialScope,
+    subscribe(listener) { displayListeners.add(listener); return () => displayListeners.delete(listener); },
+  };
   const conversationViews = createConversationViewRegistry({
     scopeLeases: conversationLeases,
     composerServices: { now: Date.now, createId: createClientId },
+    draftContinuity: createConversationDraftContinuity({
+      namespace: `${workbenchProductId}.${draftCredentialScope}`,
+      storage: browserDraftStore.storage,
+    }),
     onDisposeView(viewId) {
       disposeViewResources(viewId);
       routeCheckpoints.delete(viewId);
     },
   });
   startupRollback.push(() => conversationViews.dispose());
+  const stopDraftScope = lightVelaAccount.subscribe(() => {
+    const nextScope = lightVelaAccount.getSnapshot().credentialScope;
+    if (nextScope === draftCredentialScope) return;
+    browserDraftStore.revokeAndClear();
+    // The old Thread lease may remain readable briefly while authentication
+    // changes. Never seed a new account's cache from that old lease.
+    displayWritesSuspended = true;
+    displayResumeAfterGeneration = coordinator.getRuntime().getSnapshot().connectionGeneration;
+    draftCredentialScope = nextScope;
+    browserDraftStore = createBrowserConversationDraftStorage(`${workbenchProductId}.${nextScope}`);
+    currentDisplayContinuity = createConversationDisplayContinuity({
+      namespace: `${workbenchProductId}.${nextScope}`,
+      storage: browserDraftStore.displayStorage,
+    });
+    for (const listener of displayListeners) listener();
+    conversationViews.replaceDraftContinuity(createConversationDraftContinuity({
+      namespace: `${workbenchProductId}.${nextScope}`,
+      storage: browserDraftStore.storage,
+    }));
+  });
+  startupRollback.push(stopDraftScope);
   const conversationActivation = createConversationActivationCoordinator(
     coordinator,
     conversationBindings,
@@ -1566,6 +1630,7 @@ export async function createWebWorkbenchApplicationSupervisor(
     composerActionRenderers,
     botDirectory,
     sidebarLayout,
+    displayContinuity,
     hostProfiles,
     registry,
     coordinator,
@@ -1586,6 +1651,8 @@ export async function createWebWorkbenchApplicationSupervisor(
     async dispose() {
       await disposeOwnedSteps([
         stopEnvironmentRegistry,
+        stopDraftScope,
+        () => displayListeners.clear(),
         () => navigation.dispose(),
         () => conversationActivation.dispose(),
         () => conversationViews.dispose(),
@@ -1696,6 +1763,28 @@ export function AppServerRuntimeProvider({
   );
   const runtime = coordinator.getRuntime();
   const activeThreadLease = coordinator.getActiveThreadLease();
+  const returnProbe = useRef(createConversationReturnProbe()).current;
+  useEffect(() => {
+    const revalidate = () => {
+      if (document.visibilityState === "hidden" || coordinator.getRuntime().getSnapshot().phase !== "ready") return;
+      const lease = coordinator.getActiveThreadLease();
+      if (lease) void lease.retryRestore().catch(() => undefined);
+    };
+    const visibility = () => {
+      if (document.visibilityState === "hidden") returnProbe.background(Date.now());
+      else if (returnProbe.foreground(Date.now())) revalidate();
+    };
+    const offline = () => returnProbe.offline();
+    const online = () => { if (returnProbe.online(Date.now())) revalidate(); };
+    document.addEventListener("visibilitychange", visibility);
+    window.addEventListener("offline", offline);
+    window.addEventListener("online", online);
+    return () => {
+      document.removeEventListener("visibilitychange", visibility);
+      window.removeEventListener("offline", offline);
+      window.removeEventListener("online", online);
+    };
+  }, [coordinator, returnProbe]);
   const activeConversationScopeId = conversationActivation.scopeIdFor(coordinatorSnapshot.location);
   const activeConversationViewId = coordinatorSnapshot.viewId;
   if (activeConversationViewId === null) throw new Error("Active Conversation View has no identity");
@@ -1736,6 +1825,7 @@ export function AppServerRuntimeProvider({
   const applicationContextValue = useMemo<AppServerApplicationContextValue>(() => ({
     managedHostCatalog: supervisor.managedHostCatalog,
     hostProfiles,
+    displayContinuity: supervisor.displayContinuity,
     agentRuntimes: supervisor.agentRuntimes,
     threadManagement,
     environmentDirectory: supervisor.environmentDirectory,

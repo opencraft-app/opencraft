@@ -8,6 +8,15 @@ Pass 升配 Web checkout 在北京测试环境发布时，需协调前端、CTL�
 
 ## 交付链
 
+OpenCraft DevCloud 第一方登录扩展需要配对交付 Auth 新镜像与
+`auth-platform.env` 中的显式子域回调注册，以及 Service Gateway 新镜像与全局 CORS 配置。
+旧 Auth 二进制只接受两个精确 Web 回调，不能先把第三条模式配置投放给旧进程；
+应在同一次目标环境发布中更新镜像和配置，并确认进程已滚动读取新值。
+上海与新加坡分别通过各服务的标准构建、GitOps 晋级和 Argo 手工同步验收；
+除 revision/image 与 `Synced/Healthy` 外，还须检查子域 authorize、session exchange
+预检及真实登录，同时验证非法域名被拒绝。回滚须同时恢复兼容的注册列表与镜像；
+只合入 master 或只允许 CORS 不能视为登录能力已上线。
+
 问卷反馈的 MySQL 版本需要 ticket 镜像、`000002_support_feedback_mysql` migration、Service Gateway 路由和 Dashboard 上游配置共同就绪。北京测试已走独立测试发布路径，不能作为生产迁移、Argo 或公网验收证据。上海/新加坡恢复 ticket 正式 release bundle 后，`master` 仅构建两区镜像，`MASTER_AUTO_PIN_ENVS=none`，不得自动 pin 生产；流水线生产候选、数据库实际迁移以及 GitOps 镜像晋级分别受人工审核保护，生产 leaf Application 保持手动同步。
 
 首次生产上线按地域独立准备 `lightvela_ticket` 逻辑库、ticket 专用账号、SSM 真源与 SOPS 加密的 `ticket-runtime-secrets`（DB 密码、admin token），不得把后台 Basic Auth 密码用作服务密钥。迁移器优先使用完整 `TICKET_MYSQL_DSN`，否则从 `MYSQL_HOST`、`MYSQL_PORT`、`TICKET_DB`、`TICKET_DB_USER`、Secret 引用的 `TICKET_DB_PASSWORD` 构造 DSN；一次性 Job 不打印密钥。先用同地域候选镜像和库内 `schema_migrations` 探测版本/dirty，初始库无表记为 0，显式批准后将版本推进到 2 并验证 `dirty=false`、两张反馈表和 DB 权限。不可将 `up` 成功等同于可用，也不得靠回退 DDL 清除生产反馈。

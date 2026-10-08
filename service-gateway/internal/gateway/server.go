@@ -778,6 +778,9 @@ func (a originAllowlist) Allows(origin string) bool {
 	if _, ok := a.exact[origin]; ok {
 		return true
 	}
+	if !isReflectableCORSOrigin(origin) {
+		return false
+	}
 	u, err := url.Parse(origin)
 	if err != nil {
 		return false
@@ -796,7 +799,7 @@ func (a originAllowlist) Allows(origin string) bool {
 			if host == item.host {
 				continue
 			}
-			if strings.HasSuffix(host, "."+item.host) {
+			if validOriginSubdomain(host, item.host) {
 				return true
 			}
 			continue
@@ -806,6 +809,24 @@ func (a originAllowlist) Allows(origin string) bool {
 		}
 	}
 	return false
+}
+
+func validOriginSubdomain(host, base string) bool {
+	prefix, ok := strings.CutSuffix(host, "."+base)
+	if !ok || len(host) > 253 {
+		return false
+	}
+	for _, label := range strings.Split(prefix, ".") {
+		if len(label) == 0 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return false
+		}
+		for _, c := range label {
+			if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '-') {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func normalizeAllowedOrigins(origins []string) originAllowlist {
@@ -868,7 +889,7 @@ func normalizeAllowedOrigins(origins []string) originAllowlist {
 
 func isReflectableCORSOrigin(origin string) bool {
 	u, err := url.Parse(origin)
-	if err != nil || u.User != nil || u.Opaque != "" || u.Hostname() == "" || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
+	if err != nil || u.User != nil || u.Opaque != "" || u.Hostname() == "" || u.Path != "" || u.ForceQuery || u.RawQuery != "" || u.Fragment != "" || strings.Contains(origin, "#") {
 		return false
 	}
 	switch strings.ToLower(u.Scheme) {

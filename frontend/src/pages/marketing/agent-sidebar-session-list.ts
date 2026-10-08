@@ -1,9 +1,46 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import type { LightVelaSession, LightVelaSessionState } from "./agent-chat-panel";
 
 // Agents 子页面会重挂载；只缓存列表数据，操作句柄仍由当前页面的聊天实例提供。
 const sessionsByBot = new Map<string, LightVelaSession[]>();
+const unreadStorageKey = (botKey: string) => `lightvela:agents:unread-sessions:${botKey}`;
+
+const readUnreadSessionIds = (botKey: string | null): string[] => {
+  if (!botKey || typeof window === "undefined") return [];
+  try {
+    const stored = window.localStorage.getItem(unreadStorageKey(botKey));
+    const parsed: unknown = stored ? JSON.parse(stored) : [];
+    return Array.isArray(parsed) ? parsed.filter((id: unknown): id is string => typeof id === "string") : [];
+  } catch {
+    return [];
+  }
+};
+
+export function useAgentSidebarUnreadSessions(botKey: string | null) {
+  const [current, setCurrent] = useState<{ botKey: string | null; ids: string[] }>({ botKey: null, ids: [] });
+
+  useEffect(() => {
+    setCurrent({ botKey, ids: readUnreadSessionIds(botKey) });
+  }, [botKey]);
+
+  const setUnread = useCallback((chatId: string, unread: boolean) => {
+    if (!botKey) return;
+    const next = new Set(current.botKey === botKey ? current.ids : readUnreadSessionIds(botKey));
+    if (unread) next.add(chatId);
+    else next.delete(chatId);
+    const ids = [...next];
+    try {
+      if (ids.length > 0) window.localStorage.setItem(unreadStorageKey(botKey), JSON.stringify(ids));
+      else window.localStorage.removeItem(unreadStorageKey(botKey));
+    } catch {
+      // The marker still works for the current page when browser storage is unavailable.
+    }
+    setCurrent({ botKey, ids });
+  }, [botKey, current]);
+
+  return { unreadChatIds: current.botKey === botKey ? current.ids : [], setUnread };
+}
 
 export function resolveAgentSidebarEmptySessionState({
   botPaused,

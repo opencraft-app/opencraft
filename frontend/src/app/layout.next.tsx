@@ -14,7 +14,7 @@ export const metadata: Metadata = {
     template: '%s | LightVela',
   },
   description: defaultEnglish
-    ? 'LightVela is a cloud Agent hosting product from the Tencent Lighthouse team.'
+    ? 'LightVela is a cloud AI agent product from the Tencent Lighthouse team.'
     : '云端托管 Hermes Agent，越聊越懂的智能伙伴。',
   applicationName: 'LightVela',
   authors: [{ name: 'Tencent Lighthouse Team' }],

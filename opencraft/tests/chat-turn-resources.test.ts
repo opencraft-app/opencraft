@@ -29,7 +29,8 @@ test("a legacy aggregate diff cannot close or automatically fold active work", (
   assert.equal(activity.type, "agent-activity");
   if (activity.type !== "agent-activity") return;
   assert.equal(activity.status, "streaming");
-  assert.equal(activity.hasDisclosureBoundary, false);
+  assert.equal(activity.segmentEnd, "open");
+  assert.equal(activity.hasFinalAssistantStarted, false);
   assert.equal(resolveAgentActivityLayout(activity, true).isCollapsed, false, "old preference cannot fold an open response");
   assert.deepEqual(after.plan.assistant!.slots, before.plan.assistant!.slots, "resource arrival changes no transcript or clock");
   assert.deepEqual(after.plan.thinkingOwner, before.plan.thinkingOwner);

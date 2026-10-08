@@ -34,6 +34,10 @@ import {
 export type Region = "cn" | "global";
 
 const envRegion = (() => {
+  if (typeof window !== "undefined") {
+    const embedded = (window as Window & { __LIGHTVELA_EMBEDDED_REGION__?: Region }).__LIGHTVELA_EMBEDDED_REGION__;
+    if (embedded === "cn" || embedded === "global") return embedded;
+  }
   if (typeof process !== "undefined") {
     const value = process.env.NEXT_PUBLIC_REGION;
     if (value === "cn" || value === "global") return value;
