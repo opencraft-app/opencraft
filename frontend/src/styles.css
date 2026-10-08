@@ -2253,6 +2253,21 @@ a {
     display: block;
   }
 
+  .lv-agent-bot-rail-enabled.lv-agent-sidebar-collapsed .lv-agent-account-trigger[data-renewal-reminder="true"] {
+    position: relative;
+  }
+
+  .lv-agent-bot-rail-enabled.lv-agent-sidebar-collapsed .lv-agent-account-trigger[data-renewal-reminder="true"]::after {
+    position: absolute;
+    top: 6px;
+    left: 36px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #d97706;
+    content: "";
+  }
+
 }
 
 @media (min-width: 1024px) and (max-height: 860px) {

@@ -384,7 +384,8 @@ describe("agent settings sidebar chat/settings tabs", () => {
     const onboardingCalls = page.match(/setShowMultiBotOnboarding\(true\)/g)?.length ?? 0;
     const legacyCalls = page.match(/setShowCreateConfirm\(true\)/g)?.length ?? 0;
     expect(onboardingCalls).toBeGreaterThanOrEqual(3);
-    expect(legacyCalls).toBe(onboardingCalls);
+    expect(legacyCalls).toBe(onboardingCalls - 1);
+    expect(page).toContain("if (createBotPageParam && IS_BUDDY_ONBOARDING_ENABLED)");
     expect(page).toContain('navigate("/subscribe")');
     expect(page).toContain("max-w-[42rem]");
     expect(page).not.toContain('t("用途说明")');

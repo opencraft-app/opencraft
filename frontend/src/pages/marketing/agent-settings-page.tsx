@@ -2701,7 +2701,7 @@ export const AgentSettingsPage = ({
   const [showMultiBotOnboarding, setShowMultiBotOnboarding] = useState(false);
   const createBotPageHistoryRef = useRef(false);
   useEffect(() => {
-    if (createBotPageParam) {
+    if (createBotPageParam && IS_BUDDY_ONBOARDING_ENABLED) {
       createBotPageHistoryRef.current = true;
       setShowMultiBotOnboarding(true);
     } else if (createBotPageHistoryRef.current) {
@@ -3173,11 +3173,12 @@ export const AgentSettingsPage = ({
       return;
     }
     const botId = visibleBots.some((bot) => bot.id === requestedBotId) ? requestedBotId : activeBot?.id;
-    const destination = botId ? getAgentBotSectionHref(AGENT_SECTION_PATH_BY_ID.chat, botId) : AGENT_SECTION_PATH_BY_ID.chat;
+    if (!botId) return;
+    const destination = getAgentBotSectionHref(AGENT_SECTION_PATH_BY_ID.chat, botId);
     const redirectKey = `${pathname}:${destination}`;
     if (entryRedirectRef.current === redirectKey) return;
     entryRedirectRef.current = redirectKey;
-    if (botId) pendingNewChatSessionBotId = botId;
+    pendingNewChatSessionBotId = botId;
     navigate(destination, { replace: true });
   }, [requestedSection, sectionId, hasResolvedBots, isCreating, isModifying, showEarlyOnboarding, showBuddyOnboarding, showMultiBotOnboarding, createBotIntentParam, createBotPageParam, visibleBots, requestedBotId, activeBot?.id, pathname, navigate]);
   const useMobileChatLayout = activeSection === "chat" && openCraftChatEnabled && hasSidebarLayout;
@@ -5835,10 +5836,12 @@ export const AgentSettingsPage = ({
                   <PopoverTrigger asChild>
                     <button type="button" className="lv-agent-bot-context-trigger" aria-label={t("管理 Bot")} data-tooltip={t("管理 Bot")}>
                       <Settings2 className="h-[18px] w-[18px]" aria-hidden="true" />
+                      {activeBotRestartError && <span className="absolute right-0 top-0 size-1.5 rounded-full bg-red-500" aria-hidden="true" />}
                     </button>
                   </PopoverTrigger>
                   <PopoverContent side="right" align="end" sideOffset={8} className="w-52 rounded-md p-1.5">
                     <div className="truncate px-2 py-1.5 text-xs text-black/45" title={agentProfileDisplayName}>{agentProfileDisplayName}</div>
+                    {activeBotRestartError && <p role="alert" className="px-2 py-1 text-xs leading-relaxed text-red-500">{activeBotRestartError}</p>}
                     <button type="button" className="lv-sidebar-user-menu-item w-full" disabled={activeBot.status !== "running" || !activeBot.profileId?.trim() || buddyProfileState.loading || buddyProfileState.soulExists === null} onClick={() => setProfileEditorOpen(true)}>
                       <Wand2 className="size-4" aria-hidden="true" />{t("修改资料")}
                     </button>
@@ -6478,7 +6481,11 @@ export const AgentSettingsPage = ({
                     <div className="lv-agents-sidebar-footer">
                       <div className="lv-agent-account-footer">
                         {(isDesktop || mobileChatNavOpen) && (
-                          <UserAvatarMenu showLanguageSwitcher={isGlobal} variant="sidebar" />
+                          <UserAvatarMenu showLanguageSwitcher={isGlobal} variant="sidebar"
+                            renewalReminder={isDesktop && multiBotEnabled && passExpiryReminder && passExpiryReminderCopy && activePass
+                              ? { label: passExpiryReminderCopy.label, tooltip: passExpiryReminderCopy.tooltip, actionLabel: t("立即续费"),
+                                  onRenew: renewalAvailable ? () => setRenewPassModalOpen(true) : undefined }
+                              : undefined} />
                         )}
                       </div>
                     </div>

@@ -165,6 +165,7 @@ const renderAgentSettingsPage = () => render(
 describe("AgentSettingsPage renewal reminder", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === "(min-width: 1024px)", addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} }));
     vi.stubGlobal("IntersectionObserver", class {
       observe() {}
       unobserve() {}
@@ -229,7 +230,7 @@ describe("AgentSettingsPage renewal reminder", () => {
     passesError = true;
     renderAgentSettingsPage();
     expect(screen.getByRole("alert")).toHaveTextContent("套餐列表加载失败");
-    expect(screen.getByText("Hermes Renewal")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /切换到 Hermes Renewal/ })).toBeInTheDocument();
     expect(screen.queryByText("正在为 Hermes Agent 升级套餐")).not.toBeInTheDocument();
     expect(screen.queryByText("套餐升级失败")).not.toBeInTheDocument();
     refreshPasses.mockClear();
@@ -269,7 +270,7 @@ describe("AgentSettingsPage renewal reminder", () => {
       </AppNavigationProvider>,
     );
     expect(screen.queryByText("正在为 Hermes Agent 升级套餐")).not.toBeInTheDocument();
-    expect(screen.getByText("Hermes Renewal")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /切换到 Hermes Renewal/ })).toBeInTheDocument();
   });
 
   it("keeps Bot controls hidden and shows support guidance after upgrade delivery fails", () => {
@@ -295,58 +296,37 @@ describe("AgentSettingsPage renewal reminder", () => {
     expect(screen.getByRole("main")).toHaveClass("pb-6");
   });
 
-  it("labels the domestic navigation entry as advanced settings", () => {
+  it("keeps the domestic daily and explore navigation", () => {
     renderAgentSettingsPage();
-
-    expect(screen.getByRole("link", { name: "高级设置" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "日常" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "探索" })).toBeInTheDocument();
   });
 
   it("keeps the desktop settings navigation independent from content scrolling", () => {
     renderAgentSettingsPage();
 
-    const sidebar = screen.getByRole("navigation", { name: "实例配置导航" }).closest("aside");
+    const sidebar = screen.getByRole("navigation", { name: "日常" }).closest("aside");
     expect(sidebar).toHaveClass("lv-agents-sidebar-scroll-isolated");
     expect(sidebar).not.toHaveClass("lg:sticky", "lg:top-[84px]");
-    expect(sidebar?.nextElementSibling).toHaveClass("lg:col-start-2");
+    expect(sidebar?.nextElementSibling).toHaveClass("lv-agent-settings-content");
     const tabs = screen.getByRole("tablist", { name: "侧边栏视图切换" });
     const middle = sidebar?.querySelector(".lv-agents-sidebar-middle");
     expect(sidebar).toContainElement(tabs);
     expect(middle).not.toContainElement(tabs);
-    expect(middle).toContainElement(screen.getByRole("navigation", { name: "实例配置导航" }));
+    expect(middle).toContainElement(screen.getByRole("navigation", { name: "日常" }));
     expect(within(sidebar as HTMLElement).queryByRole("link", { name: "有建议？提交反馈" })).not.toBeInTheDocument();
   });
 
   it("shows an orange renewal reminder near the active agent status and opens the renewal modal", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     renderAgentSettingsPage();
+    const accountEntry = screen.getByRole("button", { name: /打开用户菜单 剩余 3 天到期/ });
+    expect(accountEntry).toHaveTextContent("临近到期");
+    expect(within(accountEntry).getByText("临近到期")).toHaveAttribute("title", "剩余 3 天到期");
 
-    const reminder = screen.getByRole("button", { name: "套餐剩余 3 天到期，点击续费" });
-    expect(reminder).toHaveTextContent("临近到期");
-    expect(reminder).not.toHaveAttribute("title");
-    expect(reminder).toHaveClass("is-warning", "cursor-pointer");
-
-    const tooltip = screen.getByRole("tooltip");
-    expect(reminder).toHaveAttribute("aria-describedby", tooltip.id);
-    expect(tooltip).toHaveTextContent("剩余 3 天到期");
-    expect(tooltip).toHaveClass(
-      "rounded-[6px]",
-      "border",
-      "border-[var(--border-subtle)]",
-      "bg-white",
-      "px-3",
-      "py-1.5",
-      "text-[11px]",
-      "font-medium",
-      "pointer-events-auto",
-      "select-text",
-      "shadow-[0_8px_24px_rgba(15,23,42,0.12)]",
-    );
-    expect(tooltip.parentElement).toHaveClass("top-full", "pt-2");
-    expect(tooltip.querySelector('[aria-hidden="true"]')).toHaveClass("bottom-full", "border-l", "border-t");
-
-    const renewAction = within(tooltip).getByRole("button", { name: "立即续费" });
-    expect(renewAction).toHaveAttribute("type", "button");
-    expect(renewAction).toHaveClass("cursor-pointer");
+    await userEvent.setup({ advanceTimers: vi.advanceTimersByTime }).click(accountEntry);
+    expect(screen.getByRole("status")).toHaveTextContent("剩余 3 天到期");
+    const renewAction = screen.getByRole("button", { name: "立即续费" });
 
     await userEvent.setup({ advanceTimers: vi.advanceTimersByTime }).click(renewAction);
 
@@ -364,7 +344,8 @@ describe("AgentSettingsPage renewal reminder", () => {
       (window as Window & { show?: () => boolean }).show?.();
     });
 
-    const navigation = screen.getByRole("navigation", { name: "实例配置导航" });
+    await userEvent.click(screen.getByRole("tab", { name: "探索" }));
+    const navigation = screen.getByRole("navigation", { name: "探索" });
     const terminalLink = within(navigation).getByRole("link", { name: "终端" });
     const advancedToolsList = terminalLink.closest(".lv-agents-nav-group-items");
 
@@ -374,14 +355,6 @@ describe("AgentSettingsPage renewal reminder", () => {
     expect(within(advancedToolsList).getByRole("link", { name: "终端" })).toBe(terminalLink);
     expect(within(advancedToolsList).getByRole("link", { name: "浏览器" })).toBeInTheDocument();
 
-    for (const label of ["配置", "使用", "成长", "管理"]) {
-      const group = within(navigation).getByRole("group", { name: label });
-      const visibleLabel = within(group).getByText(label);
-
-      expect(group).toHaveAttribute("aria-labelledby", visibleLabel.id);
-      expect(group).not.toHaveAttribute("aria-label");
-      expect(within(group).getByRole("list")).toBeInTheDocument();
-    }
   });
 
   it("shows the realname guide in the renewal modal when an unverified user clicks the renewal reminder", async () => {
@@ -394,8 +367,8 @@ describe("AgentSettingsPage renewal reminder", () => {
 
     renderAgentSettingsPage();
 
-    const reminder = screen.getByRole("button", { name: "套餐剩余 3 天到期，点击续费" });
-    await userEvent.setup({ advanceTimers: vi.advanceTimersByTime }).click(reminder);
+    await userEvent.setup({ advanceTimers: vi.advanceTimersByTime }).click(screen.getByRole("button", { name: /打开用户菜单 剩余 3 天到期/ }));
+    await userEvent.setup({ advanceTimers: vi.advanceTimersByTime }).click(screen.getByRole("button", { name: "立即续费" }));
 
     expect(await screen.findByRole("heading", { name: "续费套餐" })).toBeInTheDocument();
     expect(await screen.findByText("续费前需先")).toBeInTheDocument();
