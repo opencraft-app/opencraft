@@ -611,4 +611,19 @@ describe("AgentChatMigrationSurface", () => {
     expect(screen.getByRole("status")).toHaveTextContent("请检查 AI 伙伴状态后重试");
   });
 
+  it("reports a retired artifact instead of crashing when the host keeps stale session commands", async () => {
+    const ctor = customElements.get("opencraft-embedded-workbench")!;
+    const show = vi.spyOn(ctor.prototype, "show").mockResolvedValue(undefined);
+    let commands: EmbeddedSessionCommands | null = null;
+    try {
+      const view = render(<AgentChatMigrationSurface active enabled instanceId="ins-1" profileId="sales" region="cn"
+        legacy={<div>Legacy</div>} onSessionCommandsChange={(next) => { if (next !== null) commands = next; }}
+        multiSession={{ onSessionStateChange: vi.fn(), onSelectedChatIdChange: vi.fn() }} />);
+      await waitFor(() => expect(commands).not.toBeNull());
+      view.unmount();
+      await expect(commands!.createSession()).rejects.toThrow(/Embedded Workbench/u);
+      await expect(commands!.loadMoreSessions?.()).rejects.toThrow(/Embedded Workbench/u);
+    } finally { show.mockRestore(); }
+  });
+
 });

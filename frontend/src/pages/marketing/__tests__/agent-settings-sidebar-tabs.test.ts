@@ -32,6 +32,20 @@ const readGeneratedDictionary = (locale: string): Record<string, string> =>
   ) as Record<string, string>;
 
 describe("agent settings sidebar chat/settings tabs", () => {
+  /**
+   * 控制台常驻后，分区面板容器不能再按 activeSection 分 key：
+   * 嵌入式 Chat Surface 是容器内唯一不随分区条件渲染的子节点，
+   * 一旦 key 变化它会整体重挂载，宿主已下发的会话命令随即失效，
+   * 从通道/技能点「新建对话」会访问到已销毁实例。
+   */
+  it("keeps the Bot panel container key independent from the active section", () => {
+    const page = readPageSource();
+    const containerKey = page.split('className="_lh-claw-bot-panel"')[0]!.split("<div key={").pop()!;
+    expect(containerKey).not.toContain("activeSection");
+    expect(containerKey).toContain("activeBot.id");
+  });
+
+
   it("shows additional Bot creation without show() while preserving feature and quota gates", () => {
     const page = readPageSource();
     expect(page).toContain("const [showHiddenAgentTools, setShowHiddenAgentTools] = useState(false);");

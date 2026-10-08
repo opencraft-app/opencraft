@@ -285,11 +285,16 @@ export function AgentChatMigrationSurface({
         await element.loadMoreConversations();
       },
       async createSession() {
+        // The host may still hold these commands after this artifact retired.
+        if (typeof element?.createConversation !== "function") {
+          throw new Error("Embedded Workbench cannot create a conversation");
+        }
+        const current = element;
         onSessionMutationStateChangeRef.current?.({
           operation: "create", chatId: "", pending: true, error: null,
         });
         try {
-          await element!.createConversation();
+          await current.createConversation();
           onSessionMutationStateChangeRef.current?.(null);
         } catch (cause) {
           onSessionMutationStateChangeRef.current?.({

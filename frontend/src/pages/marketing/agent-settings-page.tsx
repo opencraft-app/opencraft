@@ -6537,7 +6537,13 @@ export const AgentSettingsPage = ({
                       现在只保留一个挂载点，条件不含 activeBot，创建全程都是同一个
                       组件实例，不会重挂载。
                     */}
-                    <div key={fleetOverviewEnabled && activeSection === "overview" ? "fleet-overview" : `${activeBot.id}-${activeSection}`} className="_lh-claw-bot-panel">
+                    {/*
+                      key 不含 activeSection：各分区面板本身就按 activeSection 条件渲染、
+                      切换时自行卸载，而嵌入式 Chat Surface 是容器内唯一无条件渲染的子节点。
+                      一旦 key 随分区变化，它会在控制台常驻的前提下被整体重挂载，宿主持有的
+                      会话命令指向已销毁实例，从通道/技能点「新建对话」即会失败。
+                    */}
+                    <div key={activeBot.id} className="_lh-claw-bot-panel">
                       {showBuddyOnboarding ? (
                         <div className="_lh-claw-bot-panel__cards min-w-0">
                           <AgentOnboardingPanel
