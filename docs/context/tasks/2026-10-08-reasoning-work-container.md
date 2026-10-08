@@ -6,7 +6,7 @@ triggers: ["reasoning work container", "思考过程用时外面", "nested think
 owner: skipzhang
 authority: derived
 source_of_truth: ["opencraft/docs/chat-ui-architecture.md", "opencraft/design/invariants.md"]
-status: active
+status: retired
 reviewed_at: 2026-10-08
 review_due: 2027-01-06
 revision: 1.0.0
@@ -53,29 +53,33 @@ Before modification, the completed reasoning-only test passes with sibling reaso
 - Real Conversation browser smoke passed 12 engine/theme/input combinations (Codex/Hermes/DSH × light/dark × mouse/touch), including 24 long-empty/clock variants and 12 reasoning-only variants. It checks one work fold, real clock, final answer outside, first activation, independent controls, restored choices, streaming and history identity. Synthetic provider content only; no paid provider or iPhone OS claim.
 - Desktop and touch reasoning-only browser screenshots visually reviewed. Full logs/screenshots are isolated validation artifacts outside Git, not application state.
 - Continued gate reached the known unrelated `ssh-native-surface.test.ts:71` expected-value mismatch (`pin: false` omitted): 75 passed / 1 failed / 1 skipped. No claim that the complete gate passed; its later stages were not reached. Latest full Chat suite after all test edits: 591/591 passed.
+- Source commit `9940589e0f2544ec80c3991419d75796c8f96b78` atomically fast-forwarded both feature branch and mono2 master; remote readback matched both refs. No force push or public mirror.
+- Correctly flagged headless Web release `20261008-reasoning-work-container-9940589e0` built from that source; isolated static candidate mounted in real Chromium with zero page errors and 460 manifest assets verified by HTTP byte hashes. Web release tests: 10/10 passed. Its intentionally absent Host is not provider execution acceptance.
+- Independent supervisor published only Web resources at 2026-10-08 12:23:39 UTC, preserving the original backend process, runtime SHA and data owner. Post-switch readback confirmed live build ID, source revision, listener/unit owner, health `{ok:true, appServerConfigured:true}` and all 460 asset byte hashes. Added 48 hashed assets, reused 434 and retained old assets/rollback Web entry. Runtime hash identity was checked before/after and is retained in private delivery evidence; no backend restart. Package manifest is the original runtime-package inventory, not an inventory of the subsequently published Web overlay.
+- Staged change-impact and first-party documentation checks passed (zero broken links). Global Context catalog validation still reports historical task-schema and credential-heuristic findings outside this change; it is not claimed green. Generated catalog drift was restored rather than included in the delivery.
 
 ## risks / unverified
-No actual iPhone OS acceptance. Full gate's unrelated SSH fixture failure remains. Preview validation/delivery is pending and cannot be inferred from the source tests.
+No actual iPhone OS acceptance. Full gate's unrelated SSH fixture failure remains. Existing browser documents keep their already loaded scripts until refresh; production/GitOps and public mirror were not changed.
 
 ## stage / handoff
-Implementation, targeted browser/component validation and Web build complete; user subsequently authorized commit/push/master integration and preview replacement. Preview change is Web-only: preserve the actual Host runtime and account/data owner, publish a correctly flagged headless Web release with retained old hashed assets and a rollback entry.
+Implementation, targeted browser/component validation, headless Web build, mono2 master integration and Web-only preview publication complete. Existing Host runtime, account/data owner and old assets/rollback entry preserved. Refresh the current page to consume the new bundle; no backend restart was performed.
 
 ## checkpoint
 
 ### stage
-Source fix and verification complete; Git integration and independent Web-only preview publication remain.
+Source fix, Git integration and independent Web-only preview publication complete; receipt-only documentation commit remains.
 
 ### verified
-Contiguous response work owns all returned reasoning and tools. Reasoning-only completed work folds under its real clock. Final answers and real response/input boundaries stay outside; no fabricated clock or duplicate Thinking. View-owned independent choices survive outer remount on Web and Native. Documentation replaces the previous sibling-slot contract.
+Contiguous response work owns all returned reasoning and tools. Reasoning-only completed work folds under its real clock. Final answers and real response/input boundaries stay outside; no fabricated clock or duplicate Thinking. View-owned independent choices survive outer remount on Web and Native. Documentation replaces the previous sibling-slot contract. Remote refs and actual preview HTTP build/assets/health independently verified after publication; backend owner unchanged.
 
 ### unverified
-Unrelated SSH fixture prevents a green full gate; iPhone OS untested; live preview still unchanged.
+Unrelated SSH fixture prevents a green full gate; iPhone OS untested. Current live preview is verified new Web / original Host, not a newly built full server package.
 
 ### discard
 Previous sibling-slot / nearest reasoning-separated work-slice contract is superseded. Do not reuse the old delivery's validation JSON as evidence for this fix.
 
 ### restore
-Canonical source branch will be `fix/opencraft-reasoning-work-container-20261008`, base fc18e8386 (fresh fetch equals current remote master). The unrelated original desktop worktree and current preview were not modified. Use existing Web publisher's durable assets-before-entry switch, not a Host restart or generic Web build.
+Canonical source branch `fix/opencraft-reasoning-work-container-20261008`, source commit 9940589e0 on mono2 master. The unrelated original desktop worktree was not modified. Preview publisher used durable assets-before-entry switching, retained old hashed assets and rollback entry; private scripts, screenshots, logs and package paths remain outside Git. Do not rerun that one-shot publication script: its old-build CAS intentionally rejects an already upgraded baseline.
 
 ### next_action
-Stage only scoped source/tests/docs, run change-impact and documentation checks, commit and atomically fast-forward feature/master without force. Then build the headless Web candidate and validate/publish through an independent supervisor with rollback. Recheck live build ID, entry asset bytes, health, PID/unit and unchanged runtime hash before claiming preview completion.
+Commit/push this receipt-only update through ordinary fast-forward refs, then hand off the new preview and refresh instruction. No further runtime or code changes required for this request.
