@@ -40,6 +40,7 @@ const Text = platformElement("span");
 const Pressable = platformElement("button");
 const native = {
   View, Text, Pressable,
+  Easing: { bezier: () => (value: number) => value },
   Platform: { select: (options: { default?: unknown }) => options.default },
   Animated: {
     Value: AnimatedValue, View,
@@ -169,7 +170,7 @@ test("Native reasoning hides empty content, expands returned detail and obeys ac
   });
 });
 
-test("Native Frame consumes dedicated reasoning slots without placing Bash/Read in its body or duplicating Thinking", async () => {
+test("Native Frame consumes nested reasoning without placing Bash/Read in its body or duplicating Thinking", async () => {
   await withNativeRoot(async (container, render) => {
     const snapshot = core.projectTimeline({
       key: core.createConversationKey("test-native", "thread"), revision: 1, authoritative: true, phase: "live",
@@ -183,7 +184,8 @@ test("Native Frame consumes dedicated reasoning slots without placing Bash/Read 
     const presentation = core.createTimelineTurnPresentationPlan(turn, undefined, { isMostRecentTurn: true });
     assert.equal(presentation.thinkingOwner.type, "reasoning");
     assert.ok(presentation.assistant?.slots.some(unit => unit.type === "agent-activity"));
-    assert.ok(presentation.assistant?.slots.some(unit => unit.type === "reasoning"));
+    assert.ok(presentation.assistant?.slots.some(unit => unit.type === "agent-activity"
+      && unit.contentUnits.some(content => content.type === "reasoning")));
     await render(React.createElement(Frame, {
       assistantPlan: presentation.assistant, frame: presentation.assistantFrame,
       thinkingId: null, showActions: false, threadDetailLevel: "STEPS_COMMANDS",
@@ -199,5 +201,57 @@ test("Native Frame consumes dedicated reasoning slots without placing Bash/Read 
     assert.deepEqual(Array.from(container.querySelectorAll("[data-block-type='command-execution']"), element => element.textContent), ["echo tool", "cat file.ts"]);
     assert.equal(reasoning.getAttribute("aria-expanded"), "true", "opening tool work cannot change the reasoning choice");
     assert.equal(container.querySelectorAll("button[aria-label^='Thinking:']").length, 1);
+  });
+});
+
+test("Native response work retains independent thinking/tool choices across completion and outer remount", async () => {
+  for (const withTools of [false, true]) await withNativeRoot(async (container, render) => {
+    const frameFor = (complete: boolean) => {
+      const snapshot = core.projectTimeline({ key: core.createConversationKey("native", "reasoning-only"),
+        revision: complete ? 2 : 1, authoritative: true, phase: "live", turns: [{
+          id: "turn", status: complete ? "complete" : "streaming", startedAtMs: 1_000,
+          firstTurnWorkItemStartedAtMs: 1_050, finalAssistantStartedAtMs: complete ? 10_000 : null,
+          durationMs: complete ? 9_000 : null, items: [
+            ...(withTools ? [
+              { id: "bash", type: "commandExecution", payload: { command: "echo tool", status: "completed" } },
+              { id: "read", type: "commandExecution", payload: { command: "cat file.ts", status: "completed", commandActions: [{ type: "read", name: "file.ts", path: "file.ts" }] } },
+            ] : []),
+            { id: "reason", type: "reasoning", payload: { summary: ["Actual returned text"], completed: complete } },
+            ...(complete ? [{ id: "answer", type: "agentMessage", payload: { text: "Final answer", phase: "final_answer", completed: true } }] : []),
+          ],
+        }] }, core.createDefaultTimelineProjectorRegistry());
+      return core.createTimelineTurnPresentationPlan(core.groupTimelineFramesByTurn(snapshot)[0]!, undefined, { isMostRecentTurn: true });
+    };
+    const show = async (complete: boolean) => {
+      const p = frameFor(complete);
+      await render(React.createElement(Frame, { assistantPlan: p.assistant, frame: p.assistantFrame,
+        thinkingId: null, showActions: false, threadDetailLevel: "STEPS_COMMANDS" }));
+    };
+    await show(false);
+    const thinking = container.querySelector<HTMLButtonElement>("button[aria-label^='Thinking:']")!;
+    await click(thinking);
+    if (withTools) {
+      await click(Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(button => button !== thinking)!);
+      assert.equal(container.querySelectorAll("[data-block-type='command-execution']").length, 2);
+    }
+    assert.equal(container.querySelector("[data-selectable]")?.textContent, "Actual returned text");
+    await show(true);
+    const outer = container.querySelector("button")!;
+    assert.equal(outer.getAttribute("aria-expanded"), "false");
+    assert.equal(container.querySelector("[data-selectable]"), null);
+    assert.match(container.textContent!, /Final answer/u, "answer remains outside work");
+    await click(outer);
+    const inner = container.querySelector<HTMLButtonElement>("button[aria-label^='Thought:']")!;
+    assert.ok(inner);
+    assert.equal(inner.getAttribute("aria-expanded"), "true", "completion/outer remount retains inner intent");
+    assert.equal(container.querySelectorAll("[data-block-type='command-execution']").length, withTools ? 2 : 0,
+      "completion/outer remount retains the independent tool choice");
+    await click(inner);
+    await click(outer);
+    await click(outer);
+    assert.equal(container.querySelector("button[aria-label^='Thought:']")?.getAttribute("aria-expanded"), "false");
+    assert.equal(container.querySelector("[data-selectable]"), null);
+    assert.equal(container.querySelectorAll("[data-block-type='command-execution']").length, withTools ? 2 : 0,
+      "closing thinking and cycling the outer fold cannot reset tool intent");
   });
 });

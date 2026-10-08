@@ -82,7 +82,7 @@ test("only the activity adjacent to a real answer receives fold eligibility", ()
   assert.equal(adjacent!.segmentEnd, "final-answer");
 });
 
-test("a real answer grants collapse to preceding single and multi-tool slices across reasoning", () => {
+test("a real answer grants collapse to the shared response container for thinking and single/multiple tools", () => {
   const read: TimelineSourceItem = { id: "read", type: "commandExecution", payload: {
     command: "cat src/index.ts", status: "completed", exitCode: 0,
     commandActions: [{ type: "read", command: "cat", name: "index.ts", path: "src/index.ts" }],
@@ -94,34 +94,32 @@ test("a real answer grants collapse to preceding single and multi-tool slices ac
         const toolSlices = activities(p).filter(unit => unit.blocks.some(block => block.type === "command-execution"));
         assert.equal(toolSlices.length, 1);
         const unit = toolSlices[0]!;
-        assert.equal(unit.segmentEnd, summary.length === 0 ? "final-answer" : "reasoning");
+        assert.equal(unit.segmentEnd, "final-answer");
         assert.equal(unit.hasFinalAssistantStarted, true);
         assert.equal(resolveAgentActivityLayout(unit, undefined).showToggle, true);
         assert.equal(resolveAgentActivityLayout(unit, undefined).isCollapsed, true);
         assert.equal(resolveAgentActivityLayout(unit, false).isCollapsed, false);
         assert.equal(resolveAgentActivityLayout(unit, true).isCollapsed, true);
-        assert.ok(unit.contentUnits.every(content => content.type === "worked-for"
+        assert.ok(unit.contentUnits.every(content => content.type === "worked-for" || content.type === "reasoning"
           || (content.type === "group" ? content.blocks : [content.block]).every(block => block.type !== "reasoning")));
       }
 });
 
-test("independent reasoning disclosures give only the nearest meaningful tool slice the final grant", () => {
+test("independent thinking and tool disclosures share one chronological response work owner", () => {
   const p = plan([
     reasoning("start"), work("first"), reasoning("middle"), work("second"), work("third"),
     reasoning("last"), prose("answer", "final_answer"),
   ], "complete");
   const toolSlices = activities(p).filter(unit => unit.blocks.some(block => block.type === "command-execution"));
-  assert.equal(toolSlices.length, 2);
-  assert.equal(p.assistant!.slots.filter(slot => slot.type === "reasoning").length, 3);
-  const [earlier, nearest] = toolSlices;
-  assert.equal(earlier!.hasFinalAssistantStarted, false);
-  assert.equal(resolveAgentActivityLayout(earlier!, true).showToggle, false);
-  assert.equal(resolveAgentActivityLayout(earlier!, true).isCollapsed, false, "earlier work remains inline, not a second completed-work card");
-  assert.equal(nearest!.hasFinalAssistantStarted, true);
-  assert.equal(resolveAgentActivityLayout(nearest!, true).showToggle, true);
-  assert.equal(resolveAgentActivityLayout(nearest!, true).isCollapsed, true);
-  assert.equal(resolveAgentActivityLayout(nearest!, false).isCollapsed, false);
-  assert.notEqual(toolSlices[0]!.id, toolSlices[1]!.id);
+  assert.equal(toolSlices.length, 1);
+  assert.equal(p.assistant!.slots.filter(slot => slot.type === "reasoning").length, 0);
+  const owner = toolSlices[0]!;
+  assert.deepEqual(owner.contentUnits.map(unit => unit.type), ["reasoning", "standalone", "reasoning", "group", "reasoning"]);
+  assert.equal(owner.contentUnits.filter(unit => unit.type === "reasoning").length, 3);
+  assert.equal(owner.hasFinalAssistantStarted, true);
+  assert.equal(resolveAgentActivityLayout(owner).showToggle, true);
+  assert.equal(resolveAgentActivityLayout(owner).isCollapsed, true);
+  assert.equal(resolveAgentActivityLayout(owner, false).isCollapsed, false);
 });
 
 test("reasoning itself never grants tool collapse while thinking or without a final answer", () => {
@@ -166,7 +164,8 @@ test("empty reasoning is transparent; actual first text may split work but retai
   const before = tools(build([]));
   const after = tools(build(["Actual returned reasoning"]));
   assert.equal(before.length, 1);
-  assert.equal(after.length, 2, "only actual visible reasoning may split physical work surfaces");
+  assert.equal(after.length, 1, "actual thinking splits inner groups, never the response work owner");
+  assert.equal(after[0]!.contentUnits.filter(unit => unit.type === "reasoning").length, 2);
   const contentFor = (units: ReturnType<typeof tools>, sourceId: string) => units.flatMap(unit => unit.contentUnits)
     .find(content => content.type !== "worked-for" && (content.type === "group" ? content.blocks : [content.block])
       .some(block => block.sourceItemIds.includes(sourceId)));
@@ -243,6 +242,10 @@ test("each completed response retains its one legitimate fold after subsequent s
   assert.equal(granted.length, 2, "one grant belongs to each completed response, not one global Turn bucket");
   assert.ok(granted[0]!.blocks.some(block => block.sourceItemIds.includes("one-nearest")));
   assert.ok(granted[1]!.blocks.some(block => block.sourceItemIds.includes("two-nearest")));
+  assert.deepEqual(granted[0]!.blocks.flatMap(block => block.sourceItemIds),
+    ["one-early", "one-middle", "one-nearest", "one-tail"], "the whole first response folds, not only its tail");
+  assert.deepEqual(granted[1]!.blocks.flatMap(block => block.sourceItemIds),
+    ["two-early", "two-middle", "two-nearest", "two-tail"], "the next input stays outside the response work fold");
   assert.deepEqual(later.slice(0, first.length).map(unit => unit.id), first.map(unit => unit.id));
   const open = later.find(unit => unit.blocks.some(block => block.sourceItemIds.includes("three-open")))!;
   assert.equal(resolveAgentActivityLayout(open, true).showToggle, false);

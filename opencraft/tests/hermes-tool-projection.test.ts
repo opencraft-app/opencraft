@@ -141,7 +141,11 @@ test("actual Hermes reasoning remains independently readable when final text is 
     const frame = snapshot.frames.find(frame => frame.type === "assistant");
     assert.ok(frame?.type === "assistant");
     const plan = createAssistantTurnPresentationPlan(frame);
-    assert.equal(plan.slots.find(slot => slot.type === "reasoning")?.presentation.content, "Returned text");
+    const work = plan.slots.find(slot => slot.type === "agent-activity");
+    assert.ok(work);
+    assert.equal(work.contentUnits.find(unit => unit.type === "reasoning")?.presentation.content, "Returned text");
+    assert.equal(plan.slots.some(slot => slot.type === "reasoning"), false,
+      "independent thinking belongs inside response work, not alongside its outer disclosure");
     assert.equal(plan.slots.find(slot => slot.type === "assistant-content")?.block.type, "text");
     assert.equal(assistantMessageActions(frame)?.copyText, answer, "answer copy never includes the separate reasoning body");
   }

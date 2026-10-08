@@ -83,6 +83,8 @@ OpenCraft Web 混元听写在提交 Agent 请求之前完成，属于客户端�
 
 OpenCraft 的执行轮次与展示片段分开：同一轮次内的异步提问、回答、Steer 与后续工作按原有记录顺序投影，活动只在连续范围内折叠，不把所有回答集中到旧工作记录之前。共享 `chat-core` 拥有顺序分段和当前响应判定；Web/Native 不独立重排。异步提问即使带最终回答 phase 也不能结束工作计时，历史回答不得压住后续响应的运行状态。具体契约见 [ChatUI 顺序与所有权](../../../opencraft/docs/chat-ui-architecture.md#history-positions-and-concurrent-observations)。
 
+引擎实际返回的非空思考与工具记录归同一连续响应的工作容器，内层分别展开；有效最终回答位于外层折叠之外。思考文本到达只分开相邻内层工具组，不重建外层身份、制造新响应或取得完成资格；只有思考、没有工具的已答响应也可在真实用时下折叠。用时与实时反馈仍各有唯一所有者，用户插话和异步提问保留边界。外层收起仅改变可见性，View 保留内层思考/工具选择，动画组件不能重置它们；不能用不含实际内容的运行状态或加密字段伪造思考。详见 [返回思考内容](../../../opencraft/docs/chat-ui-architecture.md#returned-thinking-content)。
+
 OpenCraft 会话云桌面的观看连接不是 Agent Turn 的执行宿主。面板关闭、账户切换或观看失败只撤销自己的短期连接与输入租约，不中断 Turn 或删除远端桌面。云桌面插件框架用模拟后端验证此分离；生产 CTL/TAT 和媒体接通须另验资源代次、授权撤销及手动控制与 Agent 的仲裁。
 
 CTL 桌面准备源码以 POST 明确启动，独立有界后台编排持续安装/拉起/探测；新 GET 只观察，不创建状态或续期。换用户、换 Sandbox 与失败重试隔离旧状态，短 TAT 命令按进程内绑定锁串行化。此阶段不提供观看凭据或 WebRTC：prepared 只证明既有桌面 HTTP 探测，编排代次不是媒体 incarnation。验证需分开记录 CTL 直连、Gateway 路径策略及真实 TAT/媒体；五个精确 allowlist 环境尚未放行新路径，JP/KR 前缀路由不能靠“没新增规则”推断阻断。见 [CTL 桌面资源契约](../../../ctl/docs/cloud-desktop-resource.md)。

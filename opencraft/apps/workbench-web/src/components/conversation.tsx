@@ -448,6 +448,8 @@ function Frame({
               <AgentActivity
                 persistedCollapsed={activityCollapsedById[unit.id]}
                 onCollapsedChange={(collapsed) => onActivityCollapsedChange(unit.id, collapsed)}
+                innerCollapsedById={activityCollapsedById}
+                onInnerCollapsedChange={onActivityCollapsedChange}
                 onRetry={onRetry}
                 unit={unit}
               />

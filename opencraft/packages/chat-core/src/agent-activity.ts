@@ -137,7 +137,7 @@ export interface AgentActivityWorkStatusContentUnit {
   readonly item: WorkStatusItem;
 }
 
-export type AgentActivityContentUnit = AgentActivityGroupContentUnit | AgentActivityStandaloneContentUnit | AgentActivityWorkStatusContentUnit;
+export type AgentActivityContentUnit = AgentActivityGroupContentUnit | AgentActivityStandaloneContentUnit | AgentActivityWorkStatusContentUnit | ReasoningRenderUnit;
 
 export interface AgentActivityDisclosureInput {
   readonly hasFinalAssistantStarted: boolean;
@@ -177,7 +177,7 @@ export interface SubagentActivityRenderUnit {
   readonly blocks: readonly SubagentTimelineBlock[];
 }
 
-/** Reasoning has its own disclosure, never the tool-work disclosure's body. */
+/** An independent inner disclosure within the response work container. */
 export interface ReasoningRenderUnit {
   readonly type: "reasoning";
   readonly id: string;
@@ -343,8 +343,8 @@ function shouldKeepSingleItemGroup(
 /**
  * Source-equivalent inner Agent Activity splitter.
  *
- * The outer Turn disclosure owns "Worked for …". Reasoning is projected
- * separately, commentary is standalone, and only consecutive groupable tool
+ * The outer response disclosure owns "Worked for …". Returned reasoning is
+ * an independent inner disclosure, commentary is standalone, and consecutive tool
  * Items share a summary. A completed single-item group is demoted to a plain
  * semantic row, which is why Codex does not show a redundant "Read files"
  * disclosure around one `Read SKILL.md` event.
@@ -355,7 +355,7 @@ export function createAgentActivityContentUnits(
   registry?: ToolActivityPresenterRegistry,
   isActivitySliceClosed = status !== "pending" && status !== "streaming",
 ): readonly AgentActivityContentUnit[] {
-  const preliminaryUnits: (Omit<AgentActivityGroupContentUnit, "lifecycle"> | AgentActivityStandaloneContentUnit)[] = [];
+  const preliminaryUnits: (Omit<AgentActivityGroupContentUnit, "lifecycle"> | AgentActivityStandaloneContentUnit | ReasoningRenderUnit)[] = [];
   let group: TimelineBlock[] = [];
 
   const flushGroup = () => {
@@ -374,6 +374,14 @@ export function createAgentActivityContentUnits(
   };
 
   for (const block of blocks) {
+    if (block.type === "reasoning") {
+      const presentation = presentReasoning(block, false);
+      if (presentation !== null) {
+        flushGroup();
+        preliminaryUnits.push({ type: "reasoning", id: block.id, block, presentation, active: false });
+      }
+      continue;
+    }
     const grouping = classifyAgentActivityItem(block, registry);
     if (grouping === "hidden") continue;
     if (grouping === "groupable") {
@@ -388,7 +396,7 @@ export function createAgentActivityContentUnits(
   flushGroup();
   const lastVisibleIndex = preliminaryUnits.length - 1;
   return preliminaryUnits.reduce<AgentActivityContentUnit[]>((result, unit, index) => {
-    if (unit.type === "standalone") {
+    if (unit.type !== "group") {
       result.push(unit);
       return result;
     }
@@ -916,7 +924,7 @@ export function createAssistantTurnPresentationPlan(
     readonly phase: AgentActivityPhase;
     readonly end: AgentActivitySegmentEnd;
   }
-  const segments: (ActivitySegment | AssistantContentRenderUnit | ReasoningRenderUnit)[] = [];
+  const segments: (ActivitySegment | AssistantContentRenderUnit)[] = [];
   let pendingBlocks: TimelineBlock[] = [];
   let pendingSubagents: SubagentTimelineBlock[] = [];
   let boundaryId: string | null = null;
@@ -942,15 +950,15 @@ export function createAssistantTurnPresentationPlan(
     const endedByAnswer = hasFinalAssistantStarted;
     const isActivitySliceClosed = segment.end !== "open";
     const status = endedByContent ? "complete" : frame.status;
-    // Readable reasoning can split physical surfaces. Only the response's
-    // nearest meaningful work slice owns its outer disclosure; a protocol
-    // observation alone cannot manufacture another work surface.
+    // Work owns the response container; thinking and tools own inner controls.
+    // Readable reasoning never re-keys or splits this outer surface.
     const id = segment.boundaryId === null ? `${frame.turnId}:slot:agent-activity`
       : `${frame.turnId}:slot:activity-after:${segment.boundaryId}`;
-    const contentUnits = [...activityContentUnits.get(segment)!];
+    const contentUnits = activityContentUnits.get(segment)!.map(unit => unit.type === "reasoning"
+      ? { ...unit, id: `${frame.turnId}:slot:reasoning:${unit.block.id}` } : unit);
     // One Turn total, not a fabricated elapsed time for each response. A new
     // input awaiting work must not animate an already-closed historical slice.
-    const workStatus = !ownsWorkStatus || (turnIsActive && endedByContent && segment.end !== "reasoning" && !endedByAnswer) ? null
+    const workStatus = !ownsWorkStatus || (turnIsActive && endedByContent && !endedByAnswer) ? null
       : frame.status === "interrupted" && frame.interruptedByThisClient && frame.durationMs !== null
         ? { type: "worked-for" as const, status: "stopped" as const, startedAtMs: 0, completedAtMs: frame.durationMs }
         : frame.workStatus ?? null;
@@ -963,7 +971,8 @@ export function createAssistantTurnPresentationPlan(
       const firstWorkBlockIndex = blocks.findIndex((block) =>
         block.type !== "realtime-transcript" && block.type !== "user-message");
       const firstWorkIndex = firstWorkBlockIndex < 0 ? -1 : contentUnits.findIndex((unit) => {
-        const unitBlocks = unit.type === "group" ? unit.blocks : unit.type === "standalone" ? [unit.block] : [];
+        const unitBlocks = unit.type === "group" ? unit.blocks
+          : unit.type === "standalone" || unit.type === "reasoning" ? [unit.block] : [];
         return unitBlocks.some((block) => blocks.indexOf(block) >= firstWorkBlockIndex);
       });
       const insertionIndex = workStatus.status === "working"
@@ -1036,24 +1045,10 @@ export function createAssistantTurnPresentationPlan(
     // Codex item classifier returns null, so they cannot split Activity.
     if (block.type === "automatic-approval-review" && block.review.status === "approved") continue;
     if (block.type === "reasoning") {
-      const presentation = presentReasoning(block, false);
-      if (presentation === null) {
-        // Opaque/empty Items are observations, not physical work boundaries.
-        // Retain their provenance without splitting, re-keying or closing the
-        // existing tool group. Actual returned text owns its own disclosure.
-        pendingBlocks.push(block);
-        continue;
-      }
-      const endsVisibleWork = pendingSubagents.length > 0
-        || createAgentActivityContentUnits(pendingBlocks, frame.status, registry, true).length > 0;
+      // Item-level thinking and tool choices are independent, but share the
+      // same response work owner. Only actual response/input boundaries flush
+      // that owner; returned thinking merely splits inner tool groups.
       pendingBlocks.push(block);
-      if (endsVisibleWork) flushActivity("reasoning");
-      segments.push({ type: "reasoning", id: `${frame.turnId}:slot:reasoning:${block.id}`,
-        block, presentation, active: false });
-      // Leading reasoning cannot re-key the first work surface. A newly
-      // readable Item may introduce a real display slice; freezing topology
-      // by pre-creating invisible work owners loses response ownership.
-      if (endsVisibleWork) boundaryId = block.id;
       continue;
     }
     if (block.type === "subagent") {
@@ -1088,19 +1083,17 @@ export function createAssistantTurnPresentationPlan(
     activityContentUnits.set(segment, createAgentActivityContentUnits(segment.blocks,
       endedByContent ? "complete" : frame.status, registry, segment.end !== "open"));
   }
-  // A real final answer grants ONE response work disclosure. Reasoning is
-  // transparent to this authority, not a reason to multiply it. Earlier
-  // chronological work slices keep their semantic tool rows/groups inline.
+  // Only a real final answer grants its preceding response work disclosure.
+  // Reasoning is inner content, not a response boundary or a fold grant.
   const finalAnswerGrants = new Set<ActivitySegment>();
   let qualifyingAnswerAhead = false;
   for (let index = segments.length - 1; index >= 0; index -= 1) {
     const segment = segments[index]!;
-    if (segment.type === "reasoning") continue;
     if (segment.type === "assistant-content") {
       qualifyingAnswerAhead = isFinalAssistantText(segment.block);
       continue;
     }
-    if (segment.end !== "final-answer" && segment.end !== "reasoning") qualifyingAnswerAhead = false;
+    if (segment.end !== "final-answer") qualifyingAnswerAhead = false;
     if (qualifyingAnswerAhead && hasWorkContent(segment)) {
       finalAnswerGrants.add(segment);
       qualifyingAnswerAhead = false;
@@ -1108,17 +1101,8 @@ export function createAssistantTurnPresentationPlan(
   }
   let workStatusOwner = -1;
   segments.forEach((segment, index) => { if (segment.type === "activity-segment") workStatusOwner = index; });
-  // A trailing hidden observation may need a clock for reasoning-only work.
-  // If real work exists in the same tail, attach the clock there instead.
-  // Never cross an answer/input/content boundary to reanimate older work.
-  if (workStatusOwner >= 0) {
-    for (let index = workStatusOwner; index >= 0; index -= 1) {
-      const segment = segments[index]!;
-      if (segment.type === "reasoning") continue;
-      if (segment.type !== "activity-segment") break;
-      if (hasWorkContent(segment)) { workStatusOwner = index; break; }
-    }
-  }
+  // The latest work container owns the Turn clock, including reasoning-only
+  // work. Never move it across a response/input/content boundary.
   const slots = segments.flatMap<AssistantRenderUnit>((segment, index) => {
     if (segment.type !== "activity-segment") return [segment];
     const activity = createActivitySlot(segment, index === workStatusOwner, finalAnswerGrants.has(segment));
@@ -1201,7 +1185,10 @@ export function createTimelineTurnPresentationPlan(
   const trailingThinkingBlock = currentBlocks.filter((block) => block.type !== "todo").at(-1);
   const reasoningThinkingUnit = isMostRecentTurn && turnIsActive && !hasPendingInteraction && !isPlanning
     && trailingThinkingBlock?.type === "reasoning"
-    ? assistant?.slots.find((slot): slot is ReasoningRenderUnit => slot.type === "reasoning"
+    ? assistant?.slots.flatMap<ReasoningRenderUnit>(slot => slot.type === "agent-activity"
+      ? slot.contentUnits.filter((unit): unit is ReasoningRenderUnit => unit.type === "reasoning")
+      : slot.type === "reasoning" ? [slot] : [])
+      .find((slot): slot is ReasoningRenderUnit => slot.type === "reasoning"
       && slot.block.id === trailingThinkingBlock.id) ?? null
     : null;
   const thinkingOwner: TimelineTurnThinkingOwner = activityThinkingOwner !== null
@@ -1216,10 +1203,17 @@ export function createTimelineTurnPresentationPlan(
         }
       : { type: "none" };
   if (assistant !== null) {
+    const updateReasoning = (unit: ReasoningRenderUnit): ReasoningRenderUnit => {
+      const active = thinkingOwner.type === "reasoning" && thinkingOwner.reasoningId === unit.id;
+      return { ...unit, active, presentation: presentReasoning(unit.block, active)! };
+    };
     assistant = { ...assistant, slots: assistant.slots.map((slot) => {
+      if (slot.type === "agent-activity") {
+        const contentUnits = slot.contentUnits.map(unit => unit.type === "reasoning" ? updateReasoning(unit) : unit);
+        return { ...slot, contentUnits, partitions: partitionAgentActivityContentUnits(contentUnits, partitionOptions) };
+      }
       if (slot.type !== "reasoning") return slot;
-      const active = thinkingOwner.type === "reasoning" && thinkingOwner.reasoningId === slot.id;
-      return { ...slot, active, presentation: presentReasoning(slot.block, active)! };
+      return updateReasoning(slot);
     }) };
   }
   const topLevelSlotCount = userFrames.reduce(

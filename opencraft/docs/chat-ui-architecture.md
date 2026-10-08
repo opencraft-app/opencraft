@@ -885,8 +885,8 @@ operation Promise long enough to expose pending and failure state.
 
 ### Returned thinking content
 
-Engine-returned reasoning is a separate chronological Item-owned disclosure,
-not the body of a tool group's live “Thinking” header. Codex, DSH and Hermes
+Engine-returned reasoning is a chronological Item-owned inner disclosure within
+the response's work container, not the body of a tool group's live “Thinking” header. Codex, DSH and Hermes
 consume the same default policy: nonempty explicit summary text wins; when no
 summary is returned, the actual returned textual detail/content is available.
 The body selects that content once, without concatenating duplicate summary
@@ -918,8 +918,8 @@ every response or treating `reasoning.available` liveness as that content.
 
 `chat-core` owns selection, chronological slots and single live Thinking
 arbitration. Stable Turn/Item identity survives streaming, completion and
-history updates. Reasoning is outside Bash/Read and other tool disclosures;
-their work records and Turn-total ownership remain separate. The newest
+history updates. Reasoning and Bash/Read/tool groups have separate inner
+disclosures inside the same contiguous response work container. The newest
 current-response reasoning may own live feedback; later tools, answers,
 questions or inputs retire that feedback without deleting readable content.
 When no returned content exists, the existing noninteractive Thinking status
@@ -928,8 +928,9 @@ retains its current owner rather than becoming an empty expand button.
 Both platforms initially fold reasoning, even while streaming. Only an explicit
 View action changes that choice; new deltas or completion never automatically
 expand, collapse or write a preference. Web reuses its existing View restore
-receipt and disclosure reflow owner; Native keeps the choice on the stable
-Item component. The header uses a short localized status plus the latest
+receipt and disclosure reflow owner; Native keeps Item-keyed inner choices on
+the stable outer work component. Collapsing the outer container may unmount its
+body but must not reset either reasoning or tool-group choices. The header uses a short localized status plus the latest
 nonempty returned line when active, or first returned line when settled.
 The full selected text is available during and after execution. It is not
 copied into the final response's copy action or tool statistics.
@@ -946,22 +947,23 @@ aliases select one returned representation instead of duplicating it.
 An empty or opaque reasoning source Item remains a work observation; it does not
 flush/re-key a work slice, close an adjacent tool group or create a history-count
 heading. Actual nonempty text owns a source-identified chronological disclosure.
-First returned text can introduce a genuinely new visible slice, including when
-later Items already exist in restored history. Source identity and existing
-valid View choices survive; invisible outer owners must not be pre-created just
-to freeze presentation topology.
-Reasoning is a display separator, not a response boundary or a fold grant.
-Within the same response, a later real final answer grants exactly one outer
-work disclosure to the nearest slice with semantic content or subagent activity.
-Hidden-only slices are transparent to that selection; earlier slices stay inline
-with ordinary Bash/Read/tool summaries. Tools never move into the reasoning body.
-Real user input, an asynchronous question or other content/interaction breaks
-that eligibility chain. Separate completed responses keep their own legitimate
-folds even though execution shares one Turn. Tool and reasoning disclosures keep
-independent choices. Only one slice owns the Turn-total clock, preferring real
-work over a hidden-only tail in the same reasoning chain; the clock search never
-crosses a real response/input boundary to reanimate older work. A reasoning-only
-response can still display its real clock without an empty task toggle.
+First returned text inserts a new inner disclosure, including when later Items
+already exist in restored history; it never splits or re-keys the outer work
+container. Source identity and existing valid View choices survive. Nonempty
+reasoning separates adjacent inner tool groups, not responses or outer folds.
+Within the same contiguous response, a real final answer grants exactly one
+outer work disclosure containing both reasoning and tools in source order.
+The final answer remains outside. Tools never move into the reasoning body.
+Real user input, an asynchronous question or other content/interaction retains
+its existing ordering boundary; separate completed responses keep their own
+legitimate folds even though execution shares one Turn. Only one work container
+owns the Turn-total clock; reasoning cannot redirect it across a response/input
+boundary. Actual reasoning alone is meaningful work, so a completed reasoning-only
+response has a real outer fold, even with no tools. Its Worked-for label uses
+only the provided clock, never fabricated timing. Empty reasoning alone does
+not create an empty toggle. Outer visibility and independent inner choices are
+different authorities; streaming, completion and outer collapse never rewrite
+those inner choices.
 
 The interaction draws on DSH `ReasoningRow` in locally inspected
 `@deepseek-ai/dsh-client-ui-conversation@0.1.1-rc.2`. Shared model and adapter

@@ -76,6 +76,15 @@ function Demo() {
         { id: "after-read", type: "commandExecution", payload: { command: "cat later.ts", status: "completed", exitCode: 0 } },
       ] }); return;
     }
+    if (action === "reasoning-only-complete") {
+      restore = null; setEngine(selectedEngine); setGeneration(value => value + 1);
+      setTurn({ id: "turn", status: "complete", startedAtMs: 1_000,
+        firstTurnWorkItemStartedAtMs: 1_050, finalAssistantStartedAtMs: 10_000,
+        completedAtMs: 10_050, durationMs: 9_000, items: [
+          reasoning(selectedEngine, text, true),
+          { id: "answer", type: "agentMessage", payload: { text: "Final answer", phase: "final_answer", completed: true } },
+        ] }); return;
+    }
     setTurn(current => {
       if (action === "middle-fill") return { ...current, items: current.items.map(item => item.type === "reasoning" ? reasoning(engine) : item) };
       if (action === "grow") return { ...current, items: [reasoning(engine, text + "\nNew returned line")] };

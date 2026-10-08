@@ -87,8 +87,10 @@ export function AgentActivityGroupDisclosure({
   canExpand = true,
   children,
   defaultExpanded = false,
+  collapsed,
   icon,
   onExpand,
+  onCollapsedChange,
   shouldAnimateInitialCollapse = false,
   summary,
   summaryKey,
@@ -97,8 +99,10 @@ export function AgentActivityGroupDisclosure({
   canExpand?: boolean;
   children: ReactNode | (() => ReactNode);
   defaultExpanded?: boolean;
+  collapsed?: boolean;
   icon?: ReactNode;
   onExpand?: () => void;
+  onCollapsedChange?: (collapsed: boolean) => void;
   shouldAnimateInitialCollapse?: boolean;
   summary: ReactNode;
   summaryKey: string;
@@ -109,7 +113,7 @@ export function AgentActivityGroupDisclosure({
   const summaryId = useId();
   const [phase, setPhase] = useState<AgentActivityDisclosurePhase>(() => {
     if (!canExpand) return "collapsed";
-    if (defaultExpanded) return "expanded";
+    if (collapsed === false || (collapsed === undefined && defaultExpanded)) return "expanded";
     return shouldAnimateInitialCollapse && typeof children !== "function"
       ? "closing"
       : "collapsed";
@@ -133,11 +137,24 @@ export function AgentActivityGroupDisclosure({
     }
   }, [canExpand, reflow.cancel]);
 
+  // The View owns the user's choice; this component only owns its animation.
+  // Restore that choice when an outer work disclosure remounts this group.
+  useEffect(() => {
+    if (!canExpand || collapsed === undefined) return;
+    setPhase(current => {
+      const currentlyExpanded = current === "opening" || current === "expanded";
+      return currentlyExpanded === !collapsed
+        ? current
+        : reduceAgentActivityDisclosurePhase(current, "toggle");
+    });
+  }, [canExpand, collapsed]);
+
   const toggle = useCallback((anchor: HTMLButtonElement) => {
     reflow.begin(anchor);
     if (!expanded) onExpand?.();
+    onCollapsedChange?.(expanded);
     setPhase((current) => reduceAgentActivityDisclosurePhase(current, "toggle"));
-  }, [expanded, onExpand, reflow.begin]);
+  }, [expanded, onExpand, onCollapsedChange, reflow.begin]);
 
   const visibleSummary = summaryTransition === "static"
     ? summary

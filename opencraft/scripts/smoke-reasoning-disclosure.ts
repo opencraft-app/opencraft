@@ -59,19 +59,28 @@ try {
       assert.equal(await page.evaluate(() => (window as any).__reasoningNode === document.querySelector('.thread-reasoning')), true);
       await update("tools");
       assert.equal(await reason.locator('.thread-command,.thread-agent-activity').count(), 0, 'tools cannot hang under reasoning');
-      assert.equal(await page.locator('.thread-agent-activity .thread-reasoning').count(), 0);
+      assert.equal(await page.locator('.thread-agent-activity .thread-reasoning').count(), 1,
+        'thinking is inner response work, not inside a tool disclosure');
       assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
       assert.equal(await page.locator('.thread-reasoning[data-reasoning-active="true"]').count(), 0, 'later work owns live feedback');
       await update("complete");
+      const workToggle = page.locator('.thread-agent-activity__turn-toggle button');
+      assert.equal(await workToggle.count(), 1);
+      assert.equal(await workToggle.getAttribute('aria-expanded'), 'false');
+      assert.equal(await reason.count(), 0, 'completion folds thinking and tools under the work container');
+      assert.ok(await page.getByText('Final answer', { exact: true }).isVisible());
+      await activate(workToggle);
+      await reason.waitFor();
       assert.equal(await toggle.getAttribute('aria-expanded'), 'true', 'completion cannot write collapse choice');
       assert.match(await reason.locator('.thread-activity-item__detail').innerText(), /First returned line/);
       assert.equal(await page.locator('.thread-thinking-placeholder').count(), 0);
       assert.equal(await page.locator('.thread-reasoning[data-reasoning-active="true"]').count(), 0);
-      const workToggle = page.locator('.thread-agent-activity__turn-toggle button');
-      if (await workToggle.count()) {
-        await activate(workToggle);
-        assert.equal(await toggle.getAttribute('aria-expanded'), 'true', 'work fold choice is independent');
-      }
+      await activate(workToggle);
+      assert.equal(await reason.count(), 0);
+      await activate(workToggle);
+      await reason.waitFor();
+      assert.equal(await toggle.getAttribute('aria-expanded'), 'true', 'work folding retains the inner choice');
+      await reason.evaluate(element => { (window as any).__reasoningNode = element; });
       await update("prepend");
       assert.equal(await page.evaluate(() => (window as any).__reasoningNode === document.querySelector('.thread-reasoning')), true);
       await update("restore");
@@ -146,17 +155,38 @@ try {
         ['before', 'reasoning', 'after'], 'visible reasoning is chronological and independent of both tool groups');
       await update("complete");
       const workFolds = page.locator('.thread-agent-activity__turn-toggle button');
-      assert.equal(await workFolds.count(), 1, 'one response final grants one nearest meaningful outer work fold');
+      assert.equal(await workFolds.count(), 1, 'one response final folds all thinking and tools under one work owner');
       assert.equal(await workFolds.getAttribute('aria-expanded'), 'false');
-      assert.equal(await existingToggle.getAttribute('aria-expanded'), 'true', 'completion retains the earlier inline tool choice');
+      assert.equal(await page.locator('.thread-reasoning').count(), 0);
       await activate(workFolds);
       assert.equal(await workFolds.getAttribute('aria-expanded'), 'true');
       const independentReason = page.locator('.thread-reasoning').getByRole('button');
       assert.equal(await independentReason.getAttribute('aria-expanded'), 'false');
       await activate(independentReason);
       await activate(workFolds);
-      assert.equal(await independentReason.getAttribute('aria-expanded'), 'true', 'closing tools leaves returned reasoning open');
-      assert.equal(await existingToggle.getAttribute('aria-expanded'), 'true', 'closing the current work fold does not close earlier inline tools');
+      assert.equal(await page.locator('.thread-reasoning').count(), 0, 'outer collapse hides all inner work');
+      await activate(workFolds);
+      await page.locator('.thread-reasoning').waitFor();
+      assert.equal(await independentReason.getAttribute('aria-expanded'), 'true', 'reopening restores the thinking choice');
+      assert.equal(await existingToggle.getAttribute('aria-expanded'), 'true', 'reopening restores the first tool choice');
+      await update("reasoning-only-complete", engine);
+      const onlyWork = page.locator('.thread-agent-activity__turn-toggle button');
+      assert.equal(await onlyWork.count(), 1, 'reasoning alone is real collapsible work');
+      assert.equal(await onlyWork.getAttribute('aria-expanded'), 'false');
+      assert.equal(await page.locator('.thread-reasoning').count(), 0, 'no completed thinking remains outside work');
+      assert.equal(await page.locator('.thread-work-status__label').count(), 1);
+      assert.ok(await page.getByText('Final answer', { exact: true }).isVisible());
+      await activate(onlyWork);
+      const onlyReason = page.locator('.thread-agent-activity .thread-reasoning');
+      await onlyReason.waitFor();
+      assert.equal(await onlyReason.getByRole('button').getAttribute('aria-expanded'), 'false');
+      await activate(onlyReason.getByRole('button'));
+      await onlyReason.locator('.thread-activity-item__prose').waitFor();
+      await activate(onlyWork);
+      await activate(onlyWork);
+      await onlyReason.waitFor();
+      assert.equal(await onlyReason.getByRole('button').getAttribute('aria-expanded'), 'true');
+      await page.screenshot({ path: join(output, `${engine}-${theme}-${touch ? 'touch' : 'mouse'}-reasoning-only.png`) });
       results.push({ engine, theme, touch, defaultCollapsed: true, independentTools: true, choiceRestored: true,
         firstTextPreservesExistingToolChoice: true, oneResponseWorkFold: true, thirteenEmptyItemsRetainSixtyTools: true });
     }
