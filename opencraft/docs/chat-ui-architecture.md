@@ -672,10 +672,13 @@ eager draining, transcript persistence, or execution readiness.
 ### Activity closure and disclosure authority
 
 `AgentActivitySegmentEnd` records why a contiguous slice ended (`user-input`,
-`content`, `final-answer`, `turn-terminal`, or still `open`). This is chronology
+`content`, `reasoning`, `final-answer`, `turn-terminal`, or still `open`). This is chronology
 and live-header ownership, not permission to hide content. Ordinary task
-disclosure is eligible only when that slice reaches its own displayable,
-non-async final answer. A Steer, hook, question, approval, image, unphased text,
+disclosure is eligible only for the nearest meaningful work slice reaching its
+own displayable, non-async final answer. Readable reasoning may separate physical
+work slices, but cannot multiply that response's outer fold owners. Earlier
+slices retain their ordinary tool summaries and their tools' independent choices.
+A Steer, hook, question, approval, image, unphased text,
 terminal Turn, or a final answer in an earlier response cannot grant eligibility.
 No phase is inferred to make a disclosure work. Earlier completed commentary
 therefore stays visible when the user follows up, rather than becoming a stack
@@ -879,6 +882,94 @@ waits for `session.activate` to confirm `running: false` before closing the
 session and invoking `session.delete`. An interrupt failure or missing idle
 confirmation leaves the conversation intact. UI adapters must retain the
 operation Promise long enough to expose pending and failure state.
+
+### Returned thinking content
+
+Engine-returned reasoning is a separate chronological Item-owned disclosure,
+not the body of a tool group's live “Thinking” header. Codex, DSH and Hermes
+consume the same default policy: nonempty explicit summary text wins; when no
+summary is returned, the actual returned textual detail/content is available.
+The body selects that content once, without concatenating duplicate summary
+and detail. Empty Items and opaque/encrypted fields create no disclosure and
+cannot be used to fabricate an explanation. This product policy intentionally
+differs from the older recovered Codex tool classifier that hid reasoning.
+
+Request policy and disclosure policy are different owners. The Codex Host's
+single native request writer supplies `summary: "auto"` on `turn/start` only
+when the caller omits that field. The same boundary covers normal/new/forked
+conversations, empty continuation and Host-owned queued starts, over local
+stdio or remote Codex transport. Explicit modes (including `none`) are retained;
+explicit `null` keeps native thread/Host inheritance. Invalid explicit values
+remain the native validator's responsibility. Each omitted-field start reapplies
+the product default rather than inheriting a previous explicit `none`; callers
+wanting native inheritance use `null`. No summary field is added to Steer,
+Thread lifecycle requests or generic Hermes/DSH submissions. Codex's
+native model capability gate still owns upstream support; asking for a summary
+does not guarantee returned text. Existing running turns and historical Items
+are not rewritten. The UI stays initially collapsed and only actual returned
+text creates its disclosure.
+
+Hermes already projects actual `reasoning.delta` and its durable reasoning
+columns by default, without a separate display opt-in. Its ordinary Responses
+transport asks for an automatic summary, but provider-specific transports and
+explicit session/model/global reasoning settings can differ. “Enabled by
+default” therefore means accepting returned text, not promising content on
+every response or treating `reasoning.available` liveness as that content.
+
+`chat-core` owns selection, chronological slots and single live Thinking
+arbitration. Stable Turn/Item identity survives streaming, completion and
+history updates. Reasoning is outside Bash/Read and other tool disclosures;
+their work records and Turn-total ownership remain separate. The newest
+current-response reasoning may own live feedback; later tools, answers,
+questions or inputs retire that feedback without deleting readable content.
+When no returned content exists, the existing noninteractive Thinking status
+retains its current owner rather than becoming an empty expand button.
+
+Both platforms initially fold reasoning, even while streaming. Only an explicit
+View action changes that choice; new deltas or completion never automatically
+expand, collapse or write a preference. Web reuses its existing View restore
+receipt and disclosure reflow owner; Native keeps the choice on the stable
+Item component. The header uses a short localized status plus the latest
+nonempty returned line when active, or first returned line when settled.
+The full selected text is available during and after execution. It is not
+copied into the final response's copy action or tool statistics.
+
+Adapter event names are not content authority. In the inspected Hermes agent
+revision `3c3ab69abb9b08683b5eb15b4e2b8be1198c875f`,
+`turn_response_intake._relay_thinking` sends up to 500 characters of
+`assistant_message.content` as `reasoning.available`; it is an assistant-body
+preview, not returned reasoning. The Hermes bridge uses this only for liveness,
+leaving body ownership to `message.delta/interim/complete`. Actual
+`reasoning.delta` and durable reasoning columns own separate reasoning Items;
+an answer with equal or prefix-continuous text cannot erase them. History
+aliases select one returned representation instead of duplicating it.
+An empty or opaque reasoning source Item remains a work observation; it does not
+flush/re-key a work slice, close an adjacent tool group or create a history-count
+heading. Actual nonempty text owns a source-identified chronological disclosure.
+First returned text can introduce a genuinely new visible slice, including when
+later Items already exist in restored history. Source identity and existing
+valid View choices survive; invisible outer owners must not be pre-created just
+to freeze presentation topology.
+Reasoning is a display separator, not a response boundary or a fold grant.
+Within the same response, a later real final answer grants exactly one outer
+work disclosure to the nearest slice with semantic content or subagent activity.
+Hidden-only slices are transparent to that selection; earlier slices stay inline
+with ordinary Bash/Read/tool summaries. Tools never move into the reasoning body.
+Real user input, an asynchronous question or other content/interaction breaks
+that eligibility chain. Separate completed responses keep their own legitimate
+folds even though execution shares one Turn. Tool and reasoning disclosures keep
+independent choices. Only one slice owns the Turn-total clock, preferring real
+work over a hidden-only tail in the same reasoning chain; the clock search never
+crosses a real response/input boundary to reanimate older work. A reasoning-only
+response can still display its real clock without an empty task toggle.
+
+The interaction draws on DSH `ReasoningRow` in locally inspected
+`@deepseek-ai/dsh-client-ui-conversation@0.1.1-rc.2`. Shared model and adapter
+tests plus `scripts/smoke-reasoning-disclosure.ts` cover empty/summary/detail
+content, first control activation, browser touch/mouse/keyboard, separate tool groups,
+in-place streaming, completion, prepended history and View restoration. The
+browser fixture uses synthetic engine text; it does not claim paid-provider
+execution, hidden reasoning availability or iPhone OS acceptance.
 
 The embedded canvas permits the existing `vela.voice-input.toggle` Composer
 action. Dictation uses the platform speech provider and the same transient input

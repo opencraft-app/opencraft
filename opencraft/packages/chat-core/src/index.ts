@@ -14,6 +14,7 @@ export * from "./mcp-elicitation";
 export * from "./projection";
 export * from "./request-user-input";
 export * from "./realtime-transcript";
+export * from "./reasoning";
 export * from "./skill-path";
 export * from "./subagent-activity";
 export * from "./timeline";

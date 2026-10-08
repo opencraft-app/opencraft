@@ -22,6 +22,22 @@ OpenCraft 的活动分段结束原因与折叠资格分别建模。插话/异步
 不变；独立 Bot 聊天不强行复用任务折叠。详见
 [Activity disclosure authority](../../../opencraft/docs/chat-ui-architecture.md#activity-closure-and-disclosure-authority)。
 
+OpenCraft 对 Codex、Hermes 与 DSH 实际返回的思考摘要/文本统一提供独立、
+默认折叠的呈现；不是工具记录组的正文，也不还原未返回或不透明的内部内容。
+共享模型选择非空内容、稳定 Item 身份与唯一实时 Thinking owner，View 只记录
+显式展开选择，流式及完成不反写该选择。空或不透明的思考记录仅是工作观察，
+不切开界面工作区；有正文的思考可以按原序独立展示，但同一响应只由最近有实际
+内容的工作段领取最终回答的外层折叠资格，不能逐段制造历史消息标题。唯一 Turn
+用时优先附着同一响应的实际工作，不越过插话/回答边界回派到旧工作。详见
+[Returned thinking content](../../../opencraft/docs/chat-ui-architecture.md#returned-thinking-content)。
+
+摘要请求与折叠呈现是不同责任：OpenCraft 的 Codex Host 在唯一原生请求边界，
+仅对未指定摘要字段的 `turn/start` 补入自动摘要请求，覆盖普通发送、继续与后台
+排队起轮；显式模式及 `null` 的原生继承语义保留，Steer 和其他引擎不注入该字段。
+模型支持和实际返回仍归引擎/provider，不能把已接展示当作已启用请求。
+Hermes 默认接收真实思考事件及历史字段；其供应方和会话配置仍可能不返回文字。
+以上不改已有轮次或历史记录，也不自动替换正在运行的预览。
+
 OpenCraft 的轮次文件变更汇总由 Turn 的 diff 字段持有，属于附属资源，不是
 消息顺序中的 Item。共享 chat-core 在 transcript 分段之外派生 changeSummary，
 Web 与 Native 消费同一呈现计划；运行中 diff 更新不得关闭活动段、清空工作时钟

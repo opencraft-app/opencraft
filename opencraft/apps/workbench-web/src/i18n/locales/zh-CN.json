@@ -16,6 +16,7 @@
   "chat.queue.edit": "编辑排队消息",
   "chat.queue.delete": "删除排队消息",
   "chat.thinking": "思考中...",
+  "chat.thought": "思考过程",
   "composer.skills.title": "技能",
   "composer.commands": "指令库",
   "composer.commands.new": "新建会话",

@@ -7140,6 +7140,10 @@ html[data-codex-window-type="electron"] .thread-scroll {
   white-space: pre-wrap;
 }
 
+.thread-reasoning .thread-activity-item__prose {
+  overflow-wrap: anywhere;
+}
+
 .thread-auto-review-list {
   display: flex;
   min-width: 0;

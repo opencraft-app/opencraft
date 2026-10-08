@@ -1324,7 +1324,7 @@ test("Hermes durable projection joins tool declarations and results by tool_call
   assert.equal(turns[0]?.items[5]?.text, "Done.");
 });
 
-test("Hermes durable projection gives final text ownership over repeated reasoning", () => {
+test("Hermes durable reasoning and answer have distinct ownership even when text is equal", () => {
   const turns = mapMessages("stored-repeated-reasoning", [
     { role: "user", content: "hello", id: 1 },
     {
@@ -1336,8 +1336,9 @@ test("Hermes durable projection gives final text ownership over repeated reasoni
     },
   ]);
 
-  assert.deepEqual(turns[0]?.items.map(({ type }) => type), ["userMessage", "agentMessage"]);
-  assert.equal(turns[0]?.items[1]?.text, "Hello. How can I help?");
+  assert.deepEqual(turns[0]?.items.map(({ type }) => type), ["userMessage", "reasoning", "agentMessage"]);
+  assert.deepEqual(turns[0]?.items[1]?.content, ["Hello. How can I help?"]);
+  assert.equal(turns[0]?.items[2]?.text, "Hello. How can I help?");
 });
 
 test("Hermes model-switch markers remain runtime metadata instead of user transcript rows", () => {
@@ -3359,7 +3360,7 @@ test("Hermes reasoning and tool events preserve AppServer Item boundaries", () =
   assert.deepEqual(duplicateCompletion, []);
 });
 
-test("Hermes live completion removes reasoning repeated by the final answer", () => {
+test("Hermes body preview never creates a reasoning Item before final completion", () => {
   const turn = {
     id: "turn-repeated-reasoning",
     items: [],
@@ -3373,7 +3374,8 @@ test("Hermes live completion removes reasoning repeated by the final answer", ()
   let id = 0;
   const projection = new HermesTurnEventStateMachine("thread-repeated-reasoning", turn, () => String(++id));
   projection.accept(10_000);
-  projection.project({ type: "reasoning.available", payload: { text: "Hello. How can I help?" } }, 11_000);
+  assert.deepEqual(projection.project({ type: "reasoning.available", payload: { text: "Hello. How can I help?" } }, 11_000), []);
+  assert.deepEqual(turn.items, []);
   projection.project({ type: "message.delta", payload: { text: "Hello. How can I help?" } }, 12_000);
   const completed = projection.project({
     type: "message.complete",
@@ -3405,9 +3407,9 @@ test("Hermes live completion gives one final Item ownership over a repeated inte
   projection.accept(10_000);
   projection.project({ type: "message.delta", payload: { text: "I did not use any tools." } }, 11_000);
   projection.project({ type: "message.interim", payload: { text: "I did not use any tools." } }, 12_000);
-  // A provider reasoning frame is a presentation phase, not permission to
-  // orphan the interim Item as a second owner of the eventual final text.
-  projection.project({ type: "reasoning.available", payload: { text: "Check whether tools ran." } }, 13_000);
+  // Real reasoning is a semantic boundary, but does not make prior body text
+  // a second owner of the eventual final answer.
+  projection.project({ type: "reasoning.delta", payload: { text: "Check whether tools ran." } }, 13_000);
   const completed = projection.project({
     type: "message.complete",
     payload: { text: "I did not use any tools.", status: "complete" },

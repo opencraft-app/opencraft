@@ -43,6 +43,7 @@ import {
   parseRealtimeDelegation,
   presentApprovalRequest,
   presentAutomationUpdate,
+  presentReasoning,
   normalizeMcpElicitationMetadata,
   normalizeMcpElicitationSchema,
   normalizeCodexTurnUserMessages,
@@ -1469,7 +1470,7 @@ test("Turn gap and Activity group never both own Thinking", () => {
   assert.equal(deriveAgentActivityHeaderPresentation(group).state, "thinking");
 });
 
-test("reasoning-only live Turn leaves Thinking ownership at the Turn parent", () => {
+test("reasoning-only live Turn gives Thinking ownership to its independent disclosure", () => {
   const snapshot = projectTimeline(source([{
     id: "turn-reasoning-thinking-owner",
     status: "streaming",
@@ -1483,11 +1484,16 @@ test("reasoning-only live Turn leaves Thinking ownership at the Turn parent", ()
   const plan = createTimelineTurnPresentationPlan(turn, undefined, { isMostRecentTurn: true });
   const activity = plan.assistant?.slots.find((slot) => slot.type === "agent-activity");
   assert.equal(activity, undefined);
+  const reasoning = plan.assistant?.slots.find((slot) => slot.type === "reasoning");
+  if (reasoning?.type !== "reasoning") throw new Error("Expected reasoning disclosure");
+  assert.equal(reasoning.active, true);
+  assert.equal(reasoning.presentation.content, "Inspecting");
+  assert.equal(reasoning.presentation.initiallyCollapsed, true);
   assert.deepEqual(plan.thinkingOwner, {
-    type: "turn",
-    placeholderId: "turn-reasoning-thinking-owner:slot:thinking-placeholder",
-    label: "Thinking",
+    type: "reasoning",
+    reasoningId: reasoning.id,
   });
+  assert.equal(plan.topLevelSlotCount, 1, "the expandable Thinking row replaces, rather than duplicates, the placeholder");
 });
 
 test("unfinished read, search and list commands stay retrospective until authority finishes them", () => {
@@ -2884,6 +2890,111 @@ test("real Codex reasoning keeps content when the summary array is empty", () =>
   assert.equal(block.detail, "Inspected the recovered renderer.\nCompared the scroll transaction.");
 });
 
+test("reasoning presentation uses actual summary once, falls back to returned detail, and defaults collapsed", () => {
+  const block: Extract<TimelineBlock, { type: "reasoning" }> = {
+    type: "reasoning", id: "reasoning:item", sourceItemIds: [asItemId("item")],
+    summary: "  First summary line\n\nLatest summary line  ",
+    detail: "A second representation of the same reasoning.", streaming: true,
+  };
+  assert.deepEqual(presentReasoning(block), {
+    content: "First summary line\n\nLatest summary line", header: "Latest summary line",
+    source: "summary", initiallyCollapsed: true,
+  });
+  assert.equal(presentReasoning(block, false)?.header, "First summary line");
+  assert.deepEqual(presentReasoning({ ...block, summary: " \n ", detail: "Returned detail\nNext line", streaming: false }), {
+    content: "Returned detail\nNext line", header: "Returned detail", source: "detail", initiallyCollapsed: true,
+  });
+  assert.equal(presentReasoning({ ...block, summary: " \n ", detail: " \n " }), null);
+  assert.equal(presentReasoning({ ...block, summary: "", detail: null }), null);
+});
+
+test("empty and encrypted-only reasoning cannot create a disclosure or invent content", () => {
+  const snapshot = projectTimeline(source([{
+    id: "turn-empty-reasoning", status: "streaming",
+    items: [{ id: "reasoning", type: "reasoning", payload: {
+      summary: [], content: [], encryptedContent: "not-renderable", status: "inProgress",
+    } }],
+  }]), createDefaultTimelineProjectorRegistry());
+  const turn = groupTimelineFramesByTurn(snapshot)[0]!;
+  const plan = createTimelineTurnPresentationPlan(turn, undefined, { isMostRecentTurn: true });
+  assert.deepEqual(plan.assistant?.slots, []);
+  assert.equal(plan.thinkingOwner.type, "turn");
+  assert.equal(plan.topLevelSlotCount, 1);
+});
+
+test("reasoning content arrival preserves source and first-tool group identity, not invisible physical sections", () => {
+  const project = (summary: readonly string[], status: "streaming" | "complete" = "streaming") => {
+    const snapshot = projectTimeline(source([{
+      id: "turn-reasoning-arrival", status,
+      items: [
+        { id: "before", type: "commandExecution", payload: { command: "pwd", status: "completed" } },
+        { id: "reasoning", type: "reasoning", payload: { summary, status: status === "streaming" ? "inProgress" : "completed" } },
+        { id: "after", type: "commandExecution", payload: { command: "npm test", status: "inProgress" } },
+      ],
+    }]), createDefaultTimelineProjectorRegistry());
+    return createTimelineTurnPresentationPlan(groupTimelineFramesByTurn(snapshot)[0]!, undefined, { isMostRecentTurn: true });
+  };
+  const empty = project([]);
+  const streaming = project(["First", "Latest"]);
+  const complete = project(["First", "Latest", "Last"], "complete");
+  const toolSlots = (plan: ReturnType<typeof project>) => plan.assistant?.slots.filter((slot) => slot.type === "agent-activity");
+  assert.equal(toolSlots(empty)?.length, 1, "empty reasoning is not a physical activity boundary");
+  assert.equal(toolSlots(streaming)?.length, 2, "actual text gets an independent chronological disclosure");
+  assert.deepEqual(toolSlots(streaming)?.map((slot) => slot.id), toolSlots(complete)?.map((slot) => slot.id));
+  const beforeContent = (p: ReturnType<typeof project>) => toolSlots(p)?.flatMap(slot => slot.contentUnits)
+    .find(unit => unit.type !== "worked-for" && (unit.type === "group" ? unit.blocks : [unit.block])
+      .some(block => block.sourceItemIds.includes("before")));
+  assert.equal(beforeContent(empty)?.id, beforeContent(streaming)?.id, "first-source disclosure identity survives a real split");
+  const sourceReasoning = (p: ReturnType<typeof project>) => p.assistantFrame?.blocks.find(block => block.type === "reasoning");
+  assert.equal(sourceReasoning(empty)?.id, sourceReasoning(streaming)?.id);
+  assert.deepEqual(sourceReasoning(empty)?.sourceItemIds, sourceReasoning(streaming)?.sourceItemIds);
+  assert.equal(empty.assistant?.slots.some((slot) => slot.type === "reasoning"), false);
+  const liveReasoning = streaming.assistant?.slots.find((slot) => slot.type === "reasoning");
+  const settledReasoning = complete.assistant?.slots.find((slot) => slot.type === "reasoning");
+  if (liveReasoning?.type !== "reasoning" || settledReasoning?.type !== "reasoning") throw new Error("Expected reasoning disclosures");
+  assert.equal(liveReasoning.id, settledReasoning.id);
+  assert.equal(liveReasoning.active, false, "later live tool work owns current feedback");
+  assert.equal(liveReasoning.presentation.initiallyCollapsed, true);
+  assert.equal(settledReasoning.presentation.initiallyCollapsed, true);
+  assert.equal(settledReasoning.presentation.content, "First\nLatest\nLast");
+});
+
+test("only current-response trailing reasoning may replace Thinking, never historical or later tool work", () => {
+  const reasoning = (id: string, summary = ["First", "Latest"]) => ({
+    id, type: "reasoning", payload: { summary, completed: false },
+  });
+  const answer = { id: "answer", type: "agentMessage", payload: { text: "Done.", phase: "final_answer", completed: true } };
+  const command = { id: "command", type: "commandExecution", payload: { command: "npm test", status: "inProgress" } };
+  const followup = { id: "followup", type: "steeringUserMessage", payload: {
+    status: "accepted", input: [{ type: "text", text: "Check another thing" }],
+  } };
+  const project = (items: TimelineProjectionSource["turns"][number]["items"], isMostRecentTurn = true, status: "streaming" | "complete" = "streaming") => {
+    const snapshot = projectTimeline(source([{ id: "turn-reasoning-ownership", status, items }]), createDefaultTimelineProjectorRegistry());
+    return createTimelineTurnPresentationPlan(groupTimelineFramesByTurn(snapshot)[0]!, undefined, { isMostRecentTurn });
+  };
+  const current = project([command, reasoning("current")]);
+  const active = current.assistant?.slots.filter((slot) => slot.type === "reasoning" && slot.active) ?? [];
+  assert.equal(active.length, 1, "older running background work cannot retain a second Thinking owner");
+  assert.equal(current.thinkingOwner.type, "reasoning");
+  assert.equal(active[0]?.type === "reasoning" ? active[0].presentation.header : null, "Latest");
+
+  const laterTool = project([reasoning("earlier"), command]);
+  assert.equal(laterTool.thinkingOwner.type, "none", "running command has its own work feedback, not a Thinking fallback");
+  assert.equal(laterTool.assistant?.slots.some((slot) => slot.type === "reasoning" && slot.active), false);
+  const historical = project([reasoning("earlier"), answer, followup]);
+  assert.equal(historical.thinkingOwner.type, "turn");
+  assert.equal(historical.assistant?.slots.some((slot) => slot.type === "reasoning" && slot.active), false);
+  const resumed = project([reasoning("earlier"), answer, followup, reasoning("current")]);
+  assert.equal(resumed.thinkingOwner.type, "reasoning");
+  assert.equal(resumed.assistant?.slots.filter((slot) => slot.type === "reasoning" && slot.active).length, 1);
+  const oldTurn = project([reasoning("current")], false);
+  assert.equal(oldTurn.thinkingOwner.type, "none");
+  assert.equal(oldTurn.assistant?.slots.some((slot) => slot.type === "reasoning" && slot.active), false);
+  const complete = project([reasoning("current")], true, "complete");
+  assert.equal(complete.thinkingOwner.type, "none");
+  assert.equal(complete.assistant?.slots.find((slot) => slot.type === "reasoning")?.presentation.header, "First");
+});
+
 test("Codex commentary remains inside Agent Activity while final_answer is a separate unit", () => {
   const snapshot = projectTimeline(source([{
     id: "turn-activity",
@@ -2901,12 +3012,13 @@ test("Codex commentary remains inside Agent Activity while final_answer is a sep
   if (frame?.type !== "assistant") throw new Error("Expected an assistant frame");
   const units = createAssistantTurnPresentationPlan(frame).slots;
   assert.deepEqual(units.map((unit) => unit.type), [
+    "reasoning",
     "agent-activity",
     "assistant-content",
     "agent-activity",
   ]);
-  const before = units[0];
-  const after = units[2];
+  const before = units[1];
+  const after = units[3];
   assert.equal(before?.type, "agent-activity");
   assert.equal(after?.type, "agent-activity");
   if (before?.type !== "agent-activity" || after?.type !== "agent-activity") throw new Error("Expected activity units");
@@ -2922,7 +3034,7 @@ test("Codex commentary remains inside Agent Activity while final_answer is a sep
   assert.equal(resolveAgentActivityLayout(after, true).isCollapsed, false);
 });
 
-test("completed reasoning-only Activity retains a work interval without exposing reasoning", () => {
+test("completed reasoning-only Activity retains a work interval independent from actual returned reasoning", () => {
   const snapshot = projectTimeline(source([{
     id: "turn-reasoning-duration",
     status: "complete",
@@ -2931,22 +3043,26 @@ test("completed reasoning-only Activity retains a work interval without exposing
     firstTurnWorkItemStartedAtMs: 1_100,
     finalAssistantStartedAtMs: 2_000,
     items: [
-      { id: "reasoning", type: "reasoning", payload: { content: ["private chain of thought"], summary: [] } },
+      { id: "reasoning", type: "reasoning", payload: { content: ["Returned reasoning text"], summary: [] } },
       { id: "answer", type: "agentMessage", payload: { text: "在。", phase: "final_answer", completed: true } },
     ],
   }]), createDefaultTimelineProjectorRegistry());
   const frame = snapshot.frames.find((candidate) => candidate.type === "assistant");
   if (frame?.type !== "assistant") throw new Error("Expected assistant frame");
-  const activity = createAssistantTurnPresentationPlan(frame).slots[0];
+  const activity = createAssistantTurnPresentationPlan(frame).slots.find(unit => unit.type === "agent-activity");
   if (activity?.type !== "agent-activity") throw new Error("Expected duration Activity");
 
   assert.equal(activity.workedDurationMs, 2_021);
   assert.deepEqual(activity.contentUnits.map((unit) => unit.type), ["worked-for"]);
   assert.equal(resolveAgentActivityLayout(activity, false).showToggle, false);
   assert.deepEqual(resolveAgentActivityLayout(activity, false).visibleUnits.map((unit) => unit.type), ["worked-for"]);
+  const reasoning = createAssistantTurnPresentationPlan(frame).slots.find((unit) => unit.type === "reasoning");
+  if (reasoning?.type !== "reasoning") throw new Error("Expected reasoning disclosure");
+  assert.equal(reasoning.presentation.content, "Returned reasoning text");
+  assert.equal(reasoning.active, false);
 });
 
-test("Agent Activity hides reasoning and demotes completed singleton tools around commentary", () => {
+test("reasoning stays outside Agent Activity while completed singleton tools demote around commentary", () => {
   const snapshot = projectTimeline(source([{
     id: "turn-semantic-activity",
     status: "complete",
@@ -2970,7 +3086,9 @@ test("Agent Activity hides reasoning and demotes completed singleton tools aroun
   }]), createDefaultTimelineProjectorRegistry());
   const frame = snapshot.frames.find((candidate) => candidate.type === "assistant");
   if (frame?.type !== "assistant") throw new Error("Expected assistant frame");
-  const outer = createAssistantTurnPresentationPlan(frame).slots[0];
+  const slots = createAssistantTurnPresentationPlan(frame).slots;
+  assert.equal(slots[0]?.type, "reasoning");
+  const outer = slots[1];
   assert.equal(outer?.type, "agent-activity");
   if (outer?.type !== "agent-activity") throw new Error("Expected Agent Activity");
   assert.deepEqual(outer.contentUnits.map((unit) => unit.type), [
@@ -3354,10 +3472,11 @@ test("standalone app tools and subagent activity share one stable Turn Activity 
   if (frame?.type !== "assistant") throw new Error("Expected assistant frame");
   const units = createAssistantTurnPresentationPlan(frame).slots;
   assert.deepEqual(units.map((unit) => unit.type), [
+    "reasoning",
     "agent-activity",
     "assistant-content",
   ]);
-  const activity = units[0];
+  const activity = units[1];
   assert.equal(activity?.type, "agent-activity");
   if (activity?.type !== "agent-activity") throw new Error("Expected Agent Activity");
   assert.deepEqual(activity.contentUnits.map((unit) => unit.type), ["standalone", "standalone"]);
@@ -3385,7 +3504,7 @@ test("Turn Activity slot and inline subagent identities survive streaming prepen
   ]);
   if (initial?.type !== "assistant" || updated?.type !== "assistant") throw new Error("Expected assistant frames");
   const initialActivity = createAssistantTurnPresentationPlan(initial).slots[0];
-  const updatedActivity = createAssistantTurnPresentationPlan(updated).slots[0];
+  const updatedActivity = createAssistantTurnPresentationPlan(updated).slots.find((unit) => unit.type === "agent-activity");
   if (initialActivity?.type !== "agent-activity" || updatedActivity?.type !== "agent-activity") throw new Error("Expected Activity slots");
   assert.equal(initialActivity.id, "turn-stable-owner:slot:agent-activity");
   assert.equal(updatedActivity.id, initialActivity.id);

@@ -34,6 +34,7 @@ import {
   presentApprovalRequest,
   presentAutomationUpdate,
   presentMcpElicitationDisplayValue,
+  presentReasoning,
   presentToolActivity,
   summarizeAutomaticApprovalReviewAction,
   threadHandoffToolResult,
@@ -60,6 +61,7 @@ import {
   type WebMcpToolSurfaceCall,
   type McpElicitationDraft,
   type McpElicitationDraftValue,
+  type ReasoningContentPresentation,
   type UserInputQuestionDraft,
   validateMcpElicitationDraft,
 } from "@opencraft/chat-core";
@@ -423,21 +425,35 @@ function elicitationDraftText(value: McpElicitationDraftValue | undefined): stri
   return typeof value === "string" ? value : "";
 }
 
-function ReasoningBlock({ block }: { block: Extract<TimelineBlock, { type: "reasoning" }> }) {
-  const [open, setOpen] = useState(false);
+function ReasoningBlock({ block, active = false, presentation = presentReasoning(block, active) }: {
+  readonly block: Extract<TimelineBlock, { type: "reasoning" }>;
+  readonly active?: boolean;
+  readonly presentation?: ReasoningContentPresentation | null;
+}) {
+  // One stable Item owns one explicit choice; deltas and completion cannot
+  // replace it with a running/settled default or open the tool-work group.
+  const [open, setOpen] = useState(() => !(presentation?.initiallyCollapsed ?? true));
   const { theme } = useWorkbenchTheme();
-  const expandable = block.detail !== null && block.detail.trim() !== "";
+  const { language } = useContext(NativeDocumentHostContext);
+  if (presentation === null) return null;
+  const label = language === "zh-CN"
+    ? active ? "思考中..." : "思考过程"
+    : active ? "Thinking" : "Thought";
   const header = <>
-    <View style={[styles.reasoningDot, block.streaming ? styles.reasoningActive : styles.reasoningDone]} />
-    <Text numberOfLines={open ? undefined : 1} style={styles.reasoningTitle}>{block.summary || "Reasoning"}</Text>
-    {expandable ? <ChevronRight color={theme.color.icon.tertiary} size={theme.metrics.control.iconSmall} strokeWidth={1.8} style={open ? styles.chevronOpen : undefined} /> : null}
+    <NativeCadencedText active={active} numberOfLines={1} style={styles.reasoningStatus}>{label}</NativeCadencedText>
+    <Text numberOfLines={1} style={styles.reasoningTitle}>{presentation.header}</Text>
+    <ChevronRight color={theme.color.icon.tertiary} size={theme.metrics.control.iconSmall} strokeWidth={1.8} style={open ? styles.chevronOpen : undefined} />
   </>;
   return (
     <View style={styles.reasoning}>
-      {expandable
-        ? <InteractiveSurface onPress={() => setOpen((value) => !value)} style={styles.reasoningButton}>{header}</InteractiveSurface>
-        : <View style={styles.reasoningButton}>{header}</View>}
-      {expandable && open ? <Text style={styles.reasoningDetail}>{block.detail}</Text> : null}
+      <InteractiveSurface
+        accessibilityLabel={`${label}: ${presentation.header}`}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        onPress={() => setOpen((value) => !value)}
+        style={styles.reasoningButton}
+      >{header}</InteractiveSurface>
+      {open ? <Text selectable style={styles.reasoningDetail}>{presentation.content}</Text> : null}
     </View>
   );
 }
@@ -1862,7 +1878,9 @@ function Frame({
           ? <NativeAgentActivity key={unit.id} unit={unit} />
           : unit.type === "subagent-activity"
             ? <NativeSubagentActivity key={unit.id} unit={unit} />
-            : <View key={unit.id}><Block block={unit.block} /></View>)}
+            : unit.type === "reasoning"
+              ? <ReasoningBlock active={unit.active} block={unit.block} key={unit.id} presentation={unit.presentation} />
+              : <View key={unit.id}><Block block={unit.block} /></View>)}
       {assistantPlan?.changeSummary == null ? null : <View key={assistantPlan.changeSummary.id}><Block block={assistantPlan.changeSummary} /></View>}
       {thinkingId === null ? null : <NativeThinkingPlaceholder key={thinkingId} label={thinkingLabel} />}
       {frame.type === "assistant" && showActions && (actions?.completed || frame.hookStats != null) ? (
@@ -2171,9 +2189,7 @@ const styles = StyleSheet.create((theme) => ({
   hookStatsRunError: { color: theme.color.accent.negative, ...theme.platformTypography.caption },
   reasoning: { gap: theme.spacing[2] },
   reasoningButton: { flexDirection: "row", alignItems: "center", gap: theme.spacing[2], minHeight: theme.metrics.toolbar.touchTarget },
-  reasoningDot: { width: theme.metrics.control.activityDot, height: theme.metrics.control.activityDot, borderRadius: theme.radii.full },
-  reasoningDone: { backgroundColor: theme.color.accent.positive },
-  reasoningActive: { backgroundColor: theme.color.accent.blue },
+  reasoningStatus: { color: theme.color.text.secondary, ...theme.platformTypography.body, fontWeight: "500" },
   reasoningTitle: { flex: 1, color: theme.color.text.secondary, ...theme.platformTypography.body, fontWeight: "500" },
   thinkingPlaceholder: { minHeight: theme.metrics.toolbar.touchTarget, flexDirection: "row", alignItems: "center", gap: theme.spacing[2] },
   thinkingPlaceholderText: { color: theme.color.text.secondary, ...theme.platformTypography.body },

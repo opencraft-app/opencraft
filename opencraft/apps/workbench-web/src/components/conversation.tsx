@@ -453,6 +453,10 @@ function Frame({
               />
             ) : unit.type === "subagent-activity"
               ? <SubagentActivityGroup unit={unit} />
+              : unit.type === "reasoning" ? <ReasoningBlock block={unit.block}
+                presentation={unit.presentation} active={unit.active}
+                collapsed={activityCollapsedById[unit.id] ?? true}
+                onCollapsedChange={(collapsed) => onActivityCollapsedChange(unit.id, collapsed)} />
               : <GenericBlock block={unit.block} onRetry={onRetry} />;
           return (
             <div

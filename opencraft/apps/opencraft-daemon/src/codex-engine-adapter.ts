@@ -1487,6 +1487,16 @@ export class CodexEngineAdapter implements DuplexTransport {
   }
 
   private writePhysical(message: RpcRecord): Promise<void> | void {
+    // Product default, not a second reasoning owner: all native starts (also
+    // Host queue delivery) request returned summaries. Explicit null keeps
+    // native inheritance; explicit modes and invalid values remain native's
+    // responsibility. Never put this option on steer or another engine.
+    if (message.method === "turn/start" && responseId(message.id) !== null) {
+      const params = record(message.params);
+      if (!Object.hasOwn(params, "summary")) {
+        message = { ...message, params: { ...params, summary: "auto" } };
+      }
+    }
     if (this.options.kind === "remote") {
       return this.options.transport.send(JSON.stringify(message)).catch(() => {
         this.rejectInternalRequests(new Error("Remote delivery outcome is unknown"));

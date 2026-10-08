@@ -550,12 +550,10 @@ function projectTurnItems(
   // Tool boundaries retain independent narration even when text is equal.
   const lastToolIndex = items.findLastIndex(item => item.type === "dynamicToolCall");
   const lastAgentByText = new Map<string, number>();
-  const finalAgentTexts: string[] = [];
   items.forEach((item, index) => {
     if (item.type !== "agentMessage" || typeof item.text !== "string") return;
     const key = normalizeVisibleText(item.text);
     if (key !== "") lastAgentByText.set(key, index);
-    if (item.phase === "final_answer" && key !== "") finalAgentTexts.push(key);
   });
   return items.filter((item, index) => {
     if (item.type === "agentMessage" && typeof item.text === "string") {
@@ -564,13 +562,8 @@ function projectTurnItems(
       // Restrict final-preview reconciliation to the tail after the last tool.
       return index <= lastToolIndex || key === "" || lastAgentByText.get(key) === index;
     }
-    if (item.type === "reasoning" && Array.isArray(item.content)) {
-      const key = normalizeVisibleText(item.content.filter((value): value is string => typeof value === "string").join("\n"));
-      // Same ownership rule as Hermes Desktop's final-text merge: the final
-      // answer supersedes reasoning only when it fully starts with it. A short
-      // final must never erase a longer, genuinely distinct reasoning trace.
-      return index <= lastToolIndex || key === "" || !finalAgentTexts.some((finalText) => finalText.startsWith(key));
-    }
+    // Provider reasoning columns own separate Items, even if their text equals
+    // or prefixes the answer. Only body previews reconcile with body text.
     return true;
   }).map(projectHermesTool);
 }

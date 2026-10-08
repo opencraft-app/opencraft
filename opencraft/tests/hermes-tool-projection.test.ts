@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { HermesTurnEventStateMachine } from "../plugins/lightvela-hermes/src/hermes-appserver-bridge/turn-event-state-machine";
 import type { AppServerTurn } from "../plugins/lightvela-hermes/src/hermes-appserver-bridge/types";
-import { createConversationKey, createDefaultTimelineProjectorRegistry, projectTimeline, presentToolActivity, extractToolCallContentParts, createAssistantTurnPresentationPlan, resolveAgentActivityLayout } from "@opencraft/chat-core";
+import { createConversationKey, createDefaultTimelineProjectorRegistry, projectTimeline, presentToolActivity, extractToolCallContentParts, createAssistantTurnPresentationPlan, resolveAgentActivityLayout, assistantMessageActions } from "@opencraft/chat-core";
 import { mapMessages } from "../plugins/lightvela-hermes/src/hermes-appserver-bridge/adapter";
 
 function harness() {
@@ -99,20 +99,60 @@ test("Hermes body preview does not split a streamed segment before Clarify", () 
   assert.equal(turn.items.at(-1)!.phase, "final_answer");
 });
 
-test("reasoning available remains a fallback without a current body and real deltas remain boundaries", () => {
+test("Hermes body preview is never reasoning authority, including before the first body delta", () => {
   const { turn, event } = harness();
-  event("reasoning.available", { text: "Fallback preview" });
-  assert.equal(turn.items[0]!.type, "reasoning");
+  assert.deepEqual(event("reasoning.available", { text: "Fallback preview" }), []);
+  assert.deepEqual(turn.items, [], "a truncated assistant-body preview cannot create thinking content");
   event("message.delta", { text: "Body" });
+  const assistant = structuredClone(turn.items);
+  assert.deepEqual(event("reasoning.available", { text: "Updated fallback" }), []);
+  assert.deepEqual(turn.items, assistant, "preview does not seal or replace the assistant stream");
   event("reasoning.delta", { text: "Actual new reasoning" });
   assert.equal(turn.items.find(item => item.text === "Body")!.phase, "commentary");
   assert.equal(turn.items.at(-1)!.type, "reasoning");
-  event("reasoning.available", { text: "Updated fallback" });
-  assert.equal(turn.items.at(-1)!.type, "reasoning", "old body is not a global preview suppression key");
-  assert.deepEqual(turn.items.at(-1)!.content, ["Updated fallback"]);
   const before = structuredClone(turn.items);
-  event("reasoning.available", { text: "" });
-  assert.deepEqual(turn.items, before);
+  for (const text of ["Updated fallback", ""]) {
+    assert.deepEqual(event("reasoning.available", { text }), []);
+    assert.deepEqual(turn.items, before, "preview cannot replace genuine returned reasoning");
+  }
+});
+
+test("actual Hermes reasoning remains independently readable when final text is equal or starts with it", () => {
+  for (const answer of ["Returned text", "Returned text with more answer detail"]) {
+    const { turn, event } = harness();
+    event("reasoning.delta", { text: "Returned text" });
+    const reasoningId = turn.items[0]!.id;
+    event("message.delta", { text: answer });
+    event("message.complete", { text: answer });
+    assert.deepEqual(turn.items.map(item => item.type), ["reasoning", "agentMessage"]);
+    assert.equal(turn.items[0]!.id, reasoningId);
+    assert.deepEqual(turn.items[0]!.content, ["Returned text"]);
+    for (const column of ["reasoning", "reasoning_content", "reasoning_details"]) {
+      const [history] = mapMessages("thread", [
+        { role: "user", content: "Inspect" },
+        { role: "assistant", [column]: "Returned text", content: answer, finish_reason: "stop" },
+      ]);
+      assert.deepEqual(history!.items.map(item => item.type), ["userMessage", "reasoning", "agentMessage"]);
+      assert.deepEqual(history!.items[1]!.content, ["Returned text"]);
+    }
+    const snapshot = projectTimeline({ key: createConversationKey("host", "thread"), revision: 1, phase: "live", authoritative: true,
+      turns: [{ id: turn.id, status: "complete", items: turn.items.map(item => ({ id: item.id, type: item.type, payload: item })) }],
+    }, createDefaultTimelineProjectorRegistry());
+    const frame = snapshot.frames.find(frame => frame.type === "assistant");
+    assert.ok(frame?.type === "assistant");
+    const plan = createAssistantTurnPresentationPlan(frame);
+    assert.equal(plan.slots.find(slot => slot.type === "reasoning")?.presentation.content, "Returned text");
+    assert.equal(plan.slots.find(slot => slot.type === "assistant-content")?.block.type, "text");
+    assert.equal(assistantMessageActions(frame)?.copyText, answer, "answer copy never includes the separate reasoning body");
+  }
+});
+
+test("opaque Hermes reasoning metadata cannot fabricate readable thinking content", () => {
+  const [history] = mapMessages("thread", [
+    { role: "user", content: "Inspect" },
+    { role: "assistant", reasoning_details: [{ type: "reasoning.encrypted", data: "opaque" }], content: "Done", finish_reason: "stop" },
+  ]);
+  assert.deepEqual(history!.items.map(item => item.type), ["userMessage", "agentMessage"]);
 });
 
 test("sealed preview preserves its display slot across interim and restored completion", () => {
