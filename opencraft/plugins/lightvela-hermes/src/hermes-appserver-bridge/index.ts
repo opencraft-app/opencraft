@@ -6,6 +6,7 @@ import { HermesBotAppServerHandler, type HermesBotHandlerOptions } from "./bot-p
 import type { HermesHostFileSystem } from "./dashboard-file-system";
 import { HermesAttachmentStagingService, type HermesSha256 } from "./attachment-staging";
 import type { HermesHistoryClient } from "./history-client";
+import type { HermesSessionMetadataClient } from "./session-metadata-client";
 import type { HermesHostTerminal } from "./tat-terminal";
 import type { HermesProcessService } from "./process-service";
 import type { HermesComposerQueueService } from "./composer-queue/service";
@@ -39,6 +40,7 @@ export interface BrowserHermesBridgeOptions extends Omit<HermesRpcTransportOptio
   /** Native Hosts provide SHA-256 without requiring a global Web Crypto subtle API. */
   sha256?: HermesSha256;
   history?: HermesHistoryClient;
+  sessionMetadata?: HermesSessionMetadataClient;
   /** Host-owned command executor; survives replaceable bridge generations. */
   terminal?: HermesHostTerminal;
   /** Borrowed from the Host transport; a bridge only owns its subscription. */
@@ -143,6 +145,7 @@ export class BrowserHermesAppServerBridge {
     if (this.disposed) throw new Error("Hermes AppServer bridge is detached");
     return dispatchAppServerRequest(this.adapter, { jsonrpc: "2.0", id: 0, method, params }, {
       fileSystem: this.options.fileSystem,
+      sessionMetadata: this.options.sessionMetadata,
       attachments: this.attachments ?? undefined,
       terminal: this.options.terminal,
       processes: this.options.processes,
@@ -172,6 +175,7 @@ export class BrowserHermesAppServerBridge {
         result: await dispatchAppServerRequest(this.adapter, request, {
           signal,
           fileSystem: this.options.fileSystem,
+          sessionMetadata: this.options.sessionMetadata,
           attachments: this.attachments ?? undefined,
           terminal: this.options.terminal,
           processes: this.options.processes,
@@ -247,6 +251,7 @@ export class BrowserHermesAppServerBridge {
     this.adapter.dispose();
     this.options.fileSystem?.dispose();
     this.options.history?.dispose();
+    this.options.sessionMetadata?.dispose();
     // Terminal lifetime belongs to the Host/process service, not to this
     // replaceable dashboard WebSocket bridge generation.
     this.transport.dispose();

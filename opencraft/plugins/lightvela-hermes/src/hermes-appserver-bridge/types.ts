@@ -33,6 +33,8 @@ export interface HermesPendingClarify {
 }
 
 export interface HermesSessionSummary {
+  cwd?: string;
+  last_active?: number;
   id: string;
   /** Compression-lineage tip returned by exact-title registry lookups. */
   resolved_id?: string;

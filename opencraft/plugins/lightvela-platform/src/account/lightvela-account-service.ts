@@ -517,9 +517,11 @@ export class LightVelaAccountService {
     return operation;
   }
 
-  private invalidateAuthority(): void {
-    this.credentialScope = crypto.randomUUID();
-    this.storage?.setItem(CACHE_SCOPE_KEY, this.credentialScope);
+  private invalidateAuthority(rotateCredentialScope = true): void {
+    if (rotateCredentialScope) {
+      this.credentialScope = crypto.randomUUID();
+      this.storage?.setItem(CACHE_SCOPE_KEY, this.credentialScope);
+    }
     this.authGeneration += 1;
     this.authority.abort();
     this.authority = new AbortController();
@@ -1104,7 +1106,9 @@ export class LightVelaAccountService {
     if (this.signInOperation) void this.desktopAccount?.cancel().catch(() => {});
     globalThis.removeEventListener?.("storage", this.onStorage);
     globalThis.removeEventListener?.(UPSTREAM_AUTH_UNAUTHORIZED_EVENT, this.onUpstreamUnauthorized);
-    this.invalidateAuthority();
+    // View/application teardown revokes work, not the durable account identity.
+    // Rotating here orphans browser drafts/display caches on every refresh.
+    this.invalidateAuthority(false);
     this.listeners.clear();
   }
 

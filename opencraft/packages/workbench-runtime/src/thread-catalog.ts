@@ -22,12 +22,13 @@ function relativeTime(timestampSeconds: number, nowMs: number): string {
 
 /** Pure Thread catalog projection shared by Vite, Expo Web and iPad. */
 export function projectAppServerThread(
-  thread: Thread,
+  thread: Thread & { pinned?: boolean },
   nowMs = Date.now(),
 ): WorkbenchThread {
   const parts = thread.cwd.split("/").filter(Boolean);
   return {
     id: thread.id,
+    pinned: thread.pinned === true,
     title: thread.name?.replace(/^☁️\s*/u, "") || thread.preview || "New chat",
     project: parts.at(-1) ?? "Workspace",
     lineage: thread.parentThreadId !== null ? "subagent" : thread.forkedFromId !== null ? "fork" : "root",

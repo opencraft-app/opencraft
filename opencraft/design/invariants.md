@@ -1,5 +1,13 @@
 # 工作区不变量
 
+## Native conversation pinning
+
+- PIN-01：置顶由原生 Server 持久化；OpenCraft 不维护第二份数据库或浏览器置顶集合，DSH 不支持时不补本地 fallback。
+- PIN-02：接口准入不等于原生能力。当前连接成功发现支持后才显示置顶菜单；暂时失败不冒充不支持或空置顶列表。
+- PIN-03：置顶读写只处理元数据，不 Resume/Start；Hermes 明确携带所属 profile，身份歧义拒绝写入，压缩链由 Hermes 自身处理。
+- PIN-04：置顶目录返回完整摘要、独立于近期窗口；侧栏去重后单独分组，置顶不占十条近期预算。刷新/重连从后端重新读取。
+- PIN-05：同一会话写入串行；操作前列表不能覆盖操作后状态；连接撤销拒绝晚到结果且不重放写入。菜单复用现有受控互斥 owner，不拥有存储或轮询。
+
 ## Desktop input ownership
 
 Desktop control presentation preserves the mounted control strip's geometry
@@ -65,6 +73,8 @@ Surface消费Shell的同一逻辑active投影：隐藏立即退出模拟光标�
 状态：实施及验证中。下表记录目标与责任，不把测试名称当成已运行的证据。最新结果在 [progress.md](progress.md)。
 
 ## Application navigation restoration
+
+浏览器草稿补充：任务 View 保留既有 ConversationDraftContinuity 所有权，不叠加另一套持久化写入者。Bot Composer 通过平台存储端口保存 document、context 与附件元数据，不保存提交回执、执行状态、临时听写或发送锁；存储按产品／账号和 Host + Conversation 身份隔离。只有显式内容编辑和接受发送后的清空写入存储，生命周期变化与卸载不能覆盖其他 View 的输入。账号作用域变化撤销并清除旧适配器，迟到写入不得复活旧内容；新应用实例绑定新账号。浏览器 File 字节及临时侧聊不在当前持久化承诺内；失效 Object URL 或未完成附件恢复为可移除、不可发送的文件卡片。验证见 `chat-browser-drafts.test.ts` 和 `smoke:browser-drafts`。
 
 历史记录只持有聊天引用，不拥有草稿的存活事实。启动与历史恢复必须先由 Host 配置、ScopeRegistry 和 BindingStore 校验/规范化，再让 Router 与激活层消费同一个目标；有效当前 entry 优先于跨标签页共享的最后使用偏好。失效 Draft 不按旧 ID 重建，已提交 Draft 经持久 alias 找回 Thread。Router 唯一写回纠正结果并保留 Settings/Extension 目的地；失效引用回到当前实际保留的 View 与输入，View 不能跨 Scope 复用。规范化为 REPLACE 的 POP 仍须被资源事务消费。
 

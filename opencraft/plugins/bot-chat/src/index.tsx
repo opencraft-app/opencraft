@@ -3,10 +3,12 @@ import type {
   BotConversationSource,
 } from "@opencraft/bot-conversation";
 import type { TrustedExtensionDefinition } from "@opencraft/extension-runtime";
+import type { ComposerDraftStorage } from "@opencraft/composer-core";
 
 import { createBotChatView } from "./bot-chat-view";
 
 export interface CreateBotChatExtensionOptions {
+  readonly drafts?: ComposerDraftStorage;
   /** AppServer-owned Bot state projected through a replaceable client port. */
   readonly source: BotConversationSource;
   /** AppServer-backed selector-to-exact-conversation transaction. */
@@ -20,6 +22,7 @@ export function createBotChatExtension(
 ): TrustedExtensionDefinition {
   const BotChatView = createBotChatView(options.source, {
     resolver: options.resolver,
+    drafts: options.drafts,
   });
   return {
     manifest: {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { changesThreadCatalog, threadCatalogPhase, sidebarThreadCatalogQueryKey, managedCatalogDiscoveryPhase } from "../apps/workbench-web/src/runtime/thread-catalog-query.js";
+import { changesThreadCatalog, mergeThreadCatalogPages, threadCatalogPhase, sidebarThreadCatalogQueryKey, managedCatalogDiscoveryPhase } from "../apps/workbench-web/src/runtime/thread-catalog-query.js";
 import { MemoryTransport } from "@opencraft/appserver-transport-memory";
 import { createAppServerWorkbenchRuntime } from "@opencraft/workbench-runtime";
 import { QueryClient } from "@tanstack/react-query";
@@ -9,7 +9,16 @@ test("thread metadata changes and completed work invalidate catalog queries, not
   assert.equal(changesThreadCatalog("thread/archived"), true);
   assert.equal(changesThreadCatalog("thread/unarchived"), true);
   assert.equal(changesThreadCatalog("turn/completed"), true);
+  assert.equal(changesThreadCatalog("thread/pins/updated"), true);
   assert.equal(changesThreadCatalog("item/agentMessage/delta"), false);
+});
+
+test("older pin backfill remains unique when later recent pages contain the same thread", () => {
+  const pinned = { id: "old", pinned: true };
+  assert.deepEqual(mergeThreadCatalogPages([
+    { data: [pinned, { id: "recent", pinned: false }] },
+    { data: [{ id: "old", pinned: false }, { id: "other", pinned: false }] },
+  ]), [pinned, { id: "recent", pinned: false }, { id: "other", pinned: false }]);
 });
 
 test("connection discovery failure is observable even before there are any Host profiles", () => {

@@ -4,6 +4,14 @@ OpenCraft 的聊天跟进偏好由客户端 `UiPreferencesRuntime` 持有：运�
 普通会话默认立即跟进，设置中可改为下一轮排队，空闲发送不受影响。
 该偏好不改变 Server 能力或投递确认；临时侧聊仍受其无持久队列的能力边界约束。
 
+OpenCraft Web 的未发送输入与执行投递分开持有：任务 View 保留原有账号隔离的
+ConversationDraftContinuity；Bot Room 通过共享 Composer 的客户端存储 port
+保存结构化正文、上下文及附件描述，不同步到 Server/其他设备，也不恢复提交锁
+或自动重发请求。Bot 存储只由实际内容编辑更新，旧 View 的状态变更/销毁不能
+覆写它；账号作用域变化撤销并清除旧适配器，新应用实例绑定新账号。原始浏览器
+File 字节及临时 Side Chat 尚不承诺跨刷新恢复，失效附件不能假装可发送。详见
+[Chat UI 草稿边界](../../../opencraft/docs/chat-ui-architecture.md#browser-local-input-drafts)。
+
 本领域覆盖 Agent 请求进入、实例/渠道编排、Sandbox 分配、CloudAgent 执行、模型网关/provider 路由、流式响应和后台 workflow。
 
 OpenCraft 的活动分段结束原因与折叠资格分别建模。插话/异步问题等只关闭
@@ -23,6 +31,15 @@ Web 与 Native 消费同一呈现计划；运行中 diff 更新不得关闭活�
 源码验证不等于当前预览已经替换。
 
 ## 服务与责任
+
+OpenCraft 会话置顶属于原生 Server 的目录元数据，不属于执行轮次或客户端偏好。
+Codex adapter 使用原生置顶 section；Hermes adapter 复用既有 TAT HTTP 通道和
+会话凭据调用 Dashboard 的 Profile-scoped metadata API，不修改 Hermes。
+协议扩展可发现不等于原生能力已支持：当前连接读取成功后才提供置顶操作，
+DSH 或旧 Server 不伪造支持。桥接器和浏览器均不另存置顶集合；刷新从原生数据
+回补近期窗口以外的置顶摘要，跨页按会话身份去重。写入按会话串行，迟到读取
+与断线代次隔离，未知结果刷新核对而非盲重放，不触发 resume 或执行。
+详见 [Thread lifecycle ownership](../../../opencraft/docs/platform-architecture.md#thread-lifecycle-ownership)。
 
 OpenCraft 的可选 `tencentoa.identity` 插件按每个 HTTP 请求核验太湖签名、
 解密 TOF 员工身份并检查有效期。安装级私有密钥仅属于后端，员工身份仅投影到

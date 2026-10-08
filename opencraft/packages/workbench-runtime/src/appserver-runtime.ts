@@ -44,6 +44,8 @@ import {
   OPENCRAFT_THREAD_QUEUE_EXTENSION,
   OPENCRAFT_THREAD_GOAL_EXTENSION,
   OPENCRAFT_THREAD_LIFECYCLE_EXTENSION,
+  OPENCRAFT_THREAD_PINS_EXTENSION,
+  supportsThreadPinDiscovery,
   OPENCRAFT_THREAD_START_DURABILITY_EXTENSION,
   OPENCRAFT_SCOPED_MODEL_CATALOG_EXTENSION,
   parseAttachmentStagingCapability,
@@ -68,6 +70,7 @@ import type {
   ThreadGoal,
 } from "@opencraft/appserver-protocol/generated/v2";
 import { ThreadGoalResource } from "./thread-goal-resource";
+import { ThreadPinningResource } from "./thread-pinning-resource";
 import {
   ReplicaClient,
   type ReplicaClientStorage,
@@ -232,7 +235,8 @@ export interface StartThreadOptions {
 }
 
 export interface AppServerThreadResourcePort {
-  capabilities?(): { fork: boolean; rename: boolean; archive: boolean; delete: boolean };
+  capabilities?(): { fork: boolean; rename: boolean; archive: boolean; delete: boolean; pin?: boolean };
+  setPinned?(threadId: string, pinned: boolean): Promise<void>;
   rename?(threadId: string, name: string): Promise<void>;
   delete?(threadId: string): Promise<void>;
   archive?(threadId: string): Promise<void>;
@@ -499,6 +503,18 @@ export function createAppServerWorkbenchRuntime(
     ? config.transport ?? null
     : null;
   let client: AppServerClient | null = null;
+  let threadPins: { client: AppServerClient; generation: number; resource: ThreadPinningResource } | null = null;
+  const pinResource = (current: AppServerClient) => {
+    const generation = current.connectionGeneration;
+    if (!threadPins || threadPins.client !== current || threadPins.generation !== generation) {
+      threadPins = { client: current, generation, resource: new ThreadPinningResource({
+        current: () => client === current && current.connectionGeneration === generation && current.status.state === "open",
+        read: () => current.request("opencraft/thread-pins/list", {}),
+        write: (threadId, pinned) => current.request("opencraft/thread-pins/set", { threadId, pinned }),
+      }) };
+    }
+    return threadPins.resource;
+  };
   let session: CordisThreadSessionRuntime | null = null;
   let interactions: AppServerInteractionBroker | null = null;
   let fuzzyFileSearch: AppServerFuzzyFileSearchController | null = null;
@@ -1408,8 +1424,10 @@ export function createAppServerWorkbenchRuntime(
       threads: {
         capabilities() {
           const capability = parseThreadLifecycleCapability(client?.initializeResult?.capabilities?.extensions?.[OPENCRAFT_THREAD_LIFECYCLE_EXTENSION]);
-          return { fork: capability?.fork === true, rename: capability?.rename === true, archive: capability?.archive === true, delete: capability?.delete === true };
+          return { fork: capability?.fork === true, rename: capability?.rename === true, archive: capability?.archive === true, delete: capability?.delete === true,
+            pin: client !== null && threadPins?.client === client && threadPins.generation === client.connectionGeneration && threadPins.resource.available() };
         },
+        async setPinned(threadId, pinned) { await pinResource(requireClient()).set(threadId, pinned); },
         async rename(threadId, name) { await requireClient().request("thread/name/set", { threadId, name }); },
         async delete(threadId) { await requireClient().request("thread/delete", { threadId }); },
         async archive(threadId) { await requireClient().request("thread/archive", { threadId }); },
@@ -1467,7 +1485,8 @@ export function createAppServerWorkbenchRuntime(
           requireSession().views.remove(threadId);
         },
         async list(params = {}) {
-          const response = await requireClient().request("thread/list", {
+          const current = requireClient(), generation = current.connectionGeneration;
+          const response = await current.request("thread/list", {
             archived: false,
             cursor: null,
             limit: 30,
@@ -1481,6 +1500,15 @@ export function createAppServerWorkbenchRuntime(
           });
           const defaultCatalog = Object.keys(params).every(key => key === "cursor" || key === "limit")
             && params.cursor == null;
+          if (defaultCatalog && supportsThreadPinDiscovery(current.initializeResult?.capabilities?.extensions?.[OPENCRAFT_THREAD_PINS_EXTENSION])) {
+            const pins = await pinResource(current).read();
+            if (client !== current || current.connectionGeneration !== generation) throw new Error("Thread catalog connection changed");
+            const pinned = new Map(pins.data.map(thread => [thread.id, thread]));
+            response.data = [
+              ...pins.data.map(thread => ({ ...thread, pinned: true })),
+              ...response.data.filter(thread => !pinned.has(thread.id)).map(thread => ({ ...thread, pinned: false })),
+            ];
+          }
           if (defaultCatalog && unlistedForks.size > 0) {
             const listed = new Set(response.data.map(thread => thread.id));
             for (const id of listed) unlistedForks.delete(id);

@@ -1,6 +1,7 @@
 import {
   conversationDraftStoragePrefix,
   conversationDisplayStoragePrefix,
+  parseConversationDraftTarget,
   type ConversationDraftStorage,
   type ConversationDisplayStorage,
 } from "@opencraft/workbench-runtime";
@@ -9,6 +10,7 @@ import {
 export function createBrowserConversationDraftStorage(scope: string): {
   readonly storage: ConversationDraftStorage;
   readonly displayStorage: ConversationDisplayStorage;
+  loadNewTarget(draftId: string): Promise<ReturnType<typeof parseConversationDraftTarget>>;
   revokeAndClear(): void;
 } {
   const prefix = conversationDraftStoragePrefix(scope);
@@ -28,6 +30,18 @@ export function createBrowserConversationDraftStorage(scope: string): {
   };
   return {
     storage,
+    async loadNewTarget(draftId) {
+      if (revoked) return null;
+      try {
+        for (let index = 0; index < window.localStorage.length; index++) {
+          const key = window.localStorage.key(index);
+          if (!key?.startsWith(prefix)) continue;
+          const target = parseConversationDraftTarget(window.localStorage.getItem(key));
+          if (target?.draftId === draftId) return target;
+        }
+      } catch { /* Storage denial must not prevent startup. */ }
+      return null;
+    },
     displayStorage: {
       async load(key) { return !revoked && key.startsWith(displayPrefix) ? window.localStorage.getItem(key) : null; },
       async save(key, value) { if (!revoked && key.startsWith(displayPrefix)) window.localStorage.setItem(key, value); },

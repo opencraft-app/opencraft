@@ -119,12 +119,16 @@ export function Sidebar({
     pendingThreadId === null
       ? `${activeHostId}:${activeThreadId}`
       : `${pendingHostId ?? activeHostId}:${pendingThreadId}`;
-  const orderedThreads = [...threads].sort((left, right) => right.updatedAt - left.updatedAt);
+  const pinnedThreads = threads.filter(thread => thread.pinned === true);
+  const orderedThreads = threads.filter(thread => thread.pinned !== true).sort((left, right) => right.updatedAt - left.updatedAt);
   const visibleThreads = activityExpanded
     ? orderedThreads
     : orderedThreads.filter((thread, index) =>
       index < 10 || `${thread.connectionHostId}:${thread.id}` === selectedThreadKey);
-  const activityGroups = groupThreadsByActivityDate(visibleThreads);
+  const activityGroups = [
+    ...(pinnedThreads.length === 0 ? [] : [{ key: "pinned", label: "置顶", threads: pinnedThreads }]),
+    ...groupThreadsByActivityDate(visibleThreads),
+  ];
   const catalogLoading = threadCatalogDiscovery === "loading"
     || threadCatalogs.some(catalog => catalog.phase === "loading");
   const feedback = [
@@ -134,7 +138,7 @@ export function Sidebar({
       retry: onRetryThreadCatalog ? () => onRetryThreadCatalog(catalog.hostId) : undefined,
     })),
   ];
-  const visibleKeys = new Set(visibleThreads.map(thread => `${thread.connectionHostId}:${thread.id}`));
+  const visibleKeys = new Set([...pinnedThreads, ...visibleThreads].map(thread => `${thread.connectionHostId}:${thread.id}`));
   const hiddenRemoteCount = orderedThreads.filter(thread => thread.serverRouteLocality === "remote"
     && !visibleKeys.has(`${thread.connectionHostId}:${thread.id}`)).length;
 
@@ -225,7 +229,7 @@ export function Sidebar({
                     if (threadActions && threadCapabilities) return (
                       <ThreadRowMenu
                         key={threadKey}
-                        target={{ hostId: thread.connectionHostId, threadId: thread.id, title }}
+                        target={{ hostId: thread.connectionHostId, threadId: thread.id, title, pinned: thread.pinned }}
                         capabilities={threadCapabilities(thread.connectionHostId)}
                         openMenuKind={openThreadMenu?.hostId === thread.connectionHostId && openThreadMenu.threadId === thread.id
                           ? openThreadMenu.kind
@@ -245,7 +249,7 @@ export function Sidebar({
                 </div>
               </section>
             ))}
-            {threads.length > 10 ? (
+            {orderedThreads.length > 10 ? (
               <button
                 type="button"
                 className="sidebar-activity-more"

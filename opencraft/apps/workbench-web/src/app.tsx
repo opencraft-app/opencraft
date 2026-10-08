@@ -1502,6 +1502,10 @@ export function App({
               threadCapabilities={hostId => hostCatalog.threadManagement.capabilities(hostId)}
               pendingTitle={(hostId, threadId) => threadTitleWriter.pendingTitle({ hostId, threadId })}
               threadActions={{
+                onSetPinned: async (target, pinned) => {
+                  try { await hostCatalog.threadManagement.setPinned(target.hostId, target.threadId, pinned); }
+                  finally { await queryClient.invalidateQueries({ queryKey: ["appserver", target.hostId, "threads"] }); }
+                },
                 onRename: (target, title) => threadTitleWriter.rename(target, title),
                 onFork: target => forkAndOpenThread({
                   routeScopeId: () => workbenchNavigation.getSnapshot().routeScopeId,

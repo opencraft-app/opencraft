@@ -28,6 +28,7 @@ import { resolveHermesDashboardWebSocketUrl } from "../lib/hermes-dashboard-sess
 import { createTatWebSocketConstructor } from "../lib/tat-websocket";
 import type { Rfc6455Sha1 } from "../lib/rfc6455-client";
 import { TatHttpVirtualClient } from "../lib/tat-http-virtual-client";
+import { HermesDashboardSessionMetadataClient } from "../hermes-appserver-bridge/session-metadata-client";
 import { TencentTatSessionMultiplexer } from "../lib/tencent-tat-session-multiplexer";
 import {
   LightVelaApiError,
@@ -527,6 +528,14 @@ export class LightVelaHermesTransport implements DuplexTransport {
           // total duration of an actively progressing transcript download.
           responseHeaderTimeoutMs: 30_000,
           responseBodyChunkTimeoutMs: 30_000,
+        }),
+        sessionToken,
+      ),
+      sessionMetadata: new HermesDashboardSessionMetadataClient(
+        new TatHttpVirtualClient(bootstrap, {
+          bufferResponseBody: this.options.bufferHttpResponses,
+          proxyClient: proxy,
+          target: { host: "127.0.0.1", port: HERMES_DASHBOARD_PORT },
         }),
         sessionToken,
       ),

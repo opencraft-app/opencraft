@@ -9,12 +9,25 @@ import {
   createConversationDraftContinuity,
   createConversationScopeLeaseRegistry,
   createConversationViewRegistry,
+  parseConversationDraftTarget,
+  serializeConversationDraftDocument,
   type ConversationDraftStorage,
 } from "@opencraft/workbench-runtime";
 
 const target = { type: "existing-thread", key: createConversationKey("local", "thread-1") } as const;
 const document = (text: string): ComposerDocument => ({ version: 1, blocks: [{ type: "paragraph", children: [{ type: "text", text }] }] });
 const tick = () => new Promise<void>(resolve => setTimeout(resolve, 5));
+
+test("new Draft placement shares the existing content envelope, never execution lifecycle", () => {
+  const draftTarget = { type: "new-thread", draftId: "new-A", execution: {
+    hostId: asHostId("ssh"), workspace: { cwd: "/fixture", runtimeWorkspaceRoots: ["/fixture"] },
+  } } as const;
+  const saved = serializeConversationDraftDocument(document("unsent"), draftTarget);
+  assert.deepEqual(parseConversationDraftTarget(saved), draftTarget);
+  assert.equal(parseConversationDraftTarget(serializeConversationDraftDocument(document("legacy"))), null);
+  assert.equal(parseConversationDraftTarget(JSON.stringify({ version: 1, document: document("bad"), target: { ...draftTarget, execution: { hostId: "ssh", workspace: {} } } })), null);
+  assert.equal(serializeConversationDraftDocument(document(""), draftTarget), null);
+});
 
 function memoryStorage(): ConversationDraftStorage & { readonly data: Map<string, string> } {
   const data = new Map<string, string>();
