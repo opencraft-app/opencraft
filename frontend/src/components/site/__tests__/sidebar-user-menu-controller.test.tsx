@@ -18,6 +18,9 @@ vi.mock("@/contexts/repository-context", () => ({ useRepositories: () => { mocks
 vi.mock("@/contexts/runtime-config-context", () => ({ usePaidBillingEnabled: () => { mocks.paidBilling(); return paidBilling; }, useReferralEnabled: () => false }));
 vi.mock("@/contexts/session-context", () => ({ useSession: () => ({ session: { user: userId ? { id: userId, name: `Owner ${userId}`, email: `${userId}@example.com` } : null, currentSubscription }, signOut: mocks.signOut }) }));
 vi.mock("@/contexts/agent-context", () => ({ useOpenClaw: () => ({ activePass: currentPass, modifyingPass, passUpgradeFailed: false, hasResolvedPasses: true, isSubscribed: Boolean(currentPass), passesLoading: false, passesError: false, bots: [], botsLoading: false, botsError: false, user: { plan: { name: "STALE PLAN SHOULD NOT LEAK" } } }) }));
+vi.mock("@/components/domain/tat-file-manager-panel", () => ({
+  TatFileManagerPanel: ({ botId, showHeader }: { botId: string; showHeader?: boolean }) => <div data-testid="file-manager" data-bot-id={botId} data-show-header={String(showHeader)} />,
+}));
 vi.mock("@/lib/app-navigation", () => ({
   useAppNavigate: () => mocks.navigate,
   useAppSearchParams: () => [new URLSearchParams()],
@@ -40,6 +43,23 @@ async function openSidebar() {
 }
 
 describe("sidebar account controller boundary", () => {
+  it("opens cloud storage for the active Bot in a dialog without leaving the page", async () => {
+    const user = userEvent.setup();
+    render(<UserAvatarMenu variant="sidebar" cloudStorageBotId="active-bot" />);
+    await user.click(screen.getByRole("button", { name: "打开用户菜单" }));
+    await user.click(screen.getByRole("button", { name: "云存储" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "云存储" });
+    expect(dialog).toBeVisible();
+    expect(await within(dialog).findByTestId("file-manager")).toHaveAttribute("data-bot-id", "active-bot");
+    expect(within(dialog).getByTestId("file-manager")).toHaveAttribute("data-show-header", "false");
+    expect(mocks.navigate).not.toHaveBeenCalled();
+
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "云存储" })).not.toBeInTheDocument());
+    expect(screen.getByRole("button", { name: "打开用户菜单" })).toHaveFocus();
+  });
+
   it("shows the former overview account metrics in the sidebar menu", async () => {
     render(<UserAvatarMenu variant="sidebar" />);
     await openSidebar();

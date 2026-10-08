@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode, type Ref } from "react";
 import { Bot, ChevronDown, ChevronRight, Files, Globe, LayoutDashboard, LogOut, MessageSquare, User } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Progress } from "@/components/ui/progress";
@@ -19,6 +19,8 @@ export interface SidebarUserMenuProps {
   overview?: { expiresAt: string; remainingCredits: string; botCount: string; invitedFriends?: string; labels: { expiresAt: string; remainingCredits: string; botCount: string; invitedFriends: string } };
   upgrade?: { href: string; label: string };
   entries: readonly { id: string; kind: "agent" | "account" | "files" | "workbench" | "feedback"; href: string; label: string; external?: boolean }[];
+  onFilesSelect?: () => void;
+  triggerRef?: Ref<HTMLButtonElement>;
   labels: { trigger: string; menu: string; logout: string; language: string };
   languageContent?: ReactNode;
   onSignOut: () => void;
@@ -45,7 +47,7 @@ function SidebarLanguagePopover({ label, children, onMouseEnter, onMouseLeave }:
 }
 
 /** Presentation only; account identity, requests, routes and localization belong to the controller. */
-export function SidebarUserMenu({ open, onOpenChange, name, email, avatarSrc, planLabel, status, credit, overview, upgrade, entries, labels, languageContent, onSignOut }: SidebarUserMenuProps) {
+export function SidebarUserMenu({ open, onOpenChange, name, email, avatarSrc, planLabel, status, credit, overview, upgrade, entries, onFilesSelect, triggerRef, labels, languageContent, onSignOut }: SidebarUserMenuProps) {
   const headingRef = useRef<HTMLHeadingElement>(null);
   const triggerHoveredRef = useRef(false);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -71,7 +73,7 @@ export function SidebarUserMenu({ open, onOpenChange, name, email, avatarSrc, pl
   return <div className="lv-agent-account-menu">
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
-        <button type="button" className="lv-agent-account-trigger" aria-label={labels.trigger}
+        <button ref={triggerRef} type="button" className="lv-agent-account-trigger" aria-label={labels.trigger}
           onMouseEnter={() => { cancelClose(); triggerHoveredRef.current = true; onOpenChange(true); }}
           onMouseLeave={scheduleClose}
           onClickCapture={(event) => { if (triggerHoveredRef.current) event.stopPropagation(); }}>
@@ -117,6 +119,10 @@ export function SidebarUserMenu({ open, onOpenChange, name, email, avatarSrc, pl
         <div className="py-1">
           {entries.map((entry) => {
             const Icon = icons[entry.kind];
+            if (entry.kind === "files" && onFilesSelect) {
+              return <button key={entry.id} type="button" onClick={() => { close(); onFilesSelect(); }}
+                className="lv-sidebar-user-menu-item w-full text-left"><Icon className="size-4 shrink-0" aria-hidden="true" /><span>{entry.label}</span></button>;
+            }
             return <a key={entry.id} href={entry.href} target={entry.external ? "_blank" : undefined} rel={entry.external ? "noopener noreferrer" : undefined}
               onClick={close} className="lv-sidebar-user-menu-item"><Icon className="size-4 shrink-0" aria-hidden="true" /><span>{entry.label}</span></a>;
           })}

@@ -1,6 +1,7 @@
-import { useEffect, useId, useState } from "react";
+import { lazy, Suspense, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSession } from "@/contexts/session-context";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useOpenClaw } from "@/contexts/agent-context";
 import { useRepositories } from "@/contexts/repository-context";
 import { usePaidBillingEnabled, useReferralEnabled } from "@/contexts/runtime-config-context";
@@ -21,7 +22,11 @@ import { PRODUCT_FEEDBACK_URL } from "@/constants/product-feedback";
 import { InternationalLanguageMenu } from "./language-switcher";
 import { SidebarUserMenu, type SidebarUserMenuProps } from "./sidebar-user-menu";
 
-export function SidebarUserMenuController({ showLanguageSwitcher = false }: { showLanguageSwitcher?: boolean }) {
+const TatFileManagerPanel = lazy(() =>
+  import("@/components/domain/tat-file-manager-panel").then((module) => ({ default: module.TatFileManagerPanel })),
+);
+
+export function SidebarUserMenuController({ showLanguageSwitcher = false, cloudStorageBotId }: { showLanguageSwitcher?: boolean; cloudStorageBotId?: string }) {
   const { session, signOut } = useSession();
   const { activePass, modifyingPass, passUpgradeFailed, passesLoading, passesError, bots, botsLoading, botsError, hasResolvedBots } = useOpenClaw();
   const { plans, auth } = useRepositories();
@@ -34,6 +39,8 @@ export function SidebarUserMenuController({ showLanguageSwitcher = false }: { sh
   const [searchParams] = useAppSearchParams();
   const languageId = useId();
   const [open, setOpen] = useState(false);
+  const [cloudStorageOpen, setCloudStorageOpen] = useState(false);
+  const accountTriggerRef = useRef<HTMLButtonElement>(null);
   const [loadedUserId, setLoadedUserId] = useState<string>();
   const [referralStats, setReferralStats] = useState<{ userId: string; count: number } | null>(null);
   const userId = session.user?.id;
@@ -92,11 +99,32 @@ export function SidebarUserMenuController({ showLanguageSwitcher = false }: { sh
   );
   if (shouldShowWorkbenchEntry({ hostname, revealed: hiddenEntriesRevealed })) entries.push({ id: "workbench", kind: "workbench", href: AGENT_SECTION_PATH_BY_ID.workbench, label: t("工作台") });
   if (hiddenEntriesRevealed && !isGlobal) entries.push({ id: "feedback", kind: "feedback", href: PRODUCT_FEEDBACK_URL, label: t("产品反馈") });
-  return <SidebarUserMenu open={open} onOpenChange={(next) => { if (next) setLoadedUserId(userId); setOpen(next); }}
+  return <><SidebarUserMenu open={open} onOpenChange={(next) => { if (next) setLoadedUserId(userId); setOpen(next); }}
     name={session.user?.name || t("用户")} email={session.user?.email || undefined} avatarSrc={avatarImageUrl(session.user?.avatarUrl ?? null)}
     planLabel={planLabel} credit={credit} overview={overview} status={statusText} entries={entries}
+    onFilesSelect={cloudStorageBotId ? () => setCloudStorageOpen(true) : undefined}
+    triggerRef={accountTriggerRef}
     upgrade={canRenew && upgrade.pass && upgrade.pass.pass_id === operablePass?.pass_id && upgrade.options.length > 0 ? { href: `${subscribeHref}/?upgrade_pass_id=${encodeURIComponent(upgrade.pass.pass_id)}`, label: t("升级套餐") } : undefined}
     labels={{ trigger: t("打开用户菜单"), menu: t("账号管理"), logout: t("退出登录"), language: t("语言") }}
     languageContent={isGlobal && showLanguageSwitcher ? <InternationalLanguageMenu id={languageId} ariaLabel={t("语言")} reloadAfterSwitch /> : undefined}
-    onSignOut={() => { navigate("/", { replace: true }); void signOut(); }} />;
+    onSignOut={() => { navigate("/", { replace: true }); void signOut(); }} />
+    <Dialog open={cloudStorageOpen} onOpenChange={setCloudStorageOpen}>
+      <DialogContent
+        className="flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden rounded-lg p-0 md:w-[min(92vw,76rem)]"
+        closeLabel={t("关闭")}
+        onInteractOutside={(event) => event.preventDefault()}
+        onCloseAutoFocus={(event) => { event.preventDefault(); accountTriggerRef.current?.focus(); }}
+      >
+        <DialogHeader className="mb-0 shrink-0 border-b border-[var(--border-subtle)] px-5 py-4 pr-12">
+          <DialogTitle>{t("云存储")}</DialogTitle>
+          <DialogDescription>{t("查看、管理云存储中的文件")}</DialogDescription>
+        </DialogHeader>
+        <div className="min-h-0 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6">
+          {cloudStorageOpen && cloudStorageBotId && <Suspense fallback={<p role="status">{t("加载中...")}</p>}>
+            <TatFileManagerPanel botId={cloudStorageBotId} showHeader={false} />
+          </Suspense>}
+        </div>
+      </DialogContent>
+    </Dialog>
+  </>;
 }

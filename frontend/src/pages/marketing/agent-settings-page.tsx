@@ -6473,7 +6473,7 @@ export const AgentSettingsPage = ({
                     <div className="lv-agents-sidebar-footer">
                       <div className="lv-agent-account-footer">
                         {(isDesktop || mobileChatNavOpen) && (
-                          <UserAvatarMenu showLanguageSwitcher={isGlobal} variant="sidebar" />
+                          <UserAvatarMenu showLanguageSwitcher={isGlobal} variant="sidebar" cloudStorageBotId={activeBot?.id} />
                         )}
                       </div>
                     </div>
