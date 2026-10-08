@@ -61,7 +61,10 @@ function AgentBotRailItem({ bot, active, mobile, restarting, execDebugCommand, o
       <ModelActionTooltip content={`${name} · ${statusLabel}`} side={mobile ? "auto" : "right"} focusable={false}>
         {active ? (
           <button type="button" className={buttonClassName} aria-label={label} aria-current="true"
-            style={!mobile ? { backgroundColor: `color-mix(in srgb, ${accentColor} 8%, white)` } : undefined}>
+            style={!mobile ? {
+              backgroundColor: `color-mix(in srgb, ${accentColor} 8%, white)`,
+              boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${accentColor} 24%, white)`,
+            } : undefined}>
             {avatar}
           </button>
         ) : (

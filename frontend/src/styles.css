@@ -510,6 +510,18 @@ html.lw-settings-scrollbar-stable {
     margin: 0;
   }
 
+  /* Bot rail: header is 60px, and the chat divider must meet the sidebar border. */
+  .lv-agent-bot-rail-enabled.lv-agent-embedded-chat-page .lv-agent-settings-content {
+    --lightvela-console-header-height: 60px;
+    padding-left: 0;
+  }
+
+  /* Collapsed grid columns are 16px wider than the 112px sidebar. */
+  .lv-agent-bot-rail-enabled.lv-agent-embedded-chat-page.lv-agent-sidebar-collapsed .lv-agent-settings-content {
+    width: calc(100% + 16px);
+    margin-left: -16px;
+  }
+
   header.lv-agent-sidebar-header > div {
     height: 68px !important;
     max-width: none;
@@ -1137,7 +1149,7 @@ a {
     flex: 1;
     flex-direction: column;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
     overflow-y: auto;
     overscroll-behavior: contain;
     padding: 12px 0 8px;
@@ -1150,7 +1162,7 @@ a {
 
   .lv-agent-bot-rail-list .lv-agent-bot-rail-create::before {
     position: absolute;
-    inset: 6px 4px;
+    inset: 6px;
     border: 1px dashed #c4cbd5;
     border-radius: 8px;
     content: "";
@@ -1924,6 +1936,20 @@ a {
 
   .lv-agent-bot-rail-enabled .lv-agents-sidebar-tabs {
     width: 188px;
+  }
+
+  /* Bot rail: items, chat header and session labels share the 12px group-label inset. */
+  .lv-agent-bot-rail-enabled:not(.lv-agent-sidebar-collapsed) .lv-agents-nav-group .lv-agents-nav-item {
+    padding-left: 12px;
+  }
+
+  .lv-agent-bot-rail-enabled:not(.lv-agent-sidebar-collapsed) .lv-agents-chat-header {
+    padding-left: 12px;
+  }
+
+  .lv-agent-bot-rail-enabled:not(.lv-agent-sidebar-collapsed) .lv-agents-session-group-label,
+  .lv-agent-bot-rail-enabled:not(.lv-agent-sidebar-collapsed) .lv-agents-session-hint {
+    padding-left: 12px;
   }
 
   .lv-agents-sidebar {

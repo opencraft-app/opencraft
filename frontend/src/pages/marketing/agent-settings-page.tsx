@@ -8,6 +8,7 @@ import {
   Check,
   Copy,
   Globe2,
+  House,
   LayoutDashboard,
   PanelLeft,
   MessageCircle,
@@ -6134,7 +6135,7 @@ export const AgentSettingsPage = ({
                           className={cn("lv-agents-sidebar-tab", sidebarTab === "daily" && "is-active")}
                           onClick={handleSidebarDailyTabClick}
                         >
-                          <MessageSquare className="lv-agents-sidebar-tab-icon size-4" aria-hidden="true" />
+                          <House className="lv-agents-sidebar-tab-icon size-4" aria-hidden="true" />
                           <span className="lv-agents-sidebar-tab-label">{t("日常")}</span>
                         </button>)}
                         {withCollapsedNavTooltip(t("探索"),
