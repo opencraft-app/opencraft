@@ -75,6 +75,12 @@ const (
 	desktopInstallStartedMark  = "DESKTOP_INSTALL_STARTED"
 	// 安装总超时（秒）：apt 装图形层通常 2-5 分钟。
 	desktopInstallTimeoutS = 600
+	// 进度轮询持续失败判死阈值（秒）：安装脚本已在 sandbox 里 nohup 独立跑着，
+	// 读进度失败不代表安装失败。TAT 限流/网络抖动等可恢复失败会短暂连续出现，
+	// 若按「固定失败次数」判死会被轮询间隔放大成几十秒误杀正在装的桌面；故改为
+	// 按「持续失败时长」判定：仅当读进度持续失败超过本阈值（与轮询间隔解耦）才
+	// 带确切原因快速失败，既不误杀可恢复抖动，也不静默卡满整个超时窗口。
+	desktopInstallFailureGraceS = 120
 
 	// ingressproxy 对外泛域名（证书需覆盖 *-<sandboxID>）。
 	desktopIngressDomainEnv = "DESKTOP_INGRESS_DOMAIN"
@@ -217,6 +223,13 @@ func (s *desktopSession) installSnapshot() (progress int, message string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.installProgress, s.installMessage
+}
+
+// isInstalling 线程安全读安装标记，供测试等待后台安装 goroutine 收敛。
+func (s *desktopSession) isInstalling() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.installing
 }
 
 // desktopSessions 包级会话表：instanceID → *desktopSession。
@@ -664,7 +677,14 @@ func (l *logic) startDesktopInstall(parent pctx.Context, session *desktopSession
 		return // 已有安装在进行
 	}
 	job, cancel := context.WithTimeout(context.Background(), desktopInstallTimeoutS*time.Second)
-	ctx := pctx.NewContext(job).WithUserID(parent.GetUserID()).WithRegion(parent.GetRegion())
+	// 后台安装经 TAT 下发命令，而 TAT endpoint（/tat/*）鉴权只认 ctx 透传的用户
+	// session（见 adapter.applySandboxSessionAuth）。请求早已返回，这里必须从
+	// parent 显式继承 SessionAuth，否则后台 ctx 的 session 为空，TAT 调用会以
+	// "authentication required: authentication failed" 失败，桌面安装永远起不来。
+	ctx := pctx.NewContext(job).
+		WithUserID(parent.GetUserID()).
+		WithRegion(parent.GetRegion()).
+		WithSessionAuth(parent.GetSessionAuthorization(), parent.GetSessionCookie())
 	ctx.SetGormDB(parent.GormDB())
 	go func() { defer cancel(); l.runDesktopInstall(ctx, sandboxID, session) }()
 }
@@ -687,12 +707,20 @@ func (l *logic) runDesktopInstall(ctx pctx.Context, sandboxID string, session *d
 
 	// 2. 轮询进度文件，直到 DONE / FAIL / 超时。
 	deadline := time.Now().Add(desktopInstallTimeoutS * time.Second)
+	// 单次轮询失败（网络抖动、TAT 限流等）不致命；只有「持续失败超过宽限时长」才
+	// 往往是真实错误（如 TAT 鉴权失效、sandbox 不可达）。按持续失败时长判定、而非
+	// 固定失败次数，可与轮询间隔解耦，既不把可恢复抖动误杀成失败、也不静默卡满整个
+	// 安装超时窗口。failureSince 记首次失败时刻（零值表示当前无连续失败），
+	// lastFailureDetail 保留最后一次失败原因，供超时/判死时拼进 reason 便于定位。
+	var failureSince time.Time
+	var lastFailureDetail string
+	failureGrace := time.Duration(desktopInstallFailureGraceS) * time.Second
 	for time.Now().Before(deadline) {
 		timer := time.NewTimer(desktopInstallPollInterval)
 		select {
 		case <-ctx.Done():
 			timer.Stop()
-			session.endInstall(transport.DesktopSessionStatusFailed, "desktop install timed out")
+			session.endInstall(transport.DesktopSessionStatusFailed, desktopInstallTimeoutReason(lastFailureDetail))
 			return
 		case <-timer.C:
 		}
@@ -703,8 +731,25 @@ func (l *logic) runDesktopInstall(ctx pctx.Context, sandboxID string, session *d
 				session.endInstall(transport.DesktopSessionStatusFailed, "desktop target changed")
 				return
 			}
-			continue // 单次轮询失败不致命，继续重试直至超时
+			lastFailureDetail = "poll desktop install progress"
+			if perr != nil {
+				lastFailureDetail = perr.Error()
+			} else if res != nil {
+				lastFailureDetail = sandboxCommandFailureDetail(res)
+			}
+			now := time.Now()
+			if failureSince.IsZero() {
+				failureSince = now
+			}
+			if now.Sub(failureSince) >= failureGrace {
+				session.endInstall(transport.DesktopSessionStatusFailed, "desktop install progress unreachable: "+lastFailureDetail)
+				return
+			}
+			continue // 可恢复抖动：继续重试直至持续失败超过宽限时长或整体超时
 		}
+		// 读到一次成功进度即视为连通性恢复，重置连续失败计时。
+		failureSince = time.Time{}
+		lastFailureDetail = ""
 		out := desktopCommandOutput(res)
 		if strings.Contains(out, desktopInstallFailMarker) {
 			session.endInstall(transport.DesktopSessionStatusFailed, "desktop install failed on sandbox (see /tmp/vela-desktop-install.log)")
@@ -720,7 +765,19 @@ func (l *logic) runDesktopInstall(ctx pctx.Context, sandboxID string, session *d
 			session.setInstallProgress(p, "")
 		}
 	}
-	session.endInstall(transport.DesktopSessionStatusFailed, "desktop install timed out")
+	session.endInstall(transport.DesktopSessionStatusFailed, desktopInstallTimeoutReason(lastFailureDetail))
+}
+
+// desktopInstallTimeoutReason 组装安装超时/ctx 结束时的失败原因。安装脚本在
+// sandbox 里独立运行，ctl 侧超时不代表知道真正卡在哪；若有最近一次读进度失败的
+// 底层原因，拼进 reason，避免「为什么 600s 没装完」只剩一句 timed out 无从排查
+// （正是本次现网定位最缺的信息）。
+func desktopInstallTimeoutReason(lastFailureDetail string) string {
+	const base = "desktop install timed out"
+	if strings.TrimSpace(lastFailureDetail) == "" {
+		return base
+	}
+	return base + " (last progress error: " + lastFailureDetail + ")"
 }
 
 // Serialize local TAT dispatches and fence detached jobs. This cannot revoke an

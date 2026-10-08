@@ -739,3 +739,16 @@ Sandbox replacements 消费进 runtime ConfigMap，CTL 创建任务 worker optio
 再发布 CTL new-instance hook；回退先关闭 CTL Skill map 再关闭 Sandbox Skill allowlist。
 源配置/render 通过不等于 live GitOps/Argo revision/image 或新实例业务验收；本轮无实际发布。
 详细步骤及已交接 ID 见 [建站 Skill auth fallback](../operations/website-skill-auth-fallback.md)。
+
+## 现网云桌面环境配置的真源归属（2026-10-08）
+
+`CLOUD_DESKTOP_ENABLED` 与 `DESKTOP_INGRESS_DOMAIN` 是 CTL 云桌面的环境级业务配置，
+其真源必须落在 `master` 的 `argocd/services/ctl/{shprod,sgprod}/ctl-platform.env`，而非只手工
+写入 `gitops` 分支。CI 从 `master` 的 source env 渲染 deploy-facing 清单回写 `gitops`，
+仅 image pin 等制品字段由发布流程覆盖；源 env 中缺失的业务键在每次渲染后不会出现在 `gitops`。
+因此只改 `gitops`（如早期 !4837）的桌面开关与泛域名会在下一次 CTL 发布渲染时被覆盖丢失，
+表现为桌面就绪后拼接 wss 地址报 `DESKTOP_NOT_CONFIGURED`。本次把两站点的两键补回 `master`
+source env：shprod=`desktop.lightvela.tech`（cert bAnCmJOZ / CLB lb-ohkm8fm5），
+sgprod=`desktop.lightvela.site`（cert bAnD57eL / CLB lb-8kenwgvc）。该改动只调整 CTL 运行时
+业务配置，不改变镜像构建、制品晋级、Argo Application 或同步模型；CLB 证书（SNI）、泛解析 DNS
+与含云桌面代码的 CTL 镜像仍是独立的发布前置，源配置 render 通过不等于 live 验收。

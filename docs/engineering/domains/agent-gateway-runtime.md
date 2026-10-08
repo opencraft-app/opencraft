@@ -861,3 +861,17 @@ Skill POST 不盲重试，metadata 成功不等于 Skill 已 UPDATED；其它 cr
 [建站 Skill auth fallback 运维说明](../operations/website-skill-auth-fallback.md)。
 
 远端/Web 的工作区文件浏览仍通过当前 Host 的 AppServer 文件系统端口读取、监听和写入；浏览器不成为文件真相来源。OpenCraft Web 文件面板把读取结果视为可刷新的服务端快照，未保存草稿按 Host 与路径隔离。切换文件和迟到响应不能覆盖草稿，异步写入必须锁定提交时的 Host、路径与文本；检测到磁盘内容与草稿基线不同则阻止覆盖保存，交由用户处理。文件类型图标和 CSS/JS 语言渲染属于 Web 展示层，不改变 Host 文件协议。
+
+## CTL 云桌面后台安装的会话鉴权传播（2026-10-08）
+
+CTL 云桌面准备把实际安装编排放在 POST 返回后的独立后台任务里执行，但该任务经 Sandbox
+adapter 的 TAT 命令通道（`/tat/*`）下发命令，而该通道的鉴权只认请求 `ctx` 透传的用户
+session（`applySandboxSessionAuth` 注入 Authorization/Cookie），不存在服务级凭据回退。
+因此后台编排的派生 `ctx` 必须显式继承发起请求的 `SessionAuth`，否则安装命令鉴权失败
+（`authentication failed`），安装无法真正落到实例机器。provision 探测阶段走的是 PTY
+流式 endpoint（`/internal/.../exec-stream`，`X-API-Key` 服务级鉴权），不依赖 session，
+故探测可成功而安装失败——两条通道鉴权来源不同是该责任面的既定语义，安装路径不得假定
+存在服务级凭据。后台编排对进度轮询的瞬时失败可有界重试，但连续失败须带原因快速判失败，
+不得把持续的鉴权/不可达故障静默停留在“安装中”直至整体超时。TAT 命令按进程内绑定锁串行化、
+换用户/换 Sandbox/失败重试隔离旧状态等既有约束不变。实现见 `ctl/pkg/instance/desktop.go`，
+通道鉴权见 `ctl/pkg/adapter/sandbox/adapter.go`。
