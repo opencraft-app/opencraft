@@ -456,6 +456,25 @@ that acceptance is reported separately in [the native speech plan](../design/nat
 
 ### Thread lifecycle ownership
 
+Conversation pinning is native Server metadata, not a Sidebar preference or a
+bridge database. The `opencraft/thread-pins` extension declares a discovery
+adapter; its list response separately proves support for the current initialized
+connection. Codex uses its reserved native pinned section and metadata-only
+section moves; legacy peers without that section remain unsupported. Hermes
+uses the already-authenticated Dashboard HTTP channel, passes the owning profile
+in each PATCH, and preserves native compression-lineage persistence. DSH has no
+fallback pin store. Neither discovery nor mutation resumes or starts a Thread.
+
+The normalized pinned catalog returns complete summaries beyond recent pages.
+Runtime merges them once into the initial Sidebar catalog; pinned rows have a
+separate visible group and do not consume the recent-row display budget.
+The native backend remains authoritative after reload. In-memory write tails
+serialize each Thread's intents, and a metadata revision fences reads issued
+before a write. A revoked connection cannot publish a late pin result or replay
+its write on a successor. Discovery failures remain errors, not unpin-all or
+unsupported success. Catalog notifications and connection recovery invalidate
+the same shared queries; no menu owns a polling loop or persistent pin set.
+
 DSH display recovery uses [JIT history](../design/dsh-jit-history.md): native
 message pages retain their original unit and are mapped to requested Turn
 windows without a persistent event mirror. Reading a conversation does not

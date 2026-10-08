@@ -1,5 +1,16 @@
-const catalogChanges = new Set(["thread/started", "thread/name/updated", "thread/archived", "thread/unarchived", "thread/closed", "turn/started", "turn/completed"]);
+const catalogChanges = new Set(["thread/started", "thread/name/updated", "thread/archived", "thread/unarchived", "thread/closed", "thread/deleted", "thread/pins/updated", "turn/started", "turn/completed"]);
 export function changesThreadCatalog(method: string): boolean { return catalogChanges.has(method); }
+
+/** The first page backfills native pins outside the recent window. Later
+ * recent pages may contain those same IDs; retain the authoritative first row. */
+export function mergeThreadCatalogPages<T extends { readonly id: string }>(pages: readonly { readonly data: readonly T[] }[]): T[] {
+  const seen = new Set<string>();
+  return pages.flatMap(page => page.data.filter(row => {
+    if (seen.has(row.id)) return false;
+    seen.add(row.id);
+    return true;
+  }));
+}
 
 /** A missing source is not an empty per-Host catalog. Quiet status polling of
  * an already-known source must not flash a loading row every five seconds. */

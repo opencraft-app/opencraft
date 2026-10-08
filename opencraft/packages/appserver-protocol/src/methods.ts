@@ -1,4 +1,5 @@
 import type { AppServerProcessMethodMap } from "./process";
+import type { ThreadPinsMethodMap } from "./thread-pins";
 import type { AppServerAttachmentMethodMap } from "./attachments";
 import type { HostDesktopCredential } from "./desktop";
 import type {
@@ -224,7 +225,9 @@ export type FsReadFileResponse = GeneratedFsReadFileResponse;
 export type ThreadForkParams = GeneratedThreadForkParams;
 export type ThreadForkResponse = GeneratedThreadForkResponse;
 export type ThreadListParams = GeneratedThreadListParams;
-export type ThreadListResponse = GeneratedThreadListResponse;
+export type ThreadListResponse = Omit<GeneratedThreadListResponse, "data"> & {
+  data: Array<GeneratedThreadListResponse["data"][number] & { pinned?: boolean }>;
+};
 export type TurnStartParams = GeneratedTurnStartParams;
 export type TurnStartResponse = GeneratedTurnStartResponse;
 export type TurnSteerParams = GeneratedTurnSteerParams;
@@ -311,7 +314,7 @@ export interface ThreadArchiveParams {
  * packages can add protocol methods without introducing an untyped index
  * signature into the core client.
  */
-export interface AppServerMethodMap extends AppServerBotMethodMap, AppServerCodexAccountMethodMap, AppServerProcessMethodMap, AppServerAttachmentMethodMap, ProfileSkillsMethodMap {
+export interface AppServerMethodMap extends AppServerBotMethodMap, AppServerCodexAccountMethodMap, AppServerProcessMethodMap, AppServerAttachmentMethodMap, ProfileSkillsMethodMap, ThreadPinsMethodMap {
   "thread/goal/get": { params: ThreadGoalGetParams; result: ThreadGoalGetResponse };
   "thread/goal/set": { params: ThreadGoalSetParams; result: ThreadGoalSetResponse };
   "thread/goal/clear": { params: ThreadGoalClearParams; result: ThreadGoalClearResponse };

@@ -1,5 +1,13 @@
 # 工作区不变量
 
+## Native conversation pinning
+
+- PIN-01：置顶由原生 Server 持久化；OpenCraft 不维护第二份数据库或浏览器置顶集合，DSH 不支持时不补本地 fallback。
+- PIN-02：接口准入不等于原生能力。当前连接成功发现支持后才显示置顶菜单；暂时失败不冒充不支持或空置顶列表。
+- PIN-03：置顶读写只处理元数据，不 Resume/Start；Hermes 明确携带所属 profile，身份歧义拒绝写入，压缩链由 Hermes 自身处理。
+- PIN-04：置顶目录返回完整摘要、独立于近期窗口；侧栏去重后单独分组，置顶不占十条近期预算。刷新/重连从后端重新读取。
+- PIN-05：同一会话写入串行；操作前列表不能覆盖操作后状态；连接撤销拒绝晚到结果且不重放写入。菜单复用现有受控互斥 owner，不拥有存储或轮询。
+
 ## Desktop input ownership
 
 Desktop control presentation preserves the mounted control strip's geometry

@@ -1,5 +1,7 @@
 import {
   OPENCRAFT_METHOD_ACCESS_EXTENSION,
+  OPENCRAFT_THREAD_PINS_EXTENSION,
+  OPENCRAFT_THREAD_PINS_CAPABILITY,
   OPENCRAFT_THREAD_LIFECYCLE_EXTENSION,
   OPENCRAFT_THREAD_START_DURABILITY_EXTENSION,
   OPENCRAFT_FIRST_TURN_DURABILITY_CAPABILITY,
@@ -19,6 +21,7 @@ export const CODEX_NATIVE_SHARED_METHODS = Object.freeze([
   "thread/list", "thread/read", "thread/turns/list", "thread/items/list", "thread/loaded/list",
   "thread/start", "thread/resume", "thread/fork", "thread/unsubscribe",
   "thread/name/set", "thread/archive", "thread/unarchive", "thread/compact/start",
+  "opencraft/thread-pins/list", "opencraft/thread-pins/set",
   "turn/start", "turn/steer", "turn/interrupt",
   "fs/readDirectory", "fs/getMetadata", "fs/readFile", "fs/writeFile", "fs/createDirectory",
 ] as const);
@@ -42,6 +45,7 @@ export function projectSharedNativeCodexInitialize(value: unknown): Record<strin
     ephemeral: false, injectItems: false, delete: false,
   };
   extensions[OPENCRAFT_METHOD_ACCESS_EXTENSION] = { version: 1, methods: CODEX_NATIVE_SHARED_METHODS };
+  extensions[OPENCRAFT_THREAD_PINS_EXTENSION] = OPENCRAFT_THREAD_PINS_CAPABILITY;
   extensions[OPENCRAFT_THREAD_START_DURABILITY_EXTENSION] = OPENCRAFT_FIRST_TURN_DURABILITY_CAPABILITY;
   return { ...result, capabilities: { ...capabilities, extensions } };
 }

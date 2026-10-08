@@ -12,6 +12,8 @@ export interface WorkbenchThread {
   updatedAt: number;
   status: ThreadStatus;
   unread?: boolean;
+  /** Native backend metadata, never a client-local preference. */
+  pinned?: boolean;
 }
 
 export interface WorkbenchFileChange {

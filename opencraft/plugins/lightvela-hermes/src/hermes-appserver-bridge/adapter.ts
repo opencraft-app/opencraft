@@ -1,4 +1,5 @@
 import { HermesRpcError, type HermesRpcClient } from "./rpc-transport";
+import type { HermesSessionMetadataClient } from "./session-metadata-client";
 import type { HermesHistoryClient } from "./history-client";
 import {
   decodeHermesModelSelection,
@@ -672,7 +673,7 @@ function makeThread(summary: HermesSessionSummary, cwd: string, turns: AppServer
       profile: summary.profile ?? "default",
     } },
     forkedFromId: null, parentThreadId: null, preview: title, ephemeral: false, section: null, sectionEnteredAt: null,
-    projectId: null, historyMode: "message-window", modelProvider: "hermes", createdAt: when, updatedAt: when, recencyAt: when,
+    projectId: null, historyMode: "message-window", modelProvider: "hermes", createdAt: when, updatedAt: summary.last_active ?? when, recencyAt: summary.last_active ?? when,
     status: running ? { type: "active", activeFlags: [] } : { type: "idle" }, path: null, cwd,
     cliVersion: "hemesclient/0.2.0", source: { custom: "hermes" }, canAcceptDirectInput: true, threadSource: null,
     agentNickname: null, agentRole: null, gitInfo: null, name: title, turns,
@@ -789,6 +790,40 @@ interface PendingClarifyOwnership {
 }
 
 export class HermesAppServerAdapter {
+  async listPinnedThreads(client: HermesSessionMetadataClient, signal?: AbortSignal) {
+    const profiles = this.profileScope !== null ? [this.profileScope] : (await this.listProfiles()).map(row => row.name.trim() || "default");
+    if (profiles.length === 0) throw new Error("无法确认会话所属连接，请稍后重试");
+    const bindings = new Map<string, string>();
+    const data: AppServerThread[] = [];
+    for (const profile of new Set(profiles)) {
+      const result = await client.readPinned(profile, signal);
+      throwIfSignalAborted(signal);
+      if (!result.supported) return { supported: false, data: [] };
+      for (const row of result.rows) {
+        const previous = bindings.get(row.id) ?? this.profileByStored.get(row.id);
+        if (previous !== undefined && previous !== profile) throw new Error("Ambiguous Hermes session profile identity");
+        bindings.set(row.id, profile);
+        data.push(makeThread(row, row.cwd ?? this.defaultCwd, [], this.payloadByStored.get(row.id)?.running === true));
+      }
+    }
+    for (const [id, profile] of bindings) this.profileByStored.set(id, profile);
+    return { supported: true, data };
+  }
+
+  async setThreadPinned(client: HermesSessionMetadataClient, threadId: string, pinned: boolean, signal?: AbortSignal) {
+    if (!threadId || typeof pinned !== "boolean") throw new Error("Invalid Hermes pin command");
+    // Unlike execution's resolveThreadProfile fallback, pinning never resumes a session.
+    let profile = this.profileScope ?? this.profileByStored.get(threadId);
+    if (profile === undefined || profile === null) {
+      await this.listPinnedThreads(client, signal);
+      profile = this.profileByStored.get(threadId);
+    }
+    if (!profile) throw new Error("无法确认会话所属连接，请刷新列表后重试");
+    await client.setPinned(threadId, profile, pinned, signal);
+    throwIfSignalAborted(signal);
+    this.emit("thread/pins/updated", { threadId });
+    return { pinned };
+  }
   private skillValidator?: (profile: string, skills: readonly { name: string; path: string }[]) => Promise<void>;
   setSkillValidator(validator: (profile: string, skills: readonly { name: string; path: string }[]) => Promise<void>): void { this.skillValidator = validator; }
   composerProfile(): string {
@@ -2458,6 +2493,10 @@ export class HermesAppServerAdapter {
   }
 
   private projectGatewayEvent(event: Record<string, unknown>): void {
+    if (event.type === "sessions.changed") {
+      this.emit("thread/pins/updated", {});
+      return;
+    }
     const live = typeof event.session_id === "string" ? event.session_id : "";
     const threadId = this.storedByLive.get(live);
     if (threadId === undefined) return;

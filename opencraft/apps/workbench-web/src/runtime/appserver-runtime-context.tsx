@@ -14,7 +14,7 @@ import {
 } from "@tanstack/react-query";
 import { composerCapabilitiesOptions, invalidateComposerCapabilities, changesComposerCapabilities } from "./composer-capabilities-query";
 import { requiresEmbeddedLightVelaAccountPreflight } from "./lightvela-web-bootstrap";
-import { changesThreadCatalog, sidebarThreadCatalogQueryKey, threadCatalogPhase, managedCatalogDiscoveryPhase, type HostThreadCatalogState } from "./thread-catalog-query";
+import { changesThreadCatalog, mergeThreadCatalogPages, sidebarThreadCatalogQueryKey, threadCatalogPhase, managedCatalogDiscoveryPhase, type HostThreadCatalogState } from "./thread-catalog-query";
 import { webSshDiscoveryLifecycle } from "./web-ssh-discovery";
 import {
   AppServerRpcError,
@@ -201,7 +201,8 @@ export interface AppServerHostCatalog {
   readonly connectorApprovals: ConnectorApprovalQueue;
   readonly agentRuntimes: AgentRuntimeAccess;
   readonly threadManagement: {
-    capabilities(hostId: string): { fork: boolean; rename: boolean; archive: boolean; delete: boolean };
+    capabilities(hostId: string): { fork: boolean; rename: boolean; archive: boolean; delete: boolean; pin?: boolean };
+    setPinned(hostId: string, threadId: string, pinned: boolean): Promise<void>;
     rename(hostId: string, threadId: string, name: string): Promise<void>;
     delete(hostId: string, threadId: string): Promise<void>;
     fork(hostId: string, threadId: string): Promise<string>;
@@ -1817,7 +1818,7 @@ export function AppServerRuntimeProvider({
   }
   const composerController = conversationView.composer;
   const threadManagement = useMemo<AppServerHostCatalog["threadManagement"]>(() => {
-    const manager = async (hostId: string, operation: "rename" | "archive" | "delete" | "fork") => {
+    const manager = async (hostId: string, operation: "rename" | "archive" | "delete" | "fork" | "pin") => {
       const host = await registry.ensureConnected(hostId);
       if (!host.resources.threads.capabilities?.()[operation]) throw new Error("此宿主未接通该会话操作");
       return host.resources.threads;
@@ -1825,6 +1826,7 @@ export function AppServerRuntimeProvider({
     return {
       capabilities: hostId => registry.peekRuntime(hostId)?.resources.threads.capabilities?.() ?? { rename: false, archive: false, delete: false, fork: false },
       rename: async (hostId, id, name) => { const port = await manager(hostId, "rename"); await port.rename!(id, name); },
+      setPinned: async (hostId, id, pinned) => { const port = await manager(hostId, "pin"); await port.setPinned!(id, pinned); },
       delete: async (hostId, id) => { const port = await manager(hostId, "delete"); await port.delete!(id); },
       archive: async (hostId, id) => { const port = await manager(hostId, "archive"); await port.archive!(id); },
       unarchive: async (hostId, id) => { const port = await manager(hostId, "archive"); await port.unarchive!(id); },
@@ -2086,7 +2088,7 @@ export function useThreadCatalog(): {
     staleTime: 30_000,
   });
   const protocolThreads = useMemo(
-    () => query.data?.pages.flatMap((page) => page.data) ?? [],
+    () => mergeThreadCatalogPages(query.data?.pages ?? []),
     [query.data],
   );
   const threads = useMemo(() => protocolThreads.map((thread) => projectAppServerThread(thread)), [protocolThreads]);
