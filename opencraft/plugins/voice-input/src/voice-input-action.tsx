@@ -1,5 +1,5 @@
 import { Mic, MicOff } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import type { ComposerActionHost } from "@opencraft/extension-react";
 import type { ComposerTransientTextInput, ComposerAudioLevels } from "@opencraft/composer-core";
@@ -13,6 +13,7 @@ import type {
 } from "./speech-input-provider";
 
 type VoiceInputPhase = "idle" | "starting" | "listening" | "transcribing" | "failed" | "error";
+const noAvailabilitySubscription = () => () => undefined;
 
 export function createVoiceInputAction(provider: SpeechInputProvider) {
   return function VoiceInputAction({
@@ -50,7 +51,7 @@ export function createVoiceInputAction(provider: SpeechInputProvider) {
     }, []);
     const [phase, setPhase] = useState<VoiceInputPhase>("idle");
     const [error, setError] = useState<SpeechInputError | null>(null);
-    const available = provider.isAvailable();
+    const available = useSyncExternalStore(provider.subscribe ?? noAvailabilitySubscription, () => provider.isAvailable(), () => false);
 
     const cancel = () => {
       pressGesture.reset(); holdFinishRef.current = false;

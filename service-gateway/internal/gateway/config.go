@@ -61,6 +61,7 @@ type Config struct {
 	AllowedOrigins    []string                  `yaml:"allowed_origins"`
 	TrustedProxyCIDRs []string                  `yaml:"trusted_proxy_cidrs"`
 	Collaboration     *CollaborationRouteConfig `yaml:"collaboration"`
+	Speech            *SpeechConfig             `yaml:"speech"`
 	Routes            []Route                   `yaml:"routes"`
 	WorkerActions     WorkerActionsConfig       `yaml:"worker_actions"`
 }
