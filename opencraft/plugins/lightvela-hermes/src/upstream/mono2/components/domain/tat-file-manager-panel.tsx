@@ -3,6 +3,7 @@ import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } fro
 import { CheckCircle, ChevronRight, Download, Eye, EyeOff, File, FileArchive, FileCode2, FileText, Folder, FolderPlus, Loader2, PencilLine, RefreshCw, Trash2, Undo2, Upload, XCircle } from "lucide-react";
 import { AgentSectionHeader } from "./agent-section-header";
 import { Button } from "../ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../ui/dialog";
 import { Input } from "../ui/input";
 import { useRepositories } from "../../contexts/repository-context";
 import { useT } from "../../i18n/t";
@@ -396,6 +397,8 @@ export const TatFileManagerPanel = ({ botId, showHeader = true }: TatFileManager
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const pathInputRef = useRef<HTMLInputElement | null>(null);
   const pathControlsRef = useRef<HTMLDivElement | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const deleteButtonRef = useRef<HTMLButtonElement | null>(null);
   const createFolderInputRef = useRef<HTMLInputElement | null>(null);
   const renameInputRef = useRef<HTMLInputElement | null>(null);
   const downloadTriggerIframesRef = useRef<Set<DownloadTriggerIframe>>(new Set());
@@ -410,6 +413,7 @@ export const TatFileManagerPanel = ({ botId, showHeader = true }: TatFileManager
   const [renameDraft, setRenameDraft] = useState("");
   const [files, setFiles] = useState<TsshFileInfo[]>([]);
   const [selectedName, setSelectedName] = useState<string | null>(null);
+  const [fileToDelete, setFileToDelete] = useState<TsshFileInfo | null>(null);
   const [showHiddenFiles, setShowHiddenFiles] = useState(false);
   const [status, setStatus] = useState<FileManagerStatus>("idle");
   const [notice, setNotice] = useState<string | null>(null);
@@ -513,6 +517,7 @@ export const TatFileManagerPanel = ({ botId, showHeader = true }: TatFileManager
     setRenameDraft("");
     setFiles([]);
     setSelectedName(null);
+    setFileToDelete(null);
     setNotice(null);
     setError(null);
     setProgress(null);
@@ -929,18 +934,16 @@ export const TatFileManagerPanel = ({ botId, showHeader = true }: TatFileManager
     }
   };
 
-  const deleteSelected = async () => {
-    if (!selectedFile) {
-      return;
-    }
+  const deleteSelected = async (file: TsshFileInfo) => {
     setStatus("working");
     setError(null);
     try {
-      const remotePath = managedChildPath(path, selectedFile.name);
+      const remotePath = managedChildPath(path, file.name);
       if (!remotePath) {
         throw new Error(t("只能访问 {{path}} 目录下的文件和文件夹。", { path: MANAGED_TAT_FILE_ROOT }));
       }
-      await runWithReconnectedClient((client) => client.deleteFile(remotePath, isDirectory(selectedFile)));
+      await runWithReconnectedClient((client) => client.deleteFile(remotePath, isDirectory(file)));
+      setFileToDelete(null);
       setNotice(t("已删除选中文件。"));
       await loadPath(path);
       await loadStorageCapacity();
@@ -1092,7 +1095,7 @@ export const TatFileManagerPanel = ({ botId, showHeader = true }: TatFileManager
     : 0;
 
   return (
-    <div className="lv-tat-files-panel w-full min-w-0 max-w-full space-y-5 overflow-x-clip">
+    <div ref={panelRef} tabIndex={-1} className="lv-tat-files-panel w-full min-w-0 max-w-full space-y-5 overflow-x-clip">
       {showHeader && <AgentSectionHeader
         title={t("云存储")}
         description={t("查看、管理云存储中的文件")}
@@ -1288,7 +1291,7 @@ export const TatFileManagerPanel = ({ botId, showHeader = true }: TatFileManager
               </Button>
             </ActionTooltip>
             <ActionTooltip label={deleteTooltip}>
-              <Button type="button" variant="destructive" onClick={() => void deleteSelected()} disabled={busy || !selectedFile}>
+              <Button ref={deleteButtonRef} type="button" variant="destructive" onClick={() => { setError(null); setFileToDelete(selectedFile); }} disabled={busy || !selectedFile}>
                 <Trash2 className="size-4" />
                 {t("删除")}
               </Button>
@@ -1455,6 +1458,45 @@ export const TatFileManagerPanel = ({ botId, showHeader = true }: TatFileManager
           )}
         </div>
       </div>
+
+      <Dialog open={fileToDelete !== null} onOpenChange={(open) => { if (!open && !busy) setFileToDelete(null); }}>
+        <DialogContent
+          role="alertdialog"
+          className="rounded-lg p-5 md:w-[28rem]"
+          closeLabel={t("关闭")}
+          onInteractOutside={(event) => event.preventDefault()}
+          onEscapeKeyDown={(event) => { if (busy) event.preventDefault(); }}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            if (deleteButtonRef.current && !deleteButtonRef.current.disabled) deleteButtonRef.current.focus();
+            else panelRef.current?.focus();
+          }}
+        >
+          <DialogHeader className="mb-5">
+            <DialogTitle>{t("确认删除")}</DialogTitle>
+            <DialogDescription className="text-[var(--danger)]">
+              {fileToDelete ? t("确定要删除「{{name}}」吗？此操作无法恢复。", { name: fileToDelete.name }) : null}
+            </DialogDescription>
+          </DialogHeader>
+          {error ? <p role="alert" className="mb-4 text-sm text-[var(--danger)]">{error}</p> : null}
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" className="rounded-lg" onClick={() => setFileToDelete(null)} disabled={busy}>
+              {t("取消")}
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              className="rounded-lg"
+              disabled={busy || !fileToDelete}
+              aria-label={fileToDelete ? t("确认删除 {{name}}", { name: fileToDelete.name }) : t("确认删除")}
+              onClick={() => { if (fileToDelete) void deleteSelected(fileToDelete); }}
+            >
+              {busy ? <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Trash2 className="size-4" aria-hidden="true" />}
+              {busy ? t("删除中...") : t("删除")}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
