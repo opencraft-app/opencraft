@@ -475,6 +475,12 @@ its write on a successor. Discovery failures remain errors, not unpin-all or
 unsupported success. Catalog notifications and connection recovery invalidate
 the same shared queries; no menu owns a polling loop or persistent pin set.
 
+The LightVela site renders its own Agent sidebar around the embedded Workbench.
+The embedded element passes each Thread's pinned state and the current Host's
+discovered pin capability to that sidebar, and forwards pin commands to the same
+Thread management resource. The site shows pinned rows outside its recent-page
+budget and never persists a second pin list.
+
 DSH display recovery uses [JIT history](../design/dsh-jit-history.md): native
 message pages retain their original unit and are mapped to requested Turn
 windows without a persistent event mirror. Reading a conversation does not

@@ -40,7 +40,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
-import { lazy, Suspense, useState, useEffect, useCallback, useRef, useMemo, useId, useLayoutEffect, type ChangeEvent, type ReactNode } from "react";
+import { Fragment, lazy, Suspense, useState, useEffect, useCallback, useRef, useMemo, useId, useLayoutEffect, type ChangeEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { assetUrl } from "@/lib/asset-url";
@@ -87,7 +87,7 @@ import type {
   LightVelaSession,
   LightVelaSessionActions,
 } from "./agent-chat-panel";
-import { resolveAgentSidebarEmptySessionState, useAgentSidebarSessionList, useAgentSidebarUnreadSessions } from "./agent-sidebar-session-list";
+import { resolveAgentSidebarEmptySessionState, runBotScopedSessionPin, useAgentSidebarSessionList, useAgentSidebarUnreadSessions } from "./agent-sidebar-session-list";
 import { AUTH_SERVICE_UNAVAILABLE_MESSAGE, readStoredAuthToken } from "@/repositories/http-repositories";
 import {
   AGENTS_HOME_PATH,
@@ -2803,6 +2803,8 @@ export const AgentSettingsPage = ({
   const sidebarSessionBotKey = openCraftChatEnabled && activeBot && accountId
     ? JSON.stringify([accountId, activeBot.instanceId ?? activeBot.id, activeBot.profileId ?? "main", isGlobal])
     : null;
+  const sidebarSessionBotKeyRef = useRef(sidebarSessionBotKey);
+  sidebarSessionBotKeyRef.current = sidebarSessionBotKey;
   const {
     sessions: chatSessions,
     loading: chatSessionsLoading,
@@ -2816,6 +2818,9 @@ export const AgentSettingsPage = ({
     sessionCount: chatSessions.length,
   });
   const [chatSessionsHasMore, setChatSessionsHasMore] = useState(false);
+  const [chatPinSupported, setChatPinSupported] = useState(false);
+  const [pinningChatIds, setPinningChatIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [chatPinError, setChatPinError] = useState<string | null>(null);
   const [chatSessionMutationState, setChatSessionMutationState] = useState<EmbeddedSessionMutationState | null>(null);
   const [chatSessionCommands, setChatSessionCommands] = useState<EmbeddedSessionCommands | null>(null);
   const chatSessionPagination = useAgentSessionPagination(
@@ -2922,6 +2927,26 @@ export const AgentSettingsPage = ({
   const markSessionUnread = (chatId: string) => {
     setUnread(chatId, true);
     setOpenSessionMenuChatId(null);
+  };
+
+  const toggleSessionPin = (session: LightVelaSession) => {
+    const commands = chatSessionCommands;
+    if (session.chatId === "" || !chatPinSupported || commands === null || pinningChatIds.has(session.chatId)) return;
+    const pinned = "pinned" in session && session.pinned === true;
+    const botKey = sidebarSessionBotKey;
+    setOpenSessionMenuChatId(null);
+    setChatPinError(null);
+    setPinningChatIds((current) => new Set(current).add(session.chatId));
+    void runBotScopedSessionPin(
+      () => commands.setPinned(session.chatId, !pinned),
+      () => sidebarSessionBotKeyRef.current === botKey,
+      () => setChatPinError(session.chatId),
+      () => setPinningChatIds((current) => {
+        const next = new Set(current);
+        next.delete(session.chatId);
+        return next;
+      }),
+    );
   };
 
   const commitSessionRename = () => {
@@ -4012,6 +4037,9 @@ export const AgentSettingsPage = ({
   useEffect(() => {
     chatSessionPagination.reset();
     setChatSessionsHasMore(false);
+    setChatPinSupported(false);
+    setPinningChatIds(new Set());
+    setChatPinError(null);
     setChatSessionMutationState(null);
     setSelectedChatId(undefined);
     setChatSessionActions(null);
@@ -6307,9 +6335,11 @@ export const AgentSettingsPage = ({
                                     </AppLink>
                                   </li>
                                 ) : (
-                                  chatSessionPagination.visibleSessions.map((session) => {
+                                  chatSessionPagination.visibleSessions.map((session, index) => {
                                     const isSelected = selectedChatId === session.chatId;
                                     const isUnread = unreadChatIds.includes(session.chatId);
+                                    const isPinned = "pinned" in session && session.pinned === true;
+                                    const isPinning = pinningChatIds.has(session.chatId);
                                     const isRenaming = renamingChatId === session.chatId;
                                     const isMenuOpen = openSessionMenuChatId === session.chatId;
                                     const isDeletable = canDeleteSession(session);
@@ -6320,7 +6350,16 @@ export const AgentSettingsPage = ({
                                       t("默认会话"),
                                     );
                                     return (
-                                      <li key={session.chatId} className="lv-agents-session-item-wrap">
+                                      <Fragment key={session.chatId}>
+                                      {chatSessionPagination.pinnedCount > 0 && index === 0 ? (
+                                        <li className="lv-agents-session-group-label">
+                                          {locale.startsWith("zh") ? t("置顶") : t("已置顶")}
+                                        </li>
+                                      ) : null}
+                                      {chatSessionPagination.pinnedCount > 0 && index === chatSessionPagination.pinnedCount ? (
+                                        <li className="lv-agents-session-group-label">{t("最近对话")}</li>
+                                      ) : null}
+                                      <li className="lv-agents-session-item-wrap">
                                         {isRenaming ? (
                                           <input
                                             className="lv-agents-session-rename-input"
@@ -6372,16 +6411,27 @@ export const AgentSettingsPage = ({
                                                 className="lv-agents-session-menu-btn"
                                                 aria-label={t("会话操作")}
                                                 aria-expanded={isMenuOpen}
+                                                aria-busy={isPinning || undefined}
+                                                disabled={isPinning}
                                                 onClick={(event) => {
                                                   event.preventDefault();
                                                   event.stopPropagation();
                                                   setOpenSessionMenuChatId(isMenuOpen ? null : session.chatId);
                                                 }}
                                               >
-                                                <MoreVertical className="h-3.5 w-3.5" />
+                                                {isPinning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <MoreVertical className="h-3.5 w-3.5" />}
                                               </button>
                                               {isMenuOpen ? (
                                                 <div className="lv-agents-session-menu" role="menu">
+                                                  {chatPinSupported && chatSessionCommands && session.chatId !== "" ? <button
+                                                    type="button"
+                                                    role="menuitem"
+                                                    className="lv-agents-session-menu-item"
+                                                    disabled={isPinning}
+                                                    onClick={() => toggleSessionPin(session)}
+                                                  >
+                                                    {isPinned ? t("取消置顶") : t("置顶")}
+                                                  </button> : null}
                                                   <button
                                                     type="button"
                                                     role="menuitem"
@@ -6415,6 +6465,8 @@ export const AgentSettingsPage = ({
                                           </>
                                         )}
                                       </li>
+                                      {chatPinError === session.chatId ? <li className="lv-agents-session-hint lv-agents-session-hint--error" role="alert">{t("置顶操作失败，请重试")}</li> : null}
+                                      </Fragment>
                                     );
                                   })
                                 )}
@@ -6711,6 +6763,7 @@ export const AgentSettingsPage = ({
                               multiSession={openCraftChatMultiSessionBridge}
                               onSessionCommandsChange={setChatSessionCommands}
                               onHasMoreSessionsChange={setChatSessionsHasMore}
+                              onPinSupportChange={setChatPinSupported}
                               onSessionMutationStateChange={setChatSessionMutationState}
                               onTurnCompleted={(chatId) => setUnread(chatId, true)}
                               legacy={null}

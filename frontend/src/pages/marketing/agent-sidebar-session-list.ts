@@ -58,6 +58,21 @@ export function resolveAgentSidebarEmptySessionState({
   return loading || botKey === null ? "loading" : "default";
 }
 
+export async function runBotScopedSessionPin(
+  setPinned: () => Promise<void>,
+  isCurrentBot: () => boolean,
+  onError: () => void,
+  onSettled: () => void,
+): Promise<void> {
+  try {
+    await setPinned();
+  } catch {
+    if (isCurrentBot()) onError();
+  } finally {
+    if (isCurrentBot()) onSettled();
+  }
+}
+
 export function useAgentSidebarSessionList(botKey: string | null) {
   const [current, setCurrent] = useState(() => ({
     botKey,

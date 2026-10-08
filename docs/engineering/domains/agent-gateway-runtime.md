@@ -41,6 +41,11 @@ DSH 或旧 Server 不伪造支持。桥接器和浏览器均不另存置顶集�
 与断线代次隔离，未知结果刷新核对而非盲重放，不触发 resume 或执行。
 详见 [Thread lifecycle ownership](../../../opencraft/docs/platform-architecture.md#thread-lifecycle-ownership)。
 
+LightVela 站点的 Agent 会话侧栏由 `frontend` 持有，不使用 OpenCraft 完整工作台的
+Sidebar。嵌入式 Workbench 仅投影会话的置顶状态、当前 Host 的置顶能力与置顶动作；
+站点按该能力显示菜单，置顶会话独立于近期分页配额展示。侧栏的会话缓存不作为
+置顶写入权威，操作后由原生目录刷新确认。
+
 OpenCraft 的可选 `tencentoa.identity` 插件按每个 HTTP 请求核验太湖签名、
 解密 TOF 员工身份并检查有效期。安装级私有密钥仅属于后端，员工身份仅投影到
 当前客户端的独立 Authentication provider，不取代 LightVela 账户，不写入全局

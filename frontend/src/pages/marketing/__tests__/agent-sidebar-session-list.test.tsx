@@ -1,7 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { resolveAgentSidebarEmptySessionState, useAgentSidebarSessionList, useAgentSidebarUnreadSessions } from "@/pages/marketing/agent-sidebar-session-list";
+import { resolveAgentSidebarEmptySessionState, runBotScopedSessionPin, useAgentSidebarSessionList, useAgentSidebarUnreadSessions } from "@/pages/marketing/agent-sidebar-session-list";
 
 const session = (chatId: string) => ({ chatId, title: chatId });
 const state = (chatId: string | null, loading = false) => ({
@@ -11,6 +11,32 @@ const state = (chatId: string | null, loading = false) => ({
 });
 
 describe("Agents sidebar session list", () => {
+  it("ignores a failed pin request after switching Bot", async () => {
+    let rejectPin: (reason: Error) => void = () => {};
+    let currentBot = "bot-a";
+    const pin = new Promise<void>((_resolve, reject) => { rejectPin = reject; });
+    const onError = vi.fn();
+    const onSettled = vi.fn();
+    const pending = runBotScopedSessionPin(() => pin, () => currentBot === "bot-a", onError, onSettled);
+
+    currentBot = "bot-b";
+    rejectPin(new Error("pin failed"));
+    await pending;
+
+    expect(onError).not.toHaveBeenCalled();
+    expect(onSettled).not.toHaveBeenCalled();
+  });
+
+  it("shows pin errors and clears pending state for the current Bot", async () => {
+    const onError = vi.fn();
+    const onSettled = vi.fn();
+
+    await runBotScopedSessionPin(async () => { throw new Error("pin failed"); }, () => true, onError, onSettled);
+
+    expect(onError).toHaveBeenCalledOnce();
+    expect(onSettled).toHaveBeenCalledOnce();
+  });
+
   it("persists unread markers per account and Bot until the conversation is opened", () => {
     window.localStorage.clear();
     const first = renderHook(({ botKey }) => useAgentSidebarUnreadSessions(botKey), {
