@@ -23,6 +23,17 @@ export function mountHeroArtwork(root: HTMLElement): () => void {
   if (!hero) return () => {};
   const heroElement: HTMLElement = hero;
   const frame = hero.querySelector<HTMLElement>('.hero__frame');
+  const featuresHeading = root.querySelector<HTMLElement>('.about__head');
+  const navigation = root.querySelector<HTMLElement>('.nav');
+  const gripEnd = () => Math.max(280, Math.min(window.innerHeight * .90, heroElement.offsetHeight - window.innerHeight * .65));
+  const exitEnd = () => {
+    if (!featuresHeading) return gripEnd();
+    let top = 0;
+    for (let element: HTMLElement | null = featuresHeading; element; element = element.offsetParent as HTMLElement | null) {
+      top += element.offsetTop;
+    }
+    return Math.max(gripEnd(), top - (navigation?.offsetHeight ?? 64) - 32);
+  };
   gsap.registerPlugin(ScrollTrigger);
   const layer = document.createElement('div');
   layer.className = 'hero-artwork-cast';
@@ -134,10 +145,11 @@ export function mountHeroArtwork(root: HTMLElement): () => void {
     }
     // On the way back up the characters used to enter one head-height before
     // the demo window. Wait until its border is actually on screen.
-    const inView = rect.height === 0 || (rect.top < window.innerHeight - 20 && rect.bottom > 0);
+    const falling = !reduce.matches && progress * exitEnd() > gripEnd() * .38 && progress < 1;
+    const inView = falling || rect.height === 0 || (rect.top < window.innerHeight - 20 && rect.bottom > 0);
     const opacity = Number.parseFloat(getComputedStyle(frame).opacity);
     const visibility = inView ? 'visible' : 'hidden';
-    const targetOpacity = String(Number.isFinite(opacity) ? opacity : 1);
+    const targetOpacity = String(falling ? 1 : Number.isFinite(opacity) ? opacity : 1);
     if (layer.style.visibility !== visibility) layer.style.visibility = visibility;
     if (layer.style.opacity !== targetOpacity) layer.style.opacity = targetOpacity;
   }
@@ -150,7 +162,9 @@ export function mountHeroArtwork(root: HTMLElement): () => void {
     const mobile = window.innerWidth < 900;
     const frameEdge = frame?.querySelector<HTMLElement>('.im') ?? frame ?? heroElement;
     const frameRect = frameEdge.getBoundingClientRect();
-    const heroRect = heroElement.getBoundingClientRect();
+    const end = exitEnd();
+    const grip = gripEnd();
+    const scrollPosition = progress * end;
     // All four friends perch over the chat window's inner border, with one just
     // spilling past its left edge rather than floating in the page margin.
     // Tuck the entire group inside the chat window, keeping their overlap.
@@ -183,22 +197,24 @@ export function mountHeroArtwork(root: HTMLElement): () => void {
       button.style.zIndex = String([1, 3, 2, 4][i]);
       // Scroll scrubs a reluctant grip: pull up, cling, then slip. Reverse scroll
       // follows the same path back, so a returning friend catches the edge again.
-      const local = clamp((progress - delay) / (1 - delay));
+      const local = clamp((scrollPosition / grip - delay) / (1 - delay));
       const frame = reduce.matches ? 0 : local < .14 ? 0 : local < .48 ? 1 : 2;
       button.dataset.pose = ['grip', 'reluctant', 'arms-up'][frame];
       showScrollFrame(frame);
       // While they still hold on, the friends ride the window edge exactly:
       // the page moving up carries them up with it. Only a small wobble plays
       // in place. Leaving the edge starts once they let go.
-      const slip = smooth((local - .38) / .54);
+      const releaseAt = grip * (delay + (1 - delay) * .38);
+      const slip = Math.pow(clamp((scrollPosition - releaseAt) / Math.max(1, end - releaseAt)), 1.5);
       const struggle = Math.sin(local * Math.PI * 16 + i) * Math.sin(Math.PI * clamp((local - .16) / .30));
       const fall = reduce.matches ? 0 : slip;
       const wobble = reduce.matches ? 0 : struggle * (1 - fall);
-      // The button only translates; the lean lives on the inner artwork, so
-      // the button's own crop stays a level line along the window border.
-      gsap.set(button, { y: fall * (Math.max(0, -heroRect.top) + size * 2.2 + window.innerHeight * .35)
-          - wobble * 2.5,
-        x: -fall * (180 + i * 55) + wobble * 2 });
+      const releaseTop = docTop - size * layout.crop / 512 - releaseAt;
+      const fallDistance = Math.max(0, window.innerHeight + size * .25 - releaseTop);
+      const scrollCompensation = reduce.matches ? 0 : Math.max(0, scrollPosition - releaseAt);
+      const drift = Math.min(180 + i * 55, Math.max(0, clusterStart + layout.left - window.scrollX - 16));
+      gsap.set(button, { y: scrollCompensation + fall * fallDistance - wobble * 2.5,
+        x: -fall * drift + wobble * 2 });
       gsap.set(life, { rotation: [9, -3, 5, -7, -8, 3, -5][i]! + spec.side * fall * 32 + wobble * 1.3 });
       // Each friend hides its body below the border until it lets go itself,
       // so the ones still holding on never spill over the tabs or search box.
@@ -212,20 +228,16 @@ export function mountHeroArtwork(root: HTMLElement): () => void {
     // while they hold the edge. Reduced motion never lets go, so it never opens;
     // otherwise it opens only as the first friend lets go (its slip starts at
     // .38), so gripping bodies never spill over the tabs and search box.
-    const open = reduce.matches ? 0 : smooth((progress - .36) / .1);
-    layer.style.height = `${docTop + open * window.innerHeight * 2}px`;
+    const open = reduce.matches ? 0 : smooth((scrollPosition / grip - .36) / .1);
+    layer.style.height = `${docTop + open * Math.max(window.innerHeight * 2, end + window.innerHeight + 200 - docTop)}px`;
     syncFrameEntrance();
   }
-  // A position observer, not an entrance: the fixed layer must follow the chat
-  // window on every scroll, including under reduced motion.
   const trigger = ScrollTrigger.create({ id: HERO_ARTWORK_TRIGGER_ID, trigger: hero, start: 0,
-    end: () => Math.max(280, Math.min(window.innerHeight * .90, hero.offsetHeight - window.innerHeight * .65)),
+    end: exitEnd,
     onUpdate: self => { progress = self.progress; draw(); },
     onRefresh: self => { progress = self.progress; draw(); },
   });
-  // The layer is position: fixed, so it must be re-anchored in the same frame
-  // the page scrolls. ScrollTrigger stops updating past its end and can trail a
-  // frame behind, which left the friends standing still while the page moved.
+  // Keep document-coordinate anchors current even outside the trigger range.
   const follow = () => draw();
   window.addEventListener('scroll', follow, { passive: true });
   document.addEventListener('visibilitychange', draw);
