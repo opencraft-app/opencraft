@@ -1949,6 +1949,8 @@ test("explicit follow-up submission alone owns optimistic queue state", async ()
   const operation = runtime.submit(intent);
   assert.equal(runtime.getSnapshot().queuedSubmissions[0]?.state, "submitting");
   assert.equal(runtime.getSnapshot().pendingSubmissions.length, 0);
+  assert.equal(runtime.getSnapshot().timeline.frames.flatMap((frame) => frame.blocks)
+    .some((block) => block.type === "user-message" && block.message === "Next"), false);
   resolveSubmission({
     commandId: intent.commandId,
     clientMessageId: intent.clientMessageId,
@@ -1960,6 +1962,8 @@ test("explicit follow-up submission alone owns optimistic queue state", async ()
   });
   await operation;
   assert.equal(runtime.getSnapshot().queuedSubmissions[0]?.state, "queued");
+  assert.equal(runtime.getSnapshot().timeline.frames.flatMap((frame) => frame.blocks)
+    .some((block) => block.type === "user-message" && block.message === "Next"), false);
   runtime.dispose();
 });
 

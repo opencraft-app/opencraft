@@ -9128,6 +9128,36 @@ html[data-codex-window-type="electron"] .thread-scroll {
   white-space: nowrap;
 }
 
+.codex-composer-queue-action-trigger {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+}
+
+.codex-composer-queue-action-tooltip {
+  z-index: var(--layer-tooltip, 1000);
+  max-width: min(320px, calc(100vw - 16px));
+  padding: 6px 12px;
+  border: 1px solid var(--border-subtle, var(--color-border-subtle, rgb(15 23 42 / 12%)));
+  border-radius: 6px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgb(15 23 42 / 12%);
+  color: #1f2937;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  pointer-events: auto;
+  user-select: text;
+}
+
+.codex-composer-queue-action-tooltip__arrow {
+  fill: #fff;
+  stroke: var(--border-subtle, var(--color-border-subtle, rgb(15 23 42 / 12%)));
+  stroke-width: 1px;
+}
+
 .codex-composer-queue-item__actions {
   display: flex;
   align-items: center;
@@ -9151,6 +9181,11 @@ html[data-codex-window-type="electron"] .thread-scroll {
 
     &:disabled {
       opacity: 0.38;
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--color-border-focus);
+      outline-offset: 2px;
     }
 
     &.is-labelled {
