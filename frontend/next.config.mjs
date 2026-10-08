@@ -54,6 +54,15 @@ const config = {
   // Next.js 只内联 NEXT_PUBLIC_* 变量，VITE_* 需通过 env 显式暴露到客户端。
   env: {
     VITE_AUTH_API_BASE_URL: process.env.NEXT_PUBLIC_AUTH_API_BASE_URL || process.env.VITE_AUTH_API_BASE_URL || '',
+    // 国内站只发布中文，其余字典按需加载（见 src/i18n/index.ts）。这里由 Next
+    // 内联成字面量，打包器才能把未用到的 JSON 当死代码消除。
+    //
+    // 不能让 src/i18n/index.ts 直接读 NEXT_PUBLIC_REGION：该文件被 vendoring 进
+    // opencraft 嵌入式工作台，而那边的 Vite 把 NEXT_PUBLIC_REGION 固定替换成
+    // 'cn'（见 opencraft/apps/workbench-web/vite.config.ts 的 vendoredEnvKeys），
+    // 会连带把国际站嵌入式控制台的英文字典一起裁掉。换成本变量后，嵌入式构建
+    // 取到空值即保持全量同步装载。
+    NEXT_PUBLIC_I18N_LAZY_LOCALES: isGlobalRegion() ? '0' : '1',
   },
   allowedDevOrigins: ['lightvela.ai', 'www.lightvela.ai', 'lightvela.com', 'lightvela.tencent.com', 'localhost', '127.0.0.1', 'lightclaw.pages.dev','intl-sandbox-kr-1.preview.lightclaw.tech','frontend.sandbox-bj-7.lightclaw.tech'],
   // `.intl.tsx` = 仅国际站存在的页面（当前是 src/app/(site)/[lang]/**）。
