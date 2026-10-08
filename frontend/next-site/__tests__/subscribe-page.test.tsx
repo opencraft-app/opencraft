@@ -650,7 +650,7 @@ describe("SubscribePage", () => {
     expect(within(getCreditTab("200")).queryByText("推荐")).not.toBeInTheDocument();
   });
 
-  it("keeps quoted zero-price bundles on the legacy order flow in CN", async () => {
+  it("places quoted zero-price bundles through Dianshi order-and-pay in CN", async () => {
     openClawState.isLoggedIn = true;
     sessionState.isAuthenticated = true;
     sessionState.user = { realnameVerified: true };
@@ -684,17 +684,61 @@ describe("SubscribePage", () => {
 
     await user.click(await screen.findByRole("button", { name: "免费订阅" }));
     expect(screen.getByRole("heading", { name: "确认订单" })).toBeInTheDocument();
-    expect(screen.getByText("微信支付")).toBeInTheDocument();
+    expect(screen.queryByText("微信支付")).not.toBeInTheDocument();
     expect(screen.queryByText("信用卡支付")).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: /支付/ }));
+    await user.click(screen.getByRole("button", { name: "确认开通" }));
     await waitFor(() => {
-      expect(createPassOrderMock).toHaveBeenCalledWith({
+      expect(createDianshiPassOrderAndPayMock).toHaveBeenCalledWith({
         bundle_id: "bundle_launch_zero",
         period: 1,
         time_unit: "m",
       });
     });
+    expect(createPassOrderMock).not.toHaveBeenCalled();
+    expect(await screen.findByRole("heading", { name: "正在开通套餐" })).toBeInTheDocument();
+  });
+
+  it("keeps nonzero CN orders on the WeChat payment flow", async () => {
+    openClawState.isLoggedIn = true;
+    sessionState.isAuthenticated = true;
+    sessionState.user = { realnameVerified: true };
+    listBundlesMock.mockResolvedValue([{
+      bundle_id: "bundle_launch_paid",
+      bundle_name: "启航 Launch",
+      description: [],
+      bundle_state: "ONLINE",
+      bundle_type: "general",
+      agent_quota: 1,
+      credit: 100,
+      price: {
+        price: 750,
+        total_cost: 750,
+        real_total_cost: 500,
+        currency: "CNY",
+        discount: 67,
+      },
+      time_span: 1,
+      time_unit: "m",
+      bundle_sales_available_count: 100,
+      bundle_sales_total_count: 100,
+      bundle_sales_state: "AVAILABLE",
+    }]);
+
+    const { SubscribePage } = await import("@next-site/subscribe-page");
+    const user = userEvent.setup();
+    render(<SubscribePage />);
+
+    await user.click(await screen.findByRole("button", { name: "立即订阅" }));
+    expect(screen.getByRole("heading", { name: "确认订单" })).toBeInTheDocument();
+    expect(screen.getByText("微信支付")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /支付/ }));
+    await waitFor(() => expect(createPassOrderMock).toHaveBeenCalledWith({
+      bundle_id: "bundle_launch_paid",
+      period: 1,
+      time_unit: "m",
+    }));
     expect(createDianshiPassOrderAndPayMock).not.toHaveBeenCalled();
   });
 
