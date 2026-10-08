@@ -42,6 +42,7 @@ describe("AgentChatMigrationSurface", () => {
     const onSelectedChatIdChange = vi.fn();
     const onOwnerChange = vi.fn();
     const onHasMoreSessionsChange = vi.fn();
+    const onPinSupportChange = vi.fn();
     const onSessionMutationStateChange = vi.fn();
     const onTurnCompleted = vi.fn();
     let resolveShow!: () => void;
@@ -57,12 +58,14 @@ describe("AgentChatMigrationSurface", () => {
       selectConversation = vi.fn();
       renameConversation = vi.fn(async () => undefined);
       deleteConversation = vi.fn(async () => undefined);
+      setConversationPinned = vi.fn(async () => undefined);
       async prepare() {
         this.dispatchEvent(new CustomEvent("opencraft-sessions", {
           detail: {
-            sessions: [{ chatId: "thread-1", title: "First", createdAt: 1, updatedAt: 2 }],
+            sessions: [{ chatId: "thread-1", title: "First", createdAt: 1, updatedAt: 2, pinned: true }],
             loading: false,
             hasMoreSessions: true,
+            pinSupported: true,
             error: null,
             selectedChatId: "thread-1",
           },
@@ -95,6 +98,7 @@ describe("AgentChatMigrationSurface", () => {
         onTurnCompleted={onTurnCompleted}
         onOwnerChange={onOwnerChange}
         onHasMoreSessionsChange={onHasMoreSessionsChange}
+        onPinSupportChange={onPinSupportChange}
         onSessionCommandsChange={(next) => { commands = next; }}
         onSessionMutationStateChange={onSessionMutationStateChange}
       />
@@ -136,6 +140,10 @@ describe("AgentChatMigrationSurface", () => {
     }));
     expect(onSelectedChatIdChange).toHaveBeenCalledWith("thread-1");
     expect(onHasMoreSessionsChange).toHaveBeenCalledWith(true);
+    expect(onPinSupportChange).toHaveBeenCalledWith(true);
+    expect(onSessionStateChange).toHaveBeenCalledWith(expect.objectContaining({
+      sessions: [expect.objectContaining({ chatId: "thread-1", pinned: true })],
+    }));
     rerender(renderSurface(true, "ja-JP", "thread-1"));
     act(() => prepared.dispatchEvent(new CustomEvent("opencraft-turn-completed", {
       detail: { chatId: "thread-1", turnId: "turn-1" },
@@ -183,6 +191,8 @@ describe("AgentChatMigrationSurface", () => {
       expect(surface).toHaveClass("border-0", "rounded-none");
     }
     expect(commands).not.toBeNull();
+    await requireCommands().setPinned("thread-1", false);
+    expect((embedded as FakeEmbeddedWorkbench).setConversationPinned).toHaveBeenCalledWith("thread-1", false);
     await requireCommands().loadMoreSessions?.();
     expect((embedded as FakeEmbeddedWorkbench).loadMoreConversations).toHaveBeenCalledOnce();
     await requireCommands().createSession();
@@ -210,6 +220,7 @@ describe("AgentChatMigrationSurface", () => {
     expect(actions).toBeNull();
     expect(commands).toBeNull();
     expect(onHasMoreSessionsChange).toHaveBeenLastCalledWith(false);
+    expect(onPinSupportChange).toHaveBeenLastCalledWith(false);
 
     rerender(renderSurface(true));
     const replacement = await waitFor(() => {

@@ -1327,6 +1327,17 @@ a {
   line-height: 20px;
 }
 
+.lv-agents-session-hint--error {
+  color: #b91c1c;
+}
+
+.lv-agents-session-group-label {
+  padding: 8px 12px 2px 20px;
+  color: rgb(0 0 0 / 45%);
+  font-size: 12px;
+  line-height: 16px;
+}
+
 .lv-agents-session-item-wrap {
   position: relative;
   display: flex;

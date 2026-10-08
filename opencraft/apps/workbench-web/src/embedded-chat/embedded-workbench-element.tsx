@@ -60,6 +60,7 @@ export interface EmbeddedWorkbenchSessionsDetail {
   readonly sessions: readonly EmbeddedWorkbenchSession[];
   readonly loading: boolean;
   readonly hasMoreSessions: boolean;
+  readonly pinSupported: boolean;
   readonly error: string | null;
   readonly selectedChatId: string | null;
   readonly isDraft: boolean;
@@ -176,6 +177,7 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
   private isDraft = true;
   private hasMoreSessions = false;
   private sessions = new Map<string, EmbeddedWorkbenchSession>();
+  private pinSupported = false;
   private stopThemeSubscription: (() => void) | null = null;
   private stopTurnCompletionSubscription: (() => void) | null = null;
   private disposed = false;
@@ -310,6 +312,12 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
     await this.requireActions().deleteThread(session.chatId);
   }
 
+  async setConversationPinned(conversationId: string, pinned: boolean): Promise<void> {
+    const session = this.requireSession(conversationId);
+    if (!this.pinSupported) throw new Error("This Host does not support conversation pinning");
+    await this.requireActions().setThreadPinned(session.chatId, pinned);
+  }
+
   async dispose(): Promise<void> {
     if (this.disposed) return;
     this.disposed = true;
@@ -418,11 +426,13 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
     readonly sessions: readonly EmbeddedWorkbenchSession[];
     readonly loading: boolean;
     readonly hasMoreSessions: boolean;
+    readonly pinSupported: boolean;
     readonly selectedChatId: string | null;
     readonly isDraft: boolean;
   }): void {
     this.sessions = new Map(detail.sessions.map((session) => [session.chatId, session]));
     this.hasMoreSessions = detail.hasMoreSessions;
+    this.pinSupported = detail.pinSupported;
     this.selectedConversationId = detail.selectedChatId;
     this.isDraft = detail.isDraft;
     this.publishSessions(detail.loading, null);
@@ -494,6 +504,7 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
           sessions: Object.freeze([...this.sessions.values()]),
           loading,
           hasMoreSessions: this.hasMoreSessions,
+          pinSupported: this.pinSupported,
           error,
           selectedChatId: this.selectedConversationId,
           isDraft: this.isDraft,

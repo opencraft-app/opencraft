@@ -515,7 +515,7 @@ describe("agent settings sidebar chat/settings tabs", () => {
   it("shows activity only for a session reported as running", () => {
     const page = readPageSource();
     const styles = readStylesSource();
-    const sessions = page.slice(page.indexOf("chatSessionPagination.visibleSessions.map((session) => {"), page.indexOf("chatSessionMutationState !== null"));
+    const sessions = page.slice(page.indexOf("chatSessionPagination.visibleSessions.map((session, index) => {"));
 
     expect(sessions).toContain('const isRunning = "running" in session && session.running === true;');
     expect(sessions).toContain('isRunning ? <span className="lv-agents-session-running" role="img" aria-label={t("执行中")} /> : null');
@@ -583,7 +583,8 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain("const sidebarSessionBotKey = openCraftChatEnabled && activeBot && accountId");
     expect(page).toContain("useAgentSidebarSessionList(sidebarSessionBotKey)");
     expect(page).toContain("[sdkInstance?.InstanceId, sdkInstance?.ProfileId, chatSessionPagination.reset]");
-    expect(page).toMatch(/setChatSessionsHasMore\(false\);\s*\n\s*setChatSessionMutationState\(null\);\s*\n\s*setSelectedChatId\(undefined\);\s*\n\s*setChatSessionActions\(null\);/);
+    const instanceReset = page.slice(page.indexOf("chatSessionPagination.reset();"), page.indexOf("setChatSessionCommands(null);"));
+    expect(instanceReset).toMatch(/setChatSessionsHasMore\(false\);[\s\S]*setChatSessionMutationState\(null\);\s*\n\s*setSelectedChatId\(undefined\);\s*\n\s*setChatSessionActions\(null\);/);
   });
 
   it("never uses truthiness to test chatId validity (empty string is a legal default session)", () => {
@@ -609,6 +610,8 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain('const canDeleteSession = (session: LightVelaSession) => session.chatId !== "";');
     // 菜单项禁用 + 说明原因，而不是让用户点了没反应。
     expect(page).toContain("const isDeletable = canDeleteSession(session);");
+    expect(page).toContain('chatPinSupported && chatSessionCommands && session.chatId !== ""');
+    expect(page).toContain('if (session.chatId === "" || !chatPinSupported');
     expect(page).toContain("disabled={!chatSessionActions || chatSessionMutationState?.pending === true || !isDeletable}");
     expect(page).toContain('title={isDeletable ? undefined : t("默认会话不支持删除")}');
   });
@@ -643,7 +646,7 @@ describe("agent settings sidebar chat/settings tabs", () => {
 
     const emptyBranch = page.slice(
       page.indexOf(') : emptyChatSessionState === "default" ? ('),
-      page.indexOf("chatSessionPagination.visibleSessions.map((session) => {"),
+      page.indexOf("chatSessionPagination.visibleSessions.map((session, index) => {"),
     );
 
     expect(emptyBranch).toContain('title={t("默认对话")}');

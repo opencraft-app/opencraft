@@ -71,4 +71,19 @@ describe("agent session pagination", () => {
     expect(result.current.pageError).toBe(true);
     expect(result.current.loadingMore).toBe(false);
   });
+
+  it("keeps old pinned conversations visible without consuming recent slots", async () => {
+    const oldPinned = { chatId: "old-pinned", updatedAt: 1, pinned: true };
+    const recent = sessions(8).map((session) => ({ ...session, pinned: false }));
+    const { result } = renderHook(() => useAgentSessionPagination([...recent, oldPinned], false, undefined, 5));
+
+    expect(result.current.pinnedCount).toBe(1);
+    expect(result.current.visibleSessions.map((session) => session.chatId)).toEqual([
+      "old-pinned", "session-8", "session-7", "session-6", "session-5", "session-4",
+    ]);
+    await act(async () => { await result.current.showMore(); });
+    expect(result.current.visibleSessions).toHaveLength(9);
+    act(() => { result.current.collapse(); });
+    expect(result.current.visibleSessions).toHaveLength(6);
+  });
 });

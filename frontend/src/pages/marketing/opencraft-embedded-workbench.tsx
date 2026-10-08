@@ -50,6 +50,7 @@ interface EmbeddedWorkbenchElement extends HTMLElement {
   selectConversation(conversationId: string): void;
   renameConversation(conversationId: string, title: string): Promise<void>;
   deleteConversation(conversationId: string): Promise<void>;
+  setConversationPinned(conversationId: string, pinned: boolean): Promise<void>;
 }
 
 function isEmbeddedWorkbenchElement(element: HTMLElement): element is EmbeddedWorkbenchElement {
@@ -74,6 +75,7 @@ interface AgentChatMigrationSurfaceProps extends Omit<EmbeddedWorkbenchConfig, "
   readonly onOwnerChange?: (owner: "legacy" | "opencraft") => void;
   readonly onSessionCommandsChange?: (commands: EmbeddedSessionCommands | null) => void;
   readonly onHasMoreSessionsChange?: (hasMore: boolean) => void;
+  readonly onPinSupportChange?: (supported: boolean) => void;
   readonly onSessionMutationStateChange?: (state: EmbeddedSessionMutationState | null) => void;
   readonly onTurnCompleted?: (chatId: string) => void;
 }
@@ -88,12 +90,14 @@ export interface EmbeddedSessionMutationState {
 export interface EmbeddedSessionCommands {
   createSession(): Promise<void>;
   loadMoreSessions?(): Promise<void>;
+  setPinned(chatId: string, pinned: boolean): Promise<void>;
 }
 
 interface EmbeddedSessionsDetail {
   readonly sessions: LightVelaSessionState["sessions"];
   readonly loading: boolean;
   readonly hasMoreSessions?: boolean;
+  readonly pinSupported?: boolean;
   readonly error: string | null;
   readonly selectedChatId: string | null;
   readonly isDraft?: boolean;
@@ -134,6 +138,7 @@ export function AgentChatMigrationSurface({
   onOwnerChange,
   onSessionCommandsChange,
   onHasMoreSessionsChange,
+  onPinSupportChange,
   onSessionMutationStateChange,
   onTurnCompleted,
   profileId,
@@ -157,6 +162,8 @@ export function AgentChatMigrationSurface({
   onSessionCommandsChangeRef.current = onSessionCommandsChange;
   const onHasMoreSessionsChangeRef = useRef(onHasMoreSessionsChange);
   onHasMoreSessionsChangeRef.current = onHasMoreSessionsChange;
+  const onPinSupportChangeRef = useRef(onPinSupportChange);
+  onPinSupportChangeRef.current = onPinSupportChange;
   const onSessionMutationStateChangeRef = useRef(onSessionMutationStateChange);
   onSessionMutationStateChangeRef.current = onSessionMutationStateChange;
   const onTurnCompletedRef = useRef(onTurnCompleted);
@@ -273,11 +280,18 @@ export function AgentChatMigrationSurface({
         historyLoading: false,
       });
       onHasMoreSessionsChangeRef.current?.(latestSessions.hasMoreSessions === true);
+      onPinSupportChangeRef.current?.(latestSessions.pinSupported === true);
       if (latestSessions.selectedChatId !== null && !preserveHostSelection) {
         multiSessionRef.current.onSelectedChatIdChange(latestSessions.selectedChatId);
       }
     };
     const sessionCommands: EmbeddedSessionCommands = {
+      async setPinned(chatId, pinned) {
+        if (typeof element?.setConversationPinned !== "function") {
+          throw new Error("Embedded Workbench cannot pin conversations");
+        }
+        await element.setConversationPinned(chatId, pinned);
+      },
       async loadMoreSessions() {
         if (typeof element?.loadMoreConversations !== "function") {
           throw new Error("Embedded Workbench cannot load more conversations");
@@ -424,6 +438,7 @@ export function AgentChatMigrationSurface({
       if (adopted) multiSessionRef.current.onSessionActionsChange?.(null);
       onSessionCommandsChangeRef.current?.(null);
       onHasMoreSessionsChangeRef.current?.(false);
+      onPinSupportChangeRef.current?.(false);
       onSessionMutationStateChangeRef.current?.(null);
       const current = element;
       element = null;
