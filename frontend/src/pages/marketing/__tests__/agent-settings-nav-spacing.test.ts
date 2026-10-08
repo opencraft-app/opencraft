@@ -242,6 +242,22 @@ describe("Agent settings navigation spacing", () => {
     expect(styles).toContain("min-height: 48px;");
   });
 
+  it("keeps overview spacing symmetric and matches the other desktop navigation text", () => {
+    const desktopStyles = styles.slice(styles.lastIndexOf("@media (min-width: 1024px) {"));
+    const sidebar = getBlockBody(desktopStyles, "\n  .lv-agents-sidebar {");
+    const overviewSidebar = getBlockBody(desktopStyles, "\n  .lv-agents-sidebar:has(.lv-agent-overview-nav) {");
+    const overview = getBlockBody(desktopStyles, "\n  .lv-agent-overview-nav {");
+    const overviewItem = getBlockBody(desktopStyles, "\n  .lv-agent-overview-nav .lv-agents-nav-item {");
+    const middleItem = getBlockBody(desktopStyles, "\n  .lv-agents-sidebar-middle .lv-agents-nav-item {");
+
+    expect(sidebar).toContain("padding-top: 12px;");
+    expect(overviewSidebar).toContain("padding-top: 0;");
+    expect(overview).toContain("padding-block: 8px;");
+    expect(page).toContain('className="lv-agent-overview-nav mb-2 pb-2 lg:mb-0 lg:pb-0"');
+    expect(overviewItem).toContain("font-size: 13px;");
+    expect(middleItem).toContain("font-size: 13px;");
+  });
+
   it("moves the desktop account menu to the bottom of the Agent sidebar", () => {
     const accountFooter = getBlockBody(styles, "\n.lv-agent-account-footer {");
     const desktopSidebar = getBlockBody(styles, "\n  .lv-agents-sidebar {");

@@ -246,6 +246,17 @@ class RepositoryContextContract(unittest.TestCase):
         self.assertEqual(owners_only.returncode, 0, owners_only.stderr)
         self.assertEqual(json.loads(owners_only.stdout.splitlines()[-1])["matched_rules"], [])
 
+        synced_skills_assets = self._run_impact(
+            "opencraft/apps/workbench-web/public/assets/skills/featured-domestic-dev-expert.webp",
+            "opencraft/plugins/lightvela-hermes/src/upstream/mono2/UPSTREAM.json",
+        )
+        self.assertEqual(synced_skills_assets.returncode, 0, synced_skills_assets.stderr)
+        self.assertEqual(json.loads(synced_skills_assets.stdout.splitlines()[-1])["matched_rules"], [])
+
+        opencraft_runtime = self._run_impact("opencraft/apps/workbench-web/src/runtime/workbench-navigation.ts")
+        self.assertEqual(opencraft_runtime.returncode, 1)
+        self.assertIn("agent-gateway-runtime", opencraft_runtime.stderr)
+
     def test_docs_impact_blocks_high_risk_and_only_advises_normal_risk(self) -> None:
         """``risk`` must decide guard strength, per ADR-0002.
 
