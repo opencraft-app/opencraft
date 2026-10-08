@@ -32,13 +32,15 @@ import { canShowMyAgentsEntry } from "@/lib/cta-journey";
 type UserAvatarMenuProps = {
   showLanguageSwitcher?: boolean;
   variant?: "header" | "sidebar";
+  renewalReminder?: { label: string; tooltip: string; actionLabel: string; onRenew?: () => void };
 };
 
 export const UserAvatarMenu = ({
   showLanguageSwitcher = false,
   variant = "header",
+  renewalReminder,
 }: UserAvatarMenuProps) => variant === "sidebar"
-  ? <SidebarUserMenuController showLanguageSwitcher={showLanguageSwitcher} />
+  ? <SidebarUserMenuController showLanguageSwitcher={showLanguageSwitcher} renewalReminder={renewalReminder} />
   : <HeaderUserAvatarMenu showLanguageSwitcher={showLanguageSwitcher} />;
 
 const HeaderUserAvatarMenu = ({
