@@ -24,6 +24,15 @@ Web 与 Native 消费同一呈现计划；运行中 diff 更新不得关闭活�
 
 ## 服务与责任
 
+OpenCraft 会话置顶属于原生 Server 的目录元数据，不属于执行轮次或客户端偏好。
+Codex adapter 使用原生置顶 section；Hermes adapter 复用既有 TAT HTTP 通道和
+会话凭据调用 Dashboard 的 Profile-scoped metadata API，不修改 Hermes。
+协议扩展可发现不等于原生能力已支持：当前连接读取成功后才提供置顶操作，
+DSH 或旧 Server 不伪造支持。桥接器和浏览器均不另存置顶集合；刷新从原生数据
+回补近期窗口以外的置顶摘要，跨页按会话身份去重。写入按会话串行，迟到读取
+与断线代次隔离，未知结果刷新核对而非盲重放，不触发 resume 或执行。
+详见 [Thread lifecycle ownership](../../../opencraft/docs/platform-architecture.md#thread-lifecycle-ownership)。
+
 OpenCraft 的可选 `tencentoa.identity` 插件按每个 HTTP 请求核验太湖签名、
 解密 TOF 员工身份并检查有效期。安装级私有密钥仅属于后端，员工身份仅投影到
 当前客户端的独立 Authentication provider，不取代 LightVela 账户，不写入全局

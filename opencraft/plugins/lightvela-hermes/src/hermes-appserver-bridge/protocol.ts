@@ -11,9 +11,12 @@ import {
   OPENCRAFT_RESUME_HISTORY_EXTENSION,
   OPENCRAFT_THREAD_QUEUE_EXTENSION,
   OPENCRAFT_THREAD_LIFECYCLE_EXTENSION,
+  OPENCRAFT_THREAD_PINS_EXTENSION,
+  OPENCRAFT_THREAD_PINS_CAPABILITY,
   type ProfileSkillsMethod,
 } from "@opencraft/appserver-protocol";
 import type { HermesHostFileSystem } from "./dashboard-file-system";
+import type { HermesSessionMetadataClient } from "./session-metadata-client";
 import type { HermesHostTerminal } from "./tat-terminal";
 import type { HermesProcessService } from "./process-service";
 import type { AppServerTurn, JsonRpcRequest } from "./types";
@@ -86,6 +89,7 @@ export const dispatchAppServerRequest = async (
   request: JsonRpcRequest,
   services: {
     readonly signal?: AbortSignal;
+    readonly sessionMetadata?: HermesSessionMetadataClient;
     readonly fileSystem?: HermesHostFileSystem;
     readonly attachments?: HermesAttachmentStagingService;
     readonly terminal?: HermesHostTerminal;
@@ -156,6 +160,9 @@ export const dispatchAppServerRequest = async (
               archive: false,
               delete: true,
             },
+            ...(services.sessionMetadata === undefined ? {} : {
+              [OPENCRAFT_THREAD_PINS_EXTENSION]: OPENCRAFT_THREAD_PINS_CAPABILITY,
+            }),
             [OPENCRAFT_SCOPED_MODEL_CATALOG_EXTENSION]:
               OPENCRAFT_SCOPED_MODEL_CATALOG_CAPABILITY,
             ...(services.profileSkills === undefined ? {} : {
@@ -215,6 +222,13 @@ export const dispatchAppServerRequest = async (
     }
     case "thread/list":
       return adapter.listThreads(value);
+    case "opencraft/thread-pins/list":
+      if (!services.sessionMetadata) throw new Error("Session metadata is unavailable");
+      return adapter.listPinnedThreads(services.sessionMetadata, services.signal);
+    case "opencraft/thread-pins/set":
+      if (!services.sessionMetadata) throw new Error("Session metadata is unavailable");
+      if (typeof value.threadId !== "string" || typeof value.pinned !== "boolean") throw new Error("Invalid pin command");
+      return adapter.setThreadPinned(services.sessionMetadata, value.threadId, value.pinned, services.signal);
     case "thread/name/set":
       await adapter.renameThread(String(value.threadId ?? ""), String(value.name ?? ""));
       return {};

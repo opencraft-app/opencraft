@@ -5,6 +5,7 @@ import { createInterface, type Interface as ReadLineInterface } from "node:readl
 import { join } from "node:path";
 import { CodexHostQueue, type HostQueuedSubmission } from "./codex-host-queue.js";
 import { CodexMessageAttachments } from "./codex-message-attachments.js";
+import { CodexThreadPins } from "./codex-thread-pins.js";
 import { CODEX_NATIVE_SHARED_METHODS, projectSharedNativeCodexInitialize } from "./codex-native-surface.js";
 import { projectCodexAttachmentNotification, projectCodexAttachmentResult } from "./codex-message-attachment-projection.js";
 
@@ -17,6 +18,8 @@ import {
   OPENCRAFT_ATTACHMENT_STAGING_EXTENSION,
   OPENCRAFT_FIRST_TURN_DURABILITY_CAPABILITY,
   OPENCRAFT_THREAD_LIFECYCLE_EXTENSION,
+  OPENCRAFT_THREAD_PINS_EXTENSION,
+  OPENCRAFT_THREAD_PINS_CAPABILITY,
   OPENCRAFT_THREAD_QUEUE_EXTENSION,
   OPENCRAFT_THREAD_GOAL_EXTENSION,
   OPENCRAFT_THREAD_START_DURABILITY_EXTENSION,
@@ -121,6 +124,7 @@ function withCodexHostCapabilities(value: unknown, attachmentStaging: Attachment
       ...capabilities,
       extensions: {
         ...extensions,
+        [OPENCRAFT_THREAD_PINS_EXTENSION]: OPENCRAFT_THREAD_PINS_CAPABILITY,
         [OPENCRAFT_ATTACHMENT_STAGING_EXTENSION]: attachmentStaging,
         ...(desktop ? { [OPENCRAFT_DESKTOP_EXTENSION]: desktop } : {}),
         [OPENCRAFT_THREAD_START_DURABILITY_EXTENSION]:
@@ -177,6 +181,7 @@ export class CodexEngineAdapter implements DuplexTransport {
   private child: ChildProcessWithoutNullStreams | null = null;
   private lines: ReadLineInterface | null = null;
   private initializeResult: unknown | null = null;
+  private threadPins: CodexThreadPins | null = null;
   private physicalInitializePending = false;
   private poolStore: AccountPoolStore | null = null;
   private poolServer: Awaited<ReturnType<typeof startCodexAccountPoolServer>> | null = null;
@@ -383,6 +388,22 @@ export class CodexEngineAdapter implements DuplexTransport {
         return;
       }
       const requestClientEpoch = this.clientEpoch(clientId);
+      if (message.method === "opencraft/thread-pins/list" || message.method === "opencraft/thread-pins/set") {
+        try {
+          const pins = this.threadPins ??= new CodexThreadPins((method, params) => this.requestPhysical(method, params));
+          const params = record(message.params);
+          if (message.method.endsWith("/set") && (typeof params.threadId !== "string" || typeof params.pinned !== "boolean")) throw new Error("Invalid pin command");
+          const result = message.method.endsWith("/list") ? await pins.list() : await pins.set(params.threadId as string, params.pinned as boolean);
+          if (this.initializedClients.has(clientId) && this.clientEpoch(clientId) === requestClientEpoch) this.emit({ id, result }, clientId);
+          if (message.method.endsWith("/set")) for (const subscriber of this.initializedClients) {
+            this.emit({ method: "thread/pins/updated", params: { threadId: params.threadId } }, subscriber);
+          }
+        } catch (error) {
+          this.diagnostic({ event: "thread-pins-failed", reason: errorMessage(error) });
+          if (this.initializedClients.has(clientId) && this.clientEpoch(clientId) === requestClientEpoch) this.emit({ id, error: { code: -32000, message: "无法更新置顶会话，请刷新列表核对后重试" } }, clientId);
+        }
+        return;
+      }
       if (message.method === "attachment/stage" || message.method === "attachment/remove") {
         if (!this.initializedClients.has(clientId)) {
           this.emit({ id, error: { code: -32600, message: "Client is not initialized" } }, clientId);
