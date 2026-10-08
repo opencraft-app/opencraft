@@ -173,7 +173,7 @@ export function AgentFleetOverview({ bots, currentBotId, heroStats, canCreate, c
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 id="overview-bots-title" className="flex items-center gap-2 text-balance text-base font-semibold">{t("我的 Bots")}<span className="rounded bg-black/[0.04] px-2 py-0.5 text-xs tabular-nums">{bots.length}</span></h3>
-            <p className="mt-1 text-pretty text-sm text-[var(--text-secondary)]">{scrollable ? t("左右滑动查看更多 Bot") : t("在这里查看和管理你的所有 Bot")}</p>
+            {scrollable && <p className="mt-1 text-pretty text-sm text-[var(--text-secondary)]">{t("左右滑动查看更多 Bot")}</p>}
           </div>
           <div className="flex items-center gap-2">
             <Button className={cn(compactButton, "rounded-full")} disabled={!canCreate || botsError || botsLoading} aria-describedby={createLimitMessage ? limitId : undefined} onClick={() => onCreate()}><Plus className="size-4" aria-hidden="true" />{t("创建 Bot")}</Button>

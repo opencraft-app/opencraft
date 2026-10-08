@@ -15,7 +15,7 @@
  *   - 已创建态：点「创建」后自动进入
  */
 
-import { ChevronRight, HelpCircle, RefreshCw } from "lucide-react";
+import { ChevronLeft, ChevronRight, HelpCircle, RefreshCw } from "lucide-react";
 
 import {
   Select,
@@ -147,36 +147,89 @@ const TemplateRecommendations = ({
   onPick: (template: AgentTemplate) => void;
 }) => {
   const t = useT();
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const [canScrollPrev, setCanScrollPrev] = useState(false);
+  const [canScrollNext, setCanScrollNext] = useState(false);
+
+  const syncScrollState = useCallback(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    setCanScrollPrev(el.scrollLeft > 1);
+    setCanScrollNext(el.scrollLeft + el.clientWidth < el.scrollWidth - 1);
+  }, []);
+
+  useEffect(() => {
+    syncScrollState();
+    window.addEventListener("resize", syncScrollState);
+    return () => window.removeEventListener("resize", syncScrollState);
+  }, [syncScrollState, templates]);
+
+  /* 一屏恰好放满一批卡片（桌面 3 张 / 窄屏 2 张），翻一批 = 视口宽 + 一个 gap-3（12px） */
+  const scrollByPage = (direction: 1 | -1) => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    el.scrollBy({ left: direction * (el.clientWidth + 12), behavior: reduceMotion ? "auto" : "smooth" });
+  };
+
+  const arrowClass =
+    "inline-flex size-8 shrink-0 items-center justify-center rounded-full border border-black/10 bg-white text-black/60 transition-colors hover:bg-black/[0.03] hover:text-black disabled:cursor-default disabled:border-black/[0.06] disabled:bg-transparent disabled:text-black/20";
 
   return (
     <section className="mt-7">
       <h3 className="mb-3 text-[13px] font-medium text-black/45">{t("建议")}</h3>
 
-      {/* 横向滚动：卡片定宽 + snap，避免窄屏时被压扁。
-          卡片无阴影，所以不需要额外的下内边距留溢出空间。 */}
-      <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {templates.map((template) => (
-          <button
-            key={template.id}
-            type="button"
-            onClick={() => onPick(template)}
-            className="flex w-[248px] shrink-0 snap-start items-start gap-3 rounded-[4px] border border-black/[0.06] bg-white p-3 text-left transition hover:border-black/[0.12] hover:bg-black/[0.015]"
-          >
-            <GeometricAvatar
-              shapeId={template.shapeId}
-              color={template.color}
-              size={40}
-              className="shrink-0"
-            />
-            {/* Demo 常量中文无法被 i18n-extract 静态提取，接真实接口时由后端返回已本地化文案 */}
-            <span className="min-w-0">
-              <span className="block text-sm font-medium text-black/[0.88]">{template.name}</span>
-              <span className="mt-0.5 block line-clamp-2 text-xs leading-5 text-black/45">
-                {template.description}
+      {/* 左按钮 / 内容视口 / 右按钮（DESIGN.md · Carousel Navigation）。
+          视口保留原生横向滚动 + snap，触控板/触屏仍可直接滑动。 */}
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => scrollByPage(-1)}
+          disabled={!canScrollPrev}
+          aria-label={t("上一批")}
+          title={t("上一批")}
+          className={arrowClass}
+        >
+          <ChevronLeft className="size-4" aria-hidden="true" />
+        </button>
+        <div
+          ref={scrollerRef}
+          onScroll={syncScrollState}
+          className="flex min-w-0 flex-1 snap-x snap-mandatory gap-3 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        >
+          {templates.map((template) => (
+            <button
+              key={template.id}
+              type="button"
+              onClick={() => onPick(template)}
+              className="flex w-[calc((100%-12px)/2)] shrink-0 snap-start items-start gap-3 rounded-[10px] sm:w-[calc((100%-24px)/3)] border border-black/[0.06] bg-white p-3 text-left transition hover:border-black/[0.12] hover:bg-black/[0.015]"
+            >
+              <GeometricAvatar
+                shapeId={template.shapeId}
+                color={template.color}
+                size={40}
+                className="shrink-0"
+              />
+              {/* Demo 常量中文无法被 i18n-extract 静态提取，接真实接口时由后端返回已本地化文案 */}
+              <span className="min-w-0">
+                <span className="block text-sm font-medium text-black/[0.88]">{template.name}</span>
+                <span className="mt-0.5 block line-clamp-2 text-xs leading-5 text-black/45">
+                  {template.description}
+                </span>
               </span>
-            </span>
-          </button>
-        ))}
+            </button>
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={() => scrollByPage(1)}
+          disabled={!canScrollNext}
+          aria-label={t("下一批")}
+          title={t("下一批")}
+          className={arrowClass}
+        >
+          <ChevronRight className="size-4" aria-hidden="true" />
+        </button>
       </div>
     </section>
   );
@@ -983,7 +1036,7 @@ export const AgentOnboardingPanel = ({
             id="lv-onboarding-name"
             value={name}
             onChange={(event) => setName(event.target.value)}
-            className="mt-1 w-full rounded-[3px] border border-black/[0.1] px-3 py-2 text-sm font-medium text-black/[0.88] outline-none transition focus:border-black/25"
+            className="mt-1 w-full rounded-md border border-black/[0.1] px-3 py-2 text-sm font-medium text-black/[0.88] outline-none transition focus:border-black/25"
           />
         </div>
 
@@ -1001,7 +1054,7 @@ export const AgentOnboardingPanel = ({
             rows={2}
             placeholder={t(BUDDY_DESCRIPTION_PLACEHOLDER)}
             onChange={(event) => setDescription(event.target.value)}
-            className="mt-1 w-full resize-none rounded-[3px] border border-black/[0.1] px-3 py-2 text-[13px] leading-5 text-black/70 outline-none transition placeholder:text-black/30 focus:border-black/25"
+            className="mt-1 w-full resize-none rounded-md border border-black/[0.1] px-3 py-2 text-[13px] leading-5 text-black/70 outline-none transition placeholder:text-black/30 focus:border-black/25"
           />
         </div>
 

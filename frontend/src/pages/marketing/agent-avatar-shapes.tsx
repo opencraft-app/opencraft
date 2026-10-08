@@ -47,8 +47,8 @@ export const getAvatarShapeLabel = (id: AvatarShapeId, t: (message: string) => s
  * 明度统一压在能承载白色眼睛的区间：太浅眼睛会糊，太深又回到深色压迫感。
  */
 export const AVATAR_COLORS = [
-  { id: "tangerine", label: "橘橙", value: "#F97316" },
   { id: "violet", label: "亮紫", value: "#8B5CF6" },
+  { id: "tangerine", label: "橘橙", value: "#F97316" },
   { id: "azure", label: "亮蓝", value: "#3B82F6" },
   { id: "teal", label: "青绿", value: "#14B8A6" },
   { id: "emerald", label: "翠绿", value: "#10B981" },
@@ -60,6 +60,7 @@ export const AVATAR_COLORS = [
 ];
 
 export const DEFAULT_AVATAR_SHAPE: AvatarShapeId = "blob";
+/** 默认取第一个（亮紫），与 LightVela 品牌紫色接近 */
 export const DEFAULT_AVATAR_COLOR = AVATAR_COLORS[0]!.value;
 
 /* ──────────────────────────────── 组件 ──────────────────────────────── */

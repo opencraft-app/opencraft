@@ -7,7 +7,8 @@
  * 三个成因各不相同，所以分别守：
  *   1. buildBuddySetupPlan 的步骤 label 硬编码中文，不走 t()
  *   2. 模板 routine.label 改成英文后，cron 解析器只认中文 → 定时任务静默全失败
- *   3. 总览页「最新动态」是模块级常量，中文直接渲染、日期整串硬编码
+ *   3. 总览页「产品动态」曾是模块级常量，中文直接渲染、日期整串硬编码；
+ *      现改为复用 changelog-data.ts
  */
 import { describe, expect, it } from "vitest";
 
@@ -108,22 +109,20 @@ describe("cron parsing covers both locales", () => {
 });
 
 describe("overview changelog is localizable", () => {
-  it("keeps dates structured instead of hardcoding a formatted string", () => {
-    // 日期整串（「2026年9月10日」）进词典意味着每加一条动态都要翻 6 个语种；
-    // 结构化后由 Intl.DateTimeFormat 按 locale 输出
+  it("reuses the shared changelog data instead of keeping a second hardcoded list", () => {
+    // 总览「产品动态」与 changelog 页共用 changelog-data.ts：国内站 / 国际站
+    // 由数据源各自维护，月份是已本地化的文案，不再在总览里硬编码日期或条目
     const src = readOverviewSource();
-    expect(src).toMatch(/date: \{ y: \d{4}, m: \d{1,2}, d: \d{1,2} \}/);
-    expect(src).toContain("Intl.DateTimeFormat(locale");
+    expect(src).toContain("getRecentChangelogEntries(t, locale, NEWS_LIMIT)");
     expect(src).not.toMatch(/date: "\d{4}年/);
+    expect(src).not.toMatch(/title: t\("/);
   });
 
-  it("renders changelog text through t()", () => {
+  it("renders the localized month, title and description of each entry", () => {
     const src = readOverviewSource();
-    // 标题 / 正文 / 图片 alt / 指示器 aria-label 四处都要翻译
-    expect(src).toContain("{t(entry.title)}");
-    expect(src).toContain("{t(entry.body)}");
-    expect(src).toContain("alt={t(entry.imageAlt)}");
-    expect(src).toContain("aria-label={t(item.title)}");
+    expect(src).toContain("{entry.month}");
+    expect(src).toContain("{entry.title}");
+    expect(src).toContain("{entry.desc}");
   });
 });
 
