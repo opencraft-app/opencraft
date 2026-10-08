@@ -129,7 +129,23 @@ the normal Git/MR workflow; no preview restart or unrelated auto-connect deliver
   credentials into command arguments, the repository or output.
 - Fetch current master and integrate in an isolated checkout before pushing;
   merge only through the normal server policy, never bypass required reviews.
-- Actual commit/MR/master receipts remain pending; no deployment is authorized.
+- Source commit `ea2834606` was cherry-picked onto fetched master `541705b15`
+  in an isolated checkout as `f62d25026`; automatic merges preserve the newer
+  Bot draft-storage injection. Independent review found no draft-owner change.
+- The isolated checkout installed its own lockfile dependencies. Focused
+  history/profile/Bot/draft regressions passed 156/156; Bot management 32/32;
+  three affected workspace typechecks, boundaries, Web build and diff check pass.
+  History browser proof passed desktop/narrow and light/dark with built CSS
+  at `/tmp/opencraft-hermes-history-evidence-1Eun2H`; browser draft smoke passed
+  1280 and 390 widths. All native Hermes calls remain synthetic.
+- Feature branch `fix/hermes-history-20261008` was pushed normally; remote
+  `ls-remote` confirmed `f62d25026`. Master still reports `541705b15` at this
+  point. No claim of merge or preview replacement.
+- Git authentication is available, but the existing MCP configuration requires
+  a missing `GONGFENG_TOKEN`; the configured Git credential cannot authenticate
+  the MR API (`Unauthorized`). Browser inspection is unavailable for this page
+  (`PREVIEW_BRIDGE_UNAVAILABLE`). Requested a current API credential; do not
+  bypass review policy or publish any credential values.
 
 ## scan_scope / scan_output
 Exact bridge, source and viewport paths plus selected reference Desktop files;
