@@ -436,9 +436,11 @@ produce neither a blank interval nor a duplicate row. This does not redefine
 steer as a hard interrupt: the current provider request and tool step remain
 owned by DSH and may finish before the next-step inbox is consumed.
 
-The main conversation defaults fresh follow-up input to direct steering during
+The standalone main conversation defaults fresh follow-up input to direct steering during
 an active response. Chat settings can persist `queue` instead through
-`UiPreferencesRuntime` (`chat.defaultFollowUpAction`, installation scope).
+`UiPreferencesRuntime` (`chat.defaultFollowUpAction`, installation scope). The
+LightVela embedded conversation defaults to `queue` while a response is active,
+independent of the standalone preference.
 Ctrl/Cmd+Enter temporarily chooses the opposite action; idle input still starts
 a normal response. A preference change does not replace the Composer document,
 editor or selections, and submission rechecks the actual active Turn. Side Chat
@@ -469,6 +471,9 @@ by client-message identity and is never retried automatically. The Composer
 disables later Send/Steer and reorder while such a claim is unresolved, and
 must not offer a generic Resume action behind it. Editing and removing ordinary
 queued rows remain available.
+Queued-message action hints use a hover/focus tooltip mounted in the Workbench
+presentation root, outside the scroll-clipped queue tray. The tooltip remains
+hoverable and text-selectable; native `title` is not used for these actions.
 This does not prove Codex never saw the input. `unconfirmedSteerDiscard` remains
 a separate Host capability; DSH's `atomicSteer` does not imply it. A failed
 history read also rejects discard. Ordinary direct steering and idle queue Send

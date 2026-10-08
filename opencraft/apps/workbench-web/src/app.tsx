@@ -1740,7 +1740,7 @@ export function App({
                       >{(goalMenuItem) => (
                       <CodexComposer
                         controller={composerController}
-                        defaultFollowUpAction={defaultFollowUpAction}
+                        defaultFollowUpAction={embedded ? "queue" : defaultFollowUpAction}
                         availableFollowUpActions={(["steer", "queue"] as const).filter(action => runtime.resources.host.canRequest?.(action === "queue" ? "thread/queue/add" : "turn/steer") !== false)}
                         portalContainer={portalContainer}
                         isStreaming={isStreaming}

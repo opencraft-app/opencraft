@@ -40,7 +40,7 @@ test("Workbench passes the Host queue capability into the Composer prop", () => 
   const composerTag = app.match(/<CodexComposer\b[\s\S]*?\/>/u)?.[0];
   assert.ok(composerTag, "Workbench should render CodexComposer");
   assert.match(composerTag, /supportsQueuedSteer=\{queueAtomicSteer\}/u);
-  assert.match(composerTag, /defaultFollowUpAction=\{defaultFollowUpAction\}/u);
+  assert.match(composerTag, /defaultFollowUpAction=\{embedded \? "queue" : defaultFollowUpAction\}/u);
 });
 
 test("normal queued follow-ups render as messages rather than transport UI", () => {
@@ -105,6 +105,7 @@ test("queued Steer is disabled without Host atomic support while idle Send remai
   );
   assert.match(running, /aria-label="Steer with queued message"[^>]*disabled=""/);
   assert.match(running, /This Host cannot steer a queued message/);
+  assert.match(running, /class="codex-composer-queue-action-trigger"[^>]*tabindex="0"[^>]*role="group"[^>]*aria-disabled="true"/);
 
   const supported = renderToStaticMarkup(
     <ComposerQueueTray items={[item]} isResponseInProgress atomicSteer />,
@@ -128,7 +129,7 @@ test("queued Steer is disabled without Host atomic support while idle Send remai
 });
 
 
-test("Chinese queued steer exposes the immediate-insert tooltip and accessible name", async () => {
+test("Chinese queued steer keeps its accessible name without a native tooltip", async () => {
   const runtime = new LocaleRuntime([{ locale: "zh-CN", label: "中文", load: async () => zh }]);
   await runtime.update({ localeOverride: "zh-CN" });
   try {
@@ -136,11 +137,12 @@ test("Chinese queued steer exposes the immediate-insert tooltip and accessible n
       <ComposerQueueTray items={[{ ...pendingItem, state: "queued", actionable: true }]}
         isResponseInProgress atomicSteer />
     </IntlRuntimeProvider>);
-    assert.match(markup, /class="is-labelled is-steer"[^>]*aria-label="立即插入"[^>]*title="立即插入"/);
+    assert.match(markup, /class="is-labelled is-steer"[^>]*aria-label="立即插入"/);
+    assert.doesNotMatch(markup, /\btitle=/);
   } finally { runtime.dispose(); }
 });
 
-test("queued action tooltips describe the action instead of inheriting the message preview", async () => {
+test("queued actions keep labels and use custom tooltip triggers", async () => {
   const runtime = new LocaleRuntime([{ locale: "zh-CN", label: "中文", load: async () => zh }]);
   await runtime.update({ localeOverride: "zh-CN" });
   try {
@@ -148,13 +150,15 @@ test("queued action tooltips describe the action instead of inheriting the messa
     const markup = renderMarkup(<IntlRuntimeProvider runtime={runtime}>
       <ComposerQueueTray items={[item]} isResponseInProgress atomicSteer />
     </IntlRuntimeProvider>);
-    assert.match(markup, /class="codex-composer-queue-item"[^>]*title="几点了"/);
-    assert.match(markup, /aria-label="调整排队消息顺序"[^>]*title="调整排队消息顺序"/);
-    assert.match(markup, /aria-label="编辑排队消息"[^>]*title="编辑排队消息"/);
-    assert.match(markup, /aria-label="删除排队消息"[^>]*title="删除排队消息"/);
+    assert.match(markup, /class="codex-composer-queue-item__preview"[^>]*>几点了/);
+    assert.match(markup, /aria-label="调整排队消息顺序"/);
+    assert.match(markup, /aria-label="编辑排队消息"/);
+    assert.match(markup, /aria-label="删除排队消息"/);
+    assert.doesNotMatch(markup, /\btitle=/);
     const editing = renderMarkup(<IntlRuntimeProvider runtime={runtime}>
       <ComposerQueueTray items={[{ ...item, editing: true }]} isResponseInProgress atomicSteer />
     </IntlRuntimeProvider>);
-    assert.match(editing, /aria-label="取消编辑排队消息"[^>]*title="取消编辑排队消息"/);
+    assert.match(editing, /aria-label="取消编辑排队消息"/);
+    assert.doesNotMatch(editing, /\btitle=/);
   } finally { runtime.dispose(); }
 });
