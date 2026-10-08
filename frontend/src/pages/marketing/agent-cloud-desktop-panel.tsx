@@ -16,7 +16,14 @@ import { cn } from "@/lib/utils";/**
  *  4. Failed 可一键重试（重新 POST）；wsUrl 一律由后端下发，前端不拼 IP
  */
 
+// Provisioning 态已接近就绪（拉起服务 + 探测，通常数秒），轮询快一点可缩短进入
+// 桌面的等待体感。
 const DESKTOP_POLL_INTERVAL_MS = 3_000;
+// Installing 态是按需装图形层（apt，通常 2-5 分钟）。后端进度文件本身约 8s 才刷新
+// 一次（ctl desktopInstallPollInterval），此阶段用 3s 轮询纯属空转、会打出上百次
+// 拿到同一进度值的无效请求。拉到 6s，既对齐后端更新节奏、显著降频，又不致让进度
+// 显示太迟钝。
+const DESKTOP_INSTALLING_POLL_INTERVAL_MS = 6_000;
 const DESKTOP_HEARTBEAT_MS = 30_000;
 const DESKTOP_MAX_POLL_ERRORS = 5;
 // WebSocket 保活间隔：桌面静止时 wss 链路长时间无字节，会被腾讯云 CLB 按
@@ -131,7 +138,13 @@ export function AgentCloudDesktopPanel({ botId }: { botId: string }) {
           if (current.status === "Failed") {
             throw new Error(current.reason || t("云桌面启动失败"));
           }
-          await new Promise((resolve) => setTimeout(resolve, DESKTOP_POLL_INTERVAL_MS));
+          // 按阶段分级轮询：Installing（apt 装图形层，分钟级）用更大间隔降频，
+          // Provisioning（接近就绪）保持较快轮询以缩短进入桌面的等待。
+          const pollDelayMs =
+            current.status === "Installing"
+              ? DESKTOP_INSTALLING_POLL_INTERVAL_MS
+              : DESKTOP_POLL_INTERVAL_MS;
+          await new Promise((resolve) => setTimeout(resolve, pollDelayMs));
           if (cancelled) return;
           try {
             current = await repositories.bots.getDesktopSession(botId);

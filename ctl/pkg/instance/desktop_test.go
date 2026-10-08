@@ -53,6 +53,9 @@ type desktopSandboxStub struct {
 	resumeCalls []string
 	// execFunc 若非空，则按命令内容动态返回（用于模拟按需装的进度序列，线程安全）。
 	execFunc func(bash string) (*psandbox.ExecCommandResult, error)
+	// execAuths 记录每次 ExecCommand 调用时从 ctx 取出的 session 鉴权，
+	// 用于断言后台安装 goroutine 的 ctx 正确透传了用户 session。
+	execAuths []string
 }
 
 func (s *desktopSandboxStub) StreamPtyCommand(_ context.Context, _ string, req *psandbox.PtyExecStreamRequest, onEvent func(psandbox.PtyExecStreamEvent) error) error {
@@ -71,10 +74,17 @@ func (s *desktopSandboxStub) StreamPtyCommand(_ context.Context, _ string, req *
 	return nil
 }
 
-func (s *desktopSandboxStub) ExecCommand(_ context.Context, sandboxID string, bash string, _ int) (*psandbox.ExecCommandResult, error) {
+func (s *desktopSandboxStub) ExecCommand(ctx context.Context, sandboxID string, bash string, _ int) (*psandbox.ExecCommandResult, error) {
+	// 捕获 ctx 透传的 session 鉴权：真实 adapter 的 TAT 调用（/tat/*）依赖它，
+	// 后台安装 goroutine 若漏传会导致鉴权失败。此处记录以便测试断言。
+	var auth string
+	if p, ok := ctx.(interface{ GetSessionAuthorization() string }); ok {
+		auth = p.GetSessionAuthorization()
+	}
 	s.mu.Lock()
 	s.execCalls = append(s.execCalls, sandboxID)
 	s.execCmds = append(s.execCmds, bash)
+	s.execAuths = append(s.execAuths, auth)
 	fn := s.execFunc
 	execErr := s.execErr
 	execResult := s.execResult
@@ -97,6 +107,13 @@ func (s *desktopSandboxStub) execCmdCount() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return len(s.execCalls)
+}
+
+// execAuthsSnapshot 线程安全快照每次 ExecCommand 捕获到的 session 鉴权。
+func (s *desktopSandboxStub) execAuthsSnapshot() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.execAuths...)
 }
 
 // ptyCallCount 线程安全读 StreamPtyCommand 调用次数。
@@ -472,6 +489,66 @@ func TestDesktopProvisionMissingLayerTriggersInstall(t *testing.T) {
 	// 安装期间发过 ExecCommand（启动 + 至少一次进度查询）。
 	if sb.execCmdCount() < 2 {
 		t.Fatalf("expected install dispatch + progress poll ExecCommand, got %d", sb.execCmdCount())
+	}
+}
+
+// TestDesktopInstallPropagatesSessionAuth 回归：后台安装 goroutine 经 TAT 下发命令，
+// TAT endpoint 鉴权只认 ctx 透传的用户 session。startDesktopInstall 用 context.Background()
+// 重建 ctx 时若漏传 SessionAuth，后台所有 ExecCommand 的 ctx 鉴权为空 → TAT
+// "authentication required: authentication failed" → 桌面安装永远起不来（现网实测）。
+// 本测试断言：后台安装 goroutine 的每次 ExecCommand 都带上了 parent 的 session 鉴权。
+func TestDesktopInstallPropagatesSessionAuth(t *testing.T) {
+	resetDesktopSessionsForTest()
+	fastDesktopInstallPoll(t)
+	withDesktopEnv(t, "ingress.example.com")
+	dao := &desktopInstanceDaoStub{entity: desktopTestEntity()}
+	sb := &desktopSandboxStub{
+		ptyOutputs: [][]psandbox.PtyExecStreamEvent{
+			ptyFinishEvents(desktopMissingLayerMarker),
+		},
+	}
+	sb.execFunc = func(bash string) (*psandbox.ExecCommandResult, error) {
+		if strings.Contains(bash, "vela-desktop-install.sh") {
+			return &psandbox.ExecCommandResult{Status: "SUCCESS", ExitCode: 0, Output: desktopInstallStartedMark}, nil
+		}
+		return &psandbox.ExecCommandResult{Status: "SUCCESS", ExitCode: 0, Output: "PROGRESS=100\n" + desktopInstallDoneMarker}, nil
+	}
+	l := newDesktopTestLogic(dao, sb)
+
+	const wantAuth = "Bearer test-session-token"
+	const wantCookie = "lc_session=test-session-token"
+	// parent ctx 带上用户 session 鉴权（模拟真实 HTTP 请求链路）。
+	ctx := pctx.NewContext(nil).
+		WithUserID("user-desktop-1").
+		WithSessionAuth(wantAuth, wantCookie)
+
+	resp, err := l.EnsureDesktopSession(ctx, "ins-desktop-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Status != transport.DesktopSessionStatusInstalling {
+		t.Fatalf("expected Installing, got %q (reason=%q)", resp.Status, resp.Reason)
+	}
+
+	// 等后台安装 goroutine 收敛到 Provisioning。
+	session := l.desktopSessionOf("ins-desktop-1")
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, _, status, _, _ := session.snapshot(); status == transport.DesktopSessionStatusProvisioning {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	auths := sb.execAuthsSnapshot()
+	if len(auths) == 0 {
+		t.Fatal("expected background install ExecCommand calls, got none")
+	}
+	// 核心断言：后台安装 goroutine 的每次 TAT 下发都必须带上 parent 的 session 鉴权。
+	for i, got := range auths {
+		if got != wantAuth {
+			t.Fatalf("background install ExecCommand #%d ctx missing session auth: got %q, want %q", i, got, wantAuth)
+		}
 	}
 }
 

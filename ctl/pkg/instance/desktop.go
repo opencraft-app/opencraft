@@ -75,6 +75,9 @@ const (
 	desktopInstallStartedMark  = "DESKTOP_INSTALL_STARTED"
 	// 安装总超时（秒）：apt 装图形层通常 2-5 分钟。
 	desktopInstallTimeoutS = 600
+	// 进度轮询连续失败上限：连续这么多次读进度失败即判定为真实故障（如 TAT
+	// 鉴权失效、sandbox 不可达），带确切原因快速失败，而非静默卡满整个超时窗口。
+	desktopInstallMaxPollFailures = 5
 
 	// ingressproxy 对外泛域名（证书需覆盖 *-<sandboxID>）。
 	desktopIngressDomainEnv = "DESKTOP_INGRESS_DOMAIN"
@@ -664,7 +667,14 @@ func (l *logic) startDesktopInstall(parent pctx.Context, session *desktopSession
 		return // 已有安装在进行
 	}
 	job, cancel := context.WithTimeout(context.Background(), desktopInstallTimeoutS*time.Second)
-	ctx := pctx.NewContext(job).WithUserID(parent.GetUserID()).WithRegion(parent.GetRegion())
+	// 后台安装经 TAT 下发命令，而 TAT endpoint（/tat/*）鉴权只认 ctx 透传的用户
+	// session（见 adapter.applySandboxSessionAuth）。请求早已返回，这里必须从
+	// parent 显式继承 SessionAuth，否则后台 ctx 的 session 为空，TAT 调用会以
+	// "authentication required: authentication failed" 失败，桌面安装永远起不来。
+	ctx := pctx.NewContext(job).
+		WithUserID(parent.GetUserID()).
+		WithRegion(parent.GetRegion()).
+		WithSessionAuth(parent.GetSessionAuthorization(), parent.GetSessionCookie())
 	ctx.SetGormDB(parent.GormDB())
 	go func() { defer cancel(); l.runDesktopInstall(ctx, sandboxID, session) }()
 }
@@ -687,6 +697,10 @@ func (l *logic) runDesktopInstall(ctx pctx.Context, sandboxID string, session *d
 
 	// 2. 轮询进度文件，直到 DONE / FAIL / 超时。
 	deadline := time.Now().Add(desktopInstallTimeoutS * time.Second)
+	// 单次轮询失败（网络抖动等）不致命，但连续多次失败往往是真实错误（如 TAT
+	// 鉴权失效、sandbox 不可达）。此时应带确切原因快速失败，而非静默卡满整个
+	// 安装超时窗口、把真实故障伪装成「正在安装」。
+	consecutivePollFailures := 0
 	for time.Now().Before(deadline) {
 		timer := time.NewTimer(desktopInstallPollInterval)
 		select {
@@ -703,8 +717,20 @@ func (l *logic) runDesktopInstall(ctx pctx.Context, sandboxID string, session *d
 				session.endInstall(transport.DesktopSessionStatusFailed, "desktop target changed")
 				return
 			}
-			continue // 单次轮询失败不致命，继续重试直至超时
+			consecutivePollFailures++
+			if consecutivePollFailures >= desktopInstallMaxPollFailures {
+				detail := "poll desktop install progress"
+				if perr != nil {
+					detail = perr.Error()
+				} else if res != nil {
+					detail = sandboxCommandFailureDetail(res)
+				}
+				session.endInstall(transport.DesktopSessionStatusFailed, "desktop install progress unreachable: "+detail)
+				return
+			}
+			continue // 偶发失败：继续重试直至连续失败上限或整体超时
 		}
+		consecutivePollFailures = 0
 		out := desktopCommandOutput(res)
 		if strings.Contains(out, desktopInstallFailMarker) {
 			session.endInstall(transport.DesktopSessionStatusFailed, "desktop install failed on sandbox (see /tmp/vela-desktop-install.log)")
