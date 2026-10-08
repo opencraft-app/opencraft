@@ -1,4 +1,5 @@
 import { submitEmbeddedPrompt } from "./embedded-chat/embedded-prompt-submission";
+import { isEmbeddedConversationPainted } from "./embedded-chat/embedded-paint";
 import { WorkspaceResourcePreviewPanel } from "./panels/workspace-resource-panel";
 import { EditableThreadTitle } from "./components/editable-thread-title";
 import { shouldTypeToCompose } from "./type-to-compose";
@@ -1141,9 +1142,9 @@ export function App({
       isDraft: draft !== null && draft.submission === null,
     });
   }, [activeThreadId, catalog.hasNextPage, catalog.isFetching, draft, embedded, embeddedSessions, snapshot.hostId]);
-  // The local Draft paints before the Host connects; the Composer stays
-  // submission-disabled until the connection is ready.
-  const painted = draft !== null && draft.submission === null;
+  // The local Draft paints before the Host connects (the Composer stays
+  // submission-disabled until ready); a restored Thread paints when ready.
+  const painted = isEmbeddedConversationPainted(draft, conversationViewActivation.phase);
   useEffect(() => {
     if (embedded === undefined || !painted) return;
     embedded.onPainted();

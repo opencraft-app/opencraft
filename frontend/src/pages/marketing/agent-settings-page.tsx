@@ -767,7 +767,7 @@ const DAILY_SECTION_IDS = new Set<AgentSettingsSectionId>([
   "overview", "channel", "connectors", "skill", "automations", "chat",
 ]);
 
-/** 路由切换会重挂载页面；保留每栏最近打开的页面供顶部 Tab 返回。 */
+/** 跨整页刷新以外的场景保留每栏最近打开的页面，供顶部 Tab 返回。 */
 let lastDailySection: AgentSettingsSectionId = "channel";
 let lastExploreSection: AgentSettingsSectionId = "buddy";
 let lastSidebarTab: "daily" | "explore" = "daily";
@@ -2845,14 +2845,16 @@ export const AgentSettingsPage = ({
   const [sessionToDelete, setSessionToDelete] = useState<LightVelaSession | null>(null);
   const sessionMenuRef = useRef<HTMLDivElement>(null);
 
-  /** 路由切换后记住各栏最近使用的页面。 */
+  /** 路由切换后记住各栏最近使用的页面；控制台常驻不重挂载，侧栏 tab 也随路由同步。 */
   useEffect(() => {
     if (EXPLORE_SECTION_IDS.has(activeSection)) {
       lastExploreSection = activeSection;
       lastSidebarTab = "explore";
+      setSidebarTab("explore");
     } else if (DAILY_SECTION_IDS.has(activeSection)) {
       lastDailySection = activeSection;
       lastSidebarTab = "daily";
+      setSidebarTab("daily");
     }
   }, [activeSection]);
 

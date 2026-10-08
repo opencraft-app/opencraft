@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -181,6 +181,26 @@ describe("AgentSettingsPage 实验室导航", () => {
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
+  });
+
+  // The persistent /agents console keeps this page mounted across sections, so the
+  // sidebar tab must follow the route (e.g. Explore workbench → "创建我的工作台" → Chat).
+  it("follows the route section with the sidebar tab while staying mounted", async () => {
+    const navigation = createNavigation();
+    const view = render(
+      <AppNavigationProvider value={navigation}>
+        <AgentSettingsPage sectionId="deepseek-harness" showHeader={false} />
+      </AppNavigationProvider>,
+    );
+    const tab = (name: string) => screen.getAllByRole("tab", { name })[0]!;
+    await waitFor(() => expect(tab("探索")).toHaveAttribute("aria-selected", "true"));
+    view.rerender(
+      <AppNavigationProvider value={{ ...navigation, pathname: "/agents/skills" }}>
+        <AgentSettingsPage sectionId="skill" showHeader={false} />
+      </AppNavigationProvider>,
+    );
+    await waitFor(() => expect(tab("日常")).toHaveAttribute("aria-selected", "true"));
+    expect(tab("探索")).toHaveAttribute("aria-selected", "false");
   });
 
   it("keeps account, billing, and cloud storage reachable at the bottom of the mobile drawer", async () => {
