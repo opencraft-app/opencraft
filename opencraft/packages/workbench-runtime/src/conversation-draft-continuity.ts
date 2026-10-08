@@ -61,10 +61,26 @@ export function parseConversationDraftDocument(value: string | null): ComposerDo
   } catch { return null; }
 }
 
-export function serializeConversationDraftDocument(document: ComposerDocument): string | null {
+export function serializeConversationDraftDocument(document: ComposerDocument, target?: ComposerTarget): string | null {
   if (isComposerDocumentEmpty(document)) return null;
-  const value = JSON.stringify({ version: VERSION, document });
+  const value = JSON.stringify({ version: VERSION, document, ...(target?.type === "new-thread" ? { target } : {}) });
   return value.length <= MAX_CHARACTERS ? value : null;
+}
+
+/** Placement is recoverable input metadata, never execution admission. */
+export function parseConversationDraftTarget(value: string | null): Extract<ComposerTarget, { type: "new-thread" }> | null {
+  if (parseConversationDraftDocument(value) === null || value === null) return null;
+  try {
+    const target: unknown = JSON.parse(value).target;
+    if (!record(target) || target.type !== "new-thread" || typeof target.draftId !== "string" || !target.draftId
+      || !record(target.execution) || typeof target.execution.hostId !== "string" || !target.execution.hostId
+      || !record(target.execution.workspace)) return null;
+    const workspace = target.execution.workspace;
+    if (!(workspace.cwd === null || typeof workspace.cwd === "string")
+      || !Array.isArray(workspace.runtimeWorkspaceRoots) || !workspace.runtimeWorkspaceRoots.every(root => typeof root === "string")
+      || !(workspace.projectId === undefined || workspace.projectId === null || typeof workspace.projectId === "string")) return null;
+    return target as unknown as Extract<ComposerTarget, { type: "new-thread" }>;
+  } catch { return null; }
 }
 
 /**
@@ -91,8 +107,8 @@ export function createConversationDraftContinuity(input: {
     if (timer !== undefined) clearTimeout(timer);
     timers.delete(key);
   };
-  const write = (key: string, document: ComposerDocument) => {
-    const value = serializeConversationDraftDocument(document);
+  const write = (key: string, document: ComposerDocument, target: ComposerTarget) => {
+    const value = serializeConversationDraftDocument(document, target);
     enqueue(key, () => value === null ? input.storage.remove(key) : input.storage.save(key, value));
   };
   return {
@@ -106,9 +122,11 @@ export function createConversationDraftContinuity(input: {
         const current = controller.getSnapshot().draft;
         if (keyFor(viewId, current.target) !== key) return;
         cancelTimer(key);
-        const value = serializeConversationDraftDocument(current.document);
+        const value = serializeConversationDraftDocument(current.document, current.target);
         if (value === null) {
           enqueue(key, () => input.storage.remove(key));
+        } else if (input.delayMs === 0) {
+          enqueue(key, () => input.storage.save(key, value));
         } else {
           timers.set(key, setTimeout(() => {
             timers.delete(key);
@@ -137,7 +155,7 @@ export function createConversationDraftContinuity(input: {
         unsubscribe();
         cancelTimer(key);
         const current = controller.getSnapshot().draft;
-        if (keyFor(viewId, current.target) === key && (hydrated || current.document !== initial.document)) write(key, current.document);
+        if (keyFor(viewId, current.target) === key && (hydrated || current.document !== initial.document)) write(key, current.document, current.target);
       };
     },
     discard(viewId, target) {

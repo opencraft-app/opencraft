@@ -18,7 +18,7 @@ import {
 import { createConversationKey, encodeConversationKey } from "@opencraft/chat-core";
 import { WebChatDocument, WebUserMessageDocument } from "@opencraft/chat-render-web";
 import { CodexComposer } from "@opencraft/codex-composer";
-import { createClientId, createComposerController } from "@opencraft/composer-core";
+import { createClientId, createComposerController, type ComposerDraftStorage } from "@opencraft/composer-core";
 import type { ExtensionSettingsViewProps } from "@opencraft/extension-react";
 import {
   ArrowDown,
@@ -76,6 +76,7 @@ export interface BotChatViewStatus {
 }
 
 export interface BotChatViewOptions {
+  readonly drafts?: ComposerDraftStorage;
   readonly resolver: BotConversationResolver;
   readonly createMotionReplay?: () => BotMotionReplayController;
   readonly writeAuthority?: BotChatWriteAuthority;
@@ -517,7 +518,8 @@ export function createBotChatView(
       () =>
         createComposerController(
           { type: "existing-thread", key },
-          { createId: createClientId, now: () => Date.now() },
+          { createId: createClientId, now: () => Date.now(), drafts: options.drafts,
+            onDraftStorageError: () => console.warn("Chat draft could not be saved locally") },
         ),
       [identity],
     );

@@ -35,6 +35,17 @@ function fixture(fetchImpl: typeof fetch, desktopAccount?: LightVelaDesktopAccou
   return { service, storage, transactionStorage, location, redirects, replacements };
 }
 
+test("application disposal preserves account cache scope while real sign-out rotates it", async () => {
+  const f = fixture(async () => Response.json({}));
+  const scope = f.service.getSnapshot().credentialScope;
+  f.service.dispose();
+  const reopened = new LightVelaAccountService({ storage: f.storage, fetchImpl: async () => Response.json({}) });
+  assert.equal(reopened.getSnapshot().credentialScope, scope);
+  await reopened.signOut();
+  assert.notEqual(reopened.getSnapshot().credentialScope, scope);
+  reopened.dispose();
+});
+
 test("desktop sign-in completes independently of failing profile and instance services", async () => {
   const desktop: LightVelaDesktopAccountPort = {
     signIn: async region => ({ region, token: "test-session" }),

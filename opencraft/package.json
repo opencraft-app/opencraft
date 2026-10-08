@@ -18,6 +18,7 @@
   "scripts": {
     "pretest:extensions": "tsx --test tests/extension-artifacts.test.ts tests/extension-catalog.test.ts tests/optional-feature-startup.test.ts tests/embedded-workbench-host-profile.test.ts tests/embedded-workbench-authority.test.ts",
     "smoke:extensions": "tsx scripts/smoke-extension-lifecycle.ts",
+    "smoke:browser-drafts": "tsx scripts/smoke-browser-drafts.ts",
     "smoke:sidebar-execution-owner": "tsx scripts/smoke-sidebar-execution-owner.ts",
     "smoke:sent-image-preview": "tsx scripts/smoke-sent-image-preview.ts",
     "check:i18n": "node scripts/check-i18n.mjs",

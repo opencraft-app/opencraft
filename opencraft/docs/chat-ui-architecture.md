@@ -1,5 +1,36 @@
 # ChatUI integration architecture
 
+## Browser-local input drafts
+
+`ComposerStoreServices.drafts` is a platform-neutral content storage port;
+`BrowserComposerDrafts` adapts browser localStorage for Bot input without server or
+device synchronization. Task Views retain their existing account-bound
+`ConversationDraftContinuity` owner; no second task persistence writer is added.
+Bot input is isolated by product/account and exact Host/conversation identity. Document, context and
+attachment metadata are saved on explicit edits and cleared after an accepted
+send. Lifecycle, selection and disposal changes never overwrite stored content.
+Restore creates a fresh editing state, not a submitting lock, receipt or outbox
+entry, and never sends automatically. Account credential-scope changes revoke
+and clear the old Bot adapter; a fresh application creates the next account's
+adapter. This change does not replace task navigation/restoration semantics.
+
+Task continuity includes new-Draft placement in its existing document envelope,
+not a second storage writer. Browser bootstrap can restore that exact client
+Draft ID and configured, enabled Host before the View hydrates its document.
+Canonical promotion aliases take precedence; old envelopes remain readable.
+Browser edits enqueue local writes immediately rather than leaving the last
+input behind a debounce window. No execution state is inferred from placement.
+Account service disposal revokes asynchronous authority without rotating the
+persisted credential scope. Only actual identity/credential transitions rotate
+that scope; otherwise every ordinary browser refresh would orphan saved input.
+
+Original browser File bytes and ephemeral Side Chat reload restoration are not
+implemented. Expired Object URLs and unfinished attachment staging restore as
+failed removable cards asking the user to re-add the file, never as ready files.
+Storage corruption, denial or quota failures retain in-memory editing; diagnostics
+do not log content. Mounted Views do not subscribe to cross-tab changes.
+Tests: `tests/chat-browser-drafts.test.ts`, `npm run smoke:browser-drafts`.
+
 Thread identity, execution activation, capability leases and revocation follow
 the [execution ownership contract](execution-ownership.md), including its
 explicit distinction between implemented coordination and pending delivery guarantees.

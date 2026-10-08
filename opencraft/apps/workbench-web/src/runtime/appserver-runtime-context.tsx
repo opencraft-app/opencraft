@@ -40,6 +40,7 @@ import { BlobResourceService } from "@opencraft/blob-resources";
 import { ImageProcessingService } from "@opencraft/image-processing";
 import { processBrowserImage } from "@opencraft/image-processing/browser";
 import { IndexedDbBlobStorage } from "@opencraft/blob-resources/browser";
+import { BrowserComposerDrafts } from "./browser-composer-drafts";
 import {
   OPENCRAFT_BROWSER_CAPABILITY,
   OPENCRAFT_BROWSER_EXTENSION,
@@ -1058,6 +1059,15 @@ export async function createWebWorkbenchApplicationSupervisor(
       ),
     });
     startupRollback.push(() => lightVelaAccount.dispose());
+    // Existing task View continuity remains its sole persistence owner. Bot
+    // content uses a separate account-bound adapter; an old account cannot
+    // read or write through it after its credential scope is revoked.
+    const botDraftScope = lightVelaAccount.getSnapshot().credentialScope;
+    const botDrafts = new BrowserComposerDrafts(window.localStorage,
+      currentProductStorageKey(`opencraft.composer-drafts.v1.bot.${botDraftScope}`));
+    startupRollback.push(lightVelaAccount.subscribe(() => {
+      if (lightVelaAccount.getSnapshot().credentialScope !== botDraftScope) botDrafts.revokeAndClear();
+    }));
     const extensionPersistence = await openClientExtensionPersistence(currentProductDatabaseName);
     startupRollback.push(() => extensionPersistence.backend.close());
     const extensions = new ExtensionSupervisor({
@@ -1225,6 +1235,7 @@ export async function createWebWorkbenchApplicationSupervisor(
         source: botSource,
         resolver: new AppServerBotConversationResolver(botConversations.service),
         showNavigation: false,
+        drafts: botDrafts,
       });
     });
     let connectBotHost: (hostId: string) => Promise<void> = async () => { throw new Error("暂无可连接的实例。"); };
@@ -1360,10 +1371,21 @@ export async function createWebWorkbenchApplicationSupervisor(
     startupRollback.length = 0;
     return hostless;
   }
-  const bootstrapLocation = requestedBootstrapLocation === null ? null : resolveRetainedWorkbenchLocation(
+  let draftCredentialScope = lightVelaAccount.getSnapshot().credentialScope;
+  let browserDraftStore = createBrowserConversationDraftStorage(`${workbenchProductId}.${draftCredentialScope}`);
+  const normalizedBootstrapLocation = requestedBootstrapLocation === null ? null : resolveRetainedWorkbenchLocation(
     requestedBootstrapLocation,
     { hasHost: hostId => profiles.some(profile => profile.hostId === hostId), bindings: conversationBindings, scopes: null },
   );
+  const savedNewTarget = normalizedBootstrapLocation?.kind !== "thread" && requestedBootstrapLocation?.kind === "draft"
+    ? await browserDraftStore.loadNewTarget(requestedBootstrapLocation.draftId) : null;
+  const restoredNewTarget = savedNewTarget && requestedBootstrapLocation?.kind === "draft"
+    && savedNewTarget.execution.hostId === requestedBootstrapLocation.hostId
+    && profiles.some(profile => profile.hostId === savedNewTarget.execution.hostId && profile.enabled)
+    ? savedNewTarget : null;
+  const bootstrapLocation = restoredNewTarget
+    ? createWorkbenchDraftLocation(restoredNewTarget.execution.hostId, restoredNewTarget.draftId)
+    : normalizedBootstrapLocation;
   const persistedHostId = window.localStorage.getItem(currentProductStorageKey("vela.active-host-id"));
   const requestedHostId = bootstrapLocation?.kind === "thread"
     ? bootstrapLocation.key.hostId
@@ -1476,12 +1498,13 @@ export async function createWebWorkbenchApplicationSupervisor(
       ? createWorkbenchThreadLocation(initialHostId, persistedThreadId)
       : null;
   const conversationScopes = createConversationScopeRegistry({
-    // A process-local Draft cannot be resurrected from a history ID. Only a
-    // durable promotion alias can recover its canonical Thread on bootstrap.
+    // Local persisted input may restore its client identity and placement.
+    // A canonical promotion alias still wins; execution locks never restore.
     initialDraft: initialThreadLocation === null
       ? {
           entrypoint: "home",
-          execution: {
+          ...(restoredNewTarget ? { draftId: restoredNewTarget.draftId } : {}),
+          execution: restoredNewTarget?.execution ?? {
             hostId: active.hostId,
             workspace: {
               cwd: initialWorkspaceRoot,
@@ -1507,8 +1530,6 @@ export async function createWebWorkbenchApplicationSupervisor(
     },
   });
   startupRollback.push(() => conversationLeases.dispose());
-  let draftCredentialScope = lightVelaAccount.getSnapshot().credentialScope;
-  let browserDraftStore = createBrowserConversationDraftStorage(`${workbenchProductId}.${draftCredentialScope}`);
   let currentDisplayContinuity = createConversationDisplayContinuity({
     namespace: `${workbenchProductId}.${draftCredentialScope}`,
     storage: browserDraftStore.displayStorage,
@@ -1536,6 +1557,7 @@ export async function createWebWorkbenchApplicationSupervisor(
     draftContinuity: createConversationDraftContinuity({
       namespace: `${workbenchProductId}.${draftCredentialScope}`,
       storage: browserDraftStore.storage,
+      delayMs: 0,
     }),
     onDisposeView(viewId) {
       disposeViewResources(viewId);
@@ -1561,6 +1583,7 @@ export async function createWebWorkbenchApplicationSupervisor(
     conversationViews.replaceDraftContinuity(createConversationDraftContinuity({
       namespace: `${workbenchProductId}.${nextScope}`,
       storage: browserDraftStore.storage,
+      delayMs: 0,
     }));
   });
   startupRollback.push(stopDraftScope);
