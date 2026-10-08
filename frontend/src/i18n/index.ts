@@ -45,24 +45,40 @@ import zhHant from "./generated/zh-Hant.json";
 type TranslationDictionary = Record<string, string>;
 
 /**
- * 首屏同步字典与按需字典。
+ * 国内站只发布中文：`initialLocale` 恒为 DEFAULT_LOCALE（本文件下方），构建
+ * 产物也不含任何语种前缀路由，因此其余字典不进首屏。`NEXT_PUBLIC_I18N_LAZY_LOCALES`
+ * 由 next.config.mjs 按构建区域内联成字面量，打包器据此把未用到的 JSON 当死代码
+ * 消除。取不到该变量的环境（vitest、以及把本文件 vendoring 进去的 opencraft
+ * 嵌入式工作台）保持全量同步装载，既有行为不变——不要换回直接读
+ * `NEXT_PUBLIC_REGION`，嵌入式构建会把它固定替换成 "cn"，连带裁掉国际站
+ * 嵌入式控制台要用的英文字典。
  *
- * 动态 import 仍保持字面量路径，确保打包器生成独立 chunk。日语或韩语
- * 成为当前 URL / 用户选择时才下载；已发布既有语种继续同步可用。
+ * 动态 import 仍保持字面量路径，确保打包器生成独立 chunk。未同步装载的语种
+ * 一律留有按需通道：即便被意外请求也只是多一次异步加载，不会抛错。
  */
-const EAGER_DICTIONARIES: Partial<Record<I18nDictKey, TranslationDictionary>> = {
-  "en-US": enUS,
-  "zh-CN": zhCN,
-  "zh-Hant": zhHant,
-  "id-ID": idID,
-  es,
-};
+const EAGER_ALL_DICTIONARIES = process.env.NEXT_PUBLIC_I18N_LAZY_LOCALES !== "1";
+
+const EAGER_DICTIONARIES: Partial<Record<I18nDictKey, TranslationDictionary>> = EAGER_ALL_DICTIONARIES
+  ? {
+    "en-US": enUS,
+    "zh-CN": zhCN,
+    "zh-Hant": zhHant,
+    "id-ID": idID,
+    es,
+  }
+  : { "zh-CN": zhCN };
 
 const LAZY_DICTIONARY_LOADERS: Partial<
   Record<I18nDictKey, () => Promise<TranslationDictionary>>
 > = {
   "ja-JP": async () => (await import("./generated/ja-JP.json")).default,
   "ko-KR": async () => (await import("./generated/ko-KR.json")).default,
+  ...(EAGER_ALL_DICTIONARIES ? {} : {
+    "en-US": async () => (await import("./generated/en-US.json")).default,
+    "zh-Hant": async () => (await import("./generated/zh-Hant.json")).default,
+    "id-ID": async () => (await import("./generated/id-ID.json")).default,
+    es: async () => (await import("./generated/es.json")).default,
+  }),
 };
 
 const dictionaryCache: Partial<Record<I18nDictKey, TranslationDictionary>> = {

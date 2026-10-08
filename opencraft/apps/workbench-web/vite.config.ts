@@ -94,6 +94,8 @@ const webRelease = createWebReleaseMetadata();
 const vendoredEnvKeys = [
   "NEXT_PUBLIC_REGION",
   "NEXT_PUBLIC_PREVIEW_LOCALES",
+  // 空值即「全量同步装载字典」，嵌入式工作台两站共用一份产物，必须保留英文等字典。
+  "NEXT_PUBLIC_I18N_LAZY_LOCALES",
   "NEXT_PUBLIC_LOCAL_PREVIEW_AUTH",
   "NEXT_PUBLIC_AUTH_API_BASE_URL",
   "NEXT_PUBLIC_ZERO_TOKEN_AUTOMATIONS_ENABLED",
