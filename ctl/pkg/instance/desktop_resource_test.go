@@ -444,3 +444,59 @@ func TestDesktopLegacyReadyCannotSurviveSandboxReplacement(t *testing.T) {
 		t.Fatal("legacy did not prepare new binding")
 	}
 }
+
+// TestDesktopResourceObserverPrepareInheritsSessionAuth 回归（与 startDesktopInstall
+// 同源）：prepareDesktopResource 的后台 worker 经 execDesktopInstallCommand →
+// /sandboxes/{id}/tat/commands 下发 observer 准备命令，该 TAT endpoint 鉴权只认 ctx
+// 透传的用户 session（无服务级凭据回退）。EnsureDesktopResource 构造 worker ctx 时
+// 若漏传 SessionAuth，observer 准备会鉴权失败 → "desktop observation unavailable" →
+// Failed。本测试断言后台 worker 的 TAT 下发带上了 parent 的 session，且最终收敛到
+// observerPrepared。注意 provision/probe 走 PTY（X-API-Key），不经此 auth。
+func TestDesktopResourceObserverPrepareInheritsSessionAuth(t *testing.T) {
+	resetDesktopSessionsForTest()
+	t.Setenv(desktopIngressDomainEnv, "")
+	// provision 一次 PTY 直接 ProbeOK → Ready，随后 worker 走 observer 准备分支。
+	sb := &desktopSandboxStub{ptyOutputs: [][]psandbox.PtyExecStreamEvent{
+		ptyFinishEvents(desktopProbeOKMarker),
+	}}
+	sb.execFunc = func(command string) (*psandbox.ExecCommandResult, error) {
+		if !strings.Contains(command, desktopObserverProxySource) {
+			return nil, errcode.ErrSandboxServiceError // 只认 observer 准备命令
+		}
+		return &psandbox.ExecCommandResult{Status: "SUCCESS", ExitCode: 0}, nil
+	}
+
+	const wantAuth = "Bearer resource-session-token"
+	const wantCookie = "lc_session=resource-session-token"
+	l := &logic{instanceDao: &desktopResourceDAO{entity: *desktopTestEntity()}, sandboxAdapter: sb, logger: zap.NewNop()}
+	// parent ctx 带上用户 session 鉴权（模拟真实 HTTP 请求链路）。
+	ctx := pctx.NewContext(nil).
+		WithUserID("user-desktop-1").
+		WithSessionAuth(wantAuth, wantCookie)
+
+	if _, err := l.EnsureDesktopResource(ctx, "ins-desktop-1"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	session := l.desktopSessionOf("ins-desktop-1")
+	awaitDesktopWorker(t, session)
+
+	session.mu.Lock()
+	prepared := session.observerPrepared
+	_, _, status := session.sandboxID, session.password, session.status
+	reason := session.reason
+	session.mu.Unlock()
+	if !prepared || status != transport.DesktopSessionStatusReady {
+		t.Fatalf("observer not prepared: prepared=%v status=%q reason=%q", prepared, status, reason)
+	}
+
+	auths := sb.execAuthsSnapshot()
+	if len(auths) == 0 {
+		t.Fatal("expected observer prepare ExecCommand (TAT) calls, got none")
+	}
+	// 核心断言：observer 准备的每次 TAT 下发都必须带上 parent 的 session 鉴权。
+	for i, got := range auths {
+		if got != wantAuth {
+			t.Fatalf("observer prepare ExecCommand #%d ctx missing session auth: got %q, want %q", i, got, wantAuth)
+		}
+	}
+}
