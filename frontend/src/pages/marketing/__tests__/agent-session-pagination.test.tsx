@@ -86,4 +86,16 @@ describe("agent session pagination", () => {
     act(() => { result.current.collapse(); });
     expect(result.current.visibleSessions).toHaveLength(6);
   });
+
+  it("loads the server page on the first click when pinned sessions fill the local threshold", async () => {
+    const loadMore = vi.fn(async () => undefined);
+    const recent = sessions(8).map((session) => ({ ...session, pinned: false }));
+    const pinned = ["pinned-1", "pinned-2"].map((chatId) => ({ chatId, pinned: true }));
+    const { result } = renderHook(() => useAgentSessionPagination([...recent, ...pinned], true, loadMore, 5));
+
+    await act(async () => { await result.current.showMore(); });
+
+    expect(loadMore).toHaveBeenCalledOnce();
+    expect(result.current.visibleSessions).toHaveLength(10);
+  });
 });

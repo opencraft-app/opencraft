@@ -87,7 +87,7 @@ import type {
   LightVelaSession,
   LightVelaSessionActions,
 } from "./agent-chat-panel";
-import { resolveAgentSidebarEmptySessionState, useAgentSidebarSessionList, useAgentSidebarUnreadSessions } from "./agent-sidebar-session-list";
+import { resolveAgentSidebarEmptySessionState, runBotScopedSessionPin, useAgentSidebarSessionList, useAgentSidebarUnreadSessions } from "./agent-sidebar-session-list";
 import { AUTH_SERVICE_UNAVAILABLE_MESSAGE, readStoredAuthToken } from "@/repositories/http-repositories";
 import {
   AGENTS_HOME_PATH,
@@ -2937,16 +2937,16 @@ export const AgentSettingsPage = ({
     setOpenSessionMenuChatId(null);
     setChatPinError(null);
     setPinningChatIds((current) => new Set(current).add(session.chatId));
-    void commands.setPinned(session.chatId, !pinned).catch(() => {
-      if (sidebarSessionBotKeyRef.current === botKey) setChatPinError(session.chatId);
-    }).finally(() => {
-      if (sidebarSessionBotKeyRef.current !== botKey) return;
-      setPinningChatIds((current) => {
+    void runBotScopedSessionPin(
+      () => commands.setPinned(session.chatId, !pinned),
+      () => sidebarSessionBotKeyRef.current === botKey,
+      () => setChatPinError(session.chatId),
+      () => setPinningChatIds((current) => {
         const next = new Set(current);
         next.delete(session.chatId);
         return next;
-      });
-    });
+      }),
+    );
   };
 
   const commitSessionRename = () => {
