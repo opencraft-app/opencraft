@@ -57,6 +57,27 @@ afterEach(() => {
 });
 
 describe("homepage hero headline order", () => {
+  it("restores natural word boundaries without changing the headline or replay timing", () => {
+    new Function(headlineRuntime)();
+    const motion = readFileSync(path.resolve("public/lightvela-intl-home/assets/feature-motion.js"), "utf8");
+    const normalization = motion.slice(0, motion.indexOf("  var rotator = root.querySelector")) + "})();";
+    const main = document.querySelector<HTMLElement>(".hero__line--main")!;
+    const prefix = document.querySelector<HTMLElement>(".hero__prefix")!;
+    const wrap = document.querySelector<HTMLElement>(".hero__rotator-wrap")!;
+    const text = main.textContent!.replace(/\u00a0/g, " ");
+    const delay = wrap.style.getPropertyValue("--rotator-delay");
+
+    new Function(normalization)();
+    new Function(normalization)();
+
+    expect(main.textContent).toBe(text);
+    expect(main.querySelectorAll(".hero__char")).toHaveLength(0);
+    expect(prefix.textContent).toBe("LightVela 可以成为你的");
+    expect(prefix.querySelectorAll(".hero__char")).toHaveLength(0);
+    expect(wrap.style.getPropertyValue("--rotator-delay")).toBe(delay);
+    expect(document.querySelector("#hero-rotator")?.textContent).toBe("工作搭档");
+  });
+
   it("keeps the first role until both headline lines have appeared", () => {
     new Function(headlineRuntime)();
     window.dispatchEvent(new Event("pageshow"));

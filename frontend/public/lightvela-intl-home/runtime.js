@@ -441,6 +441,8 @@
   voice.classList.add('has-voice-carousel');
   var count = items.length;
   var timer = 0;
+  var disposed = false;
+  var observer;
   var inView = typeof IntersectionObserver === 'undefined';
   var hovering = false;
   function offsetOf(index) {
@@ -463,7 +465,7 @@
   function stop() { if (timer) window.clearInterval(timer); timer = 0; }
   function restart() {
     stop();
-    if (reduced.matches || hovering || !inView || document.hidden) return;
+    if (disposed || reduced.matches || hovering || !inView || document.hidden) return;
     timer = window.setInterval(function () { go(active + 1); }, 1500);
   }
   root.addEventListener('pointerenter', function () { hovering = true; stop(); });
@@ -489,11 +491,24 @@
   document.addEventListener('visibilitychange', restart);
   if (reduced.addEventListener) reduced.addEventListener('change', restart);
   if (typeof IntersectionObserver !== 'undefined') {
-    new IntersectionObserver(function (entries) {
+    observer = new IntersectionObserver(function (entries) {
       inView = entries[0].isIntersecting;
       restart();
-    }, { threshold: 0.25 }).observe(root);
+    }, { threshold: 0.25 });
+    observer.observe(root);
   }
+  function dispose() {
+    if (disposed) return;
+    disposed = true;
+    stop();
+    if (observer) observer.disconnect();
+    document.removeEventListener('visibilitychange', restart);
+    if (reduced.removeEventListener) reduced.removeEventListener('change', restart);
+    document.removeEventListener('lightvela-home-dispose', dispose);
+    root.remove();
+    voice.classList.remove('has-voice-carousel');
+  }
+  document.addEventListener('lightvela-home-dispose', dispose);
   go(active);
   restart();
 })();

@@ -1165,13 +1165,22 @@ describe("international v2 homepage artifact", () => {
     expect(css).toMatch(/#lightvela-intl-home \.foot__title,[\s\S]*font-family:\s*"STXingkai"/);
   });
 
-  it("keeps long Indonesian desktop headings on one line", () => {
+  it("keeps long desktop headings on one line at a smaller responsive size", () => {
     const css = readFileSync(stylesheetPath, "utf8");
+    const editorial = readFileSync(path.join(homeRoot, "assets/hermes-home.css"), "utf8");
+    const importer = readFileSync(path.join(process.cwd(), "scripts/import-international-homepage.mjs"), "utf8");
+    const selector = "#lightvela-intl-home:is([data-locale^='id'], [data-locale='es'], [data-locale^='ko']) .hero__line--main";
 
-    expect(css).toMatch(/@media \(min-width: 1024px\)[\s\S]*#lightvela-intl-home:is\(\[data-locale\^='id'\], \[data-locale='es'\]\) \.hero__line--main\s*\{[^}]*max-width:\s*min\(1680px, calc\(100vw - 64px\)\);[^}]*white-space:\s*nowrap;/);
+    for (const source of [css, importer]) {
+      expect(source).toContain(selector);
+      expect(source).toContain("max-width: calc(100vw - 48px);");
+      expect(source).not.toContain("max-width: min(1680px, calc(100vw - 64px));");
+    }
+    expect(css).toMatch(/\.hero__line--main\s*\{[^}]*max-width:\s*calc\(100vw - 48px\);[^}]*white-space:\s*nowrap;/);
+    expect(editorial).toContain("font-size: clamp(21px, 1.7vw, 26px) !important;");
+    expect(editorial).toContain("font-size: clamp(30px, 2.4vw, 36px) !important;");
+    expect(editorial).toMatch(/\.hero \.hero__title\s*\{\s*gap: 96px;/);
     expect(css).toMatch(/#lightvela-intl-home\[data-locale\^='id'\] \.about__head\s*\{[^}]*max-width:\s*min\(1200px, calc\(100vw - 64px\)\);/);
-    expect(css).toMatch(/#lightvela-intl-home\[data-locale\^='id'\] \.about__head \.k\s*\{[^}]*white-space:\s*nowrap;/);
-    expect(css).toMatch(/@media \(min-width: 1280px\) and \(max-width: 1439px\)[\s\S]*font-size:\s*32px;/);
   });
 
   it("localizes the revised free-trial CTA in every non-English locale", () => {

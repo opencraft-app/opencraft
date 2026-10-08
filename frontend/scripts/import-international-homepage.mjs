@@ -49,6 +49,10 @@ const preservedHarnessAssetNames = [
   "hermes-door-background.webp",
   "hermes-door-white.webp",
   "footer-group-portrait.webp",
+  "footer-cast-video.mp4",
+  "footer-cast-pingpong.mp4",
+  "footer-cast-first.webp",
+  "footer-cast-final.webp",
   ...["bean-lilac", "round-coral", "square-mint", "drop-sky", "cloud-butter", "round-peach", "bean-periwinkle"].map(name => `peek-friends/${name}.webp`),
   "hero-poses/manifest.json",
   ...["bean-lilac", "round-coral", "square-mint", "drop-sky", "cloud-butter", "round-peach", "bean-periwinkle"].flatMap(name => [
@@ -3126,9 +3130,14 @@ const domesticStableHeroPrefixCss = `
 }
 `;
 const longLocaleDesktopHeadingCss = `
+/* Long-sentence locales (Indonesian, Spanish, Korean) keep the headline on one
+   desktop line, but at a smaller size so it neither overflows the viewport nor
+   runs under the companion art. The effective desktop size is set with the
+   editorial !important rule in hermes-home.css; these widths only reserve room
+   and keep the single line from being clipped. */
 @media (min-width: 1024px) {
-  #lightvela-intl-home:is([data-locale^='id'], [data-locale='es']) .hero__line--main {
-    max-width: min(1680px, calc(100vw - 64px));
+  #lightvela-intl-home:is([data-locale^='id'], [data-locale='es'], [data-locale^='ko']) .hero__line--main {
+    max-width: calc(100vw - 48px);
     white-space: nowrap;
   }
 
@@ -3138,28 +3147,6 @@ const longLocaleDesktopHeadingCss = `
 
   #lightvela-intl-home[data-locale^='id'] .about__head .k {
     white-space: nowrap;
-  }
-}
-
-@media (min-width: 1024px) and (max-width: 1279px) {
-  #lightvela-intl-home:is([data-locale^='id'], [data-locale='es']) .hero__line--main {
-    font-size: 25px;
-  }
-
-  #lightvela-intl-home[data-locale^='id'] .about__head .k {
-    font-size: 36px;
-  }
-}
-
-@media (min-width: 1280px) and (max-width: 1439px) {
-  #lightvela-intl-home:is([data-locale^='id'], [data-locale='es']) .hero__line--main {
-    font-size: 32px;
-  }
-}
-
-@media (min-width: 1440px) {
-  #lightvela-intl-home:is([data-locale^='id'], [data-locale='es']) .hero__line--main {
-    font-size: 36px;
   }
 }
 `;

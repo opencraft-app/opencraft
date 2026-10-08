@@ -8344,8 +8344,8 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
 
 
 @media (min-width: 1024px) {
-  #lightvela-intl-home:is([data-locale^='id'], [data-locale='es']) .hero__line--main {
-    max-width: min(1680px, calc(100vw - 64px));
+  #lightvela-intl-home:is([data-locale^='id'], [data-locale='es'], [data-locale^='ko']) .hero__line--main {
+    max-width: calc(100vw - 48px);
     white-space: nowrap;
   }
 
@@ -8355,28 +8355,6 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
 
   #lightvela-intl-home[data-locale^='id'] .about__head .k {
     white-space: nowrap;
-  }
-}
-
-@media (min-width: 1024px) and (max-width: 1279px) {
-  #lightvela-intl-home:is([data-locale^='id'], [data-locale='es']) .hero__line--main {
-    font-size: 25px;
-  }
-
-  #lightvela-intl-home[data-locale^='id'] .about__head .k {
-    font-size: 36px;
-  }
-}
-
-@media (min-width: 1280px) and (max-width: 1439px) {
-  #lightvela-intl-home:is([data-locale^='id'], [data-locale='es']) .hero__line--main {
-    font-size: 32px;
-  }
-}
-
-@media (min-width: 1440px) {
-  #lightvela-intl-home:is([data-locale^='id'], [data-locale='es']) .hero__line--main {
-    font-size: 36px;
   }
 }
 

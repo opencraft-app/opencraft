@@ -1642,6 +1642,35 @@ canvas.home-scroll-cast { position: fixed; inset: 0; display: block; width: 100%
     width: 270px !important;
   }
 }
+/* Long-sentence locales stay on one desktop line (style.css sets nowrap) but at
+   a smaller size than the editorial default above, so the line fits the viewport
+   and ends before the companion art. Indonesian and Spanish are the longest, so
+   they shrink most; Korean is shorter and can stay larger. */
+@media (min-width: 900px) and (max-width: 1279px) {
+  #lightvela-intl-home:is([data-locale^='id'], [data-locale='es']) .hero .hero__line--main {
+    font-size: clamp(16px, 1.95vw, 21px) !important;
+  }
+  #lightvela-intl-home[data-locale^='ko'] .hero .hero__line--main {
+    font-size: clamp(22px, 2.8vw, 30px) !important;
+  }
+}
+@media (min-width: 1280px) {
+  #lightvela-intl-home:is([data-locale^='id'], [data-locale='es']) .hero .hero__line--main {
+    font-size: clamp(21px, 1.7vw, 26px) !important;
+  }
+  #lightvela-intl-home[data-locale^='ko'] .hero .hero__line--main {
+    font-size: clamp(30px, 2.4vw, 36px) !important;
+  }
+}
+@media (min-width: 900px) {
+  #lightvela-intl-home:is([data-locale^='id'], [data-locale='es'], [data-locale^='ko']) .hero .hero__line--main {
+    max-width: 100%;
+    white-space: nowrap;
+  }
+  #lightvela-intl-home:is([data-locale^='id'], [data-locale='es'], [data-locale^='ko']) .hero .hero__title {
+    gap: 96px;
+  }
+}
 @media (max-width: 899px) {
   #lightvela-intl-home .hero .hero__line--main {
     font-size: clamp(32px, 5vw, 46px) !important;
@@ -1654,9 +1683,62 @@ canvas.home-scroll-cast { position: fixed; inset: 0; display: block; width: 100%
     width: 198px !important;
   }
 }
+@media (min-width: 769px) and (max-width: 899px) {
+  #lightvela-intl-home:is([data-locale^='id'], [data-locale='es']) .hero .hero__line--main {
+    font-size: clamp(16px, 2vw, 18px) !important;
+    white-space: nowrap;
+    max-width: 100%;
+  }
+  #lightvela-intl-home[data-locale^='ko'] .hero .hero__line--main {
+    font-size: clamp(22px, 3.5vw, 30px) !important;
+    white-space: nowrap;
+    max-width: 100%;
+  }
+  #lightvela-intl-home:is([data-locale^='id'], [data-locale='es'], [data-locale^='ko']) .hero .hero__title {
+    gap: 80px;
+  }
+}
+@media (min-width: 900px) and (max-width: 1279px) {
+  #lightvela-intl-home .hero .hero__line--dynamic {
+    font-size: clamp(18px, 2vw, 24px);
+  }
+  #lightvela-intl-home .hero .home-cover-mascot {
+    left: calc(100% + 16px) !important;
+  }
+  #lightvela-intl-home .hero .home-cover-mascot,
+  #lightvela-intl-home .hero .home-cover-mascot img {
+    width: 198px !important;
+  }
+  #lightvela-intl-home .hero .hero__title {
+    gap: 64px;
+  }
+}
+@media (min-width: 601px) and (max-width: 899px) {
+  #lightvela-intl-home .hero .hero__line--dynamic {
+    padding-right: 162px;
+    font-size: clamp(18px, 2.5vw, 22px);
+  }
+  #lightvela-intl-home .hero .hero__title {
+    gap: 80px;
+  }
+}
+@media (max-width: 768px) {
+  #lightvela-intl-home:is([data-locale^='en'], [data-locale^='id'], [data-locale='es']) .hero .hero__line--main {
+    font-size: clamp(22px, 5.8vw, 28px) !important;
+  }
+  #lightvela-intl-home .hero .hero__line--main {
+    white-space: normal;
+    overflow-wrap: break-word;
+  }
+}
 @media (max-width: 600px) {
   #lightvela-intl-home .hero .home-cover-mascot,
   #lightvela-intl-home .hero .home-cover-mascot img { width: 150px !important; }
+  #lightvela-intl-home .hero .hero__rotator-wrap {
+    margin-right: 114px;
+    max-width: calc(100% - 114px);
+    min-height: 3em;
+  }
 }
 
 /* User voice: center-mode carousel. One wide flat stage card, each
