@@ -11,7 +11,7 @@
 1. Buka My Agent dan pilih Bot yang ingin digunakan di bagian atas sidebar.
 2. Di Daily, buka Chat lalu pilih New conversation. Anda juga dapat memulai percakapan untuk Bot tertentu dari kartunya di halaman Overview.
 3. Tulis pertanyaan atau tugas di kolom “Share your thoughts, or ask me to help with something”, lalu kirim.
-4. Baca balasan di percakapan. Saat pertama kali dimuat, pesan “Your AI companion will be right here” mungkin muncul sebentar; tunggu hingga kolom pesan tampil.
+4. Baca balasan di percakapan. Kolom pesan untuk percakapan baru langsung muncul; jika halaman masih menghubungkan, pesanmu menampilkan “Akan dikirim setelah terhubung…” dan terkirim otomatis. Saat membuka percakapan yang sudah ada, pesan “Teman AI-mu akan segera hadir” mungkin muncul sebentar.
 
 Chat di web tidak memerlukan kanal pesan. Jika ingin menggunakan Bot yang sama di Telegram, WhatsApp, Discord, atau WeChat, hubungkan platform tersebut melalui Channels.
 

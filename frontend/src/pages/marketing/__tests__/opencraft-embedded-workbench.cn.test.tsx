@@ -1,5 +1,5 @@
 import { savePendingWorkbenchPrompt, readPendingWorkbenchPrompt } from "../workbench-prompt-templates";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type {
@@ -117,7 +117,8 @@ describe("AgentChatMigrationSurface", () => {
       localization: { ideLocale: "en-US", localeSource: "IDE" },
     });
     expect(screen.queryByText("Legacy AgentChat")).toBeNull();
-    expect(screen.getByRole("status")).toHaveTextContent("你的 AI 伙伴，马上就来");
+    expect(screen.getByRole("textbox", { name: "聊聊你的想法，或交给我一件事" })).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("正在连接…");
     expect(screen.getByRole("status")).not.toHaveTextContent("正在准备我们的对话");
     resolveShow();
     await waitFor(() => expect(onOwnerChange).toHaveBeenCalledWith("opencraft"));
@@ -242,7 +243,7 @@ describe("AgentChatMigrationSurface", () => {
       expect(legacyMounted).not.toHaveBeenCalled();
       rerender(surface(true));
       await waitFor(() => expect(show).toHaveBeenCalled());
-      expect(screen.getByRole("status")).toHaveTextContent("你的 AI 伙伴，马上就来");
+      expect(screen.getByRole("status")).toHaveTextContent("正在连接…");
       expect(legacyMounted).not.toHaveBeenCalled();
       await act(async () => { resolveShow(); await pendingShow; });
       await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
@@ -527,6 +528,99 @@ describe("AgentChatMigrationSurface", () => {
     expect(submitPrompt).not.toHaveBeenCalled();
     expect(readPendingWorkbenchPrompt()?.templateId).toBe("tool");
     delete ctor.prototype.submitPrompt;
+  });
+
+  describe("composer placeholder", () => {
+    const composer = () => screen.queryByRole("textbox", { name: "聊聊你的想法，或交给我一件事" }) as HTMLTextAreaElement | null;
+    const setup = (admit: boolean | (() => boolean), selectedChatId?: string) => {
+      const ctor = customElements.get("opencraft-embedded-workbench")!;
+      let resolveShow!: () => void;
+      const shown = new Promise<void>(resolve => { resolveShow = resolve; });
+      const show = vi.spyOn(ctor.prototype, "show").mockImplementation(() => shown);
+      const submitPrompt = vi.fn(typeof admit === "function" ? admit : () => admit);
+      Object.defineProperty(ctor.prototype, "submitPrompt", { value: submitPrompt, configurable: true });
+      render(<AgentChatMigrationSurface active enabled instanceId="ins-1" profileId="sales-123" region="cn"
+        legacy={<div>Legacy</div>} multiSession={{ selectedChatId, onSessionStateChange: vi.fn(), onSelectedChatIdChange: vi.fn() }} />);
+      return {
+        show, submitPrompt,
+        ready: () => act(async () => { resolveShow(); await shown; }),
+        restore: () => { delete (ctor.prototype as { submitPrompt?: unknown }).submitPrompt; },
+      };
+    };
+
+    it("accepts typing before readiness and hands the queued message over exactly once", async () => {
+      const harness = setup(true);
+      try {
+        await waitFor(() => expect(harness.show).toHaveBeenCalled());
+        const input = composer()!;
+        expect(screen.getByRole("button", { name: "发送" })).toBeDisabled();
+        fireEvent.change(input, { target: { value: "帮我写一份周报" } });
+        fireEvent.keyDown(input, { key: "Enter" });
+        expect(screen.getByRole("status")).toHaveTextContent("连上后自动发送…");
+        expect(input).toHaveAttribute("readonly");
+        expect(harness.submitPrompt).not.toHaveBeenCalled();
+        await harness.ready();
+        await waitFor(() => expect(harness.submitPrompt).toHaveBeenCalledOnce());
+        expect(harness.submitPrompt).toHaveBeenCalledWith(expect.stringMatching(/^placeholder:/), "帮我写一份周报");
+        await waitFor(() => expect(composer()).toBeNull());
+        expect(harness.submitPrompt).toHaveBeenCalledOnce();
+      } finally { harness.restore(); }
+    });
+
+    it("keeps unsent text after adoption until the user sends it", async () => {
+      const harness = setup(true);
+      try {
+        await waitFor(() => expect(harness.show).toHaveBeenCalled());
+        fireEvent.change(composer()!, { target: { value: "还没写完" } });
+        await harness.ready();
+        expect(composer()).toHaveValue("还没写完");
+        expect(screen.getByRole("status")).toBeEmptyDOMElement();
+        expect(harness.submitPrompt).not.toHaveBeenCalled();
+        fireEvent.keyDown(composer()!, { key: "Enter", shiftKey: true });
+        expect(harness.submitPrompt).not.toHaveBeenCalled();
+        fireEvent.click(screen.getByRole("button", { name: "发送" }));
+        await waitFor(() => expect(harness.submitPrompt).toHaveBeenCalledWith(expect.any(String), "还没写完"));
+        await waitFor(() => expect(composer()).toBeNull());
+      } finally { harness.restore(); }
+    });
+
+    it("hides once the real composer is ready when nothing was typed", async () => {
+      const harness = setup(true);
+      try {
+        await waitFor(() => expect(composer()).not.toBeNull());
+        await harness.ready();
+        await waitFor(() => expect(composer()).toBeNull());
+        expect(harness.submitPrompt).not.toHaveBeenCalled();
+      } finally { harness.restore(); }
+    });
+
+    it("retains the text and allows a retry when the embedded owner refuses admission", async () => {
+      let admit = false;
+      const harness = setup(() => admit);
+      try {
+        await waitFor(() => expect(harness.show).toHaveBeenCalled());
+        fireEvent.change(composer()!, { target: { value: "你好" } });
+        fireEvent.click(screen.getByRole("button", { name: "发送" }));
+        await harness.ready();
+        await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("未能发送，请重试"));
+        expect(composer()).toHaveValue("你好");
+        expect(composer()).not.toHaveAttribute("readonly");
+        admit = true;
+        fireEvent.click(screen.getByRole("button", { name: "发送" }));
+        await waitFor(() => expect(composer()).toBeNull());
+        expect(harness.submitPrompt).toHaveBeenCalledTimes(2);
+        expect(new Set(harness.submitPrompt.mock.calls.map(call => (call as unknown[])[0])).size).toBe(2);
+      } finally { harness.restore(); }
+    });
+
+    it("keeps the loading state for an existing thread", async () => {
+      const harness = setup(true, "thread-1");
+      try {
+        await waitFor(() => expect(harness.show).toHaveBeenCalled());
+        expect(composer()).toBeNull();
+        expect(screen.getByRole("status")).toHaveTextContent("你的 AI 伙伴，马上就来");
+      } finally { harness.restore(); }
+    });
   });
 
 });

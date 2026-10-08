@@ -7,6 +7,7 @@ import {
 } from "react";
 
 import { useT } from "@/i18n/t";
+import { ChatComposerPlaceholder } from "@/components/site/chat-composer-placeholder";
 import { ChatLoadingState } from "@/components/site/chat-loading-state";
 import { ChatFileDownloadMenu } from "./chat-file-download-menu";
 
@@ -165,6 +166,9 @@ export function AgentChatMigrationSurface({
   const [sessionRevision, setSessionRevision] = useState(0);
   const [owner, setOwner] = useState<"loading" | "legacy" | "opencraft">("loading");
   const [started, setStarted] = useState((active || preloadSessions) && enabled);
+  const [placeholderDraft, setPlaceholderDraft] = useState("");
+  const [placeholderRequestId, setPlaceholderRequestId] = useState<string | null>(null);
+  const [placeholderRejected, setPlaceholderRejected] = useState(false);
   const presentedOwner = enabled ? owner : "legacy";
 
   const unavailable = enabled && (agentPaused || owner !== "opencraft" || connection.phase !== "ready");
@@ -428,6 +432,19 @@ export function AgentChatMigrationSurface({
   }, [active, enabled, owner, connection.phase, promptRevision]);
 
   useEffect(() => {
+    if (placeholderRequestId === null || !active || !enabled || owner !== "opencraft" || connection.phase !== "ready") return;
+    let admitted = false;
+    try {
+      admitted = elementRef.current?.submitPrompt?.(placeholderRequestId, placeholderDraft) === true;
+    } catch {
+      // Not admitted: the placeholder keeps the text for an explicit retry.
+    }
+    setPlaceholderRequestId(null);
+    if (admitted) setPlaceholderDraft("");
+    else setPlaceholderRejected(true);
+  }, [active, enabled, owner, connection.phase, placeholderRequestId, placeholderDraft]);
+
+  useEffect(() => {
     if (!enabled || owner !== "opencraft" || !multiSession.selectedChatId) return;
     const element = elementRef.current;
     if (element === null) return;
@@ -455,6 +472,14 @@ export function AgentChatMigrationSurface({
     : presentedOwner === "opencraft" ? t("正在重新连接，输入内容已保留…")
     : null;
 
+  // A new conversation gets a usable composer immediately; an existing thread keeps the loading state.
+  // After adoption it stays only while it still holds the user's unsent text.
+  const placeholderVisible = active && enabled && !agentPaused && !multiSession.selectedChatId && (
+    (presentedOwner === "loading" && connectionMessage === null)
+    || (presentedOwner === "opencraft" && connection.phase === "ready" && placeholderDraft.trim() !== ""
+      && typeof elementRef.current?.submitPrompt === "function")
+  );
+
   return (
     <div
       aria-hidden={!active || undefined}
@@ -477,7 +502,18 @@ export function AgentChatMigrationSurface({
       >
         {presentedOwner === "legacy" ? legacy : null}
       </div>
-      {unavailable && active && (
+      {placeholderVisible ? (
+        <div className="absolute inset-0 z-10 flex items-center justify-center overflow-y-auto bg-white">
+          <ChatComposerPlaceholder
+            value={placeholderDraft}
+            queued={placeholderRequestId !== null}
+            rejected={placeholderRejected}
+            connecting={presentedOwner === "loading"}
+            onChange={(value) => { setPlaceholderDraft(value); setPlaceholderRejected(false); }}
+            onSubmit={() => { setPlaceholderRejected(false); setPlaceholderRequestId(`placeholder:${Date.now()}`); }}
+          />
+        </div>
+      ) : unavailable && active && (
         <div className={cn(
           "absolute z-10 flex items-center justify-center gap-3 bg-white/95 px-4 py-3 text-sm text-black/60",
           presentedOwner === "loading" ? "inset-0 flex-col" : "inset-x-0 top-0 border-b border-black/[0.08]",
