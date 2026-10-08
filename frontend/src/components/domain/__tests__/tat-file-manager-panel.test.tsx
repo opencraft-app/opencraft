@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TatFileManagerPanel } from "@/components/domain/tat-file-manager-panel";
 import type { TsshFileInfo } from "@/lib/tencent-tssh-file-client";
@@ -339,6 +339,8 @@ describe("TatFileManagerPanel upload limits", () => {
     fireEvent.click(await screen.findByText("app.log"));
 
     fireEvent.click(screen.getByRole("button", { name: "删除" }));
+    expect(deleteFileMock).not.toHaveBeenCalled();
+    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "确认删除 app.log" }));
 
     await waitFor(() => expect(deleteFileMock).toHaveBeenCalledWith("/home/agentuser/.hermes/app.log", false));
     await waitFor(() => expect(storageCapacityCommandCalls()).toHaveLength(2));
@@ -551,8 +553,55 @@ describe("TatFileManagerPanel upload limits", () => {
     expect(deleteButton).toBeEnabled();
 
     fireEvent.click(deleteButton);
+    expect(deleteFileMock).not.toHaveBeenCalled();
+    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "确认删除 app.log" }));
 
     await waitFor(() => expect(deleteFileMock).toHaveBeenCalledWith("/home/agentuser/.hermes/app.log", false));
+  });
+
+  it("requires confirmation for files and folders, and cancel leaves them untouched", async () => {
+    listPathMock.mockResolvedValueOnce([
+      { type: "-", name: "app.log", size: 42, modifyTime: 0, accessTime: 0, rights: "-rw-r--r--" },
+      { type: "d", name: "logs", size: 0, modifyTime: 0, accessTime: 0, rights: "drwxr-xr-x" },
+    ]);
+    render(<TatFileManagerPanel botId="bot-delete-confirmation" />);
+    fireEvent.click(await screen.findByText("app.log"));
+    fireEvent.click(screen.getByRole("button", { name: "删除" }));
+
+    let dialog = screen.getByRole("alertdialog");
+    expect(within(dialog).getByText("确定要删除「app.log」吗？此操作无法恢复。")).toBeInTheDocument();
+    expect(deleteFileMock).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole("button", { name: "取消" }));
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("button", { name: "删除" })).toHaveFocus());
+    expect(deleteFileMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByText("logs"));
+    fireEvent.click(screen.getByRole("button", { name: "删除" }));
+    dialog = screen.getByRole("alertdialog");
+    expect(within(dialog).getByText("确定要删除「logs」吗？此操作无法恢复。")).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "确认删除 logs" }));
+    await waitFor(() => expect(deleteFileMock).toHaveBeenCalledWith("/home/agentuser/.hermes/logs", true));
+  });
+
+  it("keeps the confirmation open after deletion fails so the user can retry", async () => {
+    listPathMock.mockResolvedValueOnce([
+      { type: "-", name: "app.log", size: 42, modifyTime: 0, accessTime: 0, rights: "-rw-r--r--" },
+    ]);
+    deleteFileMock.mockRejectedValueOnce(new Error("permission denied"));
+    render(<TatFileManagerPanel botId="bot-delete-retry" />);
+    fireEvent.click(await screen.findByText("app.log"));
+    fireEvent.click(screen.getByRole("button", { name: "删除" }));
+
+    const dialog = screen.getByRole("alertdialog");
+    const confirm = within(dialog).getByRole("button", { name: "确认删除 app.log" });
+    fireEvent.click(confirm);
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("权限不足，无法完成该文件操作。");
+    expect(confirm).toBeEnabled();
+
+    fireEvent.click(confirm);
+    await waitFor(() => expect(deleteFileMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
   });
 
   it("renames the selected file through a TAT exec command", async () => {
