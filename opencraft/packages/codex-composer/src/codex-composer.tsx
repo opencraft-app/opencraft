@@ -1787,6 +1787,9 @@ export const CodexComposer = forwardRef<
             ? "Steer active response"
             : intl.formatMessage({ id: "chat.send", defaultMessage: "Send message" });
   const inverseFollowUpAction = resolveComposerFollowUpAction(invertComposerFollowUpAction(defaultFollowUpAction), availableFollowUpActions);
+  // Typed content that cannot be sent yet explains why, instead of a silently grey button.
+  const waitingForHostWithContent = submissionDisabled && !disabled && primaryAction !== "stop"
+    && composerSnapshot.canSubmit;
   const primaryActionTitle = submissionDisabled && primaryAction !== "stop"
     ? "Waiting for execution host"
     : isStreaming && primaryAction !== "stop" && inverseFollowUpAction !== null && inverseFollowUpAction !== defaultFollowUpAction
@@ -2497,6 +2500,11 @@ export const CodexComposer = forwardRef<
           </div>
         </div>
       </div>
+      {waitingForHostWithContent ? (
+        <p className="codex-composer-connection-hint" role="status">
+          {intl.formatMessage({ id: "chat.waitingForHostToSend", defaultMessage: "Connecting. You can send once connected." })}
+        </p>
+      ) : null}
     </div>
   );
 });

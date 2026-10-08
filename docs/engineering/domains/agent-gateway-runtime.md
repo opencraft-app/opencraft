@@ -152,6 +152,8 @@ Pages 制品对嵌入内容哈希资源声明 immutable，稳定 loader/version/
 
 嵌入聊天的语音、协作、Bot Chat/管理呈现与 Terminal 面板模块由同一 Application 在首个可用可见帧后按依赖顺序启动，不再阻塞 Host/Thread 就绪。账户身份、实例/Profile 校验与协议声明所需服务仍为必需依赖。未完成模块加载在超时或销毁时撤销工厂 scope；已开始的扩展激活排空后才销毁借用的 registry/Host。Full Workbench 默认保持原 eager 策略；这不等于 Host 启动超时已修复。详见 [Embedded Shell](../../../opencraft/docs/platform-architecture.md#embedded-workbench-shell)。
 
+嵌入式 Chat 的绘制与可发送分属两个就绪点。启动草稿是本地身份，不依赖 Host 连接，因此 Embedded 元素在 Application 创建并渲染出草稿后即兑现 `prepare()`/`show()`（painted）；Host 连接进度只经 `opencraft-connection` 事件发布，`opencraft-ready` 仍表示会话视图激活完成，模板 prompt 的自动提交继续以连接就绪为前提。连接未就绪时 Composer 自身以 `submissionDisabled` 拒绝准入，已输入内容时在输入框下方提示等待连接；宿主不再以「已接管」推断「已连接」，仅对从不上报连接阶段的旧制品保留该兜底。宿主遮罩只覆盖画布尚未绘制（超过 1 秒才显示加载状态）与真实异常；首次连接超过 10 秒提示慢网并提供重连，「正在重新连接」仅用于曾连接成功之后。国际站与国内站同样在 Bot 发现期间并行准备嵌入资源与物理连接，地域按站点传递。`/agents/*` 的控制台由路由 layout 常驻，切换分区不重建 Application 与 Host 连接。
+
 OpenCraft 弱网恢复按共享 AppHost 连接、每 Host 的协议就绪、各 Thread/资源恢复和查询缓存重新验证分别持有状态。
 前台/网络恢复提示由共享连接 owner 合并；协商后的探测仅证明接入通路可达，不激活或重启引擎。
 Host 在 lease 与 initialize 完成后即可就绪，慢终端、文件监听或失败 Thread 不阻塞其他会话；查询在新连接就绪后按 Host 重新验证并拒绝旧结果覆盖。

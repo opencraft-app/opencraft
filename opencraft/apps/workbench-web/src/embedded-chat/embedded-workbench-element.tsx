@@ -167,6 +167,11 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
   private resolveReady!: (detail: EmbeddedWorkbenchReadyDetail) => void;
   private rejectReady!: (error: Error) => void;
   private readyDetail: EmbeddedWorkbenchReadyDetail | null = null;
+  /** Local Draft identity is painted before the Host connects; it never admits a submission. */
+  private paintedPromise: Promise<void>;
+  private resolvePainted!: () => void;
+  private rejectPainted!: (error: Error) => void;
+  private painted = false;
   private selectedConversationId: string | null = null;
   private isDraft = true;
   private hasMoreSessions = false;
@@ -189,6 +194,11 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
       this.resolveReady = resolve;
       this.rejectReady = reject;
     });
+    this.paintedPromise = new Promise((resolve, reject) => {
+      this.resolvePainted = resolve;
+      this.rejectPainted = reject;
+    });
+    void this.paintedPromise.catch(() => undefined);
     // Startup can fail or be disposed before prepareOwned begins awaiting readiness.
     // Observe rejection now; prepare()/show() still receive the original failure.
     void this.readyPromise.catch(() => undefined);
@@ -228,9 +238,10 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
     await this.connection?.reconnect();
   }
 
+  /** Painting waits for the local Draft only; sending stays gated on the Host connection. */
   async show(): Promise<void> {
     await this.prepare();
-    await this.readyPromise;
+    await this.paintedPromise;
     if (this.disposed) throw new Error("Embedded Workbench is disposed");
     this.dataset.visible = "true";
     this.inert = false;
@@ -306,6 +317,9 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
     if (this.readyDetail === null && !this.failed) {
       this.rejectReady(new Error("Embedded Workbench was disposed before it became ready"));
     }
+    if (!this.painted && !this.failed) {
+      this.rejectPainted(new Error("Embedded Workbench was disposed before it painted"));
+    }
     this.connection?.dispose();
     this.connection = null;
     this.stopTurnCompletionSubscription?.();
@@ -361,15 +375,23 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
       this.connection = observeEmbeddedConnection(runtime, detail => {
         this.dispatchEvent(new CustomEvent("opencraft-connection", { detail }));
       });
-      await this.connection.ready;
-      if (this.disposed) return;
+      // The startup Draft is local identity, so the Composer can paint while the
+      // Host connects. NewThreadDraftPage keeps submission disabled until ready;
+      // prepare() resolves once painted and connection progress flows through
+      // opencraft-connection events.
       this.renderApplication();
-      await this.readyPromise;
+      await this.paintedPromise;
     } catch (cause) {
       const error = cause instanceof Error ? cause : new Error(String(cause));
       this.fail(error);
       throw error;
     }
+  }
+
+  private handlePainted(): void {
+    if (this.painted || this.disposed || this.failed) return;
+    this.painted = true;
+    this.resolvePainted();
   }
 
   private handleReady(threadId: string | null, config: EmbeddedWorkbenchConfig): void {
@@ -418,6 +440,7 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
     if (!this.failed && this.readyDetail === null) {
       this.failed = true;
       this.rejectReady(error);
+      if (!this.painted) this.rejectPainted(error);
     }
     this.dispatchEvent(new CustomEvent("opencraft-error", {
       detail: Object.freeze({ message: error.message }),
@@ -439,6 +462,7 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
             bindActions={(actions) => this.bindActions(actions)}
             hostId={application.hostId}
             onError={(error) => this.fail(error)}
+            onPainted={() => this.handlePainted()}
             onReady={(threadId) => this.handleReady(threadId, config)}
             onSessionsChange={(detail) => this.handleSessions(detail)}
             portalContainer={this.mount}

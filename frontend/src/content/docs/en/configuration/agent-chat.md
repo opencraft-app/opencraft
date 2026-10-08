@@ -11,7 +11,7 @@
 1. Open My Agent and select the Bot you want to use at the top of the sidebar.
 2. Under Daily, expand Chat and choose New conversation. You can also start a conversation for a specific Bot from its card on the Overview page.
 3. Enter your question or task in “Share your thoughts, or ask me to help with something,” then send it.
-4. Read the reply in the conversation. The composer for a new conversation appears right away; if the page is still connecting, your message shows “Will send once connected…” and is sent automatically. Opening an existing conversation may briefly show “Your AI companion will be right here.”
+4. Read the reply in the conversation. The composer appears as soon as a new conversation opens, so you can start writing; sending becomes available once the connection is ready. Opening an existing conversation may briefly show “Your AI companion will be right here.”
 
 Web Chat does not require a messaging channel. To use the same Bot in Telegram, WhatsApp, Discord, or WeChat, connect that platform under Channels.
 

@@ -216,6 +216,8 @@ export interface EmbeddedWorkbenchAppActions {
 
 export interface EmbeddedWorkbenchAppPresentation {
   readonly hostId: string;
+  /** The conversation surface has painted; the Host may still be connecting. */
+  readonly onPainted: () => void;
   readonly onReady: (threadId: string | null) => void;
   readonly onError: (error: Error) => void;
   readonly onSessionsChange: (detail: {
@@ -1139,6 +1141,13 @@ export function App({
       isDraft: draft !== null && draft.submission === null,
     });
   }, [activeThreadId, catalog.hasNextPage, catalog.isFetching, draft, embedded, embeddedSessions, snapshot.hostId]);
+  // The local Draft paints before the Host connects; the Composer stays
+  // submission-disabled until the connection is ready.
+  const painted = draft !== null && draft.submission === null;
+  useEffect(() => {
+    if (embedded === undefined || !painted) return;
+    embedded.onPainted();
+  }, [embedded, painted]);
   useEffect(() => {
     if (embedded === undefined) return;
     if (conversationViewActivation.phase === "error") {

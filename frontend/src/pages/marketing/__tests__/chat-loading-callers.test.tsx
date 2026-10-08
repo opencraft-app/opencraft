@@ -2,7 +2,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { AgentChatPanel } from "@/pages/marketing/agent-chat-panel";
-import { AgentChatMigrationSurface } from "@/pages/marketing/opencraft-embedded-workbench";
+import { AgentChatMigrationSurface, LOADING_NOTICE_DELAY_MS } from "@/pages/marketing/opencraft-embedded-workbench";
 
 const region = vi.hoisted(() => ({ isCN: true }));
 
@@ -64,23 +64,14 @@ it("uses regional prompts while the chat SDK chunk loads", () => {
   expect(screen.queryByText("你的 AI 伙伴，马上就来")).toBeNull();
 });
 
-it("uses the shared loading state for an existing thread in the global embedded workbench", () => {
-  region.isCN = false;
-  render(<AgentChatMigrationSurface active enabled instanceId="ins-1" profileId="main" region="intl"
-    legacy={<div>Legacy chat</div>}
-    multiSession={{ selectedChatId: "thread-1", onSessionStateChange: vi.fn(), onSelectedChatIdChange: vi.fn() }} />);
-
-  expect(screen.getByRole("status")).toHaveTextContent("你的 AI 伙伴，马上就来");
-  expect(document.querySelectorAll(".lv-chat-loading-dot")).toHaveLength(3);
-});
-
-it("offers the composer placeholder for a new conversation in the global embedded workbench", () => {
+it("uses the shared loading state for the global embedded workbench", async () => {
   region.isCN = false;
   render(<AgentChatMigrationSurface active enabled instanceId="ins-1" profileId="main" region="intl"
     legacy={<div>Legacy chat</div>}
     multiSession={{ onSessionStateChange: vi.fn(), onSelectedChatIdChange: vi.fn() }} />);
 
-  expect(screen.getByRole("textbox", { name: "聊聊你的想法，或交给我一件事" })).toBeInTheDocument();
-  expect(screen.getByRole("heading", { name: "今天想一起做点什么？" })).toBeInTheDocument();
-  expect(screen.queryByText("你的 AI 伙伴，马上就来")).toBeNull();
+  expect(await screen.findByRole("status", undefined, { timeout: LOADING_NOTICE_DELAY_MS + 1_000 }))
+    .toHaveTextContent("你的 AI 伙伴，马上就来");
+  expect(document.querySelectorAll(".lv-chat-loading-dot")).toHaveLength(3);
 });
+
