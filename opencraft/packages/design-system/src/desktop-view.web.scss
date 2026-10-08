@@ -1,0 +1,281 @@
+@use "./typography.web" as typography;
+
+// The media adapter owns scale/input; this primitive only fits the aperture
+// and projects confirmed ownership. Desktop appearance is independent from
+// application accent. Reference purple submit colors form a foreground pair;
+// an eventual identity owner may override both locally, not the app theme.
+.ui-desktop-view {
+  --desktop-control-background: #8952ee;
+  --desktop-control-foreground: #ffffff;
+  --desktop-card-radius: 11.628px;
+  --desktop-ring-radius: 14.628px;
+  --desktop-ring-inset: -3px;
+  --desktop-ring-width: 4px;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) 80px;
+  min-height: 0;
+  min-width: 0;
+  padding: 16px;
+  flex: 1;
+  container-type: inline-size;
+}
+:root[data-theme="dark"] .ui-desktop-view { --desktop-control-background: #7849d1; }
+.ui-desktop-view__viewport {
+  container-type: size;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 0;
+}
+.ui-desktop-view__frame {
+  position: relative;
+  container-type: size;
+  width: min(100cqw, calc(var(--desktop-aspect-ratio, 1.3333333333) * 100cqh));
+  height: min(100cqh, calc(100cqw / var(--desktop-aspect-ratio, 1.3333333333)));
+  flex: none;
+}
+.ui-desktop-view__surface {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--desktop-card-radius);
+  overflow: hidden;
+  background: var(--color-background-surface);
+}
+.ui-desktop-view__preview {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+  opacity: 1;
+  transition: opacity 240ms;
+  &[data-live="true"] { opacity: 0; }
+}
+.ui-desktop-view__shadow {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: var(--desktop-card-radius);
+  &::before, &::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    transition: opacity 240ms;
+  }
+  &::before { box-shadow: 0 4px 16px #0000000d; }
+  &::after { opacity: 0; box-shadow: 0 8px 10px -6px #0000001a, 0 20px 25px -5px #0000001a; }
+}
+.ui-desktop-view__ring {
+  position: absolute;
+  inset: var(--desktop-ring-inset);
+  border-radius: var(--desktop-ring-radius);
+  padding: var(--desktop-ring-width);
+  pointer-events: none;
+  visibility: hidden;
+  transition: visibility 0s 240ms;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+}
+.ui-desktop-view__trace {
+  position: absolute;
+  inset-block: 0;
+  width: calc(50% + 1px);
+  overflow: hidden;
+  &:first-child { left: 0; }
+  &:last-child { right: 0; }
+  > span {
+    position: absolute;
+    top: calc(50% - 100cqmax);
+    right: 0;
+    width: 100cqmax;
+    height: 200cqmax;
+    background: var(--desktop-control-background);
+    transform-origin: 100% 50%;
+    transform: rotate(-180deg);
+    transition: transform 240ms cubic-bezier(.4, 0, .2, 1);
+  }
+  &:last-child > span { left: 0; right: auto; transform-origin: 0 50%; transform: rotate(180deg); }
+}
+.ui-desktop-view__controls {
+  position: absolute;
+  top: 100%;
+  inset-inline: 0;
+  display: flex;
+  justify-content: center;
+  transform: translateY(8px);
+  transition: transform 180ms;
+}
+.ui-desktop-view__island {
+  @include typography.role(body, null);
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: max-content;
+  min-width: 0;
+  max-width: 100%;
+  padding: 10px 11px;
+  border: 1px solid transparent;
+  border-radius: 20px;
+  color: var(--color-text);
+  user-select: none;
+  &::before, &::after {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    top: 1.42969px;
+    width: 17px;
+    height: 25px;
+    background: var(--desktop-control-background);
+    pointer-events: none;
+    opacity: 0;
+    transform: scaleY(0);
+    transform-origin: top;
+    transition: transform 140ms, opacity 140ms;
+  }
+  &::before {
+    left: -17px;
+    // Preserve the outside curve and its origin; extend only the inside fill
+    // beyond the old mask box so independently rasterized edges overlap.
+    width: 18px;
+    height: 24px;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 18 24'%3E%3Cpath d='M0 0H18V24H16.5C16.5 24 15.8019 12.2069 12.48 6.72C9.15808 1.23312 0 0 0 0Z'/%3E%3C/svg%3E") no-repeat center / 100% 100%;
+  }
+  &::after {
+    right: -17px;
+    width: 18px;
+    // Growing a right-anchored box moves its origin left by one pixel. Shift
+    // the outside curve by the same amount in the SVG to keep it stationary.
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 18 25'%3E%3Cpath d='M17.5 0H0V25H1.5C1.5 25 1.698078 12.2069 5.02 6.72C8.34192 1.23312 17.5 0 17.5 0Z'/%3E%3C/svg%3E") no-repeat center / 100% 100%;
+  }
+}
+.ui-desktop-view__floating-background, .ui-desktop-view__visor-background {
+  position: absolute;
+  inset: -1px;
+  z-index: -1;
+  pointer-events: none;
+}
+.ui-desktop-view__floating-background {
+  border: 1px solid var(--color-border);
+  border-radius: 20px;
+  background: var(--color-background-surface);
+  box-shadow: 0 4px 16px #0000000d;
+  transition: opacity 180ms;
+}
+.ui-desktop-view__visor-background {
+  border-radius: 0 0 16px 16px;
+  overflow: hidden;
+  container-type: size;
+  -webkit-mask-box-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='228' height='42' viewBox='16 0 228 42'%3E%3Cpath d='M16 0H244V10C244 25.0849 244 32.6274 239.314 37.3137C234.627 42 227.085 42 212 42H48C32.9151 42 25.3726 42 20.6863 37.3137C16 32.6274 16 25.0849 16 10V0Z'/%3E%3C/svg%3E") 0 32 32 fill / 0 32px 32px;
+  visibility: hidden;
+  transition: visibility 0s 500ms;
+  > span {
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    border-radius: 50%;
+    width: 400cqw;
+    height: 440cqh;
+    background: var(--desktop-control-background);
+    transform: translate(-50%, 50%) scale(0);
+    transition: transform 400ms cubic-bezier(.22, 1, .36, 1) 100ms;
+  }
+}
+.ui-desktop-view__status {
+  min-width: 0;
+  display: grid;
+  flex: 0 1 auto;
+  > span { grid-area: 1 / 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  > [aria-hidden="true"] { visibility: hidden; }
+}
+.ui-desktop-view__waiting {
+  display: none;
+  position: absolute;
+  left: 11px;
+  top: 50%;
+  transform: translateY(-50%);
+  align-items: center;
+  gap: 4px;
+  > span { width: 4px; height: 4px; border-radius: 50%; background: currentColor; animation: desktop-wait 1400ms ease-in-out infinite; }
+  > span:nth-child(2) { animation-delay: 140ms; }
+  > span:nth-child(3) { animation-delay: 280ms; }
+}
+.ui-desktop-view__island[aria-busy="true"] .ui-desktop-view__waiting { display: inline-flex; animation: desktop-wait-reveal 0s 200ms both; }
+.ui-desktop-view__island[aria-busy="true"] .ui-desktop-view__status { animation: desktop-status-hide 0s 200ms both; }
+.ui-desktop-view__controls[data-visible="false"] { visibility: hidden; }
+.ui-desktop-view__action {
+  @include typography.role(control-small, null);
+  height: 32px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 999px;
+  position: relative;
+  isolation: isolate;
+  background: transparent;
+  color: var(--color-text-button-primary);
+  flex: none;
+  cursor: pointer;
+  transition: none;
+  &::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    background: var(--color-background-button-primary);
+    pointer-events: none;
+    opacity: 1;
+    transition: opacity 240ms;
+  }
+  &:not(:disabled):hover::before { background: var(--color-background-button-primary-hover); }
+  &:disabled { opacity: .4; cursor: default; }
+}
+.ui-desktop-view[data-owned="true"] {
+  .ui-desktop-view__ring { visibility: visible; transition-delay: 0s; }
+  .ui-desktop-view__trace > span { transform: rotate(0); transition-duration: 320ms; transition-delay: 50ms; }
+  .ui-desktop-view__shadow::before { opacity: 0; }
+  .ui-desktop-view__shadow::after { opacity: 1; }
+  .ui-desktop-view__controls { transform: translateY(0); }
+  .ui-desktop-view__island { min-width: min(241px, 100%); color: var(--desktop-control-foreground); border-radius: 0 0 16px 16px; }
+  .ui-desktop-view__island::before, .ui-desktop-view__island::after { opacity: 1; transform: scaleY(1); }
+  .ui-desktop-view__floating-background { opacity: 0; }
+  .ui-desktop-view__visor-background { visibility: visible; transition-delay: 0s; }
+  .ui-desktop-view__visor-background > span { transform: translate(-50%, 50%) scale(1); transition-delay: 0s; animation: desktop-wash 420ms cubic-bezier(.22, 1, .36, 1); }
+  .ui-desktop-view__action { background: color-mix(in srgb, var(--desktop-control-foreground) 15%, transparent); color: var(--desktop-control-foreground); backdrop-filter: blur(12px); }
+  .ui-desktop-view__action::before { opacity: 0; }
+  .ui-desktop-view__action:not(:disabled):hover { background: color-mix(in srgb, var(--desktop-control-foreground) 30%, transparent); }
+}
+// Touch activation is not sticky desktop hover.
+:root[data-touch-interaction="true"] .ui-desktop-view:not([data-owned="true"]) .ui-desktop-view__action:not(:disabled):hover::before { background: var(--color-background-button-primary); }
+:root[data-touch-interaction="true"] .ui-desktop-view[data-owned="true"] .ui-desktop-view__action:not(:disabled):hover { background: color-mix(in srgb, var(--desktop-control-foreground) 15%, transparent); }
+@container (width >= 48rem) {
+  .ui-desktop-view__surface, .ui-desktop-view__shadow { --desktop-card-radius: 23px; }
+  .ui-desktop-view__ring { --desktop-ring-radius: 28.75px; --desktop-ring-inset: -5.75px; --desktop-ring-width: 6.75px; }
+  .ui-desktop-view__shadow::before { box-shadow: 0 11.5px 17.25px -3.45px #0000001a, 0 4.6px 6.9px -4.6px #0000001a; }
+  .ui-desktop-view[data-owned="true"] .ui-desktop-view__shadow::before { opacity: 1; }
+  .ui-desktop-view__shadow::after { display: none; }
+  .ui-desktop-view__island::before {
+    width: 17px;
+    top: -1px;
+    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 17 24'%3E%3Cpath d='M0 0H17V24H16C16 24 15.8019 12.2069 12.48 6.72C9.15808 1.23312 0 0 0 0Z'/%3E%3C/svg%3E");
+  }
+  .ui-desktop-view__island::after { top: -1.5px; }
+}
+@media (any-pointer: coarse) { .ui-desktop-view__action { min-width: 44px; height: 44px; } }
+@keyframes desktop-wait { 0%, 70%, 100% { opacity: .3; transform: translateY(0); } 35% { opacity: 1; transform: translateY(-2px); } }
+@keyframes desktop-wait-reveal { from { opacity: 0; } to { opacity: 1; } }
+@keyframes desktop-status-hide { from { opacity: 1; } to { opacity: 0; } }
+@keyframes desktop-wash { from { transform: translate(-50%, 50%) scale(calc(74px / 400cqw), calc(24px / 440cqh)); } to { transform: translate(-50%, 50%) scale(1); } }
+@media (prefers-reduced-motion: reduce) {
+  .ui-desktop-view *, .ui-desktop-view *::before, .ui-desktop-view *::after { transition: none; animation: none; }
+  .ui-desktop-view__island[aria-busy="true"] .ui-desktop-view__waiting { display: none; }
+}
+:root[data-reduced-motion="true"] {
+  .ui-desktop-view *, .ui-desktop-view *::before, .ui-desktop-view *::after { transition: none; animation: none; }
+  .ui-desktop-view__island[aria-busy="true"] .ui-desktop-view__waiting { display: none; }
+}

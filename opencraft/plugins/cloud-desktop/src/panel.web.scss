@@ -1,6 +1,7 @@
 @use "@opencraft/design-system/empty-state.web" as empty-state;
 @use "@opencraft/design-system/typography.web" as typography;
 @use "@opencraft/design-system/panel-controls.web";
+@use "@opencraft/design-system/desktop-view.web";
 
 .cloud-desktop-panel {
   position: relative;
@@ -15,18 +16,20 @@
 }
 .cloud-desktop-panel__toolbar {
   &[hidden] { display: none; }
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--gap-control-group);
-  padding: var(--padding-control-inline);
-  @include typography.role(body, secondary);
-  user-select: none;
-  [role="status"] { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  button { flex: 0 0 auto; }
 }
 .cloud-desktop-panel__actions { display: flex; flex: 0 0 auto; gap: var(--gap-control-group); }
+.cloud-desktop-panel__keyboard { display: none; @media (any-pointer: coarse) { display: inline-flex; } }
+.cloud-desktop-panel__text-input {
+  position: absolute;
+  width: 1px; height: 1px;
+  bottom: 0; left: 0;
+  padding: 0; border: 0;
+  opacity: 0;
+  pointer-events: none;
+  // Not display:none: the platform needs a real editable focus target.
+  // Prevent iOS focus zoom while preserving the actual desktop viewport.
+  font-size: 16px;
+}
 // Reserve the localized action's intrinsic size through pending/confirmation.
 // The shared button still owns typography, padding, shape and touch density.
 .cloud-desktop-panel__control-label {
@@ -34,7 +37,7 @@
   > span { grid-area: 1 / 1; }
   > [data-current="false"] { visibility: hidden; }
 }
-.cloud-desktop-panel__body { position: relative; display: flex; flex: 1; min-height: 0; min-width: 0; }
+.cloud-desktop-panel__body { display: flex; min-height: 0; min-width: 0; }
 .cloud-desktop-panel__surface {
   flex: 1;
   min-height: 0;
@@ -48,4 +51,14 @@
   position: absolute;
   inset: 0;
   background: var(--color-background-surface);
+  transition: opacity 240ms, visibility 0s;
+  &[data-preview="true"] { background: color-mix(in srgb, var(--color-background-surface) 55%, transparent); }
+  &[data-live="true"] {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 240ms, visibility 0s 240ms;
+  }
 }
+@media (prefers-reduced-motion: reduce) { .cloud-desktop-panel__feedback { transition: none; } }
+:root[data-reduced-motion="true"] .cloud-desktop-panel__feedback { transition: none; }

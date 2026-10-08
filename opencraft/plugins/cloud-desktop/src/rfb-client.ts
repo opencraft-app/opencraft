@@ -1,5 +1,5 @@
 /// <reference path="./novnc.d.ts" />
-/** Public noVNC 1.5.0 API + reviewed firstframe/clipboardready events.
+/** Public noVNC 1.5.0 API + reviewed media events and managed pointer port.
  * Installation verifies scripts/patch-novnc-desktop-events.mjs. No private fields. */
 export interface RfbClient extends EventTarget {
   viewOnly: boolean;
@@ -13,6 +13,10 @@ export interface RfbClient extends EventTarget {
   clipboardPasteFrom(text: string): void;
   clearClipboard(): void;
   sendKey(keysym: number, code?: string, down?: boolean): void;
+  setSurfaceActive(active: boolean): void;
+  setPointerInputManaged(managed: boolean): void;
+  getInputCanvas(): HTMLCanvasElement;
+  sendPointer(x: number, y: number, mask: number, clientX?: number, clientY?: number): void;
 }
 
 export interface RfbClientConstructor {

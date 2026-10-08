@@ -59,9 +59,12 @@ await runtime.install(createCloudDesktopWorkbenchPanelPlugin(adapter));
 const tab = runtime.panels.open("panel:test", "cloud-desktop", { conversationId: target.conversationId });
 const Panel = runtime.renderers.getSnapshot().find(item => item.kind === "cloud-desktop")!.Component;
 const root = createRoot(document.getElementById("root")!);
-root.render(<IntlRuntimeProvider runtime={locale}><Panel tab={tab} ownerId="panel:test" presentationId="presentation:test" /></IntlRuntimeProvider>);
+const render = (active: boolean) => root.render(<IntlRuntimeProvider runtime={locale}><Panel tab={tab}
+  ownerId="panel:test" presentationId="presentation:test" active={active} /></IntlRuntimeProvider>);
+render(new URLSearchParams(location.search).get("inactive") !== "1");
 
 Object.assign(window, { __desktopFixture: {
+  setActive: render,
   async revoke() { await fetch("/revoke", { method: "POST" }); },
   close() { runtime.panels.close("panel:test", "right", tab.id); },
   async dispose() { root.unmount(); await runtime.dispose(); adapter.dispose(); locale.dispose(); },

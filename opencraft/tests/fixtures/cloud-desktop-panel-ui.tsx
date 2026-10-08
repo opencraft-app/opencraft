@@ -7,6 +7,7 @@ import { buildCodexThemeCssProperties, codexThemePalette } from "@opencraft/desi
 import { ProgressIndicator } from "@opencraft/design-system-web/progress";
 import { bindTouchInteractionMode } from "../../apps/workbench-web/src/runtime/pointer-modality";
 import chineseMessages from "../../apps/workbench-web/src/i18n/locales/zh-CN.json";
+import { captureFramePreview } from "../../plugins/cloud-desktop/src/frame-preview";
 import { createCloudDesktopWorkbenchPanelPlugin, type DesktopConnectionSnapshot,
   type DesktopControlLease } from "../../plugins/cloud-desktop/src/index";
 import { AppShell } from "../../apps/workbench-web/src/components/app-shell";
@@ -16,7 +17,7 @@ import { UiPreferencesProvider } from "../../apps/workbench-web/src/runtime/ui-p
 
 // Only authorization/media boundaries are synthetic. The real plugin, controller,
 // panel registry and production CSS render every state; never import from bootstrap.
-let state: DesktopConnectionSnapshot = { videoReady: false, inputReady: false,
+let state: DesktopConnectionSnapshot = { mediaAspectRatio: 960 / 600, videoReady: false, inputReady: false,
   controlAvailable: true, ended: false };
 let authorized = true, valid = false, mounts = 0, preparations = 0, requests = 0, releases = 0, connectionCloses = 0, attachmentReleases = 0;
 let pasteAvailable = true;
@@ -50,6 +51,10 @@ await runtime.install(createCloudDesktopWorkbenchPanelPlugin({
       return { target, resourceId: "resource:test", incarnation: "instance:test", release() { attachmentReleases++; },
         async connect() { return {
           getSnapshot: () => state,
+          capturePreview: () => {
+            const canvas = document.querySelector('.cloud-desktop-panel__surface canvas') as HTMLCanvasElement | null;
+            return canvas ? captureFramePreview(canvas) : null;
+          },
           subscribe: listener => { listeners.add(listener); return () => { listeners.delete(listener); }; },
           requestControl: () => new Promise(resolve => { requests++; grant = resolve; }), close() { connectionCloses++; },
         }; } };
@@ -63,7 +68,7 @@ await runtime.install(createCloudDesktopWorkbenchPanelPlugin({
     context.fillStyle = "#2080e0"; context.fillRect(0, 0, 960, 600);
     element.append(canvas);
     canvas.tabIndex = 0;
-    return { enableInput() {}, disableInput() {}, focus() { canvas.focus({ preventScroll: true }); },
+    return { setActive() {}, enableInput() {}, disableInput() {}, focus() { canvas.focus({ preventScroll: true }); },
       get pasteText() { return pasteAvailable ? async () => {} : undefined; }, dispose() { canvas.remove(); } };
   } },
 }));
@@ -115,10 +120,10 @@ Object.assign(window, { __desktopUi: {
   locale: (value: string) => locale.update({ localeOverride: value }),
   ready(controlAvailable = true, supportsPaste = true) {
     pasteAvailable = supportsPaste;
-    state = { videoReady: true, inputReady: true, controlAvailable, ended: false }; notify();
+    state = { mediaAspectRatio: 960 / 600, videoReady: true, inputReady: true, controlAvailable, ended: false }; notify();
   },
   fail() { state = { ...state, ended: true }; notify(); },
-  connecting() { state = { videoReady: false, inputReady: false, controlAvailable: true, ended: false }; },
+  connecting() { state = { mediaAspectRatio: 960 / 600, videoReady: false, inputReady: false, controlAvailable: true, ended: false }; },
   grant() { valid = true; const resolve = grant; grant = null; resolve?.(lease); },
   unavailable() { authorized = false; for (const listener of authorityListeners) listener(); },
   counts: () => ({ mounts, preparations, requests, releases, connectionCloses, attachmentReleases, toolMounts, toolCloses }),

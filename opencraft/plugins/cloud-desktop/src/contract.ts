@@ -24,6 +24,8 @@ export class DesktopFailure extends Error {
 }
 
 export interface DesktopConnectionSnapshot {
+  /** Decoded media geometry, not a requested remote desktop resize. */
+  readonly mediaAspectRatio?: number;
   readonly videoReady: boolean;
   readonly inputReady: boolean;
   readonly controlAvailable: boolean;
@@ -35,10 +37,17 @@ export interface DesktopConnectionSnapshot {
 }
 
 /** A transient viewing connection; credentials remain private to the adapter. */
+export interface DesktopFramePreview {
+  /** Bounded in-memory JPEG, never a remote URL or interactive surface. */
+  readonly dataUrl: string;
+  readonly aspectRatio: number;
+}
 export interface DesktopConnection {
   getSnapshot(): DesktopConnectionSnapshot;
   subscribe(listener: () => void): () => void;
   requestControl(signal: AbortSignal): Promise<DesktopControlLease>;
+  /** Optional synchronous capture of the last actually decoded frame. */
+  capturePreview?(): DesktopFramePreview | null;
   /** Closes local transport; does not stop the desktop/Agent. */
   close(): void;
 }

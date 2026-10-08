@@ -1,5 +1,51 @@
 # 工作区不变量
 
+## Desktop input ownership
+
+Desktop control presentation preserves the mounted control strip's geometry
+while hiding and making it inert before current video/input readiness. Confirmed
+ownership fades the shared action's solid decorative layer over 240ms; intent,
+press feedback and reduced motion do not delay input retirement or cancel.
+
+The mounted desktop interaction scope, confirmed backend grant and physical
+gesture have separate lifetimes. Unknown mobile focusout does not prove leaving:
+internal toolbar/media/editable handoff retains control; explicit outside presses
+(including blank space), known outside focus, hidden page and window blur retire
+it. The interaction owner never grants input or restores focus. Geometry changes
+retire held input and queued samples without revoking the grant; old physical
+contacts must lift before another gesture can start in the new geometry.
+Managed-media native touch activation consumes a fixed Take command once on
+single-finger tap release; movement, second contact, cancellation and capture
+loss cancel it. It never emits a synthetic click or replays a compatibility
+click. Ordinary toolbar buttons retain native click/keyboard activation.
+
+Desktop visor shoulder masks preserve their exterior curve and world-space
+origin while extending only the interior fill into the center background.
+Independent raster edges must have opaque overlap, not a butt joint; moving
+the entire shoulder to conceal a seam is not equivalent. Mobile and wide
+container variants share this contract. Pixel regression distinguishes ordinary
+rendering from simulated background-edge retraction; neither proves iOS Safari.
+
+WSP-36 桌面输入补充：手势与坐标仅由媒体适配层一个owner写入，decoder显式关闭
+原指针输出。观看缩放/平移不等于远端操作；捏合始终调整本地画面，只有确认授权
+后单指点击/拖动与双指滚动才发远端输入。滚轮和触控滚动共用有界规则，双指按
+同一帧采样，防止先后到达的事件造成错误分类。停止、失焦、新授权取消未消费帧、
+按键和滚动；旧物理指针须抬起才可被后继授权消费。缩放后坐标从实际画面与留白
+计算，不能拿Shell宽度当远端像素。手机文字入口在显式操作及确认授权下创建，
+候选词不发送，确认一次发送一次；撤权销毁该DOM而非复用给下一次输入。
+Take在用户激活时先取得媒体焦点而不提前启用输入；平台只读焦点归属在请求与确认
+两端检查，迟到授权不得再次聚焦。文字事务短于控制授权：远端点击/拖动/粘贴前先
+将焦点在Panel内交接，平台同步确认的组词先发到原目标；其余候选随原事务退休。
+旧输入DOM不得在同授权下后继输入复活；交接中撤权/换代也不得发送原指针按下。
+Surface消费Shell的同一逻辑active投影：隐藏立即退出模拟光标覆盖层及监听，不能
+等待触屏不保证的mouseleave；隐藏中迟到光标形状只更新媒体状态，不能复活覆盖层。
+本地控制光标资格复用输入授权投影与active，不另存控制开关；观看/申请中不挂载。
+停止、撤权或失焦立即移除覆盖层与监听，并恢复普通鼠标；迟到形状或mouseover不得复活。
+重新展开保留媒体连接但不抢焦点或恢复控制；只有新确认授权才挂载最新形状。
+此规则不清除远端画面内已有的光标像素；重复启用不能清空仍有效的光标附件。
+模型/真实decoder浏览器验收不等于iPhone系统键盘或原生执行器验收，详见
+[桌面输入策略](../docs/cloud-desktop-plugin.md#pointer-viewing-gestures-and-mobile-text-input)。
+
 ## SSH connection management
 
 - SSH-01：部署后端数据库是管理连接的配置/凭据唯一 authority，字段和 revision/CAS 同事务；秘密只写不回读，密钥留在私有后端文件。未知或冲突 schema 历史保留原数据并拒绝写入。
