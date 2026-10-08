@@ -7,6 +7,7 @@
 - PIN-03：置顶读写只处理元数据，不 Resume/Start；Hermes 明确携带所属 profile，身份歧义拒绝写入，压缩链由 Hermes 自身处理。
 - PIN-04：置顶目录返回完整摘要、独立于近期窗口；侧栏去重后单独分组，置顶不占十条近期预算。刷新/重连从后端重新读取。
 - PIN-05：同一会话写入串行；操作前列表不能覆盖操作后状态；连接撤销拒绝晚到结果且不重放写入。菜单复用现有受控互斥 owner，不拥有存储或轮询。
+- PIN-06：LightVela 站点的外层会话侧栏只消费嵌入式 Workbench 投影的置顶状态、能力和动作；置顶会话不占近期分页名额，站点不持久化第二份置顶集合。
 
 ## Desktop input ownership
 
@@ -74,7 +75,9 @@ Surface消费Shell的同一逻辑active投影：隐藏立即退出模拟光标�
 
 ## Application navigation restoration
 
-浏览器草稿补充：任务 View 保留既有 ConversationDraftContinuity 所有权，不叠加另一套持久化写入者。Bot Composer 通过平台存储端口保存 document、context 与附件元数据，不保存提交回执、执行状态、临时听写或发送锁；存储按产品／账号和 Host + Conversation 身份隔离。只有显式内容编辑和接受发送后的清空写入存储，生命周期变化与卸载不能覆盖其他 View 的输入。账号作用域变化撤销并清除旧适配器，迟到写入不得复活旧内容；新应用实例绑定新账号。浏览器 File 字节及临时侧聊不在当前持久化承诺内；失效 Object URL 或未完成附件恢复为可移除、不可发送的文件卡片。验证见 `chat-browser-drafts.test.ts` 和 `smoke:browser-drafts`。
+任务草稿保留：Application 级输入槽拥有原 Controller、File、预览与处理任务，View 只借用。20 个非活动页面的缓存淘汰不得删除非空输入；输入槽按 50 份非空草稿单独执行 LRU，空输入不计数，淘汰同时丢弃持久文档并释放附件资源。正在编辑或发送的所有者不可淘汰；全部受保护时拒绝新内容，不超限。侧栏完整 A→B→A 回到最后成功呈现的槽位，显式新 View 与 POP 仍独立。Scope promotion 必须更新无页面但仍保留的草稿；账号撤销清除全部槽位与目标缓存。验证：`test:task-draft-switching`、`smoke:task-draft-switching`。
+
+浏览器草稿补充：任务输入槽由 ConversationDraftOwnerRegistry 保留，ConversationDraftContinuity 仍是唯一文档持久化写入者，不叠加另一套持久化写入者。Bot Composer 通过平台存储端口保存 document、context 与附件元数据，不保存提交回执、执行状态、临时听写或发送锁；存储按产品／账号和 Host + Conversation 身份隔离。只有显式内容编辑和接受发送后的清空写入存储，生命周期变化与卸载不能覆盖其他 View 的输入。账号作用域变化撤销并清除旧适配器，迟到写入不得复活旧内容；新应用实例绑定新账号。浏览器 File 字节及临时侧聊不在当前持久化承诺内；失效 Object URL 或未完成附件恢复为可移除、不可发送的文件卡片。验证见 `chat-browser-drafts.test.ts` 和 `smoke:browser-drafts`。
 
 历史记录只持有聊天引用，不拥有草稿的存活事实。启动与历史恢复必须先由 Host 配置、ScopeRegistry 和 BindingStore 校验/规范化，再让 Router 与激活层消费同一个目标；有效当前 entry 优先于跨标签页共享的最后使用偏好。失效 Draft 不按旧 ID 重建，已提交 Draft 经持久 alias 找回 Thread。Router 唯一写回纠正结果并保留 Settings/Extension 目的地；失效引用回到当前实际保留的 View 与输入，View 不能跨 Scope 复用。规范化为 REPLACE 的 POP 仍须被资源事务消费。
 
@@ -129,6 +132,14 @@ WSP-32 远端目录补充：目录选择与持久 Project 记录是独立能力�
 ## Conversation loading presentation
 
 会话首次加载只在无可见历史的空槽中显示居中中性圆环，不显示加载文字；辅助技术可读取本地化状态名。Thread runtime 拥有加载/失败事实，视图不添加恢复计时器或第二套 authority。Design System 拥有共享圆环、主题色与减少动态效果规则；Conversation 拥有空槽几何和滚动。后台重连保留历史、输入和 View 身份，失败切换为可操作的重试而非永久转圈。
+
+Bot 的空展示页与历史耗尽分开：仍有更早源记录时，视口可在没有滚动手势的情况下
+按一次恢复意图最多推进三页，串行且有界；额度耗尽或失败在原状态槽提供继续／重试，
+不呈现新会话欢迎页、不自动排空全历史。重同步保留有持久锚点的已加载前缀及独立
+本地提交，不以展示缓存恢复执行权限。协议所有权见
+[Hermes message windows](../docs/chat-ui-architecture.md#hermes-message-windows-and-bot-history-continuity)；
+`hermes-bot-history-integration.test.ts` 和 `smoke-hermes-bot-history.ts` 验证真实组件与模拟远端端口，
+不代表已替换运行预览或实测远端 Hermes。
 
 ## Application navigation glyphs（Codex 26.930.31428 参考）
 
@@ -247,7 +258,7 @@ Connector 目录浏览不套用设置行：采用限宽品牌卡片，已配置�
 
 ## 图片附件呈现（2026-09-27）
 
-- 草稿图片的语义身份和处理状态只属于 Composer Draft；浏览器 `File`、临时预览 URL 和处理任务属于其 View 级附件会话，不写入可序列化 Draft。切换目标后的晚到结果只能修改原 Draft；移除、清空或 View 销毁须中止任务并释放 URL。
+- 草稿图片的语义身份和处理状态只属于 Composer Draft；浏览器 `File`、临时预览 URL 和处理任务属于 Controller 的草稿所有者附件会话，不写入可序列化 Draft。切换会话或页面缓存淘汰保留资源，晚到结果只能修改原 Draft；移除、清空或草稿所有者销毁须中止任务并释放 URL。新内容准入失败必须回收尚未被草稿接收的 File 预览，不启动孤立任务。
 - 图片选中即在输入卡片内显示方形缩略图；处理中、失败和删除均原位反馈。触控删除始终可见，不能依赖 hover；处理中不宣称网络上传百分比，失败图片不允许发送。
 - 已发送图片由 Timeline 及媒体加载边界投影。缩略图进入图片查看器，不绕过通用链接策略来打开 `data:` URL；查看器按原资源身份加载并在关闭后恢复焦点。
 

@@ -204,6 +204,7 @@ export interface EmbeddedWorkbenchAppSession {
   readonly updatedAt: number;
   readonly readOnly: boolean;
   readonly running: boolean;
+  readonly pinned: boolean;
 }
 
 export interface EmbeddedWorkbenchAppActions {
@@ -213,6 +214,7 @@ export interface EmbeddedWorkbenchAppActions {
   loadMoreThreads(): Promise<void>;
   renameThread(threadId: string, title: string): Promise<void>;
   deleteThread(threadId: string): Promise<void>;
+  setThreadPinned(threadId: string, pinned: boolean): Promise<void>;
 }
 
 export interface EmbeddedWorkbenchAppPresentation {
@@ -225,6 +227,7 @@ export interface EmbeddedWorkbenchAppPresentation {
     readonly sessions: readonly EmbeddedWorkbenchAppSession[];
     readonly loading: boolean;
     readonly hasMoreSessions: boolean;
+    readonly pinSupported: boolean;
     readonly selectedChatId: string | null;
     readonly isDraft: boolean;
   }) => void;
@@ -1129,6 +1132,7 @@ export function App({
         updatedAt,
         readOnly: false,
         running: thread.status === "running",
+        pinned: thread.pinned === true,
       };
     });
   }, [catalog.protocolThreads, catalog.threads, embedded]);
@@ -1138,10 +1142,11 @@ export function App({
       sessions: embeddedSessions,
       loading: catalog.isFetching,
       hasMoreSessions: catalog.hasNextPage,
+      pinSupported: hostCatalog.threadManagement.capabilities(embedded.hostId).pin === true,
       selectedChatId: snapshot.hostId === embedded.hostId ? activeThreadId : null,
       isDraft: draft !== null && draft.submission === null,
     });
-  }, [activeThreadId, catalog.hasNextPage, catalog.isFetching, draft, embedded, embeddedSessions, snapshot.hostId]);
+  }, [activeThreadId, catalog.hasNextPage, catalog.isFetching, draft, embedded, embeddedSessions, hostCatalog.threadManagement, snapshot.hostId]);
   // The local Draft paints before the Host connects (the Composer stays
   // submission-disabled until ready); a restored Thread paints when ready.
   const painted = isEmbeddedConversationPainted(draft, conversationViewActivation.phase);
@@ -1190,6 +1195,10 @@ export function App({
         await hostCatalog.threadManagement.delete(embedded.hostId, threadId);
         await queryClient.invalidateQueries({ queryKey: ["appserver", embedded.hostId, "threads"] });
         if (activeThreadId === threadId) navigateToHome();
+      },
+      setThreadPinned: async (threadId, pinned) => {
+        try { await hostCatalog.threadManagement.setPinned(embedded.hostId, threadId, pinned); }
+        finally { await queryClient.invalidateQueries({ queryKey: ["appserver", embedded.hostId, "threads"] }); }
       },
     });
   }, [activeThreadId, catalog.fetchNextPage, composerController, embedded, hostCatalog, navigateToHome, queryClient, sendMessage, snapshot.phase]);

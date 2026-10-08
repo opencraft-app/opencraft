@@ -257,9 +257,13 @@ func (f *fakeOrderWriter) MarkOrderCancelled(ctx context.Context, dealName strin
 type fakeOrderStore struct {
 	getOrderByDealNameFn                    func(ctx context.Context, dealName string) (*store.TradeOrder, error)
 	getProvisionedCreateOrderByResourceIDFn func(ctx context.Context, resourceID string) (*store.TradeOrder, error)
+	findReusableFn                          func() (*store.TradeOrder, error)
 }
 
 func (f *fakeOrderStore) FindReusableDianshiOrder(context.Context, string, int64, string, string, int64, string, time.Time) (*store.TradeOrder, error) {
+	if f.findReusableFn != nil {
+		return f.findReusableFn()
+	}
 	return nil, store.ErrTradeOrderNotFound
 }
 
@@ -935,6 +939,25 @@ func TestPlaceDianshiOrderAndPay_HappyPath(t *testing.T) {
 	}
 	if got := env.orderWriter.lastCreateOrderInput; got.Status != store.OrderStatusProvisioned || got.ResourceID != "pass-dianshi-paid-1" {
 		t.Fatalf("persisted status/resource_id=%q/%q", got.Status, got.ResourceID)
+	}
+}
+
+func TestPlaceDianshiOrderAndPay_LegacyOrderReturnsConflict(t *testing.T) {
+	env := newTestEnv(t)
+	env.activity.mapping = &activity.Mapping{BundleID: "b1", ActivityID: 1001, ActID: 2001, Active: true, TimeSpanUnit: "1m"}
+	env.activity.use = true
+	env.orderStore.findReusableFn = func() (*store.TradeOrder, error) {
+		return &store.TradeOrder{DealName: "legacy-deal", Status: store.OrderStatusPaidPendingProvision}, nil
+	}
+
+	rec := env.doJSON(http.MethodPost, "/internal/trade/dianshi/orders/place-and-pay", map[string]any{
+		"externalUserId": "user-1", "uin": "1000", "bundleId": "b1", "period": 1, "timeUnit": "m", "goodsNum": 1,
+	}, true)
+	if rec.Code != http.StatusConflict || decodeBody(t, rec)["code"] != "LegacyDianshiOrderPending" {
+		t.Fatalf("expected legacy-order conflict, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if env.dianshi.doGoodsAndPayCalls.Load() != 0 {
+		t.Fatal("must not create another Dianshi order")
 	}
 }
 

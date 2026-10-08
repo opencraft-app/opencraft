@@ -475,6 +475,12 @@ its write on a successor. Discovery failures remain errors, not unpin-all or
 unsupported success. Catalog notifications and connection recovery invalidate
 the same shared queries; no menu owns a polling loop or persistent pin set.
 
+The LightVela site renders its own Agent sidebar around the embedded Workbench.
+The embedded element passes each Thread's pinned state and the current Host's
+discovered pin capability to that sidebar, and forwards pin commands to the same
+Thread management resource. The site shows pinned rows outside its recent-page
+budget and never persists a second pin list.
+
 DSH display recovery uses [JIT history](../design/dsh-jit-history.md): native
 message pages retain their original unit and are mapped to requested Turn
 windows without a persistent event mirror. Reading a conversation does not
@@ -1407,6 +1413,21 @@ that decision: reuse the remembered entry's View (or the actual retained View),
 coalesce an in-flight destination only when its View also matches, and no-op only for the presented View with no
 competing destination. `navigate` remains a distinct explicit-open operation, so
 different history Views of one Thread keep independent Composer documents.
+For a completed sidebar A→B→A cycle, the transaction remembers the last
+successfully presented View per canonical conversation in a bounded preferred
+map. It validates that input slot against its account-bound draft owner, not
+just the 20-View presentation cache. Failed or superseded preparations never
+publish a preferred View; POP updates it only after acceptance. Draft eviction
+forgets the slot, and account revocation clears the map and fences pending work.
+`ConversationDraftOwnerRegistry` owns at most 50 nonempty input slots and their
+original Controllers independently of View/Scope resource caching. It does not
+retain Thread or Host leases. Physical editing/submission protects input;
+unprotected slots are evicted in last-used order, releasing attachment resources
+and deleting document continuity. Empty editors are not content slots. Scope
+promotion updates all retained slots, including ones with no cached View.
+Unsubmitted New-chat Scope metadata also queries that input ownership: its
+20-empty-record budget cannot evict a Scope with retained input. Empty history
+records remain bounded separately and confer no retained-content authority.
 All preparations use one intent/lifetime/Router-revision eligibility check and
 one accept-or-release path, including local Draft readiness and promotion. A
 promotion must originate from the still-active Draft and capture its View before

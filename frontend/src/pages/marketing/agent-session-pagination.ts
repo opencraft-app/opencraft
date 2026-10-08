@@ -3,6 +3,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 interface TimedSession {
   readonly createdAt?: number;
   readonly updatedAt?: number;
+  readonly pinned?: boolean;
 }
 
 export function useAgentSessionPagination<T extends TimedSession>(
@@ -16,10 +17,11 @@ export function useAgentSessionPagination<T extends TimedSession>(
   const [pageError, setPageError] = useState(false);
   const generationRef = useRef(0);
 
-  const orderedSessions = useMemo(() => [...sessions].sort((left, right) =>
+  const pinnedSessions = useMemo(() => sessions.filter((session) => session.pinned === true), [sessions]);
+  const orderedSessions = useMemo(() => sessions.filter((session) => session.pinned !== true).sort((left, right) =>
     (right.updatedAt ?? right.createdAt ?? 0) - (left.updatedAt ?? left.createdAt ?? 0),
   ), [sessions]);
-  const visibleSessions = useMemo(() => orderedSessions.slice(0, visibleCount), [orderedSessions, visibleCount]);
+  const visibleSessions = useMemo(() => [...pinnedSessions, ...orderedSessions.slice(0, visibleCount)], [pinnedSessions, orderedSessions, visibleCount]);
   const hasMoreVisible = visibleCount < orderedSessions.length || hasMoreOnServer;
 
   const reset = useCallback(() => {
@@ -32,7 +34,7 @@ export function useAgentSessionPagination<T extends TimedSession>(
   const showMore = async () => {
     if (loadingMore || !hasMoreVisible) return;
     const nextCount = visibleCount + pageSize;
-    if (nextCount <= sessions.length || !hasMoreOnServer) {
+    if (nextCount <= orderedSessions.length || !hasMoreOnServer) {
       setVisibleCount(nextCount);
       return;
     }
@@ -57,6 +59,7 @@ export function useAgentSessionPagination<T extends TimedSession>(
 
   return {
     visibleSessions,
+    pinnedCount: pinnedSessions.length,
     hasMoreVisible,
     hasExpanded: visibleCount > pageSize,
     loadingMore,

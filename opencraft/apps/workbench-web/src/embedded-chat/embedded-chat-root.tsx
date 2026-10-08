@@ -31,6 +31,7 @@ export interface EmbeddedChatRootProps {
     readonly sessions: readonly EmbeddedWorkbenchAppSession[];
     readonly loading: boolean;
     readonly hasMoreSessions: boolean;
+    readonly pinSupported: boolean;
     readonly selectedChatId: string | null;
     readonly isDraft: boolean;
   }) => void;

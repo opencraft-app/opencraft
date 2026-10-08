@@ -26,6 +26,9 @@ interface VirtualizedBotUnit {
 
 export interface BotConversationViewport {
   readonly following: boolean;
+  readonly historyLoading: boolean;
+  readonly historyError: string | null;
+  requestOlderHistory(): void;
   readonly transcriptRef: RefCallback<HTMLDivElement>;
   readonly totalHeightPx: number;
   readonly marginTopPx: number;
@@ -35,6 +38,15 @@ export interface BotConversationViewport {
   followLatest(options?: { readonly smooth?: boolean }): void;
 }
 
+export interface BotConversationHistoryDemand {
+  readonly enabled: boolean;
+  readonly hasOlder: boolean;
+  readonly loadingOlder: boolean;
+  readonly loadOlder: () => Promise<void>;
+}
+
+const EMPTY_HISTORY_PAGE_BUDGET = 3;
+
 /**
  * Bot-specific adapter around the shared Codex-derived viewport machinery.
  * Its entries are geometry units only; Bot semantics remain owned by
@@ -43,8 +55,54 @@ export interface BotConversationViewport {
 export function useBotConversationViewport(
   identity: string,
   units: readonly BotTimelineUnit[],
-  onUserScrollToTop?: () => void,
+  history?: BotConversationHistoryDemand,
 ): BotConversationViewport {
+  const historyOwner = useMemo(() => ({ budget: EMPTY_HISTORY_PAGE_BUDGET, activeGeneration: null as number | null, generation: 0, disposed: false }), [identity]);
+  const historyRef = useRef(history);
+  const unitsRef = useRef(units);
+  historyRef.current = history;
+  unitsRef.current = units;
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  useLayoutEffect(() => {
+    historyOwner.disposed = false;
+    historyOwner.budget = EMPTY_HISTORY_PAGE_BUDGET;
+    setHistoryLoading(false);
+    setHistoryError(null);
+    return () => { historyOwner.disposed = true; historyOwner.generation += 1; historyOwner.activeGeneration = null; };
+  }, [historyOwner]);
+  const loadHistoryPage = useCallback(() => {
+    const demand = historyRef.current;
+    if (historyOwner.disposed || historyOwner.activeGeneration !== null || historyOwner.budget <= 0
+      || demand?.enabled !== true || !demand.hasOlder || demand.loadingOlder) return;
+    const generation = historyOwner.generation;
+    historyOwner.activeGeneration = generation;
+    historyOwner.budget -= 1;
+    setHistoryLoading(true);
+    void Promise.resolve().then(() => {
+      if (!historyOwner.disposed && generation === historyOwner.generation) return demand.loadOlder();
+    }).catch(() => {
+      if (!historyOwner.disposed && generation === historyOwner.generation) {
+        historyOwner.budget = 0;
+        setHistoryError("Could not load earlier messages.");
+      }
+    }).finally(() => {
+      if (historyOwner.activeGeneration === generation) historyOwner.activeGeneration = null;
+      if (!historyOwner.disposed && generation === historyOwner.generation) setHistoryLoading(false);
+    });
+  }, [historyOwner]);
+  const requestOlderHistory = useCallback(() => {
+    if (historyOwner.activeGeneration !== null) return;
+    historyOwner.budget = unitsRef.current.length === 0 ? EMPTY_HISTORY_PAGE_BUDGET : 1;
+    setHistoryError(null);
+    loadHistoryPage();
+  }, [historyOwner, loadHistoryPage]);
+  // An empty projection cannot produce a scroll-to-top gesture. Advance one
+  // page per committed layout, bounded per recovery intent; failures and a
+  // still-empty budget exhaustion remain explicitly recoverable in the View.
+  useEffect(() => {
+    if (units.length === 0 && historyError === null && !historyLoading) loadHistoryPage();
+  }, [units.length, history?.enabled, history?.hasOlder, history?.loadingOlder, historyError, historyLoading, loadHistoryPage]);
   const entries = useMemo<readonly VirtualizedBotUnit[]>(
     () => units.map((unit) => ({
       timelineKey: unit.unitKey,
@@ -76,12 +134,12 @@ export function useBotConversationViewport(
   const layoutRef = useRef(layout);
   const viewportRef = useRef(viewport);
   const measuredRef = useRef(measuredHeights);
-  const onUserScrollToTopRef = useRef(onUserScrollToTop);
+  const onUserScrollToTopRef = useRef(requestOlderHistory);
   entriesRef.current = entries;
   layoutRef.current = layout;
   viewportRef.current = viewport;
   measuredRef.current = measuredHeights;
-  onUserScrollToTopRef.current = onUserScrollToTop;
+  onUserScrollToTopRef.current = requestOlderHistory;
 
   const updateFromSnapshot = useCallback((snapshot: {
     readonly distanceFromBottomPx: number;
@@ -215,6 +273,9 @@ export function useBotConversationViewport(
 
   return {
     following,
+    historyLoading: historyLoading || history?.loadingOlder === true,
+    historyError,
+    requestOlderHistory,
     transcriptRef: owner.attachScrollElement,
     totalHeightPx: windowSlice.totalHeightPx,
     marginTopPx: windowSlice.marginTopPx,

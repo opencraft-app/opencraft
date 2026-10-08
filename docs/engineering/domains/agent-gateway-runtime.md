@@ -41,6 +41,11 @@ DSH 或旧 Server 不伪造支持。桥接器和浏览器均不另存置顶集�
 与断线代次隔离，未知结果刷新核对而非盲重放，不触发 resume 或执行。
 详见 [Thread lifecycle ownership](../../../opencraft/docs/platform-architecture.md#thread-lifecycle-ownership)。
 
+LightVela 站点的 Agent 会话侧栏由 `frontend` 持有，不使用 OpenCraft 完整工作台的
+Sidebar。嵌入式 Workbench 仅投影会话的置顶状态、当前 Host 的置顶能力与置顶动作；
+站点按该能力显示菜单，置顶会话独立于近期分页配额展示。侧栏的会话缓存不作为
+置顶写入权威，操作后由原生目录刷新确认。
+
 OpenCraft 的可选 `tencentoa.identity` 插件按每个 HTTP 请求核验太湖签名、
 解密 TOF 员工身份并检查有效期。安装级私有密钥仅属于后端，员工身份仅投影到
 当前客户端的独立 Authentication provider，不取代 LightVela 账户，不写入全局
@@ -117,6 +122,8 @@ WebSocket 契约。远端模式不构造本机账号池、附件或队列，不�
 | `opencraft` | Codex-faithful Chat Runtime、多端 Workbench、AppServer/Hermes 转译与扩展运行时 |
 | `collaboration` | Server、Member、Channel、Task、Reminder 与腾讯 IM 资源映射控制面 |
 | `vela-computer` | 托管 Computer 内的 Agent Chat Client、IM 入站恢复与受控回复能力 |
+
+CTL 为国内站存量免费 Pass 创建计费迁移单前，可仅将已过期但仍为 `active` 的 Pass 到期时间延至下一天；这不触发 Sandbox/CVM 开机或实例状态迁移。曾在隔离中关机的实例保持关机，直到用户续费链路明确恢复。
 
 OpenCraft 独立 Web 入口在创建应用级 `LightVelaAccountService` 前解析显式的
 `VITE_LIGHTVELA_API_BASE_URL` 与 `VITE_LIGHTVELA_REGION`，并将结果传入应用启动边界。

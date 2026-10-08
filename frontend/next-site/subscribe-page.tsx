@@ -267,7 +267,7 @@ interface PlanInfo {
 }
 
 const isDianshiZeroAmountPlan = (plan: PlanInfo, paidBillingActive: boolean): boolean =>
-  isGlobal && paidBillingActive && plan.raw.price?.real_total_cost === 0;
+  paidBillingActive && plan.raw.price?.real_total_cost === 0;
 
 /* ─── 套餐分类 Tab 配置 ─── */
 
@@ -3345,8 +3345,7 @@ export const SubscribePage = ({
    * **PC 端不再调 getPassOrderUrl** —— 因为 jifei pay_url 生成时绑定 wx_open_id，
    * PC 端没有 wx_open_id，提前调只能拿到错误的 url（与 CodeBuddy 一致）。
    *
-   * 零元订单（need_charge === 0）改由中转页判定：中转页拿到 getPassOrderUrl 响应后
-   * 走「已完成」分支，PC 端继续轮询 listMyPasses 接棒 finalize。
+   * 计费开关开启后的零元点石新单走独立入口；旧 do_goods 订单仍用本链路继续扫码。
    *
    * 安全：二维码里**只有 deal_name + auth_code + expires_at**，无 Bearer token、无 pay_url；
    * auth_code 是一次性 ticket（TTL ≤10 分钟），截图泄漏的最坏后果是替受害者发起一次支付。
@@ -3406,11 +3405,18 @@ export const SubscribePage = ({
       return;
     }
 
-    const order = await repositories.plans.createDianshiPassOrderAndPay({
-      bundle_id: plan.raw.bundle_id,
-      period: aiDuration.period,
-      time_unit: aiDuration.time_unit,
-    });
+    let order;
+    try {
+      order = await repositories.plans.createDianshiPassOrderAndPay({
+        bundle_id: plan.raw.bundle_id,
+        period: aiDuration.period,
+        time_unit: aiDuration.time_unit,
+      });
+    } catch (err) {
+      if (isGlobal || getBillingErrorCode(err) !== "DIANSHI_LEGACY_ORDER_PENDING") throw err;
+      await startPaidPassOrder(plan);
+      return;
+    }
     setPaymentContext({
       userId: currentUserId,
       plan,
@@ -3420,7 +3426,7 @@ export const SubscribePage = ({
     setSelectedPlan(plan);
     setModalStep("paying");
     await refreshPasses();
-  }, [aiDuration, finalizeBot, isSubscribed, refreshPasses, repositories.plans, currentUserId]);
+  }, [aiDuration, finalizeBot, isSubscribed, refreshPasses, repositories.plans, currentUserId, startPaidPassOrder]);
 
   /**
    * 国际站信用卡支付链路（正式）。
@@ -3629,8 +3635,8 @@ export const SubscribePage = ({
       paid_billing_active: paidBillingActive,
     });
     try {
-      /* 国内站一律走付费下单链路（plan.skipPayment 已在 mapBundleToPlan 中按站点置为 false）；
-         国际站维持「paidBillingActive 开关 + skipPayment」组合控制。 */
+      /* 国内外站实付零元的点石订单都走下单并支付；非零元国内站继续微信支付。
+         国际站其余套餐维持「paidBillingActive 开关 + skipPayment」组合控制。 */
       if (isDianshiZeroAmountPlan(plan, paidBillingActive)) {
         await startDianshiOrderAndPay(plan);
       } else if ((!isGlobal || paidBillingActive) && !plan.skipPayment) {

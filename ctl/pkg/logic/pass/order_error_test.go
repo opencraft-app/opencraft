@@ -42,6 +42,18 @@ func TestMapTradePlaceOrderErrorDianshiActivityRequired(t *testing.T) {
 	}
 }
 
+func TestMapTradePlaceOrderErrorLegacyDianshiOrderPending(t *testing.T) {
+	err := mapTradePlaceOrderError(&tradeadapter.Error{
+		Status:  http.StatusConflict,
+		Code:    "LegacyDianshiOrderPending",
+		Message: "continue payment for the existing order",
+	})
+	var businessErr *errcode.Error
+	if !errors.As(err, &businessErr) || businessErr.Code != "DIANSHI_LEGACY_ORDER_PENDING" {
+		t.Fatalf("expected DIANSHI_LEGACY_ORDER_PENDING, got %v", err)
+	}
+}
+
 func TestMapTradePlaceOrderErrorKeepsOtherErrors(t *testing.T) {
 	err := mapTradePlaceOrderError(&tradeadapter.Error{
 		Status:  http.StatusBadGateway,

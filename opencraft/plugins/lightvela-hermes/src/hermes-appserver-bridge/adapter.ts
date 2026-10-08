@@ -882,7 +882,6 @@ export class HermesAppServerAdapter {
   private readonly transcriptSnapshots: Map<string, HermesTranscriptWindowSnapshot>;
   /** One cursor-zero history page shared by Resume and its first page read. */
   private readonly preparedHistoryByStored = new Map<string, {
-    readonly limit: number;
     readonly sortDirection: "asc" | "desc";
     readonly page: {
       data: AppServerTurn[];
@@ -1221,7 +1220,7 @@ export class HermesAppServerAdapter {
   async readTurnsPage(
     threadId: string,
     offset: number,
-    limit: number,
+    _limit: number,
     sortDirection: "asc" | "desc",
     signal?: AbortSignal,
   ): Promise<{
@@ -1239,7 +1238,7 @@ export class HermesAppServerAdapter {
       this.preparedHistoryByStored.delete(threadId);
       return prepared.page;
     }
-    return this.fetchTurnsPage(threadId, offset, limit, sortDirection, signal);
+    return this.fetchTurnsPage(threadId, offset, sortDirection, signal);
   }
 
   /**
@@ -1249,7 +1248,7 @@ export class HermesAppServerAdapter {
    */
   async prepareTurnsPage(
     threadId: string,
-    limit: number,
+    _limit: number,
     sortDirection: "asc" | "desc",
     signal?: AbortSignal,
   ): Promise<{
@@ -1257,16 +1256,15 @@ export class HermesAppServerAdapter {
     chronological: AppServerTurn[];
     nextOffset: number | null;
   }> {
-    const page = await this.fetchTurnsPage(threadId, 0, limit, sortDirection, signal);
+    const page = await this.fetchTurnsPage(threadId, 0, sortDirection, signal);
     throwIfSignalAborted(signal);
-    this.preparedHistoryByStored.set(threadId, { limit, sortDirection, page });
+    this.preparedHistoryByStored.set(threadId, { sortDirection, page });
     return page;
   }
 
   private async fetchTurnsPage(
     threadId: string,
     offset: number,
-    limit: number,
     sortDirection: "asc" | "desc",
     signal?: AbortSignal,
   ): Promise<{
@@ -1300,30 +1298,18 @@ export class HermesAppServerAdapter {
       this.transcriptWindows.get(oldest)?.invalidate();
       this.transcriptWindows.delete(oldest);
     }
-    // The durable transport is row-paged while AppServer is Turn-paged. Keep
-    // the larger Desktop-compatible row window cached, but project only the
-    // requested Turn slice. The cursor remains a count from the newest row,
-    // so subsequent pages can be served from this window until its older edge
-    // is reached and the transport must backfill again.
-    const end = Math.max(0, page.messages.length - offset);
+    // Earlier rows can regroup the partial leading Turn. Message-window
+    // consumers replace their historical groups, so every response must
+    // project the complete loaded row window and carry its source cursor.
     const attachmentNames = await this.resolveAttachmentNames(page.messages);
-    const eligible = mapMessageRanges(threadId, [...page.messages], false, attachmentNames)
-      .filter(({ end: rangeEnd }) => rangeEnd <= end);
-    const selected = eligible.slice(-limit);
-    const chronological = selected.map(({ turn }) => ({
+    const chronological = mapMessages(threadId, [...page.messages], false, attachmentNames).map(turn => ({
       ...turn, historyWindowId: key,
     }));
     for (const turn of chronological) this.cacheTurnItems(turn);
-    const consumedOffset = selected.length > 0
-      ? page.messages.length - selected[0]!.start
-      : Math.max(offset, page.nextOffset);
-    const nextOffset = eligible.length > selected.length || page.possiblyTruncated
-      ? consumedOffset
-      : null;
     return {
       data: sortDirection === "desc" ? [...chronological].reverse() : chronological,
       chronological,
-      nextOffset,
+      nextOffset: page.possiblyTruncated ? page.nextOffset : null,
     };
   }
 
