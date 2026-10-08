@@ -482,7 +482,7 @@ func TestDesktopResourceObserverPrepareInheritsSessionAuth(t *testing.T) {
 
 	session.mu.Lock()
 	prepared := session.observerPrepared
-	_, _, status := session.sandboxID, session.password, session.status
+	status := session.status
 	reason := session.reason
 	session.mu.Unlock()
 	if !prepared || status != transport.DesktopSessionStatusReady {
