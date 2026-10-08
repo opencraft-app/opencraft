@@ -2,11 +2,13 @@ import type {
   ConversationActivationCoordinator,
   ConversationScopeRegistry,
   PreparedConversationActivation,
+  RouteScopeId,
   WorkbenchActivatableRuntime,
   WorkbenchLocation,
 } from "@opencraft/workbench-runtime";
 import {
   draftSubmissionOwnsNavigation,
+  encodeWorkbenchLocation,
   equalWorkbenchLocation,
   type WorkbenchDraftLocation,
 } from "@opencraft/workbench-runtime";
@@ -21,6 +23,14 @@ import {
 } from "./workbench-navigation";
 
 export type WorkbenchHistoryMode = "push" | "replace";
+
+export interface WorkbenchNavigationTransactionOptions extends ApplicationRouterOptions {
+  /** Resolve promotion aliases within the current Application/account. */
+  readonly resolveCanonicalLocation?: (location: WorkbenchLocation) => WorkbenchLocation;
+  /** A cached View or its independently retained draft owner may restore this slot. */
+  readonly isRetainedView?: (location: WorkbenchLocation, viewId: RouteScopeId) => boolean;
+  readonly maxPreferredViews?: number;
+}
 
 export interface WorkbenchNavigationTransaction<
   TRuntime extends WorkbenchActivatableRuntime,
@@ -50,6 +60,10 @@ export interface WorkbenchNavigationTransaction<
   ): Promise<WorkbenchLocation>;
   back(): void;
   forward(): void;
+  /** Revoke all preferred-conversation references to an evicted owner slot. */
+  forgetView(viewId: string): void;
+  /** Account changes revoke both remembered Views and pending navigation. */
+  clearPreferredViews(): void;
   dispose(): void;
 }
 
@@ -58,10 +72,15 @@ export function createWorkbenchNavigationTransaction<TRuntime extends WorkbenchA
   initialLocation: WorkbenchLocation,
   activation: ConversationActivationCoordinator<TRuntime>,
   scopes: ConversationScopeRegistry,
-  routerOptions: ApplicationRouterOptions = {},
+  routerOptions: WorkbenchNavigationTransactionOptions = {},
 ): WorkbenchNavigationTransaction<TRuntime> {
+  const maxPreferredViews = routerOptions.maxPreferredViews ?? 75;
+  if (!Number.isInteger(maxPreferredViews) || maxPreferredViews < 1) {
+    throw new RangeError("Preferred View capacity must be a positive integer");
+  }
   const navigation = createApplicationNavigation(initialLocation, routerOptions);
   const listeners = new Set<() => void>();
+  const preferredViews = new Map<string, { location: WorkbenchLocation; viewId: RouteScopeId }>();
   let snapshot = navigation.getSnapshot();
   let committed = snapshot;
   let activeLocation = initialLocation;
@@ -76,14 +95,72 @@ export function createWorkbenchNavigationTransaction<TRuntime extends WorkbenchA
     promise: Promise<boolean>;
   } | null = null;
   activation.setViewId(activeScope);
+  const canonicalLocation = (location: WorkbenchLocation): WorkbenchLocation =>
+    routerOptions.resolveCanonicalLocation?.(location)
+      ?? preferredViews.get(encodeWorkbenchLocation(location))?.location
+      ?? location;
+  const forgetView = (viewId: string) => {
+    for (const [key, entry] of preferredViews) {
+      if (entry.viewId === viewId) preferredViews.delete(key);
+    }
+  };
+  const rememberPresentedView = (location: WorkbenchLocation, viewId: RouteScopeId,
+    previousLocation?: WorkbenchLocation) => {
+    if (routerOptions.isRetainedView !== undefined) {
+      for (const [key, previous] of preferredViews) {
+        if (!routerOptions.isRetainedView(canonicalLocation(previous.location), previous.viewId)) {
+          preferredViews.delete(key);
+        }
+      }
+    }
+    const canonical = canonicalLocation(location);
+    const entry = { location: canonical, viewId };
+    // A promoted Draft alias follows later successful presentations of its Thread.
+    for (const [key, previous] of preferredViews) {
+      if (equalWorkbenchLocation(previous.location, canonical)) preferredViews.set(key, entry);
+    }
+    const rememberKey = (key: string) => {
+      preferredViews.delete(key);
+      preferredViews.set(key, entry);
+    };
+    rememberKey(encodeWorkbenchLocation(canonical));
+    if (!equalWorkbenchLocation(location, canonical)) rememberKey(encodeWorkbenchLocation(location));
+    if (previousLocation !== undefined) {
+      const previousKey = encodeWorkbenchLocation(previousLocation);
+      if (routerOptions.resolveCanonicalLocation !== undefined
+        && equalWorkbenchLocation(canonicalLocation(previousLocation), canonical)) {
+        // The binding owner resolves this alias; it need not occupy another
+        // preferred slot after a successful promotion.
+        if (previousKey !== encodeWorkbenchLocation(canonical)) preferredViews.delete(previousKey);
+      } else rememberKey(previousKey);
+    }
+    while (preferredViews.size > maxPreferredViews) {
+      preferredViews.delete(preferredViews.keys().next().value!);
+    }
+  };
+  const isRetainedView = (location: WorkbenchLocation, viewId: RouteScopeId) =>
+    routerOptions.isRetainedView?.(location, viewId) ?? true;
+  const preferredView = (location: WorkbenchLocation): RouteScopeId | undefined => {
+    const canonical = canonicalLocation(location);
+    const preferred = preferredViews.get(encodeWorkbenchLocation(canonical))
+      ?? preferredViews.get(encodeWorkbenchLocation(location));
+    if (preferred === undefined) return undefined;
+    if (!isRetainedView(canonical, preferred.viewId)) {
+      forgetView(preferred.viewId);
+      return undefined;
+    }
+    return preferred.viewId;
+  };
+  rememberPresentedView(initialLocation, activeScope);
   const publish = () => {
     snapshot = navigation.getSnapshot();
     for (const listener of listeners) listener();
   };
   const remember = () => { committed = navigation.getSnapshot(); publish(); };
-  const commitRoute = (action: () => void) => {
+  const commitRoute = (action: () => void, presented?: () => void) => {
     committingRoute = true;
     try { action(); } finally { committingRoute = false; }
+    presented?.();
     remember();
   };
   const blocked = () => {
@@ -138,6 +215,7 @@ export function createWorkbenchNavigationTransaction<TRuntime extends WorkbenchA
       remember(); return;
     }
     if (equalWorkbenchLocation(next.location, activeLocation) && next.routeScopeId === activeScope) {
+      rememberPresentedView(next.location, next.routeScopeId);
       remember(); resumeReadiness(next, epoch); return;
     }
     void activation.prepare(next.location).then(prepared => {
@@ -148,6 +226,7 @@ export function createWorkbenchNavigationTransaction<TRuntime extends WorkbenchA
         rollbackPop(next); return;
       }
       activeLocation = next.location; activeScope = next.routeScopeId;
+      rememberPresentedView(next.location, next.routeScopeId);
       remember();
     }).catch(() => { if (ownsIntent(epoch, next)) rollbackPop(next); });
   });
@@ -160,15 +239,15 @@ export function createWorkbenchNavigationTransaction<TRuntime extends WorkbenchA
     // A rejected preparation must not write a route and then attempt a lossy rollback.
     if (!accept(prepared, viewId)) return false;
     activeLocation = location; activeScope = viewId;
-    commitRoute(() => navigation[mode](location, { routeScopeId: viewId }));
+    commitRoute(() => navigation[mode](location, { routeScopeId: viewId }),
+      () => rememberPresentedView(location, viewId));
     return true;
   };
   const navigate = (location: WorkbenchLocation, mode: WorkbenchHistoryMode = "push", scope?: typeof activeScope) => {
     if (disposed) return rejectClosed();
     if (blocked()) return Promise.resolve(false);
     const origin = navigation.getSnapshot();
-    const viewId = scope ?? (origin.applicationRoute.kind === "conversation"
-      && equalWorkbenchLocation(origin.location, location) ? origin.routeScopeId : createRouteScopeId());
+    const viewId = scope ?? createRouteScopeId();
     const epoch = beginIntent();
     const operation = { location, viewId, promise: prepareNavigation(location, mode, viewId, epoch, origin) };
     pendingNavigation = operation;
@@ -182,7 +261,8 @@ export function createWorkbenchNavigationTransaction<TRuntime extends WorkbenchA
     }
     if (equalWorkbenchLocation(location, activeLocation) && scope === activeScope) {
       const epoch = beginIntent();
-      commitRoute(() => navigation.push(location, { routeScopeId: scope }));
+      commitRoute(() => navigation.push(location, { routeScopeId: scope }),
+        () => rememberPresentedView(location, scope));
       // Settings may have canceled bootstrap readiness, while the local View
       // itself remained presentable. Resume readiness without delaying Chat.
       resumeReadiness(navigation.getSnapshot(), epoch);
@@ -199,9 +279,12 @@ export function createWorkbenchNavigationTransaction<TRuntime extends WorkbenchA
   const selectConversation = (location: WorkbenchLocation) => {
     if (disposed) return rejectClosed();
     if (blocked()) return Promise.resolve(false);
+    location = canonicalLocation(location);
     const current = navigation.getSnapshot();
-    const retainedScope = equalWorkbenchLocation(current.location, location) ? current.routeScopeId
-      : equalWorkbenchLocation(activeLocation, location) ? activeScope : undefined;
+    const retainedScope = equalWorkbenchLocation(current.location, location) && isRetainedView(location, current.routeScopeId)
+      ? current.routeScopeId
+      : equalWorkbenchLocation(activeLocation, location) && isRetainedView(location, activeScope)
+        ? activeScope : preferredView(location);
     // Coalesce a destination only when it also matches the requested View.
     if (pendingNavigation && equalWorkbenchLocation(pendingNavigation.location, location)
       && (retainedScope === undefined || pendingNavigation.viewId === retainedScope)) {
@@ -239,7 +322,8 @@ export function createWorkbenchNavigationTransaction<TRuntime extends WorkbenchA
       const epoch = beginIntent(), scope = createRouteScopeId();
       activation.presentLocalDraft(location, scope);
       activeLocation = location; activeScope = scope;
-      commitRoute(() => navigation[mode](location, { routeScopeId: scope }));
+      commitRoute(() => navigation[mode](location, { routeScopeId: scope }),
+        () => rememberPresentedView(location, scope));
       resumeReadiness(navigation.getSnapshot(), epoch);
       return true;
     },
@@ -260,12 +344,20 @@ export function createWorkbenchNavigationTransaction<TRuntime extends WorkbenchA
         prepared?.cancel(); throw new Error("Draft promotion navigation was superseded");
       }
       if (!prepared || !accept(prepared, scope)) throw new Error("Draft promotion activation failed");
+      const previousLocation = activeLocation;
       activeLocation = prepared.location;
-      commitRoute(() => navigation.replace(prepared.location, { preserveView: true, routeScopeId: scope }));
+      commitRoute(() => navigation.replace(prepared.location, { preserveView: true, routeScopeId: scope }),
+        () => rememberPresentedView(prepared.location, scope, previousLocation));
       return prepared.location;
     },
     back() { ensureOpen(); if (!blocked()) { beginIntent(); navigation.back(); } },
     forward() { ensureOpen(); if (!blocked()) { beginIntent(); navigation.forward(); } },
-    dispose() { disposed = true; beginIntent(); stopNavigation(); navigation.dispose(); listeners.clear(); },
+    forgetView,
+    clearPreferredViews() {
+      beginIntent(); preferredViews.clear();
+      const attempt = navigation.getSnapshot();
+      if (!restoring && attempt.revision !== committed.revision) rollbackPop(attempt);
+    },
+    dispose() { disposed = true; beginIntent(); preferredViews.clear(); stopNavigation(); navigation.dispose(); listeners.clear(); },
   };
 }

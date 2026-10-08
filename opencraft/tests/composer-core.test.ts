@@ -59,6 +59,70 @@ const richDocument: ComposerDocument = {
   ],
 };
 
+test("content inspection includes hidden target drafts and uses active content over its stale cache", () => {
+  const controller = createComposerController(existing("a"), services());
+  assert.equal(controller.hasRetainedContent(), false);
+  controller.dispatch({ type: "set-document", document: richDocument });
+  controller.dispatch({ type: "switch-target", target: existing("b") });
+  assert.equal(controller.getSnapshot().hasContent, false);
+  assert.equal(controller.hasRetainedContent(), true);
+  assert.equal(controller.hasTargetContent(existing("a")), true);
+  assert.equal(controller.hasTargetContent(existing("b")), false);
+  assert.equal(controller.hasTargetContent(existing("unknown")), false);
+  controller.dispatch({ type: "switch-target", target: existing("a") });
+  controller.dispatch({ type: "replace-content", document: { version: 1, blocks: [] }, attachments: [], context: [] });
+  assert.equal(controller.hasTargetContent(existing("a")), false);
+  assert.equal(controller.hasRetainedContent(), false);
+  controller.dispatch({ type: "set-document", document: richDocument });
+  controller.dispatch({ type: "switch-target", target: existing("b") });
+  controller.dispatch({ type: "reset-all" });
+  assert.equal(controller.hasTargetContent(existing("a")), false);
+  assert.equal(controller.hasRetainedContent(), false);
+  controller.dispatch({ type: "set-document", document: richDocument });
+  controller.dispose();
+  assert.equal(controller.hasRetainedContent(), false);
+  assert.equal(controller.hasTargetContent(existing("b")), false);
+});
+
+test("retained-content inspection includes cached attachments and context but excludes selections", () => {
+  const controller = createComposerController(existing("attachment"), services());
+  controller.dispatch({ type: "add-attachment", attachment: {
+    id: "file", name: "file.txt", mimeType: "text/plain", size: 1,
+    uri: null, lifecycle: "processing", error: null,
+  } });
+  controller.dispatch({ type: "switch-target", target: existing("context") });
+  controller.dispatch({ type: "add-context", reference: {
+    id: "context", kind: "file", title: "file", uri: "file", visible: true,
+  } });
+  controller.dispatch({ type: "switch-target", target: existing("empty") });
+  controller.dispatch({ type: "set-selections", patch: { model: "selected" } });
+  assert.equal(controller.hasRetainedContent(), true);
+  assert.equal(controller.hasTargetContent(existing("attachment")), true);
+  assert.equal(controller.hasTargetContent(existing("context")), true);
+  assert.equal(controller.hasTargetContent(existing("empty")), false);
+  controller.dispatch({ type: "switch-target", target: existing("attachment") });
+  controller.dispatch({ type: "clear" });
+  assert.equal(controller.hasRetainedContent(), true);
+  controller.dispatch({ type: "switch-target", target: existing("context") });
+  controller.dispatch({ type: "clear" });
+  assert.equal(controller.hasRetainedContent(), false);
+  controller.dispose();
+});
+
+test("cached submission settlement immediately updates retained-content inspection", () => {
+  const controller = createComposerController(existing("sending"), services());
+  controller.dispatch({ type: "set-document", document: richDocument });
+  const draftId = controller.getSnapshot().draft.id;
+  const intent = controller.createSubmitIntent();
+  controller.dispatch({ type: "set-lifecycle", phase: "submitting" });
+  controller.dispatch({ type: "switch-target", target: existing("empty") });
+  assert.equal(controller.hasRetainedContent(), true);
+  assert.equal(controller.settleSubmission(draftId, intent, { status: "accepted" }), true);
+  assert.equal(controller.hasRetainedContent(), false);
+  assert.equal(controller.hasTargetContent(existing("sending")), false);
+  controller.dispose();
+});
+
 test("late attachment results update only their owning cached Draft and clear releases it", () => {
   const controller = createComposerController(existing("image-a"), services());
   const draftId = controller.getSnapshot().draft.id;

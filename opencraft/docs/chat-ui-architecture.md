@@ -4,15 +4,37 @@
 
 `ComposerStoreServices.drafts` is a platform-neutral content storage port;
 `BrowserComposerDrafts` adapts browser localStorage for Bot input without server or
-device synchronization. Task Views retain their existing account-bound
-`ConversationDraftContinuity` owner; no second task persistence writer is added.
+device synchronization. Task input slots use an account-bound
+`ConversationDraftOwnerRegistry`; `ConversationDraftContinuity` remains their
+sole document persistence writer.
 Bot input is isolated by product/account and exact Host/conversation identity. Document, context and
 attachment metadata are saved on explicit edits and cleared after an accepted
 send. Lifecycle, selection and disposal changes never overwrite stored content.
 Restore creates a fresh editing state, not a submitting lock, receipt or outbox
 entry, and never sends automatically. Account credential-scope changes revoke
 and clear the old Bot adapter; a fresh application creates the next account's
-adapter. This change does not replace task navigation/restoration semantics.
+adapter. Task sidebar selection resumes the conversation's last successfully
+presented input slot; explicit navigation and POP preserve independent Views.
+
+Task presentation caching and input retention have separate budgets. A cached
+View borrows its slot's original Controller and does not retain that draft owner.
+Evicting the presentation after 20 inactive Views releases Scope/UI resources,
+not the Controller, original Files, previews or attachment jobs. The Application
+retains at most 50 nonempty unsent input slots, evicting the least-recently-used
+inactive slot and discarding its stored document. Empty inputs do not count.
+Physical editing and in-flight submissions protect a slot from eviction; if all
+50 are protected, new-content admission is refused rather than deleting live
+input or exceeding the budget. Late attachment status changes do not refresh
+recency. Promotion updates every slot of the Scope, including slots whose View
+has been evicted; the owner holds no Scope, Thread or Host lease. Clear/accepted
+settlement releases assets, failed settlement retains input, and account
+revocation clears all slots and target caches. Tests: `test:task-draft-switching`
+and `smoke:task-draft-switching` (real CodexComposer, synthetic remote boundaries).
+New-chat Scope metadata uses a separate 20-empty-record budget; records with
+retained input and in-flight first submissions cannot be pruned by that budget.
+It queries input ownership rather than retaining an execution lease. Evicted
+input cannot rehydrate from its discarded document even while empty navigation
+metadata remains.
 
 Task continuity includes new-Draft placement in its existing document envelope,
 not a second storage writer. Browser bootstrap can restore that exact client
@@ -24,8 +46,9 @@ Account service disposal revokes asynchronous authority without rotating the
 persisted credential scope. Only actual identity/credential transitions rotate
 that scope; otherwise every ordinary browser refresh would orphan saved input.
 
-Original browser File bytes and ephemeral Side Chat reload restoration are not
-implemented. Expired Object URLs and unfinished attachment staging restore as
+Original browser File bytes survive Task conversation switching within the same
+Application. File persistence across a full refresh and ephemeral Side Chat
+reload restoration are not implemented. Expired Object URLs and unfinished attachment staging restore as
 failed removable cards asking the user to re-add the file, never as ready files.
 Storage corruption, denial or quota failures retain in-memory editing; diagnostics
 do not log content. Mounted Views do not subscribe to cross-tab changes.
@@ -56,7 +79,7 @@ retain their own suggestions and have no Hermes shortcut menu.
 
 ## 跨桌面、手机和平板的会话连续性
 
-Conversation Scope 是会话身份，View 是一个具体窗口或页面的输入与滚动状态。`workbench-runtime` 的 `ConversationDraftContinuity` 管理 View 文档的保存、恢复、发送成功后的丢弃和迟到读取仲裁；平台只提供本地存储。移动端用 SQLite，并以区域、凭证摘要和 Bot 实例/Profile 分区；Web/Electron 用浏览器本地存储，并以产品和账号服务的凭证作用域分区。退出登录或切换凭证时撤销旧存储、清除 View 与其内部目标缓存。附件与临时文件引用不在这个文档缓存中恢复，避免把已失效的本地 URI 当成可发送资产。
+Conversation Scope 是会话身份，View 是具体窗口或页面的呈现与滚动状态；任务输入槽位以 View ID 标识，但其 Application 级草稿所有权独立于页面缓存。`workbench-runtime` 的 `ConversationDraftOwnerRegistry` 保留原 Controller 与附件资源，`ConversationDraftContinuity` 管理同一输入槽文档的保存、恢复、发送成功后的丢弃和迟到读取仲裁；平台只提供本地存储。移动端用 SQLite，并以区域、凭证摘要和 Bot 实例/Profile 分区；Web/Electron 用浏览器本地存储，并以产品和账号服务的凭证作用域分区。退出登录或切换凭证时撤销旧存储、清除所有草稿所有者及其内部目标缓存，包括已无页面的草稿。附件与临时文件引用不从文档缓存恢复；会话切换保留内存附件不等于刷新恢复字节。
 
 `ConversationReturnProbe` 统一短暂离开、较长前台恢复和断网恢复的触发条件。iOS 把 AppState/Expo Network 事件交给它，Web/Electron 把 visibility/online 事件交给它；真正的追平仍调用当前 Thread lease 的 `retryRestore()`。追平不创建新会话，不重置可读历史。已经显示的内容是否权威，仍由 Replica/Session 决定。
 
@@ -1000,7 +1023,7 @@ history, or remounting the Conversation.
 
 The Web Composer displays a selected image immediately from a browser-owned
 object URL. The object URL and original `File` belong to the Composer
-Controller's View-scoped attachment session, keyed by Draft ID and attachment
+Controller's draft-owner attachment session, keyed by Draft ID and attachment
 ID; neither enters the serializable Draft or AppServer input. The session owns
 compression/resolve work across React mount changes, updates only the Draft
 that initiated the work, and aborts/revokes on removal, clear or Controller
@@ -1010,7 +1033,7 @@ image preparation, not measured network upload progress. The existing
 For iPhone camera HEIC/HEIF input, browser image decode and canvas encoding
 produce a JPEG upload derivative. This is required format conversion, so it is
 kept even if larger than the selected HEIC; the original File stays with the
-View-scoped session for retry. A browser without that decode/encode path leaves
+draft-owner session for retry. A browser without that decode/encode path leaves
 the attachment failed rather than sending HEIC under an unsupported MIME.
 The post-conversion inline byte cap still applies before base64 allocation.
 Failed image cards show the preparation error beside the thumbnail, so touch

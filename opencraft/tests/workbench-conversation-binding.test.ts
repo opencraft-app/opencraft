@@ -24,7 +24,7 @@ test("a Draft Conversation Scope keeps its identity after receiving a canonical 
   assert.equal(store.findScope(key), scopeId);
 });
 
-test("inactive Conversation Views are bounded and dispose their owned Composer", () => {
+test("inactive Conversation Views are bounded and may discard an empty input slot", () => {
   const disposed: string[] = [];
   const leases = createConversationScopeLeaseRegistry({});
   const views = createConversationViewRegistry({

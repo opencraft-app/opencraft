@@ -126,6 +126,10 @@ export interface ComposerTransientTextInputFinalization {
 
 export interface ComposerController {
   getSnapshot(): ComposerStoreSnapshot;
+  /** Content retained by this Controller, including inactive target drafts. */
+  hasRetainedContent(): boolean;
+  /** Content already owned by an active or cached semantic target. */
+  hasTargetContent(target: ComposerTarget): boolean;
   subscribe(listener: () => void): () => void;
   getInputInteractionSnapshot(): ComposerDictationInteraction | null;
   subscribeInputInteraction(listener: () => void): () => void;
@@ -260,6 +264,12 @@ function reduce(
   }
 }
 
+function draftHasContent(draft: ComposerDraft): boolean {
+  return !isComposerDocumentEmpty(draft.document)
+    || draft.attachments.length > 0
+    || draft.context.length > 0;
+}
+
 function snapshot(
   revision: number,
   draft: ComposerDraft,
@@ -274,11 +284,7 @@ function snapshot(
   const hasUnavailableAssets = draft.attachments.some(
     (attachment) => attachment.lifecycle !== "ready" || attachment.uri === null,
   );
-  const hasContent =
-    !isComposerDocumentEmpty(draft.document) ||
-    draft.attachments.length > 0 ||
-    draft.context.length > 0 ||
-    hasTransientText;
+  const hasContent = draftHasContent(draft) || hasTransientText;
   return {
     revision,
     draft,
@@ -401,6 +407,19 @@ export function createComposerController(
 
   return {
     getSnapshot: () => currentSnapshot,
+    hasRetainedContent() {
+      if (disposed) return false;
+      const activeTarget = encodeComposerTarget(draft.target);
+      return currentSnapshot.hasContent || [...draftCache.entries()]
+        .some(([key, cached]) => key !== activeTarget && draftHasContent(cached));
+    },
+    hasTargetContent(target) {
+      if (disposed) return false;
+      const key = encodeComposerTarget(target);
+      if (key === encodeComposerTarget(draft.target)) return currentSnapshot.hasContent;
+      const cached = draftCache.get(key);
+      return cached !== undefined && draftHasContent(cached);
+    },
     getInputInteractionSnapshot: () => transient?.interaction ?? null,
     subscribeInputInteraction(listener) {
       ensureOpen(); interactionListeners.add(listener);
