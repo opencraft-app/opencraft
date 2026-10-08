@@ -69,5 +69,7 @@ Conversation menus can pin/unpin supported native sessions; pinned conversations
 - Global context-catalog validation remains failing on existing repository task schema, instruction-size and secret-scan findings; it is not counted as passed. Initial wrong-directory generated empty catalog was moved to ignored runtime storage, not retained as source.
 
 ## handoff
-- Source implementation and scoped validation complete. User subsequently authorized commit/push and normal merge to master; Git delivery is in progress and subject to repository review gates. Current public preview remains unchanged, with no replacement or restart authorized in this request.
+- Source committed as `b7e8ae711`; latest master incorporated by merge `ec5447b2e`, preserving desktop changes. Post-merge focused regression checks passed 62/62, five workspace typechecks, i18n, boundaries and desktop/touch × light/dark Sidebar smoke passed.
+- Branch pushed; [MR !5064](https://git.woa.com/wisp/mono2/-/merge_requests/5064), global ID 27568538, targets master. Normal merge refused with `Review check not passed. 409 conflict`; maintainer approval is required. No review rule changes or bypass. Master is not yet updated by this feature.
+- Current public preview remains unchanged, with no replacement or restart authorized in this request.
 - Native storage is the sole pin authority; DSH/unsupported peers hide the action. Refresh re-reads native metadata. Deployment and real remote Hermes write acceptance are separate remaining delivery steps.

@@ -17,4 +17,4 @@ Implementation and scoped verification are complete. User authorized commit/push
 Three browser setup attempts failed: missing Playwright module, unrelated dependency resolution conflict, then missing libgbm. Application dependencies were not changed. Isolated Playwright is installed under `opencraft/.runtime/thread-pins-ui-tools`; existing browser libraries are available at `/data/tmp/opencraft-browser-libs/usr/lib64`.
 
 ## Next
-Submit the feature branch through the repository's normal merge request/review flow. Do not bypass review gates. Existing preview remains unchanged. Before real Hermes acceptance use its actual authorized connection; do not replace native state with bridge persistence.
+Branch pushed with source `b7e8ae711` and master integration `ec5447b2e`. Post-merge 62/62 tests, five workspace typechecks, boundaries, i18n and Sidebar smoke passed. MR !5064 (global 27568538) is open; normal merge returned `Review check not passed. 409 conflict`. Await maintainer approval, then recheck and use the normal merge API. Do not bypass review gates. Existing preview remains unchanged. Real Hermes remote writes remain unverified.
