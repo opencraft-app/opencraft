@@ -49,6 +49,10 @@ const (
 	payURLRequestTimeout = 50 * time.Second
 )
 
+// 付费积分包（credit 服务）也是 LLMGateway 命名订阅，余量由 /v1/credit/packages 单独返回，
+// 不能计入套餐积分，否则账号页会把积分包算两次。
+const creditPackageSubscriptionNamePrefix = "credit-package:"
+
 func packageSubscriptionName(userID, passID string) string {
 	return packageSubscriptionNamePrefix + strings.TrimSpace(userID) + ":" + strings.TrimSpace(passID)
 }
@@ -1464,6 +1468,9 @@ func getCompatibleCreditBalances(ctx context.Context, userID string) (creditBala
 func creditBalancesFromLLMSubscriptions(subs []llmgateway.Subscription) creditBalances {
 	var balances creditBalances
 	for _, sub := range subs {
+		if strings.HasPrefix(strings.TrimSpace(sub.Name), creditPackageSubscriptionNamePrefix) {
+			continue
+		}
 		if strings.HasPrefix(strings.TrimSpace(sub.Name), freeCreditSubscriptionNamePrefix) {
 			tokenTotal := sub.TokenTotal
 			if tokenTotal == 0 && sub.TokenBalance > 0 {
@@ -1481,7 +1488,8 @@ func creditBalancesFromLLMSubscriptions(subs []llmgateway.Subscription) creditBa
 
 func firstPackageSubscription(subs []llmgateway.Subscription) llmgateway.Subscription {
 	for _, sub := range subs {
-		if !strings.HasPrefix(strings.TrimSpace(sub.Name), freeCreditSubscriptionNamePrefix) {
+		name := strings.TrimSpace(sub.Name)
+		if !strings.HasPrefix(name, freeCreditSubscriptionNamePrefix) && !strings.HasPrefix(name, creditPackageSubscriptionNamePrefix) {
 			return sub
 		}
 	}

@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSession } from "@/contexts/session-context";
 import { useOpenClaw } from "@/contexts/agent-context";
@@ -15,6 +15,7 @@ import { publicSiteHref } from "@/lib/public-site-navigation";
 import { resolveVisiblePublicSiteLocale } from "@/lib/public-site-routing";
 import { isGlobal } from "@/lib/region";
 import { useAccountPassSummary } from "@/lib/use-account-pass-summary";
+import { useCreditSources } from "@/lib/use-credit-sources";
 import { usePassUpgrade } from "@/lib/use-pass-upgrade";
 import { installConsoleShowCommand, isConsoleShowEnabled, subscribeConsoleShow } from "@/lib/console-show-event";
 import { PRODUCT_FEEDBACK_URL } from "@/constants/product-feedback";
@@ -49,6 +50,23 @@ export function SidebarUserMenuController({ showLanguageSwitcher = false }: { sh
   const enabled = open || Boolean(userId && loadedUserId === userId);
   const summary = useAccountPassSummary({ userId, activePass, modifyingPass, paidBillingActive, global: isGlobal, enabled, listMyPasses: plans.listMyPasses });
   const operablePass = summary.pass;
+  // 与「套餐与费用」页同一口径：套餐 + 额外积分 + 付费积分包。
+  const planCreditInput = useMemo(() => operablePass
+    ? { displayName: "", creditTotal: operablePass.credit_total, creditAvailable: operablePass.credit_available }
+    : null, [operablePass]);
+  const freeCreditInput = useMemo(() => {
+    const creditTotal = Math.max(0, operablePass?.free_credit_total ?? 0);
+    return creditTotal > 0
+      ? { displayName: "", creditTotal, creditAvailable: Math.min(creditTotal, Math.max(0, operablePass?.free_credit_available ?? 0)) }
+      : null;
+  }, [operablePass]);
+  const { summary: creditSummary } = useCreditSources(planCreditInput, freeCreditInput, enabled && Boolean(operablePass));
+  const credits = operablePass ? {
+    total: creditSummary.total,
+    available: creditSummary.available,
+    used: creditSummary.used,
+    usedPercent: creditSummary.total > 0 ? Math.min(100, Math.round(creditSummary.used / creditSummary.total * 100)) : 0,
+  } : null;
   const upgrade = usePassUpgrade({ userId, passId: operablePass?.pass_id, currentPass: operablePass, enabled: enabled && paidBillingActive });
   const canRenew = accountPassCanRenew(operablePass, isGlobal, paidBillingActive);
   const subscribeHref = publicSiteHref("/subscribe", resolveVisiblePublicSiteLocale(null, i18n.language), { localized: isGlobal });
@@ -69,12 +87,12 @@ export function SidebarUserMenuController({ showLanguageSwitcher = false }: { sh
     ? { text: passUpgradeFailed ? t("套餐升级失败") : t("套餐升级中"), tone: "warning" }
     : status === "expired" ? { text: t("已过期"), tone: "danger" }
     : status === "isolated" ? { text: t("套餐已隔离，请前往续费。"), tone: "warning" } : undefined;
-  const credit: SidebarUserMenuProps["credit"] = summary.credits
-    ? { state: "ready", label: t("已使用积分"), ...summary.credits }
+  const credit: SidebarUserMenuProps["credit"] = credits
+    ? { state: "ready", label: t("已使用积分"), ...credits }
     : { state: state === "ready" ? "idle" : state, label: creditLabel };
   const overview: SidebarUserMenuProps["overview"] = {
     expiresAt: formatExpiryDate(operablePass?.expired_time, locale) ?? "—",
-    remainingCredits: summary.credits ? summary.credits.available.toLocaleString() : "—",
+    remainingCredits: credits ? credits.available.toLocaleString() : "—",
     botCount: !userId || !hasResolvedBots || botsLoading || botsError ? "—" : bots.length.toLocaleString(),
     invitedFriends: referralEnabled ? (referralStats && referralStats.userId === userId ? referralStats.count.toLocaleString() : "—") : undefined,
     labels: { expiresAt: t("有效期至"), remainingCredits: t("剩余 AI 积分"), botCount: t("Bot 数量"), invitedFriends: t("已邀请好友") },

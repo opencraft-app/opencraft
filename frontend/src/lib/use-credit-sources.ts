@@ -68,6 +68,8 @@ export const formatCreditDate = (iso: string): string => {
 export const useCreditSources = (
   planCredit: PlanCreditInput | null,
   freeCredit: FreeCreditInput | null = null,
+  /** false 时不请求积分包（侧栏账户菜单首次展开前不读账务）。 */
+  enabled = true,
 ): CreditSourcesState => {
   const repositories = useRepositories();
   const t = useT();
@@ -91,7 +93,7 @@ export const useCreditSources = (
        此时不发请求、不报错，退化为「只有套餐积分」——积分包属增量能力，
        不应让缺失它导致整个账号页崩溃。 */
     const creditRepository = repositoriesRef.current?.credit;
-    if (!creditRepository) {
+    if (!enabled || !creditRepository) {
       setPackSources([]);
       setLoading(false);
       setFailed(false);
@@ -133,7 +135,7 @@ export const useCreditSources = (
     return () => {
       active = false;
     };
-  }, [reloadToken]);
+  }, [enabled, reloadToken]);
 
   const sources = useMemo(() => {
     const all: CreditSourceView[] = [];

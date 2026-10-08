@@ -6,7 +6,7 @@ import { UserAvatarMenu } from "../user-avatar-menu";
 import { isGlobal } from "@/lib/region";
 import { CONSOLE_SHOW_EVENT, setConsoleShowEnabled } from "@/lib/console-show-event";
 
-const mocks = vi.hoisted(() => ({ listMyPasses: vi.fn(), listModifyBundles: vi.fn(), repositories: vi.fn(), paidBilling: vi.fn(), navigate: vi.fn(), signOut: vi.fn() }));
+const mocks = vi.hoisted(() => ({ listCreditPackages: vi.fn(), listMyPasses: vi.fn(), listModifyBundles: vi.fn(), repositories: vi.fn(), paidBilling: vi.fn(), navigate: vi.fn(), signOut: vi.fn() }));
 const pass = (overrides: Partial<Pass> & { bundle_type?: string } = {}): Pass & { bundle_type?: string } => ({ pass_id: "p/a", user_id: "a", status: "active", bundle_id: "source", bundle_name: "Pro A", created_time: "2026-01-01", expired_time: "2099-01-01", credit_total: 1000, credit_available: 750, ...overrides });
 let currentPass: Pass | null = pass();
 let modifyingPass: Pass | null = null;
@@ -14,7 +14,7 @@ let userId: string | undefined = "a";
 let paidBilling = true;
 let currentSubscription: { code: string } | null = null;
 const plans = { listMyPasses: mocks.listMyPasses, listModifyBundles: mocks.listModifyBundles };
-vi.mock("@/contexts/repository-context", () => ({ useRepositories: () => { mocks.repositories(); return { plans, auth: { getReferralStats: vi.fn() } }; } }));
+vi.mock("@/contexts/repository-context", () => ({ useRepositories: () => { mocks.repositories(); return { plans, auth: { getReferralStats: vi.fn() }, credit: { listCreditPackages: mocks.listCreditPackages } }; } }));
 vi.mock("@/contexts/runtime-config-context", () => ({ usePaidBillingEnabled: () => { mocks.paidBilling(); return paidBilling; }, useReferralEnabled: () => false }));
 vi.mock("@/contexts/session-context", () => ({ useSession: () => ({ session: { user: userId ? { id: userId, name: `Owner ${userId}`, email: `${userId}@example.com` } : null, currentSubscription }, signOut: mocks.signOut }) }));
 vi.mock("@/contexts/agent-context", () => ({ useOpenClaw: () => ({ activePass: currentPass, modifyingPass, passUpgradeFailed: false, hasResolvedPasses: true, isSubscribed: Boolean(currentPass), passesLoading: false, passesError: false, bots: [], botsLoading: false, botsError: false, user: { plan: { name: "STALE PLAN SHOULD NOT LEAK" } } }) }));
@@ -30,6 +30,7 @@ beforeEach(() => {
   vi.clearAllMocks(); currentPass = pass(); modifyingPass = null; userId = "a"; paidBilling = true; currentSubscription = null;
   vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
   mocks.listMyPasses.mockResolvedValue([pass()]);
+  mocks.listCreditPackages.mockResolvedValue([]);
   mocks.listModifyBundles.mockResolvedValue({ source_bundle_id: "source", modify_bundle_set: [target] });
 });
 
@@ -40,6 +41,19 @@ async function openSidebar() {
 }
 
 describe("sidebar account controller boundary", () => {
+  it("counts paid credit packs with the plan, matching the billing page", async () => {
+    currentPass = pass({ credit_total: 100, credit_available: 83 });
+    mocks.listCreditPackages.mockResolvedValue([
+      { credit_type: "paid", credit_total: 1000, credit_available: 1000, expired_time: "2099-01-01T00:00:00Z" },
+    ]);
+    render(<UserAvatarMenu variant="sidebar" />);
+    expect(mocks.listCreditPackages).not.toHaveBeenCalled();
+    await openSidebar();
+    const menu = screen.getByRole("dialog", { name: "账号管理" });
+    await waitFor(() => expect(menu).toHaveTextContent("17 / 1,100"));
+    expect(menu).toHaveTextContent("1,083");
+  });
+
   it("shows the former overview account metrics in the sidebar menu", async () => {
     render(<UserAvatarMenu variant="sidebar" />);
     await openSidebar();
