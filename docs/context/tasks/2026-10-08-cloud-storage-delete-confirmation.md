@@ -42,13 +42,15 @@
 - 聚焦组件测试 35/35 通过；覆盖取消、文件与文件夹确认、失败后重试和容量刷新。
 - 本地国内站预览已显示嵌套确认弹窗；取消后焦点返回原删除按钮，未调用真实删除。
 - `pnpm check` 通过，TypeScript diagnostics 0 new；`git diff --check` 通过。
-- OpenCraft 只读检查按预期发现真源变更导致的副本漂移，需在真源提交后生成同步提交。
+- `pnpm build:cn` 通过，生成 106 个静态页面；构建产物导致的两份跟踪文件变化已恢复。
+- 真源提交 `ffdfa7229` 后运行 `sync:mono2-agent-console`，生成副本提交 `6d47ebf66`；只读同步检查通过。
+- `validate_change_impact.py --staged` 与 `validate_documentation.py --format json` 通过，文档链接错误 0。
 
 ## risks
 - 嵌套在云存储弹窗中时确认 Dialog 的焦点与遮罩必须正常；在本地预览验证。
 
 ## validation
-- 聚焦组件测试、`pnpm check` 已通过；待运行 `pnpm build` 与真源提交后的 OpenCraft 同步检查。
+- 聚焦组件测试 35/35、`pnpm check`、`pnpm build:cn`、OpenCraft 同步只读检查通过。
 
 ## decisions
 - 在共享文件管理面板加入确认 Dialog，使弹窗和直达页面使用同一保护；沿用现有删除 API。
@@ -60,4 +62,4 @@
 - 精确命中 `tat-file-manager-panel.tsx:931` 的 `deleteSelected` 及相邻测试。
 
 ## handoff
-- 实现、验证、同步与 MR 更新进行中。
+- 实现、验证与同步已完成；待推送现有 MR 并核对远端状态。
