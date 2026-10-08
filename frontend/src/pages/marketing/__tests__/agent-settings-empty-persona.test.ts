@@ -9,12 +9,10 @@ describe("empty Agent page", () => {
     const page = readSource("src/pages/marketing/agent-settings-page.tsx");
     const styles = readSource("src/styles.css");
     const header = readSource("next-site/agents-page-client.tsx");
-    const homeRoute = readSource("src/app/(site)/agents/page.next.tsx");
-    const sectionRoute = readSource("src/app/(site)/agents/[section]/page.next.tsx");
+    const consoleLayout = readSource("next-site/agents-console-layout.tsx");
     const emptyGuard = page.split("const isEmptyAgentPage = ")[1]?.split(";")[0];
 
-    expect(homeRoute).toContain("<AgentsPageClient />");
-    expect(sectionRoute).toContain("initialSectionSlug={section}");
+    expect(consoleLayout).toContain("<AgentsPageClient initialSectionSlug={route.slug} sectionId={route.sectionId} />");
     expect(emptyGuard).not.toContain("initialSectionSlug");
     for (const state of ["!isModifying", "!passesLoading", "!isCreating", "!botsLoading", "visibleBots.length === 0"]) {
       expect(emptyGuard).toContain(state);

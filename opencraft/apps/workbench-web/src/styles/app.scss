@@ -8917,6 +8917,14 @@ html[data-codex-window-type="electron"] .thread-scroll {
   color: var(--color-text);
 }
 
+.codex-composer-connection-hint {
+  margin: 6px 0 0;
+  padding-inline: 12px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--color-text-tertiary);
+}
+
 .codex-composer-shell {
   position: relative;
   z-index: 1;

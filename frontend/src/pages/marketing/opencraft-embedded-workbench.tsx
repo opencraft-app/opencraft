@@ -115,6 +115,11 @@ export function useEmbeddedWorkbenchResourcePreparation(enabled: boolean, active
   }, [enabled, active]);
 }
 
+/** Startup waits shorter than this show a plain canvas instead of the loading notice. */
+export const LOADING_NOTICE_DELAY_MS = 1_000;
+/** A connection still pending after this long offers the slow-network notice and retry. */
+export const CONNECTION_SLOW_NOTICE_MS = 10_000;
+
 export function AgentChatMigrationSurface({
   active,
   preloadSessions = false,
@@ -161,6 +166,8 @@ export function AgentChatMigrationSurface({
   const [connection, setConnection] = useState<{ phase: string; failureCode: string | null }>({ phase: "connecting", failureCode: null });
   const [startupFailed, setStartupFailed] = useState(false);
   const [connectionSlow, setConnectionSlow] = useState(false);
+  const [everReady, setEverReady] = useState(false);
+  const [loadingNoticeDue, setLoadingNoticeDue] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [sessionRevision, setSessionRevision] = useState(0);
   const [owner, setOwner] = useState<"loading" | "legacy" | "opencraft">("loading");
@@ -169,9 +176,21 @@ export function AgentChatMigrationSurface({
 
   const unavailable = enabled && (agentPaused || owner !== "opencraft" || connection.phase !== "ready");
   useEffect(() => {
+    if (connection.phase === "ready") setEverReady(true);
+  }, [connection.phase]);
+  // A short startup paints the Composer directly; only a slow one earns the loading
+  // notice, so a sub-second wait never flashes a different page.
+  const startingUp = enabled && active && owner === "loading";
+  useEffect(() => {
+    setLoadingNoticeDue(false);
+    if (!startingUp) return;
+    const timer = window.setTimeout(() => setLoadingNoticeDue(true), LOADING_NOTICE_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [startingUp, sessionRevision]);
+  useEffect(() => {
     setConnectionSlow(false);
     if (!unavailable || agentPaused) return;
-    const timer = window.setTimeout(() => setConnectionSlow(true), 30_000);
+    const timer = window.setTimeout(() => setConnectionSlow(true), CONNECTION_SLOW_NOTICE_MS);
     return () => window.clearTimeout(timer);
   }, [agentPaused, unavailable, sessionRevision]);
 
@@ -204,6 +223,7 @@ export function AgentChatMigrationSurface({
     setOwner("loading");
     setStartupFailed(false);
     setRetrying(false);
+    setEverReady(false);
     setConnection({ phase: "connecting", failureCode: null });
     if (!profileId.trim()) {
       setConnection({ phase: "error", failureCode: "intervention:configuration-required" });
@@ -216,6 +236,9 @@ export function AgentChatMigrationSurface({
     let retired = false;
     let failed = false;
     let adopted = false;
+    // Adoption now precedes the Host connection, so it can no longer imply "ready".
+    // Only an artifact that never reports its connection keeps the legacy assumption.
+    let reportedConnection = false;
     let element: EmbeddedWorkbenchElement | null = null;
     const initialToken = readStoredAuthToken();
     const getSessionToken = () => {
@@ -338,6 +361,7 @@ export function AgentChatMigrationSurface({
     const handleConnection = (event: Event) => {
       if (retired) return;
       const detail = (event as CustomEvent<{ phase: string; failureCode: string | null }>).detail;
+      reportedConnection = true;
       setConnection(detail);
     };
     const handleEmbeddedError = () => {
@@ -375,7 +399,9 @@ export function AgentChatMigrationSurface({
         onSessionCommandsChangeRef.current?.(sessionCommands);
         publishSessions();
         setOwner("opencraft");
-        setConnection(current => current.phase === "connecting" ? { phase: "ready", failureCode: null } : current);
+        if (!reportedConnection) {
+          setConnection(current => current.phase === "connecting" ? { phase: "ready", failureCode: null } : current);
+        }
       }
     }).catch((cause: unknown) => {
       if (retired) return;
@@ -452,7 +478,7 @@ export function AgentChatMigrationSurface({
     : connection.failureCode === "intervention:configuration-required" ? t("请检查 AI 伙伴状态后重试")
     : connection.phase === "error" ? t("连接暂时中断，正在尝试恢复…")
     : connectionSlow ? t("连接时间较长，请检查网络或重试")
-    : presentedOwner === "opencraft" ? t("正在重新连接，输入内容已保留…")
+    : presentedOwner === "opencraft" && everReady ? t("正在重新连接，输入内容已保留…")
     : null;
 
   return (
@@ -477,12 +503,13 @@ export function AgentChatMigrationSurface({
       >
         {presentedOwner === "legacy" ? legacy : null}
       </div>
-      {unavailable && active && (
+      {unavailable && active && (connectionMessage !== null || presentedOwner === "loading") && (
         <div className={cn(
           "absolute z-10 flex items-center justify-center gap-3 bg-white/95 px-4 py-3 text-sm text-black/60",
           presentedOwner === "loading" ? "inset-0 flex-col" : "inset-x-0 top-0 border-b border-black/[0.08]",
         )}>
-          {connectionMessage === null ? <ChatLoadingState /> : <span role="status">{connectionMessage}</span>}
+          {connectionMessage !== null ? <span role="status">{connectionMessage}</span>
+            : loadingNoticeDue ? <ChatLoadingState /> : null}
           {!agentPaused && (startupFailed || connectionSlow || connection.phase === "error" || presentedOwner === "opencraft") && (
             <button type="button" disabled={retrying} onClick={() => { void retryConnection(); }}
               className="shrink-0 rounded-md border border-black/15 px-3 py-1 text-black/80 hover:bg-black/5 disabled:opacity-50">

@@ -38,6 +38,13 @@ afterEach(()=>{
   vi.unstubAllEnvs();
 });
 
+it.each([false,true])("prepares Chat resources while the Bot gate is held (global=%s)", async global=>{
+  state.global=global;
+  render(<AgentsPageClient sectionId="chat" />);
+  await waitFor(()=>expect(scripts()).toHaveLength(1));
+  expect(screen.queryByTestId("settings-page")).toBeNull();
+});
+
 it("prepares domestic Chat resources while the real Bot gate still withholds the settings page", async()=>{
   const view=render(<AgentsPageClient sectionId="chat" />);
   await waitFor(()=>expect(scripts()).toHaveLength(1));
@@ -49,10 +56,9 @@ it("prepares domestic Chat resources while the real Bot gate still withholds the
   expect(scripts()).toHaveLength(1);
 });
 
-it.each(["auth-restoring","anonymous","international","non-chat"])("does not speculate for %s", async kind=>{
+it.each(["auth-restoring","anonymous","non-chat"])("does not speculate for %s", async kind=>{
   if(kind==="auth-restoring")state.authReady=false;
   if(kind==="anonymous")state.authenticated=false;
-  if(kind==="international")state.global=true;
   render(<AgentsPageClient sectionId={kind==="non-chat"?"settings":"chat"} />);
   expect(scripts()).toHaveLength(0);
 });

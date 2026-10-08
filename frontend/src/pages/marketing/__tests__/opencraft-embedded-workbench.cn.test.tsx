@@ -8,8 +8,12 @@ import type {
 } from "@/pages/marketing/agent-chat-panel";
 import {
   AgentChatMigrationSurface,
+  CONNECTION_SLOW_NOTICE_MS,
+  LOADING_NOTICE_DELAY_MS,
   type EmbeddedSessionCommands,
 } from "@/pages/marketing/opencraft-embedded-workbench";
+
+const afterLoadingNotice = { timeout: LOADING_NOTICE_DELAY_MS + 1_000 };
 
 import { writeStoredAuthToken } from "@/repositories/http-repositories";
 import { installConsoleShowCommand, subscribeConsoleShow } from "@/lib/console-show-event";
@@ -117,7 +121,7 @@ describe("AgentChatMigrationSurface", () => {
       localization: { ideLocale: "en-US", localeSource: "IDE" },
     });
     expect(screen.queryByText("Legacy AgentChat")).toBeNull();
-    expect(screen.getByRole("status")).toHaveTextContent("你的 AI 伙伴，马上就来");
+    expect(await screen.findByRole("status", undefined, afterLoadingNotice)).toHaveTextContent("你的 AI 伙伴，马上就来");
     expect(screen.getByRole("status")).not.toHaveTextContent("正在准备我们的对话");
     resolveShow();
     await waitFor(() => expect(onOwnerChange).toHaveBeenCalledWith("opencraft"));
@@ -242,7 +246,7 @@ describe("AgentChatMigrationSurface", () => {
       expect(legacyMounted).not.toHaveBeenCalled();
       rerender(surface(true));
       await waitFor(() => expect(show).toHaveBeenCalled());
-      expect(screen.getByRole("status")).toHaveTextContent("你的 AI 伙伴，马上就来");
+      expect(await screen.findByRole("status", undefined, afterLoadingNotice)).toHaveTextContent("你的 AI 伙伴，马上就来");
       expect(legacyMounted).not.toHaveBeenCalled();
       await act(async () => { resolveShow(); await pendingShow; });
       await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
@@ -398,6 +402,10 @@ describe("AgentChatMigrationSurface", () => {
     } finally { prepare.mockRestore(); }
   });
 
+  it("keeps the slow-connection deadline at 10 seconds", () => {
+    expect(CONNECTION_SLOW_NOTICE_MS).toBe(10_000);
+  });
+
   it("offers retry after a startup deadline without mounting legacy", async () => {
     const ctor = customElements.get("opencraft-embedded-workbench")!;
     const prepare = vi.spyOn(ctor.prototype, "prepare").mockImplementation(() => new Promise<void>(() => {}));
@@ -405,7 +413,9 @@ describe("AgentChatMigrationSurface", () => {
     try {
       render(<AgentChatMigrationSurface active enabled instanceId="ins-1" profileId="main" region="cn"
         legacy={<div>Legacy</div>} multiSession={{ onSessionStateChange: vi.fn(), onSelectedChatIdChange: vi.fn() }} />);
-      await act(async () => { await vi.advanceTimersByTimeAsync(30_001); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(CONNECTION_SLOW_NOTICE_MS - 1); });
+      expect(screen.queryByText(/连接时间较长/)).toBeNull();
+      await act(async () => { await vi.advanceTimersByTimeAsync(1); });
       expect(screen.getByRole("status")).toHaveTextContent("连接时间较长");
       expect(screen.getByRole("button", { name: "重新连接" })).toBeEnabled();
       expect(screen.queryByText("Legacy")).toBeNull();
@@ -527,6 +537,78 @@ describe("AgentChatMigrationSurface", () => {
     expect(submitPrompt).not.toHaveBeenCalled();
     expect(readPendingWorkbenchPrompt()?.templateId).toBe("tool");
     delete ctor.prototype.submitPrompt;
+  });
+
+  // The current artifact publishes its connection phase before it paints, so adoption
+  // must not be treated as "connected". `prepare` mirrors that ordering.
+  const renderConnectingSurface = () => {
+    const ctor = customElements.get("opencraft-embedded-workbench")!;
+    const prepare = vi.spyOn(ctor.prototype, "prepare").mockImplementation(async function (this: HTMLElement) {
+      this.dispatchEvent(new CustomEvent("opencraft-connection", { detail: { phase: "connecting", failureCode: null } }));
+    });
+    const show = vi.spyOn(ctor.prototype, "show").mockResolvedValue(undefined);
+    const view = render(<AgentChatMigrationSurface active enabled instanceId="ins-1" profileId="sales" region="cn"
+      legacy={<div>Legacy</div>} multiSession={{ onSessionStateChange: vi.fn(), onSelectedChatIdChange: vi.fn() }} />);
+    return { view, show, restore: () => { show.mockRestore(); prepare.mockRestore(); } };
+  };
+
+  it("leaves the adopted canvas uncovered while the Host is still connecting", async () => {
+    const harness = renderConnectingSurface();
+    try {
+      await waitFor(() => expect(harness.show).toHaveBeenCalled());
+      const element = harness.view.container.querySelector("opencraft-embedded-workbench")!;
+      // Painted but not connected: the Composer owns its own disabled-send state.
+      expect(screen.queryByRole("status")).toBeNull();
+      expect(element.parentElement).not.toHaveClass("invisible");
+      act(() => element.dispatchEvent(new CustomEvent("opencraft-connection", { detail: { phase: "error", failureCode: null } })));
+      expect(screen.getByRole("status")).toHaveTextContent("连接暂时中断");
+    } finally { harness.restore(); }
+  });
+
+  it("uses the reconnect copy only after the Host has been ready once", async () => {
+    const harness = renderConnectingSurface();
+    try {
+      await waitFor(() => expect(harness.show).toHaveBeenCalled());
+      const element = harness.view.container.querySelector("opencraft-embedded-workbench")!;
+      const connection = (phase: string) => act(() => element.dispatchEvent(new CustomEvent("opencraft-connection", { detail: { phase, failureCode: null } })));
+      expect(screen.queryByText("正在重新连接，输入内容已保留…")).toBeNull();
+      connection("ready");
+      expect(screen.queryByRole("status")).toBeNull();
+      connection("connecting");
+      expect(screen.getByRole("status")).toHaveTextContent("正在重新连接，输入内容已保留…");
+    } finally { harness.restore(); }
+  });
+
+  it("keeps the legacy assumption for an artifact that never reports its connection", async () => {
+    const ctor = customElements.get("opencraft-embedded-workbench")!;
+    const show = vi.spyOn(ctor.prototype, "show").mockResolvedValue(undefined);
+    try {
+      render(<AgentChatMigrationSurface active enabled instanceId="ins-1" profileId="sales" region="cn"
+        legacy={<div>Legacy</div>} multiSession={{ onSessionStateChange: vi.fn(), onSelectedChatIdChange: vi.fn() }} />);
+      await waitFor(() => expect(show).toHaveBeenCalled());
+      await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
+    } finally { show.mockRestore(); }
+  });
+
+  it("shows a plain canvas for a short startup and the loading notice only after the grace period", async () => {
+    const ctor = customElements.get("opencraft-embedded-workbench")!;
+    const show = vi.spyOn(ctor.prototype, "show").mockImplementation(() => new Promise<void>(() => {}));
+    vi.useFakeTimers();
+    try {
+      render(<AgentChatMigrationSurface active enabled instanceId="ins-1" profileId="sales" region="cn"
+        legacy={<div>Legacy</div>} multiSession={{ onSessionStateChange: vi.fn(), onSelectedChatIdChange: vi.fn() }} />);
+      await act(async () => { await vi.advanceTimersByTimeAsync(LOADING_NOTICE_DELAY_MS - 1); });
+      expect(screen.queryByText("你的 AI 伙伴，马上就来")).toBeNull();
+      expect(screen.queryByRole("status")).toBeNull();
+      await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+      expect(screen.getByRole("status")).toHaveTextContent("你的 AI 伙伴，马上就来");
+    } finally { cleanup(); vi.useRealTimers(); show.mockRestore(); }
+  });
+
+  it("shows real failures immediately without waiting for the grace period", () => {
+    render(<AgentChatMigrationSurface active enabled instanceId="ins-1" profileId="" region="cn"
+      legacy={<div>Legacy</div>} multiSession={{ onSessionStateChange: vi.fn(), onSelectedChatIdChange: vi.fn() }} />);
+    expect(screen.getByRole("status")).toHaveTextContent("请检查 AI 伙伴状态后重试");
   });
 
 });

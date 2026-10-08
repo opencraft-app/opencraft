@@ -25,6 +25,7 @@ export interface EmbeddedChatRootProps {
   readonly bindActions: (actions: EmbeddedWorkbenchAppActions) => (() => void);
   readonly hostId: string;
   readonly onError: (error: Error) => void;
+  readonly onPainted: () => void;
   readonly onReady: (threadId: string | null) => void;
   readonly onSessionsChange: (detail: {
     readonly sessions: readonly EmbeddedWorkbenchAppSession[];
@@ -46,6 +47,7 @@ export function EmbeddedChatRoot({
   bindActions,
   hostId,
   onError,
+  onPainted,
   onReady,
   onSessionsChange,
   portalContainer,
@@ -58,9 +60,10 @@ export function EmbeddedChatRoot({
     hostId,
     bindActions,
     onError,
+    onPainted,
     onReady,
     onSessionsChange,
-  }), [bindActions, hostId, onError, onReady, onSessionsChange]);
+  }), [bindActions, hostId, onError, onPainted, onReady, onSessionsChange]);
   return (
     <BrowserEnvironmentProvider
       pages={application.browserPages}

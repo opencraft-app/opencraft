@@ -11,7 +11,7 @@
 1. Abra My Agent y seleccione el Bot en la parte superior de la barra lateral.
 2. Abra Chat en la sección de uso diario y elija crear una conversación nueva. También puede iniciar una conversación para un Bot desde su tarjeta en la página de resumen.
 3. Escriba una pregunta o tarea en el cuadro de mensajes y envíela.
-4. Lea la respuesta. Al cargar la página puede aparecer brevemente un mensaje de espera; aguarde hasta que se muestre el cuadro de mensajes.
+4. Lea la respuesta. El cuadro de mensajes aparece en cuanto se abre una conversación nueva, así que puede empezar a escribir; el envío se habilita cuando la conexión está lista. Al abrir una conversación existente puede aparecer brevemente un mensaje de espera.
 
 El Chat web no requiere un canal externo. Para usar el mismo Bot en Telegram, WhatsApp, Discord o WeChat, conecte esa plataforma en Canales.
 

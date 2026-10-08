@@ -79,8 +79,15 @@ it("starts session preparation while Profiles are held, then gives the one surfa
   expect(elements).toBe(1);
 });
 
-it.each(["inactive", "international", "stale", "wrong-account", "paused", "ambiguous"])("does not speculate for %s", async kind => {
-  if (kind === "international") state.global = true;
+it.each([false, true])("prepares the confirmed instance with its site region (global=%s)", async global => {
+  state.global = global;
+  render(<Page />);
+  await waitFor(() => expect(state.session).toHaveBeenCalledOnce());
+  expect(preparedOptions[0]).toEqual(expect.objectContaining({ region: global ? "intl" : "cn", instanceId: "ins-1" }));
+  expect(elements).toBe(0);
+});
+
+it.each(["inactive", "stale", "wrong-account", "paused", "ambiguous"])("does not speculate for %s", async kind => {
   if (kind === "stale") state.current = false;
   if (kind === "wrong-account") state.userId = "user-2";
   if (kind === "paused") state.discovery!.items[0]!.running = false;
