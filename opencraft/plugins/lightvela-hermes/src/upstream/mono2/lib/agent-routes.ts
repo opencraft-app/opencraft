@@ -129,6 +129,8 @@ export const getAgentCreatingPath = (creating: true | string) => {
  * 因此订阅链路不再写死默认名，与删除后重建的体验统一。
  */
 export const AGENT_CREATE_QUERY_KEY = "create";
+/** 已有 Bot 时打开创建页的历史记录标记；浏览器返回时关闭创建引导。 */
+export const AGENT_CREATE_PAGE_QUERY_KEY = "newBot";
 export const getAgentCreateBotPath = () =>
   `${AGENTS_HOME_PATH}?${AGENT_CREATE_QUERY_KEY}=1`;
 

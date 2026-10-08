@@ -14,15 +14,15 @@ let userId: string | undefined = "a";
 let paidBilling = true;
 let currentSubscription: { code: string } | null = null;
 const plans = { listMyPasses: mocks.listMyPasses, listModifyBundles: mocks.listModifyBundles };
-vi.mock("@/contexts/repository-context", () => ({ useRepositories: () => { mocks.repositories(); return { plans }; } }));
-vi.mock("@/contexts/runtime-config-context", () => ({ usePaidBillingEnabled: () => { mocks.paidBilling(); return paidBilling; } }));
+vi.mock("@/contexts/repository-context", () => ({ useRepositories: () => { mocks.repositories(); return { plans, auth: { getReferralStats: vi.fn() } }; } }));
+vi.mock("@/contexts/runtime-config-context", () => ({ usePaidBillingEnabled: () => { mocks.paidBilling(); return paidBilling; }, useReferralEnabled: () => false }));
 vi.mock("@/contexts/session-context", () => ({ useSession: () => ({ session: { user: userId ? { id: userId, name: `Owner ${userId}`, email: `${userId}@example.com` } : null, currentSubscription }, signOut: mocks.signOut }) }));
-vi.mock("@/contexts/agent-context", () => ({ useOpenClaw: () => ({ activePass: currentPass, modifyingPass, passUpgradeFailed: false, hasResolvedPasses: true, isSubscribed: Boolean(currentPass), passesLoading: false, passesError: false, user: { plan: { name: "STALE PLAN SHOULD NOT LEAK" } } }) }));
+vi.mock("@/contexts/agent-context", () => ({ useOpenClaw: () => ({ activePass: currentPass, modifyingPass, passUpgradeFailed: false, hasResolvedPasses: true, isSubscribed: Boolean(currentPass), passesLoading: false, passesError: false, bots: [], botsLoading: false, botsError: false, user: { plan: { name: "STALE PLAN SHOULD NOT LEAK" } } }) }));
 vi.mock("@/lib/app-navigation", () => ({
   useAppNavigate: () => mocks.navigate,
   useAppSearchParams: () => [new URLSearchParams()],
 }));
-vi.mock("@/i18n/t", () => ({ useT: () => (text: string) => text }));
+vi.mock("@/i18n/t", () => ({ useT: () => (text: string) => text, useCurrentLocale: () => "zh-CN" }));
 const target = { target_bundle_id: "target", bundle: { bundle_id: "target" } };
 const host = () => window as Window & { show?: (...args: unknown[]) => unknown };
 beforeEach(() => {
@@ -40,6 +40,19 @@ async function openSidebar() {
 }
 
 describe("sidebar account controller boundary", () => {
+  it("shows the former overview account metrics in the sidebar menu", async () => {
+    render(<UserAvatarMenu variant="sidebar" />);
+    await openSidebar();
+    const menu = screen.getByRole("dialog", { name: "账号管理" });
+    expect(menu).not.toHaveTextContent("已服务");
+    expect(menu).toHaveTextContent("有效期至");
+    expect(menu).toHaveTextContent("2099年1月1日");
+    expect(menu).toHaveTextContent("剩余 AI 积分");
+    expect(menu).toHaveTextContent("750");
+    expect(menu).toHaveTextContent("Bot 数量");
+    expect(menu).not.toHaveTextContent("已邀请好友");
+  });
+
   it("emits the shared console-show event without requiring the header to be mounted", () => {
     const onShow = vi.fn();
     window.addEventListener(CONSOLE_SHOW_EVENT, onShow);
@@ -118,7 +131,9 @@ describe("sidebar account controller boundary", () => {
     expect(mocks.listMyPasses).not.toHaveBeenCalled();
     await openSidebar();
     expect(await screen.findByText("250 / 1,000")).toBeVisible();
-    expect(await screen.findByRole("link", { name: "升级套餐" })).toHaveAttribute("href", expect.stringContaining("/?upgrade_pass_id=p%2Fa"));
+    const upgrade = await screen.findByRole("link", { name: "升级套餐" });
+    expect(upgrade).toHaveAttribute("href", expect.stringContaining("/?upgrade_pass_id=p%2Fa"));
+    expect(upgrade.parentElement).toHaveTextContent("套餐：Pro A");
     expect(screen.queryByText(/99,999/)).not.toBeInTheDocument();
   });
 

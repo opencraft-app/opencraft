@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LightVela · Bot 管理入口调整示意</title>
+  <style>
+    :root { font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #242529; background: #f5f6f8; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    button, textarea { font: inherit; }
+    button { cursor: pointer; }
+    button:focus-visible { outline: 2px solid #8066df; outline-offset: 2px; }
+    [hidden] { display: none !important; }
+    .note { display: flex; align-items: center; justify-content: space-between; gap: 20px; max-width: 1552px; margin: 16px auto 10px; padding: 0 16px; color: #727784; font-size: 12px; }
+    .note strong { color: #35333d; font-size: 14px; }
+    .app { display: grid; grid-template-columns: 56px 248px minmax(0, 1fr); grid-template-rows: 68px minmax(620px, 1fr); width: min(1520px, calc(100vw - 32px)); height: min(890px, calc(100vh - 68px)); min-height: 688px; margin: 0 auto 16px; overflow: hidden; border: 1px solid #e5e7eb; border-radius: 12px; background: #fff; box-shadow: 0 16px 45px rgb(25 29 44 / 7%); }
+    .brand { grid-column: 1 / 3; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; border-right: 1px solid #eceef2; border-bottom: 1px solid #eceef2; }
+    .brand b { color: #15161a; font-size: 25px; letter-spacing: -.055em; }
+    .brand span { color: #8d929b; font-size: 18px; }
+    .context { grid-column: 3; display: flex; min-width: 0; align-items: center; justify-content: space-between; padding: 0 26px 0 34px; border-bottom: 1px solid #eceef2; }
+    .crumb { display: flex; min-width: 0; align-items: center; gap: 11px; }
+    .crumb .bot-name { overflow: hidden; max-width: 230px; color: #6c6f78; text-overflow: ellipsis; white-space: nowrap; }
+    .crumb .slash { color: #c9cbd1; }
+    .crumb strong { overflow: hidden; max-width: min(48vw, 560px); font-size: 14px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+    .state-chip { flex: none; padding: 2px 7px; border-radius: 5px; background: #fff4e8; color: #9b6020; font-size: 11px; }
+    .state-chip.is-failed { background: #fff0f0; color: #b73e3e; }
+    .bot-identity { display: flex; min-width: 0; align-items: center; gap: 4px; }
+    .header-actions { position: relative; flex: none; }
+    .manage-trigger { display: grid; width: 30px; height: 30px; place-items: center; border: 1px solid #e4e4e7; border-radius: 8px; background: #f4f4f5; color: #52525b; }
+    .manage-trigger svg { width: 18px; height: 18px; }
+    .manage-trigger:hover, .manage-trigger[aria-expanded="true"] { background: #f3f3f7; }
+    .menu { position: absolute; top: 42px; right: 0; z-index: 5; width: 206px; padding: 6px; border: 1px solid #e5e5eb; border-radius: 10px; background: #fff; box-shadow: 0 12px 35px rgb(22 26 35 / 14%); }
+    .menu-title { padding: 7px 9px 9px; color: #8a8e98; font-size: 11px; }
+    .menu button { display: block; width: 100%; padding: 9px 10px; border: 0; border-radius: 6px; background: transparent; color: #383a42; text-align: left; }
+    .menu button:hover:not(:disabled) { background: #f5f5f8; }
+    .menu button:disabled { color: #b5b7be; cursor: not-allowed; }
+    .menu button.danger { color: #c03d49; }
+    .menu hr { margin: 5px 3px; border: 0; border-top: 1px solid #eeeef2; }
+    .rail { display: flex; min-height: 0; flex-direction: column; align-items: center; gap: 6px; overflow-y: auto; padding: 12px 0; border-right: 1px solid #eceef2; }
+    .bot-button, .add-button { position: relative; display: grid; width: 44px; height: 44px; flex: none; place-items: center; border: 0; border-radius: 10px; background: transparent; }
+    .bot-button:hover { background: #f3f3f6; }
+    .bot-button[aria-current="true"] { background: #f8f7ff; }
+    .face { position: relative; display: grid; width: 34px; height: 34px; place-items: center; border-radius: 50%; background: var(--face); }
+    .face::before { width: 4px; height: 4px; border-radius: 50%; background: #fff; box-shadow: 10px 0 #fff; content: ""; transform: translateX(-5px); }
+    .face .dot { position: absolute; right: -2px; bottom: -2px; width: 10px; height: 10px; border: 2px solid #fff; border-radius: 50%; background: var(--status); }
+    .add-button { margin-top: 5px; color: #737c8a; font-size: 23px; }
+    .add-button::before { position: absolute; inset: 4px; border: 1px dashed #c9cfd8; border-radius: 8px; content: ""; }
+    .add-button:hover { background: #f7f8fb; }
+    .sidebar { display: flex; min-height: 0; flex-direction: column; padding: 16px 14px 0 16px; border-right: 1px solid #eceef2; }
+    .tabs { display: flex; padding: 3px; border-radius: 999px; background: #f4f4f6; }
+    .tabs button { flex: 1; padding: 6px; border: 0; border-radius: 999px; background: transparent; color: #8a8d95; }
+    .tabs button[aria-selected="true"] { background: #fff; color: #25262b; box-shadow: 0 1px 4px rgb(0 0 0 / 6%); }
+    .nav { margin-top: 16px; }
+    .nav button, .chat-row { display: flex; width: 100%; align-items: center; gap: 12px; padding: 9px 12px; border: 0; border-radius: 6px; background: transparent; color: #55585e; text-align: left; }
+    .nav button:hover, .chat-row:hover { background: #f6f6f7; }
+    .nav .icon { width: 15px; color: #777b83; text-align: center; }
+    .chat-section { margin-top: 18px; padding-top: 17px; border-top: 1px solid #eceef2; }
+    .chat-heading { display: flex; align-items: center; justify-content: space-between; padding: 0 11px 7px; color: #55585e; }
+    .chat-heading button { border: 0; background: none; color: #6b6d74; font-size: 20px; }
+    .chat-row { overflow: hidden; color: #666971; text-overflow: ellipsis; white-space: nowrap; }
+    .chat-row.active { background: #f2f2f3; color: #36383e; }
+    .account { display: flex; align-items: center; gap: 9px; margin: auto -14px 0 -16px; padding: 14px 17px; border-top: 1px solid #eceef2; color: #40434a; }
+    .account .photo { display: grid; width: 33px; height: 33px; flex: none; place-items: center; border-radius: 50%; background: #d7b681; color: #fff; font-weight: 700; }
+    .account small { display: block; color: #9599a0; font-size: 11px; }
+    .main { position: relative; display: flex; min-width: 0; flex-direction: column; align-items: center; justify-content: center; background: #fff; }
+    .greeting { display: flex; align-items: center; gap: 16px; margin-top: -30px; font-size: 29px; letter-spacing: -.045em; }
+    .greeting .mini-face { display: grid; width: 36px; height: 36px; place-items: center; border-radius: 45% 55% 58% 42%; background: #9583ed; color: #fff; font-size: 19px; transform: rotate(-12deg); }
+    .composer { width: min(780px, calc(100% - 100px)); min-height: 130px; margin-top: 30px; padding: 14px 16px; border: 1px solid #f0f0f2; border-radius: 18px; box-shadow: 0 7px 24px rgb(24 28 37 / 8%); }
+    .composer textarea { width: 100%; min-height: 68px; resize: none; border: 0; outline: 0; color: #3c3e44; }
+    .composer textarea::placeholder { color: #b0b1b7; }
+    .composer-footer { display: flex; align-items: center; justify-content: space-between; color: #8b8e95; }
+    .composer-footer span { padding: 4px 8px; border: 1px solid #f0f0f1; border-radius: 999px; font-size: 12px; }
+    .composer-footer button { width: 28px; height: 28px; border: 0; border-radius: 8px; background: #d1d1d5; color: #fff; font-size: 19px; }
+    .thread { width: min(780px, calc(100% - 100px)); align-self: center; margin: auto 0; }
+    .message { max-width: 72%; margin-bottom: 25px; line-height: 1.9; }
+    .message.user { margin-left: auto; padding: 12px 17px; border-radius: 14px; background: #f5f5f6; }
+    .thread .composer { width: 100%; margin-top: 44px; }
+    .section-panel { width: min(800px, calc(100% - 100px)); margin: 45px auto auto; }
+    .section-panel h1 { margin: 0 0 8px; font-size: 24px; }
+    .section-panel p { color: #858991; }
+    .section-card { max-width: 520px; margin-top: 30px; padding: 22px; border: 1px solid #edeef1; border-radius: 10px; color: #555963; }
+    .toast { position: fixed; z-index: 8; right: 28px; bottom: 26px; padding: 10px 14px; border: 1px solid #e5e6eb; border-radius: 8px; background: #fff; box-shadow: 0 8px 25px rgb(20 24 36 / 12%); color: #4d5058; }
+    .veil { position: fixed; inset: 0; z-index: 9; display: grid; place-items: center; background: rgb(28 31 39 / 28%); }
+    .dialog { width: 390px; padding: 22px; border-radius: 12px; background: #fff; box-shadow: 0 24px 65px rgb(0 0 0 / 15%); }
+    .dialog h2 { margin: 0 0 10px; font-size: 17px; }
+    .dialog p { margin: 0 0 22px; color: #747780; }
+    .dialog button { padding: 7px 13px; border: 1px solid #e6e7eb; border-radius: 7px; background: #fff; }
+    @media (max-width: 980px) { .app { width: 980px; margin-left: 16px; } body { overflow-x: auto; } }
+  </style>
+</head>
+<body>
+  <div class="note"><span><strong>Bot 管理入口调整 · PC 交互示意</strong>　点击左侧头像切换 Bot，点击 Bot 名称旁的设置图标查看管理操作</span><span>方案讨论稿 · 模拟内容，不执行真实操作</span></div>
+  <div class="app">
+    <header class="brand"><b>LightVela</b><span aria-hidden="true">◫</span></header>
+    <header class="context"><div class="crumb"><div class="bot-identity"><span id="header-bot" class="bot-name"></span><div class="header-actions"><button id="manage-trigger" class="manage-trigger" type="button" aria-label="管理当前 Bot" aria-expanded="false" aria-controls="manage-menu" title="管理当前 Bot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h9m4 0h3M4 17h3m4 0h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg></button><div id="manage-menu" class="menu" hidden></div></div></div><span class="slash">/</span><strong id="page-title"></strong><span id="state-chip" class="state-chip" hidden></span></div></header>
+    <aside class="rail" id="rail" aria-label="切换 Bot"></aside>
+    <aside class="sidebar" aria-label="Bot 导航"><div class="tabs" role="tablist" aria-label="侧边栏视图切换"><button id="daily" type="button" role="tab" aria-selected="true">日常</button><button id="explore" type="button" role="tab" aria-selected="false">探索</button></div><nav id="nav" class="nav" aria-label="当前 Bot 导航"></nav><div class="chat-section"><div class="chat-heading"><span>对话⌃</span><button id="new-chat" type="button" aria-label="新建对话" title="新建对话">＋</button></div><button class="chat-row" id="existing-chat" type="button">默认对话</button></div><div class="account"><span class="photo">吴</span><span><strong>吴所滑</strong><small>套餐：启航 Launch AI</small></span></div></aside>
+    <main class="main" id="main"></main>
+  </div>
+  <div class="toast" id="toast" role="status" hidden></div>
+  <div class="veil" id="veil" hidden><div class="dialog" role="dialog" aria-modal="true"><h2 id="dialog-title"></h2><p>这是交互示意，操作不会影响真实 Bot。</p><button id="dialog-close" type="button">知道了</button></div></div>
+  <script>
+    const bots = [
+      { id: "a", name: "我的 AI 伙伴", color: "#f97316", status: "在线", dot: "#34c759" },
+      { id: "b", name: "创意伙伴", color: "#8b5cf6", status: "在线", dot: "#34c759" },
+      { id: "c", name: "内容研究助手", color: "#a576e8", status: "已暂停", dot: "#ff9500" },
+      { id: "d", name: "运营助手", color: "#f59e0b", status: "创建失败", dot: "#dc2626" },
+    ];
+    let activeId = "a";
+    let tab = "daily";
+    let page = "new-chat";
+    let menuOpen = false;
+    const byId = () => bots.find((bot) => bot.id === activeId);
+    const escapeHtml = (value) => value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
+    function render() {
+      const bot = byId();
+      document.querySelector("#rail").innerHTML = `${bots.map((item) => `<button class="bot-button" type="button" data-bot="${item.id}" aria-label="切换到 ${escapeHtml(item.name)}，${item.status}" aria-current="${item.id === activeId}" title="${escapeHtml(item.name)} · ${item.status}"><span class="face" style="--face:${item.color};--status:${item.dot}"><span class="dot"></span></span></button>`).join("")}<button class="add-button" type="button" data-demo="新建 Bot" aria-label="新建 Bot" title="新建 Bot">＋</button>`;
+      const title = page === "new-chat" ? "" : page === "existing-chat" ? "默认对话" : page;
+      document.querySelector("#header-bot").textContent = bot.name;
+      document.querySelector("#page-title").textContent = title;
+      document.querySelector("#page-title").hidden = !title;
+      document.querySelector(".crumb .slash").hidden = !title;
+      const chip = document.querySelector("#state-chip");
+      chip.hidden = bot.status === "在线";
+      chip.textContent = bot.status;
+      chip.classList.toggle("is-failed", bot.status === "创建失败");
+      document.querySelector("#daily").setAttribute("aria-selected", String(tab === "daily"));
+      document.querySelector("#explore").setAttribute("aria-selected", String(tab === "explore"));
+      document.querySelector("#nav").innerHTML = (tab === "daily" ? [["◯", "通道"], ["✣", "技能"], ["◷", "定时任务"]] : [["◇", "资料"], ["▦", "模型"], ["◎", "记忆"]]).map(([icon, label]) => `<button type="button" data-page="${label}"><span class="icon">${icon}</span>${label}</button>`).join("");
+      document.querySelector("#existing-chat").classList.toggle("active", page === "existing-chat");
+      document.querySelector("#manage-trigger").setAttribute("aria-expanded", String(menuOpen));
+      const menu = document.querySelector("#manage-menu");
+      menu.hidden = !menuOpen;
+      menu.innerHTML = `<div class="menu-title">${escapeHtml(bot.name)} · Bot 管理</div><button type="button" data-demo="修改资料">修改资料</button><button type="button" data-demo="复制 Bot">复制 Bot</button><hr><button type="button" data-demo="${bot.status === "创建失败" ? "修复 Bot" : "重启 Bot"}" ${bot.status === "已暂停" ? "disabled" : ""}>${bot.status === "创建失败" ? "修复 Bot" : "重启 Bot"}</button><button class="danger" type="button" data-demo="删除 Bot">删除 Bot</button>`;
+      const main = document.querySelector("#main");
+      if (page === "new-chat") main.innerHTML = `<div class="greeting">今天想一起做点什么？<span class="mini-face" aria-hidden="true">◕</span></div><div class="composer"><textarea aria-label="新对话内容" placeholder="聊聊你的想法，或交给我一件事"></textarea><div class="composer-footer"><span>✧ 指令库⌄</span><button type="button" data-demo="发送消息" aria-label="发送消息">↑</button></div></div>`;
+      else if (page === "existing-chat") main.innerHTML = `<div class="thread"><div class="message user">帮我整理本周的工作重点</div><div class="message">好的，我会按优先级整理任务，并列出需要你确认的事项。</div><div class="composer"><textarea aria-label="继续对话" placeholder="告诉我接下来想做点什么"></textarea><div class="composer-footer"><span>✧ 指令库⌄</span><button type="button" data-demo="发送消息" aria-label="发送消息">↑</button></div></div></div>`;
+      else main.innerHTML = `<div class="section-panel"><h1>${escapeHtml(page)}</h1><p>${escapeHtml(bot.name)} 的${escapeHtml(page)}设置</p><div class="section-card">顶部显示当前 Bot 和页面名称；Bot 管理入口在名称旁。</div></div>`;
+    }
+    function showDemo(action) {
+      menuOpen = false;
+      render();
+      document.querySelector("#dialog-title").textContent = `${action} · ${byId().name}`;
+      document.querySelector("#veil").hidden = false;
+      document.querySelector("#dialog-close").focus();
+    }
+    document.addEventListener("click", (event) => {
+      const botButton = event.target.closest("[data-bot]");
+      if (botButton) { if (botButton.dataset.bot !== activeId) { activeId = botButton.dataset.bot; tab = "daily"; page = "new-chat"; menuOpen = false; render(); } return; }
+      if (event.target.closest("#manage-trigger")) { menuOpen = !menuOpen; render(); return; }
+      const demo = event.target.closest("[data-demo]");
+      if (demo) { showDemo(demo.dataset.demo); return; }
+      const nav = event.target.closest("[data-page]");
+      if (nav) { page = nav.dataset.page; menuOpen = false; render(); return; }
+      if (event.target.closest("#daily") || event.target.closest("#explore")) { tab = event.target.id; page = tab === "daily" ? "new-chat" : "资料"; menuOpen = false; render(); return; }
+      if (event.target.closest("#new-chat")) { page = "new-chat"; menuOpen = false; render(); return; }
+      if (event.target.closest("#existing-chat")) { page = "existing-chat"; menuOpen = false; render(); return; }
+      if (event.target.closest("#dialog-close") || event.target.id === "veil") { document.querySelector("#veil").hidden = true; return; }
+      if (menuOpen && !event.target.closest("#manage-menu")) { menuOpen = false; render(); }
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") { if (!document.querySelector("#veil").hidden) document.querySelector("#veil").hidden = true; else if (menuOpen) { menuOpen = false; render(); document.querySelector("#manage-trigger").focus(); } }
+    });
+    render();
+  </script>
+</body>
+</html>

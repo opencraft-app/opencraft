@@ -6,9 +6,11 @@ import React, { Suspense, useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { LoginModal } from '@/components/site/login-modal';
+import { AgentSidebarToggle } from '@/components/site/agent-sidebar';
 import { LegalFooter } from '@/components/site/legal-footer';
 import { ProductReturnHomeHeader } from '@/components/site/product-chrome';
 import { useOpenClaw } from '@/contexts/agent-context';
+import { useMultiBotEnabled } from '@/contexts/runtime-config-context';
 import { useSession } from '@/contexts/session-context';
 import { useT } from '@/i18n/t';
 import { useAppNavigate } from '@/lib/app-navigation';
@@ -85,11 +87,13 @@ function SkeletonBlock({ className }: { className: string }) {
   return <span className={`block animate-pulse bg-black/[0.045] ${className}`} />;
 }
 
-export function AgentsRouteLoading() {
+export function AgentsRouteLoading({ collapsed, onToggle, isChat }: { collapsed: boolean; onToggle: () => void; isChat: boolean }) {
+  const multiBotEnabled = useMultiBotEnabled();
   return (
-    <div className="flex min-h-dvh flex-col bg-white text-[var(--text-primary)]">
+    <div className={`flex min-h-dvh flex-col bg-white text-[var(--text-primary)]${multiBotEnabled ? ' lv-agent-bot-rail-enabled' : ''}${collapsed ? ' lv-agent-sidebar-collapsed' : ''}`}>
       <ProductReturnHomeHeader
-        className="lv-agent-sidebar-header"
+        beforeUserMenu={<AgentSidebarToggle collapsed={collapsed} onToggle={onToggle} />}
+        className={`lv-agent-sidebar-header${collapsed ? ' lv-agent-sidebar-header--collapsed' : ''}`}
         reloadLanguageAfterSwitch
         showAccountLanguageSwitcher
         showDesktopUserMenu={false}
@@ -97,7 +101,7 @@ export function AgentsRouteLoading() {
       />
       <main className="lw-app-top-pad lv-agent-settings-main flex-grow bg-white pb-6">
         <section className="lw-settings-shell lv-agent-settings-shell">
-          <AgentSettingsLoadingContent />
+          <AgentSettingsLoadingContent multiBotEnabled={multiBotEnabled} isChat={isChat} collapsed={collapsed} />
         </section>
       </main>
     </div>

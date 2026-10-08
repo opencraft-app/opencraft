@@ -55,6 +55,7 @@ vi.mock("@/contexts/runtime-config-context", () => ({
   usePaidBillingEnabled: () => true,
   useMultiBotEnabled: () => true,
   useRealnamePhoneVerificationEnabled: () => false,
+  useReferralEnabled: () => false,
 }));
 
 vi.mock("@/contexts/session-context", () => ({

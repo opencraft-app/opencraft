@@ -35,7 +35,7 @@ describe("Agents route loading boundary", () => {
       "lazy(() => import('@/pages/marketing/agents-workbench/AgentsWorkbenchPage')",
     );
     expect(source).toContain(
-      "const loadingFallback = isWorkbench ? productHeader : <AgentsRouteLoading />;",
+      "const loadingFallback = isWorkbench ? productHeader : <AgentsRouteLoading collapsed={collapsed} onToggle={toggle} isChat={!sectionId || sectionId === 'chat'} />;",
     );
     expect(source).toContain(
       "<AppRouteShell loadingFallback={loadingFallback} showAuthGateFooter={false}>",

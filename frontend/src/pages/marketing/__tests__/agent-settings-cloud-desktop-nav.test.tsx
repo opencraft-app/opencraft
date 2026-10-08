@@ -33,6 +33,7 @@ vi.mock("@/contexts/runtime-config-context", () => ({
   usePaidBillingEnabled: () => false,
   useRealnamePhoneVerificationEnabled: () => false,
   useCloudDesktopEnabled: () => true,
+  useReferralEnabled: () => false,
 }));
 
 vi.mock("@/contexts/session-context", () => ({

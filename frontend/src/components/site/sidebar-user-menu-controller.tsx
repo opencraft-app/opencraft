@@ -3,8 +3,9 @@ import { useTranslation } from "react-i18next";
 import { useSession } from "@/contexts/session-context";
 import { useOpenClaw } from "@/contexts/agent-context";
 import { useRepositories } from "@/contexts/repository-context";
-import { usePaidBillingEnabled } from "@/contexts/runtime-config-context";
-import { useT } from "@/i18n/t";
+import { usePaidBillingEnabled, useReferralEnabled } from "@/contexts/runtime-config-context";
+import { useCurrentLocale, useT } from "@/i18n/t";
+import { formatExpiryDate } from "@/lib/agent-account-dates";
 import { AGENT_SECTION_PATH_BY_ID, getAgentSectionHref, shouldShowWorkbenchEntry } from "@/lib/agent-routes";
 import { useAppNavigate, useAppSearchParams } from "@/lib/app-navigation";
 import { avatarImageUrl } from "@/lib/avatar-image";
@@ -22,17 +23,28 @@ import { SidebarUserMenu, type SidebarUserMenuProps } from "./sidebar-user-menu"
 
 export function SidebarUserMenuController({ showLanguageSwitcher = false }: { showLanguageSwitcher?: boolean }) {
   const { session, signOut } = useSession();
-  const { activePass, modifyingPass, passUpgradeFailed, passesLoading, passesError } = useOpenClaw();
-  const { plans } = useRepositories();
+  const { activePass, modifyingPass, passUpgradeFailed, passesLoading, passesError, bots, botsLoading, botsError, hasResolvedBots } = useOpenClaw();
+  const { plans, auth } = useRepositories();
   const paidBillingActive = isPaidBillingEnabled(usePaidBillingEnabled());
+  const referralEnabled = useReferralEnabled();
   const t = useT();
+  const locale = useCurrentLocale();
   const { i18n } = useTranslation();
   const navigate = useAppNavigate();
   const [searchParams] = useAppSearchParams();
   const languageId = useId();
   const [open, setOpen] = useState(false);
   const [loadedUserId, setLoadedUserId] = useState<string>();
+  const [referralStats, setReferralStats] = useState<{ userId: string; count: number } | null>(null);
   const userId = session.user?.id;
+  useEffect(() => {
+    if (!open || !userId || !referralEnabled || referralStats?.userId === userId) return undefined;
+    let cancelled = false;
+    void auth.getReferralStats().then((stats) => {
+      if (!cancelled) setReferralStats({ userId, count: stats.successfulReferrals ?? 0 });
+    }).catch(() => { if (!cancelled) setReferralStats(null); });
+    return () => { cancelled = true; };
+  }, [open, userId, referralEnabled, referralStats?.userId, auth]);
   // 首次展开才读账务；同一账号关闭后保留摘要，换号关闭态不额外发请求。
   const enabled = open || Boolean(userId && loadedUserId === userId);
   const summary = useAccountPassSummary({ userId, activePass, modifyingPass, paidBillingActive, global: isGlobal, enabled, listMyPasses: plans.listMyPasses });
@@ -60,6 +72,13 @@ export function SidebarUserMenuController({ showLanguageSwitcher = false }: { sh
   const credit: SidebarUserMenuProps["credit"] = summary.credits
     ? { state: "ready", label: t("已使用积分"), ...summary.credits }
     : { state: state === "ready" ? "idle" : state, label: creditLabel };
+  const overview: SidebarUserMenuProps["overview"] = {
+    expiresAt: formatExpiryDate(operablePass?.expired_time, locale) ?? "—",
+    remainingCredits: summary.credits ? summary.credits.available.toLocaleString() : "—",
+    botCount: !userId || !hasResolvedBots || botsLoading || botsError ? "—" : bots.length.toLocaleString(),
+    invitedFriends: referralEnabled ? (referralStats && referralStats.userId === userId ? referralStats.count.toLocaleString() : "—") : undefined,
+    labels: { expiresAt: t("有效期至"), remainingCredits: t("剩余 AI 积分"), botCount: t("Bot 数量"), invitedFriends: t("已邀请好友") },
+  };
   const entries: SidebarUserMenuProps["entries"][number][] = [];
   entries.push(
     {
@@ -75,7 +94,7 @@ export function SidebarUserMenuController({ showLanguageSwitcher = false }: { sh
   if (hiddenEntriesRevealed && !isGlobal) entries.push({ id: "feedback", kind: "feedback", href: PRODUCT_FEEDBACK_URL, label: t("产品反馈") });
   return <SidebarUserMenu open={open} onOpenChange={(next) => { if (next) setLoadedUserId(userId); setOpen(next); }}
     name={session.user?.name || t("用户")} email={session.user?.email || undefined} avatarSrc={avatarImageUrl(session.user?.avatarUrl ?? null)}
-    planLabel={planLabel} credit={credit} status={statusText} entries={entries}
+    planLabel={planLabel} credit={credit} overview={overview} status={statusText} entries={entries}
     upgrade={canRenew && upgrade.pass && upgrade.pass.pass_id === operablePass?.pass_id && upgrade.options.length > 0 ? { href: `${subscribeHref}/?upgrade_pass_id=${encodeURIComponent(upgrade.pass.pass_id)}`, label: t("升级套餐") } : undefined}
     labels={{ trigger: t("打开用户菜单"), menu: t("账号管理"), logout: t("退出登录"), language: t("语言") }}
     languageContent={isGlobal && showLanguageSwitcher ? <InternationalLanguageMenu id={languageId} ariaLabel={t("语言")} reloadAfterSwitch /> : undefined}

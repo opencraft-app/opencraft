@@ -16,6 +16,7 @@ export interface SidebarUserMenuProps {
   planLabel: string;
   status?: { text: string; tone: "warning" | "danger" | "neutral" };
   credit: SidebarCreditSummary;
+  overview?: { expiresAt: string; remainingCredits: string; botCount: string; invitedFriends?: string; labels: { expiresAt: string; remainingCredits: string; botCount: string; invitedFriends: string } };
   upgrade?: { href: string; label: string };
   entries: readonly { id: string; kind: "agent" | "account" | "files" | "workbench" | "feedback"; href: string; label: string; external?: boolean }[];
   labels: { trigger: string; menu: string; logout: string; language: string };
@@ -44,7 +45,7 @@ function SidebarLanguagePopover({ label, children, onMouseEnter, onMouseLeave }:
 }
 
 /** Presentation only; account identity, requests, routes and localization belong to the controller. */
-export function SidebarUserMenu({ open, onOpenChange, name, email, avatarSrc, planLabel, status, credit, upgrade, entries, labels, languageContent, onSignOut }: SidebarUserMenuProps) {
+export function SidebarUserMenu({ open, onOpenChange, name, email, avatarSrc, planLabel, status, credit, overview, upgrade, entries, labels, languageContent, onSignOut }: SidebarUserMenuProps) {
   const headingRef = useRef<HTMLHeadingElement>(null);
   const triggerHoveredRef = useRef(false);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -89,9 +90,20 @@ export function SidebarUserMenu({ open, onOpenChange, name, email, avatarSrc, pl
         <div className="space-y-1 border-b border-[var(--border-subtle)] px-3 py-3">
           <h2 ref={headingRef} tabIndex={-1} className="truncate text-sm font-semibold text-[var(--text-primary)] outline-none">{name}</h2>
           {email && <p className="truncate text-xs text-[var(--text-secondary)]">{email}</p>}
-          <p className="truncate text-xs text-[var(--text-secondary)]">{planLabel}</p>
+          <div className="flex items-center gap-2">
+            <p className="min-w-0 flex-1 truncate text-xs text-[var(--text-secondary)]" title={planLabel}>{planLabel}</p>
+            {upgrade && <a href={upgrade.href} onClick={close} className="lv-sidebar-user-menu-upgrade">{upgrade.label}<ChevronRight className="size-3" aria-hidden="true" /></a>}
+          </div>
           {status && <p data-tone={status.tone} className="lv-sidebar-user-menu-status text-xs" role="status">{status.text}</p>}
         </div>
+        {overview && <dl className="grid grid-cols-2 gap-x-3 gap-y-2 border-b border-[var(--border-subtle)] px-3 py-3 text-xs">
+          {([
+            [overview.labels.expiresAt, overview.expiresAt],
+            [overview.labels.remainingCredits, overview.remainingCredits],
+            [overview.labels.botCount, overview.botCount],
+            ...(overview.invitedFriends === undefined ? [] : [[overview.labels.invitedFriends, overview.invitedFriends]]),
+          ] as [string, string][]).map(([label, value]) => <div key={label} className="min-w-0"><dt className="text-[var(--text-secondary)]">{label}</dt><dd className="mt-1 truncate font-semibold tabular-nums text-[var(--text-primary)]" title={value}>{value}</dd></div>)}
+        </dl>}
         <div className="space-y-2 border-b border-[var(--border-subtle)] px-3 py-3">
           {credit.state === "ready" ? <>
             <div className="flex items-center justify-between gap-2 text-xs text-[var(--text-secondary)]">
@@ -101,7 +113,6 @@ export function SidebarUserMenu({ open, onOpenChange, name, email, avatarSrc, pl
             <Progress value={credit.usedPercent} aria-label={credit.label}
               aria-valuetext={`${credit.used.toLocaleString()} / ${credit.total.toLocaleString()}`} />
           </> : <p role={credit.state === "error" ? "alert" : "status"} className="text-xs text-[var(--text-secondary)]">{credit.label}</p>}
-          {upgrade && <a href={upgrade.href} onClick={close} className="lv-sidebar-user-menu-upgrade">{upgrade.label}<ChevronRight className="size-4" aria-hidden="true" /></a>}
         </div>
         <div className="py-1">
           {entries.map((entry) => {
