@@ -177,6 +177,14 @@ describe("international v2 homepage rendering", () => {
     ]);
   });
 
+  it.each([false, true])("does not mount a pointer-following mascot on the homepage (global=%s)", (global) => {
+    regionMock.isGlobal = global;
+    render(<InternationalHomeRuntime locale={global ? 'en-US' : 'zh-CN'} markup='<main id="lightvela-intl-home" />' />);
+
+    expect(document.querySelector('#lightvela-home-pointer-mascot')).toBeNull();
+    expect(document.querySelectorAll('img[src*="hermes-pointer-lilac"]')).toHaveLength(0);
+  });
+
   it("starts all homepage motion script requests without waiting for earlier scripts", () => {
     render(<InternationalHomeRuntime locale="en-US" markup="<main />" />);
 

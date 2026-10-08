@@ -4,7 +4,6 @@ import { memo, useEffect, useRef, useState } from 'react';
 
 import { PublicHeaderAuthIsland } from '@next-site/public-header-auth-island';
 import { HomeMobileNavigation } from '@next-site/home-mobile-navigation';
-import { HomePointerMascot } from '@next-site/home-pointer-mascot';
 import { PublicSiteLocaleBridge } from '@next-site/public-site-providers';
 import { MaintenanceAnnouncementBanner } from '@/components/site/maintenance-announcement-banner';
 import { BrowserLanguageSuggestion } from '@/components/site/browser-language-suggestion';
@@ -228,7 +227,6 @@ export function InternationalHomeRuntime({ locale, markup }: { locale: PublicSit
       <div className={authReady && entitlementReady && readyCtaKey === ctaKey ? undefined : '[&_.hero__cta]:invisible [&_.foot__cta]:invisible'}>
         <InternationalHomeMarkup markup={markup} />
       </div>
-      <HomePointerMascot />
       <div className="international-home-header-actions-layer">
         <PublicHeaderAuthIsland
           appearance="immersive"
