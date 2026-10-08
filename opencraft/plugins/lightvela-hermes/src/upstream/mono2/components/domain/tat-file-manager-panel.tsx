@@ -12,6 +12,7 @@ import { canReadTsshFile } from "../../lib/tssh-file-permissions";
 
 interface TatFileManagerPanelProps {
   botId: string;
+  showHeader?: boolean;
 }
 
 interface ActionTooltipProps {
@@ -388,7 +389,7 @@ const fileIconFor = (file: TsshFileInfo) => {
   return <File className="size-4 text-[var(--text-tertiary)]" />;
 };
 
-export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
+export const TatFileManagerPanel = ({ botId, showHeader = true }: TatFileManagerPanelProps) => {
   const t = useT();
   const repositories = useRepositories();
   const clientRef = useRef<TencentTsshFileClient | null>(null);
@@ -1092,10 +1093,10 @@ export const TatFileManagerPanel = ({ botId }: TatFileManagerPanelProps) => {
 
   return (
     <div className="lv-tat-files-panel w-full min-w-0 max-w-full space-y-5 overflow-x-clip">
-      <AgentSectionHeader
+      {showHeader && <AgentSectionHeader
         title={t("云存储")}
         description={t("查看、管理云存储中的文件")}
-      />
+      />}
 
       <section
         aria-labelledby="instance-storage-title"
