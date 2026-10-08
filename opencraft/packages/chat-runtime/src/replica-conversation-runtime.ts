@@ -1694,6 +1694,12 @@ export function createReplicaConversationRuntime(
       }
     },
     async deleteQueuedSubmission(queuedSubmissionId) {
+      if (queued.get(queuedSubmissionId)?.state === "failed") {
+        queued.delete(queuedSubmissionId);
+        localRevision += 1;
+        publish();
+        return;
+      }
       const previous = authoritativeQueue.get(queuedSubmissionId);
       if (previous === undefined)
         throw new Error(

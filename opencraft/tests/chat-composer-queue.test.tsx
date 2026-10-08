@@ -59,6 +59,19 @@ test("normal queued follow-ups render as messages rather than transport UI", () 
   assert.match(markup, /aria-busy="true"/);
 });
 
+test("failed local queue entries can be deleted while unaccepted entries stay disabled", () => {
+  const failed = renderToStaticMarkup(
+    <ComposerQueueTray items={[{ ...pendingItem, state: "failed", dismissible: true }]} isResponseInProgress />,
+  );
+  assert.match(failed, /aria-label="Delete queued message"/);
+  assert.doesNotMatch(failed, /aria-label="Delete queued message"[^>]*disabled=""/);
+
+  const submitting = renderToStaticMarkup(
+    <ComposerQueueTray items={[pendingItem]} isResponseInProgress />,
+  );
+  assert.match(submitting, /aria-label="Delete queued message"[^>]*disabled=""/);
+});
+
 test("queue interruption is the only state promoted to a tray header", () => {
   const markup = renderToStaticMarkup(
     <ComposerQueueTray

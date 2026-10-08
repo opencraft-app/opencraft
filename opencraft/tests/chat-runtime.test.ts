@@ -1967,6 +1967,31 @@ test("explicit follow-up submission alone owns optimistic queue state", async ()
   runtime.dispose();
 });
 
+test("deleting a failed local follow-up removes it without a Host queue request", async () => {
+  const key = createConversationKey("local", "thread-one");
+  let hostDeletes = 0;
+  const runtime = createReplicaConversationRuntime({
+    key,
+    replica: new FakeReplica(threadView()),
+    commands: commands({
+      async submit() { throw new Error("Model unavailable"); },
+      async deleteQueuedSubmission() { hostDeletes += 1; return true; },
+    }),
+    history: { async loadOlder() {} },
+  });
+  const composer = createComposerController({ type: "enqueue-follow-up", key }, { now: () => 100, createId: () => "failed-follow-up" });
+  composer.dispatch({ type: "set-document", document: { version: 1, blocks: [
+    { type: "paragraph", children: [{ type: "text", text: "Next" }] },
+  ] } });
+  const intent = composer.createSubmitIntent();
+  await assert.rejects(runtime.submit(intent), /Model unavailable/);
+  assert.equal(runtime.getSnapshot().queuedSubmissions[0]?.state, "failed");
+  await runtime.deleteQueuedSubmission(intent.commandId);
+  assert.equal(runtime.getSnapshot().queuedSubmissions.length, 0);
+  assert.equal(hostDeletes, 0);
+  runtime.dispose();
+});
+
 test("authoritative AppServer queue replaces optimistic follow-up state", () => {
   const runtime = createReplicaConversationRuntime({
     key: createConversationKey("local", "thread-one"),

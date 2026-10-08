@@ -1765,6 +1765,7 @@ export function App({
                           state: submission.state,
                           operation: submission.operation,
                           actionable: submission.serverSubmissionId !== null,
+                          dismissible: submission.state === "failed" && submission.serverSubmissionId === null,
                           reorderable: queueReorderable,
                           editableContent: restoreQueuedInput(submission.input),
                           pausedReason: submission.pausedReason,

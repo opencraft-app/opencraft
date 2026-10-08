@@ -35,6 +35,7 @@ export interface ComposerQueueTrayItem {
   readonly state: "submitting" | "queued" | "failed";
   readonly operation: "idle" | "updating" | "deleting" | "starting";
   readonly actionable: boolean;
+  readonly dismissible?: boolean;
   readonly reorderable?: boolean;
   readonly editing: boolean;
   readonly pausedReason?: string | null;
@@ -123,6 +124,7 @@ function SortableQueueItem({
   const dragDisabled = blockedByUnconfirmedDelivery || item.reorderable === false || !item.actionable || busy || item.editing;
   const dragTooltip = item.reorderable === false ? item.error ?? item.pausedReason ?? "Queued message" : reorderLabel;
   const steerDisabled = !item.actionable || busy || awaitingNativeReconciliation || blockedByUnconfirmedDelivery || (isResponseInProgress && !atomicSteer);
+  const deleteDisabled = (!item.actionable && !item.dismissible) || busy;
   const steerTooltip = blockedByUnconfirmedDelivery
     ? "An earlier message has unconfirmed delivery; review it before sending another message"
     : awaitingNativeReconciliation
@@ -216,8 +218,8 @@ function SortableQueueItem({
                 <Pencil size={12} />
               </button>
             </QueueTooltip>
-            <QueueTooltip label={deleteLabel} portalContainer={portalContainer} disabled={!item.actionable || busy}>
-              <button type="button" aria-label={deleteLabel} disabled={!item.actionable || busy} onClick={() => ignoreRejected(onDelete?.(item.id))}>
+            <QueueTooltip label={deleteLabel} portalContainer={portalContainer} disabled={deleteDisabled}>
+              <button type="button" aria-label={deleteLabel} disabled={deleteDisabled} onClick={() => ignoreRejected(onDelete?.(item.id))}>
                 <Trash2 size={12} />
               </button>
             </QueueTooltip>
