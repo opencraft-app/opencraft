@@ -16,9 +16,10 @@ derived: false
 ---
 
 ## stage
-双站 `/agents` 代码已实现；获批的 PC 顶栏方案已写入前端、OpenCraft 嵌入式顶栏和 PRD，国内站 5174 已实测，待提交后 OpenCraft 副本同步。
+双站 `/agents` 代码已实现；获批的 PC 顶栏方案已写入前端、OpenCraft 嵌入式顶栏和 PRD，国内站 5174 已实测。工蜂 MR !5097 已提交，待评审与 CI。
 
 ## verified
+- 前端真源提交 `5e1bbc2e5`，按仓库要求同步 130 个 OpenCraft 副本文件并单独提交 `876538eab`；只读同步检查通过。远端分支与本地 SHA 一致。MR !5097 指向 `master`，创建后的快照为 `opened`、`can_be_merged`，CI `pending` 且暂时阻塞合并。
 - 国际站创建引导复测 20/20 通过；测试已按当前 Bot 头像状态名称和竖栏底部管理入口更新。工蜂只读鉴权有效，同名开放 MR 不存在；提交前 OpenCraft 副本检查提示预期的真源漂移，须按仓库要求在真源提交后同步并单独提交生成副本。
 - 已有 Bot 的「新建 Bot」现向浏览器历史新增 `newBot=1` 状态；返回到原 `/agents` 地址时关闭创建引导，未提交表单不会创建实例。创建等待由“可能需要几分钟”改为通常 10 秒内完成，超过 10 秒展示实际等待秒数与继续创建状态；双站 locale 已补齐。相关 4 个测试文件 70/70、`pnpm check`（0 新增类型诊断）、国内／国际站构建、文档校验、staged change-impact 与 `git diff --check` 通过。当前预览账号已达 Bot 数量上限，未通过该账号点击入口实测。
 - 左上角展开态 LightVela 文字标识从 32px 收至 28px，顶部栏仍为 60px；5174 已登录国内站实测标识宽约 100px、高 28px，x=16px，页面加载完成正常。侧栏定向测试 4/4、`pnpm check`（0 新增类型诊断）及 `git diff --check` 通过。
@@ -61,7 +62,7 @@ derived: false
 ## unverified
 - 真实登录环境下国际站、移动视觉、账户实际邀请数、Bot 切换新会话的端到端验收。
 - 全量 `pnpm test` 未通过：含与本需求无关的旧断言失败及 Vitest worker 内存耗尽；`validate_context.py --build-catalog` 也受全仓既有 Task Pack 缺字段影响。不得对外宣称这两个全仓门禁通过。
-- 用户已明确授权本次 commit、push 与提交 MR；尚未授权合并或发布。OpenCraft 同步须在 frontend 真源提交后进行。
+- MR 已提交；尚未合并或发布。国际站真实登录环境、移动端视觉与 Bot 创建入口的完整人工验收仍待完成。
 
 ## discard
 - 旧总览、左栏 Bot 下拉切换的测试断言已替换；临时借用主工作区依赖的类型检查结果不可作为门禁证据。
@@ -72,7 +73,7 @@ derived: false
 - 门禁日志：`/tmp/agents-bot-rail-check.log`、`/tmp/agents-bot-rail-build.log`、`/tmp/agents-bot-rail-build-global.log`、`/tmp/agents-bot-rail-focused-tests.log`、`/tmp/agents-bot-rail-opencraft-check.log`。
 
 ## next_action
-- 提交真源、同步并单独提交 OpenCraft 生成副本，推送分支并创建 MR；不合并或发布。
+- 等待 MR !5097 评审及 CI 结果；本次不合并或发布。
 
 ## requirement_ids / requirement_refs / requirement_excerpt
 - `agents-bot-rail-2026-10-08`；见 `wiki/prd-docs/2026-10-08-agents-bot-rail.md`；双站独立 Bot 竖栏与总览退场。
