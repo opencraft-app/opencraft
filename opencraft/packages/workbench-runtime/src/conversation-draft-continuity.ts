@@ -142,7 +142,7 @@ export function createConversationDraftContinuity(input: {
           if (!live) return;
           const document = parseConversationDraftDocument(value);
           const current = controller.getSnapshot().draft;
-          if (document !== null && current.document === initial.document
+          if (document !== null && isComposerDocumentEmpty(initial.document) && current.document === initial.document
             && keyFor(viewId, current.target) === key && current.attachments.length === 0 && current.context.length === 0) {
             controller.dispatch({ type: "replace-content", document, attachments: [], context: [] });
           }

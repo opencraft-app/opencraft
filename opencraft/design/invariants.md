@@ -74,7 +74,9 @@ Surface消费Shell的同一逻辑active投影：隐藏立即退出模拟光标�
 
 ## Application navigation restoration
 
-浏览器草稿补充：任务 View 保留既有 ConversationDraftContinuity 所有权，不叠加另一套持久化写入者。Bot Composer 通过平台存储端口保存 document、context 与附件元数据，不保存提交回执、执行状态、临时听写或发送锁；存储按产品／账号和 Host + Conversation 身份隔离。只有显式内容编辑和接受发送后的清空写入存储，生命周期变化与卸载不能覆盖其他 View 的输入。账号作用域变化撤销并清除旧适配器，迟到写入不得复活旧内容；新应用实例绑定新账号。浏览器 File 字节及临时侧聊不在当前持久化承诺内；失效 Object URL 或未完成附件恢复为可移除、不可发送的文件卡片。验证见 `chat-browser-drafts.test.ts` 和 `smoke:browser-drafts`。
+任务草稿保留：Application 级输入槽拥有原 Controller、File、预览与处理任务，View 只借用。20 个非活动页面的缓存淘汰不得删除非空输入；输入槽按 50 份非空草稿单独执行 LRU，空输入不计数，淘汰同时丢弃持久文档并释放附件资源。正在编辑或发送的所有者不可淘汰；全部受保护时拒绝新内容，不超限。侧栏完整 A→B→A 回到最后成功呈现的槽位，显式新 View 与 POP 仍独立。Scope promotion 必须更新无页面但仍保留的草稿；账号撤销清除全部槽位与目标缓存。验证：`test:task-draft-switching`、`smoke:task-draft-switching`。
+
+浏览器草稿补充：任务输入槽由 ConversationDraftOwnerRegistry 保留，ConversationDraftContinuity 仍是唯一文档持久化写入者，不叠加另一套持久化写入者。Bot Composer 通过平台存储端口保存 document、context 与附件元数据，不保存提交回执、执行状态、临时听写或发送锁；存储按产品／账号和 Host + Conversation 身份隔离。只有显式内容编辑和接受发送后的清空写入存储，生命周期变化与卸载不能覆盖其他 View 的输入。账号作用域变化撤销并清除旧适配器，迟到写入不得复活旧内容；新应用实例绑定新账号。浏览器 File 字节及临时侧聊不在当前持久化承诺内；失效 Object URL 或未完成附件恢复为可移除、不可发送的文件卡片。验证见 `chat-browser-drafts.test.ts` 和 `smoke:browser-drafts`。
 
 历史记录只持有聊天引用，不拥有草稿的存活事实。启动与历史恢复必须先由 Host 配置、ScopeRegistry 和 BindingStore 校验/规范化，再让 Router 与激活层消费同一个目标；有效当前 entry 优先于跨标签页共享的最后使用偏好。失效 Draft 不按旧 ID 重建，已提交 Draft 经持久 alias 找回 Thread。Router 唯一写回纠正结果并保留 Settings/Extension 目的地；失效引用回到当前实际保留的 View 与输入，View 不能跨 Scope 复用。规范化为 REPLACE 的 POP 仍须被资源事务消费。
 
@@ -247,7 +249,7 @@ Connector 目录浏览不套用设置行：采用限宽品牌卡片，已配置�
 
 ## 图片附件呈现（2026-09-27）
 
-- 草稿图片的语义身份和处理状态只属于 Composer Draft；浏览器 `File`、临时预览 URL 和处理任务属于其 View 级附件会话，不写入可序列化 Draft。切换目标后的晚到结果只能修改原 Draft；移除、清空或 View 销毁须中止任务并释放 URL。
+- 草稿图片的语义身份和处理状态只属于 Composer Draft；浏览器 `File`、临时预览 URL 和处理任务属于 Controller 的草稿所有者附件会话，不写入可序列化 Draft。切换会话或页面缓存淘汰保留资源，晚到结果只能修改原 Draft；移除、清空或草稿所有者销毁须中止任务并释放 URL。新内容准入失败必须回收尚未被草稿接收的 File 预览，不启动孤立任务。
 - 图片选中即在输入卡片内显示方形缩略图；处理中、失败和删除均原位反馈。触控删除始终可见，不能依赖 hover；处理中不宣称网络上传百分比，失败图片不允许发送。
 - 已发送图片由 Timeline 及媒体加载边界投影。缩略图进入图片查看器，不绕过通用链接策略来打开 `data:` URL；查看器按原资源身份加载并在关闭后恢复焦点。
 

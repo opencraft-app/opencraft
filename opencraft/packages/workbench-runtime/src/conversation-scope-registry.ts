@@ -53,7 +53,10 @@ export interface ConversationScopeRegistryConfig {
   readonly initialDraft?: OpenNewThreadDraftOptions | null;
   readonly createDraftId?: () => string;
   readonly now?: () => number;
+  /** Empty, editable Draft metadata is bounded separately from retained input. */
   readonly maxRetainedDrafts?: number;
+  /** Read the Application input owner; this probe acquires no execution lease. */
+  readonly isInputRetained?: (scopeId: ConversationScopeId) => boolean;
 }
 
 export interface ConversationScopeRegistry {
@@ -154,13 +157,15 @@ export function createConversationScopeRegistry(
     return draft;
   };
   const pruneDrafts = () => {
-    const inactive = [...drafts.values()]
-      .filter((draft) =>
-        draft.id !== activeDraftId
-        && (draft.phase === "editing" || draft.phase === "submit-failed"))
+    const emptyEditable = [...drafts.values()].filter((draft) =>
+      (draft.phase === "editing" || draft.phase === "submit-failed")
+      && !(config.isInputRetained?.(draft.scopeId) ?? false));
+    const inactive = emptyEditable.filter((draft) => draft.id !== activeDraftId)
       .sort((left, right) => left.createdAt - right.createdAt);
-    while (drafts.size > maxRetainedDrafts && inactive.length > 0) {
+    let excess = emptyEditable.length - maxRetainedDrafts;
+    while (excess > 0 && inactive.length > 0) {
       drafts.delete(inactive.shift()!.id);
+      excess--;
     }
   };
 

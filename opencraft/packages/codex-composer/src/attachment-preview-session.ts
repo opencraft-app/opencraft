@@ -75,7 +75,14 @@ export class AttachmentPreviewSession {
         lifecycle: resolve === undefined ? "failed" : "pending",
         error: resolve === undefined ? "No browser-to-AppServer attachment bridge is configured" : null,
       };
-      this.composer.dispatch({ type: "add-attachment", attachment: pending });
+      try {
+        this.composer.dispatch({ type: "add-attachment", attachment: pending });
+      } catch (error) {
+        // Content admission can refuse a new draft before it owns this File.
+        // Do not leak its preview or start a job that has no semantic owner.
+        this.remove(draftId, attachmentId);
+        throw error;
+      }
       this.notify();
       if (resolve !== undefined) this.start(entry, resolve);
     }

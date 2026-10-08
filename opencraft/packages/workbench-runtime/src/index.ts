@@ -8,6 +8,7 @@ export * from "./conversation-activation-coordinator";
 export * from "./conversation-scope-lease";
 export * from "./conversation-view-registry";
 export * from "./conversation-draft-continuity";
+export * from "./conversation-draft-owner-registry";
 export * from "./conversation-return-probe";
 export * from "./conversation-display-continuity";
 export * from "./conversation-scope-registry";
