@@ -530,14 +530,17 @@ func TestDesktopInstallPropagatesSessionAuth(t *testing.T) {
 		t.Fatalf("expected Installing, got %q (reason=%q)", resp.Status, resp.Reason)
 	}
 
-	// 等后台安装 goroutine 收敛到 Provisioning。
+	// 等后台安装 goroutine 收敛（installing 置回 false）；超时即失败，不静默放行。
 	session := l.desktopSessionOf("ins-desktop-1")
 	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		if _, _, status, _, _ := session.snapshot(); status == transport.DesktopSessionStatusProvisioning {
-			break
+	for session.isInstalling() {
+		if time.Now().After(deadline) {
+			t.Fatal("background install goroutine did not converge within 3s (still installing)")
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+	if _, _, status, reason, _ := session.snapshot(); status != transport.DesktopSessionStatusProvisioning {
+		t.Fatalf("expected Provisioning after install, got %q (reason=%q)", status, reason)
 	}
 
 	auths := sb.execAuthsSnapshot()
