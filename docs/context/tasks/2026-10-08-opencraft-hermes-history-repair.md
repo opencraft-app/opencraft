@@ -144,8 +144,18 @@ the normal Git/MR workflow; no preview restart or unrelated auto-connect deliver
 - Git authentication is available, but the existing MCP configuration requires
   a missing `GONGFENG_TOKEN`; the configured Git credential cannot authenticate
   the MR API (`Unauthorized`). Browser inspection is unavailable for this page
-  (`PREVIEW_BRIDGE_UNAVAILABLE`). Requested a current API credential; do not
-  bypass review policy or publish any credential values.
+  (`PREVIEW_BRIDGE_UNAVAILABLE`). The API credential request became unnecessary
+  for this user's authorized Git merge: no MR was created or review gate altered.
+- Master advanced to `8c50eb352` during verification. A normal merge preserved
+  its task draft/attachment ownership changes in `6e878756e`. Post-integration
+  history/Bot/Composer/draft regression set passed 102/102, five affected
+  workspace typechecks, boundaries, Web build and documentation validation pass.
+  Rebuilt history UI smoke passed at `/tmp/opencraft-hermes-history-evidence-mexGUd`
+  and browser draft smoke passed both viewport sizes again.
+- Normal atomic Git push advanced feature and master to `6e878756e` after remote
+  permission/watch-path/push checks. A fresh fetch and remote ref check confirmed
+  that master contains `f62d25026` and the latest preceding master. No force push,
+  approval-rule mutation, credential publication, deployment or preview restart.
 
 ## scan_scope / scan_output
 Exact bridge, source and viewport paths plus selected reference Desktop files;
