@@ -1,5 +1,12 @@
 # Agent、网关与运行时领域
 
+内嵌 OpenCraft 语音输入使用独立的应用级转写 transport，不经过 Hermes/DSH 的聊天模型配置。
+浏览器登录态经 Service Gateway 转为用户 default-purpose VelaGW Key；录音与标准 multipart
+均不落盘，混元转换仍由 NewAPI 拥有。通用语音插件复用录音、取消和 final-only 草稿写入，
+产品适配器持有账号/区域代次，取消或换账号后的迟到结果不能写入新草稿。
+此入口不回落到本地预览服务或浏览器系统识别，不影响独立工作台原有语音配置。
+详见 [Service Gateway 语音输入](../../../service-gateway/docs/README.md#内嵌-opencraft-语音输入)。
+
 OpenCraft 的聊天跟进偏好由客户端 `UiPreferencesRuntime` 持有：运行中的
 独立工作台普通会话默认立即跟进，设置中可改为下一轮排队；主站嵌入式 Chat 在运行中默认排队，空闲发送不受影响。
 该偏好不改变 Server 能力或投递确认；临时侧聊仍受其无持久队列的能力边界约束。

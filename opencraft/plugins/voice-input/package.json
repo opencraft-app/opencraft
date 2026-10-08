@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./cloud-speech": "./src/cloud-speech.ts",
     "./runtime-entry": "./src/runtime-entry.ts"
   },
   "dependencies": {

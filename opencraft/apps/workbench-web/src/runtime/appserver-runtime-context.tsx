@@ -618,6 +618,8 @@ export type WebWorkbenchApplicationSupervisor =
   | ActiveWebWorkbenchApplicationSupervisor;
 
 export interface WebWorkbenchSupervisorOptions {
+  /** Product-supplied provider; embedded credentials never enter the generic voice extension. */
+  readonly speechInputProvider?: import("@opencraft/plugin-voice-input").SpeechInputProvider;
   /** Internal Application-owned lane; absent keeps full Workbench eager behavior. */
   readonly optionalFeatureStartup?: OptionalFeatureStartup;
   /** Application-owned profiles that must never enter the durable Host store. */
@@ -1138,7 +1140,8 @@ export async function createWebWorkbenchApplicationSupervisor(
         await import("@opencraft/plugin-voice-input/runtime-entry")
       ).default;
       signal?.throwIfAborted();
-      return createVoiceInputExtension(undefined, platform === "web" ? { webSpeech: { usePreferences: useVoiceInputPreference } } : {});
+      return createVoiceInputExtension(options.speechInputProvider, options.speechInputProvider
+        ? {} : platform === "web" ? { webSpeech: { usePreferences: useVoiceInputPreference } } : {});
     });
     if (import.meta.env.VITE_INCLUDE_BUILTIN_AGENTS_PLUGIN === "true") {
       await extensions.loadOptional("vela.builtin-agents", async () => {

@@ -1,5 +1,6 @@
 import { BrowserAudioCapture, type AudioCapturePort, type AudioCaptureSession, type RecordedAudio } from "./audio-capture";
 import type { SpeechInputError, SpeechInputObserver, SpeechInputProvider, SpeechInputSession } from "./speech-input-provider";
+export type { RecordedAudio } from "./audio-capture";
 
 export type VoiceProviderChoice = "auto" | "system" | "hunyuan";
 export interface VoiceInputPreference { readonly provider: VoiceProviderChoice; setProvider(value: VoiceProviderChoice): Promise<void> }
@@ -12,6 +13,14 @@ export interface SpeechServiceSnapshot {
   readonly models: readonly (SpeechModelSelection & { readonly name: string; readonly enabled: boolean })[];
 }
 const emptySnapshot: SpeechServiceSnapshot = { phase: "loading", binding: null, revision: null, selection: null, models: [] };
+/** Application-owned transcription transport; no capture, Draft or provider credential ownership. */
+export interface SpeechServicePort {
+  getSnapshot(): SpeechServiceSnapshot;
+  subscribe(listener: () => void): () => void;
+  refresh(): Promise<void>;
+  transcribe(audio: RecordedAudio, sessionId: string, attemptId: string, language: string | undefined, signal: AbortSignal, binding?: string): Promise<string>;
+  close(): void;
+}
 function decodeCapabilities(value: unknown): SpeechServiceSnapshot {
   if (!value || typeof value !== "object") throw new Error("语音服务暂不可用");
   const v = value as Record<string, unknown>;
@@ -89,15 +98,19 @@ export class SpeechServiceClient {
   }
   close() { this.closed = true; this.discovery?.abort(); this.selectionController?.abort(); this.listeners.clear(); }
 }
-class TranscriptionFailure extends Error { constructor(message: string, readonly retryable: boolean) { super(message); } }
+export class TranscriptionFailure extends Error { constructor(message: string, readonly retryable: boolean) { super(message); } }
 
 /** Owns an ephemeral audio session, never a Draft, View or selected execution Server. */
 export class CloudSpeechInputProvider implements SpeechInputProvider {
   readonly id = "opencraft.hunyuan-speech";
-  readonly unavailableMessage = "混元语音服务尚未就绪，请检查语音设置";
+  readonly unavailableMessage: string;
   private active: SpeechInputSession | null = null;
   private closed = false;
-  constructor(readonly service: SpeechServiceClient, private readonly capture: AudioCapturePort = new BrowserAudioCapture()) {}
+  constructor(readonly service: SpeechServicePort, private readonly capture: AudioCapturePort = new BrowserAudioCapture(),
+    options: { readonly unavailableMessage?: string } = {}) {
+    this.unavailableMessage = options.unavailableMessage ?? "混元语音服务尚未就绪，请检查语音设置";
+  }
+  subscribe = (listener: () => void) => this.service.subscribe(listener);
   isAvailable() { return !this.closed && this.service.getSnapshot().phase === "ready" && this.capture.isAvailable(); }
   start(observer: SpeechInputObserver, options: { readonly language?: string } = {}): SpeechInputSession {
     if (!this.isAvailable()) throw new Error(this.unavailableMessage);
