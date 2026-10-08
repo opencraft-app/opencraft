@@ -8,7 +8,9 @@ beforeEach(() => {
  vi.spyOn(HTMLImageElement.prototype, 'complete', 'get').mockReturnValue(true);
  vi.spyOn(HTMLImageElement.prototype, 'naturalWidth', 'get').mockReturnValue(512);
 });
-const flush = async () => { for(let i=0;i<6;i++) await Promise.resolve(); };
+// Drain the microtask queue this test relies on (image decode()/complete callbacks
+// chain a few levels of resolved promises); six passes has been enough to settle them.
+const flush = async () => { for (let i = 0; i < 6; i++) await Promise.resolve(); };
 
 function mountFeatureScene(reduced = false) {
  vi.stubGlobal('matchMedia', () => ({ matches: reduced, addEventListener() {}, removeEventListener() {} }));

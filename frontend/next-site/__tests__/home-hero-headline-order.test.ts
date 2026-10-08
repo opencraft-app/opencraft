@@ -60,7 +60,11 @@ describe("homepage hero headline order", () => {
   it("restores natural word boundaries without changing the headline or replay timing", () => {
     new Function(headlineRuntime)();
     const motion = readFileSync(path.resolve("public/lightvela-intl-home/assets/feature-motion.js"), "utf8");
-    const normalization = motion.slice(0, motion.indexOf("  var rotator = root.querySelector")) + "})();";
+    const rotatorIndex = motion.indexOf("  var rotator = root.querySelector");
+    if (rotatorIndex === -1) {
+      throw new Error("Cannot find the rotator marker in feature-motion.js; the headline normalization block may have moved.");
+    }
+    const normalization = motion.slice(0, rotatorIndex) + "})();";
     const main = document.querySelector<HTMLElement>(".hero__line--main")!;
     const prefix = document.querySelector<HTMLElement>(".hero__prefix")!;
     const wrap = document.querySelector<HTMLElement>(".hero__rotator-wrap")!;

@@ -70,7 +70,7 @@ afterEach(() => {
 });
 
 // The hero friends' position observer is not an entrance; it stays under reduced motion.
-const motionTriggers = () => ScrollTrigger.getAll().filter((trigger) => trigger.vars.id !== HERO_ARTWORK_TRIGGER_ID);
+const motionTriggers = () => ScrollTrigger.getAll().filter((trigger) => trigger.vars?.id !== HERO_ARTWORK_TRIGGER_ID);
 
 function switchPanel(id: string) {
   const input = root.querySelector<HTMLInputElement>(`#${id}`)!;

@@ -30,6 +30,10 @@ export const INTERNATIONAL_HOME_SCRIPT_SOURCES = [
 
 export const INTERNATIONAL_HOME_ASSET_VERSION = '20261008-play-card-v117';
 
+/** Homepage motion mode: GSAP-driven on the global site, CSS-only on the domestic site. */
+const MOTION_MODE_GSAP = 'gsap';
+const MOTION_MODE_CSS = 'css';
+
 function versionedInternationalHomeAsset(source: string) {
   return `${source}?v=${INTERNATIONAL_HOME_ASSET_VERSION}`;
 }
@@ -134,7 +138,7 @@ export function InternationalHomeRuntime({ locale, markup }: { locale: PublicSit
     function loadScripts() {
       document.querySelectorAll('script[data-lightvela-intl-home-script]').forEach((script) => script.remove());
       const home = document.getElementById('lightvela-intl-home');
-      if (home) home.dataset.homeMotionMode = isGlobal ? 'gsap' : 'css';
+      if (home) home.dataset.homeMotionMode = isGlobal ? MOTION_MODE_GSAP : MOTION_MODE_CSS;
 
       for (const source of INTERNATIONAL_HOME_SCRIPT_SOURCES) {
         if (cancelled) return;

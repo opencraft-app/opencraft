@@ -57,6 +57,9 @@ export function mountFooterCast(root: HTMLElement): () => void {
       started = true;
       video.currentTime = 0;
     }
+    // Autoplay can be rejected by browser policy (e.g. NotAllowedError) even though
+    // the clip is muted; that is expected and recoverable on the next gesture, so the
+    // decorative footer swallows it rather than surfacing a console error on every load.
     void (looping ? loop : video).play().catch(() => {});
   }
   function stopAndReset() {

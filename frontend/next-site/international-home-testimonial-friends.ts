@@ -1,6 +1,9 @@
 import { gsap } from 'gsap';
 import { watchMascotBeats } from './international-home-mascot-life';
 
+const REDUCED_MOTION_OK_QUERY = '(prefers-reduced-motion: no-preference)';
+const HOVER_FINE_QUERY = '(hover: hover) and (pointer: fine)';
+
 // Unequal sizes, overlapping heights and depth make two little peeking crowds.
 // Base pose belongs to the slot; GSAP touches only its inner artwork.
 const FRIENDS = [
@@ -45,7 +48,7 @@ export function mountTestimonialFriends(root: HTMLElement): () => void {
   section.append(layer);
   section.classList.add('has-peek-friends');
   const media = gsap.matchMedia();
-  media.add('(prefers-reduced-motion: no-preference)', () => {
+  media.add(REDUCED_MOTION_OK_QUERY, () => {
     const beats = actors.map(({ slot, image, side, index }) => {
       const direction = side === 'left' ? 1 : -1;
       // A rear friend peeks first, the front friend answers; each then rests visibly.
@@ -74,7 +77,7 @@ export function mountTestimonialFriends(root: HTMLElement): () => void {
         .to(image, { ...tucked, duration: 0.65, ease: 'power1.inOut' }, '+=0.2');
       return { observe: slot, surface: image, timeline, interact: image };
     });
-    return watchMascotBeats(beats, window.matchMedia('(hover: hover) and (pointer: fine)').matches);
+    return watchMascotBeats(beats, window.matchMedia(HOVER_FINE_QUERY).matches);
   });
   return () => { media.revert(); layer.remove(); section.classList.remove('has-peek-friends'); };
 }
