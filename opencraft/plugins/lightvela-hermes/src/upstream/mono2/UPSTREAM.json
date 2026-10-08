@@ -1,6 +1,6 @@
 {
   "source": "frontend/src",
-  "sourceRevision": "48de3504bff7ebcef23ef8627d4b77a49966140d",
+  "sourceRevision": "f2267d87301baca6dddcead71e84e2cdad0f76ab",
   "generatedBy": "scripts/sync-mono2-agent-console.mjs",
   "files": [
     {
@@ -101,11 +101,11 @@
     },
     {
       "file": "i18n/generated/ja-JP.json",
-      "sourceSha256": "0327569e6beef4636e01090099cf6163a48f32148e4ade6ce5d8eaf1a02f3fec"
+      "sourceSha256": "43612b1d711fd3a8a09a13f9c167f165925a6381cbfe10346fa4deda3ac3a93b"
     },
     {
       "file": "i18n/generated/ko-KR.json",
-      "sourceSha256": "14653d36e49be504a9f3f29e96084984a7cfdf0583e04d8e316b406fd01d5db4"
+      "sourceSha256": "7b063d34dfe8272596612b5e47735ad36a86b9488c167d762bcca08fb926fd91"
     },
     {
       "file": "i18n/generated/zh-CN.json",
