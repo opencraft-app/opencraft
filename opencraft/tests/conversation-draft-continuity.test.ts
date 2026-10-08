@@ -93,6 +93,26 @@ test("a late cached read cannot replace text already typed in the View", async (
   second.dispose();
 });
 
+test("reattaching continuity never replaces already retained in-memory content", async () => {
+  const storage = memoryStorage();
+  const continuity = createConversationDraftContinuity({ namespace: "account", storage, delayMs: 0 });
+  const seed = createComposerController(target, { now: Date.now, createId: () => "seed" });
+  const stopSeed = continuity.attach("retained", seed);
+  seed.dispatch({ type: "set-document", document: document("older stored input") });
+  await tick();
+  stopSeed();
+  seed.dispose();
+  await tick();
+
+  const retained = createComposerController(target, { now: Date.now, createId: () => "retained" });
+  retained.dispatch({ type: "set-document", document: document("newer retained input") });
+  const stopRetained = continuity.attach("retained", retained);
+  await tick();
+  assert.equal(composerDocumentToPlainText(retained.getSnapshot().draft.document), "newer retained input");
+  stopRetained();
+  retained.dispose();
+});
+
 test("promoting an accepted first turn discards the original new-thread draft", async () => {
   const storage = memoryStorage();
   const continuity = createConversationDraftContinuity({ namespace: "account", storage, delayMs: 0 });

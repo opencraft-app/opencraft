@@ -1499,6 +1499,7 @@ export async function createWebWorkbenchApplicationSupervisor(
       ? createWorkbenchThreadLocation(initialHostId, persistedThreadId)
       : null;
   const conversationScopes = createConversationScopeRegistry({
+    isInputRetained: (scopeId) => conversationViews.hasRetainedInput(scopeId),
     // Local persisted input may restore its client identity and placement.
     // A canonical promotion alias still wins; execution locks never restore.
     initialDraft: initialThreadLocation === null
@@ -1564,6 +1565,9 @@ export async function createWebWorkbenchApplicationSupervisor(
       disposeViewResources(viewId);
       routeCheckpoints.delete(viewId);
     },
+    onEvictDraft(viewId) {
+      navigation.forgetView(viewId);
+    },
   });
   startupRollback.push(() => conversationViews.dispose());
   const stopDraftScope = lightVelaAccount.subscribe(() => {
@@ -1581,6 +1585,7 @@ export async function createWebWorkbenchApplicationSupervisor(
       storage: browserDraftStore.displayStorage,
     });
     for (const listener of displayListeners) listener();
+    navigation.clearPreferredViews();
     conversationViews.replaceDraftContinuity(createConversationDraftContinuity({
       namespace: `${workbenchProductId}.${nextScope}`,
       storage: browserDraftStore.storage,
@@ -1602,6 +1607,21 @@ export async function createWebWorkbenchApplicationSupervisor(
     conversationScopes,
     {
       ...routerOptions,
+      resolveCanonicalLocation(location) {
+        return resolveRetainedWorkbenchLocation(location, {
+          hasHost: () => true,
+          bindings: conversationBindings,
+          scopes: conversationScopes,
+        }) ?? location;
+      },
+      isRetainedView(location, viewId) {
+        const owner = conversationViews.getDraftOwner(viewId);
+        if (owner === null) return false;
+        const target = owner.composer.getSnapshot().draft.target;
+        return location.kind === "draft"
+          ? target.type === "new-thread" && target.execution.hostId === location.hostId && target.draftId === location.draftId
+          : target.type === "existing-thread" && target.key.hostId === location.key.hostId && target.key.threadId === location.key.threadId;
+      },
       resolveRestoredEntry: createWorkbenchEntryResolver({
         hasHost: hostId => hostProfiles.getSnapshot().profiles.some(profile => profile.enabled && profile.hostId === hostId),
         bindings: conversationBindings,
