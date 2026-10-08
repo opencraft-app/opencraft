@@ -1350,17 +1350,18 @@ a {
 
 .lv-agents-session-list-actions {
   display: flex;
-  justify-content: center;
-  gap: 8px;
-  padding: 2px 24px 4px 8px;
+  justify-content: flex-start;
+  gap: 12px;
+  padding: 2px 12px 4px 14px;
 }
 
 .lv-agents-session-list-actions button {
   padding: 4px 6px;
   border-radius: 6px;
-  color: #596273;
+  color: rgb(0 0 0 / 45%);
   font-size: 12px;
   line-height: 16px;
+  white-space: nowrap;
 }
 
 .lv-agents-session-list-actions button:hover:not(:disabled) {
@@ -1975,6 +1976,10 @@ a {
 @media (max-width: 1023px) {
   .lv-agents-nav-group-items.lv-agents-session-list {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .lv-agents-session-list-actions {
+    padding-left: 6px;
   }
 }
 
