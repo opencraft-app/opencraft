@@ -19,7 +19,7 @@ trusts those users to request exclusive input on that same machine.
 | Desktop process / incarnation | Backend, independent of Chat turn and renderer | Backend policy only; no stop operation exposed to the panel |
 | `cloud-desktop` tab | Conversation Panel service, singleton within one panel owner | Descriptor contains only Conversation ID, never credentials |
 | Attachment | Backend-authorized short-lived viewer lease for exact target/resource/incarnation | Release on bootstrap failure or viewer teardown |
-| Media transport + surface | One desktop tab's opted-in resident presentation | Hiding or switching tabs retains viewing but disables input; tab closure, owner replacement, timeout, connection end or plugin retirement releases viewing |
+| Media transport + surface | One desktop tab's opted-in resident presentation | Hiding or switching tabs retains viewing but disables input and retires cursor overlays/listeners; tab closure, owner replacement, timeout, connection end or plugin retirement releases viewing |
 | Control grant | Server-authorized, exclusive and revocable input lease | Disable input before release on cancel, blur, hidden page, revocation or teardown |
 | Button activation | Mounted presentation captures the pressed action; controller issues a single-use command bound to viewing/control epochs | Cancelled physical gestures, focus/page loss, revoked readiness and replaced ownership cannot reinterpret or replay a press |
 
@@ -33,6 +33,25 @@ Agent automation must be arbitrated by the backend, not `viewOnly` CSS.
 The surface is a focusable child of the panel; adapters keep media/input focus
 inside this boundary. Moving focus between toolbar and surface is not blur of
 the desktop owner. Losing focus outside it releases control.
+The mounted DOM interaction owner observes explicit outside pointer presses,
+known outside focus destinations, window blur and document hiding. A null
+focusout destination is incomplete platform information, not proof of departure:
+it reconciles the current active element after synchronous focus handoff, without
+granting input or restoring focus. Body/root as an unknown destination cannot
+alone revoke existing control; an outside blank-space press still revokes it.
+Controller acquisition/confirmation continues to require actual in-panel focus.
+An observing managed-media surface commits a fixed Take command on native
+single-finger tap release, since its compatibility mouse events are suppressed.
+Movement, a second finger, pointer cancellation or capture loss retires that
+command. No synthetic click is emitted; a compatibility click, if provided by
+the browser, consumes only the already-spent command. Ordinary toolbar buttons
+retain native click/keyboard activation.
+Take acquires media focus synchronously while still observe-only, before awaiting
+the grant. The platform supplies a read-only current-panel focus predicate;
+failed focus cannot request input, and focus is checked again at confirmation.
+Confirmation enables input but never refocuses the media. A no-focus touch/AT
+button activation followed by leaving the panel cannot accept a late grant or
+steal focus back. The focus predicate is not backend authorization.
 
 One native activation has a fixed action, not a toggle of the latest rendered
 state. Pointer/Enter/Space press captures Take or Stop; native click consumes
@@ -53,10 +72,43 @@ it is not a complete phone network-recovery or foreground-probing implementation
 
 ### Panel presentation
 
-The panel follows the decoded Codex 26.930.31428 WebView desktop structure:
-compact status/outline-control toolbar, contained media, centered connection
-feedback and a full-panel unavailable state with explicit reconnect on failure.
-This is source-referenced presentation, not an official Mac pixel-comparison.
+The panel follows the rich `CloudAeonComputerPanel` composition in the original
+Codex 26.930.31428 / build 12913 renderer, not its separate simple
+`CloudDesktopPanel` toolbar. The shared Design System `desktop-view.web` primitive
+owns an aspect-fit media card, rounded clipping/shadow, a floating ownership
+island and a confirmed-control perimeter/visor. This is source-referenced
+presentation, not an official Mac pixel-comparison or a remote OS theme change.
+Desktop control appearance is independent from the application accent: its
+current default is the reference purple submit pair (#8952ee light, #7849d1
+dark, white foreground). The shared primitive owns the paired defaults; trace,
+wash, visor and translucent release action consume the same local variables.
+There is no assistant appearance authority wired to this local desktop yet, so
+this is a product default, not a claim that every Codex desktop is purple.
+Application theme/skill colors and remote Linux wallpaper remain unchanged.
+The adapter reports optional `mediaAspectRatio` from decoded backing dimensions;
+the controller projects the current connection's geometry. Missing geometry uses
+4:3 temporarily. Shell owns available space; noVNC remains the sole owner of
+scaling, zoom and input-coordinate mapping, with remote resize disabled. The
+frame fits container width/height without a second scaling transform; the island
+is anchored to its bottom edge with reserved control space below. Connection
+feedback remains centered and failures have explicit reconnect. The ownership
+strip stays mounted with reserved geometry but is invisible, accessibility-hidden
+and inert until current video and input are ready. Initial connection, recovery
+and failure cannot expose duplicate disabled actions or accept hidden input.
+The optional connection `capturePreview` returns only a bounded JPEG of decoded
+backing pixels (1280px longest edge, quality .85, at most 2M data-URL characters).
+Capture is synchronous at connection retirement; unsupported/tainted media falls
+back to plain feedback. No screenshot polling, persistence or shared cache exists.
+The controller retains one frame in memory, scoped to target identity, resource
+and physical incarnation. Recovery shows it only after fresh authorized attachment
+preparation validates the same binding; pending preparation remains plain feedback.
+New identities/instances, denied authorization and disposal clear eligibility.
+Reentrant capture cannot write after a newer lifecycle generation.
+Cached images are decorative, pointer-inert and never establish readiness or
+input authority. A connecting overlay distinguishes stale pixels from live media.
+Once current video and input are ready, the preview and feedback fade over 240ms;
+reduced motion hides them immediately. The media mount remains the same, and a
+fresh exclusive grant is still required after recovery.
 Empty-state geometry and the 18/24 medium panel-title role belong to the shared
 Design System; desktop-specific layout belongs to the neutral plugin stylesheet.
 The design system also owns a decorative 24px vector progress indicator (a
@@ -67,12 +119,18 @@ Vector geometry remains in the renderer-free `design-system/progress` contract;
 `design-system-web/progress` projects it to React/SVG and owns animation phase.
 Empty-state sizing and secondary tone apply only to direct glyphs, not nested
 progress primitives, so the spinner is neither enlarged nor clipped.
-Compact outline controls apply theme feedback immediately, without a color tween
-or press scaling; disabled opacity is 0.4 and touch does not inherit sticky hover.
-These are source-referenced Codex motion rules, not a Mac runtime parity claim.
-The shared controls retain compact 14/18 regular capsule actions and a 44px coarse-pointer
-target. Toolbar feedback is single-line and cannot push the media down when
-control or clipboard operations are pending.
+The ownership action uses the shared 12/16 semibold `control-small` role, a 32px
+capsule and at least 44px coarse-pointer target. Icon actions retain shared compact
+panel controls. Activation feedback is immediate with no press scaling. Disabled
+opacity is 0.4; touch does not inherit sticky hover. A decorative solid button
+layer fades over 240ms into the translucent confirmed-control background and
+back on release; only confirmed ownership selects this presentation. Reduced
+motion skips the fade, and held-press geometry/feedback remains immediate.
+The ownership island keeps a
+bounded width and single-line truncated status, so control/clipboard pending
+cannot move the media or neighboring actions. Requesting keeps Stop usable; after
+200ms animated dots visually replace status while accessible status remains.
+Reduced motion retains readable status without dots or color/position animation.
 The localized control labels share an intrinsic sizing slot, so Take/Stop
 do not move adjacent buttons. Ready status is short; unsupported clipboard
 capability hides Paste altogether. Physical clipboard availability is separate
@@ -86,8 +144,23 @@ retry states. Feedback overlays do not instantiate a second controller or attach
 input. Control is disabled until both channels are ready and the provider permits
 it; local immutable observation remains visibly read-only. While requesting,
 the toolbar reports busy and Stop controlling remains visible and usable. The
-pressed state represents intent; input is still blocked until the backend grants
-control. Window/panel blur and logical
+pressed state represents cancellable intent; input is still blocked until the
+backend grants control. The decorative ring and connected visor require
+**active + ready + confirmed controlling**, never merely pressed/requesting.
+Observing uses a theme-surface island 8px below the frame. Confirmation joins the
+island to the frame over 180ms, draws a two-sided masked perimeter over 320ms after
+a 50ms delay, and washes the bottom visor over 420ms. Return reverses presentation;
+it never delays input revocation. Decorative layers are non-interactive and
+aria-hidden. The status slot reserves ordinary localized ownership labels
+intrinsically, without a fixed pixel width; hidden measurement labels are excluded
+from accessibility. Only the confirmed visor has the 241px minimum. Auxiliary
+input actions remain capability-driven. Narrow and wide shoulder masks use distinct
+asymmetric reference curves. Card shadows crossfade fixed pseudo layers over 240ms
+rather than interpolating shadow geometry; the wide card retains one shadow across
+ownership changes. Paired theme accent/foreground tokens drive color, not a Vela or
+assistant identity or hardcoded global purple. Watching does not falsely assert
+an agent owns control. Clicking observing media uses the same single-use,
+lifecycle-fenced Take activation as the button. Window/panel blur and logical
 closure preserve the existing immediate revocation semantics. Shell continues
 to own the tab, close action and maximize presentation.
 
@@ -148,6 +221,24 @@ changing its owner disposes the viewer. This is current-Shell residency, not
 cross-route/process persistence. Non-opted-in tools retain their normal active
 tab and physical-presentation lifetime; a resident desktop cannot keep another
 tool alive after the pane finishes closing. The remote desktop is never stopped.
+
+`DesktopSurface.setActive` receives that same logical activity, including when
+media finishes mounting while hidden. The media adapter owns overlays even if
+the decoder attaches them outside the panel DOM. noVNC's touch fallback cursor
+is a fixed body-level canvas. The reviewed decoder derives its attachment from
+surface activity and the adapter's existing `viewOnly` input-grant projection;
+there is no separately writable cursor-control flag. Observation and pending
+authorization never attach it. Stop, revocation, focus loss or inactivity detach
+the cursor and its listeners immediately and restore the canvas's ordinary
+`auto` cursor, including the desktop URI-cursor path, without closing the viewing
+stream or relying on a touch-generated mouseleave. Shapes still decode into
+latest media state without writing to the detached cursor. Late shapes and
+mouseover cannot resurrect it. Reopening restores observation only; a fresh
+valid grant attaches the latest shape without stealing focus. Repeated enable
+notifications do not clear an already attached cursor. Closing removes it before
+transport teardown. This governs local control feedback, not cursor pixels
+already present in the remote framebuffer. Shell never searches global canvases
+or owns a second cursor-visibility state.
 
 The platform-free `contract.ts` models canonical Conversation, Server,
 environment and principal identity separately from transient resource incarnation.
@@ -379,7 +470,72 @@ bounded at 5 seconds; timeout/revoke clears retained local clipboard data and
 cannot emit late keys. Legacy Latin-1 clipboard rejects unsupported characters
 instead of silently corrupting text; extended clipboard transports UTF-8.
 No unsolicited peer-to-local OS clipboard writes or background reads are added.
-Remote copy-to-local and native IME/mobile keyboard usability remain unverified.
+Remote copy-to-local remains unverified. Browser IME verification below is not an
+iPhone system-keyboard acceptance claim.
+
+### Pointer, viewing gestures and mobile text input
+
+The neutral Web adapter owns one pointer/scroll policy. Shell only supplies the
+viewport; product providers authorize input, never own gesture listeners. The
+pinned decoder exposes reviewed `setSurfaceActive`, `setPointerInputManaged`, `getInputCanvas` and
+`sendPointer` APIs. Native pointer output and Ctrl-wheel pinch are suppressed in
+managed mode; rendering and hardware keys stay decoder-owned. The public port
+checks connected/surface-active/view-only state, coordinates and masks and
+preserves the eligible fallback cursor. The application adapter only consumes
+public ports; reviewed decoder internals implement cursor attachment. Host
+remains the input authority. Installation validates the original source hash and
+accepts only complete previous event-only/managed-pointer/surface-activity
+generations or the complete current patch, not arbitrary subsets.
+
+- Observe mode: pinch/pan change only local viewing, never send remote packets.
+- Confirmed control: one-finger tap/drag operates the remote pointer; two-finger
+  translation scrolls remotely. Pinch remains local viewing, not remote Ctrl.
+- Finger events are sampled together per animation frame so sequential updates
+  cannot misclassify fast scrolling as pinch. Cancellation drops the sample;
+  normal release may consume its final sample, under the same valid grant.
+- Wheel and touch translation share bounded delta accumulation, reversal/idle
+  reset and at most one step per axis per 100ms. RFB encodes discrete steps,
+  not Codex pixel deltas; scrolling speed is not claimed identical. Trackpad
+  Ctrl-wheel adjusts local viewing only.
+- Zoom is 1–4x anchored under the gesture, with bounded pan. Coordinates use
+  actual transformed canvas bounds and framebuffer dimensions. Bars cannot start
+  a remote click; a captured drag clamps at framebuffer edges.
+- Stop/blur/new grant reset buttons, scroll and queued samples. Old physical
+  pointers must lift before a successor accepts them, even if joined by a new
+  finger. Reopen/reconnect never resumes control automatically.
+- Gesture geometry belongs to the physical input transaction. Viewport position,
+  size or framebuffer changes retire held pointers and queued pair samples;
+  active remote presses also fence canvas bounds. No old start coordinate is
+  remapped into new geometry. Retained fingers must lift before another gesture;
+  this cancellation does not itself revoke the longer-lived confirmed grant.
+
+Coarse-pointer presentation adds one translated compact Show keyboard action,
+enabled only after confirmation on a surface with a text-input port. An explicit
+gesture focuses a real editable textarea without moving toolbar/media geometry.
+Printable text commits via `input`, not also `keydown`. IME candidates stay local
+until `compositionend`; Enter/deletion map to key strokes. Unicode uses RFB
+keysyms independently of native clipboard availability. Paste/drop remain in the
+existing clipboard boundary. Each keyboard transaction owns its DOM, bounds a
+commit to 2048 UTF-16 units and clears/removes the input on revoke. Late events
+on removed DOM cannot type into a successor; text is not persisted or logged.
+
+Each text transaction is shorter-lived than its control grant. Before a remote
+mouse press, touch tap/drag or paste can change the remote input target, the RFB
+adapter transfers focus to its canvas while the old target is still selected.
+A platform-confirmed synchronous composition end commits there first; then the
+old text transaction is detached and removed before pointer/paste packets.
+Candidates not confirmed during this handoff are cancelled rather than replayed
+into the next target. Delayed input/composition events cannot enter a new typing
+transaction even under the same still-valid control grant. Focus remains inside
+the panel, so this handoff must not itself release control. Reentrant revocation
+or replacement during focus handoff cancels the old pointer press. Hover, local
+pinch and two-finger scrolling do not change the text target or end typing.
+Event ordering follows the [W3C composition contract](https://www.w3.org/TR/input-events-2/#input-event-order-during-composition).
+
+Tests and `smoke:cloud-desktop` cover the real patched decoder and native Chromium
+touch/IME events with a synthetic peer. Real iPhone keyboard opening, candidates,
+viewport occlusion and native executor acceptance still require device/runtime
+verification; a Chromium touch profile cannot prove them.
 
 The controller owns preparation/connection/video/input/connected stages and fixed
 failure classifications. Its diagnostic sink receives only generation, stage,

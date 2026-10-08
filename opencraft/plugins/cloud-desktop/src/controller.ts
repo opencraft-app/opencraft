@@ -1,6 +1,8 @@
 import { DesktopFailure, desktopTargetKey, type DesktopAttachment, type DesktopBackend, type DesktopConnection,
   type DesktopControlLease, type DesktopTarget, type DesktopFailureReason } from "./contract";
 import type { DesktopSurface, DesktopSurfaceFactory } from "./viewer";
+import type { DesktopFramePreview } from "./contract";
+import { validFramePreview } from "./frame-preview";
 
 const recoveryDelaysMs = [1_000, 2_000, 4_000] as const;
 const stableViewingMs = 30_000;
@@ -14,6 +16,8 @@ export interface DesktopDiagnostic {
 }
 
 export interface DesktopViewSnapshot {
+  readonly preview?: DesktopFramePreview;
+  readonly mediaAspectRatio?: number;
   readonly phase: "unavailable" | "connecting" | "ready" | "failed";
   readonly control: "observing" | "requesting" | "controlling";
   readonly canControl: boolean;
@@ -23,6 +27,7 @@ export interface DesktopViewSnapshot {
   readonly canPaste?: boolean;
   /** Physical capability, independent of the current exclusive input grant. */
   readonly pasteAvailable?: boolean;
+  readonly textInputAvailable?: boolean;
   readonly clipboardBusy?: boolean;
   readonly clipboardFailed?: boolean;
 }
@@ -55,6 +60,7 @@ export class DesktopViewController {
   private startedAt = 0;
   private clipboardEpoch = 0;
   private readinessDeadline = 0;
+  private preview: { targetKey: string; resourceId: string; incarnation: string; frame: DesktopFramePreview } | null = null;
 
   constructor(
     private readonly backend: DesktopBackend,
@@ -63,6 +69,8 @@ export class DesktopViewController {
     private readonly element: HTMLElement,
     private readonly timeoutMs = 120_000,
     private readonly onDiagnostic: (record: DesktopDiagnostic) => void = record => console.info("[desktop]", record),
+    /** Platform-derived focus ownership, never a substitute for the backend grant. */
+    private readonly ownsInteractionFocus: () => boolean = () => true,
   ) {}
 
   getSnapshot = (): DesktopViewSnapshot => this.snapshot;
@@ -86,6 +94,9 @@ export class DesktopViewController {
       this.controlEpoch++;
       this.releaseControl();
     }
+    // Adapter overlays may live outside the media aperture (touch cursors).
+    // Cleanup callbacks can reenter; project the latest intent, not a stale arg.
+    this.cleanup(() => this.surface?.setActive(this.active));
   }
 
   retry(): void {
@@ -120,6 +131,7 @@ export class DesktopViewController {
       : this.target !== null && desktopTargetKey(target) === desktopTargetKey(this.target))) return;
     if (target === null || this.target === null || desktopTargetKey(target) !== desktopTargetKey(this.target)) {
       this.recoveryAttempts = 0;
+      this.preview = null;
     }
     this.target = target === null ? null : Object.freeze({ ...target });
     const generation = this.retireConnection();
@@ -148,6 +160,10 @@ export class DesktopViewController {
       this.attachment = attachment;
       if (!attachment.resourceId || !attachment.incarnation
         || desktopTargetKey(attachment.target) !== desktopTargetKey(target)) throw new DesktopFailure("identity");
+      if (this.preview && (this.preview.targetKey !== desktopTargetKey(target)
+        || this.preview.resourceId !== attachment.resourceId || this.preview.incarnation !== attachment.incarnation)) this.preview = null;
+      this.publish({ ...this.snapshot, preview: this.preview?.frame,
+        mediaAspectRatio: this.preview?.frame.aspectRatio });
       this.setStage("connecting");
       if (!this.current(generation)) return;
       const connection = await attachment.connect(signal);
@@ -159,6 +175,8 @@ export class DesktopViewController {
       surface.setPasteHandler?.(read => { if (this.current(generation)) void this.pasteClipboard(read); });
       // The surface starts in observe mode even if the transport had old input state.
       this.surface.disableInput();
+      if (!this.current(generation)) return;
+      this.surface.setActive(this.active);
       if (!this.current(generation)) return;
       const unsubscribe = connection.subscribe(() => this.syncConnection(generation));
       if (!this.current(generation)) { this.cleanup(unsubscribe); return; }
@@ -199,7 +217,9 @@ export class DesktopViewController {
         if (this.current(generation)) this.fail(false, "timeout");
       }, this.timeoutMs);
       this.publish({ ...this.snapshot, phase: ready ? "ready" : "connecting", canControl,
-        pasteAvailable: ready && Boolean(this.surface?.pasteText) });
+        mediaAspectRatio: state.mediaAspectRatio ?? this.preview?.frame.aspectRatio,
+        pasteAvailable: ready && Boolean(this.surface?.pasteText),
+        textInputAvailable: ready && Boolean(this.surface?.focusTextInput) });
     } catch { if (this.current(generation)) this.fail(); }
   }
 
@@ -228,9 +248,17 @@ export class DesktopViewController {
     this.publish({ ...this.snapshot, control: "requesting", controlFailed: false });
     if (!this.current(generation) || this.controlAbort !== abort) return;
     try {
+      // Acquire focus within the user's Take activation, while still observe-only.
+      // A grant confirmation must not later pull focus back from another task.
+      this.surface?.focus?.();
+      if (!this.current(generation) || abort.signal.aborted || this.controlAbort !== abort) return;
+      if (!this.active || !this.hasInteractionFocus()) { this.releaseControl(); return; }
       const lease = await connection.requestControl(abort.signal);
       if (!this.current(generation) || abort.signal.aborted || this.controlAbort !== abort
-        || !this.active || !this.snapshot.canControl) { this.cleanup(() => lease.release()); return; }
+        || !this.active || !this.snapshot.canControl || !this.hasInteractionFocus()) {
+        if (this.current(generation) && this.controlAbort === abort) this.releaseControl();
+        this.cleanup(() => lease.release()); return;
+      }
       this.lease = lease;
       const unsubscribe = lease.subscribeRevoked(() => {
         if (this.lease === lease) this.releaseControl();
@@ -240,10 +268,7 @@ export class DesktopViewController {
       this.unwatchControl = unsubscribe;
       if (!lease.isValid()) throw new Error("Control grant revoked");
       this.surface?.enableInput(lease);
-      if (this.lease === lease) {
-        this.surface?.focus?.();
-        if (this.lease === lease) this.publish({ ...this.snapshot, control: "controlling", canPaste: Boolean(this.surface?.pasteText) });
-      }
+      if (this.lease === lease) this.publish({ ...this.snapshot, control: "controlling", canPaste: Boolean(this.surface?.pasteText) });
     } catch {
       if (this.current(generation) && this.controlAbort === abort && !abort.signal.aborted) {
         this.releaseControl();
@@ -289,6 +314,16 @@ export class DesktopViewController {
     } finally {
       clearTimeout(timer); abort.signal.removeEventListener("abort", cancelRead);
     }
+  }
+
+  showKeyboard(label: string): void {
+    if (this.disposed || !this.active || this.snapshot.control !== "controlling" || !this.lease?.isValid()) return;
+    this.surface?.focusTextInput?.(label);
+  }
+
+  private hasInteractionFocus(): boolean {
+    try { return this.ownsInteractionFocus(); }
+    catch { return false; } // A retired platform reader cannot authorize input or leak a late grant.
   }
 
   private setStage(stage: DesktopStage): void {
@@ -341,6 +376,7 @@ export class DesktopViewController {
     this.cleanup(this.unwatchBackend);
     this.unwatchBackend = null;
     this.retireConnection();
+    this.preview = null;
     this.snapshot = { phase: "unavailable", control: "observing", canControl: false, controlFailed: false };
     for (const listener of this.listeners) listener();
     this.listeners.clear();
@@ -357,6 +393,7 @@ export class DesktopViewController {
       ? recoveryDelaysMs[this.recoveryAttempts] : undefined;
     const generation = this.retireConnection();
     if (!this.current(generation)) return;
+    if (reason === "identity" || reason === "authorization") this.preview = null;
     if (delay === undefined) {
       this.publish({ phase: "failed", stage, failure: reason, control: "observing", canControl: false, controlFailed: false });
       return;
@@ -391,6 +428,19 @@ export class DesktopViewController {
     this.surface = null;
     this.connection = null;
     this.attachment = null;
+    // Only the current authorized binding can retain pixels. No global cache,
+    // localStorage, cross-view reuse or async capture result to race retirement.
+    if (!this.disposed && this.target && attachment
+      && desktopTargetKey(this.target) === desktopTargetKey(attachment.target)) {
+      try {
+        const frame = connection?.capturePreview?.();
+        if (this.current(generation) && this.target && validFramePreview(frame)
+          && desktopTargetKey(this.target) === desktopTargetKey(attachment.target)) this.preview = {
+          targetKey: desktopTargetKey(this.target), resourceId: attachment.resourceId,
+          incarnation: attachment.incarnation, frame: Object.freeze({ ...frame }),
+        };
+      } catch { /* Capture is optional, not a viewing failure. */ }
+    }
     // All old writable handles are detached before adapters can notify again.
     abort?.abort();
     if (timer !== null) clearTimeout(timer);

@@ -174,7 +174,15 @@ unsupported adapters do not render a dead toolbar action.
 The desktop renderer alone opts into `while-tab-open` residency. Shell hiding
 and tool-tab selection project logical `active=false`: the controller releases
 input immediately, while viewing stays mounted. Reopening never reacquires input;
-closing the tab or changing the panel owner disposes the viewer. Other tools keep
+the surface consumes the same activity to detach out-of-aperture cursor overlays
+and their listeners. Hidden cursor updates cannot recreate them; reopening only
+restores observation, never the previous control or focus. The adapter owns this
+projection, not Shell DOM queries or a second visibility registry.
+Local control-cursor attachment additionally requires the same confirmed input
+grant projection: observation/requesting never attaches it; Stop/revocation/blur
+restore the ordinary cursor and retire fallback listeners immediately. Late shape
+updates stay cached until a fresh valid grant; the framebuffer itself is unchanged.
+Closing the tab or changing the panel owner disposes the viewer. Other tools keep
 their existing physical-presentation lifetime. The control button projects the
 user's intention immediately as Stop; only a valid backend grant enables input.
 

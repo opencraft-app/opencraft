@@ -1,13 +1,14 @@
 import type { Context } from "@deepseek-ai/cordis";
 import { useIntl } from "@opencraft/i18n/react";
 import type { PanelRendererProps } from "@opencraft/workbench-panels-react";
-import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ClipboardPaste, MonitorOff } from "lucide-react";
+import React, { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
+import { ClipboardPaste, Keyboard, MonitorOff } from "lucide-react";
 import { ProgressIndicator } from "@opencraft/design-system-web/progress";
 import type { DesktopBackend } from "./contract";
 import { DesktopViewController, type DesktopViewSnapshot } from "./controller";
 import type { DesktopSurfaceFactory } from "./viewer";
 import { useDesktopControlAction } from "./control-action";
+import { bindDesktopInteractionOwner } from "./interaction-owner";
 
 export * from "./contract";
 export * from "./viewer";
@@ -24,6 +25,7 @@ function createDesktopPanel(adapter: CloudDesktopPluginAdapter | undefined,
   controllers: Map<DesktopViewController, string>) {
   return function DesktopPanel({ tab, ownerId, active = true }: PanelRendererProps) {
     const intl = useIntl();
+    const panel = useRef<HTMLElement>(null);
     const element = useRef<HTMLDivElement>(null);
     const controller = useRef<DesktopViewController | null>(null);
     const [snapshot, setSnapshot] = useState<DesktopViewSnapshot>(() => {
@@ -36,28 +38,31 @@ function createDesktopPanel(adapter: CloudDesktopPluginAdapter | undefined,
         canControl: false, controlFailed: false };
     });
     const controlAction = useDesktopControlAction(controller, snapshot.control === "observing" ? "take" : "stop");
+    const surfaceAction = useDesktopControlAction<HTMLDivElement>(controller, "take", true);
+    const owned = active && snapshot.phase === "ready" && snapshot.control === "controlling";
+    const ratio = snapshot.mediaAspectRatio;
+    const geometry = { "--desktop-aspect-ratio": ratio && Number.isFinite(ratio) && ratio > 0 ? ratio : 4 / 3 } as CSSProperties;
     const controlLabels = {
       observing: intl.formatMessage({ id: "desktop.control", defaultMessage: "Take control" }),
       requesting: intl.formatMessage({ id: "desktop.release", defaultMessage: "Stop controlling" }),
       controlling: intl.formatMessage({ id: "desktop.release", defaultMessage: "Stop controlling" }),
     };
     useEffect(() => {
-      if (!adapter || !tab.resource || !element.current) return;
-      const current = new DesktopViewController(adapter.backend, adapter.surfaces, tab.resource, element.current);
+      if (!adapter || !tab.resource || !element.current || !panel.current) return;
+      const owner = panel.current;
+      const current = new DesktopViewController(adapter.backend, adapter.surfaces, tab.resource, element.current,
+        undefined, undefined, () => owner.ownerDocument.visibilityState === "visible"
+          && owner.ownerDocument.hasFocus() && owner.contains(owner.ownerDocument.activeElement));
       controller.current = current;
       controllers.set(current, ownerId);
       current.setActive(active);
       const unsubscribe = current.subscribe(() => setSnapshot(current.getSnapshot()));
-      const release = () => current.releaseControl();
-      const visibility = () => { if (document.visibilityState !== "visible") release(); };
-      window.addEventListener("blur", release);
-      document.addEventListener("visibilitychange", visibility);
+      const disposeInteraction = bindDesktopInteractionOwner(owner, () => current.releaseControl());
       current.start();
       setSnapshot(current.getSnapshot());
       return () => {
         unsubscribe();
-        window.removeEventListener("blur", release);
-        document.removeEventListener("visibilitychange", visibility);
+        disposeInteraction();
         controller.current = null;
         controllers.delete(current);
         current.dispose();
@@ -91,11 +96,18 @@ function createDesktopPanel(adapter: CloudDesktopPluginAdapter | undefined,
             ? intl.formatMessage({ id: "desktop.pasteFailed", defaultMessage: "Unable to paste." })
           : snapshot.controlFailed
             ? intl.formatMessage({ id: "desktop.controlFailed", defaultMessage: "Unable to take control." })
-            : intl.formatMessage({ id: "desktop.connected", defaultMessage: "Connected" });
+            : owned
+              ? intl.formatMessage({ id: "desktop.ownership.local", defaultMessage: "You have control" })
+              : snapshot.control === "requesting"
+                ? intl.formatMessage({ id: "desktop.ownership.requesting", defaultMessage: "Taking control…" })
+                : intl.formatMessage({ id: "desktop.ownership.watching", defaultMessage: "Watching desktop" });
     const feedbackTitle = snapshot.phase === "connecting"
       ? intl.formatMessage({ id: "desktop.connectingTitle", defaultMessage: "Connecting to desktop…" })
       : intl.formatMessage({ id: "desktop.unavailableTitle", defaultMessage: "Desktop unavailable" });
     const feedback = <div className="cloud-desktop-panel__feedback"
+      data-live={snapshot.phase === "ready" ? "true" : "false"}
+      data-preview={snapshot.preview ? "true" : "false"}
+      aria-hidden={snapshot.phase === "ready" || undefined}
       role={snapshot.phase === "connecting" ? undefined : "status"}
       aria-live={snapshot.phase === "connecting" ? undefined : "polite"}>
       <div className="ui-empty-state__content">
@@ -104,7 +116,7 @@ function createDesktopPanel(adapter: CloudDesktopPluginAdapter | undefined,
         </span>
         <div className="ui-empty-state__copy">
           <h2 className="ui-empty-state__title">{feedbackTitle}</h2>
-          {snapshot.phase !== "connecting" ? <p className="ui-empty-state__description">{status}</p> : null}
+          {snapshot.phase === "failed" || snapshot.phase === "unavailable" ? <p className="ui-empty-state__description">{status}</p> : null}
         </div>
         {snapshot.phase === "failed" ? <div className="ui-empty-state__actions">
           <button type="button" className="ui-button" data-density="compact" data-variant="outline"
@@ -114,18 +126,40 @@ function createDesktopPanel(adapter: CloudDesktopPluginAdapter | undefined,
         </div> : null}
       </div>
     </div>;
-    return <section className="cloud-desktop-panel" data-phase={snapshot.phase} data-stage={snapshot.stage}
+    return <section ref={panel} className="cloud-desktop-panel" data-phase={snapshot.phase} data-stage={snapshot.stage}
       data-control={snapshot.control} inert={!active || undefined}
-      aria-label={intl.formatMessage({ id: "desktop.panel", defaultMessage: "Desktop" })}
-      onBlurCapture={event => {
-      if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)) {
-        controller.current?.releaseControl();
-      }
-    }}>
-      <div className="cloud-desktop-panel__toolbar" aria-busy={snapshot.control === "requesting"}
-        hidden={snapshot.phase === "failed" || snapshot.phase === "unavailable"}>
-        <span role="status" aria-live="polite">{snapshot.phase === "failed" || snapshot.phase === "unavailable" ? null : status}</span>
+      aria-label={intl.formatMessage({ id: "desktop.panel", defaultMessage: "Desktop" })}>
+      <div className="ui-desktop-view" data-owned={owned ? "true" : "false"} style={geometry}>
+      <div className="ui-desktop-view__viewport">
+      <div className="ui-desktop-view__frame">
+      <div className="ui-desktop-view__shadow" aria-hidden="true" />
+      <div className="ui-desktop-view__ring" aria-hidden="true">
+        <span className="ui-desktop-view__trace"><span /></span>
+        <span className="ui-desktop-view__trace"><span /></span>
+      </div>
+      <div className="ui-desktop-view__controls" data-visible={snapshot.phase === "ready" ? "true" : "false"}
+        aria-hidden={snapshot.phase !== "ready" || undefined} inert={snapshot.phase !== "ready" || undefined}>
+      <div className="cloud-desktop-panel__toolbar ui-desktop-view__island" aria-busy={snapshot.control === "requesting"}>
+        <span className="ui-desktop-view__floating-background" aria-hidden="true" />
+        <span className="ui-desktop-view__visor-background" aria-hidden="true"><span /></span>
+        <span className="ui-desktop-view__status" role="status" aria-live="polite">
+          <span>{snapshot.phase === "failed" || snapshot.phase === "unavailable" ? null : status}</span>
+          {/* Intrinsic localized geometry, not a fixed text width. Reserve ordinary
+              ownership labels so waiting cannot move the cancel action. */}
+          <span aria-hidden="true">{intl.formatMessage({ id: "desktop.ownership.watching", defaultMessage: "Watching desktop" })}</span>
+          <span aria-hidden="true">{intl.formatMessage({ id: "desktop.ownership.requesting", defaultMessage: "Taking control…" })}</span>
+          <span aria-hidden="true">{intl.formatMessage({ id: "desktop.ownership.local", defaultMessage: "You have control" })}</span>
+        </span>
+        {snapshot.control === "requesting" ? <span className="ui-desktop-view__waiting" aria-hidden="true"><span /><span /><span /></span> : null}
         <div className="cloud-desktop-panel__actions">
+        {snapshot.textInputAvailable ? <button type="button"
+          className="ui-button cloud-desktop-panel__keyboard" data-density="compact" data-variant="outline"
+          disabled={snapshot.control !== "controlling"}
+          aria-label={intl.formatMessage({ id: "desktop.keyboard", defaultMessage: "Show keyboard" })}
+          title={intl.formatMessage({ id: "desktop.keyboard", defaultMessage: "Show keyboard" })}
+          onClick={() => controller.current?.showKeyboard(intl.formatMessage({ id: "desktop.textInput", defaultMessage: "Type on desktop" }))}>
+          <span className="ui-button__label"><Keyboard size={16} aria-hidden="true" /></span>
+        </button> : null}
         {snapshot.pasteAvailable ? <button type="button" className="ui-button" data-density="compact" data-variant="outline"
           aria-label={intl.formatMessage({ id: "desktop.paste", defaultMessage: "Paste" })}
           title={intl.formatMessage({ id: "desktop.paste", defaultMessage: "Paste" })}
@@ -134,8 +168,8 @@ function createDesktopPanel(adapter: CloudDesktopPluginAdapter | undefined,
           {snapshot.clipboardBusy ? <span aria-hidden="true" className="ui-button__spinner" /> : null}
           <span className="ui-button__label"><ClipboardPaste size={16} aria-hidden="true" /></span>
         </button> : null}
-        <button type="button" className="ui-button" data-density="compact"
-          data-variant="outline" disabled={!active || snapshot.phase !== "ready" || !snapshot.canControl}
+        <button type="button" className="ui-desktop-view__action"
+          disabled={!active || snapshot.phase !== "ready" || !snapshot.canControl}
           aria-pressed={snapshot.control !== "observing"}
           {...controlAction}>
           <span className="ui-button__label cloud-desktop-panel__control-label">
@@ -146,11 +180,18 @@ function createDesktopPanel(adapter: CloudDesktopPluginAdapter | undefined,
         </button>
         </div>
       </div>
-      <div className="cloud-desktop-panel__body">
+      </div>
+      <div className="cloud-desktop-panel__body ui-desktop-view__surface">
         <div className="cloud-desktop-panel__surface" ref={element} role="region"
+          {...(active && snapshot.phase === "ready" && snapshot.canControl && snapshot.control === "observing" ? surfaceAction : {})}
           tabIndex={snapshot.phase === "ready" ? 0 : -1}
           aria-label={intl.formatMessage({ id: "desktop.view", defaultMessage: "Desktop view" })} />
-        {snapshot.phase === "connecting" ? feedback : null}
+        {snapshot.preview ? <img className="ui-desktop-view__preview" src={snapshot.preview.dataUrl}
+          alt="" aria-hidden="true" draggable={false} data-live={snapshot.phase === "ready" ? "true" : "false"} /> : null}
+        {snapshot.phase === "connecting" || snapshot.phase === "ready" ? feedback : null}
+      </div>
+      </div>
+      </div>
       </div>
       {snapshot.phase === "failed" || snapshot.phase === "unavailable" ? feedback : null}
     </section>;

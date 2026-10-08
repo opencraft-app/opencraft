@@ -29,8 +29,8 @@ const receipts: unknown[] = [];
 try {
   await new Promise<void>(yes => server.listen(0, "127.0.0.1", yes));
   browser = await chromium.launch({ headless: true, executablePath: process.env.OPENCRAFT_CHROMIUM_EXECUTABLE });
-  for (const theme of (process.env.OPENCRAFT_DESKTOP_SHELL_ONLY === "true" ? [] : ["light", "dark", "custom"])) for (const width of [720, 320]) {
-    const page = await browser.newPage({ viewport: { width, height: 480 }, hasTouch: width === 320,
+  for (const theme of (process.env.OPENCRAFT_DESKTOP_SHELL_ONLY === "true" ? [] : ["light", "dark", "custom"])) for (const width of [1024, 720, 320]) {
+    const page = await browser.newPage({ viewport: { width, height: width === 1024 ? 900 : 480 }, hasTouch: width === 320,
       reducedMotion: theme === "light" ? "no-preference" : "reduce" });
     const activate = (button: any) => width === 320 ? button.tap() : button.click();
     const errors: string[] = []; page.on("pageerror", (error: Error) => errors.push(error.message));
@@ -51,10 +51,19 @@ try {
     assert.equal(feedbackStyle.weight, "500"); assert.ok(Math.abs(feedbackStyle.center - width / 2) <= 1);
     const background = await page.locator(".cloud-desktop-panel__feedback").evaluate(element => getComputedStyle(element).backgroundColor);
     assert.equal(background, theme === "light" ? "rgb(255, 255, 255)" : theme === "dark" ? "rgb(24, 24, 24)" : "rgb(23, 35, 47)");
-    const outline = await page.getByRole("button", { name: "Take control", exact: true }).evaluate(element => {
+    const initialAction = page.locator('.ui-desktop-view__action');
+    const controls = page.locator('.ui-desktop-view__controls');
+    assert.equal(await controls.evaluate(element => getComputedStyle(element).visibility), 'hidden');
+    assert.equal(await controls.getAttribute('aria-hidden'), 'true');
+    assert.equal(await controls.evaluate(element => element.hasAttribute('inert')), true);
+    assert.equal(await page.getByRole('button', { name: 'Take control', exact: true }).count(), 0,
+      'connecting must not expose a duplicate disabled control strip');
+    const reservedControls = await controls.boundingBox();
+    assert.ok(reservedControls && reservedControls.height > 0, 'invisible controls still reserve geometry');
+    const outline = await initialAction.evaluate(element => {
       const style = getComputedStyle(element); return { width: style.borderTopWidth, style: style.borderTopStyle, color: style.borderTopColor };
     });
-    assert.equal(outline.width, "1px"); assert.equal(outline.style, "solid"); assert.notEqual(outline.color, "rgba(0, 0, 0, 0)");
+    assert.equal(outline.width, "0px", "rich ownership action is solid, not an outline toolbar action");
     const progress = page.locator(".cloud-desktop-panel .ui-progress-indicator");
     const motion = await progress.evaluate(element => {
       const style = getComputedStyle(element);
@@ -105,52 +114,99 @@ try {
       await page.waitForFunction(() => [...document.querySelectorAll(".ui-progress-indicator")]
         .every(element => element.getAnimations()[0]?.startTime === 0));
     }
-    const disabledFeedback = await page.getByRole("button", { name: "Take control", exact: true }).evaluate(element => {
+    const disabledFeedback = await initialAction.evaluate(element => {
       const style = getComputedStyle(element);
       return { opacity: style.opacity, property: style.transitionProperty, transform: style.transform };
     });
     // Global reduced-motion CSS shortens duration to 0.01ms. The meaningful
     // invariant is no transitioned property, regardless of that fallback.
     assert.deepEqual(disabledFeedback, { opacity: "0.4", property: "none", transform: "none" });
-    const buttonStyle = await page.getByRole("button", { name: "Take control", exact: true }).evaluate(element => {
+    const buttonStyle = await initialAction.evaluate(element => {
       const style = getComputedStyle(element); return { size: style.fontSize, line: style.lineHeight,
         weight: style.fontWeight, radius: style.borderRadius, height: element.getBoundingClientRect().height };
     });
-    assert.equal(buttonStyle.size, "14px"); assert.equal(buttonStyle.weight, "400");
-    assert.equal(buttonStyle.radius, "999px"); assert.ok(buttonStyle.height >= (width === 320 ? 44 : 24));
+    assert.equal(buttonStyle.size, "12px"); assert.equal(buttonStyle.weight, "600");
+    assert.equal(buttonStyle.radius, "999px"); assert.ok(buttonStyle.height >= (width === 320 ? 44 : 32));
     // The shared React Button always projects a size (md by default). Density
     // must beat every legacy size, not only raw plugin buttons without a size.
     for (const size of ["sm", "md", "lg", "toolbar"]) {
-      const style = await page.getByRole("button", { name: "Take control", exact: true }).evaluate((element, size) => {
+      const style = await initialAction.evaluate((element, size) => {
         (element as HTMLElement).dataset.size = size;
         const style = getComputedStyle(element), rect = element.getBoundingClientRect();
         return { size: style.fontSize, line: style.lineHeight, radius: style.borderRadius, height: rect.height };
       }, size);
-      assert.deepEqual(style, { size: "14px", line: "18px", radius: "999px", height: width === 320 ? 44 : 24 },
+      assert.deepEqual(style, { size: "12px", line: "16px", radius: "999px", height: width === 320 ? 44 : 32 },
         `compact density must override ${size} size`);
     }
-    await page.getByRole("button", { name: "Take control", exact: true }).evaluate(element => delete (element as HTMLElement).dataset.size);
+    await initialAction.evaluate(element => delete (element as HTMLElement).dataset.size);
     await page.screenshot({ path: join(directory, `${theme}-${width}-connecting.png`) });
     await page.evaluate(() => (window as any).__desktopUi.ready());
     await page.locator('[data-phase="ready"]').waitFor();
+    assert.equal(await controls.evaluate(element => getComputedStyle(element).visibility), 'visible');
+    assert.equal(await controls.evaluate(element => element.hasAttribute('inert')), false);
+    assert.equal((await controls.boundingBox())!.height, reservedControls!.height,
+      'readiness changes visibility, not reserved control height');
     if (width === 320) {
       const pasteBounds = await page.getByRole("button", { name: "Paste", exact: true }).boundingBox();
       assert.ok(pasteBounds && pasteBounds.width >= 44 && pasteBounds.height >= 44,
         "icon-only touch actions also need a two-dimensional 44px hit target");
     }
     const surfaceBefore = await page.locator(".cloud-desktop-panel__surface").boundingBox();
+    assert.ok(Math.abs(surfaceBefore!.width / surfaceBefore!.height - 1.6) < .01,
+      "card geometry follows decoded framebuffer, not available panel aspect");
+    const frameBefore = await page.locator('.ui-desktop-view__frame').boundingBox();
+    assert.deepEqual(frameBefore, surfaceBefore);
+    assert.equal(await page.locator('.ui-desktop-view__ring').evaluate(element => getComputedStyle(element).visibility), 'hidden');
+    // Taking via the media surface shares intent/cancellation, never a second grant owner.
+    await activate(page.locator('.cloud-desktop-panel__surface canvas'));
+    await page.locator('[data-control="requesting"]').waitFor();
+    assert.equal(await page.locator('.ui-desktop-view').getAttribute('data-owned'), 'false');
+    await activate(page.getByRole('button', { name: 'Stop controlling', exact: true }));
+    await page.locator('[data-control="observing"]').waitFor();
     const toolbarBefore = await page.locator(".cloud-desktop-panel__toolbar").boundingBox();
+    const naturalStatus = await page.locator('.ui-desktop-view__status').evaluate(element => ({
+      width: element.getBoundingClientRect().width,
+      basis: getComputedStyle(element).flexBasis,
+      islandMin: getComputedStyle(element.parentElement!).minWidth,
+    }));
+    assert.equal(naturalStatus.basis, 'auto');
+    assert.equal(naturalStatus.islandMin, '0px');
+    assert.ok(naturalStatus.width < 140, 'localized intrinsic width replaces the old 140px reservation');
+    const shoulders = await page.locator('.ui-desktop-view__island').evaluate(element => {
+      const left = getComputedStyle(element, '::before'), right = getComputedStyle(element, '::after');
+      return { leftTop: left.top, rightTop: right.top, leftWidth: left.width, leftHeight: left.height, rightHeight: right.height };
+    });
+    assert.deepEqual(shoulders, width === 1024
+      ? { leftTop: '-1px', rightTop: '-1.5px', leftWidth: '16px', leftHeight: '24px', rightHeight: '25px' }
+      : { leftTop: '1.42969px', rightTop: '1.42969px', leftWidth: '17px', leftHeight: '24px', rightHeight: '25px' });
     const controlBounds = await page.getByRole("button", { name: "Take control", exact: true }).boundingBox();
     const pasteBefore = await page.getByRole("button", { name: "Paste", exact: true }).boundingBox();
     const takeAction = page.getByRole("button", { name: "Take control", exact: true });
+    // Control variable: native click without implicit button focus (e.g. a
+    // touch/AT activation). Take itself must focus, and a late grant cannot
+    // steal focus back after the user moves to another task.
+    const releaseBeforeFocusTest = (await page.evaluate(() => (window as any).__desktopUi.counts())).releases;
+    await takeAction.evaluate(element => (element as HTMLButtonElement).click());
+    await page.locator('[data-control="requesting"]').waitFor();
+    assert.equal(await page.evaluate(() => document.activeElement?.tagName), "CANVAS",
+      "Take acquires focus synchronously, before authorization");
+    await page.evaluate(() => {
+      const input = document.createElement("input"); input.id = "outside-focus-probe";
+      document.body.append(input); input.focus();
+      (window as any).__desktopUi.grant();
+    });
+    await page.locator('[data-control="observing"]').waitFor();
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "outside-focus-probe");
+    assert.equal((await page.evaluate(() => (window as any).__desktopUi.counts())).releases, releaseBeforeFocusTest + 1);
+    await page.locator("#outside-focus-probe").evaluate(element => element.remove());
     const expectedColors = await takeAction.evaluate(element => {
       const probe = document.createElement("span"); element.append(probe);
       probe.style.transition = "none";
-      probe.style.backgroundColor = "var(--color-background-button-secondary)";
+      probe.style.backgroundColor = "var(--color-background-button-primary)";
       const base = getComputedStyle(probe).backgroundColor;
-      probe.style.backgroundColor = "var(--color-background-button-secondary-hover)";
+      probe.style.backgroundColor = "var(--color-background-button-primary-hover)";
       const hover = getComputedStyle(probe).backgroundColor;
-      const rawHover = getComputedStyle(element).getPropertyValue("--color-background-button-secondary-hover");
+      const rawHover = getComputedStyle(element).getPropertyValue("--color-background-button-primary-hover");
       probe.remove(); return { base, hover, rawHover };
     });
     // Sample a real held press, not just its post-click state. No scaling or
@@ -160,7 +216,7 @@ try {
     if (touchSession) await touchSession.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [center] });
     else { await page.mouse.move(center.x, center.y); await page.mouse.down(); }
     const heldStyle = await takeAction.evaluate(element => {
-      const style = getComputedStyle(element); return { background: style.backgroundColor,
+      const style = getComputedStyle(element); return { background: getComputedStyle(element, '::before').backgroundColor,
         property: style.transitionProperty, transform: style.transform };
     });
     assert.deepEqual(heldStyle, { background: width === 320 ? expectedColors.base : expectedColors.hover,
@@ -178,6 +234,7 @@ try {
       // reset Chromium's coarse-pointer emulation mid-geometry assertion.
     } else await page.mouse.up();
     const cancel = page.getByRole("button", { name: "Stop controlling", exact: true }); await cancel.waitFor();
+    assert.equal(await page.locator('.ui-desktop-view').getAttribute('data-owned'), 'false');
     assert.equal(await cancel.locator(".ui-button__label").evaluate(element => getComputedStyle(element).opacity), "1");
     assert.deepEqual(await cancel.boundingBox(), controlBounds, "pending cannot move or resize the action");
     assert.deepEqual(await page.getByRole("button", { name: "Paste", exact: true }).boundingBox(), pasteBefore);
@@ -188,13 +245,95 @@ try {
     await activate(page.getByRole("button", { name: "Take control", exact: true }));
     await page.evaluate(() => (window as any).__desktopUi.grant());
     await page.getByRole("button", { name: "Stop controlling", exact: true }).waitFor();
+    await page.locator('.ui-desktop-view[data-owned="true"]').waitFor();
+    const desktopColors = await page.locator('.ui-desktop-view').evaluate(element => ({
+      background: getComputedStyle(element).getPropertyValue('--desktop-control-background').trim(),
+      foreground: getComputedStyle(element).getPropertyValue('--desktop-control-foreground').trim(),
+      globalAccent: getComputedStyle(element).getPropertyValue('--codex-base-accent').trim(),
+      trace: getComputedStyle(element.querySelector('.ui-desktop-view__trace > span')!).backgroundColor,
+      wash: getComputedStyle(element.querySelector('.ui-desktop-view__visor-background > span')!).backgroundColor,
+      status: getComputedStyle(element.querySelector('.ui-desktop-view__status')!).color,
+    }));
+    assert.equal(desktopColors.background, theme === 'light' ? '#8952ee' : '#7849d1');
+    assert.match(desktopColors.foreground, /^#(?:fff|ffffff)$/u, 'minified white remains the explicit paired foreground');
+    assert.notEqual(desktopColors.background, desktopColors.globalAccent, 'desktop does not borrow app accent');
+    assert.equal(desktopColors.trace, theme === 'light' ? 'rgb(137, 82, 238)' : 'rgb(120, 73, 209)');
+    assert.equal(desktopColors.wash, desktopColors.trace, 'ring and wash share the same appearance');
+    assert.equal(desktopColors.status, 'rgb(255, 255, 255)', 'foreground is an explicit paired color');
+    const buttonFade = await page.locator('.ui-desktop-view__action').evaluate(element => {
+      const transitions = element.getAnimations({ subtree: true });
+      for (const animation of transitions) { animation.pause(); animation.currentTime = 120; }
+      const style = getComputedStyle(element, '::before');
+      const sample = { count: transitions.length, opacity: Number(style.opacity), property: style.transitionProperty,
+        duration: style.transitionDuration, transform: getComputedStyle(element).transform };
+      for (const animation of transitions) animation.play();
+      return sample;
+    });
+    assert.equal(buttonFade.transform, 'none', 'ownership transition does not scale the action');
+    if (theme === 'light') {
+      assert.equal(buttonFade.count, 1);
+      assert.equal(buttonFade.property, 'opacity'); assert.equal(buttonFade.duration, '0.24s');
+      assert.ok(buttonFade.opacity > 0 && buttonFade.opacity < 1, 'solid button layer fades rather than cuts');
+    } else {
+      assert.equal(buttonFade.count, 0); assert.equal(buttonFade.opacity, 0, 'reduced motion changes immediately');
+    }
+    if (theme === 'light' && width !== 1024) {
+      const crossfade = await page.locator('.ui-desktop-view__shadow').evaluate(element => {
+        const transitions = element.getAnimations({ subtree: true });
+        for (const animation of transitions) { animation.pause(); animation.currentTime = 120; }
+        const before = getComputedStyle(element, '::before'), after = getComputedStyle(element, '::after');
+        const sample = { count: transitions.length, before: Number(before.opacity), after: Number(after.opacity) };
+        for (const animation of transitions) animation.play();
+        return sample;
+      });
+      assert.equal(crossfade.count, 2, 'both fixed shadow layers animate on confirmation');
+      assert.ok(crossfade.before > 0 && crossfade.before < 1);
+      assert.ok(crossfade.after > 0 && crossfade.after < 1);
+      assert.ok(Math.abs(crossfade.before + crossfade.after - 1) < .001, 'mid-frame complementary opacity');
+    }
+    assert.equal(await page.locator('.ui-desktop-view__ring').evaluate(element => getComputedStyle(element).visibility), 'visible');
     assert.equal(await page.evaluate(() => document.activeElement?.tagName), "CANVAS");
-    assert.deepEqual(await page.locator(".cloud-desktop-panel__toolbar").boundingBox(), toolbarBefore);
+    await page.waitForFunction(() => getComputedStyle(document.querySelector('.ui-desktop-view__controls')!).transform === 'matrix(1, 0, 0, 1, 0, 0)');
+    const joinedToolbar = await page.locator('.cloud-desktop-panel__toolbar').boundingBox();
+    assert.equal(joinedToolbar!.y, toolbarBefore!.y - 8, 'ownership island joins the media edge');
+    assert.equal(joinedToolbar!.height, toolbarBefore!.height);
+    assert.ok(Math.abs(joinedToolbar!.x + joinedToolbar!.width / 2 - frameBefore!.x - frameBefore!.width / 2) < 1,
+      'confirmed visor stays centered');
+    const shadows = await page.locator('.ui-desktop-view__shadow').evaluate(element => {
+      const before = getComputedStyle(element, '::before'), after = getComputedStyle(element, '::after');
+      return { baseShadow: getComputedStyle(element).boxShadow, property: before.transitionProperty,
+        duration: before.transitionDuration, afterDisplay: after.display };
+    });
+    assert.equal(shadows.baseShadow, 'none', 'fixed shadow layers crossfade instead of interpolating geometry');
+    assert.equal(shadows.property, theme === 'light' ? 'opacity' : 'none');
+    if (theme === 'light') assert.equal(shadows.duration, '0.24s');
+    if (width === 1024) assert.equal(shadows.afterDisplay, 'none');
+    assert.deepEqual(await page.locator('.cloud-desktop-panel__surface').boundingBox(), surfaceBefore);
+    await page.waitForFunction(() => [...document.querySelectorAll('.ui-desktop-view__trace > span')]
+      .every(element => getComputedStyle(element).transform === 'matrix(1, 0, 0, 1, 0, 0)'));
+    const ringStyle = await page.locator('.ui-desktop-view__ring').evaluate(element => {
+      const style = getComputedStyle(element); return { composite: style.maskComposite, padding: style.paddingTop,
+        radius: style.borderRadius, transition: style.transitionProperty };
+    });
+    assert.ok(ringStyle.composite.split(',').every(value => value.trim() === 'exclude'));
+    assert.equal(ringStyle.padding, width === 1024 ? '6.75px' : '4px');
+    assert.equal(await page.locator('.ui-desktop-view__surface').evaluate(element => getComputedStyle(element).borderRadius),
+      width === 1024 ? '23px' : '11.628px');
+    if (theme !== 'light') assert.equal(ringStyle.transition, 'none');
     await page.screenshot({ path: join(directory, `${theme}-${width}-ready.png`) });
     // Complete native activation, not just direct controller/window-blur calls.
     const requestsBeforeStop = (await page.evaluate(() => (window as any).__desktopUi.counts())).requests;
     await activate(page.getByRole("button", { name: "Stop controlling", exact: true }));
     await page.getByRole("button", { name: "Take control", exact: true }).waitFor();
+    const releaseFade = await page.locator('.ui-desktop-view__action').evaluate(element => {
+      const transitions = element.getAnimations({ subtree: true });
+      for (const animation of transitions) { animation.pause(); animation.currentTime = 120; }
+      const opacity = Number(getComputedStyle(element, '::before').opacity);
+      for (const animation of transitions) animation.play();
+      return opacity;
+    });
+    if (theme === 'light') assert.ok(releaseFade > 0 && releaseFade < 1, 'release fades the solid layer back in');
+    else assert.equal(releaseFade, 1);
     assert.equal((await page.evaluate(() => (window as any).__desktopUi.counts())).requests, requestsBeforeStop);
     await activate(page.getByRole("button", { name: "Take control", exact: true }));
     await page.evaluate(() => (window as any).__desktopUi.grant());
@@ -234,15 +373,30 @@ try {
     await page.getByRole("button", { name: "Take control", exact: true }).waitFor();
     await page.evaluate(() => (window as any).__desktopUi.ready(false));
     await page.waitForFunction(() => document.querySelector<HTMLButtonElement>('.cloud-desktop-panel__actions button[aria-pressed]')?.disabled);
-    assert.equal(await page.getByRole("button", { name: "Take control", exact: true }).isDisabled(), true);
+    assert.equal(await page.locator('.ui-desktop-view__action').isDisabled(), true);
     await page.evaluate(() => (window as any).__desktopUi.fail());
     await page.getByRole("heading", { name: "Desktop unavailable" }).waitFor();
     await page.screenshot({ path: join(directory, `${theme}-${width}-failed.png`) });
     await page.evaluate(() => (window as any).__desktopUi.connecting());
     await activate(page.getByRole("button", { name: "Reconnect", exact: true }));
     await title.waitFor();
+    assert.equal(await controls.evaluate(element => getComputedStyle(element).visibility), 'hidden');
+    assert.equal(await controls.getAttribute('aria-hidden'), 'true');
+    assert.equal(await controls.evaluate(element => element.hasAttribute('inert')), true);
+    const preview = page.locator('.ui-desktop-view__preview');
+    await preview.waitFor();
+    const cached = await preview.evaluate((element: HTMLImageElement) => ({
+      src: element.src.startsWith('data:image/jpeg;base64,'),
+      events: getComputedStyle(element).pointerEvents, width: element.naturalWidth, height: element.naturalHeight,
+    }));
+    assert.equal(cached.src, true); assert.equal(cached.events, 'none');
+    await page.waitForFunction(() => (document.querySelector('.ui-desktop-view__preview') as HTMLImageElement)?.naturalWidth === 960);
+    assert.equal(await page.locator('.ui-desktop-view').getAttribute('data-owned'), 'false');
+    await page.screenshot({ path: join(directory, `${theme}-${width}-recovery-preview.png`) });
     await page.evaluate(() => (window as any).__desktopUi.ready());
     await page.locator('[data-phase="ready"]').waitFor();
+    await page.waitForFunction(() => getComputedStyle(document.querySelector('.ui-desktop-view__preview')!).opacity === '0');
+    await page.waitForFunction(() => getComputedStyle(document.querySelector('.cloud-desktop-panel__feedback')!).visibility === 'hidden');
     // Local native control explicitly has no clipboard capability: no dead icon.
     await page.evaluate(() => (window as any).__desktopUi.ready(true, false));
     await page.waitForFunction(() => !document.querySelector('button[aria-label="Paste"]'));
@@ -254,6 +408,7 @@ try {
     await page.evaluate(() => (window as any).__desktopUi.locale("zh-CN"));
     const chineseTake = page.getByRole("button", { name: "接管桌面", exact: true });
     await chineseTake.waitFor();
+    await page.waitForFunction(() => getComputedStyle(document.querySelector('.ui-desktop-view__controls')!).transform === 'matrix(1, 0, 0, 1, 0, 8)');
     const chineseBounds = await chineseTake.boundingBox();
     await activate(chineseTake);
     const chineseCancel = page.getByRole("button", { name: "停止控制", exact: true });
@@ -262,10 +417,16 @@ try {
     await page.evaluate(() => (window as any).__desktopUi.grant());
     const chineseStop = page.getByRole("button", { name: "停止控制", exact: true });
     await chineseStop.waitFor();
-    assert.deepEqual(await chineseStop.boundingBox(), chineseBounds);
+    await page.waitForFunction(() => getComputedStyle(document.querySelector('.ui-desktop-view__controls')!).transform === 'matrix(1, 0, 0, 1, 0, 0)');
+    const ownedBounds = await chineseStop.boundingBox();
+    assert.equal(ownedBounds!.width, chineseBounds!.width);
+    assert.equal(ownedBounds!.height, chineseBounds!.height);
+    assert.ok(Math.abs(ownedBounds!.y - chineseBounds!.y + 8) < 1, "confirmed ownership joins the control island to the media edge");
+    await page.waitForFunction(() => !document.querySelector('.ui-desktop-view__frame')!.getAnimations({ subtree: true })
+      .some(animation => animation.playState === 'running'));
     await page.screenshot({ path: join(directory, `${theme}-${width}-zh-control.png`) });
     await activate(chineseStop); await chineseTake.waitFor();
-    assert.equal(await page.locator(".cloud-desktop-panel__toolbar [role=status]").textContent(), "已连接");
+    assert.equal(await page.locator(".cloud-desktop-panel__toolbar [role=status] > span").first().textContent(), "正在观看");
     await page.evaluate(() => (window as any).__desktopUi.unavailable());
     await page.getByRole("heading", { name: "桌面暂不可用" }).waitFor();
     await page.screenshot({ path: join(directory, `${theme}-${width}-unavailable.png`) });

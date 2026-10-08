@@ -74,7 +74,7 @@ test("real Host backend, wire and controller retain one viewer across multiple f
   }
   const socket = new Socket();
   const media: RfbDesktopAdapter = {
-    surfaces: { mount() { mounts++; return { enableInput() { enabled++; }, disableInput() {}, dispose() {} }; } },
+    surfaces: { mount() { mounts++; return { setActive() {}, enableInput() { enabled++; }, disableInput() {}, dispose() {} }; } },
     async connect(session) {
       const channel = session.openChannel();
       socket.readyState = 1; socket.dispatchEvent(new Event("open"));
