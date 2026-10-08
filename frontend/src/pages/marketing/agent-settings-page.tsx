@@ -3005,20 +3005,17 @@ export const AgentSettingsPage = ({
     };
   }, [openSessionMenuChatId]);
 
-  // bots 异步加载完成或 URL 变化时同步选择；避免其他本地状态变化
-  // 重跑旧 ?bot= 参数，并覆盖正在进行的 Bot 切换。
+  // bots 异步加载完成后，若当前 tab 无效则自动切换到第一个可展示 bot
   useEffect(() => {
     if (isCreating) return;
     if (requestedBotId && visibleBots.some((bot) => bot.id === requestedBotId)) {
       setActiveTabId(requestedBotId);
       return;
     }
-    if (visibleBots.length > 0) {
-      setActiveTabId((currentId) => visibleBots.some((bot) => bot.id === currentId)
-        ? currentId
-        : (visibleBots.find((bot) => hasUnfinishedBuddySetup(bot.id)) ?? visibleBots[0])!.id);
+    if (visibleBots.length > 0 && !visibleBots.some((b) => b.id === activeTabId)) {
+      setActiveTabId((visibleBots.find((bot) => hasUnfinishedBuddySetup(bot.id)) ?? visibleBots[0])!.id);
     }
-  }, [visibleBots, isCreating, requestedBotId]);
+  }, [visibleBots, activeTabId, isCreating, requestedBotId]);
   const defaultBot = visibleBots.find((bot) => bot.isDefault) ?? visibleBots[0];
   const isActiveBotDefault = Boolean(activeBot && defaultBot && activeBot.id === defaultBot.id);
 
@@ -3304,18 +3301,16 @@ export const AgentSettingsPage = ({
   const whatsAppOccupiedByOther = Boolean(
     activeBot?.whatsAppOwner && activeBot.whatsAppOwner.botId !== activeBot.id,
   );
-  const prepareBotSwitch = (botId: string) => {
+  const handleSelectBot = (botId: string) => {
     if (botId === activeBot?.id) return;
     pendingNewChatSessionBotId = botId;
     setChatSessionCommands(null);
     setSelectedChatId(undefined);
     setOpenSessionMenuChatId(null);
+    setActiveTabId(botId);
     setSidebarTab("daily");
     setChatSessionsExpanded(true);
     setMobileChatNavOpen(false);
-  };
-  const handleSelectBot = (botId: string) => {
-    prepareBotSwitch(botId);
     navigate(getAgentBotSectionHref(AGENT_SECTION_PATH_BY_ID.chat, botId), { replace: true });
   };
   const activeBotStatus = activeBot?.status;
@@ -5888,7 +5883,7 @@ export const AgentSettingsPage = ({
                       配置完成后导航才出现（避免一进来就面对点不了的入口） */}
                   {hasSidebarLayout && !embedded ? (
                   <>
-                      {isDesktop && multiBotEnabled && <AgentBotRail bots={visibleBots} activeBotId={activeBot.id} canCreate={nativeCreateEnabled} createLimitMessage={createLimitMessage || ""} profileRevision={botRailProfileRevision} restartingBotIds={restartingBotIds} execDebugCommand={repositories.bots.execDebugCommand} onSelect={prepareBotSwitch} onCreate={handleCreateNew} manageActions={botContextActions} />}
+                      {isDesktop && multiBotEnabled && <AgentBotRail bots={visibleBots} activeBotId={activeBot.id} canCreate={nativeCreateEnabled} createLimitMessage={createLimitMessage || ""} profileRevision={botRailProfileRevision} restartingBotIds={restartingBotIds} execDebugCommand={repositories.bots.execDebugCommand} onSelect={handleSelectBot} onCreate={handleCreateNew} manageActions={botContextActions} />}
                       <div className="lv-agent-mobile-toolbar">
                         <button
                           ref={mobileNavTriggerRef}
@@ -5944,7 +5939,7 @@ export const AgentSettingsPage = ({
                       >
                         <X className="size-4" aria-hidden="true" />
                       </button>
-                    {!isDesktop && multiBotEnabled && <AgentBotRail mobile bots={visibleBots} activeBotId={activeBot.id} canCreate={nativeCreateEnabled} createLimitMessage={createLimitMessage || ""} profileRevision={botRailProfileRevision} restartingBotIds={restartingBotIds} execDebugCommand={repositories.bots.execDebugCommand} onSelect={prepareBotSwitch} onCreate={handleCreateNew} />}
+                    {!isDesktop && multiBotEnabled && <AgentBotRail mobile bots={visibleBots} activeBotId={activeBot.id} canCreate={nativeCreateEnabled} createLimitMessage={createLimitMessage || ""} profileRevision={botRailProfileRevision} restartingBotIds={restartingBotIds} execDebugCommand={repositories.bots.execDebugCommand} onSelect={handleSelectBot} onCreate={handleCreateNew} />}
                     {(!isDesktop || !multiBotEnabled) && <div className="lv-agents-sidebar-profile">
                       <div className="lv-agent-profile-row">
                       <div className="lv-agent-profile-wrap">

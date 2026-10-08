@@ -238,12 +238,14 @@ describe("international Bot onboarding", () => {
     it("shows all Bots in the separate rail without an overview entry", async () => {
       bots = [buildBot(), { ...buildBot(), id: "bot-child", profileId: "child", isDefault: false, name: "Research Bot" }];
       render(page("?bot=ins-372", "chat"));
-      expect(await screen.findByRole("link", { name: /切换到 Research Bot/ })).toHaveAttribute("href", "/agents/chat/?bot=bot-child");
+      expect(await screen.findByRole("button", { name: /切换到 Research Bot/ })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: /切换到 Existing Bot/ })).toHaveAttribute("aria-current", "true");
       expect(screen.queryByRole("link", { name: "总览" })).not.toBeInTheDocument();
       expect(screen.getByRole("button", { name: "新建 Bot" })).toBeEnabled();
       fireEvent.click(screen.getByRole("button", { name: /切换到 Existing Bot/ }));
       expect(navigateMock).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole("button", { name: /切换到 Research Bot/ }));
+      expect(navigateMock).toHaveBeenCalledWith("/agents/chat?bot=bot-child", { replace: true });
     });
 
     it("opens the creation guide from the rail", async () => {
@@ -385,9 +387,9 @@ describe("international Bot onboarding", () => {
   it("keeps every Bot in the rail when the selected Bot changes", async () => {
     bots = [buildBot(), { ...buildBot(), id: "bot-child", profileId: "child", isDefault: false, name: "Research Bot" }];
     const view = render(page("?bot=ins-372", "chat"));
-    expect(await screen.findByRole("link", { name: /切换到 Research Bot/ })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /切换到 Research Bot/ })).toBeInTheDocument();
     view.rerender(page("?bot=bot-child", "chat"));
-    expect(screen.getByRole("link", { name: /切换到 Existing Bot/ })).toHaveAttribute("href", "/agents/chat/?bot=ins-372");
+    expect(screen.getByRole("button", { name: /切换到 Existing Bot/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /切换到 Research Bot/ })).toHaveAttribute("aria-current", "true");
   });
 

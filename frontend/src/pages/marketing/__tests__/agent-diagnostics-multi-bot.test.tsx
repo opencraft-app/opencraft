@@ -194,34 +194,6 @@ describe("multi-Bot diagnostics", () => {
   });
   afterEach(cleanup);
 
-  it.each(["CN", "global"])("gives other Bots a direct chat URL in the %s rail", async (region) => {
-    testRegion.isCN = region === "CN";
-    testRegion.isGlobal = region === "global";
-    const navigation = { ...createNavigation(), pathname: "/agents/chat/", search: "?bot=ins-1" };
-    const view = render(
-      <AppNavigationProvider value={navigation}>
-        <AgentSettingsPage sectionId="chat" showHeader={false} />
-      </AppNavigationProvider>,
-    );
-    const selected = screen.getByRole("button", { name: /切换到 Hermes Lab/ });
-    const target = screen.getByRole("link", { name: /切换到 Sales/ });
-    expect(selected).toHaveAttribute("aria-current", "true");
-    expect(target).toHaveAttribute("href", "/agents/chat/?bot=sales");
-
-    expect(navigation.navigate).not.toHaveBeenCalled();
-    expect(selected).toHaveAttribute("aria-current", "true");
-
-    view.rerender(
-      <AppNavigationProvider value={{ ...navigation, search: "?bot=sales" }}>
-        <AgentSettingsPage sectionId="chat" showHeader={false} />
-      </AppNavigationProvider>,
-    );
-    const activeTarget = screen.getByRole("button", { name: /切换到 Sales/ });
-    expect(activeTarget).toHaveAttribute("aria-current", "true");
-    fireEvent.click(activeTarget);
-    expect(navigation.navigate).not.toHaveBeenCalled();
-  });
-
   it("only shows instance maintenance on main and scopes logs after switching", async () => {
     const view = render(page("ins-1"));
     await screen.findByText("Agent 备份与恢复");
