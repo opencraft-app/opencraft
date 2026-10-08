@@ -110,7 +110,7 @@ export function SidebarUserMenuController({ showLanguageSwitcher = false, cloudS
     onSignOut={() => { navigate("/", { replace: true }); void signOut(); }} />
     <Dialog open={cloudStorageOpen} onOpenChange={setCloudStorageOpen}>
       <DialogContent
-        className="flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden rounded-lg p-0 md:w-[min(92vw,76rem)]"
+  className="flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden rounded-lg p-0 md:w-[min(88vw,64rem)]"
         closeLabel={t("关闭")}
         onInteractOutside={(event) => event.preventDefault()}
         onCloseAutoFocus={(event) => { event.preventDefault(); accountTriggerRef.current?.focus(); }}
