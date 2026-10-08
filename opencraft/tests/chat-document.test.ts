@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   ChatDocumentCompiler,
+  chatDocumentPlainText,
   ChatDocumentStreamingSession,
   findMarkdownLink,
   preprocessChatMarkdown,
@@ -41,6 +42,25 @@ function flatten(nodes: readonly ChatDocumentNode[]): ChatDocumentNode[] {
   }
   return result;
 }
+
+test("document label projection preserves visible literals and block boundaries, not Markdown controls or targets", () => {
+  const input = ["# **First**", "", "- *Read* [the file](file:///work/a.ts)", "- `a_b * literal` and \\*escaped\\*", "",
+    "```js", "const a_b = '*';", "```", "", "![Screen](https://example.test/image.png)", "",
+    "| **Name** | Value |", "| --- | --- |", "| entry | `a_b` |"].join("\n");
+  const text = chatDocumentPlainText(new ChatDocumentCompiler().compile(input).nodes);
+  assert.deepEqual(text.split(/\n/u).filter(Boolean), ["First", "Read the file", "a_b * literal and *escaped*",
+    "const a_b = '*';", "Screen", "Name\tValue", "entry\ta_b"]);
+  assert.doesNotMatch(text, /file:\/\/|https:\/\/|```|\*\*First|^- /mu);
+});
+
+test("document label projection shares streaming repair without modifying canonical source", () => {
+  const source = "# **Calculating**\n\nRead [the source](file:///work/incomplete";
+  const parsed = new ChatDocumentCompiler().compile(source, { streaming: true });
+  assert.equal(parsed.source, source);
+  assert.deepEqual(chatDocumentPlainText(parsed.nodes).split(/\n/u).filter(Boolean), ["Calculating", "Read the source"]);
+  const html = new ChatDocumentCompiler().compile("<script>inert</script>\n\n**Current check**");
+  assert.equal(chatDocumentPlainText(html.nodes).trim().split(/\n/u).at(-1), "Current check");
+});
 
 test("chat document compiles prose, GFM, code, math, links and tables", () => {
   const compiler = new ChatDocumentCompiler();

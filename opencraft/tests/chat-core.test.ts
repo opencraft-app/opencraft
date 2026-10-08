@@ -2916,6 +2916,22 @@ test("reasoning presentation uses actual summary once, falls back to returned de
   assert.equal(presentReasoning({ ...block, summary: "", detail: null }), null);
 });
 
+test("reasoning header is plain visible Markdown text while selected body retains its canonical markup", () => {
+  const block: Extract<TimelineBlock, { type: "reasoning" }> = {
+    type: "reasoning", id: "reasoning:markdown", sourceItemIds: [asItemId("markdown")],
+    summary: "# **Calculating dates**\n\n- Read [the source](file:///work/a.ts) and `a_b`", detail: "Not selected", streaming: true,
+  };
+  assert.equal(presentReasoning(block)?.header, "Read the source and a_b");
+  assert.equal(presentReasoning(block, false)?.header, "Calculating dates");
+  assert.equal(presentReasoning(block)?.content, block.summary);
+  const fenced = { ...block, summary: "```js\nconst a_b = '*';\n```" };
+  assert.equal(presentReasoning(fenced)?.header, "const a_b = '*';");
+  assert.equal(presentReasoning(fenced, false)?.header, "const a_b = '*';");
+  assert.equal(presentReasoning({ ...block, summary: "Literal \\*stars\\* and a_b" })?.header, "Literal *stars* and a_b");
+  assert.equal(presentReasoning({ ...block, summary: "Only **unfinished" })?.header, "Only unfinished");
+  assert.equal(presentReasoning({ ...block, summary: "Earlier text\n\n---" })?.header, "Earlier text");
+});
+
 test("empty and encrypted-only reasoning cannot create a disclosure or invent content", () => {
   const snapshot = projectTimeline(source([{
     id: "turn-empty-reasoning", status: "streaming",

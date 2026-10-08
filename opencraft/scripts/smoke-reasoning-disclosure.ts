@@ -13,7 +13,7 @@ const vite = await createServer({ configFile: false, root: process.cwd(), logLev
     server.middlewares.use((request, response, next) => {
       if (request.url !== "/" && !request.url?.startsWith("/?")) return next();
       response.setHeader("content-type", "text/html");
-      response.end('<div id="root"></div><script type="module" src="/tests/fixtures/reasoning-disclosure.tsx"></script>');
+      response.end('<meta name="viewport" content="width=device-width, initial-scale=1"><div id="root"></div><script type="module" src="/tests/fixtures/reasoning-disclosure.tsx"></script>');
     });
   } }] });
 let browser: any;
@@ -26,10 +26,33 @@ try {
       isMobile: touch, reducedMotion: touch ? "reduce" : "no-preference" });
     const errors: string[] = []; page.on("pageerror", (error: Error) => errors.push(error.message));
     await page.addInitScript("window.__name=value=>value");
+    await page.addInitScript(() => {
+      const NativeObserver = window.ResizeObserver;
+      const deliveries: unknown[] = [];
+      (window as any).resizeFeedback = [];
+      window.ResizeObserver = class extends NativeObserver {
+        constructor(callback: ResizeObserverCallback) {
+          super((entries, observer) => {
+            deliveries.push(entries.map(entry => ({ target: entry.target.className,
+              width: entry.contentRect.width, height: entry.contentRect.height })));
+            if (deliveries.length > 10) deliveries.shift();
+            callback(entries, observer);
+          });
+        }
+      };
+      window.addEventListener('error', event => {
+        if (event.message.startsWith('ResizeObserver')) (window as any).resizeFeedback.push({ action: (window as any).__reasoningSmokeAction, message: event.message, deliveries: deliveries.slice() });
+      });
+    });
     await page.goto(`http://127.0.0.1:${(vite.httpServer!.address() as { port: number }).port}/?theme=${theme}&locale=${touch ? "zh" : "en"}`);
+    assert.equal(await page.evaluate(() => innerWidth), touch ? 390 : 1024,
+      'mobile emulation must use the real narrow CSS viewport, not Safari default page scaling');
     const update = async (action: string, engine?: string) => {
       const before = Number(await page.locator('[data-revision]').getAttribute('data-revision'));
-      await page.evaluate(([action, engine]) => (window as any).update(action, engine), [action, engine]);
+      await page.evaluate(([action, engine]) => {
+        (window as any).__reasoningSmokeAction = action;
+        (window as any).update(action, engine);
+      }, [action, engine]);
       await page.locator(`[data-revision="${before + 1}"]`).waitFor();
     };
     const activate = (target: any) => touch ? target.tap() : target.click();
@@ -51,7 +74,11 @@ try {
       await activate(toggle);
       assert.equal(await toggle.getAttribute('aria-expanded'), 'true', 'first real touch/mouse activation works');
       await reason.locator('.thread-activity-item__prose').waitFor();
-      assert.equal(await reason.locator('.thread-activity-item__prose').innerText(), 'First returned line\nCurrent returned line');
+      await reason.locator('.opencraft-chat-document').waitFor();
+      // Wait past the lazy raw fallback. Whitespace can be a source soft
+      // break or a visual line wrap at phone width; text must be unchanged.
+      assert.equal((await reason.locator('.thread-activity-item__prose').innerText()).replace(/\s+/gu, ' '),
+        'First returned line Current returned line');
       assert.doesNotMatch(await reason.innerText(), /Alternate returned detail/);
       await update("grow");
       assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
@@ -187,10 +214,54 @@ try {
       await onlyReason.waitFor();
       assert.equal(await onlyReason.getByRole('button').getAttribute('aria-expanded'), 'true');
       await page.screenshot({ path: join(output, `${engine}-${theme}-${touch ? 'touch' : 'mouse'}-reasoning-only.png`) });
-      results.push({ engine, theme, touch, defaultCollapsed: true, independentTools: true, choiceRestored: true,
+      await update("markdown", engine);
+      const markdownReason = page.locator('.thread-reasoning');
+      const markdownToggle = markdownReason.locator(':scope > .thread-activity-item > .thread-activity-item__header button');
+      assert.equal(await markdownToggle.getAttribute('aria-expanded'), 'false');
+      assert.equal((await markdownReason.locator('.thread-activity-item__detail').innerText()).trim(), 'Current check');
+      await activate(markdownToggle);
+      const markdownBody = markdownReason.locator('.opencraft-chat-document');
+      await markdownBody.locator('h1 strong').waitFor();
+      assert.equal(await markdownBody.locator('h1 strong').innerText(), 'Checking the result');
+      assert.equal(await markdownBody.locator('em').innerText(), 'carefully');
+      assert.equal(await markdownBody.locator('ul li').count(), 2);
+      assert.ok(await markdownBody.locator('code').filter({ hasText: 'a_b' }).count() >= 1);
+      assert.ok(await markdownBody.getByText('const a_b = 42;', { exact: true }).count() >= 1);
+      assert.equal(await markdownBody.locator('script').count(), 0);
+      assert.equal(await page.evaluate(() => (window as any).__unsafeReasoning), undefined);
+      assert.equal(await markdownBody.locator('[href^="javascript:"]').count(), 0);
+      const fileLink = markdownBody.getByRole('link', { name: 'The file', exact: true });
+      await activate(fileLink);
+      assert.equal(await markdownToggle.getAttribute('aria-expanded'), 'true', 'resource activation cannot collapse thinking');
+      assert.deepEqual(await page.evaluate(() => (window as any).openedReasoningResources.at(-1)),
+        { target: 'file:///work/a.ts', kind: 'file' }, 'thinking resources use the existing Host opener');
+      await markdownReason.evaluate(element => { (window as any).__markdownReasoningNode = element; });
+      await update("markdown-grow");
+      assert.equal(await markdownToggle.getAttribute('aria-expanded'), 'true');
+      assert.equal((await markdownReason.locator('.thread-activity-item__detail').innerText()).trim(), 'New returned line');
+      await markdownBody.locator('strong').filter({ hasText: /^returned$/ }).waitFor();
+      assert.equal(await page.evaluate(() => (window as any).__markdownReasoningNode === document.querySelector('.thread-reasoning')), true);
+      await update("complete");
+      const markdownWork = page.locator('.thread-agent-activity__turn-toggle button');
+      assert.equal(await markdownWork.getAttribute('aria-expanded'), 'false');
+      await activate(markdownWork);
+      assert.equal(await markdownToggle.getAttribute('aria-expanded'), 'true');
+      assert.equal((await markdownReason.locator('.thread-activity-item__detail').innerText()).trim(), 'Checking the result');
+      await markdownBody.locator('h1 strong').waitFor();
+      await page.screenshot({ path: join(output, `${engine}-${theme}-${touch ? 'touch' : 'mouse'}-markdown.png`) });
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+      results.push({ engine, theme, touch, defaultCollapsed: true, independentTools: true, choiceRestored: true, markdown: true,
         firstTextPreservesExistingToolChoice: true, oneResponseWorkFold: true, thirteenEmptyItemsRetainSixtyTools: true });
     }
-    assert.deepEqual(errors, []); await page.close();
+    assert.deepEqual(errors, []);
+    const resizeFeedback = await page.evaluate(() => (window as any).resizeFeedback);
+    assert.deepEqual(resizeFeedback.filter((event: any) => !['long-empty', 'long-empty-clock', 'middle-empty'].includes(event.action)), [],
+      'Markdown and normal thinking interactions must not introduce ResizeObserver feedback');
+    // Preserve evidence of the separate, pre-existing long-tool-group reflow
+    // sequence instead of suppressing browser error delivery or calling it clean.
+    if (resizeFeedback.length > 0) console.log(JSON.stringify({ theme, touch,
+      existingToolGroupResizeWarnings: resizeFeedback.map((event: any) => event.action) }));
+    await page.close();
   }
   console.log(JSON.stringify({ passed: results, output, scope: 'Real shared projector and Conversation/disclosure/viewport; engine text synthetic, not paid model or native iPhone acceptance.' }));
 } finally { await browser?.close(); await vite.close(); }

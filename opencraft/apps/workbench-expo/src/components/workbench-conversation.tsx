@@ -456,7 +456,9 @@ function ReasoningBlock({ block, active = false, presentation = presentReasoning
         onPress={() => onCollapsedChange ? onCollapsedChange(open) : setLocalOpen(!open)}
         style={styles.reasoningButton}
       >{header}</InteractiveSurface>
-      {open ? <Text selectable style={styles.reasoningDetail}>{presentation.content}</Text> : null}
+      {open ? <View style={styles.reasoningDetail}>
+        <NativeConversationChatDocument documentId={block.id} source={presentation.content} streaming={active} />
+      </View> : null}
     </View>
   );
 }
@@ -2217,7 +2219,7 @@ const styles = StyleSheet.create((theme) => ({
   cadencedText: { position: "relative", minWidth: 0, flexShrink: 1, overflow: "hidden" },
   cadencedTextSweep: { position: "absolute", top: 0, bottom: 0, left: 0, overflow: "hidden" },
   cadencedTextHighlight: { color: theme.color.text.workingHighlight },
-  reasoningDetail: { marginLeft: theme.spacing[4], color: theme.color.text.tertiary, ...theme.platformTypography.body },
+  reasoningDetail: { marginLeft: theme.spacing[4], minWidth: 0 },
   chevronOpen: { transform: [{ rotate: "90deg" }] },
   activityDisclosure: { minWidth: 0, maxWidth: "100%" },
   activityDisclosureHeader: { minHeight: theme.metrics.toolbar.touchTarget, maxWidth: "100%", flexDirection: "row", alignItems: "center", alignSelf: "flex-start", gap: theme.spacing[2], paddingHorizontal: 0 },

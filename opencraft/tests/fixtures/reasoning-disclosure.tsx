@@ -20,6 +20,8 @@ const registry = createDefaultTimelineProjectorRegistry();
 const probe = window as any;
 let restore: ConversationRestoreSnapshot | null = null;
 const text = "First returned line\nCurrent returned line";
+const markdown = "# **Checking the result**\n\nRead *carefully* and `a_b`.\n\n- First step\n- Second step\n\n```js\nconst a_b = 42;\n```\n\n[The file](file:///work/a.ts) [Unsafe](javascript:alert(1))\n\n<script>window.__unsafeReasoning = true</script>\n\n**Current check**";
+probe.openedReasoningResources = [];
 
 function reasoning(engine: string, content = text, completed = false): TimelineSourceItem {
   return { id: "reason", type: "reasoning", payload: {
@@ -58,9 +60,9 @@ function Demo() {
   probe.update = (action: string, selectedEngine = engine) => {
     setRevision(value => value + 1);
     if (action === "restore") { setMounted(false); return; }
-    if (action === "reset" || action === "empty") {
+    if (action === "reset" || action === "empty" || action === "markdown") {
       restore = null; setEngine(selectedEngine); setGeneration(value => value + 1);
-      setTurn({ id: "turn", status: "streaming", items: [reasoning(selectedEngine, action === "empty" ? "" : text)] }); return;
+      setTurn({ id: "turn", status: "streaming", items: [reasoning(selectedEngine, action === "empty" ? "" : action === "markdown" ? markdown : text)] }); return;
     }
     if (action === "long-empty" || action === "long-empty-clock") {
       restore = null; setEngine(selectedEngine); setGeneration(value => value + 1);
@@ -86,6 +88,7 @@ function Demo() {
         ] }); return;
     }
     setTurn(current => {
+      if (action === "markdown-grow") return { ...current, items: [reasoning(engine, markdown + "\n\nNew **returned** line")] };
       if (action === "middle-fill") return { ...current, items: current.items.map(item => item.type === "reasoning" ? reasoning(engine) : item) };
       if (action === "grow") return { ...current, items: [reasoning(engine, text + "\nNew returned line")] };
       if (action === "tools") return { ...current, items: [...current.items,
@@ -108,6 +111,8 @@ function Demo() {
   return <div data-revision={revision} style={{ width: "100vw", height: "100dvh" }}>
     <TimelineBlockRendererProvider registry={ctx.timelineBlockRenderers}>
       {mounted ? <Conversation key={generation} timeline={timeline} scrollPolicy="natural" initialRestoreSnapshot={restore}
+        documentContext={{ theme, conversationId: "thread", hostId: engine, cwd: "/work",
+          onOpenResource: (target, decision) => probe.openedReasoningResources.push({ target, kind: decision.kind }) }}
         onRestoreSnapshotChange={value => { restore = value; }}
         footer={<div style={{ height: 48 }}>Composer fixture</div>} /> : null}
     </TimelineBlockRendererProvider>

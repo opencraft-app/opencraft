@@ -7,12 +7,26 @@ import { JSDOM } from "jsdom";
 import React, { act } from "react";
 import { createRoot } from "react-dom/client";
 import * as core from "@opencraft/chat-core";
+import * as renderReact from "@opencraft/chat-render-react";
+import * as listMarker from "../packages/chat-render-native/src/renderers/list-marker";
+import * as mediaParagraph from "../packages/chat-render-native/src/renderers/media-paragraph";
+import * as proseSpacing from "../packages/chat-render-native/src/renderers/prose-spacing";
+import * as imageSize from "../packages/chat-render-native/src/renderers/image-size";
+import * as resourceOpening from "../packages/chat-render-native/src/renderers/resource-opening";
 import { workingShimmerMotion } from "@opencraft/design-system/tokens";
 import { nativeThemes } from "@opencraft/design-system/tokens.native";
 
 // Execute the production Native component and InteractiveSurface with only
 // their platform/unused host seams replaced. This is not an iPhone OS test.
 const require = createRequire(import.meta.url);
+// tsx's Node harness emits the shared React package's JSX in classic mode;
+// production Vite/Metro use the automatic runtime. Preserve the harness seam.
+const previousReact = Object.getOwnPropertyDescriptor(globalThis, "React");
+Object.assign(globalThis, { React });
+test.after(() => {
+  if (previousReact) Object.defineProperty(globalThis, "React", previousReact);
+  else Reflect.deleteProperty(globalThis, "React");
+});
 const theme = nativeThemes.light;
 const styles = {
   hairlineWidth: 1,
@@ -20,12 +34,15 @@ const styles = {
     typeof value === "function" ? value(theme) : value,
 };
 function platformElement(tag: string) {
-  return function Element({ children, accessibilityLabel, accessibilityRole, accessibilityState, selectable, onPress }: any) {
+  return function Element({ children, accessibilityLabel, accessibilityRole, accessibilityState, selectable, onPress, style }: any) {
+    const flattenedStyle = Object.assign({}, ...[style].flat(Infinity).filter(Boolean));
     return React.createElement(tag, {
       "aria-label": accessibilityLabel,
       role: accessibilityRole,
       "aria-expanded": accessibilityState?.expanded,
       "data-selectable": selectable ? "true" : undefined,
+      "data-font-weight": flattenedStyle.fontWeight,
+      "data-font-style": flattenedStyle.fontStyle,
       onClick: onPress,
     }, children);
   };
@@ -39,7 +56,7 @@ const View = platformElement("div");
 const Text = platformElement("span");
 const Pressable = platformElement("button");
 const native = {
-  View, Text, Pressable,
+  View, Text, Pressable, ScrollView: View,
   Easing: { bezier: () => (value: number) => value },
   Platform: { select: (options: { default?: unknown }) => options.default },
   Animated: {
@@ -62,7 +79,24 @@ const seams: Record<string, unknown> = {
   "@opencraft/chat-core": core,
   "@opencraft/design-system/tokens": { workingShimmerMotion },
   "@opencraft/chat-render-native": {},
-  "@opencraft/chat-render-react": {},
+  "@opencraft/chat-render-react": renderReact,
+  "@opencraft/design-system/tokens.native": { nativeThemes },
+  "./styles": { StyleSheet: styles },
+  "../styles": { StyleSheet: styles },
+  "./renderers/image-gallery": { NativeImageGalleryProvider: ({ children }: any) => children },
+  "./presentation-language": { NativeChatLanguageProvider: ({ children }: any) => children },
+  "./list-marker": listMarker,
+  "./media-paragraph": mediaParagraph,
+  "./prose-spacing": proseSpacing,
+  "./image-size": imageSize,
+  "./resource-opening": resourceOpening,
+  "../presentation-language": { useNativeChatCopy: () => ({}) },
+  "./image-gallery": { useNativeImageGallery: () => null },
+  "expo-clipboard": { setStringAsync: async () => undefined },
+  // Only OS clipboard and touch-scroll plumbing are substituted; production
+  // document/prose/code/link components and resource policy execute below.
+  "./use-copy-feedback": { useCopyFeedback: () => ({ copied: false, copy: () => undefined }) },
+  "../horizontal-scroll-owner": { useNativeHorizontalOverflowTouchOwner: () => ({ scrollEnabled: true }) },
   "@opencraft/timeline-render-react": {
     TimelineBlockView: ({ block }: any) => React.createElement("span", { "data-block-type": block.type }, block.command ?? block.text),
     useWorkStatusLabel: (item: core.WorkStatusItem) => core.deriveWorkStatusLabel(item, 0),
@@ -87,6 +121,23 @@ async function compileNative(url: URL, expose = "") {
   return module.exports;
 }
 seams["./ui/interactive-surface"] = await compileNative(new URL("../apps/workbench-expo/src/components/ui/interactive-surface.tsx", import.meta.url));
+const { NativeProseRenderer, nativeProseNodeKinds } = await compileNative(new URL("../packages/chat-render-native/src/renderers/prose.tsx", import.meta.url));
+const { NativeCodeRenderer } = await compileNative(new URL("../packages/chat-render-native/src/renderers/code.tsx", import.meta.url));
+const { createNativeLinkRenderer } = await compileNative(new URL("../packages/chat-render-native/src/renderers/resource.tsx", import.meta.url));
+const { NativeChatDocument, NativeChatRenderRuntimeProvider } = await compileNative(new URL("../packages/chat-render-native/src/native-chat-document.tsx", import.meta.url));
+const documentProps: any[] = [];
+const nativeRuntime = await renderReact.createChatRenderRuntime();
+const removeProse = nativeRuntime.renderers.register({ name: "test-native-prose", priority: 0, kinds: nativeProseNodeKinds, component: NativeProseRenderer });
+const removeCode = nativeRuntime.renderers.register({ name: "test-native-code", priority: 0, kinds: ["code-fence"], component: NativeCodeRenderer });
+const removeLink = nativeRuntime.renderers.register({ name: "test-native-link", priority: 0, kinds: ["link"], component: createNativeLinkRenderer(nativeRuntime.resources) });
+const removeResourcePolicy = renderReact.registerStandardChatResourcePolicy(nativeRuntime.resources, "test-native-standard-url");
+seams["@opencraft/chat-render-native"] = {
+  NativeChatDocument: (props: any) => {
+    documentProps.push(props);
+    return React.createElement(NativeChatRenderRuntimeProvider, { runtime: nativeRuntime }, React.createElement(NativeChatDocument, props));
+  },
+};
+test.after(async () => { removeResourcePolicy(); removeLink(); removeCode(); removeProse(); await nativeRuntime.dispose(); });
 const { ReasoningBlock, Frame, NativeDocumentHostContext } = await compileNative(
   new URL("../apps/workbench-expo/src/components/workbench-conversation.tsx", import.meta.url),
   "\nexport { ReasoningBlock, Frame, NativeDocumentHostContext };\n",
@@ -167,6 +218,48 @@ test("Native reasoning hides empty content, expands returned detail and obeys ac
     await click(button);
     assert.equal(container.querySelectorAll("[data-selectable]").length, 1);
     assert.equal(container.querySelector("[data-selectable]")?.textContent, detail.detail);
+  });
+});
+
+test("Native returned thinking renders actual document/prose Markdown and forwards its Host context", async () => {
+  await withNativeRoot(async (container, render) => {
+    const block = reason("# **Checking**\n\nRead *carefully* and `a_b`.\n\n- First step\n- Second step\n\n```\nconst a_b = '*';\n```\n\n[The file](file:///work/a.ts) [Unsafe](javascript:alert(1))\n\n**Current check**");
+    const opened: string[] = [];
+    const opener = (target: string) => { opened.push(target); };
+    const loader = async () => null;
+    const show = (active: boolean) => render(React.createElement(NativeDocumentHostContext.Provider,
+      { value: { language: "en", hostId: "native-host", conversationId: "native-thread", cwd: "/work", openResource: opener, loadMediaSource: loader } },
+      React.createElement(ReasoningBlock, { block, active })));
+    await show(true);
+    const toggle = container.querySelector("button")!;
+    assert.match(toggle.textContent!, /Current check/u);
+    assert.doesNotMatch(toggle.textContent!, /\*\*/u);
+    await click(toggle);
+    assert.equal(container.querySelector('[data-font-weight="600"]')?.textContent, "Checking");
+    assert.equal(container.querySelector('[data-font-style="italic"]')?.textContent, "carefully");
+    assert.ok(Array.from(container.querySelectorAll('[data-selectable]')).some(element => element.textContent === "First step"));
+    assert.ok(Array.from(container.querySelectorAll('[data-selectable]')).some(element => element.textContent === "Second step"));
+    assert.ok(Array.from(container.querySelectorAll('[data-selectable]')).some(element => element.textContent === "const a_b = '*';"));
+    const fileLink = Array.from(container.querySelectorAll<HTMLElement>('[role="link"]')).find(element => element.textContent === "The file")!;
+    assert.ok(fileLink);
+    await act(async () => { fileLink.click(); });
+    assert.deepEqual(opened, ["file:///work/a.ts"]);
+    assert.equal(toggle.getAttribute("aria-expanded"), "true");
+    assert.ok(!Array.from(container.querySelectorAll('[role="link"]')).some(element => element.textContent === "Unsafe"));
+    const props = documentProps.at(-1)!;
+    assert.equal(props.documentId, block.id);
+    assert.equal(props.source, block.summary);
+    assert.equal(props.streaming, true);
+    assert.equal(props.hostId, "native-host");
+    assert.equal(props.conversationId, "native-thread");
+    assert.equal(props.cwd, "/work");
+    assert.equal(props.onOpenResource, opener);
+    assert.equal(props.loadMediaSource, loader);
+    await show(false);
+    assert.equal(toggle.getAttribute("aria-expanded"), "true");
+    assert.equal(documentProps.at(-1)!.streaming, false, "retired live feedback does not animate stale source streaming");
+    await click(toggle);
+    assert.equal(container.querySelector('[data-selectable]'), null);
   });
 });
 

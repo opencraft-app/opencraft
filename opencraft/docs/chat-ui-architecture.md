@@ -931,7 +931,17 @@ expand, collapse or write a preference. Web reuses its existing View restore
 receipt and disclosure reflow owner; Native keeps Item-keyed inner choices on
 the stable outer work component. Collapsing the outer container may unmount its
 body but must not reset either reasoning or tool-group choices. The header uses a short localized status plus the latest
-nonempty returned line when active, or first returned line when settled.
+nonempty visible document line when active, or first visible line when settled.
+`chat-document` owns the shared assistant Markdown grammar and plain-text
+projection: labels omit formatting controls and link destinations, but preserve
+escaped literals and code identifiers. `chat-core` selects the line and keeps
+the selected Markdown body unchanged; neither platform regex-strips content.
+The expanded body uses the ordinary Web/Native document renderer, with stable
+Item document identity, the existing Host resource/media policy and the Web
+viewport measurement ingress. Block Markdown is never nested in a raw paragraph;
+its renderer owns whitespace and narrow code/table overflow. Only current live
+feedback animates the document. Rendering a resource or a stream update cannot
+change either disclosure choice or take tool/final-answer ownership.
 The full selected text is available during and after execution. It is not
 copied into the final response's copy action or tool statistics.
 

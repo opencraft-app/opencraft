@@ -15,6 +15,7 @@ import {
 } from "@opencraft/chat-core";
 import {
   AnsiTerminalText,
+  WebChatDocument,
   normalizeTerminalOutput,
   resolveStandardChatResource,
   writeTextToClipboard,
@@ -55,6 +56,7 @@ function ReasoningBlock({ block, presentation, active = block.streaming, collaps
   readonly onCollapsedChange?: (collapsed: boolean) => void;
 }) {
   const intl = useIntl();
+  const document = useContext(ConversationDocumentContext);
   // One View choice across running/settled phases, unlike tool activity's
   // independent live/history defaults. Only explicit activation writes it.
   const [localOpen, setLocalOpen] = useState(false);
@@ -76,7 +78,21 @@ function ReasoningBlock({ block, presentation, active = block.streaming, collaps
         detail={content.header}
         unmountBodyWhenCollapsed
       >
-        <p className="thread-activity-item__prose">{content.content}</p>
+        <div className="thread-activity-item__prose">
+          <WebChatDocument
+            documentId={block.id}
+            source={content.content}
+            streaming={active}
+            conversationId={document.conversationId}
+            hostId={document.hostId}
+            cwd={document.cwd}
+            theme={document.theme}
+            allowWideBlocks={false}
+            onOpenResource={document.onOpenResource}
+            loadMediaSource={document.loadMediaSource}
+            onMeasurementRequest={document.onMeasurementRequest}
+          />
+        </div>
       </ActivityDisclosure>
     </div>
   );

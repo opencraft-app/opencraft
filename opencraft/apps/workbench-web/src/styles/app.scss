@@ -7142,6 +7142,8 @@ html[data-codex-window-type="electron"] .thread-scroll {
 
 .thread-reasoning .thread-activity-item__prose {
   overflow-wrap: anywhere;
+  // The document's block renderers own whitespace, not the old raw paragraph.
+  white-space: normal;
 }
 
 .thread-auto-review-list {
