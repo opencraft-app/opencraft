@@ -110,14 +110,14 @@ export function SidebarUserMenuController({ showLanguageSwitcher = false, cloudS
     onSignOut={() => { navigate("/", { replace: true }); void signOut(); }} />
     <Dialog open={cloudStorageOpen} onOpenChange={setCloudStorageOpen}>
       <DialogContent
-  className="flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden rounded-lg p-0 md:w-[min(88vw,64rem)]"
+        className="flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden rounded-lg p-0 md:w-[min(88vw,64rem)] [&_.lv-tat-files-panel_.text-sm]:text-[13px]"
         closeLabel={t("关闭")}
         onInteractOutside={(event) => event.preventDefault()}
         onCloseAutoFocus={(event) => { event.preventDefault(); accountTriggerRef.current?.focus(); }}
       >
         <DialogHeader className="mb-0 shrink-0 border-b border-[var(--border-subtle)] px-5 py-4 pr-12">
-          <DialogTitle>{t("云存储")}</DialogTitle>
-          <DialogDescription>{t("查看、管理云存储中的文件")}</DialogDescription>
+          <DialogTitle className="text-lg">{t("云存储")}</DialogTitle>
+          <DialogDescription className="text-[13px]">{t("查看、管理云存储中的文件")}</DialogDescription>
         </DialogHeader>
         <div className="min-h-0 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6">
           {cloudStorageOpen && cloudStorageBotId && <Suspense fallback={<p role="status">{t("加载中...")}</p>}>
