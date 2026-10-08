@@ -3130,15 +3130,15 @@ const domesticStableHeroPrefixCss = `
 }
 `;
 const longLocaleDesktopHeadingCss = `
-/* Long-sentence locales (Indonesian, Spanish, Korean) keep the headline on one
-   desktop line, but at a smaller size so it neither overflows the viewport nor
-   runs under the companion art. The effective desktop size is set with the
-   editorial !important rule in hermes-home.css; these widths only reserve room
-   and keep the single line from being clipped. */
+/* Long-sentence locales (Indonesian, Spanish, Korean) wrap to a balanced,
+   centred two-line desktop headline at a readable size (set with the editorial
+   !important rule in hermes-home.css). The width is capped so the headline ends
+   before the companion art instead of running under it. */
 @media (min-width: 1024px) {
   #lightvela-intl-home:is([data-locale^='id'], [data-locale='es'], [data-locale^='ko']) .hero__line--main {
-    max-width: calc(100vw - 48px);
-    white-space: nowrap;
+    max-width: min(840px, calc(100vw - 420px));
+    white-space: normal;
+    text-wrap: balance;
   }
 
   #lightvela-intl-home[data-locale^='id'] .about__head {

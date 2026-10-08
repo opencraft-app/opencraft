@@ -1165,7 +1165,7 @@ describe("international v2 homepage artifact", () => {
     expect(css).toMatch(/#lightvela-intl-home \.foot__title,[\s\S]*font-family:\s*"STXingkai"/);
   });
 
-  it("keeps long desktop headings on one line at a smaller responsive size", () => {
+  it("wraps long desktop headings to a balanced, readable two lines clear of the companion", () => {
     const css = readFileSync(stylesheetPath, "utf8");
     const editorial = readFileSync(path.join(homeRoot, "assets/hermes-home.css"), "utf8");
     const importer = readFileSync(path.join(process.cwd(), "scripts/import-international-homepage.mjs"), "utf8");
@@ -1173,13 +1173,17 @@ describe("international v2 homepage artifact", () => {
 
     for (const source of [css, importer]) {
       expect(source).toContain(selector);
-      expect(source).toContain("max-width: calc(100vw - 48px);");
+      expect(source).toContain("max-width: min(840px, calc(100vw - 420px));");
       expect(source).not.toContain("max-width: min(1680px, calc(100vw - 64px));");
+      expect(source).not.toContain("max-width: calc(100vw - 48px);");
     }
-    expect(css).toMatch(/\.hero__line--main\s*\{[^}]*max-width:\s*calc\(100vw - 48px\);[^}]*white-space:\s*nowrap;/);
-    expect(editorial).toContain("font-size: clamp(21px, 1.7vw, 26px) !important;");
-    expect(editorial).toContain("font-size: clamp(30px, 2.4vw, 36px) !important;");
-    expect(editorial).toMatch(/\.hero \.hero__title\s*\{\s*gap: 96px;/);
+    // The generated stylesheet lets the long-locale headline wrap, not clip to one line.
+    expect(css).toMatch(/\.hero__line--main\s*\{[^}]*max-width:\s*min\(840px, calc\(100vw - 420px\)\);[^}]*white-space:\s*normal;[^}]*text-wrap:\s*balance;/);
+    // Readable desktop sizes with a two-line allowance, bigger than the earlier single-line shrink.
+    expect(editorial).toContain("font-size: clamp(32px, 2.6vw, 40px) !important;");
+    expect(editorial).toContain("font-size: clamp(26px, 2.9vw, 32px) !important;");
+    expect(editorial).toMatch(/\.hero \.hero__line--main\s*\{[^}]*white-space:\s*normal;[^}]*text-wrap:\s*balance;/);
+    expect(editorial).not.toContain("font-size: clamp(21px, 1.7vw, 26px) !important;");
     expect(css).toMatch(/#lightvela-intl-home\[data-locale\^='id'\] \.about__head\s*\{[^}]*max-width:\s*min\(1200px, calc\(100vw - 64px\)\);/);
   });
 

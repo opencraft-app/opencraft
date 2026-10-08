@@ -1642,33 +1642,29 @@ canvas.home-scroll-cast { position: fixed; inset: 0; display: block; width: 100%
     width: 270px !important;
   }
 }
-/* Long-sentence locales stay on one desktop line (style.css sets nowrap) but at
-   a smaller size than the editorial default above, so the line fits the viewport
-   and ends before the companion art. Indonesian and Spanish are the longest, so
-   they shrink most; Korean is shorter and can stay larger. */
+/* Long-sentence locales (Indonesian, Spanish, Korean) wrap to a balanced,
+   centred two-line headline at a readable size rather than a shrunken single
+   line. The width is capped so the second line ends before the companion art. */
 @media (min-width: 900px) and (max-width: 1279px) {
-  #lightvela-intl-home:is([data-locale^='id'], [data-locale='es']) .hero .hero__line--main {
-    font-size: clamp(16px, 1.95vw, 21px) !important;
-  }
-  #lightvela-intl-home[data-locale^='ko'] .hero .hero__line--main {
-    font-size: clamp(22px, 2.8vw, 30px) !important;
+  #lightvela-intl-home:is([data-locale^='id'], [data-locale='es'], [data-locale^='ko']) .hero .hero__line--main {
+    font-size: clamp(26px, 2.9vw, 32px) !important;
+    max-width: min(640px, calc(100vw - 340px));
   }
 }
 @media (min-width: 1280px) {
-  #lightvela-intl-home:is([data-locale^='id'], [data-locale='es']) .hero .hero__line--main {
-    font-size: clamp(21px, 1.7vw, 26px) !important;
-  }
-  #lightvela-intl-home[data-locale^='ko'] .hero .hero__line--main {
-    font-size: clamp(30px, 2.4vw, 36px) !important;
+  #lightvela-intl-home:is([data-locale^='id'], [data-locale='es'], [data-locale^='ko']) .hero .hero__line--main {
+    font-size: clamp(32px, 2.6vw, 40px) !important;
+    max-width: min(840px, calc(100vw - 420px));
   }
 }
 @media (min-width: 900px) {
   #lightvela-intl-home:is([data-locale^='id'], [data-locale='es'], [data-locale^='ko']) .hero .hero__line--main {
-    max-width: 100%;
-    white-space: nowrap;
+    white-space: normal;
+    text-wrap: balance;
+    overflow-wrap: break-word;
   }
   #lightvela-intl-home:is([data-locale^='id'], [data-locale='es'], [data-locale^='ko']) .hero .hero__title {
-    gap: 96px;
+    gap: 72px;
   }
 }
 @media (max-width: 899px) {

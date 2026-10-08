@@ -8345,8 +8345,9 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
 
 @media (min-width: 1024px) {
   #lightvela-intl-home:is([data-locale^='id'], [data-locale='es'], [data-locale^='ko']) .hero__line--main {
-    max-width: calc(100vw - 48px);
-    white-space: nowrap;
+    max-width: min(840px, calc(100vw - 420px));
+    white-space: normal;
+    text-wrap: balance;
   }
 
   #lightvela-intl-home[data-locale^='id'] .about__head {
