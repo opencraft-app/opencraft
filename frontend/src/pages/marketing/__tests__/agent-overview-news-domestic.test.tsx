@@ -78,6 +78,25 @@ it("pauses the news carousel while the pointer is over the cards", async () => {
   expect(firstVisible()).toBe("聊天通道支持发送测试消息");
 });
 
+it("pauses the news carousel while keyboard focus is inside the cards and resumes after focus leaves", async () => {
+  await ensureLocaleDictionary("zh-CN");
+  mockDescriptionOverflow(true);
+  vi.useFakeTimers();
+  renderOverview();
+  const newsSection = screen.getByText("产品动态").closest("section")!;
+  const firstVisible = () => newsSection.querySelector('li[aria-hidden="false"] p:nth-of-type(2)')?.textContent;
+  // 截断描述的 tooltip 触发区可聚焦（tabIndex=0）
+  const trigger = screen.getByRole("group", { name: "现在可以在 LightVela 网页中直接与主 Bot 之外的其他 Bot 对话，无需切换到外部聊天通道。" });
+  act(() => { trigger.focus(); });
+  act(() => { vi.advanceTimersByTime(15000); });
+  expect(firstVisible()).toBe("LightVela 支持与多个 Bot 网页对话");
+  expect(trigger.closest("li")).toHaveAttribute("aria-hidden", "false");
+  expect(document.activeElement).toBe(trigger);
+  act(() => { trigger.blur(); });
+  act(() => { vi.advanceTimersByTime(5000); });
+  expect(firstVisible()).toBe("聊天通道支持发送测试消息");
+});
+
 it("shows the five most recent domestic changelog entries as text-only cards, two per screen", async () => {
   await ensureLocaleDictionary("zh-CN");
   render(

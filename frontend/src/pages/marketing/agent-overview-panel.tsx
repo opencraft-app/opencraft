@@ -246,17 +246,19 @@ export const LatestNewsSection = () => {
   const [paused, setPaused] = useState(false);
   /** 鼠标停在动态区（含描述 tooltip）时暂停，避免读全文时卡片被滑走 */
   const [hovering, setHovering] = useState(false);
+  /** 键盘焦点在卡片内（如截断描述的 tooltip 触发区）时暂停，否则卡片滑走后被设为 inert，焦点丢失 */
+  const [focusWithin, setFocusWithin] = useState(false);
   const entries = getRecentChangelogEntries(t, locale, NEWS_LIMIT);
   const positions = Math.max(entries.length - NEWS_PER_VIEW + 1, 1);
   const activeIndex = index >= 0 && index < positions ? index : 0;
 
   useEffect(() => {
-    if (paused || hovering || positions <= 1) return undefined;
+    if (paused || hovering || focusWithin || positions <= 1) return undefined;
     const timer = window.setInterval(() => {
       setIndex((current) => (current + 1) % positions);
     }, CAROUSEL_INTERVAL_MS);
     return () => window.clearInterval(timer);
-  }, [paused, hovering, positions]);
+  }, [paused, hovering, focusWithin, positions]);
 
   // An empty feed has no card to render; keep hooks unconditional.
   if (entries.length === 0) return null;
@@ -268,7 +270,15 @@ export const LatestNewsSection = () => {
       />
 
       {/* 视口裁切 + 轨道平移；轨道宽 = 视口宽，所以 100% 即一屏 */}
-      <div className="overflow-hidden" onMouseEnter={() => setHovering(true)} onMouseLeave={() => setHovering(false)}>
+      <div
+        className="overflow-hidden"
+        onMouseEnter={() => setHovering(true)}
+        onMouseLeave={() => setHovering(false)}
+        onFocus={() => setFocusWithin(true)}
+        onBlur={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocusWithin(false);
+        }}
+      >
         <ul
           className="flex gap-3 transition-transform duration-500 ease-out motion-reduce:transition-none"
           style={{ transform: `translateX(calc(${-activeIndex} * (100% + ${NEWS_GAP_PX}px) / ${NEWS_PER_VIEW}))` }}
