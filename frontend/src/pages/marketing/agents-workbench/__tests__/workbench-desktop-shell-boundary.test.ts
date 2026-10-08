@@ -21,8 +21,8 @@ describe("agents workbench embedded shell boundary", () => {
   it("uses a quiet auth-loading fallback for the workbench route", () => {
     const adapter = readSource("next-site/agents-page-client.tsx");
 
-    expect(adapter).toMatch(/const loadingFallback = isWorkbench \? productHeader : <AgentsRouteLoading \/>;/);
-    expect(adapter).toMatch(/<AppRouteShell loadingFallback=\{loadingFallback\}>/);
+    expect(adapter).toMatch(/const loadingFallback = isWorkbench \? productHeader : <AgentsRouteLoading collapsed=\{collapsed\} onToggle=\{toggle\}/);
+    expect(adapter).toMatch(/<AppRouteShell loadingFallback=\{loadingFallback\} showAuthGateFooter=\{false\}>/);
     expect(adapter).toMatch(/<Suspense fallback=\{loadingFallback\}>/);
   });
 

@@ -35,7 +35,7 @@ export function AgentsPageClient({
       showLanguageSwitcher={false}
     />
   );
-  const loadingFallback = isWorkbench ? productHeader : <AgentsRouteLoading />;
+  const loadingFallback = isWorkbench ? productHeader : <AgentsRouteLoading collapsed={collapsed} onToggle={toggle} isChat={!sectionId || sectionId === 'chat'} />;
 
   return (
     <AppRouteShell loadingFallback={loadingFallback} showAuthGateFooter={false}>

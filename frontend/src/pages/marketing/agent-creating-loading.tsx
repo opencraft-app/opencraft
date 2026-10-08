@@ -23,9 +23,7 @@ import type { SetupStepState } from "@/pages/marketing/agent-buddy-setup-runner"
 /**
  * 预热行正在跑时显示已等待秒数。
  *
- * 实例冷启动最坏要等数分钟（海外节点拉镜像更慢）。没有这个计时，用户面对
- * 一行「正在唤醒 Bot 实例」同样分不清是在推进还是已经卡死 —— 一个会变的
- * 数字是这段等待里唯一可信的「还活着」信号。
+ * 通常 10 秒内完成；慢启动时继续显示真实已等待时间，避免固定预计时间失准。
  */
 const ElapsedHint = ({ running }: { running: boolean }) => {
   const t = useT();
@@ -45,7 +43,9 @@ const ElapsedHint = ({ running }: { running: boolean }) => {
   if (!running) return null;
   return (
     <span className="mt-0.5 block text-[11px] leading-4 text-black/35">
-      {t("已等待 {{seconds}}s，实例首次启动可能需要几分钟", { seconds })}
+      {seconds < 10
+        ? t("通常 10 秒内完成，已等待 {{seconds}} 秒", { seconds })
+        : t("已等待 {{seconds}} 秒，仍在创建中", { seconds })}
     </span>
   );
 };

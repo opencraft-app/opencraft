@@ -14,6 +14,19 @@ describe("Agent sidebar scrolling", () => {
     expect(middle).not.toContainElement(tabs as HTMLElement);
     expect(container.querySelector(".lv-agent-feedback-link")).toBeNull();
   });
+  it("matches the multi Bot rail and chat canvas while data is loading", () => {
+    const { container } = render(<AgentSettingsLoadingContent multiBotEnabled isChat />);
+    expect(screen.getByTestId("agent-bot-rail-skeleton")).toBeInTheDocument();
+    expect(screen.getByTestId("agent-chat-loading-canvas")).toBeInTheDocument();
+    expect(container.querySelector(".lv-agents-sidebar-profile")).toHaveClass("lg:hidden");
+    expect(container.querySelector(".lv-agent-settings-content")).toHaveClass("lg:col-start-3");
+    expect(container.querySelectorAll(".lv-agents-nav-item")).toHaveLength(4);
+  });
+  it("uses the narrow grid when the loading sidebar is collapsed", () => {
+    const { container } = render(<AgentSettingsLoadingContent multiBotEnabled isChat collapsed />);
+    expect(screen.getByTestId("agent-settings-loading-content")).toHaveClass("lg:grid-cols-[56px_56px_minmax(0,1fr)]");
+    expect(container.querySelector(".lv-agents-sidebar-profile")).toHaveClass("lg:hidden");
+  });
   it("updates both edges on scroll and content resize, keeping profile and account outside the scroll area", () => {
     let resize: () => void = () => {};
     const disconnect = vi.fn();

@@ -48,10 +48,11 @@ describe("agent settings sidebar chat/settings tabs", () => {
 
   it("shows additional Bot creation without show() while preserving feature and quota gates", () => {
     const page = readPageSource();
+    const rail = readFileSync(join(process.cwd(), "src/pages/marketing/agent-bot-rail.tsx"), "utf8");
     expect(page).toContain("const [showHiddenAgentTools, setShowHiddenAgentTools] = useState(false);");
-    expect(page).toContain("{multiBotEnabled && !isSidebarCollapsed && (");
-    expect(page).toContain('content={createLimitMessage || t("新建 Bot")}');
-    expect(page).toContain("disabled={!canCreateAdditionalBot}");
+    expect(page).toContain("const nativeCreateEnabled = nativeCreateVisible");
+    expect(page).toContain("canCreate={nativeCreateEnabled}");
+    expect(rail).toContain("disabled={!canCreate}");
     expect(page).toContain("!isCreating && !botsLoading");
     expect(page).toContain("!showMultiBotOnboarding && visibleBots.length === 0");
     expect(page).toContain("disabled={!canCreateInitialAgent || directCreating}");
@@ -157,8 +158,9 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(statusRow).toContain('className="lv-agent-status"');
   });
 
-  it("uses the avatar status indicator on both sites without an online subtitle", () => {
+  it("keeps the Bot status on the rail for multi-Bot accounts", () => {
     const page = readPageSource();
+    const rail = readFileSync(join(process.cwd(), "src/pages/marketing/agent-bot-rail.tsx"), "utf8");
     const profile = page.slice(
       page.indexOf('className="lv-agent-avatar lv-agent-avatar--status"'),
       page.indexOf('className="lv-agents-sidebar-controls"'),
@@ -173,9 +175,28 @@ describe("agent settings sidebar chat/settings tabs", () => {
     );
 
     expect(avatar).toContain('"lv-agent-avatar-status"');
+    expect(page).toContain('!multiBotEnabled && <span className="lv-agent-avatar lv-agent-avatar--status">');
+    expect(page.match(/restartingBotIds=\{restartingBotIds\}/g)).toHaveLength(2);
+    expect(rail).toContain('className={cn("lv-agent-avatar-status"');
+    expect(rail).toContain('restarting={restartingBotIds.has(bot.id)}');
     expect(avatar).not.toContain("!isGlobal");
     expect(statusRowCondition).toContain('activeBot.status !== "running"');
     expect(statusRowCondition).not.toContain("isGlobal ||");
+  });
+
+  it("keeps the chat title while placing desktop Bot management at the bottom of the rail", () => {
+    const page = readPageSource();
+    const workbenchHeader = readFileSync(join(process.cwd(), "../opencraft/apps/workbench-web/src/components/app-shell-header.tsx"), "utf8");
+
+    expect(page).toContain('{(!isDesktop || !multiBotEnabled) && <div className="lv-agents-sidebar-profile">');
+    expect(page).not.toContain('slot="lightvela-header-prefix"');
+    expect(page).not.toContain('className="lv-agent-bot-context-header"');
+    expect(page).toContain('manageActions={botContextActions}');
+    expect(page).toContain('<Settings2 className="h-[18px] w-[18px]" aria-hidden="true" />');
+    expect(page).toContain('<div className="lv-agents-sidebar-footer">');
+    expect(page).toContain('aria-label={t("管理 Bot")}');
+    expect(workbenchHeader).not.toContain('<slot name="lightvela-header-prefix" />');
+    expect(workbenchHeader).toContain('{titleContent ?? <span className="thread-header-copy">');
   });
 
   it("removes the legacy SHOW_AGENTCHAT_ENTRY gate", () => {
@@ -279,7 +300,6 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(styles).not.toContain(".lv-agent-action-tooltip {");
     expect(page).toContain('!consoleShowStateReady || activeSection !== "chat" || !activeBot || isActiveBotChatAvailable');
     expect(page).toContain('{isActiveBotChatAvailable && (');
-    expect(page).toContain('&& !openCraftChatEnabled');
     expect(page).toContain('enabled={openCraftChatEnabled}');
     expect(page).toContain('profileId={activeBot.profileId ?? (isActiveBotDefault ? "main" : "")}');
     expect(page).toContain("setConsoleShowStateReady(true);");
@@ -312,55 +332,32 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain('!isChatTabDisabled && chatSessionsExpanded && !isSidebarCollapsed');
   });
 
-  it("places the create action beside the Bot card and the switcher after delete", () => {
+  it("keeps Bot maintenance in the detail sidebar and creation in the rail", () => {
     const page = readPageSource();
     const profileRow = page.slice(page.indexOf('className="lv-agent-profile-row"'), page.indexOf('className="lv-agents-sidebar-controls"'));
-    const profile = profileRow.slice(0, profileRow.indexOf('className="lv-agent-create-bot-action"'));
-    const createAction = profileRow.slice(profileRow.indexOf('className="lv-agent-create-bot-action"'));
-
-    expect(profile).toContain("setShowRestartConfirm(true)");
-    expect(profile).toContain("setShowDeleteConfirm(true)");
-    expect(profile).toContain("<RefreshCw");
-    expect(profile).toContain("<Trash2");
-    expect(profile).not.toContain('aria-label={t("新建 Bot")}');
-    expect(createAction).toContain('aria-label={t("新建 Bot")}');
-    expect(createAction).toContain('<Plus className="h-4 w-4" aria-hidden="true" />');
-    expect(profileRow.indexOf("</Popover>")).toBeLessThan(profileRow.indexOf('className="lv-agent-create-bot-action"'));
-    expect(profile.indexOf("<RestartIcon")).toBeLessThan(profile.indexOf("<Trash2"));
-    expect(profile).not.toContain("<MoreHorizontal");
-    expect(page).toMatch(/\{visibleBots.length > 1 && \(\s*<ChevronDown/);
-    const switcherChevron = page.search(/<ChevronDown\s+aria-hidden="true"/);
-    expect(switcherChevron).toBeGreaterThan(page.indexOf("<Trash2"));
+    expect(profileRow).toContain("setShowRestartConfirm(true)");
+    expect(profileRow).toContain("setShowDeleteConfirm(true)");
+    expect(profileRow).toContain('aria-label={t("管理 Bot")}');
+    expect(profileRow).toContain('t("修改资料")');
+    expect(profileRow).toContain('t("复制 Bot")');
+    expect(profileRow).not.toContain('aria-label={t("新建 Bot")}');
+    expect(page).toContain("<AgentBotRail bots={visibleBots}");
   });
 
-  it("renders the Bot switcher as an overlay popover instead of in sidebar flow", () => {
+  it("shows Bot switching in a separate rail and opens a fresh chat", () => {
     const page = readPageSource();
-
-    expect(page).toContain("<Popover");
-    expect(page).toContain("<PopoverTrigger asChild>");
-    expect(page).toContain("<PopoverContent");
-    expect(page).toContain("w-[var(--radix-popover-trigger-width)]");
-    const switcherStart = page.indexOf("<PopoverContent");
-    const menu = page.slice(switcherStart, page.indexOf("</PopoverContent>", switcherStart));
-    expect(menu).toContain("border-black/10 bg-white p-1.5 shadow-xl");
-    expect(menu).not.toContain("backdrop-");
-    expect(menu).not.toContain("<img");
-    expect(menu).not.toContain("bg-white/");
-    expect(menu).not.toContain("shadow-sm");
-    expect(menu).toContain('isActive ? "text-black/90"');
-    expect(menu).toContain("{isActive && <Check");
-    expect(page).not.toContain("visibleBots.length > 1 && isAgentMenuOpen &&");
-    expect(page).toContain("{visibleBots.map((bot) => {");
-    expect(page).not.toContain("botSearch");
-    expect(page).not.toContain('t("搜索 Bot")');
+    const rail = readFileSync(join(process.cwd(), "src/pages/marketing/agent-bot-rail.tsx"), "utf8");
+    expect(page).toContain("onSelect={handleSelectBot}");
+    expect(page).toContain("pendingNewChatSessionBotId = botId;");
+    expect(page).toContain("getAgentBotSectionHref(AGENT_SECTION_PATH_BY_ID.chat, botId)");
+    expect(rail).toContain("bots.map((bot) =>");
+    expect(rail).toContain("aria-current={active ? \"true\" : undefined}");
   });
 
-  it("keeps the current Bot header background unchanged on hover", () => {
+  it("keeps the current Bot card informational", () => {
     const page = readPageSource();
-    const trigger = page.slice(page.indexOf("<PopoverTrigger asChild>"), page.indexOf("</PopoverTrigger>"));
-    expect(trigger).toContain('"lv-agent-profile"');
-    expect(trigger).not.toContain("hover:bg-");
-    expect(trigger).toContain("onKeyDown");
+    expect(page).toContain('className="lv-agent-profile cursor-default"');
+    expect(page).not.toContain("setIsAgentMenuOpen");
   });
 
   it("keeps header actions compact without shrinking their hit areas", () => {
@@ -370,8 +367,7 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(actions).toContain("gap: 4px;");
     expect(button).toContain("width: 24px;");
     expect(button).toContain("height: 24px;");
-    expect(readPageSource()).toContain('"h-4 w-4 flex-shrink-0 text-black/35 transition-transform"');
-    expect(readPageSource()).not.toContain('"-ml-2 h-4 w-4 flex-shrink-0 text-black/35 transition-transform"');
+    expect(readPageSource()).toContain('aria-label={t("管理 Bot")}');
   });
 
   it("creates another Bot inside an existing instance without requiring a new subscription", () => {
@@ -417,7 +413,7 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain('className="block space-y-2 text-sm font-medium text-black/70"');
     expect(page).toContain("Array.from(normalizedName).length > MAX_BOT_NAME_LENGTH");
     expect(page).toContain('t("最大不能超过 {{max}} 字符。", { max: MAX_BOT_NAME_LENGTH })');
-    expect(page).toContain('aria-label={t("新建 Bot")}');
+    expect(readFileSync(join(process.cwd(), "src/pages/marketing/agent-bot-rail.tsx"), "utf8")).toContain('aria-label={t("新建 Bot")}');
     expect(page).not.toContain('className="lv-agent-create-button"');
     expect(page).toContain("handleCreateNew();");
     expect(page).not.toContain('t("立即创建")');
@@ -490,8 +486,11 @@ describe("agent settings sidebar chat/settings tabs", () => {
      */
     expect(page).toContain('(hasSidebarLayout || shouldShowDataLoading) && "lv-agent-settings-main"');
     expect(page).toContain("lv-agent-settings-grid grid items-start");
+    expect(page).toContain('multiBotEnabled && "lg:gap-x-0"');
     expect(page).toContain('activeSection === "chat" && openCraftChatEnabled ? "gap-y-0 lg:gap-y-6" : "gap-6"');
-    expect(page).toContain('hasSidebarLayout && !embedded && (isSidebarCollapsed ? "lg:grid-cols-[56px_minmax(0,1fr)]" : "lg:grid-cols-[248px_minmax(0,1fr)]")');
+    expect(page).toContain('hasSidebarLayout && !embedded && (multiBotEnabled');
+    expect(page).toContain('"lg:grid-cols-[56px_216px_minmax(0,1fr)]"');
+    expect(page).toContain('"lg:grid-cols-[248px_minmax(0,1fr)]"');
   });
 
   it("places mark as unread between rename and delete in the session menu", () => {
@@ -583,7 +582,8 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain("const sidebarSessionBotKey = openCraftChatEnabled && activeBot && accountId");
     expect(page).toContain("useAgentSidebarSessionList(sidebarSessionBotKey)");
     expect(page).toContain("[sdkInstance?.InstanceId, sdkInstance?.ProfileId, chatSessionPagination.reset]");
-    const instanceReset = page.slice(page.indexOf("chatSessionPagination.reset();"), page.indexOf("setChatSessionCommands(null);"));
+    const resetStart = page.indexOf("chatSessionPagination.reset();");
+    const instanceReset = page.slice(resetStart, page.indexOf("setChatSessionCommands(null);", resetStart));
     expect(instanceReset).toMatch(/setChatSessionsHasMore\(false\);[\s\S]*setChatSessionMutationState\(null\);\s*\n\s*setSelectedChatId\(undefined\);\s*\n\s*setChatSessionActions\(null\);/);
   });
 

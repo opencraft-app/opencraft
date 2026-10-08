@@ -23,6 +23,7 @@ import {
   X,
   ScanLine,
   SlidersHorizontal,
+  Settings2,
   Stethoscope,
   AlertTriangle,
   Crown,
@@ -93,6 +94,7 @@ import {
   AGENTS_HOME_PATH,
   AGENT_BOT_QUERY_KEY,
   AGENT_CREATE_QUERY_KEY,
+  AGENT_CREATE_PAGE_QUERY_KEY,
   AGENT_SECTION_PATH_BY_ID,
   getAgentBotSectionHref,
   getAgentSectionHref,
@@ -128,7 +130,8 @@ import {
 } from "@/pages/marketing/agent-memory-save";
 import { AgentOnboardingPanel, useDemoOnboarding } from "@/pages/marketing/agent-onboarding-panel";
 import { useBuddyProfile } from "@/pages/marketing/agent-buddy-profile";
-import { useHeroStats } from "@/pages/marketing/agent-hero-stats";
+import { AgentBotRail } from "@/pages/marketing/agent-bot-rail";
+import { getBotStatusColor, getBotStatusLabel } from "@/pages/marketing/agent-bot-status";
 import {
   clearPendingOnboarding,
   hasAgentSidebarLayout,
@@ -223,11 +226,8 @@ const HermesAgentSkillsPanel = lazy(() =>
 const AchievementsPanel = lazy(() =>
   import("@/pages/marketing/agent-achievements-panel").then((module) => ({ default: module.AchievementsPanel })),
 );
-const AgentFleetOverview = lazy(() =>
-  import("@/pages/marketing/agent-fleet-overview").then((module) => ({ default: module.AgentFleetOverview })),
-);
-const AgentOverviewPanel = lazy(() =>
-  import("@/pages/marketing/agent-overview-panel").then((module) => ({ default: module.AgentOverviewPanel })),
+const AgentBotProfileEditor = lazy(() =>
+  import("@/pages/marketing/agent-bot-profile-editor").then((module) => ({ default: module.AgentBotProfileEditor })),
 );
 const HermesAgentAutomationsPanel = lazy(() =>
   import("@/pages/marketing/agent-automations-panel").then((module) => ({ default: module.HermesAgentAutomationsPanel })),
@@ -411,7 +411,7 @@ const RepairToolsIcon = (props: React.SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
-type WorkspaceActionTooltipSide = "top" | "bottom";
+type WorkspaceActionTooltipSide = "top" | "bottom" | "right";
 
 const WORKSPACE_ACTION_TOOLTIP_GAP = 8;
 const WORKSPACE_ACTION_TOOLTIP_VIEWPORT_MARGIN = 16;
@@ -463,6 +463,19 @@ export function WorkspaceActionTooltip({
     if (!triggerRect || !tooltipRect) return;
 
     const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+    if (side === "right") {
+      const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+      const halfHeight = tooltipRect.height / 2;
+      const minTop = WORKSPACE_ACTION_TOOLTIP_VIEWPORT_MARGIN + halfHeight;
+      setPosition({
+        left: triggerRect.right + WORKSPACE_ACTION_TOOLTIP_GAP,
+        top: Math.min(
+          Math.max(triggerRect.top + triggerRect.height / 2, minTop),
+          Math.max(minTop, viewportHeight - WORKSPACE_ACTION_TOOLTIP_VIEWPORT_MARGIN - halfHeight),
+        ),
+      });
+      return;
+    }
     const halfWidth = tooltipRect.width / 2;
     const centeredLeft = triggerRect.left + triggerRect.width / 2;
     const minLeft = WORKSPACE_ACTION_TOOLTIP_VIEWPORT_MARGIN + halfWidth;
@@ -531,8 +544,10 @@ export function WorkspaceActionTooltip({
               id={tooltipId}
               role="tooltip"
               className={cn(
-                "pointer-events-auto fixed z-50 max-w-[calc(100vw-32px)] -translate-x-1/2 select-text rounded-md border border-[var(--border-subtle)] bg-white text-[11px] font-medium text-[var(--text-primary)] shadow-[0_8px_24px_rgba(15,23,42,0.12)]",
-                compact ? "w-max px-2.5 py-1 leading-4" : "w-72 px-3 py-2 text-pretty leading-relaxed",
+                "pointer-events-auto fixed z-50 max-w-[calc(100vw-32px)] select-text",
+                side === "right"
+                  ? "lv-agent-rail-tooltip -translate-y-1/2"
+                  : cn("-translate-x-1/2 rounded-md border border-[var(--border-subtle)] bg-white text-[11px] font-medium text-[var(--text-primary)] shadow-[0_8px_24px_rgba(15,23,42,0.12)]", compact ? "w-max px-2.5 py-1 leading-4" : "w-72 px-3 py-2 text-pretty leading-relaxed"),
                 side === "top" && "-translate-y-full",
               )}
               style={{ left: position.left, top: position.top }}
@@ -540,7 +555,7 @@ export function WorkspaceActionTooltip({
               onMouseLeave={scheduleClose}
             >
               {content}
-              <span
+              {side !== "right" && <span
                 aria-hidden="true"
                 className={cn(
                   "absolute left-1/2 size-2 -translate-x-1/2 rotate-45 border-[var(--border-subtle)] bg-white",
@@ -548,7 +563,7 @@ export function WorkspaceActionTooltip({
                     ? "bottom-full translate-y-1/2 border-l border-t"
                     : "top-full -translate-y-1/2 border-b border-r",
                 )}
-              />
+              />}
             </span>,
             document.body,
           )
@@ -751,20 +766,14 @@ void _staggerContainer;
 
 /* ─── Navbar ─── */
 
-/*
- * 默认 tab 随引导开关走：国内站落「总览」（引导落地页），
- * 国际站尚未上线引导与总览，保持原来的「通道」。
- */
-const DEFAULT_AGENT_SECTION: AgentSettingsSectionId = IS_BUDDY_ONBOARDING_ENABLED
-  ? "overview"
-  : "channel";
+const DEFAULT_AGENT_SECTION: AgentSettingsSectionId = "chat";
 
 const EXPLORE_SECTION_IDS = new Set<AgentSettingsSectionId>([
   "buddy", "memory", "achievement", "model", "diagnostics", "settings", "website", "deepseek-harness", "cloud-desktop",
   "terminal", "browser",
 ]);
 const DAILY_SECTION_IDS = new Set<AgentSettingsSectionId>([
-  "overview", "channel", "connectors", "skill", "automations", "chat",
+  "channel", "connectors", "skill", "automations", "chat",
 ]);
 
 /** 跨整页刷新以外的场景保留每栏最近打开的页面，供顶部 Tab 返回。 */
@@ -2540,22 +2549,6 @@ export const _BotInfoCard = ({ bot, index, onDelete, onTerminal }: { bot: { id: 
 const CREATING_POLL_INTERVAL_MS = 3000;
 const CREATING_MAX_WAIT_MS = 15 * 60 * 1000;
 
-const getBotStatusColor = (status: OpenClawBot["status"]) => {
-  if (status === "running") return "#34C759";
-  if (status === "paused") return "#FF9500";
-  if (status === "failed") return "#DC2626";
-  return "#999";
-};
-
-const getBotStatusLabel = (status: OpenClawBot["status"]) => {
-  if (status === "running") return rawT("在线");
-  if (status === "paused") return rawT("离线");
-  if (status === "failed") return rawT("创建失败");
-  if (status === "deleting") return rawT("删除中");
-  if (status === "provisioning") return rawT("创建中");
-  return rawT("草稿");
-};
-
 /* ─── Main Settings Page ─── */
 
 const RESCUE_EXPORT_POLL_INTERVAL_MS = 5000;
@@ -2596,8 +2589,8 @@ const formatWorkspaceImportFileSize = (bytes: number) => {
   return `${value.toFixed(fractionDigits)} ${unit}`;
 };
 
-function AgentSettingsDataLoading() {
-  return <AgentSettingsLoadingContent />;
+function AgentSettingsDataLoading({ multiBotEnabled, isChat, collapsed }: { multiBotEnabled: boolean; isChat: boolean; collapsed: boolean }) {
+  return <AgentSettingsLoadingContent multiBotEnabled={multiBotEnabled} isChat={isChat} collapsed={collapsed} />;
 }
 
 const isRescueExportRunning = (status: WorkerActionStatusResult | null | undefined) => {
@@ -2642,6 +2635,7 @@ export const AgentSettingsPage = ({
   const requestedCreatingBotId = creatingParam && creatingParam !== "true" ? creatingParam : "";
   /* 订阅成功后引导「为首个 Bot 命名」的意图（/agents?create=1），区别于 creating 的等待态。 */
   const createBotIntentParam = searchParams.get(AGENT_CREATE_QUERY_KEY)?.trim() ?? "";
+  const createBotPageParam = searchParams.get(AGENT_CREATE_PAGE_QUERY_KEY) === "1";
   const firstCreateEntryHandled = useRef(false);
   const { bots, botsLoading, hasResolvedBots, deleteBot, user, refreshBots, refreshPasses, isSubscribed, addBot, activePass, modifyingPass, passUpgradeFailed, passesLoading, passesError, returningUpgrade, passUpgradePaused, passUpgradeRefreshing, retryPassUpgrade } = useOpenClaw();
   const upgradingPass = modifyingPass ?? (activePass?.status === "modifying" ? activePass : null);
@@ -2650,7 +2644,6 @@ export const AgentSettingsPage = ({
   const paidBillingEnabled = usePaidBillingEnabled();
   const multiBotEnabled = useMultiBotEnabled();
   const cloudDesktopEnabled = useCloudDesktopEnabled();
-  const fleetOverviewEnabled = multiBotEnabled && IS_BUDDY_ONBOARDING_ENABLED;
   const realnamePhoneVerificationEnabled = useRealnamePhoneVerificationEnabled();
   const paidBillingActive = isPaidBillingEnabled(paidBillingEnabled);
   const renewalAvailable = isRenewalAvailableForRegion(isGlobal, paidBillingActive);
@@ -2706,6 +2699,16 @@ export const AgentSettingsPage = ({
   const openCraftChatEnabled = true;
   /** 多 bot 创建引导（取代原先的「创建 Bot」弹窗） */
   const [showMultiBotOnboarding, setShowMultiBotOnboarding] = useState(false);
+  const createBotPageHistoryRef = useRef(false);
+  useEffect(() => {
+    if (createBotPageParam) {
+      createBotPageHistoryRef.current = true;
+      setShowMultiBotOnboarding(true);
+    } else if (createBotPageHistoryRef.current) {
+      createBotPageHistoryRef.current = false;
+      setShowMultiBotOnboarding(false);
+    }
+  }, [createBotPageParam]);
   /** 「从其他 Bot 复制」选中的来源 bot id */
   const [cloneSourceBotId, setCloneSourceBotId] = useState("");
 
@@ -2743,21 +2746,16 @@ export const AgentSettingsPage = ({
     [visibleBots, requestedCreatingBotId],
   );
   /* 实例内部的子页面切换：由 Next /agents/<section> 路由在服务端校验，client 只接收已归一化 sectionId。 */
-  /*
-   * 总览页随引导开关走：国际站尚未上线，直接访问 /agents/overview 时回落到
-   * 默认 tab，避免渲染出一个空白 section（路由层仍然认这个 slug）。
-   */
   const requestedSection = sectionId ?? DEFAULT_AGENT_SECTION;
-  const activeSection = !IS_BUDDY_ONBOARDING_ENABLED && requestedSection === "overview"
-    ? DEFAULT_AGENT_SECTION
-    : requestedSection;
+  const activeSection = requestedSection === "overview" ? DEFAULT_AGENT_SECTION : requestedSection;
   const isEmptyAgentPage = !isModifying
     && !passesLoading && !isCreating && !botsLoading && visibleBots.length === 0;
 
   /* Tab 切换 */
   const [activeTabId, setActiveTabId] = useState((requestedBotId || visibleBots[0]?.id || requestedCreatingBotId) || "creating");
   const activeBot = isModifying ? undefined : visibleBots.find((bot) => bot.id === activeTabId) ?? visibleBots[0];
-  const [isAgentMenuOpen, setIsAgentMenuOpen] = useState(false);
+  const [profileEditorOpen, setProfileEditorOpen] = useState(false);
+  const [botRailProfileRevision, setBotRailProfileRevision] = useState(0);
   const [renewPassModalOpen, setRenewPassModalOpen] = useState(false);
 
   /* ── 配置引导：未写过 SOUL.md 的新订阅用户，主区展示配置表单，
@@ -3042,15 +3040,6 @@ export const AgentSettingsPage = ({
     exec: repositories.bots.execDebugCommand,
   });
 
-  /** 总览横幅：套餐额度 + 定时任务数 + 站点数，全部真实读取 */
-  const [buddySetupRevision, setBuddySetupRevision] = useState(0);
-  const heroStats = useHeroStats({
-    activePass,
-    locale,
-    botId: activeBot?.id,
-    profileId: activeBot?.profileId,
-    refreshKey: buddySetupRevision,
-  });
 
   /*
    * 配置引导只对「新订阅用户」生效。
@@ -3173,6 +3162,21 @@ export const AgentSettingsPage = ({
     isCreating,
     hasActiveBot: Boolean(activeBot),
   }) && !showBuddyOnboarding && !showMultiBotOnboarding;
+  const entryRedirectRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!hasResolvedBots || isCreating || isModifying || showEarlyOnboarding || showBuddyOnboarding || showMultiBotOnboarding || createBotIntentParam || createBotPageParam) return;
+    if (requestedSection !== "overview" && sectionId) {
+      entryRedirectRef.current = null;
+      return;
+    }
+    const botId = visibleBots.some((bot) => bot.id === requestedBotId) ? requestedBotId : activeBot?.id;
+    const destination = botId ? getAgentBotSectionHref(AGENT_SECTION_PATH_BY_ID.chat, botId) : AGENT_SECTION_PATH_BY_ID.chat;
+    const redirectKey = `${pathname}:${destination}`;
+    if (entryRedirectRef.current === redirectKey) return;
+    entryRedirectRef.current = redirectKey;
+    if (botId) pendingNewChatSessionBotId = botId;
+    navigate(destination, { replace: true });
+  }, [requestedSection, sectionId, hasResolvedBots, isCreating, isModifying, showEarlyOnboarding, showBuddyOnboarding, showMultiBotOnboarding, createBotIntentParam, createBotPageParam, visibleBots, requestedBotId, activeBot?.id, pathname, navigate]);
   const useMobileChatLayout = activeSection === "chat" && openCraftChatEnabled && hasSidebarLayout;
   const chatPageRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -3227,7 +3231,6 @@ export const AgentSettingsPage = ({
   /** 引导完成：立刻收起表单，再刷新资料与列表 */
   const handleBuddyCreated = useCallback((createdBotId?: string) => {
     setOnboardingJustFinished(true);
-    setBuddySetupRevision((revision) => revision + 1);
     /*
      * 配置已结束，放开那三个会退出创建态 / 改 URL 的 effect。
      *
@@ -3253,7 +3256,7 @@ export const AgentSettingsPage = ({
      * 切到刚创建的那个 bot。
      *
      * 不切的话 activeTabId 还指着创建前那个 bot，用户配置完会停在旧 bot 的
-     * 总览页上，看不到自己刚建的东西。
+     * 对话页上，看不到自己刚建的东西。
      *
      * 这里同时写 activeTabId 和 URL 的 ?bot=：
      *   - 新 bot 此刻多半还在 provisioning，会被 visibleBots 过滤掉，光设
@@ -3263,10 +3266,11 @@ export const AgentSettingsPage = ({
      *     列表后，它会自动把 activeTabId 拉到新 bot 上。
      */
     if (createdBotId) {
+      pendingNewChatSessionBotId = createdBotId;
       setActiveTabId(createdBotId);
       setSidebarTab("daily");
       navigate(
-        getAgentBotSectionHref(AGENT_SECTION_PATH_BY_ID.overview, createdBotId),
+        getAgentBotSectionHref(AGENT_SECTION_PATH_BY_ID.chat, createdBotId),
         { replace: true },
       );
     }
@@ -3297,14 +3301,16 @@ export const AgentSettingsPage = ({
     activeBot?.whatsAppOwner && activeBot.whatsAppOwner.botId !== activeBot.id,
   );
   const handleSelectBot = (botId: string) => {
-    pendingNewChatSessionBotId = null;
+    if (botId === activeBot?.id) return;
+    pendingNewChatSessionBotId = botId;
+    setChatSessionCommands(null);
+    setSelectedChatId(undefined);
+    setOpenSessionMenuChatId(null);
     setActiveTabId(botId);
-    setIsAgentMenuOpen(false);
-    const nextParams = new URLSearchParams(searchParams);
-    nextParams.set(AGENT_BOT_QUERY_KEY, botId);
-    const nextSection = activeSection === "chat" && !openCraftChatEnabled ? "channel" : activeSection;
-    if (nextSection !== activeSection) setSidebarTab("daily");
-    navigate(getAgentSectionHref(AGENT_SECTION_PATH_BY_ID[nextSection], nextParams), { replace: true });
+    setSidebarTab("daily");
+    setChatSessionsExpanded(true);
+    setMobileChatNavOpen(false);
+    navigate(getAgentBotSectionHref(AGENT_SECTION_PATH_BY_ID.chat, botId), { replace: true });
   };
   const activeBotStatus = activeBot?.status;
   const activeBotId = activeBot?.id;
@@ -4469,11 +4475,14 @@ export const AgentSettingsPage = ({
     /* 国际站引导未上线，回落到旧的「创建 Bot」弹窗（master 原行为：clone-current） */
     if (IS_BUDDY_ONBOARDING_ENABLED) {
       setShowMultiBotOnboarding(true);
+      const createPageParams = new URLSearchParams(searchParams);
+      createPageParams.set(AGENT_CREATE_PAGE_QUERY_KEY, "1");
+      navigate(`${pathname}?${createPageParams.toString()}`);
     } else {
       setCreateBotMode("clone-current");
       setShowCreateConfirm(true);
     }
-  }, [activeBot, bots.length, canCreateAdditionalBot, createLimitMessage, isSubscribed, navigate]);
+  }, [activeBot, bots.length, canCreateAdditionalBot, createLimitMessage, isSubscribed, navigate, pathname, searchParams]);
 
   const nativeCreateVisible = !activeBot || multiBotEnabled;
   const nativeCreateEnabled = nativeCreateVisible
@@ -4494,43 +4503,13 @@ export const AgentSettingsPage = ({
     if (nativeCreateEnabled) handleCreateNew();
   }, [embedded, createRequestId, botsLoading, passesLoading, isCreating, isModifying, directCreating, nativeCreateEnabled, onCreateRequestHandled, handleCreateNew]);
 
-  const handleCreateFleetBot = (sourceBotId?: string) => {
+  const handleCloneBot = () => {
+    const sourceBotId = activeBot?.id;
     if (createLimitMessage || (activeBot ? !canCreateAdditionalBot : !canCreateInitialAgent)) return;
     if (sourceBotId && !visibleBots.some((bot) => bot.id === sourceBotId && bot.status === "running" && bot.profileId)) return;
     handleCreateNew();
     if (sourceBotId) setCloneSourceBotId(sourceBotId);
   };
-  const handleOpenFleetBotChat = (botId: string) => {
-    pendingNewChatSessionBotId = botId;
-    setChatSessionCommands(null);
-    setActiveTabId(botId);
-    setSidebarTab("daily");
-    setChatSessionsExpanded(true);
-    navigate(getAgentBotSectionHref(AGENT_SECTION_PATH_BY_ID.chat, botId));
-  };
-  const fleetOverview = (
-    <AgentFleetOverview
-      bots={bots}
-      currentBotId={activeBot?.id}
-      heroStats={heroStats}
-      canCreate={activeBot ? canCreateAdditionalBot : canCreateInitialAgent}
-      createLimitMessage={createLimitMessage || ""}
-      onCreate={handleCreateFleetBot}
-      onOpenChat={handleOpenFleetBotChat}
-      onChanged={(changedBotId) => {
-        buddyProfileState.reload();
-        if (embedded) window.dispatchEvent(new CustomEvent("opencraft-mobile-bot-profile-changed", { detail: changedBotId }));
-      }}
-      getAvatarForBot={getAvatarForBot}
-      onDelete={(bot) => {
-        if (resettingInstanceIds.has(bot.instanceId ?? bot.id)) return;
-        setDeleteTargetBot(bot);
-        setDeleteInput("");
-        setDeleteError(null);
-        setShowDeleteConfirm(true);
-      }}
-    />
-  );
 
   /**
    * 引导页里的「创建」：真正建实例。
@@ -4949,6 +4928,7 @@ export const AgentSettingsPage = ({
         activeSection === "chat" && "lv-agent-chat-page",
         activeSection === "chat" && openCraftChatEnabled && hasSidebarLayout && "lv-agent-embedded-chat-page",
         mobileChatNavOpen && "lv-agent-mobile-nav-open",
+        (hasSidebarLayout || shouldShowDataLoading) && !embedded && multiBotEnabled && "lv-agent-bot-rail-enabled",
         isEmptyAgentPage && "lv-agent-empty-page",
         isModifying && "lv-agent-upgrading-page",
         isSidebarCollapsed && "lv-agent-sidebar-collapsed",
@@ -5580,7 +5560,7 @@ export const AgentSettingsPage = ({
         >
           {/* ── Loading 状态 ── */}
           {!isModifying && !(passesLoading && passesError) && shouldShowDataLoading && (
-            <AgentSettingsDataLoading />
+            <AgentSettingsDataLoading multiBotEnabled={multiBotEnabled} isChat={activeSection === "chat"} collapsed={isSidebarCollapsed} />
           )}
 
           {!isModifying && passesLoading && passesError && (
@@ -5638,17 +5618,13 @@ export const AgentSettingsPage = ({
             分支就消失、渲染跳到订阅分支，面板被重挂载、配置流程被取消。
             互斥性改由订阅分支上的 !showMultiBotOnboarding 单向保证。
           */}
-          {fleetOverviewEnabled && activeSection === "overview" && !activeBot && !isCreating
-            && !isModifying && !passesLoading && !botsLoading && !showEarlyOnboarding && !showMultiBotOnboarding && isSubscribed && (
-              <Suspense fallback={<AgentSettingsDataLoading />}>{fleetOverview}</Suspense>
-          )}
           {showMultiBotOnboarding && !isModifying && (
             <div className="_lh-claw-bot-panel__cards min-w-0">
               <AgentOnboardingPanel
                 botId=""
                 onCreated={(createdBotId) => {
                   setShowMultiBotOnboarding(false);
-                  // 带上新 bot 的 id，落到它自己的总览页
+                  // 带上新 bot 的 id，落到它自己的新会话页
                   handleBuddyCreated(createdBotId);
                 }}
                 onCreateBot={handleOnboardingCreateBot}
@@ -5757,6 +5733,10 @@ export const AgentSettingsPage = ({
                   ],
                 },
               ];
+              const withCollapsedNavTooltip = (label: string, child: ReactNode, focusable = false) =>
+                isDesktop && isSidebarCollapsed
+                  ? <WorkspaceActionTooltip content={label} side="right" compact focusable={focusable}>{child}</WorkspaceActionTooltip>
+                  : child;
               const renderSettingsGroup = (group: typeof settingsGroups[number]) => {
                 const groupLabelId = `agent-settings-nav-group-${group.id}`;
                 return (
@@ -5781,16 +5761,18 @@ export const AgentSettingsPage = ({
                           {section.badge && <span className="shrink-0 rounded-full border border-black/[0.08] bg-black/[0.025] px-1.5 py-0.5 text-[9px] font-bold leading-none text-black/45">{section.badge}</span>}
                         </>;
                         return <li key={section.id}>
-                          {showBuddyOnboarding ? (
-                            <span aria-disabled="true" title={t("请先创建你的个人助手")}
-                              className={cn(itemClass, "cursor-not-allowed opacity-40")}>{content}</span>
-                          ) : (
-                            <AppLink to={getAgentSectionHref(section.path, searchParams)}
+                          {withCollapsedNavTooltip(
+                            showBuddyOnboarding ? t("请先创建你的个人助手") : section.label,
+                            showBuddyOnboarding ? (
+                              <span aria-disabled="true" tabIndex={isDesktop && isSidebarCollapsed ? 0 : undefined} title={!isSidebarCollapsed ? t("请先创建你的个人助手") : undefined}
+                                className={cn(itemClass, "cursor-not-allowed opacity-40")}>{content}</span>
+                            ) : (
+                              <AppLink to={getAgentSectionHref(section.path, searchParams)}
                               aria-label={section.label}
                               aria-current={section.id === activeSection ? "page" : undefined}
-                              title={isSidebarCollapsed ? section.label : undefined}
                               onClick={() => setMobileChatNavOpen(false)}
                               className={itemClass}>{content}</AppLink>
+                            ),
                           )}
                         </li>;
                       })}
@@ -5818,9 +5800,13 @@ export const AgentSettingsPage = ({
                   : t("重置 Hermes（保留数据）");
               const deleteRequiresOtherBotsRemoved = Boolean(activeBot.isDefault && remainingInstanceBotCount > 0);
               const deleteDisabled = resettingAcli || deleteRequiresOtherBotsRemoved;
+              const deleteLabel = activeBot.isDefault ? t("删除整个 Agent") : t("删除 Bot");
               const deleteTooltip = deleteRequiresOtherBotsRemoved
                 ? t("请先删除其他 Bot，再删除主 Bot")
-                : activeBot.isDefault ? t("删除整个 Agent") : t("删除 Bot");
+                : deleteLabel;
+              const deleteDisabledReason = deleteRequiresOtherBotsRemoved
+                ? deleteTooltip
+                : resettingAcli ? t("请稍后") : undefined;
               const sectionFallback = TEA_SDK_SECTIONS.has(activeSection)
                 ? null
                 : (
@@ -5838,24 +5824,63 @@ export const AgentSettingsPage = ({
                 : activeBotDisplayName;
               const mobileSectionLabel = activeSection === "chat"
                 ? t("对话")
-                : activeSection === "overview"
-                  ? t("总览")
-                  : settingsGroups.flatMap((group) => group.sections).find((section) => section.id === activeSection)?.label ?? activeBotDisplayName;
-
+                : settingsGroups.flatMap((group) => group.sections).find((section) => section.id === activeSection)?.label ?? activeBotDisplayName;
+              const botContextActions = <span className="lv-agent-bot-context-actions">
+                <Popover key={activeBot.id}>
+                  <PopoverTrigger asChild>
+                    <button type="button" className="lv-agent-bot-context-trigger" aria-label={t("管理 Bot")} data-tooltip={t("管理 Bot")}>
+                      <Settings2 className="h-[18px] w-[18px]" aria-hidden="true" />
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent side="right" align="end" sideOffset={8} className="w-52 rounded-md p-1.5">
+                    <div className="truncate px-2 py-1.5 text-xs text-black/45" title={agentProfileDisplayName}>{agentProfileDisplayName}</div>
+                    <button type="button" className="lv-sidebar-user-menu-item w-full" disabled={activeBot.status !== "running" || !activeBot.profileId?.trim() || buddyProfileState.loading || buddyProfileState.soulExists === null} onClick={() => setProfileEditorOpen(true)}>
+                      <Wand2 className="size-4" aria-hidden="true" />{t("修改资料")}
+                    </button>
+                    <button type="button" className="lv-sidebar-user-menu-item w-full" disabled={!canCreateAdditionalBot || activeBot.status !== "running" || !activeBot.profileId?.trim()} onClick={handleCloneBot}>
+                      <Copy className="size-4" aria-hidden="true" />{t("复制 Bot")}
+                    </button>
+                    <div className="my-1 border-t border-black/[0.06]" />
+                    <button type="button" className="lv-sidebar-user-menu-item w-full" disabled={restartOrRepairDisabled}
+                      title={restartOrRepairDisabled ? t("请稍后") : undefined}
+                      onClick={() => {
+                        if (activeBot.status === "failed") void handleRetryBot();
+                        else setShowRestartConfirm(true);
+                      }}>
+                      {isActiveBotRestarting || isRepairingBot ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="size-4" aria-hidden="true" />}
+                      {restartTooltip}
+                    </button>
+                    <WorkspaceActionTooltip content={deleteDisabledReason} side="right" className="w-full">
+                      <button type="button" className="lv-sidebar-user-menu-item lv-agent-bot-menu-delete w-full" disabled={deleteDisabled}
+                        onClick={() => {
+                          setDeleteTargetBot(null);
+                          setDeleteInput("");
+                          setShowDeleteConfirm(true);
+                        }}>
+                        <Trash2 className="size-4" aria-hidden="true" />{deleteLabel}
+                      </button>
+                    </WorkspaceActionTooltip>
+                  </PopoverContent>
+                </Popover>
+              </span>;
               return (
                 <div
                   className={cn(
                     /* lv-agent-settings-grid 来自 master，勿删 */
                     "lv-agent-settings-grid grid items-start",
+                    multiBotEnabled && "lg:gap-x-0",
                     activeSection === "chat" && openCraftChatEnabled ? "gap-y-0 lg:gap-y-6" : "gap-6",
                     /* 引导态不给侧边栏留列，内容区自己撑满并居中 */
-                    hasSidebarLayout && !embedded && (isSidebarCollapsed ? "lg:grid-cols-[56px_minmax(0,1fr)]" : "lg:grid-cols-[248px_minmax(0,1fr)]"),
+                    hasSidebarLayout && !embedded && (multiBotEnabled
+                      ? (isSidebarCollapsed ? "lg:grid-cols-[56px_56px_minmax(0,1fr)]" : "lg:grid-cols-[56px_216px_minmax(0,1fr)]")
+                      : (isSidebarCollapsed ? "lg:grid-cols-[56px_minmax(0,1fr)]" : "lg:grid-cols-[248px_minmax(0,1fr)]")),
                   )}
                 >
                   {/* 引导态隐藏整个侧边栏：新用户先专注建伙伴，
                       配置完成后导航才出现（避免一进来就面对点不了的入口） */}
                   {hasSidebarLayout && !embedded ? (
                   <>
+                      {isDesktop && multiBotEnabled && <AgentBotRail bots={visibleBots} activeBotId={activeBot.id} canCreate={nativeCreateEnabled} createLimitMessage={createLimitMessage || ""} profileRevision={botRailProfileRevision} restartingBotIds={restartingBotIds} execDebugCommand={repositories.bots.execDebugCommand} onSelect={handleSelectBot} onCreate={handleCreateNew} manageActions={botContextActions} />}
                       <div className="lv-agent-mobile-toolbar">
                         <button
                           ref={mobileNavTriggerRef}
@@ -5911,50 +5936,18 @@ export const AgentSettingsPage = ({
                       >
                         <X className="size-4" aria-hidden="true" />
                       </button>
-                    <div className="lv-agents-sidebar-profile">
-                    {fleetOverviewEnabled && (
-                      <div className="lv-agent-overview-nav mb-2 pb-2 lg:mb-0 lg:pb-0">
-                        <AppLink
-                          to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.overview, searchParams)}
-                          aria-current={activeSection === "overview" ? "page" : undefined}
-                          title={isSidebarCollapsed ? t("总览") : undefined}
-                          className={cn("lw-settings-nav-item lv-agents-nav-item", activeSection === "overview" && "is-active")}
-                        >
-                          <span className="lv-agents-nav-icon"><LayoutDashboard className="size-4" aria-hidden="true" /></span>
-                          <span>{t("总览")}</span>
-                        </AppLink>
-                      </div>
-                    )}
+                    {!isDesktop && multiBotEnabled && <AgentBotRail mobile bots={visibleBots} activeBotId={activeBot.id} canCreate={nativeCreateEnabled} createLimitMessage={createLimitMessage || ""} profileRevision={botRailProfileRevision} restartingBotIds={restartingBotIds} execDebugCommand={repositories.bots.execDebugCommand} onSelect={handleSelectBot} onCreate={handleCreateNew} />}
+                    {(!isDesktop || !multiBotEnabled) && <div className="lv-agents-sidebar-profile">
                       <div className="lv-agent-profile-row">
                       <div className="lv-agent-profile-wrap">
-                        <Popover
-                          open={visibleBots.length > 1 && isAgentMenuOpen}
-                          onOpenChange={(open) => {
-                            if (visibleBots.length > 1) setIsAgentMenuOpen(open);
-                          }}
-                        >
-                          <PopoverTrigger asChild>
                             <div
-                              role={visibleBots.length > 1 ? "button" : undefined}
-                              tabIndex={visibleBots.length > 1 ? 0 : undefined}
-                              onKeyDown={(event) => {
-                                if (visibleBots.length <= 1) return;
-                                if (event.key === "Enter" || event.key === " ") {
-                                  event.preventDefault();
-                                  setIsAgentMenuOpen((open) => !open);
-                                }
-                              }}
-                              className={cn(
-                                "lv-agent-profile",
-                                visibleBots.length <= 1 && "cursor-default",
-                              )}
+                              className="lv-agent-profile cursor-default"
                               aria-label={`${agentProfileDisplayName}，${isActiveBotRestarting ? t("重启中...") : getBotStatusLabel(activeBot.status)}`}
                               title={isSidebarCollapsed ? agentProfileDisplayName : undefined}
-                              aria-expanded={visibleBots.length > 1 ? isAgentMenuOpen : undefined}
                             >
                               {/* Demo：头像与名称跟随新手引导里设置的资料（几何体头像）；
                                   未设置过时回落到原有的 bot 头像与名称。 */}
-                              <span className="lv-agent-avatar lv-agent-avatar--status">
+                              {!multiBotEnabled && <span className="lv-agent-avatar lv-agent-avatar--status">
                                 {demoProfileIsCustom ? (
                                   <GeometricAvatar
                                     shapeId={buddyProfileState.profile.shapeId}
@@ -5974,7 +5967,7 @@ export const AgentSettingsPage = ({
                                   title={isActiveBotRestarting ? t("重启中...") : getBotStatusLabel(activeBot.status)}
                                   style={{ background: isActiveBotRestarting ? "#FF9500" : getBotStatusColor(activeBot.status) }}
                                 />
-                              </span>
+                              </span>}
                               <span className="lv-agent-profile-text">
                                 <span className="lv-agent-profile-name" title={agentProfileDisplayName}>
                                   {truncateBotName(agentProfileDisplayName)}
@@ -6099,152 +6092,72 @@ export const AgentSettingsPage = ({
                                     <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                                   </button>
                                 </WorkspaceActionTooltip>
+                                <Popover>
+                                  <PopoverTrigger asChild>
+                                    <button type="button" className="lv-agent-action-button" aria-label={t("管理 Bot")}>
+                                      <MoreVertical className="h-4 w-4" aria-hidden="true" />
+                                    </button>
+                                  </PopoverTrigger>
+                                  <PopoverContent side="bottom" align="end" className="w-44 rounded-md p-1.5">
+                                    <button type="button" className="lv-sidebar-user-menu-item w-full" disabled={activeBot.status !== "running" || !activeBot.profileId?.trim() || buddyProfileState.loading || buddyProfileState.soulExists === null} onClick={() => setProfileEditorOpen(true)}>
+                                      <Wand2 className="size-4" aria-hidden="true" />{t("修改资料")}
+                                    </button>
+                                    <button type="button" className="lv-sidebar-user-menu-item w-full" disabled={!canCreateAdditionalBot || activeBot.status !== "running" || !activeBot.profileId?.trim()} onClick={handleCloneBot}>
+                                      <Copy className="size-4" aria-hidden="true" />{t("复制 Bot")}
+                                    </button>
+                                  </PopoverContent>
+                                </Popover>
                               </div>
-                              {visibleBots.length > 1 && (
-                                <ChevronDown
-                                  aria-hidden="true"
-                                  className={cn("h-4 w-4 flex-shrink-0 text-black/35 transition-transform", isAgentMenuOpen && "rotate-180")}
-                                />
-                              )}
                             </div>
-                          </PopoverTrigger>
-                          {visibleBots.length > 1 && (
-                            <PopoverContent
-                              align="start"
-                              side="bottom"
-                              sideOffset={8}
-                              className={cn(
-                                "max-h-80 overflow-y-auto !rounded-[8px] border-black/10 bg-white p-1.5 shadow-xl",
-                                isSidebarCollapsed ? "w-56" : "w-[var(--radix-popover-trigger-width)]",
-                              )}
-                            >
-                              {visibleBots.map((bot) => {
-                                const isActive = bot.id === activeTabId;
-                                const botDisplayName = resolveAgentDisplayName(bot.name, t);
-                                return (
-                                  <button
-                                    key={bot.id}
-                                    type="button"
-                                    onClick={() => {
-                                      handleSelectBot(bot.id);
-                                    }}
-                                    className={cn(
-                                      "flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black/15",
-                                      isActive ? "text-black/90" : "text-black/60 hover:bg-black/[0.04] hover:text-black/80",
-                                    )}
-                                    aria-current={isActive ? "true" : undefined}
-                                  >
-                                    <span className="min-w-0 flex-1 truncate" title={botDisplayName}>
-                                      {truncateBotName(botDisplayName)}
-                                    </span>
-                                    {isActive && <Check className="size-3.5 text-black/55" />}
-                                  </button>
-                                );
-                              })}
-                            </PopoverContent>
-                          )}
-                        </Popover>
 
                         {activeBotRestartError && (
                           <p className="mt-2 px-1 text-xs leading-relaxed text-red-500">{activeBotRestartError}</p>
                         )}
                       </div>
-                      {multiBotEnabled && !isSidebarCollapsed && (
-                        <WorkspaceActionTooltip
-                          content={createLimitMessage || t("新建 Bot")}
-                          side="bottom"
-                          compact
-                          focusable={!canCreateAdditionalBot}
-                          className="lv-agent-create-bot-action"
-                        >
-                          <button
-                            type="button"
-                            aria-label={t("新建 Bot")}
-                            disabled={!canCreateAdditionalBot}
-                            className="lv-agent-action-button"
-                            onClick={handleCreateNew}
-                          >
-                            <Plus className="h-4 w-4" aria-hidden="true" />
-                          </button>
-                        </WorkspaceActionTooltip>
-                      )}
                       </div>
 
-                    </div>
+                    </div>}
                     <div className="lv-agents-sidebar-controls">
                       {/* ── 日常与探索共用当前 Bot，切换时恢复各栏最近页面 ── */}
                       <div className="lv-agents-sidebar-tabs" role="tablist" aria-label={t("侧边栏视图切换")}>
+                        {withCollapsedNavTooltip(t("日常"),
                         <button
                           type="button"
                           role="tab"
                           aria-selected={sidebarTab === "daily"}
                           aria-label={t("日常")}
-                          title={isSidebarCollapsed ? t("日常") : undefined}
                           className={cn("lv-agents-sidebar-tab", sidebarTab === "daily" && "is-active")}
                           onClick={handleSidebarDailyTabClick}
                         >
                           <MessageSquare className="lv-agents-sidebar-tab-icon size-4" aria-hidden="true" />
                           <span className="lv-agents-sidebar-tab-label">{t("日常")}</span>
-                        </button>
+                        </button>)}
+                        {withCollapsedNavTooltip(t("探索"),
                         <button
                           type="button"
                           role="tab"
                           aria-selected={sidebarTab === "explore"}
                           aria-label={t("探索")}
-                          title={isSidebarCollapsed ? t("探索") : undefined}
                           disabled={showBuddyOnboarding}
                           className={cn("lv-agents-sidebar-tab", sidebarTab === "explore" && "is-active")}
                           onClick={handleSidebarExploreTabClick}
                         >
                           <LayoutDashboard className="lv-agents-sidebar-tab-icon size-4" aria-hidden="true" />
                           <span className="lv-agents-sidebar-tab-label">{t("探索")}</span>
-                        </button>
+                        </button>, showBuddyOnboarding)}
                       </div>
                     </div>
                     <div className="lv-agents-sidebar-middle">
                       <div className="flow-root">
                         {sidebarTab === "daily" ? (
                           <nav className="lv-agents-nav" aria-label={t("日常")}>
-                            {/* ── 「总览」：日常 tab 的置顶入口，新用户引导落地页（不参与下方任务分组）。
-                                 未创建个人助手时改名为「创建你的个人助手」，是此刻唯一可点的入口。
-
-                                 分区域上线：国际站尚未上线总览页与引导，隐藏该入口，
-                                 否则会点进一个空白 section（见 IS_BUDDY_ONBOARDING_ENABLED）。 ── */}
-                            {IS_BUDDY_ONBOARDING_ENABLED && !fleetOverviewEnabled ? (
-                            <div className="lv-agents-nav-group">
-                              <ul className="lv-agents-nav-group-items">
-                                <li>
-                                  <AppLink
-                                    to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.overview, searchParams)}
-                                    aria-current={activeSection === "overview" ? "page" : undefined}
-                                    aria-label={showBuddyOnboarding ? t("个性化你的智能伙伴") : t("总览")}
-                                    title={isSidebarCollapsed ? (showBuddyOnboarding ? t("个性化你的智能伙伴") : t("总览")) : undefined}
-                                    className={cn(
-                                      "lw-settings-nav-item lv-agents-nav-item",
-                                      activeSection === "overview" || showBuddyOnboarding
-                                        ? "is-active"
-                                        : "text-black/70 hover:bg-black/[0.025]",
-                                    )}
-                                  >
-                                    {/* 引导态只有这一个入口，图标反而多余 */}
-                                    {showBuddyOnboarding ? null : (
-                                      <span className="lv-agents-nav-icon"><LayoutDashboard className="h-4 w-4" /></span>
-                                    )}
-                                    <span className="min-w-0 flex-1 whitespace-nowrap text-left">
-                                      {showBuddyOnboarding ? t("个性化你的智能伙伴") : t("总览")}
-                                    </span>
-                                  </AppLink>
-                                </li>
-                              </ul>
-                            </div>
-                            ) : null}
                             {settingsGroups.filter((group) => group.id === "daily").map(renderSettingsGroup)}
                             {openCraftChatEnabled && <div className="lv-agents-nav-group lv-agents-chat-group" role="group" aria-label={t("对话")}>
                               {isSidebarCollapsed ? (
                                 isChatTabDisabled ? (
                                   <WorkspaceActionTooltip
                                     content={t("请先创建你的个人助手")}
-                                    side="bottom"
+                                    side="right"
                                     focusable
                                   >
                                     <span aria-disabled="true" tabIndex={0} className="lw-settings-nav-item lv-agents-nav-item cursor-not-allowed opacity-40">
@@ -6252,10 +6165,10 @@ export const AgentSettingsPage = ({
                                       <span>{t("对话")}</span>
                                     </span>
                                   </WorkspaceActionTooltip>
-                                ) : (
+                                ) : withCollapsedNavTooltip(t("对话"),
                                   <AppLink to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.chat, searchParams)}
                                     onClick={() => setMobileChatNavOpen(false)}
-                                    title={t("对话")}
+                                    aria-label={t("对话")}
                                     className={cn("lw-settings-nav-item lv-agents-nav-item", activeSection === "chat" && "is-active")}
                                   >
                                     <span className="lv-agents-nav-icon"><MessageSquare className="h-4 w-4" /></span>
@@ -6515,11 +6428,11 @@ export const AgentSettingsPage = ({
                               <div className="lv-agents-nav-group">
                                 <ul className="lv-agents-nav-group-items">
                                   <li>
+                                    {withCollapsedNavTooltip(t("终端"),
                                     <AppLink
                                       to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.terminal, searchParams)}
                                       aria-current={activeSection === "terminal" ? "page" : undefined}
                                       aria-label={t("终端")}
-                                      title={isSidebarCollapsed ? t("终端") : undefined}
                                       className={cn(
                                         "lw-settings-nav-item lv-agents-nav-item",
                                         activeSection === "terminal"
@@ -6529,14 +6442,14 @@ export const AgentSettingsPage = ({
                                     >
                                       <span className="lv-agents-nav-icon"><TerminalSquare className="h-4 w-4" /></span>
                                       <span className="flex-1 text-left">{t("终端")}</span>
-                                    </AppLink>
+                                    </AppLink>)}
                                   </li>
                                   <li>
+                                    {withCollapsedNavTooltip(t("浏览器"),
                                     <AppLink
                                       to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.browser, searchParams)}
                                       aria-current={activeSection === "browser" ? "page" : undefined}
                                       aria-label={t("浏览器")}
-                                      title={isSidebarCollapsed ? t("浏览器") : undefined}
                                       className={cn(
                                         "lw-settings-nav-item lv-agents-nav-item",
                                         activeSection === "browser"
@@ -6546,7 +6459,7 @@ export const AgentSettingsPage = ({
                                     >
                                       <span className="lv-agents-nav-icon"><Globe2 className="h-4 w-4" /></span>
                                       <span className="flex-1 text-left">{t("浏览器")}</span>
-                                    </AppLink>
+                                    </AppLink>)}
                                   </li>
                                 </ul>
                               </div>
@@ -6568,11 +6481,32 @@ export const AgentSettingsPage = ({
                   </>
                   ) : null}
 
+                  {profileEditorOpen && activeBot && (
+                    <Suspense fallback={null}>
+                      <AgentBotProfileEditor
+                        key={activeBot.id}
+                        botId={activeBot.id}
+                        profileId={activeBot.profileId}
+                        profile={buddyProfileState.profile}
+                        execDebugCommand={repositories.bots.execDebugCommand}
+                        onClose={() => setProfileEditorOpen(false)}
+                        onChanged={() => {
+                          buddyProfileState.reload();
+                          setBotRailProfileRevision((revision) => revision + 1);
+                          void refreshBots();
+                          if (embedded) window.dispatchEvent(new CustomEvent("opencraft-mobile-bot-profile-changed", { detail: activeBot.id }));
+                        }}
+                      />
+                    </Suspense>
+                  )}
+
                   <section
                     className={cn(
                       "lv-agent-settings-content min-w-0",
-                      /* 有侧边栏时占第二列；引导态没有侧边栏，内容自己居中 */
-                      hasSidebarLayout && !embedded ? "lg:col-start-2" : "mx-auto w-full max-w-[860px]",
+                      /* 多 Bot 时占第三列；单 Bot 时占第二列；引导态没有侧边栏 */
+                      hasSidebarLayout && !embedded
+                        ? (multiBotEnabled ? "lg:col-start-3 lg:pl-6" : "lg:col-start-2")
+                        : "mx-auto w-full max-w-[860px]",
                     )}
                   >
                     {/*
@@ -6612,20 +6546,6 @@ export const AgentSettingsPage = ({
                         fallback={sectionFallback}
                       >
                         <div className="_lh-claw-bot-panel__cards min-w-0">
-                          {activeSection === "overview" && (fleetOverviewEnabled ? fleetOverview : (
-                            <AgentOverviewPanel
-                              botId={activeBot.id}
-                              profileId={activeBot.profileId ?? ""}
-                              profile={buddyProfileState.profile}
-                              execDebugCommand={repositories.bots.execDebugCommand}
-                              onProfileChanged={buddyProfileState.reload}
-                              heroStats={heroStats}
-                              /* 存量用户没配过几何体头像时，资料卡回落
-                                 侧边栏那张插画，避免两处头像不一致 */
-                              hasCustomAvatar={buddyProfileState.hasBuddyConfig === true}
-                              fallbackAvatarUrl={avatarUrl}
-                            />
-                          ))}
                           {activeSection === "channel" && (
                             <TeaSdkSettingsPanel
                               kind="channel"
@@ -6833,7 +6753,7 @@ export const AgentSettingsPage = ({
           {
             !isModifying && !passesLoading && !isCreating && !botsLoading
               && !showMultiBotOnboarding && visibleBots.length === 0
-              && !(fleetOverviewEnabled && activeSection === "overview" && isSubscribed) && (
+              && (
               <div className="flex flex-col items-center justify-center py-20 text-center">
                 <p className="text-sm" style={{ color: "rgba(0,0,0,0.40)" }}>{t("即刻创建你的云端智能体伙伴")}</p>
                 {createLimitMessage && (

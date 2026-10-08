@@ -37,6 +37,7 @@ vi.mock("@/contexts/runtime-config-context", () => ({
   useCloudDesktopEnabled: () => false,
   usePaidBillingEnabled: () => false,
   useMultiBotEnabled: () => true,
+  useReferralEnabled: () => false,
   useRealnamePhoneVerificationEnabled: () => false,
 }));
 
@@ -196,7 +197,7 @@ describe("subscribe path: picking a template enters the setup flow", () => {
     bots = [{ ...buildBot(), status: "running" }];
     view.rerender(page("?creating=ins-372"));
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith(
-      "/agents/overview?bot=ins-372", { replace: true },
+      "/agents/chat?bot=ins-372", { replace: true },
     ));
     expect(addBot).not.toHaveBeenCalled();
     expect(execDebugCommand.mock.calls.some(([id, command]) =>

@@ -1373,6 +1373,8 @@ export function App({
     presentation.rightPanel && panelState.right.open;
   const presentedRightPanelFullWidth =
     presentation.rightPanel && panelState.rightPanelFullWidth;
+  const conversationRightPanelAvailable = conversationSurfaceVisible
+    && (embedded === undefined || (draft === null && activeThreadId !== null));
   // Applications replace context/content, never the Shell control plane.
   // Target management remains an independent modal semantic surface.
   const headerNavigationActions = chromePolicy.leadingNavigationActions;
@@ -1412,9 +1414,9 @@ export function App({
             : null
       }
       sidebarOpen={shellSidebarOpen}
-      rightPanelOpen={conversationSurfaceVisible && presentedRightPanelOpen}
-      rightPanelFullWidth={conversationSurfaceVisible && presentedRightPanelFullWidth}
-      showRightPanelAction={conversationSurfaceVisible && presentation.rightPanel}
+      rightPanelOpen={conversationRightPanelAvailable && presentedRightPanelOpen}
+      rightPanelFullWidth={conversationRightPanelAvailable && presentedRightPanelFullWidth}
+      showRightPanelAction={conversationRightPanelAvailable && presentation.rightPanel}
       canGoBack={canGoBack}
       canGoForward={canGoForward}
       onToggleSidebar={() => setSidebarOpen((value) => !value)}
@@ -1465,10 +1467,10 @@ export function App({
           onSidebarCollapse={collapseSidebar}
           onSidebarExpand={expandSidebar}
           onSidebarResizeEnd={commitSidebarWidth}
-          rightPanelOpen={conversationSurfaceVisible && presentedRightPanelOpen}
+          rightPanelOpen={conversationRightPanelAvailable && presentedRightPanelOpen}
           rightPanelKeepMounted={presentation.rightPanel && panelState.right.tabs.some(tab =>
             presentedPanelRenderers.some(renderer => renderer.kind === tab.kind && renderer.residency === "while-tab-open"))}
-          rightPanelFullWidth={conversationSurfaceVisible && presentedRightPanelFullWidth}
+          rightPanelFullWidth={conversationRightPanelAvailable && presentedRightPanelFullWidth}
           rightPanelDefaultSize={presentation.rightPanelDefaultSize}
           onRightPanelOpenChange={(open) =>
             dispatchPanel({
