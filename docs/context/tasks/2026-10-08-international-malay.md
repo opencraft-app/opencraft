@@ -82,7 +82,7 @@ derived: false
 - Context 全库校验与测试仍因历史 Task Pack 缺字段失败；本任务的 Task Pack 不在最终错误清单。
 
 ## risks / remaining_gate
-- `check:mono2-agent-console` 报告生成副本缺少新增马来语资源。按 frontend/AGENTS.md，须先提交真源，再运行同步脚本并独立提交生成副本；用户已追加授权“提交 mr”，将先提交真源后同步生成副本，未手改生成副本。
+- `check:mono2-agent-console` 报告生成副本缺少新增马来语资源。按 frontend/AGENTS.md，须先提交真源，再运行同步脚本并独立提交生成副本；用户已追加授权“提交 mr”；真源提交 `49a5790e98` 后同步生成副本，`check:mono2-agent-console` 已通过（133 文件），未手改生成副本。
 - 生产发布、真实账号和付费模型调用尚未执行。
 
 ## handoff
@@ -119,12 +119,12 @@ derived: false
 
 ## checkpoint
 ### stage
-最新 master 同步与优化已实现，最终 check、国际站构建、汇总回归与浏览器复验已通过。全量测试与生成副本门禁保留未通过状态。
+最新 master 同步与优化已实现，最终 check、国际站构建、汇总回归与浏览器复验已通过。全量测试保留未通过状态；生成副本门禁已在授权提交及同步后通过。
 ### verified
 - 工作区 HEAD 为 6e2b77732f；原用户工作区保留；没有提交、推送或发布。
 - 国际站马来语独立资源、文档及浏览器 6/6；聚焦测试及 SDK/嵌入式语言验证见上。
 ### unverified
-- 全量测试未通过；真实账号、付费模型与生成副本待后续门禁。
+- 全量测试未通过；真实账号、付费模型与生产发布未验证。
 ### discard
 - /data/mono2 和 /data/mono2-malay 中旧版本、端口 5179/5180 的预览不能证明本轮最终源码。
 ### restore
@@ -133,4 +133,10 @@ derived: false
 - 用户已授权提交 MR；提交真源、同步并复验生成副本、独立提交副本后推送并创建 MR。
 
 ## next_action
-- 用户已授权提交 MR；按 frontend/AGENTS.md 提交真源、同步并复验生成副本，创建目标 master 的 MR。
+- 独立提交已复验的生成副本，推送 codex/lightvela-malay-refine 并创建目标 master 的 MR；生产发布未执行。
+
+## MR submission
+- 用户明确授权“提交 mr”，包含本次源码/生成副本提交、分支推送与创建 MR，不包含合并或发布。
+- 真源提交 49a5790e98；随后同步的 UPSTREAM.sourceRevision 指向该提交。
+- 同步及只读漂移复验通过；OpenCraft 两个受影响 workspace 类型检查和 build:web 通过，221 条语言校验、10 项运行时与 1 项嵌入式语言测试复验通过。
+- 此前前端 check/build、340 项聚焦测试、6 组浏览器验收结果沿用；前端源码未在提交阶段改动。

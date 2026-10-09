@@ -5,6 +5,7 @@
  * 这里是这 6 个 pack 的唯一事实来源；完整任务库只负责把它们聚合回原有顺序。
  * 本模块不得导入 scenario-packs.ts，避免首页重新拉入完整场景库。
  */
+import { localizeMalay } from '../../../i18n/malay-copy';
 import type { PublicSiteLocaleCode } from "../../../lib/public-site-routing";
 
 import {
@@ -2404,6 +2405,7 @@ const OVERVIEW_COPY_BY_LOCALE: Record<
   "zh-Hant": null,
   "en-US": OVERVIEW_ENGLISH_COPY,
   "id-ID": OVERVIEW_INDONESIAN_COPY,
+  "ms-MY": localizeMalay(OVERVIEW_ENGLISH_COPY),
   es: OVERVIEW_SPANISH_COPY,
   "ja-JP": OVERVIEW_JAPANESE_COPY,
   "ko-KR": OVERVIEW_KOREAN_COPY,
