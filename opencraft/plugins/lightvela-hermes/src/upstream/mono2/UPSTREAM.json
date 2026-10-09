@@ -1,6 +1,6 @@
 {
   "source": "frontend/src",
-  "sourceRevision": "5e1bbc2e500e14c40bc70d6b0391440f74ec8e64",
+  "sourceRevision": "225267ffaed45285feb20a53aabcdd083091deb3",
   "generatedBy": "scripts/sync-mono2-agent-console.mjs",
   "files": [
     {
@@ -141,7 +141,7 @@
     },
     {
       "file": "lib/auth-api-base.ts",
-      "sourceSha256": "e6dbf89f7f9f9c87c0d02f0d53f05758bcd69ba8261a421bcbdefdd5945b037f"
+      "sourceSha256": "faac2447091f5f44d7da21eb7fbcb9a9a7960d96ee54ceab1350f8841f9bb318"
     },
     {
       "file": "lib/cookie-consent.ts",
@@ -149,7 +149,7 @@
     },
     {
       "file": "lib/debug-exec-request.ts",
-      "sourceSha256": "ff7ef8932f85db8dfaae9e5e40e6af50a86f81657d6401da5bf6f4f9eeebdcd3"
+      "sourceSha256": "676df22383ab4b5f72c1ca35d97dfce54f58f9ed27712690e9f8d262f7344191"
     },
     {
       "file": "lib/expert-package-storage.ts",
@@ -161,7 +161,7 @@
     },
     {
       "file": "lib/hermes-cron-client.ts",
-      "sourceSha256": "4911ab21734c13fd1d61cb7979b8127ec05034f23ee1ca368dfee35dda455437"
+      "sourceSha256": "e8451d0e6814a1784c314d952d0565f2219920957e03399dcc1e348fe56fca83"
     },
     {
       "file": "lib/hermes-skills-client.ts",
@@ -225,7 +225,7 @@
     },
     {
       "file": "pages/marketing/agent-automations-panel.tsx",
-      "sourceSha256": "53932737d75bfb923264c7dd209e0ca2d3facc89454cb452fe5ca12eedeb056e"
+      "sourceSha256": "4147bdca068a343c8ea77916805956b64a2fc4445b3f46918584d86d9140a50f"
     },
     {
       "file": "pages/marketing/agent-channel-panel.tsx",
@@ -513,7 +513,7 @@
     },
     {
       "file": "repositories/http-repositories.ts",
-      "sourceSha256": "1d537491ae17b35a73ac6b853362993c3b0facc513aee9975993a1d6a7baa640"
+      "sourceSha256": "ae70f025e2591cae56978b14112681a32ae3d000610e5040922223d3bccc81ef"
     },
     {
       "file": "repositories/types.ts",
