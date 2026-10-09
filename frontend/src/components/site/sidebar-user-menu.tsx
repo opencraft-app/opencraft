@@ -6,7 +6,7 @@ const agentPortalClassName = "lv-sidebar-account-surface";
 
 export type SidebarCreditSummary =
   | { state: "ready"; label: string; total: number; used: number; usedPercent: number }
-  | { state: "loading" | "error" | "none" | "idle"; label: string };
+  | { state: "loading" | "error" | "none" | "idle"; label: string; onRetry?: () => void };
 export interface SidebarUserMenuProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -112,7 +112,8 @@ export function SidebarUserMenu({ open, onOpenChange, name, email, avatarSrc, pl
             </div>
             <Progress value={credit.usedPercent} aria-label={credit.label}
               aria-valuetext={`${credit.used.toLocaleString()} / ${credit.total.toLocaleString()}`} />
-          </> : <p role={credit.state === "error" ? "alert" : "status"} className="text-xs text-[var(--text-secondary)]">{credit.label}</p>}
+          </> : credit.onRetry ? <button type="button" className="text-left text-xs font-semibold text-[var(--text-secondary)] underline-offset-2 hover:underline" onClick={credit.onRetry}>{credit.label}</button>
+            : <p role={credit.state === "error" ? "alert" : "status"} className="text-xs text-[var(--text-secondary)]">{credit.label}</p>}
         </div>
         <div className="py-1">
           {entries.map((entry) => {

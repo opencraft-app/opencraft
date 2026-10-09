@@ -54,6 +54,51 @@ describe("sidebar account controller boundary", () => {
     expect(menu).toHaveTextContent("1,083");
   });
 
+  it("does not carry account A's credit packs into account B while the menu stays open", async () => {
+    const packOf = (owner: string) => [{ credit_type: "paid", credit_total: owner === "a" ? 1000 : 10, credit_available: owner === "a" ? 1000 : 10, expired_time: "2099-01-01T00:00:00Z" }];
+    mocks.listCreditPackages.mockImplementation(async () => packOf(userId!));
+    currentPass = pass({ credit_total: 100, credit_available: 83 });
+    const view = render(<UserAvatarMenu variant="sidebar" />);
+    await openSidebar();
+    await waitFor(() => expect(screen.getByRole("dialog", { name: "账号管理" })).toHaveTextContent("17 / 1,100"));
+
+    userId = "b";
+    currentPass = pass({ pass_id: "p/b", user_id: "b", credit_total: 100, credit_available: 50 });
+    view.rerender(<UserAvatarMenu variant="sidebar" />);
+    const menu = screen.getByRole("dialog", { name: "账号管理" });
+    expect(menu).not.toHaveTextContent("1,100");
+    await waitFor(() => expect(menu).toHaveTextContent("50 / 110"));
+    expect(mocks.listCreditPackages).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows paid credit packs for an account without a pass", async () => {
+    currentPass = null;
+    mocks.listMyPasses.mockResolvedValue([]);
+    mocks.listCreditPackages.mockResolvedValue([
+      { credit_type: "paid", credit_total: 1000, credit_available: 900, expired_time: "2099-01-01T00:00:00Z" },
+    ]);
+    render(<UserAvatarMenu variant="sidebar" />);
+    await openSidebar();
+    const menu = screen.getByRole("dialog", { name: "账号管理" });
+    await waitFor(() => expect(menu).toHaveTextContent("100 / 1,000"));
+    expect(menu).toHaveTextContent("900");
+  });
+
+  it("does not present plan-only credit as the full balance when credit packs fail, and can retry", async () => {
+    currentPass = pass({ credit_total: 100, credit_available: 83 });
+    mocks.listCreditPackages.mockRejectedValueOnce(new Error("boom")).mockResolvedValue([
+      { credit_type: "paid", credit_total: 1000, credit_available: 1000, expired_time: "2099-01-01T00:00:00Z" },
+    ]);
+    render(<UserAvatarMenu variant="sidebar" />);
+    await openSidebar();
+    const menu = screen.getByRole("dialog", { name: "账号管理" });
+    const retry = await within(menu).findByRole("button", { name: "积分包额度加载失败，点击重试" });
+    expect(menu).not.toHaveTextContent("17 / 100");
+    expect(menu).not.toHaveTextContent("83");
+    await userEvent.click(retry);
+    await waitFor(() => expect(menu).toHaveTextContent("17 / 1,100"));
+  });
+
   it("shows the former overview account metrics in the sidebar menu", async () => {
     render(<UserAvatarMenu variant="sidebar" />);
     await openSidebar();

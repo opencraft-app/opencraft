@@ -60,8 +60,12 @@ export function SidebarUserMenuController({ showLanguageSwitcher = false }: { sh
       ? { displayName: "", creditTotal, creditAvailable: Math.min(creditTotal, Math.max(0, operablePass?.free_credit_available ?? 0)) }
       : null;
   }, [operablePass]);
-  const { summary: creditSummary } = useCreditSources(planCreditInput, freeCreditInput, enabled && Boolean(operablePass));
-  const credits = operablePass ? {
+  // 积分包独立于 Pass（取消 Pass 后仍保留），所以只看账号，不等 Pass 就绪。
+  const creditSources = useCreditSources(planCreditInput, freeCreditInput, enabled && Boolean(userId), userId ?? "");
+  const creditSummary = creditSources.summary;
+  // 积分包没读到时不展示数字：加载中显示加载态，失败显示可重试的错误态，避免把部分余额当成全部。
+  const creditsSettled = !creditSources.loading && !creditSources.failed;
+  const credits = creditsSettled && (operablePass || creditSummary.total > 0) ? {
     total: creditSummary.total,
     available: creditSummary.available,
     used: creditSummary.used,
@@ -89,6 +93,8 @@ export function SidebarUserMenuController({ showLanguageSwitcher = false }: { sh
     : status === "isolated" ? { text: t("套餐已隔离，请前往续费。"), tone: "warning" } : undefined;
   const credit: SidebarUserMenuProps["credit"] = credits
     ? { state: "ready", label: t("已使用积分"), ...credits }
+    : creditSources.failed ? { state: "error", label: t("积分包额度加载失败，点击重试"), onRetry: creditSources.reload }
+    : creditSources.loading ? { state: "loading", label: t("加载中...") }
     : { state: state === "ready" ? "idle" : state, label: creditLabel };
   const overview: SidebarUserMenuProps["overview"] = {
     expiresAt: formatExpiryDate(operablePass?.expired_time, locale) ?? "—",
