@@ -7,6 +7,8 @@ import { WorkbenchLocaleController } from "../apps/workbench-web/src/i18n/workbe
 
 const heading = { id: "chat.companionHeading", defaultMessage: "What would you like to do together today?" };
 const placeholder = { id: "chat.companionPlaceholder", defaultMessage: "Share your thoughts, or ask me to help with something" };
+const thinking = { id: "chat.thinking", defaultMessage: "Thinking" };
+const thought = { id: "chat.thought", defaultMessage: "Thought" };
 const consoleLocales: { code: string; i18nKey: string }[] = JSON.parse(readFileSync(
   new URL("../../frontend/src/i18n/locales.json", import.meta.url), "utf8",
 ));
@@ -22,13 +24,15 @@ test("embedded companion copy covers every console language and follows host upd
       await controller.configure({ ideLocale: locale.code });
       const snapshot = controller.getSnapshot();
       assert.equal(snapshot.phase, "ready", locale.code);
-      const values = [heading, placeholder].map(message => snapshot.intl.formatMessage(message));
+      const values = [heading, placeholder, thinking, thought].map(message => snapshot.intl.formatMessage(message));
       assert.ok(values.every(value => value.length > 0 && !/OpenCraft/i.test(value)), locale.code);
       if (locale.i18nKey !== "en-US") {
         assert.notEqual(values[0], heading.defaultMessage, locale.code);
         assert.notEqual(values[1], placeholder.defaultMessage, locale.code);
+        assert.notEqual(values[2], thinking.defaultMessage, locale.code);
+        assert.notEqual(values[3], thought.defaultMessage, locale.code);
         const messages = await embeddedLocaleCatalogs.find(catalog => catalog.locale === locale.i18nKey)!.load();
-        assert.deepEqual(values, [messages[heading.id], messages[placeholder.id]], locale.code);
+        assert.deepEqual(values, [heading, placeholder, thinking, thought].map(message => messages[message.id]), locale.code);
       }
       results.set(locale.code, values);
     }

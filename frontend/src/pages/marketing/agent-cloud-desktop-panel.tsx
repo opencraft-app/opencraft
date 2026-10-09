@@ -229,7 +229,9 @@ export function AgentCloudDesktopPanel({ botId }: { botId: string }) {
 
   const statusText =
     phase === "installing"
-      ? session?.message || t("正在安装桌面环境（首次约需 2–4 分钟）…")
+      ? // 后端 session.message 是中文硬编码，无法随前端语言切换，故不直接展示；
+        // installing 文案统一走前端 i18n，进度百分比仍由 install_progress 驱动。
+        t("正在安装桌面环境（首次约需 2–4 分钟）…")
       : phase === "provisioning"
         ? t("正在启动云桌面（首次约需 1–2 分钟）…")
         : phase === "connecting"

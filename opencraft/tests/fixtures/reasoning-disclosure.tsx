@@ -6,6 +6,7 @@ import { buildCodexThemeCssProperties } from "@opencraft/design-system/theme-eng
 import { TimelineBlockRendererProvider, TimelineBlockRendererRegistryService } from "@opencraft/timeline-render-react";
 import { Conversation, type ConversationRestoreSnapshot } from "../../apps/workbench-web/src/components/conversation";
 import { BuiltinTimelineRendererPlugin } from "../../apps/workbench-web/src/components/conversation-renderers/builtin-timeline-renderer-plugin";
+import { embeddedLocaleCatalogs } from "../../apps/workbench-web/src/i18n/catalogs";
 import { createIntlTestRoot } from "./intl-root";
 import "../../apps/workbench-web/src/styles/app.scss";
 
@@ -64,6 +65,11 @@ function Demo() {
       restore = null; setEngine(selectedEngine); setGeneration(value => value + 1);
       setTurn({ id: "turn", status: "streaming", items: [reasoning(selectedEngine, action === "empty" ? "" : action === "markdown" ? markdown : text)] }); return;
     }
+    if (action === "long-detail") {
+      restore = null; setEngine(selectedEngine); setGeneration(value => value + 1);
+      setTurn({ id: "turn", status: "streaming", items: [reasoning(selectedEngine,
+        "The user asked about a long discussion, so I will inspect the earlier context and compare several sources before answering in detail. ".repeat(3))] }); return;
+    }
     if (action === "long-empty" || action === "long-empty-clock") {
       restore = null; setEngine(selectedEngine); setGeneration(value => value + 1);
       setTurn(longEmptyResponse(selectedEngine, action === "long-empty-clock")); return;
@@ -118,4 +124,4 @@ function Demo() {
     </TimelineBlockRendererProvider>
   </div>;
 }
-createIntlTestRoot(document.getElementById("root")!, undefined, params.get("locale") === "zh" ? "zh-CN" : "en-US").render(<Demo />);
+createIntlTestRoot(document.getElementById("root")!, undefined, params.get("locale") ?? "en-US", embeddedLocaleCatalogs).render(<Demo />);

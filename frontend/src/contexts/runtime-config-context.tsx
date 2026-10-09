@@ -73,6 +73,14 @@ const PAID_BILLING_OVERRIDE_STORAGE_KEY = "lightclaw:features.paidBillingEnabled
 const REALNAME_PHONE_VERIFICATION_OVERRIDE_STORAGE_KEY = "lightclaw:features.realnamePhoneVerificationEnabled";
 const ZERO_TOKEN_AUTOMATIONS_OVERRIDE_STORAGE_KEY = "lightclaw:features.zeroTokenAutomationsEnabled";
 const CLOUD_DESKTOP_OVERRIDE_STORAGE_KEY = "lightclaw:features.cloudDesktopEnabled";
+/**
+ * 云桌面「隐藏发布」闸门：现网入口默认隐藏，只有在本机显式调用过 showCloudDesktop()
+ * （写入本 key）后才显示。与 CLOUD_DESKTOP_OVERRIDE_STORAGE_KEY 的区别：后者只是
+ * 「覆盖后端下发值」的调试旋钮，本 key 是「是否放行展示」的最终闸门——后端即使下发
+ * cloudDesktopEnabled=true，未 show() 的环境依旧隐藏。用于把入口收起来发布、再按需
+ * 单机联调，避免改动后端环境变量 / 等后端发布。
+ */
+const CLOUD_DESKTOP_SHOWN_STORAGE_KEY = "lightclaw:cloudDesktop.shown";
 
 const RuntimeConfigContext = createContext<RuntimeConfigState>({
   config: DEFAULT_RUNTIME_CONFIG,
@@ -258,17 +266,62 @@ export const useReferralEnabled = (): boolean => {
 };
 
 /**
- * 云桌面入口守卫：仅在后端下发 `features.cloudDesktopEnabled === true` 的环境显示
- * 「云桌面」菜单。后端据 DESKTOP_INGRESS_DOMAIN 是否配置决定该值——已就绪环境
- * （如 sandbox-bj-7）为 true，现网未配置时为 false，避免暴露无后端支撑的死入口。
+ * 云桌面入口守卫（隐藏发布）：可见性只由本机 show() 闸门决定——现网以隐藏态发布，
+ * 需要联调/演示时在控制台执行 `showCloudDesktop()` 单机打开，`hideCloudDesktop()` 还原。
+ *
+ * 不再看后端 `features.cloudDesktopEnabled`：该值由 ctl 的 CLOUD_DESKTOP_ENABLED 下发，
+ * 现网各环境（shprod/sgprod/sandbox-bj-7）均已为 true，作为判据已无区分度；且它表达的
+ * 是「环境是否具备能力」，而入口要不要给人看是发布节奏问题，两者不该混在一个条件里。
+ * （连带影响：CLOUD_DESKTOP_OVERRIDE_STORAGE_KEY 那个 override 已不再影响入口可见性。）
  */
-const resolveCloudDesktopEnabled = (config: RuntimeConfig): boolean =>
-  config.features.cloudDesktopEnabled === true;
+const resolveCloudDesktopEnabled = (): boolean =>
+  readBooleanOverride(CLOUD_DESKTOP_SHOWN_STORAGE_KEY) === true;
 
 export const useCloudDesktopEnabled = (): boolean => {
-  const { config } = useRuntimeConfig();
-  return resolveCloudDesktopEnabled(config);
+  // 仍订阅 runtime config：配置加载完成/刷新后要触发重渲染，可见性随之重算。
+  useRuntimeConfig();
+  return resolveCloudDesktopEnabled();
 };
+
+/**
+ * 单机打开云桌面入口（联调/验收用）：写入 localStorage 闸门后刷新生效。
+ * 只影响当前浏览器，不改动服务端、不影响其他用户。
+ */
+export const showCloudDesktop = (): void => {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(CLOUD_DESKTOP_SHOWN_STORAGE_KEY, "true");
+  } catch {
+    // localStorage 不可用（隐私模式等）时无法打开，入口保持隐藏。
+    return;
+  }
+  window.location.reload();
+};
+
+/** 还原隐藏态（与 showCloudDesktop 配对）。 */
+export const hideCloudDesktop = (): void => {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(CLOUD_DESKTOP_SHOWN_STORAGE_KEY);
+  } catch {
+    return;
+  }
+  window.location.reload();
+};
+
+declare global {
+  interface Window {
+    /** 控制台快捷入口：等价于 showCloudDesktop()。 */
+    showCloudDesktop?: () => void;
+    /** 控制台快捷入口：等价于 hideCloudDesktop()。 */
+    hideCloudDesktop?: () => void;
+  }
+}
+
+if (typeof window !== "undefined") {
+  window.showCloudDesktop = showCloudDesktop;
+  window.hideCloudDesktop = hideCloudDesktop;
+}
 
 export const __runtimeConfigTestHooks = {
   DEFAULT_RUNTIME_CONFIG,
@@ -276,10 +329,13 @@ export const __runtimeConfigTestHooks = {
   REALNAME_PHONE_VERIFICATION_OVERRIDE_STORAGE_KEY,
   ZERO_TOKEN_AUTOMATIONS_OVERRIDE_STORAGE_KEY,
   CLOUD_DESKTOP_OVERRIDE_STORAGE_KEY,
+  CLOUD_DESKTOP_SHOWN_STORAGE_KEY,
   applyRuntimeOverrides,
   getEdgeOnePreviewRuntimeConfig,
   resolveReferralEnabled,
   resolveCloudDesktopEnabled,
+  showCloudDesktop,
+  hideCloudDesktop,
   normalizeRuntimeConfig,
   resolvePaidBillingEnabled,
   resolveRealnamePhoneVerificationEnabled,

@@ -8,6 +8,8 @@ const {
   PAID_BILLING_OVERRIDE_STORAGE_KEY,
   ZERO_TOKEN_AUTOMATIONS_OVERRIDE_STORAGE_KEY,
   CLOUD_DESKTOP_OVERRIDE_STORAGE_KEY,
+  CLOUD_DESKTOP_SHOWN_STORAGE_KEY,
+  resolveCloudDesktopEnabled,
   resolveMultiBotEnabled,
   resolvePaidBillingEnabled,
   resolveRealnamePhoneVerificationEnabled,
@@ -63,6 +65,19 @@ describe("runtime config normalization", () => {
         .features.cloudDesktopEnabled,
     ).toBe(false);
     window.localStorage.removeItem(CLOUD_DESKTOP_OVERRIDE_STORAGE_KEY);
+  });
+
+  it("keeps the cloud desktop entry hidden until show() unlocks it locally", () => {
+    // 隐藏发布的核心保证：默认隐藏，与后端下发值无关（现网各环境已统一为 true）。
+    window.localStorage.removeItem(CLOUD_DESKTOP_SHOWN_STORAGE_KEY);
+    expect(resolveCloudDesktopEnabled()).toBe(false);
+
+    window.localStorage.setItem(CLOUD_DESKTOP_SHOWN_STORAGE_KEY, "true");
+    expect(resolveCloudDesktopEnabled()).toBe(true);
+
+    window.localStorage.setItem(CLOUD_DESKTOP_SHOWN_STORAGE_KEY, "not-a-bool");
+    expect(resolveCloudDesktopEnabled()).toBe(false);
+    window.localStorage.removeItem(CLOUD_DESKTOP_SHOWN_STORAGE_KEY);
   });
 
   it("defaults multi-bot on but accepts an explicit runtime rollback", () => {
