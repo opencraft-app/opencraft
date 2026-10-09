@@ -9,7 +9,7 @@ source_of_truth: ["frontend/src/i18n/locales.json", "opencraft/apps/workbench-we
 status: active
 reviewed_at: 2026-10-09
 review_due: 2026-11-09
-revision: 1.2.3
+revision: 1.2.4
 precedence: task
 derived: false
 ---
@@ -204,3 +204,16 @@ derived: false
 - 聚焦复制测试 3/3、完整 CI runtime 门禁通过，冲突标记/空白检查通过。merge commit `1c107719b2f67467cb93ce078f620e137b1256fc` 已推送，远端 SHA 一致；bootstrap worktree 干净。
 - 工蜂 API 回读 !5125：opened / can_be_merged、source_commit 为上述 SHA、target_commit 为 dabd4fd36a，commit_check_state pending；未宣称远端 CI 通过。
 - MR 标题/描述已改为测试夹具补强的最终范围。未合并 MR 或手动启动流水线。主马来语分支仅本地 checkpoint/catalog 更新仍未提交推送。
+
+## MR !5116 CI 与冲突修复 checkpoint（2026-10-09）
+- 用户反馈 !5116 同时 CI 失败和合并冲突，授权修复更新。工蜂回读确认 source 仍是旧 `f45cd77b24`，失败仍对应原 `b-dc186cdc8b8a4752991931d04fd36cca`（2m11s），不是同步之后的新构建。
+- fetch master 最新 `1b9faf845e`，已包含 !5123 实际依赖安装修复和 !5125 的测试补强，也包含 !5122 云桌面开关与 VelaChat reference subtree。先提交此前本地诊断 checkpoint/catalog（`ebeac4aa2a`），避免在脏目录覆盖上下文，再执行正常 merge。
+- 唯一冲突在 UPSTREAM.json 的 sourceRevision。合并时使用已有有效清单解决冲突，合并真源提交 `92ecdb59ff` 后运行机械同步；后续独立生成清单提交 `eebfa37f15`，sourceRevision 指向合并真源，133 文件只读检查通过。上游运行时与 reference 内容原样保留。
+- CI 固定 Node 22.12.0 下工作台 embedded-ci 222/222、222 条消息 ICU/参数检查通过；上游 runtime-config/云桌面提示相关 18/18 回归通过。
+- 独立隔离 frontend guard 已完成 frozen install、check（166/171、0 new）及本 MR 新增的马来语门禁在内 13 文件 / 168 测试；继续执行双站静态构建。CI runtime 和完整 MR 变更文档影响门禁通过。
+- 剩余：确认双站构建最终 exit 0、提交 checkpoint/catalog、推送 !5116 并回读合并/新 CI 状态。未合并 MR、未手动启动蓝盾流水线；远端步骤日志权限缺失边界仍有效。
+
+### !5116 同步最新 master 后的完整本地门禁
+- `/data/tmp/lightclaw-frontend-guard.OjZuuV` 独立 frozen install，CI Node 22.12.0 / pnpm 10.32.1；完整候选 frontend guard exit 0：类型检查 166/171、0 new；13 文件 / 168 测试（包含新增马来语门禁）；国内 108 静态任务 / 196 HTML / 8 SEO 路由、国际 708 静态任务 / 1,392 HTML / 50 SEO 路由均通过。
+- CI runtime、MR 全部变更文档影响、工作台 embedded-ci 222/222、222 条消息 ICU/参数校验及上游运行时/云桌面相关 18/18 回归通过；133 文件同步检查通过。
+- 当前只剩提交推送和远端新提交的流水线回读。既有全量 Vitest 超时/历史失败记录未改为全量成功，真实账号及生产发布未执行。
