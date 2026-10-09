@@ -66,6 +66,8 @@ and allow existing managed Bots to perform a first installation.
 - Standalone installation instructions uploaded separately to immutable guide path
   vela-im/guides/v0.1.0-bot.20261009.1/INSTALL.md; public bytes match the local guide.
 - Enabled-release frontend check passed (zero new diagnostics); all 16 targeted tests passed.
+- Enabled-release Beijing build passed; generated console gate verified 130 files;
+  final documentation validation reports zero errors. Release enablement commit 5aa8226df.
 
 ## handoff
 - COS upload completed; its temporary authentication file was deleted immediately.
