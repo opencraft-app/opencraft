@@ -61,6 +61,18 @@ try {
       await update("empty", engine);
       assert.equal(await page.locator('.thread-reasoning').count(), 0, 'empty reasoning cannot create an empty disclosure');
       assert.equal(await page.locator('.thread-thinking-placeholder').count(), 1, 'no content retains one noninteractive status');
+      await update("long-detail", engine);
+      for (const phase of ["running", "settled"]) {
+        const widths = await page.locator('.thread-reasoning').evaluate(element => {
+          const summary = element.querySelector<HTMLElement>('.thread-activity-item__summary')!;
+          const detail = element.querySelector<HTMLElement>('.thread-activity-item__detail')!;
+          return { summary: [summary.clientWidth, summary.scrollWidth], detail: [detail.clientWidth, detail.scrollWidth] };
+        });
+        assert.ok(widths.summary[0] + 1 >= widths.summary[1], `${phase} thinking label must be fully visible`);
+        assert.ok(widths.detail[0] + 1 < widths.detail[1], `${phase} long preview should truncate first`);
+        if (phase === "running") await update("tools");
+      }
+      await page.screenshot({ path: join(output, `${engine}-${theme}-${touch ? 'touch' : 'mouse'}-long-detail.png`) });
       await update("reset", engine);
       const reason = page.locator('.thread-reasoning');
       const toggle = reason.getByRole('button');
@@ -263,5 +275,37 @@ try {
       existingToolGroupResizeWarnings: resizeFeedback.map((event: any) => event.action) }));
     await page.close();
   }
-  console.log(JSON.stringify({ passed: results, output, scope: 'Real shared projector and Conversation/disclosure/viewport; engine text synthetic, not paid model or native iPhone acceptance.' }));
+  const localizedLabels = [
+    ["zh-Hant", "思考中…", "思考過程"],
+    ["id-ID", "Sedang berpikir…", "Proses berpikir"],
+    ["es", "Pensando…", "Razonamiento"],
+    ["ja-JP", "思考中…", "思考過程"],
+    ["ko-KR", "생각하는 중…", "사고 과정"],
+  ] as const;
+  for (const [locale, running, settled] of localizedLabels) {
+    const page = await browser.newPage({ viewport: { width: 390, height: 900 }, isMobile: true, hasTouch: true });
+    await page.goto(`http://127.0.0.1:${(vite.httpServer!.address() as { port: number }).port}/?theme=light&locale=${locale}`);
+    await page.locator('[data-revision="0"]').waitFor();
+    await page.evaluate(() => (window as any).update("long-detail", "codex"));
+    await page.locator('[data-revision="1"]').waitFor();
+    for (const [label, revision] of [[running, 1], [settled, 2]] as const) {
+      const header = await page.locator('.thread-reasoning').evaluate(element => {
+        const summary = element.querySelector<HTMLElement>('.thread-activity-item__summary')!;
+        const detail = element.querySelector<HTMLElement>('.thread-activity-item__detail')!;
+        return { label: summary.firstChild?.textContent, summary: [summary.clientWidth, summary.scrollWidth],
+          detail: [detail.clientWidth, detail.scrollWidth] };
+      });
+      assert.equal(header.label, label, `${locale} reasoning label`);
+      assert.ok(header.summary[0] + 1 >= header.summary[1], `${locale} reasoning label must fit`);
+      assert.ok(header.detail[0] + 1 < header.detail[1], `${locale} long preview should truncate`);
+      if (revision === 1) {
+        await page.evaluate(() => (window as any).update("tools"));
+        await page.locator('[data-revision="2"]').waitFor();
+      }
+    }
+    await page.screenshot({ path: join(output, `codex-${locale}-touch-long-detail.png`) });
+    await page.close();
+  }
+  console.log(JSON.stringify({ passed: results, localizedLabels: localizedLabels.map(([locale]) => locale), output,
+    scope: 'Real shared projector and Conversation/disclosure/viewport; engine text synthetic, not paid model or native iPhone acceptance.' }));
 } finally { await browser?.close(); await vite.close(); }

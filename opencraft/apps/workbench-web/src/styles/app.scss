@@ -6971,6 +6971,10 @@ html[data-codex-window-type="electron"] .thread-scroll {
   white-space: nowrap;
 }
 
+.thread-reasoning .thread-activity-item__summary {
+  flex-shrink: 0;
+}
+
 .thread-activity-item__detail {
   min-width: 0;
   flex: 1 1 auto;
