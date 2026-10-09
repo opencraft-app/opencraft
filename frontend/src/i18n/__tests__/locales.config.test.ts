@@ -46,6 +46,7 @@ describe("locales.json 与联合类型的一致性", () => {
     "zh-SG",
     "zh-Hant",
     "id-ID",
+    "ms-MY",
     "es",
     "ja-JP",
     "ko-KR",
@@ -58,6 +59,7 @@ describe("locales.json 与联合类型的一致性", () => {
     "zh-sg",
     "zh-hant",
     "id-id",
+    "ms-my",
     "es",
     "ja-jp",
     "ko-kr",
@@ -139,7 +141,7 @@ describe("注册表自身一致性", () => {
   });
 
   it("既有 4 语种与新增 3 语种均已注册", () => {
-    for (const code of ["en-US", "zh-CN", "zh-SG", "zh-Hant", "id-ID", "es", "ja-JP", "ko-KR"] as const) {
+    for (const code of ["en-US", "zh-CN", "zh-SG", "zh-Hant", "id-ID", "ms-MY", "es", "ja-JP", "ko-KR"] as const) {
       expect(ALL_LOCALE_CODES).toContain(code);
     }
   });
@@ -247,7 +249,7 @@ describe("不可信输入的白名单收敛", () => {
     } as const;
 
     expect(runtimeLocaleDefinitions(previewOptions).map((definition) => definition.code))
-      .toEqual(["en-US", "zh-CN", "zh-SG", "zh-Hant", "id-ID", "es", "ja-JP", "ko-KR"]);
+      .toEqual(["en-US", "zh-CN", "zh-SG", "zh-Hant", "id-ID", "ms-MY", "es", "ja-JP", "ko-KR"]);
     expect(parseRuntimeLocaleCode("ja-JP", previewOptions)).toBe("ja-JP");
     expect(parseRuntimeLocaleCode("unknown", previewOptions)).toBeNull();
   });
@@ -307,6 +309,7 @@ describe("新增语种的已知约束", () => {
       "zh-SG",
       "zh-Hant",
       "id-ID",
+    "ms-MY",
       "es",
       "ja-JP",
       "ko-KR",

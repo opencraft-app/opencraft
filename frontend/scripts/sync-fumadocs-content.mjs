@@ -39,6 +39,7 @@ const LOCALES = Object.freeze({
   ZH_SG: 'zh-SG',
   ZH_HANT: 'zh-Hant',
   ID_ID: 'id-ID',
+  MS_MY: 'ms-MY',
   ES: 'es',
   JA_JP: 'ja-JP',
   KO_KR: 'ko-KR',
@@ -51,6 +52,7 @@ const URL_LANGS = Object.freeze({
   ZH_SG: 'zh-sg',
   ZH_HANT: 'zh-hant',
   ID_ID: 'id-id',
+  MS_MY: 'ms-my',
   ES: 'es',
   JA_JP: 'ja-jp',
   KO_KR: 'ko-kr',
@@ -1524,7 +1526,17 @@ function koreanDocMetadata(file) {
   };
 }
 
+const msMetadata = JSON.parse(readFileSync(join(sourceRoot, 'ms', 'metadata.json'), 'utf8'));
 for (const doc of globalDocs) {
+  const metadata = msMetadata[doc.file];
+  if (!metadata) throw new Error(`missing Malay docs metadata: ${doc.file}`);
+  doc.title[LOCALES.MS_MY] = metadata.title;
+  doc.description[LOCALES.MS_MY] = metadata.description;
+  if (doc.group && typeof doc.group === 'object') {
+    const group = msMetadata.groups[doc.group[LOCALES.EN_US]];
+    if (!group) throw new Error(`missing Malay docs group: ${doc.group[LOCALES.EN_US]}`);
+    doc.group[LOCALES.MS_MY] = group;
+  }
   if (doc.group && typeof doc.group === 'object') {
     const englishGroup = doc.group[LOCALES.EN_US];
     const esGroup = ES_GROUP_LABELS[englishGroup];
@@ -1588,6 +1600,8 @@ const globalDocsForIndonesian = globalDocs.filter(
     existsSync(join(sourceRoot, 'id', doc.file)) &&
     !isHiddenFor(doc, LOCALES.ID_ID),
 );
+
+const globalDocsForMalay = globalDocsForEnglish.filter((doc) => existsSync(join(sourceRoot, 'ms', doc.file)));
 
 const globalDocsForSpanish = globalDocsForEnglish.filter((doc) =>
   existsSync(join(sourceRoot, 'es', doc.file)),
@@ -1662,6 +1676,13 @@ const docSets = [
     title: 'Dokumentasi LightVela',
   },
   {
+    outputPrefix: URL_LANGS.MS_MY,
+    sourcePrefix: 'ms',
+    locale: LOCALES.MS_MY,
+    docs: globalDocsForMalay,
+    title: 'Dokumentasi LightVela',
+  },
+  {
     outputPrefix: URL_LANGS.ES,
     sourcePrefix: 'es',
     locale: LOCALES.ES,
@@ -1729,6 +1750,8 @@ function allDocsForLinks(outputPrefix) {
     localeDocs = globalDocsForChineseLocale(LOCALES.ZH_HANT);
   } else if (outputPrefix === URL_LANGS.ID_ID) {
     localeDocs = globalDocsForIndonesian;
+  } else if (outputPrefix === URL_LANGS.MS_MY) {
+    localeDocs = globalDocsForMalay;
   } else if (outputPrefix === URL_LANGS.ES) {
     localeDocs = globalDocsForSpanish;
   } else if (outputPrefix === URL_LANGS.JA_JP) {
@@ -1738,7 +1761,7 @@ function allDocsForLinks(outputPrefix) {
   } else {
     localeDocs = globalDocsForEnglish;
   }
-  return [URL_LANGS.ES, URL_LANGS.JA_JP, URL_LANGS.KO_KR].includes(outputPrefix)
+  return [URL_LANGS.MS_MY, URL_LANGS.ES, URL_LANGS.JA_JP, URL_LANGS.KO_KR].includes(outputPrefix)
     ? localeDocs
     : [...cnDocs, ...localeDocs];
 }
@@ -1761,6 +1784,7 @@ function fileToHrefFor(outputPrefix) {
 function localizedImageName(imageName, locale) {
   const suffixesByLocale = {
     [LOCALES.EN_US]: ['-en'],
+    [LOCALES.MS_MY]: ['-ms', '-en'],
     [LOCALES.ZH_HANT]: ['-zh-hant'],
     [LOCALES.ID_ID]: ['-id', '-en'],
     [LOCALES.ES]: ['-es', '-en'],
@@ -1804,11 +1828,14 @@ function rewriteMarkdownLinkDestination(destination, currentDir, fileToHref, out
     return target ? `${target}${suffix}${titleSuffix}` : destination;
   }
 
-  if (![URL_LANGS.ES, URL_LANGS.JA_JP, URL_LANGS.KO_KR].includes(outputPrefix)) return destination;
+  if (![URL_LANGS.MS_MY, URL_LANGS.ES, URL_LANGS.JA_JP, URL_LANGS.KO_KR].includes(outputPrefix)) return destination;
 
   const docsPath = hrefPath.startsWith('https://lightvela.ai/')
     ? hrefPath.slice('https://lightvela.ai'.length)
     : hrefPath;
+  if (outputPrefix === URL_LANGS.MS_MY && /^\/(?:$|(?:subscribe|changelog|about|blog|support|privacy-policy|terms-of-service|open-source-licenses|cookie-policy)(?:\/|$))/.test(docsPath)) {
+    return `/${outputPrefix}${docsPath}${suffix}${titleSuffix}`;
+  }
   if (docsPath !== '/docs' && !docsPath.startsWith('/docs/')) return destination;
 
   const slug = docsPath.slice('/docs'.length).replace(/^\//, '').replace(/\/$/, '');
@@ -1859,7 +1886,7 @@ function writeDoc(docSet, doc) {
   const raw = readFileSync(inputPath, 'utf8').replace(/\r\n/g, '\n');
   const body = convert(
     normalizeMarkdownLinks(
-      stripTitle(raw, rawTitle, [LOCALES.ES, LOCALES.JA_JP, LOCALES.KO_KR].includes(docSet.locale)),
+      stripTitle(raw, rawTitle, [LOCALES.MS_MY, LOCALES.ES, LOCALES.JA_JP, LOCALES.KO_KR].includes(docSet.locale)),
       doc.file,
       docSet.outputPrefix,
       docSet.locale,

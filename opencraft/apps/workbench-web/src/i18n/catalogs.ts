@@ -12,6 +12,7 @@ export const localeCatalogs: readonly LocaleCatalog[] = Object.freeze([
  * their English defaultMessage fallback; standalone language options stay unchanged. */
 export const embeddedLocaleCatalogs: readonly LocaleCatalog[] = Object.freeze([
   ...localeCatalogs,
+  { locale: "ms-MY", label: "Bahasa Melayu", load: async () => (await import("./locales/ms-MY.json")).default },
   ...Object.entries(companionMessages).map(([locale, messages]) => ({
     locale,
     label: locale,

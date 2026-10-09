@@ -14,6 +14,7 @@ import { describe, expect, it } from "vitest";
 import enUS from "../generated/en-US.json";
 import es from "../generated/es.json";
 import idID from "../generated/id-ID.json";
+import msMY from "../generated/ms-MY.json";
 import jaJP from "../generated/ja-JP.json";
 import koKR from "../generated/ko-KR.json";
 import zhCN from "../generated/zh-CN.json";
@@ -26,6 +27,7 @@ const DICTS: Record<I18nDictKey, Record<string, string>> = {
   "zh-CN": zhCN,
   "zh-Hant": zhHant,
   "id-ID": idID,
+  "ms-MY": msMY,
   es,
   "ja-JP": jaJP,
   "ko-KR": koKR,

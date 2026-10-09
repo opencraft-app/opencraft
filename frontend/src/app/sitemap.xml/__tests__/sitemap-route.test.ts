@@ -14,7 +14,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 // manifest 是构建期生成产物（国内站只含 zh-cn，国际站含 6 个 locale），
 // 这里固定为全量 locale，以便同一份 mock 同时验证两个 region 的分支。
-const MOCK_LOCALES = ['en-us', 'zh-cn', 'zh-sg', 'zh-hant', 'id-id', 'es'] as const;
+const MOCK_LOCALES = ['en-us', 'zh-cn', 'zh-sg', 'zh-hant', 'id-id', 'ms-my', 'es'] as const;
 const MOCK_SLUGS = [[], ['overview'], ['plans']] as const;
 /** 每篇文档一个不同日期，用来验证 lastmod 是**逐 URL**取值，而不是全站同一个时间。 */
 const MOCK_LAST_UPDATED: Record<string, string> = {
@@ -119,7 +119,7 @@ describe('sitemap.xml — 国际站（global）', () => {
     expect(locs).toContain('https://lightvela.ai/blog/lightvela-personal-ai-cloud-now-live/');
     expect(locs).toContain('https://lightvela.ai/zh-hant/blog/');
     expect(locs).toContain('https://lightvela.ai/zh-hant/blog/lightvela-personal-ai-cloud-now-live/');
-    for (const prefix of ['id-id', 'es', 'ja-jp', 'ko-kr']) {
+    for (const prefix of ['id-id', 'ms-my', 'es', 'ja-jp', 'ko-kr']) {
       expect(locs).toContain(`https://lightvela.ai/${prefix}/blog/lightvela-personal-ai-cloud-now-live/`);
       expect(locs).toContain(`https://lightvela.ai/${prefix}/blog/hermes-dsh-pelican-cup/`);
     }
@@ -155,14 +155,15 @@ describe('sitemap.xml — 国际站（global）', () => {
     expect(blogHreflangs.length).toBeGreaterThan(0);
     const chinese = hreflangs.filter((entry) => entry.href.includes('/blog/hermes-dsh-pelican-cup/'));
     const english = hreflangs.filter((entry) => entry.href.includes('/blog/lightvela-personal-ai-cloud-now-live/'));
-    expect(new Set(chinese.map((entry) => entry.hreflang))).toEqual(new Set(['x-default', 'en-US', 'zh-CN', 'zh-SG', 'zh-Hant', 'id-ID', 'es', 'ja-JP', 'ko-KR']));
-    expect(new Set(english.map((entry) => entry.hreflang))).toEqual(new Set(['x-default', 'en-US', 'zh-CN', 'zh-SG', 'zh-Hant', 'id-ID', 'es', 'ja-JP', 'ko-KR']));
+    expect(new Set(chinese.map((entry) => entry.hreflang))).toEqual(new Set(['x-default', 'en-US', 'zh-CN', 'zh-SG', 'zh-Hant', 'id-ID', 'ms-MY', 'es', 'ja-JP', 'ko-KR']));
+    expect(new Set(english.map((entry) => entry.hreflang))).toEqual(new Set(['x-default', 'en-US', 'zh-CN', 'zh-SG', 'zh-Hant', 'id-ID', 'ms-MY', 'es', 'ja-JP', 'ko-KR']));
     expect(new Set(blogHreflangs.map((entry) => entry.hreflang))).toEqual(new Set([
       'x-default',
       'en-US',
       'zh-SG',
       'zh-Hant',
       'id-ID',
+      'ms-MY',
       'es',
       'ja-JP',
       'ko-KR',

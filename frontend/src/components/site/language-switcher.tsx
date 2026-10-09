@@ -143,6 +143,7 @@ function applyLocaleChange(
 }
 
 function chinaSiteLabel(activeLocale: PublicSiteLocale): string {
+  if (activeLocale === PUBLIC_SITE_LOCALES.MS_MY) return "Laman China";
   if (activeLocale === PUBLIC_SITE_LOCALES.ZH_HANT) return "中國站";
   return activeLocale.startsWith("zh") ? "中国站" : "China Site";
 }
@@ -270,7 +271,7 @@ function DropdownSwitcher({
   ));
   const options = buildLanguageSwitcherOptions(
     visibleLocales,
-    isGlobal ? "International Site" : "国际站",
+    active.value === PUBLIC_SITE_LOCALES.MS_MY ? "Laman Antarabangsa" : isGlobal ? "International Site" : "国际站",
   );
 
   /* 点击外部关闭下拉 */
@@ -332,7 +333,7 @@ function DropdownSwitcher({
           !isGlobal ? "font-semibold text-black/90" : "font-normal text-black/80"
         }`}
       >
-        <span>{isGlobal && active.value !== PUBLIC_SITE_LOCALES.ZH_HANT ? "中国站" : chinaSiteLabel(active.value)}</span>
+        <span>{isGlobal && active.value !== PUBLIC_SITE_LOCALES.ZH_HANT && active.value !== PUBLIC_SITE_LOCALES.MS_MY ? "中国站" : chinaSiteLabel(active.value)}</span>
         {!isGlobal && <Check className="h-[14px] w-[14px]" />}
       </button>
     </li>
@@ -352,7 +353,7 @@ function DropdownSwitcher({
         type="button"
         aria-haspopup="listbox"
         aria-expanded={open}
-        aria-label="Change language"
+        aria-label={active.value === PUBLIC_SITE_LOCALES.MS_MY ? "Tukar bahasa" : "Change language"}
         onClick={() => setOpen((v) => !v)}
         onKeyDown={(event) => {
           if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
@@ -424,7 +425,7 @@ function InlineSwitcher({
         PUBLIC_SITE_LOCALES.ZH_HANT,
         PUBLIC_SITE_LOCALES.ID_ID,
       ];
-  const options = buildLanguageSwitcherOptions(inlineLocales, "Intl");
+  const options = buildLanguageSwitcherOptions(inlineLocales, active.value === PUBLIC_SITE_LOCALES.MS_MY ? "Antarabangsa" : "Intl");
 
   return (
     <div className="flex flex-col gap-2">

@@ -25,6 +25,7 @@ function langForOutputPath(path) {
   if (relative.startsWith('zh-sg/')) return 'zh-SG';
   if (relative.startsWith('zh-hant/')) return 'zh-Hant';
   if (relative.startsWith('id-id/')) return 'id-ID';
+  if (relative.startsWith('ms-my/')) return 'ms-MY';
   if (relative.startsWith('es/')) return 'es';
   if (relative.startsWith('ja-jp/')) return 'ja-JP';
   if (relative.startsWith('ko-kr/')) return 'ko-KR';

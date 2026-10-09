@@ -6,6 +6,7 @@ const INTERNATIONAL_V2_HOME_LOCALES = new Set<PublicSiteLocale>([
   "zh-SG",
   "zh-Hant",
   "id-ID",
+  "ms-MY",
   "es",
   "ja-JP",
   "ko-KR",

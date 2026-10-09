@@ -1,0 +1,283 @@
+{
+  "groups": {
+    "Getting Started": "Bermula",
+    "Plans & Activation": "Pelan & Pengaktifan",
+    "Features & Configuration": "Ciri & Konfigurasi",
+    "Use Cases": "Kes Penggunaan",
+    "Compare & Choose": "Bandingkan & Pilih",
+    "Hermes Agent Deep Dive": "Kupasan Mendalam Hermes Agent",
+    "Support": "Sokongan"
+  },
+  "01-overview.md": {
+    "title": "Apakah LightVela",
+    "description": "LightVela ialah rakan Hermes Agent dihoskan yang memastikan perbualan dan automasi berjalan di awan."
+  },
+  "02-quickstart.md": {
+    "title": "Mula pantas",
+    "description": "Sediakan perbualan LightVela pertama anda dalam beberapa minit."
+  },
+  "04-core-concepts.md": {
+    "title": "Konsep Teras",
+    "description": "Fahami Hermes, model, saluran, kemahiran dan automasi dalam LightVela."
+  },
+  "who-is-lightvela-for.md": {
+    "title": "Untuk Siapa LightVela?",
+    "description": "Ketahui untuk siapa LightVela direka, termasuk orang yang mahukan rakan AI peribadi dihoskan awan tanpa mengurus pelayan atau infrastruktur."
+  },
+  "plans.md": {
+    "title": "Rancangan",
+    "description": "Bandingkan pelan LightVela, persekitaran awan khusus, kredit AI bulanan, peraturan pemulangan, dan langkah permohonan pemulangan melalui emel."
+  },
+  "credits.md": {
+    "title": "Kredit",
+    "description": "Ketahui cara kredit model LightVela diperuntukkan, digunakan oleh penggunaan token dan berkaitan dengan pelan dan model."
+  },
+  "create-first-hermes.md": {
+    "title": "Bagaimana Saya Mengaktifkan Contoh Hermes Pertama Saya?",
+    "description": "Aktifkan contoh Hermes pertama anda dengan Google atau GitHub, pelan yang tersedia, peruntukan awan automatik dan saluran pemesejan antarabangsa."
+  },
+  "05-configuration.md": {
+    "title": "Gambaran Keseluruhan Konfigurasi",
+    "description": "Semak aliran konfigurasi konsol LightVela."
+  },
+  "configuration/bots.md": {
+    "title": "Urus Bots",
+    "description": "Cipta, salin, tukar, ubah nama, dan padam Bots dalam satu Hermes Agent."
+  },
+  "configuration/model.md": {
+    "title": "Konfigurasikan Model",
+    "description": "Sambung dan urus model bahasa yang digunakan oleh Hermes."
+  },
+  "configuration/channel-telegram.md": {
+    "title": "Telegram",
+    "description": "Sambungkan Telegram kepada Hermes Agent anda."
+  },
+  "configuration/channel-whatsapp.md": {
+    "title": "WhatsApp",
+    "description": "Sambungkan WhatsApp kepada Hermes Agent anda."
+  },
+  "configuration/channel-discord.md": {
+    "title": "Perselisihan",
+    "description": "Sambungkan Discord kepada Hermes Agent anda."
+  },
+  "configuration/channel-slack.md": {
+    "title": "Kendur",
+    "description": "Sambungkan Slack kepada Hermes Agent anda dengan Slack Token Bot dan Token Apl."
+  },
+  "configuration/channel-wechat.md": {
+    "title": "WeChat",
+    "description": "Sambungkan WeChat kepada Hermes Agent anda."
+  },
+  "configuration/channel-qq.md": {
+    "title": "QQ",
+    "description": "Sambungkan QQ kepada Hermes Agent anda."
+  },
+  "configuration/channel-wecom.md": {
+    "title": "WeCom",
+    "description": "Sambungkan WeCom kepada Hermes Agent anda."
+  },
+  "configuration/channel-feishu.md": {
+    "title": "Lark",
+    "description": "Sambungkan Lark kepada Hermes Agent anda."
+  },
+  "configuration/skill.md": {
+    "title": "Konfigurasikan Kemahiran",
+    "description": "Pasang kemahiran untuk memanjangkan keupayaan Hermes."
+  },
+  "configuration/personality.md": {
+    "title": "Jiwa",
+    "description": "Pilih dan gunakan Jiwa untuk menentukan Hermes peranan, suara, keutamaan dan sempadan tingkah laku ejen."
+  },
+  "configuration/achievements.md": {
+    "title": "Pencapaian",
+    "description": "Semak pencapaian, kemajuan, peraturan pengiraan, dan status imbasan sejarah Hermes Agent Bot semasa."
+  },
+  "configuration/memory.md": {
+    "title": "Pengurusan Memori",
+    "description": "Ketahui cara Hermes menyimpan dan mengurus kenangan jangka panjang serta profil pengguna merentas peranti dan saluran pemesejan."
+  },
+  "configuration/automation.md": {
+    "title": "Tugas Berjadual",
+    "description": "Buat automasi berjadual untuk Hermes Agent anda."
+  },
+  "configuration/files.md": {
+    "title": "Storan Awan",
+    "description": ""
+  },
+  "configuration/agent-chat.md": {
+    "title": "Sembang",
+    "description": "Berbual dengan Hermes dan periksa tingkah laku perbualan."
+  },
+  "configuration/diagnostics.md": {
+    "title": "Diagnostik",
+    "description": ""
+  },
+  "configuration/advanced-settings.md": {
+    "title": "Tetapan Lanjutan",
+    "description": "Semak dan laraskan Hermes tetapan keselamatan ejen, ingatan dan pengurusan konteks."
+  },
+  "configuration/multiple-models.md": {
+    "title": "Penukaran Model",
+    "description": ""
+  },
+  "configuration/bots-switching.md": {
+    "title": "Bertukar Bot",
+    "description": "Cipta, konfigurasikan, dan bertukar antara Bot khusus dalam satu Ejen awan LightVela."
+  },
+  "configuration/deepseek-harness.md": {
+    "title": "DeepSeek Harness",
+    "description": "Pasang dan uruskan masa jalan DeepSeek Harness Labs bersama Hermes Agent dalam LightVela."
+  },
+  "configuration/workbench.md": {
+    "title": "Meja kerja",
+    "description": "Bina, gunakan dan urus tapak web statik dengan Ejen AI dalam LightVela."
+  },
+  "use-cases/personal-ai-assistant.md": {
+    "title": "Cara Membina Pembantu AI Peribadi dengan LightVela",
+    "description": ""
+  },
+  "use-cases/chinese-messaging-channels.md": {
+    "title": "Cara Menghubungkan Ejen AI ke Platform Pemesejan",
+    "description": ""
+  },
+  "use-cases/telegram-persona-agent.md": {
+    "title": "Cara Mengkonfigurasi Hermes Agent dengan Personaliti Terbeza dalam Telegram",
+    "description": ""
+  },
+  "use-cases/whatsapp-persona-agent.md": {
+    "title": "Cara Mengkonfigurasi Hermes Agent dengan Personaliti Terbeza dalam WhatsApp",
+    "description": ""
+  },
+  "use-cases/im-agent-persona-soul-md.md": {
+    "title": "Cara Menentukan Peranan, Personaliti dan Suara Ejen IM dengan SOUL.md",
+    "description": ""
+  },
+  "use-cases/multi-channel-personality-memory.md": {
+    "title": "Cara Menghubungkan Satu Ejen kepada Telegram dan WhatsApp Sambil Mengekalkan Satu Personaliti dan Ingatan Jangka Panjang",
+    "description": ""
+  },
+  "use-cases/telegram-group-community-assistant.md": {
+    "title": "Cara Menggunakan Telegram Pembantu Komuniti AI Kumpulan: Soal Jawab, Ringkasan dan Peringatan",
+    "description": ""
+  },
+  "use-cases/daily-summary.md": {
+    "title": "Cara Membuat Ringkasan Harian dengan Hermes Agent",
+    "description": ""
+  },
+  "use-cases/hermes-agent-24-7.md": {
+    "title": "Cara Mengekalkan Hermes Agent Dalam Talian 24/7",
+    "description": ""
+  },
+  "use-cases/memory-and-knowledge.md": {
+    "title": "Cara Mengurus Ingatan Jangka Panjang dan Pengetahuan Peribadi dengan Ejen",
+    "description": ""
+  },
+  "use-cases/discord-community-agent.md": {
+    "title": "Temui LightVela untuk Discord: Ejen AI Anda Discord Bot Melayan Saluran Anda",
+    "description": "Konfigurasikan Discord Ejen kongsi untuk soalan komuniti, onboarding dan sokongan acara."
+  },
+  "use-cases/discord-event-agent.md": {
+    "title": "Perkasakan Discord Bot Acara anda dengan Keupayaan AI-Agentic",
+    "description": "Gunakan Discord Ejen untuk menjawab soalan acara, menyokong peringatan dan memastikan operasi acara konsisten."
+  },
+  "use-cases/scheduled-task-agent.md": {
+    "title": "Mengautomasikan Tugas Ejen dengan LightVela",
+    "description": ""
+  },
+  "use-cases/scheduled-task-notifications.md": {
+    "title": "Menetapkan Tugas Pemberitahuan dalam LightVela",
+    "description": ""
+  },
+  "use-cases/scheduled-task-script.md": {
+    "title": "Menjalankan Tugas Skrip dalam LightVela",
+    "description": ""
+  },
+  "compare/lightvela-vs-localhost-ai-agent.md": {
+    "title": "LightVela vs Ejen Selfhost: Mana yang terbaik?",
+    "description": ""
+  },
+  "compare/lightvela-vs-hostinger.md": {
+    "title": "LightVela vs Hostinger: Manakah VPS terbaik untuk pengehosan ejen?",
+    "description": ""
+  },
+  "compare/lightvela-vs-manus.md": {
+    "title": "LightVela vs Manus: Manakah yang terbaik untuk menjadi hos Ejen AI anda?",
+    "description": ""
+  },
+  "compare/lightvela-vs-chatgpt.md": {
+    "title": "LightVela vs ChatGPT: Manakah yang terbaik untuk membina pembantu AI peribadi anda?",
+    "description": ""
+  },
+  "compare/lightvela-vs-genspark.md": {
+    "title": "LightVela vs Genspark: Manakah yang terbaik untuk menjadi hos Ejen AI anda?",
+    "description": ""
+  },
+  "compare/lightvela-vs-grok-bot.md": {
+    "title": "LightVela vs Grok Bot: Mana yang terbaik untuk menjalankan Ejen AI peribadi anda?",
+    "description": "Bandingkan LightVela dan Grok Bot untuk menjalankan Ejen AI peribadi, daripada rutin berterusan dan akses pemesejan kepada komputer awan dan kerja yang ditugaskan."
+  },
+  "compare/lightvela-vs-mira.md": {
+    "title": "LightVela vs Mira: Mana yang terbaik untuk menjalankan Ejen AI peribadi anda?",
+    "description": "Bandingkan LightVela dan Mira untuk menjalankan Ejen AI peribadi, daripada rutin berterusan dan saluran pemesejan kepada Telegram-kerja berpasukan dan tindakan berasaskan sembang yang pertama."
+  },
+  "compare/lightvela-vs-viktor.md": {
+    "title": "LightVela vs Viktor.com: Mana yang terbaik untuk menjalankan Ejen AI peribadi anda?",
+    "description": "Bandingkan LightVela dan Viktor.com untuk menjalankan Ejen AI peribadi, daripada bantuan peribadi yang berterusan kepada aliran kerja pasukan kongsi merentas alatan perniagaan."
+  },
+  "compare/lightvela-vs-today-ai.md": {
+    "title": "LightVela vs Today.AI: Manakah yang terbaik untuk pembantu AI peribadi sentiasa aktif?",
+    "description": "Bandingkan LightVela dan Today.AI untuk pembantu AI peribadi yang sentiasa aktif, daripada pengehosan Ejen yang jelas dan Tugasan Berjadual kepada konteks peribadi proaktif merentas peranti."
+  },
+  "hermes-agent/01-hermes-vs-openclaw.md": {
+    "title": "Hermes Agent vs OpenClaw: Perbezaan Asas Antara Dua Ejen Sumber Terbuka",
+    "description": "Bandingkan Hermes Agent dan OpenClaw merentas memori jangka panjang, ekosistem kemahiran dan penyepaduan berbilang platform untuk melihat ejen sumber terbuka yang sesuai dengan kes penggunaan anda."
+  },
+  "hermes-agent/02-why-hermes-remembers-you.md": {
+    "title": "Bagaimana Hermes Agent Ingat Anda?",
+    "description": "Temui sistem ingatan jangka panjang empat lapisan di belakang Hermes Agent: USER.md, MEMORY.md, arkib perbualan SQLite+FTS5 dan Kemahiran, serta cara menulis dan mengingat semula direka bentuk."
+  },
+  "hermes-agent/03-user-md-vs-memory-md.md": {
+    "title": "Mengapa USER.md dan MEMORY.md Tidak Boleh Digabungkan",
+    "description": "Tiga kekangan keras — kapasiti, strategi pemuatan dan kemas kini semantik — terangkan sebab Hermes Agent menyimpan memori jangka panjang dalam dua nota berasingan dan bukannya satu fail yang digabungkan."
+  },
+  "hermes-agent/04-hermes-memory-curation.md": {
+    "title": "Hermes Penyusunan Memori Jangka Panjang Ejen: Empat Peraturan Besi untuk \"Sedikit tetapi Tepat\"",
+    "description": "Pecahkan empat peraturan besi — terikat, beku, lutsinar, menyatukan diri — yang memastikan Hermes ingatan jangka panjang agen tepat dan bukannya kembung."
+  },
+  "hermes-agent/05-memory-vs-skill.md": {
+    "title": "Ingatan vs Kemahiran: Ingatan Deklaratif dan Ingatan Prosedur",
+    "description": "Berasaskan ingatan deklaratif vs prosedural daripada sains kognitif, terangkan sebab Hermes Agent membahagikan ingatan jangka panjang kepada Memori dan Kemahiran, dan bagaimana ia berbeza dalam pencetus, bentuk dan kelajuan evolusi."
+  },
+  "hermes-agent/06-model-vs-agent-layer.md": {
+    "title": "Bolehkah Anda Menggantikan Hermes Otak Ejen? Lapisan Model lwn Lapisan Ejen",
+    "description": "Ketahui tanggungjawab mana yang dimiliki oleh model dan yang mana kekal dengan Ejen, termasuk identiti, ingatan, alatan, saluran dan kerja berjadual."
+  },
+  "hermes-agent/07-message-gateway.md": {
+    "title": "Bagaimanakah Seorang Ejen Boleh Muncul Merentasi Berbilang Aplikasi Pemesejan?",
+    "description": "Lihat cara get laluan pemesejan menukar acara khusus saluran menjadi perbualan Ejen dikongsi sambil mengekalkan penghalaan, konteks dan balasan."
+  },
+  "hermes-agent/08-automation-scheduling.md": {
+    "title": "Bagaimana Hermes Agent Mencapai Anda mengikut Jadual?",
+    "description": "Fahami acara, jadual, pelaksanaan dan lapisan penghantaran yang membolehkan Ejen menyelesaikan kerja berulang secara proaktif."
+  },
+  "hermes-agent/09-model-switching-memory.md": {
+    "title": "Adakah Pertukaran Model Membuat Ejen Lupa?",
+    "description": "Ketahui cara reka bentuk model, persona dan memori yang dipisahkan membolehkan Ejen menukar enjin inferensnya tanpa kehilangan konteks jangka panjangnya."
+  },
+  "hermes-agent/10-persona-user-memory.md": {
+    "title": "Dari Mana Datangnya Personaliti Hermes Agent?",
+    "description": "Terokai cara peraturan persona, pilihan pengguna dan ingatan jangka panjang berfungsi bersama untuk menghasilkan personaliti Ejen yang stabil tetapi mudah suai."
+  },
+  "hermes-agent/11-workspace-context-storage.md": {
+    "title": "Di Mana Hermes Agent Meletakkan Fail?",
+    "description": "Ketahui peranan berbeza bagi direktori kerja, fail konteks dan storan berterusan apabila Ejen mencipta dan menggunakan semula kerja."
+  },
+  "hermes-agent/12-skills-self-improvement.md": {
+    "title": "Mengapa Ejen Menjadi Lebih Baik dengan Penggunaan?",
+    "description": "Lihat cara Kemahiran boleh guna semula menukar corak kerja yang berjaya menjadi arahan tahan lama yang menjadikan tugas Ejen masa hadapan lebih dipercayai."
+  },
+  "contact-us.md": {
+    "title": "Hubungi Kami",
+    "description": "Sertai komuniti LightVela, bercakap terus dengan pasukan produk, dan kongsi soalan penggunaan, cadangan produk, serta maklum balas dari dunia nyata."
+  }
+}

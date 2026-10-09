@@ -1,4 +1,5 @@
 // @ts-nocheck -- mechanically vendored from mono2; typechecked in its source repository.
+import { localizeMalay } from '../../../i18n/malay-copy';
 import { CURATED_SKILL_OVERVIEWS_ZH } from "./curated-skill-overviews.zh";
 import { CURATED_SKILL_OVERVIEWS_ID } from "./curated-skill-overviews.id";
 import { CURATED_SKILL_OVERVIEWS_ES } from "./curated-skill-overviews.es";
@@ -19,7 +20,7 @@ export type CuratedSkillOverview = {
   examplePrompt: string;
 };
 
-export type CuratedSkillOverviewLocale = "en-US" | "zh-CN" | "id-ID" | "es" | "ja-JP" | "ko-KR";
+export type CuratedSkillOverviewLocale = "en-US" | "zh-CN" | "id-ID" | "ms-MY" | "es" | "ja-JP" | "ko-KR";
 
 function overview(
   firstParagraph: string,
@@ -586,5 +587,5 @@ export function getCuratedSkillOverview(
   if (!result) {
     throw new Error(`Missing curated skill overview: ${rawId}`);
   }
-  return result;
+  return locale === "ms-MY" ? localizeMalay(result) : result;
 }

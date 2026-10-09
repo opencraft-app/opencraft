@@ -1,5 +1,6 @@
 "use client";
 
+import { localizeMalay } from '@/i18n/malay-copy';
 import { LegalFooter } from "@/components/site/legal-footer";
 import { openSourceLicensesText } from "@/content/legal/open-source-licenses-text";
 import { useLocaleOverride } from "@/i18n/t";
@@ -129,6 +130,7 @@ const koreanLegalLanguageNote =
   "라이선스 조항은 영문 원문으로 제공됩니다. 번역된 제목 또는 설명과 불일치하는 경우 영문 라이선스 원문이 우선합니다.";
 
 export function getOpenSourceLicensesChrome(locale: PublicSiteLocaleCode) {
+  if (locale === PUBLIC_SITE_LOCALES.MS_MY) return localizeMalay(copy.en);
   if (locale === PUBLIC_SITE_LOCALES.KO_KR) return copy.ko;
   if (locale === PUBLIC_SITE_LOCALES.JA_JP) return copy.ja;
   if (locale === PUBLIC_SITE_LOCALES.ES) return copy.es;
@@ -137,6 +139,7 @@ export function getOpenSourceLicensesChrome(locale: PublicSiteLocaleCode) {
 }
 
 export function publicLocaleHomePath(locale: PublicSiteLocaleCode): string {
+  if (locale === PUBLIC_SITE_LOCALES.MS_MY) return `/${PUBLIC_URL_LANGS.MS_MY}/`;
   if (locale === PUBLIC_SITE_LOCALES.ID_ID) return `/${PUBLIC_URL_LANGS.ID_ID}/`;
   if (locale === PUBLIC_SITE_LOCALES.ZH_HANT) return `/${PUBLIC_URL_LANGS.ZH_HANT}/`;
   if (locale === PUBLIC_SITE_LOCALES.ES) return `/${PUBLIC_URL_LANGS.ES}/`;
@@ -147,6 +150,15 @@ export function publicLocaleHomePath(locale: PublicSiteLocaleCode): string {
 }
 
 export function translateNoticeText(text: string, locale: PublicSiteLocaleCode): string {
+  if (locale === PUBLIC_SITE_LOCALES.MS_MY) {
+    const group = text.match(/^Open Source Software Licensed under the (.+):$/);
+    if (group) return `Perisian Sumber Terbuka berlesen di bawah ${group[1]}:`;
+    const terms = text.match(/^Terms of the (.+):$/);
+    if (terms) return `Syarat lesen ${terms[1]}:`;
+    const source = text.match(/^You may obtain the source code and detailed information about this component at (.+)\.$/);
+    if (source) return `Kod sumber dan maklumat terperinci komponen ini tersedia di ${source[1]}.`;
+    return localizeMalay(text);
+  }
   if (locale === PUBLIC_SITE_LOCALES.EN_US) return text;
 
   const licenseGroup = text.match(/^Open Source Software Licensed under the (.+):$/);
@@ -240,7 +252,9 @@ export function translateNoticeText(text: string, locale: PublicSiteLocaleCode):
 export const OpenSourceLicensesPage = () => {
   const localeOverride = useLocaleOverride();
   const currentLocale: PublicSiteLocaleCode =
-    localeOverride === PUBLIC_SITE_LOCALES.KO_KR
+    localeOverride === PUBLIC_SITE_LOCALES.MS_MY
+      ? PUBLIC_SITE_LOCALES.MS_MY
+      : localeOverride === PUBLIC_SITE_LOCALES.KO_KR
       ? PUBLIC_SITE_LOCALES.KO_KR
       : localeOverride === PUBLIC_SITE_LOCALES.JA_JP
       ? PUBLIC_SITE_LOCALES.JA_JP

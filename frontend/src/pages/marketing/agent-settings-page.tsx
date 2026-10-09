@@ -5694,10 +5694,10 @@ export const AgentSettingsPage = ({
                   label: t("日常"),
                   sections: [
                     { id: "channel", label: resolveAgentConsoleCollectionLabel("channel", i18n.language, t), icon: <MessageCircle className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.channel },
+                    { id: "skill", label: t("技能"), icon: <Wand2 className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.skill },
                     ...(showConnectorsEntry
                       ? [{ id: "connectors" as const, label: t("连接器"), icon: <Plug className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.connectors }]
                       : []),
-                    { id: "skill", label: t("技能"), icon: <Wand2 className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.skill },
                     { id: "automations", label: t("定时任务"), icon: <CalendarClock className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.automations },
                   ],
                 },
@@ -6558,7 +6558,7 @@ export const AgentSettingsPage = ({
                     <div className="lv-agents-sidebar-footer">
                       <div className="lv-agent-account-footer">
                         {(isDesktop || mobileChatNavOpen) && (
-                          <UserAvatarMenu showLanguageSwitcher={isGlobal} variant="sidebar"
+                          <UserAvatarMenu showLanguageSwitcher={isGlobal} variant="sidebar" cloudStorageBotId={activeSection === "files" ? undefined : activeBot?.id}
                             renewalReminder={isDesktop && multiBotEnabled && passExpiryReminder && passExpiryReminderCopy && activePass
                               ? { label: passExpiryReminderCopy.label, tooltip: passExpiryReminderCopy.tooltip, actionLabel: t("立即续费"),
                                   onRenew: renewalAvailable ? () => setRenewPassModalOpen(true) : undefined }

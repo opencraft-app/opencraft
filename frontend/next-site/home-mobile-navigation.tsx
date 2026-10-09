@@ -13,12 +13,14 @@ const menuCopy: Record<PublicSiteLocale, [string, string]> = {
   'zh-SG': ['打开菜单', '关闭菜单'],
   'zh-Hant': ['開啟選單', '關閉選單'],
   'id-ID': ['Buka menu', 'Tutup menu'],
+  'ms-MY': ["Buka menu", "Tutup menu"],
   es: ['Abrir menú', 'Cerrar menú'],
   'ja-JP': ['メニューを開く', 'メニューを閉じる'],
   'ko-KR': ['메뉴 열기', '메뉴 닫기'],
 };
 
 const languageLabel: Record<PublicSiteLocale, string> = {
+  'ms-MY': 'Bahasa',
   'en-US': 'Language',
   'zh-CN': '语言',
   'zh-SG': '语言',

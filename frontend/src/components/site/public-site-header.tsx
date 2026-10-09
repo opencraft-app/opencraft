@@ -151,6 +151,12 @@ const headerCopy: Record<PublicSiteLocale, {
     login: "Masuk",
     openMenu: "Buka menu",
   },
+  [PUBLIC_SITE_LOCALES.MS_MY]: {
+    closeMenu: "Tutup menu",
+    createNow: "Buat Sekarang",
+    login: "Log Masuk",
+    openMenu: "Buka menu",
+  },
   [PUBLIC_SITE_LOCALES.ES]: {
     closeMenu: "Cerrar menú",
     createNow: "Crear ahora",
