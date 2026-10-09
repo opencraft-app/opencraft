@@ -79,6 +79,11 @@ browser show() gate, and verify real Tencent IM connection on localhost.
 - Full pnpm test was attempted and did not pass: failures in subscription, FaceID,
   model catalog, international artwork and debug command tests; cloud-desktop worker
   exhausted its heap and stalled termination. No baseline or tests were relaxed.
+- Detached unmodified master 1b9faf845 reproduced the debug-command assertion and
+  cloud-desktop heap exhaustion; other full-suite failures remain unclassified.
+- OpenCraft generated routes/locales synchronized in a separate commit; the
+  read-only gate verified all 130 console files. ref/velachat retains tree
+  0caf6978e5d4ebfe99db114e270209fc97323266.
 
 ## risks
 - show() controls discovery only; backend session authentication remains mandatory.
@@ -104,4 +109,4 @@ browser show() gate, and verify real Tencent IM connection on localhost.
 - Implementation and real localhost IM connection verified. Preview uses Beijing only:
   http://localhost:5198/agents/labs/collaboration/; execute show() to toggle visibility.
 - Full-suite failures remain a release limitation; this task does not deploy production.
-- Commit frontend source before synchronizing OpenCraft generated console locales.
+- Local commits: dd89ab8f7 (source) and 6120eb24e (generated console sync).
