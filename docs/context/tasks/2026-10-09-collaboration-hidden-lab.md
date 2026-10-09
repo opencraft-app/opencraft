@@ -149,3 +149,16 @@ browser show() gate, and verify real Tencent IM connection on localhost and the 
   and pnpm v10.32.1 using --frozen-lockfile; the isolated frontend check reports
   166 current diagnostics against 171 baseline, zero new. Evidence logs:
   /tmp/collaboration-guard-install-pinned.log and /tmp/collaboration-isolated-check.log.
+
+## Master conflict resolution
+- Merged latest master 281cff92b (MR !5132 chat startup recovery). The only
+  conflict was generated UPSTREAM.json sourceRevision. Regenerated it from
+  merged frontend sources; the read-only console gate verifies 133 files.
+- Merge commit 25b516b6c and separate generated-sync commit 5ea3838c5.
+- Combined focused regressions: 40 passed, 3 failed in the newly integrated
+  embedded-workbench tests. Those three failures reproduced on master-based
+  CI worktree with identical sources (23 tests: 20 passed, 3 failed); no tests
+  or assertions were relaxed. The collaboration/installation tests all passed.
+- Evidence: /tmp/collaboration-conflict-tests.log and
+  /tmp/collaboration-conflict-baseline-tests.log.
+- Integrated frontend check passed: TypeScript diagnostics: 166 current, 171 baseline, 0 new, 5 resolved.
