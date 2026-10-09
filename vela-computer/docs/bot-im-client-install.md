@@ -11,8 +11,9 @@
 - 包含原生 TAT 桥接，没有内置自动更新通道。
 - 对象前缀：`vela-im/releases/v0.1.0-bot.20261009.1/linux-amd64/`。
 - 发布文件：`vela-computer`、`install.sh`、`VERSION`、`manifest.json`、`SHA256SUMS`。
-- 当前尚未上传。`frontend/src/lib/generated/vela-im-client-release.json` 的
-  `published` 只有在所有普通 HTTPS 下载地址校验通过后才能置为 `true`。
+- 已上传，五个普通 HTTPS 下载地址及 SHA-256 全部校验通过。
+  `frontend/src/lib/generated/vela-im-client-release.json` 的 `published` 已置为 `true`。
+  COS 上的不可变 manifest 保留构建时的元数据；入口开放状态由前端清单记录。
 
 ## 发布步骤
 
@@ -47,7 +48,10 @@ python3 vela-computer/scripts/publish-im-client.py \
 
 ## 安装步骤
 
-1. 发布并验证上述文件，然后更新前端版本清单的 `published`。
+可直接交给 Bot 的完整操作步骤已发布至
+[北京 COS 安装说明](https://vela-installer-1388575217.cos.ap-beijing.myqcloud.com/vela-im/guides/v0.1.0-bot.20261009.1/INSTALL.md)。
+
+1. 确认前端版本清单指向已验证的发布文件且 `published=true`。
 2. 在工作台执行 `show()`，选择目标 Bot，打开设置中的「IM 客户端」。
 3. 点击「安装客户端」。现有 Bot 命令通道以 `agentuser` 执行短启动命令，下载在
    后台进行，页面轮询结果。下载和执行安装器之前先校验固定 SHA-256。
