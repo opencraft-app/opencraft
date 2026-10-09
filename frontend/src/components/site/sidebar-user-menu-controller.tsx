@@ -26,7 +26,7 @@ const TatFileManagerPanel = lazy(() =>
   import("@/components/domain/tat-file-manager-panel").then((module) => ({ default: module.TatFileManagerPanel })),
 );
 
-export function SidebarUserMenuController({ showLanguageSwitcher = false, cloudStorageBotId }: { showLanguageSwitcher?: boolean; cloudStorageBotId?: string }) {
+export function SidebarUserMenuController({ showLanguageSwitcher = false, cloudStorageBotId, renewalReminder }: { showLanguageSwitcher?: boolean; cloudStorageBotId?: string; renewalReminder?: { label: string; tooltip: string; actionLabel: string; onRenew?: () => void } }) {
   const { session, signOut } = useSession();
   const { activePass, modifyingPass, passUpgradeFailed, passesLoading, passesError, bots, botsLoading, botsError, hasResolvedBots } = useOpenClaw();
   const { plans, auth } = useRepositories();
@@ -101,7 +101,7 @@ export function SidebarUserMenuController({ showLanguageSwitcher = false, cloudS
   if (hiddenEntriesRevealed && !isGlobal) entries.push({ id: "feedback", kind: "feedback", href: PRODUCT_FEEDBACK_URL, label: t("产品反馈") });
   return <><SidebarUserMenu open={open} onOpenChange={(next) => { if (next) setLoadedUserId(userId); setOpen(next); }}
     name={session.user?.name || t("用户")} email={session.user?.email || undefined} avatarSrc={avatarImageUrl(session.user?.avatarUrl ?? null)}
-    planLabel={planLabel} credit={credit} overview={overview} status={statusText} entries={entries}
+    planLabel={planLabel} credit={credit} overview={overview} status={statusText} entries={entries} renewalReminder={renewalReminder}
     onFilesSelect={cloudStorageBotId ? () => setCloudStorageOpen(true) : undefined}
     triggerRef={accountTriggerRef}
     upgrade={canRenew && upgrade.pass && upgrade.pass.pass_id === operablePass?.pass_id && upgrade.options.length > 0 ? { href: `${subscribeHref}/?upgrade_pass_id=${encodeURIComponent(upgrade.pass.pass_id)}`, label: t("升级套餐") } : undefined}

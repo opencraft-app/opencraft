@@ -14,6 +14,7 @@ export interface SidebarUserMenuProps {
   email?: string;
   avatarSrc: string;
   planLabel: string;
+  renewalReminder?: { label: string; tooltip: string; actionLabel: string; onRenew?: () => void };
   status?: { text: string; tone: "warning" | "danger" | "neutral" };
   credit: SidebarCreditSummary;
   overview?: { expiresAt: string; remainingCredits: string; botCount: string; invitedFriends?: string; labels: { expiresAt: string; remainingCredits: string; botCount: string; invitedFriends: string } };
@@ -47,7 +48,7 @@ function SidebarLanguagePopover({ label, children, onMouseEnter, onMouseLeave }:
 }
 
 /** Presentation only; account identity, requests, routes and localization belong to the controller. */
-export function SidebarUserMenu({ open, onOpenChange, name, email, avatarSrc, planLabel, status, credit, overview, upgrade, entries, onFilesSelect, triggerRef, labels, languageContent, onSignOut }: SidebarUserMenuProps) {
+export function SidebarUserMenu({ open, onOpenChange, name, email, avatarSrc, planLabel, renewalReminder, status, credit, overview, upgrade, entries, onFilesSelect, triggerRef, labels, languageContent, onSignOut }: SidebarUserMenuProps) {
   const headingRef = useRef<HTMLHeadingElement>(null);
   const triggerHoveredRef = useRef(false);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -73,14 +74,17 @@ export function SidebarUserMenu({ open, onOpenChange, name, email, avatarSrc, pl
   return <div className="lv-agent-account-menu">
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
-        <button ref={triggerRef} type="button" className="lv-agent-account-trigger" aria-label={labels.trigger}
+        <button ref={triggerRef} type="button" className="lv-agent-account-trigger" aria-label={renewalReminder ? `${labels.trigger} ${renewalReminder.tooltip}` : labels.trigger}
+          data-renewal-reminder={renewalReminder ? "true" : undefined}
           onMouseEnter={() => { cancelClose(); triggerHoveredRef.current = true; onOpenChange(true); }}
           onMouseLeave={scheduleClose}
           onClickCapture={(event) => { if (triggerHoveredRef.current) event.stopPropagation(); }}>
           <img src={avatarSrc} alt="" className="size-9 shrink-0 rounded-full border border-[var(--border-subtle)] object-cover" />
           <span className="min-w-0 flex-1 text-left">
             <span className="block truncate text-sm font-semibold text-[var(--text-primary)]">{name}</span>
-            <span className="block truncate text-xs text-[var(--text-secondary)]">{planLabel}</span>
+            <span className={renewalReminder ? "block truncate text-xs text-[#a86108]" : "block truncate text-xs text-[var(--text-secondary)]"} title={renewalReminder?.tooltip}>
+              {renewalReminder?.label ?? planLabel}
+            </span>
           </span>
           <ChevronDown className="size-3.5 shrink-0 text-[var(--text-tertiary)]" style={{ transform: open ? undefined : "rotate(180deg)" }} aria-hidden="true" />
         </button>
@@ -97,6 +101,10 @@ export function SidebarUserMenu({ open, onOpenChange, name, email, avatarSrc, pl
             {upgrade && <a href={upgrade.href} onClick={close} className="lv-sidebar-user-menu-upgrade">{upgrade.label}<ChevronRight className="size-3" aria-hidden="true" /></a>}
           </div>
           {status && <p data-tone={status.tone} className="lv-sidebar-user-menu-status text-xs" role="status">{status.text}</p>}
+          {renewalReminder && <div className="flex items-center justify-between gap-2 text-xs text-[#a86108]" role="status">
+            <span title={renewalReminder.tooltip}>{renewalReminder.tooltip}</span>
+            {renewalReminder.onRenew && <button type="button" className="shrink-0 font-semibold underline-offset-2 hover:underline" onClick={() => { close(); renewalReminder.onRenew?.(); }}>{renewalReminder.actionLabel}</button>}
+          </div>}
         </div>
         {overview && <dl className="grid grid-cols-2 gap-x-3 gap-y-2 border-b border-[var(--border-subtle)] px-3 py-3 text-xs">
           {([

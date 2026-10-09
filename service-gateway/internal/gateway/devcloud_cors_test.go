@@ -24,6 +24,9 @@ func TestProductionDevCloudCORSPreflightAndExchange(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			if cfg.Speech.ControlURL != "" {
+				t.Setenv(cfg.Speech.AdminTokenEnv, "test-only-speech-admin")
+			}
 			cfg.AuthServiceURL = upstream.URL
 			cfg.WorkerActions.Enabled = false
 			for i := range cfg.Routes {

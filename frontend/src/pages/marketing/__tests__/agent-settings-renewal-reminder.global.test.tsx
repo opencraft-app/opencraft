@@ -39,6 +39,7 @@ vi.mock("@/i18n/t", () => {
   return {
     t: translate,
     useT: () => translate,
+    useCurrentLocale: () => "en-US",
   };
 });
 
@@ -165,6 +166,7 @@ const renderAgentSettingsPage = (sectionId: "skill" | "settings" = "skill") => r
 describe("AgentSettingsPage global renewal reminder", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === "(min-width: 1024px)", addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} }));
     vi.setSystemTime(new Date("2026-07-27T00:00:00.000Z"));
     currentSessionUser = {
       id: "usr_global_agent_renewal",
@@ -197,14 +199,15 @@ describe("AgentSettingsPage global renewal reminder", () => {
   });
 
   afterEach(() => {
+    vi.unstubAllGlobals();
     cleanup();
     vi.useRealTimers();
   });
 
-  it("exposes the advanced settings navigation entry", () => {
+  it("exposes daily and explore navigation", () => {
     renderAgentSettingsPage();
-
-    expect(screen.getByRole("link", { name: "Advanced Settings" })).toHaveAttribute("href", "/agents/settings");
+    expect(screen.getByRole("tab", { name: "日常" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "探索" })).toBeInTheDocument();
   });
 
   it("mounts the advanced settings panel on the global site", async () => {
@@ -213,23 +216,13 @@ describe("AgentSettingsPage global renewal reminder", () => {
     expect(await screen.findByText("Global common settings panel")).toBeInTheDocument();
   });
 
-  it("renders the global renewal reminder as a static compact badge", () => {
+  it("shows the global reminder in the account entry without an unavailable renewal action", async () => {
     renderAgentSettingsPage();
-
-    const reminder = screen.getByText("Expires soon").closest(".lv-agent-renewal-badge") as HTMLElement | null;
-    expect(reminder).not.toBeNull();
-    expect(reminder?.tagName).toBe("SPAN");
-    expect(reminder).toHaveTextContent("Expires soon");
-    expect(reminder).toHaveTextContent("3 days left");
-    expect(reminder).toHaveClass("lv-agent-renewal-badge");
-    expect(reminder).not.toHaveAttribute("aria-label");
-    expect(reminder).not.toHaveAttribute("aria-disabled");
-    expect(reminder).not.toHaveAttribute("aria-describedby");
-    expect(reminder).not.toHaveAttribute("role");
-    expect(reminder).not.toHaveAttribute("title");
-    expect(reminder?.querySelector("svg")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Expires soon|Coming Soon/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+    const accountEntry = screen.getByRole("button", { name: /打开用户菜单 3 days left/ });
+    expect(accountEntry).toHaveTextContent("Expires soon");
+    await userEvent.click(accountEntry);
+    expect(screen.getByRole("status")).toHaveTextContent("3 days left");
+    expect(screen.queryByRole("button", { name: "立即续费" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "续费套餐" })).not.toBeInTheDocument();
     expect(getRenewPrice).not.toHaveBeenCalled();
     expect(createRenewOrder).not.toHaveBeenCalled();
@@ -239,8 +232,8 @@ describe("AgentSettingsPage global renewal reminder", () => {
     paidBillingEnabled = true;
     renderAgentSettingsPage();
 
-    const reminder = screen.getByRole("button", { name: /点击续费/ });
-    await userEvent.click(reminder);
+    await userEvent.click(screen.getByRole("button", { name: /打开用户菜单 3 days left/ }));
+    await userEvent.click(screen.getByRole("button", { name: "立即续费" }));
 
     expect(await screen.findByRole("heading", { name: "续费套餐" })).toBeInTheDocument();
     expect(getRenewPrice).toHaveBeenCalledWith("pass_global_agent_renewal", { period: 1, time_unit: "m" });
