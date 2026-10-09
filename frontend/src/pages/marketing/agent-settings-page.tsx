@@ -190,6 +190,7 @@ import { isRenewalRealnameVerified } from "@/lib/renewal-realname";
 import { RenewPassModal } from "@/pages/marketing/renew-pass-modal";
 import { AgentDeepSeekHarnessPanel } from "@/pages/marketing/agent-deepseek-harness-panel";
 import { AgentCollaborationLab } from "@/pages/marketing/agent-collaboration-lab";
+import { AgentImClientInstallCard } from "@/pages/marketing/agent-im-client-install-card";
 
 import { AgentCloudDesktopPanel } from "@/pages/marketing/agent-cloud-desktop-panel";
 import { isRenewalAvailableForRegion } from "@/pages/marketing/renew-coming-soon";
@@ -6793,6 +6794,8 @@ export const AgentSettingsPage = ({
                             />
                           )}
                           {activeSection === "settings" && (
+                            <>
+                            {connectorsRevealed && <AgentImClientInstallCard key={activeBot.id} botId={activeBot.id} bots={repositories.bots} />}
                             <AgentCommonSettingsPanel
                               botId={activeBot.id}
                               profileId={activeBot.profileId}
@@ -6802,6 +6805,7 @@ export const AgentSettingsPage = ({
                                 return (await getHermesScriptCommands(activeBot.profileId)).getGatewayRestartCommand();
                               }}
                             />
+                            </>
                           )}
                           {activeSection === "files" && (
                             <TatFileManagerPanel botId={activeBot.id} />

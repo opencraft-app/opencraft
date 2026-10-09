@@ -1,0 +1,12 @@
+{
+  "version": "v0.1.0-bot.20261009.1",
+  "platform": "linux-amd64",
+  "sourceSha": "7593f9705693a4bd1d5f33ed52ebe025ca199170",
+  "published": false,
+  "binaryUrl": "https://vela-installer-1388575217.cos.ap-beijing.myqcloud.com/vela-im/releases/v0.1.0-bot.20261009.1/linux-amd64/vela-computer",
+  "binarySha256": "4f67820d94071f3e38e6d6d962aec58b08d321fe66a7025a7f8c94e833921c41",
+  "installerUrl": "https://vela-installer-1388575217.cos.ap-beijing.myqcloud.com/vela-im/releases/v0.1.0-bot.20261009.1/linux-amd64/install.sh",
+  "installerSha256": "6b5a7de4af4d19844ee0c6605c2685858b172395a6df88b62b8db31a940f39e8",
+  "nativeTat": true,
+  "bakedUpdateChannel": false
+}

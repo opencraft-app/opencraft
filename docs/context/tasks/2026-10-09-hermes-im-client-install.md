@@ -1,0 +1,66 @@
+---
+id: hermes-im-client-install-2026-10-09
+type: task
+scope: First-install IM client artifact on Beijing COS and managed Bot installation entry.
+triggers: ["hermes im client install"]
+owner: wisp/mono2-maintainers
+authority: primary
+status: active
+reviewed_at: 2026-10-09
+review_due: 2027-01-07
+revision: 1.0.0
+precedence: task
+derived: false
+---
+
+## goal
+Build the migrated Hermes-capable Tencent IM client, upload to Beijing COS,
+and allow existing managed Bots to perform a first installation.
+
+## requirements
+- User authorized COS upload and installation steps, using cloud desktop as precedent.
+- User explicitly requested no special region restriction and a first-install flow.
+
+## non_goals
+- No external Computer enrollment, TAT re-registration or replacement of a running Hermes.
+- No automatic credential creation or claim that installing a binary connects a Bot to IM.
+- Keep ref/velachat unchanged.
+
+## context_receipt
+- AGENTS.md, frontend/AGENTS.md, frontend/DESIGN.md, vela-computer/AGENTS.md, ctl/AGENTS.md.
+- docs/context/domains/agent-gateway-runtime.md and services/cloudagent.md,
+  services/collaboration.md, services/vela-computer.md under docs/context/project.
+- vela-computer/docs/README.md and scripts/build-vela-candidate.sh.
+- docs/context/project/adjacency/argocd-ci-secrets.md; .ci/vela-computer.yml.
+- ctl/pkg/instance/desktop.go: first-install detection, execution ownership and idempotence.
+- frontend/src/lib/deepseek-harness-command.ts: authenticated existing Bot execution and installer bucket.
+
+## decisions
+- Use writable vela-computer source, not the frozen subtree.
+- Pin immutable binary and installer checksums, verify before execution, install per user.
+- Preserve existing unrelated binaries; repeat installs reuse verified bytes.
+- Reuse existing authenticated Bot command execution; no region-specific install authorization.
+
+## evidence
+- Beijing endpoint for existing vela-installer bucket returned HTTP 200 for its DSH installer.
+- COS upload probe currently returns secretID is missing; usable upload authentication requested.
+- Native TAT release library and CGO-enabled Linux AMD64 binary built successfully.
+- Binary version v0.1.0-bot.20261009.1; SHA-256
+  4f67820d94071f3e38e6d6d962aec58b08d321fe66a7025a7f8c94e833921c41.
+- Full vela-computer Go tests and vet passed; five installer scenarios passed.
+- Eight installer frontend checks passed, including unpublished-release gating,
+  Bot-switch isolation and failed-launch retry; the earlier combined run passed 15 checks.
+- Real binary first install and repeated reuse passed using an isolated local
+  download fixture; evidence /data/vela-im-client-release-20261009/installer-smoke.json.
+- Frontend check passed: 166 baseline diagnostics, zero new; documentation errors zero.
+- Installer bucket URL is prepared; frontend published=false prevents offering an
+  unavailable release. No region restriction was added to Bot installation.
+- Existing Bot debug commands have a 30s backend limit; installation runs in a
+  detached, flock-protected job with status polling, rather than lengthening that limit.
+
+## handoff
+- Upload awaits usable COS authentication; no cloud file or Bot was changed yet.
+- Prepared payload at /data/vela-im-client-release-20261009/v0.1.0-bot.20261009.1/linux-amd64.
+- Installing the client does not itself wire an existing Hermes gateway into IM.
+- Beijing frontend build, full Go tests/vet and message/runtime race checks passed.
+- Finish generated console synchronization; COS upload is the remaining external blocker.

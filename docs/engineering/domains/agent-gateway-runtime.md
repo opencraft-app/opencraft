@@ -943,3 +943,11 @@ the same local DOM runtime. Service intent, tabs and resource lifetimes stay wit
 the original conversation panel owner. Only narrow/full-width capacity uses replacement
 presentation; held movement, interruption, cancellation and geometry changes share
 the same driver, without a second visibility authority or duplicated application.
+### Bot IM 客户端首次安装
+
+`vela-computer` 的首次安装产物使用北京 COS 的版本化目录，安装入口复用现有
+Bot 归属校验与 `agentuser` 命令执行权限，不新增地域白名单。长下载通过后台任务
+和状态轮询完成，安装器与二进制在执行前核验固定摘要，重复安装复用已验证程序。
+二进制安装与 Agent Runtime Session/UserSig 的签发、Hermes 启动接线分别验收；
+安装完成不能作为 Bot 已连接腾讯 IM 的证据。详细步骤见
+[Bot IM 客户端首次安装](../../../vela-computer/docs/bot-im-client-install.md)。
