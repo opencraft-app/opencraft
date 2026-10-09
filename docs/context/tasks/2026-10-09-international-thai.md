@@ -103,3 +103,10 @@ derived: false
 - discard: 英文结构翻译时的三处 Markdown 链接已修正，严格 73 文档代码/inline/link 测试通过；初始日期已按 UTC 校验约定修正。此前未生成文档 manifest 时的类型/SEO 失败不代表最终结果。
 - restore: /tmp/lightvela-thai-focused-final.log；/tmp/lightvela-thai-docs-recheck.log；/tmp/lightvela-thai-check.log；/tmp/lightvela-thai-icu.log；/tmp/lightvela-thai-embedded-ci.log；/tmp/lightvela-thai-validation/cases.json。
 - next_action: 完整 guard 正确重跑，保留国内输出用于实际浏览器矩阵，并验证最新 master 后提交真源及机械生成层。
+
+## checkpoint — 最新 master 集成
+- stage: 已合并 master 55073abc04；两份 runtime 文档内容冲突按职责保留双方内容。
+- verified: Thai UI 补齐至 3,060 条；新协作功能与 locale/SEO 11 文件 111 测试通过。文档 parity 45/45；Markdown 末尾空行规范化，保留合法硬换行。
+- unverified: 最终隔离 frontend guard 正在执行；浏览器矩阵、生成层与远端 CI 尚待验证。
+- restore: /tmp/lightvela-thai-master-regression.log；/tmp/lightvela-thai-frontend-guard-complete.log。
+- next_action: 提交补齐文案，再执行机械同步并验收完整构建与浏览器。
