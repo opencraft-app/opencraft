@@ -87,6 +87,11 @@ echo "frontend 约束：运行 release matrix / static route guard 单测"
 echo "目的：防止 Pages / EdgeOne 发布矩阵与 Next static export 约束回归"
 echo "============================================================"
 "$PNPM_BIN" test \
+  next-site/__tests__/thai-consumers.test.tsx \
+  scripts/thai-home.test.ts \
+  src/i18n/__tests__/thai.test.ts \
+  src/i18n/__tests__/thai-loading.test.ts \
+  src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx \
   scripts/malay-home.test.ts \
   src/i18n/__tests__/malay.test.ts \
   src/i18n/__tests__/malay-loading.test.ts \

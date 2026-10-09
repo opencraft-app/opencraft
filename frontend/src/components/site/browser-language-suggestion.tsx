@@ -14,6 +14,10 @@ const SUGGESTION_COPY = {
     ariaLabel: "Cadangan bahasa", message: "Bahasa pilihan pelayar anda ialah Bahasa Melayu. Mahu bertukar?",
     switchLabel: "Tukar ke Bahasa Melayu", continueLabel: "Teruskan dalam bahasa Inggeris", closeLabel: "Tutup dan teruskan dalam bahasa Inggeris",
   },
+  [PUBLIC_SITE_LOCALES.TH_TH]: {
+    ariaLabel: "ข้อเสนอภาษา", message: "ภาษาที่ผู้ใช้งานเลือกคือภาษามาเลย์ ต้องการเปลี่ยนไหม?",
+    switchLabel: "เปลี่ยนเป็นภาษามาเลย์", continueLabel: "ดำเนินการต่อเป็นภาษาอังกฤษ", closeLabel: "ปิดและดำเนินการต่อเป็นภาษาอังกฤษ",
+  },
   [PUBLIC_SITE_LOCALES.EN_US]: {
     ariaLabel: "Language suggestion", message: "Your browser prefers English. Would you like to switch?",
     switchLabel: "Switch to English", continueLabel: "Continue in English", closeLabel: "Close and continue in English",

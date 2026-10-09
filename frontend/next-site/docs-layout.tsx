@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 
 import { source } from './source';
 import type { DocsLocalePrefix } from './docs-page';
-import { EN_US_URL_LANG, ES_URL_LANG, ID_ID_URL_LANG, MS_MY_URL_LANG, JA_JP_URL_LANG, KO_KR_URL_LANG, ZH_CN_URL_LANG, ZH_HANT_URL_LANG } from './public-locale';
+import { EN_US_URL_LANG, ES_URL_LANG, ID_ID_URL_LANG, MS_MY_URL_LANG, TH_TH_URL_LANG, JA_JP_URL_LANG, KO_KR_URL_LANG, ZH_CN_URL_LANG, ZH_HANT_URL_LANG } from './public-locale';
 
 const ZH_FUMADOCS_TRANSLATIONS = {
   'Close Search(search dialog)(aria-label)': '关闭搜索',
@@ -84,6 +84,53 @@ const MS_FUMADOCS_TRANSLATIONS = {
   'Search(search trigger)': 'Cari dokumentasi',
 } satisfies Translations;
 
+const TH_FUMADOCS_TRANSLATIONS = {
+  'Back to Home(404 page)': "กลับไปหน้าหลัก",
+  'Choose a language(language switcher)': "เลือกภาษา",
+  'Choose a language(language switcher)(aria-label)': "เลือกภาษา",
+  'Close Banner(banner)(aria-label)': "ปิดแบนเนอร์",
+  'Collapse Sidebar(sidebar)(aria-label)': "ย่อแถบด้านข้าง",
+  'Copied Text(code block)(aria-label)': "ข้อความที่ถูกคัดลอก",
+  'Copy Anchor Link(heading anchor)(aria-label)': "คัดลอกลิงก์แองเคอร์",
+  'Copy Link(accordion)(aria-label)': "คัดลอกลิงก์",
+  'Copy Markdown(page actions)': "คัดลอก Markdown",
+  'Copy Text(code block)(aria-label)': "คัดลอกข้อความ",
+  'Dark(theme switcher)(aria-label)': "มืด",
+  'Default(type table)': "ค่าเริ่มต้น",
+  'Edit on GitHub(edit page)': "แก้ไขบน GitHub",
+  'Last updated on(page footer)': "อัปเดตล่าสุดเมื่อ",
+  'Light(theme switcher)(aria-label)': "แสง",
+  'Next Page(pagination)': "หน้าถัดไป",
+  'Open Sidebar(sidebar)(aria-label)': "เปิดแถบด้านข้าง",
+  'Open in ChatGPT(page actions)': "เปิดใน ChatGPT",
+  'Open in Claude(page actions)': "เปิดใน Claude",
+  'Open in Cursor(page actions)': "เปิดในเคอร์เซอร์",
+  'Open in GitHub(page actions)': "เปิดใน GitHub",
+  'Open in Scira AI(page actions)': "เปิดใน Scira AI",
+  'Open(page actions)': "เปิด",
+  'Page Not Found(404 page)': "ไม่พบหน้าที่ต้องการ",
+  'Parameters(type table)': "พารามิเตอร์",
+  'Previous Page(pagination)': "หน้าก่อนหน้า",
+  'Prop(type table)': "พร็อพ",
+  'Read {url}, I want to ask questions about it.(page actions)': "อ่าน {url} ฉันต้องการถามคำถามเกี่ยวกับมัน",
+  'Returns(type table)': "ผลตอบแทน",
+  'System(theme switcher)(aria-label)': "ระบบ",
+  'Table of Contents(inline table of contents)': "สารบัญ",
+  'The page you are looking for might have been removed, had its name changed, or is temporarily unavailable.(404 page)': "หน้าที่คุณกำลังค้นหาอาจถูกลบ ถูกเปลี่ยนชื่อ หรือไม่สามารถใช้งานได้ชั่วคราว",
+  'Toggle Menu(mobile menu)(aria-label)': "สลับเมนู",
+  'Toggle Theme(theme switcher)(aria-label)': "สลับธีม",
+  'Type(type table)': "ประเภท",
+  'View as Markdown(page actions)': "ดูเป็นมาร์กดาวน์",
+  displayName: "ไทย",
+  'Close Search(search dialog)(aria-label)': "ปิดการค้นหา",
+  'No Headings(table of contents)': "ไม่มีหัวข้อ",
+  'No results found(search dialog)': "ไม่พบผลลัพธ์",
+  'On this page(table of contents)': "บนหน้านี้",
+  'Open Search(search trigger)(aria-label)': "เปิดการค้นหา",
+  'Search(search dialog)': "ค้นหา",
+  'Search(search trigger)': "ค้นหา",
+} satisfies Translations;
+
 const ES_FUMADOCS_TRANSLATIONS = {
   'Close Search(search dialog)(aria-label)': 'Cerrar búsqueda',
   'No Headings(table of contents)': 'No hay encabezados',
@@ -116,6 +163,7 @@ const KO_FUMADOCS_TRANSLATIONS = {
 
 export function fumadocsTranslations(docsLocale: DocsLocalePrefix) {
   if (docsLocale === EN_US_URL_LANG) return undefined;
+  if (docsLocale === TH_TH_URL_LANG) return TH_FUMADOCS_TRANSLATIONS;
   if (docsLocale === MS_MY_URL_LANG) return MS_FUMADOCS_TRANSLATIONS;
   if (docsLocale === ID_ID_URL_LANG) return ID_FUMADOCS_TRANSLATIONS;
   if (docsLocale === ES_URL_LANG) return ES_FUMADOCS_TRANSLATIONS;

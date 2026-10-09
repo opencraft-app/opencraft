@@ -942,3 +942,5 @@ the same local DOM runtime. Service intent, tabs and resource lifetimes stay wit
 the original conversation panel owner. Only narrow/full-width capacity uses replacement
 presentation; held movement, interruption, cancellation and geometry changes share
 the same driver, without a second visibility authority or duplicated application.
+
+泰语国际站的嵌入式工作台使用 `th-TH` 目录，由原有 WorkbenchLocaleController 装载并随宿主语言切换；独立 OpenCraft 语言菜单不扩大。泰语目录保持全部消息 ID、ICU 参数及复数结构，必须通过应用消息提取与 ICU 校验。前端真源提交后通过同步脚本生成 Agent Console 副本，生成层独立提交且通过只读漂移检查。

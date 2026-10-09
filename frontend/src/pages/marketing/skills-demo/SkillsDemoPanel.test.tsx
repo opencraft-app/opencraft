@@ -1,5 +1,6 @@
 import { cleanup, configure, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ensureThaiPublicCopy, localizeThai } from "@/i18n/thai-copy";
 import { ensureMalayPublicCopy, localizeMalay } from "@/i18n/malay-copy";
 
 import type { Registry, SkillsDataLayer } from "./skill-registries";
@@ -1091,6 +1092,28 @@ it("renders Malay categories after the public copy has loaded", async () => {
   try {
     renderPanel("global");
     expect(screen.getByText("Analisis Pasaran")).toBeInTheDocument();
+  } finally {
+    mocks.language = "zh-CN";
+  }
+});
+
+// !5133 regression: unrelated locales must render with an unloaded Thai catalog.
+it.each(["zh-CN", "en-US", "id-ID", "es", "ja-JP", "ko-KR"])("renders %s skill categories without loading Thai copy", (locale) => {
+  expect(() => localizeThai("Home")).toThrow("Thai public copy must be loaded before rendering");
+  mocks.language = locale;
+  try {
+    expect(() => renderPanel("global")).not.toThrow();
+  } finally {
+    mocks.language = "zh-CN";
+  }
+});
+
+it("renders Thai skill categories after Thai copy loads", async () => {
+  await ensureThaiPublicCopy();
+  mocks.language = "th-TH";
+  try {
+    renderPanel("global");
+    expect(screen.getByText(localizeThai("Market Analysis"))).toBeInTheDocument();
   } finally {
     mocks.language = "zh-CN";
   }

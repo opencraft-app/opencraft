@@ -1,0 +1,105 @@
+---
+id: task-international-thai-20261009
+type: task
+scope: Add complete Thai localization to the LightVela international site.
+triggers: ["Thai", "th-TH", "international Thai"]
+owner: mingyuxiao
+authority: primary
+source_of_truth:
+  - frontend/src/i18n/locales.json
+  - frontend/src/i18n/index.ts
+  - frontend/src/content/docs/th
+status: active
+reviewed_at: 2026-10-09
+review_due: 2026-11-09
+revision: 1.0.0
+precedence: task
+derived: false
+---
+
+## goal
+从最新 master 新建分支，参考马来语实现，为国际站增加完整泰语（th-TH / th-th）产品界面、公开页面与文档。
+
+## non_goals
+- 不改生产、GitOps、云资源、计费或外部账户；不自动合并 MR。
+
+## requirement_refs / requirement_excerpt
+- 用户：“起一个新的分支，增加一个泰国语的版本吧。参考马来语的实现。”
+- https://git.woa.com/wisp/mono2/-/merge_requests/5133
+- !5133 已合并，技能分类无条件调用马来语词典造成其他语言页面崩溃。必须只在当前语言分支消费对应词典，保持非目标语言无需加载目标目录。
+
+## interface_refs / data_structure_refs
+- frontend/src/i18n/locales.json：语言、公开路由、翻译门禁唯一注册表。
+- frontend/src/i18n/index.ts：异步字典与公共词典加载完成后切换；代次约束晚到结果。
+- frontend/scripts/sync-fumadocs-content.mjs：文档输出和 metadata。
+- opencraft/apps/workbench-web/src/i18n/catalogs.ts：嵌入式工作台 locale。
+
+## history_context
+- current_design_refs: docs/engineering/domains/site-environment-routing.md；docs/engineering/domains/agent-gateway-runtime.md。
+- relevant_evolution: !5116 马来语完整支持；!5133 按 locale 延迟消费技能分类；最新 master 1667fea443（含 !5137 CI 共享依赖复制）。
+- superseded_refs: 马来语开发时的旧 CI 安装失败，不能照搬旧 guard。
+
+## acceptance
+- 泰语完整字典、独立文档源、公开页面、语言选择、搜索、SEO 与嵌入式工作台可用。
+- 国内及其他语言不加载泰语公共词典，也不因其未加载而失败。
+- 非空格泰语词检索能命中文档；文档代码、链接和字段标识不被翻译。
+- check、聚焦测试、双站构建、工作台 ICU 检查与机械同步检查通过。
+
+## affected_paths
+- frontend/src/i18n；frontend/src/content/docs/th；frontend/next-site；frontend/scripts；frontend/src/pages/marketing；frontend/src/components/site。
+- opencraft/apps/workbench-web/src/i18n；机械同步的 plugins/lightvela-hermes/src/upstream/mono2。
+
+## required_context
+- site-environment-routing；agent-gateway-runtime。
+
+## context_receipt
+| 文件 | 阅读原因 | 用途 |
+|---|---|---|
+| AGENTS.md | 根约束 | secret、验证、TaskPack、交付授权 |
+| frontend/AGENTS.md | 前端约束 | check/test/build、真源先提交再机械同步 |
+| opencraft/AGENTS.md | 工作台约束 | 独立依赖和语言目录 |
+| docs/context/domains/site-environment-routing.md | router must_read | 国际/国内边界 |
+| docs/context/domains/agent-gateway-runtime.md | router must_read | 嵌入式工作台所有权 |
+| docs/context/project/adjacency/frontend-runtime-openspec-i18n.md | 语言邻接 | 检查 locale 与测试邻居 |
+| frontend/DESIGN.md | 泰语字体呈现 | 复用现有语种字体栈 |
+| docs/context/tasks/TASK-TEMPLATE.md | 任务 contract | 本记录 |
+
+## evidence
+- 独立 worktree /data/mono2-thai，branch codex/lightvela-thai，baseline 1667fea443。
+- 工蜂只读 API 获取 !5133 描述和讨论；已确认真实技能分类 locale 分支修复。
+
+## risks
+- 翻译占位符、Markdown、ICU 参数须结构验证；翻译完整不代表经泰语母语编辑审核。
+- 公开首页采用英文结构加提交目录机械生成；必须检查遗漏译文。
+- 泰语需 Unicode 词分段与字体回退；不复用汉语分词器。
+
+## validation
+- 前端 check、聚焦回归与 CN/global builds；OpenCraft check:i18n、embedded-ci、readonly sync；文档影响检查。
+
+## decisions
+- 沿用已有按语言按需加载与独立文档源，不引入平行 UI 或旧 SDK 桥接。
+
+## scan_scope
+- frontend locale/Next/public/marketing/scripts；opencraft i18n。
+
+## scan_output
+- 临时翻译与验证日志在 /tmp/lightvela-thai-*，不含 secret。
+
+## handoff
+- 正在实现与验证；后续沿用本会话已授权的 commit/push/MR 交付流程，未授权自动合并或发布。
+
+## checkpoint — 实现与翻译中
+- stage: 独立分支编码完成主要接入，翻译与完整门禁仍在进行。
+- verified: 工蜂 !5133 描述/讨论与源码确认；语言注册/公开路径/搜索端点 3 文件 41 测试通过；Thai Orama 查询/保存重载与其他分词回归 8 测试通过；独立 frontend pnpm install 与 opencraft npm ci 已完成。
+- unverified: 全部 8,775 段翻译队列未结束；首轮 typecheck 新增诊断包含尚未生成 Thai docs manifest、尚未写入 Thai blog 和测试语言穷举两处，须完备后重跑。浏览器与双站构建未执行。
+- discard: 初始公开语言测试批量替换造成对象语法错误已修复并重跑通过，不能采用初始失败日志作为最终结果。
+- restore: /tmp/lightvela-thai-translation.log、/tmp/lightvela-thai-cache.json、/tmp/lightvela-thai-finish.py、/tmp/lightvela-thai-doc-parts.json、/tmp/lightvela-thai-code-copy.json、/tmp/lightvela-thai-fuma-cache.json。
+- next_action: 等翻译结束合并 docs chrome cache，再严格生成所有目录，补测试语言穷举并执行 check 与回归。
+
+## checkpoint — 完整资源与聚焦门禁通过
+- stage: 全部 Thai 资源落盘，双站构建与浏览器验收待执行。
+- verified: UI 3,050；公共 copy 1,389；首页 621；73 文档源；222 工作台消息；98 博客文本。ICU/参数检查、工作台 embedded-ci 222/222、平台边界检查通过。前端 check 164/171、0 new/7 resolved；最终 Thai 字典 3,050/3,050、0 错误/0 告警。13 文件 245 用例完整回归通过。
+- unverified: 隔离 guard 首轮因文档 parity 语言期望未补 Thai 而失败；已补 fixture，正在复验并将重跑完整 guard。浏览器与双站构建、生成副本同步及远端 CI 尚未验证。
+- discard: 英文结构翻译时的三处 Markdown 链接已修正，严格 73 文档代码/inline/link 测试通过；初始日期已按 UTC 校验约定修正。此前未生成文档 manifest 时的类型/SEO 失败不代表最终结果。
+- restore: /tmp/lightvela-thai-focused-final.log；/tmp/lightvela-thai-docs-recheck.log；/tmp/lightvela-thai-check.log；/tmp/lightvela-thai-icu.log；/tmp/lightvela-thai-embedded-ci.log；/tmp/lightvela-thai-validation/cases.json。
+- next_action: 完整 guard 正确重跑，保留国内输出用于实际浏览器矩阵，并验证最新 master 后提交真源及机械生成层。

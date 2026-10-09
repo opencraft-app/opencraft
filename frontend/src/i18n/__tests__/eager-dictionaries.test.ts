@@ -20,7 +20,7 @@ import { ALL_I18N_DICT_KEYS, localeDefinition, type I18nDictKey } from "../local
  * VITE_REGION=global 下会误报。
  */
 const INITIAL_DICT_KEY = localeDefinition(DEFAULT_LOCALE).i18nKey;
-const OPTIONAL_DICT_KEYS = (["en-US", "es", "id-ID", "ms-MY", "zh-Hant"] as const)
+const OPTIONAL_DICT_KEYS = (["en-US", "es", "id-ID", "ms-MY", "th-TH", "zh-Hant"] as const)
   .filter((key) => key !== INITIAL_DICT_KEY);
 
 /**
