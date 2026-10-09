@@ -468,7 +468,7 @@ export function createAppServerWorkbenchRuntime(
   const hostId = asHostId(config.hostId);
   const clock = config.clock ?? defaultClock;
   const reconnectDelays = config.reconnectDelaysMs ?? [
-    250, 500, 1_000, 2_000, 5_000,
+    500, 1_000, 2_000, 5_000, 15_000, 30_000, 60_000,
   ];
   const maxInactiveThreads = config.maxInactiveThreads ?? 4;
   const listeners = new Set<() => void>();
@@ -637,7 +637,7 @@ export function createAppServerWorkbenchRuntime(
     loggedReconnectStopCode = null;
     const delay =
       reconnectDelays[Math.min(reconnectAttempt, reconnectDelays.length - 1)] ??
-      5_000;
+      60_000;
     reconnectAttempt += 1;
     console.log("[appserver-reconnect] scheduled", { hostId, attempt: reconnectAttempt, delayMs: delay });
     reconnectTimer = clock.setTimeout(() => {

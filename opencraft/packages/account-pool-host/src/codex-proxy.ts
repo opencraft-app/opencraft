@@ -7,6 +7,7 @@ import type {
 } from "./store.js";
 import type { CodexCredentialRefreshReason } from "./oauth-refresh.js";
 import { CODEX_POOL_MAX_REQUEST_BYTES } from "./request-limits.js";
+import { Agent, fetch as undiciFetch } from "undici";
 
 const HOST_TOKEN_HEADER = "x-opencraft-account-pool-token";
 const FORWARDED_REQUEST_HEADERS = new Set([
@@ -146,6 +147,45 @@ function isQuotaRejection(response: Response): boolean {
   });
 }
 
+function transportError(error: unknown): { code: string | null; name: string | null; message: string | null } {
+  const detail = error !== null && typeof error === "object"
+    ? error as { cause?: unknown; code?: unknown; name?: unknown; message?: unknown }
+    : null;
+  const cause = detail?.cause !== null && typeof detail?.cause === "object"
+    ? detail.cause as { code?: unknown; name?: unknown; message?: unknown }
+    : detail;
+  return {
+    code: typeof cause?.code === "string" ? cause.code : null,
+    name: typeof cause?.name === "string" ? cause.name : null,
+    message: typeof cause?.message === "string" ? cause.message.slice(0, 200) : null,
+  };
+}
+
+function createUpstreamFetch(override?: typeof fetch): typeof fetch {
+  if (override !== undefined) return override;
+  const dispatcher = new Agent({
+    connections: 16,
+    pipelining: 1,
+    allowH2: false,
+    headersTimeout: 60_000,
+    bodyTimeout: 180_000,
+    keepAliveTimeout: 10_000,
+    keepAliveMaxTimeout: 30_000,
+  });
+  console.info("[opencraft account-pool]", JSON.stringify({
+    event: "transport-config",
+    protocol: "http/1.1",
+    maxConnections: 16,
+    pipelining: 1,
+    headersTimeoutMs: 60_000,
+    bodyTimeoutMs: 180_000,
+  }));
+  return ((input, init) => undiciFetch(input instanceof Request ? input.url : input, {
+    ...init,
+    dispatcher,
+  } as Parameters<typeof undiciFetch>[1]) as unknown as Promise<Response>) as typeof fetch;
+}
+
 export class CodexAccountPoolProxy {
   private readonly store: AccountPoolStore;
   private readonly upstreamBaseUrl: string;
@@ -170,7 +210,7 @@ export class CodexAccountPoolProxy {
   }) {
     this.store = options.store;
     this.upstreamBaseUrl = options.upstreamBaseUrl;
-    this.fetch = options.fetch ?? fetch;
+    this.fetch = createUpstreamFetch(options.fetch);
     this.now = options.now ?? Date.now;
     this.resolveCredential = options.resolveCredential;
   }
@@ -215,12 +255,36 @@ export class CodexAccountPoolProxy {
           continue;
         }
       }
-      const upstream = await this.fetch(upstreamUrl(this.upstreamBaseUrl, request.url), {
-        method: request.method,
-        headers: requestHeaders(request.headers, secret.accessToken, selection.account.upstreamAccountId),
-        ...(request.method === "GET" ? {} : { body }),
-        signal: request.signal,
-      });
+      const upstreamStartedAt = this.now();
+      let upstream: Response;
+      try {
+        upstream = await this.fetch(upstreamUrl(this.upstreamBaseUrl, request.url), {
+          method: request.method,
+          headers: requestHeaders(request.headers, secret.accessToken, selection.account.upstreamAccountId),
+          ...(request.method === "GET" ? {} : { body }),
+          signal: request.signal,
+        });
+      } catch (error) {
+        const detail = transportError(error);
+        console.warn("[opencraft account-pool]", JSON.stringify({
+          event: "upstream-transport-failure",
+          affinityId: identity.affinityId,
+          accountId: selection.account.id,
+          durationMs: this.now() - upstreamStartedAt,
+          ...detail,
+        }));
+        throw error;
+      }
+      const upstreamDurationMs = this.now() - upstreamStartedAt;
+      if (upstreamDurationMs >= 10_000) {
+        console.warn("[opencraft account-pool]", JSON.stringify({
+          event: "upstream-slow-headers",
+          affinityId: identity.affinityId,
+          accountId: selection.account.id,
+          durationMs: upstreamDurationMs,
+          status: upstream.status,
+        }));
+      }
       const quota = quotaFromHeaders(upstream.headers, this.now());
       if (quota !== null) this.store.observeQuota(selection.account.id, quota);
       if (isQuotaRejection(upstream)) {
