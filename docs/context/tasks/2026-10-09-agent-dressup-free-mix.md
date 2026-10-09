@@ -244,3 +244,5 @@ derived: false
 - 最新证据：7 文件 81 项回归通过；pnpm check 退出0（166 current / 171 baseline / 0 new），3141条各必填字典零缺失，繁简一致。当前 final build:cn 运行中，随后串行 build:global。字体子集读取发布字典，新文案增加所需字形；本轮保留对应生成字体，next-env.d.ts 的构建路径更改将在交接前恢复。
 
 - 最终交接检查点：81项聚焦回归通过，新增失败出口后该文件17项独立复跑通过（82项唯一回归）；最终 pnpm check 退出0，0新增类型错误。build:cn/build:global 均退出0；文档校验0错误/0断链。保存失败关闭按钮避免被弹窗关闭按钮隐藏规则误伤，失败不刷新或误报成功。准备提交 frontend 真源，再按规定生成 OpenCraft 字典同步后续提交；未发布或合并。
+
+- 提交交接：frontend 真源 6187b75eee、OpenCraft 生成同步 c7eed4d681 已推送 feat/agent-dressup-20261009 / MR !5124；OpenCraft 130 文件只读校验通过。5183 本地 next dev 已恢复（Ready）。旧无关未跟踪文件保留，未合并或发布；现网存量头像替换在此代码发布后生效。
