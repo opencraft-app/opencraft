@@ -332,7 +332,7 @@ const authStorage = () => {
   return storage;
 };
 
-export const readStoredAuthToken = (): string | null => {
+export const readStoredAuthToken = (_target?: unknown): string | null => {
   if (typeof window !== "undefined") {
     const embedded = (window as Window & { __LIGHTVELA_EMBEDDED_TOKEN__?: string }).__LIGHTVELA_EMBEDDED_TOKEN__;
     if (typeof embedded === "string" && embedded.trim()) return embedded.trim();
@@ -346,7 +346,7 @@ export const readStoredAuthToken = (): string | null => {
   return value ? value : null;
 };
 
-export const writeStoredAuthToken = (token?: string | null) => {
+export const writeStoredAuthToken = (token?: string | null, _target?: unknown) => {
   const previous = readStoredAuthToken();
   const normalized = token?.trim();
   if (typeof window !== "undefined") {

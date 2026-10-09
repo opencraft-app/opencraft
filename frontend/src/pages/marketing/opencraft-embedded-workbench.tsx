@@ -25,6 +25,7 @@ import type {
 } from "@/pages/marketing/agent-chat-panel";
 
 interface EmbeddedWorkbenchConfig {
+  readonly externalPanelChrome?: boolean;
   /** In-process credential accessor; never serialize into an HTML attribute. */
   readonly getSessionToken?: () => string | null;
   readonly accountId?: string;
@@ -145,6 +146,8 @@ export function AgentChatMigrationSurface({
   region,
 }: AgentChatMigrationSurfaceProps) {
   const t = useT();
+  const mutationFailure = useRef(t("操作失败，请稍后重试"));
+  mutationFailure.current = t("操作失败，请稍后重试");
   const physicalConnection = useEmbeddedPhysicalConnectionPreparation();
   const physicalConnectionRef = useRef(physicalConnection);
   physicalConnectionRef.current = physicalConnection;
@@ -287,20 +290,20 @@ export function AgentChatMigrationSurface({
     };
     const sessionCommands: EmbeddedSessionCommands = {
       async setPinned(chatId, pinned) {
-        if (typeof element?.setConversationPinned !== "function") {
+        if (retired || typeof element?.setConversationPinned !== "function") {
           throw new Error("Embedded Workbench cannot pin conversations");
         }
         await element.setConversationPinned(chatId, pinned);
       },
       async loadMoreSessions() {
-        if (typeof element?.loadMoreConversations !== "function") {
+        if (retired || typeof element?.loadMoreConversations !== "function") {
           throw new Error("Embedded Workbench cannot load more conversations");
         }
         await element.loadMoreConversations();
       },
       async createSession() {
         // The host may still hold these commands after this artifact retired.
-        if (typeof element?.createConversation !== "function") {
+        if (retired || typeof element?.createConversation !== "function") {
           throw new Error("Embedded Workbench cannot create a conversation");
         }
         const current = element;
@@ -309,13 +312,15 @@ export function AgentChatMigrationSurface({
         });
         try {
           await current.createConversation();
+          if (retired) return;
           onSessionMutationStateChangeRef.current?.(null);
         } catch (cause) {
+          if (retired) return;
           onSessionMutationStateChangeRef.current?.({
             operation: "create",
             chatId: "",
             pending: false,
-            error: cause instanceof Error ? cause.message : String(cause),
+            error: mutationFailure.current,
           });
           throw cause;
         }
@@ -323,32 +328,38 @@ export function AgentChatMigrationSurface({
     };
     const sessionActions: LightVelaSessionActions = {
       renameSession: (chatId, title) => {
+        if (retired || element === null) return;
         onSessionMutationStateChangeRef.current?.({
           operation: "rename", chatId, pending: true, error: null,
         });
         void element!.renameConversation(chatId, title).then(() => {
+          if (retired) return;
           onSessionMutationStateChangeRef.current?.(null);
-        }).catch((cause: unknown) => {
+        }).catch(() => {
+          if (retired) return;
           onSessionMutationStateChangeRef.current?.({
             operation: "rename",
             chatId,
             pending: false,
-            error: cause instanceof Error ? cause.message : String(cause),
+            error: mutationFailure.current,
           });
         });
       },
       deleteSession: (chatId) => {
+        if (retired || element === null) return;
         onSessionMutationStateChangeRef.current?.({
           operation: "delete", chatId, pending: true, error: null,
         });
         void element!.deleteConversation(chatId).then(() => {
+          if (retired) return;
           onSessionMutationStateChangeRef.current?.(null);
-        }).catch((cause: unknown) => {
+        }).catch(() => {
+          if (retired) return;
           onSessionMutationStateChangeRef.current?.({
             operation: "delete",
             chatId,
             pending: false,
-            error: cause instanceof Error ? cause.message : String(cause),
+            error: mutationFailure.current,
           });
         });
       },
@@ -398,12 +409,15 @@ export function AgentChatMigrationSurface({
       }
       element = candidate;
       elementRef.current = element;
+      element.dataset.instanceId = instanceId;
+      element.dataset.profileId = profileId;
       element.className = "block size-full";
       element.addEventListener("opencraft-sessions", handleSessions);
       element.addEventListener("opencraft-turn-completed", handleTurnCompleted);
       element.addEventListener("opencraft-error", handleEmbeddedError);
       element.addEventListener("opencraft-connection", handleConnection);
       element.configure({ accountId, apiBase, instanceId, profileId, region, getSessionToken,
+        externalPanelChrome: Boolean((window as Window & { __LIGHTVELA_BOT_RUNTIME_ID__?: string }).__LIGHTVELA_BOT_RUNTIME_ID__),
         ...(localeRef.current ? { localization: { ideLocale: localeRef.current, localeSource: "IDE" as const } } : {}),
         physicalConnection: physicalConnectionRef.current ?? undefined });
       mount.append(element);

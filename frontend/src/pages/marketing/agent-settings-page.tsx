@@ -1,4 +1,5 @@
 import { AgentSidebar, AgentSidebarToggle, useAgentSidebarCollapse } from "@/components/site/agent-sidebar";
+import { AgentConsoleHostProjection, type AgentConsoleHostPort } from "./agent-console-host";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowRight,
@@ -2602,6 +2603,8 @@ const isRescueExportRunning = (status: WorkerActionStatusResult | null | undefin
 type AgentSettingsPageProps = {
   /** Native shell owns navigation; reuse existing section controllers. */
   embedded?: boolean;
+  consoleHost?: AgentConsoleHostPort;
+  presentationActive?: boolean;
   createRequestId?: number;
   onCreateRequestHandled?: () => void;
   deleteRequestId?: number;
@@ -2617,6 +2620,8 @@ export const AgentSettingsPage = ({
   showHeader = true,
   sidebarCollapsed,
   embedded = false,
+  consoleHost,
+  presentationActive = true,
   createRequestId = 0,
   onCreateRequestHandled,
   deleteRequestId = 0,
@@ -3308,6 +3313,7 @@ export const AgentSettingsPage = ({
   const prepareBotSwitch = (botId: string) => {
     if (botId === activeBot?.id) return;
     pendingNewChatSessionBotId = botId;
+    setActiveTabId(botId);
     setChatSessionCommands(null);
     setSelectedChatId(undefined);
     setOpenSessionMenuChatId(null);
@@ -5661,12 +5667,12 @@ export const AgentSettingsPage = ({
 
           {/* ── 设置区域 ── */}
           {/*
-            必须排除两个引导态。
+            官网排除两个引导态；嵌入宿主在新建表单后保留当前 Bot 控制器。
             引导是「接管整页」的流程，而这块只看 !isCreating && activeBot ——
             多 bot 引导时 isCreating 为 false、activeBot 又存在（就是当前那个
             bot），于是配置进度清单和总览/设置区同屏显示（真实故障截图）。
           */}
-          {!isCreating && !showMultiBotOnboarding && !showEarlyOnboarding && activeBot && sdkInstance && (
+          {!isCreating && (!showMultiBotOnboarding || embedded) && !showEarlyOnboarding && activeBot && sdkInstance && (
             (() => {
               type SettingsSectionLink = {
                 id: AgentSettingsSectionId;
@@ -5873,7 +5879,63 @@ export const AgentSettingsPage = ({
                 </Popover>
               </span>;
               return (
+                <Fragment>
+                <AgentConsoleHostProjection host={consoleHost} state={{
+                  type: "bot-console-state", botId: activeBot.id, section: activeSection,
+                  groups: settingsGroups.map(group => ({ id: group.id, label: group.label,
+                    sections: group.sections.map(item => ({ id: item.id, label: item.label })) })),
+                  sessions: chatSessionPagination.visibleSessions.map(session => ({
+                    chatId: session.chatId, title: (session.title || t("新对话")).slice(0, 256),
+                    pinned: "pinned" in session && session.pinned === true,
+                    unread: unreadChatIds.includes(session.chatId),
+                  })),
+                  selectedChatId: selectedChatId ?? null,
+                  loading: chatSessionsLoading,
+                  hasMore: chatSessionPagination.hasMoreVisible || chatSessionsHasMore,
+                  commandsReady: chatSessionCommands !== null && isActiveBotChatAvailable,
+                  pinSupported: chatPinSupported,
+                  pending: chatSessionMutationState?.pending === true || chatSessionPagination.loadingMore,
+                  error: chatSessionMutationState?.error != null || chatPinError !== null || chatSessionPagination.pageError,
+                }} onCommand={command => {
+                  if (command.type === "select" && command.botId !== activeBot.id && visibleBots.some(bot => bot.id === command.botId)) {
+                    handleSelectBot(command.botId);
+                    return true;
+                  }
+                  if (command.type !== "session" || command.botId !== activeBot.id) return false;
+                  if (chatSessionMutationState?.pending || chatSessionCommands === null) return true;
+                  switch (command.action) {
+                    case "create":
+                      navigate(getAgentBotSectionHref(AGENT_SECTION_PATH_BY_ID.chat, activeBot.id));
+                      createChatSession(); break;
+                    case "load-more": void chatSessionPagination.showMore(); break;
+                    case "select":
+                      if (command.chatId === "" || chatSessions.some(session => session.chatId === command.chatId)) {
+                        setSelectedChatId(command.chatId);
+                        setUnread(command.chatId, false);
+                        navigate(getAgentBotSectionHref(AGENT_SECTION_PATH_BY_ID.chat, activeBot.id));
+                      }
+                      break;
+                    case "rename":
+                      if (chatSessions.some(session => session.chatId === command.chatId)) chatSessionActions?.renameSession(command.chatId, command.title.trim());
+                      break;
+                    case "delete": {
+                      const session = chatSessions.find(session => session.chatId === command.chatId);
+                      if (session && canDeleteSession(session)) chatSessionActions?.deleteSession(command.chatId);
+                      break;
+                    }
+                    case "pin": {
+                      const session = chatSessions.find(session => session.chatId === command.chatId);
+                      if (session && ("pinned" in session && session.pinned === true) !== command.pinned) toggleSessionPin(session);
+                      break;
+                    }
+                    case "unread": if (chatSessions.some(session => session.chatId === command.chatId)) markSessionUnread(command.chatId); break;
+                  }
+                  return true;
+                }} />
                 <div
+                  hidden={showMultiBotOnboarding}
+                  inert={showMultiBotOnboarding || undefined}
+                  style={showMultiBotOnboarding ? { display: "none" } : undefined}
                   className={cn(
                     /* lv-agent-settings-grid 来自 master，勿删 */
                     "lv-agent-settings-grid grid items-start",
@@ -5889,7 +5951,7 @@ export const AgentSettingsPage = ({
                       配置完成后导航才出现（避免一进来就面对点不了的入口） */}
                   {hasSidebarLayout && !embedded ? (
                   <>
-                      {isDesktop && multiBotEnabled && <AgentBotRail bots={visibleBots} activeBotId={activeBot.id} canCreate={nativeCreateEnabled} createLimitMessage={createLimitMessage || ""} profileRevision={botRailProfileRevision} restartingBotIds={restartingBotIds} execDebugCommand={repositories.bots.execDebugCommand} onSelect={prepareBotSwitch} onCreate={handleCreateNew} manageActions={botContextActions} />}
+                      {isDesktop && multiBotEnabled && <AgentBotRail bots={visibleBots} activeBotId={activeBot.id} canCreate={nativeCreateEnabled} createLimitMessage={createLimitMessage || ""} profileRevision={botRailProfileRevision} restartingBotIds={restartingBotIds} execDebugCommand={repositories.bots.execDebugCommand} onSelect={handleSelectBot} onCreate={handleCreateNew} manageActions={botContextActions} />}
                       <div className="lv-agent-mobile-toolbar">
                         <button
                           ref={mobileNavTriggerRef}
@@ -5945,7 +6007,7 @@ export const AgentSettingsPage = ({
                       >
                         <X className="size-4" aria-hidden="true" />
                       </button>
-                    {!isDesktop && multiBotEnabled && <AgentBotRail mobile bots={visibleBots} activeBotId={activeBot.id} canCreate={nativeCreateEnabled} createLimitMessage={createLimitMessage || ""} profileRevision={botRailProfileRevision} restartingBotIds={restartingBotIds} execDebugCommand={repositories.bots.execDebugCommand} onSelect={prepareBotSwitch} onCreate={handleCreateNew} />}
+                    {!isDesktop && multiBotEnabled && <AgentBotRail mobile bots={visibleBots} activeBotId={activeBot.id} canCreate={nativeCreateEnabled} createLimitMessage={createLimitMessage || ""} profileRevision={botRailProfileRevision} restartingBotIds={restartingBotIds} execDebugCommand={repositories.bots.execDebugCommand} onSelect={handleSelectBot} onCreate={handleCreateNew} />}
                     {(!isDesktop || !multiBotEnabled) && <div className="lv-agents-sidebar-profile">
                       <div className="lv-agent-profile-row">
                       <div className="lv-agent-profile-wrap">
@@ -6232,7 +6294,7 @@ export const AgentSettingsPage = ({
                               {!isChatTabDisabled && chatSessionsExpanded && !isSidebarCollapsed ? <>
                               <ul className="lv-agents-nav-group-items lv-agents-session-list">
                                 {emptyChatSessionState === "loading" ? (
-                                  <li className="lv-agents-session-hint">{isGlobal ? t("正在加载会话…") : t("正在加载...")}</li>
+                                  <li className="sr-only" role="status">{isGlobal ? t("正在加载会话…") : t("正在加载...")}</li>
                                 ) : emptyChatSessionState === "default" ? (
                                   /*
                                    * 首次读取尚未完成时由 loading 分支承接；确认空列表后
@@ -6683,7 +6745,7 @@ export const AgentSettingsPage = ({
                           )}
                           {isActiveBotChatAvailable && (
                             <AgentChatMigrationSurface
-                              active={activeSection === "chat"}
+                              active={activeSection === "chat" && presentationActive && !showMultiBotOnboarding}
                               preloadSessions={activeBot.status !== "paused" && sidebarTab === "daily" && chatSessionsExpanded && !isSidebarCollapsed}
                               agentPaused={activeBot.status === "paused" && activeBot.siblingsUnknown === "instance_stopped"}
                               accountId={accountId}
@@ -6752,6 +6814,7 @@ export const AgentSettingsPage = ({
                     </div>
                   </section>
                 </div>
+                </Fragment>
               );
             })()
           )}

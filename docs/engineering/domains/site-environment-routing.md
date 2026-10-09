@@ -4,6 +4,10 @@ Pass 升配微信桥通过精确的 `POST /v1/passes/{pass_id}/modify/order-url`
 
 本领域覆盖国内/国际站、域名、locale、区域功能差异、环境 inventory 和对应 GitOps overlay。
 
+## 隔离开发预览
+
+Next 开发预览的临时域名由本地服务通过 `NEXT_DEV_ALLOWED_ORIGINS`（逗号分隔主机名）显式加入 `allowedDevOrigins`，避免隧道上的热更新连接被拒绝；该增量只在 development 生效，不进入生产配置。认证 API 可使用现有 `NEXT_PUBLIC_AUTH_API_BASE_URL=local-proxy` 与所属站点的 `NEXT_PUBLIC_LOCAL_PROXY_TARGET` 同源代理，避免浏览器直接跨域请求未放行的临时域名。预览不能以测试身份覆盖正常认证；未登录入口与真实账号功能链路分别验收。
+
 ## 管理后台内部服务路由
 
 - Gateway Dashboard 的积分包管理页通过同源 `/admin/api/credit/*` 访问服务端 BFF；浏览器不直连 Credit，也不接触内部凭据。

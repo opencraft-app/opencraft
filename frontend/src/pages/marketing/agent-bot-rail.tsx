@@ -68,9 +68,13 @@ function AgentBotRailItem({ bot, active, mobile, restarting, execDebugCommand, o
             {avatar}
           </button>
         ) : (
-          // 原生导航确保首次打开页面、客户端路由尚未就绪时也能切换 Bot。
+          // 首屏尚未完成 hydration 时保留原生链接；就绪后普通点击走客户端切换。
           <a href={getAgentBotSectionHref(`${AGENT_SECTION_PATH_BY_ID.chat}/`, bot.id)}
-            className={buttonClassName} aria-label={label} onClick={() => onSelect(bot.id)}>
+            className={buttonClassName} aria-label={label} onClick={(event) => {
+              if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+              event.preventDefault();
+              onSelect(bot.id);
+            }}>
             {avatar}
           </a>
         )}

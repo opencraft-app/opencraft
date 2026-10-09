@@ -103,3 +103,25 @@ export class BrowserAudioCapture implements AudioCapturePort {
     } catch (error) { dispose(); throw error; }
   }
 }
+
+/** Native WAV may contain extra RIFF chunks. Validate actual PCM and canonicalize before ASR. */
+export function normalizePcmWav(bytes: Uint8Array): RecordedAudio {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const word = (offset: number, length: number) => String.fromCharCode(...bytes.subarray(offset, offset + length));
+  if (bytes.length < 44 || bytes.length > 8 * 1024 * 1024 || word(0, 4) !== "RIFF" || word(8, 4) !== "WAVE" || view.getUint32(4, true) + 8 !== bytes.length) throw new Error("Invalid WAV");
+  let rate = 0, channels = 0, data: Uint8Array | null = null;
+  for (let offset = 12; offset + 8 <= bytes.length;) {
+    const size = view.getUint32(offset + 4, true), start = offset + 8;
+    if (start + size > bytes.length) throw new Error("Truncated WAV");
+    if (word(offset, 4) === "fmt ") {
+      if (size < 16 || view.getUint16(start, true) !== 1 || view.getUint16(start + 14, true) !== 16) throw new Error("Invalid PCM");
+      channels = view.getUint16(start + 2, true); rate = view.getUint32(start + 4, true);
+      if (channels < 1 || channels > 2 || view.getUint16(start + 12, true) !== channels * 2 || view.getUint32(start + 8, true) !== rate * channels * 2) throw new Error("Invalid PCM geometry");
+    }
+    if (word(offset, 4) === "data") { if (data) throw new Error("Multiple audio chunks"); data = bytes.subarray(start, start + size); }
+    offset = start + size + (size % 2);
+  }
+  if (!data || !rate || !channels || data.length % (channels * 2) || data.length / (rate * channels * 2) > 120) throw new Error("Invalid audio duration");
+  const pcm = new DataView(data.buffer, data.byteOffset, data.byteLength), frames = data.length / (channels * 2);
+  return encodeSpeechWav(Array.from({ length: channels }, (_, channel) => Float32Array.from({ length: frames }, (_, frame) => pcm.getInt16((frame * channels + channel) * 2, true) / 32768)), rate);
+}

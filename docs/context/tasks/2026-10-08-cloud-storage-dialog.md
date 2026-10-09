@@ -43,6 +43,9 @@
 | `frontend/DESIGN.md@worktree` | 弹窗设计 | 结构与可访问性 |
 | `docs/context/project/adjacency/frontend-runtime-openspec-i18n.md@worktree` | 邻接测试 | 检查 OpenSpec 与组件测试 |
 | `frontend/openspec/changes/2026-09-02-cloud-storage-capacity-implementation-plan.md@worktree` | 现有功能约束 | 复用容量与文件管理逻辑 |
+| `docs/context/flows/tapd-gongfeng-delivery.md@worktree` | 最新 master 冲突处理与 MR 交付 | 核对提交及远端验证门禁 |
+| `docs/context/flows/change-delivery.md@worktree` | 交接流程 | 更新任务证据与 checkpoint |
+| `opencraft/AGENTS.md@worktree` | 生成副本边界 | 清单由同步脚本生成 |
 
 ## evidence
 - 路由器命中以上 3 个 Pack；精确搜索定位账号菜单、Agent 页和文件管理面板。
@@ -53,6 +56,7 @@
 - `npm --prefix opencraft run check:mono2-agent-console` 报文件管理面板生成副本漂移；按 `frontend/AGENTS.md` 须先提交真源，再生成带正确 sourceRevision 的副本。
 - `validate_documentation.py --repo . --format json` 通过，broken links 0、warnings 0；`git diff --check` 通过。
 - CR !5104 修复：合入 `origin/master` 后保留双方账号菜单逻辑；双面板下载归属与删除中守卫相关组件测试 58/58 通过，`pnpm check`、`pnpm build:cn`、文档校验与变更影响检查通过。
+- 2026-10-09 再合入 `origin/master`（`50aadd48b`）：仅 OpenCraft `UPSTREAM.json` 的 `sourceRevision` 文本冲突；前端代码自动合并，云存储入口仍绑定当前 Bot。合并树上 `pnpm check` 0 新增 TypeScript 诊断、相邻 4 个测试文件 99/99 通过、`pnpm build:cn` 通过。生成清单待源提交后按脚本同步。
 - 本轮全量 Vitest 单 worker 在出现既有模型配置等失败后停止，未获得全量通过结果；OpenCraft 文件面板副本将在真源提交后同步。
 
 ## risks

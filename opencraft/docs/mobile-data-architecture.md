@@ -37,6 +37,12 @@ Freshness values are policy, not identity: start with a short in-memory freshnes
 
 ## Request coordination
 
+### Bot navigation continuity
+
+The native and Expo Web hosts use one `mobile-bot-navigation-state` presentation model. Selecting a Bot changes the destination without clearing its navigation tree. Runtime-local, bounded (32 Bot) display snapshots restore the target's own groups and sessions immediately. Until the embedded controller publishes the selected Bot again, cached commands stay disabled. A cold destination keeps the previous group geometry as a noninteractive placeholder and reserves session rows without showing another Bot's session names. Target groups replace those placeholders on receipt; this does not invent permissions or prefetch/mount a second Bot runtime.
+
+An empty loading session response retains that Bot's existing rows with actions disabled; a successful empty result removes them. Late projections may update only their own Bot snapshot, never confirm the current destination. Runtime, account and locale replacement retire the display scope; successful catalog changes prune removed Bots, and a successful empty catalog clears it. The cache is memory only and is not a domain controller or authorization source. Keep Tabs and group/item keys stable across selection; selection must not replace the whole list with a loading page. Snapshot freshness and request readiness remain separate from displayed data.
+
 The iOS shell now has a native `QueryClient` for profile reads and registers React Native `AppState` and Expo Network events with `focusManager` and `onlineManager`. Profile requests use a session-scoped key for in-flight deduplication and cap retries at two transient failures; 401 and ordinary validation errors do not retry. The visible account page refreshes on entry, successful edit, foreground return and network recovery. An explicit concurrency scheduler remains conditional on measured contention: TanStack Query does not itself define one durable, app-wide queue across native and WKWebView.
 
 | Work lane | Scheduling rule | Persistence |

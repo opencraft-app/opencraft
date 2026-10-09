@@ -56,6 +56,8 @@ import {
 } from "./right-panel-tab-drag";
 
 interface RightPanelProps {
+  /** Host supplies container geometry; this view retains the full toolbar and renderer residency. */
+  readonly hostPresentationActive?: boolean;
   readonly emptyHint?: string;
   readonly state: ConversationPanelState;
   readonly presentationId: string;
@@ -84,6 +86,7 @@ function PanelToolbarAction({
   context: PanelToolbarActionContext;
   launcher?: boolean;
 }) {
+  const intl = useIntl();
   const [error, setError] = useState<string | null>(null);
   const run = (
     operation: (context: PanelToolbarActionContext) => void | Promise<void>,
@@ -91,8 +94,9 @@ function PanelToolbarAction({
     setError(null);
     void Promise.resolve()
       .then(() => operation(context))
-      .catch((cause) => {
-        setError(cause instanceof Error ? cause.message : String(cause));
+      .catch(() => {
+        setError(intl.formatMessage({ id: "panel.actionFailed", defaultMessage: "Could not open the preview. Try again." }));
+        window.dispatchEvent(new CustomEvent("opencraft-panel-action-failed"));
       });
   };
   const trigger = (
@@ -161,8 +165,10 @@ function PanelCreationMenu({
               setError(null);
               void Promise.resolve()
                 .then(() => { if (mounted.current) return operation(); })
-                .catch(cause => {
-                  if (mounted.current) setError(cause instanceof Error ? cause.message : String(cause));
+                .catch(() => {
+                  if (!mounted.current) return;
+                  setError(intl.formatMessage({ id: "panel.actionFailed", defaultMessage: "Could not open the preview. Try again." }));
+                  window.dispatchEvent(new CustomEvent("opencraft-panel-action-failed"));
                 });
             }}>
             {tabs ? <DropdownMenu.Label className="app-shell-toolbar-menu__title">{intl.formatMessage({ id: "panel.newTab", defaultMessage: "New tab" })}</DropdownMenu.Label> : null}
@@ -336,6 +342,7 @@ function DraggedPanelTabOverlay({
 }
 
 export function RightPanel({
+  hostPresentationActive,
   emptyHint,
   state,
   presentationId,
@@ -350,10 +357,13 @@ export function RightPanel({
   const region = "right" as const;
   const regionState = state[region];
   const presentation = useShellPresentation();
-  const fullWidth = presentation?.rightPanelFullWidth ?? state.rightPanelFullWidth;
+  const fullWidth = hostPresentationActive === undefined
+    ? presentation?.rightPanelFullWidth ?? state.rightPanelFullWidth
+    : state.rightPanelFullWidth;
   const autoFullWidth = fullWidth && !state.rightPanelFullWidth;
-  const { headerRightWidth, rightPanelTabBarLeftInset, rightPanelPresentationActive } =
+  const { headerRightWidth, rightPanelTabBarLeftInset, rightPanelPresentationActive: shellPanelActive } =
     useAppShellLayoutMotion();
+  const rightPanelPresentationActive = hostPresentationActive ?? shellPanelActive;
   const headerRightWidthPx = useTransform(
     headerRightWidth,
     (width) => `${Math.max(0, width)}px`,
@@ -400,7 +410,7 @@ export function RightPanel({
       : (renderers.find((renderer) => renderer.kind === activeTab.kind)
           ?.Component ?? null);
   const activeRegistration = renderers.find(renderer => renderer.kind === activeTab?.kind);
-  const interactive = presentation?.rightPanelOpen ?? regionState.open;
+  const interactive = hostPresentationActive ?? presentation?.rightPanelOpen ?? regionState.open;
   const residentTabs = regionState.tabs.flatMap(tab => {
     const registration = renderers.find(renderer => renderer.kind === tab.kind);
     return registration?.residency === "while-tab-open" ? [{ tab, Component: registration.Component }] : [];
@@ -513,7 +523,7 @@ export function RightPanel({
           <motion.div
             aria-hidden="true"
             className="right-panel-header-start-spacer"
-            style={{ width: tabBarLeftInsetPx }}
+            style={{ width: hostPresentationActive === undefined ? tabBarLeftInsetPx : 0 }}
           />
           <div
             ref={stripRef}
@@ -608,7 +618,7 @@ export function RightPanel({
               aria-hidden="true"
               className="right-panel-header-action-spacer"
               data-testid="right-panel-tab-bar-header-spacer"
-              style={{ width: headerRightWidthPx }}
+              style={{ width: hostPresentationActive === undefined ? headerRightWidthPx : 0 }}
             />
           </div>
         </header>

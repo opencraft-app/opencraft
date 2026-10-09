@@ -1427,7 +1427,7 @@ export function HermesAgentAutomationsPanel({ botId: rawBotId, gatewayRunning, o
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-testid="automations-panel">
       {errorMessage && <ErrorToast message={errorMessage} onClose={() => setErrorMessage(null)} />}
       {notice && <ErrorToast message={notice.message} tone={notice.tone} onClose={() => setNotice(null)} />}
 

@@ -21,11 +21,21 @@
       "expo-sqlite",
       "expo-secure-store",
       "expo-web-browser",
-      ["expo-image-picker", {
-        "photosPermission": "Allow LightVela to choose a profile photo.",
-        "cameraPermission": false,
-        "microphonePermission": false
-      }]
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow LightVela to choose a profile photo.",
+          "cameraPermission": false,
+          "microphonePermission": false
+        }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Allow LightVela to record your voice for transcription.",
+          "enableBackgroundRecording": false
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

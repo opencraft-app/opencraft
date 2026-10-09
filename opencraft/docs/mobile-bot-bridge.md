@@ -27,17 +27,43 @@ supported commands; the host sends feature commands only after capability
 handshake. A new command requires a corresponding behavior on both sides,
 explicit failure semantics, and a focused protocol test.
 
-The native drawer owns feature navigation; the DOM runtime owns Bot business
-logic and renders frontend components except Chat. The catalog also transfers
-each Bot's physical instance ID and Hermes Profile ID; iOS Chat binds the
-OpenCraft RN Workbench to that exact pair. When Chat is selected, the DOM keeps
-its previous feature mounted but hidden, so frontend AgentChat never owns the
-visible mobile conversation. `external-navigation` leaves the local
-runtime and passes through the shell's first-party route check. Neither side
-logs credentials, personal identifiers, query strings, API bodies or error
-payloads. Fixed diagnostic event names and bounded numeric facts may enter the
-developer log. A protocol mismatch or missing ready event becomes the existing
-recoverable Bot runtime error, never an endless loading spinner.
+The shared Expo navigation owns presentation; the persistent frontend controller
+owns Bot permissions, mutations and session selection. It publishes validated
+`bot-console-state` projections and accepts Bot-scoped session commands. Both
+native and Expo Web use the same HeroUI Native navigation/session components.
+The local HTML includes the actual OpenCraft Web custom element, its styles
+and build assets; this Agent Console entry does not mount RN Chat or AgentChat.
+Automations currently keeps the original packaged frontend panel. A staged
+React Native/HeroUI implementation and target-scoped port for the original
+Cron client live under `apps/workbench-expo/src/components/mobile-automations.shared.tsx`
+and `src/runtime/native-cron-port.ts`, but are not routed into the product.
+The initial native form lacked templates, 0 Token creation/editing, delivery
+channels, skills, upstream bindings, effective windows and run-output details;
+switching the product route to it removed existing capabilities and broke the
+Automations-to-Chat return path. Route the native screen only after a complete
+capability and navigation regression check. `build:native-cron-client` remains
+available for that work, outside the normal Expo start/build path.
+Bot catalog identity retains the physical instance/Profile pair. Session
+commands reuse the existing create/select/rename/delete/pin/unread/pagination
+handlers rather than create a second session store. Retired controller commands
+ignore late results. External navigation passes through the host route policy.
+Opening the unsent Create Bot form changes presentation, not the selected Bot
+or its Chat controller lifetime. In an embedded host the existing controller
+and session projection stay mounted behind a hidden, inert canvas. Chat is
+inactive there; selecting an existing/new conversation clears the creation
+route through the original handler and reveals the same controller and draft.
+The website keeps its existing full-page creation layout. This does not grant
+session commands for an unavailable or retired Bot, nor queue mutations.
+Regression: `apps/workbench-expo/scripts/smoke-mobile-bot-create-return.mjs`
+runs the packaged frontend in Chromium with fixture transport/Chat APIs;
+set `OPENCRAFT_PLAYWRIGHT_MODULE` and `OPENCRAFT_CHROMIUM_EXECUTABLE` as needed.
+The bootstrap publishes boolean `bot-touch-ownership` for a contact originating
+in an editable/control or horizontal scroller. The native pan yields to this
+contact; touch end/cancel and document reload release it. Runtime validation
+rejects stale or malformed ownership messages. It is not a permission grant
+and carries no content or element identifiers.
+Neither host logs credentials, personal identifiers, query strings, API bodies
+or raw errors. Fixed diagnostics belong in the developer log.
 The bundled DOM lays out against its WebView viewport, which can be a phone,
 iPad pane or foldable pane. Feature panels must shrink within that width; a
 horizontal overflow hidden on the document is not proof that card and file
@@ -51,7 +77,8 @@ shell shows that section's retry state without marking the entire WebView as
 failed; moving to another section lets the existing DOM error boundary recover.
 If iOS terminates the WebView content process, the host reloads it at most
 twice within a minute before showing the manual retry card. It keeps the Bot
-selection and native Chat state outside that process.
+selection outside that process; the Web chat runtime and draft persistence own
+conversation restoration after a document restart.
 
 Bot avatar shape definitions are shared by frontend and Expo. Once the DOM
 reads a Bot profile, it sends a validated `bot-avatar` message with the Bot ID,
@@ -65,3 +92,119 @@ typecheck and frontend typecheck. After changing navigation, also run
 `tests/mobile-shell-model.test.mjs` and check the account/drawer return flow
 in an Expo runtime. These checks are focused; this document adds no CI gate or
 mandatory screenshot requirement.
+
+## Chat panel host presentation
+
+The packaged Chat opts into `externalPanelChrome`. Its original
+`WorkbenchPanelService` remains the only owner of tab identity, active tab,
+preview replacement, ordering, MRU close behavior, full-width intent and
+resource lifetime. `workbench-panels/host-presentation` is a pure contract
+entry; mobile bridge messages carry only a validated presentation projection
+and owner-scoped commands. `chat-panel-state` also includes instance/Profile
+identity. A retired runtime, Bot or conversation cannot operate the new owner.
+Actions must still be in the current presentation's admitted action catalog;
+this port does not expand the embedded product's renderer or backend authority.
+
+Expo measures the native content plane and supplies shell controls and gesture input.
+The embedded parent owns actual Chat/right-pane viewport allocation and motion.
+The complete original `RightPanel`, including its tab bar, creation/switching
+menus, empty state and file/browser contents, is portaled into a sibling outlet
+of the **same local custom element and DOM runtime**. React contexts and browser
+residency remain intact. There is no replacement native tab-management dialog,
+second Application, iframe per tab or hosted page navigation. The legacy
+`externalPanelChrome` opt-in names host layout; it does not suppress the original
+DOM toolbar. Both standalone Web/Electron and Expo reuse that toolbar.
+
+The host measures its content container after outer navigation takes space.
+`chat-panel-geometry` assigns content/panel width with zero additional native
+toolbar clearance: narrow containers and explicit full-width intent overlay Chat; sufficient space places
+both in real sibling grid columns. The contained Chat AppShell measures its own
+column; it cannot retain a document-level fixed width. In overlay mode only the underlying Chat DOM is inert,
+not the WebView containing panel content. Width changes apply geometry without
+remounting the runtime or resetting tabs/drafts. Hiding a panel retains its tabs;
+closing a tab or releasing its conversation uses the existing owner lifecycle.
+The native content plane contains one DOM runtime with both sibling viewports;
+there are no independent native WebViews or new native file/browser renderers. Hardware accessibility and keyboard acceptance
+must be checked separately from browser fixture and iOS bundle evidence.
+
+`chat-panel-gesture` carries a validated contact ID, phase and finite movement/
+velocity samples to the current panel owner. Start captures the displayed position;
+move changes transient geometry, not service open intent; end commits via the
+original command admission, and cancel restores current intent. Older contact
+samples, changed geometry and retired owners cannot resume a new transaction.
+Buttons, resource-originated open intents and gesture release use one motion driver.
+`chat-panel-presentation` reports owner-scoped boolean activity to native arbitration
+so a closing pane remains interruptible and mounted. It grants no resource authority.
+Move samples are coalesced; terminal samples replace queued moves, carrying the full
+displacement. Runtime replacement clears pending samples. Native/WebView bridge
+latency still requires device observation; this is not an all-native UI-thread claim.
+
+## Expo Web parallel entry
+
+`frontend/next-site/agents-next-page-client.tsx` adapts authentication and mounts
+an actual Expo Web export at `/agents-next`; `/agents` retains its current
+controller and presentation. Build from `opencraft/`:
+
+```sh
+npm run build:agents-next --workspace @opencraft/workbench-expo
+```
+
+This exports shared navigation through Metro and emits a static manifest under
+`frontend/public/__expo-agents/`. Generated outputs are ignored; rebuild them
+before building/deploying a frontend that exposes this experimental route.
+Native loads packaged HTML in WebView; Web loads that build output into an
+`iframe.srcDoc` container. Both run the original frontend code, never a hosted
+feature URL. The outer Next adapter performs authentication and external navigation only;
+Bot entitlement/configuration decisions stay in the packaged controller and
+server APIs rather than a second independently fetched console gate.
+The Web mount port exposes update/dispose so account refresh does
+not rebuild the console. Width changes preserve the mounted DOM frame.
+The frame validates source window, origin, protocol and runtime generation.
+CSP rejects network script and stylesheet loads; API networking remains available. The frame
+has same-origin capability for browser storage and is not a security boundary
+against hostile code. Only trusted build code belongs in this runtime.
+The Electron renderer can consume the same mount port through its host adapter;
+this iteration does not replace the existing Electron entry.
+
+```mermaid
+flowchart LR
+  Next[Next authentication adapter] --> Shell[Expo shared navigation and layout]
+  Native[Native authentication adapter] --> Shell
+  Shell -->|validated commands| DOM[Local DOM runtime]
+  DOM --> Controller[Original frontend Bot and session controller]
+  Controller -->|state projection| Shell
+  Controller --> Chat[OpenCraft Web chat]
+  Controller --> API[Authoritative server APIs]
+```
+
+## Native audio and packaged code
+
+Executable modules, stylesheets and workers for the App-owned runtime come from
+the build. The packaged document permits inline/data/blob code and styles, with
+no network script or stylesheet source and no nested document. API responses
+and media remain separate from executable resources. Account management, verification and subscription pages open the system browser;
+the previous hidden remote account WebView and asset prefetch are removed.
+Metro is a development
+transport only; an Expo Go preview is not a release bundle.
+
+Embedded Web retains browser capture. The iOS bootstrap explicitly supplies a
+native capture capability; that capture adapter has no browser fallback. Expo
+Audio owns system permission, the recorder, interruption handling and temporary
+file disposal. A denied permission still requires the user's system decision.
+WKWebView media capture is denied so regressions cannot add a website permission
+prompt. The DOM receives bounded, ordered audio frames through the validated
+runtime/request contract and normalizes actual PCM WAV before the existing ASR
+service. Audio/text never enters developer diagnostics. The existing speech
+provider keeps explicit same-audio retry and the original composer owns final
+text insertion; no second draft or automatic send is introduced.
+
+Cancel, background, leaving Chat, Bot disposal and document generation changes
+retire capture. Outstanding permission/prepare work holds device ownership
+until disposal; late frames cannot target a replacement request. App-owned
+audio files are removed after delivery or cancellation. Hardware microphone
+permission, interruptions and waveform quality require device acceptance.
+
+Reference: read-only Paseo `3cc4ae2` splits shared dictation from
+`use-dictation-audio-source.native/web` and `audio-engine.native/web`. Its current
+native dictation uses a custom two-way module; this App uses the SDK-compatible
+Expo Audio module so the iOS path can also be bundled for Expo Go.
