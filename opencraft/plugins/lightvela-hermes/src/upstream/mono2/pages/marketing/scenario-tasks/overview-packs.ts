@@ -2405,7 +2405,7 @@ const OVERVIEW_COPY_BY_LOCALE: Record<
   "zh-Hant": null,
   "en-US": OVERVIEW_ENGLISH_COPY,
   "id-ID": OVERVIEW_INDONESIAN_COPY,
-  "ms-MY": localizeMalay(OVERVIEW_ENGLISH_COPY),
+  "ms-MY": OVERVIEW_ENGLISH_COPY,
   es: OVERVIEW_SPANISH_COPY,
   "ja-JP": OVERVIEW_JAPANESE_COPY,
   "ko-KR": OVERVIEW_KOREAN_COPY,
@@ -2422,10 +2422,14 @@ export function hasLocalizedOverviewCopy(locale: PublicSiteLocaleCode): boolean 
   return OVERVIEW_COPY_BY_LOCALE[locale] !== null;
 }
 
+let malayOverviewCopy: typeof OVERVIEW_ENGLISH_COPY | undefined;
+
 export function getOverviewScenarioTaskPacks(
   locale: PublicSiteLocaleCode,
 ): readonly ScenarioTaskPack[] {
-  const localizedCopy = OVERVIEW_COPY_BY_LOCALE[locale];
+  const localizedCopy = locale === "ms-MY"
+    ? (malayOverviewCopy ??= localizeMalay(OVERVIEW_ENGLISH_COPY))
+    : OVERVIEW_COPY_BY_LOCALE[locale];
   if (!localizedCopy) return OVERVIEW_SCENARIO_TASK_PACKS;
 
   return OVERVIEW_SCENARIO_TASK_PACKS.map((pack) => {

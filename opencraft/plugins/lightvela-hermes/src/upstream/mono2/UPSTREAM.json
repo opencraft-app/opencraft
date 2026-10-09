@@ -1,6 +1,6 @@
 {
   "source": "frontend/src",
-  "sourceRevision": "49a5790e98b852287ed664910ac69318a1c2157a",
+  "sourceRevision": "6802d5abe0559a0e12a59a5d5cb1fc8c5341ca90",
   "generatedBy": "scripts/sync-mono2-agent-console.mjs",
   "files": [
     {
@@ -109,11 +109,11 @@
     },
     {
       "file": "i18n/generated/malay-public-copy.json",
-      "sourceSha256": "ef914a9c555f876ce8937bf4c805b5c5fe835966c24135cb25be37d3822d1d88"
+      "sourceSha256": "d287e786333065907d98730c3e9ea7be279ce6872c8270491f24dd98054ce8a2"
     },
     {
       "file": "i18n/generated/ms-MY.json",
-      "sourceSha256": "0c348109f7c750d096869656d9de15a80932f0d13463cbb65496075d4e4b84b9"
+      "sourceSha256": "db5b1cd9810f922ccb7459b6dc778dc5c68006514d16c03d2977e0a79ca03872"
     },
     {
       "file": "i18n/generated/zh-CN.json",
@@ -129,7 +129,7 @@
     },
     {
       "file": "i18n/index.ts",
-      "sourceSha256": "4af324dc3410152fa5ccd8d778a8a86794193aca062afa4dbc4abb72c00c9d35"
+      "sourceSha256": "edbead4d3c517557489b151efbea7a635a46112a8d7aec563e8e26a5105d773d"
     },
     {
       "file": "i18n/locales.config.ts",
@@ -141,7 +141,7 @@
     },
     {
       "file": "i18n/malay-copy.ts",
-      "sourceSha256": "9804388f59b2fcc9a10e94cd0de9a223db87f564d06eae543d99e82edcf3e220"
+      "sourceSha256": "41432562f10c691c3ed94b5581840474c4f9099976908bbf1ce0a85214df4493"
     },
     {
       "file": "i18n/t.ts",
@@ -237,11 +237,7 @@
     },
     {
       "file": "pages/marketing/agent-automations-panel.tsx",
-<<<<<<< HEAD
-      "sourceSha256": "0322a2466d21480dce505dc2377e3298d33073a2c9e1c4fcb750a2f34e93e030"
-=======
-      "sourceSha256": "4147bdca068a343c8ea77916805956b64a2fc4445b3f46918584d86d9140a50f"
->>>>>>> origin/master
+      "sourceSha256": "8f8b7c99c441d8b44435d07624d5fd7adfc718153bfeaa7bd9d436432ebd0235"
     },
     {
       "file": "pages/marketing/agent-channel-panel.tsx",
@@ -453,7 +449,7 @@
     },
     {
       "file": "pages/marketing/scenario-tasks/overview-packs.ts",
-      "sourceSha256": "8635843b54edc21e2b2c7604da764f869de0a189920291f7f9711ade2e2a67ba"
+      "sourceSha256": "40d42b260e28a850e55b64b3cc68c0b7370c892429b8516a2ddc6024c81aa927"
     },
     {
       "file": "pages/marketing/scenario-tasks/scenario-full-prompt.ts",
