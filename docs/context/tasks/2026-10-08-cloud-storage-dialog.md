@@ -20,6 +20,7 @@
 ## acceptance
 - 左下角菜单点击云存储时，当前 Bot 的文件管理器在弹窗中呈现，URL 不变；可通过 Esc 或关闭按钮返回原页面。
 - 文件浏览、上传、下载、重命名、删除沿用现有面板。
+- `/agents/files` 已有文件面板时不再打开第二个面板；文件面板只认领自身触发的下载请求。
 - 聚焦组件测试、`pnpm check`、`pnpm test`、`pnpm build` 及 OpenCraft 同步只读检查。
 
 ## affected_paths
@@ -51,16 +52,20 @@
 - 完整 Vitest 门禁启动后，模型配置测试出现 84 个失败；单测复现为本机 Python 缺少 `cryptography`，与此次修改路径无关，随后停止完整门禁。
 - `npm --prefix opencraft run check:mono2-agent-console` 报文件管理面板生成副本漂移；按 `frontend/AGENTS.md` 须先提交真源，再生成带正确 sourceRevision 的副本。
 - `validate_documentation.py --repo . --format json` 通过，broken links 0、warnings 0；`git diff --check` 通过。
+- CR !5104 修复：合入 `origin/master` 后保留双方账号菜单逻辑；双面板下载归属与删除中守卫相关组件测试 58/58 通过，`pnpm check`、`pnpm build:cn`、文档校验与变更影响检查通过。
+- 本轮全量 Vitest 单 worker 在出现既有模型配置等失败后停止，未获得全量通过结果；OpenCraft 文件面板副本将在真源提交后同步。
 
 ## risks
 - 弹窗内容较长：使用限高与独立纵向滚动；已有直达页提供回退入口。
 - 当前 Bot 不存在时保留原路由链接。
+- 同 Bot 的多个文件面板监听同一 SW 下载消息，需按本面板创建的下载触发器限定认领范围。
 
 ## validation
 - 聚焦组件测试、`pnpm check`、`pnpm build` 通过；完整测试受本机 Python 依赖阻断，OpenCraft 同步检查将在源码提交后复检。
 
 ## decisions
 - 复用 `TatFileManagerPanel` 和现有 Dialog；页面直达路由保留。
+- CR !5104 后续：`/agents/files` 菜单保留直达链接，文件面板用已有 iframe 触发器记录远端路径以限定 SW 下载请求归属，不改 Service Worker 协议。
 
 ## scan_scope
 - `frontend/src/components/site/`、`frontend/src/components/domain/tat-file-manager-panel.tsx`、`frontend/src/pages/marketing/agent-settings-page.tsx`。

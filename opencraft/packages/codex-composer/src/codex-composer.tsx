@@ -666,9 +666,10 @@ export interface CodexComposerHandle {
 export interface ComposerQueuedSubmissionPresentation {
   readonly id: string;
   readonly preview: string;
-  readonly state: "submitting" | "queued" | "failed";
+  readonly state: "submitting" | "queued" | "failed" | "unknown";
   readonly operation: "idle" | "updating" | "deleting" | "starting";
   readonly actionable: boolean;
+  readonly dismissible?: boolean;
   /** Whether this runtime permits changing authoritative queue order. */
   readonly reorderable?: boolean;
   readonly editableContent: ComposerQueuedSubmissionContent;
@@ -1811,6 +1812,10 @@ export const CodexComposer = forwardRef<
           ...item,
           actionable:
             item.actionable &&
+            (editingQueuedSubmissionId === null ||
+              item.id === editingQueuedSubmissionId),
+          dismissible:
+            item.dismissible &&
             (editingQueuedSubmissionId === null ||
               item.id === editingQueuedSubmissionId),
           editing: item.id === editingQueuedSubmissionId,

@@ -28,7 +28,11 @@ export const INTERNATIONAL_HOME_SCRIPT_SOURCES = [
   '/lightvela-intl-home/assets/feature-motion.js',
 ] as const;
 
-export const INTERNATIONAL_HOME_ASSET_VERSION = '20261005-heading-font-v110';
+export const INTERNATIONAL_HOME_ASSET_VERSION = '20261009-runtime-v118';
+
+/** Homepage motion mode: GSAP-driven on the global site, CSS-only on the domestic site. */
+const MOTION_MODE_GSAP = 'gsap';
+const MOTION_MODE_CSS = 'css';
 
 function versionedInternationalHomeAsset(source: string) {
   return `${source}?v=${INTERNATIONAL_HOME_ASSET_VERSION}`;
@@ -133,6 +137,8 @@ export function InternationalHomeRuntime({ locale, markup }: { locale: PublicSit
 
     function loadScripts() {
       document.querySelectorAll('script[data-lightvela-intl-home-script]').forEach((script) => script.remove());
+      const home = document.getElementById('lightvela-intl-home');
+      if (home) home.dataset.homeMotionMode = isGlobal ? MOTION_MODE_GSAP : MOTION_MODE_CSS;
 
       for (const source of INTERNATIONAL_HOME_SCRIPT_SOURCES) {
         if (cancelled) return;
@@ -159,16 +165,18 @@ export function InternationalHomeRuntime({ locale, markup }: { locale: PublicSit
   }, [locale, markup]);
 
   useEffect(() => {
-    if (!isGlobal) return;
     const root = document.getElementById('lightvela-intl-home');
     if (!root) return;
     let cancelled = false;
     let stopMotion: (() => void) | undefined;
     const frame = requestAnimationFrame(() => {
-      void import('./international-home-motion').then(({ mountInternationalHomeMotion }) => {
-        if (!cancelled && root.isConnected) stopMotion = mountInternationalHomeMotion(root);
+      const loadMotion = isGlobal
+        ? import('./international-home-motion').then(({ mountInternationalHomeMotion }) => mountInternationalHomeMotion)
+        : import('./domestic-home-mascot-motion').then(({ mountDomesticHomeMascotMotion }) => mountDomesticHomeMascotMotion);
+      void loadMotion.then((mountMotion) => {
+        if (!cancelled && root.isConnected) stopMotion = mountMotion(root);
       }).catch((error: unknown) => {
-        console.error('Failed to load international homepage motion', error);
+        console.error('Failed to load homepage motion', error);
       });
     });
     return () => {

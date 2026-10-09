@@ -109,6 +109,19 @@
     replayPending = false;
   }
 
+  // IM tabs are a preview picker: switching should show a complete screen at once.
+  function showPanelImmediately() {
+    replayRun += 1;
+    clearReplayTimers();
+    document.querySelectorAll('.hero__frame .panel .bub, .hero__frame .panel .dc__msg').forEach(function (message) {
+      message.classList.remove('is-typing');
+      message.classList.add('is-in', 'is-done');
+      getCopies(message).forEach(function (copy) { copy.innerHTML = originalHtml(copy); });
+    });
+    activeReplayPanel = null;
+    replayPending = false;
+  }
+
   function replayPanel(panel) {
     replayRun += 1;
     var run = replayRun;
@@ -315,12 +328,12 @@
   document.querySelectorAll('.hero__stage > input[name="surface"]').forEach(function (tab) {
     tab.addEventListener('change', function () {
       if (!tab.checked) return;
-      replayPanel(document.querySelector('#panel-' + tab.id.replace('tab-', '')));
+      showPanelImmediately();
     });
   });
   if (document.querySelector('.hero__stage > input[name="surface"]:checked')) {
     var currentTab = document.querySelector('.hero__stage > input[name="surface"]:checked');
-    replayPanel(document.querySelector('#panel-' + currentTab.id.replace('tab-', '')));
+    showPanelImmediately();
   }
 
   var stage = document.querySelector('.hero__stage');

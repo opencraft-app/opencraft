@@ -185,6 +185,7 @@ OpenCraft Web 输入框在当前 Host 的 provider 为 `lightvela.hermes` 时展
 OpenCraft 的 Codex Host 持有排队 steer 的持久投递权，同一 Thread 的物理准入串行化。匹配目标 Turn 的 `turn/steer` 获确认后先持久化为 `steering`，后续消息即可继续准入；历史物化和 client-message ID 对账在后台完成。只有正在投递或结果未知的前序投递阻止后续准入，未知结果不得自动重发或交给普通 Resume 猜测恢复。具体状态与回归边界见 [OpenCraft ChatUI 架构](../../../opencraft/docs/chat-ui-architecture.md)。
 
 OpenCraft Composer 的排队消息预览保留正文提示；其排序、插入、编辑、取消编辑和删除按钮的悬浮提示由各自操作定义，不继承消息正文。无确认投递的丢弃入口单独显示其操作提示。
+确定被拒绝的排队跟进仅属于客户端 Conversation Runtime，尚无 Server 队列 ID；其删除操作只移除本地失败记录，不请求 Host 删除。超时或断线导致投递结果未知时，Host 可能已经入队：客户端保留未确认记录，禁止本地删除与再次提交，直到同一 client message ID 出现在 Host 队列或权威历史中。已确认入队的消息仍按 Server 队列 ID 删除，提交中的消息不得提前删除。
 
 OpenCraft Web 文件更改入口消费同一 Turn-owned changeSummary：实际 Composer 唯一呈现 active Turn 的运行中入口（含浮动位置），主/mini transcript 按该 Turn 身份抑制重复，完成后恢复为消息区资源卡。卡片对齐 Codex 26.930 原始 Renderer 的图标、主题几何、正负计数、前三文件和查看交互；悬浮状态与展开状态只属于 View，不能改变执行、排序、折叠或资源身份。点击悬浮子项先关闭列表，再交给已有 Review；没有真实回退能力不显示撤销。见 [Changed-file review](../../../opencraft/docs/chat-ui-architecture.md#changed-file-review)。
 

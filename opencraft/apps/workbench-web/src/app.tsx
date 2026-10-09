@@ -18,6 +18,7 @@ import {
   compileSubmitIntent,
   restoreQueuedInput,
 } from "@opencraft/composer-appserver";
+import { queuedSubmissionPresentation } from "./queued-submission-presentation";
 import {
   CodexComposer,
   type ComposerSelectionCatalog,
@@ -1757,19 +1758,8 @@ export function App({
                         isStreaming={isStreaming}
                         submissionDisabled={snapshot.phase !== "ready" || snapshot.conversation?.authoritative !== true}
                         queuedSubmissions={[
-                          ...(snapshot.conversation?.queuedSubmissions ?? []).map((submission) => ({
-                          id:
-                            submission.serverSubmissionId ??
-                            submission.commandId,
-                          preview: submission.preview,
-                          state: submission.state,
-                          operation: submission.operation,
-                          actionable: submission.serverSubmissionId !== null,
-                          reorderable: queueReorderable,
-                          editableContent: restoreQueuedInput(submission.input),
-                          pausedReason: submission.pausedReason,
-                          error: submission.error?.message ?? null,
-                          })),
+                          ...(snapshot.conversation?.queuedSubmissions ?? []).map((submission) =>
+                            queuedSubmissionPresentation(submission, queueReorderable)),
                           ...(queueUnconfirmedSteerDiscard ? snapshot.conversation?.unconfirmedSteers ?? [] : []).map((claim) => ({
                             id: claim.id,
                             preview: claim.input.find((input) => input.type === "text")?.text ?? "Unconfirmed steering message",

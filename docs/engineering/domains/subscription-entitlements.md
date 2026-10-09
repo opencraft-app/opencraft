@@ -192,4 +192,6 @@ CTL在Pass完成升配后继续支持原订单重投：依靠由Pass/Flow确定�
 
 ## 前端赠送积分口径
 
-`Pass.credit_total/credit_available` 是套餐额度，`free_credit_total/free_credit_available` 是赠送额度；概览余额、侧栏总额/已用和共享账号模型按两者合计展示。账号页进度按所有积分来源的去重汇总展示，Credit 查询中的 `free` 与 Pass 赠送聚合不得重复计入或误标为付费积分包；真实 `paid` 积分包保留。额度明细优先列赠送积分，其余来源保持按到期时间排序。展示层不改变 Pass 有效期、续费、支付或扣减授权。
+`Pass.credit_total/credit_available` 是套餐额度，`free_credit_total/free_credit_available` 是赠送额度；概览余额、侧栏总额/已用和共享账号模型按两者合计展示。账号页进度按所有积分来源的去重汇总展示，Credit 查询中的 `free` 与 Pass 赠送聚合不得重复计入或误标为付费积分包；真实 `paid` 积分包保留。
+
+CTL 汇总 Pass 套餐余额时只统计套餐订阅，`free-credit:*` 计入赠送额度，`credit-package:*` 两者都不计：付费积分包的总量与余量只由 Credit `/v1/credit/packages` 提供。否则 `credit_available` 会混入积分包余额，与只含套餐额度的 `credit_total` 失配，前端再叠加积分包时会重复计入。侧栏账户菜单与「套餐与费用」页使用同一份去重汇总（套餐 + 赠送 + 付费积分包），菜单首次展开后才查询积分包。该口径要求 CTL 先于或与前端同时发布。额度明细优先列赠送积分，其余来源保持按到期时间排序。展示层不改变 Pass 有效期、续费、支付或扣减授权。

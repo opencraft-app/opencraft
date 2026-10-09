@@ -8,6 +8,7 @@ import {
   Check,
   Copy,
   Globe2,
+  House,
   LayoutDashboard,
   PanelLeft,
   MessageCircle,
@@ -6137,7 +6138,7 @@ export const AgentSettingsPage = ({
                           className={cn("lv-agents-sidebar-tab", sidebarTab === "daily" && "is-active")}
                           onClick={handleSidebarDailyTabClick}
                         >
-                          <MessageSquare className="lv-agents-sidebar-tab-icon size-4" aria-hidden="true" />
+                          <House className="lv-agents-sidebar-tab-icon size-4" aria-hidden="true" />
                           <span className="lv-agents-sidebar-tab-label">{t("日常")}</span>
                         </button>)}
                         {withCollapsedNavTooltip(t("探索"),
@@ -6481,7 +6482,7 @@ export const AgentSettingsPage = ({
                     <div className="lv-agents-sidebar-footer">
                       <div className="lv-agent-account-footer">
                         {(isDesktop || mobileChatNavOpen) && (
-                          <UserAvatarMenu showLanguageSwitcher={isGlobal} variant="sidebar" cloudStorageBotId={activeBot?.id}
+                          <UserAvatarMenu showLanguageSwitcher={isGlobal} variant="sidebar" cloudStorageBotId={activeSection === "files" ? undefined : activeBot?.id}
                             renewalReminder={isDesktop && multiBotEnabled && passExpiryReminder && passExpiryReminderCopy && activePass
                               ? { label: passExpiryReminderCopy.label, tooltip: passExpiryReminderCopy.tooltip, actionLabel: t("立即续费"),
                                   onRenew: renewalAvailable ? () => setRenewPassModalOpen(true) : undefined }

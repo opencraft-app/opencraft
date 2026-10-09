@@ -13,6 +13,11 @@ const motionMocks = vi.hoisted(() => {
   return { dispose, mount: vi.fn(() => dispose) };
 });
 vi.mock('@next-site/international-home-motion', () => ({ mountInternationalHomeMotion: motionMocks.mount }));
+const domesticMotionMocks = vi.hoisted(() => {
+  const dispose = vi.fn();
+  return { dispose, mount: vi.fn(() => dispose) };
+});
+vi.mock('@next-site/domestic-home-mascot-motion', () => ({ mountDomesticHomeMascotMotion: domesticMotionMocks.mount }));
 const regionMock = vi.hoisted(() => ({ isGlobal: false }));
 const sessionMock = vi.hoisted(() => ({ authReady: true, isAuthenticated: false }));
 vi.mock("@next-site/public-header-auth-island", () => ({ PublicHeaderAuthIsland: headerAuthMock }));
@@ -75,6 +80,8 @@ beforeEach(() => {
   regionMock.isGlobal = false;
   motionMocks.mount.mockClear();
   motionMocks.dispose.mockClear();
+  domesticMotionMocks.mount.mockClear();
+  domesticMotionMocks.dispose.mockClear();
   sessionMock.authReady = true;
   sessionMock.isAuthenticated = false;
   openClawMock.bots = [];
@@ -128,6 +135,7 @@ describe("international v2 homepage rendering", () => {
     const markup = renderToStaticMarkup(<InternationalHomePage locale="en-US" />);
 
     expect(markup).toContain(`href="/lightvela-intl-home/style.css?v=${INTERNATIONAL_HOME_ASSET_VERSION}"`);
+    expect(markup).toContain(`href="/lightvela-intl-home/assets/hermes-home.css?v=${INTERNATIONAL_HOME_ASSET_VERSION}"`);
     expect(markup).not.toContain('rel="preload" as="image"');
     expect(markup).toContain('id="lightvela-intl-home"');
     expect(markup).toContain("Your AI companion—always on, always evolving with you.");
@@ -167,6 +175,14 @@ describe("international v2 homepage rendering", () => {
       "/lightvela-intl-home/scene-wheel.js",
       "/lightvela-intl-home/assets/feature-motion.js",
     ]);
+  });
+
+  it.each([false, true])("does not mount a pointer-following mascot on the homepage (global=%s)", (global) => {
+    regionMock.isGlobal = global;
+    render(<InternationalHomeRuntime locale={global ? 'en-US' : 'zh-CN'} markup='<main id="lightvela-intl-home" />' />);
+
+    expect(document.querySelector('#lightvela-home-pointer-mascot')).toBeNull();
+    expect(document.querySelectorAll('img[src*="hermes-pointer-lilac"]')).toHaveLength(0);
   });
 
   it("starts all homepage motion script requests without waiting for earlier scripts", () => {
@@ -236,6 +252,7 @@ describe("international v2 homepage rendering", () => {
     const markup = '<main id="lightvela-intl-home"><h1>Home</h1></main>';
     const { rerender, unmount } = render(<InternationalHomeRuntime locale="en-US" markup={markup} />);
     await waitFor(() => expect(motionMocks.mount).toHaveBeenCalledTimes(1));
+    expect(domesticMotionMocks.mount).not.toHaveBeenCalled();
     rerender(<InternationalHomeRuntime locale="en-US" markup={markup} />);
     expect(motionMocks.mount).toHaveBeenCalledTimes(1);
     expect(motionMocks.dispose).not.toHaveBeenCalled();
@@ -244,6 +261,23 @@ describe("international v2 homepage rendering", () => {
     expect(motionMocks.dispose).toHaveBeenCalledTimes(1);
     unmount();
     expect(motionMocks.dispose).toHaveBeenCalledTimes(2);
+  });
+
+  it('mounts only the mascot enhancement on CN and cleans it up on markup changes', async () => {
+    regionMock.isGlobal = false;
+    const markup = '<main id="lightvela-intl-home"><section class="voice">CN reviews</section></main>';
+    const { rerender, unmount } = render(<InternationalHomeRuntime locale="zh-CN" markup={markup} />);
+    await waitFor(() => expect(domesticMotionMocks.mount).toHaveBeenCalledTimes(1));
+    expect(domesticMotionMocks.mount).toHaveBeenCalledWith(document.getElementById('lightvela-intl-home'));
+    expect(motionMocks.mount).not.toHaveBeenCalled();
+    rerender(<InternationalHomeRuntime locale="zh-CN" markup={markup} />);
+    expect(domesticMotionMocks.mount).toHaveBeenCalledTimes(1);
+    expect(domesticMotionMocks.dispose).not.toHaveBeenCalled();
+    rerender(<InternationalHomeRuntime locale="zh-CN" markup={markup.replace('CN reviews', 'Updated reviews')} />);
+    await waitFor(() => expect(domesticMotionMocks.mount).toHaveBeenCalledTimes(2));
+    expect(domesticMotionMocks.dispose).toHaveBeenCalledTimes(1);
+    unmount();
+    expect(domesticMotionMocks.dispose).toHaveBeenCalledTimes(2);
   });
 
   it('cancels deferred motion loading when the page unmounts before the next frame', async () => {

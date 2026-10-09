@@ -34,7 +34,7 @@ export interface QueuedSubmission {
   readonly serverSubmissionId: string | null;
   readonly input: readonly UserInput[];
   readonly preview: string;
-  readonly state: "submitting" | "queued" | "failed";
+  readonly state: "submitting" | "queued" | "failed" | "unknown";
   readonly operation: "idle" | "updating" | "deleting" | "starting";
   readonly createdAt: number;
   readonly pausedReason: string | null;

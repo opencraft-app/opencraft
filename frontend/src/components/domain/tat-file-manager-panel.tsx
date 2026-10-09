@@ -108,6 +108,7 @@ interface TatFileDownloadAckWaiter {
 
 interface DownloadTriggerIframe {
   iframe: HTMLIFrameElement;
+  path: string;
   timer: number;
 }
 
@@ -477,7 +478,7 @@ export const TatFileManagerPanel = ({ botId, showHeader = true }: TatFileManager
     downloadTriggerIframesRef.current.clear();
   }, []);
 
-  const triggerBrowserDownload = useCallback((url: string) => {
+  const triggerBrowserDownload = useCallback((url: string, path: string) => {
     const iframe = document.createElement("iframe");
     iframe.src = url;
     iframe.hidden = true;
@@ -485,6 +486,7 @@ export const TatFileManagerPanel = ({ botId, showHeader = true }: TatFileManager
     iframe.setAttribute("aria-hidden", "true");
     const trigger: DownloadTriggerIframe = {
       iframe,
+      path,
       timer: window.setTimeout(() => {
         removeDownloadTriggerIframe(trigger);
       }, DOWNLOAD_TRIGGER_IFRAME_TTL_MS),
@@ -778,7 +780,8 @@ export const TatFileManagerPanel = ({ botId, showHeader = true }: TatFileManager
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       const port = event.ports[0];
-      if (!port || !isTatFileDownloadRequest(event.data) || event.data.botId !== botId) {
+      if (!port || !isTatFileDownloadRequest(event.data) || event.data.botId !== botId ||
+        ![...downloadTriggerIframesRef.current].some((trigger) => trigger.path === event.data.path)) {
         return;
       }
       port.postMessage({
@@ -1017,7 +1020,7 @@ export const TatFileManagerPanel = ({ botId, showHeader = true }: TatFileManager
         return;
       }
       const downloadUrl = fileDownloadUrlFor(botId, remotePath, selectedFile.name);
-      triggerBrowserDownload(downloadUrl);
+      triggerBrowserDownload(downloadUrl, remotePath);
       setNotice(t("下载已开始。"));
     } catch {
       await downloadSelectedWithMemoryFallback();
