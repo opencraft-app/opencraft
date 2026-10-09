@@ -16,3 +16,20 @@ items:
     app.kubernetes.io/managed-by: argocd
   annotations:
     managed-by: export_ssm_to_sops.py
+- id: service-gateway-speech-secrets
+  secret_name: mono-sgprod-ctl-runtime-secrets
+  version_id: v5
+  namespace: lightclaw-gateway
+  kubernetes_resource_name: service-gateway-speech-secrets
+  kubernetes_resource_kind: Secret
+  output_path: argocd/secrets/sgprod/service-gateway-speech-secrets.sops.yaml
+  secret_type: Opaque
+  required_keys:
+  - CTL_LLMGATEWAY_ADMIN_TOKEN
+  key_mappings:
+    CTL_LLMGATEWAY_ADMIN_TOKEN: VELAGW_SPEECH_ADMIN_TOKEN
+  labels:
+    app.kubernetes.io/name: service-gateway
+    app.kubernetes.io/managed-by: argocd
+  annotations:
+    managed-by: export_ssm_to_sops.py

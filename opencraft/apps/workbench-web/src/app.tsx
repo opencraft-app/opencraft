@@ -18,6 +18,7 @@ import {
   compileSubmitIntent,
   restoreQueuedInput,
 } from "@opencraft/composer-appserver";
+import { queuedSubmissionPresentation } from "./queued-submission-presentation";
 import {
   CodexComposer,
   type ComposerSelectionCatalog,
@@ -1151,13 +1152,13 @@ export function App({
     if (embedded === undefined) return;
     embedded.onSessionsChange({
       sessions: embeddedSessions,
-      loading: catalog.isFetching,
+      loading: (catalog.isPending && snapshot.phase !== "error") || catalog.isFetching,
       hasMoreSessions: catalog.hasNextPage,
       pinSupported: hostCatalog.threadManagement.capabilities(embedded.hostId).pin === true,
       selectedChatId: snapshot.hostId === embedded.hostId ? activeThreadId : null,
       isDraft: draft !== null && draft.submission === null,
     });
-  }, [activeThreadId, catalog.hasNextPage, catalog.isFetching, draft, embedded, embeddedSessions, hostCatalog.threadManagement, snapshot.hostId]);
+  }, [activeThreadId, catalog.hasNextPage, catalog.isFetching, catalog.isPending, draft, embedded, embeddedSessions, hostCatalog.threadManagement, snapshot.hostId, snapshot.phase]);
   // The local Draft paints before the Host connects (the Composer stays
   // submission-disabled until ready); a restored Thread paints when ready.
   const painted = isEmbeddedConversationPainted(draft, conversationViewActivation.phase);
@@ -1798,19 +1799,8 @@ export function App({
                         isStreaming={isStreaming}
                         submissionDisabled={snapshot.phase !== "ready" || snapshot.conversation?.authoritative !== true}
                         queuedSubmissions={[
-                          ...(snapshot.conversation?.queuedSubmissions ?? []).map((submission) => ({
-                          id:
-                            submission.serverSubmissionId ??
-                            submission.commandId,
-                          preview: submission.preview,
-                          state: submission.state,
-                          operation: submission.operation,
-                          actionable: submission.serverSubmissionId !== null,
-                          reorderable: queueReorderable,
-                          editableContent: restoreQueuedInput(submission.input),
-                          pausedReason: submission.pausedReason,
-                          error: submission.error?.message ?? null,
-                          })),
+                          ...(snapshot.conversation?.queuedSubmissions ?? []).map((submission) =>
+                            queuedSubmissionPresentation(submission, queueReorderable)),
                           ...(queueUnconfirmedSteerDiscard ? snapshot.conversation?.unconfirmedSteers ?? [] : []).map((claim) => ({
                             id: claim.id,
                             preview: claim.input.find((input) => input.type === "text")?.text ?? "Unconfirmed steering message",

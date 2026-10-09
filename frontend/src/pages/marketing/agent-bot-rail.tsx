@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 
 import type { OpenClawBot } from "@/contexts/agent-context";
 import { useT } from "@/i18n/t";
+import { AGENT_SECTION_PATH_BY_ID, getAgentBotSectionHref } from "@/lib/agent-routes";
 import { cn } from "@/lib/utils";
 import { GeometricAvatar } from "@/pages/marketing/agent-avatar-shapes";
 import { getBotStatusColor, getBotStatusLabel } from "@/pages/marketing/agent-bot-status";
@@ -38,33 +39,45 @@ function AgentBotRailItem({ bot, active, mobile, restarting, execDebugCommand, o
   const name = profile.hasBuddyConfig ? profile.profile.name : fallbackName;
   const accentColor = profile.hasBuddyConfig ? profile.profile.color : avatarColor(bot.id);
   const statusLabel = getBotStatusLabel(bot.status, restarting);
+  const avatar = (
+    <span className="lv-agent-bot-rail-avatar-wrap">
+      {profile.hasBuddyConfig ? (
+        <GeometricAvatar shapeId={profile.profile.shapeId} color={profile.profile.color} size={34} />
+      ) : (
+        <span className="lv-agent-bot-rail-avatar" style={{ backgroundColor: avatarColor(bot.id) }} aria-hidden="true">
+          {Array.from(name)[0] ?? "B"}
+        </span>
+      )}
+      <span
+        className={cn("lv-agent-avatar-status", !restarting && ["provisioning", "deleting", "draft"].includes(bot.status) && "lv-agent-avatar-status--blinking")}
+        aria-hidden="true"
+        style={{ background: getBotStatusColor(bot.status, restarting) }}
+      />
+    </span>
+  );
+  const label = `${t("切换到")} ${name}，${statusLabel}`;
+  const buttonClassName = cn("lv-agent-bot-rail-button", active && "is-active");
   return (
       <ModelActionTooltip content={`${name} · ${statusLabel}`} side={mobile ? "auto" : "right"} focusable={false}>
-        <button
-          type="button"
-          className={cn("lv-agent-bot-rail-button", active && "is-active")}
-          aria-label={`${t("切换到")} ${name}，${statusLabel}`}
-          aria-current={active ? "true" : undefined}
-          style={active && !mobile ? {
-            backgroundColor: `color-mix(in srgb, ${accentColor} 8%, white)`,
-          } : undefined}
-          onClick={() => onSelect(bot.id)}
-        >
-          <span className="lv-agent-bot-rail-avatar-wrap">
-            {profile.hasBuddyConfig ? (
-              <GeometricAvatar shapeId={profile.profile.shapeId} color={profile.profile.color} size={34} />
-            ) : (
-              <span className="lv-agent-bot-rail-avatar" style={{ backgroundColor: avatarColor(bot.id) }} aria-hidden="true">
-                {Array.from(name)[0] ?? "B"}
-              </span>
-            )}
-            <span
-              className={cn("lv-agent-avatar-status", !restarting && ["provisioning", "deleting", "draft"].includes(bot.status) && "lv-agent-avatar-status--blinking")}
-              aria-hidden="true"
-              style={{ background: getBotStatusColor(bot.status, restarting) }}
-            />
-          </span>
-        </button>
+        {active ? (
+          <button type="button" className={buttonClassName} aria-label={label} aria-current="true"
+            style={!mobile ? {
+              backgroundColor: `color-mix(in srgb, ${accentColor} 8%, white)`,
+              boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${accentColor} 24%, white)`,
+            } : undefined}>
+            {avatar}
+          </button>
+        ) : (
+          // 首屏尚未完成 hydration 时保留原生链接；就绪后普通点击走客户端切换。
+          <a href={getAgentBotSectionHref(`${AGENT_SECTION_PATH_BY_ID.chat}/`, bot.id)}
+            className={buttonClassName} aria-label={label} onClick={(event) => {
+              if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+              event.preventDefault();
+              onSelect(bot.id);
+            }}>
+            {avatar}
+          </a>
+        )}
       </ModelActionTooltip>
   );
 }

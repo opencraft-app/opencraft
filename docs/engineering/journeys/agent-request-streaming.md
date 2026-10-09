@@ -34,6 +34,14 @@ SSH Codex 恢复仍遵循原生 Turn/Item 分页，不因 SSH 传输丢失历史
 
 OpenCraft 的 Codex Account Pool 在 Host 本机回环地址转发 Responses 请求，接收正文上限为 32 MiB。超限时读完并丢弃剩余正文，再返回明确的 HTTP 413；不把本地大小拒绝呈现成流式连接中断，也不将超限正文送往模型上游。
 
+Codex Account Pool 的模型上游传输使用专用 HTTP/1.1 连接池，最多同时放行
+16 个请求且不使用 pipelining；等待响应头和响应体空闲分别限制为 60 秒和
+180 秒。排队、慢响应头及传输失败只记录脱敏身份与时长，不记录请求正文或
+凭据。超时或网络失败必须回报原 Turn，不能切换账号重放该推理请求，因为
+provider 是否已经开始执行无法从传输失败确定。Workbench 对 AppHost 的自动
+重连按 0.5/1/2/5/15/30/60 秒退避并保持一分钟上限；重连只恢复传输，不重新
+提交已经接纳或结果未知的 Turn。
+
 OpenCraft 侧栏目录读取的加载状态不占可见行：不显示额外转圈、文字或空白占位，也不改变既有历史行位置或身份。状态仍由 Application 查询拥有，Sidebar 保留 `aria-busy`，加载未完成不冒充成功空列表；失败仍提供当前目录的重试入口。此呈现约束不改变目录读取或会话正文加载行为，详见 [SSH-07](../../../opencraft/design/invariants.md#ssh-connection-management)。
 
 ## 验证

@@ -163,6 +163,7 @@ const renderLabPage = () => render(
 describe("AgentSettingsPage 实验室导航", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === "(min-width: 1024px)", addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} }));
     deleteBot.mockReset();
     deleteBot.mockResolvedValue(undefined);
     delete (window as Window & { show?: unknown }).show;
@@ -251,13 +252,26 @@ describe("AgentSettingsPage 实验室导航", () => {
     expect(await screen.findByText("DeepSeek Harness panel")).toBeInTheDocument();
   });
 
-  it("直接展示 Agent 顶部的重启和删除图标操作", async () => {
+  it("在 Bot 竖栏的管理菜单提供重启和删除操作", async () => {
     renderLabPage();
-
-    await screen.findByText("Hermes Lab");
+    expect(await screen.findByRole("button", { name: /切换到 Hermes Lab/ })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "管理 Bot" }));
     expect(screen.getByRole("button", { name: "重启" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "删除整个 Agent" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "更多操作" })).toBeNull();
+  });
+
+  it("重启失败后在竖栏管理入口提示，并在菜单中展示错误", async () => {
+    execDebugCommand.mockRejectedValue(new Error("网关重启失败"));
+    renderLabPage();
+    const manage = screen.getByRole("button", { name: "管理 Bot" });
+    await userEvent.click(manage);
+    await userEvent.click(screen.getByRole("button", { name: "重启" }));
+    await userEvent.click(screen.getByRole("button", { name: "确认重启" }));
+
+    await waitFor(() => expect(manage.querySelector(".bg-red-500")).toBeInTheDocument());
+    if (manage.getAttribute("aria-expanded") === "false") await userEvent.click(manage);
+    expect(screen.getByRole("alert")).toHaveTextContent("网关重启失败");
   });
 
   it.each([
@@ -269,7 +283,8 @@ describe("AgentSettingsPage 实验室导航", () => {
     deleteBot.mockImplementation(() => new Promise<void>((resolve) => { finishDelete = resolve; }));
     renderLabPage();
 
-    await userEvent.click(await screen.findByRole("button", { name: action }));
+    await userEvent.click(await screen.findByRole("button", { name: "管理 Bot" }));
+    await userEvent.click(screen.getByRole("button", { name: action }));
     await userEvent.type(screen.getByPlaceholderText("请输入 {{name}}"), "Hermes Lab");
     await userEvent.click(screen.getByRole("button", { name: confirm }));
 
@@ -290,7 +305,8 @@ describe("AgentSettingsPage 实验室导航", () => {
     deleteBot.mockImplementation(() => new Promise<void>((_, reject) => { failDelete = reject; }));
     renderLabPage();
 
-    await userEvent.click(await screen.findByRole("button", { name: "删除整个 Agent" }));
+    await userEvent.click(await screen.findByRole("button", { name: "管理 Bot" }));
+    await userEvent.click(screen.getByRole("button", { name: "删除整个 Agent" }));
     await userEvent.type(screen.getByPlaceholderText("请输入 {{name}}"), "Hermes Lab");
     await userEvent.click(screen.getByRole("button", { name: "确认删除 Agent" }));
     await act(async () => { failDelete(new Error("删除请求失败")); });

@@ -27,6 +27,10 @@ LightVela `/agents` 多 Bot 桌面页由 OpenCraft 内嵌工作台独立呈现�
 新建会话页不呈现标题、该开关或右侧预览面板。这一呈现调整不改变会话身份、运行时操作或独立
 OpenCraft 工作台的标题所有权。
 
+`/agents` 入口只有在选出可用 Bot 后才替换到该 Bot 的新建会话；无 Bot 的过期历史用户留在入口，
+与权益门禁的允许落点一致。桌面多 Bot 模式隐藏旧资料卡时，临期续费提示由账户入口承接，
+原续费资格、实名检查与弹窗流程不变；当前 Bot 重启失败由竖栏管理入口标记并在菜单内展示错误。
+
 OpenCraft 的活动分段结束原因与折叠资格分别建模。插话/异步问题等只关闭
 连续时序段，不隐藏先前文字；普通任务过程必须到达自身有效非异步最终回答
 才获得折叠资格，不能继承旧响应的 final phase 或以 Turn 完成冒充回答。
@@ -74,6 +78,9 @@ LightVela 站点的 Agent 会话侧栏由 `frontend` 持有，不使用 OpenCraf
 Sidebar。嵌入式 Workbench 仅投影会话的置顶状态、当前 Host 的置顶能力与置顶动作；
 站点按该能力显示菜单，置顶会话独立于近期分页配额展示。侧栏的会话缓存不作为
 置顶写入权威，操作后由原生目录刷新确认。
+内嵌 Workbench 的首次会话目录查询在 Host 尚未就绪时属于待加载状态，不能把
+尚未发起查询的空数组投影为已确认的空列表；Host 进入错误态后停止报告加载，由聊天主区呈现失败和重试。切换 Bot 后，站点侧栏保留既有栏位，
+等待目标 Bot 的目录结果；只有首次读取结束且仍为空时才显示默认会话入口。
 
 OpenCraft 的可选 `tencentoa.identity` 插件按每个 HTTP 请求核验太湖签名、
 解密 TOF 员工身份并检查有效期。安装级私有密钥仅属于后端，员工身份仅投影到
@@ -181,6 +188,7 @@ OpenCraft Web 输入框在当前 Host 的 provider 为 `lightvela.hermes` 时展
 OpenCraft 的 Codex Host 持有排队 steer 的持久投递权，同一 Thread 的物理准入串行化。匹配目标 Turn 的 `turn/steer` 获确认后先持久化为 `steering`，后续消息即可继续准入；历史物化和 client-message ID 对账在后台完成。只有正在投递或结果未知的前序投递阻止后续准入，未知结果不得自动重发或交给普通 Resume 猜测恢复。具体状态与回归边界见 [OpenCraft ChatUI 架构](../../../opencraft/docs/chat-ui-architecture.md)。
 
 OpenCraft Composer 的排队消息预览保留正文提示；其排序、插入、编辑、取消编辑和删除按钮的悬浮提示由各自操作定义，不继承消息正文。无确认投递的丢弃入口单独显示其操作提示。
+确定被拒绝的排队跟进仅属于客户端 Conversation Runtime，尚无 Server 队列 ID；其删除操作只移除本地失败记录，不请求 Host 删除。超时或断线导致投递结果未知时，Host 可能已经入队：客户端保留未确认记录，禁止本地删除与再次提交，直到同一 client message ID 出现在 Host 队列或权威历史中。已确认入队的消息仍按 Server 队列 ID 删除，提交中的消息不得提前删除。
 
 OpenCraft Web 文件更改入口消费同一 Turn-owned changeSummary：实际 Composer 唯一呈现 active Turn 的运行中入口（含浮动位置），主/mini transcript 按该 Turn 身份抑制重复，完成后恢复为消息区资源卡。卡片对齐 Codex 26.930 原始 Renderer 的图标、主题几何、正负计数、前三文件和查看交互；悬浮状态与展开状态只属于 View，不能改变执行、排序、折叠或资源身份。点击悬浮子项先关闭列表，再交给已有 Review；没有真实回退能力不显示撤销。见 [Changed-file review](../../../opencraft/docs/chat-ui-architecture.md#changed-file-review)。
 

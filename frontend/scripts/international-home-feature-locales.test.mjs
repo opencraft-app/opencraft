@@ -244,6 +244,10 @@ for (const locale of FEATURE_LOCALES) {
       assert.equal(decoration.getAttribute('aria-hidden'), 'true');
       assert.equal(decoration.querySelector('img')?.getAttribute('alt'), '');
     }
+    assert.ok(document.querySelector('.cta__acts .btn-dark > .home-cta-mascot:first-child'), `${locale}: CTA companion rides on the trial button`);
+    const voiceHead = document.querySelector('#voice > .voice__head:first-child');
+    assert.ok(voiceHead, `${locale}: user voice section keeps its heading`);
+    assert.ok(voiceHead.querySelector('h2.voice__title')?.textContent.trim(), `${locale}: user voice heading has copy`);
     assert.equal(document.querySelector('.home-footer-boundary svg')?.getAttribute('aria-hidden'), 'true');
     for (const icon of document.querySelectorAll('.feature-motion-channel img')) {
       assert.equal(icon.getAttribute('alt'), '', 'duplicate decorative channel icon');

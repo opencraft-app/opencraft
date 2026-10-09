@@ -68,6 +68,10 @@ export const formatCreditDate = (iso: string): string => {
 export const useCreditSources = (
   planCredit: PlanCreditInput | null,
   freeCredit: FreeCreditInput | null = null,
+  /** false 时不请求积分包（侧栏账户菜单首次展开前不读账务）。 */
+  enabled = true,
+  /** 账号标识：结果按它隔离，换号后旧账号的积分包不会混入新账号的汇总。 */
+  scope = "",
 ): CreditSourcesState => {
   const repositories = useRepositories();
   const t = useT();
@@ -75,10 +79,10 @@ export const useCreditSources = (
   const repositoriesRef = useRef(repositories);
   repositoriesRef.current = repositories;
 
-  const [packSources, setPackSources] = useState<CreditSourceView[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [failed, setFailed] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
+  /* 结果带上请求键：键不一致即视为「未加载」，渲染期就隐藏上一账号或上一轮的数据。 */
+  const requestKey = `${scope}\u0000${reloadToken}`;
+  const [packs, setPacks] = useState<{ key: string; status: "ready" | "failed"; items: CreditSourceView[] } | null>(null);
 
   const reload = useCallback(() => {
     setReloadToken((token) => token + 1);
@@ -91,24 +95,20 @@ export const useCreditSources = (
        此时不发请求、不报错，退化为「只有套餐积分」——积分包属增量能力，
        不应让缺失它导致整个账号页崩溃。 */
     const creditRepository = repositoriesRef.current?.credit;
-    if (!creditRepository) {
-      setPackSources([]);
-      setLoading(false);
-      setFailed(false);
+    if (!enabled || !creditRepository) {
       return () => {
         active = false;
       };
     }
 
-    setLoading(true);
-    setFailed(false);
-
     void creditRepository
       .listCreditPackages()
       .then((items) => {
         if (!active) return;
-        setPackSources(
-          items.map((item) => ({
+        setPacks({
+          key: requestKey,
+          status: "ready",
+          items: items.map((item) => ({
             source_type: item.credit_type === "free" ? ("free_credit" as const) : ("paid_pack" as const),
             source_id: creditPackageSourceId(item),
             /* 查询结果没有商品名；免费积分与 pass 的 free_credit_* 是同一来源。 */
@@ -117,23 +117,24 @@ export const useCreditSources = (
             credit_available: item.credit_available,
             next_expire_at: item.expired_time,
           })),
-        );
+        });
       })
       .catch(() => {
         if (!active) return;
         /* 积分包查询失败不影响套餐积分展示，只标记失败态供 UI 提示重试 */
-        setPackSources([]);
-        setFailed(true);
-      })
-      .finally(() => {
-        if (!active) return;
-        setLoading(false);
+        setPacks({ key: requestKey, status: "failed", items: [] });
       });
 
     return () => {
       active = false;
     };
-  }, [reloadToken]);
+  }, [enabled, requestKey]);
+
+  const requested = enabled && Boolean(repositories?.credit);
+  const current = requested && packs?.key === requestKey ? packs : null;
+  const packSources = useMemo(() => current?.items ?? [], [current]);
+  const loading = requested && current === null;
+  const failed = current?.status === "failed";
 
   const sources = useMemo(() => {
     const all: CreditSourceView[] = [];

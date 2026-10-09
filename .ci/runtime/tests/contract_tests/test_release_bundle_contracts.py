@@ -1760,22 +1760,29 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertNotIn("values", item)
         self.assertNotIn("stringData", item)
 
-    def test_shanghai_speech_secret_is_projected_and_promotable(self) -> None:
-        source = yaml.safe_load((REPO_ROOT / "scripts/ssm_manifest.ctl.shprod.yaml").read_text())
-        authority = next(item for item in source["items"] if item["id"] == "ctl-runtime-secrets")
-        manifest = yaml.safe_load((REPO_ROOT / "scripts/ssm_manifest.service-gateway.shprod.yaml").read_text())
-        speech = next(item for item in manifest["items"] if item["id"] == "service-gateway-speech-secrets")
-        self.assertEqual(speech["secret_name"], authority["secret_name"])
-        self.assertEqual(speech["version_id"], authority["version_id"])
-        self.assertEqual(speech["key_mappings"], {"CTL_LLMGATEWAY_ADMIN_TOKEN": "VELAGW_SPEECH_ADMIN_TOKEN"})
-        generator = yaml.safe_load((REPO_ROOT / "argocd/services/service-gateway/shprod/ksops-secret-generator.yaml").read_text())
-        self.assertIn("../../../secrets/shprod/service-gateway-speech-secrets.sops.yaml", generator["files"])
-        bundle = yaml.safe_load((REPO_ROOT / ".ci/runtime/bundles/service-gateway.bundle").read_text())["bundles"]["service-gateway"]
-        self.assertIn(speech["output_path"], bundle["publish_paths_by_env"]["shprod"])
-        encrypted = yaml.safe_load((REPO_ROOT / speech["output_path"]).read_text())
-        self.assertEqual(set(encrypted["stringData"]), {"VELAGW_SPEECH_ADMIN_TOKEN"})
-        self.assertTrue(encrypted["stringData"]["VELAGW_SPEECH_ADMIN_TOKEN"].startswith("ENC["))
-        self.assertIn("sops", encrypted)
+    def test_regional_speech_secret_is_projected_and_promotable(self) -> None:
+        for region, domain in (("shprod", "com"), ("sgprod", "ai")):
+            with self.subTest(region=region):
+                source = yaml.safe_load((REPO_ROOT / f"scripts/ssm_manifest.ctl.{region}.yaml").read_text())
+                authority = next(item for item in source["items"] if item["id"] == "ctl-runtime-secrets")
+                manifest = yaml.safe_load((REPO_ROOT / f"scripts/ssm_manifest.service-gateway.{region}.yaml").read_text())
+                speech = next(item for item in manifest["items"] if item["id"] == "service-gateway-speech-secrets")
+                self.assertEqual(speech["secret_name"], authority["secret_name"])
+                self.assertEqual(speech["version_id"], authority["version_id"])
+                self.assertEqual(speech["key_mappings"], {"CTL_LLMGATEWAY_ADMIN_TOKEN": "VELAGW_SPEECH_ADMIN_TOKEN"})
+                generator = yaml.safe_load((REPO_ROOT / f"argocd/services/service-gateway/{region}/ksops-secret-generator.yaml").read_text())
+                self.assertIn(f"../../../secrets/{region}/service-gateway-speech-secrets.sops.yaml", generator["files"])
+                bundle = yaml.safe_load((REPO_ROOT / ".ci/runtime/bundles/service-gateway.bundle").read_text())["bundles"]["service-gateway"]
+                self.assertIn(speech["output_path"], bundle["publish_paths_by_env"][region])
+                encrypted = yaml.safe_load((REPO_ROOT / speech["output_path"]).read_text())
+                self.assertEqual(set(encrypted["stringData"]), {"VELAGW_SPEECH_ADMIN_TOKEN"})
+                self.assertTrue(encrypted["stringData"]["VELAGW_SPEECH_ADMIN_TOKEN"].startswith("ENC["))
+                self.assertIn("sops", encrypted)
+                config = yaml.safe_load((REPO_ROOT / f"argocd/services/service-gateway/{region}/config.yaml").read_text())["speech"]
+                self.assertEqual(config["control_url"], f"https://token-admin.lightvela.{domain}")
+                self.assertEqual(config["traffic_url"], f"https://token.lightvela.{domain}")
+                self.assertEqual(config["admin_token_env"], "VELAGW_SPEECH_ADMIN_TOKEN")
+                self.assertNotIn("*", config["allowed_origins"])
 
     def test_japan_runtime_ssm_manifest_is_independent_and_complete(self) -> None:
         manifest_path = REPO_ROOT / "scripts/ssm_manifest.runtime.sandbox-jp-1.yaml"

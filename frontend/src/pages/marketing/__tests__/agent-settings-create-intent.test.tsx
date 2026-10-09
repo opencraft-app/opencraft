@@ -247,4 +247,14 @@ describe("post-subscribe naming intent (/agents?create=1)", () => {
     expect(screen.getByText("即刻创建你的云端智能体伙伴")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "新建" })).toBeInTheDocument();
   });
+
+  it.each(["domestic", "global"])("keeps an expired account without a Bot on /agents (%s)", async (region) => {
+    testRegion.isCN = region === "domestic";
+    testRegion.isGlobal = region === "global";
+    isSubscribed = false;
+
+    render(page(""));
+    await waitFor(() => expect(screen.getByText("即刻创建你的云端智能体伙伴")).toBeInTheDocument());
+    expect(navigateMock).not.toHaveBeenCalledWith("/agents/chat", { replace: true });
+  });
 });

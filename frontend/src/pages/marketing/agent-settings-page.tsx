@@ -9,6 +9,7 @@ import {
   Check,
   Copy,
   Globe2,
+  House,
   LayoutDashboard,
   PanelLeft,
   MessageCircle,
@@ -2706,7 +2707,7 @@ export const AgentSettingsPage = ({
   const [showMultiBotOnboarding, setShowMultiBotOnboarding] = useState(false);
   const createBotPageHistoryRef = useRef(false);
   useEffect(() => {
-    if (createBotPageParam) {
+    if (createBotPageParam && IS_BUDDY_ONBOARDING_ENABLED) {
       createBotPageHistoryRef.current = true;
       setShowMultiBotOnboarding(true);
     } else if (createBotPageHistoryRef.current) {
@@ -3010,17 +3011,20 @@ export const AgentSettingsPage = ({
     };
   }, [openSessionMenuChatId]);
 
-  // bots 异步加载完成后，若当前 tab 无效则自动切换到第一个可展示 bot
+  // bots 异步加载完成或 URL 变化时同步选择；避免其他本地状态变化
+  // 重跑旧 ?bot= 参数，并覆盖正在进行的 Bot 切换。
   useEffect(() => {
     if (isCreating) return;
     if (requestedBotId && visibleBots.some((bot) => bot.id === requestedBotId)) {
       setActiveTabId(requestedBotId);
       return;
     }
-    if (visibleBots.length > 0 && !visibleBots.some((b) => b.id === activeTabId)) {
-      setActiveTabId((visibleBots.find((bot) => hasUnfinishedBuddySetup(bot.id)) ?? visibleBots[0])!.id);
+    if (visibleBots.length > 0) {
+      setActiveTabId((currentId) => visibleBots.some((bot) => bot.id === currentId)
+        ? currentId
+        : (visibleBots.find((bot) => hasUnfinishedBuddySetup(bot.id)) ?? visibleBots[0])!.id);
     }
-  }, [visibleBots, activeTabId, isCreating, requestedBotId]);
+  }, [visibleBots, isCreating, requestedBotId]);
   const defaultBot = visibleBots.find((bot) => bot.isDefault) ?? visibleBots[0];
   const isActiveBotDefault = Boolean(activeBot && defaultBot && activeBot.id === defaultBot.id);
 
@@ -3175,11 +3179,12 @@ export const AgentSettingsPage = ({
       return;
     }
     const botId = visibleBots.some((bot) => bot.id === requestedBotId) ? requestedBotId : activeBot?.id;
-    const destination = botId ? getAgentBotSectionHref(AGENT_SECTION_PATH_BY_ID.chat, botId) : AGENT_SECTION_PATH_BY_ID.chat;
+    if (!botId) return;
+    const destination = getAgentBotSectionHref(AGENT_SECTION_PATH_BY_ID.chat, botId);
     const redirectKey = `${pathname}:${destination}`;
     if (entryRedirectRef.current === redirectKey) return;
     entryRedirectRef.current = redirectKey;
-    if (botId) pendingNewChatSessionBotId = botId;
+    pendingNewChatSessionBotId = botId;
     navigate(destination, { replace: true });
   }, [requestedSection, sectionId, hasResolvedBots, isCreating, isModifying, showEarlyOnboarding, showBuddyOnboarding, showMultiBotOnboarding, createBotIntentParam, createBotPageParam, visibleBots, requestedBotId, activeBot?.id, pathname, navigate]);
   const useMobileChatLayout = activeSection === "chat" && openCraftChatEnabled && hasSidebarLayout;
@@ -3305,16 +3310,19 @@ export const AgentSettingsPage = ({
   const whatsAppOccupiedByOther = Boolean(
     activeBot?.whatsAppOwner && activeBot.whatsAppOwner.botId !== activeBot.id,
   );
-  const handleSelectBot = (botId: string) => {
+  const prepareBotSwitch = (botId: string) => {
     if (botId === activeBot?.id) return;
     pendingNewChatSessionBotId = botId;
+    setActiveTabId(botId);
     setChatSessionCommands(null);
     setSelectedChatId(undefined);
     setOpenSessionMenuChatId(null);
-    setActiveTabId(botId);
     setSidebarTab("daily");
     setChatSessionsExpanded(true);
     setMobileChatNavOpen(false);
+  };
+  const handleSelectBot = (botId: string) => {
+    prepareBotSwitch(botId);
     navigate(getAgentBotSectionHref(AGENT_SECTION_PATH_BY_ID.chat, botId), { replace: true });
   };
   const activeBotStatus = activeBot?.status;
@@ -5835,10 +5843,12 @@ export const AgentSettingsPage = ({
                   <PopoverTrigger asChild>
                     <button type="button" className="lv-agent-bot-context-trigger" aria-label={t("管理 Bot")} data-tooltip={t("管理 Bot")}>
                       <Settings2 className="h-[18px] w-[18px]" aria-hidden="true" />
+                      {activeBotRestartError && <span className="absolute right-0 top-0 size-1.5 rounded-full bg-red-500" aria-hidden="true" />}
                     </button>
                   </PopoverTrigger>
                   <PopoverContent side="right" align="end" sideOffset={8} className="w-52 rounded-md p-1.5">
                     <div className="truncate px-2 py-1.5 text-xs text-black/45" title={agentProfileDisplayName}>{agentProfileDisplayName}</div>
+                    {activeBotRestartError && <p role="alert" className="px-2 py-1 text-xs leading-relaxed text-red-500">{activeBotRestartError}</p>}
                     <button type="button" className="lv-sidebar-user-menu-item w-full" disabled={activeBot.status !== "running" || !activeBot.profileId?.trim() || buddyProfileState.loading || buddyProfileState.soulExists === null} onClick={() => setProfileEditorOpen(true)}>
                       <Wand2 className="size-4" aria-hidden="true" />{t("修改资料")}
                     </button>
@@ -6190,7 +6200,7 @@ export const AgentSettingsPage = ({
                           className={cn("lv-agents-sidebar-tab", sidebarTab === "daily" && "is-active")}
                           onClick={handleSidebarDailyTabClick}
                         >
-                          <MessageSquare className="lv-agents-sidebar-tab-icon size-4" aria-hidden="true" />
+                          <House className="lv-agents-sidebar-tab-icon size-4" aria-hidden="true" />
                           <span className="lv-agents-sidebar-tab-label">{t("日常")}</span>
                         </button>)}
                         {withCollapsedNavTooltip(t("探索"),
@@ -6284,7 +6294,7 @@ export const AgentSettingsPage = ({
                               {!isChatTabDisabled && chatSessionsExpanded && !isSidebarCollapsed ? <>
                               <ul className="lv-agents-nav-group-items lv-agents-session-list">
                                 {emptyChatSessionState === "loading" ? (
-                                  <li className="lv-agents-session-hint">{isGlobal ? t("正在加载会话…") : t("正在加载...")}</li>
+                                  <li className="sr-only" role="status">{isGlobal ? t("正在加载会话…") : t("正在加载...")}</li>
                                 ) : emptyChatSessionState === "default" ? (
                                   /*
                                    * 首次读取尚未完成时由 loading 分支承接；确认空列表后
@@ -6534,7 +6544,11 @@ export const AgentSettingsPage = ({
                     <div className="lv-agents-sidebar-footer">
                       <div className="lv-agent-account-footer">
                         {(isDesktop || mobileChatNavOpen) && (
-                          <UserAvatarMenu showLanguageSwitcher={isGlobal} variant="sidebar" />
+                          <UserAvatarMenu showLanguageSwitcher={isGlobal} variant="sidebar"
+                            renewalReminder={isDesktop && multiBotEnabled && passExpiryReminder && passExpiryReminderCopy && activePass
+                              ? { label: passExpiryReminderCopy.label, tooltip: passExpiryReminderCopy.tooltip, actionLabel: t("立即续费"),
+                                  onRenew: renewalAvailable ? () => setRenewPassModalOpen(true) : undefined }
+                              : undefined} />
                         )}
                       </div>
                     </div>
