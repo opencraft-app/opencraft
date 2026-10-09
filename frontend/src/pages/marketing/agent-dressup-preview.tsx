@@ -79,7 +79,7 @@ export function AgentDressupPreview() {
         onPointerDownOutside={(event) => { if (!created) event.preventDefault(); }}
         onInteractOutside={(event) => { if (!created) event.preventDefault(); }}
         onOpenAutoFocus={(event) => { event.preventDefault(); (event.currentTarget as HTMLElement).focus(); }}>
-        <DialogDescription className="sr-only">{t('选择形象、起个名字，创建你的 Agent。')}</DialogDescription>
+        <DialogDescription className="sr-only">{t('选择形象、起个名字，创建你的 LightVela Bot。')}</DialogDescription>
         {created ? <>
           <DialogTitle className="text-2xl font-semibold text-[#242034]">{t('创建完成')}</DialogTitle>
           <div className="my-6 flex flex-col items-center rounded-2xl bg-[#faf8ff] py-5">
@@ -95,7 +95,7 @@ export function AgentDressupPreview() {
           </div>
           {!storageError && <p className="mt-4 text-center text-xs text-[#736b86]" role="status">{t('已保存在本机预览，刷新后仍会保留。')}</p>}
         </> : <>
-          <DialogTitle className="text-2xl font-semibold text-[#242034]">{t('创建你的 Agent')}</DialogTitle>
+          <DialogTitle className="text-2xl font-semibold text-[#242034]">{t('创建你的 LightVela Bot')}</DialogTitle>
           <div className="mt-4 grid gap-x-10 gap-y-5 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] md:items-center">
             <HermesStepDressup appearance={appearance} onChange={setAppearance} zh={zh} />
             <div>

@@ -279,3 +279,22 @@ derived: false
 - 重新运行extract，实际当前中文全集中马来语91条缺译（107为先前新增量，并非当前缺口）；逐条补齐，保留插值。扩展换装locale测试至九个注册入口，含zh-SG与ms-MY；PRD加入马来语。前端真源验证并提交后按规则重新生成OpenCraft副本。
 
 - Rebase 验证检查点：九个 locale 入口测试按 ensureLocaleDictionary 返回的字典 key 接入（zh-SG 复用 zh-CN）。前端 check、国内与国际 build 均退出0；CI 指定的马来语及发布回归包含在19文件250项检查中，247项通过，构建并发时两项超时导致下一项遗留状态失败；构建结束后单独重跑这2文件39项全部通过。文档校验通过。将源码提交后按133项闭包重新生成 vendoring，再以原远端074c013086b711f6fbb52225cc800dcfaec74a63为 lease 更新MR !5124；尚未合并或部署。
+
+## 独立测试预览部署检查点
+- 用户授权发布可分享测试预览，明确沿用 homepage-review-20261008.preview.lightclaw.tech 同类站点。切换发布域前读取 site-environment-routing、release-gitops 与 .ci/AGENTS；邻接配置 .ci/frontend-preview.yml 核对双站 StaticPages 发布。
+- 源提交 ae936f6a8747e4717b63234998ab35f6f3861540 已推送 MR !5124 与独立 frontsandbox/agent-dressup-20261009。新建分支后未发现自动发布构建，不把推送当作部署。
+- 复用已登录 Chrome/Stream，在用户明确测试部署授权下启动 发布 frontend 分支预览，pipeline p-9a3eeb676e0a4b0bacd778af7e39a952，build b-10e297b20b064bcabe5b23fa7df9a78d，编号2117；页面显示目标分支与 ae936f6a，正在构建。无需获取/输出令牌。共享 CF 测试站 master-only 保持边界。未合并或发布生产。
+- 分享目标国内 agent-dressup-20261009.preview.lightclaw.tech、国际 intl-agent-dressup-20261009.preview.lightclaw.tech；构建启动前两者404，需等待发布成功并验证页面及素材。
+
+### 双站公开预览发布结果
+
+- Stream 构建 #2117（b-10e297b20b064bcabe5b23fa7df9a78d）已确认绿色成功，源码 ae936f6a8747e4717b63234998ab35f6f3861540。
+- 国内：https://agent-dressup-20261009.preview.lightclaw.tech/agents/；国际：https://intl-agent-dressup-20261009.preview.lightclaw.tech/agents/。Chrome 实际打开双站工作台，头像换装弹窗及素材正确显示；国际弹窗英文文案已确认。
+- /dressup-preview/ 源码限定 development，正式静态构建显示 404；公开分享使用真实 /agents/ 入口。
+- 当前登录测试账号在双站均显示会话加载失败，换装弹窗可用；不能据此次部署宣称对话链路完整通过。
+- 页面截图：/tmp/lightvela-dressup-validation/public-branch-preview.jpg。仅发布独立测试分支预览，未合并或发布生产。
+
+### 创建标题文案调整
+
+- 用户指定标题为「创建你的 LightVela Bot」；真实引导与本地试玩同步修改，辅助描述使用相同产品名。按注册表补齐所有语言字典并同步 OpenCraft 生成副本。
+- 实际读取 site-environment-routing Pack 与 frontend/AGENTS.md；pnpm frontend check 退出0，两个现有换装测试文件33项通过，OpenCraft只读检查133文件通过，git diff --check通过。此次仅文案变更，尚未重新发布共享预览。

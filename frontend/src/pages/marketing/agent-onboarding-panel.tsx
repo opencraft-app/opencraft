@@ -120,7 +120,7 @@ function RequiredOnboardingDialog({ children }: { children: ReactNode }) {
       onEscapeKeyDown={(event) => event.preventDefault()}
       onPointerDownOutside={(event) => event.preventDefault()}
       onInteractOutside={(event) => event.preventDefault()}>
-      <DialogTitle className="text-2xl font-semibold">{t("创建你的 Agent")}</DialogTitle>
+      <DialogTitle className="text-2xl font-semibold">{t("创建你的 LightVela Bot")}</DialogTitle>
       <DialogDescription className="sr-only">{t("名字")}</DialogDescription>
       {children}
     </DialogContent>

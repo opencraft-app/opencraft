@@ -214,7 +214,7 @@ describe('Hermes illustration studio', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     click('创建 Bot');
     expect(screen.getByRole('dialog')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: '创建你的 Agent' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '创建你的 LightVela Bot' })).toBeInTheDocument();
   });
   it('creates with the default appearance without entering the studio', () => {
     render(<AgentDressupPreview />);
