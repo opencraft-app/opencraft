@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_HERMES_APPEARANCE, HERMES_DRAWING_LIMITS, type HermesAppearance, type HermesDrawingStroke } from '@/lib/hermes-appearance';
 import { HermesDrawingEditor } from '@/components/site/hermes-drawing-editor';
 import { HermesDrawingLayer } from '@/components/site/hermes-drawing-layer';
-vi.mock('@/components/site/hermes-doodle-avatar', () => ({ HermesDoodleAvatar: ({ appearance }: { appearance: HermesAppearance }) => <span data-testid="drawing-avatar" data-drawing={JSON.stringify(appearance.drawing)} /> }));
+vi.mock('@/components/site/hermes-plush-avatar', () => ({ HermesPlushAvatar: ({ appearance }: { appearance: HermesAppearance }) => <span data-testid="drawing-avatar" data-drawing={JSON.stringify(appearance.drawing)} /> }));
 class TestPointerEvent extends MouseEvent {
   readonly pointerId: number; readonly isPrimary: boolean;
   constructor(type: string, options: PointerEventInit = {}) { super(type, options); this.pointerId = options.pointerId ?? 1; this.isPrimary = options.isPrimary ?? true; }

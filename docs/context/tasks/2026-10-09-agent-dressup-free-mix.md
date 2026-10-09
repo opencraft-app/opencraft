@@ -198,3 +198,9 @@ derived: false
 ## 随机样式复核
 - 用户指出随机截图似旧版本。重新路由并读取must_read和frontend/AGENTS；有界源码检查确认随机与手动共用HermesAppearanceAvatar/HermesPlushAvatar及统一主色集合。
 - 当前服务真实浏览器随机6次，检查DOM证明新版v2配饰、云朵底模与18度天线均在随机结果使用；截图 /tmp/lightvela-dressup-validation/random-checked.png。用户截图确与当前页面不同，但未证实旧截图来源。本轮无需修改随机算法或素材。
+
+## MR准备（用户已明确授权）
+- 已提交换装修正92694c40d6，并合并最新master e17b1d3600，无冲突。
+- OpenCraft同步及只读门禁通过，130个副本无差异；无需额外生成提交。
+- master新增file依赖经frozen-lockfile安装更新本地快照；绘画编辑测试改为模拟实际HermesPlushAvatar。
+- 合并后12文件226项测试全部通过；pnpm build退出0；文档校验0错误/0断链。真实云端E2E及正文头像边界明确写入MR说明。
