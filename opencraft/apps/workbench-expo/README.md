@@ -312,3 +312,20 @@ python3 apps/workbench-expo/scripts/serve-android-release-apk.py --bind 0.0.0.0 
 先用 `curl -I` 检查 HTTP 200 和文件长度，再下载核对 SHA-256。
 服务只开放这一个 APK 路径；签名密钥和密码不得放进下载目录。
 关闭终端或服务器进程后，链接即失效。该流程不执行上架或公开发布。
+
+## Parallel `/agents-next` Expo Web console
+
+From `opencraft/`, run `npm run build:agents-next --workspace @opencraft/workbench-expo`.
+Then start the frontend dev server and visit `/agents-next/`. From `frontend/`,
+`npm run build:agents-next` performs the same preparation; run it before a
+frontend release build that includes this experimental entry. Both workspaces'
+dependencies must be installed. The generated `frontend/public/__expo-agents/`
+assets are ignored and rebuilt from source. The official `/agents` entry stays
+in place.
+
+Navigation/session controls are shared HeroUI Native components. Phone/tablet/
+foldable/desktop layouts use measured container width and preserve one mounted
+DOM runtime. This console embeds the existing frontend configuration code and
+OpenCraft Web chat locally; it does not mount RN Chat or a hosted feature page.
+Electron can consume the Web mount port after wiring its host capabilities;
+that existing entry is not migrated by this change.

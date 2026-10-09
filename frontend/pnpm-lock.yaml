@@ -8308,6 +8308,24 @@ packages:
   zwitch@2.0.4:
     resolution: {integrity: sha512-bXE4cR/kVZhKZX/RjPEflHaKVhUVl85noU3v6b8apfQEc1x4A+zBxjZ4lN8LqGd6WZ3dl98pY4o717VFmoPp+A==}
 
+  '@opencraft/workbench-panels@file:../opencraft/packages/workbench-panels':
+    resolution: {directory: ../opencraft/packages/workbench-panels, type: directory}
+
+  '@deepseek-ai/cordis@4.0.1':
+    resolution: {integrity: sha512-YBdskTU2Po1kru3GgcUWUbkTsPMA9LkSQDAY8rBkFJeajdgcQad3QPJZE26JyK99Xb6HaASvoXg2DSUTeN/0Nw==}
+    hasBin: true
+    peerDependencies:
+      '@deepseek-ai/cordis-plugin-include': ^1.0.6
+      '@deepseek-ai/cordis-plugin-loader': ^1.0.2
+    peerDependenciesMeta:
+      '@deepseek-ai/cordis-plugin-include':
+        optional: true
+      '@deepseek-ai/cordis-plugin-loader':
+        optional: true
+
+  '@deepseek-ai/cosmokit@1.8.5':
+    resolution: {integrity: sha512-LXsrlem9z8dq4sLflj2yuCuYX7KqhdzF5hZly3eZyuTo8d6oDSOXuEgC5DbQWKW+lksm6zmOutQLsP/ma6wR6A==}
+
 snapshots:
 
   '@acemir/cssom@0.9.31': {}
@@ -9697,7 +9715,12 @@ snapshots:
 
   '@opencraft/mobile-account-sdk@file:../opencraft/packages/mobile-account-sdk': {}
 
-  '@opencraft/mobile-bot-bridge@file:../opencraft/packages/mobile-bot-bridge': {}
+  '@opencraft/mobile-bot-bridge@file:../opencraft/packages/mobile-bot-bridge':
+    dependencies:
+      '@opencraft/workbench-panels': file:../opencraft/packages/workbench-panels
+    transitivePeerDependencies:
+      - '@deepseek-ai/cordis-plugin-include'
+      - '@deepseek-ai/cordis-plugin-loader'
 
   '@opentelemetry/api@1.9.1': {}
 
@@ -18148,3 +18171,17 @@ snapshots:
       react: 19.2.4
 
   zwitch@2.0.4: {}
+
+  '@opencraft/workbench-panels@file:../opencraft/packages/workbench-panels':
+    dependencies:
+      '@deepseek-ai/cordis': 4.0.1
+    transitivePeerDependencies:
+      - '@deepseek-ai/cordis-plugin-include'
+      - '@deepseek-ai/cordis-plugin-loader'
+
+  '@deepseek-ai/cordis@4.0.1':
+    dependencies:
+      '@deepseek-ai/cosmokit': 1.8.5
+      '@standard-schema/spec': 1.1.0
+
+  '@deepseek-ai/cosmokit@1.8.5': {}

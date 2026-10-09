@@ -15,6 +15,13 @@ export function embeddedWorkbenchScriptUrl(): string | null {
 
 /** Shared code loader only. It never constructs an Application or acquires a Host. */
 export function loadEmbeddedWorkbench(url: string): Promise<void> {
+  // Expo pre-registers the same Web element from a local, packaged module.
+  // A missing packaged element is a build failure, never a remote fallback.
+  if (url === 'bundled:opencraft') {
+    return customElements.get(EMBEDDED_WORKBENCH_ELEMENT_NAME)
+      ? Promise.resolve()
+      : Promise.reject(new Error('Packaged OpenCraft Chat is missing'));
+  }
   const existing = scriptLoads.get(url);
   if (existing) return existing;
   const operation = new Promise<void>((resolve, reject) => {

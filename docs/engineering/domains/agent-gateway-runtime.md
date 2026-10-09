@@ -85,6 +85,9 @@ LightVela 站点的 Agent 会话侧栏由 `frontend` 持有，不使用 OpenCraf
 Sidebar。嵌入式 Workbench 仅投影会话的置顶状态、当前 Host 的置顶能力与置顶动作；
 站点按该能力显示菜单，置顶会话独立于近期分页配额展示。侧栏的会话缓存不作为
 置顶写入权威，操作后由原生目录刷新确认。
+内嵌 Workbench 的首次会话目录查询在 Host 尚未就绪时属于待加载状态，不能把
+尚未发起查询的空数组投影为已确认的空列表；Host 进入错误态后停止报告加载，由聊天主区呈现失败和重试。切换 Bot 后，站点侧栏保留既有栏位，
+等待目标 Bot 的目录结果；只有首次读取结束且仍为空时才显示默认会话入口。
 
 OpenCraft 的可选 `tencentoa.identity` 插件按每个 HTTP 请求核验太湖签名、
 解密 TOF 员工身份并检查有效期。安装级私有密钥仅属于后端，员工身份仅投影到
@@ -900,3 +903,44 @@ session（`applySandboxSessionAuth` 注入 Authorization/Cookie），不存在�
 不得把持续的鉴权/不可达故障静默停留在“安装中”直至整体超时。TAT 命令按进程内绑定锁串行化、
 换用户/换 Sandbox/失败重试隔离旧状态等既有约束不变。实现见 `ctl/pkg/instance/desktop.go`，
 通道鉴权见 `ctl/pkg/adapter/sandbox/adapter.go`。
+
+## Parallel Expo Agent Console (2026-10-08)
+
+`/agents-next` is an Expo Web presentation entry, without replacing `/agents`.
+The native Expo console and this Web entry share a vertical Bot icon rail beside
+the selected Bot feature/session pane, plus a fixed account/settings footer;
+creation is the rail plus button and Bot switching keeps navigation open. They share navigation and session controls;
+frontend retains Bot/session business ownership. Existing OpenCraft Web chat is
+bundled locally into the DOM runtime. Actual container dimensions determine
+foldable/phone/tablet/desktop layout and never reset conversation or draft state.
+See [embedded Bot bridge](../../../opencraft/docs/mobile-bot-bridge.md) for the
+validated mount/command ports and [mobile shell](../../../opencraft/docs/mobile-shell.md)
+for geometry and platform responsibilities. Electron entry integration and
+hardware keyboard/folding evidence remain separate acceptance work; Android
+standalone and Electron entry wiring are explicitly excluded from this iteration.
+The embedded Chat height chain targets its actual main/section/grid/content
+elements, rather than website-only chrome classes. Runtime registration and
+visible layout are separate acceptance boundaries: packaged HTML parsing plus
+measured nonzero Chat bounds across container sizes precede device/transport
+acceptance.
+
+The Expo Chat right pane now opts into external host presentation: the original
+conversation panel service owns tab identity, selection, ordering, close/MRU,
+preview replacement and browser/resource lifetimes. Host-measured bounds and a
+native shell open/close button contain the complete original DOM toolbar, menus and content; no new tab
+manager replaces them. The original pane renders in a sibling outlet of the same
+local custom element/runtime;
+there is no per-tab Application or hosted-page fallback. Runtime generation,
+Bot instance/Profile and conversation owner scope every command/state update.
+Narrow content capacity overlays Chat; wider capacity places it alongside the
+pane without rebuilding the runtime. Default website/Electron chrome remains
+unchanged. Contract and acceptance limits are in
+[Chat panel host presentation](../../../opencraft/docs/mobile-bot-bridge.md#chat-panel-host-presentation).
+
+The external panel layout parent now allocates genuine sibling grid viewports;
+Chat’s embedded AppShell consumes its own column instead of a document-wide fixed
+viewport. Native controls/gesture input feed one transient presentation driver in
+the same local DOM runtime. Service intent, tabs and resource lifetimes stay with
+the original conversation panel owner. Only narrow/full-width capacity uses replacement
+presentation; held movement, interruption, cancellation and geometry changes share
+the same driver, without a second visibility authority or duplicated application.

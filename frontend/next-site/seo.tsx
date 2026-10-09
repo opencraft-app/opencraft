@@ -553,7 +553,7 @@ export function SiteJsonLd() {
     },
   ];
 
-  return <JsonLd id="lightvela-site-jsonld" data={data} />;
+  return <JsonLd id="lightvela-site-jsonld" data={{ '@context': 'https://schema.org', '@graph': data }} />;
 }
 
 export function SoftwareApplicationJsonLd({ locale = DEFAULT_PUBLIC_ROUTE_LOCALE.locale }: { locale?: SeoLocale }) {

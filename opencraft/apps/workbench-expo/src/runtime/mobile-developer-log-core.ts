@@ -2,6 +2,9 @@
 export const MAX_DEVELOPER_LOG_LINES = 100;
 
 export type DeveloperEvent =
+  | "site.external.open.failed"
+  | "speech.capture.started" | "speech.capture.failed" | "speech.capture.cleanup.failed"
+  | "chat.panel.action.failed"
   | "account.profile.cache.hit" | "account.profile.display-cache.hit"
   | "account.profile.refresh.succeeded" | "account.profile.refresh.failed"
   | "avatar.picker.opened" | "avatar.picker.cancelled" | "avatar.picker.selected"
@@ -17,6 +20,7 @@ export type DeveloperEvent =
   | "bot.section.render.failed" | "bot.runtime.process.terminated" | "bot.runtime.navigation.blocked"
   | "bot.api.network.failed" | "bot.api.http.failed"
   | "bot.model.load.failed"
+  | "bot.session.operation.failed"
   | "bot.auth.pending" | "bot.auth.ready" | "bot.auth.missing"
   | "chat.submit.failed" | "chat.attachment.failed" | "chat.picker.failed"
   | "chat.model.list.failed" | "chat.request.failed"

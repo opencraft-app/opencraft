@@ -1132,6 +1132,13 @@ priority order; recovery of an earlier account does not pull new Threads back.
 The loopback HTTP bridge owns each response stream until completion. When its
 client disconnects, it aborts the upstream request and consumes the resulting
 stream error without terminating the Host process or replaying the request.
+The proxy uses a dedicated HTTP/1.1 pool with sixteen non-pipelined connections
+and the loopback bridge admits at most sixteen concurrent upstream requests.
+Waiting for response headers is bounded to 60 seconds and an idle response body
+to 180 seconds. Slow headers, queue delay and transport failure emit
+content-free diagnostics keyed only by provider Thread/account identity. A
+timeout or other transport failure is surfaced to the owning Turn and is never
+replayed on another account, because the upstream execution outcome is unknown.
 The bridge accepts request bodies up to 32 MiB. It drains an oversized body
 without forwarding it and returns HTTP 413, so a large Codex history produces
 an explicit size error instead of a disconnected stream.

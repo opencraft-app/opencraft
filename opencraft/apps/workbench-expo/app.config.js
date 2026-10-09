@@ -13,6 +13,7 @@ module.exports = ({ config }) => {
 
   return {
     ...config,
+    ...(process.env.OPENCRAFT_EXPO_SURFACE === "agents-next" && { experiments: { ...config.experiments, baseUrl: "/__expo-agents" } }),
     name: androidRelease || iosRelease ? edition === 'cn' ? 'LightVela' : 'LightVela International' : config.name,
     scheme: internationalRelease ? 'opencraft-intl' : config.scheme,
     extra: {

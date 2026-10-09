@@ -95,10 +95,11 @@ describe("next-site SEO origin", () => {
   it("omits international social sameAs links from cn structured data", async () => {
     const { OrganizationJsonLd, SiteJsonLd } = await importSeoWithRegion("cn");
 
-    const siteData = jsonLdData(SiteJsonLd());
+    const siteData = jsonLdData(SiteJsonLd()) as { '@context': string; '@graph': unknown[] };
     const organizationData = jsonLdData(OrganizationJsonLd());
 
-    expect(siteData).toEqual([
+    expect(siteData['@context'].toLowerCase()).toBe('https://schema.org');
+    expect(siteData['@graph']).toEqual([
       expect.not.objectContaining({
         sameAs: expect.arrayContaining([
           "https://discord.gg/Myh58xEMe2",
@@ -113,7 +114,9 @@ describe("next-site SEO origin", () => {
   it("keeps global structured data linked to official international profiles", async () => {
     const { OrganizationJsonLd, SiteJsonLd } = await importSeoWithRegion("global");
 
-    const [siteOrganization] = jsonLdData(SiteJsonLd()) as [{ sameAs: string[] }];
+    const siteData = jsonLdData(SiteJsonLd()) as { '@context': string; '@graph': [{ sameAs: string[] }] };
+    expect(siteData['@context'].toLowerCase()).toBe('https://schema.org');
+    const [siteOrganization] = siteData['@graph'];
     const organization = jsonLdData(OrganizationJsonLd()) as { sameAs: string[] };
 
     expect(siteOrganization.sameAs).toEqual(

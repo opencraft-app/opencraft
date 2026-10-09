@@ -37,7 +37,8 @@
     "verify:artifact": "node scripts/verify-release-artifact.mjs",
     "build:release-artifacts": "node scripts/build-release-artifacts.mjs",
     "release:eo:artifact": "node scripts/release-edgeone-from-artifact.mjs",
-    "release:cf:artifact": "node scripts/release-cloudflare-from-artifact.mjs"
+    "release:cf:artifact": "node scripts/release-cloudflare-from-artifact.mjs",
+    "build:agents-next": "node ../opencraft/apps/workbench-expo/scripts/build-agents-next.mjs"
   },
   "dependencies": {
     "@babel/runtime-corejs3": "7.29.7",

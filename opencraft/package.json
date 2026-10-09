@@ -24,7 +24,7 @@
     "check:i18n": "node scripts/check-i18n.mjs",
     "test:i18n": "tsx --test tests/i18n-runtime.test.ts tests/i18n-controller.test.ts",
     "smoke:i18n": "tsx scripts/smoke-i18n.ts",
-    "postinstall": "node scripts/patch-expo-modules-jsi.mjs && node scripts/patch-novnc-desktop-events.mjs",
+    "postinstall": "node scripts/patch-expo-modules-jsi.mjs && node scripts/patch-novnc-desktop-events.mjs && node scripts/patch-heroui-menu-measurement.mjs",
     "protocol:refresh": "node scripts/refresh-codex-protocol.mjs",
     "sync:mono2-agent-console": "node scripts/sync-mono2-agent-console.mjs",
     "check:mono2-agent-console": "node scripts/sync-mono2-agent-console.mjs --check",

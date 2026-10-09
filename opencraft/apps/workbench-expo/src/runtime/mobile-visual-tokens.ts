@@ -26,10 +26,11 @@ export const mobileVisualTokens = {
   },
   drawer: { floatingRadius: 34, floatingScale: 0.97 },
   shell: {
+    panelTouchTarget: nativeTokens.metrics.toolbar.touchTarget,
     sidebarWidth: nativeTokens.metrics.sidebar.width,
     minimumContentWidth: 480,
-    drawerWidthFraction: 0.52,
-    drawerMaximumWidth: 250,
+    drawerWidthFraction: 0.86,
+    drawerMaximumWidth: 340,
     panelMinimumWidth: 560,
     panelMaximumWidth: 680,
     panelInset: nativeTokens.spacing[6],

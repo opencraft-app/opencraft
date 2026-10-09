@@ -21,6 +21,7 @@ import { WorkbenchPresentationRootProvider } from "../components/workbench-prese
 import { EMBEDDED_CORE_CHAT_PRESENTATION } from "../workbench-presentation-policy";
 
 export interface EmbeddedChatRootProps {
+  readonly panelHost?: EmbeddedWorkbenchAppPresentation["panelHost"];
   readonly application: WebWorkbenchApplication;
   readonly bindActions: (actions: EmbeddedWorkbenchAppActions) => (() => void);
   readonly hostId: string;
@@ -52,6 +53,7 @@ export function EmbeddedChatRoot({
   onReady,
   onSessionsChange,
   portalContainer,
+  panelHost,
 }: EmbeddedChatRootProps) {
   if (application.supervisor.mode !== "active") {
     throw new Error("Embedded Chat requires an active OpenCraft Host");
@@ -64,7 +66,8 @@ export function EmbeddedChatRoot({
     onPainted,
     onReady,
     onSessionsChange,
-  }), [bindActions, hostId, onError, onPainted, onReady, onSessionsChange]);
+    panelHost,
+  }), [bindActions, hostId, onError, onPainted, onReady, onSessionsChange, panelHost]);
   return (
     <BrowserEnvironmentProvider
       pages={application.browserPages}

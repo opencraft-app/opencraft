@@ -883,18 +883,3 @@
     text-align: left;
   }
 }
-
-/* Edge parity v80: the hero frame is capped at 1140px while every block below
-   it runs at the 1200px content width, so each section edge landed 30px
-   further out than the hero screenshot above. Align them to the hero frame. */
-@media (min-width: 1024px) {
-  #lightvela-intl-home .about__head,
-  #lightvela-intl-home .about__cards,
-  #lightvela-intl-home .scenes__head,
-  #lightvela-intl-home .soul-strip,
-  #lightvela-intl-home .scenes__layout {
-    max-width: 1140px !important;
-    margin-right: auto !important;
-    margin-left: auto !important;
-  }
-}
