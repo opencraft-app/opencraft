@@ -3308,6 +3308,7 @@ export const AgentSettingsPage = ({
   const prepareBotSwitch = (botId: string) => {
     if (botId === activeBot?.id) return;
     pendingNewChatSessionBotId = botId;
+    setActiveTabId(botId);
     setChatSessionCommands(null);
     setSelectedChatId(undefined);
     setOpenSessionMenuChatId(null);
@@ -5889,7 +5890,7 @@ export const AgentSettingsPage = ({
                       配置完成后导航才出现（避免一进来就面对点不了的入口） */}
                   {hasSidebarLayout && !embedded ? (
                   <>
-                      {isDesktop && multiBotEnabled && <AgentBotRail bots={visibleBots} activeBotId={activeBot.id} canCreate={nativeCreateEnabled} createLimitMessage={createLimitMessage || ""} profileRevision={botRailProfileRevision} restartingBotIds={restartingBotIds} execDebugCommand={repositories.bots.execDebugCommand} onSelect={prepareBotSwitch} onCreate={handleCreateNew} manageActions={botContextActions} />}
+                      {isDesktop && multiBotEnabled && <AgentBotRail bots={visibleBots} activeBotId={activeBot.id} canCreate={nativeCreateEnabled} createLimitMessage={createLimitMessage || ""} profileRevision={botRailProfileRevision} restartingBotIds={restartingBotIds} execDebugCommand={repositories.bots.execDebugCommand} onSelect={handleSelectBot} onCreate={handleCreateNew} manageActions={botContextActions} />}
                       <div className="lv-agent-mobile-toolbar">
                         <button
                           ref={mobileNavTriggerRef}
@@ -5945,7 +5946,7 @@ export const AgentSettingsPage = ({
                       >
                         <X className="size-4" aria-hidden="true" />
                       </button>
-                    {!isDesktop && multiBotEnabled && <AgentBotRail mobile bots={visibleBots} activeBotId={activeBot.id} canCreate={nativeCreateEnabled} createLimitMessage={createLimitMessage || ""} profileRevision={botRailProfileRevision} restartingBotIds={restartingBotIds} execDebugCommand={repositories.bots.execDebugCommand} onSelect={prepareBotSwitch} onCreate={handleCreateNew} />}
+                    {!isDesktop && multiBotEnabled && <AgentBotRail mobile bots={visibleBots} activeBotId={activeBot.id} canCreate={nativeCreateEnabled} createLimitMessage={createLimitMessage || ""} profileRevision={botRailProfileRevision} restartingBotIds={restartingBotIds} execDebugCommand={repositories.bots.execDebugCommand} onSelect={handleSelectBot} onCreate={handleCreateNew} />}
                     {(!isDesktop || !multiBotEnabled) && <div className="lv-agents-sidebar-profile">
                       <div className="lv-agent-profile-row">
                       <div className="lv-agent-profile-wrap">
@@ -6232,7 +6233,7 @@ export const AgentSettingsPage = ({
                               {!isChatTabDisabled && chatSessionsExpanded && !isSidebarCollapsed ? <>
                               <ul className="lv-agents-nav-group-items lv-agents-session-list">
                                 {emptyChatSessionState === "loading" ? (
-                                  <li className="lv-agents-session-hint">{isGlobal ? t("正在加载会话…") : t("正在加载...")}</li>
+                                  <li className="sr-only" role="status">{isGlobal ? t("正在加载会话…") : t("正在加载...")}</li>
                                 ) : emptyChatSessionState === "default" ? (
                                   /*
                                    * 首次读取尚未完成时由 loading 分支承接；确认空列表后
