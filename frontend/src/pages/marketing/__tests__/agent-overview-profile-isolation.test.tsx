@@ -17,6 +17,31 @@ const base = {
 };
 
 describe("overview profile editing", () => {
+  it("uses an honest return label for an existing avatar editor", () => {
+    const onClose = vi.fn();
+    render(<ProfileEditDialog avatarOnly profile={{ ...base.profile, appearance: DEFAULT_HERMES_APPEARANCE }} onSave={vi.fn()} onClose={onClose} />);
+    expect(screen.queryByRole("button", { name: "返回创建" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "返回" }));
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("blocks repeated confirmation and draft changes while reading before a save", async () => {
+    let finish!: (value: typeof ok) => void;
+    const exec = vi.fn<SetupExec>().mockResolvedValue(ok).mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    const onClose = vi.fn(), onChanged = vi.fn();
+    render(<AgentBotProfileEditor avatarOnly botId={base.botId} profileId="worker" profile={{ ...base.profile, appearance: DEFAULT_HERMES_APPEARANCE }} execDebugCommand={exec} onClose={onClose} onChanged={onChanged} />);
+    fireEvent.click(screen.getByRole("button", { name: "就用这个" }));
+    const saving = screen.getByRole("button", { name: "保存中..." });
+    expect(saving).toBeDisabled();
+    expect(screen.getByRole("button", { name: "随机" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "薄荷" })).toBeDisabled();
+    fireEvent.click(saving);
+    expect(exec).toHaveBeenCalledOnce();
+    await act(async () => { finish(ok); });
+    await waitFor(() => expect(onChanged).toHaveBeenCalledOnce());
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
   it("opens avatar-only editing and saves the new look without changing profile fields", () => {
     const onSave = vi.fn();
     const profile = { ...base.profile, description: "Keep my description", appearance: DEFAULT_HERMES_APPEARANCE, legacyMascot: "bean-lilac" as const };

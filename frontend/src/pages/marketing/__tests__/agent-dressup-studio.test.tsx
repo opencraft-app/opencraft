@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_HERMES_APPEARANCE, type HermesAppearance } from '@/lib/hermes-appearance';
+import { DEFAULT_HERMES_APPEARANCE, parseHermesAppearance, asDoodleAppearance, type HermesAppearance } from '@/lib/hermes-appearance';
 import { AgentDressupStudio, HermesStepDressup } from '@/pages/marketing/agent-dressup-studio';
 import { AgentDressupPreview } from '@/pages/marketing/agent-dressup-preview';
 
@@ -16,6 +16,20 @@ const button = (name: string | RegExp) => screen.getByRole('button', { name });
 const click = (name: string | RegExp) => fireEvent.click(button(name));
 
 describe('Hermes illustration studio', () => {
+  it('keeps reverse click layering through color changes, toggles, confirm and saved parsing', () => {
+    const save = vi.fn(); render(<Harness onConfirm={save} />);
+    click('小书本'); click('星星巫师帽'); click('奶油耳机'); click('晴空');
+    click('就用这个');
+    const look = save.mock.lastCall![0] as HermesAppearance;
+    expect(look.doodads).toEqual(['book', 'wizard-hat', 'headphones']);
+    expect(asDoodleAppearance(parseHermesAppearance(JSON.parse(JSON.stringify(look)))!).doodads).toEqual(look.doodads);
+    const layers = [...screen.getByLabelText('和 Hermes 打招呼').querySelectorAll('[data-testid]')].map((node) => node.getAttribute('data-testid'));
+    expect(layers.indexOf('plush-book')).toBeLessThan(layers.indexOf('plush-wizard-hat'));
+    expect(layers.indexOf('plush-wizard-hat')).toBeLessThan(layers.indexOf('plush-headphones'));
+    click('星星巫师帽'); click('星星巫师帽'); click('就用这个');
+    expect(save.mock.lastCall![0].doodads).toEqual(['book', 'headphones', 'wizard-hat']);
+  });
+
   function StepHarness({ initial = { ...DEFAULT_HERMES_APPEARANCE, skin: 'mint', expression: 'wink' } as HermesAppearance }) {
     const [value, setValue] = useState<HermesAppearance>(initial);
     return <><HermesStepDressup appearance={value} onChange={setValue} zh /><output data-testid="appearance">{JSON.stringify(value)}</output></>;

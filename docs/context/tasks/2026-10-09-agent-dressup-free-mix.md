@@ -255,3 +255,12 @@ derived: false
 - 视觉复核检查点：真实工作台圆形和方形针织帽已复核，去掉灰色拖尾、保留侧面帽口；1280×800 横向弹窗完整显示所有配饰与确认按钮，390×844 单列手机弹窗未遮挡选项。证据 /tmp/lightvela-dressup-validation/horizontal-beanie-round.png、horizontal-beanie-square.png、horizontal-beanie-mobile.png。仅操作编辑草稿，未保存用户头像。38项回归通过；check退出0（166 current/171 baseline/0 new）；OpenCraft130文件校验及文档校验通过；build:global退出0，build:cn进行中。
 
 - 最终提交检查点：build:cn同样退出0；恢复仅构建产生的next-env路由引用。准备将上述五份修复与设计记录提交现有MR !5124，未合并、发布或修改远端头像。
+
+## 头像流程 bug 与合理性审查
+- 用户要求复核 bug 和不合理之处；采用 lightvela-web-validation 状态矩阵。首次自然语言路由无命中，记录失败查询 frontend agent dressup creation avatar editor UX bugs；改用精确路径完成 frontend/site 路由，读取 docs/context/project/services/frontend.md、docs/context/domains/site-environment-routing.md、frontend/AGENTS.md、frontend/DESIGN.md、frontend-runtime-openspec-i18n 邻接卡及相邻资料隔离测试。
+- 修复源码确认的问题：换装返回文案与关闭行为不符、读取资料期间确认按钮未禁用、配饰规范化按枚举排序丢失点击层级、资料编辑中旧换装文案仍按中英二分。头戴耳机现在按点击顺序与其他配饰绘制，身体/帽口接触/手臂层维持物理关系。
+- 本轮浏览器绑定因非HTTP错误页被安全策略阻止操作；不绕过，不宣称本轮真实页面/云端写入实测通过。报告 /tmp/lightvela-dressup-audit/report-data.json；正在执行组件回归及前端门禁。
+
+- 审查验证检查点：新增保存等待、真实返回含义、倒序配饰遮挡及保存解析回归；4文件61项通过，12配饰WebP存在。首次check发现统一配饰列表沿用不含耳机的PlushOutfit类型守卫，已修正为keyof PLUSH_OUTFITS；最终check退出0（166/171/0 new）。OpenCraft130文件及文档校验退出0；build:cn退出0，build:global进行中。HTML审查报告 /tmp/lightvela-dressup-audit/report.html，注明本轮UI实测被阻止及未执行真实云端写入。
+
+- 最终审查交接：国际构建同样退出0，恢复next-env与Context校验生成的catalog。前端61项回归、类型/多语言、双站构建、文档及OpenCraft校验通过；全仓Context目录校验退出1（其他历史任务文档缺元数据），Context测试27项中4项失败，Context-audit测试33项及审计脚本退出0。未把全仓错误混同本次头像行为问题，详细证据在审查报告目录。继续按用户既有修复后提交授权更新MR !5124，未合并或发布。

@@ -175,7 +175,7 @@ export function asDoodleAppearance(value: HermesAppearance): HermesAppearance {
       glasses: 'star-glasses', cap: 'wizard-hat', crown: 'wizard-hat',
     };
     const selected = (value.doodads ?? []).map((id) => replacements[id] ?? id);
-    const doodads = HERMES_PLAYFUL_DOODADS.filter((id) => selected.includes(id));
+    const doodads = [...new Set(selected.filter((id) => HERMES_PLAYFUL_DOODADS.some((part) => part === id)))];
     return { ...value, skin, doodads };
   }
   return { version: 1, style: 'doodle', shape: 'bean', skin,
@@ -193,7 +193,7 @@ export function toggleHermesDoodad(value: HermesAppearance, id: HermesDoodad): H
   };
   const doodads = selected.includes(id) ? selected.filter((part) => part !== id)
     : [...selected.filter((part) => slot(part) !== slot(id)), id];
-  return { ...next, doodads: HERMES_DOODADS.filter((part) => doodads.includes(part)) };
+  return { ...next, doodads };
 }
 
 /** Approved homepage cast, also used as the bounded legacy avatar pool. */

@@ -204,8 +204,7 @@ export function HermesPlushAvatar({ appearance, size = 96, alive = false, reacti
           })}
         </g>
       </svg>
-      {parts.includes('headphones') && <HeadphonesLayer shape={shape} />}
-      {parts.filter((id): id is PlushOutfit => id !== 'headphones' && id in PLUSH_OUTFITS).map((id) =>
+      {parts.filter((id): id is keyof typeof PLUSH_OUTFITS => id in PLUSH_OUTFITS).map((id) => id === 'headphones' ? <HeadphonesLayer key={id} shape={shape} /> :
         <img key={id} src={`${PLUSH_ROOT}/${PLUSH_OUTFITS[id]}.webp`} alt="" draggable={false} data-testid={`plush-${id}`}
           className={cn('pointer-events-none absolute', PLUSH_FIT[id].slot === 'head' ? 'object-fill' : 'object-contain')} style={{ ...placementFor(shape, id), clipPath: HAT_BRIM_CLIPS[id] ? `url(#${colourId}-${id}-brim)` : undefined }} />)}
       {shape === 'cloud' && <svg viewBox="0 0 512 512" aria-hidden="true" className="pointer-events-none absolute inset-0 size-full"><path d="M251 339q12 13 24 0" fill="none" stroke="#342b35" strokeWidth="6" strokeLinecap="round" /></svg>}

@@ -344,7 +344,6 @@ export const ProfileEditDialog = ({
   avatarOnly?: boolean;
 }) => {
   const t = useT();
-  const zh = useCurrentLocale().startsWith('zh');
   const [name, setName] = useState(profile.name);
   const [description, setDescription] = useState(profile.description);
   const [appearance, setAppearance] = useState<HermesAppearance | null>(profile.appearance ?? null);
@@ -360,6 +359,7 @@ export const ProfileEditDialog = ({
         {dressupOpen && errorMessage && <p role="alert" className="text-sm text-red-700">{errorMessage}</p>}
         {dressupOpen ? <AgentDressupStudio
           value={draftAppearance}
+          saving={saving}
           onChange={setDraftAppearance}
           onBack={() => avatarOnly ? onClose() : setDressupOpen(false)}
           onConfirm={(next) => { if (avatarOnly) onSave({ ...profile, appearance: next, legacyMascot: undefined }); else { setAppearance(next); setDressupOpen(false); } }}
@@ -376,7 +376,7 @@ export const ProfileEditDialog = ({
         <div className="mt-5 flex flex-col items-center">
           {appearance ? <HermesAppearanceAvatar appearance={appearance} size={96} alive /> : <GeometricAvatar shapeId={profile.shapeId} color={profile.color} size={96} alive />}
           <button type="button" onClick={() => { setDraftAppearance(appearance ?? DEFAULT_HERMES_APPEARANCE); setDressupOpen(true); }} className="mt-2 min-h-11 cursor-pointer rounded-lg px-3 text-sm font-medium text-violet-700 hover:bg-violet-50 focus-visible:outline-2 focus-visible:outline-violet-500">
-            {zh ? '给 Hermes 换装 · 试肤色和表情' : 'Dress up Hermes · try colors and expressions'}
+            {t("更换头像")}
           </button>
         </div>
 

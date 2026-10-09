@@ -111,7 +111,7 @@ describe("multi Bot overview", () => {
     expect(screen.getByRole("dialog", { name: "修改资料" })).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "名字" })).toHaveValue("bravo");
     // The shape picker was replaced by the dress-up studio: open it, confirm a look, and return to the form.
-    fireEvent.click(screen.getByRole("button", { name: /给 Hermes 换装/ }));
+    fireEvent.click(screen.getByRole("button", { name: "更换头像" }));
     fireEvent.click(screen.getByRole("button", { name: "就用这个" }));
     fireEvent.change(screen.getByRole("textbox", { name: "名字" }), { target: { value: "Research" } });
     fireEvent.change(screen.getByRole("textbox", { name: /描述/ }), { target: { value: "Daily research" } });

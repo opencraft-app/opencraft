@@ -218,9 +218,9 @@ export function HermesStepDressup({ appearance, onChange, zh }: {
   </section>;
 }
 
-export function AgentDressupStudio({ value, onChange, onBack, onConfirm, className }: {
+export function AgentDressupStudio({ value, onChange, onBack, onConfirm, className, saving = false }: {
   value: HermesAppearance; onChange: (next: HermesAppearance) => void; onBack: () => void;
-  onConfirm: (next: HermesAppearance) => void; className?: string;
+  onConfirm: (next: HermesAppearance) => void; className?: string; saving?: boolean;
 }) {
   const zh = useCurrentLocale().startsWith('zh');
   const t = useT();
@@ -236,11 +236,11 @@ export function AgentDressupStudio({ value, onChange, onBack, onConfirm, classNa
   const parts = current.doodads ?? [];
   const randomize = () => onChange(rollHermesLook(current, true));
   if (drawingOpen) return <HermesDrawingEditor appearance={current} zh={zh} onCancel={() => setDrawingOpen(false)} onConfirm={(drawing) => { onChange({ ...current, drawing }); setDrawingOpen(false); }} />;
-  return <section aria-label={t('Hermes 形象选择')} className={cn('mx-auto w-full max-w-[960px] bg-white px-4 pb-5 pt-3 text-[#292638] sm:px-7 sm:pt-4', className)}>
+  return <section aria-label={t('Hermes 形象选择')} aria-busy={saving} className={cn('mx-auto w-full max-w-[960px] bg-white px-4 pb-5 pt-3 text-[#292638] sm:px-7 sm:pt-4', className)}>
     <header className="flex h-11 items-center justify-between gap-2 text-sm">
-      <button type="button" onClick={onBack} className={cn('flex min-h-11 items-center gap-1 rounded-md text-[#6c677d]', FOCUS)}><ArrowLeft size={17} />{t('返回创建')}</button>
+      <button type="button" disabled={saving} onClick={onBack} className={cn('flex min-h-11 items-center gap-1 rounded-md text-[#6c677d]', FOCUS)}><ArrowLeft size={17} />{t('返回')}</button>
       <span className="text-sm font-medium text-[#a88ae7]">LightVela</span>
-      <button type="button" onClick={randomize} className={cn('flex min-h-11 items-center gap-1.5 rounded-md text-[#7550dc]', FOCUS)}><Shuffle size={17} />{t('随机')}</button>
+      <button type="button" disabled={saving} onClick={randomize} className={cn('flex min-h-11 items-center gap-1.5 rounded-md text-[#7550dc]', FOCUS)}><Shuffle size={17} />{t('随机')}</button>
     </header>
     <div className="mt-4 grid min-w-0 gap-4 md:grid-cols-[minmax(0,.85fr)_minmax(0,1.15fr)] md:items-center md:gap-8">
     <div className="min-w-0">
@@ -255,7 +255,7 @@ export function AgentDressupStudio({ value, onChange, onBack, onConfirm, classNa
     </div>
     <div className="min-w-0">
     <div className="space-y-3">
-      <fieldset className="flex min-w-0 items-center gap-2">
+      <fieldset disabled={saving} className="flex min-w-0 items-center gap-2">
         <legend className="sr-only">{t('形状')}</legend><span aria-hidden="true" className="w-10 shrink-0 text-xs font-medium text-[#777087] sm:w-12 sm:text-sm">{t('形状')}</span>
         <div className="grid min-w-0 flex-1 grid-cols-5 gap-1">
           {HERMES_DOODLE_SHAPES.map((shape) => <button key={shape} type="button" aria-label={t(DOODLE_SHAPE_LABELS[shape][0])} aria-pressed={current.shape === shape}
@@ -267,7 +267,7 @@ export function AgentDressupStudio({ value, onChange, onBack, onConfirm, classNa
           </button>)}
         </div>
       </fieldset>
-      <fieldset className="flex min-w-0 items-center gap-2">
+      <fieldset disabled={saving} className="flex min-w-0 items-center gap-2">
         <legend className="sr-only">{t('颜色')}</legend><span aria-hidden="true" className="w-10 shrink-0 text-xs font-medium text-[#777087] sm:w-12 sm:text-sm">{t('颜色')}</span>
         <div className="grid min-w-0 flex-1 grid-cols-5 gap-0.5">
           {HERMES_DOODLE_COLORS.map((skin) => <button type="button" key={skin} aria-label={t(DOODLE_COLOR_INFO[skin][0])} aria-pressed={current.skin === skin}
@@ -276,7 +276,7 @@ export function AgentDressupStudio({ value, onChange, onBack, onConfirm, classNa
           </button>)}
         </div>
       </fieldset>
-      <fieldset className="flex min-w-0 items-center gap-2">
+      <fieldset disabled={saving} className="flex min-w-0 items-center gap-2">
         <legend className="sr-only">{t('配饰，可多选')}</legend>
         <span aria-hidden="true" className="w-10 shrink-0 text-xs font-medium text-[#777087] sm:w-12 sm:text-sm">{t('配饰')}<span className="mt-1 block text-[10px] font-normal">{t('可多选')}</span></span>
         <div className="grid min-w-0 flex-1 grid-cols-6 gap-0.5">
@@ -293,7 +293,7 @@ export function AgentDressupStudio({ value, onChange, onBack, onConfirm, classNa
       </fieldset>
     </div>
     <footer className="mt-4 bg-white pb-[max(.5rem,env(safe-area-inset-bottom))] pt-2">
-      <button type="button" onClick={() => onConfirm(current)} className={cn('min-h-12 w-full rounded-xl bg-[#7450dc] px-5 text-sm font-semibold text-white transition-colors hover:bg-[#6440cb]', FOCUS)}>{t('就用这个')}</button>
+      <button type="button" disabled={saving} onClick={() => { if (!saving) onConfirm(current); }} className={cn('min-h-12 w-full rounded-xl bg-[#7450dc] px-5 text-sm font-semibold text-white transition-colors hover:bg-[#6440cb]', FOCUS)}>{saving ? t('保存中...') : t('就用这个')}</button>
     </footer>
     </div>
     </div>
