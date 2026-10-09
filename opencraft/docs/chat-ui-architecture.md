@@ -932,6 +932,10 @@ receipt and disclosure reflow owner; Native keeps Item-keyed inner choices on
 the stable outer work component. Collapsing the outer container may unmount its
 body but must not reset either reasoning or tool-group choices. The header uses a short localized status plus the latest
 nonempty visible document line when active, or first visible line when settled.
+The status label stays readable in full; the document-line preview yields space
+and truncates when the header is narrow or the line is long.
+Embedded LightVela status labels follow the host locale for all supported site
+languages; returned reasoning text stays in the language supplied by the engine.
 `chat-document` owns the shared assistant Markdown grammar and plain-text
 projection: labels omit formatting controls and link destinations, but preserve
 escaped literals and code identifiers. `chat-core` selects the line and keeps

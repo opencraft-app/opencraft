@@ -23,7 +23,7 @@ import {
 } from "@opencraft/chat-render-web";
 import {
   AlertCircle,
-  Bot,
+  Brain,
   Check,
   ChevronRight,
   Copy,
@@ -70,7 +70,7 @@ function ReasoningBlock({ block, presentation, active = block.streaming, collaps
   return (
     <div className="thread-reasoning" data-reasoning-id={block.id} data-reasoning-active={active}>
       <ActivityDisclosure
-        icon={<Bot size={14} />}
+        icon={<Brain size={14} />}
         onOpenChange={setOpen}
         open={open}
         running={active}
