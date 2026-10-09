@@ -19,7 +19,7 @@
 - `superseded_refs`: 旧 `AgentChatPanel` 的连接 UI 不作为当前 OpenCraft 所有者。
 
 ## acceptance
-- 模块加载失败最多自动整页刷新一次；第二次失败显示“对话加载失败”和“重新加载对话”。
+- 模块加载失败最多自动整页刷新一次；后台预加载失败须等用户进入对话页再刷新。第二次失败显示“对话加载失败”和“重新加载对话”。
 - 启动失败按钮整页刷新并保留当前 Bot URL；真正的连接中断继续调用 `reconnect()` 且保留草稿。
 - 聚焦测试、多语言检查、前端 `check`/`test`/`build` 及 OpenCraft 同步检查给出命令证据。
 
@@ -47,7 +47,8 @@
 - `pnpm exec vitest run` 聚焦恢复测试 4/4 通过；`pnpm check` 通过（TypeScript 新增诊断 0）；`pnpm build` 通过。
 - 完整 `pnpm test` 出现多个失败后卡住并中断，未取得全量通过结果。
 - 前端真源提交后已同步 OpenCraft 生成副本；合入最新 master 后补齐马来语译文，OpenCraft 同步检查验证 133 个文件。
-- MR !5132 的远端源提交与本地一致，当前 `can_be_merged`，提交检查仍 pending。
+- CR-MR5132 发现后台预加载失败可打断设置页输入，以及后续 master 更新造成的 `UPSTREAM.json` 冲突；已延迟自动恢复至对话页激活，并合入 master、重新同步来源清单。
+- 最新定向 Vitest 42/44；两条失败与 CR 报告中 master 基线相同。`pnpm check`、`pnpm build`、OpenCraft 同步检查通过；远端状态以再次推送后的 MR 查询为准。
 
 ## risks
 - `sessionStorage` 不可用时禁用自动刷新，保留手动入口，避免循环。
@@ -59,6 +60,7 @@
 
 ## decisions
 - 模块加载失败才自动刷新；连接中断继续 `reconnect()`，因为整页刷新会丢失已输入草稿。
+- 后台预加载失败仅记待恢复状态；用户进入对话页时才执行一次受 `sessionStorage` 限制的刷新，避免打断其他设置页输入。
 - 启动失败与尚未挂载画布的超长等待显示页面重载按钮；已挂载画布的连接异常显示连接重试按钮。
 
 ## scan_scope
@@ -68,4 +70,4 @@
 - 有界 `rg` 命中及聚焦测试输出；不保存敏感浏览器网络记录。
 
 ## handoff
-- 已提交 MR !5132，合入 master 后聚焦测试、`pnpm check`、`pnpm build`、OpenCraft 同步检查通过。远端 CI 仍 pending；合并和发布未获授权。
+- MR !5132 的 CR 主要问题已在本地修复并通过聚焦检查；等待推送后核验远端 CI、合并状态。合并和发布未获授权。
