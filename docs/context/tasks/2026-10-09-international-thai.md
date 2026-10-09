@@ -110,3 +110,15 @@ derived: false
 - unverified: 最终隔离 frontend guard 正在执行；浏览器矩阵、生成层与远端 CI 尚待验证。
 - restore: /tmp/lightvela-thai-master-regression.log；/tmp/lightvela-thai-frontend-guard-complete.log。
 - next_action: 提交补齐文案，再执行机械同步并验收完整构建与浏览器。
+
+## checkpoint — 浏览器发现文档入口与弹窗语言问题
+- stage: 国内/国际两轮构建通过，真实浏览器已复现手机文档导航被公开顶部栏遮挡及搜索弹窗 UI 保留英文。
+- verified: 已启用 Fumadocs 移动导航并预留 60px 顶部空间；泰语搜索结果正确。新弹窗逻辑共享语言目录并按路径提供 locale。
+- unverified: 弹窗组件测试的前三轮因测试 FrameworkProvider/JSX harness 缺失失败，不能据此声称测试通过；正在补齐真实 Provider 和测试 JSX 环境。最终构建与浏览器须覆盖这些新修复。
+- restore: /tmp/lightvela-thai-validation/search-probe.log；/tmp/lightvela-thai-search-chrome-tests.log；/tmp/lightvela-thai-frontend-guard-verified.log。
+- next_action: 修正测试 harness，完成最新代码的门禁与 10 用例真实验收再交付 MR。
+
+## checkpoint — 搜索弹窗本地化完成
+- verified: 真实 FrameworkProvider、真实搜索 Dialog 与默认英文外层环境下，泰语/英文弹窗标签回归通过；3 文件 12/12 测试通过。测试所需 JSX 全局及 ResizeObserver 已在测试局部提供并清理。
+- unverified: 最新搜索 UI 修复还需最终 19 文件 guard、双站构建与真实浏览器复验。
+- next_action: 运行最终完整门禁；通过后更新验收证据、提交分支并创建 MR。

@@ -88,6 +88,7 @@ echo "目的：防止 Pages / EdgeOne 发布矩阵与 Next static export 约束�
 echo "============================================================"
 "$PNPM_BIN" test \
   next-site/__tests__/thai-consumers.test.tsx \
+  next-site/__tests__/search-dialog-locale.test.tsx \
   scripts/thai-home.test.ts \
   src/i18n/__tests__/thai.test.ts \
   src/i18n/__tests__/thai-loading.test.ts \
