@@ -15,7 +15,7 @@ derived: false
 
 ## goal
 Make the existing Human collaboration capability available behind an explicit
-browser show() gate, and verify real Tencent IM connection on localhost.
+browser show() gate, and verify real Tencent IM connection on localhost and the Beijing test site.
 
 ## non_goals
 - No Shanghai or international integration, token forwarding or production operations.
@@ -45,6 +45,7 @@ browser show() gate, and verify real Tencent IM connection on localhost.
 
 ## affected_paths
 - frontend route, local feature gate, lazy panel, account adapter and translations.
+- Beijing service-gateway collaboration CORS origin in its GitOps overlay.
 - shared/vela-collaboration-web and OpenCraft compatibility exports/package lock.
 
 ## required_context
@@ -108,5 +109,22 @@ browser show() gate, and verify real Tencent IM connection on localhost.
 ## handoff
 - Implementation and real localhost IM connection verified. Preview uses Beijing only:
   http://localhost:5198/agents/labs/collaboration/; execute show() to toggle visibility.
-- Full-suite failures remain a release limitation; this task does not deploy production.
+- Full-suite failures remain baseline limitations; no Shanghai production rollout occurred.
 - Local commits: dd89ab8f7 (source) and 6120eb24e (generated console sync).
+
+## Beijing test delivery
+- Integrated origin/master a6335c674; required Malay locale entries added and console regenerated.
+- Integrated frontend check: 166 baseline diagnostics, zero new; 16 focused tests and Beijing build passed.
+- Source MR !5134: https://git.woa.com/wisp/mono2/merge_requests/5134.
+  Merge request was rejected with Review check not passed; master is not merged.
+- Public frontend deployment 8af0b894-7583-43c5-b3d6-090400cfd3e5 uses build
+  beb91234237bc0b43919ec0ed001493df38ea19f; 5363 manifest entries verified,
+  including 672 preserved embedded-workbench paths from the latest concurrent release.
+- Beijing gateway CORS now allows exactly https://lightclaw.pages.dev in addition
+  to the existing localhost origins. UID/resourceVersion guarded config and
+  deployment updates completed; both gateway replicas rolled out successfully.
+- Public browser: hiddenRequests=0; show() loads real IM session HTTP 200,
+  real Tencent IM group history renders; second show() restores hidden state.
+  Evidence: /data/collaboration-lab-evidence-20261009/beijing.json and beijing-connected.png.
+- Focused gateway TestCollaboration cases passed.
+- Public entry: https://lightclaw.pages.dev/agents/labs/collaboration/.

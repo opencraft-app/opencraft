@@ -77,5 +77,6 @@ and allow existing managed Bots to perform a first installation.
 - Source locally committed as 88929a070; generated console locales separately
   committed as 3d6b790f6. The read-only console gate verified all 130 files.
 - Public COS release and installation steps complete. The install entry is enabled
-  in local source; a deployed frontend still requires its own rollout.
+  in the deployed Beijing frontend (deployment 8af0b894-7583-43c5-b3d6-090400cfd3e5).
+- Source MR !5134 is pushed and awaiting required review; master is not merged.
 - Existing Bots were not bulk-installed or restarted. Release credentials were not persisted.
