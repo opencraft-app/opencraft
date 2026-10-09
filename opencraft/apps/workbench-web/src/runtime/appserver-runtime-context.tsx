@@ -2098,6 +2098,7 @@ export function useThreadCatalog(): {
   readonly threads: readonly WorkbenchThread[];
   readonly hasNextPage: boolean;
   readonly fetchNextPage: () => Promise<unknown>;
+  readonly isPending: boolean;
   readonly isFetching: boolean;
 } {
   const runtime = useAppServerRuntime();
@@ -2120,6 +2121,7 @@ export function useThreadCatalog(): {
     threads,
     hasNextPage: query.hasNextPage,
     fetchNextPage: query.fetchNextPage,
+    isPending: query.isPending,
     isFetching: query.isFetching,
   };
 }

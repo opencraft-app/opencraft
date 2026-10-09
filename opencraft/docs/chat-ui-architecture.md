@@ -1380,6 +1380,7 @@ bundles are independent quality gates; a static fixture alone is not accepted.
 内嵌新会话（draft 存在且尚无 submission）由 sessions bridge 显式发布 isDraft；启用右侧预览时保留顶部面板开关，已有会话继续展示标题与重命名。国内控制台内嵌聊天的加载、新会话和已有会话均无宿主圆角外框，内嵌主内容表面无阴影；保留标题重命名入口与输入框边界。预览面板默认关闭，网页标签随会话 scope 切换；文件只读预览不展示目录树、搜索或编辑。
 
 内嵌会话列表由宿主分页呈现。OpenCraft 的 Thread catalog 仍以 30 条为一个后端分页单元，sessions bridge 将当前已取会话和 `hasMoreSessions` 一并发布，并通过 `loadMoreConversations()` 显式读取下一页；宿主初始展示最近 20 条，每次「查看更多」最多增加 20 条，「收起」逐批撤回。加载失败时不推进宿主的可见数量。
+首次连接的 Thread catalog 在查询尚未开始或尚未取得结果时也报告加载中；空列表只有在首次读取结束后才能作为已确认的空状态投影。宿主切换 Bot 时不显示短暂的「默认对话」或可见的加载文案，待目标 Bot 的会话结果到达后再呈现列表或空列表入口。
 
 内嵌右侧预览面板的入口、标签列表/空态、缩放与关闭提示、宽度调整无障碍标签以及不可用状态均通过稳定消息 ID 跟随宿主语言；网页自身正文由目标站点控制，不由控制台翻译。
 
