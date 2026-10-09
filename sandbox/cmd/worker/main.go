@@ -34,6 +34,7 @@ var (
 	defaultBundleSyncInterval  = 15 * time.Second
 	defaultSKURolloutInterval  = 5 * time.Second
 	defaultModifyInterval      = 10 * time.Second
+	defaultPoolSupplyInterval  = 5 * time.Minute
 	defaultOrphanSGTTL         = 100 * time.Second
 	defaultCreateVerifyRetries = 3
 	defaultCreateVerifyBackoff = 5 * time.Second
@@ -215,6 +216,7 @@ func main() {
 	skuRolloutInterval := flag.Duration("sku-rollout-interval", defaultSKURolloutInterval, "interval for serialized SKU rollout reconciliation; 0 to disable")
 	modifyInterval := flag.Duration("modify-interval", defaultModifyInterval, "interval for same-SP instance upgrade reconciliation; 0 to disable")
 	modifyBatch := flag.Int("modify-batch", 20, "max modify operations advanced per sweep")
+	poolSupplyInterval := flag.Duration("cvm-inventory-interval", defaultPoolSupplyInterval, "interval for CVM pool supply observation; 0 to disable")
 	flag.Parse()
 
 	if *shardTotal > 0 && (*shardIndex < 0 || *shardIndex >= *shardTotal) {
@@ -315,6 +317,19 @@ func main() {
 		emitWorkerEvent(baseCtx, "sandbox.worker.loop_skipped", "当前 worker 不是 leader shard，因此跳过 sku rollout loop。", attribute.String("loop", "sku_rollout"), attribute.Int("shard_index", *shardIndex), attribute.Int("shard_total", *shardTotal))
 	}
 
+	if shouldRunPoolSupplyLoop(*shardTotal, *shardIndex, *poolSupplyInterval) {
+		inventoryClient, _ := cp.(provider.CVMInventoryClient)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			runPoolSupplyLoop(baseCtx, svc, inventoryClient, os.Getenv("TENCENT_INSTANCE_TYPE"), *poolSupplyInterval)
+		}()
+	} else if *poolSupplyInterval <= 0 {
+		emitWorkerEvent(baseCtx, "sandbox.worker.loop_disabled", "CVM 库存同步 loop 已被显式关闭。", attribute.String("loop", "cvm_inventory"))
+	} else {
+		emitWorkerEvent(baseCtx, "sandbox.worker.loop_skipped", "当前 worker 不是 leader shard，因此跳过 CVM 库存同步。", attribute.String("loop", "cvm_inventory"), attribute.Int("shard_index", *shardIndex), attribute.Int("shard_total", *shardTotal))
+	}
+
 	// 升配账本按 operation id 分片，所以每个 worker 只推进自己分片的操作。
 	if *modifyInterval > 0 {
 		wg.Add(1)
@@ -337,6 +352,53 @@ func main() {
 	}
 
 	wg.Wait()
+}
+
+func shouldRunPoolSupplyLoop(shardTotal, shardIndex int, interval time.Duration) bool {
+	return interval > 0 && (shardTotal <= 0 || shardIndex == 0)
+}
+
+func runPoolSupplyLoop(ctx context.Context, svc *service.Service, client provider.CVMInventoryClient, fallbackType string, interval time.Duration) {
+	emitWorkerEvent(ctx, "sandbox.worker.loop_started", "CVM 库存同步 loop 已启动。", attribute.String("loop", "cvm_inventory"), attribute.String("interval", interval.String()))
+	for {
+		report, err := svc.SyncPoolSupplyOverview(ctx, client, fallbackType)
+		if err != nil {
+			emitWorkerEvent(ctx, "sandbox.worker.loop_failed", "CVM 库存同步写入失败。", attribute.String("loop", "cvm_inventory"), attribute.String("error", err.Error()))
+		} else {
+			for _, region := range report.Regions {
+				attrs := []attribute.KeyValue{
+					attribute.String("region", region.Region),
+					attribute.Int("batches_planned", region.BatchesPlanned),
+					attribute.Int("batches_succeeded", region.BatchesSucceeded),
+					attribute.Int("matched", region.Matched),
+					attribute.Int("missing", region.Missing),
+					attribute.Int("missing_rows", region.MissingRows),
+					attribute.Int("invalid_quotas", region.InvalidQuotas),
+					attribute.Int("duplicate_rows", region.DuplicateRows),
+					attribute.StringSlice("request_ids", region.RequestIDs),
+					attribute.String("duration", region.Duration.String()),
+				}
+				if region.UpdatedTime != nil {
+					attrs = append(attrs, attribute.String("updated_time", region.UpdatedTime.Format(time.RFC3339Nano)))
+				}
+				if region.Success {
+					emitWorkerEvent(ctx, "sandbox.cvm_inventory.region_succeeded", "CVM 库存地域同步完成。", attrs...)
+				} else {
+					attrs = append(attrs, attribute.String("error", region.Error))
+					emitWorkerEvent(ctx, "sandbox.cvm_inventory.region_failed", "CVM 库存地域同步失败，保留旧库存。", attrs...)
+				}
+			}
+			if report.InvalidPools > 0 {
+				emitWorkerEvent(ctx, "sandbox.cvm_inventory.invalid_pools", "部分资源池缺少有效的可用区或机型。", attribute.Int("invalid_pool_count", report.InvalidPools), attribute.Int("invalid_zone_count", report.InvalidZones), attribute.Int("invalid_instance_type_count", report.InvalidTypes))
+			}
+		}
+		select {
+		case <-time.After(interval):
+		case <-ctx.Done():
+			emitWorkerEvent(ctx, "sandbox.worker.loop_stopped", "CVM 库存同步 loop 已停止。", attribute.String("loop", "cvm_inventory"))
+			return
+		}
+	}
 }
 
 func runRefillLoop(ctx context.Context, svc *service.Service, cp provider.CloudProvider, metrics *observability.WorkerMetrics, poolID string, count int, interval time.Duration, concurrency int) {
