@@ -1,6 +1,6 @@
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DEFAULT_HERMES_APPEARANCE } from "@/lib/hermes-appearance";
+import { DEFAULT_HERMES_APPEARANCE, getLegacyHermesAppearance } from "@/lib/hermes-appearance";
 import { useBuddyProfile } from "../agent-buddy-profile";
 import { buildHermesSoulContentReadCommand } from "../agent-buddy-command";
 import { buildProfileMetaReadCommand } from "@/lib/hermes-profile-meta";
@@ -39,6 +39,33 @@ describe("Buddy profile isolation", () => {
     const refreshed = renderHook(() => useBuddyProfile({ botId: 'appearance-without-soul', profileId: 'worker', fallbackName: 'Fallback', exec }));
     await waitFor(() => expect(refreshed.result.current.profile.appearance).toEqual(appearance));
     expect(refreshed.result.current.profile.name).toBe('My Agent');
+  });
+
+  it("assigns stable new looks to legacy profiles without completing onboarding", async () => {
+    const exec = vi.fn<SetupExec>().mockResolvedValue(ok("Exists: no"));
+    const props = { botId: "legacy-empty", profileId: "worker", fallbackName: "Legacy", exec };
+    const { result, unmount } = renderHook(() => useBuddyProfile(props));
+    const expected = result.current.profile.appearance;
+    expect(expected?.style).toBe("doodle");
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.profile.appearance).toEqual(expected);
+    expect(result.current.hasBuddyConfig).toBe(false);
+    unmount();
+    const refreshed = renderHook(() => useBuddyProfile(props));
+    expect(refreshed.result.current.profile.appearance).toEqual(expected);
+    await waitFor(() => expect(refreshed.result.current.loading).toBe(false));
+    expect(exec.mock.calls.every((call) => [buildProfileMetaReadCommand("worker"), buildHermesSoulContentReadCommand("worker")].includes(call[1]))).toBe(true);
+  });
+
+  it("replaces old geometric metadata while keeping the configured name", async () => {
+    const exec = vi.fn<SetupExec>().mockImplementation(async (_bot, command) => ok(
+      command.includes("read_profile_meta") ? "__LV_META__" + JSON.stringify({ displayName: "Legacy name", ui_meta: { lightvela_avatar: "circle:#fff" } }) : "Exists: no",
+    ));
+    const { result } = renderHook(() => useBuddyProfile({ botId: "legacy-geometric", profileId: "worker", fallbackName: "Fallback", exec }));
+    await waitFor(() => expect(result.current.profile.name).toBe("Legacy name"));
+    expect(result.current.profile.appearance?.style).toBe("doodle");
+    expect(result.current.hasBuddyConfig).toBe(true);
+    expect(new Set(Array.from({ length: 30 }, (_, index) => JSON.stringify(getLegacyHermesAppearance(`bot-${index}`)))).size).toBe(7);
   });
 
   it("accepts main only when explicitly provided", async () => {

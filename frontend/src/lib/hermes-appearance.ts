@@ -195,3 +195,30 @@ export function toggleHermesDoodad(value: HermesAppearance, id: HermesDoodad): H
     : [...selected.filter((part) => slot(part) !== slot(id)), id];
   return { ...next, doodads: HERMES_DOODADS.filter((part) => doodads.includes(part)) };
 }
+
+/** Approved homepage cast, also used as the bounded legacy avatar pool. */
+export const HERMES_HOMEPAGE_MASCOTS = ['bean-lilac', 'round-coral', 'square-mint', 'drop-sky', 'cloud-butter', 'round-peach', 'bean-periwinkle'] as const;
+export type HermesHomepageMascot = typeof HERMES_HOMEPAGE_MASCOTS[number];
+const LEGACY_LOOKS: readonly { shape: HermesDoodleShape; skin: HermesSkin; doodads: HermesDoodad[] }[] = [
+  { shape: 'bean', skin: 'lavender', doodads: ['headphones', 'record'] },
+  { shape: 'round', skin: 'peach', doodads: ['wizard-hat', 'cape'] },
+  { shape: 'square', skin: 'mint', doodads: ['bucket-hat', 'book'] },
+  { shape: 'drop', skin: 'sky', doodads: ['star-glasses'] },
+  { shape: 'cloud', skin: 'butter', doodads: ['goggles', 'scarf'] },
+  { shape: 'round', skin: 'peach', doodads: ['camera'] },
+  { shape: 'bean', skin: 'lavender', doodads: ['beanie'] },
+];
+function legacyLookIndex(identity: string): number {
+  let seed = 2166136261;
+  for (const character of identity) seed = Math.imul(seed ^ character.charCodeAt(0), 16777619) >>> 0;
+  return seed % HERMES_HOMEPAGE_MASCOTS.length;
+}
+/** Stable random assignment, identical across refreshes, devices and regions. */
+export function getLegacyHermesMascot(identity: string): HermesHomepageMascot {
+  return HERMES_HOMEPAGE_MASCOTS[legacyLookIndex(identity)]!;
+}
+/** Matching editable starting look; viewing old Bots never writes remote metadata. */
+export function getLegacyHermesAppearance(identity: string): HermesAppearance {
+  const look = LEGACY_LOOKS[legacyLookIndex(identity)]!;
+  return { ...DEFAULT_HERMES_APPEARANCE, ...look, doodads: [...look.doodads] };
+}

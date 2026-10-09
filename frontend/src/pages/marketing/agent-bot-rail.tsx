@@ -5,9 +5,10 @@ import type { OpenClawBot } from "@/contexts/agent-context";
 import { useT } from "@/i18n/t";
 import { AGENT_SECTION_PATH_BY_ID, getAgentBotSectionHref } from "@/lib/agent-routes";
 import { cn } from "@/lib/utils";
-import { GeometricAvatar } from "@/pages/marketing/agent-avatar-shapes";
+import { getLegacyHermesMascot } from "@/lib/hermes-appearance";
 import { getBotStatusColor, getBotStatusLabel } from "@/pages/marketing/agent-bot-status";
 import { useBuddyProfile } from "@/pages/marketing/agent-buddy-profile";
+import { AgentHomepageAvatar } from "@/pages/marketing/agent-template-avatar";
 import { HermesAppearanceAvatar } from "@/pages/marketing/agent-dressup-studio";
 import type { SetupExec } from "@/pages/marketing/agent-buddy-setup-runner";
 import { resolveAgentDisplayName } from "@/pages/marketing/agent-provider-locale";
@@ -24,33 +25,22 @@ type AgentBotRailProps = {
   execDebugCommand: SetupExec;
   onSelect: (botId: string) => void;
   onCreate: () => void;
+  onEditAvatar?: () => void;
   manageActions?: ReactNode;
 };
 
-const avatarColor = (id: string) => {
-  let hash = 0;
-  for (const char of id) hash = (hash * 31 + char.charCodeAt(0)) | 0;
-  return `hsl(${Math.abs(hash) % 360} 38% 48%)`;
-};
-
-function AgentBotRailItem({ bot, active, mobile, restarting, execDebugCommand, onSelect }: { bot: OpenClawBot; active: boolean; mobile: boolean; restarting: boolean; execDebugCommand: SetupExec; onSelect: (botId: string) => void }) {
+function AgentBotRailItem({ bot, active, mobile, restarting, execDebugCommand, onSelect, onEditAvatar }: { bot: OpenClawBot; active: boolean; mobile: boolean; restarting: boolean; execDebugCommand: SetupExec; onSelect: (botId: string) => void; onEditAvatar?: () => void }) {
   const t = useT();
   const fallbackName = resolveAgentDisplayName(bot.name, t);
-  const profile = useBuddyProfile({ botId: bot.status === "running" ? bot.id : undefined, profileId: bot.profileId, fallbackName, exec: execDebugCommand });
+  const profile = useBuddyProfile({ botId: bot.id, readEnabled: bot.status === "running", profileId: bot.profileId, fallbackName, exec: execDebugCommand, avatarIdentity: JSON.stringify([bot.id, bot.profileId ?? ""]) });
   const name = profile.hasBuddyConfig ? profile.profile.name : fallbackName;
-  const accentColor = profile.hasBuddyConfig ? profile.profile.color : avatarColor(bot.id);
   const statusLabel = getBotStatusLabel(bot.status, restarting);
   const avatar = (
     <span className="lv-agent-bot-rail-avatar-wrap">
-      {profile.profile.appearance ? (
-        <HermesAppearanceAvatar appearance={profile.profile.appearance} size={34} portrait />
-      ) : profile.hasBuddyConfig ? (
-        <GeometricAvatar shapeId={profile.profile.shapeId} color={profile.profile.color} size={34} />
-      ) : (
-        <span className="lv-agent-bot-rail-avatar" style={{ backgroundColor: avatarColor(bot.id) }} aria-hidden="true">
-          {Array.from(name)[0] ?? "B"}
-        </span>
-      )}
+      {profile.profile.appearance && !profile.profile.legacyMascot
+        ? <HermesAppearanceAvatar appearance={profile.profile.appearance} size={34} portrait />
+        : <AgentHomepageAvatar mascot={profile.profile.legacyMascot ?? getLegacyHermesMascot(JSON.stringify([bot.id, bot.profileId ?? ""]))} size={34} />}
+
       <span
         className={cn("lv-agent-avatar-status", !restarting && ["provisioning", "deleting", "draft"].includes(bot.status) && "lv-agent-avatar-status--blinking")}
         aria-hidden="true"
@@ -58,15 +48,15 @@ function AgentBotRailItem({ bot, active, mobile, restarting, execDebugCommand, o
       />
     </span>
   );
-  const label = `${t("切换到")} ${name}，${statusLabel}`;
-  const buttonClassName = cn("lv-agent-bot-rail-button", active && "is-active", profile.profile.appearance && "!rounded-full");
+  const label = `${active ? t("更换头像") : t("切换到")} ${name}，${statusLabel}`;
+  const buttonClassName = cn("lv-agent-bot-rail-button", active && "is-active", "!rounded-full");
   return (
       <ModelActionTooltip content={`${name} · ${statusLabel}`} side={mobile ? "auto" : "right"} focusable={false}>
         {active ? (
-          <button type="button" className={buttonClassName} aria-label={label} aria-current="true"
+          <button type="button" className={buttonClassName} aria-label={label} aria-current="true" onClick={onEditAvatar} disabled={!onEditAvatar}
             style={!mobile ? {
-              backgroundColor: profile.profile.appearance ? "#f4f0fa" : `color-mix(in srgb, ${accentColor} 8%, white)`,
-              boxShadow: profile.profile.appearance ? "inset 0 0 0 2px #7953de" : `inset 0 0 0 1px color-mix(in srgb, ${accentColor} 24%, white)`,
+              backgroundColor: "#f4f0fa",
+              boxShadow: "inset 0 0 0 2px #7953de",
             } : undefined}>
             {avatar}
           </button>
@@ -85,9 +75,9 @@ function AgentBotRailItem({ bot, active, mobile, restarting, execDebugCommand, o
   );
 }
 
-export function AgentBotRail({ bots, activeBotId, mobile = false, canCreate, createLimitMessage, profileRevision = 0, restartingBotIds, execDebugCommand, onSelect, onCreate, manageActions }: AgentBotRailProps) {
+export function AgentBotRail({ bots, activeBotId, mobile = false, canCreate, createLimitMessage, profileRevision = 0, restartingBotIds, execDebugCommand, onSelect, onCreate, onEditAvatar, manageActions }: AgentBotRailProps) {
   const t = useT();
-  const items = bots.map((bot) => <AgentBotRailItem key={`${bot.id}:${profileRevision}`} bot={bot} active={bot.id === activeBotId} mobile={mobile} restarting={restartingBotIds.has(bot.id)} execDebugCommand={execDebugCommand} onSelect={onSelect} />);
+  const items = bots.map((bot) => <AgentBotRailItem key={`${bot.id}:${profileRevision}`} bot={bot} active={bot.id === activeBotId} mobile={mobile} restarting={restartingBotIds.has(bot.id)} execDebugCommand={execDebugCommand} onSelect={onSelect} onEditAvatar={onEditAvatar} />);
   const create = (
     <ModelActionTooltip content={createLimitMessage || t("新建 Bot")} side={mobile ? "auto" : "right"}>
       <button type="button" className="lv-agent-bot-rail-button lv-agent-bot-rail-create" aria-label={t("新建 Bot")} disabled={!canCreate} onClick={onCreate}>

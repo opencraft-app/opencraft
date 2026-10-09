@@ -227,3 +227,20 @@ derived: false
 - 用户要求推荐模板更换为首页批准的形象，删除「再点一次，就能取下」。沿用已读 frontend/site must_read、frontend/AGENTS、DESIGN。有界检索定位 TemplateRecommendations 与 TemplateDetailView，复用已有 peek-friends WebP，并通过共享 AgentTemplateAvatar 保持卡片及详情一致。不改用户自选外观和模板配置执行逻辑。
 - 已核对 square-mint 原图，保留头像裁切中的脸与配饰。当前进行模板入口回归、前端检查、构建和真实弹窗截图。
 - 最终检查点：43项回归串行通过，check/build退出0，0新增类型问题；OpenCraft130文件校验通过，无需生成同步提交。初次2个订阅回归期待自动跳转，更新为点击开始旅程；构建并发导致的5s超时通过构建结束后串行复跑解决。真实截图 /tmp/lightvela-dressup-validation/template-homepage-avatars.png；保留高级/必做弹窗规则，未执行实际新Bot创建或部署。
+
+## 双站多语言与存量头像检查点（2026-10-09）
+- 用户要求国内/国际和所有语言补齐，并将存量旧头像随机替换。实际读取 frontend service/site routing must_read、frontend/AGENTS、DESIGN 和 frontend-runtime-openspec-i18n 邻接卡；检查 agent-buddy-profile-isolation 邻居。
+- 单一读取兼容层按 Bot/profile 身份固定随机分配新版外观，保留已保存 doodle，不修改远端配置，不影响 hasBuddyConfig/引导判据；侧栏加载中和停止态同样使用新形象。
+- 换装、配饰及涂鸦由二分语言切换到真实 useT 路由字典；试玩页面也本地化。补齐所有注册语言，zh-SG 复用 zh-CN。删除遗漏的步骤内取下提示。
+- 65 项回归通过，包括存量刷新稳定、旧几何替换、保存外观保留、Bot 隔离和七种语言真实字典。首次新测试用字符串 read 判定只读命令不准确，改成真实命令精确比对后通过。默认权限阻止 check 写生成缓存，正在以批准的工作树权限重跑。
+- 浏览器现有绑定已变成非 HTTP 错误页，安全策略拒绝 reload；未绕过策略或据此宣称新截图验证。正在运行国内/国际构建与类型门禁，尚未提交本轮变更。
+
+- 用户补充要求发布后现网存量头像限定为封面中间七个形象；实现收窄为 HERMES_HOMEPAGE_MASCOTS 七项固定池，并直接复用原始 WebP。侧栏、单 Bot 头部与资料展示共用 legacyMascot；进入编辑时提供对应可编辑外观，用户已保存的 doodle 优先，未自动修改生产或远端数据。素材七项存在性已核对。前一轮国内构建为落实新要求主动停止，最终源码需要重新构建。
+
+- 用户指出总览隐藏并要求左侧头像可换装。已复用 AgentBotProfileEditor/ProfileEditDialog 的真实写入链路，为桌面、移动、多Bot和单Bot当前头像添加直接入口，其他Bot仍正常切换；更换头像确认直接保存，成功刷新avatar revision、metadata、Bot列表并关闭，读写期间保留弹窗。补充直接保存不更改名称/描述的回归。现网公开agents页面抓取超时，未宣称线上登录态已经核验。国内前一版构建退出0；入口新增后最终再次验证双站构建。
+
+- 验证检查点：直接头像入口改变当前项的可访问名称，国际回归原断言仍期待切换，已按当前/其他项分别更新；新入口使 lazy ProfileEditDialog 真正加载，旧测试完整替代 overview 模块漏了该导出，改为 partial mock 保留真实换装。avatar-only 直接保存回归与其余80项通过，正在复跑漏导出修正。停止态读取现在用 readEnabled 控制，保留 bot/profile 身份与自选头像缓存。
+
+- 最新证据：7 文件 81 项回归通过；pnpm check 退出0（166 current / 171 baseline / 0 new），3141条各必填字典零缺失，繁简一致。当前 final build:cn 运行中，随后串行 build:global。字体子集读取发布字典，新文案增加所需字形；本轮保留对应生成字体，next-env.d.ts 的构建路径更改将在交接前恢复。
+
+- 最终交接检查点：81项聚焦回归通过，新增失败出口后该文件17项独立复跑通过（82项唯一回归）；最终 pnpm check 退出0，0新增类型错误。build:cn/build:global 均退出0；文档校验0错误/0断链。保存失败关闭按钮避免被弹窗关闭按钮隐藏规则误伤，失败不刷新或误报成功。准备提交 frontend 真源，再按规定生成 OpenCraft 字典同步后续提交；未发布或合并。

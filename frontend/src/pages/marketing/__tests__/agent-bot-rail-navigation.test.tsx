@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { OpenClawBot } from "@/contexts/agent-context";
+import { getLegacyHermesMascot } from "@/lib/hermes-appearance";
 import { AgentBotRail } from "@/pages/marketing/agent-bot-rail";
 
 vi.mock("@/i18n/t", () => ({ t: (value: string) => value, useT: () => (value: string) => value }));
@@ -36,11 +37,19 @@ afterEach(cleanup);
 describe("Agent Bot rail navigation", () => {
   it("uses client navigation for a normal click while retaining a real href", () => {
     const onSelect = vi.fn();
+    const onEditAvatar = vi.fn();
     render(<AgentBotRail bots={[bot("first"), bot("second")]} activeBotId="first"
       canCreate createLimitMessage="" restartingBotIds={new Set()} execDebugCommand={vi.fn()}
-      onSelect={onSelect} onCreate={vi.fn()} />);
+      onSelect={onSelect} onCreate={vi.fn()} onEditAvatar={onEditAvatar} />);
 
+    fireEvent.click(screen.getByRole("button", { name: /更换头像 first/ }));
+    expect(onEditAvatar).toHaveBeenCalledOnce();
+    expect(onSelect).not.toHaveBeenCalled();
     const link = screen.getByRole("link", { name: /second/ });
+    const firstAvatar = screen.getByRole("button", { name: /更换头像 first/ }).querySelector("img");
+    expect(firstAvatar?.getAttribute("src")).toContain(`/peek-friends/${getLegacyHermesMascot(JSON.stringify(["first", "first"]))}.webp`);
+    expect(link.querySelector("img")?.getAttribute("src")).toContain(`/peek-friends/${getLegacyHermesMascot(JSON.stringify(["second", "second"]))}.webp`);
+
     expect(link).toHaveAttribute("href", "/agents/chat/?bot=second");
 
     const normalClick = new MouseEvent("click", { bubbles: true, cancelable: true });

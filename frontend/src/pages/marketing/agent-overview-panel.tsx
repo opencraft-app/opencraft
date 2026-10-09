@@ -30,6 +30,7 @@ import { cn } from "@/lib/utils";
 import {
   GeometricAvatar,
 } from "@/pages/marketing/agent-avatar-shapes";
+import { AgentHomepageAvatar } from '@/pages/marketing/agent-template-avatar';
 import { DEFAULT_HERMES_APPEARANCE, type HermesAppearance } from '@/lib/hermes-appearance';
 import { AgentDressupStudio, HermesAppearanceAvatar } from '@/pages/marketing/agent-dressup-studio';
 import { CreatingLoadingView } from "@/pages/marketing/agent-creating-loading";
@@ -333,12 +334,14 @@ export const ProfileEditDialog = ({
   onSave,
   errorMessage,
   saving = false,
+  avatarOnly = false,
 }: {
   profile: BuddyProfile;
   onClose: () => void;
   onSave: (next: BuddyProfile) => void;
   errorMessage?: string | null;
   saving?: boolean;
+  avatarOnly?: boolean;
 }) => {
   const t = useT();
   const zh = useCurrentLocale().startsWith('zh');
@@ -346,18 +349,20 @@ export const ProfileEditDialog = ({
   const [description, setDescription] = useState(profile.description);
   const [appearance, setAppearance] = useState<HermesAppearance | null>(profile.appearance ?? null);
   const [draftAppearance, setDraftAppearance] = useState<HermesAppearance>(profile.appearance ?? DEFAULT_HERMES_APPEARANCE);
-  const [dressupOpen, setDressupOpen] = useState(false);
+  const [dressupOpen, setDressupOpen] = useState(avatarOnly);
 
   const canSave = name.trim().length > 0 && !saving;
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="max-h-[95dvh] overflow-y-auto rounded-[0.875rem] md:w-[35rem]">
+        {dressupOpen && <DialogTitle className="sr-only">{t("修改资料")}</DialogTitle>}
+        {dressupOpen && errorMessage && <p role="alert" className="text-sm text-red-700">{errorMessage}</p>}
         {dressupOpen ? <AgentDressupStudio
           value={draftAppearance}
           onChange={setDraftAppearance}
-          onBack={() => setDressupOpen(false)}
-          onConfirm={(next) => { setAppearance(next); setDressupOpen(false); }}
+          onBack={() => avatarOnly ? onClose() : setDressupOpen(false)}
+          onConfirm={(next) => { if (avatarOnly) onSave({ ...profile, appearance: next, legacyMascot: undefined }); else { setAppearance(next); setDressupOpen(false); } }}
           className="border-0 shadow-none"
         /> : <>
         <div className="pr-6">
@@ -450,7 +455,9 @@ export const BuddyProfileAvatar = ({ profile, hasCustomAvatar, fallbackAvatarUrl
   hasCustomAvatar: boolean;
   fallbackAvatarUrl: string;
   size?: number;
-}) => profile.appearance ? (
+}) => profile.legacyMascot ? (
+  <AgentHomepageAvatar mascot={profile.legacyMascot} size={size} />
+) : profile.appearance ? (
   <HermesAppearanceAvatar appearance={profile.appearance} size={size} className="shrink-0" />
 ) : (hasCustomAvatar || !fallbackAvatarUrl ? (
   <GeometricAvatar shapeId={profile.shapeId} color={profile.color} size={size} className="shrink-0" />

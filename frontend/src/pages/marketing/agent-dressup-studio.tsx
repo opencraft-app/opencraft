@@ -4,7 +4,7 @@ import { ArrowLeft, Check, RefreshCw, Shuffle, Pencil, Ban } from 'lucide-react'
 import { motion, useReducedMotion } from 'framer-motion';
 import { useEffect, useRef, useState } from 'react';
 
-import { useCurrentLocale } from '@/i18n/t';
+import { useCurrentLocale, useT } from '@/i18n/t';
 import { DOODLE_COLOR_INFO, DOODLE_PART_LABELS, DOODLE_SHAPE_LABELS } from '@/components/site/hermes-doodle-avatar';
 import { HermesPlushAvatar, PLUSH_ROOT, PLUSH_OUTFITS } from '@/components/site/hermes-plush-avatar';
 import {
@@ -142,7 +142,7 @@ const DRESSUP_STEPS = ['base-color', 'shape', 'color', 'extras'] as const;
 export function HermesStepDressup({ appearance, onChange, zh }: {
   appearance: HermesAppearance; onChange: (next: HermesAppearance) => void; zh: boolean;
 }) {
-  const label = (cnLabel: string, enLabel: string) => zh ? cnLabel : enLabel;
+  const t = useT();
   const current = asDoodleAppearance(appearance);
   const parts = current.doodads ?? [];
   const [step, setStep] = useState<DressupStep>('base-color');
@@ -163,25 +163,25 @@ export function HermesStepDressup({ appearance, onChange, zh }: {
 
   const stepIndex = DRESSUP_STEPS.indexOf(step as typeof DRESSUP_STEPS[number]);
   const titles: Record<DressupStep, string> = {
-    'base-color': label('先选个颜色', 'Pick a colour'), shape: label('选个形状', 'Pick a shape'), color: label('再选个颜色', 'Pick a colour'),
-    extras: label('最后加点配饰', 'Add some extras'), done: label('我的 Hermes', 'My Hermes'),
+    'base-color': t('先选个颜色'), shape: t('选个形状'), color: t('再选个颜色'),
+    extras: t('最后加点配饰'), done: t('我的 Hermes'),
   };
   const back: DressupStep | null = step === 'shape' ? 'base-color' : step === 'color' ? 'shape' : step === 'extras' ? 'color' : null;
   const shuffle = () => onChange(rollHermesLook(current));
-  return <section aria-label={label('我的 Hermes', 'My Hermes')} className="flex flex-col items-center py-2">
+  return <section aria-label={t('我的 Hermes')} className="flex flex-col items-center py-2">
     <div className="relative flex w-full justify-center">
-      {back && <button type="button" onClick={() => setStep(back)} className={cn('absolute left-0 top-0 flex min-h-11 items-center gap-1 rounded-md text-xs text-[#777184]', FOCUS)}><ArrowLeft size={14} />{label('上一步', 'Back')}</button>}
+      {back && <button type="button" onClick={() => setStep(back)} className={cn('absolute left-0 top-0 flex min-h-11 items-center gap-1 rounded-md text-xs text-[#777184]', FOCUS)}><ArrowLeft size={14} />{t('上一步')}</button>}
       <div className="rounded-full bg-[#f8f5ff]"><HermesAppearanceAvatar appearance={current} size={step === 'done' ? 196 : 180} alive /></div>
     </div>
     <h3 ref={heading} tabIndex={-1} className="mt-2 text-sm font-semibold text-[#28223a] outline-none">{titles[step]}</h3>
     {step === 'done'
-      ? <p className="mt-1 text-xs text-[#777184]">{label('就是它了，还可以再换。', 'That is the one. You can still change it.')}</p>
-      : <ol aria-label={label(`第 ${stepIndex + 1} 步，共 4 步`, `Step ${stepIndex + 1} of 4`)} className="mt-2 flex gap-1.5">
+      ? <p className="mt-1 text-xs text-[#777184]">{t('就是它了，还可以再换。')}</p>
+      : <ol aria-label={t('第 {{step}} 步，共 4 步', { step: stepIndex + 1 })} className="mt-2 flex gap-1.5">
         {DRESSUP_STEPS.map((id, index) => <li key={id} aria-hidden="true" className={cn('h-1.5 rounded-full transition-all', index === stepIndex ? 'w-5 bg-[#7450d9]' : index < stepIndex ? 'w-1.5 bg-[#b9a4ee]' : 'w-1.5 bg-[#e3ddee]')} />)}
       </ol>}
 
-    {step === 'shape' && <div role="group" aria-label={label('形状', 'Shape')} className="mt-3 grid w-full grid-cols-5 gap-1">
-      {HERMES_DOODLE_SHAPES.map((shape) => <button key={shape} type="button" aria-label={DOODLE_SHAPE_LABELS[shape][zh ? 0 : 1]} aria-pressed={current.shape === shape}
+    {step === 'shape' && <div role="group" aria-label={t('形状')} className="mt-3 grid w-full grid-cols-5 gap-1">
+      {HERMES_DOODLE_SHAPES.map((shape) => <button key={shape} type="button" aria-label={t(DOODLE_SHAPE_LABELS[shape][0])} aria-pressed={current.shape === shape}
         onClick={() => { onChange({ ...current, shape }); setStep('color'); }} className={cn('group flex min-w-0 flex-col items-center rounded-md pb-1 text-xs text-[#777087]', FOCUS)}>
         <span className={cn('flex aspect-square w-full max-w-[78px] items-center justify-center rounded-full transition-colors group-hover:bg-[#f8f5ff]', current.shape === shape && 'bg-[#f4efff]')}>
           <HermesPlushAvatar appearance={{ ...current, shape, doodads: [], expression: 'open', drawing: [] }} size={76} className="!size-full" />
@@ -189,33 +189,32 @@ export function HermesStepDressup({ appearance, onChange, zh }: {
       </button>)}
     </div>}
 
-    {(step === 'base-color' || step === 'color') && <div role="group" aria-label={label('颜色', 'Colour')} className="mt-3 grid w-full grid-cols-5 gap-0.5">
-      {HERMES_DOODLE_COLORS.map((skin) => <button type="button" key={skin} aria-label={DOODLE_COLOR_INFO[skin][zh ? 0 : 1]} aria-pressed={current.skin === skin}
+    {(step === 'base-color' || step === 'color') && <div role="group" aria-label={t('颜色')} className="mt-3 grid w-full grid-cols-5 gap-0.5">
+      {HERMES_DOODLE_COLORS.map((skin) => <button type="button" key={skin} aria-label={t(DOODLE_COLOR_INFO[skin][0])} aria-pressed={current.skin === skin}
         onClick={() => { onChange({ ...current, skin }); setStep(step === 'base-color' ? 'shape' : 'extras'); }} className={cn('flex min-h-12 min-w-0 items-center justify-center rounded-full', FOCUS)}>
         <span className={cn('size-8 rounded-full', current.skin === skin && 'ring-2 ring-[#7953de] ring-offset-2')} style={{ backgroundColor: DOODLE_COLOR_INFO[skin][2] }} />
       </button>)}
     </div>}
 
     {step === 'extras' && <>
-      <div role="group" aria-label={label('配饰，可多选', 'Accessories, select multiple')} className="mt-3 grid w-full grid-cols-6 gap-0.5">
-        {HERMES_PLAYFUL_DOODADS.map((id) => <button key={id} type="button" aria-label={DOODLE_PART_LABELS[id][zh ? 0 : 1]} aria-pressed={parts.includes(id)}
+      <div role="group" aria-label={t('配饰，可多选')} className="mt-3 grid w-full grid-cols-6 gap-0.5">
+        {HERMES_PLAYFUL_DOODADS.map((id) => <button key={id} type="button" aria-label={t(DOODLE_PART_LABELS[id][0])} aria-pressed={parts.includes(id)}
           onClick={() => onChange(toggleHermesDoodad(current, id))} className={cn('relative flex aspect-square min-h-11 min-w-0 items-center justify-center rounded-full p-2 transition-colors hover:bg-[#f8f5ff]', parts.includes(id) && 'bg-[#f5f0ff]', FOCUS)}>
           <img src={`${PLUSH_ROOT}/${PLUSH_OUTFITS[id]}.webp`} alt="" draggable={false} className="pointer-events-none max-h-9 w-full object-contain" />
           {parts.includes(id) && <span className="absolute right-0 top-0 flex size-3.5 items-center justify-center rounded-full bg-[#7950df] text-white"><Check size={10} strokeWidth={3} /></span>}
         </button>)}
-        <button ref={drawingButton} type="button" aria-label={label('自己画', 'Draw your own')} aria-pressed={Boolean(current.drawing?.length)}
+        <button ref={drawingButton} type="button" aria-label={t('自己画')} aria-pressed={Boolean(current.drawing?.length)}
           onClick={() => (current.drawing?.length ? onChange({ ...current, drawing: [] }) : setDrawingOpen(true))}
-          className={cn('relative flex aspect-square min-h-11 flex-col items-center justify-center gap-0.5 rounded-full text-[#7950df] hover:bg-[#f8f5ff]', current.drawing?.length && 'bg-[#f5f0ff]', FOCUS)}><Pencil size={22} /><span className="text-[10px]">{label('自己画', 'Draw')}</span>{current.drawing?.length ? <span className="absolute right-0 top-0 flex size-3.5 items-center justify-center rounded-full bg-[#7950df] text-white"><Check size={10} strokeWidth={3} /></span> : null}</button>
-        <button type="button" aria-label={label('全部取下', 'Remove all accessories')} onClick={() => onChange({ ...current, doodads: [], drawing: [] })} className={cn('flex aspect-square min-h-11 items-center justify-center rounded-full text-[#b4adbf] hover:bg-[#f8f5ff]', FOCUS)}><Ban size={24} /></button>
+          className={cn('relative flex aspect-square min-h-11 flex-col items-center justify-center gap-0.5 rounded-full text-[#7950df] hover:bg-[#f8f5ff]', current.drawing?.length && 'bg-[#f5f0ff]', FOCUS)}><Pencil size={22} /><span className="text-[10px]">{t('自己画')}</span>{current.drawing?.length ? <span className="absolute right-0 top-0 flex size-3.5 items-center justify-center rounded-full bg-[#7950df] text-white"><Check size={10} strokeWidth={3} /></span> : null}</button>
+        <button type="button" aria-label={t('全部取下')} onClick={() => onChange({ ...current, doodads: [], drawing: [] })} className={cn('flex aspect-square min-h-11 items-center justify-center rounded-full text-[#b4adbf] hover:bg-[#f8f5ff]', FOCUS)}><Ban size={24} /></button>
       </div>
-      <p className="mt-1 text-xs text-[#888094]">{label('再点一次，就能取下', 'Tap again to take it off')}</p>
-      <button type="button" onClick={() => setStep('done')} className={cn('mt-3 min-h-11 w-full rounded-xl bg-[#7450dc] px-5 text-sm font-semibold text-white transition-colors hover:bg-[#6440cb]', FOCUS)}>{label('完成', 'Done')}</button>
+      <button type="button" onClick={() => setStep('done')} className={cn('mt-3 min-h-11 w-full rounded-xl bg-[#7450dc] px-5 text-sm font-semibold text-white transition-colors hover:bg-[#6440cb]', FOCUS)}>{t('完成')}</button>
     </>}
 
     {step === 'done' ? <div className="mt-3 flex flex-wrap items-center justify-center gap-4">
-      <button type="button" onClick={() => setStep('base-color')} className={cn('min-h-11 rounded-md text-sm font-medium text-[#7050d9]', FOCUS)}>{label('返回自己搭配', 'Customize again')}</button>
-      <button type="button" onClick={shuffle} className={cn('flex min-h-11 items-center gap-1 rounded-md text-xs text-[#777184]', FOCUS)}><Shuffle size={13} />{label('随机', 'Shuffle')}</button>
-    </div> : <button type="button" onClick={() => { shuffle(); setStep('done'); }} className={cn('mt-2 flex min-h-11 items-center gap-1 rounded-md text-xs text-[#777184]', FOCUS)}><RefreshCw size={13} />{label('随机样式', 'Random look')}</button>}
+      <button type="button" onClick={() => setStep('base-color')} className={cn('min-h-11 rounded-md text-sm font-medium text-[#7050d9]', FOCUS)}>{t('返回自己搭配')}</button>
+      <button type="button" onClick={shuffle} className={cn('flex min-h-11 items-center gap-1 rounded-md text-xs text-[#777184]', FOCUS)}><Shuffle size={13} />{t('随机')}</button>
+    </div> : <button type="button" onClick={() => { shuffle(); setStep('done'); }} className={cn('mt-2 flex min-h-11 items-center gap-1 rounded-md text-xs text-[#777184]', FOCUS)}><RefreshCw size={13} />{t('随机样式')}</button>}
   </section>;
 }
 
@@ -224,7 +223,7 @@ export function AgentDressupStudio({ value, onChange, onBack, onConfirm, classNa
   onConfirm: (next: HermesAppearance) => void; className?: string;
 }) {
   const zh = useCurrentLocale().startsWith('zh');
-  const label = (cnLabel: string, enLabel: string) => zh ? cnLabel : enLabel;
+  const t = useT();
   const current = asDoodleAppearance(value);
   const [reaction, setReaction] = useState(0);
   const [drawingOpen, setDrawingOpen] = useState(false);
@@ -237,25 +236,25 @@ export function AgentDressupStudio({ value, onChange, onBack, onConfirm, classNa
   const parts = current.doodads ?? [];
   const randomize = () => onChange(rollHermesLook(current, true));
   if (drawingOpen) return <HermesDrawingEditor appearance={current} zh={zh} onCancel={() => setDrawingOpen(false)} onConfirm={(drawing) => { onChange({ ...current, drawing }); setDrawingOpen(false); }} />;
-  return <section aria-label={label('Hermes 形象选择', 'Customize Hermes')} className={cn('mx-auto w-full max-w-[560px] bg-white px-4 pb-5 pt-3 text-[#292638] sm:px-7 sm:pt-4', className)}>
+  return <section aria-label={t('Hermes 形象选择')} className={cn('mx-auto w-full max-w-[560px] bg-white px-4 pb-5 pt-3 text-[#292638] sm:px-7 sm:pt-4', className)}>
     <header className="flex h-11 items-center justify-between gap-2 text-sm">
-      <button type="button" onClick={onBack} className={cn('flex min-h-11 items-center gap-1 rounded-md text-[#6c677d]', FOCUS)}><ArrowLeft size={17} />{label('返回创建', 'Back')}</button>
+      <button type="button" onClick={onBack} className={cn('flex min-h-11 items-center gap-1 rounded-md text-[#6c677d]', FOCUS)}><ArrowLeft size={17} />{t('返回创建')}</button>
       <span className="text-sm font-medium text-[#a88ae7]">LightVela</span>
-      <button type="button" onClick={randomize} className={cn('flex min-h-11 items-center gap-1.5 rounded-md text-[#7550dc]', FOCUS)}><Shuffle size={17} />{label('随机', 'Shuffle')}</button>
+      <button type="button" onClick={randomize} className={cn('flex min-h-11 items-center gap-1.5 rounded-md text-[#7550dc]', FOCUS)}><Shuffle size={17} />{t('随机')}</button>
     </header>
     <div className="mt-4 text-center">
-      <h2 className="text-balance text-2xl font-semibold">{label('捏一个你的搭档', 'Make a little companion')}</h2>
-      <p className="mt-2 text-sm text-[#847d97]">{label('换个形状，加一点个性。', 'A little shape. A lot of personality.')}</p>
+      <h2 className="text-balance text-2xl font-semibold">{t('捏一个你的搭档')}</h2>
+      <p className="mt-2 text-sm text-[#847d97]">{t('换个形状，加一点个性。')}</p>
     </div>
     <div className="mt-4 flex min-h-[286px] items-center justify-center py-2 sm:min-h-[316px]">
-      <button type="button" onClick={() => setReaction((n) => n + 1)} aria-label={label('和 Hermes 打招呼', 'Say hello to Hermes')}
+      <button type="button" onClick={() => setReaction((n) => n + 1)} aria-label={t('和 Hermes 打招呼')}
         className={cn('rounded-full', FOCUS)}><HermesPlushAvatar appearance={current} size={300} alive reaction={reaction} className="max-sm:!size-[270px]" /></button>
     </div>
     <div className="space-y-3">
       <fieldset className="flex min-w-0 items-center gap-2">
-        <legend className="sr-only">{label('形状', 'Shape')}</legend><span aria-hidden="true" className="w-10 shrink-0 text-xs font-medium text-[#777087] sm:w-12 sm:text-sm">{label('形状', 'Shape')}</span>
+        <legend className="sr-only">{t('形状')}</legend><span aria-hidden="true" className="w-10 shrink-0 text-xs font-medium text-[#777087] sm:w-12 sm:text-sm">{t('形状')}</span>
         <div className="grid min-w-0 flex-1 grid-cols-5 gap-1">
-          {HERMES_DOODLE_SHAPES.map((shape) => <button key={shape} type="button" aria-label={DOODLE_SHAPE_LABELS[shape][zh ? 0 : 1]} aria-pressed={current.shape === shape}
+          {HERMES_DOODLE_SHAPES.map((shape) => <button key={shape} type="button" aria-label={t(DOODLE_SHAPE_LABELS[shape][0])} aria-pressed={current.shape === shape}
             onClick={() => onChange({ ...current, shape })} className={cn('group flex min-w-0 flex-col items-center rounded-md pb-1 text-xs text-[#777087]', FOCUS)}>
             <span className={cn('flex aspect-square w-full max-w-[78px] items-center justify-center rounded-full transition-colors group-hover:bg-[#f8f5ff]', current.shape === shape && 'bg-[#f4efff]')}>
               <HermesPlushAvatar appearance={{ ...current, shape, doodads: [], expression: 'open', drawing: [] }} size={76} className="!size-full" />
@@ -265,34 +264,73 @@ export function AgentDressupStudio({ value, onChange, onBack, onConfirm, classNa
         </div>
       </fieldset>
       <fieldset className="flex min-w-0 items-center gap-2">
-        <legend className="sr-only">{label('颜色', 'Color')}</legend><span aria-hidden="true" className="w-10 shrink-0 text-xs font-medium text-[#777087] sm:w-12 sm:text-sm">{label('颜色', 'Color')}</span>
+        <legend className="sr-only">{t('颜色')}</legend><span aria-hidden="true" className="w-10 shrink-0 text-xs font-medium text-[#777087] sm:w-12 sm:text-sm">{t('颜色')}</span>
         <div className="grid min-w-0 flex-1 grid-cols-6 gap-0.5">
-          {HERMES_DOODLE_COLORS.map((skin) => <button type="button" key={skin} aria-label={DOODLE_COLOR_INFO[skin][zh ? 0 : 1]} aria-pressed={current.skin === skin}
+          {HERMES_DOODLE_COLORS.map((skin) => <button type="button" key={skin} aria-label={t(DOODLE_COLOR_INFO[skin][0])} aria-pressed={current.skin === skin}
             onClick={() => onChange({ ...current, skin })} className={cn('flex min-h-11 min-w-0 items-center justify-center rounded-full', FOCUS)}>
             <span className={cn('size-7 rounded-full sm:size-8', current.skin === skin && 'ring-2 ring-[#7953de] ring-offset-4')} style={{ backgroundColor: DOODLE_COLOR_INFO[skin][2] }} />
           </button>)}
         </div>
       </fieldset>
       <fieldset className="flex min-w-0 items-center gap-2">
-        <legend className="sr-only">{label('配饰，可多选', 'Accessories, select multiple')}</legend>
-        <span aria-hidden="true" className="w-10 shrink-0 text-xs font-medium text-[#777087] sm:w-12 sm:text-sm">{label('配饰', 'Extras')}<span className="mt-1 block text-[10px] font-normal">{label('可多选', 'Mix them')}</span></span>
+        <legend className="sr-only">{t('配饰，可多选')}</legend>
+        <span aria-hidden="true" className="w-10 shrink-0 text-xs font-medium text-[#777087] sm:w-12 sm:text-sm">{t('配饰')}<span className="mt-1 block text-[10px] font-normal">{t('可多选')}</span></span>
         <div className="grid min-w-0 flex-1 grid-cols-6 gap-0.5">
-          {HERMES_PLAYFUL_DOODADS.map((id) => <button key={id} type="button" aria-label={DOODLE_PART_LABELS[id][zh ? 0 : 1]} aria-pressed={parts.includes(id)}
+          {HERMES_PLAYFUL_DOODADS.map((id) => <button key={id} type="button" aria-label={t(DOODLE_PART_LABELS[id][0])} aria-pressed={parts.includes(id)}
             onClick={() => onChange(toggleHermesDoodad(current, id))} className={cn('relative flex aspect-square min-h-11 min-w-0 items-center justify-center rounded-full p-2 transition-colors hover:bg-[#f8f5ff]', parts.includes(id) && 'bg-[#f5f0ff]', FOCUS)}>
             <img src={`${PLUSH_ROOT}/${PLUSH_OUTFITS[id]}.webp`} alt="" draggable={false} className="pointer-events-none max-h-9 w-full object-contain" />
             {parts.includes(id) && <span className="absolute right-0 top-0 flex size-3.5 items-center justify-center rounded-full bg-[#7950df] text-white"><Check size={10} strokeWidth={3} /></span>}
           </button>)}
-          <button ref={drawingButton} type="button" aria-label={label('自己画', 'Draw your own')} aria-pressed={Boolean(current.drawing?.length)}
+          <button ref={drawingButton} type="button" aria-label={t('自己画')} aria-pressed={Boolean(current.drawing?.length)}
             onClick={() => (current.drawing?.length ? onChange({ ...current, drawing: [] }) : setDrawingOpen(true))}
-            className={cn('relative flex aspect-square min-h-11 flex-col items-center justify-center gap-0.5 rounded-full text-[#7950df] hover:bg-[#f8f5ff]', current.drawing?.length && 'bg-[#f5f0ff]', FOCUS)}><Pencil size={23} /><span className="text-[10px]">{label('自己画', 'Draw')}</span>{current.drawing?.length ? <span className="absolute right-0 top-0 flex size-3.5 items-center justify-center rounded-full bg-[#7950df] text-white"><Check size={10} strokeWidth={3} /></span> : null}</button>
-          <button type="button" aria-label={label('全部取下', 'Remove all accessories')} onClick={() => onChange({ ...current, doodads: [], drawing: [] })} className={cn('flex aspect-square min-h-11 items-center justify-center rounded-full text-[#b4adbf] hover:bg-[#f8f5ff]', FOCUS)}><Ban size={25} /></button>
+            className={cn('relative flex aspect-square min-h-11 flex-col items-center justify-center gap-0.5 rounded-full text-[#7950df] hover:bg-[#f8f5ff]', current.drawing?.length && 'bg-[#f5f0ff]', FOCUS)}><Pencil size={23} /><span className="text-[10px]">{t('自己画')}</span>{current.drawing?.length ? <span className="absolute right-0 top-0 flex size-3.5 items-center justify-center rounded-full bg-[#7950df] text-white"><Check size={10} strokeWidth={3} /></span> : null}</button>
+          <button type="button" aria-label={t('全部取下')} onClick={() => onChange({ ...current, doodads: [], drawing: [] })} className={cn('flex aspect-square min-h-11 items-center justify-center rounded-full text-[#b4adbf] hover:bg-[#f8f5ff]', FOCUS)}><Ban size={25} /></button>
         </div>
       </fieldset>
     </div>
     <footer className="sticky bottom-0 z-10 mt-4 bg-white pb-[max(.5rem,env(safe-area-inset-bottom))] pt-2">
-      <button type="button" onClick={() => onConfirm(current)} className={cn('min-h-12 w-full rounded-xl bg-[#7450dc] px-5 text-sm font-semibold text-white transition-colors hover:bg-[#6440cb]', FOCUS)}>{label('就用这个', 'This is the one')}</button>
+      <button type="button" onClick={() => onConfirm(current)} className={cn('min-h-12 w-full rounded-xl bg-[#7450dc] px-5 text-sm font-semibold text-white transition-colors hover:bg-[#6440cb]', FOCUS)}>{t('就用这个')}</button>
     </footer>
   </section>;
 }
 
 export { DEFAULT_HERMES_APPEARANCE };
+
+// Dynamic option labels are included in the translation catalog.
+function __i18nExtractDressup(t: (value: string) => string) {
+  t('游游');
+  t('轻轻');
+  t('量量');
+  t('帆帆');
+  t('云云');
+  t('星星巫师帽');
+  t('渔夫帽');
+  t('飞行眼镜');
+  t('针织帽');
+  t('小唱片');
+  t('小书本');
+  t('小相机');
+  t('小皇冠');
+  t('星星眼镜');
+  t('星星贴纸');
+  t('小翅膀');
+  t('奶油耳机');
+  t('蝴蝶结');
+  t('小雏菊');
+  t('贝雷帽');
+  t('小行星');
+  t('小披风');
+  t('小圆镜');
+  t('小领巾');
+  t('小叶子');
+  t('小帽子');
+  t('小铅笔');
+  t('浅紫');
+  t('蜜桃');
+  t('奶黄');
+  t('薄荷');
+  t('晴空');
+  t('炭黑');
+  t('珍珠白');
+}
+void __i18nExtractDressup;

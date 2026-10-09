@@ -5,7 +5,7 @@ import { DEFAULT_HERMES_APPEARANCE, type HermesAppearance } from '@/lib/hermes-a
 import { AgentDressupStudio, HermesStepDressup } from '@/pages/marketing/agent-dressup-studio';
 import { AgentDressupPreview } from '@/pages/marketing/agent-dressup-preview';
 
-vi.mock('@/i18n/t', () => ({ useCurrentLocale: () => 'zh-CN' }));
+vi.mock('@/i18n/t', () => ({ useCurrentLocale: () => 'zh-CN', useT: () => (value: string) => value }));
 beforeEach(() => localStorage.clear());
 afterEach(() => cleanup());
 function Harness({ onConfirm = () => {} }: { onConfirm?: (value: HermesAppearance) => void }) {

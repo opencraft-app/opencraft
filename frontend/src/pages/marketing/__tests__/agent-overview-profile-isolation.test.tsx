@@ -1,7 +1,9 @@
 import type { ReactNode } from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AgentOverviewPanel } from "../agent-overview-panel";
+import { AgentBotProfileEditor } from "../agent-bot-profile-editor";
+import { DEFAULT_HERMES_APPEARANCE } from "@/lib/hermes-appearance";
+import { AgentOverviewPanel, ProfileEditDialog } from "../agent-overview-panel";
 import type { SetupExec } from "../agent-buddy-setup-runner";
 import { buildHermesSoulContentReadCommand } from "../agent-buddy-command";
 
@@ -15,6 +17,28 @@ const base = {
 };
 
 describe("overview profile editing", () => {
+  it("opens avatar-only editing and saves the new look without changing profile fields", () => {
+    const onSave = vi.fn();
+    const profile = { ...base.profile, description: "Keep my description", appearance: DEFAULT_HERMES_APPEARANCE, legacyMascot: "bean-lilac" as const };
+    render(<ProfileEditDialog avatarOnly profile={profile} onSave={onSave} onClose={vi.fn()} />);
+    expect(screen.queryByLabelText("名字")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "薄荷" }));
+    fireEvent.click(screen.getByRole("button", { name: "就用这个" }));
+    expect(onSave).toHaveBeenCalledExactlyOnceWith({ ...profile, legacyMascot: undefined, appearance: { ...DEFAULT_HERMES_APPEARANCE, skin: "mint" } });
+  });
+
+  it("keeps failed avatar saves in a dialog and allows closing without claiming success", async () => {
+    const exec = vi.fn<SetupExec>().mockResolvedValue({ status: "FAILED", exitCode: 1, output: "Write failed" }).mockResolvedValueOnce(ok);
+    const onClose = vi.fn(), onChanged = vi.fn();
+    render(<AgentBotProfileEditor avatarOnly botId={base.botId} profileId="worker" profile={{ ...base.profile, appearance: DEFAULT_HERMES_APPEARANCE }} execDebugCommand={exec} onClose={onClose} onChanged={onChanged} />);
+    fireEvent.click(screen.getByRole("button", { name: "就用这个" }));
+    const close = await screen.findByRole("button", { name: "关闭" });
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(onChanged).not.toHaveBeenCalled();
+    fireEvent.click(close);
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
   it.each([
     ["network failure", new Error("timeout")],
     ["failed command", { status: "FAILED", exitCode: 0, output: "Exists: no" }],
