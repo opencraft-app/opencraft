@@ -168,7 +168,7 @@ describe("subscribe path: picking a template enters the setup flow", () => {
 
     // 先确认引导表单在
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "换一批" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "随机样式" })).toBeInTheDocument();
     });
 
 
@@ -203,6 +203,6 @@ describe("subscribe path: picking a template enters the setup flow", () => {
     expect(execDebugCommand.mock.calls.some(([id, command]) =>
       id === "ins-372" && command.includes("__CTL_SOUL_EOF__") && command.includes("profile-372"),
     )).toBe(true);
-    expect(screen.queryByRole("button", { name: "换一批" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "随机样式" })).not.toBeInTheDocument();
   });
 });

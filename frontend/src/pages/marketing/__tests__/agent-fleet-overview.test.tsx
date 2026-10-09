@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawBot } from "@/contexts/agent-context";
+import { DEFAULT_HERMES_APPEARANCE } from "@/lib/hermes-appearance";
 import { AgentFleetOverview, type FleetOverviewProps } from "@/pages/marketing/agent-fleet-overview";
 
 const api = vi.hoisted(() => ({ renameBot: vi.fn(), deleteBot: vi.fn(), refreshBots: vi.fn(), execDebugCommand: vi.fn(), renderHero: vi.fn(), botsError: false, botsLoading: false }));
@@ -105,13 +106,13 @@ describe("multi Bot overview", () => {
     fireEvent.click(screen.getByRole("button", { name: "复制 Bot" }));
     expect(props.onCreate).toHaveBeenCalledWith("bravo");
   });
-  it("reuses the original profile editor and saves name, description and avatar only for its target", async () => {
+  it("reuses the original profile editor and saves name, description and appearance only for its target", async () => {
     render(<AgentFleetOverview {...props} />); manage("bravo"); fireEvent.click(screen.getByRole("button", { name: "修改资料" }));
     expect(screen.getByRole("dialog", { name: "修改资料" })).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "名字" })).toHaveValue("bravo");
-    expect(screen.getByRole("button", { name: "圆形" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: "换一批" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "六边形" }));
+    // The shape picker was replaced by the dress-up studio: open it, confirm a look, and return to the form.
+    fireEvent.click(screen.getByRole("button", { name: /给 Hermes 换装/ }));
+    fireEvent.click(screen.getByRole("button", { name: "就用这个" }));
     fireEvent.change(screen.getByRole("textbox", { name: "名字" }), { target: { value: "Research" } });
     fireEvent.change(screen.getByRole("textbox", { name: /描述/ }), { target: { value: "Daily research" } });
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
@@ -122,7 +123,8 @@ describe("multi Bot overview", () => {
     expect(api.execDebugCommand.mock.calls[0]![1]).toContain("ContentBase64");
     const command = api.execDebugCommand.mock.calls.find(([, command]) => command.includes("__LV_META_OK__"))![1] as string;
     const payload = JSON.parse(atob(command.match(/base64.b64decode\("([^"\n]+)"\)/)![1]!));
-    expect(payload).toEqual({ display_name: "Research", description: "Daily research", description_auto: false, avatar: "hexagon:#3d7df5" });
+    // The geometric avatar is untouched; the dress-up choice is stored separately as `appearance`.
+    expect(payload).toEqual({ display_name: "Research", description: "Daily research", description_auto: false, avatar: "circle:#3d7df5", appearance: DEFAULT_HERMES_APPEARANCE });
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
   it("delegates the selected Bot to the existing page delete dialog", () => {

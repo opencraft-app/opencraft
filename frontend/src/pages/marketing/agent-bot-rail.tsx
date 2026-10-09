@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { GeometricAvatar } from "@/pages/marketing/agent-avatar-shapes";
 import { getBotStatusColor, getBotStatusLabel } from "@/pages/marketing/agent-bot-status";
 import { useBuddyProfile } from "@/pages/marketing/agent-buddy-profile";
+import { HermesAppearanceAvatar } from "@/pages/marketing/agent-dressup-studio";
 import type { SetupExec } from "@/pages/marketing/agent-buddy-setup-runner";
 import { resolveAgentDisplayName } from "@/pages/marketing/agent-provider-locale";
 import { ModelActionTooltip } from "@/pages/marketing/agent-model-config/model-action-tooltip";
@@ -41,7 +42,9 @@ function AgentBotRailItem({ bot, active, mobile, restarting, execDebugCommand, o
   const statusLabel = getBotStatusLabel(bot.status, restarting);
   const avatar = (
     <span className="lv-agent-bot-rail-avatar-wrap">
-      {profile.hasBuddyConfig ? (
+      {profile.profile.appearance ? (
+        <HermesAppearanceAvatar appearance={profile.profile.appearance} size={34} />
+      ) : profile.hasBuddyConfig ? (
         <GeometricAvatar shapeId={profile.profile.shapeId} color={profile.profile.color} size={34} />
       ) : (
         <span className="lv-agent-bot-rail-avatar" style={{ backgroundColor: avatarColor(bot.id) }} aria-hidden="true">

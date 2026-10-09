@@ -1,6 +1,7 @@
 /** Same-tab refresh recovery. Never restore a snapshot into an unverified Bot. */
 import type { SetupStep } from "@/pages/marketing/agent-buddy-setup";
 import type { SetupStepState } from "@/pages/marketing/agent-buddy-setup-runner";
+import { parseHermesAppearance, type HermesAppearance } from '@/lib/hermes-appearance';
 
 const STORAGE_KEY = "lv-buddy-setup-progress:";
 const SNAPSHOT_TTL_MS = 30 * 60 * 1000;
@@ -10,6 +11,7 @@ export interface BuddySetupSnapshot {
   profileId: string;
   profile: { name: string; description: string };
   avatar: { shapeId: string; color: string };
+  appearance?: HermesAppearance;
   templateId: string;
   preserveSoul: boolean;
   planSignature: string;
@@ -34,6 +36,7 @@ const isSnapshot = (value: unknown): value is BuddySetupSnapshot => {
     && typeof candidate.profile?.description === "string"
     && typeof candidate.avatar?.shapeId === "string"
     && typeof candidate.avatar?.color === "string"
+    && (candidate.appearance === undefined || parseHermesAppearance(candidate.appearance) !== null)
     && typeof candidate.templateId === "string"
     && typeof candidate.preserveSoul === "boolean"
     && typeof candidate.planSignature === "string"

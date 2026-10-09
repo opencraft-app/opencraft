@@ -148,7 +148,9 @@ describe("overview language consistency", () => {
     await ensureLocaleDictionary("en-US");
     const view = render(<LocaleOverrideProvider locale="en-US"><AgentOnboardingPanel botId="" execDebugCommand={vi.fn()} onCreated={vi.fn()} onCreateBot={vi.fn()} cloneOptions={{ value: "", onChange: vi.fn(), choices: [] }} /></LocaleOverrideProvider>);
     fireEvent.click(screen.getByRole("button", { name: "Advanced" }));
-    expect(screen.getByRole("button", { name: "Circle" })).toBeInTheDocument();
+    // The shape picker was replaced by the step-by-step dress-up flow, which must also be fully English.
+    expect(screen.getByRole("heading", { name: "Pick a shape" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Random look" })).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("My AI Companion");
     expect(screen.getByRole("combobox", { name: "Creation method" })).toHaveTextContent("Basic setup");
     expect(view.container.innerHTML).not.toMatch(/[\u4e00-\u9fff]/);

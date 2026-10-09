@@ -146,6 +146,7 @@ import {
 import { hasUnfinishedBuddySetup } from "@/pages/marketing/agent-buddy-setup-progress";
 import { CreatingLoadingView } from "@/pages/marketing/agent-creating-loading";
 import { GeometricAvatar } from "@/pages/marketing/agent-avatar-shapes";
+import { HermesAppearanceAvatar } from '@/pages/marketing/agent-dressup-studio';
 import { shouldShowAgentSettingsDataLoading } from "@/pages/marketing/agent-settings-loading";
 import { AgentSettingsLoadingContent } from "@/pages/marketing/agent-settings-loading-view";
 import { AgentUpgradingView } from "@/pages/marketing/agent-upgrading-view";
@@ -6019,7 +6020,9 @@ export const AgentSettingsPage = ({
                               {/* Demo：头像与名称跟随新手引导里设置的资料（几何体头像）；
                                   未设置过时回落到原有的 bot 头像与名称。 */}
                               {!multiBotEnabled && <span className="lv-agent-avatar lv-agent-avatar--status">
-                                {demoProfileIsCustom ? (
+                                {buddyProfileState.profile.appearance ? (
+                                  <HermesAppearanceAvatar appearance={buddyProfileState.profile.appearance} size={32} />
+                                ) : demoProfileIsCustom ? (
                                   <GeometricAvatar
                                     shapeId={buddyProfileState.profile.shapeId}
                                     color={buddyProfileState.profile.color}

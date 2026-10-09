@@ -249,7 +249,7 @@ describe("international Bot onboarding", () => {
     it("opens the creation guide from the rail", async () => {
       render(page("", "chat"));
       fireEvent.click(await screen.findByRole("button", { name: "新建 Bot" }));
-      expect(await screen.findByRole("button", { name: "换一批" })).toBeInTheDocument();
+      expect(await screen.findByRole("button", { name: "随机样式" })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "创建" })).toBeInTheDocument();
       expect(addBot).not.toHaveBeenCalled();
     });
@@ -300,7 +300,7 @@ describe("international Bot onboarding", () => {
   it("opens the subscription return in the international template guide", async () => {
     bots = [];
     render(page("?create=1"));
-    expect(await screen.findByRole("button", { name: "换一批" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "随机样式" })).toBeInTheDocument();
     expect(screen.getByText("Industry Researcher", { selector: "span" })).toBeInTheDocument();
     expect(screen.queryByText("育儿参谋")).not.toBeInTheDocument();
     expect(screen.queryByText("创建 Bot")).not.toBeInTheDocument();
@@ -310,7 +310,7 @@ describe("international Bot onboarding", () => {
   it("automatically opens the guide for an empty account", async () => {
     bots = [];
     render(page(""));
-    expect(await screen.findByRole("button", { name: "换一批" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "随机样式" })).toBeInTheDocument();
     expect(await screen.findByText("Industry Researcher", { selector: "span" })).toBeInTheDocument();
     expect(screen.queryByText("创建 Bot")).not.toBeInTheDocument();
   });
@@ -320,7 +320,7 @@ describe("international Bot onboarding", () => {
     expect(await screen.findByTestId("opencraft-chat")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "总览" })).not.toBeInTheDocument();
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith("/agents/chat?bot=ins-372", { replace: true }));
-    expect(screen.queryByRole("button", { name: "换一批" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "随机样式" })).not.toBeInTheDocument();
     expect(addBot).not.toHaveBeenCalled();
   });
 

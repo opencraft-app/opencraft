@@ -12,6 +12,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { HermesAppearance } from '@/lib/hermes-appearance';
 
 import {
   buildHermesSoulContentReadCommand,
@@ -35,6 +36,7 @@ export type BuddyProfile = {
   shapeId: AvatarShapeId;
   color: string;
   description: string;
+  appearance?: HermesAppearance | null;
 };
 
 const SOUL_READ_TIMEOUT_MS = 30_000;
@@ -159,9 +161,10 @@ export const useBuddyProfile = (params: {
             shapeId,
             color: avatar?.color || DEFAULT_AVATAR_COLOR,
             description: meta.description || soulFields.summary || "",
+            appearance: meta.appearance,
           },
           soulExists: parsed.status === "ready" || parsed.status === "too_large",
-          hasBuddyConfig: avatar !== null,
+          hasBuddyConfig: avatar !== null || meta.appearance !== null,
         };
         profileCache.set(scopeKey, value);
         setLoaded({ key: scopeKey, value });

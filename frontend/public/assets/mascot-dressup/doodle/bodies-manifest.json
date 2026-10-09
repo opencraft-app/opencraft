@@ -1,0 +1,214 @@
+{
+  "source": "/Users/keria/.codex/generated_images/01a1079e-ef58-7f10-bdc5-4fd0dafdc720/exec-c8d78f11-4c1c-47aa-8e86-a1150b53ee23.png",
+  "reference": "/Users/keria/.codex/generated_images/01a0fabe-e857-77f1-94c9-06e39bab64be/exec-abb86e79-60ff-4087-bd9c-073d7ba36aad.png",
+  "tool": "built-in imagegen",
+  "normalization": "Alpha>128 only used for crop bounds, full original alpha retained. Cropped with 3px AA padding; resized proportionally into480x640 max rectangle and bottom-aligned to720 on800square. No redraw/recolor.",
+  "assets": [
+    {
+      "name": "bean",
+      "path": "/tmp/hermes-doodle-assets/body-bean.webp",
+      "canvas": [
+        800,
+        800
+      ],
+      "sourceCrop": {
+        "left": 89,
+        "top": 166,
+        "width": 267,
+        "height": 455
+      },
+      "bounds": [
+        212,
+        80,
+        588,
+        720
+      ],
+      "bodyBounds": [
+        216,
+        238,
+        583,
+        676
+      ],
+      "faceCenter": [
+        396,
+        439
+      ],
+      "scarfCenter": [
+        396,
+        560
+      ],
+      "antennaBall": [
+        507,
+        129
+      ],
+      "scale": 1.4065934065934067
+    },
+    {
+      "name": "round",
+      "path": "/tmp/hermes-doodle-assets/body-round.webp",
+      "canvas": [
+        800,
+        800
+      ],
+      "sourceCrop": {
+        "left": 429,
+        "top": 183,
+        "width": 305,
+        "height": 437
+      },
+      "bounds": [
+        177,
+        80,
+        624,
+        720
+      ],
+      "bodyBounds": [
+        181,
+        247,
+        619,
+        676
+      ],
+      "faceCenter": [
+        388,
+        433
+      ],
+      "scarfCenter": [
+        394,
+        556
+      ],
+      "antennaBall": [
+        511,
+        131
+      ],
+      "scale": 1.4645308924485125
+    },
+    {
+      "name": "square",
+      "path": "/tmp/hermes-doodle-assets/body-square.webp",
+      "canvas": [
+        800,
+        800
+      ],
+      "sourceCrop": {
+        "left": 816,
+        "top": 183,
+        "width": 301,
+        "height": 438
+      },
+      "bounds": [
+        180,
+        80,
+        620,
+        720
+      ],
+      "bodyBounds": [
+        184,
+        249,
+        615,
+        675
+      ],
+      "faceCenter": [
+        389,
+        431
+      ],
+      "scarfCenter": [
+        396,
+        556
+      ],
+      "antennaBall": [
+        490,
+        131
+      ],
+      "scale": 1.461187214611872
+    },
+    {
+      "name": "drop",
+      "path": "/tmp/hermes-doodle-assets/body-drop.webp",
+      "canvas": [
+        800,
+        800
+      ],
+      "sourceCrop": {
+        "left": 1195,
+        "top": 176,
+        "width": 280,
+        "height": 445
+      },
+      "bounds": [
+        199,
+        80,
+        602,
+        720
+      ],
+      "bodyBounds": [
+        203,
+        241,
+        602,
+        675
+      ],
+      "faceCenter": [
+        396,
+        447
+      ],
+      "scarfCenter": [
+        399,
+        575
+      ],
+      "antennaBall": [
+        484,
+        129
+      ],
+      "scale": 1.4382022471910112
+    },
+    {
+      "name": "cloud",
+      "path": "/tmp/hermes-doodle-assets/body-cloud.webp",
+      "canvas": [
+        800,
+        800
+      ],
+      "sourceCrop": {
+        "left": 1540,
+        "top": 233,
+        "width": 381,
+        "height": 388
+      },
+      "bounds": [
+        160,
+        231,
+        640,
+        720
+      ],
+      "bodyBounds": [
+        163,
+        370,
+        636,
+        681
+      ],
+      "faceCenter": [
+        399,
+        514
+      ],
+      "scarfCenter": [
+        399,
+        608
+      ],
+      "antennaBall": [
+        471,
+        278
+      ],
+      "scale": 1.2598425196850394
+    }
+  ],
+  "prompts": [
+    "Use case: stylized-concept. Asset type: transparent 2D mascot sprite family, a single sprite sheet. Input image is STYLE and SHAPE reference only, not an edit target. Create exactly five faceless mascot bodies in one horizontal row of five equal generously padded cells. In left-to-right order: upright softly asymmetric bean, round circle, rounded square squircle, upward teardrop, broad three-lobed cloud. Each has the SAME short bent antenna with round antenna ball, and two tiny stubby feet below. NO eyes, no mouth, no blush, no facial details, no glasses, no scarf, no accessories. Use the clean flat playful illustration language of the reference's small shape icons: smooth silhouette, subtle two-tone flat edge accent, no glossy material, no 3D, no outline. For later reliable runtime tinting ALL pixels must be neutral grayscale: body light gray RGB about 220, edge accent gray 202, antenna stem medium gray 158, antenna ball gray 208, tiny feet gray 190. Keep all five similar optical mass, body center at same row height, feet baseline aligned. Cloud is wider and shorter; drop has a clear pointed top. Body face area is broad empty uninterrupted surface. No ground shadows, no stage, no rings, no labels, no text, no sparkle, no grid separators. Isolated on true transparent alpha background. Wide sheet approximately 2500x700, each figure occupies only center 70% of its cell with transparent gutters, all fully inside canvas. Match charming proportions of reference small icons; do not copy reference UI. This sheet is a production family for character customization.",
+    "Precisely clean the supplied five-shape mascot sprite sheet. Preserve all five existing flat neutral gray silhouettes, body shapes, two tiny feet, and bent antenna ball exactly. Remove ALL white pixel debris, white matte halos, and disconnected fragments surrounding and between the figures. Every pixel outside the five continuous silhouettes must be transparent alpha; smooth clean antialiased outer contours, absolutely NO scattered flecks. Keep the bodies empty faceless and grayscale, retain subtle flat darker right edge accent. Maintain a horizontal row of five equal padded cells, fully contained all silhouettes. Transparent background, no shadow, no text, no grids. This is production sprite cleanup only.",
+    "Create a clean production sprite sheet: five separate flat 2D light lilac mascot bodies, transparent background, one horizontal row. Use input only as SHAPE guide, recolor all bodies to very pale lavender #DCD2FF, with subtle flat darker edge accent #C8B8F5; bent antenna stems #9471E5 and balls #C8B4FF; tiny feet #BCA6EC. In order: bean, circle, squircle, pointed teardrop, three-lobed cloud. Each has two tiny feet and a short curved antenna ending in a circle. Keep bodies totally FACELESS. NO facial marks or accessories. CRITICAL: all inside shapes have opaque solid fills (alpha255), all outside transparent (alpha0), with only very narrow smooth antialiasing at edges. No semi-transparent washed-out areas, no white matte, no grain, no texture, no specks, no external shadows. Crisp filled cartoon/vector-like illustration, no 3D, no gloss. Equal padded cells and aligned feet baseline. Keep entire figures fully inside canvas with adequate transparent margins. One wide sheet, no text or labels."
+  ],
+  "qa": {
+    "contactSheet": "/tmp/hermes-doodle-assets/bodies-contact.png",
+    "inspected": true,
+    "background": "true alpha; original generated edges preserved",
+    "notes": "Five empty bodies, consistent flat pale-lilac fill, no face/accessories. Cloud intentionally lower/wider with own face/scarf anchors."
+  }
+}

@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentOnboardingPanel } from "../agent-onboarding-panel";
 import { buildBuddySetupPlan, SANDBOX_PROBE_TIMEOUT_MS } from "../agent-buddy-setup";
 import { buildSetupPlanSignature, loadBuddySetupSnapshot, saveBuddySetupSnapshot } from "../agent-buddy-setup-progress";
+import { DEFAULT_HERMES_APPEARANCE } from "@/lib/hermes-appearance";
 
 vi.mock("@/i18n/t", () => {
   const t = (text: string) => text;
@@ -47,7 +48,7 @@ describe("refresh recovery", () => {
     expect(screen.queryByText(/已等待/)).toBeNull();
   });
 
-  it("resumes after metadata without creating another Bot or rewriting completed steps", async () => {
+  it("resumes a legacy snapshot without rewriting SOUL and adds appearance metadata", async () => {
     saveBuddySetupSnapshot(snapshot);
     const exec = vi.fn(async () => ok);
     const onCreateBot = vi.fn();
@@ -58,10 +59,12 @@ describe("refresh recovery", () => {
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith("bot-1"));
     expect(onCreateBot).not.toHaveBeenCalled();
     expect(onSetupStart).toHaveBeenCalledTimes(1);
+    const upgradedPlan = buildBuddySetupPlan({ profile, avatar, appearance: DEFAULT_HERMES_APPEARANCE, profileId: "profile-1", timestamp: "test" });
     expect(exec.mock.calls).toEqual([
       // 第一条永远是探活；超时取常量，避免调参后又要来改这个断言
       ["bot-1", "true", { timeoutMs: SANDBOX_PROBE_TIMEOUT_MS }],
-      ["bot-1", plan.at(-1)!.command, { timeoutMs: plan.at(-1)!.timeoutMs }],
+      ["bot-1", upgradedPlan[1]!.command, { timeoutMs: upgradedPlan[1]!.timeoutMs }],
+      ["bot-1", upgradedPlan.at(-1)!.command, { timeoutMs: upgradedPlan.at(-1)!.timeoutMs }],
     ]);
     expect(loadBuddySetupSnapshot("bot-1")).toBeNull();
     await waitFor(() => expect(unloadPrevented()).toBe(false));
@@ -95,7 +98,8 @@ describe("refresh recovery", () => {
     render(<AgentOnboardingPanel botId="bot-1" profileId="profile-1" execDebugCommand={exec} onCreated={onCreated} />);
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith("bot-1"));
     expect(exec).toHaveBeenCalledTimes(4); // probe + soul + metadata + gateway
-    expect(unloadPrevented()).toBe(false);
+    // onCreated runs before React flushes the effect that releases the unload guard.
+    await waitFor(() => expect(unloadPrevented()).toBe(false));
   });
 
   it("waits for the verified profile before recovering", async () => {
@@ -140,7 +144,7 @@ describe("refresh recovery", () => {
     await screen.findByRole("alert");
     expect(exec).toHaveBeenCalledTimes(2); // probe + read; no writes
     expect(onCreated).not.toHaveBeenCalled();
-    expect(unloadPrevented()).toBe(false);
+    await waitFor(() => expect(unloadPrevented()).toBe(false));
     retry = true;
     fireEvent.click(screen.getByRole("button", { name: "重试" }));
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith("bot-new"));

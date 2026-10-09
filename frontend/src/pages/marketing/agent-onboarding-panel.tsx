@@ -15,7 +15,7 @@
  *   - 已创建态：点「创建」后自动进入
  */
 
-import { ChevronLeft, ChevronRight, HelpCircle, RefreshCw } from "lucide-react";
+import { ChevronLeft, ChevronRight, HelpCircle } from "lucide-react";
 
 import {
   Select,
@@ -31,15 +31,14 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { useT } from "@/i18n/t";
 import { cn } from "@/lib/utils";
 import {
-  AVATAR_SHAPES,
-  getAvatarShapeLabel,
   DEFAULT_AVATAR_COLOR,
   DEFAULT_AVATAR_SHAPE,
   GeometricAvatar,
-  randomizeAvatarBatch,
   type AvatarShapeId,
 } from "@/pages/marketing/agent-avatar-shapes";
 import { CreatingLoadingView } from "@/pages/marketing/agent-creating-loading";
+import { HermesStepDressup } from "@/pages/marketing/agent-dressup-studio";
+import { DEFAULT_HERMES_APPEARANCE, type HermesAppearance } from '@/lib/hermes-appearance';
 import {
   buildBuddySetupPlan,
   buildSandboxWarmupStep,
@@ -350,6 +349,7 @@ export const AgentOnboardingPanel = ({
     profile: { name: string; description: string };
     template?: AgentTemplate;
     avatar: { shapeId: string; color: string };
+    appearance: HermesAppearance;
     preserveSoul?: boolean;
     resume?: boolean;
   } | null>(null);
@@ -556,6 +556,7 @@ export const AgentOnboardingPanel = ({
       profile: snapshot.profile,
       template,
       avatar: snapshot.avatar,
+      appearance: snapshot.appearance ?? DEFAULT_HERMES_APPEARANCE,
       preserveSoul: snapshot.preserveSoul,
       resume: true,
     });
@@ -576,10 +577,9 @@ export const AgentOnboardingPanel = ({
   }, [protectUnload]);
 
   /* ── 头像 ── */
-  const [shapeId, setShapeId] = useState<AvatarShapeId>(DEFAULT_AVATAR_SHAPE);
-  const [color, setColor] = useState(DEFAULT_AVATAR_COLOR);
-  /** 当前展示的候选形状（「换一批」会重新抽） */
-  const [shapeBatch, setShapeBatch] = useState(() => AVATAR_SHAPES.slice(0, 8));
+  const shapeId: AvatarShapeId = DEFAULT_AVATAR_SHAPE;
+  const color = DEFAULT_AVATAR_COLOR;
+  const [appearance, setAppearance] = useState<HermesAppearance>(DEFAULT_HERMES_APPEARANCE);
 
   /* ── 表单 ── */
   /*
@@ -606,16 +606,6 @@ export const AgentOnboardingPanel = ({
 
   /** 空白创建：没有选中任何来源 bot（空串） */
   const isBlankCreate = !cloneOptions?.value;
-
-  /** 换一批：重抽候选形状 + 换个配色；若当前形状不在新批次里则顺延选中第一个 */
-  const handleRandomize = () => {
-    const next = randomizeAvatarBatch({ currentColor: color });
-    setShapeBatch(next.shapes);
-    setColor(next.color);
-    if (!next.shapes.some((item) => item.id === shapeId)) {
-      setShapeId(next.shapes[0]!.id);
-    }
-  };
 
   /**
    * 两条创建路径共用：落资料 → 建 bot → 跑配置计划。
@@ -645,6 +635,7 @@ export const AgentOnboardingPanel = ({
         profile: nextProfile,
         template,
         avatar: nextAvatar,
+        appearance,
         preserveSoul: !template && Boolean(runtimeRef.current.cloneValue),
       });
 
@@ -665,6 +656,7 @@ export const AgentOnboardingPanel = ({
           template,
           profileId: "main",
           avatar: nextAvatar,
+          appearance,
           timestamp: new Date().toISOString().replace(/[:.]/g, "-"),
           // 传 t：步骤 label 要跟界面同语言，否则英文表单点完会跳出中文清单
           t,
@@ -680,7 +672,7 @@ export const AgentOnboardingPanel = ({
       setWarmupState({ step: buildSandboxWarmupStep(t), status: "running" });
       setPhase("creating");
     },
-    [name, shapeId, color, description],
+    [name, shapeId, color, description, appearance],
   );
 
   /*
@@ -755,6 +747,7 @@ export const AgentOnboardingPanel = ({
           profileId: targetProfileId || profileIdRef.current,
           profile: pendingSetup.profile,
           avatar: pendingSetup.avatar,
+          appearance: pendingSetup.resume ? previous?.appearance : pendingSetup.appearance,
           templateId: pendingSetup.template?.id ?? "",
           preserveSoul: Boolean(pendingSetup.preserveSoul),
           planSignature: pendingSetup.resume ? previous?.planSignature ?? "" : "",
@@ -831,23 +824,31 @@ export const AgentOnboardingPanel = ({
           if (cancelled()) return;
         }
 
-        const plan = buildBuddySetupPlan({
+        const planInput = {
           profile: pendingSetup.profile,
           template: pendingSetup.template,
           profileId: targetProfileId,
           avatar: pendingSetup.avatar,
+          appearance: pendingSetup.appearance,
           timestamp: new Date().toISOString().replace(/[:.]/g, "-"),
           // 克隆路径只有完整读取成功才会到达这里。
           preserveSoulContent: Boolean(existingSoul),
           existingSoul,
           t,
-        });
+        };
+        const plan = buildBuddySetupPlan(planInput);
 
         const snapshot = loadBuddySetupSnapshot(targetBotId);
-        const resumeKeys = pendingSetup.resume
-          && snapshot?.profileId === targetProfileId
-          && snapshot.planSignature === buildSetupPlanSignature(plan)
-          ? new Set(snapshot.completedKeys)
+        const planSignature = buildSetupPlanSignature(plan);
+        const legacySignature = snapshot?.appearance === undefined
+          ? buildSetupPlanSignature(buildBuddySetupPlan({ ...planInput, appearance: undefined }))
+          : null;
+        const resumeKeys = pendingSetup.resume && snapshot?.profileId === targetProfileId
+          ? snapshot.planSignature === planSignature
+            ? new Set(snapshot.completedKeys)
+            : snapshot.planSignature === legacySignature
+              ? new Set(snapshot.completedKeys.filter((key) => !key.endsWith(':profile-meta')))
+              : undefined
           : undefined;
 
         /* 每完成一步就落盘，刷新后据此续跑 */
@@ -857,9 +858,10 @@ export const AgentOnboardingPanel = ({
             profileId: targetProfileId,
             profile: pendingSetup.profile,
             avatar: pendingSetup.avatar,
+            appearance: pendingSetup.appearance,
             templateId: pendingSetup.template?.id ?? "",
             preserveSoul: Boolean(pendingSetup.preserveSoul),
-            planSignature: buildSetupPlanSignature(plan),
+            planSignature,
             completedKeys: collectCompletedKeys(states),
           });
         };
@@ -989,40 +991,9 @@ export const AgentOnboardingPanel = ({
         </p>
       ) : null}
       <div className="flex flex-col items-center text-center">
-        {/* ── 头像预览：选中的大头像持续呼吸 + 偶尔眨眼 ── */}
-        <GeometricAvatar shapeId={shapeId} color={color} size={84} alive />
-
-        {/* ── 形状选择：固定一行，不换行 ── */}
-        <div className="mt-4 flex flex-nowrap justify-center gap-2">
-          {shapeBatch.map((shape) => (
-            <button
-              key={shape.id}
-              type="button"
-              aria-label={getAvatarShapeLabel(shape.id, t)}
-              aria-pressed={shape.id === shapeId}
-              onClick={() => setShapeId(shape.id)}
-              className={cn(
-                // 无边框：几何体本身有形状与配色，方框反而抢视线
-                "inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[4px] transition",
-                shape.id === shapeId
-                  ? "bg-black/[0.06]"
-                  : "hover:bg-black/[0.03]",
-              )}
-            >
-              <GeometricAvatar shapeId={shape.id} color={color} size={26} alive={shape.id === shapeId} />
-            </button>
-          ))}
+        <div className="w-full max-w-[420px]">
+          <HermesStepDressup appearance={appearance} onChange={setAppearance} zh={t("名字") === "名字"} />
         </div>
-
-        {/* ── 换一批：同时换形状候选与配色 ── */}
-        <button
-          type="button"
-          onClick={handleRandomize}
-          className="mt-2.5 inline-flex items-center gap-1.5 rounded-[3px] px-2.5 py-1 text-[13px] font-medium text-black/55 transition hover:bg-black/[0.03] hover:text-black/80"
-        >
-          <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
-          {t("换一批")}
-        </button>
 
         {/* ── 表单 ── */}
         <div className="mt-5 w-full max-w-[420px]">
