@@ -14,7 +14,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { LayoutGrid, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
 // 复用标准面板体系（通道/模型/技能同源）：弹窗蒙层、按钮、主题变量
 import "./agent-config/styles-index.css";
@@ -669,8 +669,8 @@ export function ConnectorsPanel({
   return (
     <section aria-label={t("连接器")} className="space-y-4">
       <AgentSectionHeader
-        title={t("连接你的常用服务")}
-        description={t("授权与配置仅作用于当前实例，Agent 可在对话中安全调用对应能力。")}
+        title={t("连接器")}
+        description={t("连接常用服务，扩展 Agent 能力边界，帮你完成更多任务")}
       />
 
       {error && (
@@ -688,13 +688,6 @@ export function ConnectorsPanel({
           </button>
         </div>
       )}
-
-      <div className="flex flex-col gap-1">
-        <h3 className="text-[15px] font-semibold leading-6 text-black/[0.87]">{t("应用连接")}</h3>
-        <p className="text-sm text-black/45">
-          {t("每个实例单独连接授权账号；更换账号会重新触发授权。")}
-        </p>
-      </div>
 
       {!itemsReady && !error ? (
         <p aria-busy="true" className="rounded-lg border border-black/[0.08] bg-white py-10 text-center text-sm text-black/45 shadow-[0_8px_24px_rgba(15,23,42,0.035)]">
@@ -774,17 +767,6 @@ export function ConnectorsPanel({
               </li>
             );
           })}
-          <li
-            aria-hidden="true"
-            className="flex min-h-32 flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-black/[0.12] bg-black/[0.015] p-5 text-center"
-          >
-            <span className="flex h-11 w-11 items-center justify-center rounded-[14px] border border-black/[0.06] bg-black/[0.03] text-black/35">
-              <LayoutGrid className="h-[22px] w-[22px]" />
-            </span>
-            <span className="text-[13px] font-medium leading-5 text-black/45">
-              {t("更多连接器逐步接入中…")}
-            </span>
-          </li>
         </ul>
       )}
 

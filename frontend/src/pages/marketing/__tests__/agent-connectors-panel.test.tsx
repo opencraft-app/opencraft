@@ -67,6 +67,10 @@ describe("ConnectorsPanel 列表与状态", () => {
     });
     render(<ConnectorsPanel instanceId="ins-1" />);
     expect(await screen.findByText("腾讯会议")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "连接器" })).toBeTruthy();
+    expect(screen.getByText("连接常用服务，扩展 Agent 能力边界，帮你完成更多任务")).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "应用连接" })).toBeNull();
+    expect(screen.queryByText("更多连接器逐步接入中…")).toBeNull();
     expect(await screen.findByText("已授权")).toBeTruthy();
   });
 
