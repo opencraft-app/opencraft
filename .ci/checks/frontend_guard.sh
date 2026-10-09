@@ -46,8 +46,8 @@ tar \
   --exclude="velalink/out" \
   --exclude="velalink/target" \
   --exclude="velalink/crates/*/target" \
-  --exclude="shared/lightvela-agent-core/node_modules" \
-  --exclude="shared/lightvela-agent-core/dist" \
+  --exclude="shared/*/node_modules" \
+  --exclude="shared/*/dist" \
   --exclude="opencraft/packages/mobile-account-sdk/node_modules" \
   --exclude="opencraft/packages/mobile-account-sdk/dist" \
   --exclude="opencraft/packages/mobile-bot-bridge/node_modules" \
@@ -55,7 +55,7 @@ tar \
   --exclude="opencraft/packages/workbench-panels/node_modules" \
   --exclude="opencraft/packages/workbench-panels/dist" \
   -C "$REPO_ROOT" \
-  -cf - frontend velalink shared/lightvela-agent-core opencraft/packages/mobile-account-sdk opencraft/packages/mobile-bot-bridge opencraft/packages/workbench-panels | tar -C "$FRONTEND_GUARD_ROOT" -xf -
+  -cf - frontend velalink shared opencraft/packages/mobile-account-sdk opencraft/packages/mobile-bot-bridge opencraft/packages/workbench-panels | tar -C "$FRONTEND_GUARD_ROOT" -xf -
 
 cd "$FRONTEND_GUARD_DIR"
 if [[ ! -f pnpm-lock.yaml ]]; then
