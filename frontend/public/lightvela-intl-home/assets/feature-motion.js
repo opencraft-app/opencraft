@@ -3,9 +3,6 @@
   var root = document.getElementById('lightvela-intl-home');
   if (!root || root.dataset.featureMotionReady) return;
   root.dataset.featureMotionReady = 'true';
-  root.querySelectorAll('.hero__line--main, .hero__prefix').forEach(function (headline) {
-    headline.textContent = headline.textContent.replace(/\u00a0/g, ' ');
-  });
   var rotator = root.querySelector('#hero-rotator');
   var rotatorWrap = root.querySelector('.hero__rotator-wrap');
   var suffix = root.querySelector('.hero__suffix');

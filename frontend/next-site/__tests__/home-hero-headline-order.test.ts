@@ -21,11 +21,12 @@ const heroReplayRuntime = runtime.slice(
 
 beforeEach(() => {
   vi.useFakeTimers();
-  vi.stubGlobal("matchMedia", () => ({ matches: false }));
+  vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
   vi.stubGlobal(
     "IntersectionObserver",
     class {
       observe() {}
+      disconnect() {}
     },
   );
   vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
@@ -49,6 +50,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  document.dispatchEvent(new Event("lightvela-home-dispose"));
   vi.clearAllTimers();
   vi.useRealTimers();
   vi.unstubAllGlobals();
@@ -57,25 +59,50 @@ afterEach(() => {
 });
 
 describe("homepage hero headline order", () => {
-  it("restores natural word boundaries without changing the headline or replay timing", () => {
+  it.each(["phone", "reduced-motion"])("keeps natural text immediately for %s", () => {
+    vi.stubGlobal("matchMedia", () => ({ matches: true }));
+    const main = document.querySelector<HTMLElement>(".hero__line--main")!;
+    main.textContent = "AI\u00a0partner";
     new Function(headlineRuntime)();
+    expect(main.textContent).toBe("AI partner");
+    expect(main.querySelector(".hero__char")).toBeNull();
+    expect(document.querySelector<HTMLElement>(".hero__rotator-wrap")!.style.getPropertyValue("--rotator-delay")).toBe("0ms");
+  });
+
+  it("cancels pending restoration when the homepage is disposed", () => {
+    new Function(headlineRuntime)();
+    const main = document.querySelector<HTMLElement>(".hero__line--main")!;
+    document.dispatchEvent(new Event("lightvela-home-dispose"));
+    main.textContent = "Replacement page";
+    vi.advanceTimersByTime(10_000);
+    expect(main.textContent).toBe("Replacement page");
+  });
+
+  it.each(["runtime-first", "motion-first"])("restores word boundaries after the entrance, with %s", (order) => {
     const motion = readFileSync(path.resolve("public/lightvela-intl-home/assets/feature-motion.js"), "utf8");
-    const rotatorIndex = motion.indexOf("  var rotator = root.querySelector");
-    if (rotatorIndex === -1) {
-      throw new Error("Cannot find the rotator marker in feature-motion.js; the headline normalization block may have moved.");
-    }
-    const normalization = motion.slice(0, rotatorIndex) + "})();";
     const main = document.querySelector<HTMLElement>(".hero__line--main")!;
     const prefix = document.querySelector<HTMLElement>(".hero__prefix")!;
     const wrap = document.querySelector<HTMLElement>(".hero__rotator-wrap")!;
-    const text = main.textContent!.replace(/\u00a0/g, " ");
+    const text = main.textContent!;
+    if (order === "motion-first") new Function(motion)();
+    new Function(headlineRuntime)();
+    if (order === "runtime-first") new Function(motion)();
     const delay = wrap.style.getPropertyValue("--rotator-delay");
-
-    new Function(normalization)();
-    new Function(normalization)();
-
+    const lastMain = main.querySelector<HTMLElement>(".hero__char:last-child")!;
+    const lastPrefix = prefix.querySelector<HTMLElement>(".hero__char:last-child")!;
+    const mainEnd = Number.parseInt(lastMain.style.getPropertyValue("--cd"), 10) + 500;
+    const prefixEnd = Number.parseInt(lastPrefix.style.getPropertyValue("--cd"), 10) + 500;
+    expect(main.querySelectorAll(".hero__char")).toHaveLength(text.length);
+    expect(main.textContent).toContain("\u00a0");
+    vi.advanceTimersByTime(mainEnd - 1);
+    expect(main.contains(lastMain)).toBe(true);
+    vi.advanceTimersByTime(1);
     expect(main.textContent).toBe(text);
     expect(main.querySelectorAll(".hero__char")).toHaveLength(0);
+    expect(prefix.contains(lastPrefix)).toBe(true);
+    vi.advanceTimersByTime(prefixEnd - mainEnd - 1);
+    expect(prefix.contains(lastPrefix)).toBe(true);
+    vi.advanceTimersByTime(1);
     expect(prefix.textContent).toBe("LightVela 可以成为你的");
     expect(prefix.querySelectorAll(".hero__char")).toHaveLength(0);
     expect(wrap.style.getPropertyValue("--rotator-delay")).toBe(delay);

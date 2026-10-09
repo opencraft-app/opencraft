@@ -119,10 +119,65 @@ export function restoreFooterBoundary(html) {
   return html;
 }
 
+// The animation owner also restores natural text at each line's final frame.
+const heroHeadlineRuntime = String.raw`  (function () {
+    var INITIAL = 100;
+    var STEP = 30;
+    var CHAR_DURATION = 500;
+    var SEGMENT_GAP = 80;
+    var shouldKeepNaturalText = window.matchMedia('(max-width: 640px), (prefers-reduced-motion: reduce)').matches;
+    var restoreTimers = [];
+    function naturalText(el) {
+      return el.textContent.replace(/\u00a0/g, ' ');
+    }
+    function splitChars(el, startDelay) {
+      var text = naturalText(el);
+      el.textContent = '';
+      for (var i = 0; i < text.length; i++) {
+        var ch = document.createElement('span');
+        ch.className = 'hero__char';
+        ch.textContent = text[i] === ' ' ? '\u00a0' : text[i];
+        ch.style.setProperty('--cd', (startDelay + i * STEP) + 'ms');
+        el.appendChild(ch);
+      }
+      var endDelay = startDelay + Math.max(0, text.length - 1) * STEP + CHAR_DURATION;
+      // Keep every character until the last entrance animation has finished.
+      // This owner then restores ordinary spaces so later resizes wrap by word.
+      restoreTimers.push(window.setTimeout(function () { el.textContent = text; }, endDelay));
+      return endDelay;
+    }
+    var main = document.querySelector('.hero__line--main');
+    var prefix = document.querySelector('.hero__line--dynamic .hero__prefix');
+    var wrap = document.querySelector('.hero__line--dynamic .hero__rotator-wrap');
+    var suffix = document.querySelector('.hero__line--dynamic .hero__suffix');
+    if (shouldKeepNaturalText) {
+      if (main) main.textContent = naturalText(main);
+      if (prefix) prefix.textContent = naturalText(prefix);
+    }
+    var next = INITIAL;
+    if (!shouldKeepNaturalText && main) next = splitChars(main, next);
+    if (!shouldKeepNaturalText && prefix) next = splitChars(prefix, next + SEGMENT_GAP);
+    var rotatorDelay = shouldKeepNaturalText ? 0 : next + SEGMENT_GAP;
+    if (wrap) wrap.style.setProperty('--rotator-delay', rotatorDelay + 'ms');
+    if (suffix) suffix.style.setProperty('--rotator-delay', rotatorDelay + 'ms');
+    var root = document.documentElement;
+    var afterText = rotatorDelay + (shouldKeepNaturalText ? 0 : 600) + 200;
+    root.style.setProperty('--cta-delay', afterText + 'ms');
+    root.style.setProperty('--tabs-delay', (afterText + 160) + 'ms');
+    root.style.setProperty('--frame-delay', (afterText + 320) + 'ms');
+    root.classList.add('hero-sequence-ready');
+    if (restoreTimers.length) {
+      document.addEventListener('lightvela-home-dispose', function () {
+        restoreTimers.forEach(function (timer) { window.clearTimeout(timer); });
+      }, { once: true });
+    }
+  })();`;
+
 // The approved source includes per-word measuring; only feature-motion.js owns
 // hero sizing now. Keep this normalization shared by import and regression tests.
 export function normalizeHeroRuntime(source) {
   return source
+    .replace(/  \(function \(\) \{\n    var INITIAL = 100;[\s\S]*?\n  \}\)\(\);/, heroHeadlineRuntime)
     .replace(/^[ \t]*var measurer = el\.cloneNode\(false\);\n[\s\S]*?^[ \t]*function measure\(word\) \{[^\n]*\}\n/m, '')
     .replace(/^[ \t]*wrap\.style\.width = measure\(words\[index\]\) \+ 'px';\n/gm, '')
     .replace(/^[ \t]*var width = measure\(word\);\n[ \t]*if \(width > 0\) wrap\.style\.width = width \+ 'px';\n/gm, '');

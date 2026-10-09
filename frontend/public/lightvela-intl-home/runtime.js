@@ -99,8 +99,12 @@
     var CHAR_DURATION = 500;
     var SEGMENT_GAP = 80;
     var shouldKeepNaturalText = window.matchMedia('(max-width: 640px), (prefers-reduced-motion: reduce)').matches;
+    var restoreTimers = [];
+    function naturalText(el) {
+      return el.textContent.replace(/\u00a0/g, ' ');
+    }
     function splitChars(el, startDelay) {
-      var text = el.textContent;
+      var text = naturalText(el);
       el.textContent = '';
       for (var i = 0; i < text.length; i++) {
         var ch = document.createElement('span');
@@ -109,12 +113,20 @@
         ch.style.setProperty('--cd', (startDelay + i * STEP) + 'ms');
         el.appendChild(ch);
       }
-      return startDelay + Math.max(0, text.length - 1) * STEP + CHAR_DURATION;
+      var endDelay = startDelay + Math.max(0, text.length - 1) * STEP + CHAR_DURATION;
+      // Keep every character until the last entrance animation has finished.
+      // This owner then restores ordinary spaces so later resizes wrap by word.
+      restoreTimers.push(window.setTimeout(function () { el.textContent = text; }, endDelay));
+      return endDelay;
     }
     var main = document.querySelector('.hero__line--main');
     var prefix = document.querySelector('.hero__line--dynamic .hero__prefix');
     var wrap = document.querySelector('.hero__line--dynamic .hero__rotator-wrap');
     var suffix = document.querySelector('.hero__line--dynamic .hero__suffix');
+    if (shouldKeepNaturalText) {
+      if (main) main.textContent = naturalText(main);
+      if (prefix) prefix.textContent = naturalText(prefix);
+    }
     var next = INITIAL;
     if (!shouldKeepNaturalText && main) next = splitChars(main, next);
     if (!shouldKeepNaturalText && prefix) next = splitChars(prefix, next + SEGMENT_GAP);
@@ -127,6 +139,11 @@
     root.style.setProperty('--tabs-delay', (afterText + 160) + 'ms');
     root.style.setProperty('--frame-delay', (afterText + 320) + 'ms');
     root.classList.add('hero-sequence-ready');
+    if (restoreTimers.length) {
+      document.addEventListener('lightvela-home-dispose', function () {
+        restoreTimers.forEach(function (timer) { window.clearTimeout(timer); });
+      }, { once: true });
+    }
   })();
 
   (function () {
