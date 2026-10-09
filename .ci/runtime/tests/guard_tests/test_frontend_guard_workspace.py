@@ -49,6 +49,7 @@ class FrontendGuardWorkspaceTests(unittest.TestCase):
                 for spec in manifest.get(section, {}).values():
                     if spec.startswith("file:"):
                         dependency = (package_root / spec.removeprefix("file:")).resolve()
+                        dependency.relative_to(REPO_ROOT)
                         if dependency not in dependencies:
                             dependencies.add(dependency)
                             pending.append(dependency)
@@ -64,7 +65,7 @@ class FrontendGuardWorkspaceTests(unittest.TestCase):
             for dependency in dependencies:
                 package = source / dependency.relative_to(REPO_ROOT)
                 package.mkdir(parents=True, exist_ok=True)
-                (package / "package.json").write_text('{"name":"fixture","version":"0.0.0"}')
+                (package / "package.json").write_text((dependency / "package.json").read_text())
                 (package / "src").mkdir()
                 (package / "src/index.ts").write_text("export {};\n")
                 (package / "node_modules").mkdir()
