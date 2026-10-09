@@ -131,3 +131,15 @@ derived: false
 - unverified: 尚未在此记录创建时间完成远端 CI；未合并、未生产发布，未验证真实账号、支付、付费模型及泰语母语编辑审核。全仓 Vitest 与全量历史 context 审计不能用聚焦门禁代替。
 - restore: /tmp/lightvela-thai-frontend-guard-delivery.log；/tmp/lightvela-thai-master-regression.log；/tmp/lightvela-thai-embedded-final.log；/tmp/lightvela-thai-validation/report.html；/tmp/lightvela-thai-validation/report-data.json。
 - next_action: 沿用会话授权 push codex/lightvela-thai 并创建 MR，核对新 HEAD 远端 CI 与合并状态；不自动合并或发布。
+
+## checkpoint — 远端 CI 失败与本地复现
+- stage: MR !5146 已创建，HEAD 52106d8d9a，工蜂状态 can_be_merged；首轮 MR 占位检查 failure，耗时 1m27s。
+- context_receipt: 新读取 .ci/AGENTS.md、docs/context/flows/tapd-gongfeng-delivery.md、docs/context/project/services/ci.md、.agents/skills/devops-pipeline/SKILL.md。
+- verified: 完整 ci-runtime 本地复现 656 tests：唯一失败 test_beijing_gateway_consumes_dedicated_collaboration_bridge_secret。master 17ba518fce 已加入 https://lightclaw.pages.dev 来源，但测试期望仅 localhost。修复仅更新精确名单断言，保持 token env/upstream/全部来源的完整比较；不改配置、部署或权限。
+- unverified: BK_CI_ACCESS_TOKEN 未配置，已按技能请求日志读取授权；本地复现不能等同读取蓝盾日志。新断言修复需完整 ci-runtime 与远端新 HEAD 复验。
+- restore: /tmp/lightvela-thai-ci-runtime-reproduce.log；MR !5146；/tmp/lightvela-thai-validation/report.html。
+- next_action: 完整 ci-runtime 通过后推送同一 MR，并核对新的远端 CI 状态。
+
+## checkpoint — 上游 CI 契约修复验证通过
+- verified: 完整 ci-runtime 656 tests 通过（4 个既有 skip），materialized runtime smoke、YAML/manifest 与 diff 检查全部通过；完全按 CI 入口隔离 npm ci --ignore-scripts 的 opencraft guard 222/222 通过，包含生成层只读检查。
+- next_action: 推送精确名单测试修复到同一 MR !5146，核对新提交 SHA 的远端 CI；浏览器与产品代码仍为已验证 d2b246f303，不涉及新产品实现变更。
