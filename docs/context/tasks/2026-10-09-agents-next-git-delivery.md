@@ -35,3 +35,16 @@ No production deployment, GitOps or public mirror push; no generated bundles or 
 - Original branch starts 40 commits behind origin/master; retain latest upstream changes.
 - Browser fixture verifies theme conversion with Chromium; phone/tablet hardware remains separate.
 - This delivery does not mean production deployment or complete native automations parity.
+
+## merged validation / checkpoint
+- Source commit `225267ffae`, synchronized snapshot commit `c7d907c99e`.
+- Latest master `5413ca59a0` merged without textual conflicts into `06b94203cd`.
+- Independent merge worktree installed its own npm/pnpm dependencies.
+- Merged frontend `check` passed (166 baseline diagnostics, zero new); 26 frontend tests passed.
+- Merged Expo/Web/panels typechecks, platform boundaries and 130-file sync check passed.
+- Merged model/bridge tests: 15 + 28 passed.
+- Fresh `/agents-next` export and embedded runtime smoke passed, including automations-to-chat return.
+- The mobile-bot-bridge package has no standalone typecheck script; its typed consumers passed.
+- Repository-wide documentation validation reports 136 errors, including 51 links, because
+  this sparse checkout omits unrelated service directories; no full-repository gate claimed.
+- Original dirty catalog remains outside the delivery commits; generated Web/iOS output is ignored.
