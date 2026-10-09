@@ -178,6 +178,7 @@ export function AgentChatMigrationSurface({
   activeRef.current = active;
   const [connection, setConnection] = useState<{ phase: string; failureCode: string | null }>({ phase: "connecting", failureCode: null });
   const [startupFailed, setStartupFailed] = useState(false);
+  const [moduleReloadPending, setModuleReloadPending] = useState(false);
   const [connectionSlow, setConnectionSlow] = useState(false);
   const [everReady, setEverReady] = useState(false);
   const [loadingNoticeDue, setLoadingNoticeDue] = useState(false);
@@ -235,6 +236,7 @@ export function AgentChatMigrationSurface({
     if (mount === null) return;
     setOwner("loading");
     setStartupFailed(false);
+    setModuleReloadPending(false);
     setRetrying(false);
     setEverReady(false);
     setConnection({ phase: "connecting", failureCode: null });
@@ -448,9 +450,7 @@ export function AgentChatMigrationSurface({
       console.warn("[opencraft-embed] startup failed", { stage: moduleFailed ? "module" : "application", error: cause });
       failed = true;
       setStartupFailed(true);
-      if (moduleFailed && scriptUrl !== "bundled:opencraft" && markEmbeddedWorkbenchModuleReload()) {
-        reloadEmbeddedWorkbenchPage();
-      }
+      if (moduleFailed && scriptUrl !== "bundled:opencraft") setModuleReloadPending(true);
     });
 
     return () => {
@@ -478,6 +478,12 @@ export function AgentChatMigrationSurface({
       }
     };
   }, [accountId, apiBase, enabled, instanceId, profileId, region, sessionRevision, started]);
+
+  useEffect(() => {
+    if (active && enabled && moduleReloadPending && markEmbeddedWorkbenchModuleReload()) {
+      reloadEmbeddedWorkbenchPage();
+    }
+  }, [active, enabled, moduleReloadPending]);
 
   useEffect(() => {
     if (!locale) return;
