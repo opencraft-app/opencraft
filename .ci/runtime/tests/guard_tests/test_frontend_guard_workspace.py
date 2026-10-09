@@ -40,27 +40,19 @@ class FrontendGuardWorkspaceTests(unittest.TestCase):
         self.assertTrue(GUARD_PATH.is_file(), "missing trusted CI frontend guard")
         subprocess.run(["bash", "-n", str(GUARD_PATH)], check=True, capture_output=True)
         package_json = json.loads((REPO_ROOT / "frontend/package.json").read_text())
-        # pnpm resolves file: dependencies of local packages too. Build the
-        # real closure so a newly added nested dependency cannot evade this guard.
-        packages = {REPO_ROOT / "frontend": package_json}
+        dependencies = set()
         pending = [REPO_ROOT / "frontend"]
         while pending:
-            package = pending.pop()
-            manifest = packages[package]
+            package_root = pending.pop()
+            manifest = json.loads((package_root / "package.json").read_text())
             for section in ("dependencies", "devDependencies", "optionalDependencies"):
                 for spec in manifest.get(section, {}).values():
-                    if not spec.startswith("file:"):
-                        continue
-                    dependency = (package / spec.removeprefix("file:")).resolve()
-                    dependency.relative_to(REPO_ROOT)
-                    if dependency not in packages:
-                        packages[dependency] = json.loads((dependency / "package.json").read_text())
-                        pending.append(dependency)
-        dependencies = {
-            os.path.relpath(package, REPO_ROOT / "frontend"): manifest
-            for package, manifest in packages.items()
-            if package != REPO_ROOT / "frontend"
-        }
+                    if spec.startswith("file:"):
+                        dependency = (package_root / spec.removeprefix("file:")).resolve()
+                        dependency.relative_to(REPO_ROOT)
+                        if dependency not in dependencies:
+                            dependencies.add(dependency)
+                            pending.append(dependency)
         self.assertTrue(dependencies)
         guard_text = GUARD_PATH.read_text()
         command = guard_text.split("\ntar \\\n", 1)[1].split('\n\ncd "$FRONTEND_GUARD_DIR"', 1)[0]
@@ -70,10 +62,10 @@ class FrontendGuardWorkspaceTests(unittest.TestCase):
             (source / "frontend").mkdir(parents=True)
             destination.mkdir()
             (source / "frontend/package.json").write_text(json.dumps(package_json))
-            for relative_path, manifest in dependencies.items():
-                package = (source / "frontend" / relative_path).resolve()
+            for dependency in dependencies:
+                package = source / dependency.relative_to(REPO_ROOT)
                 package.mkdir(parents=True, exist_ok=True)
-                (package / "package.json").write_text(json.dumps(manifest))
+                (package / "package.json").write_text((dependency / "package.json").read_text())
                 (package / "src").mkdir()
                 (package / "src/index.ts").write_text("export {};\n")
                 (package / "node_modules").mkdir()
@@ -85,9 +77,9 @@ class FrontendGuardWorkspaceTests(unittest.TestCase):
                 capture_output=True,
                 text=True,
             )
-            for relative_path in dependencies:
-                package = destination / "frontend" / relative_path
-                with self.subTest(dependency=relative_path):
-                    self.assertTrue((package / "package.json").is_file(), f"missing local dependency: {relative_path}")
+            for dependency in dependencies:
+                package = destination / dependency.relative_to(REPO_ROOT)
+                with self.subTest(dependency=dependency):
+                    self.assertTrue((package / "package.json").is_file(), f"missing local dependency: {dependency}")
                     self.assertTrue((package / "src/index.ts").is_file())
                     self.assertFalse((package / "node_modules").exists())
