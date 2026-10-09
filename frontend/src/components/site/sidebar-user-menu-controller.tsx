@@ -111,6 +111,7 @@ export function SidebarUserMenuController({ showLanguageSwitcher = false, cloudS
     <Dialog open={cloudStorageOpen} onOpenChange={setCloudStorageOpen}>
       <DialogContent
         className="flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden rounded-lg p-0 md:max-h-[85dvh] md:w-[min(88vw,64rem)] [&_.lv-tat-files-panel_.text-sm]:text-[13px]"
+        overlayClassName="bg-transparent backdrop-blur-none"
         closeLabel={t("关闭")}
         onInteractOutside={(event) => event.preventDefault()}
         onCloseAutoFocus={(event) => { event.preventDefault(); accountTriggerRef.current?.focus(); }}
