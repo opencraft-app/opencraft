@@ -1,0 +1,9 @@
+.git
+.gitignore
+node_modules
+**/node_modules
+apps/client/.expo
+coverage
+*.log
+.env
+.env.*

@@ -1,0 +1,19 @@
+{
+  "schema": "chatserver.agent-notification-test/v1",
+  "senderUserId": "sys_notify",
+  "receiverUserId": "a_KG2X62I5NHEBNDMFNLTOCWLUP4LGI",
+  "customElem": {
+    "schema": "chatserver.agent-notification/v1",
+    "type": "task.assigned",
+    "serverId": "0198f4c2-7a31-7c91-a6d2-7d76f9188c38",
+    "resourceId": "0198f4c2-7a32-7d02-b8c1-3f6e15aa91b4",
+    "revision": 3,
+    "eventId": "0198f4c2-7a34-7af3-a01e-0fcb31e9d84a"
+  },
+  "invariants": [
+    "通知不包含 Task 正文",
+    "通知不包含 Secret 或 URL",
+    "Task 数据库事实不依赖通知成功",
+    "Agent 重连后通过 HTTP 主动对账"
+  ]
+}

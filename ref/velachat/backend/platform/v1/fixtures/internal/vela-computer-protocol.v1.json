@@ -1,0 +1,147 @@
+{
+  "schema": "vela-computer-platform-fixture.v1",
+  "provenance": {
+    "date": "2026-07-31",
+    "protocolVersion": 1,
+    "valueStatus": "synthetic-sanitized-values",
+    "containsRealCredentials": false
+  },
+  "computerCredential": {
+    "request": {
+      "mode": "bootstrap"
+    },
+    "response": {
+      "credentialId": "018f0c9e-7b18-7abc-8def-0123456789ab",
+      "version": 1,
+      "secret": "fixture-computer-credential-not-usable",
+      "expiresAt": "2027-07-31T00:00:00Z",
+      "graceExpiresAt": null
+    }
+  },
+  "computerSession": {
+    "accessToken": "fixture-computer-session-token-not-usable",
+    "expiresAt": "2026-07-31T00:15:00Z",
+    "computer": {
+      "id": "018f0c9e-7b12-7abc-8def-0123456789ab",
+      "serverId": "018f0c9e-7b10-7abc-8def-0123456789ab",
+      "credentialVersion": 1,
+      "assignmentEpoch": "018f0c9e-7b13-7abc-8def-0123456789ab",
+      "assignmentRevision": 1
+    },
+    "assignmentVersions": [
+      1
+    ]
+  },
+  "assignment": {
+    "query": {
+      "sinceEpoch": "018f0c9e-7b13-7abc-8def-0123456789ab",
+      "sinceRevision": 0,
+      "waitSeconds": 0,
+      "forceFull": true
+    },
+    "snapshot": {
+      "schemaVersion": 1,
+      "computerId": "018f0c9e-7b12-7abc-8def-0123456789ab",
+      "epoch": "018f0c9e-7b13-7abc-8def-0123456789ab",
+      "revision": 1,
+      "snapshotHash": "KBcQSbQLv1TrsFOG_rj_6Fav01wz2__kQ217Y9fvP6Y",
+      "agents": []
+    },
+    "canonicalBytes": "{\"agents\":[],\"computerId\":\"018f0c9e-7b12-7abc-8def-0123456789ab\",\"epoch\":\"018f0c9e-7b13-7abc-8def-0123456789ab\",\"revision\":1,\"schemaVersion\":1}",
+    "sha256Hex": "28171049b40bbf54ebb05386feb8ffe856afd35c33dbffe4436d7b63d7ef3fa6",
+    "noChange": {
+      "status": 204,
+      "assignmentRevision": 1
+    },
+    "epochChanged": {
+      "status": 409,
+      "code": "assignment_epoch_changed"
+    },
+    "cursorAhead": {
+      "status": 409,
+      "code": "assignment_cursor_ahead"
+    }
+  },
+  "agentSession": {
+    "agentId": "018f0c9e-7b14-7abc-8def-0123456789ab",
+    "request": {
+      "assignmentEpoch": "018f0c9e-7b13-7abc-8def-0123456789ab",
+      "assignmentRevision": 2,
+      "configGeneration": 3,
+      "credentialVersion": 1
+    },
+    "response": {
+      "accessToken": "fixture-agent-session-token-not-usable",
+      "expiresAt": "2026-07-31T00:15:00Z",
+      "agent": {
+        "id": "018f0c9e-7b14-7abc-8def-0123456789ab",
+        "serverId": "018f0c9e-7b10-7abc-8def-0123456789ab",
+        "userId": "fixture_agent_user",
+        "capabilities": [
+          "read",
+          "send",
+          "server"
+        ],
+        "replyPolicy": "mention_and_dm",
+        "runtime": {
+          "kind": "codex",
+          "model": null
+        }
+      },
+      "im": {
+        "sdkAppId": 1600000000,
+        "userId": "fixture_agent_user",
+        "userSig": "fixture-user-sig-not-usable",
+        "expiresAt": "2026-07-31T00:15:00Z"
+      },
+      "observationCursor": {
+        "assignmentEpoch": null,
+        "configGeneration": 0,
+        "attempt": 0,
+        "sequence": 0
+      }
+    }
+  },
+  "observation": {
+    "observationId": "018f0c9e-7b17-7abc-8def-0123456789ab",
+    "agentId": "018f0c9e-7b14-7abc-8def-0123456789ab",
+    "request": {
+      "assignmentEpoch": "018f0c9e-7b13-7abc-8def-0123456789ab",
+      "assignmentRevision": 2,
+      "configGeneration": 3,
+      "attempt": 1,
+      "sequence": 1,
+      "launchId": "018f0c9e-7b15-7abc-8def-0123456789ab",
+      "state": "starting",
+      "errorCode": null,
+      "observedAt": "2026-07-31T00:00:01Z"
+    },
+    "acceptedStatus": 204,
+    "stale": {
+      "status": 202,
+      "body": {
+        "accepted": false,
+        "reason": "ignored_stale_observation"
+      }
+    }
+  },
+  "heartbeat": {
+    "heartbeatId": "018f0c9e-7b16-7abc-8def-0123456789ab",
+    "daemonVersion": "v0.1.0-fixture",
+    "assignmentEpoch": "018f0c9e-7b13-7abc-8def-0123456789ab",
+    "assignmentRevision": 2,
+    "tatState": "online",
+    "reconcile": {
+      "state": "healthy",
+      "errorCode": null
+    },
+    "agents": [
+      {
+        "agentId": "018f0c9e-7b14-7abc-8def-0123456789ab",
+        "configGeneration": 3,
+        "attempt": 1,
+        "launchId": "018f0c9e-7b15-7abc-8def-0123456789ab"
+      }
+    ]
+  }
+}
