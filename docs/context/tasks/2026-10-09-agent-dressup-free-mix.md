@@ -273,3 +273,9 @@ derived: false
 - 用户要求按Skill补PRD并明确国内/国际都完成。读取lightvela-product-skills、prd-creator及template/checklist/handoff/tapd-write/mr-flow；沿用聊天已确认方案，新增wiki/prd-docs/2026-10-09-agent-avatar-dressup.md，定义双站范围、11项验收、真实Demo、存量七角色、异常与产物交接。原Task Pack未关联TAPD；PRD父单状态不伪称已创建。用户要求补入本次研发，继续现有分支/MR，不夹带无关文件。
 
 - 双站PRD交接：33项头像/换装回归、check零新增类型错误、build:cn和build:global、OpenCraft130项及文档链接校验通过。恢复next-env自动构建引用。本轮提交范围四文件；PRD与代码更新现有MR !5124。TAPD创建/关联范围仍待用户答复，未宣称完整产品前置或线上发布完成。
+
+## master 马来语同步与 rebase
+- 用户指出来源分支与master分叉及语言、UPSTREAM闭包冲突，明确要求rebase并保留九语种。fetch后master为f1ce589f18，远端来源仍074c013086；建立codex/agent-dressup-before-rebase-20261009恢复锚点。13份来源提交重放完成：两处UPSTREAM冲突用最新脚本生成133项解决，字体冲突用subset-fonts重建。源码及其他字典自动合并，未覆盖master九语种注册表和malay文件。
+- 重新运行extract，实际当前中文全集中马来语91条缺译（107为先前新增量，并非当前缺口）；逐条补齐，保留插值。扩展换装locale测试至九个注册入口，含zh-SG与ms-MY；PRD加入马来语。前端真源验证并提交后按规则重新生成OpenCraft副本。
+
+- Rebase 验证检查点：九个 locale 入口测试按 ensureLocaleDictionary 返回的字典 key 接入（zh-SG 复用 zh-CN）。前端 check、国内与国际 build 均退出0；CI 指定的马来语及发布回归包含在19文件250项检查中，247项通过，构建并发时两项超时导致下一项遗留状态失败；构建结束后单独重跑这2文件39项全部通过。文档校验通过。将源码提交后按133项闭包重新生成 vendoring，再以原远端074c013086b711f6fbb52225cc800dcfaec74a63为 lease 更新MR !5124；尚未合并或部署。
