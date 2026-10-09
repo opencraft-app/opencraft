@@ -36,7 +36,7 @@ const encoder = new TextEncoder();
 const MAX_QUERY_BYTES = 65536;
 const MAX_BINDINGS_BYTES = 1048576;
 const MAX_RESULT_BYTES = 1048576;
-const MAX_DATABASE_BYTES = 16777216;
+const MAX_DATABASE_BYTES = 268435456;
 
 function executionResponse(response, digest) {
   const headers = new Headers();
