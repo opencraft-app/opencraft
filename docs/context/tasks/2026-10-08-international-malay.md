@@ -130,13 +130,19 @@ derived: false
 ### restore
 - /data/mono2-malay-refine，分支 codex/lightvela-malay-refine；本轮日志均为 /tmp/lightvela-ms-refine-*。
 ### next_action
-- 用户已授权提交 MR；提交真源、同步并复验生成副本、独立提交副本后推送并创建 MR。
+- MR !5116 已提交，等待审阅并跟进 CI。
 
 ## next_action
-- 独立提交已复验的生成副本，推送 codex/lightvela-malay-refine 并创建目标 master 的 MR；生产发布未执行。
+- MR !5116 已创建，目标 master；后续审阅并跟进 CI，生产发布未执行。
 
 ## MR submission
 - 用户明确授权“提交 mr”，包含本次源码/生成副本提交、分支推送与创建 MR，不包含合并或发布。
 - 真源提交 49a5790e98；随后同步的 UPSTREAM.sourceRevision 指向该提交。
 - 同步及只读漂移复验通过；OpenCraft 两个受影响 workspace 类型检查和 build:web 通过，221 条语言校验、10 项运行时与 1 项嵌入式语言测试复验通过。
 - 此前前端 check/build、340 项聚焦测试、6 组浏览器验收结果沿用；前端源码未在提交阶段改动。
+
+## submitted_mr
+- 工蜂 MR： https://git.woa.com/wisp/mono2/-/merge_requests/5116
+- API 只读列表已核实 iid 5116、id 27588996、状态 opened、源分支 codex/lightvela-malay-refine、目标分支 master；未执行合并。
+- 前端真源提交 49a5790e98；机械同步提交 cbbd792ed6；分支已推送。
+- MR 描述包含范围、通过的检查以及全量测试超时/context 历史失败等限制。
