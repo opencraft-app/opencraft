@@ -70,6 +70,23 @@ class FrontendGuardWorkspaceTests(unittest.TestCase):
                 (package / "src/index.ts").write_text("export {};\n")
                 (package / "node_modules").mkdir()
                 (package / "node_modules/not-source").write_text("excluded")
+            # A new frontend file dependency can land after the trusted guard.
+            # Its transitive shared dependency must also survive isolation.
+            future_dependencies = [source / "shared/new-client", source / "shared/new-core"]
+            frontend_manifest = json.loads((source / "frontend/package.json").read_text())
+            frontend_manifest.setdefault("dependencies", {})["new-client"] = "file:../shared/new-client"
+            (source / "frontend/package.json").write_text(json.dumps(frontend_manifest))
+            for package in future_dependencies:
+                package.mkdir(parents=True)
+                manifest = {"name": package.name}
+                if package.name == "new-client":
+                    manifest["dependencies"] = {"new-core": "file:../new-core"}
+                (package / "package.json").write_text(json.dumps(manifest))
+                (package / "src").mkdir()
+                (package / "src/index.ts").write_text("export {};\n")
+                for generated in ("node_modules", "dist"):
+                    (package / generated).mkdir()
+                    (package / generated / "not-source").write_text("excluded")
             subprocess.run(
                 ["bash", "-euo", "pipefail", "-c", "tar \\\n" + command],
                 env={**os.environ, "REPO_ROOT": str(source), "FRONTEND_GUARD_ROOT": str(destination)},
@@ -83,3 +100,11 @@ class FrontendGuardWorkspaceTests(unittest.TestCase):
                     self.assertTrue((package / "package.json").is_file(), f"missing local dependency: {dependency}")
                     self.assertTrue((package / "src/index.ts").is_file())
                     self.assertFalse((package / "node_modules").exists())
+
+            for dependency in future_dependencies:
+                package = destination / dependency.relative_to(source)
+                with self.subTest(future_dependency=dependency.name):
+                    self.assertTrue((package / "package.json").is_file())
+                    self.assertTrue((package / "src/index.ts").is_file())
+                    self.assertFalse((package / "node_modules").exists())
+                    self.assertFalse((package / "dist").exists())
