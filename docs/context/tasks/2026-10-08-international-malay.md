@@ -9,7 +9,7 @@ source_of_truth: ["frontend/src/i18n/locales.json", "opencraft/apps/workbench-we
 status: active
 reviewed_at: 2026-10-09
 review_due: 2026-11-09
-revision: 1.2.0
+revision: 1.2.1
 precedence: task
 derived: false
 ---
@@ -167,3 +167,8 @@ derived: false
 - 73 份马来语文档的代码块、行内代码与链接目标逐项保持英文源一致。文档分类、正式设计影响及 CI runtime 门禁通过；context-audit 33/33 通过。
 - 全量 `pnpm run test --maxWorkers=3` 在 240 秒限制结束（exit 124），已有 19 个失败文件输出及无 Vitest 用例的脚本错误，未取得全量通过结果。失败包括现有 AgentSettings、升级弹窗、嵌入式工作台、通道文案、静态脚本等；本轮没有扩展修复这些范围，也没有对新 master 宣称逐项基线相等。本任务新加门禁、语言聚焦及双站构建已独立通过。
 - 剩余仅为 frontend 真源提交后的 OpenCraft 机械生成与检查、提交推送和 MR 回执；未合并 MR 或执行生产发布。
+
+### CR 修复提交回执
+- frontend 真源与本轮正式设计/CI 门禁提交 `6802d5abe0`，其后运行同步脚本，生成副本独立提交 `0bbcc64bfa`，sourceRevision 指向 `6802d5abe0`。
+- 只读 `check:mono2-agent-console` 验证 133 文件通过；插件与 workbench-web 类型检查、`build:web`、平台边界检查均通过。工作台构建保留既有 chunk 大小及混合静态/动态 import 告警，不影响本次动态公共词典验证。
+- 修复将推送既有分支 `codex/lightvela-malay-refine`，更新 MR !5116；剩余仅为远端回执。所有通过结论对应本轮 fresh logs，前述全量测试超时限制仍有效。
