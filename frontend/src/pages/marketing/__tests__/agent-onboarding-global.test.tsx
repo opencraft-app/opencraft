@@ -289,6 +289,7 @@ describe("international Bot onboarding", () => {
     fireEvent.click(screen.getByRole("button", { name: "创建" }));
 
     await waitFor(() => expect(addBot).toHaveBeenCalledTimes(1));
+    fireEvent.click(await screen.findByRole("button", { name: "开始旅程" }, { timeout: 25000 }));
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith(
       "/agents/chat?bot=ins-372", { replace: true },
     ));
@@ -422,6 +423,7 @@ describe("international Bot onboarding", () => {
     fireEvent.click(buttons[buttons.length - 1]!);
     bots = [{ ...buildBot(), status: "running" }];
     view.rerender(page("?creating=ins-372"));
+    fireEvent.click(await screen.findByRole("button", { name: "开始旅程" }, { timeout: 25000 }));
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith(
       "/agents/chat?bot=ins-372", { replace: true },
     ));

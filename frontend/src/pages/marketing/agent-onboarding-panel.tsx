@@ -1,10 +1,10 @@
 /**
- * 新用户创建个人助手引导（静态 Demo）
+ * 新用户创建个人助手引导（真实创建流程）
  * ──────────────────────────────────────────────────────────────
  * 新用户从首页 hero 进入 /agents 后的首屏：先完成「创建个人助手」，
  * 才解锁总览与其余功能入口。
  *
- * 两条创建路径，都会先播「喂咖啡」动效再进 dashboard：
+ * 两条创建路径，都在必做弹窗内配置，完成后点「开始旅程」进入对话：
  *   A. 自填表单：头像（形状/配色可换） + 名字 + 描述
  *   B. 个性化模板推荐：点卡片开详情弹窗，弹窗内「创建」
  *
@@ -25,9 +25,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { useT } from "@/i18n/t";
 import { cn } from "@/lib/utils";
 import {
@@ -112,6 +112,21 @@ export const useDemoOnboarding = () => {
   return { needsOnboardingByQuery, completeOnboarding };
 };
 
+/** Required onboarding cannot be dismissed while profile setup is incomplete. */
+function RequiredOnboardingDialog({ children }: { children: ReactNode }) {
+  const t = useT();
+  return <Dialog open>
+    <DialogContent className="max-h-[92dvh] overflow-y-auto rounded-3xl p-6 md:w-[56rem] [&>button]:hidden"
+      onEscapeKeyDown={(event) => event.preventDefault()}
+      onPointerDownOutside={(event) => event.preventDefault()}
+      onInteractOutside={(event) => event.preventDefault()}>
+      <DialogTitle className="text-2xl font-semibold">{t("创建你的 Agent")}</DialogTitle>
+      <DialogDescription className="sr-only">{t("名字")}</DialogDescription>
+      {children}
+    </DialogContent>
+  </Dialog>;
+}
+
 /* ─────────────────────────── 模板详情弹窗 ─────────────────────────── */
 
 const TemplateDialog = ({
@@ -174,9 +189,10 @@ const TemplateRecommendations = ({
   const arrowClass =
     "inline-flex size-8 shrink-0 items-center justify-center rounded-full border border-black/10 bg-white text-black/60 transition-colors hover:bg-black/[0.03] hover:text-black disabled:cursor-default disabled:border-black/[0.06] disabled:bg-transparent disabled:text-black/20";
 
+  if (templates.length === 0) return null;
   return (
     <section className="mt-7">
-      <h3 className="mb-3 text-[13px] font-medium text-black/45">{t("建议")}</h3>
+      <h3 className="mb-3 text-[13px] font-medium text-black/45">{t("推荐模板（可选）")}</h3>
 
       {/* 左按钮 / 内容视口 / 右按钮（DESIGN.md · Carousel Navigation）。
           视口保留原生横向滚动 + snap，触控板/触屏仍可直接滑动。 */}
@@ -922,7 +938,7 @@ export const AgentOnboardingPanel = ({
           return;
         }
         setCreatedBotId(targetBotId);
-        runtimeRef.current.onCreated(targetBotId);
+        // Keep the required dialog open until the user starts their journey.
       } catch (error) {
         if (cancelled()) return;
         // 保留目标与进度：重试或刷新继续配置同一个 Bot。
@@ -958,7 +974,7 @@ export const AgentOnboardingPanel = ({
 
   if (phase === "creating") {
     return (
-      <CreatingLoadingView
+      <RequiredOnboardingDialog><CreatingLoadingView
         errorMessage={fatalError}
         onRetry={fatalError && pendingSetup ? () => {
           const next = { ...pendingSetup, resume: true };
@@ -979,22 +995,23 @@ export const AgentOnboardingPanel = ({
         onContinue={createdBotId
           ? () => runtimeRef.current.onCreated(createdBotId)
           : undefined}
-      />
+      /></RequiredOnboardingDialog>
     );
   }
 
   return (
-    <div className="mx-auto flex min-w-0 max-w-[720px] flex-col py-6">
+    <RequiredOnboardingDialog><div className="flex min-w-0 flex-col py-2">
       {partialFailureCount > 0 ? (
         <p className="mb-4 rounded-[3px] border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
           {t("有 {{count}} 项配置未完成，可在技能 / 定时任务页面重试", { count: partialFailureCount })}
         </p>
       ) : null}
-      <div className="flex flex-col items-center text-center">
-        <div className="w-full max-w-[420px]">
+      <div className="grid gap-6 md:grid-cols-2 md:items-center">
+        <div className="min-w-0">
           <HermesStepDressup appearance={appearance} onChange={setAppearance} zh={t("名字") === "名字"} />
         </div>
 
+        <div className="flex min-w-0 flex-col items-center">
         {/* ── 表单 ── */}
         <div className="mt-5 w-full max-w-[420px]">
           <label
@@ -1146,6 +1163,7 @@ export const AgentOnboardingPanel = ({
         >
           {t("创建")}
         </button>
+        </div>
       </div>
 
       {/* 底部：个性化模板推荐 */}
@@ -1158,6 +1176,6 @@ export const AgentOnboardingPanel = ({
           onCreate={() => handleCreate(activeTemplate)}
         />
       ) : null}
-    </div>
+    </div></RequiredOnboardingDialog>
   );
 };

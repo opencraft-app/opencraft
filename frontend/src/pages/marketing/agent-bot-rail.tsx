@@ -43,7 +43,7 @@ function AgentBotRailItem({ bot, active, mobile, restarting, execDebugCommand, o
   const avatar = (
     <span className="lv-agent-bot-rail-avatar-wrap">
       {profile.profile.appearance ? (
-        <HermesAppearanceAvatar appearance={profile.profile.appearance} size={34} />
+        <HermesAppearanceAvatar appearance={profile.profile.appearance} size={34} portrait />
       ) : profile.hasBuddyConfig ? (
         <GeometricAvatar shapeId={profile.profile.shapeId} color={profile.profile.color} size={34} />
       ) : (
@@ -59,14 +59,14 @@ function AgentBotRailItem({ bot, active, mobile, restarting, execDebugCommand, o
     </span>
   );
   const label = `${t("切换到")} ${name}，${statusLabel}`;
-  const buttonClassName = cn("lv-agent-bot-rail-button", active && "is-active");
+  const buttonClassName = cn("lv-agent-bot-rail-button", active && "is-active", profile.profile.appearance && "!rounded-full");
   return (
       <ModelActionTooltip content={`${name} · ${statusLabel}`} side={mobile ? "auto" : "right"} focusable={false}>
         {active ? (
           <button type="button" className={buttonClassName} aria-label={label} aria-current="true"
             style={!mobile ? {
-              backgroundColor: `color-mix(in srgb, ${accentColor} 8%, white)`,
-              boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${accentColor} 24%, white)`,
+              backgroundColor: profile.profile.appearance ? "#f4f0fa" : `color-mix(in srgb, ${accentColor} 8%, white)`,
+              boxShadow: profile.profile.appearance ? "inset 0 0 0 2px #7953de" : `inset 0 0 0 1px color-mix(in srgb, ${accentColor} 24%, white)`,
             } : undefined}>
             {avatar}
           </button>

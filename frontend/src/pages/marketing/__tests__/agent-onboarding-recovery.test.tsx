@@ -44,6 +44,7 @@ describe("refresh recovery", () => {
     expect(onCreated).not.toHaveBeenCalled();
 
     await act(async () => resolveProbe(ok));
+    fireEvent.click(await screen.findByRole("button", { name: "开始旅程" }, { timeout: 25000 }));
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith("bot-1"));
     expect(screen.queryByText(/已等待/)).toBeNull();
   });
@@ -56,6 +57,7 @@ describe("refresh recovery", () => {
     const onSetupStart = vi.fn();
     render(<StrictMode><AgentOnboardingPanel botId="bot-1" profileId="profile-1"
       execDebugCommand={exec} onCreated={onCreated} onCreateBot={onCreateBot} onSetupStart={onSetupStart} /></StrictMode>);
+    fireEvent.click(await screen.findByRole("button", { name: "开始旅程" }, { timeout: 25000 }));
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith("bot-1"));
     expect(onCreateBot).not.toHaveBeenCalled();
     expect(onSetupStart).toHaveBeenCalledTimes(1);
@@ -96,6 +98,7 @@ describe("refresh recovery", () => {
     const onCreated = vi.fn();
     const exec = vi.fn(async () => ok);
     render(<AgentOnboardingPanel botId="bot-1" profileId="profile-1" execDebugCommand={exec} onCreated={onCreated} />);
+    fireEvent.click(await screen.findByRole("button", { name: "开始旅程" }, { timeout: 25000 }));
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith("bot-1"));
     expect(exec).toHaveBeenCalledTimes(4); // probe + soul + metadata + gateway
     // onCreated runs before React flushes the effect that releases the unload guard.
@@ -109,6 +112,7 @@ describe("refresh recovery", () => {
     const view = render(<AgentOnboardingPanel botId="bot-1" profileId="" execDebugCommand={exec} onCreated={onCreated} />);
     expect(exec).not.toHaveBeenCalled();
     view.rerender(<AgentOnboardingPanel botId="bot-1" profileId="profile-1" execDebugCommand={exec} onCreated={onCreated} />);
+    fireEvent.click(await screen.findByRole("button", { name: "开始旅程" }, { timeout: 25000 }));
     await waitFor(() => expect(onCreated).toHaveBeenCalledOnce());
   });
 
@@ -147,6 +151,7 @@ describe("refresh recovery", () => {
     await waitFor(() => expect(unloadPrevented()).toBe(false));
     retry = true;
     fireEvent.click(screen.getByRole("button", { name: "重试" }));
+    fireEvent.click(await screen.findByRole("button", { name: "开始旅程" }, { timeout: 25000 }));
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith("bot-new"));
     expect(onCreateBot).toHaveBeenCalledTimes(1);
     expect(new Set(exec.mock.calls.map(([id]) => id))).toEqual(new Set(["bot-new"]));

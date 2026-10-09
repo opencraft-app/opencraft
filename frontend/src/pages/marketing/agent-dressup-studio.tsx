@@ -66,10 +66,11 @@ function useBlink(enabled: boolean) {
   return blink;
 }
 
-export function HermesAppearanceAvatar({ appearance, size = 96, alive = false, className }: {
+export function HermesAppearanceAvatar({ appearance, size = 96, alive = false, portrait = false, className }: {
   appearance: HermesAppearance;
   size?: number;
   alive?: boolean;
+  portrait?: boolean;
   className?: string;
 }) {
   const reduced = useReducedMotion();
@@ -79,6 +80,11 @@ export function HermesAppearanceAvatar({ appearance, size = 96, alive = false, c
   // The body occludes backpack straps; foreground accessories share the same canvas anchor.
   const accessories = getHermesAccessories(appearance);
   const base = `${ROOT}/${nativeWink ? 'wink' : 'base'}-${appearance.skin}.webp`;
+  if (portrait) return <span className={cn('relative inline-block shrink-0 overflow-hidden rounded-full bg-[#f4f0fa]', className)} style={{ width: size, height: size }}>
+    <span className="absolute left-1/2 top-0" style={{ width: size * 1.85, height: size * 1.85, transform: 'translate(-50%, -22%)' }}>
+      <HermesAppearanceAvatar appearance={appearance} size={size * 1.85} />
+    </span>
+  </span>;
   if (appearance.style === 'doodle') return <HermesPlushAvatar appearance={appearance} size={size} alive={alive} className={className} />;
   if (appearance.style === 'soft') return <HermesSoftAvatar appearance={appearance} size={size} alive={alive} className={className} />;
   return (
@@ -241,7 +247,7 @@ export function AgentDressupStudio({ value, onChange, onBack, onConfirm, classNa
       <h2 className="text-balance text-2xl font-semibold">{label('捏一个你的搭档', 'Make a little companion')}</h2>
       <p className="mt-2 text-sm text-[#847d97]">{label('换个形状，加一点个性。', 'A little shape. A lot of personality.')}</p>
     </div>
-    <div className="flex h-[242px] items-center justify-center sm:h-[268px]">
+    <div className="mt-4 flex min-h-[286px] items-center justify-center py-2 sm:min-h-[316px]">
       <button type="button" onClick={() => setReaction((n) => n + 1)} aria-label={label('和 Hermes 打招呼', 'Say hello to Hermes')}
         className={cn('rounded-full', FOCUS)}><HermesPlushAvatar appearance={current} size={300} alive reaction={reaction} className="max-sm:!size-[270px]" /></button>
     </div>

@@ -167,8 +167,10 @@ describe('Hermes illustration studio', () => {
     click('量量'); expect(button('晴空')).toHaveAttribute('aria-pressed', 'true');
     click('晴空'); expect(button('小书本')).toHaveAttribute('aria-pressed', 'true');
     click('完成'); click('创建试玩 Agent');
-    expect(screen.getByRole('heading', { name: '小星，准备好了' })).toBeInTheDocument();
-    click('继续搭配'); click('晴空'); expect(button('量量')).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('heading', { name: '创建完成' })).toBeInTheDocument();
+    click('开始旅程');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByText('小星')).toBeInTheDocument();
   });
   it('combines ears, hat and eyewear independently while replacing items in the same slot', () => {
     const save = vi.fn(); render(<Harness onConfirm={save} />);
@@ -178,23 +180,10 @@ describe('Hermes illustration studio', () => {
     expect(save.mock.lastCall?.[0].doodads).not.toContain('book');
     expect(save.mock.lastCall?.[0].doodads).not.toContain('cape');
   });
-  it('edits profile without reopening dress-up and preserves the saved appearance', () => {
-    render(<AgentDressupPreview />);
-    fireEvent.change(screen.getByLabelText('名字'), { target: { value: '小星' } });
-    click('随机样式'); click('创建试玩 Agent');
-    const before = JSON.parse(localStorage.getItem('lightvela:hermes-studio-preview:v1')!).appearance;
-    click('修改资料');
-    expect(screen.getByRole('heading', { name: '修改资料' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '随机样式' })).not.toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText('名字'), { target: { value: '新名字' } });
-    click('保存');
-    expect(screen.getByRole('heading', { name: '新名字，准备好了' })).toBeInTheDocument();
-    expect(JSON.parse(localStorage.getItem('lightvela:hermes-studio-preview:v1')!).appearance).toEqual(before);
-  });
   it('closes the created preview and makes the console creation entry usable', () => {
     render(<AgentDressupPreview />);
     fireEvent.change(screen.getByLabelText('名字'), { target: { value: '小星' } });
-    click('创建试玩 Agent'); click('关闭');
+    click('创建试玩 Agent'); click('开始旅程');
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     click('创建 Bot');
     expect(screen.getByRole('dialog')).toBeInTheDocument();
@@ -203,6 +192,6 @@ describe('Hermes illustration studio', () => {
   it('creates with the default appearance without entering the studio', () => {
     render(<AgentDressupPreview />);
     fireEvent.change(screen.getByLabelText('名字'), { target: { value: 'Hermes' } }); click('创建试玩 Agent');
-    expect(screen.getByRole('heading', { name: 'Hermes，准备好了' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '创建完成' })).toBeInTheDocument();
   });
 });

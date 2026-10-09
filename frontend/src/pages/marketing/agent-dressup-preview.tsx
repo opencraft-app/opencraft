@@ -47,7 +47,6 @@ export function AgentDressupPreview() {
   const [ready, setReady] = useState(false);
   const [created, setCreated] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(true);
-  const [editingProfile, setEditingProfile] = useState(false);
   const [storageError, setStorageError] = useState(false);
   useEffect(() => {
     try {
@@ -69,7 +68,7 @@ export function AgentDressupPreview() {
     catch { setStorageError(true); }
   }, [appearance, name, description, created, ready]);
   return <>
-    <ConsoleBackdrop appearance={appearance} botName={created ? name : null} onCreate={() => { setEditingProfile(false); setCreated(false); setDialogOpen(true); }} />
+    <ConsoleBackdrop appearance={appearance} botName={created ? name : null} onCreate={() => { setCreated(false); setDialogOpen(true); }} />
     {/* Creation remains required; after creating, the preview can close to show the console backdrop. */}
     <Dialog open={dialogOpen} onOpenChange={(open) => { if (created) setDialogOpen(open); }}>
       <DialogContent closeLabel={zh ? '关闭' : 'Close'}
@@ -80,7 +79,7 @@ export function AgentDressupPreview() {
         onOpenAutoFocus={(event) => { event.preventDefault(); (event.currentTarget as HTMLElement).focus(); }}>
         <DialogDescription className="sr-only">{zh ? '选择形象、起个名字，创建你的 Agent。' : 'Pick a look, choose a name, and create your Agent.'}</DialogDescription>
         {created ? <>
-          <DialogTitle className="text-2xl font-semibold text-[#242034]">{name}，准备好了</DialogTitle>
+          <DialogTitle className="text-2xl font-semibold text-[#242034]">创建完成</DialogTitle>
           <div className="my-6 flex flex-col items-center rounded-2xl bg-[#faf8ff] py-5">
             <HermesAppearanceAvatar appearance={appearance} size={240} alive />
             <p className="text-sm text-[#625c73]">{description || '你的新搭档'}</p>
@@ -89,21 +88,20 @@ export function AgentDressupPreview() {
             <HermesAppearanceAvatar appearance={appearance} size={32} />
             <span className="flex-1 text-sm font-medium">{name}</span><span className="text-xs text-[#736b86]">侧栏效果</span>
           </div>
-          <div className="mt-5 flex justify-center gap-3">
-            <button type="button" className="min-h-11 cursor-pointer rounded-xl bg-[#7150da] px-5 text-sm font-semibold text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-500" onClick={() => { setEditingProfile(false); setCreated(false); }}>继续搭配</button>
-            <button type="button" className="min-h-11 cursor-pointer rounded-xl border border-[#e9e3f4] px-5 text-sm focus-visible:outline-2 focus-visible:outline-violet-500" onClick={() => { setEditingProfile(true); setCreated(false); }}>修改资料</button>
+          <div className="mt-5 flex justify-center">
+            <button type="button" className="min-h-11 cursor-pointer rounded-xl bg-[#7150da] px-5 text-sm font-semibold text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-500" onClick={() => setDialogOpen(false)}>开始旅程</button>
           </div>
           {!storageError && <p className="mt-4 text-center text-xs text-[#736b86]" role="status">已保存在本机预览，刷新后仍会保留。</p>}
         </> : <>
-          <DialogTitle className="text-2xl font-semibold text-[#242034]">{editingProfile ? '修改资料' : '创建你的 Agent'}</DialogTitle>
+          <DialogTitle className="text-2xl font-semibold text-[#242034]">创建你的 Agent</DialogTitle>
           <div className="mt-4 grid gap-x-10 gap-y-5 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] md:items-center">
-            {editingProfile ? <div className="flex justify-center"><HermesAppearanceAvatar appearance={appearance} size={180} /></div> : <HermesStepDressup appearance={appearance} onChange={setAppearance} zh={zh} />}
+            <HermesStepDressup appearance={appearance} onChange={setAppearance} zh={zh} />
             <div>
               <label className="block text-sm font-medium text-[#514a65]" htmlFor="preview-name">名字</label>
-              <input id="preview-name" autoFocus={editingProfile} value={name} onChange={(event) => setName(event.target.value)} placeholder="给 Agent 起个名字" className="mt-2 min-h-11 w-full rounded-xl border border-[#e6e1ed] px-3 outline-none focus:border-violet-500" />
+              <input id="preview-name" value={name} onChange={(event) => setName(event.target.value)} placeholder="给 Agent 起个名字" className="mt-2 min-h-11 w-full rounded-xl border border-[#e6e1ed] px-3 outline-none focus:border-violet-500" />
               <label className="mt-4 block text-sm font-medium text-[#514a65]" htmlFor="preview-description">用途 <span className="font-normal text-[#918b9d]">（可选）</span></label>
               <textarea id="preview-description" value={description} onChange={(event) => setDescription(event.target.value)} rows={3} placeholder="它可以帮你做什么？" className="mt-2 w-full resize-none rounded-xl border border-[#e6e1ed] px-3 py-2 outline-none focus:border-violet-500" />
-              <button type="button" disabled={!name.trim() || !ready} onClick={() => setCreated(true)} className="mt-6 min-h-12 w-full cursor-pointer rounded-xl bg-[#7150da] font-semibold text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-500 disabled:cursor-not-allowed disabled:opacity-40">{editingProfile ? '保存' : '创建试玩 Agent'}</button>
+              <button type="button" disabled={!name.trim() || !ready} onClick={() => setCreated(true)} className="mt-6 min-h-12 w-full cursor-pointer rounded-xl bg-[#7150da] font-semibold text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-500 disabled:cursor-not-allowed disabled:opacity-40">创建试玩 Agent</button>
             </div>
           </div>
         </>}

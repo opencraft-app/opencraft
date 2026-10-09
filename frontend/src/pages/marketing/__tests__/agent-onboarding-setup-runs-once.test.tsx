@@ -119,9 +119,15 @@ describe("onboarding setup runs exactly once", () => {
     for (const choice of ['薄荷', '帆帆', '薄荷', '渔夫帽', '小书本']) {
       await userEvent.click(screen.getByRole('button', { name: choice }));
     }
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    await userEvent.keyboard("{Escape}");
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
     await userEvent.click(await screenCreateButton());
 
     // 配置流程跑完
+    const start = await screen.findByRole("button", { name: "开始旅程" }, { timeout: 25000 });
+    expect(onCreated).not.toHaveBeenCalled();
+    await userEvent.click(start);
     await waitFor(() => expect(onCreated).toHaveBeenCalled(), { timeout: 8000 });
 
     // 核心断言：实例只建了一次

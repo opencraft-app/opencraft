@@ -6021,7 +6021,7 @@ export const AgentSettingsPage = ({
                                   未设置过时回落到原有的 bot 头像与名称。 */}
                               {!multiBotEnabled && <span className="lv-agent-avatar lv-agent-avatar--status">
                                 {buddyProfileState.profile.appearance ? (
-                                  <HermesAppearanceAvatar appearance={buddyProfileState.profile.appearance} size={32} />
+                                  <HermesAppearanceAvatar appearance={buddyProfileState.profile.appearance} size={32} portrait />
                                 ) : demoProfileIsCustom ? (
                                   <GeometricAvatar
                                     shapeId={buddyProfileState.profile.shapeId}
