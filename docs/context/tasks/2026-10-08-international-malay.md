@@ -9,7 +9,7 @@ source_of_truth: ["frontend/src/i18n/locales.json", "opencraft/apps/workbench-we
 status: active
 reviewed_at: 2026-10-09
 review_due: 2026-11-09
-revision: 1.2.1
+revision: 1.2.3
 precedence: task
 derived: false
 ---
@@ -172,3 +172,35 @@ derived: false
 - frontend 真源与本轮正式设计/CI 门禁提交 `6802d5abe0`，其后运行同步脚本，生成副本独立提交 `0bbcc64bfa`，sourceRevision 指向 `6802d5abe0`。
 - 只读 `check:mono2-agent-console` 验证 133 文件通过；插件与 workbench-web 类型检查、`build:web`、平台边界检查均通过。工作台构建保留既有 chunk 大小及混合静态/动态 import 告警，不影响本次动态公共词典验证。
 - 修复将推送既有分支 `codex/lightvela-malay-refine`，更新 MR !5116；剩余仅为远端回执。所有通过结论对应本轮 fresh logs，前述全量测试超时限制仍有效。
+
+
+## CI 失败调查 checkpoint（2026-10-09）
+- 用户反馈 MR !5116 CI 失败。工蜂提交状态确认 `f45cd77b24` 的 `MR 占位检查@MERGE_REQUEST` 为 failure，构建 `p-4ed28a7f9b6a4468a10dcfa92d3f9fe4 / b-dc186cdc8b8a4752991931d04fd36cca`，约 2m11s 后失败。
+- 当前无 BK_CI_ACCESS_TOKEN，已按 `.agents/skills/devops-pipeline/SKILL.md` 请求补充；工蜂令牌仅用于工蜂 API，没有混用到蓝盾。尚未读取远端失败步骤日志，未把工蜂总状态当作具体根因证据。
+- 使用 master 可信 frontend guard、CI 固定 Node 22.12.0 / pnpm 10.32.1 及独立锁文件安装，在 `/data/tmp/lightclaw-frontend-guard.xwmmDb` 复现 ENOENT：缺少 `opencraft/packages/workbench-panels`。该目录是 mobile-bot-bridge 的传递 file: 依赖；原 guard 只复制直接依赖。
+- 文档影响检查通过；Node 22 下 OpenCraft `test:embedded-ci` 221/221 通过。
+- 当前 master 更新为 `3a815d4be3`，仍缺该复制路径。已在独立 worktree `/data/mono2-malay-ci-bootstrap`、分支 `codex/ci-frontend-transitive-file-deps` 准备只修改 `.ci` 的 bootstrap 修复，避免 mixed MR 无法走可信 CI 自修复 fallback；马来语业务源码未改。
+- 回归测试改为沿真实 package.json 递归检查 file: 依赖闭包：旧 guard 对 workbench-panels 的缺失打红，修复后 3/3 通过；追加 node_modules/dist 排除及旧契约更新。
+- 剩余：完整 CI runtime 门禁及修复后的隔离 frontend guard（包含双站构建）、bootstrap 修复 MR 回执。bootstrap 合入 master 尚未获用户授权；未重跑/启动远端流水线，原 MR CI 未宣称恢复。
+
+### CI bootstrap 校验进展
+- bootstrap 仅 3 个 `.ci` 文件：补复制 workbench-panels、排除其缓存/产物、递归依赖复制回归和旧契约更新。staged 正式设计影响检查不命中设计边界且通过；无需将正式文档改动混入 CI 自修复分支。
+- 旧脚本独立安装 ENOENT 已复现；修复脚本的独立 frozen install、`pnpm check` 和 trusted guard 原有 7 个 release/docs 测试已通过，正在继续双站静态构建。完整 CI runtime 验证通过。
+
+### CI bootstrap 本地完整门禁结果
+- 修复脚本在 `/data/tmp/lightclaw-frontend-guard.fzbeQE` 以独立依赖目录、CI Node 22.12.0 / pnpm 10.32.1 运行，完整 frontend guard exit 0：frozen install、check（166/171、0 new）、原有 7 文件 / 131 测试及国内/国际 Next static export 与 SEO 均通过。
+- bootstrap 的 CI runtime 门禁、3 项复制回归及 staged 设计影响检查通过；未复制其他 worktree 的 node_modules。
+- 尚未读到远端蓝盾日志；原 !5116 的 failure 不能根据本地复验改标为远端成功。仅提交 bootstrap MR，合入 master 及远端重跑等待用户下一步授权。
+
+### CI bootstrap MR 交接
+- 修复提交 `71bd46c895565bb67270af8d223c35993a2874d1` 已推送，远端 SHA 与本地一致，bootstrap worktree 干净。
+- 创建工蜂 MR !5125（id 27600421）：https://git.woa.com/wisp/mono2/-/merge_requests/5125，目标 master，opened / can_be_merged。MR 描述明确远端总状态与本地复现的证据边界。
+- 原 !5116 远端提交仍为 `f45cd77b24`，尚未合入 CI 修复或重跑远端流水线；本任务 checkpoint 和 catalog 的诊断更新仅留在本地，避免在可信 guard 修复合入前再触发同一失败流水线。
+- handoff：先审核并合入 !5125，再重跑 !5116；合并和手动启动流水线没有在本轮执行。仍缺蓝盾令牌，未读取远端步骤日志。
+
+## MR !5125 冲突处理 checkpoint（2026-10-09）
+- 用户反馈 !5125 合并冲突，授权修复并更新。fetch 最新 master `dabd4fd36a`，确认 !5123 已合入同一 workbench-panels 复制修复；冲突仅发生在递归依赖复制测试。
+- 合入最新 master，保留其运行脚本、契约与既有文档；!5125 相对 master 缩为一个测试文件 2 行新增/1 行替换，分别约束依赖路径在仓库内和保留真实 package.json 夹具。实际 CI 修复已在 master，!5125 不再是 !5116 的 CI 恢复前置条件。
+- 聚焦复制测试 3/3、完整 CI runtime 门禁通过，冲突标记/空白检查通过。merge commit `1c107719b2f67467cb93ce078f620e137b1256fc` 已推送，远端 SHA 一致；bootstrap worktree 干净。
+- 工蜂 API 回读 !5125：opened / can_be_merged、source_commit 为上述 SHA、target_commit 为 dabd4fd36a，commit_check_state pending；未宣称远端 CI 通过。
+- MR 标题/描述已改为测试夹具补强的最终范围。未合并 MR 或手动启动流水线。主马来语分支仅本地 checkpoint/catalog 更新仍未提交推送。
