@@ -33,10 +33,10 @@ import { cn } from "@/lib/utils";
 import {
   DEFAULT_AVATAR_COLOR,
   DEFAULT_AVATAR_SHAPE,
-  GeometricAvatar,
   type AvatarShapeId,
 } from "@/pages/marketing/agent-avatar-shapes";
 import { CreatingLoadingView } from "@/pages/marketing/agent-creating-loading";
+import { AgentTemplateAvatar } from '@/pages/marketing/agent-template-avatar';
 import { HermesStepDressup } from "@/pages/marketing/agent-dressup-studio";
 import { DEFAULT_HERMES_APPEARANCE, type HermesAppearance } from '@/lib/hermes-appearance';
 import {
@@ -219,12 +219,7 @@ const TemplateRecommendations = ({
               onClick={() => onPick(template)}
               className="flex w-[calc((100%-12px)/2)] shrink-0 snap-start items-start gap-3 rounded-[10px] sm:w-[calc((100%-24px)/3)] border border-black/[0.06] bg-white p-3 text-left transition hover:border-black/[0.12] hover:bg-black/[0.015]"
             >
-              <GeometricAvatar
-                shapeId={template.shapeId}
-                color={template.color}
-                size={40}
-                className="shrink-0"
-              />
+              <AgentTemplateAvatar templateId={template.id} size={40} />
               {/* Demo 常量中文无法被 i18n-extract 静态提取，接真实接口时由后端返回已本地化文案 */}
               <span className="min-w-0">
                 <span className="block text-sm font-medium text-black/[0.88]">{template.name}</span>

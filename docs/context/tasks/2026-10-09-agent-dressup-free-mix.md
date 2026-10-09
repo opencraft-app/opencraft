@@ -222,3 +222,8 @@ derived: false
 - 最新要求：实际引导左右布局，创建和喂咖啡同为不可关闭弹窗；空模板不显示「建议」。头像侧栏采用圆形头部近景，复用用户保存外观而非换用固定图。已实现，进入真实截图及回归验证。
 - 真实配置成功后保留弹窗，展示「创建成功」与「开始旅程」，点击才调用 onCreated 导航并关闭；阻断失败不可进入，非阻断失败保留失败清单。预热回归原断言仍期待s单位而实际文案为秒，修正单位匹配。
 - 验证检查点：5文件64项回归通过；pnpm check退出0（166 current/171 baseline/0 new）；pnpm build退出0。真实左右创建弹窗截图 /tmp/lightvela-dressup-validation/real-create-dialog.png；浏览器Esc未关闭。真实创建新实例未执行，不能宣称云端创建E2E通过。原工作台聊天连接仍报加载失败。准备提交前端真源，再同步OpenCraft字典生成副本。
+
+## 推荐模板头像（2026-10-09）
+- 用户要求推荐模板更换为首页批准的形象，删除「再点一次，就能取下」。沿用已读 frontend/site must_read、frontend/AGENTS、DESIGN。有界检索定位 TemplateRecommendations 与 TemplateDetailView，复用已有 peek-friends WebP，并通过共享 AgentTemplateAvatar 保持卡片及详情一致。不改用户自选外观和模板配置执行逻辑。
+- 已核对 square-mint 原图，保留头像裁切中的脸与配饰。当前进行模板入口回归、前端检查、构建和真实弹窗截图。
+- 最终检查点：43项回归串行通过，check/build退出0，0新增类型问题；OpenCraft130文件校验通过，无需生成同步提交。初次2个订阅回归期待自动跳转，更新为点击开始旅程；构建并发导致的5s超时通过构建结束后串行复跑解决。真实截图 /tmp/lightvela-dressup-validation/template-homepage-avatars.png；保留高级/必做弹窗规则，未执行实际新Bot创建或部署。

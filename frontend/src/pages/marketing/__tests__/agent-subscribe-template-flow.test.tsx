@@ -196,6 +196,7 @@ describe("subscribe path: picking a template enters the setup flow", () => {
     // 模拟实例从 provisioning 变 active，目标 profile 不能随过滤结果丢失。
     bots = [{ ...buildBot(), status: "running" }];
     view.rerender(page("?creating=ins-372"));
+    fireEvent.click(await screen.findByRole("button", { name: "开始旅程" }, { timeout: 25000 }));
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith(
       "/agents/chat?bot=ins-372", { replace: true },
     ));

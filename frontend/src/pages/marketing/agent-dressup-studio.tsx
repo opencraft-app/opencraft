@@ -289,7 +289,6 @@ export function AgentDressupStudio({ value, onChange, onBack, onConfirm, classNa
         </div>
       </fieldset>
     </div>
-    <p className="mt-2 text-center text-xs text-[#888094]">{label('再点一次，就能取下', 'Tap again to take it off')}</p>
     <footer className="sticky bottom-0 z-10 mt-4 bg-white pb-[max(.5rem,env(safe-area-inset-bottom))] pt-2">
       <button type="button" onClick={() => onConfirm(current)} className={cn('min-h-12 w-full rounded-xl bg-[#7450dc] px-5 text-sm font-semibold text-white transition-colors hover:bg-[#6440cb]', FOCUS)}>{label('就用这个', 'This is the one')}</button>
     </footer>
