@@ -189,7 +189,7 @@ export function LightVelaDocsLayout({
         <DocsLayout
           tree={source.getPageTree(contentLocale)}
           nav={{
-            enabled: false,
+            enabled: true,
           }}
           i18n={false}
           themeSwitch={{

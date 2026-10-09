@@ -223,3 +223,5 @@ OpenCraft iOS 的内置 Bot DOM runtime 同时包含国内与国际的 frontend 
 泰语使用 `th-TH`（ไทย）及 `/th-th/`，沿用唯一 locale 注册表和独立 `src/content/docs/th/` 源、同目录 metadata；文档清单与英文一致且不跨语言回退。国内站不生成泰语路由。产品词典和公共文案按需共同就绪后切换，异步晚到加载服从现有语言选择代次。
 
 公共文案只在泰语消费分支调用 `localizeThai`；中文、英文、马来语及其他语种不得依赖未加载的泰语目录。技能分类和 overview 均延迟到当前 locale 消费，避免 !5133 中无条件调用未就绪词典导致整页崩溃的问题。首页由英文结构加 `copy.th-TH.json` 机械生成，缺译文失败并在临时目录重生成比对。Thai 文档搜索的索引和查询均使用 `Intl.Segmenter('th', { granularity: 'word' })`，归一化 NFC 并保留泰语组合字符，支持无空格词查询。页面字体通过现有 locale 字体变量回退到系统泰文字体，不将泰字加入不支持它的中文字体子集。
+
+文档复用 Fumadocs 移动导航与搜索，并以 `--fd-banner-height: 60px` 为公开站点顶部栏预留空间，防止搜索和侧栏入口被覆盖。桌面保留原有文档侧栏搜索。
