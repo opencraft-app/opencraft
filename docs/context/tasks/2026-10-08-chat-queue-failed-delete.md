@@ -1,5 +1,5 @@
 ## goal
-Allow a user to delete a failed local queued follow-up from the OpenCraft composer.
+Allow a user to delete a definitely failed local queued follow-up from the OpenCraft composer without hiding an unconfirmed delivery.
 
 ## non_goals
 - Change model availability checks, resend failed input, or delete a Host queue entry without its Server ID.
@@ -9,7 +9,7 @@ Allow a user to delete a failed local queued follow-up from the OpenCraft compos
 - User screenshot and follow-up in this chat: red failed queued messages cannot be deleted.
 
 ## interface_refs / data_structure_refs
-- `ReplicaConversationRuntime.queuedSubmissions`: failed optimistic entries have a command ID and no Server queue ID.
+- `ReplicaConversationRuntime.queuedSubmissions`: definitely failed optimistic entries have a command ID and no Server queue ID; unknown delivery has its own state.
 - `ReplicaConversationRuntime.deleteQueuedSubmission`: route failed local IDs to local removal, Server queue IDs to Host deletion.
 - `ComposerQueueTrayItem.dismissible`: deletion availability for the failed local entry; Send/Edit remain unavailable.
 
@@ -22,6 +22,7 @@ Allow a user to delete a failed local queued follow-up from the OpenCraft compos
 - A failed local queued message has an enabled Delete button, and deleting it removes that row.
 - Local deletion sends no Host queue delete request; ordinary accepted entries still use the existing Host delete path.
 - Submitting entries remain non-deletable; no implicit retry or model change.
+- Unknown delivery remains visible but non-deletable, blocks further submission, and reconciles by client message ID against the Host queue or authoritative history.
 
 ## affected_paths
 - `opencraft/packages/chat-runtime/src/replica-conversation-runtime.ts`
@@ -51,12 +52,15 @@ Allow a user to delete a failed local queued follow-up from the OpenCraft compos
 
 ## evidence
 - The screenshot shows failed rows with disabled Delete buttons.
+- CR !5103 showed that transport timeouts were classified as failed and could be deleted locally even if the Host had accepted the item; this follow-up separates unknown delivery from definite failure.
 - Exact search found `dismissFailedSubmission` in Conversation Runtime and disabled Delete in `queue-tray.tsx`; no prior UI caller.
 - Focused queue/runtime tests: 48 passed; full chat suite: 596 passed. Affected chat-runtime, codex-composer, and Web typechecks plus platform boundaries passed.
 - Real Chromium queue component probe: failed Delete was enabled and removed its row; submitting Delete stayed disabled and the accepted row remained.
 - Web production build and documentation validation passed.
 - Staged change-impact check and staged diff whitespace check passed.
 - Full `npm run gate` reached `test:extensions` and hit an assertion in `tests/extension-artifacts.test.ts:38` (`artifactRef` present in actual persisted record, absent in expected). The extension suite then stalled; the gate was stopped. No extension code was changed in this task.
+- CR follow-up: 52 focused queue/runtime tests and 219 embedded CI tests passed. Chat Runtime, Composer, and Web typechecks, platform boundaries, Web build, and documentation validation passed.
+- Chromium rendered the actual Composer queue with Web styles: definite failure had enabled Delete and danger text; unknown and submitting states had disabled Delete and neutral text. The temporary probe was removed.
 
 ## risks
 - A stale or incorrectly classified row must not route a command ID to Host deletion; eligibility derives from the runtime state.
@@ -66,7 +70,7 @@ Allow a user to delete a failed local queued follow-up from the OpenCraft compos
 - `python3 .agents/context/scripts/validate_change_impact.py --repo . --staged` before handoff.
 
 ## decisions
-- Keep the existing Delete action; distinguish locally failed entries in the presenter and remove them in Conversation Runtime.
+- Keep the existing Delete action for definite failures; represent uncertain delivery as unknown and retain it until authoritative acknowledgement.
 
 ## scan_scope
 - `opencraft/packages/chat-runtime/src/replica-conversation-runtime.ts`

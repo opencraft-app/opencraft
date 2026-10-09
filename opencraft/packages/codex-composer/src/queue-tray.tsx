@@ -32,7 +32,7 @@ import {
 export interface ComposerQueueTrayItem {
   readonly id: string;
   readonly preview: string;
-  readonly state: "submitting" | "queued" | "failed";
+  readonly state: "submitting" | "queued" | "failed" | "unknown";
   readonly operation: "idle" | "updating" | "deleting" | "starting";
   readonly actionable: boolean;
   readonly dismissible?: boolean;
@@ -161,7 +161,7 @@ function SortableQueueItem({
           {...sortable.attributes}
           {...sortable.listeners}
         >
-          {item.state === "failed" || item.pausedReason ? (
+          {item.state === "failed" || item.state === "unknown" || item.pausedReason ? (
             <CircleAlert size={12} aria-hidden="true" />
           ) : (
             <>

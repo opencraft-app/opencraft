@@ -15,7 +15,14 @@ function renderToStaticMarkup(children: React.ReactNode) {
 }
 
 import { ComposerQueueTray } from "../packages/codex-composer/src/queue-tray";
+import { CodexComposer } from "@opencraft/codex-composer";
+import { createConversationKey } from "@opencraft/chat-core";
+import { createComposerController } from "@opencraft/composer-core";
+import { queuedSubmissionPresentation } from "../apps/workbench-web/src/queued-submission-presentation";
 import { supportsAtomicQueuedSteer, supportsUnconfirmedSteerDiscard } from "@opencraft/appserver-protocol";
+
+// tsx compiles package sources with the classic JSX runtime.
+(globalThis as { React?: typeof React }).React = React;
 
 const pendingItem = {
   id: "client-command-1",
@@ -70,6 +77,40 @@ test("failed local queue entries can be deleted while unaccepted entries stay di
     <ComposerQueueTray items={[pendingItem]} isResponseInProgress />,
   );
   assert.match(submitting, /aria-label="Delete queued message"[^>]*disabled=""/);
+});
+
+test("Workbench queue projection keeps uncertain delivery non-deletable through the Composer", () => {
+  const app = readFileSync(new URL("../apps/workbench-web/src/app.tsx", import.meta.url), "utf8");
+  assert.match(app, /queuedSubmissionPresentation\(submission, queueReorderable\)/u);
+  const submission = {
+    commandId: "local-follow-up",
+    clientMessageId: "client-follow-up",
+    serverSubmissionId: null,
+    input: [],
+    preview: "Next",
+    operation: "idle" as const,
+    createdAt: 100,
+    pausedReason: null,
+    error: null,
+  };
+  const controller = createComposerController(
+    { type: "existing-thread", key: createConversationKey("local", "thread-one") },
+    { now: () => 100, createId: () => "composer-id" },
+  );
+  const renderState = (state: "submitting" | "failed" | "unknown") => renderToStaticMarkup(
+    <CodexComposer
+      controller={controller}
+      isStreaming
+      queuedSubmissions={[queuedSubmissionPresentation({ ...submission, state }, true)]}
+      onSubmit={() => false}
+      onCancel={() => {}}
+    />,
+  );
+  assert.match(renderState("failed"), /aria-label="Delete queued message"(?![^>]*disabled="")/u);
+  assert.match(renderState("submitting"), /aria-label="Delete queued message"[^>]*disabled=""/u);
+  const unknown = renderState("unknown");
+  assert.match(unknown, /data-state="unknown"/u);
+  assert.match(unknown, /aria-label="Delete queued message"[^>]*disabled=""/u);
 });
 
 test("queue interruption is the only state promoted to a tray header", () => {

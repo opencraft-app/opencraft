@@ -666,7 +666,7 @@ export interface CodexComposerHandle {
 export interface ComposerQueuedSubmissionPresentation {
   readonly id: string;
   readonly preview: string;
-  readonly state: "submitting" | "queued" | "failed";
+  readonly state: "submitting" | "queued" | "failed" | "unknown";
   readonly operation: "idle" | "updating" | "deleting" | "starting";
   readonly actionable: boolean;
   readonly dismissible?: boolean;

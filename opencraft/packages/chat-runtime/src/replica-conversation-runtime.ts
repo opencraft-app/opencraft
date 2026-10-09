@@ -1206,6 +1206,14 @@ export function createReplicaConversationRuntime(
     );
     const source = sourceTurns(view.turns ?? thread.turns).map((turn) =>
       interruptedByThisClient.has(turn.id) ? { ...turn, interruptedByThisClient: true } : turn);
+    if (replica.authoritative) {
+      const acknowledgedClientIds = sourceClientMessageIds(source);
+      for (const [commandId, submission] of queued) {
+        if (submission.state === "unknown" && acknowledgedClientIds.has(submission.clientMessageId)) {
+          queued.delete(commandId);
+        }
+      }
+    }
     resolveOptimisticTurnPlacements(
       source,
       replica.authoritative,
@@ -1377,7 +1385,7 @@ export function createReplicaConversationRuntime(
     },
     async submit(intent) {
       assertIntentTarget(config.key, intent);
-      if ([...pendingSubmissions.values()].some((submission) => submission.state === "unknown")) {
+      if ([...pendingSubmissions.values(), ...queued.values()].some((submission) => submission.state === "unknown")) {
         throw new SubmissionOutcomeUnknownError();
       }
       if (continuationPending || continuedFromTurnId !== null) {
@@ -1485,18 +1493,22 @@ export function createReplicaConversationRuntime(
         const submissionError =
           error instanceof Error ? error : new Error(String(error));
         if (intent.target.type === "enqueue-follow-up") {
-          queued.set(intent.commandId, {
-            commandId: intent.commandId,
-            clientMessageId: intent.clientMessageId,
-            serverSubmissionId: null,
-            input: [],
-            preview,
-            state: "failed",
-            operation: "idle",
-            createdAt: intent.createdAt,
-            pausedReason: null,
-            error: submissionError,
-          });
+          const acknowledgedByQueue = [...authoritativeQueue.values()].some((submission) =>
+            submission.clientMessageId === intent.clientMessageId);
+          if (!acknowledgedByQueue) {
+            queued.set(intent.commandId, {
+              commandId: intent.commandId,
+              clientMessageId: intent.clientMessageId,
+              serverSubmissionId: null,
+              input: [],
+              preview,
+              state: error instanceof SubmissionOutcomeUnknownError ? "unknown" : "failed",
+              operation: "idle",
+              createdAt: intent.createdAt,
+              pausedReason: null,
+              error: submissionError,
+            });
+          }
         } else {
           const previous = pendingSubmissions.get(intent.commandId);
           if (previous !== undefined) {
@@ -1598,14 +1610,13 @@ export function createReplicaConversationRuntime(
         }
       }
       for (const [commandId, candidate] of queued) {
-        if (
-          candidate.state === "queued" &&
-          !submissions.some(
-            (submission) =>
-              submission.clientUserMessageId === candidate.clientMessageId,
-          )
-        )
+        if (submissions.some((submission) =>
+          submission.clientUserMessageId === candidate.clientMessageId
+        )) {
           queued.delete(commandId);
+          continue;
+        }
+        if (candidate.state === "queued") queued.delete(commandId);
       }
       authoritativeSteers.clear();
       steeringClaims.clear();
