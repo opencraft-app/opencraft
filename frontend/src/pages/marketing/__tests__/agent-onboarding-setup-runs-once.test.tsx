@@ -21,7 +21,7 @@
  *   3. onCreated 最终被回调一次
  */
 
-import { render, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { StrictMode } from "react";
 import userEvent from "@testing-library/user-event";
 import { useEffect, useState } from "react";
@@ -116,6 +116,9 @@ describe("onboarding setup runs exactly once", () => {
       </StrictMode>,
     );
 
+    for (const choice of ['薄荷', '帆帆', '薄荷', '渔夫帽', '小书本']) {
+      await userEvent.click(screen.getByRole('button', { name: choice }));
+    }
     await userEvent.click(await screenCreateButton());
 
     // 配置流程跑完
@@ -138,6 +141,12 @@ describe("onboarding setup runs exactly once", () => {
      * 而且所有配置命令都得发给新 bot，不能串写到别的 bot 上。
      * （第一个参数是 botId）
      */
+    const metadata = execDebugCommand.mock.calls.find((call) => call[1].includes('lightvela_appearance'))?.[1];
+    expect(metadata).toBeDefined();
+    const encoded = metadata!.match(/base64\.b64decode\("([A-Za-z0-9+/=]+)"\)/)?.[1];
+    expect(encoded).toBeDefined();
+    const written = JSON.parse(atob(encoded!));
+    expect(written.appearance).toMatchObject({ shape: 'drop', skin: 'mint', doodads: ['bucket-hat', 'book'] });
     const targets = new Set(execDebugCommand.mock.calls.map((call) => call[0]));
     expect([...targets]).toEqual(["bot-new"]);
   }, 15000);

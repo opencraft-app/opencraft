@@ -1,5 +1,6 @@
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { DEFAULT_HERMES_APPEARANCE } from "@/lib/hermes-appearance";
 import { useBuddyProfile } from "../agent-buddy-profile";
 import { buildHermesSoulContentReadCommand } from "../agent-buddy-command";
 import { buildProfileMetaReadCommand } from "@/lib/hermes-profile-meta";
@@ -22,6 +23,22 @@ describe("Buddy profile isolation", () => {
     expect(exec.mock.calls.map((call) => call[1])).toEqual([
       buildProfileMetaReadCommand("worker"), buildHermesSoulContentReadCommand("worker"),
     ]);
+  });
+
+  it("keeps saved appearance when the optional legacy SOUL read fails, including reload", async () => {
+    const appearance = { ...DEFAULT_HERMES_APPEARANCE, shape: 'drop', skin: 'mint', doodads: ['bucket-hat', 'book'] };
+    const exec = vi.fn<SetupExec>().mockImplementation(async (_bot, command) => {
+      if (command === buildProfileMetaReadCommand('worker')) return ok('__LV_META__' + JSON.stringify({ displayName: 'My Agent', ui_meta: { lightvela_appearance: appearance } }));
+      throw new Error('SOUL unavailable');
+    });
+    const { result, unmount } = renderHook(() => useBuddyProfile({ botId: 'appearance-without-soul', profileId: 'worker', fallbackName: 'Fallback', exec }));
+    await waitFor(() => expect(result.current.profile.appearance).toEqual(appearance));
+    expect(result.current.hasBuddyConfig).toBe(true);
+    expect(result.current.soulExists).toBeNull();
+    unmount();
+    const refreshed = renderHook(() => useBuddyProfile({ botId: 'appearance-without-soul', profileId: 'worker', fallbackName: 'Fallback', exec }));
+    await waitFor(() => expect(refreshed.result.current.profile.appearance).toEqual(appearance));
+    expect(refreshed.result.current.profile.name).toBe('My Agent');
   });
 
   it("accepts main only when explicitly provided", async () => {

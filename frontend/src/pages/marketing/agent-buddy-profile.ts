@@ -136,15 +136,15 @@ export const useBuddyProfile = (params: {
           }).catch(() => null),
           exec(botId, buildHermesSoulContentReadCommand(resolvedProfileId), {
             timeoutMs: SOUL_READ_TIMEOUT_MS,
-          }),
+          }).catch(() => null),
         ]);
-        if (cancelled) return;
+        if (cancelled || (!metaResult && !soulResult)) return;
 
         const meta = metaResult
           ? parseProfileMetaOutput(metaResult.output || "")
           : EMPTY_PROFILE_META;
 
-        const parsed = parseHermesSoulContent(soulResult.output || "");
+        const parsed = parseHermesSoulContent(soulResult?.output || "");
         const soulFields = parsed.status === "ready"
           ? parseBuddyProfileFromSoul(parsed.markdown)
           : { name: null, summary: null, avatar: null };
@@ -163,7 +163,7 @@ export const useBuddyProfile = (params: {
             description: meta.description || soulFields.summary || "",
             appearance: meta.appearance,
           },
-          soulExists: parsed.status === "ready" || parsed.status === "too_large",
+          soulExists: soulResult ? parsed.status === "ready" || parsed.status === "too_large" : null,
           hasBuddyConfig: avatar !== null || meta.appearance !== null,
         };
         profileCache.set(scopeKey, value);

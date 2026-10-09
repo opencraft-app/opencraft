@@ -108,7 +108,7 @@ export function HermesAppearanceAvatar({ appearance, size = 96, alive = false, c
 }
 
 // Curated accessory sets that read well together; the empty set is only for the full studio.
-const LOOK_COMBINATIONS = [['headphones'], ['wizard-hat'], ['bucket-hat'], ['star-glasses'], ['goggles'], ['beret'], ['beanie'], ['headphones', 'star-glasses']] as const;
+const LOOK_COMBINATIONS = [['headphones', 'record'], ['wizard-hat', 'cape'], ['bucket-hat', 'book'], ['star-glasses'], ['goggles', 'scarf'], ['beret', 'camera'], ['beanie'], ['headphones', 'star-glasses']] as const;
 const pickOther = <T,>(list: readonly T[], current: T, same: (a: T, b: T) => boolean = (a, b) => a === b): T => {
   const options = list.filter((item) => !same(item, current));
   return (options.length ? options : list)[Math.floor(Math.random() * (options.length || list.length))]!;
@@ -129,17 +129,17 @@ export function rollHermesLook(value: HermesAppearance, allowBare = false): Herm
 // Tailwind v4 resets buttons to an arrow cursor; every control here is clickable.
 const FOCUS = 'cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-500';
 
-type DressupStep = 'shape' | 'color' | 'extras' | 'done';
-const DRESSUP_STEPS = ['shape', 'color', 'extras'] as const;
+type DressupStep = 'base-color' | 'shape' | 'color' | 'extras' | 'done';
+const DRESSUP_STEPS = ['base-color', 'shape', 'color', 'extras'] as const;
 
-/** Inline creation card: shape, then colour, then accessories, then the finished look. */
+/** Pick an initial colour, shape, refine the colour, then add independent accessories. */
 export function HermesStepDressup({ appearance, onChange, zh }: {
   appearance: HermesAppearance; onChange: (next: HermesAppearance) => void; zh: boolean;
 }) {
   const label = (cnLabel: string, enLabel: string) => zh ? cnLabel : enLabel;
   const current = asDoodleAppearance(appearance);
   const parts = current.doodads ?? [];
-  const [step, setStep] = useState<DressupStep>('shape');
+  const [step, setStep] = useState<DressupStep>('base-color');
   const [drawingOpen, setDrawingOpen] = useState(false);
   const heading = useRef<HTMLHeadingElement>(null);
   const drawingButton = useRef<HTMLButtonElement>(null);
@@ -157,20 +157,20 @@ export function HermesStepDressup({ appearance, onChange, zh }: {
 
   const stepIndex = DRESSUP_STEPS.indexOf(step as typeof DRESSUP_STEPS[number]);
   const titles: Record<DressupStep, string> = {
-    shape: label('先选个形状', 'Pick a shape'), color: label('再选个颜色', 'Pick a colour'),
+    'base-color': label('先选个颜色', 'Pick a colour'), shape: label('选个形状', 'Pick a shape'), color: label('再选个颜色', 'Pick a colour'),
     extras: label('最后加点配饰', 'Add some extras'), done: label('我的 Hermes', 'My Hermes'),
   };
-  const back = step === 'color' ? 'shape' : step === 'extras' ? 'color' : null;
+  const back: DressupStep | null = step === 'shape' ? 'base-color' : step === 'color' ? 'shape' : step === 'extras' ? 'color' : null;
   const shuffle = () => onChange(rollHermesLook(current));
   return <section aria-label={label('我的 Hermes', 'My Hermes')} className="flex flex-col items-center py-2">
     <div className="relative flex w-full justify-center">
       {back && <button type="button" onClick={() => setStep(back)} className={cn('absolute left-0 top-0 flex min-h-11 items-center gap-1 rounded-md text-xs text-[#777184]', FOCUS)}><ArrowLeft size={14} />{label('上一步', 'Back')}</button>}
-      <div className="rounded-full bg-[#f8f5ff]"><HermesAppearanceAvatar appearance={current} size={step === 'done' ? 156 : 124} alive /></div>
+      <div className="rounded-full bg-[#f8f5ff]"><HermesAppearanceAvatar appearance={current} size={step === 'done' ? 196 : 180} alive /></div>
     </div>
     <h3 ref={heading} tabIndex={-1} className="mt-2 text-sm font-semibold text-[#28223a] outline-none">{titles[step]}</h3>
     {step === 'done'
       ? <p className="mt-1 text-xs text-[#777184]">{label('就是它了，还可以再换。', 'That is the one. You can still change it.')}</p>
-      : <ol aria-label={label(`第 ${stepIndex + 1} 步，共 3 步`, `Step ${stepIndex + 1} of 3`)} className="mt-2 flex gap-1.5">
+      : <ol aria-label={label(`第 ${stepIndex + 1} 步，共 4 步`, `Step ${stepIndex + 1} of 4`)} className="mt-2 flex gap-1.5">
         {DRESSUP_STEPS.map((id, index) => <li key={id} aria-hidden="true" className={cn('h-1.5 rounded-full transition-all', index === stepIndex ? 'w-5 bg-[#7450d9]' : index < stepIndex ? 'w-1.5 bg-[#b9a4ee]' : 'w-1.5 bg-[#e3ddee]')} />)}
       </ol>}
 
@@ -179,13 +179,13 @@ export function HermesStepDressup({ appearance, onChange, zh }: {
         onClick={() => { onChange({ ...current, shape }); setStep('color'); }} className={cn('group flex min-w-0 flex-col items-center rounded-md pb-1 text-xs text-[#777087]', FOCUS)}>
         <span className={cn('flex aspect-square w-full max-w-[78px] items-center justify-center rounded-full transition-colors group-hover:bg-[#f8f5ff]', current.shape === shape && 'bg-[#f4efff]')}>
           <HermesPlushAvatar appearance={{ ...current, shape, doodads: [], expression: 'open', drawing: [] }} size={76} className="!size-full" />
-        </span><span className="mt-0.5">{DOODLE_SHAPE_LABELS[shape][zh ? 0 : 1]}</span>
+        </span>
       </button>)}
     </div>}
 
-    {step === 'color' && <div role="group" aria-label={label('颜色', 'Colour')} className="mt-3 grid w-full grid-cols-6 gap-0.5">
+    {(step === 'base-color' || step === 'color') && <div role="group" aria-label={label('颜色', 'Colour')} className="mt-3 grid w-full grid-cols-5 gap-0.5">
       {HERMES_DOODLE_COLORS.map((skin) => <button type="button" key={skin} aria-label={DOODLE_COLOR_INFO[skin][zh ? 0 : 1]} aria-pressed={current.skin === skin}
-        onClick={() => { onChange({ ...current, skin }); setStep('extras'); }} className={cn('flex min-h-12 min-w-0 items-center justify-center rounded-full', FOCUS)}>
+        onClick={() => { onChange({ ...current, skin }); setStep(step === 'base-color' ? 'shape' : 'extras'); }} className={cn('flex min-h-12 min-w-0 items-center justify-center rounded-full', FOCUS)}>
         <span className={cn('size-8 rounded-full', current.skin === skin && 'ring-2 ring-[#7953de] ring-offset-2')} style={{ backgroundColor: DOODLE_COLOR_INFO[skin][2] }} />
       </button>)}
     </div>}
@@ -207,7 +207,7 @@ export function HermesStepDressup({ appearance, onChange, zh }: {
     </>}
 
     {step === 'done' ? <div className="mt-3 flex flex-wrap items-center justify-center gap-4">
-      <button type="button" onClick={() => setStep('shape')} className={cn('min-h-11 rounded-md text-sm font-medium text-[#7050d9]', FOCUS)}>{label('返回自己搭配', 'Customize again')}</button>
+      <button type="button" onClick={() => setStep('base-color')} className={cn('min-h-11 rounded-md text-sm font-medium text-[#7050d9]', FOCUS)}>{label('返回自己搭配', 'Customize again')}</button>
       <button type="button" onClick={shuffle} className={cn('flex min-h-11 items-center gap-1 rounded-md text-xs text-[#777184]', FOCUS)}><Shuffle size={13} />{label('随机', 'Shuffle')}</button>
     </div> : <button type="button" onClick={() => { shuffle(); setStep('done'); }} className={cn('mt-2 flex min-h-11 items-center gap-1 rounded-md text-xs text-[#777184]', FOCUS)}><RefreshCw size={13} />{label('随机样式', 'Random look')}</button>}
   </section>;
@@ -253,7 +253,7 @@ export function AgentDressupStudio({ value, onChange, onBack, onConfirm, classNa
             onClick={() => onChange({ ...current, shape })} className={cn('group flex min-w-0 flex-col items-center rounded-md pb-1 text-xs text-[#777087]', FOCUS)}>
             <span className={cn('flex aspect-square w-full max-w-[78px] items-center justify-center rounded-full transition-colors group-hover:bg-[#f8f5ff]', current.shape === shape && 'bg-[#f4efff]')}>
               <HermesPlushAvatar appearance={{ ...current, shape, doodads: [], expression: 'open', drawing: [] }} size={76} className="!size-full" />
-            </span><span className="mt-0.5">{DOODLE_SHAPE_LABELS[shape][zh ? 0 : 1]}</span>
+            </span>
             <span aria-hidden="true" className={cn('mt-1 size-1 rounded-full', current.shape === shape ? 'bg-[#7450d9]' : 'bg-transparent')} />
           </button>)}
         </div>

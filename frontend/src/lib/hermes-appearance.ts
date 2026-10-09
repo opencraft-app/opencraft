@@ -5,6 +5,10 @@ export const HERMES_EXPRESSIONS = ['open', 'wink', 'happy'] as const;
 export const HERMES_ACCESSORIES = ['backpack', 'crossbody', 'bowtie'] as const;
 
 export type HermesSkin = typeof HERMES_SKINS[number];
+export const HERMES_SKIN_COLORS: Record<HermesSkin, string> = {
+  lavender: '#CDC5F0', peach: '#F6C9C7', butter: '#FCE0B5',
+  mint: '#CDE5E5', sky: '#BED2F8', charcoal: '#444352', white: '#EEE8F7',
+};
 export type HermesPiece = typeof HERMES_PIECES[number];
 export type HermesExpression = typeof HERMES_EXPRESSIONS[number];
 export type HermesAccessory = typeof HERMES_ACCESSORIES[number];
@@ -123,7 +127,7 @@ export const HERMES_PLAYFUL_DOODADS = ['headphones', 'wizard-hat', 'bucket-hat',
 // Older locally saved and remote version-1 appearances remain readable.
 export const HERMES_DOODADS = ['glasses', 'leaf', 'cap', 'pencil', 'crown', 'sparkle-cheeks', 'wings', 'bow-tie', 'flower', 'saturn', ...HERMES_PLAYFUL_DOODADS] as const;
 export type HermesDoodad = typeof HERMES_DOODADS[number];
-export const HERMES_DOODLE_COLORS = ['lavender', 'peach', 'butter', 'mint', 'sky', 'charcoal'] as const;
+export const HERMES_DOODLE_COLORS = ['lavender', 'peach', 'butter', 'mint', 'sky'] as const;
 
 export type HermesDrawingStroke = {
   color: string;
@@ -181,8 +185,9 @@ export function toggleHermesDoodad(value: HermesAppearance, id: HermesDoodad): H
   const next = asDoodleAppearance(value);
   const selected = next.doodads ?? [];
   const slot = (part: HermesDoodad) => {
-    if (['headphones', 'wizard-hat', 'bucket-hat', 'beret', 'beanie'].includes(part)) return 'head';
-    if (['star-glasses', 'goggles'].includes(part)) return 'eyes';
+    if (['wizard-hat', 'bucket-hat', 'beret', 'beanie', 'goggles'].includes(part)) return 'head';
+    if (['cape', 'scarf'].includes(part)) return 'neck';
+    if (['book', 'camera', 'record'].includes(part)) return 'hold';
     return part;
   };
   const doodads = selected.includes(id) ? selected.filter((part) => part !== id)

@@ -2,7 +2,7 @@
 
 import { motion, useReducedMotion } from 'framer-motion';
 import { useEffect, useRef, useState } from 'react';
-import { type HermesAppearance, type HermesDoodad, type HermesDoodleShape, type HermesSkin } from '@/lib/hermes-appearance';
+import { HERMES_SKIN_COLORS, type HermesAppearance, type HermesDoodad, type HermesDoodleShape, type HermesSkin } from '@/lib/hermes-appearance';
 import { HermesDrawingLayer } from '@/components/site/hermes-drawing-layer';
 import { cn } from '@/lib/utils';
 
@@ -21,8 +21,8 @@ export const DOODLE_PART_LABELS = {
   glasses: ['小圆镜', 'Glasses'], scarf: ['小领巾', 'Bandana'], leaf: ['小叶子', 'Leaf pin'], cap: ['小帽子', 'Cap'], pencil: ['小铅笔', 'Pencil'],
 } as const;
 export const DOODLE_COLOR_INFO: Record<HermesSkin, readonly [string, string, string]> = {
-  lavender: ['浅紫', 'Lilac', '#CBB6F9'], peach: ['蜜桃', 'Peach', '#FFB9BB'], butter: ['奶黄', 'Butter', '#FFE2A7'],
-  mint: ['薄荷', 'Mint', '#A9E0CD'], sky: ['晴空', 'Sky', '#AECFFB'], charcoal: ['炭黑', 'Charcoal', '#444352'], white: ['珍珠白', 'Pearl', '#EEE8F7'],
+  lavender: ['浅紫', 'Lilac', HERMES_SKIN_COLORS.lavender], peach: ['蜜桃', 'Peach', HERMES_SKIN_COLORS.peach], butter: ['奶黄', 'Butter', HERMES_SKIN_COLORS.butter],
+  mint: ['薄荷', 'Mint', HERMES_SKIN_COLORS.mint], sky: ['晴空', 'Sky', HERMES_SKIN_COLORS.sky], charcoal: ['炭黑', 'Charcoal', HERMES_SKIN_COLORS.charcoal], white: ['珍珠白', 'Pearl', HERMES_SKIN_COLORS.white],
 };
 const BODY_FILTER: Record<HermesSkin, string> = {
   lavender: 'none', peach: 'hue-rotate(100deg) saturate(1.15)', butter: 'hue-rotate(145deg) saturate(.85) brightness(1.12)',
