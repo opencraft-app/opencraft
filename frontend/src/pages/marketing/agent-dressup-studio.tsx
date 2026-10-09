@@ -135,10 +135,10 @@ export function rollHermesLook(value: HermesAppearance, allowBare = false): Herm
 // Tailwind v4 resets buttons to an arrow cursor; every control here is clickable.
 const FOCUS = 'cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-500';
 
-type DressupStep = 'base-color' | 'shape' | 'color' | 'extras' | 'done';
-const DRESSUP_STEPS = ['base-color', 'shape', 'color', 'extras'] as const;
+type DressupStep = 'base-color' | 'shape' | 'extras' | 'done';
+const DRESSUP_STEPS = ['base-color', 'shape', 'extras'] as const;
 
-/** Pick an initial colour, shape, refine the colour, then add independent accessories. */
+/** Pick a colour, shape, then add independent accessories. */
 export function HermesStepDressup({ appearance, onChange, zh }: {
   appearance: HermesAppearance; onChange: (next: HermesAppearance) => void; zh: boolean;
 }) {
@@ -163,10 +163,10 @@ export function HermesStepDressup({ appearance, onChange, zh }: {
 
   const stepIndex = DRESSUP_STEPS.indexOf(step as typeof DRESSUP_STEPS[number]);
   const titles: Record<DressupStep, string> = {
-    'base-color': t('先选个颜色'), shape: t('选个形状'), color: t('再选个颜色'),
+    'base-color': t('先选个颜色'), shape: t('选个形状'),
     extras: t('最后加点配饰'), done: t('我的 Hermes'),
   };
-  const back: DressupStep | null = step === 'shape' ? 'base-color' : step === 'color' ? 'shape' : step === 'extras' ? 'color' : null;
+  const back: DressupStep | null = step === 'shape' ? 'base-color' : step === 'extras' ? 'shape' : null;
   const shuffle = () => onChange(rollHermesLook(current));
   return <section aria-label={t('我的 Hermes')} className="flex flex-col items-center py-2">
     <div className="relative flex w-full justify-center">
@@ -176,22 +176,22 @@ export function HermesStepDressup({ appearance, onChange, zh }: {
     <h3 ref={heading} tabIndex={-1} className="mt-2 text-sm font-semibold text-[#28223a] outline-none">{titles[step]}</h3>
     {step === 'done'
       ? <p className="mt-1 text-xs text-[#777184]">{t('就是它了，还可以再换。')}</p>
-      : <ol aria-label={t('第 {{step}} 步，共 4 步', { step: stepIndex + 1 })} className="mt-2 flex gap-1.5">
+      : <ol aria-label={t('第 {{step}} 步，共 3 步', { step: stepIndex + 1 })} className="mt-2 flex gap-1.5">
         {DRESSUP_STEPS.map((id, index) => <li key={id} aria-hidden="true" className={cn('h-1.5 rounded-full transition-all', index === stepIndex ? 'w-5 bg-[#7450d9]' : index < stepIndex ? 'w-1.5 bg-[#b9a4ee]' : 'w-1.5 bg-[#e3ddee]')} />)}
       </ol>}
 
     {step === 'shape' && <div role="group" aria-label={t('形状')} className="mt-3 grid w-full grid-cols-5 gap-1">
       {HERMES_DOODLE_SHAPES.map((shape) => <button key={shape} type="button" aria-label={t(DOODLE_SHAPE_LABELS[shape][0])} aria-pressed={current.shape === shape}
-        onClick={() => { onChange({ ...current, shape }); setStep('color'); }} className={cn('group flex min-w-0 flex-col items-center rounded-md pb-1 text-xs text-[#777087]', FOCUS)}>
+        onClick={() => { onChange({ ...current, shape }); setStep('extras'); }} className={cn('group flex min-w-0 flex-col items-center rounded-md pb-1 text-xs text-[#777087]', FOCUS)}>
         <span className={cn('flex aspect-square w-full max-w-[78px] items-center justify-center rounded-full transition-colors group-hover:bg-[#f8f5ff]', current.shape === shape && 'bg-[#f4efff]')}>
           <HermesPlushAvatar appearance={{ ...current, shape, doodads: [], expression: 'open', drawing: [] }} size={76} className="!size-full" />
         </span>
       </button>)}
     </div>}
 
-    {(step === 'base-color' || step === 'color') && <div role="group" aria-label={t('颜色')} className="mt-3 grid w-full grid-cols-5 gap-0.5">
+    {step === 'base-color' && <div role="group" aria-label={t('颜色')} className="mt-3 grid w-full grid-cols-5 gap-0.5">
       {HERMES_DOODLE_COLORS.map((skin) => <button type="button" key={skin} aria-label={t(DOODLE_COLOR_INFO[skin][0])} aria-pressed={current.skin === skin}
-        onClick={() => { onChange({ ...current, skin }); setStep(step === 'base-color' ? 'shape' : 'extras'); }} className={cn('flex min-h-12 min-w-0 items-center justify-center rounded-full', FOCUS)}>
+        onClick={() => { onChange({ ...current, skin }); setStep('shape'); }} className={cn('flex min-h-12 min-w-0 items-center justify-center rounded-full', FOCUS)}>
         <span className={cn('size-8 rounded-full', current.skin === skin && 'ring-2 ring-[#7953de] ring-offset-2')} style={{ backgroundColor: DOODLE_COLOR_INFO[skin][2] }} />
       </button>)}
     </div>}

@@ -18,14 +18,14 @@ derived: false
 ---
 
 ## goal
-完善 Agent 自由换装创建流程：颜色 → 形状 → 颜色 → 配饰；正脸底模和配饰能组成接近用户七角色参考图的形象。
+完善 Agent 自由换装创建流程：颜色 → 形状 → 配饰；正脸底模和配饰能组成接近用户七角色参考图的形象。
 
 ## non_goals
 - 首页 MR、部署、commit/push/MR 创建。
 
 ## requirement_ids / requirement_refs / requirement_excerpt
 - requirement_ids: unknown（当前聊天需求，无外部单号）。
-- requirement_excerpt: 颜色→形状→颜色→配饰；保持正脸，可自由组合，接近七角色参考。
+- requirement_excerpt: 颜色→形状→配饰；保持正脸，可自由组合，接近七角色参考。
 - 2026-10-09 用户在本聊天要求继续 feat/agent-dressup-20261009，保持自由搭配，贴合已认可底模和七角色参考。
 
 ## interface_refs / data_structure_refs
@@ -42,7 +42,7 @@ derived: false
 - 已暂存前一阶段 Agent 换装文件，已有锚点修改保留并继续完善。
 
 ## acceptance
-- 四步骤可前进/返回，换形状保留颜色；配饰独立增删且正常贴合五形状。
+- 三步骤可前进/返回，换形状保留颜色；配饰独立增删且正常贴合五形状。
 - 参考中帽、眼镜、耳机、书/相机等可组合；不自动切换整套穿搭图。
 - 创建、完成、侧栏和编辑显示同一形象；聚焦测试、check、build，桌面/移动端截图核对。
 
@@ -298,3 +298,15 @@ derived: false
 
 - 用户指定标题为「创建你的 LightVela Bot」；真实引导与本地试玩同步修改，辅助描述使用相同产品名。按注册表补齐所有语言字典并同步 OpenCraft 生成副本。
 - 实际读取 site-environment-routing Pack 与 frontend/AGENTS.md；pnpm frontend check 退出0，两个现有换装测试文件33项通过，OpenCraft只读检查133文件通过，git diff --check通过。此次仅文案变更，尚未重新发布共享预览。
+
+### 创建标题发布与 MR 交接
+
+- 用户授权发布并提交 MR。真源提交 c42e50342d、OpenCraft 同步提交 ee92d2c621 已推送现有 MR !5124 和 frontsandbox/agent-dressup-20261009。
+- 自动预览流水线 #2120（b-e062dd21e10c458486c5649682306a4a）已成功，国内国际 Next 构建及上传完成。
+- Chrome 实际打开双站 /agents/chat/?newBot=1，国内弹窗标题「创建你的 LightVela Bot」、国际「Create your LightVela Bot」已显示。截图 /tmp/lightvela-dressup-validation/published-lightvela-bot-title.jpg。未点击创建或改动生产。
+
+### 最新三步流程修正
+
+- 用户明确要求仅三步：颜色、形状、配饰；删除形状后的重复选色步骤，返回路径配饰→形状→颜色；完成页不计为搭配步骤。
+- context route 无匹配，已对 agent-dressup-studio 精确定位；读取 frontend-runtime-openspec-i18n 邻接卡并检查对应现有流程与语言测试。旧四步记录保留为历史，以本节为最新要求。
+- 验证：两文件33项测试通过；前端check退出0，类型166 current/171 baseline/0 new；PRD同步三步。

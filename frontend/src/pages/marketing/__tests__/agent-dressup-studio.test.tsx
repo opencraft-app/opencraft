@@ -51,33 +51,32 @@ describe('Hermes illustration studio', () => {
     heading('先选个颜色'); click('薄荷');
     click('量量');
     expect(readAppearance()).toMatchObject({ shape: 'square', skin: 'mint', doodads: [] });
-    click('蜜桃');
-    expect(readAppearance()).toMatchObject({ skin: 'peach', doodads: [] });
+    expect(readAppearance()).toMatchObject({ skin: 'mint', doodads: [] });
     expect(screen.getByTestId('plush-body')).toHaveAttribute('src', '/assets/mascot-dressup/plush/front-square.webp');
     click('小书本'); click('渔夫帽'); click('渔夫帽');
     expect(readAppearance().doodads).toEqual(['book']);
-    click('上一步'); click('上一步'); click('帆帆');
-    expect(readAppearance()).toMatchObject({ shape: 'drop', skin: 'peach', doodads: ['book'] });
+    click('上一步'); click('帆帆');
+    expect(readAppearance()).toMatchObject({ shape: 'drop', skin: 'mint', doodads: ['book'] });
   });
-  it('walks colour, shape, colour refinement and accessories before the finished look', () => {
+  it('walks three steps: colour, shape and accessories before the finished look', () => {
     render(<StepHarness />);
     heading('先选个颜色'); click('薄荷'); heading('选个形状'); click('量量');
-    heading('再选个颜色'); expect(screen.queryByRole('button', { name: '量量' })).not.toBeInTheDocument(); click('晴空');
+    expect(screen.getByRole('list', { name: '第 {{step}} 步，共 3 步' }).children).toHaveLength(3);
+    expect(screen.queryByRole('button', { name: '晴空' })).not.toBeInTheDocument();
     heading('最后加点配饰'); click('小书本'); click('小披风');
-    expect(readAppearance()).toMatchObject({ shape: 'square', skin: 'sky', expression: 'wink' });
+    expect(readAppearance()).toMatchObject({ shape: 'square', skin: 'mint', expression: 'wink' });
     click('完成'); heading('我的 Hermes');
     expect(readAppearance().doodads).toEqual(expect.arrayContaining(['book', 'cape']));
     expect(screen.getByRole('button', { name: '返回自己搭配' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '随机' })).toBeInTheDocument();
   });
-  it('goes back through all four steps without losing choices', () => {
+  it('goes back through all three steps without losing choices', () => {
     render(<StepHarness />);
-    click('蜜桃'); click('轻轻'); click('蜜桃'); heading('最后加点配饰');
-    click('上一步'); heading('再选个颜色'); expect(button('蜜桃')).toHaveAttribute('aria-pressed', 'true');
+    click('蜜桃'); click('轻轻'); heading('最后加点配饰');
     click('上一步'); heading('选个形状'); expect(button('轻轻')).toHaveAttribute('aria-pressed', 'true');
     click('上一步'); heading('先选个颜色'); expect(button('蜜桃')).toHaveAttribute('aria-pressed', 'true');
     expect(screen.queryByRole('button', { name: '上一步' })).not.toBeInTheDocument();
-    click('蜜桃'); click('轻轻'); click('蜜桃'); click('完成'); click('返回自己搭配');
+    click('蜜桃'); click('轻轻'); click('完成'); click('返回自己搭配');
     heading('先选个颜色'); expect(readAppearance()).toMatchObject({ shape: 'round', skin: 'peach' });
   });
   it('random look jumps straight to the finished look, and shuffle changes silhouette, colour and accessories every time', () => {
@@ -103,7 +102,7 @@ describe('Hermes illustration studio', () => {
   it('lets the accessory step take a drawing off with a second tap and clear everything', () => {
     const drawn: HermesAppearance = { ...DEFAULT_HERMES_APPEARANCE, drawing: [{ color: '#373044', width: 8, points: [[100, 100], [400, 400]] }] };
     render(<StepHarness initial={drawn} />);
-    click('浅紫'); click('游游'); click('浅紫');
+    click('浅紫'); click('游游');
     expect(button('自己画')).toHaveAttribute('aria-pressed', 'true');
     click('自己画'); expect(button('自己画')).toHaveAttribute('aria-pressed', 'false');
     expect(readAppearance().drawing).toEqual([]);
@@ -121,10 +120,10 @@ describe('Hermes illustration studio', () => {
     click('浅紫');
     const shapeButtons = screen.getAllByRole('button').filter((element) => ['轻轻', '游游', '量量', '帆帆', '云云'].includes(element.getAttribute('aria-label') ?? ''));
     expect(shapeButtons.map((element) => element.getAttribute('aria-label'))).toEqual(['轻轻', '游游', '量量', '帆帆', '云云']);
-    click('游游'); click('浅紫');
+    click('游游');
     for (const name of ['星星眼镜', '贝雷帽', '小书本', '小披风']) click(name);
     click('完成'); view.unmount(); render(<AgentDressupPreview />);
-    click('浅紫'); click('游游'); click('浅紫');
+    click('浅紫'); click('游游');
     for (const name of ['星星眼镜', '贝雷帽', '小书本', '小披风']) expect(button(name)).toHaveAttribute('aria-pressed', 'true');
     click('贝雷帽'); expect(button('贝雷帽')).toHaveAttribute('aria-pressed', 'false');
     expect(button('小披风')).toHaveAttribute('aria-pressed', 'true');
@@ -182,14 +181,13 @@ describe('Hermes illustration studio', () => {
     const view = render(<AgentDressupPreview />);
     fireEvent.change(screen.getByLabelText('名字'), { target: { value: '小星' } });
     fireEvent.change(screen.getByLabelText(/用途/), { target: { value: '整理灵感' } });
-    click('薄荷'); click('量量'); click('晴空'); click('小书本'); click('完成');
+    click('晴空'); click('量量'); click('小书本'); click('完成');
     expect(screen.getByLabelText('名字')).toHaveValue('小星');
     view.unmount(); render(<AgentDressupPreview />);
     expect(screen.getByLabelText('名字')).toHaveValue('小星');
     expect(screen.getByLabelText(/用途/)).toHaveValue('整理灵感');
     click('晴空'); expect(button('量量')).toHaveAttribute('aria-pressed', 'true');
-    click('量量'); expect(button('晴空')).toHaveAttribute('aria-pressed', 'true');
-    click('晴空'); expect(button('小书本')).toHaveAttribute('aria-pressed', 'true');
+    click('量量'); expect(button('小书本')).toHaveAttribute('aria-pressed', 'true');
     click('完成'); click('创建试玩 Agent');
     expect(screen.getByRole('heading', { name: '创建完成' })).toBeInTheDocument();
     click('开始旅程');
