@@ -1,3 +1,4 @@
+import type { HostPanelGesture } from "@opencraft/mobile-bot-bridge";
 import { Component, useCallback, useEffect, useMemo, useRef, useState, type ErrorInfo, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 
@@ -22,9 +23,11 @@ import {
   type AgentSettingsSectionId,
 } from '@/lib/agent-routes';
 import { AgentSettingsPage } from '@/pages/marketing/agent-settings-page';
+import { EmbeddedChatPreparation } from '@/lib/opencraft-embedded-connection';
+import type { AgentConsoleHostPort } from '@/pages/marketing/agent-console-host';
 import { AgentsWorkbenchPage } from '@/pages/marketing/agents-workbench/AgentsWorkbenchPage';
 import { useBuddyProfile } from '@/pages/marketing/agent-buddy-profile';
-import { BOT_COMMAND_CAPABILITIES, MOBILE_BOT_EVENT, encodeBotBridgeMessage, parseBotCommand, type BotToHostMessage } from '@opencraft/mobile-bot-bridge';
+import { BOT_COMMAND_CAPABILITIES, MOBILE_BOT_EVENT, encodeBotBridgeMessage, parseBotCommand, type BotCommand, type BotToHostMessage, type HostPanelState, type HostPanelCommand, type HostPanelGeometry } from '@opencraft/mobile-bot-bridge';
 
 type HostSelection = { readonly section: AgentSectionId; readonly botId: string; readonly search: string };
 
@@ -49,6 +52,20 @@ window.addEventListener('opencraft-mobile-model-load-failed', (event: Event) => 
   const detail = (event as CustomEvent<{ kind: number }>).detail;
   if (detail && Number.isSafeInteger(detail.kind)) sendToHost({ type: 'bot-model-load-failed', kind: detail.kind });
 });
+document.addEventListener('opencraft-panels', event => {
+  const element = event.target as HTMLElement;
+  sendToHost({ type: 'chat-panel-state', instanceId: element.dataset.instanceId ?? '', profileId: element.dataset.profileId ?? '', state: (event as CustomEvent<HostPanelState>).detail });
+});
+document.addEventListener('opencraft-panel-presentation', event => {
+  const detail = (event as CustomEvent<{ ownerId: string; active: boolean }>).detail;
+  sendToHost({ type: 'chat-panel-presentation', ...detail });
+});
+window.addEventListener('opencraft-panel-action-failed', () => sendToHost({ type: 'chat-panel-action-failed' }));
+interface PanelWorkbenchElement extends HTMLElement {
+  dispatchPanelCommand?(command: HostPanelCommand): boolean;
+  setPanelGeometry?(ownerId: string, geometry: HostPanelGeometry): boolean;
+  dispatchPanelGesture?(ownerId: string, gesture: HostPanelGesture): boolean;
+}
 
 function BotAvatarBridge({ bot }: { bot: { id: string; profileId?: string; name: string; status: string } }) {
   const repositories = useRepositories();
@@ -128,7 +145,16 @@ class EmbeddedSectionBoundary extends Component<{ section: AgentSectionId; child
 }
 
 function MobileBotRuntime() {
-  const [selection, setSelection] = useState<HostSelection>({ section: 'overview', botId: '', search: '' });
+  const listeners = useRef(new Set<(command: BotCommand) => boolean>());
+  const consoleHost = useMemo<AgentConsoleHostPort>(() => ({
+    publish: sendToHost,
+    subscribe(listener) {
+      listeners.current.add(listener);
+      return () => { listeners.current.delete(listener); };
+    },
+  }), []);
+  const [presentationActive, setPresentationActive] = useState(true);
+  const [selection, setSelection] = useState<HostSelection>({ section: 'chat', botId: '', search: '' });
   const [createRequestId, setCreateRequestId] = useState(0);
   const [deleteRequest, setDeleteRequest] = useState<{ id: string; serial: number } | null>(null);
   const createSequence = useRef(0);
@@ -140,14 +166,14 @@ function MobileBotRuntime() {
     const href = targetToHref(target);
     const url = new URL(href, siteBase());
     const slug = url.pathname.split('/').filter(Boolean)[1];
-    const section = url.pathname === '/agents' ? 'channel'
+    const section = url.pathname === '/agents' ? 'chat'
       : slug === 'labs' ? getAgentLabSectionFromSlug(url.pathname.split('/').filter(Boolean)[2])
         : getAgentSectionFromSlug(slug);
     if (section) {
       const botId = url.searchParams.get('bot')?.trim() ?? selection.botId;
-      // Native Expo owns Chat. Keep the packaged DOM on its current Bot feature.
-      if (section !== 'chat') setSelection({ section, botId, search: url.search });
-      sendToHost({ type: 'bot-selection', section, botId });
+      const nextSection = section === 'overview' ? 'chat' : section;
+      setSelection({ section: nextSection, botId, search: url.search });
+      sendToHost({ type: 'bot-selection', section: nextSection, botId });
       return;
     }
     sendToHost({ type: 'external-navigation', href: url.href, replace: options?.replace === true });
@@ -158,30 +184,36 @@ function MobileBotRuntime() {
       const detail = (event as CustomEvent<Partial<HostSelection>>).detail;
       if (!detail || typeof detail.section !== 'string') return;
       if (!Object.prototype.hasOwnProperty.call(AGENT_SECTION_PATH_BY_ID, detail.section)) return;
-      if (detail.section === 'chat') return;
       const botId = typeof detail.botId === 'string' ? detail.botId : '';
-      setSelection({ section: detail.section as AgentSectionId, botId, search: botId ? `?bot=${encodeURIComponent(botId)}` : '' });
+      setSelection({ section: detail.section === 'overview' ? 'chat' : detail.section as AgentSectionId, botId, search: botId ? `?bot=${encodeURIComponent(botId)}` : '' });
     };
     const onLink = (event: Event) => {
       const href = (event as CustomEvent<unknown>).detail;
       if (typeof href === 'string') navigate(href);
     };
     const onCreate = () => {
-      setSelection(current => ({ ...current, section: 'channel' }));
+      // Creation is a presentation over the current Bot, not a section switch.
+      // Keep its Chat controller and draft alive while the form is open.
       setCreateRequestId(++createSequence.current);
     };
     const onDelete = (event: Event) => {
       const botId = (event as CustomEvent<unknown>).detail;
       if (typeof botId !== 'string' || !botId) return;
-      setSelection({ section: 'overview', botId, search: `?bot=${encodeURIComponent(botId)}` });
-      sendToHost({ type: 'bot-selection', section: 'overview', botId });
+      setSelection({ section: 'chat', botId, search: `?bot=${encodeURIComponent(botId)}` });
+      sendToHost({ type: 'bot-selection', section: 'chat', botId });
       setDeleteRequest({ id: botId, serial: ++deleteSequence.current });
     };
     const onCommand = (event: Event) => {
       const raw = (event as CustomEvent<unknown>).detail;
       const command = typeof raw === 'string' ? parseBotCommand(raw, runtimeId()) : null;
       if (!command) return;
+      for (const listener of listeners.current) if (listener(command)) return;
       switch (command.type) {
+        case 'chat-panel': document.querySelector<PanelWorkbenchElement>('opencraft-embedded-workbench')?.dispatchPanelCommand?.(command.command); break;
+        case 'chat-panel-gesture': document.querySelector<PanelWorkbenchElement>('opencraft-embedded-workbench')?.dispatchPanelGesture?.(command.ownerId, command.gesture); break;
+        case 'chat-panel-geometry': document.querySelector<PanelWorkbenchElement>('opencraft-embedded-workbench')?.setPanelGeometry?.(command.ownerId, command.geometry); break;
+        case 'visibility': setPresentationActive(command.active); break;
+        case 'session': break; // No active controller: fail closed, never queue a mutation.
         case 'select': onSelect(new CustomEvent('select', { detail: command })); break;
         case 'refresh': window.dispatchEvent(new Event('opencraft-mobile-bot-refresh')); break;
         case 'create': onCreate(); break;
@@ -227,11 +259,13 @@ function MobileBotRuntime() {
 
   return <AppNavigationProvider value={navigation}>
     <AgentListBridge />
+    <EmbeddedChatPreparation active={selection.section === 'chat'}>
     <EmbeddedSectionBoundary section={selection.section}>
       {selection.section === 'workbench'
         ? <AgentsWorkbenchPage />
-        : <AgentSettingsPage sectionId={selection.section as AgentSettingsSectionId} showHeader={false} embedded createRequestId={createRequestId} onCreateRequestHandled={acknowledgeCreateRequest} deleteRequestId={deleteRequest?.serial} deleteRequestBotId={deleteRequest?.id} onDeleteRequestHandled={acknowledgeDeleteRequest} />}
+        : <AgentSettingsPage presentationActive={presentationActive} sectionId={selection.section as AgentSettingsSectionId} showHeader={false} embedded consoleHost={consoleHost} createRequestId={createRequestId} onCreateRequestHandled={acknowledgeCreateRequest} deleteRequestId={deleteRequest?.serial} deleteRequestBotId={deleteRequest?.id} onDeleteRequestHandled={acknowledgeDeleteRequest} />}
     </EmbeddedSectionBoundary>
+    </EmbeddedChatPreparation>
   </AppNavigationProvider>;
 }
 

@@ -36,9 +36,14 @@ import { readCachedThreadName, writeCachedThreadName } from "./runtime/thread-ti
 import { forkAndOpenThread } from "./runtime/thread-fork-navigation";
 import { formatDocumentTitle } from "./runtime/document-title";
 import {
+  canInvokeHostPanelCommand,
   type PanelAction,
   type PanelTabDescriptor,
+  type HostPanelCommand,
+  type HostPanelState,
+  type PanelToolbarActionContext,
 } from "@opencraft/workbench-panels";
+import { createPortal } from "react-dom";
 import {
   createInteractionResponse,
   createWorkbenchDraftLocation,
@@ -218,6 +223,12 @@ export interface EmbeddedWorkbenchAppActions {
 }
 
 export interface EmbeddedWorkbenchAppPresentation {
+  readonly panelHost?: {
+    readonly target: HTMLElement;
+    readonly presentation?: { subscribe: (listener: () => void) => (() => void); getSnapshot: () => boolean };
+    readonly publish: (state: HostPanelState) => void;
+    readonly bind: (command: (command: HostPanelCommand) => boolean) => (() => void);
+  };
   readonly hostId: string;
   /** The conversation surface has painted; the Host may still be connecting. */
   readonly onPainted: () => void;
@@ -1375,6 +1386,60 @@ export function App({
     presentation.rightPanel && panelState.rightPanelFullWidth;
   const conversationRightPanelAvailable = conversationSurfaceVisible
     && (embedded === undefined || (draft === null && activeThreadId !== null));
+  const panelHost = embedded?.panelHost;
+  const hostPanelActive = useSyncExternalStore(panelHost?.presentation?.subscribe ?? (() => () => {}),
+    panelHost?.presentation?.getSnapshot ?? (() => false), () => false);
+  const panelToolbarContext: PanelToolbarActionContext = {
+    ownerId: panelOwnerId, resourceOwnerId: conversationResourceOwnerId, hostId: snapshot.hostId,
+    cwd: snapshot.conversation?.execution.cwd ?? activeProtocolThread?.cwd
+      ?? draft?.target.execution.workspace.cwd ?? activeHost.workspaceBrowseRoots[0] ?? null,
+  };
+  const panelHostProjection: HostPanelState = {
+    ownerId: panelOwnerId, available: conversationRightPanelAvailable,
+    open: panelState.right.open, fullWidth: panelState.rightPanelFullWidth,
+    activeTabId: panelState.right.activeTabId,
+    tabs: panelState.right.tabs.map(tab => ({ id: tab.id,
+      title: tab.kind === "browser" && tab.title === "New tab"
+        ? intl.formatMessage({ id: "panel.newTab", defaultMessage: "New tab" }) : tab.title.slice(0, 512),
+      kind: tab.kind, closable: tab.closable, preview: tab.preview })),
+    actions: (conversationRouteOpen ? panelToolbarActions : []).filter(action => action.region === "right"
+      && (action.isAvailable?.(panelToolbarContext) ?? true))
+      .map(action => ({ id: action.id, label: action.creationLabel ?? action.label, icon: action.icon })),
+  };
+  const panelHostWire = JSON.stringify(panelHostProjection);
+  useEffect(() => { panelHost?.publish(JSON.parse(panelHostWire) as HostPanelState); }, [panelHost, panelHostWire]);
+  // The same panel owner admits Web and native actions. Retired owner commands
+  // cannot select/close a resource in the next conversation.
+  const invokeHostPanel = useStableEvent((command: HostPanelCommand) => {
+    if (!conversationRouteOpen || !canInvokeHostPanelCommand(panelHostProjection, command)) return false;
+    const tab = "tabId" in command ? panelState.right.tabs.find(tab => tab.id === command.tabId) : undefined;
+    switch (command.action) {
+      case "open": dispatchPanel({ type: "set-region-open", region: "right", open: command.open, reason: "manual", allowEmpty: true }); return true;
+      case "full-width": dispatchPanel({ type: "toggle-right-full-width" }); return true;
+      case "select": if (!tab) return false; dispatchPanel({ type: "activate-tab", region: "right", tabId: tab.id }); return true;
+      case "close": if (!tab?.closable) return false; requestClosePanel(tab); return true;
+      case "move": if (!tab || (command.beforeTabId !== null && !panelState.right.tabs.some(tab => tab.id === command.beforeTabId))) return false;
+        dispatchPanel({ type: "move-tab", region: "right", tabId: tab.id, beforeTabId: command.beforeTabId }); return true;
+      case "launch": {
+        const action = panelToolbarActions.find(action => action.id === command.actionId && action.region === "right"
+          && (action.isAvailable?.(panelToolbarContext) ?? true));
+        if (!action) return false;
+        try {
+          void Promise.resolve(action.run(panelToolbarContext)).catch(() => {
+            window.dispatchEvent(new CustomEvent("opencraft-panel-action-failed"));
+          });
+        } catch { window.dispatchEvent(new CustomEvent("opencraft-panel-action-failed")); }
+        return true;
+      }
+    }
+  });
+  useEffect(() => panelHost?.bind(invokeHostPanel), [panelHost, invokeHostPanel]);
+  const rightPanelView = !presentation.rightPanel ? null : <RightPanel
+    hostPresentationActive={panelHost ? conversationRightPanelAvailable && (panelState.right.open || hostPanelActive) : undefined}
+    emptyHint={presentation.filePreviewOnly ? intl.formatMessage({ id: "panel.fileHint", defaultMessage: "Click a file in the conversation to preview it here." }) : undefined}
+    state={panelState} presentationId={panelPresentationId} renderers={presentedPanelRenderers}
+    toolbarActions={conversationRouteOpen ? panelToolbarActions : []} toolbarActionContext={panelToolbarContext}
+    onAction={dispatchPanel} onCloseTab={requestClosePanel} portalContainer={portalContainer} />;
   // Applications replace context/content, never the Shell control plane.
   // Target management remains an independent modal semantic surface.
   const headerNavigationActions = chromePolicy.leadingNavigationActions;
@@ -1416,7 +1481,7 @@ export function App({
       sidebarOpen={shellSidebarOpen}
       rightPanelOpen={conversationRightPanelAvailable && presentedRightPanelOpen}
       rightPanelFullWidth={conversationRightPanelAvailable && presentedRightPanelFullWidth}
-      showRightPanelAction={conversationRightPanelAvailable && presentation.rightPanel}
+      showRightPanelAction={!panelHost && conversationRightPanelAvailable && presentation.rightPanel}
       canGoBack={canGoBack}
       canGoForward={canGoForward}
       onToggleSidebar={() => setSidebarOpen((value) => !value)}
@@ -1467,10 +1532,10 @@ export function App({
           onSidebarCollapse={collapseSidebar}
           onSidebarExpand={expandSidebar}
           onSidebarResizeEnd={commitSidebarWidth}
-          rightPanelOpen={conversationRightPanelAvailable && presentedRightPanelOpen}
-          rightPanelKeepMounted={presentation.rightPanel && panelState.right.tabs.some(tab =>
+          rightPanelOpen={!panelHost && conversationRightPanelAvailable && presentedRightPanelOpen}
+          rightPanelKeepMounted={!panelHost && presentation.rightPanel && panelState.right.tabs.some(tab =>
             presentedPanelRenderers.some(renderer => renderer.kind === tab.kind && renderer.residency === "while-tab-open"))}
-          rightPanelFullWidth={conversationRightPanelAvailable && presentedRightPanelFullWidth}
+          rightPanelFullWidth={!panelHost && conversationRightPanelAvailable && presentedRightPanelFullWidth}
           rightPanelDefaultSize={presentation.rightPanelDefaultSize}
           onRightPanelOpenChange={(open) =>
             dispatchPanel({
@@ -1565,33 +1630,9 @@ export function App({
               onOpenSettings={openSettingsFromConversation}
             /> : null
           )}
-          rightPanel={!presentation.rightPanel ? null : (
-            <RightPanel
-              emptyHint={presentation.filePreviewOnly ? intl.formatMessage({ id: "panel.fileHint", defaultMessage: "Click a file in the conversation to preview it here." }) : undefined}
-              state={panelState}
-              presentationId={panelPresentationId}
-              renderers={presentedPanelRenderers}
-              // Route ownership gates launchers even while the panel's exit
-              // animation keeps its physical surface mounted. Do not unregister
-              // plugins or close their resources when entering Settings.
-              toolbarActions={conversationRouteOpen ? panelToolbarActions : []}
-              toolbarActionContext={{
-                ownerId: panelOwnerId,
-                resourceOwnerId: conversationResourceOwnerId,
-                hostId: snapshot.hostId,
-                cwd:
-                  snapshot.conversation?.execution.cwd
-                  ?? activeProtocolThread?.cwd
-                  ?? draft?.target.execution.workspace.cwd
-                  ?? activeHost.workspaceBrowseRoots[0]
-                  ?? null,
-              }}
-              onAction={dispatchPanel}
-              onCloseTab={requestClosePanel}
-              portalContainer={portalContainer}
-            />
-          )}
+          rightPanel={panelHost ? null : rightPanelView}
         >
+        {panelHost ? createPortal(rightPanelView, panelHost.target) : null}
         <div className="workbench-route-stage">
           <div
             aria-hidden={!conversationRouteOpen || undefined}

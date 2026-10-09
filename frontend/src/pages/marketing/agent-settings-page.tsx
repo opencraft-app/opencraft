@@ -1,4 +1,5 @@
 import { AgentSidebar, AgentSidebarToggle, useAgentSidebarCollapse } from "@/components/site/agent-sidebar";
+import { AgentConsoleHostProjection, type AgentConsoleHostPort } from "./agent-console-host";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowRight,
@@ -2601,6 +2602,8 @@ const isRescueExportRunning = (status: WorkerActionStatusResult | null | undefin
 type AgentSettingsPageProps = {
   /** Native shell owns navigation; reuse existing section controllers. */
   embedded?: boolean;
+  consoleHost?: AgentConsoleHostPort;
+  presentationActive?: boolean;
   createRequestId?: number;
   onCreateRequestHandled?: () => void;
   deleteRequestId?: number;
@@ -2616,6 +2619,8 @@ export const AgentSettingsPage = ({
   showHeader = true,
   sidebarCollapsed,
   embedded = false,
+  consoleHost,
+  presentationActive = true,
   createRequestId = 0,
   onCreateRequestHandled,
   deleteRequestId = 0,
@@ -5654,12 +5659,12 @@ export const AgentSettingsPage = ({
 
           {/* ── 设置区域 ── */}
           {/*
-            必须排除两个引导态。
+            官网排除两个引导态；嵌入宿主在新建表单后保留当前 Bot 控制器。
             引导是「接管整页」的流程，而这块只看 !isCreating && activeBot ——
             多 bot 引导时 isCreating 为 false、activeBot 又存在（就是当前那个
             bot），于是配置进度清单和总览/设置区同屏显示（真实故障截图）。
           */}
-          {!isCreating && !showMultiBotOnboarding && !showEarlyOnboarding && activeBot && sdkInstance && (
+          {!isCreating && (!showMultiBotOnboarding || embedded) && !showEarlyOnboarding && activeBot && sdkInstance && (
             (() => {
               type SettingsSectionLink = {
                 id: AgentSettingsSectionId;
@@ -5864,7 +5869,63 @@ export const AgentSettingsPage = ({
                 </Popover>
               </span>;
               return (
+                <Fragment>
+                <AgentConsoleHostProjection host={consoleHost} state={{
+                  type: "bot-console-state", botId: activeBot.id, section: activeSection,
+                  groups: settingsGroups.map(group => ({ id: group.id, label: group.label,
+                    sections: group.sections.map(item => ({ id: item.id, label: item.label })) })),
+                  sessions: chatSessionPagination.visibleSessions.map(session => ({
+                    chatId: session.chatId, title: (session.title || t("新对话")).slice(0, 256),
+                    pinned: "pinned" in session && session.pinned === true,
+                    unread: unreadChatIds.includes(session.chatId),
+                  })),
+                  selectedChatId: selectedChatId ?? null,
+                  loading: chatSessionsLoading,
+                  hasMore: chatSessionPagination.hasMoreVisible || chatSessionsHasMore,
+                  commandsReady: chatSessionCommands !== null && isActiveBotChatAvailable,
+                  pinSupported: chatPinSupported,
+                  pending: chatSessionMutationState?.pending === true || chatSessionPagination.loadingMore,
+                  error: chatSessionMutationState?.error != null || chatPinError !== null || chatSessionPagination.pageError,
+                }} onCommand={command => {
+                  if (command.type === "select" && command.botId !== activeBot.id && visibleBots.some(bot => bot.id === command.botId)) {
+                    handleSelectBot(command.botId);
+                    return true;
+                  }
+                  if (command.type !== "session" || command.botId !== activeBot.id) return false;
+                  if (chatSessionMutationState?.pending || chatSessionCommands === null) return true;
+                  switch (command.action) {
+                    case "create":
+                      navigate(getAgentBotSectionHref(AGENT_SECTION_PATH_BY_ID.chat, activeBot.id));
+                      createChatSession(); break;
+                    case "load-more": void chatSessionPagination.showMore(); break;
+                    case "select":
+                      if (command.chatId === "" || chatSessions.some(session => session.chatId === command.chatId)) {
+                        setSelectedChatId(command.chatId);
+                        setUnread(command.chatId, false);
+                        navigate(getAgentBotSectionHref(AGENT_SECTION_PATH_BY_ID.chat, activeBot.id));
+                      }
+                      break;
+                    case "rename":
+                      if (chatSessions.some(session => session.chatId === command.chatId)) chatSessionActions?.renameSession(command.chatId, command.title.trim());
+                      break;
+                    case "delete": {
+                      const session = chatSessions.find(session => session.chatId === command.chatId);
+                      if (session && canDeleteSession(session)) chatSessionActions?.deleteSession(command.chatId);
+                      break;
+                    }
+                    case "pin": {
+                      const session = chatSessions.find(session => session.chatId === command.chatId);
+                      if (session && ("pinned" in session && session.pinned === true) !== command.pinned) toggleSessionPin(session);
+                      break;
+                    }
+                    case "unread": if (chatSessions.some(session => session.chatId === command.chatId)) markSessionUnread(command.chatId); break;
+                  }
+                  return true;
+                }} />
                 <div
+                  hidden={showMultiBotOnboarding}
+                  inert={showMultiBotOnboarding || undefined}
+                  style={showMultiBotOnboarding ? { display: "none" } : undefined}
                   className={cn(
                     /* lv-agent-settings-grid 来自 master，勿删 */
                     "lv-agent-settings-grid grid items-start",
@@ -6670,7 +6731,7 @@ export const AgentSettingsPage = ({
                           )}
                           {isActiveBotChatAvailable && (
                             <AgentChatMigrationSurface
-                              active={activeSection === "chat"}
+                              active={activeSection === "chat" && presentationActive && !showMultiBotOnboarding}
                               preloadSessions={activeBot.status !== "paused" && sidebarTab === "daily" && chatSessionsExpanded && !isSidebarCollapsed}
                               agentPaused={activeBot.status === "paused" && activeBot.siblingsUnknown === "instance_stopped"}
                               accountId={accountId}
@@ -6739,6 +6800,7 @@ export const AgentSettingsPage = ({
                     </div>
                   </section>
                 </div>
+                </Fragment>
               );
             })()
           )}

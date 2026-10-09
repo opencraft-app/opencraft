@@ -188,3 +188,8 @@ docs/harness/
 # teamai（ClawPro）本地状态目录与注入的工具 hooks —— 机器本地配置，不入库
 .teamai/
 .codebuddy/settings.json
+
+# Expo Web surface generated from workbench-expo.
+/frontend/public/__expo-agents/
+
+/frontend/.next-agents-next-preview/

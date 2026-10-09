@@ -1,6 +1,7 @@
 import { BrowserAudioCapture, type AudioCapturePort, type AudioCaptureSession, type RecordedAudio } from "./audio-capture";
 import type { SpeechInputError, SpeechInputObserver, SpeechInputProvider, SpeechInputSession } from "./speech-input-provider";
-export type { RecordedAudio } from "./audio-capture";
+export { normalizePcmWav } from "./audio-capture";
+export type { AudioCapturePort, AudioCaptureSession, RecordedAudio } from "./audio-capture";
 
 export type VoiceProviderChoice = "auto" | "system" | "hunyuan";
 export interface VoiceInputPreference { readonly provider: VoiceProviderChoice; setProvider(value: VoiceProviderChoice): Promise<void> }

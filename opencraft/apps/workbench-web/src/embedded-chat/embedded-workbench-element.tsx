@@ -1,3 +1,5 @@
+import hostPanelLayoutStyles from "./host-panel-layout.css?inline";
+import { EmbeddedHostPanelLayout } from "./host-panel-layout";
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import appStyles from "../styles/app.scss?inline";
@@ -40,10 +42,13 @@ import {
 import { observeEmbeddedConnection } from "./embedded-connection";
 import { observeEmbeddedTurnCompletions, type EmbeddedWorkbenchTurnCompletedDetail } from "./embedded-turn-completion";
 import { HermesPhysicalConnectionPreparation, type HermesPhysicalConnectionPreparationOptions } from "@opencraft/plugin-lightvela-hermes/physical-connection";
+import { isHostPanelCommand, isHostPanelGeometry, isHostPanelGesture, type HostPanelGesture, type HostPanelCommand, type HostPanelGeometry, type HostPanelState } from "@opencraft/workbench-panels";
 
 const ELEMENT_NAME = "opencraft-embedded-workbench";
 
 export interface EmbeddedWorkbenchConfig extends EmbeddedChatApplicationOptions {
+  /** Legacy name: host allocates the container; the complete DOM toolbar stays. */
+  readonly externalPanelChrome?: boolean;
   readonly localization?: WorkbenchLocaleOptions;
 }
 
@@ -77,6 +82,7 @@ function embeddedStyles(): string {
   const application = localizeAssets(appStyles.replaceAll(":root", ":host"));
   return `
     :host {
+      position: relative;
       display: block;
       width: 100%;
       height: 100%;
@@ -90,7 +96,10 @@ function embeddedStyles(): string {
     }
     :host([data-visible="true"]) { visibility: visible; pointer-events: auto; }
     .opencraft-embedded-workbench-root { width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: hidden; }
+    .opencraft-host-panel-overlays { position: absolute; inset: 0; pointer-events: none; }
+    .opencraft-host-panel-overlays > * { pointer-events: auto; }
     ${application}
+    ${hostPanelLayoutStyles}
     .opencraft-embedded-workbench-root { --height-toolbar: var(--lightvela-console-header-height, 46px); }
     .opencraft-embedded-workbench-root .codex-composer-queue-item__actions button.is-steer {
       width: 22px;
@@ -154,6 +163,11 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
     return new HermesPhysicalConnectionPreparation(options);
   }
   private readonly mount: HTMLDivElement;
+  private readonly panelMount: HTMLDivElement;
+  private readonly overlayMount: HTMLDivElement;
+  private panelState: HostPanelState | null = null;
+  private readonly paneLayout: EmbeddedHostPanelLayout;
+  private panelCommand: ((command: HostPanelCommand) => boolean) | null = null;
   private readonly root: Root;
   private actions: EmbeddedWorkbenchAppActions | null = null;
   private readonly admittedPrompts = new Set<string>();
@@ -189,8 +203,19 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
     const style = document.createElement("style");
     style.textContent = embeddedStyles();
     this.mount = document.createElement("div");
-    this.mount.className = "opencraft-embedded-workbench-root";
-    shadow.append(style, this.mount);
+    this.mount.className = "opencraft-embedded-workbench-root opencraft-host-chat-content";
+    this.panelMount = document.createElement("div");
+    this.panelMount.className = "opencraft-embedded-workbench-root opencraft-host-panel-content";
+
+    this.overlayMount = document.createElement("div");
+    this.overlayMount.className = "opencraft-embedded-workbench-root opencraft-host-panel-overlays";
+    this.paneLayout = new EmbeddedHostPanelLayout(this.mount, this.panelMount, command => this.dispatchPanelCommand(command));
+    this.paneLayout.subscribe(() => {
+      if (this.disposed || !this.panelState) return;
+      this.dispatchEvent(new CustomEvent("opencraft-panel-presentation", { bubbles: true, composed: true,
+        detail: { ownerId: this.panelState.ownerId, active: this.paneLayout.getSnapshot() } }));
+    });
+    shadow.append(style, this.paneLayout.plane, this.overlayMount);
     this.root = createRoot(this.mount);
     this.readyPromise = new Promise((resolve, reject) => {
       this.resolveReady = resolve;
@@ -233,6 +258,30 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
     if (config === null) return Promise.reject(new Error("Embedded Workbench is not configured"));
     this.preparePromise = this.prepareOwned(config);
     return this.preparePromise;
+  }
+
+  dispatchPanelCommand(command: HostPanelCommand): boolean {
+    if (this.disposed || !this.config?.externalPanelChrome || !isHostPanelCommand(command)
+      || command.ownerId !== this.panelState?.ownerId) return false;
+    return this.panelCommand?.(command) ?? false;
+  }
+
+  setPanelGeometry(ownerId: string, geometry: HostPanelGeometry): boolean {
+    if (this.disposed || !this.config?.externalPanelChrome || ownerId !== this.panelState?.ownerId || !isHostPanelGeometry(geometry)) return false;
+    this.paneLayout.setGeometry(geometry);
+    return true;
+  }
+
+  dispatchPanelGesture(ownerId: string, gesture: HostPanelGesture): boolean {
+    if (this.disposed || !this.config?.externalPanelChrome || ownerId !== this.panelState?.ownerId || !isHostPanelGesture(gesture)) return false;
+    return this.paneLayout.dispatchGesture(gesture);
+  }
+
+  private publishPanels(state: HostPanelState): void {
+    if (this.disposed) return;
+    this.panelState = state;
+    this.paneLayout.setState(state);
+    this.dispatchEvent(new CustomEvent("opencraft-panels", { bubbles: true, composed: true, detail: state }));
   }
 
   /** Reuses the same Host and composer owners; never replays a submission. */
@@ -340,6 +389,9 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
     this.stopThemeSubscription?.();
     this.stopThemeSubscription = null;
     this.actions = null;
+    this.panelCommand = null;
+    this.panelState = null;
+    this.paneLayout.dispose();
     const application = this.application;
     const preferences = this.preferences;
     this.application = null;
@@ -475,7 +527,16 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
             onPainted={() => this.handlePainted()}
             onReady={(threadId) => this.handleReady(threadId, config)}
             onSessionsChange={(detail) => this.handleSessions(detail)}
-            portalContainer={this.mount}
+            portalContainer={config.externalPanelChrome ? this.overlayMount : this.mount}
+            panelHost={config.externalPanelChrome ? {
+              target: this.panelMount,
+              presentation: this.paneLayout,
+              publish: state => this.publishPanels(state),
+              bind: command => {
+                this.panelCommand = command;
+                return () => { if (this.panelCommand === command) this.panelCommand = null; };
+              },
+            } : undefined}
           />
           </WorkbenchIntlProvider>
         </UiPreferencesProvider>

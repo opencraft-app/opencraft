@@ -1,5 +1,24 @@
 # 工作区不变量
 
+## Embedded panel host presentation
+
+- Embedded panel viewport and its complete DOM content reuse the current conversation's panel service,
+  renderer registrations and resource lifetime. Host commands must match the
+  current runtime, Bot instance/Profile and conversation owner; unknown tabs or
+  actions cannot bypass the product presentation policy.
+- External container layout is explicit opt-in. Expo and standalone Web/Electron
+  reuse the complete original toolbar, menus and content. Expo adds only host
+  geometry and native shell controls/input, without a replacement tab manager,
+  new Applications or per-tab WebViews.
+- Host geometry uses available container space and the shared panel minimum/Chat
+  reserve. A single embedded parent allocates sibling grid columns; Chat AppShell
+  consumes its own containing viewport. Only narrow/full-width mode replaces Chat.
+  One transient motion owner follows held input and completes/interrupts service
+  intents; it does not own tabs or create a second persisted open state.
+  Overlay makes only Chat inert; the same DOM plane remains accessible for
+  panel content. Resize/full-width changes preserve tabs and drafts; closing
+  releases resources through the original service lifecycle.
+
 ## Native conversation pinning
 
 - PIN-01：置顶由原生 Server 持久化；OpenCraft 不维护第二份数据库或浏览器置顶集合，DSH 不支持时不补本地 fallback。
@@ -280,3 +299,12 @@ Markdown preview entry: explicit `.md` / `.markdown` paths in completed inline c
 国内桌面嵌入聊天由控制台占满侧栏右侧的内容列，去除设置页外围 gutter 和宽度上限；宿主通过 `--lightvela-console-header-height` 对齐 68px 导航表头。嵌入根将其投影到 toolbar token（缺省 46px），消息正文保留内部间距；移动端与旧聊天入口沿用原布局。
 
 只读 Markdown 文件预览的“源码”直接呈现转义后的原文，可选择复制和键盘滚动，不依赖按需加载的编辑器模块；可编辑工作台继续由 CodeMirror 持有草稿。
+
+### Shared side-panel glyphs
+
+Web/Electron and Expo consume one platform-neutral geometry definition in
+`@opencraft/design-system/sidebar-toggle-glyphs`. The renderer owns SVG primitives
+and platform hit testing; the 16-unit optical box does not dictate the touch
+target. Mobile keeps 44-point targets with neutral, transparent toolbar buttons.
+Panel visibility remains a projection of its existing owner, including after
+a swipe; icon adaptation must not introduce a parallel navigation state.

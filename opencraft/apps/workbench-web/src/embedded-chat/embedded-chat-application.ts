@@ -1,4 +1,5 @@
 import { createEmbeddedAccountStorage } from "./embedded-account-storage";
+import { EmbeddedNativeAudioCapture, embeddedNativeAudioAvailable } from "./embedded-native-audio";
 import { EmbeddedSpeechService } from "./embedded-speech-service";
 import { CloudSpeechInputProvider } from "@opencraft/plugin-voice-input/cloud-speech";
 import { HermesPhysicalConnectionPreparation } from "@opencraft/plugin-lightvela-hermes/physical-connection";
@@ -35,7 +36,7 @@ export async function createEmbeddedChatApplication(
   // Never restore standalone or another embedded account's browser metadata.
   const browserMetadata = new Map<string, string>();
   const speech = new EmbeddedSpeechService(options.apiBase ?? "", options.getSessionToken ?? (() => null));
-  const speechProvider = new CloudSpeechInputProvider(speech, undefined, { unavailableMessage: "语音识别暂不可用，请稍后重试" });
+  const speechProvider = new CloudSpeechInputProvider(speech, embeddedNativeAudioAvailable() ? new EmbeddedNativeAudioCapture() : undefined, { unavailableMessage: "语音识别暂不可用，请稍后重试" });
   void speech.refresh();
   const closeSpeech = () => { speechProvider.close(); speech.close(); };
   const application = await createWebWorkbenchApplication({

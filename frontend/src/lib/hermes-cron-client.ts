@@ -586,12 +586,12 @@ export function buildEditCommand(id: string, patch: EditCronJobPatch): string {
 
 /** 同步执行一条命令；非零 exit_code 抛 CronCommandError */
 export async function execCommand(target: HermesCronTarget, command: string): Promise<DebugExecPayload> {
-  const baseUrl = resolveConfiguredAuthApiBaseUrl();
+  const baseUrl = resolveConfiguredAuthApiBaseUrl(target);
   if (baseUrl === null) {
     throw new Error("[hermes-cron] auth API base URL not configured");
   }
   const headers = new Headers({ "Content-Type": "application/json" });
-  const token = readStoredAuthToken();
+  const token = readStoredAuthToken(target);
   if (token) headers.set("Authorization", `Bearer ${token}`);
 
   const { instanceId, profileId } = resolveCronTarget(target);
@@ -601,11 +601,11 @@ export async function execCommand(target: HermesCronTarget, command: string): Pr
     method: "POST",
     credentials: "include",
     headers,
-    body: JSON.stringify(createDebugExecRequestBody(routedCommand)),
+    body: JSON.stringify(createDebugExecRequestBody(routedCommand, target)),
   });
   if (!resp.ok) {
     if (resp.status === 401 || resp.status === 403) {
-      writeStoredAuthToken(null);
+      writeStoredAuthToken(null, target);
       if (typeof window !== "undefined") {
         window.dispatchEvent(new Event(AUTH_UNAUTHORIZED_EVENT));
       }
@@ -666,7 +666,7 @@ export async function execCommandStream(
   command: string,
   options: ExecCommandStreamOptions = {},
 ): Promise<DebugExecPayload> {
-  const baseUrl = resolveConfiguredAuthApiBaseUrl();
+  const baseUrl = resolveConfiguredAuthApiBaseUrl(target);
   if (baseUrl === null) {
     throw new Error("[hermes-cron] auth API base URL not configured");
   }
@@ -674,7 +674,7 @@ export async function execCommandStream(
     "Content-Type": "application/json",
     "Accept": "text/event-stream",
   });
-  const token = readStoredAuthToken();
+  const token = readStoredAuthToken(target);
   if (token) headers.set("Authorization", `Bearer ${token}`);
 
   const { instanceId, profileId } = resolveCronTarget(target);
@@ -685,11 +685,11 @@ export async function execCommandStream(
     credentials: "include",
     headers,
     signal: options.signal,
-    body: JSON.stringify(createDebugExecRequestBody(routedCommand)),
+    body: JSON.stringify(createDebugExecRequestBody(routedCommand, target)),
   });
   if (!resp.ok) {
     if (resp.status === 401 || resp.status === 403) {
-      writeStoredAuthToken(null);
+      writeStoredAuthToken(null, target);
       if (typeof window !== "undefined") {
         window.dispatchEvent(new Event(AUTH_UNAUTHORIZED_EVENT));
       }

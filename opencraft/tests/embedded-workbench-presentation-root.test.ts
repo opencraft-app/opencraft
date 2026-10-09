@@ -20,8 +20,8 @@ test("Embedded Workbench owns one presentation root for theme and overlays", () 
   assert.match(element, /applyAppearanceThemeToElement\(this, getAppearanceThemeSnapshot\(\)\)/u);
   assert.match(app, /portalContainer=\{portalContainer\}/u);
   assert.match(app, /conversationRightPanelAvailable = conversationSurfaceVisible[\s\S]*?embedded === undefined \|\| \(draft === null && activeThreadId !== null\)/u);
-  assert.match(app, /showRightPanelAction=\{conversationRightPanelAvailable && presentation\.rightPanel\}/u);
-  assert.match(app, /rightPanel=\{!presentation\.rightPanel \? null : \(/u);
+  assert.match(app, /showRightPanelAction=\{!panelHost && conversationRightPanelAvailable && presentation\.rightPanel\}/u);
+  assert.match(app, /rightPanel=\{panelHost \? null : rightPanelView\}/u);
   assert.match(app, /presentation\.connectorLauncher \? connectorPresentation\.launcher : null/u);
   assert.match(app, /presentation\.connectorLauncher[\s\S]*?connectorPresentation\.addMenuContent/u);
   assert.match(app, /composerAddMenuContent=\{composerAddMenuContent\}/u);
