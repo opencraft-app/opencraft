@@ -6544,7 +6544,7 @@ export const AgentSettingsPage = ({
                     <div className="lv-agents-sidebar-footer">
                       <div className="lv-agent-account-footer">
                         {(isDesktop || mobileChatNavOpen) && (
-                          <UserAvatarMenu showLanguageSwitcher={isGlobal} variant="sidebar"
+                          <UserAvatarMenu showLanguageSwitcher={isGlobal} variant="sidebar" cloudStorageBotId={activeSection === "files" ? undefined : activeBot?.id}
                             renewalReminder={isDesktop && multiBotEnabled && passExpiryReminder && passExpiryReminderCopy && activePass
                               ? { label: passExpiryReminderCopy.label, tooltip: passExpiryReminderCopy.tooltip, actionLabel: t("立即续费"),
                                   onRenew: renewalAvailable ? () => setRenewPassModalOpen(true) : undefined }
