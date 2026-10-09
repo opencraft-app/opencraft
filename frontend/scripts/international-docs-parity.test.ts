@@ -506,6 +506,7 @@ describe("international docs publication inventory", () => {
 
     it("publishes the same 69 routes as international English for every completed locale", () => {
       expect(docsRouteSlugs.es).toEqual(docsRouteSlugs["en-us"]);
+      expect(docsRouteSlugs["ms-my"]).toEqual(docsRouteSlugs["en-us"]);
       expect(docsRouteSlugs.es).toHaveLength(69);
       expect(docsRouteSlugs.es).toContainEqual([]);
       expect(Object.keys(docsRouteSlugs)).toContain("ja-jp");
@@ -518,6 +519,7 @@ describe("international docs publication inventory", () => {
       expect(docsRouteSlugs["zh-sg"]).toHaveLength(69);
       expect(docsRouteSlugs["zh-hant"]).toHaveLength(69);
       expect(docsRouteSlugs["id-id"]).toHaveLength(66);
+      expect(docsRouteSlugs["ms-my"]).toHaveLength(69);
     });
 
     it("generates 68 Spanish documents from explicit Spanish body sources", () => {
@@ -702,12 +704,14 @@ describe("international docs publication inventory", () => {
         "zh-sg",
         "zh-hant",
         "id-id",
+        "ms-my",
         "es",
         "ja-jp",
         "ko-kr",
       ]);
       expect(docsRouteApi.docsRouteLocalesForRegion("cn")).toEqual([]);
       expect(docsRouteApi.publicLocaleForDocsRoute("es")).toBe("es");
+      expect(docsRouteApi.publicLocaleForDocsRoute("ms-my")).toBe("ms-MY");
       expect(docsRouteApi.docsRouteLocalesForRegion("global")).toContain("ja-jp");
       expect(docsRouteApi.docsRouteLocalesForRegion("global")).toContain("ko-kr");
     });

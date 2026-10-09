@@ -80,6 +80,22 @@
     "fontSubsetEligible": true
   },
   {
+    "code": "ms-MY",
+    "urlLang": "ms-my",
+    "i18nKey": "ms-MY",
+    "htmlLang": "ms-MY",
+    "ogLocale": "ms_MY",
+    "displayName": "Bahasa Melayu",
+    "shortLabel": "MS",
+    "docsSourcePrefix": "ms",
+    "docsFallbackPrefixes": [],
+    "seoPrefixed": true,
+    "switcherVisible": true,
+    "translationRequired": true,
+    "requiresFontFallback": false,
+    "fontSubsetEligible": true
+  },
+  {
     "code": "es",
     "urlLang": "es",
     "i18nKey": "es",

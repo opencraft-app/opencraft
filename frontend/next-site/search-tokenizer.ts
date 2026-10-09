@@ -3,6 +3,6 @@ import { createTokenizer as createMandarinTokenizer } from '@orama/tokenizers/ma
 import type { DocsSearchLocale } from './search-routing';
 
 export function createDocsSearchTokenizer(locale: DocsSearchLocale) {
-  if (locale === 'en-us') return undefined;
+  if (locale === 'en-us' || locale === 'ms-my') return undefined;
   return createMandarinTokenizer();
 }

@@ -70,6 +70,7 @@ describe("global changelog skill package entry", () => {
 
   it("localizes the subscription-upgrade entry for every public-site locale", async () => {
     const copies = {
+      "ms-MY": ["September 2026", "LightVela Kini Menyokong Naik Taraf Pelan", "Naik taraf pelan semasa anda ke peringkat yang lebih tinggi. Amaun sebenar yang perlu dibayar ialah harga akhir yang dipaparkan semasa pembayaran."],
       "zh-CN": ["2026 年 9 月", "LightVela 支持套餐升配", "现有套餐可升配至更高规格，实际应付价格以最终支付页显示为准。"],
       "zh-SG": ["2026 年 9 月", "LightVela 支持套餐升配", "现有套餐可升配至更高规格，实际应付价格以最终支付页显示为准。"],
       "zh-Hant": ["2026 年 9 月", "LightVela 支援套餐升級", "現有套餐可升級至更高規格，實際應付價格以最終支付頁顯示為準。"],

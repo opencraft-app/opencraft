@@ -10,7 +10,8 @@ import {
 
 describe('docs search routing', () => {
   it('recognizes every published docs locale', () => {
-    expect(DOCS_SEARCH_LOCALES).toEqual(['en-us', 'zh-cn', 'zh-sg', 'zh-hant', 'id-id', 'es']);
+    expect(DOCS_SEARCH_LOCALES).toEqual(['en-us', 'zh-cn', 'zh-sg', 'zh-hant', 'id-id', 'ms-my', 'es', 'ja-jp', 'ko-kr']);
+    expect(resolveDocsSearchLocale('/ms-my/docs/overview', 'en-us', 'en-us')).toBe('ms-my');
     expect(resolveDocsSearchLocale('/zh-hant/docs/overview', 'zh-cn', 'en-us')).toBe('zh-hant');
     expect(resolveDocsSearchLocale('/id-id/docs/overview', 'zh-cn', 'en-us')).toBe('id-id');
     expect(resolveDocsSearchLocale('/es/docs/overview', 'en-us', 'en-us')).toBe('es');
@@ -25,6 +26,8 @@ describe('docs search routing', () => {
     expect(resolveDocsSearchEndpoint('/api/search/', 'zh-hant')).toBe('/api/search/zh-hant');
     expect(resolveDocsSearchEndpoint('/api/search/', 'id-id')).toBe('/api/search/id-id');
     expect(resolveDocsSearchEndpoint('/api/search/', 'es')).toBe('/api/search/es');
+    expect(resolveDocsSearchEndpoint('/api/search/', 'ms-my')).toBe('/api/search/ms-my');
+    expect(existsSync(resolve('src/app/api/search/ms-my/route.next.ts'))).toBe(true);
     expect(existsSync(resolve('src/app/api/search/es/route.next.ts'))).toBe(true);
   });
 });

@@ -5,6 +5,7 @@
  */
 'use client';
 
+import { localizeMalay } from '@/i18n/malay-copy';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { LegalFooter } from '@/components/site/legal-footer';
@@ -398,6 +399,7 @@ const SUPPORT_LABELS_JA: Record<string, string> = {
 };
 
 export function localizeSupportLabel(label: string, locale: PublicSiteLocale): string {
+  if (locale === PUBLIC_SITE_LOCALES.MS_MY) return localizeMalay(SUPPORT_LABELS_EN[label] ?? label);
   if (locale === PUBLIC_SITE_LOCALES.ID_ID) return SUPPORT_LABELS_ID[label] ?? label;
   if (locale === PUBLIC_SITE_LOCALES.EN_US) return SUPPORT_LABELS_EN[label] ?? label;
   if (locale === PUBLIC_SITE_LOCALES.ZH_HANT) return SUPPORT_LABELS_HANT[label] ?? label;

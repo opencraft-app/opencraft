@@ -87,6 +87,7 @@ const BUNDLE_TYPE_AI = "ai";
 const PLAN_RECOMMENDATION_BY_LOCALE: Record<I18nLocale, string> = {
   "zh-CN": "推荐",
   "zh-Hant": "推薦",
+  "ms-MY": "Pilihan utama",
   "en-US": "Top pick",
   "id-ID": "Pilihan",
   es: "Sugerido",

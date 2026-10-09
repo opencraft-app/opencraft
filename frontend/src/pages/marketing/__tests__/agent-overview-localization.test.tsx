@@ -29,6 +29,7 @@ const Progress = () => {
 
 /** 国际站 changelog 最近 5 条（时间倒序） */
 const titles: Record<I18nDictKey, [string, string, string, string, string]> = {
+  "ms-MY": ["LightVela Kini Menyokong Sembang Web dengan Pelbagai Bot", "Hantar Mesej Ujian ke Saluran Sembang yang Disambungkan", "LightVela Kini Menyokong Naik Taraf Pelan", "LightVela Kini Menyokong Pelbagai Bot", "Tugasan Berjadual Kini Menyokong Pemberitahuan dan Tugasan Skrip"],
   "zh-CN": ["LightVela 支持与多个 Bot 网页对话", "聊天通道支持发送测试消息", "LightVela 支持套餐升配", "LightVela 支持创建多个 Bot", "定时任务新增通知任务和脚本任务"],
   "zh-Hant": ["LightVela 支持與多個 Bot 網頁對話", "聊天通道支持發送測試消息", "LightVela 支援套餐升級", "LightVela 支持創建多個 Bot", "定時任務新增通知任務和腳本任務"],
   "en-US": ["LightVela Now Supports Web Chat with Multiple Bots", "Send Test Messages to Connected Chat Channels", "LightVela Now Supports Plan Upgrades", "LightVela Now Supports Multiple Bots", "Scheduled Tasks Now Support Notification and Script Tasks"],
@@ -140,7 +141,7 @@ describe("overview language consistency", () => {
     const view = render(<LocaleOverrideProvider locale={locale}><Labels /><Progress /></LocaleOverrideProvider>);
     expect(screen.getAllByRole("button")).toHaveLength(10);
     expect(view.container.textContent).not.toMatch(/\{\{|k_[a-f0-9]{8}/);
-    if (["en-US", "id-ID", "es", "ko-KR"].includes(locale)) expect(view.container.textContent).not.toMatch(/[\u4e00-\u9fff]/);
+    if (["en-US", "id-ID", "ms-MY", "es", "ko-KR"].includes(locale)) expect(view.container.textContent).not.toMatch(/[\u4e00-\u9fff]/);
   });
 
   it("renders English form defaults, accessible names and clone options without Chinese", async () => {
@@ -173,7 +174,7 @@ describe("overview language consistency", () => {
     expect(view.container.textContent).not.toMatch(/\{\{|k_[a-f0-9]{8}/);
     // Account content is not silently translated or overwritten.
     expect(screen.getByText("Custom Bot")).toBeInTheDocument();
-    if (["en-US", "id-ID", "es", "ko-KR"].includes(locale)) {
+    if (["en-US", "id-ID", "ms-MY", "es", "ko-KR"].includes(locale)) {
       expect(view.container.textContent).not.toMatch(/[\u4e00-\u9fff]/);
     }
   });

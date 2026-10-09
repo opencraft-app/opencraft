@@ -72,6 +72,7 @@ const LAZY_DICTIONARY_LOADERS: Partial<
   Record<I18nDictKey, () => Promise<TranslationDictionary>>
 > = {
   "ja-JP": async () => (await import("./generated/ja-JP.json")).default,
+  "ms-MY": async () => (await import("./generated/ms-MY.json")).default,
   "ko-KR": async () => (await import("./generated/ko-KR.json")).default,
   ...(EAGER_ALL_DICTIONARIES ? {} : {
     "en-US": async () => (await import("./generated/en-US.json")).default,

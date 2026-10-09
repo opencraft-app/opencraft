@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useRef, type ComponentProps } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ComponentProps } from "react";
 
 import type {
   LightVelaMultiSessionOptions,
@@ -19,6 +19,7 @@ import i18n from "@/i18n";
 import { useT } from "@/i18n/t";
 import { ChatLoadingState } from "@/components/site/chat-loading-state";
 import { isCN } from "@/lib/region";
+import { prepareAgentChatLocale } from "@/i18n/agentchat-locale";
 import { DATONG_EVENTS, DATONG_PAGE_IDS } from "@/observability/datong";
 import { trackDatongEvent } from "@/observability/datong-tracker";
 import { WorkbenchPromptAutoSender } from "./workbench-prompt-auto-sender";
@@ -69,22 +70,22 @@ export const AgentChatPanel = ({
 }: AgentChatPanelProps) => {
   const t = useT();
 
-  /* 同步 agentchat-locale 到 localStorage（LightVelaPanel / velachat 内部消费）。
-     规则（2026-08-27 产品口径）：
-     - zh-CN / zh-Hant（简体/繁体）→ "zh-CN"
-     - 其他（en-US / id-ID / es-ES 等非中文）→ "en-US"
-     在 render 阶段同步写入（非 useEffect）：父组件用 key={isGlobal ? i18n.language : "cn"}
-     触发本组件重挂，重挂后首次 render 在 LightVelaPanel 挂载之前先跑此同步块，保证
-     LightVelaPanel 读到的是最新语言。useState 初始化器保证只在每次挂载时写一次。 */
-  if (typeof window !== "undefined") {
-    const lang = i18n.language;
-    const agentchatLocale = lang === "zh-CN" || lang === "zh-Hant" ? "zh-CN" : "en-US";
-    try {
-      window.localStorage.setItem("agentchat-locale", agentchatLocale);
-    } catch {
-      /* localStorage 不可用（隐私模式等）时静默跳过，不阻塞面板初始化 */
-    }
-  }
+  const language = i18n.language as import("@/i18n").SupportedLocale;
+  const [sdkLocaleReady, setSdkLocaleReady] = useState<string | null>(null);
+  const [sdkLocaleError, setSdkLocaleError] = useState(false);
+  useEffect(() => {
+    let active = true;
+    setSdkLocaleError(false);
+    const sdkLocale = language === 'ms-MY' ? language
+      : language === 'zh-CN' || language === 'zh-SG' || language === 'zh-Hant' ? 'zh-CN' : 'en-US';
+    try { window.localStorage.setItem('agentchat-locale', sdkLocale); } catch { /* Storage may be unavailable. */ }
+    void prepareAgentChatLocale(language).then(() => {
+      if (active) setSdkLocaleReady(language);
+    }).catch(() => {
+      if (active) setSdkLocaleError(true);
+    });
+    return () => { active = false; };
+  }, [language]);
 
   // 缓存当前 token、获取时刻及过期时刻（Unix 秒），供续期回调判断是否复用。
   // 初始化为 null / 0：真正的值在下方「首次锁定」块里写入，不依赖 mount 时的 prop 快照。
@@ -198,7 +199,13 @@ export const AgentChatPanel = ({
           </button>
         </div>
       )}
-      {launchTokenStatus === "ready" && launchToken && accountId && stableApiParams && (
+      {launchTokenStatus === "ready" && launchToken && accountId && stableApiParams && sdkLocaleReady !== language && (
+        <div className="flex h-full items-center justify-center p-6 text-sm text-black/60">
+          {sdkLocaleError ? <button type="button" onClick={() => window.location.reload()}>{t("重试")}</button>
+            : isCN ? <ChatLoadingState className="h-full" /> : t("正在加载对话…")}
+        </div>
+      )}
+      {launchTokenStatus === "ready" && launchToken && accountId && stableApiParams && sdkLocaleReady === language && (
         <Suspense
           fallback={isCN ? <ChatLoadingState className="h-full" /> : (
             <div className="flex h-full items-center justify-center p-6 text-sm text-black/60">

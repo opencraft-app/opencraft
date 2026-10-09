@@ -22,7 +22,8 @@ describe("publicRouteLocaleFromLang", () => {
     expect(
       (publicLocaleModule as Partial<{ PUBLIC_RUNTIME_URL_LANGS: readonly string[] }>)
         .PUBLIC_RUNTIME_URL_LANGS,
-    ).toEqual(["en-us", "zh-cn", "zh-sg", "zh-hant", "id-id", "es", "ja-jp", "ko-kr"]);
+    ).toEqual(["en-us", "zh-cn", "zh-sg", "zh-hant", "id-id", "ms-my", "es", "ja-jp", "ko-kr"]);
+    expect(publicRouteLocaleFromLang("ms-my")).toEqual({ locale: "ms-MY", localized: true });
     expect(publicRouteLocaleFromLang("ja-jp")).toEqual({ locale: "ja-JP", localized: true });
     expect(publicRouteLocaleFromLang("ko-kr")).toEqual({ locale: "ko-KR", localized: true });
   });

@@ -1,5 +1,12 @@
 # Agent、网关与运行时领域
 
+国际站界面语言由站点宿主传入内嵌 OpenCraft 工作台的 `ideLocale`，
+WorkbenchLocaleController 装载对应目录并随宿主语言更新。马来语 `ms-MY`
+目录覆盖工作台应用自有消息，保留 ICU 参数；界面译文不改写用户会话标题或消息。
+兼容 AgentChat SDK 的入口先准备 SDK 自有 i18next 运行时，再挂载面板；
+准备失败显示重试入口。语言准备与启动 token 准备分别持有就绪状态，
+两者完成后才挂载 SDK，请求凭据和执行仍由原有宿主/transport 持有。
+
 内嵌 OpenCraft 语音输入使用独立的应用级转写 transport，不经过 Hermes/DSH 的聊天模型配置。
 浏览器登录态经 Service Gateway 转为用户 default-purpose VelaGW Key；录音与标准 multipart
 均不落盘，混元转换仍由 NewAPI 拥有。通用语音插件复用录音、取消和 final-only 草稿写入，

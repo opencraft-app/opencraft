@@ -26,6 +26,7 @@ export default defineConfig({
     ],
   },
   test: {
+    server: { deps: { inline: ["@tencent/agentchat-lightvela-panel", "@tencent/agentchat-i18n"] } },
     environment: "jsdom",
     environmentOptions: {
       jsdom: {

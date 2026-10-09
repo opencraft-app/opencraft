@@ -3573,6 +3573,9 @@ const SCENARIO_TEMPLATE_PROMPT_VALUE_OVERRIDES: Record<string, Partial<Record<Au
     "id-ID": {
       rentInfo: "sewa 2.000 CNY ditambah biaya pengelolaan properti 800 CNY, dibayar ke pemilik atau pengelola properti melalui transfer bank",
     },
+    "ms-MY": {
+      rentInfo: "sewa 2,000 CNY serta yuran pengurusan harta 800 CNY, perlu dibayar kepada pemilik atau pengurus harta melalui pindahan wang melalui bank",
+    },
   },
   "country-fx-alert": {
     "zh-CN": {
@@ -3599,6 +3602,10 @@ const SCENARIO_TEMPLATE_PROMPT_VALUE_OVERRIDES: Record<string, Partial<Record<Au
       fromCurrency: "USD",
       toCurrency: "CNY",
     },
+    "ms-MY": {
+      fromCurrency: "USD",
+      toCurrency: "CNY",
+    },
   },
   "calorie-fitness-checkin": {
     "zh-CN": {
@@ -3618,6 +3625,9 @@ const SCENARIO_TEMPLATE_PROMPT_VALUE_OVERRIDES: Record<string, Partial<Record<Au
     },
     "id-ID": {
       bodyProfile: "168 cm, 62 kg, target 58 kg, latihan kekuatan 3 kali per minggu",
+    },
+    "ms-MY": {
+      bodyProfile: "168 cm, 62 kg, sasaran 58 kg, latihan kekuatan 3 kali seminggu",
     },
   },
 };
@@ -3676,6 +3686,11 @@ const SCENARIO_TEMPLATE_PROMPT_LABELS: Record<AutomationDisplayLocale, {
     yes: "ya",
     no: "tidak",
   },
+  "ms-MY": {
+    config: "Contoh ini mungkin dipadamkan atau diubah; jika saya menulis butiran baru, gunakan yang baru",
+    yes: "ya",
+    no: "Tidak",
+  },
 };
 
 const SCENARIO_TEMPLATE_NATURAL_PROMPTS: Record<string, Partial<Record<AutomationDisplayLocale, string[]>>> = {
@@ -3686,6 +3701,7 @@ const SCENARIO_TEMPLATE_NATURAL_PROMPTS: Record<string, Partial<Record<Automatio
     "en-US": ["Remind me to drink water and take my regular medication exactly as prescribed."],
     es: ["Recuérdame beber agua y tomar mi medicación habitual según la receta."],
     "id-ID": ["Ingatkan saya minum air dan obat rutin sesuai resep."],
+    "ms-MY": ["Ingatkan saya untuk minum air dan ubat dengan kerap seperti yang ditetapkan."],
   },
   "rent-reminder": {
     "zh-CN": ["请在账期临近时提醒我支付房租 2000 元和物业费 800 元。"],
@@ -3694,6 +3710,7 @@ const SCENARIO_TEMPLATE_NATURAL_PROMPTS: Record<string, Partial<Record<Automatio
     "en-US": ["Remind me when rent of CNY 2,000 and a CNY 800 property fee are due."],
     es: ["Recuérdame pagar 2000 CNY de alquiler y 800 CNY de comunidad cuando se acerque la fecha."],
     "id-ID": ["Ingatkan saya saat sewa CNY 2.000 dan biaya pengelolaan CNY 800 mendekati jatuh tempo."],
+    "ms-MY": ["Ingatkan saya apabila sewa CNY 2,000 dan yuran pengurusan CNY 800 hampir matang."],
   },
   "country-fx-alert": {
     "zh-CN": ["请关注 USD/CNY，较前一日涨跌达到 1% 时提醒我。"],
@@ -3702,6 +3719,7 @@ const SCENARIO_TEMPLATE_NATURAL_PROMPTS: Record<string, Partial<Record<Automatio
     "en-US": ["Watch USD/CNY and alert me when it moves 1% from the previous day."],
     es: ["Vigila USD/CNY y avísame cuando cambie un 1 % frente al día anterior."],
     "id-ID": ["Pantau USD/CNY dan beri tahu saat berubah 1% dari hari sebelumnya."],
+    "ms-MY": ["Pantau USD/CNY dan maklumkan apabila ia berubah 1% daripada hari sebelumnya."],
   },
   "calorie-fitness-checkin": {
     "zh-CN": ["请记录今天的饮食、运动和体重；目标减脂并保持力量训练，168cm、62kg、目标 58kg。"],
@@ -3710,6 +3728,7 @@ const SCENARIO_TEMPLATE_NATURAL_PROMPTS: Record<string, Partial<Record<Automatio
     "en-US": ["Track today's food, exercise, and weight for a 58 kg fat-loss goal while keeping strength training."],
     es: ["Registra la comida, el ejercicio y el peso de hoy para llegar a 58 kg manteniendo la fuerza."],
     "id-ID": ["Catat makanan, olahraga, dan berat hari ini untuk target 58 kg sambil menjaga latihan kekuatan."],
+    "ms-MY": ["Catatkan makanan, senaman dan berat hari ini untuk matlamat 58 kg sambil mengekalkan latihan kekuatan."],
   },
   "global-holiday-reminder": {
     "zh-CN": ["请关注泰国、印尼的公共假期和天气预警，旅行、发货或会议前提醒我。"],
@@ -3718,6 +3737,7 @@ const SCENARIO_TEMPLATE_NATURAL_PROMPTS: Record<string, Partial<Record<Automatio
     "en-US": ["Watch holidays and weather alerts in Thailand and Indonesia before travel, shipping, or meetings."],
     es: ["Vigila festivos y alertas del tiempo en Tailandia e Indonesia antes de viajes, envíos o reuniones."],
     "id-ID": ["Pantau hari libur dan peringatan cuaca di Thailand dan Indonesia sebelum perjalanan, pengiriman, atau rapat."],
+    "ms-MY": ["Pantau amaran cuti dan cuaca di Thailand dan Indonesia sebelum perjalanan, penghantaran atau mesyuarat."],
   },
   "stock-info-digest": {
     "zh-CN": ["请整理腾讯控股 00700、NVIDIA NVDA 和贵州茅台 600519 的价格、公告及财报动态。"],
@@ -3726,6 +3746,7 @@ const SCENARIO_TEMPLATE_NATURAL_PROMPTS: Record<string, Partial<Record<Automatio
     "en-US": ["Summarize price, announcement, and earnings updates for Tencent 00700, NVIDIA NVDA, and Kweichow Moutai 600519."],
     es: ["Resume precios, anuncios y resultados de Tencent 00700, NVIDIA NVDA y Kweichow Moutai 600519."],
     "id-ID": ["Rangkum harga, pengumuman, dan laporan keuangan Tencent 00700, NVIDIA NVDA, dan Kweichow Moutai 600519."],
+    "ms-MY": ["Ringkaskan harga, pengumuman dan laporan kewangan Tencent 00700, NVIDIA NVDA dan Kweichow Moutai 600519."],
   },
 };
 
