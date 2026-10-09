@@ -380,10 +380,12 @@ function getSkillOverview(
 }
 
 function getCategoryLabel(label: SkillCategoryLabel, overviewLocale: CuratedSkillOverviewLocale): string {
+  if (overviewLocale === "ms-MY") return localizeMalay(label.en);
+
   const labelByLocale: Partial<Record<CuratedSkillOverviewLocale, string>> = {
     "zh-CN": label.zh,
     "id-ID": label.id,
-    "ms-MY": localizeMalay(label.en), es: label.es, "ja-JP": label.ja, "ko-KR": label.ko ?? label.en,
+    es: label.es, "ja-JP": label.ja, "ko-KR": label.ko ?? label.en,
     "en-US": label.en,
   };
 
