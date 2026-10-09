@@ -1,6 +1,6 @@
 {
   "source": "frontend/src",
-  "sourceRevision": "636ea9c974bc5da4511eb57e1f5ca261276bca34",
+  "sourceRevision": "1146c4b28f3afa16e2765c14f993e468d3fc288e",
   "generatedBy": "scripts/sync-mono2-agent-console.mjs",
   "files": [
     {
@@ -9,7 +9,7 @@
     },
     {
       "file": "components/domain/tat-file-manager-panel.tsx",
-      "sourceSha256": "a1747345009e0209e51d7df3e77d5f69d150667c3b8b3669f7cdcd318b32a71c"
+      "sourceSha256": "51c59c341184ced6444c8fcfa563d13983f128b654cb6a79e03dbf8b0e4e9895"
     },
     {
       "file": "components/ui/badge.tsx",
