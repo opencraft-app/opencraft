@@ -147,3 +147,26 @@ func TestCreditBalancesFromLLMSubscriptionsSeparatesFreeCredit(t *testing.T) {
 		t.Fatalf("FreeTokenBalance = %d, want 25000", balances.FreeTokenBalance)
 	}
 }
+
+func TestCreditBalancesFromLLMSubscriptionsExcludesCreditPackages(t *testing.T) {
+	subs := []llmgateway.Subscription{
+		{ID: "1", Name: "credit-package:pkg-1", TokenTotal: 1000000, TokenBalance: 1000000},
+		{ID: "2", Name: "package:usr-test:pass-test", TokenTotal: 100000, TokenBalance: 83000},
+	}
+	balances := creditBalancesFromLLMSubscriptions(subs)
+
+	if !balances.PackageFound {
+		t.Fatalf("PackageFound = false, want true")
+	}
+	if balances.PackageTokenBalance != 83000 {
+		t.Fatalf("PackageTokenBalance = %d, want 83000 (credit packages must not count as plan credit)", balances.PackageTokenBalance)
+	}
+	if got := firstPackageSubscription(subs); got.ID != "2" {
+		t.Fatalf("firstPackageSubscription = %s, want plan subscription 2", got.ID)
+	}
+
+	onlyPacks := creditBalancesFromLLMSubscriptions(subs[:1])
+	if onlyPacks.PackageFound || onlyPacks.PackageTokenBalance != 0 {
+		t.Fatalf("credit packages alone = %+v, want no plan package", onlyPacks)
+	}
+}
