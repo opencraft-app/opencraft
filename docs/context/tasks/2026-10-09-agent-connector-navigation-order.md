@@ -42,7 +42,7 @@
 - `pnpm check`：通过，i18n 结构错误 0，TypeScript 新增诊断 0。
 - `pnpm build`：通过，静态路由包含 `/agents/connectors`。
 - `pnpm test`：多处无关测试失败，worker 达到 Node 4GB 堆上限后中止；未取得全量通过结果。
-- `npm --prefix opencraft run check:mono2-agent-console`：失败，清单 `sourceRevision` 与当前源码修订不一致；按前端规则，真源提交后才能同步副本。
+- 初次 OpenCraft 检查发现 `sourceRevision` 漂移；真源提交 `fff15e2ad` 后以独立提交 `61bf4fe66` 同步生成副本和清单，复查通过。
 - `pnpm exec vitest run src/pages/marketing/__tests__/agent-settings-sidebar-tabs.test.tsx`：启动时本机 `localhost` DNS `ENOTFOUND`，未运行用例。
 - `git diff --check`：通过。
 
@@ -62,4 +62,21 @@
 - 精确搜索命中 `settingsGroups` 和 `agent-settings-nav-order.test.ts`。
 
 ## handoff
-- 导航顺序已调整，聚焦测试、前端检查和构建通过；全量测试与 OpenCraft 同步检查未通过。未提交、未推送、未发布。
+- 导航顺序已提交并推送至 MR !5131；聚焦测试、前端检查、构建及 OpenCraft 同步检查通过。全量测试未取得通过结果；MR 尚未合并或发布。
+---
+id: agent-connector-navigation-order
+type: task
+scope: Agent 日常导航中连接器入口的顺序调整。
+triggers: ["Agent 连接器导航", "日常导航顺序"]
+owner: pablozhong
+authority: primary
+source_of_truth:
+  - frontend/src/pages/marketing/agent-settings-page.tsx
+  - frontend/src/pages/marketing/__tests__/agent-settings-nav-order.test.ts
+status: active
+reviewed_at: 2026-10-09
+review_due: 2026-11-09
+revision: 1.0.1
+precedence: task
+derived: false
+---

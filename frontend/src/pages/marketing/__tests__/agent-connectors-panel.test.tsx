@@ -219,6 +219,7 @@ describe("ConnectorsPanel 操作", () => {
 
     render(<ConnectorsPanel instanceId="ins-1" execCommand={noopExecutor} />);
     fireEvent.click(await screen.findByRole("button", { name: "解除授权" }));
+    expect(screen.getByText(/当前实例下的所有 Bot 都将无法使用该连接器/)).toBeTruthy();
     fireEvent.click(await screen.findByRole("button", { name: "确认解除" }));
     await waitFor(() => expect(client.detachBuiltinConnector).toHaveBeenCalled());
     await waitFor(() => expect(executeConnectorTat).toHaveBeenCalled());

@@ -781,7 +781,7 @@ export function ConnectorsPanel({
           <div className="lh-std-channel-panel__modal">
             <h3 className="lh-std-channel-panel__modal-title">{t("确认解除授权？")}</h3>
             <p className="lh-std-channel-panel__modal-desc">
-              {t("确认解除「{{name}}」授权？解除后当前实例将无法继续使用该连接器，重新连接无需再次授权。", {
+              {t("确认解除「{{name}}」授权？解除后，当前实例下的所有 Bot 都将无法使用该连接器；重新连接无需再次授权。", {
                 name: pendingDisconnect.name,
               })}
             </p>

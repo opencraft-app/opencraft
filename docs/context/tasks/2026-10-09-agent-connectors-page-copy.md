@@ -47,7 +47,9 @@
 - 用户最终指定原文：「连接常用服务，扩展 Agent 能力边界，帮你完成更多任务」。
 - MR 前对齐最新 `origin/master` 后，按新增 `ms-MY` locale 补齐同一文案翻译。
 - 此工作树此前全量 `pnpm test` 出现多处无关失败和 4GB worker 内存耗尽；本次改动后未重复全量运行。
-- 此工作树此前 OpenCraft 同步只读检查报告 `sourceRevision` 漂移；真源提交前不运行同步写操作。
+- 初次 OpenCraft 检查发现 `sourceRevision` 漂移；真源提交 `fff15e2ad` 后以独立提交 `61bf4fe66` 同步生成副本和清单，复查通过。
+- MR !5131 的 CR 修订进一步说明解除授权对当前实例下所有 Bot 的影响，并微调英文说明。
+- CR 修订的连接器与导航聚焦测试 20/20、`pnpm check`、`pnpm build`、文档校验均通过；七种必需语言无缺译。
 
 ## risks
 - 说明保持概括性，具体可用能力仍以连接器卡片和授权状态为准。
@@ -65,4 +67,21 @@
 - 命中面板头部与底部占位卡；无测试依赖旧文案。
 
 ## handoff
-- 页面文案和结构调整完成；聚焦测试、前端检查与构建通过。未提交、未推送、未发布。
+- 页面文案和结构已提交并推送至 MR !5131；聚焦测试、前端检查、构建与 OpenCraft 同步检查通过。MR 尚未合并或发布。
+---
+id: agent-connectors-page-copy
+type: task
+scope: 双站 Agent 连接器页面标题、说明和解除授权提示。
+triggers: ["Agent 连接器文案", "连接器解除授权提示"]
+owner: pablozhong
+authority: primary
+source_of_truth:
+  - frontend/src/pages/marketing/agent-connectors-panel.tsx
+  - frontend/src/i18n/generated/zh-CN.json
+status: active
+reviewed_at: 2026-10-09
+review_due: 2026-11-09
+revision: 1.0.1
+precedence: task
+derived: false
+---
