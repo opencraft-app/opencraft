@@ -131,3 +131,21 @@ browser show() gate, and verify real Tencent IM connection on localhost and the 
 - CORS GitOps MR !5135 merged into gitops at 4090f031266426bb4e7a3fd9d361a96c78510469.
   Runtime rollout and public browser were verified directly; Argo Application CRs
   are unavailable on the target cluster, so Argo Synced/Healthy is not claimed.
+
+## CI isolation repair
+- User-provided CI log for a8bf5ef4a failed before frontend typecheck:
+  frozen install returned ENOENT shared/vela-collaboration-web inside the isolated guard directory.
+- Trusted master guard copied only shared/lightvela-agent-core. New shared local
+  package dependencies were therefore absent; existing service-gateway and
+  vela-computer guards passed, and the fallback rejection was consequential.
+- CI-only repair commit 07050a2ef packages the shared source tree and excludes
+  package node_modules/dist. Direct and transitive future-dependency regressions
+  and the real feature dependency-closure archive check pass.
+- Complete CI runtime: 656 tests passed, 4 skipped, materialized smoke passed.
+- CI MR !5137: https://git.woa.com/wisp/mono2/merge_requests/5137. Its merge attempt
+  was rejected with Review check not passed. It must enter master before
+  trusted feature-MR validation can use the repaired script; no bypass was used.
+- Actual isolated feature-source install succeeds with pinned CI Node v22.12.0
+  and pnpm v10.32.1 using --frozen-lockfile; the isolated frontend check reports
+  166 current diagnostics against 171 baseline, zero new. Evidence logs:
+  /tmp/collaboration-guard-install-pinned.log and /tmp/collaboration-isolated-check.log.
