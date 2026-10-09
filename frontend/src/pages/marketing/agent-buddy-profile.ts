@@ -105,7 +105,7 @@ export const useBuddyProfile = (params: {
   const reload = useCallback(() => setReloadToken((value) => value + 1), []);
   const avatarIdentity = params.avatarIdentity ?? JSON.stringify([botId ?? "", resolvedProfileId]);
   const legacyMascot = getLegacyHermesMascot(avatarIdentity);
-  const legacyAppearance = useMemo(() => getLegacyHermesAppearance(params.avatarIdentity ?? JSON.stringify([botId ?? "", resolvedProfileId])), [params.avatarIdentity, botId, resolvedProfileId]);
+  const legacyAppearance = useMemo(() => getLegacyHermesAppearance(avatarIdentity), [avatarIdentity]);
   const fallback = useMemo<ProfileSnapshot>(() => ({
     profile: {
       name: fallbackName,

@@ -16,6 +16,16 @@ const button = (name: string | RegExp) => screen.getByRole('button', { name });
 const click = (name: string | RegExp) => fireEvent.click(button(name));
 
 describe('Hermes illustration studio', () => {
+  it.each(['white', 'charcoal'] as const)('makes legacy %s visible as one selected editable colour and confirms that colour', (skin) => {
+    const save = vi.fn();
+    render(<AgentDressupStudio value={{ ...DEFAULT_HERMES_APPEARANCE, skin }} onChange={vi.fn()} onBack={vi.fn()} onConfirm={save} />);
+    const colours = ['浅紫', '蜜桃', '奶黄', '薄荷', '晴空'].map((label) => button(label));
+    expect(colours.filter((option) => option.getAttribute('aria-pressed') === 'true')).toHaveLength(1);
+    expect(button('浅紫')).toHaveAttribute('aria-pressed', 'true');
+    click('就用这个');
+    expect(save).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ skin: 'lavender', style: 'doodle' }));
+  });
+
   it('keeps reverse click layering through color changes, toggles, confirm and saved parsing', () => {
     const save = vi.fn(); render(<Harness onConfirm={save} />);
     click('小书本'); click('星星巫师帽'); click('奶油耳机'); click('晴空');
@@ -197,7 +207,10 @@ describe('Hermes illustration studio', () => {
   it('closes the created preview and makes the console creation entry usable', () => {
     render(<AgentDressupPreview />);
     fireEvent.change(screen.getByLabelText('名字'), { target: { value: '小星' } });
-    click('创建试玩 Agent'); click('开始旅程');
+    click('创建试玩 Agent');
+    expect(screen.queryByRole('button', { name: '修改资料' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '继续搭配' })).not.toBeInTheDocument();
+    click('开始旅程');
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     click('创建 Bot');
     expect(screen.getByRole('dialog')).toBeInTheDocument();

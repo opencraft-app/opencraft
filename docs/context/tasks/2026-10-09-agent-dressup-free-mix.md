@@ -264,3 +264,12 @@ derived: false
 - 审查验证检查点：新增保存等待、真实返回含义、倒序配饰遮挡及保存解析回归；4文件61项通过，12配饰WebP存在。首次check发现统一配饰列表沿用不含耳机的PlushOutfit类型守卫，已修正为keyof PLUSH_OUTFITS；最终check退出0（166/171/0 new）。OpenCraft130文件及文档校验退出0；build:cn退出0，build:global进行中。HTML审查报告 /tmp/lightvela-dressup-audit/report.html，注明本轮UI实测被阻止及未执行真实云端写入。
 
 - 最终审查交接：国际构建同样退出0，恢复next-env与Context校验生成的catalog。前端61项回归、类型/多语言、双站构建、文档及OpenCraft校验通过；全仓Context目录校验退出1（其他历史任务文档缺元数据），Context测试27项中4项失败，Context-audit测试33项及审计脚本退出0。未把全仓错误混同本次头像行为问题，详细证据在审查报告目录。继续按用户既有修复后提交授权更新MR !5124，未合并或发布。
+
+## 旧 inline 评论逐项复核
+- 用户反馈颜色兜底、完成页修改资料死按钮和创建Bot入口无效三条评论。当前f7294c6429源码已包含此前修复：white/charcoal统一五色兜底，完成页已只保留开始旅程，Dialog以dialogOpen受控且创建入口重新打开。无需重复改业务代码。沿用本会话已读frontend/site必读、服务AGENTS、设计和邻接测试。补充两种旧颜色的可见选中与确认回归，并检查旧完成页按钮不存在；正在重跑试玩创建关闭与再次打开流程。
+
+- 用户确认旧三条已修并指出identity拼接重复；legacyAppearance改为复用avatarIdentity，依赖同一标量，保证存量头像及换装底模身份规则一致。上一轮新加两种旧颜色与死按钮回归、check均退出0；正在复核头像读取隔离与本轮最小重构。
+
+- 用户要求按Skill补PRD并明确国内/国际都完成。读取lightvela-product-skills、prd-creator及template/checklist/handoff/tapd-write/mr-flow；沿用聊天已确认方案，新增wiki/prd-docs/2026-10-09-agent-avatar-dressup.md，定义双站范围、11项验收、真实Demo、存量七角色、异常与产物交接。原Task Pack未关联TAPD；PRD父单状态不伪称已创建。用户要求补入本次研发，继续现有分支/MR，不夹带无关文件。
+
+- 双站PRD交接：33项头像/换装回归、check零新增类型错误、build:cn和build:global、OpenCraft130项及文档链接校验通过。恢复next-env自动构建引用。本轮提交范围四文件；PRD与代码更新现有MR !5124。TAPD创建/关联范围仍待用户答复，未宣称完整产品前置或线上发布完成。
