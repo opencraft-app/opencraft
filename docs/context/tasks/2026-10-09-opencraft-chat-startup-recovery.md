@@ -46,7 +46,8 @@
 - 代码：原启动失败按钮与连接失败共用“重新连接”，模块失败只重建组件。
 - `pnpm exec vitest run` 聚焦恢复测试 4/4 通过；`pnpm check` 通过（TypeScript 新增诊断 0）；`pnpm build` 通过。
 - 完整 `pnpm test` 出现多个失败后卡住并中断，未取得全量通过结果。
-- OpenCraft 同步检查报告 locale 生成副本漂移，需在前端真源提交后按仓库门禁同步。
+- 前端真源提交后已同步 OpenCraft 生成副本；合入最新 master 后补齐马来语译文，OpenCraft 同步检查验证 133 个文件。
+- MR !5132 的远端源提交与本地一致，当前 `can_be_merged`，提交检查仍 pending。
 
 ## risks
 - `sessionStorage` 不可用时禁用自动刷新，保留手动入口，避免循环。
@@ -67,4 +68,4 @@
 - 有界 `rg` 命中及聚焦测试输出；不保存敏感浏览器网络记录。
 
 ## handoff
-- 本地独立工作树已实现并完成聚焦验证；用户已授权提交和创建 MR。合并和发布未获授权。
+- 已提交 MR !5132，合入 master 后聚焦测试、`pnpm check`、`pnpm build`、OpenCraft 同步检查通过。远端 CI 仍 pending；合并和发布未获授权。
