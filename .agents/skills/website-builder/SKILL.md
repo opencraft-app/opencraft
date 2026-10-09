@@ -175,7 +175,7 @@ GET {API_BASE}/v1/websites/capability
 
 - 使用 `await env.RIVET_STORAGE.sql.exec(sql, bindings)`，返回 `{ rows, columnNames, rowsRead, rowsWritten }`；使用参数绑定，不能拼接用户输入到 SQL。`await env.RIVET_STORAGE.sql.databaseSize()` 返回数据库字节数。
 - 数据库绑定网站身份，而不是 release、浏览器或 JS 全局变量；同一网站的重新部署、回滚和运行时实例替换应保留数据。网站删除会终止其持久对象，不能重新创建旧身份。
-- 当前上限：单站数据库 16 MiB，SQL 64 KiB，256 个绑定且共 1 MiB，结果最多 1000 行且共 1 MiB。超额显示保存失败，不能用 localStorage 作兜底。
+- 建站层不另设固定数据库总容量上限，实际可用容量及错误以平台存储机制为准。单次调用上限：SQL 64 KiB，256 个绑定且共 1 MiB，结果最多 1000 行且共 1 MiB。超额显示保存失败，不能用 localStorage 作兜底。
 - 有效分享会话仅允许一个 SELECT 读取；不支持分享会话执行 DDL、INSERT、UPDATE、DELETE、WITH 或多语句。不要在 GET 内初始化数据库或写业务数据；在所有者写请求中初始化 schema。仅首次建站且业务表尚未创建时，GET 可返回空列表；存储超时、权限、配额或其他 SQL 错误必须明确报错，不得吞掉错误伪装成空数据。
 - 按用户实际需求设计数据实体、字段、接口和页面，不复制预设业务应用。持久化代码写在 `backend/app.mjs`，只通过平台提供的 SQL 接口访问本站数据；不要预置与需求无关的表、路由或业务字段。
 - 每个创建意图生成一次稳定的业务标识或幂等键；同一次意图重复提交时不得重复写入或更换标识。校验输入并使用参数绑定，以数据库约束和原子 SQL 保证一致性。写请求失败后先确认结果，不自动重放或偷偷新建记录。

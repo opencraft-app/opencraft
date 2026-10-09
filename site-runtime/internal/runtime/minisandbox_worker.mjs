@@ -36,7 +36,6 @@ const encoder = new TextEncoder();
 const MAX_QUERY_BYTES = 65536;
 const MAX_BINDINGS_BYTES = 1048576;
 const MAX_RESULT_BYTES = 1048576;
-const MAX_DATABASE_BYTES = 16777216;
 
 function executionResponse(response, digest) {
   const headers = new Headers();
@@ -95,7 +94,7 @@ function sqlCapability(storage, readOnly, isActive) {
       }
       if (bindingBytes > MAX_BINDINGS_BYTES) throw new RangeError("SQL bindings too large");
       if (readOnly) readQuery(query);
-      // Bounds and quota errors roll back the entire SQL call rather than
+      // Query and result bounds roll back the entire SQL call rather than
       // committing a partial write and merely returning an error afterwards.
       return storage.transactionSync(() => {
         const cursor = storage.sql.exec(query, ...bindings);
@@ -107,7 +106,6 @@ function sqlCapability(storage, readOnly, isActive) {
           rows.push(row);
         }
         if (readOnly && cursor.rowsWritten > 0) throw new TypeError("share storage is read-only");
-        if (storage.sql.databaseSize > MAX_DATABASE_BYTES) throw new RangeError("site database quota exceeded");
         return { rows, columnNames: cursor.columnNames, rowsRead: cursor.rowsRead, rowsWritten: cursor.rowsWritten };
       });
     },

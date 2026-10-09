@@ -586,9 +586,11 @@ separate stateless compatibility path, not the persistent implementation.
   Worker and one `VelaSite` Durable Object. Releases select a verified backend
   digest within the retained Worker package; they do not create a new database.
   Storage is native Durable Object SQL through Depot/FoundationDB and inherits
-  the platform commit/output gate. Each bounded SQL call rolls back on quota or
-  result overflow. Database limit is 16 MiB; SQL/query and response limits are
-  enforced in the platform wrapper, not delegated to generated application code.
+  the platform commit/output gate. Each bounded SQL call rolls back on query/result overflow or storage errors.
+  The website wrapper does not impose a fixed database-size ceiling; underlying
+  storage accounting, capacity and errors remain authoritative. SQL/query and
+  response limits are enforced in the platform wrapper, not delegated to
+  generated application code.
 - Preparation activates via `expected_deployment_id` CAS and fences the exact
   deployment ID/targets before and after stateless and durable compiled-package
   probes, without invoking application fetch or SQL. The versioned canonical
