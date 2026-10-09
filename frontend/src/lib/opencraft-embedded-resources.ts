@@ -2,6 +2,29 @@ import { useEffect } from "react";
 
 export const EMBEDDED_WORKBENCH_ELEMENT_NAME = "opencraft-embedded-workbench";
 const scriptLoads = new Map<string, Promise<void>>();
+const MODULE_RELOAD_ATTEMPT_KEY = "lightvela:opencraft-module-reload-attempt";
+
+/** A failed module may stay failed in the browser's module cache until navigation. */
+export function markEmbeddedWorkbenchModuleReload(): boolean {
+  try {
+    if (window.sessionStorage.getItem(MODULE_RELOAD_ATTEMPT_KEY)) return false;
+    window.sessionStorage.setItem(MODULE_RELOAD_ATTEMPT_KEY, "1");
+    return true;
+  } catch {
+    // Without a persistent guard, an automatic reload could loop forever.
+    return false;
+  }
+}
+
+export function clearEmbeddedWorkbenchModuleReload(): void {
+  try { window.sessionStorage.removeItem(MODULE_RELOAD_ATTEMPT_KEY); }
+  catch { /* Storage may be unavailable in private browsing. */ }
+}
+
+/** Navigation retains the selected Bot in the current URL and reloads failed JS modules. */
+export function reloadEmbeddedWorkbenchPage(): void {
+  window.location.reload();
+}
 
 export function embeddedWorkbenchScriptUrl(): string | null {
   const configured = (typeof process !== "undefined"

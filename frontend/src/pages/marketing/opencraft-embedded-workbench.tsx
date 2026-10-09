@@ -15,8 +15,11 @@ import { cn } from "@/lib/utils";
 import { useEmbeddedPhysicalConnectionPreparation } from "@/lib/opencraft-embedded-connection";
 import {
   EMBEDDED_WORKBENCH_ELEMENT_NAME as ELEMENT_NAME,
+  clearEmbeddedWorkbenchModuleReload,
   embeddedWorkbenchScriptUrl,
   loadEmbeddedWorkbench,
+  markEmbeddedWorkbenchModuleReload,
+  reloadEmbeddedWorkbenchPage,
 } from "@/lib/opencraft-embedded-resources";
 import type {
   LightVelaMultiSessionOptions,
@@ -207,7 +210,7 @@ export function AgentChatMigrationSurface({
   const retryConnection = async () => {
     const element = elementRef.current;
     if (agentPaused || retrying) return;
-    if (startupFailed || element === null) {
+    if (element === null) {
       setSessionRevision(value => value + 1);
       return;
     }
@@ -250,6 +253,7 @@ export function AgentChatMigrationSurface({
     // Only an artifact that never reports its connection keeps the legacy assumption.
     let reportedConnection = false;
     let element: EmbeddedWorkbenchElement | null = null;
+    let moduleLoaded = false;
     const initialToken = readStoredAuthToken();
     const getSessionToken = () => {
       if (retired || !initialToken || readStoredAuthToken() !== initialToken) {
@@ -402,6 +406,8 @@ export function AgentChatMigrationSurface({
     };
 
     void loadEmbeddedWorkbench(scriptUrl).then(async () => {
+      moduleLoaded = true;
+      clearEmbeddedWorkbenchModuleReload();
       if (retired) return;
       const candidate = document.createElement(ELEMENT_NAME);
       if (!isEmbeddedWorkbenchElement(candidate)) {
@@ -438,9 +444,13 @@ export function AgentChatMigrationSurface({
       }
     }).catch((cause: unknown) => {
       if (retired) return;
-      console.warn("[opencraft-embed] startup failed", { stage: element === null ? "module" : "application", error: cause });
+      const moduleFailed = !moduleLoaded;
+      console.warn("[opencraft-embed] startup failed", { stage: moduleFailed ? "module" : "application", error: cause });
       failed = true;
       setStartupFailed(true);
+      if (moduleFailed && scriptUrl !== "bundled:opencraft" && markEmbeddedWorkbenchModuleReload()) {
+        reloadEmbeddedWorkbenchPage();
+      }
     });
 
     return () => {
@@ -506,7 +516,7 @@ export function AgentChatMigrationSurface({
   }, [active, enabled, owner]);
 
   const connectionMessage = agentPaused ? t("Agent 已暂停运行。如因套餐到期，续费后即可恢复使用。")
-    : startupFailed ? t("会话加载失败，请重试")
+    : startupFailed ? t("对话加载失败")
     : connection.failureCode === "intervention:authentication-required" ? t("登录已过期，请重新登录后重试")
     : connection.failureCode === "remote-resource-not-found" ? t("当前 AI 伙伴不可用，请检查运行状态")
     : connection.failureCode === "intervention:configuration-required" ? t("请检查 AI 伙伴状态后重试")
@@ -514,6 +524,7 @@ export function AgentChatMigrationSurface({
     : connectionSlow ? t("连接时间较长，请检查网络或重试")
     : presentedOwner === "opencraft" && everReady ? t("正在重新连接，输入内容已保留…")
     : null;
+  const reloadConversation = startupFailed || (connectionSlow && presentedOwner === "loading");
 
   return (
     <div
@@ -545,9 +556,10 @@ export function AgentChatMigrationSurface({
           {connectionMessage !== null ? <span role="status">{connectionMessage}</span>
             : loadingNoticeDue ? <ChatLoadingState /> : null}
           {!agentPaused && (startupFailed || connectionSlow || connection.phase === "error" || presentedOwner === "opencraft") && (
-            <button type="button" disabled={retrying} onClick={() => { void retryConnection(); }}
+            <button type="button" disabled={!reloadConversation && retrying}
+              onClick={() => { if (reloadConversation) reloadEmbeddedWorkbenchPage(); else void retryConnection(); }}
               className="shrink-0 rounded-md border border-black/15 px-3 py-1 text-black/80 hover:bg-black/5 disabled:opacity-50">
-              {retrying ? t("正在连接…") : t("重新连接")}
+              {reloadConversation ? t("重新加载对话") : retrying ? t("正在连接…") : t("重新连接")}
             </button>
           )}
         </div>
