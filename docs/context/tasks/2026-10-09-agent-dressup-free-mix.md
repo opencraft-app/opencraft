@@ -204,3 +204,12 @@ derived: false
 - OpenCraft同步及只读门禁通过，130个副本无差异；无需额外生成提交。
 - master新增file依赖经frozen-lockfile安装更新本地快照；绘画编辑测试改为模拟实际HermesPlushAvatar。
 - 合并后12文件226项测试全部通过；pnpm build退出0；文档校验0错误/0断链。真实云端E2E及正文头像边界明确写入MR说明。
+
+## Review修复（用户明确要求修复后提交）
+- 沿用已读frontend/site路由context与设计，重新路由预览路径。修复资料编辑与继续搭配同操作、创建完成不能查看背景预览及旧white/charcoal编辑无选中色。
+- CI修复在独立.ci-only分支准备，等待master合入后可信Guard方可生效；业务MR不放宽fallback。
+
+- 已发现远端同名CI分支已有MR !5123，其frontend_guard.sh与本地修复完全一致，故复用现有CI MR，不覆盖远端提交、不创建重复MR。
+- 本轮84项聚焦回归、pnpm check（0新增类型错误）与pnpm build通过；资料编辑保留外观、创建后关闭/重新打开入口、旧颜色编辑映射有新回归。修复将提交到!5124；未合并/部署，远端CI仍需!5123进入master后重跑。
+
+- 浏览器复核：修改资料打开独立表单并聚焦名字；保存后外观保留；创建完成弹窗关闭后可见本地侧栏预览，背景创建按钮重新打开表单。截图 /tmp/lightvela-dressup-validation/console-preview-fixed.png。最终typecheck退出0、无新增类型错误。

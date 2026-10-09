@@ -74,6 +74,15 @@ describe('Doodle profile metadata', () => {
     expect(parseHermesAppearance({ ...DEFAULT_HERMES_APPEARANCE, ...patch })).toBeNull();
   });
 
+  it.each(['white', 'charcoal'] as const)('keeps legacy %s readable but converts it to a visible editing colour', (skin) => {
+    for (const style of [undefined, 'soft', 'doodle'] as const) {
+      const old: HermesAppearance = { version: 1, skin, style, expression: 'open', top: 'none', hat: 'none', shoes: 'none', ...(style === 'doodle' ? { shape: 'bean', doodads: [] } : {}) };
+      expect(parseHermesAppearance(old)?.skin).toBe(skin);
+      expect(asDoodleAppearance(old).skin).toBe('lavender');
+      expect(old.skin).toBe(skin);
+    }
+  });
+
   it('uses the playful family for new avatars and explicitly converts older doodles only when edited', () => {
     expect(HERMES_PLAYFUL_DOODADS).toEqual(['headphones', 'wizard-hat', 'bucket-hat', 'star-glasses', 'goggles', 'beret', 'beanie', 'cape', 'scarf', 'record', 'book', 'camera']);
     expect(DEFAULT_HERMES_APPEARANCE.doodads).toEqual([]);

@@ -169,15 +169,16 @@ export function isValidHermesDrawing(value: unknown): value is HermesDrawingStro
 
 /** Editing an old avatar is an explicit opt-in to the new illustration family. */
 export function asDoodleAppearance(value: HermesAppearance): HermesAppearance {
+  const skin = HERMES_DOODLE_COLORS.includes(value.skin as typeof HERMES_DOODLE_COLORS[number]) ? value.skin : 'lavender';
   if (value.style === 'doodle') {
     const replacements: Partial<Record<HermesDoodad, HermesDoodad>> = {
       glasses: 'star-glasses', cap: 'wizard-hat', crown: 'wizard-hat',
     };
     const selected = (value.doodads ?? []).map((id) => replacements[id] ?? id);
     const doodads = HERMES_PLAYFUL_DOODADS.filter((id) => selected.includes(id));
-    return { ...value, doodads };
+    return { ...value, skin, doodads };
   }
-  return { version: 1, style: 'doodle', shape: 'bean', skin: value.skin === 'white' ? 'lavender' : value.skin,
+  return { version: 1, style: 'doodle', shape: 'bean', skin,
     expression: value.expression, top: 'none', hat: 'none', shoes: 'none', doodads: [] };
 }
 
