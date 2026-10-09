@@ -347,11 +347,14 @@ describe("agent settings sidebar chat/settings tabs", () => {
   it("shows Bot switching in a separate rail and opens a fresh chat", () => {
     const page = readPageSource();
     const rail = readFileSync(join(process.cwd(), "src/pages/marketing/agent-bot-rail.tsx"), "utf8");
-    expect(page).toContain("onSelect={handleSelectBot}");
+    expect(page.match(/onSelect=\{handleSelectBot\}/g)).toHaveLength(2);
+    expect(page).not.toContain("onSelect={prepareBotSwitch}");
+    expect(page).toContain("setActiveTabId(botId);");
     expect(page).toContain("pendingNewChatSessionBotId = botId;");
     expect(rail).toContain('href={getAgentBotSectionHref(`${AGENT_SECTION_PATH_BY_ID.chat}/`, bot.id)}');
     expect(rail).toContain("bots.map((bot) =>");
     expect(rail).toContain('aria-current="true"');
+    expect(page).toContain('<li className="sr-only" role="status">');
   });
 
   it("keeps the current Bot card informational", () => {

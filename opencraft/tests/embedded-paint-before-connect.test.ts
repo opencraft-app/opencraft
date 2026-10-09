@@ -47,3 +47,11 @@ test("a startup that restores a stored session ID paints once its Thread view is
   assert.equal(isEmbeddedConversationPainted({ submission: null }, "resolving"), true);
   assert.equal(isEmbeddedConversationPainted({ submission: { id: "turn-1" } }, "resolving"), false);
 });
+
+test("embedded sessions wait for the initial catalog unless the Host has failed", () => {
+  const app = read("../apps/workbench-web/src/app.tsx");
+  const runtime = read("../apps/workbench-web/src/runtime/appserver-runtime-context.tsx");
+  assert.match(runtime, /isPending: query\.isPending/u);
+  assert.match(app, /loading: \(catalog\.isPending && snapshot\.phase !== "error"\) \|\| catalog\.isFetching/u);
+  assert.match(app, /snapshot\.phase\]\);/u);
+});

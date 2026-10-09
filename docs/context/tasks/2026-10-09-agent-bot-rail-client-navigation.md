@@ -1,3 +1,21 @@
+---
+id: agent-bot-rail-client-navigation
+type: task
+scope: Dual-site Bot rail client navigation and session catalog loading.
+triggers: ["agent bot rail", "bot switch navigation", "embedded session catalog"]
+owner: pablozhong
+authority: primary
+source_of_truth:
+  - wiki/prd-docs/2026-10-08-agents-bot-rail.md
+  - opencraft/docs/chat-ui-architecture.md
+status: active
+reviewed_at: 2026-10-09
+review_due: 2026-11-09
+revision: 1.0.0
+precedence: task
+derived: false
+---
+
 ## goal
 Make switching Bot avatars use client navigation after hydration, without a full document reload or transient empty-session rows.
 
@@ -49,6 +67,7 @@ Make switching Bot avatars use client navigation after hydration, without a full
 | `docs/context/project/services/opencraft.md` and `opencraft/AGENTS.md` | OpenCraft validation | Run service checks and rebuild embedded asset |
 | `docs/context/project/upstream-subtrees.md` | Source ownership | Edit mono2 OpenCraft source only |
 | `docs/context/domains/identity-access.md` | Session boundary | Keep account-scoped cache intact |
+| `frontend/DESIGN.md` and `opencraft/docs/platform-architecture.md` | Current UI/runtime rules | Preserve client navigation and Host failure behavior |
 
 ## evidence
 - `origin/master` fetched at `c72e37f45`; inactive Bot anchor invokes `onSelect` without `preventDefault`, so native navigation follows.
@@ -60,6 +79,7 @@ Make switching Bot avatars use client navigation after hydration, without a full
 - A client switch must reset old Bot chat state; use the existing `handleSelectBot` path.
 - Modified clicks and pre-hydration clicks must retain native navigation; preserve the anchor.
 - A confirmed empty catalog must still expose the default conversation entry, including query failure or single-session fallback behavior.
+- A failed initial Host connection must not keep announcing catalog loading indefinitely; the main chat owns the failure and retry presentation.
 
 ## validation
 - Focused behavior and sidebar tests, `pnpm check`, relevant build, `git diff --check`, change-impact validation if mapped.
@@ -70,10 +90,12 @@ Make switching Bot avatars use client navigation after hydration, without a full
 - OpenCraft workbench typecheck, embedded release build, and `npm run test:chat` (600 tests) passed. Generated embedded script at 5174 references the rebuilt asset `a-Dj-Z9hkq.js`.
 - `check:mono2-agent-console`, explicit docs-impact check, and `git diff --check` passed.
 - User reviewed the local 5174 preview and confirmed the interaction looks okay.
+- CR !5117 follow-up: CN and global focused tests each passed 41/41; OpenCraft embedded tests passed 221/221. Frontend `pnpm check` reported 0 new TypeScript diagnostics; OpenCraft workbench typecheck, embedded release build, sync check, and documentation validation passed.
 
 ## decisions
 - Keep an anchor and intercept only ordinary unmodified clicks after hydration; no new router abstraction.
-- Publish catalog loading while the query is pending or fetching. Keep the sidebar loading announcement accessible but visually hidden, without delaying or hiding an already cached list.
+- Publish catalog loading while the query is pending or fetching, except when the Host has entered its terminal error phase. Keep the sidebar loading announcement accessible but visually hidden, without delaying or hiding an already cached list.
+- Keep Bot avatar clicks on the existing client `replace` path. The native anchor was added for pre-hydration and modified-click behavior, not as a product requirement for ordinary-switch browser history; the PRD only specifies the destination.
 
 ## scan_scope
 - `frontend/src/pages/marketing/agent-bot-rail.tsx`, `agent-settings-page.tsx`, adjacent tests and app navigation.

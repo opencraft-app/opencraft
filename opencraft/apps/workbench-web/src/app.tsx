@@ -1141,13 +1141,13 @@ export function App({
     if (embedded === undefined) return;
     embedded.onSessionsChange({
       sessions: embeddedSessions,
-      loading: catalog.isPending || catalog.isFetching,
+      loading: (catalog.isPending && snapshot.phase !== "error") || catalog.isFetching,
       hasMoreSessions: catalog.hasNextPage,
       pinSupported: hostCatalog.threadManagement.capabilities(embedded.hostId).pin === true,
       selectedChatId: snapshot.hostId === embedded.hostId ? activeThreadId : null,
       isDraft: draft !== null && draft.submission === null,
     });
-  }, [activeThreadId, catalog.hasNextPage, catalog.isFetching, catalog.isPending, draft, embedded, embeddedSessions, hostCatalog.threadManagement, snapshot.hostId]);
+  }, [activeThreadId, catalog.hasNextPage, catalog.isFetching, catalog.isPending, draft, embedded, embeddedSessions, hostCatalog.threadManagement, snapshot.hostId, snapshot.phase]);
   // The local Draft paints before the Host connects (the Composer stays
   // submission-disabled until ready); a restored Thread paints when ready.
   const painted = isEmbeddedConversationPainted(draft, conversationViewActivation.phase);

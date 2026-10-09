@@ -48,14 +48,16 @@ describe("Agent Bot rail navigation", () => {
     expect(normalClick.defaultPrevented).toBe(true);
     expect(onSelect).toHaveBeenCalledExactlyOnceWith("second");
 
-    onSelect.mockClear();
-    const newTabClick = new MouseEvent("click", { bubbles: true, cancelable: true, metaKey: true });
-    const preventJsdomNavigation = (event: MouseEvent) => {
-      expect(event.defaultPrevented).toBe(false);
-      event.preventDefault();
-    };
-    document.addEventListener("click", preventJsdomNavigation, { once: true });
-    fireEvent(link, newTabClick);
-    expect(onSelect).not.toHaveBeenCalled();
+    for (const options of [{ metaKey: true }, { ctrlKey: true }, { shiftKey: true }, { altKey: true }, { button: 1 }]) {
+      onSelect.mockClear();
+      const modifiedClick = new MouseEvent("click", { bubbles: true, cancelable: true, ...options });
+      const preventJsdomNavigation = (event: MouseEvent) => {
+        expect(event.defaultPrevented).toBe(false);
+        event.preventDefault();
+      };
+      document.addEventListener("click", preventJsdomNavigation, { once: true });
+      fireEvent(link, modifiedClick);
+      expect(onSelect).not.toHaveBeenCalled();
+    }
   });
 });
