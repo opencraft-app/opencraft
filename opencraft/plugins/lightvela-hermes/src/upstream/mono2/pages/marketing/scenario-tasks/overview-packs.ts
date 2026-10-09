@@ -6,6 +6,7 @@
  * 本模块不得导入 scenario-packs.ts，避免首页重新拉入完整场景库。
  */
 import { localizeMalay } from '../../../i18n/malay-copy';
+import { localizeThai } from '../../../i18n/thai-copy';
 import type { PublicSiteLocaleCode } from "../../../lib/public-site-routing";
 
 import {
@@ -2406,6 +2407,7 @@ const OVERVIEW_COPY_BY_LOCALE: Record<
   "en-US": OVERVIEW_ENGLISH_COPY,
   "id-ID": OVERVIEW_INDONESIAN_COPY,
   "ms-MY": OVERVIEW_ENGLISH_COPY,
+  "th-TH": OVERVIEW_ENGLISH_COPY,
   es: OVERVIEW_SPANISH_COPY,
   "ja-JP": OVERVIEW_JAPANESE_COPY,
   "ko-KR": OVERVIEW_KOREAN_COPY,
@@ -2422,12 +2424,15 @@ export function hasLocalizedOverviewCopy(locale: PublicSiteLocaleCode): boolean 
   return OVERVIEW_COPY_BY_LOCALE[locale] !== null;
 }
 
+let thaiOverviewCopy: typeof OVERVIEW_ENGLISH_COPY | undefined;
 let malayOverviewCopy: typeof OVERVIEW_ENGLISH_COPY | undefined;
 
 export function getOverviewScenarioTaskPacks(
   locale: PublicSiteLocaleCode,
 ): readonly ScenarioTaskPack[] {
-  const localizedCopy = locale === "ms-MY"
+  const localizedCopy = locale === "th-TH"
+    ? (thaiOverviewCopy ??= localizeThai(OVERVIEW_ENGLISH_COPY))
+    : locale === "ms-MY"
     ? (malayOverviewCopy ??= localizeMalay(OVERVIEW_ENGLISH_COPY))
     : OVERVIEW_COPY_BY_LOCALE[locale];
   if (!localizedCopy) return OVERVIEW_SCENARIO_TASK_PACKS;
