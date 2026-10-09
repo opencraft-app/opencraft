@@ -46,10 +46,10 @@
 - `git diff --check`、文档校验（errors 为空）通过。`validate_change_impact.py --staged` 通过，但当前未暂存任何文件；已人工核对本次路径不命中设计映射。
 
 ## handoff
-- 本地源码修复和相关回归验证完成；未提交、推送或发布。线上仍需走发布流程后生效。
+- 本地源码与生成副本已分别提交，工作树干净；92 项相关测试及 133 项同步检查通过。推送失败，尚未创建 MR、合入或发布。
 
 ## stage
-本地修复完成，发布前需在依赖齐全的构建环境完成全量门禁。
+本地提交完成；远端网络阻断。发布前仍需在依赖齐全的环境完成全量门禁。
 
 ## verified
 - 错误来自分类标题对象的马来语字段无条件求值；按语言分支修复后 92 项相关测试通过。
@@ -64,7 +64,7 @@
 - 保留同一 worktree 其他首页改动；本次实现仅修改 SkillsDemoPanel 和相邻测试。
 
 ## next_action
-- 在依赖齐全的环境完成全量门禁并按授权执行提交及发布。
+- 在具备工蜂及发布网络的环境刷新 master，复核分支、推送、创建并合入 MR，完成国内正式站构建/发布与线上验收。已有用户授权，无需再次索要相同操作授权。
 
 ## delivery_authorization
 - 用户明确要求“提交合入发布”，授权本次修复的 commit、push、MR 合入和 lightvela.com 发布。
@@ -74,3 +74,9 @@
 - 本次生产写入授权来自用户指令，高于网站运维技能历史任务中的生产只读约束。未启用任何额外区域发布。
 - 国内当前仓库发布定义为 `.ci/frontend-edgeone-lightvela.yml`，combo `eo:cn-lightvela-prod-next`，项目 `lightvela`；依赖在线核验实际制品来源和流水线状态。
 - `check:mono2-agent-console` 发现本次 SkillsDemoPanel 生成副本漂移；按 frontend/AGENTS.md，先提交真源，再用生成器同步并独立提交。
+- 真源提交：`d3a38791e2ab37ddc82b968b7dd8d34dca0c8008`。同步生成器只修改生成 SkillsDemoPanel 与 UPSTREAM 清单；133 项副本校验通过，清单 sourceRevision 指向上述提交。
+- 独立分支修复验证重新通过（四个测试文件、92 项）；本地补齐 package.json 已声明的 file: 依赖链接，仅写入忽略的 node_modules，未修改依赖声明或共享依赖目录。日志：`/tmp/lightvela-skills-malay-isolated-tests.log`。
+- 国内发布入口 dry-run 已核对，只输出目标与 SHA，没有发起流水线。
+- 独立分支 `pnpm check`：i18n/文档检查通过，类型门禁仍被依赖及相邻包问题阻断（186 current，43 new）；日志 `/tmp/lightvela-skills-malay-isolated-check.log`，本次 SkillsDemoPanel 文件没有诊断。
+- 实际 `git push origin HEAD:refs/heads/fix/skills-category-malay-loading-20261009` 因 git.woa.com DNS 解析失败而退出 128；没有远端提交回执。
+- 网络仍受限，尚未推送、创建 MR、合入或发布。已准备 MR 描述 `/tmp/lightvela-skills-malay-mr-description.md`；后续在具备工蜂/发布机网络的执行环境继续，沿用本轮授权。

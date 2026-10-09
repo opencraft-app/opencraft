@@ -1,6 +1,6 @@
 {
   "source": "frontend/src",
-  "sourceRevision": "82fbadb7c9a4625317f5f47a1472e3c0df06a8c4",
+  "sourceRevision": "d3a38791e2ab37ddc82b968b7dd8d34dca0c8008",
   "generatedBy": "scripts/sync-mono2-agent-console.mjs",
   "files": [
     {
@@ -473,7 +473,7 @@
     },
     {
       "file": "pages/marketing/skills-demo/SkillsDemoPanel.tsx",
-      "sourceSha256": "5b9988c44bb1bbbdf86fd54b2d792ccefbbd32d4196e40a6691f619ad2632a4e"
+      "sourceSha256": "e3f599ca0967a47d437bad503ce5b21632bb9a5f2cc23bbb3be3a07eaae289be"
     },
     {
       "file": "pages/marketing/skills-demo/curated-skill-categories.ts",
