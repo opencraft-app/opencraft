@@ -919,6 +919,18 @@ img.icon--brand {
     transform: none;
   }
 }
+/* Reset the first-screen entrance while it is outside the viewport so it plays on return. */
+#lightvela-intl-home.hero-sequence-away .hero__char,
+#lightvela-intl-home.hero-sequence-away .hero__eyebrow,
+#lightvela-intl-home.hero-sequence-away .hero__rotator-wrap,
+#lightvela-intl-home.hero-sequence-away .hero__suffix,
+#lightvela-intl-home.hero-sequence-away .hero__cta,
+#lightvela-intl-home.hero-sequence-away .hero__tabs,
+#lightvela-intl-home.hero-sequence-away .hero__stage .hero__frame {
+  animation: none !important;
+  opacity: 1;
+  transform: none;
+}
 /* 大标题逐字符模糊淡入（skillhub GradualSpacing 同款） */
 @keyframes hero-char-in {
   from {
@@ -1245,7 +1257,7 @@ img.icon--brand {
 .hero__stage {
   position: relative;
   max-width: 1140px;
-  margin: 70px auto 0;
+  margin: 24px auto 0;
   padding-bottom: 28px;
 }
 
@@ -1419,18 +1431,6 @@ img.icon--brand {
 .panel {
   display: none;
   height: 100%;
-  animation: panel-in 0.26s var(--ease) both;
-}
-
-@keyframes panel-in {
-  from {
-    opacity: 0.7;
-    transform: translateX(8px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
 }
 
 .hero__stage:has(#tab-wa:checked) #panel-wa,
@@ -8344,9 +8344,10 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
 
 
 @media (min-width: 1024px) {
-  #lightvela-intl-home:is([data-locale^='id'], [data-locale='es']) .hero__line--main {
-    max-width: min(1680px, calc(100vw - 64px));
-    white-space: nowrap;
+  #lightvela-intl-home:is([data-locale^='id'], [data-locale='es'], [data-locale^='ko']) .hero__line--main {
+    max-width: min(840px, calc(100vw - 420px));
+    white-space: normal;
+    text-wrap: balance;
   }
 
   #lightvela-intl-home[data-locale^='id'] .about__head {
@@ -8355,28 +8356,6 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
 
   #lightvela-intl-home[data-locale^='id'] .about__head .k {
     white-space: nowrap;
-  }
-}
-
-@media (min-width: 1024px) and (max-width: 1279px) {
-  #lightvela-intl-home:is([data-locale^='id'], [data-locale='es']) .hero__line--main {
-    font-size: 25px;
-  }
-
-  #lightvela-intl-home[data-locale^='id'] .about__head .k {
-    font-size: 36px;
-  }
-}
-
-@media (min-width: 1280px) and (max-width: 1439px) {
-  #lightvela-intl-home:is([data-locale^='id'], [data-locale='es']) .hero__line--main {
-    font-size: 32px;
-  }
-}
-
-@media (min-width: 1440px) {
-  #lightvela-intl-home:is([data-locale^='id'], [data-locale='es']) .hero__line--main {
-    font-size: 36px;
   }
 }
 
@@ -13946,20 +13925,6 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
   }
 }
 
-/* Edge parity v80: the hero frame is capped at 1140px while every block below
-   it runs at the 1200px content width, so each section edge landed 30px
-   further out than the hero screenshot above. Align them to the hero frame. */
-@media (min-width: 1024px) {
-  #lightvela-intl-home .about__head,
-  #lightvela-intl-home .about__cards,
-  #lightvela-intl-home .scenes__head,
-  #lightvela-intl-home .soul-strip,
-  #lightvela-intl-home .scenes__layout {
-    max-width: 1140px !important;
-    margin-right: auto !important;
-    margin-left: auto !important;
-  }
-}
 
 @media (max-width: 359px) {
   #lightvela-intl-home .nav__brand img {

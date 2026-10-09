@@ -44,7 +44,7 @@ export function mountDoorPeek(portal: HTMLElement): () => void {
     return element;
   }
 
-  void Promise.all([preload('hermes-door-background.webp'), preload('hermes-door-character.webp')]).then((ready) => {
+  void Promise.all([preload('hermes-door-white.webp'), preload('hermes-door-character.webp')]).then((ready) => {
     if (disposed || !portal.isConnected || ready.some((ok) => !ok)) return;
     const clipId = `home-door-peek-${++nextClipId}`;
     definitions = svg('defs', {});
@@ -53,7 +53,7 @@ export function mountDoorPeek(portal: HTMLElement): () => void {
     definitions.appendChild(clip);
     layers = svg('g', { class: 'home-door-peek-layers', 'aria-hidden': 'true', 'pointer-events': 'none' });
     const background = svg('image', {
-      class: 'home-door-peek-background', href: `${ASSET_ROOT}hermes-door-background.webp?v=${ASSET_VERSION}`,
+      class: 'home-door-peek-background', href: `${ASSET_ROOT}hermes-door-white.webp?v=${ASSET_VERSION}`,
       width: '964', height: '966', preserveAspectRatio: 'xMidYMid meet',
     });
     const doorway = svg('g', { 'clip-path': `url(#${clipId})` });
@@ -69,7 +69,7 @@ export function mountDoorPeek(portal: HTMLElement): () => void {
       scrollTrigger: { trigger: portal, start: 'top 82%', toggleActions: 'play pause resume pause' },
       onStart: () => { portal.dataset.doorPeek = DOOR_PEEK_STATE.playing; },
       onComplete: () => {
-        if (layers) layers.style.display = 'none';
+        // Keep the character visible against the new white doorway.
         portal.dataset.doorPeek = DOOR_PEEK_STATE.complete;
       },
     });

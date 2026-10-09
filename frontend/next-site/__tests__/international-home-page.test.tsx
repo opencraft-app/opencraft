@@ -91,6 +91,19 @@ describe("international v2 homepage selection", () => {
 });
 
 describe("international v2 homepage artifact", () => {
+  it.each(generatedFragmentNames)("places the original peek mascot on the trial button in %s", (name) => {
+    const document = new DOMParser().parseFromString(readFileSync(path.join(homeRoot, name), "utf8"), "text/html");
+    const button = document.querySelector('.cta__acts > .btn-dark');
+    const mascots = document.querySelectorAll('.home-cta-mascot');
+    expect(mascots).toHaveLength(1);
+    expect(mascots[0].parentElement).toBe(button);
+    expect(mascots[0].getAttribute('aria-hidden')).toBe('true');
+    expect(mascots[0].querySelector('img')?.getAttribute('src')).toContain('hermes-black-companion.webp');
+    expect(button?.textContent?.trim()).toBeTruthy();
+    expect(button?.getAttribute('href')).toContain('/subscribe');
+    expect(document.querySelector('.cta > .home-cta-mascot')).toBeNull();
+  });
+
   it("does not render a literal newline escape below the footer in any locale", () => {
     for (const name of generatedFragmentNames) {
       const document = new DOMParser().parseFromString(readFileSync(path.join(homeRoot, name), "utf8"), "text/html");
@@ -608,6 +621,47 @@ describe("international v2 homepage artifact", () => {
     expect(css).toMatch(/#lightvela-intl-home \.voice \.tcard\s*\{[^}]*width:\s*260px;[^}]*min-height:\s*116px;/s);
   });
 
+  it("turns the user voice cards into a center-mode carousel that advances one card at a time", () => {
+    vi.useFakeTimers();
+    const fragment = new DOMParser().parseFromString(readLocaleFragment("zh-SG"), "text/html");
+    const voice = fragment.querySelector("#voice")!;
+    document.body.innerHTML = `<main id="lightvela-intl-home">${voice.outerHTML}</main>`;
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: vi.fn().mockReturnValue({ matches: false, addEventListener() {}, removeEventListener() {} }),
+    });
+    window.eval(readFileSync(runtimePath, "utf8"));
+
+    const names = new Set(Array.from(voice.querySelectorAll(".tcard__head b")).map((b) => b.textContent!.trim()));
+    const cards = Array.from(document.querySelectorAll<HTMLElement>(".vcar__card"));
+    expect(document.querySelector(".voice")!.classList.contains("has-voice-carousel")).toBe(true);
+    expect(cards).toHaveLength(names.size);
+    const positions = () => cards.map((card) => card.dataset.pos);
+    expect(positions().slice(0, 3)).toEqual(["side", "center", "side"]);
+    expect(positions().filter((pos) => pos === "side")).toHaveLength(2);
+    expect(cards[0]!.querySelector("img")!.getAttribute("src")).toMatch(/-128\.webp$/);
+    // The carousel sits under the section heading, not above it.
+    const section = document.querySelector(".voice")!;
+    expect(section.firstElementChild!.matches(".voice__head")).toBe(true);
+    expect(section.querySelector(".voice__head + .vcar")).not.toBeNull();
+    // Each indicator is a doll ID photo; neighbouring photos never repeat.
+    const dolls = Array.from(document.querySelectorAll<HTMLImageElement>(".vcar__dot .vcar__face img"))
+      .map((image) => image.getAttribute("src")!);
+    expect(dolls).toHaveLength(cards.length);
+    expect(dolls.every((src) => /\/peek-friends\/[a-z-]+\.webp$/.test(src))).toBe(true);
+    expect(dolls.every((src, i) => i === 0 || src !== dolls[i - 1])).toBe(true);
+
+    vi.advanceTimersByTime(1499);
+    expect(positions().slice(0, 3)).toEqual(["side", "center", "side"]);
+    vi.advanceTimersByTime(1);
+    expect(positions().slice(1, 4)).toEqual(["side", "center", "side"]);
+    expect(cards[0]!.dataset.pos).toBe("off");
+
+    cards[1]!.click();
+    expect(cards[1]!.dataset.pos).toBe("center");
+    vi.useRealTimers();
+  });
+
   it("activates all 18 native scene buttons by click as well as hover", () => {
     const englishDocument = new DOMParser().parseFromString(
       readLocaleFragment("en-US"),
@@ -1111,13 +1165,26 @@ describe("international v2 homepage artifact", () => {
     expect(css).toMatch(/#lightvela-intl-home \.foot__title,[\s\S]*font-family:\s*"STXingkai"/);
   });
 
-  it("keeps long Indonesian desktop headings on one line", () => {
+  it("wraps long desktop headings to a balanced, readable two lines clear of the companion", () => {
     const css = readFileSync(stylesheetPath, "utf8");
+    const editorial = readFileSync(path.join(homeRoot, "assets/hermes-home.css"), "utf8");
+    const importer = readFileSync(path.join(process.cwd(), "scripts/import-international-homepage.mjs"), "utf8");
+    const selector = "#lightvela-intl-home:is([data-locale^='id'], [data-locale='es'], [data-locale^='ko']) .hero__line--main";
 
-    expect(css).toMatch(/@media \(min-width: 1024px\)[\s\S]*#lightvela-intl-home:is\(\[data-locale\^='id'\], \[data-locale='es'\]\) \.hero__line--main\s*\{[^}]*max-width:\s*min\(1680px, calc\(100vw - 64px\)\);[^}]*white-space:\s*nowrap;/);
+    for (const source of [css, importer]) {
+      expect(source).toContain(selector);
+      expect(source).toContain("max-width: min(840px, calc(100vw - 420px));");
+      expect(source).not.toContain("max-width: min(1680px, calc(100vw - 64px));");
+      expect(source).not.toContain("max-width: calc(100vw - 48px);");
+    }
+    // The generated stylesheet lets the long-locale headline wrap, not clip to one line.
+    expect(css).toMatch(/\.hero__line--main\s*\{[^}]*max-width:\s*min\(840px, calc\(100vw - 420px\)\);[^}]*white-space:\s*normal;[^}]*text-wrap:\s*balance;/);
+    // Readable desktop sizes with a two-line allowance, bigger than the earlier single-line shrink.
+    expect(editorial).toContain("font-size: clamp(32px, 2.6vw, 40px) !important;");
+    expect(editorial).toContain("font-size: clamp(26px, 2.9vw, 32px) !important;");
+    expect(editorial).toMatch(/\.hero \.hero__line--main\s*\{[^}]*white-space:\s*normal;[^}]*text-wrap:\s*balance;/);
+    expect(editorial).not.toContain("font-size: clamp(21px, 1.7vw, 26px) !important;");
     expect(css).toMatch(/#lightvela-intl-home\[data-locale\^='id'\] \.about__head\s*\{[^}]*max-width:\s*min\(1200px, calc\(100vw - 64px\)\);/);
-    expect(css).toMatch(/#lightvela-intl-home\[data-locale\^='id'\] \.about__head \.k\s*\{[^}]*white-space:\s*nowrap;/);
-    expect(css).toMatch(/@media \(min-width: 1280px\) and \(max-width: 1439px\)[\s\S]*font-size:\s*32px;/);
   });
 
   it("localizes the revised free-trial CTA in every non-English locale", () => {
