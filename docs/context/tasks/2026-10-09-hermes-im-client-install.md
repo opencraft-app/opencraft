@@ -52,6 +52,8 @@ and allow existing managed Bots to perform a first installation.
   Bot-switch isolation and failed-launch retry; the earlier combined run passed 15 checks.
 - Real binary first install and repeated reuse passed using an isolated local
   download fixture; evidence /data/vela-im-client-release-20261009/installer-smoke.json.
+- Actual generated background launcher installed the real binary with a 10ms
+  launcher return; evidence /data/vela-im-client-release-20261009/background-smoke.json.
 - Frontend check passed: 166 baseline diagnostics, zero new; documentation errors zero.
 - Installer bucket URL is prepared; frontend published=false prevents offering an
   unavailable release. No region restriction was added to Bot installation.
@@ -63,4 +65,7 @@ and allow existing managed Bots to perform a first installation.
 - Prepared payload at /data/vela-im-client-release-20261009/v0.1.0-bot.20261009.1/linux-amd64.
 - Installing the client does not itself wire an existing Hermes gateway into IM.
 - Beijing frontend build, full Go tests/vet and message/runtime race checks passed.
-- Finish generated console synchronization; COS upload is the remaining external blocker.
+- Source locally committed as 88929a070; generated console locales separately
+  committed as 3d6b790f6. The read-only console gate verified all 130 files.
+- All implementation checks complete; COS upload is the remaining external blocker.
+- No cloud object uploaded, installation enabled or existing Bot modified.
