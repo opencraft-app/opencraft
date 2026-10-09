@@ -9,7 +9,7 @@ source_of_truth: ["frontend/src/i18n/locales.json", "opencraft/apps/workbench-we
 status: active
 reviewed_at: 2026-10-09
 review_due: 2026-11-09
-revision: 1.2.4
+revision: 1.2.5
 precedence: task
 derived: false
 ---
@@ -217,3 +217,9 @@ derived: false
 - `/data/tmp/lightclaw-frontend-guard.OjZuuV` 独立 frozen install，CI Node 22.12.0 / pnpm 10.32.1；完整候选 frontend guard exit 0：类型检查 166/171、0 new；13 文件 / 168 测试（包含新增马来语门禁）；国内 108 静态任务 / 196 HTML / 8 SEO 路由、国际 708 静态任务 / 1,392 HTML / 50 SEO 路由均通过。
 - CI runtime、MR 全部变更文档影响、工作台 embedded-ci 222/222、222 条消息 ICU/参数校验及上游运行时/云桌面相关 18/18 回归通过；133 文件同步检查通过。
 - 当前只剩提交推送和远端新提交的流水线回读。既有全量 Vitest 超时/历史失败记录未改为全量成功，真实账号及生产发布未执行。
+
+### !5116 远端 CI 通过后的第二次 master 更新
+- `f91726a533` 已推送，远端工蜂提交检查 success / block false；构建 `b-d7b46b49792d40afbaff2f117e2b185d` 耗时 5m57s。远端失败已恢复，未读取蓝盾步骤日志。
+- 等待期间 master 又合入 !5104，最新 `ecdbf5adc9`；重新 fetch 后 merge-tree 确认唯一冲突仍为生成清单。正常合并真源 `82fbadb7c9`，再机械同步并独立提交 `11788e31a9`；133 文件只读检查通过。云存储删除确认、弹窗和用户菜单上游改动完整保留。
+- 最新合并的云存储/用户菜单 2 文件 58/58 回归通过，工作台 embedded-ci 222/222 重新通过。新隔离 frontend guard 已安装并运行，最终双站构建结果仍待回读。
+- 下一步推送第二次合并后的提交，回读工蜂确认合并状态与新提交检查；不复用上一提交 success 声称新提交成功。
