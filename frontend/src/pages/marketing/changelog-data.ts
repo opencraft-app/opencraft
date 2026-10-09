@@ -71,6 +71,14 @@ export function buildChangelogGroups(t: TranslateFn, locale: string): ChangelogM
       id: "2026-10",
       month: t("2026 年 10 月"),
       entries: [
+        ...(isGlobal
+          ? [{
+              id: "malay-language",
+              title: t("LightVela 支持马来语"),
+              desc: t("现在可以使用马来语浏览 LightVela 国际站的公开页面、产品界面、产品文档和账号流程。"),
+              visual: "none" as const,
+            }]
+          : []),
         {
           id: "multi-bot-web-chat",
           title: t("LightVela 支持与多个 Bot 网页对话"),

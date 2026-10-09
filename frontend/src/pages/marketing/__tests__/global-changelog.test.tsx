@@ -54,6 +54,37 @@ afterEach(() => {
 });
 
 describe("global changelog skill package entry", () => {
+  it("announces Malay in the October changelog in English and Malay", async () => {
+    const copies = [
+      {
+        locale: "en-US",
+        month: "October 2026",
+        title: "Malay Is Now Available",
+        description: "Browse LightVela's international site, product interface, documentation, and account flows in Malay.",
+      },
+      {
+        locale: "ms-MY",
+        month: "Oktober 2026",
+        title: "Bahasa Melayu Kini Tersedia",
+        description: "Kini anda boleh melayari halaman awam, antara muka produk, dokumentasi dan aliran akaun LightVela versi antarabangsa dalam Bahasa Melayu.",
+      },
+    ] as const;
+
+    for (const copy of copies) {
+      await ensureLocaleDictionary(copy.locale);
+      await i18n.changeLanguage(copy.locale);
+      render(<MemoryRouter><ChangelogPage /></MemoryRouter>);
+
+      const octoberSection = screen.getByText(copy.month).closest("section");
+      expect(octoberSection).not.toBeNull();
+      const heading = within(octoberSection!).getByRole("heading", { name: copy.title });
+      expect(within(octoberSection!).getAllByRole("heading")[0]).toBe(heading);
+      expect(within(octoberSection!).getByText(copy.description)).toBeInTheDocument();
+      expect(heading.closest("article")?.querySelector("img")).toBeNull();
+      cleanup();
+    }
+  });
+
   it("puts channel test messages first in the English September changelog", async () => {
     await i18n.changeLanguage("en-US");
     render(<MemoryRouter><ChangelogPage /></MemoryRouter>);
