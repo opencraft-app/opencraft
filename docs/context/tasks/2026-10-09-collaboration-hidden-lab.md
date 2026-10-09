@@ -128,3 +128,6 @@ browser show() gate, and verify real Tencent IM connection on localhost and the 
   Evidence: /data/collaboration-lab-evidence-20261009/beijing.json and beijing-connected.png.
 - Focused gateway TestCollaboration cases passed.
 - Public entry: https://lightclaw.pages.dev/agents/labs/collaboration/.
+- CORS GitOps MR !5135 merged into gitops at 4090f031266426bb4e7a3fd9d361a96c78510469.
+  Runtime rollout and public browser were verified directly; Argo Application CRs
+  are unavailable on the target cluster, so Argo Synced/Healthy is not claimed.
