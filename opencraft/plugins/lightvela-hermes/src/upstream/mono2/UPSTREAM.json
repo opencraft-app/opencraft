@@ -1,6 +1,6 @@
 {
   "source": "frontend/src",
-  "sourceRevision": "225267ffaed45285feb20a53aabcdd083091deb3",
+  "sourceRevision": "636ea9c974bc5da4511eb57e1f5ca261276bca34",
   "generatedBy": "scripts/sync-mono2-agent-console.mjs",
   "files": [
     {
@@ -65,7 +65,7 @@
     },
     {
       "file": "contexts/runtime-config-context.tsx",
-      "sourceSha256": "8d1bed3325cb8cb3b5eac6870579db6726b145148b7d4f572773bfd9fef4e2bf"
+      "sourceSha256": "c4372c91bd4840d48d6db32496773856fa015e2f4cfcec9286f1600550cdcb0b"
     },
     {
       "file": "domain/credit-pack.ts",
