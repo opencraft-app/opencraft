@@ -58,7 +58,7 @@ describe("Blog publishing dates", () => {
         expect(post.coverImage).toBe(BLOG_POSTS[index]?.coverImage);
         expect(post.content.filter((block) => block.type === "image")).toEqual(BLOG_POSTS[index]?.content.filter((block) => block.type === "image"));
         const prose = JSON.stringify({title: post.title, excerpt: post.excerpt, content: post.content.filter((block) => block.type !== "image")});
-        if (["en", "es", "id-ID"].includes(language)) expect(prose).not.toMatch(/[\u4e00-\u9fff]/);
+        if (["en", "es", "id-ID", "ms-MY"].includes(language)) expect(prose).not.toMatch(/[\u4e00-\u9fff]/);
         else if (language === "ko-KR") expect(post.title).toMatch(/[\uac00-\ud7af]/);
         else expect(post.title).toMatch(/[\u4e00-\u9fff]/);
         expect(prose).not.toMatch(/[?&](from|utm_)/);

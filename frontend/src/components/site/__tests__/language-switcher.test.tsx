@@ -29,6 +29,7 @@ describe("LanguageSwitcher", () => {
             "International Site - 简体中文",
             "International Site - 繁體中文",
             "International Site - Bahasa Indonesia",
+      "International Site - Bahasa Melayu",
             "International Site - Español",
             "International Site - 日本語",
             "International Site - 한국어",
@@ -89,6 +90,7 @@ describe("LanguageSwitcher", () => {
       "International Site - 简体中文",
       "International Site - 繁體中文",
       "International Site - Bahasa Indonesia",
+      "International Site - Bahasa Melayu",
       "International Site - Español",
       "International Site - 日本語",
       "International Site - 한국어",
@@ -120,12 +122,13 @@ describe("LanguageSwitcher", () => {
       "简体中文",
       "繁體中文",
       "Bahasa Indonesia",
+      "Bahasa Melayu",
       "Español",
       "日本語",
     ]);
     expect(
       screen.getAllByRole("radio").map((option) => (option as HTMLInputElement).value),
-    ).toEqual(["ko-KR", "en-US", "zh-SG", "zh-Hant", "id-ID", "es", "ja-JP"]);
+    ).toEqual(["ko-KR", "en-US", "zh-SG", "zh-Hant", "id-ID", "ms-MY", "es", "ja-JP"]);
     const selectedLanguage = screen.getByRole("radio", { name: "한국어" });
     expect(selectedLanguage).toBeChecked();
     expect(selectedLanguage).toHaveClass("peer");

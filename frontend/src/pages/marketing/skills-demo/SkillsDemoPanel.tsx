@@ -10,6 +10,7 @@
  * 仅国际站渲染（见 agent-skills-panel.tsx 的 isGlobal 分支）。
  */
 
+import { localizeMalay } from '@/i18n/malay-copy';
 import {
   ArrowLeft,
   BookOpen,
@@ -381,7 +382,8 @@ function getSkillOverview(
 function getCategoryLabel(label: SkillCategoryLabel, overviewLocale: CuratedSkillOverviewLocale): string {
   const labelByLocale: Partial<Record<CuratedSkillOverviewLocale, string>> = {
     "zh-CN": label.zh,
-    "id-ID": label.id, es: label.es, "ja-JP": label.ja, "ko-KR": label.ko ?? label.en,
+    "id-ID": label.id,
+    "ms-MY": localizeMalay(label.en), es: label.es, "ja-JP": label.ja, "ko-KR": label.ko ?? label.en,
     "en-US": label.en,
   };
 
@@ -1917,6 +1919,8 @@ export function SkillsDemoPanel({
   // 印尼语、西班牙语、日语、韩语，其余回退英文。未收录条目回退英文。
   const overviewLocale: CuratedSkillOverviewLocale = isChinese
     ? "zh-CN"
+    : i18n.resolvedLanguage === "ms-MY"
+      ? "ms-MY"
     : i18n.resolvedLanguage === "id-ID"
       ? "id-ID"
       : i18n.resolvedLanguage?.startsWith("es")

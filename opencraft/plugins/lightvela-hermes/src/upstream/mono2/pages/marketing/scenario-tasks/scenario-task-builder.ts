@@ -121,7 +121,9 @@ export function buildScenarioTaskDraft({
     effectiveStartAt: null,
     effectiveEndAt,
     oneShotJobName: `${generatedName} · ${
-      pack.quickPromptLocale === "en-US"
+      pack.quickPromptLocale === "ms-MY"
+        ? "pelaksanaan sekali"
+        : pack.quickPromptLocale === "en-US"
         ? "one-time run"
         : pack.quickPromptLocale === "id-ID"
           ? "sekali jalan"
@@ -466,6 +468,9 @@ function buildUserFacingScenarioPrompt(
   values: Record<string, string>,
   userPrompt: string,
 ): string {
+  if (pack.quickPromptLocale === "ms-MY") {
+    return `Write the final user-facing response in Bahasa Melayu (ms-MY).\n\n${buildEnglishUserFacingScenarioPrompt(pack, values, userPrompt)}`;
+  }
   if (pack.quickPromptLocale === "en-US") {
     return buildEnglishUserFacingScenarioPrompt(pack, values, userPrompt);
   }

@@ -57,6 +57,7 @@ const zeroTokenScheduledTasksGlobalAssets: Record<string, string> = {
   es: "/assets/changelog/scheduled-tasks-notification-es.webp",
   "ja-JP": "/assets/changelog/scheduled-tasks-notification-ja-JP.webp",
   "ko-KR": "/assets/changelog/scheduled-tasks-notification-ko-KR.webp",
+  "ms-MY": "/assets/changelog/scheduled-tasks-notification-en-US.webp",
 };
 
 export function VisualCard({ variant }: { variant: "lobster" | "multiBot" | "planUpgrade" | "cloudStorage" | "instanceStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "advancedSettings" | "deepseekHarness" | "achievements" | "wecom" | "dingtalk" | "personaUpload" | "soul" | "schedule" | "zeroTokenScheduledTasks" | "automationSkill" | "automationUpstream" | "chat" | "memory" | "skillsBulkInstall" | "automationTemplates" | "qqGroupMentions" | "traditionalChinese" | "skill-package" | "workbench" }) {
