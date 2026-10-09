@@ -55,7 +55,7 @@ Jika WhatsApp Ejen melayani pelanggan atau pasukan, gantikan "saya" dengan khala
 
 ### 3. Pilih dan suntik Jiwa daripada Personaliti
 
-Buka tetapan Agen sasaran dan pilih bahagian "Peribadi".
+Buka tetapan Ejen sasaran dan pilih bahagian "Peribadi".
 Anda boleh melukis Jiwa rawak atau menggunakan ujian personaliti untuk mencari padanan yang lebih dekat.
 
 Semak perihalan peranan, suara dan tingkah laku pada kad, pilihnya dan klik "Suntikan jiwa".

@@ -19,7 +19,7 @@ Selepas tetapan Pengurusan Memori atau Konteks disimpan, LightVela memulakan sem
 
 ## Sebelum anda bermula
 
-1. Sahkan bahawa Agen sasaran sedang berjalan.
+1. Sahkan bahawa Ejen sasaran sedang berjalan.
 2. Buka **Agents** dan pilih Ejen yang ingin anda konfigurasikan.
 3. Buka **Tetapan Lanjutan**.
 

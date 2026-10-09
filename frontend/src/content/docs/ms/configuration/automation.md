@@ -71,7 +71,7 @@ Tetapkan nama tugas, jadual, bahasa skrip, kandungan skrip, tetingkap berkesan d
 Sebelum anda membuat tugasan, akui notis keselamatan skrip dan sahkan bahawa anda mempercayai kod tersebut.
 
 Tugasan Skrip tidak membuat sesi Ejen, memanggil model, menggunakan gesaan atau menggunakan Kemahiran.
-Mereka mempunyai 0 penggunaan model Token, tetapi mereka menggunakan sumber masa jalan Agen awan.
+Mereka mempunyai 0 penggunaan model Token, tetapi mereka menggunakan sumber masa jalan Ejen awan.
 
 | Hasil skrip | Hasil tugasan | Tingkah laku penghantaran |
 | --- | --- | --- |

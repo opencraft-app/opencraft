@@ -9,7 +9,7 @@ source_of_truth: ["frontend/src/i18n/locales.json", "opencraft/apps/workbench-we
 status: active
 reviewed_at: 2026-10-09
 review_due: 2026-11-09
-revision: 1.1.0
+revision: 1.2.0
 precedence: task
 derived: false
 ---
@@ -146,3 +146,24 @@ derived: false
 - API 只读列表已核实 iid 5116、id 27588996、状态 opened、源分支 codex/lightvela-malay-refine、目标分支 master；未执行合并。
 - 前端真源提交 49a5790e98；机械同步提交 cbbd792ed6；分支已推送。
 - MR 描述包含范围、通过的检查以及全量测试超时/context 历史失败等限制。
+
+
+## CR 修复 checkpoint（2026-10-09）
+- 用户授权修复 MR 会话中的 CR 并提交 MR，继续更新既有 !5116。
+- 最新 `origin/master` 已合入，merge commit `a62d290c91`；保留上游首页、运行时与文档变更。同步清单唯一冲突保留已有 sourceRevision，待真源提交后用同步脚本重生成。
+- 公共词典改为动态 import，与马来语主字典共同准备；非马来语模块加载不触发字典请求。场景结构仅在实际马来语消费时翻译并缓存；迟到的语言准备不能覆盖后续语言选择。
+- 补齐上游首页新增译文并重生成，CI 临时生成 byte parity 与缺译文失败测试；修复法律链接双斜线。
+- 移除无生产渲染调用方的 AgentChat SDK 马来语桥接、2,049 条 SDK 目录和专用依赖；之前的 SDK 验证属于已移除的历史实现，现产品由嵌入式 OpenCraft 承载。
+- 统一马来语 Ejen、tetapan、dijumpai，并保留 Hermes Agent 品牌及代码/链接。新增任务最终回复语言、文档 UI、搜索、系统会话名、支持选项和语言切换回归测试并接入 frontend MR guard。
+- context_receipt 补充：`.ci/AGENTS.md`、`docs/context/project/services/ci.md`、`docs/context/domains/release-gitops.md`、`.agents/skills/gongfeng/SKILL.md`、`.agents/skills/gongfeng/DEPENDENCIES.md`；先前无匹配查询 `frontend Malay CR fixes and frontend CI guard` 后按精确路径路由。
+- 目前证据：国际站聚焦 21 文件 / 301 用例通过；国内门禁聚焦 7 文件 / 82 用例通过；CI runtime 门禁通过。类型检查 166 current / 171 baseline / 0 new / 5 resolved。
+- 剩余：最终源类型检查、国内/国际构建和浏览器词典请求边界，真源提交后的机械同步与复验，推送现有 MR。真实账号、付费推理及生产发布不在本轮范围。
+
+### CR 真源提交前验收
+- 本轮同步的 master 为 `50aadd48be284faee0a84e2bcb25308bf5a5ebe5`（任务开始 fetch），不是前轮记录的 `6e2b77732f`。上游新增工作台 `panel.actionFailed` 已补马来语；222 条消息 ICU/参数校验、10 项运行时测试、宿主切换测试通过。
+- 最终 `pnpm check` 通过（166 current / 171 baseline / 0 new / 5 resolved）；修改后语言加载和消费测试 8/8 复验通过。
+- 国内构建 108 静态任务 / 196 HTML / 8 SEO 路由通过；国际构建 708 静态任务 / 1,392 HTML / 50 SEO 路由通过。
+- 浏览器 13/13 通过：桌面/手机首页、文档、搜索、语言切换、博客，英文与国内法律/产品页不请求马来语公共字典；马来语法律页请求字典一次且链接没有双斜线。报告 `/tmp/lightvela-ms-cr-validation/report.html`。
+- 73 份马来语文档的代码块、行内代码与链接目标逐项保持英文源一致。文档分类、正式设计影响及 CI runtime 门禁通过；context-audit 33/33 通过。
+- 全量 `pnpm run test --maxWorkers=3` 在 240 秒限制结束（exit 124），已有 19 个失败文件输出及无 Vitest 用例的脚本错误，未取得全量通过结果。失败包括现有 AgentSettings、升级弹窗、嵌入式工作台、通道文案、静态脚本等；本轮没有扩展修复这些范围，也没有对新 master 宣称逐项基线相等。本任务新加门禁、语言聚焦及双站构建已独立通过。
+- 剩余仅为 frontend 真源提交后的 OpenCraft 机械生成与检查、提交推送和 MR 回执；未合并 MR 或执行生产发布。

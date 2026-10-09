@@ -11,7 +11,7 @@
 | Apa yang penting | LightVela | SembangGPT |
 | - | - | - |
 | **Pekerjaan utama** | Anjurkan Hermes Agent berdedikasi | Ruang kerja AI tujuan am |
-| **Waktu Jalan** | Agen awan khusus tersedia 24/7 | Akaun ChatGPT, sembang, Projek dan GPT |
+| **Waktu Jalan** | Ejen awan khusus tersedia 24/7 | Akaun ChatGPT, sembang, Projek dan GPT |
 | **Pemperibadian** | Model, alatan, persona, Kemahiran, Saluran | Memori, arahan, Projek, GPT tersuai |
 | **Interaksi** | Saluran pemesejan seperti Telegram, WhatsApp, Discord, Slack dan WeChat | ChatGPT web, mudah alih, desktop, suara, fail dan Kanvas |
 | **Paling sesuai** | Ejen berterusan yang anda konfigurasikan dan kembali ke | Pembantu yang fleksibel untuk pelbagai tugasan |
@@ -36,7 +36,7 @@ Itu hebat—tetapi ia masih merupakan ruang kerja di dalam ChatGPT.
 
 ## Di mana LightVela lebih langsung
 
-LightVela adalah lebih baik apabila Agen itu sendiri adalah produk yang anda ingin simpan.
+LightVela adalah lebih baik apabila Ejen itu sendiri adalah produk yang anda ingin simpan.
 
 Anda bukan sahaja membuka ruang kerja AI untuk tugasan. Anda sedang menyediakan Hermes Agent dengan identiti tertentu, konfigurasi model, Kemahiran dan saluran komunikasi.
 

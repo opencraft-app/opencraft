@@ -2,7 +2,7 @@
 
 ## Ringkasan
 
-**Bot acara Discord menjadi lebih berguna apabila ia boleh menerangkan maklumat acara yang diluluskan, menjawab soalan ulangan, menyokong onboarding dan menghantar peringatan berjadual daripada satu Hermes Agent yang dikonfigurasikan.** Dalam LightVela, laluan praktikal adalah untuk menyambung Discord, berikan Agen acara ringkas dan soalan keselamatan dan tambahkan sempadan tugasan yang dikonfigurasikan, mengujinya dengan menyempitkan atau menyempitkan peserta, mengujinya dengan menyempitkan atau menyempitkan peserta. ringkasan.
+**Bot acara Discord menjadi lebih berguna apabila ia boleh menerangkan maklumat acara yang diluluskan, menjawab soalan ulangan, menyokong onboarding dan menghantar peringatan berjadual daripada satu Hermes Agent yang dikonfigurasikan.** Dalam LightVela, laluan praktikal adalah untuk menyambung Discord, berikan Ejen acara ringkas dan soalan keselamatan dan tambahkan sempadan tugasan yang dikonfigurasikan, mengujinya dengan menyempitkan atau menyempitkan peserta, mengujinya dengan menyempitkan atau menyempitkan peserta. ringkasan.
 
 Corak ini adalah yang terbaik untuk kejohanan berulang, serbuan, kumpulan belajar, pelancaran komuniti dan acara lain di mana maklumat yang sama mesti diulang dalam banyak perbualan.
 
@@ -164,7 +164,7 @@ Sahkan aliran kerja acara dengan empat ujian:
 
 3. Tanya tentang peraturan yang sengaja hilang dan sahkan Ejen mengaku tidak tahu.
 
-4. Minta perubahan jadual atau keputusan penyederhanaan dan sahkan Agen meningkat daripada membuat keputusan.
+4. Minta perubahan jadual atau keputusan penyederhanaan dan sahkan Ejen meningkat daripada membuat keputusan.
 
 Dokumentasi saluran Discord semasa meliputi kebenaran Bot, interaksi pelayan dan saluran, akses kandungan mesej dan mesej proaktif pada lapisan saluran.
 Ia juga mencatatkan had semasa di sekitar sokongan sembang kumpulan.

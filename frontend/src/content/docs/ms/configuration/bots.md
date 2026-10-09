@@ -2,7 +2,7 @@
 
 ## Ringkasan
 
-**Bot adalah profil berdikari di dalam Hermes Agent anda. Bot utama dibuat bersama Agen, dan setiap Bot tambahan boleh mempunyai tetapan model sendiri, persona, ingatan, Kemahiran, saluran, dan tugas terjadual. Apabila anda membuat Bot, pilih sama ada untuk menyalin Bot sedia ada atau memulakan dengan tetapan Asas. Pelan anda menentukan berapa banyak Bot yang boleh anda buat, termasuk Bot utama.**
+**Bot adalah profil berdikari di dalam Hermes Agent anda. Bot utama dibuat bersama Ejen, dan setiap Bot tambahan boleh mempunyai tetapan model sendiri, persona, ingatan, Kemahiran, saluran, dan tugas terjadual. Apabila anda membuat Bot, pilih sama ada untuk menyalin Bot sedia ada atau memulakan dengan tetapan Asas. Pelan anda menentukan berapa banyak Bot yang boleh anda buat, termasuk Bot utama.**
 
 > **Ketersediaan di laman antarabangsa**
 >

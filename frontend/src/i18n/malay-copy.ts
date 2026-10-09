@@ -1,12 +1,24 @@
-import translations from './generated/malay-public-copy.json';
+let copy: Readonly<Record<string, string>> | undefined;
+let pending: Promise<void> | undefined;
 
-const copy: Readonly<Record<string, string>> = translations;
+/** Load the large public catalog only when Malay is requested. Failed loads may be retried. */
+export function ensureMalayPublicCopy(): Promise<void> {
+  if (copy) return Promise.resolve();
+  if (!pending) {
+    pending = import('./generated/malay-public-copy.json').then((module) => {
+      copy = module.default;
+    }).finally(() => { pending = undefined; });
+  }
+  return pending;
+}
 const identifiers = new Set(['id', 'key', 'type', 'kind', 'fieldKey', 'rawId', 'slug', 'registry', 'href', 'url', 'src']);
 
 function translateText(value: string): string {
-  const translated = Object.hasOwn(copy, value) ? copy[value] : undefined;
+  const catalog = copy;
+  if (!catalog) throw new Error("Malay public copy must be loaded before rendering");
+  const translated = Object.hasOwn(catalog, value) ? catalog[value] : undefined;
   if (translated !== undefined) return translated;
-  return value.split('\n').map((line) => Object.hasOwn(copy, line) ? copy[line] ?? line : line).join('\n');
+  return value.split('\n').map((line) => Object.hasOwn(catalog, line) ? catalog[line] ?? line : line).join('\n');
 }
 
 /** Translate the public site's structured English copy without changing keys or identifiers. */

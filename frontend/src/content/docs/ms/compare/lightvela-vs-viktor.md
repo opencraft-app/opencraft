@@ -17,7 +17,7 @@ Ia adalah tempat tinggal Ejen, milik siapa, dan jenis kerja yang direka untuk di
 | **Antara muka utama** | Konsol web dan Saluran pemesejan | Slack, Microsoft Teams, apl web dan Discord |
 | **Model memori** | Memori Ejen Peribadi merentas perbualan dan Saluran | Konteks dan memori ruang kerja kongsi |
 | **Integrasi** | Saluran Pemesejan, Kemahiran, Tugas Berjadual dan pembekal model | 3,200+ penyepaduan alatan perniagaan |
-| **Model persediaan** | Agen awan terurus tanpa penyelenggaraan pelayan | Sambungkan Viktor, izinkan alatan dan wakilkan kerja |
+| **Model persediaan** | Ejen awan terurus tanpa penyelenggaraan pelayan | Sambungkan Viktor, izinkan alatan dan wakilkan kerja |
 | **Paling sesuai** | Bantuan peribadi dan kerjasama jangka panjang | Operasi perniagaan alat silang |
 
 ## Perbezaan sebenar ialah pemilikan

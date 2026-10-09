@@ -226,7 +226,7 @@
   },
   "compare/lightvela-vs-today-ai.md": {
     "title": "LightVela vs Today.AI: Manakah yang terbaik untuk pembantu AI peribadi sentiasa aktif?",
-    "description": "Bandingkan LightVela dan Today.AI untuk pembantu AI peribadi yang sentiasa aktif, daripada pengehosan Agen yang jelas dan Tugasan Berjadual kepada konteks peribadi proaktif merentas peranti."
+    "description": "Bandingkan LightVela dan Today.AI untuk pembantu AI peribadi yang sentiasa aktif, daripada pengehosan Ejen yang jelas dan Tugasan Berjadual kepada konteks peribadi proaktif merentas peranti."
   },
   "hermes-agent/01-hermes-vs-openclaw.md": {
     "title": "Hermes Agent vs OpenClaw: Perbezaan Asas Antara Dua Ejen Sumber Terbuka",
@@ -241,7 +241,7 @@
     "description": "Tiga kekangan keras — kapasiti, strategi pemuatan dan kemas kini semantik — terangkan sebab Hermes Agent menyimpan memori jangka panjang dalam dua nota berasingan dan bukannya satu fail yang digabungkan."
   },
   "hermes-agent/04-hermes-memory-curation.md": {
-    "title": "Hermes Penyusunan Memori Jangka Panjang Agen: Empat Peraturan Besi untuk \"Sedikit tetapi Tepat\"",
+    "title": "Hermes Penyusunan Memori Jangka Panjang Ejen: Empat Peraturan Besi untuk \"Sedikit tetapi Tepat\"",
     "description": "Pecahkan empat peraturan besi — terikat, beku, lutsinar, menyatukan diri — yang memastikan Hermes ingatan jangka panjang agen tepat dan bukannya kembung."
   },
   "hermes-agent/05-memory-vs-skill.md": {

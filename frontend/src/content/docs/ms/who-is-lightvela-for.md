@@ -28,7 +28,7 @@ LightVela amat berguna untuk:
 * **Orang yang memerlukan ingatan merentas perbualan**
   Tidak seperti chatbot asas, Hermes boleh mengekalkan konteks perbualan dan kenangan jangka panjang merentas sesi, jadi anda tidak perlu memperkenalkan diri anda lagi setiap kali.
 
-* **Orang yang mahukan Agen yang beroperasi secara bebas dan tersedia 24/7**
+* **Orang yang mahukan Ejen yang beroperasi secara bebas dan tersedia 24/7**
   Setiap contoh Hermes dijalankan dalam persekitaran awan khusus dan tetap tersedia tanpa bergantung sama ada peranti tempatan anda dalam talian atau tidak.
 
 ***

@@ -25,7 +25,7 @@ Penukaran Model membolehkan anda memilih model terkonfigurasi yang Hermes Agent 
 
 ## Tukar model aktif
 
-1. Buka **Agen** dan pilih Ejen.
+1. Buka **Ejen** dan pilih Ejen.
 2. Buka bahagian **Models**.
 3. Pilih model yang dikonfigurasikan yang anda mahu Ejen gunakan.
 4. Simpan atau gunakan perubahan, kemudian tunggu Ejen selesai mengemas kini konfigurasi aktifnya.

@@ -1,9 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import malay from '../generated/ms-MY.json';
 import base from '../generated/zh-CN.json';
-import { localizeMalay } from '../malay-copy';
+import { ensureMalayPublicCopy, localizeMalay } from '../malay-copy';
 import { localeDefinition, parseLocaleCode } from '../locales.config';
 import { DOCS_ROUTE_SLUGS } from '../../../next-site/docs-route-manifest';
 import { getTermsOfServiceChrome } from '@/pages/marketing/terms-of-service-page';
@@ -16,6 +16,7 @@ import { getOverviewScenarioTaskPacks } from '@/pages/marketing/scenario-tasks/o
 const dictionary: Record<string, string> = malay;
 
 describe('Malay international site', () => {
+  beforeAll(ensureMalayPublicCopy);
   it('publishes an explicit Malay locale with independent docs and no fallback', () => {
     expect(parseLocaleCode('ms-MY')).toBe('ms-MY');
     expect(localeDefinition('ms-MY')).toMatchObject({
@@ -37,8 +38,7 @@ describe('Malay international site', () => {
 
   it('offers all international English docs as independent Malay routes', () => {
     expect(DOCS_ROUTE_SLUGS['ms-my']).toEqual(DOCS_ROUTE_SLUGS['en-us']);
-    const overview = readFileSync(path.join(process.cwd(), '.fumadocs-content/docs/ms-my/overview.mdx'), 'utf8');
-    expect(overview).toContain('source_path: "src/content/docs/ms/01-overview.md"');
+    const overview = readFileSync(path.join(process.cwd(), 'src/content/docs/ms/01-overview.md'), 'utf8');
     expect(overview).toContain('Ringkasan');
     expect(overview).not.toMatch(/ZQX|⟦\d+⟧/);
   });

@@ -181,6 +181,7 @@ master 源码
   frozen install。完整实现由 `.ci/checks/frontend_guard.sh` 持有，旧 `frontend/checks/guard.sh` 仅转发。
   MR runner 仍从可信 `origin/master` 提取注册入口；旧 guard 无法校验自身修复时，先通过独立
   `.ci` bootstrap MR 引入新可信入口，再收敛旧入口，不修改可信 ref 或豁免检查。
+  前端 guard 同时执行马来语首页重生成一致性、公共词典按需加载与就绪、消费界面、法律链接和搜索分词测试，再验证国内/国际静态构建；新增语种不能只依赖资源条目校验。
   回归测试应实际执行复制命令并逐个验证本地依赖源码存在，并验证转发保留参数、环境与退出码。
 - 正式发布只认 Argo CD；service-local apply/release 脚本不是主线。
 - 服务级生产审核人由对应 `.ci/<service>.yml` 的 `PROD_REVIEWERS` 跟踪，并通过契约测试锁定服务边界；

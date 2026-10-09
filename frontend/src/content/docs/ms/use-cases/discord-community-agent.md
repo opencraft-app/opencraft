@@ -40,7 +40,7 @@ Bot Discord ialah titik masuk ke Hermes, jadi arahan dan model yang dikonfiguras
 Tuliskan soalan paling biasa komuniti dan jawapan terkecil yang berguna untuk setiap soalan.
 Contohnya, senaraikan halaman peraturan, saluran sokongan, jadual acara, proses pendaftaran dan laluan peningkatan moderator.
 
-### 2. Berikan konteks komuniti yang diluluskan oleh Agen
+### 2. Berikan konteks komuniti yang diluluskan oleh Ejen
 
 Konfigurasikan Ejen dengan maklumat yang dibenarkan untuk digunakan dan sempadan yang mesti diikuti.
 Arahan permulaan yang berguna mungkin kelihatan seperti ini:
@@ -118,7 +118,7 @@ Lihat [Tugas Berjadual](../configuration/automation.md) untuk tetapan jadual dan
 | Sambung | Tambahkan token Discord Bot dan jemput bot dengan keizinan paling sedikit | Discord saluran | Discord muncul sebagai disambungkan dan bot hadir dalam pelayan |
 | Ujian | Tanya soalan FAQ yang diketahui dan soalan yang tidak diketahui atau sensitif | Discord perbualan | Yang pertama mendapat jawapan yang berasas dan yang kedua ditolak atau dinaikkan |
 | Ulang | Tambahkan satu peringatan atau ringkasan dengan jadual sempit | Tugas Berjadual | Mesej tiba dalam saluran pemberitahuan yang dipilih pada masa yang dijangkakan |
-| Semakan | Semak jawapan, jadual dan maklumat acara yang diubah | Pengurusan Agen dan Tugas Berjadual | Peraturan dan pengumuman lapuk diperbetulkan sebelum menyebabkan kekeliruan |
+| Semakan | Semak jawapan, jadual dan maklumat acara yang diubah | Pengurusan Ejen dan Tugas Berjadual | Peraturan dan pengumuman lapuk diperbetulkan sebelum menyebabkan kekeliruan |
 
 ## Apa yang dikongsi Discord Ejen boleh membantu
 
@@ -162,7 +162,7 @@ LightVela bermula dengan Ejen dan membolehkan anda menerangkan kelakuannya dalam
 | Bot berkod standard | LightVela untuk Discord |
 | --- | --- |
 | Tulis arahan dan pengendali acara | Huraikan perkara yang perlu dilakukan oleh Ejen |
-| Simpan Soalan Lazim dan peraturan dalam kod atau pangkalan data | Berikan konteks dan sempadan yang diluluskan oleh Agen |
+| Simpan Soalan Lazim dan peraturan dalam kod atau pangkalan data | Berikan konteks dan sempadan yang diluluskan oleh Ejen |
 | Bina penjadual untuk peringatan | Buat Tugasan Berjadual dalam konsol |
 | Sebarkan perubahan tingkah laku | Kemas kini arahan Ejen dan semak keputusan |
 | Kekalkan infrastruktur dan logik bot | Fokus pada operasi komuniti dan kesederhanaan |

@@ -11,7 +11,7 @@
 | Apa yang penting | LightVela | Grok Bot |
 | - | - | - |
 | **Terbaik untuk** | Ejen AI peribadi yang telah lama beroperasi | Kerja yang ditugaskan merentas apl dan tapak web |
-| **Perasaan teras** | Agen anda yang dikonfigurasikan, tersedia apabila anda memerlukannya | Bot yang gigih anda boleh layan seperti rakan sepasukan |
+| **Perasaan teras** | Ejen anda yang dikonfigurasikan, tersedia apabila anda memerlukannya | Bot yang gigih anda boleh layan seperti rakan sepasukan |
 | **Fokus persediaan** | Kemahiran, Tugas Berjadual, ingatan, persona, model dan Saluran | Bot, komputer awan, penyambung, rutin dan kelulusan |
 | **Akses setiap hari** | Saluran Pemesejan dan ruang kerja Ejen yang berterusan | Pengalaman desktop dan iOS Grok Bot |
 | **Kes penggunaan terkuat** | Aliran kerja peribadi yang sepatutnya terus menjadi lebih baik untuk anda | Kerja berbilang langkah yang memerlukan interaksi penyemak imbas dan aplikasi |

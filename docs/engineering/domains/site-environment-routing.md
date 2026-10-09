@@ -49,9 +49,9 @@ OpenCraft iOS 的内置 Bot DOM runtime 同时包含国内与国际的 frontend 
 
 国际站马来语使用 `ms-MY`（Bahasa Melayu），公开路径前缀为 `/ms-my/`，语言注册表 `frontend/src/i18n/locales.json` 同时控制语言切换与公开发布。马来语文档以 `src/content/docs/ms/` 为独立源，覆盖国际站英文文档清单，不跨区域或语言回退；标题、简介与分类来自同目录 `metadata.json`，生成 `/ms-my/docs/` 页面与独立搜索索引。国内站不生成马来语公开页面。
 
-马来语主界面字典按需装载。公共结构化文案仅收录实际消费的英文文本，保留字段绑定、内部标识和链接值；字典读取只允许自身键，避免把对象原型属性当作译文。产品对话使用嵌入式 OpenCraft 工作台，`opencraft/apps/workbench-web/src/i18n/catalogs.ts` 的 embeddedLocaleCatalogs 注册 `ms-MY`，宿主语言更新由 WorkbenchLocaleController 消费；独立 OpenCraft 的语言列表仍由独立目录管理。马来语工作台目录须通过 ICU 参数和完整条目检查。兼容 AgentChat SDK 的入口使用独立 i18next 26 运行时，`src/i18n/agentchat-locale.ts` 在面板挂载前加载 `agentchat-ms-MY.json` 并设置语言；宿主 i18next 23 不替代 SDK 的实例。SDK 升级时须同时核对所依赖的 i18next 版本与新增翻译条目。
+马来语主界面和公共结构化词典均通过语言就绪流程按需装载；非马来语浏览器不下载公共词典，马来语资源与公共词典都准备完成后才渲染，服务端预载保证静态首帧完整。场景任务文案仅在马来语消费时翻译，避免模块加载时计算。公共结构化文案仅收录实际消费的英文文本，保留字段绑定、内部标识和链接值；字典读取只允许自身键，避免把对象原型属性当作译文。产品对话使用嵌入式 OpenCraft 工作台，`opencraft/apps/workbench-web/src/i18n/catalogs.ts` 的 embeddedLocaleCatalogs 注册 `ms-MY`，宿主语言更新由 WorkbenchLocaleController 消费；独立 OpenCraft 的语言列表仍由独立目录管理。马来语工作台目录须通过 ICU 参数和完整条目检查。
 
-首页结构仍由英文静态片段维护，`scripts/generate-malay-home.mjs` 配合已提交 `copy.ms-MY.json` 生成马来语片段，缺少译文会明确失败；首页导入流程包含该步骤。静态文字、无障碍属性及动态聊天/轮播数据均使用马来语；公开页面链接使用 `/ms-my/` 前缀，受保护的 `/agents` 产品路径保留原地址。
+首页结构仍由英文静态片段维护，`scripts/generate-malay-home.mjs` 配合已提交 `copy.ms-MY.json` 生成马来语片段，缺少译文会明确失败；首页导入流程包含该步骤；CI 在临时目录重生成并比对已提交片段，阻止英文首页结构更新后遗漏马来语生成物。静态文字、无障碍属性及动态聊天/轮播数据均使用马来语；公开页面链接使用 `/ms-my/` 前缀，受保护的 `/agents` 产品路径保留原地址。
 
 `frontend/src/content/docs/` 保留 cn/global/en/id 源；生成的 zh-cn/zh-sg/en-us/zh-hant/id-id 输出不直接编辑。区域差异必须通过 parity 测试和真实路由共同证明。
 

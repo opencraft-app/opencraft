@@ -42,7 +42,7 @@ Contohnya: "Pembantu penyelidik ringkas yang memberikan kesimpulan sebelum bukti
 
 ### Personaliti Terbuka
 
-1. Buka **Agen** dalam konsol LightVela.
+1. Buka **Ejen** dalam konsol LightVela.
 2. Pilih Hermes Agent yang ingin anda konfigurasikan.
 3. Buka bahagian **Personaliti** dalam tetapan Ejen tersebut.
 
@@ -127,18 +127,18 @@ Jika anda memerlukan panduan khusus saluran, lihat [Cara Menentukan Peranan, Per
 | Isu | Berkemungkinan menyebabkan | Apa yang perlu dilakukan |
 | --- | --- | --- |
 | Balasan masih menggunakan nada sebelumnya | Perbualan bermula sebelum Jiwa berubah | Hantar `/new`, kemudian uji semula tingkah laku dalam perbualan baharu. |
-| Jiwa yang dipilih tidak sesuai dengan kerja sebenar Ejen | Kad Jiwa dipilih mengikut gaya dan bukannya peranan dan sempadan | Kembali ke Personaliti, semak butiran kad, dan suntikan Jiwa yang sepadan dengan ringkasan Agen. |
+| Jiwa yang dipilih tidak sesuai dengan kerja sebenar Ejen | Kad Jiwa dipilih mengikut gaya dan bukannya peranan dan sempadan | Kembali ke Personaliti, semak butiran kad, dan suntikan Jiwa yang sepadan dengan ringkasan Ejen. |
 | Ejen terlupa fakta projek | Fakta yang berubah diletakkan dalam Personaliti dan bukannya Memori | Simpan peraturan yang stabil dalam `SOUL.md` dan minta Hermes untuk mengingati fakta yang berubah. |
 | Ejen tidak boleh melaksanakan tugas yang diperlukan | Personaliti mentakrifkan tingkah laku, bukan keupayaan | Pasang atau konfigurasikan Kemahiran yang sesuai selepas menyemak sumber dan kebenarannya. |
 | Konsol memuat turun `soul.md` dan bukannya menggunakannya | Tiada Ejen dipilih atau kotak pasir Ejen tidak dapat menulis konfigurasi baharu | Pilih sasaran Ejen yang sedang berjalan dan cuba semula suntikan. Fail yang dimuat turun tidak mengubah Ejen. Hantar `/new` hanya selepas konsol mengesahkan bahawa suntikan berjaya. |
-| Saya tidak boleh memuat naik Jiwa saya sendiri | Tiada Ejen dipilih atau fail itu bukan fail UTF-8 Markdown yang sah dalam lingkungan 20 KB | Pilih Agen sasaran, kemudian muat naik fail `.md` yang memenuhi keperluan fail. |
+| Saya tidak boleh memuat naik Jiwa saya sendiri | Tiada Ejen dipilih atau fail itu bukan fail UTF-8 Markdown yang sah dalam lingkungan 20 KB | Pilih Ejen sasaran, kemudian muat naik fail `.md` yang memenuhi keperluan fail. |
 
 ## Soalan Lazim
 
 ### Bolehkah seorang Ejen mempunyai beberapa Jiwa yang aktif?
 
 Tidak.
-Satu Agen mempunyai satu Jiwa aktif pada satu masa.
+Satu Ejen mempunyai satu Jiwa aktif pada satu masa.
 Cipta Ejen berasingan apabila anda memerlukan peranan yang benar-benar berbeza dan bukannya berulang kali menggantikan satu personaliti Ejen.
 
 ### Bolehkah saya mengedit awan `SOUL.md` secara manual?

@@ -20,8 +20,8 @@ Perbezaan ini adalah prasyarat untuk segala-galanya.
 
 | Konsep | Apa itu | Kardinaliti |
 |---|---|---|
-| **Saluran** | Titik masuk untuk mesej, mis. Telegram, WhatsApp, Discord, Slack, WeChat | Satu Agen boleh menghubungkan banyak |
-| **Agen** | Subjek kerja yang gigih memegang identiti, ingatan, kemahiran, tugas | Dikongsi oleh banyak saluran |
+| **Saluran** | Titik masuk untuk mesej, mis. Telegram, WhatsApp, Discord, Slack, WeChat | Satu Ejen boleh menghubungkan banyak |
+| **Ejen** | Subjek kerja yang gigih memegang identiti, ingatan, kemahiran, tugas | Dikongsi oleh banyak saluran |
 
 Orang secara naluri menganggap "bot Telegram saya" sebagai entiti kendiri, yang secara semula jadi menimbulkan persoalan "jadi adakah bot WhatsApp saya berbeza?" Setelah saluran difahami sebagai pintu masuk dan bukannya subjek, soalan itu terlerai.
 
@@ -140,7 +140,7 @@ Langkah 6 ialah yang paling ramai orang langkau dan ia membawa nilai paling ting
 |---|---|---|
 | Tiada balasan langsung pada saluran baharu | Keizinan tidak lengkap atau bukti kelayakan salah | Semak status sambungan dan bukti kelayakan, buat semula kebenaran |
 | Balasan muncul dalam perbualan lain | Peleraian sasaran penghantaran atau ralat konfigurasi | Berhenti menggunakannya dalam kumpulan; beralih ke mengarahkan mesej untuk mengasingkan |
-| Balasan, tetapi "tidak mengenali saya" | Mungkin disambungkan kepada Ejen lain | Sahkan dengan fakta yang diketahui dan semak Agen mana yang dituju oleh sambungan |
+| Balasan, tetapi "tidak mengenali saya" | Mungkin disambungkan kepada Ejen lain | Sahkan dengan fakta yang diketahui dan semak Ejen mana yang dituju oleh sambungan |
 | Kumpulan senyap, mesej langsung baik | Peraturan atau kebenaran pencetus dalam kumpulan | Semak peraturan respons kumpulan dan kebenaran yang diperlukan |
 | Balasan panjang dipotong atau salah format | Had penghantaran platform | Laraskan panjang output dan pemformatan untuk platform tersebut |
 

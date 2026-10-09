@@ -2,7 +2,7 @@
 
 ## Ringkasan
 
-**Pilih LightVela jika anda mahu Hermes Agent peribadi yang kekal dalam talian, mengingati persediaan anda dan tinggal dalam saluran pemesejan yang telah anda gunakan.** Pilih Manus jika anda ingin menyerahkan tugas yang ditetapkan—penyelidikan, kerja penyemak imbas, laporan atau aliran kerja—dan minta Ejen bekerja ke arah penghantaran. Mereka bertindih dalam perkataan "Agen," tetapi dalam penggunaan sehari-hari mereka bermula dari tempat yang sangat berbeza.
+**Pilih LightVela jika anda mahu Hermes Agent peribadi yang kekal dalam talian, mengingati persediaan anda dan tinggal dalam saluran pemesejan yang telah anda gunakan.** Pilih Manus jika anda ingin menyerahkan tugas yang ditetapkan—penyelidikan, kerja penyemak imbas, laporan atau aliran kerja—dan minta Ejen bekerja ke arah penghantaran. Mereka bertindih dalam perkataan "Ejen," tetapi dalam penggunaan sehari-hari mereka bermula dari tempat yang sangat berbeza.
 
 ![LightVela dibandingkan dengan Manus untuk menempatkan dan menggunakan Ejen AI](../../images/lightvela-vs-manus.webp)
 

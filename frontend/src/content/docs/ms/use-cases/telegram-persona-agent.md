@@ -55,7 +55,7 @@ Ringkas ini membantu anda memilih Jiwa yang sesuai dan memberi anda bahasa untuk
 
 ### 3. Pilih dan suntik Jiwa daripada Personaliti
 
-Buka tetapan Agen sasaran dan pilih bahagian "Peribadi".
+Buka tetapan Ejen sasaran dan pilih bahagian "Peribadi".
 Anda boleh memilih "Lukis jiwa rawak" atau "Ujian personaliti jiwa", kemudian semak huraian pada setiap kad.
 
 Pilih Jiwa yang paling sesuai dengan peranan dan klik "Suntikan jiwa".
@@ -132,7 +132,7 @@ Lihat [Konfigurasi Saluran - Telegram](../configuration/channel-telegram.md) unt
 ### Adakah perubahan model akan menyebabkan Ejen kehilangan personalitinya?
 
 Selalunya tidak.
-Model, persona Agen dan ingatan jangka panjang adalah lapisan konfigurasi yang berasingan, walaupun menukar model boleh mengubah penaakulan, penggunaan alat dan butiran kecil gaya tindak balas.
+Model, persona Ejen dan ingatan jangka panjang adalah lapisan konfigurasi yang berasingan, walaupun menukar model boleh mengubah penaakulan, penggunaan alat dan butiran kecil gaya tindak balas.
 
 ## Langkah seterusnya
 

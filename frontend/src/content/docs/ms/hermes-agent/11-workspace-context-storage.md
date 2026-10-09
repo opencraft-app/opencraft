@@ -145,7 +145,7 @@ Hermes membezakan direktori kerja daripada fail konteks di peringkat mekanisme, 
 
 - Tiga lokasi, tiga peranan: **direktori kerja** (tapak kerja terhad), **fail konteks** (perjanjian jangka panjang pemastautin), **storan awan** (bahan dan output diambil atas permintaan).
 - Fail konteks dan storan awan berbeza dalam masa baca: yang pertama adalah pemastautin setiap sesi, yang kedua adalah atas permintaan.
-- Fakta storan awan: **1 GB** had muat naik/muat turun setiap fail; memadam hanya mengeluarkan salinan yang dihoskan; **fail satu Agen tidak tersedia secara automatik kepada yang lain**.
+- Fakta storan awan: **1 GB** had muat naik/muat turun setiap fail; memadam hanya mengeluarkan salinan yang dihoskan; **fail satu Ejen tidak tersedia secara automatik kepada yang lain**.
 - Struktur folder kekal mudah — bahan / dalam proses / siap biasanya cukup, dengan nama yang menerangkan tujuan.
 - Satu peraturan yang perlu dipegang: **jangan sekali-kali menulis kata laluan, kunci atau maklumat sensitif yang tidak diperlukan ke dalam fail konteks jangka panjang.**
 - Apabila sesi terasa berat atau perlahan, mula-mula semak sama ada bahan pukal telah ditolak ke dalam fail konteks.

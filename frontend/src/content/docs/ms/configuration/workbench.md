@@ -113,7 +113,7 @@ Jika anda mencapai had anda, padamkan meja kerja sedia ada sebelum membuat yang 
 
 ## Sempadan Semasa
 
-Meja Kerja Saya bertujuan untuk mencipta dan mengehos tapak web statik melalui sembang Agen.
+Meja Kerja Saya bertujuan untuk mencipta dan mengehos tapak web statik melalui sembang Ejen.
 Ia tidak menyediakan storan sebelah pelayan, pangkalan data terurus, pengendalian borang yang berterusan, akaun kongsi atau perkhidmatan bahagian belakang sewenang-wenangnya.
 Kiraan meja kerja, trafik, storan, saiz pakej dan kiraan fail bergantung pada pelan aktif anda.
 

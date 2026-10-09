@@ -13,7 +13,7 @@
 | **Apa yang anda mulakan dengan** | Hermes Agent dihoskan awan | Pelayan maya KVM yang anda konfigurasikan |
 | **Hermes persediaan** | Masa jalan Ejen dihoskan untuk anda | Anda menggunakan, mengkonfigurasi dan mengendalikan Hermes |
 | **Pemilikan harian** | Model, saluran dan kemahiran dalam konsol produk | Linux, akses, kemas kini, rahsia, sandaran dan masa jalan Hermes |
-| **Kawalan** | Fokus pada menggunakan dan mengkonfigurasi Agen | Akses root penuh dan kawalan peringkat pelayan |
+| **Kawalan** | Fokus pada menggunakan dan mengkonfigurasi Ejen | Akses root penuh dan kawalan peringkat pelayan |
 | **Terbaik untuk** | Orang yang mahukan Ejen sentiasa aktif tanpa kerja pelayan | Pembina yang secara khusus ingin memiliki tindanan pelayan |
 
 ## Perbezaan sebenar: produk Ejen berbanding pelayan

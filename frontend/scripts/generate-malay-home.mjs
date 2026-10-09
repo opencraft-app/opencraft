@@ -14,7 +14,7 @@ export async function generateMalayHome(targetRoot) {
     if (!trimmed || !/[A-Za-z]/.test(trimmed)) return value;
     const translated = translations[trimmed];
     if (translated === undefined) throw new Error(`Missing Malay homepage translation: ${trimmed}`);
-    return value.replace(trimmed, translated);
+    return value.replace(trimmed, () => translated);
   };
   const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   let node;

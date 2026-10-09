@@ -34,9 +34,9 @@ Selepas memasukkan butiran, sahkan penciptaan dan tunggu Bot baru selesai disedi
 
 ## Ruang kerja Bot dan tetapan
 
-Selepas penciptaan, Bot membuka ruang kerja tetapan sendiri. Dari tab Bot di halaman Utama Agen, anda boleh memilih Bot itu dan menguruskan tetapan yang tersedia untuknya, termasuk memori, kemahiran, personaliti, tugas yang dijadualkan, dan saluran yang disambungkan.
+Selepas penciptaan, Bot membuka ruang kerja tetapan sendiri. Dari tab Bot di halaman Utama Ejen, anda boleh memilih Bot itu dan menguruskan tetapan yang tersedia untuknya, termasuk memori, kemahiran, personaliti, tugas yang dijadualkan, dan saluran yang disambungkan.
 
-![Tinjauan Agen LightVela menunjukkan kad Bot dalam bahagian My Bots](../../images/bots-switching-overview.webp)
+![Tinjauan Ejen LightVela menunjukkan kad Bot dalam bahagian My Bots](../../images/bots-switching-overview.webp)
 
 Mod penciptaan menentukan apa yang diwarisi oleh Bot baru:
 

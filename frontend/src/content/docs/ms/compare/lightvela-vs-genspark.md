@@ -107,6 +107,6 @@ Pandangan saya: **LightVela ialah hos Ejen berdedikasi yang lebih baik. Genspark
 
 Jika soalan anda ialah "Alat yang manakah boleh menjadikan saya pembentangan, laporan penyelidikan dan hamparan terpantas?", Genspark mungkin jawapan yang lebih jelas.
 
-Jika anda membandingkan hos Ejen peribadi dengan kerja AI yang diwakilkan, [LightVela vs Grok Bot](./lightvela-vs-grok-bot.md) menerangkan perbezaan antara satu Agen boleh dikonfigurasikan dan Bot awan berterusan.
+Jika anda membandingkan hos Ejen peribadi dengan kerja AI yang diwakilkan, [LightVela vs Grok Bot](./lightvela-vs-grok-bot.md) menerangkan perbezaan antara satu Ejen boleh dikonfigurasikan dan Bot awan berterusan.
 
 Jika soalan anda ialah "Di manakah saya harus menjadi hos Ejen AI yang saya terus gunakan setiap hari?", LightVela adalah lebih sesuai.

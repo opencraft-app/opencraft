@@ -384,7 +384,7 @@ function withTrailingSlash(path: string): string {
 }
 
 function publicLocalePrefix(locale: PublicSiteLocaleCode): string {
-  if (locale === PUBLIC_SITE_LOCALES.MS_MY) return `/${PUBLIC_URL_LANGS.MS_MY}/`;
+  if (locale === PUBLIC_SITE_LOCALES.MS_MY) return `/${PUBLIC_URL_LANGS.MS_MY}`;
   if (locale === PUBLIC_SITE_LOCALES.ID_ID) return `/${PUBLIC_URL_LANGS.ID_ID}`;
   if (locale === PUBLIC_SITE_LOCALES.ZH_HANT) return `/${PUBLIC_URL_LANGS.ZH_HANT}`;
   if (locale === PUBLIC_SITE_LOCALES.ES) return `/${PUBLIC_URL_LANGS.ES}`;

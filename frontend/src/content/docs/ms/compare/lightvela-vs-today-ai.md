@@ -5,7 +5,7 @@
 **Pilih LightVela jika anda mahukan Ejen AI peribadi yang praktikal dan sentiasa dalam talian yang boleh anda capai melalui apl pemesejan, konfigurasikan dengan model yang berbeza, lanjutkan dengan Kemahiran dan jadualkan dengan Tugasan Berjadual.** Pilih Today.AI jika anda mahukan sistem pengendalian peribadi yang lebih tertumpu kepada aplikasi yang dibina berdasarkan data harian anda dan cadangan proaktif.
 
 Model produk yang didokumenkan LightVela tertumpu pada Hermes Agent dihoskan awan, manakala kedudukan awam Today.AI menekankan konteks peribadi, bantuan proaktif dan bantuan merentas peranti.
-LightVela ialah pilihan yang lebih mudah difahami untuk pengehosan Agen yang berterusan dan kawalan eksplisit.
+LightVela ialah pilihan yang lebih mudah difahami untuk pengehosan Ejen yang berterusan dan kawalan eksplisit.
 Today.AI mewakili visi yang lebih eksperimen: pembantu yang membina gambaran hidup anda dan bertindak sebelum anda bertanya.
 
 ![LightVela dibandingkan dengan Today.AI untuk pembantu AI peribadi yang sentiasa aktif](../../images/lightvela-vs-today-ai.webp)

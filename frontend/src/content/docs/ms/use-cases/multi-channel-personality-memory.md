@@ -38,7 +38,7 @@ Persona, memori jangka panjang dan Kemahiran tergolong dalam lapisan Ejen, manak
 
 ## Langkah
 
-### 1. Pilih satu sasaran Agen
+### 1. Pilih satu sasaran Ejen
 
 Buka konsol LightVela dan tentukan tunggal Hermes Agent mana yang harus menerima kedua-dua sambungan Telegram dan WhatsApp.
 
@@ -46,7 +46,7 @@ Jangan buat satu Ejen setiap saluran melainkan anda dengan sengaja mahukan perso
 
 ### 2. Sambung Telegram
 
-Ikuti [Konfigurasi Saluran - Telegram](../configuration/channel-telegram.md) untuk mencipta Bot dan tampal token HTTP API ke dalam tetapan saluran Telegram untuk Agen sasaran.
+Ikuti [Konfigurasi Saluran - Telegram](../configuration/channel-telegram.md) untuk mencipta Bot dan tampal token HTTP API ke dalam tetapan saluran Telegram untuk Ejen sasaran.
 
 Hantar mesej ujian dalam Telegram, sahkan bahawa konsol menunjukkan saluran sebagai disambungkan dan sahkan bahawa balasan kembali kepada Bot yang dijangkakan.
 
@@ -60,9 +60,9 @@ Buka kenalan bot yang sepadan dalam WhatsApp, hantar mesej ujian dan sahkan baha
 
 Jika anda juga mahukan personaliti WhatsApp yang berbeza, lihat [Cara Mengkonfigurasi Hermes Agent dengan Personaliti Terbeza dalam WhatsApp](./whatsapp-persona-agent.md).
 
-### 4. Konfigurasikan satu personaliti peringkat Agen
+### 4. Konfigurasikan satu personaliti peringkat Ejen
 
-Buka bahagian "Peribadi" Agen sasaran dan sahkan bahawa peranan, suara, keutamaan dan sempadan tingkah laku dalam SOUL.md berfungsi untuk kedua-dua saluran.
+Buka bahagian "Peribadi" Ejen sasaran dan sahkan bahawa peranan, suara, keutamaan dan sempadan tingkah laku dalam SOUL.md berfungsi untuk kedua-dua saluran.
 
 Kerana personaliti berada di lapisan Ejen, anda tidak perlu mengkonfigurasi dua salinan dalam Telegram dan WhatsApp.
 
@@ -74,7 +74,7 @@ Selepas perubahan, mulakan perbualan baharu dalam setiap saluran dan jalankan se
 
 Buka "Memori" dalam konsol dan sahkan bahawa memori Ejen dan kapasiti profil pengguna sesuai dengan aliran kerja anda.
 
-Telegram dan WhatsApp berkongsi memori jangka panjang Agen awan yang sama, jadi anda tidak perlu memasukkan identiti, bahasa dan pilihan yang sama dua kali.
+Telegram dan WhatsApp berkongsi memori jangka panjang Ejen awan yang sama, jadi anda tidak perlu memasukkan identiti, bahasa dan pilihan yang sama dua kali.
 
 Dalam mana-mana saluran, anda boleh menghantar:
 

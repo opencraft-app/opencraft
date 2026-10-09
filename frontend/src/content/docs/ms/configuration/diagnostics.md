@@ -19,13 +19,13 @@ Diagnostik membantu anda menyiasat Ejen yang tidak berkelakuan seperti yang diha
 
 ## Sebelum anda bermula
 
-1. Buka Agen yang mengalami masalah.
+1. Buka Ejen yang mengalami masalah.
 2. Perhatikan perkara yang berlaku, bila ia bermula dan sama ada ia mempengaruhi Sembang, saluran yang disambungkan atau satu tugas tertentu.
 3. Jika model gagal, semak persediaan semasa dalam [Configure Models](./model.md) sebelum menetapkan semula apa-apa.
 
 ## Diagnostik Terbuka
 
-1. Buka **Agen** dan pilih Ejen yang terjejas.
+1. Buka **Ejen** dan pilih Ejen yang terjejas.
 2. Buka bahagian **Diagnostik**.
 3. Pilih julat masa untuk log terkini: 1, 3, 6, 12 atau 24 jam.
 4. Pilih **Refresh** untuk memuatkan log.

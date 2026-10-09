@@ -6,7 +6,7 @@
 
 ## Mengapa soalan ini terus timbul
 
-"Bolehkah saya memindahkan Ejen saya kepada model yang lebih kukuh?" adalah salah satu soalan yang paling biasa orang tanya tentang produk Agen. Susulan tiba serta-merta: "Adakah ia masih ingat saya?"
+"Bolehkah saya memindahkan Ejen saya kepada model yang lebih kukuh?" adalah salah satu soalan yang paling biasa orang tanya tentang produk Ejen. Susulan tiba serta-merta: "Adakah ia masih ingat saya?"
 
 Meminta kedua-duanya bersama-sama mendedahkan salah tanggapan yang meluas — bahawa model dan Ejen adalah perkara yang sama. Dalam model mental itu, Ejen hanyalah antara muka sembang yang dililitkan pada LLM, jadi menggantikan model bermakna menggantikan keseluruhan pembantu, dan memulakan semula terasa tidak dapat dielakkan.
 
@@ -26,7 +26,7 @@ Sebelum membincangkan penukaran model, ia membantu untuk mengenali bahawa Ejen m
 | **Waktu jalan ejen** | Alat yang menjalankan proses, saluran I/O dan penjadualan | Lama berjalan | Tidak berubah |
 | **Aset jangka panjang** | `SOUL.md`, `USER.md`, `MEMORY.md`, `memories/`, `skills/`, fail direktori berfungsi | Terkumpul dari semasa ke semasa | Tidak berubah |
 
-Kebanyakan orang hanya melihat lapisan pertama dan tetingkap sembang, kehilangan masa jalan di tengah dan lapisan aset di bawah. Namun kedua-dua lapisan bawah itulah yang menjadikan Agen dikenali sebagai "yang sama" selama beberapa bulan penggunaan.
+Kebanyakan orang hanya melihat lapisan pertama dan tetingkap sembang, kehilangan masa jalan di tengah dan lapisan aset di bawah. Namun kedua-dua lapisan bawah itulah yang menjadikan Ejen dikenali sebagai "yang sama" selama beberapa bulan penggunaan.
 
 Analogi yang berguna: model ialah cara seseorang berfikir sekarang, masa jalan ialah badan dan tangan orang itu, dan aset jangka panjang ialah identiti, ingatan dan tabiat profesional mereka. Mengubah cara seseorang berfikir tidak menjadikan mereka orang yang berbeza, kerana identiti dan ingatan tidak berubah dengannya.
 
@@ -53,7 +53,7 @@ Kesemua keupayaan tersebut hidup di luar model. Itulah asas teknikal untuk "menu
 
 ---
 
-## 3. Lapisan Agen: bertanggungjawab untuk menjadikan pemikiran berterusan
+## 3. Lapisan Ejen: bertanggungjawab untuk menjadikan pemikiran berterusan
 
 Tanggungjawab lapisan Ejen dibahagikan kepada lima kumpulan, disusun mengikut masalah yang diselesaikan setiap satu.
 

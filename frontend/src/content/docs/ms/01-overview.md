@@ -86,7 +86,7 @@ Perbualan dalam Web Chat tidak memerlukan saluran luaran:
 
 ## Mengenai rancangan
 
-Satu pelan menyediakan satu Hermes contoh cloud Agen. Siri Launch menyokong sehingga 5 Bot di dalam contoh itu; siri Cruise menyokong sehingga 10. Bot adalah profil yang berasingan, bukan Hermes contoh tambahan.
+Satu pelan menyediakan satu Hermes contoh cloud Ejen. Siri Launch menyokong sehingga 5 Bot di dalam contoh itu; siri Cruise menyokong sehingga 10. Bot adalah profil yang berasingan, bukan Hermes contoh tambahan.
 
 | Pilihan pelan | Kredit model sebulan | Bot |
 |---|---:|---:|
@@ -100,7 +100,7 @@ Harga, tawaran pengenalan, dan ketersediaan boleh berubah. Semak [halaman Langga
 
 ## Hubungan dengan Lighthouse (pilihan)
 
-Untuk pengguna yang biasa dengan Tencent Cloud: LightVela boleh difahamkan sebagai pembungkusan sedia untuk digunakan keupayaan penggunaan Agen awan Tencent Lighthouse. LightVela mengalih keluar konsep seperti akaun Tencent Cloud, pengurusan sumber dan operasi sumber awan, meninggalkan hanya dua tindakan teras: mengkonfigurasi Ejen dan menyambungkannya ke platform pemesejan.
+Untuk pengguna yang biasa dengan Tencent Cloud: LightVela boleh difahamkan sebagai pembungkusan sedia untuk digunakan keupayaan penggunaan Ejen awan Tencent Lighthouse. LightVela mengalih keluar konsep seperti akaun Tencent Cloud, pengurusan sumber dan operasi sumber awan, meninggalkan hanya dua tindakan teras: mengkonfigurasi Ejen dan menyambungkannya ke platform pemesejan.
 
 Jika anda baru menggunakan Ejen awan, anda boleh melangkau bahagian ini.
 

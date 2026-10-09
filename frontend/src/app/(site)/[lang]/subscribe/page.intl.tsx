@@ -26,7 +26,7 @@ const DESCRIPTION_BY_LOCALE: Record<PublicSiteLocaleCode, string> = {
   [PUBLIC_SITE_LOCALES.ZH_SG]: '选择适合你的 LightVela 套餐。',
   [PUBLIC_SITE_LOCALES.ZH_HANT]: '選擇適合你的 LightVela 套餐。',
   [PUBLIC_SITE_LOCALES.ID_ID]: 'Pilih paket LightVela yang sesuai untuk Hermes Agent Anda.',
-  [PUBLIC_SITE_LOCALES.MS_MY]: "Pilih pakej LightVela yang sesuai untuk Ejen Hermes anda.",
+  [PUBLIC_SITE_LOCALES.MS_MY]: "Pilih pakej LightVela yang sesuai untuk Hermes Agent anda.",
   [PUBLIC_SITE_LOCALES.ES]: 'Elige el plan de LightVela que mejor se adapte a tu Hermes Agent.',
   [PUBLIC_SITE_LOCALES.JA_JP]: japaneseRouteDescription('/subscribe'),
   [PUBLIC_SITE_LOCALES.KO_KR]: koreanRouteDescription('/subscribe'),

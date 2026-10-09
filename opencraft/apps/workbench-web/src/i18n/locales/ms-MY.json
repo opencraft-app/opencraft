@@ -219,5 +219,6 @@
   "desktop.keyboard": "Paparkan papan kekunci",
   "desktop.textInput": "Taip di komputer",
   "desktop.paste": "Tampal",
-  "desktop.view": "Paparan desktop"
+  "desktop.view": "Paparan desktop",
+  "panel.actionFailed": "Pratonton tidak dapat dibuka buat masa ini. Sila cuba lagi."
 }
