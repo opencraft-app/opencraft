@@ -47,6 +47,12 @@ OpenCraft iOS 的内置 Bot DOM runtime 同时包含国内与国际的 frontend 
 
 ## 产品文档区域
 
+国际站马来语使用 `ms-MY`（Bahasa Melayu），公开路径前缀为 `/ms-my/`，语言注册表 `frontend/src/i18n/locales.json` 同时控制语言切换与公开发布。马来语文档以 `src/content/docs/ms/` 为独立源，覆盖国际站英文文档清单，不跨区域或语言回退；标题、简介与分类来自同目录 `metadata.json`，生成 `/ms-my/docs/` 页面与独立搜索索引。国内站不生成马来语公开页面。
+
+马来语主界面和公共结构化词典均通过语言就绪流程按需装载；非马来语浏览器不下载公共词典，马来语资源与公共词典都准备完成后才渲染，服务端预载保证静态首帧完整。场景任务文案仅在马来语消费时翻译，避免模块加载时计算。公共结构化文案仅收录实际消费的英文文本，保留字段绑定、内部标识和链接值；字典读取只允许自身键，避免把对象原型属性当作译文。产品对话使用嵌入式 OpenCraft 工作台，`opencraft/apps/workbench-web/src/i18n/catalogs.ts` 的 embeddedLocaleCatalogs 注册 `ms-MY`，宿主语言更新由 WorkbenchLocaleController 消费；独立 OpenCraft 的语言列表仍由独立目录管理。马来语工作台目录须通过 ICU 参数和完整条目检查。
+
+首页结构仍由英文静态片段维护，`scripts/generate-malay-home.mjs` 配合已提交 `copy.ms-MY.json` 生成马来语片段，缺少译文会明确失败；首页导入流程包含该步骤；CI 在临时目录重生成并比对已提交片段，阻止英文首页结构更新后遗漏马来语生成物。静态文字、无障碍属性及动态聊天/轮播数据均使用马来语；公开页面链接使用 `/ms-my/` 前缀，受保护的 `/agents` 产品路径保留原地址。
+
 `frontend/src/content/docs/` 保留 cn/global/en/id 源；生成的 zh-cn/zh-sg/en-us/zh-hant/id-id 输出不直接编辑。区域差异必须通过 parity 测试和真实路由共同证明。
 
 跨区域产品定义文案使用“云端 AI Agent 产品”及对应语言表达；部署与运行的云端托管能力仍按功能事实描述。
@@ -198,7 +204,7 @@ OpenCraft iOS 的内置 Bot DOM runtime 同时包含国内与国际的 frontend 
 
 双站 OpenCraft 会话侧栏为绝对定位的更多按钮预留独立空间，长标题在按钮前 8px 截断；该样式随 OpenCraft 启用条件生效。
 
-内嵌 Chat 新会话的伙伴标题与输入占位文案覆盖控制台七套字典（en-US、zh-CN、zh-Hant、id-ID、es、ja-JP、ko-KR）；zh-SG 复用简体中文。额外语言由内嵌专用 catalog 注入，宿主以当前路由语言配置工作台并在切换语言时调用 `setLocalization()`，保留会话和草稿；独立工作台语言列表不变。未翻译的通用工作台文案回落英文。
+内嵌 Chat 新会话的伙伴标题与输入占位文案覆盖控制台八套字典（en-US、zh-CN、zh-Hant、id-ID、ms-MY、es、ja-JP、ko-KR）；zh-SG 复用简体中文。额外语言由内嵌专用 catalog 注入，宿主以当前路由语言配置工作台并在切换语言时调用 `setLocalization()`，保留会话和草稿；独立工作台语言列表不变。未翻译的通用工作台文案回落英文。
 
 双站启用内嵌 Chat 时，加载、新会话和已有会话均不呈现宿主圆角外框。工作台保留已有会话标题、重命名入口和输入框，移除主内容表面的阴影。草稿状态仍由工作台拥有。
 

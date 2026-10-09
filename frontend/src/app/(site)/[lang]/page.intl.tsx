@@ -19,6 +19,7 @@ const TITLE_BY_LOCALE: Record<PublicSiteLocale, string> = {
   [PUBLIC_SITE_LOCALES.ZH_SG]: 'LightVela｜云端专属个人 Agent',
   [PUBLIC_SITE_LOCALES.ZH_HANT]: 'LightVela｜雲端專屬個人 Agent',
   [PUBLIC_SITE_LOCALES.ID_ID]: 'LightVela | Agen AI Pribadi di Cloud',
+  [PUBLIC_SITE_LOCALES.MS_MY]: "LightVela | Ejen AI Peribadi di Awan",
   [PUBLIC_SITE_LOCALES.ES]: 'LightVela | Tu agente personal de IA en la nube',
   [PUBLIC_SITE_LOCALES.JA_JP]: japaneseRouteTitle('/'),
   [PUBLIC_SITE_LOCALES.KO_KR]: koreanRouteTitle('/'),
@@ -31,6 +32,7 @@ const DESCRIPTION_BY_LOCALE: Record<PublicSiteLocale, string> = {
   [PUBLIC_SITE_LOCALES.ZH_HANT]: 'LightVela 是騰訊輕量雲團隊推出的雲端 AI Agent 產品。',
   [PUBLIC_SITE_LOCALES.ID_ID]: 'LightVela adalah produk AI Agent berbasis cloud dari tim Tencent Lighthouse.',
   [PUBLIC_SITE_LOCALES.ES]: 'LightVela es un producto de agentes de IA en la nube para crear tu compañero personal.',
+  [PUBLIC_SITE_LOCALES.MS_MY]: 'LightVela ialah produk ejen AI berasaskan awan daripada pasukan Tencent Lighthouse.',
   [PUBLIC_SITE_LOCALES.JA_JP]: japaneseRouteDescription('/'),
   [PUBLIC_SITE_LOCALES.KO_KR]: koreanRouteDescription('/'),
 };

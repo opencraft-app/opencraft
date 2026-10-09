@@ -10,6 +10,10 @@ import { isGlobal, localizedPath } from "@/lib/region";
 
 const SUGGESTION_SEEN_KEY = "lw-language-suggestion-seen";
 const SUGGESTION_COPY = {
+  [PUBLIC_SITE_LOCALES.MS_MY]: {
+    ariaLabel: "Cadangan bahasa", message: "Bahasa pilihan pelayar anda ialah Bahasa Melayu. Mahu bertukar?",
+    switchLabel: "Tukar ke Bahasa Melayu", continueLabel: "Teruskan dalam bahasa Inggeris", closeLabel: "Tutup dan teruskan dalam bahasa Inggeris",
+  },
   [PUBLIC_SITE_LOCALES.EN_US]: {
     ariaLabel: "Language suggestion", message: "Your browser prefers English. Would you like to switch?",
     switchLabel: "Switch to English", continueLabel: "Continue in English", closeLabel: "Close and continue in English",

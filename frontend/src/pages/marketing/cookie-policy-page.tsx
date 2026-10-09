@@ -1,5 +1,6 @@
 "use client";
 
+import { localizeMalay } from '@/i18n/malay-copy';
 import type { ReactNode } from "react";
 import { LegalFooter } from "@/components/site/legal-footer";
 import { useLocaleOverride } from "@/i18n/t";
@@ -619,6 +620,7 @@ const CookieTable = ({ copy, rows }: { copy: CookiePolicyCopy; rows: CookieTable
 );
 
 export function cookiePolicyHomePath(locale: PublicSiteLocaleCode | null): string {
+  if (locale === PUBLIC_SITE_LOCALES.MS_MY) return `/${PUBLIC_URL_LANGS.MS_MY}/`;
   if (locale === PUBLIC_SITE_LOCALES.KO_KR) return `/${PUBLIC_URL_LANGS.KO_KR}/`;
   if (locale === PUBLIC_SITE_LOCALES.JA_JP) return `/${PUBLIC_URL_LANGS.JA_JP}/`;
   return locale === PUBLIC_SITE_LOCALES.ES ? '/es/' : '/';
@@ -632,6 +634,7 @@ export function getCookiePolicyChrome(
 }
 
 export function getCookiePolicyCopy(locale: PublicSiteLocaleCode | null): CookiePolicyCopy {
+  if (locale === PUBLIC_SITE_LOCALES.MS_MY) return localizeMalay(en);
   if (locale === PUBLIC_SITE_LOCALES.KO_KR) return KOREAN_COOKIE_POLICY_COPY as CookiePolicyCopy;
   if (locale === PUBLIC_SITE_LOCALES.JA_JP) return JAPANESE_COOKIE_POLICY_COPY as CookiePolicyCopy;
   if (locale === PUBLIC_SITE_LOCALES.ES) return es;

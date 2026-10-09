@@ -25,6 +25,7 @@
  *     首页 gzip JS 增加超过 100 KB
  */
 
+import { ensureMalayPublicCopy } from './malay-copy';
 import i18n from "i18next";
 import type { Resource } from "i18next";
 import { initReactI18next } from "react-i18next";
@@ -73,6 +74,12 @@ const LAZY_DICTIONARY_LOADERS: Partial<
   Record<I18nDictKey, () => Promise<TranslationDictionary>>
 > = {
   "ja-JP": async () => (await import("./generated/ja-JP.json")).default,
+  "ms-MY": async () => {
+    const [dictionary] = await Promise.all([
+      import("./generated/ms-MY.json"), ensureMalayPublicCopy(),
+    ]);
+    return dictionary.default;
+  },
   "ko-KR": async () => (await import("./generated/ko-KR.json")).default,
   ...(EAGER_ALL_DICTIONARIES ? {} : {
     "en-US": async () => (await import("./generated/en-US.json")).default,
@@ -204,9 +211,8 @@ async function loadDictionary(dictKey: I18nDictKey): Promise<TranslationDictiona
   if (!loader) throw new Error(`[i18n] missing dictionary loader: ${dictKey}`);
   const load = loader().then((dictionary) => {
     dictionaryCache[dictKey] = dictionary;
-    dictionaryLoads.delete(dictKey);
     return dictionary;
-  });
+  }).finally(() => { dictionaryLoads.delete(dictKey); });
   dictionaryLoads.set(dictKey, load);
   return load;
 }
@@ -275,9 +281,12 @@ export async function ensureLocaleDictionary(locale: SupportedLocale): Promise<I
  * 手动切换语言并持久化
  * @example setLocale('ja-JP')
  */
+let localeChangeGeneration = 0;
+
 export const setLocale = (locale: SupportedLocale): void => {
   const runtimeLocale = parseRuntimeLocaleCode(locale, RUNTIME_LOCALE_OPTIONS);
   if (!runtimeLocale) return;
+  const generation = ++localeChangeGeneration;
   try {
     window.localStorage.setItem(LOCALE_STORAGE_KEY, runtimeLocale);
     window.localStorage.setItem(EXPLICIT_LOCALE_STORAGE_KEY, "1");
@@ -290,7 +299,9 @@ export const setLocale = (locale: SupportedLocale): void => {
     void i18n.changeLanguage(dictKey);
     return;
   }
-  void ensureLocaleDictionary(runtimeLocale).then((loadedDictKey) => i18n.changeLanguage(loadedDictKey));
+  void ensureLocaleDictionary(runtimeLocale).then((loadedDictKey) => {
+    if (generation === localeChangeGeneration) return i18n.changeLanguage(loadedDictKey);
+  });
 };
 
 export default i18n;

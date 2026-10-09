@@ -4,8 +4,11 @@ import { describe, expect, it } from 'vitest';
 import { createDocsSearchTokenizer } from '../search-tokenizer';
 
 describe('docs search tokenizer', () => {
-  it('uses the Orama default tokenizer for English', () => {
-    expect(createDocsSearchTokenizer('en-us')).toBeUndefined();
+  it.each(['en-us', 'ms-my'] as const)('uses the Orama Latin tokenizer for %s', (locale) => {
+    expect(createDocsSearchTokenizer(locale)).toBeUndefined();
+    const db = create({ schema: { content: 'string' }, components: { tokenizer: createDocsSearchTokenizer(locale) } });
+    insert(db, { content: 'Panduan kredit untuk Hermes Agent' });
+    expect(search(db, { term: 'kredit' }).count).toBe(1);
   });
 
   it.each(['zh-cn', 'zh-sg', 'zh-hant'] as const)(

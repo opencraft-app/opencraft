@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { JSDOM } from "jsdom";
 import { polishCapabilityCards } from "./international-home-capability-polish.mjs";
 import { localizeFeatureCards, normalizeHeroRuntime } from "./international-home-feature-locales.mjs";
+import { generateMalayHome } from "./generate-malay-home.mjs";
 import * as OpenCC from "opencc-js";
 
 import { initializeInternationalHomeFragmentAccessibility } from "./international-home-fragment-accessibility.mjs";
@@ -8847,6 +8848,7 @@ await writeFile(path.join(targetRoot, "runtime.js"), cleanGeneratedText(runtime)
 await writeFile(path.join(targetRoot, "hero-chat.js"), cleanGeneratedText(heroChat));
 await copyFile(path.join(sourceRoot, "assets/scene-wheel.js"), path.join(targetRoot, "scene-wheel.js"));
 
+await generateMalayHome(targetRoot);
 await initializeInternationalHomeFragmentAccessibility(targetRoot);
 const voiceAvatarSummary = await optimizeInternationalHomeVoiceAvatars(targetRoot);
 
