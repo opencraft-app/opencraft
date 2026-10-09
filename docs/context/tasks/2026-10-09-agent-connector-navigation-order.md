@@ -1,3 +1,21 @@
+---
+id: agent-connector-navigation-order
+type: task
+scope: Agent 日常导航中连接器入口的顺序调整。
+triggers: ["Agent 连接器导航", "日常导航顺序"]
+owner: pablozhong
+authority: primary
+source_of_truth:
+  - frontend/src/pages/marketing/agent-settings-page.tsx
+  - frontend/src/pages/marketing/__tests__/agent-settings-nav-order.test.ts
+status: active
+reviewed_at: 2026-10-09
+review_due: 2026-11-09
+revision: 1.0.1
+precedence: task
+derived: false
+---
+
 ## goal
 将 Agent 侧边栏「日常」导航中的连接器移到技能下方。
 
@@ -63,20 +81,3 @@
 
 ## handoff
 - 导航顺序已提交并推送至 MR !5131；聚焦测试、前端检查、构建及 OpenCraft 同步检查通过。全量测试未取得通过结果；MR 尚未合并或发布。
----
-id: agent-connector-navigation-order
-type: task
-scope: Agent 日常导航中连接器入口的顺序调整。
-triggers: ["Agent 连接器导航", "日常导航顺序"]
-owner: pablozhong
-authority: primary
-source_of_truth:
-  - frontend/src/pages/marketing/agent-settings-page.tsx
-  - frontend/src/pages/marketing/__tests__/agent-settings-nav-order.test.ts
-status: active
-reviewed_at: 2026-10-09
-review_due: 2026-11-09
-revision: 1.0.1
-precedence: task
-derived: false
----

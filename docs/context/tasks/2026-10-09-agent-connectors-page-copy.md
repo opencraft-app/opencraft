@@ -1,3 +1,21 @@
+---
+id: agent-connectors-page-copy
+type: task
+scope: 双站 Agent 连接器页面标题、说明和解除授权提示。
+triggers: ["Agent 连接器文案", "连接器解除授权提示"]
+owner: pablozhong
+authority: primary
+source_of_truth:
+  - frontend/src/pages/marketing/agent-connectors-panel.tsx
+  - frontend/src/i18n/generated/zh-CN.json
+status: active
+reviewed_at: 2026-10-09
+review_due: 2026-11-09
+revision: 1.0.1
+precedence: task
+derived: false
+---
+
 ## goal
 将连接器页顶部简化为「连接器」标题与一句说明，并移除重复说明及纯占位卡。
 
@@ -68,20 +86,3 @@
 
 ## handoff
 - 页面文案和结构已提交并推送至 MR !5131；聚焦测试、前端检查、构建与 OpenCraft 同步检查通过。MR 尚未合并或发布。
----
-id: agent-connectors-page-copy
-type: task
-scope: 双站 Agent 连接器页面标题、说明和解除授权提示。
-triggers: ["Agent 连接器文案", "连接器解除授权提示"]
-owner: pablozhong
-authority: primary
-source_of_truth:
-  - frontend/src/pages/marketing/agent-connectors-panel.tsx
-  - frontend/src/i18n/generated/zh-CN.json
-status: active
-reviewed_at: 2026-10-09
-review_due: 2026-11-09
-revision: 1.0.1
-precedence: task
-derived: false
----
