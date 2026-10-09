@@ -89,23 +89,23 @@
     },
     {
       "file": "i18n/generated/en-US.json",
-      "sourceSha256": "2056a7ff5358ba3718d5fe364797e071291fe981bc8dc16760ec6226ab43e524"
+      "sourceSha256": "03f651cbe455aed2e385f1c34bb00f2bd4e51fe2662b7eb7c0e9be5c84bf4fa6"
     },
     {
       "file": "i18n/generated/es.json",
-      "sourceSha256": "aa3f654c6e3cdb7b8459d489814fc189e9f28b3d23cd1c704c2c4a758f24d61f"
+      "sourceSha256": "8b6902dc32979002a6e5d4565b30a3c2aeff2c4f2b3745d4da3458947401a327"
     },
     {
       "file": "i18n/generated/id-ID.json",
-      "sourceSha256": "88c810f0a8d1a40b7afade51802576787052276d81b8432b00ad3622edd40d2e"
+      "sourceSha256": "f2f719b7bdb7f7af0a2c328e7d18eaf6f3da989e5a4c7a194de77f4ccca815c4"
     },
     {
       "file": "i18n/generated/ja-JP.json",
-      "sourceSha256": "45324dcbce01c1433d0a86903b31f2ca4b61e6e12d516b022f895a68c54f2832"
+      "sourceSha256": "3473a433a7833384753315f2842a44abd33e372814a650bf6f8bc8e82afab630"
     },
     {
       "file": "i18n/generated/ko-KR.json",
-      "sourceSha256": "cb3cf74224394ac314579710adf0b3cdafafcfbf1f16df4057abda4990cbf10d"
+      "sourceSha256": "7c4f6a64da29a3487ebbe739b96456c08703461ba12263370bc992a945f073c0"
     },
     {
       "file": "i18n/generated/malay-public-copy.json",
@@ -113,19 +113,19 @@
     },
     {
       "file": "i18n/generated/ms-MY.json",
-      "sourceSha256": "7521711dfed627898f863a72511a78532f2fa10ef904e79ec26b914a745b11f3"
+      "sourceSha256": "61cf2955ab3e46799875b4947b1296153271128dc014a0815953d3aa695d20b6"
     },
     {
       "file": "i18n/generated/zh-CN.json",
-      "sourceSha256": "7aa05aee1c5c9398cc3b8de9b302b23d028ffb1138e1a81b5d73b888d317ae18"
+      "sourceSha256": "1bd740800386256895989b8f1f43895878d535eefab2790df6c58e09c154d61c"
     },
     {
       "file": "i18n/generated/zh-Hant.json",
-      "sourceSha256": "966922eec132583147c8bd7b3e2e5505c4b495d85147176199fdf46613b75264"
+      "sourceSha256": "5ee965efd061edc968b780743a0b265a9b972c3de94773108a03ba247bba3201"
     },
     {
       "file": "i18n/generated/zh-to-key.json",
-      "sourceSha256": "a7abd50df36724d510d44e0601d408ec919f6206aa1c8c88babdcc4e2a2202fd"
+      "sourceSha256": "a9c3c9b5f9ecacbe86fab39b0a926223375f57d98594f72d89ab2cce9287889d"
     },
     {
       "file": "i18n/index.ts",

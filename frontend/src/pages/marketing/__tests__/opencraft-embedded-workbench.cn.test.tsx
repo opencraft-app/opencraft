@@ -417,7 +417,7 @@ describe("AgentChatMigrationSurface", () => {
     expect(CONNECTION_SLOW_NOTICE_MS).toBe(10_000);
   });
 
-  it("offers retry after a startup deadline without mounting legacy", async () => {
+  it("offers page reload after a startup deadline without mounting legacy", async () => {
     const ctor = customElements.get("opencraft-embedded-workbench")!;
     const prepare = vi.spyOn(ctor.prototype, "prepare").mockImplementation(() => new Promise<void>(() => {}));
     vi.useFakeTimers();
@@ -428,12 +428,12 @@ describe("AgentChatMigrationSurface", () => {
       expect(screen.queryByText(/连接时间较长/)).toBeNull();
       await act(async () => { await vi.advanceTimersByTimeAsync(1); });
       expect(screen.getByRole("status")).toHaveTextContent("连接时间较长");
-      expect(screen.getByRole("button", { name: "重新连接" })).toBeEnabled();
+      expect(screen.getByRole("button", { name: "重新加载对话" })).toBeEnabled();
       expect(screen.queryByText("Legacy")).toBeNull();
     } finally { cleanup(); vi.useRealTimers(); prepare.mockRestore(); }
   });
 
-  it.each(["prepare", "show"] as const)("does not adopt a failed startup after late %s and rebuilds on retry", async stage => {
+  it.each(["prepare", "show"] as const)("does not adopt a failed startup after late %s and offers page reload", async stage => {
     const ctor = customElements.get("opencraft-embedded-workbench")!;
     let resolve!: () => void;
     const pending = new Promise<void>(done => { resolve = done; });
@@ -448,15 +448,14 @@ describe("AgentChatMigrationSurface", () => {
     await waitFor(() => expect(held).toHaveBeenCalledOnce());
     const previous = container.querySelector("opencraft-embedded-workbench")!;
     act(() => previous.dispatchEvent(new CustomEvent("opencraft-error")));
-    expect(screen.getByRole("status")).toHaveTextContent("会话加载失败");
+    expect(screen.getByRole("status")).toHaveTextContent("对话加载失败");
     await act(async () => { resolve(); await pending; });
     expect(owner).not.toHaveBeenCalledWith("opencraft");
     expect(commands).not.toHaveBeenCalledWith(expect.objectContaining({ createSession: expect.any(Function) }));
     if (stage === "prepare") expect(show).not.toHaveBeenCalled();
-    act(() => screen.getByRole("button", { name: "重新连接" }).click());
-    await waitFor(() => expect(owner).toHaveBeenLastCalledWith("opencraft"));
-    expect(container.querySelector("opencraft-embedded-workbench")).not.toBe(previous);
-    expect(previous.isConnected).toBe(false);
+    expect(screen.getByRole("button", { name: "重新加载对话" })).toBeEnabled();
+    expect(container.querySelector("opencraft-embedded-workbench")).toBe(previous);
+    expect(previous.isConnected).toBe(true);
     expect(reconnect).not.toHaveBeenCalled();
     expect(screen.queryByText("Legacy")).toBeNull();
   });
