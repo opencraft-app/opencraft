@@ -122,3 +122,12 @@ derived: false
 - verified: 真实 FrameworkProvider、真实搜索 Dialog 与默认英文外层环境下，泰语/英文弹窗标签回归通过；3 文件 12/12 测试通过。测试所需 JSX 全局及 ResizeObserver 已在测试局部提供并清理。
 - unverified: 最新搜索 UI 修复还需最终 19 文件 guard、双站构建与真实浏览器复验。
 - next_action: 运行最终完整门禁；通过后更新验收证据、提交分支并创建 MR。
+
+## checkpoint — 本地验收完成，准备 MR
+- stage: 最新代码的完整隔离 guard 与真实浏览器验收均通过。
+- verified: Node 22.12.0 / pnpm 10.32.1 frozen install；19 文件 267 测试；Thai 3,060/3,060、0 错误/0 告警；typecheck 164 当前 / 171 基线、0 new / 7 resolved；CN/global 完整 static builds，SEO 8/58 路由检查通过。OpenCraft ICU、222 embedded-ci、平台边界及 136 生成文件只读一致性通过。最新 master 功能与 locale/SEO 111 测试通过。正式文档和变更影响检查通过。
+- verified_browser: Chromium 140，桌面 1440×960 / 手机 390×844，10/10 用例通过；Thai 搜索“โมเดล”命中并导航至 Thai docs；搜索弹窗占位与关闭按钮本地化；语言切换保持文档进入英文 canonical 路径；英文/国内无 Thai 字典请求，国内无 Thai 路由。截图已查看，字体正常且无明显横向溢出。
+- source_revision: d2b246f303861e8ce33576da48c96995aa93f426；本提交仅更新验收记录。
+- unverified: 尚未在此记录创建时间完成远端 CI；未合并、未生产发布，未验证真实账号、支付、付费模型及泰语母语编辑审核。全仓 Vitest 与全量历史 context 审计不能用聚焦门禁代替。
+- restore: /tmp/lightvela-thai-frontend-guard-delivery.log；/tmp/lightvela-thai-master-regression.log；/tmp/lightvela-thai-embedded-final.log；/tmp/lightvela-thai-validation/report.html；/tmp/lightvela-thai-validation/report-data.json。
+- next_action: 沿用会话授权 push codex/lightvela-thai 并创建 MR，核对新 HEAD 远端 CI 与合并状态；不自动合并或发布。
