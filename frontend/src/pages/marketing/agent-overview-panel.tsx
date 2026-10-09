@@ -355,7 +355,7 @@ export const ProfileEditDialog = ({
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="max-h-[95dvh] overflow-y-auto rounded-[0.875rem] md:w-[35rem]">
+      <DialogContent className={cn("max-h-[95dvh] overflow-y-auto rounded-[0.875rem]", dressupOpen ? "md:w-[min(64rem,calc(100vw-3rem))]" : "md:w-[35rem]")}>
         {dressupOpen && <DialogTitle className="sr-only">{t("修改资料")}</DialogTitle>}
         {dressupOpen && errorMessage && <p role="alert" className="text-sm text-red-700">{errorMessage}</p>}
         {dressupOpen ? <AgentDressupStudio

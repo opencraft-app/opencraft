@@ -236,20 +236,24 @@ export function AgentDressupStudio({ value, onChange, onBack, onConfirm, classNa
   const parts = current.doodads ?? [];
   const randomize = () => onChange(rollHermesLook(current, true));
   if (drawingOpen) return <HermesDrawingEditor appearance={current} zh={zh} onCancel={() => setDrawingOpen(false)} onConfirm={(drawing) => { onChange({ ...current, drawing }); setDrawingOpen(false); }} />;
-  return <section aria-label={t('Hermes 形象选择')} className={cn('mx-auto w-full max-w-[560px] bg-white px-4 pb-5 pt-3 text-[#292638] sm:px-7 sm:pt-4', className)}>
+  return <section aria-label={t('Hermes 形象选择')} className={cn('mx-auto w-full max-w-[960px] bg-white px-4 pb-5 pt-3 text-[#292638] sm:px-7 sm:pt-4', className)}>
     <header className="flex h-11 items-center justify-between gap-2 text-sm">
       <button type="button" onClick={onBack} className={cn('flex min-h-11 items-center gap-1 rounded-md text-[#6c677d]', FOCUS)}><ArrowLeft size={17} />{t('返回创建')}</button>
       <span className="text-sm font-medium text-[#a88ae7]">LightVela</span>
       <button type="button" onClick={randomize} className={cn('flex min-h-11 items-center gap-1.5 rounded-md text-[#7550dc]', FOCUS)}><Shuffle size={17} />{t('随机')}</button>
     </header>
-    <div className="mt-4 text-center">
+    <div className="mt-4 grid min-w-0 gap-4 md:grid-cols-[minmax(0,.85fr)_minmax(0,1.15fr)] md:items-center md:gap-8">
+    <div className="min-w-0">
+    <div className="text-center">
       <h2 className="text-balance text-2xl font-semibold">{t('捏一个你的搭档')}</h2>
       <p className="mt-2 text-sm text-[#847d97]">{t('换个形状，加一点个性。')}</p>
     </div>
     <div className="mt-4 flex min-h-[286px] items-center justify-center py-2 sm:min-h-[316px]">
       <button type="button" onClick={() => setReaction((n) => n + 1)} aria-label={t('和 Hermes 打招呼')}
-        className={cn('rounded-full', FOCUS)}><HermesPlushAvatar appearance={current} size={300} alive reaction={reaction} className="max-sm:!size-[270px]" /></button>
+        className={cn('aspect-square w-full max-w-[270px] rounded-full sm:max-w-[300px]', FOCUS)}><HermesPlushAvatar appearance={current} size={300} alive reaction={reaction} className="!size-full" /></button>
     </div>
+    </div>
+    <div className="min-w-0">
     <div className="space-y-3">
       <fieldset className="flex min-w-0 items-center gap-2">
         <legend className="sr-only">{t('形状')}</legend><span aria-hidden="true" className="w-10 shrink-0 text-xs font-medium text-[#777087] sm:w-12 sm:text-sm">{t('形状')}</span>
@@ -265,7 +269,7 @@ export function AgentDressupStudio({ value, onChange, onBack, onConfirm, classNa
       </fieldset>
       <fieldset className="flex min-w-0 items-center gap-2">
         <legend className="sr-only">{t('颜色')}</legend><span aria-hidden="true" className="w-10 shrink-0 text-xs font-medium text-[#777087] sm:w-12 sm:text-sm">{t('颜色')}</span>
-        <div className="grid min-w-0 flex-1 grid-cols-6 gap-0.5">
+        <div className="grid min-w-0 flex-1 grid-cols-5 gap-0.5">
           {HERMES_DOODLE_COLORS.map((skin) => <button type="button" key={skin} aria-label={t(DOODLE_COLOR_INFO[skin][0])} aria-pressed={current.skin === skin}
             onClick={() => onChange({ ...current, skin })} className={cn('flex min-h-11 min-w-0 items-center justify-center rounded-full', FOCUS)}>
             <span className={cn('size-7 rounded-full sm:size-8', current.skin === skin && 'ring-2 ring-[#7953de] ring-offset-4')} style={{ backgroundColor: DOODLE_COLOR_INFO[skin][2] }} />
@@ -288,9 +292,11 @@ export function AgentDressupStudio({ value, onChange, onBack, onConfirm, classNa
         </div>
       </fieldset>
     </div>
-    <footer className="sticky bottom-0 z-10 mt-4 bg-white pb-[max(.5rem,env(safe-area-inset-bottom))] pt-2">
+    <footer className="mt-4 bg-white pb-[max(.5rem,env(safe-area-inset-bottom))] pt-2">
       <button type="button" onClick={() => onConfirm(current)} className={cn('min-h-12 w-full rounded-xl bg-[#7450dc] px-5 text-sm font-semibold text-white transition-colors hover:bg-[#6440cb]', FOCUS)}>{t('就用这个')}</button>
     </footer>
+    </div>
+    </div>
   </section>;
 }
 

@@ -51,7 +51,7 @@ const PLUSH_FIT: Record<PlushOutfit, { slot: PlushSlot; aspect: number; width: n
   'wizard-hat': { slot: 'head', aspect: .831, width: 1.02, dx: -.04 },
   'bucket-hat': { slot: 'head', aspect: .575, width: 1 },
   beret: { slot: 'head', aspect: .48, width: .98 },
-  beanie: { slot: 'head', aspect: .65, width: .97, dy: .02 },
+  beanie: { slot: 'head', aspect: .65, width: .97, dy: .032 },
   'star-glasses': { slot: 'eyes', aspect: .471, width: .39 },
   goggles: { slot: 'forehead', aspect: 0.421, width: .94 },
   cape: { slot: 'neck', aspect: .432, width: 1.12 },
@@ -80,7 +80,7 @@ const HAT_CONTACT_CURVES: Partial<Record<PlushOutfit, string>> = {
   'bucket-hat': 'M.12 1Q.14 .89 .24 .83Q.5 .65 .76 .83Q.86 .89 .88 1',
   beret: 'M.14 1Q.15 .94 .25 .86Q.5 .7 .75 .86Q.85 .94 .86 1',
   'wizard-hat': 'M.18 1Q.2 .94 .46 .86Q.72 .78 .85 .72',
-  beanie: 'M.15 1Q.15 .89 .24 .88Q.5 .85 .76 .92Q.84 .95 .85 1',
+  beanie: 'M.20 .884Q.48 .843 .80 .927',
 };
 
 const pct = (value: number) => `${(value * 100).toFixed(2)}%`;
@@ -200,7 +200,7 @@ export function HermesPlushAvatar({ appearance, size = 96, alive = false, reacti
           {parts.filter((id): id is PlushOutfit => id in HAT_CONTACT_CURVES).map((id) => {
             const p = placementFor(shape, id);
             return <path key={id} d={HAT_CONTACT_CURVES[id]} transform={`translate(${Number.parseFloat(String(p.left))} ${Number.parseFloat(String(p.top)) + .5}) scale(${Number.parseFloat(String(p.width))} ${Number.parseFloat(String(p.height))})`}
-              fill="none" stroke="#493348" strokeOpacity=".2" strokeWidth=".025" />;
+              fill="none" stroke="#493348" strokeOpacity={id === 'beanie' ? .12 : .2} strokeWidth={id === 'beanie' ? .018 : .025} strokeLinecap="round" />;
           })}
         </g>
       </svg>

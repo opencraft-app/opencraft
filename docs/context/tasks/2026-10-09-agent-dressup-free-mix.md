@@ -246,3 +246,12 @@ derived: false
 - 最终交接检查点：81项聚焦回归通过，新增失败出口后该文件17项独立复跑通过（82项唯一回归）；最终 pnpm check 退出0，0新增类型错误。build:cn/build:global 均退出0；文档校验0错误/0断链。保存失败关闭按钮避免被弹窗关闭按钮隐藏规则误伤，失败不刷新或误报成功。准备提交 frontend 真源，再按规定生成 OpenCraft 字典同步后续提交；未发布或合并。
 
 - 提交交接：frontend 真源 6187b75eee、OpenCraft 生成同步 c7eed4d681 已推送 feat/agent-dressup-20261009 / MR !5124；OpenCraft 130 文件只读校验通过。5183 本地 next dev 已恢复（Ready）。旧无关未跟踪文件保留，未合并或发布；现网存量头像替换在此代码发布后生效。
+
+## 换装横向布局检查点
+- 用户指出编辑弹窗纵向过长且确认按钮遮住配饰。沿用已读 frontend/site context、AGENTS、DESIGN、邻接卡与换装测试；应用 baseline-ui 约束。桌面编辑改左预览/右选项，弹窗加宽但受视口约束，移动保持单列；确认按钮取消sticky覆盖。颜色格调整为五列与五种主色一致，预览随左列收缩。正在验证。
+
+- 用户补充针织帽假，截图可见额头左侧拖尾灰斑。检查 beanie 原始 WebP 与 contact curve，定位阴影沿帽口两端竖线绘制造成；保留两侧帽口裁切与纹理，阴影改为前沿弧线、减弱接触色，下压帽沿1.2%画布。桌面1280×800真实换装弹窗已确认左右布局和配饰完整可见，正在复核针织帽圆/方形。
+
+- 视觉复核检查点：真实工作台圆形和方形针织帽已复核，去掉灰色拖尾、保留侧面帽口；1280×800 横向弹窗完整显示所有配饰与确认按钮，390×844 单列手机弹窗未遮挡选项。证据 /tmp/lightvela-dressup-validation/horizontal-beanie-round.png、horizontal-beanie-square.png、horizontal-beanie-mobile.png。仅操作编辑草稿，未保存用户头像。38项回归通过；check退出0（166 current/171 baseline/0 new）；OpenCraft130文件校验及文档校验通过；build:global退出0，build:cn进行中。
+
+- 最终提交检查点：build:cn同样退出0；恢复仅构建产生的next-env路由引用。准备将上述五份修复与设计记录提交现有MR !5124，未合并、发布或修改远端头像。
