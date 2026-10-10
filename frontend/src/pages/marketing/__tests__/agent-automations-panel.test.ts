@@ -523,8 +523,48 @@ describe("recent run limit hint", () => {
       skillLoadState: { status: "ready", slugs: [], error: null },
     }));
 
-    expect(screen.getByText("执行失败：当前模型暂不可用，请稍后重试或切换模型。")).toBeTruthy();
+    expect(screen.getByText("执行失败")).toBeTruthy();
     expect(screen.queryByText(/The requested model is not available/)).toBeNull();
+    fireEvent.click(screen.getAllByRole("button", { name: "查看任务详情" })[0]!);
+    expect(screen.getByText("当前模型暂不可用，请稍后重试或切换模型。")).toBeTruthy();
+  });
+
+  it("shows the delivery error on hover while keeping the list concise", async () => {
+    const rawStatus = "ran, but the result was not delivered (live adapter send failed: iLink sendmessage session not ready)";
+    render(createElement(RecentCronRunsPanel, {
+      target: "bot-1",
+      runs: [makeCronRun({ job_name: "节假日与天气", status: rawStatus })],
+      skillLoadState: { status: "ready", slugs: [], error: null },
+    }));
+
+    expect(screen.getByText("节假日与天气")).toBeTruthy();
+    expect(screen.getByText("通知未送达")).toBeTruthy();
+    expect(screen.queryByText(rawStatus)).toBeNull();
+
+    fireEvent.mouseEnter(screen.getByText("通知未送达"));
+    const tooltip = await screen.findByRole("tooltip");
+    expect(within(tooltip).getByText(rawStatus)).toBeTruthy();
+    expect(within(tooltip).getByText("任务已执行，但通知发送失败。请检查通知通道配置。")).toBeTruthy();
+    expect(tooltip.closest("section")).toBeNull();
+
+    fireEvent.click(screen.getByText("通知未送达"));
+    expect(screen.getByText("任务已执行，但通知发送失败。请检查通知通道配置。")).toBeTruthy();
+    const rawStatusDisclosure = screen.getByText("查看原始状态").closest("details");
+    expect(rawStatusDisclosure).not.toHaveAttribute("open");
+    fireEvent.click(screen.getByText("查看原始状态"));
+    expect(rawStatusDisclosure).toHaveAttribute("open");
+    expect(screen.getByText(rawStatus)).toBeTruthy();
+  });
+
+  it("does not render an unknown raw status as a list badge", () => {
+    render(createElement(RecentCronRunsPanel, {
+      target: "bot-1",
+      runs: [makeCronRun({ status: "unexpected adapter state with a long diagnostic" })],
+      skillLoadState: { status: "ready", slugs: [], error: null },
+    }));
+
+    expect(screen.getByText("状态异常")).toBeTruthy();
+    expect(screen.queryByText("unexpected adapter state with a long diagnostic")).toBeNull();
   });
 
   it("shows the bound Skill in the recent-run detail", () => {
