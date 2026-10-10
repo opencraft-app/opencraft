@@ -189,8 +189,10 @@ function primaryActionCopy(state: ConnectorUiState): string {
     case "installing": return t("配置中...");
     case "detaching": return t("解除中…");
     case "auth_expired": return t("重新授权");
+    // 失败态统一「重试」：先保授权重发配置（enableBuiltin）；授权已失效时
+    // 服务端返回 auth_required，前端自动转重新授权——用户无需区分两种失败
     case "runtime_missing":
-    case "operation_failed": return t("重新配置");
+    case "operation_failed": return t("重试");
     default: return t("去授权");
   }
 }
@@ -214,11 +216,35 @@ const OAUTH_CLOSED_PENDING_GRACE_MS = 10_000;
 const LOCAL_CLI_AUTH_POLL_INTERVAL_MS = 3000;
 const LOCAL_CLI_AUTH_MAX_POLL = 20;
 
-/** OAuth 完成状态分类（对齐 AgentChat classifyOAuthPollingStatus） */
+/**
+ * OAuth 完成状态分类（对齐 AgentChat classifyOAuthPollingStatus）。
+ * binding = 授权已成功、服务端已绑定，响应携带 tat 下发计划——客户端应
+ * 立即 resolve 并执行下发（finishOperation → reportDelivery 回写后
+ * current_operation_id 清空，状态自然流转到 completed/active）。若把
+ * binding 当 wait 傻等，没人执行下发则状态永远停在 binding，只能靠
+ * 超时兜底（表现为授权成功后卡片迟迟不转「已授权」）。
+ */
 function classifyCompletion(status: string): "wait" | "done" | "abandoned" {
-  if (status === "pending" || status === "binding") return "wait";
-  if (status === "completed" || status === "active") return "done";
+  if (status === "pending") return "wait";
+  if (status === "completed" || status === "active" || status === "binding") return "done";
   return "abandoned"; // expired / cancelled / superseded
+}
+
+/**
+ * 预开窗写入加载提示页：authUrl 要等网络请求（OAuth 型 startOAuth）甚至
+ * TAT 实例执行（local_cli 型 tmeet auth login 提取 URL，可达数秒）才有，
+ * 纯 about:blank 空白窗会让用户误以为卡死。about:blank 与本页同源可安全
+ * 写入；拿到真实 URL 后 location.href 导航即整体替换。
+ */
+function primePopupLoading(popup: Window | null, loadingText: string) {
+  if (!popup) return;
+  try {
+    const doc = popup.document;
+    doc.title = loadingText;
+    doc.body.innerHTML = `<div style="display:flex;height:100vh;margin:0;align-items:center;justify-content:center;font-family:system-ui,-apple-system,sans-serif;color:#646a73;font-size:14px;">${loadingText}</div>`;
+  } catch {
+    // 极端环境写入失败无碍——空白窗仍可正常导航
+  }
 }
 
 export function ConnectorsPanel({
@@ -385,12 +411,12 @@ export function ConnectorsPanel({
         const startedAt = Date.now();
         let settled = false;
         let completing = false;
-        let lastStatus: string | null = null;
-        let lastResult: OAuthCompletionResponse | null = null;
         let closedPendingSince: number | null = null;
         const cleanup = () => {
           window.removeEventListener("message", handleMessage);
           window.clearInterval(timer);
+          window.clearInterval(closedWatcher);
+          window.clearTimeout(hardDeadline);
         };
         const finish = (fn: () => void) => {
           if (settled) return;
@@ -410,13 +436,11 @@ export function ConnectorsPanel({
           completing = true;
           try {
             const result = await completeConnectorOAuth(token, instanceId, connectorKey, flowId);
-            lastStatus = result.status;
-            lastResult = result;
             const outcome = classifyCompletion(result.status);
             if (outcome === "wait") {
-              // 关窗后的判定：binding = 已授权，继续轮询至终态；pending 给宽限窗口
-              // （覆盖回调处理延迟），超窗才判定未完成。
-              if (popup?.closed && result.status !== "binding") {
+              // 关窗后 pending 给宽限窗口（覆盖回调处理延迟），超窗才判定
+              // 未完成；binding/completed 已在上面 done 分支直接 resolve。
+              if (popup?.closed) {
                 const now = Date.now();
                 if (closedPendingSince === null) closedPendingSince = now;
                 if (now - closedPendingSince >= OAUTH_CLOSED_PENDING_GRACE_MS) {
@@ -448,16 +472,24 @@ export function ConnectorsPanel({
           void complete();
         }
         window.addEventListener("message", handleMessage);
+        // 关窗实时检测：不等下个轮询 tick（2s）——500ms 高频探测 popup.closed，
+        // 发现关窗立即触发一次 complete 确认服务端状态。若授权实际已成功
+        // （用户授权后回调页自动关窗），complete 返回终态直接 resolve；
+        // 若仍 pending，complete 内的关窗宽限逻辑（10s）接管判定未完成。
+        // 浏览器无原生「弹窗被关闭」事件，轮询 closed 是唯一可靠手段。
+        const closedWatcher = window.setInterval(() => {
+          if (popup?.closed) void complete();
+        }, 500);
+        // 硬性 deadline 兜底：interval 轮询/abandon 内部都依赖 fetch（虽已加
+        // 15s 超时，仍可能被极端环境拖住）——此处独立 setTimeout 强制 settle，
+        // 保证 Promise 必然结束 → busy 必然释放，卡片不会永久卡在「授权中」。
+        const hardDeadline = window.setTimeout(() => {
+          finish(() => reject(new Error(t("授权等待超时，请重试"))));
+        }, OAUTH_TIMEOUT_MS + 15_000);
         const timer = window.setInterval(() => {
           if (Date.now() - startedAt >= OAUTH_TIMEOUT_MS) {
-            // 超时：已进入绑定/下发阶段（binding）= 授权已成功，保留 flow 不
-            // cancel——resolve 最后一次 complete 响应走正常收尾（finishOperation
-            // 缺 tat 时跳过 → refresh），卡片转「正在配置中」，不误报「请重新授权」
-            if (lastStatus === "binding" && lastResult) {
-              const completion = lastResult;
-              finish(() => resolve(completion));
-              return;
-            }
+            // 超时：binding 早已在 complete 内直接 resolve（分类修正后 done），
+            // 走到此处的只可能是 pending 卡死——abandon 兜底
             void abandon(t("授权等待超时，请重试"));
             return;
           }
@@ -478,9 +510,28 @@ export function ConnectorsPanel({
       const busyKey = connectorKey;
       if (!claimBusy(busyKey, "authorize")) return;
       setError(null);
+      // 预开窗：window.open 必须在用户手势的同步上下文内调用——await 两个网络
+      // 请求（fetchToken/startOAuth）后浏览器 transient activation 已失效，
+      // 弹窗会被拦截（时灵时不灵的原因）。先同步开 about:blank（必不被拦），
+      // 拿到 authorizeUrl 再导航；失败路径关掉空白窗不残留。
+      const popup = window.open("about:blank", "_blank", "width=520,height=720");
+      // popup 为 null：浏览器默认/设置阻止了弹窗——降级当前页跳转（同页导航
+      // 不受弹窗拦截约束），flow 在服务端挂起，回来由挂载恢复逻辑接管
+      const fallbackToSameTab = popup === null;
+      if (fallbackToSameTab) {
+        message.info({ content: t("浏览器拦截了授权弹窗，将在当前页打开授权，完成后请返回本页"), duration: 6000 });
+      }
+      // 立即写入加载提示页——授权 URL 到手前用户看到「正在准备授权」而非空白窗
+      primePopupLoading(popup, t("正在准备授权，请稍候..."));
       try {
         const token = launchTokenRef.current ?? (await fetchToken());
-        if (!token) return;
+        if (!token) {
+          // fetchToken 失败返回 null（不 throw）——释放 busy 让卡片可重试，
+          // 否则 busy 永久占位导致按钮禁用（错误详情已由 fetchToken 内 setError）
+          popup?.close();
+          releaseBusy(busyKey);
+          return;
+        }
         // 取消上一条未完成的 flow（双击/换连接器连点）
         const previous = pendingFlowRef.current;
         if (previous) {
@@ -488,8 +539,15 @@ export function ConnectorsPanel({
         }
         const flow = await startConnectorOAuth(token, instanceId, connectorKey, window.location.href);
         pendingFlowRef.current = { connectorKey, flowId: flow.flowId };
-        const popup = window.open(flow.authorizeUrl, "_blank");
-        if (!popup) throw new Error(t("授权窗口打开失败，请允许浏览器弹窗后重试"));
+        if (fallbackToSameTab) {
+          // 弹窗被拦：当前页跳授权页。flow 已在服务端挂起，用户授权完成回
+          // 到本页后由挂载恢复逻辑（pending 检测）接管，无需本地等待
+          window.location.href = flow.authorizeUrl;
+          return;
+        }
+        // about:blank 与本页同源可安全导航；closed 的窗导航无效，跳过不报错
+        // （waitForOAuth 的关窗宽限逻辑会正确处理这种「关窗」场景）
+        if (!popup.closed) popup.location.href = flow.authorizeUrl;
         popupRef.current = popup;
         const completion = await waitForOAuth(connectorKey, flow.flowId, popup);
         pendingFlowRef.current = null;
@@ -500,6 +558,9 @@ export function ConnectorsPanel({
         await refresh();
       } catch (err) {
         pendingFlowRef.current = null;
+        // 已导航到授权页的弹窗保留（用户可能还停留在授权流程上）；
+        // 仅未导航成功的 about:blank 空白窗关掉，不残留垃圾标签页
+        if (popupRef.current !== popup) popup?.close();
         popupRef.current = null;
         const msg = err instanceof Error ? err.message : String(err);
         setError(msg);
@@ -513,28 +574,62 @@ export function ConnectorsPanel({
   );
 
   /**
-   * local_cli 型启用（tmeet 模式，对齐 AgentChat retryPending local_cli 分支）：
-   * enable → finishOperation（TAT local_cli_enable 可能带 authUrl）→
-   * 打开授权页 → 轮询 checkBuiltinLocal 至 success。
+   * 统一重试/启用入口（对齐 AgentChat retryPending）：
+   * enableBuiltin（服务端按类型路由——local_cli 走 local_cli_enable TAT、
+   * OAuth 型已授权则重发 MCP 配置）→ finishOperation →
+   * local_cli 的 authUrl 走授权页轮询；OAuth 型返回 auth_required
+   * （授权已失效）时自动转重新授权，用户无需区分。
    */
-  const enableLocalCli = useCallback(
+  const retryDelivery = useCallback(
     async (connectorKey: string) => {
       const busyKey = connectorKey;
       // busy action 用状态机语义名（upsert），deriveConnectorUiState 据此
       // 将卡片切到「正在配置当前实例」+ 按钮「配置中...」spinner。
       if (!claimBusy(busyKey, "upsert")) return;
       setError(null);
+      // 预开窗：authUrl 要等 enable/finishOperation 网络响应才有，届时已脱离
+      // 用户手势上下文（window.open 会被浏览器拦截）——先同步开 about:blank，
+      // 有 authUrl 再导航，无 authUrl 或失败则关掉，不残留空白标签页
+      // 尺寸对齐 AgentChat（520×720 小弹窗，用户不离开面板）
+      const popup = window.open("about:blank", "_blank", "width=520,height=720");
+      // popup 为 null：浏览器禁弹窗——与 OAuth 入口同款降级策略（authUrl
+      // 就绪后当前页跳转，提示用户授权完成后返回）
+      const fallbackToSameTab = popup === null;
+      let navigated = false;
+      // local_cli 的 authUrl 要等 TAT 下发实例执行 tmeet auth login 才能提取
+      // （可达数秒）——加载提示页对腾讯会议尤其重要，避免用户面对空白窗
+      primePopupLoading(popup, t("正在准备授权，请稍候..."));
       try {
         const token = launchTokenRef.current ?? (await fetchToken());
-        if (!token) return;
+        if (!token) {
+          // fetchToken 失败返回 null（不 throw）——释放 busy 让卡片可重试
+          popup?.close();
+          releaseBusy(busyKey);
+          return;
+        }
         const result = await enableBuiltinConnector(token, instanceId, connectorKey);
+        // OAuth 型授权已失效：enable 只会返回 auth_required（不带 TAT）——
+        // 关掉预开窗、释放 busy 后自动转重新授权（startAuthorization 会重新
+        // claimBusy 为 authorize），用户无需先手动「重新授权」
+        if (result.status === "auth_required") {
+          popup?.close();
+          releaseBusy(busyKey);
+          void startAuthorization(connectorKey);
+          return;
+        }
         const report = await finishOperation(result);
         if (report?.authUrl) {
           // 轮询期间卡片切到「等待完成授权」（busy action = authorize），
           // 对齐 AgentChat setBusyAction(busy, 'authorize')。
           setBusy((prev) => ({ ...prev, [busyKey]: { action: "authorize", active: true } }));
           busyRef.current[busyKey] = { action: "authorize", active: true };
-          window.open(report.authUrl, "_blank");
+          if (fallbackToSameTab) {
+            message.info({ content: t("浏览器拦截了授权弹窗，将在当前页打开授权，完成后请返回本页"), duration: 6000 });
+            window.location.href = report.authUrl;
+            return;
+          }
+          if (!popup.closed) popup.location.href = report.authUrl;
+          navigated = true;
           for (let attempt = 0; attempt < LOCAL_CLI_AUTH_MAX_POLL; attempt += 1) {
             await new Promise((r) => setTimeout(r, LOCAL_CLI_AUTH_POLL_INTERVAL_MS));
             if (!mountedRef.current) return;
@@ -544,9 +639,13 @@ export function ConnectorsPanel({
               break;
             }
           }
+        } else {
+          // enable 响应不带 authUrl（无需浏览器授权），关掉预开的空白窗
+          popup?.close();
         }
         await refresh();
       } catch (err) {
+        if (!navigated) popup?.close();
         const msg = err instanceof Error ? err.message : String(err);
         setError(msg);
         message.error({ content: msg, duration: 4000 });
@@ -555,7 +654,7 @@ export function ConnectorsPanel({
       }
       releaseBusy(busyKey);
     },
-    [claimBusy, fetchToken, finishOperation, instanceId, refresh, releaseBusy],
+    [claimBusy, fetchToken, finishOperation, instanceId, refresh, releaseBusy, startAuthorization],
   );
 
   /** 解除授权（对齐 AgentChat detachBuiltin）：detach → finishOperation（TAT remove） */
@@ -568,7 +667,11 @@ export function ConnectorsPanel({
       setError(null);
       try {
         const token = launchTokenRef.current ?? (await fetchToken());
-        if (!token) return;
+        if (!token) {
+          // fetchToken 失败返回 null——释放 busy，否则「解除中...」永久转圈
+          releaseBusy(busyKey);
+          return;
+        }
         const result = await detachBuiltinConnector(token, instanceId, connectorKey);
         await finishOperation(result);
         await refresh();
@@ -635,17 +738,21 @@ export function ConnectorsPanel({
     };
   }, [instanceId]);
 
-  /** 主操作路由（对齐 AgentChat handleOfficialPrimary） */
+  /** 主操作路由（对齐 AgentChat handleOfficialPrimary）：失败态统一走重试 */
   const handlePrimary = (item: InstanceBuiltinConnectorView, state: ConnectorUiState) => {
     if (state === "ready") {
       setPendingDisconnect(item);
+      return;
+    }
+    if (state === "operation_failed" || state === "runtime_missing") {
+      void retryDelivery(item.connectorKey);
       return;
     }
     if (isOAuthType(item.authType)) {
       void startAuthorization(item.connectorKey);
       return;
     }
-    void enableLocalCli(item.connectorKey);
+    void retryDelivery(item.connectorKey);
   };
 
   const [pendingDisconnect, setPendingDisconnect] = useState<InstanceBuiltinConnectorView | null>(null);
@@ -663,7 +770,7 @@ export function ConnectorsPanel({
     void detachConnector(target.connectorKey);
   };
 
-  const busyItem = (key: string) => Boolean(busy[key]);
+  const busyItem = (key: string) => busy[key]?.active === true;
   const opFailed = (key: string) => busy[key]?.failed === true;
 
   return (
@@ -738,16 +845,6 @@ export function ConnectorsPanel({
                     </span>
                   </span>
                   <span className="flex shrink-0 items-center gap-3">
-                    {(state === "operation_failed" || state === "runtime_missing") && (
-                      <button
-                        type="button"
-                        disabled={disabled}
-                        onClick={() => void enableLocalCli(item.connectorKey)}
-                        className="text-xs text-[#2563eb] disabled:opacity-50"
-                      >
-                        {t("重试下发")}
-                      </button>
-                    )}
                     <button
                       type="button"
                       disabled={disabled}
