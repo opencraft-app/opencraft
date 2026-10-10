@@ -1,5 +1,6 @@
 const VIDEO = '/lightvela-intl-home/assets/mascot-four-landing-v6-refined.webm';
 const STILL = '/lightvela-intl-home/assets/mascot-four-landing-v6-refined-still.webp';
+const LANDING_STATE = { STILL: 'still', WAITING: 'waiting', BUFFERING: 'buffering', PLAYING: 'playing' } as const;
 export type MascotLanding = { element: HTMLElement; land: () => void; reset: () => void; ready: () => boolean; active: () => boolean; stop: () => void };
 
 /** Finite playback of the approved tumble-and-rescue clip; pauses outside the viewport. */
@@ -40,7 +41,7 @@ export function mountMascotLanding(root: HTMLElement): MascotLanding | undefined
   const reduced = matchMedia('(prefers-reduced-motion: reduce)');
   let landed = false, visible = false, prepared = false, disposed = false, complete = false;
   const staticMode = () => reduced.matches || window.innerWidth < 900 || typeof IntersectionObserver !== 'function';
-  const showStill = () => { element.dataset.state = 'still'; };
+  const showStill = () => { element.dataset.state = LANDING_STATE.STILL; };
   function syncPlayback() {
     if (disposed) return;
     element.dataset.paused = String(!visible || document.hidden);
@@ -49,29 +50,29 @@ export function mountMascotLanding(root: HTMLElement): MascotLanding | undefined
     if (video.paused) void video.play().catch(showStill);
   }
   function reset(force = false) {
-    if (!force && !landed && element.dataset.state === 'waiting') return;
+    if (!force && !landed && element.dataset.state === LANDING_STATE.WAITING) return;
     landed = false; complete = false; greeting?.cancel(); video.pause();
     if (video.readyState >= 1) video.currentTime = 0;
     alignWithTitle();
-    element.dataset.state = staticMode() ? 'still' : 'waiting';
+    element.dataset.state = staticMode() ? LANDING_STATE.STILL : LANDING_STATE.WAITING;
   }
   function land() {
     if (disposed || landed || staticMode()) return;
     landed = true;
     alignWithTitle();
-    element.dataset.state = 'buffering';
+    element.dataset.state = LANDING_STATE.BUFFERING;
     syncPlayback();
   }
   const decoded = () => { alignWithTitle(); root.dispatchEvent(new Event('mascotlandingready')); };
   video.addEventListener('loadeddata', decoded);
-  const playing = () => { alignWithTitle(); if (!disposed && landed) element.dataset.state = 'playing'; };
+  const playing = () => { alignWithTitle(); if (!disposed && landed) element.dataset.state = LANDING_STATE.PLAYING; };
   const ended = () => { complete = true; showStill(); };
   // A finite hover greeting; the current flattened clip has no separate hand rig.
   let greeting: Animation | undefined;
   let lastGreeting = -Infinity;
   const greet = (event: PointerEvent) => {
     if (disposed || reduced.matches || event.pointerType === 'touch' || document.hidden ||
-        element.dataset.state !== 'still' || performance.now() - lastGreeting < 1600) return;
+        element.dataset.state !== LANDING_STATE.STILL || performance.now() - lastGreeting < 1600) return;
     if (typeof still.animate !== 'function') return;
     lastGreeting = performance.now();
     greeting?.cancel();

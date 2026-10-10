@@ -65,8 +65,9 @@ export function mountInternationalHomeMotion(root: HTMLElement): () => void {
       const cards = Array.from(root.querySelectorAll<HTMLElement>('.about__cards .wcard'));
       const positions = new Map(cards.map(card => [card, card.getBoundingClientRect()]));
       cards.sort((a, b) => {
-        const first = positions.get(a)!;
-        const second = positions.get(b)!;
+        const first = positions.get(a);
+        const second = positions.get(b);
+        if (!first || !second) return 0;
         return Math.abs(first.top - second.top) > 8 ? first.top - second.top : first.left - second.left;
       });
       cards.forEach((card, index) => entrance(card, card, {

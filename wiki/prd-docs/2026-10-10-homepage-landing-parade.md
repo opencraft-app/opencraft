@@ -83,3 +83,11 @@ A最终帧作为B起始图，保留最终帧原文件；要求背景、光源、
 - Full pnpm test encountered cross-module timeouts and Node test collection incompatibility; stopped to release resources. Full suite is not verified green.
 - Browser evidence: 8px heading/frame gap, plays separator 0px, Chinese final phrase kept together. Step mascot to be reviewed in branch preview.
 - Limitation: landing hover uses group feedback; a real wave needs independent assets. Hero sequential greetings use existing wave frames.
+
+## 2026-10-11 Review and delivery checkpoint
+- MR: https://git.woa.com/wisp/mono2/merge_requests/5181; target master; branch frontsandbox/homepage-mascot-polish-20261011.
+- Latest master merged. Required dialog preserved; only additional-creation form can dismiss; tests cover 1, 2 and 4 existing Bots.
+- AI review fixes: guard cached Map lookups, optional clone-source count, centralized LANDING_STATE constants.
+- After fixes: 83 focused Vitest passed; typecheck 164 current, 171 baseline, 0 new, 7 resolved. Node generator 27 passed.
+- Global build passed after clearing Next cache; 1562 static HTML files, 58 public routes verified. CN build passed earlier.
+- Branch preview pipeline p-9a3eeb676e0a4b0bacd778af7e39a952 triggered by authorized push; publication pending latest revision.

@@ -5658,7 +5658,7 @@ export const AgentSettingsPage = ({
                   handleBuddyCreated(createdBotId);
                 }}
                 onCreateBot={handleOnboardingCreateBot}
-                onCancel={cloneSourceChoices.length > 0 ? () => {
+                onCancel={(cloneSourceChoices?.length ?? 0) > 0 ? () => {
                   setShowMultiBotOnboarding(false);
                   setDirectCreateError(null);
                   const params = new URLSearchParams(searchParams);
