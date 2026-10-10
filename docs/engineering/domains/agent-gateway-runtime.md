@@ -521,10 +521,12 @@ Hermes 回复中独立成项的 `MEDIA:<明确 Markdown 路径>`（普通文本�
 
 ## 建站动态接入：能力与发布边界
 
-2026-09-29 候选实现，未部署。`GET /v1/websites/capability` 增量返回
+2026-10-10 源码启用契约（合入不等于生产开放）。`GET /v1/websites/capability` 增量返回
 `backend.enabled/contract` 和 `data.enabled`。backend 仅在 runtime URL、部署凭据
-配置有效且用户精确命中 `WEBSITE_BACKEND_BETA_USERS` 时为 true，契约 `fetch-v1`；
-data 始终 false。缺失/null/非布尔 true 均 fail-closed。源码开关不是生产开放证据。
+配置有效、用户身份非空且区域 `WEBSITE_BACKEND_ENABLED=1` 时为 true，契约 `fetch-v1`；
+data 还要求 `WEBSITE_BACKEND_DATA_ENABLED=1`，契约 `rivet-sql-v1`。不按账号筛选。
+前端建站导航默认隐藏，控制台 `show()` 可切换显示；此状态不是 API 权限，
+登录用户直接请求 API 仍须通过 ownership、quota、Origin 与分享会话校验。缺失/null/非布尔 true 均 fail-closed。源码开关不是生产开放证据。
 
 release `kind` 缺省/static 保持静态，fullstack 需要能力门禁与 SHA-256；静态包不得
 携带私有 `__backend` 内容。worker 单独上传 `__backend/app.mjs` 到内部 runtime，
@@ -556,14 +558,23 @@ separate stateless compatibility path, not the persistent implementation.
   and `rivet-sql-v1` only when `WEBSITE_BACKEND_DATA_ENABLED=1`, a configured backend
   runtime and the exact user beta allowlist all pass. Static sites are unchanged;
   frontend visibility still follows its existing hidden `show()` boundary.
-- A static candidate may replace a fullstack site without deleting its backend data or history.
-  Before legacy static-prefix cleanup, the worker requires the authenticated manager to confirm
-  zero retained backend bytes; nonempty backend history is reclaimed only by control-plane
-  retention, not by inferring deletion authority from the new candidate's kind. An unavailable
-  configured manager fails publication closed. An unconfigured runtime is not evidence of zero
-  backend bytes: legacy static publication remains available, but the worker skips prefix pruning
-  and preserves history rather than interpreting the optional storage client's default as deletion
-  authority. Static-only cleanup resumes only after authenticated empty-store confirmation.
+- Static publication is independent of runtime availability for sites CTL certifies as backend-free.
+  Claimed/internal operation responses carry optional `HasBackendHistory` and `PreviousStorageBytes`
+  facts derived from current site kind, all release history (including failed/pruned history), and
+  the site's last reported storage total. These are transient response fields, not new DB columns.
+  A current static kind alone never establishes that no backend exists; omitted history is unknown.
+  Certified static sites use legacy COS retention and COS-only accounting without runtime calls.
+  A static transition with backend/unknown history keeps old release resources for joint rollback.
+  Optional runtime accounting reads for static publication have a five-second deadline. If unavailable, a new CTL snapshot allows
+  conservative accounting of current COS bytes plus the previous reported total; this may overcount,
+  is still subject to CTL quota checks, and is replaced by exact accounting on the next successful
+  runtime read. It is not a live database-size measurement. Missing/invalid fallback facts do not
+  become zero backend usage. Legacy responses without a runtime keep the old static publishing
+  contract while preserving history. Fullstack publication still requires runtime accounting.
+  Site deletion bypasses runtime only for certified backend-free sites. Backend/unknown history
+  requires successful runtime deletion before COS cleanup and completion; unavailable runtime does
+  not release quota or report success. Delete completion recounts COS without another runtime call.
+  Rollout order is CTL first, then workers; older responses keep conservative cleanup behavior.
 - Offline release bindings use schema2 to declare the regional runtime driver and a boolean
   `data_enabled` input. Persistent data is rejected for `runsc`. The explicit `enable` phase
   requires a nonempty owner allowlist and renders CTL `WEBSITE_BACKEND_DATA_ENABLED=1` with

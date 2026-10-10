@@ -5,6 +5,10 @@ import "time"
 // Operation 从 ctl 获取的待执行操作
 // JSON字段名与ctl的OperationEntity Go结构体字段名一致
 type Operation struct {
+	// nil means an older CTL omitted the fact; never treat unknown as absent.
+	HasBackendHistory *bool `json:"HasBackendHistory,omitempty"`
+	// Last reported total, used only as a conservative fallback for retained history.
+	PreviousStorageBytes  *int64     `json:"PreviousStorageBytes,omitempty"`
 	Kind                  string     `json:"Kind"`
 	BackendSHA256         string     `json:"BackendSHA256"`
 	OperationID           string     `json:"OperationID"`

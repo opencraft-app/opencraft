@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -42,13 +43,14 @@ func websiteZip(t *testing.T, files map[string]string) []byte {
 }
 
 type fakeCOSState struct {
-	mu             sync.Mutex
-	artifact       []byte
-	metadataHash   string
-	objects        map[string]int64
-	putKeys        []string
-	deletedObjects []string
-	rejectStorage  bool
+	mu              sync.Mutex
+	artifact        []byte
+	metadataHash    string
+	objects         map[string]int64
+	putKeys         []string
+	deletedObjects  []string
+	rejectStorage   bool
+	reportedStorage int64
 }
 
 func (s *fakeCOSState) handler(w http.ResponseWriter, r *http.Request) {
@@ -143,6 +145,15 @@ func newPublishTestDeployer(t *testing.T, state *fakeCOSState) (*Deployer, *stri
 			completedPath = body.CloudPath
 		case strings.HasSuffix(r.URL.Path, "/fail"):
 		case strings.HasSuffix(r.URL.Path, "/storage"):
+			var usage struct {
+				StorageBytes int64 `json:"storage_bytes"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&usage); err != nil {
+				t.Error(err)
+			}
+			state.mu.Lock()
+			state.reportedStorage = usage.StorageBytes
+			state.mu.Unlock()
 			if state.rejectStorage {
 				w.WriteHeader(http.StatusForbidden)
 				_, _ = io.WriteString(w, `{"code":"WEBSITE_QUOTA_EXCEEDED"}`)
@@ -268,5 +279,78 @@ func TestPublishReleaseDoesNotActivateWhenActualStorageIsRejected(t *testing.T) 
 	})
 	if len(state.objects) != 0 {
 		t.Fatalf("quota-rejected artifacts retained: %v", state.objects)
+	}
+}
+
+// Exercise the existing publish/delete paths with an unavailable runtime. The
+// optional CTL fact distinguishes pure static sites from retained backend history.
+func TestStaticOperationsDoNotDependOnRuntime(t *testing.T) {
+	for _, operation := range []string{"publish", "delete"} {
+		for _, history := range []string{"false", "true", "unknown", "unknown-no-snapshot"} {
+			t.Run(operation+"/history="+history, func(t *testing.T) {
+				artifact := websiteZip(t, map[string]string{"index.html": "new"})
+				oldKey := "sites/ws-1/releases/wr-old/index.html"
+				state := &fakeCOSState{artifact: artifact, metadataHash: digestForTest(string(artifact)),
+					objects: map[string]int64{oldKey: 3}}
+				d, completed := newPublishTestDeployer(t, state)
+				var calls atomic.Int32
+				runtime := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					calls.Add(1)
+					http.Error(w, "unavailable", http.StatusServiceUnavailable)
+				}))
+				defer runtime.Close()
+				d.runtimeURL, d.runtimeToken = runtime.URL, "test-deploy"
+				op := Operation{Kind: "static", OperationID: "wo-1", SiteID: "ws-1",
+					ReleaseID: "wr-0123456789abcdef", LeaseToken: "lease",
+					ArtifactHash: state.metadataHash, ArtifactSize: int64(len(artifact))}
+				if history != "unknown-no-snapshot" {
+					if err := json.Unmarshal([]byte(`{"PreviousStorageBytes":20}`), &op); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if history == "false" || history == "true" {
+					if err := json.Unmarshal([]byte(`{"HasBackendHistory":`+history+`}`), &op); err != nil {
+						t.Fatal(err)
+					}
+				}
+				var err error
+				if operation == "publish" {
+					err = d.publishRelease(op, false)
+				} else {
+					err = d.executeDelete(op)
+				}
+				if (operation == "delete" && history != "false") || history == "unknown-no-snapshot" {
+					if err == nil || calls.Load() != 1 {
+						t.Fatalf("unconfirmed operation must fail closed: err=%v, calls=%d", err, calls.Load())
+					}
+				} else {
+					wantCalls := int32(0)
+					if history != "false" {
+						wantCalls = 1
+					}
+					if err != nil || calls.Load() != wantCalls {
+						t.Fatalf("static operation: err=%v, calls=%d, want calls=%d", err, calls.Load(), wantCalls)
+					}
+					if operation == "publish" && *completed == "" {
+						t.Fatal("static release was not activated")
+					}
+				}
+				state.mu.Lock()
+				defer state.mu.Unlock()
+				_, retained := state.objects[oldKey]
+				if retained != (history != "false") {
+					t.Fatalf("old release retained=%v with history=%s", retained, history)
+				}
+				if operation == "publish" && history != "unknown-no-snapshot" {
+					wantStorage := int64(26) // old COS 3 + new COS 3 + previous reported total 20
+					if history == "false" {
+						wantStorage = 3
+					}
+					if state.reportedStorage != wantStorage {
+						t.Fatalf("reported storage=%d, want %d", state.reportedStorage, wantStorage)
+					}
+				}
+			})
+		}
 	}
 }

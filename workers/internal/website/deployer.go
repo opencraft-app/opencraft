@@ -621,27 +621,20 @@ func (d *Deployer) publishRelease(op Operation, waitForArtifact bool) error {
 	// site remains public.
 	// Fullstack history is reclaimed only by control-plane retention, which
 	// removes rollback eligibility before deleting BOTH static and backend data.
-	// A static candidate can replace a site with retained backend releases.
-	// Only a runtime-confirmed empty backend store permits legacy cleanup;
-	// otherwise retained COS history must stay eligible for joint rollback.
-	// An unconfigured runtime is not proof of an empty backend: preserve
-	// history while allowing legacy static publication to remain available.
-	if op.Kind != "fullstack" && d.runtimeURL != "" {
-		backendBytes, err := d.backendStorage(op.SiteID)
-		if err != nil {
-			return d.failOperation(op, "inspect retained backend before static cleanup: "+err.Error())
-		}
-		if backendBytes == 0 {
-			if err := d.pruneSiteReleases(siteCos, op.SiteID, op.ReleaseID, op.ActiveCloudPath); err != nil {
-				return d.failOperation(op, fmt.Sprintf("prune stale releases before activation: %v", err))
-			}
+	// Certified static publication never depends on runtime availability. CTL's claimed
+	// operation proves whether this site has ever owned a backend. Pure static
+	// sites retain the legacy cleanup behavior; backend/unknown history stays
+	// eligible for joint rollback and is reclaimed only by CTL retention.
+	if op.Kind != "fullstack" && op.HasBackendHistory != nil && !*op.HasBackendHistory {
+		if err := d.pruneSiteReleases(siteCos, op.SiteID, op.ReleaseID, op.ActiveCloudPath); err != nil {
+			return d.failOperation(op, fmt.Sprintf("prune stale releases before activation: %v", err))
 		}
 	}
 
 	// 6. The candidate is complete. CTL must accept its actual retained storage
 	// before activation; this closes the compressed-archive expansion gap left by
 	// CreateRelease's declared artifact reservation.
-	actualStorage, err := d.siteStorageBytes(siteCos, op.SiteID)
+	actualStorage, err := d.publicationStorageBytes(siteCos, op)
 	if err != nil {
 		return d.failOperation(op, fmt.Sprintf("compute storage before activation: %v", err))
 	}
@@ -660,7 +653,8 @@ func (d *Deployer) publishRelease(op Operation, waitForArtifact bool) error {
 	}
 	keepReleasePrefix = true
 
-	d.refreshSiteStorage(siteCos, op.SiteID)
+	// The same immutable resources were accounted before activation; completion
+	// changes only CTL metadata, so do not query the runtime again.
 	return nil
 }
 
@@ -688,13 +682,17 @@ func (d *Deployer) executeDelete(op Operation) error {
 		return d.failOperation(op, "site COS bucket is not configured")
 	}
 
-	if d.runtimeURL != "" {
+	// Only CTL can certify a site as backend-free. Current static kind is not
+	// enough, and legacy responses without history must remain conservative.
+	if op.Kind == "fullstack" || op.HasBackendHistory == nil || *op.HasBackendHistory {
+		if d.runtimeURL == "" {
+			return d.failOperation(op, "runtime unavailable for backend cleanup")
+		}
 		if err := d.runtimeRequest("DELETE", "/v1/sites/"+url.PathEscape(op.SiteID), nil, nil); err != nil {
 			return d.failOperation(op, "delete backend failed")
 		}
-	} else if op.Kind == "fullstack" {
-		return d.failOperation(op, "runtime unavailable for deletion")
 	}
+
 	// Published files first: a failed delete must leave the site in deleting
 	// state and let ctl schedule the next durable retry.
 	prefix := fmt.Sprintf("sites/%s/", op.SiteID)
@@ -710,7 +708,15 @@ func (d *Deployer) executeDelete(op Operation) error {
 	// 两个前缀都已清空，重算一次会得到 0。走同一条重算路径而不是直接上报 0：
 	// 万一删除并不彻底（分页中途出错但被判为成功），上报的仍是桶里的真实残留量，
 	// 而不是一个我们希望它是的数字。
-	d.refreshSiteStorage(siteCos, op.SiteID)
+	// Backend deletion succeeded above or CTL proved there was none. Do not
+	// introduce another runtime dependency after successful cleanup.
+	if storage, err := d.cosStorageBytes(siteCos, op.SiteID); err == nil {
+		if err := d.reportSiteStorage(op.SiteID, storage); err != nil {
+			log.Printf("warning: refresh deleted site storage %s: %v", op.SiteID, err)
+		}
+	} else {
+		log.Printf("warning: count deleted site storage %s: %v", op.SiteID, err)
+	}
 
 	return d.completeOperation(op, "", "")
 }

@@ -754,3 +754,13 @@ Go registry 与 Rust Depot 的 file-session 消费者必须和 renewer 配套：
 部署与配置细节见 [renewer 入口](../../../minisandbox/infra/cells/cmd/storage-session-renewer/README.md)
 和 [建站发布清单](../../../site-runtime/deploy/RELEASE-CHECKLIST.md)。当前工作仅
 准备国内/国际待隐藏发布，不授权生产、GitOps 晋级或存量全量 Skill 下发。
+
+### 建站区域启用契约（2026-10-10）
+
+当前代码使用 `WEBSITE_BACKEND_ENABLED=1` 区域总开关与独立的
+`WEBSITE_BACKEND_DATA_ENABLED=1` 数据开关，不使用账号白名单。旧 overlay 的空
+beta 变量仅是历史准备配置，不再控制当前代码；总开关未配置仍关闭。
+离线 binding schema3 删除 beta_users，prepare 显式写总开关/数据开关为 0，
+enable 写总开关为 1，并按 data_enabled 写数据与共享读取开关。
+区域 runtime/TLS/角色凭据与持久化验收仍是发布前提；本次只修改源码。
+平台前端入口保持默认隐藏，通过控制台 show() 展示；UI 隐藏不是鉴权。

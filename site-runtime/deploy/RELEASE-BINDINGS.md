@@ -3,7 +3,8 @@
 This tool closes source-level release preparation; it never deploys, connects to Kubernetes,
 reads Secret values, provisions a host or authorizes production. Use the frozen candidate's
 script and source tree, not an unrelated checkout. Schema1 retains the stateless fetch-v1 input
-contract; schema2 explicitly selects the qualified regional driver and persistent data gate.
+contract; schema2 selects the regional driver and data gate. Schema3 removes the owner-list
+field; enablement is regional and never an account entitlement.
 
 ## Regional inputs
 
@@ -11,7 +12,7 @@ Write a protected, references-only JSON file following this schema:
 
 ```json
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "environment": "shprod",
   "source_tree_sha256": "REPLACE_WITH_FROZEN_SOURCE_TREE_SHA256",
   "runtime": {
@@ -22,7 +23,6 @@ Write a protected, references-only JSON file following this schema:
     "deploy_token": {"name": "website-runtime-secrets", "key": "deploy"},
     "invoke_token": {"name": "website-runtime-secrets", "key": "invoke"}
   },
-  "beta_users": [],
   "data_enabled": false
 }
 ```
@@ -54,7 +54,7 @@ python3 .ci/runtime/commands/prepare_website_backend_release.py \
 Output is references-only `manifest.json` and `overlay-patches.json` for ctl,
 website-deployer and site-gateway. The manifest hashes every patch file. Existing output or
 symlink destinations are refused. This command does not produce images or modify any source.
-Prepare explicitly sets `WEBSITE_BACKEND_BETA_USERS=""` on CTL API/service even if an old
+Prepare explicitly sets `WEBSITE_BACKEND_ENABLED=0` on CTL API/service even if an old
 ConfigMap/envFrom enabled it. Prepare also explicitly sets CTL data to `0` and gateway
 shared reads to `false`, overriding inherited gates. Do not roll a live Beta back to prepare
 without owner review; closing share reads can affect existing shared links.
@@ -120,8 +120,9 @@ python3 .ci/runtime/commands/prepare_website_backend_release.py \
 ```
 
 Prepare the enable diff against a clean baseline by replacing the previous generated patch
-set, not layering duplicate entries. Empty beta_users is rejected in enable. Full public
-availability is not assumed. With schema2 `driver=minisandbox` and `data_enabled=true`, enable
+set, not layering duplicate entries. The explicit enable phase sets `WEBSITE_BACKEND_ENABLED=1` for authenticated users.
+Legacy schema1/2 beta_users inputs are validated but ignored; schema3 omits them.
+The frontend entry remains hidden until console `show()`; that is not API authorization. With schema2/3 `driver=minisandbox` and `data_enabled=true`, enable
 renders CTL `WEBSITE_BACKEND_DATA_ENABLED=1` and gateway `SITE_GATEWAY_BACKEND_SHARED_READ=true`
 together. Writes still require the owner; shared GET/HEAD still require valid generation-bound
 share sessions. This hidden Beta is opt-in, not anonymous or public creation. Keep the data flag

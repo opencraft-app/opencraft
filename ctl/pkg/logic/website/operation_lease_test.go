@@ -1,6 +1,7 @@
 package website
 
 import (
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -115,6 +116,49 @@ func TestGetOperationInternalCarriesReleaseUploadContract(t *testing.T) {
 	}
 	if got.ActiveCloudPath != activeCloudPath {
 		t.Fatalf("active cloud path = %q, want %q", got.ActiveCloudPath, activeCloudPath)
+	}
+	assertHistory := func(op *websiteModel.OperationEntity, want bool) {
+		t.Helper()
+		body, err := json.Marshal(op)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var fields map[string]interface{}
+		if err := json.Unmarshal(body, &fields); err != nil {
+			t.Fatal(err)
+		}
+		if fields["HasBackendHistory"] != want {
+			t.Fatalf("HasBackendHistory = %v, want %v", fields["HasBackendHistory"], want)
+		}
+	}
+	assertHistory(got, false)
+	// Current static kind alone must not erase a prior backend's data identity.
+	prior := &websiteModel.ReleaseEntity{ReleaseID: "wr-prior-backend", SiteID: op.SiteID,
+		Kind: "fullstack", Status: websiteModel.ReleaseStatusSuperseded, Version: 0}
+	prior.UserID = op.UserID
+	if err := resource.GormDB.Table(websiteModel.ReleasesTable).Create(prior).Error; err != nil {
+		t.Fatal(err)
+	}
+	got, err = l.GetOperationInternal(op.OperationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertHistory(got, true)
+	// Site deletion has no target release; history must still be populated.
+	if err := resource.GormDB.Table(websiteModel.OperationsTable).Where("operation_id = ?", op.OperationID).
+		Updates(map[string]interface{}{"release_id": "", "operation_type": websiteModel.OpTypeDelete}).Error; err != nil {
+		t.Fatal(err)
+	}
+	got, err = l.GetOperationInternal(op.OperationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertHistory(got, true)
+	if err := resource.GormDB.Exec("DROP TABLE website_releases").Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := l.GetOperationInternal(op.OperationID); err == nil {
+		t.Fatal("failed history lookup must not certify a site as static")
 	}
 }
 

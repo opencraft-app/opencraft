@@ -56,6 +56,10 @@ func backendBundle(files []*zip.File, op Operation) (string, error) {
 	return code, nil
 }
 func (d *Deployer) runtimeRequest(method, path string, body any, out any) error {
+	return d.runtimeRequestWithTimeout(110*time.Second, method, path, body, out)
+}
+
+func (d *Deployer) runtimeRequestWithTimeout(timeout time.Duration, method, path string, body any, out any) error {
 	u, err := url.Parse(d.runtimeURL)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" || d.runtimeToken == "" {
 		return fmt.Errorf("website runtime unavailable")
@@ -64,7 +68,7 @@ func (d *Deployer) runtimeRequest(method, path string, body any, out any) error 
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 110*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, method, d.runtimeURL+path, bytes.NewReader(data))
 	if err != nil {
@@ -72,7 +76,7 @@ func (d *Deployer) runtimeRequest(method, path string, body any, out any) error 
 	}
 	req.Header.Set("Authorization", "Bearer "+d.runtimeToken)
 	req.Header.Set("Content-Type", "application/json")
-	client := &http.Client{Timeout: 110 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	client := &http.Client{Timeout: timeout, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	response, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("runtime request failed")
@@ -105,14 +109,19 @@ func (d *Deployer) deployBackend(op Operation, code string) error {
 func (d *Deployer) deleteBackend(op Operation) error {
 	return d.runtimeRequest("DELETE", "/v1/sites/"+url.PathEscape(op.SiteID)+"/releases/"+url.PathEscape(op.ReleaseID), nil, nil)
 }
+
 func (d *Deployer) backendStorage(site string) (int64, error) {
+	return d.backendStorageWithTimeout(site, 110*time.Second)
+}
+
+func (d *Deployer) backendStorageWithTimeout(site string, timeout time.Duration) (int64, error) {
 	if d.runtimeURL == "" {
 		return 0, nil
 	}
 	var result struct {
 		Storage int64 `json:"storage_bytes"`
 	}
-	err := d.runtimeRequest("GET", "/v1/sites/"+url.PathEscape(site), nil, &result)
+	err := d.runtimeRequestWithTimeout(timeout, "GET", "/v1/sites/"+url.PathEscape(site), nil, &result)
 	if err != nil {
 		return 0, err
 	}

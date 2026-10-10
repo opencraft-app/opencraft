@@ -13,7 +13,7 @@ func TestFullstackReleasePersistsPinnedBackendContract(t *testing.T) {
 	l := setupCreateReleaseTest(t, 1000)
 	runtime := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) }))
 	defer runtime.Close()
-	t.Setenv("WEBSITE_BACKEND_BETA_USERS", "user-1")
+	t.Setenv("WEBSITE_BACKEND_ENABLED", "1")
 	t.Setenv("WEBSITE_RUNTIME_BASE_URL", runtime.URL)
 	t.Setenv("WEBSITE_RUNTIME_DEPLOY_TOKEN", "test-token")
 	request := validReleaseRequest(10)

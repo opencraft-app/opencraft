@@ -87,12 +87,12 @@ def endpoint(value):
 
 
 def prepare(config, phase='prepare'):
-    if not isinstance(config, dict) or type(config.get('schema_version')) is not int or config['schema_version'] not in {1, 2}:
+    if not isinstance(config, dict) or type(config.get('schema_version')) is not int or config['schema_version'] not in {1, 2, 3}:
         raise ValueError('unsupported release config schema')
     schema = config['schema_version']
-    fields = {'schema_version', 'environment', 'source_tree_sha256', 'runtime', 'beta_users'}
-    cfg = mapping(config, fields | ({'data_enabled'} if schema == 2 else set()), 'release config')
-    data_requested = cfg['data_enabled'] if schema == 2 else False
+    fields = {'schema_version', 'environment', 'source_tree_sha256', 'runtime'}
+    cfg = mapping(config, fields | ({'beta_users'} if schema < 3 else set()) | ({'data_enabled'} if schema >= 2 else set()), 'release config')
+    data_requested = cfg['data_enabled'] if schema >= 2 else False
     if type(data_requested) is not bool:
         raise ValueError('data_enabled must be an explicit boolean')
     env = cfg['environment']
@@ -104,8 +104,8 @@ def prepare(config, phase='prepare'):
     if not isinstance(sha, str) or not re.fullmatch(r'[a-f0-9]{64}', sha):
         raise ValueError('fixed source tree SHA256 is required')
     runtime_fields = {'environment', 'base_url', 'ca', 'deploy_token', 'invoke_token'}
-    runtime = mapping(cfg['runtime'], runtime_fields | ({'driver'} if schema == 2 else set()), 'runtime binding')
-    driver = runtime['driver'] if schema == 2 else 'runsc'
+    runtime = mapping(cfg['runtime'], runtime_fields | ({'driver'} if schema >= 2 else set()), 'runtime binding')
+    driver = runtime['driver'] if schema >= 2 else 'runsc'
     if not isinstance(driver, str) or driver not in {'runsc', 'minisandbox'}:
         raise ValueError('unsupported regional runtime driver')
     if data_requested and driver != 'minisandbox':
@@ -118,14 +118,14 @@ def prepare(config, phase='prepare'):
         raise ValueError('deploy and invoke must use separate Secret key references')
     if refs['ca'] in [refs['deploy_token'], refs['invoke_token']]:
         raise ValueError('CA reference must not mount an execution credential')
-    users = cfg['beta_users']
-    if not isinstance(users, list) or len(users) > 1000 or any(
-        not isinstance(user, str) or not re.fullmatch(r'usr[-_][A-Za-z0-9-]+', user) for user in users
-    ) or len(users) != len(set(users)):
-        raise ValueError('beta_users must be an explicit, unique owner-id allowlist')
-    if phase == 'enable' and not users:
-        raise ValueError('enable requires a nonempty approved owner allowlist')
-    users_value = ','.join(sorted(users)) if phase == 'enable' else ''
+    # Old reference-only inputs remain readable, but their owner list is never
+    # used for authorization. Schema3 removes that field entirely.
+    if schema < 3:
+        users = cfg['beta_users']
+        if not isinstance(users, list) or len(users) > 1000 or any(
+            not isinstance(user, str) or not re.fullmatch(r'usr[-_][A-Za-z0-9-]+', user) for user in users
+        ) or len(users) != len(set(users)):
+            raise ValueError('invalid legacy beta_users input')
     data_enabled = phase == 'enable' and data_requested
     service_patches = {}
     for service, namespace, name, container, role in TARGETS[env]:
@@ -141,7 +141,7 @@ def prepare(config, phase='prepare'):
             {'name': opposite, 'value': '', 'valueFrom': None},
         ]
         if service == 'ctl':
-            variables.append({'name': 'WEBSITE_BACKEND_BETA_USERS', 'value': users_value, 'valueFrom': None})
+            variables.append({'name': 'WEBSITE_BACKEND_ENABLED', 'value': '1' if phase == 'enable' else '0', 'valueFrom': None})
             # Explicit values override stale envFrom gates, including legacy schema1 inputs.
             variables.append({'name': 'WEBSITE_BACKEND_DATA_ENABLED', 'value': '1' if data_enabled else '0', 'valueFrom': None})
         elif service == 'site-gateway':

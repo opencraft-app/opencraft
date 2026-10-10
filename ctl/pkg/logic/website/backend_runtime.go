@@ -10,22 +10,17 @@ import (
 	"time"
 )
 
-// Empty allowlist is disabled. This gate is not a substitute for release checks:
-// every activation also verifies its immutable runtime revision independently.
+// Backend enablement is regional, not an account entitlement. The hidden UI is
+// controlled by show(); API authentication, ownership and quotas remain mandatory.
 func backendEnabledFor(userID string) bool {
-	if _, _, err := backendRuntimeConfig(); err != nil {
+	if userID == "" || os.Getenv("WEBSITE_BACKEND_ENABLED") != "1" {
 		return false
 	}
-	for _, id := range strings.Split(os.Getenv("WEBSITE_BACKEND_BETA_USERS"), ",") {
-		if strings.TrimSpace(id) == userID && userID != "" {
-			return true
-		}
-	}
-	return false
+	_, _, err := backendRuntimeConfig()
+	return err == nil
 }
 
-// Enable only after regional Minisandbox persistence acceptance. The explicit
-// flag cannot activate a user whose backend allowlist or runtime is absent.
+// Enable persistent data only after regional Minisandbox acceptance.
 func backendDataEnabledFor(userID string) bool {
 	return backendEnabledFor(userID) && os.Getenv("WEBSITE_BACKEND_DATA_ENABLED") == "1"
 }
