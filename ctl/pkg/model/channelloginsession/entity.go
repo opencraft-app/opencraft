@@ -8,6 +8,8 @@ const (
 	ColumnID            = "id"
 	ColumnSessionID     = "session_id"
 	ColumnInstanceID    = "instance_id"
+	ColumnBotID         = "bot_id"
+	ColumnProfileID     = "profile_id"
 	ColumnUserID        = "user_id"
 	ColumnChannel       = "channel"
 	ColumnStatus        = "status"
@@ -46,6 +48,8 @@ type Entity struct {
 	ID            int64      `gorm:"column:id;primaryKey;autoIncrement"`
 	SessionID     string     `gorm:"column:session_id;uniqueIndex:uk_channel_login_session_id"`
 	InstanceID    string     `gorm:"column:instance_id;index:idx_channel_login_instance"`
+	BotID         string     `gorm:"column:bot_id"`
+	ProfileID     string     `gorm:"column:profile_id"`
 	UserID        string     `gorm:"column:user_id;index:idx_channel_login_user"`
 	Channel       string     `gorm:"column:channel;index:idx_channel_login_instance"`
 	Status        string     `gorm:"column:status;index:idx_channel_login_instance;index:idx_channel_login_expires"`

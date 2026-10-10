@@ -185,11 +185,11 @@ func (l *logic) CreateWeixinLoginSession(ctx pctx.Context, instanceID string, re
 	}
 	existing, err := l.channelLoginSessionDao.GetActiveByInstance(ctx, instanceID, channelloginsession.ChannelWeixin)
 	if err != nil {
-		_ = l.releaseReservedInstanceBotChannel(ctx, instanceID, bot.BotID)
+		_ = l.releaseReservedInstanceBotChannel(ctx, instanceID, bot.BotID, bot.ProfileID)
 		return nil, err
 	}
 	if existing != nil {
-		_ = l.releaseReservedInstanceBotChannel(ctx, instanceID, bot.BotID)
+		_ = l.releaseReservedInstanceBotChannel(ctx, instanceID, bot.BotID, bot.ProfileID)
 		return nil, errcode.Wrap(errcode.ErrChannelLoginConflict, "active session already exists: %s", existing.SessionID)
 	}
 
@@ -198,13 +198,15 @@ func (l *logic) CreateWeixinLoginSession(ctx pctx.Context, instanceID string, re
 	record := &channelloginsession.Entity{
 		SessionID:  sessionID,
 		InstanceID: instanceID,
+		BotID:      bot.BotID,
+		ProfileID:  bot.ProfileID,
 		Channel:    channelloginsession.ChannelWeixin,
 		Status:     channelloginsession.StatusStarting,
 		StartedAt:  now,
 		ExpiresAt:  now.Add(weixinLoginTTL),
 	}
 	if err := l.channelLoginSessionDao.Create(ctx, record); err != nil {
-		_ = l.releaseReservedInstanceBotChannel(ctx, instanceID, bot.BotID)
+		_ = l.releaseReservedInstanceBotChannel(ctx, instanceID, bot.BotID, bot.ProfileID)
 		return nil, err
 	}
 
@@ -290,7 +292,7 @@ func (l *logic) CancelWeixinLoginSession(ctx pctx.Context, instanceID, sessionID
 	if snapshot != nil {
 		l.weixinHub.publish(sessionID, transport.WeixinLoginSessionEvent{Type: "finished", Status: snapshot.Status, Data: snapshot})
 	}
-	_ = l.releaseReservedInstanceBotChannel(ctx, instanceID, botID)
+	_ = l.releaseReservedInstanceBotChannel(ctx, instanceID, botID, profileID)
 	return snapshot, nil
 }
 
@@ -298,14 +300,33 @@ func (l *logic) weixinSessionTarget(ctx pctx.Context, instanceID, sessionID stri
 	if runtime := l.weixinHub.runtime(sessionID); runtime != nil {
 		return runtime.botID, runtime.profileID, nil
 	}
-	binding, err := l.getChannelBindingResponse(ctx, instanceID, uniqueChannelWeixin)
+	session, err := l.channelLoginSessionDao.GetBySessionID(ctx, instanceID, sessionID)
 	if err != nil {
 		return "", "", err
 	}
-	if binding == nil {
-		return "", "", errcode.Wrap(errcode.ErrChannelLoginNotFound, "weixin session target is unavailable")
+	if session.BotID == "" || session.ProfileID == "" {
+		// Sessions created before bot_id/profile_id were persisted live for at
+		// most five minutes. Recover only when their instance has one owner.
+		catalog, listErr := l.ListInstanceBots(ctx, instanceID)
+		if listErr != nil {
+			return "", "", listErr
+		}
+		var owner *transport.InstanceChannelBindingResponse
+		for _, bot := range catalog.Items {
+			if bot.WeixinOwner == nil {
+				continue
+			}
+			if owner != nil {
+				return "", "", errcode.Wrap(errcode.ErrChannelLoginNotFound, "ambiguous legacy weixin session target")
+			}
+			owner = bot.WeixinOwner
+		}
+		if owner == nil {
+			return "", "", errcode.Wrap(errcode.ErrChannelLoginNotFound, "weixin session target is unavailable")
+		}
+		return owner.BotID, owner.ProfileID, nil
 	}
-	return binding.BotID, binding.ProfileID, nil
+	return session.BotID, session.ProfileID, nil
 }
 
 func (l *logic) SubscribeWeixinLoginSession(ctx pctx.Context, instanceID, sessionID string) (*transport.WeixinLoginSessionResponse, <-chan transport.WeixinLoginSessionEvent, func(), error) {
@@ -330,7 +351,7 @@ func (l *logic) startWeixinLoginSession(ctx pctx.Context, inst *instance.Entity,
 	go func() {
 		defer l.weixinHub.setRuntime(session.SessionID, nil)
 		defer cancel()
-		defer func() { _ = l.releaseReservedInstanceBotChannel(ctx, session.InstanceID, botID) }()
+		defer func() { _ = l.releaseReservedInstanceBotChannel(ctx, session.InstanceID, botID, profileID) }()
 
 		update := func(updates map[string]interface{}, event transport.WeixinLoginSessionEvent) {
 			if err := l.channelLoginSessionDao.UpdateFields(ctx, session.InstanceID, session.SessionID, updates); err != nil {
@@ -398,7 +419,7 @@ func (l *logic) startWeixinLoginSession(ctx pctx.Context, inst *instance.Entity,
 			terminal := !isWeixinSessionActive(nextStatus)
 			if nextStatus == channelloginsession.StatusSuccess {
 				if err := l.finishWeixinLoginSuccess(ctx, inst.SandboxId, session, botID, profileID, update); err != nil {
-					_ = l.releaseReservedInstanceBotChannel(ctx, session.InstanceID, botID)
+					_ = l.releaseReservedInstanceBotChannel(ctx, session.InstanceID, botID, profileID)
 				}
 				return true
 			}
@@ -430,7 +451,7 @@ func (l *logic) startWeixinLoginSession(ctx pctx.Context, inst *instance.Entity,
 				stateMu.Unlock()
 			}
 			if terminal {
-				_ = l.releaseReservedInstanceBotChannel(ctx, session.InstanceID, botID)
+				_ = l.releaseReservedInstanceBotChannel(ctx, session.InstanceID, botID, profileID)
 			}
 
 			return terminal
@@ -824,6 +845,8 @@ func toWeixinSessionResponse(entity *channelloginsession.Entity, runtime *weixin
 	}
 	response := &transport.WeixinLoginSessionResponse{
 		SessionID:     entity.SessionID,
+		BotID:         entity.BotID,
+		ProfileID:     entity.ProfileID,
 		Status:        entity.Status,
 		QRURL:         entity.QRURL,
 		QRASCII:       entity.QRASCII,

@@ -42,6 +42,16 @@ func TestOpenclawWeixinProtocolCommandScopesNamedProfileHome(t *testing.T) {
 	}
 }
 
+func TestWeixinSessionResponseKeepsBotTargetAfterRuntimeEnds(t *testing.T) {
+	entity := &channelloginsession.Entity{
+		SessionID: "wxs-1", InstanceID: "ins-1", BotID: "sales", ProfileID: "sales", Status: channelloginsession.StatusSuccess,
+	}
+	response := toWeixinSessionResponse(entity, nil)
+	if response.BotID != "sales" || response.ProfileID != "sales" {
+		t.Fatalf("durable session target was lost: %+v", response)
+	}
+}
+
 func TestNormalizeWeixinProtocolStatus(t *testing.T) {
 	cases := []struct {
 		name   string
