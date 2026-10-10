@@ -1,0 +1,87 @@
+<slide id="s13">
+  <background color="bg-page" />
+  <shape type="line" x="40" y="26" width="1200" height="0" stroke="border" />
+  <shape type="line" x="520" y="26" width="240" height="0" stroke="primary" stroke-width="3" />
+  <text x="40" y="36" width="1200" height="24" font="caption" color="primary">03 产品现状 · 典型场景</text>
+  <text x="40" y="77" width="1200" height="50" font="heading" color="text-main">
+    <strong>资讯、金融行情与监控聚集高频需求</strong>
+  </text>
+  <text x="40" y="132" width="1200" height="30" font="body" color="text-muted">自动化运行已体现使用价值；交互渠道记录较少，但会话深度更高。</text>
+  <table id="scenario-table" x="40" y="185" width="753" height="465" columns="5,1.8,1.3" rows="42,47,47,47,47,47,47,47,47,47" font="body" size="16" color="text-main" align="left" padding="8 12" fill="bg-page" header-fill="bg-surface" border-h="1 border" header-border="2 primary">
+    <tr>
+      <td>
+        <strong>场景</strong>
+      </td>
+      <td align="right">
+        <strong>明细数</strong>
+      </td>
+      <td align="right">
+        <strong>占比</strong>
+      </td>
+    </tr>
+    <tr>
+      <td>AI 资讯 / 新闻 / 信息订阅</td>
+      <td align="right">329,000</td>
+      <td align="right" color="primary">
+        <strong>27.8%</strong>
+      </td>
+    </tr>
+    <tr>
+      <td>金融投研 / 行情</td>
+      <td align="right">190,923</td>
+      <td align="right" color="primary">
+        <strong>16.1%</strong>
+      </td>
+    </tr>
+    <tr>
+      <td>商品 / 价格 / 库存 / 业务监控</td>
+      <td align="right">101,174</td>
+      <td align="right" color="primary">
+        <strong>8.5%</strong>
+      </td>
+    </tr>
+    <tr>
+      <td>测试 / 验证 / 演示</td>
+      <td align="right">105,434</td>
+      <td align="right">8.9%</td>
+    </tr>
+    <tr>
+      <td>系统 / 自定义自动化任务</td>
+      <td align="right">65,517</td>
+      <td align="right">5.5%</td>
+    </tr>
+    <tr>
+      <td>个人效率 / 日程 / 总结</td>
+      <td align="right">56,606</td>
+      <td align="right">4.8%</td>
+    </tr>
+    <tr>
+      <td>研究 / 知识 / 教育</td>
+      <td align="right">43,869</td>
+      <td align="right">3.7%</td>
+    </tr>
+    <tr>
+      <td>消息 / 邮件 / 社交内容处理</td>
+      <td align="right">28,748</td>
+      <td align="right">2.4%</td>
+    </tr>
+    <tr>
+      <td>其他未明确分类</td>
+      <td align="right">139,506</td>
+      <td align="right">11.8%</td>
+    </tr>
+  </table>
+  <text x="845" y="188" width="395" height="36" font="strong" color="primary">
+    <strong>高频场景占比</strong>
+  </text>
+  <chart type="bar" x="825" y="246" width="415" height="197" font="body" text-size="15" text-color="text-main" categories="资讯订阅,金融行情,业务监控" color="primary" data-labels="true" y-min="0" y-max="32" gridlines="v" gridline-color="border" gap-width="110">
+    <series values="27.8,16.1,8.5" label-expr="{value:.1f}%" />
+  </chart>
+  <text x="845" y="468" width="395" height="174" font="body" color="text-main" line-height="1.55">
+    <p>AI 资讯、金融行情和监控告警，已有较成熟的高频需求。</p>
+    <p space-before="14">消息渠道的单次会话更长，可能贡献更高 Token 消耗，仍需结合实际消耗验证。</p>
+  </text>
+  <text x="40" y="657" width="1200" height="19" font="caption" color="text-muted">原文所列占比未合计至 100%，明细数与消息总量并非同一指标；本页保留原数，不补项、不归一化。</text>
+  <text x="40" y="684" width="1130" height="20" font="caption" color="text-muted">LightVela｜来源：8 月 1 日—10 月 8 日用户会话概况</text>
+  <text x="1180" y="684" width="60" height="20" font="caption" color="text-muted" align="right">13 / 24</text>
+</slide>

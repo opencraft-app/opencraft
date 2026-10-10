@@ -1,0 +1,27 @@
+<slide id="insight02">
+  <background color="bg-page" />
+  <shape type="line" x="40" y="26" width="1200" height="0" stroke="border" />
+  <shape type="line" x="280" y="26" width="240" height="0" stroke="primary" stroke-width="3" />
+  <text x="40" y="36" width="1200" height="24" font="caption" color="primary">02 个人助理产品洞察 · 场景与用户需求</text>
+  <text x="40" y="77" width="1200" height="50" font="heading" color="text-main"><strong>Muse 案例以个人事务和生活管理为主</strong></text>
+  <text x="40" y="132" width="1200" height="34" font="body" color="text-muted">个人事务与效率、财务与省钱、购物餐饮活动位于前三；工作、内容与开发也是其中一类用途。</text>
+  <text x="40" y="189" width="760" height="34" font="strong" color="primary"><strong>837 条案例 · 七类需求</strong></text>
+  <chart x="40" y="231" width="760" height="374" type="bar" categories="个人事务与效率,财务与省钱,购物、餐饮与活动,工作、内容与开发,旅行与出行,健康、家庭、学习与休闲,产品设置或任务不明" y-max="280" label-width="236" value-width="142" text-size="17" value-size="14">
+    <series name="案例数" values="251,177,117,111,101,65,15" percentages="30.0,21.1,14.0,13.3,12.1,7.8,1.8" label-expr="条" color="primary" />
+  </chart>
+  <shape type="line" x="822" y="189" width="0" height="417" stroke="border" />
+  <text x="854" y="189" width="386" height="34" font="strong" color="primary"><strong>哪些人可能需要个人助理？</strong></text>
+  <text x="854" y="241" width="386" height="31" font="body" color="text-main"><strong>需要安排日常事务的人</strong></text>
+  <text x="854" y="281" width="386" height="55" font="body" color="text-main" line-height="1.5">处理邮件、日历、预约和规划，减少重复安排。</text>
+  <shape type="line" x="854" y="353" width="386" height="0" stroke="border" />
+  <text x="854" y="375" width="386" height="31" font="body" color="text-main"><strong>需要管理生活开支与出行的人</strong></text>
+  <text x="854" y="416" width="386" height="55" font="body" color="text-main" line-height="1.5">处理账单、退款、购物和旅行等具体事务。</text>
+  <shape type="line" x="854" y="488" width="386" height="0" stroke="border" />
+  <text x="854" y="510" width="386" height="31" font="body" color="text-main"><strong>需要工作与创作支持的人</strong></text>
+  <text x="854" y="551" width="386" height="55" font="body" color="text-main" line-height="1.5">获得研究、内容制作和开发支持。</text>
+  <text x="40" y="621" width="760" height="24" font="caption" color="text-muted">横轴为案例数；标签为原文数量与占比，存在四舍五入误差。</text>
+  <text x="854" y="621" width="386" height="37" font="caption" color="text-muted" line-height="1.5">按案例需求归纳适用人群，不代表 Muse 的实际年龄、职业或用户构成。</text>
+  <text x="40" y="651" width="780" height="21" font="caption" color="text-muted">原始数据：<a href="https://www.useofmuse.com/data/use-cases.js?v=6" color="primary"><u>Use of Muse</u></a> · <a href="https://musecases.netlify.app/usecases.json" color="primary"><u>Musecases（1–421）</u></a> · <a href="https://howtousemuse.com/use-cases" color="primary"><u>HowToUseMuse</u></a></text>
+  <text x="40" y="684" width="1130" height="20" font="caption" color="text-muted">LightVela｜原文 837 条案例分类统计，非活跃用户分布，亦非任务成功率统计；未重新采集或更新</text>
+  <text x="1180" y="684" width="60" height="20" font="caption" color="text-muted" align="right">07 / 24</text>
+</slide>

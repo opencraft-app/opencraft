@@ -1,0 +1,43 @@
+<slide id="historical-scale">
+  <background color="bg-page" />
+  <shape type="line" x="40" y="26" width="1200" height="0" stroke="border" />
+  <shape type="line" x="520" y="26" width="240" height="0" stroke="primary" stroke-width="3" />
+  <text x="40" y="36" width="1200" height="24" font="caption" color="primary">03 产品现状 · 10 月 9 日历史规模与统计口径</text>
+  <text x="40" y="77" width="1200" height="50" font="heading" color="text-main">
+    <strong>用户与 Agent 规模已初步建立</strong>
+  </text>
+  <text x="40" y="132" width="1200" height="30" font="body" color="text-muted">用户规模按生效套餐统计，近七日使用按会话记录统计。</text>
+  <shape type="rect" x="40" y="188" width="374" height="190" fill="bg-surface" corner-radius="4" />
+  <shape type="rect" x="450" y="188" width="374" height="190" fill="bg-surface" corner-radius="4" />
+  <shape type="rect" x="860" y="188" width="380" height="190" fill="bg-surface" corner-radius="4" />
+  <text x="62" y="211" width="330" height="34" font="strong" color="text-main">累计用户规模</text>
+  <text x="62" y="267" width="330" height="68" font="display" color="primary">
+    <strong>3.76 万</strong>
+  </text>
+  <text x="472" y="211" width="330" height="34" font="strong" color="text-main">现存 Agent 数</text>
+  <text x="472" y="267" width="330" height="68" font="display" color="primary">
+    <strong>3.53 万</strong>
+  </text>
+  <text x="882" y="211" width="330" height="34" font="strong" color="text-main">近七日有会话用户</text>
+  <text x="882" y="267" width="330" height="68" font="display" color="primary">
+    <strong>1.48 万</strong>
+  </text>
+  <text x="40" y="423" width="800" height="36" font="strong" color="text-main">
+    <strong>统计口径</strong>
+  </text>
+  <text x="40" y="481" width="785" height="168" font="body" color="text-main" line-height="1.5">
+    <p>
+      <strong>累计用户：</strong>10 月 9 日账号下有生效中产品套餐的唯一用户 ID 数。</p>
+    <p space-before="16">
+      <strong>现存 Agent：</strong>10 月 9 日有生效中套餐，且实际存在的 Agent 数；与底层 CVM 数量 1:1。</p>
+    <p space-before="16">
+      <strong>近七日用户：</strong>近七日内至少产生过一条会话记录的唯一用户 ID 数。</p>
+  </text>
+  <shape type="line" x="850" y="421" width="0" height="227" stroke="border" />
+  <text x="890" y="446" width="310" height="71" font="display" color="primary">
+    <strong>39.4%</strong>
+  </text>
+  <text x="890" y="540" width="310" height="78" font="body" color="text-main" line-height="1.5">近七日有会话用户占用户总量的比例。该指标包含自动任务产生的会话记录。</text>
+  <text x="40" y="684" width="1130" height="20" font="caption" color="text-muted">LightVela｜来源：原文数据情况，截至 10 月 9 日；保留“累计”名称及其原始口径</text>
+  <text x="1180" y="684" width="60" height="20" font="caption" color="text-muted" align="right">11 / 24</text>
+</slide>

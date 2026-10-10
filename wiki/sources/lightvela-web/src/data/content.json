@@ -1,0 +1,6926 @@
+{
+  "s01_text_03": {
+    "tag": "text",
+    "attrs": {},
+    "text": "LightVela · 产品与增长汇报"
+  },
+  "s01_text_04": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "LightVela"
+      }
+    ]
+  },
+  "s01_text_05": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "产品与增长汇报"
+      }
+    ]
+  },
+  "s01_text_07": {
+    "tag": "text",
+    "attrs": {},
+    "text": "出圈回顾 · 产品现状 · 下一阶段建设"
+  },
+  "s01_text_08": {
+    "tag": "text",
+    "attrs": {},
+    "text": "2026 年 10 月"
+  },
+  "s01_image_09": {
+    "src": "/assets/round-coral_trim.png",
+    "alt": "s01 原始图文材料"
+  },
+  "s01_text_10": {
+    "tag": "text",
+    "attrs": {},
+    "text": "01 / 31"
+  },
+  "s02_text_03": {
+    "tag": "text",
+    "attrs": {},
+    "text": "LightVela · 汇报目录"
+  },
+  "s02_text_04": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "从节前传播回顾，到下一阶段建设"
+      }
+    ]
+  },
+  "s02_text_06": {
+    "tag": "text",
+    "attrs": {},
+    "text": "01"
+  },
+  "s02_text_07": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "a",
+        "attrs": {
+          "slide": "s03"
+        },
+        "children": [
+          {
+            "tag": "strong",
+            "attrs": {},
+            "text": "出圈回顾"
+          }
+        ]
+      }
+    ]
+  },
+  "s02_text_08": {
+    "tag": "text",
+    "attrs": {},
+    "text": "三项动作、媒体扩散与增长结果"
+  },
+  "s02_text_10": {
+    "tag": "text",
+    "attrs": {},
+    "text": "02"
+  },
+  "s02_text_11": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "a",
+        "attrs": {
+          "slide": "insight01"
+        },
+        "children": [
+          {
+            "tag": "strong",
+            "attrs": {},
+            "text": "个人助理产品洞察"
+          }
+        ]
+      }
+    ]
+  },
+  "s02_text_12": {
+    "tag": "text",
+    "attrs": {},
+    "text": "市场进程、用户场景、海外热度与能力基础"
+  },
+  "s02_text_14": {
+    "tag": "text",
+    "attrs": {},
+    "text": "03"
+  },
+  "s02_text_15": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "a",
+        "attrs": {
+          "slide": "s15"
+        },
+        "children": [
+          {
+            "tag": "strong",
+            "attrs": {},
+            "text": "产品现状"
+          }
+        ]
+      }
+    ]
+  },
+  "s02_text_16": {
+    "tag": "text",
+    "attrs": {},
+    "text": "定位、App、新视觉、使用反馈与场景选择"
+  },
+  "s02_text_18": {
+    "tag": "text",
+    "attrs": {},
+    "text": "04"
+  },
+  "s02_text_19": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "a",
+        "attrs": {
+          "slide": "evo01"
+        },
+        "children": [
+          {
+            "tag": "strong",
+            "attrs": {},
+            "text": "产品演进"
+          }
+        ]
+      }
+    ]
+  },
+  "s02_text_20": {
+    "tag": "text",
+    "attrs": {},
+    "text": "泛开发者、产品亮点、基础设施与体验"
+  },
+  "s02_text_22": {
+    "tag": "text",
+    "attrs": {},
+    "text": "05"
+  },
+  "s02_text_23": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "a",
+        "attrs": {
+          "slide": "s21"
+        },
+        "children": [
+          {
+            "tag": "strong",
+            "attrs": {},
+            "text": "增长与运营"
+          }
+        ]
+      }
+    ]
+  },
+  "s02_text_24": {
+    "tag": "text",
+    "attrs": {},
+    "text": "社区参与、产品激励、促活与分层留存"
+  },
+  "s02_image_25": {
+    "src": "/assets/square-mint_trim.png",
+    "alt": "s02 原始图文材料"
+  },
+  "s02_text_26": {
+    "tag": "text",
+    "attrs": {},
+    "text": "LightVela｜产品与增长汇报"
+  },
+  "s02_text_27": {
+    "tag": "text",
+    "attrs": {},
+    "text": "02 / 31"
+  },
+  "s03_text_03": {
+    "tag": "text",
+    "attrs": {},
+    "text": "01 出圈回顾 · 三项动作"
+  },
+  "s03_text_04": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "三项动作叠加，带动试用与分享"
+      }
+    ]
+  },
+  "s03_text_05": {
+    "tag": "text",
+    "attrs": {},
+    "text": "X 推文、邀请积分与首月免费体验在同一阶段推出，推动关注、试用和分享。"
+  },
+  "s03_text_09": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "01"
+      }
+    ]
+  },
+  "s03_text_10": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "X 官方发声"
+      }
+    ]
+  },
+  "s03_text_11": {
+    "tag": "text",
+    "attrs": {},
+    "text": "发布一条产品推文，集中介绍产品与体验权益。"
+  },
+  "s03_text_12": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "02"
+      }
+    ]
+  },
+  "s03_text_13": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "邀请送积分同步开放"
+      }
+    ]
+  },
+  "s03_text_14": {
+    "tag": "text",
+    "attrs": {},
+    "text": "原计划的好友邀请活动上线，邀请双方均可获得 AI 积分。"
+  },
+  "s03_text_15": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "03"
+      }
+    ]
+  },
+  "s03_text_16": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "免费体验一个月"
+      }
+    ]
+  },
+  "s03_text_17": {
+    "tag": "text",
+    "attrs": {},
+    "text": "新用户首月免费，包含云端电脑与 AI 积分，降低尝试门槛。"
+  },
+  "s03_text_18": {
+    "tag": "text",
+    "attrs": {},
+    "text": "官方 X 推文 · 9 月 24 日 · 点击查看完整原图"
+  },
+  "s03_image_19": {
+    "src": "/assets/source_11_rights_crop.png",
+    "alt": "官方推文中的首月免费、云端电脑与 AI 积分权益",
+    "originalSrc": "/assets/source_11.png"
+  },
+  "s03_text_20": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "社区分享继续放大关注"
+      }
+    ]
+  },
+  "s03_text_21": {
+    "tag": "text",
+    "attrs": {},
+    "text": "海外 KOL 在 X、Telegram 分享免费云端环境与积分权益，带来第一轮关注。"
+  },
+  "s03_text_22": {
+    "tag": "text",
+    "attrs": {},
+    "text": "官方帖子初始加热投入 $10。"
+  },
+  "s03_text_23": {
+    "tag": "text",
+    "attrs": {},
+    "text": "背景：Grok Bot、Meta Muse 推高个人 Agent 讨论热度，相关关注逐步传入国内。"
+  },
+  "s03_text_24": {
+    "tag": "text",
+    "attrs": {},
+    "text": "LightVela｜依据原文传播复盘与官方 X 推文"
+  },
+  "s03_text_25": {
+    "tag": "text",
+    "attrs": {},
+    "text": "03 / 31"
+  },
+  "s06_text_03": {
+    "tag": "text",
+    "attrs": {},
+    "text": "01 出圈回顾 · 媒体扩散"
+  },
+  "s06_text_04": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "“中国版 Muse”引发多账号跟进传播"
+      }
+    ]
+  },
+  "s06_text_05": {
+    "tag": "text",
+    "attrs": {},
+    "text": "“人人都是产品经理”以这一标签介绍 LightVela，随后公众号与科技媒体跟进传播。"
+  },
+  "s06_text_09": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "官方 X 推文"
+      }
+    ]
+  },
+  "s06_text_10": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "人人都是产品经理"
+      }
+    ]
+  },
+  "s06_text_11": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "公众号 / 科技媒体 / X"
+      }
+    ]
+  },
+  "s06_text_14": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "标签来源"
+      }
+    ]
+  },
+  "s06_image_15": {
+    "src": "/assets/source_12_header_crop.png",
+    "alt": "人人都是产品经理发布的中国版 Muse 文章标题与署名",
+    "originalSrc": "/assets/source_12.png"
+  },
+  "s06_text_16": {
+    "tag": "text",
+    "attrs": {},
+    "text": "作者从官方 X 推文发现产品，自发撰文。"
+  },
+  "s06_image_17": {
+    "src": "/assets/source_17_quote_crop.png",
+    "alt": "X 媒体以中国版 Muse 标签跟进介绍 LightVela",
+    "originalSrc": "/assets/source_17.png"
+  },
+  "s06_text_18": {
+    "tag": "text",
+    "attrs": {},
+    "text": "X 媒体内容继续引用“中国版 Muse”"
+  },
+  "s06_text_20": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "多个公众号集中跟进"
+      }
+    ]
+  },
+  "s06_image_21": {
+    "src": "/assets/source_14.png",
+    "alt": "多个公众号集中出现 LightVela 的产品介绍与分析文章"
+  },
+  "s06_text_22": {
+    "tag": "text",
+    "attrs": {},
+    "text": "产品笔记、AI 工具派、极客公园、AI 观察站等出现相关内容"
+  },
+  "s06_text_23": {
+    "tag": "text",
+    "attrs": {},
+    "text": "LightVela｜依据原文文章标题、公众号报道列表与 X 媒体内容；点击截图可查看原图"
+  },
+  "s06_text_24": {
+    "tag": "text",
+    "attrs": {},
+    "text": "04 / 31"
+  },
+  "s07_text_03": {
+    "tag": "text",
+    "attrs": {},
+    "text": "01 出圈回顾"
+  },
+  "s07_text_04": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "传播期间，国内外注册同步增长"
+      }
+    ]
+  },
+  "s07_text_05": {
+    "tag": "text",
+    "attrs": {},
+    "text": "国内外渠道有所不同，传播与权益分享带来了新增用户。"
+  },
+  "s07_text_06": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "国内｜公众号内容带动认知"
+      }
+    ]
+  },
+  "s07_text_07": {
+    "tag": "text",
+    "attrs": {},
+    "text": "公众号和科技媒体的介绍、分析带动关注；邀请积分主要在用户间分享。"
+  },
+  "s07_text_08": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "海外｜权益分享与邀请推动扩散"
+      }
+    ]
+  },
+  "s07_text_09": {
+    "tag": "text",
+    "attrs": {},
+    "text": "X 上的权益分享和好友邀请推动扩散，产品介绍与分析作为补充。"
+  },
+  "s07_image_10": {
+    "src": "/assets/source_21.png",
+    "alt": "s07 原始图文材料"
+  },
+  "s07_image_11": {
+    "src": "/assets/source_20.png",
+    "alt": "s07 原始图文材料"
+  },
+  "s07_text_12": {
+    "tag": "text",
+    "attrs": {},
+    "text": "原文标注：国内站单日注册峰值接近 5,000"
+  },
+  "s07_text_13": {
+    "tag": "text",
+    "attrs": {},
+    "text": "原文标注：国际站迎来第二轮增长"
+  },
+  "s07_text_14": {
+    "tag": "text",
+    "attrs": {},
+    "text": "这次传播以较低的帖子推广投入获得了关注，后续需要通过稳定体验和持续运营承接新增用户。"
+  },
+  "s07_text_15": {
+    "tag": "text",
+    "attrs": {},
+    "text": "LightVela｜来源：原文国内/国际站趋势图及微信指数对比；不据图估算增长倍数"
+  },
+  "s07_text_16": {
+    "tag": "text",
+    "attrs": {},
+    "text": "05 / 31"
+  },
+  "insight01_text_03": {
+    "tag": "text",
+    "attrs": {},
+    "text": "02 个人助理产品洞察 · 市场进程"
+  },
+  "insight01_text_04": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "LightVela 4–5 月已上线，海外产品随后集中发布"
+      }
+    ]
+  },
+  "insight01_text_05": {
+    "tag": "text",
+    "attrs": {},
+    "text": "LightVela 上线时即定位个人助理；原文列举的海外同类产品在 8–9 月集中发布。"
+  },
+  "insight01_text_07": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "4–5 月"
+      }
+    ]
+  },
+  "insight01_text_08": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "LightVela 上线"
+      }
+    ]
+  },
+  "insight01_text_09": {
+    "tag": "text",
+    "attrs": {},
+    "text": "定位：个人助理"
+  },
+  "insight01_text_11": {
+    "tag": "text",
+    "attrs": {},
+    "text": "8–9 月｜海外同类产品集中发布（按原文日期排列，非等距时间轴）"
+  },
+  "insight01_text_18": {
+    "tag": "text",
+    "attrs": {},
+    "text": "08.11"
+  },
+  "insight01_text_19": {
+    "tag": "text",
+    "attrs": {},
+    "text": "08.26"
+  },
+  "insight01_text_20": {
+    "tag": "text",
+    "attrs": {},
+    "text": "09.08"
+  },
+  "insight01_text_21": {
+    "tag": "text",
+    "attrs": {},
+    "text": "09.28"
+  },
+  "insight01_text_22": {
+    "tag": "text",
+    "attrs": {},
+    "text": "09.29"
+  },
+  "insight01_text_23": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "Grok Bot"
+      }
+    ]
+  },
+  "insight01_text_24": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "Instinct"
+      }
+    ]
+  },
+  "insight01_text_25": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "Meta Muse"
+      }
+    ]
+  },
+  "insight01_text_26": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "Manus Cue"
+      }
+    ]
+  },
+  "insight01_text_27": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "OpenAI Dot"
+      }
+    ]
+  },
+  "insight01_text_28": {
+    "tag": "text",
+    "attrs": {},
+    "text": "多 Bot / 云电脑"
+  },
+  "insight01_text_29": {
+    "tag": "text",
+    "attrs": {},
+    "text": "电话 / 电脑 / 邮箱"
+  },
+  "insight01_text_30": {
+    "tag": "text",
+    "attrs": {},
+    "text": "长期在线 / 主动工作"
+  },
+  "insight01_text_31": {
+    "tag": "text",
+    "attrs": {},
+    "text": "独立身份 / 多 Agent"
+  },
+  "insight01_text_32": {
+    "tag": "text",
+    "attrs": {},
+    "text": "持续工作 / 任务调度"
+  },
+  "insight01_text_34": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "持续执行"
+      }
+    ]
+  },
+  "insight01_text_35": {
+    "tag": "text",
+    "attrs": {},
+    "text": "云端电脑、浏览器和长期在线，支持任务持续推进。"
+  },
+  "insight01_text_36": {
+    "tag": "text",
+    "attrs": {},
+    "text": "原文侧重：Grok Bot、Muse、Dot 的云端环境与执行能力。"
+  },
+  "insight01_text_38": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "独立身份"
+      }
+    ]
+  },
+  "insight01_text_39": {
+    "tag": "text",
+    "attrs": {},
+    "text": "多个 Bot，以及邮箱、电话、钱包等工具，让助理参与更多任务。"
+  },
+  "insight01_text_40": {
+    "tag": "text",
+    "attrs": {},
+    "text": "原文侧重：Instinct、Manus Cue 的身份与工具探索。"
+  },
+  "insight01_text_42": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "日常入口"
+      }
+    ]
+  },
+  "insight01_text_43": {
+    "tag": "text",
+    "attrs": {},
+    "text": "简易交互、App 与硬件接入，降低理解成本并获得场景上下文。"
+  },
+  "insight01_text_44": {
+    "tag": "text",
+    "attrs": {},
+    "text": "原文侧重：Grok Bot 的体验与 Muse 的 App、硬件探索。"
+  },
+  "insight01_text_45": {
+    "tag": "text",
+    "attrs": {},
+    "text": "国内竞争还涉及既有聊天入口、默认设备助手和任务型 Agent，完整市场表可在“详细参考”查看。"
+  },
+  "insight01_text_46": {
+    "tag": "text",
+    "attrs": {},
+    "text": "LightVela｜海外日期与特点沿用原文；4–5 月上线及个人助理定位据本次补充，未补造具体上线日或首创结论"
+  },
+  "insight01_text_47": {
+    "tag": "text",
+    "attrs": {},
+    "text": "06 / 31"
+  },
+  "insight02_text_03": {
+    "tag": "text",
+    "attrs": {},
+    "text": "02 个人助理产品洞察 · 场景与用户需求"
+  },
+  "insight02_text_04": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "Muse 案例以个人事务和生活管理为主"
+      }
+    ]
+  },
+  "insight02_text_05": {
+    "tag": "text",
+    "attrs": {},
+    "text": "个人事务与效率、财务与省钱、购物餐饮活动位于前三；工作、内容与开发也是其中一类用途。"
+  },
+  "insight02_text_06": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "837 条案例 · 七类需求"
+      }
+    ]
+  },
+  "insight02_chart_07": {
+    "tag": "chart",
+    "attrs": {
+      "categories": "个人事务与效率,财务与省钱,购物、餐饮与活动,工作、内容与开发,旅行与出行,健康、家庭、学习与休闲,产品设置或任务不明"
+    },
+    "children": [
+      {
+        "tag": "series",
+        "attrs": {
+          "name": "案例数",
+          "values": "251,177,117,111,101,65,15",
+          "percentages": "30.0,21.1,14.0,13.3,12.1,7.8,1.8",
+          "label-expr": "条",
+          "color": "primary"
+        }
+      }
+    ]
+  },
+  "insight02_text_09": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "哪些人可能需要个人助理？"
+      }
+    ]
+  },
+  "insight02_text_10": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "需要安排日常事务的人"
+      }
+    ]
+  },
+  "insight02_text_11": {
+    "tag": "text",
+    "attrs": {},
+    "text": "处理邮件、日历、预约和规划，减少重复安排。"
+  },
+  "insight02_text_13": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "需要管理生活开支与出行的人"
+      }
+    ]
+  },
+  "insight02_text_14": {
+    "tag": "text",
+    "attrs": {},
+    "text": "处理账单、退款、购物和旅行等具体事务。"
+  },
+  "insight02_text_16": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "需要工作与创作支持的人"
+      }
+    ]
+  },
+  "insight02_text_17": {
+    "tag": "text",
+    "attrs": {},
+    "text": "获得研究、内容制作和开发支持。"
+  },
+  "insight02_text_18": {
+    "tag": "text",
+    "attrs": {},
+    "text": "横轴为案例数；标签为原文数量与占比，存在四舍五入误差。"
+  },
+  "insight02_text_19": {
+    "tag": "text",
+    "attrs": {},
+    "text": "按案例需求归纳适用人群，不代表 Muse 的实际年龄、职业或用户构成。"
+  },
+  "insight02_text_20": {
+    "tag": "text",
+    "attrs": {},
+    "text": "原始数据：",
+    "children": [
+      {
+        "tag": "a",
+        "attrs": {
+          "href": "https://www.useofmuse.com/data/use-cases.js?v=6",
+          "color": "primary"
+        },
+        "children": [
+          {
+            "tag": "u",
+            "attrs": {},
+            "text": "Use of Muse"
+          }
+        ]
+      },
+      {
+        "tag": "plain",
+        "text": " · ",
+        "attrs": {}
+      },
+      {
+        "tag": "a",
+        "attrs": {
+          "href": "https://musecases.netlify.app/usecases.json",
+          "color": "primary"
+        },
+        "children": [
+          {
+            "tag": "u",
+            "attrs": {},
+            "text": "Musecases（1–421）"
+          }
+        ]
+      },
+      {
+        "tag": "plain",
+        "text": " · ",
+        "attrs": {}
+      },
+      {
+        "tag": "a",
+        "attrs": {
+          "href": "https://howtousemuse.com/use-cases",
+          "color": "primary"
+        },
+        "children": [
+          {
+            "tag": "u",
+            "attrs": {},
+            "text": "HowToUseMuse"
+          }
+        ]
+      }
+    ]
+  },
+  "insight02_text_21": {
+    "tag": "text",
+    "attrs": {},
+    "text": "LightVela｜原文 837 条案例分类统计，非活跃用户分布，亦非任务成功率统计；未重新采集或更新"
+  },
+  "insight02_text_22": {
+    "tag": "text",
+    "attrs": {},
+    "text": "07 / 31"
+  },
+  "insight03_text_03": {
+    "tag": "text",
+    "attrs": {},
+    "text": "02 个人助理产品洞察 · 海外热度"
+  },
+  "insight03_text_04": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "产品体验、落地条件与分发共同推动关注"
+      }
+    ]
+  },
+  "insight03_text_05": {
+    "tag": "text",
+    "attrs": {},
+    "text": "云端持续执行提供可展示的能力，日常服务承接具体任务，社区与平台分发进一步放大关注。"
+  },
+  "insight03_text_06": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "01"
+      }
+    ]
+  },
+  "insight03_text_07": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "用户容易看懂"
+      }
+    ]
+  },
+  "insight03_text_08": {
+    "tag": "text",
+    "attrs": {},
+    "text": "简易交互与可识别的助理形象"
+  },
+  "insight03_text_09": {
+    "tag": "text",
+    "attrs": {},
+    "text": "Grok Bot 的简易体验和形象设计，以及 Muse 的个人助理形态，让用户更容易理解“把一件事情交给它处理”。"
+  },
+  "insight03_text_10": {
+    "tag": "text",
+    "attrs": {},
+    "text": "原文线索：Grok Bot 的体验、形象设计，Muse 的个人助理产品形态。"
+  },
+  "insight03_text_12": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "02"
+      }
+    ]
+  },
+  "insight03_text_13": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "任务有落地条件"
+      }
+    ]
+  },
+  "insight03_text_14": {
+    "tag": "text",
+    "attrs": {},
+    "text": "海外 Web 服务支持能力复用"
+  },
+  "insight03_text_15": {
+    "tag": "text",
+    "attrs": {},
+    "text": "海外大量核心服务以 Web 形态提供，浏览器、连接器和云端执行可在邮箱、购物、旅行等场景复用，适合优先验证助理任务。"
+  },
+  "insight03_text_16": {
+    "tag": "text",
+    "attrs": {},
+    "text": "原文线索：海外场景与应用生态的判断，云端工作环境和持续执行的产品探索。"
+  },
+  "insight03_text_18": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "03"
+      }
+    ]
+  },
+  "insight03_text_19": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "关注得到集中放大"
+      }
+    ]
+  },
+  "insight03_text_20": {
+    "tag": "text",
+    "attrs": {},
+    "text": "社区分享、大平台与同期发布"
+  },
+  "insight03_text_21": {
+    "tag": "text",
+    "attrs": {},
+    "text": "X 社区和 Meta 的分发能力推动产品进入更多用户视野。多款产品在相近时间发布，进一步放大个人助理话题。"
+  },
+  "insight03_text_22": {
+    "tag": "text",
+    "attrs": {},
+    "text": "原文线索：X 分发、Meta 的平台能力，以及榜单和科技媒体讨论。"
+  },
+  "insight03_text_23": {
+    "tag": "text",
+    "attrs": {},
+    "text": "热度说明市场关注正在形成，长期价值仍需通过任务完成和持续使用验证。"
+  },
+  "insight03_text_24": {
+    "tag": "text",
+    "attrs": {},
+    "text": "LightVela｜依据原文热度回顾、市场特点与海外场景判断提炼；未测量各因素的增长贡献，不将热度等同于长期价值"
+  },
+  "insight03_text_25": {
+    "tag": "text",
+    "attrs": {},
+    "text": "08 / 31"
+  },
+  "insight04_text_03": {
+    "tag": "text",
+    "attrs": {},
+    "text": "02 个人助理产品洞察 · 能力与价值验证"
+  },
+  "insight04_text_04": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "能力覆盖已较丰富，个人助理价值仍需验证"
+      }
+    ]
+  },
+  "insight04_text_05": {
+    "tag": "text",
+    "attrs": {},
+    "text": "Hermes 已提供多类基础能力；真实任务表现仍受模型和配置影响，需要在可靠交付中建立信任。"
+  },
+  "insight04_text_06": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "Hermes 能力按用途归纳"
+      }
+    ]
+  },
+  "insight04_text_10": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "记住并复用"
+      }
+    ]
+  },
+  "insight04_text_11": {
+    "tag": "text",
+    "attrs": {},
+    "text": "持久记忆、会话搜索和技能"
+  },
+  "insight04_text_12": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "持续执行与协作"
+      }
+    ]
+  },
+  "insight04_text_13": {
+    "tag": "text",
+    "attrs": {},
+    "text": "定时任务、子 Agent 和终端执行"
+  },
+  "insight04_text_14": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "连接已有工具"
+      }
+    ]
+  },
+  "insight04_text_15": {
+    "tag": "text",
+    "attrs": {},
+    "text": "MCP 与多个消息平台"
+  },
+  "insight04_text_16": {
+    "tag": "text",
+    "attrs": {},
+    "text": "原文判断：迭代频率高、成熟度尚可、口碑整体积极；完整能力与原文分数可在“详细参考”查看。"
+  },
+  "insight04_text_18": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "LightVela 的承接"
+      }
+    ]
+  },
+  "insight04_text_19": {
+    "tag": "text",
+    "attrs": {},
+    "text": "沿个人助理方向持续探索"
+  },
+  "insight04_text_20": {
+    "tag": "text",
+    "attrs": {},
+    "text": "LightVela 自上线起沿个人助理方向探索，当前特点集中在可定制性、开放接入和云端工作环境。\n接下来结合实际使用数据，判断持续使用的场景、任务完成的稳定性，以及配置和授权门槛是否足够低。"
+  },
+  "insight04_text_22": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "先建立任务信任"
+      }
+    ]
+  },
+  "insight04_text_23": {
+    "tag": "text",
+    "attrs": {},
+    "text": "优先验证目标明确、结果可检查的任务；长期偏好、复杂记忆与高风险个人事务仍需谨慎探索。"
+  },
+  "insight04_text_25": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "下一章：结合 LightVela 的产品形态、使用数据和用户反馈检验这些判断。"
+      }
+    ]
+  },
+  "insight04_text_26": {
+    "tag": "text",
+    "attrs": {},
+    "text": "LightVela｜依据原文 Hermes 能力、产品判断与信任门槛；未将底层模型分数等同于 LightVela 的实际表现"
+  },
+  "insight04_text_27": {
+    "tag": "text",
+    "attrs": {},
+    "text": "09 / 31"
+  },
+  "s15_text_03": {
+    "tag": "text",
+    "attrs": {},
+    "text": "03 产品现状 · 定位与差异"
+  },
+  "s15_text_04": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "LightVela：可按需定制的云端个人助理"
+      }
+    ]
+  },
+  "s15_text_05": {
+    "tag": "text",
+    "attrs": {},
+    "text": "用户可选择模型、工具和消息入口，按个人工作方式组织任务，并为不同职能配置独立 Bot。"
+  },
+  "s15_text_06": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "定制化"
+      }
+    ]
+  },
+  "s15_text_07": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "按个人工作方式配置助理"
+      }
+    ]
+  },
+  "s15_text_08": {
+    "tag": "text",
+    "attrs": {},
+    "text": "模型、连接器、外部工具和性格可选；",
+    "children": [
+      {
+        "tag": "br",
+        "attrs": {}
+      },
+      {
+        "tag": "plain",
+        "text": "通过脚本、定时任务与 Agent 配置组织任务。",
+        "attrs": {}
+      }
+    ]
+  },
+  "s15_image_09": {
+    "src": "/assets/source_26_model_choices_crop.png",
+    "alt": "原文模型配置选项摘图，点击查看完整配置界面",
+    "originalSrc": "/assets/source_26.png"
+  },
+  "s15_text_10": {
+    "tag": "text",
+    "attrs": {},
+    "text": "原文配置界面 · 点击查看完整原图"
+  },
+  "s15_text_12": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "入口灵活"
+      }
+    ]
+  },
+  "s15_text_13": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "网页打磨，IM 接收"
+      }
+    ]
+  },
+  "s15_text_14": {
+    "tag": "text",
+    "attrs": {},
+    "text": "网页用于创建、配置和调整 Agent 或任务；微信、Telegram 等熟悉入口用于持续接收信息与结果，也可日常对话。"
+  },
+  "s15_text_16": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "strong",
+            "attrs": {},
+            "text": "Web → 云端 Agent"
+          }
+        ]
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "云端 Agent ↔ 微信 / Telegram"
+      }
+    ]
+  },
+  "s15_text_18": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "多 Bot"
+      }
+    ]
+  },
+  "s15_text_19": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "按职能拆分，各自独立"
+      }
+    ]
+  },
+  "s15_text_20": {
+    "tag": "text",
+    "attrs": {},
+    "text": "部分深度用户希望将不同职能分开组织。基于 Hermes 原生能力，每个 Bot 拥有独立个性、记忆和工作空间。"
+  },
+  "s15_image_21": {
+    "src": "/assets/source_27_bot_list_crop.png",
+    "alt": "原文独立Bot列表摘图，点击查看完整多Bot界面",
+    "originalSrc": "/assets/source_27.png"
+  },
+  "s15_text_22": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "独立个性"
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "独立记忆"
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "独立工作空间"
+      }
+    ]
+  },
+  "s15_text_23": {
+    "tag": "text",
+    "attrs": {},
+    "text": "LightVela｜原文与本次补充；多 Bot 于 9 月上线，自动协同仍属探索；完整路径、能力与友商比较见“详细参考”"
+  },
+  "s15_text_24": {
+    "tag": "text",
+    "attrs": {},
+    "text": "10 / 31"
+  },
+  "app01_text_03": {
+    "tag": "text",
+    "attrs": {},
+    "text": "03 产品现状 · App 产品路线"
+  },
+  "app01_text_04": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "优先做移动 App，承接离开电脑后的个人事务"
+      }
+    ]
+  },
+  "app01_text_05": {
+    "tag": "text",
+    "attrs": {},
+    "text": "云端持续执行，手机及时带回任务进展与确认请求；桌面客户端按复杂任务需求补齐。"
+  },
+  "app01_text_06": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "strong",
+            "attrs": {},
+            "text": "个人事务碎片化"
+          }
+        ]
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "strong",
+            "attrs": {},
+            "text": "手机及时带回进展"
+          }
+        ]
+      }
+    ]
+  },
+  "app01_text_07": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "行程、购物、提醒、邮件跟进和家庭安排，常在用户离开电脑后继续变化。"
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "手机通过通知带回任务进展、待确认事项和异常情况。"
+      }
+    ]
+  },
+  "app01_text_09": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "strong",
+            "attrs": {},
+            "text": "执行留在云端"
+          }
+        ]
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "strong",
+            "attrs": {},
+            "text": "桌面客户端无需前置"
+          }
+        ]
+      }
+    ]
+  },
+  "app01_text_10": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "Agent 在云端 VM 中运行，浏览器与工作状态由云端保留。"
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "个人电脑无需持续开机，也不必先开放本地文件和系统控制权限；邮箱、账户等服务仍按需授权。"
+      }
+    ]
+  },
+  "app01_text_12": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "strong",
+            "attrs": {},
+            "text": "手机补充个人上下文"
+          }
+        ]
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "strong",
+            "attrs": {},
+            "text": "方便发起与关键确认"
+          }
+        ]
+      }
+    ]
+  },
+  "app01_text_13": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "语音、相机与分享入口补充任务信息，位置和联系人按需授权。"
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "App 集中展示任务状态、执行记录和审批；微信、Telegram 等 IM 保留轻量消息入口。"
+      }
+    ]
+  },
+  "app01_text_15": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "现有 Web / IM"
+      }
+    ]
+  },
+  "app01_text_16": {
+    "tag": "text",
+    "attrs": {},
+    "text": "网页配置与打磨任务；",
+    "children": [
+      {
+        "tag": "br",
+        "attrs": {}
+      },
+      {
+        "tag": "plain",
+        "text": "熟悉的消息入口接收与交互。",
+        "attrs": {}
+      }
+    ]
+  },
+  "app01_text_17": {
+    "tag": "text",
+    "attrs": {},
+    "text": "→"
+  },
+  "app01_text_18": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "优先移动 App"
+      }
+    ]
+  },
+  "app01_text_19": {
+    "tag": "text",
+    "attrs": {},
+    "text": "先验证个人事务中的任务发起、",
+    "children": [
+      {
+        "tag": "br",
+        "attrs": {}
+      },
+      {
+        "tag": "plain",
+        "text": "通知与关键确认体验。",
+        "attrs": {}
+      }
+    ]
+  },
+  "app01_text_20": {
+    "tag": "text",
+    "attrs": {},
+    "text": "→"
+  },
+  "app01_text_21": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "按需补充桌面客户端"
+      }
+    ]
+  },
+  "app01_text_22": {
+    "tag": "text",
+    "attrs": {},
+    "text": "编程、长文档、本地文件和",
+    "children": [
+      {
+        "tag": "br",
+        "attrs": {}
+      },
+      {
+        "tag": "plain",
+        "text": "多窗口研究等复杂任务。",
+        "attrs": {}
+      }
+    ]
+  },
+  "app01_text_23": {
+    "tag": "text",
+    "attrs": {},
+    "text": "LightVela｜产品路线，未标为 App 已上线；依据原文与本次补充；",
+    "children": [
+      {
+        "tag": "a",
+        "attrs": {
+          "href": "https://about.fb.com/news/2026/09/introducing-muse-personal-ai-agent/"
+        },
+        "text": "Muse 云端执行、移动入口与授权机制参考"
+      }
+    ]
+  },
+  "app01_text_24": {
+    "tag": "text",
+    "attrs": {},
+    "text": "11 / 31"
+  },
+  "visual01_text_03": {
+    "tag": "text",
+    "attrs": {},
+    "text": "03 产品现状 · 新视觉进展"
+  },
+  "visual01_text_04": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "官网首页已上线首版新视觉"
+      }
+    ]
+  },
+  "visual01_text_05": {
+    "tag": "text",
+    "attrs": {},
+    "text": "围绕“可信赖、亲和、灵动”，首页已完成首版视觉更新，演示视频呈现新形象与动态效果。"
+  },
+  "visual01_text_06": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "官网当前首页"
+      }
+    ]
+  },
+  "visual01_text_07": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "新视觉演示 · 中文版"
+      }
+    ]
+  },
+  "visual01_image_08": {
+    "src": "/assets/lightvela-homepage-current.png",
+    "alt": "LightVela官网当前国际首页真实首屏截图，首版新视觉已上线，点击查看完整截图",
+    "originalSrc": "/assets/lightvela-homepage-current-full.png"
+  },
+  "visual01_video_09": {
+    "src": "/assets/lightvela-homepage-visual-demo.mp4",
+    "poster": "/assets/lightvela-homepage-video-poster.png",
+    "title": "LightVela 新视觉演示 · 中文版",
+    "duration": 37.8
+  },
+  "visual01_text_10": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "strong",
+            "attrs": {},
+            "text": "首版已上线"
+          },
+          {
+            "tag": "plain",
+            "text": " · 形象与页面表达同步更新。",
+            "attrs": {}
+          }
+        ]
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "亲和、易识别作为设计目标，展示云端个人助理。"
+      }
+    ]
+  },
+  "visual01_text_11": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "strong",
+            "attrs": {},
+            "text": "完整演示"
+          },
+          {
+            "tag": "plain",
+            "text": " · 首页、功能与角色动效，手动播放。",
+            "attrs": {}
+          }
+        ]
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "产品内交互视觉后续继续优化，当前演示范围有限。"
+      }
+    ]
+  },
+  "visual01_text_12": {
+    "tag": "text",
+    "attrs": {},
+    "text": "官网当前国际页面与中文演示版本分别展示；未将演示画面标为实时官网截图。"
+  },
+  "visual01_text_13": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "a",
+        "attrs": {
+          "href": "https://lightvela.ai/"
+        },
+        "text": "LightVela｜官网 lightvela.ai · 2026.10.10 实际截图；视频为原文及用户提供的演示材料"
+      }
+    ]
+  },
+  "visual01_text_14": {
+    "tag": "text",
+    "attrs": {},
+    "text": "12 / 31"
+  },
+  "s11_text_03": {
+    "tag": "text",
+    "attrs": {},
+    "text": "03 产品现状 · 数据规模与开通转化"
+  },
+  "s11_text_04": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "国内站注册更多，Pass 开通率低于国际站"
+      }
+    ]
+  },
+  "s11_text_05": {
+    "tag": "text",
+    "attrs": {},
+    "text": "两站累计注册与 Pass 开通／领取情况，包含免费体验。"
+  },
+  "s11_text_08": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "国内站"
+      }
+    ]
+  },
+  "s11_text_09": {
+    "tag": "text",
+    "attrs": {},
+    "text": "累计注册用户"
+  },
+  "s11_text_10": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "89,122"
+      }
+    ]
+  },
+  "s11_text_11": {
+    "tag": "text",
+    "attrs": {},
+    "text": "开通／领取 Pass 用户"
+  },
+  "s11_text_12": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "25,218"
+      }
+    ]
+  },
+  "s11_text_13": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "开通率 28.3%"
+      }
+    ]
+  },
+  "s11_text_16": {
+    "tag": "text",
+    "attrs": {},
+    "text": "本站累计注册 = 100%"
+  },
+  "s11_text_17": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "国际站"
+      }
+    ]
+  },
+  "s11_text_18": {
+    "tag": "text",
+    "attrs": {},
+    "text": "累计注册用户"
+  },
+  "s11_text_19": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "17,807"
+      }
+    ]
+  },
+  "s11_text_20": {
+    "tag": "text",
+    "attrs": {},
+    "text": "开通／领取 Pass 用户"
+  },
+  "s11_text_21": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "14,036"
+      }
+    ]
+  },
+  "s11_text_22": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "开通率 78.8%"
+      }
+    ]
+  },
+  "s11_text_25": {
+    "tag": "text",
+    "attrs": {},
+    "text": "本站累计注册 = 100%"
+  },
+  "s11_text_27": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "免费体验仍有开通阻力，实名环节需重点关注"
+      }
+    ]
+  },
+  "s11_text_28": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "国内站即使提供免费体验，Pass 开通率仍只有 28.3%，比国际站低 50.5 个百分点。"
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "目前观察，实名验证环节带来了用户流失。"
+      }
+    ]
+  },
+  "s11_text_29": {
+    "tag": "text",
+    "attrs": {},
+    "text": "当前观察，尚未完成分步漏斗归因；两站全部差距不直接归因于实名。"
+  },
+  "s11_text_30": {
+    "tag": "text",
+    "attrs": {},
+    "text": "开通率 = 累计开通／领取 Pass 用户数 ÷ 累计注册用户数；含免费领取，与付费及当前生效套餐口径不同。"
+  },
+  "s11_text_31": {
+    "tag": "text",
+    "attrs": {},
+    "text": "LightVela｜本次更新数据与团队观察；10 月 9 日历史规模与统计口径见详细参考"
+  },
+  "s11_text_32": {
+    "tag": "text",
+    "attrs": {},
+    "text": "13 / 31"
+  },
+  "s12_text_03": {
+    "tag": "text",
+    "attrs": {},
+    "text": "03 产品现状 · 使用频次与消息结构"
+  },
+  "s12_text_04": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "使用频次分化，自动任务贡献大量消息"
+      }
+    ]
+  },
+  "s12_text_05": {
+    "tag": "text",
+    "attrs": {},
+    "text": "一次或短期使用用户较多，也有一批用户持续运行自动化任务。"
+  },
+  "s12_text_06": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "近七日使用天数"
+      }
+    ]
+  },
+  "s12_usage-frequency": {
+    "tag": "chart",
+    "attrs": {
+      "categories": "只出现1天,至少活跃2天,至少活跃3天,连续7天",
+      "color": "primary"
+    },
+    "children": [
+      {
+        "tag": "series",
+        "attrs": {
+          "name": "用户数",
+          "values": "8212,6575,5078,2641",
+          "label-expr": "{value:,.0f} 人"
+        }
+      }
+    ]
+  },
+  "s12_text_08": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "对应占比：55.5% / 44.5% / 34.3% / 17.9%"
+      },
+      {
+        "tag": "p",
+        "attrs": {
+          "color": "text-muted",
+          "size": "14"
+        },
+        "text": "“至少 2 天”“至少 3 天”“连续 7 天”为嵌套分组，不能相加。"
+      }
+    ]
+  },
+  "s12_text_10": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "8 月 1 日—10 月 8 日"
+      }
+    ]
+  },
+  "s12_text_11": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "115.83 万"
+      }
+    ]
+  },
+  "s12_text_12": {
+    "tag": "text",
+    "attrs": {},
+    "text": "会话消息总量"
+  },
+  "s12_text_15": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "91.4% 定时任务"
+      }
+    ]
+  },
+  "s12_text_16": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "cron 平均 4.7 条消息，多为提醒、状态检查和短任务。"
+      },
+      {
+        "tag": "p",
+        "attrs": {
+          "space-before": "12"
+        },
+        "text": "Telegram、QQ、微信等渠道记录较少，但单次会话更长。"
+      }
+    ]
+  },
+  "s12_text_17": {
+    "tag": "text",
+    "attrs": {},
+    "text": "使用天数沿用原文“剔除定时任务场景”口径；概要另列“定时任务会话占比超过 70%”，与消息条数占比不同。"
+  },
+  "s12_text_18": {
+    "tag": "text",
+    "attrs": {},
+    "text": "LightVela｜来源：原文近七日使用统计、会话消息统计；分母与场景过滤建议复核"
+  },
+  "s12_text_19": {
+    "tag": "text",
+    "attrs": {},
+    "text": "14 / 31"
+  },
+  "s13_text_03": {
+    "tag": "text",
+    "attrs": {},
+    "text": "03 产品现状 · 典型场景"
+  },
+  "s13_text_04": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "资讯、金融行情与监控聚集高频需求"
+      }
+    ]
+  },
+  "s13_text_05": {
+    "tag": "text",
+    "attrs": {},
+    "text": "自动化运行已体现使用价值；交互渠道记录较少，但会话深度更高。"
+  },
+  "s13_scenario-table": {
+    "tag": "table",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "tr",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "td",
+            "attrs": {},
+            "children": [
+              {
+                "tag": "strong",
+                "attrs": {},
+                "text": "场景"
+              }
+            ]
+          },
+          {
+            "tag": "td",
+            "attrs": {
+              "align": "right"
+            },
+            "children": [
+              {
+                "tag": "strong",
+                "attrs": {},
+                "text": "明细数"
+              }
+            ]
+          },
+          {
+            "tag": "td",
+            "attrs": {
+              "align": "right"
+            },
+            "children": [
+              {
+                "tag": "strong",
+                "attrs": {},
+                "text": "占比"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "tag": "tr",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "td",
+            "attrs": {},
+            "text": "AI 资讯 / 新闻 / 信息订阅"
+          },
+          {
+            "tag": "td",
+            "attrs": {
+              "align": "right"
+            },
+            "text": "329,000"
+          },
+          {
+            "tag": "td",
+            "attrs": {
+              "align": "right",
+              "color": "primary"
+            },
+            "children": [
+              {
+                "tag": "strong",
+                "attrs": {},
+                "text": "27.8%"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "tag": "tr",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "td",
+            "attrs": {},
+            "text": "金融投研 / 行情"
+          },
+          {
+            "tag": "td",
+            "attrs": {
+              "align": "right"
+            },
+            "text": "190,923"
+          },
+          {
+            "tag": "td",
+            "attrs": {
+              "align": "right",
+              "color": "primary"
+            },
+            "children": [
+              {
+                "tag": "strong",
+                "attrs": {},
+                "text": "16.1%"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "tag": "tr",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "td",
+            "attrs": {},
+            "text": "商品 / 价格 / 库存 / 业务监控"
+          },
+          {
+            "tag": "td",
+            "attrs": {
+              "align": "right"
+            },
+            "text": "101,174"
+          },
+          {
+            "tag": "td",
+            "attrs": {
+              "align": "right",
+              "color": "primary"
+            },
+            "children": [
+              {
+                "tag": "strong",
+                "attrs": {},
+                "text": "8.5%"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "tag": "tr",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "td",
+            "attrs": {},
+            "text": "测试 / 验证 / 演示"
+          },
+          {
+            "tag": "td",
+            "attrs": {
+              "align": "right"
+            },
+            "text": "105,434"
+          },
+          {
+            "tag": "td",
+            "attrs": {
+              "align": "right"
+            },
+            "text": "8.9%"
+          }
+        ]
+      },
+      {
+        "tag": "tr",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "td",
+            "attrs": {},
+            "text": "系统 / 自定义自动化任务"
+          },
+          {
+            "tag": "td",
+            "attrs": {
+              "align": "right"
+            },
+            "text": "65,517"
+          },
+          {
+            "tag": "td",
+            "attrs": {
+              "align": "right"
+            },
+            "text": "5.5%"
+          }
+        ]
+      },
+      {
+        "tag": "tr",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "td",
+            "attrs": {},
+            "text": "个人效率 / 日程 / 总结"
+          },
+          {
+            "tag": "td",
+            "attrs": {
+              "align": "right"
+            },
+            "text": "56,606"
+          },
+          {
+            "tag": "td",
+            "attrs": {
+              "align": "right"
+            },
+            "text": "4.8%"
+          }
+        ]
+      },
+      {
+        "tag": "tr",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "td",
+            "attrs": {},
+            "text": "研究 / 知识 / 教育"
+          },
+          {
+            "tag": "td",
+            "attrs": {
+              "align": "right"
+            },
+            "text": "43,869"
+          },
+          {
+            "tag": "td",
+            "attrs": {
+              "align": "right"
+            },
+            "text": "3.7%"
+          }
+        ]
+      },
+      {
+        "tag": "tr",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "td",
+            "attrs": {},
+            "text": "消息 / 邮件 / 社交内容处理"
+          },
+          {
+            "tag": "td",
+            "attrs": {
+              "align": "right"
+            },
+            "text": "28,748"
+          },
+          {
+            "tag": "td",
+            "attrs": {
+              "align": "right"
+            },
+            "text": "2.4%"
+          }
+        ]
+      },
+      {
+        "tag": "tr",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "td",
+            "attrs": {},
+            "text": "其他未明确分类"
+          },
+          {
+            "tag": "td",
+            "attrs": {
+              "align": "right"
+            },
+            "text": "139,506"
+          },
+          {
+            "tag": "td",
+            "attrs": {
+              "align": "right"
+            },
+            "text": "11.8%"
+          }
+        ]
+      }
+    ]
+  },
+  "s13_text_07": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "高频场景占比"
+      }
+    ]
+  },
+  "s13_chart_08": {
+    "tag": "chart",
+    "attrs": {
+      "categories": "资讯订阅,金融行情,业务监控",
+      "color": "primary"
+    },
+    "children": [
+      {
+        "tag": "series",
+        "attrs": {
+          "values": "27.8,16.1,8.5",
+          "label-expr": "{value:.1f}%"
+        }
+      }
+    ]
+  },
+  "s13_text_09": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "AI 资讯、金融行情和监控告警，已有较成熟的高频需求。"
+      },
+      {
+        "tag": "p",
+        "attrs": {
+          "space-before": "14"
+        },
+        "text": "消息渠道的单次会话更长，可能贡献更高 Token 消耗，仍需结合实际消耗验证。"
+      }
+    ]
+  },
+  "s13_text_10": {
+    "tag": "text",
+    "attrs": {},
+    "text": "原文所列占比未合计至 100%，明细数与消息总量并非同一指标；本页保留原数，不补项、不归一化。"
+  },
+  "s13_text_11": {
+    "tag": "text",
+    "attrs": {},
+    "text": "LightVela｜来源：8 月 1 日—10 月 8 日用户会话概况"
+  },
+  "s13_text_12": {
+    "tag": "text",
+    "attrs": {},
+    "text": "15 / 31"
+  },
+  "s14_text_03": {
+    "tag": "text",
+    "attrs": {},
+    "text": "03 产品现状 · 用户反馈"
+  },
+  "s14_text_04": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "多数用户保持观察，承接体验需要跟上"
+      }
+    ]
+  },
+  "s14_text_05": {
+    "tag": "text",
+    "attrs": {},
+    "text": "原文概述：中性观察声量超过 60%，负向反馈略高于正向反馈。"
+  },
+  "s14_text_06": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "国际站｜X 内容讨论"
+      }
+    ]
+  },
+  "s14_image_07": {
+    "src": "/assets/source_30.png",
+    "alt": "s14 原始图文材料"
+  },
+  "s14_text_08": {
+    "tag": "text",
+    "attrs": {},
+    "text": "原图将“中性”和“信息传播”分别列示；原文“约 60%”概述与图中分类口径不同，需确认合并规则。"
+  },
+  "s14_text_09": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "国内站｜用户社群"
+      }
+    ]
+  },
+  "s14_image_10": {
+    "src": "/assets/source_31.png",
+    "alt": "s14 原始图文材料"
+  },
+  "s14_text_12": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "负向反馈集中点"
+      }
+    ]
+  },
+  "s14_text_13": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "strong",
+            "attrs": {
+              "color": "primary"
+            },
+            "text": "资源供给："
+          },
+          {
+            "tag": "plain",
+            "text": "声量增长后，资源补充承接延后。",
+            "attrs": {}
+          }
+        ]
+      },
+      {
+        "tag": "p",
+        "attrs": {
+          "space-before": "16"
+        },
+        "children": [
+          {
+            "tag": "strong",
+            "attrs": {
+              "color": "primary"
+            },
+            "text": "稳定性："
+          },
+          {
+            "tag": "plain",
+            "text": "持续运行和任务执行体验需要完善。",
+            "attrs": {}
+          }
+        ]
+      },
+      {
+        "tag": "p",
+        "attrs": {
+          "space-before": "16"
+        },
+        "children": [
+          {
+            "tag": "strong",
+            "attrs": {
+              "color": "primary"
+            },
+            "text": "体验细节："
+          },
+          {
+            "tag": "plain",
+            "text": "用户理解、操作与异常反馈仍待优化。",
+            "attrs": {}
+          }
+        ]
+      }
+    ]
+  },
+  "s14_text_15": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "用户对个人 Agent 方向仍有兴趣，也在等待实际价值验证。"
+      },
+      {
+        "tag": "p",
+        "attrs": {
+          "space-before": "14"
+        },
+        "text": "国内社群原文概述约 80% 中立；原图按群聊规则打分，不能直接与 X 样本比较。"
+      }
+    ]
+  },
+  "s14_text_16": {
+    "tag": "text",
+    "attrs": {},
+    "text": "LightVela｜来源：原文用户态度概述与两张原始统计图；保留原图配色和分类"
+  },
+  "s14_text_17": {
+    "tag": "text",
+    "attrs": {},
+    "text": "16 / 31"
+  },
+  "s08_text_03": {
+    "tag": "text",
+    "attrs": {},
+    "text": "03 产品现状 · 阶段判断"
+  },
+  "s08_text_04": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "短期关注已经形成，持续使用仍需验证"
+      }
+    ]
+  },
+  "s08_text_05": {
+    "tag": "text",
+    "attrs": {},
+    "text": "媒体标签带来的集中传播具有偶发性，后续建设需要围绕场景、体验与用户展开。"
+  },
+  "s08_text_06": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "产品基本能力已经搭建"
+      }
+    ]
+  },
+  "s08_text_07": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "云端个人助理的基本能力已经搭建，并形成一定用户规模和 Agent 使用基础。"
+      },
+      {
+        "tag": "p",
+        "attrs": {
+          "space-before": "16"
+        },
+        "text": "云端应用仍在探索，持续使用的价值需要结合实际场景验证。"
+      }
+    ]
+  },
+  "s08_text_08": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "用户仍以了解和试用为主"
+      }
+    ]
+  },
+  "s08_text_09": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "自动任务的持续运行价值较容易感知。"
+      },
+      {
+        "tag": "p",
+        "attrs": {
+          "space-before": "16"
+        },
+        "text": "业务监控、资讯订阅、建站和看板已有尝试；“个人助理”的长期价值还需验证。"
+      }
+    ]
+  },
+  "s08_text_10": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "体验承接和信任仍需加强"
+      }
+    ]
+  },
+  "s08_text_11": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "用户反馈整体保持观察。"
+      },
+      {
+        "tag": "p",
+        "attrs": {
+          "space-before": "16"
+        },
+        "text": "负向反馈集中于资源供给、稳定性和体验细节；复杂个人事务还需要任务完成价值建立信任。"
+      }
+    ]
+  },
+  "s08_text_13": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "下一阶段，围绕五项工作持续推进"
+      }
+    ]
+  },
+  "s08_text_19": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "strong",
+            "attrs": {
+              "color": "primary"
+            },
+            "text": "基础设施"
+          }
+        ]
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "稳定在线、状态保留"
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "权限管理"
+      }
+    ]
+  },
+  "s08_text_20": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "strong",
+            "attrs": {
+              "color": "primary"
+            },
+            "text": "核心能力"
+          }
+        ]
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "泛开发者场景优先"
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "补齐通用执行能力"
+      }
+    ]
+  },
+  "s08_text_21": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "strong",
+            "attrs": {
+              "color": "primary"
+            },
+            "text": "开放接入"
+          }
+        ]
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "API、SDK、MCP"
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "连接器与硬件"
+      }
+    ]
+  },
+  "s08_text_22": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "strong",
+            "attrs": {
+              "color": "primary"
+            },
+            "text": "产品体验"
+          }
+        ]
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "状态、授权与异常"
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "降低 ToC 门槛"
+      }
+    ]
+  },
+  "s08_text_23": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "strong",
+            "attrs": {
+              "color": "primary"
+            },
+            "text": "增长运营"
+          }
+        ]
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "社区参与、产品激励"
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "分层留存"
+      }
+    ]
+  },
+  "s08_text_24": {
+    "tag": "text",
+    "attrs": {},
+    "text": "LightVela｜来源：原文“汇报概要”与传播复盘总结"
+  },
+  "s08_text_25": {
+    "tag": "text",
+    "attrs": {},
+    "text": "17 / 31"
+  },
+  "focus01_text_03": {
+    "tag": "text",
+    "attrs": {},
+    "text": "03 产品现状 · 场景选择"
+  },
+  "focus01_text_04": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "优先服务泛开发者，聚焦云端应用、协作与开放接入"
+      }
+    ]
+  },
+  "focus01_text_05": {
+    "tag": "text",
+    "attrs": {},
+    "text": "面向借助 Agent 搭建应用、配置工具、组织流程或连接设备的用户，先打磨目标明确、结果可检查、需要持续运行的任务。"
+  },
+  "focus01_text_07": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "为什么先做泛开发者"
+      }
+    ]
+  },
+  "focus01_text_08": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "01 用户和任务更熟悉"
+      }
+    ]
+  },
+  "focus01_text_09": {
+    "tag": "text",
+    "attrs": {},
+    "text": "从团队熟悉的用户需求入手，围绕建站、看板与自动化逐项打磨。"
+  },
+  "focus01_text_10": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "02 已有能力更匹配"
+      }
+    ]
+  },
+  "focus01_text_11": {
+    "tag": "text",
+    "attrs": {},
+    "text": "可定制模型、工具、脚本和定时任务，结合持续运行的云端工作环境。"
+  },
+  "focus01_text_12": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "03 结果可检查，便于验证"
+      }
+    ]
+  },
+  "focus01_text_13": {
+    "tag": "text",
+    "attrs": {},
+    "text": "应用能否访问、流程是否完成、设备是否响应，均可具体检查并持续改进。"
+  },
+  "focus01_text_14": {
+    "tag": "text",
+    "attrs": {},
+    "text": "优先打磨的三类任务 · 当前基础与后续探索分开呈现"
+  },
+  "focus01_text_15": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "云端应用｜搭建并持续维护自己的工具"
+      }
+    ]
+  },
+  "focus01_text_16": {
+    "tag": "text",
+    "attrs": {},
+    "text": "用 Agent 创建网页、数据看板或轻量业务工具，云端部署后继续更新、维护。"
+  },
+  "focus01_text_17": {
+    "tag": "text",
+    "attrs": {},
+    "text": "原文基础：个人工作台已在实验室上线，已有建站、看板与业务监控尝试。"
+  },
+  "focus01_text_19": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "多 Agent 协作｜按职能组织持续工作的流程"
+      }
+    ]
+  },
+  "focus01_text_20": {
+    "tag": "text",
+    "attrs": {},
+    "text": "独立配置不同 Bot，探索 Hermes 与 Coding Agent 分工，承接开发、更新与跟进。"
+  },
+  "focus01_text_21": {
+    "tag": "text",
+    "attrs": {},
+    "text": "原文基础：独立多 Bot 已上线；DeepSeek Harness 为实验入口，协同继续探索。"
+  },
+  "focus01_text_23": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "开放与接入｜连接自己的服务、工具和设备"
+      }
+    ]
+  },
+  "focus01_text_24": {
+    "tag": "text",
+    "attrs": {},
+    "text": "接入服务与专业工具，配置自动化流程；用屏幕、按钮、摄像头制作硬件原型并连接 Agent。"
+  },
+  "focus01_text_25": {
+    "tag": "text",
+    "attrs": {},
+    "text": "原文基础：已有工具配置；标准接口与设备接入继续探索，外部操作仍需授权。"
+  },
+  "focus01_text_26": {
+    "tag": "text",
+    "attrs": {},
+    "text": "LightVela｜依据原文提炼的场景选择，非用户职业分布；完整配置、实验室与接入探索见“详细参考”"
+  },
+  "focus01_text_27": {
+    "tag": "text",
+    "attrs": {},
+    "text": "18 / 31"
+  },
+  "evo01_text_03": {
+    "tag": "text",
+    "attrs": {},
+    "text": "04 产品演进 · 场景重点"
+  },
+  "evo01_text_04": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "聚焦泛开发者场景，建设应用、协作与硬件接入"
+      }
+    ]
+  },
+  "evo01_text_05": {
+    "tag": "text",
+    "attrs": {},
+    "text": "围绕熟悉的泛开发者群体，选择目标明确、结果可检查的任务，集中打磨场景化能力。"
+  },
+  "evo01_text_06": {
+    "tag": "text",
+    "attrs": {},
+    "text": "重点场景"
+  },
+  "evo01_text_07": {
+    "tag": "text",
+    "attrs": {},
+    "text": "用户任务"
+  },
+  "evo01_text_08": {
+    "tag": "text",
+    "attrs": {},
+    "text": "建设重点"
+  },
+  "evo01_text_10": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "strong",
+            "attrs": {},
+            "text": "AI 建站与"
+          }
+        ]
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "strong",
+            "attrs": {},
+            "text": "云端应用"
+          }
+        ]
+      }
+    ]
+  },
+  "evo01_text_11": {
+    "tag": "text",
+    "attrs": {},
+    "text": "做出可运行的网页或应用，继续更新、维护。"
+  },
+  "evo01_text_12": {
+    "tag": "text",
+    "attrs": {},
+    "text": "围绕创建、部署与持续维护完善能力，承接个人工作台的场景探索。"
+  },
+  "evo01_text_14": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "多 Agent 协作"
+      }
+    ]
+  },
+  "evo01_text_15": {
+    "tag": "text",
+    "attrs": {},
+    "text": "按职能配置 Agent，尝试分工完成任务。"
+  },
+  "evo01_text_16": {
+    "tag": "text",
+    "attrs": {},
+    "text": "在独立多 Bot 基础上探索协同执行，结合 Hermes 与 Coding Agent 的实验。"
+  },
+  "evo01_text_18": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "硬件开发与接入"
+      }
+    ]
+  },
+  "evo01_text_19": {
+    "tag": "text",
+    "attrs": {},
+    "text": "用屏幕、按钮、摄像头等设备制作原型，连接云端 Agent，展示状态、交互或触发任务。"
+  },
+  "evo01_text_20": {
+    "tag": "text",
+    "attrs": {},
+    "text": "面向开发者开展低成本接入实验，验证设备与 Agent Session 的连接方式。"
+  },
+  "evo01_text_21": {
+    "tag": "text",
+    "attrs": {},
+    "text": "LightVela｜依据原文与本次确认提炼；均为下一阶段建设方向，完整场景与接口资料见“详细参考”"
+  },
+  "evo01_text_22": {
+    "tag": "text",
+    "attrs": {},
+    "text": "19 / 31"
+  },
+  "evo02_text_03": {
+    "tag": "text",
+    "attrs": {},
+    "text": "04 产品演进 · 产品亮点"
+  },
+  "evo02_text_04": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "完善多 Bot、云电脑与硬件连接能力"
+      }
+    ]
+  },
+  "evo02_text_05": {
+    "tag": "text",
+    "attrs": {},
+    "text": "围绕应用、协作与硬件场景，补齐任务组织、云端执行和开放接入。"
+  },
+  "evo02_text_06": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "多 Bot"
+      }
+    ]
+  },
+  "evo02_text_07": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "从独立配置继续探索协同执行"
+      }
+    ]
+  },
+  "evo02_text_08": {
+    "tag": "text",
+    "attrs": {},
+    "text": "完善分工组织，探索多 Bot 以及 Hermes 与 Coding Agent 的协同执行。"
+  },
+  "evo02_text_09": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "strong",
+            "attrs": {
+              "color": "primary"
+            },
+            "text": "已有基础"
+          }
+        ]
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "独立个性、记忆、工作空间"
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "协同执行继续探索"
+      }
+    ]
+  },
+  "evo02_text_11": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "云电脑"
+      }
+    ]
+  },
+  "evo02_text_12": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "补齐浏览器、应用与文件操作"
+      }
+    ]
+  },
+  "evo02_text_13": {
+    "tag": "text",
+    "attrs": {},
+    "text": "让任务在云端持续运行，保留工作状态；长期在线与权限管理共同支撑执行。"
+  },
+  "evo02_text_14": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "strong",
+            "attrs": {
+              "color": "primary"
+            },
+            "text": "持续完善"
+          }
+        ]
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "云端环境已有基础"
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "执行范围仍需补齐"
+      }
+    ]
+  },
+  "evo02_text_16": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "硬件生态"
+      }
+    ]
+  },
+  "evo02_text_17": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "开放连接，先支持开发者原型验证"
+      }
+    ]
+  },
+  "evo02_text_18": {
+    "tag": "text",
+    "attrs": {},
+    "text": "探索 API、SDK、MCP 等连接方式，把设备输入、状态展示和任务执行接入云端 Agent Session。"
+  },
+  "evo02_text_20": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "strong",
+            "attrs": {},
+            "text": "设备 ↔ 云端 Agent"
+          }
+        ]
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "低成本接入实验"
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "逐步积累接入方式"
+      }
+    ]
+  },
+  "evo02_text_21": {
+    "tag": "text",
+    "attrs": {},
+    "text": "LightVela｜依据原文能力强化与开放接入提炼；硬件先做原型验证，完整架构、接口与设备示例见“详细参考”"
+  },
+  "evo02_text_22": {
+    "tag": "text",
+    "attrs": {},
+    "text": "20 / 31"
+  },
+  "infra00_text_01": {
+    "tag": "text",
+    "attrs": {},
+    "text": "04 产品演进 · 基础设施建设"
+  },
+  "infra00_text_02": {
+    "tag": "text",
+    "attrs": {},
+    "text": "让 Agent 弄坏的只是可替换的部分"
+  },
+  "infra00_text_03": {
+    "tag": "text",
+    "attrs": {},
+    "text": "21 / 31"
+  },
+  "infra00_dynamic_04": {
+    "pageIndex": 0,
+    "title": "让 Agent 弄坏的只是可替换的部分"
+  },
+  "infra01_text_01": {
+    "tag": "text",
+    "attrs": {},
+    "text": "04 产品演进 · 基础设施建设"
+  },
+  "infra01_text_02": {
+    "tag": "text",
+    "attrs": {},
+    "text": "现状与风险：Agent 能弄坏整台 VM"
+  },
+  "infra01_text_03": {
+    "tag": "text",
+    "attrs": {},
+    "text": "22 / 31"
+  },
+  "infra01_dynamic_04": {
+    "pageIndex": 1,
+    "title": "现状与风险：Agent 能弄坏整台 VM"
+  },
+  "infra02_text_01": {
+    "tag": "text",
+    "attrs": {},
+    "text": "04 产品演进 · 基础设施建设"
+  },
+  "infra02_text_02": {
+    "tag": "text",
+    "attrs": {},
+    "text": "缩小破坏范围，坏了能恢复"
+  },
+  "infra02_text_03": {
+    "tag": "text",
+    "attrs": {},
+    "text": "23 / 31"
+  },
+  "infra02_dynamic_04": {
+    "pageIndex": 2,
+    "title": "缩小破坏范围，坏了能恢复"
+  },
+  "infra03_text_01": {
+    "tag": "text",
+    "attrs": {},
+    "text": "04 产品演进 · 基础设施建设"
+  },
+  "infra03_text_02": {
+    "tag": "text",
+    "attrs": {},
+    "text": "方案一：单 VM + Sandbox"
+  },
+  "infra03_text_03": {
+    "tag": "text",
+    "attrs": {},
+    "text": "24 / 31"
+  },
+  "infra03_dynamic_04": {
+    "pageIndex": 3,
+    "title": "方案一：单 VM + Sandbox"
+  },
+  "infra04_text_01": {
+    "tag": "text",
+    "attrs": {},
+    "text": "04 产品演进 · 基础设施建设"
+  },
+  "infra04_text_02": {
+    "tag": "text",
+    "attrs": {},
+    "text": "方案二：大脑与工作台分离"
+  },
+  "infra04_text_03": {
+    "tag": "text",
+    "attrs": {},
+    "text": "25 / 31"
+  },
+  "infra04_dynamic_04": {
+    "pageIndex": 4,
+    "title": "方案二：大脑与工作台分离"
+  },
+  "infra05_text_01": {
+    "tag": "text",
+    "attrs": {},
+    "text": "04 产品演进 · 基础设施建设"
+  },
+  "infra05_text_02": {
+    "tag": "text",
+    "attrs": {},
+    "text": "预热：换机恢复，目标最快约 10 秒"
+  },
+  "infra05_text_03": {
+    "tag": "text",
+    "attrs": {},
+    "text": "26 / 31"
+  },
+  "infra05_dynamic_04": {
+    "pageIndex": 5,
+    "title": "预热：换机恢复，目标最快约 10 秒"
+  },
+  "infra06_text_01": {
+    "tag": "text",
+    "attrs": {},
+    "text": "04 产品演进 · 基础设施建设"
+  },
+  "infra06_text_02": {
+    "tag": "text",
+    "attrs": {},
+    "text": "两套方案对比：各有取舍"
+  },
+  "infra06_text_03": {
+    "tag": "text",
+    "attrs": {},
+    "text": "27 / 31"
+  },
+  "infra06_dynamic_04": {
+    "pageIndex": 6,
+    "title": "两套方案对比：各有取舍"
+  },
+  "infra07_text_01": {
+    "tag": "text",
+    "attrs": {},
+    "text": "04 产品演进 · 基础设施建设"
+  },
+  "infra07_text_02": {
+    "tag": "text",
+    "attrs": {},
+    "text": "管家 Agent：已跑通 POC"
+  },
+  "infra07_text_03": {
+    "tag": "text",
+    "attrs": {},
+    "text": "28 / 31"
+  },
+  "infra07_dynamic_04": {
+    "pageIndex": 7,
+    "title": "管家 Agent：已跑通 POC"
+  },
+  "evo03_text_03": {
+    "tag": "text",
+    "attrs": {},
+    "text": "04 产品演进 · 体验升级"
+  },
+  "evo03_text_04": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "持续优化产品交互，完善角色识别与任务反馈"
+      }
+    ]
+  },
+  "evo03_text_05": {
+    "tag": "text",
+    "attrs": {},
+    "text": "官网新视觉已上线首版，后续继续完善产品内对话、Bot 切换与任务交互。"
+  },
+  "evo03_text_06": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "拟人化"
+      }
+    ]
+  },
+  "evo03_text_07": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "角色清楚，交流自然"
+      }
+    ]
+  },
+  "evo03_text_08": {
+    "tag": "text",
+    "attrs": {},
+    "text": "围绕名称、性格、对话风格与记忆改善体验，减少管理后台式操作，让不同 Bot 更容易识别。"
+  },
+  "evo03_image_09": {
+    "src": "/assets/source_35_role_crop.png",
+    "alt": "原文LightVela健康管家角色化对话摘图，点击查看完整工作区",
+    "originalSrc": "/assets/source_35.png"
+  },
+  "evo03_text_10": {
+    "tag": "text",
+    "attrs": {},
+    "text": "原文 LightVela 角色化对话参考"
+  },
+  "evo03_text_12": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "主动性"
+      }
+    ]
+  },
+  "evo03_text_13": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "授权范围内，主动提醒与跟进"
+      }
+    ]
+  },
+  "evo03_text_14": {
+    "tag": "text",
+    "attrs": {},
+    "text": "结合目标、历史上下文和环境变化，探索提醒、推荐与任务跟进；重要操作继续确认，任务状态与异常反馈保持清楚。"
+  },
+  "evo03_image_15": {
+    "src": "/assets/source_33_followup_crop.png",
+    "alt": "原文外部对话体验中的待办跟进参考，非LightVela已上线能力",
+    "originalSrc": "/assets/source_33.png"
+  },
+  "evo03_text_16": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "原文外部待办跟进参考"
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "LightVela 主动性仍为研究方向"
+      }
+    ]
+  },
+  "evo03_text_18": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "交互视觉更新"
+      }
+    ]
+  },
+  "evo03_text_19": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "统一角色识别与状态反馈"
+      }
+    ]
+  },
+  "evo03_text_20": {
+    "tag": "text",
+    "attrs": {},
+    "text": "在首页新视觉基础上，继续优化头像、Bot 切换、对话、执行状态、授权确认与异常反馈。"
+  },
+  "evo03_text_22": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "strong",
+            "attrs": {},
+            "text": "角色识别 · 状态反馈 · 操作确认"
+          }
+        ]
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "后续产品内交互优化"
+      }
+    ]
+  },
+  "evo03_text_23": {
+    "tag": "text",
+    "attrs": {},
+    "text": "LightVela｜官网首版视觉已上线；本页为后续产品交互方向；完整体验原图见“详细参考”"
+  },
+  "evo03_text_24": {
+    "tag": "text",
+    "attrs": {},
+    "text": "29 / 31"
+  },
+  "s21_text_03": {
+    "tag": "text",
+    "attrs": {},
+    "text": "05 增长与运营 · 坚持用户路线"
+  },
+  "s21_text_04": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "坚持用户路线，连接传播、使用与留存"
+      }
+    ]
+  },
+  "s21_text_05": {
+    "tag": "text",
+    "attrs": {},
+    "text": "关注与注册之后，还需要明确场景、产品激励和稳定体验，促成长期使用。"
+  },
+  "s21_text_11": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "01 社区与内容"
+      }
+    ]
+  },
+  "s21_text_12": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "02 分享权益"
+      }
+    ]
+  },
+  "s21_text_13": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "03 游戏化促活"
+      }
+    ]
+  },
+  "s21_text_14": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "04 分层留存"
+      }
+    ]
+  },
+  "s21_text_15": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "持续参与 X、Telegram 社区，及时回应用户。"
+      },
+      {
+        "tag": "p",
+        "attrs": {
+          "space-before": "16"
+        },
+        "text": "输出能力介绍、真实案例与用户作品。"
+      },
+      {
+        "tag": "p",
+        "attrs": {
+          "space-before": "16"
+        },
+        "text": "维持活跃度，建立信任与品牌认知。"
+      }
+    ]
+  },
+  "s21_text_16": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "将订阅时长、AI 积分、稀缺能力设计为分享权益。"
+      },
+      {
+        "tag": "p",
+        "attrs": {
+          "space-before": "16"
+        },
+        "text": "鼓励老用户邀请新用户。"
+      },
+      {
+        "tag": "p",
+        "attrs": {
+          "space-before": "16"
+        },
+        "text": "重点关注有效激活与后续使用。"
+      }
+    ]
+  },
+  "s21_text_17": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "Agent 成就、任务完成与积分和权益联动。"
+      },
+      {
+        "tag": "p",
+        "attrs": {
+          "space-before": "16"
+        },
+        "text": "鼓励尝试更多场景、持续构建 Agent。"
+      },
+      {
+        "tag": "p",
+        "attrs": {
+          "space-before": "16"
+        },
+        "text": "用阶段性反馈形成使用习惯。"
+      }
+    ]
+  },
+  "s21_text_18": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "按活跃度、构建深度和使用频率分层。"
+      },
+      {
+        "tag": "p",
+        "attrs": {
+          "space-before": "16"
+        },
+        "text": "提供续期、积分、高级能力、专属身份与共创权益。"
+      },
+      {
+        "tag": "p",
+        "attrs": {
+          "space-before": "16"
+        },
+        "text": "沉淀高价值长期用户。"
+      }
+    ]
+  },
+  "s21_text_20": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "用户参与　→　产品使用　→　案例共创　→　口碑传播　→　更多用户参与"
+      }
+    ]
+  },
+  "s21_text_21": {
+    "tag": "text",
+    "attrs": {},
+    "text": "LightVela｜来源：原文增长与运营四项策略；未新增权益数值或量化目标"
+  },
+  "s21_text_22": {
+    "tag": "text",
+    "attrs": {},
+    "text": "30 / 31"
+  },
+  "s24_text_03": {
+    "tag": "text",
+    "attrs": {},
+    "text": "LightVela · 下一阶段"
+  },
+  "s24_text_04": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "把高频场景做稳，把用户留下"
+      }
+    ]
+  },
+  "s24_text_06": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "strong",
+            "attrs": {
+              "color": "primary"
+            },
+            "text": "完善基础体验"
+          },
+          {
+            "tag": "plain",
+            "text": "　稳定在线、状态保留、权限管理与异常承接",
+            "attrs": {}
+          }
+        ]
+      },
+      {
+        "tag": "p",
+        "attrs": {
+          "space-before": "18"
+        },
+        "children": [
+          {
+            "tag": "strong",
+            "attrs": {
+              "color": "primary"
+            },
+            "text": "聚焦场景建设"
+          },
+          {
+            "tag": "plain",
+            "text": "　泛开发者场景优先，海外验证，国内打磨易用性",
+            "attrs": {}
+          }
+        ]
+      },
+      {
+        "tag": "p",
+        "attrs": {
+          "space-before": "18"
+        },
+        "children": [
+          {
+            "tag": "strong",
+            "attrs": {
+              "color": "primary"
+            },
+            "text": "持续用户运营"
+          },
+          {
+            "tag": "plain",
+            "text": "　社区参与、分享激励、分层权益与内容共创",
+            "attrs": {}
+          }
+        ]
+      }
+    ]
+  },
+  "s24_text_07": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "谢谢"
+      }
+    ]
+  },
+  "s24_image_08": {
+    "src": "/assets/bean-lilac_trim.png",
+    "alt": "s24 原始图文材料"
+  },
+  "s24_text_09": {
+    "tag": "text",
+    "attrs": {},
+    "text": "LightVela｜产品与增长汇报 · 2026 年 10 月"
+  },
+  "s24_text_10": {
+    "tag": "text",
+    "attrs": {},
+    "text": "31 / 31"
+  },
+  "recap-background_text_03": {
+    "tag": "text",
+    "attrs": {},
+    "text": "01 出圈回顾"
+  },
+  "recap-background_text_04": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "节前出圈：从社区积累到跨平台扩散"
+      }
+    ]
+  },
+  "recap-background_text_05": {
+    "tag": "text",
+    "attrs": {},
+    "text": "海外产品热度传入国内，LightVela 的社区内容和免费权益获得关注。"
+  },
+  "recap-background_text_07": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "外部背景"
+      }
+    ]
+  },
+  "recap-background_text_08": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "Grok Bot 借助云端电脑、简易体验、形象设计和 X 分发，逐步建立个人 Agent 助手认知。"
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "Meta Muse 发布后的分发和榜单表现继续推高热度；9 月上旬，相关讨论开始传入国内科技媒体。"
+      }
+    ]
+  },
+  "recap-background_text_15": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "6 月起"
+      }
+    ]
+  },
+  "recap-background_text_16": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "建立 X 官方账号"
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "发布更新、教程"
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "参与社区互动"
+      }
+    ]
+  },
+  "recap-background_text_17": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "9 月上旬"
+      }
+    ]
+  },
+  "recap-background_text_18": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "国内个人公众号"
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "开始发布内容"
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "关注度仍然有限"
+      }
+    ]
+  },
+  "recap-background_text_19": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "9 月中旬"
+      }
+    ]
+  },
+  "recap-background_text_20": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "海外 KOL 分享"
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "免费 VM 与 AI 积分"
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "X、Telegram 扩散"
+      }
+    ]
+  },
+  "recap-background_text_21": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "9 月 24 日前"
+      }
+    ]
+  },
+  "recap-background_text_22": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "升级新用户权益"
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "推出邀请积分"
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "官方推文小额加热"
+      }
+    ]
+  },
+  "recap-background_text_23": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "9 月下旬"
+      }
+    ]
+  },
+  "recap-background_text_24": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "“中国版 Muse”文章"
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "带动中文媒体跟进"
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "国内外注册增长"
+      }
+    ]
+  },
+  "recap-background_text_25": {
+    "tag": "text",
+    "attrs": {},
+    "text": "LightVela｜来源：原文传播复盘；外部产品表现沿用材料描述"
+  },
+  "recap-background_text_26": {
+    "tag": "text",
+    "attrs": {},
+    "text": "补充材料"
+  },
+  "s04_text_03": {
+    "tag": "text",
+    "attrs": {},
+    "text": "01 出圈回顾"
+  },
+  "s04_text_04": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "前期持续发布，国内关注度仍然有限"
+      }
+    ]
+  },
+  "s04_text_05": {
+    "tag": "text",
+    "attrs": {},
+    "text": "产品更新、使用教程和社区互动，为后续传播留下了可引用的内容。"
+  },
+  "s04_text_06": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "X 官方账号持续参与"
+      }
+    ]
+  },
+  "s04_text_07": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "6 月建立官方账号。"
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "持续发布产品相关更新、实用教程，并回应社区讨论。"
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "早期内容覆盖产品介绍、赛事资讯 Agent 和成就体系。"
+      }
+    ]
+  },
+  "s04_image_08": {
+    "src": "/assets/source_01.png",
+    "alt": "s04 原始图文材料"
+  },
+  "s04_image_09": {
+    "src": "/assets/source_03.png",
+    "alt": "s04 原始图文材料"
+  },
+  "s04_text_10": {
+    "tag": "text",
+    "attrs": {},
+    "text": "6 月官方账号的产品介绍"
+  },
+  "s04_text_11": {
+    "tag": "text",
+    "attrs": {},
+    "text": "实用教程：FIFA 资讯跟踪"
+  },
+  "s04_text_13": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "国内公众号开始试水"
+      }
+    ]
+  },
+  "s04_text_14": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "9 月上旬，产品同学以多个个人账号发布推文。"
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "阅读和关注较少，微信指数尚未出现明显突破。"
+      }
+    ]
+  },
+  "s04_image_15": {
+    "src": "/assets/source_05.png",
+    "alt": "s04 原始图文材料"
+  },
+  "s04_image_16": {
+    "src": "/assets/source_06.png",
+    "alt": "s04 原始图文材料"
+  },
+  "s04_image_17": {
+    "src": "/assets/source_07.png",
+    "alt": "s04 原始图文材料"
+  },
+  "s04_image_18": {
+    "src": "/assets/source_08.png",
+    "alt": "s04 原始图文材料"
+  },
+  "s04_text_19": {
+    "tag": "text",
+    "attrs": {},
+    "text": "国内个人公众号内容"
+  },
+  "s04_text_20": {
+    "tag": "text",
+    "attrs": {},
+    "text": "9 月 9 日　LightVela　微信指数 487"
+  },
+  "s04_text_21": {
+    "tag": "text",
+    "attrs": {},
+    "text": "LightVela｜来源：原文 X 推文、公众号和微信指数截图"
+  },
+  "s04_text_22": {
+    "tag": "text",
+    "attrs": {},
+    "text": "补充材料"
+  },
+  "s05_text_03": {
+    "tag": "text",
+    "attrs": {},
+    "text": "01 出圈回顾"
+  },
+  "s05_text_04": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "免费权益与邀请活动推动海外传播"
+      }
+    ]
+  },
+  "s05_text_05": {
+    "tag": "text",
+    "attrs": {},
+    "text": "“免费 + 云端服务器 + AI 积分”引发分享，官方权益更新继续放大关注。"
+  },
+  "s05_text_06": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "9 月中旬｜海外 KOL 先行分享"
+      }
+    ]
+  },
+  "s05_text_07": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "9 月 24 日前｜权益更新与官方推送"
+      }
+    ]
+  },
+  "s05_image_09": {
+    "src": "/assets/source_09.png",
+    "alt": "s05 原始图文材料"
+  },
+  "s05_text_10": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "专注推荐 AI 产品的 KOL，开始在 X、Telegram 分享。"
+      },
+      {
+        "tag": "p",
+        "attrs": {
+          "space-before": "12"
+        },
+        "text": "免费云端环境与积分权益降低了体验门槛。"
+      }
+    ]
+  },
+  "s05_image_11": {
+    "src": "/assets/source_10.png",
+    "alt": "s05 原始图文材料"
+  },
+  "s05_text_12": {
+    "tag": "text",
+    "attrs": {},
+    "text": "原文标注：国际站的第一轮增长"
+  },
+  "s05_image_13": {
+    "src": "/assets/source_11.png",
+    "alt": "s05 原始图文材料"
+  },
+  "s05_text_14": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "更新新用户免费体验权益。"
+      },
+      {
+        "tag": "p",
+        "attrs": {
+          "space-before": "12"
+        },
+        "text": "好友邀请双方各得 AI 积分。"
+      },
+      {
+        "tag": "p",
+        "attrs": {
+          "space-before": "12"
+        },
+        "text": "官方 X 推文针对新加坡进行小额加热，浏览量远超预期。"
+      }
+    ]
+  },
+  "s05_text_15": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "$10"
+      }
+    ]
+  },
+  "s05_text_16": {
+    "tag": "text",
+    "attrs": {},
+    "text": "原文记录的帖子加热投入"
+  },
+  "s05_text_17": {
+    "tag": "text",
+    "attrs": {},
+    "text": "LightVela｜来源：原文 KOL、X 官方推文及国际站趋势截图"
+  },
+  "s05_text_18": {
+    "tag": "text",
+    "attrs": {},
+    "text": "补充材料"
+  },
+  "s22_text_03": {
+    "tag": "text",
+    "attrs": {},
+    "text": "02 个人助理产品洞察 · 详细参考"
+  },
+  "s22_text_04": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "附录｜个人 Agent 市场与潜在竞品"
+      }
+    ]
+  },
+  "s22_text_05": {
+    "tag": "text",
+    "attrs": {},
+    "text": "海外玩家分别强调云端执行、独立身份和日常场景；国内同时面临入口与任务能力竞争。"
+  },
+  "s22_table_06": {
+    "tag": "table",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "tr",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "td",
+            "attrs": {},
+            "children": [
+              {
+                "tag": "strong",
+                "attrs": {},
+                "text": "海外产品"
+              }
+            ]
+          },
+          {
+            "tag": "td",
+            "attrs": {},
+            "children": [
+              {
+                "tag": "strong",
+                "attrs": {},
+                "text": "Grok Bot"
+              }
+            ]
+          },
+          {
+            "tag": "td",
+            "attrs": {},
+            "children": [
+              {
+                "tag": "strong",
+                "attrs": {},
+                "text": "Instinct"
+              }
+            ]
+          },
+          {
+            "tag": "td",
+            "attrs": {},
+            "children": [
+              {
+                "tag": "strong",
+                "attrs": {},
+                "text": "Meta Muse"
+              }
+            ]
+          },
+          {
+            "tag": "td",
+            "attrs": {},
+            "children": [
+              {
+                "tag": "strong",
+                "attrs": {},
+                "text": "Manus Cue"
+              }
+            ]
+          },
+          {
+            "tag": "td",
+            "attrs": {},
+            "children": [
+              {
+                "tag": "strong",
+                "attrs": {},
+                "text": "OpenAI Dot"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "tag": "tr",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "td",
+            "attrs": {},
+            "children": [
+              {
+                "tag": "strong",
+                "attrs": {},
+                "text": "发布时间"
+              }
+            ]
+          },
+          {
+            "tag": "td",
+            "attrs": {},
+            "text": "2026.08.11"
+          },
+          {
+            "tag": "td",
+            "attrs": {},
+            "text": "2026.08.26"
+          },
+          {
+            "tag": "td",
+            "attrs": {},
+            "text": "2026.09.08"
+          },
+          {
+            "tag": "td",
+            "attrs": {},
+            "text": "2026.09.28"
+          },
+          {
+            "tag": "td",
+            "attrs": {},
+            "text": "2026.09.29"
+          }
+        ]
+      },
+      {
+        "tag": "tr",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "td",
+            "attrs": {},
+            "children": [
+              {
+                "tag": "strong",
+                "attrs": {},
+                "text": "主打亮点"
+              }
+            ]
+          },
+          {
+            "tag": "td",
+            "attrs": {},
+            "children": [
+              {
+                "tag": "p",
+                "attrs": {},
+                "text": "多 Bot"
+              },
+              {
+                "tag": "p",
+                "attrs": {
+                  "space-before": "8"
+                },
+                "text": "云电脑"
+              }
+            ]
+          },
+          {
+            "tag": "td",
+            "attrs": {},
+            "children": [
+              {
+                "tag": "p",
+                "attrs": {},
+                "text": "真人助理感"
+              },
+              {
+                "tag": "p",
+                "attrs": {
+                  "space-before": "8"
+                },
+                "text": "手机号、电脑、邮箱"
+              }
+            ]
+          },
+          {
+            "tag": "td",
+            "attrs": {},
+            "children": [
+              {
+                "tag": "p",
+                "attrs": {},
+                "text": "长期在线"
+              },
+              {
+                "tag": "p",
+                "attrs": {
+                  "space-before": "8"
+                },
+                "text": "云端工作环境"
+              },
+              {
+                "tag": "p",
+                "attrs": {
+                  "space-before": "8"
+                },
+                "text": "主动工作"
+              }
+            ]
+          },
+          {
+            "tag": "td",
+            "attrs": {},
+            "children": [
+              {
+                "tag": "p",
+                "attrs": {},
+                "text": "每个 Agent 独立身份"
+              },
+              {
+                "tag": "p",
+                "attrs": {
+                  "space-before": "8"
+                },
+                "text": "多 Agent 组队"
+              },
+              {
+                "tag": "p",
+                "attrs": {
+                  "space-before": "8"
+                },
+                "text": "邮箱、手机号、钱包、云端电脑"
+              }
+            ]
+          },
+          {
+            "tag": "td",
+            "attrs": {},
+            "children": [
+              {
+                "tag": "p",
+                "attrs": {},
+                "text": "持续工作"
+              },
+              {
+                "tag": "p",
+                "attrs": {
+                  "space-before": "8"
+                },
+                "text": "云电脑与浏览器"
+              },
+              {
+                "tag": "p",
+                "attrs": {
+                  "space-before": "8"
+                },
+                "text": "调度其他工作 Agent"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "tag": "tr",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "td",
+            "attrs": {},
+            "children": [
+              {
+                "tag": "strong",
+                "attrs": {},
+                "text": "原文用户数据"
+              }
+            ]
+          },
+          {
+            "tag": "td",
+            "attrs": {},
+            "text": "上线首月周活 41.8 万"
+          },
+          {
+            "tag": "td",
+            "attrs": {},
+            "text": "9 月中旬突破 10 万；增速约 10%–11%"
+          },
+          {
+            "tag": "td",
+            "attrs": {},
+            "text": "美国移动端日活 64.2 万"
+          },
+          {
+            "tag": "td",
+            "attrs": {},
+            "text": "暂无公开数据"
+          },
+          {
+            "tag": "td",
+            "attrs": {},
+            "text": "暂无公开数据"
+          }
+        ]
+      }
+    ]
+  },
+  "s22_text_07": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "国内市场｜用户心智层面的潜在竞争"
+      }
+    ]
+  },
+  "s22_table_08": {
+    "tag": "table",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "tr",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "td",
+            "attrs": {},
+            "children": [
+              {
+                "tag": "strong",
+                "attrs": {},
+                "text": "微信小微"
+              }
+            ]
+          },
+          {
+            "tag": "td",
+            "attrs": {},
+            "children": [
+              {
+                "tag": "strong",
+                "attrs": {},
+                "text": "ChatBot｜豆包 / 元宝"
+              }
+            ]
+          },
+          {
+            "tag": "td",
+            "attrs": {},
+            "children": [
+              {
+                "tag": "strong",
+                "attrs": {},
+                "text": "模型厂商 Agent"
+              }
+            ]
+          },
+          {
+            "tag": "td",
+            "attrs": {},
+            "children": [
+              {
+                "tag": "strong",
+                "attrs": {},
+                "text": "多端助理｜Siri / 小爱"
+              }
+            ]
+          },
+          {
+            "tag": "td",
+            "attrs": {},
+            "children": [
+              {
+                "tag": "strong",
+                "attrs": {},
+                "text": "Coding Agent 分化"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "tag": "tr",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "td",
+            "attrs": {},
+            "text": "微信入口、数据、内容与小程序生态"
+          },
+          {
+            "tag": "td",
+            "attrs": {},
+            "text": "原文未单列核心优势"
+          },
+          {
+            "tag": "td",
+            "attrs": {},
+            "text": "如 Minimax Agent；大模型第一方优势"
+          },
+          {
+            "tag": "td",
+            "attrs": {},
+            "text": "掌握默认入口，用户心智成熟"
+          },
+          {
+            "tag": "td",
+            "attrs": {},
+            "text": "WB / TRAE / Qoder；任务完成与委派能力更强"
+          }
+        ]
+      }
+    ]
+  },
+  "s22_text_09": {
+    "tag": "text",
+    "attrs": {},
+    "text": "LightVela｜全部沿用原文市场资料；用户数据的时间与指标不同，不作规模排名，未作外部更新"
+  },
+  "s22_text_10": {
+    "tag": "text",
+    "attrs": {},
+    "text": "补充材料"
+  },
+  "s23_text_03": {
+    "tag": "text",
+    "attrs": {},
+    "text": "02 个人助理产品洞察 · 详细参考"
+  },
+  "s23_text_04": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "附录｜Muse 场景与 Hermes 能力参考"
+      }
+    ]
+  },
+  "s23_text_05": {
+    "tag": "text",
+    "attrs": {},
+    "text": "场景统计和底层能力判断沿用原文，不据此推导 LightVela 的实际表现。"
+  },
+  "s23_text_06": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "Muse｜837 条使用案例"
+      }
+    ]
+  },
+  "s23_table_07": {
+    "tag": "table",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "tr",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "td",
+            "attrs": {},
+            "children": [
+              {
+                "tag": "strong",
+                "attrs": {},
+                "text": "统一场景"
+              }
+            ]
+          },
+          {
+            "tag": "td",
+            "attrs": {
+              "align": "right"
+            },
+            "children": [
+              {
+                "tag": "strong",
+                "attrs": {},
+                "text": "数量"
+              }
+            ]
+          },
+          {
+            "tag": "td",
+            "attrs": {
+              "align": "right"
+            },
+            "children": [
+              {
+                "tag": "strong",
+                "attrs": {},
+                "text": "占比"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "tag": "tr",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "td",
+            "attrs": {},
+            "text": "个人事务与效率"
+          },
+          {
+            "tag": "td",
+            "attrs": {
+              "align": "right"
+            },
+            "text": "251"
+          },
+          {
+            "tag": "td",
+            "attrs": {
+              "align": "right"
+            },
+            "text": "30.0%"
+          }
+        ]
+      },
+      {
+        "tag": "tr",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "td",
+            "attrs": {},
+            "text": "财务与省钱"
+          },
+          {
+            "tag": "td",
+            "attrs": {
+              "align": "right"
+            },
+            "text": "177"
+          },
+          {
+            "tag": "td",
+            "attrs": {
+              "align": "right"
+            },
+            "text": "21.1%"
+          }
+        ]
+      },
+      {
+        "tag": "tr",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "td",
+            "attrs": {},
+            "text": "购物、餐饮与活动"
+          },
+          {
+            "tag": "td",
+            "attrs": {
+              "align": "right"
+            },
+            "text": "117"
+          },
+          {
+            "tag": "td",
+            "attrs": {
+              "align": "right"
+            },
+            "text": "14.0%"
+          }
+        ]
+      },
+      {
+        "tag": "tr",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "td",
+            "attrs": {},
+            "text": "工作、内容与开发"
+          },
+          {
+            "tag": "td",
+            "attrs": {
+              "align": "right"
+            },
+            "text": "111"
+          },
+          {
+            "tag": "td",
+            "attrs": {
+              "align": "right"
+            },
+            "text": "13.3%"
+          }
+        ]
+      },
+      {
+        "tag": "tr",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "td",
+            "attrs": {},
+            "text": "旅行与出行"
+          },
+          {
+            "tag": "td",
+            "attrs": {
+              "align": "right"
+            },
+            "text": "101"
+          },
+          {
+            "tag": "td",
+            "attrs": {
+              "align": "right"
+            },
+            "text": "12.1%"
+          }
+        ]
+      },
+      {
+        "tag": "tr",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "td",
+            "attrs": {},
+            "text": "健康、家庭、学习与休闲"
+          },
+          {
+            "tag": "td",
+            "attrs": {
+              "align": "right"
+            },
+            "text": "65"
+          },
+          {
+            "tag": "td",
+            "attrs": {
+              "align": "right"
+            },
+            "text": "7.8%"
+          }
+        ]
+      },
+      {
+        "tag": "tr",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "td",
+            "attrs": {},
+            "text": "产品设置或任务不明"
+          },
+          {
+            "tag": "td",
+            "attrs": {
+              "align": "right"
+            },
+            "text": "15"
+          },
+          {
+            "tag": "td",
+            "attrs": {
+              "align": "right"
+            },
+            "text": "1.8%"
+          }
+        ]
+      },
+      {
+        "tag": "tr",
+        "attrs": {
+          "fill": "bg-surface"
+        },
+        "children": [
+          {
+            "tag": "td",
+            "attrs": {},
+            "children": [
+              {
+                "tag": "strong",
+                "attrs": {},
+                "text": "合计"
+              }
+            ]
+          },
+          {
+            "tag": "td",
+            "attrs": {
+              "align": "right"
+            },
+            "children": [
+              {
+                "tag": "strong",
+                "attrs": {},
+                "text": "837"
+              }
+            ]
+          },
+          {
+            "tag": "td",
+            "attrs": {
+              "align": "right"
+            },
+            "children": [
+              {
+                "tag": "strong",
+                "attrs": {},
+                "text": "100%"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "s23_text_08": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "原文数据依据：",
+        "children": [
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://www.useofmuse.com/data/use-cases.js?v=6",
+              "color": "primary"
+            },
+            "children": [
+              {
+                "tag": "u",
+                "attrs": {},
+                "text": "Use of Muse"
+              }
+            ]
+          },
+          {
+            "tag": "plain",
+            "text": " · ",
+            "attrs": {}
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://musecases.netlify.app/usecases.json",
+              "color": "primary"
+            },
+            "children": [
+              {
+                "tag": "u",
+                "attrs": {},
+                "text": "Musecases（1–421）"
+              }
+            ]
+          },
+          {
+            "tag": "plain",
+            "text": " · ",
+            "attrs": {}
+          },
+          {
+            "tag": "a",
+            "attrs": {
+              "href": "https://howtousemuse.com/use-cases",
+              "color": "primary"
+            },
+            "children": [
+              {
+                "tag": "u",
+                "attrs": {},
+                "text": "HowToUseMuse"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "百分比存在四舍五入误差；保留原文类别、数量与占比。"
+      }
+    ]
+  },
+  "s23_text_10": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "Hermes｜迭代频率高，能力覆盖丰富"
+      }
+    ]
+  },
+  "s23_text_11": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "原文判断：成熟度尚可，口碑整体积极。"
+      },
+      {
+        "tag": "p",
+        "attrs": {
+          "space-before": "12"
+        },
+        "text": "已覆盖持久记忆、技能、会话搜索、定时任务、子 Agent、MCP、多个消息平台和终端后端。"
+      },
+      {
+        "tag": "p",
+        "attrs": {
+          "space-before": "12"
+        },
+        "text": "真实任务能力受模型和配置影响，表现有竞争力，但尚未稳定领先。"
+      }
+    ]
+  },
+  "s23_text_12": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "WildClawBench｜原文引用分数"
+      }
+    ]
+  },
+  "s23_table_13": {
+    "tag": "table",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "tr",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "td",
+            "attrs": {},
+            "text": "GPT-5.4"
+          },
+          {
+            "tag": "td",
+            "attrs": {},
+            "text": "GLM 5"
+          },
+          {
+            "tag": "td",
+            "attrs": {},
+            "text": "MiMo V2 Pro"
+          },
+          {
+            "tag": "td",
+            "attrs": {},
+            "text": "MiniMax M2.7"
+          }
+        ]
+      },
+      {
+        "tag": "tr",
+        "attrs": {
+          "color": "primary",
+          "size": "24"
+        },
+        "children": [
+          {
+            "tag": "td",
+            "attrs": {},
+            "children": [
+              {
+                "tag": "strong",
+                "attrs": {},
+                "text": "50.7%"
+              }
+            ]
+          },
+          {
+            "tag": "td",
+            "attrs": {},
+            "children": [
+              {
+                "tag": "strong",
+                "attrs": {},
+                "text": "46.4%"
+              }
+            ]
+          },
+          {
+            "tag": "td",
+            "attrs": {},
+            "children": [
+              {
+                "tag": "strong",
+                "attrs": {},
+                "text": "48.1%"
+              }
+            ]
+          },
+          {
+            "tag": "td",
+            "attrs": {},
+            "children": [
+              {
+                "tag": "strong",
+                "attrs": {},
+                "text": "37.1%"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "s23_text_14": {
+    "tag": "text",
+    "attrs": {},
+    "text": "分数与判断沿用原文引用，未补造测试设置或外部来源。"
+  },
+  "s23_text_15": {
+    "tag": "text",
+    "attrs": {},
+    "text": "LightVela｜来源：原文两项附录及其中引用链接；非最新外部调查"
+  },
+  "s23_text_16": {
+    "tag": "text",
+    "attrs": {},
+    "text": "补充材料"
+  },
+  "s09_text_03": {
+    "tag": "text",
+    "attrs": {},
+    "text": "03 产品现状 · 产品形态"
+  },
+  "s09_text_04": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "独立站已串起个人 Agent 的使用路径"
+      }
+    ]
+  },
+  "s09_text_05": {
+    "tag": "text",
+    "attrs": {},
+    "text": "国际站与国内站提供相同的核心路径，逐步引导用户完成创建、对话与个性化配置。"
+  },
+  "s09_text_07": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {
+          "color": "primary"
+        },
+        "text": "访问首页"
+      },
+      {
+        "tag": "plain",
+        "text": "　→　订阅 / 免费体验　→　创建个人 Agent　→　开始对话　→　Agent 个性化　→　多 Bot",
+        "attrs": {}
+      }
+    ]
+  },
+  "s09_image_08": {
+    "src": "/assets/source_25.png",
+    "alt": "s09 原始图文材料"
+  },
+  "s09_image_09": {
+    "src": "/assets/source_22.png",
+    "alt": "s09 原始图文材料"
+  },
+  "s09_text_10": {
+    "tag": "text",
+    "attrs": {},
+    "text": "首页：建立产品理解"
+  },
+  "s09_image_11": {
+    "src": "/assets/source_23.png",
+    "alt": "s09 原始图文材料"
+  },
+  "s09_text_12": {
+    "tag": "text",
+    "attrs": {},
+    "text": "套餐：订阅或免费体验"
+  },
+  "s09_text_13": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "开始对话"
+      }
+    ]
+  },
+  "s09_text_14": {
+    "tag": "text",
+    "attrs": {},
+    "text": "完成创建后进入 Agent 工作区，再逐步添加技能、通道和自动任务。"
+  },
+  "s09_image_15": {
+    "src": "/assets/source_24.png",
+    "alt": "s09 原始图文材料"
+  },
+  "s09_text_16": {
+    "tag": "text",
+    "attrs": {},
+    "text": "创建个人 Agent"
+  },
+  "s09_text_17": {
+    "tag": "text",
+    "attrs": {},
+    "text": "LightVela｜来源：原文国际站首页、套餐、创建和对话界面"
+  },
+  "s09_text_18": {
+    "tag": "text",
+    "attrs": {},
+    "text": "补充材料"
+  },
+  "s10_text_03": {
+    "tag": "text",
+    "attrs": {},
+    "text": "03 产品现状 · 能力组织"
+  },
+  "s10_text_04": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "日常能力与进阶探索分层组织"
+      }
+    ]
+  },
+  "s10_text_05": {
+    "tag": "text",
+    "attrs": {},
+    "text": "多 Bot 和实验室功能，继续探索更深的个性化与协作场景。"
+  },
+  "s10_text_10": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "日常与探索"
+      }
+    ]
+  },
+  "s10_text_11": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "日常：对话、通道、技能、自动任务。"
+      },
+      {
+        "tag": "p",
+        "attrs": {
+          "space-before": "10"
+        },
+        "text": "探索：人设、记忆、模型和诊断中心等进阶配置。"
+      }
+    ]
+  },
+  "s10_image_12": {
+    "src": "/assets/source_26.png",
+    "alt": "s10 原始图文材料"
+  },
+  "s10_text_13": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "多 Bot"
+      }
+    ]
+  },
+  "s10_text_14": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "9 月基于 Hermes 原生能力上线。"
+      },
+      {
+        "tag": "p",
+        "attrs": {
+          "space-before": "10"
+        },
+        "text": "每个 Bot 拥有独立个性、记忆和工作空间，探索多 Agent 玩法。"
+      }
+    ]
+  },
+  "s10_image_15": {
+    "src": "/assets/source_27.png",
+    "alt": "s10 原始图文材料"
+  },
+  "s10_text_16": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "个人工作台"
+      }
+    ]
+  },
+  "s10_text_17": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "在实验室内承载云端应用部署场景。"
+      },
+      {
+        "tag": "p",
+        "attrs": {
+          "space-before": "10"
+        },
+        "text": "用于验证用户反馈，逐步打磨场景化能力。"
+      }
+    ]
+  },
+  "s10_image_18": {
+    "src": "/assets/source_28.png",
+    "alt": "s10 原始图文材料"
+  },
+  "s10_text_19": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "DeepSeek Harness"
+      }
+    ]
+  },
+  "s10_text_20": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "探索云端 Hermes Agent 与 Coding Agent 的协作模式。"
+      },
+      {
+        "tag": "p",
+        "attrs": {
+          "space-before": "10"
+        },
+        "text": "通过实验室验证，再决定后续产品化方式。"
+      }
+    ]
+  },
+  "s10_image_21": {
+    "src": "/assets/source_29.png",
+    "alt": "s10 原始图文材料"
+  },
+  "s10_text_22": {
+    "tag": "text",
+    "attrs": {},
+    "text": "LightVela｜来源：原文 Agent 配置、多 Bot 与实验室界面"
+  },
+  "s10_text_23": {
+    "tag": "text",
+    "attrs": {},
+    "text": "补充材料"
+  },
+  "product-comparison_text_03": {
+    "tag": "text",
+    "attrs": {},
+    "text": "03 产品现状 · 详细参考"
+  },
+  "product-comparison_text_04": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "继续投入可定制能力、开放接入与云端环境"
+      }
+    ]
+  },
+  "product-comparison_text_05": {
+    "tag": "text",
+    "attrs": {},
+    "text": "当前支持更自主的配置和任务组织，产品体验与品牌认知还需要追赶。"
+  },
+  "product-comparison_table_06": {
+    "tag": "table",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "tr",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "td",
+            "attrs": {},
+            "children": [
+              {
+                "tag": "strong",
+                "attrs": {},
+                "text": "维度"
+              }
+            ]
+          },
+          {
+            "tag": "td",
+            "attrs": {},
+            "children": [
+              {
+                "tag": "strong",
+                "attrs": {
+                  "color": "primary"
+                },
+                "text": "LightVela 当前特点"
+              }
+            ]
+          },
+          {
+            "tag": "td",
+            "attrs": {},
+            "children": [
+              {
+                "tag": "strong",
+                "attrs": {},
+                "text": "主要玩家的领先探索"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "tag": "tr",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "td",
+            "attrs": {},
+            "children": [
+              {
+                "tag": "strong",
+                "attrs": {},
+                "text": "Agent 配置"
+              }
+            ]
+          },
+          {
+            "tag": "td",
+            "attrs": {},
+            "text": "模型、IM、连接器、外部工具可选择；用户可显式定义性格。"
+          },
+          {
+            "tag": "td",
+            "attrs": {},
+            "text": "Meta Muse：App + 开源硬件组件，深入日常场景并沉淀上下文。"
+          }
+        ]
+      },
+      {
+        "tag": "tr",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "td",
+            "attrs": {},
+            "children": [
+              {
+                "tag": "strong",
+                "attrs": {},
+                "text": "任务组织"
+              }
+            ]
+          },
+          {
+            "tag": "td",
+            "attrs": {},
+            "text": "脚本、定时任务、Agent 配置和建站能力支持深度定制，仍待完善。"
+          },
+          {
+            "tag": "td",
+            "attrs": {},
+            "text": "OpenAI Dot：联动 Codex / ChatGPT Work，持续完成任务的能力更强。"
+          }
+        ]
+      },
+      {
+        "tag": "tr",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "td",
+            "attrs": {},
+            "children": [
+              {
+                "tag": "strong",
+                "attrs": {},
+                "text": "运行与身份"
+              }
+            ]
+          },
+          {
+            "tag": "td",
+            "attrs": {},
+            "text": "VM、浏览器、文件系统和应用连接提供可持续建设的云端工作环境。"
+          },
+          {
+            "tag": "td",
+            "attrs": {},
+            "text": "Instinct / Manus Cue：更人格化的身份，探索电话、邮箱、钱包等工具。"
+          }
+        ]
+      }
+    ]
+  },
+  "product-comparison_text_07": {
+    "tag": "text",
+    "attrs": {},
+    "text": "友商的产品包装、用户分发和社区声量更早建立市场认知；LightVela 仍需打磨完整体验。"
+  },
+  "product-comparison_text_10": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "strong",
+            "attrs": {
+              "color": "primary"
+            },
+            "text": "海外优先验证"
+          }
+        ]
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "Web 服务丰富，浏览器、连接器和云端执行可在邮箱、购物、旅行、社交等场景复用。"
+      }
+    ]
+  },
+  "product-comparison_text_11": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "strong",
+            "attrs": {
+              "color": "primary"
+            },
+            "text": "国内持续打磨"
+          }
+        ]
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "继续完善产品体验和 ToC 易用性，降低理解成本与操作门槛。"
+      }
+    ]
+  },
+  "product-comparison_text_12": {
+    "tag": "text",
+    "attrs": {},
+    "text": "LightVela｜来源：原文竞品比较与市场选择判断；非外部更新后的产品评测"
+  },
+  "product-comparison_text_13": {
+    "tag": "text",
+    "attrs": {},
+    "text": "补充材料"
+  },
+  "historical-scale_text_03": {
+    "tag": "text",
+    "attrs": {},
+    "text": "03 产品现状 · 10 月 9 日历史规模与统计口径"
+  },
+  "historical-scale_text_04": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "用户与 Agent 规模已初步建立"
+      }
+    ]
+  },
+  "historical-scale_text_05": {
+    "tag": "text",
+    "attrs": {},
+    "text": "用户规模按生效套餐统计，近七日使用按会话记录统计。"
+  },
+  "historical-scale_text_09": {
+    "tag": "text",
+    "attrs": {},
+    "text": "累计用户规模"
+  },
+  "historical-scale_text_10": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "3.76 万"
+      }
+    ]
+  },
+  "historical-scale_text_11": {
+    "tag": "text",
+    "attrs": {},
+    "text": "现存 Agent 数"
+  },
+  "historical-scale_text_12": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "3.53 万"
+      }
+    ]
+  },
+  "historical-scale_text_13": {
+    "tag": "text",
+    "attrs": {},
+    "text": "近七日有会话用户"
+  },
+  "historical-scale_text_14": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "1.48 万"
+      }
+    ]
+  },
+  "historical-scale_text_15": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "统计口径"
+      }
+    ]
+  },
+  "historical-scale_text_16": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "strong",
+            "attrs": {},
+            "text": "累计用户："
+          },
+          {
+            "tag": "plain",
+            "text": "10 月 9 日账号下有生效中产品套餐的唯一用户 ID 数。",
+            "attrs": {}
+          }
+        ]
+      },
+      {
+        "tag": "p",
+        "attrs": {
+          "space-before": "16"
+        },
+        "children": [
+          {
+            "tag": "strong",
+            "attrs": {},
+            "text": "现存 Agent："
+          },
+          {
+            "tag": "plain",
+            "text": "10 月 9 日有生效中套餐，且实际存在的 Agent 数；与底层 CVM 数量 1:1。",
+            "attrs": {}
+          }
+        ]
+      },
+      {
+        "tag": "p",
+        "attrs": {
+          "space-before": "16"
+        },
+        "children": [
+          {
+            "tag": "strong",
+            "attrs": {},
+            "text": "近七日用户："
+          },
+          {
+            "tag": "plain",
+            "text": "近七日内至少产生过一条会话记录的唯一用户 ID 数。",
+            "attrs": {}
+          }
+        ]
+      }
+    ]
+  },
+  "historical-scale_text_18": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "39.4%"
+      }
+    ]
+  },
+  "historical-scale_text_19": {
+    "tag": "text",
+    "attrs": {},
+    "text": "近七日有会话用户占用户总量的比例。该指标包含自动任务产生的会话记录。"
+  },
+  "historical-scale_text_20": {
+    "tag": "text",
+    "attrs": {},
+    "text": "LightVela｜来源：原文数据情况，截至 10 月 9 日；保留“累计”名称及其原始口径"
+  },
+  "historical-scale_text_21": {
+    "tag": "text",
+    "attrs": {},
+    "text": "补充材料"
+  },
+  "s16_text_03": {
+    "tag": "text",
+    "attrs": {},
+    "text": "04 产品演进 · 基础设施"
+  },
+  "s16_text_04": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "围绕长期在线、状态保留与权限管理演进"
+      }
+    ]
+  },
+  "s16_text_05": {
+    "tag": "text",
+    "attrs": {},
+    "text": "VM、浏览器、应用连接、文件系统和运行状态，共同支持 Agent 长期承担任务。"
+  },
+  "s16_text_10": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "strong",
+            "attrs": {
+              "color": "primary"
+            },
+            "text": "01 基础设施"
+          }
+        ]
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "提升云端环境稳定性与可扩展性"
+      }
+    ]
+  },
+  "s16_text_11": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "strong",
+            "attrs": {
+              "color": "primary"
+            },
+            "text": "02 核心能力"
+          }
+        ]
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "泛开发者场景优先，补齐执行能力"
+      }
+    ]
+  },
+  "s16_text_12": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "strong",
+            "attrs": {
+              "color": "primary"
+            },
+            "text": "03 开放接入"
+          }
+        ]
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "开发者接口与终端设备连接"
+      }
+    ]
+  },
+  "s16_text_13": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "strong",
+            "attrs": {
+              "color": "primary"
+            },
+            "text": "04 产品体验"
+          }
+        ]
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "降低门槛，明确状态、授权和异常"
+      }
+    ]
+  },
+  "s16_text_14": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "原始材料中的基础设施参考"
+      }
+    ]
+  },
+  "s16_image_15": {
+    "src": "/assets/source_32.png",
+    "alt": "s16 原始图文材料"
+  },
+  "s16_text_16": {
+    "tag": "text",
+    "attrs": {},
+    "text": "图示为 Meta Muse 架构（重绘版），用于参考隔离、状态保护、权限控制和恢复设计；不代表 LightVela 当前实现。"
+  },
+  "s16_text_17": {
+    "tag": "text",
+    "attrs": {},
+    "text": "LightVela｜来源：原文产品演进思路与基础设施参考图；图内原始配色予以保留"
+  },
+  "s16_text_18": {
+    "tag": "text",
+    "attrs": {},
+    "text": "补充材料"
+  },
+  "s17_text_03": {
+    "tag": "text",
+    "attrs": {},
+    "text": "04 产品演进 · 核心能力"
+  },
+  "s17_text_04": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "优先建设泛开发者场景，并补齐执行能力"
+      }
+    ]
+  },
+  "s17_text_05": {
+    "tag": "text",
+    "attrs": {},
+    "text": "从熟悉的泛开发者群体入手，选择目标明确、结果可检查的任务。"
+  },
+  "s17_text_06": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "场景化建设｜基于 Hermes Agent 推进三个方向"
+      }
+    ]
+  },
+  "s17_text_10": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "AI 建站 / 云端应用部署"
+      }
+    ]
+  },
+  "s17_text_11": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "围绕建站和部署，提供场景化产品能力。"
+      },
+      {
+        "tag": "p",
+        "attrs": {
+          "space-before": "14"
+        },
+        "text": "支持用户构建并长期维护云端应用。"
+      }
+    ]
+  },
+  "s17_text_12": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "多 Agent 协作"
+      }
+    ]
+  },
+  "s17_text_13": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "继续探索多 Bot 分工与协同执行。"
+      },
+      {
+        "tag": "p",
+        "attrs": {
+          "space-before": "14"
+        },
+        "text": "结合 Hermes 与 Coding Agent 的协作实践。"
+      }
+    ]
+  },
+  "s17_text_14": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "多云资源管理"
+      }
+    ]
+  },
+  "s17_text_15": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "面向跨云资源使用与管理需求。"
+      },
+      {
+        "tag": "p",
+        "attrs": {
+          "space-before": "14"
+        },
+        "text": "逐步推出场景化定制能力，积累可复用的任务方式。"
+      }
+    ]
+  },
+  "s17_text_17": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "通用执行能力补齐"
+      }
+    ]
+  },
+  "s17_text_18": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "strong",
+            "attrs": {},
+            "text": "多模态："
+          },
+          {
+            "tag": "plain",
+            "text": "增强语音、视频等交互与理解能力。",
+            "attrs": {}
+          }
+        ]
+      },
+      {
+        "tag": "p",
+        "attrs": {
+          "space-before": "8"
+        },
+        "children": [
+          {
+            "tag": "strong",
+            "attrs": {},
+            "text": "任务执行："
+          },
+          {
+            "tag": "plain",
+            "text": "强化浏览器操作、云电脑执行、自动任务和多 Bot 协作。",
+            "attrs": {}
+          }
+        ]
+      },
+      {
+        "tag": "p",
+        "attrs": {
+          "space-before": "8"
+        },
+        "children": [
+          {
+            "tag": "strong",
+            "attrs": {},
+            "text": "应用连接："
+          },
+          {
+            "tag": "plain",
+            "text": "优先结合海外开放应用生态，通过连接器扩展可操作范围。",
+            "attrs": {}
+          }
+        ]
+      }
+    ]
+  },
+  "s17_text_19": {
+    "tag": "text",
+    "attrs": {},
+    "text": "LightVela｜来源：原文核心场景建设与 Agent 能力强化；均为后续建设方向"
+  },
+  "s17_text_20": {
+    "tag": "text",
+    "attrs": {},
+    "text": "补充材料"
+  },
+  "s18_text_03": {
+    "tag": "text",
+    "attrs": {},
+    "text": "04 产品演进 · 身份与主动性"
+  },
+  "s18_text_04": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "探索独立身份与主动跟进，先建立信任"
+      }
+    ]
+  },
+  "s18_text_05": {
+    "tag": "text",
+    "attrs": {},
+    "text": "从可验证任务积累信任，再尝试更多个人事务和主动行为。"
+  },
+  "s18_text_07": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "任务完成价值"
+      }
+    ]
+  },
+  "s18_text_08": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "独立主体能力"
+      }
+    ]
+  },
+  "s18_text_09": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "主动提醒与跟进"
+      }
+    ]
+  },
+  "s18_text_10": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "优先选择目标明确、结果可检查、权限边界清楚的任务。"
+      },
+      {
+        "tag": "p",
+        "attrs": {
+          "space-before": "16"
+        },
+        "text": "长期记忆、复杂偏好和高风险个人决策，需要更充分的实际任务验证。"
+      },
+      {
+        "tag": "p",
+        "attrs": {
+          "space-before": "16"
+        },
+        "text": "各家对“个人助手”的定义不同，产品价值还要持续验证。"
+      }
+    ]
+  },
+  "s18_text_11": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "下一阶段探索专属邮箱、Agent 钱包等能力。"
+      },
+      {
+        "tag": "p",
+        "attrs": {
+          "space-before": "16"
+        },
+        "text": "长期尝试硬件与智能家居接入。"
+      },
+      {
+        "tag": "p",
+        "attrs": {
+          "space-before": "16"
+        },
+        "text": "原文用户需求包含控制设备、接入私有 NAS 等场景。"
+      }
+    ]
+  },
+  "s18_text_12": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "结合用户目标、记忆、历史上下文与环境变化，研究主动提醒、推荐和任务跟进。"
+      },
+      {
+        "tag": "p",
+        "attrs": {
+          "space-before": "16"
+        },
+        "text": "探索过程中保留用户授权、清晰边界和可控过程。"
+      }
+    ]
+  },
+  "s18_text_14": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "strong",
+            "attrs": {
+              "color": "primary"
+            },
+            "text": "推进前提"
+          }
+        ]
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "用户授权明确　·　权限边界清楚　·　执行过程可控　·　任务结果可验证"
+      }
+    ]
+  },
+  "s18_text_15": {
+    "tag": "text",
+    "attrs": {},
+    "text": "LightVela｜来源：原文个人助手价值判断、身份探索与主动性研究；非已上线能力清单"
+  },
+  "s18_text_16": {
+    "tag": "text",
+    "attrs": {},
+    "text": "补充材料"
+  },
+  "s19_text_03": {
+    "tag": "text",
+    "attrs": {},
+    "text": "04 产品演进 · 开放与接入"
+  },
+  "s19_text_04": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "向开发者开放工具，并尝试设备接入"
+      }
+    ]
+  },
+  "s19_text_05": {
+    "tag": "text",
+    "attrs": {},
+    "text": "先以低成本实验扩展工具、数据和执行范围，再从开发者实践中发现新场景。"
+  },
+  "s19_text_11": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "开发者扩展"
+      }
+    ]
+  },
+  "s19_text_12": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "children": [
+          {
+            "tag": "strong",
+            "attrs": {},
+            "text": "API / SDK / MCP / 连接器"
+          }
+        ]
+      },
+      {
+        "tag": "p",
+        "attrs": {
+          "space-before": "18"
+        },
+        "text": "接入外部服务与专业工具"
+      },
+      {
+        "tag": "p",
+        "attrs": {
+          "space-before": "10"
+        },
+        "text": "创建 Agent 技能"
+      },
+      {
+        "tag": "p",
+        "attrs": {
+          "space-before": "10"
+        },
+        "text": "构建自动化工作流"
+      },
+      {
+        "tag": "p",
+        "attrs": {
+          "space-before": "18"
+        },
+        "text": "通过实践验证新产品场景"
+      }
+    ]
+  },
+  "s19_text_13": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "云端 Agent Session"
+      }
+    ]
+  },
+  "s19_text_14": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "Lighthouse / LightVela"
+      },
+      {
+        "tag": "p",
+        "attrs": {
+          "space-before": "14"
+        },
+        "text": "承接工具、数据和执行"
+      },
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "连接开发者服务与终端入口"
+      }
+    ]
+  },
+  "s19_text_15": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "设备与硬件入口"
+      }
+    ]
+  },
+  "s19_text_16": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "p",
+        "attrs": {},
+        "text": "ESP32、屏幕、按钮"
+      },
+      {
+        "tag": "p",
+        "attrs": {
+          "space-before": "10"
+        },
+        "text": "摄像头、智能家居设备"
+      },
+      {
+        "tag": "p",
+        "attrs": {
+          "space-before": "18"
+        },
+        "text": "语音或文字交互"
+      },
+      {
+        "tag": "p",
+        "attrs": {
+          "space-before": "10"
+        },
+        "text": "查看状态、发起任务"
+      },
+      {
+        "tag": "p",
+        "attrs": {
+          "space-before": "10"
+        },
+        "text": "完成授权与确认"
+      }
+    ]
+  },
+  "s19_text_18": {
+    "tag": "text",
+    "attrs": {},
+    "text": "以标准化接口支持外部开发者扩展能力；用低成本硬件制作原型，验证 Agent 的感知、展示和执行入口。"
+  },
+  "s19_text_19": {
+    "tag": "text",
+    "attrs": {},
+    "text": "LightVela｜来源：原文开放 API/SDK、开发者能力开放与设备接入思路"
+  },
+  "s19_text_20": {
+    "tag": "text",
+    "attrs": {},
+    "text": "补充材料"
+  },
+  "s20_text_03": {
+    "tag": "text",
+    "attrs": {},
+    "text": "04 产品演进 · 产品体验"
+  },
+  "s20_text_04": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "降低使用门槛，完善任务与授权体验"
+      }
+    ]
+  },
+  "s20_text_05": {
+    "tag": "text",
+    "attrs": {},
+    "text": "逐步减少控制台和管理后台式交互，让普通用户更容易理解和操作。"
+  },
+  "s20_text_06": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "交互更简洁、自然"
+      }
+    ]
+  },
+  "s20_text_07": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "状态与确认更清楚"
+      }
+    ]
+  },
+  "s20_text_08": {
+    "tag": "text",
+    "attrs": {},
+    "children": [
+      {
+        "tag": "strong",
+        "attrs": {},
+        "text": "品牌与反馈更统一"
+      }
+    ]
+  },
+  "s20_text_09": {
+    "tag": "text",
+    "attrs": {},
+    "text": "用易懂的任务入口和自然对话降低理解成本，改善首次使用与日常操作。"
+  },
+  "s20_text_10": {
+    "tag": "text",
+    "attrs": {},
+    "text": "完善任务状态、授权确认和异常处理，让用户清楚执行到哪里、何时需要介入。"
+  },
+  "s20_text_11": {
+    "tag": "text",
+    "attrs": {},
+    "text": "围绕“可信赖、亲和、灵动”，统一品牌语言、动效、任务状态与关键交互。"
+  },
+  "s20_image_12": {
+    "src": "/assets/source_33.png",
+    "alt": "s20 原始图文材料"
+  },
+  "s20_image_13": {
+    "src": "/assets/source_34.png",
+    "alt": "s20 原始图文材料"
+  },
+  "s20_image_14": {
+    "src": "/assets/source_35.png",
+    "alt": "s20 原始图文材料"
+  },
+  "s20_text_15": {
+    "tag": "text",
+    "attrs": {},
+    "text": "原文对话交互参考"
+  },
+  "s20_text_16": {
+    "tag": "text",
+    "attrs": {},
+    "text": "原文 LightVela 工作区界面"
+  },
+  "s20_text_17": {
+    "tag": "text",
+    "attrs": {},
+    "text": "LightVela｜原文体验截图；品牌视频仅有文件名，未嵌入；正文无新增品牌角色"
+  },
+  "s20_text_18": {
+    "tag": "text",
+    "attrs": {},
+    "text": "补充材料"
+  }
+}

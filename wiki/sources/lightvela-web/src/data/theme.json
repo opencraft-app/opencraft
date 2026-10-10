@@ -1,0 +1,38 @@
+{
+  "colors": {
+    "primary": "#6842FF",
+    "bg-page": "#FFFFFF",
+    "bg-surface": "#F5F5F7",
+    "text-main": "#1D1D1F",
+    "text-muted": "#86868B",
+    "chart-sec": "#B39FFF",
+    "chart-light": "#E0D4FF",
+    "border": "#E5E5EA"
+  },
+  "fonts": {
+    "display": {
+      "family": "Noto Sans SC",
+      "size": 48.0
+    },
+    "heading": {
+      "family": "Noto Sans SC",
+      "size": 32.0
+    },
+    "strong": {
+      "family": "Noto Sans SC",
+      "size": 24.0
+    },
+    "body": {
+      "family": "Noto Sans SC",
+      "size": 18.0
+    },
+    "caption": {
+      "family": "Noto Sans SC",
+      "size": 12.0
+    }
+  },
+  "size": {
+    "width": 1280,
+    "height": 720
+  }
+}

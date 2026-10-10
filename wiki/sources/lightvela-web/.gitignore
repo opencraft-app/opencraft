@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+.DS_Store
+coverage/
+.manus-webdev/
+.manus/
+cloudflare-dist/
+.wrangler/
+.dev.vars
+.dev.vars.*
+__pycache__/
+*.pyc

@@ -1,0 +1,29 @@
+<slide id="s20">
+  <background color="bg-page" />
+  <shape type="line" x="40" y="26" width="1200" height="0" stroke="border" />
+  <shape type="line" x="760" y="26" width="240" height="0" stroke="primary" stroke-width="3" />
+  <text x="40" y="36" width="1200" height="24" font="caption" color="primary">04 产品演进 · 产品体验</text>
+  <text x="40" y="77" width="1200" height="50" font="heading" color="text-main">
+    <strong>降低使用门槛，完善任务与授权体验</strong>
+  </text>
+  <text x="40" y="132" width="1200" height="30" font="body" color="text-muted">逐步减少控制台和管理后台式交互，让普通用户更容易理解和操作。</text>
+  <text x="40" y="188" width="362" height="36" font="strong" color="primary">
+    <strong>交互更简洁、自然</strong>
+  </text>
+  <text x="451" y="188" width="363" height="36" font="strong" color="primary">
+    <strong>状态与确认更清楚</strong>
+  </text>
+  <text x="862" y="188" width="378" height="36" font="strong" color="primary">
+    <strong>品牌与反馈更统一</strong>
+  </text>
+  <text x="40" y="241" width="362" height="86" font="body" color="text-main" line-height="1.5">用易懂的任务入口和自然对话降低理解成本，改善首次使用与日常操作。</text>
+  <text x="451" y="241" width="363" height="86" font="body" color="text-main" line-height="1.5">完善任务状态、授权确认和异常处理，让用户清楚执行到哪里、何时需要介入。</text>
+  <text x="862" y="241" width="378" height="86" font="body" color="text-main" line-height="1.5">围绕“可信赖、亲和、灵动”，统一品牌语言、动效、任务状态与关键交互。</text>
+  <image x="40" y="351" width="362" height="240" src="/assets/source_33.png" fit="contain" stroke="border" />
+  <image x="512" y="337" width="240" height="312" src="/assets/source_34.png" fit="contain" stroke="border" />
+  <image x="862" y="351" width="378" height="240" src="/assets/source_35.png" fit="contain" stroke="border" />
+  <text x="40" y="607" width="362" height="37" font="caption" color="text-muted">原文对话交互参考</text>
+  <text x="862" y="607" width="378" height="37" font="caption" color="text-muted">原文 LightVela 工作区界面</text>
+  <text x="40" y="684" width="1130" height="20" font="caption" color="text-muted">LightVela｜原文体验截图；品牌视频仅有文件名，未嵌入；正文无新增品牌角色</text>
+  <text x="1180" y="684" width="60" height="20" font="caption" color="text-muted" align="right">20 / 24</text>
+</slide>

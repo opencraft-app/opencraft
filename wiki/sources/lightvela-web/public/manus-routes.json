@@ -1,0 +1,232 @@
+{
+  "routes": [
+    {
+      "path": "/",
+      "title": "LightVela 汇报"
+    },
+    {
+      "path": "/#/s01",
+      "title": "产品与增长汇报"
+    },
+    {
+      "path": "/#/s02",
+      "title": "从节前传播回顾，到下一阶段建设"
+    },
+    {
+      "path": "/#/s03",
+      "title": "三项动作叠加，带动试用与分享"
+    },
+    {
+      "path": "/#/s06",
+      "title": "“中国版 Muse”引发多账号跟进传播"
+    },
+    {
+      "path": "/#/s07",
+      "title": "传播期间，国内外注册同步增长"
+    },
+    {
+      "path": "/#/insight01",
+      "title": "LightVela 4–5 月已上线，海外产品随后集中发布"
+    },
+    {
+      "path": "/#/insight02",
+      "title": "Muse 案例以个人事务和生活管理为主"
+    },
+    {
+      "path": "/#/insight03",
+      "title": "产品体验、落地条件与分发共同推动关注"
+    },
+    {
+      "path": "/#/insight04",
+      "title": "能力覆盖已较丰富，个人助理价值仍需验证"
+    },
+    {
+      "path": "/#/s15",
+      "title": "LightVela：可按需定制的云端个人助理"
+    },
+    {
+      "path": "/#/app01",
+      "title": "优先做移动 App，承接离开电脑后的个人事务"
+    },
+    {
+      "path": "/#/visual01",
+      "title": "官网首页已上线首版新视觉"
+    },
+    {
+      "path": "/#/s11",
+      "title": "国内站注册更多，Pass 开通率低于国际站"
+    },
+    {
+      "path": "/#/s12",
+      "title": "使用频次分化，自动任务贡献大量消息"
+    },
+    {
+      "path": "/#/s13",
+      "title": "资讯、金融行情与监控聚集高频需求"
+    },
+    {
+      "path": "/#/s14",
+      "title": "多数用户保持观察，承接体验需要跟上"
+    },
+    {
+      "path": "/#/s08",
+      "title": "短期关注已经形成，持续使用仍需验证"
+    },
+    {
+      "path": "/#/focus01",
+      "title": "优先服务泛开发者，聚焦云端应用、协作与开放接入"
+    },
+    {
+      "path": "/#/evo01",
+      "title": "聚焦泛开发者场景，建设应用、协作与硬件接入"
+    },
+    {
+      "path": "/#/evo02",
+      "title": "完善多 Bot、云电脑与硬件连接能力"
+    },
+    {
+      "path": "/#/infra00",
+      "title": "让 Agent 弄坏的只是可替换的部分"
+    },
+    {
+      "path": "/#/infra01",
+      "title": "现状与风险：Agent 能弄坏整台 VM"
+    },
+    {
+      "path": "/#/infra02",
+      "title": "缩小破坏范围，坏了能恢复"
+    },
+    {
+      "path": "/#/infra03",
+      "title": "方案一：单 VM + Sandbox"
+    },
+    {
+      "path": "/#/infra04",
+      "title": "方案二：大脑与工作台分离"
+    },
+    {
+      "path": "/#/infra05",
+      "title": "预热：换机恢复，目标最快约 10 秒"
+    },
+    {
+      "path": "/#/infra06",
+      "title": "两套方案对比：各有取舍"
+    },
+    {
+      "path": "/#/infra07",
+      "title": "管家 Agent：已跑通 POC"
+    },
+    {
+      "path": "/#/evo03",
+      "title": "持续优化产品交互，完善角色识别与任务反馈"
+    },
+    {
+      "path": "/#/s21",
+      "title": "坚持用户路线，连接传播、使用与留存"
+    },
+    {
+      "path": "/#/s24",
+      "title": "把高频场景做稳，把用户留下"
+    },
+    {
+      "path": "/#/supplements/recap-background",
+      "title": "背景与完整时间线"
+    },
+    {
+      "path": "/#/supplements/s04",
+      "title": "前期账号与公众号截图"
+    },
+    {
+      "path": "/#/supplements/s05",
+      "title": "海外 KOL 与权益原图"
+    },
+    {
+      "path": "/#/supplements/s22",
+      "title": "市场玩家与国内潜在竞品"
+    },
+    {
+      "path": "/#/supplements/s23",
+      "title": "Muse 原始场景表与 Hermes 能力"
+    },
+    {
+      "path": "/#/supplements/s09",
+      "title": "独立站使用全流程"
+    },
+    {
+      "path": "/#/supplements/s10",
+      "title": "配置能力、多 Bot 与实验室"
+    },
+    {
+      "path": "/#/supplements/product-comparison",
+      "title": "友商比较与市场验证重点"
+    },
+    {
+      "path": "/#/supplements/historical-scale",
+      "title": "10 月 9 日历史规模与统计口径"
+    },
+    {
+      "path": "/#/supplements/s16",
+      "title": "基础设施与原架构参考"
+    },
+    {
+      "path": "/#/supplements/s17",
+      "title": "完整场景与通用执行能力"
+    },
+    {
+      "path": "/#/supplements/s18",
+      "title": "身份与主动性探索"
+    },
+    {
+      "path": "/#/supplements/s19",
+      "title": "开放接口与设备接入"
+    },
+    {
+      "path": "/#/supplements/s20",
+      "title": "原文体验截图与视觉方向"
+    },
+    {
+      "path": "/#/s04",
+      "title": "前期账号与公众号截图"
+    },
+    {
+      "path": "/#/s05",
+      "title": "海外 KOL 与权益原图"
+    },
+    {
+      "path": "/#/s22",
+      "title": "市场玩家与国内潜在竞品"
+    },
+    {
+      "path": "/#/s23",
+      "title": "Muse 原始场景表与 Hermes 能力"
+    },
+    {
+      "path": "/#/s09",
+      "title": "独立站使用全流程"
+    },
+    {
+      "path": "/#/s10",
+      "title": "配置能力、多 Bot 与实验室"
+    },
+    {
+      "path": "/#/s16",
+      "title": "基础设施与原架构参考"
+    },
+    {
+      "path": "/#/s17",
+      "title": "完整场景与通用执行能力"
+    },
+    {
+      "path": "/#/s18",
+      "title": "身份与主动性探索"
+    },
+    {
+      "path": "/#/s19",
+      "title": "开放接口与设备接入"
+    },
+    {
+      "path": "/#/s20",
+      "title": "原文体验截图与视觉方向"
+    }
+  ]
+}

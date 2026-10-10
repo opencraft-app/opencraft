@@ -1,0 +1,11 @@
+{
+  "projectName": "lightvela-report-202610",
+  "accountId": "c2a5bbb1d9077e738ca1876c6bbde375",
+  "productionBranch": "main",
+  "productionUrl": "https://lightvela-report-202610.pages.dev",
+  "buildCommand": "pnpm build:pages",
+  "buildDirectory": "cloudflare-dist",
+  "requiredSecrets": ["REPORT_PASSWORD_HASH", "REPORT_SESSION_SECRET"],
+  "failOpen": false,
+  "sessionHours": 8
+}

@@ -1,0 +1,27 @@
+<slide id="s15">
+  <background color="bg-page" />
+  <shape type="line" x="40" y="26" width="1200" height="0" stroke="border" />
+  <shape type="line" x="520" y="26" width="240" height="0" stroke="primary" stroke-width="3" />
+  <text x="40" y="36" width="1200" height="24" font="caption" color="primary">03 产品现状 · 定位与差异</text>
+  <text x="40" y="77" width="1200" height="50" font="heading" color="text-main"><strong>LightVela：可按需定制的云端个人助理</strong></text>
+  <text x="40" y="132" width="1200" height="34" font="body" color="text-muted">用户可选择模型、工具和消息入口，按个人工作方式组织任务，并为不同职能配置独立 Bot。</text>
+  <text x="40" y="215" width="92" height="30" font="body" color="primary"><strong>定制化</strong></text>
+  <text x="156" y="208" width="736" height="40" font="strong" color="text-main"><strong>按个人工作方式配置助理</strong></text>
+  <text x="156" y="264" width="720" height="65" font="body" color="text-main" line-height="1.6">模型、连接器、外部工具和性格可选；<br />通过脚本、定时任务与 Agent 配置组织任务。</text>
+  <image x="936" y="211" width="284" height="103" src="/assets/source_26_model_choices_crop.png" original-src="/assets/source_26.png" alt="原文模型配置选项摘图，点击查看完整配置界面" fit="contain" stroke="border" />
+  <text x="936" y="324" width="284" height="20" font="caption" color="text-muted">原文配置界面 · 点击查看完整原图</text>
+  <shape type="line" x="40" y="358" width="1200" height="0" stroke="border" />
+  <text x="40" y="386" width="92" height="30" font="body" color="primary"><strong>入口灵活</strong></text>
+  <text x="156" y="378" width="736" height="40" font="strong" color="text-main"><strong>网页打磨，IM 接收</strong></text>
+  <text x="156" y="434" width="720" height="72" font="body" color="text-main" line-height="1.6">网页用于创建、配置和调整 Agent 或任务；微信、Telegram 等熟悉入口用于持续接收信息与结果，也可日常对话。</text>
+  <shape type="rect" x="936" y="384" width="284" height="104" fill="#F0EBFF" corner-radius="4" />
+  <text x="950" y="398" width="256" height="72" font="body" size="16" color="primary" line-height="1.65"><p><strong>Web → 云端 Agent</strong></p><p>云端 Agent ↔ 微信 / Telegram</p></text>
+  <shape type="line" x="40" y="528" width="1200" height="0" stroke="border" />
+  <text x="40" y="555" width="92" height="30" font="body" color="primary"><strong>多 Bot</strong></text>
+  <text x="156" y="547" width="736" height="40" font="strong" color="text-main"><strong>按职能拆分，各自独立</strong></text>
+  <text x="156" y="599" width="720" height="65" font="body" color="text-main" line-height="1.6">部分深度用户希望将不同职能分开组织。基于 Hermes 原生能力，每个 Bot 拥有独立个性、记忆和工作空间。</text>
+  <image x="951" y="546" width="34" height="117" src="/assets/source_27_bot_list_crop.png" original-src="/assets/source_27.png" alt="原文独立Bot列表摘图，点击查看完整多Bot界面" fit="contain" />
+  <text x="1008" y="558" width="216" height="88" font="body" color="text-main" line-height="1.6"><p>独立个性</p><p>独立记忆</p><p>独立工作空间</p></text>
+  <text x="40" y="684" width="1130" height="20" font="caption" color="text-muted">LightVela｜原文与本次补充；多 Bot 于 9 月上线，自动协同仍属探索；完整路径、能力与友商比较见“详细参考”</text>
+  <text x="1180" y="684" width="60" height="20" font="caption" color="text-muted" align="right">10 / 22</text>
+</slide>

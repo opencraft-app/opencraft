@@ -1,0 +1,17 @@
+<slide id="visual01">
+  <background color="bg-page" />
+  <shape type="line" x="40" y="26" width="1200" height="0" stroke="border" />
+  <shape type="line" x="520" y="26" width="240" height="0" stroke="primary" stroke-width="3" />
+  <text x="40" y="36" width="1200" height="24" font="caption" color="primary">03 产品现状 · 新视觉进展</text>
+  <text x="40" y="77" width="1200" height="50" font="heading" color="text-main"><strong>官网首页已上线首版新视觉</strong></text>
+  <text x="40" y="132" width="1200" height="46" font="body" color="text-muted">围绕“可信赖、亲和、灵动”，首页已完成首版视觉更新，演示视频呈现新形象与动态效果。</text>
+  <text x="40" y="199" width="576" height="30" font="strong" color="text-main"><strong>官网当前首页</strong></text>
+  <text x="664" y="199" width="576" height="30" font="strong" color="text-main"><strong>新视觉演示 · 中文版</strong></text>
+  <image x="40" y="245" width="576" height="320" src="/assets/lightvela-homepage-current.png" original-src="/assets/lightvela-homepage-current-full.png" alt="LightVela官网当前国际首页真实首屏截图，首版新视觉已上线，点击查看完整截图" fit="contain" stroke="border" />
+  <video x="664" y="245" width="576" height="320" src="/assets/lightvela-homepage-visual-demo.mp4" poster="/assets/lightvela-homepage-video-poster.png" title="LightVela 新视觉演示 · 中文版" duration="37.8" stroke="border" corner-radius="4" />
+  <text x="40" y="582" width="576" height="56" font="body" color="text-main" line-height="1.5"><p><strong>首版已上线</strong> · 形象与页面表达同步更新。</p><p>亲和、易识别作为设计目标，展示云端个人助理。</p></text>
+  <text x="664" y="582" width="576" height="56" font="body" color="text-main" line-height="1.5"><p><strong>完整演示</strong> · 首页、功能与角色动效，手动播放。</p><p>产品内交互视觉后续继续优化，当前演示范围有限。</p></text>
+  <text x="40" y="649" width="1200" height="20" font="caption" color="text-muted">官网当前国际页面与中文演示版本分别展示；未将演示画面标为实时官网截图。</text>
+  <text x="40" y="684" width="1130" height="20" font="caption" color="text-muted"><a href="https://lightvela.ai/">LightVela｜官网 lightvela.ai · 2026.10.10 实际截图；视频为原文及用户提供的演示材料</a></text>
+  <text x="1180" y="684" width="60" height="20" font="caption" color="text-muted" align="right">11 / 21</text>
+</slide>

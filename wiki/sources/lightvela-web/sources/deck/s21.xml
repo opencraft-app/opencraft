@@ -1,0 +1,53 @@
+<slide id="s21">
+  <background color="bg-page" />
+  <shape type="line" x="40" y="26" width="1200" height="0" stroke="border" />
+  <shape type="line" x="1000" y="26" width="240" height="0" stroke="primary" stroke-width="3" />
+  <text x="40" y="36" width="1200" height="24" font="caption" color="primary">05 增长与运营 · 坚持用户路线</text>
+  <text x="40" y="77" width="1200" height="50" font="heading" color="text-main">
+    <strong>坚持用户路线，连接传播、使用与留存</strong>
+  </text>
+  <text x="40" y="132" width="1200" height="30" font="body" color="text-muted">关注与注册之后，还需要明确场景、产品激励和稳定体验，促成长期使用。</text>
+  <shape type="line" x="128" y="234" width="1020" height="0" stroke="chart-sec" stroke-width="3" arrow-end="arrow" />
+  <shape type="rect" x="40" y="267" width="276" height="302" fill="bg-surface" corner-radius="4" />
+  <shape type="rect" x="348" y="267" width="276" height="302" fill="bg-surface" corner-radius="4" />
+  <shape type="rect" x="656" y="267" width="276" height="302" fill="bg-surface" corner-radius="4" />
+  <shape type="rect" x="964" y="267" width="276" height="302" fill="bg-surface" corner-radius="4" />
+  <text x="40" y="188" width="276" height="38" font="strong" color="primary">
+    <strong>01 社区与内容</strong>
+  </text>
+  <text x="348" y="188" width="276" height="38" font="strong" color="primary">
+    <strong>02 分享权益</strong>
+  </text>
+  <text x="656" y="188" width="276" height="38" font="strong" color="primary">
+    <strong>03 游戏化促活</strong>
+  </text>
+  <text x="964" y="188" width="276" height="38" font="strong" color="primary">
+    <strong>04 分层留存</strong>
+  </text>
+  <text x="60" y="290" width="236" height="252" font="body" color="text-main" line-height="1.65">
+    <p>持续参与 X、Telegram 社区，及时回应用户。</p>
+    <p space-before="16">输出能力介绍、真实案例与用户作品。</p>
+    <p space-before="16">维持活跃度，建立信任与品牌认知。</p>
+  </text>
+  <text x="368" y="290" width="236" height="252" font="body" color="text-main" line-height="1.65">
+    <p>将订阅时长、AI 积分、稀缺能力设计为分享权益。</p>
+    <p space-before="16">鼓励老用户邀请新用户。</p>
+    <p space-before="16">重点关注有效激活与后续使用。</p>
+  </text>
+  <text x="676" y="290" width="236" height="252" font="body" color="text-main" line-height="1.65">
+    <p>Agent 成就、任务完成与积分和权益联动。</p>
+    <p space-before="16">鼓励尝试更多场景、持续构建 Agent。</p>
+    <p space-before="16">用阶段性反馈形成使用习惯。</p>
+  </text>
+  <text x="984" y="290" width="236" height="252" font="body" color="text-main" line-height="1.65">
+    <p>按活跃度、构建深度和使用频率分层。</p>
+    <p space-before="16">提供续期、积分、高级能力、专属身份与共创权益。</p>
+    <p space-before="16">沉淀高价值长期用户。</p>
+  </text>
+  <shape type="line" x="40" y="598" width="1200" height="0" stroke="border" />
+  <text x="40" y="624" width="1200" height="34" font="strong" size="22" color="text-main">
+    <strong>用户参与　→　产品使用　→　案例共创　→　口碑传播　→　更多用户参与</strong>
+  </text>
+  <text x="40" y="684" width="1130" height="20" font="caption" color="text-muted">LightVela｜来源：原文增长与运营四项策略；未新增权益数值或量化目标</text>
+  <text x="1180" y="684" width="60" height="20" font="caption" color="text-muted" align="right">21 / 24</text>
+</slide>

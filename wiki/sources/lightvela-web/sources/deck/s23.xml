@@ -1,0 +1,120 @@
+<slide id="s23">
+  <background color="bg-page" />
+  <shape type="line" x="40" y="26" width="1200" height="0" stroke="border" />
+  <shape type="line" x="280" y="26" width="240" height="0" stroke="primary" stroke-width="3" />
+  <text x="40" y="36" width="1200" height="24" font="caption" color="primary">02 个人助理产品洞察 · 详细参考</text>
+  <text x="40" y="77" width="1200" height="50" font="heading" color="text-main">
+    <strong>附录｜Muse 场景与 Hermes 能力参考</strong>
+  </text>
+  <text x="40" y="132" width="1200" height="30" font="body" color="text-muted">场景统计和底层能力判断沿用原文，不据此推导 LightVela 的实际表现。</text>
+  <text x="40" y="186" width="578" height="36" font="strong" color="primary">
+    <strong>Muse｜837 条使用案例</strong>
+  </text>
+  <table x="40" y="241" width="578" height="344" columns="5,1.3,1.4" rows="40,38,38,38,38,38,38,38,38" font="body" size="15" color="text-main" align="left" padding="8 10" header-fill="bg-surface" border-h="1 border" header-border="2 primary">
+    <tr>
+      <td>
+        <strong>统一场景</strong>
+      </td>
+      <td align="right">
+        <strong>数量</strong>
+      </td>
+      <td align="right">
+        <strong>占比</strong>
+      </td>
+    </tr>
+    <tr>
+      <td>个人事务与效率</td>
+      <td align="right">251</td>
+      <td align="right">30.0%</td>
+    </tr>
+    <tr>
+      <td>财务与省钱</td>
+      <td align="right">177</td>
+      <td align="right">21.1%</td>
+    </tr>
+    <tr>
+      <td>购物、餐饮与活动</td>
+      <td align="right">117</td>
+      <td align="right">14.0%</td>
+    </tr>
+    <tr>
+      <td>工作、内容与开发</td>
+      <td align="right">111</td>
+      <td align="right">13.3%</td>
+    </tr>
+    <tr>
+      <td>旅行与出行</td>
+      <td align="right">101</td>
+      <td align="right">12.1%</td>
+    </tr>
+    <tr>
+      <td>健康、家庭、学习与休闲</td>
+      <td align="right">65</td>
+      <td align="right">7.8%</td>
+    </tr>
+    <tr>
+      <td>产品设置或任务不明</td>
+      <td align="right">15</td>
+      <td align="right">1.8%</td>
+    </tr>
+    <tr fill="bg-surface">
+      <td>
+        <strong>合计</strong>
+      </td>
+      <td align="right">
+        <strong>837</strong>
+      </td>
+      <td align="right">
+        <strong>100%</strong>
+      </td>
+    </tr>
+  </table>
+  <text x="40" y="602" width="578" height="56" font="caption" color="text-muted" line-height="1.5">
+    <p>原文数据依据：<a href="https://www.useofmuse.com/data/use-cases.js?v=6" color="primary">
+        <u>Use of Muse</u>
+      </a> · <a href="https://musecases.netlify.app/usecases.json" color="primary">
+        <u>Musecases（1–421）</u>
+      </a> · <a href="https://howtousemuse.com/use-cases" color="primary">
+        <u>HowToUseMuse</u>
+      </a>
+    </p>
+    <p>百分比存在四舍五入误差；保留原文类别、数量与占比。</p>
+  </text>
+  <shape type="line" x="645" y="186" width="0" height="472" stroke="border" />
+  <text x="681" y="186" width="559" height="36" font="strong" color="primary">
+    <strong>Hermes｜迭代频率高，能力覆盖丰富</strong>
+  </text>
+  <text x="681" y="241" width="559" height="155" font="body" color="text-main" line-height="1.55">
+    <p>原文判断：成熟度尚可，口碑整体积极。</p>
+    <p space-before="12">已覆盖持久记忆、技能、会话搜索、定时任务、子 Agent、MCP、多个消息平台和终端后端。</p>
+    <p space-before="12">真实任务能力受模型和配置影响，表现有竞争力，但尚未稳定领先。</p>
+  </text>
+  <text x="681" y="431" width="559" height="32" font="body" color="text-main">
+    <strong>WildClawBench｜原文引用分数</strong>
+  </text>
+  <table x="681" y="480" width="559" height="135" columns="2.2,2,2.1,2.4" rows="49,86" font="body" size="15" color="text-main" align="left" padding="10" header-fill="bg-surface" border-h="1 border" header-border="2 primary">
+    <tr>
+      <td>GPT-5.4</td>
+      <td>GLM 5</td>
+      <td>MiMo V2 Pro</td>
+      <td>MiniMax M2.7</td>
+    </tr>
+    <tr color="primary" size="24">
+      <td>
+        <strong>50.7%</strong>
+      </td>
+      <td>
+        <strong>46.4%</strong>
+      </td>
+      <td>
+        <strong>48.1%</strong>
+      </td>
+      <td>
+        <strong>37.1%</strong>
+      </td>
+    </tr>
+  </table>
+  <text x="681" y="632" width="559" height="26" font="caption" color="text-muted">分数与判断沿用原文引用，未补造测试设置或外部来源。</text>
+  <text x="40" y="684" width="1130" height="20" font="caption" color="text-muted">LightVela｜来源：原文两项附录及其中引用链接；非最新外部调查</text>
+  <text x="1180" y="684" width="60" height="20" font="caption" color="text-muted" align="right">23 / 24</text>
+</slide>
