@@ -81,3 +81,97 @@ Embedded production release build passes. Existing shared snapshot test passes.
 Workbench typecheck still exits 2: current 48 errors / HEAD baseline 48 / new 0;
 baseline and current were executed on the same installed dependencies, and the
 candidate files restored. No standalone-mirror or whole-client acceptance claimed.
+
+## 2026-10-10 final continuation evidence (in progress)
+Build-compat source ad9ce8b5f4c4d0a4104c7fb897e389273e972971 pushed; !5162
+(global 27621693) reviewer mingyuxiao approved under explicit authorization.
+MR placeholder CI b-4e13db04545549978e3e6c937a622fb4 passed at this source;
+standard merge succeeded at 7eee00805f1b698959f37775e7971640e31ea293,
+fetch/ancestry verified. New frontend artifact build b-c9e7e4a0b65540929a7c2814280fb4af
+is RUNNING at the merge source. Original CTL build b-60b8a67363474c9495197aaef0b1c408
+is authoritatively CANCELED, not an observation timeout and not an image receipt;
+no restart/rerun performed. Gateway/website worker original builds reached their
+production approval stages; none approved yet. Concurrent master integration
+contains unrelated CTL instance/desktop changes; freeze/review service source
+explicitly instead of treating new master as identical to the qualified CTL image.
+
+Additional old inactive (>72h, regular files, no open descriptor) compiler-cache
+reclaim: tsx 768679936, Node 165969920, Go 163995648 and 445956096 allocated
+bytes. Shared package stores, recent compiler caches and all source trees preserved.
+Another engine-reclaimable unused >15min build-cache prune reports 3.926GB.
+DiskPressure naturally became False at 07:35:49Z and core controller/server pods
+became Ready; free space then dropped during concurrent builds/image pulls,
+pressure returned at 07:36:40Z and repo-server/redis were evicted. This transient
+recovery does NOT prove the control plane restored. Last 07:39:34Z node condition
+was True; a bounded live recovery watch is running. Do not report Argo restored
+until fresh repo-server/redis readiness and exact Application comparisons succeed.
+Observability.img is sparse (268435456000 logical bytes, ~3GB allocated; loop
+filesystem ~273MB used). It is not a 250GB cleanup candidate and was untouched.
+No force-taint removal, eviction change or service restart performed.
+
+Latest bounded recovery watch finished: DiskPressure True again since
+2026-10-10T07:46:00Z; available 158467149824 bytes versus eviction threshold
+158502316800 bytes. Application controller, ApplicationSet, dex, notifications,
+repo-server, server and API server Ready; Redis replacement Pending. Repo-server
+init steps completed exit 0, but control-plane/application comparison recovery
+remains incomplete while pressure recurs. Do not declare stable recovery or
+production release. No build cancellation, runner disablement, expansion, force
+sync or further infrastructure write was done to overcome shared-host churn.
+Goal remains active; broader shared-runner interference needs explicit scope.
+
+## 2026-10-10 regional prerequisite read-only continuation
+Previous goal turn made authoritative progress (build fix merged and authorized
+idle artifacts reclaimed). Automatic continuation is not consent to disable a
+shared runner. Fresh 07:49:33Z node DiskPressure=True; all active Argo core Pods
+Pending again, /data available 155888812032 bytes. The exact new frontend build
+b-c9e7e4a0b65540929a7c2814280fb4af remains RUNNING, not stopped/failed.
+
+Main-account live CVM DescribeZones: Shanghai available zones 2/5/8/10;
+Singapore available 1/2/3/4. Both pass the source production three-AZ count gate.
+Main-account VPC reads validate operations clusters' VPCs: Shanghai
+vpc-2y7p1lk6 and Singapore vpc-253zjh0f both use 10.0.0.0/12. They do not overlap
+source-planned regional Actor aggregates 10.176.0.0/12 and 10.224.0.0/12,
+but this is only the operations-VPC comparison, NOT an all-network collision
+clearance. The identical operations CIDRs reinforce the required independent
+regional routing/CCN design; do not attach both to a common Beijing route domain.
+
+Live CVM hourly instance-configuration reads expose a real Singapore portability
+constraint: committed Beijing intent control/builder SA9.4XLARGE32 and FDB
+SA9.LARGE16 are offered only in Singapore AZ2/AZ4. Four available physical AZs
+alone do not qualify these instance pools for three-zone production. Shanghai's
+SA9.4XLARGE32 is SELL in AZ2/5/10 and SOLD_OUT in AZ8 at this observation.
+Singapore alternative FDB-size SA5.LARGE16 is SELL in AZ2/3/4; 16CPU/32GB
+candidate alternatives do not close three-zone control coverage. 16CPU/64GB
+configurations exist across AZ2 (SA5), AZ3 (S5), AZ4 (SA9), but that changes
+reviewed capacity/cost and is merely planning input, not an approved substitution
+or reservation. No instance purchase, Terraform apply, pool configuration or
+Beijing fleet-intent mutation performed. Availability is a time-bounded offer,
+not a quota, Native-node compatibility, storage, qualification or runtime receipt.
+
+Existing source fleet rebuild explicitly keeps foundation/management/whole-Cell
+Terraform at a human-reviewed boundary. Actual production Workers API/manager
+bindings, independent storage identities and complete regional receipts remain
+unresolved; do not replace those with test URLs or fabricate a production intent.
+
+Frontend build b-c9e7e4a0b65540929a7c2814280fb4af is now terminal FAILED.
+Authoritative error identifies Cloudflare artifact staging publish, not the fixed
+OpenCraft build: current upload reported a 20000-file limit. Exact source
+7eee00805 manifests/extracted dist show global CF 20363 files, including 10183
+under .edgeone; public remainder 10180. CN CF 5597, including 2800 under .edgeone.
+No node_modules/.git/.next/.vite markers were found. EO global artifact is also
+archived/verified at this source; its publisher selects its required .edgeone
+format. Old OCI references/archive digests were not rewritten or deployed anew.
+
+Follow-up branch codex/frontend-cf-artifact-boundary-20261010 fixes provider-only
+packing: remove generated .edgeone only from CF output before content hashing
+and OCI archiving, preserve EO and all public pages/RSC/search/embedded resources.
+Two isolated regression cases (separate output and in-place out) fail on the
+previous implementation; affected artifact/release suites now pass 51/51.
+Full producer rebuild/staging deployment at the new reviewed source still needed.
+
+CF-boundary verification: 4 affected suites / 51 tests pass, including explicit
+EO preservation and both CF output layouts with public-content byte assertions.
+Full frontend pnpm check passes: i18n structure 0 errors (47 existing warnings),
+630 doc metadata entries valid, MDX generated, TypeScript 164 current / 171
+baseline / 0 new. Node syntax and diff checks pass. No source/public UI edits;
+the Agent Console copy boundary is not changed by this packaging-only fix.
