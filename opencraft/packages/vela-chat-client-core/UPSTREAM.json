@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "source": "shared/vela-chat-client-core",
-  "digest": "cc8f2a67046669d25bcc55668f8b39841d7dbac0421a3ca79f0c46bc60fa52e1",
+  "digest": "861f1fe87c04ffc6b0394570c63cdfea5f4549dd34329b270c86aa5c61b228a4",
   "files": [
     {
       "file": "README.md",
@@ -17,7 +17,7 @@
     },
     {
       "file": "package.json",
-      "sha256": "fef93a4b4eade729ed039254c78089e76ba4d5a2c07c7afbbeb7b0320913631d"
+      "sha256": "e404281133cb70fc1147a55a1e44d04bcbb00bb691dc42bf5f1e984eb0fec495"
     },
     {
       "file": "src/domain/resources.ts",
