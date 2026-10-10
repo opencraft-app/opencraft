@@ -165,3 +165,14 @@ derived: false
 - source_revision: 63a243bb02；generated_revision: 9c4003af86；master: 3b6cbe9127。
 - unverified: 推送后的新 HEAD 远端 CI 与 MR merge_status 仍需核对；尚未合并、发布或母语审校。
 - next_action: 沿用用户授权推送同一 MR !5146 并更新说明，核对远端流水线和合并状态，不自动合并或发布。
+
+## checkpoint — 截图定位远端 OpenCraft 漂移
+- evidence: 用户日志截图显示 OpenCraft guard 在 runtime-config-context.tsx 哈希比较失败；target 1993175b… 精确匹配历史 c0eb7e211f，当前 HEAD 副本为 9a43c433…，源和副本本地同步正确。
+- inference: 失败日志的构建输入与本次提交不一致，复用工作区污染/checkout 错误是待远端复验的解释，不将推断当作已读取全部 CI 日志。
+- changes: MR checkout 修复覆盖同 HEAD 下的 tracked/index 残留，修复后额外验证完整 tracked diff；增加实际 Git 工作树 staged/unstaged 两种回归，同步 release 正式文档。
+- context_receipt: .ci/AGENTS.md、ci service、argocd-ci-secrets 邻接、release-gitops 正式设计、test_mr_placeholder_workflow.py。
+- next_action: 回归 RED/GREEN、完整 ci-runtime 通过后推送同一 MR 并复验远端；不获取蓝盾 token、不手动启动/取消流水线或发布。
+
+## checkpoint — CI checkout 修复验证通过
+- verified: 新回归针对实际 workflow 的 staged/unstaged 脏文件各复现旧实现失败（RED 2），新实现均恢复期望源码/副本并保持正确 SHA；workflow 8 tests 通过。完整 ci-runtime 657 tests 通过（4 既有 skip），materialized runtime smoke、YAML 解析、正式文档与 docs-impact 通过。产品源码和生成副本未改动，沿用 329 前端/222 工作台及双站浏览器通过证据。
+- next_action: 推送 checkout 防污染修复至 !5146，核对新 HEAD 远端 CI；若仍失败须读取对应完整构建日志，不能以本地通过代替。
