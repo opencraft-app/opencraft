@@ -16,6 +16,7 @@ function MoreActions({ label, children }: { label: string; children: React.React
 }
 
 function ProviderDefaultAction({ provider, controller, disabled }: { provider: RuntimeProviderView; controller: ModelServicesController; disabled: boolean }) {
+  if (provider.configuration?.modelType === "asr") return null;
   const snapshot = controller.service.getSnapshot();
   const availableModels = snapshot.models?.groups
     .find(group => group.id === provider.provider)?.models
@@ -95,13 +96,15 @@ function ProviderRow({ provider, controller }: { provider: RuntimeProviderView; 
   </AlertDialog.Portal></AlertDialog.Root></>;
 }
 
-function CreatePopover({ label, disabled, onCreate }: { label: string; disabled: boolean; onCreate(name: string): Promise<void> }) {
+function CreatePopover({ label, disabled, allowSpeech = false, onCreate }: { label: string; disabled: boolean; allowSpeech?: boolean; onCreate(name: string, type: "chat" | "asr"): Promise<void> }) {
   const [open, setOpen] = useState(false), [name, setName] = useState(""), [error, setError] = useState<string | null>(null), [saving, setSaving] = useState(false);
+  const [type, setType] = useState<"chat" | "asr">("chat");
   return <Popover.Root open={open} onOpenChange={value => { if (!saving) { setOpen(value); setName(""); setError(null); } }}>
     <Popover.Trigger asChild><SettingsIconButton label={label} disabled={disabled}><Plus size={16} /></SettingsIconButton></Popover.Trigger>
     <Popover.Portal><Popover.Content className="model-services-create" align="end" sideOffset={6} collisionPadding={12} aria-label={label}>
       <form onSubmit={event => { event.preventDefault(); if (!name.trim() || saving) return; setSaving(true); setError(null);
-        void onCreate(name.trim()).then(() => setOpen(false)).catch(cause => setError(cause instanceof Error ? cause.message : "创建失败")).finally(() => setSaving(false)); }}>
+        void onCreate(name.trim(), type).then(() => setOpen(false)).catch(cause => setError(cause instanceof Error ? cause.message : "创建失败")).finally(() => setSaving(false)); }}>
+        {allowSpeech ? <label>用途<SettingsSelect aria-label="提供商用途" value={type} disabled={saving} onChange={event => setType(event.target.value as "chat" | "asr")}><option value="chat">聊天</option><option value="asr">混元语音转写</option></SettingsSelect></label> : null}
         <label>{label}<SettingsTextInput value={name} disabled={saving} placeholder={label === "添加模型" ? "模型 ID" : "提供商名称"} onChange={event => setName(event.target.value)} required /></label>
         {error ? <SettingsNotice tone="error">{error}</SettingsNotice> : null}
         <div><Popover.Close asChild><SettingsButton disabled={saving}>取消</SettingsButton></Popover.Close><SettingsButton variant="primary" type="submit" disabled={saving || !name.trim()}>{saving ? "添加中…" : "添加"}</SettingsButton></div>
@@ -114,6 +117,7 @@ function ProviderDetail({ controller, provider }: { controller: ModelServicesCon
   const { service } = controller;
   const snapshot = service.getSnapshot();
   const draft = controller.draft(provider);
+  const speech = provider.configuration?.modelType === "asr";
   const [showKey, setShowKey] = useState(false);
   const [searchVisible, setSearchVisible] = useState(false);
   const revision = controller.revision(provider);
@@ -138,14 +142,15 @@ function ProviderDetail({ controller, provider }: { controller: ModelServicesCon
     // RuntimeModelView is the final resolved capability (native answer,
     // declaration fallback, then conservative text). Show what Chat will use.
     const supportsImages = model.input?.includes("image") === true;
-    const capabilityEditable = provider.configuration?.modelDeclarations === true && declared !== undefined;
+    const capabilityEditable = !speech && provider.configuration?.modelDeclarations === true && declared !== undefined;
     const capabilityPending = controller.isModelCapabilityPending(provider.provider, model.id);
     return <div className="model-services__model" key={model.id}>
     <BrandMark kind="model" id={model.id} size={32} />
     <div><strong>{model.name}</strong></div>
     {isDefault(model.id) ? <span className="model-services__kind">默认</span> : null}
-    <MoreActions label={`模型操作：${model.id}`}><small>{model.id}</small>
-      <Popover.Close asChild><SettingsButton variant="quiet" aria-label={`设为默认：${model.id}`} disabled={!editable || draft.dirty || !provider.active || model.enabled === false || isDefault(model.id)} onClick={() => { void controller.setDefault(provider, model.id); }}>设为默认</SettingsButton></Popover.Close>
+    {speech ? <span className="model-services__kind">语音转写</span> : null}
+    {!speech ? <MoreActions label={`模型操作：${model.id}`}><small>{model.id}</small>
+      {!speech ? <Popover.Close asChild><SettingsButton variant="quiet" aria-label={`设为默认：${model.id}`} disabled={!editable || draft.dirty || !provider.active || model.enabled === false || isDefault(model.id)} onClick={() => { void controller.setDefault(provider, model.id); }}>设为默认</SettingsButton></Popover.Close> : null}
       {capabilityEditable ? <div className="model-services-actions__toggle">
         <span><strong>图片输入</strong><small>允许在聊天时向该模型发送图片附件</small></span>
         {capabilityPending
@@ -154,7 +159,7 @@ function ProviderDetail({ controller, provider }: { controller: ModelServicesCon
             title={draft.dirty ? "请先保存或取消连接配置的修改" : undefined}
             onCheckedChange={value => { void controller.setModelImageInput(provider, model.id, value); }} />}
       </div> : null}
-    </MoreActions>
+    </MoreActions> : null}
     <SettingsSwitch label={`启用 ${model.name}`} checked={model.enabled !== false} disabled={!editable || draft.dirty || isDefault(model.id)} onCheckedChange={value => { void controller.changeModel(provider, model.id, value); }} />
   </div>;
   });
@@ -174,7 +179,7 @@ function ProviderDetail({ controller, provider }: { controller: ModelServicesCon
           <SettingsIconButton label={showKey ? "隐藏 API Key" : "显示 API Key"} onClick={() => setShowKey(!showKey)}>{showKey ? <EyeOff size={15} /> : <Eye size={15} />}</SettingsIconButton>
         </div>
       </div>
-      <div className="model-services__row"><div><label htmlFor="model-service-url">API 基础地址（Base URL）</label><p>例如 https://example.com/v1，不含 /chat/completions 或 /responses；留空使用默认地址</p></div><div><SettingsTextInput id="model-service-url" aria-invalid={!!baseUrlIssue} aria-describedby={baseUrlIssue ? "model-service-url-error" : undefined} value={draft.config.baseURL} disabled={!editable} placeholder={provider.configuration?.defaultBaseURL ?? "https://example.com/v1"} onChange={event => change({ baseURL: event.target.value })} />{baseUrlIssue ? <SettingsNotice id="model-service-url-error" tone="error">{baseUrlIssue}</SettingsNotice> : null}</div></div>
+      <div className="model-services__row"><div><label htmlFor="model-service-url">{speech ? "语音服务地址" : "API 基础地址（Base URL）"}</label><p>{speech ? "使用混元转写服务；保存并启用后，可在语音输入中选择模型。" : "例如 https://example.com/v1，不含 /chat/completions 或 /responses；留空使用默认地址"}</p></div><div><SettingsTextInput id="model-service-url" aria-invalid={!!baseUrlIssue} aria-describedby={baseUrlIssue ? "model-service-url-error" : undefined} value={draft.config.baseURL} disabled={!editable} readOnly={speech} placeholder={provider.configuration?.defaultBaseURL ?? "https://example.com/v1"} onChange={event => change({ baseURL: event.target.value })} />{baseUrlIssue ? <SettingsNotice id="model-service-url-error" tone="error">{baseUrlIssue}</SettingsNotice> : null}</div></div>
       {canTest ? <div className="model-services__row"><div><label htmlFor="model-service-test-model">连通性检查</label><p>{draft.dirty ? "请先保存修改，再检查连接" : "使用已保存的连接和密钥发送文本请求，可能计费"}</p></div>
         <div className="model-services__checker"><SettingsSelect id="model-service-test-model" value={testModel} disabled={!editable} onChange={event => { draft.testModel = event.target.value; draft.probe = null; controller.notify(); }}>
           {!testModel ? <option value="">暂无可用模型</option> : null}{[...models.values()].map(model => <option key={model.id} value={model.id}>{model.name}</option>)}
@@ -191,7 +196,7 @@ function ProviderDetail({ controller, provider }: { controller: ModelServicesCon
     {draft.probe ? <SettingsNotice tone={draft.probe.ok ? "neutral" : "error"}>{draft.probe.ok ? "已收到文本响应；不代表工具、图像或流式能力均已验证。" : draft.probe.error}</SettingsNotice> : null}
     <section className="model-services__models" aria-label="模型列表">
       <div className="model-services__model-heading"><h3>模型</h3><div>{searchVisible || controller.modelQuery ? <SettingsTextInput autoFocus aria-label="搜索模型" placeholder="搜索模型" value={controller.modelQuery} onChange={event => { controller.modelQuery = event.target.value; controller.notify(); }} /> : <SettingsIconButton label="搜索模型" onClick={() => setSearchVisible(true)}><Search size={16} /></SettingsIconButton>}
-        <SettingsButton disabled={!editable || draft.dirty} onClick={() => { if (provider.configuration?.modelDeclarations) void controller.fetchModels(provider); else void controller.run(async () => { await service.refresh(); controller.message = "模型目录已刷新"; }); }}><RefreshCw size={14} />{provider.configuration?.modelDeclarations ? "获取模型" : "刷新模型"}</SettingsButton>
+        {!speech ? <SettingsButton disabled={!editable || draft.dirty} onClick={() => { if (provider.configuration?.modelDeclarations) void controller.fetchModels(provider); else void controller.run(async () => { await service.refresh(); controller.message = "模型目录已刷新"; }); }}><RefreshCw size={14} />{provider.configuration?.modelDeclarations ? "获取模型" : "刷新模型"}</SettingsButton> : null}
         {provider.configuration?.modelDeclarations ? <CreatePopover label="添加模型" disabled={!editable || draft.dirty} onCreate={async name => { await controller.addModel(provider, { id: name }); if (controller.error) throw new Error(controller.error); }} /> : null}
       </div></div>
       {rows(true)}
@@ -217,11 +222,11 @@ export function createModelServicesView(controller: ModelServicesController) {
     return <div className="model-services">
       <aside className="model-services__navigation" aria-label="提供商列表">
         <div className="model-services__search"><Search size={16} aria-hidden="true" /><SettingsTextInput aria-label="搜索提供商" placeholder="搜索提供商" value={controller.query} onChange={event => { controller.query = event.target.value; controller.notify(); }} />
-          <CreatePopover label="添加提供商" disabled={controller.busy || !snapshot.providers?.creation} onCreate={async name => { await controller.create(name); if (controller.error) throw new Error(controller.error); }} />
+          <CreatePopover label="添加提供商" allowSpeech={!!snapshot.providers?.creation?.speech} disabled={controller.busy || !snapshot.providers?.creation} onCreate={async (name, type) => { await controller.create(name, type); if (controller.error) throw new Error(controller.error); }} />
         </div>
         {([ ["已启用", (p: RuntimeProviderView) => p.enabled], ["自定义", (p: RuntimeProviderView) => !p.enabled && p.declared], ["未启用", (p: RuntimeProviderView) => !p.enabled && !p.declared] ] as const).map(([title, filter]) => <details open={title !== "未启用" || !!controller.query || !!(selected && filter(selected))} key={title} hidden={!visible.some(filter)}><summary>{title}</summary>{visible.filter(filter).map(providerRow)}</details>)}
       </aside>
-      <div className="model-services__main"><div className="model-services__mobile-select"><SettingsSelect aria-label="选择提供商" value={selected?.provider ?? ""} onChange={event => pick(event.target.value || null)}><option value="">全部提供商</option>{providers.map(provider => <option key={provider.provider} value={provider.provider}>{provider.displayName}</option>)}</SettingsSelect><CreatePopover label="添加提供商" disabled={controller.busy || !snapshot.providers?.creation} onCreate={async name => { await controller.create(name); if (controller.error) throw new Error(controller.error); }} /></div>
+      <div className="model-services__main"><div className="model-services__mobile-select"><SettingsSelect aria-label="选择提供商" value={selected?.provider ?? ""} onChange={event => pick(event.target.value || null)}><option value="">全部提供商</option>{providers.map(provider => <option key={provider.provider} value={provider.provider}>{provider.displayName}</option>)}</SettingsSelect><CreatePopover label="添加提供商" allowSpeech={!!snapshot.providers?.creation?.speech} disabled={controller.busy || !snapshot.providers?.creation} onCreate={async (name, type) => { await controller.create(name, type); if (controller.error) throw new Error(controller.error); }} /></div>
         {snapshot.providers?.application?.state === "failed" ? <SettingsNotice tone="error">{snapshot.providers.application.error}<SettingsButton disabled={controller.busy} onClick={() => { void controller.run(()=>controller.service.reapply()); }}>重试应用</SettingsButton></SettingsNotice> : null}
         {snapshot.error ? <SettingsNotice tone="error">{snapshot.error}<SettingsButton onClick={() => { void controller.service.refresh(); }}>重试</SettingsButton></SettingsNotice> : null}
         {selected ? <ProviderDetail key={selected.provider} controller={controller} provider={selected} /> : <div className="model-services__overview"><h2>全部提供商</h2>{visible.map(providerRow)}{!providers.length ? snapshot.phase === "loading" ? <div className="model-services__pending" role="status" aria-label="正在加载提供商"><LoaderCircle aria-hidden="true" className="is-spinning" size={16} /></div> : <p>暂无提供商</p> : null}</div>}

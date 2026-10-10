@@ -2,6 +2,10 @@
 set -euo pipefail
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+[[ ${RUNTIME_HOST_DRAIN_PROFILE:-production} == production ]] || {
+	echo "production runtime release requires the production Host drain profile" >&2
+	exit 2
+}
 namespace=${RIVET_CELL_NAMESPACE:-actor-fdb-cell-system}
 : "${RIVET_CELL_NAME:?RIVET_CELL_NAME must name the exact Cell}"
 cell_name=$RIVET_CELL_NAME
@@ -59,6 +63,7 @@ release_receipt_dir=${RIVET_RELEASE_RECEIPT_DIR:-$script_dir/receipts}
 default_runtime_admission_field_manager=rivet-runtime-admission-installer
 runtime_admission_field_manager=${RUNTIME_ADMISSION_FIELD_MANAGER:-$default_runtime_admission_field_manager}
 runtime_admission_rollback_field_manager=rivet-runtime-admission-rollback
+runtime_capacity_recovery_field_manager=rivet-runtime-capacity-recovery
 runtime_rollback_field_manager=rivet-runtime-rollback
 runtime_release_hold_annotation=fleet.actor.dev/runtime-release-hold
 runtime_release_hold_protocol=statefulset-uid-cas-v1
@@ -66,6 +71,12 @@ runtime_release_hold_id=release-$(python3 -c 'import uuid; print(uuid.uuid4().he
 runtime_release_hold_builder=$script_dir/build-runtime-scale-in-hold-patch.py
 runtime_capacity_settle_checker=$script_dir/check-runtime-capacity-settle.py
 runtime_machine_set=${RUNTIME_MACHINE_SET:-np-runtime0}
+capacity_controller_recovery=${RUNTIME_CAPACITY_CONTROLLER_RECOVERY:-0}
+case "$capacity_controller_recovery" in
+0 | 1) ;;
+*) echo "RUNTIME_CAPACITY_CONTROLLER_RECOVERY must be 0 or 1" >&2; exit 2 ;;
+esac
+capacity_recovery_helper=$script_dir/capacity-controller-recovery.py
 for artifact in "$runtime_release_hold_builder" "$runtime_capacity_settle_checker"; do
 	[[ -f $artifact ]] || { echo "runtime release helper is missing: $artifact" >&2; exit 2; }
 done
@@ -105,7 +116,65 @@ rollout_started=false
 ledger_write_started=false
 ledger_existed=false
 runtime_release_hold_acquired=false
+capacity_recovery_started=false
 cleanup() { rm -rf -- "$temporary"; }
+
+recover_capacity_controller() {
+	local journal_name=${cell_name}-cap-recovery-${runtime_release_hold_id#release-}
+	[[ -f $capacity_recovery_helper ]] || { echo "capacity recovery helper is missing" >&2; return 1; }
+	kubectl "${kubeconfig_args[@]}" -n "$namespace" get deployment "${cell_name}-runtime-capacity" \
+		-o json >"$temporary/capacity-recovery-current.json"
+	kubectl "${kubeconfig_args[@]}" -n "$namespace" get statefulset "${cell_name}-runtime-hosts" \
+		-o json >"$temporary/capacity-recovery-runtime.json"
+	kubectl "${kubeconfig_args[@]}" get machineset "$runtime_machine_set" \
+		-o json >"$temporary/capacity-recovery-machineset.json"
+	kubectl "${kubeconfig_args[@]}" get machines \
+		-l "node.tke.cloud.tencent.com/machineset=${runtime_machine_set}" \
+		-o json >"$temporary/capacity-recovery-machines.json"
+	kubectl "${kubeconfig_args[@]}" get nodes \
+		-l "node.tke.cloud.tencent.com/machineset=${runtime_machine_set}" \
+		-o json >"$temporary/capacity-recovery-nodes.json"
+	python3 "$capacity_recovery_helper" prepare \
+		--deployment "$temporary/capacity-recovery-current.json" \
+		--original-deployment "$temporary/capacity.json" \
+		--statefulset "$temporary/capacity-recovery-runtime.json" \
+		--hold-identity "$temporary/runtime-release-hold-identity.json" \
+		--machineset "$temporary/capacity-recovery-machineset.json" \
+		--machines "$temporary/capacity-recovery-machines.json" \
+		--nodes "$temporary/capacity-recovery-nodes.json" \
+		--cell "$cell_name" --namespace "$namespace" --image "$reporter_image" \
+		--revision "$reporter_source_revision" --manifest "$reporter_source_manifest_sha" \
+		--journal-name "$journal_name" --journal "$temporary/capacity-recovery-journal.json" \
+		--patch "$temporary/capacity-recovery-patch.json"
+	# Persist the exact original template before any ambiguous deployment ACK.
+	# The immutable journal and live hold survive a killed release process.
+	kubectl "${kubeconfig_args[@]}" create -f "$temporary/capacity-recovery-journal.json" \
+		-o json >"$temporary/capacity-recovery-persisted-journal.json"
+	capacity_recovery_started=true
+	kubectl "${kubeconfig_args[@]}" -n "$namespace" patch deployment "${cell_name}-runtime-capacity" \
+		--field-manager="$runtime_capacity_recovery_field_manager" --type=json \
+		--patch-file "$temporary/capacity-recovery-patch.json" >/dev/null
+	kubectl "${kubeconfig_args[@]}" -n "$namespace" rollout status \
+		deployment/"${cell_name}-runtime-capacity" --timeout=5m
+	echo "capacity controller recovery staged under release hold: journal=$journal_name"
+}
+
+restore_recovered_capacity_controller() {
+	kubectl "${kubeconfig_args[@]}" -n "$namespace" get deployment "${cell_name}-runtime-capacity" \
+		-o json >"$temporary/capacity-recovery-rollback-current.json" || return 1
+	kubectl "${kubeconfig_args[@]}" -n "$namespace" get statefulset "${cell_name}-runtime-hosts" \
+		-o json >"$temporary/capacity-recovery-rollback-runtime.json" || return 1
+	python3 "$capacity_recovery_helper" rollback \
+		--deployment "$temporary/capacity-recovery-rollback-current.json" \
+		--statefulset "$temporary/capacity-recovery-rollback-runtime.json" \
+		--journal "$temporary/capacity-recovery-persisted-journal.json" \
+		--patch "$temporary/capacity-recovery-rollback-patch.json" || return 1
+	kubectl "${kubeconfig_args[@]}" -n "$namespace" patch deployment "${cell_name}-runtime-capacity" \
+		--field-manager="$runtime_capacity_recovery_field_manager" --type=json \
+		--patch-file "$temporary/capacity-recovery-rollback-patch.json" >/dev/null || return 1
+	kubectl "${kubeconfig_args[@]}" -n "$namespace" rollout status \
+		deployment/"${cell_name}-runtime-capacity" --timeout=5m
+}
 
 acquire_runtime_release_hold() {
 	local deadline=$((SECONDS + 900)) status acquired_at wait_reason previous_wait_reason=
@@ -236,6 +305,13 @@ PY
 rollback() {
 	local status=$?
 	((status != 0)) || status=1
+	if [[ $capacity_recovery_started == true && $rollout_started == false ]]; then
+		if ! restore_recovered_capacity_controller; then
+			echo "capacity recovery rollback failed; retaining the release hold and durable journal" >&2
+			cleanup
+			exit "$status"
+		fi
+	fi
 	if [[ $rollout_started == true ]]; then
 		echo "release failed; restoring the exact pre-release ConfigMap and workload revisions" >&2
 		# Forward updates converge the reconnect-capable candidate Engine before
@@ -373,7 +449,6 @@ host_drain_protocol=$(kubectl "${kubeconfig_args[@]}" -n "$namespace" get deploy
 	exit 1
 }
 acquire_runtime_release_hold
-wait_for_runtime_capacity_settle
 if kubectl "${kubeconfig_args[@]}" -n "$namespace" get configmap "$release_ledger_name" \
 	-o json >"$temporary/release-ledger-before.json" 2>/dev/null; then
 	ledger_existed=true
@@ -457,8 +532,8 @@ cold_max_concurrent_requests=${RIVET_COLD_MAX_CONCURRENT_REQUESTS:-16}
 gasoline_worker_poll_interval_ms=${RIVET_GASOLINE_WORKER_POLL_INTERVAL_MS:-2000}
 gasoline_worker_pull_batch_size=${RIVET_GASOLINE_WORKER_PULL_BATCH_SIZE:-256}
 gasoline_worker_max_active_workflows=${RIVET_GASOLINE_WORKER_MAX_ACTIVE_WORKFLOWS:-4096}
-depot_manager_refresh_max_concurrency=${RIVET_DEPOT_MANAGER_REFRESH_MAX_CONCURRENCY:-16}
-depot_compaction_max_concurrency=${RIVET_DEPOT_COMPACTION_MAX_CONCURRENCY:-8}
+depot_manager_refresh_max_concurrency=${RIVET_DEPOT_MANAGER_REFRESH_MAX_CONCURRENCY:-8}
+depot_compaction_max_concurrency=${RIVET_DEPOT_COMPACTION_MAX_CONCURRENCY:-2}
 gasoline_worker_secondary_grace_ms=${RIVET_GASOLINE_WORKER_SECONDARY_GRACE_MS:-1000}
 gasoline_history_prune_eligibility_seconds=${RIVET_GASOLINE_HISTORY_PRUNE_ELIGIBILITY_SECONDS:-900}
 gasoline_terminal_prune_eligibility_seconds=${RIVET_GASOLINE_TERMINAL_PRUNE_ELIGIBILITY_SECONDS:-604800}
@@ -532,7 +607,7 @@ RIVET_RUNTIME_CONFIG_FILE="$temporary/config.jsonc" \
 	"$script_dir/validate-runtime-image.sh"
 
 # The runtime image validator does not exercise the separately released
-# controller/reporter image. Pull and execute both entrypoints on every control
+# controller/reporter image. Pull and execute every required entrypoint on each control
 # node before changing a live Deployment; a registry-side manifest rewrite or
 # stale/nonexistent digest must fail before rollout_started becomes true.
 ACTOR_IMAGE_PREFLIGHT_NAMESPACE="$namespace" \
@@ -543,12 +618,25 @@ ACTOR_IMAGE_PREFLIGHT_NAMESPACE="$namespace" \
 	ACTOR_IMAGE_PREFLIGHT_EXPECTED_EXIT_CODE=0 \
 	"$operations_dir/preflight-image-pull.sh" /usr/local/bin/workerd-runtime-capacity-controller --help
 ACTOR_IMAGE_PREFLIGHT_NAMESPACE="$namespace" \
+	ACTOR_IMAGE_PREFLIGHT_NAME=host-drain-release \
+	ACTOR_IMAGE_PREFLIGHT_IMAGE="$reporter_image" \
+	ACTOR_IMAGE_PREFLIGHT_PULL_SECRET=actor-fleet-tcr \
+	ACTOR_IMAGE_PREFLIGHT_NODE_SELECTOR=fleet.actor.dev/control-pool=true \
+	ACTOR_IMAGE_PREFLIGHT_EXPECTED_EXIT_CODE=0 \
+	ACTOR_IMAGE_PREFLIGHT_REQUIRED_OUTPUT='Usage: workerd-host-drain-controller [--help]' \
+	"$operations_dir/preflight-image-pull.sh" /usr/local/bin/workerd-host-drain-controller --help
+ACTOR_IMAGE_PREFLIGHT_NAMESPACE="$namespace" \
 	ACTOR_IMAGE_PREFLIGHT_NAME=cell-reporter-release \
 	ACTOR_IMAGE_PREFLIGHT_IMAGE="$reporter_image" \
 	ACTOR_IMAGE_PREFLIGHT_PULL_SECRET=actor-fleet-tcr \
 	ACTOR_IMAGE_PREFLIGHT_NODE_SELECTOR=fleet.actor.dev/control-pool=true \
 	ACTOR_IMAGE_PREFLIGHT_EXPECTED_EXIT_CODE=1 \
 	"$operations_dir/preflight-image-pull.sh" /usr/local/bin/rivet-cell-reporter --help
+
+if [[ $capacity_controller_recovery == 1 ]]; then
+	recover_capacity_controller
+fi
+wait_for_runtime_capacity_settle
 
 rollout_started=true
 # Qualification is runtime lifecycle state owned by publish-qualified-release,
@@ -692,5 +780,6 @@ release_receipt_temporary=$(mktemp "$release_receipt_dir/.release-ledger.XXXXXX"
 install -m 0640 "$temporary/release-ledger.json" "$release_receipt_temporary"
 mv -Tf "$release_receipt_temporary" "$release_receipt"
 rollout_started=false
+capacity_recovery_started=false
 echo "production runtime release converged: $runtime_image"
 echo "static release ledger: $release_id receipt=$release_receipt sha256=$ledger_sha256"

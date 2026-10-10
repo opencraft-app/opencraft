@@ -222,6 +222,30 @@ describe("BuddyPanel P1 stability", () => {
     expect(screen.queryByText("MUM · 妈妈（旧快照）")).not.toBeInTheDocument();
   });
 
+  it("removes LOVE-R, SOLO and GRASS from new domestic candidates while keeping saved cards", async () => {
+    const riskySouls = ["LOVE-R", "SOLO", "GRASS"].map((slug, index) => ({
+      ...fixtures.agentA,
+      id: index + 10,
+      slug,
+      displayName: `${slug}（最新）`,
+    }));
+    const savedSouls = riskySouls.map((soul) => ({ ...soul, displayName: `${soul.slug}（旧快照）` }));
+    const yyds = { ...fixtures.agentB, slug: "YYDS", displayName: "YYDS · 神人" };
+    mockedFetchSouls.mockResolvedValue({ total: 4, souls: [...riskySouls, yyds] });
+    mockedLoadBuddyState.mockResolvedValue({ drawnSouls: savedSouls, appliedSlug: "LOVE-R" });
+
+    render(<BuddyPanel botId="agent-a" />);
+
+    await waitFor(() => {
+      expect(candidateState.draw).toEqual(["YYDS"]);
+      expect(candidateState.test).toEqual(["YYDS"]);
+    });
+    for (const soul of riskySouls) {
+      expect(await screen.findByText(soul.displayName)).toBeInTheDocument();
+      expect(screen.queryByText(`${soul.slug}（旧快照）`)).not.toBeInTheDocument();
+    }
+  });
+
   it("removes MOMMY from both international candidate flows", async () => {
     regionState.isGlobal = true;
     const savedMum = { ...fixtures.agentA, slug: "MUM", displayName: "MUM · 妈妈" };
@@ -291,8 +315,8 @@ describe("BuddyPanel P1 stability", () => {
       "items-center",
       "justify-center",
     );
-    expect(source).toHaveClass("absolute", "inset-y-0", "right-0", "items-center");
-    expect(source).not.toHaveClass("right-6");
+    expect(source).toHaveClass("lv-buddy-panel__source", "items-center");
+    expect(source).not.toHaveClass("absolute", "right-6");
     expect(description.parentElement).not.toBe(source.parentElement);
   });
 
@@ -1198,7 +1222,11 @@ describe("BuddyPanel P1 stability", () => {
 
     render(<BuddyPanel botId="agent-a" />);
     await screen.findByText("Agent A Soul");
-    fireEvent.click(screen.getByText("人设解读"));
+    const selectCard = screen.getByRole("button", { name: "选中此人设" });
+    const preview = screen.getByRole("button", { name: "人设解读" });
+    expect(selectCard.contains(preview)).toBe(false);
+    fireEvent.click(preview);
+    expect(selectCard).toHaveAttribute("aria-pressed", "false");
     expect(await screen.findByText("加载失败：network unavailable")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "重试" }));

@@ -133,6 +133,8 @@ Create a custom Notification Task or Script Task from the Create dialog rather t
 After a task is created, use the Scheduled Tasks page to review Current Jobs, Ended Jobs, and Recent Runs.
 The Current Jobs view can filter Agent Tasks, Notification Tasks, and Script Tasks.
 
+In **Recent Runs**, open a run and choose **View result** to read its Markdown output or **Download result** to save it. First switch to the Bot that owns the task: its result stays in that Bot’s run records and does not appear in another Bot’s chat or records.
+
 Ended Jobs collects completed, failed, and expired tasks.
 Ongoing tasks stay under Current Jobs.
 

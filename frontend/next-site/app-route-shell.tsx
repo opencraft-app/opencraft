@@ -6,11 +6,15 @@ import React, { Suspense, useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { LoginModal } from '@/components/site/login-modal';
+import { AgentSidebarToggle } from '@/components/site/agent-sidebar';
 import { LegalFooter } from '@/components/site/legal-footer';
 import { ProductReturnHomeHeader } from '@/components/site/product-chrome';
+import { useOpenClaw } from '@/contexts/agent-context';
+import { useMultiBotEnabled } from '@/contexts/runtime-config-context';
 import { useSession } from '@/contexts/session-context';
 import { useT } from '@/i18n/t';
 import { useAppNavigate } from '@/lib/app-navigation';
+import { AGENTS_HOME_PATH, getAgentCreateBotPath } from '@/lib/agent-routes';
 import { isGlobal } from '@/lib/region';
 import { getSeoMeta } from '@/lib/seo-data';
 import { RumUserBridge } from '@/observability/rum-user-bridge';
@@ -83,11 +87,13 @@ function SkeletonBlock({ className }: { className: string }) {
   return <span className={`block animate-pulse bg-black/[0.045] ${className}`} />;
 }
 
-export function AgentsRouteLoading() {
+export function AgentsRouteLoading({ collapsed, onToggle, isChat }: { collapsed: boolean; onToggle: () => void; isChat: boolean }) {
+  const multiBotEnabled = useMultiBotEnabled();
   return (
-    <div className="flex min-h-dvh flex-col bg-white text-[var(--text-primary)]">
+    <div className={`flex min-h-dvh flex-col bg-white text-[var(--text-primary)]${multiBotEnabled ? ' lv-agent-bot-rail-enabled' : ''}${collapsed ? ' lv-agent-sidebar-collapsed' : ''}`}>
       <ProductReturnHomeHeader
-        className="lv-agent-sidebar-header"
+        beforeUserMenu={<AgentSidebarToggle collapsed={collapsed} onToggle={onToggle} />}
+        className={`lv-agent-sidebar-header${collapsed ? ' lv-agent-sidebar-header--collapsed' : ''}`}
         reloadLanguageAfterSwitch
         showAccountLanguageSwitcher
         showDesktopUserMenu={false}
@@ -95,7 +101,7 @@ export function AgentsRouteLoading() {
       />
       <main className="lw-app-top-pad lv-agent-settings-main flex-grow bg-white pb-6">
         <section className="lw-settings-shell lv-agent-settings-shell">
-          <AgentSettingsLoadingContent />
+          <AgentSettingsLoadingContent multiBotEnabled={multiBotEnabled} isChat={isChat} collapsed={collapsed} />
         </section>
       </main>
     </div>
@@ -273,6 +279,85 @@ function NextMarketingAuthGate({
       <LoginModal open={showLogin} onClose={() => setShowLogin(false)} />
     </div>
   );
+}
+
+/**
+ * 订阅门禁：购买前不得进入「我的智能体」（/agents 及其子路由）。
+ *
+ * 入口隐藏只是体验层，直接输入 URL 仍需拦住 —— 权益未确认前不挂载智能体内容，
+ * 避免列表数据被渲染出来。请求失败时不误踢（网络抖动不应把已订阅用户带走），
+ * 只提示稍后重试。服务端仍保留权益校验，前端门禁不是权限边界。
+ */
+export function NextAgentEntitlementGate({
+  children,
+  loadingFallback,
+}: {
+  children: ReactNode;
+  loadingFallback: ReactNode;
+}) {
+  const navigate = useAppNavigate();
+  const pathname = usePathname() || AGENTS_HOME_PATH;
+  const t = useT();
+  const { bots, botsError, botsLoading, hasResolvedBots, hasResolvedPasses, isSubscribed, latestPass, passesError, passesLoading, refreshBots, refreshPasses } = useOpenClaw();
+  /*
+   * 已购买的老用户（有历史订阅或现存 Bot）一律放行。
+   * 订阅过期的人同样要进来管理已有 Bot 和续费，不能把人挡在门外 ——
+   * 门禁只拦「从没买过、也没有任何资产」的新访客。
+   */
+  const hasExistingAssets = (bots?.length ?? 0) > 0 || Boolean(latestPass);
+  const isAgentHome = pathname.replace(/\/$/, '') === AGENTS_HOME_PATH;
+  const hasNoBots = (bots?.length ?? 0) === 0;
+  const mustCreateBeforeSection = isSubscribed && hasNoBots && !isAgentHome;
+  const mustReturnHomeWithoutBot = !isSubscribed && hasExistingAssets && hasNoBots && !isAgentHome;
+
+  useEffect(() => {
+    if (hasResolvedPasses && hasResolvedBots && !passesLoading && !botsLoading && !isSubscribed && !passesError && !botsError && !hasExistingAssets) {
+      navigate('/', { replace: true });
+    }
+  }, [botsError, botsLoading, hasExistingAssets, hasResolvedBots, hasResolvedPasses, isSubscribed, navigate, passesError, passesLoading]);
+
+  useEffect(() => {
+    if (!hasResolvedPasses || !hasResolvedBots || passesLoading || botsLoading || passesError || botsError) return;
+    if (mustCreateBeforeSection) navigate(getAgentCreateBotPath(), { replace: true });
+    else if (mustReturnHomeWithoutBot) navigate(AGENTS_HOME_PATH, { replace: true });
+  }, [botsError, botsLoading, hasResolvedBots, hasResolvedPasses, mustCreateBeforeSection, mustReturnHomeWithoutBot, navigate, passesError, passesLoading]);
+
+  if (passesError || botsError) {
+    return (
+      <div className="landing-page lw-setup-bg relative flex min-h-screen flex-col overflow-hidden" style={{ color: 'var(--lw-fg)' }}>
+        <main className="relative z-10 flex flex-grow items-center justify-center pb-8 pt-24">
+          <div className="mx-auto flex max-w-md flex-col items-center px-6 text-center">
+            <h2 className="text-xl font-bold" style={{ color: 'var(--lw-fg)', marginBottom: 16 }}>{t(passesError ? '权益状态加载失败' : 'Bot 列表加载失败，请刷新重试。')}</h2>
+            <p className="text-sm leading-relaxed" style={{ color: 'var(--lw-fg-tertiary)', marginBottom: 48 }}>
+              {t('请稍后重试')}
+            </p>
+            <button type="button" onClick={() => void (passesError ? refreshPasses() : refreshBots())} className="rounded-full bg-black px-5 py-2 text-sm font-medium text-white">
+              {t('重试')}
+            </button>
+            <a href="/" className="lw-back-link" style={{ marginTop: 36 }}>
+              <ArrowLeft className="h-3.5 w-3.5" /> {t('返回首页')}
+            </a>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  if (!hasResolvedPasses || !hasResolvedBots || passesLoading || botsLoading) {
+    return <>{loadingFallback}</>;
+  }
+
+  /* 未订阅且无资产：不挂载智能体内容（避免列表被渲染出来），跳转由上面的 effect 负责。 */
+  if (!isSubscribed && !hasExistingAssets) {
+    return <>{loadingFallback}</>;
+  }
+
+  /* 没有 Bot 时，深层功能页必须先经过创建或管理首页；跳转前不挂载目标页面。 */
+  if (mustCreateBeforeSection || mustReturnHomeWithoutBot) {
+    return <>{loadingFallback}</>;
+  }
+
+  return <>{children}</>;
 }
 
 export function AppRouteShell({

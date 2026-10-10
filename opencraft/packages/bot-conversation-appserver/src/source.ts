@@ -41,10 +41,16 @@ export interface AppServerBotConversationSourceOptions {
 interface MutableConversationState {
   readonly logicalKey: ConversationKey;
   remoteConversationId: string | null;
+  conversationCreatedAtMs: number | null;
   snapshot: BotConversationSnapshot;
   nextCursor: string | null;
   liveEpoch: string | null;
   nextSeq: number;
+  generation: number;
+  durableTranscript: readonly BotConversationMessage[];
+  readonly liveMessages: Map<string, { readonly message: BotConversationMessage; readonly epoch: string | null; readonly nextSeq: number; readonly ownership: "local" | "remote" }>;
+  readonly traversedHistoryCursors: Set<string>;
+  readonly pendingClientMessages: Set<string>;
   hydrating: boolean;
   loadPromise: Promise<void> | null;
   resyncRequested: boolean;
@@ -338,24 +344,56 @@ export class AppServerBotConversationSource implements BotConversationSource {
 
   async loadOlder(key: ConversationKey): Promise<void> {
     const state = this.ensure(key);
-    if (state.remoteConversationId === null || state.nextCursor === null || state.snapshot.history.loadingOlder) return;
+    if (state.snapshot.phase !== "ready" || state.hydrating || state.remoteConversationId === null || state.nextCursor === null || state.snapshot.history.loadingOlder) return;
+    const generation = state.generation;
+    const conversationId = state.remoteConversationId;
+    const cursor = state.nextCursor;
     replaceSnapshot(state, { history: Object.freeze({ ...state.snapshot.history, loadingOlder: true }) });
     try {
       const page = await this.service.listMessages(key.hostId, {
-        conversationId: state.remoteConversationId,
-        cursor: state.nextCursor,
+        conversationId,
+        cursor,
         limit: this.olderPageSize,
         direction: "backwards",
       });
+      if (!this.isCurrent(state, generation) || state.remoteConversationId !== conversationId) return;
+      if (page.data.some((item) => item.conversationId !== conversationId)) {
+        throw new BotConversationSourceError("CONVERSATION_MISMATCH", "Could not load earlier messages.", false);
+      }
+      const nextCursor = page.nextCursor ?? null;
+      if (nextCursor !== null && (nextCursor === cursor || state.traversedHistoryCursors.has(nextCursor))) {
+        throw new BotConversationSourceError("HISTORY_CURSOR_STALLED", "Could not load earlier messages. Try again.", true);
+      }
       const older = page.data.map((item) => message(item, state.logicalKey));
-      const seen = new Set(state.snapshot.transcript.map(botMessageStableKey));
-      const prepended = older.filter((item) => !seen.has(botMessageStableKey(item)));
-      state.nextCursor = page.nextCursor ?? null;
+      const olderByKey = new Map(older.map((item) => [botMessageStableKey(item), item]));
+      const durableKeys = new Set(state.durableTranscript.map(botMessageStableKey));
+      const currentKeys = new Set(state.snapshot.transcript.map(botMessageStableKey));
+      for (const item of older) {
+        const stableKey = botMessageStableKey(item);
+        if (item.clientMessageId !== null && item.delivery === "sent" && state.liveMessages.get(stableKey)?.ownership === "local") {
+          state.liveMessages.delete(stableKey);
+        }
+      }
+      // A provider may return its whole materialized window. Covered durable
+      // rows own refreshed grouping/causal metadata, but overlapping ordinary
+      // pages cannot move established slots or their outside neighbours.
+      state.durableTranscript = Object.freeze([
+        ...older.filter((item) => !durableKeys.has(botMessageStableKey(item))),
+        ...state.durableTranscript.map((item) => olderByKey.get(botMessageStableKey(item)) ?? item),
+      ]);
+      const transcript = Object.freeze([
+        ...older.filter((item) => !currentKeys.has(botMessageStableKey(item))),
+        ...state.snapshot.transcript.map((item) => state.liveMessages.has(botMessageStableKey(item))
+          ? item : olderByKey.get(botMessageStableKey(item)) ?? item),
+      ]);
+      state.traversedHistoryCursors.add(cursor);
+      state.nextCursor = nextCursor;
       replaceSnapshot(state, {
-        transcript: Object.freeze([...prepended, ...state.snapshot.transcript]),
+        transcript,
         history: Object.freeze({ hasOlder: state.nextCursor !== null, loadingOlder: false }),
       });
     } catch (error) {
+      if (!this.isCurrent(state, generation)) return;
       replaceSnapshot(state, { history: Object.freeze({ ...state.snapshot.history, loadingOlder: false }) });
       throw sourceError(error);
     }
@@ -367,10 +405,17 @@ export class AppServerBotConversationSource implements BotConversationSource {
     }
     const state = this.ensure(key);
     await this.load(key);
+    const conversationCreatedAtMs = state.conversationCreatedAtMs;
+    const confirmed = this.confirmedSendReceipt(state, intent, conversationCreatedAtMs);
+    if (confirmed !== null) return confirmed;
     if (state.snapshot.descriptor.readOnly === true) {
       throw new BotConversationSourceError("BOT_CONVERSATION_READ_ONLY", "This historical group is read-only because a member no longer exists.", false);
     }
     if (state.remoteConversationId === null) throw new BotConversationSourceError("NOT_LOADED", "Bot conversation is not loaded", true);
+    if (state.pendingClientMessages.has(intent.clientMessageId)) {
+      throw new BotConversationSourceError("BOT_SEND_IN_PROGRESS", "This message is already being sent.", false);
+    }
+    state.pendingClientMessages.add(intent.clientMessageId);
     const author = state.snapshot.descriptor.participants.find((item) => item.kind === "human") ?? FALLBACK_HUMAN;
     const optimistic: BotConversationMessage = Object.freeze({
       id: `optimistic:${intent.clientMessageId}`,
@@ -384,6 +429,7 @@ export class AppServerBotConversationSource implements BotConversationSource {
       delivery: "sending",
       streaming: false,
     });
+    this.rememberLiveMessage(state, optimistic, "local");
     replaceSnapshot(state, {
       transcript: upsertBy(state.snapshot.transcript, optimistic, botMessageStableKey),
     });
@@ -410,7 +456,10 @@ export class AppServerBotConversationSource implements BotConversationSource {
           ...intent.context.flatMap((item) => item.uri === null ? [] : [{ type: "resource" as const, uri: item.uri, title: item.title }]),
         ],
       });
+      const adopted = this.confirmedSendReceipt(state, intent, conversationCreatedAtMs);
+      if (adopted !== null) return adopted;
       const accepted = message(result.message, key);
+      this.rememberLiveMessage(state, accepted, "local");
       const transcript = upsertBy(state.snapshot.transcript, accepted, botMessageStableKey);
       const executions = result.executions.reduce(
         (items, item) => upsertBy(items, execution(item, key), (value) => value.executionId),
@@ -424,9 +473,14 @@ export class AppServerBotConversationSource implements BotConversationSource {
         acceptedAtMs: result.message.createdAtMs,
       };
     } catch (error) {
+      const adopted = this.confirmedSendReceipt(state, intent, conversationCreatedAtMs);
+      if (adopted !== null) return adopted;
       const failed = Object.freeze({ ...optimistic, delivery: "failed" as const });
+      this.rememberLiveMessage(state, failed, "local");
       replaceSnapshot(state, { transcript: upsertBy(state.snapshot.transcript, failed, botMessageStableKey) });
       throw sourceError(error);
+    } finally {
+      state.pendingClientMessages.delete(intent.clientMessageId);
     }
   }
 
@@ -488,10 +542,16 @@ export class AppServerBotConversationSource implements BotConversationSource {
       state = {
         logicalKey: key,
         remoteConversationId: null,
+        conversationCreatedAtMs: null,
         snapshot: emptySnapshot(key),
         nextCursor: null,
         liveEpoch: null,
         nextSeq: 0,
+        generation: 0,
+        durableTranscript: [],
+        liveMessages: new Map(),
+        traversedHistoryCursors: new Set(),
+        pendingClientMessages: new Set(),
         hydrating: false,
         loadPromise: null,
         resyncRequested: false,
@@ -511,32 +571,66 @@ export class AppServerBotConversationSource implements BotConversationSource {
   }
 
   private async hydrate(state: MutableConversationState, showLoading: boolean): Promise<void> {
+    const generation = ++state.generation;
     state.hydrating = true;
     state.bufferedEvents = [];
+    if (state.snapshot.history.loadingOlder) replaceSnapshot(state, { history: Object.freeze({ ...state.snapshot.history, loadingOlder: false }) }, false);
     if (showLoading) replaceSnapshot(state, { phase: "loading", error: null });
     try {
       await this.service.waitForCapability(state.logicalKey.hostId);
+      if (!this.isCurrent(state, generation)) return;
       const conversationId = await this.resolveRemoteConversation(state);
       const result = await this.service.readConversation(state.logicalKey.hostId, {
         conversationId,
         initialMessagesPage: { limit: this.initialPageSize },
       });
-      if (this.disposed) return;
+      if (!this.isCurrent(state, generation)) return;
       if (this.deletedConversations.has(encodeConversationKey(state.logicalKey)) || result.participants.some(person =>
         person.kind === "bot" && this.deletedBots.has(JSON.stringify([state.logicalKey.hostId, person.participantId])))) {
         this.markDeleted(state);
         throw new BotConversationSourceError("BOT_DELETED", "此 Bot 已删除。", false);
       }
+      if (result.conversation.conversationId !== conversationId || result.initialMessagesPage.data.some((item) => item.conversationId !== conversationId)) {
+        throw new BotConversationSourceError("CONVERSATION_MISMATCH", "Could not restore this Bot conversation.", false);
+      }
       const participants = result.participants.map(participant);
-      state.nextCursor = result.initialMessagesPage.nextCursor ?? null;
+      const fresh = result.initialMessagesPage.data.map((item) => message(item, state.logicalKey));
+      const previousKeys = new Map(state.durableTranscript.map((item, index) => [botMessageStableKey(item), index]));
+      const shared = fresh.find((item) => previousKeys.has(botMessageStableKey(item)));
+      const sameConversation = state.conversationCreatedAtMs === result.conversation.createdAtMs;
+      const anchored = sameConversation && shared !== undefined;
+      const freshKeys = new Set(fresh.map(botMessageStableKey));
+      const prefix = anchored
+        ? state.durableTranscript.slice(0, previousKeys.get(botMessageStableKey(shared))!).filter((item) => !freshKeys.has(botMessageStableKey(item)))
+        : [];
+      const wasExhausted = state.durableTranscript.length > 0 && state.nextCursor === null;
+      state.durableTranscript = Object.freeze([...prefix, ...fresh]);
+      // Opaque cursors belong to the new read. Revisit overlap rather than
+      // deriving an offset from projected message count; an anchored exhausted
+      // edge, however, cannot become unexhausted just because the tail grew.
+      state.nextCursor = anchored && wasExhausted ? null : result.initialMessagesPage.nextCursor ?? null;
+      state.traversedHistoryCursors.clear();
+      if (!sameConversation || state.liveEpoch !== result.liveCursor.epoch) {
+        for (const [stableKey, live] of state.liveMessages) {
+          if (!sameConversation || live.ownership === "remote") state.liveMessages.delete(stableKey);
+        }
+        state.deltaSeqByMessage.clear();
+      }
+      let transcript = state.durableTranscript;
+      for (const [stableKey, live] of state.liveMessages) {
+        if (live.ownership === "remote" && live.epoch !== result.liveCursor.epoch) continue;
+        if (!freshKeys.has(stableKey) || (live.ownership === "remote" && live.nextSeq > result.liveCursor.nextSeq)) {
+          transcript = upsertBy(transcript, live.message, botMessageStableKey);
+        } else state.liveMessages.delete(stableKey);
+      }
       state.liveEpoch = result.liveCursor.epoch;
       state.nextSeq = result.liveCursor.nextSeq;
-      state.deltaSeqByMessage.clear();
+      state.conversationCreatedAtMs = result.conversation.createdAtMs;
       state.snapshot = Object.freeze({
         revision: state.snapshot.revision + 1,
         phase: "ready",
         descriptor: descriptor(result.conversation, state.logicalKey, participants),
-        transcript: Object.freeze(result.initialMessagesPage.data.map((item) => message(item, state.logicalKey))),
+        transcript,
         executions: Object.freeze(result.executions.map((item) => execution(item, state.logicalKey))),
         presence: Object.freeze(result.presence.map((item) => presence(item, state.logicalKey, result.liveCursor.nextSeq))),
         interactions: Object.freeze(result.interactions.map(interaction)),
@@ -552,6 +646,7 @@ export class AppServerBotConversationSource implements BotConversationSource {
       if (state.resyncRequested) return;
       for (const listener of state.listeners) listener();
     } catch (error) {
+      if (!this.isCurrent(state, generation)) return;
       state.hydrating = false;
       state.bufferedEvents = [];
       const normalized = sourceError(error);
@@ -585,10 +680,34 @@ export class AppServerBotConversationSource implements BotConversationSource {
   }
 
   private markDeleted(state: MutableConversationState): void {
+    state.generation += 1;
     this.deletedConversations.add(encodeConversationKey(state.logicalKey));
     state.resyncRequested = false;
     state.bufferedEvents = [];
-    replaceSnapshot(state, { phase: "error", error: "此 Bot 已删除。", executions: [], presence: [], interactions: [] });
+    replaceSnapshot(state, { phase: "error", error: "此 Bot 已删除。", executions: [], presence: [], interactions: [], history: Object.freeze({ hasOlder: false, loadingOlder: false }) });
+  }
+
+  private isCurrent(state: MutableConversationState, generation: number): boolean {
+    return !this.disposed && state.generation === generation
+      && this.states.get(encodeConversationKey(state.logicalKey)) === state
+      && !this.deletedConversations.has(encodeConversationKey(state.logicalKey));
+  }
+
+  private rememberLiveMessage(state: MutableConversationState, value: BotConversationMessage, ownership: "local" | "remote" = "remote"): void {
+    const stableKey = botMessageStableKey(value);
+    const owner = state.liveMessages.get(stableKey)?.ownership === "local" ? "local" : ownership;
+    state.liveMessages.set(stableKey, { message: value, epoch: state.liveEpoch, nextSeq: state.nextSeq, ownership: owner });
+  }
+
+  private confirmedSendReceipt(state: MutableConversationState, intent: SubmitIntent, conversationCreatedAtMs: number | null): BotSendReceipt | null {
+    if (!this.isCurrent(state, state.generation) || state.conversationCreatedAtMs !== conversationCreatedAtMs) return null;
+    const acknowledged = state.durableTranscript.find((item) => item.clientMessageId === intent.clientMessageId && item.delivery === "sent");
+    return acknowledged === undefined ? null : {
+      commandId: intent.commandId,
+      clientMessageId: intent.clientMessageId,
+      messageId: acknowledged.id,
+      acceptedAtMs: acknowledged.sentAtMs,
+    };
   }
 
   private applyEvent(
@@ -627,6 +746,9 @@ export class AppServerBotConversationSource implements BotConversationSource {
       case "bot/message/started":
       case "bot/message/completed": {
         const next = message(event.params.message, key);
+        const retained = state.liveMessages.get(botMessageStableKey(next));
+        if (retained?.epoch === event.params.stamp.epoch && retained.nextSeq > event.params.stamp.seq) return;
+        this.rememberLiveMessage(state, next);
         replaceSnapshot(state, { transcript: upsertBy(state.snapshot.transcript, next, botMessageStableKey) }, publish);
         return;
       }
@@ -653,6 +775,7 @@ export class AppServerBotConversationSource implements BotConversationSource {
         content[event.params.partIndex] = Object.freeze({ type: "text", text: part.text + event.params.delta });
         const transcript = [...state.snapshot.transcript];
         transcript[index] = Object.freeze({ ...current, content: Object.freeze(content), streaming: true });
+        this.rememberLiveMessage(state, transcript[index]!);
         replaceSnapshot(state, { transcript: Object.freeze(transcript) }, publish);
         return;
       }
@@ -686,7 +809,8 @@ export class AppServerBotConversationSource implements BotConversationSource {
   }
 
   /**
-   * A cursor discontinuity invalidates the whole materialized view. Resync is
+   * A cursor discontinuity invalidates live cursor authority, not the loaded
+   * durable prefix or separately owned live messages. Resync is
    * single-flight: it never races an active hydration or publishes a partial
    * repair assembled from events whose prefix is unknown.
    */

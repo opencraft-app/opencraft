@@ -1,0 +1,53 @@
+{
+  "schema": "actor-runtime-builder-storage-cloud-evidence/v1",
+  "claimEligible": false,
+  "region": "ap-beijing",
+  "sourceRevision": "2757fc785d8f572d1b6430e471100c4a880aefac",
+  "sourceManifestSha256": "c6785b95c7d2615bbc0fdd57e2007665bd542455fa288dc6c863e389ee107300",
+  "inventorySha256": "882113091f01cbe12e224f53d3f34667c4e659d37afdc37d8b9ecf8cc1419a57",
+  "firstInitialization": {
+    "operationsInvocationId": "inv-d9f3tug8mn",
+    "guestInvocationId": "inv-d9f3u2gck3",
+    "status": "FAILED",
+    "exitCode": 1
+  },
+  "readOnlyJournalObservation": {
+    "invocationId": "inv-c9f3vg0ama",
+    "status": "SUCCESS",
+    "exitCode": 0,
+    "requestId": "6d2980dc-4ed9-4e28-98b3-e1f160163967",
+    "responseSha256": "fcddad7b783a7eda3d93bb58ece40cd8649aeaf4f5b35160f3c1e8f7b14ce9bf",
+    "journalPhase": "formatting",
+    "filesystemType": "ext4",
+    "filesystemUuid": "dd34c927-dfee-4826-8b45-d5cbb4d47c5e",
+    "mounted": false
+  },
+  "journalResume": {
+    "operationsInvocationId": "inv-d9f3xqgakq",
+    "guestInvocationId": "inv-c9f3xvgbpu",
+    "operationsStatus": "SUCCESS",
+    "guestStatus": "SUCCESS",
+    "exitCode": 0,
+    "operationsRequestId": "05ad9156-808b-4849-9d8f-d22f2ece63e5",
+    "guestRequestId": "0dd25808-eb50-462f-a023-d2c8f66032bd",
+    "operationsResponseSha256": "e54507373aad4b10b8baffb7edf8d7886e0761e319c02d23f5036f8900a7fcc8",
+    "guestResponseSha256": "b92167d6a51c2a8651714f6362ffea6e8167f3d3aeedc9499d8b233cbbc10f03"
+  },
+  "result": {
+    "schema": "actor-runtime-builder-storage-initialization/v1",
+    "verdict": "passed",
+    "storageReady": false,
+    "mountVerified": true,
+    "instanceId": "ins-mh9mruw7",
+    "diskId": "disk-kkels2ln",
+    "filesystemUuid": "dd34c927-dfee-4826-8b45-d5cbb4d47c5e",
+    "journalSha256": "416b384527f21b1035a2de16f7fb9d06687d08b196b824c849f02ceaff7e6039",
+    "mountUnitSha256": "369b7c16f4985dd49f8dae5183b5885f19cf2102b3475dc2af8e4d1f8ae0f214",
+    "buildahStorageConfigSha256": "6a988d44c406100f2f95920cc0c905b6c5e61c60611513c02ec87c89830cd7fe"
+  },
+  "limitations": [
+    "The first guest failure occurred after formatting; the exact failing condition has not been established. Successful journal resume is not proof of its cause.",
+    "Mount verification does not prove reboot persistence, actual Buildah GraphRoot, compiler prerequisites or complete build admission.",
+    "No compiler, runtime deployment or 10k qualification ran in this workflow."
+  ]
+}

@@ -30,8 +30,8 @@ interface ShareAccessResponse {
   expires_at?: string;
 }
 
-function buildAuthHeaders(): HeadersInit {
-  const headers = new Headers();
+function buildAuthHeaders(requestHeaders?: HeadersInit): Headers {
+  const headers = new Headers(requestHeaders);
   const token = readStoredAuthToken();
   if (token) headers.set("Authorization", `Bearer ${token}`);
   return headers;
@@ -72,8 +72,8 @@ export const WebsiteShareDialog = ({ site, onClose, onChanged }: WebsiteShareDia
       if (!apiBase) throw new Error(t("服务地址未配置"));
       const res = await fetch(`${apiBase}${path}`, {
         credentials: "include",
-        headers: { ...buildAuthHeaders(), ...(init?.headers ?? {}) },
         ...init,
+        headers: buildAuthHeaders(init?.headers),
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json || json.code !== "OK") {

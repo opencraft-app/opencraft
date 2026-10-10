@@ -1,6 +1,5 @@
 import type { ChatResourceOpenIntent } from "@opencraft/chat-render-react";
-
-export const SAFE_URL_SETTLE_MS = 500;
+export { SAFE_URL_SETTLE_MS } from "@opencraft/chat-render-react";
 
 export function faviconSources(target: string): readonly string[] {
   try {

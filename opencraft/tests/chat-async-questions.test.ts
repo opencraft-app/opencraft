@@ -124,15 +124,18 @@ test("async question card renders touch choices and a free-text answer without t
     updateDraft: () => undefined,
   };
   const markup = renderToStaticMarkup(createElement(AsyncQuestionContext.Provider, { value: context },
-    createElement(AsyncQuestionCard, { question })));
-  assert.match(markup, /<legend>Which way\?<\/legend>/u);
+    createElement(AsyncQuestionCard, { question, title: createElement("span", null, question.title) })));
+  assert.match(markup, /<fieldset aria-labelledby="([^"]+)"/u);
+  assert.match(markup, /class="thread-async-question__title" id="[^"]+"/u);
+  assert.match(markup, /Which way\?/u);
+  assert.doesNotMatch(markup, /<legend>/u);
   assert.match(markup, /Suggested answers/u);
   assert.match(markup, /<span>Other<\/span>/u);
   assert.match(markup, /<textarea[^>]*>My answer<\/textarea>/u);
   assert.match(markup, /Send answer/u);
   const answered = renderToStaticMarkup(createElement(AsyncQuestionContext.Provider, {
     value: { ...context, states: new Map([[question.id, "answered" as const]]) },
-  }, createElement(AsyncQuestionCard, { question })));
+  }, createElement(AsyncQuestionCard, { question, title: createElement("span", null, question.title) })));
   assert.match(answered, /Answered/u);
   assert.doesNotMatch(answered, /Send answer/u);
 });

@@ -15,6 +15,7 @@ const startRescueExport = vi.fn();
 const resetInstanceConfig = vi.fn();
 const resetToPlatformDefault = vi.fn();
 const addBot = vi.fn();
+const listMyPasses = vi.fn().mockResolvedValue([]);
 const botRepository = { execDebugCommand, getRescueExportStatus, getHermesImportStatus, startRescueExport, resetInstanceConfig };
 const testRegion = vi.hoisted(() => ({ isCN: true, isGlobal: false }));
 
@@ -55,6 +56,7 @@ vi.mock("@/contexts/runtime-config-context", () => ({
   usePaidBillingEnabled: () => false,
   useMultiBotEnabled: () => multiBotEnabled,
   useRealnamePhoneVerificationEnabled: () => false,
+  useReferralEnabled: () => false,
 }));
 
 vi.mock("@/contexts/session-context", () => ({
@@ -100,7 +102,7 @@ vi.mock("@/contexts/repository-context", () => ({
     plans: {
       getRenewPrice: vi.fn(),
       createRenewOrder: vi.fn(),
-      listMyPasses: vi.fn(),
+      listMyPasses,
     },
   }),
 }));
@@ -192,6 +194,34 @@ describe("multi-Bot diagnostics", () => {
   });
   afterEach(cleanup);
 
+  it.each(["CN", "global"])("gives other Bots a direct chat URL in the %s rail", async (region) => {
+    testRegion.isCN = region === "CN";
+    testRegion.isGlobal = region === "global";
+    const navigation = { ...createNavigation(), pathname: "/agents/chat/", search: "?bot=ins-1" };
+    const view = render(
+      <AppNavigationProvider value={navigation}>
+        <AgentSettingsPage sectionId="chat" showHeader={false} />
+      </AppNavigationProvider>,
+    );
+    const selected = screen.getByRole("button", { name: /切换到 Hermes Lab/ });
+    const target = screen.getByRole("link", { name: /切换到 Sales/ });
+    expect(selected).toHaveAttribute("aria-current", "true");
+    expect(target).toHaveAttribute("href", "/agents/chat/?bot=sales");
+
+    expect(navigation.navigate).not.toHaveBeenCalled();
+    expect(selected).toHaveAttribute("aria-current", "true");
+
+    view.rerender(
+      <AppNavigationProvider value={{ ...navigation, search: "?bot=sales" }}>
+        <AgentSettingsPage sectionId="chat" showHeader={false} />
+      </AppNavigationProvider>,
+    );
+    const activeTarget = screen.getByRole("button", { name: /切换到 Sales/ });
+    expect(activeTarget).toHaveAttribute("aria-current", "true");
+    fireEvent.click(activeTarget);
+    expect(navigation.navigate).not.toHaveBeenCalled();
+  });
+
   it("only shows instance maintenance on main and scopes logs after switching", async () => {
     const view = render(page("ins-1"));
     await screen.findByText("Agent 备份与恢复");
@@ -205,11 +235,6 @@ describe("multi-Bot diagnostics", () => {
     view.rerender(page("sales"));
     await waitFor(() => expect(screen.queryByText("Agent 备份与恢复")).not.toBeInTheDocument());
     expect(screen.getByText("查看当前 Bot 的日志和模型配置；Agent 级维护请在主 Bot 中操作")).toBeInTheDocument();
-    const chatTab = screen.getByRole("tab", { name: "对话" });
-    expect(chatTab).toBeDisabled();
-    expect(chatTab).not.toHaveAttribute("title");
-    expect(chatTab).toHaveAccessibleDescription("对话功能目前仅支持主 Bot");
-    expect(screen.getByRole("tooltip", { name: "对话功能目前仅支持主 Bot" })).toHaveClass("lv-agent-action-tooltip");
     expect(screen.queryByText("重置 Hermes（保留数据）")).not.toBeInTheDocument();
     expect(screen.queryByText("root log")).not.toBeInTheDocument();
     expect(resetInstanceConfig).not.toHaveBeenCalled();
@@ -349,12 +374,10 @@ describe("multi-Bot diagnostics", () => {
     expect(show).toBeTypeOf("function");
     act(() => show?.());
     expect(screen.getByRole("link", { name: "终端" })).toBeInTheDocument();
-    expect(
-      Array.from(view.container.querySelectorAll(".lv-agent-actions button"))
-        .map((button) => button.getAttribute("aria-label")),
-    ).toEqual(["新建 Bot", "重启", "请先删除其他 Bot，再删除主 Bot"]);
+    expect(within(view.container.querySelector(".lv-agent-bot-rail-management") as HTMLElement)
+      .getByRole("button", { name: "管理 Bot" })).toBeInTheDocument();
     expect(view.container.querySelector(".lv-agent-profile > .lucide-chevron-down"))
-      .toHaveAttribute("aria-hidden", "true");
+      .not.toBeInTheDocument();
     // 切换 bot 与整页重挂后，入口都不该消失
     view.rerender(page("sales"));
     expect(screen.getByRole("button", { name: "新建 Bot" })).toBeInTheDocument();
@@ -377,9 +400,8 @@ describe("multi-Bot diagnostics", () => {
 
     expect(screen.getByRole("button", { name: "新建 Bot" })).toBeEnabled();
     expect(screen.getByRole("link", { name: "终端" })).toBeInTheDocument();
-    expect(Array.from(view.container.querySelectorAll(".lv-agent-actions button")).map((button) => button.getAttribute("aria-label"))).toEqual([
-      "新建 Bot", "重启", "请先删除其他 Bot，再删除主 Bot",
-    ]);
+    expect(within(view.container.querySelector(".lv-agent-bot-rail-management") as HTMLElement)
+      .getByRole("button", { name: "管理 Bot" })).toBeInTheDocument();
     maxBots = 1;
     view.rerender(page("ins-1"));
     expect(screen.getByRole("button", { name: "新建 Bot" })).toBeDisabled();

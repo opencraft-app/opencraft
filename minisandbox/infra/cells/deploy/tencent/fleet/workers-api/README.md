@@ -13,6 +13,11 @@ Before rendering, resolve the immutable `workers-api` image from the complete
 28-image inventory plus both Cells' identity, private Engine/stateless endpoint,
 and published `CellServingRoute` receipts. Never
 select this image independently from the inventory used for runtime release.
+The renderer requires the product ref, source revision, source-manifest digest,
+and original build-receipt byte digest to match the inventory's exact
+`workers-api` entry. Matching Go foundations alone is insufficient. Both
+bootstrap and serving reject a mismatch before publishing any output.
+Do not reformat an immutable product receipt after assembling the inventory.
 Each Cell first creates its immutable `actor-stateless-auth/v1` credential
 receipt. `sync-credentials.sh` then copies the two exact Engine, executor and
 Object Router capabilities into the externally owned immutable
@@ -32,12 +37,21 @@ private Object Router endpoint, then A/B executors and serving routes. A final
 `serving` render consumes those receipts and enables stateless dispatch. No
 placeholder address or hand-edited Deployment is part of the production path.
 
-`/readyz` proves that the stateless facade and authoritative Worker Registry
-are usable. It deliberately does not require an admitted placement candidate
-or every Cell Engine to be healthy. Capacity is request-scoped: new Object
-creation fails closed with `no_admission_capacity`, and an Object pinned to an
-unavailable Cell returns retryable `worker_unavailable`; neither condition may
-withdraw every Hub replica and interrupt Objects assigned to other Cells.
+`verify.sh` may run from any operator working directory, including against a
+relocated reviewed-source tree. It enters each test suite's source directory
+and passes module names to `unittest`, not absolute file paths. The fleet
+static gate includes a real copied-tree regression with dotted parent paths
+and an unrelated working directory.
+
+`/readyz` reports local facade readiness after configuration validation. It does
+not probe Registry, require an admitted placement candidate, or require every
+Cell Engine to be healthy. Registry outages must not withdraw all Hub replicas
+and cut off already-cached Object routes. New Objects and placement-cache misses
+still need Registry truth and fail closed when it is unavailable. Cell route
+identity is checked on every hit. Deployment watch loss still disables the active
+Worker code cache; readiness does not bypass code loading or freshness checks.
+Registry has its own storage readiness probe, and Cell qualification remains
+independent of facade readiness. Capacity and dependency failures are request-scoped.
 
 Stateless dispatch keeps at most 4,096 recently used active Workers per API
 replica. This is not a TTL cache: Registry changes an opaque namespace cursor
@@ -126,6 +140,23 @@ Dockerfile deliberately has no defaults. After push, the wrapper cold-pulls the 
 rechecks the source OCI labels, and only then publishes the receipt. It runs the Workers API unit
 tests inside the Go 1.25 build stage.
 
+The TAT build wrapper gives each operation an immutable receipt identity bound
+to source revision, source manifest, both base digests and the unique image tag.
+Changing bases or tag cannot collide with an earlier source-only receipt.
+Python bytecode is disabled on the builder so receipt validation cannot add
+derived files to the reviewed source closure. This prepares a candidate image;
+it does not update Kubernetes, Argo, or the live release inventory.
+
+The [2026-10-04 candidate receipt](evidence/workers-api-product-42ef7aea-20261004.json)
+records a real Go build, TCR push and isolated cold pull for the safe platform
+logger, redirect-preserving fetch client and Registry-outage facade readiness.
+Its source is the committed mono2 Go subtree, not a remembered file subset.
+It matches the runtime-2757 dependency lock and has passed leaf promotion into
+a staged inventory. It is not deployed; the original strict10k final-drain
+supervisor remains unchanged. CLS addon/CRD/topic compatibility, controlled
+canary collection, positive/negative queries and exploration release gates
+remain separate prerequisites.
+
 ```sh
 ./verify.sh
 python3.11 ./render.py \
@@ -173,7 +204,8 @@ ACTOR_WORKERS_API_INSTALL_RECEIPT=/protected/workers-api-install.json \
 
 Installation passes only after the current HPA replica target (never fewer than three)
 is digest-pinned, fully Ready and spread across at least three distinct nodes, and
-`/readyz` reaches the Registry. The renderer and install
+the local `/readyz` probe succeeds. This does not qualify Registry availability or
+an end-to-end Worker request. The renderer and install
 receipt still require the complete pair of private Engine routes and separate
 credentials; live Engine and placement-capacity health are monitored and
 enforced per request rather than coupled to global Pod readiness.

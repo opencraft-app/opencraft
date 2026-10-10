@@ -1,16 +1,19 @@
 'use client';
 
-import { lazy, Suspense } from 'react';
+import React, { Suspense } from 'react';
 
+import { AgentCollaborationLab } from "@/pages/marketing/agent-collaboration-lab";
+import { AgentSidebarToggle, useAgentSidebarCollapse } from '@/components/site/agent-sidebar';
 import { ProductReturnHomeHeader } from '@/components/site/product-chrome';
 import type { AgentSectionId, AgentSettingsSectionId } from '@/lib/agent-routes';
+import { EmbeddedChatPreparation } from '@/lib/opencraft-embedded-connection';
 
-import { AgentsRouteLoading, AppRouteShell } from './app-route-shell';
+import { AgentsRouteLoading, AppRouteShell, NextAgentEntitlementGate } from './app-route-shell';
 
-const AgentSettingsPage = lazy(() => import('@/pages/marketing/agent-settings-page').then(
+const AgentSettingsPage = React.lazy(() => import('@/pages/marketing/agent-settings-page').then(
   (module) => ({ default: module.AgentSettingsPage }),
 ));
-const AgentsWorkbenchPage = lazy(() => import('@/pages/marketing/agents-workbench/AgentsWorkbenchPage').then(
+const AgentsWorkbenchPage = React.lazy(() => import('@/pages/marketing/agents-workbench/AgentsWorkbenchPage').then(
   (module) => ({ default: module.AgentsWorkbenchPage }),
 ));
 
@@ -22,31 +25,45 @@ export function AgentsPageClient({
   sectionId?: AgentSectionId;
 }) {
   const isWorkbench = sectionId === 'workbench';
+  const { collapsed, toggle, transitionReady } = useAgentSidebarCollapse();
   const productHeader = (
     <ProductReturnHomeHeader
-      className={isWorkbench ? undefined : 'lv-agent-sidebar-header'}
+      beforeUserMenu={isWorkbench ? undefined : <AgentSidebarToggle collapsed={collapsed} onToggle={toggle} />}
+      className={isWorkbench ? undefined : `lv-agent-sidebar-header${collapsed ? ' lv-agent-sidebar-header--collapsed' : ''}${transitionReady ? '' : ' lv-agent-sidebar-header--motion-pending'}`}
       reloadLanguageAfterSwitch
       showAccountLanguageSwitcher
       showDesktopUserMenu={isWorkbench}
       showLanguageSwitcher={false}
     />
   );
-  const loadingFallback = isWorkbench ? productHeader : <AgentsRouteLoading />;
+  const loadingFallback = isWorkbench ? productHeader : <AgentsRouteLoading collapsed={collapsed} onToggle={toggle} isChat={!sectionId || sectionId === 'chat'} />;
+
+  // Human collaboration is independent of paid Agent/instance entitlements.
+  if (sectionId === 'collaboration') return (
+    <AppRouteShell loadingFallback={productHeader} showAuthGateFooter={false}>
+      {productHeader}<AgentCollaborationLab />
+    </AppRouteShell>
+  );
 
   return (
     <AppRouteShell loadingFallback={loadingFallback} showAuthGateFooter={false}>
-      <Suspense fallback={loadingFallback}>
-        {productHeader}
-        {isWorkbench ? (
-          <AgentsWorkbenchPage />
-        ) : (
-          <AgentSettingsPage
-            initialSectionSlug={initialSectionSlug}
-            sectionId={sectionId as AgentSettingsSectionId | undefined}
-            showHeader={false}
-          />
-        )}
-      </Suspense>
+      <EmbeddedChatPreparation active={sectionId === 'chat'}>
+      <NextAgentEntitlementGate loadingFallback={loadingFallback}>
+        <Suspense fallback={loadingFallback}>
+          {productHeader}
+          {isWorkbench ? (
+            <AgentsWorkbenchPage />
+          ) : (
+            <AgentSettingsPage
+              initialSectionSlug={initialSectionSlug}
+              sectionId={sectionId as AgentSettingsSectionId | undefined}
+              showHeader={false}
+              sidebarCollapsed={collapsed}
+            />
+          )}
+        </Suspense>
+      </NextAgentEntitlementGate>
+      </EmbeddedChatPreparation>
     </AppRouteShell>
   );
 }

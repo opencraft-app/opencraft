@@ -14,14 +14,19 @@ const headlineRuntime = runtime.slice(
   runtime.indexOf("(function () {\n    var el = document.getElementById('hero-rotator');"),
   runtime.indexOf("(function () {\n    var els = document.querySelectorAll('.sr');"),
 );
+const heroReplayRuntime = runtime.slice(
+  runtime.indexOf("(function () {\n    var home = document.getElementById('lightvela-intl-home');"),
+  runtime.indexOf("(function () {\n    var els = document.querySelectorAll('.sr');"),
+);
 
 beforeEach(() => {
   vi.useFakeTimers();
-  vi.stubGlobal("matchMedia", () => ({ matches: false }));
+  vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
   vi.stubGlobal(
     "IntersectionObserver",
     class {
       observe() {}
+      disconnect() {}
     },
   );
   vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
@@ -45,6 +50,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  document.dispatchEvent(new Event("lightvela-home-dispose"));
   vi.clearAllTimers();
   vi.useRealTimers();
   vi.unstubAllGlobals();
@@ -53,6 +59,56 @@ afterEach(() => {
 });
 
 describe("homepage hero headline order", () => {
+  it.each(["phone", "reduced-motion"])("keeps natural text immediately for %s", () => {
+    vi.stubGlobal("matchMedia", () => ({ matches: true }));
+    const main = document.querySelector<HTMLElement>(".hero__line--main")!;
+    main.textContent = "AI\u00a0partner";
+    new Function(headlineRuntime)();
+    expect(main.textContent).toBe("AI partner");
+    expect(main.querySelector(".hero__char")).toBeNull();
+    expect(document.querySelector<HTMLElement>(".hero__rotator-wrap")!.style.getPropertyValue("--rotator-delay")).toBe("0ms");
+  });
+
+  it("cancels pending restoration when the homepage is disposed", () => {
+    new Function(headlineRuntime)();
+    const main = document.querySelector<HTMLElement>(".hero__line--main")!;
+    document.dispatchEvent(new Event("lightvela-home-dispose"));
+    main.textContent = "Replacement page";
+    vi.advanceTimersByTime(10_000);
+    expect(main.textContent).toBe("Replacement page");
+  });
+
+  it.each(["runtime-first", "motion-first"])("restores word boundaries after the entrance, with %s", (order) => {
+    const motion = readFileSync(path.resolve("public/lightvela-intl-home/assets/feature-motion.js"), "utf8");
+    const main = document.querySelector<HTMLElement>(".hero__line--main")!;
+    const prefix = document.querySelector<HTMLElement>(".hero__prefix")!;
+    const wrap = document.querySelector<HTMLElement>(".hero__rotator-wrap")!;
+    const text = main.textContent!;
+    if (order === "motion-first") new Function(motion)();
+    new Function(headlineRuntime)();
+    if (order === "runtime-first") new Function(motion)();
+    const delay = wrap.style.getPropertyValue("--rotator-delay");
+    const lastMain = main.querySelector<HTMLElement>(".hero__char:last-child")!;
+    const lastPrefix = prefix.querySelector<HTMLElement>(".hero__char:last-child")!;
+    const mainEnd = Number.parseInt(lastMain.style.getPropertyValue("--cd"), 10) + 500;
+    const prefixEnd = Number.parseInt(lastPrefix.style.getPropertyValue("--cd"), 10) + 500;
+    expect(main.querySelectorAll(".hero__char")).toHaveLength(text.length);
+    expect(main.textContent).toContain("\u00a0");
+    vi.advanceTimersByTime(mainEnd - 1);
+    expect(main.contains(lastMain)).toBe(true);
+    vi.advanceTimersByTime(1);
+    expect(main.textContent).toBe(text);
+    expect(main.querySelectorAll(".hero__char")).toHaveLength(0);
+    expect(prefix.contains(lastPrefix)).toBe(true);
+    vi.advanceTimersByTime(prefixEnd - mainEnd - 1);
+    expect(prefix.contains(lastPrefix)).toBe(true);
+    vi.advanceTimersByTime(1);
+    expect(prefix.textContent).toBe("LightVela 可以成为你的");
+    expect(prefix.querySelectorAll(".hero__char")).toHaveLength(0);
+    expect(wrap.style.getPropertyValue("--rotator-delay")).toBe(delay);
+    expect(document.querySelector("#hero-rotator")?.textContent).toBe("工作搭档");
+  });
+
   it("keeps the first role until both headline lines have appeared", () => {
     new Function(headlineRuntime)();
     window.dispatchEvent(new Event("pageshow"));
@@ -108,5 +164,27 @@ describe("homepage hero headline order", () => {
     expect(css).toMatch(
       /#lightvela-intl-home \.hero__line--dynamic \.hero__suffix \{[\s\S]*animation: hero-in[^;]*var\(--rotator-delay/,
     );
+  });
+
+  it("replays the domestic hero after scrolling away and back", () => {
+    const home = document.getElementById('lightvela-intl-home')!;
+    const hero = document.createElement('section');
+    hero.className = 'hero';
+    home.appendChild(hero);
+    let onIntersection: IntersectionObserverCallback | undefined;
+    vi.stubGlobal('IntersectionObserver', class {
+      constructor(callback: IntersectionObserverCallback) { onIntersection = callback; }
+      observe() {}
+      disconnect() {}
+    });
+    new Function(heroReplayRuntime)();
+    const notify = (isIntersecting: boolean) => onIntersection?.([{ target: hero, isIntersecting } as IntersectionObserverEntry], {} as IntersectionObserver);
+    notify(true);
+    expect(home).not.toHaveClass('hero-sequence-away');
+    notify(false);
+    expect(home).toHaveClass('hero-sequence-away');
+    notify(true);
+    expect(home).not.toHaveClass('hero-sequence-away');
+    expect(css).toContain('#lightvela-intl-home.hero-sequence-away .hero__char');
   });
 });

@@ -69,6 +69,7 @@ import {
   encodeComposerTarget,
   invertComposerFollowUpAction,
   resolveComposerPrimaryAction,
+  resolveComposerFollowUpAction,
   shouldSearchComposerCatalog,
   type ComposerAttachment,
   type ComposerCatalog,
@@ -665,9 +666,10 @@ export interface CodexComposerHandle {
 export interface ComposerQueuedSubmissionPresentation {
   readonly id: string;
   readonly preview: string;
-  readonly state: "submitting" | "queued" | "failed";
+  readonly state: "submitting" | "queued" | "failed" | "unknown";
   readonly operation: "idle" | "updating" | "deleting" | "starting";
   readonly actionable: boolean;
+  readonly dismissible?: boolean;
   /** Whether this runtime permits changing authoritative queue order. */
   readonly reorderable?: boolean;
   readonly editableContent: ComposerQueuedSubmissionContent;
@@ -686,8 +688,8 @@ export interface CodexComposerProps {
   controller: ComposerController;
   /** Composer-owned chrome rendered above attachments and the editor. */
   chromeHeader?: ReactNode;
-  /** Host-owned Radix items appended to Add; render callbacks may close the root menu after nested actions. */
-  addMenuContent?: ReactNode | ((closeMenu: () => void) => ReactNode);
+  /** Host-owned Add items. An optional continuation opens the next surface after menu focus cleanup. */
+  addMenuContent?: ReactNode | ((closeMenu: (afterClose?: () => void) => void) => ReactNode);
   /** Host-scoped slash commands shown in the editor and its shortcut menu. */
   shortcutCommands?: readonly ComposerShortcutCommand[];
   /** Host-owned trusted extension actions placed before built-in end actions. */
@@ -712,6 +714,7 @@ export interface CodexComposerProps {
   effectiveSelections?: ComposerEffectiveSelections;
   executionTarget?: ComposerExecutionTarget;
   defaultFollowUpAction?: ComposerFollowUpAction;
+  availableFollowUpActions?: readonly ComposerFollowUpAction[];
   /** Thread-owned queue projection. The Composer only renders this state. */
   queuedSubmissions?: readonly ComposerQueuedSubmissionPresentation[];
   supportsQueuedSteer?: boolean;
@@ -770,7 +773,8 @@ export const CodexComposer = forwardRef<
     modelSelectionPolicy = "user",
     effectiveSelections,
     executionTarget,
-    defaultFollowUpAction = "queue",
+    defaultFollowUpAction: preferredFollowUpAction = "queue",
+    availableFollowUpActions,
     queuedSubmissions = [],
     supportsQueuedSteer = false,
     onUpdateQueuedSubmission,
@@ -786,6 +790,8 @@ export const CodexComposer = forwardRef<
   },
   forwardedRef,
 ) {
+  const admittedFollowUpAction = resolveComposerFollowUpAction(preferredFollowUpAction, availableFollowUpActions);
+  const defaultFollowUpAction = admittedFollowUpAction ?? preferredFollowUpAction;
   const intl = useIntl();
   const placeholder = suppliedPlaceholder ?? intl.formatMessage({ id: "chat.placeholder", defaultMessage: "Ask for follow-up changes", description: "Follow-up composer placeholder" });
   const placeholderRef = useRef(placeholder);
@@ -817,9 +823,11 @@ export const CodexComposer = forwardRef<
   const refocusEditorAfterIntelligenceMenuRef = useRef(false);
   const isStreamingRef = useRef(isStreaming);
   const defaultFollowUpActionRef = useRef(defaultFollowUpAction);
+  const availableFollowUpActionsRef = useRef(availableFollowUpActions);
   const disabledRef = useRef(disabled);
   isStreamingRef.current = isStreaming;
   defaultFollowUpActionRef.current = defaultFollowUpAction;
+  availableFollowUpActionsRef.current = availableFollowUpActions;
   disabledRef.current = disabled;
   const [suggestionQuery, setSuggestionQuery] =
     useState<SuggestionQuery | null>(null);
@@ -846,6 +854,7 @@ export const CodexComposer = forwardRef<
   const [openPicker, setOpenPicker] = useState<SelectionPicker | null>(null);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [shortcutMenuOpen, setShortcutMenuOpen] = useState(false);
+  const afterAddMenuClose = useRef<(() => void) | null>(null);
   const [editingQueuedSubmissionId, setEditingQueuedSubmissionId] = useState<
     string | null
   >(null);
@@ -865,7 +874,7 @@ export const CodexComposer = forwardRef<
       event.preventDefault(); event.stopPropagation();
       if (action === "cancel") { inputInteraction.cancel(); controller.focus(); }
       else { void submitActionRef.current(isStreamingRef.current && (event.metaKey || event.ctrlKey)
-        ? invertComposerFollowUpAction(defaultFollowUpActionRef.current) : undefined); }
+        ? resolveComposerFollowUpAction(invertComposerFollowUpAction(defaultFollowUpActionRef.current), availableFollowUpActionsRef.current) ?? undefined : undefined); }
     };
     window.addEventListener("keydown", handleDictationKey, true);
     return () => window.removeEventListener("keydown", handleDictationKey, true);
@@ -1157,6 +1166,8 @@ export const CodexComposer = forwardRef<
         type: "set-document",
         document: proseMirrorToComposerDocument(view.state.doc),
       });
+      if (isStreaming && (admittedFollowUpAction === null
+        || (followUpActionOverride !== undefined && availableFollowUpActions?.includes(followUpActionOverride) === false))) return;
       let intent: SubmitIntent;
       try {
         intent = controller.createSubmitIntent();
@@ -1258,6 +1269,8 @@ export const CodexComposer = forwardRef<
       composerSnapshot.canSubmit,
       controller,
       defaultFollowUpAction,
+      admittedFollowUpAction,
+      availableFollowUpActions,
       disabled,
       submissionDisabled,
       isStreaming,
@@ -1391,8 +1404,8 @@ export const CodexComposer = forwardRef<
           "Mod-Enter": () => {
             submitActionRef.current(
               isStreamingRef.current
-                ? invertComposerFollowUpAction(defaultFollowUpActionRef.current)
-                : undefined,
+                ? resolveComposerFollowUpAction(invertComposerFollowUpAction(defaultFollowUpActionRef.current), availableFollowUpActionsRef.current) ?? undefined
+              : undefined,
             );
             return true;
           },
@@ -1762,6 +1775,7 @@ export const CodexComposer = forwardRef<
     isResponseInProgress: isStreaming,
     canSubmit: !disabled && !submissionDisabled && composerSnapshot.canSubmit,
     defaultFollowUpAction,
+    availableFollowUpActions,
   });
   const primaryActionLabel =
     editingQueuedSubmissionId !== null
@@ -1773,12 +1787,13 @@ export const CodexComposer = forwardRef<
           : primaryAction === "steer"
             ? "Steer active response"
             : intl.formatMessage({ id: "chat.send", defaultMessage: "Send message" });
-  const inverseFollowUpAction = invertComposerFollowUpAction(
-    defaultFollowUpAction,
-  );
+  const inverseFollowUpAction = resolveComposerFollowUpAction(invertComposerFollowUpAction(defaultFollowUpAction), availableFollowUpActions);
+  // Typed content that cannot be sent yet explains why, instead of a silently grey button.
+  const waitingForHostWithContent = submissionDisabled && !disabled && primaryAction !== "stop"
+    && composerSnapshot.canSubmit;
   const primaryActionTitle = submissionDisabled && primaryAction !== "stop"
     ? "Waiting for execution host"
-    : isStreaming && primaryAction !== "stop"
+    : isStreaming && primaryAction !== "stop" && inverseFollowUpAction !== null && inverseFollowUpAction !== defaultFollowUpAction
       ? `${primaryActionLabel} (⌘/Ctrl+Enter to ${inverseFollowUpAction})`
       : primaryActionLabel;
   return (
@@ -1797,6 +1812,10 @@ export const CodexComposer = forwardRef<
           ...item,
           actionable:
             item.actionable &&
+            (editingQueuedSubmissionId === null ||
+              item.id === editingQueuedSubmissionId),
+          dismissible:
+            item.dismissible &&
             (editingQueuedSubmissionId === null ||
               item.id === editingQueuedSubmissionId),
           editing: item.id === editingQueuedSubmissionId,
@@ -1873,15 +1892,22 @@ export const CodexComposer = forwardRef<
                   </button>
                 </div>
               );
+              const preparing = attachment.lifecycle === "pending" || attachment.lifecycle === "processing" || attachment.lifecycle === "uploading";
               return (
-                <div className="codex-composer-attachment" key={attachment.id}>
+                <div aria-busy={preparing} className="codex-composer-attachment" data-state={attachment.lifecycle} key={attachment.id}>
                   <span className="codex-composer-attachment__icon"><FileText size={15} /></span>
                   <span className="codex-composer-attachment__copy">
                     <strong>{attachment.name}</strong>
                     <small>{Math.max(1, Math.ceil(attachment.size / 1024))} KB</small>
-                    {attachment.error ? <small>{attachment.error}</small> : null}
+                    {preparing ? <small role="status">Adding file…</small> : null}
+                    {attachment.lifecycle === "failed" ? <small role="alert">Could not add file</small> : null}
                   </span>
-                  <button type="button" aria-label={`Remove ${attachment.name}`} onClick={() => removeAttachment(attachment.id)}><X size={13} /></button>
+                  <span className="codex-composer-attachment__actions">
+                    {attachment.lifecycle === "failed" && attachmentSession.canRetry(composerSnapshot.draft.id, attachment.id) && onResolveAttachment !== undefined ? (
+                      <button type="button" aria-label={`Retry ${attachment.name}`} onClick={() => attachmentSession.retry(composerSnapshot.draft.id, attachment.id, onResolveAttachment)}><RotateCcw size={13} /></button>
+                    ) : null}
+                    <button type="button" aria-label={`Remove ${attachment.name}`} onClick={() => removeAttachment(attachment.id)}><X size={13} /></button>
+                  </span>
                 </div>
               );
             })}
@@ -2017,7 +2043,10 @@ export const CodexComposer = forwardRef<
                 <Plus size={16} />
               </button>
             ) : (
-              <DropdownMenu.Root modal={false} open={addMenuOpen} onOpenChange={setAddMenuOpen}>
+              <DropdownMenu.Root modal={false} open={addMenuOpen} onOpenChange={(open) => {
+                if (open) afterAddMenuClose.current = null;
+                setAddMenuOpen(open);
+              }}>
                 <DropdownMenu.Trigger asChild>
                   <button
                     className="codex-composer-icon-button"
@@ -2033,6 +2062,14 @@ export const CodexComposer = forwardRef<
                     align="start"
                     sideOffset={6}
                     collisionPadding={6}
+                    onCloseAutoFocus={(event) => {
+                      const afterClose = afterAddMenuClose.current;
+                      afterAddMenuClose.current = null;
+                      if (afterClose !== null) {
+                        event.preventDefault();
+                        afterClose();
+                      }
+                    }}
                   >
                     <DropdownMenu.Item
                       className="codex-composer-selection-menu__item codex-composer-add-menu__item"
@@ -2042,7 +2079,10 @@ export const CodexComposer = forwardRef<
                       <FormattedMessage id="chat.attach" defaultMessage="Attach files" />
                     </DropdownMenu.Item>
                     {typeof addMenuContent === "function"
-                      ? addMenuContent(() => setAddMenuOpen(false))
+                      ? addMenuContent((afterClose) => {
+                          afterAddMenuClose.current = afterClose ?? null;
+                          setAddMenuOpen(false);
+                        })
                       : addMenuContent}
                   </DropdownMenu.Content>
                 </DropdownMenu.Portal>
@@ -2465,6 +2505,11 @@ export const CodexComposer = forwardRef<
           </div>
         </div>
       </div>
+      {waitingForHostWithContent ? (
+        <p className="codex-composer-connection-hint" role="status">
+          {intl.formatMessage({ id: "chat.waitingForHostToSend", defaultMessage: "Connecting. You can send once connected." })}
+        </p>
+      ) : null}
     </div>
   );
 });

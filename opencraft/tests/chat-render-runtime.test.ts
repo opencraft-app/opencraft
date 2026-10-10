@@ -6,7 +6,10 @@ import { Context } from "@deepseek-ai/cordis";
 import type { ChatDocumentNode } from "@opencraft/chat-document";
 import {
   ChatFadeTimeline,
+  chatFileCitationPresentation,
+  chatReferenceTarget,
   createChatRenderRuntime,
+  registerStandardChatResourcePolicy,
   resolveStandardChatResource,
   type ChatNodeRenderer,
   type ChatRenderContext,
@@ -151,6 +154,7 @@ test("Cordis renderer registry is ordered, subscribable and disposable", async (
 
 test("resource policies reject restricted external resources and can be overridden", async () => {
   const runtime = await createChatRenderRuntime();
+  const removeStandard = registerStandardChatResourcePolicy(runtime.resources, "test-standard-url");
   const restricted = {
     ...context,
     externalResourcePolicy: "restricted" as const,
@@ -159,6 +163,16 @@ test("resource policies reject restricted external resources and can be overridd
     runtime.resources.resolve("https://example.com", restricted).allowed,
     false,
   );
+  assert.equal(runtime.resources.resolve("javascript:alert(1)", context).allowed, false);
+  assert.equal(runtime.resources.resolve("src/main.ts", { ...context, cwd: "/vela" }).target, "file:///vela/src/main.ts");
+  const removeHostRestriction = runtime.resources.register({
+    name: "host-restricted-domain",
+    priority: 100,
+    matches: target => target.startsWith("https://private.example"),
+    resolve: () => ({ allowed: false, kind: "blocked", target: null, reason: "Host policy" }),
+  });
+  assert.equal(runtime.resources.resolve("https://private.example/path", context).allowed, false);
+  removeHostRestriction();
   const remove = runtime.resources.register({
     name: "workspace-files",
     priority: 100,
@@ -170,6 +184,7 @@ test("resource policies reject restricted external resources and can be overridd
     true,
   );
   remove();
+  removeStandard();
   await runtime.dispose();
 });
 
@@ -220,6 +235,26 @@ test("Codex chat URLs distinguish navigation, workspace files, external links an
     resolveStandardChatResource("javascript:alert(1)", context).allowed,
     false,
   );
+});
+
+test("file citations and mentions share the same display target on Web and Native", () => {
+  const base = { stableKey: "source", completeness: "complete" as const, sourceRange: { start: 0, end: 30 } };
+  const citation: Extract<ChatDocumentNode, { kind: "directive" }> = {
+    ...base,
+    kind: "directive",
+    name: "codex-file-citation",
+    attributes: { path: "src/docs/readme.md", line_range_start: "12", line_range_end: "18" },
+    raw: "【src/docs/readme.md†L12-L18】",
+  };
+  assert.deepEqual(chatFileCitationPresentation(citation), {
+    label: "readme.md (L12–18)",
+    target: "src/docs/readme.md:12-18",
+  });
+  const mention: Extract<ChatDocumentNode, { kind: "reference" }> = {
+    ...base, kind: "reference", text: "@src/docs/readme.md", referenceKind: "workspace-file", segments: [],
+  };
+  assert.equal(chatReferenceTarget(mention), "src/docs/readme.md");
+  assert.equal(chatReferenceTarget({ ...mention, text: "$workspace", referenceKind: "variable" }), null);
 });
 
 test("code blocks share Codex word-wrap preference and normalize language labels", () => {

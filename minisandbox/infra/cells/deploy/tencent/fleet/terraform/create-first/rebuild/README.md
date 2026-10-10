@@ -5,6 +5,17 @@ remembered cloud IDs or files copied from an old node. Terraform remains a
 human-reviewed boundary for adding a regional foundation, management cluster,
 or whole Cell. Everything after each apply is a receipt-bound reconciliation.
 
+`management.runtimeBuilder` in the reviewed intent selects an independent build
+CVM type and CBS size. The renderer does not copy these inputs to a Cell, and
+Terraform does not change the control workers or join the builder to TKE. The
+separate `runtime_builder_inventory` Terraform output identifies the exact disk and attachment;
+it is not a build-ready receipt. Storage initialization, mounts and actual build
+admission still require their own verified bootstrap before this host is used.
+Do not add build resources to the strict platform `management_inventory`: that
+input binds C bootstrap, not disposable compilation capacity.
+Release/qualification continues on `kubernetes.bootstrapInstanceId` under the
+existing shared operation lock, not a new lock on the build-only CVM.
+
 The dependency order is:
 
 ```text

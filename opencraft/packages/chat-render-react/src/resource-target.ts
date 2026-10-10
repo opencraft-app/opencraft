@@ -1,4 +1,5 @@
 import type { ChatRenderContext, ChatResourceDecision, ChatResourceKind } from "./contracts";
+import type { ChatResourcePolicyService } from "./services/resource-policy-service";
 
 const unsafeScheme = /^(?:javascript|vbscript|data):/iu;
 const externalScheme = /^https?:/iu;
@@ -80,4 +81,14 @@ export function resolveStandardChatResource(
     return decision("file", workspaceTarget(location.path, context.cwd) + location.fragment);
   }
   return decision("workspace-file", workspaceTarget(location.path, context.cwd) + location.fragment);
+}
+
+/** Web and Native install the same last-resort policy, leaving higher-priority Host rules in control. */
+export function registerStandardChatResourcePolicy(resources: ChatResourcePolicyService, name: string): () => void {
+  return resources.register({
+    name,
+    priority: 0,
+    matches: () => true,
+    resolve: resolveStandardChatResource,
+  });
 }

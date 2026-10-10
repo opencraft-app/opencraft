@@ -37,7 +37,7 @@ describe("Agent common settings region boundary", () => {
     const { notFound, route } = await loadRoute(false);
 
     expect(route.generateStaticParams()).toContainEqual({ section: "settings" });
-    await expect(route.default({ params: Promise.resolve({ section: "settings" }) })).resolves.toBeTruthy();
+    await expect(route.default({ params: Promise.resolve({ section: "settings" }) })).resolves.toBeNull();
     expect(notFound).not.toHaveBeenCalled();
   });
 
@@ -45,7 +45,7 @@ describe("Agent common settings region boundary", () => {
     const { notFound, route } = await loadRoute(true);
 
     expect(route.generateStaticParams()).toContainEqual({ section: "settings" });
-    await expect(route.default({ params: Promise.resolve({ section: "settings" }) })).resolves.toBeTruthy();
+    await expect(route.default({ params: Promise.resolve({ section: "settings" }) })).resolves.toBeNull();
     expect(notFound).not.toHaveBeenCalled();
   });
 
@@ -54,14 +54,14 @@ describe("Agent common settings region boundary", () => {
 
     expect(domestic.route.generateStaticParams()).toContainEqual({ section: "channels" });
     expect(domestic.route.generateStaticParams()).toContainEqual({ section: "websites" });
-    await expect(domestic.route.default({ params: Promise.resolve({ section: "websites" }) })).resolves.toBeTruthy();
+    await expect(domestic.route.default({ params: Promise.resolve({ section: "websites" }) })).resolves.toBeNull();
     expect(domestic.notFound).not.toHaveBeenCalled();
 
     const global = await loadRoute(true);
 
     expect(global.route.generateStaticParams()).toContainEqual({ section: "channels" });
     expect(global.route.generateStaticParams()).toContainEqual({ section: "websites" });
-    await expect(global.route.default({ params: Promise.resolve({ section: "websites" }) })).resolves.toBeTruthy();
+    await expect(global.route.default({ params: Promise.resolve({ section: "websites" }) })).resolves.toBeNull();
     expect(global.notFound).not.toHaveBeenCalled();
   });
 });

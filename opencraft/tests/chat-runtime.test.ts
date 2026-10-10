@@ -3,7 +3,7 @@ import test from "node:test";
 
 import type { ReplicaJsonValue } from "@opencraft/appserver-protocol";
 import type { ReplicaClientSnapshot } from "@opencraft/appserver-replica";
-import { asTurnId, createConversationKey } from "@opencraft/chat-core";
+import { asTurnId, createConversationKey, createTimelineTurnPresentationPlan, groupTimelineFramesByTurn, resolveAgentActivityLayout, timelineTurnRenderKey } from "@opencraft/chat-core";
 import {
   createReplicaConversationRuntime,
   ContinuationCommandError,
@@ -476,9 +476,9 @@ test("Conversation Runtime projects the authoritative Turn aggregate diff as a t
       .timeline.frames.flatMap((frame) => frame.blocks);
     assert.deepEqual(
       blocks.map((block) => block.type),
-      ["patch", "turn-diff"],
+      ["patch"],
     );
-    const turnDiff = blocks[1];
+    const turnDiff = runtime.getSnapshot().timeline.frames[0]?.changeSummary;
     assert.equal(turnDiff?.type, "turn-diff");
     if (turnDiff?.type === "turn-diff") {
       assert.deepEqual(turnDiff.files, [
@@ -488,6 +488,36 @@ test("Conversation Runtime projects the authoritative Turn aggregate diff as a t
   } finally {
     runtime.dispose();
   }
+});
+
+test("Replica diff updates leave active work open across later Items and restored runtimes", () => {
+  const diff = "diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-old\n+new";
+  const work = [{ id: "progress", type: "agentMessage", phase: "commentary", text: "Progress", completed: true },
+    { id: "command", type: "commandExecution", command: "test", status: "inProgress", completed: false }];
+  const entity = (changes: string | null, later = false) => threadView({ pendingInteractions: [], turns: [{
+    id: "active", status: "inProgress", turnStartedAtMs: 1000, firstTurnWorkItemStartedAtMs: 1100,
+    diff: changes, unifiedDiff: diff, items: later ? [...work, { id: "later", type: "reasoning", summary: [], completed: false }] : work,
+  }] });
+  const replica = new FakeReplica(entity(null));
+  const create = () => createReplicaConversationRuntime({ key: createConversationKey("local", "thread-one"), replica,
+    commands: commands(), history: { async loadOlder() {} } });
+  const runtime = create();
+  const presentation = () => createTimelineTurnPresentationPlan(groupTimelineFramesByTurn(runtime.getSnapshot().timeline)[0]!, undefined, { isMostRecentTurn: true });
+  try {
+    const initial = presentation();
+    replica.setEntity(entity(diff));
+    assert.deepEqual(presentation().assistant!.slots, initial.assistant!.slots);
+    assert.equal(presentation().assistant!.changeSummary?.status, "running");
+    replica.setEntity(entity(diff, true));
+    const updated = presentation();
+    const activity = updated.assistant!.slots.find(s => s.type === "agent-activity")!;
+    if (activity.type === "agent-activity") assert.equal(resolveAgentActivityLayout(activity, true).isCollapsed, false);
+    const restored = create();
+    try { assert.deepEqual(createTimelineTurnPresentationPlan(groupTimelineFramesByTurn(restored.getSnapshot().timeline)[0]!, undefined, { isMostRecentTurn: true }), updated); }
+    finally { restored.dispose(); }
+    replica.setEntity(entity(null, true));
+    assert.equal(presentation().assistant!.changeSummary, null);
+  } finally { runtime.dispose(); }
 });
 
 test("Guardian auto-reviews attach to target tools and keep unmatched failures standalone", () => {
@@ -1584,6 +1614,71 @@ test("authoritative Turn acknowledgement retires the optimistic submission", asy
   runtime.dispose();
 });
 
+test("outgoing bubble remains mounted while Turn acknowledgement arrives before its user Item", async () => {
+  let resolveSubmission!: (receipt: SubmissionReceipt) => void;
+  const pending = new Promise<SubmissionReceipt>((resolve) => { resolveSubmission = resolve; });
+  const replica = new FakeReplica(threadView({ turns: [], pendingInteractions: [] }));
+  const key = createConversationKey("local", "thread-one");
+  const runtime = createReplicaConversationRuntime({
+    key,
+    replica,
+    commands: commands({ submit: async () => pending }),
+    history: { async loadOlder() {} },
+  });
+  const composer = createComposerController(
+    { type: "existing-thread", key },
+    { now: () => 100, createId: () => "handoff" },
+  );
+  composer.dispatch({
+    type: "set-document",
+    document: { version: 1, blocks: [{ type: "paragraph", children: [{ type: "text", text: "Hello" }] }] },
+  });
+  const intent = composer.createSubmitIntent();
+  const operation = runtime.submit(intent);
+  const visibleIdentity = () => {
+    const timeline = runtime.getSnapshot().timeline;
+    const messages = timeline.frames.flatMap((frame) => frame.blocks)
+      .filter((block) => block.type === "user-message" && block.message === "Hello");
+    assert.equal(messages.length, 1, "the outgoing bubble must never disappear or duplicate");
+    const frame = timeline.frames.find((candidate) => candidate.blocks.includes(messages[0]!));
+    assert.ok(frame);
+    const turn = groupTimelineFramesByTurn(timeline).find((candidate) => candidate.turnId === frame.turnId);
+    assert.ok(turn);
+    return { blockId: messages[0]!.id, frameId: frame.id, renderKey: timelineTurnRenderKey(turn) };
+  };
+  const optimistic = visibleIdentity();
+  resolveSubmission(receipt(intent.commandId, intent.clientMessageId));
+  await operation;
+  assert.deepEqual(visibleIdentity(), optimistic, "the RPC receipt must not remount the bubble");
+  assert.equal(groupTimelineFramesByTurn(runtime.getSnapshot().timeline)[0]?.turnKey, "turn-two",
+    "the navigation and measurement locator remains the authoritative Turn ID");
+
+  replica.setEntity(threadView({ turns: [{ id: "turn-two", status: "inProgress", items: [] }], pendingInteractions: [] }));
+  assert.deepEqual(visibleIdentity(), optimistic, "an empty acknowledged Turn must keep the optimistic bubble");
+
+  replica.setEntity(threadView({ turns: [{ id: "turn-two", status: "inProgress", params: {
+    clientUserMessageId: intent.clientMessageId,
+  }, items: [] }], pendingInteractions: [] }));
+  assert.deepEqual(visibleIdentity(), optimistic, "a client ID without message content is not a display acknowledgement");
+
+  const params = { clientUserMessageId: intent.clientMessageId, input: [{ type: "text", text: "Hello" }] };
+  replica.setEntity(threadView({ turns: [{ id: "turn-two", status: "inProgress", params, items: [] }], pendingInteractions: [] }));
+  assert.deepEqual(visibleIdentity(), optimistic, "Turn.params must inherit the same display identity");
+
+  replica.setEntity(threadView({ turns: [{ id: "turn-two", status: "inProgress", items: [{
+    id: "user-two", type: "userMessage", clientId: intent.clientMessageId,
+    content: [{ type: "text", text: "Hello" }],
+  }] }], pendingInteractions: [] }));
+  assert.deepEqual(visibleIdentity(), optimistic, "an Item-only snapshot must keep the same display identity");
+
+  replica.setEntity(threadView({ turns: [{ id: "turn-two", status: "inProgress", params, items: [{
+    id: "user-two", type: "userMessage", clientId: intent.clientMessageId,
+    content: [{ type: "text", text: "Hello" }],
+  }] }], pendingInteractions: [] }));
+  assert.deepEqual(visibleIdentity(), optimistic, "the authoritative Item must not remount the bubble");
+  runtime.dispose();
+});
+
 test("steer remains visible until its authoritative user-message identity joins it", async () => {
   let resolveSubmission!: (receipt: SubmissionReceipt) => void;
   const pending = new Promise<SubmissionReceipt>((resolve) => {
@@ -1854,6 +1949,8 @@ test("explicit follow-up submission alone owns optimistic queue state", async ()
   const operation = runtime.submit(intent);
   assert.equal(runtime.getSnapshot().queuedSubmissions[0]?.state, "submitting");
   assert.equal(runtime.getSnapshot().pendingSubmissions.length, 0);
+  assert.equal(runtime.getSnapshot().timeline.frames.flatMap((frame) => frame.blocks)
+    .some((block) => block.type === "user-message" && block.message === "Next"), false);
   resolveSubmission({
     commandId: intent.commandId,
     clientMessageId: intent.clientMessageId,
@@ -1865,6 +1962,119 @@ test("explicit follow-up submission alone owns optimistic queue state", async ()
   });
   await operation;
   assert.equal(runtime.getSnapshot().queuedSubmissions[0]?.state, "queued");
+  assert.equal(runtime.getSnapshot().timeline.frames.flatMap((frame) => frame.blocks)
+    .some((block) => block.type === "user-message" && block.message === "Next"), false);
+  runtime.dispose();
+});
+
+test("deleting a failed local follow-up removes it without a Host queue request", async () => {
+  const key = createConversationKey("local", "thread-one");
+  let hostDeletes = 0;
+  const runtime = createReplicaConversationRuntime({
+    key,
+    replica: new FakeReplica(threadView()),
+    commands: commands({
+      async submit() { throw new Error("Model unavailable"); },
+      async deleteQueuedSubmission() { hostDeletes += 1; return true; },
+    }),
+    history: { async loadOlder() {} },
+  });
+  const composer = createComposerController({ type: "enqueue-follow-up", key }, { now: () => 100, createId: () => "failed-follow-up" });
+  composer.dispatch({ type: "set-document", document: { version: 1, blocks: [
+    { type: "paragraph", children: [{ type: "text", text: "Next" }] },
+  ] } });
+  const intent = composer.createSubmitIntent();
+  await assert.rejects(runtime.submit(intent), /Model unavailable/);
+  assert.equal(runtime.getSnapshot().queuedSubmissions[0]?.state, "failed");
+  await runtime.deleteQueuedSubmission(intent.commandId);
+  assert.equal(runtime.getSnapshot().queuedSubmissions.length, 0);
+  assert.equal(hostDeletes, 0);
+  runtime.dispose();
+});
+
+test("an unconfirmed follow-up cannot be dismissed or deleted before Host reconciliation", async () => {
+  const key = createConversationKey("local", "thread-one");
+  let submits = 0;
+  let hostDeletes = 0;
+  const runtime = createReplicaConversationRuntime({
+    key,
+    replica: new FakeReplica(threadView()),
+    commands: commands({
+      async submit() { submits += 1; throw new SubmissionOutcomeUnknownError(); },
+      async deleteQueuedSubmission() { hostDeletes += 1; return true; },
+    }),
+    history: { async loadOlder() {} },
+  });
+  const composer = createComposerController({ type: "enqueue-follow-up", key }, { now: () => 100, createId: () => "unknown-follow-up" });
+  composer.dispatch({ type: "set-document", document: { version: 1, blocks: [
+    { type: "paragraph", children: [{ type: "text", text: "Next" }] },
+  ] } });
+  const intent = composer.createSubmitIntent();
+  await assert.rejects(runtime.submit(intent), SubmissionOutcomeUnknownError);
+  assert.equal(runtime.getSnapshot().queuedSubmissions[0]?.state, "unknown");
+  runtime.dismissFailedSubmission(intent.commandId);
+  await assert.rejects(runtime.deleteQueuedSubmission(intent.commandId), /not deletable/);
+  await assert.rejects(runtime.submit(intent), SubmissionOutcomeUnknownError);
+  assert.equal(submits, 1);
+  assert.equal(hostDeletes, 0);
+  runtime.replaceQueuedSubmissions([{
+    id: "server-follow-up",
+    clientUserMessageId: intent.clientMessageId,
+    input: [{ type: "text", text: "Next", text_elements: [] }],
+    createdAt: 101,
+    pausedReason: null,
+  }]);
+  assert.deepEqual(runtime.getSnapshot().queuedSubmissions.map((item) => [item.serverSubmissionId, item.state]),
+    [["server-follow-up", "queued"]]);
+  runtime.replaceQueuedSubmissions([]);
+  assert.equal(runtime.getSnapshot().queuedSubmissions.length, 0);
+  runtime.dispose();
+});
+
+test("an unconfirmed follow-up retires when its client message appears in authoritative history", async () => {
+  const key = createConversationKey("local", "thread-one");
+  const replica = new FakeReplica(threadView());
+  const runtime = createReplicaConversationRuntime({
+    key, replica,
+    commands: commands({ async submit() { throw new SubmissionOutcomeUnknownError(); } }),
+    history: { async loadOlder() {} },
+  });
+  const composer = createComposerController({ type: "enqueue-follow-up", key }, { now: () => 100, createId: () => "unknown-follow-up" });
+  composer.dispatch({ type: "set-document", document: { version: 1, blocks: [
+    { type: "paragraph", children: [{ type: "text", text: "Next" }] },
+  ] } });
+  const intent = composer.createSubmitIntent();
+  await assert.rejects(runtime.submit(intent), SubmissionOutcomeUnknownError);
+  replica.setEntity(threadView({ turns: [{ id: "confirmed", status: "inProgress", items: [
+    { id: "confirmed-user", type: "userMessage", clientId: intent.clientMessageId, content: [{ type: "text", text: "Next" }] },
+  ] }] }));
+  assert.equal(runtime.getSnapshot().queuedSubmissions.length, 0);
+  runtime.dispose();
+});
+
+test("Host queue acknowledgement arriving before a lost receipt does not leave a local unknown claim", async () => {
+  const key = createConversationKey("local", "thread-one");
+  let rejectReceipt!: (error: Error) => void;
+  const runtime = createReplicaConversationRuntime({
+    key,
+    replica: new FakeReplica(threadView()),
+    commands: commands({ submit: () => new Promise((_resolve, reject) => { rejectReceipt = reject; }) }),
+    history: { async loadOlder() {} },
+  });
+  const composer = createComposerController({ type: "enqueue-follow-up", key }, { now: () => 100, createId: () => "racing-follow-up" });
+  composer.dispatch({ type: "set-document", document: { version: 1, blocks: [
+    { type: "paragraph", children: [{ type: "text", text: "Next" }] },
+  ] } });
+  const intent = composer.createSubmitIntent();
+  const operation = runtime.submit(intent);
+  runtime.replaceQueuedSubmissions([{
+    id: "server-follow-up", clientUserMessageId: intent.clientMessageId,
+    input: [{ type: "text", text: "Next", text_elements: [] }], createdAt: 101, pausedReason: null,
+  }]);
+  rejectReceipt(new SubmissionOutcomeUnknownError());
+  await assert.rejects(operation, SubmissionOutcomeUnknownError);
+  runtime.replaceQueuedSubmissions([]);
+  assert.equal(runtime.getSnapshot().queuedSubmissions.length, 0);
   runtime.dispose();
 });
 

@@ -1,6 +1,17 @@
 import type { LocaleCode } from "@/i18n/locales.config";
 
 const upgradeCopies = {
+  "ms-MY": {
+    month: "September 2026",
+    title: "LightVela Kini Menyokong Naik Taraf Pelan",
+    desc: "Naik taraf pelan semasa anda ke peringkat yang lebih tinggi. Amaun sebenar yang perlu dibayar ialah harga akhir yang dipaparkan semasa pembayaran.",
+  },
+  "th-TH": {
+    month: "กันยายน 2026",
+    title: "LightVela รองรับการอัปเกรดแพ็กเกจแล้ว",
+    desc: "อัปเกรดแพ็กเกจปัจจุบันเป็นระดับที่สูงขึ้น ยอดที่ต้องชำระจริงเป็นราคาสุดท้ายที่แสดงในหน้าชำระเงิน",
+  },
+
   "zh-CN": {
     month: "2026 年 9 月",
     title: "LightVela 支持套餐升配",

@@ -5,10 +5,36 @@ import (
 	"testing"
 	"time"
 
+	pctx "ctl/pkg/context"
 	"ctl/pkg/errcode"
 	bundlemodel "ctl/pkg/model/bundle"
+	modelfactory "ctl/pkg/model/factory"
 	passmodel "ctl/pkg/model/pass"
+	"ctl/pkg/resource"
+	"ctl/pkg/transport"
+
+	"go.uber.org/zap"
 )
+
+type renewalAdmissionTestFactory struct {
+	modelfactory.DaoFactory
+	passDAO passmodel.Dao
+}
+
+func (f *renewalAdmissionTestFactory) PassDao(_ pctx.Context) passmodel.Dao { return f.passDAO }
+
+type renewalAdmissionTestDAO struct {
+	passmodel.Dao
+	entity *passmodel.Entity
+}
+
+func (d *renewalAdmissionTestDAO) GetByPassID(string) (*passmodel.Entity, error) {
+	return d.entity, nil
+}
+
+func (d *renewalAdmissionTestDAO) UpdateStatus(string, string, string) (bool, error) {
+	panic("renewal period must be rejected before status mutation")
+}
 
 func TestRenewPassParentRetryBudget(t *testing.T) {
 	const renewInstanceRetryWindowSeconds = int64(60 * 60)
@@ -18,6 +44,51 @@ func TestRenewPassParentRetryBudget(t *testing.T) {
 	}
 	if retryWindow := renewPassParentExecuteIntervalSeconds * int64(renewPassParentMaxExecuteCount); retryWindow <= renewInstanceRetryWindowSeconds {
 		t.Fatalf("renew parent retry window = %ds, must exceed child retry window %ds", retryWindow, renewInstanceRetryWindowSeconds)
+	}
+}
+
+func TestValidateRenewalPeriodRejectsAlreadyExpiredResult(t *testing.T) {
+	now := time.Date(2026, 10, 1, 8, 0, 0, 0, time.UTC)
+	oldExpiry := time.Date(2026, 8, 28, 1, 22, 33, 0, time.UTC)
+	if err := validateRenewalPeriod(now.AddDate(0, 1, 0), 1, "m", now); err != nil {
+		t.Fatalf("normal unexpired renewal must remain available: %v", err)
+	}
+	if err := validateRenewalPeriod(oldExpiry, 1, "m", now); !errors.Is(err, errcode.ErrPassRenewalPeriodTooShort) {
+		t.Fatalf("one month from Aug 28 must be rejected on Oct 1, got %v", err)
+	}
+	if err := validateRenewalPeriod(oldExpiry, 2, "m", now); err != nil {
+		t.Fatalf("two months from Aug 28 should still be purchasable on Oct 1: %v", err)
+	}
+	if err := validateRenewalPeriod(now.AddDate(0, -1, 0), 1, "m", now); !errors.Is(err, errcode.ErrPassRenewalPeriodTooShort) {
+		t.Fatalf("renewal ending exactly now must be rejected, got %v", err)
+	}
+}
+
+func TestRenewalAdmissionRejectsUnusablePeriodBeforeBillingCalls(t *testing.T) {
+	previousFactory, previousLogger := modelfactory.DefaultDaoFactory, resource.ZapLogger
+	modelfactory.DefaultDaoFactory = &renewalAdmissionTestFactory{passDAO: &renewalAdmissionTestDAO{
+		entity: &passmodel.Entity{
+			PassID:      "pass-stale",
+			UserID:      "user-stale",
+			BundleID:    "bundle-launch",
+			ExpiredTime: time.Now().AddDate(0, -2, 0),
+			Status:      passmodel.StatusActive,
+		},
+	}}
+	resource.ZapLogger = zap.NewNop()
+	t.Cleanup(func() {
+		modelfactory.DefaultDaoFactory, resource.ZapLogger = previousFactory, previousLogger
+	})
+
+	l := &logic{} // Bundle/Trade adapters remain nil: the admission gate must run first.
+	if _, err := l.RenewPassPrice("user-stale", "pass-stale", &transport.RenewPassPriceRequest{Period: 1, TimeUnit: "m"}); !errors.Is(err, errcode.ErrPassRenewalPeriodTooShort) {
+		t.Fatalf("quote should reject before contacting billing, got %v", err)
+	}
+	if _, _, err := l.prepareRenewPassOrder("user-stale", "pass-stale", &transport.RenewPassOrderRequest{Period: 1, TimeUnit: "m"}); !errors.Is(err, errcode.ErrPassRenewalPeriodTooShort) {
+		t.Fatalf("order should reject before contacting billing, got %v", err)
+	}
+	if _, accepted, err := l.RenewPass("pass-stale", 1, 1, "m"); !errors.Is(err, errcode.ErrPassRenewalPeriodTooShort) || accepted {
+		t.Fatalf("stale paid callback should reject before pass mutation, accepted=%v err=%v", accepted, err)
 	}
 }
 

@@ -287,6 +287,13 @@ Read the following before selecting a path:
 - The Beijing builder has a legacy native listener on `127.0.0.1:18081`; qualification reserves
   local ports `28081-28083` for Kubernetes port-forwards.
 
+## 探索优先的验收顺序
+
+后续开发/修复先用 `exploration` 做功能与收敛验收，再跑 `production` 资格。
+探索结果不打开生产准入，不中途改动运行任务。切换仍走整段锁部署流程，未验证接线
+不得手工绕过；无需重编未改动的二进制。参数和不变的安全边界见
+[runtime README](deploy/tencent/fleet/runtime/README.md#探索阶段的快速-host-缩容)。
+
 ## Release order
 
 1. Run focused unit/integration tests and formatting checks locally.

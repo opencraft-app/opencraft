@@ -26,6 +26,7 @@ import {
   formatAutomaticApprovalReviewSummary,
   formatAutomaticApprovalReviewTitle,
   groupTimelineFramesByTurn,
+  getTimelineUserMessageTargetKey,
   isAutomaticApprovalReviewWarning,
   isCodexAppThreadTool,
   isVisibleAgentActivityRow,
@@ -33,6 +34,7 @@ import {
   presentApprovalRequest,
   presentAutomationUpdate,
   presentMcpElicitationDisplayValue,
+  presentReasoning,
   presentToolActivity,
   summarizeAutomaticApprovalReviewAction,
   threadHandoffToolResult,
@@ -59,11 +61,13 @@ import {
   type WebMcpToolSurfaceCall,
   type McpElicitationDraft,
   type McpElicitationDraftValue,
+  type ReasoningContentPresentation,
   type UserInputQuestionDraft,
   validateMcpElicitationDraft,
 } from "@opencraft/chat-core";
 import type { Context } from "@deepseek-ai/cordis";
-import { NativeChatDocument } from "@opencraft/chat-render-native";
+import { NativeChatDocument, NativeChatLanguageProvider, NativeImageGalleryProvider, useNativeImageGallery, type NativeChatDocumentProps } from "@opencraft/chat-render-native";
+import { chatMediaPresentationKey, resolveChatConversationMediaSource, resolveStandardChatResource, type ChatRenderContext } from "@opencraft/chat-render-react";
 import { workingShimmerMotion } from "@opencraft/design-system/tokens";
 import {
   TimelineBlockView,
@@ -135,6 +139,7 @@ import {
   NativeResponsePositionedTurns,
   type WorkbenchConversationRestoreSnapshot,
 } from "./native-response-positioned-turns";
+import { NativeTurnTargetContext } from "./native-turn-target-context";
 import { useNativeUserMessageCollapse } from "./use-native-user-message-collapse";
 import { Button, IconButton } from "./ui/button";
 import { InteractiveSurface } from "./ui/interactive-surface";
@@ -173,11 +178,24 @@ const NativeToolCallIconRendererContext = createContext<NativeToolCallIconRender
 const NativeThreadNavigationContext = createContext<((threadId: string, displayName: string) => void) | null>(null);
 
 interface NativeDocumentHostValue {
-  readonly openResource: ((path: string) => void) | null;
+  readonly language: "zh-CN" | "en";
+  readonly conversationId: string | null;
+  readonly hostId: string | null;
+  readonly cwd: string | null;
+  readonly openResource: ChatRenderContext["openResource"] | null;
+  readonly canOpenResource: ChatRenderContext["canOpenResource"] | null;
+  readonly loadMediaSource: ChatRenderContext["loadMediaSource"] | null;
   readonly reviewTurnDiff: ((block: Extract<TimelineBlock, { type: "turn-diff" }>, path?: string) => void) | null;
 }
 
-const NativeDocumentHostContext = createContext<NativeDocumentHostValue>({ openResource: null, reviewTurnDiff: null });
+const NativeDocumentHostContext = createContext<NativeDocumentHostValue>({ language: "en", conversationId: null, hostId: null, cwd: null, openResource: null, canOpenResource: null, loadMediaSource: null, reviewTurnDiff: null });
+
+function NativeConversationChatDocument(props: NativeChatDocumentProps) {
+  const host = useContext(NativeDocumentHostContext);
+  return <NativeChatDocument {...props} language={host.language} conversationId={host.conversationId}
+    hostId={host.hostId} cwd={host.cwd} onOpenResource={host.openResource ?? undefined}
+    canOpenResource={host.canOpenResource ?? undefined} loadMediaSource={host.loadMediaSource ?? undefined} />;
+}
 
 interface NativeImageViewHostValue {
   readonly open: ((path: string) => void) | null;
@@ -192,6 +210,52 @@ interface NativeGeneratedImageHostValue {
 }
 
 const NativeGeneratedImageHostContext = createContext<NativeGeneratedImageHostValue>({ open: null, resolveSource: null });
+
+function directlyReadableNativeImage(source: string): string | null {
+  if (/^(?:https?:\/\/|data:image\/)/iu.test(source)) return source;
+  if (source.startsWith("//")) return `https:${source}`;
+  return null;
+}
+
+/** Conversation attachments and tool images use the same Host boundary as Markdown images. */
+function useNativeConversationImageSource(source: string | null, documentId: string, directOverride: string | null = null): string | null {
+  const host = useContext(NativeDocumentHostContext);
+  const resolution = useMemo(() => resolveChatConversationMediaSource(
+    source ?? "", host.cwd, directOverride ?? (source === null ? null : directlyReadableNativeImage(source)),
+    host.loadMediaSource != null,
+  ), [directOverride, host.cwd, host.loadMediaSource, source]);
+  const key = chatMediaPresentationKey(source ?? "", resolution.decision, {
+    hostId: host.hostId, conversationId: host.conversationId, cwd: host.cwd, documentId,
+  });
+  const [loaded, setLoaded] = useState<{ key: string; source: string | null } | null>(null);
+  useEffect(() => {
+    const load = host.loadMediaSource;
+    if (!resolution.loadThroughHost || resolution.decision.target === null
+      || resolution.decision.kind === undefined || load == null || source === null) return;
+    let active = true;
+    let release: (() => void) | undefined;
+    const controller = new AbortController();
+    setLoaded({ key, source: null });
+    void load({
+      signal: controller.signal,
+      source,
+      resolvedTarget: resolution.decision.target,
+      resourceKind: resolution.decision.kind,
+      documentId,
+      conversationId: host.conversationId,
+      hostId: host.hostId,
+      cwd: host.cwd,
+    }).then(result => {
+      if (!active) { result?.release?.(); return; }
+      release = result?.release;
+      setLoaded({ key, source: result?.source ?? null });
+    }, () => { if (active) setLoaded({ key, source: null }); });
+    return () => { active = false; controller.abort(); release?.(); };
+  }, [documentId, host.conversationId, host.cwd, host.hostId, host.loadMediaSource,
+    key, resolution.decision.kind, resolution.decision.target, resolution.loadThroughHost, source]);
+  if (resolution.directSource !== null) return resolution.directSource;
+  return resolution.loadThroughHost && loaded?.key === key ? loaded.source : null;
+}
 
 function nativeActivityIcon(icon: ToolActivityIcon, color: string, size: number): ReactNode {
   if (icon === "none") return null;
@@ -361,21 +425,40 @@ function elicitationDraftText(value: McpElicitationDraftValue | undefined): stri
   return typeof value === "string" ? value : "";
 }
 
-function ReasoningBlock({ block }: { block: Extract<TimelineBlock, { type: "reasoning" }> }) {
-  const [open, setOpen] = useState(false);
+function ReasoningBlock({ block, active = false, presentation = presentReasoning(block, active), collapsed, onCollapsedChange }: {
+  readonly block: Extract<TimelineBlock, { type: "reasoning" }>;
+  readonly active?: boolean;
+  readonly presentation?: ReasoningContentPresentation | null;
+  readonly collapsed?: boolean;
+  readonly onCollapsedChange?: (collapsed: boolean) => void;
+}) {
+  // One stable Item owns one explicit choice; deltas and completion cannot
+  // replace it with a running/settled default or open the tool-work group.
+  const [localOpen, setLocalOpen] = useState(() => !(presentation?.initiallyCollapsed ?? true));
+  const open = collapsed === undefined ? localOpen : !collapsed;
   const { theme } = useWorkbenchTheme();
-  const expandable = block.detail !== null && block.detail.trim() !== "";
+  const { language } = useContext(NativeDocumentHostContext);
+  if (presentation === null) return null;
+  const label = language === "zh-CN"
+    ? active ? "思考中..." : "思考过程"
+    : active ? "Thinking" : "Thought";
   const header = <>
-    <View style={[styles.reasoningDot, block.streaming ? styles.reasoningActive : styles.reasoningDone]} />
-    <Text numberOfLines={open ? undefined : 1} style={styles.reasoningTitle}>{block.summary || "Reasoning"}</Text>
-    {expandable ? <ChevronRight color={theme.color.icon.tertiary} size={theme.metrics.control.iconSmall} strokeWidth={1.8} style={open ? styles.chevronOpen : undefined} /> : null}
+    <NativeCadencedText active={active} numberOfLines={1} style={styles.reasoningStatus}>{label}</NativeCadencedText>
+    <Text numberOfLines={1} style={styles.reasoningTitle}>{presentation.header}</Text>
+    <ChevronRight color={theme.color.icon.tertiary} size={theme.metrics.control.iconSmall} strokeWidth={1.8} style={open ? styles.chevronOpen : undefined} />
   </>;
   return (
     <View style={styles.reasoning}>
-      {expandable
-        ? <InteractiveSurface onPress={() => setOpen((value) => !value)} style={styles.reasoningButton}>{header}</InteractiveSurface>
-        : <View style={styles.reasoningButton}>{header}</View>}
-      {expandable && open ? <Text style={styles.reasoningDetail}>{block.detail}</Text> : null}
+      <InteractiveSurface
+        accessibilityLabel={`${label}: ${presentation.header}`}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        onPress={() => onCollapsedChange ? onCollapsedChange(open) : setLocalOpen(!open)}
+        style={styles.reasoningButton}
+      >{header}</InteractiveSurface>
+      {open ? <View style={styles.reasoningDetail}>
+        <NativeConversationChatDocument documentId={block.id} source={presentation.content} streaming={active} />
+      </View> : null}
     </View>
   );
 }
@@ -523,7 +606,19 @@ function TurnDiffBlock({ block }: { block: Extract<TimelineBlock, { type: "turn-
   const visible = expanded ? block.files : block.files.slice(0, 3);
   const single = block.files.length === 1 ? block.files[0] : null;
   const basename = single?.path.replaceAll("\\", "/").split("/").at(-1);
-  const canOpenFile = documentHost.reviewTurnDiff !== null || documentHost.openResource !== null;
+  const openFile = (path: string) => {
+    if (documentHost.reviewTurnDiff !== null) { documentHost.reviewTurnDiff(block, path); return; }
+    const decision = resolveStandardChatResource(path, { cwd: documentHost.cwd, externalResourcePolicy: "allow" });
+    if (decision.allowed && decision.target !== null && documentHost.canOpenResource?.(decision.target, decision) !== false) {
+      documentHost.openResource?.(decision.target, decision);
+    }
+  };
+  const canOpenFile = (path: string) => {
+    if (documentHost.reviewTurnDiff !== null) return true;
+    if (documentHost.openResource === null) return false;
+    const decision = resolveStandardChatResource(path, { cwd: documentHost.cwd, externalResourcePolicy: "allow" });
+    return decision.allowed && decision.target !== null && documentHost.canOpenResource?.(decision.target, decision) !== false;
+  };
   return (
     <View style={styles.turnDiffCard}>
       <View style={styles.turnDiffHeader}>
@@ -533,8 +628,8 @@ function TurnDiffBlock({ block }: { block: Extract<TimelineBlock, { type: "turn-
       </View>
       {block.files.length > 1 ? <View style={styles.turnDiffFiles}>{visible.map((file) => {
         const content = <><Text numberOfLines={1} style={styles.filePath}>{file.path}</Text><View style={styles.diffCounts}><Text style={styles.additions}>+{file.additions}</Text><Text style={styles.deletions}>−{file.deletions}</Text></View></>;
-        return canOpenFile
-          ? <InteractiveSurface key={file.path} onPress={() => { if (documentHost.reviewTurnDiff !== null) documentHost.reviewTurnDiff(block, file.path); else documentHost.openResource?.(file.path); }} style={styles.fileRow}>{content}</InteractiveSurface>
+        return canOpenFile(file.path)
+          ? <InteractiveSurface key={file.path} onPress={() => openFile(file.path)} style={styles.fileRow}>{content}</InteractiveSurface>
           : <View key={file.path} style={styles.fileRow}>{content}</View>;
       })}{block.files.length > 3 ? <InteractiveSurface onPress={() => setExpanded((value) => !value)} style={styles.viewChanges}><Text style={styles.viewChangesText}>{expanded ? "Collapse files" : `Show ${block.files.length - 3} more files`}</Text></InteractiveSurface> : null}</View> : null}
     </View>
@@ -711,16 +806,24 @@ function NativeCodexAppThreadToolRow({ block, presentation }: {
   ) : <View style={styles.codexAppToolRow}>{content}</View>;
 }
 
-function defaultNativeImageSource(path: string): string | null {
-  if (/^(?:blob:|data:|https?:\/\/|file:\/\/)/iu.test(path)) return path;
-  if (Platform.OS !== "web" && path.startsWith("/")) return `file://${path}`;
-  return null;
+function NativeInspectedImage({ path, blockId, index }: { readonly path: string; readonly blockId: string; readonly index: number }) {
+  const { theme } = useWorkbenchTheme();
+  const host = useContext(NativeImageViewHostContext);
+  const gallery = useNativeImageGallery();
+  const source = useNativeConversationImageSource(path, `${blockId}:image-view:${index}`, host.resolveSource?.(path) ?? null);
+  const preview = source === null
+    ? <ImageIcon color={theme.color.icon.tertiary} size={24} strokeWidth={1.6} />
+    : <Image accessibilityLabel="Inspected image" resizeMode="cover" source={{ uri: source }} style={styles.imageViewImage} />;
+  return source === null || (host.open === null && gallery === null) ? <View style={styles.imageViewPreview}>{preview}</View> : (
+    <InteractiveSurface accessibilityLabel={`Open inspected image ${index + 1}`} accessibilityRole="button"
+      onPress={() => host.open ? host.open(path) : gallery?.open({ key: `${blockId}:image-view:${index}`, source, alt: "", order: index })}
+      style={styles.imageViewPreview}>{preview}</InteractiveSurface>
+  );
 }
 
 function NativeImageViewToolBlock({ block }: { readonly block: Extract<TimelineBlock, { type: "tool-call" }> }) {
   const { theme } = useWorkbenchTheme();
   const presentation = useToolActivityPresentation(block);
-  const host = useContext(NativeImageViewHostContext);
   const paths = block.imagePaths ?? [];
   const [open, setOpen] = useState(false);
   return (
@@ -737,25 +840,7 @@ function NativeImageViewToolBlock({ block }: { readonly block: Extract<TimelineB
           horizontal
           showsHorizontalScrollIndicator={false}
         >
-          {paths.map((path, index) => {
-            const source = host.resolveSource?.(path) ?? defaultNativeImageSource(path);
-            const preview = source === null
-              ? <ImageIcon color={theme.color.icon.tertiary} size={24} strokeWidth={1.6} />
-              : <Image accessibilityLabel="Inspected image" resizeMode="cover" source={{ uri: source }} style={styles.imageViewImage} />;
-            return host.open === null ? (
-              <View key={`${path}:${index}`} style={styles.imageViewPreview}>{preview}</View>
-            ) : (
-              <InteractiveSurface
-                accessibilityLabel={`Open inspected image ${index + 1}`}
-                accessibilityRole="button"
-                key={`${path}:${index}`}
-                onPress={() => host.open?.(path)}
-                style={styles.imageViewPreview}
-              >
-                {preview}
-              </InteractiveSurface>
-            );
-          })}
+          {paths.map((path, index) => <NativeInspectedImage key={`${path}:${index}`} path={path} blockId={block.id} index={index} />)}
         </ScrollView>
       ) : null}
     </NativeActivityDisclosure>
@@ -764,9 +849,10 @@ function NativeImageViewToolBlock({ block }: { readonly block: Extract<TimelineB
 
 function NativeGeneratedImageBlock({ block }: { readonly block: Extract<TimelineBlock, { type: "image" }> }) {
   const host = useContext(NativeGeneratedImageHostContext);
+  const gallery = useNativeImageGallery();
   const [aspectRatio, setAspectRatio] = useState<number | null>(null);
   const running = block.status === "pending" || block.status === "running";
-  const source = host.resolveSource?.(block) ?? block.uri;
+  const source = useNativeConversationImageSource(block.uri, `${block.id}:generated-image`, host.resolveSource?.(block) ?? null);
   if (source === null) {
     if (!running) return null;
     return <View accessibilityLabel="Generating image" accessibilityRole="progressbar" style={styles.generatedImagePlaceholder} />;
@@ -784,11 +870,11 @@ function NativeGeneratedImageBlock({ block }: { readonly block: Extract<Timeline
         style={[styles.generatedImage, { aspectRatio: aspectRatio ?? 1 }]}
       />
   );
-  return host.open === null ? <View style={styles.generatedImagePreview}>{image}</View> : (
+  return host.open === null && gallery === null ? <View style={styles.generatedImagePreview}>{image}</View> : (
     <InteractiveSurface
       accessibilityLabel="Generated image 1"
       accessibilityRole="imagebutton"
-      onPress={() => host.open?.(block)}
+      onPress={() => host.open ? host.open(block) : gallery?.open({ key: `${block.id}:generated-image`, source, alt: "", order: 0 })}
       style={styles.generatedImagePreview}
     >
       {image}
@@ -868,7 +954,11 @@ function NativeSubagentActivity({ unit }: { readonly unit: SubagentActivityRende
   );
 }
 
-function NativeAgentActivityGroup({ unit }: { readonly unit: AgentActivityGroupContentUnit }) {
+function NativeAgentActivityGroup({ unit, collapsed, onCollapsedChange }: {
+  readonly unit: AgentActivityGroupContentUnit;
+  readonly collapsed?: boolean;
+  readonly onCollapsedChange?: (collapsed: boolean) => void;
+}) {
   const { theme } = useWorkbenchTheme();
   const registry = useContext(NativeToolActivityPresenterContext);
   const detailLevel = useContext(NativeConversationDetailContext);
@@ -881,18 +971,23 @@ function NativeAgentActivityGroup({ unit }: { readonly unit: AgentActivityGroupC
     () => unit.blocks.filter((block) => isVisibleAgentActivityRow(block, registry, detailLevel)),
     [registry, unit.blocks, version, detailLevel],
   );
-  const [open, setOpen] = useState(false);
+  const [localOpen, setLocalOpen] = useState(false);
+  const open = collapsed === undefined ? localOpen : !collapsed;
   const hasExpandableContent = visibleBlocks.length > 0;
+  const isThinking = header.state === "thinking";
+  const headerStyle = isThinking ? styles.thinkingPlaceholder : styles.reasoningButton;
   const headerContent = <>
     {header.icon === null ? null : nativeActivityIcon(header.icon, theme.color.icon.secondary, theme.metrics.control.icon)}
-    <Text numberOfLines={1} style={styles.reasoningTitle}>{agentActivityHeaderAccessibleLabel(header.summary)}</Text>
+    {isThinking
+      ? <NativeThinkingLabel label={agentActivityHeaderAccessibleLabel(header.summary)} />
+      : <Text numberOfLines={1} style={styles.reasoningTitle}>{agentActivityHeaderAccessibleLabel(header.summary)}</Text>}
     {hasExpandableContent ? <ChevronRight color={theme.color.icon.tertiary} size={theme.metrics.control.iconSmall} style={open ? styles.chevronOpen : undefined} /> : null}
   </>;
   return (
     <View style={styles.agentActivity}>
       {hasExpandableContent
-        ? <InteractiveSurface onPress={() => setOpen((value) => !value)} style={styles.reasoningButton}>{headerContent}</InteractiveSurface>
-        : <View style={styles.reasoningButton}>{headerContent}</View>}
+        ? <InteractiveSurface onPress={() => onCollapsedChange ? onCollapsedChange(open) : setLocalOpen(!open)} style={headerStyle}>{headerContent}</InteractiveSurface>
+        : <View style={headerStyle}>{headerContent}</View>}
       {open && hasExpandableContent ? (
         <View style={styles.agentActivityRows}>
           {visibleBlocks.map((block) => <Block block={block} key={block.id} />)}
@@ -941,32 +1036,54 @@ function NativeWorkStatusDivider({ item }: { readonly item: WorkStatusItem }) {
   </Animated.View>;
 }
 
-function NativeActivityExpansion({ children }: { readonly children: ReactNode }) {
-  const progress = useRef(new Animated.Value(0)).current;
+function NativeActivityExpansion({ animateEntrance, children }: {
+  readonly animateEntrance: boolean;
+  readonly children: ReactNode;
+}) {
+  const progress = useRef(new Animated.Value(animateEntrance ? 0 : 1)).current;
   const reduced = useWorkStatusReducedMotion();
   useEffect(() => {
+    // An Activity takes over the Turn's waiting label as Items arrive. This
+    // status handoff must keep its baseline; only disclosure expansion moves.
+    if (!animateEntrance) {
+      progress.setValue(1);
+      return;
+    }
     const animation = Animated.timing(progress, { toValue: 1, duration: reduced ? 120 : 220, easing: Easing.bezier(0.33, 1, 0.68, 1), useNativeDriver: true });
     animation.start();
     return () => animation.stop();
-  }, [progress, reduced]);
+  }, [animateEntrance, progress, reduced]);
   return <Animated.View style={[styles.activityContent, { opacity: progress, transform: [{ translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [reduced ? 0 : -8, 0] }) }] }]}>{children}</Animated.View>;
 }
 
-function NativeActivityContent({ units }: { readonly units: readonly AgentActivityContentUnit[] }) {
+function NativeActivityContent({ units, innerCollapsedById, onInnerCollapsedChange }: {
+  readonly units: readonly AgentActivityContentUnit[];
+  readonly innerCollapsedById: Readonly<Record<string, boolean>>;
+  readonly onInnerCollapsedChange: (id: string, collapsed: boolean) => void;
+}) {
   return <View style={styles.activityContent}>{units.map((unit) =>
     unit.type === "worked-for" ? <NativeWorkStatusDivider key={unit.id} item={unit.item} />
-      : unit.type === "group" ? <NativeAgentActivityGroup key={unit.id} unit={unit} />
+      : unit.type === "group" ? <NativeAgentActivityGroup key={unit.id} unit={unit}
+          collapsed={innerCollapsedById[unit.id] ?? true}
+          onCollapsedChange={collapsed => onInnerCollapsedChange(unit.id, collapsed)} />
+        : unit.type === "reasoning" ? <ReasoningBlock key={unit.id} block={unit.block} active={unit.active}
+            presentation={unit.presentation} collapsed={innerCollapsedById[unit.id] ?? true}
+            onCollapsedChange={collapsed => onInnerCollapsedChange(unit.id, collapsed)} />
         : <Block key={unit.id} block={unit.block} />)}</View>;
 }
 
 function NativeAgentActivity({ unit }: { readonly unit: AgentActivityRenderUnit }) {
   const { theme } = useWorkbenchTheme();
   const [persistedCollapsed, setPersistedCollapsed] = useState<boolean>();
+  const [innerCollapsedById, setInnerCollapsedById] = useState<Readonly<Record<string, boolean>>>({});
+  const renderContent = (units: readonly AgentActivityContentUnit[]) => <NativeActivityContent units={units}
+    innerCollapsedById={innerCollapsedById}
+    onInnerCollapsedChange={(id, collapsed) => setInnerCollapsedById(current => ({ ...current, [id]: collapsed }))} />;
   // Native consumes the same disclosure/partition authority as Web. A local
   // `open` initialized once cannot own completion-triggered auto-collapse.
   const layout = resolveAgentActivityLayout(unit, persistedCollapsed);
   return <View style={styles.activityContent}>
-    {layout.preToggleUnits.length > 0 ? <NativeActivityContent units={layout.preToggleUnits} /> : null}
+    {layout.preToggleUnits.length > 0 ? renderContent(layout.preToggleUnits) : null}
     {layout.showToggle ? <View>
       <InteractiveSurface accessibilityRole="button" accessibilityState={{ expanded: !layout.isCollapsed }}
         onPress={() => setPersistedCollapsed(!layout.isCollapsed)} style={styles.workStatusButton}>
@@ -978,9 +1095,9 @@ function NativeAgentActivity({ unit }: { readonly unit: AgentActivityRenderUnit 
       </InteractiveSurface>
       <View style={styles.workStatusRuleRow}><View style={styles.workStatusRule} /></View>
     </View> : null}
-    {layout.persistentUnits.length > 0 ? <NativeActivityContent units={layout.persistentUnits} /> : null}
-    {!layout.isCollapsed ? <NativeActivityExpansion>
-      {layout.visibleUnits.length > 0 ? <NativeActivityContent units={layout.visibleUnits} /> : null}
+    {layout.persistentUnits.length > 0 ? renderContent(layout.persistentUnits) : null}
+    {!layout.isCollapsed ? <NativeActivityExpansion animateEntrance={layout.showToggle}>
+      {layout.visibleUnits.length > 0 ? renderContent(layout.visibleUnits) : null}
       {unit.inlineSubagentActivity !== null ? <NativeSubagentActivity unit={unit.inlineSubagentActivity} /> : null}
     </NativeActivityExpansion> : null}
   </View>;
@@ -1493,23 +1610,37 @@ function openNativeUserMessageResource(source: string, host: NativeImageViewHost
   }
 }
 
+type UserMessageImagePart = Extract<UserMessageTimelineBlock["content"][number], { readonly type: "image" | "local-image" }>;
+
+function NativeUserImageAttachment({ part, blockId, index }: {
+  readonly part: UserMessageImagePart;
+  readonly blockId: string;
+  readonly index: number;
+}) {
+  const host = useContext(NativeImageViewHostContext);
+  const gallery = useNativeImageGallery();
+  const { theme } = useWorkbenchTheme();
+  const source = useNativeConversationImageSource(part.source, `${blockId}:attachment:${index}`,
+    part.type === "local-image" ? host.resolveSource?.(part.source) ?? null : null);
+  const contents = source === null
+    ? <ImageIcon color={theme.color.icon.tertiary} size={22} />
+    : <Image resizeMode="cover" source={{ uri: source }} style={styles.userImageContent} />;
+  return source === null || gallery === null ? <View style={styles.userImage}>{contents}</View> : (
+    <InteractiveSurface accessibilityLabel="Open attached image" accessibilityRole="imagebutton"
+      onPress={() => gallery.open({ key: `${blockId}:attachment:${index}`, source, alt: "", order: index })}
+      style={styles.userImage}>{contents}</InteractiveSurface>
+  );
+}
+
 function NativeUserMessageAttachments({ block }: { readonly block: UserMessageTimelineBlock }) {
   const host = useContext(NativeImageViewHostContext);
-  const { theme } = useWorkbenchTheme();
   const attachments = block.content.filter((part) => part.type !== "text");
   if (attachments.length === 0) return null;
   return (
     <View style={styles.userAttachments}>
       {attachments.map((part, index) => {
         if (part.type === "image" || part.type === "local-image") {
-          const source = part.type === "local-image" ? host.resolveSource?.(part.source) ?? null : part.source;
-          return (
-            <InteractiveSurface accessibilityLabel="Open attached image" accessibilityRole="button" key={`${part.type}:${part.source}:${index}`} onPress={() => openNativeUserMessageResource(part.source, host)} style={styles.userImage}>
-              {source === null
-                ? <ImageIcon color={theme.color.icon.tertiary} size={22} />
-                : <Image resizeMode="cover" source={{ uri: source }} style={styles.userImageContent} />}
-            </InteractiveSurface>
-          );
+          return <NativeUserImageAttachment key={`${part.type}:${part.source}:${index}`} part={part} blockId={block.id} index={index} />;
         }
         if (part.type === "audio" || part.type === "local-audio") {
           return <InteractiveSurface accessibilityRole="button" key={`${part.type}:${part.source}:${index}`} onPress={() => openNativeUserMessageResource(part.source, host)} style={styles.userAttachmentChip}><Text style={styles.userAttachmentChipText}>Audio</Text></InteractiveSurface>;
@@ -1528,9 +1659,11 @@ function NativeUserMessageBlock({ block }: { readonly block: UserMessageTimeline
   const collapsedHeight = theme.platformTypography.chat.lineHeight * (NATIVE_USER_MESSAGE_COLLAPSED_LINES - 1);
   const {
     collapseState,
+    contentRef,
     measuringNaturalHeight,
     onContentLayout,
     onViewportLayout,
+    requestMeasurement,
     toggleExpansion,
   } = useNativeUserMessageCollapse({
     collapsedHeight: theme.platformTypography.chat.lineHeight * NATIVE_USER_MESSAGE_COLLAPSED_LINES,
@@ -1544,8 +1677,8 @@ function NativeUserMessageBlock({ block }: { readonly block: UserMessageTimeline
       {block.message.trim().length === 0 ? null : (
         <View onLayout={onViewportLayout} style={styles.userBubble}>
           <View style={collapsed && !measuringNaturalHeight ? [styles.userMessageClip, { maxHeight: collapsedHeight }] : styles.userMessageClip}>
-            <View onLayout={onContentLayout}>
-              <NativeChatDocument documentId={`${block.id}:user-message`} source={block.message} />
+            <View collapsable={false} onLayout={onContentLayout} ref={contentRef}>
+              <NativeConversationChatDocument dialect="user-message" documentId={`${block.id}:user-message`} onMeasurementRequest={requestMeasurement} source={block.message} />
             </View>
           </View>
           {collapsed ? <Text accessibilityElementsHidden style={styles.userMessageEllipsis}>…</Text> : null}
@@ -1564,7 +1697,7 @@ function NativeUserMessageBlock({ block }: { readonly block: UserMessageTimeline
 function NativeTextTimelineRenderer({ block, richText }: TimelineBlockRendererProps) {
   if (block.type !== "text") return null;
   return richText
-    ? <NativeChatDocument documentId={block.id} source={block.text} streaming={block.streaming} />
+    ? <NativeConversationChatDocument documentId={block.id} source={block.text} streaming={block.streaming} />
     : <Text selectable style={styles.messageText}>{block.text}</Text>;
 }
 
@@ -1572,7 +1705,7 @@ function NativePlanTimelineRenderer({ block }: TimelineBlockRendererProps) {
   const [collapsed, setCollapsed] = useState(block.type === "plan" && !block.completed);
   if (block.type !== "plan") return null;
   return <SemanticCard title={block.completed ? block.title ?? "Plan" : "Writing plan"}>
-    <View style={collapsed ? { height: 320, overflow: "hidden" } : undefined}><NativeChatDocument documentId={block.id} source={block.text} streaming={!block.completed} /></View>
+    <View style={collapsed ? { height: 320, overflow: "hidden" } : undefined}><NativeConversationChatDocument documentId={block.id} source={block.text} streaming={!block.completed} /></View>
     <Button accessibilityState={{ expanded: !collapsed }} onPress={() => setCollapsed(!collapsed)} size="sm" variant="link">{collapsed ? "Expand plan" : "Collapse plan"}</Button>
     {block.completed && block.text.trim() ? <NativeResponseCopyButton text={block.text} label="Copy plan" /> : null}
   </SemanticCard>;
@@ -1746,9 +1879,19 @@ function Frame({
   const visibleBlocks = frame.blocks;
   const visibleFrame = frame;
   const units = assistantPlan?.slots ?? null;
-  if (visibleBlocks.length === 0 && thinkingId === null) return null;
+  const reportTurnTarget = useContext(NativeTurnTargetContext);
+  const userTargetKey = getTimelineUserMessageTargetKey(frame);
+  const reportUserTargetLayout = useCallback((event: LayoutChangeEvent) => {
+    if (userTargetKey === null) return;
+    const { y, height } = event.nativeEvent.layout;
+    reportTurnTarget?.(userTargetKey, { topPx: y, heightPx: height });
+  }, [reportTurnTarget, userTargetKey]);
+  useEffect(() => () => {
+    if (userTargetKey !== null) reportTurnTarget?.(userTargetKey, null);
+  }, [reportTurnTarget, userTargetKey]);
+  if (visibleBlocks.length === 0 && thinkingId === null && assistantPlan?.changeSummary == null) return null;
   if (frame.type === "user") {
-    return <View style={styles.userFrame}>{visibleBlocks.map((block) => block.type === "user-message" ? <NativeUserMessageBlock block={block} key={block.id} /> : <View key={block.id}><Block block={block} richText={false} /></View>)}</View>;
+    return <View onLayout={reportUserTargetLayout} style={styles.userFrame}>{visibleBlocks.map((block) => block.type === "user-message" ? <NativeUserMessageBlock block={block} key={block.id} /> : <View key={block.id}><Block block={block} richText={false} /></View>)}</View>;
   }
   return (
     <View style={styles.frame}>
@@ -1758,7 +1901,10 @@ function Frame({
           ? <NativeAgentActivity key={unit.id} unit={unit} />
           : unit.type === "subagent-activity"
             ? <NativeSubagentActivity key={unit.id} unit={unit} />
-            : <View key={unit.id}><Block block={unit.block} /></View>)}
+            : unit.type === "reasoning"
+              ? <ReasoningBlock active={unit.active} block={unit.block} key={unit.id} presentation={unit.presentation} />
+              : <View key={unit.id}><Block block={unit.block} /></View>)}
+      {assistantPlan?.changeSummary == null ? null : <View key={assistantPlan.changeSummary.id}><Block block={assistantPlan.changeSummary} /></View>}
       {thinkingId === null ? null : <NativeThinkingPlaceholder key={thinkingId} label={thinkingLabel} />}
       {frame.type === "assistant" && showActions && (actions?.completed || frame.hookStats != null) ? (
         <>
@@ -1778,8 +1924,12 @@ function Frame({
   );
 }
 
+function NativeThinkingLabel({ label }: { readonly label: string }) {
+  return <NativeCadencedText active numberOfLines={1} style={styles.thinkingPlaceholderText}>{label}</NativeCadencedText>;
+}
+
 function NativeThinkingPlaceholder({ label = "Thinking" }: { label?: "Thinking" | "Planning" }) {
-  return <View accessibilityLiveRegion="polite" style={styles.thinkingPlaceholder}><NativeCadencedText active style={styles.thinkingPlaceholderText}>{label}</NativeCadencedText></View>;
+  return <View accessibilityLiveRegion="polite" style={styles.thinkingPlaceholder}><NativeThinkingLabel label={label} /></View>;
 }
 
 function Turn({
@@ -1844,7 +1994,7 @@ function AnimatedTurn({
   );
 }
 
-function EmptyConversation({ onSuggestion }: { onSuggestion(text: string): void }) {
+function EmptyConversation({ onSuggestion, copy }: { onSuggestion(text: string): void; copy?: { title: string; description: string } }) {
   const { theme } = useWorkbenchTheme();
   const suggestions = [
     { icon: FileSearch, label: "Explore this codebase", prompt: "Explore this codebase and explain its architecture." },
@@ -1854,9 +2004,9 @@ function EmptyConversation({ onSuggestion }: { onSuggestion(text: string): void 
   return (
     <View style={styles.empty}>
       <View style={styles.emptyMark}><WandSparkles color={theme.color.accent.blue} size={theme.metrics.conversation.heroIcon} strokeWidth={1.8} /></View>
-      <Text style={styles.emptyTitle}>What are we building?</Text>
-      <Text style={styles.emptyText}>Start with a goal. OpenCraft can inspect your workspace, make changes, and show its work.</Text>
-      <View style={styles.suggestions}>{suggestions.map(({ icon: Icon, label, prompt }) => <InteractiveSurface key={label} onPress={() => onSuggestion(prompt)} style={styles.suggestion}><Icon color={theme.color.icon.secondary} size={theme.metrics.control.icon} strokeWidth={1.8} /><Text style={styles.suggestionText}>{label}</Text><ArrowRight color={theme.color.icon.tertiary} size={theme.metrics.control.iconSmall} strokeWidth={1.9} /></InteractiveSurface>)}</View>
+      <Text style={styles.emptyTitle}>{copy?.title ?? "What are we building?"}</Text>
+      <Text style={styles.emptyText}>{copy?.description ?? "Start with a goal. OpenCraft can inspect your workspace, make changes, and show its work."}</Text>
+      {copy ? null : <View style={styles.suggestions}>{suggestions.map(({ icon: Icon, label, prompt }) => <InteractiveSurface key={label} onPress={() => onSuggestion(prompt)} style={styles.suggestion}><Icon color={theme.color.icon.secondary} size={theme.metrics.control.icon} strokeWidth={1.8} /><Text style={styles.suggestionText}>{label}</Text><ArrowRight color={theme.color.icon.tertiary} size={theme.metrics.control.iconSmall} strokeWidth={1.9} /></InteractiveSurface>)}</View>}
     </View>
   );
 }
@@ -1864,8 +2014,10 @@ function EmptyConversation({ onSuggestion }: { onSuggestion(text: string): void 
 export type { WorkbenchConversationRestoreSnapshot } from "./native-response-positioned-turns";
 
 interface WorkbenchConversationProps {
+  readonly language?: "zh-CN" | "en";
   readonly timeline: TimelineSnapshot | null;
   readonly onSuggestion: (text: string) => void;
+  readonly emptyCopy?: { readonly title: string; readonly description: string };
   readonly footerScrollPaddingPx?: number;
   readonly initialRestoreSnapshot?: WorkbenchConversationRestoreSnapshot | null;
   readonly onRestoreSnapshotChange?: (snapshot: WorkbenchConversationRestoreSnapshot) => void;
@@ -1876,7 +2028,12 @@ interface WorkbenchConversationProps {
   readonly onRespondInteraction?: NativeInteractionResponder;
   readonly onOpenSubagent?: (threadId: string, displayName: string) => void;
   readonly onOpenAutomation?: (block: AutomationUpdateTimelineBlock) => void;
-  readonly onOpenResource?: (path: string) => void;
+  readonly conversationId?: string | null;
+  readonly hostId?: string | null;
+  readonly cwd?: string | null;
+  readonly onOpenResource?: ChatRenderContext["openResource"];
+  readonly canOpenResource?: ChatRenderContext["canOpenResource"];
+  readonly loadMediaSource?: ChatRenderContext["loadMediaSource"];
   readonly onReviewTurnDiff?: (block: Extract<TimelineBlock, { type: "turn-diff" }>, path?: string) => void;
   readonly onOpenInspectedImage?: (path: string) => void;
   readonly resolveInspectedImageSource?: (path: string) => string | null;
@@ -1890,8 +2047,10 @@ interface WorkbenchConversationProps {
 }
 
 export function WorkbenchConversation({
+  language = "en",
   timeline,
   onSuggestion,
+  emptyCopy,
   footerScrollPaddingPx = 0,
   initialRestoreSnapshot = null,
   onRestoreSnapshotChange,
@@ -1903,6 +2062,11 @@ export function WorkbenchConversation({
   onOpenSubagent,
   onOpenAutomation,
   onOpenResource,
+  canOpenResource,
+  loadMediaSource,
+  conversationId = null,
+  hostId = null,
+  cwd = null,
   onReviewTurnDiff,
   onOpenInspectedImage,
   resolveInspectedImageSource,
@@ -1928,13 +2092,15 @@ export function WorkbenchConversation({
     ? null
     : JSON.stringify([timeline.key.hostId, timeline.key.threadId]);
   return (
+    <NativeChatLanguageProvider language={language}>
+    <NativeImageGalleryProvider scopeKey={JSON.stringify([hostId, conversationId, cwd, historyKey])}>
     <NativeConversationDetailContext.Provider value={threadDetailLevel}>
       <NativeCopyTextContext.Provider value={onCopyText ?? null}>
         <NativeToolActivityPresenterContext.Provider value={toolActivityPresenterRegistry}>
           <NativeToolCallIconRendererContext.Provider value={renderToolCallIcon ?? null}>
             <NativeToolCallContentRendererContext.Provider value={renderToolCallContent ?? null}>
               <NativeThreadNavigationContext.Provider value={onOpenSubagent ?? null}>
-                <NativeDocumentHostContext.Provider value={{ openResource: onOpenResource ?? null, reviewTurnDiff: onReviewTurnDiff ?? null }}>
+                <NativeDocumentHostContext.Provider value={{ language, conversationId, hostId, cwd, openResource: onOpenResource ?? null, canOpenResource: canOpenResource ?? null, loadMediaSource: loadMediaSource ?? null, reviewTurnDiff: onReviewTurnDiff ?? null }}>
                   <NativeAutomationNavigationContext.Provider value={onOpenAutomation ?? null}>
                     <NativeGeneratedImageHostContext.Provider value={{
                       open: onOpenGeneratedImage ?? null,
@@ -1948,6 +2114,7 @@ export function WorkbenchConversation({
                         <View style={styles.conversationRoot}>
                         <NativeResponsePositionedTurns
                           entries={entries}
+                          timelineRevision={timeline?.revision ?? 0}
                           historyKey={historyKey}
                           footerScrollPaddingPx={footerScrollPaddingPx}
                           initialRestoreSnapshot={initialRestoreSnapshot}
@@ -1961,7 +2128,7 @@ export function WorkbenchConversation({
                             onVirtualizedTurnListApiChange
                           }
                           renderEmpty={() => (
-                            <EmptyConversation onSuggestion={onSuggestion} />
+                            <EmptyConversation onSuggestion={onSuggestion} copy={emptyCopy} />
                           )}
                           renderTurn={(
                             turn,
@@ -2003,6 +2170,8 @@ export function WorkbenchConversation({
         </NativeToolActivityPresenterContext.Provider>
       </NativeCopyTextContext.Provider>
     </NativeConversationDetailContext.Provider>
+    </NativeImageGalleryProvider>
+    </NativeChatLanguageProvider>
   );
 }
 const styles = StyleSheet.create((theme) => ({
@@ -2043,16 +2212,14 @@ const styles = StyleSheet.create((theme) => ({
   hookStatsRunError: { color: theme.color.accent.negative, ...theme.platformTypography.caption },
   reasoning: { gap: theme.spacing[2] },
   reasoningButton: { flexDirection: "row", alignItems: "center", gap: theme.spacing[2], minHeight: theme.metrics.toolbar.touchTarget },
-  reasoningDot: { width: theme.metrics.control.activityDot, height: theme.metrics.control.activityDot, borderRadius: theme.radii.full },
-  reasoningDone: { backgroundColor: theme.color.accent.positive },
-  reasoningActive: { backgroundColor: theme.color.accent.blue },
+  reasoningStatus: { color: theme.color.text.secondary, ...theme.platformTypography.body, fontWeight: "500" },
   reasoningTitle: { flex: 1, color: theme.color.text.secondary, ...theme.platformTypography.body, fontWeight: "500" },
-  thinkingPlaceholder: { minHeight: theme.metrics.toolbar.touchTarget, flexDirection: "row", alignItems: "center" },
+  thinkingPlaceholder: { minHeight: theme.metrics.toolbar.touchTarget, flexDirection: "row", alignItems: "center", gap: theme.spacing[2] },
   thinkingPlaceholderText: { color: theme.color.text.secondary, ...theme.platformTypography.body },
   cadencedText: { position: "relative", minWidth: 0, flexShrink: 1, overflow: "hidden" },
   cadencedTextSweep: { position: "absolute", top: 0, bottom: 0, left: 0, overflow: "hidden" },
   cadencedTextHighlight: { color: theme.color.text.workingHighlight },
-  reasoningDetail: { marginLeft: theme.spacing[4], color: theme.color.text.tertiary, ...theme.platformTypography.body },
+  reasoningDetail: { marginLeft: theme.spacing[4], minWidth: 0 },
   chevronOpen: { transform: [{ rotate: "90deg" }] },
   activityDisclosure: { minWidth: 0, maxWidth: "100%" },
   activityDisclosureHeader: { minHeight: theme.metrics.toolbar.touchTarget, maxWidth: "100%", flexDirection: "row", alignItems: "center", alignSelf: "flex-start", gap: theme.spacing[2], paddingHorizontal: 0 },

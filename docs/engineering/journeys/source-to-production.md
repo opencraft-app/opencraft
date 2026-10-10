@@ -22,6 +22,14 @@
 
 ## 回滚
 
+### 嵌入 OpenCraft 语音发布
+
+Service Gateway 的语音启用是镜像、区域 `speech` 配置和独立 SOPS Secret 三者的契约。
+新增 Secret 必须进入该环境 release bundle 的 publish paths 和 KSOPS generator，不能只更新镜像。
+上海 Secret 从现有区域 SSM 版本仅投影管理令牌；浏览器只使用登录态，实际转写使用用户 Key。
+前端通过原有 embedded-workbench 构建进入 frontend 制品；上线需分别验证网关与公共前端资源版本。
+其他区域不配置 `speech` 即保持关闭；回滚区域配置时保留审计记录，不删除用户 Key。
+
 回滚目标是上一已知健康的 GitOps pin 或应用 revision，不用本地未审阅 manifest 覆盖集群。数据库变更必须预先声明向前/向后兼容与独立恢复方式。
 
 邀请返利在北京按依赖分段放行：先准备 Pulsar/Secret/Plan 和三个 schema，再启用生产者 relay 与

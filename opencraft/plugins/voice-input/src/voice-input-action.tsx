@@ -1,5 +1,5 @@
 import { Mic, MicOff } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import type { ComposerActionHost } from "@opencraft/extension-react";
 import type { ComposerTransientTextInput, ComposerAudioLevels } from "@opencraft/composer-core";
@@ -12,7 +12,8 @@ import type {
   SpeechInputSession,
 } from "./speech-input-provider";
 
-type VoiceInputPhase = "idle" | "starting" | "listening" | "transcribing" | "error";
+type VoiceInputPhase = "idle" | "starting" | "listening" | "transcribing" | "failed" | "error";
+const noAvailabilitySubscription = () => () => undefined;
 
 export function createVoiceInputAction(provider: SpeechInputProvider) {
   return function VoiceInputAction({
@@ -50,7 +51,7 @@ export function createVoiceInputAction(provider: SpeechInputProvider) {
     }, []);
     const [phase, setPhase] = useState<VoiceInputPhase>("idle");
     const [error, setError] = useState<SpeechInputError | null>(null);
-    const available = useMemo(() => provider.isAvailable(), [provider]);
+    const available = useSyncExternalStore(provider.subscribe ?? noAvailabilitySubscription, () => provider.isAvailable(), () => false);
 
     const cancel = () => {
       pressGesture.reset(); holdFinishRef.current = false;
@@ -74,6 +75,7 @@ export function createVoiceInputAction(provider: SpeechInputProvider) {
     }, [disabled]);
 
     const start = () => {
+      if (activeRef.current) return;
       const generation = generationRef.current + 1;
       generationRef.current = generation;
       activeRef.current = true;
@@ -113,8 +115,9 @@ export function createVoiceInputAction(provider: SpeechInputProvider) {
       startRecognitionEpoch = () => {
         const epoch = recognitionEpochRef.current + 1;
         recognitionEpochRef.current = epoch;
-        const completion = new DictationCompletion(); completionRef.current = completion;
-        const finish = () => ownsRecognitionEpoch(epoch) ? completion.finish(() => { present("transcribing"); sessionRef.current?.stop(); }) : Promise.resolve(false);
+        let completion = new DictationCompletion(); completionRef.current = completion;
+        let recovering = false;
+        const finish = () => ownsRecognitionEpoch(epoch) && !recovering ? completion.finish(() => { present("transcribing"); sessionRef.current?.stop(); }) : Promise.resolve(false);
         finishRecognitionRef.current = finish;
         const present = (nextPhase: "starting" | "listening" | "transcribing") => {
           if (!ownsRecognitionEpoch(epoch)) return;
@@ -139,6 +142,21 @@ export function createVoiceInputAction(provider: SpeechInputProvider) {
           commit(text) {
             if (!ownsRecognitionEpoch(epoch)) return;
             finalTextRef.current += text;
+          },
+          recover(nextError, retry) {
+            if (!ownsRecognitionEpoch(epoch)) return;
+            // Failure revokes the old send intent. Explicit retry alone only inserts.
+            completion.settle(false); completion = new DictationCompletion(); completionRef.current = completion;
+            recovering = true; setPhase("failed"); setError(nextError);
+            textInputRef.current?.setInteraction?.({ kind: "dictation", phase: "failed", message: nextError.message,
+              startedAt: startedAtRef.current, audioLevels, cancel: () => { if (ownsRecognitionEpoch(epoch)) cancel(); },
+              finish: () => Promise.resolve(false),
+              retry: () => {
+                if (!ownsRecognitionEpoch(epoch) || !recovering) return;
+                recovering = false; setError(null);
+                void completion.finish(() => { present("transcribing"); retry(); });
+              },
+            });
           },
           end() {
             if (!ownsRecognitionEpoch(epoch)) return;
@@ -195,10 +213,10 @@ export function createVoiceInputAction(provider: SpeechInputProvider) {
     };
 
     const listening = phase === "listening";
-    const active = listening || phase === "starting" || phase === "transcribing";
+    const active = listening || phase === "starting" || phase === "transcribing" || phase === "failed";
     const label = !available
       ? provider.unavailableMessage ?? "Voice input is unavailable in this browser"
-      : phase === "starting" ? "正在等待系统语音权限，点击取消"
+      : phase === "starting" ? "正在准备录音，点击取消"
       : phase === "transcribing" ? "正在完成语音识别，点击取消"
       : listening
         ? "Stop voice input"
@@ -232,7 +250,7 @@ export function createVoiceInputAction(provider: SpeechInputProvider) {
         onClick={() => {
           if (disabled || !available) return;
           if (pressGesture.consumeClick()) return;
-          if (phase === "starting" || phase === "transcribing") { cancel(); return; }
+          if (phase === "starting" || phase === "transcribing" || phase === "failed") { cancel(); return; }
           if (listening) {
             if (sessionRef.current === null) cancel();
             else sessionRef.current.stop();

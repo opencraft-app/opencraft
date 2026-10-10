@@ -45,4 +45,9 @@ describe("shouldUseEnglishProviderData", () => {
     expect(resolveAgentSessionTitle("历史会话", "ko-KR", "기본 세션")).toBe("历史会话");
     expect(resolveAgentSessionTitle("", "ko-KR", "기본 세션")).toBe("기본 세션");
   });
+
+  it("hides a dated suffix in the sidebar without changing other title text", () => {
+    expect(resolveAgentSessionTitle("是的发生的 · Oct 02 19:38", "zh-CN", "默认会话")).toBe("是的发生的");
+    expect(resolveAgentSessionTitle("项目 · Oct 02 19:38 复盘", "zh-CN", "默认会话")).toBe("项目 · Oct 02 19:38 复盘");
+  });
 });

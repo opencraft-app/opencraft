@@ -23,7 +23,7 @@ type apiMetrics struct {
 	indeterminate   *prometheus.CounterVec
 }
 
-func newAPIMetrics(namespace string, router *objectrouter.Router[actorBinding]) *apiMetrics {
+func newAPIMetrics(namespace string, router *objectrouter.Router[actorBinding], reads *deploymentReadGroup) *apiMetrics {
 	registry := prometheus.NewRegistry()
 	metrics := &apiMetrics{
 		dispatch: prometheus.NewCounterVec(prometheus.CounterOpts{
@@ -121,6 +121,38 @@ func newAPIMetrics(namespace string, router *objectrouter.Router[actorBinding]) 
 		}, func() float64 { return float64(router.Stats().Inflight) }),
 	)
 	metrics.handler = promhttp.HandlerFor(registry, promhttp.HandlerOpts{})
+	for _, result := range []string{"started", "registry", "shared", "overloaded"} {
+		registry.MustRegister(prometheus.NewCounterFunc(prometheus.CounterOpts{
+			Name:        "workers_api_deployment_reads_total",
+			Help:        "Deployment read group outcomes. Started includes cache rechecks, not only HTTP GETs.",
+			ConstLabels: prometheus.Labels{"namespace": namespace, "result": result},
+		}, func() float64 {
+			stats, _ := reads.Snapshot()
+			switch result {
+			case "started":
+				return float64(stats.Started)
+			case "registry":
+				return float64(stats.RegistryReads)
+			case "shared":
+				return float64(stats.Shared)
+			default:
+				return float64(stats.Overloaded)
+			}
+		}))
+	}
+	for _, state := range []string{"inflight", "waiters"} {
+		registry.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+			Name:        "workers_api_deployment_read_group",
+			Help:        "Bounded Deployment reads and waiting callers on this replica.",
+			ConstLabels: prometheus.Labels{"namespace": namespace, "state": state},
+		}, func() float64 {
+			stats, _ := reads.Snapshot()
+			if state == "inflight" {
+				return float64(stats.Inflight)
+			}
+			return float64(stats.Waiters)
+		}))
+	}
 	return metrics
 }
 

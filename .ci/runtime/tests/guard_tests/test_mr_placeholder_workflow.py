@@ -1,4 +1,9 @@
+import os
+import subprocess
+import tempfile
 import unittest
+
+import yaml
 from pathlib import Path
 
 REPO_ROOT = next(parent for parent in Path(__file__).resolve().parents if (parent / ".ci/runtime").is_dir())
@@ -94,6 +99,43 @@ class MRPlaceholderWorkflowTests(unittest.TestCase):
         self.assertIn("[[ ! -f .ci/checks/guard.sh ]]", workflow)
         self.assertIn("bash .ci/checks/guard.sh", workflow)
         self.assertIn('GUARD_NAME="ci-runtime-candidate"', workflow)
+
+    def test_checkout_restores_stale_tracked_files_even_at_expected_head(self) -> None:
+        workflow = yaml.safe_load((REPO_ROOT / ".ci/mr-placeholder.yml").read_text())
+        steps = workflow["stages"][0]["jobs"]["changed_guards"]["steps"]
+        script = next(step["run"] for step in steps if step.get("name") == "校验并修复 MR checkout")
+        for staged in (False, True):
+            with self.subTest(staged=staged), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                def git(*args):
+                    return subprocess.check_output(["git", "-C", str(root), *args], text=True).strip()
+                git("init", "-q")
+                git("config", "user.name", "fixture")
+                git("config", "user.email", "fixture@example.invalid")
+                (root / ".ci").mkdir()
+                (root / ".ci/init.sh").write_text("ci_git_fetch_origin() { return 0; }\n")
+                source = root / "frontend/src/contexts/runtime-config-context.tsx"
+                target = root / "opencraft/plugins/lightvela-hermes/src/upstream/mono2/contexts/runtime-config-context.tsx"
+                for file in (source, target):
+                    file.parent.mkdir(parents=True, exist_ok=True)
+                    file.write_text("expected snapshot\n")
+                git("add", ".")
+                git("commit", "-qm", "expected source and generated snapshot")
+                sha = git("rev-parse", "HEAD")
+                source.write_text("residual source from reused workspace\n")
+                target.write_text("old generated snapshot\n")
+                if staged:
+                    git("add", "frontend", "opencraft")
+                (root / "stale-untracked.ts").write_text("residual file")
+                self.assertEqual(git("rev-parse", "HEAD"), sha)
+                run_script = script.replace("${{ ci.branch }}", "fixture").replace("${{ ci.sha }}", sha)
+                result = subprocess.run(["bash", "-euo", "pipefail", "-c", run_script],
+                                        cwd=root, env=os.environ.copy(), capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(git("rev-parse", "HEAD"), sha)
+                self.assertEqual(git("status", "--porcelain"), "")
+                for file in (source, target):
+                    self.assertEqual(file.read_text(), "expected snapshot\n")
 
     def test_opencraft_guard_bootstraps_node_before_sync(self) -> None:
         guard = (REPO_ROOT / ".ci/checks/opencraft_guard.sh").read_text()

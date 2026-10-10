@@ -35,6 +35,7 @@ interface TurnPromptPreview {
 
 interface HydratedTurnNavigation {
   readonly turn: AppServerTurn;
+  readonly baselineTurn: AppServerTurn | undefined;
   readonly turnCursor: string | null;
   readonly prompts: readonly TurnPromptPreview[];
 }
@@ -46,6 +47,7 @@ export interface CodexV3ConversationNavigationPort {
   commitHydratedTurn(
     turn: AppServerTurn,
     chronologicalTurnIds: readonly string[],
+    baselineTurn: AppServerTurn | undefined,
   ): ThreadViewProjectionCommit;
   readonly projectionBarrier: ThreadViewProjectionBarrier;
 }
@@ -332,7 +334,7 @@ export function createCodexV3ConversationNavigationSource(
     if (disposed || expectedGeneration === null || generation() !== expectedGeneration) return Promise.resolve(null);
     const loaded = config.port.getView()?.turns.find((turn) => turn.id === turnId);
     if (loaded !== undefined && projectTurnPrompts(loaded).length > 0) {
-      return Promise.resolve({ turn: loaded, turnCursor: null, prompts: projectTurnPrompts(loaded) });
+      return Promise.resolve({ turn: loaded, baselineTurn: loaded, turnCursor: null, prompts: projectTurnPrompts(loaded) });
     }
     const cached = hydratedByTurnId.get(turnId);
     if (cached !== undefined) return Promise.resolve(cached);
@@ -366,6 +368,7 @@ export function createCodexV3ConversationNavigationSource(
       if (turn === undefined || turn.id !== turnId) return null;
       const result: HydratedTurnNavigation = {
         turn,
+        baselineTurn: loaded,
         turnCursor: page.backwardsCursor ?? cursor,
         prompts: projectTurnPrompts(turn),
       };
@@ -464,6 +467,7 @@ export function createCodexV3ConversationNavigationSource(
       const commit = config.port.commitHydratedTurn(
         hydrated.turn,
         locators.map((locator) => locator.turnId),
+        hydrated.baselineTurn,
       );
       const projectionRevision = await config.port.projectionBarrier.waitUntilProjected(commit, options);
       if (isAborted() || generation() !== expectedGeneration) return null;

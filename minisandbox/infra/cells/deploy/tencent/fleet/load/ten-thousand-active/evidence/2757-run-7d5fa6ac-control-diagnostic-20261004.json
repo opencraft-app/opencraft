@@ -1,0 +1,597 @@
+{
+  "schema": "minisandbox-strict-load-diagnostic/v1",
+  "claimEligible": false,
+  "runId": "7d5fa6acee6a4a0fa60ea59d4b9ffe91",
+  "faultAt": "2026-10-03T20:47:07.847Z",
+  "queryAt": "2026-10-03T20:48:00Z",
+  "scope": "Historical C metrics and bounded exact-Pod logs; no per-request join or socket root cause proven; increase is extrapolated.",
+  "observations": [
+    {
+      "source": "/data/tmp/minisandbox-control-prom-history-native-20261004.json",
+      "invocationId": "inv-e9fdmw0n5p",
+      "status": "SUCCESS",
+      "exitCode": 0,
+      "results": [
+        {
+          "query": "sum(increase(workers_api_deployment_reads_total{result=\"overloaded\"}[5m]))",
+          "status": "success",
+          "data": {
+            "resultType": "vector",
+            "result": [
+              {
+                "metric": {},
+                "value": [
+                  1791060480,
+                  "0"
+                ]
+              }
+            ]
+          },
+          "errorType": null,
+          "error": null,
+          "warnings": null
+        },
+        {
+          "query": "sum(increase(object_router_cache_requests_total{result=\"overloaded\"}[5m]))",
+          "status": "success",
+          "data": {
+            "resultType": "vector",
+            "result": [
+              {
+                "metric": {},
+                "value": [
+                  1791060480,
+                  "0"
+                ]
+              }
+            ]
+          },
+          "errorType": null,
+          "error": null,
+          "warnings": null
+        },
+        {
+          "query": "sum(increase(workers_api_routing_requests_total{result=\"server_error\"}[5m]))",
+          "status": "success",
+          "data": {
+            "resultType": "vector",
+            "result": [
+              {
+                "metric": {},
+                "value": [
+                  1791060480,
+                  "1.0526315789473684"
+                ]
+              }
+            ]
+          },
+          "errorType": null,
+          "error": null,
+          "warnings": null
+        },
+        {
+          "query": "sum(increase(workers_api_routing_requests_total{result=\"indeterminate\"}[5m]))",
+          "status": "success",
+          "data": {
+            "resultType": "vector",
+            "result": [
+              {
+                "metric": {},
+                "value": [
+                  1791060480,
+                  "0"
+                ]
+              }
+            ]
+          },
+          "errorType": null,
+          "error": null,
+          "warnings": null
+        },
+        {
+          "query": "count(up{namespace=\"workers-api-system\"})",
+          "status": "success",
+          "data": {
+            "resultType": "vector",
+            "result": [
+              {
+                "metric": {},
+                "value": [
+                  1791060480,
+                  "12"
+                ]
+              }
+            ]
+          },
+          "errorType": null,
+          "error": null,
+          "warnings": null
+        },
+        {
+          "query": "sum(up{namespace=\"workers-api-system\"})",
+          "status": "success",
+          "data": {
+            "resultType": "vector",
+            "result": [
+              {
+                "metric": {},
+                "value": [
+                  1791060480,
+                  "12"
+                ]
+              }
+            ]
+          },
+          "errorType": null,
+          "error": null,
+          "warnings": null
+        }
+      ]
+    },
+    {
+      "source": "/data/tmp/minisandbox-control-prom-failed-pod-native-20261004.json",
+      "invocationId": "inv-a9fdnf0rau",
+      "status": "SUCCESS",
+      "exitCode": 0,
+      "results": [
+        {
+          "query": "increase(workers_api_routing_requests_total{result=\"server_error\"}[5m]) > 0",
+          "status": "success",
+          "data": {
+            "resultType": "vector",
+            "result": [
+              {
+                "metric": {
+                  "container": "workers-api",
+                  "endpoint": "http",
+                  "exported_namespace": "default",
+                  "instance": "10.200.0.137:8080",
+                  "job": "workers-api",
+                  "namespace": "workers-api-system",
+                  "plane": "object",
+                  "pod": "workers-api-7d567c894f-wbtzz",
+                  "result": "server_error",
+                  "service": "workers-api"
+                },
+                "value": [
+                  1791060480,
+                  "1.0526315789473684"
+                ]
+              }
+            ]
+          },
+          "errorType": null,
+          "error": null,
+          "warnings": null
+        },
+        {
+          "query": "increase(object_router_registry_seconds_count{result=\"server_error\"}[5m]) > 0",
+          "status": "success",
+          "data": {
+            "resultType": "vector",
+            "result": []
+          },
+          "errorType": null,
+          "error": null,
+          "warnings": null
+        },
+        {
+          "query": "increase(object_router_requests_total{result=\"server_error\"}[5m]) > 0",
+          "status": "success",
+          "data": {
+            "resultType": "vector",
+            "result": []
+          },
+          "errorType": null,
+          "error": null,
+          "warnings": null
+        },
+        {
+          "query": "sum by (pod) (workers_api_deployment_reads_total{result=\"overloaded\"})",
+          "status": "success",
+          "data": {
+            "resultType": "vector",
+            "result": [
+              {
+                "metric": {
+                  "pod": "workers-api-7d567c894f-j7qmq"
+                },
+                "value": [
+                  1791060480,
+                  "0"
+                ]
+              },
+              {
+                "metric": {
+                  "pod": "workers-api-7d567c894f-dc7xw"
+                },
+                "value": [
+                  1791060480,
+                  "0"
+                ]
+              },
+              {
+                "metric": {
+                  "pod": "workers-api-7d567c894f-cfrwj"
+                },
+                "value": [
+                  1791060480,
+                  "0"
+                ]
+              },
+              {
+                "metric": {
+                  "pod": "workers-api-7d567c894f-gq2xx"
+                },
+                "value": [
+                  1791060480,
+                  "0"
+                ]
+              },
+              {
+                "metric": {
+                  "pod": "workers-api-7d567c894f-hqbtl"
+                },
+                "value": [
+                  1791060480,
+                  "0"
+                ]
+              },
+              {
+                "metric": {
+                  "pod": "workers-api-7d567c894f-frpc6"
+                },
+                "value": [
+                  1791060480,
+                  "0"
+                ]
+              },
+              {
+                "metric": {
+                  "pod": "workers-api-7d567c894f-rfq4x"
+                },
+                "value": [
+                  1791060480,
+                  "0"
+                ]
+              },
+              {
+                "metric": {
+                  "pod": "workers-api-7d567c894f-xqrgk"
+                },
+                "value": [
+                  1791060480,
+                  "0"
+                ]
+              },
+              {
+                "metric": {
+                  "pod": "workers-api-7d567c894f-7xzzk"
+                },
+                "value": [
+                  1791060480,
+                  "0"
+                ]
+              },
+              {
+                "metric": {
+                  "pod": "workers-api-7d567c894f-dxk2n"
+                },
+                "value": [
+                  1791060480,
+                  "0"
+                ]
+              },
+              {
+                "metric": {
+                  "pod": "workers-api-7d567c894f-248vr"
+                },
+                "value": [
+                  1791060480,
+                  "0"
+                ]
+              },
+              {
+                "metric": {
+                  "pod": "workers-api-7d567c894f-wbtzz"
+                },
+                "value": [
+                  1791060480,
+                  "0"
+                ]
+              }
+            ]
+          },
+          "errorType": null,
+          "error": null,
+          "warnings": null
+        },
+        {
+          "query": "sum by (pod) (object_router_cache_requests_total{result=\"overloaded\"})",
+          "status": "success",
+          "data": {
+            "resultType": "vector",
+            "result": [
+              {
+                "metric": {
+                  "pod": "workers-api-7d567c894f-j7qmq"
+                },
+                "value": [
+                  1791060480,
+                  "0"
+                ]
+              },
+              {
+                "metric": {
+                  "pod": "workers-api-7d567c894f-dc7xw"
+                },
+                "value": [
+                  1791060480,
+                  "0"
+                ]
+              },
+              {
+                "metric": {
+                  "pod": "workers-api-7d567c894f-cfrwj"
+                },
+                "value": [
+                  1791060480,
+                  "0"
+                ]
+              },
+              {
+                "metric": {
+                  "pod": "workers-api-7d567c894f-gq2xx"
+                },
+                "value": [
+                  1791060480,
+                  "0"
+                ]
+              },
+              {
+                "metric": {
+                  "pod": "workers-api-7d567c894f-hqbtl"
+                },
+                "value": [
+                  1791060480,
+                  "0"
+                ]
+              },
+              {
+                "metric": {
+                  "pod": "workers-api-7d567c894f-frpc6"
+                },
+                "value": [
+                  1791060480,
+                  "0"
+                ]
+              },
+              {
+                "metric": {
+                  "pod": "workers-api-7d567c894f-rfq4x"
+                },
+                "value": [
+                  1791060480,
+                  "0"
+                ]
+              },
+              {
+                "metric": {
+                  "pod": "workers-api-7d567c894f-xqrgk"
+                },
+                "value": [
+                  1791060480,
+                  "0"
+                ]
+              },
+              {
+                "metric": {
+                  "pod": "workers-api-7d567c894f-7xzzk"
+                },
+                "value": [
+                  1791060480,
+                  "0"
+                ]
+              },
+              {
+                "metric": {
+                  "pod": "workers-api-7d567c894f-dxk2n"
+                },
+                "value": [
+                  1791060480,
+                  "0"
+                ]
+              },
+              {
+                "metric": {
+                  "pod": "workers-api-7d567c894f-248vr"
+                },
+                "value": [
+                  1791060480,
+                  "0"
+                ]
+              },
+              {
+                "metric": {
+                  "pod": "workers-api-7d567c894f-wbtzz"
+                },
+                "value": [
+                  1791060480,
+                  "0"
+                ]
+              }
+            ]
+          },
+          "errorType": null,
+          "error": null,
+          "warnings": null
+        }
+      ]
+    },
+    {
+      "source": "/data/tmp/minisandbox-control-prom-claim-window-native-20261004.json",
+      "invocationId": "inv-a9fdrjgjaq",
+      "status": "SUCCESS",
+      "exitCode": 0,
+      "results": [
+        {
+          "query": "increase(object_router_registry_seconds_count{result=\"error\",pod=\"workers-api-7d567c894f-wbtzz\"}[5m])",
+          "status": "success",
+          "data": {
+            "resultType": "vector",
+            "result": [
+              {
+                "metric": {
+                  "container": "workers-api",
+                  "endpoint": "http",
+                  "exported_namespace": "default",
+                  "instance": "10.200.0.137:8080",
+                  "job": "workers-api",
+                  "namespace": "workers-api-system",
+                  "operation": "claim",
+                  "pod": "workers-api-7d567c894f-wbtzz",
+                  "result": "error",
+                  "service": "workers-api"
+                },
+                "value": [
+                  1791060480,
+                  "17.894736842105264"
+                ]
+              }
+            ]
+          },
+          "errorType": null,
+          "error": null,
+          "warnings": null
+        },
+        {
+          "query": "object_router_requests_total{result=\"server_error\",target_cell=\"unassigned\",pod=\"workers-api-7d567c894f-wbtzz\"}",
+          "status": "success",
+          "data": {
+            "resultType": "vector",
+            "result": [
+              {
+                "metric": {
+                  "__name__": "object_router_requests_total",
+                  "container": "workers-api",
+                  "endpoint": "http",
+                  "exported_namespace": "default",
+                  "instance": "10.200.0.137:8080",
+                  "job": "workers-api",
+                  "namespace": "workers-api-system",
+                  "pod": "workers-api-7d567c894f-wbtzz",
+                  "result": "server_error",
+                  "service": "workers-api",
+                  "source_cell": "public",
+                  "target_cell": "unassigned"
+                },
+                "value": [
+                  1791060480,
+                  "1"
+                ]
+              }
+            ]
+          },
+          "errorType": null,
+          "error": null,
+          "warnings": null
+        },
+        {
+          "query": "increase(workers_api_deployment_reads_total{pod=\"workers-api-7d567c894f-wbtzz\"}[5m])",
+          "status": "success",
+          "data": {
+            "resultType": "vector",
+            "result": [
+              {
+                "metric": {
+                  "container": "workers-api",
+                  "endpoint": "http",
+                  "exported_namespace": "default",
+                  "instance": "10.200.0.137:8080",
+                  "job": "workers-api",
+                  "namespace": "workers-api-system",
+                  "pod": "workers-api-7d567c894f-wbtzz",
+                  "result": "overloaded",
+                  "service": "workers-api"
+                },
+                "value": [
+                  1791060480,
+                  "0"
+                ]
+              },
+              {
+                "metric": {
+                  "container": "workers-api",
+                  "endpoint": "http",
+                  "exported_namespace": "default",
+                  "instance": "10.200.0.137:8080",
+                  "job": "workers-api",
+                  "namespace": "workers-api-system",
+                  "pod": "workers-api-7d567c894f-wbtzz",
+                  "result": "registry",
+                  "service": "workers-api"
+                },
+                "value": [
+                  1791060480,
+                  "0"
+                ]
+              },
+              {
+                "metric": {
+                  "container": "workers-api",
+                  "endpoint": "http",
+                  "exported_namespace": "default",
+                  "instance": "10.200.0.137:8080",
+                  "job": "workers-api",
+                  "namespace": "workers-api-system",
+                  "pod": "workers-api-7d567c894f-wbtzz",
+                  "result": "shared",
+                  "service": "workers-api"
+                },
+                "value": [
+                  1791060480,
+                  "0"
+                ]
+              },
+              {
+                "metric": {
+                  "container": "workers-api",
+                  "endpoint": "http",
+                  "exported_namespace": "default",
+                  "instance": "10.200.0.137:8080",
+                  "job": "workers-api",
+                  "namespace": "workers-api-system",
+                  "pod": "workers-api-7d567c894f-wbtzz",
+                  "result": "started",
+                  "service": "workers-api"
+                },
+                "value": [
+                  1791060480,
+                  "0"
+                ]
+              }
+            ]
+          },
+          "errorType": null,
+          "error": null,
+          "warnings": null
+        }
+      ]
+    },
+    {
+      "source": "/data/tmp/minisandbox-control-failed-pod-logs-native-20261004.json",
+      "invocationId": "inv-c9fdp10vx4",
+      "status": "SUCCESS",
+      "exitCode": 0,
+      "results": [
+        {
+          "pod": "workers-api-7d567c894f-wbtzz",
+          "logBytes": 0,
+          "matchingRows": 0,
+          "logs": [],
+          "scope": "current container, bounded, exact faulting Pod; empty result is not healthy transport proof"
+        }
+      ]
+    }
+  ]
+}

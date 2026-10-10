@@ -13,6 +13,7 @@ const cronClientMocks = vi.hoisted(() => ({
   listAutomationBlueprints: vi.fn(),
   listCronJobs: vi.fn(),
   listRecentCronRuns: vi.fn(),
+  readCronRunOutput: vi.fn(),
   removeCronJob: vi.fn(),
   removeManagedCronScriptIfUnreferenced: vi.fn(),
   removeCronJobWithDependentRollback: vi.fn(),
@@ -114,6 +115,7 @@ beforeEach(() => {
   cronClientMocks.listAutomationBlueprints.mockResolvedValue([]);
   cronClientMocks.listCronJobs.mockResolvedValue([]);
   cronClientMocks.listRecentCronRuns.mockResolvedValue([]);
+  cronClientMocks.readCronRunOutput.mockResolvedValue("# 今日结果\n已完成资料收集。");
   cronClientMocks.removeCronJob.mockResolvedValue(undefined);
   cronClientMocks.removeManagedCronScriptIfUnreferenced.mockResolvedValue(undefined);
   cronClientMocks.removeCronJobWithDependentRollback.mockResolvedValue(undefined);
@@ -481,6 +483,7 @@ describe("recent run limit hint", () => {
 
   it("renders the empty recent-runs message without a nested gray container", () => {
     const { container } = render(createElement(RecentCronRunsPanel, {
+      target: "bot-1",
       runs: [],
       skillLoadState: { status: "ready", slugs: [], error: null },
     }));
@@ -497,6 +500,7 @@ describe("recent run limit hint", () => {
 
   it("shows model drift as an unexecuted run with a concise reason", () => {
     render(createElement(RecentCronRunsPanel, {
+      target: "bot-1",
       runs: [makeCronRun({
         job_name: "每日工作小结",
         status: "not_executed",
@@ -512,18 +516,60 @@ describe("recent run limit hint", () => {
 
   it("localizes the unsupported-plan model error", () => {
     render(createElement(RecentCronRunsPanel, {
+      target: "bot-1",
       runs: [makeCronRun({
         status: "error: RuntimeError: HTTP 403: The requested model is not available in your current plan.",
       })],
       skillLoadState: { status: "ready", slugs: [], error: null },
     }));
 
-    expect(screen.getByText("执行失败：当前模型暂不可用，请稍后重试或切换模型。")).toBeTruthy();
+    expect(screen.getByText("执行失败")).toBeTruthy();
     expect(screen.queryByText(/The requested model is not available/)).toBeNull();
+    fireEvent.click(screen.getAllByRole("button", { name: "查看任务详情" })[0]!);
+    expect(screen.getByText("当前模型暂不可用，请稍后重试或切换模型。")).toBeTruthy();
+  });
+
+  it("shows the delivery error on hover while keeping the list concise", async () => {
+    const rawStatus = "ran, but the result was not delivered (live adapter send failed: iLink sendmessage session not ready)";
+    render(createElement(RecentCronRunsPanel, {
+      target: "bot-1",
+      runs: [makeCronRun({ job_name: "节假日与天气", status: rawStatus })],
+      skillLoadState: { status: "ready", slugs: [], error: null },
+    }));
+
+    expect(screen.getByText("节假日与天气")).toBeTruthy();
+    expect(screen.getByText("通知未送达")).toBeTruthy();
+    expect(screen.queryByText(rawStatus)).toBeNull();
+
+    fireEvent.mouseEnter(screen.getByText("通知未送达"));
+    const tooltip = await screen.findByRole("tooltip");
+    expect(within(tooltip).getByText(rawStatus)).toBeTruthy();
+    expect(within(tooltip).getByText("任务已执行，但通知发送失败。请检查通知通道配置。")).toBeTruthy();
+    expect(tooltip.closest("section")).toBeNull();
+
+    fireEvent.click(screen.getByText("通知未送达"));
+    expect(screen.getByText("任务已执行，但通知发送失败。请检查通知通道配置。")).toBeTruthy();
+    const rawStatusDisclosure = screen.getByText("查看原始状态").closest("details");
+    expect(rawStatusDisclosure).not.toHaveAttribute("open");
+    fireEvent.click(screen.getByText("查看原始状态"));
+    expect(rawStatusDisclosure).toHaveAttribute("open");
+    expect(screen.getByText(rawStatus)).toBeTruthy();
+  });
+
+  it("does not render an unknown raw status as a list badge", () => {
+    render(createElement(RecentCronRunsPanel, {
+      target: "bot-1",
+      runs: [makeCronRun({ status: "unexpected adapter state with a long diagnostic" })],
+      skillLoadState: { status: "ready", slugs: [], error: null },
+    }));
+
+    expect(screen.getByText("状态异常")).toBeTruthy();
+    expect(screen.queryByText("unexpected adapter state with a long diagnostic")).toBeNull();
   });
 
   it("shows the bound Skill in the recent-run detail", () => {
     render(createElement(RecentCronRunsPanel, {
+      target: "bot-1",
       runs: [makeCronRun({ skills: ["builder-radar"] })],
       skillLoadState: { status: "ready", slugs: ["builder-radar"], error: null },
     }));
@@ -535,8 +581,29 @@ describe("recent run limit hint", () => {
     expect(screen.getByText("builder-radar")).toBeTruthy();
   });
 
+  it("loads the selected Bot's Markdown result on demand", async () => {
+    const run = makeCronRun({ job_id: "daily-research" });
+    render(createElement(RecentCronRunsPanel, {
+      target: { instanceId: "instance-3", profileId: "bot-3" },
+      runs: [run],
+      skillLoadState: { status: "ready", slugs: [], error: null },
+    }));
+
+    fireEvent.click(screen.getAllByRole("button", { name: localizedText("查看任务详情", "View job details") })[0]!);
+    expect(cronClientMocks.readCronRunOutput).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: localizedText("查看执行结果", "View result") }));
+
+    await waitFor(() => expect(cronClientMocks.readCronRunOutput).toHaveBeenCalledWith(
+      { instanceId: "instance-3", profileId: "bot-3" },
+      run,
+    ));
+    expect(screen.getByText(/已完成资料收集/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: localizedText("下载执行结果", "Download result") })).toBeEnabled();
+  });
+
   it("shows an unconfigured Skill binding in the recent-run detail", () => {
     render(createElement(RecentCronRunsPanel, {
+      target: "bot-1",
       runs: [makeCronRun({ skills: [] })],
       skillLoadState: { status: "ready", slugs: [], error: null },
     }));
@@ -553,6 +620,7 @@ describe("recent run limit hint", () => {
       "Deduplicate alerts. If nothing changed, return exactly [SILENT].",
     );
     render(createElement(RecentCronRunsPanel, {
+      target: "bot-1",
       runs: [makeCronRun({ job_prompt: jobPrompt })],
       skillLoadState: { status: "ready", slugs: [], error: null },
     }));
@@ -569,6 +637,7 @@ describe("recent run limit hint", () => {
 
   it("shows the 0 Token subtype in the recent-run list and hides Agent-only detail rows", () => {
     render(createElement(RecentCronRunsPanel, {
+      target: "bot-1",
       runs: [makeCronRun({
         job_name: "喝水提醒",
         job_prompt: "",
@@ -1903,41 +1972,41 @@ describe("terminal cron card visibility", () => {
     const disabledCard = await getCronJobCard("停用任务");
     const actionsToggle = within(disabledCard).getByRole("button", { name: localizedText("操作", "Actions") });
     const actionsMenu = actionsToggle.parentElement;
-    const actionsRollout = actionsToggle.nextElementSibling;
+    const actionsPopover = actionsToggle.nextElementSibling;
 
-    if (!actionsRollout) throw new Error("Expected current-job action rollout");
-    const [actionsMask, actionsContent] = Array.from(actionsRollout.children);
-
-    if (!(actionsMask instanceof HTMLElement) || !(actionsContent instanceof HTMLElement)) {
-      throw new Error("Expected rollout mask and action content");
-    }
-    const actionItems = Array.from(actionsContent.children);
-    const [testAction, viewAction, copyAction, deleteAction] = actionItems;
-
-    if (!testAction || !viewAction || !copyAction || !deleteAction) {
-      throw new Error("Expected the remaining current-job actions in the rollout");
-    }
+    if (!(actionsPopover instanceof HTMLElement)) throw new Error("Expected current-job actions popover");
+    const actionsContent = actionsPopover.firstElementChild;
+    if (!(actionsContent instanceof HTMLElement)) throw new Error("Expected action list");
 
     expect(actionsMenu).toHaveClass("group/actions", "relative");
-    expect(actionsRollout).toHaveClass(
-      "right-[72px]",
-      "top-1/2",
-      "-translate-y-1/2",
-      "pointer-events-none",
+    expect(actionsToggle.querySelector(".lucide-ellipsis")).toBeTruthy();
+    expect(actionsToggle).toHaveAttribute("aria-expanded", "false");
+    expect(actionsPopover).toHaveClass(
+      "right-0", "bottom-full", "invisible",
+      "group-hover/actions:visible",
     );
-    expect(actionsMask).toHaveClass(
-      "bg-white",
-      "opacity-0",
-      "group-hover/actions:opacity-100",
-    );
-    expect(actionsRollout).not.toHaveClass("border", "p-0.5", "shadow-sm");
-    expect(testAction).toHaveClass("transition-opacity", "delay-0", "group-hover/actions:delay-[60ms]");
-    expect(testAction).not.toHaveClass("translate-x-1", "group-hover/actions:translate-x-0");
-    expect(viewAction).toHaveClass("delay-[20ms]", "group-hover/actions:delay-[40ms]");
-    expect(copyAction).toHaveClass("delay-[40ms]", "group-hover/actions:delay-[20ms]");
-    expect(deleteAction).toHaveClass("delay-[60ms]", "group-hover/actions:delay-0");
-    expect(fireEvent.pointerDown(actionsToggle)).toBe(false);
-    expect(fireEvent.click(actionsToggle)).toBe(false);
+    expect(actionsContent).toHaveClass("flex-col", "border", "bg-white", "shadow-[0_8px_24px_rgba(15,23,42,0.12)]");
+    expect(Array.from(actionsContent.children).map((item) => item.textContent)).toEqual([
+      localizedText("测试运行", "Test run"),
+      localizedText("查看", "View"),
+      localizedText("复制", "Copy"),
+      localizedText("删除", "Delete"),
+    ]);
+    for (const button of within(actionsContent).getAllByRole("button")) {
+      expect(button.querySelector("svg")).toBeTruthy();
+      expect(button.querySelector("span")).toHaveTextContent(button.textContent ?? "");
+    }
+    await userEvent.pointer({ keys: "[TouchA]", target: actionsToggle });
+    expect(actionsToggle).toHaveAttribute("aria-expanded", "true");
+    expect(actionsPopover).toHaveClass("visible", "opacity-100");
+    fireEvent.pointerDown(document.body, { pointerType: "touch" });
+    expect(actionsToggle).toHaveAttribute("aria-expanded", "false");
+    expect(actionsPopover).toHaveClass("invisible", "opacity-0");
+    await userEvent.click(actionsToggle);
+    expect(actionsToggle).toHaveFocus();
+    expect(actionsToggle).toHaveAttribute("aria-expanded", "true");
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(actionsToggle).toHaveAttribute("aria-expanded", "false");
     const resumeButton = within(disabledCard).getByRole("button", { name: localizedText("恢复", "Resume") });
     expect(resumeButton).toBeTruthy();
     expect(within(actionsContent).queryByRole("button", { name: localizedText("编辑", "Edit") })).toBeNull();
@@ -1963,31 +2032,33 @@ describe("terminal cron card visibility", () => {
     expect(screen.getAllByText(localizedText("已取消", "Cancelled"))).toHaveLength(2);
     const endedCard = await getCronJobCard("结束任务 completed");
     const endedActionsToggle = within(endedCard).getByRole("button", { name: localizedText("操作", "Actions") });
-    const endedActionsRollout = endedActionsToggle.nextElementSibling;
+    const endedActionsPopover = endedActionsToggle.nextElementSibling;
     const viewButton = within(endedCard).getByRole("button", { name: localizedText("查看", "View") });
     const deleteButton = within(endedCard).getByRole("button", { name: localizedText("删除", "Delete") });
 
-    if (!endedActionsRollout) throw new Error("Expected ended-job action rollout");
-    const endedActionsMask = endedActionsRollout.firstElementChild;
-    const endedActionsContent = endedActionsRollout.lastElementChild;
+    if (!endedActionsPopover) throw new Error("Expected ended-job actions popover");
+    const endedActionsContent = endedActionsPopover.firstElementChild;
+    if (!(endedActionsContent instanceof HTMLElement)) throw new Error("Expected ended-job action list");
 
-    expect(endedActionsMask).toHaveClass("bg-white", "opacity-0", "delay-[40ms]", "group-hover/actions:opacity-100");
+    expect(endedActionsPopover).toHaveClass("right-0", "bottom-full", "group-hover/actions:visible");
     expect(endedActionsContent?.children).toHaveLength(2);
-    expect(viewButton.parentElement).toHaveClass("delay-0", "group-hover/actions:delay-[40ms]");
-    expect(within(endedCard).getByRole("button", { name: localizedText("复制", "Copy") }).parentElement).toHaveClass(
-      "delay-[20ms]",
-      "group-hover/actions:delay-[20ms]",
-    );
+    expect(viewButton).toHaveTextContent(localizedText("查看", "View"));
+    expect(within(endedCard).getByRole("button", { name: localizedText("复制", "Copy") })).toHaveTextContent(localizedText("复制", "Copy"));
     expect(deleteButton.closest("[class~='group/actions']")).toBeNull();
     expect(Boolean(deleteButton.compareDocumentPosition(endedActionsToggle) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
-    expect(fireEvent.pointerDown(endedActionsToggle)).toBe(false);
-    expect(fireEvent.click(endedActionsToggle)).toBe(false);
+    expect(endedActionsToggle.querySelector(".lucide-ellipsis")).toBeTruthy();
+    await userEvent.pointer({ keys: "[TouchB]", target: endedActionsToggle });
+    expect(endedActionsToggle).toHaveAttribute("aria-expanded", "true");
+    expect(endedActionsPopover).toHaveClass("visible", "opacity-100");
     expect(viewButton.closest(".ml-auto")).toBeTruthy();
     expect(deleteButton).toBeTruthy();
     expect(within(endedCard).queryByRole("button", { name: localizedText("测试运行", "Test run") })).toBeNull();
     expect(within(endedCard).queryByRole("button", { name: localizedText("编辑", "Edit") })).toBeNull();
     expect(within(endedCard).queryByRole("button", { name: localizedText("恢复", "Resume") })).toBeNull();
     expect(within(endedCard).queryByRole("button", { name: localizedText("暂停", "Pause") })).toBeNull();
+    await userEvent.click(within(endedActionsContent).getByRole("button", { name: localizedText("复制", "Copy") }));
+    expect(endedActionsToggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 
   it("copies an ended intelligent job into a prefilled create form without editing the source", async () => {

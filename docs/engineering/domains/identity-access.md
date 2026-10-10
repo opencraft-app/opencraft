@@ -13,6 +13,12 @@
 
 ## 稳定不变量
 
+- 内嵌 OpenCraft 语音代理只接受现有登录态，通过 session 内省取得用户 ID，
+  服务端复用该用户 default-purpose VelaGW Key。管理令牌和推理 Key 不返回浏览器；
+  客户端身份头、owner 查询参数与自报 Key 不参与代理授权。
+  短 TTL 进程缓存不替代 VelaGW 的撤销/用户鉴权；上游 Key 拒绝不等于会话失效。
+  配置与边界见 [Service Gateway 语音输入](../../../service-gateway/docs/README.md#内嵌-opencraft-语音输入)。
+
 - 会话、实名和权限结果来自服务 API/权威存储，不从 UI 状态或用户名推断。
 - 一次性 `auth_code`、临时凭据和回调 token 必须保持最小暴露与明确过期语义。
 - 公共行为至少验证网关路径；直连 `user/auth` 只证明内部 API。
@@ -107,11 +113,23 @@ GET `/oauth2/authorize`，统一 `/auth/federation/authorize` 页面复用 Login
 POST `/oauth2/authorize` 签发 code。不新增登录页、Google 专属启动入口或 provider 回调分支。
 
 在 `LIGHTCLAW_OIDC_CLIENTS_JSON` 中显式注册：
-`{"id":"opencraft-native-v1","display_name":"Vela","redirect_uris":["opencraft://auth/lightvela"]}`。
+`{"id":"opencraft-native-v1","display_name":"Vela","redirect_uris":["opencraft://auth/lightvela","opencraft-intl://auth/lightvela"]}`。
+双包由构建 edition 选择国内或国际的精确原生 callback；服务兼容仅注册国内 callback 的既有配置，
+新增双包时须显式注册这两个地址。区域切换只在开发者模式中提供，不从当前页面、缓存或错误推断区域。
 以及 `opencraft-web-v1` 的两个精确 HTTPS callback：
 `https://chat.lightvela.com/auth/lightvela/callback`、
 `https://chat.lightvela.ai/auth/lightvela/callback`。保留 site-gateway 原有两个精确 HTTPS callback。只有 native client 的精确
 自定义协议地址被允许；通用 Web return_to 不变，不支持通配、查询、fragment 或路径变体。
+
+`opencraft-web-v1` 可额外显式注册
+`https://*.devcloud.woa.com/auth/lightvela/callback`，作为第一方开发环境的有界例外。
+仅匹配合法 DNS 子域（含多级子域），必须 HTTPS、无显式端口，且路径完全一致；
+不允许根域、查询、fragment、userinfo 或其他通配模式。国内与国际 Auth 均注册此项，
+两地 service-gateway 的全局 CORS 同步允许 `https://*.devcloud.woa.com`，响应反射具体 Origin
+并保留 `Vary: Origin`，不返回通配星号。此授权意味着信任整个子域族作为第一方客户端；
+域名管理方必须控制子域分配与回收，不能将不可信租户放入此命名空间。
+授权码保存并严格匹配实际发起授权的具体 callback，而非注册模式；跨子域兑换、错误 PKCE
+和重复兑换均被拒绝。其他客户端及 readiness issuer 的精确注册限制保持不变。
 OIDC 未启用、无 MySQL 或客户端未注册时不降级到其他认证实现。
 
 App 持有随机 state/verifier，使用 S256、nonce、response_type=code、scope=openid profile。
@@ -155,8 +173,20 @@ Collaboration 本身不是新的 OIDC client，也不接收授权码、ID Token 
 
 Collaboration 同时验证内部 Bearer 和 LightVela subject。首次出现的合法 subject 只创建稳定的
 `lightvela subject -> local collaboration actor` 映射，并调度腾讯云 IM identity projection；
-映射记录不包含密码，也不产生第二套登录 session。配置内部 Gateway token 时，本地注册、密码登录、
-refresh 和 logout 路由不进入已实现路由集合。Human 产品路径由 Gateway 的精确 allowlist 控制；
+映射记录不包含密码，也不产生第二套登录 session。
+当前资料通过同一 Human 身份域的 `GET /me/profile` 返回 `HumanProfile`，不要求该 actor
+保存邮箱。旧 `GET /me` 的已发布邮箱 Account 响应保持不变；没有邮箱的委托 actor 不得
+伪造邮箱满足旧 DTO，旧接口必须在写成功状态前拒绝编码无效资料。OpenCraft 使用新的资料接口，
+Gateway 只按精确路径放行，身份断言和内部 Bearer 校验不变。
+协作客户端的 IM owner、目录、历史、草稿及一次性邀请显示按共享账户
+`authGeneration` 分代。身份变化时立即废弃旧 scope，旧 SDK 注销完成后才可登录新用户；
+旧请求迟到不能向新 View 返回 Server/私聊导航。该消费侧不销毁共享账户或建立第二套登录态。
+配置内部 Gateway token 时，本地注册、密码登录、refresh 和 logout 路由不进入已实现路由集合。
+Human 产品路径由 Gateway 的精确 allowlist 控制；
+成员邀请只公开经 Human 会话验证的 `POST /servers/{serverId}/invites` 与
+`POST /join-links/accept`，异步诊断只公开同身份域的
+`GET /servers/{serverId}/operations/{operationId}`；不因此开放 Computer bootstrap、
+本地 Auth 或任意 Collaboration 管理路径。
 旧 Computer/TAT bootstrap 不因复用 Handler 而扩大公开认证面。腾讯云 IM 状态 callback 是单独的
 provider callback 路径，仍由 callback token 校验，不产生 Human principal。
 

@@ -5,8 +5,10 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
+import contextlib
 import datetime as dt
 import hashlib
+import importlib.util
 import json
 import math
 import os
@@ -22,8 +24,16 @@ import urllib.request
 import uuid
 
 
-SCHEMA = "actor-router-binding-performance-load/v1"
+SCHEMA = "actor-router-binding-performance-load/v2"
 CLASS_NAME = "Counter"
+ROOT = Path(__file__).resolve().parent
+REPO = Path(os.environ.get("MINISANDBOX_REPO", ROOT.parents[6]))
+RUNTIME_SPEC = importlib.util.spec_from_file_location(
+    "router_performance_runtime",
+    REPO / "infra/cells/deploy/local/mesh/workerd-persistent-code-e2e/run.py",
+)
+runtime = importlib.util.module_from_spec(RUNTIME_SPEC)
+RUNTIME_SPEC.loader.exec_module(runtime)
 WORKER_SOURCE = r'''
 import { DurableObject } from "cloudflare:workers";
 export class Counter extends DurableObject {
@@ -163,6 +173,38 @@ class Histogram:
         }
 
 
+class RequestTiming:
+    def __init__(self):
+        self.schedule = Histogram()
+        self.response = Histogram()
+        self.arrival = Histogram()
+        self.within_window = 0
+        self.after_window = 0
+        self._lock = threading.Lock()
+
+    def started(self, scheduled: float, dispatched: float, deadline: float) -> None:
+        if (not all(math.isfinite(value) for value in (scheduled, dispatched, deadline))
+                or dispatched < scheduled or scheduled >= deadline):
+            raise ValueError("invalid monotonic request arrival timing")
+        self.schedule.add((dispatched - scheduled) * 1000)
+        with self._lock:
+            if dispatched < deadline:
+                self.within_window += 1
+            else:
+                self.after_window += 1
+
+    def completed(self, scheduled: float, dispatched: float, finished: float) -> None:
+        if (not all(math.isfinite(value) for value in (scheduled, dispatched, finished))
+                or scheduled > dispatched or dispatched > finished):
+            raise ValueError("invalid monotonic request response timing")
+        self.response.add((finished - dispatched) * 1000)
+        self.arrival.add((finished - scheduled) * 1000)
+
+    def window(self) -> dict:
+        with self._lock:
+            return {"startedWithinWindow": self.within_window, "startedAfterWindow": self.after_window}
+
+
 def publish(path: Path, value: object) -> None:
     path = path.resolve()
     if path.exists() or not path.parent.is_dir():
@@ -185,7 +227,10 @@ def passed(receipt: dict, expected_requests: int, object_count: int,
     counters = receipt["counters"]
     return (
         receipt.get("stopReason") is None
+        and counters["requestsScheduled"] == expected_requests
         and counters["requestsSucceeded"] == expected_requests
+        and receipt["dispatchWindow"]["startedWithinWindow"] == expected_requests
+        and receipt["dispatchWindow"]["startedAfterWindow"] == 0
         and counters["requestsFailed"] == 0
         and counters["requestRetries"] == 0
         and counters["objectsPrepared"] == object_count
@@ -195,9 +240,32 @@ def passed(receipt: dict, expected_requests: int, object_count: int,
     )
 
 
+@contextlib.contextmanager
+def reachable_registry(args):
+    if args.registry_endpoint:
+        registry = args.registry_endpoint.rstrip("/")
+        request("GET", f"{registry}/readyz", timeout=args.timeout_seconds)
+        yield registry
+        return
+    if not re.fullmatch(r"[a-z0-9](?:[-a-z0-9]*[a-z0-9])?", args.registry_service):
+        raise ValueError("Registry service must be a Kubernetes Service name")
+    kube = runtime.Kubectl(args.hub_kubeconfig, args.registry_namespace)
+    forward = runtime.PortForward(kube, f"service/{args.registry_service}", 8080)
+    try:
+        forward.start("/readyz")
+        yield forward.base_url
+    finally:
+        forward.stop()
+
+
 def run(args) -> dict:
+    # Registry availability must be established before any public mutation.
+    with reachable_registry(args) as registry:
+        return run_with_registry(args, registry)
+
+
+def run_with_registry(args, registry: str) -> dict:
     api = args.endpoint.rstrip("/")
-    registry = args.registry_endpoint.rstrip("/")
     cells = ready_cell_uids(args.hub_kubeconfig, set(args.cell))
     objects = balanced_names(args.namespace, args.worker, args.run_id, cells, args.objects)
     root = f"{api}/workers/{urllib.parse.quote(args.worker, safe='')}"
@@ -212,109 +280,137 @@ def run(args) -> dict:
     }
     errors: dict[str, int] = {}
     placements = {cell: {"cellUid": uid, "objects": 0} for cell, uid in cells.items()}
-    histogram = Histogram()
-    counter_lock = threading.Lock()
+    timing = RequestTiming()
     stop_reason = None
     version_id = None
     deployment_id = None
 
-    _, version = request("POST", f"{root}/versions", {
-        "main_module": "main.js",
-        "modules": {"main.js": WORKER_SOURCE},
-        "compatibility_date": args.compatibility_date,
-        "durable_objects": {"COUNTER": CLASS_NAME},
-    }, timeout=args.timeout_seconds)
-    version_id = version["id"]
-    _, deployment = request("POST", f"{root}/deployments", {"version_id": version_id},
-                            timeout=args.timeout_seconds)
-    deployment_id = deployment["id"]
-
-    def dispatch(item: dict[str, str]):
-        began = time.monotonic()
-        _, payload = request(
-            "POST", f"{root}/dispatch",
-            headers={"X-Workers-Original-URL": "https://router-performance.example/counter?" +
-                     urllib.parse.urlencode({"name": item["name"]})},
-            timeout=args.timeout_seconds,
-        )
-        histogram.add((time.monotonic() - began) * 1000)
-        if payload.get("name") != item["name"] or not isinstance(payload.get("value"), int):
-            raise RuntimeError("binding response identity differs")
-        return payload
-
-    # Create every Object through the real binding and independently prove its immutable placement.
-    for item in objects:
-        dispatch(item)
-        encoded_worker = urllib.parse.quote(args.worker, safe="")
-        record_url = (
-            f"{registry}/internal/v1/namespaces/{urllib.parse.quote(args.namespace, safe='')}"
-            f"/workers/{encoded_worker}/objects/{CLASS_NAME}/{item['objectId']}"
-        )
-        _, record = request("GET", record_url, timeout=args.timeout_seconds)
-        expected_uid = cells[item["cell"]]
-        if record.get("placement", {}).get("cell_uid") != expected_uid:
-            raise RuntimeError(f"immutable placement differs for {item['name']}")
-        placements[item["cell"]]["objects"] += 1
-        counters["objectsPrepared"] += 1
-
-    # The evidence window excludes publishing, first placement, Registry verification, and cleanup.
     expected_requests = args.rate * args.duration_seconds
     started_at = utc_now()
-    began = time.monotonic()
-    deadline = began + args.duration_seconds
-    futures: set[concurrent.futures.Future] = set()
-    with concurrent.futures.ThreadPoolExecutor(max_workers=args.concurrency) as executor:
-        for index in range(expected_requests):
-            scheduled = began + index / args.rate
-            delay = scheduled - time.monotonic()
-            if delay > 0:
-                time.sleep(delay)
-            done = {future for future in futures if future.done()}
-            for future in done:
-                futures.remove(future)
+    finished_at = started_at
+    offered_finished_at = None
+    elapsed = 0.0
+    attempted = []
+    verified = set()
+    phase = "preparation"
+    try:
+        _, version = request("POST", f"{root}/versions", {
+            "main_module": "main.js",
+            "modules": {"main.js": WORKER_SOURCE},
+            "compatibility_date": args.compatibility_date,
+            "durable_objects": {"COUNTER": CLASS_NAME},
+        }, timeout=args.timeout_seconds)
+        version_id = version["id"]
+        _, deployment = request("POST", f"{root}/deployments", {"version_id": version_id},
+                                timeout=args.timeout_seconds)
+        deployment_id = deployment["id"]
+
+        def dispatch(item: dict[str, str], measure=True, scheduled=None):
+            began = time.monotonic()
+            if measure:
+                if scheduled is None:
+                    raise ValueError("measured dispatch requires its original arrival deadline")
+                timing.started(scheduled, began, deadline)
+            _, payload = request(
+                "POST", f"{root}/dispatch",
+                headers={"X-Workers-Original-URL": "https://router-performance.example/counter?" +
+                         urllib.parse.urlencode({"name": item["name"]})},
+                timeout=args.timeout_seconds,
+            )
+            if payload.get("name") != item["name"] or not isinstance(payload.get("value"), int):
+                raise RuntimeError("binding response identity differs")
+            if measure:
+                finished = time.monotonic()
+                timing.completed(scheduled, began, finished)
+            return payload
+
+        # Create every Object through the real binding and independently prove its immutable placement.
+        for item in objects:
+            attempted.append(item)
+            dispatch(item, measure=False)
+            encoded_worker = urllib.parse.quote(args.worker, safe="")
+            record_url = (
+                f"{registry}/internal/v1/namespaces/{urllib.parse.quote(args.namespace, safe='')}"
+                f"/workers/{encoded_worker}/objects/{CLASS_NAME}/{item['objectId']}"
+            )
+            _, record = request("GET", record_url, timeout=args.timeout_seconds)
+            expected_uid = cells[item["cell"]]
+            if record.get("placement", {}).get("cell_uid") != expected_uid:
+                raise RuntimeError(f"immutable placement differs for {item['name']}")
+            placements[item["cell"]]["objects"] += 1
+            counters["objectsPrepared"] += 1
+            verified.add(item["objectId"])
+
+        # The evidence window excludes publishing, first placement, Registry verification, and cleanup.
+        phase = "load"
+        started_at = utc_now()
+        offered_finished_at = (
+            dt.datetime.fromisoformat(started_at) + dt.timedelta(seconds=args.duration_seconds)
+        ).isoformat()
+        began = time.monotonic()
+        deadline = began + args.duration_seconds
+        futures: set[concurrent.futures.Future] = set()
+        with concurrent.futures.ThreadPoolExecutor(max_workers=args.concurrency) as executor:
+            for index in range(expected_requests):
+                scheduled = began + index / args.rate
+                delay = scheduled - time.monotonic()
+                if delay > 0:
+                    time.sleep(delay)
+                done = {future for future in futures if future.done()}
+                for future in done:
+                    futures.remove(future)
+                    try:
+                        future.result()
+                        counters["requestsSucceeded"] += 1
+                    except Exception as error:  # zero-retry load fails at the first transport/application error
+                        counters["requestsFailed"] += 1
+                        key = str(error)[:512]
+                        errors[key] = errors.get(key, 0) + 1
+                        stop_reason = "request_failed"
+                if stop_reason:
+                    break
+                if len(futures) >= args.concurrency:
+                    stop_reason = "load_generator_backlog"
+                    break
+                item = objects[index % len(objects)]
+                futures.add(executor.submit(dispatch, item, scheduled=scheduled))
+                counters["requestsScheduled"] += 1
+                counters["inFlightPeak"] = max(counters["inFlightPeak"], len(futures))
+            for future in concurrent.futures.as_completed(futures):
                 try:
                     future.result()
                     counters["requestsSucceeded"] += 1
-                except Exception as error:  # zero-retry load fails at the first transport/application error
+                except Exception as error:
                     counters["requestsFailed"] += 1
                     key = str(error)[:512]
                     errors[key] = errors.get(key, 0) + 1
                     stop_reason = "request_failed"
-            if stop_reason:
-                break
-            if len(futures) >= args.concurrency:
-                stop_reason = "load_generator_backlog"
-                break
-            item = objects[index % len(objects)]
-            futures.add(executor.submit(dispatch, item))
-            counters["requestsScheduled"] += 1
-            counters["inFlightPeak"] = max(counters["inFlightPeak"], len(futures))
-        for future in concurrent.futures.as_completed(futures):
+        if stop_reason is None:
+            time.sleep(max(0.0, deadline - time.monotonic()))
+        finished_at = utc_now()
+        elapsed = time.monotonic() - began
+        if stop_reason is None and timing.after_window:
+            stop_reason = "load_generator_deadline"
+
+    except Exception as error:
+        stop_reason = f"{phase}_failed"
+        errors[str(error)[:512]] = errors.get(str(error)[:512], 0) + 1
+        finished_at = utc_now()
+    finally:
+        cleanup_errors = []
+        deleted = []
+        for item in attempted:
+            path = f"{root}/objects/{CLASS_NAME}/{item['objectId']}"
             try:
-                future.result()
-                counters["requestsSucceeded"] += 1
+                expected = (204, 410) if item["objectId"] in verified else (204, 410, 404)
+                request("DELETE", path, expected=expected, timeout=args.timeout_seconds)
+                counters["objectsDeleted"] += 1
+                deleted.append(item["objectId"])
             except Exception as error:
-                counters["requestsFailed"] += 1
-                key = str(error)[:512]
-                errors[key] = errors.get(key, 0) + 1
-                stop_reason = "request_failed"
-    if stop_reason is None:
-        time.sleep(max(0.0, deadline - time.monotonic()))
-    finished_at = utc_now()
-    elapsed = time.monotonic() - began
-
-    cleanup_errors = []
-    for item in objects:
-        path = f"{root}/objects/{CLASS_NAME}/{item['objectId']}"
-        try:
-            request("DELETE", path, expected=(204, 410), timeout=args.timeout_seconds)
-            counters["objectsDeleted"] += 1
-        except Exception as error:
-            cleanup_errors.append(str(error)[:512])
-    if cleanup_errors:
-        stop_reason = stop_reason or "cleanup_failed"
-        errors["cleanup"] = len(cleanup_errors)
-
+                cleanup_errors.append({"objectId": item["objectId"], "error": str(error)[:512]})
+        if cleanup_errors:
+            stop_reason = stop_reason or "cleanup_failed"
+            errors["cleanup"] = len(cleanup_errors)
     receipt = {
         "schema": SCHEMA,
         "mode": "stateless-worker-durable-object-binding",
@@ -325,6 +421,7 @@ def run(args) -> dict:
         "sourceSha256": "sha256:" + sha256(WORKER_SOURCE.encode()),
         "startedAt": started_at,
         "finishedAt": finished_at,
+        "offeredWindowFinishedAt": offered_finished_at,
         "elapsedSeconds": elapsed,
         "durationTargetSeconds": args.duration_seconds,
         "rateTargetPerSecond": args.rate,
@@ -332,10 +429,17 @@ def run(args) -> dict:
         "objectTarget": args.objects,
         "placements": placements,
         "counters": counters,
-        "latency": histogram.as_json(),
+        "latency": timing.response.as_json(),
+        "scheduleLatency": timing.schedule.as_json(),
+        "arrivalLatency": timing.arrival.as_json(),
+        "dispatchWindow": timing.window(),
         "errors": errors,
         "stopReason": stop_reason,
-        "cleanup": {"workerRetained": True, "objectsDeleted": counters["objectsDeleted"]},
+        "cleanup": {
+            "workerRetained": True, "objectsDeleted": counters["objectsDeleted"],
+            "attemptedObjectIds": [item["objectId"] for item in attempted],
+            "deletedObjectIds": deleted, "errors": cleanup_errors,
+        },
     }
     receipt["verdict"] = "passed" if passed(
         receipt, expected_requests, args.objects, args.duration_seconds, len(cells)
@@ -354,7 +458,10 @@ def endpoint(value: str) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--endpoint", required=True, type=endpoint)
-    parser.add_argument("--registry-endpoint", required=True)
+    registry = parser.add_mutually_exclusive_group(required=True)
+    registry.add_argument("--registry-endpoint")
+    registry.add_argument("--registry-service")
+    parser.add_argument("--registry-namespace", default="worker-registry-system")
     parser.add_argument("--hub-kubeconfig", type=Path, required=True)
     parser.add_argument("--cell", action="append", required=True)
     parser.add_argument("--namespace", default="default")
@@ -378,6 +485,8 @@ def main() -> int:
         parser.error("run-id must be exactly 32 lowercase hexadecimal characters")
     if not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", args.worker):
         parser.error("worker must be a lowercase DNS label")
+    if args.receipt.exists() or not args.receipt.resolve().parent.is_dir():
+        parser.error("receipt must be a new path with an existing parent")
     receipt = run(args)
     publish(args.receipt, receipt)
     print(json.dumps(receipt, indent=2, sort_keys=True))

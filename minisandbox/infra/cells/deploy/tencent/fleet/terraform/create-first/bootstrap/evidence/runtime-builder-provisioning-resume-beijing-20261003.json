@@ -1,0 +1,45 @@
+{
+  "schema": "actor-runtime-builder-provisioning-resume/v1",
+  "verdict": "passed",
+  "claimEligible": false,
+  "region": "ap-beijing",
+  "nativeTask": {
+    "invocationId": "inv-e9f3320wma",
+    "instanceId": "ins-55ry1kb1",
+    "status": "SUCCESS",
+    "exitCode": 0,
+    "requestId": "611ba320-bc55-4c13-a4d5-0ac424ebb4fb",
+    "responseSha256": "60dd9ce08a2d8c72a8af7dd49b46a0a11a5796cf8b35b340e7e092800a3ad8d4"
+  },
+  "plan": {
+    "create": 4,
+    "destroy": 0,
+    "planSha256": "1f354fe56b0742b7809a65f11ed545c9459f71ab8252450f8d55ed4d50729bc5",
+    "plannedAt": "2026-10-03T15:03:36Z",
+    "reusedDiskId": "disk-kkels2ln",
+    "schema": "actor-runtime-builder-infrastructure-plan/v1",
+    "sourceRevision": "fc83364db9018eb8b9391459b84d290a09564d82",
+    "stateLineage": "a7e30c7b-220f-7a93-6f36-c584ba27a466",
+    "stateSerial": 63,
+    "update": 0,
+    "verdict": "passed"
+  },
+  "apply": {
+    "diskId": "disk-kkels2ln",
+    "instanceId": "ins-mh9mruw7",
+    "inventorySha256": "882113091f01cbe12e224f53d3f34667c4e659d37afdc37d8b9ecf8cc1419a57",
+    "planSha256": "1f354fe56b0742b7809a65f11ed545c9459f71ab8252450f8d55ed4d50729bc5",
+    "schema": "actor-runtime-builder-infrastructure-apply/v1",
+    "sourceRevision": "fc83364db9018eb8b9391459b84d290a09564d82",
+    "stateLineage": "a7e30c7b-220f-7a93-6f36-c584ba27a466",
+    "stateSerial": 65,
+    "storageReady": false,
+    "verdict": "passed"
+  },
+  "protectedStateDirectory": "/data/actor-build/runtime-builder-tools-fc83364d/provision.0rMiYX",
+  "limitations": [
+    "Terraform apply success does not prove guest disk initialization or runtime build readiness.",
+    "No compiler or runtime deployment was executed by this provisioning workflow.",
+    "The regional security group cleanup is independently recorded; its quota release is not performance evidence."
+  ]
+}

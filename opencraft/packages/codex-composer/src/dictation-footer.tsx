@@ -1,6 +1,7 @@
 // Semantically adopted from Codex RecordingWaveformControls / BB VoiceRecordingBar.
-import { ArrowUp, LoaderCircle, Square, X } from "lucide-react";
+import { ArrowUp, LoaderCircle, RotateCcw, Square, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { ProgressIndicator } from "@opencraft/design-system-web/progress";
 import type { ComposerAudioLevels, ComposerDictationInteraction } from "@opencraft/composer-core";
 
 function DictationWaveform({ levels, active }: { levels: ComposerAudioLevels; active: boolean }) {
@@ -63,15 +64,23 @@ export function DictationFooter({ interaction, canSend, onSend, onCancel }: {
     return () => window.clearInterval(timer);
   }, [listening]);
   const seconds = interaction.startedAt === null ? 0 : Math.max(0, Math.floor((now - interaction.startedAt) / 1000));
-  const status = listening ? "正在听写" : interaction.phase === "starting" ? "等待系统授权" : "正在完成语音识别";
+  const failed = interaction.phase === "failed";
+  const starting = interaction.phase === "starting";
+  // Startup includes device acquisition and provider readiness, not necessarily
+  // a permission prompt. Keep the announcement accessible and the slot quiet.
+  const status = listening ? "正在听写" : failed ? "转写失败" : starting ? "正在准备录音" : "正在完成语音识别";
   return <div className="codex-composer-voice-footer" data-voice-phase={interaction.phase} aria-label="语音输入控制">
     <button type="button" className="codex-composer-icon-button" aria-label="取消语音输入" title="取消语音输入 · Esc" onClick={onCancel}><X size={16} aria-hidden="true" /></button>
     <div className="codex-composer-voice-footer__signal">
-      {listening ? <DictationWaveform levels={interaction.audioLevels} active /> : <span className="codex-composer-voice-footer__status"><LoaderCircle size={14} aria-hidden="true" /><span className="codex-composer-voice-footer__status-label" aria-hidden="true">{status}</span></span>}
+      {listening ? <DictationWaveform levels={interaction.audioLevels} active /> : <span className="codex-composer-voice-footer__status" title={failed ? interaction.message : undefined}>
+        {starting ? <ProgressIndicator /> : !failed && <LoaderCircle size={14} aria-hidden="true" />}
+        {!starting && <span className="codex-composer-voice-footer__status-label" aria-hidden="true">{status}</span>}
+      </span>}
       <span className="sr-only" role="status">{status}</span>
     </div>
     <span className="codex-composer-voice-footer__duration" aria-label="录音时长">{Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, "0")}</span>
-    <button type="button" className="codex-composer-icon-button" aria-label="停止并写入文字" title="停止并写入文字" disabled={!listening} onClick={() => { void interaction.finish(); }}><Square size={14} fill="currentColor" aria-hidden="true" /></button>
+    {failed ? <button type="button" className="codex-composer-icon-button" aria-label="重试语音识别" title={interaction.message} onClick={() => interaction.retry()}><RotateCcw size={14} aria-hidden="true" /></button>
+      : <button type="button" className="codex-composer-icon-button" aria-label="停止并写入文字" title="停止并写入文字" disabled={!listening} onClick={() => { void interaction.finish(); }}><Square size={14} fill="currentColor" aria-hidden="true" /></button>}
     <button type="button" className="codex-composer-submit" aria-label="识别完成后发送" title="识别完成后发送" disabled={!listening || !canSend} onClick={onSend}><ArrowUp size={17} aria-hidden="true" /></button>
   </div>;
 }

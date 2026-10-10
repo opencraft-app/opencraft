@@ -30,7 +30,7 @@ export const resolveAgentDisplayName = (
 
 /**
  * AgentChat 对所有非中文 locale 使用英文语言包，但旧默认会话标题可能仍返回中文。
- * 只归一化精确的系统默认值，历史消息和用户自定义标题保持原样。
+ * 侧栏只归一化系统默认值，并隐藏历史标题末尾的英文时间后缀；不改存储的标题。
  */
 export const resolveAgentSessionTitle = (
   title: string,
@@ -38,6 +38,8 @@ export const resolveAgentSessionTitle = (
   fallbackTitle: string,
 ): string => {
   if (!title) return fallbackTitle;
+  if (title === "新会话" && locale === "th-TH") return "แชทใหม่";
+  if (title === "新会话" && locale === "ms-MY") return "Sembang baharu";
   if (title === "新会话" && locale && !isChineseLocale(locale)) return "New chat";
-  return title;
+  return title.replace(/\s+·\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}\s+\d{2}:\d{2}$/u, "");
 };

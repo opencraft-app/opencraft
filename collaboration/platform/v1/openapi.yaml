@@ -85,7 +85,7 @@ x-auth-domain-registry:
      refreshComputerAgentSession, putComputerAgentObservation, sendComputerHeartbeat]
   enrollment: [claimComputerEnrollment, getComputerArtifact]
   human:
-    [logout, getMe, createHumanImSession, listServers, createServer, getServer,
+    [logout, getMe, getHumanProfile, createHumanImSession, listServers, createServer, getServer,
      updateServer, resolveServerSlug, listInvites, createInvite, revokeInvite,
      acceptInvite, acceptJoinLink, listMembers, getMember, updateMember, removeMember,
      listChannels, createChannel, getChannel, updateChannel, listChannelMembers,
@@ -316,6 +316,20 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Account'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /me/profile:
+    get:
+      tags: [Me]
+      operationId: getHumanProfile
+      summary: 获取当前 Human 的协作身份资料
+      description: 适用于 LightVela 委托账户和本地账户；不要求本服务持有邮箱或密码。
+      responses:
+        '200':
+          description: 当前 Human 身份资料
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/HumanProfile'}
         default: {$ref: '#/components/responses/Error'}
 
   /me/im/session:
@@ -2392,6 +2406,16 @@ components:
       properties:
         id: {$ref: '#/components/schemas/Id'}
         email: {type: string, format: email}
+        displayName: {type: string}
+        imUserId: {type: string, nullable: true}
+        imState: {type: string, enum: [provisioning, ready, error]}
+        revision: {$ref: '#/components/schemas/Revision'}
+    HumanProfile:
+      type: object
+      additionalProperties: false
+      required: [id, displayName, imState, revision]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
         displayName: {type: string}
         imUserId: {type: string, nullable: true}
         imState: {type: string, enum: [provisioning, ready, error]}

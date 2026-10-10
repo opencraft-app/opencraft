@@ -1,0 +1,85 @@
+{
+  "schema": "minisandbox-cls-discovery/v1",
+  "claimEligible": false,
+  "observedAt": "2026-10-03T21:18:14Z",
+  "region": "ap-beijing",
+  "topicInventory": {
+    "totalCount": 7,
+    "returned": 7,
+    "requestId": "796de3ca-d20b-42dd-b052-063890d0713b"
+  },
+  "clusterInventory": {
+    "requestId": "3fde2e55-9b52-4a0f-8513-03325726b975",
+    "clusters": [
+      {
+        "id": "cls-1femn3mh",
+        "name": "actor-bj-b01",
+        "status": "Running"
+      },
+      {
+        "id": "cls-kuck099x",
+        "name": "actor-bj-a01",
+        "status": "Running"
+      },
+      {
+        "id": "cls-b2lt3ed9",
+        "name": "actor-bj-c01",
+        "status": "Running"
+      }
+    ]
+  },
+  "tkeLogConfigErrors": [
+    {
+      "cluster": "cls-b2lt3ed9",
+      "code": "FailedOperation.KubernetesListOperationError",
+      "resource": "logconfigs.cls.cloud.tencent.com",
+      "reason": "Kubernetes resource not found",
+      "requestId": "d7ca3dcf-c5c8-454d-b8d8-5d646bd50606"
+    },
+    {
+      "cluster": "cls-kuck099x",
+      "code": "FailedOperation.KubernetesListOperationError",
+      "resource": "logconfigs.cls.cloud.tencent.com",
+      "reason": "Kubernetes resource not found",
+      "requestId": "cc9d6452-119c-4f2e-8d42-7849df68c754"
+    },
+    {
+      "cluster": "cls-1femn3mh",
+      "code": "FailedOperation.KubernetesListOperationError",
+      "resource": "logconfigs.cls.cloud.tencent.com",
+      "reason": "Kubernetes resource not found",
+      "requestId": "d6cd884b-1f80-48ce-a553-e9d9294e4b21"
+    }
+  ],
+  "collectorObservation": {
+    "invocationId": "inv-a9fe2800vk",
+    "status": "SUCCESS",
+    "exitCode": 0,
+    "cells": [
+      {
+        "cell": "actor-bj-c01",
+        "logCRDs": [],
+        "collectors": []
+      },
+      {
+        "cell": "actor-bj-a01",
+        "logCRDs": [],
+        "collectors": []
+      },
+      {
+        "cell": "actor-bj-b01",
+        "logCRDs": [],
+        "collectors": []
+      }
+    ],
+    "scope": "CRDs and bounded-name matching DaemonSets/Deployments; not a complete custom agent or sidecar audit"
+  },
+  "topicContentsRead": false,
+  "mutations": [],
+  "conclusion": "Standard TKE LogConfig collection absent. No verified current-fleet topic binding; unrelated topic contents not searched. This does not prove absence of custom external logging or absence of the original fault.",
+  "sources": [
+    "https://cloud.tencent.com/document/api/614/56454",
+    "https://intl.cloud.tencent.com/document/api/457/66006",
+    "https://cloud.tencent.com/document/product/614/56447"
+  ]
+}

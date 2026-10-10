@@ -2,42 +2,27 @@
 
 ## Summary
 
-**The Chat page is a messaging window built into the LightVela console, letting you talk to your Hermes Agent directly without connecting any external channel — handy for verifying that the agent works right after you configure a model. It shares the same agent, the same persona, and the same long-term memory as your external messaging channels, so a preference you mention here also applies in those channels, and vice versa.**
+**After signing in and activating a LightVela plan, you can chat with the selected Bot from Daily → Chat in My Agent without connecting a messaging channel first. The sidebar keeps that Bot's conversations, so you can start a new one or return to an existing one. Before sending a message, make sure the Bot is online and that plan model credits are available or a model is configured.**
 
----
+![New conversation in the international LightVela console, with the sidebar collapsed](../../images/chat-overview-en.webp)
 
-Open the "Chat" page to interact with your Hermes Agent through a chat window.
+## Start a conversation
 
-> ℹ️ **Heads-up**
->
-> The Chat interface guide is currently primarily in Chinese; full localization is on the way.
+1. Open My Agent and select the Bot you want to use at the top of the sidebar.
+2. Under Daily, expand Chat and choose New conversation. You can also start a conversation for a specific Bot from its card on the Overview page.
+3. Enter your question or task in “Share your thoughts, or ask me to help with something,” then send it.
+4. Read the reply in the conversation. The composer appears as soon as a new conversation opens, so you can start writing; sending becomes available once the connection is ready. Opening an existing conversation may briefly show “Your AI companion will be right here.”
 
-![The Chat page in the LightVela console](../../images/chat-overview-en.webp)
+Web Chat does not require a messaging channel. To use the same Bot in Telegram, WhatsApp, Discord, or WeChat, connect that platform under Channels.
 
----
+## Return to or manage conversations
 
-## Conversation memory
+Recent conversations for the selected Bot appear under Chat. Select a title to continue; use Show more to reveal older conversations. The menu beside a conversation lets you rename or delete it. Selecting another Bot shows that Bot's conversations.
 
-The Hermes Agent can iterate and evolve on its own as conversations continue. Learn more about your memory by visiting the "Memory" page.
+Hermes retains useful long-term preferences and project details as appropriate. See [Memory](./memory.md) to inspect the selected Bot's long-term memory; starting a new conversation does not clear it.
 
-![](../../images/agentchat-2-global-en.webp)
+## Verify and troubleshoot
 
-### How memory works
-
-Hermes Agent builds up long-term memory automatically through two mechanisms:
-
-- **Context compression**: distills the key information from long conversations into long-lived memory.
-
-- **Key memory nodes**: automatically captures personal preferences, usage habits, and project-related information worth reusing later.
-
-### How memory is stored
-
-Memory is persisted into two kinds of documents:
-
-- `MEMORY.md`: project information, runtime environment, and collaboration conventions
-
-- `USER.md`: the user's personal preferences, usage habits, and communication style
-
-Only content with long-term value is retained, so that Hermes Agent can give coherent, personalized replies in later conversations.
-
----
+- **Expected result:** Your message appears in the conversation, the Bot replies, and you can return to the conversation from the sidebar after reloading.
+- **Loading message remains:** Confirm that the Bot is online, then refresh the page. Wait for the composer before deciding Chat is unavailable.
+- **Cannot send or receive a reply:** Check available plan model credits or [Model configuration](./model.md), and confirm the Bot is not paused. A connected external channel is not required for Web Chat.

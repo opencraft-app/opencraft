@@ -1,5 +1,6 @@
 @use "@opencraft/design-system/typography.web" as typography;
 @use "@opencraft/design-system/controls.web" as controls;
+@use "@opencraft/design-system/panel-controls.web" as panel-controls;
 
 .ui-button {
   @include typography.role(control, null);
@@ -62,6 +63,9 @@
     padding-inline: 0;
   }
 
+  // Explicit density owns geometry after legacy size/variant defaults.
+  &[data-density="compact"] { @include panel-controls.compact-action; }
+
   &[data-variant="destructive"] {
     background: var(--color-status-error);
     color: var(--color-text-button-primary, #fff);
@@ -81,7 +85,7 @@
     background: var(--color-background-button-tertiary-hover);
   }
 
-  &[data-variant="outline"]:hover:not(:disabled) {
+  &[data-variant="outline"]:not([data-density="compact"]):hover:not(:disabled) {
     background: var(--color-background-button-tertiary-hover);
   }
 

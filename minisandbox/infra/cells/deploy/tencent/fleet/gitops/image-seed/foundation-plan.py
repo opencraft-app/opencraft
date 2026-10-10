@@ -59,11 +59,21 @@ def load(path: Path) -> dict[str, dict[str, str]]:
     return validate(value)
 
 
+def select(images: dict[str, dict[str, str]], requested: str | None) -> list[str]:
+    if requested is None:
+        return sorted(images)
+    names = requested.split(",")
+    if any(name not in images for name in names) or len(set(names)) != len(names):
+        raise ValueError("foundation selection must contain distinct known repositories")
+    return sorted(names)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--lock", required=True, type=Path)
     parser.add_argument("--repository")
     parser.add_argument("--field", choices=("source", "dockerfile", "buildArg"))
+    parser.add_argument("--repositories", help="comma-separated build subset; the complete lock is still validated")
     args = parser.parse_args()
     try:
         images = load(args.lock)
@@ -72,8 +82,14 @@ def main() -> int:
     if args.repository is None:
         if args.field is not None:
             parser.error("--field requires --repository")
-        print("\n".join(sorted(images)))
+        try:
+            repositories = select(images, args.repositories)
+        except ValueError as error:
+            parser.error(str(error))
+        print("\n".join(repositories))
         return 0
+    if args.repositories is not None:
+        parser.error("--repositories cannot be combined with a field query")
     if args.repository not in images or args.field is None:
         parser.error("--repository must be known and used with --field")
     print(images[args.repository][args.field])

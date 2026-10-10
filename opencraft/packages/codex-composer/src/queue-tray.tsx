@@ -17,6 +17,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
+import * as Tooltip from "@radix-ui/react-tooltip";
 import React, { useState } from "react";
 import {
   CircleAlert,
@@ -31,9 +32,10 @@ import {
 export interface ComposerQueueTrayItem {
   readonly id: string;
   readonly preview: string;
-  readonly state: "submitting" | "queued" | "failed";
+  readonly state: "submitting" | "queued" | "failed" | "unknown";
   readonly operation: "idle" | "updating" | "deleting" | "starting";
   readonly actionable: boolean;
+  readonly dismissible?: boolean;
   readonly reorderable?: boolean;
   readonly editing: boolean;
   readonly pausedReason?: string | null;
@@ -59,11 +61,41 @@ function ignoreRejected(operation: Promise<void> | undefined): void {
   void operation?.catch(() => undefined);
 }
 
+function QueueTooltip({ children, label, portalContainer, disabled = false }: {
+  readonly children: React.ReactElement;
+  readonly label: string;
+  readonly portalContainer?: HTMLElement | null;
+  readonly disabled?: boolean;
+}) {
+  return (
+    <Tooltip.Root>
+      <Tooltip.Trigger asChild>
+        {disabled ? (
+          <span
+            className="codex-composer-queue-action-trigger"
+            tabIndex={0}
+            role="group"
+            aria-disabled="true"
+            aria-label={label}
+          >{children}</span>
+        ) : children}
+      </Tooltip.Trigger>
+      <Tooltip.Portal container={portalContainer ?? undefined}>
+        <Tooltip.Content className="codex-composer-queue-action-tooltip" side="top" sideOffset={8} collisionPadding={8}>
+          {label}
+          <Tooltip.Arrow className="codex-composer-queue-action-tooltip__arrow" width={10} height={6} />
+        </Tooltip.Content>
+      </Tooltip.Portal>
+    </Tooltip.Root>
+  );
+}
+
 function SortableQueueItem({
   item,
   isResponseInProgress,
   atomicSteer,
   blockedByUnconfirmedDelivery,
+  portalContainer,
   onEdit,
   onCancelEdit,
   onDelete,
@@ -74,6 +106,7 @@ function SortableQueueItem({
   readonly isResponseInProgress: boolean;
   readonly atomicSteer: boolean;
   readonly blockedByUnconfirmedDelivery: boolean;
+  readonly portalContainer?: HTMLElement | null;
   readonly onEdit?: ComposerQueueTrayProps["onEdit"];
   readonly onCancelEdit?: ComposerQueueTrayProps["onCancelEdit"];
   readonly onDelete?: ComposerQueueTrayProps["onDelete"];
@@ -88,10 +121,20 @@ function SortableQueueItem({
   const deleteLabel = intl.formatMessage({ id: "chat.queue.delete", defaultMessage: "Delete queued message" });
   const busy = item.operation !== "idle";
   const awaitingNativeReconciliation = item.pausedReason === "restored-after-host-restart";
+  const dragDisabled = blockedByUnconfirmedDelivery || item.reorderable === false || !item.actionable || busy || item.editing;
+  const dragTooltip = item.reorderable === false ? item.error ?? item.pausedReason ?? "Queued message" : reorderLabel;
+  const steerDisabled = !item.actionable || busy || awaitingNativeReconciliation || blockedByUnconfirmedDelivery || (isResponseInProgress && !atomicSteer);
+  const deleteDisabled = (!item.actionable && !item.dismissible) || busy;
+  const steerTooltip = blockedByUnconfirmedDelivery
+    ? "An earlier message has unconfirmed delivery; review it before sending another message"
+    : awaitingNativeReconciliation
+      ? "This queued message is awaiting native reconciliation before it can be sent"
+      : isResponseInProgress && !atomicSteer
+        ? "This Host cannot steer a queued message; it will remain queued until the turn finishes"
+        : isResponseInProgress ? steerLabel : "Start queued message";
   const sortable = useSortable({
     id: item.id,
-    disabled:
-      blockedByUnconfirmedDelivery || item.reorderable === false || !item.actionable || busy || item.editing,
+    disabled: dragDisabled,
   });
 
   return (
@@ -107,99 +150,79 @@ function SortableQueueItem({
         transform: CSS.Transform.toString(sortable.transform),
         transition: sortable.transition,
       }}
-      title={item.error ?? item.pausedReason ?? item.preview}
     >
-      <button
-        ref={sortable.setActivatorNodeRef}
-        className="codex-composer-queue-item__drag"
-        type="button"
-        aria-label={item.reorderable === false ? "Queued message" : reorderLabel}
-        disabled={blockedByUnconfirmedDelivery || item.reorderable === false || !item.actionable || busy || item.editing}
-        {...sortable.attributes}
-        {...sortable.listeners}
-        title={item.reorderable === false ? item.error ?? item.pausedReason ?? "Queued message" : reorderLabel}
-      >
-        {item.state === "failed" || item.pausedReason ? (
-          <CircleAlert size={12} aria-hidden="true" />
-        ) : (
-          <>
-            {item.reorderable === false ? null : (
-              <GripVertical
-                className="codex-composer-queue-item__grip"
-                size={12}
+      <QueueTooltip label={dragTooltip} portalContainer={portalContainer} disabled={dragDisabled}>
+        <button
+          ref={sortable.setActivatorNodeRef}
+          className="codex-composer-queue-item__drag"
+          type="button"
+          aria-label={item.reorderable === false ? "Queued message" : reorderLabel}
+          disabled={dragDisabled}
+          {...sortable.attributes}
+          {...sortable.listeners}
+        >
+          {item.state === "failed" || item.state === "unknown" || item.pausedReason ? (
+            <CircleAlert size={12} aria-hidden="true" />
+          ) : (
+            <>
+              {item.reorderable === false ? null : (
+                <GripVertical
+                  className="codex-composer-queue-item__grip"
+                  size={12}
+                  aria-hidden="true"
+                />
+              )}
+              <CornerDownRight
+                className="codex-composer-queue-item__message-icon"
+                size={13}
                 aria-hidden="true"
               />
-            )}
-            <CornerDownRight
-              className="codex-composer-queue-item__message-icon"
-              size={13}
-              aria-hidden="true"
-            />
-          </>
-        )}
-      </button>
+            </>
+          )}
+        </button>
+      </QueueTooltip>
 
-      <span className="codex-composer-queue-item__preview">{item.preview}</span>
+      <QueueTooltip label={item.error ?? item.pausedReason ?? item.preview} portalContainer={portalContainer}>
+        <span className="codex-composer-queue-item__preview" tabIndex={0}>{item.preview}</span>
+      </QueueTooltip>
 
       <div className="codex-composer-queue-item__actions">
         {item.unconfirmedTargetTurnId ? (
-          <button type="button" className="is-labelled" title="Review & discard" onClick={() => ignoreRejected(onDiscardUnconfirmed?.(item.id, item.unconfirmedTargetTurnId!))}>
-            <Trash2 size={12} /><span>Review &amp; discard</span>
-          </button>
+          <QueueTooltip label="Review & discard" portalContainer={portalContainer}>
+            <button type="button" className="is-labelled" onClick={() => ignoreRejected(onDiscardUnconfirmed?.(item.id, item.unconfirmedTargetTurnId!))}>
+              <Trash2 size={12} /><span>Review &amp; discard</span>
+            </button>
+          </QueueTooltip>
         ) : item.editing ? (
-          <button
-            type="button"
-            aria-label={cancelEditLabel}
-            title={cancelEditLabel}
-            onClick={onCancelEdit}
-          >
-            <X size={12} />
-          </button>
+          <QueueTooltip label={cancelEditLabel} portalContainer={portalContainer}>
+            <button type="button" aria-label={cancelEditLabel} onClick={onCancelEdit}>
+              <X size={12} />
+            </button>
+          </QueueTooltip>
         ) : (
           <>
-            <button
-              className={isResponseInProgress ? "is-labelled is-steer" : "is-labelled"}
-              type="button"
-              aria-label={
-                isResponseInProgress
-                  ? steerLabel
-                  : "Start queued message"
-              }
-              disabled={!item.actionable || busy || awaitingNativeReconciliation || blockedByUnconfirmedDelivery || (isResponseInProgress && !atomicSteer)}
-              title={blockedByUnconfirmedDelivery
-                ? "An earlier message has unconfirmed delivery; review it before sending another message"
-                : awaitingNativeReconciliation
-                ? "This queued message is awaiting native reconciliation before it can be sent"
-                : isResponseInProgress && !atomicSteer
-                  ? "This Host cannot steer a queued message; it will remain queued until the turn finishes"
-                  : isResponseInProgress ? steerLabel : "Start queued message"}
-              onClick={() => ignoreRejected(onSteer?.(item.id))}
-            >
-              {isResponseInProgress ? (
-                <CornerDownRight size={12} />
-              ) : (
-                <Play size={12} />
-              )}
-              <span>{isResponseInProgress ? "Steer" : "Send"}</span>
-            </button>
-            <button
-              type="button"
-              aria-label={editLabel}
-              title={editLabel}
-              disabled={!item.actionable || busy}
-              onClick={() => onEdit?.(item.id)}
-            >
-              <Pencil size={12} />
-            </button>
-            <button
-              type="button"
-              aria-label={deleteLabel}
-              title={deleteLabel}
-              disabled={!item.actionable || busy}
-              onClick={() => ignoreRejected(onDelete?.(item.id))}
-            >
-              <Trash2 size={12} />
-            </button>
+            <QueueTooltip label={steerTooltip} portalContainer={portalContainer} disabled={steerDisabled}>
+              <button
+                className={isResponseInProgress ? "is-labelled is-steer" : "is-labelled"}
+                type="button"
+                aria-label={isResponseInProgress ? steerLabel : "Start queued message"}
+                disabled={steerDisabled}
+                onClick={() => ignoreRejected(onSteer?.(item.id))}
+              >
+                {isResponseInProgress ? <CornerDownRight size={12} /> : <Play size={12} />}
+                <span>{isResponseInProgress ? "Steer" : "Send"}</span>
+              </button>
+            </QueueTooltip>
+            <QueueTooltip label={editLabel} portalContainer={portalContainer} disabled={!item.actionable || busy}>
+              <button type="button" aria-label={editLabel} disabled={!item.actionable || busy} onClick={() => onEdit?.(item.id)}>
+                <Pencil size={12} />
+              </button>
+            </QueueTooltip>
+            <QueueTooltip label={deleteLabel} portalContainer={portalContainer} disabled={deleteDisabled}>
+              <button type="button" aria-label={deleteLabel} disabled={deleteDisabled} onClick={() => ignoreRejected(onDelete?.(item.id))}>
+                <Trash2 size={12} />
+              </button>
+            </QueueTooltip>
           </>
         )}
       </div>
@@ -246,6 +269,7 @@ export function ComposerQueueTray({
   if (items.length === 0) return null;
   return (
     <>
+    <Tooltip.Provider delayDuration={300} skipDelayDuration={100}>
     <div
       className="codex-composer-queue-tray"
       data-queue-size={items.length}
@@ -280,6 +304,7 @@ export function ComposerQueueTray({
                 isResponseInProgress={isResponseInProgress}
                 atomicSteer={atomicSteer}
                 blockedByUnconfirmedDelivery={hasUnconfirmedDelivery}
+                portalContainer={portalContainer}
             onDelete={onDelete}
             onDiscardUnconfirmed={(id, expectedTurnId) => {
               setDiscardError(null);
@@ -295,6 +320,7 @@ export function ComposerQueueTray({
         </SortableContext>
       </DndContext>
     </div>
+    </Tooltip.Provider>
     <AlertDialog.Root open={discardCandidate !== null} onOpenChange={(open) => { if (!open && !discardBusy) { setDiscardCandidate(null); setDiscardError(null); } }}>
       <AlertDialog.Portal container={portalContainer ?? undefined}>
         <AlertDialog.Overlay className="modal-surface__scrim" data-layer="confirmation" data-appearance="utility" />

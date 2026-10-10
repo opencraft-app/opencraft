@@ -43,6 +43,7 @@ import {
   parseRealtimeDelegation,
   presentApprovalRequest,
   presentAutomationUpdate,
+  presentReasoning,
   normalizeMcpElicitationMetadata,
   normalizeMcpElicitationSchema,
   normalizeCodexTurnUserMessages,
@@ -59,6 +60,8 @@ import {
   visibleThreadHandoffSteps,
   type TimelineProjectionSource,
   type TimelineBlock,
+  type AssistantTurnPresentationPlan,
+  type ReasoningRenderUnit,
 } from "@opencraft/chat-core";
 
 function activityHeaderFor(
@@ -160,6 +163,12 @@ function source(turns: TimelineProjectionSource["turns"]): TimelineProjectionSou
   };
 }
 
+function reasoningUnits(plan: AssistantTurnPresentationPlan | null | undefined): readonly ReasoningRenderUnit[] {
+  return plan?.slots.flatMap<ReasoningRenderUnit>(slot => slot.type === "agent-activity"
+    ? slot.contentUnits.filter((unit): unit is ReasoningRenderUnit => unit.type === "reasoning")
+    : slot.type === "reasoning" ? [slot] : []) ?? [];
+}
+
 test("Timeline projection groups consecutive assistant Items into a stable Frame", () => {
   const snapshot = projectTimeline(source([{
     id: "turn-1",
@@ -183,7 +192,7 @@ test("Timeline projection groups consecutive assistant Items into a stable Frame
   assert.equal(snapshot.anchorFrameIds.get("call:call-1"), snapshot.frames[1]?.id);
 });
 
-test("a Turn folds split assistant Frames and arbitrates Thinking to its Activity group", () => {
+test("a Turn retains interaction boundaries and arbitrates Thinking to its latest Activity group", () => {
   const snapshot = projectTimeline(source([{
     id: "turn-split-assistant",
     status: "streaming",
@@ -203,14 +212,15 @@ test("a Turn folds split assistant Frames and arbitrates Thinking to its Activit
   assert.equal(plan.assistantFrame?.id, "turn-split-assistant:assistant-surface");
   assert.deepEqual(plan.assistantFrame?.blocks.map((block) => block.type), [
     "command-execution",
+    "approval",
     "reasoning",
     "tool-call",
   ]);
-  assert.equal(plan.assistant?.slots.filter((slot) => slot.type === "agent-activity").length, 1);
+  assert.equal(plan.assistant?.slots.filter((slot) => slot.type === "agent-activity").length, 2);
   assert.equal(plan.assistant?.slots[0]?.id, "turn-split-assistant:slot:agent-activity");
   assert.equal(plan.thinkingOwner.type, "activity");
   if (plan.thinkingOwner.type !== "activity") throw new Error("Expected Activity Thinking owner");
-  assert.equal(plan.thinkingOwner.activityId, "turn-split-assistant:slot:agent-activity");
+  assert.equal(plan.thinkingOwner.activityId, plan.assistant?.slots.at(-1)?.id);
 });
 
 test("only the most recent Turn may materialize transient Thinking chrome", () => {
@@ -257,7 +267,7 @@ test("a pending Composer-owned interaction suppresses generic Turn Thinking", ()
   if (turn === undefined) throw new Error("Expected Turn");
 
   const plan = createTimelineTurnPresentationPlan(turn, undefined, { isMostRecentTurn: true });
-  assert.equal(plan.assistant?.slots.filter((slot) => slot.type === "agent-activity").length, 1);
+  assert.equal(plan.assistant?.slots.filter((slot) => slot.type === "agent-activity").length, 2);
   assert.notEqual(plan.thinkingOwner.type, "turn");
 });
 
@@ -276,7 +286,7 @@ test("final answer actions remain owned by one synthesized assistant surface", (
 
   const plan = createTimelineTurnPresentationPlan(turn, undefined, { isMostRecentTurn: true });
   assert.equal(plan.assistantFrame?.blocks.filter((block) => block.type === "text").length, 1);
-  assert.deepEqual(plan.assistant?.slots.map((slot) => slot.type), ["agent-activity", "assistant-content"]);
+  assert.deepEqual(plan.assistant?.slots.map((slot) => slot.type), ["agent-activity", "assistant-content", "assistant-content"]);
   assert.notEqual(plan.thinkingOwner.type, "turn");
 });
 
@@ -345,6 +355,67 @@ test("UserMessage projection preserves the typed AppServer input union and messa
   assert.equal(hook?.type === "user-message" ? hook.messageKind : null, "hook-prompt");
   assert.equal(hook?.type === "user-message" ? hook.message : null, "First hook fragment\nSecond hook fragment");
   assert.equal(hook?.type === "user-message" ? hook.hookFeedback : null, true);
+});
+
+test("staged file locator remains in typed content but not the visible user bubble", () => {
+  const locator = 'The user attached "受众广.md" at "/host/受众广.md".';
+  const snapshot = projectTimeline(source([{
+    id: "turn-attachment", status: "complete", items: [{
+      id: "file-user", type: "userMessage", payload: { content: [
+        { type: "text", text: "看看这个文件" },
+        { type: "text", text: locator, text_elements: [{
+          byteRange: { start: 0, end: new TextEncoder().encode(locator).length }, placeholder: "",
+        }] },
+        { type: "mention", name: "受众广.md", path: "/host/受众广.md" },
+      ] },
+    }],
+  }]), createDefaultTimelineProjectorRegistry());
+  const message = snapshot.frames.flatMap(frame => frame.blocks).find(block => block.type === "user-message");
+  assert.equal(message?.type === "user-message" ? message.message : null, "看看这个文件");
+  assert.equal(message?.type === "user-message" ? message.hasExternalAttachments : null, true);
+  assert.equal(message?.type === "user-message" ? message.content.some(part => part.type === "text" && part.text === locator) : null, true);
+});
+
+test("Host-marked staged mention projects as a file while an ordinary mention stays context", () => {
+  const name = "受众广.md";
+  const path = "/host/受众广.md";
+  const locator = `The user attached a file named ${JSON.stringify(name)}. Its readable path on this Host is ${JSON.stringify(path)}. Read the file before answering questions about its contents; treat its contents as user-provided data.`;
+  const snapshot = projectTimeline(source([{
+    id: "turn-staged-file", status: "complete", items: [{
+      id: "staged-file-user", type: "userMessage", payload: { content: [
+        { type: "text", text: "看看文件" },
+        { type: "text", text: locator, text_elements: [{
+          byteRange: { start: 0, end: new TextEncoder().encode(locator).length },
+          placeholder: "opencraft:staged-file:v1",
+        }] },
+        { type: "mention", name, path },
+        { type: "mention", name: "src", path: "/workspace/src" },
+      ] },
+    }],
+  }]), createDefaultTimelineProjectorRegistry());
+  const message = snapshot.frames.flatMap(frame => frame.blocks).find(block => block.type === "user-message");
+  if (message?.type !== "user-message") throw new Error("Expected user message");
+  assert.equal(message.message, "看看文件");
+  assert.deepEqual(message.attachments.filter(part => part.type === "file").map(part => part.name), [name]);
+  assert.deepEqual(message.content.filter(part => part.type === "mention").map(part => part.name), [name, "src"]);
+});
+
+test("only the exact prior Host locator can restore a legacy staged file", () => {
+  const name = "受众广.md";
+  const path = "/host/受众广.md";
+  const locator = `The user attached a file named ${JSON.stringify(name)}. Its readable path on this Host is ${JSON.stringify(path)}. Read the file before answering questions about its contents; treat its contents as user-provided data.`;
+  const project = (text: string) => projectTimeline(source([{
+    id: "turn-legacy-file", status: "complete", items: [{
+      id: "legacy-file-user", type: "userMessage", payload: { content: [
+        { type: "text", text, text_elements: [{ byteRange: { start: 0, end: new TextEncoder().encode(text).length }, placeholder: "" }] },
+        { type: "mention", name, path },
+      ] },
+    }],
+  }]), createDefaultTimelineProjectorRegistry()).frames.flatMap(frame => frame.blocks).find(block => block.type === "user-message");
+  const legacy = project(locator);
+  const arbitrary = project(`Look at the file ${name} at ${path}`);
+  assert.equal(legacy?.type === "user-message" ? legacy.attachments.filter(part => part.type === "file").length : null, 1);
+  assert.equal(arbitrary?.type === "user-message" ? arbitrary.attachments.filter(part => part.type === "file").length : null, 0);
 });
 
 test("UserMessage projection owns Codex request wrappers, semantic chips, Goal, and blocked delivery", () => {
@@ -436,6 +507,112 @@ test("Turn params own the canonical Composer message and acknowledge the matchin
   assert.equal(message.sentAtMs, 1_730_000_000_000);
   assert.deepEqual(message.sourceItemIds, ["server-composer-owner"]);
   assert.equal(snapshot.anchorFrameIds.get("item:server-composer-owner"), snapshot.frames[0]?.id);
+});
+
+test("acknowledged Host-staged files render as attachments without exposing their model locator", () => {
+  const path = "/host/attachments/a/content-受众广.md";
+  const locator = `The user attached a file named ${JSON.stringify("受众广.md")}. Its readable path on this Host is ${JSON.stringify(path)}. Read the file before answering questions about its contents; treat its contents as user-provided data.`;
+  const turn: TimelineProjectionSource["turns"][number] = {
+    id: "turn-host-staged-file", status: "complete",
+    params: {
+      clientUserMessageId: "client-host-staged-file",
+      input: [{ type: "text", text: ".." }, { type: "mention", name: "受众广.md", path }],
+    },
+    items: [{
+      id: "server-host-staged-file", type: "userMessage", payload: {
+        clientId: "client-host-staged-file",
+        content: [
+          { type: "text", text: "..", text_elements: [] },
+          { type: "text", text: locator, text_elements: [{
+            byte_range: { start: 0, end: new TextEncoder().encode(locator).length },
+            placeholder: "opencraft:staged-file:v1",
+          }] },
+          { type: "mention", name: "受众广.md", path },
+        ],
+      },
+    }],
+  };
+  const normalized = normalizeCodexTurnUserMessages(turn);
+  assert.deepEqual((normalized.items[0]?.payload as { content?: unknown }).content,
+    (turn.items[0]?.payload as { content?: unknown }).content);
+  const snapshot = projectTimeline(source([turn]), createDefaultTimelineProjectorRegistry());
+  const message = snapshot.frames.flatMap((frame) => frame.blocks)
+    .find((block) => block.type === "user-message");
+  assert.equal(message?.type, "user-message");
+  if (message?.type !== "user-message") throw new Error("Expected UserMessage block");
+  assert.equal(message.message, "..");
+  assert.equal(message.attachments.length, 1);
+  assert.deepEqual(message.attachments[0], {
+    type: "file", id: path, name: "受众广.md", target: path,
+    mimeType: null, startLine: null, endLine: null,
+  });
+
+  const attachmentOnly = projectTimeline(source([{
+    ...turn,
+    id: "turn-only-host-staged-file",
+    params: { ...turn.params, input: [{ type: "mention", name: "受众广.md", path }] },
+    items: [{ ...turn.items[0]!, payload: {
+      ...turn.items[0]!.payload,
+      content: (turn.items[0]!.payload as { content: unknown[] }).content.slice(1),
+    } }],
+  }]), createDefaultTimelineProjectorRegistry());
+  const fileOnlyMessage = attachmentOnly.frames.flatMap((frame) => frame.blocks)
+    .find((block) => block.type === "user-message");
+  assert.equal(fileOnlyMessage?.type, "user-message");
+  if (fileOnlyMessage?.type !== "user-message") throw new Error("Expected file-only UserMessage block");
+  assert.equal(fileOnlyMessage.message, "");
+  assert.equal(fileOnlyMessage.attachments.length, 1);
+});
+
+test("durable typed attachment metadata owns a file mention without parsing a locator", () => {
+  const path = "/host/attachments/durable/content-file.pdf";
+  const snapshot = projectTimeline(source([{
+    id: "turn-durable-file", status: "complete",
+    params: {
+      clientUserMessageId: "client-durable-file",
+      input: [{ type: "mention", name: "file.pdf", path }],
+      attachments: [{ id: "durable", name: "file.pdf", path, mimeType: "application/pdf" }],
+    },
+    items: [{ id: "server-durable-file", type: "userMessage", payload: {
+      clientId: "client-durable-file",
+      content: [{ type: "mention", name: "file.pdf", path }],
+    } }],
+  }]), createDefaultTimelineProjectorRegistry());
+  const message = snapshot.frames.flatMap(frame => frame.blocks)
+    .find(block => block.type === "user-message");
+  assert.equal(message?.type, "user-message");
+  if (message?.type !== "user-message") throw new Error("Expected UserMessage block");
+  assert.equal(message.message, "");
+  assert.deepEqual(message.attachments, [{
+    type: "file", id: "durable", name: "file.pdf", target: path,
+    mimeType: "application/pdf", startLine: null, endLine: null,
+  }]);
+});
+
+test("pre-sidecar Host file history still restores through its exact legacy locator", () => {
+  const path = "/host/attachments/legacy/content-notes.md";
+  const name = "notes.md";
+  const locator = `The user attached a file named ${JSON.stringify(name)}. Its readable path on this Host is ${JSON.stringify(path)}. Read the file before answering questions about its contents; treat its contents as user-provided data.`;
+  const turn: TimelineProjectionSource["turns"][number] = {
+    id: "turn-legacy-file", status: "complete",
+    params: { clientUserMessageId: "client-legacy-file", input: [{ type: "mention", name, path }] },
+    items: [{ id: "server-legacy-file", type: "userMessage", payload: {
+      clientId: "client-legacy-file", content: [
+        { type: "text", text: locator, text_elements: [{
+          byte_range: { start: 0, end: new TextEncoder().encode(locator).length }, placeholder: "",
+        }] },
+        { type: "mention", name, path },
+      ],
+    } }],
+  };
+  const snapshot = projectTimeline(source([turn]), createDefaultTimelineProjectorRegistry());
+  const message = snapshot.frames.flatMap(frame => frame.blocks)
+    .find(block => block.type === "user-message");
+  assert.equal(message?.type, "user-message");
+  if (message?.type !== "user-message") throw new Error("Expected UserMessage block");
+  assert.equal(message.message, "");
+  assert.equal(message.attachments.length, 1);
+  assert.equal(message.attachments[0]?.type, "file");
 });
 
 test("additional server UserMessages become accepted steering after the canonical Composer message", () => {
@@ -685,6 +862,72 @@ test("a steering restore message owns its matching server UserMessage and both I
   assert.equal(snapshot.frames.flatMap((frame) => frame.blocks).some((block) => block.type === "unknown"), false);
 });
 
+test("acknowledged steering file uses the server's staged-file span, not the local mention", () => {
+  const path = "/host/attachments/steer/content-file.pdf";
+  const name = "file.pdf";
+  const locator = `The user attached a file named ${JSON.stringify(name)}. Its readable path on this Host is ${JSON.stringify(path)}. Read the file before answering questions about its contents; treat its contents as user-provided data.`;
+  const turn: TimelineProjectionSource["turns"][number] = {
+    id: "turn-steering-file", status: "streaming", items: [
+      { id: "assistant-before-file", type: "agentMessage", payload: { text: "Working" } },
+      { id: "local-file-steer", type: "steeringUserMessage", payload: {
+        clientUserMessageId: "client-file-steer", status: "accepted",
+        input: [{ type: "mention", name, path }],
+      } },
+      { id: "server-file-steer", type: "userMessage", payload: {
+        clientId: "client-file-steer", content: [
+          { type: "text", text: locator, text_elements: [{
+            byte_range: { start: 0, end: new TextEncoder().encode(locator).length },
+            placeholder: "opencraft:staged-file:v1",
+          }] },
+          { type: "mention", name, path },
+        ],
+      } },
+    ],
+  };
+  const normalized = normalizeCodexTurnUserMessages(turn);
+  assert.deepEqual((normalized.items[1]?.payload as { input?: unknown }).input,
+    (turn.items[2]?.payload as { content?: unknown }).content);
+  const snapshot = projectTimeline(source([turn]), createDefaultTimelineProjectorRegistry());
+  const message = snapshot.frames.flatMap((frame) => frame.blocks)
+    .find((block) => block.type === "user-message");
+  assert.equal(message?.type, "user-message");
+  if (message?.type !== "user-message") throw new Error("Expected steering UserMessage block");
+  assert.equal(message.messageKind, "steering");
+  assert.equal(message.message, "");
+  assert.equal(message.attachments.length, 1);
+  assert.deepEqual(message.attachments[0], {
+    type: "file", id: path, name, target: path,
+    mimeType: null, startLine: null, endLine: null,
+  });
+});
+
+test("durable typed file metadata reconciles a steer without its model locator", () => {
+  const path = "/host/attachments/steer/content-file.pdf";
+  const input = [{ type: "mention", name: "file.pdf", path }];
+  const turn: TimelineProjectionSource["turns"][number] = {
+    id: "turn-durable-steer", status: "streaming", items: [
+      { id: "local-durable-steer", type: "steeringUserMessage", payload: {
+        clientUserMessageId: "client-durable-steer", status: "accepted", input,
+      } },
+      { id: "server-durable-steer", type: "userMessage", payload: {
+        clientId: "client-durable-steer", content: input,
+        attachments: [{ id: "file-1", name: "file.pdf", path, mimeType: "application/pdf" }],
+      } },
+    ],
+  };
+  const snapshot = projectTimeline(source([turn]), createDefaultTimelineProjectorRegistry());
+  const message = snapshot.frames.flatMap(frame => frame.blocks)
+    .find(block => block.type === "user-message");
+  assert.equal(message?.type, "user-message");
+  if (message?.type !== "user-message") throw new Error("Expected steering UserMessage block");
+  assert.equal(message.messageKind, "steering");
+  assert.equal(message.message, "");
+  assert.deepEqual(message.attachments, [{
+    type: "file", id: "file-1", name: "file.pdf", target: path,
+    mimeType: "application/pdf", startLine: null, endLine: null,
+  }]);
+});
+
 test("TurnDiff stays distinct from patch Activity and aggregates renamed files", () => {
   const diff = [
     "diff --git a/src/old.ts b/src/new.ts",
@@ -723,8 +966,8 @@ test("TurnDiff stays distinct from patch Activity and aggregates renamed files",
     ],
   }]), createDefaultTimelineProjectorRegistry());
   const blocks = snapshot.frames.flatMap((frame) => frame.blocks);
-  assert.deepEqual(blocks.map((block) => block.type), ["patch", "turn-diff"]);
-  const turnDiff = blocks[1];
+  assert.deepEqual(blocks.map((block) => block.type), ["patch"]);
+  const turnDiff = snapshot.frames[0]?.changeSummary;
   assert.equal(turnDiff?.type, "turn-diff");
   if (turnDiff?.type === "turn-diff") {
     assert.equal(turnDiff.status, "complete");
@@ -1235,7 +1478,7 @@ test("Turn gap and Activity group never both own Thinking", () => {
   assert.equal(deriveAgentActivityHeaderPresentation(group).state, "thinking");
 });
 
-test("reasoning-only live Turn leaves Thinking ownership at the Turn parent", () => {
+test("reasoning-only live Turn gives Thinking ownership to its independent disclosure", () => {
   const snapshot = projectTimeline(source([{
     id: "turn-reasoning-thinking-owner",
     status: "streaming",
@@ -1248,12 +1491,17 @@ test("reasoning-only live Turn leaves Thinking ownership at the Turn parent", ()
 
   const plan = createTimelineTurnPresentationPlan(turn, undefined, { isMostRecentTurn: true });
   const activity = plan.assistant?.slots.find((slot) => slot.type === "agent-activity");
-  assert.equal(activity, undefined);
+  assert.equal(activity?.type, "agent-activity");
+  const reasoning = reasoningUnits(plan.assistant)[0];
+  if (reasoning?.type !== "reasoning") throw new Error("Expected reasoning disclosure");
+  assert.equal(reasoning.active, true);
+  assert.equal(reasoning.presentation.content, "Inspecting");
+  assert.equal(reasoning.presentation.initiallyCollapsed, true);
   assert.deepEqual(plan.thinkingOwner, {
-    type: "turn",
-    placeholderId: "turn-reasoning-thinking-owner:slot:thinking-placeholder",
-    label: "Thinking",
+    type: "reasoning",
+    reasoningId: reasoning.id,
   });
+  assert.equal(plan.topLevelSlotCount, 1, "the expandable Thinking row replaces, rather than duplicates, the placeholder");
 });
 
 test("unfinished read, search and list commands stay retrospective until authority finishes them", () => {
@@ -2650,6 +2898,127 @@ test("real Codex reasoning keeps content when the summary array is empty", () =>
   assert.equal(block.detail, "Inspected the recovered renderer.\nCompared the scroll transaction.");
 });
 
+test("reasoning presentation uses actual summary once, falls back to returned detail, and defaults collapsed", () => {
+  const block: Extract<TimelineBlock, { type: "reasoning" }> = {
+    type: "reasoning", id: "reasoning:item", sourceItemIds: [asItemId("item")],
+    summary: "  First summary line\n\nLatest summary line  ",
+    detail: "A second representation of the same reasoning.", streaming: true,
+  };
+  assert.deepEqual(presentReasoning(block), {
+    content: "First summary line\n\nLatest summary line", header: "Latest summary line",
+    source: "summary", initiallyCollapsed: true,
+  });
+  assert.equal(presentReasoning(block, false)?.header, "First summary line");
+  assert.deepEqual(presentReasoning({ ...block, summary: " \n ", detail: "Returned detail\nNext line", streaming: false }), {
+    content: "Returned detail\nNext line", header: "Returned detail", source: "detail", initiallyCollapsed: true,
+  });
+  assert.equal(presentReasoning({ ...block, summary: " \n ", detail: " \n " }), null);
+  assert.equal(presentReasoning({ ...block, summary: "", detail: null }), null);
+});
+
+test("reasoning header is plain visible Markdown text while selected body retains its canonical markup", () => {
+  const block: Extract<TimelineBlock, { type: "reasoning" }> = {
+    type: "reasoning", id: "reasoning:markdown", sourceItemIds: [asItemId("markdown")],
+    summary: "# **Calculating dates**\n\n- Read [the source](file:///work/a.ts) and `a_b`", detail: "Not selected", streaming: true,
+  };
+  assert.equal(presentReasoning(block)?.header, "Read the source and a_b");
+  assert.equal(presentReasoning(block, false)?.header, "Calculating dates");
+  assert.equal(presentReasoning(block)?.content, block.summary);
+  const fenced = { ...block, summary: "```js\nconst a_b = '*';\n```" };
+  assert.equal(presentReasoning(fenced)?.header, "const a_b = '*';");
+  assert.equal(presentReasoning(fenced, false)?.header, "const a_b = '*';");
+  assert.equal(presentReasoning({ ...block, summary: "Literal \\*stars\\* and a_b" })?.header, "Literal *stars* and a_b");
+  assert.equal(presentReasoning({ ...block, summary: "Only **unfinished" })?.header, "Only unfinished");
+  assert.equal(presentReasoning({ ...block, summary: "Earlier text\n\n---" })?.header, "Earlier text");
+});
+
+test("empty and encrypted-only reasoning cannot create a disclosure or invent content", () => {
+  const snapshot = projectTimeline(source([{
+    id: "turn-empty-reasoning", status: "streaming",
+    items: [{ id: "reasoning", type: "reasoning", payload: {
+      summary: [], content: [], encryptedContent: "not-renderable", status: "inProgress",
+    } }],
+  }]), createDefaultTimelineProjectorRegistry());
+  const turn = groupTimelineFramesByTurn(snapshot)[0]!;
+  const plan = createTimelineTurnPresentationPlan(turn, undefined, { isMostRecentTurn: true });
+  assert.deepEqual(plan.assistant?.slots, []);
+  assert.equal(plan.thinkingOwner.type, "turn");
+  assert.equal(plan.topLevelSlotCount, 1);
+});
+
+test("reasoning content arrival preserves source and first-tool group identity, not invisible physical sections", () => {
+  const project = (summary: readonly string[], status: "streaming" | "complete" = "streaming") => {
+    const snapshot = projectTimeline(source([{
+      id: "turn-reasoning-arrival", status,
+      items: [
+        { id: "before", type: "commandExecution", payload: { command: "pwd", status: "completed" } },
+        { id: "reasoning", type: "reasoning", payload: { summary, status: status === "streaming" ? "inProgress" : "completed" } },
+        { id: "after", type: "commandExecution", payload: { command: "npm test", status: "inProgress" } },
+      ],
+    }]), createDefaultTimelineProjectorRegistry());
+    return createTimelineTurnPresentationPlan(groupTimelineFramesByTurn(snapshot)[0]!, undefined, { isMostRecentTurn: true });
+  };
+  const empty = project([]);
+  const streaming = project(["First", "Latest"]);
+  const complete = project(["First", "Latest", "Last"], "complete");
+  const toolSlots = (plan: ReturnType<typeof project>) => plan.assistant?.slots.filter((slot) => slot.type === "agent-activity");
+  assert.equal(toolSlots(empty)?.length, 1, "empty reasoning is not a physical activity boundary");
+  assert.equal(toolSlots(streaming)?.length, 1, "actual text gets an independent inner disclosure, not a second work owner");
+  assert.deepEqual(toolSlots(streaming)?.map((slot) => slot.id), toolSlots(complete)?.map((slot) => slot.id));
+  const beforeContent = (p: ReturnType<typeof project>) => toolSlots(p)?.flatMap(slot => slot.contentUnits)
+    .find(unit => unit.type !== "worked-for" && (unit.type === "group" ? unit.blocks : [unit.block])
+      .some(block => block.sourceItemIds.includes("before")));
+  assert.equal(beforeContent(empty)?.id, beforeContent(streaming)?.id, "first-source disclosure identity survives a real split");
+  const sourceReasoning = (p: ReturnType<typeof project>) => p.assistantFrame?.blocks.find(block => block.type === "reasoning");
+  assert.equal(sourceReasoning(empty)?.id, sourceReasoning(streaming)?.id);
+  assert.deepEqual(sourceReasoning(empty)?.sourceItemIds, sourceReasoning(streaming)?.sourceItemIds);
+  assert.equal(empty.assistant?.slots.some((slot) => slot.type === "reasoning"), false);
+  const liveReasoning = reasoningUnits(streaming.assistant)[0];
+  const settledReasoning = reasoningUnits(complete.assistant)[0];
+  if (liveReasoning?.type !== "reasoning" || settledReasoning?.type !== "reasoning") throw new Error("Expected reasoning disclosures");
+  assert.equal(liveReasoning.id, settledReasoning.id);
+  assert.equal(liveReasoning.active, false, "later live tool work owns current feedback");
+  assert.equal(liveReasoning.presentation.initiallyCollapsed, true);
+  assert.equal(settledReasoning.presentation.initiallyCollapsed, true);
+  assert.equal(settledReasoning.presentation.content, "First\nLatest\nLast");
+});
+
+test("only current-response trailing reasoning may replace Thinking, never historical or later tool work", () => {
+  const reasoning = (id: string, summary = ["First", "Latest"]) => ({
+    id, type: "reasoning", payload: { summary, completed: false },
+  });
+  const answer = { id: "answer", type: "agentMessage", payload: { text: "Done.", phase: "final_answer", completed: true } };
+  const command = { id: "command", type: "commandExecution", payload: { command: "npm test", status: "inProgress" } };
+  const followup = { id: "followup", type: "steeringUserMessage", payload: {
+    status: "accepted", input: [{ type: "text", text: "Check another thing" }],
+  } };
+  const project = (items: TimelineProjectionSource["turns"][number]["items"], isMostRecentTurn = true, status: "streaming" | "complete" = "streaming") => {
+    const snapshot = projectTimeline(source([{ id: "turn-reasoning-ownership", status, items }]), createDefaultTimelineProjectorRegistry());
+    return createTimelineTurnPresentationPlan(groupTimelineFramesByTurn(snapshot)[0]!, undefined, { isMostRecentTurn });
+  };
+  const current = project([command, reasoning("current")]);
+  const active = reasoningUnits(current.assistant).filter(slot => slot.active);
+  assert.equal(active.length, 1, "older running background work cannot retain a second Thinking owner");
+  assert.equal(current.thinkingOwner.type, "reasoning");
+  assert.equal(active[0]?.type === "reasoning" ? active[0].presentation.header : null, "Latest");
+
+  const laterTool = project([reasoning("earlier"), command]);
+  assert.equal(laterTool.thinkingOwner.type, "none", "running command has its own work feedback, not a Thinking fallback");
+  assert.equal(reasoningUnits(laterTool.assistant).some(slot => slot.active), false);
+  const historical = project([reasoning("earlier"), answer, followup]);
+  assert.equal(historical.thinkingOwner.type, "turn");
+  assert.equal(reasoningUnits(historical.assistant).some(slot => slot.active), false);
+  const resumed = project([reasoning("earlier"), answer, followup, reasoning("current")]);
+  assert.equal(resumed.thinkingOwner.type, "reasoning");
+  assert.equal(reasoningUnits(resumed.assistant).filter(slot => slot.active).length, 1);
+  const oldTurn = project([reasoning("current")], false);
+  assert.equal(oldTurn.thinkingOwner.type, "none");
+  assert.equal(reasoningUnits(oldTurn.assistant).some(slot => slot.active), false);
+  const complete = project([reasoning("current")], true, "complete");
+  assert.equal(complete.thinkingOwner.type, "none");
+  assert.equal(reasoningUnits(complete.assistant)[0]?.presentation.header, "First");
+});
+
 test("Codex commentary remains inside Agent Activity while final_answer is a separate unit", () => {
   const snapshot = projectTimeline(source([{
     id: "turn-activity",
@@ -2688,7 +3057,7 @@ test("Codex commentary remains inside Agent Activity while final_answer is a sep
   assert.equal(resolveAgentActivityLayout(after, true).isCollapsed, false);
 });
 
-test("completed reasoning-only Activity retains a work interval without exposing reasoning", () => {
+test("completed reasoning-only response folds actual thinking under its real work interval", () => {
   const snapshot = projectTimeline(source([{
     id: "turn-reasoning-duration",
     status: "complete",
@@ -2697,22 +3066,28 @@ test("completed reasoning-only Activity retains a work interval without exposing
     firstTurnWorkItemStartedAtMs: 1_100,
     finalAssistantStartedAtMs: 2_000,
     items: [
-      { id: "reasoning", type: "reasoning", payload: { content: ["private chain of thought"], summary: [] } },
+      { id: "reasoning", type: "reasoning", payload: { content: ["Returned reasoning text"], summary: [] } },
       { id: "answer", type: "agentMessage", payload: { text: "在。", phase: "final_answer", completed: true } },
     ],
   }]), createDefaultTimelineProjectorRegistry());
   const frame = snapshot.frames.find((candidate) => candidate.type === "assistant");
   if (frame?.type !== "assistant") throw new Error("Expected assistant frame");
-  const activity = createAssistantTurnPresentationPlan(frame).slots[0];
+  const activity = createAssistantTurnPresentationPlan(frame).slots.find(unit => unit.type === "agent-activity");
   if (activity?.type !== "agent-activity") throw new Error("Expected duration Activity");
 
   assert.equal(activity.workedDurationMs, 2_021);
-  assert.deepEqual(activity.contentUnits.map((unit) => unit.type), ["worked-for"]);
-  assert.equal(resolveAgentActivityLayout(activity, false).showToggle, false);
-  assert.deepEqual(resolveAgentActivityLayout(activity, false).visibleUnits.map((unit) => unit.type), ["worked-for"]);
+  assert.deepEqual(activity.contentUnits.map((unit) => unit.type), ["reasoning", "worked-for"]);
+  assert.equal(resolveAgentActivityLayout(activity).showToggle, true);
+  assert.equal(resolveAgentActivityLayout(activity).isCollapsed, true);
+  assert.deepEqual(resolveAgentActivityLayout(activity, false).visibleUnits.map((unit) => unit.type), ["reasoning"]);
+  assert.equal(createAssistantTurnPresentationPlan(frame).slots.some(unit => unit.type === "reasoning"), false);
+  const reasoning = reasoningUnits(createAssistantTurnPresentationPlan(frame))[0];
+  if (reasoning?.type !== "reasoning") throw new Error("Expected reasoning disclosure");
+  assert.equal(reasoning.presentation.content, "Returned reasoning text");
+  assert.equal(reasoning.active, false);
 });
 
-test("Agent Activity hides reasoning and demotes completed singleton tools around commentary", () => {
+test("reasoning stays inside response work but outside tool groups around commentary", () => {
   const snapshot = projectTimeline(source([{
     id: "turn-semantic-activity",
     status: "complete",
@@ -2736,17 +3111,18 @@ test("Agent Activity hides reasoning and demotes completed singleton tools aroun
   }]), createDefaultTimelineProjectorRegistry());
   const frame = snapshot.frames.find((candidate) => candidate.type === "assistant");
   if (frame?.type !== "assistant") throw new Error("Expected assistant frame");
-  const outer = createAssistantTurnPresentationPlan(frame).slots[0];
+  const slots = createAssistantTurnPresentationPlan(frame).slots;
+  const outer = slots[0];
   assert.equal(outer?.type, "agent-activity");
   if (outer?.type !== "agent-activity") throw new Error("Expected Agent Activity");
   assert.deepEqual(outer.contentUnits.map((unit) => unit.type), [
-    "standalone", "standalone", "standalone", "standalone",
+    "reasoning", "standalone", "standalone", "standalone", "standalone",
   ]);
   assert.deepEqual(outer.contentUnits.flatMap((unit) => unit.type === "group"
     ? unit.blocks.map((block) => block.type)
-    : [unit.block.type]), ["text", "command-execution", "text", "command-execution"]);
-  assert.equal(outer.collapsedItemCount, 4);
-  const skillRead = outer.contentUnits[1];
+    : unit.type === "worked-for" ? [] : [unit.block.type]), ["reasoning", "text", "command-execution", "text", "command-execution"]);
+  assert.equal(outer.collapsedItemCount, 5);
+  const skillRead = outer.contentUnits[2];
   assert.equal(skillRead?.type, "standalone");
   if (skillRead?.type !== "standalone" || skillRead.block.type !== "command-execution") throw new Error("Expected skill read");
   assert.deepEqual(presentToolActivity(skillRead.block), {
@@ -2886,7 +3262,7 @@ test("MCP App persistence requires both the feature cohort and a renderer surfac
   ]);
 });
 
-test("steering and hook feedback are assistant Activity units that persist while collapsed", () => {
+test("steering and hook feedback retain their own slots outside Activity disclosures", () => {
   const snapshot = projectTimeline(source([{
     id: "turn-persistent-feedback",
     status: "complete",
@@ -2902,28 +3278,24 @@ test("steering and hook feedback are assistant Activity units that persist while
   assert.deepEqual(snapshot.frames.map((frame) => frame.type), ["user", "assistant"]);
   const assistant = snapshot.frames[1];
   if (assistant?.type !== "assistant") throw new Error("Expected assistant frame");
-  const outer = createAssistantTurnPresentationPlan(assistant).slots[0];
+  const slots = createAssistantTurnPresentationPlan(assistant).slots;
+  const outer = slots[0];
   if (outer?.type !== "agent-activity") throw new Error("Expected Agent Activity");
   assert.deepEqual(outer.partitions.collapsibleUnits.map((unit) => unit.id), ["agent-activity-group:command-execution:command"]);
-  assert.deepEqual(outer.partitions.persistentUnits.map((unit) => unit.id), [
-    "agent-activity-standalone:user-message:steering",
-    "agent-activity-standalone:user-message:hook",
+  assert.deepEqual(outer.partitions.persistentUnits, []);
+  assert.deepEqual(slots.filter(slot => slot.type === "assistant-content").map(slot => slot.block.id), [
+    "user-message:steering", "user-message:hook", "text:answer",
   ]);
   const collapsedLayout = resolveAgentActivityLayout(outer, true);
-  assert.equal(collapsedLayout.showToggle, true);
-  assert.equal(collapsedLayout.isCollapsed, true);
+  assert.equal(collapsedLayout.showToggle, false, "Steer is not a final-answer fold grant");
+  assert.equal(collapsedLayout.isCollapsed, false);
   assert.deepEqual(collapsedLayout.visibleUnits.map((unit) => unit.id), ["agent-activity-group:command-execution:command"]);
-  assert.deepEqual(collapsedLayout.persistentUnits.map((unit) => unit.id), [
-    "agent-activity-standalone:user-message:steering",
-    "agent-activity-standalone:user-message:hook",
-  ]);
+  assert.deepEqual(collapsedLayout.persistentUnits, []);
   const expandedLayout = resolveAgentActivityLayout(outer, false);
   assert.equal(expandedLayout.isCollapsed, false);
   assert.deepEqual(expandedLayout.persistentUnits, []);
   assert.deepEqual(expandedLayout.visibleUnits.map((unit) => unit.id), [
     "agent-activity-group:command-execution:command",
-    "agent-activity-standalone:user-message:steering",
-    "agent-activity-standalone:user-message:hook",
   ]);
 });
 
@@ -3130,11 +3502,11 @@ test("standalone app tools and subagent activity share one stable Turn Activity 
   const activity = units[0];
   assert.equal(activity?.type, "agent-activity");
   if (activity?.type !== "agent-activity") throw new Error("Expected Agent Activity");
-  assert.deepEqual(activity.contentUnits.map((unit) => unit.type), ["standalone", "standalone"]);
-  assert.equal(activity.contentUnits[0]?.type === "standalone" ? activity.contentUnits[0].block.id : null, "tool-call:mcp-app");
-  assert.equal(activity.contentUnits[1]?.type === "standalone" ? activity.contentUnits[1].block.id : null, "command-execution:exec-after");
+  assert.deepEqual(activity.contentUnits.map((unit) => unit.type), ["reasoning", "standalone", "standalone"]);
+  assert.equal(activity.contentUnits[1]?.type === "standalone" ? activity.contentUnits[1].block.id : null, "tool-call:mcp-app");
+  assert.equal(activity.contentUnits[2]?.type === "standalone" ? activity.contentUnits[2].block.id : null, "command-execution:exec-after");
   assert.equal(activity.inlineSubagentActivity?.blocks[0]?.id, "subagent:subagent");
-  assert.equal(activity.collapsedItemCount, 3);
+  assert.equal(activity.collapsedItemCount, 4);
 });
 
 test("Turn Activity slot and inline subagent identities survive streaming prepend and append", () => {
@@ -3155,13 +3527,13 @@ test("Turn Activity slot and inline subagent identities survive streaming prepen
   ]);
   if (initial?.type !== "assistant" || updated?.type !== "assistant") throw new Error("Expected assistant frames");
   const initialActivity = createAssistantTurnPresentationPlan(initial).slots[0];
-  const updatedActivity = createAssistantTurnPresentationPlan(updated).slots[0];
+  const updatedActivity = createAssistantTurnPresentationPlan(updated).slots.find((unit) => unit.type === "agent-activity");
   if (initialActivity?.type !== "agent-activity" || updatedActivity?.type !== "agent-activity") throw new Error("Expected Activity slots");
   assert.equal(initialActivity.id, "turn-stable-owner:slot:agent-activity");
   assert.equal(updatedActivity.id, initialActivity.id);
   assert.equal(updatedActivity.inlineSubagentActivity?.id, initialActivity.inlineSubagentActivity?.id);
   assert.equal(initialActivity.collapsedItemCount, 2);
-  assert.equal(updatedActivity.collapsedItemCount, 2);
+  assert.equal(updatedActivity.collapsedItemCount, 3);
   assert.equal(updatedActivity.inlineSubagentActivity?.blocks.length, 2);
 });
 

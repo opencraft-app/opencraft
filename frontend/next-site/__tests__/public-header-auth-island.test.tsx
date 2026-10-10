@@ -11,6 +11,10 @@ const runtimeMock = vi.hoisted(() => ({
   isAuthenticated: false,
   isSubscribed: false,
   bots: [] as Array<{ id: string }>,
+  hasResolvedPasses: true,
+  latestPass: null as { pass_id: string } | null,
+  botsLoading: false,
+  botsError: false,
 }));
 const trackDatongClickMock = vi.hoisted(() => vi.fn());
 const prepareReferralCodeMock = vi.hoisted(() => vi.fn());
@@ -20,12 +24,15 @@ vi.mock("react-i18next", () => ({
   useTranslation: () => ({ i18n: { language: runtimeMock.language } }),
 }));
 vi.mock("@/components/site/login-modal", () => ({ LoginModal: () => <div data-testid="current-login-modal" /> }));
-vi.mock("@/components/site/user-avatar-menu", () => ({ UserAvatarMenu: () => null }));
+vi.mock("@/components/site/user-avatar-menu", () => ({ UserAvatarMenu: () => <button data-testid="header-avatar">Account</button> }));
 vi.mock("@/contexts/agent-context", () => ({
   useOpenClaw: () => ({
     bots: runtimeMock.bots,
     isSubscribed: runtimeMock.isSubscribed,
-    hasResolvedPasses: true,
+    hasResolvedPasses: runtimeMock.hasResolvedPasses,
+    latestPass: runtimeMock.latestPass,
+    botsLoading: runtimeMock.botsLoading,
+    botsError: runtimeMock.botsError,
     passesLoading: false,
     passesError: false,
     refreshPasses: vi.fn(),
@@ -51,6 +58,7 @@ vi.mock("@/observability/datong-tracker", () => ({
 vi.mock("@next-site/language-switcher", () => ({ renderNextLanguageSwitcher: () => null }));
 
 import { PublicHeaderAuthIsland } from "@next-site/public-header-auth-island";
+import { REOPEN_PRICING_MODAL_EVENT } from "@next-site/use-post-login-redirect";
 
 beforeEach(() => {
   window.history.replaceState(null, "", "/");
@@ -60,11 +68,16 @@ beforeEach(() => {
   runtimeMock.isAuthenticated = false;
   runtimeMock.isSubscribed = false;
   runtimeMock.bots = [];
+  runtimeMock.hasResolvedPasses = true;
+  runtimeMock.latestPass = null;
+  runtimeMock.botsLoading = false;
+  runtimeMock.botsError = false;
   prepareReferralCodeMock.mockReset().mockResolvedValue(undefined);
 });
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
   window.history.replaceState(null, "", "/");
   routerMock.push.mockReset();
   trackDatongClickMock.mockReset();
@@ -125,6 +138,7 @@ describe("PublicHeaderAuthIsland", () => {
     ["ko-KR", "LightVela 열기"],
   ] as const)("shows the homepage product entry for %s", (locale, label) => {
     runtimeMock.isAuthenticated = true;
+    runtimeMock.isSubscribed = true;
     render(
       <PublicHeaderAuthIsland
         locale={locale}
@@ -133,18 +147,53 @@ describe("PublicHeaderAuthIsland", () => {
       />,
     );
 
-    const links = screen.getAllByRole("link", { name: label });
-    expect(links).toHaveLength(2);
-    for (const link of links) {
-      expect(link).toHaveAttribute("href", "/agents");
-    }
+    expect(screen.getByRole("link", { name: label })).toHaveAttribute("href", "/agents");
+    expect(screen.getAllByTestId("header-avatar")).toHaveLength(1);
   });
 
   it("keeps the product entry off non-home public pages", () => {
     runtimeMock.isAuthenticated = true;
+    runtimeMock.isSubscribed = true;
     render(<PublicHeaderAuthIsland locale="en-US" showLanguageSwitcher={false} />);
 
     expect(screen.queryByRole("link", { name: "Enter LightVela" })).not.toBeInTheDocument();
+  });
+
+  it("hides the product entry before purchase", () => {
+    runtimeMock.isAuthenticated = true;
+    runtimeMock.isSubscribed = false;
+    render(
+      <PublicHeaderAuthIsland locale="en-US" showLanguageSwitcher={false} showProductEntry />,
+    );
+
+    expect(screen.queryByRole("link", { name: "Enter LightVela" })).not.toBeInTheDocument();
+  });
+
+  it("hides the product entry while purchase status is unconfirmed", () => {
+    runtimeMock.isAuthenticated = true;
+    runtimeMock.isSubscribed = true;
+    runtimeMock.hasResolvedPasses = false;
+    render(<PublicHeaderAuthIsland locale="en-US" showLanguageSwitcher={false} showProductEntry />);
+    expect(screen.queryByRole("link", { name: "Enter LightVela" })).not.toBeInTheDocument();
+  });
+
+  it("shows a confirmed subscriber before the Bot request finishes", () => {
+    runtimeMock.isAuthenticated = true;
+    runtimeMock.isSubscribed = true;
+    runtimeMock.botsLoading = true;
+    render(<PublicHeaderAuthIsland locale="zh-CN" showLanguageSwitcher={false} showProductEntry />);
+    expect(screen.getByRole("link", { name: "开始使用" })).toHaveAttribute("href", "/agents");
+  });
+
+  it("waits for Bot evidence when the account has no pass", () => {
+    runtimeMock.isAuthenticated = true;
+    runtimeMock.bots = [{ id: "existing" }];
+    runtimeMock.botsLoading = true;
+    const { rerender } = render(<PublicHeaderAuthIsland locale="zh-CN" showLanguageSwitcher={false} showProductEntry />);
+    expect(screen.queryByRole("link", { name: "开始使用" })).not.toBeInTheDocument();
+    runtimeMock.botsLoading = false;
+    rerender(<PublicHeaderAuthIsland locale="zh-CN" showLanguageSwitcher={false} showProductEntry />);
+    expect(screen.getByRole("link", { name: "开始使用" })).toHaveAttribute("href", "/agents");
   });
 
   it("keeps anonymous homepage actions unchanged", () => {
@@ -164,17 +213,35 @@ describe("PublicHeaderAuthIsland", () => {
 
   it("tracks the desktop product entry without changing its native target", () => {
     runtimeMock.isAuthenticated = true;
+    runtimeMock.isSubscribed = true;
     render(
       <PublicHeaderAuthIsland locale="en-US" showLanguageSwitcher={false} showProductEntry />,
     );
 
-    const link = screen.getAllByRole("link", { name: "Enter LightVela" })[0]!;
+    const link = screen.getByRole("link", { name: "Enter LightVela" });
     link.addEventListener("click", (event) => event.preventDefault());
     fireEvent.click(link);
 
     expect(trackDatongClickMock).toHaveBeenCalledWith("agent_enter_console_btn", {
       pgid: "home",
       params: { surface: "desktop", target: "/agents" },
+    });
+  });
+
+  it("tracks the single product entry as mobile on a narrow viewport", () => {
+    vi.stubGlobal("innerWidth", 390);
+    runtimeMock.isAuthenticated = true;
+    runtimeMock.isSubscribed = true;
+    render(<PublicHeaderAuthIsland locale="en-US" showLanguageSwitcher={false} showProductEntry />);
+
+    const link = screen.getByRole("link", { name: "Enter LightVela" });
+    link.addEventListener("click", (event) => event.preventDefault());
+    fireEvent.click(link);
+
+    expect(screen.getAllByTestId("header-avatar")).toHaveLength(1);
+    expect(trackDatongClickMock).toHaveBeenCalledWith("agent_enter_console_btn", {
+      pgid: "home",
+      params: { surface: "mobile", target: "/agents" },
     });
   });
 
@@ -224,7 +291,7 @@ describe("PublicHeaderAuthIsland", () => {
     expect(screen.queryByRole("button", { name: "Start free" })).not.toBeInTheDocument();
   });
 
-  it("sends anonymous CTA clicks straight to the subscribe page (plan A)", () => {
+  it("keeps the subscribe page as the fallback when no pricing modal is mounted", () => {
     (globalThis as { React?: typeof React }).React = React;
     render(
       <PublicHeaderAuthIsland
@@ -246,5 +313,28 @@ describe("PublicHeaderAuthIsland", () => {
       pgid: "home",
       params: { has_bots: false, target: "subscribe" },
     });
+  });
+
+  it("opens the pricing modal from the header Free trial button", () => {
+    const openModal = vi.fn((event: Event) => {
+      (event as CustomEvent<{ handled: boolean }>).detail.handled = true;
+    });
+    window.addEventListener(REOPEN_PRICING_MODAL_EVENT, openModal);
+    try {
+      render(
+        <PublicHeaderAuthIsland
+          locale="en-US"
+          showLanguageSwitcher={false}
+          showProductEntry
+          promoteFreeTrial
+          loginOnly={false}
+        />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Free trial" }));
+      expect(openModal).toHaveBeenCalledTimes(1);
+      expect(routerMock.push).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener(REOPEN_PRICING_MODAL_EVENT, openModal);
+    }
   });
 });

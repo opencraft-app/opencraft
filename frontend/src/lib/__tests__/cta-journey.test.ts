@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  canShowMyAgentsEntry,
   CTA_COPY_BY_LOCALE,
   getCtaCopy,
   journeyHref,
@@ -9,6 +10,36 @@ import {
   resolvePostLoginRoute,
 } from '@/lib/cta-journey';
 import { AGENTS_HOME_PATH, SUBSCRIBE_PATH } from '@/lib/agent-routes';
+
+describe('canShowMyAgentsEntry', () => {
+  const pendingBots = {
+    hasResolvedPasses: true,
+    passesLoading: false,
+    passesError: false,
+    isSubscribed: false,
+    hasHistoricalPass: false,
+    hasBots: false,
+    botsLoading: true,
+    botsError: false,
+  };
+
+  it('shows a confirmed subscriber or former subscriber while Bots load or fail', () => {
+    expect(canShowMyAgentsEntry({ ...pendingBots, isSubscribed: true })).toBe(true);
+    expect(canShowMyAgentsEntry({ ...pendingBots, hasHistoricalPass: true, botsError: true })).toBe(true);
+  });
+
+  it('waits for Bots only when they are the remaining proof of entry', () => {
+    expect(canShowMyAgentsEntry({ ...pendingBots, hasBots: true })).toBe(false);
+    expect(canShowMyAgentsEntry({ ...pendingBots, hasBots: true, botsLoading: false })).toBe(true);
+    expect(canShowMyAgentsEntry({ ...pendingBots, hasBots: true, botsLoading: false, botsError: true })).toBe(false);
+    expect(canShowMyAgentsEntry({ ...pendingBots, botsLoading: false })).toBe(false);
+  });
+
+  it('keeps the entry hidden until pass status is confirmed', () => {
+    expect(canShowMyAgentsEntry({ ...pendingBots, isSubscribed: true, hasResolvedPasses: false })).toBe(false);
+    expect(canShowMyAgentsEntry({ ...pendingBots, isSubscribed: true, passesError: true })).toBe(false);
+  });
+});
 
 describe('resolvePostLoginRoute', () => {
   it('sends unsubscribed users to the subscribe page', () => {
@@ -23,6 +54,7 @@ describe('resolvePostLoginRoute', () => {
   it('never leaves a subscribed user without an agent creation entry', () => {
     expect(resolvePostLoginRoute({ isSubscribed: true, hasBots: false })).toBe(JOURNEY_ROUTE.AGENTS_CREATING);
   });
+
 });
 
 describe('resolveCtaRoute', () => {
@@ -38,13 +70,19 @@ describe('resolveCtaRoute', () => {
     );
   });
 
+  it('returns an expired subscriber to the existing Agent space', () => {
+    expect(resolveCtaRoute({ isAuthenticated: true, isSubscribed: false, hasBots: true, hasLapsedPass: true })).toBe(
+      JOURNEY_ROUTE.AGENTS,
+    );
+  });
+
   it('sends subscribed visitors straight to the console', () => {
     expect(resolveCtaRoute({ isAuthenticated: true, isSubscribed: true, hasBots: true })).toBe(
       JOURNEY_ROUTE.AGENTS,
     );
   });
 
-  it('handles the subscribed-without-agent transition inside the console', () => {
+  it('sends any subscribed account without a current Bot to creation', () => {
     expect(resolveCtaRoute({ isAuthenticated: true, isSubscribed: true, hasBots: false })).toBe(
       JOURNEY_ROUTE.AGENTS_CREATING,
     );
@@ -75,6 +113,8 @@ describe('CTA copy', () => {
     expect(getCtaCopy('zh-CN', guest)).toBe('免费试用');
     expect(getCtaCopy('en-US', subscribed)).toBe('My AI Companion');
     expect(getCtaCopy('en-US', guest)).toBe('Free trial');
+    expect(getCtaCopy('en-US', { isAuthenticated: true, isSubscribed: false, hasLapsedPass: true })).toBe('My AI Companion');
+    expect(getCtaCopy('zh-CN', { isAuthenticated: true, isSubscribed: false, hasLapsedPass: true })).toBe('我的智能体伙伴');
   });
 
   it('uses one English casing for every locale entry', () => {
@@ -94,10 +134,10 @@ describe('CTA copy', () => {
    * 写成了旧 "Free Trial" 概念的机翻文案，跟首页实际按钮文案不一致。
    */
   it('matches the official translations already shipped on the international homepage', () => {
-    expect(CTA_COPY_BY_LOCALE['id-ID']).toEqual({ startFree: 'Mulai gratis', myCompanion: 'Pendamping AI saya' });
-    expect(CTA_COPY_BY_LOCALE.es).toEqual({ startFree: 'Empieza gratis', myCompanion: 'Mi compañero de IA' });
-    expect(CTA_COPY_BY_LOCALE['ja-JP']).toEqual({ startFree: '無料で開始', myCompanion: '私のAIパートナー' });
-    expect(CTA_COPY_BY_LOCALE['ko-KR']).toEqual({ startFree: '무료 시작', myCompanion: '내 AI 파트너' });
+    expect(CTA_COPY_BY_LOCALE['id-ID']).toMatchObject({ startFree: 'Mulai gratis', myCompanion: 'Pendamping AI saya' });
+    expect(CTA_COPY_BY_LOCALE.es).toMatchObject({ startFree: 'Empieza gratis', myCompanion: 'Mi compañero de IA' });
+    expect(CTA_COPY_BY_LOCALE['ja-JP']).toMatchObject({ startFree: '無料で開始', myCompanion: '私のAIパートナー' });
+    expect(CTA_COPY_BY_LOCALE['ko-KR']).toMatchObject({ startFree: '무료 시작', myCompanion: '내 AI 파트너' });
   });
 
   /**

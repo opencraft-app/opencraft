@@ -1,3 +1,5 @@
+import hostPanelLayoutStyles from "./host-panel-layout.css?inline";
+import { EmbeddedHostPanelLayout } from "./host-panel-layout";
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import appStyles from "../styles/app.scss?inline";
@@ -38,10 +40,15 @@ import {
 } from "./embedded-chat-root";
 
 import { observeEmbeddedConnection } from "./embedded-connection";
+import { observeEmbeddedTurnCompletions, type EmbeddedWorkbenchTurnCompletedDetail } from "./embedded-turn-completion";
+import { HermesPhysicalConnectionPreparation, type HermesPhysicalConnectionPreparationOptions } from "@opencraft/plugin-lightvela-hermes/physical-connection";
+import { isHostPanelCommand, isHostPanelGeometry, isHostPanelGesture, type HostPanelGesture, type HostPanelCommand, type HostPanelGeometry, type HostPanelState } from "@opencraft/workbench-panels";
 
 const ELEMENT_NAME = "opencraft-embedded-workbench";
 
 export interface EmbeddedWorkbenchConfig extends EmbeddedChatApplicationOptions {
+  /** Legacy name: host allocates the container; the complete DOM toolbar stays. */
+  readonly externalPanelChrome?: boolean;
   readonly localization?: WorkbenchLocaleOptions;
 }
 
@@ -57,6 +64,8 @@ export interface EmbeddedWorkbenchSession extends EmbeddedWorkbenchAppSession {}
 export interface EmbeddedWorkbenchSessionsDetail {
   readonly sessions: readonly EmbeddedWorkbenchSession[];
   readonly loading: boolean;
+  readonly hasMoreSessions: boolean;
+  readonly pinSupported: boolean;
   readonly error: string | null;
   readonly selectedChatId: string | null;
   readonly isDraft: boolean;
@@ -73,6 +82,7 @@ function embeddedStyles(): string {
   const application = localizeAssets(appStyles.replaceAll(":root", ":host"));
   return `
     :host {
+      position: relative;
       display: block;
       width: 100%;
       height: 100%;
@@ -86,7 +96,10 @@ function embeddedStyles(): string {
     }
     :host([data-visible="true"]) { visibility: visible; pointer-events: auto; }
     .opencraft-embedded-workbench-root { width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: hidden; }
+    .opencraft-host-panel-overlays { position: absolute; inset: 0; pointer-events: none; }
+    .opencraft-host-panel-overlays > * { pointer-events: auto; }
     ${application}
+    ${hostPanelLayoutStyles}
     .opencraft-embedded-workbench-root { --height-toolbar: var(--lightvela-console-header-height, 46px); }
     .opencraft-embedded-workbench-root .codex-composer-queue-item__actions button.is-steer {
       width: 22px;
@@ -98,6 +111,9 @@ function embeddedStyles(): string {
     .opencraft-embedded-workbench-root:has(.new-thread-draft-page) .main-content-frame { border-top: 0; }
     .opencraft-embedded-workbench-root .main-content-surface { box-shadow: none; }
     .opencraft-embedded-workbench-root .codex-composer-editor { min-height: 74px; }
+    @media (max-width: 639px) {
+      .opencraft-embedded-workbench-root .codex-composer-editor { min-height: 48px; }
+    }
     .opencraft-embedded-workbench-root .codex-composer-voice-footer__status-label { display: none; }
     .opencraft-embedded-workbench-root .codex-composer-submit.is-stop {
       border-radius: 50%;
@@ -142,7 +158,16 @@ class EmbeddedWorkbenchErrorBoundary extends Component<{
 }
 
 export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
+  /** Does not construct an element, Application, Dashboard or logical Host. */
+  static preparePhysicalConnection(options: HermesPhysicalConnectionPreparationOptions): HermesPhysicalConnectionPreparation {
+    return new HermesPhysicalConnectionPreparation(options);
+  }
   private readonly mount: HTMLDivElement;
+  private readonly panelMount: HTMLDivElement;
+  private readonly overlayMount: HTMLDivElement;
+  private panelState: HostPanelState | null = null;
+  private readonly paneLayout: EmbeddedHostPanelLayout;
+  private panelCommand: ((command: HostPanelCommand) => boolean) | null = null;
   private readonly root: Root;
   private actions: EmbeddedWorkbenchAppActions | null = null;
   private readonly admittedPrompts = new Set<string>();
@@ -157,10 +182,18 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
   private resolveReady!: (detail: EmbeddedWorkbenchReadyDetail) => void;
   private rejectReady!: (error: Error) => void;
   private readyDetail: EmbeddedWorkbenchReadyDetail | null = null;
+  /** Local Draft identity is painted before the Host connects; it never admits a submission. */
+  private paintedPromise: Promise<void>;
+  private resolvePainted!: () => void;
+  private rejectPainted!: (error: Error) => void;
+  private painted = false;
   private selectedConversationId: string | null = null;
   private isDraft = true;
+  private hasMoreSessions = false;
   private sessions = new Map<string, EmbeddedWorkbenchSession>();
+  private pinSupported = false;
   private stopThemeSubscription: (() => void) | null = null;
+  private stopTurnCompletionSubscription: (() => void) | null = null;
   private disposed = false;
   private failed = false;
 
@@ -170,13 +203,29 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
     const style = document.createElement("style");
     style.textContent = embeddedStyles();
     this.mount = document.createElement("div");
-    this.mount.className = "opencraft-embedded-workbench-root";
-    shadow.append(style, this.mount);
+    this.mount.className = "opencraft-embedded-workbench-root opencraft-host-chat-content";
+    this.panelMount = document.createElement("div");
+    this.panelMount.className = "opencraft-embedded-workbench-root opencraft-host-panel-content";
+
+    this.overlayMount = document.createElement("div");
+    this.overlayMount.className = "opencraft-embedded-workbench-root opencraft-host-panel-overlays";
+    this.paneLayout = new EmbeddedHostPanelLayout(this.mount, this.panelMount, command => this.dispatchPanelCommand(command));
+    this.paneLayout.subscribe(() => {
+      if (this.disposed || !this.panelState) return;
+      this.dispatchEvent(new CustomEvent("opencraft-panel-presentation", { bubbles: true, composed: true,
+        detail: { ownerId: this.panelState.ownerId, active: this.paneLayout.getSnapshot() } }));
+    });
+    shadow.append(style, this.paneLayout.plane, this.overlayMount);
     this.root = createRoot(this.mount);
     this.readyPromise = new Promise((resolve, reject) => {
       this.resolveReady = resolve;
       this.rejectReady = reject;
     });
+    this.paintedPromise = new Promise((resolve, reject) => {
+      this.resolvePainted = resolve;
+      this.rejectPainted = reject;
+    });
+    void this.paintedPromise.catch(() => undefined);
     // Startup can fail or be disposed before prepareOwned begins awaiting readiness.
     // Observe rejection now; prepare()/show() still receive the original failure.
     void this.readyPromise.catch(() => undefined);
@@ -211,18 +260,50 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
     return this.preparePromise;
   }
 
+  dispatchPanelCommand(command: HostPanelCommand): boolean {
+    if (this.disposed || !this.config?.externalPanelChrome || !isHostPanelCommand(command)
+      || command.ownerId !== this.panelState?.ownerId) return false;
+    return this.panelCommand?.(command) ?? false;
+  }
+
+  setPanelGeometry(ownerId: string, geometry: HostPanelGeometry): boolean {
+    if (this.disposed || !this.config?.externalPanelChrome || ownerId !== this.panelState?.ownerId || !isHostPanelGeometry(geometry)) return false;
+    this.paneLayout.setGeometry(geometry);
+    return true;
+  }
+
+  dispatchPanelGesture(ownerId: string, gesture: HostPanelGesture): boolean {
+    if (this.disposed || !this.config?.externalPanelChrome || ownerId !== this.panelState?.ownerId || !isHostPanelGesture(gesture)) return false;
+    return this.paneLayout.dispatchGesture(gesture);
+  }
+
+  private publishPanels(state: HostPanelState): void {
+    if (this.disposed) return;
+    this.panelState = state;
+    this.paneLayout.setState(state);
+    this.dispatchEvent(new CustomEvent("opencraft-panels", { bubbles: true, composed: true, detail: state }));
+  }
+
   /** Reuses the same Host and composer owners; never replays a submission. */
   async reconnect(): Promise<void> {
     await this.connection?.reconnect();
   }
 
+  /** Painting waits for the local Draft only; sending stays gated on the Host connection. */
   async show(): Promise<void> {
     await this.prepare();
-    await this.readyPromise;
+    await this.paintedPromise;
     if (this.disposed) throw new Error("Embedded Workbench is disposed");
     this.dataset.visible = "true";
     this.inert = false;
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    const application = this.application;
+    // Let the host finish its show() handoff and paint before optional imports.
+    requestAnimationFrame(() => {
+      if (!this.disposed && !this.inert && this.application === application) {
+        void application?.application.startOptionalFeatures();
+      }
+    });
   }
 
   hide(): void {
@@ -256,6 +337,10 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
     await this.requireActions().createThread();
   }
 
+  async loadMoreConversations(): Promise<void> {
+    await this.requireActions().loadMoreThreads();
+  }
+
   /** Host-controlled locale updates retain the application and draft identity. */
   async setLocalization(options: WorkbenchLocaleOptions): Promise<void> {
     if (this.disposed) throw new Error("Embedded Workbench is disposed");
@@ -276,6 +361,12 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
     await this.requireActions().deleteThread(session.chatId);
   }
 
+  async setConversationPinned(conversationId: string, pinned: boolean): Promise<void> {
+    const session = this.requireSession(conversationId);
+    if (!this.pinSupported) throw new Error("This Host does not support conversation pinning");
+    await this.requireActions().setThreadPinned(session.chatId, pinned);
+  }
+
   async dispose(): Promise<void> {
     if (this.disposed) return;
     this.disposed = true;
@@ -283,8 +374,13 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
     if (this.readyDetail === null && !this.failed) {
       this.rejectReady(new Error("Embedded Workbench was disposed before it became ready"));
     }
+    if (!this.painted && !this.failed) {
+      this.rejectPainted(new Error("Embedded Workbench was disposed before it painted"));
+    }
     this.connection?.dispose();
     this.connection = null;
+    this.stopTurnCompletionSubscription?.();
+    this.stopTurnCompletionSubscription = null;
     this.root.unmount();
     this.locale?.dispose();
     this.localeObserver?.disconnect();
@@ -293,6 +389,9 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
     this.stopThemeSubscription?.();
     this.stopThemeSubscription = null;
     this.actions = null;
+    this.panelCommand = null;
+    this.panelState = null;
+    this.paneLayout.dispose();
     const application = this.application;
     const preferences = this.preferences;
     this.application = null;
@@ -321,19 +420,38 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
       if (this.disposed) return;
       const supervisor = application.application.supervisor;
       if (supervisor.mode !== "active") throw new Error("Embedded Host is unavailable");
+      this.stopTurnCompletionSubscription = observeEmbeddedTurnCompletions(
+        supervisor.appServerRegistry.clients,
+        application.hostId,
+        (detail) => {
+          if (this.disposed) return;
+          this.dispatchEvent(new CustomEvent<EmbeddedWorkbenchTurnCompletedDetail>(
+            "opencraft-turn-completed",
+            { detail },
+          ));
+        },
+      );
       const runtime = supervisor.registry.getRuntime(application.hostId);
       this.connection = observeEmbeddedConnection(runtime, detail => {
         this.dispatchEvent(new CustomEvent("opencraft-connection", { detail }));
       });
-      await this.connection.ready;
-      if (this.disposed) return;
+      // The startup Draft is local identity, so the Composer can paint while the
+      // Host connects. NewThreadDraftPage keeps submission disabled until ready;
+      // prepare() resolves once painted and connection progress flows through
+      // opencraft-connection events.
       this.renderApplication();
-      await this.readyPromise;
+      await this.paintedPromise;
     } catch (cause) {
       const error = cause instanceof Error ? cause : new Error(String(cause));
       this.fail(error);
       throw error;
     }
+  }
+
+  private handlePainted(): void {
+    if (this.painted || this.disposed || this.failed) return;
+    this.painted = true;
+    this.resolvePainted();
   }
 
   private handleReady(threadId: string | null, config: EmbeddedWorkbenchConfig): void {
@@ -359,10 +477,14 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
   private handleSessions(detail: {
     readonly sessions: readonly EmbeddedWorkbenchSession[];
     readonly loading: boolean;
+    readonly hasMoreSessions: boolean;
+    readonly pinSupported: boolean;
     readonly selectedChatId: string | null;
     readonly isDraft: boolean;
   }): void {
     this.sessions = new Map(detail.sessions.map((session) => [session.chatId, session]));
+    this.hasMoreSessions = detail.hasMoreSessions;
+    this.pinSupported = detail.pinSupported;
     this.selectedConversationId = detail.selectedChatId;
     this.isDraft = detail.isDraft;
     this.publishSessions(detail.loading, null);
@@ -380,6 +502,7 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
     if (!this.failed && this.readyDetail === null) {
       this.failed = true;
       this.rejectReady(error);
+      if (!this.painted) this.rejectPainted(error);
     }
     this.dispatchEvent(new CustomEvent("opencraft-error", {
       detail: Object.freeze({ message: error.message }),
@@ -401,9 +524,19 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
             bindActions={(actions) => this.bindActions(actions)}
             hostId={application.hostId}
             onError={(error) => this.fail(error)}
+            onPainted={() => this.handlePainted()}
             onReady={(threadId) => this.handleReady(threadId, config)}
             onSessionsChange={(detail) => this.handleSessions(detail)}
-            portalContainer={this.mount}
+            portalContainer={config.externalPanelChrome ? this.overlayMount : this.mount}
+            panelHost={config.externalPanelChrome ? {
+              target: this.panelMount,
+              presentation: this.paneLayout,
+              publish: state => this.publishPanels(state),
+              bind: command => {
+                this.panelCommand = command;
+                return () => { if (this.panelCommand === command) this.panelCommand = null; };
+              },
+            } : undefined}
           />
           </WorkbenchIntlProvider>
         </UiPreferencesProvider>
@@ -431,6 +564,8 @@ export class OpenCraftEmbeddedWorkbenchElement extends HTMLElement {
         detail: Object.freeze({
           sessions: Object.freeze([...this.sessions.values()]),
           loading,
+          hasMoreSessions: this.hasMoreSessions,
+          pinSupported: this.pinSupported,
           error,
           selectedChatId: this.selectedConversationId,
           isDraft: this.isDraft,

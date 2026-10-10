@@ -1,0 +1,21 @@
+{
+  "actions": [],
+  "autonomy_score": 100,
+  "cell": "actor-bj-b01",
+  "control": "allow",
+  "failures": [],
+  "matched_rules": [],
+  "namespace": "actor-fdb-cell-system",
+  "policy_version": "autonomy-control-policy-v1",
+  "schemaVersion": "actor-fdb-autonomy-control-v1",
+  "sourceIdentity": {
+    "manifest_sha256": "c6785b95c7d2615bbc0fdd57e2007665bd542455fa288dc6c863e389ee107300",
+    "revision": "2757fc785d8f572d1b6430e471100c4a880aefac",
+    "target": "/var/lib/actor-build/deploy/q01-src-2757fc785d8f572d1b6430e471100c4a880aefac-c6785b95c7d2615bbc0fdd57e2007665bd542455fa288dc6c863e389ee107300"
+  },
+  "source_receipt": "/data/actor-bootstrap/beijing-rebuild-20260915/cells/actor-bj-b01/receipts/runtime-admission-2757fc785d8f572d1b6430e471100c4a880aefac-aea4ca3f31b280c99f710833203352547373fdd1299f8a0b6f44a3f033662b72-cycle-owner-v2/audits/autonomy-audit-actor-bj-b01-20261003T191631Z.json",
+  "source_receipt_sha256": "fdfb50e096492cc13efda3e0be1d2fea798e1b92e5909783a37609f96498bb07",
+  "timestamp": "2026-10-03T19:16:31Z",
+  "verdict": "passed",
+  "warnings": []
+}

@@ -10,11 +10,11 @@ const defaultEnglish = DEFAULT_PUBLIC_ROUTE_LOCALE.locale === EN_US_LOCALE;
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl()),
   title: {
-    default: defaultEnglish ? 'LightVela | Your Personal Cloud AI Agent' : 'LightVela｜云端专属个人 Agent',
+    default: defaultEnglish ? 'My AI Companion | LightVela' : 'LightVela｜云端专属个人 Agent',
     template: '%s | LightVela',
   },
   description: defaultEnglish
-    ? 'LightVela is a cloud Agent hosting product from the Tencent Lighthouse team.'
+    ? 'LightVela is a cloud AI agent product from the Tencent Lighthouse team.'
     : '云端托管 Hermes Agent，越聊越懂的智能伙伴。',
   applicationName: 'LightVela',
   authors: [{ name: 'Tencent Lighthouse Team' }],

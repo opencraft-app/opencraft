@@ -2,11 +2,11 @@
 
 ## Resumen
 
-**Crear su primera instancia de Hermes es tan sencillo como esto: inicie sesión con Google o GitHub, elija un plan disponible, actívelo según las reglas del plan actual, permita que la plataforma cree la instancia automáticamente, luego configure un modelo y un canal. Todo ocurre en el navegador — no necesita comprar servidores ni desplegar nada localmente. Una instancia de Hermes es el entorno de ejecución en la nube donde reside su Agent, y una vez creada permanece en línea las 24 horas del día, los 7 días de la semana. Una vez que esté lista, abra el consuelo "Mi Hermes" para configurar su modelo, conectar canales de mensajería e instalar Skills; si aún no tiene su propia clave de API de modelo, puede comenzar a hablar de inmediato utilizando los créditos de modelo incluidos en su plan.**
+**Crear su primera instancia de Hermes es tan sencillo como esto: inicie sesión con Google o GitHub, elija un plan disponible, actívelo según las reglas del plan actual, permita que la plataforma cree la instancia automáticamente, luego use el Chat web; conecte un canal si desea usar una aplicación de mensajería. Todo ocurre en el navegador — no necesita comprar servidores ni desplegar nada localmente. Una instancia de Hermes es el entorno de ejecución en la nube donde reside su Agent, y una vez creada permanece en línea las 24 horas del día, los 7 días de la semana. Una vez que esté lista, abra My Agent para utilizar el Chat web y configure modelos, canales o Skills según sea necesario; si aún no tiene su propia clave de API de modelo, puede comenzar a hablar de inmediato utilizando los créditos de modelo incluidos en su plan.**
 
 ---
 
-Una instancia de Hermes es el entorno de ejecución en la nube donde reside su LightVela Agent. Activar su primera instancia sigue cinco pasos: **iniciar sesión con Google o GitHub → seleccionar un plan disponible → activarlo mediante el flujo de activación actual → permitir que LightVela provisione la instancia → configurar un modelo y un canal**. Todo ocurre en el navegador, sin necesidad de comprar servidores ni desplegar localmente. Esta página guía paso a paso el proceso.
+Una instancia de Hermes es el entorno de ejecución en la nube donde reside su LightVela Agent. Activar su primera instancia sigue cinco pasos: **iniciar sesión con Google o GitHub → seleccionar un plan disponible → activarlo mediante el flujo de activación actual → permitir que LightVela provisione la instancia → comenzar en el Chat web y conectar un canal si lo desea**. Todo ocurre en el navegador, sin necesidad de comprar servidores ni desplegar localmente. Esta página guía paso a paso el proceso.
 
 ## ¿Qué cubre esta página
 
@@ -22,7 +22,7 @@ Una instancia de Hermes es el entorno de ejecución en la nube donde reside su L
 
 - Un plan actualmente disponible seleccionado desde la [página de Suscripción](/subscribe); el sitio internacional no requiere verificación de identidad real en China
 
-- Al menos una cuenta de mensajería que planea conectar, como Telegram, WhatsApp, Discord, Slack o WeChat
+- Una cuenta de Telegram, WhatsApp, Discord, Slack o WeChat solo si desea usar esa aplicación de mensajería
 
 ---
 
@@ -50,11 +50,13 @@ Una vez activado el plan, LightVela **asigna automáticamente un entorno de nube
 
 Una vez que la instancia esté lista, abra el consuelo y complete la configuración básica:
 
-1. **Configure un modelo** — Elija el modelo de lenguaje subyacente; consulte [Configurar Modelos](./configuration/model.md)
+1. **Compruebe el modelo** — Si hay créditos disponibles, puede comenzar sin su propia clave de API; consulte [Configurar Modelos](./configuration/model.md) cuando sea necesario
 
-2. **Conecte un canal** — Añada Telegram, WhatsApp, Discord, Slack, WeChat o otro canal compatible, luego hable con su Agent desde la aplicación de mensajería
+2. **Pruebe el Chat web** — Inicie una conversación en Chat y envíe un mensaje; consulte [Chat](./configuration/agent-chat.md)
 
-3. **Opcionalmente añada Skills y tareas programadas** — Extienda lo que puede hacer su Agent; consulte [Configurar Tareas programadas](./configuration/automation.md)
+3. **Conecte un canal si lo necesita** — Añada Telegram, WhatsApp, Discord o WeChat para usar el Bot en una aplicación de mensajería
+
+4. **Añada Skills y tareas programadas si lo desea** — Consulte [Configurar Tareas programadas](./configuration/automation.md)
 
 Su primer Agent de Hermes ya está listo para permanecer en línea en la nube las 24 horas del día, los 7 días de la semana.
 
@@ -64,7 +66,7 @@ Su primer Agent de Hermes ya está listo para permanecer en línea en la nube la
 
 ### ¿Cuánto tiempo puedo utilizar la instancia después de la activación?
 
-LightVela comienza a provisionar la instancia de Hermes automáticamente después de la activación del plan. Cuando la instancia esté lista, configure un modelo y un canal en el consuelo e inicie una conversación.
+LightVela comienza a provisionar la instancia de Hermes automáticamente después de la activación del plan. Cuando el Bot esté listo y haya créditos disponibles o un modelo configurado, envíe un mensaje en el Chat web. Conecte un canal externo más adelante si lo necesita.
 
 ### ¿Dónde puedo consultar los planes y las ofertas actuales?
 

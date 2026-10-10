@@ -1,0 +1,66 @@
+{
+  "checks": {
+    "activeCapacityReady": false,
+    "automaticScaleUpObserved": true,
+    "capacityIdentityStable": true,
+    "capacityTraceValid": true,
+    "exactObjectCleanupPassed": true,
+    "finalLowCapacity": true,
+    "initialLowCapacity": true,
+    "loadReceiptPassed": false,
+    "safeDrainObserved": true,
+    "tenThousandActiveSustained": false
+  },
+  "evidence": {
+    "baselineObservedAt": "2026-10-03T09:33:05.254536+00:00",
+    "baselineSample": 0,
+    "capacityIdentities": {
+      "actor-bj-a01": {
+        "foundationDB": "eef9ba91-78d3-46dd-b814-b1d2d01b61c6",
+        "hostConfig": "a25fdf91-5c54-464d-a516-d085e6870396",
+        "machineSet": "f80d4089-2a42-46d4-b932-97c74fa4f1a1",
+        "runtimeRevision": "actor-bj-a01-runtime-hosts-75f4d956f9"
+      },
+      "actor-bj-b01": {
+        "foundationDB": "c6e52dcb-1a7b-499b-bf36-39e8fe2194dd",
+        "hostConfig": "671c4557-324a-4082-89dd-ac109a542032",
+        "machineSet": "71ac45ab-fd52-42e6-812e-08d00f781ae7",
+        "runtimeRevision": "actor-bj-b01-runtime-hosts-6767cb4bd"
+      }
+    },
+    "completeSamples": 654,
+    "finalObservedAt": "2026-10-03T12:54:03.838003+00:00",
+    "finalSample": 653,
+    "maxHosts": 523,
+    "maxMachines": 525,
+    "maxReadyHosts": 523,
+    "maxReadyMachines": 525,
+    "peakActive": 9076.0,
+    "peakObservedAt": "2026-10-03T10:49:56.053278+00:00",
+    "peakSample": 248,
+    "samples": 654
+  },
+  "expected": {
+    "active": 10000,
+    "floorPerCell": 4,
+    "hardActivePerHost": 32,
+    "objects": 11000
+  },
+  "generatedAt": "2026-10-03T12:54:18.562729+00:00",
+  "inputs": {
+    "capacityTrace": {
+      "path": "/data/actor-bootstrap/beijing-rebuild-20260915/load-tests/ten-thousand-active-200a42ae03ef4e128505b0def22e8af8/capacity.ndjson",
+      "sha256": "4a19121343338092b628a1c31714de203c5e017c2b43509537906a15f9f0715a"
+    },
+    "cleanupReceipt": {
+      "path": "/data/actor-bootstrap/beijing-rebuild-20260915/load-tests/ten-thousand-active-200a42ae03ef4e128505b0def22e8af8/cleanup-receipt.json",
+      "sha256": "8ad4def7691cbc1e295b658354c7c4258334c06b6416399e9f2f6fdc3d487428"
+    },
+    "loadReceipt": {
+      "path": "/data/actor-bootstrap/beijing-rebuild-20260915/load-tests/ten-thousand-active-200a42ae03ef4e128505b0def22e8af8/load/receipt.json",
+      "sha256": "affced2c82eabaa761f73ee7dc45e23047970740499e4abf20cae8026c45767b"
+    }
+  },
+  "schema": "actor-ten-thousand-active-qualification/v1",
+  "verdict": "failed"
+}

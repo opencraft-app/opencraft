@@ -12,6 +12,8 @@ on:
       - argocd/services/service-gateway/**
       - argocd/apps/*/service-gateway.yaml
       - argocd/secrets/*/service-gateway-runtime-secrets.sops.yaml
+      - argocd/secrets/*/service-gateway-speech-secrets.sops.yaml
+      - scripts/ssm_manifest.service-gateway.*.yaml
     paths-ignore:
       - OWNERS
       - "**/OWNERS"

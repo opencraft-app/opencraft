@@ -19,7 +19,10 @@ import {
   ES_LOCALE,
   ES_URL_LANG,
   ID_ID_LOCALE,
+  MS_MY_LOCALE,
+  TH_TH_LOCALE,
   ID_ID_URL_LANG,
+  MS_MY_URL_LANG, TH_TH_URL_LANG,
   JA_JP_LOCALE,
   JA_JP_URL_LANG,
   KO_KR_LOCALE,
@@ -38,6 +41,8 @@ export type DocsLocalePrefix =
   | typeof ZH_SG_URL_LANG
   | typeof ZH_HANT_URL_LANG
   | typeof ID_ID_URL_LANG
+  | typeof MS_MY_URL_LANG
+  | typeof TH_TH_URL_LANG
   | typeof ES_URL_LANG
   | typeof JA_JP_URL_LANG
   | typeof KO_KR_URL_LANG
@@ -65,6 +70,8 @@ export function docsSlug(_prefix: DocsLocalePrefix, slug?: string[]) {
 function lastUpdatedLabel(prefix: DocsLocalePrefix, lastUpdated?: string): string | null {
   if (!lastUpdated) return null;
 
+  if (prefix === TH_TH_URL_LANG) return `อัปเดตล่าสุดเมื่อ ${lastUpdated}`;
+  if (prefix === MS_MY_URL_LANG) return `Dikemas kini pada ${lastUpdated}`;
   if (prefix === ID_ID_URL_LANG) return `Terakhir diperbarui ${lastUpdated}`;
   if (prefix === EN_US_URL_LANG) return `Last updated ${lastUpdated}`;
   if (prefix === ES_URL_LANG) return `Última actualización: ${lastUpdated}`;
@@ -125,6 +132,8 @@ export function LightVelaDocsPage({ prefix, slug }: { prefix?: DocsLocalePrefix;
 }
 
 export function docsBreadcrumbName(prefix: DocsLocalePrefix): string {
+  if (prefix === TH_TH_URL_LANG) return 'เอกสาร';
+  if (prefix === MS_MY_URL_LANG) return 'Dokumentasi';
   if (prefix === ID_ID_URL_LANG) return 'Dokumentasi';
   if (prefix === ES_URL_LANG) return 'Documentación';
   if (prefix === JA_JP_URL_LANG) return 'ドキュメント';
@@ -155,6 +164,8 @@ function docsSeoLocale(prefix: DocsLocalePrefix): SeoLocale {
     [ZH_SG_URL_LANG]: ZH_SG_LOCALE,
     [ZH_HANT_URL_LANG]: ZH_HANT_LOCALE,
     [ID_ID_URL_LANG]: ID_ID_LOCALE,
+    [MS_MY_URL_LANG]: MS_MY_LOCALE,
+    [TH_TH_URL_LANG]: TH_TH_LOCALE,
     [ES_URL_LANG]: ES_LOCALE,
     [JA_JP_URL_LANG]: JA_JP_LOCALE,
     [KO_KR_URL_LANG]: KO_KR_LOCALE,

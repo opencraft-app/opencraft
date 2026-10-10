@@ -33,6 +33,7 @@ vi.mock("@/contexts/runtime-config-context", () => ({
   usePaidBillingEnabled: () => false,
   useRealnamePhoneVerificationEnabled: () => false,
   useCloudDesktopEnabled: () => true,
+  useReferralEnabled: () => false,
 }));
 
 vi.mock("@/contexts/session-context", () => ({
@@ -170,7 +171,7 @@ describe("AgentSettingsPage 实验室 › 云桌面导航", () => {
   it("实验室分组包含云桌面入口并标记当前页", async () => {
     renderLabPage();
 
-    const navigation = await screen.findByRole("navigation", { name: "实例配置导航" });
+    const navigation = await screen.findByRole("navigation", { name: "探索" });
     const labsGroup = within(navigation).getByRole("group", { name: "实验室" });
 
     const desktopLink = within(labsGroup).getByRole("link", { name: "云桌面" });
@@ -187,7 +188,7 @@ describe("AgentSettingsPage 实验室 › 云桌面导航", () => {
   it("云桌面入口带 Beta 标记", async () => {
     renderLabPage();
 
-    const navigation = await screen.findByRole("navigation", { name: "实例配置导航" });
+    const navigation = await screen.findByRole("navigation", { name: "探索" });
     const labsGroup = within(navigation).getByRole("group", { name: "实验室" });
     const desktopLink = within(labsGroup).getByRole("link", { name: "云桌面" });
 

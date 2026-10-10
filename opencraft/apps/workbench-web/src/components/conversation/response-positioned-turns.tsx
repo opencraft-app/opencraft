@@ -296,10 +296,13 @@ export function ResponsePositionedTurns({
       compensateHeightDelta(change.heightDeltaPx);
     }
 
+    const followMode = responsePositioning.getFollowState().followMode;
     if (
-      responsePositioning.getFollowState().followMode !== "prework_watch"
-      || latestTurnPhase !== "prework"
-      || responseSpacerHeight.get() <= 24
+      (followMode !== "response_watch" && (
+        followMode !== "prework_watch"
+        || latestTurnPhase !== "prework"
+        || responseSpacerHeight.get() <= 24
+      ))
       || element === null
     ) return;
     const latestElement = change.element;
@@ -312,7 +315,8 @@ export function ResponsePositionedTurns({
       latestTurnPhase,
       followContentOverflowPx: overflow,
     });
-    if (nextFollowState.followMode === "prework_follow") {
+    if (nextFollowState.followMode === "prework_follow" || nextFollowState.followMode === "user_follow") {
+      responsePositioning.settleRestoreForFollowMode();
       clearResponseSpacer();
       scrollController.scrollToDistanceFromBottomPx(0, "instant");
     }
@@ -404,7 +408,7 @@ export function ResponsePositionedTurns({
       if (consumePendingLatestTurnSubmitPlacement !== undefined && placement === null && !allowInitialPlacement) {
         return;
       }
-      setFollowState({ type: "latest_turn_placed" });
+      setFollowState({ type: "latest_turn_placed", watchForOverflow: placement?.shouldPlaceLatestTurn === true });
       if (!(placement?.shouldPlaceLatestTurn ?? true)) {
         clearResponseSpacer();
         if (placement !== null) {

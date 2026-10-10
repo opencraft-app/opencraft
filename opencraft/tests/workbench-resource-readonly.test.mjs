@@ -40,7 +40,7 @@ test("preview rejects direct writes; editable panel saves the captured target", 
   const writes = [];
   const invalidations = [];
   globalThis.__panelTest = {
-    runtime: {resources:{fileSystem:{writeFile:async(...args)=>{writes.push(args)}}}},
+    runtime: {resources:{host:{canRequest:method=>method==="fs/writeFile"},fileSystem:{writeFile:async(...args)=>{writes.push(args)}}}},
     blobs: {invalidate:async resource=>{invalidations.push(resource)}},
   };
   try {
@@ -51,7 +51,8 @@ test("preview rejects direct writes; editable panel saves the captured target", 
     await assert.rejects(globalThis.__panelTest.mutation(target), /read-only/);
     assert.deepEqual(writes, []);
     assert.deepEqual(invalidations, []);
-    renderToString(createElement(exports.WorkspaceResourcePanel, props));
+    const editableHtml = renderToString(createElement(exports.WorkspaceResourcePanel, props));
+    assert.match(editableHtml, /aria-label="Search workspace files" disabled=""/);
     await globalThis.__panelTest.mutation(target);
     assert.deepEqual(writes, [[target.path, Buffer.from(target.text).toString("base64")]]);
     assert.deepEqual(invalidations, [{scope:"bot-a",path:target.path}]);
@@ -67,7 +68,7 @@ test("Markdown preview and source switch without loading the editor", async () =
   const keys = ["window", "document", "IS_REACT_ACT_ENVIRONMENT"];
   const previous = Object.fromEntries(keys.map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
   Object.assign(globalThis, {window:dom.window, document:dom.window.document, IS_REACT_ACT_ENVIRONMENT:true});
-  globalThis.__panelTest = { runtime:{resources:{fileSystem:{}}}, blobs:{} };
+  globalThis.__panelTest = { runtime:{resources:{host:{canRequest:()=>false},fileSystem:{}}}, blobs:{} };
   const root = createRoot(document.getElementById("app"));
   try {
     await act(() => root.render(createElement(exports.WorkspaceResourcePreviewPanel, {tab:{resource:"/workspace/report.md"}})));

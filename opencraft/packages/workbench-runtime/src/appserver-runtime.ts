@@ -42,13 +42,18 @@ import type {
 import {
   OPENCRAFT_ATTACHMENT_STAGING_EXTENSION,
   OPENCRAFT_THREAD_QUEUE_EXTENSION,
+  OPENCRAFT_THREAD_GOAL_EXTENSION,
   OPENCRAFT_THREAD_LIFECYCLE_EXTENSION,
+  OPENCRAFT_THREAD_PINS_EXTENSION,
+  supportsThreadPinDiscovery,
   OPENCRAFT_THREAD_START_DURABILITY_EXTENSION,
   OPENCRAFT_SCOPED_MODEL_CATALOG_EXTENSION,
   parseAttachmentStagingCapability,
   parseThreadLifecycleCapability,
   supportsAtomicQueuedSteer,
   supportsUnconfirmedSteerDiscard,
+  parseThreadGoalCapability,
+  allowsAppServerMethod,
 } from "@opencraft/appserver-protocol";
 import { OPENCRAFT_RESUME_HISTORY_EXTENSION } from "@opencraft/appserver-protocol";
 import { reasoningCapability, modelInputModalities } from "@opencraft/composer-core";
@@ -62,7 +67,10 @@ import type {
   Thread as ProtocolThread,
   ThreadInjectItemsParams,
   UserInput,
+  ThreadGoal,
 } from "@opencraft/appserver-protocol/generated/v2";
+import { ThreadGoalResource } from "./thread-goal-resource";
+import { ThreadPinningResource } from "./thread-pinning-resource";
 import {
   ReplicaClient,
   type ReplicaClientStorage,
@@ -73,7 +81,7 @@ import {
   createCodexThreadReplicaSource,
   createCordisThreadSessionRuntime,
   createThreadViewReplicaProjectionBarrier,
-  mergeTurns,
+  reconcileHydratedTurn,
   projectThreadViewForReplica,
   type AppServerHostKind,
   type CordisThreadSessionRuntime,
@@ -227,7 +235,8 @@ export interface StartThreadOptions {
 }
 
 export interface AppServerThreadResourcePort {
-  capabilities?(): { fork: boolean; rename: boolean; archive: boolean; delete: boolean };
+  capabilities?(): { fork: boolean; rename: boolean; archive: boolean; delete: boolean; pin?: boolean };
+  setPinned?(threadId: string, pinned: boolean): Promise<void>;
   rename?(threadId: string, name: string): Promise<void>;
   delete?(threadId: string): Promise<void>;
   archive?(threadId: string): Promise<void>;
@@ -268,6 +277,8 @@ export interface AppServerProjectResourcePort {
 /** Host-scoped facts and capabilities; it never owns Conversation state. */
 export interface AppServerHostResourcePort {
   getInitializeResult(): AppServerInitializeResponse | null;
+  /** Bridge admission only; native rejection still remains authoritative. */
+  canRequest?(method: AppServerMethod): boolean;
   getConnectionGeneration?(): number;
   /**
    * Fetches an HTTP endpoint in the physical Host's loopback namespace.
@@ -335,6 +346,7 @@ export interface AppServerWorkbenchRuntime {
     readonly projects: AppServerProjectResourcePort;
     readonly fileSystem: AppServerFileSystemResourcePort;
     readonly attachments: AppServerAttachmentResourcePort;
+    readonly goals: ThreadGoalResource;
     readonly composerCatalog: AppServerComposerCatalogResourcePort;
     readonly terminal: AppServerTerminalResourcePort;
   };
@@ -456,7 +468,7 @@ export function createAppServerWorkbenchRuntime(
   const hostId = asHostId(config.hostId);
   const clock = config.clock ?? defaultClock;
   const reconnectDelays = config.reconnectDelaysMs ?? [
-    250, 500, 1_000, 2_000, 5_000,
+    500, 1_000, 2_000, 5_000, 15_000, 30_000, 60_000,
   ];
   const maxInactiveThreads = config.maxInactiveThreads ?? 4;
   const listeners = new Set<() => void>();
@@ -491,6 +503,18 @@ export function createAppServerWorkbenchRuntime(
     ? config.transport ?? null
     : null;
   let client: AppServerClient | null = null;
+  let threadPins: { client: AppServerClient; generation: number; resource: ThreadPinningResource } | null = null;
+  const pinResource = (current: AppServerClient) => {
+    const generation = current.connectionGeneration;
+    if (!threadPins || threadPins.client !== current || threadPins.generation !== generation) {
+      threadPins = { client: current, generation, resource: new ThreadPinningResource({
+        current: () => client === current && current.connectionGeneration === generation && current.status.state === "open",
+        read: () => current.request("opencraft/thread-pins/list", {}),
+        write: (threadId, pinned) => current.request("opencraft/thread-pins/set", { threadId, pinned }),
+      }) };
+    }
+    return threadPins.resource;
+  };
   let session: CordisThreadSessionRuntime | null = null;
   let interactions: AppServerInteractionBroker | null = null;
   let fuzzyFileSearch: AppServerFuzzyFileSearchController | null = null;
@@ -503,6 +527,13 @@ export function createAppServerWorkbenchRuntime(
   let removeClientHandlers: (() => void) | null = null;
   let removeFileSystemNotificationListener: (() => void) | null = null;
   let removeSkillsNotificationListener: (() => void) | null = null;
+  let removeGoalNotificationListener: (() => void) | null = null;
+  const goals = new ThreadGoalResource({
+    capability: () => parseThreadGoalCapability(client?.initializeResult?.capabilities?.extensions?.[OPENCRAFT_THREAD_GOAL_EXTENSION]),
+    get: (threadId) => requireClient().request("thread/goal/get", { threadId }),
+    set: (threadId, change) => requireClient().request("thread/goal/set", { threadId, ...change }),
+    clear: (threadId) => requireClient().request("thread/goal/clear", { threadId }),
+  });
   let fileSystemWatchSequence = 0;
   const fileSystemWatches = new Map<string, {
     readonly path: string;
@@ -606,7 +637,7 @@ export function createAppServerWorkbenchRuntime(
     loggedReconnectStopCode = null;
     const delay =
       reconnectDelays[Math.min(reconnectAttempt, reconnectDelays.length - 1)] ??
-      5_000;
+      60_000;
     reconnectAttempt += 1;
     console.log("[appserver-reconnect] scheduled", { hostId, attempt: reconnectAttempt, delayMs: delay });
     reconnectTimer = clock.setTimeout(() => {
@@ -619,6 +650,13 @@ export function createAppServerWorkbenchRuntime(
   const requireClient = (): AppServerClient => {
     if (client === null) throw new Error("AppServer Workbench has not started");
     return client;
+  };
+
+  const canRequest = (method: AppServerMethod): boolean => allowsAppServerMethod(
+    client?.initializeResult?.capabilities?.extensions, method,
+  );
+  const assertMethodAccess = (method: AppServerMethod): void => {
+    if (!canRequest(method)) throw new Error("此连接暂不支持该操作");
   };
 
   const requireSession = (): CordisThreadSessionRuntime => {
@@ -834,27 +872,12 @@ export function createAppServerWorkbenchRuntime(
                 priority: "background",
               }),
             projectionBarrier,
-            commitHydratedTurn: (turn, chronologicalTurnIds) => {
-              const order = new Map(
-                chronologicalTurnIds.map((turnId, index) => [turnId, index]),
-              );
+            commitHydratedTurn: (turn, chronologicalTurnIds, baselineTurn) => {
               const committedView = currentSession.views.update(
                 threadId,
                 (current) => ({
                   ...current,
-                  turns: [
-                    ...mergeTurns(current.turns, [turn], {
-                      placement: "prepend",
-                    }),
-                  ].sort((left, right) => {
-                    const leftOrder = order.get(left.id);
-                    const rightOrder = order.get(right.id);
-                    if (leftOrder === undefined && rightOrder === undefined)
-                      return 0;
-                    if (leftOrder === undefined) return 1;
-                    if (rightOrder === undefined) return -1;
-                    return leftOrder - rightOrder;
-                  }),
+                  turns: reconcileHydratedTurn(current.turns, turn, chronologicalTurnIds, { turn: baselineTurn }),
                 }),
               );
               return {
@@ -920,6 +943,7 @@ export function createAppServerWorkbenchRuntime(
         });
       });
       const refreshQueue = (): Promise<void> => {
+        if (!canRequest("thread/queue/list")) return Promise.resolve();
         if (binding.queueRefreshOperation !== null) {
           binding.queueRefreshRequested = true;
           return binding.queueRefreshOperation;
@@ -1002,6 +1026,7 @@ export function createAppServerWorkbenchRuntime(
   const hydrateBinding = (
     binding: ConversationBinding,
     force: boolean,
+    retryRejected = false,
   ): Promise<void> => {
     if (binding.disposed)
       return Promise.reject(
@@ -1012,7 +1037,7 @@ export function createAppServerWorkbenchRuntime(
         return binding.hydrationOperation;
       return binding.hydrationOperation
         .catch(() => undefined)
-        .then(() => hydrateBinding(binding, true));
+        .then(() => hydrateBinding(binding, true, retryRejected));
     }
     binding.hydrationForReconnect = force;
     const revision = connectionRevision;
@@ -1038,7 +1063,7 @@ export function createAppServerWorkbenchRuntime(
             if (view?.resumeState !== "resumed" || view.connectionGeneration !== requireClient().connectionGeneration) {
               throw new Error("This temporary side chat expired after disconnect. Start a new side chat.");
             }
-          } else await currentSession.resume.resume({ threadId: binding.threadId, force });
+          } else await currentSession.resume.resume({ threadId: binding.threadId, force, retryRejected });
           if (!current()) throw new AppServerClientError("ABORTED", "Thread recovery was superseded");
           // Prewarm execution readiness, but do not keep already-restored
           // history behind a slow connector/tool registration request.
@@ -1167,6 +1192,15 @@ export function createAppServerWorkbenchRuntime(
           try { listener(); } catch { /* One View cannot break the shared notification pump. */ }
         }
       });
+      removeGoalNotificationListener = client.subscribeNotification((notification) => {
+        if (notification.method === "thread/goal/updated") {
+          const params = notification.params as { threadId: string; goal: ThreadGoal };
+          goals.observe(params.threadId, params.goal);
+        } else if (notification.method === "thread/goal/cleared") {
+          const params = notification.params as { threadId: string };
+          goals.observe(params.threadId, null);
+        }
+      });
       removeFileSystemNotificationListener = client.subscribeNotification((notification) => {
         if (notification.method !== "fs/changed") return;
         const changed = notification.params as FsChangedNotification;
@@ -1213,6 +1247,7 @@ export function createAppServerWorkbenchRuntime(
       }) ?? null;
       await connectPhysicalHost(generation);
       ensureLifecycle(generation);
+      goals.reset();
       const resumeHistoryCapability = client.initializeResult?.capabilities?.extensions?.[
         OPENCRAFT_RESUME_HISTORY_EXTENSION
       ] as { version?: unknown; mode?: unknown } | undefined;
@@ -1240,6 +1275,7 @@ export function createAppServerWorkbenchRuntime(
       commandPort = createAppServerConversationCommandPort({
         hostId,
         client,
+        canRequest,
         interactions,
         queueAtomicSteer: supportsAtomicQueuedSteer(
           client.initializeResult?.capabilities?.extensions?.[OPENCRAFT_THREAD_QUEUE_EXTENSION],
@@ -1310,6 +1346,8 @@ export function createAppServerWorkbenchRuntime(
         removeFileSystemNotificationListener = null;
         removeSkillsNotificationListener?.();
         removeSkillsNotificationListener = null;
+        removeGoalNotificationListener?.();
+        removeGoalNotificationListener = null;
         interactions?.dispose();
         interactions = null;
         fuzzyFileSearch?.dispose();
@@ -1344,10 +1382,13 @@ export function createAppServerWorkbenchRuntime(
     resources: {
       protocol: {
         request(method, params) {
+          assertMethodAccess(method);
           return requireClient().request(method, params);
         },
       },
+      goals,
       host: {
+        canRequest: method => client?.initializeResult != null && canRequest(method),
         getConnectionGeneration() { return client?.connectionGeneration ?? 0; },
         getInitializeResult() {
           return client?.initializeResult ?? null;
@@ -1383,8 +1424,10 @@ export function createAppServerWorkbenchRuntime(
       threads: {
         capabilities() {
           const capability = parseThreadLifecycleCapability(client?.initializeResult?.capabilities?.extensions?.[OPENCRAFT_THREAD_LIFECYCLE_EXTENSION]);
-          return { fork: capability?.fork === true, rename: capability?.rename === true, archive: capability?.archive === true, delete: capability?.delete === true };
+          return { fork: capability?.fork === true, rename: capability?.rename === true, archive: capability?.archive === true, delete: capability?.delete === true,
+            pin: client !== null && threadPins?.client === client && threadPins.generation === client.connectionGeneration && threadPins.resource.available() };
         },
+        async setPinned(threadId, pinned) { await pinResource(requireClient()).set(threadId, pinned); },
         async rename(threadId, name) { await requireClient().request("thread/name/set", { threadId, name }); },
         async delete(threadId) { await requireClient().request("thread/delete", { threadId }); },
         async archive(threadId) { await requireClient().request("thread/archive", { threadId }); },
@@ -1442,16 +1485,30 @@ export function createAppServerWorkbenchRuntime(
           requireSession().views.remove(threadId);
         },
         async list(params = {}) {
-          const response = await requireClient().request("thread/list", {
+          const current = requireClient(), generation = current.connectionGeneration;
+          const response = await current.request("thread/list", {
             archived: false,
             cursor: null,
             limit: 30,
             sortDirection: "desc",
             sortKey: "updated_at",
+            // SSH Codex discovery is a hot catalog read, not a filesystem
+            // reconciliation. Keep the policy here so all catalog consumers
+            // share it; an explicit repair caller can still override it.
+            ...(config.hostKind === "remote-ssh" ? { useStateDbOnly: true } : {}),
             ...params,
           });
           const defaultCatalog = Object.keys(params).every(key => key === "cursor" || key === "limit")
             && params.cursor == null;
+          if (defaultCatalog && supportsThreadPinDiscovery(current.initializeResult?.capabilities?.extensions?.[OPENCRAFT_THREAD_PINS_EXTENSION])) {
+            const pins = await pinResource(current).read();
+            if (client !== current || current.connectionGeneration !== generation) throw new Error("Thread catalog connection changed");
+            const pinned = new Map(pins.data.map(thread => [thread.id, thread]));
+            response.data = [
+              ...pins.data.map(thread => ({ ...thread, pinned: true })),
+              ...response.data.filter(thread => !pinned.has(thread.id)).map(thread => ({ ...thread, pinned: false })),
+            ];
+          }
           if (defaultCatalog && unlistedForks.size > 0) {
             const listed = new Set(response.data.map(thread => thread.id));
             for (const id of listed) unlistedForks.delete(id);
@@ -1518,6 +1575,7 @@ export function createAppServerWorkbenchRuntime(
           return requireClient().request("fs/writeFile", { path, dataBase64 });
         },
         async watch(path, listener) {
+          assertMethodAccess("fs/watch");
           const watchId = `opencraft:${hostId}:fs:${++fileSystemWatchSequence}`;
           fileSystemWatches.set(watchId, { path, listener });
           let response: FsWatchResponse;
@@ -1540,6 +1598,7 @@ export function createAppServerWorkbenchRuntime(
           };
         },
         createFuzzyFileSearchSession(options) {
+          assertMethodAccess("fuzzyFileSearch/sessionStart");
           if (fuzzyFileSearch === null) {
             return Promise.reject(
               new Error("AppServer fuzzy file search is unavailable"),
@@ -1598,6 +1657,7 @@ export function createAppServerWorkbenchRuntime(
           };
         },
         async writeNewThreadDefaults(defaults) {
+          assertMethodAccess("config/batchWrite");
           await requireClient().request("config/batchWrite", {
             edits: [
               { keyPath: "model", value: defaults.model, mergeStrategy: "replace" },
@@ -1613,6 +1673,7 @@ export function createAppServerWorkbenchRuntime(
           });
         },
         async listSkills(params = {}) {
+          assertMethodAccess("skills/list");
           return requireClient().request("skills/list", {
             cwds: [],
             forceReload: false,
@@ -1620,6 +1681,7 @@ export function createAppServerWorkbenchRuntime(
           });
         },
         createFuzzyFileSearchSession(options) {
+          assertMethodAccess("fuzzyFileSearch/sessionStart");
           if (fuzzyFileSearch === null) {
             return Promise.reject(
               new Error("AppServer fuzzy file search is unavailable"),
@@ -1635,14 +1697,17 @@ export function createAppServerWorkbenchRuntime(
       },
       terminal: {
         attach(processId) {
+          assertMethodAccess("process/attach");
           if (phase !== "ready" || terminalController === null) throw new Error("Terminal Host is not ready");
           return terminalController.attach(processId);
         },
         list() {
+          assertMethodAccess("process/list");
           if (phase !== "ready" || terminalController === null) throw new Error("Terminal Host is not ready");
           return terminalController.list();
         },
         open(options) {
+          assertMethodAccess("process/spawn");
           if (phase !== "ready") {
             throw new Error(`AppServer Host is not ready for a terminal (${phase})`);
           }
@@ -1760,7 +1825,7 @@ export function createAppServerWorkbenchRuntime(
         getSnapshot: binding.runtime.getSnapshot,
         retryRestore() {
           if (released || binding.disposed) return Promise.reject(new Error(`Thread ${threadId} lease is released`));
-          return hydrateBinding(binding, false);
+          return hydrateBinding(binding, false, true);
         },
         subscribe(listener) {
           if (released || binding.disposed)
@@ -1782,6 +1847,10 @@ export function createAppServerWorkbenchRuntime(
         },
         submit: (intent) =>
           runBindingCommand(binding, async () => {
+            // Refuse before Conversation adopts the immutable draft/optimistic
+            // queue. Transport failure after adoption is a different boundary.
+            assertMethodAccess(intent.target.type === "enqueue-follow-up" ? "thread/queue/add"
+              : intent.target.type === "steer-active-turn" ? "turn/steer" : "turn/start");
             const receipt = await binding.runtime.submit(intent);
             if (receipt.turnId !== null)
               retainAcceptedTurn(binding, receipt.turnId);
@@ -1894,6 +1963,8 @@ export function createAppServerWorkbenchRuntime(
         removeFileSystemNotificationListener = null;
         removeSkillsNotificationListener?.();
         removeSkillsNotificationListener = null;
+        removeGoalNotificationListener?.();
+        removeGoalNotificationListener = null;
         skillsChangedListeners.clear();
 
         const pending = [

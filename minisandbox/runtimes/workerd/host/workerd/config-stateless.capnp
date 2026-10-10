@@ -9,6 +9,8 @@ const config :Workerd.Config = (
 			bindings = [
 				(name = "RIVET_WORKERD_TOKEN", text = "dev-only-change-me"),
 				(name = "RIVET_OBJECT_ROUTER_TOKEN", text = "object-router-token-change-me"),
+				(name = "RIVET_STATELESS_ISOLATE_CACHE_CAPACITY", text = "16"),
+				(name = "RIVET_STATELESS_ISOLATE_CACHE_IDLE_MS", text = "60000"),
 				(name = "WORKER_LOADER", workerLoader = (id = "rivet-stateless-worker-versions")),
 				(name = "WORKER_CODE", service = "worker-code"),
 				(name = "OBJECT_ROUTER", service = "object-router"),

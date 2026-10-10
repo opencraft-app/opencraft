@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"log/slog"
 	"net/http"
@@ -87,7 +86,7 @@ func main() {
 	flag.IntVar(&actorCacheCapacity, "actor-cache-capacity", 32_768, "maximum cached Durable Object Actor placements")
 	flag.DurationVar(&actorCacheIdleTTL, "actor-cache-idle-ttl", 10*time.Minute, "idle lifetime of a cached Durable Object Actor placement")
 	flag.IntVar(&objectMissCapacity, "object-miss-capacity", 4_096, "maximum distinct concurrent Durable Object cache misses")
-	flag.IntVar(&deploymentCacheCapacity, "deployment-cache-capacity", 4_096, "maximum active Worker Deployments cached behind the Registry change cursor")
+	flag.IntVar(&deploymentCacheCapacity, "deployment-cache-capacity", 4_096, "maximum cached Worker Deployments, shared Deployment reads, and read waiters")
 	flag.StringVar(&placementNamespace, "placement-namespace", "actor-fleet-system", "namespace containing the production ShardPool and RivetCells")
 	flag.StringVar(&placementPool, "placement-pool", "", "ShardPool used for new Agent placement")
 	flag.StringVar(&placementRouteNamespace, "placement-route-namespace", "workers-api-system", "namespace containing immutable Cell route records")
@@ -100,7 +99,7 @@ func main() {
 	flag.StringVar(&qualificationDatacenter, "qualification-datacenter", "", "qualification-only fixed Engine datacenter")
 	flag.Parse()
 
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	logger := workersapi.NewPlatformLogger(os.Stdout)
 	slog.SetDefault(logger)
 	shutdownSignal, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -206,6 +205,7 @@ func main() {
 	server := &http.Server{
 		Addr:              listenAddress,
 		Handler:           api,
+		ErrorLog:          workersapi.PlatformHTTPErrorLog(logger, "public"),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		// Conversational responses may stream for much longer than control
@@ -220,6 +220,7 @@ func main() {
 		servers = append(servers, &http.Server{
 			Addr:              internalListenAddress,
 			Handler:           api.InternalHandler(),
+			ErrorLog:          workersapi.PlatformHTTPErrorLog(logger, "internal"),
 			ReadHeaderTimeout: 5 * time.Second,
 			ReadTimeout:       30 * time.Second,
 			WriteTimeout:      0,
@@ -227,30 +228,13 @@ func main() {
 			MaxHeaderBytes:    32 << 10,
 		})
 	}
-	go func() {
-		<-shutdownSignal.Done()
-		shutdownContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		for _, activeServer := range servers {
-			if err := activeServer.Shutdown(shutdownContext); err != nil {
-				logger.Error("shut down Workers API listener", "address", activeServer.Addr, "error", err)
-			}
-		}
-	}()
-
-	listenerErrors := make(chan error, len(servers))
-	for _, activeServer := range servers {
-		go func() {
-			logger.Info("starting Workers API listener", "listenAddress", activeServer.Addr, "engineCount", len(engineURLs))
-			err := activeServer.ListenAndServe()
-			if errors.Is(err, http.ErrServerClosed) {
-				err = nil
-			}
-			listenerErrors <- err
-		}()
+	endpoints, err := bindHTTPServers(servers)
+	if err == nil {
+		err = runHTTPServers(shutdownSignal, logger, len(engineURLs), endpoints, 10*time.Second)
 	}
-	if err := <-listenerErrors; err != nil {
+	if err != nil {
 		stop()
+		api.Close()
 		logger.Error("Workers API listener stopped", "error", err)
 		os.Exit(1)
 	}

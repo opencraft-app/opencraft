@@ -15,4 +15,6 @@ var (
 	ErrInstanceShadowBindingRequired = Register(New("INSTANCE_SHADOW_BINDING_REQUIRED", 403, "shadow account binding required"))
 	ErrChannelInvalidParam           = Register(New("CHANNEL_INVALID_PARAM", 400, "invalid channel configuration parameters"))
 	ErrChannelConfigFailed           = Register(New("CHANNEL_CONFIG_FAILED", 500, "channel configuration failed"))
+	ErrChannelHistoryUnavailable     = Register(New("CHANNEL_HISTORY_UNAVAILABLE", 503, "channel history is unavailable"))
+	ErrChannelHistoryNotFound        = Register(New("CHANNEL_HISTORY_NOT_FOUND", 404, "channel session not found"))
 )

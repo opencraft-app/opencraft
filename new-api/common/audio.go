@@ -38,7 +38,7 @@ func GetAudioDuration(ctx context.Context, f io.ReadSeeker, ext string) (duratio
 	case ".aiff", ".aif", ".aifc":
 		duration, err = getAIFFDuration(f)
 	case ".webm":
-		duration, err = getWebMDuration(f)
+		duration, err = getWebMDurationContext(ctx, f)
 	case ".aac":
 		duration, err = getAACDuration(f)
 	default:
@@ -275,36 +275,7 @@ func getAIFFDuration(r io.ReadSeeker) (float64, error) {
 // getWebMDuration 解析 WebM 文件以获取时长。
 // WebM 使用 Matroska 容器格式
 func getWebMDuration(r io.ReadSeeker) (float64, error) {
-	if _, err := r.Seek(0, io.SeekStart); err != nil {
-		return 0, errors.Wrap(err, "failed to seek webm file")
-	}
-
-	// WebM/Matroska 文件的解析比较复杂
-	// 这里提供一个简化的实现，读取 EBML 头部
-	// 对于完整的 WebM 解析，可能需要使用专门的库
-
-	// 简单实现：查找 Duration 元素
-	// WebM Duration 的 Element ID 是 0x4489
-	// 这是一个简化版本，可能不适用于所有 WebM 文件
-	buf := make([]byte, 8192)
-	n, err := r.Read(buf)
-	if err != nil && err != io.EOF {
-		return 0, errors.Wrap(err, "failed to read webm file")
-	}
-
-	// 尝试查找 Duration 元素（这是一个简化的方法）
-	// 实际的 WebM 解析需要完整的 EBML 解析器
-	// 这里返回错误，建议使用专门的库
-	if n > 0 {
-		// 检查 EBML 标识
-		if len(buf) >= 4 && binary.BigEndian.Uint32(buf[0:4]) == 0x1A45DFA3 {
-			// 这是一个有效的 EBML 文件
-			// 但完整解析需要更复杂的逻辑
-			return 0, errors.New("webm duration parsing requires full EBML parser (consider using ffprobe for webm files)")
-		}
-	}
-
-	return 0, errors.New("failed to parse webm file")
+	return getWebMDurationContext(context.Background(), r)
 }
 
 // getAACDuration 解析 AAC (ADTS格式) 文件以获取时长。

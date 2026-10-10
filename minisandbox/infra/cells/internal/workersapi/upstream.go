@@ -7,9 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -156,6 +159,7 @@ func (a *API) requestJSON(
 	if token := a.tokenForURL(target); token != "" {
 		request.Header.Set("Authorization", "Bearer "+token)
 	}
+	request, transportTrace := traceFetchRequest(request)
 	response, err := a.client.Do(request)
 	if err != nil {
 		status := http.StatusServiceUnavailable
@@ -164,6 +168,15 @@ func (a *API) requestJSON(
 			status = http.StatusGatewayTimeout
 			code = "upstream_timeout"
 		}
+		// url.Error includes the full URL. Emit bounded classification and socket
+		// milestones instead of raw errors, paths, headers, or response payloads.
+		attrs := append(transportTrace.attributes(),
+			slog.String("code", code), slog.String("error", diagnosticErrorClass(err)),
+			slog.Int("status", status))
+		if requestID, ok := ctx.Value(requestIDKey{}).(string); ok && requestID != "" {
+			attrs = append(attrs, slog.String("request_id", requestID))
+		}
+		slog.Default().LogAttrs(ctx, slog.LevelWarn, "Worker control transport failed", attrs...)
 		return &upstreamError{Status: status, Code: code, Message: "An internal service is unavailable", Retryable: true}
 	}
 	defer response.Body.Close()
@@ -199,6 +212,38 @@ func (a *API) requestJSON(
 		return &upstreamError{Status: http.StatusBadGateway, Code: "invalid_upstream_response", Message: "An internal service returned malformed JSON", Retryable: true}
 	}
 	return nil
+}
+
+// diagnosticErrorClass never serializes an error message or an upstream code.
+// Those values can contain a URL, response payload, or other user data.
+func diagnosticErrorClass(err error) string {
+	var networkError net.Error
+	var dnsError *net.DNSError
+	var upstream *upstreamError
+	switch {
+	case err == nil:
+		return "none"
+	case errors.Is(err, context.Canceled):
+		return "cancelled"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "deadline"
+	case errors.Is(err, ErrNoAdmissionCapacity):
+		return "no_admission_capacity"
+	case errors.As(err, &upstream):
+		return "upstream_error"
+	case errors.As(err, &dnsError):
+		return "dns"
+	case errors.Is(err, syscall.ECONNREFUSED):
+		return "connection_refused"
+	case errors.Is(err, syscall.ECONNRESET):
+		return "connection_reset"
+	case errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF):
+		return "eof"
+	case errors.As(err, &networkError) && networkError.Timeout():
+		return "timeout"
+	default:
+		return "transport_error"
+	}
 }
 
 func (a *API) tokenForURL(target *url.URL) string {

@@ -29,6 +29,8 @@ use crate::{
 	value::{KeyValue, Slice, Value, Values},
 };
 
+use super::read_flights::ReadFlights;
+
 enum TransactionCommand {
 	AtomicOp {
 		key: Vec<u8>,
@@ -444,8 +446,16 @@ impl TransactionTask {
 
 	async fn run(mut self) {
 		let mut deferred_error = None;
+		let mut reads = ReadFlights::new();
 
-		while let Some(command) = self.receiver.recv().await {
+		while let Some(command) = reads.next_command(&mut self.receiver).await {
+			// Only adjacent point reads overlap. All other commands preserve FIFO completion.
+			if !matches!(
+				&command,
+				TransactionCommand::Get { .. } | TransactionCommand::GetKey { .. }
+			) {
+				reads.drain().await;
+			}
 			match command {
 				TransactionCommand::AtomicOp {
 					key,
@@ -461,38 +471,52 @@ impl TransactionTask {
 					snapshot,
 					response,
 				} => {
-					let result = if let Some(error) = take_deferred_error(&mut deferred_error) {
-						Err(error)
+					if let Some(error) = take_deferred_error(&mut deferred_error) {
+						let _ = response.send(Err(error));
 					} else {
 						match self.active() {
-							Ok(transaction) => transaction
-								.get(&key, snapshot)
-								.await
-								.map(|value| value.map(|value| value.to_vec().into()))
-								.map_err(anyhow::Error::new),
-							Err(error) => Err(error),
+							Ok(transaction) => {
+								// The native future is created here, in command order. It owns its FDB
+								// handle and does not borrow the transaction or the key.
+								let read = transaction.get(&key, snapshot);
+								reads.push(async move {
+									let result = read
+										.await
+										.map(|value| value.map(|value| value.to_vec().into()))
+										.map_err(anyhow::Error::new);
+									let _ = response.send(result);
+								});
+							}
+							Err(error) => {
+								let _ = response.send(Err(error));
+							}
 						}
-					};
-					let _ = response.send(result);
+					}
 				}
 				TransactionCommand::GetKey {
 					selector,
 					snapshot,
 					response,
 				} => {
-					let result = if let Some(error) = take_deferred_error(&mut deferred_error) {
-						Err(error)
+					if let Some(error) = take_deferred_error(&mut deferred_error) {
+						let _ = response.send(Err(error));
 					} else {
 						match self.active() {
-							Ok(transaction) => transaction
-								.get_key(&selector, snapshot)
-								.await
-								.map(|key| key.to_vec().into())
-								.map_err(anyhow::Error::new),
-							Err(error) => Err(error),
+							Ok(transaction) => {
+								let read = transaction.get_key(&selector, snapshot);
+								reads.push(async move {
+									let result = read
+										.await
+										.map(|key| key.to_vec().into())
+										.map_err(anyhow::Error::new);
+									let _ = response.send(result);
+								});
+							}
+							Err(error) => {
+								let _ = response.send(Err(error));
+							}
 						}
-					};
-					let _ = response.send(result);
+					}
 				}
 				TransactionCommand::GetRange {
 					option,
@@ -625,6 +649,7 @@ impl TransactionTask {
 				}
 			}
 		}
+		reads.drain().await;
 	}
 }
 

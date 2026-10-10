@@ -8,7 +8,7 @@
 > **v3 关键变化（§12）**：桌面**复用实例自己的主 sandbox**，不再新建独立桌面 CVM，
 > 因此 **B 节「建桌面 pool」整节删除**、C 节不再需要 `DESKTOP_SANDBOX_TEMPLATE_ID`、
 > idle 回收由「pause 整机」改为「只停桌面服务」。图形层需在**主镜像**预装
-> （`build.sh --with-desktop`）或按需装（TB.2 待补）。
+> （`build.sh --with-desktop`）或按需装（Ubuntu/Debian 的 apt 分支、TencentOS 4.4 的 dnf 分支）。
 
 ---
 
@@ -45,9 +45,26 @@ bash build.sh <openclaw_version> --with-desktop
 # 5. 将镜像复制到 sandbox 所在 region，并**作为实例主 pool 的基础镜像**
 #    （实例新建/重建后主 sandbox 即自带图形层）
 #
-# 备选（TB.2 待补）：不改主镜像，点桌面时 ctl 按需 apt 装图形层。
-# 当前该路径未实现，provision 会检测到图形层缺失并返回 Failed 提示。
+# 备选：不改主镜像，点桌面时 ctl 检测图形层缺失并按需安装。
+# Ubuntu/Debian 使用 apt；TencentOS 4.4 使用已配置的原生 dnf 仓库。
+# 安装脚本异步执行、写进度文件；完成后仍由 provision 注入密码和启动服务。
 ```
+
+### 腾讯 OS 4.4 按需安装前提
+
+本节仅适用于 CTL 生成的运行时安装脚本，不表示 `images/build.sh` 已支持 TencentOS，也不包含 WebRTC 服务。
+
+- `/etc/os-release` 必须声明 `ID=tencentos`、`VERSION_ID=4.4`；其他 TencentOS 版本明确拒绝，不猜测兼容性。
+- 目标已配置原生 BaseOS/AppStream/EPOL 仓库且可访问；脚本不自动添加外部仓库或执行发行版升级。
+- 目标具有正在运行的 systemd、`flock`、`getent` 和非交互 sudo；已有非 root `agentuser`，其 home 为 `/home/agentuser`。缺少账户时应先在运行时接入层准备，不在安装脚本中创建或改名、不回退为 root 桌面。
+- 在有容器工作负载的开发主机上准备账户时，还须核验现有进程的数值 UID/GID，不能因 NSS 中没有该用户名就默认分配 UID 1000；不要让新桌面账户取得无关容器进程的身份。
+- dnf 包：`xorg-x11-server-Xvfb x11vnc novnc python3-websockify xfce4-session xfce4-panel xfce4-settings xfce4-terminal xfdesktop xfwm4 xfce4-appfinder xfce4-notifyd dbus-daemon dbus-x11 google-noto-sans-cjk-sc-fonts curl`。
+- 腾讯原生 EPOL 提供 XFCE、x11vnc、novnc 和 python3-websockify；Xvfb、D-Bus 和中文字体来自 AppStream。安装后核验 `/usr/bin/{Xvfb,x11vnc,websockify,dbus-run-session,startxfce4}` 与 `/usr/share/novnc/vnc.html`；服务与 Ubuntu 使用同一 `DISPLAY=:1` 和用户身份。
+- 不关闭 SELinux、防火墙或扩大 6080 的公开访问；继续遵循 B' 的内网入口约束。
+
+2026-10-04 在 TencentOS 4.4 x86_64 上只读查询上述仓库包和文件路径，未执行真实安装或启动桌面。模拟安装与 Bash 语法通过仍不能代替 A.3 的图形服务、中文字体和实际连接验收；真机测试应在专用测试实例上另外执行。
+
+同日后续经用户明确授权，在承载本机 OpenCraft 的 TencentOS 4.4 上执行生成脚本：包安装和四个 unit 写入完成；以独立非特权 agentuser 启动临时回环测试，实际 XFCE/终端、1440×900 framebuffer、Noto Sans CJK SC 字体、noVNC HTTP 200 与 WebSocket→RFB 链路通过。测试后临时服务停止，正式 vela unit 保持 disabled/inactive，5900/6080 不监听；OpenCraft 与原 dbus-broker 的 PID、启动时间保持不变。此结果只验证本机图形环境和回环媒体链路，不验证 CTL/TAT/ingress 或 OpenCraft 云桌面 UI/WebRTC。详情见 [本机试装记录](../../docs/context/tasks/2026-10-04-cloud-desktop-local-install.md)。
 
 ### A.2 可调参数（环境变量，一般用默认）
 
@@ -247,3 +264,7 @@ curl -s https://<ctl-host>/v1/instances/<别人的实例ID>/desktop/session \
 | idle 回收 | `PauseSandbox` 整机（STOP_CHARGING）| `systemctl stop` 桌面服务，主机不停 |
 | 恢复 | `ResumeSandbox` 唤醒整机 | `provisionDesktop` 幂等重拉服务 |
 | 图形层缺失 | 不会（独立桌面镜像必带）| 返回 `Failed` 提示（主镜像须 `--with-desktop`）|
+
+## OpenCraft 资源准备兼容说明（2026-10-04）
+
+新 `desktop/resource` 将明确准备与只读查询分开；旧 `desktop/session` 的启动、GET 心跳与 VNC DTO 保留兼容。两者核验缓存的用户/Sandbox 绑定，避免换机后复用旧 Ready；后台安装仍使用同一 Ubuntu/TencentOS 生成脚本。本轮只有模拟 TAT 测试，未执行云端命令或替换预览。新接口不提供 WebRTC 或输入控制，详见 [资源准备契约](cloud-desktop-resource.md)。

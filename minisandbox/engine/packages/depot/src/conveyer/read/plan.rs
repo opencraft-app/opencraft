@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use universaldb::utils::IsolationLevel::Serializable;
 
 use crate::conveyer::{
@@ -34,6 +34,7 @@ pub(super) struct BranchReadPlan {
 	pub(super) head: DBHead,
 	pub(super) ancestry: BranchAncestry,
 	pub(super) sources: Vec<ReadSource>,
+	pub(super) inherited_bucket_cap: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -102,7 +103,7 @@ pub(super) async fn resolve_storage_scope(
 	cached_ancestry: Option<&BranchAncestry>,
 ) -> Result<StorageScope> {
 	Ok(
-		match branch::resolve_database_branch(
+		match branch::resolve_database_read_branch(
 			tx,
 			bucket_id,
 			database_id,
@@ -112,9 +113,15 @@ pub(super) async fn resolve_storage_scope(
 		)
 		.await?
 		{
-			Some(branch_id) => {
-				StorageScope::Branch(load_branch_read_plan(tx, branch_id, cached_ancestry).await?)
-			}
+			Some(resolution) => StorageScope::Branch(
+				load_branch_read_plan(
+					tx,
+					resolution.pointer.current_branch,
+					resolution.versionstamp_cap,
+					cached_ancestry,
+				)
+				.await?,
+			),
 			None => return Err(SqliteStorageError::DatabaseNotFound.into()),
 		},
 	)
@@ -123,10 +130,11 @@ pub(super) async fn resolve_storage_scope(
 async fn load_branch_read_plan(
 	tx: &universaldb::Transaction,
 	branch_id: DatabaseBranchId,
+	bucket_versionstamp_cap: Option<[u8; 16]>,
 	cached_ancestry: Option<&BranchAncestry>,
 ) -> Result<BranchReadPlan> {
 	let head_bytes = super::tx::tx_get_value(tx, &keys::branch_meta_head_key(branch_id)).await?;
-	let head = if let Some(head_bytes) = head_bytes {
+	let mut head = if let Some(head_bytes) = head_bytes {
 		decode_db_head(&head_bytes)?
 	} else {
 		let head_at_fork_bytes =
@@ -137,6 +145,13 @@ async fn load_branch_read_plan(
 				})?;
 		decode_db_head(&head_at_fork_bytes)?
 	};
+	if let Some(cap) = bucket_versionstamp_cap {
+		let txid = lookup_txid_for_read(tx, branch_id, cap).await?;
+		let commit = branch::read_commit_row(tx, branch_id, txid).await?;
+		head.head_txid = txid;
+		head.db_size_pages = commit.db_size_pages;
+		head.post_apply_checksum = commit.post_apply_checksum;
+	}
 
 	let ancestry = if let Some(cached_ancestry) =
 		cached_ancestry.filter(|ancestry| ancestry.root_branch_id == branch_id)
@@ -147,10 +162,20 @@ async fn load_branch_read_plan(
 	};
 
 	let mut sources = Vec::new();
+	let mut versionstamp_cap = bucket_versionstamp_cap;
 	for ancestor in &ancestry.ancestors {
 		let max_txid = match ancestor.parent_versionstamp_cap {
-			Some(parent_versionstamp) => {
-				lookup_txid_for_read(tx, ancestor.branch_id, parent_versionstamp).await?
+			Some(parent_cap) => {
+				let cap = versionstamp_cap.map_or(parent_cap, |cap| cap.min(parent_cap));
+				versionstamp_cap = Some(cap);
+				if cap == parent_cap {
+					// A database fork records an exact commit. Missing history must not
+					// silently turn this boundary into an earlier snapshot.
+					branch::lookup_txid_at_versionstamp(tx, ancestor.branch_id, parent_cap).await?
+				} else {
+					// A bucket snapshot may fall between this database's commits.
+					lookup_txid_for_read(tx, ancestor.branch_id, cap).await?
+				}
 			}
 			None => head.head_txid,
 		};
@@ -165,6 +190,7 @@ async fn load_branch_read_plan(
 		head,
 		ancestry,
 		sources,
+		inherited_bucket_cap: bucket_versionstamp_cap.is_some(),
 	})
 }
 
@@ -173,13 +199,9 @@ async fn lookup_txid_for_read(
 	branch_id: DatabaseBranchId,
 	versionstamp: [u8; 16],
 ) -> Result<u64> {
-	let bytes = super::tx::tx_get_value(tx, &keys::branch_vtx_key(branch_id, versionstamp))
-		.await?
-		.ok_or(SqliteStorageError::RestoreTargetExpired)?;
-	let bytes: [u8; std::mem::size_of::<u64>()] = bytes
-		.as_slice()
-		.try_into()
-		.context("sqlite VTX entry should be exactly 8 bytes")?;
-
-	Ok(u64::from_be_bytes(bytes))
+	Ok(
+		branch::lookup_commit_position_at_or_before(tx, branch_id, versionstamp)
+			.await?
+			.1,
+	)
 }

@@ -13,10 +13,11 @@ import { type PublicSiteLocale } from '@/lib/public-site-navigation';
 import { isGlobal } from '@/lib/region';
 import { cn } from '@/lib/utils';
 import { AGENTS_HOME_PATH } from '@/lib/agent-routes';
-import { CTA_COPY_BY_LOCALE, journeyHref, resolveCtaRoute } from '@/lib/cta-journey';
+import { canShowMyAgentsEntry, CTA_COPY_BY_LOCALE, journeyHref, resolveCtaRoute } from '@/lib/cta-journey';
 import {
   armPostLoginRedirect,
   disarmPostLoginRedirect,
+  REOPEN_PRICING_MODAL_EVENT,
   usePostLoginRedirect,
 } from './use-post-login-redirect';
 import { DATONG_PAGE_IDS } from '@/observability/datong';
@@ -69,6 +70,16 @@ const copyByLocale: Record<
     enterProduct: 'Masuk ke LightVela',
     login: 'Masuk',
   },
+  'ms-MY': {
+    createNow: "Buat Sekarang",
+    enterProduct: "Buka LightVela",
+    login: "Log Masuk",
+  },
+  'th-TH': {
+    createNow: "ทำตอนนี้",
+    enterProduct: "เปิด LightVela",
+    login: "เข้าสู่ระบบ",
+  },
   es: {
     createNow: 'Crear ahora',
     enterProduct: 'Entrar a LightVela',
@@ -84,6 +95,19 @@ const copyByLocale: Record<
     enterProduct: 'LightVela 열기',
     login: '로그인',
   },
+};
+
+const entitlementErrorCopy: Record<PublicSiteLocale, { message: string; retry: string }> = {
+  'ms-MY': { message: 'Langganan anda belum dapat disahkan. Cuba lagi.', retry: 'Cuba lagi' },
+  'th-TH': { message: "การสมัครของคุณยังไม่สามารถยืนยันได้ ลองอีกครั้ง", retry: "ลองอีกครั้ง" },
+  'en-US': { message: 'Could not confirm your subscription. Try again.', retry: 'Retry' },
+  'zh-CN': { message: '订阅状态暂时无法确认，请重试。', retry: '重试' },
+  'zh-SG': { message: '订阅状态暂时无法确认，请重试。', retry: '重试' },
+  'zh-Hant': { message: '暫時無法確認訂閱狀態，請重試。', retry: '重試' },
+  'id-ID': { message: 'Status langganan belum dapat dikonfirmasi. Coba lagi.', retry: 'Coba lagi' },
+  es: { message: 'No se pudo confirmar tu suscripción. Inténtalo de nuevo.', retry: 'Reintentar' },
+  'ja-JP': { message: 'サブスクリプションの状態を確認できません。再試行してください。', retry: '再試行' },
+  'ko-KR': { message: '구독 상태를 확인할 수 없습니다. 다시 시도해 주세요.', retry: '다시 시도' },
 };
 
 type PublicHeaderAuthIslandProps = {
@@ -113,11 +137,13 @@ function PublicHeaderAuthControls({
   const router = useRouter();
   const { authReady, isAuthenticated } = useSession();
   const { auth } = useRepositories();
-  const { bots, isSubscribed } = useOpenClaw();
+  const { bots, botsError, botsLoading, hasResolvedPasses, isSubscribed, latestPass, passesError, passesLoading } = useOpenClaw();
   const [showLogin, setShowLogin] = useState(false);
+  const [postLoginError, setPostLoginError] = useState(false);
   const loginErrorMessage = useMemo(() => oauthErrorMessage(oauthError), [oauthError]);
   const activeLocale = locale;
   const copy = copyByLocale[activeLocale];
+  const errorCopy = entitlementErrorCopy[activeLocale] ?? entitlementErrorCopy['en-US'];
   const hasBots = bots.length > 0;
   // 未登录转化引导：主按钮文案与 Hero / Footer CTA 共用同一份「免费试用」文案。
   // 可选链 + en-US 兜底，避免 CTA_COPY_BY_LOCALE 缺失对应语种时拿到 undefined（工蜂 AI CR 边界条件建议）。
@@ -125,26 +151,38 @@ function PublicHeaderAuthControls({
     ? (CTA_COPY_BY_LOCALE[activeLocale]?.startFree ?? CTA_COPY_BY_LOCALE['en-US'].startFree)
     : copy.createNow;
   // CTA / 登录落点：订阅前统一 /subscribe，订阅后统一 /agents（国内国际同一套逻辑）。
-  const ctaRoute = resolveCtaRoute({ isAuthenticated, isSubscribed, hasBots });
+  // 当前没有 Bot 的已订阅用户直接进入创建流程。
+  const ctaRoute = resolveCtaRoute({
+    isAuthenticated,
+    isSubscribed,
+    hasBots,
+  });
   const ctaHref = journeyHref(ctaRoute, activeLocale, { localized: isGlobal });
   // 登录成功后按订阅状态分流：未订阅 → /subscribe，已订阅 → /agents
-  const redirectAfterLogin = usePostLoginRedirect({ locale: activeLocale });
+  const redirectAfterLogin = usePostLoginRedirect({
+    locale: activeLocale,
+    onEntitlementUnavailable: () => setPostLoginError(true),
+  });
 
-  const renderProductEntry = (surface: 'desktop' | 'mobile') => {
-    if (!showProductEntry) return null;
-    const isMobile = surface === 'mobile';
+  const renderProductEntry = () => {
+    /* 购买前不暴露「我的智能体」入口（PRD 2026-09-30）。
+       与 /agents 门禁同口径：已订阅、有历史订阅或 Bot 才显示。 */
+    if (!showProductEntry || !isAuthenticated || !canShowMyAgentsEntry({
+      hasResolvedPasses, passesLoading, passesError, isSubscribed,
+      hasHistoricalPass: Boolean(latestPass), hasBots: (bots?.length ?? 0) > 0,
+      botsLoading, botsError,
+    })) return null;
     return (
       <a
         href={AGENTS_HOME_PATH}
         onClick={() => {
           trackDatongClick('agent_enter_console_btn', {
             pgid: DATONG_PAGE_IDS.HOME,
-            params: { surface, target: AGENTS_HOME_PATH },
+            params: { surface: window.innerWidth < 1024 ? 'mobile' : 'desktop', target: AGENTS_HOME_PATH },
           });
         }}
         className={cn(
-          'inline-flex cursor-pointer items-center justify-center whitespace-nowrap rounded-[100px] border border-black/90 bg-black/90 font-heading font-medium text-white shadow-[0_2px_0_rgba(187,187,187,0.05)] hover:bg-black/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2',
-          isMobile ? 'h-[32px] px-3 text-[13px]' : 'h-[36px] px-4 text-sm xl:px-5',
+          'inline-flex h-[32px] cursor-pointer items-center justify-center whitespace-nowrap rounded-[100px] border border-black/90 bg-black/90 px-3 font-heading text-[13px] font-medium text-white shadow-[0_2px_0_rgba(187,187,187,0.05)] hover:bg-black/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 lg:h-[36px] lg:px-4 lg:text-sm xl:px-5',
         )}
       >
         {copy.enterProduct}
@@ -182,6 +220,11 @@ function PublicHeaderAuthControls({
         target: ctaRoute,
       },
     });
+    if (promoteFreeTrial && ctaRoute === 'subscribe') {
+      const event = new CustomEvent(REOPEN_PRICING_MODAL_EVENT, { detail: { handled: false } });
+      window.dispatchEvent(event);
+      if (event.detail.handled) return;
+    }
     router.push(ctaHref);
   };
 
@@ -203,13 +246,28 @@ function PublicHeaderAuthControls({
   if (isAuthenticated) {
     return (
       <>
-        <div className="hidden shrink-0 items-center gap-2 lg:flex xl:gap-3">
-          {showLanguageSwitcher && renderNextLanguageSwitcher({ activeLocale: activeLocale, reloadAfterSwitch: false, variant: 'dropdown' })}
-          {renderProductEntry('desktop')}
-          <UserAvatarMenu />
-        </div>
-        <div className="ml-auto flex items-center gap-2 lg:hidden">
-          {renderProductEntry('mobile')}
+        {postLoginError && (
+          <div role="alert" className="fixed right-4 top-20 z-[100] flex max-w-[calc(100vw-2rem)] items-center gap-3 rounded-lg bg-[var(--surface-base)] px-4 py-3 text-sm text-[var(--color-danger)] shadow-lg ring-1 ring-[var(--color-danger)]/20">
+            <span>{errorCopy.message}</span>
+            <button
+              type="button"
+              className="shrink-0 font-semibold underline underline-offset-2"
+              onClick={() => {
+                setPostLoginError(false);
+                redirectAfterLogin();
+              }}
+            >
+              {errorCopy.retry}
+            </button>
+          </div>
+        )}
+        <div className="ml-auto flex shrink-0 items-center gap-2 lg:ml-0 xl:gap-3">
+          {showLanguageSwitcher && (
+            <div className="hidden lg:block">
+              {renderNextLanguageSwitcher({ activeLocale: activeLocale, reloadAfterSwitch: false, variant: 'dropdown' })}
+            </div>
+          )}
+          {renderProductEntry()}
           <UserAvatarMenu />
         </div>
       </>

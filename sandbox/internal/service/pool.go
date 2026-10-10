@@ -1729,6 +1729,13 @@ func (s *Service) WarmCapacityBundleCountForSKU(ctx context.Context, skuID strin
 }
 
 func (s *Service) EnsurePoolForCapacityBundle(ctx context.Context, binding core.TemplateSkuBinding, sku core.SKU, bundleID string) (core.Pool, bool, error) {
+	return s.ensurePoolForCapacityBundle(ctx, binding, sku, bundleID, "")
+}
+
+// ensurePoolForCapacityBundle keeps the source pool's instance type when a
+// security-group shard is being replaced. Ordinary SKU growth still uses the
+// SKU default.
+func (s *Service) ensurePoolForCapacityBundle(ctx context.Context, binding core.TemplateSkuBinding, sku core.SKU, bundleID, sourceInstanceType string) (core.Pool, bool, error) {
 	if strings.TrimSpace(bundleID) == "" {
 		return core.Pool{}, false, fmt.Errorf("missing capacity bundle id")
 	}
@@ -1797,7 +1804,7 @@ func (s *Service) EnsurePoolForCapacityBundle(ctx context.Context, binding core.
 		Description:         fmt.Sprintf("derived from sku %s", sku.ID),
 		BaseImage:           firstNonEmptyString(strings.TrimSpace(sku.DesiredImageID), strings.TrimSpace(sku.BaseImage)),
 		DesiredCap:          desiredCap,
-		InstanceType:        firstNonEmptyString(bundle.LineageTags[sourcePoolInstanceTypeLineageTag], sku.InstanceType, defaultInstanceType),
+		InstanceType:        firstNonEmptyString(strings.TrimSpace(sourceInstanceType), bundle.LineageTags[sourcePoolInstanceTypeLineageTag], strings.TrimSpace(sku.InstanceType), defaultInstanceType),
 		Status:              core.PoolStatusActive,
 		VpcID:               bundle.VpcID,
 		SubnetID:            bundle.SubnetID,

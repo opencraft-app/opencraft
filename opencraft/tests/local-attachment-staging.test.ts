@@ -109,3 +109,23 @@ test("Local attachment staging keeps reserved manifest names separate from file 
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("Host path lookup accepts only a live staged file with its original name", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "opencraft-attachment-lookup-"));
+  const service = new LocalAttachmentStagingService(join(directory, "attachments"));
+  try {
+    const staged = await service.stage({
+      clientAttachmentId: "lookup-1", name: "受众广.md", mimeType: "text/markdown", size: 5,
+      source: { kind: "client-bytes", dataBase64: "aGVsbG8=" },
+    });
+    if (staged.ref.location.kind !== "host-file") throw new Error("Expected host-file ref");
+    const path = staged.ref.location.path;
+    assert.deepEqual(await service.referenceForHostPath("受众广.md", path), staged.ref);
+    assert.equal(await service.referenceForHostPath("other.md", join(directory, "other.md")), null);
+    await assert.rejects(() => service.referenceForHostPath("other.md", path), /name|match/i);
+    await service.remove({ id: "lookup-1" });
+    await assert.rejects(() => service.referenceForHostPath("受众广.md", path));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});

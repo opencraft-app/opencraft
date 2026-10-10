@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -7,6 +7,7 @@ import type { User } from "@/domain/types";
 import { AppNavigationProvider, type AppNavigationValue } from "@/lib/app-navigation";
 import { AgentSettingsPage } from "@/pages/marketing/agent-settings-page";
 import { journeyHref, resolveCtaRoute } from "@/lib/cta-journey";
+import { setConsoleShowEnabled } from "@/lib/console-show-event";
 
 const addBot = vi.fn();
 const deleteBot = vi.fn();
@@ -61,6 +62,7 @@ vi.mock("@/contexts/agent-context", () => ({
   useOpenClaw: () => ({
     bots,
     botsLoading: false,
+    hasResolvedBots: true,
     deleteBot,
     user: {
       email: "user@example.com",
@@ -133,7 +135,7 @@ const createNavigation = (search: string): AppNavigationValue => ({
   setSearchParams: vi.fn(),
 });
 
-const page = (search: string, sectionId?: "chat") => (
+const page = (search: string, sectionId?: "chat" | "overview") => (
   <AppNavigationProvider value={createNavigation(search)}>
     <AgentSettingsPage showHeader={false} sectionId={sectionId} />
   </AppNavigationProvider>
@@ -154,8 +156,11 @@ vi.mock("@/pages/marketing/agent-chat-panel", () => ({
 }));
 
 vi.mock("@/pages/marketing/opencraft-embedded-workbench", () => ({
-  AgentChatMigrationSurface: ({ enabled, legacy }: { enabled: boolean; legacy: ReactNode }) =>
-    enabled ? <div data-testid="opencraft-chat" /> : legacy,
+  AgentChatMigrationSurface: ({ enabled, legacy, locale, profileId, region }: {
+    enabled: boolean; legacy: ReactNode; locale: string; profileId: string; region: string;
+  }) => enabled
+    ? <div data-testid="opencraft-chat" data-locale={locale} data-profile-id={profileId} data-region={region} />
+    : legacy,
 }));
 
 vi.mock("@/pages/marketing/agent-overview-panel", () => ({
@@ -172,10 +177,12 @@ describe("international Bot onboarding", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     window.sessionStorage.clear();
+    window.localStorage.clear();
     maxBots = 5;
     multiBotEnabled = true;
     testRegion.isCN = false;
     testRegion.isGlobal = true;
+    setConsoleShowEnabled(false);
     currentLocale = "en-US";
     activePass = null;
     bots = [buildBot()];
@@ -188,13 +195,34 @@ describe("international Bot onboarding", () => {
   });
   afterEach(cleanup);
 
-  it("keeps international Chat on AgentChat", async () => {
+  it("shows international OpenCraft Chat by default and keeps it visible when show() toggles", async () => {
     render(page("?bot=ins-372", "chat"));
-    expect(await screen.findByTestId("agent-chat")).toBeInTheDocument();
-    expect(screen.queryByTestId("opencraft-chat")).not.toBeInTheDocument();
+    const chat = await screen.findByTestId("opencraft-chat");
+    expect(chat).toHaveAttribute("data-region", "intl");
+    expect(chat).toHaveAttribute("data-locale", "en-US");
+    expect(screen.getByRole("group", { name: "对话" })).toBeInTheDocument();
+    expect(screen.queryByTestId("agent-chat")).not.toBeInTheDocument();
+    const show = (window as Window & { show?: () => boolean }).show;
+    expect(show).toBeTypeOf("function");
+    act(() => { show?.(); });
+    expect(screen.getByTestId("opencraft-chat")).toBe(chat);
+    act(() => { show?.(); });
+    expect(screen.getByTestId("opencraft-chat")).toBe(chat);
+    expect(screen.getByRole("group", { name: "对话" })).toBeInTheDocument();
   });
 
-  describe("domestic multi-Bot overview", () => {
+  it("uses OpenCraft for an international non-default Bot", async () => {
+    bots = [buildBot(), { ...buildBot(), id: "bot-child", profileId: "research", isDefault: false, name: "Research Bot" }];
+    currentLocale = "ja-JP";
+    render(page("?bot=bot-child", "chat"));
+    const chat = await screen.findByTestId("opencraft-chat");
+    expect(chat).toHaveAttribute("data-region", "intl");
+    expect(chat).toHaveAttribute("data-profile-id", "research");
+    expect(chat).toHaveAttribute("data-locale", "ja-JP");
+    expect(screen.queryByTestId("agent-chat")).not.toBeInTheDocument();
+  });
+
+  describe("domestic multi-Bot rail", () => {
     beforeEach(() => {
       testRegion.isCN = true;
       testRegion.isGlobal = false;
@@ -207,22 +235,20 @@ describe("international Bot onboarding", () => {
       expect(screen.queryByTestId("agent-chat")).not.toBeInTheDocument();
     });
 
-    it("shows all Bots and places overview above the Bot selector", async () => {
+    it("shows all Bots in the separate rail without an overview entry", async () => {
       bots = [buildBot(), { ...buildBot(), id: "bot-child", profileId: "child", isDefault: false, name: "Research Bot" }];
-      render(page("?bot=ins-372"));
-      expect(await screen.findByRole("heading", { name: "Research Bot" })).toBeInTheDocument();
-      expect(screen.getByRole("heading", { name: "Existing Bot" })).toBeInTheDocument();
-      const overview = screen.getByRole("link", { name: "总览" });
-      expect(overview).toHaveAttribute("aria-current", "page");
-      const selector = document.querySelector(".lv-agent-profile-wrap");
-      expect(selector).not.toBeNull();
-      expect(overview.compareDocumentPosition(selector!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-      expect(screen.getByRole("button", { name: "创建 Bot" })).toBeEnabled();
+      render(page("?bot=ins-372", "chat"));
+      expect(await screen.findByRole("link", { name: /切换到 Research Bot/ })).toHaveAttribute("href", "/agents/chat/?bot=bot-child");
+      expect(screen.getByRole("button", { name: /切换到 Existing Bot/ })).toHaveAttribute("aria-current", "true");
+      expect(screen.queryByRole("link", { name: "总览" })).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "新建 Bot" })).toBeEnabled();
+      fireEvent.click(screen.getByRole("button", { name: /切换到 Existing Bot/ }));
+      expect(navigateMock).not.toHaveBeenCalled();
     });
 
-    it("opens the original creation guide from the domestic overview", async () => {
-      render(page(""));
-      fireEvent.click(await screen.findByRole("button", { name: "创建 Bot" }));
+    it("opens the creation guide from the rail", async () => {
+      render(page("", "chat"));
+      fireEvent.click(await screen.findByRole("button", { name: "新建 Bot" }));
       expect(await screen.findByRole("button", { name: "换一批" })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "创建" })).toBeInTheDocument();
       expect(addBot).not.toHaveBeenCalled();
@@ -230,21 +256,18 @@ describe("international Bot onboarding", () => {
 
     it("keeps the creation quota restriction", async () => {
       maxBots = 1;
-      render(page(""));
-      expect(await screen.findByRole("button", { name: "创建 Bot" })).toBeDisabled();
+      render(page("", "chat"));
+      expect(await screen.findByRole("button", { name: "新建 Bot" })).toBeDisabled();
       expect(addBot).not.toHaveBeenCalled();
     });
 
-    it("retains the original overview when multi-Bot is disabled", async () => {
+    it("keeps chat available when multi-Bot is disabled", async () => {
       multiBotEnabled = false;
-      render(page(""));
-      expect(await screen.findByText("Bot overview")).toBeInTheDocument();
-      expect(screen.queryByRole("button", { name: "创建 Bot" })).not.toBeInTheDocument();
-      expect(screen.queryByRole("heading", { name: "我的 Bots" })).not.toBeInTheDocument();
-      const overview = screen.getByRole("link", { name: "总览" });
-      const selector = document.querySelector(".lv-agent-profile-wrap");
-      expect(selector).not.toBeNull();
-      expect(overview.compareDocumentPosition(selector!) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+      render(page("", "chat"));
+      expect(await screen.findByTestId("opencraft-chat")).toBeInTheDocument();
+      expect(screen.queryByRole("link", { name: "总览" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "新建 Bot" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /切换到 Existing Bot/ })).not.toBeInTheDocument();
     });
   });
 
@@ -267,7 +290,7 @@ describe("international Bot onboarding", () => {
 
     await waitFor(() => expect(addBot).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith(
-      "/agents/overview?bot=ins-372", { replace: true },
+      "/agents/chat?bot=ins-372", { replace: true },
     ));
     expect(execDebugCommand.mock.calls.some(([id, command]) =>
       id === "ins-372" && command.includes("__CTL_SOUL_EOF__"),
@@ -284,18 +307,19 @@ describe("international Bot onboarding", () => {
     expect(addBot).not.toHaveBeenCalled();
   });
 
-  it("opens the same guide when creating the first Bot from an empty account", async () => {
+  it("automatically opens the guide for an empty account", async () => {
     bots = [];
     render(page(""));
-    fireEvent.click(await screen.findByRole("button", { name: "创建 Bot" }));
+    expect(await screen.findByRole("button", { name: "换一批" })).toBeInTheDocument();
     expect(await screen.findByText("Industry Researcher", { selector: "span" })).toBeInTheDocument();
     expect(screen.queryByText("创建 Bot")).not.toBeInTheDocument();
   });
 
-  it("defaults existing users to overview without forcing onboarding", async () => {
+  it("defaults existing users to chat without forcing onboarding", async () => {
     render(page(""));
-    expect(await screen.findByText("Bot overview")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "总览" })).toHaveAttribute("aria-current", "page");
+    expect(await screen.findByTestId("opencraft-chat")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "总览" })).not.toBeInTheDocument();
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith("/agents/chat?bot=ins-372", { replace: true }));
     expect(screen.queryByRole("button", { name: "换一批" })).not.toBeInTheDocument();
     expect(addBot).not.toHaveBeenCalled();
   });
@@ -306,13 +330,11 @@ describe("international Bot onboarding", () => {
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith(expect.stringContaining("creating=ins-372"), { replace: true }));
   });
 
-  it("opens the original delete dialog for the card target without changing the selected Bot", async () => {
+  it("opens the original delete dialog for the selected Bot", async () => {
     bots = [buildBot(), { ...buildBot(), id: "bot-child", profileId: "child", isDefault: false, name: "Research Bot" }];
-    render(page("?bot=ins-372"));
-    await screen.findByRole("heading", { name: "Research Bot" });
-    // This test's translator returns source strings without interpolation.
-    fireEvent.click(screen.getAllByRole("button", { name: "管理 {{name}}" })[1]!);
-    fireEvent.click(screen.getByRole("button", { name: "删除" }));
+    render(page("?bot=bot-child", "chat"));
+    fireEvent.click(await screen.findByRole("button", { name: "管理 Bot" }));
+    fireEvent.click(await screen.findByRole("button", { name: "删除 Bot" }));
     expect(screen.getByText("风险提示：")).toBeInTheDocument();
     expect(screen.getByText("删除后，当前 Bot 的会话、配置、已安装技能和记忆等数据将无法恢复。请谨慎操作！")).toBeInTheDocument();
     fireEvent.change(screen.getByPlaceholderText("请输入 {{name}}"), { target: { value: "Research Bot" } });
@@ -321,31 +343,63 @@ describe("international Bot onboarding", () => {
     expect(navigateMock).not.toHaveBeenCalled();
   });
 
-  it("keeps every Bot visible when the selected Bot changes", async () => {
+  it("opens the same named delete confirmation from the embedded native request", async () => {
     bots = [buildBot(), { ...buildBot(), id: "bot-child", profileId: "child", isDefault: false, name: "Research Bot" }];
-    const view = render(page("?bot=ins-372"));
-    expect(await screen.findByRole("heading", { name: "Research Bot" })).toBeInTheDocument();
-    view.rerender(page("?bot=bot-child"));
-    expect(screen.getByRole("heading", { name: "Existing Bot" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Research Bot" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "打开 Bot" })).not.toBeInTheDocument();
+    const onDeleteRequestHandled = vi.fn();
+    render(<AppNavigationProvider value={createNavigation("?bot=bot-child")}>
+      <AgentSettingsPage
+        showHeader={false}
+        sectionId="overview"
+        embedded
+        deleteRequestId={1}
+        deleteRequestBotId="bot-child"
+        onDeleteRequestHandled={onDeleteRequestHandled}
+      />
+    </AppNavigationProvider>);
+    expect(await screen.findByText("风险提示：")).toBeInTheDocument();
+    expect(onDeleteRequestHandled).toHaveBeenCalledOnce();
+    expect(screen.getByRole("button", { name: "确认删除 Bot" })).toBeDisabled();
+    fireEvent.change(screen.getByPlaceholderText("请输入 {{name}}"), { target: { value: "Research Bot" } });
+    fireEvent.click(screen.getByRole("button", { name: "确认删除 Bot" }));
+    await waitFor(() => expect(deleteBot).toHaveBeenCalledWith("bot-child"));
   });
 
-  it("formats the overview expiry in the current language and updates on language switches", async () => {
-    activePass = { expired_time: "2026-10-23T12:00:00Z", created_time: "2026-09-23T12:00:00Z", credit_available: 4500, status: "active" };
-    const view = render(page(""));
-    expect(await screen.findByText("Bot overview October 23, 2026")).toBeInTheDocument();
-    currentLocale = "id-ID";
-    view.rerender(page(""));
-    expect(await screen.findByText("Bot overview 23 Oktober 2026")).toBeInTheDocument();
-    currentLocale = "zh-CN";
-    view.rerender(page(""));
-    expect(await screen.findByText("Bot overview 2026年10月23日")).toBeInTheDocument();
+  it("keeps the main Bot deletion blocked while another Bot shares its instance", async () => {
+    bots = [buildBot(), { ...buildBot(), id: "bot-child", profileId: "child", isDefault: false, name: "Research Bot" }];
+    const onDeleteRequestHandled = vi.fn();
+    render(<AppNavigationProvider value={createNavigation("?bot=ins-372")}>
+      <AgentSettingsPage
+        showHeader={false}
+        sectionId="overview"
+        embedded
+        deleteRequestId={1}
+        deleteRequestBotId="ins-372"
+        onDeleteRequestHandled={onDeleteRequestHandled}
+      />
+    </AppNavigationProvider>);
+    await waitFor(() => expect(onDeleteRequestHandled).toHaveBeenCalledOnce());
+    expect(screen.queryByText("风险提示：")).not.toBeInTheDocument();
+    expect(deleteBot).not.toHaveBeenCalled();
+  });
+
+  it("keeps every Bot in the rail when the selected Bot changes", async () => {
+    bots = [buildBot(), { ...buildBot(), id: "bot-child", profileId: "child", isDefault: false, name: "Research Bot" }];
+    const view = render(page("?bot=ins-372", "chat"));
+    expect(await screen.findByRole("link", { name: /切换到 Research Bot/ })).toBeInTheDocument();
+    view.rerender(page("?bot=bot-child", "chat"));
+    expect(screen.getByRole("link", { name: /切换到 Existing Bot/ })).toHaveAttribute("href", "/agents/chat/?bot=ins-372");
+    expect(screen.getByRole("button", { name: /切换到 Research Bot/ })).toHaveAttribute("aria-current", "true");
+  });
+
+  it("redirects the retired overview URL to the selected Bot's chat", async () => {
+    render(page("?bot=ins-372", "overview"));
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith("/agents/chat?bot=ins-372", { replace: true }));
+    expect(screen.queryByText("Bot overview")).not.toBeInTheDocument();
   });
 
   it("opens the international guide for an additional Bot and enforces quota on submit", async () => {
     const view = render(page("?bot=ins-372"));
-    fireEvent.click(await screen.findByRole("button", { name: "创建 Bot" }));
+    fireEvent.click(await screen.findByRole("button", { name: "新建 Bot" }));
     expect(await screen.findByText("Industry Researcher", { selector: "span" })).toBeInTheDocument();
     expect(screen.queryByText("育儿参谋")).not.toBeInTheDocument();
     maxBots = 1;
@@ -357,7 +411,7 @@ describe("international Bot onboarding", () => {
     expect(addBot).not.toHaveBeenCalled();
   });
 
-  it.each(["running", "provisioning"] as const)("configures a %s target with skills.sh and opens its overview", async (status) => {
+  it.each(["running", "provisioning"] as const)("configures a %s target with skills.sh and opens its chat", async (status) => {
     bots = [{ ...buildBot(), status }];
     const view = render(page("?creating=ins-372"));
     const card = (await screen.findByText("Industry Researcher", { selector: "span" })).closest("button");
@@ -369,7 +423,7 @@ describe("international Bot onboarding", () => {
     bots = [{ ...buildBot(), status: "running" }];
     view.rerender(page("?creating=ins-372"));
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith(
-      "/agents/overview?bot=ins-372", { replace: true },
+      "/agents/chat?bot=ins-372", { replace: true },
     ));
     expect(addBot).not.toHaveBeenCalled();
     const skillCalls = execDebugCommand.mock.calls.filter(([, command]) => command.includes("skills-sh install"));

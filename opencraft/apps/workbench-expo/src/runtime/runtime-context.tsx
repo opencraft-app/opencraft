@@ -3,7 +3,7 @@ import {
   QueryClientProvider,
   useInfiniteQuery,
 } from "@tanstack/react-query";
-import type { Thread } from "@opencraft/appserver-protocol/generated/v2";
+import type { PermissionProfileSummary, Project, Thread } from "@opencraft/appserver-protocol/generated/v2";
 import { OPENCRAFT_SCOPED_MODEL_CATALOG_EXTENSION } from "@opencraft/appserver-protocol";
 import { WebSocketTransport } from "@opencraft/appserver-transport-websocket";
 import type { DuplexTransport } from "@opencraft/appserver-client/transport";
@@ -21,6 +21,8 @@ import {
   createConversationScopeLeaseRegistry,
   createConversationScopeRegistry,
   createConversationViewRegistry,
+  createConversationDraftContinuity,
+  createConversationDisplayContinuity,
   createWorkbenchCoordinator,
   createWorkbenchDraftLocation,
   createWorkbenchThreadLocation,
@@ -38,6 +40,9 @@ import {
   type WorkbenchThread,
   type WorkbenchComposerModelChoice,
   type HostRuntimeDescriptor,
+  type ConversationDraftStorage,
+  type ConversationDisplayStorage,
+  type ConversationDisplayContinuity,
 } from "@opencraft/workbench-runtime";
 import {
   createContext,
@@ -56,6 +61,7 @@ interface WorkbenchRuntimeContextValue {
   readonly activeThreadLease: AppServerThreadRuntimeLease | null;
   readonly conversationScopes: ConversationScopeRegistry;
   readonly composerController: ComposerController;
+  readonly displayContinuity: ConversationDisplayContinuity | null;
   submit(intent: SubmitIntent): Promise<SubmissionReceipt>;
   activateThread(threadId: string): Promise<boolean>;
   openDraft(cwd?: string): Promise<void>;
@@ -72,6 +78,7 @@ export interface ExpoWorkbenchApplication {
   readonly views: ReturnType<typeof createConversationViewRegistry>;
   readonly bindings: ConversationBindingStore;
   readonly queryClient: QueryClient;
+  readonly displayContinuity: ConversationDisplayContinuity | null;
   readonly submissionPipeline: ReturnType<typeof createWorkbenchSubmissionPipeline>;
   start(): Promise<void>;
   dispose(): Promise<void>;
@@ -123,6 +130,11 @@ export interface ExpoWorkbenchApplicationOptions {
   readonly hostLabel?: string;
   readonly transport?: DuplexTransport;
   readonly transportEndpoint?: string | null;
+  readonly initialDraftId?: string;
+  readonly draftNamespace?: string;
+  readonly draftStorage?: ConversationDraftStorage;
+  readonly displayNamespace?: string;
+  readonly displayStorage?: ConversationDisplayStorage;
 }
 
 export function createExpoWorkbenchApplication(options: ExpoWorkbenchApplicationOptions = {}): ExpoWorkbenchApplication {
@@ -135,6 +147,7 @@ export function createExpoWorkbenchApplication(options: ExpoWorkbenchApplication
     });
     const conversationScopes = createConversationScopeRegistry({
       initialDraft: {
+        draftId: options.initialDraftId,
         entrypoint: "home",
         execution: {
           hostId,
@@ -164,6 +177,9 @@ export function createExpoWorkbenchApplication(options: ExpoWorkbenchApplication
     const views = createConversationViewRegistry({
       scopeLeases: leases,
       composerServices: { now: Date.now, createId: createClientId },
+      draftContinuity: options.draftNamespace && options.draftStorage
+        ? createConversationDraftContinuity({ namespace: options.draftNamespace, storage: options.draftStorage })
+        : undefined,
     });
     const conversationActivation = createConversationActivationCoordinator(
       coordinator,
@@ -177,6 +193,9 @@ export function createExpoWorkbenchApplication(options: ExpoWorkbenchApplication
     // Supplying an initial coordinator viewId alone does not create its View.
     conversationActivation.mountInitial(initialLocation, initialViewId);
     const queryClient = createWorkbenchQueryClient();
+    const displayContinuity = options.displayNamespace && options.displayStorage
+      ? createConversationDisplayContinuity({ namespace: options.displayNamespace, storage: options.displayStorage })
+      : null;
     const submissionPipeline = createWorkbenchSubmissionPipeline({
       scopes: conversationScopes,
       submitNewThread: (intent) => runtime.createThread(intent),
@@ -223,6 +242,7 @@ export function createExpoWorkbenchApplication(options: ExpoWorkbenchApplication
       views,
       bindings,
       queryClient,
+      displayContinuity,
       submissionPipeline,
       start() {
         if (disposed) return Promise.reject(new Error("Expo Workbench application is disposed"));
@@ -281,6 +301,7 @@ export function WorkbenchRuntimeProvider({
     activeThreadLease,
     conversationScopes: application.conversationScopes,
     composerController,
+    displayContinuity: application.displayContinuity,
     submit: application.submissionPipeline.submit,
     async activateThread(threadId) {
       const location = createWorkbenchThreadLocation(runtime.getSnapshot().hostId, threadId);
@@ -400,6 +421,42 @@ export function useComposerModelCatalog(): {
       : query.error instanceof Error ? query.error : new Error(String(query.error)),
     refetch: query.refetch,
   };
+}
+
+export function useComposerPermissionProfiles(cwd: string | null): readonly PermissionProfileSummary[] {
+  const runtime = useWorkbenchRuntime();
+  const snapshot = useWorkbenchSnapshot();
+  const query = useInfiniteQuery({
+    queryKey: ["appserver", snapshot.hostId, "permission-profiles", cwd] as const,
+    enabled: snapshot.phase === "ready" || snapshot.phase === "reconnecting",
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam }) => runtime.resources.composerCatalog.listPermissionProfiles({
+      cursor: pageParam, limit: 100, cwd: cwd ?? undefined,
+    }),
+    getNextPageParam: page => page.nextCursor ?? undefined,
+    staleTime: 60_000,
+  });
+  useEffect(() => {
+    if (query.hasNextPage && !query.isFetchingNextPage) void query.fetchNextPage();
+  }, [query.fetchNextPage, query.hasNextPage, query.isFetchingNextPage]);
+  return useMemo(() => query.data?.pages.flatMap(page => page.data) ?? [], [query.data]);
+}
+
+export function useProjectCatalog(active: boolean): readonly Project[] {
+  const runtime = useWorkbenchRuntime();
+  const snapshot = useWorkbenchSnapshot();
+  const query = useInfiniteQuery({
+    queryKey: ["appserver", snapshot.hostId, "projects"] as const,
+    enabled: active && (snapshot.phase === "ready" || snapshot.phase === "reconnecting"),
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam }) => runtime.resources.projects.list({ cursor: pageParam, limit: 100 }),
+    getNextPageParam: page => page.nextCursor ?? undefined,
+    staleTime: 30_000,
+  });
+  useEffect(() => {
+    if (active && query.hasNextPage && !query.isFetchingNextPage) void query.fetchNextPage();
+  }, [active, query.fetchNextPage, query.hasNextPage, query.isFetchingNextPage]);
+  return useMemo(() => query.data?.pages.flatMap(page => page.data) ?? [], [query.data]);
 }
 
 export function useThreadCatalog(): {

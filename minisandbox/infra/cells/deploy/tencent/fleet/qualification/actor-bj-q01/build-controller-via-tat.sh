@@ -33,7 +33,8 @@ done
 [[ $build_python =~ ^/[-A-Za-z0-9._/]+$ || $build_python =~ ^[A-Za-z0-9._-]+$ ]]
 [[ $image_tag =~ ^${registry_host//./\.}/actor-fleet/actor-fleet-controller:[A-Za-z0-9._-]+$ ]]
 [[ $source_link == /var/lib/actor-build/deploy/actor-bj-q01-current ||
-   $source_link == "/var/lib/actor-build/deploy/q01-src-${source_revision}-${source_manifest_sha}" ]] || {
+   $source_link == "/var/lib/actor-build/deploy/q01-src-${source_revision}-${source_manifest_sha}" ||
+   $source_link == "/data/actor-build/deploy/controller-src-${source_revision}-${source_manifest_sha}" ]] || {
 	echo "controller build source must be the reviewed current link or exact immutable source" >&2
 	exit 2
 }
@@ -72,7 +73,7 @@ auth=$(printf '%s:%s' "$username" "$token" | base64 | tr -d '\n')
 jq -n --arg host "$registry_host" --arg auth "$auth" \
 	'{auths:{($host):{auth:$auth}}}' >"$temporary/config.json"
 chmod 0600 "$temporary/config.json"
-remote_auth=/var/lib/actor-build/credentials/q01-tcr-build-${request_id}.json
+remote_auth=/data/actor-build/credentials/controller-build-${request_id}.json
 TAT_UPLOAD_MODE=0600 "$fleet_dir/tat/tat-upload.sh" "$temporary/config.json" "$remote_auth" >/dev/null
 
 printf -v quoted_source_link '%q' "$source_link"
@@ -84,7 +85,12 @@ printf -v quoted_remote '%q' "$remote_auth"
 printf -v quoted_build_base '%q' "$build_base"
 printf -v quoted_runtime_base '%q' "$runtime_base"
 printf -v quoted_python '%q' "$build_python"
-product_receipt=/data/actor-build/product-receipts/actor-fleet-controller-${source_revision}-${source_manifest_sha}.json
+# Source identity alone is not a build identity: the same code may be built
+# against a different locked base or published under another unique tag.
+# Keep those operations in separate immutable receipts; never overwrite the
+# previous proof or relax product-lock's exact dependency closure.
+build_inputs_sha=$(printf '%s\0' "$source_revision" "$source_manifest_sha" "$build_base" "$runtime_base" "$image_tag" | sha256sum | cut -d' ' -f1)
+product_receipt=/data/actor-build/product-receipts/actor-fleet-controller-${source_revision}-${source_manifest_sha}-${build_inputs_sha}.json
 printf -v quoted_product_receipt '%q' "$product_receipt"
 set +e
 "$fleet_dir/tat/tat-run.sh" --name q01-build-controller --timeout 3600 <<REMOTE_BUILD
@@ -95,6 +101,7 @@ test "\$(stat -c '%a' "\$auth")" = 600
 source=\$(readlink -e $quoted_source_link)
 test "\$(tr -d '[:space:]' <"\$source/.actor-source/SOURCE_REVISION")" = $quoted_revision
 test "\$(sha256sum "\$source/.actor-source/RELEASE_SHA256SUMS" | cut -d' ' -f1)" = $quoted_manifest
+test ! -e $quoted_product_receipt
 getent ahostsv4 $quoted_registry | awk '{print \$1}' | grep -Eq '^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)'
 export ACTOR_SOURCE_DIR="\$source"
 export ACTOR_FLEET_CONTROLLER_IMAGE_TAG=$quoted_image
@@ -104,6 +111,7 @@ export ACTOR_PRODUCT_BUILD_RECEIPT=$quoted_product_receipt
 export PYTHON=$quoted_python
 export REGISTRY_AUTH_FILE="\$auth"
 export ACTOR_BUILD_TMPDIR=/data/tmp
+export PYTHONDONTWRITEBYTECODE=1
 install -d -m 0700 /data/actor-build/product-receipts
 command -v "\$PYTHON" >/dev/null
 "\$PYTHON" -c 'import sys; assert sys.version_info >= (3, 11)'

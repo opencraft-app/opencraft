@@ -38,8 +38,12 @@ func assertProductionOpenCraftOIDCRegistry(t *testing.T, environment string) {
 	if err := validateSiteGatewayOIDCClients(clients); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := oidc.NewRegistry(clients); err != nil {
+	parsedRegistry, err := oidc.NewRegistry(clients)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if _, err := parsedRegistry.ValidateRedirectURI(oidc.WebClientID, "https://join.devcloud.woa.com/auth/lightvela/callback"); err != nil {
+		t.Fatal("missing production DevCloud registration", err)
 	}
 	if len(clients) != 3 {
 		t.Fatal("expected exactly Sites, native and web clients")
@@ -52,7 +56,7 @@ func assertProductionOpenCraftOIDCRegistry(t *testing.T, environment string) {
 				client.RedirectURIs[0] == oidc.NativeRedirectURI
 		}
 		if client.ID == oidc.WebClientID {
-			foundWeb = client.DisplayName == "OpenCraft Web" && len(client.RedirectURIs) == 2
+			foundWeb = client.DisplayName == "OpenCraft Web" && len(client.RedirectURIs) == 3
 		}
 	}
 	if !foundNative {

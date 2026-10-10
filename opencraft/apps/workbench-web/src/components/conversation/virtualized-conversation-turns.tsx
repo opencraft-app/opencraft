@@ -1,4 +1,4 @@
-import type { TimelineTurnView } from "@opencraft/chat-core";
+import { timelineTurnRenderKey, type TimelineTurnView } from "@opencraft/chat-core";
 import {
   buildTurnLayout,
   CODEX_TURN_VIRTUALIZER_CONFIG,
@@ -13,6 +13,7 @@ import {
   getTurnGeometry,
   reconcileRenderedRangeForEntries,
   reconcileTurnLayoutViewport,
+  rekeyTurnMeasurements,
   serializeTurnRestoreState,
   updateTurnViewportState,
   type TurnMeasurementTransaction,
@@ -141,9 +142,18 @@ export function VirtualizedConversationTurns({
   const rowElements = viewportOwner.turnElementsRef;
   const scrollController = viewportOwner.scrollController;
   const virtualizerSpacerRef = useRef<HTMLDivElement>(null);
-  const [measuredHeightsByKey, setMeasuredHeightsByKey] = useState<
+  const [storedMeasuredHeightsByKey, setMeasuredHeightsByKey] = useState<
     Readonly<Record<string, number>>
   >(() => initialRestoreState?.turnHeightsByKey ?? {});
+  const committedEntriesRef = useRef(entries);
+  const measuredHeightsByKey = useMemo(() => rekeyTurnMeasurements(
+    committedEntriesRef.current, entries, storedMeasuredHeightsByKey, timelineTurnRenderKey,
+  ), [entries, storedMeasuredHeightsByKey]);
+  useLayoutEffect(() => {
+    committedEntriesRef.current = entries;
+    if (measuredHeightsByKey !== storedMeasuredHeightsByKey)
+      setMeasuredHeightsByKey(measuredHeightsByKey);
+  }, [entries, measuredHeightsByKey, storedMeasuredHeightsByKey]);
   const layout = useMemo(
     () => buildTurnLayout(entries, measuredHeightsByKey),
     [entries, measuredHeightsByKey],
@@ -427,6 +437,8 @@ export function VirtualizedConversationTurns({
     scrollController,
   ]);
 
+  // Same-count identity handoffs and measurements change the layout too.
+  // They cannot wait for a platform scroll event to refresh the window.
   useLayoutEffect(() => {
     if (
       pendingScrollRequest !== null ||
@@ -441,7 +453,7 @@ export function VirtualizedConversationTurns({
       );
     restoreScrollDistanceFromBottomPx?.();
   }, [
-    entries.length,
+    layout,
     getBottomScrollPaddingPx,
     pendingScrollRequest,
     restoreScrollDistanceFromBottomPx,
@@ -631,7 +643,7 @@ export function VirtualizedConversationTurns({
               : undefined;
           return (
             <MeasuredTurnRow
-              key={turn.turnKey}
+              key={timelineTurnRenderKey(turn)}
               turnKey={turn.turnKey}
               constrainedHeightPx={constrained}
               observeTurn={observeTurn}

@@ -43,9 +43,9 @@
     padding-inline: 0;
 
     > section {
-      width: var(--shell-navigation-row-width);
+      width: max(var(--size-application-navigation-hit-min), var(--shell-navigation-row-width));
       min-width: 0;
-      margin-left: var(--shell-navigation-row-inset);
+      margin-left: min(var(--shell-navigation-row-inset), calc((100% - var(--size-application-navigation-hit-min)) / 2));
     }
 
     .shell-navigation__items {
@@ -66,7 +66,7 @@
     .shell-navigation__items > button {
       width: 100%;
       gap: var(--shell-navigation-row-gap);
-      padding-inline: var(--shell-navigation-row-padding);
+      padding-inline: max(var(--shell-navigation-row-padding), calc((var(--size-application-navigation-hit-min) - var(--size-application-navigation-icon)) / 2));
       box-sizing: border-box;
       overflow: hidden;
     }
@@ -81,12 +81,6 @@
       will-change: opacity, transform;
     }
 
-    .shell-navigation__items button > svg,
-    .shell-navigation__items button > .sidebar-account__avatar {
-      transform: scale(var(--shell-navigation-icon-scale));
-      transform-origin: center;
-      will-change: transform;
-    }
   }
 }
 .shell-navigation__heading {
@@ -103,7 +97,6 @@
   gap: var(--menu-item-gap);
   color: var(--color-text);
   button {
-    @include menu.item;
     @include controls.navigation-control;
     min-height: var(--height-navigation-row);
     cursor: pointer;
@@ -111,6 +104,21 @@
   }
   small, p { color: var(--color-text-secondary); font-size: 12px; }
   p { padding: 8px; }
+}
+.shell-navigation__items:not(.shell-navigation__items--applications) > button {
+  // Account surfaces retain menu density; this must not leak into the rail.
+  @include menu.item;
+  @include controls.navigation-control;
+}
+.shell-navigation__items--applications {
+  gap: var(--gap-application-navigation-items);
+  > button { @include controls.application-navigation-control; }
+}
+@media (any-pointer: coarse), (hover: none) {
+  .shell-navigation__dock-content { --size-application-navigation-hit-min: 44px; }
+}
+:root[data-touch-interaction] .shell-navigation__dock-content {
+  --size-application-navigation-hit-min: 44px;
 }
 .shell-navigation__identity { display: flex; flex-direction: column; gap: 4px; }
 .shell-navigation__footer {
@@ -131,7 +139,11 @@
   position: relative;
   justify-content: flex-start;
   min-width: 0;
-  &[data-surface="applications"] { justify-content: center; padding: 0; }
+  &[data-surface="applications"] {
+    @include controls.application-navigation-glyph;
+    justify-content: center;
+    padding: 0;
+  }
   &[data-surface="account"] { width: 100%; padding-inline: var(--padding-control-inline); }
   .sidebar-account__avatar { width: 20px; height: 20px; flex: 0 0 20px; font-size: 10px; border: 0; }
 }
@@ -193,11 +205,36 @@
     -webkit-backdrop-filter: none;
   }
 }
+.app-shell-sidecar::after {
+  // Paint-only boundary below the global titlebar; no layout or hit-test owner.
+  position: absolute;
+  inset: var(--height-toolbar) 0 0 auto;
+  border-right: 1px solid var(--color-border-subtle);
+  opacity: var(--app-shell-titlebar-divider-progress, 0);
+  content: "";
+  pointer-events: none;
+}
+@media (forced-colors: active) {
+  .app-shell-sidecar {
+    // System colors retain a boundary below the titlebar without layout cost.
+    &::after {
+      position: absolute;
+      inset: var(--height-toolbar) 0 0 auto;
+      border-right: 1px solid CanvasText;
+      opacity: 1;
+      content: "";
+      pointer-events: none;
+    }
+  }
+}
 .app-shell-sidecar__panes {
   display: flex;
   flex: 1;
   min-width: 0;
   min-height: 0;
+  // The rail divider is internal to a two-pane Sidecar. With no context pane,
+  // the primary rail meets main content; Shell owns that outer boundary.
+  > .shell-navigation__dock:last-child::before { display: none; }
 }
 .app-shell-sidecar__footer {
   // A real layout track, not an overlay on arbitrary application content.

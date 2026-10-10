@@ -10,6 +10,7 @@ import type {
 import type { HookStats } from "./hook-stats";
 import { normalizeCodexTurnUserMessages } from "./turn-user-message-normalization";
 import { deriveTurnWorkStatus } from "./work-status";
+import { createTurnChangeSummary } from "./turn-diff";
 
 export type TimelineLane = "user" | "assistant" | "event" | "interaction";
 
@@ -27,6 +28,8 @@ export interface TimelineSourceTurn {
   readonly durationMs?: number | null;
   readonly firstTurnWorkItemStartedAtMs?: number | null;
   readonly finalAssistantStartedAtMs?: number | null;
+  /** Aggregate resource owned by the Turn, outside ordered Item membership. */
+  readonly unifiedDiff?: string | null;
   readonly interruptedByThisClient?: boolean;
   readonly hookStats?: HookStats | null;
   /** Complete Turn-start envelope retained for Codex UserMessage ownership. */
@@ -234,6 +237,16 @@ export function projectTimeline(
   for (const sourceTurn of source.turns) {
     const turn = normalizeCodexTurnUserMessages(sourceTurn);
     const workStatus = deriveTurnWorkStatus(turn);
+    // Compatibility Items are lowered once here, not allowed to participate
+    // in transcript topology. An explicit Turn value (including null) wins.
+    const legacyDiff = turn.items.filter(item => item.type === "turnDiff").at(-1);
+    const legacyBlock = legacyDiff === undefined ? null
+      : registry.project(legacyDiff, { turn, itemIndex: turn.items.indexOf(legacyDiff) }).block;
+    const changeSummary = turn.unifiedDiff !== undefined
+      ? createTurnChangeSummary(turn.id, turn.status, turn.unifiedDiff)
+      : legacyBlock?.type === "turn-diff"
+        ? { ...legacyBlock, id: `${turn.id}:turn-diff`, sourceItemIds: [] } : null;
+    const initialFrameCount = frames.length;
     let pendingLane: TimelineLane | null = null;
     let pendingBlocks: TimelineBlock[] = [];
     let pendingAnchors: TimelineAnchor[] = [];
@@ -245,13 +258,18 @@ export function projectTimeline(
       const firstBlock = blocks[0];
       if (pendingLane === null || firstBlock === undefined) return;
       const itemIds = blocks.flatMap((block) => block.sourceItemIds);
+      const userClientId = pendingLane === "user" && firstBlock.type === "user-message"
+        && firstBlock.messageKind === "user" ? firstBlock.clientId : null;
       frames.push({
         type: pendingLane,
-        id: frameId(turn.id, pendingLane, itemIds[0] ?? asItemId(firstBlock.id)),
+        id: userClientId === null
+          ? frameId(turn.id, pendingLane, itemIds[0] ?? asItemId(firstBlock.id))
+          : `user-message:${userClientId}:frame`,
         turnId: asTurnId(turn.id),
         status: turn.status,
         durationMs: turn.durationMs ?? null,
         workStatus,
+        changeSummary,
         interruptedByThisClient: turn.interruptedByThisClient === true,
         hookStats: turn.hookStats ?? null,
         anchors: frameAnchors(turn.id, itemIds, pendingAnchors),
@@ -263,6 +281,7 @@ export function projectTimeline(
     };
 
     turn.items.forEach((item, itemIndex) => {
+      if (item.type === "turnDiff") return;
       const projected = registry.project(item, { turn, itemIndex });
       const canGroup = projected.lane === "assistant" && pendingLane === "assistant";
       if (!canGroup) flush();
@@ -272,6 +291,12 @@ export function projectTimeline(
       if (projected.lane !== "assistant") flush();
     });
     flush();
+    // A resource-only recovered Turn still owns a surface, not a fake Item.
+    if (frames.length === initialFrameCount && changeSummary !== null) {
+      frames.push({ type: "assistant", id: `${turn.id}:resources`, turnId: asTurnId(turn.id),
+        status: turn.status, durationMs: turn.durationMs ?? null, workStatus,
+        changeSummary, hookStats: turn.hookStats ?? null, anchors: [{ type: "turn", id: turn.id }], blocks: [] });
+    }
   }
 
   const anchorFrameIds = new Map<string, string>();

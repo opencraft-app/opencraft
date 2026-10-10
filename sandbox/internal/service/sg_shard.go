@@ -101,7 +101,7 @@ func (s *Service) ReconcileSGShardRecovery(ctx context.Context, cp provider.Clou
 	if err != nil {
 		return SGShardRecoveryResult{}, err
 	}
-	newPool, created, err := s.EnsurePoolForCapacityBundle(ctx, *binding, sku, bundle.ID)
+	newPool, created, err := s.ensurePoolForCapacityBundle(ctx, *binding, sku, bundle.ID, pool.InstanceType)
 	if err != nil {
 		return SGShardRecoveryResult{}, err
 	}

@@ -28,25 +28,25 @@ use depot::conveyer::keys::{
 	branch_manifest_last_access_bucket_key, branch_manifest_last_access_ts_ms_key,
 	branch_manifest_last_hot_pass_txid_key, branch_meta_compact_key,
 	branch_meta_compactor_lease_key, branch_meta_head_at_fork_key, branch_meta_head_key,
-	branch_meta_quota_key, branch_page_history_complete_txid_key, branch_page_history_key,
-	branch_page_history_page_prefix, branch_pidx_count_node_key, branch_pidx_count_node_prefix,
-	branch_pidx_key, branch_pitr_interval_key, branch_pitr_interval_prefix, branch_prefix,
-	branch_range, branch_shard_key, branch_shard_version_prefix, branch_vtx_key,
-	branches_desc_pin_key, branches_list_key, branches_refcount_key,
-	branches_restore_point_pin_key, bucket_branches_database_name_tombstone_key,
-	bucket_branches_desc_pin_key, bucket_branches_list_key, bucket_branches_refcount_key,
-	bucket_branches_restore_point_pin_key, bucket_catalog_by_db_key, bucket_catalog_by_db_prefix,
-	bucket_child_key, bucket_child_prefix, bucket_fork_pin_key, bucket_fork_pin_prefix,
-	bucket_pointer_cur_key, bucket_pointer_history_key, bucket_policy_pitr_key,
-	bucket_policy_pitr_shard_key, bucket_policy_shard_cache_key, bucket_proof_epoch_key,
-	bucket_proof_epoch_shard, bucket_proof_epoch_shard_key, cold_tier_identity_key,
-	cold_upload_job_queue_prefix, commit_key, ctr_eviction_index_key, ctr_eviction_index_range,
-	ctr_quota_global_key, database_pitr_policy_key, database_pointer_cur_key,
-	database_pointer_history_key, database_policy_binding_key, database_prefix, database_range,
-	database_shard_cache_policy_key, db_pin_by_txid_key, db_pin_by_txid_prefix, db_pin_key,
-	db_pin_prefix, db_pin_txid_count_key, db_pin_txid_count_prefix,
-	decode_branch_compaction_cold_upload_intent_key, decode_branch_compaction_hot_generation_txid,
-	decode_branch_compaction_hot_shard_coverage_key,
+	branch_meta_quota_key, branch_meta_truncate_txid_key, branch_page_history_complete_txid_key,
+	branch_page_history_key, branch_page_history_page_prefix, branch_pidx_count_node_key,
+	branch_pidx_count_node_prefix, branch_pidx_key, branch_pitr_interval_key,
+	branch_pitr_interval_prefix, branch_prefix, branch_range, branch_shard_key,
+	branch_shard_version_prefix, branch_vtx_key, branches_desc_pin_key, branches_list_key,
+	branches_refcount_key, branches_restore_point_pin_key,
+	bucket_branches_database_name_tombstone_key, bucket_branches_desc_pin_key,
+	bucket_branches_list_key, bucket_branches_refcount_key, bucket_branches_restore_point_pin_key,
+	bucket_catalog_by_db_key, bucket_catalog_by_db_prefix, bucket_child_key, bucket_child_prefix,
+	bucket_fork_pin_key, bucket_fork_pin_prefix, bucket_pointer_cur_key,
+	bucket_pointer_history_key, bucket_policy_pitr_key, bucket_policy_pitr_shard_key,
+	bucket_policy_shard_cache_key, bucket_proof_epoch_key, bucket_proof_epoch_shard,
+	bucket_proof_epoch_shard_key, cold_tier_identity_key, cold_upload_job_queue_prefix, commit_key,
+	ctr_eviction_index_key, ctr_eviction_index_range, ctr_quota_global_key,
+	database_pitr_policy_key, database_pointer_cur_key, database_pointer_history_key,
+	database_policy_binding_key, database_prefix, database_range, database_shard_cache_policy_key,
+	db_pin_by_txid_key, db_pin_by_txid_prefix, db_pin_key, db_pin_prefix, db_pin_txid_count_key,
+	db_pin_txid_count_prefix, decode_branch_compaction_cold_upload_intent_key,
+	decode_branch_compaction_hot_generation_txid, decode_branch_compaction_hot_shard_coverage_key,
 	decode_branch_compaction_stage_hot_job_by_generation_key, decode_branch_gc_queue_key,
 	decode_branch_history_pin_count_shard_key, decode_branch_pidx_count_node_key,
 	decode_branch_pidx_pgno, decode_ctr_eviction_index_key, decode_db_pin_by_txid_key,
@@ -67,6 +67,22 @@ const TEST_RESTORE_POINT: &str = "0000018bcfe56800-0000000000000007";
 
 fn database_branch_id() -> DatabaseBranchId {
 	DatabaseBranchId::from_uuid(Uuid::from_u128(0x0011_2233_4455_6677_8899_aabb_ccdd_eeff))
+}
+
+#[test]
+fn truncate_txid_is_one_exact_branch_local_metadata_key() {
+	let branch = database_branch_id();
+	let mut expected = branch_prefix(branch);
+	expected.extend_from_slice(b"/META/truncate_txid");
+	assert_eq!(branch_meta_truncate_txid_key(branch), expected);
+	assert_ne!(
+		branch_meta_truncate_txid_key(branch),
+		branch_meta_head_key(branch)
+	);
+	assert_ne!(
+		branch_meta_truncate_txid_key(branch),
+		branch_meta_truncate_txid_key(DatabaseBranchId::from_uuid(Uuid::from_u128(7)))
+	);
 }
 
 #[test]

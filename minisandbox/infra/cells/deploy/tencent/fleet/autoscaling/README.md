@@ -41,6 +41,30 @@ Receipt schema v5 binds cardinality, probes, concurrency, batching, pacing,
 retry policy and runtime baseline to both the immutable Job and its result.
 The verifier retains v4 support only for already-issued historical evidence.
 
+The public load generator uses local manifest schema 4. Before dispatching each
+batch it commits the exact Object IDs to a FULL-synchronous SQLite attempt
+journal. One exclusive manifest lock covers the entire phase, so cleanup cannot
+race a still-running population or probe process. Process exit releases the
+lock automatically. Successful results and confirmation are committed together. Recovery
+can therefore delete an Object whose PUT or initial state write committed but
+whose response was lost, even when no successful result row exists. Cleanup
+validates each ID against the retained run, ordinal and probe-epoch prefix;
+it never lists a namespace or guesses IDs using the current probe epoch.
+Explicit partial indexes bound cleanup batches and unfinished-probe lookup.
+
+Cleanup and summary use the retained immutable release metadata and never
+republish Worker code. Selected endpoint, Worker, class, run and cardinality
+must match the manifest before any Code Plane mutation. Historical manifest
+schema 3 runs retain their original reviewed tool; they are not silently
+upgraded in place. This does not change any production storage format.
+
+The receipt reports journal states and scheduled operations, including resumed
+pending work. Cleaning all attempted IDs in a failed partial population can
+pass the cleanup operation, but cannot prove the requested population existed.
+The outer qualification still requires the exact target Actor inventory and
+successful public state transitions. Missing results do not acquire fabricated
+latency samples or count as zero-error cardinality evidence.
+
 The script never deletes a PV or CBS disk. On failure it restores the production
 profile but deliberately leaves any safe expanded FDB topology in place for
 diagnosis. If the larger FDB target was never published, it terminalizes that

@@ -1,0 +1,8 @@
+package: computerupdate
+output: client.gen.go
+generate:
+  models: false
+  client: true
+output-options:
+  skip-prune: true
+

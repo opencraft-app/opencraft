@@ -149,6 +149,8 @@ export async function packageHeadlessLinux() {
     await cp(join(repositoryRoot, "scripts/headless-server-launcher.sh"), join(stage, "bin/opencraft-server"));
     await chmod(join(stage, "bin/opencraft-server"), 0o755);
     await buildHeadlessBundle(join(stage, "runtime/server.mjs"));
+    // Optional native installation assets; startup never installs services.
+    await cp(join(repositoryRoot, "apps/local-agent-host/native/linux"), join(stage, "runtime/native-desktop"), { recursive: true });
     await cp(join(repositoryRoot, "apps/workbench-web/dist"), join(stage, "web"), {
       recursive: true,
       filter: (path) => !path.endsWith(".map"),

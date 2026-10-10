@@ -1,7 +1,67 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { PanelLeft } from "lucide-react";
+import { useEffect, useRef, useState, type HTMLAttributes, type ReactNode } from "react";
+
+import { useT } from "@/i18n/t";
+
+const COLLAPSED_STORAGE_KEY = "lv-agent-sidebar-collapsed";
+
+export function useAgentSidebarCollapse(readStoredChoice = true) {
+  const [collapsed, setCollapsed] = useState(false);
+  const [transitionReady, setTransitionReady] = useState(false);
+
+  useEffect(() => {
+    if (readStoredChoice) {
+      try {
+        setCollapsed(window.localStorage.getItem(COLLAPSED_STORAGE_KEY) === "true");
+      } catch {
+        // Browser storage may be unavailable; the sidebar still works for this visit.
+      }
+    }
+    // Let the stored width paint before enabling the user-triggered transition.
+    let secondFrame = 0;
+    const firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => setTransitionReady(true));
+    });
+    return () => {
+      window.cancelAnimationFrame(firstFrame);
+      window.cancelAnimationFrame(secondFrame);
+    };
+  }, [readStoredChoice]);
+
+  const toggle = () => setCollapsed((current) => {
+    const next = !current;
+    try {
+      window.localStorage.setItem(COLLAPSED_STORAGE_KEY, String(next));
+    } catch {
+      // Keep the in-memory setting when browser storage is unavailable.
+    }
+    return next;
+  });
+
+  return { collapsed, toggle, transitionReady };
+}
+
+export function AgentSidebarToggle({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
+  const t = useT();
+  const label = collapsed ? t("展开导航") : t("收起导航");
+
+  return (
+    <button
+      type="button"
+      className="lv-agent-sidebar-toggle"
+      aria-label={label}
+      aria-controls="lv-agent-sidebar-navigation"
+      aria-expanded={!collapsed}
+      data-tooltip={label}
+      onClick={onToggle}
+    >
+      <PanelLeft className="size-[18px]" strokeWidth={1.5} aria-hidden="true" />
+    </button>
+  );
+}
 
 /** Owns only desktop sidebar scrolling; page controllers retain navigation and Bot actions. */
-export function AgentSidebar({ children }: { children: ReactNode }) {
+export function AgentSidebar({ children, ...props }: { children: ReactNode } & HTMLAttributes<HTMLElement>) {
   const sidebarRef = useRef<HTMLElement>(null);
   const [edges, setEdges] = useState({ above: false, below: false });
   useEffect(() => {
@@ -30,9 +90,11 @@ export function AgentSidebar({ children }: { children: ReactNode }) {
   return (
     <aside
       ref={sidebarRef}
+      id="lv-agent-sidebar-navigation"
       className="lv-agents-sidebar lv-agents-sidebar-scroll-isolated"
       data-scroll-above={edges.above}
       data-scroll-below={edges.below}
+      {...props}
     >
       {children}
     </aside>

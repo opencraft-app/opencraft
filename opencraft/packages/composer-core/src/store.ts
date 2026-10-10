@@ -46,11 +46,22 @@ export type ComposerAction =
       readonly error?: string | null;
     }
   | { readonly type: "switch-target"; readonly target: ComposerTarget }
-  | { readonly type: "clear" };
+  | { readonly type: "clear" }
+  | { readonly type: "reset-all" };
 
 export interface ComposerStoreServices {
   readonly now: () => number;
   readonly createId: () => string;
+  /** Client-local content only. Submission receipts and execution are not drafts. */
+  readonly drafts?: ComposerDraftStorage;
+  readonly onDraftStorageError?: (error: unknown) => void;
+}
+
+export type ComposerSavedContent = Pick<ComposerDraft, "document" | "attachments" | "context">;
+
+export interface ComposerDraftStorage {
+  read(target: ComposerTarget): ComposerSavedContent | null;
+  write(target: ComposerTarget, content: ComposerSavedContent): void;
 }
 
 export interface ComposerStoreSnapshot {
@@ -63,6 +74,11 @@ export interface ComposerStoreSnapshot {
   readonly hasProcessingAssets: boolean;
   readonly hasUnavailableAssets: boolean;
 }
+
+export type ComposerSubmissionSettlement =
+  | { readonly status: "accepted" }
+  | { readonly status: "rejected" }
+  | { readonly status: "failed"; readonly error: string };
 
 export interface ComposerViewHandle {
   focus(): void;
@@ -110,17 +126,25 @@ export interface ComposerTransientTextInputFinalization {
 
 export interface ComposerController {
   getSnapshot(): ComposerStoreSnapshot;
+  /** Content retained by this Controller, including inactive target drafts. */
+  hasRetainedContent(): boolean;
+  /** Content already owned by an active or cached semantic target. */
+  hasTargetContent(target: ComposerTarget): boolean;
   subscribe(listener: () => void): () => void;
   getInputInteractionSnapshot(): ComposerDictationInteraction | null;
   subscribeInputInteraction(listener: () => void): () => void;
   dispatch(action: ComposerAction): void;
   /** Resolve an attachment in the active or target-cached Draft. */
   getDraftAttachment(draftId: string, attachmentId: string): ComposerAttachment | null;
+  /** Inspect the lifecycle of an active or target-cached Draft. */
+  getDraftPhase(draftId: string): ComposerDraft["lifecycle"]["phase"] | null;
   /** Late asset results may only update the Draft that initiated the work. */
   updateDraftAttachment(draftId: string, attachmentId: string, patch: Partial<Omit<ComposerAttachment, "id">>): boolean;
   /** View-owned browser resources follow the Controller, not a mounted editor. */
   onDispose(listener: () => void): () => void;
   createSubmitIntent(): SubmitIntent;
+  /** Settle only the Draft that produced this immutable submission. */
+  settleSubmission(draftId: string, intent: SubmitIntent, result: ComposerSubmissionSettlement): boolean;
   registerView(handle: ComposerViewHandle): () => void;
   focus(): void;
   blur(): void;
@@ -233,9 +257,17 @@ function reduce(
         selections: draft.selections,
         options: draft.options,
       };
+    case "reset-all":
+      return createDraft(draft.target, services);
     case "switch-target":
       return draft;
   }
+}
+
+function draftHasContent(draft: ComposerDraft): boolean {
+  return !isComposerDocumentEmpty(draft.document)
+    || draft.attachments.length > 0
+    || draft.context.length > 0;
 }
 
 function snapshot(
@@ -252,11 +284,7 @@ function snapshot(
   const hasUnavailableAssets = draft.attachments.some(
     (attachment) => attachment.lifecycle !== "ready" || attachment.uri === null,
   );
-  const hasContent =
-    !isComposerDocumentEmpty(draft.document) ||
-    draft.attachments.length > 0 ||
-    draft.context.length > 0 ||
-    hasTransientText;
+  const hasContent = draftHasContent(draft) || hasTransientText;
   return {
     revision,
     draft,
@@ -275,9 +303,20 @@ export function createComposerController(
   target: ComposerTarget,
   services: ComposerStoreServices,
 ): ComposerController {
+  const restoreDraft = (nextTarget: ComposerTarget): ComposerDraft => {
+    const fresh = createDraft(nextTarget, services);
+    try {
+      const saved = services.drafts?.read(nextTarget);
+      return saved ? { ...fresh, ...saved } : fresh;
+    } catch (error) { services.onDraftStorageError?.(error); return fresh; }
+  };
+  const persist = (value: ComposerDraft) => {
+    try { services.drafts?.write(value.target, { document: value.document, attachments: value.attachments, context: value.context }); }
+    catch (error) { services.onDraftStorageError?.(error); }
+  };
   let revision = 0;
   let contentEpoch = 0;
-  let draft = createDraft(target, services);
+  let draft = restoreDraft(target);
   let currentSnapshot = snapshot(revision, draft);
   const draftCache = new Map<string, ComposerDraft>();
   const listeners = new Set<() => void>();
@@ -317,6 +356,13 @@ export function createComposerController(
 
   const publish = (next: ComposerDraft) => {
     if (next === draft) return;
+    // Lifecycle/selection changes must not overwrite another surface's content.
+    // Only actual content edits (including accepted-send clear) write storage.
+    if (next.document !== draft.document || next.attachments !== draft.attachments || next.context !== draft.context) {
+      if (encodeComposerTarget(next.target) === encodeComposerTarget(draft.target)) persist(next);
+    } else if (next.target !== draft.target && next.target.type === "new-thread") {
+      persist(next); // Execution placement changed without changing Draft identity.
+    }
     draft = next;
     revision += 1;
     currentSnapshot = snapshot(
@@ -361,6 +407,19 @@ export function createComposerController(
 
   return {
     getSnapshot: () => currentSnapshot,
+    hasRetainedContent() {
+      if (disposed) return false;
+      const activeTarget = encodeComposerTarget(draft.target);
+      return currentSnapshot.hasContent || [...draftCache.entries()]
+        .some(([key, cached]) => key !== activeTarget && draftHasContent(cached));
+    },
+    hasTargetContent(target) {
+      if (disposed) return false;
+      const key = encodeComposerTarget(target);
+      if (key === encodeComposerTarget(draft.target)) return currentSnapshot.hasContent;
+      const cached = draftCache.get(key);
+      return cached !== undefined && draftHasContent(cached);
+    },
     getInputInteractionSnapshot: () => transient?.interaction ?? null,
     subscribeInputInteraction(listener) {
       ensureOpen(); interactionListeners.add(listener);
@@ -373,7 +432,7 @@ export function createComposerController(
     },
     dispatch(action) {
       ensureOpen();
-      if (action.type === "switch-target" || action.type === "clear" || action.type === "replace-content") {
+      if (action.type === "switch-target" || action.type === "clear" || action.type === "reset-all" || action.type === "replace-content") {
         contentEpoch++;
         const active = transient;
         if (active !== null) {
@@ -385,6 +444,12 @@ export function createComposerController(
         }
       }
       if (action.type === "replace-content") submissionContinuation = null;
+      if (action.type === "reset-all") {
+        submissionContinuation = null;
+        draftCache.clear();
+        publish(createDraft(draft.target, services));
+        return;
+      }
       if (action.type === "switch-target") {
         submissionContinuation = null;
         const currentKey = encodeComposerTarget(draft.target);
@@ -399,7 +464,7 @@ export function createComposerController(
           return;
         }
         const restored = draftCache.get(targetKey);
-        publish(restored ?? createDraft(action.target, services));
+        publish(restored ?? restoreDraft(action.target));
         return;
       }
       if (action.type === "clear") draftCache.delete(encodeComposerTarget(draft.target));
@@ -411,6 +476,12 @@ export function createComposerController(
         : [...draftCache.values()].find(candidate => candidate.id === draftId);
       return owner?.attachments.find(attachment => attachment.id === attachmentId) ?? null;
     },
+    getDraftPhase(draftId) {
+      const owner = draft.id === draftId
+        ? draft
+        : [...draftCache.values()].find(candidate => candidate.id === draftId);
+      return owner?.lifecycle.phase ?? null;
+    },
     updateDraftAttachment(draftId, attachmentId, patch) {
       ensureOpen();
       if (draft.id === draftId) {
@@ -420,7 +491,9 @@ export function createComposerController(
       }
       for (const [key, cached] of draftCache) {
         if (cached.id !== draftId || !cached.attachments.some(attachment => attachment.id === attachmentId)) continue;
-        draftCache.set(key, reduce(cached, { type: "update-attachment", id: attachmentId, patch }, services));
+        const next = reduce(cached, { type: "update-attachment", id: attachmentId, patch }, services);
+        draftCache.set(key, next);
+        persist(next);
         return true;
       }
       return false;
@@ -456,6 +529,40 @@ export function createComposerController(
         options: draft.options,
         createdAt: services.now(),
       };
+    },
+    settleSubmission(draftId, intent, result) {
+      // An async result may arrive after target navigation or controller
+      // disposal. It must never clear the currently visible, unrelated Draft.
+      if (disposed) return false;
+      const active = draft.id === draftId;
+      const cachedEntry = active ? null : [...draftCache.entries()].find(([, candidate]) => candidate.id === draftId);
+      const owner = active ? draft : cachedEntry?.[1];
+      if (!owner || owner.lifecycle.phase !== "submitting"
+        || encodeComposerTarget(owner.target) !== encodeComposerTarget(intent.target)) return false;
+      const sameContent = owner.document === intent.document
+        && owner.attachments === intent.attachments
+        && owner.context === intent.context;
+      const next = result.status === "accepted" && sameContent
+        ? reduce(owner, { type: "clear" }, services)
+        : reduce(owner, {
+          type: "set-lifecycle",
+          phase: result.status === "failed" ? "failed" : "editing",
+          error: result.status === "failed" ? result.error : null,
+        }, services);
+      if (active) {
+        if (result.status === "accepted" && sameContent) {
+          contentEpoch++;
+          if (transient !== null) finalizeTransient(transient, "cancel", "draft-reset");
+          draftCache.delete(encodeComposerTarget(owner.target));
+        }
+        publish(next);
+      } else if (cachedEntry) {
+        draftCache.set(cachedEntry[0], next);
+        // A cached Draft can settle while another View is active. Resource
+        // owners still need to observe its new lifecycle before a reset.
+        publishSnapshot();
+      }
+      return true;
     },
     registerView(handle) {
       ensureOpen();

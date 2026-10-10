@@ -15,7 +15,14 @@ function renderToStaticMarkup(children: React.ReactNode) {
 }
 
 import { ComposerQueueTray } from "../packages/codex-composer/src/queue-tray";
+import { CodexComposer } from "@opencraft/codex-composer";
+import { createConversationKey } from "@opencraft/chat-core";
+import { createComposerController } from "@opencraft/composer-core";
+import { queuedSubmissionPresentation } from "../apps/workbench-web/src/queued-submission-presentation";
 import { supportsAtomicQueuedSteer, supportsUnconfirmedSteerDiscard } from "@opencraft/appserver-protocol";
+
+// tsx compiles package sources with the classic JSX runtime.
+(globalThis as { React?: typeof React }).React = React;
 
 const pendingItem = {
   id: "client-command-1",
@@ -40,6 +47,7 @@ test("Workbench passes the Host queue capability into the Composer prop", () => 
   const composerTag = app.match(/<CodexComposer\b[\s\S]*?\/>/u)?.[0];
   assert.ok(composerTag, "Workbench should render CodexComposer");
   assert.match(composerTag, /supportsQueuedSteer=\{queueAtomicSteer\}/u);
+  assert.match(composerTag, /defaultFollowUpAction=\{embedded \? "queue" : defaultFollowUpAction\}/u);
 });
 
 test("normal queued follow-ups render as messages rather than transport UI", () => {
@@ -56,6 +64,53 @@ test("normal queued follow-ups render as messages rather than transport UI", () 
   assert.doesNotMatch(markup, /codex-composer-queue-tray__heading/);
   assert.doesNotMatch(markup, />(?:Adding…|Saving…|Queued)</);
   assert.match(markup, /aria-busy="true"/);
+});
+
+test("failed local queue entries can be deleted while unaccepted entries stay disabled", () => {
+  const failed = renderToStaticMarkup(
+    <ComposerQueueTray items={[{ ...pendingItem, state: "failed", dismissible: true }]} isResponseInProgress />,
+  );
+  assert.match(failed, /aria-label="Delete queued message"/);
+  assert.doesNotMatch(failed, /aria-label="Delete queued message"[^>]*disabled=""/);
+
+  const submitting = renderToStaticMarkup(
+    <ComposerQueueTray items={[pendingItem]} isResponseInProgress />,
+  );
+  assert.match(submitting, /aria-label="Delete queued message"[^>]*disabled=""/);
+});
+
+test("Workbench queue projection keeps uncertain delivery non-deletable through the Composer", () => {
+  const app = readFileSync(new URL("../apps/workbench-web/src/app.tsx", import.meta.url), "utf8");
+  assert.match(app, /queuedSubmissionPresentation\(submission, queueReorderable\)/u);
+  const submission = {
+    commandId: "local-follow-up",
+    clientMessageId: "client-follow-up",
+    serverSubmissionId: null,
+    input: [],
+    preview: "Next",
+    operation: "idle" as const,
+    createdAt: 100,
+    pausedReason: null,
+    error: null,
+  };
+  const controller = createComposerController(
+    { type: "existing-thread", key: createConversationKey("local", "thread-one") },
+    { now: () => 100, createId: () => "composer-id" },
+  );
+  const renderState = (state: "submitting" | "failed" | "unknown") => renderToStaticMarkup(
+    <CodexComposer
+      controller={controller}
+      isStreaming
+      queuedSubmissions={[queuedSubmissionPresentation({ ...submission, state }, true)]}
+      onSubmit={() => false}
+      onCancel={() => {}}
+    />,
+  );
+  assert.match(renderState("failed"), /aria-label="Delete queued message"(?![^>]*disabled="")/u);
+  assert.match(renderState("submitting"), /aria-label="Delete queued message"[^>]*disabled=""/u);
+  const unknown = renderState("unknown");
+  assert.match(unknown, /data-state="unknown"/u);
+  assert.match(unknown, /aria-label="Delete queued message"[^>]*disabled=""/u);
 });
 
 test("queue interruption is the only state promoted to a tray header", () => {
@@ -104,6 +159,7 @@ test("queued Steer is disabled without Host atomic support while idle Send remai
   );
   assert.match(running, /aria-label="Steer with queued message"[^>]*disabled=""/);
   assert.match(running, /This Host cannot steer a queued message/);
+  assert.match(running, /class="codex-composer-queue-action-trigger"[^>]*tabindex="0"[^>]*role="group"[^>]*aria-disabled="true"/);
 
   const supported = renderToStaticMarkup(
     <ComposerQueueTray items={[item]} isResponseInProgress atomicSteer />,
@@ -127,7 +183,7 @@ test("queued Steer is disabled without Host atomic support while idle Send remai
 });
 
 
-test("Chinese queued steer exposes the immediate-insert tooltip and accessible name", async () => {
+test("Chinese queued steer keeps its accessible name without a native tooltip", async () => {
   const runtime = new LocaleRuntime([{ locale: "zh-CN", label: "中文", load: async () => zh }]);
   await runtime.update({ localeOverride: "zh-CN" });
   try {
@@ -135,11 +191,12 @@ test("Chinese queued steer exposes the immediate-insert tooltip and accessible n
       <ComposerQueueTray items={[{ ...pendingItem, state: "queued", actionable: true }]}
         isResponseInProgress atomicSteer />
     </IntlRuntimeProvider>);
-    assert.match(markup, /class="is-labelled is-steer"[^>]*aria-label="立即插入"[^>]*title="立即插入"/);
+    assert.match(markup, /class="is-labelled is-steer"[^>]*aria-label="立即插入"/);
+    assert.doesNotMatch(markup, /\btitle=/);
   } finally { runtime.dispose(); }
 });
 
-test("queued action tooltips describe the action instead of inheriting the message preview", async () => {
+test("queued actions keep labels and use custom tooltip triggers", async () => {
   const runtime = new LocaleRuntime([{ locale: "zh-CN", label: "中文", load: async () => zh }]);
   await runtime.update({ localeOverride: "zh-CN" });
   try {
@@ -147,13 +204,15 @@ test("queued action tooltips describe the action instead of inheriting the messa
     const markup = renderMarkup(<IntlRuntimeProvider runtime={runtime}>
       <ComposerQueueTray items={[item]} isResponseInProgress atomicSteer />
     </IntlRuntimeProvider>);
-    assert.match(markup, /class="codex-composer-queue-item"[^>]*title="几点了"/);
-    assert.match(markup, /aria-label="调整排队消息顺序"[^>]*title="调整排队消息顺序"/);
-    assert.match(markup, /aria-label="编辑排队消息"[^>]*title="编辑排队消息"/);
-    assert.match(markup, /aria-label="删除排队消息"[^>]*title="删除排队消息"/);
+    assert.match(markup, /class="codex-composer-queue-item__preview"[^>]*>几点了/);
+    assert.match(markup, /aria-label="调整排队消息顺序"/);
+    assert.match(markup, /aria-label="编辑排队消息"/);
+    assert.match(markup, /aria-label="删除排队消息"/);
+    assert.doesNotMatch(markup, /\btitle=/);
     const editing = renderMarkup(<IntlRuntimeProvider runtime={runtime}>
       <ComposerQueueTray items={[{ ...item, editing: true }]} isResponseInProgress atomicSteer />
     </IntlRuntimeProvider>);
-    assert.match(editing, /aria-label="取消编辑排队消息"[^>]*title="取消编辑排队消息"/);
+    assert.match(editing, /aria-label="取消编辑排队消息"/);
+    assert.doesNotMatch(editing, /\btitle=/);
   } finally { runtime.dispose(); }
 });

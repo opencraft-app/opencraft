@@ -1,0 +1,115 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chatserver-computer-update
+  namespace: dep
+  labels:
+    app.kubernetes.io/name: chatserver-computer-update
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: chatserver-computer-update
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: chatserver-computer-update
+    spec:
+      serviceAccountName: chatserver-computer-update
+      automountServiceAccountToken: false
+      imagePullSecrets:
+        - name: csighub-skipzhang
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        fsGroupChangePolicy: OnRootMismatch
+      containers:
+        - name: computer-update
+          image: csighub.tencentyun.com/skipzhang/chatserver@sha256:c929bd8e45d1b8703c5706cb052f9985c5379f2ba7d8fa23f6a3489ce6bfb307
+          imagePullPolicy: IfNotPresent
+          args:
+            - computer-update
+            - serve
+            - --listen
+            - 0.0.0.0:8090
+            - --state-dir
+            - /var/lib/chatserver/computer-update/state
+            - --release-root
+            - /var/lib/chatserver/computer-update/releases
+            - --release-public-key-file
+            - /var/run/secrets/computer-update/release.public
+            - --channel-key-id
+            - computer-channel-2026-08
+            - --channel-private-key-file
+            - /var/run/secrets/computer-update/channel.private
+            - --host
+            - computer-update.invalid
+            - --origin
+            - https://computer-update.invalid
+            - --trusted-proxy-cidr
+            - 192.0.2.0/32
+            - --tencent-cloud-secret-id-file
+            - /var/run/secrets/computer-update/tencent-cloud-secret-id
+            - --tencent-cloud-secret-key-file
+            - /var/run/secrets/computer-update/tencent-cloud-secret-key
+            - --computer-artifact-bucket
+            - an-computer-1388575217
+            - --computer-artifact-region
+            - ap-beijing
+            - --url-ttl
+            - 5m
+          ports:
+            - name: http
+              containerPort: 8090
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 1
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/chatserver/computer-update
+            - name: secrets
+              mountPath: /var/run/secrets/computer-update
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: chatserver-computer-update-data
+        - name: secrets
+          secret:
+            secretName: chatserver-computer-update-secrets
+            defaultMode: 0440
+        - name: tmp
+          emptyDir: {}

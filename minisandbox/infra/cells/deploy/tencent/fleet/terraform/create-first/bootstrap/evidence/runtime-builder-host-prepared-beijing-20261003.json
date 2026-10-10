@@ -1,0 +1,87 @@
+{
+  "schema": "actor-runtime-builder-host-preparation-evidence/v1",
+  "verdict": "passed",
+  "source": {
+    "revision": "54cc72736123620e63f9010edf373fd5afbc8777",
+    "projectTree": "4a202d62fbd85adc5c7c705defc2fef4ea12d958",
+    "fileCount": 14337,
+    "manifestSha256": "fb4b74bad6851cf6f72947aef7a4767297dc08c9d206afe06fe242cb52372254",
+    "bundleBytes": 54837844,
+    "bundleSha256": "e40810403361951f9cfe56e37873434780b7d252ecfbfab3559424c67195020a",
+    "receiptSha256": "af307d871503a4d1ab3bdde6ee43d5a2e7251a6c9d815e6134186e5ac8ac1acd"
+  },
+  "inventorySha256": "882113091f01cbe12e224f53d3f34667c4e659d37afdc37d8b9ecf8cc1419a57",
+  "operationsInstanceId": "ins-55ry1kb1",
+  "builderInstanceId": "ins-mh9mruw7",
+  "relay": [
+    {"invocationId": "inv-d9f4iegwm2", "status": "SUCCESS", "exitCode": 0, "kind": "source-bundle"},
+    {"invocationId": "inv-a9f4ig0ie1", "status": "SUCCESS", "exitCode": 0, "kind": "source-receipt"}
+  ],
+  "captureInvocationId": "inv-c9f4j6gvn1",
+  "guest": {
+    "invocationId": "inv-c9f4j803t6",
+    "status": "SUCCESS",
+    "exitCode": 0,
+    "nativeRequestId": "7e4acfac-98f8-4ddf-9ded-e6f773d7a678",
+    "nativeResponseSha256": "4f4f9ed965f629b281a8c33d6e17394e6e83da0ca8f9a7bc505ca1c7e6f68c60"
+  },
+  "coordinator": {
+    "invocationId": "inv-e9f4j2gij8",
+    "status": "SUCCESS",
+    "exitCode": 0,
+    "nativeRequestId": "54ec6806-c969-4b9d-be05-31cdc9d72b7f",
+    "nativeResponseSha256": "fab84078b02d2cdcb0432d55876e6b994b0b4a8108ef7fd90f26cec9d887f2cd",
+    "statePath": "/var/lib/actor-runtime-builder-host-coordinator/ins-mh9mruw7.json"
+  },
+  "result": {
+    "schema": "actor-runtime-builder-host-preparation/v1",
+    "verdict": "passed",
+    "packageReady": true,
+    "storageReady": false,
+    "instanceId": "ins-mh9mruw7",
+    "diskId": "disk-kkels2ln",
+    "filesystemUuid": "dd34c927-dfee-4826-8b45-d5cbb4d47c5e",
+    "journalSha256": "416b384527f21b1035a2de16f7fb9d06687d08b196b824c849f02ceaff7e6039",
+    "packageInventorySha256": "8e6f582622b6d9676965258eb6f17ec9f573030a81683e2397d3d2090490149b",
+    "graphRoot": "/data/actor-build/containers/storage"
+  },
+  "localValidation": {"bootstrapTests": 152, "coordinatorTests": 18, "packageProtocolTests": 10},
+  "subsequentSourceAdmission": {
+    "verdict": "failed",
+    "sourceRevision": "2757fc785d8f572d1b6430e471100c4a880aefac",
+    "coordinator": {
+      "invocationId": "inv-a9f4me0efw",
+      "status": "FAILED",
+      "exitCode": 1,
+      "nativeRequestId": "edfd6aae-4ae7-4afb-8ff0-670cc1dfd7bc",
+      "nativeResponseSha256": "be86cafe7cda55611f3fd35989e34022440db1e34251bf47fcae43d0a1d52e62"
+    },
+    "guest": {
+      "invocationId": "inv-a9f4mf0fgs",
+      "status": "FAILED",
+      "exitCode": 1,
+      "nativeRequestId": "3e2b7c6f-248c-4ace-a1b6-5db5443a7777",
+      "nativeResponseSha256": "54f68d8f5b28ddb1dbe7e5f84d8975f757d696318dd27b08f5172e48888169c9"
+    },
+    "failure": "workers-api/test_verify_runner.py: real verify.sh invokes kubectl kustomize; kubectl is absent on the standalone builder",
+    "priorGitFailurePassed": true,
+    "sourcePublished": false,
+    "remainingStaticRenderTool": {
+      "state": "official checksum verified locally, not installed on builder",
+      "version": "v1.30.14",
+      "platform": "linux/amd64",
+      "binarySha256": "7ccac981ece0098284d8961973295f5124d78eab7b89ba5023f35591baa16271",
+      "officialChecksumUrl": "https://dl.k8s.io/release/v1.30.14/bin/linux/amd64/kubectl.sha256",
+      "purpose": "offline manifest rendering; not proof of cluster API client/version compatibility or permission"
+    }
+  },
+  "boundaries": [
+    "Original operations host owns the existing fleet lock; guest receives no cloud credentials or kubeconfig.",
+    "Preparation is bound to fresh native attachment and TKE exclusion, exact reviewed source, mounted journal and actual bulk reserves.",
+    "No initialization intent was cleared or rebound; filesystem UUID and journal digest match the earlier mounted receipt.",
+    "Every package-tool child explicitly receives the managed Buildah configuration; actual GraphRoot is on the separate disk.",
+    "Native guest and operations-host terminal outputs were independently collected and their exact result objects matched.",
+    "This proves declared package readiness, not pinned Rust, offline Cargo cache, complete build admission, ABI, stage reuse, compilation, release or workload qualification.",
+    "No product Runtime, A/B capacity policy or workload acceptance conditions changed."
+  ]
+}

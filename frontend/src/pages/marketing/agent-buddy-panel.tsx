@@ -15,7 +15,7 @@
  * 注：AI 搭子当前仅保留 Soul（人设）浏览与抽卡能力。
  */
 
-import { AlertCircle, AlertTriangle, Check, ClipboardCheck, Dice5, Download, ExternalLink, Loader2, Pencil, RotateCcw, Trash2, X, Zap } from "lucide-react";
+import { AlertCircle, AlertTriangle, Check, ClipboardCheck, Dice5, Download, ExternalLink, Eye, Loader2, Pencil, RotateCcw, Trash2, X, Zap } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
@@ -237,7 +237,10 @@ export function BuddyPanel({
   const soulsResource = useAsyncResource(soulsFetcher, [soulDataLocale]);
   // 历史卡片仍从完整目录本地化；新抽卡与测试只使用筛选后的候选。
   const sourceSouls = soulsResource.data?.souls;
-  const souls = useMemo(() => getRecommendableSouls(sourceSouls ?? []), [sourceSouls]);
+  const souls = useMemo(
+    () => getRecommendableSouls(sourceSouls ?? [], soulDataLocale),
+    [sourceSouls, soulDataLocale],
+  );
   const localizedDrawnSouls = useMemo(
     () => localizeDrawnSouls(
       drawnSouls,
@@ -1039,7 +1042,7 @@ export function BuddyPanel({
 
       <div className="lv-buddy-panel relative overflow-hidden rounded-2xl" style={PANEL_CARD_STYLE}>
       <InjectToast state={toast} onClose={() => setToast({ kind: "idle" })} t={t} />
-      <div className="lv-buddy-panel__toolbar px-6 pt-5 pb-3">
+      <div className="lv-buddy-panel__toolbar pt-5 pb-3">
         <div className="lv-buddy-panel__toolbar-inner relative mx-auto flex w-full items-center justify-center">
           <div className="lv-buddy-panel__heading inline-flex items-center justify-center gap-2">
             <h3
@@ -1065,7 +1068,7 @@ export function BuddyPanel({
               href="https://skillhub.cn/soul"
               target="_blank"
               rel="noopener noreferrer"
-              className="lv-buddy-panel__source absolute inset-y-0 right-0 inline-flex items-center gap-1.5 text-xs font-medium transition-colors hover:opacity-80"
+              className="lv-buddy-panel__source inline-flex items-center gap-1.5 text-xs font-medium transition-colors hover:opacity-80"
               style={{ color: "rgba(0,0,0,0.55)" }}
             >
               {t("灵感来自 SkillHub")}
@@ -1076,7 +1079,7 @@ export function BuddyPanel({
       </div>
 
       {/* 内容区：人设抽卡槽 */}
-      <div className="lv-buddy-panel__body px-6 pt-2 pb-2">
+      <div className="lv-buddy-panel__body pt-2 pb-2">
         {loadStatus === "unauthorized" ? (
           <UnauthorizedState />
         ) : loadStatus === "error" ? (
@@ -1126,11 +1129,11 @@ export function BuddyPanel({
 
       {(customPersonaName || appliedPersonaName) && (
         <div
-          className="mx-auto mt-3 flex max-w-[816px] items-center justify-center gap-2 px-6 text-sm text-[var(--text-secondary)]"
+          className="lv-buddy-panel__applied mx-auto mt-3 flex max-w-[816px] min-w-0 flex-wrap items-center justify-center gap-2 px-6 text-sm text-[var(--text-secondary)]"
         >
-          <div role="status" className="inline-flex items-center gap-2">
-            <Check className="size-4" aria-hidden="true" />
-            <span>
+          <div role="status" className="inline-flex min-w-0 max-w-full items-center gap-2">
+            <Check className="size-4 shrink-0" aria-hidden="true" />
+            <span className="min-w-0 break-words">
               {customPersonaName
                 ? t("已注入：自定义人设 · {{name}}", { name: customPersonaName })
                 : t("已注入：{{name}}", { name: appliedPersonaName })}
@@ -1182,7 +1185,7 @@ export function BuddyPanel({
       )}
 
       {/* 卡片下方：抽取人设 + Soul 测试 + 应用到 Agent */}
-      <div className="lv-buddy-panel__actions relative mx-auto flex max-w-[816px] items-center justify-center gap-3 px-0 py-5">
+      <div className="lv-buddy-panel__actions relative mx-auto flex justify-center gap-3 py-5">
         <div className="lv-buddy-panel__action-buttons flex flex-wrap items-center justify-center gap-3">
           <div className="group relative inline-flex">
             <button
@@ -1497,7 +1500,7 @@ function SoulSlotGrid({
   return (
     // 网格 max-w 锁在 816px 居中，4 列下单卡 ≈ 192×269，最多展示 8 张抽卡槽。
     // 容器在更窄视口里会自然缩小，cell 跟着变小。
-    <div className="lv-buddy-panel__grid mx-auto grid max-w-[816px] grid-cols-4 gap-4">
+    <div className="lv-buddy-panel__grid mx-auto grid gap-4">
       {Array.from({ length: MAX_DRAWS }).map((_, i) => {
         const soul = drawnSouls[i];
         if (soul) {
@@ -1546,7 +1549,7 @@ function FilledSlot({
   const t = useT();
   return (
     <div
-      className="group relative transition-transform duration-200 hover:-translate-y-1"
+      className="lv-buddy-card--filled group relative transition-transform duration-200 hover:-translate-y-1"
       style={{
         // 选中态：黑色 2px 描边 + 强阴影（对齐 SkillHub）
         // 已注入但未选中：不加描边，仅靠左上角胶囊徽章标识
@@ -1563,7 +1566,17 @@ function FilledSlot({
         aria-label={selected ? t("取消选中此人设") : t("选中此人设")}
         className="block w-full cursor-pointer"
       >
-        <SoulFaceCard soul={soul} size="slot" onInterpret={onPreview} />
+        <SoulFaceCard soul={soul} size="slot" />
+      </button>
+
+      <button
+        type="button"
+        className="lv-buddy-card__preview inline-flex items-center justify-center gap-1 rounded-md text-xs text-black/60 underline underline-offset-2 transition-colors hover:text-[#3957FF]"
+        onClick={onPreview}
+        aria-label={t("人设解读")}
+      >
+        <Eye className="size-3.5" aria-hidden="true" />
+        {t("人设解读")}
       </button>
 
       {/* 左上角：注入状态标签。appliedSlug 是单值，同一时间最多 1 张卡显示已注入。 */}
@@ -1599,10 +1612,10 @@ function FilledSlot({
         </div>
       )}
 
-      {/* 右上角：选中态显示「勾」（SkillHub 同款黑底白勾），未选中显示「删除 + 重抽」（hover 浮现） */}
+      {/* 选中态显示勾；重抽与删除在指针设备上悬停显示，在触屏设备上常显。 */}
       {selected ? (
         <div
-          className="pointer-events-none absolute right-1.5 top-1.5 inline-flex h-[18px] w-[18px] items-center justify-center rounded-full"
+          className="pointer-events-none absolute right-1.5 top-1.5 inline-flex h-[18px] w-[18px] items-center justify-center rounded-full group-hover:opacity-0 group-focus-within:opacity-0"
           style={{
             background: "#000000",
             color: "#ffffff",
@@ -1611,8 +1624,8 @@ function FilledSlot({
         >
           <Check className="h-2.5 w-2.5" strokeWidth={3} />
         </div>
-      ) : (
-        <div className="absolute right-2 top-2 flex items-center gap-1.5 opacity-0 transition-opacity duration-150 focus-within:opacity-100 group-hover:opacity-100">
+      ) : null}
+      <div className="lv-buddy-card__quick-actions absolute right-2 top-2 flex items-center gap-1.5 opacity-0 transition-opacity duration-150 focus-within:opacity-100 group-hover:opacity-100">
           <button
             type="button"
             onClick={(e) => {
@@ -1652,8 +1665,7 @@ function FilledSlot({
           >
             <Trash2 className="h-3 w-3" />
           </button>
-        </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -1662,7 +1674,7 @@ function EmptySlot({ onClick }: { onClick: () => void }) {
   const t = useT();
   return (
     // group + group-hover 让卡片在 hover 时浮出顶部 tooltip 提示
-    <div className="group relative">
+    <div className="lv-buddy-card--empty group relative">
       <button
         type="button"
         onClick={onClick}

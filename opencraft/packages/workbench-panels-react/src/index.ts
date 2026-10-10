@@ -12,11 +12,15 @@ export interface PanelRendererProps {
   readonly ownerId: string;
   /** Ephemeral Route/View surface presenting the stable panel state. */
   readonly presentationId: string;
+  /** Logical visibility, not exit-animation progress. Inactive cannot own input. */
+  readonly active?: boolean;
 }
 
 export interface PanelRendererRegistration {
   readonly kind: string;
   readonly Component: ComponentType<PanelRendererProps>;
+  /** Opt-in only: preserve the physical viewer while its tab remains open. */
+  readonly residency?: "while-tab-open";
 }
 
 declare module "@deepseek-ai/cordis" {

@@ -82,6 +82,7 @@ type Handler struct {
 	adminBridgeConfigured  bool
 	realnameWallEnabled    bool
 	workerActions          *workerActionService
+	speech                 *speechService
 	workerActionBackend    workerActionBackend
 	trustedProxyCIDRs      []netip.Prefix
 }
@@ -195,6 +196,20 @@ func NewHandler(cfg Config, opts ...Option) (http.Handler, error) {
 	authTransport := newUpstreamTransport(defaultResponseHeaderTimeout)
 
 	configuredRoutes := append([]Route(nil), cfg.Routes...)
+	var speech *speechService
+	if cfg.Speech != nil {
+		for _, route := range cfg.Routes {
+			if route.Name == speechRouteName || strings.HasPrefix(route.Prefix, "/api/speech") {
+				return nil, errors.New("speech route conflicts with a configured route")
+			}
+		}
+		var err error
+		speech, err = newSpeechService(*cfg.Speech)
+		if err != nil {
+			return nil, err
+		}
+		configuredRoutes = append(configuredRoutes, speechRoute(*cfg.Speech))
+	}
 	if cfg.Collaboration != nil {
 		if strings.TrimSpace(cfg.Collaboration.Upstream) == "" ||
 			strings.TrimSpace(cfg.Collaboration.UpstreamBearerTokenEnv) == "" {
@@ -263,6 +278,7 @@ func NewHandler(cfg Config, opts ...Option) (http.Handler, error) {
 			Transport: authTransport,
 		},
 		routes:                routes,
+		speech:                speech,
 		adminRealm:            "Lightclaw Admin",
 		adminBridgeCookieName: defaultAdminBridgeCookieName,
 		adminBridgeCookieTTL:  defaultAdminBridgeCookieTTL,
@@ -426,11 +442,15 @@ func collaborationRoute(config CollaborationRouteConfig) Route {
 	const prefix = "/v1/collaboration"
 	paths := []PublicRule{
 		{Method: http.MethodGet, Path: prefix + "/me"},
+		{Method: http.MethodGet, Path: prefix + "/me/profile"},
 		{Method: http.MethodPost, Path: prefix + "/me/im/session"},
 		{Method: http.MethodGet, Path: prefix + "/servers"},
 		{Method: http.MethodPost, Path: prefix + "/servers"},
 		{Method: http.MethodGet, Path: prefix + "/servers/{serverId}"},
 		{Method: http.MethodGet, Path: prefix + "/servers/{serverId}/members"},
+		{Method: http.MethodPost, Path: prefix + "/servers/{serverId}/invites"},
+		{Method: http.MethodPost, Path: prefix + "/join-links/accept"},
+		{Method: http.MethodGet, Path: prefix + "/servers/{serverId}/operations/{operationId}"},
 		{Method: http.MethodGet, Path: prefix + "/servers/{serverId}/channels"},
 		{Method: http.MethodGet, Path: prefix + "/servers/{serverId}/computers-v2"},
 		{Method: http.MethodPost, Path: prefix + "/servers/{serverId}/computers-v2"},
@@ -630,6 +650,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		injectIdentityHeaders(r.Header, session)
 		rec := newStatusRecorder(w)
+		if matched.route.Name == speechRouteName && h.speech != nil {
+			h.speech.serve(rec, r, session.Session.User.ID)
+			h.observeRequest(start, matched.route.Name, r, rec.statusCode())
+			h.logRequest(start, matched, session, r, rec.statusCode(), "")
+			return
+		}
 		matched.proxy.ServeHTTP(rec, r)
 		h.observeRequest(start, matched.route.Name, r, rec.statusCode())
 		h.logRequest(start, matched, session, r, rec.statusCode(), "")
@@ -774,6 +800,9 @@ func (a originAllowlist) Allows(origin string) bool {
 	if _, ok := a.exact[origin]; ok {
 		return true
 	}
+	if !isReflectableCORSOrigin(origin) {
+		return false
+	}
 	u, err := url.Parse(origin)
 	if err != nil {
 		return false
@@ -792,7 +821,7 @@ func (a originAllowlist) Allows(origin string) bool {
 			if host == item.host {
 				continue
 			}
-			if strings.HasSuffix(host, "."+item.host) {
+			if validOriginSubdomain(host, item.host) {
 				return true
 			}
 			continue
@@ -802,6 +831,24 @@ func (a originAllowlist) Allows(origin string) bool {
 		}
 	}
 	return false
+}
+
+func validOriginSubdomain(host, base string) bool {
+	prefix, ok := strings.CutSuffix(host, "."+base)
+	if !ok || len(host) > 253 {
+		return false
+	}
+	for _, label := range strings.Split(prefix, ".") {
+		if len(label) == 0 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return false
+		}
+		for _, c := range label {
+			if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '-') {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func normalizeAllowedOrigins(origins []string) originAllowlist {
@@ -864,7 +911,7 @@ func normalizeAllowedOrigins(origins []string) originAllowlist {
 
 func isReflectableCORSOrigin(origin string) bool {
 	u, err := url.Parse(origin)
-	if err != nil || u.User != nil || u.Opaque != "" || u.Hostname() == "" || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
+	if err != nil || u.User != nil || u.Opaque != "" || u.Hostname() == "" || u.Path != "" || u.ForceQuery || u.RawQuery != "" || u.Fragment != "" || strings.Contains(origin, "#") {
 		return false
 	}
 	switch strings.ToLower(u.Scheme) {

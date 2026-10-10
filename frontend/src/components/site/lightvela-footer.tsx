@@ -20,6 +20,7 @@ type FooterLink =
       label: string;
       to: string;
       external?: false;
+      trial?: boolean;
     }
   | {
       label: string;
@@ -40,6 +41,7 @@ export type RenderFooterLink = (props: {
   onClick?: () => void;
   target?: string;
   rel?: string;
+  "data-pricing-modal"?: "on";
 }) => ReactNode;
 
 const footerLinkClassName =
@@ -116,8 +118,8 @@ const getFooterSections = (t: (zh: string) => string): FooterSection[] => {
     {
       title: t("产品"),
       links: [
-        // 与首页顶部「免费试用」按钮落点一致：未登录 / 未订阅均先进订阅页
-        { label: t("1 个月免费试用"), to: SUBSCRIBE_PATH },
+        // 只有试用入口打开弹窗；相邻「定价」仍进入完整页面。
+        { label: t("1 个月免费试用"), to: SUBSCRIBE_PATH, trial: true },
         { label: t("定价"), to: SUBSCRIBE_PATH },
         ...getChannelGuideLinks(t),
         ...(isGlobal ? [{ label: t("博客"), to: "/blog" }] : []),
@@ -229,6 +231,7 @@ function FooterTextLink({
     href: localizedPath(link.to, locale),
     className: linkClassName,
     children: label,
+    "data-pricing-modal": link.trial ? "on" : undefined,
   });
 }
 

@@ -1,0 +1,49 @@
+{
+  "schema": "actor-runtime-builder-publication-evidence/v1",
+  "verdict": "passed",
+  "runtimeSourceRevision": "2757fc785d8f572d1b6430e471100c4a880aefac",
+  "runtimeSourceManifestSha256": "c6785b95c7d2615bbc0fdd57e2007665bd542455fa288dc6c863e389ee107300",
+  "runtimeRef": "actor-fleet-beijing.tencentcloudcr.com/actor-fleet/rivet-runtime@sha256:06797c6453379e880e9288b6961157bf468039c86f2e9c375dc0a3cc663a8026",
+  "localImageConfigSha256": "42056376ec1da4d01c5c09f4b7f793202573ce490ffac1c44174ea04b8ce3ac3",
+  "adapterSha256": "e92ba039ce72ab2f9148ff31a46d7dbc69d08d0475a34945b4a51a24b362d1f2",
+  "coordinatorInvocationId": "inv-d9f7t2065a",
+  "coordinatorInstanceId": "ins-55ry1kb1",
+  "coordinatorStatus": "SUCCESS",
+  "coordinatorExitCode": 0,
+  "coordinatorFinishedAtUtc": "2026-10-03T17:46:23Z",
+  "guestInvocationId": "inv-e9f7tf0hfg",
+  "guestInstanceId": "ins-mh9mruw7",
+  "guestStatus": "SUCCESS",
+  "guestExitCode": 0,
+  "guestFinishedAtUtc": "2026-10-03T17:46:17Z",
+  "nativeRequestId": "9f35ca22-0d1c-4ac4-bb5a-4ce6ca3937ce",
+  "nativeResponseSha256": "f8ac26eef6365d3078aa92e5af197725d81d06769109f2c3c39f0c2a9b904d14",
+  "freshAttachmentCaptureInvocationId": "inv-a9f7t6gh9e",
+  "builderPreflightInvocationId": "inv-a9f7t8g3r0",
+  "intent": "/data/actor-build/runtime-builder-verify-eec1f1ef/input/publish-intent.w2K6iz",
+  "productReceipt": "runtime-builder-product-2757-beijing-20261004.receipt.json",
+  "productReceiptFileSha256": "aea4ca3f31b280c99f710833203352547373fdd1299f8a0b6f44a3f033662b72",
+  "productReceiptSemanticDigest": "sha256:69feb2db89d1c4a36ce4c9336763aac2dfa9f589f768438e951571d6861a71bf",
+  "gates": {
+    "originalBuildGuestAndCoordinatorTerminalSuccessRequired": true,
+    "localBinaryHashesMatchOciLabels": true,
+    "exactPrivateTcrVpcEndpointVerified": true,
+    "freshPurposeSpecificTemporaryAuth": true,
+    "coldPullVerifiedByRecordProductImage": true,
+    "recompiledForPublication": false,
+    "cellReleaseProven": false,
+    "strict10kQualificationProven": false
+  },
+  "credentialCleanup": {
+    "independentReadOnlyInvocationId": "inv-a9f7vh0q1f",
+    "status": "SUCCESS", "exitCode": 0,
+    "temporaryRegistryCredentialDirectoryEmpty": true,
+    "builderFilesystemUuid": "dd34c927-dfee-4826-8b45-d5cbb4d47c5e"
+  },
+  "boundaries": [
+    "This publication pushes the already validated local image without invoking Cargo or recompiling V8.",
+    "The operations coordinator retains its original fleet operation lock until the guest's terminal observation and temporary credential cleanup. Unknown observations retain the original guest and never resubmit publication.",
+    "Fresh-token RequestId suffixes the destination tag. The authoritative product identity is the cold-pulled registry manifest digest, not that tag or the local OCI configuration hash.",
+    "A passed build/publication receipt does not prove A/B release, Bottomless or Engine HA qualification, strict10k capacity, Router performance or the remaining Phase5 requirements."
+  ]
+}

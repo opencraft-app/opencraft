@@ -53,6 +53,69 @@ namespace's own pull Secret. Registry, credential, node-network and
 architecture failures therefore preserve the previous version instead of
 creating an `ImagePullBackOff` rollout.
 
+The separate Go image also includes `workerd-host-drain-controller`; changing
+its UID/RV-fenced topology repair logic does not require rebuilding workerd or
+the unified runtime image. Its `--help` / `-h` exits successfully before
+Kubernetes initialization, Secret reads or reconciliation. Runtime releases
+probe this exact entrypoint and its expected help output on every control node
+before mutating live workloads. A successful help probe proves only that the
+entrypoint runs, not PDB behavior, Actor fencing, destination capacity or safe
+scale-in. Topology repair remains disabled until its independent gates pass.
+
+For a mono2-only controller build, export the **entire committed**
+`minisandbox/infra/cells` Git tree under `infra/cells/`; do not assemble a
+remembered file subset or include uncommitted source. Bind the full mono2
+revision, subtree tree ID and per-file manifest in `.actor-source/`, scan the
+closure, and transfer the content-addressed archive through the management
+template's current COS bootstrap relay. Select the relay and TCR from current
+management outputs, not the historical q01 defaults.
+
+`qualification/actor-bj-q01/build-controller-via-tat.sh` accepts the exact
+`/data/actor-build/deploy/controller-src-<revision>-<manifest-sha256>` path for
+this build. It still accepts the reviewed legacy q01 inputs for existing
+workflows, but the new path cannot point at `current`, a nested directory or
+another revision/manifest. Validation happens before minting push credentials.
+Temporary push authority is stored under `/data/actor-build/credentials/`,
+removed by both remote and local cleanup, and independently expires. The build
+requires pinned bases with matching Go module labels and retains the normal
+isolated registry cold-pull receipt. This is an artifact preparation operation,
+not permission to alter a Cell while a qualification supervisor holds its lock.
+
+The [2026-10-04 initial candidate receipt](evidence/controller-product-03e7e7b7-20261004.json)
+records a real Go-only build, registry push and isolated cold-pull for source
+`03e7e7b7`. Its Go base does **not** match the current runtime-2757 complete
+inventory, so this historical artifact cannot be promoted into that inventory.
+It is **not deployed** and does not certify TKE topology repair or
+the strict 10,000-active-object gate. Keep repair disabled until the real API,
+generation, destination-capacity and serialized release gates pass.
+
+Select controller bases from the **exact target release's complete inventory**,
+not from bootstrap inputs or whichever cached base has matching module labels.
+Module-graph equality is necessary for compilation but does not replace the
+dependency-closure identity checked by `product-lock.py promote`. A controller
+leaf promotion must preserve every other inventory entry, especially the
+qualified runtime; do not change a foundation entry to accommodate a candidate.
+
+The build wrapper keys new receipts by a NUL-separated SHA-256 of source revision,
+source-manifest SHA-256, build-base ref, runtime-base ref and unique output tag.
+It rejects an existing receipt before build/push. Different bases/tags therefore
+cannot collide with the previous immutable proof; retry a disconnected operation
+by its original TAT invocation, not by resubmitting the same build intent.
+`PYTHONDONTWRITEBYTECODE=1` prevents receipt-generation imports from placing
+derived caches in the reviewed source closure.
+
+The [current-lock candidate](evidence/controller-product-03e7e7b7-current-lock-20261004.json)
+passed real Go build/test, registry cold-pull and `product-lock.py promote`
+against the runtime-2757 inventory. Comparison proved that only the controller
+entry changed; the other 27 entries and remaining root metadata were preserved.
+This is a **staged inventory**, not a cloud release or TKE/Actor qualification.
+
+Execute release helpers from a frozen source snapshot, including their TAT
+neighbours. Never edit a local waiter while its remote invocation is active:
+the shell can report a footer parse failure even after the original remote build
+succeeded. Resume that invocation, collect its immutable receipt and verify exact
+credential cleanup instead of rebuilding or pretending the local exit passed.
+
 Apply CRDs before this kustomization:
 
 ```sh

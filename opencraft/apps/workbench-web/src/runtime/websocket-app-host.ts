@@ -284,6 +284,7 @@ export function connectWebSocketAppHost(
     readonly probeTimeoutMs?: number;
     readonly recoveryEvents?: AppHostRecoveryEvents;
     readonly reportFailure?: (diagnostic: AppHostConnectionDiagnostic) => void;
+    readonly path?: "/apphost" | "/ssh-apphost";
   } = {},
 ): { createTransport(hostId: string): DuplexTransport; close(): void } {
   let current: { port: WebSocketAppHostPort; client: MessagePortAppHostClient } | null = null;
@@ -303,7 +304,7 @@ export function connectWebSocketAppHost(
       const transport = new RenewableAppHostTransport(() => {
         if (disposed) throw new Error("App Host connection is closed");
         if (current === null || current.port.isClosed) {
-          const url = new URL("/apphost", window.location.href);
+          const url = new URL(options.path ?? "/apphost", window.location.href);
           url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
           const id = globalThis.crypto?.randomUUID?.() ?? `client-${Date.now()}-${Math.random().toString(36).slice(2)}`;
           url.searchParams.set("attempt", id);

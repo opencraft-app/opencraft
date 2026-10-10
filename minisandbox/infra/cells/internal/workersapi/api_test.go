@@ -935,13 +935,44 @@ func TestNewAgentReadyDeadlineIsIndependentFromConversationFetch(t *testing.T) {
 
 	t.Run("slow response headers fail fast without limiting a streaming body", func(t *testing.T) {
 		fake := &fakeBackends{
-			testing:      t,
-			version:      testVersionOne,
-			active:       testVersionOne,
-			gatewayDelay: 50 * time.Millisecond,
+			testing: t,
+			version: testVersionOne,
+			active:  testVersionOne,
 		}
-		server := httptest.NewServer(http.HandlerFunc(fake.serveHTTP))
-		defer server.Close()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		headerCanceled := make(chan struct{})
+		bodyStarted := make(chan struct{})
+		releaseBody := make(chan struct{})
+		var releaseOnce sync.Once
+		release := func() { releaseOnce.Do(func() { close(releaseBody) }) }
+		var gatewayRequests int
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if !strings.HasPrefix(r.URL.Path, "/engine/gateway/object-actor") {
+				fake.serveHTTP(w, r)
+				return
+			}
+			gatewayRequests++
+			if gatewayRequests == 1 {
+				// No response can race the header timeout. Cancellation of the
+				// real HTTP request is the terminal event, not elapsed wall time.
+				select {
+				case <-r.Context().Done():
+					close(headerCanceled)
+				case <-ctx.Done():
+				}
+				return
+			}
+			w.WriteHeader(http.StatusCreated)
+			w.(http.Flusher).Flush()
+			close(bodyStarted)
+			select {
+			case <-releaseBody:
+				_, _ = io.WriteString(w, "complete streaming body")
+			case <-ctx.Done():
+			}
+		}))
+		defer func() { release(); cancel(); server.Close() }()
 		api, err := NewAPI(Config{
 			RegistryURL:                server.URL + "/registry",
 			EngineURLs:                 []string{server.URL + "/engine"},
@@ -957,6 +988,10 @@ func TestNewAgentReadyDeadlineIsIndependentFromConversationFetch(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		defer api.Close()
+		if api.fetchClient.Timeout != 0 {
+			t.Fatal("fetch client must not put a whole-request deadline on streaming bodies")
+		}
 		objectPath := "/v1/workers/counter/objects/Counter/" + testObjectID
 		if response := performJSON(t, api, http.MethodPut, objectPath, nil); response.Code != http.StatusOK {
 			t.Fatalf("put status = %d: %s", response.Code, response.Body.String())
@@ -964,10 +999,9 @@ func TestNewAgentReadyDeadlineIsIndependentFromConversationFetch(t *testing.T) {
 		request := httptest.NewRequest(http.MethodPost, objectPath+"/fetch", nil)
 		request.Header.Set(publicOriginalURLHeader, "https://counter.example/increment?by=1")
 		response := httptest.NewRecorder()
-		started := time.Now()
 		api.ServeHTTP(response, request)
-		if response.Code != http.StatusBadGateway || time.Since(started) >= 50*time.Millisecond {
-			t.Fatalf("slow-header status=%d duration=%s body=%s", response.Code, time.Since(started), response.Body.String())
+		if response.Code != http.StatusBadGateway {
+			t.Fatalf("slow-header status=%d body=%s", response.Code, response.Body.String())
 		}
 		var failure ErrorResponse
 		decodeForTest(t, response.Body, &failure)
@@ -975,19 +1009,32 @@ func TestNewAgentReadyDeadlineIsIndependentFromConversationFetch(t *testing.T) {
 			t.Fatalf("slow-header failure = %#v", failure)
 		}
 
-		// ResponseHeaderTimeout returns before the synthetic upstream handler
-		// finishes its sleep. Let that handler release the fake's serialization
-		// lock before changing the scenario to a slow response body.
-		time.Sleep(60 * time.Millisecond)
-		fake.mu.Lock()
-		fake.gatewayDelay = 0
-		fake.gatewayBodyDelay = 50 * time.Millisecond
-		fake.mu.Unlock()
+		select {
+		case <-headerCanceled:
+		case <-ctx.Done():
+			t.Fatal("upstream header request was not canceled")
+		}
 		response = httptest.NewRecorder()
-		started = time.Now()
-		api.ServeHTTP(response, request)
-		if response.Code != http.StatusCreated || time.Since(started) < 50*time.Millisecond {
-			t.Fatalf("streaming-body status=%d duration=%s body=%s", response.Code, time.Since(started), response.Body.String())
+		finished := make(chan struct{})
+		go func() { api.ServeHTTP(response, request); close(finished) }()
+		select {
+		case <-bodyStarted:
+		case <-ctx.Done():
+			t.Fatal("upstream did not flush response headers")
+		}
+		select {
+		case <-finished:
+			t.Fatal("fetch returned before the streaming body was released")
+		default:
+		}
+		release()
+		select {
+		case <-finished:
+		case <-ctx.Done():
+			t.Fatal("fetch did not finish after the streaming body was released")
+		}
+		if response.Code != http.StatusCreated || response.Body.String() != "complete streaming body" {
+			t.Fatalf("streaming-body status=%d body=%s", response.Code, response.Body.String())
 		}
 	})
 }

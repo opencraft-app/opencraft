@@ -15,7 +15,7 @@
  * - 生效日期区间通过 Hermes 官方 pre-run script gate 实现：区间外返回 wakeAgent=false
  */
 
-import { AlertTriangle, Activity, ArrowLeftRight, BellRing, BriefcaseBusiness, CalendarDays, CalendarRange, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleHelp, Clock, Copy, CreditCard, Droplets, EllipsisVertical, Eraser, Eye, FolderKanban, Loader2, Newspaper, Pause, Pencil, Pill, Play, Plus, RefreshCw, Sunrise, Trash2, TrendingUp, Wallet, X, Zap } from "lucide-react";
+import { AlertTriangle, Activity, ArrowLeftRight, BellRing, BriefcaseBusiness, CalendarDays, CalendarRange, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleHelp, Clock, Copy, CreditCard, Download, Droplets, Ellipsis, Eraser, Eye, FolderKanban, Loader2, Newspaper, Pause, Pencil, Pill, Play, Plus, RefreshCw, Sunrise, Trash2, TrendingUp, Wallet, X, Zap } from "lucide-react";
 import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
@@ -75,6 +75,7 @@ import {
   listAutomationBlueprints,
   listCronJobs,
   listRecentCronRuns,
+  readCronRunOutput,
   isLightVelaZeroTokenScriptName,
   isTestRunMarkerName,
   pauseCronJob,
@@ -108,7 +109,7 @@ const PANEL_CARD_STYLE: React.CSSProperties = {
   boxShadow: "0 4px 24px rgba(0,0,0,0.03), 0 1px 2px rgba(0,0,0,0.02)",
 };
 const MAX_CRON_JOBS_PER_BOT = 20;
-const MODAL_CONTROL_TEXT_STYLE: React.CSSProperties = { fontSize: 16, lineHeight: "24px" };
+const MODAL_CONTROL_TEXT_STYLE: React.CSSProperties = { fontSize: 14, lineHeight: "24px" };
 const MODAL_COMPACT_CONTROL_TEXT_STYLE: React.CSSProperties = { fontSize: 14, lineHeight: "20px" };
 const MODAL_HELP_TEXT_STYLE: React.CSSProperties = { fontSize: 13, lineHeight: "20px" };
 const EXPIRED_CRON_JOB_HIDE_AFTER_MS = 10 * 60 * 1000;
@@ -1426,7 +1427,7 @@ export function HermesAgentAutomationsPanel({ botId: rawBotId, gatewayRunning, o
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-testid="automations-panel">
       {errorMessage && <ErrorToast message={errorMessage} onClose={() => setErrorMessage(null)} />}
       {notice && <ErrorToast message={notice.message} tone={notice.tone} onClose={() => setNotice(null)} />}
 
@@ -1573,6 +1574,7 @@ export function HermesAgentAutomationsPanel({ botId: rawBotId, gatewayRunning, o
           </div>
         ) : activeView === "recent" ? (
           <RecentCronRunsPanel
+            target={botId}
             runs={recentRuns}
             jobs={jobs}
             skillLoadState={installedSkillLoadState}
@@ -1841,10 +1843,12 @@ function getVisibleAutomationPrompt(prompt: string): string {
 }
 
 export function RecentCronRunsPanel({
+  target,
   runs,
   jobs = [],
   skillLoadState,
 }: {
+  target: HermesCronTarget;
   runs: CronRunRecord[];
   jobs?: CronJob[];
   skillLoadState: InstalledSkillLoadState;
@@ -1870,6 +1874,7 @@ export function RecentCronRunsPanel({
           <div className="divide-y divide-black/[0.06] px-4">
             {runs.map((run) => {
               const presentation = getScenarioRunPresentation(run, displayLocale);
+              const runStatus = getRecentRunStatusInfo(run.status, t);
               const taskTypeLabel = run.zero_token_config
                 ? run.zero_token_config.kind === "fixed_notification"
                   ? t("0 Token · 固定通知")
@@ -1913,15 +1918,7 @@ export function RecentCronRunsPanel({
                     >
                       {taskTypeLabel}
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => setViewingRun(run)}
-                      className="rounded-full bg-black/[0.06] px-2 py-0.5 text-[11px] text-black/55 transition hover:bg-black/[0.1] hover:text-black/75"
-                      aria-label={t("查看任务详情")}
-                      title={t("查看任务详情")}
-                    >
-                      {run.status ? formatLastStatus(run.status, t) : t("已执行")}
-                    </button>
+                    <RecentRunStatusButton status={runStatus} onClick={() => setViewingRun(run)} />
                     <time className="text-right text-xs text-black/55" dateTime={run.run_at}>
                       {formatTime(run.run_at)}
                     </time>
@@ -1933,6 +1930,7 @@ export function RecentCronRunsPanel({
         )}
         {viewingRun && (
           <RecentCronRunDetailModal
+            target={target}
             run={viewingRun}
             currentUpstream={viewingUpstream ?? null}
             skillLoadState={skillLoadState}
@@ -1948,6 +1946,75 @@ export function RecentCronRunsPanel({
         </div>
       )}
     </div>
+  );
+}
+
+function RecentRunStatusButton({
+  status,
+  onClick,
+}: {
+  status: ReturnType<typeof getRecentRunStatusInfo>;
+  onClick: () => void;
+}) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const tooltipId = useId();
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const error = status.description && status.raw ? status.raw : null;
+
+  useEffect(() => () => {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+  }, []);
+
+  const showTooltip = () => {
+    if (!error) return;
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    closeTimer.current = null;
+    setOpen(true);
+  };
+  const hideTooltip = () => {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    closeTimer.current = setTimeout(() => setOpen(false), 150);
+  };
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverAnchor asChild>
+        <button
+          type="button"
+          onClick={() => {
+            setOpen(false);
+            onClick();
+          }}
+          onMouseEnter={showTooltip}
+          onMouseLeave={hideTooltip}
+          onFocus={showTooltip}
+          onBlur={hideTooltip}
+          className="rounded-full bg-black/[0.06] px-2 py-0.5 text-[11px] text-black/55 transition hover:bg-black/[0.1] hover:text-black/75"
+          aria-label={t("查看任务详情")}
+          aria-describedby={open ? tooltipId : undefined}
+        >
+          {status.label}
+        </button>
+      </PopoverAnchor>
+      {error && (
+        <PopoverContent
+          id={tooltipId}
+          role="tooltip"
+          side="top"
+          align="end"
+          sideOffset={8}
+          onOpenAutoFocus={(event) => event.preventDefault()}
+          onCloseAutoFocus={(event) => event.preventDefault()}
+          onMouseEnter={showTooltip}
+          onMouseLeave={hideTooltip}
+          className="pointer-events-auto max-h-48 w-[min(26rem,calc(100vw-2rem))] overflow-y-auto rounded-md border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium leading-relaxed text-black/80 shadow-[0_8px_24px_rgba(15,23,42,0.12)] select-text"
+        >
+          <p>{status.description}</p>
+          <p className="mt-1 break-words font-normal text-black/60">{error}</p>
+        </PopoverContent>
+      )}
+    </Popover>
   );
 }
 
@@ -1977,11 +2044,13 @@ function runToCronJob(run: CronRunRecord): CronJob {
 }
 
 function RecentCronRunDetailModal({
+  target,
   run,
   currentUpstream,
   skillLoadState,
   onClose,
 }: {
+  target: HermesCronTarget;
   run: CronRunRecord;
   currentUpstream: CronJob | null;
   skillLoadState: InstalledSkillLoadState;
@@ -1990,8 +2059,40 @@ function RecentCronRunDetailModal({
   const t = useT();
   const { i18n } = useTranslation();
   const presentation = getScenarioRunPresentation(run, getAutomationDisplayLocale(i18n.language));
+  const runStatus = getRecentRunStatusInfo(run.status, t);
   const visiblePrompt = getVisibleAutomationPrompt(presentation.prompt);
   const zeroTokenConfig = run.zero_token_config;
+  const [output, setOutput] = useState<string | null>(null);
+  const [outputLoading, setOutputLoading] = useState(false);
+  const [outputError, setOutputError] = useState<string | null>(null);
+  const loadOutput = useCallback(async () => {
+    setOutputLoading(true);
+    setOutputError(null);
+    try {
+      setOutput(await readCronRunOutput(target, run));
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "";
+      setOutputError(code === "cron_output_too_large"
+        ? t("结果文件过大，暂无法在此查看或下载。")
+        : code === "cron_output_missing"
+          ? t("结果文件已不存在。")
+          : t("暂时无法读取结果，请稍后重试。"));
+    } finally {
+      setOutputLoading(false);
+    }
+  }, [run, t, target]);
+  const downloadOutput = useCallback(() => {
+    if (output === null) return;
+    const blob = new Blob([output], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `automation-result-${run.job_id.replace(/[^A-Za-z0-9_-]/g, "-")}.md`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  }, [output, run.job_id]);
   return createPortal(
     <div
       className="lightvela-agent-console-portal lv-dialog-backdrop fixed inset-0 z-[200] flex items-center justify-center bg-black/40 px-4 py-8"
@@ -2015,7 +2116,7 @@ function RecentCronRunDetailModal({
         <div className="flex items-center gap-2 pr-8">
           <h2 className="truncate text-balance text-lg font-semibold text-black/90">{presentation.name || t("未命名任务")}</h2>
           <span className="shrink-0 rounded-full bg-black/[0.06] px-2 py-0.5 text-[11px] text-black/55">
-            {run.status ? formatLastStatus(run.status, t) : t("已执行")}
+            {runStatus.label}
           </span>
         </div>
 
@@ -2052,6 +2153,20 @@ function RecentCronRunDetailModal({
           )}
           <DetailRow label={t("执行时间")} value={run.schedule ? formatScheduleFriendly(runToCronJob(run), t) : "—"} />
           <DetailRow label={t("本次执行")} value={formatTime(run.run_at)} />
+          {runStatus.raw && (
+            <DetailRow
+              label={t("状态说明")}
+              value={(
+                <div className="min-w-0 text-left">
+                  {runStatus.description && <p className="text-pretty">{runStatus.description}</p>}
+                  <details className="mt-1 text-left text-xs text-black/55">
+                    <summary className="cursor-pointer text-black/60">{t("查看原始状态")}</summary>
+                    <p className="mt-2 whitespace-pre-wrap break-words rounded-md bg-black/[0.03] p-2 font-mono leading-5">{runStatus.raw}</p>
+                  </details>
+                </div>
+              )}
+            />
+          )}
           {currentUpstream && (
             <DetailRow
               label={t("当前关联上游")}
@@ -2061,6 +2176,33 @@ function RecentCronRunDetailModal({
           <DeliverDetailRow deliver={run.deliver} />
           <DetailRow label={t("任务 ID")} value={run.job_id} />
         </dl>
+        <div className="mt-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void loadOutput()}
+              disabled={outputLoading}
+              className="inline-flex items-center gap-1.5 rounded-md border border-black/10 px-3 py-1.5 text-xs font-medium text-black/75 hover:bg-black/[0.04] disabled:opacity-45"
+            >
+              {outputLoading ? <Loader2 className="size-3.5 animate-spin" /> : <Eye className="size-3.5" />}
+              {t("查看执行结果")}
+            </button>
+            {output !== null && (
+              <button
+                type="button"
+                onClick={downloadOutput}
+                className="inline-flex items-center gap-1.5 rounded-md border border-black/10 px-3 py-1.5 text-xs font-medium text-black/75 hover:bg-black/[0.04]"
+              >
+                <Download className="size-3.5" />
+                {t("下载执行结果")}
+              </button>
+            )}
+          </div>
+          {outputError && <p role="alert" className="mt-2 text-xs text-[#B91C1C]">{outputError}</p>}
+          {output !== null && (
+            <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-md bg-black/[0.03] p-3 text-xs leading-5 text-black/75">{output}</pre>
+          )}
+        </div>
       </div>
     </div>,
     document.body,
@@ -2120,8 +2262,31 @@ function CronJobCard({
     : visiblePrompt;
   const scheduleLabel = formatScheduleFriendly(job, t);
   const scheduleTooltipLabel = formatScheduleTooltip(job, t);
-  const [actionRolloutRetained, setActionRolloutRetained] = useState(false);
-  const retainedActionRolloutClass = actionRolloutRetained ? "!opacity-100 !delay-0" : "";
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const actionsRef = useRef<HTMLDivElement>(null);
+  const actionsToggleRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!actionsOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.target instanceof Node && !actionsRef.current?.contains(event.target)) {
+        setActionsOpen(false);
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setActionsOpen(false);
+        actionsToggleRef.current?.focus();
+      }
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [actionsOpen]);
+
   return (
     <div
       className="flex flex-col rounded-md bg-white p-4 transition hover:shadow-md"
@@ -2195,10 +2360,7 @@ function CronJobCard({
             />
           )}
         </div>
-        <div
-          className="ml-auto flex shrink-0 items-center"
-          onMouseLeave={() => setActionRolloutRetained(false)}
-        >
+        <div className="ml-auto flex shrink-0 items-center">
           {!terminal && (
             <CronActionButton label={t("编辑")} onClick={onEdit} disabled={busy}>
               <Pencil className="h-3 w-3" />
@@ -2218,51 +2380,36 @@ function CronJobCard({
               <Trash2 className="h-3 w-3" />
             </CronActionButton>
           )}
-          <div
-            className="group/actions relative inline-flex items-center"
-            onMouseLeave={(event) => {
-              const relatedTarget = event.relatedTarget;
-              if (
-                relatedTarget instanceof Node
-                && event.currentTarget.parentElement?.contains(relatedTarget)
-                && !event.currentTarget.contains(relatedTarget)
-              ) {
-                setActionRolloutRetained(true);
-              }
-            }}
-          >
+          <div ref={actionsRef} className="group/actions relative inline-flex items-center">
             <button
+              ref={actionsToggleRef}
               type="button"
               aria-label={t("操作")}
-              onPointerDown={(event) => event.preventDefault()}
-              onClick={(event) => event.preventDefault()}
+              aria-expanded={actionsOpen}
+              onClick={() => setActionsOpen((open) => !open)}
               className="inline-flex size-6 cursor-pointer items-center justify-center rounded-md text-black/50 transition hover:bg-black/[0.04] hover:text-black/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-black/15"
             >
-              <EllipsisVertical className="size-4" />
+              <Ellipsis className="size-4" />
             </button>
-            <div className={cn(
-              "pointer-events-none absolute top-1/2 z-10 flex -translate-y-1/2 items-center group-hover/actions:pointer-events-auto group-focus-within/actions:pointer-events-auto",
-              actionRolloutRetained && "pointer-events-auto",
-              terminal ? "right-[48px]" : "right-[72px]",
-            )}>
-              <span
-                aria-hidden
-                className={cn(
-                  "absolute inset-0 bg-white opacity-0 transition-opacity duration-100 ease-out motion-reduce:transition-none group-hover/actions:opacity-100 group-hover/actions:delay-0 group-focus-within/actions:opacity-100 group-focus-within/actions:delay-0",
-                  retainedActionRolloutClass,
-                  terminal ? "delay-[40ms]" : "delay-[60ms]",
-                )}
-              />
-              <div className="relative flex items-center">
+            <div
+              className={cn(
+                "absolute bottom-full right-0 z-20 pb-1 transition-opacity duration-100 motion-reduce:transition-none",
+                actionsOpen
+                  ? "visible opacity-100"
+                  : "invisible opacity-0 group-hover/actions:visible group-hover/actions:opacity-100",
+              )}
+              onClickCapture={() => {
+                setActionsOpen(false);
+                actionsToggleRef.current?.focus();
+              }}
+            >
+              <div className="flex min-w-32 flex-col rounded-lg border border-black/10 bg-white p-1 shadow-[0_8px_24px_rgba(15,23,42,0.12)]">
                 {!terminal && (
                   <CronActionButton
                     label={t("测试运行")}
                     onClick={onTestRun}
                     disabled={busy || testState === "running"}
-                    className={cn(
-                      "opacity-0 transition-opacity duration-100 ease-out delay-0 motion-reduce:transition-none group-hover/actions:opacity-100 group-hover/actions:delay-[60ms] group-focus-within/actions:opacity-100 group-focus-within/actions:delay-[60ms]",
-                      retainedActionRolloutClass,
-                    )}
+                    menuItem
                   >
                     {testState === "running" ? (
                       <Loader2 className="h-3 w-3 animate-spin" />
@@ -2278,13 +2425,7 @@ function CronJobCard({
                 <CronActionButton
                   label={t("查看")}
                   onClick={onView}
-                  className={cn(
-                    "opacity-0 transition-opacity duration-100 ease-out motion-reduce:transition-none group-hover/actions:opacity-100 group-focus-within/actions:opacity-100",
-                    retainedActionRolloutClass,
-                    terminal
-                      ? "delay-0 group-hover/actions:delay-[40ms] group-focus-within/actions:delay-[40ms]"
-                      : "delay-[20ms] group-hover/actions:delay-[40ms] group-focus-within/actions:delay-[40ms]",
-                  )}
+                  menuItem
                 >
                   <Eye className="h-3 w-3" />
                 </CronActionButton>
@@ -2292,13 +2433,7 @@ function CronJobCard({
                   label={t("复制")}
                   onClick={onCopy}
                   disabled={busy}
-                  className={cn(
-                    "opacity-0 transition-opacity duration-100 ease-out motion-reduce:transition-none group-hover/actions:opacity-100 group-focus-within/actions:opacity-100",
-                    retainedActionRolloutClass,
-                    terminal
-                      ? "delay-[20ms] group-hover/actions:delay-[20ms] group-focus-within/actions:delay-[20ms]"
-                      : "delay-[40ms] group-hover/actions:delay-[20ms] group-focus-within/actions:delay-[20ms]",
-                  )}
+                  menuItem
                 >
                   <Copy className="h-3 w-3" />
                 </CronActionButton>
@@ -2307,11 +2442,7 @@ function CronJobCard({
                     label={t("删除")}
                     onClick={onRemove}
                     disabled={busy}
-                    className={cn(
-                      "opacity-0 transition-opacity duration-100 ease-out motion-reduce:transition-none group-hover/actions:opacity-100 group-hover/actions:delay-0 group-focus-within/actions:opacity-100 group-focus-within/actions:delay-0",
-                      retainedActionRolloutClass,
-                      "delay-[60ms]",
-                    )}
+                    menuItem
                   >
                     <Trash2 className="h-3 w-3" />
                   </CronActionButton>
@@ -2330,16 +2461,29 @@ function CronActionButton({
   onClick,
   disabled = false,
   children,
-  className,
+  menuItem = false,
 }: {
   label: string;
   onClick: () => void;
   disabled?: boolean;
   children: React.ReactNode;
-  className?: string;
+  menuItem?: boolean;
 }) {
+  if (menuItem) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={disabled}
+        className="flex w-full cursor-pointer items-center gap-2 whitespace-nowrap rounded-md px-2.5 py-2 text-left text-xs text-black/65 transition hover:bg-black/[0.04] hover:text-black/85 focus:outline-none focus-visible:ring-2 focus-visible:ring-black/15 disabled:cursor-not-allowed disabled:opacity-40 [&>svg]:size-4 [&>svg]:shrink-0"
+      >
+        {children}
+        <span>{label}</span>
+      </button>
+    );
+  }
   return (
-    <span className={cn("group relative inline-flex", className)}>
+    <span className="group relative inline-flex">
       <button
         type="button"
         onClick={onClick}
@@ -3054,6 +3198,33 @@ function formatLastStatus(status: string | null, t: ReturnType<typeof useT>): st
   return status || "";
 }
 
+function getRecentRunStatusInfo(status: string | null, t: ReturnType<typeof useT>) {
+  const normalized = (status || "").trim().toLowerCase();
+  if (!normalized) return { label: t("已执行"), description: null, raw: null };
+  if (normalized.includes("result was not delivered")) {
+    return {
+      label: t("通知未送达"),
+      description: t("任务已执行，但通知发送失败。请检查通知通道配置。"),
+      raw: status,
+    };
+  }
+  if (normalized.includes("the requested model is not available in your current plan")) {
+    return {
+      label: t("执行失败"),
+      description: t("当前模型暂不可用，请稍后重试或切换模型。"),
+      raw: status,
+    };
+  }
+  if (["ok", "success", "succeeded", "done", "completed", "failed", "failure", "error", "not_executed", "running", "pending"].includes(normalized)) {
+    return { label: formatLastStatus(status, t), description: null, raw: null };
+  }
+  return {
+    label: /^(failed|failure|error)(?:\s|:)/.test(normalized) ? t("执行失败") : t("状态异常"),
+    description: null,
+    raw: status,
+  };
+}
+
 type EffectiveWindowStatus = "always" | "pending" | "active" | "ended";
 
 export function normalizeEffectiveWindowInput(value: string): string {
@@ -3507,6 +3678,12 @@ const SCENARIO_TEMPLATE_PROMPT_VALUE_OVERRIDES: Record<string, Partial<Record<Au
     "id-ID": {
       rentInfo: "sewa 2.000 CNY ditambah biaya pengelolaan properti 800 CNY, dibayar ke pemilik atau pengelola properti melalui transfer bank",
     },
+    "ms-MY": {
+      rentInfo: "sewa 2,000 CNY serta yuran pengurusan harta 800 CNY, perlu dibayar kepada pemilik atau pengurus harta melalui pindahan wang melalui bank",
+    },
+    "th-TH": {
+      rentInfo: "ค่าเช่า 2,000 หยวน และค่าบริหารทรัพย์สิน 800 หยวน ต้องชำระให้เจ้าของหรือนายหน้าทรัพย์สินผ่านการโอนเงินทางธนาคาร",
+    },
   },
   "country-fx-alert": {
     "zh-CN": {
@@ -3533,6 +3710,14 @@ const SCENARIO_TEMPLATE_PROMPT_VALUE_OVERRIDES: Record<string, Partial<Record<Au
       fromCurrency: "USD",
       toCurrency: "CNY",
     },
+    "ms-MY": {
+      fromCurrency: "USD",
+      toCurrency: "CNY",
+    },
+    "th-TH": {
+      fromCurrency: "USD",
+      toCurrency: "CNY",
+    },
   },
   "calorie-fitness-checkin": {
     "zh-CN": {
@@ -3552,6 +3737,12 @@ const SCENARIO_TEMPLATE_PROMPT_VALUE_OVERRIDES: Record<string, Partial<Record<Au
     },
     "id-ID": {
       bodyProfile: "168 cm, 62 kg, target 58 kg, latihan kekuatan 3 kali per minggu",
+    },
+    "ms-MY": {
+      bodyProfile: "168 cm, 62 kg, sasaran 58 kg, latihan kekuatan 3 kali seminggu",
+    },
+    "th-TH": {
+      bodyProfile: "168 ซม., 62 กก., เป้าหมาย 58 กก., ฝึกความแข็งแรง 3 ครั้งต่อสัปดาห์",
     },
   },
 };
@@ -3610,6 +3801,16 @@ const SCENARIO_TEMPLATE_PROMPT_LABELS: Record<AutomationDisplayLocale, {
     yes: "ya",
     no: "tidak",
   },
+  "ms-MY": {
+    config: "Contoh ini mungkin dipadamkan atau diubah; jika saya menulis butiran baru, gunakan yang baru",
+    yes: "ya",
+    no: "Tidak",
+  },
+  "th-TH": {
+    config: "ตัวอย่างนี้อาจถูกลบหรือเปลี่ยนแปลง; หากฉันเขียนรายละเอียดใหม่ ให้ใช้รายละเอียดใหม่",
+    yes: "ใช่",
+    no: "ไม่",
+  },
 };
 
 const SCENARIO_TEMPLATE_NATURAL_PROMPTS: Record<string, Partial<Record<AutomationDisplayLocale, string[]>>> = {
@@ -3620,6 +3821,8 @@ const SCENARIO_TEMPLATE_NATURAL_PROMPTS: Record<string, Partial<Record<Automatio
     "en-US": ["Remind me to drink water and take my regular medication exactly as prescribed."],
     es: ["Recuérdame beber agua y tomar mi medicación habitual según la receta."],
     "id-ID": ["Ingatkan saya minum air dan obat rutin sesuai resep."],
+    "ms-MY": ["Ingatkan saya untuk minum air dan ubat dengan kerap seperti yang ditetapkan."],
+    "th-TH": ["เตือนฉันให้ดื่มน้ำและทานยาอย่างสม่ำเสมอตามที่กำหนด"],
   },
   "rent-reminder": {
     "zh-CN": ["请在账期临近时提醒我支付房租 2000 元和物业费 800 元。"],
@@ -3628,6 +3831,8 @@ const SCENARIO_TEMPLATE_NATURAL_PROMPTS: Record<string, Partial<Record<Automatio
     "en-US": ["Remind me when rent of CNY 2,000 and a CNY 800 property fee are due."],
     es: ["Recuérdame pagar 2000 CNY de alquiler y 800 CNY de comunidad cuando se acerque la fecha."],
     "id-ID": ["Ingatkan saya saat sewa CNY 2.000 dan biaya pengelolaan CNY 800 mendekati jatuh tempo."],
+    "ms-MY": ["Ingatkan saya apabila sewa CNY 2,000 dan yuran pengurusan CNY 800 hampir matang."],
+    "th-TH": ["เตือนฉันเมื่อค่าเช่า 2,000 หยวนและค่าบริหารจัดการ 800 หยวนใกล้ครบกำหนด"],
   },
   "country-fx-alert": {
     "zh-CN": ["请关注 USD/CNY，较前一日涨跌达到 1% 时提醒我。"],
@@ -3636,6 +3841,8 @@ const SCENARIO_TEMPLATE_NATURAL_PROMPTS: Record<string, Partial<Record<Automatio
     "en-US": ["Watch USD/CNY and alert me when it moves 1% from the previous day."],
     es: ["Vigila USD/CNY y avísame cuando cambie un 1 % frente al día anterior."],
     "id-ID": ["Pantau USD/CNY dan beri tahu saat berubah 1% dari hari sebelumnya."],
+    "ms-MY": ["Pantau USD/CNY dan maklumkan apabila ia berubah 1% daripada hari sebelumnya."],
+    "th-TH": ["ติดตาม USD/CNY และแจ้งเมื่อมันเปลี่ยนแปลง 1% จากวันก่อนหน้า"],
   },
   "calorie-fitness-checkin": {
     "zh-CN": ["请记录今天的饮食、运动和体重；目标减脂并保持力量训练，168cm、62kg、目标 58kg。"],
@@ -3644,6 +3851,8 @@ const SCENARIO_TEMPLATE_NATURAL_PROMPTS: Record<string, Partial<Record<Automatio
     "en-US": ["Track today's food, exercise, and weight for a 58 kg fat-loss goal while keeping strength training."],
     es: ["Registra la comida, el ejercicio y el peso de hoy para llegar a 58 kg manteniendo la fuerza."],
     "id-ID": ["Catat makanan, olahraga, dan berat hari ini untuk target 58 kg sambil menjaga latihan kekuatan."],
+    "ms-MY": ["Catatkan makanan, senaman dan berat hari ini untuk matlamat 58 kg sambil mengekalkan latihan kekuatan."],
+    "th-TH": ["บันทึกอาหาร การออกกำลังกาย และน้ำหนักวันนี้เพื่อเป้าหมาย 58 กก. พร้อมกับการรักษาการฝึกความแข็งแรง"],
   },
   "global-holiday-reminder": {
     "zh-CN": ["请关注泰国、印尼的公共假期和天气预警，旅行、发货或会议前提醒我。"],
@@ -3652,6 +3861,8 @@ const SCENARIO_TEMPLATE_NATURAL_PROMPTS: Record<string, Partial<Record<Automatio
     "en-US": ["Watch holidays and weather alerts in Thailand and Indonesia before travel, shipping, or meetings."],
     es: ["Vigila festivos y alertas del tiempo en Tailandia e Indonesia antes de viajes, envíos o reuniones."],
     "id-ID": ["Pantau hari libur dan peringatan cuaca di Thailand dan Indonesia sebelum perjalanan, pengiriman, atau rapat."],
+    "ms-MY": ["Pantau amaran cuti dan cuaca di Thailand dan Indonesia sebelum perjalanan, penghantaran atau mesyuarat."],
+    "th-TH": ["ตรวจสอบคำเตือนวันหยุดและสภาพอากาศในประเทศไทยและอินโดนีเซียก่อนการเดินทาง การจัดส่ง หรือการประชุม"],
   },
   "stock-info-digest": {
     "zh-CN": ["请整理腾讯控股 00700、NVIDIA NVDA 和贵州茅台 600519 的价格、公告及财报动态。"],
@@ -3660,6 +3871,8 @@ const SCENARIO_TEMPLATE_NATURAL_PROMPTS: Record<string, Partial<Record<Automatio
     "en-US": ["Summarize price, announcement, and earnings updates for Tencent 00700, NVIDIA NVDA, and Kweichow Moutai 600519."],
     es: ["Resume precios, anuncios y resultados de Tencent 00700, NVIDIA NVDA y Kweichow Moutai 600519."],
     "id-ID": ["Rangkum harga, pengumuman, dan laporan keuangan Tencent 00700, NVIDIA NVDA, dan Kweichow Moutai 600519."],
+    "ms-MY": ["Ringkaskan harga, pengumuman dan laporan kewangan Tencent 00700, NVIDIA NVDA dan Kweichow Moutai 600519."],
+    "th-TH": ["สรุปราคา ประกาศ และรายงานการเงิน Tencent 00700, NVIDIA NVDA และ Kweichow Moutai 600519"],
   },
 };
 
@@ -3667,7 +3880,7 @@ function getScenarioDefaultValues(pack: ScenarioTaskPack): Record<string, string
   return Object.fromEntries(pack.fields.map((field) => [field.key, field.defaultValue]));
 }
 
-function getScenarioTemplatePromptValues(
+export function getScenarioTemplatePromptValues(
   pack: ScenarioTaskPack,
   displayLocale: AutomationDisplayLocale,
 ): Record<string, string> {

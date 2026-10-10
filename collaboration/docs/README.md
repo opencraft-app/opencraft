@@ -27,6 +27,9 @@
 迁入基线仍含旧本地登录与外部 Computer/TAT 代码。启用
 `--lightvela-gateway-token-file` 时，本地注册/登录路由已关闭且 Human JIT 映射不创建
 AuthSession；其余旧 Computer surface 仍待通过后续契约版本完整退役。
+当前 Human 资料由 `GET /me/profile` 返回不依赖邮箱的 `HumanProfile`。LightVela JIT
+actor 的空邮箱是既有投影语义，不改库、不补假邮箱。旧 `GET /me` 的邮箱 Account
+响应保持兼容，并在编码前校验邮箱，避免先写 200 再返回错误对象。
 
 ## 数据库部署边界
 

@@ -1,0 +1,44 @@
+{
+  "schema": "actor-runtime-builder-offline-attempt-evidence/v1",
+  "verdict": "failed",
+  "sourceRevision": "7846706c36d907f37342a6dced90533efe263ec4",
+  "sourceManifestSha256": "68ce9ebbd23e70497e1863830697ef233fd440c2d6c4dbea41e0ef6c80c820e2",
+  "sourceBundleBytes": 54854095,
+  "sourceBundleSha256": "2537f766f64d7d00af0bdcca3a2ae56f2bb778c985140e94c36af121c72e6ac0",
+  "sourceReceiptSha256": "b3107007dfaca42c2f755fe3451d47b52ad612a6307c4e6e2a5f0212ac535c22",
+  "inventorySha256": "882113091f01cbe12e224f53d3f34667c4e659d37afdc37d8b9ecf8cc1419a57",
+  "operationsInstanceId": "ins-55ry1kb1",
+  "builderInstanceId": "ins-mh9mruw7",
+  "wrapperSha256": "8d5595dff6a69eb850d4f850d7c4ef9d229148d3d3294eede9df2050e3263064",
+  "operationsRelayInvocationIds": ["inv-a9f6140qqq", "inv-a9f613gfm8", "inv-d9f622ggum"],
+  "guardedBuilderRelay": [
+    {"invocationId": "inv-e9f625gpm5", "status": "SUCCESS", "exitCode": 0, "kind": "rust-archive"},
+    {"invocationId": "inv-c9f62agssf", "status": "SUCCESS", "exitCode": 0, "kind": "vendor-archive"}
+  ],
+  "captureInvocationId": "inv-a9f62i072t",
+  "coordinator": {
+    "invocationId": "inv-c9f623g60r", "status": "FAILED", "exitCode": 1,
+    "nativeRequestId": "fcb41bfc-27e4-46ee-a63b-9d8c384f794e",
+    "nativeResponseSha256": "a148df972fdbd879fd4221eb00ec819d7f490b450ee52220c8b9e182f82f7728"
+  },
+  "guest": {
+    "invocationId": "inv-c9f62j0fq9", "status": "FAILED", "exitCode": 1,
+    "nativeRequestId": "82488b42-4910-410c-b644-085ae23d8152",
+    "nativeResponseSha256": "7df46dfc789506f0d62f3af8d3252d13b059f0b4a4ed91b56f82ce4437d303ec"
+  },
+  "followupReadOnlyProbe": {
+    "invocationId": "inv-e9f67tgn23", "status": "SUCCESS", "exitCode": 0,
+    "nativeRequestId": "75e1b30a-b7da-4ebe-b7d1-f166fbc51d23",
+    "nativeResponseSha256": "d2fb3485f43806c06d2e5ae8864eab60aef4f10228948ae92f0032da7df1b3c8",
+    "completedTreeMarkersObserved": true,
+    "rustVersion": "rustc 1.96.0 (ac68faa20 2026-05-25)",
+    "cargoVersion": "cargo 1.96.0 (30a34c682 2026-05-25)"
+  },
+  "rootCause": "Installer final version validator compared PREP.command bytes with str. The real Rust/Cargo version probe is correct; new regressions exercise actual subprocess bytes.",
+  "boundaries": [
+    "The original failed coordinator intent and native invocations remain unchanged.",
+    "Archive transfer succeeded under exact mount/identity guards. Marker/version observation alone does not prove all installed bytes or build readiness.",
+    "Recovery must be a separate source-reviewed, fresh native attachment/journal-bound verification-only operation, not a repeated install or bypass.",
+    "No product runtime image, workload acceptance, Cell capacity or release changed."
+  ]
+}

@@ -24,6 +24,8 @@
  *     首页 gzip JS 增加超过 100 KB
  */
 
+import { ensureThaiPublicCopy } from './thai-copy';
+import { ensureMalayPublicCopy } from './malay-copy';
 import i18n from "i18next";
 import type { Resource } from "i18next";
 import { initReactI18next } from "react-i18next";
@@ -45,24 +47,52 @@ import zhHant from "./generated/zh-Hant.json";
 type TranslationDictionary = Record<string, string>;
 
 /**
- * 首屏同步字典与按需字典。
+ * 国内站只发布中文：`initialLocale` 恒为 DEFAULT_LOCALE（本文件下方），构建
+ * 产物也不含任何语种前缀路由，因此其余字典不进首屏。`NEXT_PUBLIC_I18N_LAZY_LOCALES`
+ * 由 next.config.mjs 按构建区域内联成字面量，打包器据此把未用到的 JSON 当死代码
+ * 消除。取不到该变量的环境（vitest、以及把本文件 vendoring 进去的 opencraft
+ * 嵌入式工作台）保持全量同步装载，既有行为不变——不要换回直接读
+ * `NEXT_PUBLIC_REGION`，嵌入式构建会把它固定替换成 "cn"，连带裁掉国际站
+ * 嵌入式控制台要用的英文字典。
  *
- * 动态 import 仍保持字面量路径，确保打包器生成独立 chunk。日语或韩语
- * 成为当前 URL / 用户选择时才下载；已发布既有语种继续同步可用。
+ * 动态 import 仍保持字面量路径，确保打包器生成独立 chunk。未同步装载的语种
+ * 一律留有按需通道：即便被意外请求也只是多一次异步加载，不会抛错。
  */
-const EAGER_DICTIONARIES: Partial<Record<I18nDictKey, TranslationDictionary>> = {
-  "en-US": enUS,
-  "zh-CN": zhCN,
-  "zh-Hant": zhHant,
-  "id-ID": idID,
-  es,
-};
+const EAGER_ALL_DICTIONARIES = process.env.NEXT_PUBLIC_I18N_LAZY_LOCALES !== "1";
+
+const EAGER_DICTIONARIES: Partial<Record<I18nDictKey, TranslationDictionary>> = EAGER_ALL_DICTIONARIES
+  ? {
+    "en-US": enUS,
+    "zh-CN": zhCN,
+    "zh-Hant": zhHant,
+    "id-ID": idID,
+    es,
+  }
+  : { "zh-CN": zhCN };
 
 const LAZY_DICTIONARY_LOADERS: Partial<
   Record<I18nDictKey, () => Promise<TranslationDictionary>>
 > = {
   "ja-JP": async () => (await import("./generated/ja-JP.json")).default,
+  "ms-MY": async () => {
+    const [dictionary] = await Promise.all([
+      import("./generated/ms-MY.json"), ensureMalayPublicCopy(),
+    ]);
+    return dictionary.default;
+  },
+  "th-TH": async () => {
+    const [dictionary] = await Promise.all([
+      import("./generated/th-TH.json"), ensureThaiPublicCopy(),
+    ]);
+    return dictionary.default;
+  },
   "ko-KR": async () => (await import("./generated/ko-KR.json")).default,
+  ...(EAGER_ALL_DICTIONARIES ? {} : {
+    "en-US": async () => (await import("./generated/en-US.json")).default,
+    "zh-Hant": async () => (await import("./generated/zh-Hant.json")).default,
+    "id-ID": async () => (await import("./generated/id-ID.json")).default,
+    es: async () => (await import("./generated/es.json")).default,
+  }),
 };
 
 const dictionaryCache: Partial<Record<I18nDictKey, TranslationDictionary>> = {
@@ -187,9 +217,8 @@ async function loadDictionary(dictKey: I18nDictKey): Promise<TranslationDictiona
   if (!loader) throw new Error(`[i18n] missing dictionary loader: ${dictKey}`);
   const load = loader().then((dictionary) => {
     dictionaryCache[dictKey] = dictionary;
-    dictionaryLoads.delete(dictKey);
     return dictionary;
-  });
+  }).finally(() => { dictionaryLoads.delete(dictKey); });
   dictionaryLoads.set(dictKey, load);
   return load;
 }
@@ -271,9 +300,12 @@ export async function ensureLocaleDictionary(locale: SupportedLocale): Promise<I
  * 手动切换语言并持久化
  * @example setLocale('ja-JP')
  */
+let localeChangeGeneration = 0;
+
 export const setLocale = (locale: SupportedLocale): void => {
   const runtimeLocale = parseRuntimeLocaleCode(locale, RUNTIME_LOCALE_OPTIONS);
   if (!runtimeLocale) return;
+  const generation = ++localeChangeGeneration;
   try {
     window.localStorage.setItem(LOCALE_STORAGE_KEY, runtimeLocale);
     window.localStorage.setItem(EXPLICIT_LOCALE_STORAGE_KEY, "1");
@@ -286,7 +318,9 @@ export const setLocale = (locale: SupportedLocale): void => {
     void i18n.changeLanguage(dictKey);
     return;
   }
-  void ensureLocaleDictionary(runtimeLocale).then((loadedDictKey) => i18n.changeLanguage(loadedDictKey));
+  void ensureLocaleDictionary(runtimeLocale).then((loadedDictKey) => {
+    if (generation === localeChangeGeneration) return i18n.changeLanguage(loadedDictKey);
+  });
 };
 
 export default i18n;

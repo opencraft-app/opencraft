@@ -221,16 +221,11 @@ export class HermesTurnEventStateMachine {
         this.appendReasoning(eventText(payload), output, occurredAtMs);
         break;
       case "reasoning.available":
-        // Hermes emits this as a fallback preview of assistant_message.content,
-        // not a reasoning delta. Match Desktop's replace-preview guard: once
-        // this stream owns body text, the preview cannot seal it or discard its
-        // identity before message.interim(already_streamed) reconciles it.
-        if (!eventText(payload) || this.assistant?.text.trim()) break;
-        this.streamedAssistant = null;
-        this.classifyInterimAsCommentary(output);
-        this.completeAssistant(output, "commentary");
-        this.phase = "reasoning";
-        this.reconcileReasoning(eventText(payload), output, occurredAtMs);
+        // Hermes turn_response_intake._relay_thinking relays the first 500
+        // characters of assistant_message.content here, not provider reasoning.
+        // This is a liveness observation only. The authoritative body arrives
+        // through message.delta/interim/complete; a preview cannot create a
+        // reasoning Item, replace genuine reasoning or revoke a text identity.
         break;
       case "message.delta":
         if (this.assistant === null) this.classifyInterimAsCommentary(output);
@@ -520,11 +515,12 @@ export class HermesTurnEventStateMachine {
   }
 
   /**
-   * Hermes can preview one response through either `message.interim` or the
-   * reasoning channel before publishing its authoritative completion. Text
+   * Hermes can preview one response through `message.interim` before
+   * publishing its authoritative completion. Text
    * continuity (same text, or a prefix in either direction) means these are
    * two protocol phases of one visible message, not two transcript owners.
-   * Distinct pre-tool narration and distinct reasoning remain independent.
+   * Distinct pre-tool narration and actual reasoning remain independent;
+   * equal text does not give an answer ownership of a reasoning Item.
    *
    * This mirrors Hermes Desktop's `finalContinuesInterim` rule. The cleared
    * completion is a live tombstone for incremental replicas; the following
@@ -552,25 +548,7 @@ export class HermesTurnEventStateMachine {
           continue;
         }
       }
-      if (item.type !== "reasoning" || !Array.isArray(item.content)) {
-        retained.push(item);
-        continue;
-      }
-      const reasoning = item.content
-        .filter((value): value is string => typeof value === "string")
-        .join("\n")
-        .replace(/\s+/gu, " ")
-        .trim();
-      if (reasoning === "" || !finalText.startsWith(reasoning)) {
-        retained.push(item);
-        continue;
-      }
-      // Clear the live replica first; the immediately following terminal Turn
-      // snapshot then removes the redundant Item from durable presentation.
-      output.push(this.notification("item/completed", {
-        turnId: this.turn.id,
-        item: { ...item, summary: [], content: [] },
-      }));
+      retained.push(item);
     }
     this.turn.items = retained;
   }
@@ -604,18 +582,6 @@ export class HermesTurnEventStateMachine {
       contentIndex: 0,
       delta,
     }));
-  }
-
-  private reconcileReasoning(authoritative: string, output: HermesProjectionNotification[], occurredAtMs: number): void {
-    if (authoritative === "") return;
-    const state = this.ensureReasoning(output, occurredAtMs);
-    if (authoritative === state.text) return;
-    if (authoritative.startsWith(state.text)) {
-      this.appendReasoning(authoritative.slice(state.text.length), output, occurredAtMs);
-      return;
-    }
-    this.completeReasoning(output);
-    this.appendReasoning(authoritative, output, occurredAtMs);
   }
 
   private completeReasoning(output: HermesProjectionNotification[]): void {

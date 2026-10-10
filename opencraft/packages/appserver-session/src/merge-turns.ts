@@ -100,15 +100,52 @@ function isTerminalTurn(turn: AppServerTurn): boolean {
   return turn.status === "completed" || turn.status === "interrupted" || turn.status === "failed";
 }
 
-function mergeHistoryTurn(existing: AppServerTurn, history: AppServerTurn): AppServerTurn {
+/** Keep observations absent from a snapshot at their existing neighbour, not
+ * at a newly sorted tail. The snapshot still owns the order of shared rows. */
+function retainObservedRows<T extends { id: string }>(
+  ordered: readonly T[], existing: readonly T[], retain: (row: T) => boolean,
+): readonly T[] {
+  const known = new Set(ordered.map(row => row.id));
+  const after = new Map<string, T[]>();
+  const leading: T[] = [];
+  let anchor: string | null = null;
+  let firstAnchor: string | null = null;
+  for (const row of existing) {
+    if (known.has(row.id)) {
+      firstAnchor ??= row.id;
+      anchor = row.id;
+    } else if (retain(row)) {
+      if (anchor === null) leading.push(row);
+      else {
+        const rows = after.get(anchor) ?? [];
+        rows.push(row);
+        after.set(anchor, rows);
+      }
+    }
+  }
+  return [
+    ...ordered.flatMap(row => [
+      ...(row.id === firstAnchor ? leading : []), row, ...(after.get(row.id) ?? []),
+    ]),
+    ...(firstAnchor === null ? leading : []),
+  ];
+}
+
+function mergeHistoryTurn(
+  existing: AppServerTurn, history: AppServerTurn,
+  observationBaseline?: { readonly turn: AppServerTurn | undefined },
+): AppServerTurn {
   const historyIsOlder = isTerminalTurn(existing) && history.status === "inProgress";
   const existingItems = existing.items ?? [];
   const historyItems = history.items ?? [];
   const existingById = new Map(existingItems.map((item) => [item.id, item]));
+  const baselineById = new Map((observationBaseline?.turn?.items ?? []).map(item => [item.id, item]));
+  const observedSinceRequest = (item: AppServerThreadItem) => observationBaseline !== undefined
+    && baselineById.get(item.id) !== item;
   const mergeItem = (previous: AppServerThreadItem, item: AppServerThreadItem): AppServerThreadItem => {
     // A terminal observation can be newer than an in-progress history page.
     // Preserve its content and lifecycle while accepting history's position.
-    const keepObserved = historyIsOlder || (history.status === "inProgress"
+    const keepObserved = observedSinceRequest(previous) || historyIsOlder || (history.status === "inProgress"
       && previous.completed === true && item.completed !== true);
     return keepObserved ? { ...item, ...previous } : {
       ...(history.itemsView === "full" ? {} : previous),
@@ -117,7 +154,7 @@ function mergeHistoryTurn(existing: AppServerTurn, history: AppServerTurn): AppS
       ...(item.completedAtMs == null && previous.completedAtMs != null ? { completedAtMs: previous.completedAtMs } : {}),
     };
   };
-  const items = history.itemsView === "full" && !historyIsOlder
+  const hydratedItems = history.itemsView === "full" && !historyIsOlder
     ? historyItems.map((item) => {
         const previous = existingById.get(item.id);
         return previous === undefined ? item : mergeItem(previous, item);
@@ -126,6 +163,14 @@ function mergeHistoryTurn(existing: AppServerTurn, history: AppServerTurn): AppS
       ? existingItems
       : mergeOrderedWindow(existingItems, historyItems,
         historyIsOlder ? "before" : "after", mergeItem);
+  const items = observationBaseline === undefined ? hydratedItems
+    : retainObservedRows(hydratedItems, existingItems, observedSinceRequest);
+  // Updates are immutable in ThreadViewStore. Compare against the request's
+  // captured baseline, not a clock or guessed Item revision. Only fields that
+  // actually changed during the read override the snapshot's metadata.
+  const observedFields = observationBaseline === undefined ? {}
+    : Object.fromEntries(Object.entries(existing).filter(([key, value]) => key !== "items"
+      && key !== "itemsView" && observationBaseline.turn?.[key] !== value));
   let itemsView = history.itemsView ?? existing.itemsView;
   if (historyIsOlder) itemsView = existing.itemsView ?? "summary";
   else if (history.itemsView === "notLoaded" && existing.itemsView) itemsView = existing.itemsView;
@@ -133,6 +178,7 @@ function mergeHistoryTurn(existing: AppServerTurn, history: AppServerTurn): AppS
   return {
     ...existing,
     ...history,
+    ...observedFields,
     ...(historyIsOlder ? {
       status: existing.status,
       error: existing.error,
@@ -152,8 +198,44 @@ function mergeHistoryTurn(existing: AppServerTurn, history: AppServerTurn): AppS
 export function reconcileHistoryTurns(
   existing: readonly AppServerTurn[], history: readonly AppServerTurn[],
   historyPosition: "latest" | "older",
+  options: { baselineTurns?: readonly AppServerTurn[] } = {},
 ): readonly AppServerTurn[] {
-  return mergeOrderedWindow(existing, history, historyPosition === "older" ? "before" : "after", mergeHistoryTurn);
+  const baseline = options.baselineTurns === undefined ? undefined
+    : new Map(options.baselineTurns.map(turn => [turn.id, turn]));
+  const ordered = mergeOrderedWindow(existing, history, historyPosition === "older" ? "before" : "after",
+    (previous, snapshot) => mergeHistoryTurn(previous, snapshot,
+      baseline === undefined ? undefined : { turn: baseline.get(previous.id) }));
+  return baseline === undefined ? ordered
+    : retainObservedRows(ordered, existing, turn => baseline.get(turn.id) !== turn);
+}
+
+/** A locator index is a placement hint for an unloaded Turn, never authority
+ * to sort every loaded Turn. Updating an established Turn preserves its slot. */
+export function reconcileHydratedTurn(
+  existing: readonly AppServerTurn[], turn: AppServerTurn,
+  chronologicalTurnIds: readonly string[],
+  observationBaseline?: { readonly turn: AppServerTurn | undefined },
+): readonly AppServerTurn[] {
+  const established = existing.find(candidate => candidate.id === turn.id);
+  if (established !== undefined) return existing.map(candidate => candidate.id === turn.id
+    ? mergeHistoryTurn(candidate, turn, observationBaseline) : candidate);
+  const index = chronologicalTurnIds.indexOf(turn.id);
+  const positions = new Map(existing.map((candidate, position) => [candidate.id, position]));
+  // Prefer the first loaded successor, then the closest loaded predecessor.
+  // With no shared neighbour an unloaded historical Turn precedes the live tail.
+  let insertionIndex = 0;
+  for (let next = index + 1; index >= 0 && next < chronologicalTurnIds.length; next += 1) {
+    const position = positions.get(chronologicalTurnIds[next]!);
+    if (position !== undefined) {
+      insertionIndex = position;
+      return [...existing.slice(0, insertionIndex), turn, ...existing.slice(insertionIndex)];
+    }
+  }
+  for (let previous = index - 1; previous >= 0; previous -= 1) {
+    const position = positions.get(chronologicalTurnIds[previous]!);
+    if (position !== undefined) { insertionIndex = position + 1; break; }
+  }
+  return [...existing.slice(0, insertionIndex), turn, ...existing.slice(insertionIndex)];
 }
 
 /** A row-window refresh owns only previously projected history membership.

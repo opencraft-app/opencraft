@@ -52,7 +52,7 @@ También puedes seleccionar la opción en blanco y dejar que el Agent aclare los
 
 El flujo actual usa React, TypeScript, Tailwind CSS y bibliotecas de interfaz comunes para generar sitios web.
 
-![Crear un Workbench con el chat del Agent](../../images/workbench-04.webp)
+![Nueva conversación del sitio internacional con una solicitud de Workbench escrita pero aún sin enviar](../../images/workbench-04.webp)
 
 También se indica al Agent que mantenga el contenido editable, evite datos empresariales ficticios predefinidos y use el almacenamiento local del navegador cuando sea apropiado para datos locales temporales.
 

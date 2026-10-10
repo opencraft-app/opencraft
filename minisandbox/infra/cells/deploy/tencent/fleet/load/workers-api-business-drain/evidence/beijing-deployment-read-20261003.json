@@ -1,0 +1,58 @@
+{
+  "baseline": {
+    "deploymentSpecSha256": "2e293eeff8623fd135c4f94ea53ad5bcf89225bdc3ae91453349922db7defbcf",
+    "deploymentUid": "1720e900-8cf0-4151-b341-b4f8fa646463",
+    "hpaSpecSha256": "ab678a35c9c5992f89d2b95911795d56fbb43717bf0dbe68eca908a07cdd4065",
+    "hpaUid": "15b8a8eb-682d-437a-9e7f-1a92127c6f4b"
+  },
+  "cleanup": {
+    "attempted": true,
+    "status": 204
+  },
+  "deploymentId": "d_0f9e95387850e404df1a16359516488b",
+  "endpoint": "http://10.160.0.3:6688",
+  "finishedAt": "2026-10-02T17:58:20.368644+00:00",
+  "image": "actor-fleet-beijing.tencentcloudcr.com/actor-fleet/workers-api@sha256:d2e890c531e1979f74dbc83714b365ee11a43050fd45bcd5a1131c83ca95f9d5",
+  "replacement": {
+    "deleteStartedAt": "2026-10-02T17:57:42.915874+00:00",
+    "deletionTimestamp": "2026-10-02T17:58:32Z",
+    "readyNodes": 3,
+    "readyReplicas": 3,
+    "replacementPod": "workers-api-7d567c894f-dc7xw",
+    "replacementPodUid": "e20c9d69-f60b-4b1e-a207-3e97c0adb83f",
+    "restoredAt": "2026-10-02T17:58:19.649027+00:00",
+    "selectedPod": "workers-api-7d567c894f-fzxg7",
+    "selectedPodUid": "e17260ad-0e13-4b10-bf61-316d546d38ae"
+  },
+  "runId": "db0c2576ded14f998b05f3d1895368bc",
+  "schema": "actor-workers-api-business-drain/v1",
+  "startedAt": "2026-10-02T17:57:41.333740+00:00",
+  "stream": {
+    "bodySha256": "7400933a0afb7226a318156edb3290c1c3846f3f5203cf47bf48cfcfe0fced18",
+    "bytes": 131072,
+    "completedAt": "2026-10-02T17:58:17.913112+00:00",
+    "contentLength": null,
+    "drainAfterListenerStopSeconds": 4.912,
+    "holdSeconds": 35,
+    "listenerStopEvidence": "separate_forward_container_connection_refused",
+    "listenerStoppedAt": "2026-10-02T17:58:13.001373+00:00",
+    "pendingAfterListenerStop": true,
+    "prefixReceivedAt": "2026-10-02T17:57:42.912980+00:00",
+    "requestAttempts": 1,
+    "responseStatus": 200,
+    "retries": 0,
+    "transferEncoding": "chunked"
+  },
+  "toolSha256": "e5af2617caa1f7f55c809ab5bda9ed9adcd6bb22e2a8c80209483d107763330d",
+  "toolSourceManifestSha256": "2e5708cd2d688d060acb0372c08ea838da8ed29d1af17b6fc1d7309736dbec85",
+  "toolSourceRevision": "723eebaac627fcfead30c24307be2788e887e2af",
+  "traffic": {
+    "failures": 0,
+    "successful": 145,
+    "successfulAfterReady": 3,
+    "successfulBeforeDeletion": 4,
+    "successfulDuringReplacement": 138
+  },
+  "verdict": "passed",
+  "versionId": "v_8cc09d351270cce7d8d1f0e6864bf59d385fd123503fbbef7c42c1202cedc813"
+}

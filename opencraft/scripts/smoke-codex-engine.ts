@@ -29,7 +29,10 @@ const model = createServer((request, response) => {
   request.resume();
   if (request.url === "/backend-api/codex/v1/models") {
     response.writeHead(200, { "content-type": "application/json" });
-    response.end(JSON.stringify({ object: "list", data: [{ id: "gpt-test", object: "model", owned_by: "fixture" }] }));
+    response.end(JSON.stringify({ object: "list", data: [
+      { id: "gpt-test", object: "model", owned_by: "fixture" },
+      { id: "gpt-6.1-sol", object: "model", owned_by: "fixture" },
+    ] }));
     return;
   }
   modelRequests += 1;
@@ -84,6 +87,10 @@ try {
     initialized.result.capabilities.extensions[OPENCRAFT_THREAD_START_DURABILITY_EXTENSION],
     { version: 1, durableAfter: "first-turn-accepted" },
   );
+  await adapter.send(JSON.stringify({ id: 15, method: "model/list", params: {}, [LOGICAL_CLIENT_FIELD]: client }));
+  const models = await waitFor(frame => frame.id === 15);
+  assert.equal(models.error, undefined, `Model list failed: ${JSON.stringify(models.error)}`);
+  assert.ok(models.result.data.some((entry: { model: string }) => entry.model === "gpt-6.1-sol"));
   await adapter.send(JSON.stringify({ id: 2, method: "thread/start", params: { cwd: root, model: "gpt-test", approvalPolicy: "never", sandbox: "danger-full-access", dynamicTools: OPENCRAFT_WORKBENCH_DYNAMIC_TOOLS }, [LOGICAL_CLIENT_FIELD]: client }));
   const started = await waitFor(frame => frame.id === 2);
   const threadId = started.result.thread.id as string;

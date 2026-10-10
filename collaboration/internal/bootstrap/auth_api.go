@@ -610,6 +610,7 @@ func newAuthAndMeAPIHandler(
 				Method: http.MethodGet,
 				Path:   "/v1/me",
 			},
+			httptransport.ImplementedRoute{Method: http.MethodGet, Path: "/v1/me/profile"},
 			httptransport.ImplementedRoute{
 				Method: http.MethodPost,
 				Path:   "/v1/me/im/session",
@@ -644,6 +645,10 @@ func newAuthAndMeAPIHandler(
 	if invites != nil {
 		implementedRoutes = append(
 			implementedRoutes,
+			httptransport.ImplementedRoute{
+				Method: http.MethodPost,
+				Path:   "/v1/join-links/accept",
+			},
 			httptransport.ImplementedRoute{
 				Method: http.MethodPost,
 				Path:   "/v1/invites/accept",

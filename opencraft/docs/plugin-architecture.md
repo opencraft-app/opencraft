@@ -9,6 +9,10 @@
 
 已实现并进入仓库质量门：
 
+- 可选 `tencentoa.identity`：后端逐请求太湖验签与 TOF 身份解密，独立员工
+  Authentication provider 与共享控件设置页；不取代平台账户，不自动授权资源。
+  详见 [员工身份插件](./tencentoa-authentication.md)。
+
 - `packages/extension-contract`：renderer-free manifest V1、activation identity、Command、Settings、
   location-neutral View、Navigation、Sidebar Catalog、Settings Page、Workbench Surface、双明暗
   语义 Theme palette 与 disposer API；
@@ -44,6 +48,7 @@ Settings V1 刻意不包含 global/host/workspace 多层 scope、自定义 migra
 
 - 扩展管理主入口为 Skills 的“扩展”Tab。应用通过 `PlatformViewRegions.ExtensionLibrary` 提供内容；不受技能 Host 选择影响。目录只读合并 Supervisor、Manager 与公开贡献，区分内建/安装、启用意图、运行故障和当前版本仍运行时的操作失败。列表搜索/来源筛选，详情复用 Manager 操作；内建项暂不开放停用/移除，URL 安装仅开发者模式。旧 Settings 插件路由保留兼容，导航不再展示入口。
 - Web bootstrap 保留 WebSocket 基础连接扩展为关键依赖；主题、语音、模型管理、产品接入等第一方扩展使用可选激活，失败记录在 Supervisor，继续其他扩展。语音、Builtin Agents、HyperNode、Collaboration、Bot Chat/Management 的动态 import 和工厂也通过 `loadOptional` 有界执行；平台账户服务模块仍属于 Application bootstrap 的必需依赖。
+- Embedded Chat 在同一 Application 内将语音、Collaboration、Bot Chat/Management 呈现和 Terminal 面板模块放入延后启动队列，首屏可用并完成 `show()` 的可见帧后才按依赖顺序激活；Full Workbench 默认保留 eager 策略。必需 Host/provider、账户身份和 Terminal 协议服务不后移。队列不拥有第二份扩展 registry；销毁先撤销未完成 import 的工厂 scope，再排空已开始激活，最后释放其借用的服务。该计划不是通用 activation event dispatcher。
 - 持久化产物独立存入 `system/artifacts/<sha256>`；安装集合只保存引用，CAS 成功后才切换安装指针，候选写入失败保留旧指针。缺失产物不自动联网换版本，插件提示显式重新加载修复。旧产物暂时保留，后续 GC 不影响正确性。
 - Module Loader、`activate` 工厂与每个内部 adapter prepare/commit 等待默认各 15 秒；subscription/internal disposer、rollback 与 command drain 默认每次 5 秒。超时撤销旧 API，继续剩余清理；工厂或 commit 迟到返回的 disposer 仍被调用，退休后命令结果不再成功返回。不隔离 trusted 模块同步死循环，也不能强制终止任意插件自行创建的副作用；prepare 必须无副作用。
 - 公共 `OpenCraftExtensionDefinition` 只引用公共 API，第一方 Theme Pack 已消费；`api.signal` 在失败或停用时先于清理 abort，运行中的插件可继续登记资源 subscription（贡献本身仍只在激活期登记）。自包含示例见 `examples/extensions/hello.mjs`，测试覆盖注册导航、调用公告与卸载中的待决结果。
@@ -334,6 +339,18 @@ UNLOADING / DISPOSED`，非常适合实现 Activation 内核。`ctx.effect()` �
 等于把当前 scope 能看到的服务全部交出去。
 
 ### 6.3 不合并成一个巨大 Context
+
+云桌面第一阶段使用现有可信内建 Panel definition / renderer / toolbar 注册，
+由 Workbench Application 显式注入后端与媒体适配器；不增加公共权限或新的全局 Context。
+未接通适配器时不发布可用入口，桌面进程、观看连接和独占控制租约分开所有权。
+框架及后续接入条件见 [Conversation desktop plugin](cloud-desktop-plugin.md)。
+
+云桌面与 Vela 产品插件保持单向依赖：通用插件拥有桌面 contract、面板和 noVNC
+媒体适配，不读取账号或调用 TAT/CTL；`lightvela-platform/desktop` 只消费通用
+contract/media 子入口，拥有精确绑定校验、资源准备及后端 attachment 交接，
+不导入桌面 React renderer、noVNC 或 Hermes Chat 隧道。生产观看授权/输入门禁
+尚未实现，缺失 viewer port 时不发布能力。源码和 package dependency guard
+固化此边界；可信插件仍不是安全沙箱。
 
 当前 Chat、Panel、Session、Replica 的 Context 可以继续独立存在。跨域原子卸载由
 Contribution Broker 完成：

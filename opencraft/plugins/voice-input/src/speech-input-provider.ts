@@ -20,6 +20,8 @@ export interface SpeechInputObserver {
   commit(text: string): void;
   end(): void;
   error(error: SpeechInputError): void;
+  /** Retains this input transaction for explicit same-audio retry; never authorizes a send. */
+  recover?(error: SpeechInputError, retry: () => void): void;
 }
 
 export interface SpeechInputSession {
@@ -29,6 +31,8 @@ export interface SpeechInputSession {
 }
 
 export interface SpeechInputProvider {
+  /** Optional capability updates for asynchronously discovered transports. */
+  subscribe?(listener: () => void): () => void;
   readonly unavailableMessage?: string;
   readonly id: string;
   isAvailable(): boolean;

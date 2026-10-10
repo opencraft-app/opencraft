@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 
-import type { Message } from "@lightvela/vela-chat-client-core";
+import { channelAddress, MessagingSendError, type Message } from "@lightvela/vela-chat-client-core";
 import { CollaborationWorkspaceController } from "../../plugins/lightvela-collaboration/src/collaboration-workspace-controller";
 import { createCollaborationWorkspaceView } from "../../plugins/lightvela-collaboration/src/collaboration-workspace-view";
 import { CollaborationWorkspaceService } from "../../plugins/lightvela-collaboration/src/collaboration-workspace-service";
@@ -38,10 +38,24 @@ const direct: any = {
   id: "direct-1", serverId: server.id, memberA: self, memberB: ada, status: "active",
   imGroupId: "direct-group-1", imState: "ready", revision: 1,
 };
+const previewParams = new URLSearchParams(window.location.search);
+const emptyPreview = previewParams.has("empty");
+const uncertainPreview = previewParams.has("uncertain");
+let serverItems = emptyPreview ? [] : [server];
 let directItems: any[] = [];
 const client: any = {
   getMe: async () => account,
-  listServers: async () => ({ items: [server], nextCursor: null }),
+  listServers: async () => ({ items: serverItems, nextCursor: null }),
+  getServer: async () => serverItems[0],
+  createServer: async (name: string, slug: string) => {
+    serverItems = [{ ...server, name, slug }];
+    return { kind: "ready", resource: serverItems[0] };
+  },
+  createInvite: async () => ({ invite: { id: "invite-preview" }, token: "rfi_preview_one_use_token" }),
+  acceptJoinLink: async () => {
+    serverItems = [server];
+    return { serverId: server.id, memberId: self.id, landingChannelId: channel.id, operations: [] };
+  },
   listChannels: async () => [channel],
   listMembers: async () => [self, ada],
   listDirectConversations: async () => directItems,
@@ -53,12 +67,12 @@ const client: any = {
   },
 };
 
-function message(conversationId: string, text: string): Message {
+function message(conversationId: string, text: string, createdAt = new Date().toISOString()): Message {
   return {
     id: `${conversationId}:${text}`,
     conversationId,
     content: { kind: "text", text },
-    createdAt: new Date().toISOString(),
+    createdAt,
     delivery: { state: "sent" },
     direction: "incoming",
     kind: "text",
@@ -72,18 +86,52 @@ function message(conversationId: string, text: string): Message {
   };
 }
 
+let receiveLive: ((messages: Message[]) => void) | null = null;
+let uncertainInput: { channel: { conversationId: string }; clientRequestId: string; text: string } | null = null;
 const messaging: any = {
   connect: async () => undefined,
   close: async () => undefined,
   setScope: async () => undefined,
   waitUntilReady: async () => undefined,
-  loadHistory: async (address: any) => ({
-    completed: true,
-    messages: [message(address.conversationId, address.directConversationId ? "这是一条私聊消息。" : "欢迎来到 #general。")],
-  }),
+  loadHistory: async (address: any, cursor?: string) => address.directConversationId
+    ? {
+        completed: true,
+        messages: [message(address.conversationId, "这是一条私聊消息。")],
+      }
+    : cursor
+      ? {
+          completed: true,
+          messages: [message(address.conversationId, "更早的频道消息。", "2026-09-14T11:00:00Z")],
+        }
+      : {
+          completed: false,
+          nextCursor: "older-1",
+          messages: [message(address.conversationId, "欢迎来到 #general。", "2026-09-14T12:00:00Z")],
+        },
   markRead: async () => undefined,
-  sendText: async (input: any) => ({ ...message(input.channel.conversationId, input.text), direction: "outgoing", senderName: "Skip" }),
-  subscribeMessages: () => () => undefined,
+  sendText: async (input: any) => {
+    if (uncertainPreview && uncertainInput === null) {
+      uncertainInput = input;
+      throw new MessagingSendError("ack lost", { outcome: "uncertain", retryable: false });
+    }
+    return { ...message(input.channel.conversationId, input.text), direction: "outgoing", senderName: "Skip" };
+  },
+  reconcileMessage: async (input: { clientRequestId: string }) => uncertainInput?.clientRequestId === input.clientRequestId
+    ? {
+        state: "sent",
+        message: {
+          ...message(uncertainInput.channel.conversationId, uncertainInput.text),
+          direction: "outgoing",
+          senderName: "Skip",
+        },
+      }
+    : { state: "pending" },
+  subscribeMessages: (listener: (messages: Message[]) => void) => {
+    receiveLive = listener;
+    return () => {
+      if (receiveLive === listener) receiveLive = null;
+    };
+  },
 };
 
 const workspace = new CollaborationWorkspaceService(client, messaging, {
@@ -97,7 +145,9 @@ const Workspace = createCollaborationWorkspaceView({
 });
 
 function Preview() {
-  const initial = serializeCollaborationWorkspaceRoute({ kind: "chat", serverId: server.id });
+  const initial = serializeCollaborationWorkspaceRoute(
+    emptyPreview ? { kind: "home" } : { kind: "chat", serverId: server.id },
+  );
   const [resourceUri, setResourceUri] = useState(initial);
   const host = useMemo(() => ({
     platform: "web" as const,
@@ -115,7 +165,18 @@ function Preview() {
       setResourceUri(next);
     },
   }), []);
-  return <Workspace activation={{ viewId: "lightvela.collaboration.workspace-view", resourceUri }} contribution={{ id: "lightvela.collaboration.workspace-view", title: "Collaboration", viewType: "lightvela.collaboration.workspace" }} host={host} />;
+  return <>
+    <Workspace activation={{ viewId: "lightvela.collaboration.workspace-view", resourceUri }} contribution={{ id: "lightvela.collaboration.workspace-view", title: "Collaboration", viewType: "lightvela.collaboration.workspace" }} host={host} />
+    <button
+      data-testid="preview-receive"
+      onClick={() => {
+        const address = channelAddress(channel);
+        if (address !== null) receiveLive?.([message(address.conversationId, "这是一条实时收到的频道消息。")]);
+      }}
+      style={{ position: "fixed", bottom: 96, right: 28, zIndex: 10 }}
+      type="button"
+    >模拟收到频道消息</button>
+  </>;
 }
 
 const style = document.createElement("style");

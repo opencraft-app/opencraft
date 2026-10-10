@@ -8,6 +8,15 @@ Pass 升配 Web checkout 在北京测试环境发布时，需协调前端、CTL�
 
 ## 交付链
 
+OpenCraft DevCloud 第一方登录扩展需要配对交付 Auth 新镜像与
+`auth-platform.env` 中的显式子域回调注册，以及 Service Gateway 新镜像与全局 CORS 配置。
+旧 Auth 二进制只接受两个精确 Web 回调，不能先把第三条模式配置投放给旧进程；
+应在同一次目标环境发布中更新镜像和配置，并确认进程已滚动读取新值。
+上海与新加坡分别通过各服务的标准构建、GitOps 晋级和 Argo 手工同步验收；
+除 revision/image 与 `Synced/Healthy` 外，还须检查子域 authorize、session exchange
+预检及真实登录，同时验证非法域名被拒绝。回滚须同时恢复兼容的注册列表与镜像；
+只合入 master 或只允许 CORS 不能视为登录能力已上线。
+
 问卷反馈的 MySQL 版本需要 ticket 镜像、`000002_support_feedback_mysql` migration、Service Gateway 路由和 Dashboard 上游配置共同就绪。北京测试已走独立测试发布路径，不能作为生产迁移、Argo 或公网验收证据。上海/新加坡恢复 ticket 正式 release bundle 后，`master` 仅构建两区镜像，`MASTER_AUTO_PIN_ENVS=none`，不得自动 pin 生产；流水线生产候选、数据库实际迁移以及 GitOps 镜像晋级分别受人工审核保护，生产 leaf Application 保持手动同步。
 
 首次生产上线按地域独立准备 `lightvela_ticket` 逻辑库、ticket 专用账号、SSM 真源与 SOPS 加密的 `ticket-runtime-secrets`（DB 密码、admin token），不得把后台 Basic Auth 密码用作服务密钥。迁移器优先使用完整 `TICKET_MYSQL_DSN`，否则从 `MYSQL_HOST`、`MYSQL_PORT`、`TICKET_DB`、`TICKET_DB_USER`、Secret 引用的 `TICKET_DB_PASSWORD` 构造 DSN；一次性 Job 不打印密钥。先用同地域候选镜像和库内 `schema_migrations` 探测版本/dirty，初始库无表记为 0，显式批准后将版本推进到 2 并验证 `dirty=false`、两张反馈表和 DB 权限。不可将 `up` 成功等同于可用，也不得靠回退 DDL 清除生产反馈。
@@ -48,6 +57,8 @@ master 源码
 - Argo/集群/线上 E2E：真实运行态。
 
 ## 不变量
+
+- 2026-10-02 建站 Skill 紧急恢复采用兼容旧 credential 参数合同的 TAT bootstrap：逐地域 clone 原命令并追加降权 auth-only 修补，CTL/Sandbox 的 scalar 与地域映射成对热修和固化，独立 Skill hook 生产关闭，控制面镜像不换。详见 [操作说明](../operations/website-skill-auth-fallback.md)。bootstrap 入口遵循 `commands` 薄 wrapper / `support` 语义模块边界，两者注册到 materialize manifest，不能将业务逻辑直接放入 command wrapper。这是经用户明确授权的运行时配置热修，不是正式镜像/GitOps 发布；需分别报告 Pod 配置、实际新机 TAT/terminal 验收和 GitOps 对齐状态。
 
 - 紧急恢复时若先在生产集群直改 Auth ConfigMap 或 Deployment，必须记录原值与镜像 digest，并在同一事件内把限流参数、可信代理地址和镜像 pin 固化到对应环境的 GitOps 声明；业务 429 恢复只证明临时热修生效，Argo 对齐到预期 revision 且 `Synced/Healthy` 才表示发布闭环。可信代理不得为省事扩大到整个 Pod 网段。
 
@@ -186,6 +197,7 @@ master 源码
   frozen install。完整实现由 `.ci/checks/frontend_guard.sh` 持有，旧 `frontend/checks/guard.sh` 仅转发。
   MR runner 仍从可信 `origin/master` 提取注册入口；旧 guard 无法校验自身修复时，先通过独立
   `.ci` bootstrap MR 引入新可信入口，再收敛旧入口，不修改可信 ref 或豁免检查。
+  前端 guard 同时执行马来语首页重生成一致性、公共词典按需加载与就绪、消费界面、法律链接和搜索分词测试，再验证国内/国际静态构建；新增语种不能只依赖资源条目校验。
   回归测试应实际执行复制命令并逐个验证本地依赖源码存在，并验证转发保留参数、环境与退出码。
 - 正式发布只认 Argo CD；service-local apply/release 脚本不是主线。
 - 服务级生产审核人由对应 `.ci/<service>.yml` 的 `PROD_REVIEWERS` 跟踪，并通过契约测试锁定服务边界；
@@ -597,6 +609,7 @@ sgprod 旧 Auth 镜像（源码 `bf1c36960ed4`）只接受一个 Sites client，
 
 - 环境 Secret 的长期真源是 SSM；`master` 中的 SOPS 文件是 source-facing 快照，`gitops` 中的 SOPS 文件是 deploy-facing 期望。修复顺序必须是 SSM → `master` → `gitops`，不能只 patch live 或只修改 `gitops`。
 - SSM manifest 应声明运行时必填键。重新导出时缺少 required key 必须失败，避免后续 promotion 静默删除 live 已有凭据。
+- Service Gateway 云语音按上海、新加坡独立启用。区域 manifest 从同地域 CTL 的固定 SSM 版本仅投影 `CTL_LLMGATEWAY_ADMIN_TOKEN` 为 `VELAGW_SPEECH_ADMIN_TOKEN`，以专用 SOPS Secret、KSOPS generator 和该区域 bundle publish paths 一起晋级；不复制其他 CTL 密钥，不跨区域复用令牌。区域 control/traffic origin 与具体浏览器 origin 必须随配置交付，镜像与 Secret 完整校验后才同步对应 Gateway Application。
 
 ## nextgen-dashboard 下线的 GitOps 处置（2026-09-22）
 
@@ -764,3 +777,32 @@ beta 变量仅是历史准备配置，不再控制当前代码；总开关未配
 enable 写总开关为 1，并按 data_enabled 写数据与共享读取开关。
 区域 runtime/TLS/角色凭据与持久化验收仍是发布前提；本次只修改源码。
 平台前端入口保持默认隐藏，通过控制台 show() 展示；UI 隐藏不是鉴权。
+
+## 建站 auth-only Skill hook 的配对发布（2026-10-02）
+
+`argocd/services/{ctl,sandbox}/{shprod,sgprod}` source env 的独立 Skill 地域映射必须配对；
+Sandbox replacements 消费进 runtime ConfigMap，CTL 创建任务 worker optional 注入同名 env。
+其它环境默认关闭，不得替换 credential CommandId。先发布 Sandbox 精确 allowlist/provider，
+再发布 CTL new-instance hook；回退先关闭 CTL Skill map 再关闭 Sandbox Skill allowlist。
+源配置/render 通过不等于 live GitOps/Argo revision/image 或新实例业务验收；本轮无实际发布。
+详细步骤及已交接 ID 见 [建站 Skill auth fallback](../operations/website-skill-auth-fallback.md)。
+
+## 现网云桌面环境配置的真源归属（2026-10-08）
+
+`CLOUD_DESKTOP_ENABLED` 与 `DESKTOP_INGRESS_DOMAIN` 是 CTL 云桌面的环境级业务配置，
+其真源必须落在 `master` 的 `argocd/services/ctl/{shprod,sgprod}/ctl-platform.env`，而非只手工
+写入 `gitops` 分支。CI 从 `master` 的 source env 渲染 deploy-facing 清单回写 `gitops`，
+仅 image pin 等制品字段由发布流程覆盖；源 env 中缺失的业务键在每次渲染后不会出现在 `gitops`。
+因此只改 `gitops`（如早期 !4837）的桌面开关与泛域名会在下一次 CTL 发布渲染时被覆盖丢失，
+表现为桌面就绪后拼接 wss 地址报 `DESKTOP_NOT_CONFIGURED`。本次把两站点的两键补回 `master`
+source env：shprod=`desktop.lightvela.tech`（cert bAnCmJOZ / CLB lb-ohkm8fm5），
+sgprod=`desktop.lightvela.site`（cert bAnD57eL / CLB lb-8kenwgvc）。该改动只调整 CTL 运行时
+业务配置，不改变镜像构建、制品晋级、Argo Application 或同步模型；CLB 证书（SNI）、泛解析 DNS
+与含云桌面代码的 CTL 镜像仍是独立的发布前置，源配置 render 通过不等于 live 验收。
+
+## MR 复用工作区源码一致性（2026-10-10）
+
+MR 占位检查在 checkout 后校验期望提交和该提交下的全部受跟踪文件（含 index）。
+提交号相同不能证明工作树正确：复用 runner 可能残留旧前端源码或旧 OpenCraft 生成副本。
+发现提交或受跟踪文件不一致时，对本次构建工作区执行既有 reset/clean，再核验 HEAD 和完整 tracked diff。
+这只恢复构建输入，不执行机械同步来掩盖源码中真实的生成漂移，也不修改 trusted guard 或发布权限。

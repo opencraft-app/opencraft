@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_SEO_TITLE, SEO_DESCRIPTION, SEO_KEYWORDS, getFullSeoMeta, getSeoMeta } from "@/lib/seo";
 
 describe("seo meta", () => {
-  it("keeps the landing page title unchanged", () => {
+  it("uses the AI companion title for the domestic landing page", () => {
     const meta = getSeoMeta("/");
 
+    expect(meta.title).toBe("我的智能体伙伴 | LightVela");
     expect(meta.title).toBe(DEFAULT_SEO_TITLE);
     expect(meta.description).toBe(SEO_DESCRIPTION);
     expect(meta.keywords).toBe(SEO_KEYWORDS);
@@ -38,7 +39,8 @@ describe("seo meta", () => {
 
   it("renders English titles and suffix for the global region", () => {
     const globalSuffix = "LightVela · Your Personal Cloud AI Agent";
-    expect(getSeoMeta("/", "global").title).toBe("LightVela | Your Personal Cloud AI Agent");
+    expect(getSeoMeta("/", "global").title).toBe("My AI Companion | LightVela");
+    expect(getSeoMeta("/agents", "global").title).toBe("My AI Companion | LightVela");
     expect(getSeoMeta("/about", "global").title).toBe(`About LightVela | ${globalSuffix}`);
     expect(getSeoMeta("/docs/overview", "global").title).toBe(`What is LightVela | ${globalSuffix}`);
     expect(getSeoMeta("/agents/memory", "global").title).toBe(`Memory | ${globalSuffix}`);
@@ -87,6 +89,12 @@ describe("seo meta — global multi-URL language prefix", () => {
   it("/en/changelog and /zh/changelog return localized changelog titles", () => {
     expect(getSeoMeta("/en/changelog", "global").title).toBe(`Changelog | ${globalSuffix}`);
     expect(getSeoMeta("/zh/changelog", "global").title).toBe(`更新日志 | ${cnSuffix}`);
+  });
+
+  it("recognizes the Thai public URL prefix", () => {
+    const meta = getFullSeoMeta("/th-th/about", "global");
+    expect(meta.htmlLang).toBe("th-TH");
+    expect(meta.title).not.toContain("Page Not Found");
   });
 
   it("getFullSeoMeta htmlLang follows URL prefix", () => {

@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   ensureBrowserProcessEnv,
+  requiresEmbeddedLightVelaAccountPreflight,
   resolveLightVelaWebBootstrapOptions,
 } from "../apps/workbench-web/src/runtime/lightvela-web-bootstrap";
 
@@ -18,6 +19,17 @@ test("LightVela Web bootstrap projects the explicit Beijing account authority", 
 
 test("LightVela Web bootstrap leaves account defaults untouched without overrides", () => {
   assert.deepEqual(resolveLightVelaWebBootstrapOptions({}), {});
+});
+
+test("explicit standalone Web region does not turn account loading into a startup gate", () => {
+  assert.equal(requiresEmbeddedLightVelaAccountPreflight({
+    hostProfileMode: undefined,
+    lightVelaRegion: "cn",
+  }), false);
+  assert.equal(requiresEmbeddedLightVelaAccountPreflight({
+    hostProfileMode: "configured",
+    lightVelaRegion: "cn",
+  }), true);
 });
 
 test("LightVela Web bootstrap rejects an invalid region", () => {

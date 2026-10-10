@@ -116,7 +116,8 @@ describe("Agent settings navigation spacing", () => {
      * 路由级加载壳（app-route-shell）与最终页面都是左对齐宽容器 + 68px，
      * 中间就会横竖双向跳一下。
      */
-    expect(page).toContain('"lw-app-top-pad flex-grow bg-white pb-6"');
+    expect(page).toContain('"lw-app-top-pad flex-grow bg-white"');
+    expect(page).toContain('useMobileChatLayout ? "pb-0" : "pb-6"');
     expect(page).toContain('(hasSidebarLayout || shouldShowDataLoading) && "lv-agent-settings-main"');
     expect(page).toContain('"lw-settings-shell"');
     expect(page).toContain('(hasSidebarLayout || shouldShowDataLoading) && "lv-agent-settings-shell"');
@@ -130,15 +131,19 @@ describe("Agent settings navigation spacing", () => {
     // 页面级骨架屏必须跟路由级加载壳用同一套几何，否则两段加载之间会跳
     expect(appRouteShell).toContain('className="lw-app-top-pad lv-agent-settings-main flex-grow bg-white pb-6"');
     expect(appRouteShell).toContain('className="lw-settings-shell lv-agent-settings-shell"');
-    expect(page.match(/lg:grid-cols-\[248px_minmax\(0,1fr\)\]/g)).toHaveLength(1);
-    expect(agentsPageClient).toContain(
-      "className={isWorkbench ? undefined : 'lv-agent-sidebar-header'}",
-    );
+    expect(page.match(/lg:grid-cols-\[56px_216px_minmax\(0,1fr\)\]/g)).toHaveLength(1);
+    expect(agentsPageClient).toContain("<AgentSidebarToggle collapsed={collapsed} onToggle={toggle} />");
+    expect(agentsPageClient).toContain("sidebarCollapsed={collapsed}");
+    expect(agentsPageClient).toContain("lv-agent-sidebar-header--motion-pending");
     expect(agentShell).toContain("width: calc(100% - 40px);");
     expect(agentShell).toContain("margin-left: 16px;");
     expect(agentShell).toContain("margin-right: 24px;");
     expect(agentHeaderShell).toContain("right: auto;");
     expect(agentHeaderShell).toContain("width: 264px;");
+    expect(styles).toContain("body:has(.lv-agent-bot-rail-enabled) header.lv-agent-sidebar-header {");
+    expect(styles).toContain("width: 288px;");
+    expect(styles).toContain("body:has(.lv-agent-bot-rail-enabled) header.lv-agent-sidebar-header > div {");
+    expect(styles).toContain("height: 60px !important;");
     expect(agentHeaderShell).toContain("height: 68px;");
     /*
      * 常规 agent 页的 header 要画边框 —— 它和侧边栏的分隔线是连着的，
@@ -182,9 +187,11 @@ describe("Agent settings navigation spacing", () => {
      * 而不是放宽成只检查基类 —— 漏掉任一分支都会布局错位。
      */
     expect(page).toContain('"lv-agent-settings-content min-w-0"');
-    expect(page).toContain('hasSidebarLayout ? "lg:col-start-2" : "mx-auto w-full max-w-[860px]"');
+    expect(page).toContain('multiBotEnabled ? "lg:col-start-3 lg:pl-6" : "lg:col-start-2"');
+    expect(page).toContain('"mx-auto w-full max-w-[860px]"');
     // 创建 Loading 视图没有侧边栏问题，仍是固定写法
-    expect(loadingView).toContain('className="lv-agent-settings-content min-w-0 lg:col-start-2"');
+    expect(loadingView).toContain('"lv-agent-settings-content min-w-0 lg:col-start-2"');
+    expect(loadingView).toContain('"lv-agent-settings-content min-w-0 lg:col-start-3 lg:pl-6"');
     expect(styles).toContain("width: min(1440px, calc(100vw - 160px));");
   });
 
@@ -213,8 +220,10 @@ describe("Agent settings navigation spacing", () => {
       desktopStyles ?? "",
       "\n  .lv-agents-sidebar-middle .lv-agents-nav-item {",
     );
-    const responsiveStyles = getBlockBody(styles, "@media (max-width: 1023px) {");
-    const mobileNavigation = getBlockBody(responsiveStyles ?? "", "\n\n  .lv-agents-nav {");
+    const desktopProfile = getBlockBody(desktopStyles ?? "", "\n  .lv-agents-sidebar-profile .lv-agent-profile {");
+    const desktopProfileName = getBlockBody(desktopStyles ?? "", "\n  .lv-agents-sidebar-profile .lv-agent-profile-name {");
+    const responsiveStyles = getBlockBody(styles, "@media (max-width: 1023px) {\n  .lv-agents-sidebar {");
+    const mobileNavigation = getBlockBody(responsiveStyles ?? "", "\n  .lv-agents-nav {\n    gap:");
     const mobileItem = getBlockBody(responsiveStyles ?? "", "\n  .lv-agents-nav-item {");
 
     expect(desktopSidebar).toContain("padding-bottom: 24px;");
@@ -224,6 +233,9 @@ describe("Agent settings navigation spacing", () => {
     expect(desktopItem).toContain("height: var(--lv-agents-nav-item-height);");
     expect(profileName).toContain("font-size: 14px;");
     expect(profileName).toContain("line-height: 20px;");
+    expect(desktopProfile).toContain("min-height: 40px;");
+    expect(desktopProfileName).toContain("font-size: 13px;");
+    expect(desktopProfileName).toContain("line-height: 18px;");
     expect(desktopMiddle).toContain("--lv-agents-nav-group-gap: 2px;");
     expect(desktopMiddle).toContain("--lv-agents-nav-item-gap: 0;");
     expect(desktopMiddleNavigation).toContain("gap: var(--lv-agents-nav-group-gap);");
@@ -236,29 +248,47 @@ describe("Agent settings navigation spacing", () => {
     expect(styles).toContain("min-height: 48px;");
   });
 
-  it("moves the desktop account menu to the bottom of the Agent sidebar", () => {
+  it("reserves a separate desktop Bot rail next to the existing navigation", () => {
+    const desktopStyles = styles.slice(styles.lastIndexOf("@media (min-width: 1024px) {"));
+    const sidebar = getBlockBody(desktopStyles, "\n  .lv-agents-sidebar {");
+    const middleItem = getBlockBody(desktopStyles, "\n  .lv-agents-sidebar-middle .lv-agents-nav-item {");
+
+    expect(sidebar).toContain("padding-top: 12px;");
+    expect(styles).toContain(".lv-agent-bot-rail {");
+    expect(styles).toContain("width: 56px;");
+    expect(styles).toContain("background: #fff;");
+    expect(styles).toContain("left: 56px;");
+    expect(page).not.toContain('className="lv-agent-overview-nav');
+    expect(middleItem).toContain("font-size: 13px;");
+  });
+
+  it("places the account menu at the bottom of the Agent sidebar", () => {
     const accountFooter = getBlockBody(styles, "\n.lv-agent-account-footer {");
     const desktopSidebar = getBlockBody(styles, "\n  .lv-agents-sidebar {");
 
     expect(page).toMatch(/<UserAvatarMenu\b[^>]*\bvariant="sidebar"[^>]*\/>/);
+    expect(page).toContain('<div className="lv-agents-sidebar-footer">');
+    expect(styles).toContain(".lv-agent-bot-rail-management {");
     expect(page).toContain("showDesktopUserMenu={false}");
     expect(agentsPageClient).toContain("showDesktopUserMenu={isWorkbench}");
     expect(accountFooter).toContain("margin-top: auto;");
     expect(accountFooter).toContain("padding-top: 8px;");
     expect(accountFooter).toContain("border-top: 1px solid #e9ecf1;");
     expect(styles).toContain("height: calc(100dvh - 68px);");
-    expect(desktopSidebar).toContain("padding-top: 20px;");
+    expect(desktopSidebar).toContain("padding-top: 12px;");
   });
 
   it("keeps auth and data loading states on the final Agent shell geometry", () => {
-    expect(appRouteShell).toContain('className="lv-agent-sidebar-header"');
+    expect(appRouteShell).toContain("className={`lv-agent-sidebar-header${collapsed ? ' lv-agent-sidebar-header--collapsed' : ''}`}");
     expect(appRouteShell).toContain('className="lw-app-top-pad lv-agent-settings-main flex-grow bg-white pb-6"');
     expect(appRouteShell).toContain('className="lw-settings-shell lv-agent-settings-shell"');
-    expect(appRouteShell).toContain("<AgentSettingsLoadingContent />");
-    expect(page).toContain("return <AgentSettingsLoadingContent />;");
+    expect(appRouteShell).toContain("<AgentSettingsLoadingContent multiBotEnabled={multiBotEnabled} isChat={isChat} collapsed={collapsed} />");
+    expect(page).toContain("return <AgentSettingsLoadingContent multiBotEnabled={multiBotEnabled} isChat={isChat} collapsed={collapsed} />;");
     expect(loadingView).toContain('lg:grid-cols-[248px_minmax(0,1fr)]');
+    expect(loadingView).toContain('lg:grid-cols-[56px_216px_minmax(0,1fr)]');
+    expect(loadingView).toContain('data-testid="agent-bot-rail-skeleton"');
     expect(loadingView).toContain('<AgentSidebar>');
-    expect(page).toContain('<AgentSidebar>');
+    expect(page).toMatch(/<AgentSidebar\b/);
     expect(sidebar).toContain('className="lv-agents-sidebar lv-agents-sidebar-scroll-isolated"');
     for (const source of [loadingView, page]) {
       expect(source).toContain('className="lv-agents-sidebar-controls"');
@@ -271,6 +301,7 @@ describe("Agent settings navigation spacing", () => {
 
   it("keeps the requested desktop sidebar separators and bottom actions aligned", () => {
     const profileSeparator = getBlockBody(styles, "\n.lv-agent-profile-wrap {");
+    const desktopProfile = getBlockBody(styles, "\n  .lv-agents-sidebar-profile .lv-agent-profile-wrap {");
     const controls = getBlockBody(styles, "\n  .lv-agents-sidebar-controls {");
     const middle = getBlockBody(styles, "\n  .lv-agents-sidebar-middle {");
     const accountSeparator = getBlockBody(styles, "\n.lv-agent-account-footer {");
@@ -279,9 +310,10 @@ describe("Agent settings navigation spacing", () => {
       "\n  .lv-agents-sidebar-scroll-isolated {",
     );
 
-    expect(profileSeparator).toContain("width: calc(100% + 12px);");
+    expect(profileSeparator).toContain("width: auto;");
     expect(profileSeparator).toContain("padding-bottom: 8px;");
     expect(profileSeparator).not.toContain("border-bottom:");
+    expect(desktopProfile).toContain("padding: 3px 8px;");
     expect(controls).toContain("padding-top: 16px;");
     expect(middle).toContain("padding-top: var(--lv-agents-sidebar-middle-padding-block);");
     expect(styles).toContain('.lv-agents-sidebar[data-scroll-above="true"] .lv-agents-sidebar-controls::after');

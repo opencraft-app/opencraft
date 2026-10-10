@@ -438,6 +438,9 @@ func normalizePath(path string) string {
 	if strings.HasPrefix(path, "/v1/instances/") && strings.HasSuffix(path, "/desktop/session") {
 		return "/v1/instances/{id}/desktop/session"
 	}
+	if strings.HasPrefix(path, "/v1/instances/") && strings.HasSuffix(path, "/desktop/resource") {
+		return "/v1/instances/{id}/desktop/resource"
+	}
 	if strings.HasPrefix(path, "/internal/instances/") && strings.HasSuffix(path, "/gateway/migrate") {
 		return "/internal/instances/{id}/gateway/migrate"
 	}
@@ -718,6 +721,28 @@ func (h *instanceHandler) handleInstance(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		writeSuccess(w, r, http.StatusOK, resp)
+	case len(parts) == 3 && parts[1] == "desktop" && parts[2] == "resource" && (r.Method == http.MethodPost || r.Method == http.MethodGet):
+		ctx, ok := newRequestContext(r)
+		if !ok {
+			writeHTTPError(w, r, errcode.ErrInstanceMissingUserID)
+			return
+		}
+		var resp *transport.DesktopResourceResponse
+		var err error
+		if r.Method == http.MethodPost {
+			resp, err = h.logic.EnsureDesktopResource(ctx, instanceID)
+		} else {
+			resp, err = h.logic.GetDesktopResource(ctx, instanceID)
+		}
+		if err != nil {
+			writeHTTPError(w, r, err)
+			return
+		}
+		status := http.StatusOK
+		if r.Method == http.MethodPost && resp.State == transport.DesktopResourceStatePreparing {
+			status = http.StatusAccepted
+		}
+		writeSuccess(w, r, status, resp)
 	case len(parts) == 3 && parts[1] == "desktop" && parts[2] == "session" && r.Method == http.MethodPost:
 		// 云桌面（VNC）：POST 幂等触发 provision（Provisioning→Ready 状态机入口）。
 		ctx, ok := newRequestContext(r)
@@ -751,6 +776,66 @@ func (h *instanceHandler) handleInstance(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		resp, err := h.logic.ListInstanceBots(ctx, instanceID)
+		if err != nil {
+			writeHTTPError(w, r, err)
+			return
+		}
+		writeSuccess(w, r, http.StatusOK, resp)
+	case len(parts) == 4 && parts[1] == "bots" && parts[3] == "channel-sessions" && r.Method == http.MethodGet:
+		if !readRuntimeFeatureFlag("CHANNEL_HISTORY_ENABLED", false) {
+			writeHTTPError(w, r, errcode.ErrChannelHistoryUnavailable)
+			return
+		}
+		ctx, ok := newRequestContext(r)
+		if !ok {
+			writeHTTPError(w, r, errcode.ErrInstanceMissingUserID)
+			return
+		}
+		limit := 20
+		if raw := r.URL.Query().Get("limit"); raw != "" {
+			var err error
+			limit, err = strconv.Atoi(raw)
+			if err != nil || limit < 1 || limit > 50 {
+				writeHTTPError(w, r, errcode.ErrInstanceInvalidParam)
+				return
+			}
+		}
+		source, before := r.URL.Query().Get("source"), r.URL.Query().Get("before")
+		if len(source) > 32 || len(before) > 128 {
+			writeHTTPError(w, r, errcode.ErrInstanceInvalidParam)
+			return
+		}
+		resp, err := h.logic.ListChannelSessions(ctx, instanceID, parts[2], source, before, limit)
+		if err != nil {
+			writeHTTPError(w, r, err)
+			return
+		}
+		writeSuccess(w, r, http.StatusOK, resp)
+	case len(parts) == 6 && parts[1] == "bots" && parts[3] == "channel-sessions" && parts[5] == "messages" && r.Method == http.MethodGet:
+		if !readRuntimeFeatureFlag("CHANNEL_HISTORY_ENABLED", false) {
+			writeHTTPError(w, r, errcode.ErrChannelHistoryUnavailable)
+			return
+		}
+		ctx, ok := newRequestContext(r)
+		if !ok {
+			writeHTTPError(w, r, errcode.ErrInstanceMissingUserID)
+			return
+		}
+		limit := 20
+		if raw := r.URL.Query().Get("limit"); raw != "" {
+			var err error
+			limit, err = strconv.Atoi(raw)
+			if err != nil || limit < 1 || limit > 20 {
+				writeHTTPError(w, r, errcode.ErrInstanceInvalidParam)
+				return
+			}
+		}
+		before := r.URL.Query().Get("before")
+		if len(parts[4]) > 128 || len(before) > 32 {
+			writeHTTPError(w, r, errcode.ErrInstanceInvalidParam)
+			return
+		}
+		resp, err := h.logic.ListChannelMessages(ctx, instanceID, parts[2], parts[4], before, limit)
 		if err != nil {
 			writeHTTPError(w, r, err)
 			return

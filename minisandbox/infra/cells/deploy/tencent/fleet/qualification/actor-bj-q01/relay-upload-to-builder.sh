@@ -46,6 +46,16 @@ for variable in TENCENTCLOUD_SECRET_ID TENCENTCLOUD_SECRET_KEY TAT_INSTANCE_ID; 
 	}
 done
 
+builder_uuid=${RELAY_BUILDER_FILESYSTEM_UUID:-}
+builder_disk=${RELAY_BUILDER_DISK_ID:-}
+if [[ -n $builder_uuid || -n $builder_disk ]]; then
+	[[ $builder_uuid =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ &&
+	   $builder_disk =~ ^disk-[a-z0-9]+$ && $TAT_INSTANCE_ID =~ ^ins-[a-z0-9]+$ ]] || {
+		echo "dedicated builder relay requires exact filesystem UUID, disk and instance identities" >&2
+		exit 2
+	}
+fi
+
 sha=$(sha256sum "$local_file" | cut -d' ' -f1)
 bytes=$(wc -c <"$local_file")
 base=$(basename -- "$local_file")
@@ -100,6 +110,27 @@ printf -v quoted_remote '%q' "$remote_file"
 printf -v quoted_dir '%q' "$(dirname -- "$remote_file")"
 "$fleet_dir/tat/tat-run.sh" --name q01-relay-download --timeout 1200 <<REMOTE
 set -euo pipefail
+check_build_storage() {
+  [[ -n '$builder_uuid' ]] || return 0
+  test "\$(curl --fail --silent --show-error --max-time 5 http://metadata.tencentyun.com/latest/meta-data/instance-id)" = '$TAT_INSTANCE_ID'
+  test "\$(findmnt -n --mountpoint /data -o UUID)" = '$builder_uuid'
+  test "\$(findmnt -n --mountpoint /data -o SOURCE)" = "\$(readlink -e '/dev/disk/by-id/virtio-$builder_disk')"
+  test "\$(stat -c %d /data)" != "\$(stat -c %d /)"
+  resolved=\$(readlink -m $quoted_dir)
+  [[ \$resolved == /data/actor-build || \$resolved == /data/actor-build/* ]]
+  nearest=$quoted_dir
+  while [[ ! -e \$nearest ]]; do nearest=\$(dirname -- "\$nearest"); done
+  test "\$(stat -c %d "\$nearest")" = "\$(stat -c %d /data)"
+  for file in $quoted_remote ${quoted_remote}.cos-part; do
+    test ! -L "\$file"
+    if [[ -e \$file ]]; then
+      test -f "\$file"
+      test "\$(stat -c %h "\$file")" = 1
+      test "\$(stat -c %d "\$file")" = "\$(stat -c %d /data)"
+    fi
+  done
+}
+check_build_storage
 install -d -m 700 $quoted_dir
 partial=${quoted_remote}.cos-part
 trap 'rm -f -- "\$partial"' EXIT
@@ -108,6 +139,7 @@ curl --fail --silent --show-error --location --proto '=https' \
 test "\$(wc -c <"\$partial")" = '$bytes'
 test "\$(sha256sum "\$partial" | cut -d' ' -f1)" = '$sha'
 chmod '$remote_mode' "\$partial"
+check_build_storage
 mv "\$partial" $quoted_remote
 trap - EXIT
 printf 'relay download verified sha256=%s bytes=%s\n' '$sha' '$bytes'

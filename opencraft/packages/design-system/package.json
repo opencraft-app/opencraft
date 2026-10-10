@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     "./button": "./src/button.shared.ts",
+    "./progress": "./src/progress.shared.ts",
     "./modal": "./src/modal.shared.ts",
     "./theme": "./src/theme.ts",
     "./theme-options": "./src/theme-options.ts",
@@ -18,7 +19,12 @@
     "./menu.web": "./src/menu.web.scss",
     "./selection.web": "./src/selection.web.scss",
     "./controls.web": "./src/controls.web.scss",
-    "./identity-color": "./src/identity-color.ts"
+    "./focus.web": "./src/focus.web.scss",
+    "./empty-state.web": "./src/empty-state.web.scss",
+    "./panel-controls.web": "./src/panel-controls.web.scss",
+    "./desktop-view.web": "./src/desktop-view.web.scss",
+    "./identity-color": "./src/identity-color.ts",
+    "./sidebar-toggle-glyphs": "./src/sidebar-toggle-glyphs.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

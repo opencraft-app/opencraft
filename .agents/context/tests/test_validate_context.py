@@ -104,6 +104,17 @@ class RepositoryContextContract(unittest.TestCase):
         route = json.loads(result.stdout)["route"]
         self.assertNotIn("release-gitops", route["pack_ids"], route)
 
+    def test_local_android_release_apk_does_not_load_gitops_pack(self) -> None:
+        result = run_validator(
+            "--route",
+            "OpenCraft Android release APK com.tencent.vela 本地打包备案",
+            "--format",
+            "json",
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        route = json.loads(result.stdout)["route"]
+        self.assertNotIn("release-gitops", route["pack_ids"], route)
+
     def test_service_specific_queries_select_service_surface_packs(self) -> None:
         cases = {
             "修复国际站 trade Billing 测试域名": {
@@ -234,6 +245,17 @@ class RepositoryContextContract(unittest.TestCase):
         owners_only = self._run_impact("shadow/OWNERS", "gateway-dashboard/OWNERS")
         self.assertEqual(owners_only.returncode, 0, owners_only.stderr)
         self.assertEqual(json.loads(owners_only.stdout.splitlines()[-1])["matched_rules"], [])
+
+        synced_skills_assets = self._run_impact(
+            "opencraft/apps/workbench-web/public/assets/skills/featured-domestic-dev-expert.webp",
+            "opencraft/plugins/lightvela-hermes/src/upstream/mono2/UPSTREAM.json",
+        )
+        self.assertEqual(synced_skills_assets.returncode, 0, synced_skills_assets.stderr)
+        self.assertEqual(json.loads(synced_skills_assets.stdout.splitlines()[-1])["matched_rules"], [])
+
+        opencraft_runtime = self._run_impact("opencraft/apps/workbench-web/src/runtime/workbench-navigation.ts")
+        self.assertEqual(opencraft_runtime.returncode, 1)
+        self.assertIn("agent-gateway-runtime", opencraft_runtime.stderr)
 
     def test_docs_impact_blocks_high_risk_and_only_advises_normal_risk(self) -> None:
         """``risk`` must decide guard strength, per ADR-0002.

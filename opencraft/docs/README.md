@@ -15,6 +15,7 @@ OpenCraft 是 mono2 内的多端 Agent Workbench 服务根，包含 Codex-faithf
 - Chat 与浏览器 Workbench：`opencraft/docs/chat-ui-architecture.md`、`opencraft/docs/browser-workbench-architecture.md`。
 - 执行所有权：[会话、运行实例与能力租约](execution-ownership.md)；明确创建提交、执行准入、断线撤销、释放及 warm 边界。
 - 构建目标：`opencraft/docs/build-matrix.md` 与 `opencraft/config/build-matrix.json`。
+- iOS 手机端容器与手势：[Mobile shell](mobile-shell.md)；打包的 frontend Bot runtime 与原生通信：[Embedded Bot bridge](mobile-bot-bridge.md)；缓存与请求状态：[Mobile data architecture](mobile-data-architecture.md)。
 
 ## 核心不变量
 

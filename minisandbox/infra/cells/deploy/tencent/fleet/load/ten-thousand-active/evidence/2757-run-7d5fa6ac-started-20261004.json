@@ -1,0 +1,180 @@
+{
+  "schema": "operator-observation/strict10k-started/v1",
+  "runId": "7d5fa6acee6a4a0fa60ea59d4b9ffe91",
+  "sourceRevision": "2757fc785d8f572d1b6430e471100c4a880aefac",
+  "launch": {
+    "invocationId": "inv-c9fbs80d31",
+    "status": "SUCCESS",
+    "exitCode": 0,
+    "startTime": "2026-10-03T20:01:20Z",
+    "endTime": "2026-10-03T20:01:21Z"
+  },
+  "service": {
+    "name": "minisandbox-strict10k-7d5fa6acee6a4a0fa60ea59d4b9ffe91.service",
+    "invocationId": "c5d5db1b472d4631aa48ab25e91a629a",
+    "mainPid": 261665,
+    "activeState": "active",
+    "subState": "running"
+  },
+  "observation": {
+    "invocationId": "inv-a9fbtvg266",
+    "status": "SUCCESS",
+    "exitCode": 0,
+    "observedAt": "2026-10-03T20:03:08Z",
+    "nativeRequestId": "f621d2ef-d85d-4a89-9d12-8454418a2048",
+    "nativeResponseSha256": "355269742ba5678725be8b9218f35352c5444d87a5fa9eea0581693504762af6"
+  },
+  "progress": {
+    "schema": "actor-shared-agent-scale/v1",
+    "runId": "7d5fa6acee6a4a0fa60ea59d4b9ffe91",
+    "elapsedSeconds": 60.022508201,
+    "target": 11000,
+    "rate": 20,
+    "activeTarget": 10000,
+    "activeReady": 83,
+    "activeProven": 64,
+    "warmupTarget": 10000,
+    "heartbeatTarget": 10000,
+    "heartbeatReady": 83,
+    "warmupBackpressure": {
+      "timeoutMs": 900000,
+      "retries": 0,
+      "objects": 0,
+      "timeouts": 0
+    },
+    "readySlo": {
+      "limitMs": 3000,
+      "scope": "post-warmup_object_create_plus_initial_state",
+      "breaches": 0
+    },
+    "activeInFlight": 0,
+    "inFlight": 2,
+    "counters": {
+      "versionsPublished": 16,
+      "deploymentsPublished": 16,
+      "scheduled": 85,
+      "createAttempts": 85,
+      "objectsCreated": 83,
+      "objectsFailed": 0,
+      "readySloBreaches": 0,
+      "requestRetries": 0,
+      "warmupBackpressureRetries": 0,
+      "warmupBackpressureTimeouts": 0,
+      "activeTargetReady": 83,
+      "activeAttempts": 136,
+      "activeSucceeded": 136,
+      "activeFailed": 0,
+      "activeIdentityMismatches": 0,
+      "consecutiveCreationFailures": 0,
+      "inFlightPeak": 2
+    },
+    "latency": {
+      "version": {
+        "count": 16,
+        "p50UpperBoundMs": 76.10925536017415,
+        "p95UpperBoundMs": 197.40298565221642,
+        "p99UpperBoundMs": 197.40298565221642,
+        "maxMs": 182.56067199999995
+      },
+      "deployment": {
+        "count": 16,
+        "p50UpperBoundMs": 1116.6799182492239,
+        "p95UpperBoundMs": 1217.7480857627863,
+        "p99UpperBoundMs": 1217.7480857627863,
+        "maxMs": 1174.8667969999997
+      },
+      "create": {
+        "count": 84,
+        "p50UpperBoundMs": 304.4370214406966,
+        "p95UpperBoundMs": 362.03867196751236,
+        "p99UpperBoundMs": 394.80597130443283,
+        "maxMs": 378.3170949999985
+      },
+      "initialize": {
+        "count": 83,
+        "p50UpperBoundMs": 234.75303506039583,
+        "p95UpperBoundMs": 279.16997956230597,
+        "p99UpperBoundMs": 304.4370214406966,
+        "maxMs": 294.14185
+      },
+      "warmupReady": {
+        "count": 83,
+        "p50UpperBoundMs": 512,
+        "p95UpperBoundMs": 608.8740428813932,
+        "p99UpperBoundMs": 663.9818519813169,
+        "maxMs": 640.1316910000023
+      },
+      "ready": {
+        "count": 0,
+        "p50UpperBoundMs": null,
+        "p95UpperBoundMs": null,
+        "p99UpperBoundMs": null,
+        "maxMs": 0
+      },
+      "active": {
+        "count": 136,
+        "p50UpperBoundMs": 107.63474115247546,
+        "p95UpperBoundMs": 181.01933598375618,
+        "p99UpperBoundMs": 256,
+        "maxMs": 258.71151100000134
+      }
+    },
+    "loadGeneratorRssBytes": 96145408,
+    "stopReason": null
+  },
+  "capacity": {
+    "observedAt": "2026-10-03T20:02:54.883537+00:00",
+    "cells": [
+      {
+        "cell": "actor-bj-a01",
+        "errors": [],
+        "activeActors": [
+          "22"
+        ],
+        "hostConfig": {
+          "replicas": 4,
+          "ready": 4,
+          "currentRevision": "actor-bj-a01-runtime-hosts-775494f897",
+          "updateRevision": "actor-bj-a01-runtime-hosts-775494f897"
+        },
+        "machineSet": {
+          "desired": 4,
+          "current": 4,
+          "ready": 4
+        },
+        "metricsSummary": {
+          "samples": 96,
+          "missingSignals": [],
+          "warnings": []
+        }
+      },
+      {
+        "cell": "actor-bj-b01",
+        "errors": [],
+        "activeActors": [
+          "12"
+        ],
+        "hostConfig": {
+          "replicas": 4,
+          "ready": 4,
+          "currentRevision": "actor-bj-b01-runtime-hosts-dc9c46494",
+          "updateRevision": "actor-bj-b01-runtime-hosts-dc9c46494"
+        },
+        "machineSet": {
+          "desired": 4,
+          "current": 4,
+          "ready": 4
+        },
+        "metricsSummary": {
+          "samples": 96,
+          "missingSignals": [],
+          "warnings": []
+        }
+      }
+    ]
+  },
+  "ordinaryRetryBudgetChanged": false,
+  "manualReplicaScaling": false,
+  "loadQualified": false,
+  "phaseFiveComplete": false
+}

@@ -86,6 +86,8 @@ type Dao interface {
 	// 用例：ctl.RenewPass 分支 A — pass.status=='active' 时直接同步延长 expired_time，
 	// 不切 status，不入队 task；trade callback CompleteFlow(flow_id, completed) 紧随其后。
 	UpdateExpiredTimeIfActive(passID string, newExpiredTime time.Time) (updated bool, err error)
+	// ExtendExpiredTimeForBillingMigration 只更新已过期的指定 Bundle active Pass，避免覆盖并发续期或隔离。
+	ExtendExpiredTimeForBillingMigration(passID, bundleID string, now, newExpiredTime time.Time) (updated bool, err error)
 
 	// === trade-pass-renew §3.4 异步续费父 task 终态收尾（renewing → active）===
 	// 设计稿：.tmp/trade-pass-renew-design.md §3.4 / §5 / §12 Q2=a / R-D-3
@@ -618,6 +620,18 @@ func (d *dao) UpdateExpiredTimeIfActive(passID string, newExpiredTime time.Time)
 		Update(ColumnExpiredTime, newExpiredTime)
 	if result.Error != nil {
 		return false, fmt.Errorf("UpdateExpiredTimeIfActive: %w", result.Error)
+	}
+	return result.RowsAffected == 1, nil
+}
+
+func (d *dao) ExtendExpiredTimeForBillingMigration(passID, bundleID string, now, newExpiredTime time.Time) (bool, error) {
+	result := d.DB().
+		Model(&Entity{}).
+		Where(ColumnPassID+" = ? AND "+ColumnBundleID+" = ? AND "+ColumnStatus+" = ? AND "+ColumnExpiredTime+" <= ?",
+			passID, bundleID, StatusActive, now).
+		Update(ColumnExpiredTime, newExpiredTime)
+	if result.Error != nil {
+		return false, fmt.Errorf("ExtendExpiredTimeForBillingMigration: %w", result.Error)
 	}
 	return result.RowsAffected == 1, nil
 }

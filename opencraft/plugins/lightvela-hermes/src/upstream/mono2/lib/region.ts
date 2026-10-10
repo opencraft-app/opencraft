@@ -35,6 +35,10 @@ import {
 export type Region = "cn" | "global";
 
 const envRegion = (() => {
+  if (typeof window !== "undefined") {
+    const embedded = (window as Window & { __LIGHTVELA_EMBEDDED_REGION__?: Region }).__LIGHTVELA_EMBEDDED_REGION__;
+    if (embedded === "cn" || embedded === "global") return embedded;
+  }
   if (typeof process !== "undefined") {
     const value = process.env.NEXT_PUBLIC_REGION;
     if (value === "cn" || value === "global") return value;
@@ -104,6 +108,8 @@ const INTL_SEO_URL_LANG_BY_LOCALE: Record<PublicSiteLocaleCode, CanonicalPublicU
   "zh-SG": PUBLIC_URL_LANGS.ZH_SG,
   "zh-Hant": PUBLIC_URL_LANGS.ZH_HANT,
   "id-ID": PUBLIC_URL_LANGS.ID_ID,
+  "ms-MY": PUBLIC_URL_LANGS.MS_MY,
+  "th-TH": PUBLIC_URL_LANGS.TH_TH,
   es: PUBLIC_URL_LANGS.ES,
   "ja-JP": PUBLIC_URL_LANGS.JA_JP,
   "ko-KR": PUBLIC_URL_LANGS.KO_KR,

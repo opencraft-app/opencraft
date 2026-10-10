@@ -8,6 +8,7 @@ use std::{
 
 use anyhow::{Context, Result, anyhow};
 use futures_util::FutureExt;
+use rivet_metrics::prometheus::IntGauge;
 use rivet_tracing_utils::CustomInstrumentExt;
 
 use crate::{
@@ -36,6 +37,29 @@ fn simulated_latency() -> Option<Duration> {
 pub struct Database {
 	driver: DatabaseDriverHandle,
 	default_transaction_tag: Option<Arc<str>>,
+}
+
+/// Keeps the pending-transaction gauge balanced when the transaction future is cancelled.
+///
+/// Callers may drop `Database::txn()` at any await point (for example when an HTTP request is
+/// cancelled). A decrement after the driver await therefore leaks the gauge. Owning the metric in
+/// this guard makes cancellation and ordinary completion share the same cleanup path.
+struct PendingTransactionGuard {
+	gauge: IntGauge,
+}
+
+impl PendingTransactionGuard {
+	fn new(name: &'static str) -> Self {
+		let gauge = metrics::TRANSACTION_PENDING.with_label_values(&[name]);
+		gauge.inc();
+		Self { gauge }
+	}
+}
+
+impl Drop for PendingTransactionGuard {
+	fn drop(&mut self) {
+		self.gauge.dec();
+	}
 }
 
 impl Database {
@@ -69,9 +93,7 @@ impl Database {
 		let attempts = Arc::new(AtomicUsize::new(0));
 		let attempts_for_run = attempts.clone();
 		metrics::TRANSACTION_TOTAL.with_label_values(&[name]).inc();
-		metrics::TRANSACTION_PENDING
-			.with_label_values(&[name])
-			.inc();
+		let _pending_transaction = PendingTransactionGuard::new(name);
 
 		let closure = &closure;
 		let default_transaction_tag = self.default_transaction_tag.clone();
@@ -103,9 +125,6 @@ impl Database {
 		metrics::TRANSACTION_ATTEMPTS
 			.with_label_values(&[name])
 			.observe(final_attempts as f64);
-		metrics::TRANSACTION_PENDING
-			.with_label_values(&[name])
-			.dec();
 		metrics::TRANSACTION_DURATION
 			.with_label_values(&[name])
 			.observe(duration.as_secs_f64());
@@ -134,5 +153,50 @@ impl Database {
 	/// Gracefully release process-wide driver resources before shutdown.
 	pub async fn shutdown(&self) {
 		self.driver.shutdown().await;
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[tokio::test]
+	async fn pending_transaction_gauge_is_released_after_cancellation() {
+		const NAME: &str = "pending_transaction_gauge_is_released_after_cancellation";
+		let gauge = metrics::TRANSACTION_PENDING.with_label_values(&[NAME]);
+		let initial = gauge.get();
+		let directory = tempfile::tempdir().unwrap();
+		let driver = crate::driver::RocksDbDatabaseDriver::new(directory.path().to_path_buf())
+			.await
+			.unwrap();
+		let db = Database::new(Arc::new(driver));
+		let entered = Arc::new(tokio::sync::Notify::new());
+		let task_db = db.clone();
+		let task_entered = entered.clone();
+		let task = tokio::spawn(async move {
+			task_db
+				.txn(NAME, move |_| {
+					task_entered.notify_one();
+					std::future::pending::<Result<()>>()
+				})
+				.await
+		});
+		tokio::time::timeout(Duration::from_secs(5), entered.notified())
+			.await
+			.unwrap();
+		assert_eq!(gauge.get(), initial + 1);
+
+		task.abort();
+		assert!(task.await.unwrap_err().is_cancelled());
+		assert_eq!(gauge.get(), initial);
+
+		db.txn(NAME, |_| async { Ok(()) }).await.unwrap();
+		assert_eq!(gauge.get(), initial);
+		assert!(
+			db.txn(NAME, |_| async { Err::<(), _>(anyhow!("test failure")) })
+				.await
+				.is_err()
+		);
+		assert_eq!(gauge.get(), initial);
 	}
 }

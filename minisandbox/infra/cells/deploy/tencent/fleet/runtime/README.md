@@ -13,12 +13,147 @@ workerd compute and deliberately does not advertise PVM support. PVM sbxlet
 requires a separately qualified node that proves a usable `/dev/kvm`; adding a
 label to a standard CVM is not qualification.
 
+## 探索阶段的快速 Host 缩容
+
+后续新的开发/修复验收先以 `exploration` 做第一道功能与收敛门禁，通过后再以
+`production` 配置做发布/容量资格。两类结果分开记录，探索通过不等于生产准入；
+当前已运行任务不切换模式、不缩短其观察窗口。云上接线未完成验证前，不能
+用手工 patch 提前启用探索；此顺序也不要求重编未改变的二进制。
+
+快速缩容与 `e2e-fast` 是不同配置维度：前者仅改变 Host drain 的稳定窗口和
+协调间隔，不改变 Actor 配额、存储参数、三 AZ、PDB、UID fencing 或逐台排空。
+生产为 `5m/5s`，探索为 `30s/2s`；排空超时仍是 `10m`，到期取消而不是强删。
+缩短窗口可能增加扩缩容抖动，也不能解决缺少目标 AZ 容量或 ordinal 拓扑阻塞。
+
+`host-drain-profile.py` 提供离线 JSON 转换/检查；安装入口现已接入源码，但尚未发布
+或做云上模式切换验收。可在本地检查已渲染资源：
+
+```sh
+python3 host-drain-profile.py render exploration < /data/review/host-drain.json
+python3 host-drain-profile.py check production < /data/review/host-drain.json
+```
+
+`check` 只接受单个已渲染 Host drain Deployment。`render` 还接受最多 32 个资源的
+manifest List，要求恰好一个目标 Deployment，其他资源仅允许现有 SA/RBAC/HPA 类型，
+保持结构不变；拒绝 Secret、kubeconfig、嵌套 List 或重复身份。
+探索输出在 Pod template 上标记 `fleet.actor.dev/host-drain-profile=exploration`。
+检查同时核对两项 timer 和固定安全字段，不只信任标记；非法或漂移输入不会被转换
+成看似有效的生产配置。工具不访问 Kubernetes、不发布或删除资源；输出不是准入收据。
+安装时 `RUNTIME_HOST_DRAIN_PROFILE` 默认为 `production`。`exploration` 要求现有整段
+operation lock，并且 `install.sh` 要求运行时配额维持 `RIVET_RUNTIME_PROFILE=production`；
+不会暗中切换为 `e2e-fast`。`install-host-autoscaling.sh` 使用 client dry-run 将同一份
+已渲染 YAML 转为 JSON List、转换 profile，再沿用现有 SSA server dry-run/apply、rollout
+与 HPA floor 检查；返回前重新读取实际 Deployment 校验 profile。生产默认不经过转换，
+沿用原 YAML，不改变 SA/RBAC/HPA 权限或唯一缩容 writer。
+
+`release-runtime.sh` 只接受 production profile。`qualify-runtime.sh` 的 production 与
+production-cell 路径在取得 operation lock 后读取实际 Deployment，拒绝探索、配置
+漂移、畸形 JSON 或 API 失败；不能用调用者环境覆盖实际配置。strict10k 入口也在任何
+负载启动前核对两 Cell 的实际 production profile。`e2e-fast` 仍是独立开发数据路径，
+不是生产资格。模式切换必须走受锁部署流程，不直接 apply 离线工具输出。
+
+本地 `test_host_drain_scripts.py` 用严格 double 运行真实 shell 入口，证明默认 manifest
+不变、探索→生产恢复、模式/锁早拒绝、live drift fail-closed、持锁后才检查并在取得
+scale-in hold/启动负载前拒绝。该回归不证明真实 Kubernetes API、Argo 持续收敛或云上
+缩容资格；原 strict10k 的冻结源码和观察窗口不变，当前未发布新的探索配置。
+
+开发容量第一道入口见 [exploration-capacity](../load/exploration-capacity/README.md)：
+固定 320 活跃/352 总对象、4 Version，复用同一容量周期，输出独立开发收据。真实云
+模式切换与 Argo 收敛仍需验证，不能把该本地入口视为当前已能启动的云任务。
+
+### 仅切换现有 controller 的 profile
+
+切 timer 不应借机更新 controller 镜像、HPA 或 RBAC。原安装器提供独立的
+`--transition-profile` 路径：要求整段 operation lock、当前 autonomy control，以及从
+实际 GET 得到的 `RUNTIME_HOST_DRAIN_EXPECTED_UID`。该路径不需要 reporter image，
+不调用完整 runtime installer，不编译二进制，不 apply 完整 manifest。
+
+```sh
+# 仅在既有整段 operation lock 内，deployment_uid 为本次实际 GET 的 UID。
+RUNTIME_HOST_DRAIN_PROFILE=exploration \
+RUNTIME_HOST_DRAIN_EXPECTED_UID="$deployment_uid" \
+bash install-host-autoscaling.sh --transition-profile
+```
+
+它先校验单副本 Recreate、现有 literal guards、digest-pinned image 和配置 owner，再用同时测试 UID 与
+resourceVersion 的 JSON Patch 只改两个 timer 和自己的标记；先 server dry-run，后提交。
+CAS 冲突不自动重读后重试。rollout 后 GET 必须仍是原 UID、目标 profile，且除 profile
+之外的整个 controller spec 不变；镜像、权限、安全参数或同名替换不能混成成功证据。
+恢复时用相同入口、原 UID 和 `RUNTIME_HOST_DRAIN_PROFILE=production`，不拿旧完整
+Deployment 快照覆盖当前对象。工具不操作 Host replicas、Node、Machine 或 Actor。
+
+响应丢失/rollout 失败意味着状态未知，不保证配置未变，也不隐式回滚；调用者应在同一
+锁内 GET 原 UID 后判断是否需要恢复，失败不得启动新容量实验。即使已确认返回成功，
+后续实验仍须读取 live profile，并在实验结束后恢复生产。当前原 strict10k 运行期间
+不得调用此入口；本地 API doubles 不能证明真实 TKE 的切换/恢复资格。
+
+当前源码中，Host drain 的 declarative owner 是 runtime 安装器；stateless executor 的
+Argo Application 和静态 release ledger 都不拥有该 Deployment。不要因此把它塞进
+stateless Application、暂停 Argo 或扩展忽略差异。仅切换路径检测到 Argo tracking、
+instance label 或 managedFields 后拒绝；未来若改变 owner，应先设计正式 desired-state
+切换协议，再验证 live Argo revision/Synced/Healthy，不能同时保留两个配置 writer。
+
+## 安装与构建前提
+
 Before creating auth Secrets or changing admission/runtime workloads, the
 installer reads the Cell's actual control Nodes and validates Ready status,
 scheduling fences, role isolation, unique identities and the required zone
 count. MachineSet Ready replicas and `ZoneEquality` alone are insufficient.
 `qualification-single-zone` is explicit; production never relaxes its
 three-zone constraint to work around a Pending NATS or Engine Pod.
+
+Runtime builds require actual bulk-storage isolation. `verify-builder-storage.py`
+checks `/data`, the reviewed-source/workspace root and Buildah's reported
+GraphRoot before `build-runtime-via-tat.sh` grants push authority, then rechecks
+under the stable build lock before mounting the workspace. `build-image.sh`
+also checks the actual stage, Cargo target and temporary directories before
+image pulls and compilation. A directory named `/data` on the system filesystem,
+a tmpfs/overlay/network backing, missing mount identity or inadequate headroom
+fails closed. The checker is read-only and never formats, mounts or deletes data.
+Its writable-path contract must not be applied to the intentionally read-only
+source bind mount after workspace setup. Check that bind separately for the
+exact reviewed source, dedicated-disk device and `ST_RDONLY`; keep every stage,
+Cargo, temporary and Buildah output in the writable-path gate. A read-only source
+rejection is an adapter scoping error, not permission to make source writable
+or relax the storage checker.
+The observed Buildah store comes from its documented
+[`info` JSON](https://github.com/podman-container-tools/buildah/blob/main/docs/buildah-info.1.md),
+not an assumed default pathname.
+
+The conservative initial policy reserves at least 20 GiB or 20% of nodefs,
+whichever is larger, plus at least 64 GiB of build increment and 10 GiB or 10%
+of each independent bulk filesystem. Paths on the same filesystem pay the
+increment once, not once per directory. This is preflight admission, not a disk
+quota or a measured peak bound for arbitrary builds. Concurrent writers and
+late disk consumption can still invalidate a snapshot. Fresh workerd/V8 builds
+need their own measured peak budget; this gate does not qualify them.
+The system filesystem also needs 16,384 available inodes; each bulk filesystem
+needs 81,920. Adequate free bytes alone cannot qualify an inode-exhausted build.
+
+Canonical paths and disk layout must be established by Terraform/bootstrap
+before building. Existing source bundles, stage receipts and caches must not be
+silently moved, reformatted or deleted by the checker. The existing c631 product
+can be released without rebuilding it, but the shared-root builder diagnosed on
+2026-10-03 is deliberately not eligible for a new build until its storage is fixed.
+
+Legacy Beijing control-node source caches can be audited separately with
+`retire-reviewed-source-cache.py`; it is an operator-bound recovery tool, not
+a cleanup daemon or permission for the storage checker to delete files. The
+original whole-operation lock and stable build lock are required. Current runtime,
+load tools, API, verification tools and rollback sources are protected, as are
+source paths referenced by processes or systemd units. A dry-run verifies every
+selected v2 bundle, receipt, embedded source identity, full extracted file manifest,
+symlink inventory and absence of added state. The only allowed generated extras
+are bounded CPython 3.11 bytecode files whose header, source identity and recompiled
+code match an unchanged manifest-listed Python source; a `.pyc` suffix alone is
+not proof that a file is disposable. Execution requires that exact plan's
+SHA-256 within ten minutes and revalidates all members before the first deletion.
+Only exact extracted `q01-src-<revision>-<manifest>` directories are retired;
+compressed recovery bundles and receipts remain. Native output journals each
+attempted/deleted target, including partial filesystem failures. This tool neither
+deletes registry images, business volumes, FDB/COS objects nor changes admission
+thresholds or workload replica counts. Restore through the original full-source
+materializer, not by copying a remembered subset of files.
 
 The runtime image is built from the exact Beijing-qualified artifacts recorded
 as OCI labels in `Dockerfile`. It must be supplied by registry digest. The
@@ -68,6 +203,48 @@ V8 translation units. `WORKERD_BUILD_CACHE_DIR` may select another absolute
 data-volume path. The cache is never trusted as release evidence: every run
 still verifies the source bundle, locked fork commit/tree, toolchains, static
 ELF properties, staged checksums, and a new source-bound stage receipt.
+
+An existing physical workspace can be selected explicitly with
+`WORKERD_VERIFIED_WARM_CACHE_DIR=/data/.../third-party`. This is a build-cache
+adoption path, not an old-binary reuse path. It requires a real, clean checkout
+at `workerd-fdb`, the exact locked fork commit/tree, and its existing
+`rivet-history` link. The full stage and local production Rust closure must
+match the reviewed source before and after the official fork compiler recipe.
+The builder does not change that source link or the old workspace's code. It
+retains the physical compiler path for Bazel/Cargo cache hits and records the
+input digest in the new immutable stage receipt. A dirty checkout, differing
+client input, missing graph or late source change fails closed. Blank builders
+still use the default content-addressed cache and require no adoption flag.
+
+An incremental release may use `reuse-stage-from-runtime.sh` only after the
+verified base and release source agree on every stage input. This includes the
+embedded Rust bridge's local production dependency closure rooted at
+`rivet-depot-client` and `rivet-envoy-protocol`, not just the workerd fork bundle.
+The gate resolves both locked graphs offline before any container access and
+includes normal/build dependencies, workspace manifests, lockfile, Cargo
+configuration, source bytes and executable modes. Dev-only Engine/Depot code
+does not invalidate that stage. File links also bind their in-tree target's
+content and mode; directory links, escaping links and missing graph inputs
+fail closed. A changed compiled client requires a fresh stage, not a new label
+on the old binary. The build must configure its verified offline Cargo sources
+before invoking this gate.
+The bridge's direct dependency roots are bound to the audited fork tree. A new
+fork must use a fresh stage until that root contract is reviewed and updated;
+matching two copies of an unknown fork is not permission to omit its new roots.
+
+The [standalone Beijing stage-reuse evidence](../terraform/create-first/bootstrap/evidence/runtime-builder-stage-reuse-beijing-20261004.json)
+records the actual base-container extraction after full baseline verification,
+offline production-closure equality and static ELF/hash checks. The extracted
+workerd also passed the production WorkerLoader ABI test. This is not merely
+a source-only eligibility result, but it still does not prove the subsequent
+Engine/Host build, registry publication, rollout or workload qualification.
+
+The full source-materialization gate checks the shell's helper invocation and
+the helper's production-input proof separately. Its structural regression runs
+without Cargo so a clean builder can materialize reviewed source before toolchain
+installation. The actual offline Cargo/changed-input tests remain mandatory for
+stage-reuse changes; neither check substitutes for the other or for a qualified
+compiled-origin receipt.
 
 Those tools themselves are installed from the official checksum-locked sources
 without consulting `/data/build-cache`:
@@ -489,6 +666,32 @@ This prevents a provider-side Node deletion that trails a completed Host contrac
 the immutable Pod set during release or qualification. Dynamic release binding accepts the full
 production HPA envelope of 3..301 Ready Hosts and still requires the exact desired Pod UID set to
 remain unchanged across each qualification.
+
+The runtime capacity Deployment has one `Recreate` writer per MachineSet. Orphaned Node drain
+recovery requires an API-server JSON Patch test of the MachineSet UID and resourceVersion before
+the existing Node UID/resourceVersion/owner CAS removes its fence. A GET without an intent is not
+proof that a committed intent is absent. If the exact original Machine and Node still exist but an
+intent's entire fence is missing, only zero provider attempts and an empty RequestID permit its
+CAS cancellation. Capacity, topology, emptiness, and stabilization must then be evaluated again.
+An attempted operation, replacement UID, partial fence, or another owner's fence remains fail closed.
+Do not scale this writer above one replica without a cross-resource ownership protocol.
+
+For a known zero-attempt intent whose exact Node has completely lost its fence, set
+`RUNTIME_CAPACITY_CONTROLLER_RECOVERY=1` on the normal `release-runtime.sh` transaction.
+The default is `0`. This does not skip capacity settle: after acquiring the release hold, the
+workflow captures original templates, validates the candidate runtime config and both controller
+entrypoints, then validates the exact MachineSet/Machine/Node identities. It creates an immutable
+`${cell}-cap-recovery-${hold-id}` ConfigMap journal before the UID/resourceVersion/template-CAS
+controller-image patch. The singleton `Recreate` controller must clear the unattempted intent under
+the hold before any Engine/Host/NATS rollout proceeds. It never directly edits an intent or Node.
+Accepted/attempted operations, partial fences and replaced identities are not recoverable this way.
+
+Before full rollout starts, a failed recovery restores only its exact controller template under
+the same live hold. A foreign template, replaced Deployment/StatefulSet UID, or failed rollback
+retains the hold and immutable journal. A hard-killed release likewise leaves durable evidence;
+this journal is not automatic release resumption. The full transaction still owns the final static
+ledger and closes placement during replacement. Retain the journal for incident review; do not
+delete it or steal a hold to make a failed release look successful.
 
 `RIVET_CELL_REPORTER_MODE=disabled` is reserved for isolated runtime qualification
 clusters that deliberately do not install the production Fleet CRDs (for example, a

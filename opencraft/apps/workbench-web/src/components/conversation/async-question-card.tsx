@@ -3,8 +3,9 @@ import * as React from "react";
 
 import { AsyncQuestionContext } from "../conversation-renderers/render-contexts";
 
-export function AsyncQuestionCard({ question }: { readonly question: AsyncQuestion }) {
+export function AsyncQuestionCard({ question, title }: { readonly question: AsyncQuestion; readonly title: React.ReactNode }) {
   const context = React.useContext(AsyncQuestionContext);
+  const titleId = React.useId();
   const state = context.states.get(question.id) ?? "pending";
   const queued = context.queuedIds.has(question.id);
   const submitting = context.submittingIds.has(question.id);
@@ -21,8 +22,8 @@ export function AsyncQuestionCard({ question }: { readonly question: AsyncQuesti
           : queued ? "Answer in follow-up queue" : context.answer === null ? "Connect to answer" : null;
   return (
     <section className="thread-async-question" data-state={status === null ? "pending" : state}>
-      <fieldset disabled={!canAnswer}>
-        <legend>{question.title}</legend>
+      <fieldset aria-labelledby={titleId} disabled={!canAnswer}>
+        <div className="thread-async-question__title" id={titleId}>{title}</div>
         {state === "pending" && !queued ? (
           <>
             {question.options.length > 0 ? (
@@ -51,7 +52,7 @@ export function AsyncQuestionCard({ question }: { readonly question: AsyncQuesti
             ) : null}
             {draft.selectedIndex === null ? (
               <textarea
-                aria-label={`Answer: ${question.title}`}
+                aria-label="Your answer"
                 onChange={(event) => context.updateDraft(question.id, { selectedIndex: null, otherText: event.target.value })}
                 placeholder="Type your answer"
                 rows={2}

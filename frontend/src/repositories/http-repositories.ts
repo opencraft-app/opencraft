@@ -48,6 +48,7 @@ import {
   planBotCreation,
   type BotIdentity,
 } from "@lightvela/agent-core";
+import { accountOperations, parsePhoneCodeResponse, parseReferralOverview, parseReferralStats } from "@opencraft/mobile-account-sdk";
 import type {
   AuthRepository,
   BotRepository,
@@ -330,7 +331,11 @@ const authStorage = () => {
   return storage;
 };
 
-export const readStoredAuthToken = (): string | null => {
+export const readStoredAuthToken = (_target?: unknown): string | null => {
+  if (typeof window !== "undefined") {
+    const embedded = (window as Window & { __LIGHTVELA_EMBEDDED_TOKEN__?: string }).__LIGHTVELA_EMBEDDED_TOKEN__;
+    if (typeof embedded === "string" && embedded.trim()) return embedded.trim();
+  }
   const storage = authStorage();
   if (!storage) {
     return null;
@@ -340,14 +345,28 @@ export const readStoredAuthToken = (): string | null => {
   return value ? value : null;
 };
 
-export const writeStoredAuthToken = (token?: string | null) => {
+export const writeStoredAuthToken = (token?: string | null, _target?: unknown) => {
+  const previous = readStoredAuthToken();
+  const normalized = token?.trim();
+  if (typeof window !== "undefined") {
+    const embeddedWindow = window as Window & {
+      __LIGHTVELA_EMBEDDED_TOKEN__?: string;
+      __LIGHTVELA_BOT_POST__?: (payload: { type: "signed-out" }) => void;
+      ReactNativeWebView?: { postMessage(message: string): void };
+    };
+    if (typeof embeddedWindow.__LIGHTVELA_EMBEDDED_TOKEN__ === "string") {
+      embeddedWindow.__LIGHTVELA_EMBEDDED_TOKEN__ = normalized || undefined;
+      if (!normalized) {
+        if (embeddedWindow.__LIGHTVELA_BOT_POST__) embeddedWindow.__LIGHTVELA_BOT_POST__({ type: "signed-out" });
+        else embeddedWindow.ReactNativeWebView?.postMessage(JSON.stringify({ type: "signed-out" }));
+      }
+    }
+  }
   const storage = authStorage();
   if (!storage) {
     return;
   }
 
-  const normalized = token?.trim();
-  const previous = readStoredAuthToken();
   if (!normalized) {
     storage.removeItem(AUTH_TOKEN_STORAGE_KEY);
     if (previous) globalThis.dispatchEvent?.(new Event(AUTH_SESSION_CHANGED_EVENT));
@@ -577,7 +596,7 @@ const request = async <T>(
 const requestEnvelope = async <T>(
   baseUrl: string,
   path: string,
-  init?: Omit<RequestInit, "body"> & { body?: unknown },
+  init?: Omit<RequestInit, "body"> & { body?: unknown; suppressUnauthorizedBroadcast?: boolean },
 ): Promise<T> => {
   const payload = await request<APIEnvelope<T>>(baseUrl, path, init);
   return payload.data;
@@ -684,10 +703,12 @@ const normalizeNullableWorkerActionStatus = (payload: WorkerActionStatusPayload)
 const requestMultipart = async <T>(
   baseUrl: string,
   path: string,
+  field: string,
+  method: "PUT" | "POST",
   file: File,
 ): Promise<T> => {
   const formData = new FormData();
-  formData.append("file", file);
+  formData.append(field, file);
 
   const headers = new Headers();
   const authToken = readStoredAuthToken();
@@ -698,7 +719,7 @@ const requestMultipart = async <T>(
   let response: Response;
   try {
     response = await fetch(buildUrl(baseUrl, path), {
-      method: "PUT",
+      method,
       credentials: "include",
       headers,
       body: formData,
@@ -927,7 +948,7 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
     ]);
   };
 
-  const listBots = async (): Promise<Bot[]> => {
+  const listBots = async (onInstances?: (instances: readonly { instanceId: string; running: boolean }[]) => void): Promise<Bot[]> => {
     const response = await requestEnvelope<CtlListInstancesPayload>(baseUrl, "/v1/instances", {
       method: "GET",
     });
@@ -935,6 +956,10 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
     const instances = Array.isArray(response.items) ? response.items : [];
     instanceCache.clear();
     instances.forEach((instance) => instanceCache.set(instance.instance_id, instance));
+    onInstances?.(instances.map(instance => ({
+      instanceId: instance.instance_id,
+      running: mapInstanceStatusToBotStatus(instance.status) === "active",
+    })));
     // Instances whose Bot list came from the single-instance projection instead of
     // /bots, mapped to why the real list was unavailable. Their root Bot must not be
     // treated as a legacy single-Bot instance: sibling Bots may exist on the server
@@ -1009,8 +1034,8 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
   });
 
   return {
-    async getDashboardSnapshot() {
-      const bots = await listBots();
+    async getDashboardSnapshot(_mode, options) {
+      const bots = await listBots(options?.onInstances);
       const primaryBot = bots[0] ?? null;
 
       return {
@@ -1248,10 +1273,13 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
       } satisfies SettingsSnapshot;
     },
 
-    async getTerminalSession(botId) {
+    async getTerminalSession(botId, options) {
       const { instanceId } = await resolveBotScope(botId);
+      options?.signal?.throwIfAborted();
       return requestEnvelope<BotTerminalSession>(baseUrl, `/v1/instances/${encodeURIComponent(instanceId)}/tat/session`, {
         method: "POST",
+        signal: options?.signal,
+        suppressUnauthorizedBroadcast: options?.suppressUnauthorizedBroadcast,
       });
     },
 
@@ -1794,14 +1822,7 @@ const createHttpAuthRepository = (baseUrl: string): AuthRepository => ({
       starts_at: string;
       ends_at: string;
     }>(baseUrl, "/v1/referrals/me/code", { method: "POST" });
-    return {
-      code: payload.code,
-      url: payload.url,
-      campaignId: payload.campaign_id,
-      campaignName: payload.campaign_name,
-      startsAt: payload.starts_at,
-      endsAt: payload.ends_at,
-    };
+    return parseReferralOverview(payload);
   },
   async getReferralStats() {
     const payload = await requestEnvelope<{
@@ -1810,12 +1831,7 @@ const createHttpAuthRepository = (baseUrl: string): AuthRepository => ({
       pending_rewards: number;
       granted_rewards: number;
     }>(baseUrl, "/v1/referrals/me/stats", { method: "GET" });
-    return {
-      successfulReferrals: payload.successful_referrals,
-      grantedCredits: payload.granted_credits,
-      pendingRewards: payload.pending_rewards,
-      grantedRewards: payload.granted_rewards,
-    };
+    return parseReferralStats(payload);
   },
   async activateInviteCode(code: string) {
     const response = await request<{ user: User }>(baseUrl, "/auth/invite/activate", {
@@ -1864,14 +1880,16 @@ const createHttpAuthRepository = (baseUrl: string): AuthRepository => ({
     return response.user;
   },
   async updateProfile(input) {
-    const response = await request<{ user: User }>(baseUrl, "/auth/profile", {
-      method: "PUT",
-      body: input,
+    const operation = accountOperations.updateNickname(input.name);
+    const response = await request<{ user: User }>(baseUrl, operation.path, {
+      method: operation.method,
+      body: operation.body,
     });
     return response.user;
   },
   async uploadAvatar(file) {
-    const response = await requestMultipart<{ user: User }>(baseUrl, "/auth/profile/avatar", file);
+    const operation = accountOperations.uploadAvatar();
+    const response = await requestMultipart<{ user: User }>(baseUrl, operation.path, operation.field, operation.method, file);
     return response.user;
   },
   async deleteAccount() {
@@ -1940,15 +1958,17 @@ const createHttpAuthRepository = (baseUrl: string): AuthRepository => ({
     });
   },
   async sendPhoneChangeCode(input) {
-    return request(baseUrl, "/auth/profile/phone/send", {
-      method: "POST",
-      body: input,
-    });
+    const operation = accountOperations.sendPhoneCode(input.phone);
+    return parsePhoneCodeResponse(await request(baseUrl, operation.path, {
+      method: operation.method,
+      body: operation.body,
+    }));
   },
   async verifyPhoneChange(input) {
-    const response = await request<{ user: User }>(baseUrl, "/auth/profile/phone/verify", {
-      method: "POST",
-      body: input,
+    const operation = accountOperations.verifyPhone(input.phone, input.code);
+    const response = await request<{ user: User }>(baseUrl, operation.path, {
+      method: operation.method,
+      body: operation.body,
     });
     return response.user;
   },
@@ -2141,9 +2161,10 @@ const createHttpAuthRepository = (baseUrl: string): AuthRepository => ({
     return mapSession(response);
   },
   async signOut() {
+    const operation = accountOperations.signOut();
     try {
-      await request<void>(baseUrl, "/auth/session", {
-        method: "DELETE",
+      await request<void>(baseUrl, operation.path, {
+        method: operation.method,
       });
     } catch (error) {
       if (!(error instanceof RepositoryError) || (error.status !== 401 && error.status !== 403)) {

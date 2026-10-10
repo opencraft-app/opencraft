@@ -13,6 +13,9 @@ for executable in \
 	"$script_dir/load/stateless-durable-routing/run.py" \
 	"$script_dir/load/command-ack-disconnect/qualify.py" \
 	"$script_dir/load/command-ack-disconnect/run-on-builder.sh" \
+	"$script_dir/load/workers-api-business-drain/qualify.py" \
+	"$script_dir/load/workers-api-business-drain/run-on-builder.sh" \
+	"$script_dir/load/workers-api-business-drain/test_qualify.py" \
 	"$script_dir/load/deployment-cursor/qualify.py" \
 	"$script_dir/load/fdb-network-outage/qualify.py" \
 	"$script_dir/load/fdb-network-outage/test_qualify.py" \
@@ -120,6 +123,11 @@ for executable in \
 	"$script_dir/terraform/create-first/bootstrap/install-storage-credentials.sh" \
 	"$script_dir/terraform/create-first/bootstrap/install-cell-platform.sh" \
 	"$script_dir/terraform/create-first/bootstrap/validate-inputs.py" \
+	"$script_dir/terraform/create-first/bootstrap/validate-runtime-builder-storage.py" \
+	"$script_dir/terraform/create-first/bootstrap/collect-runtime-builder-storage.py" \
+	"$script_dir/terraform/create-first/bootstrap/initialize-runtime-builder-storage.py" \
+	"$script_dir/terraform/create-first/bootstrap/run-runtime-builder-storage.py" \
+	"$script_dir/terraform/create-first/bootstrap/collect-runtime-builder-guest.py" \
 	"$script_dir/terraform/create-first/bootstrap/validate-storage-inputs.py" \
 	"$script_dir/terraform/create-first/bootstrap/validate-cell-platform-inputs.py" \
 	"$script_dir/terraform/create-first/bootstrap/render-regional-profile.py" \
@@ -179,23 +187,28 @@ PYTHONDONTWRITEBYTECODE=1 python3 "$local_deploy_dir/mesh/workers-api-autoscalin
 PYTHONDONTWRITEBYTECODE=1 python3 "$local_deploy_dir/mesh/workers-api-ha-e2e/test_run.py"
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/load/fdb-network-outage/test_qualify.py"
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/load/command-ack-disconnect/test_qualify.py"
+PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/load/workers-api-business-drain/test_qualify.py"
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/load/agent-upload-soak/test_observe.py"
-PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/load/router-performance/test_capture.py"
-PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/load/router-performance/test_run.py"
-PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/load/router-performance/test_run_on_builder.py"
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$script_dir/load/router-performance" -p 'test_*.py'
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/load/shared-agent-scale/test_cleanup.py"
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/load/ten-thousand-active/test_verify.py"
-node --test "$script_dir/load/shared-agent-scale/runner.test.mjs"
+PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/load/ten-thousand-active/test_release_admission.py"
+PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/load/ten-thousand-active/test_analyze_pressure.py"
+PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/runtime/test_capacity_controller_recovery.py"
+node --test "$script_dir/load/shared-agent-scale/runner.test.mjs" "$script_dir/load/shared-agent-scale/heartbeat-demand.test.mjs"
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/workers-api/test_private_endpoint_contract.py"
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/workers-api/test_private_endpoint_qualification_contract.py"
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/workers-api/test_private_endpoint_ha_contract.py"
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/workers-api/test_object_router_endpoint_contract.py"
+PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/workers-api/test_verify_runner.py"
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$script_dir/code-plane" -p 'test_*.py'
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$script_dir/code-plane/gitops" -p 'test_*.py'
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/observability/federation/test_federation.py"
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/observability/federation/test_hub_install_contract.py"
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/observability/test_verify_scrape_convergence.py"
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/runtime/test_prepare_stage.py"
+PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/runtime/test_stage_reuse_inputs.py" StageReuseContractTest
+PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/runtime/test_warm_stage_cache.py" WarmStageContractTest
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/runtime/test_install_toolchains.py"
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/runtime/test_stateless_executor_contract.py"
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$script_dir/runtime/gitops" -p 'test_*.py'
@@ -206,6 +219,11 @@ PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/fdb-operator/test_bootstrap_cell_
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/fdb-operator/test_render_cell_continuous_backup.py"
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/fdb-operator/test_render_install.py"
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/terraform/create-first/bootstrap/test_validate_inputs.py"
+PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/terraform/create-first/bootstrap/test_validate_runtime_builder_storage.py"
+PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/terraform/create-first/bootstrap/test_collect_runtime_builder_storage.py"
+PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/terraform/create-first/bootstrap/test_initialize_runtime_builder_storage.py"
+PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/terraform/create-first/bootstrap/test_run_runtime_builder_storage.py"
+PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/terraform/create-first/test-terraform-storage-contract.py"
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/terraform/create-first/bootstrap/test_install_pull_credential.py"
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/terraform/create-first/bootstrap/test_install_pull_credential_e2e.py"
 PYTHONDONTWRITEBYTECODE=1 python3 "$script_dir/terraform/create-first/bootstrap/test_render_regional_profile.py"
@@ -231,6 +249,7 @@ bash -n "$script_dir/bootstrap-fdb-node.sh" "$script_dir/test-bootstrap-fdb-node
 	"$script_dir/runtime/install-private-stateless-endpoint.sh" \
 	"$script_dir/load/stateless-autoscaling/run-on-builder.sh" \
 	"$script_dir/load/command-ack-disconnect/run-on-builder.sh" \
+	"$script_dir/load/workers-api-business-drain/run-on-builder.sh" \
 	"$script_dir/load/router-performance/run-on-builder.sh" \
 	"$script_dir/load/workers-api-autoscaling/run-on-builder.sh" \
 	"$script_dir/runtime/gitops/install-application.sh" \
@@ -422,7 +441,15 @@ python3 "$script_dir/qualification/actor-bj-q01/test_release_receipt_persistence
 python3 "$script_dir/runtime/test_bottomless_receipt_identity.py"
 python3 "$script_dir/runtime/test_runtime_base_contract.py"
 python3 "$script_dir/qualification/actor-bj-q01/test_runtime_build_log.py"
+python3 "$script_dir/qualification/actor-bj-q01/test_runtime_python.py"
+python3 "$script_dir/runtime/test_builder_storage.py"
+python3 "$script_dir/qualification/actor-bj-q01/test_prepared_runtime_stage.py" PreparedStageContractTest
 python3 "$script_dir/runtime/test_monitor_bottomless.py"
+command -v kubectl >/dev/null || {
+	echo "kubectl is required for the qualification Pod UID protocol gate" >&2
+	exit 1
+}
+python3 -m unittest discover -s "$script_dir/load/stateless-durable-routing" -p 'test_*.py' -v
 "$script_dir/qualification/actor-bj-q01/test-run-user-transparent-upgrade-via-tat.sh"
 python3 "$script_dir/runtime/test_capture_release_binding.py"
 python3 "$script_dir/runtime/test_render_runtime_config.py"
@@ -453,6 +480,7 @@ python3 "$script_dir/qualification/actor-bj-q01/test_verify_runtime_topology_rep
 python3 "$script_dir/qualification/actor-bj-q01/test_verify_existing_runtime_capacity.py"
 python3 "$script_dir/qualification/actor-bj-q01/physical-restore/test_physical_restore.py"
 python3 "$script_dir/operations/test_autonomy_audit.py"
+python3 "$script_dir/operations/test_audit_json.py"
 arrival_schema=actor-cell-agent-arrival-rate/v1
 grep -Fq '"schema": "'"$arrival_schema"'"' \
 	"$script_dir/qualification/actor-bj-q01/agent-arrival-rate.py"
@@ -714,6 +742,7 @@ runtime_tat_builder = (
     root / "qualification" / "actor-bj-q01" / "build-runtime-via-tat.sh"
 ).read_text()
 runtime_stage_reuser = (root / "runtime" / "reuse-stage-from-runtime.sh").read_text()
+runtime_stage_reuse_inputs = (root / "runtime" / "verify-stage-reuse-inputs.py").read_text()
 runtime_cargo_cache = (root / "runtime" / "prepare-cargo-cache.sh").read_text()
 runtime_baseline_materializer = (
     root / "runtime" / "materialize-runtime-baseline-source.sh"
@@ -1544,6 +1573,8 @@ if runtime_release.count('--field-manager="$runtime_admission_rollback_field_man
     raise SystemExit("runtime admission update rollback must use its isolated field manager")
 if runtime_release.count('--field-manager="$runtime_admission_field_manager"') != 1:
     raise SystemExit("runtime admission ownership restore must use the canonical apply field manager")
+if runtime_release.count('--field-manager="$runtime_capacity_recovery_field_manager"') != 2:
+    raise SystemExit("capacity recovery must isolate its forward and rollback CAS updates")
 if "--field-manager=rivet-runtime-release-fields" in runtime_release:
     raise SystemExit("rollback must not update through the scoped release field manager")
 if runtime_release.count("--field-manager=rivet-runtime-release-ledger") != 2:
@@ -2215,7 +2246,9 @@ for remote_build_guard in (
 for stage_reuse_guard in (
     '@sha256:[0-9a-f]{64}',
     'sha256sum --check .actor-source/RELEASE_SHA256SUMS',
-    'base Runtime stage inputs differ from the release source',
+    'python3 "$script_dir/verify-stage-reuse-inputs.py"',
+    '"$base_source_dir" "$source_dir" "${stage_inputs[@]}"',
+    '[[ $stage_inputs_digest =~ ^[0-9a-f]{64}$ ]]',
     'fleet.actor.dev/source-revision',
     'fleet.actor.dev/source-manifest-sha256',
     'fleet.actor.dev/workerd-sha256',
@@ -2224,6 +2257,19 @@ for stage_reuse_guard in (
 ):
     if stage_reuse_guard not in runtime_stage_reuser:
         raise SystemExit(f"Runtime stage reuse lost immutable equivalence gate: {stage_reuse_guard}")
+for stage_closure_guard in (
+    'base Runtime stage inputs differ from the release source',
+    '"cargo", "metadata", "--locked", "--offline"',
+    'FFI_ROOTS = {"rivet-depot-client", "rivet-envoy-protocol"}',
+    'workerd bridge direct dependency contract is not audited for this fork',
+    'workerd Rust dependency escaped reviewed source',
+    'dependency.get("kind") == "dev"',
+    'target_bytes = handle.read()',
+    'target_mode = os.stat(target).st_mode & 0o111',
+    'left_inventory != right_inventory',
+):
+    if stage_closure_guard not in runtime_stage_reuse_inputs:
+        raise SystemExit(f"Runtime stage reuse lost production input proof: {stage_closure_guard}")
 for stage_reuse_entry_guard in (
     'base_sources=()',
     'if (( ${#base_sources[@]} != 1 )); then',

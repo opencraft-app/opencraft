@@ -38,6 +38,14 @@ the same Actor IDs and immutable Cell placements retain monotonically increasing
 state throughout the matrix. It does not scale a workload, mutate a route, or
 delete the retained qualification Worker.
 
+Both replacement gates use Kubernetes UID-preconditioned DELETE and verify the
+acknowledged UID. They preserve the configured termination grace period and
+preStop hook. A name reused with another UID causes a conflict and aborts the
+gate without deleting the replacement or choosing another victim. Recovery
+requires one Ready snapshot proving the selected UID is gone, all unselected
+peer UIDs remain, and exactly one new UID restores the original Ready floor.
+An unrelated peer replacement is not evidence of recovery from this fault.
+
 ```sh
 ./fault_matrix.py \
   --endpoint http://10.160.0.3:6688 \

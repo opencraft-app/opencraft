@@ -2,6 +2,7 @@ import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { mountFeaturePreviews } from './international-home-feature-previews';
 import { mountStageMotion } from './international-home-stage-motion';
+import { mountHomeScrollCast } from './home-scroll-cast-loader';
 
 const activeRoots = new WeakMap<HTMLElement, () => void>();
 const HOME_DISPOSE_EVENT = 'lightvela-home-dispose';
@@ -10,6 +11,7 @@ export function mountInternationalHomeMotion(root: HTMLElement): () => void {
   activeRoots.get(root)?.();
   gsap.registerPlugin(ScrollTrigger);
 
+  const stopTestimonialFriends = mountHomeScrollCast(root);
   const media = gsap.matchMedia();
   const originalReady = root.getAttribute('data-home-motion-ready');
   let disposed = false;
@@ -42,7 +44,7 @@ export function mountInternationalHomeMotion(root: HTMLElement): () => void {
       if (!target || !trigger) return;
       const timeline = track(gsap.timeline({
         defaults: { duration: desktop ? 0.46 : 0.28, ease: 'power2.out' },
-        scrollTrigger: { trigger, start: 'top 90%', toggleActions: 'play none none none' },
+        scrollTrigger: { trigger, start: 'top 90%', toggleActions: 'restart none restart none' },
       }));
       timeline.fromTo(target, {
         y: desktop ? 20 : 8,
@@ -165,6 +167,7 @@ export function mountInternationalHomeMotion(root: HTMLElement): () => void {
     if (disposed) return;
     disposed = true;
     media.revert();
+    stopTestimonialFriends();
     document.removeEventListener(HOME_DISPOSE_EVENT, dispose);
     if (originalReady === null) root.removeAttribute('data-home-motion-ready');
     else root.setAttribute('data-home-motion-ready', originalReady);

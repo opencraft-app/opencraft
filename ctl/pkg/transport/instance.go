@@ -210,6 +210,34 @@ type ListInstanceBotsResponse struct {
 	Items []*InstanceBotResponse `json:"items"`
 }
 
+// Channel history is a read-only projection of Hermes messages for one Bot.
+type ChannelSession struct {
+	ID        string  `json:"id"`
+	Source    string  `json:"source"`
+	Title     string  `json:"title"`
+	ChatType  string  `json:"chat_type"`
+	UpdatedAt float64 `json:"updated_at"`
+	Preview   string  `json:"preview"`
+}
+
+type ChannelSessionsResponse struct {
+	Items      []ChannelSession `json:"items"`
+	Sources    []string         `json:"sources"`
+	NextCursor string           `json:"next_cursor,omitempty"`
+}
+
+type ChannelMessage struct {
+	ID        int64   `json:"id"`
+	Role      string  `json:"role"`
+	Text      string  `json:"text"`
+	Timestamp float64 `json:"timestamp"`
+}
+
+type ChannelMessagesResponse struct {
+	Items      []ChannelMessage `json:"items"`
+	NextCursor string           `json:"next_cursor,omitempty"`
+}
+
 type CreateInstanceBotRequest struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
@@ -681,4 +709,20 @@ type DesktopSessionResponse struct {
 	Height int `json:"height,omitempty" example:"900"`
 	// Failed 时的原因摘要
 	Reason string `json:"reason,omitempty" example:"desktop provision command failed"`
+}
+
+const (
+	DesktopResourceStateUnprepared = "unprepared"
+	DesktopResourceStatePreparing  = "preparing"
+	DesktopResourceStatePrepared   = "prepared"
+	DesktopResourceStatePaused     = "paused"
+	DesktopResourceStateFailed     = "failed"
+)
+
+// Resource preparation only; not media readiness, viewer credentials or input authorization.
+type DesktopResourceResponse struct {
+	ResourceID   string `json:"resource_id"`
+	GenerationID string `json:"generation_id,omitempty"`
+	State        string `json:"state"`
+	Progress     int    `json:"progress,omitempty"`
 }

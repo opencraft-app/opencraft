@@ -99,12 +99,13 @@ stages:
               fi
 
               CI_ACTUAL_SHA="$(git rev-parse HEAD)"
-              if [[ "$CI_ACTUAL_SHA" != "$CI_EXPECTED_SHA" ]]; then
-                echo "检测到复用工作区 checkout 串分支：actual=${CI_ACTUAL_SHA} expected=${CI_EXPECTED_SHA}"
+              if [[ "$CI_ACTUAL_SHA" != "$CI_EXPECTED_SHA" ]] || ! git diff --quiet "$CI_EXPECTED_SHA" --; then
+                echo "检测到复用工作区提交或受跟踪文件不匹配：actual=${CI_ACTUAL_SHA} expected=${CI_EXPECTED_SHA}"
                 git reset --hard "$CI_EXPECTED_SHA"
                 git clean -ffd
               fi
               test "$(git rev-parse HEAD)" = "$CI_EXPECTED_SHA"
+              git diff --exit-code "$CI_EXPECTED_SHA" --
           - name: 派发变更目录约束
             shell: bash
             env:

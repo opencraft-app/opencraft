@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { mountInternationalHomeMotion } from '../international-home-motion';
+import { HERO_ARTWORK_TRIGGER_ID } from '../home-hero-artwork';
 
 let root: HTMLElement;
 let dispose: (() => void) | undefined;
@@ -68,6 +69,9 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+// The hero friends' position observer is not an entrance; it stays under reduced motion.
+const motionTriggers = () => ScrollTrigger.getAll().filter((trigger) => trigger.vars?.id !== HERO_ARTWORK_TRIGGER_ID);
+
 function switchPanel(id: string) {
   const input = root.querySelector<HTMLInputElement>(`#${id}`)!;
   const panel = root.querySelector<HTMLElement>(`#${id.replace('pl-', 'play-').replace('sc-', 'scene-')}`)!;
@@ -78,14 +82,16 @@ function switchPanel(id: string) {
 }
 
 describe('international homepage motion', () => {
-  it('adds one-shot entrances without pinning, scroll capture or initial content hiding', () => {
+  it('replays the hero and later stage entrances on return while keeping content visible', () => {
     dispose = mountInternationalHomeMotion(root);
     expect(root.dataset.homeMotionReady).toBe('active');
-    const triggers = ScrollTrigger.getAll();
+    const triggers = motionTriggers();
     expect(triggers.length).toBeGreaterThanOrEqual(5);
     expect(triggers.every((trigger) => !trigger.vars.pin && !trigger.vars.snap)).toBe(true);
     expect(triggers.filter((trigger) => trigger.vars.scrub).length).toBeGreaterThan(0);
-    expect(triggers.filter((trigger) => !trigger.vars.scrub).every((trigger) => trigger.vars.toggleActions === 'play none none none')).toBe(true);
+    expect(triggers.filter((trigger) => !trigger.vars.scrub).every((trigger) =>
+      trigger.vars.toggleActions === 'restart none restart none',
+    )).toBe(true);
     expect(root.querySelector<HTMLElement>('.wcard')!.style.opacity).not.toBe('0');
     expect(root.querySelector('.pin-spacer')).toBeNull();
     const cardEntrance = triggers.find((trigger) => trigger.trigger?.matches('.wcard'))!.animation as gsap.core.Timeline;
@@ -115,7 +121,7 @@ describe('international homepage motion', () => {
     image.src = '/lightvela-intl-home/assets/lv-cover-lavender.webp';
     dispose = mountInternationalHomeMotion(root);
     expect(root.querySelector('.hero .home-cover-mascot img')).toBe(image);
-    expect(gsap.getTweensOf(root.querySelector('.home-cover-mascot')).length).toBeGreaterThan(0);
+    expect(gsap.getTweensOf(root.querySelector('.home-cover-mascot'))).toHaveLength(0);
     ScrollTrigger.getAll().forEach((trigger) => trigger.animation?.progress(1));
     expect(image.style.visibility).not.toBe('hidden');
   });
@@ -136,7 +142,8 @@ describe('international homepage motion', () => {
     reduce = true;
     dispose = mountInternationalHomeMotion(root);
     expect(root.dataset.homeMotionReady).toBe('reduced');
-    expect(ScrollTrigger.getAll()).toHaveLength(0);
+    expect(motionTriggers()).toHaveLength(0);
+    expect(ScrollTrigger.getById(HERO_ARTWORK_TRIGGER_ID)).toBeTruthy();
     const panel = switchPanel('pl-3');
     expect(gsap.getTweensOf(panel.querySelector('.play__screen'))).toHaveLength(0);
     reduce = false;
@@ -148,7 +155,7 @@ describe('international homepage motion', () => {
     await new Promise((resolve) => setTimeout(resolve, 10));
     queries.get('(prefers-reduced-motion: reduce)')!.dispatchEvent(new Event('change'));
     expect(root.dataset.homeMotionReady).toBe('reduced');
-    expect(ScrollTrigger.getAll()).toHaveLength(0);
+    expect(motionTriggers()).toHaveLength(0);
   });
 
   it('uses one gentle mobile card-strip entrance rather than rotating hidden horizontal cards', () => {
@@ -335,7 +342,7 @@ describe('international homepage motion', () => {
     const before = inner.getAttribute('style');
     dispose = mountInternationalHomeMotion(root);
     expect(root.querySelectorAll('.home-stage-light,.home-stage-orbit')).toHaveLength(0);
-    expect(gsap.getTweensOf(root.querySelector('.home-cover-mascot')).length).toBeGreaterThan(0);
+    expect(gsap.getTweensOf(root.querySelector('.home-cover-mascot'))).toHaveLength(0);
     expect(root.querySelectorAll('.home-portal-shutter,.home-portal-halo')).toHaveLength(0);
     expect(root.querySelectorAll('.home-card-sheen')).toHaveLength(2);
     card.dispatchEvent(new MouseEvent('pointermove', { clientX: 250, clientY: 1850 }));
@@ -346,7 +353,7 @@ describe('international homepage motion', () => {
     queries.get('(prefers-reduced-motion: reduce)')!.dispatchEvent(new Event('change'));
     expect(root.querySelectorAll('.home-stage-light,.home-stage-orbit,.home-portal-shutter,.home-portal-halo,.home-cta-light,.home-card-sheen')).toHaveLength(0);
     expect(inner.getAttribute('style') || null).toBe(before);
-    expect(ScrollTrigger.getAll()).toHaveLength(0);
+    expect(motionTriggers()).toHaveLength(0);
   });
 
   it('keeps the original portal artwork visible while character layers are loading', () => {
@@ -367,7 +374,7 @@ describe('international homepage motion', () => {
     reduce = true;
     await new Promise((resolve) => setTimeout(resolve, 10));
     queries.get('(prefers-reduced-motion: reduce)')!.dispatchEvent(new Event('change'));
-    expect(ScrollTrigger.getAll()).toHaveLength(0);
+    expect(motionTriggers()).toHaveLength(0);
     reduce = false;
     await new Promise((resolve) => setTimeout(resolve, 10));
     queries.get('(prefers-reduced-motion: reduce)')!.dispatchEvent(new Event('change'));

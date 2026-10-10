@@ -3,9 +3,9 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 /**
- * 侧边栏「探索/对话」双 tab 改造守卫测试。
+ * 侧边栏「日常/探索」双 tab 守卫测试。
  *
- * 背景：对话入口从「使用」菜单组移到侧边栏顶部 tab；「对话」tab 渲染最近会话列表，
+ * 背景：对话入口与最近会话列表位于「日常」tab，
  * 数据来自 SDK 1.4.0-beta.0 的 multiSession 受控桥接。本测试做源码级守卫，
  * 防止后续改动悄悄回退这些结构性约定。
  */
@@ -32,12 +32,27 @@ const readGeneratedDictionary = (locale: string): Record<string, string> =>
   ) as Record<string, string>;
 
 describe("agent settings sidebar chat/settings tabs", () => {
+  /**
+   * 控制台常驻后，分区面板容器不能再按 activeSection 分 key：
+   * 嵌入式 Chat Surface 是容器内唯一不随分区条件渲染的子节点，
+   * 一旦 key 变化它会整体重挂载，宿主已下发的会话命令随即失效，
+   * 从通道/技能点「新建对话」会访问到已销毁实例。
+   */
+  it("keeps the Bot panel container key independent from the active section", () => {
+    const page = readPageSource();
+    const containerKey = page.split('className="_lh-claw-bot-panel"')[0]!.split("<div key={").pop()!;
+    expect(containerKey).not.toContain("activeSection");
+    expect(containerKey).toContain("activeBot.id");
+  });
+
+
   it("shows additional Bot creation without show() while preserving feature and quota gates", () => {
     const page = readPageSource();
+    const rail = readFileSync(join(process.cwd(), "src/pages/marketing/agent-bot-rail.tsx"), "utf8");
     expect(page).toContain("const [showHiddenAgentTools, setShowHiddenAgentTools] = useState(false);");
-    expect(page).toContain("{multiBotEnabled && (");
-    expect(page).toContain('content={createLimitMessage || t("新建 Bot")}');
-    expect(page).toContain("disabled={!canCreateAdditionalBot}");
+    expect(page).toContain("const nativeCreateEnabled = nativeCreateVisible");
+    expect(page).toContain("canCreate={nativeCreateEnabled}");
+    expect(rail).toContain("disabled={!canCreate}");
     expect(page).toContain("!isCreating && !botsLoading");
     expect(page).toContain("!showMultiBotOnboarding && visibleBots.length === 0");
     expect(page).toContain("disabled={!canCreateInitialAgent || directCreating}");
@@ -143,32 +158,73 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(statusRow).toContain('className="lv-agent-status"');
   });
 
+  it("keeps the Bot status on the rail for multi-Bot accounts", () => {
+    const page = readPageSource();
+    const rail = readFileSync(join(process.cwd(), "src/pages/marketing/agent-bot-rail.tsx"), "utf8");
+    const profile = page.slice(
+      page.indexOf('className="lv-agent-avatar lv-agent-avatar--status"'),
+      page.indexOf('className="lv-agents-sidebar-controls"'),
+    );
+    const avatar = profile.slice(
+      profile.indexOf('className="lv-agent-avatar lv-agent-avatar--status"'),
+      profile.indexOf('className="lv-agent-profile-text"'),
+    );
+    const statusRowCondition = profile.slice(
+      profile.indexOf('className="lv-agent-profile-name"'),
+      profile.indexOf('className="lv-agent-status-row"'),
+    );
+
+    expect(avatar).toContain('"lv-agent-avatar-status"');
+    expect(page).toContain('!multiBotEnabled && <span className="lv-agent-avatar lv-agent-avatar--status">');
+    expect(page.match(/restartingBotIds=\{restartingBotIds\}/g)).toHaveLength(2);
+    expect(rail).toContain('className={cn("lv-agent-avatar-status"');
+    expect(rail).toContain('restarting={restartingBotIds.has(bot.id)}');
+    expect(avatar).not.toContain("!isGlobal");
+    expect(statusRowCondition).toContain('activeBot.status !== "running"');
+    expect(statusRowCondition).not.toContain("isGlobal ||");
+  });
+
+  it("keeps the chat title while placing desktop Bot management at the bottom of the rail", () => {
+    const page = readPageSource();
+    const workbenchHeader = readFileSync(join(process.cwd(), "../opencraft/apps/workbench-web/src/components/app-shell-header.tsx"), "utf8");
+
+    expect(page).toContain('{(!isDesktop || !multiBotEnabled) && <div className="lv-agents-sidebar-profile">');
+    expect(page).not.toContain('slot="lightvela-header-prefix"');
+    expect(page).not.toContain('className="lv-agent-bot-context-header"');
+    expect(page).toContain('manageActions={botContextActions}');
+    expect(page).toContain('<Settings2 className="h-[18px] w-[18px]" aria-hidden="true" />');
+    expect(page).toContain('<div className="lv-agents-sidebar-footer">');
+    expect(page).toContain('aria-label={t("管理 Bot")}');
+    expect(workbenchHeader).not.toContain('<slot name="lightvela-header-prefix" />');
+    expect(workbenchHeader).toContain('{titleContent ?? <span className="thread-header-copy">');
+  });
+
   it("removes the legacy SHOW_AGENTCHAT_ENTRY gate", () => {
     expect(readPageSource()).not.toContain("SHOW_AGENTCHAT_ENTRY");
   });
 
-  it("renders the sidebar tabs segmented control above the settings nav", () => {
+  it("renders the daily and explore tabs above navigation", () => {
     const page = readPageSource();
     const tabsStart = page.indexOf("lv-agents-sidebar-tabs");
-    const navStart = page.indexOf('aria-label={t("实例配置导航")}');
+    const navStart = page.indexOf('className="lv-agents-sidebar-middle"');
 
     expect(tabsStart).toBeGreaterThanOrEqual(0);
     expect(navStart).toBeGreaterThan(tabsStart);
     expect(page).toContain('role="tablist"');
-    expect(page).toContain('aria-selected={sidebarTab === "chat" && isActiveBotChatAvailable}');
-    expect(page).toContain('aria-selected={sidebarTab === "settings"}');
+    expect(page).toContain('aria-selected={sidebarTab === "daily"}');
+    expect(page).toContain('aria-selected={sidebarTab === "explore"}');
   });
 
-  it("labels the top-level modes as explore and chat", () => {
+  it("labels the top-level modes as daily and explore", () => {
     const page = readPageSource();
     const tabs = page.slice(
       page.indexOf("lv-agents-sidebar-tabs"),
-      page.indexOf('{sidebarTab === "chat" ? ('),
+      page.indexOf('className="lv-agents-sidebar-middle"'),
     );
 
+    expect(tabs).toContain('t("日常")');
     expect(tabs).toContain('t("探索")');
-    expect(tabs).toContain('t("对话")');
-    expect(tabs).not.toContain('t("设置")');
+    expect(tabs).not.toContain('role="tab"\n                              aria-selected={sidebarTab === "chat"}');
   });
 
   it("removes the legacy full-width create button while retaining pill-shaped tabs", () => {
@@ -182,77 +238,68 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(sidebarTabsStyles.match(/border-radius: 999px;/g)).toHaveLength(2);
   });
 
-  it("translates the explore and chat tabs in every supported locale", () => {
+  it("translates the daily and explore tabs in every supported locale", () => {
     const exploreKey = readGeneratedDictionary("zh-to-key")["探索"];
-    const chatKey = readGeneratedDictionary("zh-to-key")["对话"];
+    const dailyKey = readGeneratedDictionary("zh-to-key")["日常"];
     const expectedByLocale = {
-      "zh-CN": { explore: "探索", chat: "对话" },
-      "zh-Hant": { explore: "探索", chat: "對話" },
-      "en-US": { explore: "Explore", chat: "Chat" },
-      "id-ID": { explore: "Jelajahi", chat: "Obrolan" },
-      es: { explore: "Explorar", chat: "Conversación" },
-      "ja-JP": { explore: "探索", chat: "チャット" },
-      "ko-KR": { explore: "탐색", chat: "채팅" },
+      "zh-CN": { explore: "探索", daily: "日常" },
+      "zh-Hant": { explore: "探索", daily: "日常" },
+      "en-US": { explore: "Explore", daily: "Daily" },
+      "id-ID": { explore: "Jelajahi", daily: "Sehari-hari" },
+      es: { explore: "Explorar", daily: "Uso diario" },
+      "ja-JP": { explore: "探索", daily: "日常" },
+      "ko-KR": { explore: "탐색", daily: "일상" },
     } as const;
 
     expect(exploreKey).toBeDefined();
-    expect(chatKey).toBeDefined();
+    expect(dailyKey).toBeDefined();
     for (const [locale, expected] of Object.entries(expectedByLocale)) {
       const dictionary = readGeneratedDictionary(locale);
       expect(dictionary[exploreKey!]).toBe(expected.explore);
-      expect(dictionary[chatKey!]).toBe(expected.chat);
+      expect(dictionary[dailyKey!]).toBe(expected.daily);
     }
   });
 
-  it("places skills under use before automations; workbench lives in labs", () => {
+  it("places skills under daily before automations; workbench lives in labs", () => {
     const page = readPageSource();
-    const setupGroupStart = page.indexOf('id: "setup"');
-    const useGroupStart = page.indexOf('id: "use"');
+    const dailyGroupStart = page.indexOf('id: "daily"');
     const growthGroupStart = page.indexOf('id: "growth"');
-    const setupGroup = page.slice(setupGroupStart, useGroupStart);
-    const useGroup = page.slice(useGroupStart, growthGroupStart);
+    const dailyGroup = page.slice(dailyGroupStart, growthGroupStart);
 
-    expect(setupGroup).not.toContain('id: "skill"');
-    expect(useGroup).toContain('id: "skill"');
-    expect(useGroup.indexOf('id: "skill"')).toBeLessThan(
-      useGroup.indexOf('id: "automations"'),
+    expect(dailyGroup).toContain('id: "skill"');
+    expect(dailyGroup.indexOf('id: "skill"')).toBeLessThan(
+      dailyGroup.indexOf('id: "automations"'),
     );
-    expect(useGroup).not.toContain('id: "website"');
-    expect(useGroup).not.toContain("isGlobal && showHiddenAgentTools");
+    expect(dailyGroup).not.toContain('id: "website"');
+    expect(dailyGroup).not.toContain('id: "model"');
   });
 
-  it("navigates the main area on tab click (settings → last menu, chat → first session)", () => {
+  it("restores the last page of each tab", () => {
     const page = readPageSource();
 
-    // 点「探索」：在对话页时回到前一个设置菜单（模块级记忆，跨 /agents/[section] 重挂载存活）。
-    expect(page).toContain("handleSidebarSettingsTabClick");
-    expect(page).toContain("let lastSettingsSection");
-    expect(page).toContain("AGENT_SECTION_PATH_BY_ID[lastSettingsSection]");
-
-    // 点「对话」：非对话页时进入 chat 页，并默认选中第一个会话。
-    expect(page).toContain("handleSidebarChatTabClick");
-    expect(page).toContain("setSelectedChatId(chatSessions[0]?.chatId)");
+    expect(page).toContain("handleSidebarExploreTabClick");
+    expect(page).toContain("handleSidebarDailyTabClick");
+    expect(page).toContain("AGENT_SECTION_PATH_BY_ID[lastExploreSection]");
+    expect(page).toContain("AGENT_SECTION_PATH_BY_ID[target]");
   });
 
-  it("uses OpenCraft for domestic Chat without show and keeps international AgentChat", () => {
+  it("shows OpenCraft Chat by default on both sites", () => {
     const page = readPageSource();
     const styles = readStylesSource();
 
-    expect(page).toContain("const isActiveBotChatAvailable = isActiveBotDefault || openCraftChatEnabled;");
-    expect(page).toContain("if (!isActiveBotChatAvailable) return;");
+    expect(page).toContain("const openCraftChatEnabled = true;");
+    expect(page).toContain("locale={locale}");
+    expect(page).toContain("const isActiveBotChatAvailable = openCraftChatEnabled;");
+    expect(page).toContain("const sidebarSessionBotKey = openCraftChatEnabled && activeBot && accountId");
+    expect(page).toContain('{openCraftChatEnabled && <div className="lv-agents-nav-group lv-agents-chat-group"');
+    expect(page).toContain('lastDailySection === "chat" && !isActiveBotChatAvailable ? "channel" : lastDailySection');
     expect(page).toContain("const isChatTabDisabled = !isActiveBotChatAvailable || showBuddyOnboarding;");
-    expect(page).toContain('disabled={isChatTabDisabled}');
-    expect(page).toContain('t("对话功能目前仅支持主 Bot")');
-    expect(page).not.toContain('title={isActiveBotChatAvailable ? undefined');
-    const chatTab = page.slice(page.indexOf('/* 「对话」入口不可用时'), page.indexOf('{sidebarTab === "chat" && isActiveBotChatAvailable ? ('));
-    expect(chatTab).toContain("<WorkspaceActionTooltip");
-    expect(chatTab).toContain("content={isChatTabDisabled");
-    expect(chatTab).toContain('side="bottom"');
-    expect(chatTab).not.toContain("lv-agent-action-tooltip");
+    expect(page).toContain('aria-disabled="true" tabIndex={0}');
+    expect(page).not.toContain('t("对话功能目前仅支持主 Bot")');
+    expect(page).toContain('side="bottom"');
     expect(styles).not.toContain(".lv-agent-action-tooltip {");
     expect(page).toContain('!consoleShowStateReady || activeSection !== "chat" || !activeBot || isActiveBotChatAvailable');
     expect(page).toContain('{isActiveBotChatAvailable && (');
-    expect(page).toContain('&& !openCraftChatEnabled');
     expect(page).toContain('enabled={openCraftChatEnabled}');
     expect(page).toContain('profileId={activeBot.profileId ?? (isActiveBotDefault ? "main" : "")}');
     expect(page).toContain("setConsoleShowStateReady(true);");
@@ -262,67 +309,58 @@ describe("agent settings sidebar chat/settings tabs", () => {
 
   it("derives the initial tab from the current route", () => {
     expect(readPageSource()).toContain(
-      'activeSection === "chat" ? "chat" : "settings"',
+      'EXPLORE_SECTION_IDS.has(activeSection) ? "explore" : DAILY_SECTION_IDS.has(activeSection) ? "daily" : lastSidebarTab',
     );
   });
 
-  it("renders the recent sessions list under the chat tab", () => {
+  it("renders an expandable chat header with a create action and icon-free sessions under daily", () => {
     const page = readPageSource();
 
-    expect(page).toContain('t("最近会话")');
-    expect(page).toContain("chatSessions.map");
-    expect(page).toContain('lv-agents-session-item');
+    expect(page).toContain('sidebarTab === "daily"');
+    expect(page).toContain('className="lv-agents-chat-header"');
+    expect(page).toContain('const [chatSessionsExpanded, setChatSessionsExpanded] = useState(true)');
+    expect(page).toContain('aria-expanded={chatSessionsExpanded}');
+    expect(page).toContain('className="lv-agents-chat-create"');
+    expect(page).toContain('<WorkspaceActionTooltip content={t("新建对话")} compact focusable={false} className="shrink-0">');
+    expect(page).toContain('aria-label={t("新建对话")}');
+    expect(page).not.toContain('title={t("新会话")}');
+    expect(page).toContain('pendingNewChatSessionBotId = activeBot.id');
+    expect(page).toContain('chatSessionCommands.createSession()');
+    expect(page).toContain("chatSessionPagination.visibleSessions.map");
+    const sessionList = page.slice(page.indexOf('className="lv-agents-nav-group-items lv-agents-session-list"'), page.indexOf("chatSessionMutationState !== null"));
+    expect(sessionList).not.toContain('<MessageSquare');
+    expect(page).toContain('!isChatTabDisabled && chatSessionsExpanded && !isSidebarCollapsed');
   });
 
-  it("places the create icon before restart and the multi-Bot chevron after delete", () => {
+  it("keeps Bot maintenance in the detail sidebar and creation in the rail", () => {
     const page = readPageSource();
-    const profile = page.slice(
-      page.indexOf('className="lv-agent-actions"'),
-      page.indexOf("{visibleBots.length > 1 &&", page.indexOf('className="lv-agent-actions"')),
-    );
-
-    expect(profile).toContain("setShowRestartConfirm(true)");
-    expect(profile).toContain("setShowDeleteConfirm(true)");
-    expect(profile).toContain("<RefreshCw");
-    expect(profile).toContain("<Trash2");
-    expect(profile).toContain('aria-label={t("新建 Bot")}');
-    expect(profile).toContain('<Plus className="h-4 w-4" aria-hidden="true" />');
-    expect(profile.indexOf('aria-label={t("新建 Bot")}')).toBeLessThan(profile.indexOf("<RestartIcon"));
-    expect(profile.indexOf("<RestartIcon")).toBeLessThan(profile.indexOf("<Trash2"));
-    expect(profile).not.toContain("<MoreHorizontal");
-    expect(page).toMatch(/\{visibleBots.length > 1 && \(\s*<ChevronDown/);
-    const switcherChevron = page.search(/<ChevronDown\s+aria-hidden="true"/);
-    expect(switcherChevron).toBeGreaterThan(page.indexOf("<Trash2"));
+    const profileRow = page.slice(page.indexOf('className="lv-agent-profile-row"'), page.indexOf('className="lv-agents-sidebar-controls"'));
+    expect(profileRow).toContain("setShowRestartConfirm(true)");
+    expect(profileRow).toContain("setShowDeleteConfirm(true)");
+    expect(profileRow).toContain('aria-label={t("管理 Bot")}');
+    expect(profileRow).toContain('t("修改资料")');
+    expect(profileRow).toContain('t("复制 Bot")');
+    expect(profileRow).not.toContain('aria-label={t("新建 Bot")}');
+    expect(page).toContain("<AgentBotRail bots={visibleBots}");
   });
 
-  it("renders the Bot switcher as an overlay popover instead of in sidebar flow", () => {
+  it("shows Bot switching in a separate rail and opens a fresh chat", () => {
     const page = readPageSource();
-
-    expect(page).toContain("<Popover");
-    expect(page).toContain("<PopoverTrigger asChild>");
-    expect(page).toContain("<PopoverContent");
-    expect(page).toContain("w-[var(--radix-popover-trigger-width)]");
-    const switcherStart = page.indexOf("<PopoverContent");
-    const menu = page.slice(switcherStart, page.indexOf("</PopoverContent>", switcherStart));
-    expect(menu).toContain("border-black/10 bg-white p-1.5 shadow-xl");
-    expect(menu).not.toContain("backdrop-");
-    expect(menu).not.toContain("<img");
-    expect(menu).not.toContain("bg-white/");
-    expect(menu).not.toContain("shadow-sm");
-    expect(menu).toContain('isActive ? "text-black/90"');
-    expect(menu).toContain("{isActive && <Check");
-    expect(page).not.toContain("visibleBots.length > 1 && isAgentMenuOpen &&");
-    expect(page).toContain("{visibleBots.map((bot) => {");
-    expect(page).not.toContain("botSearch");
-    expect(page).not.toContain('t("搜索 Bot")');
+    const rail = readFileSync(join(process.cwd(), "src/pages/marketing/agent-bot-rail.tsx"), "utf8");
+    expect(page.match(/onSelect=\{handleSelectBot\}/g)).toHaveLength(2);
+    expect(page).not.toContain("onSelect={prepareBotSwitch}");
+    expect(page).toContain("setActiveTabId(botId);");
+    expect(page).toContain("pendingNewChatSessionBotId = botId;");
+    expect(rail).toContain('href={getAgentBotSectionHref(`${AGENT_SECTION_PATH_BY_ID.chat}/`, bot.id)}');
+    expect(rail).toContain("bots.map((bot) =>");
+    expect(rail).toContain('aria-current="true"');
+    expect(page).toContain('<li className="sr-only" role="status">');
   });
 
-  it("keeps the current Bot header background unchanged on hover", () => {
+  it("keeps the current Bot card informational", () => {
     const page = readPageSource();
-    const trigger = page.slice(page.indexOf("<PopoverTrigger asChild>"), page.indexOf("</PopoverTrigger>"));
-    expect(trigger).toContain('"lv-agent-profile"');
-    expect(trigger).not.toContain("hover:bg-");
-    expect(trigger).toContain("onKeyDown");
+    expect(page).toContain('className="lv-agent-profile cursor-default"');
+    expect(page).not.toContain("setIsAgentMenuOpen");
   });
 
   it("keeps header actions compact without shrinking their hit areas", () => {
@@ -332,7 +370,7 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(actions).toContain("gap: 4px;");
     expect(button).toContain("width: 24px;");
     expect(button).toContain("height: 24px;");
-    expect(readPageSource()).toContain('"-ml-2 h-4 w-4 flex-shrink-0 text-black/35 transition-transform"');
+    expect(readPageSource()).toContain('aria-label={t("管理 Bot")}');
   });
 
   it("creates another Bot inside an existing instance without requiring a new subscription", () => {
@@ -349,7 +387,8 @@ describe("agent settings sidebar chat/settings tabs", () => {
     const onboardingCalls = page.match(/setShowMultiBotOnboarding\(true\)/g)?.length ?? 0;
     const legacyCalls = page.match(/setShowCreateConfirm\(true\)/g)?.length ?? 0;
     expect(onboardingCalls).toBeGreaterThanOrEqual(3);
-    expect(legacyCalls).toBe(onboardingCalls);
+    expect(legacyCalls).toBe(onboardingCalls - 1);
+    expect(page).toContain("if (createBotPageParam && IS_BUDDY_ONBOARDING_ENABLED)");
     expect(page).toContain('navigate("/subscribe")');
     expect(page).toContain("max-w-[42rem]");
     expect(page).not.toContain('t("用途说明")');
@@ -378,7 +417,7 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain('className="block space-y-2 text-sm font-medium text-black/70"');
     expect(page).toContain("Array.from(normalizedName).length > MAX_BOT_NAME_LENGTH");
     expect(page).toContain('t("最大不能超过 {{max}} 字符。", { max: MAX_BOT_NAME_LENGTH })');
-    expect(page).toContain('aria-label={t("新建 Bot")}');
+    expect(readFileSync(join(process.cwd(), "src/pages/marketing/agent-bot-rail.tsx"), "utf8")).toContain('aria-label={t("新建 Bot")}');
     expect(page).not.toContain('className="lv-agent-create-button"');
     expect(page).toContain("handleCreateNew();");
     expect(page).not.toContain('t("立即创建")');
@@ -409,25 +448,22 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain("{sessionDisplayTitle}");
   });
 
-  it("shows a default-chat entry when the SDK has no sessions yet", () => {
+  it("shows a default-chat entry after a running Bot confirms an empty list", () => {
     const page = readPageSource();
 
-    // 空态：列表里渲染「默认对话」可点入口（行为对齐之前的对话菜单项），
-    // 让用户无论 SDK 是否已加载都至少有一个进入对话主区的入口。
-    expect(page).toContain('chatSessions.length === 0 ?');
+    // 运行中确认空列表后仍可进入聊天；暂停时则不显示无效的空态入口。
+    expect(page).toContain('emptyChatSessionState === "default" ? (');
     expect(page).toContain('AGENT_SECTION_PATH_BY_ID.chat');
   });
 
-  it("wires the SDK multiSession controlled bridge into AgentChatPanel", () => {
+  it("wires the OpenCraft multiSession controlled bridge", () => {
     const page = readPageSource();
-    const chatPanel = readChatPanelSource();
 
-    // 宿主构造受控桥并下传。
-    expect(page).toContain("legacyChatMultiSessionBridge");
-    expect(page).toContain("multiSession={legacyChatMultiSessionBridge}");
-    // AgentChatPanel 透传给 LightVelaPanel。
-    expect(chatPanel).toContain("multiSession?: LightVelaMultiSessionOptions");
-    expect(chatPanel).toContain("multiSession={multiSession}");
+    expect(page).toContain("openCraftChatMultiSessionBridge");
+    expect(page).toContain("multiSession={openCraftChatMultiSessionBridge}");
+    expect(page).toContain("legacy={null}");
+    expect(page).not.toContain("<AgentChatPanel");
+    expect(page).not.toContain("agentchat/launch-token");
   });
 
   it("fills the available desktop layout while preserving the compact panel height", () => {
@@ -439,11 +475,11 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(chatPanel).toContain("lg:h-full");
   });
 
-  it("marks the active chat route and removes its desktop page padding", () => {
+  it("marks the active chat route and removes its page padding", () => {
     const page = readPageSource();
 
     expect(page).toContain('activeSection === "chat" && "lv-agent-chat-page"');
-    expect(page).toContain('"lw-app-top-pad flex-grow bg-white pb-6"');
+    expect(page).toContain('useMobileChatLayout ? "pb-0" : "pb-6"');
     expect(page).toContain('activeSection === "chat" && "lg:pb-0"');
     /*
      * lv-agent-settings-main / -shell / 栅格列这三处本分支按
@@ -454,16 +490,22 @@ describe("agent settings sidebar chat/settings tabs", () => {
      */
     expect(page).toContain('(hasSidebarLayout || shouldShowDataLoading) && "lv-agent-settings-main"');
     expect(page).toContain("lv-agent-settings-grid grid items-start");
-    expect(page).toContain('activeSection === "chat" && openCraftChatEnabled ? "gap-y-6" : "gap-6"');
-    expect(page).toContain('hasSidebarLayout && "lg:grid-cols-[248px_minmax(0,1fr)]"');
+    expect(page).toContain('multiBotEnabled && "lg:gap-x-0"');
+    expect(page).toContain('activeSection === "chat" && openCraftChatEnabled ? "gap-y-0 lg:gap-y-6" : "gap-6"');
+    expect(page).toContain('hasSidebarLayout && !embedded && (multiBotEnabled');
+    expect(page).toContain('"lg:grid-cols-[56px_216px_minmax(0,1fr)]"');
+    expect(page).toContain('"lg:grid-cols-[248px_minmax(0,1fr)]"');
   });
 
-  it("exposes rename and delete in the session menu (delete needs confirmation)", () => {
+  it("places mark as unread between rename and delete in the session menu", () => {
     const page = readPageSource();
+    const menu = page.slice(page.indexOf('className="lv-agents-session-menu" role="menu"'), page.indexOf("chatSessionMutationState !== null"));
 
-    expect(page).toContain('role="menuitem"');
-    expect(page).toContain('t("重命名")');
-    expect(page).toContain('t("删除")');
+    expect(menu).toContain('role="menuitem"');
+    expect(menu.indexOf('t("重命名")')).toBeLessThan(menu.indexOf('t("标记为未读")'));
+    expect(menu.indexOf('t("标记为未读")')).toBeLessThan(menu.indexOf('t("删除")'));
+    expect(page).toContain('setUnread(session.chatId, false)');
+    expect(page).toContain('lv-agents-session-unread-dot');
     // SDK 1.4.1 提供 renameSession / deleteSession。
     expect(page).toContain("renameSession");
     expect(page).toContain("deleteSession");
@@ -471,6 +513,16 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain("sessionToDelete");
     expect(page).toContain('t("删除会话")');
     expect(page).toContain("confirmSessionDelete");
+  });
+
+  it("shows activity only for a session reported as running", () => {
+    const page = readPageSource();
+    const styles = readStylesSource();
+    const sessions = page.slice(page.indexOf("chatSessionPagination.visibleSessions.map((session, index) => {"));
+
+    expect(sessions).toContain('const isRunning = "running" in session && session.running === true;');
+    expect(sessions).toContain('isRunning ? <span className="lv-agents-session-running" role="img" aria-label={t("执行中")} /> : null');
+    expect(styles).toContain("@media (prefers-reduced-motion: reduce) {\n  .lv-agents-session-running { animation: none; }");
   });
 
   it("keeps the agent header action icons aligned with automation card icon buttons", () => {
@@ -527,12 +579,16 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).not.toContain('sidebarTab === "chat" && activeSection');
   });
 
-  it("resets session state when the agent instance switches", () => {
+  it("isolates the visible list by Bot and resets session actions when the instance switches", () => {
     const page = readPageSource();
 
-    // SDK 对接注意事项 3：实例切换时重置会话受控状态，防旧实例数据闪现。
-    expect(page).toContain("[sdkInstance?.InstanceId]");
-    expect(page).toMatch(/setChatSessions\(\[\]\);\s*\n\s*setChatSessionsLoading\(false\);\s*\n\s*setChatSessionMutationState\(null\);\s*\n\s*setSelectedChatId\(undefined\);\s*\n\s*setChatSessionActions\(null\);/);
+    // 列表按账号、实例和 Profile 隔离；操作句柄仍须在实例切换时失效。
+    expect(page).toContain("const sidebarSessionBotKey = openCraftChatEnabled && activeBot && accountId");
+    expect(page).toContain("useAgentSidebarSessionList(sidebarSessionBotKey)");
+    expect(page).toContain("[sdkInstance?.InstanceId, sdkInstance?.ProfileId, chatSessionPagination.reset]");
+    const resetStart = page.indexOf("chatSessionPagination.reset();");
+    const instanceReset = page.slice(resetStart, page.indexOf("setChatSessionCommands(null);", resetStart));
+    expect(instanceReset).toMatch(/setChatSessionsHasMore\(false\);[\s\S]*setChatSessionMutationState\(null\);\s*\n\s*setSelectedChatId\(undefined\);\s*\n\s*setChatSessionActions\(null\);/);
   });
 
   it("never uses truthiness to test chatId validity (empty string is a legal default session)", () => {
@@ -558,27 +614,28 @@ describe("agent settings sidebar chat/settings tabs", () => {
     expect(page).toContain('const canDeleteSession = (session: LightVelaSession) => session.chatId !== "";');
     // 菜单项禁用 + 说明原因，而不是让用户点了没反应。
     expect(page).toContain("const isDeletable = canDeleteSession(session);");
+    expect(page).toContain('chatPinSupported && chatSessionCommands && session.chatId !== ""');
+    expect(page).toContain('if (session.chatId === "" || !chatPinSupported');
     expect(page).toContain("disabled={!chatSessionActions || chatSessionMutationState?.pending === true || !isDeletable}");
     expect(page).toContain('title={isDeletable ? undefined : t("默认会话不支持删除")}');
   });
 
-  // 注意事项 2 的隐含要求：SDK 的 actions effect 依赖 onSessionActionsChange 的
-  // **引用**，cleanup 会 onSessionActionsChange(null)。回调内联在 useMemo 里会让
+  // actions effect 依赖 onSessionActionsChange 的引用。回调内联在 useMemo 里会让
   // 每次切换会话都把 chatSessionActions 置 null 再恢复，此刻点删除会静默失效。
   it("keeps multi-session callback identities stable across selectedChatId changes", () => {
     const page = readPageSource();
 
-    expect(page).toContain("const handleLegacyChatSessionStateChange = useCallback<");
-    expect(page).toContain("const handleLegacyChatSelectedChatIdChange = useCallback<");
-    expect(page).toContain("const handleLegacyChatSessionActionsChange = useCallback<");
+    expect(page).toContain("onSessionStateChange: applyChatSessionState,");
+    expect(page).toContain("const applyChatSelectedChatId = useCallback<");
+    expect(page).toContain("const applyChatSessionActions = useCallback<");
 
     // bridge 只能引用稳定回调，不能内联箭头函数。
-    expect(page).toContain("onSessionStateChange: handleLegacyChatSessionStateChange,");
-    expect(page).toContain("onSelectedChatIdChange: handleLegacyChatSelectedChatIdChange,");
-    expect(page).toContain("onSessionActionsChange: handleLegacyChatSessionActionsChange,");
+    expect(page).toContain("onSessionStateChange: applyChatSessionState,");
+    expect(page).toContain("onSelectedChatIdChange: applyChatSelectedChatId,");
+    expect(page).toContain("onSessionActionsChange: applyChatSessionActions,");
 
     const bridge = page.slice(
-      page.indexOf("const legacyChatMultiSessionBridge = useMemo<"),
+      page.indexOf("const openCraftChatMultiSessionBridge = useMemo<"),
       page.indexOf("const startSessionRename"),
     );
     expect(bridge).not.toMatch(/onSessionActionsChange: \(actions\) =>/);
@@ -592,8 +649,8 @@ describe("agent settings sidebar chat/settings tabs", () => {
     const page = readPageSource();
 
     const emptyBranch = page.slice(
-      page.indexOf(") : chatSessions.length === 0 ? ("),
-      page.indexOf("chatSessions.map((session) => {"),
+      page.indexOf(') : emptyChatSessionState === "default" ? ('),
+      page.indexOf("chatSessionPagination.visibleSessions.map((session, index) => {"),
     );
 
     expect(emptyBranch).toContain('title={t("默认对话")}');

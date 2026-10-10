@@ -74,7 +74,7 @@ const (
 //
 // 用 time.Date 构造避免依赖 wall clock；所有测试 jifei envelope 的 curDeadline 字符串与此严格一致。
 func stdExpired() time.Time {
-	return time.Date(2026, 6, 1, 12, 0, 0, 0, time.Local)
+	return time.Date(2099, 6, 1, 12, 0, 0, 0, time.Local)
 }
 
 func stdExpiredStr() string {
@@ -153,6 +153,36 @@ func TestCheckRenew_HappyPath_ReturnsSuccess(t *testing.T) {
 	}
 	if resp.ReturnValue != 0 {
 		t.Errorf("Q58: returnCode == returnValue must hold; got %d != %d", resp.ReturnCode, resp.ReturnValue)
+	}
+}
+
+func TestCheckRenew_RejectsPeriodEndingBeforePayment(t *testing.T) {
+	pass := stdPass()
+	pass.ExpiredTime = time.Now().AddDate(0, -2, 0).Truncate(time.Second)
+	para := stdParaMap()
+	para["goodsDetail"].(map[string]any)["curDeadline"] = jifeiproto.FormatCurDeadline(pass.ExpiredTime)
+	deps := Deps{CTLClient: &fakeCTLClient{passes: []*ctlclient.PassDetail{pass}}, Builder: stdBuilder()}
+	resp := invokeHandler(t, deps, para)
+	if resp.ReturnCode != ReturnCodePassNotRenewable {
+		t.Fatalf("expired renewal must be rejected before purchase, got %d (%q)", resp.ReturnCode, resp.ReturnMessage)
+	}
+	para["goodsDetail"].(map[string]any)["timeSpan"] = 3
+	resp = invokeHandler(t, deps, para)
+	if resp.ReturnCode != 0 {
+		t.Fatalf("longer renewal reaching the future should remain available, got %d (%q)", resp.ReturnCode, resp.ReturnMessage)
+	}
+}
+
+func TestRenewalPeriodUsefulMatchesNaturalMonthEnd(t *testing.T) {
+	old := time.Date(2026, 1, 31, 9, 0, 0, 0, time.UTC)
+	if !renewalPeriodUseful(time.Date(2026, 12, 1, 9, 0, 0, 0, time.UTC), 1, "m", time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)) {
+		t.Fatal("normal unexpired pass must remain renewable")
+	}
+	if renewalPeriodUseful(old, 1, "m", time.Date(2026, 2, 28, 9, 0, 0, 0, time.UTC)) {
+		t.Fatal("renewal ending exactly at February month-end is no longer useful")
+	}
+	if !renewalPeriodUseful(old, 1, "m", time.Date(2026, 2, 28, 8, 59, 59, 0, time.UTC)) {
+		t.Fatal("renewal is useful one second before February month-end")
 	}
 }
 

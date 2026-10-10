@@ -14,7 +14,7 @@ vi.mock("@/pages/marketing/agent-hero-stats", () => ({ useHeroStats: () => ({ cr
 vi.mock("@/pages/marketing/agent-overview-panel", async (importOriginal) => ({ ...await importOriginal<typeof import("@/pages/marketing/agent-overview-panel")>(), HeroBanner: (props: unknown) => { api.renderHero(props); return <div>Account</div>; }, LatestNewsSection: () => <div>News</div> }));
 const bot = (id: string, extra: Partial<OpenClawBot> = {}): OpenClawBot => ({ id, name: id, instanceId: "vm-1", profileId: id, isDefault: false, status: "running", personality: "", personalityEmoji: "", intro: "", createdAt: "", connectedChannels: [], installedSkills: [], ...extra });
 let props: FleetOverviewProps;
-beforeEach(() => { vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} }); vi.clearAllMocks(); api.botsError = false; api.botsLoading = false; api.renameBot.mockResolvedValue({}); api.deleteBot.mockResolvedValue(undefined); api.refreshBots.mockResolvedValue(undefined); api.execDebugCommand.mockImplementation(async (_id: string, command: string) => ({ status: "SUCCESS", exitCode: 0, output: command.includes("ContentBase64:") ? "Exists: no" : "__LV_META_OK__" })); props = { heroStats: { servedDays: 3, expiresAt: null, credits: 4500, automations: 1, sites: 0 }, bots: [bot("alpha", { isDefault: true }), bot("bravo")], canCreate: true, createLimitMessage: "", onCreate: vi.fn(), onChanged: vi.fn(), onDelete: vi.fn(), getAvatarForBot: (id) => `/avatars/${id}.webp` }; });
+beforeEach(() => { vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} }); vi.clearAllMocks(); api.botsError = false; api.botsLoading = false; api.renameBot.mockResolvedValue({}); api.deleteBot.mockResolvedValue(undefined); api.refreshBots.mockResolvedValue(undefined); api.execDebugCommand.mockImplementation(async (_id: string, command: string) => ({ status: "SUCCESS", exitCode: 0, output: command.includes("ContentBase64:") ? "Exists: no" : "__LV_META_OK__" })); props = { heroStats: { servedDays: 3, expiresAt: null, credits: 4500, automations: 1, sites: 0 }, bots: [bot("alpha", { isDefault: true }), bot("bravo")], canCreate: true, createLimitMessage: "", onCreate: vi.fn(), onOpenChat: vi.fn(), onChanged: vi.fn(), onDelete: vi.fn(), getAvatarForBot: (id) => `/avatars/${id}.webp` }; });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); referrals.enabled = false; referrals.getReferralStats.mockReset(); });
 const manage = (name: string) => fireEvent.click(screen.getByRole("button", { name: `管理 ${name}` }));
 
@@ -39,8 +39,9 @@ describe("multi Bot overview", () => {
     expect(referrals.getReferralStats).not.toHaveBeenCalled();
     expect(api.renderHero).toHaveBeenLastCalledWith({ stats: props.heroStats, botCount: 2, invitedFriends: undefined });
   });
-  it("keeps header creation and card editing alongside the management menu", () => {
+  it("keeps header creation and card chat navigation alongside the management menu", () => {
     render(<AgentFleetOverview {...props} />);
+    expect(screen.getAllByText("在线")).toHaveLength(2);
     expect(api.renderHero).toHaveBeenLastCalledWith({ stats: props.heroStats, botCount: 2 });
     expect(screen.getByRole("heading", { name: "定时任务推荐" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "查看全部" })).toHaveAttribute("href", "/agents/automations");
@@ -53,11 +54,11 @@ describe("multi Bot overview", () => {
     expect(screen.queryByRole("button", { name: "打开 Bot" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /再创建一个 Bot/ })).not.toBeInTheDocument();
   });
-  it("opens the original editor for the clicked card", () => {
+  it("opens a new chat for the clicked Bot instead of its profile editor", () => {
     render(<AgentFleetOverview {...props} />);
-    fireEvent.click(screen.getByRole("button", { name: "修改资料: bravo" }));
-    expect(screen.getByRole("dialog", { name: "编辑资料" })).toBeInTheDocument();
-    expect(screen.getByRole("textbox", { name: "名字" })).toHaveValue("bravo");
+    fireEvent.click(screen.getByRole("button", { name: "新建对话: bravo" }));
+    expect(props.onOpenChat).toHaveBeenCalledExactlyOnceWith("bravo");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(api.renameBot).not.toHaveBeenCalled();
   });
   it("marks only the currently selected Bot and follows selection changes", () => {
@@ -92,8 +93,8 @@ describe("multi Bot overview", () => {
     expect(screen.getByRole("button", { name: "第 2 页，共 2 页" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("button", { name: "第 1 页，共 2 页" })).not.toHaveAttribute("aria-current");
     expect(within(strip).getAllByRole("heading")).toHaveLength(4);
-    fireEvent.click(within(strip).getByRole("button", { name: "修改资料: delta" }));
-    expect(screen.getByRole("textbox", { name: "名字" })).toHaveValue("delta");
+    fireEvent.click(within(strip).getByRole("button", { name: "新建对话: delta" }));
+    expect(props.onOpenChat).toHaveBeenCalledExactlyOnceWith("delta");
   });
   it("orders the menu as edit profile, copy Bot, delete", () => {
     render(<AgentFleetOverview {...props} />); manage("bravo");
@@ -106,7 +107,7 @@ describe("multi Bot overview", () => {
   });
   it("reuses the original profile editor and saves name, description and avatar only for its target", async () => {
     render(<AgentFleetOverview {...props} />); manage("bravo"); fireEvent.click(screen.getByRole("button", { name: "修改资料" }));
-    expect(screen.getByRole("dialog", { name: "编辑资料" })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "修改资料" })).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "名字" })).toHaveValue("bravo");
     expect(screen.getByRole("button", { name: "圆形" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "换一批" })).toBeInTheDocument();
@@ -139,7 +140,16 @@ describe("multi Bot overview", () => {
     props.bots = [bot("creating", { status: "provisioning" }), bot("deleting", { status: "deleting" })];
     render(<AgentFleetOverview {...props} />);
     expect(screen.getByText("创建中")).toBeInTheDocument(); expect(screen.getByText("删除中")).toBeInTheDocument();
-    screen.getAllByRole("button", { name: /^(管理 |修改资料: )/ }).forEach((button) => expect(button).toBeDisabled());
+    screen.getAllByRole("button", { name: /^(管理 |新建对话: )/ }).forEach((button) => expect(button).toBeDisabled());
+  });
+  it("allows a paused Bot to open chat even when its profile cannot be edited", () => {
+    props.bots = [bot("paused", { status: "paused" })];
+    render(<AgentFleetOverview {...props} />);
+    expect(screen.getByText("离线")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "新建对话: paused" }));
+    expect(props.onOpenChat).toHaveBeenCalledExactlyOnceWith("paused");
+    manage("paused");
+    expect(screen.getByRole("button", { name: "修改资料" })).toBeDisabled();
   });
   it("retains quota explanation and prevents creation/copy", () => {
     props.canCreate = false; props.createLimitMessage = "Quota reached";

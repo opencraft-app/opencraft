@@ -1,9 +1,11 @@
 import { submitEmbeddedPrompt } from "./embedded-chat/embedded-prompt-submission";
+import { isEmbeddedConversationPainted } from "./embedded-chat/embedded-paint";
 import { WorkspaceResourcePreviewPanel } from "./panels/workspace-resource-panel";
 import { EditableThreadTitle } from "./components/editable-thread-title";
 import { shouldTypeToCompose } from "./type-to-compose";
 import { isStandaloneHermesStop } from "./hermes-stop-command";
 import { useQueryClient } from "@tanstack/react-query";
+import { useDefaultFollowUpAction } from "./runtime/use-default-follow-up-action";
 import { FormattedMessage, useIntl } from "@opencraft/i18n/react";
 import {
   createClientId,
@@ -16,11 +18,12 @@ import {
   compileSubmitIntent,
   restoreQueuedInput,
 } from "@opencraft/composer-appserver";
+import { queuedSubmissionPresentation } from "./queued-submission-presentation";
 import {
   CodexComposer,
   type ComposerSelectionCatalog,
 } from "@opencraft/codex-composer";
-import { asHostId, asTurnId, deriveAsyncQuestionStates, findPendingInteraction, parseAsyncQuestionReply, renderAsyncQuestionReply, type AsyncQuestion, type TurnDiffTimelineBlock } from "@opencraft/chat-core";
+import { asHostId, asTurnId, deriveAsyncQuestionStates, findPendingInteraction, parseAsyncQuestionReply, renderAsyncQuestionReply, type AsyncQuestion, type TimelineSnapshot, type TurnDiffTimelineBlock } from "@opencraft/chat-core";
 import type { ChatResourceDecision, ChatResourceOpenIntent } from "@opencraft/chat-render-web";
 import type { PlatformViewHost } from "@opencraft/extension-react";
 import type {
@@ -34,9 +37,14 @@ import { readCachedThreadName, writeCachedThreadName } from "./runtime/thread-ti
 import { forkAndOpenThread } from "./runtime/thread-fork-navigation";
 import { formatDocumentTitle } from "./runtime/document-title";
 import {
+  canInvokeHostPanelCommand,
   type PanelAction,
   type PanelTabDescriptor,
+  type HostPanelCommand,
+  type HostPanelState,
+  type PanelToolbarActionContext,
 } from "@opencraft/workbench-panels";
+import { createPortal } from "react-dom";
 import {
   createInteractionResponse,
   createWorkbenchDraftLocation,
@@ -82,13 +90,15 @@ import {
 } from "./components/conversation";
 import {
   ConversationRecoveryNotice,
-  ConversationRecoverySkeleton,
+  ConversationRecoveryEmptyState,
   conversationRecoveryPresentation,
 } from "./components/conversation-recovery";
 import { ConversationPendingInteractionPanel } from "./components/conversation-renderers/interaction/interaction-renderers";
 import { RightPanel } from "./components/right-panel";
 import { ThreadComposerPresentation } from "./components/thread-composer-presentation";
+import { ThreadGoalSurface } from "./components/thread-goal-surface";
 import { TurnDiffReviewDialog } from "./components/conversation/turn-diff-review-dialog";
+import { ComposerTurnChangeSummary } from "./components/conversation/turn-diff-resource";
 import { Button } from "./components/ui/button";
 import { NewThreadDraftPage } from "./components/new-thread-draft-page";
 import { isLightVelaStandaloneManagementSection } from "./components/lightvela-management-route";
@@ -136,7 +146,7 @@ import { createAppServerMediaSourceLoader } from "./runtime/appserver-media-load
 import { useBlobResources, useImageProcessing } from "./runtime/appserver-runtime-context";
 import {
   buildDraftWorkspaceOptions,
-  resolveProjectCwd,
+  resolveDraftDirectorySelection,
 } from "./runtime/draft-workspace-model";
 
 import {
@@ -199,23 +209,37 @@ export interface EmbeddedWorkbenchAppSession {
   readonly createdAt: number;
   readonly updatedAt: number;
   readonly readOnly: boolean;
+  readonly running: boolean;
+  readonly pinned: boolean;
 }
 
 export interface EmbeddedWorkbenchAppActions {
   submitPrompt(text: string): boolean;
   selectThread(threadId: string): Promise<void>;
   createThread(): Promise<void>;
+  loadMoreThreads(): Promise<void>;
   renameThread(threadId: string, title: string): Promise<void>;
   deleteThread(threadId: string): Promise<void>;
+  setThreadPinned(threadId: string, pinned: boolean): Promise<void>;
 }
 
 export interface EmbeddedWorkbenchAppPresentation {
+  readonly panelHost?: {
+    readonly target: HTMLElement;
+    readonly presentation?: { subscribe: (listener: () => void) => (() => void); getSnapshot: () => boolean };
+    readonly publish: (state: HostPanelState) => void;
+    readonly bind: (command: (command: HostPanelCommand) => boolean) => (() => void);
+  };
   readonly hostId: string;
+  /** The conversation surface has painted; the Host may still be connecting. */
+  readonly onPainted: () => void;
   readonly onReady: (threadId: string | null) => void;
   readonly onError: (error: Error) => void;
   readonly onSessionsChange: (detail: {
     readonly sessions: readonly EmbeddedWorkbenchAppSession[];
     readonly loading: boolean;
+    readonly hasMoreSessions: boolean;
+    readonly pinSupported: boolean;
     readonly selectedChatId: string | null;
     readonly isDraft: boolean;
   }) => void;
@@ -249,6 +273,7 @@ export function App({
           (candidate) => candidate.id === draftSnapshot.activeDraftId,
         ) ?? null);
   const composerController = useRootComposerController();
+  const defaultFollowUpAction = useDefaultFollowUpAction();
   const hostCatalog = useAppServerHosts();
   const conversationViewIdentity = useConversationViewIdentity();
   const connectorPresentation = useConnectorPresentation(hostCatalog.connectorManager, hostCatalog.connectorApprovals,
@@ -484,7 +509,7 @@ export function App({
     (profile) => profile.hostId === activeHost.hostId,
   )?.providerId ?? null;
   const hermesShortcutCommands = activeHost.hostId === snapshot.hostId && activeHostProviderId === "lightvela.hermes" ? [
-    { name: "new", description: intl.formatMessage({ id: "composer.commands.new", defaultMessage: "New conversation" }) },
+    { name: "new", description: intl.formatMessage({ id: "composer.commands.new", defaultMessage: "New chat" }) },
     { name: "compress", description: intl.formatMessage({ id: "composer.commands.compress", defaultMessage: "Compress context" }) },
     { name: "status", description: intl.formatMessage({ id: "composer.commands.status", defaultMessage: "View status" }) },
     { name: "usage", description: intl.formatMessage({ id: "composer.commands.usage", defaultMessage: "View usage" }) },
@@ -523,13 +548,12 @@ export function App({
     (workspace: {
       readonly cwd: string;
       readonly runtimeWorkspaceRoots: readonly string[];
-      readonly projectId: string;
+      readonly projectId?: string;
     }) => {
       lastDraftWorkspaceRef.current = workspace;
-      window.localStorage.setItem(
-        selectedProjectStorageKey(draft?.target.execution.hostId ?? snapshot.hostId),
-        workspace.projectId,
-      );
+      const key = selectedProjectStorageKey(draft?.target.execution.hostId ?? snapshot.hostId);
+      if (workspace.projectId !== undefined) window.localStorage.setItem(key, workspace.projectId);
+      else window.localStorage.removeItem(key);
       if (draft === null) throw new Error("No active Draft can be retargeted");
       hostCatalog.retargetDraft(draft.id, {
         hostId: draft.target.execution.hostId,
@@ -592,6 +616,33 @@ export function App({
     });
   }, [dispatchPanel, panelState.right.open, panelState.right.tabs.length]);
   const timeline = snapshot.conversation?.timeline ?? null;
+  const displayScope = useSyncExternalStore(
+    hostCatalog.displayContinuity.subscribe,
+    hostCatalog.displayContinuity.getScope,
+    hostCatalog.displayContinuity.getScope,
+  );
+  const [cachedTimeline, setCachedTimeline] = useState<{ scope: string; timeline: TimelineSnapshot } | null>(null);
+  useEffect(() => {
+    let current = true;
+    setCachedTimeline(null);
+    if (activeThreadId !== null) {
+      void hostCatalog.displayContinuity.load(snapshot.hostId, activeThreadId).then(value => {
+        if (current) setCachedTimeline(value === null ? null : { scope: displayScope, timeline: value });
+      });
+    }
+    return () => { current = false; };
+  }, [activeThreadId, displayScope, hostCatalog.displayContinuity, snapshot.hostId]);
+  useEffect(() => {
+    if (timeline?.authoritative) void hostCatalog.displayContinuity.observe(timeline).catch(() => undefined);
+  }, [hostCatalog.displayContinuity, timeline]);
+  const visibleTimeline = timeline?.authoritative || (timeline?.frames.length ?? 0) > 0
+    ? timeline
+    : cachedTimeline?.scope === displayScope
+      && cachedTimeline.timeline.key.hostId === snapshot.hostId
+      && cachedTimeline.timeline.key.threadId === activeThreadId
+      ? cachedTimeline.timeline
+      : timeline;
+  const showingDisplayCache = visibleTimeline !== null && visibleTimeline !== timeline;
   const [turnDiffReview, setTurnDiffReview] = useState<{
     readonly block: TurnDiffTimelineBlock;
     readonly path: string | null;
@@ -601,12 +652,12 @@ export function App({
     if (activeThreadId !== null) setTurnDiffReview({ block, path: path ?? null, threadId: activeThreadId });
   }, [activeThreadId]);
   const reviewedBlock = turnDiffReview?.threadId === activeThreadId
-    ? timeline?.frames.flatMap((frame) => frame.blocks).find((block): block is TurnDiffTimelineBlock =>
+    ? timeline?.frames.flatMap((frame) => frame.changeSummary == null ? frame.blocks : [frame.changeSummary, ...frame.blocks]).find((block): block is TurnDiffTimelineBlock =>
       block.type === "turn-diff" && block.id === turnDiffReview.block.id) ?? turnDiffReview.block
     : null;
   const recoveryPresentation = conversationRecoveryPresentation({
     authoritative: snapshot.conversation?.authoritative === true,
-    hasVisibleHistory: (timeline?.frames.length ?? 0) > 0,
+    hasVisibleHistory: (visibleTimeline?.frames.length ?? 0) > 0,
     failed: snapshot.phase === "error" || (activeThreadLease === null
       ? conversationViewActivation.phase === "error"
       : snapshot.conversation?.error != null),
@@ -705,6 +756,9 @@ export function App({
       // Re-check at the semantic boundary as the status can change between a
       // rendered enabled button and its click handler.
       if (snapshot.phase !== "ready") return false;
+      if (context.followUpAction !== null && runtime.resources.host.canRequest?.(
+        context.followUpAction === "queue" ? "thread/queue/add" : "turn/steer",
+      ) === false) return false;
       const currentConversation = activeThreadLease?.getSnapshot() ?? null;
       const intentHostId = intent.target.type === "new-thread"
         ? intent.target.execution.hostId
@@ -800,6 +854,7 @@ export function App({
       clearLatestTurnPlacement,
       snapshot.hostId,
       snapshot.phase,
+      runtime,
     ],
   );
   const answerAsyncQuestion = useCallback(async (question: AsyncQuestion, answer: string) => {
@@ -1088,6 +1143,8 @@ export function App({
         createdAt: updatedAt,
         updatedAt,
         readOnly: false,
+        running: thread.status === "running",
+        pinned: thread.pinned === true,
       };
     });
   }, [catalog.protocolThreads, catalog.threads, embedded]);
@@ -1095,11 +1152,20 @@ export function App({
     if (embedded === undefined) return;
     embedded.onSessionsChange({
       sessions: embeddedSessions,
-      loading: catalog.isFetching,
+      loading: (catalog.isPending && snapshot.phase !== "error") || catalog.isFetching,
+      hasMoreSessions: catalog.hasNextPage,
+      pinSupported: hostCatalog.threadManagement.capabilities(embedded.hostId).pin === true,
       selectedChatId: snapshot.hostId === embedded.hostId ? activeThreadId : null,
       isDraft: draft !== null && draft.submission === null,
     });
-  }, [activeThreadId, catalog.isFetching, draft, embedded, embeddedSessions, snapshot.hostId]);
+  }, [activeThreadId, catalog.hasNextPage, catalog.isFetching, catalog.isPending, draft, embedded, embeddedSessions, hostCatalog.threadManagement, snapshot.hostId, snapshot.phase]);
+  // The local Draft paints before the Host connects (the Composer stays
+  // submission-disabled until ready); a restored Thread paints when ready.
+  const painted = isEmbeddedConversationPainted(draft, conversationViewActivation.phase);
+  useEffect(() => {
+    if (embedded === undefined || !painted) return;
+    embedded.onPainted();
+  }, [embedded, painted]);
   useEffect(() => {
     if (embedded === undefined) return;
     if (conversationViewActivation.phase === "error") {
@@ -1127,6 +1193,12 @@ export function App({
         await hostCatalog.navigate(createWorkbenchThreadLocation(embedded.hostId, threadId));
       },
       createThread: async () => { navigateToHome(); },
+      loadMoreThreads: async () => {
+        const result = await catalog.fetchNextPage();
+        if (result !== null && typeof result === "object" && "isError" in result && result.isError) {
+          throw "error" in result ? result.error : new Error("Failed to load conversations");
+        }
+      },
       renameThread: async (threadId, title) => {
         await hostCatalog.threadManagement.rename(embedded.hostId, threadId, title);
         await queryClient.invalidateQueries({ queryKey: ["appserver", embedded.hostId, "threads"] });
@@ -1136,8 +1208,12 @@ export function App({
         await queryClient.invalidateQueries({ queryKey: ["appserver", embedded.hostId, "threads"] });
         if (activeThreadId === threadId) navigateToHome();
       },
+      setThreadPinned: async (threadId, pinned) => {
+        try { await hostCatalog.threadManagement.setPinned(embedded.hostId, threadId, pinned); }
+        finally { await queryClient.invalidateQueries({ queryKey: ["appserver", embedded.hostId, "threads"] }); }
+      },
     });
-  }, [activeThreadId, composerController, embedded, hostCatalog, navigateToHome, queryClient, sendMessage, snapshot.phase]);
+  }, [activeThreadId, catalog.fetchNextPage, composerController, embedded, hostCatalog, navigateToHome, queryClient, sendMessage, snapshot.phase]);
   const workspaceSelectionEpoch = useRef(0);
   useLayoutEffect(() => {
     workspaceSelectionEpoch.current++;
@@ -1153,34 +1229,23 @@ export function App({
     async (path: string) => {
       if (draft === null || draftSubmissionOwnsNavigation(draft.phase) || !conversationRouteOpen || settingsOpen) return;
       const epoch = workspaceSelectionEpoch.current;
-      let project = projectCatalog.projects.find((candidate) =>
-        candidate.roots.some((root) => root.path === path),
-      );
-      if (project === undefined) {
-        const name = path.split(/[\\/]+/u).filter(Boolean).at(-1) ?? "Project";
-        const created = await runtime.resources.projects.create({
-          name,
-          roots: [{ path }],
-          idempotencyKey: `opencraft-web:add-project:${path}`,
-          metadata: { origin: "opencraft-web-directory-picker" },
-        });
-        project = created.project;
+      const selected = await resolveDraftDirectorySelection({ path,
+        projects: projectCatalog.projects,
+        projectCatalogError: projectCatalog.error,
+        createProject: params => runtime.resources.projects.create(params),
+      });
+      if (selected.createdProject) {
         await queryClient.invalidateQueries({
           queryKey: ["appserver", snapshot.hostId, "projects"],
         });
       }
       if (epoch !== workspaceSelectionEpoch.current) return;
-      const projectRoots = project.roots.map((root) => root.path);
-      const cwd = resolveProjectCwd(project, path);
-      selectDraftWorkspace({
-        cwd,
-        runtimeWorkspaceRoots: projectRoots,
-        projectId: project.id,
-      });
+      selectDraftWorkspace(selected.workspace);
       setWorkspacePickerOpen(false);
     },
     [
       projectCatalog.projects,
+      projectCatalog.error,
       queryClient,
       runtime,
       selectDraftWorkspace,
@@ -1320,6 +1385,62 @@ export function App({
     presentation.rightPanel && panelState.right.open;
   const presentedRightPanelFullWidth =
     presentation.rightPanel && panelState.rightPanelFullWidth;
+  const conversationRightPanelAvailable = conversationSurfaceVisible
+    && (embedded === undefined || (draft === null && activeThreadId !== null));
+  const panelHost = embedded?.panelHost;
+  const hostPanelActive = useSyncExternalStore(panelHost?.presentation?.subscribe ?? (() => () => {}),
+    panelHost?.presentation?.getSnapshot ?? (() => false), () => false);
+  const panelToolbarContext: PanelToolbarActionContext = {
+    ownerId: panelOwnerId, resourceOwnerId: conversationResourceOwnerId, hostId: snapshot.hostId,
+    cwd: snapshot.conversation?.execution.cwd ?? activeProtocolThread?.cwd
+      ?? draft?.target.execution.workspace.cwd ?? activeHost.workspaceBrowseRoots[0] ?? null,
+  };
+  const panelHostProjection: HostPanelState = {
+    ownerId: panelOwnerId, available: conversationRightPanelAvailable,
+    open: panelState.right.open, fullWidth: panelState.rightPanelFullWidth,
+    activeTabId: panelState.right.activeTabId,
+    tabs: panelState.right.tabs.map(tab => ({ id: tab.id,
+      title: tab.kind === "browser" && tab.title === "New tab"
+        ? intl.formatMessage({ id: "panel.newTab", defaultMessage: "New tab" }) : tab.title.slice(0, 512),
+      kind: tab.kind, closable: tab.closable, preview: tab.preview })),
+    actions: (conversationRouteOpen ? panelToolbarActions : []).filter(action => action.region === "right"
+      && (action.isAvailable?.(panelToolbarContext) ?? true))
+      .map(action => ({ id: action.id, label: action.creationLabel ?? action.label, icon: action.icon })),
+  };
+  const panelHostWire = JSON.stringify(panelHostProjection);
+  useEffect(() => { panelHost?.publish(JSON.parse(panelHostWire) as HostPanelState); }, [panelHost, panelHostWire]);
+  // The same panel owner admits Web and native actions. Retired owner commands
+  // cannot select/close a resource in the next conversation.
+  const invokeHostPanel = useStableEvent((command: HostPanelCommand) => {
+    if (!conversationRouteOpen || !canInvokeHostPanelCommand(panelHostProjection, command)) return false;
+    const tab = "tabId" in command ? panelState.right.tabs.find(tab => tab.id === command.tabId) : undefined;
+    switch (command.action) {
+      case "open": dispatchPanel({ type: "set-region-open", region: "right", open: command.open, reason: "manual", allowEmpty: true }); return true;
+      case "full-width": dispatchPanel({ type: "toggle-right-full-width" }); return true;
+      case "select": if (!tab) return false; dispatchPanel({ type: "activate-tab", region: "right", tabId: tab.id }); return true;
+      case "close": if (!tab?.closable) return false; requestClosePanel(tab); return true;
+      case "move": if (!tab || (command.beforeTabId !== null && !panelState.right.tabs.some(tab => tab.id === command.beforeTabId))) return false;
+        dispatchPanel({ type: "move-tab", region: "right", tabId: tab.id, beforeTabId: command.beforeTabId }); return true;
+      case "launch": {
+        const action = panelToolbarActions.find(action => action.id === command.actionId && action.region === "right"
+          && (action.isAvailable?.(panelToolbarContext) ?? true));
+        if (!action) return false;
+        try {
+          void Promise.resolve(action.run(panelToolbarContext)).catch(() => {
+            window.dispatchEvent(new CustomEvent("opencraft-panel-action-failed"));
+          });
+        } catch { window.dispatchEvent(new CustomEvent("opencraft-panel-action-failed")); }
+        return true;
+      }
+    }
+  });
+  useEffect(() => panelHost?.bind(invokeHostPanel), [panelHost, invokeHostPanel]);
+  const rightPanelView = !presentation.rightPanel ? null : <RightPanel
+    hostPresentationActive={panelHost ? conversationRightPanelAvailable && (panelState.right.open || hostPanelActive) : undefined}
+    emptyHint={presentation.filePreviewOnly ? intl.formatMessage({ id: "panel.fileHint", defaultMessage: "Click a file in the conversation to preview it here." }) : undefined}
+    state={panelState} presentationId={panelPresentationId} renderers={presentedPanelRenderers}
+    toolbarActions={conversationRouteOpen ? panelToolbarActions : []} toolbarActionContext={panelToolbarContext}
+    onAction={dispatchPanel} onCloseTab={requestClosePanel} portalContainer={portalContainer} />;
   // Applications replace context/content, never the Shell control plane.
   // Target management remains an independent modal semantic surface.
   const headerNavigationActions = chromePolicy.leadingNavigationActions;
@@ -1333,9 +1454,13 @@ export function App({
         : null;
   const documentTitle = formatDocumentTitle(settingsOpen ? null : pageTitle);
   useEffect(() => {
+    if (embedded !== undefined) return;
     document.title = documentTitle;
-  }, [documentTitle]);
-  useEffect(() => () => { document.title = "OpenCraft"; }, []);
+  }, [documentTitle, embedded]);
+  useEffect(() => {
+    if (embedded !== undefined) return;
+    return () => { document.title = "OpenCraft"; };
+  }, [embedded]);
   const header = (
     <AppShellHeader
       showProjectIcon={embedded === undefined}
@@ -1355,9 +1480,9 @@ export function App({
             : null
       }
       sidebarOpen={shellSidebarOpen}
-      rightPanelOpen={conversationSurfaceVisible && presentedRightPanelOpen}
-      rightPanelFullWidth={conversationSurfaceVisible && presentedRightPanelFullWidth}
-      showRightPanelAction={conversationSurfaceVisible && presentation.rightPanel}
+      rightPanelOpen={conversationRightPanelAvailable && presentedRightPanelOpen}
+      rightPanelFullWidth={conversationRightPanelAvailable && presentedRightPanelFullWidth}
+      showRightPanelAction={!panelHost && conversationRightPanelAvailable && presentation.rightPanel}
       canGoBack={canGoBack}
       canGoForward={canGoForward}
       onToggleSidebar={() => setSidebarOpen((value) => !value)}
@@ -1408,8 +1533,10 @@ export function App({
           onSidebarCollapse={collapseSidebar}
           onSidebarExpand={expandSidebar}
           onSidebarResizeEnd={commitSidebarWidth}
-          rightPanelOpen={conversationSurfaceVisible && presentedRightPanelOpen}
-          rightPanelFullWidth={conversationSurfaceVisible && presentedRightPanelFullWidth}
+          rightPanelOpen={!panelHost && conversationRightPanelAvailable && presentedRightPanelOpen}
+          rightPanelKeepMounted={!panelHost && presentation.rightPanel && panelState.right.tabs.some(tab =>
+            presentedPanelRenderers.some(renderer => renderer.kind === tab.kind && renderer.residency === "while-tab-open"))}
+          rightPanelFullWidth={!panelHost && conversationRightPanelAvailable && presentedRightPanelFullWidth}
           rightPanelDefaultSize={presentation.rightPanelDefaultSize}
           onRightPanelOpenChange={(open) =>
             dispatchPanel({
@@ -1437,22 +1564,10 @@ export function App({
           leftPanel={!presentation.contextSidebar ? null : (
             routeSettingsOpen ? settingsNavigation : (conversationSurfaceVisible || standaloneManagementOpen) ? <Sidebar
               threads={multiHostCatalog.threads}
-              onNewTaskForTarget={async (hostId) => hostCatalog.navigateToHome({
-                  execution: {
-                    hostId: asHostId(hostId),
-                    workspace: { cwd: null, runtimeWorkspaceRoots: [] },
-                  },
-                  entrypoint: "new-chat",
-                })}
-              onOpenTargetSettings={(hostId) => {
-                const providerId = hostCatalog.profiles.find(
-                  (profile) => profile.hostId === hostId,
-                )?.providerId;
-                const settingsPageId = hostCatalog.connectionProviders.find(
-                  (provider) => provider.id === providerId,
-                )?.settingsPageId;
-                workbenchNavigation.openSettings(settingsPageId ?? "appearance");
-              }}
+              threadCatalogs={multiHostCatalog.catalogs}
+              threadCatalogDiscovery={multiHostCatalog.discovery}
+              onRetryThreadCatalogDiscovery={() => { void multiHostCatalog.retryDiscovery(); }}
+              onRetryThreadCatalog={hostId => { void multiHostCatalog.retry(hostId); }}
               managementNavigation={conversationRouteOpen || standaloneManagementOpen ? (
                 <LightVelaWorkNavigation
                   section={standaloneManagementOpen ? settingsSection : null}
@@ -1464,6 +1579,10 @@ export function App({
               threadCapabilities={hostId => hostCatalog.threadManagement.capabilities(hostId)}
               pendingTitle={(hostId, threadId) => threadTitleWriter.pendingTitle({ hostId, threadId })}
               threadActions={{
+                onSetPinned: async (target, pinned) => {
+                  try { await hostCatalog.threadManagement.setPinned(target.hostId, target.threadId, pinned); }
+                  finally { await queryClient.invalidateQueries({ queryKey: ["appserver", target.hostId, "threads"] }); }
+                },
                 onRename: (target, title) => threadTitleWriter.rename(target, title),
                 onFork: target => forkAndOpenThread({
                   routeScopeId: () => workbenchNavigation.getSnapshot().routeScopeId,
@@ -1502,20 +1621,7 @@ export function App({
                   : null
               }
               onSelectThread={(hostId, id) => {
-                if (
-                  hostId === snapshot.hostId &&
-                  id === activeThreadId &&
-                  hostCatalog.pendingLocation === null
-                )
-                  return;
-                if (
-                  hostCatalog.pendingLocation?.kind === "thread" &&
-                  hostCatalog.pendingLocation.key.hostId === hostId &&
-                  hostCatalog.pendingLocation.key.threadId === id
-                )
-                  return;
-                const location = createWorkbenchThreadLocation(hostId, id);
-                void hostCatalog.navigate(location).catch((error) => {
+                void hostCatalog.selectConversation(createWorkbenchThreadLocation(hostId, id)).catch((error) => {
                   console.error("Failed to activate selected Thread", error);
                 });
               }}
@@ -1525,33 +1631,9 @@ export function App({
               onOpenSettings={openSettingsFromConversation}
             /> : null
           )}
-          rightPanel={!presentation.rightPanel ? null : (
-            <RightPanel
-              emptyHint={presentation.filePreviewOnly ? intl.formatMessage({ id: "panel.fileHint", defaultMessage: "Click a file in the conversation to preview it here." }) : undefined}
-              state={panelState}
-              presentationId={panelPresentationId}
-              renderers={presentedPanelRenderers}
-              // Route ownership gates launchers even while the panel's exit
-              // animation keeps its physical surface mounted. Do not unregister
-              // plugins or close their resources when entering Settings.
-              toolbarActions={conversationRouteOpen ? panelToolbarActions : []}
-              toolbarActionContext={{
-                ownerId: panelOwnerId,
-                resourceOwnerId: conversationResourceOwnerId,
-                hostId: snapshot.hostId,
-                cwd:
-                  snapshot.conversation?.execution.cwd
-                  ?? activeProtocolThread?.cwd
-                  ?? draft?.target.execution.workspace.cwd
-                  ?? activeHost.workspaceBrowseRoots[0]
-                  ?? null,
-              }}
-              onAction={dispatchPanel}
-              onCloseTab={requestClosePanel}
-              portalContainer={portalContainer}
-            />
-          )}
+          rightPanel={panelHost ? null : rightPanelView}
         >
+        {panelHost ? createPortal(rightPanelView, panelHost.target) : null}
         <div className="workbench-route-stage">
           <div
             aria-hidden={!conversationRouteOpen || undefined}
@@ -1617,7 +1699,7 @@ export function App({
           <div className="local-conversation-page">
             {activeThreadLease === null ? (
                 <div className="conversation-recovery-cold-stage">
-                  <ConversationRecoverySkeleton
+                  <ConversationRecoveryEmptyState
                     failed={recoveryPresentation === "cold-error"}
                     onRetry={retryColdActivation}
                   />
@@ -1627,7 +1709,7 @@ export function App({
                 <Conversation
                   scrollPolicy="natural"
                   emptyState={recoveryPresentation === "cold-loading" || recoveryPresentation === "cold-error"
-                    ? <ConversationRecoverySkeleton
+                    ? <ConversationRecoveryEmptyState
                         failed={recoveryPresentation === "cold-error"}
                         onRetry={retryConversationRecovery}
                       />
@@ -1640,11 +1722,12 @@ export function App({
                     loadMediaSource,
                     onOpenResource: openChatResource,
                     onReviewTurnDiff: openTurnDiffReview,
+                    composerChangeSummaryTurnId: snapshot.conversation?.activeTurn?.turnId ?? null,
                     theme: appearanceTheme.resolvedTheme,
                   }}
-                  timeline={timeline}
+                  timeline={visibleTimeline}
                   consumePendingLatestTurnSubmitPlacement={consumeLatestTurnPlacement}
-                  navigationSource={navigationSource}
+                  navigationSource={showingDisplayCache ? null : navigationSource}
                   initialRestoreSnapshot={
                     activeThreadId === null
                       ? null
@@ -1658,24 +1741,24 @@ export function App({
                       );
                   }}
                   onLoadOlder={
-                    snapshot.conversation?.history.hasOlder
+                    !showingDisplayCache && snapshot.conversation?.history.hasOlder
                       ? loadOlderConversation
                       : undefined
                   }
-                  onOpenSubagent={(threadId) => {
+                  onOpenSubagent={showingDisplayCache ? undefined : (threadId) => {
                     void hostCatalog.navigate(
                       createWorkbenchThreadLocation(snapshot.hostId, threadId),
                     );
                   }}
-                  continuableTurnId={snapshot.conversation?.continuation.turnId}
-                  onContinueTurn={(turnId) => {
+                  continuableTurnId={showingDisplayCache ? null : snapshot.conversation?.continuation.turnId}
+                  onContinueTurn={showingDisplayCache ? undefined : (turnId) => {
                     const placement = captureLatestTurnPlacement();
                     void activeThreadLease?.continueTurn(turnId).catch(() => {
                       clearLatestTurnPlacement(placement);
                     });
                   }}
-                  onRespondInteraction={respondToInteraction}
-                  onAnswerAsyncQuestion={snapshot.phase === "ready" ? answerAsyncQuestion : undefined}
+                  onRespondInteraction={showingDisplayCache ? undefined : respondToInteraction}
+                  onAnswerAsyncQuestion={!showingDisplayCache && snapshot.phase === "ready" ? answerAsyncQuestion : undefined}
                   queuedAsyncQuestionIds={queuedAsyncQuestionIds}
                   onConversationScrollApiChange={(api) => {
                     conversationScrollApiRef.current = api;
@@ -1690,35 +1773,34 @@ export function App({
                       activeTabId={presentation.rightPanel ? panelState.right.activeTabId : null}
                       enabled={conversationRouteOpen}
                       timeline={timeline}
-                      documentContext={{ conversationId: activeThreadId, cwd: activeProtocolThread?.cwd ?? null, hostId: snapshot.hostId, loadMediaSource, onOpenResource: openChatResource, onReviewTurnDiff: openTurnDiffReview, theme: appearanceTheme.resolvedTheme }}
+                      documentContext={{ conversationId: activeThreadId, cwd: activeProtocolThread?.cwd ?? null, hostId: snapshot.hostId, loadMediaSource, onOpenResource: openChatResource, onReviewTurnDiff: openTurnDiffReview, composerChangeSummaryTurnId: snapshot.conversation?.activeTurn?.turnId ?? null, theme: appearanceTheme.resolvedTheme }}
                     >
                     <div
                       className="thread-composer-region"
                       data-thread-find-composer="true"
                     >
+                    <ComposerTurnChangeSummary timeline={timeline} turnId={snapshot.conversation?.activeTurn?.turnId ?? null}
+                      documentContext={{ conversationId: activeThreadId, cwd: activeProtocolThread?.cwd ?? null, hostId: snapshot.hostId,
+                        onOpenResource: openChatResource, onReviewTurnDiff: openTurnDiffReview, theme: appearanceTheme.resolvedTheme }} />
                     {snapshot.conversation?.continuation.error ? (
                       <p role="alert">{snapshot.conversation.continuation.error.message}</p>
                     ) : null}
                     {pendingInteraction === null ? (
+                      <ThreadGoalSurface
+                        threadId={snapshot.phase === "ready" ? activeThreadId : null}
+                        goals={runtime.resources.goals}
+                        portalContainer={portalContainer}
+                      >{(goalMenuItem) => (
                       <CodexComposer
                         controller={composerController}
+                        defaultFollowUpAction={embedded ? "queue" : defaultFollowUpAction}
+                        availableFollowUpActions={(["steer", "queue"] as const).filter(action => runtime.resources.host.canRequest?.(action === "queue" ? "thread/queue/add" : "turn/steer") !== false)}
                         portalContainer={portalContainer}
                         isStreaming={isStreaming}
                         submissionDisabled={snapshot.phase !== "ready" || snapshot.conversation?.authoritative !== true}
                         queuedSubmissions={[
-                          ...(snapshot.conversation?.queuedSubmissions ?? []).map((submission) => ({
-                          id:
-                            submission.serverSubmissionId ??
-                            submission.commandId,
-                          preview: submission.preview,
-                          state: submission.state,
-                          operation: submission.operation,
-                          actionable: submission.serverSubmissionId !== null,
-                          reorderable: queueReorderable,
-                          editableContent: restoreQueuedInput(submission.input),
-                          pausedReason: submission.pausedReason,
-                          error: submission.error?.message ?? null,
-                          })),
+                          ...(snapshot.conversation?.queuedSubmissions ?? []).map((submission) =>
+                            queuedSubmissionPresentation(submission, queueReorderable)),
                           ...(queueUnconfirmedSteerDiscard ? snapshot.conversation?.unconfirmedSteers ?? [] : []).map((claim) => ({
                             id: claim.id,
                             preview: claim.input.find((input) => input.type === "text")?.text ?? "Unconfirmed steering message",
@@ -1741,7 +1823,10 @@ export function App({
                         onResumeQueuedSubmissions={resumeQueuedSubmissions}
                         onResolveAttachment={resolveActiveHostAttachment}
                         onRemoveAttachment={removeActiveHostAttachment}
-                        addMenuContent={composerAddMenuContent}
+                        addMenuContent={goalMenuItem === null ? composerAddMenuContent : (closeMenu) => <>
+                          {typeof composerAddMenuContent === "function" ? composerAddMenuContent(closeMenu) : composerAddMenuContent}
+                          {goalMenuItem(closeMenu)}
+                        </>}
                         shortcutCommands={hermesShortcutCommands}
                         endActions={composerEndActions}
                         modelSelectionPolicy={embedded ? "host-default" : "user"}
@@ -1761,6 +1846,7 @@ export function App({
                         onSubmit={sendMessage}
                         onCancel={cancelStream}
                       />
+                      )}</ThreadGoalSurface>
                     ) : (
                       <ConversationPendingInteractionPanel
                         block={pendingInteraction}

@@ -83,6 +83,12 @@ func (l *logic) RenewPass(passID string, tradeFlowID int64, timeSpan int, timeUn
 		}
 		return "", false, errcode.Wrap(errcode.ErrPassNotFound, "get pass: %v", err)
 	}
+	// A payment callback must not accept an order that can only renew into the past.
+	// Keep the provider's original-expiry billing baseline unchanged; reject before
+	// the active/isolated -> renewing CAS so trade can return DeliveryFailRefund.
+	if err := validateRenewalPeriod(entity.ExpiredTime, timeSpan, timeUnit, time.Now()); err != nil {
+		return "", false, err
+	}
 
 	// 步骤 1：按 status 路由分支（active 同步 / isolated 异步 / 其他拒收）
 	switch entity.Status {
@@ -217,6 +223,21 @@ func (l *logic) RenewPass(passID string, tradeFlowID int64, timeSpan int, timeUn
 	default:
 		return "", false, classifyRenewStatusError(entity.Status)
 	}
+}
+
+// validateRenewalPeriod is shared by quote, order admission and the payment
+// callback. The provider and CTL both extend from the original expiry, so a
+// purchased period must reach strictly beyond the current instant.
+func validateRenewalPeriod(expiredTime time.Time, timeSpan int, timeUnit string, now time.Time) error {
+	newExpired, err := CalcExpiredTime(expiredTime, timeSpan, timeUnit)
+	if err != nil {
+		return errcode.Wrap(errcode.ErrPassInvalidParam, "calc renewal deadline: %v", err)
+	}
+	if !newExpired.After(now) {
+		return errcode.Wrap(errcode.ErrPassRenewalPeriodTooShort,
+			"renewal deadline %s is not after now %s", newExpired.UTC().Format(time.RFC3339), now.UTC().Format(time.RFC3339))
+	}
+	return nil
 }
 
 // classifyRenewStatusError 把 pass.status 映射到对应 errcode（用于 CAS 失败 / 非法分支）。

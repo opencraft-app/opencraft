@@ -29,6 +29,9 @@ function timestamp(value: unknown): number | null {
 export function deriveTurnWorkStatus(
   turn: TimelineSourceTurn,
 ): WorkStatusItem | null {
+  // Old snapshots may encode the aggregate as an Item. A resource cannot
+  // extend work, hide the final answer, or supply a work-start observation.
+  turn = { ...turn, items: turn.items.filter(item => item.type !== "turnDiff") };
   const active = turn.status === "streaming" || turn.status === "pending";
   if (
     turn.status === "interrupted" ||
@@ -36,20 +39,31 @@ export function deriveTurnWorkStatus(
   )
     return null;
   let lastAssistantIndex = -1;
+  let lastInputIndex = -1;
+  let finalCount = 0;
+  let hasAsyncFinal = false;
   let firstObservedWorkStart: number | null = null;
   turn.items.forEach((item, index) => {
-    if (item.type === "agentMessage") lastAssistantIndex = index;
+    const payload = record(item.payload);
+    if (["userMessage", "steeringUserMessage", "hookPrompt", "realtimeTranscript"].includes(item.type)) lastInputIndex = index;
+    if (item.type === "agentMessage") {
+      const async = payload.delivery === "async" || (Array.isArray(payload.questions) && payload.questions.length > 0);
+      if (payload.phase === "final_answer" && async) hasAsyncFinal = true;
+      if (!async && payload.phase !== "commentary") {
+        lastAssistantIndex = index;
+        if (payload.phase === "final_answer") finalCount += 1;
+      }
+    }
     if (item.type !== "userMessage" && item.type !== "hookPrompt") {
       firstObservedWorkStart ??= timestamp(record(item.payload).startedAtMs);
     }
   });
-  let assistantIndex = active
-    ? turn.items.findIndex(
-        (item) =>
-          item.type === "agentMessage" &&
-          record(item.payload).phase === "final_answer",
-      )
-    : lastAssistantIndex;
+  const lastAssistant = turn.items[lastAssistantIndex];
+  const lastPayload = record(lastAssistant?.payload);
+  const hasCurrentFinal = lastAssistantIndex > lastInputIndex
+    && lastPayload.phase === "final_answer"
+    && !turn.items.slice(lastAssistantIndex + 1).some(item => !["steered", "worktreeInit"].includes(item.type));
+  let assistantIndex = active ? hasCurrentFinal ? lastAssistantIndex : -1 : lastAssistantIndex;
   if (active && assistantIndex < 0) assistantIndex = turn.items.length;
   if (assistantIndex < 0) return null;
   const hasWork = turn.items
@@ -69,20 +83,12 @@ export function deriveTurnWorkStatus(
     turn.firstTurnWorkItemStartedAtMs ?? firstObservedWorkStart;
   if (firstWorkStartedAtMs === null) return null;
   const startedAtMs = turn.startedAtMs ?? firstWorkStartedAtMs;
-  const lastAssistant = turn.items[lastAssistantIndex];
   const finalStartedAtMs =
-    turn.finalAssistantStartedAtMs ??
-    timestamp(record(lastAssistant?.payload).startedAtMs);
-  const hasDisplayableFinal = turn.items.some((item) => {
-    const payload = record(item.payload);
-    return (
-      item.type === "agentMessage" &&
-      payload.phase === "final_answer" &&
-      ((typeof payload.text === "string" && payload.text.trim().length > 0) ||
-        payload.completed === true ||
-        payload.structuredOutput != null)
-    );
-  });
+    timestamp(lastPayload.startedAtMs) ??
+    (finalCount <= 1 && !hasAsyncFinal ? turn.finalAssistantStartedAtMs ?? null : null);
+  const hasDisplayableFinal = hasCurrentFinal
+    && ((typeof lastPayload.text === "string" && lastPayload.text.trim().length > 0)
+      || lastPayload.completed === true || lastPayload.structuredOutput != null);
   const completedAtMs =
     active && !hasDisplayableFinal ? null : finalStartedAtMs;
   if (completedAtMs !== null)

@@ -260,6 +260,12 @@ spec:
                   name: ctl-platform-values
                   key: SHADOW_BASE_URL
                   optional: true
+            - name: WEBSITE_SKILL_TAT_COMMAND_IDS_BY_REGION
+              valueFrom:
+                configMapKeyRef:
+                  name: ctl-platform-values
+                  key: WEBSITE_SKILL_TAT_COMMAND_IDS_BY_REGION
+                  optional: true
             - name: WEBSITE_CREDENTIAL_TAT_COMMAND_IDS_BY_REGION
               valueFrom:
                 configMapKeyRef:

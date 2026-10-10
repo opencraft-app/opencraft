@@ -189,6 +189,31 @@ export interface ApplicationRouterOptions {
   readonly mode?: "memory" | "browser";
   readonly initialEntries?: string[];
   readonly initialIndex?: number;
+  /** Resource owners validate references; Router owns any necessary REPLACE. */
+  readonly resolveRestoredEntry?: (entry: RestoredWorkbenchEntry) => RestoredWorkbenchEntry;
+}
+
+export interface RestoredWorkbenchEntry {
+  readonly location: WorkbenchLocation;
+  readonly routeScopeId: RouteScopeId;
+}
+
+/** Read a bootstrap candidate without creating a second Router or route writer. */
+export function readWorkbenchBootstrapLocation(
+  url: URL,
+  historyState: unknown,
+  mode?: ApplicationRouterOptions["mode"],
+): WorkbenchLocation | null {
+  // Embedded memory navigation does not own the containing page's history.
+  if (mode === "memory") return null;
+  const direct = parseWorkbenchLocationUrl(url);
+  if (direct !== null) return direct;
+  if (typeof historyState !== "object" || historyState === null) return null;
+  const state = historyState as { usr?: { namespace?: unknown; location?: unknown } };
+  if (state.usr?.namespace === "opencraft.application-route.v8") {
+    return parseWorkbenchLocation(state.usr.location);
+  }
+  return isWorkbenchHistoryState(historyState) ? parseWorkbenchLocation(historyState.location) : null;
 }
 
 /** One application route authority. The platform only chooses the Router history adapter. */
@@ -200,8 +225,10 @@ export function createApplicationNavigation<TLocation extends WorkbenchLocation 
   const mode = options.mode ?? ((globalThis as any).opencraftDesktop?.kind === "electron"
     || !browserWindow?.document ? "memory" : "browser");
   const initialUrl = browserWindow?.location.href ?? "http://opencraft.invalid/";
-  const url = new URL(initialUrl);
-  const legacy = isWorkbenchHistoryState(browserWindow?.history.state) ? browserWindow.history.state : null;
+  const explicitEntry = options.initialEntries?.[options.initialIndex ?? options.initialEntries.length - 1];
+  const url = new URL(explicitEntry ?? initialUrl, initialUrl);
+  const legacy = explicitEntry === undefined && isWorkbenchHistoryState(browserWindow?.history.state)
+    ? browserWindow.history.state : null;
   const firstLocation = initialLocation === null ? null : (parseWorkbenchLocationUrl(url)
     ?? (legacy ? parseWorkbenchLocation(legacy.location) : null) ?? initialLocation);
   const firstRoute = parseApplicationRouteUrl(url);
@@ -262,6 +289,12 @@ export function createApplicationNavigation<TLocation extends WorkbenchLocation 
     };
   };
   let snapshot = read("initial");
+  const resolveEntry = (target: ApplicationNavigationSnapshot<TLocation>) => {
+    if (target.location === null || !options.resolveRestoredEntry) return target;
+    const resolved = options.resolveRestoredEntry({ location: target.location, routeScopeId: target.routeScopeId });
+    if (equalWorkbenchLocation(target.location, resolved.location) && target.routeScopeId === resolved.routeScopeId) return target;
+    return { ...target, location: resolved.location as TLocation, routeScopeId: resolved.routeScopeId };
+  };
   const unsubscribe = router.subscribe(state => {
     if (disposed || state.location === lastRouterLocation) return;
     lastRouterLocation = state.location;
@@ -278,7 +311,15 @@ export function createApplicationNavigation<TLocation extends WorkbenchLocation 
       browserWindow!.sessionStorage.setItem(receiptKey, JSON.stringify(keys));
     } catch { /* optional button-history receipt */ }
     revision++;
-    snapshot = read(state.historyAction.toLowerCase() as ApplicationNavigationSnapshot["action"]);
+    const next = read(state.historyAction.toLowerCase() as ApplicationNavigationSnapshot["action"]);
+    const resolved = resolveEntry(next);
+    if (resolved !== next) {
+      // Preserve Settings/Extension destinations while correcting their Chat
+      // return reference. Never publish an invalid resource identity to Views.
+      restore(resolved);
+      return;
+    }
+    snapshot = next;
     for (const listener of listeners) listener();
   });
   const pathFor = (location: TLocation, route: ApplicationRoute) =>
@@ -301,8 +342,9 @@ export function createApplicationNavigation<TLocation extends WorkbenchLocation 
   };
   const restore = (target: ApplicationNavigationSnapshot<TLocation>) =>
     navigate(target.location, target.applicationRoute, true, target.routeScopeId);
-  if (mode === "browser" && (bootUrl.href !== url.href
-    || router.state.location.state?.namespace !== "opencraft.application-route.v8")) restore(snapshot);
+  const resolvedInitial = resolveEntry(snapshot);
+  if (resolvedInitial !== snapshot || (mode === "browser" && (bootUrl.href !== url.href
+    || router.state.location.state?.namespace !== "opencraft.application-route.v8"))) restore(resolvedInitial);
   return {
     getSnapshot: () => snapshot,
     subscribe(listener) { listeners.add(listener); return () => { listeners.delete(listener); }; },

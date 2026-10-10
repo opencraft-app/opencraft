@@ -1,5 +1,7 @@
 import { cleanup, configure, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ensureThaiPublicCopy, localizeThai } from "@/i18n/thai-copy";
+import { ensureMalayPublicCopy, localizeMalay } from "@/i18n/malay-copy";
 
 import type { Registry, SkillsDataLayer } from "./skill-registries";
 import { SkillsDemoPanel } from "./SkillsDemoPanel";
@@ -101,6 +103,26 @@ function renderPanel(mode: "global" | "domestic" = "global", initialTab: "discov
   );
   return dataLayer;
 }
+
+describe("SkillsDemoPanel category locale loading", () => {
+  afterEach(() => { mocks.language = "zh-CN"; });
+
+  it.each([
+    ["domestic", "zh-CN", "理财分析"],
+    ["domestic", "en-US", "Finance Analysis"],
+    ["global", "zh-CN", "市场分析"],
+    ["global", "en-US", "Market Analysis"],
+    ["global", "id-ID", "Analisis Pasar"],
+    ["global", "es", "Análisis de mercado"],
+    ["global", "ja-JP", "市場分析"],
+    ["global", "ko-KR", "시장 분석"],
+  ] as const)("renders %s categories in %s without loading Malay copy", (mode, language, label) => {
+    mocks.language = language;
+    expect(() => localizeMalay("Home")).toThrow("Malay public copy must be loaded before rendering");
+    renderPanel(mode);
+    expect(screen.getByText(label)).toBeInTheDocument();
+  });
+});
 
 describe.each(["global", "domestic"] as const)("SkillsDemoPanel %s mode", (mode) => {
   beforeEach(() => {
@@ -911,6 +933,34 @@ it("puts the new skills.sh skills in the last international Featured batch", () 
   ]);
 });
 
+it("replaces the anniversary promotion with the development skill in domestic Featured", () => {
+  renderPanel("domestic");
+
+  const featuredSection = screen.getByText("精选").closest("section") as HTMLElement;
+  const featuredBatches = featuredSection.querySelectorAll("ul");
+  const firstFeaturedBatch = featuredBatches[0] as HTMLElement;
+  const secondFeaturedBatch = featuredBatches[1] as HTMLElement;
+  const lastFeaturedBatch = featuredBatches[2] as HTMLElement;
+  const parentingBatch = featuredBatches[3] as HTMLElement;
+  expect(within(featuredSection).queryByRole("button", { name: "查看轻量云六周年送祝福详情" })).not.toBeInTheDocument();
+  expect(featuredBatches).toHaveLength(4);
+  expect(within(firstFeaturedBatch).getAllByRole("button", { name: /查看.*详情/ }).map((button) => button.getAttribute("aria-label"))).toEqual([
+    "查看find skill详情",
+    "查看提示词生成大师详情",
+    "查看编程专家.Skill详情",
+  ]);
+  expect(within(secondFeaturedBatch).getAllByRole("button", { name: /查看.*详情/, hidden: true }).map((button) => button.getAttribute("aria-label"))).toEqual([
+    "查看海报设计skill详情",
+    "查看腾讯文档 TENCENT DOCS详情",
+    "查看电商选品详情",
+  ]);
+  expect(lastFeaturedBatch.querySelectorAll("li")).toHaveLength(3);
+  expect(within(lastFeaturedBatch).getByRole("button", { name: "查看防诈专家详情", hidden: true })).toBeInTheDocument();
+  expect(parentingBatch.querySelectorAll("li")).toHaveLength(2);
+  expect(within(parentingBatch).getByRole("button", { name: "查看中文公文写作详情", hidden: true })).toBeInTheDocument();
+  expect(within(parentingBatch).getByRole("button", { name: "查看育儿大师.Skill详情", hidden: true })).toBeInTheDocument();
+});
+
 it("uses Spanish category and overview copy when the international locale is es", async () => {
   mocks.language = "es";
   renderPanel("global");
@@ -938,6 +988,35 @@ describe("SkillsDemoPanel installed identity boundaries", () => {
     vi.clearAllMocks();
     window.localStorage.clear();
     Element.prototype.scrollIntoView = vi.fn();
+  });
+
+  it("marks a skill featured and categorized under the same canonical ID as installed from a short ACLI ID", async () => {
+    const dataLayer = makeDataLayer("domestic");
+    vi.mocked(dataLayer.listInstalled).mockResolvedValue({
+      failedSources: [],
+      skills: [{
+        registry: "skillhub",
+        rawId: "parenting-expert",
+        slug: "parenting-expert",
+        name: "育儿大师.Skill",
+        registries: ["skillhub", "hermes"],
+        sourceLabel: "SkillHub / Hermes",
+      }],
+    });
+    mocks.createSkillsDataLayer.mockReturnValue(dataLayer);
+
+    render(<SkillsDemoPanel botId="bot-1" execDebugCommand={vi.fn()} mode="domestic" initialTab="discover" />);
+    const featuredSection = screen.getByText("精选").closest("section") as HTMLElement;
+    const featuredCard = within(featuredSection)
+      .getByRole("button", { name: "查看育儿大师.Skill详情", hidden: true })
+      .closest("li") as HTMLElement;
+    const educationSection = screen.getByText("教育学习").closest("section") as HTMLElement;
+    const categoryCard = within(educationSection)
+      .getByRole("button", { name: "查看育儿大师.Skill详情" })
+      .closest("li") as HTMLElement;
+
+    await waitFor(() => expect(within(featuredCard).getByLabelText("已安装")).toBeInTheDocument());
+    expect(within(categoryCard).getByLabelText("已安装")).toBeInTheDocument();
   });
 
   it("renders one installed row with both marketplace source badges", async () => {
@@ -1005,4 +1084,37 @@ describe("SkillsDemoPanel installed identity boundaries", () => {
     expect(await screen.findByRole("button", { name: "选择批量安装 First" }, { timeout: 3_000 })).toBeInTheDocument();
     expect(JSON.parse(window.localStorage.getItem("lightvela-skills-demo-known-installed:bot-1") ?? "[]")).toEqual([]);
   });
+});
+
+it("renders Malay categories after the public copy has loaded", async () => {
+  await ensureMalayPublicCopy();
+  mocks.language = "ms-MY";
+  try {
+    renderPanel("global");
+    expect(screen.getByText("Analisis Pasaran")).toBeInTheDocument();
+  } finally {
+    mocks.language = "zh-CN";
+  }
+});
+
+// !5133 regression: unrelated locales must render with an unloaded Thai catalog.
+it.each(["zh-CN", "en-US", "id-ID", "es", "ja-JP", "ko-KR"])("renders %s skill categories without loading Thai copy", (locale) => {
+  expect(() => localizeThai("Home")).toThrow("Thai public copy must be loaded before rendering");
+  mocks.language = locale;
+  try {
+    expect(() => renderPanel("global")).not.toThrow();
+  } finally {
+    mocks.language = "zh-CN";
+  }
+});
+
+it("renders Thai skill categories after Thai copy loads", async () => {
+  await ensureThaiPublicCopy();
+  mocks.language = "th-TH";
+  try {
+    renderPanel("global");
+    expect(screen.getByText(localizeThai("Market Analysis"))).toBeInTheDocument();
+  } finally {
+    mocks.language = "zh-CN";
+  }
 });

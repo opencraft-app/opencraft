@@ -2,11 +2,11 @@
 
 ## Ringkasan
 
-**Alur membuat instance Hermes pertama: masuk dengan Google atau GitHub → pilih paket yang tersedia → aktifkan sesuai aturan paket saat ini → platform otomatis membuat instance → konfigurasikan model dan kanal. Semuanya dilakukan di browser, tanpa perlu membeli server atau melakukan deployment lokal. Instance Hermes adalah lingkungan runtime Agent di cloud LightVela, dan setelah dibuat ia daring 24/7. Setelah siap, buka konsol "My Hermes" untuk mengatur model, menghubungkan kanal pesan, dan memasang skill; jika belum memiliki API key model sendiri, Anda bisa langsung mulai berbicara memakai kredit model dari paket.**
+**Alur membuat instance Hermes pertama: masuk dengan Google atau GitHub → pilih paket yang tersedia → aktifkan sesuai aturan paket saat ini → platform otomatis membuat instance → mulai Chat web; hubungkan kanal jika perlu. Semuanya dilakukan di browser, tanpa perlu membeli server atau melakukan deployment lokal. Instance Hermes adalah lingkungan runtime Agent di cloud LightVela, dan setelah dibuat ia daring 24/7. Setelah siap, buka My Agent untuk menggunakan Daily → Chat, lalu atur model, kanal pesan, dan Skill sesuai kebutuhan; jika belum memiliki API key model sendiri, Anda bisa langsung mulai berbicara memakai kredit model dari paket.**
 
 ---
 
-Instans Hermes adalah runtime cloud tempat LightVela Agent Anda berjalan. Aktivasi instans pertama dilakukan dalam lima langkah: **masuk dengan Google atau GitHub → pilih paket yang tersedia → aktifkan melalui alur aktivasi saat ini → biarkan LightVela menyiapkan instans → atur model dan kanal**. Semua dilakukan di browser, tanpa membeli server atau melakukan deployment lokal. Halaman ini memandu prosesnya secara berurutan.
+Instans Hermes adalah runtime cloud tempat LightVela Agent Anda berjalan. Aktivasi instans pertama dilakukan dalam lima langkah: **masuk dengan Google atau GitHub → pilih paket yang tersedia → aktifkan melalui alur aktivasi saat ini → biarkan LightVela menyiapkan instans → mulai Chat web, lalu hubungkan kanal bila perlu**. Semua dilakukan di browser, tanpa membeli server atau melakukan deployment lokal. Halaman ini memandu prosesnya secara berurutan.
 
 ## Yang dibahas di halaman ini
 
@@ -22,7 +22,7 @@ Instans Hermes adalah runtime cloud tempat LightVela Agent Anda berjalan. Aktiva
 
 - Paket yang saat ini tersedia dan dipilih dari [halaman Subscribe](/subscribe); situs internasional tidak memerlukan verifikasi nama asli Tiongkok
 
-- Minimal satu akun chat yang ingin dihubungkan, seperti Telegram, WhatsApp, Discord, Slack, atau WeChat
+- Akun Telegram, WhatsApp, Discord, Slack, atau WeChat hanya jika Anda ingin memakai aplikasi pesan tersebut
 
 ---
 
@@ -50,11 +50,13 @@ Setelah paket diaktifkan, LightVela **otomatis menyediakan lingkungan cloud khus
 
 Setelah instans siap, buka konsol dan selesaikan setup dasar:
 
-1. **Atur model** — Pilih model bahasa yang mendasari Agent; lihat [Ringkasan Konfigurasi](./05-configuration.md#2-model)
+1. **Periksa model** — Kredit paket yang tersedia memungkinkan Anda memulai tanpa API key sendiri; lihat [Ringkasan Konfigurasi](./05-configuration.md#2-model) bila perlu
 
-2. **Hubungkan kanal** — Tambahkan Telegram, WhatsApp, Discord, Slack, WeChat, atau kanal lain yang didukung, lalu bicara dengan Agent dari aplikasi chat tersebut
+2. **Coba Chat web** — Mulai percakapan di Daily → Chat dan kirim pesan; lihat [Chat](./configuration/agent-chat.md)
 
-3. **Tambahkan Skill dan tugas terjadwal bila perlu** — Perluas kemampuan Agent dari konsol
+3. **Hubungkan kanal bila perlu** — Gunakan Telegram, WhatsApp, Discord, atau WeChat jika ingin memakai Bot di aplikasi pesan
+
+4. **Tambahkan Skill dan tugas terjadwal bila perlu** — Perluas kemampuan Agent dari konsol
 
 Hermes Agent pertama Anda kini siap online di cloud 24/7.
 
@@ -64,7 +66,7 @@ Hermes Agent pertama Anda kini siap online di cloud 24/7.
 
 ### Seberapa cepat instans bisa digunakan setelah aktivasi?
 
-LightVela mulai menyiapkan instans Hermes secara otomatis setelah paket aktif. Saat instans siap, atur model dan kanal di konsol, lalu mulai percakapan.
+LightVela mulai menyiapkan instans Hermes secara otomatis setelah paket aktif. Saat Bot siap dan kredit paket tersedia atau model sudah dikonfigurasi, kirim pesan di Daily → Chat. Hubungkan kanal eksternal bila perlu.
 
 ### Di mana melihat paket dan penawaran saat ini?
 

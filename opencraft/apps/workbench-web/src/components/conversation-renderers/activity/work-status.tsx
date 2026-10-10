@@ -59,7 +59,7 @@ export function ActivityDisclosureHeader({
   readonly durationMs: number | null;
   readonly count: number;
   readonly open: boolean;
-  readonly onToggle: () => void;
+  readonly onToggle: (anchor: HTMLButtonElement) => void;
 }) {
   const labelId = useId();
   return (
@@ -70,6 +70,7 @@ export function ActivityDisclosureHeader({
         labelId={labelId}
         onToggle={onToggle}
         open={open}
+        reflowOwned
       >
           <span id={labelId}>
             <ActivityDisclosureLabel item={item} durationMs={durationMs} count={count} />

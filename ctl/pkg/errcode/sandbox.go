@@ -10,4 +10,5 @@ var (
 	ErrSandboxTimeout        = Register(New("SANDBOX_TIMEOUT", 504, "sandbox service timeout"))
 	// 云桌面（VNC）能力未配置（桌面模板 / ingress 域名等环境变量缺失）。
 	ErrDesktopNotConfigured = Register(New("DESKTOP_NOT_CONFIGURED", 503, "cloud desktop is not configured"))
+	ErrDesktopTargetChanged = Register(New("DESKTOP_TARGET_CHANGED", 409, "desktop target has changed"))
 )

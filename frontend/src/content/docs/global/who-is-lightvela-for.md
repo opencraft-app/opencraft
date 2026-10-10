@@ -6,7 +6,7 @@
 
 ---
 
-LightVela 是腾讯轻量云团队推出的云端 Agent 托管产品，适合**想拥有一个长期在线、认识你、越聊越懂你的专属 AI 伙伴，但不想管理服务器、容器和 API 鉴权的用户**。它把 Agent 的部署、运维和 7×24 小时运行交给云端托管；你只需在网页上完成配置，就能通过 Telegram、WhatsApp、Discord、Slack 和 WeChat 与自己的 Hermes Agent 对话。
+LightVela 是腾讯轻量云团队推出的云端 AI Agent 产品，适合**想拥有一个长期在线、认识你、越聊越懂你的专属 AI 伙伴，但不想管理服务器、容器和 API 鉴权的用户**。它把 Agent 的部署、运维和 7×24 小时运行交给云端托管；你只需在网页上完成配置，就能通过 Telegram、WhatsApp、Discord、Slack 和 WeChat 与自己的 Hermes Agent 对话。
 
 如果你还不清楚 LightVela 具体是什么，可以先看 [LightVela 是什么](./01-overview.md)。
 

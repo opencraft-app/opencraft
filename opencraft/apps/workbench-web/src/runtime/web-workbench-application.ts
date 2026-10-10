@@ -1,4 +1,5 @@
 import { Context } from "@deepseek-ai/cordis";
+import { createCloudDesktopWorkbenchPanelPlugin, type CloudDesktopPluginAdapter } from "@opencraft/plugin-cloud-desktop";
 import {
   createWebChatRenderRuntime,
   type ChatRenderRuntime,
@@ -15,6 +16,7 @@ import {
 import { asHostId, createConversationKey } from "@opencraft/chat-core";
 
 import { createBrowserWorkbenchPanelPlugin } from "../browser/browser-panel-plugin";
+import { HostDesktopBackend } from "./host-desktop-backend";
 import { BrowserPresentationCoordinator } from "../browser/browser-presentation-coordinator";
 import { BrowserWorkbenchCoordinator } from "../browser/browser-workbench-coordinator";
 import { WebBrowserPageRuntime } from "../browser/web-browser-runtime";
@@ -35,12 +37,15 @@ import {
   createWorkbenchPanelRuntime,
 } from "./panel-runtime-context";
 import type { WorkbenchPanelReactRuntime } from "@opencraft/workbench-panels-react";
+import { OptionalFeatureStartup, loadOptionalFeatureModule } from "./optional-feature-startup";
 import {
   bootstrapLightVelaOAuthCallback,
   bootstrapLightVelaWebLoginCallback,
 } from "@opencraft/plugin-lightvela-platform";
 
 export interface WebWorkbenchApplication {
+  /** Idempotent; never creates another Application or Host. */
+  startOptionalFeatures(): Promise<void>;
   readonly cordis: Context;
   readonly browserPages: WebBrowserPageRuntime;
   readonly browserSurfaces: BrowserSurfaceHost;
@@ -80,8 +85,11 @@ function loadConversationBindings(storage: BrowserMetadataStorage = window.local
 }
 
 /** Single application owner for every long-lived renderer service. */
-export interface CreateWebWorkbenchApplicationOptions extends WebWorkbenchSupervisorOptions {
+export interface CreateWebWorkbenchApplicationOptions extends Omit<WebWorkbenchSupervisorOptions, "optionalFeatureStartup"> {
+  readonly deferOptionalFeatures?: boolean;
   readonly browserMetadataStorage?: BrowserMetadataStorage;
+  /** Product override; otherwise use the capability-gated local Host adapter. */
+  readonly cloudDesktop?: CloudDesktopPluginAdapter;
 }
 
 export async function createWebWorkbenchApplication(
@@ -99,6 +107,7 @@ export async function createWebWorkbenchApplication(
   // Desktop account restoration is independent of local Host startup. The
   // local Host and its environment configuration must remain usable meanwhile.
   const cordis = new Context();
+  const optionalFeatures = options.deferOptionalFeatures ? new OptionalFeatureStartup() : null;
   const conversationBindings = createConversationBindingStore({
     persistence: {
       load: () => loadConversationBindings(browserStorage ?? window.localStorage),
@@ -114,6 +123,7 @@ export async function createWebWorkbenchApplication(
   let supervisor: WebWorkbenchApplicationSupervisor;
   let resolveTerminalRuntime: ((hostId: string) => AppServerWorkbenchRuntime) | null = null;
   let releaseSupervisor: (() => Promise<void>) | undefined;
+  let hostDesktop: HostDesktopBackend | undefined;
   const hostProxy = new WebHostProxyBroker(async (hostId, targetUrl, init) => {
     if (supervisor.mode !== "active") {
       throw new Error("Host proxy is unavailable without an active AppServer runtime");
@@ -149,6 +159,7 @@ export async function createWebWorkbenchApplication(
     await panelRuntime.install(TimelineBlockRendererRegistryService);
     await panelRuntime.install(BuiltinTimelineRendererPlugin);
     await panelRuntime.install(BuiltinWorkbenchPanelPlugin);
+    if (options.cloudDesktop) await panelRuntime.install(createCloudDesktopWorkbenchPanelPlugin(options.cloudDesktop));
     browserWorkbench = new BrowserWorkbenchCoordinator(
       browserPages,
       panelRuntime.panels,
@@ -197,11 +208,16 @@ export async function createWebWorkbenchApplication(
         }
       },
       (viewId) => browserWorkbench.releaseView(viewId),
-      options,
+      { ...options, optionalFeatureStartup: optionalFeatures ?? undefined },
     );
     releaseSupervisor = () => supervisor.dispose();
     if (supervisor.mode === "active") {
       const activeSupervisor = supervisor;
+      if (!options.cloudDesktop) {
+        hostDesktop = new HostDesktopBackend({ bindings: conversationBindings, registry: activeSupervisor.registry,
+          origin: window.location.origin });
+        await panelRuntime.install(createCloudDesktopWorkbenchPanelPlugin({ backend: hostDesktop, surfaces: hostDesktop.surfaces }));
+      }
       resolveTerminalRuntime = (hostId) => activeSupervisor.registry.getRuntime(hostId);
       await panelRuntime.install(SideChatService, { resolveHost: (hostId: string) => activeSupervisor.registry.ensureConnected(hostId) });
       await panelRuntime.install(createSideChatPanelPlugin(panelRuntime.context.sideChats, conversationBindings));
@@ -209,26 +225,32 @@ export async function createWebWorkbenchApplication(
         globalThis as typeof globalThis & { readonly opencraftDesktop?: { readonly kind?: string } }
       ).opencraftDesktop?.kind;
       if (desktopKind !== "electron") {
-        try {
-          const proxyReady = await hostProxy.start();
+        // Preview owns proxy readiness; optional SW activation never gates chat.
+        void hostProxy.start().then((proxyReady) => {
           if (!proxyReady) {
             console.warn("[host-proxy] Service Worker is unavailable; remote loopback previews are disabled");
           } else {
             console.info("[host-proxy] Service Worker broker ready", { brokerId: hostProxy.brokerId });
           }
-        } catch (error) {
+        }).catch((error) => {
           console.warn("[host-proxy] Service Worker registration failed", error);
-        }
+        });
       }
-      const {
-        createTerminalWorkbenchPanelPlugin,
-      } = await import("@opencraft/plugin-terminal");
-      await panelRuntime.install(
-        createTerminalWorkbenchPanelPlugin(terminalSessions),
-      );
+      const sessions = terminalSessions;
+      const installTerminal = async (signal?: AbortSignal) => {
+        const { createTerminalWorkbenchPanelPlugin } = await loadOptionalFeatureModule(
+          () => import("@opencraft/plugin-terminal"), signal,
+        );
+        signal?.throwIfAborted();
+        await panelRuntime.install(createTerminalWorkbenchPanelPlugin(sessions));
+      };
+      if (optionalFeatures === null) await installTerminal();
+      else optionalFeatures.add("terminal-presentation", installTerminal);
       browserWorkbench.restorePersistedTabs();
     }
   } catch (error) {
+    await optionalFeatures?.dispose();
+    hostDesktop?.dispose();
     hostProxy.dispose();
     browserPresentations.dispose();
     browserPages.dispose();
@@ -242,6 +264,7 @@ export async function createWebWorkbenchApplication(
   }
   let disposed = false;
   return {
+    startOptionalFeatures: () => optionalFeatures?.start() ?? Promise.resolve(),
     cordis,
     browserPages,
     browserSurfaces,
@@ -256,6 +279,7 @@ export async function createWebWorkbenchApplication(
       if (disposed) return;
       disposed = true;
       const failures: unknown[] = [];
+      await optionalFeatures?.dispose();
       // Retire consumers before their Host transport provider.
       hostProxy.dispose();
       try {
@@ -268,6 +292,7 @@ export async function createWebWorkbenchApplication(
       } catch (error) {
         failures.push(error);
       }
+      hostDesktop?.dispose();
       try {
         await chatRenderRuntime.dispose();
       } catch (error) {

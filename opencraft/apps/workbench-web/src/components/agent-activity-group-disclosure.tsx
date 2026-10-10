@@ -1,6 +1,8 @@
 import { ChevronRight } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import { OverlayDisclosureTrigger } from "./overlay-disclosure-trigger";
+import { useDisclosureReflow } from "./use-disclosure-reflow";
+import { useDisclosureHeight } from "./use-disclosure-height";
 import {
   type ReactNode,
   useCallback,
@@ -85,8 +87,10 @@ export function AgentActivityGroupDisclosure({
   canExpand = true,
   children,
   defaultExpanded = false,
+  collapsed,
   icon,
   onExpand,
+  onCollapsedChange,
   shouldAnimateInitialCollapse = false,
   summary,
   summaryKey,
@@ -95,24 +99,28 @@ export function AgentActivityGroupDisclosure({
   canExpand?: boolean;
   children: ReactNode | (() => ReactNode);
   defaultExpanded?: boolean;
+  collapsed?: boolean;
   icon?: ReactNode;
   onExpand?: () => void;
+  onCollapsedChange?: (collapsed: boolean) => void;
   shouldAnimateInitialCollapse?: boolean;
   summary: ReactNode;
   summaryKey: string;
   summaryTransition?: AgentActivitySummaryTransition;
 }) {
   const reduceMotion = useReducedMotion();
+  const reflow = useDisclosureReflow();
   const summaryId = useId();
   const [phase, setPhase] = useState<AgentActivityDisclosurePhase>(() => {
     if (!canExpand) return "collapsed";
-    if (defaultExpanded) return "expanded";
+    if (collapsed === false || (collapsed === undefined && defaultExpanded)) return "expanded";
     return shouldAnimateInitialCollapse && typeof children !== "function"
       ? "closing"
       : "collapsed";
   });
   const expanded = phase === "opening" || phase === "expanded";
   const fullyExpanded = phase === "expanded";
+  const animatedHeight = useDisclosureHeight(fullyExpanded ? "auto" : 0);
 
   useEffect(() => {
     if (phase !== "opening") return;
@@ -123,13 +131,30 @@ export function AgentActivityGroupDisclosure({
   }, [phase]);
 
   useEffect(() => {
-    if (!canExpand) setPhase((current) => reduceAgentActivityDisclosurePhase(current, "disable"));
-  }, [canExpand]);
+    if (!canExpand) {
+      reflow.cancel();
+      setPhase((current) => reduceAgentActivityDisclosurePhase(current, "disable"));
+    }
+  }, [canExpand, reflow.cancel]);
 
-  const toggle = useCallback(() => {
+  // The View owns the user's choice; this component only owns its animation.
+  // Restore that choice when an outer work disclosure remounts this group.
+  useEffect(() => {
+    if (!canExpand || collapsed === undefined) return;
+    setPhase(current => {
+      const currentlyExpanded = current === "opening" || current === "expanded";
+      return currentlyExpanded === !collapsed
+        ? current
+        : reduceAgentActivityDisclosurePhase(current, "toggle");
+    });
+  }, [canExpand, collapsed]);
+
+  const toggle = useCallback((anchor: HTMLButtonElement) => {
+    reflow.begin(anchor);
     if (!expanded) onExpand?.();
+    onCollapsedChange?.(expanded);
     setPhase((current) => reduceAgentActivityDisclosurePhase(current, "toggle"));
-  }, [expanded, onExpand]);
+  }, [expanded, onExpand, onCollapsedChange, reflow.begin]);
 
   const visibleSummary = summaryTransition === "static"
     ? summary
@@ -147,10 +172,13 @@ export function AgentActivityGroupDisclosure({
         data-disclosure-phase={phase}
         initial={false}
         inert={!fullyExpanded}
-        onAnimationComplete={() => {
+        onAnimationComplete={(definition) => {
+          if (phase === "opening" || typeof definition !== "object" || Array.isArray(definition)
+            || definition.height !== (fullyExpanded ? "auto" : 0)) return;
+          reflow.complete();
           setPhase((current) => reduceAgentActivityDisclosurePhase(current, "animation-complete"));
         }}
-        style={{ overflow: "hidden", pointerEvents: fullyExpanded ? "auto" : "none" }}
+        style={{ height: animatedHeight, overflow: "hidden", pointerEvents: fullyExpanded ? "auto" : "none" }}
         transition={{ duration: reduceMotion ? 0 : 0.3, ease: [0.19, 1, 0.22, 1] }}
       >
         <div className="thread-activity-item__body">
@@ -175,6 +203,7 @@ export function AgentActivityGroupDisclosure({
         labelId={summaryId}
         onToggle={toggle}
         open={expanded}
+        reflowOwned
       >
           {icon == null ? null : <span className="thread-activity-item__icon">{icon}</span>}
           <span className="thread-activity-item__summary" id={summaryId}>{visibleSummary}</span>

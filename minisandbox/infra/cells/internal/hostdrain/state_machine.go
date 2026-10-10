@@ -14,24 +14,36 @@ import (
 type Phase string
 
 const (
-	PhaseIdle             Phase = "Idle"
-	PhaseObserving        Phase = "Observing"
-	PhaseSelected         Phase = "Selected"
-	PhaseDraining         Phase = "Draining"
-	PhaseReadyToScaleDown Phase = "ReadyToScaleDown"
-	PhaseScalingDown      Phase = "ScalingDown"
-	PhaseConverging       Phase = "Converging"
-	PhaseAborting         Phase = "Aborting"
+	PhaseIdle                Phase = "Idle"
+	PhaseObserving           Phase = "Observing"
+	PhaseSelected            Phase = "Selected"
+	PhaseDraining            Phase = "Draining"
+	PhaseReadyToScaleDown    Phase = "ReadyToScaleDown"
+	PhaseScalingDown         Phase = "ScalingDown"
+	PhaseConverging          Phase = "Converging"
+	PhaseAborting            Phase = "Aborting"
+	PhaseRebalanceSelected   Phase = "RebalanceSelected"
+	PhaseRebalanceDraining   Phase = "RebalanceDraining"
+	PhaseRebalanceReady      Phase = "RebalanceReady"
+	PhaseRebalanceEvicting   Phase = "RebalanceEvicting"
+	PhaseRebalanceCancelling Phase = "RebalanceCancelling"
+	PhaseRebalanceReplacing  Phase = "RebalanceReplacing"
+	PhaseRebalanceBlocked    Phase = "RebalanceBlocked"
 )
 
 type State struct {
-	Phase        Phase     `json:"phase"`
-	Epoch        int64     `json:"epoch"`
-	TargetName   string    `json:"targetName,omitempty"`
-	TargetUID    string    `json:"targetUID,omitempty"`
-	FromReplicas int32     `json:"fromReplicas,omitempty"`
-	StartedAt    time.Time `json:"startedAt,omitempty"`
-	TransitionAt time.Time `json:"transitionAt,omitempty"`
+	Phase                   Phase     `json:"phase"`
+	Epoch                   int64     `json:"epoch"`
+	TargetName              string    `json:"targetName,omitempty"`
+	TargetUID               string    `json:"targetUID,omitempty"`
+	FromReplicas            int32     `json:"fromReplicas,omitempty"`
+	StartedAt               time.Time `json:"startedAt,omitempty"`
+	TransitionAt            time.Time `json:"transitionAt,omitempty"`
+	RepairWorkloadUID       string    `json:"repairWorkloadUID,omitempty"`
+	RepairSourceZone        string    `json:"repairSourceZone,omitempty"`
+	RepairDestinationZone   string    `json:"repairDestinationZone,omitempty"`
+	RepairPrefixScore       int64     `json:"repairPrefixScore,omitempty"`
+	EvictionResourceVersion string    `json:"evictionResourceVersion,omitempty"`
 }
 
 type Host struct {
@@ -50,6 +62,10 @@ type Host struct {
 	InFlight        int64
 	Queued          int64
 	ObservedAt      time.Time
+	ResourceVersion string
+	// This proof is derived from the exact Kubernetes cancellation CAS token.
+	// Guest stats and an arbitrary resourceVersion change cannot supply it.
+	EvictionCancelled bool
 }
 
 type Snapshot struct {
@@ -67,22 +83,27 @@ type Snapshot struct {
 	RequiredZones          int
 	TopologyMaxSkew        int
 	Hosts                  []Host
+	// Only the Kubernetes adapter may supply fresh, admitted spare-zone evidence.
+	RebalanceZones []string
 }
 
 type ActionKind string
 
 const (
-	ActionNone        ActionKind = "None"
-	ActionSetDraining ActionKind = "SetHostDraining"
-	ActionSetReplicas ActionKind = "SetReplicas"
+	ActionNone           ActionKind = "None"
+	ActionSetDraining    ActionKind = "SetHostDraining"
+	ActionSetReplicas    ActionKind = "SetReplicas"
+	ActionEvictHost      ActionKind = "EvictHost"
+	ActionCancelEviction ActionKind = "CancelEviction"
 )
 
 type Action struct {
-	Kind       ActionKind
-	TargetName string
-	TargetUID  string
-	Draining   bool
-	Replicas   int32
+	Kind            ActionKind
+	TargetName      string
+	TargetUID       string
+	Draining        bool
+	Replicas        int32
+	ResourceVersion string
 }
 
 type Decision struct {
@@ -111,6 +132,12 @@ func Decide(current State, snapshot Snapshot) Decision {
 	if err := validateState(current); err != nil {
 		return Decision{State: current, Action: Action{Kind: ActionNone}, Reason: err.Error()}
 	}
+	if current.RepairWorkloadUID != "" && current.RepairWorkloadUID != snapshot.WorkloadUID {
+		return stay(current, "rebalance workload UID changed; no target action is authorized")
+	}
+	if isRebalancePhase(current.Phase) {
+		return decideRebalance(current, snapshot)
+	}
 
 	switch current.Phase {
 	case PhaseIdle:
@@ -135,7 +162,7 @@ func Decide(current State, snapshot Snapshot) Decision {
 }
 
 func decideIdle(current State, snapshot Snapshot) Decision {
-	if reason := scaleInBlockReason(snapshot, nil); reason != "" {
+	if reason := contractionBlockReason(snapshot); reason != "" {
 		return stay(current, reason)
 	}
 	if snapshot.ScaleDownStabilization > 0 {
@@ -151,7 +178,7 @@ func decideIdle(current State, snapshot Snapshot) Decision {
 }
 
 func decideObserving(current State, snapshot Snapshot) Decision {
-	if reason := scaleInBlockReason(snapshot, nil); reason != "" {
+	if reason := contractionBlockReason(snapshot); reason != "" {
 		return reset(current, snapshot.Now, "low-load observation reset: "+reason)
 	}
 	if snapshot.Now.Sub(current.StartedAt) < snapshot.ScaleDownStabilization {
@@ -161,6 +188,18 @@ func decideObserving(current State, snapshot Snapshot) Decision {
 }
 
 func selectTarget(current State, snapshot Snapshot) Decision {
+	if reason := scaleInBlockReason(snapshot, nil); reason != "" {
+		if target, destination, score := rebalanceCandidate(snapshot); target != nil {
+			return Decision{State: State{
+				Phase: PhaseRebalanceSelected, Epoch: current.Epoch + 1,
+				TargetName: target.Name, TargetUID: target.UID, FromReplicas: snapshot.Replicas,
+				StartedAt: snapshot.Now, TransitionAt: snapshot.Now,
+				RepairWorkloadUID: snapshot.WorkloadUID, RepairSourceZone: target.Zone,
+				RepairDestinationZone: destination, RepairPrefixScore: score,
+			}, Action: Action{Kind: ActionNone}, Reason: "selected one idle Host for topology repair before serial scale-in"}
+		}
+		return stay(current, reason)
+	}
 	target := highestOrdinal(snapshot.Hosts)
 	if target == nil {
 		return stay(current, "no eligible Host exists")
@@ -307,7 +346,7 @@ func decideConverging(current State, snapshot Snapshot) Decision {
 		// ordinal has disappeared, then select at most one next Host.  Any rising
 		// demand or incomplete evidence resets to Idle, so a later contraction
 		// must earn a fresh stabilization window.
-		if reason := scaleInBlockReason(snapshot, nil); reason != "" {
+		if reason := contractionBlockReason(snapshot); reason != "" {
 			return reset(current, snapshot.Now, "the one-Host scale-down converged; contraction stopped: "+reason)
 		}
 		return selectTarget(current, snapshot)
@@ -541,6 +580,19 @@ func exactTarget(state State, hosts []Host) (*Host, bool) {
 }
 
 func validateState(state State) error {
+	if isRebalancePhase(state.Phase) {
+		if state.TargetName == "" || state.TargetUID == "" || state.FromReplicas < 2 ||
+			state.StartedAt.IsZero() || state.RepairWorkloadUID == "" || state.RepairSourceZone == "" ||
+			state.RepairDestinationZone == "" || state.RepairDestinationZone == state.RepairSourceZone ||
+			state.RepairPrefixScore <= 0 {
+			return fmt.Errorf("rebalance state must retain exact target, workload, zones and prefix score")
+		}
+		if (state.Phase == PhaseRebalanceEvicting || state.Phase == PhaseRebalanceCancelling ||
+			state.Phase == PhaseRebalanceReplacing || state.Phase == PhaseRebalanceBlocked) && state.EvictionResourceVersion == "" {
+			return fmt.Errorf("rebalance eviction state must retain the authorized Pod resourceVersion")
+		}
+		return nil
+	}
 	if state.Phase == PhaseIdle || state.Phase == PhaseObserving {
 		if state.TargetName != "" || state.TargetUID != "" || state.FromReplicas != 0 {
 			return fmt.Errorf("idle or observing state must not retain a drain target")

@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -11,6 +11,7 @@ import {
   buildCreateCommand,
   buildEditCommand,
   buildListAutomationBlueprintsCommand,
+  buildReadCronRunOutputCommand,
   buildTestRunMarker,
   buildZeroTokenScript,
   createCronJob,
@@ -48,6 +49,36 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.useRealTimers();
   writeStoredAuthToken(null);
+});
+
+describe("cron run output reading", () => {
+  it("reads only Markdown inside the selected job's output directory", () => {
+    const root = mkdtempSync(join(tmpdir(), "lightvela-cron-output-"));
+    try {
+      const jobDir = join(root, "cron", "output", "job-1");
+      mkdirSync(jobDir, { recursive: true });
+      const outputPath = join(jobDir, "run.md");
+      const otherPath = join(root, "secret.md");
+      const largePath = join(jobDir, "large.md");
+      writeFileSync(outputPath, "# 今日结果\n完成资料收集。");
+      writeFileSync(otherPath, "private");
+      writeFileSync(largePath, "x".repeat(1024 * 1024 + 1));
+      symlinkSync(otherPath, join(jobDir, "linked.md"));
+      const read = (path: string, jobId = "job-1") => JSON.parse(execFileSync(
+        "sh", ["-c", buildReadCronRunOutputCommand({ job_id: jobId, output_path: path })],
+        { encoding: "utf8", env: { ...process.env, HERMES_PROFILE_ROOT: root } },
+      )) as { content?: string; error?: string };
+
+      expect(read(outputPath).content).toBe("# 今日结果\n完成资料收集。");
+      expect(read(otherPath).error).toBe("invalid_path");
+      expect(read(join(jobDir, "linked.md")).error).toBe("invalid_path");
+      expect(read(outputPath, "../job-1").error).toBe("invalid_path");
+      expect(read(join(jobDir, "missing.md")).error).toBe("missing");
+      expect(read(largePath).error).toBe("too_large");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("Hermes automation blueprint catalog", () => {

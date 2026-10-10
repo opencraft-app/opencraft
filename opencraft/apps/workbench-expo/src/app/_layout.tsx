@@ -1,6 +1,1 @@
-import "../../global.css";
-import { NativeAccountLayout } from "../components/native-account-layout.ios";
-
-export default function RootLayout() {
-  return <NativeAccountLayout />;
-}
+export { default } from "../components/workbench-route-layout";

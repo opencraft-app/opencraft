@@ -1,0 +1,38 @@
+{
+  "schema": "minisandbox-host-eviction-api/v1",
+  "verdict": "passed",
+  "claimEligible": false,
+  "serverVersion": "v1.35.5+k3s1",
+  "clusterNamespaceUid": "61fd00f8-52db-4018-87cc-9c4fc14cfa10",
+  "namespace": "host-eviction-api-z4469",
+  "namespaceUid": "c3f109dd-db4b-4caf-9742-fd263528e24b",
+  "workloadUid": "b5afb41f-436c-4bbc-9bce-18c5d86ad3ea",
+  "webhookUid": "846a73b2-3729-4ac5-ab42-60b25dbbadd0",
+  "originalPodUid": "5b456613-e149-4c19-8d99-dae9190cce20",
+  "originalRv": "3379186",
+  "cancellationRv": "3379194",
+  "conditionRv": "3379197",
+  "afterConditionCancellationRv": "3379198",
+  "replacementPodUid": "6032656f-652c-49d6-a792-43b74b6a0e59",
+  "image": "docker.io/rancher/mirrored-pause@sha256:74c4244427b7312c5b901fe0f67cbc53683d06f4f24c6faee65d4182bf0fa893",
+  "adapterHashes": {
+    "controller.go": "7a70b8bcf8d1f49d7c0fb6778a60cbcdd11f302db06b1b5cb7faf2d5a8a5c055",
+    "topology_adapter.go": "de63a09da0fcf090dd83e395283171bf9e19830c7bc8a1f14217edd4ddcbb351",
+    "topology_capacity.go": "d92dde728eadaeef76740f0b7ad5241b247cb7f027e0c8cd81b1ab4bdd71cbed"
+  },
+  "checks": {
+    "cancelled_eviction_retains_pdb_reservation": true,
+    "fresh_eviction_creates_new_uid": true,
+    "late_eviction_after_cancellation_returns_409": true,
+    "namespace_scoped_webhook_tls_verified": true,
+    "own_namespace_removed": true,
+    "own_webhook_removed": true,
+    "pdb_capacity_recovers_without_status_mutation": true,
+    "post_condition_stale_delete_rv_rejected": true,
+    "real_pdb_429_preserves_pod": true,
+    "successor_rejects_old_cancellation": true,
+    "successor_rejects_old_eviction_uid": true
+  },
+  "intraServerConditionDeleteWindowObserved": false,
+  "scope": "local-real-api-primitives-with-pause-and-management-double-not-cloud-admission"
+}

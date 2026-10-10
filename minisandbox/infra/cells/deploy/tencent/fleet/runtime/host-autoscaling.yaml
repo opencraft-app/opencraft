@@ -14,7 +14,7 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: [pods]
-    verbs: [get, list]
+    verbs: [get, list, patch]
   - apiGroups: [""]
     resources: [secrets]
     resourceNames: [__CELL_NAME__-runtime-auth]
@@ -27,6 +27,9 @@ rules:
     resources: [horizontalpodautoscalers]
     resourceNames: [__CELL_NAME__-runtime-hosts-actor-capacity]
     verbs: [get]
+  - apiGroups: [""]
+    resources: [pods/eviction]
+    verbs: [create]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -36,6 +39,17 @@ rules:
   - apiGroups: [""]
     resources: [nodes]
     verbs: [get, list]
+  # Read-only bounded capacity inventory. No global Pod writes or Secret reads.
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [list]
+  - apiGroups: [node.tke.cloud.tencent.com]
+    resources: [machinesets]
+    resourceNames: [__RUNTIME_MACHINE_SET__]
+    verbs: [get]
+  - apiGroups: [node.tke.cloud.tencent.com]
+    resources: [machines]
+    verbs: [list]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -130,6 +144,12 @@ spec:
               value: "3"
             - name: HOST_DRAIN_TOPOLOGY_MAX_SKEW
               value: "__TOPOLOGY_MAX_SKEW__"
+            # Remains false until real Kubernetes eviction/cancellation gates
+            # pass. Pure FSM/HTTP doubles are not authorization to enable it.
+            - name: HOST_DRAIN_TOPOLOGY_REPAIR_ENABLED
+              value: "__TOPOLOGY_REPAIR_ENABLED__"
+            - name: HOST_DRAIN_MACHINE_SET
+              value: __RUNTIME_MACHINE_SET__
           resources:
             requests:
               cpu: 20m

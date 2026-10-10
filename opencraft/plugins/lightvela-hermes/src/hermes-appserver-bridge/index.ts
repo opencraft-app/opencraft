@@ -4,8 +4,9 @@ import { HermesAppServerAdapter, isHermesSessionNotFound } from "./adapter";
 import { HermesProjectionRecovery } from "./projection-recovery";
 import { HermesBotAppServerHandler, type HermesBotHandlerOptions } from "./bot-protocol-handler";
 import type { HermesHostFileSystem } from "./dashboard-file-system";
-import { HermesAttachmentStagingService } from "./attachment-staging";
+import { HermesAttachmentStagingService, type HermesSha256 } from "./attachment-staging";
 import type { HermesHistoryClient } from "./history-client";
+import type { HermesSessionMetadataClient } from "./session-metadata-client";
 import type { HermesHostTerminal } from "./tat-terminal";
 import type { HermesProcessService } from "./process-service";
 import type { HermesComposerQueueService } from "./composer-queue/service";
@@ -27,6 +28,8 @@ import type {
 } from "./types";
 
 export interface BrowserHermesBridgeOptions extends Omit<HermesRpcTransportOptions, "replayCheckpoint"> {
+  /** A handled request failure is diagnostic data, not an uncaught UI error. */
+  onRequestFailure?: (failure: { method: string; kind: "timeout" | "unavailable" | "other" }) => void;
   projectionRecovery?: HermesProjectionRecovery;
   /** Legacy runtime-only opt-in; production uses the instance-bound catalog below. */
   enableBotConversations?: boolean;
@@ -34,7 +37,10 @@ export interface BrowserHermesBridgeOptions extends Omit<HermesRpcTransportOptio
   botManagement?: HermesBotHandlerOptions["management"];
   defaultCwd?: string;
   fileSystem?: HermesHostFileSystem;
+  /** Native Hosts provide SHA-256 without requiring a global Web Crypto subtle API. */
+  sha256?: HermesSha256;
   history?: HermesHistoryClient;
+  sessionMetadata?: HermesSessionMetadataClient;
   /** Host-owned command executor; survives replaceable bridge generations. */
   terminal?: HermesHostTerminal;
   /** Borrowed from the Host transport; a bridge only owns its subscription. */
@@ -89,7 +95,7 @@ export class BrowserHermesAppServerBridge {
     });
     this.attachments = options.fileSystem === undefined
       ? null
-      : new HermesAttachmentStagingService(options.fileSystem);
+      : new HermesAttachmentStagingService(options.fileSystem, options.sha256);
     this.adapter = new HermesAppServerAdapter(this.transport, options.defaultCwd ?? "/", options.history,
       undefined, options.projectionRecovery, options.composerQueue, this.attachments ?? undefined,
       options.profileScope);
@@ -139,6 +145,7 @@ export class BrowserHermesAppServerBridge {
     if (this.disposed) throw new Error("Hermes AppServer bridge is detached");
     return dispatchAppServerRequest(this.adapter, { jsonrpc: "2.0", id: 0, method, params }, {
       fileSystem: this.options.fileSystem,
+      sessionMetadata: this.options.sessionMetadata,
       attachments: this.attachments ?? undefined,
       terminal: this.options.terminal,
       processes: this.options.processes,
@@ -168,6 +175,7 @@ export class BrowserHermesAppServerBridge {
         result: await dispatchAppServerRequest(this.adapter, request, {
           signal,
           fileSystem: this.options.fileSystem,
+          sessionMetadata: this.options.sessionMetadata,
           attachments: this.attachments ?? undefined,
           terminal: this.options.terminal,
           processes: this.options.processes,
@@ -178,25 +186,24 @@ export class BrowserHermesAppServerBridge {
         }),
       };
     } catch (error) {
-      // JSON-RPC deliberately returns a stable public error envelope, but the
-      // bridge still owns the original exception and is the only layer that
-      // can retain its actionable stack. This is especially important on
-      // React Native, where Hermes otherwise reduces call failures to
-      // "undefined is not a function" at the transport boundary.
-      const details = {
-        method: request.method,
-        error: error instanceof Error
-          ? { name: error.name, message: error.message, stack: error.stack }
-          : String(error),
-      };
-      // Missing Thread identities are a public AppServer domain outcome. The
-      // caller still receives the JSON-RPC error below, but React Native must
-      // not turn a recoverable metadata probe into a development red screen.
-      // Unexpected bridge faults retain console.error and their original stack.
-      if (isHermesSessionNotFound(error)) {
-        console.debug("[hermes-appserver-bridge] request unavailable", details);
+      // This exception is handled by the JSON-RPC response below. In Expo Go,
+      // console.error turns even a recoverable model catalog timeout into a
+      // full-screen RedBox and exposes the stack to the user.
+      const kind = error instanceof HermesRpcError && error.code === "timeout"
+        ? "timeout"
+        : isHermesSessionNotFound(error)
+          || error instanceof HermesRpcError && ["not-open", "disconnected", "aborted", "disposed"].includes(String(error.code))
+            ? "unavailable"
+            : "other";
+      if (this.options.onRequestFailure) {
+        try { this.options.onRequestFailure({ method: request.method, kind }); }
+        catch { /* Diagnostics must not change the protocol response. */ }
       } else {
-        console.error("[hermes-appserver-bridge] request failed", details);
+        console.debug("[hermes-appserver-bridge] request failed", {
+          method: request.method,
+          kind,
+          error: error instanceof Error ? { name: error.name, message: error.message, stack: error.stack } : String(error),
+        });
       }
       const code = isObject(error) && typeof error.rpcCode === "number" ? error.rpcCode : -32000;
       const data = error instanceof HermesRpcError
@@ -244,6 +251,7 @@ export class BrowserHermesAppServerBridge {
     this.adapter.dispose();
     this.options.fileSystem?.dispose();
     this.options.history?.dispose();
+    this.options.sessionMetadata?.dispose();
     // Terminal lifetime belongs to the Host/process service, not to this
     // replaceable dashboard WebSocket bridge generation.
     this.transport.dispose();

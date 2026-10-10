@@ -586,12 +586,12 @@ export function buildEditCommand(id: string, patch: EditCronJobPatch): string {
 
 /** 同步执行一条命令；非零 exit_code 抛 CronCommandError */
 export async function execCommand(target: HermesCronTarget, command: string): Promise<DebugExecPayload> {
-  const baseUrl = resolveConfiguredAuthApiBaseUrl();
+  const baseUrl = resolveConfiguredAuthApiBaseUrl(target);
   if (baseUrl === null) {
     throw new Error("[hermes-cron] auth API base URL not configured");
   }
   const headers = new Headers({ "Content-Type": "application/json" });
-  const token = readStoredAuthToken();
+  const token = readStoredAuthToken(target);
   if (token) headers.set("Authorization", `Bearer ${token}`);
 
   const { instanceId, profileId } = resolveCronTarget(target);
@@ -601,11 +601,11 @@ export async function execCommand(target: HermesCronTarget, command: string): Pr
     method: "POST",
     credentials: "include",
     headers,
-    body: JSON.stringify(createDebugExecRequestBody(routedCommand)),
+    body: JSON.stringify(createDebugExecRequestBody(routedCommand, target)),
   });
   if (!resp.ok) {
     if (resp.status === 401 || resp.status === 403) {
-      writeStoredAuthToken(null);
+      writeStoredAuthToken(null, target);
       if (typeof window !== "undefined") {
         window.dispatchEvent(new Event(AUTH_UNAUTHORIZED_EVENT));
       }
@@ -666,7 +666,7 @@ export async function execCommandStream(
   command: string,
   options: ExecCommandStreamOptions = {},
 ): Promise<DebugExecPayload> {
-  const baseUrl = resolveConfiguredAuthApiBaseUrl();
+  const baseUrl = resolveConfiguredAuthApiBaseUrl(target);
   if (baseUrl === null) {
     throw new Error("[hermes-cron] auth API base URL not configured");
   }
@@ -674,7 +674,7 @@ export async function execCommandStream(
     "Content-Type": "application/json",
     "Accept": "text/event-stream",
   });
-  const token = readStoredAuthToken();
+  const token = readStoredAuthToken(target);
   if (token) headers.set("Authorization", `Bearer ${token}`);
 
   const { instanceId, profileId } = resolveCronTarget(target);
@@ -685,11 +685,11 @@ export async function execCommandStream(
     credentials: "include",
     headers,
     signal: options.signal,
-    body: JSON.stringify(createDebugExecRequestBody(routedCommand)),
+    body: JSON.stringify(createDebugExecRequestBody(routedCommand, target)),
   });
   if (!resp.ok) {
     if (resp.status === 401 || resp.status === 403) {
-      writeStoredAuthToken(null);
+      writeStoredAuthToken(null, target);
       if (typeof window !== "undefined") {
         window.dispatchEvent(new Event(AUTH_UNAUTHORIZED_EVENT));
       }
@@ -917,6 +917,52 @@ export async function listRecentCronRuns(
 ): Promise<CronRunRecord[]> {
   const payload = await execCommand(target, buildListRecentCronRunsCommand(limit));
   return parseCronRunFilesOutput(payload.output || "", jobs);
+}
+
+/** 只读取当前 Profile 的单次执行 Markdown；output_path 来自最近执行列表，仍须在实例内复核。 */
+export function buildReadCronRunOutputCommand(run: Pick<CronRunRecord, "job_id" | "output_path">): string {
+  const script = [
+    "import json, os, sys",
+    "from pathlib import Path",
+    "root = Path(os.environ.get('HERMES_PROFILE_ROOT') or (Path.home() / '.hermes'))",
+    "base = (root / 'cron' / 'output').resolve()",
+    "job_id = sys.argv[2]",
+    "path = Path(sys.argv[1]).resolve()",
+    "if not job_id or job_id in ('.', '..') or '/' in job_id or '\\\\' in job_id:",
+    "    result = {'error': 'invalid_path'}",
+    "elif path.parent != base / job_id or path.suffix.lower() != '.md':",
+    "    result = {'error': 'invalid_path'}",
+    "else:",
+    "    try:",
+    "        if not path.is_file():",
+    "            result = {'error': 'missing'}",
+    "        elif path.stat().st_size > 1024 * 1024:",
+    "            result = {'error': 'too_large'}",
+    "        else:",
+    "            result = {'content': path.read_text(encoding='utf-8')}",
+    "    except (OSError, UnicodeError):",
+    "        result = {'error': 'unavailable'}",
+    "print(json.dumps(result, ensure_ascii=False))",
+  ].join("\n");
+  return `python3 -c ${shellQuote(script)} ${shellQuote(run.output_path)} ${shellQuote(run.job_id)}`;
+}
+
+export async function readCronRunOutput(
+  target: HermesCronTarget,
+  run: Pick<CronRunRecord, "job_id" | "output_path">,
+): Promise<string> {
+  const payload = await execCommand(target, buildReadCronRunOutputCommand(run));
+  let result: unknown;
+  try {
+    result = JSON.parse(payload.output.trim());
+  } catch {
+    throw new Error("cron_output_unavailable");
+  }
+  if (isRecord(result) && typeof result.content === "string") return result.content;
+  if (isRecord(result) && typeof result.error === "string") {
+    throw new Error(`cron_output_${result.error}`);
+  }
+  throw new Error("cron_output_unavailable");
 }
 
 function buildListRecentCronRunsCommand(limit: number): string {

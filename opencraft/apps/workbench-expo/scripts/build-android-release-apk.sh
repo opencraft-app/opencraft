@@ -22,6 +22,7 @@ fi
 }
 
 export NODE_ENV=production OPENCRAFT_ANDROID_RELEASE=1
+expected_package="$(node -e 'const config = require("./app.config.js")({ config: require("./app.json").expo }); process.stdout.write(config.android.package)')"
 if [[ -e android || -L android ]]; then
   echo "The Android native project already exists; use a clean checkout for the LightVela release build." >&2
   exit 1
@@ -39,7 +40,7 @@ fi
 )
 
 source_apk="android/app/build/outputs/apk/release/app-release.apk"
-release_prefix="release/LightVela-com.tencent.vela"
+release_prefix="release/LightVela-$expected_package"
 artifact="$release_prefix-android-release.apk"
 [[ -f "$source_apk" ]] || { echo "Gradle did not produce $source_apk." >&2; exit 1; }
 
@@ -49,7 +50,7 @@ aapt="$(dirname "$apksigner")/aapt"
 [[ -x "$aapt" ]] || { echo "Android SDK build-tools with aapt are required." >&2; exit 1; }
 badging="$("$aapt" dump badging "$source_apk")"
 package_line="${badging%%$'\n'*}"
-[[ "$package_line" == "package: name='com.tencent.vela' "* ]] || {
+[[ "$package_line" == "package: name='$expected_package' "* ]] || {
   echo "The APK does not have the production application ID." >&2
   exit 1
 }
@@ -77,7 +78,7 @@ openssl pkey -pubin -in "$release_prefix-public-key.pem" -outform DER \
   > "$release_prefix-public-key.der"
 base64 -w0 "$release_prefix-public-key.der" > "$release_prefix-public-key.base64.txt"
 {
-  echo "Android package: com.tencent.vela"
+  echo "Android package: $expected_package"
   echo "Signing certificate MD5: $(md5sum "$certificate" | cut -d' ' -f1 | tr '[:lower:]' '[:upper:]')"
   echo "APK file MD5: $(md5sum "$artifact" | cut -d' ' -f1)"
   echo "Public key (Base64 DER SPKI): $(cat "$release_prefix-public-key.base64.txt")"

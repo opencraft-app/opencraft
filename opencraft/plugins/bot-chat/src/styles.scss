@@ -1,3 +1,5 @@
+@use "@opencraft/design-system/controls.web" as controls;
+
 .bot-chat-stage {
   --bot-chat-rail-width: 780px;
   --bot-chat-inline-gutter: clamp(18px, 4.5vw, 64px);
@@ -1031,6 +1033,13 @@
     font: inherit;
     cursor: pointer;
   }
+}
+
+.bot-chat-stage__status .bot-chat-stage__history-action,
+.bot-chat-stage__error .bot-chat-stage__history-action {
+  @include controls.quiet-control;
+  width: fit-content;
+  padding: var(--spacing) var(--padding-control-inline);
 }
 
 @keyframes bot-chat-bubble-enter {

@@ -1,6 +1,6 @@
 {
   "source": "frontend/src",
-  "sourceRevision": "e76488e7c294a6bcebb5057a2a3840aa5baf1b8d",
+  "sourceRevision": "8255c58d41efe3793eb27f70646ab7a6c75c1a06",
   "generatedBy": "scripts/sync-mono2-agent-console.mjs",
   "files": [
     {
@@ -9,7 +9,7 @@
     },
     {
       "file": "components/domain/tat-file-manager-panel.tsx",
-      "sourceSha256": "552f576d75d800216631c7a57dfc2ee6d8e3311fb2cf463497b605fdbb3fc25f"
+      "sourceSha256": "51c59c341184ced6444c8fcfa563d13983f128b654cb6a79e03dbf8b0e4e9895"
     },
     {
       "file": "components/ui/badge.tsx",
@@ -25,7 +25,7 @@
     },
     {
       "file": "components/ui/dialog.tsx",
-      "sourceSha256": "0364ea8b5c517efbb80bc6f7719aa9e11a6a8285910729167b59b2e13fea2ba7"
+      "sourceSha256": "00ceae4c3cc286b399798f275472070e6e65ffa096a846239067b24dd2639c36"
     },
     {
       "file": "components/ui/display-title.tsx",
@@ -65,7 +65,7 @@
     },
     {
       "file": "contexts/runtime-config-context.tsx",
-      "sourceSha256": "8d1bed3325cb8cb3b5eac6870579db6726b145148b7d4f572773bfd9fef4e2bf"
+      "sourceSha256": "c4372c91bd4840d48d6db32496773856fa015e2f4cfcec9286f1600550cdcb0b"
     },
     {
       "file": "domain/credit-pack.ts",
@@ -89,59 +89,83 @@
     },
     {
       "file": "i18n/generated/en-US.json",
-      "sourceSha256": "7c1cdb5564d44035b27b28c73dc9db9f8992ec053e3aae1bee2855b5bbfe018d"
+      "sourceSha256": "12abce69815a2665a9f1cc5a0699bdbfaef2220ba92c2881d612c87cc0e77c45"
     },
     {
       "file": "i18n/generated/es.json",
-      "sourceSha256": "2523e9a83b20599817bb2d0649ae0380658d8cdf4d3524c50936446caf80128a"
+      "sourceSha256": "82e58224d924c35c9dd829379734fd2171498962bd4880ef7fb17a99533d7dbe"
     },
     {
       "file": "i18n/generated/id-ID.json",
-      "sourceSha256": "996fbe612ac7d3b429afaa0941fbe8d727447340466c31fde79ec0015f1d8491"
+      "sourceSha256": "bb5b94647f44236f6c6c288805b91af4e6a18cc1d4fbecb91046743c0b081127"
     },
     {
       "file": "i18n/generated/ja-JP.json",
-      "sourceSha256": "ebb431cee967f28718aa9836286561e5c3b0cd61ce664614385b74c2a7fc325b"
+      "sourceSha256": "ce8d5b798f826303e9cbf97cbc63685c3eb684162e78dcc19aebcef62059cbfa"
     },
     {
       "file": "i18n/generated/ko-KR.json",
-      "sourceSha256": "ae08d08215ecc397249c9fe311657be1c359902252539774b4b25fc65caa50e3"
+      "sourceSha256": "360b68cbbada1fed6beaaf746b9eb6702b80e85a9de779b362e77e5217ad2f38"
+    },
+    {
+      "file": "i18n/generated/malay-public-copy.json",
+      "sourceSha256": "d287e786333065907d98730c3e9ea7be279ce6872c8270491f24dd98054ce8a2"
+    },
+    {
+      "file": "i18n/generated/ms-MY.json",
+      "sourceSha256": "7c34a77e24886867456a16319b1b37b36fd16722207c9d1b1e15015b40eca3b7"
+    },
+    {
+      "file": "i18n/generated/th-TH.json",
+      "sourceSha256": "5f5c95eb16b67816ed4bbcf9a5cb31bfdbef4624f21bec33866733e914b0aecf"
+    },
+    {
+      "file": "i18n/generated/thai-public-copy.json",
+      "sourceSha256": "f6dea6c1a20cdfdb2f42ff5e82ea22b8bdcbd01e344541ada15042acaa1be497"
     },
     {
       "file": "i18n/generated/zh-CN.json",
-      "sourceSha256": "7341743ee217036882c1bb172a7df1d3b00bca864ccc75fe1a5b3620cd19049c"
+      "sourceSha256": "d1844ccde9be57a63d4e68bdbed33dff137a73817f8c018183873345df03d7c7"
     },
     {
       "file": "i18n/generated/zh-Hant.json",
-      "sourceSha256": "4d59016c09cf2fe4cab2004391cfcae0c7fd9f317e154feb0fa868e391b6333d"
+      "sourceSha256": "cff1282bdde4a1646c5f4e3c9d83b4b4e1ca02d06a43184e8e7047631517ab90"
     },
     {
       "file": "i18n/generated/zh-to-key.json",
-      "sourceSha256": "7340b6f55388f8fbab0dade5508d8f5691a3f23cd27ea90fd58e4148d632f292"
+      "sourceSha256": "dab7294ca932923db68c37803039f2cf82c40c784209f1c383508db879d181bd"
     },
     {
       "file": "i18n/index.ts",
-      "sourceSha256": "f6b181faa0062a43d5d63cda11088a09ae3d6391e4f295c9c78d102a42e3d891"
+      "sourceSha256": "93a6b4046dc90b0e39ce8bf394f562f315269d75db25c9bbb7581ffca3dd447f"
     },
     {
       "file": "i18n/locales.config.ts",
-      "sourceSha256": "69fe9069c3b3a8f5ea20f1db6de778af56f5e5911313fd449ed65e03b24e231a"
+      "sourceSha256": "4254697bf0e64e847f40a7b2109c1fb2dd67b0e6970aa412b24e451f72d92095"
     },
     {
       "file": "i18n/locales.json",
-      "sourceSha256": "a625227226de0c7190760300d8710ffbbac3237997cdbdff616303938db06e06"
+      "sourceSha256": "e8037c0d46668ba97d652168a359157bfcef3867141db09d1f1c9f4099ca6191"
+    },
+    {
+      "file": "i18n/malay-copy.ts",
+      "sourceSha256": "41432562f10c691c3ed94b5581840474c4f9099976908bbf1ce0a85214df4493"
     },
     {
       "file": "i18n/t.ts",
       "sourceSha256": "9110c89965b4487d49ec03ca2adb35332902aa7fc9d73de2658c5d1526d0048f"
     },
     {
+      "file": "i18n/thai-copy.ts",
+      "sourceSha256": "9ca08f0fc18253df0b28d26eb08801c30565246289e2db9c18378cf506afee0c"
+    },
+    {
       "file": "lib/agent-routes.ts",
-      "sourceSha256": "e9c741ec8c67595c4e2019867423c29caacbd0bc2acf9ed720b923da3cc53026"
+      "sourceSha256": "1d75b8cdb7eafdd8542dae466200607289ebfa573086aa1e633b8228b1b8d733"
     },
     {
       "file": "lib/auth-api-base.ts",
-      "sourceSha256": "be54d0bd937d532d4d4413aa365e08652207537fc094a55a81964a6172ee747c"
+      "sourceSha256": "faac2447091f5f44d7da21eb7fbcb9a9a7960d96ee54ceab1350f8841f9bb318"
     },
     {
       "file": "lib/cookie-consent.ts",
@@ -149,7 +173,7 @@
     },
     {
       "file": "lib/debug-exec-request.ts",
-      "sourceSha256": "ff7ef8932f85db8dfaae9e5e40e6af50a86f81657d6401da5bf6f4f9eeebdcd3"
+      "sourceSha256": "676df22383ab4b5f72c1ca35d97dfce54f58f9ed27712690e9f8d262f7344191"
     },
     {
       "file": "lib/expert-package-storage.ts",
@@ -161,7 +185,7 @@
     },
     {
       "file": "lib/hermes-cron-client.ts",
-      "sourceSha256": "39d112dcef5870b0960c18aef184348b816c5cbca171352270fdd8e1cd6cd681"
+      "sourceSha256": "e8451d0e6814a1784c314d952d0565f2219920957e03399dcc1e348fe56fca83"
     },
     {
       "file": "lib/hermes-skills-client.ts",
@@ -173,11 +197,11 @@
     },
     {
       "file": "lib/public-site-routing.ts",
-      "sourceSha256": "ddec545987e3db70e178e0ba0845452aa2b6843a4fc94c3f81d63a052e350c18"
+      "sourceSha256": "103c8ffadd4d7fdcee60395ba80f67cfbfadead3603e14a53d9422f2e2fac736"
     },
     {
       "file": "lib/region.ts",
-      "sourceSha256": "f7dc3ece86c2ee834c54e1bc2bdc04e980b4e6e4d96199f4c5933f8c8b667c3f"
+      "sourceSha256": "c31b65fdff7f08a6269cafc0a9775d3433cdbcc90e1549b7a1b504eb747e9cf7"
     },
     {
       "file": "lib/skillhub-api.ts",
@@ -225,7 +249,7 @@
     },
     {
       "file": "pages/marketing/agent-automations-panel.tsx",
-      "sourceSha256": "38e695e32209f0bc72d4ef899b2f577f3f67c98f9b2f16c7c1fef75575079acc"
+      "sourceSha256": "a066964726c5c92a9df26bebf28c0ad39796f47c79b95825b4f276143af55d9f"
     },
     {
       "file": "pages/marketing/agent-channel-panel.tsx",
@@ -345,7 +369,7 @@
     },
     {
       "file": "pages/marketing/agent-diagnostics-panel.tsx",
-      "sourceSha256": "8051d1ad0f31742dd35197a952a86b8beb03c69ef8ec590558f476a1d6b7aab9"
+      "sourceSha256": "edae20c97a11f928d808a6875531a3a04f5006be0252dc343e2ba4056962c6f2"
     },
     {
       "file": "pages/marketing/agent-experts-panel.tsx",
@@ -373,7 +397,7 @@
     },
     {
       "file": "pages/marketing/agent-model-config/model-action-tooltip.tsx",
-      "sourceSha256": "46fbe6f5753e01316a5be5c608ef484c074391cc0dbffeae917cc24c4f48953e"
+      "sourceSha256": "0a1a268fcf2a59f9febf9d6b2cfb71db02d1dd60f185b840491b6d72b2a2bfb6"
     },
     {
       "file": "pages/marketing/agent-model-config/model-config-client.ts",
@@ -389,11 +413,11 @@
     },
     {
       "file": "pages/marketing/agent-model-config/use-model-config.ts",
-      "sourceSha256": "26e44e68cd1e1c41dc03fd5687f304272995e403b25b402c9ba2e3f34dad7392"
+      "sourceSha256": "dadf55fc634c4699eedbc7b4662e2389fe961cd562cbf3150de185a77f9d5f5c"
     },
     {
       "file": "pages/marketing/agent-provider-locale.ts",
-      "sourceSha256": "05b8271fccbae1e8d5a114ae133c67b7990695c2efac08a55cff93cd1580bd2b"
+      "sourceSha256": "b21abe76540638c58474b7cff06c4ca4186c574f11b5ebfb7b521ce1dd010ffc"
     },
     {
       "file": "pages/marketing/agent-reset-config.ts",
@@ -437,7 +461,7 @@
     },
     {
       "file": "pages/marketing/scenario-tasks/overview-packs.ts",
-      "sourceSha256": "22750d2f00aac9f554128a7ab56b7d7ab3625f80bddf006a7904b8cc1c61e3e3"
+      "sourceSha256": "e04ef3910df097abef06cf502fa6935909d146dcbacf2bc2daea7cc93dd67e54"
     },
     {
       "file": "pages/marketing/scenario-tasks/scenario-full-prompt.ts",
@@ -457,11 +481,11 @@
     },
     {
       "file": "pages/marketing/scenario-tasks/scenario-task-builder.ts",
-      "sourceSha256": "2e03c17a3f7d9910e39317cda1d032dc261c8f0787945a3ade32364f15c1d3a1"
+      "sourceSha256": "9652cfa8faa5b674b084e6435262f0102ae68cd5ae805878147255b6d4d723d6"
     },
     {
       "file": "pages/marketing/skills-demo/SkillsDemoPanel.tsx",
-      "sourceSha256": "d0d2ee465e345bb3f7e659c6c216cb8f150d3466520a438e726166f58783c413"
+      "sourceSha256": "14dad98d1854a894eb5640e36dabe2ff4a530828897ac8c79dd9719d813f0988"
     },
     {
       "file": "pages/marketing/skills-demo/curated-skill-categories.ts",
@@ -485,15 +509,15 @@
     },
     {
       "file": "pages/marketing/skills-demo/curated-skill-overviews.ts",
-      "sourceSha256": "2c67e074f20ec506b6425c75c1113a60c5b82ba372512fe8e744cd9ce1cd4831"
+      "sourceSha256": "bb1cb63fe6bd1c5e040473bd48089ef55a14989318521fdbbca5b15c29125392"
     },
     {
       "file": "pages/marketing/skills-demo/curated-skill-overviews.zh.ts",
-      "sourceSha256": "c376d32dd97407887a977668e6f45b47d02cae75cbae0872d0e7c8fec43f0ea6"
+      "sourceSha256": "ed78280eb6493a7ca9d8aa129825c0b3ef5201be4aac7e6cb826568b5d215ec0"
     },
     {
       "file": "pages/marketing/skills-demo/domestic-skill-catalog.ts",
-      "sourceSha256": "db81fff5442494cff8d45cde23d9b46bc791bf2b1e0f300df67ccfaf8232b7b6"
+      "sourceSha256": "18270a2024d78045f59f6f5fc8926a266aee9196073eaf0bb22df21498133bde"
     },
     {
       "file": "pages/marketing/skills-demo/skill-registries.ts",
@@ -513,11 +537,11 @@
     },
     {
       "file": "repositories/http-repositories.ts",
-      "sourceSha256": "72c777d34d8bd1fffbc3c1af182f256d1f0349d778e1625df8b6958184fe0acb"
+      "sourceSha256": "ae70f025e2591cae56978b14112681a32ae3d000610e5040922223d3bccc81ef"
     },
     {
       "file": "repositories/types.ts",
-      "sourceSha256": "16d7c6b014fa3f4e7e7773339d3375e0ecf0a173de18655fca7ff5999e27da75"
+      "sourceSha256": "77df985ea14413bd9290513e433a79eebfc54dd0b8fc087ea4034cbf175d991c"
     },
     {
       "file": "services/use-async-resource.ts",
@@ -529,14 +553,15 @@
     "assets/skills/featured-caveman.jpg",
     "assets/skills/featured-domestic-anti-fraud-expert.jpg",
     "assets/skills/featured-domestic-chinese-official-writing.jpg",
+    "assets/skills/featured-domestic-dev-expert.webp",
     "assets/skills/featured-domestic-ecommerce.jpg",
     "assets/skills/featured-domestic-find-skill.jpg",
     "assets/skills/featured-domestic-image-prompt.jpg",
-    "assets/skills/featured-domestic-lh6-anniversary.jpg",
-    "assets/skills/featured-domestic-lh6-icon.svg",
     "assets/skills/featured-domestic-news.jpg",
+    "assets/skills/featured-domestic-parenting-expert.webp",
     "assets/skills/featured-domestic-poster.jpg",
     "assets/skills/featured-domestic-suno-lyrics-to-song.jpg",
+    "assets/skills/featured-domestic-tencent-docs.webp",
     "assets/skills/featured-domestic-weather.jpg",
     "assets/skills/featured-find-skills.jpg",
     "assets/skills/featured-grill-me.jpg",

@@ -23,10 +23,18 @@ bundles:
     - service-gateway/k8s/base/**
     - service-gateway/k8s/overlays/{env}/**
     publish_paths_by_env:
+      sgprod:
+      - argocd/services/service-gateway/sgprod/**
+      - argocd/apps/sgprod/service-gateway.yaml
+      - argocd/secrets/sgprod/service-gateway-runtime-secrets.sops.yaml
+      - argocd/secrets/sgprod/service-gateway-speech-secrets.sops.yaml
+      - service-gateway/k8s/base/**
+      - service-gateway/k8s/overlays/sgprod/**
       shprod:
       - argocd/services/service-gateway/shprod/**
       - argocd/apps/shprod/service-gateway.yaml
       - argocd/secrets/shprod/service-gateway-runtime-secrets.sops.yaml
+      - argocd/secrets/shprod/service-gateway-speech-secrets.sops.yaml
       - service-gateway/k8s/base/**
       - service-gateway/k8s/overlays/shprod/**
       - service-gateway/k8s/overlays/sgprod/**

@@ -6,7 +6,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 
-APK = Path(__file__).resolve().parents[1] / "release/LightVela-com.tencent.vela-android-release.apk"
+RELEASE_DIR = Path(__file__).resolve().parents[1] / "release"
+APK = RELEASE_DIR / "LightVela-com.tencent.vela-android-release.apk"
 DOWNLOAD_PATH = "/LightVela-com.tencent.vela.apk"
 
 
@@ -43,7 +44,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--bind", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--edition", choices=("cn", "intl"), default="cn")
     args = parser.parse_args()
+    package = "com.tencent.vela" if args.edition == "cn" else "com.tencent.vela.intl"
+    global APK, DOWNLOAD_PATH
+    APK = RELEASE_DIR / f"LightVela-{package}-android-release.apk"
+    DOWNLOAD_PATH = f"/LightVela-{package}.apk"
     if not APK.is_file():
         parser.error(f"Build the APK first: {APK}")
     server = ThreadingHTTPServer((args.bind, args.port), ApkHandler)

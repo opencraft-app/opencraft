@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { access, chmod, mkdir, stat } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -9,9 +10,18 @@ import lockfile from "proper-lockfile";
 
 import { AppHostServer } from "../packages/app-host-server/src/index.ts";
 import { CodexEngineAdapter } from "../apps/opencraft-daemon/src/codex-engine-adapter.ts";
+import { readSshCodexServerBindings, createSshCodexEngineAdapter } from "../apps/opencraft-daemon/src/ssh-codex-connections.ts";
+import { SshManagement } from "../apps/opencraft-daemon/src/ssh-management.ts";
 import { startLocalAgentHost } from "../apps/local-agent-host/src/main.ts";
 import { createWorkbenchWebServer } from "./serve-workbench-web.mjs";
 import { assertHeadlessWebRelease } from "./headless-web-release.mjs";
+import { LocalDesktopService } from "../apps/local-agent-host/src/desktop/local-desktop-service.ts";
+import { createNativeObserver, localDesktopMachineIdentity } from "../apps/local-agent-host/src/desktop/native-observer.ts";
+import { createNativeDesktopControl } from "../apps/local-agent-host/src/desktop/native-control.ts";
+import { ModelConfigurationRepository, ModelCredentialRepository } from "../apps/local-agent-host/src/model-config/repository.ts";
+import { SpeechModelConfiguration } from "../apps/local-agent-host/src/model-config/speech.ts";
+import { SpeechTranscriptionService } from "./speech-transcription-service.mjs";
+import { TencentOaServerPlugin } from "../plugins/tencentoa/src/server.ts";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -27,7 +37,16 @@ export function parseHeadlessArguments(argv, env = process.env, getHomeDirectory
   let port = 10000;
   let host = "127.0.0.1";
   let allowUnauthenticatedPublic = false;
+  let localDesktop = false;
+  let trustedInternalDesktop = false;
+  let desktopControl = false;
   let dataDirectory = env.OPENCRAFT_SERVER_DATA_DIR;
+  let sshServersFile;
+  let sshPublicOrigin;
+  let sshPublicAccess = false;
+  let sshAccessFile;
+  let sshRequireAccessKey = false;
+  let tencentOaTokenFile;
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (argument === "--help" || argument === "-h") return { help: true };
@@ -38,10 +57,33 @@ export function parseHeadlessArguments(argv, env = process.env, getHomeDirectory
       if (host !== "127.0.0.1" && host !== "0.0.0.0") throw new Error("--host must be 127.0.0.1 or 0.0.0.0");
     } else if (argument === "--allow-unauthenticated-public") {
       allowUnauthenticatedPublic = true;
+    } else if (argument === "--local-desktop") {
+      localDesktop = true;
+    } else if (argument === "--trusted-internal-desktop") {
+      trustedInternalDesktop = true;
+    } else if (argument === "--desktop-control") {
+      desktopControl = true;
     } else if (argument === "--data-dir") {
       const value = argv[++index];
       if (!value || value.startsWith("--")) throw new Error("--data-dir requires a path");
       dataDirectory = value;
+    } else if (argument === "--tencentoa-token-file") {
+      tencentOaTokenFile = argv[++index];
+      if (!tencentOaTokenFile?.startsWith("/")) throw new Error("--tencentoa-token-file requires an absolute private path");
+    } else if (argument === "--ssh-servers") {
+      sshServersFile = argv[++index];
+      if (!sshServersFile || !sshServersFile.startsWith("/")) throw new Error("--ssh-servers requires an absolute private configuration path");
+    } else if (argument === "--ssh-public-origin") {
+      sshPublicOrigin = argv[++index];
+      const url = new URL(sshPublicOrigin);
+      if (url.protocol !== "https:" || url.origin !== sshPublicOrigin) throw new Error("--ssh-public-origin requires a fixed HTTPS origin");
+    } else if (argument === "--ssh-public-access") {
+      sshPublicAccess = true;
+    } else if (argument === "--ssh-require-access-key") {
+      sshRequireAccessKey = true;
+    } else if (argument === "--ssh-access-file") {
+      sshAccessFile = argv[++index];
+      if (!sshAccessFile?.startsWith("/")) throw new Error("--ssh-access-file requires a private absolute path");
     } else {
       throw new Error(`Unknown option ${argument}`);
     }
@@ -56,7 +98,17 @@ export function parseHeadlessArguments(argv, env = process.env, getHomeDirectory
   if (host !== "0.0.0.0" && allowUnauthenticatedPublic) {
     throw new Error("--allow-unauthenticated-public requires --host 0.0.0.0");
   }
-  return { help: false, host, port, dataDirectory: resolve(dataDirectory), allowUnauthenticatedPublic };
+  if (sshPublicAccess && sshPublicOrigin) throw new Error("Choose either --ssh-public-access or --ssh-public-origin");
+  if (sshServersFile && host !== "127.0.0.1" && !sshPublicOrigin && !sshPublicAccess) throw new Error("SSH Servers require a protected listener");
+  if (localDesktop && trustedInternalDesktop) throw new Error("Choose either local or trusted-internal desktop access");
+  if (desktopControl && !localDesktop && !trustedInternalDesktop) throw new Error("Desktop control requires an explicit desktop access policy");
+  if (localDesktop && host !== "127.0.0.1") throw new Error("Local desktop requires a loopback-only listener");
+  return { help: false, host, port, dataDirectory: resolve(dataDirectory), allowUnauthenticatedPublic,
+    ...(tencentOaTokenFile ? { tencentOaTokenFile } : {}),
+    ...(localDesktop || trustedInternalDesktop ? { localDesktop: true } : {}),
+    ...(trustedInternalDesktop ? { desktopAccess: "trusted-internal" } : {}),
+    ...(desktopControl ? { desktopControl: true } : {}),
+    ...(sshServersFile ? { sshServersFile } : {}), ...(sshPublicOrigin ? { sshPublicOrigin } : {}), ...(sshPublicAccess ? { sshPublicAccess: true } : {}), ...(sshAccessFile ? { sshAccessFile } : {}), ...(sshRequireAccessKey ? { sshRequireAccessKey: true } : {}) };
 }
 
 async function secureDataDirectory(path) {
@@ -79,6 +131,16 @@ export async function startHeadlessServer(options = {}) {
   if (host === "0.0.0.0" && options.allowUnauthenticatedPublic !== true) {
     throw new Error("Public headless listener requires explicit unauthenticated-public acknowledgement");
   }
+  const sshServers = options.sshServers ?? (options.sshServersFile ? await readSshCodexServerBindings(options.sshServersFile) : []);
+  if (options.sshPublicAccess && options.sshPublicOrigin) throw new Error("Choose either SSH public access or a fixed origin");
+  if (sshServers.length && host !== "127.0.0.1" && !options.sshPublicOrigin && !options.sshPublicAccess) throw new Error("SSH Servers cannot be exposed through an unauthenticated public listener");
+  const remoteServers = new Map(sshServers.map(binding => [binding.descriptor.serverId, binding]));
+  if (remoteServers.size !== sshServers.length) throw new Error("Duplicate SSH Server identity");
+  const desktopAccess = options.desktopAccess ?? "loopback";
+  if (!["loopback", "trusted-internal"].includes(desktopAccess)) throw new Error("Invalid desktop access policy");
+  if (options.desktopAccess !== undefined && options.localDesktop !== true) throw new Error("Desktop access requires local desktop");
+  if (options.desktopControl && options.localDesktop !== true) throw new Error("Desktop control requires local desktop");
+  if (options.localDesktop && desktopAccess === "loopback" && host !== "127.0.0.1") throw new Error("Local desktop requires a loopback-only listener");
   await access(join(webRoot, "index.html"));
   await assertHeadlessWebRelease(webRoot);
   await secureDataDirectory(dataDirectory);
@@ -86,11 +148,17 @@ export async function startHeadlessServer(options = {}) {
   let agent;
   let web;
   let appHostServer;
+  let sshManagement;
+  let desktop;
+  let tencentOa;
   let closing = null;
   const close = () => {
     if (closing !== null) return closing;
     closing = (async () => {
+      desktop?.close(); // Retire viewers before the execution provider; never stop the desktop.
       const results = await Promise.allSettled([web?.close(), appHostServer?.close(), agent?.close()]);
+      sshManagement?.close();
+      tencentOa?.close();
       await releaseLock();
       const failures = results.filter((result) => result.status === "rejected").map((result) => result.reason);
       if (failures.length > 0) throw new AggregateError(failures, "OpenCraft server shutdown failed");
@@ -98,6 +166,19 @@ export async function startHeadlessServer(options = {}) {
     return closing;
   };
   try {
+    // Invalid configured credentials fail startup before any execution resource is created.
+    if (options.tencentOaTokenFile) tencentOa = await TencentOaServerPlugin.fromTokenFile(options.tencentOaTokenFile);
+    if (options.localDesktop === true) {
+      const observer = createNativeObserver();
+      const incarnation = await observer.inspect(AbortSignal.timeout(5_000));
+      const control = options.desktopControl ? createNativeDesktopControl() : undefined;
+      if (control && await control.inspect(AbortSignal.timeout(5_000)) !== incarnation) throw new Error("Desktop control incarnation mismatch");
+      const environmentId = await localDesktopMachineIdentity();
+      const principalId = `local-owner:${process.getuid()}`;
+      const serverId = `local-codex:${createHash("sha256").update(JSON.stringify([dataDirectory, principalId])).digest("hex")}`;
+      desktop = new LocalDesktopService({ serverId, environmentId, principalId, observer, control,
+        transport: desktopAccess === "trusted-internal" ? "same-origin-trusted-internal" : "same-origin-loopback" });
+    }
     const startAgent = options.startAgentHost ?? startLocalAgentHost;
     agent = await startAgent({
       dshExecutable: join(root, "runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js"),
@@ -105,6 +186,7 @@ export async function startHeadlessServer(options = {}) {
       runtimeDirectory: join(root, "runtime"),
       dataDirectory: join(dataDirectory, "agent"),
       modelStorageDirectory: join(dataDirectory, "models"),
+      speechModelManagement: true,
       projectStorageDirectory: join(dataDirectory, "projects"),
       projectlessWorkspaceDirectory: join(dataDirectory, "workspaces"),
       skillsDirectory: join(dataDirectory, "skills"),
@@ -113,14 +195,27 @@ export async function startHeadlessServer(options = {}) {
       logicalClientRouting: true,
       physicalHostLifetime: "server",
       createTransport(hostId) {
+        const remote = remoteServers.get(hostId);
+        if (remote) return createSshCodexEngineAdapter(remote);
+        if (hostId.startsWith("ssh:")) return createSshCodexEngineAdapter(sshManagement.store.binding(hostId));
         if (hostId !== "local-codex") throw new Error(`Unknown server Host ${hostId}`);
         return options.createCodexTransport?.() ?? new CodexEngineAdapter({
           executable: options.codexExecutable ?? join(root, "runtime/codex/bin/codex"),
           runtimeDirectory: join(root, "runtime"),
           dataDirectory: join(dataDirectory, "codex"),
           nativeCodexHomeDirectory: join(dataDirectory, "native-codex"),
+          desktop,
         });
       },
+    });
+    // Local anonymous features remain usable. Public remote access is enabled
+    // only with explicit operator opt-in; all remote sockets require a session.
+    if (host === "127.0.0.1" || options.sshPublicOrigin || options.sshPublicAccess) sshManagement = new SshManagement({
+      directory: join(dataDirectory, "ssh"), publicOrigin: options.sshPublicOrigin, publicAccess: options.sshPublicAccess, accessFile: options.sshAccessFile,
+      accessMode: options.sshRequireAccessKey || options.sshAccessFile ? "access-key" : "shared",
+      resetConnection: id => appHostServer.resetHost(id), connectionState: id => appHostServer.hostState(id),
+      connectConnection: (id, assertAdmission) => appHostServer.ensureHostConnected(id, assertAdmission),
+      legacyServers: sshServers.map(binding => binding.descriptor),
     });
     const createWeb = options.createWebServer ?? createWorkbenchWebServer;
     web = await createWeb({
@@ -128,6 +223,13 @@ export async function startHeadlessServer(options = {}) {
       appServerTarget: agent.websocketUrl,
       loopbackOnly: host === "127.0.0.1",
       appHostServer,
+      sshServerDescriptors: sshServers.map(binding => binding.descriptor),
+      sshManagement,
+      desktopService: desktop ?? null,
+      desktopAccess,
+      tencentOaService: tencentOa ?? null,
+      speechService: new SpeechTranscriptionService({ configuration: new SpeechModelConfiguration(
+        new ModelConfigurationRepository(join(dataDirectory, "models")), new ModelCredentialRepository(join(dataDirectory, "models"))) }),
     });
     const address = await web.listen({ host, port });
     return { url: `http://127.0.0.1:${address.port}`, listenHost: host, listenPort: address.port, close };
@@ -143,7 +245,8 @@ if (isMain) {
   void (async () => {
     const args = parseHeadlessArguments(process.argv.slice(2));
     if (args.help) {
-      process.stdout.write("Usage: opencraft-server [--host 127.0.0.1|0.0.0.0] [--port 10000] [--data-dir PATH] [--allow-unauthenticated-public]\nDefault: loopback only. Public mode has no TLS or access control.\n");
+      process.stdout.write("Optional employee recognition: --tencentoa-token-file ABSOLUTE_PRIVATE_FILE (raw 32-byte TAI application token; same-user 0600 regular file). Recognition does not grant shared resource permissions.\n");
+      process.stdout.write("Usage: opencraft-server [--host 127.0.0.1|0.0.0.0] [--port 10000] [--data-dir PATH] [--ssh-servers PRIVATE_JSON] [--ssh-public-origin HTTPS_ORIGIN | --ssh-public-access] [--ssh-require-access-key] [--ssh-access-file PRIVATE_FILE] [--allow-unauthenticated-public] [--local-desktop | --trusted-internal-desktop] [--desktop-control]\nDefault: loopback only; SSH management uses shared installation access without an extra key. --ssh-require-access-key or --ssh-access-file enables key protection. Public SSH requires explicit opt-in; every permitted visitor can use saved connections in shared mode. HTTP provides no transport encryption. Desktop requires an installed verified observer. Trusted-internal desktop trusts everyone able to access this deployment; operator-owned network admission is required. Optional desktop control requires a separate installed private native executor.\n");
       return;
     }
     const server = await startHeadlessServer(args);

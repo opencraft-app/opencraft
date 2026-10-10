@@ -3,7 +3,7 @@
 ## 范围与所有权
 
 - AgentSidebar 只管理中间导航滚动区的上下阴影；真实页面和加载视图共享固定 Bot、探索/对话页签、可滚动导航、底部账号的布局。导航分组、Bot 操作和正文由 master 页面继续负责。
-- UserAvatarMenu 按 variant 分流；header 保留 master 的交互，sidebar 使用已有 Radix Popover，click-only。头像、名称、套餐、箭头和按钮空白共享同一触发按钮。
+- UserAvatarMenu 按 variant 分流；header 保留 master 的交互，sidebar 使用已有 Radix Popover。头像、名称、套餐、箭头和按钮空白共享同一触发按钮，支持点击和 hover 打开。
 - SidebarUserMenuController 负责账号身份、只读套餐/积分摘要、升级资格与现有路由。只有首次打开菜单才请求回退套餐；换号隔离数据，迟到请求不能覆盖新账号。
 - useAccountPassSummary 与 account-pass-summary 仅服务菜单；Account 页面、续费流程、订阅写入与权限不变。升级只跳转原购买入口，不创建订单。
 - 直接复用 master 的 subscribeConsoleShow / installConsoleShowCommand；show 由共享 ref-counted command 统一 toggle，各界面只订阅状态，不直接派发切换事件；不注册 hide。工作台、模型遵循 master 条件；国内站反馈仅放在账号菜单，默认可见，不受 show 状态影响。国际站不显示反馈入口。
@@ -13,7 +13,7 @@
 - 桌面顶部 Bot、探索/对话页签和底部账号不随导航滚动；页签与导航间距为 16px，中间区承担 overflow，ResizeObserver 和 scroll 更新可滚动边缘。
 - 桌面导航以 `1512x850` CSS px 作为 14 寸 MacBook Pro 参考视口；固定导航项和底部账号入口在该视口内完整可见，动态会话列表只在中间区滚动。桌面矮视口使用 30px 导航项紧凑档，移动端命中区域保持原尺寸。
 - 账号菜单根节点和按钮填满父容器内容宽度；不添加覆盖层或重复点击事件。
-- Popover 使用 Portal 脱离侧栏裁切，限制可用高度。打开聚焦账号标题；Escape 关闭并归还触发器焦点。嵌套语言菜单先关闭自身。
+- Popover 使用 Portal 脱离侧栏裁切，限制可用高度。鼠标离开触发按钮与弹出菜单后短暂延迟关闭，便于跨越两者间隙；点击外部或 Escape 关闭。打开聚焦账号标题；Escape 关闭并归还触发器焦点。嵌套语言菜单先关闭自身。
 - 积分未知、加载失败和真实零余额分别展示；进度条仅展示有效数值。升级继续复用原资格判断和本地化路由。
 - 本次不改变全局 UI 原语、Account/Buddy/Memory 正文或 OpenCraft 产品逻辑；Radix Dialog/Popover 版本统一到 1.1.23 以避免重复 runtime。
 

@@ -79,6 +79,7 @@ export interface CreateWebBrowserPageInput {
 }
 
 export interface BrowserNavigationUrlMapper {
+  prepareNavigation?(url: BrowserUrl): Promise<void> | null;
   toPhysicalUrl(url: BrowserUrl, hostId: string): BrowserUrl;
   toLogicalUrl(url: string, hostId: string): string;
   isPhysicalProxyUrl(url: string): boolean;
@@ -141,11 +142,14 @@ export class WebBrowserPageRuntime {
   async capturePage(pageId: BrowserPageId): Promise<string> {
     if (!this.surfaces.capture) throw new Error("截图仅在桌面浏览器可用");
     this.prepareSurface(pageId);
+    await this.waitForNavigation(pageId);
     const release = this.surfaces.acquireUse?.(pageId) ?? (() => {});
     try { await this.surfaces.waitUntilReady?.(pageId); return await this.surfaces.capture(pageId); }
     finally { release(); }
   }
   private readonly pages = new Map<BrowserPageId, BrowserPageRecord>();
+  private readonly navigationGenerations = new Map<BrowserPageId, number>();
+  private readonly pendingNavigations = new Map<BrowserPageId, { url: BrowserUrl; generation: number; operation: Promise<void> }>();
 
   constructor(
     private readonly surfaces: BrowserSurfaceHost = new WebIframeSurfaceHost(),
@@ -248,6 +252,7 @@ export class WebBrowserPageRuntime {
 
   stop(pageId: BrowserPageId): void {
     const record = this.requireRecord(pageId);
+    this.invalidateNavigation(pageId);
     this.surfaces.stop(pageId);
     this.publish(record, { isLoading: false });
   }
@@ -289,9 +294,11 @@ export class WebBrowserPageRuntime {
     this.zoom.delete(pageId);
     const record = this.pages.get(pageId);
     if (record === undefined) return;
+    this.invalidateNavigation(pageId);
     this.surfaces.close(pageId);
     this.surfaces.forget?.(pageId);
     this.pages.delete(pageId);
+    this.navigationGenerations.delete(pageId);
     record.listeners.clear();
     this.persist();
   }
@@ -299,6 +306,8 @@ export class WebBrowserPageRuntime {
   dispose(): void {
     for (const record of this.pages.values()) record.listeners.clear();
     this.pages.clear();
+    this.navigationGenerations.clear();
+    this.pendingNavigations.clear();
   }
 
   private requireRecord(pageId: BrowserPageId): BrowserPageRecord {
@@ -319,6 +328,43 @@ export class WebBrowserPageRuntime {
   }
 
   private load(record: BrowserPageRecord, url: BrowserUrl, force = false): boolean {
+    const pending = this.pendingNavigations.get(record.id);
+    if (!force && pending?.url === url) return true;
+    const generation = this.invalidateNavigation(record.id);
+    const readiness = record.hostId === null ? null : this.navigationMapper?.prepareNavigation?.(url);
+    if (readiness) {
+      // Materialize an inert surface for Presentation ownership, not a raw localhost
+      // navigation. Its blank load must not settle the pending logical navigation.
+      this.surfaces.navigate(record.id, record.snapshot.title, null, {
+        onLoaded: () => {}, onError: () => {}, onAutomationEvent: () => {},
+      });
+      const current = () => this.pages.get(record.id) === record
+        && this.navigationGenerations.get(record.id) === generation;
+      const operation = readiness.then(() => {
+        if (!current()) return;
+        if (!this.navigateSurface(record, url, force)) this.publish(record, { isLoading: false });
+      }).catch((error: unknown) => {
+        if (current()) this.publish(record, {
+          isLoading: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }).finally(() => {
+        if (current()) this.pendingNavigations.delete(record.id);
+      });
+      this.pendingNavigations.set(record.id, { url, generation, operation });
+      return true;
+    }
+    return this.navigateSurface(record, url, force);
+  }
+
+  private invalidateNavigation(pageId: BrowserPageId): number {
+    const generation = (this.navigationGenerations.get(pageId) ?? 0) + 1;
+    this.navigationGenerations.set(pageId, generation);
+    this.pendingNavigations.delete(pageId);
+    return generation;
+  }
+
+  private navigateSurface(record: BrowserPageRecord, url: BrowserUrl, force: boolean): boolean {
     const physicalUrl = record.hostId === null || this.navigationMapper === null
       ? url
       : this.navigationMapper.toPhysicalUrl(url, record.hostId);
@@ -422,11 +468,23 @@ export class WebBrowserPageRuntime {
   }
   private async withAutomation<T>(pageId: BrowserPageId, call: (automation: BrowserAutomation) => Promise<T>): Promise<T> {
     this.prepareSurface(pageId);
+    await this.waitForNavigation(pageId);
     const release = this.surfaces.acquireUse?.(pageId) ?? (() => {});
     try {
       await this.surfaces.waitUntilReady?.(pageId);
       return await call(this.requireAutomation(pageId));
     } finally { release(); }
+  }
+
+  private async waitForNavigation(pageId: BrowserPageId): Promise<void> {
+    const pending = this.pendingNavigations.get(pageId);
+    if (!pending) return;
+    await pending.operation;
+    const record = this.requireRecord(pageId);
+    if (this.navigationGenerations.get(pageId) !== pending.generation
+      || currentBrowserHistoryEntry(record.history)?.url !== pending.url)
+      throw new WebBrowserCapabilityError("NAVIGATION_SUPERSEDED", "Preview navigation changed while waiting", true);
+    if (record.snapshot.error) throw new WebBrowserCapabilityError("HOST_PROXY_UNAVAILABLE", record.snapshot.error, true);
   }
 
   private publish(record: BrowserPageRecord, patch: {

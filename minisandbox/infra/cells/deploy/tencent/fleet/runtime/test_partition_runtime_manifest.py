@@ -195,6 +195,20 @@ class PartitionRuntimeManifestTest(unittest.TestCase):
         self.assertLess(health, kick)
         self.assertLess(kick, ledger)
 
+    def test_release_checks_host_drain_entrypoint_before_mutating_workloads(self):
+        release = (ROOT / "release-runtime.sh").read_text()
+        start = release.index('ACTOR_IMAGE_PREFLIGHT_NAME=host-drain-release')
+        end = release.index('"$operations_dir/preflight-image-pull.sh" /usr/local/bin/workerd-host-drain-controller --help', start)
+        probe = release[start:end]
+        self.assertIn('ACTOR_IMAGE_PREFLIGHT_IMAGE="$reporter_image"', probe)
+        self.assertIn('ACTOR_IMAGE_PREFLIGHT_NODE_SELECTOR=fleet.actor.dev/control-pool=true', probe)
+        self.assertIn('ACTOR_IMAGE_PREFLIGHT_EXPECTED_EXIT_CODE=0', probe)
+        self.assertIn("ACTOR_IMAGE_PREFLIGHT_REQUIRED_OUTPUT='Usage: workerd-host-drain-controller [--help]'", probe)
+        self.assertLess(end, release.index("rollout_started=true"))
+        self.assertLess(end, release.rindex("wait_for_runtime_capacity_settle\n"))
+        dockerfile = (ROOT.parents[3] / "Dockerfile.actor-fleet-controller").read_text()
+        self.assertIn("go test ./cmd/workerd-host-drain-controller", dockerfile)
+
 
 if __name__ == "__main__":
     unittest.main()

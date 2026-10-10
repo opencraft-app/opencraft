@@ -161,7 +161,7 @@ export const RenewPassModal = ({
       } catch (err) {
         if (cancelled) return;
         setPriceInfo(null);
-        setPriceError(resolveBillingErrorMessage(err, t("询价失败，可继续下单或稍后重试。")));
+        setPriceError(resolveBillingErrorMessage(err, t("询价失败，可继续下单或稍后重试。"), t));
       } finally {
         if (!cancelled) setPricing(false);
       }
@@ -310,7 +310,7 @@ export const RenewPassModal = ({
       console.error("[account] create renew order failed", err instanceof RepositoryError
         ? { status: err.status, code: err.code, message: err.message }
         : err);
-      setSubmitError(`${code ? `[${code}] ` : ""}${resolveBillingErrorMessage(err, fallbackMsg)}`);
+      setSubmitError(`${code ? `[${code}] ` : ""}${resolveBillingErrorMessage(err, fallbackMsg, t)}`);
     } finally {
       setSubmitting(false);
     }

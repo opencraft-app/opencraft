@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, useEffect, useRef } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 
 import { PublicHeaderAuthIsland } from '@next-site/public-header-auth-island';
 import { HomeMobileNavigation } from '@next-site/home-mobile-navigation';
@@ -19,6 +19,7 @@ import {
 import type { PublicSiteLocale } from '@/lib/public-site-navigation';
 import { PUBLIC_SITE_LOCALES } from '@/lib/public-site-routing';
 import { isGlobal } from '@/lib/region';
+import { getPassStatus } from '@/lib/billing-flow';
 
 export const INTERNATIONAL_HOME_SCRIPT_SOURCES = [
   '/lightvela-intl-home/runtime.js',
@@ -27,7 +28,11 @@ export const INTERNATIONAL_HOME_SCRIPT_SOURCES = [
   '/lightvela-intl-home/assets/feature-motion.js',
 ] as const;
 
-export const INTERNATIONAL_HOME_ASSET_VERSION = '20260930-feature-loops-v109';
+export const INTERNATIONAL_HOME_ASSET_VERSION = '20261009-runtime-v118';
+
+/** Homepage motion mode: GSAP-driven on the global site, CSS-only on the domestic site. */
+const MOTION_MODE_GSAP = 'gsap';
+const MOTION_MODE_CSS = 'css';
 
 function versionedInternationalHomeAsset(source: string) {
   return `${source}?v=${INTERNATIONAL_HOME_ASSET_VERSION}`;
@@ -112,9 +117,14 @@ function readOfficialCtaLabels(): Partial<Record<CtaCopyKey, string>> {
 }
 
 export function InternationalHomeRuntime({ locale, markup }: { locale: PublicSiteLocale; markup: string }) {
-  const { authReady, isAuthenticated } = useSession();
-  const { bots, isSubscribed } = useOpenClaw();
+  const { authReady, isAuthenticated, session } = useSession();
+  const { bots, hasResolvedPasses, isSubscribed, latestPass, passesError, passesLoading } = useOpenClaw();
   const officialCtaLabelsRef = useRef<Partial<Record<CtaCopyKey, string>>>({});
+  const [readyCtaKey, setReadyCtaKey] = useState<string | null>(null);
+  const entitlementReady = !isAuthenticated || (hasResolvedPasses && !passesLoading && !passesError);
+  const passStatus = latestPass ? getPassStatus(latestPass) : null;
+  const hasLapsedPass = passStatus === 'expired' || passStatus === 'isolated';
+  const ctaKey = JSON.stringify([locale, authReady, isAuthenticated, entitlementReady, isSubscribed, hasLapsedPass, bots.length, session?.user?.id]);
 
   // 先于下面的改写 effect 执行：抢在 href / 文案被改写前，从片段里取出该语种官方文案。
   useEffect(() => {
@@ -127,6 +137,8 @@ export function InternationalHomeRuntime({ locale, markup }: { locale: PublicSit
 
     function loadScripts() {
       document.querySelectorAll('script[data-lightvela-intl-home-script]').forEach((script) => script.remove());
+      const home = document.getElementById('lightvela-intl-home');
+      if (home) home.dataset.homeMotionMode = isGlobal ? MOTION_MODE_GSAP : MOTION_MODE_CSS;
 
       for (const source of INTERNATIONAL_HOME_SCRIPT_SOURCES) {
         if (cancelled) return;
@@ -153,16 +165,18 @@ export function InternationalHomeRuntime({ locale, markup }: { locale: PublicSit
   }, [locale, markup]);
 
   useEffect(() => {
-    if (!isGlobal) return;
     const root = document.getElementById('lightvela-intl-home');
     if (!root) return;
     let cancelled = false;
     let stopMotion: (() => void) | undefined;
     const frame = requestAnimationFrame(() => {
-      void import('./international-home-motion').then(({ mountInternationalHomeMotion }) => {
-        if (!cancelled && root.isConnected) stopMotion = mountInternationalHomeMotion(root);
+      const loadMotion = isGlobal
+        ? import('./international-home-motion').then(({ mountInternationalHomeMotion }) => mountInternationalHomeMotion)
+        : import('./domestic-home-mascot-motion').then(({ mountDomesticHomeMascotMotion }) => mountDomesticHomeMascotMotion);
+      void loadMotion.then((mountMotion) => {
+        if (!cancelled && root.isConnected) stopMotion = mountMotion(root);
       }).catch((error: unknown) => {
-        console.error('Failed to load international homepage motion', error);
+        console.error('Failed to load homepage motion', error);
       });
     });
     return () => {
@@ -173,22 +187,28 @@ export function InternationalHomeRuntime({ locale, markup }: { locale: PublicSit
   }, [locale, markup]);
 
   useEffect(() => {
-    if (!authReady) return;
+    if (!authReady || !entitlementReady) return;
 
-    const journeyState = { isAuthenticated, isSubscribed, hasBots: bots.length > 0 };
+    const journeyState = {
+      isAuthenticated,
+      isSubscribed,
+      hasBots: bots.length > 0,
+      hasLapsedPass,
+    };
     const ctaHref = journeyHref(resolveCtaRoute(journeyState), locale, { localized: isGlobal });
     // 优先用片段里的官方译文，取不到（例如片段没有对应按钮）才回退到兜底文案表。
     const copyKey = resolveCtaCopyKey(journeyState);
     const ctaLabel = officialCtaLabelsRef.current[copyKey] ?? getCtaCopy(locale, journeyState);
 
-    // 方案 A：CTA 落点已由 ctaHref 表达——未登录 / 已登录未订阅 → /subscribe（在订阅页点“订阅”
-    // 时才引导登录，先让用户看套餐），已登录已订阅 → /agents。因此这里只改写 href 与文案，
+    // CTA 落点已由 ctaHref 表达：未订阅新用户 → /subscribe，曾有套餐的老用户 → /agents。
+    // 因此这里只改写 href 与文案，
     // 不再拦截点击强制登录（登录入口保留在 Header 的「登录 / Sign In」按钮，见 public-header-auth-island）。
     for (const anchor of collectCtaAnchors()) {
       anchor.setAttribute('href', ctaHref);
       applyCtaLabel(anchor, ctaLabel);
     }
-  }, [authReady, bots.length, isAuthenticated, isSubscribed, locale, markup]);
+    setReadyCtaKey(ctaKey);
+  }, [authReady, bots.length, ctaKey, entitlementReady, hasLapsedPass, isAuthenticated, isSubscribed, locale, markup, session?.user?.id]);
 
   return (
     <>
@@ -207,7 +227,10 @@ export function InternationalHomeRuntime({ locale, markup }: { locale: PublicSit
       </PublicSiteLocaleBridge>
       {locale === PUBLIC_SITE_LOCALES.EN_US && <BrowserLanguageSuggestion />}
       {/* The fragment is generated from a reviewed, repository-owned static source. */}
-      <InternationalHomeMarkup markup={markup} />
+      {/* 国际站静态片段的 Hero 和页脚默认写着「我的智能体」。权益就绪并完成 CTA 改写前隐藏入口。 */}
+      <div className={authReady && entitlementReady && readyCtaKey === ctaKey ? undefined : '[&_.hero__cta]:invisible [&_.foot__cta]:invisible'}>
+        <InternationalHomeMarkup markup={markup} />
+      </div>
       <div className="international-home-header-actions-layer">
         <PublicHeaderAuthIsland
           appearance="immersive"

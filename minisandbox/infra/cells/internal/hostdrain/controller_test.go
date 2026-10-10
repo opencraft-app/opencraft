@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -139,7 +140,8 @@ func TestSnapshotKeepsPendingHostIdentityWithoutManagementRequest(t *testing.T) 
 	pending := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: "cell", Name: "runtime-2", UID: types.UID("pending-uid"),
-			Labels: map[string]string{"app": "runtime"},
+			Labels:          map[string]string{"app": "runtime"},
+			OwnerReferences: hostOwnerReferences(statefulSet),
 		},
 		Status: corev1.PodStatus{Phase: corev1.PodPending},
 	}
@@ -186,7 +188,7 @@ func TestSnapshotBatchesNodeTopologyAndBoundsParallelHostObservations(t *testing
 	}}}
 	for ordinal := int32(0); ordinal < replicas; ordinal++ {
 		objects = append(objects, &corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{Namespace: "cell", Name: fmt.Sprintf("runtime-%d", ordinal), UID: types.UID(fmt.Sprintf("uid-%d", ordinal)), Labels: map[string]string{"app": "runtime"}},
+			ObjectMeta: metav1.ObjectMeta{Namespace: "cell", Name: fmt.Sprintf("runtime-%d", ordinal), UID: types.UID(fmt.Sprintf("uid-%d", ordinal)), Labels: map[string]string{"app": "runtime"}, OwnerReferences: hostOwnerReferences(statefulSet)},
 			Spec:       corev1.PodSpec{NodeName: "runtime-node"},
 			Status:     corev1.PodStatus{Phase: corev1.PodRunning, PodIP: parsed.Hostname(), Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}}},
 		})
@@ -361,6 +363,7 @@ func TestRuntimeReleaseHoldFailsClosed(t *testing.T) {
 		"foreign UID":   `{"id":"release-0123456789abcdef","workload_uid":"other","acquired_at":"2026-09-05T13:00:00Z"}`,
 		"bad ID":        `{"id":"RELEASE/INVALID/IDENTITY","workload_uid":"workload-uid","acquired_at":"2026-09-05T13:00:00Z"}`,
 		"trailing JSON": valid + `{}`,
+		"oversized":     valid + strings.Repeat(" ", 4*1024),
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := decodeReleaseHold(raw, "workload-uid"); err == nil {

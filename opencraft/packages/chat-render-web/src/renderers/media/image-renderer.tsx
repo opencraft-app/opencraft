@@ -1,6 +1,7 @@
-import type { ChatNodeRendererProps, ChatResourcePolicyService } from "@opencraft/chat-render-react";
+import { chatMediaPresentationKey, type ChatNodeRendererProps, type ChatResourcePolicyService } from "@opencraft/chat-render-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { usePreviewFocusOrigin } from "../../preview-focus-origin";
 import "./image.scss";
 
 function CloseGlyph() {
@@ -16,6 +17,7 @@ function NextGlyph() {
 }
 
 interface ImageGalleryState {
+  readonly key: string;
   readonly index: number;
   readonly items: readonly { readonly alt: string; readonly source: string }[];
 }
@@ -29,12 +31,7 @@ export function createImageRenderer(resources: ChatResourcePolicyService) {
       readonly status: "loading" | "ready" | "unavailable";
     } | null>(null);
     const dialogRef = useRef<HTMLDialogElement>(null);
-    useEffect(() => {
-      const dialog = dialogRef.current;
-      if (dialog === null) return;
-      if (gallery !== null && !dialog.open) dialog.showModal();
-      if (gallery === null && dialog.open) dialog.close();
-    }, [gallery]);
+    const previewFocus = usePreviewFocusOrigin();
     if (node.kind !== "image") return null;
     // Codex's media normalizer permits media data URLs, while the generic
     // anchor policy rejects every data: URL. Keep that exception local to the
@@ -42,7 +39,17 @@ export function createImageRenderer(resources: ChatResourcePolicyService) {
     const decision = /^data:image\//iu.test(node.src)
       ? { allowed: true as const, kind: "external" as const, target: node.src }
       : resources.resolve(node.src, context);
-    const loadKey = `${decision.kind ?? "blocked"}:${decision.target ?? node.src}`;
+    const loadKey = chatMediaPresentationKey(node.src, decision, context);
+    const activeGallery = gallery?.key === loadKey ? gallery : null;
+    useEffect(() => {
+      const dialog = dialogRef.current;
+      if (dialog === null) return;
+      if (activeGallery !== null && !dialog.open) dialog.showModal();
+      if (activeGallery === null && dialog.open) dialog.close();
+    }, [activeGallery]);
+    useEffect(() => {
+      if (gallery !== null && gallery.key !== loadKey) setGallery(null);
+    }, [gallery, loadKey]);
     const mustLoadThroughHost = decision.allowed
       && decision.target !== null
       && context.loadMediaSource !== undefined
@@ -131,14 +138,14 @@ export function createImageRenderer(resources: ChatResourcePolicyService) {
         return image === null ? [] : [{ alt: image.alt, source: image.currentSrc || image.src }];
       });
       const index = Math.max(0, triggers.indexOf(trigger));
-      setGallery({ index: Math.min(index, Math.max(0, items.length - 1)), items });
+      setGallery({ key: loadKey, index: Math.min(index, Math.max(0, items.length - 1)), items });
     };
-    const currentImage = gallery?.items[gallery.index] ?? { alt: node.alt, source: imageSource };
-    const showPrevious = gallery !== null && gallery.index > 0;
-    const showNext = gallery !== null && gallery.index + 1 < gallery.items.length;
+    const currentImage = activeGallery?.items[activeGallery.index] ?? { alt: node.alt, source: imageSource };
+    const showPrevious = activeGallery !== null && activeGallery.index > 0;
+    const showNext = activeGallery !== null && activeGallery.index + 1 < activeGallery.items.length;
     return (
       <>
-        <button aria-label={node.alt || "Preview image"} className="chat-markdown-image-button" data-markdown-image-preview-trigger="true" onClick={(event) => openGallery(event.currentTarget)} type="button">
+        <button aria-label={node.alt || "Preview image"} className="chat-markdown-image-button" data-markdown-image-preview-trigger="true" onClick={(event) => { previewFocus.recordOpen(event); openGallery(event.currentTarget); }} onKeyDown={previewFocus.onTriggerKeyDown} onPointerCancel={previewFocus.onTriggerPointerCancel} onPointerDown={previewFocus.onTriggerPointerDown} type="button">
           <img
             alt={node.alt}
             className="chat-markdown-image"
@@ -149,15 +156,16 @@ export function createImageRenderer(resources: ChatResourcePolicyService) {
             title={node.title ?? undefined}
           />
         </button>
-        <dialog aria-label={currentImage.alt || "Image preview"} className="chat-markdown-image-preview" onCancel={(event) => { event.preventDefault(); close(); }} onClose={close} onKeyDown={(event) => {
-          if (gallery === null) return;
-          if (event.key === "ArrowLeft" && showPrevious) setGallery({ ...gallery, index: gallery.index - 1 });
-          if (event.key === "ArrowRight" && showNext) setGallery({ ...gallery, index: gallery.index + 1 });
+        <dialog aria-label={currentImage.alt || "Image preview"} className="chat-markdown-image-preview" data-opened-by-pointer={previewFocus.openedByPointer || undefined} onCancel={(event) => { event.preventDefault(); close(); }} onClose={close} onKeyDown={(event) => {
+          previewFocus.onPreviewKeyDown(event);
+          if (activeGallery === null) return;
+          if (event.key === "ArrowLeft" && showPrevious) setGallery({ ...activeGallery, index: activeGallery.index - 1 });
+          if (event.key === "ArrowRight" && showNext) setGallery({ ...activeGallery, index: activeGallery.index + 1 });
         }} ref={dialogRef}>
           <button aria-label="Close image preview" className="chat-markdown-image-preview__close" onClick={close} type="button"><CloseGlyph /></button>
-          {showPrevious ? <button aria-label="Previous image" className="chat-markdown-image-preview__previous" onClick={() => setGallery((current) => current === null ? null : { ...current, index: current.index - 1 })} type="button"><PreviousGlyph /></button> : null}
+          {showPrevious ? <button aria-label="Previous image" className="chat-markdown-image-preview__previous" onClick={() => setGallery((current) => current?.key !== loadKey ? null : { ...current, index: current.index - 1 })} type="button"><PreviousGlyph /></button> : null}
           <img alt={currentImage.alt} src={currentImage.source} title={node.title ?? undefined} />
-          {showNext ? <button aria-label="Next image" className="chat-markdown-image-preview__next" onClick={() => setGallery((current) => current === null ? null : { ...current, index: current.index + 1 })} type="button"><NextGlyph /></button> : null}
+          {showNext ? <button aria-label="Next image" className="chat-markdown-image-preview__next" onClick={() => setGallery((current) => current?.key !== loadKey ? null : { ...current, index: current.index + 1 })} type="button"><NextGlyph /></button> : null}
         </dialog>
       </>
     );

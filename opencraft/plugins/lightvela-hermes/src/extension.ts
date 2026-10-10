@@ -22,6 +22,7 @@ import type { ConnectorRelease } from "./connectors/connector-client";
 import { connectorTestRelease } from "./connectors/test-release";
 import { AppServerLightVelaRuntimeCommandPort } from "./account/lightvela-runtime-command-port";
 import type { HermesProfileDirectory } from "./settings/hermes-skills-management-view";
+import type { HermesPhysicalConnectionPreparation } from "./transport/hermes-physical-connection-preparation";
 
 export interface LightVelaHermesExtensionOptions extends LightVelaAccountServiceOptions {
   /** Application-owned account shared with other first-party LightVela extensions. */
@@ -31,6 +32,7 @@ export interface LightVelaHermesExtensionOptions extends LightVelaAccountService
   readonly profileSkills?: AppServerProfileSkillsService;
   readonly appServerClients?: AppServerClientRegistryService;
   readonly profileDirectory?: HermesProfileDirectory;
+  readonly physicalConnection?: HermesPhysicalConnectionPreparation;
 }
 
 export function createLightVelaHermesExtension(
@@ -45,6 +47,7 @@ export function createLightVelaHermesExtension(
     profileSkills,
     profileDirectory,
     appServerClients,
+    physicalConnection,
     ...accountOptions
   } = options;
   const account = injectedAccount ?? new LightVelaAccountService({
@@ -188,7 +191,7 @@ export function createLightVelaHermesExtension(
       });
       api.internal.register(
         "hostConnectionProvider",
-        createLightVelaHermesHostProvider(account, sessionTokenCache),
+        createLightVelaHermesHostProvider(account, sessionTokenCache, physicalConnection, options.apiBase),
       );
       if (ownsAccount) api.subscriptions.add(() => account.dispose());
       if (ownsSessionTokenCache) {

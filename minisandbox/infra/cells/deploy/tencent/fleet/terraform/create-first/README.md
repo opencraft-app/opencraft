@@ -21,7 +21,7 @@ remain later receipt-bound phases rather than hidden Terraform provisioners.
 |---|---|---|
 | `bootstrap-state` | one encrypted, versioned COS Terraform-state bucket | local bootstrap state |
 | `foundation` | regional private TCR instance, namespace, complete repository inventory, regional CCN, and the account-scoped TKE OIDC role-policy attachment | `actor-fleet/foundation` |
-| `management` | C VPC, three subnets, node/TKE-API/private-Workers-API security groups, TKE, three zonal workers (one bootstrap), private endpoint, TCR/CCN attachments, regional Worker-code, code-plane FDB-backup and qualification-evidence buckets | `actor-fleet/management` |
+| `management` | C VPC, three subnets, security groups, TKE, three zonal workers (one bootstrap), standalone runtime-builder CVM and build CBS, private endpoint, TCR/CCN attachments, regional Worker-code, code-plane FDB-backup and qualification-evidence buckets | `actor-fleet/management` |
 | `cell` | one VPC, three subnets, security groups, TKE, bootstrap worker, private endpoint, TCR/CCN attachments, COS buckets and scoped CAM roles | `actor-fleet/cells/<cell-id>` |
 | `operations-network` | attach an existing regional LightVela VPC to an isolated CCN route table; expose only C and prevent current/future Cells from learning operations routes | `actor-fleet/operations-network` |
 
@@ -31,6 +31,80 @@ Kubernetes desired state: Cell Terraform creates only its bootstrap worker.
 Management Terraform creates three initial workers because upstream Argo HA
 has hard hostname anti-affinity and cannot converge on one node. Terraform
 never marks a Cell placement-ready.
+
+Runtime image compilation has a separate physical resource envelope. Management
+Terraform creates a private standalone CVM and an independently identified
+512 GiB CBS by default; neither joins TKE nor changes the three control workers.
+`runtime_builder_instance_type` and `runtime_builder_data_disk_gib` are explicit
+management-only inputs. This is disposable build capacity, not Actor storage.
+The separate credential-free `runtime_builder_inventory` output binds the instance, zone, disk
+and attachment, and retains `operationsInstanceId` as the original bootstrap
+host. It is not part of the strict platform `management_inventory` contract.
+Do not move release/qualification to a second operation-lock domain.
+
+Run the full management plan and its exact saved-plan apply under the original
+operations-host wrapper. A short lock-availability probe on that host does not
+authorize applying from a different machine. Join the backend state lineage and
+the current management/VPC/bootstrap identities before mutation; a builder-only
+change must create only the five declared builder resources, with no existing
+resource update or destruction. Transfer neither saved plans nor state through
+the ordinary credential-free source relay.
+
+On a private operations host, Terraform needs both an offline provider source
+and the established private Tencent API domain. A cached installed provider alone
+does not eliminate Registry discovery. Transfer the exact provider ZIP through
+COS, verify it against the tracked `.terraform.lock.hcl`, and use a protected
+`TF_CLI_CONFIG_FILE` with a `filesystem_mirror` and no `direct` fallback.
+The mirror's packed layout is
+`registry.terraform.io/tencentcloudstack/tencentcloud/terraform-provider-tencentcloud_1.83.11_linux_amd64.zip`.
+Do not disable TLS or replace the lock file with hashes generated from an arbitrary
+cache. Terraform's COS backend also uses the Tencent Tag API for state locking:
+being able to read COS does not prove that it can acquire the state lock.
+Set `TENCENTCLOUD_DOMAIN=internal.tencentcloudapi.com` before backend initialization,
+plan and apply on the configured same-VPC operations host. This is the same
+private API root used by the existing tccli wrapper, not a second state or lock
+authority. Never work around a network failure using `-lock=false` or force-unlock.
+See HashiCorp's [provider mirror configuration](https://developer.hashicorp.com/terraform/cli/config/config-file#explicit-installation-method-configuration)
+and [COS backend domain and locking](https://developer.hashicorp.com/terraform/language/backend/cos).
+
+If cloud quota stops an apply after another resource was created, preserve the
+backend state and the native terminal invocation. Collect the exact partial
+resource identities before any recovery. A new complete plan after quota is
+resolved must reuse recorded resources; never rerun the old plan, discard state,
+delete unreviewed security groups, or adopt a broader control-worker security
+group merely to bypass the standalone builder's isolation contract.
+
+The [2026-10-03 Beijing read-only census](bootstrap/evidence/runtime-builder-security-group-census-beijing-20261003.json)
+found quota use at 50/50. All ten product-tag matches and two name-only leads
+had associated resources, so there was no zero-association project candidate.
+Name matches and tags are not deletion authority; even a future empty result
+must be joined to current desired state and exact identities before an approved
+deletion. Do not extend cleanup to unrelated account resources to unblock a build.
+This snapshot grants neither builder readiness nor performance qualification.
+
+The subsequent [authorized six-group cleanup](bootstrap/evidence/security-group-cleanup-beijing-20261003.json)
+expanded the census to all fifty Beijing groups and removed only six exact,
+unassociated candidates after the user confirmed cleanup. Fresh association and
+reference checks, all ten regional AS launch configurations and the empty CVM
+launch-template inventory showed no target references. Policy backups remain in
+a private local directory; the original group IDs are irrecoverable. The final
+inventory contains the same remaining forty-four IDs, leaving six quota slots.
+No cluster, resource binding or Terraform state was deleted. The earlier census
+was project-scoped and did not establish that raising quota was the only option.
+Resume provisioning with a new full plan that reuses the existing build disk;
+quota availability still does not prove builder or runtime readiness.
+
+Provisioning is not build readiness. The inventory deliberately requires a
+storage bootstrap: verify the cloud attachment and exact guest block-device
+identity before any initialization; never infer `/dev/vdb` or overwrite a used
+disk. All actual bulk write paths must pass `runtime/verify-builder-storage.py`
+on the mounted data filesystem. The disk envelope does not establish the peak
+space or CPU/I/O budget of a fresh V8 build. No Terraform provisioner formats,
+migrates or prunes an existing host, and the build entrypoint must remain blocked
+until the separate storage bootstrap is implemented and verified. The read-only
+`bootstrap/validate-runtime-builder-storage.py` joins fresh native cloud API,
+management-node and guest block-device observations to this output. A passed
+plan still reports `storageReady=false` and is not reusable format authority.
 
 Management and Cell roots also own the TKE `networkpolicy` add-on at an
 explicit reviewed version. Kubernetes accepting a `NetworkPolicy` object is

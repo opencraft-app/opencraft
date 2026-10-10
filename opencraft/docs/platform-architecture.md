@@ -87,6 +87,157 @@ contract or Sidebar presentation again.
 
 ## Package ownership
 
+### Backend SSH Codex connections
+
+The Node backend can attach to existing Linux or Desktop-compatible HyperNode
+AppServers through OpenSSH exec and WebSocket-in-SSH. The existing Codex routing
+adapter shares initialize, request isolation, Thread readers and interaction
+ownership across local stdio and remote physical transports. Remote mode never
+constructs local account/queue/attachment services or resolves remote files on
+this machine. Backend SQLite owns administrator-managed recipes, pinned trust and
+encrypted credentials. Settings drafts are transient; a live read-only profile
+overlay never duplicates these recipes in IndexedDB. A separate installation-owner
+HttpOnly session gates management and `/ssh-apphost`, with exact Origin and
+frame-level revocation checks. Public access requires explicit fixed-HTTPS-origin
+or changing-address opt-in; sessions stay bound to their admission Origin.
+Default shared installation access bootstraps this session automatically without
+an additional key, including after expiry/restart. Every permitted entry visitor
+can use saved SSH credentials in this mode; it is not a member ACL. Operators
+can require an extra key with `--ssh-require-access-key` or `--ssh-access-file`.
+The Application owns bootstrap/renewal and authorization incarnation, not a
+Settings mount; known session loss clears old private projections before renewal.
+Legacy servers without the policy declaration still require manual key admission.
+Bootstrap never dials SSH or replays connection/execution/file mutations. The
+explicit management Connect command uses AppHost's service-owned admission, not
+a synthetic Client or separate SSH transport. It grants no execution/answer lease;
+connection status remains a projection of the shared physical slot.
+The native broker's method-admission policy is independent of SSH framing.
+It forwards paginated Turn/Item history as well as native Skills/config writes
+and preserves unrelated upstream initialization metadata. The same validated
+`opencraft/method-access` extension feeds Runtime resources, submission admission,
+command compilation and Composer action resolution. Admission is not upstream
+support discovery; unavailable local stores/connection resources remain excluded.
+Preferences never manufacture capabilities: an SSH follow-up uses admitted Steer
+instead of unsupported Queue, without overwriting the preference; rejection is
+before optimistic adoption and cannot consume a draft. Legacy manifest absence
+is compatible, while a malformed declaration fails closed.
+The application catalog separately consumes authenticated physical readiness to
+admit its logical reader through the registry. It does not change the selected
+chat target, auto-connect policy or Thread subscriptions. Catalog publication
+checks configuration revision and authorization incarnation across async
+boundaries; a locked/disabled/removed recipe cannot regain visibility through
+a late result. Settings navigation and chat navigation consume this same
+application projection rather than issuing menu-local history refreshes. Management
+discovery is started and disposed by the Application, not the Settings
+View. Visible/online reads are single-flight, completion-scheduled and back off
+after transient failures (10/20/30 seconds, capped at 30); successful reads poll
+every five seconds. Foreground/online hints probe promptly without dialing a
+Server. Authorization changes supersede old reads; command receipts require a
+fresh post-command status read rather than joining an earlier poll. A missing
+management source due to read failure has its own sidebar retry, even before
+there are any SSH Host profiles; unsupported or successfully locked sources are
+not errors. Healthy background discovery does not flash a loading indicator.
+Runtime
+uses the shared read boundary for native indexed SSH discovery, not rollout
+reconciliation. Each admitted Host query owns loading/failure and scoped retry;
+the sidebar never substitutes an empty success for pending/error or lets one
+failed Host erase the others. Cached rows are not painted after admission is
+revoked, and expansion discloses hidden remote rows within the fetched catalog.
+Reconnect
+awaits the old physical close before admitting a successor, and failed activation
+remains observable after cleanup. Anonymous `/apphost` rejects SSH IDs; Renderer IDs and LightVela login
+projections are not administrator authority. Only public fingerprints/configuration
+are returned, never saved passwords. Static private key/agent recipes remain a
+read-only compatibility source. This is single-installation administrator access,
+not member-specific Server sharing. Reset has a physical close/claim barrier.
+Closing a page or proxy does not stop the remote daemon, and reconnection does not
+replay mutations. Scope, configuration, compatibility gates and limitations are
+specified in [SSH Codex Servers](ssh-codex-servers.md).
+
+### Conversation desktop plugin
+
+The trusted `plugins/cloud-desktop` panel registers its own renderer and entry.
+The application may inject an authorized backend/media adapter pair; absence
+means no advertised desktop capability. Conversation owns tab identity, the
+explicitly resident desktop presentation owns its transient viewing connection, and the backend
+owns the remote desktop incarnation and exclusive input authorization. Closing
+the viewer cannot stop the desktop or Agent. See the [desktop plugin contract](cloud-desktop-plugin.md)
+for framework invariants and the remaining production integration boundaries.
+
+The mounted presentation captures one physical activation's fixed control action;
+the viewing controller fences its single-use command by connection and control
+intent epochs. Focus loss still revokes immediately, but cannot turn a pressed
+Stop into Take after rendering changes, or release a successor grant. Physical
+clipboard capability and currently authorized paste are separate projections;
+unsupported adapters do not render a dead toolbar action.
+
+The desktop renderer alone opts into `while-tab-open` residency. Shell hiding
+and tool-tab selection project logical `active=false`: the controller releases
+input immediately, while viewing stays mounted. Reopening never reacquires input;
+the surface consumes the same activity to detach out-of-aperture cursor overlays
+and their listeners. Hidden cursor updates cannot recreate them; reopening only
+restores observation, never the previous control or focus. The adapter owns this
+projection, not Shell DOM queries or a second visibility registry.
+Local control-cursor attachment additionally requires the same confirmed input
+grant projection: observation/requesting never attaches it; Stop/revocation/blur
+restore the ordinary cursor and retire fallback listeners immediately. Late shape
+updates stay cached until a fresh valid grant; the framebuffer itself is unchanged.
+Closing the tab or changing the panel owner disposes the viewer. Other tools keep
+their existing physical-presentation lifetime. The control button projects the
+user's intention immediately as Stop; only a valid backend grant enables input.
+
+The neutral desktop plugin now owns the lazy noVNC media adapter; Vela's
+`lightvela-platform/desktop` provider owns account/directory validation, CTL
+preparation and attachment handoff through narrow ports. Dependencies point
+from product to neutral contract/media/session-wire, never in reverse. Vela's
+viewer port consumes configured authenticated broker endpoints and never owns
+desktop framing or rendering. Sandbox has a bounded attachment broker with
+one-use scoped credentials and confirmed remote control handoff. Its production
+authority composition, native input executor and default directory remain absent;
+an account or prepared VM alone cannot advertise the entry. The backend observer
+transport now verifies native process/socket ownership and a fresh root-key MAC
+before exposing immutable read-only RFB; this proof does not authorize a Conversation.
+
+Local Linux Codex Hosts have a separate explicit `--local-desktop` composition:
+`local-agent-host/desktop` owns authoritative native Thread checks, short grants
+and root-verified streams; `CodexEngineAdapter` binds grants to server-stamped
+logical Client epochs. Workbench's `HostDesktopBackend` maps Scope aliases to
+native Thread IDs and consumes the neutral media/session-wire. It is independent
+of Vela accounts and TAT. The dedicated WebSocket gateway is exact-Origin and
+loopback-only by default; an explicit `--trusted-internal-desktop` deployment
+instead trusts everyone admitted to that installation's network access. That
+deployment advertises a distinct same-origin trusted-internal transport, supports
+TLS-terminated HTTPS without trusting forwarded headers, and retains immutable
+read-only native observation and Thread/Client-bound grants. Neither mode is
+public DevCloud authentication. Hosts without either explicit mode do not
+advertise it. Viewer teardown cannot stop Codex or
+desktop processes. Full lifecycle and bounds are in the
+[local authority contract](cloud-desktop-plugin.md#local-execution-server-authority).
+
+Optional `--desktop-control` composes a separate root-private Unix XTest executor,
+verified against the same physical incarnation; the observation stream remains
+read-only. LocalDesktopService owns Thread/Client-bound control intent and
+confirmation, while the native executor owns physical exclusivity, renewable
+leases and held-key/button cleanup. Bounded RFB input decoding retains the grant
+at each message's first byte, including fragments. Viewing recovery never
+reacquires control; clipboard is explicitly unavailable in this local composition.
+See [native control authority](cloud-desktop-plugin.md#local-native-control-authority).
+SSH bindings do not inherit the local desktop service: the shared-native
+initialize projection removes any upstream desktop extension, and desktop
+attachment RPCs cannot be forwarded through the remote binding.
+
+Local viewing recovery opts in only because preparing a new attachment cannot
+replay resource creation or Agent work. Wire/media classify established transport
+loss; the viewing controller owns bounded backoff and fresh-grant replacement,
+never inherited input. Vela preparation remains manual on failure. See the
+[viewing recovery contract](cloud-desktop-plugin.md#bounded-viewing-recovery).
+Local viewer expiry is renewable through explicit discovery plus wire capability,
+not a removed timeout: the dedicated viewing socket requests reauthorization,
+the Host rechecks native Thread/Client/incarnation, and a matching confirmation
+re-arms both expiry owners. Failure remains bounded and cannot reacquire control.
+Legacy and Vela providers are not implicitly opted in. See
+[confirmed viewing renewal](cloud-desktop-plugin.md#confirmed-viewing-renewal).
+
 ### Workspace file Explorer ownership
 
 Workbench Web's workspace resource panel owns the selected Host/path, the
@@ -175,8 +326,9 @@ Following BB's capture/transcription/Composer separation does not imply reusing
 its Codex authentication or transcription endpoint. On Mac Electron, Main owns
 one physical capture through a bundled Speech/AVAudioEngine/CoreAudio helper.
 A trusted top-level preload port exposes semantic probe/start/stop/cancel events,
-never executable paths, audio buffers or credentials. Web retains its browser
-speech adapter; other Electron platforms explicitly report unsupported input.
+never executable paths, audio buffers or credentials. Web supports a selectable
+browser speech adapter or the application-owned Hunyuan transcription service;
+other Electron platforms explicitly report unsupported input.
 
 The voice extension owns platform selection and a dictation-session result ledger.
 Native recognition tasks supply stable utterance IDs, monotonic sequences and
@@ -227,6 +379,15 @@ owns the region. Editors are not remounted to switch modes. The voice extension
 provides semantic status, cancellation and a single completion promise, not a
 React replacement toolbar or access to the root controller.
 
+While a provider is starting, this same Footer shows only the shared decorative
+progress indicator and a neutral screen-reader announcement. Startup includes
+microphone acquisition, audio-context activation and provider readiness; it does
+not prove that an operating-system permission prompt is open. Only a confirmed
+listening event replaces progress with the waveform and starts elapsed recording
+time. Cancellation stays available before readiness and fences late completion.
+This feedback adds no minimum wait, microphone prewarming or background capture;
+it does not shorten or claim to measure physical-device startup latency.
+
 Stop-and-insert completes recognition without submitting. Transcribe-and-send
 and Enter wait for final text and revalidate the same draft and physical View
 before invoking the existing submission compiler. The read-only editor's Enter
@@ -245,6 +406,42 @@ crosses into the renderer; meters without actual samples show a quiet baseline.
 See [the dictation interaction plan](../design/dictation-interaction/task_plan.md)
 for the recovered-Codex/BB comparison and acceptance evidence.
 
+Web cloud dictation separates `AudioCapturePort`, `SpeechServiceClient` and the
+existing `SpeechInputProvider`/Composer transaction. Browser capture owns a single
+MediaStream/MediaRecorder, drains the final recording event and converts decoded
+audio to canonical mono 16kHz PCM WAV. The backend validates the actual container,
+length and duration (250ms–120s), not a client-supplied duration or filename.
+It calls TokenHub synchronous ASR with Base64 only after explicit stop; recording
+is not routed to the selected Agent/SSH Server. Capability discovery never steals
+or replaces an active capture. Explicit Hunyuan selection does not silently fall
+back to another recognizer on error. Mac's existing semantic native port is unchanged.
+
+The backend owns the API credential and normalizes vendor failures without raw
+payloads. Paid public access is separately opt-in, not inherited from public SSH.
+Speech model connections and write-only credentials reuse the installation's
+ModelConfigurationRepository/ModelCredentialRepository and existing Model Services
+commands. The voice page selects an independent defaultSpeechModel; chat defaults,
+catalogs and DSH execution projections exclude ASR models and credentials. Only a
+Host with the application speech service advertises ASR creation. Speech does not
+follow selected SSH Servers. Legacy environment credentials require an explicit
+one-time import, never runtime fallback. Capture pins an opaque configuration
+binding, checked before billing; model/key changes reject old recordings instead
+of redirecting them. Display-only renames do not invalidate captures.
+Uploads and vendor calls share a two-operation concurrency bound; admitted paid
+calls are bounded to ten per minute. Same session/attempt replays are bound to the
+audio digest/language/configuration binding and use a bounded, five-minute in-memory result receipt;
+there is no cross-restart task durability or vendor idempotency claim. Client
+disconnect/shutdown aborts local work, without claiming upstream cancellation or
+refunded usage. Voice recordings are not conversation attachments or database rows.
+
+A retryable failure keeps the original transient input and the same ephemeral
+audio, offering up to two explicit retries and expiring after two minutes idle.
+Every retry gets a new attempt identity. Failure settles any old send completion
+negatively: retry alone can insert, never revive the failed send intent. Cancel,
+target/View loss, expiry or extension disposal releases the audio and fences
+late results. UI retry/status replaces the existing Footer slots and does not
+remount the editor. Deployment and acceptance are in [cloud dictation](cloud-dictation.md).
+
 Input device UID and optional recognition language are client/profile preferences
 in Main's private JSON storage, independent of model configuration and DSH.
 Device enumeration/probe requests no recording permission. A missing selected
@@ -258,6 +455,31 @@ synthetic desktop test do not prove real microphone permission or recognition;
 that acceptance is reported separately in [the native speech plan](../design/native-speech/task_plan.md).
 
 ### Thread lifecycle ownership
+
+Conversation pinning is native Server metadata, not a Sidebar preference or a
+bridge database. The `opencraft/thread-pins` extension declares a discovery
+adapter; its list response separately proves support for the current initialized
+connection. Codex uses its reserved native pinned section and metadata-only
+section moves; legacy peers without that section remain unsupported. Hermes
+uses the already-authenticated Dashboard HTTP channel, passes the owning profile
+in each PATCH, and preserves native compression-lineage persistence. DSH has no
+fallback pin store. Neither discovery nor mutation resumes or starts a Thread.
+
+The normalized pinned catalog returns complete summaries beyond recent pages.
+Runtime merges them once into the initial Sidebar catalog; pinned rows have a
+separate visible group and do not consume the recent-row display budget.
+The native backend remains authoritative after reload. In-memory write tails
+serialize each Thread's intents, and a metadata revision fences reads issued
+before a write. A revoked connection cannot publish a late pin result or replay
+its write on a successor. Discovery failures remain errors, not unpin-all or
+unsupported success. Catalog notifications and connection recovery invalidate
+the same shared queries; no menu owns a polling loop or persistent pin set.
+
+The LightVela site renders its own Agent sidebar around the embedded Workbench.
+The embedded element passes each Thread's pinned state and the current Host's
+discovered pin capability to that sidebar, and forwards pin commands to the same
+Thread management resource. The site shows pinned rows outside its recent-page
+budget and never persists a second pin list.
 
 DSH display recovery uses [JIT history](../design/dsh-jit-history.md): native
 message pages retain their original unit and are mapped to requested Turn
@@ -300,10 +522,20 @@ resume buffer. Detach/disconnect invalidates the provisional target, and a late
 reply cannot reattach it or acquire the separate interaction-response owner.
 The Host keeps the physical subscription while any logical reader, admitted
 Turn, unsettled queue item or unanswered AppServer request still needs events.
-Only an idle, demand-free native Thread is released (30-minute grace for
+Only an idle, demand-free native Thread is released (2-minute grace for
 durable Threads, immediate for ephemeral Threads); release and new native work
 serialize per Thread. This is live fan-out plus snapshot/replay during resume,
 not a durable event log or multi-tenant authorization boundary.
+
+The packaged Codex runtime is pinned to `0.157.0`: its loaded paginated-Thread
+resume path can attach a new Client with `excludeTurns` without materializing
+the full persisted history. OpenCraft still sends the physical `thread/resume`;
+skipping it would lose atomic subscription and interaction ownership. A
+server-rejected Resume is retained for the current connection generation so
+automatic View reacquisition does not replay the same failed native request.
+An explicit user retry and a new physical generation may retry; transport
+failures are not memoized. The shorter Host grace is an additional release
+policy, not a substitute for Codex's own idle-thread cleanup.
 
 Native Fork copies a complete, validated event/context prefix with opaque
 provider state, not the currently loaded UI turns. Turn boundaries use logical
@@ -487,6 +719,20 @@ own HTTP/AppServer authority adapter with revision/CAS.
 Temporary interaction state such as peek, hover, drag projection and animation
 never enters the preference store.
 
+`chat.defaultFollowUpAction` is an installation-scoped `steer | queue`
+preference, defaulting to `steer`. Chat settings and the main conversation
+Composer consume the same runtime snapshot. The preference chooses the default
+intent only while a response is active; idle sends remain normal Turn starts.
+It neither creates a Host capability nor enables atomic queued-message steering.
+Temporary Side Chat has no durable queue and retains immediate follow-ups.
+
+`voice.inputProvider` is an installation-scoped `auto | system | hunyuan`
+preference. Web's default `auto` chooses Hunyuan only after the backend contract
+and local recording capability are available, otherwise the browser adapter.
+The choice is read once per capture and is independent of model/Host selection;
+it grants neither microphone permission nor paid-service access. No speech
+credential enters UI preference storage.
+
 Shell Navigation is the first migrated consumer. Applications Pin, Account
 Pin, rail detent, last visible detent, navigation-rail width and left context
 sidebar width are installation-scoped.
@@ -568,6 +814,7 @@ protocol adaptations are tracked there rather than implied by a successful build
 | `capability-core` (proposed) | AI-facing Spec, Offering, ModelView, Lease, Invocation and Receipt | none |
 | `capability-runtime` (proposed) | catalog, progressive disclosure, resolver, policy, execution router, journal and Draft Lab | none |
 | `design-system` | semantic colors, spacing, radii and theme computation | none |
+| `design-system-web` | shared Web/SVG progress projection, document animation phase and motion preference cleanup; consumes renderer-free geometry | React and DOM only |
 | `codex-composer` | ProseMirror/DOM composer view | DOM only |
 | `workbench-web` | Codex frame, SCSS, Electron/browser adapters | React DOM |
 | `workbench-expo` | Expo Router routes, native views, Expo Web view | React Native |
@@ -648,6 +895,65 @@ requested when domestic Chat is active. The release build fails closed when the
 reviewed Embedded artifact is unavailable, so legacy fallback cannot disguise
 an incomplete production artifact.
 
+Resource preparation starts at the domestic host Chat route after authentication,
+before the Next entitlement/Bot gate and lazy settings page, alongside Bot
+discovery, through the same lightweight deduplicated loader used by the migration
+surface. The actual domestic rollout authority, not hidden-tool preferences,
+enables both paths. Loading code never bypasses the entitlement gate for content.
+It registers the component but creates no Application or Host; the confirmed
+instance/Profile binding still gates the single canvas owner. Failed speculative
+loads are retryable by the surface. Optional Host Proxy startup runs independently
+of chat readiness. Remote loopback Browser navigation instead waits for its own
+proxy registration to activate; it never falls back to client-local localhost.
+Embedded Vite `assets/a-[hash][extname]` resources have immutable one-year cache
+headers in the Pages artifact. Stable loaders, version files and Service Workers
+remain revalidated; publishing must continue retaining old content-hash closures.
+
+The authenticated domestic Chat route may also prepare a physical TAT connection
+from the intermediate result of its existing instance-list read, independently
+of the slower per-instance Profile catalogs. A sole discovered instance that is Running or an
+explicit verified root-instance selection is required; a named Bot among several
+machines is not enough to guess its physical target. The TAT API retains ownership,
+Running-state and active-Pass checks. No extra Application/account service is
+created, and the preparation sends only the TAT handshake: no PTY, Dashboard
+bootstrap, loopback health probe, Profile tools or AppServer RPC.
+
+This in-process preparation capability is owned by the route/session discovery
+generation and is bounded to 15 seconds while unclaimed. Navigation, discovery
+replacement and credential changes revoke it; late HTTP/socket results cannot
+revive it. The confirmed Profile's normal provider/preflight and fresh instance
+validation still run. Only a matching account, region, instance and API base can
+claim the same multiplexer exactly once. Adoption enables the formal transport's
+ordinary health probing and transfers disposal responsibility to that transport;
+the preparation binding and multiplexer configuration are owner-held snapshots,
+not borrowed mutable caller options. Health configuration must succeed before
+the transfer commits, so failures still leave a resource that can be disposed;
+the route's old preparation owner cannot close an adopted Host. Failed, expired,
+lost or already-consumed preparations use the ordinary connection path. The
+capability is not stored in profiles, HTML, browser storage or a global pool.
+Older independently deployed Embedded artifacts without the static preparation
+API keep their original startup path. Dashboard ensure remains a post-adoption
+Host operation because it can start or replace an owned remote backend.
+
+The Embedded Application owns one deferred startup lane for Voice,
+Collaboration, Bot Chat/Management presentation and the Terminal panel module.
+The element releases that lane after its first visible `show()` handoff has
+painted; repeated `show()` calls do not activate a second copy. The required
+account/instance/Profile validation, WebSocket and Hermes providers remain in
+bootstrap, as do Terminal session/tool services needed by protocol capabilities.
+Only optional presentation modules move behind chat readiness. They activate in
+dependency order through the existing ExtensionSupervisor/Panel runtime; failure
+does not revoke an already usable chat. Full Workbench defaults to its existing
+eager startup policy. This is an Application startup plan, not a second
+Application, speculative Host, or general extension activation-event dispatcher.
+
+Retirement aborts pending optional module scopes before factories can acquire
+resources. An in-flight activation is drained before borrowed services,
+registries or the Host are disposed; its own Supervisor owns activation and
+rollback deadlines. Module waits are bounded, and late imports after timeout or
+retirement cannot install into the retired Application. A hidden/disposed element
+cannot release a stale paint callback's startup lane.
+
 `show()` is a browser-origin-scoped persisted toggle, not a one-way component
 callback. One shared feature-state controller owns versioned storage, in-page
 events, cross-tab storage reconciliation and a ref-counted global command.
@@ -687,12 +993,60 @@ resource loading failure as logout.
 
 `lightvela.collaboration` owns one routed Collaboration Workspace and the Human
 Tencent IM Web data plane for Server, Channel, private Group and Member surfaces.
+Its UI, service implementations and Tencent adapters are shared through
+`shared/vela-collaboration-web`. The extension preserves its activation owner;
+the LightVela `/agents/labs/collaboration` laboratory provides a separate
+account-bound owner through the same request port. It is default-hidden behind
+`show()` and only eligible when the site's selected authority is
+the Beijing test API. It does not borrow Agent entitlement or Bot execution,
+switch Shanghai credentials to Beijing, or create another token store. Closing
+the laboratory disposes its IM scope; reopening waits for prior logout.
+The current Human is read from `GET /v1/collaboration/me/profile`; the delegated
+actor profile does not require a locally stored email. The legacy email-based
+`/me` response remains available under its published contract.
 Its activation-scoped service obtains a short-lived
 session from `POST /v1/me/im/session`, logs in through `@tencentcloud/chat`, and
 owns SDK close. View mount/unmount only subscribes to the service snapshot; it
 cannot recreate or dispose the IM connection. This conversation state is
 separate from AppServer Agent conversations and does not register a
 `BotContribution`.
+Within that activation, services are scoped to the shared account's
+`authGeneration`. An identity change immediately invalidates the old Chat and
+directory, replaces the Workspace and View state, and waits for the previous
+SDK owner to finish logout before logging in the new Human. Late mutations
+from a disposed scope cannot navigate the new View. The extension only
+unsubscribes from account authority on disposal; it never disposes or signs out
+the shared account. A send in progress remains locked to its conversation even
+when the user leaves and reopens that conversation.
+The empty Workspace offers Server creation through the same authenticated
+account request port; one idempotency key is retained across uncertain
+submissions, and both immediate and accepted creation responses lead to the
+Server's default Channel only once its IM state is ready. A transient failed IM
+login can be retried without creating a second connection owner. Channel and
+private Group drafts are scoped to their conversation identities; older
+message pages are loaded from Tencent IM cursors rather than a second message
+store.
+An Owner or Admin can create a one-use, 24-hour member invite from the Server
+directory. An account with no Server can accept the join link with a retained
+idempotency key and navigate to the returned Server ID. The one-time token stays
+in View state, is cleared on Server switch, and is never placed in a route or
+log. Both account and IM-session responses are checked for their required
+fields so a malformed HTTP 200 error envelope cannot masquerade as a valid
+Human account or Tencent IM credential.
+Realtime messages received while the initial history page is in flight are
+merged with that page for the active conversation, never replaced by it;
+switching conversations invalidates late history results.
+An uncertain text-send outcome retains the original client request ID for
+that conversation. The View presents a confirmation action, which reconciles
+the existing Tencent IM attempt before allowing another send; it cannot
+silently turn an unknown result into a second message.
+Failed root Channel initialization is rendered as a failed state rather than
+indefinite preparation; the View keeps sending disabled until IM readiness.
+An explicit API base/region in standalone Web config selects the account
+authority but must not activate the blocking embedded-Host account preflight.
+Only a configured embedded Host performs that preflight. An expired standalone
+session leaves the workbench running and makes Collaboration offer a sign-in
+and retry path instead of crashing the application.
 
 `AgentCapabilityRuntime` is an optional AI-facing consumer of that platform. It exposes
 searchable capabilities rather than packages, progressively loads model
@@ -786,6 +1140,13 @@ priority order; recovery of an earlier account does not pull new Threads back.
 The loopback HTTP bridge owns each response stream until completion. When its
 client disconnects, it aborts the upstream request and consumes the resulting
 stream error without terminating the Host process or replaying the request.
+The proxy uses a dedicated HTTP/1.1 pool with sixteen non-pipelined connections
+and the loopback bridge admits at most sixteen concurrent upstream requests.
+Waiting for response headers is bounded to 60 seconds and an idle response body
+to 180 seconds. Slow headers, queue delay and transport failure emit
+content-free diagnostics keyed only by provider Thread/account identity. A
+timeout or other transport failure is surfaced to the owning Turn and is never
+replayed on another account, because the upstream execution outcome is unknown.
 The bridge accepts request bodies up to 32 MiB. It drains an oversized body
 without forwarding it and returns HTTP 413, so a large Codex history produces
 an explicit size error instead of a disconnected stream.
@@ -1033,11 +1394,61 @@ back/forward. Web saves that key projection per browser session and verifies the
 current Router key when restoring it; it is not another path authority. Desktop
 memory history lasts for the window, not across process restarts.
 
+History contains resource references, not evidence that a Draft still exists.
+At Web bootstrap, the URL/current Router entry is resolved before choosing a
+global last-used conversation, and the Router and initial activation consume the
+same effective target. Host profiles validate Host availability, ScopeRegistry
+validates retained Drafts, and BindingStore resolves durable promotion aliases
+to canonical Threads. An expired unsubmitted Draft is not recreated under its
+old ID. Global last-used preferences (including changes from another tab) cannot
+override a valid current-entry target. Explicit embedded memory navigation starts
+at Home and never reads or writes the containing page's conversation history.
+
+The same resource projection validates later restored entries. Invalid references
+fall back to the actual retained View, keeping its Composer; promoted aliases may
+retain their original View. A View already bound to another Scope must not be
+reused. Only the Router REPLACEs corrected entry metadata, preserving the current
+Settings/Extension destination. The transaction consumes these corrections as
+restoration events even when a POP is normalized into REPLACE.
+
 `WorkbenchNavigationTransaction` fences preparation by intent epoch, commits only
 accepted destinations, and restores the complete prior entry after a failed POP.
 Changing routes cancels pending readiness without stopping a live turn. A late
 Thread lease is released; late success/error cannot take navigation ownership.
 POP to a different View of the same conversation must still restore that View.
+Returning to the already retained View, by Chat or POP, presents it locally and
+resumes readiness in the background; a newer intent or disposal fences and
+releases late preparations. Selecting the current sidebar conversation from
+Settings uses this same return operation, not a new View or a network-gated
+selection. Submission ownership guards remain in force.
+Sidebar and other selection adapters express only `selectConversation`; they do
+not decide whether a Thread is already selected, whether pending hydration should
+be deduplicated, or whether Settings requires Chat return. The transaction owns
+that decision: reuse the remembered entry's View (or the actual retained View),
+coalesce an in-flight destination only when its View also matches, and no-op only for the presented View with no
+competing destination. `navigate` remains a distinct explicit-open operation, so
+different history Views of one Thread keep independent Composer documents.
+For a completed sidebar A→B→A cycle, the transaction remembers the last
+successfully presented View per canonical conversation in a bounded preferred
+map. It validates that input slot against its account-bound draft owner, not
+just the 20-View presentation cache. Failed or superseded preparations never
+publish a preferred View; POP updates it only after acceptance. Draft eviction
+forgets the slot, and account revocation clears the map and fences pending work.
+`ConversationDraftOwnerRegistry` owns at most 50 nonempty input slots and their
+original Controllers independently of View/Scope resource caching. It does not
+retain Thread or Host leases. Physical editing/submission protects input;
+unprotected slots are evicted in last-used order, releasing attachment resources
+and deleting document continuity. Empty editors are not content slots. Scope
+promotion updates all retained slots, including ones with no cached View.
+Unsubmitted New-chat Scope metadata also queries that input ownership: its
+20-empty-record budget cannot evict a Scope with retained input. Empty history
+records remain bounded separately and confer no retained-content authority.
+All preparations use one intent/lifetime/Router-revision eligibility check and
+one accept-or-release path, including local Draft readiness and promotion. A
+promotion must originate from the still-active Draft and capture its View before
+awaiting; an inactive Draft cannot supersede a newer navigation. Last-used
+preferences are written only for still-current accepted command results, never
+used as a second selected-conversation or route authority.
 Thread/Draft stores, composer state, Host connections and background execution
 remain resource owners independent of route history. Shell divider hit targets
 start below the toolbar, so pane geometry cannot intercept history controls.
@@ -1080,6 +1491,13 @@ accessing the system keychain. Generation/abort guards prevent cancelled saves
 and late restoration from undoing sign-out.
 
 ### Authentication ownership
+
+The optional `tencentoa.identity` plugin contributes a separate employee provider
+and settings page, not the singleton LightVela account footer. Its Node-only
+verifier owns the private TAI application key and independently validates each
+request's signature, authenticated JWE and expiration. Browser projections are
+memory-only and generation-fenced. Recognition does not authorize shared resources.
+See [Tencent OA authentication](tencentoa-authentication.md).
 
 The application supervisor installs two renderer-neutral Cordis services before
 activating extensions, and disposes them with the application (including startup
@@ -1161,6 +1579,17 @@ not a zero-height absolute overlay. Scrollable navigation is constrained above
 that row even with docked DevTools or long lists. Floating sidebars use the same
 content/footer ownership split. The entrance is locally anchored within this row.
 Sidecar paints one continuous material plane behind both panes and the footer.
+There is no edge gradient. Header projects the main surface's upper lip from
+the same live primary/context frames and context visibility progress, moving
+left across the compact rail without waiting for the context owner to unmount.
+Its horizontal hairline and Sidecar's vertical divider share the same paint
+progress. No independent CSS animation or terminal boolean controls painting.
+Content lifetime still belongs to the physical pane exit owner.
+Expanded/context materials remain unchanged. The adjacent main surface keeps
+its theme-owned stroke/elevation, including soft and flat variants; titlebar
+paint must not override it. Floating overlays keep their own elevation.
+This is paint-only: pane geometry, resize targets, content identity and focus
+ownership do not change. See `docs/workbench-design-language.md`.
 Those children do not paint additional backgrounds or stack backdrop filters:
 this avoids both a white entrance strip and exposed gray window material under
 the neighboring context pane. Floating footer rows inherit their owner's surface.
@@ -1590,6 +2019,14 @@ model selection.
 
 The resident Host runtime remains the sole backoff/reconnect owner. Embedded startup
 observes readiness across failures instead of disposing on the first rejection.
+Hermes capability initialization overlaps independent control-plane Bot bindings,
+native Profile discovery and hosted-room capability reads. It still waits for
+their current-connection results before advertising capabilities; an unsupported
+Profile API remains an absent Bot capability, while control-plane failures still
+fail initialization. The first conversation list remains a fresh `session.list`
+read after Host readiness, not a speculative cache that could mask session
+changes during connection. Transport stage logs distinguish Host connection,
+initialize and `thread/list` latency without recording conversation content.
 Disconnects preserve Thread, Composer document and attachment owners; reconnect
 rehydrates existing threads and does not replay user submissions. The console shows
 a slow-connection notice after 30 seconds; fixed-Profile Hermes transport attempts

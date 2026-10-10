@@ -136,8 +136,7 @@ where
 					target_bucket_branch,
 					new_database_branch_id,
 					&udb::INCOMPLETE_VERSIONSTAMP,
-				)
-				.await?;
+				)?;
 
 				Ok(())
 			}

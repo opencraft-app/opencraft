@@ -1,4 +1,5 @@
-import type { Project } from "@opencraft/appserver-protocol/generated/v2";
+import { AppServerRpcError } from "@opencraft/appserver-client";
+import type { Project, ProjectCreateParams } from "@opencraft/appserver-protocol/generated/v2";
 
 export interface DraftWorkspaceOption {
   readonly cwd: string;
@@ -88,4 +89,39 @@ export function resolveProjectCwd(project: Project, requestedPath: string): stri
   const cwd = roots.includes(requestedPath) ? requestedPath : roots[0];
   if (cwd === undefined) throw new Error("The selected project has no workspace root");
   return cwd;
+}
+
+/** A selected Server directory need not have a Server-owned Project record. */
+export async function resolveDraftDirectorySelection(options: {
+  readonly path: string;
+  readonly projects: readonly Project[];
+  readonly projectCatalogError: Error | null;
+  readonly createProject: (params: ProjectCreateParams) => Promise<{ readonly project: Project }>;
+}): Promise<{ readonly workspace: { readonly cwd: string; readonly runtimeWorkspaceRoots: readonly string[]; readonly projectId?: string }; readonly createdProject: boolean }> {
+  const unsupported = (error: unknown) => error instanceof AppServerRpcError && error.code === -32601;
+  const directory = { cwd: options.path, runtimeWorkspaceRoots: [options.path] };
+  let project = options.projects.find(candidate => candidate.roots.some(root => root.path === options.path));
+  let createdProject = false;
+  if (project === undefined) {
+    // This is not a fallback to local storage. The selected namespace remains
+    // on the same Server and only the current Draft receives a cwd.
+    if (unsupported(options.projectCatalogError)) return { workspace: directory, createdProject };
+    try {
+      const result = await options.createProject({
+        name: options.path.split(/[\\/]+/u).filter(Boolean).at(-1) ?? "Project",
+        roots: [{ path: options.path }],
+        idempotencyKey: `opencraft-web:add-project:${options.path}`,
+        metadata: { origin: "opencraft-web-directory-picker" },
+      });
+      project = result.project;
+      createdProject = true;
+    } catch (error) {
+      // Authentication/network/unknown mutation outcomes must not turn into
+      // apparent success. Only an explicit missing method permits cwd-only.
+      if (!unsupported(error)) throw error;
+      return { workspace: directory, createdProject };
+    }
+  }
+  return { workspace: { cwd: resolveProjectCwd(project, options.path),
+    runtimeWorkspaceRoots: project.roots.map(root => root.path), projectId: project.id }, createdProject };
 }

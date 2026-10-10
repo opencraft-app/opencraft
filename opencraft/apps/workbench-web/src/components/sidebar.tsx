@@ -19,6 +19,7 @@ import { groupThreadsByActivityDate, sidebarActivityMetadata } from "../sidebar-
 import { NavigationIcon as SidebarContributionIcon, type NavigationAction as SidebarActionItem } from "./shell-navigation/navigation-action";
 import { SidebarActivityItem } from "./sidebar-activity-item";
 import { SidebarNavigationItem } from "./sidebar-navigation-item";
+import type { HostThreadCatalogState } from "../runtime/thread-catalog-query";
 export type { NavigationAction as SidebarActionItem } from "./shell-navigation/navigation-action";
 
 interface SidebarThread extends WorkbenchThread {
@@ -52,13 +53,15 @@ interface SidebarProps {
   botCreation?: SidebarEntityCreationCommand | null;
   onSelectThread(hostId: string, id: string): void;
   onNewTask(): void;
-  onNewTaskForTarget?(hostId: string): Promise<unknown>;
-  onOpenTargetSettings?(hostId: string): void;
   onOpenSettings(): void;
   showFooter?: boolean;
   threadActions?: ThreadActionCallbacks;
   threadCapabilities?(hostId: string): ThreadActionCapabilities;
   pendingTitle?(hostId: string, threadId: string): string | null;
+  threadCatalogs?: readonly HostThreadCatalogState[];
+  onRetryThreadCatalog?(hostId: string): void;
+  threadCatalogDiscovery?: "loading" | "error" | null;
+  onRetryThreadCatalogDiscovery?(): void;
 }
 
 
@@ -98,13 +101,15 @@ export function Sidebar({
   botCreation = null,
   onSelectThread,
   onNewTask,
-  onNewTaskForTarget,
-  onOpenTargetSettings,
   onOpenSettings,
   showFooter = true,
   threadActions,
   threadCapabilities,
   pendingTitle,
+  threadCatalogs = [],
+  onRetryThreadCatalog,
+  threadCatalogDiscovery = null,
+  onRetryThreadCatalogDiscovery,
 }: SidebarProps) {
   const intl = useIntl();
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
@@ -114,12 +119,28 @@ export function Sidebar({
     pendingThreadId === null
       ? `${activeHostId}:${activeThreadId}`
       : `${pendingHostId ?? activeHostId}:${pendingThreadId}`;
-  const orderedThreads = [...threads].sort((left, right) => right.updatedAt - left.updatedAt);
+  const pinnedThreads = threads.filter(thread => thread.pinned === true);
+  const orderedThreads = threads.filter(thread => thread.pinned !== true).sort((left, right) => right.updatedAt - left.updatedAt);
   const visibleThreads = activityExpanded
     ? orderedThreads
     : orderedThreads.filter((thread, index) =>
       index < 10 || `${thread.connectionHostId}:${thread.id}` === selectedThreadKey);
-  const activityGroups = groupThreadsByActivityDate(visibleThreads);
+  const activityGroups = [
+    ...(pinnedThreads.length === 0 ? [] : [{ key: "pinned", label: "置顶", threads: pinnedThreads }]),
+    ...groupThreadsByActivityDate(visibleThreads),
+  ];
+  const catalogLoading = threadCatalogDiscovery === "loading"
+    || threadCatalogs.some(catalog => catalog.phase === "loading");
+  const feedback = [
+    ...(threadCatalogDiscovery === "error" ? [{ key: "discovery", label: null, retry: onRetryThreadCatalogDiscovery }] : []),
+    ...threadCatalogs.filter(catalog => catalog.phase === "error").map(catalog => ({
+      key: `host:${catalog.hostId}`, label: catalog.label,
+      retry: onRetryThreadCatalog ? () => onRetryThreadCatalog(catalog.hostId) : undefined,
+    })),
+  ];
+  const visibleKeys = new Set([...pinnedThreads, ...visibleThreads].map(thread => `${thread.connectionHostId}:${thread.id}`));
+  const hiddenRemoteCount = orderedThreads.filter(thread => thread.serverRouteLocality === "remote"
+    && !visibleKeys.has(`${thread.connectionHostId}:${thread.id}`)).length;
 
   useLayoutEffect(() => {
     const container = scrollContainerRef.current;
@@ -165,8 +186,18 @@ export function Sidebar({
           <ExtensionCatalog key={catalog.id} catalog={catalog} />
         ))}
 
-        <section className="sidebar-tasks" aria-label="Tasks">
-          {activityGroups.length === 0 ? <div className="sidebar-activity-empty">{intl.formatMessage({ id: "sidebar.empty", defaultMessage: "No tasks yet" })}</div> : null}
+        <section className="sidebar-tasks" aria-label="Tasks" aria-busy={catalogLoading}>
+          {feedback.map(catalog => (
+            <div className="sidebar-catalog-feedback" key={catalog.key} role="status">
+                <span className="sidebar-catalog-feedback__message" title={catalog.label ?? undefined}>{catalog.label === null
+                  ? intl.formatMessage({ id: "sidebar.catalog.discoveryError", defaultMessage: "Couldn't load remote connections" })
+                  : intl.formatMessage({ id: "sidebar.catalog.error", defaultMessage: "Couldn't load {server} conversations" }, { server: catalog.label })}</span>
+                <button type="button" className="sidebar-catalog-feedback__retry" onClick={catalog.retry} disabled={!catalog.retry}>
+                  {intl.formatMessage({ id: "sidebar.catalog.retry", defaultMessage: "Retry" })}
+                </button>
+            </div>
+          ))}
+          {activityGroups.length === 0 && feedback.length === 0 && !catalogLoading ? <div className="sidebar-activity-empty">{intl.formatMessage({ id: "sidebar.empty", defaultMessage: "No tasks yet" })}</div> : null}
           <div className="sidebar-activity-list">
             {activityGroups.map(group => (
               <section className="sidebar-activity-group" key={group.key} aria-label={group.label}>
@@ -198,13 +229,8 @@ export function Sidebar({
                     if (threadActions && threadCapabilities) return (
                       <ThreadRowMenu
                         key={threadKey}
-                        target={{ hostId: thread.connectionHostId, threadId: thread.id, title }}
+                        target={{ hostId: thread.connectionHostId, threadId: thread.id, title, pinned: thread.pinned }}
                         capabilities={threadCapabilities(thread.connectionHostId)}
-                        hostActions={{
-                          label: thread.connectionHostLabel,
-                          onNewTask: onNewTaskForTarget,
-                          onOpenSettings: onOpenTargetSettings,
-                        }}
                         openMenuKind={openThreadMenu?.hostId === thread.connectionHostId && openThreadMenu.threadId === thread.id
                           ? openThreadMenu.kind
                           : null}
@@ -223,13 +249,18 @@ export function Sidebar({
                 </div>
               </section>
             ))}
-            {threads.length > 10 ? (
+            {orderedThreads.length > 10 ? (
               <button
                 type="button"
                 className="sidebar-activity-more"
+                aria-expanded={activityExpanded}
                 onClick={() => setActivityExpanded(value => !value)}
               >
-                {activityExpanded ? "Show less" : "Show more"}
+                {activityExpanded
+                  ? intl.formatMessage({ id: "sidebar.catalog.less", defaultMessage: "Show less" })
+                  : hiddenRemoteCount > 0
+                    ? intl.formatMessage({ id: "sidebar.catalog.moreRemote", defaultMessage: "Show more ({count} remote)" }, { count: hiddenRemoteCount })
+                    : intl.formatMessage({ id: "sidebar.catalog.more", defaultMessage: "Show more" })}
               </button>
             ) : null}
           </div>

@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 #[path = "../common/mod.rs"]
-mod common;
+pub(super) mod common;
 
 use anyhow::Result;
 use depot::{

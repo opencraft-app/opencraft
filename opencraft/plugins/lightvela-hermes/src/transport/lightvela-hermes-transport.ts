@@ -17,6 +17,7 @@ import {
   HermesTatTerminalService,
   browserProfileSkillsJournalStorage,
   browserHermesComposerQueueService,
+  type BrowserHermesBridgeOptions,
   type HermesComposerQueueStorage,
   type HermesComposerQueueService,
   type ProfileSkillsJournalStorage,
@@ -27,6 +28,7 @@ import { resolveHermesDashboardWebSocketUrl } from "../lib/hermes-dashboard-sess
 import { createTatWebSocketConstructor } from "../lib/tat-websocket";
 import type { Rfc6455Sha1 } from "../lib/rfc6455-client";
 import { TatHttpVirtualClient } from "../lib/tat-http-virtual-client";
+import { HermesDashboardSessionMetadataClient } from "../hermes-appserver-bridge/session-metadata-client";
 import { TencentTatSessionMultiplexer } from "../lib/tencent-tat-session-multiplexer";
 import {
   LightVelaApiError,
@@ -35,6 +37,7 @@ import {
 import { LIGHTVELA_HERMES_HOST_ID } from "../host/lightvela-hermes-host-identity";
 import { parseInstanceProfileBots } from "../hermes-appserver-bridge/instance-profile-bots";
 import { HermesInstanceBotManagement } from "../hermes-appserver-bridge/instance-bot-management";
+import type { HermesPhysicalConnectionPreparation, HermesPhysicalConnectionBinding } from "./hermes-physical-connection-preparation";
 
 const HERMES_DASHBOARD_PORT = 9119;
 // The observed forwarding path retires a fully idle socket after roughly 75s.
@@ -46,11 +49,13 @@ export interface LightVelaAccountPort {
   getSnapshot(): { readonly phase: string; readonly activeBotId: string | null; readonly authGeneration?: number; readonly credentialScope?: string };
   subscribe(listener: () => void): () => void;
   request<T>(path: string, init?: RequestInit): Promise<T>;
-  resolveActiveBot(): Promise<LightVelaBotInstance>;
+  resolveActiveBot(): Promise<Pick<LightVelaBotInstance, "instanceId">>;
 }
 
 export interface LightVelaHermesTransportOptions {
   readonly account: LightVelaAccountPort;
+  /** Platform-owned, privacy-safe diagnostics for handled AppServer failures. */
+  readonly onRequestFailure?: BrowserHermesBridgeOptions["onRequestFailure"];
   readonly dashboardUrl?: string;
   /** Startup deadline; fixed Profile embeds default to 90 seconds. */
   readonly connectTimeoutMs?: number;
@@ -58,9 +63,13 @@ export interface LightVelaHermesTransportOptions {
   readonly profile?: string;
   readonly WebSocketImpl?: typeof WebSocket;
   readonly sha1?: Rfc6455Sha1;
+  /** Platform digest for attachment staging; browsers use Web Crypto by default. */
+  readonly sha256?: (data: Uint8Array) => Promise<Uint8Array>;
   /** React Native Response cannot consume a custom streaming response body. */
   readonly bufferHttpResponses?: boolean;
   readonly sessionTokenCache?: HermesSessionTokenCache;
+  readonly physicalConnection?: HermesPhysicalConnectionPreparation;
+  readonly physicalBinding?: HermesPhysicalConnectionBinding;
   /** Test/platform override. Browsers default to their origin-local storage. */
   readonly composerQueueStorage?: HermesComposerQueueStorage;
   /** Test/platform override. Browser journals default to origin-local storage. */
@@ -220,6 +229,7 @@ export class LightVelaHermesTransport implements DuplexTransport {
       : "";
     const requestStartedAt = Date.now();
     if (method === "initialize") this.logConnection("appserver:initialize:start", this.generation);
+    if (method === "thread/list") this.logConnection("appserver:thread-list:start", this.generation);
     const response = await bridge.handle(request, signal);
     if (
       response !== null
@@ -229,7 +239,7 @@ export class LightVelaHermesTransport implements DuplexTransport {
     ) {
       this.logConnection("appserver:request-failed", this.generation, {
         method,
-        responseError: (response as { error?: unknown }).error,
+        errorCode: (response as { error?: { code?: unknown } }).error?.code,
       });
     }
     // A response from an expired request or detached bridge has no owner.
@@ -237,6 +247,11 @@ export class LightVelaHermesTransport implements DuplexTransport {
     if (signal?.aborted || this.bridge !== bridge) return;
     if (method === "initialize") {
       this.logConnection("appserver:initialize:response", this.generation, {
+        stageMs: Date.now() - requestStartedAt,
+      });
+    }
+    if (method === "thread/list") {
+      this.logConnection("appserver:thread-list:response", this.generation, {
         stageMs: Date.now() - requestStartedAt,
       });
     }
@@ -369,12 +384,7 @@ export class LightVelaHermesTransport implements DuplexTransport {
     }
     this.whatsappOnboarding ??= new HermesDashboardWhatsAppOnboardingHandler();
     stageStartedAt = Date.now();
-    const bootstrap = await createSession();
-    this.logConnection("tat:session-created", generation, { stageMs: Date.now() - stageStartedAt });
-    if (signal?.aborted || generation !== this.generation) throw abortError();
-    const proxy = new TencentTatSessionMultiplexer(bootstrap, {
-      WebSocketImpl,
-      diagnosticContext: { hostId: LIGHTVELA_HERMES_HOST_ID, generation },
+    const health = {
       idleKeepaliveIntervalMs: TAT_IDLE_KEEPALIVE_INTERVAL_MS,
       idleKeepaliveTarget: { ip: "127.0.0.1", port: HERMES_DASHBOARD_PORT },
       onUnhealthy: () => {
@@ -387,6 +397,24 @@ export class LightVelaHermesTransport implements DuplexTransport {
           this.setStatus({ state: "failed", reason: "TAT tunnel health probe failed" });
         });
       },
+    };
+    const prepared = this.options.physicalBinding?.instanceId === botId
+      ? await this.options.physicalConnection?.claim(this.options.physicalBinding, signal, health)
+      : null;
+    if (signal?.aborted || generation !== this.generation) {
+      prepared?.proxy.close();
+      throw abortError();
+    }
+    const bootstrap = prepared?.bootstrap ?? await createSession();
+    this.logConnection(prepared ? "tat:session-adopted" : "tat:session-created", generation, { stageMs: Date.now() - stageStartedAt });
+    if (signal?.aborted || generation !== this.generation) {
+      prepared?.proxy.close();
+      throw abortError();
+    }
+    const proxy = prepared?.proxy ?? new TencentTatSessionMultiplexer(bootstrap, {
+      WebSocketImpl,
+      diagnosticContext: { hostId: LIGHTVELA_HERMES_HOST_ID, generation },
+      ...health,
     });
     this.proxy = proxy;
     this.loopbackHttp = new TatHttpVirtualClient(bootstrap, {
@@ -479,6 +507,8 @@ export class LightVelaHermesTransport implements DuplexTransport {
       sessionToken,
     );
     const bridge = new BrowserHermesAppServerBridge(socket, {
+      onRequestFailure: this.options.onRequestFailure,
+      sha256: this.options.sha256,
       defaultCwd: bootstrap.workingDirectory ?? "/",
       projectionRecovery: this.replayCheckpoint,
       fileSystem: new HermesDashboardFileSystem(
@@ -498,6 +528,14 @@ export class LightVelaHermesTransport implements DuplexTransport {
           // total duration of an actively progressing transcript download.
           responseHeaderTimeoutMs: 30_000,
           responseBodyChunkTimeoutMs: 30_000,
+        }),
+        sessionToken,
+      ),
+      sessionMetadata: new HermesDashboardSessionMetadataClient(
+        new TatHttpVirtualClient(bootstrap, {
+          bufferResponseBody: this.options.bufferHttpResponses,
+          proxyClient: proxy,
+          target: { host: "127.0.0.1", port: HERMES_DASHBOARD_PORT },
         }),
         sessionToken,
       ),

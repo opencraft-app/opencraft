@@ -15,6 +15,7 @@ import type {
 } from "./thread.js";
 
 export type Account = components["schemas"]["Account"];
+export type HumanProfile = components["schemas"]["HumanProfile"];
 export type AcceptedResource = components["schemas"]["AcceptedResource"];
 export type Agent = components["schemas"]["AgentV2"];
 export type AgentProfileCapabilities =

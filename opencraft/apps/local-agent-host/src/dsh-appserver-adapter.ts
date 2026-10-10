@@ -28,6 +28,7 @@ import {
   OPENCRAFT_RESUME_HISTORY_EXTENSION,
   OPENCRAFT_THREAD_QUEUE_EXTENSION,
   OPENCRAFT_THREAD_LIFECYCLE_EXTENSION,
+  OPENCRAFT_THREAD_GOAL_EXTENSION,
 } from "@opencraft/appserver-protocol";
 import type { RuntimeProviderApplyParams, RuntimeModelsDiscoverParams, RuntimeProviderSetEnabledParams, RuntimeModelMutationParams, RuntimeModelsListResponse } from "@opencraft/appserver-protocol";
 
@@ -411,9 +412,9 @@ export class DshAppServerAdapter {
 
   private readonly providers: RuntimeProviderService;
   private readonly admission: DshNativeAdmission | undefined;
-  constructor(readonly client: DshClient, readonly modelConfiguration?: import('./model-config/dsh-adapter.js').DshModelConfigurationBridge, readonly authority?: DshExecutionAuthority, readonly hostCapabilities = false, readonly permissions?: DshPermissionPort) {
+  constructor(readonly client: DshClient, readonly modelConfiguration?: import('./model-config/dsh-adapter.js').DshModelConfigurationBridge, readonly authority?: DshExecutionAuthority, readonly hostCapabilities = false, readonly permissions?: DshPermissionPort, speechModelManagement = false) {
     this.admission = authority ? new DshNativeAdmission(authority) : undefined;
-    this.providers = new RuntimeProviderService(modelConfiguration ?? client);
+    this.providers = new RuntimeProviderService(modelConfiguration ?? client, !!modelConfiguration && speechModelManagement);
     this.interactions = new DshInteractions(client, async (sessionId, callId) => {
       const position = this.livePosition.get(sessionId);
       if (position && position.turn >= 0) {
@@ -1208,7 +1209,7 @@ export class DshAppServerAdapter {
       case "runtime/credentials/unset":
         return (this.modelConfiguration ?? this.client).call("credentials.unset", value);
       case "runtime/providers/list":
-        { const result=await this.providers.list();return {...result,providers:result.providers.map(p=>({...p,...(p.configuration?{configuration:{...p.configuration,canCheckSaved:!!this.modelConfiguration}}:{})})),...(this.modelConfiguration?{application:this.modelConfiguration.config.application}:{})}; }
+        { const result=await this.providers.list();return {...result,providers:result.providers.map(p=>({...p,...(p.configuration?{configuration:{...p.configuration,canCheckSaved:!!this.modelConfiguration&&p.configuration.modelType!=="asr"}}:{})})),...(this.modelConfiguration?{application:this.modelConfiguration.config.application}:{})}; }
       case "runtime/providers/reapply":
         return this.modelConfiguration ? this.modelConfiguration.config.synchronize(true) : null;
       case "runtime/providers/apply":
@@ -1246,6 +1247,7 @@ export class DshAppServerAdapter {
           capabilities: {
             extensions: {
               [OPENCRAFT_THREAD_LIFECYCLE_EXTENSION]: { version: 1, fork: this.threadEngine !== null, ephemeral: this.threadEngine !== null, injectItems: this.threadEngine !== null, rename: true, archive: true, unsubscribe: true },
+              [OPENCRAFT_THREAD_GOAL_EXTENSION]: { version: 1, read: true, write: false },
               ...(this.hostCapabilities ? { "opencraft/host-capabilities": { version: 1 } } : {}),
               "opencraft/loopback-http": { version: 1 },
               [OPENCRAFT_PROFILE_SKILLS_EXTENSION]: OPENCRAFT_LOCAL_DSH_SKILLS_CAPABILITY,

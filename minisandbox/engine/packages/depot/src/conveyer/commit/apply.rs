@@ -172,7 +172,7 @@ impl Db {
 						}
 					}
 					let branch_resolution =
-						resolve_or_allocate_branch(&tx, bucket_id, &database_id).await?;
+						resolve_or_allocate_branch(&tx, bucket_id, &database_id, now_ms).await?;
 					let branch_id = branch_resolution.branch_id;
 					#[cfg(feature = "test-faults")]
 					maybe_fire_commit_fault(
@@ -329,6 +329,12 @@ impl Db {
 							.context("sqlite head txid overflowed")?,
 						None => 1,
 					};
+					if head_bytes.is_none() || db_size_pages < previous_db_size_pages {
+						// Only a new local history can prove it has never truncated. Existing
+						// unindexed histories stay conservative, and later growth never clears this fence.
+						let truncate_txid = if db_size_pages < previous_db_size_pages { txid } else { 0 };
+						tx.informal().set(&keys::branch_meta_truncate_txid_key(branch_id), &truncate_txid.to_be_bytes());
+					}
 
 					let phase_start = Instant::now();
 					let truncate_cleanup = collect_truncate_cleanup(
@@ -671,7 +677,6 @@ impl Db {
 							&database_id,
 							now_ms,
 							&udb::INCOMPLETE_VERSIONSTAMP,
-							branch_resolution.bucket_initialized,
 						)
 						.await?;
 					}

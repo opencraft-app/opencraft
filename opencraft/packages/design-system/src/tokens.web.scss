@@ -8,9 +8,17 @@
   --padding-sidebar-entrances: calc(var(--spacing) * 3);
   --radius-control: 7px;
   --opacity-control-disabled: 0.5;
+  --opacity-control-compact-disabled: 0.4;
+  --duration-progress-cycle: 2s;
+  --timing-progress-cycle: steps(60, end);
   --width-control-focus-ring: 2px;
   --offset-control-focus-ring: 2px;
   --height-navigation-row: 34px;
+  --height-application-navigation-row: 36px;
+  --size-application-navigation-icon: 20px;
+  --size-application-navigation-hit-min: var(--height-application-navigation-row);
+  --radius-application-navigation-control: 10px;
+  --gap-application-navigation-items: 8px;
   --size-navigation-leading-slot: 28px;
   --padding-navigation-row-inline: 7px;
   --gap-navigation-row-content: 8px;
@@ -113,6 +121,8 @@
     transparent 34%
   );
   --codex-main-surface-elevation: var(--elevation-prominent);
+  // Compact navigation does not divide the native titlebar reservation.
+  --background-shell-compact-titlebar: var(--color-surface);
   // AppShell owns the material; Sidebar content never owns opacity. On the
   // web this emulates the native macOS sidebar material, while Electron lets
   // the BrowserWindow vibrancy surface show through directly.
@@ -177,7 +187,8 @@
   --border-soft: rgb(26 28 31 / 5%);
   --border-default: rgb(26 28 31 / 8%);
   --border-strong: rgb(26 28 31 / 12%);
-  --focus-ring: rgb(51 156 255 / 42%);
+  --focus-ring: var(--color-border-focus, rgb(0 0 0 / 60%));
+  --color-focus-ring: var(--focus-ring);
   --scrollbar-thumb: rgb(26 28 31 / 18%);
   --button-primary-background: var(--gray-1000);
   --button-primary-foreground: var(--gray-0);
@@ -220,7 +231,8 @@
   --border-soft: rgb(255 255 255 / 5%);
   --border-default: rgb(255 255 255 / 8%);
   --border-strong: rgb(255 255 255 / 16%);
-  --focus-ring: rgb(51 156 255 / 42%);
+  --focus-ring: var(--color-border-focus, rgb(255 255 255 / 70%));
+  --color-focus-ring: var(--focus-ring);
   --scrollbar-thumb: rgb(255 255 255 / 18%);
   --button-primary-background: var(--gray-0);
   --button-primary-foreground: var(--gray-1000);

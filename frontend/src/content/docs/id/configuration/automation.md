@@ -133,6 +133,8 @@ Buat Tugas Notifikasi atau Tugas Skrip khusus dari dialog Buat, bukan dengan men
 Setelah tugas dibuat, gunakan halaman Tugas Terjadwal untuk meninjau Job Saat Ini, Job Berakhir, dan Eksekusi terbaru.
 Tampilan Job Saat Ini dapat memfilter Tugas Agent, Tugas Notifikasi, dan Tugas Skrip.
 
+Di **Eksekusi terbaru**, buka detail eksekusi lalu pilih **Lihat hasil** untuk membaca keluaran Markdown atau **Unduh hasil** untuk menyimpannya. Beralihlah ke Bot pemilik tugas terlebih dahulu: hasilnya tersimpan dalam catatan eksekusi Bot tersebut dan tidak muncul di chat atau catatan Bot lain.
+
 Job Berakhir mengumpulkan tugas yang selesai, gagal, dan kedaluwarsa.
 Tugas yang masih berjalan tetap ada di Job Saat Ini.
 

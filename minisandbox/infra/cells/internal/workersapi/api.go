@@ -109,8 +109,8 @@ type API struct {
 	objectRouter          *objectrouter.Router[actorBinding]
 	metrics               *apiMetrics
 	deployments           *deploymentCache
+	deploymentReads       *deploymentReadGroup
 	deploymentWatchOnce   sync.Once
-	deploymentWatchCancel context.CancelFunc
 }
 
 type actorBinding struct {
@@ -383,22 +383,29 @@ func NewAPI(config Config) (*API, error) {
 		// A conversational fetch may stream for much longer than control-plane
 		// operations. Its lifetime is owned by the caller context and the Agent
 		// execution policy, not the control client timeout.
-		fetchClient: &http.Client{Transport: fetchTransport},
-		mux:         http.NewServeMux(),
-		internalMux: http.NewServeMux(),
-		deployments: newDeploymentCache(deploymentCacheCapacity),
+		fetchClient: &http.Client{
+			Transport: fetchTransport,
+			// Worker redirects belong to the caller. Never forward platform
+			// capabilities to an address supplied by a Worker response.
+			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		},
+		mux:             http.NewServeMux(),
+		internalMux:     http.NewServeMux(),
+		deployments:     newDeploymentCache(deploymentCacheCapacity),
+		deploymentReads: newDeploymentReadGroup(deploymentCacheCapacity, requestTimeout),
 	}
 	api.objectRouter = newObjectRouter(api, actorCacheCapacity, actorCacheIdleTTL, objectMissCapacity)
-	api.metrics = newAPIMetrics(namespace, api.objectRouter)
+	api.metrics = newAPIMetrics(namespace, api.objectRouter, api.deploymentReads)
 	api.routes()
 	return api, nil
 }
 
-// Close stops the Registry deployment change watch. HTTP servers must call it
-// during shutdown so the long poll is cancelled before process exit.
+// Close cancels Registry reads and the Deployment watch during server shutdown.
 func (a *API) Close() {
-	if a.deploymentWatchCancel != nil {
-		a.deploymentWatchCancel()
+	if a.deploymentReads != nil {
+		a.deploymentReads.Close()
 	}
 }
 
@@ -498,18 +505,13 @@ func (a *API) internalNotFound(writer http.ResponseWriter, request *http.Request
 	http.NotFound(writer, request)
 }
 
-func (a *API) ready(writer http.ResponseWriter, request *http.Request) {
-	var status map[string]any
-	if err := a.requestJSON(request.Context(), http.MethodGet, a.registryURL("/readyz"), nil, &status); err != nil {
-		a.writeUpstreamError(writer, request, err)
-		return
-	}
-	// Capacity and Cell reachability are request-scoped states, not process
-	// readiness. Existing Objects remain routable while every Cell is closed to
-	// new placement, and an outage of one Cell must not withdraw all three Hub
-	// replicas. Resolve() still fails closed for a new Object, while a request to
-	// an Object whose selected Engine is unavailable receives the public,
-	// retryable worker_unavailable response.
+func (a *API) ready(writer http.ResponseWriter, _ *http.Request) {
+	// Shared Registry availability, capacity, and Cell reachability are
+	// request-scoped states, not process readiness. Cached Objects can route
+	// without Registry, so its outage must not withdraw every Hub replica.
+	// Cache misses still require Registry truth and fail closed. Cell route
+	// identity is checked on every hit, and Deployment watch loss still fences
+	// the active code cache. No request dependency is bypassed by this probe.
 	writeJSON(writer, http.StatusOK, map[string]string{"status": "ready"})
 }
 
@@ -877,7 +879,7 @@ func (a *API) dispatchFetch(writer http.ResponseWriter, request *http.Request) {
 	response, err := a.fetchClient.Do(forwarded)
 	if err != nil {
 		slog.WarnContext(request.Context(), "stateless Worker transport failed",
-			"request_id", requestID(request), "executor", executor.endpoint.Host, "error", err)
+			"request_id", requestID(request), "executor", executor.endpoint.Host, "error", diagnosticErrorClass(err))
 		// The request body may already have entered user code. Retrying on a
 		// different executor would duplicate non-idempotent side effects.
 		metricStatus, metricCode = http.StatusBadGateway, "indeterminate_result"
@@ -899,7 +901,7 @@ func (a *API) dispatchFetch(writer http.ResponseWriter, request *http.Request) {
 		// request because user code may already have committed side effects.
 		metricStatus, metricCode = http.StatusBadGateway, "indeterminate_result"
 		slog.WarnContext(request.Context(), "stateless Worker response stream failed",
-			"request_id", requestID(request), "executor", executor.endpoint.Host, "error", err)
+			"request_id", requestID(request), "executor", executor.endpoint.Host, "error", diagnosticErrorClass(err))
 		panic(http.ErrAbortHandler)
 	}
 }
@@ -1020,10 +1022,13 @@ func (a *API) fetchActorAtURL(writer http.ResponseWriter, request *http.Request,
 	if token := a.tokenForURL(engine); token != "" {
 		forwarded.Header.Set("Authorization", "Bearer "+token)
 	}
+	forwarded, transportTrace := traceFetchRequest(forwarded)
 	response, err := a.fetchClient.Do(forwarded)
 	if err != nil {
-		slog.WarnContext(request.Context(), "Worker fetch transport failed",
-			"request_id", requestID(request), "engine", engine.Host, "error", err)
+		attrs := append(transportTrace.attributes(),
+			slog.String("request_id", requestID(request)), slog.String("engine", engine.Host),
+			slog.String("error", diagnosticErrorClass(err)))
+		slog.Default().LogAttrs(request.Context(), slog.LevelWarn, "Worker fetch transport failed", attrs...)
 		// Once the request is handed to the HTTP transport, the target Object may
 		// already have executed and committed a side effect even if no response
 		// headers reached the Router. Do not advertise a transparent retry: doing
@@ -1042,7 +1047,7 @@ func (a *API) fetchActorAtURL(writer http.ResponseWriter, request *http.Request,
 		metricStatus, metricCode = http.StatusBadGateway, "indeterminate_result"
 		a.metrics.indeterminate.WithLabelValues(a.namespace, metricCell(targetCell)).Inc()
 		slog.WarnContext(request.Context(), "Worker response stream failed",
-			"request_id", requestID(request), "engine", engine.Host, "error", err)
+			"request_id", requestID(request), "engine", engine.Host, "error", diagnosticErrorClass(err))
 		panic(http.ErrAbortHandler)
 	}
 }
@@ -1163,7 +1168,7 @@ func (a *API) ensureActorUncached(ctx context.Context, worker, className, object
 				return actorBinding{}, actorReadyError(readyContext, err)
 			}
 			if cleanup := a.deleteActor(context.WithoutCancel(ctx), engine, created.Actor.ActorID); cleanup != nil {
-				slog.Warn("delete rejected Durable Object Actor", "actorID", created.Actor.ActorID, "error", cleanup)
+				slog.WarnContext(ctx, "delete rejected Durable Object Actor", "error", diagnosticErrorClass(cleanup), "status", cleanup.Status)
 			}
 			return actorBinding{}, err
 		}
@@ -1190,7 +1195,7 @@ func actorReadyError(ctx context.Context, err *upstreamError) *upstreamError {
 }
 
 func placementUpstreamError(err error) *upstreamError {
-	slog.Warn("Agent placement unavailable", "error", err)
+	slog.Warn("Agent placement unavailable", "error", diagnosticErrorClass(err))
 	return &upstreamError{
 		Status: http.StatusServiceUnavailable, Code: "no_admission_capacity",
 		Message: "No fresh admitted Cell is available", Retryable: true,
@@ -1431,7 +1436,7 @@ func (a *API) prepareEntrypoint(ctx context.Context, requestID, worker, versionI
 		deleteTarget := engineURL(engine, "/actors/"+url.PathEscape(actorID))
 		deleteTarget.RawQuery = url.Values{"namespace": []string{a.namespace}}.Encode()
 		if cleanup := a.requestJSON(context.WithoutCancel(ctx), http.MethodDelete, deleteTarget, nil, nil); cleanup != nil {
-			slog.Warn("delete Worker prepare Actor", "actorID", actorID, "error", cleanup)
+			slog.WarnContext(ctx, "delete Worker prepare Actor", "error", diagnosticErrorClass(cleanup), "status", cleanup.Status)
 			if result == nil {
 				result = &upstreamError{Status: http.StatusServiceUnavailable, Code: "prepare_cleanup_failed", Message: "The Worker validation probe could not be cleaned up", Retryable: true}
 			}

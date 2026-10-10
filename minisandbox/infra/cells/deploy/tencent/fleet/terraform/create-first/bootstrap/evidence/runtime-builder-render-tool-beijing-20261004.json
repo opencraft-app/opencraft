@@ -1,0 +1,122 @@
+{
+  "schema": "actor-runtime-builder-render-tool-evidence/v1",
+  "verdict": "passed",
+  "source": {
+    "revision": "ccbebe4f19837fa8af19d2c63ae56dac408c54c8",
+    "projectTree": "912866d2a3f461ff486825035a03fe70436fae63",
+    "fileCount": 14341,
+    "manifestSha256": "58622520975f2e8d178e4d0fc2c021a085de194963e5a1da65fb677cab8f2a2d",
+    "bundleBytes": 54847795,
+    "bundleSha256": "acc8c710ca4d2496d500b52cb5ee6af9affe16ed3791067246eda3eb7f870a83",
+    "receiptSha256": "be760c9f4e71229450c4d07350034d183e17b42bf334aa855fd48914cf2ac6cd"
+  },
+  "inventorySha256": "882113091f01cbe12e224f53d3f34667c4e659d37afdc37d8b9ecf8cc1419a57",
+  "operationsInstanceId": "ins-55ry1kb1",
+  "builderInstanceId": "ins-mh9mruw7",
+  "artifact": {
+    "version": "v1.30.14",
+    "platform": "linux/amd64",
+    "bytes": 51994776,
+    "sha256": "7ccac981ece0098284d8961973295f5124d78eab7b89ba5023f35591baa16271",
+    "officialChecksumUrl": "https://dl.k8s.io/release/v1.30.14/bin/linux/amd64/kubectl.sha256"
+  },
+  "operationsRelay": [
+    {"invocationId": "inv-d9f5eb0dvp", "status": "SUCCESS", "exitCode": 0, "kind": "kubectl"},
+    {"invocationId": "inv-a9f5es05cp", "status": "SUCCESS", "exitCode": 0, "kind": "source-bundle"},
+    {"invocationId": "inv-e9f5epgcx6", "status": "SUCCESS", "exitCode": 0, "kind": "source-receipt"},
+    {"invocationId": "inv-c9f5figes5", "status": "SUCCESS", "exitCode": 0, "kind": "coscli"},
+    {"invocationId": "inv-e9f5fqgms9", "status": "SUCCESS", "exitCode": 0, "kind": "coordination-wrapper"}
+  ],
+  "guardedBuilderRelay": {"invocationId": "inv-d9f5g90xq0", "status": "SUCCESS", "exitCode": 0},
+  "captureInvocationId": "inv-c9f5gd09bm",
+  "guest": {
+    "invocationId": "inv-c9f5gegs26",
+    "status": "SUCCESS",
+    "exitCode": 0,
+    "nativeRequestId": "0364e08f-dc4d-4713-a4a0-9925642b5e5e",
+    "nativeResponseSha256": "93f1400b19acfa19be066c67ffa7437a515374909a9e9ff788caf9daa7ab2885"
+  },
+  "coordinator": {
+    "invocationId": "inv-e9f5g70u78",
+    "status": "SUCCESS",
+    "exitCode": 0,
+    "nativeRequestId": "904b4e16-89d2-409e-9330-40986d0151b5",
+    "nativeResponseSha256": "bf53d190a888ac269f59498f292368a3065932f8ebf16a34a91e831d55cd9ab3",
+    "wrapperSha256": "ff0dff68b8e925719ab70e7ace4c272c416f1c0a5e81017807bec9e7074f9b5a",
+    "statePath": "/var/lib/actor-runtime-builder-render-coordinator/ins-mh9mruw7.json"
+  },
+  "result": {
+    "schema": "actor-runtime-builder-render-tool/v1",
+    "verdict": "passed",
+    "renderReady": true,
+    "storageReady": false,
+    "instanceId": "ins-mh9mruw7",
+    "diskId": "disk-kkels2ln",
+    "filesystemUuid": "dd34c927-dfee-4826-8b45-d5cbb4d47c5e",
+    "journalSha256": "416b384527f21b1035a2de16f7fb9d06687d08b196b824c849f02ceaff7e6039",
+    "version": "v1.30.14",
+    "binarySha256": "7ccac981ece0098284d8961973295f5124d78eab7b89ba5023f35591baa16271",
+    "binaryPath": "/data/actor-build/tools/render-kubectl/v1.30.14/bin/kubectl",
+    "renderCanarySha256": "f563167a7913510dd3c900f0a75686224b354a303b5d7ace51883e451547f844"
+  },
+  "localValidation": {"bootstrapTests": 161, "coordinatorTests": 20, "renderArtifactTests": 7, "relayProtocolTests": 6, "tatHelperTests": "passed"},
+  "preparedOfflineArtifacts": {
+    "state": "prepared locally and staged on original operations host only, not installed on builder",
+    "rust": {
+      "version": "rustc 1.96.0 (ac68faa20 2026-05-25)",
+      "archiveBytes": 342294783,
+      "archiveSha256": "a20d9626e9da938091b1ffb8d9073163f40cca459e9ac2b397251ba7e14cbc5e",
+      "archiveMembers": 244,
+      "operationsRelayInvocationId": "inv-c9f5mugn5p",
+      "operationsRelayStatus": "SUCCESS",
+      "operationsRelayExitCode": 0
+    },
+    "vendor": {
+      "sourceRevision": "2757fc785d8f572d1b6430e471100c4a880aefac",
+      "cargoLockSha256": "01ba910e0089376400ca7ec634d9be47619644c42e0007b6c08b11597ce8850f",
+      "archiveBytes": 174065317,
+      "archiveSha256": "82eafab8214d56aeb2fc7ee4194072d0fb1c9fef9151be6ca44f41daf63fe324",
+      "archiveMembers": 52400,
+      "operationsRelayInvocationId": "inv-e9f5mwgb97",
+      "operationsRelayStatus": "SUCCESS",
+      "operationsRelayExitCode": 0
+    },
+    "boundary": "Offline locked vendor source replacement, exact Cargo.lock and archive path/link closure were verified locally. Archives exclude host Cargo credentials/config. Native toolchain installation and full actual-path build admission remain separate gates."
+  },
+  "subsequentSourceAdmission": {
+    "verdict": "passed",
+    "sourceRevision": "2757fc785d8f572d1b6430e471100c4a880aefac",
+    "sourceManifestSha256": "c6785b95c7d2615bbc0fdd57e2007665bd542455fa288dc6c863e389ee107300",
+    "sourcePath": "/var/lib/actor-build/deploy/q01-src-2757fc785d8f572d1b6430e471100c4a880aefac-c6785b95c7d2615bbc0fdd57e2007665bd542455fa288dc6c863e389ee107300",
+    "publishedExisting": false,
+    "wrapperSha256": "1b9267ca5f98f18bcafe6a4e156d72426f0ebebc1935a7b26918bf56b21c20eb",
+    "wrapperRelayInvocationId": "inv-d9f5i1047e",
+    "captureInvocationId": "inv-c9f5is07f2",
+    "coordinator": {
+      "invocationId": "inv-d9f5ingem6",
+      "status": "SUCCESS",
+      "exitCode": 0,
+      "nativeRequestId": "c8410681-cc6e-4e0d-b772-9ac2619ab784",
+      "nativeResponseSha256": "c6ce1ef8a53a379131a31ef41e92d99543584352b7a6f43bf2a759cdb536c189"
+    },
+    "guest": {
+      "invocationId": "inv-c9f5itgq0s",
+      "status": "SUCCESS",
+      "exitCode": 0,
+      "nativeRequestId": "dc3034ff-eb89-44e6-bb6c-249cd6ebefa6",
+      "nativeResponseSha256": "d9f30009fe7215cef4640b4a1e3a4822d156d9b6f55b1db010bdd887f66184f0"
+    },
+    "staticTestSummaries": 114,
+    "boundary": "Original complete materializer and static gate ran, including their optional skipped tests. This proves source admission, not native Rust build, runtime publication or Phase5 capacity qualification. Historical failed invocations are unchanged."
+  },
+  "boundaries": [
+    "The exact original operations host owns the shared operation lock from guarded artifact transfer through native terminal receipt.",
+    "Builder receives a pinned binary and credential-free source/inventory/evidence only, with no cloud credential or kubeconfig.",
+    "Guarded relay checks metadata, UUID, native disk by-id, non-root backing and destination resolution before download and before rename.",
+    "Installation joins fresh native attachment/TKE exclusion and matching mounted journal, then rechecks actual mount and reserves after a real offline Kustomize canary.",
+    "Existing initialization and successful package coordinator intents are not cleared or rebound.",
+    "The two native terminal result objects were independently collected and matched exactly, including the earlier mounted UUID and journal digest.",
+    "renderReady is only an offline static-render prerequisite. Subsequent source admission has separate native evidence. Neither proves live Kubernetes API compatibility, pinned Rust/vendor, build storage admission, stage reuse, compilation, release or Phase5 capacity qualification.",
+    "No product runtime image, Cell capacity, acceptance condition or qualification workload changed."
+  ]
+}

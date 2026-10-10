@@ -27,6 +27,7 @@ const AGENT_SECTION_PGID: Record<AgentSectionId, DatongPageId> = {
   "deepseek-harness": DATONG_PAGE_IDS.AGENTS_HOME,
   // 云桌面暂无独立 pgid，与 deepseek-harness 一致归到 AGENTS_HOME。
   "cloud-desktop": DATONG_PAGE_IDS.AGENTS_HOME,
+  collaboration: DATONG_PAGE_IDS.AGENTS_HOME,
   // 以下页面方案文档中尚无独立 pgid，统一归到 workbench，避免上报到未定义的 pgid。
   // 连接器（connectors）暂无独立 pgid，归入 workbench；埋点方案补充后替换为专属 pgid。
   connectors: DATONG_PAGE_IDS.AGENT_WORKBENCH,

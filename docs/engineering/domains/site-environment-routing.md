@@ -4,6 +4,10 @@ Pass 升配微信桥通过精确的 `POST /v1/passes/{pass_id}/modify/order-url`
 
 本领域覆盖国内/国际站、域名、locale、区域功能差异、环境 inventory 和对应 GitOps overlay。
 
+## 隔离开发预览
+
+Next 开发预览的临时域名由本地服务通过 `NEXT_DEV_ALLOWED_ORIGINS`（逗号分隔主机名）显式加入 `allowedDevOrigins`，避免隧道上的热更新连接被拒绝；该增量只在 development 生效，不进入生产配置。认证 API 可使用现有 `NEXT_PUBLIC_AUTH_API_BASE_URL=local-proxy` 与所属站点的 `NEXT_PUBLIC_LOCAL_PROXY_TARGET` 同源代理，避免浏览器直接跨域请求未放行的临时域名。预览不能以测试身份覆盖正常认证；未登录入口与真实账号功能链路分别验收。
+
 ## 管理后台内部服务路由
 
 - Gateway Dashboard 的积分包管理页通过同源 `/admin/api/credit/*` 访问服务端 BFF；浏览器不直连 Credit，也不接触内部凭据。
@@ -35,9 +39,25 @@ Pass 升配微信桥通过精确的 `POST /v1/passes/{pass_id}/modify/order-url`
 | 部署期望 | `argocd/apps/<env>/`、`argocd/services/*/<env>/` |
 | 真实运行 | Argo、集群、域名与浏览器 E2E 的现场证据 |
 
+国内站与国际站共用的前端组件视觉规范由 [Frontend Design Notes](../../../frontend/DESIGN.md) 维护；同类组件在两站使用一致的圆角规则，区域差异需有明确的设计依据。
+
+国内站与国际站复用定时任务卡片操作界面：横向省略号在桌面悬停、点击、移动端点按或键盘激活后显示纵向的图标与本地化操作名称列表；两站沿用相同任务状态门控，文案由各自 locale 提供。
+
+OpenCraft iOS 的内置 Bot DOM runtime 同时包含国内与国际的 frontend 组件，但区域不是从生成物的构建环境推断。原生登录会话选择 `cn` 或 `intl` 后，在 DOM 脚本运行前显式设置 frontend 的 region、对应的 `api.lightvela.com` 或 `api.lightvela.ai` API base、站点 base 和 locale；Bot 仓储请求沿用 frontend 的现有实现，不跨区回退。站点账号与订阅网页只在匹配会话区域的第一方 WebView 打开。真机需分别核对两区的 DOM origin 和 API 请求；本地 HTML 打包成功不能证明跨域请求已通过。
+
 ## 产品文档区域
 
+国际站马来语使用 `ms-MY`（Bahasa Melayu），公开路径前缀为 `/ms-my/`，语言注册表 `frontend/src/i18n/locales.json` 同时控制语言切换与公开发布。马来语文档以 `src/content/docs/ms/` 为独立源，覆盖国际站英文文档清单，不跨区域或语言回退；标题、简介与分类来自同目录 `metadata.json`，生成 `/ms-my/docs/` 页面与独立搜索索引。国内站不生成马来语公开页面。
+
+马来语主界面和公共结构化词典均通过语言就绪流程按需装载；非马来语浏览器不下载公共词典，马来语资源与公共词典都准备完成后才渲染，服务端预载保证静态首帧完整。场景任务文案仅在马来语消费时翻译，避免模块加载时计算。公共结构化文案仅收录实际消费的英文文本，保留字段绑定、内部标识和链接值；字典读取只允许自身键，避免把对象原型属性当作译文。产品对话使用嵌入式 OpenCraft 工作台，`opencraft/apps/workbench-web/src/i18n/catalogs.ts` 的 embeddedLocaleCatalogs 注册 `ms-MY`，宿主语言更新由 WorkbenchLocaleController 消费；独立 OpenCraft 的语言列表仍由独立目录管理。马来语工作台目录须通过 ICU 参数和完整条目检查。
+
+首页结构仍由英文静态片段维护，`scripts/generate-malay-home.mjs` 配合已提交 `copy.ms-MY.json` 生成马来语片段，缺少译文会明确失败；首页导入流程包含该步骤；CI 在临时目录重生成并比对已提交片段，阻止英文首页结构更新后遗漏马来语生成物。静态文字、无障碍属性及动态聊天/轮播数据均使用马来语；公开页面链接使用 `/ms-my/` 前缀，受保护的 `/agents` 产品路径保留原地址。
+
 `frontend/src/content/docs/` 保留 cn/global/en/id 源；生成的 zh-cn/zh-sg/en-us/zh-hant/id-id 输出不直接编辑。区域差异必须通过 parity 测试和真实路由共同证明。
+
+跨区域产品定义文案使用“云端 AI Agent 产品”及对应语言表达；部署与运行的云端托管能力仍按功能事实描述。
+
+国内站 overview 的产品简介以个人 AI 助理与伙伴、云端独立运行及 7×24 小时在线为主；Hermes Agent 是当前 Agent 的实现基础，不作为 LightVela 的产品名称。
 
 国内站文档的产品阶段口径与同区域 `llms.txt` 事实摘要保持一致。已开放订阅后，概览和套餐说明不再展示产品级公测提示；首购活动及价格以订阅页为准。单项功能的 Beta 标记仍按实际产品入口核对。
 
@@ -45,7 +65,7 @@ Pass 升配微信桥通过精确的 `POST /v1/passes/{pass_id}/modify/order-url`
 
 国内站新增配置指南时，`frontend/src/config/docs-sidebar.ts` 中的 `CN_SIDEBAR`、`CN_SLUG_TO_FILE` 与 `frontend/scripts/sync-fumadocs-content.mjs` 中的 `cnDocs` 必须同时注册同一 slug。钉钉指南使用 `configuration/channel-dingtalk`，仅进入国内站目录；国际站目录与映射单独维护。
 
-国内站任务文档导航按“开始使用 → Bot 与模型 → 通道与技能 → 自动化与资料 → 管理与排障 → 实验功能”组织，场景、对比和 Hermes 原理长文继续保留独立分类。分组标题与组内顺序必须在 `CN_SIDEBAR`、`cnDocs` 和 `CN_GROUP_ORDER` 中一致；原有 slug 保持稳定。网页对话当前仅开放主 Bot，额外 Bot 创建受运行时多 Bot 开关与套餐额度约束；实验功能的 Beta 标记属于单项功能。云存储保留 `/agents/files` 路由，当前控制台侧栏没有独立菜单项，文档应提供直接入口。
+国内站任务文档导航按“开始使用 → Bot 与模型 → 通道与技能 → 自动化与资料 → 管理与排障 → 实验功能”组织，场景、对比和 Hermes 原理长文继续保留独立分类。分组标题与组内顺序必须在 `CN_SIDEBAR`、`cnDocs` 和 `CN_GROUP_ORDER` 中一致；原有 slug 保持稳定。网页对话支持主 Bot 和额外 Bot，额外 Bot 创建受运行时多 Bot 开关与套餐额度约束；实验功能的 Beta 标记属于单项功能。云存储保留 `/agents/files` 路由，当前控制台侧栏没有独立菜单项，文档应提供直接入口。
 
 ## 官网首页展示产物
 
@@ -62,6 +82,7 @@ Pass 升配微信桥通过精确的 `POST /v1/passes/{pass_id}/modify/order-url`
 - 国际站首页页脚 Community 优先展示 `X / Twitter`，其后依次为 `Discord`、`WhatsApp`、`YouTube`；所有开放 locale 共用该顺序。
 - 国内站与国际站共享产品名时仍属于两套展示产物，验证时应分别启动对应区域构建或预览，不能用单站截图替代双站边界确认。
 - 国内站与国际站首页在登录态均显示直达 `/agents` 的本地化产品入口；国际站新版首页由 `InternationalHomeRuntime` 显式开启该入口，同时保留未登录态仅展示语言切换与登录动作的 `loginOnly` 规则。
+- 首页顶部产品入口与头像菜单“我的智能体伙伴”共用资格判断：会话和套餐状态确认后，已有有效或历史套餐的用户无需等待 Bot 列表即可看到入口；仅靠现存 Bot 证明资格的用户需等待列表成功返回。权益未确认或失败、没有任何资格的账号继续隐藏入口。已确认有套餐资格而 Bot 列表失败时仍显示入口，由 `/agents` 展示错误和重试操作；入口仍由该页面自身门禁保护。
 - 国内站 V2 首页不使用国际站的 `loginOnly` 规则：未登录 Header 与 Hero 展示“免费试用”并进入 `/subscribe`，登录态 Header 与 Hero 展示“开始使用”并进入 `/agents`；静态 Hero 默认输出未登录态，认证恢复后再同步登录态入口。
 - 国内站与国际站 `/subscribe` 的未登录 Header 统一启用 `loginOnly`：隐藏创建入口，仅保留登录主动作（国际站同时保留语言切换）；套餐卡“立即订阅”继续承担转化并触发登录。
 - 根首页的初始 HTML、Flight、Next 脚本数量与 raw/gzip 体积由 `pnpm check:homepage-performance` 对真实 `out/index.html` 执行预算检查，同时拒绝旧 `PublicHomePage` / `LandingPageView` chunk 回流；国内与国际构建仍须分别验证，预算通过不能替代浏览器回归或线上 Web Vitals。
@@ -75,6 +96,12 @@ Pass 升配微信桥通过精确的 `POST /v1/passes/{pass_id}/modify/order-url`
 - 国际站首页各语言静态 fragment 与共享 Footer 恢复 Blog 入口，链接跟随界面语言；国内站继续隐藏导流入口。当前活跃文章仅包含 2026-09-28 用户提供的三篇中文和一篇英文，旧稿保存在归档模块；被替换的相同 slug 展示新稿，其余旧 slug 返回 404，并从 sitemap 与 llms.txt 移除。四篇文章现均提供完整中文（简体与繁体）、英文、印尼语、西班牙语、日语、韩语版本：国内站默认中文、国际站默认英文，国际站任一已发布语言的标题、摘要、正文与社群引导均同步切换，配图保持原语言。国际站英文文章 canonical 使用裸路径，其他语言分别使用 /zh-sg、/zh-hant、/id-id、/es、/ja-jp、/ko-kr 前缀；文章 hreflang 与 sitemap 登记国内 zh-CN 及国际站全部七种语言版本，列表继续声明界面语言。文末统一按站点展示微信或 Discord / WhatsApp 入群方式；试用链接去除追踪参数并指向当前站点首页，分享链接使用当前站点域名。缺失封面或正文图片允许留空。
 - 双站 `announcements/public-beta` 以及国际站 `use-cases/telegram-whatsapp-safety-boundaries`、`use-cases/lifelike-im-agent-rhythm-social-memory`、`use-cases/im-agent-skill-scenarios`、`use-cases/whatsapp-24-7-customer-service` 暂时下线但保留源稿。下线需同时移除 sidebar、slug 映射与 Fumadocs 注册，并重新生成 route manifest、搜索与公开索引；旧 URL 返回 404，不跨语言回退，公开正文不得继续链接到这些页面。恢复时重新评审源稿并成套恢复注册和链接。
 - 首页静态 fragment 的链接、图片版本参数、合规信息和客户端演示外壳属于站点路由责任面；修改后必须同步更新正式设计文档，并用静态链接检查、前端测试和本地/预览环境证明没有跨站点串链。
+
+## 双站浏览器标题
+
+国际站英文首页 `/` 与智能体入口 `/agents/`（含其产品路由）统一显示 `My AI Companion | LightVela`。内嵌 OpenCraft 只呈现对话内容，不写入宿主页面的 `document.title`；独立 OpenCraft Web/Electron 仍由自身 Shell 管理标题。
+
+国内站首页 `/` 与智能体入口 `/agents/` 统一显示 `我的智能体伙伴 | LightVela`；首页的 Next metadata 和客户端 SEO 标题数据保持一致。其他语言继续沿用各自的本地化标题。
 
 ## 订阅页交互边界
 
@@ -111,8 +138,11 @@ Pass 升配微信桥通过精确的 `POST /v1/passes/{pass_id}/modify/order-url`
 - 实例内多 Bot 在国内站和国际站共用同一套产品能力。前端入口统一受运行时 `multiBotEnabled` 功能开关约束；CTL 的读取接口保留存量默认 Bot 兼容，新增 Bot 由服务端开关再次校验。`ctl-api` 从各环境的 `ctl-platform-values` 可选读取 `MULTI_BOT_ENABLED`，国际 `sgprod` 显式设为 `true`，后续可独立改为 `false` 回滚额外 Bot 能力；该开关不能阻断无实例用户首次创建 Agent。
 - 国内与国际 service-gateway 环境都精确允许 `/v1/instances/{instance_id}/bots` 的列表、创建/克隆、重命名、删除、失败修复和唯一通道绑定子路由。配置策略测试必须分别断言两站放行相同 method/path 集合，并继续验证鉴权、实名、归属与相邻路径拒绝；不能用前端隐藏替代公共 API 边界。
 - Agent 侧栏运行中 Bot 的“重启”使用箭头与圆弧相连的单箭头图标，与双箭头刷新区分；失败 Bot 的“修复”仍使用双箭头图标。执行中显示加载图标，操作入口和确认流程继续按当前 Bot 状态判断。
+- 国内站与国际站的桌面 Agent 侧栏共用展开/收起状态：LightVela 品牌右侧的按钮切换完整导航与图标导航，使用无方向箭头的浅灰色侧栏图标，并用当前 locale 显示悬停及键盘聚焦提示。侧栏、顶部栏和内容列同步过渡；收起时为补偿文案立即隐藏的视觉速度差采用 260ms，展开采用 200ms，并遵循系统的减少动态效果设置。恢复本地保存的收起状态时先显示目标宽度，不播放首屏展开/收起动画。Bot 展示区采用圆角描边容器，收起后容器围住头像；顶部栏至总览、总览至 Bot 卡片保持相同的紧凑间距，不另加分隔线。展开导航使用「日常／探索」切换；探索依次排列成长、管理（模型、诊断中心、高级设置）和实验室，侧栏底部账号菜单保留云存储入口。收起状态保留总览、Bot 头像、导航切换、设置入口和账号头像，导航路由不变；完整会话列表与新建 Bot 入口在展开后访问。移动端导航保持原布局。
+- 「探索」中的实验室上方使用与「日常」对话区一致的分隔线，保持成长、管理、实验室原有分组顺序和路由。
+- 桌面侧栏的「日常」会话列表超出可用高度时在列表内纵向滚动并显示滚动条，顶部入口、对话标题和底部账户入口保持可见；移动端维持抽屉整体滚动。
 - 侧栏顶部重启和删除操作、不可用的 Chat Tab 提示框通过 `document.body` Portal 固定定位并约束在视口内，避免被侧栏滚动容器裁切；按钮的操作与禁用条件不因提示框而改变。
-- 侧栏的额外 Bot 创建入口是重启图标左侧的“+”按钮：国内站与国际站均默认可见，不依赖浏览器控制台的 `show()`。多个 Bot 时，删除图标后显示用于展开 Bot 切换列表的下拉箭头。原侧栏整行“新建 Bot”按钮不再显示，运行时多 Bot 开关和套餐额度限制仍保持不变；额度不足的原因通过可聚焦的 Portal 提示展示。
+- 侧栏的额外 Bot 创建入口是当前 Bot 圆角卡片右侧独立的细圆框“+”按钮：国内站与国际站均默认可见，不依赖浏览器控制台的 `show()`。重启与删除操作保留在卡片内；多个 Bot 时，删除图标后显示用于展开 Bot 切换列表的下拉箭头。原侧栏整行“新建 Bot”按钮不再显示，运行时多 Bot 开关和套餐额度限制仍保持不变；额度不足的原因通过可聚焦的 Portal 提示展示。
 - 到期徽标的可交互续费提示从徽标下方展开，不覆盖同一 Bot 顶部的创建、重启和删除图标；徽标与提示内的续费操作保持原有入口。
 
 ## Agent 创建引导与总览区域边界
@@ -125,7 +155,7 @@ Pass 升配微信桥通过精确的 `POST /v1/passes/{pass_id}/modify/order-url`
 
 ## 公共账号菜单边界
 
-- 登录态头像菜单提供“账号”（`/account`）与“套餐与费用”（`/account/billing`），并在底部保留退出登录。Agent 控制台沿用左侧导航底部的账号触发器与向上展开菜单；当前有效 Pass 的 `bundle_type` 严格等于 `ai` 时，该侧栏菜单额外展示“模型”（`/agents/models`），同时从 Agent 的 Use 分组移除重复入口。其他类型以及字段缺失或未知时，模型入口保留在 Use 分组。公共页 Header 保留“我的智能体伙伴”入口，且不展示该套餐专属“模型”入口。
+- 登录态公开页 Header 的头像图片在已有套餐或 Bot 资格确认后链接到 `/agents`，资格未确认或不存在时链接到 `/account`，旁边的箭头继续展开头像菜单。菜单提供“账号”（`/account`）与“套餐与费用”（`/account/billing`），并在底部保留退出登录。Agent 控制台沿用左侧导航底部的账号触发器与向上展开菜单；当前有效 Pass 的 `bundle_type` 严格等于 `ai` 时，该侧栏菜单额外展示“模型”（`/agents/models`），同时从 Agent 的 Use 分组移除重复入口。其他类型以及字段缺失或未知时，模型入口保留在 Use 分组。公共页 Header 保留“我的智能体伙伴”入口，且不展示该套餐专属“模型”入口。
 - Agent 侧栏账号菜单在 AI 套餐下按“模型”→“套餐与费用”→“账号”→“语言”（仅国际站）排列；其他套餐下按“套餐与费用”→“账号”→“语言”（仅国际站）排列。公共页 Header 账号菜单保持“账号”先于“套餐与费用”。
 - 国际站英文分别使用 `Account`、`Plans & billing` 与 `My AI Companion`。两个账号私域页面均要求登录、保持 noindex/nofollow；账号页承载资料与身份管理，套餐与费用页承载订阅和国际站支付方式，购买入口仍为 `/subscribe`。
 - 订阅失败后的套餐管理/续费引导进入 `/account/billing`；创建前的实名认证引导与邮箱绑定回调仍进入 `/account`，仅账号视图消费对应 query。国内续费的实名子流程由 `RenewPassModal` 自己承载，不依赖账号页资料卡的认证入口。
@@ -155,6 +185,7 @@ Pass 升配微信桥通过精确的 `POST /v1/passes/{pass_id}/modify/order-url`
 - 调度表达式、时区、生效时段和通知渠道继续使用现有 Agent 定时任务能力；渠道列表及可用性仍由当前 Agent 和区域运行时决定，0 Token 任务不建立第二套渠道配置。
 - 0 Token 创建入口由前端在国内站、国际站和 EdgeOne 预览中默认开启，不依赖 CTL 下发字段；远端 runtime config 不可用、缺少字段或字段异常时继续使用前端默认值。显式构建期关闭、本地紧急关闭或远端布尔 `false` 只控制新建入口，不能让已存在的 Hermes `no_agent` 任务在任一站点消失或失去管理入口。
 - 双站验收须分别覆盖新建、任务卡片、详情和最近执行；国内站通过不能替代国际站英文与区域渠道验证。
+- “最近执行”列表中的状态只展示简短、已本地化的结果；Hermes 返回的长错误或未知状态不得占据状态徽标。任务已运行但通知未送达时应与执行失败区分，悬停或聚焦状态徽标时可查看报错，详情提供用户可读说明，并允许展开原始状态以便排查。
 
 ## Agent 记忆展示区域边界
 
@@ -168,22 +199,32 @@ Pass 升配微信桥通过精确的 `POST /v1/passes/{pass_id}/modify/order-url`
 
 - 双站 HTTP Repository 的网络错误 message 保持产品友好文案，供页面与 toast 展示；原始 fetch 异常仅保留在 Error.cause 供诊断，不能把 TypeError、CORS 或底层连接详情拼进用户可见消息。命令执行超时仍由原有 debug_exec_timeout 语义区分。
 
-### 国内控制台 Chat
+### 双站控制台 Chat
 
-OpenCraft Chat 在国内控制台默认加载，不依赖 `show()`；国内主 Bot 与其他 Bot 的对话均进入 OpenCraft，且不请求旧 AgentChat 启动 token。准备阶段只呈现中性聊天加载态，不挂载旧 AgentChat；就绪后显示 OpenCraft，连接异常保留同一会话并提供重试，首次资源加载失败提供重新加载入口。国际站继续使用 AgentChat，其他隐藏工具仍由 `show()` 控制；站点选择不替代服务端认证或资源归属校验。控制台认证 repository 在 token 替换/清除后广播不含 token 的 `lightclaw:auth-session-changed`，供同页内嵌消费者释放旧身份，跨标签仍由 storage 事件通知。制品复用同源 `/__opencraft/` 的现有发布链路。内嵌 Chat 不展示独立模型选择器，发送前读取当前 Bot/Profile 的 Hermes 默认模型；旧草稿模型与思考设置不得覆盖宿主配置，缺少可用默认模型时在发送前报错。
+国内站和国际站的 Chat 入口均默认可见，对话页使用 OpenCraft 内嵌工作台；执行浏览器控制台 `show()` 不改变 Chat 的可见性。两站主 Bot 与其他 Bot 的对话均进入 OpenCraft，且不请求旧 AgentChat 启动 token。准备阶段只呈现中性聊天加载态，不挂载旧 AgentChat；就绪后显示 OpenCraft，连接异常保留同一会话并提供重试，首次资源加载失败提供重新加载入口。其他隐藏工具仍由 `show()` 控制；站点选择不替代服务端认证或资源归属校验。控制台认证 repository 在 token 替换/清除后广播不含 token 的 `lightclaw:auth-session-changed`，供同页内嵌消费者释放旧身份，跨标签仍由 storage 事件通知。制品复用同源 `/__opencraft/` 的现有发布链路。内嵌 Chat 不展示独立模型选择器，发送前读取当前 Bot/Profile 的 Hermes 默认模型；旧草稿模型与思考设置不得覆盖宿主配置，缺少可用默认模型时在发送前报错。
 
-国内站 OpenCraft 会话侧栏为绝对定位的更多按钮预留独立空间，长标题在按钮前 8px 截断；该样式随 OpenCraft 启用条件生效。
+双站 OpenCraft 会话侧栏为绝对定位的更多按钮预留独立空间，长标题在按钮前 8px 截断；该样式随 OpenCraft 启用条件生效。
 
-内嵌 Chat 新会话的伙伴标题与输入占位文案覆盖控制台七套字典（en-US、zh-CN、zh-Hant、id-ID、es、ja-JP、ko-KR）；zh-SG 复用简体中文。额外语言由内嵌专用 catalog 注入，宿主 lang 变化沿现有 LocaleController 更新，不改变国际站功能启用条件或独立工作台语言列表。
+内嵌 Chat 新会话的伙伴标题与输入占位文案覆盖控制台八套字典（en-US、zh-CN、zh-Hant、id-ID、ms-MY、es、ja-JP、ko-KR）；zh-SG 复用简体中文。额外语言由内嵌专用 catalog 注入，宿主以当前路由语言配置工作台并在切换语言时调用 `setLocalization()`，保留会话和草稿；独立工作台语言列表不变。未翻译的通用工作台文案回落英文。
 
-国内站启用内嵌 Chat 时，加载、新会话和已有会话均不呈现宿主圆角外框。工作台保留已有会话标题、重命名入口和输入框，移除主内容表面的阴影。草稿状态仍由工作台拥有。
+双站启用内嵌 Chat 时，加载、新会话和已有会话均不呈现宿主圆角外框。工作台保留已有会话标题、重命名入口和输入框，移除主内容表面的阴影。草稿状态仍由工作台拥有。
 
-### 国内会话连接恢复
+### 双站会话连接恢复
 
 启用内嵌会话后，连接失败不再自动退回 AgentChat；由同一个 Host runtime 继续自动重连。
 宿主通过 opencraft-connection 投影连接状态，超过 30 秒显示网络/重试提示，提供重新连接按钮。
 已展示的会话组件不因连接错误卸载，保留当前页面内文字与附件；不承诺刷新/退出登录后的草稿恢复。
 首次资源加载失败允许重新加载组件，Bot/账号切换撤销旧回调。固定 Profile 连接尝试 90 秒超时并清理资源。
-国际站开关不变；这些变更不构成线上发布。
+这些变更不构成线上发布。
 
-国内 OpenCraft Chat 同时提供默认收起的右侧预览面板：网页标签和会话文件只读预览。国际站旧入口不变。网页受目标站点 iframe 策略约束，可使用外部打开入口；此能力不是 Hermes 远端浏览器画面。Bot/账号切换销毁整个内嵌 Application 及其内存网页元数据，文件读取沿当前 Host 归属执行；不新增实例文件系统权限隔离保证。
+双站 OpenCraft Chat 同时提供默认收起的右侧预览面板：网页标签和会话文件只读预览。网页受目标站点 iframe 策略约束，可使用外部打开入口；此能力不是 Hermes 远端浏览器画面。Bot/账号切换销毁整个内嵌 Application 及其内存网页元数据，文件读取沿当前 Host 归属执行；不新增实例文件系统权限隔离保证。
+
+## 国际站泰语
+
+泰语使用 `th-TH`（ไทย）及 `/th-th/`，沿用唯一 locale 注册表和独立 `src/content/docs/th/` 源、同目录 metadata；文档清单与英文一致且不跨语言回退。国内站不生成泰语路由。产品词典和公共文案按需共同就绪后切换，异步晚到加载服从现有语言选择代次。
+
+公共文案只在泰语消费分支调用 `localizeThai`；中文、英文、马来语及其他语种不得依赖未加载的泰语目录。技能分类和 overview 均延迟到当前 locale 消费，避免 !5133 中无条件调用未就绪词典导致整页崩溃的问题。首页由英文结构加 `copy.th-TH.json` 机械生成，缺译文失败并在临时目录重生成比对。Thai 文档搜索的索引和查询均使用 `Intl.Segmenter('th', { granularity: 'word' })`，归一化 NFC 并保留泰语组合字符，支持无空格词查询。页面字体通过现有 locale 字体变量回退到系统泰文字体，不将泰字加入不支持它的中文字体子集。
+
+文档复用 Fumadocs 移动导航与搜索，并以 `--fd-banner-height: 60px` 为公开站点顶部栏预留空间，防止搜索和侧栏入口被覆盖。桌面保留原有文档侧栏搜索。
+
+全局搜索弹窗挂载在文档页面的语言 Provider 之外，因此弹窗根据当前文档路径解析语言，并复用 `docs-ui-translations.ts` 的 UI 目录，避免泰语结果仍配英文搜索框和关闭按钮。

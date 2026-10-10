@@ -1,0 +1,25 @@
+export type CronJob = {
+  id: string; name: string; prompt: string;
+  schedule: { kind: string; expr: string; display: string };
+  enabled: boolean; state: string; deliver: string;
+  next_run_at: string | null; last_run_at: string | null; last_status: string | null;
+  execution_status?: string | null;
+  context_from: string[] | null; context_from_hydrated?: boolean;
+  inference_config: { no_agent: boolean } | null;
+  zero_token_config?: { kind: "fixed_notification" | "script"; managed: boolean } | null;
+  script: string;
+};
+export type CronTarget = { instanceId: string; profileId: string; apiBase: string; token: string; region: "cn" | "intl"; onUnauthorized(): void };
+export type CronCreateInput = { name: string; prompt: string; schedule: string; deliver?: string; pinCurrentModel?: boolean };
+export type CronEditPatch = { name?: string; prompt?: string; schedule?: string; deliver?: string };
+export type CronRunRecord = { id: string; job_id: string; run_at: string; status: string | null };
+export function listCronJobs(target: CronTarget, options?: { hydrateContextFrom?: boolean }): Promise<CronJob[]>;
+export function listRecentCronRuns(target: CronTarget, jobs: CronJob[], limit?: number): Promise<CronRunRecord[]>;
+export function createCronJobWithScriptRollback(target: CronTarget, input: CronCreateInput): Promise<void>;
+export function editCronJob(target: CronTarget, id: string, patch: CronEditPatch): Promise<void>;
+export function pauseCronJob(target: CronTarget, id: string): Promise<void>;
+export function resumeCronJob(target: CronTarget, id: string): Promise<void>;
+export function removeCronJob(target: CronTarget, id: string): Promise<void>;
+export function removeCronJobWithDependentRollback(target: CronTarget, id: string, dependents: readonly { id: string; name: string; contextFrom: readonly string[] }[]): Promise<void>;
+export function removeManagedCronScriptIfUnreferenced(target: CronTarget, removed: CronJob, before: readonly CronJob[]): Promise<void>;
+export function startCronTestRun(target: CronTarget, job: CronJob): Promise<{ completion: Promise<{ deliveryError?: string | null }> }>;

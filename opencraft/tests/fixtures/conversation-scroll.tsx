@@ -21,6 +21,7 @@ probe.pendingPlacement = null;
 const submissionMode = new URLSearchParams(location.search).has("submissions");
 const historyMode = new URLSearchParams(location.search).has("history");
 const naturalMode = new URLSearchParams(location.search).has("natural");
+const handoffMode = new URLSearchParams(location.search).has("handoff");
 probe.historyLoads = 0;
 // Capture owner through listener setup; no production debug API is installed.
 const listen = WebConversationViewportOwner.prototype.setLatestTurnMeasurementListener;
@@ -34,6 +35,9 @@ WebConversationViewportOwner.prototype.setLatestTurnMeasurementListener = functi
 function Demo() {
   const [mounted, setMounted] = useState(true);
   const [state, setState] = useState({ revision: 0, heights: [600, 600, 600, 600, 600, 200], active: !submissionMode && !historyMode, phase: "final_answer", lifetime: 0 });
+  const [authorityIndices, setAuthorityIndices] = useState<readonly number[]>([]);
+  const turnId = (index: number) => authorityIndices.includes(index) ? `authority-${index}` : `turn-${index}`;
+  probe.acknowledge = () => setAuthorityIndices((current) => [...current, state.heights.length - 1]);
   probe.shrinkHistory = () => setState((current) => ({ ...current, revision: current.revision + 1, heights: [20, 20] }));
   const loadHistory = () => {
     probe.historyLoads++;
@@ -62,10 +66,16 @@ function Demo() {
   const timeline = {
     key: { hostId: "fixture", threadId: "fixture" }, revision: state.revision, phase: "live", authoritative: true, anchorFrameIds: new Map(),
     frames: state.heights.flatMap((height, index) => [...(submissionMode ? [{
-      id: `user-${index}`, type: "user", turnId: `turn-${index}`, status: "complete", durationMs: null, hookStats: null, anchors: [],
-      blocks: [{ id: `user-text-${index}`, type: "text", text: "40", sourceItemIds: [], streaming: false }],
+      id: `user-${index}`, type: "user", turnId: turnId(index), status: "complete", durationMs: null, hookStats: null, anchors: [],
+      blocks: [handoffMode ? {
+        id: `user-text-${index}`, type: "user-message", message: `message-${index}`,
+        content: [], attachments: [], messageKind: "user", clientId: `client-${index}`,
+        steeringStatus: null, sentAtMs: null, deliveryStatus: "sent", sourceItemIds: [],
+        referencesPriorConversation: false, reviewMode: false, pullRequestFixMode: false,
+        autoResolveSync: false, goal: false, hookFeedback: false, commentCount: 0, hasExternalAttachments: false,
+      } : { id: `user-text-${index}`, type: "text", text: "40", sourceItemIds: [], streaming: false }],
     }] : []), {
-      id: `frame-${index}`, type: "assistant", turnId: `turn-${index}`,
+      id: `frame-${index}`, type: "assistant", turnId: turnId(index),
       status: index === state.heights.length - 1 && state.active ? "streaming" : "complete", durationMs: null, hookStats: null, anchors: [],
       blocks: index === state.heights.length - 1 && state.phase === "idle" ? [] : [{ id: `text-${index}`, type: "text", text: String(height), sourceItemIds: [], streaming: index === state.heights.length - 1 && state.active, phase: index === state.heights.length - 1 ? state.phase : "final_answer" }],
     }]),

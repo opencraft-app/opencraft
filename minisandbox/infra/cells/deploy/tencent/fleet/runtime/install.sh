@@ -2,6 +2,20 @@
 set -euo pipefail
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+case "${RUNTIME_HOST_DRAIN_PROFILE:-production}" in
+production) ;;
+exploration)
+	[[ ${RIVET_RUNTIME_PROFILE:-production} == production ]] || {
+		echo "exploration Host drain requires unchanged production runtime quotas" >&2
+		exit 2
+	}
+	[[ ${AUTONOMY_OPERATION_LOCK_HELD:-0} == 1 ]] || {
+		echo "exploration runtime installation requires the whole-operation lock" >&2
+		exit 75
+	}
+	;;
+*) echo "RUNTIME_HOST_DRAIN_PROFILE must be production or exploration" >&2; exit 2 ;;
+esac
 namespace=${RIVET_CELL_NAMESPACE:-actor-fdb-cell-system}
 controller_namespace=${RIVET_CONTROLLER_NAMESPACE:-fdb-operator-actor-fleet-controller-system}
 : "${RIVET_CELL_NAME:?RIVET_CELL_NAME must name the exact Cell}"
@@ -124,8 +138,8 @@ cold_max_concurrent_requests=${RIVET_COLD_MAX_CONCURRENT_REQUESTS:-16}
 gasoline_worker_poll_interval_ms=${RIVET_GASOLINE_WORKER_POLL_INTERVAL_MS:-2000}
 gasoline_worker_pull_batch_size=${RIVET_GASOLINE_WORKER_PULL_BATCH_SIZE:-256}
 gasoline_worker_max_active_workflows=${RIVET_GASOLINE_WORKER_MAX_ACTIVE_WORKFLOWS:-4096}
-depot_manager_refresh_max_concurrency=${RIVET_DEPOT_MANAGER_REFRESH_MAX_CONCURRENCY:-16}
-depot_compaction_max_concurrency=${RIVET_DEPOT_COMPACTION_MAX_CONCURRENCY:-8}
+depot_manager_refresh_max_concurrency=${RIVET_DEPOT_MANAGER_REFRESH_MAX_CONCURRENCY:-8}
+depot_compaction_max_concurrency=${RIVET_DEPOT_COMPACTION_MAX_CONCURRENCY:-2}
 gasoline_worker_secondary_grace_ms=${RIVET_GASOLINE_WORKER_SECONDARY_GRACE_MS:-1000}
 gasoline_history_prune_eligibility_seconds=${RIVET_GASOLINE_HISTORY_PRUNE_ELIGIBILITY_SECONDS:-900}
 gasoline_terminal_prune_eligibility_seconds=${RIVET_GASOLINE_TERMINAL_PRUNE_ELIGIBILITY_SECONDS:-604800}

@@ -44,6 +44,7 @@ import {
 } from "@opencraft/workbench-panels";
 import { FloatingLeftPanel } from "./floating-left-panel";
 import { Sidecar, SidecarPane } from "./sidecar";
+import { titlebarSurfaceGeometry } from "./titlebar-surface-geometry";
 import { SharedSidebarContent } from "./shared-sidebar-content";
 import { floatingSidebarLayout } from "./floating-sidebar-layout";
 import { useContextPaneGeometry } from "./use-context-pane-geometry";
@@ -78,6 +79,7 @@ interface AppShellProps {
   /** Optional application context. Chat supplies a conversation list; other apps may omit it. */
   leftPanel?: ReactNode;
   rightPanel: ReactNode;
+  rightPanelKeepMounted?: boolean;
   rightPanelOpen: boolean;
   rightPanelFullWidth: boolean;
   rightPanelDefaultSize?: "standard" | "compact";
@@ -150,6 +152,9 @@ export function ApplicationShellRoot({
 interface HeaderMotionStyle extends MotionStyle {
   "--app-shell-header-left-slot-width": MotionValue<string>;
   "--app-shell-header-left-fit-width": MotionValue<string>;
+  "--app-shell-titlebar-extension-left": MotionValue<string>;
+  "--app-shell-titlebar-extension-width": MotionValue<string>;
+  "--app-shell-titlebar-divider-progress": MotionValue<number>;
 }
 
 interface AppShellLayoutMotion {
@@ -212,6 +217,7 @@ export function AppShell({
   floatingSidebarHeader,
   leftPanel,
   rightPanel,
+  rightPanelKeepMounted = false,
   rightPanelOpen: requestedRightPanelOpen,
   rightPanelFullWidth: requestedRightPanelFullWidth,
   rightPanelDefaultSize = "standard",
@@ -462,6 +468,15 @@ export function AppShell({
     headerLeftFitWidth,
     (width) => `${Math.max(0, Number(width))}px`,
   );
+  // Paint and pane movement consume the same current frames, including drag,
+  // reversal and reduced-motion snaps. No terminal-mount or extra CSS timer.
+  const titlebarSurface = useTransform(
+    [animatedNavigationWidth, animatedSidebarWidth, sidebarProgress],
+    ([primary, context, progress]) => titlebarSurfaceGeometry(Number(primary), Number(context), Number(progress)),
+  );
+  const titlebarExtensionLeft = useTransform(titlebarSurface, surface => `${surface.extensionLeft}px`);
+  const titlebarExtensionWidth = useTransform(titlebarSurface, surface => `${surface.extensionWidth}px`);
+  const titlebarDividerProgress = useTransform(titlebarSurface, surface => surface.dividerProgress);
   const shellStyle: AppShellStyle = {
     "--app-shell-left-open-width": `${sidebarWidth}px`,
     "--shell-navigation-bottom-reserve": "calc(var(--height-navigation-row) + 2 * var(--padding-sidebar-entrances))",
@@ -471,6 +486,9 @@ export function AppShell({
     // owns slotWidth; HeaderSlot's off-layout replica owns fitWidth.
     "--app-shell-header-left-slot-width": headerLeftSlotWidth,
     "--app-shell-header-left-fit-width": headerLeftFitWidthPx,
+    "--app-shell-titlebar-extension-left": titlebarExtensionLeft,
+    "--app-shell-titlebar-extension-width": titlebarExtensionWidth,
+    "--app-shell-titlebar-divider-progress": titlebarDividerProgress,
   };
   const getLiveSidebarWidth = useCallback(
     () => liveSidebarWidth.get(),
@@ -712,7 +730,7 @@ export function AppShell({
             onTogglePrimaryNavigation={floatingOwnsContent ? toggleFloatingApplications : onSidebarCollapse} /> : null }}
         />
         <div className="app-shell-row">
-          <Sidecar animatedWidth={totalLeftWidth} footer={navigation ? <motion.div
+          <Sidecar animatedWidth={totalLeftWidth} dividerProgress={titlebarDividerProgress} footer={navigation ? <motion.div
             className="app-shell-sidecar__footer"
             data-compact-only={space.navigationDetent === "compact" && !sidebarOpen}
             style={{ opacity: sidecarOpacity }}
@@ -812,6 +830,7 @@ export function AppShell({
                 </motion.div>
               </div>
               <AppShellRightPanel
+                keepMounted={rightPanelKeepMounted}
                 animation={rightPanelAnimation}
                 fullWidth={rightPanelFullWidth}
                 mainContentWidth={mainContentWidth}

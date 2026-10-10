@@ -69,7 +69,8 @@ chmod 0600 "$temporary/config.json"
 remote_auth="$state_dir/tcr-build-${request_id}.json"
 TAT_UPLOAD_MODE=0600 "$fleet_dir/tat/tat-upload.sh" "$temporary/config.json" "$remote_auth" >/dev/null
 
-remote_receipt="$state_dir/product-workers-api-${source_revision}-${source_manifest_sha}.json"
+build_inputs_sha=$(printf '%s\0' "$source_revision" "$source_manifest_sha" "$build_base" "$runtime_base" "$image_tag" | sha256sum | cut -d' ' -f1)
+remote_receipt="$state_dir/product-workers-api-${source_revision}-${source_manifest_sha}-${build_inputs_sha}.json"
 for value in remote_source source_revision source_manifest_sha image_tag registry_host remote_auth build_base runtime_base build_python remote_receipt; do
 	printf -v "quoted_$value" '%q' "${!value}"
 done
@@ -92,6 +93,7 @@ export ACTOR_PRODUCT_BUILD_RECEIPT=$quoted_remote_receipt
 export PYTHON=$quoted_build_python
 export REGISTRY_AUTH_FILE="\$auth"
 export ACTOR_BUILD_TMPDIR=/data/tmp
+export PYTHONDONTWRITEBYTECODE=1
 install -d -m 0700 $state_dir /data/tmp
 "\$PYTHON" -c 'import sys; assert sys.version_info >= (3, 11)'
 "\$source/infra/cells/deploy/tencent/fleet/workers-api/build-image.sh"

@@ -88,6 +88,20 @@ function intent(
   };
 }
 
+test("a ready staged Markdown file can be the whole Codex submission", () => {
+  const compiled = compileSubmitIntent(intent(
+    { type: "existing-thread", key: existingKey },
+    {
+      document: { version: 1, blocks: [{ type: "paragraph", children: [] }] },
+      attachments: [{
+        id: "notes", name: "notes.md", mimeType: "text/markdown", size: 11,
+        uri: "file:///host/attachments/notes/content-notes.md", lifecycle: "ready", error: null,
+      }],
+    },
+  ));
+  assert.deepEqual(compiled.input, [{ type: "mention", name: "notes.md", path: "/host/attachments/notes/content-notes.md" }]);
+});
+
 test("rich Composer documents compile into ordered native Codex UserInput entries", () => {
   const compiled = compileSubmitIntent(
     intent(
@@ -200,6 +214,52 @@ test("rich Composer documents compile into ordered native Codex UserInput entrie
     personality: "pragmatic",
     outputSchema: { type: "object", required: ["answer"] },
   });
+});
+
+test("Composer inline marks survive submission as Markdown in shared AppServer text", () => {
+  const marked: ComposerDocument = { version: 1, blocks: [{ type: "paragraph", children: [
+    { type: "text", text: "Read " },
+    { type: "text", text: "bold *literal*", marks: ["strong"] },
+    { type: "text", text: " and " },
+    { type: "text", text: "italic", marks: ["emphasis"] },
+    { type: "text", text: " with " },
+    { type: "text", text: "a`b", marks: ["code"] },
+    { type: "text", text: " plus " },
+    { type: "text", text: "both", marks: ["strong", "emphasis"] },
+    { type: "text", text: " in " },
+    { type: "link", href: "https://example.test", children: [
+      { type: "text", text: "docs", marks: ["strong"] },
+    ] },
+    { type: "text", text: "." },
+  ] }] };
+  const compiled = compileSubmitIntent(intent({ type: "existing-thread", key: existingKey }, { document: marked }));
+  assert.deepEqual(compiled.input, [{
+    type: "text",
+    text: "Read **bold \\*literal\\*** and *italic* with ``a`b`` plus ***both*** in [**docs**](https://example.test).",
+    text_elements: [],
+  }]);
+});
+
+test("host-staged audio is submitted as a file reference for text and image hosts", () => {
+  const compiled = compileSubmitIntent(intent(
+    { type: "existing-thread", key: existingKey },
+    {
+      document: { version: 1, blocks: [] },
+      attachments: [{
+        id: "staged-audio",
+        name: "voice note.m4a",
+        mimeType: "audio/mp4",
+        size: 3,
+        uri: "file:///home/agent/voice%20note.m4a",
+        lifecycle: "ready",
+        error: null,
+        metadata: { transport: "opencraft-attachment-staging" },
+      }],
+    },
+  ), { inputModalities: ["text", "image"] });
+  assert.deepEqual(compiled.input, [{
+    type: "mention", name: "voice note.m4a", path: "/home/agent/voice note.m4a",
+  }]);
 });
 
 test("queued native input restores into the Composer without flattening typed resources", () => {
@@ -699,6 +759,22 @@ test("host identity is enforced before any network request", async () => {
   );
   assert.equal(h.requests.length, 0);
   await h.close();
+});
+
+test("bridge-denied follow-ups never compile assets or touch the upstream", async () => {
+  const h = await harness();
+  let compiled = false;
+  const port = createAppServerConversationCommandPort({
+    hostId, client: h.client,
+    interactions: { respond: async () => undefined },
+    canRequest: method => method !== "thread/queue/add",
+    resolveCompilerOptions: async () => { compiled = true; return {}; },
+  });
+  try {
+    await assert.rejects(port.submit(intent({ type: "enqueue-follow-up", key: existingKey })), /暂不支持/);
+    assert.equal(compiled, false);
+    assert.equal(h.requests.length, 0);
+  } finally { await h.close(); }
 });
 
 test("queued-message command port preserves the AppServer queue ABI", async () => {

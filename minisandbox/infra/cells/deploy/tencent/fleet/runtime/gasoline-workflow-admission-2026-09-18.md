@@ -124,12 +124,30 @@ For each Engine process:
     control timeout. Consequently a wedged isolate cannot hold an Actor workflow in
     `Destroying` forever or leak a runtime slot after its Registry tombstone commits.
 
-The next Beijing candidate uses a 4,096 workflow process-safety ceiling, a 16-wide
-manager refresh lane, and an 8-wide compaction lane per Engine process. With six Engine
-processes this bounds the Cell at 96 concurrent refreshes and 48 concurrent compactions.
+The next Beijing candidate uses a 4,096 workflow process-safety ceiling, an 8-wide
+manager refresh lane, and a 2-wide compaction lane per Engine process. With six Engine
+processes this bounds the Cell at 48 concurrent refreshes and 12 concurrent compactions.
 The lease transaction batch remains 256 and one additional workflow slot remains
 reserved only for the unique `gasoline_pruner`. These are candidate calibration values
 until the strict workload produces a passing receipt.
+
+These bounds replace the previous 16/8 per-process candidate after the strict 10k run
+`354610a58f4a66c7e0b4ec8d7978cbda` failed at 8,868 created Objects. The run began with
+zero active Objects and zero compaction waiters. Near 8k active, B Cell maintenance grew
+to 48 in-flight compactions with 1,258 waiters and 96 refreshes with 151 waiters. B UDB
+transaction averages reached approximately 0.6--1.6 seconds while A remained near
+0.05--0.12 seconds; neither Engine nor FDB CPU was saturated. The first user-visible
+failures were seven B Cell `502 indeterminate_result` responses, followed by an
+initialize failure. The subsequent 127 simultaneous cancellation errors were shutdown
+fanout, not independent network incidents.
+
+The new limits are a conservative calibration candidate, not proof of 10k capacity.
+The identical zero-retry workload must pass after formal runtime release, while hot
+bytes, compaction waiter age, and cold publish progress remain bounded. Changing the
+Engine replica count requires recalculating and qualifying the Cell-wide maintenance
+budget. UniversalDB pending metrics use a drop guard so cancellation releases the
+gauge; the prior post-await decrement left approximately 2,640/9,513 false pending
+transactions in A/B after cleanup and could not be used as a capacity truth.
 
 The reserved lane was added after two fail-closed A-Cell release attempts. Prometheus
 showed every candidate Engine pinned at exactly 64 in-flight executions, all 64 named
@@ -205,9 +223,11 @@ old 256/64 per-process gates reported no waiters. Its durable-signal receive lag
 21.37 seconds. Cell B, at 51 refreshes and 33 compactions, remained healthy; Engine and
 FDB CPU were not saturated and FDB retained full replication. The workload therefore
 proved that threshold jitter alone cannot be the safety boundary for a fully active
-cohort. The 16/8 process-local limits put the observed healthy load below the Cell-wide
-gate and the observed failed load above it, forcing maintenance to queue without adding
-a distributed admission key or changing durable ownership.
+cohort. That evidence motivated the previous 16/8 process-local candidate, which placed
+the then-observed healthy load below the Cell-wide gate and the failed load above it.
+The subsequent 8,868-Object failure documented above required the current 8/2 candidate;
+the gates still queue maintenance without adding a distributed admission key or changing
+durable ownership.
 
 ## Qualification gate
 

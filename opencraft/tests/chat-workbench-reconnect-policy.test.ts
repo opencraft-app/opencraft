@@ -165,6 +165,40 @@ test("Workbench reconnect replaces a transport generation closed by failed initi
   }
 });
 
+test("Workbench automatic reconnect backs off to a one-minute ceiling", async () => {
+  const scheduled: Array<{ readonly callback: () => void; readonly delay: number }> = [];
+  const runtime = createAppServerWorkbenchRuntime({
+    hostId: "backoff-host",
+    createTransport: () => new GenerationTransport(false),
+    autoReconnect: true,
+    clock: {
+      setTimeout(callback, delay) {
+        scheduled.push({ callback, delay });
+        return callback;
+      },
+      clearTimeout(timer) {
+        const index = scheduled.findIndex(entry => entry.callback === timer);
+        if (index >= 0) scheduled.splice(index, 1);
+      },
+    },
+  });
+
+  try {
+    await assert.rejects(runtime.connect(), /first generation failed/u);
+    for (const expectedDelay of [500, 1_000, 2_000, 5_000, 15_000, 30_000, 60_000, 60_000]) {
+      assert.equal(scheduled.length, 1);
+      const next = scheduled.shift()!;
+      assert.equal(next.delay, expectedDelay);
+      next.callback();
+      for (let attempt = 0; attempt < 10 && scheduled.length === 0; attempt += 1) {
+        await new Promise<void>(resolve => setImmediate(resolve));
+      }
+    }
+  } finally {
+    await runtime.dispose();
+  }
+});
+
 test("Workbench stops automatic retry after failed initialization closes a fixed transport", async () => {
   const timers: unknown[] = [];
   const runtime = createAppServerWorkbenchRuntime({

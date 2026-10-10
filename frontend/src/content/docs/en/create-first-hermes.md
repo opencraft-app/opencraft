@@ -2,11 +2,11 @@
 
 ## Summary
 
-**Creating your first Hermes instance goes like this: sign in with Google or GitHub, choose an available plan, activate it under the current plan rules, let the platform create the instance automatically, then configure a model and a channel. Everything happens in the browser — no servers to buy, nothing to deploy locally. A Hermes instance is the cloud runtime your agent lives in, and once created it stays online 24/7. After it is ready, open the "My Hermes" console to configure your model, connect messaging channels, and install skills; if you do not have your own model API key yet, you can start talking right away using the model credits included with your plan.**
+**Creating your first Hermes instance goes like this: sign in with Google or GitHub, choose an available plan, activate it under the current plan rules, let the platform create the instance automatically, then use Web Chat; connect a channel when you want to use a messaging app. Everything happens in the browser — no servers to buy, nothing to deploy locally. A Hermes instance is the cloud runtime your agent lives in, and once created it stays online 24/7. After it is ready, open My Agent to use Daily → Chat, then configure a model, messaging channel, or Skills as needed; if you do not have your own model API key yet, you can start talking right away using the model credits included with your plan.**
 
 ---
 
-A Hermes instance is the cloud runtime where your LightVela Agent lives. Activating your first instance follows five steps: **sign in with Google or GitHub → select an available plan → activate it through the current activation flow → let LightVela provision the instance → configure a model and channel**. Everything happens in the browser, with no server purchase or local deployment required. This page walks through the process in order.
+A Hermes instance is the cloud runtime where your LightVela Agent lives. Activating your first instance follows five steps: **sign in with Google or GitHub → select an available plan → activate it through the current activation flow → let LightVela provision the instance → start in Web Chat, then connect a channel if needed**. Everything happens in the browser, with no server purchase or local deployment required. This page walks through the process in order.
 
 ## What this page covers
 
@@ -22,7 +22,7 @@ A Hermes instance is the cloud runtime where your LightVela Agent lives. Activat
 
 - A currently available plan selected from the [Subscribe page](/subscribe); the international site does not require China real-name verification
 
-- At least one messaging account you plan to connect, such as Telegram, WhatsApp, Discord, Slack, or WeChat
+- A Telegram, WhatsApp, Discord, Slack, or WeChat account only if you plan to use that messaging app
 
 ---
 
@@ -50,11 +50,13 @@ After the plan is activated, LightVela **automatically assigns a dedicated cloud
 
 Once the instance is ready, open the console and complete the basic setup:
 
-1. **Configure a model** — Choose the underlying language model; see [Configure Models](./configuration/model.md)
+1. **Check the model** — Available plan credits let you begin without your own API key; see [Configure Models](./configuration/model.md) if needed
 
-2. **Connect a channel** — Add Telegram, WhatsApp, Discord, Slack, WeChat, or another supported channel, then talk to your Agent from the messaging app
+2. **Try Web Chat** — Start a conversation under Daily → Chat and send a message; see [Chat](./configuration/agent-chat.md)
 
-3. **Optionally add skills and scheduled tasks** — Extend what your Agent can do; see [Configure Scheduled Tasks](./configuration/automation.md)
+3. **Connect a channel if needed** — Add Telegram, WhatsApp, Discord, or WeChat to use the Bot in a messaging app
+
+4. **Optionally add skills and scheduled tasks** — See [Configure Scheduled Tasks](./configuration/automation.md)
 
 Your first Hermes Agent is now ready to stay online in the cloud 24/7.
 
@@ -64,7 +66,7 @@ Your first Hermes Agent is now ready to stay online in the cloud 24/7.
 
 ### How soon can I use the instance after activation?
 
-LightVela starts provisioning the Hermes instance automatically after plan activation. When the instance is ready, configure a model and channel in the console and begin a conversation.
+LightVela starts provisioning the Hermes instance automatically after plan activation. Once the Bot is ready and plan credits are available or a model is configured, send a message in Daily → Chat. Connect an external channel later if needed.
 
 ### Where can I check current plans and offers?
 

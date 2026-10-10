@@ -93,8 +93,13 @@ type KubernetesServingRouteResolver struct {
 
 	mu          sync.Mutex
 	routes      map[string]ServingRoute
-	highest     map[string]int64
+	highest     map[string]servingRouteRevision
 	refreshedAt time.Time
+}
+
+type servingRouteRevision struct {
+	revision       int64
+	manifestSHA256 string
 }
 
 func NewKubernetesServingRouteResolver(kube kubernetes.Interface, namespace string, refreshInterval time.Duration) (*KubernetesServingRouteResolver, error) {
@@ -103,7 +108,7 @@ func NewKubernetesServingRouteResolver(kube kubernetes.Interface, namespace stri
 	}
 	return &KubernetesServingRouteResolver{
 		kube: kube, namespace: namespace, refreshInterval: refreshInterval,
-		now: time.Now, routes: make(map[string]ServingRoute), highest: make(map[string]int64),
+		now: time.Now, routes: make(map[string]ServingRoute), highest: make(map[string]servingRouteRevision),
 	}, nil
 }
 
@@ -169,8 +174,12 @@ func (resolver *KubernetesServingRouteResolver) snapshot(ctx context.Context) (m
 			item.Annotations["fleet.actor.dev/route-manifest-sha256"] != route.ManifestSHA256 {
 			return nil, fmt.Errorf("Cell serving route %s metadata differs", item.Name)
 		}
-		if route.Revision < resolver.highest[route.CellUID] {
+		accepted := resolver.highest[route.CellUID]
+		if route.Revision < accepted.revision {
 			return nil, fmt.Errorf("Cell serving route %s revision regressed", route.CellName)
+		}
+		if route.Revision == accepted.revision && route.ManifestSHA256 != accepted.manifestSHA256 {
+			return nil, fmt.Errorf("Cell serving route %s revision content changed", route.CellName)
 		}
 		if _, duplicate := next[route.CellUID]; duplicate {
 			return nil, fmt.Errorf("duplicate Cell serving route UID %s", route.CellUID)
@@ -178,8 +187,8 @@ func (resolver *KubernetesServingRouteResolver) snapshot(ctx context.Context) (m
 		next[route.CellUID] = route
 	}
 	for uid, route := range next {
-		if route.Revision > resolver.highest[uid] {
-			resolver.highest[uid] = route.Revision
+		if route.Revision > resolver.highest[uid].revision {
+			resolver.highest[uid] = servingRouteRevision{revision: route.Revision, manifestSHA256: route.ManifestSHA256}
 		}
 	}
 	resolver.routes = next

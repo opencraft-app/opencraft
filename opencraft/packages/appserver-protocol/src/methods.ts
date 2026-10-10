@@ -1,6 +1,13 @@
 import type { AppServerProcessMethodMap } from "./process";
+import type { ThreadPinsMethodMap } from "./thread-pins";
 import type { AppServerAttachmentMethodMap } from "./attachments";
-import type { ThreadUnsubscribeParams, ThreadUnsubscribeResponse } from "./generated/v2";
+import type { HostDesktopCredential } from "./desktop";
+import type {
+  ThreadUnsubscribeParams, ThreadUnsubscribeResponse,
+  ThreadGoalGetParams, ThreadGoalGetResponse,
+  ThreadGoalSetParams, ThreadGoalSetResponse,
+  ThreadGoalClearParams, ThreadGoalClearResponse,
+} from "./generated/v2";
 import type {
   ThreadResumeHistoryRequest,
   ThreadResumeHistoryResponse,
@@ -218,7 +225,9 @@ export type FsReadFileResponse = GeneratedFsReadFileResponse;
 export type ThreadForkParams = GeneratedThreadForkParams;
 export type ThreadForkResponse = GeneratedThreadForkResponse;
 export type ThreadListParams = GeneratedThreadListParams;
-export type ThreadListResponse = GeneratedThreadListResponse;
+export type ThreadListResponse = Omit<GeneratedThreadListResponse, "data"> & {
+  data: Array<GeneratedThreadListResponse["data"][number] & { pinned?: boolean }>;
+};
 export type TurnStartParams = GeneratedTurnStartParams;
 export type TurnStartResponse = GeneratedTurnStartResponse;
 export type TurnSteerParams = GeneratedTurnSteerParams;
@@ -305,7 +314,10 @@ export interface ThreadArchiveParams {
  * packages can add protocol methods without introducing an untyped index
  * signature into the core client.
  */
-export interface AppServerMethodMap extends AppServerBotMethodMap, AppServerCodexAccountMethodMap, AppServerProcessMethodMap, AppServerAttachmentMethodMap, ProfileSkillsMethodMap {
+export interface AppServerMethodMap extends AppServerBotMethodMap, AppServerCodexAccountMethodMap, AppServerProcessMethodMap, AppServerAttachmentMethodMap, ProfileSkillsMethodMap, ThreadPinsMethodMap {
+  "thread/goal/get": { params: ThreadGoalGetParams; result: ThreadGoalGetResponse };
+  "thread/goal/set": { params: ThreadGoalSetParams; result: ThreadGoalSetResponse };
+  "thread/goal/clear": { params: ThreadGoalClearParams; result: ThreadGoalClearResponse };
   "runtime/status/read": {
     params: Record<string, never>;
     result: RuntimeStatusResponse;
@@ -415,6 +427,8 @@ export interface AppServerMethodMap extends AppServerBotMethodMap, AppServerCode
     result: { status: number; statusText: string; headers: Record<string,string>; bodyBase64: string };
   };
   "runtime/http/cancel": { params: { requestId: string }; result: { cancelled: boolean } };
+  "opencraft/desktop/attachment/create": { params: { threadId: string }; result: HostDesktopCredential };
+  "opencraft/desktop/attachment/release": { params: { attachmentId: string }; result: Record<string, never> };
   "runtime/diagnostics/read": {
     params: Record<string, never>;
     result: { presentation: Record<string, unknown>; executions: Array<Record<string, unknown>> };

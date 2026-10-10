@@ -31,7 +31,7 @@ All Depot keys live under the crate-owned `[0x02]` prefix. The next byte is the 
 | `BUCKET_FORK_PIN` | `[0x02][0x71]` | bucket fork, workflow compaction | Unresolved bucket fork retention facts. |
 | `BUCKET_CHILD` | `[0x02][0x72]` | bucket fork, workflow compaction | Bucket child edges for bounded proof walks. |
 | `BUCKET_CATALOG_BY_DB` | `[0x02][0x73]` | bucket catalog, workflow compaction | Reverse bucket membership index by database branch. |
-| `BUCKET_PROOF_EPOCH` | `[0x02][0x74]` | bucket fork/catalog mutation | Bucket-tree proof invalidation epoch. |
+| `BUCKET_PROOF_EPOCH` | `[0x02][0x74]` | bucket fork | Bucket-tree proof invalidation epoch. |
 | `SQLITE_CMP_DIRTY` | `[0x02][0x75]` | conveyer, workflow compaction | Coalesced compaction wake marker by database branch. |
 | `DB_POLICY_BINDING` | `[0x02][0x76]` | policy APIs, branch GC | Exact database-to-policy binding. |
 | `BUCKET_POLICY_PITR_SHARD` | `[0x02][0x77]` | policy APIs, workflow compaction | Sharded PITR policy membership. |
@@ -84,12 +84,16 @@ BUCKET_PTR/{bucket_id_uuid_be:16}/cur
 
 Database pointer resolution walks bucket parents when a current bucket branch does not contain a local database pointer. Pointer history supports restore/rollback bookkeeping without changing the branch-local page layout.
 
+Inherited read resolution also returns the minimum bucket fork versionstamp on that walk. The page plan limits the inherited head and sources to that cap, including historical EOF. Bucket AS-OF selection uses one reverse, limit-one VTX range; known exact database-fork commits still use exact VTX reads. An unwritten fork's existing `head_at_fork` may resolve to its retained parent COMMIT through a depth-bounded walk, with identity, cap, EOF and checksum checks. Missing required history is an error. On the first inherited write, the same commit transaction derives a child physical branch and writes a local DBPTR/catalog/policy binding before applying data. These are existing records, not a new storage format or a copied parent image.
+
 ```text
 BUCKET_CATALOG/{bucket_id_uuid_be:16}/{database_id_uuid_be:16}
   -> 16-byte FDB versionstamp via SetVersionstampedValue
 ```
 
 The value is the database membership versionstamp. Parent walks use it as the AS-OF cap for `fork_bucket`. Database tombstones on the bucket branch hide matching inherited catalog entries.
+
+Catalog insertion and tombstoning update the reverse `BUCKET_CATALOG_BY_DB` fact and clear the affected database's complete and partial proof state in the same transaction. They do not increment the tree-wide proof epoch: unrelated database memberships cannot change this database's inheritance. A new bucket fork still increments the source tree epoch and its fixed epoch shard because the child may inherit every visible database. Publication and reclamation continue to require a complete, serializably validated proof. This changes invalidation ownership, not the persisted key/value format.
 
 ## Branch Records And Pins
 
@@ -126,6 +130,8 @@ BR/{database_id_be:16}/META/head_at_fork
   -> DBHead (vbare-versioned, fork snapshot until first local commit)
 BR/{database_id_be:16}/META/commit_attempt
   -> CommitAttemptProof (vbare-versioned, latest logical attempt id + request hash + result)
+BR/{database_id_be:16}/META/truncate_txid
+  -> u64 BE simple index, commit-owned; zero certifies no local truncate, positive is latest shrink txid
 BR/{database_id_be:16}/META/quota
   -> i64 LE atomic
 BR/{database_id_be:16}/META/gc/deleting
@@ -148,6 +154,8 @@ BR/{database_id_be:16}/PITR_INTERVAL/{bucket_start_ms_be:8}
 
 `META/commit_attempt` is written in the same FDB transaction as `META/head`. A retry performs one exact read: a matching attempt id and request hash returns the recorded TXID, while a mismatched payload fails closed. Only the latest serialized attempt is retained, so deduplication adds O(1) keys per branch and never needs a token scan.
 
+`META/truncate_txid` is initialized only on the first local commit and updated atomically on each shrink. Growth never clears a positive value and ordinary writes never certify an existing unindexed history. Missing or positive values keep the original head-bound hot-compaction fingerprint; malformed values fail closed. A first shrink invalidates any previously planned prefix even if subsequent growth restores the old size. The key is a fixed-width index, not a versioned record.
+
 `COMMITS` stores commit metadata, including wall-clock time, captured versionstamp, size in pages, and post-apply checksum. `VTX` maps a versionstamp back to txid for restore point resolution and GC. `PIDX` maps a page number to the DELTA txid that currently owns it.
 
 `SHARD` is versioned by `as_of_txid`. Reads choose the largest `as_of_txid <= read_txid`. Hot compaction writes new SHARD versions and does not overwrite older ones.
@@ -158,7 +166,7 @@ BR/{database_id_be:16}/PITR_INTERVAL/{bucket_start_ms_be:8}
 BR/{database_id_be:16}/CMP/root
   -> CompactionRoot (vbare-versioned)
 BR/{database_id_be:16}/CMP/stage/{job_id}/hot_shard/{shard_id_be:4}/{as_of_txid_be:8}/{chunk_be:4}
-  -> staged LTX shard blob
+  -> HotShardStageProof (vbare-versioned, chunk index zero)
 BR/{database_id_be:16}/CMP/hot_publish/{manifest_generation_be:8}
   -> HotPublishMarker (vbare-versioned)
 BR/{database_id_be:16}/CMP/hot_generation/{as_of_txid_be:8}
@@ -179,7 +187,11 @@ BR/{database_id_be:16}/CMP/retired_cold_object_due/{delete_after_ms_be:8}/{objec
   -> empty
 ```
 
-The DB manager owns published `CMP` metadata. Staged hot shard keys are not reader-visible until the manager validates the active job and copies them to `SHARD`; the same install transaction advances `CMP/root` and compare-and-clears matching PIDX rows.
+The DB manager owns published `CMP` metadata. The hot companion prepublishes SHARD bodies and records compact stage proofs. Neither the body alone nor the stage proof makes a generation authoritative to readers. Manager installation validates the active job and full bodies, atomically publishes reader-visible coverage, advances `CMP/root`, and compare-and-clears matching PIDX rows.
+
+Hot job identity binds the committed txid prefix selected within the existing FDB batch budget. Stage and install reread only that prefix's immutable `COMMITS` and `DELTA` rows, together with current history/PITR coverage. For a history certified by `META/truncate_txid = 0`, later commits may advance `META/head` and replace PIDX owners without changing the prefix identity. Truncated or unindexed histories retain the head fence because shrink mutates SHARD caches. Installation still serializably reads the candidate PIDX keys and clears only owners inside the prefix, atomically updating their count and quota. Lifecycle and manifest-generation fences remain independent requirements. The fingerprint domain is `hot-committed-prefix-v2`; unfinished jobs with the previous fingerprint replan without changing versioned record schemas.
+
+Installation validates input identity before staged-body integrity checks and again in the atomic publication transaction. If truncate removes a staged SHARD during preflight, a fresh exact input check must independently prove the plan stale before returning a retry; unchanged input plus missing or corrupt bytes remains a terminal integrity rejection. DELTA folding applies every intervening commit's EOF before later growth, and each historical coverage output uses its own commit size rather than the latest size.
 
 Cold job descriptors, signals, and activity inputs do not embed the generation's shard-ref vector. They carry a fixed-size count and digest, and the upload activity reconstructs the bounded exact list from `CMP/hot_generation` plus its coverage rows in a short FDB transaction. This keeps workflow control-plane storage O(1) in shard count while preserving exact input identity.
 

@@ -50,7 +50,14 @@ vi.mock("@/contexts/runtime-config-context", async () => ({
 import type { CronJob } from "@/lib/hermes-cron-client";
 import { HermesAgentAutomationsPanel } from "../agent-automations-panel";
 
+class ResizeObserverMock {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+
 beforeEach(() => {
+  vi.stubGlobal("ResizeObserver", ResizeObserverMock);
   vi.clearAllMocks();
   cronClientMocks.detectCronContextFromCapability.mockResolvedValue("supported");
   cronClientMocks.execCommand.mockResolvedValue({
@@ -81,7 +88,7 @@ describe("HermesAgentAutomationsPanel global upstream context", () => {
     cronClientMocks.execCommand.mockResolvedValue({
       status: "SUCCESS",
       exit_code: 0,
-      output: JSON.stringify({ success: true, data: { platforms: ["telegram"] } }),
+      output: JSON.stringify({ success: true, data: { channels: [{ name: "openclaw-telegram", status: "connected" }] } }),
     });
     render(createElement(HermesAgentAutomationsPanel, { botId: "bot-1" }));
 
@@ -111,6 +118,7 @@ describe("HermesAgentAutomationsPanel global upstream context", () => {
     fireEvent.change(screen.getByPlaceholderText(/Time for some water/), {
       target: { value: "Time to drink water" },
     });
+    await waitFor(() => expect(within(screen.getByRole("dialog")).getByRole("button", { name: "Create" })).toBeEnabled());
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Create" }));
 
     await waitFor(() => {

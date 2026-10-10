@@ -8,6 +8,7 @@ import {
   invertComposerFollowUpAction,
   legacyContentBlocksToComposer,
   resolveComposerPrimaryAction,
+  resolveComposerFollowUpAction,
   retargetSubmitIntentForFollowUp,
   type ComposerDocument,
   type ComposerTarget,
@@ -58,6 +59,70 @@ const richDocument: ComposerDocument = {
   ],
 };
 
+test("content inspection includes hidden target drafts and uses active content over its stale cache", () => {
+  const controller = createComposerController(existing("a"), services());
+  assert.equal(controller.hasRetainedContent(), false);
+  controller.dispatch({ type: "set-document", document: richDocument });
+  controller.dispatch({ type: "switch-target", target: existing("b") });
+  assert.equal(controller.getSnapshot().hasContent, false);
+  assert.equal(controller.hasRetainedContent(), true);
+  assert.equal(controller.hasTargetContent(existing("a")), true);
+  assert.equal(controller.hasTargetContent(existing("b")), false);
+  assert.equal(controller.hasTargetContent(existing("unknown")), false);
+  controller.dispatch({ type: "switch-target", target: existing("a") });
+  controller.dispatch({ type: "replace-content", document: { version: 1, blocks: [] }, attachments: [], context: [] });
+  assert.equal(controller.hasTargetContent(existing("a")), false);
+  assert.equal(controller.hasRetainedContent(), false);
+  controller.dispatch({ type: "set-document", document: richDocument });
+  controller.dispatch({ type: "switch-target", target: existing("b") });
+  controller.dispatch({ type: "reset-all" });
+  assert.equal(controller.hasTargetContent(existing("a")), false);
+  assert.equal(controller.hasRetainedContent(), false);
+  controller.dispatch({ type: "set-document", document: richDocument });
+  controller.dispose();
+  assert.equal(controller.hasRetainedContent(), false);
+  assert.equal(controller.hasTargetContent(existing("b")), false);
+});
+
+test("retained-content inspection includes cached attachments and context but excludes selections", () => {
+  const controller = createComposerController(existing("attachment"), services());
+  controller.dispatch({ type: "add-attachment", attachment: {
+    id: "file", name: "file.txt", mimeType: "text/plain", size: 1,
+    uri: null, lifecycle: "processing", error: null,
+  } });
+  controller.dispatch({ type: "switch-target", target: existing("context") });
+  controller.dispatch({ type: "add-context", reference: {
+    id: "context", kind: "file", title: "file", uri: "file", visible: true,
+  } });
+  controller.dispatch({ type: "switch-target", target: existing("empty") });
+  controller.dispatch({ type: "set-selections", patch: { model: "selected" } });
+  assert.equal(controller.hasRetainedContent(), true);
+  assert.equal(controller.hasTargetContent(existing("attachment")), true);
+  assert.equal(controller.hasTargetContent(existing("context")), true);
+  assert.equal(controller.hasTargetContent(existing("empty")), false);
+  controller.dispatch({ type: "switch-target", target: existing("attachment") });
+  controller.dispatch({ type: "clear" });
+  assert.equal(controller.hasRetainedContent(), true);
+  controller.dispatch({ type: "switch-target", target: existing("context") });
+  controller.dispatch({ type: "clear" });
+  assert.equal(controller.hasRetainedContent(), false);
+  controller.dispose();
+});
+
+test("cached submission settlement immediately updates retained-content inspection", () => {
+  const controller = createComposerController(existing("sending"), services());
+  controller.dispatch({ type: "set-document", document: richDocument });
+  const draftId = controller.getSnapshot().draft.id;
+  const intent = controller.createSubmitIntent();
+  controller.dispatch({ type: "set-lifecycle", phase: "submitting" });
+  controller.dispatch({ type: "switch-target", target: existing("empty") });
+  assert.equal(controller.hasRetainedContent(), true);
+  assert.equal(controller.settleSubmission(draftId, intent, { status: "accepted" }), true);
+  assert.equal(controller.hasRetainedContent(), false);
+  assert.equal(controller.hasTargetContent(existing("sending")), false);
+  controller.dispose();
+});
+
 test("late attachment results update only their owning cached Draft and clear releases it", () => {
   const controller = createComposerController(existing("image-a"), services());
   const draftId = controller.getSnapshot().draft.id;
@@ -80,6 +145,56 @@ test("late attachment results update only their owning cached Draft and clear re
   controller.dispose();
   controller.dispose();
   assert.equal(disposed, 1);
+});
+
+test("a late submission settles its originating Draft without clearing the conversation now on screen", () => {
+  const controller = createComposerController(existing("send-a"), services());
+  controller.dispatch({ type: "set-document", document: richDocument });
+  controller.dispatch({ type: "set-selections", patch: { model: "selected-model" } });
+  const originId = controller.getSnapshot().draft.id;
+  const intent = controller.createSubmitIntent();
+  controller.dispatch({ type: "set-lifecycle", phase: "submitting" });
+  controller.dispatch({ type: "switch-target", target: existing("send-b") });
+  controller.dispatch({ type: "set-document", document: { version: 1, blocks: [
+    { type: "paragraph", children: [{ type: "text", text: "Keep B" }] },
+  ] } });
+  const visibleId = controller.getSnapshot().draft.id;
+
+  assert.equal(controller.settleSubmission(originId, intent, { status: "accepted" }), true);
+  assert.equal(controller.getSnapshot().draft.id, visibleId);
+  assert.equal(composerDocumentToPlainText(controller.getSnapshot().draft.document), "Keep B");
+  controller.dispatch({ type: "switch-target", target: existing("send-a") });
+  assert.notEqual(controller.getSnapshot().draft.id, originId);
+  assert.equal(composerDocumentToPlainText(controller.getSnapshot().draft.document), "");
+  assert.equal(controller.getSnapshot().draft.selections.model, "selected-model");
+  assert.equal(controller.settleSubmission(originId, intent, { status: "accepted" }), false);
+});
+
+test("a rejected or edited in-flight Draft remains editable on its own target", () => {
+  const controller = createComposerController(existing("retry-a"), services());
+  controller.dispatch({ type: "set-document", document: richDocument });
+  const originId = controller.getSnapshot().draft.id;
+  const intent = controller.createSubmitIntent();
+  controller.dispatch({ type: "set-lifecycle", phase: "submitting" });
+  controller.dispatch({ type: "switch-target", target: existing("retry-b") });
+  assert.equal(controller.settleSubmission(originId, intent, { status: "rejected" }), true);
+  controller.dispatch({ type: "switch-target", target: existing("retry-a") });
+  assert.equal(controller.getSnapshot().draft.id, originId);
+  assert.equal(controller.getSnapshot().draft.lifecycle.phase, "editing");
+  assert.equal(controller.getSnapshot().draft.document, richDocument);
+
+  controller.dispatch({ type: "set-lifecycle", phase: "submitting" });
+  assert.equal(controller.settleSubmission(originId, intent, { status: "failed", error: "Try again" }), true);
+  assert.deepEqual(controller.getSnapshot().draft.lifecycle, { phase: "failed", error: "Try again" });
+
+  controller.dispatch({ type: "set-lifecycle", phase: "submitting" });
+  controller.dispatch({ type: "set-document", document: { version: 1, blocks: [
+    { type: "paragraph", children: [{ type: "text", text: "New unsent text" }] },
+  ] } });
+  assert.equal(controller.settleSubmission(originId, intent, { status: "accepted" }), true);
+  assert.equal(controller.getSnapshot().draft.id, originId);
+  assert.equal(controller.getSnapshot().draft.lifecycle.phase, "editing");
+  assert.equal(composerDocumentToPlainText(controller.getSnapshot().draft.document), "New unsent text");
 });
 
 test("dictation presentation is owned by its transient input and never by a replaced draft", () => {
@@ -458,6 +573,16 @@ test("the primary Composer action changes from Stop to Queue or Steer when a fol
     }),
     "send",
   );
+});
+
+test("follow-up preferences cannot enable a denied queue operation", () => {
+  assert.equal(resolveComposerFollowUpAction("queue", ["steer"]), "steer");
+  assert.equal(resolveComposerFollowUpAction("steer", ["queue"]), "queue");
+  assert.equal(resolveComposerFollowUpAction("queue", []), null);
+  assert.equal(resolveComposerPrimaryAction({ isResponseInProgress: true, canSubmit: true,
+    defaultFollowUpAction: "queue", availableFollowUpActions: ["steer"] }), "steer");
+  assert.equal(resolveComposerPrimaryAction({ isResponseInProgress: true, canSubmit: true,
+    defaultFollowUpAction: "steer", availableFollowUpActions: [] }), "stop");
 });
 
 test("the inverse follow-up shortcut changes one immutable intent without changing its draft target", () => {

@@ -10,6 +10,7 @@ import type { PanelRendererRegistration } from "@opencraft/workbench-panels-reac
 import {
   FileCode2,
   Globe2,
+  Monitor,
   GitBranch,
   Maximize2,
   Minimize2,
@@ -55,6 +56,8 @@ import {
 } from "./right-panel-tab-drag";
 
 interface RightPanelProps {
+  /** Host supplies container geometry; this view retains the full toolbar and renderer residency. */
+  readonly hostPresentationActive?: boolean;
   readonly emptyHint?: string;
   readonly state: ConversationPanelState;
   readonly presentationId: string;
@@ -70,6 +73,7 @@ function ToolbarActionIcon({ icon }: { readonly icon: string }) {
   if (icon === "chat") return <MessageSquare size={14} />;
   if (icon === "terminal") return <TerminalSquare size={14} />;
   if (icon === "browser") return <Globe2 size={14} />;
+  if (icon === "desktop") return <Monitor size={14} />;
   return <Plus size={14} />;
 }
 
@@ -82,6 +86,7 @@ function PanelToolbarAction({
   context: PanelToolbarActionContext;
   launcher?: boolean;
 }) {
+  const intl = useIntl();
   const [error, setError] = useState<string | null>(null);
   const run = (
     operation: (context: PanelToolbarActionContext) => void | Promise<void>,
@@ -89,8 +94,9 @@ function PanelToolbarAction({
     setError(null);
     void Promise.resolve()
       .then(() => operation(context))
-      .catch((cause) => {
-        setError(cause instanceof Error ? cause.message : String(cause));
+      .catch(() => {
+        setError(intl.formatMessage({ id: "panel.actionFailed", defaultMessage: "Could not open the preview. Try again." }));
+        window.dispatchEvent(new CustomEvent("opencraft-panel-action-failed"));
       });
   };
   const trigger = (
@@ -159,8 +165,10 @@ function PanelCreationMenu({
               setError(null);
               void Promise.resolve()
                 .then(() => { if (mounted.current) return operation(); })
-                .catch(cause => {
-                  if (mounted.current) setError(cause instanceof Error ? cause.message : String(cause));
+                .catch(() => {
+                  if (!mounted.current) return;
+                  setError(intl.formatMessage({ id: "panel.actionFailed", defaultMessage: "Could not open the preview. Try again." }));
+                  window.dispatchEvent(new CustomEvent("opencraft-panel-action-failed"));
                 });
             }}>
             {tabs ? <DropdownMenu.Label className="app-shell-toolbar-menu__title">{intl.formatMessage({ id: "panel.newTab", defaultMessage: "New tab" })}</DropdownMenu.Label> : null}
@@ -201,6 +209,7 @@ function PanelIcon({ tab }: { readonly tab: PanelTabDescriptor }) {
   if (tab.icon === "changes") return <GitBranch size={13} />;
   if (tab.icon === "terminal") return <TerminalSquare size={13} />;
   if (tab.icon === "browser") return <Globe2 size={13} />;
+  if (tab.icon === "desktop") return <Monitor size={13} />;
   return <FileCode2 size={13} />;
 }
 
@@ -333,6 +342,7 @@ function DraggedPanelTabOverlay({
 }
 
 export function RightPanel({
+  hostPresentationActive,
   emptyHint,
   state,
   presentationId,
@@ -347,10 +357,13 @@ export function RightPanel({
   const region = "right" as const;
   const regionState = state[region];
   const presentation = useShellPresentation();
-  const fullWidth = presentation?.rightPanelFullWidth ?? state.rightPanelFullWidth;
+  const fullWidth = hostPresentationActive === undefined
+    ? presentation?.rightPanelFullWidth ?? state.rightPanelFullWidth
+    : state.rightPanelFullWidth;
   const autoFullWidth = fullWidth && !state.rightPanelFullWidth;
-  const { headerRightWidth, rightPanelTabBarLeftInset, rightPanelPresentationActive } =
+  const { headerRightWidth, rightPanelTabBarLeftInset, rightPanelPresentationActive: shellPanelActive } =
     useAppShellLayoutMotion();
+  const rightPanelPresentationActive = hostPresentationActive ?? shellPanelActive;
   const headerRightWidthPx = useTransform(
     headerRightWidth,
     (width) => `${Math.max(0, width)}px`,
@@ -396,6 +409,12 @@ export function RightPanel({
       ? null
       : (renderers.find((renderer) => renderer.kind === activeTab.kind)
           ?.Component ?? null);
+  const activeRegistration = renderers.find(renderer => renderer.kind === activeTab?.kind);
+  const interactive = hostPresentationActive ?? presentation?.rightPanelOpen ?? regionState.open;
+  const residentTabs = regionState.tabs.flatMap(tab => {
+    const registration = renderers.find(renderer => renderer.kind === tab.kind);
+    return registration?.residency === "while-tab-open" ? [{ tab, Component: registration.Component }] : [];
+  });
   const closeTab = (tab: PanelTabDescriptor) => {
     onCloseTab(tab);
   };
@@ -504,7 +523,7 @@ export function RightPanel({
           <motion.div
             aria-hidden="true"
             className="right-panel-header-start-spacer"
-            style={{ width: tabBarLeftInsetPx }}
+            style={{ width: hostPresentationActive === undefined ? tabBarLeftInsetPx : 0 }}
           />
           <div
             ref={stripRef}
@@ -599,7 +618,7 @@ export function RightPanel({
               aria-hidden="true"
               className="right-panel-header-action-spacer"
               data-testid="right-panel-tab-bar-header-spacer"
-              style={{ width: headerRightWidthPx }}
+              style={{ width: hostPresentationActive === undefined ? headerRightWidthPx : 0 }}
             />
           </div>
         </header>
@@ -636,14 +655,21 @@ export function RightPanel({
               <strong>{intl.formatMessage({ id: "panel.unavailable", defaultMessage: "{title} is unavailable" }, { title: activeTab.title })}</strong>
               <p>{intl.formatMessage({ id: "panel.unavailableHint", defaultMessage: "This content cannot be previewed here." })}</p>
             </div>
-          ) : (
+          ) : activeRegistration?.residency === "while-tab-open" || !rightPanelPresentationActive ? null : (
             <ActivePanel
               key={activeTab.id}
               tab={activeTab}
               ownerId={state.ownerId}
               presentationId={presentationId}
+              active={interactive}
             />
           )}
+          {residentTabs.map(({ tab, Component }) => <div key={`${state.ownerId}:${tab.id}`}
+            className="right-panel-resident" hidden={tab.id !== activeTab?.id}
+            inert={!interactive || tab.id !== activeTab?.id || undefined}>
+            <Component tab={tab} ownerId={state.ownerId} presentationId={presentationId}
+              active={interactive && tab.id === activeTab?.id} />
+          </div>)}
         </div>
       </div>
       {typeof document === "undefined"

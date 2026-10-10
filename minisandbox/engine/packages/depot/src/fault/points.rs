@@ -47,12 +47,14 @@ pub enum ReadFaultPoint {
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum HotCompactionFaultPoint {
+	StageBeforeAdmission,
 	StageBeforeInputRead,
 	StageAfterInputRead,
 	StageAfterShardBatchFdbCommit,
 	StageAfterShardWrite,
 	AfterStageBeforeFinishSignal,
 	InstallBeforeShardIntegrityPreflight,
+	InstallAfterInputCheckBeforeShardIntegrity,
 	InstallBeforeStagedRead,
 	InstallAfterStagedRead,
 	InstallBeforeShardPublish,
@@ -137,11 +139,13 @@ impl HotCompactionFaultPoint {
 		match self {
 			HotCompactionFaultPoint::StageAfterShardBatchFdbCommit
 			| HotCompactionFaultPoint::InstallAfterFdbCommit => FaultBoundary::AmbiguousAfterDurableCommit,
-			HotCompactionFaultPoint::StageBeforeInputRead
+			HotCompactionFaultPoint::StageBeforeAdmission
+			| HotCompactionFaultPoint::StageBeforeInputRead
 			| HotCompactionFaultPoint::StageAfterInputRead
 			| HotCompactionFaultPoint::StageAfterShardWrite
 			| HotCompactionFaultPoint::AfterStageBeforeFinishSignal
 			| HotCompactionFaultPoint::InstallBeforeShardIntegrityPreflight
+			| HotCompactionFaultPoint::InstallAfterInputCheckBeforeShardIntegrity
 			| HotCompactionFaultPoint::InstallBeforeStagedRead
 			| HotCompactionFaultPoint::InstallAfterStagedRead
 			| HotCompactionFaultPoint::InstallBeforeShardPublish

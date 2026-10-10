@@ -1,10 +1,11 @@
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { mountDoorPeek } from './international-home-door-peek';
+import { mountMascotLife } from './international-home-mascot-life';
 
-type StageOptions = { desktop: boolean; hover: boolean };
+type StageOptions = { desktop: boolean; hover: boolean; preserveHeroCss?: boolean; mascotLifeMounted?: boolean };
 
-export function mountStageMotion(root: HTMLElement, { desktop, hover }: StageOptions): () => void {
+export function mountStageMotion(root: HTMLElement, { desktop, hover, preserveHeroCss = false, mascotLifeMounted = false }: StageOptions): () => void {
   gsap.registerPlugin(ScrollTrigger);
   const decorations: HTMLElement[] = [];
   const animations: gsap.core.Animation[] = [];
@@ -23,7 +24,7 @@ export function mountStageMotion(root: HTMLElement, { desktop, hover }: StageOpt
   };
 
   const hero = query('.hero');
-  if (hero) {
+  if (hero && !preserveHeroCss) {
     const whitespace = new Map<Text, string>();
     const normalizeWords = () => {
       if (disposed) return;
@@ -46,7 +47,7 @@ export function mountStageMotion(root: HTMLElement, { desktop, hover }: StageOpt
     });
     const intro = remember(gsap.timeline({
       defaults: { ease: 'power3.out' },
-      scrollTrigger: { trigger: hero, start: 'top 85%', toggleActions: 'play none none none' },
+      scrollTrigger: { trigger: hero, start: 'top 85%', toggleActions: 'restart none restart none' },
     }));
     const pieces = [
       ['.hero__eyebrow', 0.05, 16],
@@ -63,11 +64,6 @@ export function mountStageMotion(root: HTMLElement, { desktop, hover }: StageOpt
         immediateRender: false, clearProps: 'transform,opacity',
       }, at);
     }
-    const mascot = query('.home-cover-mascot');
-    if (mascot) intro.fromTo(mascot, { x: 32, y: -22, rotation: -9, opacity: 0 }, {
-      x: 0, y: 0, rotation: 0, opacity: 1, duration: 0.85, ease: 'back.out(1.35)',
-      immediateRender: false, clearProps: 'transform,opacity',
-    }, 0.5);
   }
 
   for (const selector of ['.about__head .k', '.scenes__title', '.deploy__lead']) {
@@ -75,16 +71,16 @@ export function mountStageMotion(root: HTMLElement, { desktop, hover }: StageOpt
     if (!heading) continue;
     remember(gsap.fromTo(heading, { y: desktop ? 32 : 18, opacity: 0.15 }, {
       y: 0, opacity: 1, duration: 0.7, ease: 'power3.out', immediateRender: false,
-      clearProps: 'transform,opacity', scrollTrigger: { trigger: heading, start: 'top 90%', toggleActions: 'play none none none' },
+      clearProps: 'transform,opacity', scrollTrigger: { trigger: heading, start: 'top 90%', toggleActions: 'restart none restart none' },
     }));
   }
 
   const duo = query('.scenes__mascot img');
   const scenes = query('.scenes');
   if (duo && scenes) {
-    remember(gsap.fromTo(duo, { x: desktop ? 45 : 12, y: 22, rotation: -7, opacity: 0.2 }, {
+    remember(gsap.fromTo(duo, { x: desktop ? 18 : 8, y: 12, rotation: 0, opacity: 0.2 }, {
       x: 0, y: 0, rotation: 0, opacity: 1, duration: 0.9, ease: 'back.out(1.15)', immediateRender: false,
-      clearProps: 'transform,opacity', scrollTrigger: { trigger: duo, start: 'top 90%', toggleActions: 'play none none none' },
+      clearProps: 'transform,opacity', scrollTrigger: { trigger: duo, start: 'top 90%', toggleActions: 'restart none restart none' },
     }));
   }
 
@@ -94,7 +90,7 @@ export function mountStageMotion(root: HTMLElement, { desktop, hover }: StageOpt
   if (step && stepTrigger && deploy) {
     const journey = remember(gsap.timeline({ scrollTrigger: desktop ? {
       trigger: stepTrigger, start: 'top 90%', end: 'top 42%', scrub: 0.45,
-    } : { trigger: step, start: 'top 88%', toggleActions: 'play none none none' } }));
+    } : { trigger: step, start: 'top 88%', toggleActions: 'restart none restart none' } }));
     journey.fromTo(step, { x: desktop ? -78 : -18, y: 0 }, {
       x: desktop ? -32 : -7, y: desktop ? -30 : -12, duration: 0.48, ease: 'power1.out', immediateRender: false,
     }).to(step, { x: 0, y: 0, duration: 0.52, ease: 'power2.inOut' });
@@ -103,7 +99,7 @@ export function mountStageMotion(root: HTMLElement, { desktop, hover }: StageOpt
     if (badges.length && track) {
       remember(gsap.fromTo(badges, { y: 12, scale: 0.88, opacity: 0.45 }, {
         y: 0, scale: 1, opacity: 1, stagger: 0.14, duration: 0.45, ease: 'back.out(1.2)', immediateRender: false,
-        clearProps: 'transform,opacity', scrollTrigger: { trigger: track, start: 'top 85%', toggleActions: 'play none none none' },
+        clearProps: 'transform,opacity', scrollTrigger: { trigger: track, start: 'top 85%', toggleActions: 'restart none restart none' },
       }));
     }
   }
@@ -113,13 +109,15 @@ export function mountStageMotion(root: HTMLElement, { desktop, hover }: StageOpt
   const ctaMascot = query('.home-cta-mascot img');
   if (cta && ctaTrigger && ctaMascot) {
     const glow = decorate(cta, 'home-cta-light');
-    const reveal = remember(gsap.timeline({ scrollTrigger: { trigger: ctaTrigger, start: 'top 90%', toggleActions: 'play none none none' } }));
+    const reveal = remember(gsap.timeline({ scrollTrigger: { trigger: ctaTrigger, start: 'top 90%', toggleActions: 'restart none restart none' } }));
     reveal.fromTo(ctaMascot, { y: 38, rotation: 6, opacity: 0 }, {
       y: -7, rotation: -4, opacity: 1, duration: 0.5, ease: 'power3.out', immediateRender: false,
     }).to(ctaMascot, { y: 0, rotation: 0, duration: 0.4, ease: 'back.out(1.5)', clearProps: 'transform,opacity' })
       .fromTo(glow, { opacity: 0, scale: 0.7 }, { opacity: 0.55, scale: 1.05, duration: 0.7, immediateRender: false }, 0.15)
       .to(glow, { opacity: 0, duration: 0.65 }, 0.9);
   }
+
+  if (!mascotLifeMounted) cleanups.push(mountMascotLife(root, { desktop, hover }));
 
   const portal = query('.home-footer-boundary');
   if (portal) cleanups.push(mountDoorPeek(portal));

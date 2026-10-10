@@ -107,6 +107,14 @@ cd /path/to/rivet/infra/cells/deploy/tencent/fleet/operations
 校验源 audit 的精确字节；本地路径被替换、丢失或 hash 不匹配时一律视为 invalid。
 因此 control 不是一个脱离证据链的可复制布尔开关。
 
+Audit 输出使用严格 JSON。非有限诊断值采用字符串 `"+Inf"`、`"-Inf"`、`"NaN"`，
+不输出非标准数字 token `Infinity`/`NaN`，也不把未知值填成零。阈值判定仍使用编码前的
+内部数值；Prometheus scalar 的 NaN 不计为有效样本，全为空时保留 `value=null` 并触发
+既有缺指标门禁。平稳增长下的无限 ETA 不表示缺指标。有限值收据保持原编码字节。
+control 的 SHA 始终绑定实际写出的 audit 字节；既有原始证据不可重新编码或改 hash。
+本地回归入口为 `python3 -m unittest discover -s . -p 'test_audit_json.py'`，覆盖真实
+HTTP collector、真实 evaluator CLI 与已归档原生收据，不要求重建 runtime 镜像。
+
 严格 audit 生成 `allow` 后，由唯一入口发布当前 release 的资格并开放 Cell：
 
 ```sh

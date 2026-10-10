@@ -4,6 +4,7 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Pass } from "@/domain/types";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 const headerAuthMock = vi.hoisted(() => vi.fn(() => null));
@@ -12,6 +13,11 @@ const motionMocks = vi.hoisted(() => {
   return { dispose, mount: vi.fn(() => dispose) };
 });
 vi.mock('@next-site/international-home-motion', () => ({ mountInternationalHomeMotion: motionMocks.mount }));
+const domesticMotionMocks = vi.hoisted(() => {
+  const dispose = vi.fn();
+  return { dispose, mount: vi.fn(() => dispose) };
+});
+vi.mock('@next-site/domestic-home-mascot-motion', () => ({ mountDomesticHomeMascotMotion: domesticMotionMocks.mount }));
 const regionMock = vi.hoisted(() => ({ isGlobal: false }));
 const sessionMock = vi.hoisted(() => ({ authReady: true, isAuthenticated: false }));
 vi.mock("@next-site/public-header-auth-island", () => ({ PublicHeaderAuthIsland: headerAuthMock }));
@@ -40,6 +46,7 @@ vi.mock("@/contexts/session-context", () => ({
 const openClawMock = vi.hoisted(() => ({
   bots: [] as Array<{ id: string }>,
   isSubscribed: false,
+  latestPass: null as Pass | null,
   hasResolvedPasses: true,
   passesLoading: false,
   passesError: false,
@@ -59,6 +66,7 @@ vi.mock("@/lib/region", () => ({
 
 import { InternationalHomePage } from "@next-site/international-home-page";
 import {
+  INTERNATIONAL_HOME_ASSET_VERSION,
   INTERNATIONAL_HOME_SCRIPT_SOURCES,
   InternationalHomeRuntime,
 } from "@next-site/international-home-runtime";
@@ -72,10 +80,16 @@ beforeEach(() => {
   regionMock.isGlobal = false;
   motionMocks.mount.mockClear();
   motionMocks.dispose.mockClear();
+  domesticMotionMocks.mount.mockClear();
+  domesticMotionMocks.dispose.mockClear();
   sessionMock.authReady = true;
   sessionMock.isAuthenticated = false;
   openClawMock.bots = [];
   openClawMock.isSubscribed = false;
+  openClawMock.latestPass = null;
+  openClawMock.hasResolvedPasses = true;
+  openClawMock.passesLoading = false;
+  openClawMock.passesError = false;
 });
 
 afterEach(() => {
@@ -120,7 +134,8 @@ describe("international v2 homepage rendering", () => {
     (globalThis as { React?: typeof React }).React = React;
     const markup = renderToStaticMarkup(<InternationalHomePage locale="en-US" />);
 
-    expect(markup).toContain('href="/lightvela-intl-home/style.css?v=20260930-feature-loops-v109"');
+    expect(markup).toContain(`href="/lightvela-intl-home/style.css?v=${INTERNATIONAL_HOME_ASSET_VERSION}"`);
+    expect(markup).toContain(`href="/lightvela-intl-home/assets/hermes-home.css?v=${INTERNATIONAL_HOME_ASSET_VERSION}"`);
     expect(markup).not.toContain('rel="preload" as="image"');
     expect(markup).toContain('id="lightvela-intl-home"');
     expect(markup).toContain("Your AI companion—always on, always evolving with you.");
@@ -160,6 +175,14 @@ describe("international v2 homepage rendering", () => {
       "/lightvela-intl-home/scene-wheel.js",
       "/lightvela-intl-home/assets/feature-motion.js",
     ]);
+  });
+
+  it.each([false, true])("does not mount a pointer-following mascot on the homepage (global=%s)", (global) => {
+    regionMock.isGlobal = global;
+    render(<InternationalHomeRuntime locale={global ? 'en-US' : 'zh-CN'} markup='<main id="lightvela-intl-home" />' />);
+
+    expect(document.querySelector('#lightvela-home-pointer-mascot')).toBeNull();
+    expect(document.querySelectorAll('img[src*="hermes-pointer-lilac"]')).toHaveLength(0);
   });
 
   it("starts all homepage motion script requests without waiting for earlier scripts", () => {
@@ -229,6 +252,7 @@ describe("international v2 homepage rendering", () => {
     const markup = '<main id="lightvela-intl-home"><h1>Home</h1></main>';
     const { rerender, unmount } = render(<InternationalHomeRuntime locale="en-US" markup={markup} />);
     await waitFor(() => expect(motionMocks.mount).toHaveBeenCalledTimes(1));
+    expect(domesticMotionMocks.mount).not.toHaveBeenCalled();
     rerender(<InternationalHomeRuntime locale="en-US" markup={markup} />);
     expect(motionMocks.mount).toHaveBeenCalledTimes(1);
     expect(motionMocks.dispose).not.toHaveBeenCalled();
@@ -237,6 +261,23 @@ describe("international v2 homepage rendering", () => {
     expect(motionMocks.dispose).toHaveBeenCalledTimes(1);
     unmount();
     expect(motionMocks.dispose).toHaveBeenCalledTimes(2);
+  });
+
+  it('mounts only the mascot enhancement on CN and cleans it up on markup changes', async () => {
+    regionMock.isGlobal = false;
+    const markup = '<main id="lightvela-intl-home"><section class="voice">CN reviews</section></main>';
+    const { rerender, unmount } = render(<InternationalHomeRuntime locale="zh-CN" markup={markup} />);
+    await waitFor(() => expect(domesticMotionMocks.mount).toHaveBeenCalledTimes(1));
+    expect(domesticMotionMocks.mount).toHaveBeenCalledWith(document.getElementById('lightvela-intl-home'));
+    expect(motionMocks.mount).not.toHaveBeenCalled();
+    rerender(<InternationalHomeRuntime locale="zh-CN" markup={markup} />);
+    expect(domesticMotionMocks.mount).toHaveBeenCalledTimes(1);
+    expect(domesticMotionMocks.dispose).not.toHaveBeenCalled();
+    rerender(<InternationalHomeRuntime locale="zh-CN" markup={markup.replace('CN reviews', 'Updated reviews')} />);
+    await waitFor(() => expect(domesticMotionMocks.mount).toHaveBeenCalledTimes(2));
+    expect(domesticMotionMocks.dispose).toHaveBeenCalledTimes(1);
+    unmount();
+    expect(domesticMotionMocks.dispose).toHaveBeenCalledTimes(2);
   });
 
   it('cancels deferred motion loading when the page unmounts before the next frame', async () => {
@@ -344,6 +385,29 @@ describe("international v2 homepage rendering", () => {
     expect(document.querySelector("[data-domestic-home-hero-cta]")).toHaveAttribute("href", "/subscribe");
   });
 
+  it.each([
+    { locale: 'en-US', isolated: false, label: 'My AI Companion' },
+    { locale: 'zh-CN', isolated: true, label: '我的智能体伙伴' },
+  ] as const)('returns a signed-in account with a lapsed pass to Agents ($locale)', async ({ locale, isolated, label }) => {
+    regionMock.isGlobal = locale === 'en-US';
+    sessionMock.isAuthenticated = true;
+    openClawMock.isSubscribed = false;
+    openClawMock.latestPass = {
+      pass_id: 'previous', user_id: 'user-1', bundle_id: 'launch', bundle_name: 'Launch',
+      created_time: '2020-01-01', expired_time: '2020-02-01',
+      isolated_time: isolated ? '2020-02-02' : null,
+      credit_total: 0, credit_available: 0,
+    };
+    const markup = '<main id="lightvela-intl-home"><div class="hero__cta"><a href="/subscribe">Free trial</a></div><div class="cta__acts"><a href="/subscribe">Free trial</a></div><div class="foot__cta"><a href="/subscribe">Free trial</a></div></main>';
+
+    render(<InternationalHomeRuntime locale={locale} markup={markup} />);
+
+    for (const selector of ['.hero__cta a', '.cta__acts a', '.foot__cta a']) {
+      await waitFor(() => expect(document.querySelector(selector)).toHaveTextContent(label));
+      expect(document.querySelector(selector)).toHaveAttribute('href', '/agents');
+    }
+  });
+
   it("sends subscribed visitors from the hero CTA straight to the console", async () => {
     (globalThis as { React?: typeof React }).React = React;
     regionMock.isGlobal = false;
@@ -445,6 +509,40 @@ describe("international v2 homepage rendering", () => {
       expect(document.querySelector(".foot__cta a")).toHaveTextContent(state.label);
       expect(document.querySelector(".foot__cta a")).toHaveAttribute("href", state.href);
     });
+  });
+
+  it("hides static My Agents hero and footer entries until entitlement-based CTA copy is ready", async () => {
+    sessionMock.authReady = false;
+    const markup = '<main id="lightvela-intl-home"><div class="hero__cta"><a href="/agents">我的智能体伙伴</a></div><div class="foot__cta"><a href="/agents">我的智能体伙伴</a></div></main>';
+    const { rerender } = render(<InternationalHomeRuntime locale="zh-CN" markup={markup} />);
+    const markupHost = document.querySelector("#lightvela-intl-home")?.parentElement?.parentElement;
+    expect(markupHost).toHaveClass("[&_.hero__cta]:invisible", "[&_.foot__cta]:invisible");
+
+    sessionMock.authReady = true;
+    rerender(<InternationalHomeRuntime locale="zh-CN" markup={markup} />);
+    await waitFor(() => {
+      expect(document.querySelector(".foot__cta a")).toHaveTextContent("免费试用");
+      expect(document.querySelector(".foot__cta a")).toHaveAttribute("href", "/subscribe");
+      expect(document.querySelector(".hero__cta a")).toHaveTextContent("免费试用");
+      expect(document.querySelector(".hero__cta a")).toHaveAttribute("href", "/subscribe");
+      expect(markupHost).not.toHaveClass("[&_.hero__cta]:invisible", "[&_.foot__cta]:invisible");
+    });
+  });
+
+  it("keeps the international hero and footer hidden until subscription status is confirmed", async () => {
+    sessionMock.authReady = true;
+    sessionMock.isAuthenticated = true;
+    openClawMock.hasResolvedPasses = false;
+    const markup = '<main id="lightvela-intl-home"><div class="hero__cta"><a href="/agents">我的智能体伙伴</a></div><div class="foot__cta"><a href="/agents">我的智能体伙伴</a></div></main>';
+    const { rerender } = render(<InternationalHomeRuntime locale="zh-CN" markup={markup} />);
+    const markupHost = document.querySelector("#lightvela-intl-home")?.parentElement?.parentElement;
+    expect(markupHost).toHaveClass("[&_.hero__cta]:invisible", "[&_.foot__cta]:invisible");
+
+    openClawMock.hasResolvedPasses = true;
+    rerender(<InternationalHomeRuntime locale="zh-CN" markup={markup} />);
+    await waitFor(() => expect(markupHost).not.toHaveClass("[&_.hero__cta]:invisible"));
+    expect(document.querySelector(".hero__cta a")).toHaveTextContent("免费试用");
+    expect(document.querySelector(".foot__cta a")).toHaveAttribute("href", "/subscribe");
   });
 
   it("takes the subscribed CTA copy from the localized fragment as well", async () => {

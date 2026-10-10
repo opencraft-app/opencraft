@@ -56,3 +56,10 @@ test("Worked-for touch presentation is stable before the first tap without a poi
   assert.match(touchRule, /transition:\s*none/u);
   assert.doesNotMatch(activity, /activity-disclosure-trace|onPointerUp=|onTouchEnd=/u);
 });
+
+test("Web controls use app-owned touch feedback instead of Safari tap flash", () => {
+  const styles = readFileSync(new URL("../apps/workbench-web/src/styles/app.scss", import.meta.url), "utf8");
+  assert.match(styles, /\*\s*\{[^}]*-webkit-tap-highlight-color:\s*transparent/u);
+  assert.match(styles, /\.overlay-disclosure-trigger__hit-target\s*\{[^}]*background:\s*transparent/u);
+  assert.match(styles, /\.thread-agent-activity__turn-header\s*\{[\s\S]*?&:focus-visible\s*\{/u);
+});

@@ -47,6 +47,9 @@ interface HostSlot {
   startOperation: Promise<HostRecord> | null;
   closeOperation: Promise<void> | null;
   startAbort: AbortController | null;
+  resetOperation: Promise<void> | null;
+  serviceAdmissions: number;
+  lastState: TransportStatus["state"];
 }
 
 function normalizeError(cause: unknown): AppHostErrorPayload {
@@ -79,6 +82,44 @@ export class AppHostServer {
     );
     this.connections.add(connection);
     return connection;
+  }
+
+  /** Trusted deployment control plane only; not an RPC method or remote kill. */
+  async resetHost(hostId: string): Promise<void> {
+    const slot = this.slots.get(hostId);
+    if (!slot) return;
+    if (slot.resetOperation) return slot.resetOperation;
+    // Install the barrier before notifying renderers. Reconnects wait before
+    // acquiring their new claim; old activation/send operations lose ownership.
+    const operation = Promise.resolve().then(async () => {
+      slot.lastState = "closed";
+      slot.startAbort?.abort();
+      if (slot.record) this.publish(hostId, slot.record.generation, {
+        type: "host/status", hostId, generation: slot.record.generation,
+        status: { state: "closed", reason: "Connection settings changed" },
+      });
+      slot.claims.clear();
+      await this.stopSlot(slot, true);
+    }).finally(() => { if (slot.resetOperation === operation) slot.resetOperation = null; });
+    slot.resetOperation = operation;
+    return operation;
+  }
+
+  hostState(hostId: string): string {
+    const slot = this.slots.get(hostId);
+    return slot?.resetOperation ? "closing" : slot?.phase === "starting" ? "connecting" : slot?.record?.transport.status.state ?? slot?.lastState ?? "idle";
+  }
+
+  /** Trusted explicit connection intent; never grants a Client lease or starts remote work. */
+  async ensureHostConnected(hostId: string, assertAdmission?: () => void): Promise<void> {
+    if (this.options.physicalHostLifetime !== "server") throw new Error("Service connection requires a server-owned Host lifetime");
+    if (this.closed) throw new Error("App Host Server is closed");
+    const slot = this.slotFor(hostId);
+    while (slot.resetOperation) await slot.resetOperation;
+    if (this.closed) throw new Error("App Host Server is closed");
+    slot.serviceAdmissions++;
+    try { await this.ensureSlotOpen(slot, assertAdmission); }
+    finally { slot.serviceAdmissions--; }
   }
 
   close(): Promise<void> {
@@ -156,6 +197,9 @@ export class AppHostServer {
       startOperation: null,
       closeOperation: null,
       startAbort: null,
+      resetOperation: null,
+      serviceAdmissions: 0,
+      lastState: "idle",
     };
     this.slots.set(hostId, slot);
     return slot;
@@ -168,6 +212,8 @@ export class AppHostServer {
   ): Promise<HostRecord> {
     if (this.closed || connection.isClosed) throw new Error("App Host connection is closed");
     const slot = this.slotFor(hostId);
+    while (slot.resetOperation) await slot.resetOperation;
+    if (this.closed || connection.isClosed) throw new Error("App Host connection is closed");
     const key = this.claimKey(connection, leaseId);
     let claim = slot.claims.get(key);
     if (claim === undefined) {
@@ -194,9 +240,12 @@ export class AppHostServer {
     }
   }
 
-  private async ensureSlotOpen(slot: HostSlot): Promise<HostRecord> {
+  private async ensureSlotOpen(slot: HostSlot, assertAdmission?: () => void): Promise<HostRecord> {
     for (;;) {
       if (this.closed) throw new Error("App Host Server is closed");
+      // A trusted control request may have waited for a close barrier. Check
+      // its current authority immediately before joining/starting a transport.
+      assertAdmission?.();
       if (slot.phase === "open" && slot.record?.transport.status.state === "open") {
         return slot.record;
       }
@@ -216,6 +265,7 @@ export class AppHostServer {
   private startSlot(slot: HostSlot): Promise<HostRecord> {
     if (slot.phase !== "idle") throw new Error(`Cannot start Host ${slot.hostId} from ${slot.phase}`);
     slot.phase = "starting";
+    slot.lastState = "connecting";
     const abort = new AbortController();
     slot.startAbort = abort;
     let operation!: Promise<HostRecord>;
@@ -224,7 +274,7 @@ export class AppHostServer {
       let record: HostRecord | null = null;
       try {
         transport = await this.options.createTransport(slot.hostId, abort.signal);
-        if (this.closed || abort.signal.aborted || slot.claims.size === 0) {
+        if (this.closed || abort.signal.aborted || (slot.claims.size === 0 && slot.serviceAdmissions === 0)) {
           await transport.close();
           transport = null;
           throw new Error(`Host ${slot.hostId} activation no longer has an owner`);
@@ -233,6 +283,7 @@ export class AppHostServer {
         const ownsRecord = () => !this.closed && slot.record === record;
         const publishStatus = (status: TransportStatus) => {
           if (!ownsRecord()) return;
+          slot.lastState = status.state;
           this.publish(slot.hostId, generation, {
             type: "host/status",
             hostId: slot.hostId,
@@ -257,20 +308,23 @@ export class AppHostServer {
         slot.record = record;
         publishStatus({ state: "connecting" });
         await transport.connect(abort.signal);
-        if (this.closed || abort.signal.aborted || slot.claims.size === 0) {
+        if (this.closed || abort.signal.aborted || (slot.claims.size === 0 && slot.serviceAdmissions === 0)) {
           throw new Error(`Host ${slot.hostId} activation no longer has an owner`);
         }
         slot.phase = "open";
         publishStatus({ state: "open" });
         return record;
       } catch (cause) {
+        slot.lastState = abort.signal.aborted ? "closed" : "failed";
         if (record !== null) {
           if (!this.closed) {
             this.publish(slot.hostId, record.generation, {
               type: "host/status",
               hostId: slot.hostId,
               generation: record.generation,
-              status: { state: "failed", reason: cause instanceof Error ? cause.message : String(cause) },
+              status: { state: "failed", reason: cause instanceof Error ? cause.message : String(cause),
+                ...(record.transport.status.failure ? { failure: record.transport.status.failure } : {}),
+              },
             });
           }
           record.unsubscribeMessage();
@@ -299,7 +353,7 @@ export class AppHostServer {
   ): HostRecord {
     const slot = this.slots.get(hostId);
     const record = slot?.record;
-    if (slot === undefined || slot.phase !== "open" || record == null) {
+    if (slot === undefined || slot.resetOperation || slot.phase !== "open" || record == null) {
       throw new Error(`Host ${hostId} is not connected`);
     }
     if (record.generation !== generation) {

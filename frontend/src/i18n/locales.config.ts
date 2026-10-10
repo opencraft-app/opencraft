@@ -69,6 +69,8 @@ export type LocaleCode =
   | "zh-SG"
   | "zh-Hant"
   | "id-ID"
+  | "ms-MY"
+  | "th-TH"
   | "es"
   | "ja-JP"
   | "ko-KR";
@@ -80,6 +82,8 @@ export type UrlLang =
   | "zh-sg"
   | "zh-hant"
   | "id-id"
+  | "ms-my"
+  | "th-th"
   | "es"
   | "ja-jp"
   | "ko-kr";
@@ -88,7 +92,9 @@ export type UrlLang =
  * i18next resource key —— 实际存在字典文件的语种。
  * `zh-SG` 不在其中（复用 `zh-CN`）。
  */
-export type I18nDictKey = "en-US" | "zh-CN" | "zh-Hant" | "id-ID" | "es" | "ja-JP" | "ko-KR";
+export type I18nDictKey = "en-US" | "zh-CN" | "zh-Hant" | "id-ID"
+  | "ms-MY"
+  | "th-TH" | "es" | "ja-JP" | "ko-KR";
 
 export type LocaleDefinition = {
   /** 规范 locale code，如 `ja-JP`。 */

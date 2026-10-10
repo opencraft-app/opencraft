@@ -46,6 +46,20 @@ node runner.mjs \
 首次 SQLite 写入；`retry` 和 `error` 也包含绝对 UTC 时间，便于直接对齐服务端
 日志。不得只凭总耗时猜测并放宽 SLO。
 
+`activeDemand` 单独描述已有的单对象单在途 heartbeat 调度器，不改变请求节拍、
+重试或资格判定。它用常数空间记录实际 timer 调用、访问槽、派发和三个互斥的
+跳过原因（未就绪、已有在途、停止中）；`dispatched` 必须等于 `activeAttempts`。
+这两者计数逻辑 heartbeat；`activeHttpAttempts` 另记实际调用 fetch 的尝试，包含
+重试和已取消尝试，不代表服务端已收到请求。故障中的物理成本不能只看逻辑派发。
+`idealTimerSlots` 是调度时钟按原有每 tick 向上取整规则计算的累计槽数，
+`timerSlotDeficit` 暴露 timer 延迟而未访问的槽。它不是实际对已就绪对象发出的
+请求数，正常 tick 边界可有一个 tick 的相位差；warmup 不应以此宣称目标吞吐。
+同时报告名义对象频率与离散 timer 槽频率，目标转换按原阶段积分，停止 timer 后
+排空在途请求的时间不再增加理想需求。`skippedInFlight` 暴露响应变慢后被抑制的
+请求，不能由完成数或零失败推出目标到达率已满足；应在相同稳态窗口分别计算
+派发率和成功率，并另用固定到达的性能门禁验证吞吐。这是诊断字段，不是新成功捷径。
+正在运行的 immutable tools-120 负载没有这些新增字段，不得事后补造其计数。
+
 清理只接受 immutable load receipt 和同目录 `config.json` 作为删除权威，不
 扫描 Worker namespace。它支持 shared Agent 与旧的独立 upload-soak 身份，使用
 SQLite 记录逐对象进度，崩溃后以幂等 DELETE 续跑：
@@ -64,5 +78,5 @@ python3 cleanup.py \
 必须同时保留 load receipt、cleanup manifest 与 cleanup receipt。
 
 ```sh
-node --test runner.test.mjs
+node --test runner.test.mjs heartbeat-demand.test.mjs
 ```

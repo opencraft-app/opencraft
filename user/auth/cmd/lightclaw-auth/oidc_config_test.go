@@ -26,6 +26,13 @@ func TestOIDCRegistryAddsNativeWithoutWideningSites(t *testing.T) {
 	if _, err := oidc.NewRegistry(clients); err != nil {
 		t.Fatal(err)
 	}
+	clients[1].RedirectURIs = []string{oidc.NativeRedirectURI, oidc.NativeInternationalRedirectURI}
+	if err := validateSiteGatewayOIDCClients(clients); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := oidc.NewRegistry(clients); err != nil {
+		t.Fatal(err)
+	}
 	clients[1].RedirectURIs = []string{"opencraft://evil/lightvela"}
 	if err := validateSiteGatewayOIDCClients(clients); err == nil {
 		t.Fatal("unregistered native callback accepted")

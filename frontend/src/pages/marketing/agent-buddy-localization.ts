@@ -85,9 +85,15 @@ export function getBuddySoulPool(locale: BuddySoulLocale): SkillHubSoul[] | null
   }
 }
 
-export function getRecommendableSouls(souls: SkillHubSoul[]): SkillHubSoul[] {
-  // MUM/MOMMY 退出新推荐的依据见 docs/context/tasks/2026-10-01-hide-mum-soul-card.md；调整时同步双站抽卡与答题测试。
-  return souls.filter((soul) => toCanonicalSlug(soul.slug) !== "MUM");
+const DOMESTIC_HIDDEN_SOULS = new Set(["LOVE-R", "SOLO", "GRASS"]);
+
+export function getRecommendableSouls(souls: SkillHubSoul[], locale: BuddySoulLocale): SkillHubSoul[] {
+  // 历史卡片仍从完整目录读取；这里只筛选新抽卡、重抽和测试推荐的候选。
+  return souls.filter((soul) => {
+    const slug = toCanonicalSlug(soul.slug);
+    if (slug === "MUM") return false;
+    return locale !== "domestic-zh" || !DOMESTIC_HIDDEN_SOULS.has(slug);
+  });
 }
 
 export function getBuddySoulSpec(locale: BuddySoulLocale, slug: string): SoulSpec | null {

@@ -1,19 +1,8 @@
 import type { BlobResourceService } from "@opencraft/blob-resources";
 import { acquireFileBlob, fileBlobUrls } from "./blob-files";
 import type { ChatMediaSourceLoader } from "@opencraft/chat-render-web";
+import { chatMediaMimeType } from "@opencraft/chat-render-react";
 import type { AppServerWorkbenchRuntime } from "@opencraft/workbench-runtime";
-
-const mimeByExtension: Readonly<Record<string, string>> = Object.freeze({
-  avif: "image/avif",
-  bmp: "image/bmp",
-  gif: "image/gif",
-  ico: "image/x-icon",
-  jpeg: "image/jpeg",
-  jpg: "image/jpeg",
-  png: "image/png",
-  svg: "image/svg+xml",
-  webp: "image/webp",
-});
 
 export function appServerMediaPath(target: string): string | null {
   if (!target.startsWith("file:")) return null;
@@ -28,8 +17,7 @@ export function appServerMediaPath(target: string): string | null {
 }
 
 export function mediaMimeType(path: string): string {
-  const extension = /\.([a-z0-9]+)$/iu.exec(path)?.[1]?.toLowerCase() ?? "";
-  return mimeByExtension[extension] ?? "application/octet-stream";
+  return chatMediaMimeType(path);
 }
 
 /**

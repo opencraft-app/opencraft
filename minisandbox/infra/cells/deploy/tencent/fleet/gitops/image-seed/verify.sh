@@ -14,7 +14,9 @@ grep -Fx 'location = "mirror.ccs.tencentyun.com"' \
 python3 "$script_dir/test_image_contract.py"
 python3 "$script_dir/test_product_lock.py"
 python3 "$script_dir/test_record_product_image.py"
+python3 "$script_dir/test_revalidate_regional_seed.py"
 python3 "$script_dir/test_foundation_plan.py"
+python3 "$script_dir/test_foundation_module_labels.py"
 python3 "$script_dir/test_assemble_generation.py"
 python3 "$script_dir/foundation-plan.py" --lock "$script_dir/foundation-images.lock.json" >/dev/null
 python3 "$script_dir/image-lock.py" validate-upstream \

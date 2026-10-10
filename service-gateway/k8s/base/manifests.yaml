@@ -230,6 +230,12 @@ spec:
                   name: service-gateway-runtime-secrets
                   key: COLLABORATION_GATEWAY_TOKEN
                   optional: true
+            - name: VELAGW_SPEECH_ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: service-gateway-speech-secrets
+                  key: VELAGW_SPEECH_ADMIN_TOKEN
+                  optional: true
             - name: TENCENTCLOUD_SECRET_ID
               valueFrom:
                 secretKeyRef:

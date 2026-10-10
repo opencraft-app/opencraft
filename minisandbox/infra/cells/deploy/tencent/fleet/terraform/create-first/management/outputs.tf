@@ -8,6 +8,11 @@ output "management_inventory_yaml" {
   value       = yamlencode(local.management_inventory)
 }
 
+output "runtime_builder_inventory" {
+  description = "Build-only CVM and attached CBS identities. Provisioning does not establish storage/build readiness."
+  value       = local.runtime_builder_inventory
+}
+
 output "sensitive_bootstrap" {
   description = "Bootstrap-only kubeconfig; never write this output to Git or an ordinary receipt."
   sensitive   = true

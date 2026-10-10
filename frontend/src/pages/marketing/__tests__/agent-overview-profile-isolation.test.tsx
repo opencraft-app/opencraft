@@ -29,7 +29,7 @@ describe("overview profile editing", () => {
     else exec.mockResolvedValueOnce(readResult);
     const changed = vi.fn();
     render(<AgentOverviewPanel {...base} profileId="worker" execDebugCommand={exec} onProfileChanged={changed} />);
-    fireEvent.click(screen.getByRole("button", { name: "编辑资料" }));
+    fireEvent.click(screen.getByRole("button", { name: "修改资料" }));
     fireEvent.change(screen.getByLabelText("名字"), { target: { value: "Draft name" } });
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
     expect(await screen.findByRole("alert")).toBeInTheDocument();
@@ -48,7 +48,7 @@ describe("overview profile editing", () => {
     });
     const changed = vi.fn();
     render(<AgentOverviewPanel {...base} profileId="worker" execDebugCommand={exec} onProfileChanged={changed} />);
-    fireEvent.click(screen.getByRole("button", { name: "编辑资料" }));
+    fireEvent.click(screen.getByRole("button", { name: "修改资料" }));
     fireEvent.change(screen.getByLabelText("名字"), { target: { value: "Renamed" } });
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
     await waitFor(() => expect(changed).toHaveBeenCalledOnce());
@@ -58,20 +58,20 @@ describe("overview profile editing", () => {
   it.each([undefined, "", "  "])("disables editing until profile is known (%s)", (profileId) => {
     const exec = vi.fn<SetupExec>();
     const { rerender } = render(<AgentOverviewPanel {...base} profileId={profileId} execDebugCommand={exec} onProfileChanged={vi.fn()} />);
-    const edit = screen.getByRole("button", { name: "编辑资料" });
+    const edit = screen.getByRole("button", { name: "修改资料" });
     expect(edit).toBeDisabled();
     fireEvent.click(edit);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(exec).not.toHaveBeenCalled();
     rerender(<AgentOverviewPanel {...base} profileId="worker" execDebugCommand={exec} onProfileChanged={vi.fn()} />);
-    expect(screen.getByRole("button", { name: "编辑资料" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "修改资料" })).toBeEnabled();
   });
 
   it.each(["worker", "main"])("reads and writes only the explicit %s profile", async (profileId) => {
     const exec = vi.fn<SetupExec>().mockResolvedValue(ok);
     const changed = vi.fn();
     render(<AgentOverviewPanel {...base} profileId={profileId} execDebugCommand={exec} onProfileChanged={changed} />);
-    fireEvent.click(screen.getByRole("button", { name: "编辑资料" }));
+    fireEvent.click(screen.getByRole("button", { name: "修改资料" }));
     fireEvent.change(screen.getByLabelText("名字"), { target: { value: "Renamed" } });
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
     await waitFor(() => expect(changed).toHaveBeenCalledOnce());
@@ -87,7 +87,7 @@ describe("overview profile editing", () => {
   it("closes the previous edit draft when the profile disappears", () => {
     const exec = vi.fn<SetupExec>();
     const { rerender } = render(<AgentOverviewPanel {...base} profileId="worker" execDebugCommand={exec} onProfileChanged={vi.fn()} />);
-    fireEvent.click(screen.getByRole("button", { name: "编辑资料" }));
+    fireEvent.click(screen.getByRole("button", { name: "修改资料" }));
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     rerender(<AgentOverviewPanel {...base} profileId="" execDebugCommand={exec} onProfileChanged={vi.fn()} />);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -99,7 +99,7 @@ describe("overview profile editing", () => {
     const exec = vi.fn<SetupExec>().mockReturnValue(new Promise((resolve) => { finish = resolve; }));
     const changed = vi.fn();
     const { rerender } = render(<AgentOverviewPanel {...base} profileId="worker" execDebugCommand={exec} onProfileChanged={changed} />);
-    fireEvent.click(screen.getByRole("button", { name: "编辑资料" }));
+    fireEvent.click(screen.getByRole("button", { name: "修改资料" }));
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
     expect(exec).toHaveBeenCalledOnce();
     rerender(<AgentOverviewPanel {...base} profileId="other" execDebugCommand={exec} onProfileChanged={changed} />);

@@ -118,8 +118,8 @@ const DEFAULT_OG_IMAGE_PATH = "/lightvela-social-preview.png";
  */
 
 const DEFAULT_SEO_TITLE_BY_REGION: Record<SeoRegion, string> = {
-  cn: "LightVela｜云端专属个人 Agent",
-  global: "LightVela | Your Personal Cloud AI Agent",
+  cn: "我的智能体伙伴 | LightVela",
+  global: "My AI Companion | LightVela",
 };
 
 const SEO_TITLE_SUFFIX_BY_REGION: Record<SeoRegion, string> = {
@@ -128,9 +128,9 @@ const SEO_TITLE_SUFFIX_BY_REGION: Record<SeoRegion, string> = {
 };
 
 const SEO_DESCRIPTION_BY_REGION: Record<SeoRegion, string> = {
-  cn: "LightVela 是腾讯轻量云团队推出的云端 Agent 托管产品，致力于让每个人都能拥有一个真正属于自己的 AI 伙伴——不是每次打开都要重新自我介绍的工具，而是认识你、记得你、越聊越懂你的长期存在。",
+  cn: "LightVela 是腾讯轻量云团队推出的云端 AI Agent 产品，致力于让每个人都能拥有一个真正属于自己的 AI 伙伴——不是每次打开都要重新自我介绍的工具，而是认识你、记得你、越聊越懂你的长期存在。",
   global:
-    "LightVela is a cloud Agent hosting product from the Tencent Lighthouse team. It is designed to let everyone own an AI companion that truly belongs to them—not a tool that asks you to introduce yourself every time, but a long-term presence that knows you, remembers you, and understands you better over time.",
+    "LightVela is a cloud AI agent product from the Tencent Lighthouse team. It is designed to let everyone own an AI companion that truly belongs to them—not a tool that asks you to introduce yourself every time, but a long-term presence that knows you, remembers you, and understands you better over time.",
 };
 
 const SEO_KEYWORDS_BY_REGION: Record<SeoRegion, string> = {
@@ -298,7 +298,7 @@ const PAGE_DESCRIPTIONS_BY_REGION: Record<SeoRegion, Record<string, string>> = {
     "/docs":
       "LightVela 产品文档：包含快速开始、核心概念、模型 / 通道 / 技能配置指南，以及常见问题 FAQ。",
     "/docs/overview":
-      "LightVela 是腾讯轻量云团队推出的云端 Agent 托管产品，主打 Hermes Agent，让每个人都能拥有真正属于自己、长期在线、越聊越懂你的 AI 伙伴。",
+      "LightVela 是腾讯轻量云团队推出的云端 AI Agent 产品，主打 Hermes Agent，让每个人都能拥有真正属于自己、长期在线、越聊越懂你的 AI 伙伴。",
     "/docs/quickstart":
       "5 分钟从登录、实名认证、开通启航套餐、创建 Hermes 实例到接入微信通道，完成第一次 AI 对话的完整教程。",
     "/docs/account":
@@ -346,7 +346,7 @@ const PAGE_DESCRIPTIONS_BY_REGION: Record<SeoRegion, Record<string, string>> = {
     "/docs":
       "LightVela product documentation: quickstart, core concepts, model / channel / skill configuration guides, and FAQ.",
     "/docs/overview":
-      "LightVela is a cloud Agent hosting product from the Tencent Lighthouse team, built around Hermes Agent — a personal AI companion that stays online 24/7, knows you, remembers you, and understands you better over time.",
+      "LightVela is a cloud AI agent product from the Tencent Lighthouse team, built around Hermes Agent — a personal AI companion that stays online 24/7, knows you, remembers you, and understands you better over time.",
     "/docs/quickstart":
       "A 5-minute walkthrough: sign in, activate the starter plan, create your Hermes instance, connect a channel (WeChat / Telegram / WhatsApp / Discord / Slack) and have your first AI conversation.",
     "/docs/plans":
@@ -485,7 +485,7 @@ const AGENT_SECTION_TITLES_BY_REGION: Record<SeoRegion, Record<string, string>> 
 
 const AGENTS_HOME_TITLE_BY_REGION: Record<SeoRegion, string> = {
   cn: "我的智能体伙伴",
-  global: "My Agent",
+  global: "My AI Companion",
 };
 
 const APP_PAGE_TITLES_BY_REGION: Record<
@@ -603,10 +603,10 @@ function normalizePathname(pathname: string): string {
  * - `/en-us/`             → { bare: "/", urlLang: "en-us" }
  * - `/about` （裸）    → { bare: "/about", urlLang: null }
  */
-type UrlLang = "en" | "zh" | "en-us" | "zh-cn" | "zh-sg" | "zh-hant" | "id-id" | "es" | "ja-jp" | "ko-kr";
+type UrlLang = "en" | "zh" | "en-us" | "zh-cn" | "zh-sg" | "zh-hant" | "id-id" | "ms-my" | "th-th" | "es" | "ja-jp" | "ko-kr";
 
 function stripUrlLangPrefix(pathname: string): { bare: string; urlLang: UrlLang | null } {
-  const m = pathname.match(/^\/(en-us|zh-cn|zh-sg|zh-hant|id-id|es|ja-jp|ko-kr|en|zh)(?:\/(.*))?$/);
+  const m = pathname.match(/^\/(en-us|zh-cn|zh-sg|zh-hant|id-id|ms-my|th-th|es|ja-jp|ko-kr|en|zh)(?:\/(.*))?$/);
   if (!m) return { bare: pathname, urlLang: null };
   const rest = m[2] ?? "";
   return {
@@ -624,6 +624,8 @@ const URL_LANG_TO_HTML_LANG: Record<UrlLang, string> = {
   "zh-sg": "zh-SG",
   "zh-hant": "zh-Hant",
   "id-id": "id-ID",
+  "ms-my": "ms-MY",
+  "th-th": "th-TH",
   es: "es",
   "ja-jp": "ja-JP",
   "ko-kr": "ko-KR",
@@ -637,6 +639,8 @@ const URL_LANG_TO_OG_LOCALE: Record<UrlLang, string> = {
   // OpenGraph 无 `zh_Hant` 泛区标准；繁体站采用香港用语（OpenCC cn→hk），故用 `zh_HK`。
   "zh-hant": "zh_HK",
   "id-id": "id_ID",
+  "ms-my": "ms_MY",
+  "th-th": "th_TH",
   es: "es_ES",
   "ja-jp": "ja_JP",
   "ko-kr": "ko_KR",
@@ -763,9 +767,11 @@ export function getSeoMeta(pathname: string, region?: SeoRegion): SeoMeta {
   const pageDescription = PAGE_DESCRIPTIONS_BY_REGION[lookupRegion][bare];
 
   return {
-    title: pageTitle
-      ? `${pageTitle} | ${SEO_TITLE_SUFFIX_BY_REGION[lookupRegion]}`
-      : DEFAULT_SEO_TITLE_BY_REGION[lookupRegion],
+    title: lookupRegion === "global" && bare === "/agents"
+      ? "My AI Companion | LightVela"
+      : pageTitle
+        ? `${pageTitle} | ${SEO_TITLE_SUFFIX_BY_REGION[lookupRegion]}`
+        : DEFAULT_SEO_TITLE_BY_REGION[lookupRegion],
     description: pageDescription ?? SEO_DESCRIPTION_BY_REGION[lookupRegion],
     /* keywords 始终用 region 自身（与原行为一致）：国际站 keywords 是英文站
        SEO 关键词，不随 URL 前缀切换——/zh/ 也想被英文关键词命中。 */

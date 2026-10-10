@@ -4,14 +4,18 @@ import * as WebBrowser from "expo-web-browser";
 import { Platform } from "react-native";
 import { createNativeLoginStorage } from "./native-login-storage";
 import * as Crypto from "expo-crypto";
-import { createNativeLogin, isNativeLoginCallback, NATIVE_LOGIN_PENDING_KEY } from "./native-login";
+import { createNativeLogin, isNativeLoginCallback, NATIVE_LOGIN_PENDING_KEY, NATIVE_LOGIN_REDIRECT } from "./native-login";
 
 import { LIGHTVELA_REGIONS, type LightVelaBotInstance, type LightVelaRegion } from "@opencraft/plugin-lightvela-hermes/account-contract";
-import type { MobileLightVelaAccount, MobileLightVelaPhase, MobileLightVelaSnapshot } from "./lightvela-account-types";
+import type { MobileAuthenticatedSession, MobileLightVelaAccount, MobileLightVelaPhase, MobileLightVelaSnapshot } from "./lightvela-account-types";
+import { mobileAccountDisplayCache } from "./mobile-account-display-cache.native";
+import { clearMobileConversationContinuity } from "./mobile-conversation-drafts.native";
+import { mobileAccountQueryClient } from "./mobile-account-query.native";
 
 const TOKEN_KEY = "vela.lightvela.session-token.v1";
 const ACTIVE_BOT_KEY = "vela.lightvela.active-bot.v1";
 const REGION_KEY = "vela.lightvela.region.v1";
+const EDITION_KEY = "vela.lightvela.packaged-region.v1";
 const pendingStorage = createNativeLoginStorage({
   read: () => SecureStore.getItemAsync(NATIVE_LOGIN_PENDING_KEY),
   write: value => SecureStore.setItemAsync(NATIVE_LOGIN_PENDING_KEY, value),
@@ -22,9 +26,9 @@ interface ApiEnvelope<T> { readonly data: T; readonly message?: string; readonly
 interface BotListResponse { readonly items: readonly { readonly created_at: string; readonly instance_id: string; readonly name?: string; readonly status: string }[] }
 
 /** Owns the native LightVela credential and selected physical Bot. */
-export function createMobileLightVelaAccount(): MobileLightVelaAccount {
+export function createMobileLightVelaAccount(packagedRegion: LightVelaRegion = "intl", loginRedirect = NATIVE_LOGIN_REDIRECT): MobileLightVelaAccount {
   let disposed = false;
-  let region: LightVelaRegion = "intl";
+  let region: LightVelaRegion = packagedRegion;
   const apiBase = () => LIGHTVELA_REGIONS[region].apiBase;
   const login = createNativeLogin({
     random: () => Array.from(Crypto.getRandomBytes(32), byte => byte.toString(16).padStart(2, "0")).join(""),
@@ -47,9 +51,12 @@ export function createMobileLightVelaAccount(): MobileLightVelaAccount {
       if (typeof body.session_token !== "string") throw new Error("Invalid login exchange response");
       return body.session_token;
     },
-  }, apiBase);
+  }, apiBase, loginRedirect);
   const listeners = new Set<() => void>();
   let token: string | null = null;
+  let authenticatedSession: MobileAuthenticatedSession | null = null;
+  let loginPending = false;
+  let signInAttempt = 0;
   let bots: readonly LightVelaBotInstance[] = [];
   let revision = 0;
   let operation: Promise<void> | null = null;
@@ -57,6 +64,7 @@ export function createMobileLightVelaAccount(): MobileLightVelaAccount {
     revision,
     region,
     phase: "loading",
+    loginPending,
     botCount: 0,
     activeBotId: null,
     botName: null,
@@ -69,6 +77,7 @@ export function createMobileLightVelaAccount(): MobileLightVelaAccount {
       revision: ++revision,
       region,
       phase,
+      loginPending,
       botCount: bots.length,
       activeBotId,
       botName,
@@ -78,17 +87,25 @@ export function createMobileLightVelaAccount(): MobileLightVelaAccount {
   };
   const request = async <T,>(path: string, init: RequestInit = {}): Promise<T> => {
     if (token === null) throw new Error("Sign in to LightVela first");
+    const requestToken = token;
+    const requestRegion = region;
     const headers = new Headers(init.headers);
-    headers.set("Authorization", `Bearer ${token}`);
+    headers.set("Authorization", `Bearer ${requestToken}`);
     const response = await fetch(`${apiBase()}${path}`, { ...init, cache: "no-store", headers });
-    const body = await response.json() as ApiEnvelope<T>;
+    const body = await response.json().catch(() => null) as ApiEnvelope<T> | null;
     if (!response.ok) {
-      if (response.status === 401) {
+      if (response.status === 401 && token === requestToken && region === requestRegion) {
         token = null;
+        authenticatedSession = null;
+        mobileAccountQueryClient.clear();
+        await mobileAccountDisplayCache.clear(requestRegion, requestToken).catch(() => undefined);
+        await clearMobileConversationContinuity(requestRegion, requestToken).catch(() => undefined);
         await Promise.all([SecureStore.deleteItemAsync(TOKEN_KEY), SecureStore.deleteItemAsync(ACTIVE_BOT_KEY)]);
+        publish("anonymous", null, null);
       }
-      throw new Error(`${body.message || `HTTP ${response.status}`}${body.request_id ? ` request_id=${body.request_id}` : ""}`);
+      throw new Error(`${body?.message || `HTTP ${response.status}`}${body?.request_id ? ` request_id=${body.request_id}` : ""}`);
     }
+    if (!body) throw new Error("Invalid LightVela response");
     return body.data;
   };
   const refresh = async () => {
@@ -104,17 +121,28 @@ export function createMobileLightVelaAccount(): MobileLightVelaAccount {
   };
   const validateSiteSession = async () => {
     if (token === null) { publish("anonymous", null, null); return; }
+    const sessionToken = token;
+    const sessionRegion = region;
     const response = await fetch(`${apiBase()}/auth/session`, {
       cache: "no-store",
-      headers: { Authorization: `Bearer ${token}` },
-    });
+      headers: { Authorization: `Bearer ${sessionToken}` },
+    }).catch(() => { throw new Error("session-offline"); });
     if (response.status === 401) {
+      if (token !== sessionToken || region !== sessionRegion) return;
+      const expiredToken = sessionToken;
       token = null;
+      authenticatedSession = null;
+      mobileAccountQueryClient.clear();
+      if (expiredToken) await mobileAccountDisplayCache.clear(region, expiredToken).catch(() => undefined);
+      if (expiredToken) await clearMobileConversationContinuity(region, expiredToken).catch(() => undefined);
       await Promise.all([SecureStore.deleteItemAsync(TOKEN_KEY), SecureStore.deleteItemAsync(ACTIVE_BOT_KEY)]);
       publish("anonymous", null, null);
       return;
     }
     if (!response.ok) throw new Error(`Could not verify your LightVela session (HTTP ${response.status}).`);
+    const credentialScope = await mobileAccountDisplayCache.scope(sessionRegion, sessionToken);
+    if (token !== sessionToken || region !== sessionRegion) return;
+    authenticatedSession = Object.freeze({ region: sessionRegion, token: sessionToken, credentialScope });
     publish("authenticated", null, null);
   };
   const run = (task: () => Promise<void>) => {
@@ -128,13 +156,34 @@ export function createMobileLightVelaAccount(): MobileLightVelaAccount {
   };
   return {
     getSnapshot: () => snapshot,
+    getAuthenticatedSession: () => snapshot.phase === "authenticated" ? authenticatedSession : null,
     subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
     initialize: () => run(async () => {
-      region = (await SecureStore.getItemAsync(REGION_KEY)) === "cn" ? "cn" : "intl";
+      const [storedEdition, storedRegion] = await Promise.all([
+        SecureStore.getItemAsync(EDITION_KEY), SecureStore.getItemAsync(REGION_KEY),
+      ]);
+      const previousRegion = storedRegion === "cn" || storedRegion === "intl" ? storedRegion : null;
+      region = storedEdition === packagedRegion && previousRegion ? previousRegion : packagedRegion;
       token = await SecureStore.getItemAsync(TOKEN_KEY);
+      if (storedEdition !== packagedRegion) {
+        if (token && previousRegion !== region) {
+          mobileAccountQueryClient.clear();
+          if (previousRegion) {
+            await mobileAccountDisplayCache.clear(previousRegion, token).catch(() => undefined);
+            await clearMobileConversationContinuity(previousRegion, token).catch(() => undefined);
+          }
+          await Promise.all([SecureStore.deleteItemAsync(TOKEN_KEY), SecureStore.deleteItemAsync(ACTIVE_BOT_KEY)]);
+          token = null;
+          authenticatedSession = null;
+        }
+        await Promise.all([
+          SecureStore.setItemAsync(EDITION_KEY, packagedRegion),
+          SecureStore.setItemAsync(REGION_KEY, region),
+        ]);
+      }
       if (disposed) return;
       const initialURL = await Linking.getInitialURL();
-      if (initialURL && isNativeLoginCallback(initialURL)) {
+      if (initialURL && isNativeLoginCallback(initialURL, loginRedirect)) {
         try {
           const received = await login.consume(initialURL);
           if (disposed) return;
@@ -160,15 +209,20 @@ export function createMobileLightVelaAccount(): MobileLightVelaAccount {
         publish("loading", null, null);
         await SecureStore.setItemAsync(REGION_KEY, nextRegion);
         region = nextRegion;
+        authenticatedSession = null;
         bots = [];
         await SecureStore.deleteItemAsync(ACTIVE_BOT_KEY);
         publish("anonymous", null, null);
       });
     },
     signIn: () => run(async () => {
+      const attempt = ++signInAttempt;
+      loginPending = true;
       publish("loading", null, null);
-      const nextToken = await login.signIn();
-      if (disposed) return;
+      let nextToken: string | null;
+      try { nextToken = await login.signIn(); }
+      finally { loginPending = false; }
+      if (disposed || attempt !== signInAttempt) return;
       if (nextToken === null) { publish("anonymous", null, null); return; }
       await SecureStore.setItemAsync(TOKEN_KEY, nextToken);
       if (disposed) return;
@@ -176,8 +230,20 @@ export function createMobileLightVelaAccount(): MobileLightVelaAccount {
       if (Platform.OS === "ios") await validateSiteSession();
       else await refresh();
     }),
+    async cancelSignIn() {
+      if (!loginPending) return;
+      signInAttempt++;
+      await login.cancel();
+      try { WebBrowser.dismissAuthSession(); } catch { /* The browser may already have closed. */ }
+      loginPending = false;
+      publish("anonymous", null, null);
+    },
     signOut: () => run(async () => {
-      token = null; bots = [];
+      const oldToken = token;
+      token = null; authenticatedSession = null; bots = [];
+      mobileAccountQueryClient.clear();
+      if (oldToken) await mobileAccountDisplayCache.clear(region, oldToken).catch(() => undefined);
+      if (oldToken) await clearMobileConversationContinuity(region, oldToken).catch(() => undefined);
       await Promise.all([SecureStore.deleteItemAsync(TOKEN_KEY), SecureStore.deleteItemAsync(ACTIVE_BOT_KEY)]);
       publish("anonymous", null, null);
     }),
@@ -190,6 +256,6 @@ export function createMobileLightVelaAccount(): MobileLightVelaAccount {
       if (bot === undefined) throw new Error("No running LightVela Bot is available");
       return bot;
     },
-    dispose() { disposed = true; login.dispose(); listeners.clear(); token = null; bots = []; },
+    dispose() { disposed = true; login.dispose(); listeners.clear(); token = null; authenticatedSession = null; bots = []; },
   };
 }

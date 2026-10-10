@@ -2,11 +2,11 @@
 
 ## Ringkasan
 
-**Menjalankan percakapan pertama di LightVela memerlukan sekitar 5 menit: masuk ke LightVela → aktifkan sebuah paket → platform otomatis membuat instance Hermes Agent → konfigurasikan model (atau langsung gunakan kredit model bulanan dari paket Anda) → hubungkan satu kanal pesan → kirim pesan dan terima balasan. Semuanya dilakukan di browser, tanpa perlu membeli server atau melakukan deployment lokal. Jalur tercepat adalah memakai kredit paket bersama kanal WeChat yang cukup dihubungkan dengan memindai kode QR, lalu menambahkan API key model sendiri dan kanal lain sesuai kebutuhan.**
+**Untuk memulai percakapan pertama di LightVela, masuk dan aktifkan paket, tunggu hingga Bot siap, lalu buka Daily → Chat di My Agent dan kirim pesan. Chat di web tidak memerlukan kanal pesan; kredit model paket yang masih tersedia memungkinkan Anda memulai tanpa API key sendiri. Jika ingin memakai Bot yang sama di WeChat, ikuti langkah pemindaian kode QR di bagian berikutnya.**
 
 ---
 
-Tutorial ini memandu Anda dari proses masuk sampai menerima balasan pertama dari Hermes lewat WeChat. Waktunya sekitar 5 menit.
+Tutorial ini dimulai dengan Chat web, lalu menjelaskan cara menghubungkan WeChat bila perlu. Sediakan waktu tambahan untuk aktivasi paket dan penyiapan Bot.
 
 ## Yang dibahas di halaman ini
 
@@ -14,7 +14,9 @@ Tutorial ini memandu Anda dari proses masuk sampai menerima balasan pertama dari
 
 - Mengaktifkan paket Launch dan membuat instans Hermes
 
-- Menghubungkan kanal Telegram / WhatsApp / Discord / Slack / WeChat
+- Mengirim pesan pertama di Chat web
+
+- Menghubungkan WeChat bila perlu
 
 - Mengirim pesan di WeChat dan menerima balasan
 
@@ -52,13 +54,17 @@ Setelah paket aktif, buka [konsol Agent](/agents/overview/). LightVela menyiapka
 
 ---
 
-## 4. Hubungkan WeChat
+## 4. Mulai percakapan di Chat web
+
+Setelah Bot siap, buka Daily → Chat, mulai percakapan baru, dan kirim “Hai.” Balasan pertama menandakan Chat web siap; lihat [Chat](./configuration/agent-chat.md) untuk mengelola percakapan.
+
+## 5. Hubungkan WeChat jika diperlukan
 
 Buka **Channels** di sidebar Agent. Pada kartu **WeChat**, pilih **+ Connect** dan ikuti petunjuk kode QR. Pindai dengan WeChat di ponsel dan selesaikan otorisasi. Pastikan WeChat ditampilkan sebagai terhubung sebelum mengirim pesan. Lihat [panduan WeChat](./configuration/channel-wechat.md) jika kode kedaluwarsa atau koneksi gagal.
 
 ---
 
-## 5. Kirim pesan pertama
+## 6. Kirim pesan di WeChat
 
 Cari akun bot yang sudah ditambahkan di WeChat, lalu kirim pesan uji:
 

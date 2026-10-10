@@ -1,0 +1,19 @@
+{
+  "dependencies": [
+    {
+      "ref": "actor-fleet-beijing.tencentcloudcr.com/actor-fleet/base-distroless@sha256:8e8f5296202be28decada532444bdae805f655dd07ba8cd2b19c5bd4c04f8921",
+      "repository": "base-distroless"
+    },
+    {
+      "ref": "actor-fleet-beijing.tencentcloudcr.com/actor-fleet/base-golang@sha256:7aecd68f34e3511fe56affcff87c28464823964358daf4c6a7929f9c837fe8ed",
+      "repository": "base-golang"
+    }
+  ],
+  "ref": "actor-fleet-beijing.tencentcloudcr.com/actor-fleet/workers-api@sha256:0d8ff2535c0a4a1d0438005cce19a7d5057aba015fc80aef685725070b77dc8f",
+  "registryPullVerified": true,
+  "repository": "workers-api",
+  "schema": "actor-product-image-build/v1",
+  "sourceManifestDigest": "sha256:869a2219951f349e6c4409bec2f87ab61a847ea56b00ca52958ee7952a2f89be",
+  "sourceRevision": "42ef7aea2261cddcd7ef1f362be295bf1459f441",
+  "verdict": "passed"
+}

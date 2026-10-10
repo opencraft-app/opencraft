@@ -80,6 +80,10 @@ def common(intent: dict[str, Any]) -> dict[str, Any]:
 
 def render_management(intent: dict[str, Any]) -> dict[str, Any]:
     management = mapping(intent.get("management"), "management")
+    builder = mapping(management.get("runtimeBuilder"), "management.runtimeBuilder")
+    builder_disk = builder.get("dataDiskGiB")
+    if type(builder_disk) is not int or not 256 <= builder_disk <= 4096:
+        raise ValueError("management.runtimeBuilder.dataDiskGiB must be an integer between 256 and 4096")
     availability_mode = require_string(management.get("availabilityMode", "production-multi-zone"), "management.availabilityMode")
     result = common(intent) | network(management.get("network"), "management.network", availability_mode)
     result.update(
@@ -89,6 +93,10 @@ def render_management(intent: dict[str, Any]) -> dict[str, Any]:
             "bootstrap_subnet_key": "z1",
             "trusted_api_cidrs": [],
             "trusted_workers_api_cidrs": management.get("trustedWorkersApiCidrs", []),
+            "runtime_builder_instance_type": require_string(
+                builder.get("instanceType"), "management.runtimeBuilder.instanceType", r"[A-Za-z0-9]+\.[A-Za-z0-9]+"
+            ),
+            "runtime_builder_data_disk_gib": builder_disk,
         }
     )
     return result

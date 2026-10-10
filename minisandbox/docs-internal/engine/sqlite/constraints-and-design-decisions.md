@@ -49,6 +49,16 @@ The first enabled worker installs the record with a serializable transaction; co
 
 ## Why Versioned SHARDs
 
+### Why Hot Jobs Bind A Committed Prefix
+
+Continuous writes must not invalidate an unchanged materialization merely because the current head or latest PIDX owner advanced while the job waited for admission. The planner selects a committed prefix under the existing key/byte budget. Stage and install anchor reads to that upper txid. Its fingerprint includes branch identity, root generation/watermark, selected txid, complete COMMIT/DELTA inputs, and current history/PITR coverage, not the mutable latest-owner index.
+
+This is not permission to skip safety checks. A new history pin or changed PITR coverage must invalidate the old proof. Lifecycle and root-generation changes remain fenced. Installation reads candidate PIDX owners serializably and clears only owners covered by the installed prefix, with quota/count adjustments in the same transaction. Later owners remain authoritative in DELTA. Fault tests exercise both admission and post-stage boundaries, verify continuous progress, and require changed fork/PITR coverage to replan while retaining historical reads.
+
+Truncate is not an ordinary overwrite: it removes PIDX rows and can prune or delete base and prepublished SHARD caches. The commit-owned fixed-width `META/truncate_txid` index certifies a never-truncated local history with zero. Every shrink records its TXID atomically, subsequent growth cannot clear it, and missing history is conservative. Only certified histories omit the mutable head from the fingerprint. Truncated or unknown histories retain the head fence; this deliberately trades progress under continuous writes after a shrink for storage safety.
+
+Input identity is checked before integrity preflight as well as in final publication. A concurrently removed staged row can be replanned only after an independent input check proves staleness. Unchanged plans still require full shard and chunk integrity. Folding DELTAs applies each commit's EOF so growth cannot resurrect removed pages, while pinned historical outputs retain their own historical EOF.
+
 Overwriting one SHARD key loses the older materialized image that forks and restore points may still need. Versioned SHARDs keep multiple materializations side by side:
 
 ```text
@@ -77,6 +87,50 @@ This keeps storage invariants simple:
 Bucket forks must be metadata-only. Eagerly copying every database membership entry would make fork time proportional to bucket size.
 
 `BUCKET_CATALOG` solves this with parent walks. A bucket fork starts with an empty local catalog and inherits parent catalog entries whose versionstamp is at or before the fork's `parent_versionstamp`. Tombstones hide inherited entries only along the relevant bucket path.
+
+## Proof Invalidation Must Match The Dependency
+
+A database's bounded bucket-fork proof depends on its own reverse catalog memberships and on fork edges of the subscribed bucket trees. Catalog insertion or tombstoning atomically clears only that database's complete marker, cursor, roots, epoch subscriptions, queue and seen state. New bucket forks still invalidate the subscribed trees through root and fixed-fanout epochs; an incomplete proof still blocks publication and reclamation.
+
+Incrementing a shared tree epoch for every unrelated database creation couples independent databases: proof reset can reject already staged output, and the manager then replans the same input. Execution permits bound concurrent work but cannot make this feedback useful. Scope invalidation to changed dependencies before increasing maintenance concurrency; measure installed/reclaimed progress separately from activity success. The real RocksDB/UDB `bucket_proof_invalidation` regressions cover completed and paged proofs under unrelated membership churn and retain the real fork-history pin fence.
+
+Proof tests alone do not establish bucket-fork read semantics. Default reads now carry the minimum inherited bucket versionstamp through resolution into the page plan, snapshot head/EOF, and historical page selection. A global bucket snapshot between database commits uses a bounded VTX floor lookup. An exact database-fork boundary still requires its exact VTX entry; missing history fails closed rather than selecting an older or newer state.
+
+The first write to an inherited database derives a private physical branch and installs its local pointer, catalog marker, and policy binding in the original commit transaction. It must not mutate the parent's database. This reuses the existing generation, retention, GC, history, pin, and refcount fences. A fork with no local COMMIT resolves its stored virtual head through a depth-bounded parent chain and verifies cap, identity, EOF, and checksum. No fake COMMIT or copied page image is created. Ordinary non-inherited reads do not pay the new snapshot lookup cost. The real `fork_bucket_read` regressions cover these boundaries; parent logical-pointer mutations/deletion and distributed publication races remain separate qualification work.
+
+## Maintenance Observations Are Not Publication Authority
+
+Measure activity execution separately from its domain result. Gasoline returning
+successfully does not mean a hot output was installed: the output may say
+retryable/rejected, and hot-stage success proves only staging. Installation's
+existing atomic publish marker distinguishes a fresh publish from an idempotent
+replay. The diagnostic wrapper carries this distinction out of the existing
+transaction without a new FDB read, mutation, public output field or fence.
+
+Observed succeeded exits and `already_applied` exits are separate. Commit before
+response loss or process death can undercount fresh installs; cancellation is
+not proof that no commit occurred. Future abort/drop/panic unwind records bounded
+cancelled cost, but a killed process cannot guarantee this observation. Admission
+complete/deferred paths may not enter the wrapper. Root/marker/watermark and safe
+reclaim are still authoritative. Hot metrics do not claim byte/item throughput,
+physical object occupancy, provider request counts or exactly-once progress.
+
+Use these observations to partition execution cost into useful candidates,
+retryable/rejected rework and replay, then join durable progress in the same
+fixed workload window. Missing series stay unknown. Do not compensate for
+missing progress evidence by increasing permits or relaxing history, generation,
+integrity, pin, backup or publication checks.
+
+The workflow fault suite creates independent test databases but shares the
+process-local admission pool: the default compaction limit is two with sixteen
+FIFO wait slots. Launching all 57 scenarios at once is not 57 independent Engine
+instances, and can exhaust fixed per-scenario force-result deadlines. For
+semantic regression run `cargo test -p depot --locked --offline --features
+test-faults --test cold_workflow_publish -- --test-threads=4` (or one for isolated
+counter assertions). This does not serialize concurrency or fault races inside
+each scenario, change production admission, or qualify large-load fairness.
+Keep default-parallel failures as separate evidence; Engine saturation belongs
+in an explicit offered-load test with its queue/defer/progress observations.
 
 ## Why Split Manifest Fields
 

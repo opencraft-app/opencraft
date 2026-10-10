@@ -109,7 +109,7 @@ export interface ShellNavigationMetrics {
 export const shellNavigationMetrics: ShellNavigationMetrics = {
   columnWidth: 137,
   compactWidth: 52,
-  compactActionSize: 34,
+  compactActionSize: 36,
   expandedMinimumWidth: 126,
   expandedMaximumWidth: 137,
   footerMinimumWidth: 260,

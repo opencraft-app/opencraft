@@ -183,14 +183,6 @@ function sourceTurns(
       }
       items.push(item);
     }
-    const turnDiff = string(candidate.diff) ?? string(candidate.unifiedDiff);
-    if (turnDiff !== null && turnDiff.trim().length > 0) {
-      items.push({
-        id: `${id}:turn-diff`,
-        type: "turnDiff",
-        payload: { diff: turnDiff },
-      });
-    }
     const turnError = isRecord(candidate.error) ? candidate.error : null;
     if (
       status === "failed" &&
@@ -222,6 +214,9 @@ function sourceTurns(
         durationMs: number(candidate.durationMs),
         firstTurnWorkItemStartedAtMs: number(candidate.firstTurnWorkItemStartedAtMs),
         finalAssistantStartedAtMs: number(candidate.finalAssistantStartedAtMs),
+        ...(candidate.diff !== undefined || candidate.unifiedDiff !== undefined ? {
+          unifiedDiff: candidate.diff !== undefined ? string(candidate.diff) : string(candidate.unifiedDiff),
+        } : {}),
         hookStats: summarizeHookRuns(candidate.hookRuns),
         params: candidate.params,
         mcpAppModelContextAttachments: candidate.mcpAppModelContextAttachments,
@@ -893,6 +888,22 @@ function sourceClientMessageIds(turns: readonly TimelineSourceTurn[]): Set<strin
   return ids;
 }
 
+function authoritativeUserMessageVisible(
+  turn: TimelineSourceTurn,
+  state: OptimisticSubmissionState,
+): boolean {
+  const params = isRecord(turn.params as ReplicaJsonValue) ? turn.params as JsonRecord : {};
+  const paramsId = string(params.clientUserMessageId) ?? string(params.clientId);
+  const paramsInput = params.input;
+  if (paramsId === state.clientMessageId
+    && (Array.isArray(paramsInput) ? paramsInput.length > 0 : paramsInput != null)) return true;
+  return turn.items.some((item) => {
+    if (item.type !== "userMessage" || !isRecord(item.payload as ReplicaJsonValue)) return false;
+    const payload = item.payload as JsonRecord;
+    return (string(payload.clientUserMessageId) ?? string(payload.clientId)) === state.clientMessageId;
+  });
+}
+
 function sameUserMessageInput(left: unknown, right: unknown): boolean {
   const leftKey = codexUserMessageCompareKey(left);
   const rightKey = codexUserMessageCompareKey(right);
@@ -954,7 +965,6 @@ function mergeOptimisticSubmissions(
   submissions: Iterable<OptimisticSubmissionState>,
 ): readonly TimelineSourceTurn[] {
   const result = turns.map((turn) => ({ ...turn, items: [...turn.items] }));
-  const clientIds = sourceClientMessageIds(turns);
   const turnIds = new Set(turns.map((turn) => String(turn.id)));
   const localTurns: Array<{
     readonly state: OptimisticSubmissionState;
@@ -965,13 +975,18 @@ function mergeOptimisticSubmissions(
     // target binding, never acknowledgement of this user message. Keep the
     // local steering item as display owner until the Turn settles; the server
     // UserMessage is then joined to it by client id/compare key.
-    if (state.kind === "turn" && (
-      clientIds.has(state.clientMessageId)
-      || (state.turnId !== null && turnIds.has(String(state.turnId)))
-    )) {
+    const authoritativeTurn = state.kind === "turn"
+      ? authoritativeTurnForSubmission(turns, state)
+      : undefined;
+    if (authoritativeTurn !== undefined && authoritativeUserMessageVisible(authoritativeTurn, state)) {
       continue;
     }
     const item = optimisticItem(state);
+    if (authoritativeTurn !== undefined && state.kind === "turn") {
+      const target = result.find((turn) => String(turn.id) === String(authoritativeTurn.id));
+      if (target !== undefined) target.items.unshift(item);
+      continue;
+    }
     if (state.kind === "steer") {
       const target = result.find(
         (turn) => String(turn.id) === String(state.targetTurnId),
@@ -1112,7 +1127,6 @@ function pruneAcknowledgedSubmissions(
   confirmedSteers: Map<string, OptimisticSubmissionState>,
 ): void {
   const clientIds = sourceClientMessageIds(turns);
-  const turnIds = new Set(turns.map((turn) => String(turn.id)));
   for (const [commandId, state] of submissions) {
     if (state.state !== "accepted" && state.state !== "unknown") continue;
     const target = state.targetTurnId === null
@@ -1121,12 +1135,12 @@ function pruneAcknowledgedSubmissions(
     const acknowledged = state.kind === "steer"
       ? target !== undefined && steeringAcknowledgementIndex(target, state) >= 0
       : clientIds.has(state.clientMessageId);
-    const turnAcknowledged = state.turnId !== null && turnIds.has(String(state.turnId));
     const targetSettled = target !== undefined
       && target.status !== "streaming"
       && target.status !== "pending";
     if (
-      (state.kind === "turn" && (acknowledged || turnAcknowledged))
+      (state.kind === "turn" && acknowledged
+        && turns.some((turn) => authoritativeUserMessageVisible(turn, state)))
     ) {
       submissions.delete(commandId);
     } else if (state.kind === "steer" && acknowledged && targetSettled) {
@@ -1192,6 +1206,14 @@ export function createReplicaConversationRuntime(
     );
     const source = sourceTurns(view.turns ?? thread.turns).map((turn) =>
       interruptedByThisClient.has(turn.id) ? { ...turn, interruptedByThisClient: true } : turn);
+    if (replica.authoritative) {
+      const acknowledgedClientIds = sourceClientMessageIds(source);
+      for (const [commandId, submission] of queued) {
+        if (submission.state === "unknown" && acknowledgedClientIds.has(submission.clientMessageId)) {
+          queued.delete(commandId);
+        }
+      }
+    }
     resolveOptimisticTurnPlacements(
       source,
       replica.authoritative,
@@ -1363,7 +1385,7 @@ export function createReplicaConversationRuntime(
     },
     async submit(intent) {
       assertIntentTarget(config.key, intent);
-      if ([...pendingSubmissions.values()].some((submission) => submission.state === "unknown")) {
+      if ([...pendingSubmissions.values(), ...queued.values()].some((submission) => submission.state === "unknown")) {
         throw new SubmissionOutcomeUnknownError();
       }
       if (continuationPending || continuedFromTurnId !== null) {
@@ -1471,18 +1493,22 @@ export function createReplicaConversationRuntime(
         const submissionError =
           error instanceof Error ? error : new Error(String(error));
         if (intent.target.type === "enqueue-follow-up") {
-          queued.set(intent.commandId, {
-            commandId: intent.commandId,
-            clientMessageId: intent.clientMessageId,
-            serverSubmissionId: null,
-            input: [],
-            preview,
-            state: "failed",
-            operation: "idle",
-            createdAt: intent.createdAt,
-            pausedReason: null,
-            error: submissionError,
-          });
+          const acknowledgedByQueue = [...authoritativeQueue.values()].some((submission) =>
+            submission.clientMessageId === intent.clientMessageId);
+          if (!acknowledgedByQueue) {
+            queued.set(intent.commandId, {
+              commandId: intent.commandId,
+              clientMessageId: intent.clientMessageId,
+              serverSubmissionId: null,
+              input: [],
+              preview,
+              state: error instanceof SubmissionOutcomeUnknownError ? "unknown" : "failed",
+              operation: "idle",
+              createdAt: intent.createdAt,
+              pausedReason: null,
+              error: submissionError,
+            });
+          }
         } else {
           const previous = pendingSubmissions.get(intent.commandId);
           if (previous !== undefined) {
@@ -1584,14 +1610,13 @@ export function createReplicaConversationRuntime(
         }
       }
       for (const [commandId, candidate] of queued) {
-        if (
-          candidate.state === "queued" &&
-          !submissions.some(
-            (submission) =>
-              submission.clientUserMessageId === candidate.clientMessageId,
-          )
-        )
+        if (submissions.some((submission) =>
+          submission.clientUserMessageId === candidate.clientMessageId
+        )) {
           queued.delete(commandId);
+          continue;
+        }
+        if (candidate.state === "queued") queued.delete(commandId);
       }
       authoritativeSteers.clear();
       steeringClaims.clear();
@@ -1680,6 +1705,12 @@ export function createReplicaConversationRuntime(
       }
     },
     async deleteQueuedSubmission(queuedSubmissionId) {
+      if (queued.get(queuedSubmissionId)?.state === "failed") {
+        queued.delete(queuedSubmissionId);
+        localRevision += 1;
+        publish();
+        return;
+      }
       const previous = authoritativeQueue.get(queuedSubmissionId);
       if (previous === undefined)
         throw new Error(

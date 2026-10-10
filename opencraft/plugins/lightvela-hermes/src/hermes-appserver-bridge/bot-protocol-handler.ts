@@ -311,6 +311,9 @@ export class HermesBotAppServerHandler {
 
   async prepareCapability(): Promise<boolean> {
     if (this.unsupported || this.disposed) return false;
+    // Hosted-room negotiation is independent of the managed Bot catalog. Start
+    // it now so initialize waits for the slower read, not their sum.
+    const groupsReady = this.groups.prepareCapability().catch(() => false);
     if (this.managedCatalog && !this.catalogReady) {
       try { await this.refreshCatalog(); }
       catch (error) {
@@ -319,7 +322,7 @@ export class HermesBotAppServerHandler {
         return false;
       }
     }
-    await this.groups.prepareCapability().catch(() => false);
+    await groupsReady;
     return true;
   }
 
@@ -328,9 +331,12 @@ export class HermesBotAppServerHandler {
     const refresh = (async () => {
       await this.managementTail;
       if (this.disposed) throw new Error("Hermes Bot handler is detached");
-      const bindings = this.options.resolveProfileBots === undefined
-        ? undefined : await this.options.resolveProfileBots();
-      const profiles = await this.adapter.listProfiles();
+      // CTL Bot bindings and native Hermes Profiles have separate owners;
+      // neither read depends on the other's result.
+      const [bindings, profiles] = await Promise.all([
+        this.options.resolveProfileBots?.(),
+        this.adapter.listProfiles(),
+      ]);
       if (this.disposed) throw new Error("Hermes Bot handler is detached");
       if (bindings === undefined) this.replaceBots(profiles);
       else {

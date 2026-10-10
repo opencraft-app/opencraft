@@ -1,0 +1,49 @@
+{
+  "schema": "minisandbox-drain-topology-diagnosis/v1",
+  "claimEligible": false,
+  "runId": "7d5fa6acee6a4a0fa60ea59d4b9ffe91",
+  "runtimeRevision": "2757fc785d8f572d1b6430e471100c4a880aefac",
+  "observedAt": "2026-10-03T21:30:19Z",
+  "observations": [
+    {"invocationId": "inv-c9fecxg7m8", "status": "SUCCESS", "exitCode": 0},
+    {"invocationId": "inv-a9fedmgbjh", "status": "SUCCESS", "exitCode": 0},
+    {"invocationId": "inv-e9fed008a9", "status": "SUCCESS", "exitCode": 0}
+  ],
+  "cell": "actor-bj-a01",
+  "workloadUid": "a25fdf91-5c54-464d-a516-d085e6870396",
+  "hostDrainControllerUid": "467dc719-5873-4c93-92f2-44d941f5adcd",
+  "replicas": 111,
+  "readyReplicas": 111,
+  "activeActors": 0,
+  "releaseHold": null,
+  "phase": "Idle",
+  "lastTransitionAt": "2026-10-03T21:15:04.76792656Z",
+  "reason": "scale-down would violate runtime topology maxSkew",
+  "reconcileErrorsInBoundedLogSample": 0,
+  "counts": {"800006": 35, "800007": 35, "800008": 41},
+  "highestHost": {
+    "name": "actor-bj-a01-runtime-hosts-110",
+    "uid": "5fb68ef7-0ef8-4185-a2ab-aa42db12b95b",
+    "zone": "800006",
+    "ready": true,
+    "terminating": false
+  },
+  "prefixCounts": [
+    {"replicas": 110, "counts": {"800006": 34, "800007": 35, "800008": 41}, "skew": 7},
+    {"replicas": 109, "counts": {"800006": 34, "800007": 35, "800008": 40}, "skew": 6},
+    {"replicas": 105, "counts": {"800006": 34, "800007": 34, "800008": 37}, "skew": 3}
+  ],
+  "policy": {
+    "minReplicas": 4,
+    "requiredZones": 3,
+    "configuredDrainMaxSkew": 2,
+    "schedulerMaxSkew": 1,
+    "schedulerWhenUnsatisfiable": "DoNotSchedule",
+    "hpaScaleDown": "Disabled",
+    "contractionEnvelope": "max(configuredDrainMaxSkew, 2*requiredZones, ceil(remainingHosts/20))",
+    "allowedSkewAt110": 6
+  },
+  "mutations": [],
+  "conclusion": "Current safety policy correctly blocks the next highest-ordinal removal. Static ordinal-to-zone ordering prevents autonomous contraction from progressing without explicit topology repair. Waiting alone or a smaller valid prefix does not authorize bypassing the serial gate.",
+  "limitations": "Read-only snapshot; not a production rebalance implementation or a passed final-capacity qualification. Lower-prefix synthetic unit fixture preserves observed aggregate counts and exact tail zone sequence, not every cloud Pod identity."
+}

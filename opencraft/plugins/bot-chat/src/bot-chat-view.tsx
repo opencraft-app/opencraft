@@ -18,7 +18,7 @@ import {
 import { createConversationKey, encodeConversationKey } from "@opencraft/chat-core";
 import { WebChatDocument, WebUserMessageDocument } from "@opencraft/chat-render-web";
 import { CodexComposer } from "@opencraft/codex-composer";
-import { createClientId, createComposerController } from "@opencraft/composer-core";
+import { createClientId, createComposerController, type ComposerDraftStorage } from "@opencraft/composer-core";
 import type { ExtensionSettingsViewProps } from "@opencraft/extension-react";
 import {
   ArrowDown,
@@ -76,6 +76,7 @@ export interface BotChatViewStatus {
 }
 
 export interface BotChatViewOptions {
+  readonly drafts?: ComposerDraftStorage;
   readonly resolver: BotConversationResolver;
   readonly createMotionReplay?: () => BotMotionReplayController;
   readonly writeAuthority?: BotChatWriteAuthority;
@@ -517,7 +518,8 @@ export function createBotChatView(
       () =>
         createComposerController(
           { type: "existing-thread", key },
-          { createId: createClientId, now: () => Date.now() },
+          { createId: createClientId, now: () => Date.now(), drafts: options.drafts,
+            onDraftStorageError: () => console.warn("Chat draft could not be saved locally") },
         ),
       [identity],
     );
@@ -606,16 +608,15 @@ export function createBotChatView(
       latestBotPresenceFacts(effectivePresence).some(
         (fact) => fact.phase !== "idle",
       ) || hasStreamingMessage;
-    const loadOlderAtTop = useCallback(() => {
-      if (
-        snapshot.history.hasOlder &&
-        !snapshot.history.loadingOlder
-      ) void source.loadOlder(key).catch(() => undefined);
-    }, [identity, snapshot.history.hasOlder, snapshot.history.loadingOlder]);
     const viewport = useBotConversationViewport(
       `${identity}:${replayEnabled ? "replay" : "live"}`,
       timeline.units,
-      loadOlderAtTop,
+      {
+        enabled: snapshot.phase === "ready" && !replayEnabled,
+        hasOlder: snapshot.history.hasOlder,
+        loadingOlder: snapshot.history.loadingOlder,
+        loadOlder: () => source.loadOlder(key),
+      },
     );
     const {
       following,
@@ -864,8 +865,17 @@ export function createBotChatView(
               {snapshot.phase === "loading" ? (
                 <p className="bot-chat-stage__status">Loading conversation…</p>
               ) : null}
-              {snapshot.history.loadingOlder ? (
+              {viewport.historyLoading ? (
                 <p className="bot-chat-stage__status">Loading earlier messages…</p>
+              ) : viewport.historyError !== null ? (
+                <div className="bot-chat-stage__error" role="alert">
+                  <span>{viewport.historyError}</span>
+                  <button className="bot-chat-stage__history-action" onClick={viewport.requestOlderHistory} type="button">Try again</button>
+                </div>
+              ) : timeline.units.length === 0 && snapshot.phase === "ready" && snapshot.history.hasOlder ? (
+                <p className="bot-chat-stage__status">
+                  <button className="bot-chat-stage__history-action" onClick={viewport.requestOlderHistory} type="button">Load earlier messages</button>
+                </p>
               ) : null}
               {snapshot.phase === "error" ? (
                 <div className="bot-chat-stage__error" role="alert">
@@ -876,7 +886,7 @@ export function createBotChatView(
                   </button>
                 </div>
               ) : null}
-              {timeline.units.length === 0 && snapshot.phase !== "loading" ? (
+              {timeline.units.length === 0 && snapshot.phase === "ready" && !snapshot.history.hasOlder ? (
                 <div className="bot-chat-empty">
                   <h2>What should we work on?</h2>
                   <p>

@@ -141,6 +141,7 @@ K8s 发布路径与本地不同：
 - Refill Worker：`go run ./cmd/refill -pool <POOL_ID> -count 2`，使用 CloudProvider 创建实例并将 `cloud_id/address` 记录到 DB，状态直接入库 `CLEAN`。
 - Reset Loop（用组合 Worker 启动）：`go run ./cmd/worker -refill-count -1 -waterline-interval 0 -cleanup-interval 0 -reset-pool <POOL_ID> -reset-concurrency 10`，默认循环扫描 `DRY` 实例，推进 `RESETTING→CLEAN`，中间调用 CloudProvider 的重装接口。***
 - 组合 Worker：`go run ./cmd/worker -refill-pool <POOL_ID> -refill-count 5 -refill-interval 1m -reset-pool <POOL_ID> -reset-concurrency 10 -cleanup-interval 5m`，同一进程内分别跑补货与重装循环，并定期清理 `FAILED`；任一功能传入 0 或缺省参数即可禁用。省略 `-refill-pool` 时会对所有池补货；当 `-refill-count`<=0 时采用池的 `desired_capacity` 自动伸缩（按池总目标 `CLEAN` 库存计算，worker 若启用分片会先把总量拆成当前 shard 的目标，再按 `CLEAN+in-flight` 计算缺口补货，超出会回收多余的 `CLEAN` 实例）。
+- CVM 库存观测：组合 Worker 的 `-cvm-inventory-interval` 默认 `5m`，设为 `0` 可关闭；启动后立即执行首轮，分片部署仅 0 号分片运行。按地域将可用区与机型族分别每 5 项分批查询，结果写入 `pool_supply_overview`。`resource_count` 是 CVM 返回的 `InstanceQuota`，`sales_state` 在任一对应 pool 为 `active` 时取 `active`，否则取 `pause`。`updated_time` 仅在成功获取该机型库存时更新；查询失败会保留旧库存及其时间，不会改动现有售卖开关。
   - Refill 流程：先插入 `CREATING`，成功后转 `CLEAN`；创建失败会记录 `FAILED`（含 cloud_id/address，便于后续清理）。
 
 ## 架构示意（本项目对应）

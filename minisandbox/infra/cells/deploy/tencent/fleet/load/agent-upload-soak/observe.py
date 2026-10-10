@@ -4,18 +4,35 @@
 import argparse
 import datetime
 import json
+import math
 import pathlib
+import re
 import signal
 import subprocess
 import threading
+import time
 import urllib.parse
 import urllib.request
+
+
+DEPOT_ADMITTED_ACTIVITIES = (
+    "refresh_manager", "observe_active_manager", "stage_hot_job", "install_hot_job",
+    "upload_cold_job", "publish_cold_job", "reclaim_fdb_job",
+    "retire_cold_objects", "delete_retired_cold_objects",
+)
+DEPOT_PLANNING_TRANSACTIONS = (
+    "depot_manager_refresh", "depot_manager_observe_active", "depot_hot_compact_stage",
+)
+COMPACTION_OPERATIONS = ("cold_upload", "cold_publish", "reclaim_fdb", "hot_stage", "hot_install")
+COMPACTION_RESULTS = ("requested", "succeeded", "retryable", "rejected", "failed", "error", "cancelled")
+# The complete fixed label product is 295 samples, including new hot outcomes.
+MAX_METRIC_SAMPLES = 320
 
 
 def kube(path, *args):
     result = subprocess.run(
         ["kubectl", "--kubeconfig", str(path), "--request-timeout=10s", *args, "-o", "json"],
-        check=True, capture_output=True, text=True, timeout=15,
+        check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, timeout=15,
     )
     return json.loads(result.stdout)
 
@@ -25,7 +42,7 @@ def kube_optional(path, *args):
     result = subprocess.run(
         ["kubectl", "--kubeconfig", str(path), "--request-timeout=10s", *args,
          "--ignore-not-found=true", "-o", "json"],
-        check=True, capture_output=True, text=True, timeout=15,
+        check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, timeout=15,
     )
     raw = result.stdout.strip()
     return json.loads(raw) if raw else None
@@ -37,6 +54,9 @@ def ready(value):
 
 
 def metric_queries(namespace, cell):
+    for selector in (namespace, cell):
+        if not re.fullmatch(r"[a-z0-9](?:[-a-z0-9]*[a-z0-9])?", selector):
+            raise ValueError("metric scope must be a DNS label")
     return {
         "activeActors": f'sum(rivet_workerd_active_actors{{namespace="{namespace}",pod=~"{cell}-runtime-hosts-.*"}})',
         "hostRssBytes": f'sum(container_memory_rss{{namespace="{namespace}",pod=~"{cell}-runtime-hosts-.*",container=~"workerd|workerd-host"}})',
@@ -49,6 +69,111 @@ def metric_queries(namespace, cell):
         "depotManagerRefreshWaiters": f'sum(rivet_sqlite_activity_admission_waiters{{namespace="{namespace}",pod=~"{cell}-engine-.*",class="manager_refresh"}})',
         "depotCompactionInflight": f'sum(rivet_sqlite_activity_admission_inflight{{namespace="{namespace}",pod=~"{cell}-engine-.*",class="compaction"}})',
         "depotCompactionWaiters": f'sum(rivet_sqlite_activity_admission_waiters{{namespace="{namespace}",pod=~"{cell}-engine-.*",class="compaction"}})',
+    }
+
+
+def diagnostic_queries(namespace, cell):
+    queries = metric_queries(namespace, cell)
+    scope = f'namespace="{namespace}",pod=~"{cell}-engine-.*"'
+    # Apply rate to each original counter before aggregation, so Pod restart
+    # resets cannot masquerade as useful work or hide another Pod's progress.
+    for name, metric, labels in (
+        ("compactionJobsPerSecond", "jobs_total", "operation,result"),
+        ("compactionBytesPerSecond", "bytes_total", "operation"),
+        ("compactionObjectsPerSecond", "objects_total", "operation"),
+        ("compactionDurationSecondsPerSecond", "duration_seconds_sum", "operation,result"),
+        ("compactionDurationObservationsPerSecond", "duration_seconds_count", "operation,result"),
+    ):
+        queries[name] = f'sum by ({labels})(rate(rivet_sqlite_compaction_{metric}{{{scope}}}[5m]))'
+    # Each Engine samples the same durable Cell ledger. Replica sum is wrong;
+    # retain the sampling disagreement as well as the upper observation.
+    for aggregate in ("min", "max"):
+        queries[f"coldStorageBytes{aggregate.title()}"] = (
+            f'{aggregate} by (class)(rivet_sqlite_cold_storage_accounting_bytes{{{scope}}})'
+        )
+    # These activities explicitly exclude admission from execution time in the
+    # new Runtime. Do not mix the legacy all-inclusive duration into this series.
+    activities = "|".join(DEPOT_ADMITTED_ACTIVITIES)
+    activity_scope = f'{scope},workflow_name=~"depot_.*",activity_name=~"{activities}"'
+    for phase, metric in (("Admission", "admission"), ("Execution", "attempt")):
+        for kind, suffix in (("Seconds", "sum"), ("Outcomes", "count")):
+            queries[f"depot{phase}{kind}PerSecond"] = (
+                f'sum by (activity_name,result)(rate('
+                f'rivet_gasoline_activity_{metric}_duration_{suffix}{{{activity_scope}}}[5m]))'
+            )
+    transactions = "|".join(DEPOT_PLANNING_TRANSACTIONS)
+    transaction_scope = f'{scope},name=~"{transactions}"'
+    for name, metric in (
+        ("depotPlanningReadBytesPerSecond", "read_bytes"),
+        ("depotPlanningTransactionAttemptsPerSecond", "attempts_sum"),
+        ("depotPlanningTransactionCompletionsPerSecond", "attempts_count"),
+    ):
+        queries[name] = f'sum by (name)(rate(rivet_udb_transaction_{metric}{{{transaction_scope}}}[5m]))'
+    return queries
+
+
+def collect_metrics(endpoint, namespace, cell):
+    queries = diagnostic_queries(namespace, cell)
+    query = " or ".join(
+        f'label_replace(({expression}), "trace", "{name}", "__name__", ".*")'
+        for name, expression in queries.items()
+    )
+    requested_at = time.time()
+    url = endpoint.rstrip("/") + "/api/v1/query?" + urllib.parse.urlencode(
+        {"query": query, "time": str(requested_at)}
+    )
+    with urllib.request.urlopen(url, timeout=5) as response:
+        raw = response.read(1048577)
+    if len(raw) > 1048576:
+        raise ValueError("Prometheus response exceeds 1 MiB")
+    payload = json.loads(raw)
+    if payload.get("status") != "success":
+        raise ValueError("Prometheus query failed")
+    data = payload.get("data", {})
+    rows = data.get("result")
+    if data.get("resultType") != "vector" or not isinstance(rows, list) or len(rows) > MAX_METRIC_SAMPLES:
+        raise ValueError("Prometheus response must be a bounded instant vector")
+    samples = []
+    present = set()
+    for row in rows:
+        labels = row["metric"]
+        name = labels.get("trace")
+        if name not in queries:
+            raise ValueError("Prometheus response contains unexpected dimensions")
+        if name.startswith("compaction"):
+            has_result = name in ("compactionJobsPerSecond", "compactionDurationSecondsPerSecond",
+                                  "compactionDurationObservationsPerSecond")
+            expected = {"trace", "operation", "result"} if has_result else {"trace", "operation"}
+            if (set(labels) != expected or labels["operation"] not in COMPACTION_OPERATIONS
+                    or (has_result and labels["result"] not in (*COMPACTION_RESULTS, "already_applied"))
+                    or (labels.get("result") == "already_applied" and labels["operation"] != "hot_install")):
+                raise ValueError("Prometheus response contains unexpected compaction dimensions")
+        elif name.startswith(("depotAdmission", "depotExecution")):
+            outcomes = ({"ready", "complete", "deferred", "error", "evicted"}
+                        if name.startswith("depotAdmission") else {"succeeded", "error", "timeout"})
+            if (set(labels) != {"trace", "activity_name", "result"}
+                    or labels["activity_name"] not in DEPOT_ADMITTED_ACTIVITIES
+                    or labels["result"] not in outcomes):
+                raise ValueError("Prometheus response contains unexpected Depot activity dimensions")
+        elif name.startswith("depotPlanning"):
+            if (set(labels) != {"trace", "name"}
+                    or labels["name"] not in DEPOT_PLANNING_TRANSACTIONS):
+                raise ValueError("Prometheus response contains unexpected Depot transaction dimensions")
+        elif set(labels) - {"trace", "operation", "result", "class"}:
+            raise ValueError("Prometheus response contains unexpected dimensions")
+        timestamp, value = row["value"]
+        if (not isinstance(value, str) or isinstance(timestamp, bool)
+                or not isinstance(timestamp, (int, float)) or not math.isfinite(timestamp)):
+            raise ValueError("Prometheus response contains an invalid sample")
+        finite = math.isfinite(float(value))
+        samples.append({"labels": labels, "timestamp": timestamp, "value": value, "finite": finite})
+        if finite:
+            present.add(name)
+    return {
+        "requestedAtEpochSeconds": requested_at, "rateWindowSeconds": 300,
+        "query": query, "samples": samples,
+        "missingSignals": sorted(set(queries) - present),
+        "warnings": payload.get("warnings", []),
     }
 
 
@@ -177,16 +302,15 @@ def observe(base, cell, endpoint_file):
 
     # Endpoints are current, receipt-bound inputs rather than remembered VIPs.
     if endpoint_file.is_file():
-        endpoint = json.loads(endpoint_file.read_text())["endpoint"].rstrip("/")
-        for name, query in metric_queries(namespace, cell).items():
-            def metric(query=query):
-                url = endpoint + "/api/v1/query?" + urllib.parse.urlencode({"query": query})
-                with urllib.request.urlopen(url, timeout=5) as response:
-                    value = json.load(response)
-                if value.get("status") != "success":
-                    raise ValueError("Prometheus query failed")
-                return [item["value"][1] for item in value["data"]["result"]]
-            collect(name, metric)
+        def metrics():
+            endpoint = json.loads(endpoint_file.read_text())["endpoint"]
+            return collect_metrics(endpoint, namespace, cell)
+        collect("metricsSnapshot", metrics)
+        snapshot = result.get("metricsSnapshot")
+        if snapshot is not None:
+            for name in metric_queries(namespace, cell):
+                result[name] = [sample["value"] for sample in snapshot["samples"]
+                                if sample["labels"]["trace"] == name and sample["finite"]]
     else:
         errors.append({"component": "metrics", "kind": "missing_endpoint_receipt"})
     result["errors"] = errors

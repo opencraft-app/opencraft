@@ -38,6 +38,44 @@ describe("sidebar user menu presentation", () => {
       await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     }
   });
+
+  it("closes after the pointer leaves the trigger and portaled menu", async () => {
+    const user = userEvent.setup();
+    render(<Fixture />);
+    const trigger = screen.getByRole("button", { name: "Open user menu" });
+    await user.hover(trigger);
+    const menu = await screen.findByRole("dialog", { name: "Account menu" });
+
+    await user.hover(menu);
+    expect(menu).toBeVisible();
+    await user.unhover(menu);
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Account menu" })).not.toBeInTheDocument());
+  });
+
+  it("closes when clicking outside after hover", async () => {
+    const user = userEvent.setup();
+    render(<><Fixture /><button type="button">Outside</button></>);
+    await user.hover(screen.getByRole("button", { name: "Open user menu" }));
+    expect(await screen.findByRole("dialog", { name: "Account menu" })).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Outside" }));
+    expect(screen.queryByRole("dialog", { name: "Account menu" })).not.toBeInTheDocument();
+  });
+
+  it("stays open while the pointer moves into the portaled language menu", async () => {
+    const user = userEvent.setup();
+    render(<Fixture languageContent={<InternationalLanguageMenu id="hover-language" activeLocale="en-US" ariaLabel="Language options" reloadAfterSwitch />} />);
+    await user.hover(screen.getByRole("button", { name: "Open user menu" }));
+    const menu = await screen.findByRole("dialog", { name: "Account menu" });
+    await user.hover(menu);
+    await user.click(screen.getByRole("button", { name: "Language" }));
+    const languageMenu = await screen.findByRole("dialog", { name: "Language" });
+    await user.hover(languageMenu);
+
+    await new Promise((resolve) => setTimeout(resolve, 220));
+    expect(menu).toBeVisible();
+    expect(languageMenu).toBeVisible();
+  });
   it.each([
     { used: 0, total: 4500, usedPercent: 0, expected: 0 },
     { used: 250, total: 1000, usedPercent: 25, expected: 25 },

@@ -3,6 +3,7 @@ import { mkdir, open, rename, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
+import { HeartbeatDemand } from "./heartbeat-demand.mjs";
 
 export function options(argv) {
 	const result = {
@@ -121,7 +122,7 @@ export async function run(config) {
 		versionsPublished: 0, deploymentsPublished: 0, scheduled: 0, createAttempts: 0,
 		objectsCreated: 0, objectsFailed: 0, readySloBreaches: 0, requestRetries: 0,
 		warmupBackpressureRetries: 0, warmupBackpressureTimeouts: 0,
-		activeTargetReady: 0, activeAttempts: 0, activeSucceeded: 0, activeFailed: 0,
+		activeTargetReady: 0, activeAttempts: 0, activeHttpAttempts: 0, activeSucceeded: 0, activeFailed: 0,
 		activeIdentityMismatches: 0, consecutiveCreationFailures: 0, inFlightPeak: 0,
 	};
 	const errors = {};
@@ -154,6 +155,7 @@ export async function run(config) {
 	}
 	async function request(phase, method, route, body, index, originalPath = "/messages") {
 		const start = performance.now();
+		if (phase === "active") counters.activeHttpAttempts++;
 		try {
 			const response = await fetch(config.endpoint + route, {
 				method, redirect: "error", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(config.timeoutMs)]),
@@ -286,7 +288,7 @@ export async function run(config) {
 		}
 	}
 	async function heartbeat(index) {
-		if (!heartbeatReady.has(index) || activeInFlight.has(index) || stopping) return;
+		if (!activeDemand.visit(heartbeatReady.has(index), activeInFlight.has(index), stopping)) return;
 		activeInFlight.add(index); counters.activeAttempts++;
 		const { worker, objectId, shard } = identity(config.runId, index, config.workers);
 		const operation = `heartbeat:${activeSequence[index] + 1}`;
@@ -308,7 +310,9 @@ export async function run(config) {
 	const activeTickMs = Math.max(10, Math.min(100, Math.floor(config.activeIntervalMs / 10)));
 	let activeCursor = 0;
 	let heartbeatTarget = config.warmup;
+	const activeDemand = new HeartbeatDemand(heartbeatTarget, config.activeIntervalMs, activeTickMs, performance.now());
 	const activeTimer = setInterval(() => {
+		activeDemand.tick(performance.now());
 		const activePerTick = Math.max(1, Math.ceil(heartbeatTarget * activeTickMs / config.activeIntervalMs));
 		for (let offset = 0; offset < activePerTick; offset++) {
 			const index = activeCursor++ % heartbeatTarget;
@@ -334,6 +338,7 @@ export async function run(config) {
 			breaches: counters.readySloBreaches,
 		},
 		activeInFlight: activeInFlight.size,
+		activeDemand: activeDemand.snapshot(performance.now()),
 		inFlight: inFlight.size, counters: { ...counters }, errors,
 		latency: Object.fromEntries(Object.entries(phases).map(([name, value]) => [name, value.json()])),
 		loadGeneratorRssBytes: process.memoryUsage().rss, stopReason, retained: true,
@@ -370,6 +375,7 @@ export async function run(config) {
 		}
 		if (!stopping) await sleep(config.warmupSettleMs, undefined, { signal: controller.signal });
 		heartbeatTarget = config.active;
+		activeDemand.setTarget(heartbeatTarget, performance.now());
 		for (const index of heartbeatReady) if (index >= config.active) heartbeatReady.delete(index);
 		if (!stopping) {
 			log({ event: "warmup_complete", created: counters.objectsCreated, active: config.active });
@@ -379,6 +385,7 @@ export async function run(config) {
 	} catch (error) {
 		if (!controller.signal.aborted) { stopping = true; stopReason = "setup_failure"; recordError("setup", error); }
 	} finally {
+		activeDemand.stop(performance.now());
 		clearInterval(activeTimer); clearInterval(progressTimer);
 		await Promise.allSettled([...inFlight]);
 		while (activeInFlight.size) await sleep(10);

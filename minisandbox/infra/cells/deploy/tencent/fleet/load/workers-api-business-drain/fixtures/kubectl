@@ -1,0 +1,18 @@
+#!/usr/bin/env python3
+"""Owned process fixture for the exact Pod DeleteOptions wire boundary."""
+import json
+import os
+import pathlib
+import sys
+
+args = sys.argv[1:]
+if "delete" not in args or "--raw" not in args or "-f" not in args:
+    raise SystemExit("fixture accepts only a raw Kubernetes DELETE")
+body = json.loads(pathlib.Path(args[args.index("-f") + 1]).read_text())
+path = args[args.index("--raw") + 1]
+value = {"path": path, "body": body}
+pathlib.Path(os.environ["MINI_DRAIN_TEST_DELETE_CAPTURE"]).write_text(json.dumps(value))
+if body.get("preconditions", {}).get("uid") != os.environ["MINI_DRAIN_TEST_CURRENT_UID"]:
+    raise SystemExit(1)
+print(json.dumps({"metadata": {"uid": body["preconditions"]["uid"],
+    "deletionTimestamp": "2026-10-02T15:00:00Z"}}))

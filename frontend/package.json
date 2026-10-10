@@ -37,11 +37,14 @@
     "verify:artifact": "node scripts/verify-release-artifact.mjs",
     "build:release-artifacts": "node scripts/build-release-artifacts.mjs",
     "release:eo:artifact": "node scripts/release-edgeone-from-artifact.mjs",
-    "release:cf:artifact": "node scripts/release-cloudflare-from-artifact.mjs"
+    "release:cf:artifact": "node scripts/release-cloudflare-from-artifact.mjs",
+    "build:agents-next": "node ../opencraft/apps/workbench-expo/scripts/build-agents-next.mjs"
   },
   "dependencies": {
     "@babel/runtime-corejs3": "7.29.7",
     "@lightvela/agent-core": "file:../shared/lightvela-agent-core",
+    "@opencraft/mobile-account-sdk": "file:../opencraft/packages/mobile-account-sdk",
+    "@opencraft/mobile-bot-bridge": "file:../opencraft/packages/mobile-bot-bridge",
     "@orama/orama": "3.1.18",
     "@orama/tokenizers": "3.1.18",
     "@radix-ui/react-dialog": "^1.1.23",
@@ -92,7 +95,8 @@
     "subset-font": "2.5.0",
     "tailwind-merge": "^3.3.1",
     "velachat": "file:../velalink",
-    "zod": "^4.4.3"
+    "zod": "^4.4.3",
+    "@lightvela/collaboration-web": "file:../shared/vela-collaboration-web"
   },
   "devDependencies": {
     "@edgeone/makers-sdk": "0.1.0",

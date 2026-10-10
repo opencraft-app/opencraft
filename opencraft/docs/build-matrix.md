@@ -23,7 +23,7 @@ so each surface is an explicit matrix target with its own artifact contract.
 | `expo-web` | Expo Router + Metro Web | Expo static export | Linux/macOS/Windows |
 | `expo-ios-bundle` | React Native + Metro | JS bundle and assets | Linux/macOS; native archive on macOS |
 | `expo-android-internal-apk` | Expo prebuild + Gradle release | Installable internal APK | Linux/macOS with JDK and Android SDK |
-| `expo-android-release-apk` | Expo prebuild + Gradle, external PKCS12 signing | `com.tencent.vela` APK and filing text | Linux with JDK, Android SDK and release key |
+| `expo-android-release-apk` | Expo prebuild + Gradle, external PKCS12 signing | Mainland `com.tencent.vela` or international `com.tencent.vela.intl` APK and filing text | Linux with JDK, Android SDK and release key |
 
 The browser and Electron targets intentionally do not share a built `index.html`.
 They share source and chunks, but have different origin contracts. Electron
@@ -61,7 +61,8 @@ and downloadable Actions artifact after this subtree reaches the standalone
 GitHub mirror; the nested workflow does not run in mono2. The local
 requirements and install command are in `apps/workbench-expo/README.md`.
 
-The separate Android release target selects `com.tencent.vela`, requires a
+The separate Android release target defaults to `com.tencent.vela`; setting
+`OPENCRAFT_LIGHTVELA_EDITION=intl` selects `com.tencent.vela.intl`. It requires a
 repository-external production keystore, verifies the package ID and APK
 signature against that keystore, and writes both the APK and filing values.
 It never falls back to the internal development key. The certificate MD5 and
@@ -307,3 +308,88 @@ rtk proxy shasum -a 256 "$signed_dmg_path" "$signed_zip_path"
 - 启动包内真正的 `Contents/MacOS/OpenCraft`，清除 `ELECTRON_RUN_AS_NODE`，使用全新 user-data-dir、模型存储目录和空闲调试端口。仅隔离 user-data-dir 不会隔离默认的 `~/.opencraft` 模型配置。
 - 在该签名进程中验证首页、相关导航与本次修改。不得复用旧源码预览的结果冒充包体验证，不登录或发送付费请求来做默认烟测。
 - 输出说明分别列出：源码/dirty 状态、buildId、App/DMG 签名、公证/Gatekeeper、完整性、启动/功能验证、未通过门禁，以及是否安装或发布。一次能启动不等于完整分发资格。
+
+## Linux browser smoke prerequisites
+
+### Trusted internal desktop deployment
+
+For an installation where every network-admitted user is trusted to view this
+machine's desktop, choose `--trusted-internal-desktop` instead of `--local-desktop`.
+Keep the existing `--host 0.0.0.0 --allow-unauthenticated-public` acknowledgement
+for a non-loopback listener. No TAT or separate account service is needed. The
+verified native observer must already be installed/running; legacy interactive
+VNC/noVNC ports need not be started or exposed. A TLS reverse proxy must preserve
+the browser-facing Host and forward `/desktop/connect` WebSocket upgrades.
+Open an existing local Codex conversation, then select Desktop in the right-panel
+toolbar. It is observe-only, and closing it does not stop Agent work or the desktop.
+For mouse/keyboard control, additionally install the root-owned helper/unit from
+`apps/local-agent-host/native/linux/` and explicitly start
+`opencraft-desktop-control.service`, then add `--desktop-control`. The server
+must run as the trusted root backend peer. It fails startup if the verified input
+executor does not match the observer incarnation. The unit opens no TCP listener;
+neither mode requires enabling legacy interactive VNC/noVNC. Users still must
+click Take control, and only one viewer can control the shared machine. Closing
+or leaving releases it; refresh/recovery returns to viewing. Clipboard paste is
+not included in this local input capability.
+
+From the extracted server package, after the verified observation services are
+already installed, the operator can install the optional input service explicitly:
+
+```bash
+sudo install -o root -g root -m 0755 runtime/native-desktop/desktop-control.py /usr/local/libexec/opencraft/desktop-control.py
+sudo install -o root -g root -m 0644 runtime/native-desktop/opencraft-desktop-control.service /etc/systemd/system/opencraft-desktop-control.service
+sudo systemctl daemon-reload
+sudo systemctl start opencraft-desktop-control.service
+```
+
+Updating an already-running input helper requires an explicit service restart;
+that revokes active input. The main OpenCraft service is not restarted by installation.
+Default installations remain hidden. This explicit network-trust mode is not a
+multi-tenant or anonymous Internet deployment; see the
+[authority boundary](cloud-desktop-plugin.md#local-execution-server-authority).
+`OPENCRAFT_DESKTOP_ACCESS=trusted-internal npm run smoke:local-desktop` verifies
+the same real native/Thread chain at a non-loopback browser hostname with
+isolated synthetic inference, including viewing recovery and disabled input.
+It uses the already-running desktop rather than recoloring its root window.
+Explicit Codex/browser tools must exist before the smoke creates any resources.
+Add `OPENCRAFT_DESKTOP_CONTROL=true` to that smoke to verify real mouse/key
+delivery in a self-owned native test window, physical mutual exclusion, renewal,
+Unicode mapping, forced key release and no control reacquisition after recovery.
+
+浏览器二进制存在不代表本机可以启动。Linux 浏览器验收在创建测试资源、启动模型/Host 和
+桌面连接前，必须检查**实际选定的 Chromium**及它运行时使用的系统库环境：
+
+```sh
+ldd "$OPENCRAFT_CHROMIUM_EXECUTABLE"
+```
+
+项目复用 `scripts/browser-smoke-preflight.mjs` 的 `assertBrowserRuntimeDependencies`，列出
+所有 `not found` 库并失败退出，不自动安装、不绕过检查、不把失败算成 UI 验收。
+`smoke-cloud-desktop-rfb.ts`、`smoke-desktop-panel-ui.ts` 和 `smoke-local-desktop.ts` 已调用此检查。工具路径用明确的
+`OPENCRAFT_PLAYWRIGHT_MODULE` / `OPENCRAFT_CHROMIUM_EXECUTABLE` 注入；不得复制别的
+checkout 的 node_modules 或把一次性工具缓存路径固化为应用依赖。
+
+TencentOS 4.4 本机验收曾缺少 `libgbm.so.1`、`libasound.so.2`；补齐或引入这两者后，
+`libgbm` 还会暴露下游缺失的 `libwayland-server.so.0`。所以不能只修第一次启动报错：
+必须对 Chromium 和新增库的传递依赖重新运行检查。当前 TencentOS 仓库分别提供
+`mesa-libgbm`、`alsa-lib`、`libwayland-server`（安装前核对本机发行版和仓库）。
+Ubuntu/Debian 继续使用自己的发行版依赖安装方法，不给现有 Ubuntu 安装分支混入 DNF 命令。
+
+如果已有隔离浏览器工具库，可以仅对验收进程设置明确的 `LD_LIBRARY_PATH`；这不是应用的
+安装依赖，也不应修改系统全局搜索路径。记录最终 Chromium、库来源、缺失项、修复命令和
+实测结果；执行环境仍不满足时，应报告“浏览器验收未完成”，不能用构建/单测替代。
+
+本机桌面全链路烟测使用 `scripts/smoke-local-desktop.ts`：显式提供上述工具路径和
+`OPENCRAFT_CODEX_EXECUTABLE`，先准备独立只读观察服务；在验收拥有的 Xvfb `:1` 上设置
+已知根窗口颜色 `#2080e0`，然后核对真实 Codex Thread、观看授权、1440×900 的原生 RFB
+画面及像素。推理只访问独立的本地合成端点，不复制真实凭据/会话。服务原状态、隔离
+profile 和截图路径保留在本次 Task receipt；结束后恢复本次启用的服务，不重启聊天预览。
+应先启动 observer 保持 X 客户端连接，再设置已知根窗口颜色；最后一个 X 客户端退出会
+触发 Xvfb reset，若先着色后再启动 observer，颜色可能变回黑色，不能将此归因于传输。
+脚本只断开自己创建的一条 native 观看流，核对有限自动恢复后的新 canvas/像素和独立新连接；
+不停止桌面服务、不切断聊天连接，也不重新请求模型。这不是手机真实弱网验收。
+验收页必须消费当前 checkout 构建的正式 CSS 和应用使用的主题生成属性；仅设置
+`data-theme` 不会生成全部语义颜色，连接背景/按钮描边可能透明，不能用几何通过替代视觉验收。
+`npm run smoke:desktop-panel` 验证真实面板在三个主题及 720px/320px 中的完整状态与短文案，
+后端/媒体是明确的合成边界；真实 noVNC 和本机权限分别由另外两项烟测验收。
+脚本还检查实际画布可见尺寸及其在面板内的完整显示，并保留截图复核，拒绝零面积画面。

@@ -35,7 +35,17 @@ ModelEnginePort 只接收产品文档和窄的凭据解析能力，不获得模�
 
 reasoning 保持已有不变量：无能力不发送档位，有能力的默认必须属于支持集合；`none` 只在明确支持时有效。选择、展示和编译共享解析，不用首档位充当缺失默认。
 
-## 提交与应用
+## 语音模型与应用服务
+
+模型声明增加可选 `type: chat | asr`，旧文档省略时仍为 chat；用途不按名称推断。当前转写适配协议为 `hunyuan-asr`，仅允许固定 TokenHub HTTPS 基础地址。聊天默认只能引用聊天模型；独立的 `defaultSpeechModel` 只保存 providerId/modelId，不复制端点或密钥。移除/停用所选语音连接后保留不可用的明确选择，禁止偷偷换模型。
+
+Headless 的 Model Services 在现有添加提供商表单中选择用途，复用同一提供商命令、全局 revision/CAS、凭据暂存和不确定提交核对；语音页只选择模型，不另建密钥表单或环境变量配置。ModelConfigurationRepository/ModelCredentialRepository 的存储格式、权限和所有权不变。没有安装应用语音服务的桌面/远端 Host 不广告可创建语音模型。DSH 兼容命名空间只用于管理投影，转换保留 type；语音提供商及其凭据完全排除于聊天引擎执行投影。管理目录展示转写模型，普通聊天目录不展示；也不提供文本探测/图片输入/聊天默认操作。
+
+应用语音服务固定读取安装级 models 目录，切换 SSH/Thread/Bot 不更换该所有者。录音开始捕获不可读的绑定票据；它以进程私有 HMAC 绑定所选连接、模型和当前凭据。提交前读取一致快照并比较票据，配置变更/服务更换时拒绝旧录音，不转投新模型或新密钥。改名不退休录音；显式重试不改变票据。正在执行的转写继续使用提交时捕获的配置，不宣称可撤回供应商计费。票据不提供凭据散列、密钥读回或跨重启持久性。
+
+旧 OPENCRAFT_SPEECH_API_KEY/MODEL 只允许通过显式迁移命令一次性导入；服务启动不导入、不回退读取环境密钥。已配置选择不覆盖，导入保留旧文件并提示核对后移除旧密钥部署配置。OPENCRAFT_SPEECH_PUBLIC_ACCESS 仅为部署准入策略，不是模型真源。实装与验收见 [cloud-dictation.md](../docs/cloud-dictation.md)。
+
+## 聊天引擎提交与应用
 
 1. 在 OpenCraft 文件锁内校验 revision 和完整文档。
 2. 写入私有临时文件并原子替换 models.json。

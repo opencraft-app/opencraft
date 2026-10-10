@@ -2,6 +2,8 @@ import { ChevronRight } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import { workingShimmerMotion } from "@opencraft/design-system/tokens";
 import { OverlayDisclosureTrigger } from "../../overlay-disclosure-trigger";
+import { useDisclosureReflow } from "../../use-disclosure-reflow";
+import { useDisclosureHeight } from "../../use-disclosure-height";
 import {
   useCallback,
   useId,
@@ -85,11 +87,16 @@ export function ActivityDisclosure({
   unmountBodyWhenCollapsed = false,
 }: ActivityDisclosureProps) {
   const prefersReducedMotion = useReducedMotion();
+  const reflow = useDisclosureReflow();
   const summaryId = useId();
   const hasBody = children !== null && children !== undefined;
+  useLayoutEffect(() => {
+    if (!hasBody) reflow.cancel();
+  }, [hasBody, reflow.cancel]);
   const [bodyMounted, setBodyMounted] = useState(!unmountBodyWhenCollapsed || open);
   const bodyRef = useRef<HTMLDivElement>(null);
   const [bodyHeightPx, setBodyHeightPx] = useState(0);
+  const animatedHeight = useDisclosureHeight(0);
   useLayoutEffect(() => {
     if (open && !bodyMounted) setBodyMounted(true);
   }, [bodyMounted, open]);
@@ -113,7 +120,9 @@ export function ActivityDisclosure({
         contentClassName="thread-activity-item__header-content"
         interactive={hasBody}
         labelId={summaryId}
-        onToggle={() => {
+        reflowOwned
+        onToggle={(anchor) => {
+          reflow.begin(anchor);
           if (!open && unmountBodyWhenCollapsed) setBodyMounted(true);
           onOpenChange(!open);
         }}
@@ -133,10 +142,13 @@ export function ActivityDisclosure({
           className="thread-activity-item__body-clip"
           initial={false}
           inert={!open}
-          onAnimationComplete={() => {
+          onAnimationComplete={(definition) => {
+            if (typeof definition !== "object" || Array.isArray(definition)
+              || definition.height !== (open ? bodyHeightPx : 0)) return;
+            reflow.complete();
             if (!open && unmountBodyWhenCollapsed) setBodyMounted(false);
           }}
-          style={{ overflow: open ? "visible" : "hidden", pointerEvents: open ? "auto" : "none" }}
+          style={{ height: animatedHeight, overflow: open ? "visible" : "hidden", pointerEvents: open ? "auto" : "none" }}
           transition={{ duration: prefersReducedMotion ? 0 : 0.3, ease: [0.19, 1, 0.22, 1] }}
         >
           <div className="thread-activity-item__body" ref={bodyRef}>{bodyMounted ? children : null}</div>

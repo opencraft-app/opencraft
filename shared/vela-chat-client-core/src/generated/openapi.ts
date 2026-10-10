@@ -110,6 +110,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/me/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 获取当前 Human 的协作身份资料
+         * @description 适用于 LightVela 委托账户和本地账户；不要求本服务持有邮箱或密码。
+         */
+        get: operations["getHumanProfile"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/me/im/session": {
         parameters: {
             query?: never;
@@ -1839,6 +1859,14 @@ export interface components {
             imState: "provisioning" | "ready" | "error";
             revision: components["schemas"]["Revision"];
         };
+        HumanProfile: {
+            id: components["schemas"]["Id"];
+            displayName: string;
+            imUserId?: string | null;
+            /** @enum {string} */
+            imState: "provisioning" | "ready" | "error";
+            revision: components["schemas"]["Revision"];
+        };
         ImSession: {
             sdkAppId: number;
             userId: string;
@@ -3142,6 +3170,27 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Account"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getHumanProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 当前 Human 身份资料 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HumanProfile"];
                 };
             };
             default: components["responses"]["Error"];

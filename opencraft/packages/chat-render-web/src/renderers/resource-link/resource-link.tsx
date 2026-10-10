@@ -1,4 +1,4 @@
-import type { ChatNodeRendererProps, ChatResourcePolicyService } from "@opencraft/chat-render-react";
+import { chatFileCitationPresentation, chatReferenceTarget, useSettledResourceTarget, type ChatNodeRendererProps, type ChatResourcePolicyService } from "@opencraft/chat-render-react";
 import type { ChatResourceDecision, ChatResourceOpenIntent } from "@opencraft/chat-render-react";
 import { FormattedMessage } from "@opencraft/i18n/react";
 import * as ContextMenu from "@radix-ui/react-context-menu";
@@ -12,22 +12,8 @@ import {
   externalLinkMenuIntent,
   externalLinkPointerIntent,
   faviconSources,
-  SAFE_URL_SETTLE_MS,
 } from "./external-link-model";
 import "./resource-link.scss";
-
-function useSettledUrl(target: string | null, streaming: boolean): string | null {
-  const [settled, setSettled] = useState<string | null>(() => streaming ? null : target);
-  useEffect(() => {
-    if (!streaming) {
-      setSettled(target);
-      return;
-    }
-    const timer = window.setTimeout(() => setSettled(target), SAFE_URL_SETTLE_MS);
-    return () => window.clearTimeout(timer);
-  }, [streaming, target]);
-  return streaming ? settled === target ? target : null : target;
-}
 
 function ExternalLinkGlyph({ target }: { readonly target: string | null }) {
   const sources = useMemo(() => target === null ? [] : faviconSources(target), [target]);
@@ -62,7 +48,7 @@ export function ExternalUrlLink({
   readonly label: ReturnType<ChatNodeRendererProps["renderNodes"]>;
   readonly title: string | null;
 }) {
-  const target = useSettledUrl(decision.allowed ? decision.target : null, context.streaming);
+  const target = useSettledResourceTarget(decision.allowed ? decision.target : null, context.streaming);
   const pending = decision.allowed && decision.target !== null && target === null;
   const invoke = (intent: ChatResourceOpenIntent) => {
     if (target === null) return;
@@ -205,16 +191,12 @@ function FileGlyph() {
 export function createFileCitationRenderer(resources: ChatResourcePolicyService) {
   return function FileCitationRenderer({ node, context }: ChatNodeRendererProps) {
     if (node.kind !== "directive" || node.name !== "codex-file-citation") return null;
-    const path = node.attributes.path?.trim() ?? "";
-    if (path.length === 0) return <>{node.raw}</>;
-    const start = node.attributes.line_range_start ?? node.attributes.lineRangeStart;
-    const end = node.attributes.line_range_end ?? node.attributes.lineRangeEnd;
-    const location = start === undefined ? "" : end === undefined ? `L${start}` : `L${start}–${end}`;
-    const target = `${path}${start === undefined ? "" : `:${start}${end === undefined ? "" : `-${end}`}`}`;
-    const decision = resources.resolve(target, context);
-    const label = `${basename(path)}${location.length === 0 ? "" : ` (${location})`}`;
+    const presentation = chatFileCitationPresentation(node);
+    if (presentation === null) return <>{node.raw}</>;
+    const decision = resources.resolve(presentation.target, context);
+    const { label } = presentation;
     if (!decision.allowed || decision.target === null) {
-      return <span className="chat-file-citation" title={path}><FileGlyph />{label}</span>;
+      return <span className="chat-file-citation" title={node.attributes.path}><FileGlyph />{label}</span>;
     }
     return (
       <a
@@ -225,7 +207,7 @@ export function createFileCitationRenderer(resources: ChatResourcePolicyService)
           if (context.openResource !== undefined) event.preventDefault();
           context.openResource?.(decision.target!, decision);
         }}
-        title={path}
+        title={node.attributes.path}
       ><FileGlyph />{label}</a>
     );
   };
@@ -270,8 +252,8 @@ export function createLinkRenderer(resources: ChatResourcePolicyService) {
 export function createReferenceRenderer(resources: ChatResourcePolicyService) {
   return function ReferenceRenderer({ node, context }: ChatNodeRendererProps) {
     if (node.kind !== "reference") return null;
-    const isFile = node.referenceKind === "workspace-file";
-    const decision = isFile ? resources.resolve(node.text.slice(1), context) : null;
+    const referenceTarget = chatReferenceTarget(node);
+    const decision = referenceTarget === null ? null : resources.resolve(referenceTarget, context);
     const contents = node.segments.map((segment, index) => (
       <span
         className={segment.entering && !context.fadeTimeline?.isSettled(segment.key) ? "chat-stream-fade-in" : undefined}
@@ -291,7 +273,7 @@ export function createReferenceRenderer(resources: ChatResourcePolicyService) {
         style={segment.entering ? { "--fade-delay": `${context.fadeTimeline?.cachedDelayFor(segment.key) ?? index * 16}ms` } as CSSProperties : undefined}
       >{segment.text}</span>
     ));
-    if (!isFile || decision === null || !decision.allowed || decision.target === null) {
+    if (decision === null || !decision.allowed || decision.target === null) {
       return <span className="chat-inline-code" data-markdown-copy="inline-code" dir="ltr">{contents}</span>;
     }
     return (

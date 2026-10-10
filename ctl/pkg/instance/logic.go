@@ -70,6 +70,8 @@ type Logic interface {
 	StartTerminalSession(ctx pctx.Context, instanceID string) (*transport.TerminalSessionResponse, error)
 	ListInstances(ctx pctx.Context, page, pageSize int) (*transport.ListInstancesResponse, error)
 	ListInstanceBots(ctx pctx.Context, instanceID string) (*transport.ListInstanceBotsResponse, error)
+	ListChannelSessions(ctx pctx.Context, instanceID, botID, source, before string, limit int) (*transport.ChannelSessionsResponse, error)
+	ListChannelMessages(ctx pctx.Context, instanceID, botID, sessionID, before string, limit int) (*transport.ChannelMessagesResponse, error)
 	CreateInstanceBot(ctx pctx.Context, instanceID string, req *transport.CreateInstanceBotRequest) (*transport.InstanceBotResponse, error)
 	UpdateInstanceBot(ctx pctx.Context, instanceID, botID string, req *transport.UpdateInstanceBotRequest) (*transport.InstanceBotResponse, error)
 	DeleteInstanceBot(ctx pctx.Context, instanceID, botID string) (*transport.InstanceBotResponse, error)
@@ -121,6 +123,8 @@ type Logic interface {
 	// 云桌面（VNC）：POST 触发（幂等 provision）/ GET 轮询（Provisioning→Ready 状态机）。
 	EnsureDesktopSession(ctx pctx.Context, instanceID string) (*transport.DesktopSessionResponse, error)
 	GetDesktopSession(ctx pctx.Context, instanceID string) (*transport.DesktopSessionResponse, error)
+	EnsureDesktopResource(ctx pctx.Context, instanceID string) (*transport.DesktopResourceResponse, error)
+	GetDesktopResource(ctx pctx.Context, instanceID string) (*transport.DesktopResourceResponse, error)
 }
 
 type logic struct {
@@ -148,6 +152,7 @@ type logic struct {
 	websiteCredentialStore                 websiteauth.Store
 	websiteCredentialTATCommandID          string
 	websiteCredentialTATCommandIDsByRegion map[string]string
+	websiteSkillTATCommandIDsByRegion      map[string]string
 	websiteAgentAPIBase                    string
 }
 
@@ -183,6 +188,7 @@ func NewLogic() Logic {
 		websiteCredentialStore:                 websiteauth.New(resource.RedisMainClient),
 		websiteCredentialTATCommandID:          websiteCredentialTATCommandIDFromConfig(),
 		websiteCredentialTATCommandIDsByRegion: websiteCredentialTATCommandIDsByRegionFromEnv(),
+		websiteSkillTATCommandIDsByRegion:      websiteSkillTATCommandIDsByRegionFromEnv(),
 		websiteAgentAPIBase:                    websiteAgentAPIBaseFromConfig(),
 	}
 }

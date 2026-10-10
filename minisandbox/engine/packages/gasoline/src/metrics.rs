@@ -206,6 +206,20 @@ lazy_static::lazy_static! {
 		BUCKETS.to_vec(),
 		*REGISTRY
 	).unwrap();
+	pub static ref ACTIVITY_ATTEMPT_DURATION: HistogramVec = register_histogram_vec_with_registry!(
+		"gasoline_activity_attempt_duration",
+		"Activity execution attempts by bounded terminal result before history persistence. Explicit admission is excluded; waits inside ordinary activities remain execution. This is not a compaction progress metric.",
+		&["workflow_name", "activity_name", "result"],
+		BUCKETS.to_vec(),
+		*REGISTRY
+	).unwrap();
+	pub static ref ACTIVITY_ADMISSION_DURATION: HistogramVec = register_histogram_vec_with_registry!(
+		"gasoline_activity_admission_duration",
+		"Explicit admission wait by bounded result: ready, complete, deferred, error, evicted. Deferred waits are not execution failures.",
+		&["workflow_name", "activity_name", "result"],
+		BUCKETS.to_vec(),
+		*REGISTRY
+	).unwrap();
 	pub static ref ACTIVITY_ERRORS: IntCounterVec = register_int_counter_vec_with_registry!(
 		"gasoline_activity_errors",
 		"All errors made in an activity.",

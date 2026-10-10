@@ -80,6 +80,11 @@ if [[ ${AUTONOMY_CONTROL_ENFORCE:-1} != 0 ]]; then
 	"$operations_dir/assert-autonomy-control.sh"
 fi
 
+if [[ $qualification_profile == production || $qualification_profile == production-cell ]]; then
+	kubectl "${kubeconfig_args[@]}" -n "$namespace" get deployment "${cell_name}-host-drain" -o json \
+		| python3 "$script_dir/host-drain-profile.py" check production
+fi
+
 if [[ ${RUNTIME_SCALE_IN_HOLD_HELD:-0} != 1 ]]; then
 	exec "$script_dir/with-runtime-scale-in-hold.sh" "$0" "$@"
 fi

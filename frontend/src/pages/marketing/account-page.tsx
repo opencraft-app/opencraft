@@ -16,12 +16,13 @@ import {
   Zap,
 } from "lucide-react";
 import { useCallback, useEffect, useState, useRef, useMemo, type ReactNode } from "react";
+import { ACCOUNT_NICKNAME_MAX_LENGTH, deriveAccountVerification, isValidAccountNickname, isValidSafetyPhone, normalizeSafetyPhone } from "@opencraft/mobile-account-sdk";
 import { useSession } from "@/contexts/session-context";
 import { useRepositories } from "@/contexts/repository-context";
 import { useOpenClaw } from "@/contexts/agent-context";
 import { usePaidBillingEnabled, useRealnamePhoneVerificationEnabled, useReferralEnabled } from "@/contexts/runtime-config-context";
 import { RepositoryError } from "@/repositories/http-repositories";
-import { REALNAME_LEVEL, type Pass } from "@/domain/types";
+import { type Pass } from "@/domain/types";
 import { LoginModal } from "@/components/site/login-modal";
 import { ProductPageShell, ProductReturnHomeHeader } from "@/components/site/product-chrome";
 import { useT } from "@/i18n/t";
@@ -103,8 +104,8 @@ const ChangePhoneModal = ({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const normalizedPhone = phone.replace(/[^\d]/g, "").slice(0, 11);
-  const canSubmit = /^1\d{10}$/.test(normalizedPhone) && smsCode.trim().length >= 4 && !submitting;
+  const normalizedPhone = normalizeSafetyPhone(phone);
+  const canSubmit = isValidSafetyPhone(normalizedPhone) && smsCode.trim().length >= 4 && !submitting;
 
   useEffect(() => {
     if (cooldownSeconds <= 0) return;
@@ -142,7 +143,7 @@ const ChangePhoneModal = ({
   };
 
   const sendPhoneCode = async () => {
-    if (!/^1\d{10}$/.test(normalizedPhone) || sendingCode || cooldownSeconds > 0) return;
+    if (!isValidSafetyPhone(normalizedPhone) || sendingCode || cooldownSeconds > 0) return;
     setSendingCode(true);
     setError(null);
     try {
@@ -249,7 +250,7 @@ const ChangePhoneModal = ({
               <button
                 type="button"
                 onClick={() => void sendPhoneCode()}
-                disabled={!/^1\d{10}$/.test(normalizedPhone) || sendingCode || cooldownSeconds > 0}
+                disabled={!isValidSafetyPhone(normalizedPhone) || sendingCode || cooldownSeconds > 0}
                 className="flex-shrink-0 rounded-lg px-4 text-sm font-medium transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
                 style={{ border: "1px solid #202020", color: "#202020" }}
               >
@@ -901,7 +902,7 @@ const SubscriptionSection = ({
     };
   }, [operablePass, t]);
   const { sources: creditSources, summary: creditSummary, failed: creditPacksFailed, reload: reloadCreditPacks } =
-    useCreditSources(planCreditInput, freeCreditInput);
+    useCreditSources(planCreditInput, freeCreditInput, true, session.user?.id ?? "");
 
   /* 进度、汇总和告警统一计算所有积分来源；free 已在 hook 中去重。 */
   const allCreditsTotal = creditSummary.total;
@@ -1317,22 +1318,8 @@ export const AccountPage = ({ view = "account" }: { view?: "account" | "billing"
   const faceIdFlowEnabled = faceIdBackendEnabled || facelessFlowEnabled;
   const phoneProofEnabled = hasSafetyPhone && (realnamePhoneVerificationEnabled || faceIdFlowEnabled);
 
-  const verified = faceIdFlowEnabled
-    ? user?.realnameVerified === true && user?.realnameLevel === REALNAME_LEVEL.PHONE_3FA
-    : realnamePhoneVerificationEnabled
-      ? user?.realnameLevel === REALNAME_LEVEL.PHONE_3FA
-      : Boolean(user?.realnameVerified);
-  const idCardVerified = faceIdFlowEnabled
-    ? !verified && (user?.realnameLevel === REALNAME_LEVEL.IDCARD_2FA || user?.realnameLevel === REALNAME_LEVEL.PHONE_3FA)
-    : realnamePhoneVerificationEnabled
-      && (user?.realnameLevel === REALNAME_LEVEL.IDCARD_2FA || user?.realnameLevel === REALNAME_LEVEL.PHONE_3FA);
-  const shadowProofReady = faceIdFlowEnabled
-    && idCardVerified
-    && user?.realnameLevel === REALNAME_LEVEL.PHONE_3FA;
+  const { verified, idCardVerified, idCardSyncStatus } = deriveAccountVerification(user, realnamePhoneVerificationEnabled);
   const realnameSyncStatus = user?.realnameSyncStatus as RealnameSyncStatus | undefined;
-  const idCardSyncStatus = faceIdFlowEnabled
-    ? shadowProofReady ? realnameSyncStatus : undefined
-    : idCardVerified && !verified ? realnameSyncStatus : undefined;
   const realnameSyncNeedsRetry = !faceIdFlowEnabled
     && realnamePhoneVerificationEnabled
     && hasSafetyPhone
@@ -1431,6 +1418,15 @@ export const AccountPage = ({ view = "account" }: { view?: "account" | "billing"
     return () => window.cancelAnimationFrame(frame);
   }, [isBillingView, searchParams]);
 
+  // App 原生账号页进入主站现有实名流程；清理一次性入口参数。
+  useEffect(() => {
+    if (isBillingView || isGlobal || searchParams.get("open") !== "realname") return;
+    const next = new URLSearchParams(searchParams);
+    next.delete("open");
+    setSearchParams(next, { replace: true });
+    setShowVerifyModal(true);
+  }, [isBillingView, isGlobal, searchParams, setSearchParams]);
+
   // 首页「立即创建」→ 未实名跳转到账号页时，展示实名提醒并清理 query
   useEffect(() => {
     // 国际站无实名概念，即便被手动拼接该 query 也不展示中文提醒
@@ -1489,7 +1485,7 @@ export const AccountPage = ({ view = "account" }: { view?: "account" | "billing"
   };
 
   const handleSaveName = async () => {
-    if (!editName.trim()) return;
+    if (!isValidAccountNickname(editName)) return;
     setSaving(true);
     setNameSaveError(null);
     try {
@@ -1797,13 +1793,13 @@ export const AccountPage = ({ view = "account" }: { view?: "account" | "billing"
                           value={editName}
                           onChange={(e) => setEditName(e.target.value)}
                           className="lw-input w-full flex-1 md:w-auto"
-                          maxLength={20}
+                          maxLength={ACCOUNT_NICKNAME_MAX_LENGTH}
                           autoFocus
                         />
                         <div className="flex w-full items-center gap-2 md:w-auto">
                           <button
                             onClick={() => void handleSaveName()}
-                            disabled={saving || !editName.trim()}
+                            disabled={saving || !isValidAccountNickname(editName)}
                             className="lw-btn-primary !px-4 !py-2.5 !text-sm !rounded-lg disabled:opacity-60"
                           >
                             {saving ? (

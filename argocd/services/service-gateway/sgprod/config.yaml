@@ -6,8 +6,19 @@ allowed_origins:
   - https://www.lightvela.com
   - https://chat.lightvela.com
   - https://chat.lightvela.ai
+  - https://*.devcloud.woa.com
 trusted_proxy_cidrs:
   - 100.64.0.0/10
+speech:
+  control_url: https://token-admin.lightvela.ai
+  traffic_url: https://token.lightvela.ai
+  admin_token_env: VELAGW_SPEECH_ADMIN_TOKEN
+  allowed_origins:
+    - https://lightvela.ai
+    - https://chat.lightvela.ai
+    - https://lightvela.com
+    - https://www.lightvela.com
+    - https://chat.lightvela.com
 worker_actions:
   enabled: true
   temporal:

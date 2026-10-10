@@ -36,6 +36,7 @@ export type PublicSiteHeaderLinkProps = {
   href: string;
   onClick?: () => void;
   style?: CSSProperties;
+  "data-pricing-modal"?: "on";
 };
 
 export type RenderPublicSiteHeaderLink = (props: PublicSiteHeaderLinkProps) => ReactNode;
@@ -149,6 +150,18 @@ const headerCopy: Record<PublicSiteLocale, {
     createNow: "Buat Sekarang",
     login: "Masuk",
     openMenu: "Buka menu",
+  },
+  [PUBLIC_SITE_LOCALES.MS_MY]: {
+    closeMenu: "Tutup menu",
+    createNow: "Buat Sekarang",
+    login: "Log Masuk",
+    openMenu: "Buka menu",
+  },
+  [PUBLIC_SITE_LOCALES.TH_TH]: {
+    closeMenu: "ปิดเมนู",
+    createNow: "ทำตอนนี้",
+    login: "เข้าสู่ระบบ",
+    openMenu: "เปิดเมนู",
   },
   [PUBLIC_SITE_LOCALES.ES]: {
     closeMenu: "Cerrar menú",
@@ -286,7 +299,7 @@ export function PublicSiteHeader({
         handleCreateClick();
       }
     : undefined;
-  const createHref = "/agents";
+  const createHref = "/subscribe";
   const loginHref = "/auth/sign-in";
   const renderLanguage = (variant: LanguageSwitcherVariant) => (
     renderLanguageSwitcher

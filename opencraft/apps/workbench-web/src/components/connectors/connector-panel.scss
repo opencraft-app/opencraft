@@ -48,7 +48,7 @@
     box-shadow: none;
   }
 
-  &:focus-within {
+  :root:not([data-touch-interaction]) &:focus-within {
     @include controls.focus-indicator;
   }
 }

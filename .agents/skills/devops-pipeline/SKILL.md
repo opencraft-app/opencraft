@@ -44,6 +44,13 @@ BK_CI_ACCESS_TOKEN="your_token" python3 .agents/skills/devops-pipeline/scripts/p
 
 已验证该 projectId 可查询 `GitOps 验收与自动合并`、`北京沙箱族 GitOps 漂移审计` 等 mono2 流水线状态。
 
+### 停止 Stream 构建：渠道与最终状态缺一不可
+
+- `build_stop` 返回 `status=0, data=true` **只代表接口返回成功，不代表任务已中止**。渠道不匹配时可能无动作而返回成功。
+- 停止前读取目标的 `build_status`，核对 `webhookInfo.channelCode` 与 `variables.BK_CI_START_CHANNEL` / `pipeline.start.channel`；请求头 `X-DEVOPS-CHANNEL` 必须匹配实际渠道。不要根据项目名硬编码 `GIT`，也不要省略后默认 `BS`。
+- 优先使用本技能的 `stop` 脚本：自动取证渠道、拒绝缺失/冲突，携带原认证与渠道停止，再限时复查。未确认 `CANCELED` 时退出码为2，不能宣称中止或队列已释放。
+- 不通过轮换渠道、身份、令牌或修改 CI 并发规则“试到成功”；父子任务分别核对与授权。具体证据、边界及排障见 [reference/build-stop.md](reference/build-stop.md)。
+
 ## 重要规则
 
 **启动构建前必须获得用户确认**：在调用启动构建脚本之前，必须向用户展示完整的构建入参并获得明确确认。未经用户确认，禁止执行构建操作。

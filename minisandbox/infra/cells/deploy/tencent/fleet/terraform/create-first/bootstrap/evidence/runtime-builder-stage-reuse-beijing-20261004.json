@@ -1,0 +1,96 @@
+{
+  "schema": "actor-runtime-builder-stage-reuse-evidence/v1",
+  "verdict": "passed",
+  "toolingSourceRevision": "eec1f1efbdcd1e40fe0d8f768010fb87fdc252d1",
+  "wrapperSha256": "b744d2ea148f983b6517a7c1ebcae9e6d1d2306804f81781635d62e07b794565",
+  "baselineOpsByteCheckInvocationId": "inv-e9f6u10e1n",
+  "guardedBuilderRelayInvocationIds": [
+    "inv-c9f6vwg7vj",
+    "inv-d9f6w00xjr"
+  ],
+  "captureInvocationId": "inv-e9f6w400q3",
+  "coordinator": {
+    "invocationId": "inv-d9f6vvgr5c",
+    "nativeRequestId": "33a18a8f-28aa-4f10-96d2-fcf1811a9300",
+    "nativeResponseSha256": "0e9074f941a8df7ce9a2c0a0d2e6cbe57ecd259c9838cba1a0906a9b17979a22",
+    "status": "SUCCESS",
+    "exitCode": 0
+  },
+  "guest": {
+    "invocationId": "inv-a9f6wcgmxh",
+    "nativeRequestId": "82175efb-0331-4a22-b3d2-f27ccff56ad0",
+    "nativeResponseSha256": "d0a20ce2e709e9d7c09fcfac7aaa80c766fd8165ba450661a3e16527393b1f12",
+    "status": "SUCCESS",
+    "exitCode": 0
+  },
+  "results": [
+    {
+      "additionalBytesPerFilesystem": 68719476736,
+      "errors": [],
+      "filesystems": [
+        {
+          "availableBytes": 536476008448,
+          "availableInodes": 33465090,
+          "capacityBytes": 540053790720,
+          "device": 64784,
+          "paths": [
+            "/data",
+            "/var/lib/actor-build",
+            "/data/actor-build/containers/storage",
+            "/var/lib/actor-build/deploy/q01-src-2757fc785d8f572d1b6430e471100c4a880aefac-c6785b95c7d2615bbc0fdd57e2007665bd542455fa288dc6c863e389ee107300",
+            "/var/lib/actor-build/runtime-baselines/runtime-base-c631f5542f45b974455543d5bb458e0b3b3cf395-a54e7daa59d1b1a48403d6766a866486630b2cb7d1187a1e0d2a4427eb82bd0c",
+            "/data/actor-build/runtime-workspace/stage-reuse-2757.1T78WC",
+            "/data/actor-build/runtime-workspace/stage-reuse-2757.1T78WC/stage",
+            "/data/actor-build/runtime-workspace/stage-reuse-2757.1T78WC/cargo-home",
+            "/data/tmp"
+          ],
+          "requiredBytes": 122724855808,
+          "requiredInodes": 81920,
+          "reserveBytes": 54005379072
+        }
+      ],
+      "root": {
+        "availableBytes": 94833983488,
+        "availableInodes": 6436202,
+        "capacityBytes": 105620869120,
+        "device": 64769,
+        "filesystemType": "ext4",
+        "path": "/",
+        "resolved": "/",
+        "source": "/dev/vda1"
+      },
+      "rootReserveBytes": 21474836480,
+      "schema": "actor-builder-storage-admission/v1",
+      "verdict": "passed"
+    },
+    {
+      "schema": "actor-runtime-stage/v1",
+      "verdict": "passed",
+      "mode": "verified-base-runtime-reuse",
+      "sourceRevision": "2757fc785d8f572d1b6430e471100c4a880aefac",
+      "sourceManifestDigest": "sha256:c6785b95c7d2615bbc0fdd57e2007665bd542455fa288dc6c863e389ee107300",
+      "workerdCommit": "ce8bdf424dd94e93a39fd1385fdb459336eb76fd",
+      "foundationdbClientDigest": "sha256:52cc22565c42e7eb60c08f395a0626483735c311be0d80b7c035ac8e328e2fff",
+      "toolchainReceiptDigest": null,
+      "buildJobs": 0,
+      "artifactsDigest": "sha256:614a6a8c6b4b4dfe3abe87390bdcf680bf75f870ac5630041d07318face4754d",
+      "reuse": {
+        "baseRuntimeImage": "actor-fleet-beijing.tencentcloudcr.com/actor-fleet/rivet-runtime@sha256:d3a6e41e3d1c4726998f8261d3b75648249df4a60d26a948820d28067a797711",
+        "baseSourceRevision": "c631f5542f45b974455543d5bb458e0b3b3cf395",
+        "baseSourceManifestDigest": "sha256:a54e7daa59d1b1a48403d6766a866486630b2cb7d1187a1e0d2a4427eb82bd0c",
+        "stageInputsDigest": "sha256:a48e6285a470715f41a94b8a3e5b9379170859ddf0cff8f563aaf25d1a1f4f9d"
+      }
+    }
+  ],
+  "stageReceiptPath": "/data/actor-build/runtime-workspace/stage-reuse-2757.1T78WC/stage-receipt.json",
+  "stageReceiptSha256": "c5ed14d7647d89fd57fff8b7fe66f75eb628e10ec2bb40113c6a7d250d4c4b6e",
+  "workerLoaderAbiTestPassed": true,
+  "workerdVersion": "workerd 2026-08-07",
+  "boundaries": [
+    "Original operations lock held through guarded baseline relay, fresh native attachment/TKE exclusion, short-lived private TCR auth, stage reuse and auth cleanup.",
+    "The complete c631 baseline bundle and per-file manifest were verified and materialized read-only. It is not promoted as candidate release source.",
+    "Actual locked/offline Cargo production bridge closure and six stage inputs matched before the base container was read. Source revision, manifest, actual workerd label/hash and static ELF were checked before a new source-bound stage receipt.",
+    "The exact extracted workerd passed the production WorkerLoader ABI test. No V8 recompilation occurred.",
+    "This is compiled-stage reuse evidence, not Engine/Host compilation, registry publication, A/B rollout or strict10k success."
+  ]
+}

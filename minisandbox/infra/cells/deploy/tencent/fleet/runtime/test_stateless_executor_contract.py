@@ -2,6 +2,9 @@
 """Static contract for the production stateless execution plane."""
 
 from pathlib import Path
+import os
+import subprocess
+import tempfile
 import unittest
 
 import yaml
@@ -29,6 +32,54 @@ def resource(kind: str) -> dict:
 
 
 class StatelessExecutorContractTest(unittest.TestCase):
+    def test_native_isolate_cache_policy_is_rendered_and_fails_closed(self) -> None:
+        pod = resource("Deployment")["spec"]["template"]["spec"]
+        init = next(item for item in pod["initContainers"] if item["name"] == "prepare-workerd-config")
+        defaults = {item["name"]: item["value"] for item in init["env"]}
+        self.assertEqual(defaults, {
+            "RIVET_STATELESS_ISOLATE_CACHE_CAPACITY": "16",
+            "RIVET_STATELESS_ISOLATE_CACHE_IDLE_MS": "60000",
+        })
+        build = (ROOT / "build-image.sh").read_text()
+        self.assertIn('"$stage_dir/workerd" test --experimental --no-verbose --gc-stress', build)
+        self.assertIn("stateless-isolate-cache-native.wd-test cache-test", build)
+        self.assertIn("stateless-isolate-cache-native.wd-test metrics-test", build)
+        host = ROOT.parents[5] / "runtimes/workerd/host/workerd"
+        with tempfile.TemporaryDirectory(prefix="stateless-config-") as directory:
+            root = Path(directory)
+            (root / "auth").mkdir()
+            (root / "run").mkdir()
+            (root / "share").mkdir()
+            (root / "share/config-stateless.capnp").write_text((host / "config-stateless.capnp").read_text())
+            (root / "share/stateless-worker.js").write_text((host / "stateless-worker.js").read_text())
+            (root / "auth/workerd-token").write_text("1" * 64)
+            (root / "auth/object-router-token").write_text("2" * 64)
+            # Execute the actual manifest shell against disposable paths. No
+            # runtime secrets or cloud mutation are needed to verify rendering.
+            script = init["args"][0].replace("/var/run/stateless-auth", str(root / "auth"))
+            script = script.replace("/opt/actor/share", str(root / "share"))
+            script = script.replace("/run/stateless", str(root / "run"))
+            for capacity, ttl in [("1", "1"), ("256", "3600000"), ("16", "60000")]:
+                env = dict(os.environ, RIVET_STATELESS_ISOLATE_CACHE_CAPACITY=capacity,
+                           RIVET_STATELESS_ISOLATE_CACHE_IDLE_MS=ttl)
+                result = subprocess.run(["bash", "-ec", script], env=env, capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                config = (root / "run/config-stateless.capnp").read_text()
+                self.assertIn(f'name = "RIVET_STATELESS_ISOLATE_CACHE_CAPACITY", text = "{capacity}"', config)
+                self.assertIn(f'name = "RIVET_STATELESS_ISOLATE_CACHE_IDLE_MS", text = "{ttl}"', config)
+            for capacity, ttl in [("0", "60000"), ("257", "60000"), ("16", "0"),
+                                  ("16", "3600001"), ("01", "60000"), ("1e2", "60000"),
+                                  ("16", "1.5"), ("16", "99999999999999999999")]:
+                env = dict(os.environ, RIVET_STATELESS_ISOLATE_CACHE_CAPACITY=capacity,
+                           RIVET_STATELESS_ISOLATE_CACHE_IDLE_MS=ttl)
+                result = subprocess.run(["bash", "-ec", script], env=env, capture_output=True, text=True)
+                self.assertNotEqual(result.returncode, 0, (capacity, ttl))
+            # An incompatible image/template must not silently ignore policy.
+            template = root / "share/config-stateless.capnp"
+            template.write_text(template.read_text().replace("RIVET_STATELESS_ISOLATE_CACHE_IDLE_MS", "REMOVED_BINDING"))
+            result = subprocess.run(["bash", "-ec", script], env=dict(os.environ, **defaults), capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+
     def test_execution_plane_uses_a_secret_isolated_namespace(self) -> None:
         self.assertTrue(DOCUMENTS)
         self.assertTrue(ADMISSION_DOCUMENTS)

@@ -81,9 +81,9 @@ func (cache *deploymentCache) PutIfCurrent(worker string, value registryWorker, 
 }
 
 // ObserveCursor is called only after a successful Registry watch response. A
-// changed cursor invalidates the whole namespace cache; the number of active
-// Workers is bounded, so this is cheaper and safer than maintaining a lossy
-// per-Worker event log.
+// changed cursor invalidates the bounded namespace cache. This conservative
+// protocol avoids a lossy per-Worker event log but requires cold-read admission
+// and coalescing to bound the resulting Registry work.
 func (cache *deploymentCache) ObserveCursor(cursor string) bool {
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
@@ -148,9 +148,9 @@ func (cache *deploymentCache) Len() int {
 
 func (a *API) startDeploymentWatcher() {
 	a.deploymentWatchOnce.Do(func() {
-		ctx, cancel := context.WithCancel(context.Background())
-		a.deploymentWatchCancel = cancel
-		go a.watchDeployments(ctx)
+		// Watch and shared reads have one API-owned cancellation lifetime.
+		// Close cannot race publication of a separately stored cancel function.
+		go a.watchDeployments(a.deploymentReads.ctx)
 	})
 }
 
@@ -160,17 +160,28 @@ func (a *API) activeWorker(ctx context.Context, worker string) (registryWorker, 
 		return current, nil
 	}
 	generation, cursor, synced := a.deployments.Fence()
-	current, upstream := a.registryWorker(ctx, worker)
-	if upstream != nil {
-		return registryWorker{}, upstream
+	key := deploymentReadKey{worker: worker, generation: generation, cursor: cursor, synced: synced}
+	if !synced {
+		key.unsyncedRead = new(byte)
 	}
-	if !deploymentCursorPattern.MatchString(current.DeploymentCursor) {
-		return registryWorker{}, invalidDeploymentUpstream()
-	}
-	if synced {
-		a.deployments.PutIfCurrent(worker, current, generation, cursor)
-	}
-	return current, nil
+	return a.deploymentReads.Do(ctx, key, func(shared context.Context) (registryWorker, *upstreamError) {
+		// Another read may have filled the cache between the miss and admission.
+		if current, ok := a.deployments.Get(worker); ok {
+			return current, nil
+		}
+		a.deploymentReads.recordRegistryRead()
+		current, upstream := a.registryWorker(shared, worker)
+		if upstream != nil {
+			return registryWorker{}, upstream
+		}
+		if !deploymentCursorPattern.MatchString(current.DeploymentCursor) {
+			return registryWorker{}, invalidDeploymentUpstream()
+		}
+		if synced {
+			a.deployments.PutIfCurrent(worker, current, generation, cursor)
+		}
+		return current, nil
+	})
 }
 
 func (a *API) watchDeployments(ctx context.Context) {
@@ -185,7 +196,7 @@ func (a *API) watchDeployments(ctx context.Context) {
 		}
 		a.deployments.Invalidate()
 		if upstream != nil && ctx.Err() == nil {
-			slog.WarnContext(ctx, "Worker deployment watch unavailable", "code", upstream.Code)
+			slog.WarnContext(ctx, "Worker deployment watch unavailable", "error", diagnosticErrorClass(upstream), "status", upstream.Status)
 		}
 		timer := time.NewTimer(delay)
 		select {

@@ -963,6 +963,9 @@ function createHermesHistoryHarness(options: {
   readonly messages?: readonly HermesMessage[];
   readonly attachmentMetadata?: AttachmentMetadataResolver;
   readonly profileScope?: string;
+  readonly running?: boolean;
+  readonly onActivate?: () => boolean | Promise<boolean>;
+  readonly onInterrupt?: () => void | Promise<void>;
 } = {}) {
   const calls: Array<{ method: string; params: unknown }> = [];
   const historyCalls: Array<{ sessionId: string; limit: number; offset: number; order: string }> = [];
@@ -975,6 +978,7 @@ function createHermesHistoryHarness(options: {
           stored_session_id: "stored-1",
           message_count: 2,
           messages: [],
+          running: options.running ?? false,
           info: { cwd: "/workspace/projects/demo", reasoning_effort: "high" },
         } as T;
       }
@@ -1010,6 +1014,13 @@ function createHermesHistoryHarness(options: {
       }
       if (method === "session.title") {
         return { title: String((params as { title?: unknown })?.title ?? "") } as T;
+      }
+      if (method === "session.activate") {
+        return { session_id: "live-1", message_count: 2, messages: [], running: await options.onActivate?.() ?? options.running ?? false } as T;
+      }
+      if (method === "session.interrupt") {
+        await options.onInterrupt?.();
+        return { status: "interrupted" } as T;
       }
       if (method === "session.close") return { closed: true } as T;
       if (method === "session.delete") {
@@ -1094,6 +1105,41 @@ test("Hermes Thread lifecycle maps rename and delete to native session RPC", asy
   ]);
 });
 
+test("Hermes deletes a running Thread only after interrupt and idle confirmation", async () => {
+  let running = true;
+  let confirmStop!: () => void;
+  const stopConfirmed = new Promise<void>((resolve) => { confirmStop = resolve; });
+  const harness = createHermesHistoryHarness({
+    running: true,
+    onActivate: async () => {
+      if (!running) await stopConfirmed;
+      return running;
+    },
+    onInterrupt: () => { running = false; },
+  });
+  const deletion = harness.adapter.deleteThread("stored-1");
+  await flush();
+  assert.deepEqual(harness.calls.map(({ method }) => method).slice(-3), [
+    "session.activate", "session.interrupt", "session.activate",
+  ]);
+  assert.equal(harness.calls.some(({ method }) => method === "session.close" || method === "session.delete"), false);
+
+  confirmStop();
+  await deletion;
+  assert.deepEqual(harness.calls.map(({ method }) => method).slice(-5), [
+    "session.activate", "session.interrupt", "session.activate", "session.close", "session.delete",
+  ]);
+});
+
+test("Hermes keeps a running Thread when interrupt fails", async () => {
+  const harness = createHermesHistoryHarness({
+    running: true,
+    onInterrupt: () => { throw new Error("interrupt unavailable"); },
+  });
+  await assert.rejects(harness.adapter.deleteThread("stored-1"), /interrupt unavailable/);
+  assert.equal(harness.calls.some(({ method }) => method === "session.close" || method === "session.delete"), false);
+});
+
 test("Hermes scoped Host applies one Profile to Thread listing and creation", async () => {
   const harness = createHermesHistoryHarness({ profileScope: "sales-123" });
 
@@ -1116,6 +1162,14 @@ test("Hermes scoped Host applies one Profile to Thread listing and creation", as
     method: "session.create",
     params: { cwd: "/workspace/sales", source: "desktop", profile: "sales-123" },
   }]);
+});
+
+test("Hermes Thread listing retains the active status of a resumed session", async () => {
+  const harness = createHermesHistoryHarness({ running: true });
+  await harness.adapter.loadThread("stored-1", false);
+
+  const page = await harness.adapter.listThreads();
+  assert.equal(page.data.find((thread) => thread.id === "stored-1")?.status.type, "active");
 });
 
 test("Hermes paginated resume exposes a cursor and hydrates stored history", async () => {
@@ -1270,7 +1324,7 @@ test("Hermes durable projection joins tool declarations and results by tool_call
   assert.equal(turns[0]?.items[5]?.text, "Done.");
 });
 
-test("Hermes durable projection gives final text ownership over repeated reasoning", () => {
+test("Hermes durable reasoning and answer have distinct ownership even when text is equal", () => {
   const turns = mapMessages("stored-repeated-reasoning", [
     { role: "user", content: "hello", id: 1 },
     {
@@ -1282,8 +1336,9 @@ test("Hermes durable projection gives final text ownership over repeated reasoni
     },
   ]);
 
-  assert.deepEqual(turns[0]?.items.map(({ type }) => type), ["userMessage", "agentMessage"]);
-  assert.equal(turns[0]?.items[1]?.text, "Hello. How can I help?");
+  assert.deepEqual(turns[0]?.items.map(({ type }) => type), ["userMessage", "reasoning", "agentMessage"]);
+  assert.deepEqual(turns[0]?.items[1]?.content, ["Hello. How can I help?"]);
+  assert.equal(turns[0]?.items[2]?.text, "Hello. How can I help?");
 });
 
 test("Hermes model-switch markers remain runtime metadata instead of user transcript rows", () => {
@@ -1593,7 +1648,7 @@ test("Hermes resume does not hide a missing durable history that should contain 
   );
 });
 
-test("Hermes history cursor pages by durable message offset from the bounded transcript window", async () => {
+test("Hermes short row window stays complete when the caller requests fewer Turns", async () => {
   const allMessages = [
     { role: "user", text: "one", row_id: 1 },
     { role: "assistant", text: "first", row_id: 2 },
@@ -1632,17 +1687,9 @@ test("Hermes history cursor pages by durable message offset from the bounded tra
     method: "thread/turns/list",
     params: { threadId: "stored", cursor: "hermes-messages:0", limit: 2, sortDirection: "desc" },
   }) as { data: Array<{ items: Array<{ content?: Array<{ text?: string }> }> }>; nextCursor: string | null };
-  assert.deepEqual(newest.data.map((turn) => turn.items[0]?.content?.[0]?.text), ["three", "two"]);
-  assert.equal(newest.nextCursor, "hermes-messages:4");
-
-  const older = await dispatchAppServerRequest(adapter, {
-    id: 2,
-    method: "thread/turns/list",
-    params: { threadId: "stored", cursor: newest.nextCursor, limit: 2, sortDirection: "desc" },
-  }) as { data: Array<{ items: Array<{ content?: Array<{ text?: string }> }> }>; nextCursor: string | null };
-  assert.deepEqual(older.data.map((turn) => turn.items[0]?.content?.[0]?.text), ["one"]);
-  assert.equal(older.nextCursor, null);
-  assert.deepEqual(requests.map(({ offset }) => offset), [0]);
+  assert.deepEqual(newest.data.map((turn) => turn.items[0]?.content?.[0]?.text), ["three", "two", "one"]);
+  assert.equal(newest.nextCursor, null, "a short source page exhausts history regardless of its Turn count");
+  assert.deepEqual(requests, [{ offset: 0, limit: 120 }]);
 });
 
 test("Hermes model.options is projected as a provider-safe AppServer catalog", async () => {
@@ -2239,6 +2286,37 @@ class FakeHermesRpcSocket extends EventTarget {
     this.dispatchEvent(new Event("close"));
   }
 }
+
+test("Hermes model catalog timeout remains a retryable response without a native RedBox", async () => {
+  const socket = new FakeHermesRpcSocket();
+  const failures: Array<{ method: string; kind: string }> = [];
+  const bridge = new BrowserHermesAppServerBridge(socket, {
+    timeoutMs: 40,
+    onRequestFailure: failure => failures.push(failure),
+  });
+  const previousConsoleError = console.error;
+  const redboxes: unknown[][] = [];
+  console.error = (...args: unknown[]) => { redboxes.push(args); };
+  try {
+    const first = await bridge.handle({ jsonrpc: "2.0", id: 1, method: "model/list", params: {} });
+    assert.equal("error" in first && first.error.code, -32000);
+    assert.deepEqual(failures, [{ method: "model/list", kind: "timeout" }]);
+    assert.deepEqual(redboxes, []);
+
+    const retry = bridge.handle({ jsonrpc: "2.0", id: 2, method: "model/list", params: {} });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const request = socket.requests.at(-1)!;
+    assert.equal(request.method, "model.options");
+    assert.equal(socket.requests.filter(candidate => candidate.method === "model.options").length, 2);
+    socket.receive({ jsonrpc: "2.0", id: request.id, result: { providers: [] } });
+    const recovered = await retry;
+    assert.deepEqual("result" in recovered && recovered.result, { data: [], nextCursor: null });
+    assert.deepEqual(redboxes, []);
+  } finally {
+    console.error = previousConsoleError;
+    bridge.dispose();
+  }
+});
 
 test("Hermes RPC transport owns the advertised Gateway heartbeat lifecycle", async () => {
   const socket = new FakeHermesRpcSocket();
@@ -2858,6 +2936,36 @@ test("Hermes adapter publishes accepted work without waiting for message.start",
   ]);
 });
 
+test("Hermes accepts an inline image exactly at the native 20 MiB limit", async () => {
+  let submitted = false;
+  const rpc: HermesRpcClient = {
+    async call<T>(method: string): Promise<T> {
+      if (method === "session.create") return {
+        session_id: "live-image-limit",
+        stored_session_id: "stored-image-limit",
+        message_count: 0,
+        messages: [],
+        info: { cwd: "/workspace" },
+      } as T;
+      if (method === "image.attach_bytes") return {
+        attached: true,
+        path: "/workspace/image-limit.png",
+      } as T;
+      if (method === "prompt.submit") {
+        submitted = true;
+        return { status: "accepted" } as T;
+      }
+      throw new Error(`Unexpected ${method}`);
+    },
+    onEvent: () => () => undefined,
+  };
+  const adapter = new HermesAppServerAdapter(rpc, "/workspace");
+  const thread = await adapter.startThread();
+  const image = Buffer.alloc(20 * 1024 * 1024).toString("base64");
+  await adapter.startTurn(thread.id, [{ type: "image", url: `data:image/png;base64,${image}` }]);
+  assert.equal(submitted, true);
+});
+
 test("Hermes AppServer turn/start preserves the client message identity before its receipt", async () => {
   const rpc: HermesRpcClient = {
     async call<T>(method: string): Promise<T> {
@@ -3252,7 +3360,7 @@ test("Hermes reasoning and tool events preserve AppServer Item boundaries", () =
   assert.deepEqual(duplicateCompletion, []);
 });
 
-test("Hermes live completion removes reasoning repeated by the final answer", () => {
+test("Hermes body preview never creates a reasoning Item before final completion", () => {
   const turn = {
     id: "turn-repeated-reasoning",
     items: [],
@@ -3266,7 +3374,8 @@ test("Hermes live completion removes reasoning repeated by the final answer", ()
   let id = 0;
   const projection = new HermesTurnEventStateMachine("thread-repeated-reasoning", turn, () => String(++id));
   projection.accept(10_000);
-  projection.project({ type: "reasoning.available", payload: { text: "Hello. How can I help?" } }, 11_000);
+  assert.deepEqual(projection.project({ type: "reasoning.available", payload: { text: "Hello. How can I help?" } }, 11_000), []);
+  assert.deepEqual(turn.items, []);
   projection.project({ type: "message.delta", payload: { text: "Hello. How can I help?" } }, 12_000);
   const completed = projection.project({
     type: "message.complete",
@@ -3298,9 +3407,9 @@ test("Hermes live completion gives one final Item ownership over a repeated inte
   projection.accept(10_000);
   projection.project({ type: "message.delta", payload: { text: "I did not use any tools." } }, 11_000);
   projection.project({ type: "message.interim", payload: { text: "I did not use any tools." } }, 12_000);
-  // A provider reasoning frame is a presentation phase, not permission to
-  // orphan the interim Item as a second owner of the eventual final text.
-  projection.project({ type: "reasoning.available", payload: { text: "Check whether tools ran." } }, 13_000);
+  // Real reasoning is a semantic boundary, but does not make prior body text
+  // a second owner of the eventual final answer.
+  projection.project({ type: "reasoning.delta", payload: { text: "Check whether tools ran." } }, 13_000);
   const completed = projection.project({
     type: "message.complete",
     payload: { text: "I did not use any tools.", status: "complete" },
