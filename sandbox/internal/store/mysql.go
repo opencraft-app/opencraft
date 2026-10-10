@@ -70,6 +70,7 @@ var requiredTables = []string{
 	"vpc_shard_create_locks",
 	"vpc_shard_cleanup_resources",
 	"modify_operations",
+	"pool_supply_overview",
 }
 
 const templatePoolBindingColumns = `

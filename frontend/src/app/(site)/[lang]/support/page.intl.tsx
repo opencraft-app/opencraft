@@ -8,6 +8,7 @@ import { PUBLIC_SITE_LOCALES, type PublicSiteLocaleCode } from '@/lib/public-sit
 
 const TITLE_BY_LOCALE: Record<PublicSiteLocaleCode, string> = {
   [PUBLIC_SITE_LOCALES.MS_MY]: 'Bantuan dan maklum balas',
+  [PUBLIC_SITE_LOCALES.TH_TH]: "ความช่วยเหลือและความคิดเห็น",
   [PUBLIC_SITE_LOCALES.EN_US]: 'Support',
   [PUBLIC_SITE_LOCALES.ZH_CN]: '帮助与反馈',
   [PUBLIC_SITE_LOCALES.ZH_SG]: '帮助与反馈',
@@ -20,6 +21,7 @@ const TITLE_BY_LOCALE: Record<PublicSiteLocaleCode, string> = {
 
 const DESCRIPTION_BY_LOCALE: Record<PublicSiteLocaleCode, string> = {
   [PUBLIC_SITE_LOCALES.MS_MY]: 'Hantar maklum balas, laporkan masalah atau cadangkan ciri untuk LightVela.',
+  [PUBLIC_SITE_LOCALES.TH_TH]: "ส่งข้อเสนอแนะ รายงานปัญหา หรือแนะนำฟีเจอร์สำหรับ LightVela",
   [PUBLIC_SITE_LOCALES.EN_US]: 'Submit feedback, report issues, or request features for LightVela.',
   [PUBLIC_SITE_LOCALES.ZH_CN]: '向 LightVela 提交反馈、问题报告或功能建议。',
   [PUBLIC_SITE_LOCALES.ZH_SG]: '向 LightVela 提交反馈、问题报告或功能建议。',

@@ -781,6 +781,66 @@ func (h *instanceHandler) handleInstance(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		writeSuccess(w, r, http.StatusOK, resp)
+	case len(parts) == 4 && parts[1] == "bots" && parts[3] == "channel-sessions" && r.Method == http.MethodGet:
+		if !readRuntimeFeatureFlag("CHANNEL_HISTORY_ENABLED", false) {
+			writeHTTPError(w, r, errcode.ErrChannelHistoryUnavailable)
+			return
+		}
+		ctx, ok := newRequestContext(r)
+		if !ok {
+			writeHTTPError(w, r, errcode.ErrInstanceMissingUserID)
+			return
+		}
+		limit := 20
+		if raw := r.URL.Query().Get("limit"); raw != "" {
+			var err error
+			limit, err = strconv.Atoi(raw)
+			if err != nil || limit < 1 || limit > 50 {
+				writeHTTPError(w, r, errcode.ErrInstanceInvalidParam)
+				return
+			}
+		}
+		source, before := r.URL.Query().Get("source"), r.URL.Query().Get("before")
+		if len(source) > 32 || len(before) > 128 {
+			writeHTTPError(w, r, errcode.ErrInstanceInvalidParam)
+			return
+		}
+		resp, err := h.logic.ListChannelSessions(ctx, instanceID, parts[2], source, before, limit)
+		if err != nil {
+			writeHTTPError(w, r, err)
+			return
+		}
+		writeSuccess(w, r, http.StatusOK, resp)
+	case len(parts) == 6 && parts[1] == "bots" && parts[3] == "channel-sessions" && parts[5] == "messages" && r.Method == http.MethodGet:
+		if !readRuntimeFeatureFlag("CHANNEL_HISTORY_ENABLED", false) {
+			writeHTTPError(w, r, errcode.ErrChannelHistoryUnavailable)
+			return
+		}
+		ctx, ok := newRequestContext(r)
+		if !ok {
+			writeHTTPError(w, r, errcode.ErrInstanceMissingUserID)
+			return
+		}
+		limit := 20
+		if raw := r.URL.Query().Get("limit"); raw != "" {
+			var err error
+			limit, err = strconv.Atoi(raw)
+			if err != nil || limit < 1 || limit > 20 {
+				writeHTTPError(w, r, errcode.ErrInstanceInvalidParam)
+				return
+			}
+		}
+		before := r.URL.Query().Get("before")
+		if len(parts[4]) > 128 || len(before) > 32 {
+			writeHTTPError(w, r, errcode.ErrInstanceInvalidParam)
+			return
+		}
+		resp, err := h.logic.ListChannelMessages(ctx, instanceID, parts[2], parts[4], before, limit)
+		if err != nil {
+			writeHTTPError(w, r, err)
+			return
+		}
+		writeSuccess(w, r, http.StatusOK, resp)
 	case len(parts) == 2 && parts[1] == "bots" && r.Method == http.MethodPost:
 		if !readRuntimeFeatureFlag("MULTI_BOT_ENABLED", true) {
 			writeHTTPError(w, r, errcode.ErrInstanceBotDisabled)

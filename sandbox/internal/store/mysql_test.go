@@ -67,7 +67,8 @@ func TestVerifySchemaRequiresExpectedTables(t *testing.T) {
 		AddRow("vpc_shard_provision_progress").
 		AddRow("vpc_shard_create_locks").
 		AddRow("vpc_shard_cleanup_resources").
-		AddRow("modify_operations")
+		AddRow("modify_operations").
+		AddRow("pool_supply_overview")
 	mock.ExpectQuery("SELECT table_name FROM information_schema.tables").
 		WithArgs("sandbox_test").
 		WillReturnRows(rows)
@@ -106,6 +107,8 @@ func TestSandboxMigrationsPresent(t *testing.T) {
 		"000011_add_modify_instance_type_candidates.down.sql",
 		"000012_add_pool_refill_paused.up.sql",
 		"000012_add_pool_refill_paused.down.sql",
+		"000013_pool_supply_overview.up.sql",
+		"000013_pool_supply_overview.down.sql",
 	} {
 		path := filepath.Join("..", "..", "migrations", name)
 		if _, err := os.Stat(path); err != nil {

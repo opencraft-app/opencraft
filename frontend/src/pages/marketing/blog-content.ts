@@ -8,7 +8,8 @@ export type BlogContentLanguage = keyof typeof REGIONAL_TRANSLATIONS;
 
 const CONTENT_LANGUAGE_BY_LOCALE = {
   "en-US": "en", "zh-CN": "zh-CN", "zh-SG": "zh-CN", "zh-Hant": "zh-Hant",
-  "id-ID": "id-ID", "ms-MY": "ms-MY", es: "es", "ja-JP": "ja-JP", "ko-KR": "ko-KR",
+  "id-ID": "id-ID", "ms-MY": "ms-MY",
+  "th-TH": "th-TH", es: "es", "ja-JP": "ja-JP", "ko-KR": "ko-KR",
 } satisfies Record<BlogLocale, BlogContentLanguage>;
 
 export type BlogInline =

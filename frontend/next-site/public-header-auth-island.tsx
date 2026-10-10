@@ -75,6 +75,11 @@ const copyByLocale: Record<
     enterProduct: "Buka LightVela",
     login: "Log Masuk",
   },
+  'th-TH': {
+    createNow: "ทำตอนนี้",
+    enterProduct: "เปิด LightVela",
+    login: "เข้าสู่ระบบ",
+  },
   es: {
     createNow: 'Crear ahora',
     enterProduct: 'Entrar a LightVela',
@@ -94,6 +99,7 @@ const copyByLocale: Record<
 
 const entitlementErrorCopy: Record<PublicSiteLocale, { message: string; retry: string }> = {
   'ms-MY': { message: 'Langganan anda belum dapat disahkan. Cuba lagi.', retry: 'Cuba lagi' },
+  'th-TH': { message: "การสมัครของคุณยังไม่สามารถยืนยันได้ ลองอีกครั้ง", retry: "ลองอีกครั้ง" },
   'en-US': { message: 'Could not confirm your subscription. Try again.', retry: 'Retry' },
   'zh-CN': { message: '订阅状态暂时无法确认，请重试。', retry: '重试' },
   'zh-SG': { message: '订阅状态暂时无法确认，请重试。', retry: '重试' },

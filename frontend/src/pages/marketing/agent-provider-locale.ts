@@ -38,6 +38,7 @@ export const resolveAgentSessionTitle = (
   fallbackTitle: string,
 ): string => {
   if (!title) return fallbackTitle;
+  if (title === "新会话" && locale === "th-TH") return "แชทใหม่";
   if (title === "新会话" && locale === "ms-MY") return "Sembang baharu";
   if (title === "新会话" && locale && !isChineseLocale(locale)) return "New chat";
   return title.replace(/\s+·\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}\s+\d{2}:\d{2}$/u, "");

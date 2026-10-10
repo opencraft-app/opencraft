@@ -11,6 +11,7 @@ const FRAGMENT_FILE_BY_LOCALE: Record<PublicSiteLocale, string> = {
   'zh-Hant': 'index-fragment.zh-Hant.html',
   'id-ID': 'index-fragment.id-ID.html',
   'ms-MY': "index-fragment.ms-MY.html",
+  'th-TH': "index-fragment.th-TH.html",
   es: 'index-fragment.es.html',
   'ja-JP': 'index-fragment.ja-JP.html',
   'ko-KR': 'index-fragment.ko-KR.html',

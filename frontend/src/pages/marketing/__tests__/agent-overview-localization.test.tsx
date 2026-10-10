@@ -29,6 +29,7 @@ const Progress = () => {
 
 /** 国际站 changelog 最近 5 条（时间倒序） */
 const titles: Record<I18nDictKey, [string, string, string, string, string]> = {
+  "th-TH": ["LightVela ตอนนี้รองรับการแชทเว็บกับหลายบอท", "ส่งข้อความทดสอบไปยังช่องแชทที่เชื่อมต่อ", "LightVela รองรับการอัปเกรดแพ็กเกจแล้ว", "LightVela ตอนนี้รองรับบอทหลายตัวแล้ว", "งานที่กำหนดเวลา ตอนนี้รองรับการแจ้งเตือนและงานสคริปต์แล้ว"],
   "ms-MY": ["LightVela Kini Menyokong Sembang Web dengan Pelbagai Bot", "Hantar Mesej Ujian ke Saluran Sembang yang Disambungkan", "LightVela Kini Menyokong Naik Taraf Pelan", "LightVela Kini Menyokong Pelbagai Bot", "Tugasan Berjadual Kini Menyokong Pemberitahuan dan Tugasan Skrip"],
   "zh-CN": ["LightVela 支持与多个 Bot 网页对话", "聊天通道支持发送测试消息", "LightVela 支持套餐升配", "LightVela 支持创建多个 Bot", "定时任务新增通知任务和脚本任务"],
   "zh-Hant": ["LightVela 支持與多個 Bot 網頁對話", "聊天通道支持發送測試消息", "LightVela 支援套餐升級", "LightVela 支持創建多個 Bot", "定時任務新增通知任務和腳本任務"],

@@ -1,6 +1,7 @@
 "use client";
 
 import { localizeMalay } from '@/i18n/malay-copy';
+import { localizeThai } from '@/i18n/thai-copy';
 import { Fragment, type ReactNode } from "react";
 import { LegalFooter } from "@/components/site/legal-footer";
 import { useLocaleOverride } from "@/i18n/t";
@@ -1050,6 +1051,7 @@ const TextSection = ({ id, title, paragraphs, bullets }: { id?: string; title: s
 );
 
 export function publicLocaleHomePath(locale: PublicSiteLocaleCode): string {
+  if (locale === PUBLIC_SITE_LOCALES.TH_TH) return `/${PUBLIC_URL_LANGS.TH_TH}/`;
   if (locale === PUBLIC_SITE_LOCALES.MS_MY) return `/${PUBLIC_URL_LANGS.MS_MY}/`;
   if (locale === PUBLIC_SITE_LOCALES.ID_ID) return `/${PUBLIC_URL_LANGS.ID_ID}/`;
   if (locale === PUBLIC_SITE_LOCALES.ZH_HANT) return `/${PUBLIC_URL_LANGS.ZH_HANT}/`;
@@ -1073,6 +1075,7 @@ export function getPrivacyPolicyChrome(
 }
 
 export function getPrivacyPolicyCopy(locale: PublicSiteLocaleCode): PolicyCopy {
+  if (locale === PUBLIC_SITE_LOCALES.TH_TH) return localizeThai(en);
   if (locale === PUBLIC_SITE_LOCALES.MS_MY) return localizeMalay(en);
   if (locale === PUBLIC_SITE_LOCALES.KO_KR) return KOREAN_PRIVACY_POLICY_COPY as PolicyCopy;
   if (locale === PUBLIC_SITE_LOCALES.JA_JP) return JAPANESE_PRIVACY_POLICY_COPY as PolicyCopy;
@@ -1084,7 +1087,9 @@ export function getPrivacyPolicyCopy(locale: PublicSiteLocaleCode): PolicyCopy {
 export const PrivacyPolicyPage = () => {
   const localeOverride = useLocaleOverride();
   const currentLocale: PublicSiteLocaleCode =
-    localeOverride === PUBLIC_SITE_LOCALES.MS_MY
+    localeOverride === PUBLIC_SITE_LOCALES.TH_TH
+      ? PUBLIC_SITE_LOCALES.TH_TH
+      : localeOverride === PUBLIC_SITE_LOCALES.MS_MY
       ? PUBLIC_SITE_LOCALES.MS_MY
       : localeOverride === PUBLIC_SITE_LOCALES.KO_KR
       ? PUBLIC_SITE_LOCALES.KO_KR
@@ -1106,7 +1111,9 @@ export const PrivacyPolicyPage = () => {
   const baseCopy = getPrivacyPolicyCopy(currentLocale);
   const copy = useZhHantDeep({ ...baseCopy, ...getPrivacyPolicyChrome(currentLocale) });
   const security = useZhHantDeep(
-    currentLocale === PUBLIC_SITE_LOCALES.MS_MY
+    currentLocale === PUBLIC_SITE_LOCALES.TH_TH
+      ? localizeThai(sectionFour.en)
+      : currentLocale === PUBLIC_SITE_LOCALES.MS_MY
       ? localizeMalay(sectionFour.en)
       : currentLocale === PUBLIC_SITE_LOCALES.ES
       ? sectionFour.es

@@ -24,6 +24,7 @@
  *     首页 gzip JS 增加超过 100 KB
  */
 
+import { ensureThaiPublicCopy } from './thai-copy';
 import { ensureMalayPublicCopy } from './malay-copy';
 import i18n from "i18next";
 import type { Resource } from "i18next";
@@ -76,6 +77,12 @@ const LAZY_DICTIONARY_LOADERS: Partial<
   "ms-MY": async () => {
     const [dictionary] = await Promise.all([
       import("./generated/ms-MY.json"), ensureMalayPublicCopy(),
+    ]);
+    return dictionary.default;
+  },
+  "th-TH": async () => {
+    const [dictionary] = await Promise.all([
+      import("./generated/th-TH.json"), ensureThaiPublicCopy(),
     ]);
     return dictionary.default;
   },

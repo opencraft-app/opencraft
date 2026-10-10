@@ -58,9 +58,10 @@ const zeroTokenScheduledTasksGlobalAssets: Record<string, string> = {
   "ja-JP": "/assets/changelog/scheduled-tasks-notification-ja-JP.webp",
   "ko-KR": "/assets/changelog/scheduled-tasks-notification-ko-KR.webp",
   "ms-MY": "/assets/changelog/scheduled-tasks-notification-en-US.webp",
+  "th-TH": "/assets/changelog/scheduled-tasks-notification-en-US.webp",
 };
 
-export function VisualCard({ variant }: { variant: "lobster" | "multiBot" | "planUpgrade" | "cloudStorage" | "instanceStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "advancedSettings" | "deepseekHarness" | "achievements" | "wecom" | "dingtalk" | "personaUpload" | "soul" | "schedule" | "zeroTokenScheduledTasks" | "automationSkill" | "automationUpstream" | "chat" | "memory" | "skillsBulkInstall" | "automationTemplates" | "qqGroupMentions" | "traditionalChinese" | "skill-package" | "workbench" }) {
+export function VisualCard({ variant }: { variant: "lobster" | "multiBot" | "planUpgrade" | "cloudStorage" | "instanceStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "advancedSettings" | "deepseekHarness" | "achievements" | "wecom" | "dingtalk" | "personaUpload" | "soul" | "schedule" | "zeroTokenScheduledTasks" | "automationSkill" | "automationUpstream" | "chat" | "memory" | "skillsBulkInstall" | "automationTemplates" | "qqGroupMentions" | "traditionalChinese" | "malayLanguage" | "skill-package" | "workbench" }) {
   const t = useT();
   const { i18n } = useTranslation();
   const locale = useLocaleOverride() ?? i18n.language;
@@ -129,6 +130,8 @@ export function VisualCard({ variant }: { variant: "lobster" | "multiBot" | "pla
         : "/assets/changelog/lightvela-qq-group-mentions-global-en.webp"
       : variant === "traditionalChinese"
       ? "/assets/changelog/lightvela-traditional-chinese-global-all.webp"
+      : variant === "malayLanguage"
+      ? "/assets/changelog/lightvela-malay-international-home.webp"
       : variant === "diagnosticsCenter"
       ? isGlobal
         ? useGlobalChineseAsset
@@ -213,6 +216,8 @@ export function VisualCard({ variant }: { variant: "lobster" | "multiBot" | "pla
       ? t("支持在 QQ 群聊中 @ 机器人")
       : variant === "traditionalChinese"
       ? t("支持繁体中文")
+      : variant === "malayLanguage"
+      ? t("LightVela 国际站支持马来语")
       : variant === "diagnosticsCenter"
       ? t("诊断中心上线，让 Agent 排查更简单")
       : variant === "advancedSettings"
@@ -275,6 +280,8 @@ export function VisualCard({ variant }: { variant: "lobster" | "multiBot" | "pla
       ? useGlobalChineseAsset ? "1864 / 844" : "1863 / 844"
       : variant === "traditionalChinese"
       ? "2202 / 1286"
+      : variant === "malayLanguage"
+      ? "1440 / 900"
       : variant === "diagnosticsCenter"
       ? isGlobal
         ? useGlobalChineseAsset ? "1281 / 615" : "1283 / 638"

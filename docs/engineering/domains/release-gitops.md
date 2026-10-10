@@ -754,3 +754,10 @@ source env：shprod=`desktop.lightvela.tech`（cert bAnCmJOZ / CLB lb-ohkm8fm5�
 sgprod=`desktop.lightvela.site`（cert bAnD57eL / CLB lb-8kenwgvc）。该改动只调整 CTL 运行时
 业务配置，不改变镜像构建、制品晋级、Argo Application 或同步模型；CLB 证书（SNI）、泛解析 DNS
 与含云桌面代码的 CTL 镜像仍是独立的发布前置，源配置 render 通过不等于 live 验收。
+
+## MR 复用工作区源码一致性（2026-10-10）
+
+MR 占位检查在 checkout 后校验期望提交和该提交下的全部受跟踪文件（含 index）。
+提交号相同不能证明工作树正确：复用 runner 可能残留旧前端源码或旧 OpenCraft 生成副本。
+发现提交或受跟踪文件不一致时，对本次构建工作区执行既有 reset/clean，再核验 HEAD 和完整 tracked diff。
+这只恢复构建输入，不执行机械同步来掩盖源码中真实的生成漂移，也不修改 trusted guard 或发布权限。

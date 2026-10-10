@@ -3680,6 +3680,9 @@ const SCENARIO_TEMPLATE_PROMPT_VALUE_OVERRIDES: Record<string, Partial<Record<Au
     "ms-MY": {
       rentInfo: "sewa 2,000 CNY serta yuran pengurusan harta 800 CNY, perlu dibayar kepada pemilik atau pengurus harta melalui pindahan wang melalui bank",
     },
+    "th-TH": {
+      rentInfo: "ค่าเช่า 2,000 หยวน และค่าบริหารทรัพย์สิน 800 หยวน ต้องชำระให้เจ้าของหรือนายหน้าทรัพย์สินผ่านการโอนเงินทางธนาคาร",
+    },
   },
   "country-fx-alert": {
     "zh-CN": {
@@ -3710,6 +3713,10 @@ const SCENARIO_TEMPLATE_PROMPT_VALUE_OVERRIDES: Record<string, Partial<Record<Au
       fromCurrency: "USD",
       toCurrency: "CNY",
     },
+    "th-TH": {
+      fromCurrency: "USD",
+      toCurrency: "CNY",
+    },
   },
   "calorie-fitness-checkin": {
     "zh-CN": {
@@ -3732,6 +3739,9 @@ const SCENARIO_TEMPLATE_PROMPT_VALUE_OVERRIDES: Record<string, Partial<Record<Au
     },
     "ms-MY": {
       bodyProfile: "168 cm, 62 kg, sasaran 58 kg, latihan kekuatan 3 kali seminggu",
+    },
+    "th-TH": {
+      bodyProfile: "168 ซม., 62 กก., เป้าหมาย 58 กก., ฝึกความแข็งแรง 3 ครั้งต่อสัปดาห์",
     },
   },
 };
@@ -3795,6 +3805,11 @@ const SCENARIO_TEMPLATE_PROMPT_LABELS: Record<AutomationDisplayLocale, {
     yes: "ya",
     no: "Tidak",
   },
+  "th-TH": {
+    config: "ตัวอย่างนี้อาจถูกลบหรือเปลี่ยนแปลง; หากฉันเขียนรายละเอียดใหม่ ให้ใช้รายละเอียดใหม่",
+    yes: "ใช่",
+    no: "ไม่",
+  },
 };
 
 const SCENARIO_TEMPLATE_NATURAL_PROMPTS: Record<string, Partial<Record<AutomationDisplayLocale, string[]>>> = {
@@ -3806,6 +3821,7 @@ const SCENARIO_TEMPLATE_NATURAL_PROMPTS: Record<string, Partial<Record<Automatio
     es: ["Recuérdame beber agua y tomar mi medicación habitual según la receta."],
     "id-ID": ["Ingatkan saya minum air dan obat rutin sesuai resep."],
     "ms-MY": ["Ingatkan saya untuk minum air dan ubat dengan kerap seperti yang ditetapkan."],
+    "th-TH": ["เตือนฉันให้ดื่มน้ำและทานยาอย่างสม่ำเสมอตามที่กำหนด"],
   },
   "rent-reminder": {
     "zh-CN": ["请在账期临近时提醒我支付房租 2000 元和物业费 800 元。"],
@@ -3815,6 +3831,7 @@ const SCENARIO_TEMPLATE_NATURAL_PROMPTS: Record<string, Partial<Record<Automatio
     es: ["Recuérdame pagar 2000 CNY de alquiler y 800 CNY de comunidad cuando se acerque la fecha."],
     "id-ID": ["Ingatkan saya saat sewa CNY 2.000 dan biaya pengelolaan CNY 800 mendekati jatuh tempo."],
     "ms-MY": ["Ingatkan saya apabila sewa CNY 2,000 dan yuran pengurusan CNY 800 hampir matang."],
+    "th-TH": ["เตือนฉันเมื่อค่าเช่า 2,000 หยวนและค่าบริหารจัดการ 800 หยวนใกล้ครบกำหนด"],
   },
   "country-fx-alert": {
     "zh-CN": ["请关注 USD/CNY，较前一日涨跌达到 1% 时提醒我。"],
@@ -3824,6 +3841,7 @@ const SCENARIO_TEMPLATE_NATURAL_PROMPTS: Record<string, Partial<Record<Automatio
     es: ["Vigila USD/CNY y avísame cuando cambie un 1 % frente al día anterior."],
     "id-ID": ["Pantau USD/CNY dan beri tahu saat berubah 1% dari hari sebelumnya."],
     "ms-MY": ["Pantau USD/CNY dan maklumkan apabila ia berubah 1% daripada hari sebelumnya."],
+    "th-TH": ["ติดตาม USD/CNY และแจ้งเมื่อมันเปลี่ยนแปลง 1% จากวันก่อนหน้า"],
   },
   "calorie-fitness-checkin": {
     "zh-CN": ["请记录今天的饮食、运动和体重；目标减脂并保持力量训练，168cm、62kg、目标 58kg。"],
@@ -3833,6 +3851,7 @@ const SCENARIO_TEMPLATE_NATURAL_PROMPTS: Record<string, Partial<Record<Automatio
     es: ["Registra la comida, el ejercicio y el peso de hoy para llegar a 58 kg manteniendo la fuerza."],
     "id-ID": ["Catat makanan, olahraga, dan berat hari ini untuk target 58 kg sambil menjaga latihan kekuatan."],
     "ms-MY": ["Catatkan makanan, senaman dan berat hari ini untuk matlamat 58 kg sambil mengekalkan latihan kekuatan."],
+    "th-TH": ["บันทึกอาหาร การออกกำลังกาย และน้ำหนักวันนี้เพื่อเป้าหมาย 58 กก. พร้อมกับการรักษาการฝึกความแข็งแรง"],
   },
   "global-holiday-reminder": {
     "zh-CN": ["请关注泰国、印尼的公共假期和天气预警，旅行、发货或会议前提醒我。"],
@@ -3842,6 +3861,7 @@ const SCENARIO_TEMPLATE_NATURAL_PROMPTS: Record<string, Partial<Record<Automatio
     es: ["Vigila festivos y alertas del tiempo en Tailandia e Indonesia antes de viajes, envíos o reuniones."],
     "id-ID": ["Pantau hari libur dan peringatan cuaca di Thailand dan Indonesia sebelum perjalanan, pengiriman, atau rapat."],
     "ms-MY": ["Pantau amaran cuti dan cuaca di Thailand dan Indonesia sebelum perjalanan, penghantaran atau mesyuarat."],
+    "th-TH": ["ตรวจสอบคำเตือนวันหยุดและสภาพอากาศในประเทศไทยและอินโดนีเซียก่อนการเดินทาง การจัดส่ง หรือการประชุม"],
   },
   "stock-info-digest": {
     "zh-CN": ["请整理腾讯控股 00700、NVIDIA NVDA 和贵州茅台 600519 的价格、公告及财报动态。"],
@@ -3851,6 +3871,7 @@ const SCENARIO_TEMPLATE_NATURAL_PROMPTS: Record<string, Partial<Record<Automatio
     es: ["Resume precios, anuncios y resultados de Tencent 00700, NVIDIA NVDA y Kweichow Moutai 600519."],
     "id-ID": ["Rangkum harga, pengumuman, dan laporan keuangan Tencent 00700, NVIDIA NVDA, dan Kweichow Moutai 600519."],
     "ms-MY": ["Ringkaskan harga, pengumuman dan laporan kewangan Tencent 00700, NVIDIA NVDA dan Kweichow Moutai 600519."],
+    "th-TH": ["สรุปราคา ประกาศ และรายงานการเงิน Tencent 00700, NVIDIA NVDA และ Kweichow Moutai 600519"],
   },
 };
 
@@ -3858,7 +3879,7 @@ function getScenarioDefaultValues(pack: ScenarioTaskPack): Record<string, string
   return Object.fromEntries(pack.fields.map((field) => [field.key, field.defaultValue]));
 }
 
-function getScenarioTemplatePromptValues(
+export function getScenarioTemplatePromptValues(
   pack: ScenarioTaskPack,
   displayLocale: AutomationDisplayLocale,
 ): Record<string, string> {
