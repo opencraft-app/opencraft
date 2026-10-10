@@ -340,3 +340,19 @@ describe('Malay legal page navigation', () => {
     }
   });
 });
+
+describe('Thai legal page navigation', () => {
+  it('uses one slash between the locale and all legal paths, including displayed URLs', () => {
+    expect(cookiePolicyHomePath('th-TH')).toBe('/th-th/');
+    expect(openSourceHomePath('th-TH')).toBe('/th-th/');
+    expect(privacyHomePath('th-TH')).toBe('/th-th/');
+    expect(localizedLegalPath('/', 'th-TH', true)).toBe('/th-th/');
+    for (const slug of ['privacy-policy', 'terms-of-service', 'cookie-policy', 'open-source-licenses']) {
+      expect(localizedLegalPath(`/${slug}/`, 'th-TH', true)).toBe(`/th-th/${slug}/`);
+      if (!['privacy-policy', 'open-source-licenses'].includes(slug)) continue;
+      expect(localizedLightVelaUrl(`https://lightvela.ai/zh-sg/${slug}/`, 'th-TH', true)).toEqual({
+        href: `/th-th/${slug}/`, label: `https://lightvela.ai/th-th/${slug}/`,
+      });
+    }
+  });
+});

@@ -3561,7 +3561,7 @@ refresh_skus http://unused img-jhb "$pools_json" ap-johorbahru
         )
         self.assertIn('"$PNPM_BIN" check', guard_text)
         self.assertIn('FRONTEND_GUARD_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/lightclaw-frontend-guard.XXXXXX")"', guard_text)
-        self.assertIn('-cf - frontend velalink shared/lightvela-agent-core opencraft/packages/mobile-account-sdk opencraft/packages/mobile-bot-bridge opencraft/packages/workbench-panels | tar -C "$FRONTEND_GUARD_ROOT" -xf -', guard_text)
+        self.assertIn('-cf - frontend velalink shared opencraft/packages/mobile-account-sdk opencraft/packages/mobile-bot-bridge opencraft/packages/workbench-panels | tar -C "$FRONTEND_GUARD_ROOT" -xf -', guard_text)
         self.assertIn('--exclude="velalink/node_modules"', guard_text)
         self.assertIn('--exclude="velalink/target"', guard_text)
         self.assertIn('"$PNPM_BIN" build:cn', guard_text)

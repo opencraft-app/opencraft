@@ -91,7 +91,7 @@ describe('Doodle profile metadata', () => {
     expect(asDoodleAppearance(legacy)).toMatchObject({ version: 1, style: 'doodle', skin: 'lavender', doodads: [] });
     const oldDoodle: HermesAppearance = { ...DEFAULT_HERMES_APPEARANCE, doodads: ['glasses', 'scarf', 'leaf', 'cap', 'pencil', 'crown', 'wings'], drawing: [{ color: '#Aa00Ff', width: 10, points: [[1, 2]] }] };
     expect(parseHermesAppearance(oldDoodle)).toEqual(oldDoodle);
-    expect(asDoodleAppearance(oldDoodle)).toEqual({ ...oldDoodle, doodads: ['wizard-hat', 'star-glasses', 'scarf'] });
+    expect(asDoodleAppearance(oldDoodle)).toEqual({ ...oldDoodle, doodads: ['star-glasses', 'scarf', 'wizard-hat'] });
     expect(oldDoodle.doodads).toContain('pencil');
   });
 });

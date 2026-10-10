@@ -16,10 +16,11 @@ export type AgentSettingsSectionId =
   | "terminal"
   | "deepseek-harness"
   | "cloud-desktop"
+  | "collaboration"
   | "website";
 
 export type AgentWorkbenchSectionId = "workbench";
-export type AgentLabSectionId = "deepseek-harness" | "cloud-desktop";
+export type AgentLabSectionId = "deepseek-harness" | "cloud-desktop" | "collaboration";
 
 export type AgentSectionId = AgentSettingsSectionId | AgentWorkbenchSectionId;
 
@@ -75,6 +76,7 @@ export const AGENT_SECTION_PATH_BY_ID: Record<AgentSectionId, string> = {
   terminal: `${AGENTS_HOME_PATH}/terminal`,
   "deepseek-harness": `${AGENTS_HOME_PATH}/labs/deepseek-harness`,
   "cloud-desktop": `${AGENTS_HOME_PATH}/labs/cloud-desktop`,
+  collaboration: `${AGENTS_HOME_PATH}/labs/collaboration`,
   website: `${AGENTS_HOME_PATH}/websites`,
 };
 
@@ -104,6 +106,7 @@ export const AGENT_SECTION_ID_BY_SLUG: Record<string, AgentSectionId> = {
 export const AGENT_LAB_SECTION_ID_BY_SLUG: Record<string, AgentLabSectionId> = {
   "deepseek-harness": "deepseek-harness",
   "cloud-desktop": "cloud-desktop",
+  collaboration: "collaboration",
 };
 
 export const getAgentSectionFromSlug = (slug?: string): AgentSectionId | null => {

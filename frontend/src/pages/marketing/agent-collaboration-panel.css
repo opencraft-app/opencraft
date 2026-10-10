@@ -1,0 +1,16 @@
+.lv-collaboration-lab {
+  --color-text: #1d232d;
+  --color-text-secondary: #687385;
+  --color-border-subtle: #e5e7eb;
+  --color-background-surface: #fff;
+  --color-background: #f8fafc;
+  --color-background-primary: #fff;
+  --color-background-secondary: #f8fafc;
+  --color-accent: #f97316;
+  --color-background-button-primary: #1d232d;
+  --color-text-button-primary: #fff;
+  --color-text-danger: #dc2626;
+  min-height: 480px;
+  height: calc(100dvh - 160px);
+  overflow: auto;
+}

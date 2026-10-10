@@ -89,23 +89,23 @@
     },
     {
       "file": "i18n/generated/en-US.json",
-      "sourceSha256": "5e40f774d9814f20874a62a295567dd0c36d102dd36789a48a742ee08cd66114"
+      "sourceSha256": "48cd49b814788d22e5a6e10abb8c5b08e58b5100a2912e7d6b0bc6244bb3cb58"
     },
     {
       "file": "i18n/generated/es.json",
-      "sourceSha256": "1d3b0f8641ea1ab70e7d1f15c63951cb8af3ccf246588f18623735420b429bee"
+      "sourceSha256": "081b5b66c51187e2ee17063e38dedb182a1753055e4d9d4200028b80e8a0da16"
     },
     {
       "file": "i18n/generated/id-ID.json",
-      "sourceSha256": "94619e16f40550c14bc809fc9418394f56f751823515508992a53569d52228c2"
+      "sourceSha256": "3ad6cba85483bc1cd2aa55abd9fdbc234458bf743247dc13015fe026a8e7f1b4"
     },
     {
       "file": "i18n/generated/ja-JP.json",
-      "sourceSha256": "204a3aa05824522225ba77c384621db942f38ef14a423acea8de0414818eb79a"
+      "sourceSha256": "9ad372303372044337d7c5512e41ed6a0cefb9f3a609713996f07973ee929da4"
     },
     {
       "file": "i18n/generated/ko-KR.json",
-      "sourceSha256": "2e4100a20667540dc0d031d03975f1da7d3bb493c5b93014e6d104be8018727b"
+      "sourceSha256": "b111c4627f23946bf19bbcaa259479f863fb760dd7ae479fb1697ea304e56b93"
     },
     {
       "file": "i18n/generated/malay-public-copy.json",
@@ -113,31 +113,39 @@
     },
     {
       "file": "i18n/generated/ms-MY.json",
-      "sourceSha256": "304ec671c35f663d5a913cade132f062088f79f10454d83be951079571525e52"
+      "sourceSha256": "2c0cd3b924dd00ddbae170bbf9d895509e23a94a3ab3dc59b5966525cdb50f70"
+    },
+    {
+      "file": "i18n/generated/th-TH.json",
+      "sourceSha256": "9d1e2e9901092df031908789f5fe2737312bf64a780c1cbbe8c1738dc2094390"
+    },
+    {
+      "file": "i18n/generated/thai-public-copy.json",
+      "sourceSha256": "f6dea6c1a20cdfdb2f42ff5e82ea22b8bdcbd01e344541ada15042acaa1be497"
     },
     {
       "file": "i18n/generated/zh-CN.json",
-      "sourceSha256": "209560e6e09a4a51b33bc07552ee8f6533dc1c979bfde67db5c2a16da754db31"
+      "sourceSha256": "408f4502e79704c8d0339abb80c39c1a7b1812ed6c4495c6c9f5c687013244d7"
     },
     {
       "file": "i18n/generated/zh-Hant.json",
-      "sourceSha256": "fa9ebd41e5e835a0832f3fdfbe90fb53120994f574f80e0260da9c00ff2f51f5"
+      "sourceSha256": "a10b849cbab2c410837e7535b8579d03d90c20529fd48a30dc0578305b01dac6"
     },
     {
       "file": "i18n/generated/zh-to-key.json",
-      "sourceSha256": "ee3d3fc80c36d57de6912bc2916f1194e00c26dc4fb4e2334b6543d2c5cf27cb"
+      "sourceSha256": "eb81c6a1164d067c731456a48af38751a68b345aa19f3495dffebad4e3795132"
     },
     {
       "file": "i18n/index.ts",
-      "sourceSha256": "edbead4d3c517557489b151efbea7a635a46112a8d7aec563e8e26a5105d773d"
+      "sourceSha256": "93a6b4046dc90b0e39ce8bf394f562f315269d75db25c9bbb7581ffca3dd447f"
     },
     {
       "file": "i18n/locales.config.ts",
-      "sourceSha256": "1d9b00c0a9c69ccb10fb03a63cecdfc5fa8d4b6b90d93f0c7a7fecf6693315af"
+      "sourceSha256": "4254697bf0e64e847f40a7b2109c1fb2dd67b0e6970aa412b24e451f72d92095"
     },
     {
       "file": "i18n/locales.json",
-      "sourceSha256": "bcb23faef5f721753f855c1b4bfa0baa4d4d096826914dcffa649638c00e3ee7"
+      "sourceSha256": "e8037c0d46668ba97d652168a359157bfcef3867141db09d1f1c9f4099ca6191"
     },
     {
       "file": "i18n/malay-copy.ts",
@@ -148,8 +156,12 @@
       "sourceSha256": "9110c89965b4487d49ec03ca2adb35332902aa7fc9d73de2658c5d1526d0048f"
     },
     {
+      "file": "i18n/thai-copy.ts",
+      "sourceSha256": "9ca08f0fc18253df0b28d26eb08801c30565246289e2db9c18378cf506afee0c"
+    },
+    {
       "file": "lib/agent-routes.ts",
-      "sourceSha256": "05663d38a850e572872475d39e6f09522df15e14c745c192b92ec73a3b1ff10f"
+      "sourceSha256": "1d75b8cdb7eafdd8542dae466200607289ebfa573086aa1e633b8228b1b8d733"
     },
     {
       "file": "lib/auth-api-base.ts",
@@ -185,11 +197,11 @@
     },
     {
       "file": "lib/public-site-routing.ts",
-      "sourceSha256": "2cc95129fd0d24b04827607980dce794195cd056b20fa9bab5049cc449adf931"
+      "sourceSha256": "103c8ffadd4d7fdcee60395ba80f67cfbfadead3603e14a53d9422f2e2fac736"
     },
     {
       "file": "lib/region.ts",
-      "sourceSha256": "d1458e60ad9896ff47ff0f47c91080378fa43ef68d7ebd8a163c3736db35d459"
+      "sourceSha256": "c31b65fdff7f08a6269cafc0a9775d3433cdbcc90e1549b7a1b504eb747e9cf7"
     },
     {
       "file": "lib/skillhub-api.ts",
@@ -237,7 +249,7 @@
     },
     {
       "file": "pages/marketing/agent-automations-panel.tsx",
-      "sourceSha256": "8f8b7c99c441d8b44435d07624d5fd7adfc718153bfeaa7bd9d436432ebd0235"
+      "sourceSha256": "a066964726c5c92a9df26bebf28c0ad39796f47c79b95825b4f276143af55d9f"
     },
     {
       "file": "pages/marketing/agent-channel-panel.tsx",
@@ -405,7 +417,7 @@
     },
     {
       "file": "pages/marketing/agent-provider-locale.ts",
-      "sourceSha256": "89da5a53e56cb9a1c7e55cdebbf32d82aa10237f74fb5dbcd95176bcb7365983"
+      "sourceSha256": "b21abe76540638c58474b7cff06c4ca4186c574f11b5ebfb7b521ce1dd010ffc"
     },
     {
       "file": "pages/marketing/agent-reset-config.ts",
@@ -449,7 +461,7 @@
     },
     {
       "file": "pages/marketing/scenario-tasks/overview-packs.ts",
-      "sourceSha256": "40d42b260e28a850e55b64b3cc68c0b7370c892429b8516a2ddc6024c81aa927"
+      "sourceSha256": "e04ef3910df097abef06cf502fa6935909d146dcbacf2bc2daea7cc93dd67e54"
     },
     {
       "file": "pages/marketing/scenario-tasks/scenario-full-prompt.ts",
@@ -469,11 +481,11 @@
     },
     {
       "file": "pages/marketing/scenario-tasks/scenario-task-builder.ts",
-      "sourceSha256": "aec85639b6f1e4c4f1523644ec002b35d7516af32302692defca9503efab02eb"
+      "sourceSha256": "9652cfa8faa5b674b084e6435262f0102ae68cd5ae805878147255b6d4d723d6"
     },
     {
       "file": "pages/marketing/skills-demo/SkillsDemoPanel.tsx",
-      "sourceSha256": "5b9988c44bb1bbbdf86fd54b2d792ccefbbd32d4196e40a6691f619ad2632a4e"
+      "sourceSha256": "14dad98d1854a894eb5640e36dabe2ff4a530828897ac8c79dd9719d813f0988"
     },
     {
       "file": "pages/marketing/skills-demo/curated-skill-categories.ts",
@@ -497,7 +509,7 @@
     },
     {
       "file": "pages/marketing/skills-demo/curated-skill-overviews.ts",
-      "sourceSha256": "a1edaa16695168258c91144b7d11131a7688041783695f2b2013c7843855831e"
+      "sourceSha256": "bb1cb63fe6bd1c5e040473bd48089ef55a14989318521fdbbca5b15c29125392"
     },
     {
       "file": "pages/marketing/skills-demo/curated-skill-overviews.zh.ts",

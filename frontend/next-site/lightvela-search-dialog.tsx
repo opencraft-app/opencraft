@@ -18,10 +18,11 @@ import {
   TagsListItem,
 } from 'fumadocs-ui/components/dialog/search';
 import type { DefaultSearchDialogProps } from 'fumadocs-ui/components/dialog/search-default';
-import { useI18n } from 'fumadocs-ui/contexts/i18n';
+import { I18nProvider, useI18n } from 'fumadocs-ui/contexts/i18n';
 import { usePathname } from 'next/navigation';
 import { useMemo, useState } from 'react';
 
+import { fumadocsTranslations } from './docs-ui-translations';
 import { createDocsSearchTokenizer } from './search-tokenizer';
 import { DEFAULT_PUBLIC_DOCS_LOCALE } from './public-locale';
 import {
@@ -79,33 +80,35 @@ export function LightVelaSearchDialog({
   });
 
   return (
-    <SearchDialog
-      search={search}
-      onSearchChange={setSearch}
-      isLoading={query.isLoading}
-      {...props}
-    >
-      <SearchDialogOverlay />
-      <SearchDialogContent>
-        <SearchDialogHeader>
-          <SearchDialogIcon />
-          <SearchDialogInput />
-          <SearchDialogClose />
-        </SearchDialogHeader>
-        <SearchDialogList items={query.data !== 'empty' ? query.data : defaultItems} />
-      </SearchDialogContent>
-      <SearchDialogFooter>
-        {tags.length > 0 && (
-          <TagsList tag={tag} onTagChange={setTag} allowClear={allowClear}>
-            {tags.map((item) => (
-              <TagsListItem key={item.value} value={item.value}>
-                {item.name}
-              </TagsListItem>
-            ))}
-          </TagsList>
-        )}
-        {footer}
-      </SearchDialogFooter>
-    </SearchDialog>
+    <I18nProvider locale={searchLocale} translations={fumadocsTranslations(searchLocale)}>
+      <SearchDialog
+        search={search}
+        onSearchChange={setSearch}
+        isLoading={query.isLoading}
+        {...props}
+      >
+        <SearchDialogOverlay />
+        <SearchDialogContent>
+          <SearchDialogHeader>
+            <SearchDialogIcon />
+            <SearchDialogInput />
+            <SearchDialogClose />
+          </SearchDialogHeader>
+          <SearchDialogList items={query.data !== 'empty' ? query.data : defaultItems} />
+        </SearchDialogContent>
+        <SearchDialogFooter>
+          {tags.length > 0 && (
+            <TagsList tag={tag} onTagChange={setTag} allowClear={allowClear}>
+              {tags.map((item) => (
+                <TagsListItem key={item.value} value={item.value}>
+                  {item.name}
+                </TagsListItem>
+              ))}
+            </TagsList>
+          )}
+          {footer}
+        </SearchDialogFooter>
+      </SearchDialog>
+    </I18nProvider>
   );
 }

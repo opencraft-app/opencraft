@@ -1,3 +1,4 @@
+import { useCollaborationShown } from "@/lib/collaboration-visibility";
 import { AgentSidebar, AgentSidebarToggle, useAgentSidebarCollapse } from "@/components/site/agent-sidebar";
 import { AgentConsoleHostProjection, type AgentConsoleHostPort } from "./agent-console-host";
 import { motion, AnimatePresence } from "framer-motion";
@@ -190,6 +191,9 @@ import { getPassExpiryReminder, type PassExpiryReminder } from "@/lib/pass-renew
 import { isRenewalRealnameVerified } from "@/lib/renewal-realname";
 import { RenewPassModal } from "@/pages/marketing/renew-pass-modal";
 import { AgentDeepSeekHarnessPanel } from "@/pages/marketing/agent-deepseek-harness-panel";
+import { AgentCollaborationLab } from "@/pages/marketing/agent-collaboration-lab";
+import { AgentImClientInstallCard } from "@/pages/marketing/agent-im-client-install-card";
+
 import { AgentCloudDesktopPanel } from "@/pages/marketing/agent-cloud-desktop-panel";
 import { isRenewalAvailableForRegion } from "@/pages/marketing/renew-coming-soon";
 import { trackDatongClick, trackDatongEvent } from "@/observability/datong-tracker";
@@ -773,7 +777,7 @@ void _staggerContainer;
 const DEFAULT_AGENT_SECTION: AgentSettingsSectionId = "chat";
 
 const EXPLORE_SECTION_IDS = new Set<AgentSettingsSectionId>([
-  "buddy", "memory", "achievement", "model", "diagnostics", "settings", "website", "deepseek-harness", "cloud-desktop",
+  "buddy", "memory", "achievement", "model", "diagnostics", "settings", "website", "deepseek-harness", "cloud-desktop", "collaboration",
   "terminal", "browser",
 ]);
 const DAILY_SECTION_IDS = new Set<AgentSettingsSectionId>([
@@ -2652,6 +2656,7 @@ export const AgentSettingsPage = ({
   const paidBillingEnabled = usePaidBillingEnabled();
   const multiBotEnabled = useMultiBotEnabled();
   const cloudDesktopEnabled = useCloudDesktopEnabled();
+  const collaborationShown = useCollaborationShown();
   const realnamePhoneVerificationEnabled = useRealnamePhoneVerificationEnabled();
   const paidBillingActive = isPaidBillingEnabled(paidBillingEnabled);
   const renewalAvailable = isRenewalAvailableForRegion(isGlobal, paidBillingActive);
@@ -4942,6 +4947,8 @@ export const AgentSettingsPage = ({
     </section>
   ) : null;
 
+  if (activeSection === "collaboration") return <AgentCollaborationLab />;
+
   return (
     <div
       ref={chatPageRef}
@@ -5697,10 +5704,10 @@ export const AgentSettingsPage = ({
                   label: t("日常"),
                   sections: [
                     { id: "channel", label: resolveAgentConsoleCollectionLabel("channel", i18n.language, t), icon: <MessageCircle className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.channel },
+                    { id: "skill", label: t("技能"), icon: <Wand2 className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.skill },
                     ...(showConnectorsEntry
                       ? [{ id: "connectors" as const, label: t("连接器"), icon: <Plug className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.connectors }]
                       : []),
-                    { id: "skill", label: t("技能"), icon: <Wand2 className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.skill },
                     { id: "automations", label: t("定时任务"), icon: <CalendarClock className="h-4 w-4" />, path: AGENT_SECTION_PATH_BY_ID.automations },
                   ],
                 },
@@ -5740,6 +5747,13 @@ export const AgentSettingsPage = ({
                       path: AGENT_SECTION_PATH_BY_ID["deepseek-harness"],
                       badge: "Beta",
                     },
+                    ...(collaborationShown ? [{
+                      id: "collaboration" as const,
+                      label: t("协作聊天"),
+                      icon: <MessageSquare className="h-4 w-4" />,
+                      path: AGENT_SECTION_PATH_BY_ID.collaboration,
+                      badge: "Beta",
+                    }] : []),
                     // 云桌面入口守卫：仅在后端下发 cloudDesktopEnabled 的环境（已配置
                     // DESKTOP_INGRESS_DOMAIN，如 sandbox-bj-7）显示，现网隐藏避免死入口。
                     ...(cloudDesktopEnabled
@@ -6795,6 +6809,8 @@ export const AgentSettingsPage = ({
                             />
                           )}
                           {activeSection === "settings" && (
+                            <>
+                            {connectorsRevealed && <AgentImClientInstallCard key={activeBot.id} botId={activeBot.id} bots={repositories.bots} />}
                             <AgentCommonSettingsPanel
                               botId={activeBot.id}
                               profileId={activeBot.profileId}
@@ -6804,6 +6820,7 @@ export const AgentSettingsPage = ({
                                 return (await getHermesScriptCommands(activeBot.profileId)).getGatewayRestartCommand();
                               }}
                             />
+                            </>
                           )}
                           {activeSection === "files" && (
                             <TatFileManagerPanel botId={activeBot.id} />

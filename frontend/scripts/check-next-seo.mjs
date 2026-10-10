@@ -13,7 +13,7 @@ const requiredPublicRoutes = [
   "/docs",
   "/docs/overview",
 ];
-const localizedPrefixes = ["en-us", "zh-cn", "zh-sg", "zh-hant", "id-id", "ms-my", "es"];
+const localizedPrefixes = ["en-us", "zh-cn", "zh-sg", "zh-hant", "id-id", "ms-my", "th-th", "es"];
 const spanishPublicRoutes = [
   "/es",
   "/es/about",

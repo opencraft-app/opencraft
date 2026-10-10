@@ -1,6 +1,7 @@
 "use client";
 
 import { localizeMalay } from '@/i18n/malay-copy';
+import { localizeThai } from '@/i18n/thai-copy';
 import { useMemo, type ReactNode } from "react";
 import { LegalFooter } from "@/components/site/legal-footer";
 import { termsOfServiceText } from "@/content/legal/terms-of-service-text";
@@ -58,6 +59,7 @@ const copy = {
 } satisfies Record<"en" | "zh" | "id" | "es", TermsCopy>;
 
 export function getTermsOfServiceChrome(locale: PublicSiteLocaleCode): TermsCopy {
+  if (locale === PUBLIC_SITE_LOCALES.TH_TH) return localizeThai(copy.en);
   if (locale === PUBLIC_SITE_LOCALES.MS_MY) return localizeMalay(copy.en);
   if (locale === PUBLIC_SITE_LOCALES.KO_KR) return KOREAN_TERMS_OF_SERVICE_CHROME;
   if (locale === PUBLIC_SITE_LOCALES.JA_JP) return JAPANESE_TERMS_OF_SERVICE_CHROME;
@@ -365,6 +367,7 @@ export function getTermsOfServiceBlocks(
   locale: PublicSiteLocaleCode,
   englishBlocks: TermsBlock[],
 ): TermsBlock[] {
+  if (locale === PUBLIC_SITE_LOCALES.TH_TH) return localizeThai(englishBlocks);
   if (locale === PUBLIC_SITE_LOCALES.MS_MY) return localizeMalay(englishBlocks);
   if (locale === PUBLIC_SITE_LOCALES.KO_KR) return KOREAN_TERMS_OF_SERVICE_BLOCKS as TermsBlock[];
   if (locale === PUBLIC_SITE_LOCALES.JA_JP) return JAPANESE_TERMS_OF_SERVICE_BLOCKS as TermsBlock[];
@@ -384,6 +387,7 @@ function withTrailingSlash(path: string): string {
 }
 
 function publicLocalePrefix(locale: PublicSiteLocaleCode): string {
+  if (locale === PUBLIC_SITE_LOCALES.TH_TH) return `/${PUBLIC_URL_LANGS.TH_TH}`;
   if (locale === PUBLIC_SITE_LOCALES.MS_MY) return `/${PUBLIC_URL_LANGS.MS_MY}`;
   if (locale === PUBLIC_SITE_LOCALES.ID_ID) return `/${PUBLIC_URL_LANGS.ID_ID}`;
   if (locale === PUBLIC_SITE_LOCALES.ZH_HANT) return `/${PUBLIC_URL_LANGS.ZH_HANT}`;
@@ -486,7 +490,9 @@ function renderBlock(block: TermsBlock, index: number, locale: PublicSiteLocaleC
 export const TermsOfServicePage = () => {
   const localeOverride = useLocaleOverride();
   const currentLocale: PublicSiteLocaleCode =
-    localeOverride === PUBLIC_SITE_LOCALES.MS_MY
+    localeOverride === PUBLIC_SITE_LOCALES.TH_TH
+      ? PUBLIC_SITE_LOCALES.TH_TH
+      : localeOverride === PUBLIC_SITE_LOCALES.MS_MY
       ? PUBLIC_SITE_LOCALES.MS_MY
       : localeOverride === PUBLIC_SITE_LOCALES.KO_KR
       ? PUBLIC_SITE_LOCALES.KO_KR

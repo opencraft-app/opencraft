@@ -6,6 +6,7 @@ import { blogContentLanguage, type BlogContentLanguage, type BlogLocale } from "
 
 const COMMUNITY_COPY = {
   "ms-MY": { title: "Sertai komuniti LightVela", description: "Imbas kod QR atau buka pautan di bawah untuk meneroka ejen awan bersama komuniti.", join: "Sertai di {name}", qr: "Kod QR komuniti {name}" },
+  "th-TH": { title: "เข้าร่วมชุมชน LightVela", description: "สแกนรหัส QR หรือเปิดลิงก์ด้านล่างเพื่อสำรวจตัวแทนคลาวด์ร่วมกับชุมชน", join: "เข้าร่วมที่ {name}", qr: "รหัส QR ชุมชน {name}" },
   en: { title: "Join the LightVela community", description: "Scan a QR code or follow a link below to explore cloud agents with the community.", join: "Join on {name}", qr: "{name} community QR code" },
   "zh-CN": { title: "加入 LightVela 交流群", description: "扫码或点击链接加入社群，一起探索云端 Agent 的更多玩法。", join: "加入 {name}", qr: "{name} 社群二维码" },
   "zh-Hant": { title: "加入 LightVela 交流群", description: "掃碼或點擊連結加入社群，一起探索雲端 Agent 的更多玩法。", join: "加入 {name}", qr: "{name} 社群二維碼" },
