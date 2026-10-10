@@ -116,7 +116,7 @@ export const useDemoOnboarding = () => {
 function RequiredOnboardingDialog({ children, onCancel }: { children: ReactNode; onCancel?: () => void }) {
   const t = useT();
   return <Dialog open onOpenChange={(open) => { if (!open) onCancel?.(); }}>
-    <DialogContent className="max-h-[92dvh] overflow-y-auto rounded-3xl p-6 md:w-[56rem] [&>button]:hidden"
+    <DialogContent className="max-h-[92dvh] overflow-y-auto rounded-3xl p-6 md:w-[56rem] [&>button:last-child]:hidden"
       onEscapeKeyDown={(event) => { if (!onCancel) event.preventDefault(); }}
       onPointerDownOutside={(event) => event.preventDefault()}
       onInteractOutside={(event) => event.preventDefault()}>

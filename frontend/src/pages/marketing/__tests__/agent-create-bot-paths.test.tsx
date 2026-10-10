@@ -224,7 +224,7 @@ const settle = (ms = 700) => new Promise((r) => { setTimeout(r, ms); });
 const expectSetupRunning = () => waitFor(() => {
   const text = (document.body.textContent ?? "").replace(/\s+/g, " ");
   // 进入配置视图（咖啡杯文案）即证明没被弹回表单
-  expect(text).toMatch(/喂咖啡|已创建，但有/);
+  expect(text).toMatch(/喂咖啡|已创建，但有|配置进度/);
   // 且沙箱命令真的下发了
   expect(execDebugCommand.mock.calls.length).toBeGreaterThan(0);
 }, { timeout: 3000 });
@@ -276,6 +276,7 @@ describe("create bot: all entry paths", () => {
 
     await waitFor(() => expect(addBot).toHaveBeenCalledTimes(1));
     expect(addBot).toHaveBeenCalledWith(expect.objectContaining({ name: "首页小助手" }));
+    fireEvent.click(await screen.findByRole("button", { name: "开始旅程" }));
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith(
       "/agents/chat?bot=ins-new-0", { replace: true },
     ));
@@ -295,6 +296,7 @@ describe("create bot: all entry paths", () => {
     // 不该被弹回表单
     expect(screen.queryByRole("button", { name: "随机样式" })).not.toBeInTheDocument();
     // 已就绪的实例应完成配置并进入总览；不能把卡在进度页当成成功。
+    fireEvent.click(await screen.findByRole("button", { name: "开始旅程" }));
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith(
       "/agents/chat?bot=ins-sub", { replace: true },
     ));
@@ -304,8 +306,8 @@ describe("create bot: all entry paths", () => {
     expect(addBot).not.toHaveBeenCalled();
   });
 
-  it("allows additional creation to close without creating a Bot and preserves the current Bot", async () => {
-    bots = [buildBot("ins-main", { name: "主 Bot" })];
+  it.each([1, 2, 4])("allows additional creation after %i existing Bots to close without creating a Bot", async (count) => {
+    bots = [buildBot("ins-main", { name: "主 Bot" }), ...Array.from({ length: count - 1 }, (_, i) => buildBot(`ins-extra-${i}`, { isDefault: false }))];
     render(page("?bot=ins-main"));
     fireEvent.click(await screen.findByRole("button", { name: "新建 Bot" }));
     await waitForForm();
@@ -346,7 +348,7 @@ describe("create bot: all entry paths", () => {
     await waitForForm();
     expect(navigateMock).toHaveBeenCalledWith("/agents/chat?bot=ins-main&newBot=1", undefined);
 
-    fireEvent.click(screen.getByRole("button", { name: "模拟浏览器返回" }));
+    fireEvent.click(screen.getByRole("button", { name: "模拟浏览器返回", hidden: true }));
     await waitFor(() => {
       expect(screen.queryByRole("button", { name: "随机样式" })).not.toBeInTheDocument();
     });
