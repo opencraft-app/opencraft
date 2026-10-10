@@ -521,6 +521,7 @@ export const buildBuddySetupPlan = (params: {
   profileId?: string;
   /** 几何体头像，写入 profile.yaml 的 ui_meta */
   avatar?: { shapeId: string; color: string };
+  appearance?: import('@/lib/hermes-appearance').HermesAppearance;
   /** 注入时间戳，便于测试与备份命名 */
   timestamp: string;
   /**
@@ -546,7 +547,7 @@ export const buildBuddySetupPlan = (params: {
   t?: TranslateFn;
 }): SetupStep[] => {
   const {
-    profile, template, profileId = "main", avatar, timestamp,
+    profile, template, profileId = "main", avatar, appearance, timestamp,
     preserveSoulContent = false, existingSoul, t: tFn,
   } = params;
   /*
@@ -592,7 +593,7 @@ export const buildBuddySetupPlan = (params: {
    * 与 SOUL.md 物理分离：对话调教改 SOUL 正文，表单改 profile.yaml，
    * 两者不共享文件，从根上不会互相覆盖。
    *
-   * required: false —— 写失败不该阻断引导，SOUL 里已有同样的名字与描述。
+   * 有外观选择时必须写成功；否则创建页与重新打开后的头像会不一致。
    */
   steps.push({
     kind: "profile-meta",
@@ -603,9 +604,10 @@ export const buildBuddySetupPlan = (params: {
       // 描述取自模板时标记为自动生成，用户手填则为 false
       descriptionAuto: !profile.description.trim() && Boolean(template?.description),
       avatar,
+      appearance,
     }, profileId),
     timeoutMs: QUICK_STEP_TIMEOUT_MS,
-    required: false,
+    required: Boolean(appearance),
   });
 
   // 2. USER.md —— 模板预设画像（原「记忆」）

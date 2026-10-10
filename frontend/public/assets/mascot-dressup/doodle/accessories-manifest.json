@@ -1,0 +1,111 @@
+{
+  "generator": "built-in image_gen",
+  "reference": "/Users/keria/.codex/generated_images/01a0fabe-e857-77f1-94c9-06e39bab64be/exec-abb86e79-60ff-4087-bd9c-073d7ba36aad.png",
+  "assets": [
+    {
+      "name": "glasses",
+      "prompt": "Use case: stylized-concept. Asset type: transparent overlay sprite for a simple friendly flat 2D avatar customizer. Image 1 is STYLE REFERENCE ONLY; do NOT recreate the UI or character. Match its restrained hand-cut vector-like illustration: matte flat fills, clean soft edges, tiny darker color plane for form, no texture, no outlines except where requested, no 3D, no glossy plastic. Draw ONLY the specified isolated accessory centered with generous transparent padding. No text, character, face, eyes, UI, drop shadow, background, checkerboard or extra items. Real transparent alpha.\nSubject: One pair of perfectly FRONT-VIEW round eyeglasses, two large symmetrical circular frames, a short curved bridge and short outward horizontal arms. Thin muted dusty plum #79718f frame. Frame width 3% of full glasses width. Completely transparent empty lens holes; absolutely NO eyes, white filling, reflections or opaque lenses. Overall width to height about 2.4:1.",
+      "source": "/Users/keria/.codex/generated_images/01a1079f-570c-75c2-9a64-23836a365341/exec-10f2c5d0-dcad-48eb-8426-0619aac2fe58.png",
+      "file": "/tmp/hermes-doodle-assets/glasses.webp",
+      "sourceDimensions": [
+        1942,
+        809
+      ],
+      "crop": {
+        "left": 318,
+        "top": 139,
+        "width": 1306,
+        "height": 497
+      },
+      "width": 600,
+      "height": 228,
+      "aspectRatio": 2.6315789473684212,
+      "normalizations": "Deterministic crop to alpha > 8 plus 2 px padding; resize fit within 600x600; WebP quality95 alpha100. No recoloring.",
+      "transparentCanvasFraction": 0.9320192886667625
+    },
+    {
+      "name": "scarf",
+      "prompt": "Use case: stylized-concept. Asset type: transparent overlay sprite for a simple friendly flat 2D avatar customizer. Image 1 is STYLE REFERENCE ONLY; do NOT recreate the UI or character. Match its restrained hand-cut vector-like illustration: matte flat fills, clean soft edges, tiny darker color plane for form, no texture, no outlines except where requested, no 3D, no glossy plastic. Draw ONLY the specified isolated accessory centered with generous transparent padding. No text, character, face, eyes, UI, drop shadow, background, checkerboard or extra items. Real transparent alpha.\nSubject: One coral red-orange triangular bandana scarf, perfectly FRONT VIEW, for the lower belly of a rounded mascot. A single gently curved broad top edge dipping slightly at middle, tapering to rounded low triangular point; tiny tie knot and two short rounded tails at right edge. Flat coral #ff8b79 fill and extremely subtle darker fold. Overall width to height about 2.8:1.",
+      "source": "/Users/keria/.codex/generated_images/01a1079f-570c-75c2-9a64-23836a365341/exec-331f0af8-810b-4087-a6a5-0873d6808412.png",
+      "file": "/tmp/hermes-doodle-assets/scarf.webp",
+      "sourceDimensions": [
+        2098,
+        749
+      ],
+      "crop": {
+        "left": 413,
+        "top": 105,
+        "width": 1330,
+        "height": 527
+      },
+      "width": 600,
+      "height": 238,
+      "aspectRatio": 2.5210084033613445,
+      "normalizations": "Deterministic crop to alpha > 8 plus 2 px padding; resize fit within 600x600; WebP quality95 alpha100. No recoloring.",
+      "transparentCanvasFraction": 0.8092219559348912
+    },
+    {
+      "name": "leaf",
+      "prompt": "Use case: stylized-concept. Asset type: transparent overlay sprite for a simple friendly flat 2D avatar customizer. Image 1 is STYLE REFERENCE ONLY; do NOT recreate the UI or character. Match its restrained hand-cut vector-like illustration: matte flat fills, clean soft edges, tiny darker color plane for form, no texture, no outlines except where requested, no 3D, no glossy plastic. Draw ONLY the specified isolated accessory centered with generous transparent padding. No text, character, face, eyes, UI, drop shadow, background, checkerboard or extra items. Real transparent alpha.\nSubject: One small green TWO-LEAF sprout pin, upright, with a short thin stem. Two simple oval leaves leaning upper-left and upper-right, right leaf slightly larger. Sage and soft leaf-green flat fills, single darker diagonal leaf plane. Overall width to height about 1:1.1. Not a plant pot.",
+      "source": "/Users/keria/.codex/generated_images/01a1079f-570c-75c2-9a64-23836a365341/exec-2909864e-db7f-46cd-9abd-e89d74c4f63d.png",
+      "file": "/tmp/hermes-doodle-assets/leaf.webp",
+      "sourceDimensions": [
+        1199,
+        1312
+      ],
+      "crop": {
+        "left": 363,
+        "top": 483,
+        "width": 499,
+        "height": 447
+      },
+      "width": 499,
+      "height": 447,
+      "aspectRatio": 1.116331096196868,
+      "normalizations": "Deterministic crop to alpha > 8 plus 2 px padding; resize fit within 600x600; WebP quality95 alpha100. No recoloring.",
+      "transparentCanvasFraction": 0.9403523515531236
+    },
+    {
+      "name": "cap",
+      "prompt": "Use case: stylized-concept. Asset type: transparent overlay sprite for a simple friendly flat 2D avatar customizer. Image 1 is STYLE REFERENCE ONLY; do NOT recreate the UI or character. Match its restrained hand-cut vector-like illustration: matte flat fills, clean soft edges, tiny darker color plane for form, no texture, no outlines except where requested, no 3D, no glossy plastic. Draw ONLY the specified isolated accessory centered with generous transparent padding. No text, character, face, eyes, UI, drop shadow, background, checkerboard or extra items. Real transparent alpha.\nSubject: One little pale LILAC baseball cap for round cartoon mascot, almost FRONT VIEW with visor gently angled to right, low rounded crown, small curved brim, minimal panel lines, a tiny top button. Pale lilac crown #c7b2fa, deeper lilac brim #a78bea. Simple flattened illustration. Compact cap allowing an antenna to remain above and to the upper right when overlaid. No antenna included. Overall width to height about 1.65:1.",
+      "source": "/Users/keria/.codex/generated_images/01a1079f-570c-75c2-9a64-23836a365341/exec-7e2c3679-745d-4d18-a66c-7a21209bdd49.png",
+      "file": "/tmp/hermes-doodle-assets/cap.webp",
+      "sourceDimensions": [
+        1610,
+        977
+      ],
+      "crop": {
+        "left": 448,
+        "top": 265,
+        "width": 802,
+        "height": 452
+      },
+      "width": 600,
+      "height": 338,
+      "aspectRatio": 1.7751479289940828,
+      "normalizations": "Deterministic crop to alpha > 8 plus 2 px padding; resize fit within 600x600; WebP quality95 alpha100. No recoloring.",
+      "transparentCanvasFraction": 0.8468794700471083
+    },
+    {
+      "name": "pencil",
+      "prompt": "Use case: stylized-concept. Asset type: transparent overlay sprite for a simple friendly flat 2D avatar customizer. Image 1 is STYLE REFERENCE ONLY; do NOT recreate the UI or character. Match its restrained hand-cut vector-like illustration: matte flat fills, clean soft edges, tiny darker color plane for form, no texture, no outlines except where requested, no 3D, no glossy plastic. Draw ONLY the specified isolated accessory centered with generous transparent padding. No text, character, face, eyes, UI, drop shadow, background, checkerboard or extra items. Real transparent alpha.\nSubject: One small yellow pencil pointing diagonally down-left, coral eraser at upper-right, peach wooden tip and charcoal point at lower-left. Simple single flat ochre side plane. Cute and graphic, no writing or details, no hand. Overall diagonal footprint width to height about 0.8:1.",
+      "source": "/Users/keria/.codex/generated_images/01a1079f-570c-75c2-9a64-23836a365341/exec-06b77086-dd7c-4820-b4d0-3afb3622c54f.png",
+      "file": "/tmp/hermes-doodle-assets/pencil.webp",
+      "sourceDimensions": [
+        1122,
+        1402
+      ],
+      "crop": {
+        "left": 284,
+        "top": 361,
+        "width": 609,
+        "height": 658
+      },
+      "width": 555,
+      "height": 600,
+      "aspectRatio": 0.925,
+      "normalizations": "Deterministic crop to alpha > 8 plus 2 px padding; resize fit within 600x600; WebP quality95 alpha100. No recoloring.",
+      "transparentCanvasFraction": 0.8794502887395393
+    }
+  ]
+}

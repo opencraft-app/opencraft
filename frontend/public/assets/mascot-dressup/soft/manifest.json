@@ -1,0 +1,209 @@
+{
+  "version": 1,
+  "created": "2026-10-04",
+  "artDirection": "Front orthographic, soft satin clay, upper-left light, simple smooth surfaces. Body and antenna tint independently from eyes and charms.",
+  "assets": [
+    {
+      "id": "body",
+      "source": "exec-e9f11d33-4ce4-4cda-9a2c-08ebf2341a7f.png",
+      "file": "body.webp",
+      "bytes": 27562,
+      "alpha": true,
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "bounds": [
+        273,
+        149,
+        981,
+        1082
+      ],
+      "generator": "OpenAI built-in imagegen",
+      "purpose": "Hermes soft sprite family; no external character artwork",
+      "status": "browser-qa-reviewed"
+    },
+    {
+      "id": "eye",
+      "source": "exec-7adce7d8-3c71-4538-b912-1b682276e53e.png",
+      "file": "eye.webp",
+      "bytes": 10410,
+      "alpha": true,
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "bounds": [
+        447,
+        508,
+        571,
+        752
+      ],
+      "generator": "OpenAI built-in imagegen",
+      "purpose": "Hermes soft sprite family; no external character artwork",
+      "status": "browser-qa-reviewed"
+    },
+    {
+      "id": "smile",
+      "source": "exec-bc7461fb-1bb6-466d-a4d5-b85ec63c1d94.png",
+      "file": "smile.webp",
+      "bytes": 11638,
+      "alpha": true,
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "bounds": [
+        422,
+        542,
+        830,
+        735
+      ],
+      "generator": "OpenAI built-in imagegen",
+      "purpose": "Hermes soft sprite family; no external character artwork",
+      "status": "browser-qa-reviewed"
+    },
+    {
+      "id": "beret",
+      "source": "exec-88d66793-017c-49d8-9c34-7d72260581af.png",
+      "file": "beret.webp",
+      "bytes": 12606,
+      "alpha": true,
+      "sourceSize": [
+        1704,
+        923
+      ],
+      "bounds": [
+        476,
+        231,
+        1227,
+        654
+      ],
+      "generator": "OpenAI built-in imagegen",
+      "purpose": "Hermes soft sprite family; no external character artwork",
+      "status": "browser-qa-reviewed"
+    },
+    {
+      "id": "headphones",
+      "source": "exec-d0dc1f44-b14c-439a-a1bd-1d7826020e8f.png",
+      "file": "headphones.webp",
+      "bytes": 17862,
+      "alpha": true,
+      "sourceSize": [
+        1430,
+        1100
+      ],
+      "bounds": [
+        257,
+        203,
+        1172,
+        897
+      ],
+      "generator": "OpenAI built-in imagegen",
+      "purpose": "Hermes soft sprite family; no external character artwork",
+      "status": "browser-qa-reviewed"
+    },
+    {
+      "id": "star",
+      "source": "exec-60b8e2ba-56cf-454e-8451-efef028155b7.png",
+      "file": "star.webp",
+      "bytes": 18650,
+      "alpha": true,
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "bounds": [
+        318,
+        327,
+        935,
+        923
+      ],
+      "generator": "OpenAI built-in imagegen",
+      "purpose": "Hermes soft sprite family; no external character artwork",
+      "status": "browser-qa-reviewed"
+    },
+    {
+      "id": "moon",
+      "source": "exec-796a0857-97cf-419e-8b96-4cd834808df1.png",
+      "file": "moon.webp",
+      "bytes": 21772,
+      "alpha": true,
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "bounds": [
+        356,
+        338,
+        901,
+        928
+      ],
+      "generator": "OpenAI built-in imagegen",
+      "purpose": "Hermes soft sprite family; no external character artwork",
+      "status": "browser-qa-reviewed"
+    },
+    {
+      "id": "orbit",
+      "source": "exec-3c89dcc6-3091-4339-912a-7823e171bc5b.png",
+      "file": "orbit.webp",
+      "bytes": 16934,
+      "alpha": true,
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "bounds": [
+        336,
+        496,
+        937,
+        753
+      ],
+      "generator": "OpenAI built-in imagegen",
+      "purpose": "Hermes soft sprite family; no external character artwork",
+      "status": "browser-qa-reviewed"
+    },
+    {
+      "id": "wings",
+      "source": "exec-164d8673-898c-4a08-93ba-f15f5d6476d3.png",
+      "file": "wings.webp",
+      "bytes": 9026,
+      "alpha": true,
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "bounds": [
+        67,
+        409,
+        1185,
+        845
+      ],
+      "generator": "OpenAI built-in imagegen",
+      "purpose": "Hermes soft sprite family; no external character artwork",
+      "status": "browser-qa-reviewed"
+    }
+  ],
+  "normalization": "Sharp: preserve body square canvas, alpha-bounds crop standalone ornaments and one eye; resize 800px body / max400px ornaments, WebP quality90 alpha100. No generated background removal or geometry painting.",
+  "palette": {
+    "lavender": "original",
+    "white": "saturate(.18) brightness(1.055)",
+    "peach": "hue-rotate(115deg) saturate(.85)",
+    "mint": "hue-rotate(260deg) saturate(.72)",
+    "sky": "hue-rotate(320deg) saturate(.82)",
+    "charcoal": "grayscale(1) brightness(.34)"
+  },
+  "locks": "One front camera, upper-left light, blank facial surface, round body and short nubs, stable percentage anchors. Face and ornaments never receive the skin filter; charcoal and white keep lilac antenna.",
+  "prompts": {
+    "body": "Reference base-lavender.webp. Production transparent character sprite retaining round egg-shaped body, two rounded side nubs, tiny feet, antenna leaning right with round ball. Premium soft satin clay, broad smooth surfaces, no texture, subtle broad upper-left light, minimal highlights. Reduce hands/feet 35%. Pale lavender #e9e1ff to #bbace9, antenna lilac with soft cyan highlight. Completely blank face for separate animated eyes. Orthographic straight front, square transparent canvas. No ground, shadow, orbit, pedestal, accessories, text or background.",
+    "eye": "Single pair of identical vertical black oval eyes, front view, black satin with small soft upper-left white highlight, rounded ends. Transparent with no face, brows, mouth, lashes, shadows or background. Split and normalize one eye for symmetric placement.",
+    "smile": "Single softly curved inverted U closed-eye arc, black rounded thick curve with downward ends and subtle satin highlight. Smooth clay, simple and legible. Transparent, no eyeball/face/background/text/other marks.",
+    "commonAccessory": "Production dress-up accessory for referenced Hermes. Only accessory, no body. Orthographic front, centered transparent square. Premium smooth satin clay, broad soft upper-left light, simple shapes, restrained highlights. No textile/seam/photoreal details, text, outline, pedestal, ground or cast shadow.",
+    "beret": "Compact rounded warm coral #eda28e beret tilted left, tiny nub, no antenna hole, three soft volumes.",
+    "headphones": "Small ivory headphones, thin horseshoe band with completely empty transparent opening, muted mint cups, no cable or microphone.",
+    "star": "Rounded butter-yellow #f4cf75 five-point star badge, subtle dimensional bevel; no face/pin fitting/extra sparkle.",
+    "moon": "Soft sky-blue #a5c9ed crescent badge, rounded tips, broad bevel, no face/stars/string.",
+    "orbit": "Small horizontal pale-gold #ebce8b elliptical thin tube, wide transparent opening, one small cream sphere on right; no planet/antenna/body.",
+    "wings": "Symmetric pair of milky ivory/lilac wings with large transparent gap, each wing three rounded feather lobes, front view, no fine texture, body or bird."
+  }
+}

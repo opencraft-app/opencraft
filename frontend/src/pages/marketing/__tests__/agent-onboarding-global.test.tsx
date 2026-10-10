@@ -163,7 +163,8 @@ vi.mock("@/pages/marketing/opencraft-embedded-workbench", () => ({
     : legacy,
 }));
 
-vi.mock("@/pages/marketing/agent-overview-panel", () => ({
+vi.mock("@/pages/marketing/agent-overview-panel", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/pages/marketing/agent-overview-panel")>()),
   AgentOverviewPanel: ({ heroStats }: { heroStats: { expiresAt: string | null } }) => <div>Bot overview {heroStats.expiresAt}</div>,
   HeroBanner: ({ stats }: { stats: { expiresAt: string | null } }) => <div>Bot overview {stats.expiresAt}</div>,
   LatestNewsSection: () => null,
@@ -239,17 +240,18 @@ describe("international Bot onboarding", () => {
       bots = [buildBot(), { ...buildBot(), id: "bot-child", profileId: "child", isDefault: false, name: "Research Bot" }];
       render(page("?bot=ins-372", "chat"));
       expect(await screen.findByRole("link", { name: /切换到 Research Bot/ })).toHaveAttribute("href", "/agents/chat/?bot=bot-child");
-      expect(screen.getByRole("button", { name: /切换到 Existing Bot/ })).toHaveAttribute("aria-current", "true");
+      expect(screen.getByRole("button", { name: /更换头像 Existing Bot/ })).toHaveAttribute("aria-current", "true");
       expect(screen.queryByRole("link", { name: "总览" })).not.toBeInTheDocument();
       expect(screen.getByRole("button", { name: "新建 Bot" })).toBeEnabled();
-      fireEvent.click(screen.getByRole("button", { name: /切换到 Existing Bot/ }));
+      fireEvent.click(screen.getByRole("button", { name: /更换头像 Existing Bot/ }));
       expect(navigateMock).not.toHaveBeenCalled();
+      expect(await screen.findByRole("heading", { name: "捏一个你的搭档" })).toBeInTheDocument();
     });
 
     it("opens the creation guide from the rail", async () => {
       render(page("", "chat"));
       fireEvent.click(await screen.findByRole("button", { name: "新建 Bot" }));
-      expect(await screen.findByRole("button", { name: "换一批" })).toBeInTheDocument();
+      expect(await screen.findByRole("button", { name: "随机样式" })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "创建" })).toBeInTheDocument();
       expect(addBot).not.toHaveBeenCalled();
     });
@@ -267,7 +269,7 @@ describe("international Bot onboarding", () => {
       expect(await screen.findByTestId("opencraft-chat")).toBeInTheDocument();
       expect(screen.queryByRole("link", { name: "总览" })).not.toBeInTheDocument();
       expect(screen.queryByRole("button", { name: "新建 Bot" })).not.toBeInTheDocument();
-      expect(screen.queryByRole("button", { name: /切换到 Existing Bot/ })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /更换头像 Existing Bot/ })).not.toBeInTheDocument();
     });
   });
 
@@ -289,6 +291,7 @@ describe("international Bot onboarding", () => {
     fireEvent.click(screen.getByRole("button", { name: "创建" }));
 
     await waitFor(() => expect(addBot).toHaveBeenCalledTimes(1));
+    fireEvent.click(await screen.findByRole("button", { name: "开始旅程" }, { timeout: 25000 }));
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith(
       "/agents/chat?bot=ins-372", { replace: true },
     ));
@@ -300,7 +303,7 @@ describe("international Bot onboarding", () => {
   it("opens the subscription return in the international template guide", async () => {
     bots = [];
     render(page("?create=1"));
-    expect(await screen.findByRole("button", { name: "换一批" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "随机样式" })).toBeInTheDocument();
     expect(screen.getByText("Industry Researcher", { selector: "span" })).toBeInTheDocument();
     expect(screen.queryByText("育儿参谋")).not.toBeInTheDocument();
     expect(screen.queryByText("创建 Bot")).not.toBeInTheDocument();
@@ -310,7 +313,7 @@ describe("international Bot onboarding", () => {
   it("automatically opens the guide for an empty account", async () => {
     bots = [];
     render(page(""));
-    expect(await screen.findByRole("button", { name: "换一批" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "随机样式" })).toBeInTheDocument();
     expect(await screen.findByText("Industry Researcher", { selector: "span" })).toBeInTheDocument();
     expect(screen.queryByText("创建 Bot")).not.toBeInTheDocument();
   });
@@ -320,7 +323,7 @@ describe("international Bot onboarding", () => {
     expect(await screen.findByTestId("opencraft-chat")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "总览" })).not.toBeInTheDocument();
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith("/agents/chat?bot=ins-372", { replace: true }));
-    expect(screen.queryByRole("button", { name: "换一批" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "随机样式" })).not.toBeInTheDocument();
     expect(addBot).not.toHaveBeenCalled();
   });
 
@@ -388,7 +391,7 @@ describe("international Bot onboarding", () => {
     expect(await screen.findByRole("link", { name: /切换到 Research Bot/ })).toBeInTheDocument();
     view.rerender(page("?bot=bot-child", "chat"));
     expect(screen.getByRole("link", { name: /切换到 Existing Bot/ })).toHaveAttribute("href", "/agents/chat/?bot=ins-372");
-    expect(screen.getByRole("button", { name: /切换到 Research Bot/ })).toHaveAttribute("aria-current", "true");
+    expect(screen.getByRole("button", { name: /更换头像 Research Bot/ })).toHaveAttribute("aria-current", "true");
   });
 
   it("redirects the retired overview URL to the selected Bot's chat", async () => {
@@ -422,6 +425,7 @@ describe("international Bot onboarding", () => {
     fireEvent.click(buttons[buttons.length - 1]!);
     bots = [{ ...buildBot(), status: "running" }];
     view.rerender(page("?creating=ins-372"));
+    fireEvent.click(await screen.findByRole("button", { name: "开始旅程" }, { timeout: 25000 }));
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith(
       "/agents/chat?bot=ins-372", { replace: true },
     ));

@@ -349,8 +349,8 @@ describe("multi-Bot diagnostics", () => {
      * 现在点「新建 Bot」直接进创建引导（选头像 + 填名字），
      * 不再弹旧的「创建 Bot」弹窗 —— 那个弹窗只问名字，会让用户填两次。
      */
-    // 「换一批」是引导页独有的头像操作，用它确认进的是引导而非旧弹窗
-    expect(await screen.findByRole("button", { name: "换一批" })).toBeInTheDocument();
+    // 「随机样式」是引导页独有的头像操作，用它确认进的是引导而非旧弹窗
+    expect(await screen.findByRole("button", { name: "随机样式" })).toBeInTheDocument();
     expect(screen.queryByText("创建 Bot")).not.toBeInTheDocument();
     // 「空白创建」已从复制来源里移除，下拉只列可复制的 bot
     expect(screen.queryByRole("radio", { name: "空白创建" })).not.toBeInTheDocument();
@@ -432,7 +432,7 @@ describe("multi-Bot diagnostics", () => {
     maxBots = 2;
     const view = render(page("ins-1"));
     fireEvent.click(screen.getByRole("button", { name: "新建 Bot" }));
-    expect(await screen.findByRole("button", { name: "换一批" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "随机样式" })).toBeInTheDocument();
 
     /*
      * 这条守的保障没变，只是入口从旧弹窗换成了引导页：

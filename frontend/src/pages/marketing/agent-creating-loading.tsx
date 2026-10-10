@@ -118,7 +118,7 @@ export const CreatingLoadingView = ({
    * 「创建成功」，进去才发现技能没装、定时任务是空的。
    */
   partialFailureCount?: number;
-  /** 「完成」回调，仅在 partialFailureCount > 0 时用到 */
+  /** 「开始旅程」回调，仅在必需创建配置结束后提供 */
   onContinue?: () => void;
   /** 阻断失败后继续配置同一个 Bot */
   onRetry?: () => void;
@@ -135,6 +135,7 @@ export const CreatingLoadingView = ({
   }, []);
 
   const dots = ".".repeat(dotCount);
+  const completed = Boolean(onContinue) && !errorMessage;
   const hasSteps = Boolean(steps && steps.length > 0);
   const doneCount = steps?.filter((state) => state.status === "done").length ?? 0;
 
@@ -179,6 +180,8 @@ export const CreatingLoadingView = ({
           errorMessage
         ) : partialFailureCount > 0 ? (
           t("Bot 已创建，但有 {{count}} 项配置没成功", { count: partialFailureCount })
+        ) : completed ? (
+          t("创建成功")
         ) : (
           <>
             {t("正在给 LightVela Bot 喂咖啡，唤醒大脑中")}
@@ -220,17 +223,17 @@ export const CreatingLoadingView = ({
             部分失败时的收尾：说清去哪补，再给一个明确的出口。
             没有这个按钮用户就卡在这页了（流程已经不会自己往下走）。
           */}
-          {partialFailureCount > 0 && onContinue ? (
+          {completed && onContinue ? (
             <div className="mt-5 rounded-[6px] bg-black/[0.02] p-3.5">
-              <p className="text-[12px] leading-[18px] text-black/55">
+              {partialFailureCount > 0 && <p className="text-[12px] leading-[18px] text-black/55">
                 {t("安装过程遇到了小阻碍，稍后可在「技能」和「定时任务」页面手动安装，Bot 本身已安装成功。")}
-              </p>
+              </p>}
               <button
                 type="button"
                 onClick={onContinue}
                 className="mt-3 h-9 w-full rounded-full bg-black text-[13px] font-medium text-white transition hover:bg-black/85"
               >
-                {t("进入 Bot")}
+                {t("开始旅程")}
               </button>
             </div>
           ) : null}
