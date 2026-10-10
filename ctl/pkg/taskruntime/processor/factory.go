@@ -14,6 +14,7 @@ type prepareTaskFunc func(ctx context.Context, data []byte) (task taskruntime.Se
 var pfMap = map[string]prepareTaskFunc{
 	taskcommon.TaskNameCreateInstance:            instancetask.PrepareCreateTask,
 	taskcommon.TaskNameDestroyInstance:           instancetask.PrepareDestroyTask,
+	taskcommon.TaskNameResumeInstance:            instancetask.PrepareResumeInstanceTask,
 	taskcommon.TaskNameBuildInstanceBirthProfile: prepareDeprecatedBirthProfileTask,
 
 	// trade-pass-isolate 父子 task（设计稿 §10 Q22-I-E）

@@ -178,6 +178,8 @@ WebSocket 契约。远端模式不构造本机账号池、附件或队列，不�
 
 CTL 为国内站存量免费 Pass 创建计费迁移单前，可仅将已过期但仍为 `active` 的 Pass 到期时间延至下一天；这不触发 Sandbox/CVM 开机或实例状态迁移。曾在隔离中关机的实例保持关机，直到用户续费链路明确恢复。
 
+用户发起实例恢复时，CTL 先将 `Paused` 持久化为 `Resuming`，投递可重试任务后立即响应；HTTP 请求不等待 CVM 开机。Sandbox 的恢复接口只提交 `StartInstances`，`GET sandbox` 根据云端 `RUNNING` 将 `RESUMING` 收敛为 `ALLOCATED`；CTL 后台任务确认 Sandbox 已运行后，才把实例置为 `Running` 并重算超时。模糊超时不得直接回滚状态，重试应以云端实际状态幂等收敛；Pass 不再有效时先完成补偿关机，再回退为 `Paused`。自动续费与变配的业务入口保持原有语义。
+
 OpenCraft 独立 Web 入口在创建应用级 `LightVelaAccountService` 前解析显式的
 `VITE_LIGHTVELA_API_BASE_URL` 与 `VITE_LIGHTVELA_REGION`，并将结果传入应用启动边界。
 Collaboration 与 Hermes 复用该账户 authority；北京本地预览的 Collaboration 请求因此走配置的
