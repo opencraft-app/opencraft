@@ -56,6 +56,7 @@
 - 当前主线基线：`origin/master` 于 2026-10-10 更新至 `3bc4384e5`。
 - 新脚本在同一 TAT 命令中调用 Hermes Profile API，并在读取 SQLite 前匹配 Bot、验证 Profile ID；CTL 单测断言每次请求只有一条 PTY TAT 调用。
 - 2026-10-10 聚焦测试 `CGO_ENABLED=0 go test ./pkg/instance ./main/api -run 'TestReadChannelHistory|TestChannelHistory' -count=1` 通过；聚焦 `go vet` 通过。
+- 文档检查、staged change-impact 与 `git diff --check` 通过。
 - 全量 `CGO_ENABLED=0 go test ./...` 因仓库其他测试需要 CGO SQLite，且部分测试需要 rootless Docker 而失败；不能作为本次改动失败归因。
 
 ## risks
@@ -86,4 +87,4 @@
 
 ## handoff
 
-- 代码和正式设计已修改；尚未提交、部署。真实 Hermes/TAT 环境延迟与并发容量仍待测试环境验证。
+- CTL 优化已提交独立 MR !5154（目标 `master`），当前未合并、未部署，也未开启功能开关。真实 Hermes/TAT 环境延迟与并发容量仍待测试环境验证。

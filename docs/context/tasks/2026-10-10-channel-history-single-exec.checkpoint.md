@@ -1,6 +1,6 @@
 ## stage
 
-CTL 改动和聚焦测试完成；下一步完成变更影响门禁并交接。
+CTL 改动和聚焦测试完成；变更影响门禁通过，独立 MR !5154 已打开。
 
 ## verified
 
@@ -8,6 +8,7 @@ CTL 改动和聚焦测试完成；下一步完成变更影响门禁并交接。
 - 默认、命名、缺失与非法 Profile，以及消息过滤的 Python 脚本测试通过。
 - CTL 测试断言每次历史请求只发起一次 TAT，实例归属拒绝不发起 TAT。
 - 聚焦 Go test 与 go vet 通过。
+- 文档检查与 staged change-impact 通过；远端分支与本地提交一致，MR 当前可合并。
 
 ## unverified
 
@@ -25,4 +26,4 @@ CTL 改动和聚焦测试完成；下一步完成变更影响门禁并交接。
 
 ## next_action
 
-- 运行 staged change-impact 与文档检查，核对 diff 后交接。
+- 待 MR 评审及测试环境真实 Hermes/TAT 验收；本任务不合并、不部署。
