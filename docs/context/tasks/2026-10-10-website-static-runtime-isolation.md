@@ -47,3 +47,16 @@ schema1/2 lists are parsed but not used for enablement. Website navigation subsc
 the shared show() state, stays hidden by default, and does not grant API permissions.
 Existing integration MR !4938 is reused; current remote reported conflicts and failing
 checks before this update. Actual merge remains subject to checks and owner review.
+
+## 2026-10-10 source integration verification
+Merged origin/master 3bc4384e5 into the integration branch, preserving both sides of
+two appended domain-document conflicts; frontend merged automatically. CTL website
+package race passed (12.291s), worker website race passed (1.592s), vet/build passed
+for both. Gateway fullstack/backend integration passed. Release bindings 19/19 passed.
+Frontend targeted routes/controller/source guard: 37/37, shared show() account-menu
+subset: 5/5; typecheck baseline after MDX generation: 0 new diagnostics (164 current,
+171 recorded baseline). Full account-menu suite has 2 model-link failures; those
+component/test files are unchanged from current master. No broad frontend build or
+production/browser business acceptance was performed. Initial Node webstorage interference
+was avoided with --no-experimental-webstorage, without changing source.
+Design-impact check versus master passed; runtime/release maintainer review required.
