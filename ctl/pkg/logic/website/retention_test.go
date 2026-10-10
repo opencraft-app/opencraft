@@ -292,7 +292,7 @@ func TestRetentionInternalTriggerPersistsOnlyWithExplicitPolicyAndScope(t *testi
 	t.Setenv("WEBSITE_RETENTION_GRACE", "24h")
 	t.Setenv("WEBSITE_RUNTIME_BASE_URL", "https://runtime.invalid")
 	t.Setenv("WEBSITE_RUNTIME_DEPLOY_TOKEN", "test-only")
-	t.Setenv("WEBSITE_BACKEND_BETA_USERS", "user-1")
+	t.Setenv("WEBSITE_BACKEND_ENABLED", "1")
 	old := time.Now().Add(-48 * time.Hour)
 	for i, id := range []string{"wr-active", "wr-old", "wr-recent"} {
 		status := modelwebsite.ReleaseStatusSuperseded
@@ -307,11 +307,11 @@ func TestRetentionInternalTriggerPersistsOnlyWithExplicitPolicyAndScope(t *testi
 	if err := resource.GormDB.Table(modelwebsite.ReleasesTable).Where("site_id = ?", "ws-a").Update("updated_time", old).Error; err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("WEBSITE_BACKEND_BETA_USERS", "other")
+	t.Setenv("WEBSITE_BACKEND_ENABLED", "0")
 	if _, err := l.ScheduleReleaseRetention("ws-a"); err == nil {
 		t.Fatal("out of scope cleanup accepted")
 	}
-	t.Setenv("WEBSITE_BACKEND_BETA_USERS", "user-1")
+	t.Setenv("WEBSITE_BACKEND_ENABLED", "1")
 	op, err := l.ScheduleReleaseRetention("ws-a")
 	if err != nil || op == nil {
 		t.Fatalf("schedule: %v", err)
@@ -417,7 +417,7 @@ func TestRetentionSweepBoundedCursorAndScope(t *testing.T) {
 	t.Setenv("WEBSITE_RETENTION_ENABLED", "true")
 	t.Setenv("WEBSITE_RETENTION_KEEP", "1")
 	t.Setenv("WEBSITE_RETENTION_GRACE", "24h")
-	t.Setenv("WEBSITE_BACKEND_BETA_USERS", "")
+	t.Setenv("WEBSITE_BACKEND_ENABLED", "0")
 	for i := 0; i < 23; i++ {
 		site := modelwebsite.SiteEntity{SiteID: fmt.Sprintf("ws-%03d", i), Kind: "fullstack", Status: modelwebsite.SiteStatusActive}
 		site.UserID = "not-allowlisted"

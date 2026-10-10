@@ -401,7 +401,12 @@ export default defineConfig(({ mode }) => ({
   resolve: {
     // Mermaid keeps KaTeX optional, but when a diagram uses math it should
     // reuse the renderer already owned by chat-render-web.
-    dedupe: ["react", "react-dom", "katex"],
+    // File-linked mono2 collaboration sources resolve chat contracts and SDKs from
+    // this workbench's dependency graph, not their external source directory.
+    dedupe: [
+      "react", "react-dom", "katex", "@lightvela/vela-chat-client-core",
+      "@tencentcloud/chat", "tim-upload-plugin",
+    ],
   },
   optimizeDeps: {
     // The workbench activates large optional workspace plugins at runtime.

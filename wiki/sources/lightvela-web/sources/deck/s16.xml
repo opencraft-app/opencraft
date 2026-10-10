@@ -1,0 +1,45 @@
+<slide id="s16">
+  <background color="bg-page" />
+  <shape type="line" x="40" y="26" width="1200" height="0" stroke="border" />
+  <shape type="line" x="760" y="26" width="240" height="0" stroke="primary" stroke-width="3" />
+  <text x="40" y="36" width="1200" height="24" font="caption" color="primary">04 产品演进 · 基础设施</text>
+  <text x="40" y="77" width="1200" height="50" font="heading" color="text-main">
+    <strong>围绕长期在线、状态保留与权限管理演进</strong>
+  </text>
+  <text x="40" y="132" width="1200" height="30" font="body" color="text-muted">VM、浏览器、应用连接、文件系统和运行状态，共同支持 Agent 长期承担任务。</text>
+  <shape type="rect" x="40" y="188" width="348" height="95" fill="bg-surface" />
+  <shape type="rect" x="40" y="305" width="348" height="95" fill="bg-surface" />
+  <shape type="rect" x="40" y="422" width="348" height="95" fill="bg-surface" />
+  <shape type="rect" x="40" y="539" width="348" height="95" fill="bg-surface" />
+  <text x="60" y="201" width="308" height="67" font="body" color="text-main" line-height="1.5">
+    <p>
+      <strong color="primary">01 基础设施</strong>
+    </p>
+    <p>提升云端环境稳定性与可扩展性</p>
+  </text>
+  <text x="60" y="318" width="308" height="67" font="body" color="text-main" line-height="1.5">
+    <p>
+      <strong color="primary">02 核心能力</strong>
+    </p>
+    <p>泛开发者场景优先，补齐执行能力</p>
+  </text>
+  <text x="60" y="435" width="308" height="67" font="body" color="text-main" line-height="1.5">
+    <p>
+      <strong color="primary">03 开放接入</strong>
+    </p>
+    <p>开发者接口与终端设备连接</p>
+  </text>
+  <text x="60" y="552" width="308" height="67" font="body" color="text-main" line-height="1.5">
+    <p>
+      <strong color="primary">04 产品体验</strong>
+    </p>
+    <p>降低门槛，明确状态、授权和异常</p>
+  </text>
+  <text x="425" y="188" width="815" height="34" font="strong" color="text-main">
+    <strong>原始材料中的基础设施参考</strong>
+  </text>
+  <image x="425" y="228" width="815" height="402" src="/assets/source_32.png" fit="contain" />
+  <text x="425" y="644" width="815" height="30" font="caption" color="text-muted">图示为 Meta Muse 架构（重绘版），用于参考隔离、状态保护、权限控制和恢复设计；不代表 LightVela 当前实现。</text>
+  <text x="40" y="684" width="1130" height="20" font="caption" color="text-muted">LightVela｜来源：原文产品演进思路与基础设施参考图；图内原始配色予以保留</text>
+  <text x="1180" y="684" width="60" height="20" font="caption" color="text-muted" align="right">16 / 24</text>
+</slide>

@@ -1,0 +1,31 @@
+<slide id="insight04">
+  <background color="bg-page" />
+  <shape type="line" x="40" y="26" width="1200" height="0" stroke="border" />
+  <shape type="line" x="280" y="26" width="240" height="0" stroke="primary" stroke-width="3" />
+  <text x="40" y="36" width="1200" height="24" font="caption" color="primary">02 个人助理产品洞察 · 能力与价值验证</text>
+  <text x="40" y="77" width="1200" height="50" font="heading" color="text-main"><strong>能力覆盖已较丰富，个人助理价值仍需验证</strong></text>
+  <text x="40" y="132" width="1200" height="34" font="body" color="text-muted">Hermes 已提供多类基础能力；真实任务表现仍受模型和配置影响，需要在可靠交付中建立信任。</text>
+  <text x="40" y="196" width="1200" height="28" font="body" color="text-main"><strong>Hermes 能力按用途归纳</strong></text>
+  <shape type="rect" x="40" y="240" width="384" height="148" fill="bg-surface" corner-radius="4" />
+  <shape type="rect" x="448" y="240" width="384" height="148" fill="bg-surface" corner-radius="4" />
+  <shape type="rect" x="856" y="240" width="384" height="148" fill="bg-surface" corner-radius="4" />
+  <text x="64" y="260" width="336" height="37" font="strong" color="primary"><strong>记住并复用</strong></text>
+  <text x="64" y="313" width="336" height="49" font="body" color="text-main" line-height="1.55">持久记忆、会话搜索和技能</text>
+  <text x="472" y="260" width="336" height="37" font="strong" color="primary"><strong>持续执行与协作</strong></text>
+  <text x="472" y="313" width="336" height="49" font="body" color="text-main" line-height="1.55">定时任务、子 Agent 和终端执行</text>
+  <text x="880" y="260" width="336" height="37" font="strong" color="primary"><strong>连接已有工具</strong></text>
+  <text x="880" y="313" width="336" height="49" font="body" color="text-main" line-height="1.55">MCP 与多个消息平台</text>
+  <text x="40" y="403" width="1200" height="25" font="caption" color="text-muted">原文判断：迭代频率高、成熟度尚可、口碑整体积极；完整能力与原文分数可在“详细参考”查看。</text>
+  <shape type="line" x="40" y="449" width="1200" height="0" stroke="border" />
+  <text x="40" y="474" width="252" height="39" font="strong" color="primary"><strong>LightVela 的承接</strong></text>
+  <text x="40" y="526" width="252" height="52" font="body" color="text-muted" line-height="1.55">沿个人助理方向持续探索</text>
+  <text x="330" y="470" width="590" height="128" font="body" color="text-main" line-height="1.65">LightVela 自上线起沿个人助理方向探索，当前特点集中在可定制性、开放接入和云端工作环境。
+接下来结合实际使用数据，判断持续使用的场景、任务完成的稳定性，以及配置和授权门槛是否足够低。</text>
+  <shape type="line" x="948" y="474" width="0" height="135" stroke="border" />
+  <text x="977" y="474" width="263" height="29" font="body" color="text-main"><strong>先建立任务信任</strong></text>
+  <text x="977" y="516" width="263" height="94" font="caption" color="text-muted" line-height="1.65">优先验证目标明确、结果可检查的任务；长期偏好、复杂记忆与高风险个人事务仍需谨慎探索。</text>
+  <shape type="rect" x="40" y="632" width="1200" height="40" fill="#F0EBFF" corner-radius="3" />
+  <text x="60" y="639" width="1160" height="27" font="body" color="primary"><strong>下一章：结合 LightVela 的产品形态、使用数据和用户反馈检验这些判断。</strong></text>
+  <text x="40" y="684" width="1130" height="20" font="caption" color="text-muted">LightVela｜依据原文 Hermes 能力、产品判断与信任门槛；未将底层模型分数等同于 LightVela 的实际表现</text>
+  <text x="1180" y="684" width="60" height="20" font="caption" color="text-muted" align="right">09 / 24</text>
+</slide>

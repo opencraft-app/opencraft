@@ -141,7 +141,7 @@ func TestFullstackReleaseGatewayRuntimeIntegration(t *testing.T) {
 	host := siteID + ".lightvela.tech"
 	t.Setenv("WEBSITE_RUNTIME_BASE_URL", runtimeURL)
 	t.Setenv("WEBSITE_RUNTIME_DEPLOY_TOKEN", deployToken)
-	t.Setenv("WEBSITE_BACKEND_BETA_USERS", user)
+	t.Setenv("WEBSITE_BACKEND_ENABLED", "1")
 	t.Setenv("WEBSITE_COS_BUCKET", "test-bucket-1000")
 	t.Setenv("WEBSITE_COS_REGION", "ap-test")
 	t.Setenv("WEBSITE_COS_SECRET_ID", "test-only-id")

@@ -37,6 +37,11 @@ LightVela 的隐藏协作实验室位于 `/agents/labs/collaboration`，仅在�
 客户端复用 `shared/vela-collaboration-web` 的 Human 协作状态与腾讯 IM adapter，由既有登录账户借出请求端口，
 不持久化第二份 token，不依赖 Bot 或付费 Agent 权益。关闭入口、退出或切换账户时注销原 IM scope，
 新 scope 等待旧连接销毁后再登录。该入口的可见性不是后端鉴权或发布完成的证据。
+mono2 的 OpenCraft 构建中，该共享源码通过 file 链接位于工作台目录之外；聊天
+contract 与腾讯 IM SDK/upload 依赖仍由工作台的包依赖图解析，不依赖共享源码
+旁边偶然存在的 node_modules。聊天 contract 的机械快照保留 canonical 的
+messaging/platform 子路径导出，发布构建必须实际打包这些依赖，不将其标记为
+external 来掩盖解析失败。构建边界见 [Build Matrix](../../../opencraft/docs/build-matrix.md)。
 
 LightVela `/agents` 多 Bot 桌面页由 OpenCraft 内嵌工作台独立呈现已有会话标题、重命名及预览面板开关；
 站点宿主不再向会话顶栏插入 Bot 名称。Bot 管理菜单由宿主在工作台 Shadow DOM 外、最左 Bot 竖栏底部渲染，
@@ -177,6 +182,8 @@ WebSocket 契约。远端模式不构造本机账号池、附件或队列，不�
 | `vela-computer` | 托管 Computer 内的 Agent Chat Client、IM 入站恢复与受控回复能力 |
 
 CTL 为国内站存量免费 Pass 创建计费迁移单前，可仅将已过期但仍为 `active` 的 Pass 到期时间延至下一天；这不触发 Sandbox/CVM 开机或实例状态迁移。曾在隔离中关机的实例保持关机，直到用户续费链路明确恢复。
+
+用户发起实例恢复时，CTL 先将 `Paused` 持久化为 `Resuming`，投递可重试任务后立即响应；HTTP 请求不等待 CVM 开机。Sandbox 的恢复接口只提交 `StartInstances`，`GET sandbox` 根据云端 `RUNNING` 将 `RESUMING` 收敛为 `ALLOCATED`；CTL 后台任务确认 Sandbox 已运行后，才把实例置为 `Running` 并重算超时。模糊超时不得直接回滚状态，重试应以云端实际状态幂等收敛；Pass 不再有效时先完成补偿关机，再回退为 `Paused`。自动续费与变配的业务入口保持原有语义。
 
 OpenCraft 独立 Web 入口在创建应用级 `LightVelaAccountService` 前解析显式的
 `VITE_LIGHTVELA_API_BASE_URL` 与 `VITE_LIGHTVELA_REGION`，并将结果传入应用启动边界。
@@ -605,7 +612,15 @@ Pages 制品对嵌入内容哈希资源声明 immutable，稳定 loader/version/
 - 桌面 provision/probe/install 脚本与上层判定之间以 stdout marker 传递状态（`DESKTOP_LAYER_MISSING`、`DESKTOP_PROBE_OK`/`DESKTOP_PROBE_PENDING`、`DESKTOP_PROVISION_FAILED`、install STARTED/进度/DONE/FAIL）。provision 脚本不得使用 errexit 选项：PTY 流式执行下检测行里 `systemctl` 等非零返回会污染会话最终退出码，导致上层误判命令失败、永远走不到按需安装分支（现网 bj-7 复现）。上层判定顺序必须是 marker 优先于 `sandboxCommandSucceeded`：stdout 含 `DESKTOP_LAYER_MISSING` 时无论退出码一律触发按需安装；只有图形层缺失（Missing）和探测未就绪（Pending）是正常业务信号可返回成功——密码写入、服务启动等关键步骤失败必须输出 `DESKTOP_PROVISION_FAILED <reason>` 并 exit 非零，不得用 `|| true` 吞掉，否则会被当成 Pending 反复轮询、永久卡 Provisioning 且无可见原因（旧 noVNC 甚至可能误报 Ready）。
 - 桌面 systemd units（`vela-xvfb`/`vela-desktop-wm`/`vela-x11vnc`/`vela-novnc`）以 agent 运行用户（`agentuser`）运行：镜像预装（`images/build.sh --with-desktop`）与按需安装（`renderDesktopInstallCommand` 生成的脚本）两套 unit 必须保持一致——`User=agentuser`、显式注入 `HOME` 与 `DISPLAY=:1`、WM 用 `dbus-run-session` 包裹 `startxfce4`、`Requires/After` 补齐依赖链、`Restart=on-failure`。`images/build.sh --with-desktop` 在 `install_desktop_layer` 入口强制校验 `RUNTIME_USER` 必须与 CTL 契约（`desktopRuntimeUser=agentuser`）一致，不一致直接失败；这防止 openclaw 默认 `lightclaw` 用户跑 `--with-desktop` 生成错配镜像（unit 属 lightclaw 而 CTL 往 agentuser home 写密码，导致 x11vnc 读不到密码、桌面起不来且无报错）。不允许回退为 root 会话：root 会话会造成"桌面里创建的文件属主 root、agent 读不了"的错配，并放大公网 noVNC 暴露 root 的风险。
 - 按需安装只将包选择交给发行版分支：Ubuntu/Debian 保留 apt；`ID=tencentos` 且 `VERSION_ID=4.4` 使用 dnf 和目标配置的 BaseOS/AppStream/EPOL 原生包，不从 `ID_LIKE` 推断兼容性、不安装第三方仓库、不关闭 SELinux/防火墙。安装前验证非交互 sudo、运行中的 systemd、既有非 root agentuser 与 `/home/agentuser`；安装后核验 unit 使用的二进制和 noVNC 静态资源。包安装、unit 写入、daemon-reload 任一步失败均写 FAIL、不得写 DONE。镜像构建仍为 Ubuntu 专用；包查询和模拟测试不替代真机安装/连接验收。依赖和验收见 [云桌面验证文档](../../../ctl/docs/cloud-desktop-vnc-verification.md#腾讯-os-44-按需安装前提)。
-- 品牌壁纸采用"随镜像打包"方式预置：壁纸文件由 `images/build.sh` 打进镜像，不在 provision/install 脚本中网络下发；脚本只负责激活桌面环境。
+- 品牌壁纸是桌面资源，**镜像预装与按需安装两条路径都必须覆盖**，不能只做镜像预置（现网事故：只改 `images/build.sh`，按需装出来的实例仍是 XFCE 默认壁纸）。两条路径共用同一份素材、同一份 `xfce4-desktop.xml` 语义（`last-image` 指向系统级路径、`image-style=5` 缩放填充、workspace0-3 全覆盖、`monitorscreen`/`monitor0` 双写兼容）：
+  - 镜像预装：`images/build.sh` 的 `install_desktop_wallpaper` 把素材打进镜像，安装到 `/usr/share/backgrounds/vela/vela-wallpaper.png` 并预写 `xfce4-desktop.xml`。
+  - 按需安装：CTL 保留 `go:embed` 素材（`ctl/pkg/instance/vela-wallpaper.png`），但**图片不再嵌入安装脚本**。包与 unit 仍由远端 `nohup` 安装；CTL 在原有后台任务收到 DONE 后、进入 Provisioning 前分次上传图片并配置壁纸。无需机器从公网下载图片，也不把安装变成 HTTP 请求内的同步等待。
+  - 实验室云电脑的 `POST/GET /desktop/session` 在 `Installing` 时增加可选 `install_phase`：`installing_desktop`（包/unit 安装，界面进度最多 90%）与 `configuring_wallpaper`（95%）。状态、阶段和进度在同一锁内读写；结束安装不再返回阶段，重试重置阶段。兼容保留原始 `message`，它不是本地化契约。前端仓库映射成 `installPhase`，加载期间只在中央占位区按阶段码通过 i18n 展示提示和安装百分比，不重复展示顶部状态及进度条；连接成功后保留顶部绿色状态（壁纸阶段不再提示“安装图形组件约需 2–4 分钟”）；缺失/未知阶段回退通用安装提示，不按中文消息或百分比猜步骤。排障优先：POST/GET 返回 `Failed` 时在同一个错误框优先展示后端 `reason`，请求异常保留非空 `Error.message`；缺失或空白时才回退本地化失败提示。诊断信息以 React 纯文本渲染，不作为 HTML 执行；保留重试按钮并在重试时清除旧错误。安装中的原始 `message` 仍不作为本地化文案。此变化仅用于实验室前端，不修改 OpenCraft 或 `/desktop/resource` 契约。
+  - 每个 32 KiB 原始图片块编码成约 44 KiB 的**独立 `ExecCommand` 请求**。完整命令在下发前限制为小于 60 KiB，给 adapter 前缀保留余量以满足 Sandbox 的 64 KiB `bash` 字段限制；envd 的 shell `-c` 参数还受 Linux 单参数限制。1 MiB 是输出限额，不能拿来证明输入安全；`nohup` 和在同一脚本内换行均不能绕过输入限制。线上 `debug/exec` 探测可用于确认其自身限额，不能替代 `/tat/commands` 的接口验证。
+  - 上传使用 root 创建的 `mktemp -d` 私有目录（0700）、编号块文件与完整 PNG SHA256 校验；同一块重试覆盖原块，不能追加重复内容。校验成功后从同目录临时文件原子替换系统图片。正常及校验失败由 shell `trap` 清理，异常/取消由保留 SessionAuth 的独立有界上下文清理，仍校验实例归属和绑定；CTL 退出、创建响应丢失或换绑后无法清理时由远端 15 分钟到期任务兜底。
+  - 图片一致只跳过图片替换，不能跳过配置修复。配置以 `agentuser` 写入：已有 XFCE 会话时通过其真实 D-Bus 会话更新 xfconf 并 reload；无会话时原子合并 XML，补齐两个 monitor 的 workspace0-3，保留其他设置并修复缺失/损坏配置。不重启桌面或 Agent 服务。壁纸任务最多 90 秒且为清理保留 25 秒主任务预算，余额不足就跳过可选壁纸并记录警告。
+  - 素材在 `images/runtime/desktop/` 与 `ctl/pkg/instance/` 各存一份（`go:embed` 不能跨包目录，且 `ctl/Dockerfile` 构建上下文只有 `ctl/`），由测试用 SHA256 强制两处逐字节一致；换图必须两处同步。
+  - 壁纸失败只降级为默认壁纸并 `log_warn`，**绝不中断安装**（与镜像路径行为一致）。推而广之：unit、包、**资源类素材（图片等）**都必须两条安装路径对齐，不能只在一条路径上新增。
 
 ## 定时任务执行模式
 
@@ -811,10 +826,12 @@ Hermes 回复中独立成项的 `MEDIA:<明确 Markdown 路径>`（普通文本�
 
 ## 建站动态接入：能力与发布边界
 
-2026-09-29 候选实现，未部署。`GET /v1/websites/capability` 增量返回
+2026-10-10 源码启用契约（合入不等于生产开放）。`GET /v1/websites/capability` 增量返回
 `backend.enabled/contract` 和 `data.enabled`。backend 仅在 runtime URL、部署凭据
-配置有效且用户精确命中 `WEBSITE_BACKEND_BETA_USERS` 时为 true，契约 `fetch-v1`；
-data 始终 false。缺失/null/非布尔 true 均 fail-closed。源码开关不是生产开放证据。
+配置有效、用户身份非空且区域 `WEBSITE_BACKEND_ENABLED=1` 时为 true，契约 `fetch-v1`；
+data 还要求 `WEBSITE_BACKEND_DATA_ENABLED=1`，契约 `rivet-sql-v1`。不按账号筛选。
+前端建站导航默认隐藏，控制台 `show()` 可切换显示；此状态不是 API 权限，
+登录用户直接请求 API 仍须通过 ownership、quota、Origin 与分享会话校验。缺失/null/非布尔 true 均 fail-closed。源码开关不是生产开放证据。
 
 release `kind` 缺省/static 保持静态，fullstack 需要能力门禁与 SHA-256；静态包不得
 携带私有 `__backend` 内容。worker 单独上传 `__backend/app.mjs` 到内部 runtime，
@@ -835,6 +852,138 @@ Skill 同步提供动态流程与离线打包器；新镜像/存量机器共用�
 [Fullstack Beta 实施](../../proposals/2026-09-29-website-fullstack-beta.md) 与
 [Skill 双通路交付](../../proposals/2026-09-29-website-skill-delivery.md)。
 
+### Website persistent backend adapter (candidate, 2026-10-02)
+
+The persistent driver consumes Skip's imported `minisandbox` Workers API;
+`WEBSITE_RUNTIME_DRIVER=minisandbox` selects it explicitly. There is no host-JS,
+local-SQLite or browser-storage fallback. The existing runsc driver remains a
+separate stateless compatibility path, not the persistent implementation.
+
+- The immutable backend contract remains `fetch-v1`. CTL exposes `data.enabled`
+  and `rivet-sql-v1` only when `WEBSITE_BACKEND_DATA_ENABLED=1`, a configured backend
+  runtime and `WEBSITE_BACKEND_ENABLED=1` all pass. Static sites are unchanged;
+  frontend visibility still follows its existing hidden `show()` boundary.
+- Static publication is independent of runtime availability for sites CTL certifies as backend-free.
+  Claimed/internal operation responses carry optional `HasBackendHistory` and `PreviousStorageBytes`
+  facts derived from current site kind, all release history (including failed/pruned history), and
+  the site's last reported storage total. These are transient response fields, not new DB columns.
+  A current static kind alone never establishes that no backend exists; omitted history is unknown.
+  Certified static sites use legacy COS retention and COS-only accounting without runtime calls.
+  A static transition with backend/unknown history keeps old release resources for joint rollback.
+  Optional runtime accounting reads for static publication have a five-second deadline. If unavailable, a new CTL snapshot allows
+  conservative accounting of current COS bytes plus the previous reported total; this may overcount,
+  is still subject to CTL quota checks, and is replaced by exact accounting on the next successful
+  runtime read. It is not a live database-size measurement. Missing/invalid fallback facts do not
+  become zero backend usage. Legacy responses without a runtime keep the old static publishing
+  contract while preserving history. Fullstack publication still requires runtime accounting.
+  Site deletion bypasses runtime only for certified backend-free sites. Backend/unknown history
+  requires successful runtime deletion before COS cleanup and completion; unavailable runtime does
+  not release quota or report success. Delete completion recounts COS without another runtime call.
+  Rollout order is CTL first, then workers; older responses keep conservative cleanup behavior.
+- Offline release bindings use schema3 to declare the regional runtime driver and a boolean
+  `data_enabled` input. Persistent data is rejected for `runsc`. The explicit `enable` phase
+  sets the regional `WEBSITE_BACKEND_ENABLED=1` gate and renders CTL `WEBSITE_BACKEND_DATA_ENABLED=1` with
+  gateway `SITE_GATEWAY_BACKEND_SHARED_READ=true` together. `prepare`, legacy schema1 and a
+  false data input explicitly override inherited gates to closed values; they never establish
+  live runtime/storage readiness. See [regional release bindings](../../../site-runtime/deploy/RELEASE-BINDINGS.md).
+- Regional infrastructure can consume expiring, bucket-scoped storage sessions without
+  placing the issuer's root credentials in runtime Pods. Worker Registry opts in through
+  `ACTOR_CODE_STORAGE_SESSION_FILE` and rereads the bounded projected file for each COS
+  request; the third session token is signed with the request. Depot opts in through
+  `ACTOR_COLD_STORAGE_SESSION_FILE` and supplies expiry-aware credentials to its S3 client.
+  Missing, malformed or expiring session files fail closed rather than falling back to
+  static environment credentials. Without these options, the existing credential path
+  is unchanged. Projected Secret volumes must not use `subPath`; issuer renewal and
+  consumer refresh must be qualified on the actual regional runtime. FoundationDB backup
+  uses its native token-bearing credential file, not a two-part key substituted for STS.
+  Role creation, Secret delivery and a successful source build are separate preparation
+  evidence, not proof of runtime renewal or regional business readiness.
+- A trusted `(environment scope, site ID)` deterministically identifies one
+  Worker and one `VelaSite` Durable Object. Releases select a verified backend
+  digest within the retained Worker package; they do not create a new database.
+  Storage is native Durable Object SQL through Depot/FoundationDB and inherits
+  the platform commit/output gate. Each bounded SQL call rolls back on quota or
+  result overflow. Database limit is 256 MiB; SQL/query and response limits are
+  enforced in the platform wrapper, not delegated to generated application code.
+- Preparation activates via `expected_deployment_id` CAS and fences the exact
+  deployment ID/targets before and after stateless and durable compiled-package
+  probes, without invoking application fetch or SQL. The versioned canonical
+  package fingerprint covers main-module identity, all module contents,
+  compatibility date and Durable Object bindings, excluding only its own exact
+  injected marker. An old warm durable isolate cannot satisfy new readiness.
+  After observing a valid stale marker, the private durable probe may use native
+  `DurableObjectState.abort` to break a retained old class container, without
+  changing Actor/Depot identity or deleting storage. It never replays an
+  application handler. Deployment/recovery and managed readiness hold the
+  exclusive site lock, waiting for in-flight invocations before such a reset.
+  Failed linking
+  compensates the previous deployment with CAS against only its own activation;
+  cancellation cannot cancel the bounded compensation. A conflicting or failed
+  compensation is an error, never reported as a successful preparation. Initial
+  failed candidates have no website active pointer or local readiness receipt.
+- A fsynced write-ahead deployment journal and atomic receipts bind retained
+  digests to the actual upstream deployment, version and endpoint/scope identity.
+  Unknown/borrowed ownership cannot authorize compensation. Incomplete journals,
+  corrupt receipts, unbound legacy receipts and legacy source-only fingerprints
+  fail invocation/readiness/publication closed; they are not silently adopted,
+  rebound or removed. Interrupted native publication and disk receipt publication
+  reconcile to an explicit commit or exact owned-pointer CAS restoration before
+  readiness. External deployment and filesystem writes are not one transaction.
+  Each DataDir has one manager; the service executable holds a nonblocking
+  exclusive OS file lock for its lifetime.
+- Explicit site deletion is terminal rather than transaction recovery. Only the
+  reviewed native adapter may supersede a pending publication: it first validates
+  the journal/receipt's original endpoint/scope identity, then acknowledges the
+  permanent Object tombstone and Actor deletion. Local journal/artifact removal
+  is fsynced before releasing the in-memory fence. Failure or foreign identity
+  stays closed; no activation replay, inferred ownership, hand-erased lock or
+  Worker deletion is used. A late activation cannot recreate the Object identity.
+- Gateway freshly verifies share policy, generation and expiration before a
+  GET/HEAD backend read. `SITE_GATEWAY_BACKEND_SHARED_READ=true` is separately
+  required. Browser-supplied internal headers are discarded; the gateway creates
+  `read_only` and the runtime creates private dispatch headers. Share SQL permits
+  one SELECT only and cannot initialize schema or perform writes. SQL capabilities
+  are request-scoped and revoked when the handler completes. Handlers in one DO
+  run serially so cached owner capabilities cannot be borrowed by a concurrent
+  share request; private class rotation returns busy while a handler is active.
+  A wrapper wall-clock deadline revokes suspended handlers and releases the queue
+  before the outer invocation deadline; late continuations keep revoked SQL objects.
+  All writes still require an authenticated site owner and exact same-origin checks.
+- Site deletion uses the logical Object terminal fence. Individual release
+  retention removes code artifacts only, not the site database. Worker hard delete
+  is not used to bypass the upstream historical Object inventory requirement.
+- New-image and single-instance Skill delivery use the same content-addressed
+  business-agnostic bundle containing only the Skill and fullstack packager.
+  The Skill describes only generic execution, data and same-origin request contracts;
+  it carries no predetermined application routes, entities or request fields.
+  Application fixtures remain in runtime tests and are never installed on user
+  machines. Previous bundle manifests remain verifiable for exact rollback;
+  existing credentials are not part of that bundle. Data capability is queried independently; absent/unknown fields are off.
+
+Native dispatch retains only plain generation/Worker/class bindings and code recipes
+in module state. Worker and Durable Object handles are recreated per request;
+reusing them violates workerd I/O ownership. Eviction uses the validated same-class
+recipe without a registry lookup, fences pending readiness by epoch, and retains
+the immutable generation binding after unloading. Different Worker versions require
+a new admitted generation; native containers retain their first class. Deployment-bound
+Host execution fences user dispatch while requesting normal Engine-owned sleep.
+Only StopActor performs eviction and SQLite capability cleanup; StartActor resolves
+the active Deployment for its newly admitted generation, preserving the stable
+Actor/database identity. Generation-scoped sleep intents have bounded recovery;
+private preparation may poll an observed transition, never replay application work.
+Local native
+dispatch qualification is not a regional Workers/Depot/FDB rollout receipt.
+
+This is a source design, not a launch receipt. Release gates require a real healthy
+regional Workers/Depot/FDB path, persistence across deployment and host replacement,
+site isolation, share read/owner write checks, static regression and the public Agent
+flow. `/readyz=200` on Workers API alone does not prove admission or executor
+availability. Beijing has passed native SQL write/read, retained-version reads,
+  warm version propagation and isolated adapter restart in scoped fixtures; this
+  does not prove native Host replacement, public Agent/browser flow or production
+  acceptance. Korea and both production configurations remain unqualified. Do not
+route international persistent data to Beijing simply to obtain a passing test.
+
 ### Website backend test findings (2026-09-30 Beijing time)
 
 Dedicated runtime reconciliation runs under the manager store lock before accepting
@@ -847,8 +996,9 @@ complete the same workflow. These source changes are not evidence of live routin
 
 ### Website fullstack revision retention (candidate implementation)
 
-Fullstack publication retains historical static and backend artifacts together;
-legacy static-only publication retains its existing two-prefix behavior. Cleanup
+Fullstack publication retains historical static and backend artifacts together.
+Legacy static publication keeps its two-prefix layout; unconfigured runtime storage
+cannot authorize prefix pruning, so publication preserves history in that case. Cleanup
 requires a CTL transaction to mark a non-active historical release `pruning`, removing
 rollback eligibility before remote deletion. The worker deletes only that revision,
 checks current lease/generation between stages, and finalizes `pruned`; partial COS
@@ -858,7 +1008,7 @@ The internal authenticated `POST /internal/ctl/websites/sites/{siteId}/retention
 reserves at most one candidate using deployment policy, never request-supplied ages.
 It is disabled unless `WEBSITE_RETENTION_ENABLED=true`, `WEBSITE_RETENTION_KEEP`
 is explicitly 1–16, and `WEBSITE_RETENTION_GRACE` is explicitly 1h–720h. It additionally
-requires a fullstack site owned by a backend-enabled allowlisted user. A successful
+requires a fullstack site owned by a backend-enabled authenticated user. A successful
 response with `scheduled=false` means no eligible candidate, not a completed cleanup;
 when scheduled, follow the operation to terminal success. Worker polling is durable.
 No recurring scheduler or production policy is enabled by this source change.
@@ -876,7 +1026,7 @@ An opt-in worker scheduler now calls authenticated
 `POST /internal/ctl/websites/retention/sweep?cursor=...`. Set worker
 `WEBSITE_RETENTION_SWEEP_INTERVAL` explicitly (1m–24h); an absent value disables it.
 Each tick scans at most 20 active fullstack sites in site-ID order, filtering owners
-through the backend allowlist; each eligible site still uses the fenced reservation.
+through the regional backend gate; each eligible site still uses the fenced reservation.
 A complete scan resets the cursor, HTTP/response failures preserve it for retry,
 and shutdown cancels the scheduler before draining workers. CTL policy must also
 be explicitly enabled. No deployment environment is enabled by the source defaults.
@@ -888,6 +1038,39 @@ snapshot has no unsettled work. Successful history is considered first. Failed
 releases do not count toward the rollback window. Cleanup includes the exact
 private upload ZIP key as well as the exact static/backend revision; unknown runtime
 directories without authoritative release records are not automatically removed.
+
+Website native response stamping captures brand-checked getters across the pristine Response/Body prototype chain. workerd inherits body from Body.prototype; Node-only own-property assumptions must not prevent native Worker preparation. User response properties/proxies are never used to obtain execution identity.
+
+User backend Request boundary is distinct from the browser request: the gateway checks owner/share authorization, Origin and release identity before invocation. The Native wrapper forwards only Content-Type and Accept headers into generated application code, preserving the URL, method and body; it does not expose Cookie, Authorization, browser release headers or private control headers. Application handlers must not reject an otherwise accepted request merely because those platform headers are absent. The shipped website-builder Skill documents this boundary while continuing to require the browser release header and retaining platform write restrictions.
+
+
+Native deployment readiness must be qualified at both the management registry
+read path and the private stateless/durable execution path. Ready runtime Hosts
+and matching binaries do not establish a readable active-deployment pointer.
+A management GET503 before preparation is not evidence of a package mismatch
+or permission to replay activation, application writes, Sleep or rollback.
+The manager's bounded startup reconciliation preserves unresolved per-site
+journals as invocation fences; actual normal journal recovery and private package
+validation remain separate acceptance requirements from Pod health.
+
+### Website share generation cache consistency
+
+Site share form policy and authenticated share cookies must use fresh CTL metadata, not the ordinary site metadata TTL. A newly rotated valid share session otherwise conflicts with the cached generation and redirects back to the share form; revocation must not wait for the positive cache TTL either. Owner sessions retain their existing fresh-owner check, backend API reads retain their existing fresh generation gate, and share writes remain denied. This correction is not deployment evidence.
+
+### Final regional test candidate consistency (2026-10-06)
+
+The final manager r12, website worker r13 and gateway share-cache candidate are
+source-bound test overlays, not formal production CI images. Beijing final manager
+and gateway observation accepted both exact deployments and actual executable
+bindings; the final real website passed independent owner/share browser refresh,
+original record preservation and visitor write denial with ordinary DNS/strict TLS.
+Korean real code upgrade, joint rollback, static publication and static-to-fullstack
+rollback preserved the same original complete record. Generic Skill delivery is
+qualified in fresh test images in both regions; no production image/pool adoption
+is implied. Exact final Native lifecycle/isolation and regional release bindings
+remain separate gates. A local international TLS handshake failure does not prove
+a production service outage. The current task authorization is preparation only,
+without production, GitOps promotion or stock Skill rollout.
 
 ## 建站 Skill-only 新实例补丁（2026-10-02）
 

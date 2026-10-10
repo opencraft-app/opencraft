@@ -460,10 +460,15 @@ func (h *handler) GetSandboxesSandboxID(c *gin.Context, sandboxID api.SandboxID)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if h.cloudPauseResume && h.cloud != nil && inst.State == core.StatePausing {
-		inst, err = h.reconcilePausingInstance(ctx, inst, pool)
+	if h.cloudPauseResume && h.cloud != nil {
+		switch inst.State {
+		case core.StatePausing:
+			inst, err = h.reconcilePausingInstance(ctx, inst, pool)
+		case core.StateResuming:
+			inst, err = h.reconcileResumingInstance(ctx, inst, pool)
+		}
 		if err != nil {
-			c.JSON(http.StatusBadGateway, gin.H{"error": "reconcile pausing instance failed: " + err.Error()})
+			c.JSON(http.StatusBadGateway, gin.H{"error": "reconcile sandbox instance failed: " + err.Error()})
 			return
 		}
 	}
@@ -483,6 +488,25 @@ func (h *handler) reconcilePausingInstance(ctx context.Context, inst core.Instan
 	case "STOPPED":
 		return h.svc.MarkPaused(ctx, inst.ID)
 	case "RUNNING", "STOPPING":
+		return inst, nil
+	default:
+		return inst, fmt.Errorf("unexpected cloud state %q", state)
+	}
+}
+
+func (h *handler) reconcileResumingInstance(ctx context.Context, inst core.Instance, pool core.Pool) (core.Instance, error) {
+	instance, err := provider.CloudInstanceForPool(pool, inst.CloudID)
+	if err != nil {
+		return inst, err
+	}
+	state, err := h.cloud.DescribeInstance(ctx, instance)
+	if err != nil {
+		return inst, err
+	}
+	switch strings.ToUpper(strings.TrimSpace(state)) {
+	case "RUNNING":
+		return h.svc.MarkResumed(ctx, inst.ID)
+	case "STOPPED", "STARTING", "STOPPING":
 		return inst, nil
 	default:
 		return inst, fmt.Errorf("unexpected cloud state %q", state)
@@ -608,6 +632,13 @@ func (h *handler) rollbackPausing(instanceID string) error {
 	return err
 }
 
+func (h *handler) rollbackResuming(instanceID string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err := h.svc.RollbackResuming(ctx, instanceID)
+	return err
+}
+
 func (h *handler) describeInstanceStateDetached(instance provider.CloudInstanceRef) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -619,21 +650,9 @@ func (h *handler) PostSandboxesSandboxIDRefreshes(c *gin.Context, _ api.SandboxI
 	c.Status(http.StatusNoContent)
 }
 
-// Resume -> start the underlying instance back up while preserving disk data.
-//
-// Implements R-F（2026-05-15，对偶 Pause 侧 Q26-D 修订版）：
-//   - 旧实现是 noop（仅读 sandbox + 201 返回，不调任何 cloud 接口），
-//     等价于 trade pass renew DB 翻牌但 CVM 不开机 → P0 资金损失级缺口。
-//   - 新实现走"开机恢复数据"路径：CAS PAUSED→RESUMING → 同步调
-//     cp.StartInstance（cvm StartInstances + 轮询 RUNNING 180s deadline） →
-//     CAS RESUMING→ALLOCATED → 201 + Sandbox JSON body（保留协议契约）。
-//   - 协议契约（与 Pause 的 204 No Content 不同）：返回 201 + ResumedSandbox body，
-//     ctl 侧 instance/logic.go 的 resumeSandbox 期望此契约（含 idempotent
-//     "sandbox already running" 走 expectedResumeConflictMessages 兜底）。
-//   - 失败回滚（Q4 / R-F）：cp.StartInstance 失败 → RollbackResuming RESUMING→PAUSED
-//     → 502，由上游 ctl 子 task 走 1h 重试窗口。
-//   - Idempotent 路径：inst.State 已是 ALLOCATED → 直接 201 + body 不调 cp（重投兜底）。
-//   - State 既非 PAUSED 也非 ALLOCATED/RESUMING → 409，避免误开机污染状态机。
+// Resume submits StartInstances and returns while the instance is RESUMING.
+// GET reconciles RUNNING to ALLOCATED; repeated POSTs are safe after an
+// interrupted submission. Legacy providers retain their synchronous path.
 func (h *handler) PostSandboxesSandboxIDResume(c *gin.Context, sandboxID api.SandboxID) {
 	if !h.cloudPauseResume {
 		sb, err := h.svc.GetSandbox(c.Request.Context(), string(sandboxID))
@@ -703,17 +722,34 @@ func (h *handler) PostSandboxesSandboxIDResume(c *gin.Context, sandboxID api.San
 		c.JSON(http.StatusCreated, toSandbox(resuming, pool, sb))
 		return
 	}
-	// Sync start the cloud instance. cp may be nil in unit tests; treat as no-op.
+	// Submit the start once; GET reconciles RUNNING to ALLOCATED. Re-entry
+	// resubmits safely if the handler died after saving RESUMING.
 	if h.cloud != nil && strings.TrimSpace(resuming.CloudID) != "" {
 		instance, refErr := provider.CloudInstanceForPool(pool, resuming.CloudID)
 		if refErr != nil {
-			_, _ = h.svc.RollbackResuming(ctx, sb.InstanceID)
+			_ = h.rollbackResuming(sb.InstanceID)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": refErr.Error()})
+			return
+		}
+		if submitter, ok := h.cloud.(provider.StartSubmitter); ok {
+			if err := submitter.SubmitStartInstance(ctx, instance); err != nil {
+				state, stateErr := h.describeInstanceStateDetached(instance)
+				if stateErr == nil && (strings.EqualFold(state, "STARTING") || strings.EqualFold(state, "RUNNING")) {
+					c.JSON(http.StatusCreated, toSandbox(resuming, pool, sb))
+					return
+				}
+				if stateErr == nil && strings.EqualFold(state, "STOPPED") {
+					_ = h.rollbackResuming(sb.InstanceID)
+				}
+				c.JSON(http.StatusBadGateway, gin.H{"error": "start submission failed: " + err.Error()})
+				return
+			}
+			c.JSON(http.StatusCreated, toSandbox(resuming, pool, sb))
 			return
 		}
 		if err := h.cloud.StartInstance(ctx, instance); err != nil {
 			// Roll back to PAUSED so upstream ctl child-task can retry within the 1h window.
-			if _, rbErr := h.svc.RollbackResuming(ctx, sb.InstanceID); rbErr != nil {
+			if rbErr := h.rollbackResuming(sb.InstanceID); rbErr != nil {
 				log.Printf("[api] resume rollback failed sandbox=%s instance=%s err=%v rollback_err=%v",
 					sb.ID, sb.InstanceID, err, rbErr)
 			}
@@ -775,6 +811,8 @@ func mapInstanceState(s core.InstanceState) api.SandboxState {
 	switch s {
 	case core.StateDry, core.StatePaused:
 		return api.Paused
+	case core.StateResuming:
+		return api.Resuming
 	default:
 		return api.Running
 	}

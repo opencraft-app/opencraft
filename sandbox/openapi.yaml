@@ -193,6 +193,7 @@ components:
       enum:
         - running
         - paused
+        - resuming
 
     EnvVars:
       additionalProperties:

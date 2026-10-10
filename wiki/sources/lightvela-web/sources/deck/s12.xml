@@ -1,0 +1,40 @@
+<slide id="s12">
+  <background color="bg-page" />
+  <shape type="line" x="40" y="26" width="1200" height="0" stroke="border" />
+  <shape type="line" x="520" y="26" width="240" height="0" stroke="primary" stroke-width="3" />
+  <text x="40" y="36" width="1200" height="24" font="caption" color="primary">03 产品现状 · 使用频次与消息结构</text>
+  <text x="40" y="77" width="1200" height="50" font="heading" color="text-main">
+    <strong>使用频次分化，自动任务贡献大量消息</strong>
+  </text>
+  <text x="40" y="132" width="1200" height="30" font="body" color="text-muted">一次或短期使用用户较多，也有一批用户持续运行自动化任务。</text>
+  <text x="40" y="187" width="730" height="35" font="strong" color="text-main">
+    <strong>近七日使用天数</strong>
+  </text>
+  <chart id="usage-frequency" type="bar" x="40" y="238" width="738" height="334" font="body" text-size="16" text-color="text-main" categories="只出现1天,至少活跃2天,至少活跃3天,连续7天" color="primary" data-labels="true" gridlines="v" gridline-color="border" y-min="0" y-max="9000" gap-width="100">
+    <series name="用户数" values="8212,6575,5078,2641" label-expr="{value:,.0f} 人" />
+  </chart>
+  <text x="40" y="589" width="738" height="58" font="body" color="text-main" line-height="1.45">
+    <p>对应占比：55.5% / 44.5% / 34.3% / 17.9%</p>
+    <p color="text-muted" size="14">“至少 2 天”“至少 3 天”“连续 7 天”为嵌套分组，不能相加。</p>
+  </text>
+  <shape type="line" x="807" y="184" width="0" height="464" stroke="border" />
+  <text x="845" y="189" width="395" height="34" font="strong" color="text-main">
+    <strong>8 月 1 日—10 月 8 日</strong>
+  </text>
+  <text x="845" y="250" width="395" height="63" font="display" color="primary">
+    <strong>115.83 万</strong>
+  </text>
+  <text x="845" y="318" width="395" height="28" font="body" color="text-main">会话消息总量</text>
+  <shape type="rect" x="845" y="370" width="395" height="22" fill="chart-light" />
+  <shape type="rect" x="845" y="370" width="361.03" height="22" fill="primary" />
+  <text x="845" y="414" width="395" height="42" font="heading" color="primary">
+    <strong>91.4% 定时任务</strong>
+  </text>
+  <text x="845" y="472" width="395" height="143" font="body" color="text-main" line-height="1.5">
+    <p>cron 平均 4.7 条消息，多为提醒、状态检查和短任务。</p>
+    <p space-before="12">Telegram、QQ、微信等渠道记录较少，但单次会话更长。</p>
+  </text>
+  <text x="40" y="657" width="1200" height="19" font="caption" color="text-muted">使用天数沿用原文“剔除定时任务场景”口径；概要另列“定时任务会话占比超过 70%”，与消息条数占比不同。</text>
+  <text x="40" y="684" width="1130" height="20" font="caption" color="text-muted">LightVela｜来源：原文近七日使用统计、会话消息统计；分母与场景过滤建议复核</text>
+  <text x="1180" y="684" width="60" height="20" font="caption" color="text-muted" align="right">12 / 24</text>
+</slide>

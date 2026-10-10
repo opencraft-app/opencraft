@@ -611,3 +611,22 @@ func TestFromEnvSeoulReadinessOIDCIsolation(t *testing.T) {
 		})
 	}
 }
+
+func TestFromEnvBackendSharedReadDefaultsClosed(t *testing.T) {
+	for _, tc := range []struct {
+		value string
+		want  bool
+	}{{"", false}, {"false", false}, {"true", true}} {
+		t.Run(tc.value, func(t *testing.T) {
+			setRequired(t)
+			t.Setenv("SITE_GATEWAY_BACKEND_SHARED_READ", tc.value)
+			cfg, err := FromEnv()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.BackendSharedRead != tc.want {
+				t.Fatalf("shared backend read=%v, want %v", cfg.BackendSharedRead, tc.want)
+			}
+		})
+	}
+}

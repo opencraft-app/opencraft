@@ -267,13 +267,10 @@ export const useReferralEnabled = (): boolean => {
 };
 
 /**
- * 云桌面入口守卫（隐藏发布）：可见性只由本机 show() 闸门决定——现网以隐藏态发布，
- * 需要联调/演示时在控制台执行 `showCloudDesktop()` 单机打开，`hideCloudDesktop()` 还原。
- *
- * 不再看后端 `features.cloudDesktopEnabled`：该值由 ctl 的 CLOUD_DESKTOP_ENABLED 下发，
- * 现网各环境（shprod/sgprod/sandbox-bj-7）均已为 true，作为判据已无区分度；且它表达的
- * 是「环境是否具备能力」，而入口要不要给人看是发布节奏问题，两者不该混在一个条件里。
- * （连带影响：CLOUD_DESKTOP_OVERRIDE_STORAGE_KEY 那个 override 已不再影响入口可见性。）
+ * 云电脑入口守卫（隐藏发布）：默认隐藏，仅由本机显示开关决定。
+ * showCloudDesktop() 打开，hideCloudDesktop() 还原，刷新后生效。
+ * 后端 features.cloudDesktopEnabled 表达环境能力，不决定入口可见性；
+ * CLOUD_DESKTOP_OVERRIDE_STORAGE_KEY 也不影响入口可见性。
  */
 const resolveCloudDesktopEnabled = (): boolean =>
   readBooleanOverride(CLOUD_DESKTOP_SHOWN_STORAGE_KEY) === true;

@@ -106,6 +106,7 @@ members = [
   async-nats = { package = "rivet-async-nats", version = "0.46.0" }
   async-stream = "0.3"
   async-trait = "0.1"
+  aws-credential-types = "=1.2.12"
   aws-config = { version = "=1.8.5", default-features = false, features = [ "behavior-version-latest", "rt-tokio", "rustls" ] }
   aws-sdk-s3 = { version = "=1.103.0", default-features = false, features = [ "behavior-version-latest", "rt-tokio", "rustls" ] }
   axum-test = "17"

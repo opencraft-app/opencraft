@@ -5733,13 +5733,13 @@ export const AgentSettingsPage = ({
                   id: "labs",
                   label: t("实验室"),
                   sections: [
-                    {
+                    ...(showHiddenAgentTools ? [{
                       id: "website",
                       label: t("我的工作台"),
                       icon: <Globe2 className="h-4 w-4" />,
                       path: AGENT_SECTION_PATH_BY_ID.website,
                       badge: "Beta",
-                    },
+                    } as SettingsSectionLink] : []),
                     {
                       id: "deepseek-harness",
                       label: "DeepSeek Harness",
@@ -5754,13 +5754,12 @@ export const AgentSettingsPage = ({
                       path: AGENT_SECTION_PATH_BY_ID.collaboration,
                       badge: "Beta",
                     }] : []),
-                    // 云桌面入口守卫：仅在后端下发 cloudDesktopEnabled 的环境（已配置
-                    // DESKTOP_INGRESS_DOMAIN，如 sandbox-bj-7）显示，现网隐藏避免死入口。
+                    // 云电脑入口默认隐藏，由本机 showCloudDesktop/hideCloudDesktop 控制。
                     ...(cloudDesktopEnabled
                       ? [
                           {
                             id: "cloud-desktop",
-                            label: t("云桌面"),
+                            label: t("云电脑"),
                             icon: <Monitor className="h-4 w-4" />,
                             path: AGENT_SECTION_PATH_BY_ID["cloud-desktop"],
                             badge: "Beta",

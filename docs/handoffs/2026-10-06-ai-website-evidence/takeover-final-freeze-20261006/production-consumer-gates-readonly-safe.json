@@ -1,0 +1,90 @@
+{
+  "checkedAt": "2026-10-06T07:51:40.861313+00:00",
+  "scope": "production read-only exact four Deployments and referenced ConfigMaps per region; no Secret reads",
+  "regions": [
+    {
+      "region": "shprod",
+      "consumerBindings": [
+        {
+          "service": "ctl-api",
+          "readyReplicas": 2,
+          "configuredKeys": [
+            "WEBSITE_BACKEND_BETA_USERS"
+          ],
+          "runtimeBaseURLConfigured": false,
+          "persistentDataGate": "not explicitly set",
+          "ownerAllowlistNonempty": true
+        },
+        {
+          "service": "ctl-service",
+          "readyReplicas": 1,
+          "configuredKeys": [
+            "WEBSITE_BACKEND_BETA_USERS"
+          ],
+          "runtimeBaseURLConfigured": false,
+          "persistentDataGate": "not explicitly set",
+          "ownerAllowlistNonempty": true
+        },
+        {
+          "service": "website-deployer",
+          "readyReplicas": 1,
+          "configuredKeys": [],
+          "runtimeBaseURLConfigured": false,
+          "persistentDataGate": "not explicitly set",
+          "ownerAllowlistNonempty": false
+        },
+        {
+          "service": "site-gateway",
+          "readyReplicas": 2,
+          "configuredKeys": [],
+          "runtimeBaseURLConfigured": false,
+          "persistentDataGate": "not explicitly set",
+          "ownerAllowlistNonempty": false
+        }
+      ]
+    },
+    {
+      "region": "sgprod",
+      "consumerBindings": [
+        {
+          "service": "ctl-api",
+          "readyReplicas": 1,
+          "configuredKeys": [
+            "WEBSITE_BACKEND_BETA_USERS"
+          ],
+          "runtimeBaseURLConfigured": false,
+          "persistentDataGate": "not explicitly set",
+          "ownerAllowlistNonempty": true
+        },
+        {
+          "service": "ctl-service",
+          "readyReplicas": 1,
+          "configuredKeys": [
+            "WEBSITE_BACKEND_BETA_USERS"
+          ],
+          "runtimeBaseURLConfigured": false,
+          "persistentDataGate": "not explicitly set",
+          "ownerAllowlistNonempty": true
+        },
+        {
+          "service": "website-deployer",
+          "readyReplicas": 1,
+          "configuredKeys": [],
+          "runtimeBaseURLConfigured": false,
+          "persistentDataGate": "not explicitly set",
+          "ownerAllowlistNonempty": false
+        },
+        {
+          "service": "site-gateway",
+          "readyReplicas": 2,
+          "configuredKeys": [],
+          "runtimeBaseURLConfigured": false,
+          "persistentDataGate": "not explicitly set",
+          "ownerAllowlistNonempty": false
+        }
+      ]
+    }
+  ],
+  "productionMutations": 0,
+  "meaning": "No regional backend runtime URL found in inspected consumer env/ConfigMaps. Does not prove absence of native infrastructure. Regional runtime provisioning/adoption and bindings still require authorized release steps."
+}

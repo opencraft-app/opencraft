@@ -1,0 +1,42 @@
+<slide id="profile01">
+  <background color="bg-page" />
+  <shape type="line" x="40" y="26" width="1200" height="0" stroke="border" />
+  <shape type="line" x="520" y="26" width="240" height="0" stroke="primary" stroke-width="3" />
+  <text x="40" y="36" width="1200" height="24" font="caption" color="primary">03 产品现状 · 国内站用户画像</text>
+  <text x="40" y="77" width="1200" height="50" font="heading" color="text-main"><strong>国内站用户画像</strong></text>
+  <text x="40" y="132" width="1200" height="30" font="body" color="text-muted">2026-10-10 快照 · 国内站 · 账号口径</text>
+
+  <shape type="rect" x="40" y="178" width="575" height="454" fill="bg-surface" corner-radius="4" />
+  <shape type="rect" x="665" y="178" width="575" height="454" fill="bg-surface" corner-radius="4" />
+  <text x="62" y="194" width="531" height="32" font="strong" size="22" color="primary"><strong>已实名账号</strong></text>
+  <text x="62" y="240" width="165" height="22" font="caption" size="14" color="text-muted">已实名账号数</text>
+  <text x="62" y="264" width="165" height="40" font="heading" size="32" color="text-main"><strong>33,201</strong></text>
+  <text x="246" y="240" width="158" height="22" font="caption" size="14" color="text-muted">平均年龄</text>
+  <text x="246" y="264" width="158" height="40" font="heading" size="32" color="text-main"><strong>33.5 岁</strong></text>
+  <text x="427" y="240" width="166" height="22" font="caption" size="14" color="text-muted">年龄中位数</text>
+  <text x="427" y="264" width="166" height="40" font="heading" size="32" color="text-main"><strong>33 岁</strong></text>
+  <text x="62" y="308" width="531" height="20" font="caption" size="14" color="text-muted">登记男性 85.3% · 登记女性 14.7%</text>
+  <chart id="verified-age" type="bar" x="62" y="332" width="531" height="292" categories="18岁以下,18–24岁,25–29岁,30–34岁,35–39岁,40–44岁,45–49岁,50–59岁,60岁以上" y-max="8000" label-width="88" value-width="132" value-position="fixed" text-size="14" value-size="13">
+    <series name="已实名账号" values="1691,6090,5030,5118,5819,4622,2546,1728,557" percentages="5.1,18.3,15.2,15.4,17.5,13.9,7.7,5.2,1.7" color="primary" />
+  </chart>
+
+  <text x="687" y="194" width="531" height="32" font="strong" size="22" color="primary"><strong>开通套餐的用户画像</strong></text>
+  <text x="687" y="240" width="206" height="22" font="caption" size="14" color="text-muted">开通套餐账号（可关联年龄）</text>
+  <text x="687" y="264" width="206" height="40" font="heading" size="32" color="text-main"><strong>20,593</strong></text>
+  <text x="902" y="240" width="180" height="22" font="caption" size="14" color="text-muted">近7日有使用账号</text>
+  <text x="902" y="264" width="180" height="40" font="heading" size="32" color="text-main"><strong>7,634</strong></text>
+  <text x="1097" y="240" width="121" height="22" font="caption" size="14" color="text-muted">整体使用率</text>
+  <text x="1097" y="264" width="121" height="40" font="heading" size="30" color="primary"><strong>37.1%</strong></text>
+  <shape type="rect" x="687" y="310" width="12" height="12" fill="primary" corner-radius="2" />
+  <text x="706" y="307" width="215" height="20" font="caption" size="14" color="text-muted">近7日使用率</text>
+  <shape type="rect" x="934" y="310" width="12" height="12" fill="#B59BF3" corner-radius="2" />
+  <text x="953" y="307" width="265" height="20" font="caption" size="14" color="text-muted">D7使用留存</text>
+  <chart id="package-usage-age" type="bar" x="687" y="332" width="531" height="292" categories="18岁以下,18–24岁,25–29岁,30–34岁,35–39岁,40–44岁,45–49岁,50–59岁,60岁以上" y-max="50" label-width="88" value-width="65" text-size="14" value-size="13" tick-count="6" axis-suffix="%">
+    <series name="近7日使用率" values="13.2,32.7,35.6,39.4,41.1,43.2,42.1,43.0,29.8" color="primary" label-expr="{value}%" />
+    <series name="D7使用留存" values="21.1,33.3,30.3,35.3,35.4,37.4,36.8,39.4,40.0" color="#B59BF3" label-expr="{value}%" />
+  </chart>
+
+  <text x="40" y="644" width="1200" height="36" font="caption" size="12.5" color="text-muted" line-height="1.35"><p>年龄按实名证件计算周岁；账号未按自然人去重，证件年龄不一定代表实际使用者。各年龄段宽度不同，左图展示账号数。</p><p>套餐样本为收费Pass订单已开通，含优惠、未核验实付与退款；使用含自动任务，D7仅纳入观察期已满账号。完整原图与分母见详细参考。</p></text>
+  <text x="40" y="684" width="1130" height="20" font="caption" color="text-muted">LightVela｜来源：用户提供的国内站两张画像图；近7日整体使用率 = 7,634 ÷ 20,593</text>
+  <text x="1180" y="684" width="60" height="20" font="caption" color="text-muted" align="right">14 / 33</text>
+</slide>

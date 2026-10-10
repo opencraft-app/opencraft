@@ -463,9 +463,9 @@ export interface BotRepository {
   sendWorkspaceMessage(botId: string, text: string): Promise<WorkspaceMessage[]>;
   getSettingsSnapshot(botId: string, mode?: DataMode): Promise<SettingsSnapshot>;
   getTerminalSession(botId: string, options?: { signal?: AbortSignal; suppressUnauthorizedBroadcast?: boolean }): Promise<BotTerminalSession>;
-  /** 云桌面（VNC）：POST 幂等触发 provision（Provisioning→Ready 状态机入口）。 */
+  /** 云电脑（VNC）：POST 幂等触发 provision（Provisioning→Ready 状态机入口）。 */
   ensureDesktopSession(botId: string): Promise<CloudDesktopSession>;
-  /** 云桌面（VNC）：GET 轮询会话状态；Ready 时兼作 idle 回收心跳。 */
+  /** 云电脑（VNC）：GET 轮询会话状态；Ready 时兼作 idle 回收心跳。 */
   getDesktopSession(botId: string): Promise<CloudDesktopSession>;
   configureQQChannel(botId: string, input: { appId: string; appSecret: string; account?: string }): Promise<BotChannelConfigResult>;
   claimUniqueChannel(botId: string, channel: "weixin" | "whatsapp"): Promise<string | undefined>;

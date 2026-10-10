@@ -137,6 +137,17 @@ pub trait WorkerdTransport: Send + Sync + 'static {
 	) -> BoxFuture<Result<HttpResponse>>;
 }
 
+// This response is emitted before user fetch/SQL, never after an indeterminate
+// business invocation. Callers must not transparently replay application writes.
+fn worker_rotation_response() -> HttpResponse {
+	HttpResponse {
+		status: 503,
+		headers: HashMap::from([("content-type".into(), "application/json".into())]),
+		body: Some(br#"{"error":{"code":"worker_version_rotating","message":"The Object is changing Worker versions","retryable":true}}"#.to_vec()),
+		body_stream: None,
+	}
+}
+
 pub struct WorkerdHost {
 	transport: Arc<dyn WorkerdTransport>,
 	active: RwLock<HashMap<String, ActiveActor>>,
@@ -155,6 +166,8 @@ struct ActiveActor {
 	/// while both this epoch and the Pegboard generation still match.
 	activity_epoch: u64,
 	idle_sleep_task: Option<tokio::task::AbortHandle>,
+	/// Fence this generation while Engine performs a normal sleep/wake rotation.
+	worker_rotation_pending: bool,
 	/// Public reference received from Pegboard. An empty version means follow the
 	/// active Deployment and is intentionally retained across resolution.
 	worker_request: Option<protocol::WorkerVersionReference>,
@@ -387,6 +400,7 @@ impl WorkerdHost {
 					generation: identity.generation,
 					activity_epoch: 0,
 					idle_sleep_task: None,
+					worker_rotation_pending: false,
 					worker_request,
 					worker: worker.clone(),
 					durable_object_class: durable_object_class.clone(),
@@ -415,67 +429,40 @@ impl WorkerdHost {
 		Ok(())
 	}
 
-	/// Atomically replaces the code isolate for a deployment-bound actor without
-	/// changing its durable actor identity or SQLite database. Removal from the
-	/// active map on preparation failure is the fail-closed fence.
-	pub async fn replace_worker_version(
+	/// Fence a deployment-bound generation before requesting Engine-owned sleep.
+	/// Native DO containers retain their first class even after isolate eviction,
+	/// so preparing a different Worker in this same generation cannot be safe.
+	/// Keep admission/SQLite ownership until StopActor performs normal cleanup;
+	/// the next StartActor resolves the current Deployment using a new generation.
+	/// Returns true only for the first rotation intent for this generation.
+	pub async fn begin_worker_version_rotation(
 		&self,
 		identity: WorkerdActorIdentity,
 		worker_request: protocol::WorkerVersionReference,
 		resolved: protocol::WorkerVersionReference,
-	) -> Result<()> {
+	) -> Result<bool> {
 		identity.validate()?;
 		let _guard = self.actor_lock(&identity.actor_id).write().await;
-		let current = self
-			.active_actor(&identity.actor_id)?
+		let mut active = self
+			.active
+			.write()
+			.map_err(|_| anyhow!("workerd actor registry poisoned"))?;
+		let actor = active
+			.get_mut(&identity.actor_id)
 			.ok_or_else(|| anyhow!("actor generation is not active in this workerd host"))?;
 		ensure!(
-			current.generation == identity.generation
-				&& current.worker_request.as_ref() == Some(&worker_request),
+			actor.generation == identity.generation
+				&& actor.worker_request.as_ref() == Some(&worker_request),
 			"actor Worker reference changed while resolving its Deployment"
 		);
-		if current.worker.as_ref() == Some(&resolved) {
-			return Ok(());
+		if actor.worker_rotation_pending || actor.worker.as_ref() == Some(&resolved) {
+			return Ok(false);
 		}
-
-		self.transport.evict(identity.clone()).await?;
-		{
-			let mut active = self
-				.active
-				.write()
-				.map_err(|_| anyhow!("workerd actor registry poisoned"))?;
-			let actor = active
-				.get_mut(&identity.actor_id)
-				.ok_or_else(|| anyhow!("actor generation disappeared during code replacement"))?;
-			ensure!(
-				actor.generation == identity.generation
-					&& actor.worker_request.as_ref() == Some(&worker_request),
-				"actor Worker reference changed during code replacement"
-			);
-			actor.worker = Some(resolved.clone());
+		actor.worker_rotation_pending = true;
+		if let Some(task) = actor.idle_sleep_task.take() {
+			task.abort();
 		}
-		if let Err(error) = self
-			.transport
-			.prepare(
-				identity.clone(),
-				resolved,
-				current.durable_object_class.clone(),
-			)
-			.await
-		{
-			let mut active = self
-				.active
-				.write()
-				.map_err(|_| anyhow!("workerd actor registry poisoned"))?;
-			if active
-				.get(&identity.actor_id)
-				.is_some_and(|actor| actor.generation == identity.generation)
-			{
-				active.remove(&identity.actor_id);
-			}
-			return Err(error).context("prepare replacement Worker isolate");
-		}
-		Ok(())
+		Ok(true)
 	}
 
 	pub async fn stop_actor(&self, identity: WorkerdActorIdentity) -> Result<()> {
@@ -543,6 +530,11 @@ impl WorkerdHost {
 			actor.generation == identity.generation,
 			"actor generation is not active in this workerd host"
 		);
+		// Preparation polling must not cancel the generation-rotation task or
+		// prolong the old generation's lifetime.
+		if actor.worker_rotation_pending {
+			return Ok(actor.activity_epoch);
+		}
 		if let Some(task) = actor.idle_sleep_task.take() {
 			task.abort();
 		}
@@ -563,6 +555,94 @@ impl WorkerdHost {
 			"actor generation is not active in this workerd host"
 		);
 		Ok(actor.activity_epoch)
+	}
+
+	/// Re-propose only this generation's idempotent SleepIntent until Engine
+	/// acknowledges it with StopActor. The SDK's fire-and-forget enqueue may be
+	/// dropped during reconnect, so a single attempted enqueue is not completion.
+	/// This bounded task never evicts code, releases storage, or starts an Actor.
+	fn arm_worker_generation_rotation(
+		self: &Arc<Self>,
+		identity: WorkerdActorIdentity,
+		handle: EnvoyHandle,
+	) -> Result<()> {
+		let weak_host = Arc::downgrade(self);
+		let task_identity = identity.clone();
+		let (start_tx, start_rx) = tokio::sync::oneshot::channel();
+		let task = tokio::spawn(async move {
+			if start_rx.await.is_err() {
+				return;
+			}
+			let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
+			for _ in 0..40 {
+				if tokio::time::Instant::now() >= deadline {
+					break;
+				}
+				let Some(host) = weak_host.upgrade() else {
+					return;
+				};
+				{
+					let Ok(_guard) = tokio::time::timeout_at(
+						deadline,
+						host.actor_lock(&task_identity.actor_id).read(),
+					)
+					.await
+					else {
+						break;
+					};
+					if tokio::time::Instant::now() >= deadline {
+						break;
+					}
+					let pending = host
+						.active_actor(&task_identity.actor_id)
+						.ok()
+						.flatten()
+						.is_some_and(|actor| {
+							actor.generation == task_identity.generation
+								&& actor.worker_rotation_pending
+						});
+					if !pending {
+						return;
+					}
+					handle.sleep_actor(
+						task_identity.actor_id.clone(),
+						Some(task_identity.generation),
+					);
+				}
+				drop(host);
+				tokio::time::sleep_until(
+					deadline.min(tokio::time::Instant::now() + Duration::from_millis(500)),
+				)
+				.await;
+			}
+			tracing::warn!(actor_id=%task_identity.actor_id, generation=task_identity.generation,
+				"Worker generation rotation is still pending Engine lifecycle recovery");
+		});
+		let abort_handle = task.abort_handle();
+		drop(task);
+		let installed = {
+			let mut active = self
+				.active
+				.write()
+				.map_err(|_| anyhow!("workerd actor registry poisoned"))?;
+			if let Some(actor) = active.get_mut(&identity.actor_id)
+				&& actor.generation == identity.generation
+				&& actor.worker_rotation_pending
+			{
+				if let Some(previous) = actor.idle_sleep_task.replace(abort_handle.clone()) {
+					previous.abort();
+				}
+				true
+			} else {
+				false
+			}
+		};
+		if installed {
+			let _ = start_tx.send(());
+		} else {
+			abort_handle.abort();
+		}
+		Ok(())
 	}
 
 	/// Arms at most one timer per admitted Actor. The timer can only propose a
@@ -632,6 +712,7 @@ impl WorkerdHost {
 			if let Some(actor) = active.get_mut(&identity.actor_id)
 				&& actor.generation == identity.generation
 				&& actor.activity_epoch == activity_epoch
+				&& !actor.worker_rotation_pending
 			{
 				if let Some(previous) = actor.idle_sleep_task.replace(abort_handle.clone()) {
 					previous.abort();
@@ -703,6 +784,12 @@ impl WorkerdHost {
 			self.current_generation(&identity.actor_id)? == Some(identity.generation),
 			"actor generation is not active in this workerd host"
 		);
+		if self
+			.active_actor(&identity.actor_id)?
+			.is_some_and(|actor| actor.worker_rotation_pending)
+		{
+			return Ok(worker_rotation_response());
+		}
 		let path = request.path.split('?').next().unwrap_or_default();
 		ensure!(
 			!path.starts_with(RIVET_WORKERD_MANAGEMENT_PREFIX),
@@ -1561,6 +1648,12 @@ impl EnvoyCallbacks for WorkerdEnvoyCallbacks {
 			let identity = WorkerdActorIdentity::new(actor_id, generation)?;
 			let activity_epoch = host.begin_actor_activity(&identity)?;
 			let result = async {
+				if host
+					.active_actor(&identity.actor_id)?
+					.is_some_and(|actor| actor.worker_rotation_pending)
+				{
+					return Ok(worker_rotation_response());
+				}
 				if let Some(requested) = host.worker_request_for_actor(&identity)?
 					&& requested.version_id.is_empty()
 				{
@@ -1568,8 +1661,15 @@ impl EnvoyCallbacks for WorkerdEnvoyCallbacks {
 					if host.worker_for_actor(&identity)?.as_ref() != Some(&resolved) {
 						// Verify and cache immutable code before fencing the old isolate.
 						worker_code.prepare(&resolved).await?;
-						host.replace_worker_version(identity.clone(), requested, resolved)
-							.await?;
+						if host
+							.begin_worker_version_rotation(identity.clone(), requested, resolved)
+							.await?
+						{
+							// Only Engine can stop this generation and release its storage fence.
+							// No application request has been dispatched on this path.
+							host.arm_worker_generation_rotation(identity.clone(), handle.clone())?;
+						}
+						return Ok(worker_rotation_response());
 					}
 				}
 				host.fetch_actor(identity.clone(), request).await
@@ -2088,7 +2188,7 @@ mod tests {
 	}
 
 	#[tokio::test]
-	async fn deployment_update_replaces_code_without_changing_actor_generation() -> Result<()> {
+	async fn deployment_update_fences_until_engine_rotates_actor_generation() -> Result<()> {
 		let transport = Arc::new(RecordingTransport::default());
 		let host = WorkerdHost::new(transport.clone());
 		let identity = WorkerdActorIdentity::new("durable_object", 9)?;
@@ -2117,19 +2217,28 @@ mod tests {
 		)
 		.await?;
 
-		host.replace_worker_version(identity.clone(), requested.clone(), v2.clone())
-			.await?;
+		assert!(
+			host.begin_worker_version_rotation(identity.clone(), requested.clone(), v2.clone())
+				.await?
+		);
+		assert!(
+			!host
+				.begin_worker_version_rotation(identity.clone(), requested.clone(), v2.clone())
+				.await?
+		);
 
 		assert_eq!(host.current_generation(&identity.actor_id)?, Some(9));
 		assert_eq!(host.worker_request_for_actor(&identity)?, Some(requested));
-		assert_eq!(host.worker_for_actor(&identity)?, Some(v2.clone()));
-		assert_eq!(
-			transport.evictions.lock().unwrap().as_slice(),
-			&[identity.clone()]
+		assert_eq!(host.worker_for_actor(&identity)?, Some(v1.clone()));
+		assert!(
+			host.active_actor(&identity.actor_id)?
+				.unwrap()
+				.worker_rotation_pending
 		);
+		assert!(transport.evictions.lock().unwrap().is_empty());
 		assert_eq!(
 			transport.preparations.lock().unwrap().as_slice(),
-			&[(identity.clone(), v1, None), (identity, v2, None)]
+			&[(identity.clone(), v1, None)]
 		);
 		Ok(())
 	}
@@ -2160,8 +2269,11 @@ mod tests {
 		)
 		.await?;
 
-		host.replace_worker_version(identity.clone(), requested, resolved.clone())
-			.await?;
+		assert!(
+			!host
+				.begin_worker_version_rotation(identity.clone(), requested, resolved.clone())
+				.await?
+		);
 
 		assert_eq!(host.current_generation(&identity.actor_id)?, Some(10));
 		assert_eq!(host.worker_for_actor(&identity)?, Some(resolved));

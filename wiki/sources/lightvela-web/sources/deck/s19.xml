@@ -1,0 +1,49 @@
+<slide id="s19">
+  <background color="bg-page" />
+  <shape type="line" x="40" y="26" width="1200" height="0" stroke="border" />
+  <shape type="line" x="760" y="26" width="240" height="0" stroke="primary" stroke-width="3" />
+  <text x="40" y="36" width="1200" height="24" font="caption" color="primary">04 产品演进 · 开放与接入</text>
+  <text x="40" y="77" width="1200" height="50" font="heading" color="text-main">
+    <strong>向开发者开放工具，并尝试设备接入</strong>
+  </text>
+  <text x="40" y="132" width="1200" height="30" font="body" color="text-muted">先以低成本实验扩展工具、数据和执行范围，再从开发者实践中发现新场景。</text>
+  <shape type="rect" x="40" y="188" width="332" height="350" fill="bg-surface" corner-radius="4" />
+  <shape type="rect" x="455" y="250" width="370" height="219" fill="chart-light" corner-radius="4" />
+  <shape type="rect" x="908" y="188" width="332" height="350" fill="bg-surface" corner-radius="4" />
+  <shape type="line" x="373" y="359" width="82" height="0" stroke="primary" stroke-width="2" arrow-end="arrow" />
+  <shape type="line" x="825" y="359" width="82" height="0" stroke="primary" stroke-width="2" arrow-end="arrow" />
+  <text x="60" y="210" width="292" height="39" font="strong" color="primary">
+    <strong>开发者扩展</strong>
+  </text>
+  <text x="60" y="272" width="292" height="241" font="body" color="text-main" line-height="1.7">
+    <p>
+      <strong>API / SDK / MCP / 连接器</strong>
+    </p>
+    <p space-before="18">接入外部服务与专业工具</p>
+    <p space-before="10">创建 Agent 技能</p>
+    <p space-before="10">构建自动化工作流</p>
+    <p space-before="18">通过实践验证新产品场景</p>
+  </text>
+  <text x="479" y="281" width="322" height="47" font="strong" color="text-main">
+    <strong>云端 Agent Session</strong>
+  </text>
+  <text x="479" y="350" width="322" height="99" font="body" color="text-main" line-height="1.6">
+    <p>Lighthouse / LightVela</p>
+    <p space-before="14">承接工具、数据和执行</p>
+    <p>连接开发者服务与终端入口</p>
+  </text>
+  <text x="928" y="210" width="292" height="39" font="strong" color="primary">
+    <strong>设备与硬件入口</strong>
+  </text>
+  <text x="928" y="272" width="292" height="241" font="body" color="text-main" line-height="1.7">
+    <p>ESP32、屏幕、按钮</p>
+    <p space-before="10">摄像头、智能家居设备</p>
+    <p space-before="18">语音或文字交互</p>
+    <p space-before="10">查看状态、发起任务</p>
+    <p space-before="10">完成授权与确认</p>
+  </text>
+  <shape type="line" x="40" y="575" width="1200" height="0" stroke="border" />
+  <text x="40" y="604" width="1200" height="49" font="body" color="text-main" line-height="1.5">以标准化接口支持外部开发者扩展能力；用低成本硬件制作原型，验证 Agent 的感知、展示和执行入口。</text>
+  <text x="40" y="684" width="1130" height="20" font="caption" color="text-muted">LightVela｜来源：原文开放 API/SDK、开发者能力开放与设备接入思路</text>
+  <text x="1180" y="684" width="60" height="20" font="caption" color="text-muted" align="right">19 / 24</text>
+</slide>

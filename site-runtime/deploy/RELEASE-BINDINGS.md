@@ -2,7 +2,9 @@
 
 This tool closes source-level release preparation; it never deploys, connects to Kubernetes,
 reads Secret values, provisions a host or authorizes production. Use the frozen candidate's
-script and source tree, not an unrelated checkout. Stateless owner-authenticated fetch-v1 only.
+script and source tree, not an unrelated checkout. Schema1 retains the stateless fetch-v1 input
+contract; schema2 selects the regional driver and data gate. Schema3 removes the owner-list
+field; enablement is regional and never an account entitlement.
 
 ## Regional inputs
 
@@ -10,25 +12,31 @@ Write a protected, references-only JSON file following this schema:
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 3,
   "environment": "shprod",
   "source_tree_sha256": "REPLACE_WITH_FROZEN_SOURCE_TREE_SHA256",
   "runtime": {
     "environment": "shprod",
+    "driver": "minisandbox",
     "base_url": "REPLACE_WITH_REGIONAL_PRIVATE_HTTPS_ORIGIN",
     "ca": {"name": "website-runtime-ca", "key": "ca-bundle.pem"},
     "deploy_token": {"name": "website-runtime-secrets", "key": "deploy"},
     "invoke_token": {"name": "website-runtime-secrets", "key": "invoke"}
   },
-  "beta_users": []
+  "data_enabled": false
 }
 ```
 
 The placeholders are deliberately invalid, not a ready production configuration. For sgprod,
 change **both** environment fields and use that region's own provisioned runtime output. The
-HTTPS origin must use a private RFC1918 IPv4/ULA IPv6 address with matching certificate SAN.
+HTTPS origin must use a private RFC1918 IPv4/ULA IPv6 address or a canonical Kubernetes
+Service DNS name (`service.namespace.svc.cluster.local`), with matching certificate SAN.
+Arbitrary public/private DNS names and short Service aliases are rejected; the example's placeholder URL remains invalid.
 Do not promote testing IPs, test CA/token values or Beijing/Seoul machine image IDs into production.
-Endpoint validation is syntax/provenance validation, **not** a live TLS or CA/SAN verification.
+Endpoint validation is syntax/provenance validation, **not** live TLS/CA/SAN or driver
+verification. Schema2 requires a boolean `data_enabled` and a runtime `driver` of `runsc` or
+`minisandbox`; persistent data is rejected for `runsc`. Schema1 has neither field and keeps
+data/share gates closed. Declaring a driver is not runtime qualification evidence.
 Secrets are provisioned through the authorized regional release process. Never put their values,
 TLS private keys or decrypted SOPS contents in inputs, Git, arguments, stdout or the release pack.
 
@@ -46,8 +54,10 @@ python3 .ci/runtime/commands/prepare_website_backend_release.py \
 Output is references-only `manifest.json` and `overlay-patches.json` for ctl,
 website-deployer and site-gateway. The manifest hashes every patch file. Existing output or
 symlink destinations are refused. This command does not produce images or modify any source.
-Prepare explicitly sets `WEBSITE_BACKEND_BETA_USERS=""` on CTL API/service even if an old
-ConfigMap/envFrom enabled it. Do not roll a live Beta back to prepare without owner review.
+Prepare explicitly sets `WEBSITE_BACKEND_ENABLED=0` on CTL API/service even if an old
+ConfigMap/envFrom enabled it. Prepare also explicitly sets CTL data to `0` and gateway
+shared reads to `false`, overriding inherited gates. Do not roll a live Beta back to prepare
+without owner review; closing share reads can affect existing shared links.
 
 ## Use normal source-facing release overlays
 
@@ -93,13 +103,14 @@ Secret distribution must stay role-scoped. CA volume exposes only the selected p
 read-only. No fixed image, authentication policy or old static-client route is changed.
 
 The normal ctl/workers/site-gateway release bundles already publish these overlay paths.
-Complete migration32 and runtime setup first, promote images and overlays using the existing
+Reconcile live schema and apply migration32 only if genuinely pending; qualify regional
+runtime/storage first, then promote images and overlays using the existing
 source-to-GitOps workflow, then manually sync the correct regional apps and verify revision,
 image digest, Synced/Healthy and real business flows. A local render is not Argo proof.
 
 ## Explicit enable and new-machine adoption
 
-Enable is a separate rendering phase with an approved nonempty owner allowlist:
+Enable is a separate rendering phase with approved regional runtime acceptance:
 
 ```sh
 python3 .ci/runtime/commands/prepare_website_backend_release.py \
@@ -109,8 +120,13 @@ python3 .ci/runtime/commands/prepare_website_backend_release.py \
 ```
 
 Prepare the enable diff against a clean baseline by replacing the previous generated patch
-set, not layering duplicate entries. Empty beta_users is rejected in enable. Full public
-availability is not assumed; this delivery is an owner-authenticated stateless backend Beta.
+set, not layering duplicate entries. The explicit enable phase sets `WEBSITE_BACKEND_ENABLED=1` for authenticated users.
+Legacy schema1/2 beta_users inputs are validated but ignored; schema3 omits them.
+The frontend entry remains hidden until console `show()`; that is not API authorization. With schema2/3 `driver=minisandbox` and `data_enabled=true`, enable
+renders CTL `WEBSITE_BACKEND_DATA_ENABLED=1` and gateway `SITE_GATEWAY_BACKEND_SHARED_READ=true`
+together. Writes still require the owner; shared GET/HEAD still require valid generation-bound
+share sessions. This hidden Beta is opt-in, not anonymous or public creation. Keep the data flag
+false until that region's persistence, version replacement, rollback and isolation have passed.
 
 New-machine build inputs remain `images/helpers/website_skill_bundle.py` and the same complete
 Skill/scripts, verified in normal Beijing/Seoul provisioning. During authorized release, build

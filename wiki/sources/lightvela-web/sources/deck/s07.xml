@@ -1,0 +1,25 @@
+<slide id="s07">
+  <background color="bg-page" />
+  <shape type="line" x="40" y="26" width="1200" height="0" stroke="border" />
+  <shape type="line" x="40" y="26" width="240" height="0" stroke="primary" stroke-width="3" />
+  <text x="40" y="36" width="1200" height="24" font="caption" color="primary">01 出圈回顾</text>
+  <text x="40" y="77" width="1200" height="50" font="heading" color="text-main">
+    <strong>传播期间，国内外注册同步增长</strong>
+  </text>
+  <text x="40" y="132" width="1200" height="30" font="body" color="text-muted">国内外渠道有所不同，传播与权益分享带来了新增用户。</text>
+  <text x="40" y="185" width="572" height="34" font="strong" color="primary">
+    <strong>国内｜公众号内容带动认知</strong>
+  </text>
+  <text x="40" y="231" width="572" height="70" font="body" color="text-main" line-height="1.45">公众号和科技媒体的介绍、分析带动关注；邀请积分主要在用户间分享。</text>
+  <text x="668" y="185" width="572" height="34" font="strong" color="primary">
+    <strong>海外｜权益分享与邀请推动扩散</strong>
+  </text>
+  <text x="668" y="231" width="572" height="70" font="body" color="text-main" line-height="1.45">X 上的权益分享和好友邀请推动扩散，产品介绍与分析作为补充。</text>
+  <image x="40" y="322" width="572" height="286" src="/assets/source_21.png" fit="contain" />
+  <image x="668" y="322" width="572" height="286" src="/assets/source_20.png" fit="contain" />
+  <text x="40" y="613" width="572" height="26" font="caption" color="text-muted">原文标注：国内站单日注册峰值接近 5,000</text>
+  <text x="668" y="613" width="572" height="26" font="caption" color="text-muted">原文标注：国际站迎来第二轮增长</text>
+  <text x="40" y="650" width="1200" height="23" font="body" color="primary">这次传播以较低的帖子推广投入获得了关注，后续需要通过稳定体验和持续运营承接新增用户。</text>
+  <text x="40" y="684" width="1130" height="20" font="caption" color="text-muted">LightVela｜来源：原文国内/国际站趋势图及微信指数对比；不据图估算增长倍数</text>
+  <text x="1180" y="684" width="60" height="20" font="caption" color="text-muted" align="right">07 / 24</text>
+</slide>

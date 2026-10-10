@@ -1,0 +1,26 @@
+<slide id="s09">
+  <background color="bg-page" />
+  <shape type="line" x="40" y="26" width="1200" height="0" stroke="border" />
+  <shape type="line" x="520" y="26" width="240" height="0" stroke="primary" stroke-width="3" />
+  <text x="40" y="36" width="1200" height="24" font="caption" color="primary">03 产品现状 · 产品形态</text>
+  <text x="40" y="77" width="1200" height="50" font="heading" color="text-main">
+    <strong>独立站已串起个人 Agent 的使用路径</strong>
+  </text>
+  <text x="40" y="132" width="1200" height="30" font="body" color="text-muted">国际站与国内站提供相同的核心路径，逐步引导用户完成创建、对话与个性化配置。</text>
+  <shape type="rect" x="40" y="184" width="1200" height="63" fill="bg-surface" />
+  <text x="60" y="203" width="1150" height="31" font="body" color="text-main" wrap="false">
+    <strong color="primary">访问首页</strong>　→　订阅 / 免费体验　→　创建个人 Agent　→　开始对话　→　Agent 个性化　→　多 Bot</text>
+  <image x="270" y="284" width="762" height="384" src="/assets/source_25.png" fit="contain" stroke="border" stroke-width="1" />
+  <image x="40" y="287" width="206" height="112" src="/assets/source_22.png" fit="contain" stroke="border" />
+  <text x="40" y="412" width="206" height="25" font="caption" color="text-muted">首页：建立产品理解</text>
+  <image x="40" y="470" width="206" height="111" src="/assets/source_23.png" fit="contain" stroke="border" />
+  <text x="40" y="594" width="206" height="25" font="caption" color="text-muted">套餐：订阅或免费体验</text>
+  <text x="1060" y="294" width="180" height="36" font="strong" color="primary">
+    <strong>开始对话</strong>
+  </text>
+  <text x="1060" y="344" width="180" height="83" font="body" color="text-main" line-height="1.5">完成创建后进入 Agent 工作区，再逐步添加技能、通道和自动任务。</text>
+  <image x="1060" y="468" width="180" height="106" src="/assets/source_24.png" fit="contain" stroke="border" />
+  <text x="1060" y="594" width="180" height="25" font="caption" color="text-muted">创建个人 Agent</text>
+  <text x="40" y="684" width="1130" height="20" font="caption" color="text-muted">LightVela｜来源：原文国际站首页、套餐、创建和对话界面</text>
+  <text x="1180" y="684" width="60" height="20" font="caption" color="text-muted" align="right">09 / 24</text>
+</slide>

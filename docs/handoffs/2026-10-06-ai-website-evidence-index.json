@@ -1,0 +1,87 @@
+{
+  "date": "2026-10-06",
+  "scope": "portable safe receipt whitelist; historical evidence only, no live revalidation",
+  "entries": [
+    {
+      "sha256": "a8136188f366a7ffeb6677ec5375e4fa39fb19f2efff594fbcf54cd903bdb5f6",
+      "local_original_path": "/Users/shawnmy/.codex/worktrees/website-backend-hidden-release/mono2/.tmp/minisandbox-integration/full-source-final-test-rollout-20261006/FINAL-safe-receipt.json",
+      "path": "docs/handoffs/2026-10-06-ai-website-evidence/full-source-final-test-rollout-20261006/FINAL-safe-receipt.json"
+    },
+    {
+      "sha256": "f807b8761ef12593885f2326dd7c071cdf8162df0051cad45fb98e1c1d81be6d",
+      "local_original_path": "/Users/shawnmy/.codex/worktrees/website-backend-hidden-release/mono2/.tmp/minisandbox-integration/combined-runtime-kr-final-rollout-20261006/post-rollout-read-preparation/qualification-result.json",
+      "path": "docs/handoffs/2026-10-06-ai-website-evidence/combined-runtime-kr-final-rollout-20261006/post-rollout-read-preparation/qualification-result.json"
+    },
+    {
+      "sha256": "4e3e469a729b26cbd65039f4f48cb63732e5e4ce7838e3f1bb40dbc6db2b02bd",
+      "local_original_path": "/Users/shawnmy/.codex/worktrees/website-backend-hidden-release/mono2/.tmp/minisandbox-integration/full-source-native-go-readiness-20261006/kr-rollout-successor/rollout-observe-20261006T111842321946Z-safe.json",
+      "path": "docs/handoffs/2026-10-06-ai-website-evidence/full-source-native-go-readiness-20261006/kr-rollout-successor/rollout-observe-20261006T111842321946Z-safe.json"
+    },
+    {
+      "sha256": "c3cf4a48203a36ef0c36b0e7580302a8f86824afd3875aad50574fb77d335aa4",
+      "local_original_path": "/Users/shawnmy/.codex/worktrees/website-backend-hidden-release/mono2/.tmp/minisandbox-integration/full-source-native-go-readiness-20261006/kr-verification/SOURCE-IMAGE-STARTUP-CONTRACT-safe.json",
+      "path": "docs/handoffs/2026-10-06-ai-website-evidence/full-source-native-go-readiness-20261006/kr-verification/SOURCE-IMAGE-STARTUP-CONTRACT-safe.json"
+    },
+    {
+      "sha256": "eb39a70b9e069f7cc651db42aa20cd15171473db48ca933fcb4cc007b7cee3a4",
+      "local_original_path": "/Users/shawnmy/.codex/worktrees/website-backend-hidden-release/mono2/.tmp/minisandbox-integration/full-source-native-go-readiness-20261006/kr-verification/natural-renewal-registry-log-safe-receipt.json",
+      "path": "docs/handoffs/2026-10-06-ai-website-evidence/full-source-native-go-readiness-20261006/kr-verification/natural-renewal-registry-log-safe-receipt.json"
+    },
+    {
+      "sha256": "9ec1e8c4dbc016f94ddf07abc321fa2c364948fd4a64a7eb4bda7a391eebbed1",
+      "local_original_path": "/Users/shawnmy/.codex/worktrees/website-backend-hidden-release/mono2/.tmp/minisandbox-integration/full-source-native-go-readiness-20261006/kr-verification/original-code-get-once-safe-receipt.json",
+      "path": "docs/handoffs/2026-10-06-ai-website-evidence/full-source-native-go-readiness-20261006/kr-verification/original-code-get-once-safe-receipt.json"
+    },
+    {
+      "sha256": "deebf0b1cc24249c5b94a721b80282e7e47d78904b41b4d1d47ecb2ebd64db94",
+      "local_original_path": "/Users/shawnmy/.codex/worktrees/website-backend-hidden-release/mono2/.tmp/minisandbox-integration/new-machine-skill76-20261006/parent-image-acceptance-safe.json",
+      "path": "docs/handoffs/2026-10-06-ai-website-evidence/new-machine-skill76-20261006/parent-image-acceptance-safe.json"
+    },
+    {
+      "sha256": "910280b943389e0b3a3d5ba27ba1f4da6bdd847cb16e6df48f9eb031d8594ab2",
+      "local_original_path": "/Users/shawnmy/.codex/worktrees/website-backend-hidden-release/mono2/.tmp/minisandbox-integration/production-website-schema-shprod-20261006.json",
+      "path": "docs/handoffs/2026-10-06-ai-website-evidence/production-website-schema-shprod-20261006.json"
+    },
+    {
+      "sha256": "45977dd889f2968fb4808ed2cd4fed38a3063afb748d6d912b9ec5f49d32cf0c",
+      "local_original_path": "/Users/shawnmy/.codex/worktrees/website-backend-hidden-release/mono2/.tmp/minisandbox-integration/production-website-schema-sgprod-20261006.json",
+      "path": "docs/handoffs/2026-10-06-ai-website-evidence/production-website-schema-sgprod-20261006.json"
+    },
+    {
+      "sha256": "9bd21fcb0bcc08a35452c812ab32460013d070b90322acb774e4d396d54e3ed8",
+      "local_original_path": "/Users/shawnmy/.codex/worktrees/website-backend-hidden-release/mono2/.tmp/minisandbox-integration/bj-final-consistency-20261006/normal-native-test-rollout/writer-cas-diagnosis/use-terminal-safe.json",
+      "path": "docs/handoffs/2026-10-06-ai-website-evidence/bj-final-consistency-20261006/normal-native-test-rollout/writer-cas-diagnosis/use-terminal-safe.json"
+    },
+    {
+      "sha256": "a47b74777d1641ae5e73905cfe77d454c8514d0529d1465c1e31edafe9168a02",
+      "local_original_path": "/Users/shawnmy/.codex/worktrees/website-backend-hidden-release/mono2/.tmp/minisandbox-integration/bj-final-consistency-20261006/normal-native-test-rollout/writer-canary-execute/use-terminal-safe.json",
+      "path": "docs/handoffs/2026-10-06-ai-website-evidence/bj-final-consistency-20261006/normal-native-test-rollout/writer-canary-execute/use-terminal-safe.json"
+    },
+    {
+      "sha256": "a6f1b3d9dac4059540d860dbce11cb833ab26a96e7e6f47200d0429c59bd2fa1",
+      "local_original_path": "/Users/shawnmy/.codex/worktrees/website-backend-hidden-release/mono2/.tmp/minisandbox-integration/regional-release-discovery-20261006/existing-regional-infra-safe.json",
+      "path": "docs/handoffs/2026-10-06-ai-website-evidence/regional-release-discovery-20261006/existing-regional-infra-safe.json"
+    },
+    {
+      "sha256": "86f1afda7a4efbfe85250594949d712eb36596d34dc7193b0d779cc0f11b1e86",
+      "local_original_path": "/Users/shawnmy/.codex/worktrees/website-backend-hidden-release/mono2/.tmp/minisandbox-integration/regional-release-discovery-20261006/native-regional-clusters-safe.json",
+      "path": "docs/handoffs/2026-10-06-ai-website-evidence/regional-release-discovery-20261006/native-regional-clusters-safe.json"
+    },
+    {
+      "sha256": "7221c4e5ee7c4c4de3e268fda2954dc08f2968c0dcffa6e84d565179b842f1b1",
+      "local_original_path": "/Users/shawnmy/.codex/worktrees/website-backend-hidden-release/mono2/.tmp/minisandbox-integration/regional-release-discovery-20261006/operations-native-routes-safe.json",
+      "path": "docs/handoffs/2026-10-06-ai-website-evidence/regional-release-discovery-20261006/operations-native-routes-safe.json"
+    },
+    {
+      "sha256": "de131cf5333c4c1ab788d255aa302ff79f94dc57a53cd16dfa26d9bbc9811478",
+      "local_original_path": "/Users/shawnmy/.codex/worktrees/website-backend-hidden-release/mono2/.tmp/minisandbox-integration/regional-production-preparation-readonly-20261006/network-zone-prerequisites-safe.json",
+      "path": "docs/handoffs/2026-10-06-ai-website-evidence/regional-production-preparation-readonly-20261006/network-zone-prerequisites-safe.json"
+    },
+    {
+      "sha256": "6e682717daaa456f008c8f1734c5af5e9322e260efc0217ad709c445841fcc70",
+      "local_original_path": "/Users/shawnmy/.codex/worktrees/website-backend-hidden-release/mono2/.tmp/minisandbox-integration/takeover-final-freeze-20261006/production-consumer-gates-readonly-safe.json",
+      "path": "docs/handoffs/2026-10-06-ai-website-evidence/takeover-final-freeze-20261006/production-consumer-gates-readonly-safe.json"
+    }
+  ],
+  "missing_requested_paths": []
+}

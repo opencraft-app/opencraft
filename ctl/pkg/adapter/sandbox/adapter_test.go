@@ -88,6 +88,35 @@ func TestPauseSandboxWaitsUntilSandboxReportsPaused(t *testing.T) {
 	}
 }
 
+func TestResumeSandboxWaitsUntilSandboxReportsRunning(t *testing.T) {
+	getCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/sandboxes/sbx-123/resume":
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(Sandbox{SandboxID: "sbx-123"})
+		case r.Method == http.MethodGet && r.URL.Path == "/sandboxes/sbx-123":
+			getCalls++
+			state := "resuming"
+			if getCalls >= 2 {
+				state = "running"
+			}
+			_ = json.NewEncoder(w).Encode(SandboxDetail{State: state})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	adapter := NewSandboxAdapter(&config.SandboxConfig{BaseURL: server.URL, APIKey: "test-api-key", Timeout: 2}, zap.NewNop())
+	if _, err := adapter.ResumeSandbox(t.Context(), "sbx-123", &ResumeSandboxRequest{}); err != nil {
+		t.Fatalf("ResumeSandbox: %v", err)
+	}
+	if getCalls != 2 {
+		t.Fatalf("GetSandbox calls=%d, want 2 before resume completes", getCalls)
+	}
+}
+
 func TestApplyProcessHeadersIncludesAccessTokenWhenPresent(t *testing.T) {
 	headers := make(http.Header)
 

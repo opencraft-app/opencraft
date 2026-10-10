@@ -1,0 +1,75 @@
+{
+  "status": "TERMINAL",
+  "task_status": "FAILED",
+  "invocation_id": "inv-a9iu10g44s",
+  "task_id": "invt-a9iu10g44t",
+  "request_id": "37862dbb-86bc-4cb7-b117-eeb70f13ce5e",
+  "stage": "use",
+  "dispatches": 1,
+  "cleanup_status": "VERIFIED",
+  "observed_at": "2026-10-06T11:52:11.991704+00:00",
+  "exit_code": 1,
+  "metadata": {
+    "schema": "cellb-account-cms-use/v1",
+    "run_id": "cellb-final-canary-20261006-f525d62fe31f9094",
+    "scope_sha256": "bc7a7c5d563756c4f3761e0a2a1591f0ad5b572dc133a49a66956747684fcbe3",
+    "instance_id": "ins-8pio5abt",
+    "cluster_id": "cls-1femn3mh",
+    "status": "CANARY_FAILED",
+    "credential_values_output": false,
+    "credential_files_written": false,
+    "cleanup_verified": true,
+    "plaintext_memfd_closed": true,
+    "strict_tls": true,
+    "cipher_sha256": "3ef2b147107ee161d56b73af1ceecf9cbed73646d9d10446f96529b7b3f056b1",
+    "cluster_resource_mutations": "UNKNOWN_USE_STAGE_INTENTS_AND_ACKS",
+    "recipient_key_unlinked_before_Kube_GET": true,
+    "canary": {
+      "schema": "cellb-canary-jsonpatch-safe/v1",
+      "run_id": "cellb-final-canary-20261006-f525d62fe31f9094",
+      "scope_sha256": "bc7a7c5d563756c4f3761e0a2a1591f0ad5b572dc133a49a66956747684fcbe3",
+      "mode": "canary",
+      "status": "RECONCILE_REQUIRED_NO_REPLAY",
+      "stage": "candidate-images",
+      "strict_tls": true,
+      "credential_values_output": false,
+      "Kube_GET_count": 10,
+      "submissions": {
+        "server_dry_run": 0,
+        "Kube_PATCH": 2,
+        "native_drain": 0,
+        "Pod_DELETE": 0
+      },
+      "stage_receipts": {
+        "hold-ondelete": {
+          "uid": "671c4557-324a-4082-89dd-ac109a542032",
+          "resourceVersion": "3586872387",
+          "generation": 4242,
+          "spec_sha256": "d35328999bd40b41d0481c3508d04780534a6aebe958d57c5d1606a85e6836e8",
+          "strategy": {
+            "type": "OnDelete"
+          },
+          "replicas": 4
+        }
+      },
+      "old_Host_hash_exec": 0,
+      "business_requests": 0,
+      "no_automatic_rollback": true,
+      "release_ledger_retained": true,
+      "api_endpoint": "https://10.162.0.7",
+      "CA_SHA": "6c205557717c623840ed99cb67485f2f61d057068ea3b67cedd440e33ed12098",
+      "release_ledger_path": "/var/tmp/cellb-final-canary-20261006-f525d62fe31f9094-release",
+      "original_spec_sha256": "0f6014d4a3292d3fdf5e47bf1b474da9eb33c9c95bd7ac176126132f72121899",
+      "original_strategy": {
+        "type": "RollingUpdate"
+      },
+      "last_command_returncode": 1,
+      "safe_error_code": "KUBE_REQUEST_INVALID",
+      "resource_mutations": "UNKNOWN_USE_STAGE_INTENTS_AND_ACKS",
+      "completed_at": "2026-10-06T11:51:30.838914+00:00"
+    },
+    "cleanup_status": "VERIFIED",
+    "completed_at": "2026-10-06T11:51:30.839509+00:00"
+  },
+  "output_sha256": "2a373109083d18ae72996ecb753215ec162772663d9898d60c15759be4cad9e5"
+}

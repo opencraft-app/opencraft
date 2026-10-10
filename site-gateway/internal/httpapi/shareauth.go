@@ -125,7 +125,9 @@ func (h *SiteHandler) handleSiteShare(w http.ResponseWriter, r *http.Request) {
 		h.renderSharePage(w, r, http.StatusBadGateway, "/", "站点暂时无法访问")
 		return
 	}
-	site, err := h.sites.BySiteID(r.Context(), siteID)
+	// Share policy and generation may have changed since the cached redirect.
+	// Use authoritative metadata before rendering or accepting a share form.
+	site, err := h.lookupSiteByIDFresh(r.Context(), siteID)
 	if err != nil || site == nil {
 		h.renderSharePage(w, r, http.StatusBadGateway, "/", "站点暂时无法访问")
 		return

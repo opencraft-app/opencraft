@@ -1,0 +1,25 @@
+{
+  "schema": "skill76-parent-image-acceptance/v1",
+  "observed_at": "2026-10-06T07:14:41.685949+00:00",
+  "status": "DUAL_REGION_BUILTIN_SKILL_ACCEPTED_FOR_PRE_HIDDEN_RELEASE",
+  "scope": "two named disposable test CVMs and their exact captured candidate images only",
+  "ready_for_pre_hidden_release": true,
+  "production_released": false,
+  "images": {
+    "ap-beijing": "img-2y50gvk5",
+    "ap-seoul": "img-gbht69mn"
+  },
+  "bundle_sha256": "76bca4098d70f91c1746807c60269d93d15dd6c166f2b00a7bc66e97a8e4b3fe",
+  "guest_runtime_and_cleanliness_proven": true,
+  "identity_acceptance": "different CVMs must have independent machine-id; SSH host identities must regenerate across reset. Same CVM stable platform UUID identity is not a clone defect.",
+  "independent_cvm_count": 3,
+  "unique_machine_id_count": 3,
+  "unique_ssh_identity_observation_count": 5,
+  "boot_writer_component_not_claimed": true,
+  "old_strict_guard_result_preserved": true,
+  "old_ledger_not_rewritten": true,
+  "attribution_receipt_sha256": "94ad0b9810818e379c5186ae6c530dbfee015d544eccf43d0d75083c0680371c",
+  "correction_receipt_sha256": "130cb5549b4cc36d622f9de0b410be842e3cb78dbd902f1b1ecae0b91e12b00c",
+  "new_mutations": 0,
+  "new_tat_invocations": 0
+}

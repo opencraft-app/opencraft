@@ -7,7 +7,7 @@ import { useRepositories } from "@/contexts/repository-context";
 import { useT } from "@/i18n/t";
 import type { CloudDesktopSession } from "@/domain/types";
 import { cn } from "@/lib/utils";/**
- * 云桌面（VNC）面板 —— 实验室 › 云桌面。
+ * 云电脑（VNC）面板 —— 实验室 › 云电脑。
  *
  * 交互契约（cloud-desktop-vnc-plan §4.3 / §6）：
  *  1. POST desktop/session 幂等触发 provision → Provisioning
@@ -128,7 +128,7 @@ export function AgentCloudDesktopPanel({ botId }: { botId: string }) {
         let current = await repositories.bots.ensureDesktopSession(botId);
         setSession(current);
         if (current.status === "Failed") {
-          throw new Error(current.reason || t("云桌面启动失败"));
+          throw new Error(current.reason?.trim() || t("云电脑启动失败"));
         }
         // 首次可能进入 Installing（按需装图形层），需在轮询前先切到 installing 相位。
         setPhase(current.status === "Installing" ? "installing" : "provisioning");
@@ -136,7 +136,7 @@ export function AgentCloudDesktopPanel({ botId }: { botId: string }) {
         // Installing / Provisioning → Ready 轮询
         while (!cancelled && current.status !== "Ready") {
           if (current.status === "Failed") {
-            throw new Error(current.reason || t("云桌面启动失败"));
+            throw new Error(current.reason?.trim() || t("云电脑启动失败"));
           }
           // 按阶段分级轮询：Installing（apt 装图形层，分钟级）用更大间隔降频，
           // Provisioning（接近就绪）保持较快轮询以缩短进入桌面的等待。
@@ -185,8 +185,8 @@ export function AgentCloudDesktopPanel({ botId }: { botId: string }) {
             setPhase("failed");
             setErrorText(
               event.detail?.clean
-                ? t("云桌面连接已断开")
-                : t("云桌面连接中断，请点击重试"),
+                ? t("云电脑连接已断开")
+                : t("云电脑连接中断，请点击重试"),
             );
           }
         });
@@ -214,7 +214,7 @@ export function AgentCloudDesktopPanel({ botId }: { botId: string }) {
       } catch (err) {
         if (cancelled) return;
         setPhase("failed");
-        setErrorText(err instanceof Error ? err.message : String(err));
+        setErrorText(err instanceof Error && err.message.trim() ? err.message : t("云电脑启动失败"));
       }
     };
 
@@ -229,15 +229,15 @@ export function AgentCloudDesktopPanel({ botId }: { botId: string }) {
 
   const statusText =
     phase === "installing"
-      ? // 后端 session.message 是中文硬编码，无法随前端语言切换，故不直接展示；
-        // installing 文案统一走前端 i18n，进度百分比仍由 install_progress 驱动。
-        t("正在安装桌面环境（首次约需 2–4 分钟）…")
+      ? session?.installPhase === "configuring_wallpaper"
+        ? t("正在配置云电脑壁纸…")
+        : t("正在安装桌面环境（首次约需 2–4 分钟）…")
       : phase === "provisioning"
-        ? t("正在启动云桌面（首次约需 1–2 分钟）…")
+        ? t("正在启动云电脑（首次约需 1–2 分钟）…")
         : phase === "connecting"
           ? t("正在建立桌面连接…")
           : phase === "connected"
-            ? t("云桌面已连接")
+            ? t("云电脑已连接")
             : null;
 
   // Installing 阶段的进度百分比（后端 install_progress，0-100）。
@@ -252,9 +252,9 @@ export function AgentCloudDesktopPanel({ botId }: { botId: string }) {
         <div className="flex items-center gap-2">
           <Monitor className="text-muted-foreground h-5 w-5" />
           <div>
-            <h2 className="text-lg font-semibold">{t("云桌面")}</h2>
+            <h2 className="text-lg font-semibold">{t("云电脑")}</h2>
             <p className="text-muted-foreground text-xs">
-              {t("在浏览器中实时操作你的云端桌面")}
+              {t("在浏览器中实时操作你的云端电脑")}
             </p>
           </div>
         </div>
@@ -274,46 +274,21 @@ export function AgentCloudDesktopPanel({ botId }: { botId: string }) {
         )}
       </div>
 
-      {statusText && (
+      {phase === "connected" && (
         <div
-          className={cn(
-            "flex items-center gap-2 text-sm",
-            phase === "connected" ? "text-emerald-600 dark:text-emerald-500" : "text-muted-foreground",
-          )}
+          role="status"
+          aria-live="polite"
+          className="flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-500"
         >
-          {phase === "connected" ? (
-            <CheckCircle2 className="h-4 w-4" />
-          ) : (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          )}
+          <CheckCircle2 className="h-4 w-4" />
           {statusText}
         </div>
       )}
 
-      {installProgress !== null && (
-        <div className="space-y-1">
-          <div className="bg-muted h-1.5 w-full overflow-hidden rounded-full">
-            <div
-              className="bg-primary h-full rounded-full transition-[width] duration-500"
-              style={{ width: `${installProgress}%` }}
-            />
-          </div>
-          <div className="text-muted-foreground text-right text-xs tabular-nums">
-            {installProgress}%
-          </div>
-        </div>
-      )}
-
       {errorText && (
-        <div className="border-destructive/40 bg-destructive/10 text-destructive flex items-start gap-2 rounded-md border px-3 py-2 text-sm">
+        <div role="alert" className="border-destructive/40 bg-destructive/10 text-destructive flex items-start gap-2 rounded-md border px-3 py-2 text-sm">
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
           <span className="break-all">{errorText}</span>
-        </div>
-      )}
-
-      {session?.status === "Failed" && session.reason && !errorText && (
-        <div className="border-destructive/40 bg-destructive/10 text-destructive rounded-md border px-3 py-2 text-sm">
-          {session.reason}
         </div>
       )}
 
@@ -330,7 +305,7 @@ export function AgentCloudDesktopPanel({ botId }: { botId: string }) {
         <div className="bg-card text-muted-foreground flex aspect-video items-center justify-center rounded-lg border border-dashed">
           <div className="flex flex-col items-center gap-3">
             <Loader2 className="h-8 w-8 animate-spin" />
-            <p className="text-sm">{statusText || t("准备中…")}</p>
+            <p role="status" aria-live="polite" className="text-sm">{statusText || t("准备中…")}</p>
             {installProgress !== null && (
               <p className="text-xs tabular-nums">{installProgress}%</p>
             )}

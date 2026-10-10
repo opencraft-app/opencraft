@@ -1,0 +1,30 @@
+<slide id="s02">
+  <background color="bg-page" />
+  <shape type="line" x="40" y="26" width="1200" height="0" stroke="border" />
+  <shape type="line" x="40" y="26" width="240" height="0" stroke="primary" stroke-width="3" />
+  <text x="40" y="36" width="1200" height="24" font="caption" color="primary">LightVela · 汇报目录</text>
+  <text x="40" y="77" width="1200" height="50" font="heading" color="text-main"><strong>从节前传播回顾，到下一阶段建设</strong></text>
+  <shape type="rect" x="40" y="194" width="575" height="132" fill="bg-surface" corner-radius="4" />
+  <text x="62" y="216" width="54" height="44" font="heading" color="primary">01</text>
+  <text x="136" y="216" width="455" height="38" font="strong" color="text-main"><a slide="s03"><strong>出圈回顾</strong></a></text>
+  <text x="136" y="266" width="455" height="42" font="body" color="text-main">三项动作、媒体扩散与增长结果</text>
+  <shape type="rect" x="645" y="194" width="595" height="132" fill="bg-surface" corner-radius="4" />
+  <text x="667" y="216" width="54" height="44" font="heading" color="primary">02</text>
+  <text x="741" y="216" width="475" height="38" font="strong" color="text-main"><a slide="insight01"><strong>个人助理产品洞察</strong></a></text>
+  <text x="741" y="266" width="475" height="42" font="body" color="text-main">市场进程、用户场景、海外热度与能力基础</text>
+  <shape type="rect" x="40" y="348" width="575" height="132" fill="bg-surface" corner-radius="4" />
+  <text x="62" y="370" width="54" height="44" font="heading" color="primary">03</text>
+  <text x="136" y="370" width="455" height="38" font="strong" color="text-main"><a slide="s15"><strong>产品现状</strong></a></text>
+  <text x="136" y="420" width="455" height="42" font="body" color="text-main">定位、App、新视觉、使用反馈与场景选择</text>
+  <shape type="rect" x="645" y="348" width="595" height="132" fill="bg-surface" corner-radius="4" />
+  <text x="667" y="370" width="54" height="44" font="heading" color="primary">04</text>
+  <text x="741" y="370" width="475" height="38" font="strong" color="text-main"><a slide="evo01"><strong>产品演进</strong></a></text>
+  <text x="741" y="420" width="475" height="42" font="body" color="text-main">泛开发者、产品亮点、基础设施与体验</text>
+  <shape type="rect" x="40" y="502" width="575" height="132" fill="bg-surface" corner-radius="4" />
+  <text x="62" y="524" width="54" height="44" font="heading" color="primary">05</text>
+  <text x="136" y="524" width="455" height="38" font="strong" color="text-main"><a slide="s21"><strong>增长与运营</strong></a></text>
+  <text x="136" y="574" width="455" height="42" font="body" color="text-main">社区参与、产品激励、促活与分层留存</text>
+  <image x="1092" y="502" width="102" height="140" src="/assets/square-mint_trim.png" fit="contain" />
+  <text x="40" y="684" width="1130" height="20" font="caption" color="text-muted">LightVela｜产品与增长汇报</text>
+  <text x="1180" y="684" width="60" height="20" font="caption" color="text-muted" align="right">02 / 24</text>
+</slide>

@@ -1,0 +1,50 @@
+<slide id="insight01">
+  <background color="bg-page" />
+  <shape type="line" x="40" y="26" width="1200" height="0" stroke="border" />
+  <shape type="line" x="280" y="26" width="240" height="0" stroke="primary" stroke-width="3" />
+  <text x="40" y="36" width="1200" height="24" font="caption" color="primary">02 个人助理产品洞察 · 市场进程</text>
+  <text x="40" y="77" width="1200" height="50" font="heading" color="text-main"><strong>LightVela 4–5 月已上线，海外产品随后集中发布</strong></text>
+  <text x="40" y="132" width="1200" height="34" font="body" color="text-muted">LightVela 上线时即定位个人助理；原文列举的海外同类产品在 8–9 月集中发布。</text>
+  <shape type="rect" x="40" y="192" width="250" height="165" fill="#F0EBFF" corner-radius="4" />
+  <text x="60" y="210" width="210" height="40" font="heading" color="primary"><strong>4–5 月</strong></text>
+  <text x="60" y="264" width="210" height="36" font="strong" color="text-main"><strong>LightVela 上线</strong></text>
+  <text x="60" y="312" width="210" height="28" font="body" color="text-main">定位：个人助理</text>
+  <shape type="line" x="310" y="274" width="28" height="0" stroke="primary" stroke-width="2" arrow-end="arrow" />
+  <text x="360" y="191" width="880" height="24" font="caption" color="text-muted">8–9 月｜海外同类产品集中发布（按原文日期排列，非等距时间轴）</text>
+  <shape type="line" x="388" y="262" width="768" height="0" stroke="border" stroke-width="2" />
+  <shape type="ellipse" x="380" y="254" width="16" height="16" fill="primary" />
+  <shape type="ellipse" x="570" y="254" width="16" height="16" fill="primary" />
+  <shape type="ellipse" x="760" y="254" width="16" height="16" fill="primary" />
+  <shape type="ellipse" x="950" y="254" width="16" height="16" fill="primary" />
+  <shape type="ellipse" x="1148" y="254" width="16" height="16" fill="primary" />
+  <text x="350" y="225" width="160" height="24" font="body" color="primary">08.11</text>
+  <text x="540" y="225" width="160" height="24" font="body" color="primary">08.26</text>
+  <text x="730" y="225" width="160" height="24" font="body" color="primary">09.08</text>
+  <text x="920" y="225" width="160" height="24" font="body" color="primary">09.28</text>
+  <text x="1110" y="225" width="130" height="24" font="body" color="primary">09.29</text>
+  <text x="350" y="285" width="160" height="29" font="body" color="text-main"><strong>Grok Bot</strong></text>
+  <text x="540" y="285" width="160" height="29" font="body" color="text-main"><strong>Instinct</strong></text>
+  <text x="730" y="285" width="160" height="29" font="body" color="text-main"><strong>Meta Muse</strong></text>
+  <text x="920" y="285" width="160" height="29" font="body" color="text-main"><strong>Manus Cue</strong></text>
+  <text x="1110" y="285" width="130" height="29" font="body" color="text-main"><strong>OpenAI Dot</strong></text>
+  <text x="350" y="321" width="160" height="27" font="caption" color="text-muted">多 Bot / 云电脑</text>
+  <text x="540" y="321" width="160" height="27" font="caption" color="text-muted">电话 / 电脑 / 邮箱</text>
+  <text x="730" y="321" width="160" height="27" font="caption" color="text-muted">长期在线 / 主动工作</text>
+  <text x="920" y="321" width="160" height="27" font="caption" color="text-muted">独立身份 / 多 Agent</text>
+  <text x="1110" y="321" width="130" height="27" font="caption" color="text-muted">持续工作 / 任务调度</text>
+  <shape type="line" x="40" y="392" width="1200" height="0" stroke="border" />
+  <text x="40" y="415" width="384" height="36" font="strong" color="primary"><strong>持续执行</strong></text>
+  <text x="40" y="463" width="354" height="83" font="body" color="text-main" line-height="1.55">云端电脑、浏览器和长期在线，支持任务持续推进。</text>
+  <text x="40" y="563" width="354" height="52" font="caption" color="text-muted" line-height="1.5">原文侧重：Grok Bot、Muse、Dot 的云端环境与执行能力。</text>
+  <shape type="line" x="425" y="415" width="0" height="197" stroke="border" />
+  <text x="464" y="415" width="344" height="36" font="strong" color="primary"><strong>独立身份</strong></text>
+  <text x="464" y="463" width="344" height="83" font="body" color="text-main" line-height="1.55">多个 Bot，以及邮箱、电话、钱包等工具，让助理参与更多任务。</text>
+  <text x="464" y="563" width="344" height="52" font="caption" color="text-muted" line-height="1.5">原文侧重：Instinct、Manus Cue 的身份与工具探索。</text>
+  <shape type="line" x="848" y="415" width="0" height="197" stroke="border" />
+  <text x="888" y="415" width="352" height="36" font="strong" color="primary"><strong>日常入口</strong></text>
+  <text x="888" y="463" width="352" height="83" font="body" color="text-main" line-height="1.55">简易交互、App 与硬件接入，降低理解成本并获得场景上下文。</text>
+  <text x="888" y="563" width="352" height="52" font="caption" color="text-muted" line-height="1.5">原文侧重：Grok Bot 的体验与 Muse 的 App、硬件探索。</text>
+  <text x="40" y="646" width="1200" height="27" font="body" color="text-main">国内竞争还涉及既有聊天入口、默认设备助手和任务型 Agent，完整市场表可在“详细参考”查看。</text>
+  <text x="40" y="684" width="1130" height="20" font="caption" color="text-muted">LightVela｜海外日期与特点沿用原文；4–5 月上线及个人助理定位据本次补充，未补造具体上线日或首创结论</text>
+  <text x="1180" y="684" width="60" height="20" font="caption" color="text-muted" align="right">06 / 24</text>
+</slide>

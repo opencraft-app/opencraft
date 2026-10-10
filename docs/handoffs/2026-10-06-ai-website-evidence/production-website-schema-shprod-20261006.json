@@ -1,0 +1,10 @@
+{
+  "region": "shprod",
+  "exitCode": 0,
+  "checkedAt": "2026-10-06T03:42:10.649023+00:00",
+  "readOnly": true,
+  "querySHA256": "a593ef1762d11c8f42757bcc24771fe985fa6364aa9285d8db68a9d33823217a",
+  "productionChanged": false,
+  "output": "{\"region\": \"shprod\", \"database\": \"ctl\", \"transport\": \"existing ctl-api pod TCP relay\", \"host\": \"10.15.192.13\", \"port\": 3306, \"result\": \"gate\\tvalue1\\tvalue2\\nversion\\t32\\t0\\nwebsite_releases.backend_sha256\\tvarchar(64)\\tNO:\\nwebsite_releases.kind\\tvarchar(16)\\tNO:static\\nwebsite_sites.active_release_id\\tvarchar(64)\\tNO:\\nwebsite_sites.backend_sha256\\tvarchar(64)\\tNO:\\nwebsite_sites.kind\\tvarchar(16)\\tNO:static\\n\"}",
+  "stderrPresent": false
+}

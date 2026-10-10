@@ -1,0 +1,51 @@
+<slide id="s17">
+  <background color="bg-page" />
+  <shape type="line" x="40" y="26" width="1200" height="0" stroke="border" />
+  <shape type="line" x="760" y="26" width="240" height="0" stroke="primary" stroke-width="3" />
+  <text x="40" y="36" width="1200" height="24" font="caption" color="primary">04 产品演进 · 核心能力</text>
+  <text x="40" y="77" width="1200" height="50" font="heading" color="text-main">
+    <strong>优先建设泛开发者场景，并补齐执行能力</strong>
+  </text>
+  <text x="40" y="132" width="1200" height="30" font="body" color="text-muted">从熟悉的泛开发者群体入手，选择目标明确、结果可检查的任务。</text>
+  <text x="40" y="188" width="1200" height="35" font="strong" color="primary">
+    <strong>场景化建设｜基于 Hermes Agent 推进三个方向</strong>
+  </text>
+  <shape type="rect" x="40" y="250" width="374" height="220" fill="bg-surface" corner-radius="4" />
+  <shape type="rect" x="450" y="250" width="374" height="220" fill="bg-surface" corner-radius="4" />
+  <shape type="rect" x="860" y="250" width="380" height="220" fill="bg-surface" corner-radius="4" />
+  <text x="62" y="277" width="330" height="44" font="strong" color="text-main">
+    <strong>AI 建站 / 云端应用部署</strong>
+  </text>
+  <text x="62" y="347" width="330" height="91" font="body" color="text-main" line-height="1.6">
+    <p>围绕建站和部署，提供场景化产品能力。</p>
+    <p space-before="14">支持用户构建并长期维护云端应用。</p>
+  </text>
+  <text x="472" y="277" width="330" height="44" font="strong" color="text-main">
+    <strong>多 Agent 协作</strong>
+  </text>
+  <text x="472" y="347" width="330" height="91" font="body" color="text-main" line-height="1.6">
+    <p>继续探索多 Bot 分工与协同执行。</p>
+    <p space-before="14">结合 Hermes 与 Coding Agent 的协作实践。</p>
+  </text>
+  <text x="882" y="277" width="330" height="44" font="strong" color="text-main">
+    <strong>多云资源管理</strong>
+  </text>
+  <text x="882" y="347" width="330" height="91" font="body" color="text-main" line-height="1.6">
+    <p>面向跨云资源使用与管理需求。</p>
+    <p space-before="14">逐步推出场景化定制能力，积累可复用的任务方式。</p>
+  </text>
+  <shape type="line" x="40" y="501" width="1200" height="0" stroke="border" />
+  <text x="40" y="529" width="250" height="40" font="strong" color="primary">
+    <strong>通用执行能力补齐</strong>
+  </text>
+  <text x="322" y="529" width="918" height="122" font="body" color="text-main" line-height="1.6">
+    <p>
+      <strong>多模态：</strong>增强语音、视频等交互与理解能力。</p>
+    <p space-before="8">
+      <strong>任务执行：</strong>强化浏览器操作、云电脑执行、自动任务和多 Bot 协作。</p>
+    <p space-before="8">
+      <strong>应用连接：</strong>优先结合海外开放应用生态，通过连接器扩展可操作范围。</p>
+  </text>
+  <text x="40" y="684" width="1130" height="20" font="caption" color="text-muted">LightVela｜来源：原文核心场景建设与 Agent 能力强化；均为后续建设方向</text>
+  <text x="1180" y="684" width="60" height="20" font="caption" color="text-muted" align="right">17 / 24</text>
+</slide>

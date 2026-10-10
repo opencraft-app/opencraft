@@ -1,0 +1,38 @@
+<slide id="s14">
+  <background color="bg-page" />
+  <shape type="line" x="40" y="26" width="1200" height="0" stroke="border" />
+  <shape type="line" x="520" y="26" width="240" height="0" stroke="primary" stroke-width="3" />
+  <text x="40" y="36" width="1200" height="24" font="caption" color="primary">03 产品现状 · 用户反馈</text>
+  <text x="40" y="77" width="1200" height="50" font="heading" color="text-main">
+    <strong>多数用户保持观察，承接体验需要跟上</strong>
+  </text>
+  <text x="40" y="132" width="1200" height="30" font="body" color="text-muted">原文概述：中性观察声量超过 60%，负向反馈略高于正向反馈。</text>
+  <text x="40" y="187" width="751" height="34" font="strong" color="primary">
+    <strong>国际站｜X 内容讨论</strong>
+  </text>
+  <image x="40" y="235" width="751" height="236" src="/assets/source_30.png" fit="contain" />
+  <text x="40" y="483" width="751" height="42" font="caption" color="text-muted" line-height="1.4">原图将“中性”和“信息传播”分别列示；原文“约 60%”概述与图中分类口径不同，需确认合并规则。</text>
+  <text x="40" y="543" width="751" height="34" font="strong" color="primary">
+    <strong>国内站｜用户社群</strong>
+  </text>
+  <image x="40" y="590" width="751" height="78" src="/assets/source_31.png" fit="contain" />
+  <shape type="line" x="824" y="185" width="0" height="481" stroke="border" />
+  <text x="863" y="187" width="377" height="38" font="strong" color="text-main">
+    <strong>负向反馈集中点</strong>
+  </text>
+  <text x="863" y="251" width="377" height="182" font="body" color="text-main" line-height="1.6">
+    <p>
+      <strong color="primary">资源供给：</strong>声量增长后，资源补充承接延后。</p>
+    <p space-before="16">
+      <strong color="primary">稳定性：</strong>持续运行和任务执行体验需要完善。</p>
+    <p space-before="16">
+      <strong color="primary">体验细节：</strong>用户理解、操作与异常反馈仍待优化。</p>
+  </text>
+  <shape type="rect" x="863" y="470" width="377" height="181" fill="bg-surface" />
+  <text x="883" y="490" width="337" height="141" font="body" color="text-main" line-height="1.5">
+    <p>用户对个人 Agent 方向仍有兴趣，也在等待实际价值验证。</p>
+    <p space-before="14">国内社群原文概述约 80% 中立；原图按群聊规则打分，不能直接与 X 样本比较。</p>
+  </text>
+  <text x="40" y="684" width="1130" height="20" font="caption" color="text-muted">LightVela｜来源：原文用户态度概述与两张原始统计图；保留原图配色和分类</text>
+  <text x="1180" y="684" width="60" height="20" font="caption" color="text-muted" align="right">14 / 24</text>
+</slide>
