@@ -1,0 +1,39 @@
+{
+  "status": "FINAL_SOURCE_REGISTRY_ORIGINAL_IMMUTABLE_CODE_COS_GET_PASS",
+  "codeGETCount": 1,
+  "mutations": 0,
+  "tokenMints": 0,
+  "rawBodySaved": false,
+  "secretDataRead": false,
+  "podBinding": {
+    "pod": "actor-kr-q01-worker-registry-55b9466b97-5zx76",
+    "podUID": "04d467f4-34df-440d-8ea7-c21052b0e47a",
+    "containerID": "containerd://c02fae5530ab4f6aa85ee4b0ecb2e338c50cfee3fffbcec521831fefcdf94c4a",
+    "imageID": "lightclaw-kr1.tencentcloudcr.com/actor-fleet/worker-registry@sha256:11b865927c8794dcf5d39225d1778e1b75a1c40d6af59c877411419664498bfe",
+    "containerStartedAt": "2026-10-06T11:10:52Z"
+  },
+  "sessionBefore": {
+    "uid": "5bed9419-69f0-4413-8583-e67955761bfe",
+    "generation": "24f1dec5ea8bc4db0bfa0899",
+    "expiry": 1791287973
+  },
+  "httpStatus": 200,
+  "bodySHA256": "9ff5a6470684854ef543996d253f6bc94629997d8f77864801ec53fbdec1d788",
+  "bodyBytes": 956,
+  "originalVersionMatched": true,
+  "artifactSHA256": "b41ac42d5af3acf127e0992563ef6a27b2c95a5dd2c628e3ba97686dce5a7394",
+  "moduleSHA256": "b3535f179004cd1db32f870db992e4804205d0a3c39e0786891e51017e7569dd",
+  "sessionAfter": {
+    "uid": "5bed9419-69f0-4413-8583-e67955761bfe",
+    "generation": "24f1dec5ea8bc4db0bfa0899",
+    "expiry": 1791287973
+  },
+  "sessionStableDuringGET": true,
+  "checkedAt": "2026-10-06T11:42:11.320751+00:00",
+  "originalVersionID": "v_b41ac42d5af3acf127e0992563ef6a27b2c95a5dd2c628e3ba97686dce5a7394",
+  "originalDeploymentID": "d_6c615f78500d57f88c7389b4bf52dc4f",
+  "expectedArtifactSHA256": "b41ac42d5af3acf127e0992563ef6a27b2c95a5dd2c628e3ba97686dce5a7394",
+  "expectedModuleSHA256": "b3535f179004cd1db32f870db992e4804205d0a3c39e0786891e51017e7569dd",
+  "intentSHA256": "b74a505b46971147f879cceac7c341ec03ce31a0e2cf6889d68226f8e01608a2",
+  "claimBoundary": "One direct final Registry immutable code GET through FDB metadata and COS object path; no actor invocation, record operation, deployment, PID1 hash claim or direct wire credential generation claim. Session binding is stable public metadata and preserved projected-file startup contract."
+}

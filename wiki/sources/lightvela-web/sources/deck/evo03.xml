@@ -1,0 +1,27 @@
+<slide id="evo03">
+  <background color="bg-page" />
+  <shape type="line" x="40" y="26" width="1200" height="0" stroke="border" />
+  <shape type="line" x="760" y="26" width="240" height="0" stroke="primary" stroke-width="3" />
+  <text x="40" y="36" width="1200" height="24" font="caption" color="primary">04 产品演进 · 体验升级</text>
+  <text x="40" y="77" width="1200" height="50" font="heading" color="text-main"><strong>持续优化产品交互，完善角色识别与任务反馈</strong></text>
+  <text x="40" y="132" width="1200" height="36" font="body" color="text-muted">官网新视觉已上线首版，后续继续完善产品内对话、Bot 切换与任务交互。</text>
+  <text x="40" y="205" width="220" height="42" font="strong" color="primary"><strong>拟人化</strong></text>
+  <text x="280" y="202" width="574" height="40" font="strong" color="text-main"><strong>角色清楚，交流自然</strong></text>
+  <text x="280" y="256" width="574" height="85" font="body" color="text-main" line-height="1.6">围绕名称、性格、对话风格与记忆改善体验，减少管理后台式操作，让不同 Bot 更容易识别。</text>
+  <image x="896" y="201" width="328" height="112" src="/assets/source_35_role_crop.png" original-src="/assets/source_35.png" alt="原文LightVela健康管家角色化对话摘图，点击查看完整工作区" fit="contain" stroke="border" />
+  <text x="896" y="323" width="328" height="20" font="caption" color="text-muted">原文 LightVela 角色化对话参考</text>
+  <shape type="line" x="40" y="357" width="1200" height="0" stroke="border" />
+  <text x="40" y="385" width="220" height="42" font="strong" color="primary"><strong>主动性</strong></text>
+  <text x="280" y="382" width="574" height="40" font="strong" color="text-main"><strong>授权范围内，主动提醒与跟进</strong></text>
+  <text x="280" y="436" width="574" height="85" font="body" color="text-main" line-height="1.6">结合目标、历史上下文和环境变化，探索提醒、推荐与任务跟进；重要操作继续确认，任务状态与异常反馈保持清楚。</text>
+  <image x="896" y="385" width="328" height="98" src="/assets/source_33_followup_crop.png" original-src="/assets/source_33.png" alt="原文外部对话体验中的待办跟进参考，非LightVela已上线能力" fit="contain" stroke="border" />
+  <text x="896" y="493" width="328" height="36" font="caption" color="text-muted" line-height="1.4"><p>原文外部待办跟进参考</p><p>LightVela 主动性仍为研究方向</p></text>
+  <shape type="line" x="40" y="537" width="1200" height="0" stroke="border" />
+  <text x="40" y="565" width="220" height="69" font="strong" color="primary"><strong>交互视觉更新</strong></text>
+  <text x="280" y="562" width="574" height="40" font="strong" color="text-main"><strong>统一角色识别与状态反馈</strong></text>
+  <text x="280" y="616" width="574" height="54" font="body" color="text-main" line-height="1.45">在首页新视觉基础上，继续优化头像、Bot 切换、对话、执行状态、授权确认与异常反馈。</text>
+  <shape type="rect" x="896" y="561" width="328" height="95" fill="#F0EBFF" corner-radius="4" />
+  <text x="914" y="578" width="292" height="61" font="body" color="primary" line-height="1.6"><p><strong>角色识别 · 状态反馈 · 操作确认</strong></p><p>后续产品内交互优化</p></text>
+  <text x="40" y="684" width="1130" height="20" font="caption" color="text-muted">LightVela｜官网首版视觉已上线；本页为后续产品交互方向；完整体验原图见“详细参考”</text>
+  <text x="1180" y="684" width="60" height="20" font="caption" color="text-muted" align="right">18 / 20</text>
+</slide>

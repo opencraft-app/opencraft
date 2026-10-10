@@ -1,0 +1,27 @@
+<slide id="s06">
+  <background color="bg-page" />
+  <shape type="line" x="40" y="26" width="1200" height="0" stroke="border" />
+  <shape type="line" x="40" y="26" width="240" height="0" stroke="primary" stroke-width="3" />
+  <text x="40" y="36" width="1200" height="24" font="caption" color="primary">01 出圈回顾 · 媒体扩散</text>
+  <text x="40" y="77" width="1200" height="50" font="heading" color="text-main"><strong>“中国版 Muse”引发多账号跟进传播</strong></text>
+  <text x="40" y="132" width="1200" height="30" font="body" color="text-muted">“人人都是产品经理”以这一标签介绍 LightVela，随后公众号与科技媒体跟进传播。</text>
+  <shape type="rect" x="40" y="188" width="320" height="74" fill="bg-surface" corner-radius="5" />
+  <shape type="rect" x="424" y="188" width="432" height="74" fill="bg-surface" corner-radius="5" />
+  <shape type="rect" x="920" y="188" width="320" height="74" fill="bg-surface" corner-radius="5" />
+  <text x="58" y="208" width="284" height="35" font="strong" color="text-main" align="center"><strong>官方 X 推文</strong></text>
+  <text x="442" y="208" width="396" height="35" font="strong" color="primary" align="center"><strong>人人都是产品经理</strong></text>
+  <text x="938" y="208" width="284" height="35" font="body" color="text-main" align="center" anchor="middle"><strong>公众号 / 科技媒体 / X</strong></text>
+  <shape type="line" x="372" y="225" width="40" height="0" stroke="primary" stroke-width="2" arrow-end="arrow" />
+  <shape type="line" x="868" y="225" width="40" height="0" stroke="primary" stroke-width="2" arrow-end="arrow" />
+  <text x="40" y="286" width="430" height="30" font="strong" color="primary"><strong>标签来源</strong></text>
+  <image x="40" y="325" width="430" height="112" src="/assets/source_12_header_crop.png" original-src="/assets/source_12.png" alt="人人都是产品经理发布的中国版 Muse 文章标题与署名" fit="contain" />
+  <text x="40" y="449" width="430" height="35" font="body" color="text-main">作者从官方 X 推文发现产品，自发撰文。</text>
+  <image x="40" y="497" width="430" height="136" src="/assets/source_17_quote_crop.png" original-src="/assets/source_17.png" alt="X 媒体以中国版 Muse 标签跟进介绍 LightVela" fit="contain" />
+  <text x="40" y="643" width="430" height="20" font="caption" color="text-muted">X 媒体内容继续引用“中国版 Muse”</text>
+  <shape type="line" x="488" y="286" width="0" height="376" stroke="border" />
+  <text x="520" y="286" width="720" height="30" font="strong" color="primary"><strong>多个公众号集中跟进</strong></text>
+  <image x="520" y="327" width="720" height="320" src="/assets/source_14.png" alt="多个公众号集中出现 LightVela 的产品介绍与分析文章" fit="contain" />
+  <text x="520" y="650" width="720" height="20" font="caption" color="text-muted" align="center">产品笔记、AI 工具派、极客公园、AI 观察站等出现相关内容</text>
+  <text x="40" y="684" width="1130" height="20" font="caption" color="text-muted">LightVela｜依据原文文章标题、公众号报道列表与 X 媒体内容；点击截图可查看原图</text>
+  <text x="1180" y="684" width="60" height="20" font="caption" color="text-muted" align="right">04 / 22</text>
+</slide>

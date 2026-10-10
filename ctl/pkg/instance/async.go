@@ -49,10 +49,12 @@ const (
 const (
 	TaskNameCreateInstance  = common.TaskNameCreateInstance
 	TaskNameDestroyInstance = common.TaskNameDestroyInstance
+	TaskNameResumeInstance  = common.TaskNameResumeInstance
 )
 
 type CreateInstanceTaskPayload = common.CreateInstanceTaskPayload
 type DestroyInstanceTaskPayload = common.DestroyInstanceTaskPayload
+type ResumeInstanceTaskPayload = common.ResumeInstanceTaskPayload
 
 type noopProducer struct{}
 
@@ -75,6 +77,14 @@ func ExecuteCreateInstanceTask(ctx pctx.Context, payload *CreateInstanceTaskPayl
 
 func ExecuteDestroyInstanceTask(ctx pctx.Context, payload *DestroyInstanceTaskPayload) error {
 	return NewLogic().(*logic).RunDestroyInstanceTask(ctx, payload)
+}
+
+func ExecuteResumeInstanceTask(ctx pctx.Context, payload *ResumeInstanceTaskPayload) error {
+	return NewLogic().(*logic).RunResumeInstanceTask(ctx, payload)
+}
+
+func CompleteResumeInstanceOperation(ctx pctx.Context, operationID string, err error) {
+	NewLogic().(*logic).completeOperation(ctx, operationID, err)
 }
 
 func FinalizeCreateInstanceTaskFailure(ctx pctx.Context, payload *CreateInstanceTaskPayload, taskErr error) {

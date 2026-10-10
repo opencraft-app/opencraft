@@ -11,6 +11,8 @@
     "./tui-runtime": {
       "types": "./dist/tui-runtime.d.ts",
       "import": "./dist/tui-runtime.js"
-    }
+    },
+    "./messaging/*": "./src/messaging/*.ts",
+    "./platform/*": "./src/platform/*.ts"
   }
 }

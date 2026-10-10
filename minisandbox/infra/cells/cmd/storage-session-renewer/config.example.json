@@ -1,0 +1,25 @@
+{
+  "namespace": "actor-fdb-cell-system",
+  "namespaceUID": "REPLACE_NAMESPACE_UID",
+  "cellName": "actor-kr-q01",
+  "cellUID": "REPLACE_CELL_UID",
+  "leaseName": "actor-kr-q01-storage-session-renewer",
+  "leaseUID": "REPLACE_PRECREATED_LEASE_UID",
+  "managedBy": "kr-scoped-storage-sessions",
+  "region": "ap-seoul",
+  "providerID": "REPLACE_TKE_OIDC_PROVIDER_ID",
+  "audience": "REPLACE_OIDC_AUDIENCE",
+  "serviceAccount": "storage-session-renewer",
+  "tokenFile": "/var/run/secrets/storage-oidc/token",
+  "stsEndpoint": "sts.internal.tencentcloudapi.com",
+  "durationSeconds": 1800,
+  "pollSeconds": 30,
+  "renewBeforeSeconds": 600,
+  "readyMinSeconds": 300,
+  "requestTimeoutSeconds": 8,
+  "roles": [
+    {"name":"cold","roleARN":"qcs::cam::uin/REPLACE_ACCOUNT:role/REPLACE_COLD_ROLE","secretName":"actor-kr-q01-cold-credentials","secretUID":"REPLACE_COLD_SECRET_UID"},
+    {"name":"backup","roleARN":"qcs::cam::uin/REPLACE_ACCOUNT:role/REPLACE_BACKUP_ROLE","secretName":"actor-kr-q01-backup-credentials","secretUID":"REPLACE_BACKUP_SECRET_UID","backupHost":"REPLACE_BUCKET.cos.ap-seoul.myqcloud.com"},
+    {"name":"code","roleARN":"qcs::cam::uin/REPLACE_ACCOUNT:role/REPLACE_CODE_ROLE","secretName":"actor-kr-q01-code-credentials","secretUID":"REPLACE_CODE_SECRET_UID"}
+  ]
+}

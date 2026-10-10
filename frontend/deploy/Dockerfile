@@ -5,6 +5,11 @@ WORKDIR /frontend
 COPY frontend/package.json frontend/pnpm-lock.yaml frontend/.npmrc ./
 COPY shared/lightvela-agent-core /shared/lightvela-agent-core
 COPY velalink /velalink
+COPY shared/vela-collaboration-web /shared/vela-collaboration-web
+COPY shared/vela-chat-client-core /shared/vela-chat-client-core
+COPY opencraft/packages/mobile-account-sdk /opencraft/packages/mobile-account-sdk
+COPY opencraft/packages/mobile-bot-bridge /opencraft/packages/mobile-bot-bridge
+COPY opencraft/packages/workbench-panels /opencraft/packages/workbench-panels
 
 COPY frontend/tsconfig.json frontend/tsconfig.app.json frontend/next-env.d.ts frontend/next.config.mjs frontend/postcss.config.mjs frontend/source.config.ts frontend/mdx-components.tsx ./
 COPY frontend/public ./public

@@ -113,10 +113,11 @@ func makeStore(config backendConfig) (workerregistry.RegistryStore, error) {
 			return nil, err
 		}
 		objects, err := workerregistry.NewCOSObjectStore(workerregistry.COSConfig{
-			BucketURL:    config.cosBucketURL,
-			SecretID:     os.Getenv("TENCENTCLOUD_SECRET_ID"),
-			SecretKey:    os.Getenv("TENCENTCLOUD_SECRET_KEY"),
-			SessionToken: os.Getenv("TENCENTCLOUD_SESSION_TOKEN"),
+			BucketURL:       config.cosBucketURL,
+			SecretID:        os.Getenv("TENCENTCLOUD_SECRET_ID"),
+			SecretKey:       os.Getenv("TENCENTCLOUD_SECRET_KEY"),
+			SessionToken:    os.Getenv("TENCENTCLOUD_SESSION_TOKEN"),
+			CredentialsFile: os.Getenv("ACTOR_CODE_STORAGE_SESSION_FILE"),
 		})
 		if err != nil {
 			return nil, err

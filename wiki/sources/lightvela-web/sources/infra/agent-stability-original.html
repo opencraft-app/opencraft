@@ -1,0 +1,1449 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent 稳定性 · 基础设施方案</title>
+<style>
+  :root {
+    --bg: #0a0e16; --panel: #111827; --panel2: #0f1623; --line: #243044;
+    --text: #e6edf7; --muted: #8b98ad;
+    --cyan: #38bdf8; --green: #34d399; --amber: #fbbf24; --red: #f87171; --purple: #a78bfa; --pink: #f472b6;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #04060a; color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans SC", "Source Han Sans SC", "Segoe UI", sans-serif;
+    line-height: 1.5; -webkit-font-smoothing: antialiased; }
+  .mono { font-family: "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace; }
+  button { font-family: inherit; }
+
+  /* ===== 16:9 舞台 ===== */
+  .deck { position: absolute; left: 50%; top: 50%; width: 1600px; height: 900px; margin: -450px 0 0 -800px;
+    transform: scale(var(--s, 1)); transform-origin: center; overflow: hidden;
+    background: radial-gradient(1200px 600px at 85% -10%, #13233d 0%, transparent 60%),
+                radial-gradient(900px 500px at -10% 40%, #1a1433 0%, transparent 60%), var(--bg); }
+  .slide { position: absolute; inset: 0; padding: 46px 80px 70px; display: flex; flex-direction: column;
+    opacity: 0; visibility: hidden; transition: opacity .5s ease, visibility 0s linear .5s; }
+  .slide.active { opacity: 1; visibility: visible; transition: opacity .5s ease; }
+
+  .kicker { color: var(--cyan); font-size: 15px; letter-spacing: .18em; font-weight: 600; }
+  h1 { font-size: 66px; line-height: 1.18; margin: 18px 0 16px; font-weight: 800; }
+  h2 { font-size: 42px; line-height: 1.2; margin: 6px 0 6px; font-weight: 800; }
+  .lead { color: var(--muted); font-size: 20px; margin: 0; }
+  .grad { background: linear-gradient(90deg, var(--cyan), var(--purple) 60%, var(--pink)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+  .bar { display: flex; align-items: center; gap: 10px; margin: 16px 0 4px; min-height: 36px; }
+  .tabs { display: flex; gap: 8px; }
+  .tabs button { font-size: 14px; padding: 6px 14px; border-radius: 999px; background: #0d1420; border: 1px solid var(--line);
+    color: var(--muted); cursor: pointer; transition: background .3s, color .3s, border-color .3s; }
+  .tabs button:hover { border-color: var(--cyan); color: var(--cyan); }
+  .tabs button.on { background: var(--cyan); border-color: var(--cyan); color: #06121c; font-weight: 700; }
+  .cap { margin-left: auto; font-size: 19px; font-weight: 600; display: flex; align-items: center; gap: 10px; color: var(--text); }
+  .cap::before { content: ''; width: 9px; height: 9px; border-radius: 50%; background: var(--amber); box-shadow: 0 0 12px var(--amber); }
+  .cap:empty::before { display: none; }
+
+  .fig { flex: 1; min-height: 0; position: relative; }
+  .fig > svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; overflow: visible; }
+
+  .pts { display: flex; gap: 48px; margin: 10px 0 0; padding: 0; list-style: none; font-size: 18px; color: #c7d2e3; }
+  .pts li { display: flex; align-items: center; gap: 10px; }
+  .pts .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+  .foot { position: absolute; left: 80px; bottom: 26px; font-size: 12px; color: #5b6b85; }
+
+  .replay { position: absolute; right: 80px; top: 46px; font-size: 13px; padding: 5px 12px; border-radius: 8px;
+    background: #0d1420; border: 1px solid var(--line); color: var(--muted); cursor: pointer; z-index: 3; }
+  .replay:hover { border-color: var(--cyan); color: var(--cyan); }
+
+  .ctrl { position: absolute; right: 28px; bottom: 18px; display: flex; align-items: center; gap: 10px; z-index: 5; color: var(--muted); font-size: 14px; }
+  .ctrl button { width: 34px; height: 34px; border-radius: 50%; background: #0d1420; border: 1px solid var(--line); color: var(--text); cursor: pointer; font-size: 16px; line-height: 1; }
+  .ctrl button:hover { border-color: var(--cyan); color: var(--cyan); }
+  .ctrl .pill { width: auto; border-radius: 17px; padding: 0 14px; font-size: 13px; color: var(--muted); }
+  .ctrl .stepbtn-wait, .ctrl #stepBtn.wait { color: var(--amber); border-color: var(--amber); animation: breath 1.6s ease-in-out infinite; }
+  @keyframes breath { 0%,100% { box-shadow: 0 0 0 rgba(251,191,36,0); } 50% { box-shadow: 0 0 14px rgba(251,191,36,.55); } }
+  .manual-only { display: none; }
+  .manual .manual-only { display: inline-block; }
+  .ctrl #pg { min-width: 54px; text-align: center; font-variant-numeric: tabular-nums; }
+  .prog { position: absolute; left: 0; bottom: 0; height: 3px; width: 0; background: linear-gradient(90deg, var(--cyan), var(--purple)); transition: width .5s ease; z-index: 5; }
+
+  /* 进场 */
+  .slide.active .rv { animation: rvIn .7s cubic-bezier(.2,.7,.2,1) both; }
+  .slide.active .rv.d1 { animation-delay: .12s; } .slide.active .rv.d2 { animation-delay: .24s; }
+  .slide.active .rv.d3 { animation-delay: .36s; } .slide.active .rv.d4 { animation-delay: .48s; }
+  @keyframes rvIn { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
+
+  /* ===== SVG 图元状态 ===== */
+  svg text { font-family: inherit; }
+  .fig svg * { transition: opacity .55s ease, transform 1s cubic-bezier(.45,.05,.25,1), fill .4s ease, stroke .4s ease, stroke-width .4s ease; }
+  .fig [data-id] { transform-box: fill-box; transform-origin: center; }
+  .off { opacity: 0 !important; pointer-events: none; }
+  .gone { opacity: 0 !important; }
+  .crush { transform: scale(.9); }
+  .drop { transform: translateY(34px); }
+  .faint { opacity: .06; }
+  .bad .sh { stroke: var(--red) !important; fill: #2a1414 !important; }
+  .ok .sh { stroke: var(--green) !important; }
+  .dead { opacity: .6; }
+  .dead .sh { stroke: #3a4558 !important; fill: #10141c !important; }
+  .dead text { fill: #55627a !important; }
+  .dead .scope { stroke: #4b5568 !important; }
+  .hl-g .sh { stroke: var(--green) !important; stroke-width: 3px; filter: drop-shadow(0 0 10px rgba(52,211,153,.55)); }
+  .hl-a .sh { stroke: var(--amber) !important; stroke-width: 3px; filter: drop-shadow(0 0 10px rgba(251,191,36,.55)); }
+  .hl-p .sh { stroke: var(--purple) !important; stroke-width: 3px; filter: drop-shadow(0 0 12px rgba(167,139,250,.6)); }
+  .fresh .wsdata { opacity: .15; }
+  .lnbad, .lnbad path { stroke: var(--red) !important; animation: none !important; }
+  .lnbad text { fill: var(--red) !important; }
+  .work .sbx { stroke: #7dd3fc !important; stroke-width: 2px; }
+  .fig .barf { transform-box: fill-box; transform-origin: left center; transform: scaleX(0); }
+  .fig .barf.red { fill: var(--red); }
+  .fig .term .typer { transform-box: fill-box; transform-origin: right center; transform: scaleX(1); }
+  .fig .term.typing .typer { transform: scaleX(0); transition: transform 1.2s steps(22); }
+  .tok { transition: opacity .15s !important; }
+
+  .flow { stroke-dasharray: 6 8; animation: dash 1.2s linear infinite; }
+  @keyframes dash { to { stroke-dashoffset: -28; } }
+  .shake { animation: shake .45s ease 2; }
+  @keyframes shake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
+  .spin { animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .pulse { animation: pulse 1.4s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: .25; } 50% { opacity: 1; } }
+  .flash { animation: flash .5s ease; }
+  @keyframes flash { from { opacity: .15; } to { opacity: 1; } }
+
+  /* ===== 封面 ===== */
+  .slide.cover { justify-content: center; padding: 60px 120px 90px; }
+  .agenda { display: flex; flex-direction: column; gap: 10px; margin-top: 36px; }
+  .agenda div { display: flex; gap: 14px; align-items: center; font-size: 17px; color: #c7d2e3; }
+  .agenda b { font-size: 13px; color: var(--cyan); border: 1px solid #1e4a63; border-radius: 999px; padding: 1px 10px; font-weight: 700; }
+  .hint { position: absolute; left: 120px; bottom: 28px; font-size: 13px; color: #5b6b85; }
+
+  /* ===== 第 1 页结论 ===== */
+  .concl { margin-top: 8px; padding: 14px 24px; border-radius: 14px; background: #2a1414; border: 1px solid #5c2424;
+    color: #fde2e2; font-size: 22px; font-weight: 600; transition: opacity .6s ease, transform .6s ease; }
+  .concl.off { transform: translateY(10px); }
+  .concl b { color: var(--red); }
+
+  /* ===== 第 4 页对比 ===== */
+  .cmpwrap { display: grid; grid-template-columns: 1fr 1fr; gap: 36px; margin-top: 34px; }
+  .cmp { position: relative; background: linear-gradient(180deg, var(--panel), var(--panel2)); border: 1px solid var(--line); border-radius: 20px;
+    padding: 22px 30px 14px; transition: opacity .7s ease, transform .7s ease, border-color .5s, box-shadow .5s; }
+  .cmp:not(.on) { opacity: 0; transform: translateY(24px); }
+  .cmp-h { display: flex; align-items: center; gap: 20px; padding-bottom: 14px; border-bottom: 1px solid #1f2a3b; }
+  .cmp-h svg { width: 150px; height: 84px; flex: none; }
+  .cmp-k { font-size: 14px; color: var(--muted); letter-spacing: .1em; }
+  .cmp-t { font-size: 26px; font-weight: 800; }
+  .cmp-r { font-size: 13px; color: var(--muted); }
+  .row { display: grid; grid-template-columns: 34px 110px 1fr 14px; align-items: center; gap: 10px; padding: 18px 0; border-bottom: 1px dashed #1f2a3b;
+    font-size: 19px; opacity: 0; transform: translateX(-10px); transition: opacity .5s ease, transform .5s ease; }
+  .row:last-child { border-bottom: 0; }
+  .cmp.on .row { opacity: 1; transform: none; }
+  .cmp.on .r2 { transition-delay: .15s; } .cmp.on .r3 { transition-delay: .3s; } .cmp.on .r4 { transition-delay: .45s; } .cmp.on .r5 { transition-delay: .6s; }
+  .row .ic { font-size: 20px; text-align: center; }
+  .row .k { color: var(--muted); font-size: 15px; }
+  .st { width: 12px; height: 12px; border-radius: 50%; }
+  .st.g { background: var(--green); box-shadow: 0 0 10px rgba(52,211,153,.6); }
+  .st.a { background: var(--amber); box-shadow: 0 0 10px rgba(251,191,36,.5); }
+  .legend { margin-left: auto; display: flex; gap: 18px; font-size: 14px; color: var(--muted); }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+
+  /* ===== 实测 / 目标标注 ===== */
+  .h2tag { display: inline-block; margin-left: 14px; padding: 3px 12px; border-radius: 999px; background: var(--green); color: #052016;
+    font-size: 15px; font-weight: 800; letter-spacing: .05em; vertical-align: middle; position: relative; top: -4px; }
+  .mtag { display: inline-flex; align-items: center; margin-left: 10px; padding: 2px 10px; border-radius: 999px; white-space: nowrap;
+    font-size: 12.5px; font-weight: 600; color: var(--green); background: #0f2a22; border: 1px solid #1d5443; }
+  .mtag.tbd { color: var(--amber); background: #2a2210; border-color: #5c4a17; }
+  .mtag.goal { color: var(--amber); background: transparent; border: 1px dashed var(--amber); }
+  .tested { display: inline-block; margin-left: 8px; padding: 0 8px; border-radius: 999px; font-size: 12px; font-weight: 700; color: #052016; background: var(--green); }
+  .cmp-note { padding: 12px 0 4px; font-size: 15px; color: var(--green); opacity: 0; transition: opacity .5s ease .75s; }
+  .cmp-note.cyan { color: var(--cyan); padding-top: 4px; }
+  .ext-cap { display: inline-block; padding: 3px 14px; border-radius: 999px; border: 1px dashed #4b5b75; color: var(--muted); font-size: 15px; }
+  .cmp.on .cmp-note { opacity: 1; }
+  .pts.col { flex-direction: column; gap: 8px; }
+
+  /* URL 带 ?static 时：直接显示最终状态 */
+  .static *, .static *::before, .static *::after { animation: none !important; transition: none !important; }
+  .instant, .instant * { transition: none !important; }
+</style>
+</head>
+<body>
+
+<!-- 全局图元：箭头、渐变、图标 -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <marker id="arP" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#f472b6"/></marker>
+    <marker id="arA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#fbbf24"/></marker>
+    <marker id="arC" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#38bdf8"/></marker>
+    <marker id="arG" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#34d399"/></marker>
+    <marker id="arS" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5b6b85"/></marker>
+    <marker id="arPu" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#a78bfa"/></marker>
+    <linearGradient id="gCore" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#a78bfa"/><stop offset="1" stop-color="#38bdf8"/></linearGradient>
+    <linearGradient id="gBar" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#38bdf8"/><stop offset="1" stop-color="#a78bfa"/></linearGradient>
+    <symbol id="i-user" viewBox="0 0 40 40"><circle cx="20" cy="12" r="8"/><path d="M4,38 C4,25 36,25 36,38 Z"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#f87171"/><path d="M8,8 L16,16 M16,8 L8,16" stroke="#0a0e16" stroke-width="2.6" stroke-linecap="round"/></symbol>
+    <symbol id="i-ok" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#34d399"/><path d="M7,12.5 L10.5,16 L17,8.5" fill="none" stroke="#06231a" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-term" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M6.5,9.5 L9.5,12 L6.5,14.5 M11.5,15 H17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-desk" viewBox="0 0 24 24"><rect x="2" y="3.5" width="20" height="13.5" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M9,21 H15 M12,17 V21" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="12" rx="3"/><path d="M8,10 V7 a4,4 0 0 1 8,0 V10" fill="none" stroke="currentColor" stroke-width="2.4"/></symbol>
+  </defs>
+</svg>
+
+<div class="deck" id="deck">
+
+<!-- ================= 第 0 页 · 封面 ================= -->
+<section class="slide cover">
+  <div class="kicker rv">AGENT 稳定性 · 基础设施方案</div>
+  <h1 class="rv d1">让 Agent 弄坏的<br>只是<span class="grad">可替换的部分</span></h1>
+  <p class="lead rv d2">Agent 稳定性的两套基础设施方案</p>
+  <div class="agenda rv d3">
+    <div><b>01</b>现状与风险</div>
+    <div><b>02</b>改进思路</div>
+    <div><b>03</b>方案一 · 单 VM + Sandbox</div>
+    <div><b>04</b>方案二 · 大脑与工作台分离</div>
+    <div><b>05</b>预热（Preboot）：加速故障恢复</div>
+    <div><b>06</b>两套方案对比</div>
+    <div><b>07</b>再往上一层</div>
+  </div>
+  <div class="hint">← → 翻页 · M 切换自动/手动（手动时点击画面播放下一段）· F 全屏 · R 重播</div>
+</section>
+
+<!-- ================= 第 1 页 · 现状与风险 ================= -->
+<section class="slide">
+  <div class="kicker rv">现状与风险</div>
+  <h2 class="rv d1">现状：Agent 能弄坏整台 VM</h2>
+  <p class="lead rv d2">每个用户一台 VM；Agent、工具、系统配置、连接器、用户数据都在同一块系统盘上，Agent 有 root。</p>
+  <div class="bar rv d2"><div class="cap"></div></div>
+  <div class="fig rv d3">
+    <svg viewBox="0 0 1440 560" preserveAspectRatio="xMidYMid meet">
+      <circle cx="70" cy="265" r="34" fill="#2a1730" stroke="#f472b6" stroke-width="1.5"/>
+      <use href="#i-user" x="52" y="247" width="36" height="36" fill="#f472b6"/>
+      <text x="70" y="324" text-anchor="middle" fill="#f472b6" font-size="15" font-weight="700">用户</text>
+      <path d="M106,265 L186,265" stroke="#f472b6" stroke-width="2" fill="none" class="flow" marker-end="url(#arP)"/>
+
+      <rect x="190" y="225" width="160" height="80" rx="14" fill="#101d2e" stroke="#1e4a63" stroke-width="1.5"/>
+      <text x="270" y="262" text-anchor="middle" fill="#38bdf8" font-size="18" font-weight="800">平台</text>
+      <text x="270" y="286" text-anchor="middle" fill="#8b98ad" font-size="13">接入 · 调度</text>
+      <path d="M352,265 L476,265" stroke="#5b6b85" stroke-width="2" fill="none" class="flow" marker-end="url(#arS)"/>
+
+      <rect data-id="scope" x="468" y="18" width="944" height="524" rx="28" fill="none" stroke="#f87171" stroke-width="1.8" stroke-dasharray="9 8"/>
+      <rect x="482" y="32" width="916" height="496" rx="22" fill="#0e1522" stroke="#2c3a52" stroke-width="1.5"/>
+      <text x="508" y="68" fill="#c7d2e3" font-size="17" font-weight="800">VM</text>
+      <text x="546" y="68" fill="#8b98ad" font-size="13">每个用户一台</text>
+      <rect x="1080" y="5" width="320" height="28" rx="14" fill="#1a0f12" stroke="#f87171"/>
+      <text x="1240" y="24" text-anchor="middle" fill="#f87171" font-size="14" font-weight="700">Hermes Agent 可破坏范围 = 整台 VM</text>
+
+      <g data-id="agent">
+        <rect class="sh" x="520" y="90" width="300" height="150" rx="16" fill="#161a33" stroke="#a78bfa" stroke-width="1.5"/>
+        <circle class="sh" cx="590" cy="165" r="42" fill="#221c46" stroke="url(#gCore)" stroke-width="3"/>
+        <text x="590" y="175" text-anchor="middle" font-size="28">🧠</text>
+        <text x="652" y="152" fill="#e6edf7" font-size="19" font-weight="800">Hermes Agent</text>
+        <text x="652" y="176" fill="#8b98ad" font-size="13">Agent Loop</text>
+        <rect x="652" y="192" width="64" height="24" rx="12" fill="#2a1414" stroke="#5c2424"/>
+        <text x="684" y="209" text-anchor="middle" fill="#f87171" font-size="12" font-weight="700">root</text>
+      </g>
+      <circle data-id="spin" class="off spin" cx="590" cy="165" r="52" fill="none" stroke="#fbbf24" stroke-width="3" stroke-dasharray="70 260" stroke-linecap="round"/>
+      <use data-id="agX" class="off" href="#i-x" x="566" y="141" width="48" height="48"/>
+      <text data-id="agSt" x="732" y="209" fill="#34d399" font-size="13" font-weight="700">● 运行中</text>
+
+      <rect x="850" y="90" width="520" height="150" rx="16" fill="#0f1d2c" stroke="#1e4a63" stroke-width="1.5"/>
+      <text x="872" y="120" fill="#38bdf8" font-size="14" font-weight="700">工具</text>
+      <g text-anchor="middle">
+        <rect x="872" y="136" width="110" height="84" rx="12" fill="#0b111c" stroke="#1e4a63"/><use href="#i-term" x="914" y="149" width="26" height="26" color="#e6edf7"/><text x="927" y="204" fill="#e6edf7" font-size="14">终端</text>
+        <rect x="992" y="136" width="110" height="84" rx="12" fill="#0b111c" stroke="#1e4a63"/><text x="1047" y="172" font-size="24">🌐</text><text x="1047" y="204" fill="#e6edf7" font-size="14">浏览器</text>
+        <rect x="1112" y="136" width="110" height="84" rx="12" fill="#0b111c" stroke="#1e4a63"/><use href="#i-desk" x="1154" y="149" width="26" height="26" color="#e6edf7"/><text x="1167" y="204" fill="#e6edf7" font-size="14">桌面</text>
+        <rect x="1232" y="136" width="110" height="84" rx="12" fill="#0b111c" stroke="#1e4a63"/><text x="1287" y="172" font-size="24">🐳</text><text x="1287" y="204" fill="#e6edf7" font-size="14">Docker</text>
+      </g>
+
+      <rect x="520" y="270" width="270" height="120" rx="16" fill="#101826" stroke="#2c3a52" stroke-width="1.5"/>
+      <text x="540" y="298" fill="#c7d2e3" font-size="14" font-weight="700">系统与配置</text>
+      <g data-id="cfgFile"><g data-id="cfgFileS">
+        <rect class="sh" x="540" y="314" width="120" height="50" rx="10" fill="#0b111c" stroke="#3f4b63" stroke-width="1.5"/>
+        <text x="600" y="345" text-anchor="middle" fill="#e6edf7" font-size="14" class="mono">config.yaml</text>
+      </g></g>
+      <rect x="668" y="314" width="114" height="50" rx="10" fill="#0b111c" stroke="#3f4b63"/>
+      <text x="725" y="345" text-anchor="middle" fill="#c7d2e3" font-size="13.5">/etc · 系统包</text>
+      <text data-id="cfgBad" class="off" x="600" y="382" text-anchor="middle" fill="#f87171" font-size="12" font-weight="700">被改坏</text>
+
+      <rect x="810" y="270" width="270" height="120" rx="16" fill="#0d1726" stroke="#1e4a63" stroke-width="1.5"/>
+      <text x="830" y="298" fill="#38bdf8" font-size="14" font-weight="700">连接器</text>
+      <text x="1064" y="298" text-anchor="end" fill="#8b98ad" font-size="12">凭证 · Token 也在这里</text>
+      <g text-anchor="middle" font-size="14" fill="#e6edf7">
+        <rect x="826" y="314" width="78" height="50" rx="10" fill="#0b111c" stroke="#1e4a63"/><text x="865" y="345">消息通道</text>
+        <rect x="910" y="314" width="78" height="50" rx="10" fill="#0b111c" stroke="#1e4a63"/><text x="949" y="345">大模型</text>
+        <rect x="994" y="314" width="78" height="50" rx="10" fill="#0b111c" stroke="#1e4a63"/><text x="1033" y="345">外部服务</text>
+      </g>
+      <text x="945" y="382" text-anchor="middle" fill="#5b6b85" font-size="11">外部服务：Google · Slack · GitHub…</text>
+
+      <rect x="1100" y="270" width="270" height="120" rx="16" fill="#0c1f1a" stroke="#1d5443" stroke-width="1.5"/>
+      <text x="1120" y="298" fill="#34d399" font-size="14" font-weight="700">用户数据</text>
+      <g text-anchor="middle" font-size="14" fill="#e6edf7">
+        <rect x="1116" y="314" width="78" height="50" rx="10" fill="#0b111c" stroke="#1d5443"/><text x="1155" y="345">会话</text>
+        <rect x="1200" y="314" width="78" height="50" rx="10" fill="#0b111c" stroke="#1d5443"/><text x="1239" y="345">记忆</text>
+        <rect x="1284" y="314" width="78" height="50" rx="10" fill="#0b111c" stroke="#1d5443"/><text x="1323" y="345">工作区</text>
+      </g>
+
+      <rect x="520" y="420" width="850" height="74" rx="14" fill="#0b111c" stroke="#2c3a52" stroke-width="1.5"/>
+      <path d="M544,446 a20,6 0 0 0 40,0 v24 a20,6 0 0 1 -40,0 z" fill="#141a26" stroke="#8b98ad"/>
+      <ellipse cx="564" cy="446" rx="20" ry="6" fill="#1b2433" stroke="#8b98ad"/>
+      <text x="600" y="464" fill="#e6edf7" font-size="16" font-weight="700">系统盘</text>
+      <text x="664" y="464" fill="#8b98ad" font-size="14">以上全部在这一块盘上</text>
+
+      <g data-id="term" class="off term">
+        <rect x="600" y="222" width="384" height="44" rx="10" fill="#05080d" stroke="#38bdf8" stroke-width="1.5"/>
+        <text x="618" y="250" fill="#a3e635" font-size="15" class="mono">$ sudo vim /etc/agent/config.yaml</text>
+        <rect class="typer" x="636" y="229" width="340" height="30" fill="#05080d"/>
+      </g>
+
+      <g data-id="msg" class="off">
+        <rect class="sh" x="96" y="186" width="110" height="36" rx="18" fill="#2a1730" stroke="#f472b6" stroke-width="1.5"/>
+        <text data-id="msgT" x="151" y="210" text-anchor="middle" fill="#f472b6" font-size="15" font-weight="700">在吗？</text>
+      </g>
+    </svg>
+  </div>
+  <div class="concl off" data-id="concl">Agent 和它要保护的东西在<b>同一个故障域</b>里——自己弄坏自己，就没人能修。</div>
+  <button class="replay">↻ 重播</button>
+</section>
+
+<!-- ================= 第 2 页 · 改进思路 ================= -->
+<section class="slide">
+  <div class="kicker rv">改进思路</div>
+  <h2 class="rv d1">改进思路：缩小破坏范围，坏了能恢复</h2>
+  <p class="lead rv d2">先把 VM 里的东西分成三类，再各自安排去处；具体怎么落地，见后面两套方案。</p>
+  <div class="bar rv d2"><div class="cap"></div></div>
+  <div class="fig rv d3">
+    <svg viewBox="0 0 1440 560" preserveAspectRatio="xMidYMid meet">
+      <circle cx="44" cy="290" r="26" fill="#2a1730" stroke="#f472b6" stroke-width="1.5"/>
+      <use href="#i-user" x="30" y="276" width="28" height="28" fill="#f472b6"/>
+      <text x="44" y="334" text-anchor="middle" fill="#f472b6" font-size="14" font-weight="700">用户</text>
+      <path d="M72,290 L108,290" stroke="#f472b6" stroke-width="2" fill="none" class="flow" marker-end="url(#arP)"/>
+
+      <!-- 平台 / 控制面：故障域之外 -->
+      <rect x="112" y="30" width="300" height="500" rx="20" fill="#101d2e" stroke="#1e4a63" stroke-width="1.5"/>
+      <text x="132" y="62" fill="#38bdf8" font-size="17" font-weight="800">平台 / 控制面</text>
+      <text x="132" y="84" fill="#8b98ad" font-size="12">接入 · 调度 · 在 VM 之外</text>
+      <path d="M412,290 L446,290" stroke="#5b6b85" stroke-width="2" fill="none" class="flow" marker-end="url(#arS)"/>
+      <g data-id="repair" class="off">
+        <rect class="sh" x="130" y="404" width="264" height="104" rx="12" fill="#1c1709" stroke="#5c4a17" stroke-width="1.5"/>
+        <text x="262" y="446" text-anchor="middle" fill="#fbbf24" font-size="15" font-weight="800">发现故障 · 触发重建</text>
+        <text x="262" y="472" text-anchor="middle" fill="#8b98ad" font-size="12.5">在故障域之外，坏了有人修</text>
+      </g>
+      <g data-id="fixArr" class="off"><path d="M396,456 L470,456" stroke="#fbbf24" stroke-width="2.5" fill="none" class="flow" marker-end="url(#arA)"/></g>
+
+      <!-- VM -->
+      <rect data-id="scope" x="440" y="18" width="722" height="524" rx="26" fill="none" stroke="#f87171" stroke-width="1.8" stroke-dasharray="9 8"/>
+      <rect x="452" y="30" width="698" height="500" rx="22" fill="#0e1522" stroke="#2c3a52" stroke-width="1.5"/>
+      <text x="474" y="64" fill="#c7d2e3" font-size="17" font-weight="800">VM</text>
+      <text x="512" y="64" fill="#8b98ad" font-size="13">每个用户一台</text>
+      <rect x="806" y="5" width="350" height="28" rx="14" fill="#1a0f12" stroke="#f87171"/>
+      <text data-id="scopeT" x="981" y="24" text-anchor="middle" fill="#f87171" font-size="13.5" font-weight="700">Hermes Agent 可破坏范围 = 整台 VM</text>
+      <g data-id="rec" class="off">
+        <rect x="992" y="42" width="130" height="28" rx="14" fill="#0f2a22" stroke="#34d399"/>
+        <text x="1057" y="61" text-anchor="middle" fill="#34d399" font-size="13.5" font-weight="700">✓ 已恢复</text>
+      </g>
+
+      <!-- 可重建的环境：Hermes Agent、工具、系统 -->
+      <g data-id="env"><g data-id="envS">
+        <rect class="sh" x="474" y="80" width="250" height="140" rx="14" fill="#161a33" stroke="#a78bfa" stroke-width="1.5"/>
+        <circle cx="524" cy="150" r="32" fill="#221c46" stroke="url(#gCore)" stroke-width="2.5"/>
+        <text x="524" y="158" text-anchor="middle" font-size="22">🧠</text>
+        <text x="566" y="146" fill="#e6edf7" font-size="16" font-weight="800">Hermes Agent</text>
+        <text x="566" y="168" fill="#8b98ad" font-size="12">Agent Loop</text>
+        <rect x="566" y="180" width="52" height="22" rx="11" fill="#2a1414" stroke="#5c2424"/>
+        <text x="592" y="196" text-anchor="middle" fill="#f87171" font-size="12" font-weight="700">root</text>
+        <g data-id="tagAg" class="off"><rect x="636" y="88" width="80" height="22" rx="11" fill="#141a26" stroke="#8b98ad"/><text x="676" y="103" text-anchor="middle" fill="#8b98ad" font-size="11.5" font-weight="700">可重建的</text></g>
+        <rect class="sh" x="740" y="80" width="386" height="140" rx="14" fill="#0f1d2c" stroke="#1e4a63" stroke-width="1.5"/>
+        <text x="758" y="106" fill="#38bdf8" font-size="13" font-weight="700">工具</text>
+        <g text-anchor="middle">
+          <rect x="758" y="120" width="84" height="84" rx="10" fill="#0b111c" stroke="#1e4a63"/><use href="#i-term" x="789" y="134" width="22" height="22" color="#e6edf7"/><text x="800" y="188" fill="#e6edf7" font-size="13">终端</text>
+          <rect x="850" y="120" width="84" height="84" rx="10" fill="#0b111c" stroke="#1e4a63"/><text x="892" y="154" font-size="20">🌐</text><text x="892" y="188" fill="#e6edf7" font-size="13">浏览器</text>
+          <rect x="942" y="120" width="84" height="84" rx="10" fill="#0b111c" stroke="#1e4a63"/><use href="#i-desk" x="973" y="134" width="22" height="22" color="#e6edf7"/><text x="984" y="188" fill="#e6edf7" font-size="13">桌面</text>
+          <rect x="1034" y="120" width="84" height="84" rx="10" fill="#0b111c" stroke="#1e4a63"/><text x="1076" y="154" font-size="20">🐳</text><text x="1076" y="188" fill="#e6edf7" font-size="13">Docker</text>
+        </g>
+        <g data-id="tagTools" class="off"><rect x="1038" y="88" width="80" height="22" rx="11" fill="#141a26" stroke="#8b98ad"/><text x="1078" y="103" text-anchor="middle" fill="#8b98ad" font-size="11.5" font-weight="700">可重建的</text></g>
+        <rect class="sh" x="474" y="400" width="652" height="104" rx="14" fill="#101826" stroke="#2c3a52" stroke-width="1.5"/>
+        <text x="494" y="428" fill="#c7d2e3" font-size="14" font-weight="700">系统环境</text>
+        <g text-anchor="middle" font-size="13.5" fill="#e6edf7">
+          <rect x="494" y="444" width="130" height="44" rx="10" fill="#0b111c" stroke="#3f4b63"/><text x="559" y="471">系统包 · 运行库</text>
+          <rect x="634" y="444" width="130" height="44" rx="10" fill="#0b111c" stroke="#3f4b63"/><text x="699" y="471">/etc 系统配置</text>
+          <rect x="774" y="444" width="130" height="44" rx="10" fill="#0b111c" stroke="#3f4b63"/><text x="839" y="471">用户装的软件</text>
+        </g>
+        <g data-id="tagSys" class="off"><rect x="994" y="410" width="124" height="22" rx="11" fill="#141a26" stroke="#8b98ad"/><text data-id="tagSysT" x="1056" y="425" text-anchor="middle" fill="#8b98ad" font-size="11.5" font-weight="700">可重建的</text></g>
+        <text data-id="sysNote" class="off" x="1110" y="474" text-anchor="end" fill="#fbbf24" font-size="13" font-weight="700">按账本补装 · 尽力而为</text>
+      </g></g>
+
+      <!-- 搬走后留下的空位 -->
+      <g data-id="ghostCfg" class="off"><rect x="474" y="244" width="220" height="136" rx="14" fill="none" stroke="#38bdf8" stroke-dasharray="6 6" opacity=".6"/><text x="584" y="318" text-anchor="middle" fill="#38bdf8" font-size="13">← 已交给控制面</text></g>
+      <g data-id="ghostConn" class="off"><rect x="706" y="244" width="220" height="136" rx="14" fill="none" stroke="#38bdf8" stroke-dasharray="6 6" opacity=".6"/><text x="816" y="318" text-anchor="middle" fill="#38bdf8" font-size="13">← 已交给控制面</text></g>
+      <g data-id="ghostData" class="off"><rect x="938" y="244" width="188" height="136" rx="14" fill="none" stroke="#34d399" stroke-dasharray="6 6" opacity=".6"/><text x="1032" y="318" text-anchor="middle" fill="#34d399" font-size="13">已放到独立盘 →</text></g>
+
+      <!-- 平台管的：系统配置、连接器（会被搬到控制面） -->
+      <g data-id="cfg">
+        <rect x="474" y="244" width="220" height="136" rx="14" fill="#101826" stroke="#2c3a52" stroke-width="1.5"/>
+        <text x="492" y="270" fill="#c7d2e3" font-size="14" font-weight="700">Hermes 配置</text>
+        <rect x="492" y="286" width="186" height="40" rx="9" fill="#0b111c" stroke="#3f4b63"/>
+        <text x="585" y="311" text-anchor="middle" fill="#e6edf7" font-size="13" class="mono">config.yaml</text>
+        <text data-id="cfgSub" class="off" x="492" y="358" fill="#38bdf8" font-size="12.5" font-weight="700">平台下发 · 校验 · 回滚</text>
+        <g data-id="tagCfg" class="off"><rect x="606" y="252" width="80" height="22" rx="11" fill="#0d1726" stroke="#38bdf8"/><text x="646" y="267" text-anchor="middle" fill="#38bdf8" font-size="11.5" font-weight="700">平台管的</text></g>
+      </g>
+      <g data-id="conn">
+        <rect x="706" y="244" width="220" height="136" rx="14" fill="#0d1726" stroke="#1e4a63" stroke-width="1.5"/>
+        <text x="724" y="270" fill="#38bdf8" font-size="14" font-weight="700">连接器</text>
+        <g text-anchor="middle" font-size="12.5" fill="#e6edf7">
+          <rect x="722" y="286" width="62" height="40" rx="9" fill="#0b111c" stroke="#1e4a63"/><text x="753" y="311">消息通道</text>
+          <rect x="788" y="286" width="62" height="40" rx="9" fill="#0b111c" stroke="#1e4a63"/><text x="819" y="311">大模型</text>
+          <rect x="854" y="286" width="62" height="40" rx="9" fill="#0b111c" stroke="#1e4a63"/><text x="885" y="311">外部服务</text>
+        </g>
+        <text data-id="connSub" class="off" x="724" y="358" fill="#38bdf8" font-size="12.5" font-weight="700">外部凭证留平台，VM 用平台凭证</text>
+        <g data-id="tagConn" class="off"><rect x="838" y="252" width="80" height="22" rx="11" fill="#0d1726" stroke="#38bdf8"/><text x="878" y="267" text-anchor="middle" fill="#38bdf8" font-size="11.5" font-weight="700">平台管的</text></g>
+      </g>
+      <g data-id="via" class="off"><path d="M472,150 L416,150" stroke="#38bdf8" stroke-width="2" fill="none" class="flow" marker-end="url(#arC)"/></g>
+
+      <!-- 用户数据（会被搬到独立盘） -->
+      <g data-id="data">
+        <rect x="938" y="244" width="188" height="136" rx="14" fill="#0c1f1a" stroke="#1d5443" stroke-width="1.5"/>
+        <text x="956" y="270" fill="#34d399" font-size="14" font-weight="700">用户数据</text>
+        <g text-anchor="middle" font-size="13" fill="#e6edf7">
+          <rect x="954" y="286" width="72" height="36" rx="9" fill="#0b111c" stroke="#1d5443"/><text x="990" y="309">会话</text>
+          <rect x="1034" y="286" width="76" height="36" rx="9" fill="#0b111c" stroke="#1d5443"/><text x="1072" y="309">记忆</text>
+          <rect x="954" y="330" width="156" height="36" rx="9" fill="#0b111c" stroke="#1d5443"/><text x="1032" y="353">工作区 · 登录态</text>
+        </g>
+        <g data-id="tagData" class="off"><rect x="1038" y="252" width="80" height="22" rx="11" fill="#0f2a22" stroke="#34d399"/><text x="1078" y="267" text-anchor="middle" fill="#34d399" font-size="11.5" font-weight="700">用户数据</text></g>
+      </g>
+
+      <!-- 独立的用户数据盘 + 快照 -->
+      <g data-id="mntD" class="off">
+        <path d="M1190,200 L1152,200" stroke="#34d399" stroke-width="2.5" fill="none" class="flow"/>
+        <text x="1171" y="190" text-anchor="middle" fill="#34d399" font-size="11">挂载</text>
+      </g>
+      <g data-id="disk" class="off">
+        <path class="sh" d="M1192,110 a110,16 0 0 0 220,0 v170 a110,16 0 0 1 -220,0 z" fill="#0b1a14" stroke="#34d399" stroke-width="1.6"/>
+        <ellipse class="sh" cx="1302" cy="110" rx="110" ry="16" fill="#0f2a22" stroke="#34d399" stroke-width="1.6"/>
+        <text x="1302" y="164" text-anchor="middle" fill="#34d399" font-size="17" font-weight="800">用户数据盘</text>
+        <text x="1302" y="192" text-anchor="middle" fill="#c7d2e3" font-size="12.5">会话 · 记忆</text>
+        <text x="1302" y="212" text-anchor="middle" fill="#c7d2e3" font-size="12.5">工作区 · 登录态</text>
+        <text data-id="diskLedger" class="off" x="1302" y="238" text-anchor="middle" fill="#fbbf24" font-size="12.5" font-weight="700">已装软件账本</text>
+        <text x="1302" y="322" text-anchor="middle" fill="#c7d2e3" font-size="12.5">独立盘：机器坏了，数据还在</text>
+      </g>
+      <g data-id="snap" class="off">
+        <rect x="1236" y="350" width="150" height="70" rx="12" fill="#0b111c" stroke="#1d5443"/>
+        <rect x="1228" y="358" width="150" height="70" rx="12" fill="#0b111c" stroke="#1d5443"/>
+        <rect x="1220" y="366" width="150" height="70" rx="12" fill="#0c1f1a" stroke="#34d399" stroke-width="1.5"/>
+        <text x="1295" y="407" text-anchor="middle" fill="#34d399" font-size="15" font-weight="800">快照</text>
+        <text x="1302" y="462" text-anchor="middle" fill="#c7d2e3" font-size="12.5">数据被删了</text>
+        <text x="1302" y="482" text-anchor="middle" fill="#c7d2e3" font-size="12.5">可回到最近的快照点</text>
+      </g>
+      <g data-id="ledArr" class="off"><path d="M1200,246 C1166,300 1160,410 1130,440" stroke="#fbbf24" stroke-width="2.2" fill="none" class="flow" marker-end="url(#arA)"/></g>
+    </svg>
+  </div>
+  <ul class="pts col rv d4">
+    <li><span class="dot" style="background:var(--cyan)"></span><span><b>核心一 · 缩小破坏范围</b>：Hermes 配置和外部服务凭证交给控制面；VM 里只放平台签发、可随时更换的凭证</span></li>
+    <li><span class="dot" style="background:var(--green)"></span><span><b>核心二 · 坏了能恢复</b>：用户数据独立存放并做快照；环境坏了就重建，再挂回用户盘、按账本补装软件</span></li>
+  </ul>
+  <button class="replay">↻ 重播</button>
+</section>
+
+<!-- ================= 第 3 页 · 方案一 ================= -->
+<section class="slide">
+  <div class="kicker rv">方案一 · 参考 Meta Muse</div>
+  <h2 class="rv d1">方案一：单 VM + Sandbox <span class="h2tag">已实测</span></h2>
+  <p class="lead rv d2">把 Agent 关进 Sandbox；用户数据放在一块可以换机的用户数据盘上。</p>
+  <div class="bar rv d2">
+    <div class="tabs"><button>① Sandbox 坏了</button><button>② VM 坏了</button></div>
+    <div class="cap"></div>
+  </div>
+  <div class="fig rv d3">
+    <svg viewBox="0 0 1440 560" preserveAspectRatio="xMidYMid meet">
+      <circle cx="52" cy="232" r="32" fill="#2a1730" stroke="#f472b6" stroke-width="1.5"/>
+      <use href="#i-user" x="35" y="215" width="34" height="34" fill="#f472b6"/>
+      <text x="52" y="288" text-anchor="middle" fill="#f472b6" font-size="15" font-weight="700">用户</text>
+      <path d="M86,232 L194,232" stroke="#f472b6" stroke-width="2" fill="none" class="flow" marker-end="url(#arP)"/>
+
+      <!-- VM -->
+      <g data-id="vm">
+        <rect class="sh" x="200" y="20" width="700" height="520" rx="22" fill="#0e1522" stroke="#2c3a52" stroke-width="1.5"/>
+        <text data-id="vmLbl" x="224" y="52" fill="#c7d2e3" font-size="17" font-weight="800">VM</text>
+        <rect class="scope" x="228" y="78" width="436" height="310" rx="20" fill="none" stroke="#f87171" stroke-width="1.6" stroke-dasharray="8 7"/>
+        <g data-id="sb"><g data-id="sbS">
+          <rect class="sh" x="240" y="92" width="412" height="284" rx="16" fill="#0f1d2c" stroke="#38bdf8" stroke-width="1.5"/>
+          <text x="260" y="120" fill="#38bdf8" font-size="16" font-weight="800">Sandbox</text>
+          <rect x="342" y="104" width="52" height="22" rx="11" fill="#2a1414" stroke="#5c2424"/>
+          <text x="368" y="120" text-anchor="middle" fill="#f87171" font-size="12" font-weight="700">root</text>
+          <rect class="sh" x="260" y="134" width="372" height="82" rx="12" fill="#161a33" stroke="#a78bfa"/>
+          <circle cx="302" cy="175" r="26" fill="#221c46" stroke="url(#gCore)" stroke-width="2.5"/>
+          <text x="302" y="183" text-anchor="middle" font-size="20">🧠</text>
+          <text x="344" y="170" fill="#e6edf7" font-size="17" font-weight="800">Hermes Agent</text>
+          <text data-id="agSub" x="344" y="194" fill="#8b98ad" font-size="12">Agent Loop</text>
+          <g text-anchor="middle">
+            <rect x="260" y="230" width="86" height="64" rx="10" fill="#0b111c" stroke="#1e4a63"/><use href="#i-term" x="293" y="239" width="20" height="20" color="#e6edf7"/><text x="303" y="282" fill="#e6edf7" font-size="13">终端</text>
+            <rect x="355" y="230" width="86" height="64" rx="10" fill="#0b111c" stroke="#1e4a63"/><text x="398" y="257" font-size="18">🌐</text><text x="398" y="282" fill="#e6edf7" font-size="13">浏览器</text>
+            <rect x="450" y="230" width="86" height="64" rx="10" fill="#0b111c" stroke="#1e4a63"/><use href="#i-desk" x="483" y="239" width="20" height="20" color="#e6edf7"/><text x="493" y="282" fill="#e6edf7" font-size="13">桌面</text>
+            <rect x="545" y="230" width="86" height="64" rx="10" fill="#0b111c" stroke="#1e4a63"/><text x="588" y="257" font-size="18">🐳</text><text x="588" y="282" fill="#e6edf7" font-size="13">Docker</text>
+          </g>
+          <text data-id="idle" x="446" y="338" text-anchor="middle" fill="#5b6b85" font-size="13">装软件 · 跑命令 · 改系统，都在这里</text>
+          <g data-id="term" class="off term">
+            <rect x="260" y="312" width="372" height="42" rx="10" fill="#05080d" stroke="#334155"/>
+            <text x="276" y="339" fill="#a3e635" font-size="15" class="mono">$ sudo rm -rf /usr/lib/*</text>
+            <rect class="typer" x="292" y="318" width="334" height="30" fill="#05080d"/>
+          </g>
+          <use data-id="sbX" class="off" href="#i-x" x="610" y="100" width="30" height="30"/>
+        </g></g>
+        <rect x="372" y="65" width="290" height="26" rx="13" fill="#1a0f12" stroke="#f87171"/>
+        <text x="517" y="83" text-anchor="middle" fill="#f87171" font-size="13" font-weight="700">Hermes Agent 可破坏范围 = 只有 Sandbox</text>
+
+        <rect x="224" y="410" width="652" height="112" rx="16" fill="#141a26" stroke="#334155" stroke-width="1.5"/>
+        <use href="#i-lock" x="244" y="436" width="20" height="20" fill="#fbbf24" color="#fbbf24"/>
+        <text x="272" y="452" fill="#fbbf24" font-size="16" font-weight="800">宿主层</text>
+        <text x="244" y="478" fill="#8b98ad" font-size="12.5">只读</text>
+        <text x="244" y="497" fill="#8b98ad" font-size="12.5">Hermes Agent 碰不到</text>
+        <g data-id="img">
+          <rect class="sh" x="400" y="438" width="210" height="56" rx="10" fill="#0b111c" stroke="#5c4a17" stroke-width="1.5"/>
+          <text x="505" y="462" text-anchor="middle" fill="#fbbf24" font-size="14" font-weight="700">Sandbox 镜像</text>
+          <text x="505" y="482" text-anchor="middle" fill="#8b98ad" font-size="12">只读</text>
+        </g>
+        <rect x="626" y="438" width="170" height="56" rx="10" fill="#0b111c" stroke="#334155"/>
+        <text x="711" y="471" text-anchor="middle" fill="#c7d2e3" font-size="14">平台守护进程</text>
+      </g>
+      <g data-id="imgArr" class="off">
+        <path d="M505,436 L505,382" stroke="#fbbf24" stroke-width="2.5" fill="none" class="flow" marker-end="url(#arA)"/>
+        <text x="516" y="408" fill="#fbbf24" font-size="12" font-weight="700">拉起</text>
+      </g>
+      <use data-id="vmX" class="off" href="#i-x" x="856" y="30" width="30" height="30"/>
+      <g data-id="eta" class="off">
+        <rect x="700" y="28" width="150" height="34" rx="17" fill="#1f1a0c" stroke="#fbbf24" stroke-width="1.5"/>
+        <text x="775" y="50" text-anchor="middle" fill="#fbbf24" font-size="14" font-weight="700">⏱ 恢复中…</text>
+        <rect class="barf" data-id="etaBar" x="714" y="57" width="122" height="3" rx="1.5" fill="#fbbf24"/>
+      </g>
+      <g data-id="rec" class="off">
+        <rect x="716" y="30" width="128" height="30" rx="15" fill="#0f2a22" stroke="#34d399"/>
+        <text x="780" y="50" text-anchor="middle" fill="#34d399" font-size="14" font-weight="700">✓ 已恢复</text>
+      </g>
+
+      <!-- 数据盘 -->
+      <g data-id="mnt">
+        <path d="M654,225 L718,225" stroke="#34d399" stroke-width="2.5" fill="none" class="flow"/>
+        <text x="686" y="214" text-anchor="middle" fill="#34d399" font-size="12">挂载</text>
+      </g>
+      <g data-id="ledger" class="off">
+        <path d="M718,292 L658,292" stroke="#fbbf24" stroke-width="2.5" fill="none" class="flow" marker-end="url(#arA)"/>
+        <text x="688" y="282" text-anchor="middle" fill="#fbbf24" font-size="11.5" font-weight="700">按账本补装</text>
+      </g>
+      <g data-id="disk">
+        <path class="sh" d="M720,150 a75,14 0 0 0 150,0 v150 a75,14 0 0 1 -150,0 z" fill="#0b1a14" stroke="#34d399" stroke-width="1.6"/>
+        <ellipse class="sh" cx="795" cy="150" rx="75" ry="14" fill="#0f2a22" stroke="#34d399" stroke-width="1.6"/>
+        <text x="795" y="198" text-anchor="middle" fill="#34d399" font-size="17" font-weight="800">用户数据盘</text>
+        <text x="795" y="226" text-anchor="middle" fill="#c7d2e3" font-size="12.5">会话 · 记忆</text>
+        <text x="795" y="246" text-anchor="middle" fill="#c7d2e3" font-size="12.5">工作区</text>
+        <text x="795" y="266" text-anchor="middle" fill="#c7d2e3" font-size="12.5">浏览器登录态</text>
+        <text x="795" y="288" text-anchor="middle" fill="#fbbf24" font-size="12.5" font-weight="700">已装软件账本</text>
+        <text x="795" y="332" text-anchor="middle" fill="#8b98ad" font-size="12">挂进 Sandbox · 可卸下换机</text>
+      </g>
+
+      <!-- 外部控制器 -->
+      <g data-id="ctl">
+        <rect class="sh" x="960" y="40" width="240" height="96" rx="14" fill="#1c1709" stroke="#5c4a17" stroke-width="1.5"/>
+        <text x="1080" y="74" text-anchor="middle" fill="#fbbf24" font-size="17" font-weight="800">外部控制器</text>
+        <text x="1080" y="97" text-anchor="middle" fill="#c7d2e3" font-size="13">发现故障 · 触发修复</text>
+      </g>
+      <text data-id="ctlSt" x="1080" y="123" text-anchor="middle" fill="#34d399" font-size="12.5" font-weight="700">● 巡检中</text>
+      <g data-id="hb"><path d="M958,88 L906,88" stroke="#fbbf24" stroke-width="2" fill="none" class="flow" marker-end="url(#arA)"/></g>
+
+      <g class="platform">
+        <rect x="1216" y="40" width="204" height="96" rx="12" fill="#0d1420" stroke="#334155" stroke-dasharray="4 4"/>
+        <text x="1318" y="62" text-anchor="middle" fill="#8b98ad" font-size="12">平台公共能力 · 两套方案共用</text>
+        <text x="1318" y="86" text-anchor="middle" fill="#38bdf8" font-size="15" font-weight="800">连接器</text>
+        <text x="1318" y="108" text-anchor="middle" fill="#c7d2e3" font-size="12">消息通道 · 大模型 · 外部服务</text>
+        <text x="1318" y="126" text-anchor="middle" fill="#5b6b85" font-size="11">在 VM 外统一管理</text>
+      </g>
+
+      <!-- 待命池：VM 已开机并启动 Hermes，没有用户身份；取来后挂盘、下发平台凭证、加载会话 -->
+      <rect x="960" y="356" width="460" height="184" rx="18" fill="none" stroke="#2c3a52" stroke-dasharray="6 6"/>
+      <text x="980" y="384" fill="#8b98ad" font-size="14" font-weight="700">待命池 · 已启动 Hermes，无用户身份</text>
+      <rect x="980" y="398" width="96" height="122" rx="12" fill="none" stroke="#1f2a3b" stroke-dasharray="4 5"/>
+      <g data-id="pA">
+        <rect class="sh" x="1088" y="398" width="96" height="122" rx="12" fill="#0e1522" stroke="#3a4a64" stroke-width="1.3"/>
+        <text x="1136" y="420" text-anchor="middle" fill="#c7d2e3" font-size="13" font-weight="700">VM</text>
+        <rect x="1098" y="430" width="76" height="52" rx="8" fill="#0f1d2c" stroke="#38bdf8" stroke-opacity=".7"/>
+        <circle cx="1117" cy="456" r="10" fill="#221c46" stroke="url(#gCore)" stroke-width="2"/>
+        <text x="1132" y="452" fill="#e6edf7" font-size="10.5" font-weight="700">Hermes</text>
+        <text x="1132" y="467" fill="#34d399" font-size="10.5">运行中</text>
+        <circle class="pulse" cx="1167" cy="438" r="3" fill="#34d399"/>
+        <text x="1136" y="504" text-anchor="middle" fill="#8b98ad" font-size="11.5">无用户身份</text>
+      </g>
+      <g data-id="pB">
+        <rect class="sh" x="1196" y="398" width="96" height="122" rx="12" fill="#0e1522" stroke="#3a4a64" stroke-width="1.3"/>
+        <text x="1244" y="420" text-anchor="middle" fill="#c7d2e3" font-size="13" font-weight="700">VM</text>
+        <rect x="1206" y="430" width="76" height="52" rx="8" fill="#0f1d2c" stroke="#38bdf8" stroke-opacity=".7"/>
+        <circle cx="1225" cy="456" r="10" fill="#221c46" stroke="url(#gCore)" stroke-width="2"/>
+        <text x="1240" y="452" fill="#e6edf7" font-size="10.5" font-weight="700">Hermes</text>
+        <text x="1240" y="467" fill="#34d399" font-size="10.5">运行中</text>
+        <circle class="pulse" cx="1275" cy="438" r="3" fill="#34d399"/>
+        <text x="1244" y="504" text-anchor="middle" fill="#8b98ad" font-size="11.5">无用户身份</text>
+      </g>
+      <g data-id="pC">
+        <rect class="sh" x="1304" y="398" width="96" height="122" rx="12" fill="#0e1522" stroke="#3a4a64" stroke-width="1.3"/>
+        <text x="1352" y="420" text-anchor="middle" fill="#c7d2e3" font-size="13" font-weight="700">VM</text>
+        <rect x="1314" y="430" width="76" height="52" rx="8" fill="#0f1d2c" stroke="#38bdf8" stroke-opacity=".7"/>
+        <circle cx="1333" cy="456" r="10" fill="#221c46" stroke="url(#gCore)" stroke-width="2"/>
+        <text x="1348" y="452" fill="#e6edf7" font-size="10.5" font-weight="700">Hermes</text>
+        <text x="1348" y="467" fill="#34d399" font-size="10.5">运行中</text>
+        <circle class="pulse" cx="1383" cy="438" r="3" fill="#34d399"/>
+        <text x="1352" y="504" text-anchor="middle" fill="#8b98ad" font-size="11.5">无用户身份</text>
+      </g>
+
+      <g data-id="ack" class="off">
+        <rect data-id="ackR" x="2" y="304" width="196" height="34" rx="17" fill="#1f1a0c" stroke="#fbbf24" stroke-width="1.5"/>
+        <text data-id="ackT" x="100" y="326" text-anchor="middle" fill="#fbbf24" font-size="12.5" font-weight="700">环境恢复中，请稍候…</text>
+      </g>
+    </svg>
+  </div>
+  <ul class="pts col rv d4">
+    <li><span class="dot" style="background:var(--green)"></span>破坏范围收缩到 Sandbox，宿主层 Agent 碰不到；用户盘挂在 Sandbox 里，Agent 能读写，误删靠快照找回（活跃期快照建设中）</li>
+    <li><span class="dot" style="background:var(--amber)"></span>Sandbox 重建后按软件账本补装软件（参考 Muse 的做法，尚未实测）；账本覆盖不到的部分由 Agent 自行恢复，据公开资料同类产品也可能丢这部分内容</li>
+    <li><span class="ext-cap">可扩展 · 闲置回收：同一套挂盘机制，也能释放闲置 VM、保留用户盘</span></li>
+  </ul>
+  <div class="foot">第三方架构为公开资料与我们的理解</div>
+  <button class="replay">↻ 重播</button>
+</section>
+
+<!-- ================= 第 4 页 · 方案二 ================= -->
+<section class="slide">
+  <div class="kicker rv">方案二 · 参考 Manus</div>
+  <h2 class="rv d1">方案二：大脑与工作台分离 <span class="h2tag">已实测</span></h2>
+  <p class="lead rv d2">Agent Loop 跑在 Runtime VM（程序与配置只读，会话和记忆写在数据盘），借助 Hermes 的 SSH 能力，远程操作可替换的 Workspace VM。</p>
+  <div class="bar rv d2">
+    <div class="tabs"><button>① 工作台坏了</button><button>② 大脑坏了</button><button>③ 扩展</button></div>
+    <div class="cap"></div>
+  </div>
+  <div class="fig rv d3">
+    <svg viewBox="0 0 1440 560" preserveAspectRatio="xMidYMid meet">
+      <g data-id="main">
+        <circle cx="52" cy="252" r="32" fill="#2a1730" stroke="#f472b6" stroke-width="1.5"/>
+        <use href="#i-user" x="35" y="235" width="34" height="34" fill="#f472b6"/>
+        <text x="52" y="308" text-anchor="middle" fill="#f472b6" font-size="15" font-weight="700">用户</text>
+        <path d="M86,252 L196,252" stroke="#f472b6" stroke-width="2" fill="none" class="flow" marker-end="url(#arP)"/>
+
+        <circle data-id="rtHalo" class="off pulse" cx="390" cy="258" r="78" fill="none" stroke="#34d399" stroke-width="2"/>
+        <g data-id="rt"><g data-id="rtS">
+          <rect class="sh" x="200" y="110" width="380" height="330" rx="22" fill="#151530" stroke="#a78bfa" stroke-width="1.6"/>
+          <text data-id="rtLbl" x="224" y="146" fill="#a78bfa" font-size="17" font-weight="800">Runtime VM · 大脑</text>
+          <rect x="474" y="126" width="94" height="28" rx="14" fill="#231d0b" stroke="#5c4a17"/>
+          <use href="#i-lock" x="484" y="132" width="15" height="15" fill="#fbbf24" color="#fbbf24"/>
+          <!-- 程序只读标签 -->
+          <text x="512" y="145" fill="#fbbf24" font-size="12" font-weight="700">程序只读</text>
+          <circle cx="390" cy="258" r="60" fill="#221c46" stroke="url(#gCore)" stroke-width="3"/>
+          <text x="390" y="254" text-anchor="middle" font-size="30">🧠</text>
+          <text x="390" y="284" text-anchor="middle" fill="#e6edf7" font-size="14" font-weight="700">Hermes Agent</text>
+          <text x="390" y="358" text-anchor="middle" fill="#c7d2e3" font-size="14">Hermes Agent 改不了它</text>
+        </g></g>
+        <use data-id="rtX" class="off" href="#i-x" x="360" y="228" width="60" height="60"/>
+        <g data-id="brMnt"><path d="M390,442 L390,464" stroke="#34d399" stroke-width="2.5" fill="none" class="flow"/></g>
+        <g data-id="brDisk">
+          <path class="sh" d="M260,474 a130,10 0 0 0 260,0 v42 a130,10 0 0 1 -260,0 z" fill="#0b1a14" stroke="#34d399" stroke-width="1.5"/>
+          <ellipse class="sh" cx="390" cy="474" rx="130" ry="10" fill="#0f2a22" stroke="#34d399" stroke-width="1.5"/>
+          <text x="390" y="505" text-anchor="middle" fill="#34d399" font-size="13" font-weight="700">大脑数据盘 · 会话 · 记忆</text>
+        </g>
+        <text data-id="rtSt" x="390" y="404" text-anchor="middle" fill="#34d399" font-size="14" font-weight="700">● 在线</text>
+
+        <g data-id="lk">
+          <path d="M582,262 L774,262" stroke="#38bdf8" stroke-width="2.5" fill="none" class="flow" marker-end="url(#arC)"/>
+          <path d="M774,290 L586,290" stroke="#38bdf8" stroke-width="1.5" fill="none" class="flow" marker-end="url(#arC)" opacity=".6"/>
+          <text x="678" y="248" text-anchor="middle" fill="#38bdf8" font-size="13" font-weight="700">SSH 远程操作</text>
+          <text x="678" y="314" text-anchor="middle" fill="#8b98ad" font-size="12">结果 · 画面</text>
+        </g>
+
+        <g data-id="ws"><g data-id="wsS">
+          <rect class="scope" x="780" y="40" width="440" height="480" rx="26" fill="none" stroke="#f87171" stroke-width="1.6" stroke-dasharray="8 7"/>
+          <rect class="sh" x="796" y="60" width="408" height="444" rx="20" fill="#0f1d2c" stroke="#38bdf8" stroke-width="1.6"/>
+          <text data-id="wsLbl" x="820" y="98" fill="#38bdf8" font-size="17" font-weight="800">Workspace VM · 工作台</text>
+          <g class="inner">
+            <rect x="1124" y="80" width="56" height="24" rx="12" fill="#2a1414" stroke="#5c2424"/>
+            <text x="1152" y="97" text-anchor="middle" fill="#f87171" font-size="12" font-weight="700">root</text>
+            <g font-size="17" fill="#e6edf7" text-anchor="middle">
+              <rect x="820" y="120" width="170" height="70" rx="12" fill="#0b111c" stroke="#1e4a63"/><use href="#i-term" x="870" y="145" width="22" height="22" color="#e6edf7"/><text x="917" y="161">终端</text>
+              <rect x="1010" y="120" width="170" height="70" rx="12" fill="#0b111c" stroke="#1e4a63"/><text x="1095" y="161">🌐 浏览器</text>
+              <rect x="820" y="202" width="170" height="70" rx="12" fill="#0b111c" stroke="#1e4a63"/><use href="#i-desk" x="870" y="227" width="22" height="22" color="#e6edf7"/><text x="917" y="243">桌面</text>
+              <rect x="1010" y="202" width="170" height="70" rx="12" fill="#0b111c" stroke="#1e4a63"/><text x="1095" y="243">📁 文件</text>
+            </g>
+            <text x="1000" y="306" text-anchor="middle" fill="#8b98ad" font-size="13">里面没有 Hermes Agent Loop</text>
+            <g class="wsdata">
+              <path d="M920,334 a80,12 0 0 0 160,0 v52 a80,12 0 0 1 -160,0 z" fill="#0b1a14" stroke="#34d399" stroke-width="1.5"/>
+              <ellipse cx="1000" cy="334" rx="80" ry="12" fill="#0f2a22" stroke="#34d399" stroke-width="1.5"/>
+              <text x="1000" y="374" text-anchor="middle" fill="#34d399" font-size="14" font-weight="700">工作区数据</text>
+            </g>
+            <text data-id="idle" x="1000" y="445" text-anchor="middle" fill="#5b6b85" font-size="13">装软件 · 跑命令 · 改系统，都在这里</text>
+            <g data-id="term" class="off term">
+              <rect x="820" y="420" width="360" height="40" rx="10" fill="#05080d" stroke="#334155"/>
+              <text x="836" y="446" fill="#a3e635" font-size="15" class="mono">$ sudo chmod -R 000 /</text>
+              <rect class="typer" x="852" y="426" width="322" height="28" fill="#05080d"/>
+            </g>
+          </g>
+          <g class="pill">
+            <rect x="840" y="27" width="320" height="26" rx="13" fill="#1a0f12" stroke="#f87171"/>
+            <text x="1000" y="45" text-anchor="middle" fill="#f87171" font-size="13" font-weight="700">Hermes Agent 可破坏范围 = 只有 Workspace</text>
+          </g>
+        </g></g>
+        <use data-id="wsX" class="off" href="#i-x" x="970" y="222" width="60" height="60"/>
+
+        <g class="platform">
+        <rect x="1226" y="48" width="194" height="96" rx="12" fill="#0d1420" stroke="#334155" stroke-dasharray="4 4"/>
+        <text x="1323" y="70" text-anchor="middle" fill="#8b98ad" font-size="12">平台公共能力 · 两套方案共用</text>
+        <text x="1323" y="94" text-anchor="middle" fill="#38bdf8" font-size="15" font-weight="800">连接器</text>
+        <text x="1323" y="116" text-anchor="middle" fill="#c7d2e3" font-size="11.5">消息通道 · 大模型 · 外部服务</text>
+        <text x="1323" y="134" text-anchor="middle" fill="#5b6b85" font-size="11">在 VM 外统一管理</text>
+      </g>
+
+        <g data-id="snapLink"><path d="M1206,250 L1256,250" stroke="#34d399" stroke-width="2" fill="none" class="flow" marker-end="url(#arG)"/></g>
+        <g data-id="restore" class="off">
+          <path d="M1258,292 L1210,292" stroke="#34d399" stroke-width="3" fill="none" class="flow" marker-end="url(#arG)"/>
+          <text x="1240" y="318" text-anchor="middle" fill="#34d399" font-size="12" font-weight="700">恢复</text>
+        </g>
+        <g data-id="snap">
+          <rect x="1278" y="196" width="140" height="96" rx="12" fill="#0b111c" stroke="#1d5443"/>
+          <rect x="1270" y="204" width="140" height="96" rx="12" fill="#0b111c" stroke="#1d5443"/>
+          <rect class="sh" x="1262" y="212" width="140" height="96" rx="12" fill="#0c1f1a" stroke="#34d399" stroke-width="1.5"/>
+          <text x="1332" y="256" text-anchor="middle" fill="#34d399" font-size="15" font-weight="800">快照备份</text>
+          <text x="1332" y="280" text-anchor="middle" fill="#8b98ad" font-size="12">定期</text>
+        </g>
+
+        <g data-id="reply" class="off">
+          <rect x="16" y="54" width="300" height="36" rx="18" fill="#1d1838" stroke="#a78bfa" stroke-width="1.5"/>
+          <text data-id="replyT" x="166" y="77" text-anchor="middle" fill="#c4b5fd" font-size="14" font-weight="700">工作台坏了，正在换一台</text>
+        </g>
+      </g>
+
+      <!-- 扩展示意 -->
+      <g data-id="ext" class="off">
+        <g data-id="extL" class="off">
+          <rect x="120" y="50" width="560" height="460" rx="22" fill="#0d1420" stroke="#243044" stroke-width="1.5"/>
+          <text x="400" y="96" text-anchor="middle" fill="#e6edf7" font-size="21" font-weight="800">一个 Hermes Agent → 多个 Workspace</text>
+          <circle cx="250" cy="300" r="54" fill="#221c46" stroke="url(#gCore)" stroke-width="3"/>
+          <text x="250" y="296" text-anchor="middle" font-size="26">🧠</text>
+          <text x="250" y="324" text-anchor="middle" fill="#e6edf7" font-size="13" font-weight="700">Runtime</text>
+          <g data-id="extLk" class="off" fill="none" stroke="#38bdf8" stroke-width="2">
+            <path class="flow" d="M304,290 C370,250 380,180 448,180" marker-end="url(#arC)"/>
+            <path class="flow" d="M306,300 L448,300" marker-end="url(#arC)"/>
+            <path class="flow" d="M304,310 C370,350 380,420 448,420" marker-end="url(#arC)"/>
+          </g>
+          <g font-size="15" font-weight="700" fill="#38bdf8" text-anchor="middle">
+            <rect x="452" y="140" width="200" height="80" rx="14" fill="#0f1d2c" stroke="#38bdf8"/><text x="552" y="186">Workspace 1</text>
+            <rect x="452" y="260" width="200" height="80" rx="14" fill="#0f1d2c" stroke="#38bdf8"/><text x="552" y="306">Workspace 2</text>
+            <rect x="452" y="380" width="200" height="80" rx="14" fill="#0f1d2c" stroke="#38bdf8"/><text x="552" y="426">Workspace 3</text>
+          </g>
+        </g>
+        <g data-id="extR" class="off">
+          <rect x="760" y="50" width="560" height="460" rx="22" fill="#0d1420" stroke="#243044" stroke-width="1.5"/>
+          <text x="1040" y="96" text-anchor="middle" fill="#e6edf7" font-size="21" font-weight="800">多个 Agent → 共用一个 Workspace</text>
+          <g text-anchor="middle">
+            <circle cx="870" cy="180" r="40" fill="#221c46" stroke="url(#gCore)" stroke-width="2.5"/><text x="870" y="187" fill="#e6edf7" font-size="14" font-weight="700">Hermes A</text>
+            <circle cx="870" cy="300" r="40" fill="#221c46" stroke="url(#gCore)" stroke-width="2.5"/><text x="870" y="307" fill="#e6edf7" font-size="14" font-weight="700">Hermes B</text>
+            <circle cx="870" cy="420" r="40" fill="#141a26" stroke="#5b6b85" stroke-width="2" stroke-dasharray="5 4"/><text x="870" y="415" fill="#c7d2e3" font-size="13" font-weight="700">其他</text><text x="870" y="433" fill="#c7d2e3" font-size="13" font-weight="700">Agent</text>
+            <text x="870" y="482" fill="#fbbf24" font-size="12" font-weight="700">如 DeepSeek Harness · 适配中</text>
+          </g>
+          <g data-id="extRk" class="off" fill="none" stroke="#a78bfa" stroke-width="2">
+            <path class="flow" d="M912,180 C990,180 990,270 1056,280" marker-end="url(#arPu)"/>
+            <path class="flow" d="M912,300 L1056,300" marker-end="url(#arPu)"/>
+            <path class="flow" d="M912,420 C990,420 990,330 1056,320" marker-end="url(#arPu)"/>
+          </g>
+          <rect x="1060" y="236" width="220" height="128" rx="16" fill="#0f1d2c" stroke="#38bdf8" stroke-width="1.6"/>
+          <text x="1170" y="294" text-anchor="middle" fill="#38bdf8" font-size="17" font-weight="800">共享 Workspace</text>
+          <text x="1170" y="320" text-anchor="middle" fill="#8b98ad" font-size="13">同一套文件与环境</text>
+        </g>
+        <text x="720" y="545" text-anchor="middle" fill="#8b98ad" font-size="15">另外可扩展：工作台按需拉起，需要操作电脑时才创建</text>
+      </g>
+    </svg>
+  </div>
+  <ul class="pts col rv d4">
+    <li><span class="dot" style="background:var(--green)"></span>已实测：借助 Hermes 的 SSH 能力分开大脑和工作台；工作台坏了大脑照常在线，大脑坏了也能换机恢复</li>
+    <li><span class="dot" style="background:var(--amber)"></span>两类 VM + 远程连接，架构更复杂；其他种类 Agent 要接入远程访问工具，适配中</li>
+  </ul>
+  <div class="foot">第三方架构为公开资料与我们的理解</div>
+  <button class="replay">↻ 重播</button>
+</section>
+
+<!-- ================= 第 5 页 · 预热（Preboot） ================= -->
+<section class="slide">
+  <div class="kicker rv">预热（Preboot）· 加速故障恢复</div>
+  <h2 class="rv d1">预热：换机恢复，目标最快约 10 秒</h2>
+  <p class="lead rv d2">待命 VM 平时就起好 Sandbox 和 Hermes（无用户身份）；出故障换机时，只需挂盘、下发平台凭证、加载用户会话。</p>
+  <div class="bar rv d2"><div class="cap"></div></div>
+  <div class="fig rv d3">
+    <svg viewBox="0 0 1440 410" preserveAspectRatio="xMidYMid meet">
+      <line x1="420" y1="42" x2="420" y2="372" stroke="#e6edf7" stroke-width="2" stroke-dasharray="6 6" opacity=".45"/>
+      <text x="420" y="28" text-anchor="middle" fill="#e6edf7" font-size="14" font-weight="700">VM 故障，开始换机</text>
+      <text x="262" y="28" text-anchor="middle" fill="#5b6b85" font-size="13">← 平时就准备好</text>
+      <text x="580" y="28" text-anchor="middle" fill="#5b6b85" font-size="13">故障之后 →</text>
+
+      <text x="40" y="110" fill="#e6edf7" font-size="20" font-weight="800">冷启动换机</text>
+      <text class="stag" data-s="ok" x="40" y="136" font-size="12.5" font-weight="700"></text>
+      <text data-id="m1L" class="off" x="420" y="76" fill="#34d399" font-size="13" font-weight="700">挂盘 + 见盘 ≈ 5 秒</text>
+      <rect class="barf" data-id="m1" x="420" y="84" width="75" height="60" rx="6" fill="#34d399"/>
+      <rect class="barf" data-id="m2" x="497" y="84" width="240" height="60" rx="6" fill="#a78bfa"/>
+      <g data-id="m2L" class="off">
+        <text x="617" y="110" text-anchor="middle" fill="#120d2a" font-size="15" font-weight="800">Hermes 冷启动</text>
+        <text x="617" y="132" text-anchor="middle" fill="#120d2a" font-size="15" font-weight="800">≈ 16 秒</text>
+      </g>
+      <text data-id="m2T" class="off stag" data-s="hermes" x="617" y="166" text-anchor="middle" font-size="12.5" font-weight="700"></text>
+      <rect class="barf" data-id="m3" x="739" y="84" width="380" height="60" rx="6" fill="#475569" fill-opacity=".35" stroke="#5b6b85" stroke-dasharray="6 5"/>
+      <g data-id="m3L" class="off"><text x="929" y="120" text-anchor="middle" fill="#c7d2e3" font-size="14">起 Sandbox、编排等 · 未单独计时</text></g>
+      <g data-id="m0L" class="off">
+        <text x="1134" y="108" fill="#e6edf7" font-size="16" font-weight="800">已验证可行</text>
+        <text x="1134" y="132" fill="#8b98ad" font-size="13">端到端未完整计时</text>
+      </g>
+
+      <g data-id="mvArr" class="off">
+        <path d="M800,150 C700,225 440,222 330,254" fill="none" stroke="#a78bfa" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#arPu)"/>
+        <text x="560" y="236" fill="#a78bfa" font-size="13" font-weight="700">预热：平时就提前做好</text>
+      </g>
+
+      <text x="40" y="290" fill="#fbbf24" font-size="20" font-weight="800">预热换机</text>
+      <text class="stag" data-s="goal" x="40" y="316" font-size="12.5" font-weight="700"></text>
+      <g data-id="pre" class="off">
+        <rect x="214" y="256" width="198" height="76" rx="10" fill="#151530" stroke="#a78bfa" stroke-dasharray="5 4"/>
+        <text x="313" y="278" text-anchor="middle" fill="#c4b5fd" font-size="12.5" font-weight="700">平时已完成</text>
+        <text x="313" y="299" text-anchor="middle" fill="#e6edf7" font-size="12.5">起 Sandbox · 启动 Hermes</text>
+        <text x="313" y="319" text-anchor="middle" fill="#8b98ad" font-size="12">无用户身份</text>
+      </g>
+      <g data-id="tgt" class="off">
+        <rect x="420" y="264" width="150" height="60" rx="6" fill="#fbbf24" fill-opacity=".12" stroke="#fbbf24" stroke-dasharray="6 5"/>
+        <text x="495" y="290" text-anchor="middle" fill="#fbbf24" font-size="12" font-weight="700">挂盘 · 下发平台凭证</text>
+        <text x="495" y="309" text-anchor="middle" fill="#fbbf24" font-size="12" font-weight="700">加载用户会话</text>
+        <text x="586" y="292" fill="#fbbf24" font-size="22" font-weight="800">目标 最快 ≈ 10 秒</text>
+        <text x="586" y="316" fill="#8b98ad" font-size="13">恢复可用 · 尚无实测</text>
+        <text x="586" y="340" fill="#fbbf24" font-size="13" font-weight="700">前提：Hermes 不重启即可挂上存量用户数据和会话（验证中）</text>
+      </g>
+
+      <line x1="420" y1="372" x2="1245" y2="372" stroke="#2c3a52"/>
+      <g fill="#5b6b85" font-size="12" text-anchor="middle">
+        <text x="420" y="394">0</text><text x="570" y="394">10 秒</text><text x="720" y="394">20 秒</text><text x="870" y="394">30 秒</text>
+        <text x="1020" y="394">40 秒</text><text x="1170" y="394">50 秒</text>
+      </g>
+    </svg>
+  </div>
+  <ul class="pts col rv d4">
+    <li><span class="dot" style="background:var(--cyan)"></span>方案一：用户 VM 坏了，从待命池取一台已启动 Hermes 的 VM，挂上用户盘、下发平台凭证、加载用户会话即可用</li>
+    <li><span class="dot" style="background:var(--purple)"></span>方案二：大脑（Runtime VM）也可能故障，同样可以换一台预热好的 Runtime</li>
+  </ul>
+  <div class="foot">“目标”尚无实测，不代表已达成；分段数字为 POC 实测</div>
+  <button class="replay">↻ 重播</button>
+</section>
+
+<!-- ================= 第 6 页 · 两套方案对比 ================= -->
+<section class="slide">
+  <div class="kicker rv">两套方案对比</div>
+  <h2 class="rv d1">两套方案对比：各有取舍</h2>
+  <p class="lead rv d2">两套都把 Agent 的破坏范围收小了；区别在架构复杂度和落地成本。</p>
+  <div class="bar rv d2">
+    <div class="legend"><span><i class="st g"></i>优势</span><span><i class="st a"></i>需要权衡</span></div>
+  </div>
+  <div class="cmpwrap">
+    <div class="cmp" data-id="colL">
+      <div class="cmp-h">
+        <svg viewBox="0 0 150 84">
+          <rect x="3" y="3" width="144" height="78" rx="10" fill="#0e1522" stroke="#3a4a64"/>
+          <rect x="12" y="12" width="84" height="46" rx="7" fill="#0f1d2c" stroke="#f87171" stroke-dasharray="4 3"/>
+          <text x="54" y="40" text-anchor="middle" fill="#38bdf8" font-size="12" font-weight="700">Sandbox</text>
+          <rect x="12" y="64" width="84" height="10" rx="3" fill="#141a26" stroke="#fbbf24" stroke-opacity=".6"/>
+          <path d="M106,22 a17,5 0 0 0 34,0 v38 a17,5 0 0 1 -34,0 z" fill="#0b1a14" stroke="#34d399"/>
+          <ellipse cx="123" cy="22" rx="17" ry="5" fill="#0f2a22" stroke="#34d399"/>
+        </svg>
+        <div><div class="cmp-k">方案一</div><div class="cmp-t">单 VM + Sandbox</div><div class="cmp-r">参考 Meta Muse<span class="tested">已实测</span></div></div>
+      </div>
+      <div class="row r1"><span class="ic">🛡</span><span class="k">破坏范围</span><span>只到 Sandbox</span><i class="st g"></i></div>
+      <div class="row r2"><span class="ic">🔁</span><span class="k">恢复方式</span><span>Sandbox 本机重建；VM 坏了换机挂用户盘</span><i class="st g"></i></div>
+      <div class="row r3"><span class="ic">🧩</span><span class="k">多工作台</span><span>单个环境只有一个工作台，多工作台要靠上层编排</span><i class="st a"></i></div>
+      <div class="row r4"><span class="ic">🛠</span><span class="k">可实施性</span><span>沿用“一用户一台 VM”，改动小</span><i class="st g"></i></div>
+      <div class="cmp-note">✓ Sandbox 重建、换机挂盘、升级回退，已在真实云上实测跑通</div>
+      <div class="cmp-note cyan">＋ 可以反哺 Lighthouse 的 Agent 镜像，解决镜像的稳定性问题</div>
+    </div>
+    <div class="cmp" data-id="colR">
+      <div class="cmp-h">
+        <svg viewBox="0 0 150 84">
+          <rect x="3" y="14" width="54" height="56" rx="9" fill="#151530" stroke="#a78bfa"/>
+          <text x="30" y="47" text-anchor="middle" fill="#a78bfa" font-size="12" font-weight="700">大脑</text>
+          <path d="M60,42 L86,42" stroke="#38bdf8" stroke-width="2" stroke-dasharray="4 3"/>
+          <rect x="89" y="9" width="58" height="66" rx="9" fill="none" stroke="#f87171" stroke-dasharray="4 3"/>
+          <rect x="94" y="14" width="48" height="56" rx="7" fill="#0f1d2c" stroke="#38bdf8"/>
+          <text x="118" y="47" text-anchor="middle" fill="#38bdf8" font-size="12" font-weight="700">工作台</text>
+        </svg>
+        <div><div class="cmp-k">方案二</div><div class="cmp-t">大脑与工作台分离</div><div class="cmp-r">参考 Manus<span class="tested">已实测</span></div></div>
+      </div>
+      <div class="row r1"><span class="ic">🛡</span><span class="k">破坏范围</span><span>只到 Workspace</span><i class="st g"></i></div>
+      <div class="row r2"><span class="ic">🔁</span><span class="k">恢复方式</span><span>工作台换机 + 快照；大脑同样可换机恢复</span><i class="st a"></i></div>
+      <div class="row r3"><span class="ic">🧩</span><span class="k">多工作台</span><span>天然支持一对多、多对一</span><i class="st g"></i></div>
+      <div class="row r4"><span class="ic">🛠</span><span class="k">可实施性</span><span>两类 VM + SSH 远程连接，架构更复杂</span><i class="st a"></i></div>
+      <div class="cmp-note">✓ 已实测：SSH 分离大脑与工作台、大脑换机恢复、一对多与多对一</div>
+    </div>
+  </div>
+  <div class="foot">第三方架构为公开资料与我们的理解</div>
+  <button class="replay">↻ 重播</button>
+</section>
+
+<!-- ================= 第 7 页 · 管家 Agent（POC 里管家和执行端都是 Hermes；工作簿为调研设计，未实测） ================= -->
+<section class="slide">
+  <div class="kicker rv">建在方案一之上</div>
+  <h2 class="rv d1">再往上一层：管家 Agent <span class="h2tag">已跑通 POC</span></h2>
+  <p class="lead rv d2">执行 Agent 负责干活，<b style="color:var(--text)">管家负责让事情有交代</b>。</p>
+  <div class="bar rv d2"><div class="cap"></div></div>
+  <div class="fig rv d3">
+    <svg viewBox="0 0 1440 560" preserveAspectRatio="xMidYMid meet">
+      <circle cx="52" cy="262" r="32" fill="#2a1730" stroke="#f472b6" stroke-width="1.5"/>
+      <use href="#i-user" x="35" y="245" width="34" height="34" fill="#f472b6"/>
+      <text x="52" y="318" text-anchor="middle" fill="#f472b6" font-size="15" font-weight="700">用户</text>
+      <path d="M86,262 L216,262" stroke="#f472b6" stroke-width="2" fill="none" class="flow" marker-end="url(#arP)"/>
+
+      <g data-id="bt">
+        <rect class="sh" x="220" y="170" width="260" height="190" rx="20" fill="#151530" stroke="#a78bfa" stroke-width="1.6"/>
+        <text x="350" y="208" text-anchor="middle" fill="#a78bfa" font-size="19" font-weight="800">管家 Hermes Agent</text>
+        <circle cx="350" cy="262" r="32" fill="#221c46" stroke="url(#gCore)" stroke-width="2.5"/>
+        <text x="350" y="272" text-anchor="middle" font-size="26">🧠</text>
+        <text x="350" y="330" text-anchor="middle" fill="#8b98ad" font-size="13">对话 · 派活 · 跟进 · 收尾</text>
+      </g>
+      <text data-id="btSt" x="350" y="160" text-anchor="middle" fill="#fbbf24" font-size="15" font-weight="700"></text>
+
+      <!-- 工作簿：管家维护的持久记录（调研设计，未实测） -->
+      <g data-id="wb" class="off">
+        <rect x="226" y="380" width="312" height="166" rx="14" fill="#141127" stroke="#a78bfa" stroke-dasharray="6 5"/>
+        <text x="244" y="406" fill="#c4b5fd" font-size="15" font-weight="800">📒 工作簿（持久保存）</text>
+        <rect x="424" y="391" width="104" height="22" rx="11" fill="none" stroke="#fbbf24" stroke-dasharray="4 3"/>
+        <text x="476" y="406" text-anchor="middle" fill="#fbbf24" font-size="11.5" font-weight="700">调研设计 · 未实测</text>
+        <text x="244" y="430" fill="#8b98ad" font-size="12">背景 · 进展 · 阻塞 · 结果 · 过程记录</text>
+        <g font-size="13">
+          <text x="244" y="456" fill="#c7d2e3">子任务 A</text><text data-id="wA" x="320" y="456" fill="#8b98ad">待开始</text>
+          <text x="244" y="478" fill="#c7d2e3">子任务 B</text><text data-id="wB" x="320" y="478" fill="#8b98ad">待开始</text>
+          <text x="244" y="500" fill="#c7d2e3">子任务 C</text><text data-id="wC" x="320" y="500" fill="#8b98ad">待开始</text>
+        </g>
+        <line x1="244" y1="512" x2="520" y2="512" stroke="#2c2650"/>
+        <text x="244" y="534" fill="#c7d2e3" font-size="13" font-weight="700">事项状态</text>
+        <text data-id="wS" x="320" y="534" fill="#fbbf24" font-size="13" font-weight="700">进行中</text>
+      </g>
+      <!-- 派发路线 -->
+      <g fill="none" stroke="#3a4a64" stroke-width="1.6">
+        <path d="M482,236 C560,236 560,100 636,100" marker-end="url(#arS)"/>
+        <path d="M482,265 L636,280" marker-end="url(#arS)"/>
+        <path d="M482,294 C560,294 560,460 636,460" marker-end="url(#arS)"/>
+      </g>
+      <g data-id="d4L" class="off"><path d="M482,265 C540,265 560,192 640,192 L1060,192 C1085,192 1078,280 1096,280" fill="none" stroke="#fbbf24" stroke-width="1.8" stroke-dasharray="6 6" marker-end="url(#arA)"/></g>
+
+      <!-- 执行 Agent A：Hermes -->
+      <g data-id="e1"><g>
+        <rect class="sh" x="640" y="30" width="420" height="140" rx="16" fill="#0e1522" stroke="#2c3a52" stroke-width="1.5"/>
+        <text x="656" y="54" fill="#8b98ad" font-size="12" font-weight="700">VM</text>
+        <rect x="650" y="58" width="300" height="104" rx="15" fill="none" stroke="#f87171" stroke-width="1.2" stroke-dasharray="5 5" opacity=".7"/>
+        <rect class="sh sbx" x="656" y="64" width="288" height="92" rx="12" fill="#0f1d2c" stroke="#1e4a63" stroke-width="1.5"/>
+        <text x="676" y="94" fill="#e6edf7" font-size="15" font-weight="800">执行 Agent A</text>
+        <rect x="676" y="110" width="248" height="10" rx="5" fill="#1b2433"/>
+        <rect class="barf" data-id="b1" x="676" y="110" width="248" height="10" rx="5" fill="url(#gBar)"/>
+        <text x="676" y="142" fill="#8b98ad" font-size="12">Hermes · 子任务 A</text>
+        <path d="M964,88 a40,8 0 0 0 80,0 v44 a40,8 0 0 1 -80,0 z" fill="#0b1a14" stroke="#34d399"/>
+        <ellipse cx="1004" cy="88" rx="40" ry="8" fill="#0f2a22" stroke="#34d399"/>
+        <text x="1004" y="122" text-anchor="middle" fill="#34d399" font-size="12">数据盘</text>
+      </g></g>
+      <use data-id="e1ok" class="off" href="#i-ok" x="1024" y="36" width="26" height="26"/>
+
+      <!-- 执行 Agent B -->
+      <g data-id="e2"><g data-id="e2S">
+        <rect class="sh" x="640" y="210" width="420" height="140" rx="16" fill="#0e1522" stroke="#2c3a52" stroke-width="1.5"/>
+        <text x="656" y="234" fill="#8b98ad" font-size="12" font-weight="700">VM</text>
+        <rect x="650" y="238" width="300" height="104" rx="15" fill="none" stroke="#f87171" stroke-width="1.2" stroke-dasharray="5 5" opacity=".7"/>
+        <rect class="sh sbx" x="656" y="244" width="288" height="92" rx="12" fill="#0f1d2c" stroke="#1e4a63" stroke-width="1.5"/>
+        <text x="676" y="274" fill="#e6edf7" font-size="15" font-weight="800">执行 Agent B</text>
+        <rect x="676" y="290" width="248" height="10" rx="5" fill="#1b2433"/>
+        <rect class="barf" data-id="b2" x="676" y="290" width="248" height="10" rx="5" fill="url(#gBar)"/>
+        <text x="676" y="322" fill="#8b98ad" font-size="12">Hermes · 子任务 B</text>
+        <path d="M964,268 a40,8 0 0 0 80,0 v44 a40,8 0 0 1 -80,0 z" fill="#0b1a14" stroke="#34d399"/>
+        <ellipse cx="1004" cy="268" rx="40" ry="8" fill="#0f2a22" stroke="#34d399"/>
+        <text x="1004" y="302" text-anchor="middle" fill="#34d399" font-size="12">数据盘</text>
+      </g></g>
+      <use data-id="e2x" class="off" href="#i-x" x="1024" y="216" width="26" height="26"/>
+
+      <!-- 执行 Agent C -->
+      <g data-id="e3"><g>
+        <rect class="sh" x="640" y="390" width="420" height="140" rx="16" fill="#0e1522" stroke="#2c3a52" stroke-width="1.5"/>
+        <text x="656" y="414" fill="#8b98ad" font-size="12" font-weight="700">VM</text>
+        <rect x="650" y="418" width="300" height="104" rx="15" fill="none" stroke="#f87171" stroke-width="1.2" stroke-dasharray="5 5" opacity=".7"/>
+        <rect class="sh sbx" x="656" y="424" width="288" height="92" rx="12" fill="#0f1d2c" stroke="#1e4a63" stroke-width="1.5"/>
+        <text x="676" y="454" fill="#e6edf7" font-size="15" font-weight="800">执行 Agent C</text>
+        <rect x="676" y="470" width="248" height="10" rx="5" fill="#1b2433"/>
+        <rect class="barf" data-id="b3" x="676" y="470" width="248" height="10" rx="5" fill="url(#gBar)"/>
+        <text x="676" y="502" fill="#8b98ad" font-size="12">Hermes · 子任务 C</text>
+        <path d="M964,448 a40,8 0 0 0 80,0 v44 a40,8 0 0 1 -80,0 z" fill="#0b1a14" stroke="#34d399"/>
+        <ellipse cx="1004" cy="448" rx="40" ry="8" fill="#0f2a22" stroke="#34d399"/>
+        <text x="1004" y="482" text-anchor="middle" fill="#34d399" font-size="12">数据盘</text>
+      </g></g>
+      <use data-id="e3ok" class="off" href="#i-ok" x="1024" y="396" width="26" height="26"/>
+
+      <!-- 新的执行 Agent B′：从工作簿续做 -->
+      <g data-id="e4" class="off" style="transform: translate(40px, 0px)">
+        <rect class="sh" x="1100" y="210" width="320" height="140" rx="16" fill="#0e1522" stroke="#34d399" stroke-width="1.5"/>
+        <text x="1116" y="234" fill="#8b98ad" font-size="12" font-weight="700">待命 VM（来自池）</text>
+        <rect x="1110" y="238" width="196" height="104" rx="15" fill="none" stroke="#f87171" stroke-width="1.2" stroke-dasharray="5 5" opacity=".7"/>
+        <rect class="sh sbx" x="1116" y="244" width="184" height="92" rx="12" fill="#0f1d2c" stroke="#1e4a63" stroke-width="1.5"/>
+        <text x="1130" y="274" fill="#e6edf7" font-size="13" font-weight="800">执行 Agent B′</text>
+        <rect x="1130" y="290" width="156" height="10" rx="5" fill="#1b2433"/>
+        <rect class="barf" data-id="b4" x="1130" y="290" width="156" height="10" rx="5" fill="url(#gBar)"/>
+        <text x="1130" y="322" fill="#8b98ad" font-size="12">Hermes · 从工作簿续做</text>
+        <path d="M1318,268 a40,8 0 0 0 80,0 v44 a40,8 0 0 1 -80,0 z" fill="#0b1a14" stroke="#34d399"/>
+        <ellipse cx="1358" cy="268" rx="40" ry="8" fill="#0f2a22" stroke="#34d399"/>
+        <text x="1358" y="302" text-anchor="middle" fill="#34d399" font-size="12">数据盘</text>
+      </g>
+      <use data-id="e4ok" class="off" href="#i-ok" x="1386" y="216" width="26" height="26"/>
+
+      <text x="850" y="552" text-anchor="middle" fill="#8b98ad" font-size="13">每个执行 Agent = 一套方案一环境（VM + Sandbox + 数据盘）；POC 用的是 Hermes，也可能接入其他 Agent</text>
+
+      <!-- 飞行的任务 / 结果 -->
+      <g data-id="tMsg" class="tok off"><rect x="-22" y="-13" width="44" height="26" rx="8" fill="#2a1730" stroke="#f472b6"/><text y="5" text-anchor="middle" fill="#f472b6" font-size="13" font-weight="700">任务</text><animateMotion begin="indefinite" dur="1s" fill="freeze" path="M92,262 L214,262"/></g>
+      <g data-id="tA" class="tok off"><rect x="-16" y="-13" width="32" height="26" rx="8" fill="#1f1a0c" stroke="#fbbf24"/><text y="5" text-anchor="middle" fill="#fbbf24" font-size="13" font-weight="800">A</text><animateMotion begin="indefinite" dur="1s" fill="freeze" path="M482,236 C560,236 560,100 636,100"/></g>
+      <g data-id="tB" class="tok off"><rect x="-16" y="-13" width="32" height="26" rx="8" fill="#1f1a0c" stroke="#fbbf24"/><text y="5" text-anchor="middle" fill="#fbbf24" font-size="13" font-weight="800">B</text><animateMotion begin="indefinite" dur="1s" fill="freeze" path="M482,265 L636,280"/></g>
+      <g data-id="tC" class="tok off"><rect x="-16" y="-13" width="32" height="26" rx="8" fill="#1f1a0c" stroke="#fbbf24"/><text y="5" text-anchor="middle" fill="#fbbf24" font-size="13" font-weight="800">C</text><animateMotion begin="indefinite" dur="1s" fill="freeze" path="M482,294 C560,294 560,460 636,460"/></g>
+      <g data-id="tB2" class="tok off"><rect x="-16" y="-13" width="32" height="26" rx="8" fill="#1f1a0c" stroke="#fbbf24"/><text y="5" text-anchor="middle" fill="#fbbf24" font-size="13" font-weight="800">B</text><animateMotion begin="indefinite" dur="1s" fill="freeze" path="M482,265 C540,265 560,192 640,192 L1060,192 C1085,192 1078,280 1096,280"/></g>
+      <g data-id="rA" class="tok off"><circle r="12" fill="#0f2a22" stroke="#34d399"/><text y="5" text-anchor="middle" fill="#34d399" font-size="13" font-weight="800">✓</text><animateMotion begin="indefinite" dur="1s" fill="freeze" keyPoints="1;0" keyTimes="0;1" calcMode="linear" path="M482,236 C560,236 560,100 636,100"/></g>
+      <g data-id="rC" class="tok off"><circle r="12" fill="#0f2a22" stroke="#34d399"/><text y="5" text-anchor="middle" fill="#34d399" font-size="13" font-weight="800">✓</text><animateMotion begin="indefinite" dur="1s" fill="freeze" keyPoints="1;0" keyTimes="0;1" calcMode="linear" path="M482,294 C560,294 560,460 636,460"/></g>
+      <g data-id="rB" class="tok off"><circle r="12" fill="#0f2a22" stroke="#34d399"/><text y="5" text-anchor="middle" fill="#34d399" font-size="13" font-weight="800">✓</text><animateMotion begin="indefinite" dur="1s" fill="freeze" keyPoints="1;0" keyTimes="0;1" calcMode="linear" path="M482,265 C540,265 560,192 640,192 L1060,192 C1085,192 1078,280 1096,280"/></g>
+
+      <g data-id="msg" class="off">
+        <rect x="16" y="124" width="250" height="36" rx="18" fill="#2a1730" stroke="#f472b6" stroke-width="1.5"/>
+        <text x="141" y="147" text-anchor="middle" fill="#f472b6" font-size="14" font-weight="700">大任务：做一份竞品调研报告</text>
+      </g>
+      <g data-id="reply" class="off">
+        <rect x="16" y="76" width="300" height="36" rx="18" fill="#1d1838" stroke="#a78bfa" stroke-width="1.5"/>
+        <text data-id="replyT" x="166" y="99" text-anchor="middle" fill="#c4b5fd" font-size="13.5" font-weight="700">报告已发，还需要补充吗？</text>
+      </g>
+      <g data-id="okMsg" class="off">
+        <rect x="16" y="330" width="176" height="36" rx="18" fill="#2a1730" stroke="#f472b6" stroke-width="1.5"/>
+        <text x="104" y="353" text-anchor="middle" fill="#f472b6" font-size="13.5" font-weight="700">补一下定价对比</text>
+      </g>
+    </svg>
+  </div>
+  <ul class="pts col rv d4">
+    <li><span class="dot" style="background:var(--cyan)"></span><span><b>一个沟通入口</b>：用户只跟管家说，不必反复交代、追问多个执行 Agent</span></li>
+    <li><span class="dot" style="background:var(--amber)"></span><span><b>持续负责</b>：管家记录事项、跟进阻塞、汇总结果；执行 Agent 中断或更换，事情仍有人接着负责（工作簿为调研设计，未实测）</span></li>
+    <li><span class="dot" style="background:var(--green)"></span><span><b>已跑通（Hermes）</b>：多个执行 Agent 同时干活，任何一个坏了，都不影响整体对话</span></li>
+  </ul>
+  <button class="replay">↻ 重播</button>
+</section>
+
+<div class="ctrl">
+  <button id="stepBtn" class="pill manual-only">▶ 播放下一段</button>
+  <button id="modeBtn" class="pill">自动播放</button>
+  <button id="prev" aria-label="上一页">‹</button>
+  <span id="pg">1 / 6</span>
+  <button id="next" aria-label="下一页">›</button>
+</div>
+<div class="prog" id="prog"></div>
+</div>
+
+<script>
+(() => {
+  // 动画不跟随系统的“减弱动态效果”设置；只有 URL 带 ?static 时才直接显示每页最终状态
+  const STATIC = /[?&]static\b/.test(location.search);
+  if (STATIC) document.documentElement.classList.add('static');
+  let MANUAL = false; // 手动模式：每段动画等点击再播，见 setMode()
+
+  // POC 实测的样本量：页面上所有“POC 实测”标注都从这里取。留空 = 显示琥珀色“样本量待补”。
+  const SAMPLE = {
+    sandbox: '',   // Sandbox 重建 20–49 秒
+    failover: '',  // 换机：挂盘约 3.5 秒、机器里见盘约 1.5 秒（端到端只验证了可行性，未完整计时，不展示）
+    hermes: '',    // Hermes 冷启动约 16 秒
+  };
+  // 非数字类标注：tested 已实测 · ok 已验证可行 · wip 验证中 · untested 未实测 · goal 目标 · research 调研设计
+  const TAGS = {
+    tested: { text: '已实测', cls: 'mtag' },
+    ok: { text: '已验证可行', cls: 'mtag' },
+    wip: { text: '验证中', cls: 'mtag goal' },
+    untested: { text: '未实测', cls: 'mtag tbd' },
+    goal: { text: '目标 · 正在验证，尚无实测', cls: 'mtag goal' },
+    research: { text: '调研设计 · 未实测', cls: 'mtag goal' },
+  };
+  const tagInfo = (key) => {
+    if (TAGS[key]) return TAGS[key];
+    return SAMPLE[key] ? { text: 'POC 实测 · ' + SAMPLE[key], cls: 'mtag' } : { text: 'POC 实测 · 样本量待补', cls: 'mtag tbd' };
+  };
+  const tagEl = (key) => { const t = tagInfo(key), e = document.createElement('span'); e.className = t.cls; e.textContent = t.text; return e; };
+  document.querySelectorAll('[data-s]').forEach((el) => {
+    const t = tagInfo(el.dataset.s);
+    el.textContent = t.text;
+    if (el instanceof SVGElement) el.setAttribute('fill', t.cls === 'mtag' ? '#34d399' : '#fbbf24');
+    else el.className = t.cls;
+  });
+
+  const deck = document.getElementById('deck');
+  const slides = [...deck.querySelectorAll('.slide')];
+  const fit = () => deck.style.setProperty('--s', Math.min(innerWidth / 1600, innerHeight / 900));
+  addEventListener('resize', fit); fit();
+
+  const flash = (el) => { if (!el) return; el.classList.remove('flash'); void el.getBoundingClientRect(); el.classList.add('flash'); };
+
+  // 每页一个播放器：记录本页所有改动，离开或重播时一次性还原。
+  // 手动模式下，动画在 step() 处停住，等演讲者点击画面再播下一段；播放中再点一次则跳到本段末尾。
+  class Player {
+    constructor(sec, acts) {
+      this.sec = sec; this.acts = acts; this.log = []; this.timers = []; this.gen = 0;
+      this.pending = null; this.running = false; this.fast = false; this.skipNext = false;
+      this.capEl = sec.querySelector('.cap');
+      this.tabs = [...sec.querySelectorAll('.tabs button')];
+    }
+    el(id) { return this.sec.querySelector('[data-id="' + id + '"]'); }
+    els(ids) { return ids.split(/\s+/).map((i) => this.el(i)).filter(Boolean); }
+    later(ms, fn) {
+      const t = { fn };
+      t.id = setTimeout(() => { this.timers = this.timers.filter((x) => x !== t); fn(); }, ms);
+      this.timers.push(t);
+    }
+    wait(ms) {
+      if (STATIC || this.fast) return Promise.resolve();
+      const g = this.gen;
+      return new Promise((res) => this.later(ms, () => { if (g === this.gen) res(); }));
+    }
+    step() { // 分段点：自动模式直接通过，手动模式等点击
+      if (!MANUAL) return Promise.resolve();
+      if (this.skipNext) { this.skipNext = false; return Promise.resolve(); }
+      this.endFast();
+      return new Promise((res) => { this.pending = res; syncHint(); });
+    }
+    advance() { // 返回 false 表示本页已播完
+      if (this.pending) { const r = this.pending; this.pending = null; r(); syncHint(); return true; }
+      if (this.running) { this.fastForward(); return true; }
+      return false;
+    }
+    fastForward() {
+      if (this.fast) return;
+      this.fast = true; this.sec.classList.add('instant');
+      const ts = this.timers; this.timers = [];
+      ts.forEach((t) => { clearTimeout(t.id); t.fn(); });
+    }
+    endFast() {
+      if (!this.fast) return;
+      this.fast = false; void this.sec.offsetWidth; this.sec.classList.remove('instant');
+    }
+    add(ids, c) { this.els(ids).forEach((e) => { if (!e.classList.contains(c)) { e.classList.add(c); this.log.push(() => e.classList.remove(c)); } }); }
+    rm(ids, c) { this.els(ids).forEach((e) => { if (e.classList.contains(c)) { e.classList.remove(c); this.log.push(() => e.classList.add(c)); } }); }
+    show(ids) { this.rm(ids, 'off'); }
+    hide(ids) { this.add(ids, 'off'); }
+    css(ids, prop, v) { this.els(ids).forEach((e) => { const o = e.style.getPropertyValue(prop); e.style.setProperty(prop, v); this.log.push(() => e.style.setProperty(prop, o)); }); }
+    move(ids, x, y, ms = 1000) {
+      this.css(ids, 'transition', `opacity .45s ease, transform ${ms}ms cubic-bezier(.45,.05,.25,1)`);
+      this.css(ids, 'transform', `translate(${x}px, ${y}px)`);
+    }
+    bar(id, v, ms) { this.css(id, 'transition', `transform ${ms}ms linear`); this.css(id, 'transform', `scaleX(${v})`); }
+    text(id, s) { const e = this.el(id); const o = e.textContent; e.textContent = s; this.log.push(() => { e.textContent = o; }); }
+    attr(id, a, v) { const e = this.el(id); const o = e.getAttribute(a); e.setAttribute(a, v); this.log.push(() => (o === null ? e.removeAttribute(a) : e.setAttribute(a, o))); }
+    status(id, s, color) { this.text(id, s); this.attr(id, 'fill', color); flash(this.el(id)); }
+    say(id, s) { this.text(id + 'T', s); flash(this.el(id)); }
+    cap(s, key) { // key：样本量键名（见 SAMPLE），或 TAGS 里的标注
+      if (!this.capEl) return;
+      this.capEl.textContent = s;
+      if (key) this.capEl.appendChild(tagEl(key));
+      flash(this.capEl);
+    }
+    tab(i) { this.tabs.forEach((b, k) => b.classList.toggle('on', k === i)); }
+    fly(id, ms) { // 沿路径飞行的小标签，只在正常播放时出现
+      if (STATIC || this.fast) return;
+      const e = this.el(id), a = e.querySelector('animateMotion');
+      a.setAttribute('dur', ms + 'ms');
+      this.show(id);
+      try { a.beginElement(); } catch (_) {}
+      const g = this.gen;
+      this.later(ms, () => { if (g === this.gen) e.classList.add('off'); });
+    }
+    stop() { this.gen++; this.timers.forEach((t) => clearTimeout(t.id)); this.timers = []; }
+    revert() {
+      this.sec.classList.add('instant');
+      while (this.log.length) this.log.pop()();
+      void this.sec.offsetWidth;
+      if (!this.fast) this.sec.classList.remove('instant');
+    }
+    reset() {
+      this.stop();
+      this.fast = false; this.pending = null; this.running = false; this.skipNext = false;
+      this.revert(); this.tab(-1); if (this.capEl) this.capEl.textContent = '';
+    }
+    // opts.now：手动模式下第一段不等点击（重播、点幕标签）
+    async play(from, opts = {}) {
+      this.reset();
+      const g = this.gen, last = this.acts.length - 1;
+      this.running = true; this.skipNext = !!opts.now;
+      if (from == null) from = STATIC && !MANUAL ? last : 0;
+      syncHint();
+      for (let i = from; i <= last; i++) {
+        this.tab(this.tabs.length ? i : -1);
+        await this.acts[i](this);
+        if (g !== this.gen) return;
+        this.skipNext = false;
+        if (i === last || (STATIC && !MANUAL)) break;
+        if (MANUAL) await this.step(); else await this.wait(1600);
+        if (g !== this.gen) return;
+        this.revert();
+      }
+      this.endFast(); this.running = false; syncHint();
+    }
+  }
+
+  const ACTS = [
+    // 第 0 页 · 封面：无动画
+    [async () => {}],
+
+    // 第 1 页 · 现状：改坏配置 → 重启失败 → 用户消息无人响应
+    [async (c) => {
+      c.cap('Agent 正在 VM 上正常工作');
+      await c.step();
+      await c.wait(900); c.show('term'); c.add('term', 'typing'); c.cap('Agent 执行命令，改了自己的配置');
+      await c.wait(1600); c.add('cfgFile', 'bad'); c.add('cfgFileS', 'shake'); c.show('cfgBad');
+      await c.wait(1000); c.hide('term'); c.show('spin'); c.status('agSt', '● 重启中…', '#fbbf24'); c.cap('配置坏了，Agent 进程重启');
+      await c.wait(1600); c.hide('spin'); c.add('agent', 'dead'); c.show('agX'); c.status('agSt', '● 启动失败', '#f87171'); c.cap('启动失败');
+      await c.step();
+      await c.wait(600); c.show('msg'); c.move('msg', 262, 0, 1600); c.cap('用户发来消息……');
+      await c.wait(1900); c.add('msg', 'bad'); c.text('msgT', '无响应…'); c.attr('msgT', 'fill', '#f87171'); c.cap('没有人能回应，也没有人能修');
+      await c.wait(700); c.show('concl'); c.add('scope', 'pulse');
+    }],
+
+    // 第 2 页 · 改进思路：分类 → 核心一 搬出去 → 核心二 分开放 → 坏了就重建
+    [async (c) => {
+      await c.step();
+      c.cap('先分类：VM 里的东西分三类');
+      await c.wait(400); c.show('tagCfg tagConn'); c.cap('蓝色 · 平台管的：Hermes 配置、连接器');
+      await c.wait(1300); c.show('tagData'); c.cap('绿色 · 用户数据：丢了就真丢了');
+      await c.wait(1300); c.show('tagAg tagTools tagSys'); c.cap('灰色 · 可重建的：Agent 运行环境、系统（含 /etc）、用户装的软件');
+      await c.step();
+      c.cap('核心一：把平台管的东西搬出 VM');
+      await c.wait(300); c.move('cfg', -338, -144, 1200);
+      await c.wait(500); c.move('conn', -570, 6, 1300);
+      await c.wait(1400); c.show('cfgSub connSub via ghostCfg ghostConn');
+      c.text('scopeT', 'Hermes Agent 可破坏范围：不含配置和外部凭证');
+      c.cap('Hermes 配置由平台下发、校验、回滚；外部服务凭证留在平台，VM 只拿平台签发、可随时更换的凭证');
+      await c.step();
+      c.cap('核心二：用户数据单独存放');
+      c.css('data', 'transition', 'transform 1.1s cubic-bezier(.45,.05,.25,1), opacity .4s ease .8s');
+      await c.wait(300); c.css('data', 'transform', 'translate(254px, -134px)'); c.add('data', 'gone');
+      await c.wait(1000); c.show('disk mntD ghostData'); c.cap('独立盘：机器坏了，数据还在');
+      await c.wait(1300); c.show('snap'); c.cap('快照：数据被 Agent 删了，可回到最近的快照点');
+      await c.wait(1300); c.text('tagSysT', '可重建 · 已记账'); c.show('diskLedger'); c.cap('用户装的软件提前记账，账本存在用户盘上');
+      await c.step();
+      c.cap('Agent 又把环境改坏了');
+      await c.wait(300); c.add('env', 'bad'); c.add('envS', 'shake'); c.hide('mntD');
+      await c.wait(1200); c.show('repair fixArr'); c.add('repair', 'hl-a'); c.cap('故障域之外的控制面：发现故障，触发重建');
+      await c.wait(1200); c.add('env', 'gone'); c.cap('丢掉坏环境，重建一个干净的');
+      await c.wait(900); c.rm('env', 'bad'); c.rm('env', 'gone'); c.add('env', 'ok'); c.hide('fixArr'); c.rm('repair', 'hl-a');
+      await c.wait(800); c.show('mntD'); c.add('disk', 'hl-g'); c.cap('用户盘挂回来，会话和数据都在');
+      await c.wait(1100); c.show('ledArr sysNote'); c.cap('按账本补装软件（尽力而为）');
+      await c.wait(1400); c.show('rec'); c.cap('账本覆盖不到的部分，由 Agent 自行恢复');
+    }],
+
+    // 第 3 页 · 方案一：两幕，只讲故障恢复（数字为 POC 实测，样本量见 SAMPLE；标注见 TAGS）
+    [
+      async (c) => { // ① Sandbox 坏了：镜像重建 → 挂回用户盘 → 按软件账本补装
+        await c.step();
+        c.cap('Agent 在 Sandbox 里把系统改坏');
+        await c.wait(600); c.hide('idle'); c.show('term'); c.add('term', 'typing');
+        await c.wait(1400); c.add('sb', 'bad'); c.add('sbS', 'shake'); c.show('sbX');
+        await c.wait(800); c.add('ctl', 'bad'); c.add('hb', 'lnbad'); c.status('ctlSt', '● 发现故障', '#f87171'); c.cap('外部控制器发现故障');
+        await c.wait(1000); c.hide('term sbX mnt'); c.add('sb', 'gone'); c.add('sb', 'crush'); c.cap('销毁这个 Sandbox');
+        await c.wait(900); c.add('img', 'hl-a'); c.show('imgArr'); c.cap('从只读镜像拉起干净的 Sandbox');
+        await c.wait(700); c.rm('sb', 'bad'); c.rm('sb', 'crush'); c.rm('sb', 'gone'); c.add('sb', 'ok'); c.show('idle');
+        await c.wait(900); c.hide('imgArr'); c.rm('img', 'hl-a'); c.show('mnt'); c.add('disk', 'hl-g'); c.cap('用户盘重新挂进去，会话和数据都在');
+        await c.wait(1100); c.show('ledger'); c.cap('按软件账本补装用户装过的软件（参考 Muse 的做法）', 'untested');
+        await c.wait(1500); c.cap('账本覆盖不到的边界情况，由 Agent 自行恢复');
+        await c.wait(1500); c.hide('ledger'); c.rm('ctl', 'bad'); c.rm('hb', 'lnbad'); c.status('ctlSt', '● 已修复', '#34d399'); c.show('rec');
+        c.cap('本机重建 20–49 秒，会话和数据保留', 'sandbox');
+      },
+      async (c) => { // ② VM 坏了：从待命池取一台已启动 Hermes 的 VM，挂上用户盘、下发平台凭证、加载用户会话
+        c.cap('整台 VM 故障');
+        await c.wait(500); c.add('vm', 'dead'); c.show('vmX'); c.hide('mnt');
+        await c.wait(900); c.add('ctl', 'bad'); c.add('hb', 'lnbad'); c.status('ctlSt', '● VM 失联', '#f87171'); c.cap('外部控制器发现 VM 失联');
+        await c.wait(800); c.show('ack'); c.cap('前台先告诉用户：正在恢复');
+        await c.wait(1000); c.move('disk', 290, 8, 1100); c.cap('用户盘从旧 VM 卸下');
+        await c.wait(1300);
+        c.add('pA', 'hl-g');
+        c.css('pA', 'transition', 'transform 1.1s cubic-bezier(.45,.05,.25,1), opacity .35s ease .85s');
+        c.css('pA', 'transform', 'translate(-586px, -179px)'); c.add('pA', 'gone');
+        c.add('vm', 'gone'); c.hide('vmX hb'); c.cap('从待命池取一台已启动 Hermes 的 VM');
+        await c.wait(1200);
+        c.rm('vm', 'dead'); c.text('vmLbl', 'VM（来自池 · Hermes 已启动）'); c.status('agSub', '待命 · 无用户身份', '#fbbf24'); c.rm('vm', 'gone');
+        c.show('eta'); c.bar('etaBar', 1, 3200);
+        await c.wait(900); c.move('disk', 0, 0, 1000); c.cap('挂上同一块用户盘：挂盘约 3.5 秒，机器里见盘再约 1.5 秒', 'failover');
+        await c.wait(1300); c.show('mnt hb'); c.add('disk', 'hl-g'); c.status('agSub', '下发平台凭证…', '#fbbf24'); c.cap('下发平台凭证：外部服务凭证留在平台，可随时更换');
+        await c.wait(1100); c.status('agSub', '加载用户会话…', '#fbbf24'); c.cap('加载用户会话：挂上存量用户数据后热加载', 'wip');
+        await c.wait(1100);
+        c.status('agSub', 'Agent Loop · 已恢复', '#34d399'); c.add('sb', 'ok'); c.hide('eta'); c.show('rec');
+        c.rm('ctl', 'bad'); c.rm('hb', 'lnbad'); c.status('ctlSt', '● 已修复', '#34d399');
+        c.attr('ackR', 'stroke', '#34d399'); c.attr('ackT', 'fill', '#34d399'); c.say('ack', '已恢复，可以继续 ✓');
+        c.cap('换机挂上同一块用户盘，继续使用', 'ok');
+        await c.wait(2000); c.cap('待命 VM 预先启动 Hermes：目标最快约 10 秒（见预热页）', 'goal');
+      },
+    ],
+
+    // 第 4 页 · 方案二：三幕
+    [
+      async (c) => { // ① 工作台坏了
+        await c.step();
+        c.cap('Agent 在工作台里把系统改坏');
+        await c.wait(600); c.hide('idle'); c.show('term'); c.add('term', 'typing');
+        await c.wait(1400); c.add('ws', 'bad'); c.add('wsS', 'shake'); c.show('wsX'); c.add('lk', 'lnbad'); c.hide('snapLink');
+        await c.wait(900); c.show('rtHalo reply'); c.cap('大脑仍然在线，照常回复用户');
+        await c.wait(1500); c.hide('term wsX'); c.add('ws', 'gone'); c.add('ws', 'drop'); c.cap('换一台新的 Workspace VM');
+        await c.wait(900); c.rm('ws', 'bad'); c.show('idle'); c.add('ws', 'fresh'); c.text('wsLbl', 'Workspace VM（新）'); c.rm('ws', 'drop'); c.rm('ws', 'gone');
+        await c.wait(1000); c.show('restore'); c.add('snap', 'hl-g'); c.cap('从快照恢复数据');
+        await c.wait(1100); c.hide('restore'); c.rm('snap', 'hl-g'); c.rm('ws', 'fresh'); c.add('ws', 'ok'); c.rm('lk', 'lnbad'); c.show('snapLink');
+        c.say('reply', '已换好工作台，继续工作'); c.cap('大脑不受影响，坏的只是工作台');
+      },
+      async (c) => { // ② 大脑坏了：原理和方案一相同——换一台大脑 VM，挂回大脑数据盘
+        c.cap('大脑（Runtime VM）也可能故障');
+        await c.wait(500); c.add('rt', 'bad'); c.add('rtS', 'shake'); c.show('rtX'); c.add('lk', 'lnbad'); c.hide('brMnt'); c.status('rtSt', '● 故障', '#f87171');
+        await c.wait(1200); c.add('ws', 'ok'); c.cap('工作台不受影响，工作区数据都在');
+        await c.wait(1300); c.hide('rtX'); c.add('rt', 'gone'); c.add('rt', 'drop'); c.cap('换一台大脑 VM，原理和方案一相同，可直接用预热好的 VM');
+        await c.wait(900); c.rm('rt', 'bad'); c.text('rtLbl', 'Runtime VM · 大脑（新）'); c.rm('rt', 'drop'); c.rm('rt', 'gone');
+        await c.wait(1000); c.show('brMnt'); c.add('brDisk', 'hl-g'); c.cap('挂回大脑数据盘：会话、记忆都在');
+        await c.wait(1200); c.rm('lk', 'lnbad'); c.add('rt', 'ok'); c.status('rtSt', '● 在线', '#34d399'); c.show('reply'); c.say('reply', '我回来了，继续刚才的任务');
+        c.cap('重连工作台，继续工作', 'tested');
+      },
+      async (c) => { // ③ 扩展：一对多、多对一（支持不同 Agent）；工作台也可按需拉起
+        c.cap('扩展：一个大脑连多个工作台，多个 Agent 共用一个工作台', 'tested');
+        await c.wait(4000); c.cap('DeepSeek Harness 等其他 Agent，需要接入远程访问工具，适配中', 'wip');
+        await c.wait(300); c.add('main', 'faint'); c.show('ext extL');
+        await c.wait(1000); c.show('extLk');
+        await c.wait(900); c.show('extR');
+        await c.wait(1000); c.show('extRk');
+      },
+    ],
+
+    // 第 5 页 · 预热：冷启动换机（分段实测，端到端只验证可行）→ 预热换机（目标，尚无实测）
+    [async (c) => {
+      await c.step();
+      c.cap('现在冷启动换机：已验证可行，端到端未完整计时', 'ok');
+      await c.wait(300); c.bar('m1', 1, 350); c.show('m1L');
+      await c.wait(450); c.bar('m2', 1, 900);
+      await c.wait(950); c.show('m2L m2T'); c.bar('m3', 1, 1000);
+      await c.wait(1050); c.show('m3L m0L'); c.cap('其中 Hermes 冷启动单独约 16 秒；挂盘 + 见盘约 5 秒', 'hermes');
+      await c.step();
+      c.cap('预热：起 Sandbox、启动 Hermes，平时就做好');
+      await c.wait(300); c.show('mvArr');
+      await c.wait(900); c.show('pre');
+      await c.wait(900); c.show('tgt'); c.cap('换机只剩挂盘、下发平台凭证、加载用户会话：目标最快约 10 秒', 'goal');
+    }],
+
+    // 第 6 页 · 两套方案对比：只列优劣，不表态
+    [async (c) => {
+      await c.wait(300); c.add('colL', 'on');
+      await c.wait(1200); c.add('colR', 'on');
+    }],
+
+    // 第 7 页 · 管家 Agent：派活与重派（已跑通 POC，执行端为 Hermes）+ 工作簿与跟进收尾（调研设计，未实测）
+    [async (c) => {
+      await c.step();
+      c.cap('用户提出一个大任务');
+      await c.wait(500); c.show('msg'); c.fly('tMsg', 700);
+      await c.wait(900); c.add('bt', 'hl-p'); c.status('btSt', '拆成 3 个子任务', '#fbbf24'); c.show('wb');
+      c.cap('管家拆分任务，记进工作簿：背景、进展、阻塞、结果、过程', 'research');
+      await c.wait(1200); c.fly('tA', 900); c.fly('tB', 900); c.fly('tC', 900);
+      await c.wait(1000); c.add('e1 e2 e3', 'work'); c.bar('b1', 1, 4200); c.bar('b2', 0.42, 1700); c.bar('b3', 1, 5000); c.cap('3 个执行 Agent 同时开工');
+      c.status('wA', '进行中', '#38bdf8'); c.status('wB', '进行中', '#38bdf8'); c.status('wC', '进行中', '#38bdf8');
+      await c.wait(1900); await c.step(); c.add('e2', 'bad'); c.add('e2S', 'shake'); c.show('e2x'); c.add('b2', 'red'); c.cap('执行 Agent B 中断——只影响它自己');
+      c.status('wB', '中断 · 进度已记在簿', '#f87171');
+      await c.wait(1200); c.status('btSt', '重派子任务 B', '#fbbf24'); c.show('d4L e4'); c.move('e4', 0, 0, 700);
+      await c.wait(700); c.fly('tB2', 1000); c.status('wB', 'B′ 接手，从记录处续做', '#fbbf24');
+      await c.wait(1000); c.add('e4', 'work'); c.bar('b4', 1, 2400); c.cap('换一个执行 Agent，事项和进展不丢，从工作簿接着做', 'research');
+      await c.wait(300); c.show('e1ok'); c.status('wA', '✓ 已完成，结果已记录', '#34d399');
+      await c.wait(400); c.show('e3ok'); c.status('wC', '✓ 已完成，结果已记录', '#34d399');
+      await c.wait(1800); c.show('e4ok'); c.status('wB', '✓ 已完成，结果已记录', '#34d399');
+      await c.step();
+      await c.wait(300); c.fly('rA', 900); c.fly('rC', 900); c.fly('rB', 1100); c.status('btSt', '汇总结果', '#fbbf24'); c.cap('执行 Agent 把结果反馈给管家');
+      await c.wait(1300); c.show('reply'); c.status('btSt', '跟进中 · 等用户反馈', '#fbbf24'); c.status('wS', '执行已结束 · 待用户确认', '#fbbf24');
+      c.cap('执行结束 ≠ 事情解决：管家继续跟进', 'research');
+      await c.step();
+      await c.wait(300); c.show('okMsg'); c.cap('用户要求补充');
+      await c.wait(1100); c.status('wS', '用户补充 · 继续推进', '#38bdf8'); c.status('btSt', '继续推进', '#fbbf24'); c.cap('管家决定继续推进，派出补充任务');
+      await c.wait(1300); c.fly('tA', 900); c.hide('e1ok');
+      await c.wait(1300); c.show('e1ok'); c.say('reply', '已补上定价对比 ✓'); c.status('wS', '✓ 用户确认，事项已解决', '#34d399'); c.status('btSt', '✓ 事项已解决', '#34d399');
+      c.cap('用户确认后，管家才把事项标为已解决', 'research');
+    }],
+  ];
+
+  const players = slides.map((s, i) => new Player(s, ACTS[i]));
+  let cur = -1;
+  const pg = document.getElementById('pg'), prog = document.getElementById('prog');
+  const stepBtn = document.getElementById('stepBtn'), modeBtn = document.getElementById('modeBtn');
+
+  function syncHint() {
+    const p = players[cur];
+    if (!p) return;
+    stepBtn.classList.toggle('wait', !!p.pending);
+    stepBtn.textContent = p.pending ? '▶ 播放下一段' : p.running ? '⏩ 跳到本段末尾' : '本页已播完';
+  }
+
+  function setMode(manual) {
+    MANUAL = manual;
+    document.documentElement.classList.toggle('manual', manual);
+    modeBtn.textContent = manual ? '手动：点击播放' : '自动播放';
+    try { localStorage.setItem('deck-mode', manual ? 'manual' : 'auto'); } catch (_) {}
+  }
+
+  function go(n) {
+    n = Math.max(0, Math.min(slides.length - 1, n));
+    if (n === cur) return;
+    const prev = cur; cur = n;
+    slides.forEach((s, i) => s.classList.toggle('active', i === n));
+    if (prev >= 0) setTimeout(() => { if (cur !== prev) players[prev].reset(); }, STATIC ? 0 : 520);
+    players[n].play();
+    pg.textContent = (n + 1) + ' / ' + slides.length;
+    prog.style.width = ((n + 1) / slides.length * 100) + '%';
+    history.replaceState(null, '', location.search + '#' + n);
+    syncHint();
+  }
+  // 键盘、滚轮、‹ › 只负责翻页；手动模式下点击画面或“下一段”按钮才播放下一段动画
+  const next = () => go(cur + 1);
+  const prev = () => go(cur - 1);
+  const advance = () => { players[cur].advance(); syncHint(); };
+  const replay = () => { players[cur].play(undefined, { now: true }); syncHint(); };
+  const toggleMode = () => { setMode(!MANUAL); players[cur].play(); syncHint(); };
+
+  const blur = (e) => e.currentTarget.blur();
+  document.getElementById('prev').addEventListener('click', (e) => { blur(e); prev(); });
+  document.getElementById('next').addEventListener('click', (e) => { blur(e); next(); });
+  stepBtn.addEventListener('click', (e) => { blur(e); advance(); });
+  modeBtn.addEventListener('click', (e) => { blur(e); toggleMode(); });
+  slides.forEach((s, i) => {
+    const rb = s.querySelector('.replay');
+    if (rb) rb.addEventListener('click', (e) => { blur(e); replay(); });
+    s.querySelectorAll('.tabs button').forEach((b, k) => b.addEventListener('click', (e) => { blur(e); players[i].play(k, { now: true }); syncHint(); }));
+  });
+  deck.addEventListener('click', (e) => { if (MANUAL && !e.target.closest('button')) advance(); });
+
+  addEventListener('keydown', (e) => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const k = e.key;
+    if (k === 'ArrowRight' || k === 'ArrowDown' || k === 'PageDown' || (k === ' ' && !e.shiftKey) || k === 'Enter') { e.preventDefault(); next(); }
+    else if (k === 'ArrowLeft' || k === 'ArrowUp' || k === 'PageUp' || (k === ' ' && e.shiftKey)) { e.preventDefault(); prev(); }
+    else if (k === 'Home') go(0);
+    else if (k === 'End') go(slides.length - 1);
+    else if (k === 'r' || k === 'R') replay();
+    else if (k === 'm' || k === 'M') toggleMode();
+    else if (k === 'f' || k === 'F') {
+      if (document.fullscreenElement) document.exitFullscreen();
+      else if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen();
+    }
+  });
+
+  let wheelLock = 0;
+  addEventListener('wheel', (e) => {
+    const d = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+    if (Math.abs(d) < 12) return;
+    const now = Date.now();
+    if (now < wheelLock) return;
+    wheelLock = now + 900;
+    if (d > 0) next(); else prev();
+  }, { passive: true });
+
+  let tx = null;
+  addEventListener('touchstart', (e) => { tx = e.touches[0].clientX; }, { passive: true });
+  addEventListener('touchend', (e) => {
+    if (tx === null) return;
+    const dx = e.changedTouches[0].clientX - tx; tx = null;
+    if (Math.abs(dx) > 50) { if (dx < 0) next(); else prev(); }
+  }, { passive: true });
+
+  let saved = null;
+  try { saved = localStorage.getItem('deck-mode'); } catch (_) {}
+  setMode(/[?&]manual\b/.test(location.search) || (!/[?&]auto\b/.test(location.search) && saved === 'manual'));
+  go(parseInt(location.hash.slice(1), 10) || 0);
+})();
+</script>
+</body>
+</html>

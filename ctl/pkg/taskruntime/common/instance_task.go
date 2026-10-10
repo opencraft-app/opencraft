@@ -27,6 +27,12 @@ type DestroyInstanceTaskPayload struct {
 	OperationID  string `json:"operation_id,omitempty"`
 }
 
+type ResumeInstanceTaskPayload struct {
+	InstanceID  string `json:"instance_id"`
+	Timeout     int32  `json:"timeout"`
+	OperationID string `json:"operation_id,omitempty"`
+}
+
 type BuildInstanceBirthProfileTaskPayload struct {
 	InstanceID string `json:"instance_id"`
 }
@@ -372,6 +378,7 @@ type ModifyInstanceTaskPayload struct {
 const (
 	TaskNameCreateInstance            = "CreateInstance"
 	TaskNameDestroyInstance           = "DestroyInstance"
+	TaskNameResumeInstance            = "ResumeInstance"
 	TaskNameBuildInstanceBirthProfile = "BuildInstanceBirthProfile"
 
 	// trade-pass-isolate 父子 task（Q22-I-E）

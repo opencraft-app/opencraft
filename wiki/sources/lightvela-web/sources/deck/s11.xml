@@ -1,0 +1,38 @@
+<slide id="s11">
+  <background color="bg-page" />
+  <shape type="line" x="40" y="26" width="1200" height="0" stroke="border" />
+  <shape type="line" x="520" y="26" width="240" height="0" stroke="primary" stroke-width="3" />
+  <text x="40" y="36" width="1200" height="24" font="caption" color="primary">03 产品现状 · 数据规模与开通转化</text>
+  <text x="40" y="77" width="1200" height="50" font="heading" color="text-main"><strong>国内站注册更多，Pass 开通率低于国际站</strong></text>
+  <text x="40" y="132" width="1200" height="30" font="body" color="text-muted">两站累计注册与 Pass 开通／领取情况，包含免费体验。</text>
+
+  <shape type="rect" x="40" y="188" width="575" height="278" fill="bg-surface" corner-radius="4" />
+  <shape type="rect" x="665" y="188" width="575" height="278" fill="bg-surface" corner-radius="4" />
+  <text x="62" y="208" width="531" height="36" font="strong" color="primary"><strong>国内站</strong></text>
+  <text x="62" y="260" width="250" height="28" font="body" color="text-main">累计注册用户</text>
+  <text x="62" y="294" width="250" height="58" font="display" color="text-main"><strong>89,122</strong></text>
+  <text x="338" y="260" width="255" height="28" font="body" color="text-main">开通／领取 Pass 用户</text>
+  <text x="338" y="303" width="255" height="48" font="heading" color="text-main"><strong>25,218</strong></text>
+  <text x="62" y="366" width="531" height="42" font="heading" color="primary"><strong>开通率 28.3%</strong></text>
+  <shape id="domestic-pass-base" type="rect" x="62" y="416" width="531" height="14" fill="chart-light" />
+  <shape id="domestic-pass-converted" type="rect" x="62" y="416" width="150.273" height="14" fill="primary" />
+  <text x="62" y="438" width="531" height="20" font="caption" color="text-muted">本站累计注册 = 100%</text>
+
+  <text x="687" y="208" width="531" height="36" font="strong" color="primary"><strong>国际站</strong></text>
+  <text x="687" y="260" width="250" height="28" font="body" color="text-main">累计注册用户</text>
+  <text x="687" y="294" width="250" height="58" font="display" color="text-main"><strong>17,807</strong></text>
+  <text x="963" y="260" width="255" height="28" font="body" color="text-main">开通／领取 Pass 用户</text>
+  <text x="963" y="303" width="255" height="48" font="heading" color="text-main"><strong>14,036</strong></text>
+  <text x="687" y="366" width="531" height="42" font="heading" color="primary"><strong>开通率 78.8%</strong></text>
+  <shape id="international-pass-base" type="rect" x="687" y="416" width="531" height="14" fill="chart-light" />
+  <shape id="international-pass-converted" type="rect" x="687" y="416" width="418.428" height="14" fill="primary" />
+  <text x="687" y="438" width="531" height="20" font="caption" color="text-muted">本站累计注册 = 100%</text>
+
+  <shape type="rect" x="40" y="494" width="1200" height="146" fill="#F3EFFF" corner-radius="4" />
+  <text x="62" y="509" width="1156" height="38" font="strong" color="primary"><strong>免费体验仍有开通阻力，实名环节需重点关注</strong></text>
+  <text x="62" y="555" width="1156" height="48" font="body" color="text-main" line-height="1.45"><p>国内站即使提供免费体验，Pass 开通率仍只有 28.3%，比国际站低 50.5 个百分点。</p><p>目前观察，实名验证环节带来了用户流失。</p></text>
+  <text x="62" y="612" width="1156" height="20" font="caption" color="text-muted">当前观察，尚未完成分步漏斗归因；两站全部差距不直接归因于实名。</text>
+  <text x="40" y="654" width="1200" height="22" font="caption" color="text-muted">开通率 = 累计开通／领取 Pass 用户数 ÷ 累计注册用户数；含免费领取，与付费及当前生效套餐口径不同。</text>
+  <text x="40" y="684" width="1130" height="20" font="caption" color="text-muted">LightVela｜本次更新数据与团队观察；10 月 9 日历史规模与统计口径见详细参考</text>
+  <text x="1180" y="684" width="60" height="20" font="caption" color="text-muted" align="right">13 / 31</text>
+</slide>

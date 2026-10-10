@@ -189,8 +189,13 @@ func (ReleaseEntity) TableName() string {
 // ---- Operation Entity ----
 
 type OperationEntity struct {
-	Kind          string `gorm:"-"`
-	BackendSHA256 string `gorm:"-"`
+	// Internal-only CTL fact; nil on legacy/unhydrated responses is unknown.
+	// Derived from current kind and release history, never a database column.
+	HasBackendHistory *bool `gorm:"-" json:"HasBackendHistory,omitempty"`
+	// Last reported total, used only as a conservative fallback for retained history.
+	PreviousStorageBytes *int64 `gorm:"-" json:"PreviousStorageBytes,omitempty"`
+	Kind                 string `gorm:"-"`
+	BackendSHA256        string `gorm:"-"`
 	model.BaseEntity
 	model.BaseUserEntity
 

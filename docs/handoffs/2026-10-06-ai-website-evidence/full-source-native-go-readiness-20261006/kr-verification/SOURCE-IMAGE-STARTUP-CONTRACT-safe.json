@@ -1,0 +1,216 @@
+{
+  "status": "FOUR_NATIVE_GO_SOURCE_IMAGE_STARTUP_CONTRACT_PASS_BUSINESS_RENEWAL_PARTIAL",
+  "checkedAt": "2026-10-06T11:31:11.905730+00:00",
+  "successorScopeSHA256": "2a4b230e1199ffbb47894cfa218118bdb38ca79f88189e126d589ace75b4a8d1",
+  "matrix": [
+    {
+      "role": "registry",
+      "status": "SOURCE_IMAGE_STARTUP_CONTRACT_PASS",
+      "deploymentUID": "46cb1fef-d9f7-4fc7-81c0-3110e6488430",
+      "OCIEntrypoint": [
+        "/usr/local/bin/worker-registry"
+      ],
+      "OCICommand": null,
+      "workloadCommand": [],
+      "effectiveExecutable": "/usr/local/bin/worker-registry",
+      "entrypointPolicy": "Use reviewed OCI Entrypoint",
+      "argsSHA256": "f38575eb6a996c132647dafee7839ab37f0e32ad8239205010021e97bd71a3e5",
+      "argsMatchReviewedExistingPayload": true,
+      "flagNamesSupportedBySelectedSource": [
+        "listen-address",
+        "backend",
+        "fdb-cluster-file",
+        "fdb-key-prefix",
+        "cos-bucket-url",
+        "cos-object-prefix",
+        "version-retention",
+        "max-compatibility-date"
+      ],
+      "sourceBinarySHA256": "992399419a8ed1a0340f8a7ff4cdcaf493b560eca8ce203d175f919022ee25a7",
+      "volumeMountsSHA256": "c1814a4139f50837367c901b8f6a8cc04050a21ba10062d912eeb0e334535003",
+      "mountPaths": [
+        "/etc/foundationdb",
+        "/var/fdb-tls",
+        "/etc/actor/code-session"
+      ],
+      "mountsCoverUsrLocalBin": false,
+      "mountsCoverSelectedExecutable": false,
+      "readOnlyRootFilesystem": true,
+      "UID": 65532,
+      "GID": 65532,
+      "allNonImageLiveSpecPreserved": true,
+      "immutableOCIPublishedActualImageIDDigest": "sha256:11b865927c8794dcf5d39225d1778e1b75a1c40d6af59c877411419664498bfe",
+      "digestEqualityGate": "PASS",
+      "readinessRoleSemantics": "PASS new Pods HTTP200 /readyz => successful Store.Check state; FDB+COS HEAD result may be cached for 30 seconds. Not proof each observed GET issued a fresh physical HEAD or fetched Worker code.",
+      "observedPodCount": 3,
+      "actualPID1HashClaimed": false
+    },
+    {
+      "role": "renewer",
+      "status": "SOURCE_IMAGE_STARTUP_CONTRACT_PASS",
+      "deploymentUID": "8bb70185-38c7-4697-87f4-c08121589109",
+      "OCIEntrypoint": [
+        "/storage-session-renewer"
+      ],
+      "OCICommand": null,
+      "workloadCommand": [],
+      "effectiveExecutable": "/storage-session-renewer",
+      "entrypointPolicy": "Use reviewed OCI Entrypoint",
+      "argsSHA256": "263d5dcc436deb3172d6528f5269a0a4c0b4328cadcc564a1b37d22e451ad59b",
+      "argsMatchReviewedExistingPayload": true,
+      "flagNamesSupportedBySelectedSource": [
+        "config",
+        "listen"
+      ],
+      "sourceBinarySHA256": "e63274250644b3054b0a87e5c3b109aa960ec715db6feaab8b024ff83704e7af",
+      "volumeMountsSHA256": "5aea9ae29394f3818fd3acc7e3dbcd8ce078358162e0ee6b60d2b84c75b7b98f",
+      "mountPaths": [
+        "/etc/storage-session-renewer",
+        "/var/run/secrets/kubernetes.io/serviceaccount",
+        "/var/run/secrets/storage-oidc"
+      ],
+      "mountsCoverUsrLocalBin": false,
+      "mountsCoverSelectedExecutable": false,
+      "readOnlyRootFilesystem": true,
+      "UID": 65532,
+      "GID": 65532,
+      "allNonImageLiveSpecPreserved": true,
+      "immutableOCIPublishedActualImageIDDigest": "sha256:23a1d69133b0ffe87ee0d110cf9cffec06b7d2b94c6107e7acdeabc54b855734",
+      "digestEqualityGate": "PASS",
+      "readinessRoleSemantics": "PASS new Pod ready=true before health deadline: checks existing persisted role sessions and fresh held Lease; can become Ready without STS exchange when sessions are not due. Does not prove new process performed normal renewal.",
+      "observedPodCount": 1,
+      "actualPID1HashClaimed": false
+    },
+    {
+      "role": "runtime-capacity",
+      "status": "SOURCE_IMAGE_STARTUP_CONTRACT_PASS",
+      "deploymentUID": "08523a87-d3e8-47dd-b7fe-761153f84114",
+      "OCIEntrypoint": [
+        "/usr/local/bin/actor-fleet-controller"
+      ],
+      "OCICommand": null,
+      "workloadCommand": [
+        "/usr/local/bin/workerd-runtime-capacity-controller"
+      ],
+      "effectiveExecutable": "/usr/local/bin/workerd-runtime-capacity-controller",
+      "entrypointPolicy": "Intentional supported multi-binary override preserved",
+      "argsSHA256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "argsMatchReviewedExistingPayload": true,
+      "flagNamesSupportedBySelectedSource": [],
+      "sourceBinarySHA256": "51988f2d3b8e617b9ba98ffc5780f24d2a72c0dd6be6a8718b8cbac42c21926e",
+      "volumeMountsSHA256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "mountPaths": [],
+      "mountsCoverUsrLocalBin": false,
+      "mountsCoverSelectedExecutable": false,
+      "readOnlyRootFilesystem": true,
+      "UID": 65532,
+      "GID": 65532,
+      "allNonImageLiveSpecPreserved": true,
+      "immutableOCIPublishedActualImageIDDigest": "sha256:823bad9c652050cc7704ab8bfed518f1a6ad6816d7a373edfadbf194b3343ff3",
+      "digestEqualityGate": "PASS",
+      "readinessRoleSemantics": "PASS Deployment/POD Kubernetes readiness/startup only; reviewed role workload has no readinessProbe. Not proof new admission or capacity action. Capacity/exact-scale-down/targeted-repair remain disabled qualification contract.",
+      "observedPodCount": 1,
+      "actualPID1HashClaimed": false
+    },
+    {
+      "role": "stateless-admission",
+      "status": "SOURCE_IMAGE_STARTUP_CONTRACT_PASS",
+      "deploymentUID": "592bf7df-e260-4c21-bac8-96ef4a5008d1",
+      "OCIEntrypoint": [
+        "/usr/local/bin/actor-fleet-controller"
+      ],
+      "OCICommand": null,
+      "workloadCommand": [
+        "/usr/local/bin/workerd-runtime-capacity-controller"
+      ],
+      "effectiveExecutable": "/usr/local/bin/workerd-runtime-capacity-controller",
+      "entrypointPolicy": "Intentional supported multi-binary override preserved",
+      "argsSHA256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "argsMatchReviewedExistingPayload": true,
+      "flagNamesSupportedBySelectedSource": [],
+      "sourceBinarySHA256": "51988f2d3b8e617b9ba98ffc5780f24d2a72c0dd6be6a8718b8cbac42c21926e",
+      "volumeMountsSHA256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "mountPaths": [],
+      "mountsCoverUsrLocalBin": false,
+      "mountsCoverSelectedExecutable": false,
+      "readOnlyRootFilesystem": true,
+      "UID": 65532,
+      "GID": 65532,
+      "allNonImageLiveSpecPreserved": true,
+      "immutableOCIPublishedActualImageIDDigest": "sha256:823bad9c652050cc7704ab8bfed518f1a6ad6816d7a373edfadbf194b3343ff3",
+      "digestEqualityGate": "PASS",
+      "readinessRoleSemantics": "PASS Deployment/POD Kubernetes readiness/startup only; reviewed role workload has no readinessProbe. Not proof new admission or capacity action. Capacity/exact-scale-down/targeted-repair remain disabled qualification contract.",
+      "observedPodCount": 1,
+      "actualPID1HashClaimed": false
+    }
+  ],
+  "normalRenewerBusinessGate": {
+    "status": "PARTIAL_NEW_RENEWER_READY_EXISTING_SESSION_ADOPTION_NORMAL_RENEWAL_NOT_YET_PROVED_BY_AVAILABLE_LOCAL_RECEIPTS",
+    "newPodUID": "8fcb49d9-f25d-4af5-b5d6-0164dd812404",
+    "newImageID": "lightclaw-kr1.tencentcloudcr.com/actor-fleet/storage-session-renewer@sha256:23a1d69133b0ffe87ee0d110cf9cffec06b7d2b94c6107e7acdeabc54b855734",
+    "newContainerStartedAt": "2026-10-06T11:10:53Z",
+    "lastNewPodConsumerObservation": "2026-10-06T11:13:52.016726+00:00",
+    "observedCodeGeneration": "ba459e76b940d61c2c5fdc33",
+    "observedCodeExpiryUTC": "2026-10-06T11:39:12+00:00",
+    "normalRenewBeforeSeconds": 600,
+    "observedCodeDueTimeUTC": "2026-10-06T11:29:12+00:00",
+    "generationExpiryAdvancedWithinAvailableNewPodReceipt": false,
+    "olderNormalRotationReceipt": "/Users/shawnmy/.codex/worktrees/website-backend-hidden-release/mono2/.tmp/minisandbox-integration/kr-ready-20261006/kr-normal600-real-periodic-rotation-checkpoint.json",
+    "olderReceiptCheckedAt": "2026-10-06T03:28:04.248011+00:00",
+    "olderProofPredatesNewProcess": true,
+    "oldImageReceiptInheritedAsRegressionBaselineOnly": true,
+    "newImageNormalRenewalPASSClaimed": false
+  },
+  "necessaryRemainingBusinessEvidence": [
+    {
+      "gate": "NEW_RENEWER_NORMAL_THREE_ROLE_RENEWAL",
+      "status": "MISSING_FOR_NEW_IMAGE_IN_AVAILABLE_RECEIPTS",
+      "minimumReceipt": "Existing automatic normal600 cycle: code/cold/backup same Secret UIDs, generations+expiries advance, new Pod/container/Lease holder binding and no window/rotation intervention; reuse existing sanitized logs/receipts if already collected. No test suite or forced STS call."
+    },
+    {
+      "gate": "NEW_REGISTRY_CURRENT_SESSION_REAL_CODE_CONSUMPTION",
+      "status": "ONLY_HEALTH_STATE_PROVED_FOR_NEW_IMAGE_OLD_IMAGE_AFTER_EXPIRY_GET_IS_REGRESSION_BASELINE",
+      "minimumReceipt": "If final-image storage request acceptance remains required, reuse existing actual code read on new digest/current generation after natural renewal. Otherwise one bounded read of existing immutable version only, no upload/app creation. Do not claim /readyz proves physical code GET; no artificial wait until old expiry."
+    }
+  ],
+  "notRequiredAdditionalGate": [
+    "per-Pod PID1 hash or user-provided CRI executor",
+    "backup restore",
+    "full business suite",
+    "repeat cold LIST/FDB backup list for unchanged consumers",
+    "production regional readiness"
+  ],
+  "readinessClaimCorrection": "Earlier health receipt interpreted Store.Check as actual FDB/COS HEAD for each GET; source permits 30s cached success. This review narrows that claim without altering original receipt.",
+  "evidence": {
+    "/Users/shawnmy/.codex/worktrees/website-backend-hidden-release/mono2/.tmp/minisandbox-integration/full-source-native-go-readiness-20261006/kr-rollout-successor/SCOPE-four-native-kr-image-cas.json": "2a4b230e1199ffbb47894cfa218118bdb38ca79f88189e126d589ace75b4a8d1",
+    "/Users/shawnmy/.codex/worktrees/website-backend-hidden-release/mono2/.tmp/minisandbox-integration/full-source-native-go-readiness-20261006/kr-verification/successor-live-image-consumer-safe-receipt.json": "5c54ea3be87cb3df0e24009e532351164cb4641272db1af08a3000788ea411d6",
+    "/Users/shawnmy/.codex/worktrees/website-backend-hidden-release/mono2/.tmp/minisandbox-integration/full-source-native-go-readiness-20261006/r3/NATIVE-GO-OCI-independent-review-safe.json": "008d18442ea3d32064c50d66d7e9f65cb5adcecf6c25142af0ffc89a262885dd",
+    "/Users/shawnmy/.codex/worktrees/website-backend-hidden-release/mono2/.tmp/minisandbox-integration/full-source-native-go-readiness-20261006/publication/native-test-publish-once-ledger-safe.json": "f41ba544d682d85f715ae0d93e838b31d3ef4dc96acf15b6082430f02a0d5fc9",
+    "/Users/shawnmy/.codex/worktrees/website-backend-hidden-release/mono2/.tmp/minisandbox-integration/full-source-native-go-readiness-20261006/kr-rollout-successor/rollout-observe-20261006T111842321946Z-safe.json": "4e3e469a729b26cbd65039f4f48cb63732e5e4ce7838e3f1bb40dbc6db2b02bd",
+    "/Users/shawnmy/.codex/worktrees/website-backend-hidden-release/mono2/.tmp/minisandbox-integration/kr-ready-20261006/kr-registry-workload-payload.json": "0514d279f489186b5920c96c192c06d214a92b09979eb32087200cce9bb82b75",
+    "/Users/shawnmy/.codex/worktrees/website-backend-hidden-release/mono2/.tmp/minisandbox-integration/kr-ready-20261006/kr-formal-renewer-workload-payload.json": "c36d567b19322128ca40365da530e25384537dac5809945a99a619c075d8688e",
+    "/Users/shawnmy/.codex/worktrees/website-backend-hidden-release/mono2/.tmp/minisandbox-integration/kr-ready-20261006/kr-admission-workload-payload.json": "935603d2c5ff6a38de201bc121f2983bbb54233e640798b0b1072b196bc6f1e0",
+    "/Users/shawnmy/.codex/worktrees/website-backend-hidden-release/mono2/minisandbox/infra/cells/cmd/worker-registry/main.go": "fb1708585593810732985db9e2ae10267cc2da9dbe54fbea1a5ce318c4f0182c",
+    "/Users/shawnmy/.codex/worktrees/website-backend-hidden-release/mono2/minisandbox/infra/cells/cmd/storage-session-renewer/main.go": "17b58eb72103071326ae7c75e8af89641944c01d8762414cf580c3e26272f9ae",
+    "/Users/shawnmy/.codex/worktrees/website-backend-hidden-release/mono2/minisandbox/infra/cells/cmd/workerd-runtime-capacity-controller/main.go": "69b7d603c4e0fd29f659ec45aeced21c1a27fdca635123450ce027f73ec69ce5",
+    "/Users/shawnmy/.codex/worktrees/website-backend-hidden-release/mono2/minisandbox/infra/cells/internal/workerregistry/durable_store.go": "1b81ffdca3cc712053bde19a732e5f322cf709a45ca8f44c585b7818be232676",
+    "/Users/shawnmy/.codex/worktrees/website-backend-hidden-release/mono2/minisandbox/infra/cells/internal/workerregistry/server.go": "2bd72e28c8f11e564460ed1f1524818b92b7fb4747f03298afe1ce69ac6e0de3",
+    "/Users/shawnmy/.codex/worktrees/website-backend-hidden-release/mono2/minisandbox/infra/cells/internal/workerregistry/cos_store.go": "fdf048fa60cbd69184c806788391d0c20d4a4b81d74bb354ebe63d61dc24f26d",
+    "/Users/shawnmy/.codex/worktrees/website-backend-hidden-release/mono2/minisandbox/infra/cells/internal/storagesession/controller.go": "d239ef2ab5f470614c7313aea875d5234a1eedf536f768443e4b437199c03aaa",
+    "/Users/shawnmy/.codex/worktrees/website-backend-hidden-release/mono2/minisandbox/infra/cells/internal/storagesession/secrets.go": "486313d53581224f03a6ac766a6f8bb407783ab62885e11e9516500c70b86484",
+    "/Users/shawnmy/.codex/worktrees/website-backend-hidden-release/mono2/.tmp/minisandbox-integration/kr-ready-20261006/kr-normal600-real-periodic-rotation-checkpoint.json": "53c7a255a92f52b9fb77e07c313101a2dd9ce431f75521fd29d44771886433b7",
+    "/Users/shawnmy/.codex/worktrees/website-backend-hidden-release/mono2/.tmp/minisandbox-integration/kr-ready-20261006/kr-formal-renewer-first-ready-session.json": "85cc2e3d135afd35e91c07c324f9e6f2ad1574942afdb2fc430d43dd118a5d02",
+    "/Users/shawnmy/.codex/worktrees/website-backend-hidden-release/mono2/.tmp/minisandbox-integration/kr-ready-20261006/kr-registry-post-expiry-consumer-proof.json": "985f4aaeff98d31ca2ffbe0f68d7d7628785b9990b5c47c739eae88c3bef2925"
+  },
+  "operations": {
+    "network": 0,
+    "runtimeRequests": 0,
+    "secretReads": 0,
+    "tests": 0,
+    "apply": 0,
+    "push": 0,
+    "mint": 0,
+    "sourceEdits": 0
+  },
+  "productionReadyClaimed": false
+}

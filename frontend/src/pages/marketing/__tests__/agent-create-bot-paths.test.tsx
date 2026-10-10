@@ -193,9 +193,9 @@ function MultiBotHistoryJourney() {
   );
 }
 
-/** 等引导表单出现（「换一批」是表单独有的头像操作） */
+/** 等引导表单出现（「随机样式」是表单独有的头像操作） */
 const waitForForm = () => waitFor(() => {
-  expect(screen.getByRole("button", { name: "换一批" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "随机样式" })).toBeInTheDocument();
 });
 
 /** 点模板卡片 → 弹窗 → 点「创建」 */
@@ -293,7 +293,7 @@ describe("create bot: all entry paths", () => {
     await settle();
 
     // 不该被弹回表单
-    expect(screen.queryByRole("button", { name: "换一批" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "随机样式" })).not.toBeInTheDocument();
     // 已就绪的实例应完成配置并进入总览；不能把卡在进度页当成成功。
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith(
       "/agents/chat?bot=ins-sub", { replace: true },
@@ -328,7 +328,7 @@ describe("create bot: all entry paths", () => {
 
     // 新实例是 provisioning —— 这正是「刷新恢复」effect 会翻转 isCreating 的时机
     expect(addBot).toHaveBeenCalled();
-    expect(screen.queryByRole("button", { name: "换一批" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "随机样式" })).not.toBeInTheDocument();
     /*
      * 判据用「正在保存 Bot 资料」：它在所有路径下都有。
      * soul 那步的文案会随模式变（写入人设 / 更新名称与简介 / 保留模式），
@@ -348,7 +348,7 @@ describe("create bot: all entry paths", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "模拟浏览器返回" }));
     await waitFor(() => {
-      expect(screen.queryByRole("button", { name: "换一批" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "随机样式" })).not.toBeInTheDocument();
     });
     expect(addBot).not.toHaveBeenCalled();
   });
@@ -384,7 +384,7 @@ describe("create bot: all entry paths", () => {
     await settle();
 
     expect(addBot).toHaveBeenCalled();
-    expect(screen.queryByRole("button", { name: "换一批" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "随机样式" })).not.toBeInTheDocument();
     // 空白创建也要写资料
     await expectSetupRunning();
   });

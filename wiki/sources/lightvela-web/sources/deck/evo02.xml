@@ -1,0 +1,25 @@
+<slide id="evo02">
+  <background color="bg-page" />
+  <shape type="line" x="40" y="26" width="1200" height="0" stroke="border" />
+  <shape type="line" x="760" y="26" width="240" height="0" stroke="primary" stroke-width="3" />
+  <text x="40" y="36" width="1200" height="24" font="caption" color="primary">04 产品演进 · 产品亮点</text>
+  <text x="40" y="77" width="1200" height="50" font="heading" color="text-main"><strong>完善多 Bot、云电脑与硬件连接能力</strong></text>
+  <text x="40" y="132" width="1200" height="36" font="body" color="text-muted">围绕应用、协作与硬件场景，补齐任务组织、云端执行和开放接入。</text>
+  <text x="40" y="202" width="245" height="42" font="strong" color="primary"><strong>多 Bot</strong></text>
+  <text x="312" y="197" width="648" height="38" font="strong" color="text-main"><strong>从独立配置继续探索协同执行</strong></text>
+  <text x="312" y="252" width="648" height="65" font="body" color="text-main" line-height="1.6">完善分工组织，探索多 Bot 以及 Hermes 与 Coding Agent 的协同执行。</text>
+  <text x="1010" y="213" width="214" height="103" font="body" size="16" color="text-muted" line-height="1.6"><p><strong color="primary">已有基础</strong></p><p>独立个性、记忆、工作空间</p><p>协同执行继续探索</p></text>
+  <shape type="line" x="40" y="348" width="1200" height="0" stroke="border" />
+  <text x="40" y="384" width="245" height="42" font="strong" color="primary"><strong>云电脑</strong></text>
+  <text x="312" y="379" width="648" height="38" font="strong" color="text-main"><strong>补齐浏览器、应用与文件操作</strong></text>
+  <text x="312" y="434" width="648" height="65" font="body" color="text-main" line-height="1.6">让任务在云端持续运行，保留工作状态；长期在线与权限管理共同支撑执行。</text>
+  <text x="1010" y="395" width="214" height="103" font="body" size="16" color="text-muted" line-height="1.6"><p><strong color="primary">持续完善</strong></p><p>云端环境已有基础</p><p>执行范围仍需补齐</p></text>
+  <shape type="line" x="40" y="530" width="1200" height="0" stroke="border" />
+  <text x="40" y="565" width="245" height="42" font="strong" color="primary"><strong>硬件生态</strong></text>
+  <text x="312" y="560" width="648" height="38" font="strong" color="text-main"><strong>开放连接，先支持开发者原型验证</strong></text>
+  <text x="312" y="615" width="648" height="54" font="body" color="text-main" line-height="1.45">探索 API、SDK、MCP 等连接方式，把设备输入、状态展示和任务执行接入云端 Agent Session。</text>
+  <shape type="rect" x="1000" y="558" width="228" height="101" fill="#F0EBFF" corner-radius="4" />
+  <text x="1015" y="572" width="198" height="76" font="body" size="16" color="primary" line-height="1.6"><p><strong>设备 ↔ 云端 Agent</strong></p><p>低成本接入实验</p><p>逐步积累接入方式</p></text>
+  <text x="40" y="684" width="1130" height="20" font="caption" color="text-muted">LightVela｜依据原文能力强化与开放接入提炼；硬件先做原型验证，完整架构、接口与设备示例见“详细参考”</text>
+  <text x="1180" y="684" width="60" height="20" font="caption" color="text-muted" align="right">17 / 20</text>
+</slide>

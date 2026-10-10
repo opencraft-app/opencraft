@@ -113,7 +113,7 @@ export interface BotTerminalSession {
 }
 
 /**
- * 云桌面（VNC）会话。对应 ctl `DesktopSessionResponse`：
+ * 云电脑（VNC）会话。对应 ctl `DesktopSessionResponse`：
  * 异步状态机 [图形层未装] Installing(带进度) → Provisioning → Ready；
  * 仅 Ready 时携带 wsUrl / password / 分辨率；Installing 时携带 installProgress / message。
  */
@@ -121,7 +121,9 @@ export interface CloudDesktopSession {
   status: "Installing" | "Provisioning" | "Ready" | "Paused" | "Failed";
   /** 按需安装图形层进度（0-100），仅 Installing 时返回（ctl §12 TB.2） */
   installProgress?: number;
-  /** 安装/当前阶段人类可读提示，Installing 时展示给用户 */
+  /** installing_desktop / configuring_wallpaper；缺失或未知时回退通用安装提示。 */
+  installPhase?: string;
+  /** 兼容后端原始文案，不用于 UI 展示或状态判定。 */
   message?: string;
   wsUrl?: string;
   password?: string;

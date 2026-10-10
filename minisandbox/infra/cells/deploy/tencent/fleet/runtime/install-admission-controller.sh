@@ -30,6 +30,22 @@ case "$static_release_transaction" in
 	;;
 esac
 
+# Platform additions are opt-in exact Secret names, never a prefix exemption.
+injected_image_pull_secrets=${RUNTIME_ADMISSION_INJECTED_IMAGE_PULL_SECRETS:-}
+python3 - "$injected_image_pull_secrets" <<'PYSECRETS'
+import re, sys
+raw = sys.argv[1]
+names = raw.split(",") if raw else []
+if len(names) != len(set(names)) or "actor-fleet-tcr" in names:
+    raise SystemExit("injected image pull Secret names must be unique and exclude the primary")
+for name in names:
+    if not name or len(name) > 253 or any(
+        len(label) > 63 or not re.fullmatch(r"[a-z0-9](?:[-a-z0-9]*[a-z0-9])?", label)
+        for label in name.split(".")
+    ):
+        raise SystemExit("invalid injected image pull Secret name")
+PYSECRETS
+
 # This Deployment is part of the immutable Runtime release ledger.  A direct
 # reconfiguration after the first ledger exists would make an otherwise
 # healthy Cell fail static-drift audit.  Only release-runtime.sh may change it
@@ -192,7 +208,7 @@ manifest_sha=$(
 		sha256sum "$script_dir/admission-controller.yaml"
 		printf '%s\n' "$cell_name" "$namespace" "$machine_set" "$min_replicas" "$max_replicas" \
 			"$max_repair_surge" "$targeted_repair_enabled" "$exact_scale_down_enabled" "$provider_cluster_id" \
-			"$tencent_region" "$tke_oidc_role_arn" "$receipt_hash" "$reporter_image" "$runtime_image"
+			"$tencent_region" "$tke_oidc_role_arn" "$receipt_hash" "$reporter_image" "$runtime_image" "$injected_image_pull_secrets"
 	} | sha256sum | cut -d' ' -f1
 )
 
@@ -217,6 +233,7 @@ sed \
 	-e "s|__MACHINE_REPAIR_RECEIPT_SHA256__|$receipt_hash|g" \
 	-e "s|__REPORTER_IMAGE__|$reporter_image|g" \
 	-e "s|__RUNTIME_IMAGE__|$runtime_image|g" \
+	-e "/name: RUNTIME_ADMISSION_INJECTED_IMAGE_PULL_SECRETS/{n;s|value: \"\"|value: \"$injected_image_pull_secrets\"|;}" \
 	-e "s|__MANIFEST_SHA256__|$manifest_sha|g" \
 	"$script_dir/admission-controller.yaml" >"$temporary/admission-controller.yaml"
 python3 "$script_dir/render-controller-oidc.py" \

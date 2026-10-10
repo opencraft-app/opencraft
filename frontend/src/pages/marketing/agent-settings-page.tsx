@@ -147,6 +147,8 @@ import {
 import { hasUnfinishedBuddySetup } from "@/pages/marketing/agent-buddy-setup-progress";
 import { CreatingLoadingView } from "@/pages/marketing/agent-creating-loading";
 import { GeometricAvatar } from "@/pages/marketing/agent-avatar-shapes";
+import { AgentHomepageAvatar } from '@/pages/marketing/agent-template-avatar';
+import { HermesAppearanceAvatar } from '@/pages/marketing/agent-dressup-studio';
 import { shouldShowAgentSettingsDataLoading } from "@/pages/marketing/agent-settings-loading";
 import { AgentSettingsLoadingContent } from "@/pages/marketing/agent-settings-loading-view";
 import { AgentUpgradingView } from "@/pages/marketing/agent-upgrading-view";
@@ -2766,6 +2768,7 @@ export const AgentSettingsPage = ({
   const [activeTabId, setActiveTabId] = useState((requestedBotId || visibleBots[0]?.id || requestedCreatingBotId) || "creating");
   const activeBot = isModifying ? undefined : visibleBots.find((bot) => bot.id === activeTabId) ?? visibleBots[0];
   const [profileEditorOpen, setProfileEditorOpen] = useState(false);
+  const [avatarEditorOnly, setAvatarEditorOnly] = useState(false);
   const [botRailProfileRevision, setBotRailProfileRevision] = useState(0);
   const [renewPassModalOpen, setRenewPassModalOpen] = useState(false);
 
@@ -3054,6 +3057,13 @@ export const AgentSettingsPage = ({
     exec: repositories.bots.execDebugCommand,
   });
 
+
+  const canEditActiveAvatar = Boolean(activeBot?.status === "running" && activeBot.profileId?.trim() && !buddyProfileState.loading && buddyProfileState.soulExists !== null);
+  const handleEditActiveAvatar = () => {
+    if (!canEditActiveAvatar) return;
+    setAvatarEditorOnly(true);
+    setProfileEditorOpen(true);
+  };
 
   /*
    * 配置引导只对「新订阅用户」生效。
@@ -5752,13 +5762,12 @@ export const AgentSettingsPage = ({
                       path: AGENT_SECTION_PATH_BY_ID.collaboration,
                       badge: "Beta",
                     }] : []),
-                    // 云桌面入口守卫：仅在后端下发 cloudDesktopEnabled 的环境（已配置
-                    // DESKTOP_INGRESS_DOMAIN，如 sandbox-bj-7）显示，现网隐藏避免死入口。
+                    // 云电脑入口默认隐藏，由本机 showCloudDesktop/hideCloudDesktop 控制。
                     ...(cloudDesktopEnabled
                       ? [
                           {
                             id: "cloud-desktop",
-                            label: t("云桌面"),
+                            label: t("云电脑"),
                             icon: <Monitor className="h-4 w-4" />,
                             path: AGENT_SECTION_PATH_BY_ID["cloud-desktop"],
                             badge: "Beta",
@@ -5871,7 +5880,7 @@ export const AgentSettingsPage = ({
                   <PopoverContent side="right" align="end" sideOffset={8} className="w-52 rounded-md p-1.5">
                     <div className="truncate px-2 py-1.5 text-xs text-black/45" title={agentProfileDisplayName}>{agentProfileDisplayName}</div>
                     {activeBotRestartError && <p role="alert" className="px-2 py-1 text-xs leading-relaxed text-red-500">{activeBotRestartError}</p>}
-                    <button type="button" className="lv-sidebar-user-menu-item w-full" disabled={activeBot.status !== "running" || !activeBot.profileId?.trim() || buddyProfileState.loading || buddyProfileState.soulExists === null} onClick={() => setProfileEditorOpen(true)}>
+                    <button type="button" className="lv-sidebar-user-menu-item w-full" disabled={activeBot.status !== "running" || !activeBot.profileId?.trim() || buddyProfileState.loading || buddyProfileState.soulExists === null} onClick={() => { setAvatarEditorOnly(false); setProfileEditorOpen(true); }}>
                       <Wand2 className="size-4" aria-hidden="true" />{t("修改资料")}
                     </button>
                     <button type="button" className="lv-sidebar-user-menu-item w-full" disabled={!canCreateAdditionalBot || activeBot.status !== "running" || !activeBot.profileId?.trim()} onClick={handleCloneBot}>
@@ -5973,7 +5982,7 @@ export const AgentSettingsPage = ({
                       配置完成后导航才出现（避免一进来就面对点不了的入口） */}
                   {hasSidebarLayout && !embedded ? (
                   <>
-                      {isDesktop && multiBotEnabled && <AgentBotRail bots={visibleBots} activeBotId={activeBot.id} canCreate={nativeCreateEnabled} createLimitMessage={createLimitMessage || ""} profileRevision={botRailProfileRevision} restartingBotIds={restartingBotIds} execDebugCommand={repositories.bots.execDebugCommand} onSelect={handleSelectBot} onCreate={handleCreateNew} manageActions={botContextActions} />}
+                      {isDesktop && multiBotEnabled && <AgentBotRail bots={visibleBots} activeBotId={activeBot.id} canCreate={nativeCreateEnabled} createLimitMessage={createLimitMessage || ""} profileRevision={botRailProfileRevision} restartingBotIds={restartingBotIds} execDebugCommand={repositories.bots.execDebugCommand} onSelect={handleSelectBot} onCreate={handleCreateNew} onEditAvatar={canEditActiveAvatar ? handleEditActiveAvatar : undefined} manageActions={botContextActions} />}
                       <div className="lv-agent-mobile-toolbar">
                         <button
                           ref={mobileNavTriggerRef}
@@ -6029,7 +6038,7 @@ export const AgentSettingsPage = ({
                       >
                         <X className="size-4" aria-hidden="true" />
                       </button>
-                    {!isDesktop && multiBotEnabled && <AgentBotRail mobile bots={visibleBots} activeBotId={activeBot.id} canCreate={nativeCreateEnabled} createLimitMessage={createLimitMessage || ""} profileRevision={botRailProfileRevision} restartingBotIds={restartingBotIds} execDebugCommand={repositories.bots.execDebugCommand} onSelect={handleSelectBot} onCreate={handleCreateNew} />}
+                    {!isDesktop && multiBotEnabled && <AgentBotRail mobile bots={visibleBots} activeBotId={activeBot.id} canCreate={nativeCreateEnabled} createLimitMessage={createLimitMessage || ""} profileRevision={botRailProfileRevision} restartingBotIds={restartingBotIds} execDebugCommand={repositories.bots.execDebugCommand} onSelect={handleSelectBot} onCreate={handleCreateNew} onEditAvatar={canEditActiveAvatar ? handleEditActiveAvatar : undefined} />}
                     {(!isDesktop || !multiBotEnabled) && <div className="lv-agents-sidebar-profile">
                       <div className="lv-agent-profile-row">
                       <div className="lv-agent-profile-wrap">
@@ -6040,8 +6049,12 @@ export const AgentSettingsPage = ({
                             >
                               {/* Demo：头像与名称跟随新手引导里设置的资料（几何体头像）；
                                   未设置过时回落到原有的 bot 头像与名称。 */}
-                              {!multiBotEnabled && <span className="lv-agent-avatar lv-agent-avatar--status">
-                                {demoProfileIsCustom ? (
+                              {!multiBotEnabled && <button type="button" className="lv-agent-avatar lv-agent-avatar--status cursor-pointer disabled:cursor-not-allowed" aria-label={t("更换头像")} disabled={!canEditActiveAvatar} onClick={handleEditActiveAvatar}>
+                                {buddyProfileState.profile.legacyMascot ? (
+                                  <AgentHomepageAvatar mascot={buddyProfileState.profile.legacyMascot} size={32} />
+                                ) : buddyProfileState.profile.appearance ? (
+                                  <HermesAppearanceAvatar appearance={buddyProfileState.profile.appearance} size={32} portrait />
+                                ) : demoProfileIsCustom ? (
                                   <GeometricAvatar
                                     shapeId={buddyProfileState.profile.shapeId}
                                     color={buddyProfileState.profile.color}
@@ -6060,7 +6073,7 @@ export const AgentSettingsPage = ({
                                   title={isActiveBotRestarting ? t("重启中...") : getBotStatusLabel(activeBot.status)}
                                   style={{ background: isActiveBotRestarting ? "#FF9500" : getBotStatusColor(activeBot.status) }}
                                 />
-                              </span>}
+                              </button>}
                               <span className="lv-agent-profile-text">
                                 <span className="lv-agent-profile-name" title={agentProfileDisplayName}>
                                   {truncateBotName(agentProfileDisplayName)}
@@ -6192,7 +6205,7 @@ export const AgentSettingsPage = ({
                                     </button>
                                   </PopoverTrigger>
                                   <PopoverContent side="bottom" align="end" className="w-44 rounded-md p-1.5">
-                                    <button type="button" className="lv-sidebar-user-menu-item w-full" disabled={activeBot.status !== "running" || !activeBot.profileId?.trim() || buddyProfileState.loading || buddyProfileState.soulExists === null} onClick={() => setProfileEditorOpen(true)}>
+                                    <button type="button" className="lv-sidebar-user-menu-item w-full" disabled={activeBot.status !== "running" || !activeBot.profileId?.trim() || buddyProfileState.loading || buddyProfileState.soulExists === null} onClick={() => { setAvatarEditorOnly(false); setProfileEditorOpen(true); }}>
                                       <Wand2 className="size-4" aria-hidden="true" />{t("修改资料")}
                                     </button>
                                     <button type="button" className="lv-sidebar-user-menu-item w-full" disabled={!canCreateAdditionalBot || activeBot.status !== "running" || !activeBot.profileId?.trim()} onClick={handleCloneBot}>
@@ -6582,6 +6595,7 @@ export const AgentSettingsPage = ({
                     <Suspense fallback={null}>
                       <AgentBotProfileEditor
                         key={activeBot.id}
+                        avatarOnly={avatarEditorOnly}
                         botId={activeBot.id}
                         profileId={activeBot.profileId}
                         profile={buddyProfileState.profile}

@@ -1,0 +1,88 @@
+{
+  "status": "FOUR_KR_NATIVE_CONTROLLER_READINESS_PASS",
+  "targets": [
+    {
+      "role": "registry",
+      "uid": "46cb1fef-d9f7-4fc7-81c0-3110e6488430",
+      "resourceVersion": "19549337313",
+      "image": "lightclaw-kr1.tencentcloudcr.com/actor-fleet/worker-registry@sha256:11b865927c8794dcf5d39225d1778e1b75a1c40d6af59c877411419664498bfe",
+      "imagePatchObserved": true,
+      "controllerReady": true,
+      "nonImageSpecPreserved": true
+    },
+    {
+      "role": "renewer",
+      "uid": "8bb70185-38c7-4697-87f4-c08121589109",
+      "resourceVersion": "19549355483",
+      "image": "lightclaw-kr1.tencentcloudcr.com/actor-fleet/storage-session-renewer@sha256:23a1d69133b0ffe87ee0d110cf9cffec06b7d2b94c6107e7acdeabc54b855734",
+      "imagePatchObserved": true,
+      "controllerReady": true,
+      "nonImageSpecPreserved": true
+    },
+    {
+      "role": "runtime-capacity",
+      "uid": "08523a87-d3e8-47dd-b7fe-761153f84114",
+      "resourceVersion": "19549335586",
+      "image": "lightclaw-kr1.tencentcloudcr.com/actor-fleet/actor-fleet-controller@sha256:823bad9c652050cc7704ab8bfed518f1a6ad6816d7a373edfadbf194b3343ff3",
+      "imagePatchObserved": true,
+      "controllerReady": true,
+      "nonImageSpecPreserved": true
+    },
+    {
+      "role": "stateless-admission",
+      "uid": "592bf7df-e260-4c21-bac8-96ef4a5008d1",
+      "resourceVersion": "19549335594",
+      "image": "lightclaw-kr1.tencentcloudcr.com/actor-fleet/actor-fleet-controller@sha256:823bad9c652050cc7704ab8bfed518f1a6ad6816d7a373edfadbf194b3343ff3",
+      "imagePatchObserved": true,
+      "controllerReady": true,
+      "nonImageSpecPreserved": true
+    }
+  ],
+  "mutations": 0,
+  "actualBinaryOrConsumerQualified": false,
+  "remoteLedger": {
+    "status": "FOUR_KR_NATIVE_IMAGE_ONLY_CAS_PATCHES_ACKNOWLEDGED",
+    "scopeSHA256": "2a4b230e1199ffbb47894cfa218118bdb38ca79f88189e126d589ace75b4a8d1",
+    "attempts": [
+      {
+        "role": "registry",
+        "status": "PATCH_ACK_PRESERVED_SPEC",
+        "uid": "46cb1fef-d9f7-4fc7-81c0-3110e6488430",
+        "oldRV": "19537696381",
+        "candidate": "lightclaw-kr1.tencentcloudcr.com/actor-fleet/worker-registry@sha256:11b865927c8794dcf5d39225d1778e1b75a1c40d6af59c877411419664498bfe",
+        "newRV": "19549333520",
+        "generation": 2
+      },
+      {
+        "role": "renewer",
+        "status": "PATCH_ACK_PRESERVED_SPEC",
+        "uid": "8bb70185-38c7-4697-87f4-c08121589109",
+        "oldRV": "19540418041",
+        "candidate": "lightclaw-kr1.tencentcloudcr.com/actor-fleet/storage-session-renewer@sha256:23a1d69133b0ffe87ee0d110cf9cffec06b7d2b94c6107e7acdeabc54b855734",
+        "newRV": "19549334155",
+        "generation": 3
+      },
+      {
+        "role": "runtime-capacity",
+        "status": "PATCH_ACK_PRESERVED_SPEC",
+        "uid": "08523a87-d3e8-47dd-b7fe-761153f84114",
+        "oldRV": "19540060988",
+        "candidate": "lightclaw-kr1.tencentcloudcr.com/actor-fleet/actor-fleet-controller@sha256:823bad9c652050cc7704ab8bfed518f1a6ad6816d7a373edfadbf194b3343ff3",
+        "newRV": "19549334790",
+        "generation": 4
+      },
+      {
+        "role": "stateless-admission",
+        "status": "PATCH_ACK_PRESERVED_SPEC",
+        "uid": "592bf7df-e260-4c21-bac8-96ef4a5008d1",
+        "oldRV": "19540060985",
+        "candidate": "lightclaw-kr1.tencentcloudcr.com/actor-fleet/actor-fleet-controller@sha256:823bad9c652050cc7704ab8bfed518f1a6ad6816d7a373edfadbf194b3343ff3",
+        "newRV": "19549335320",
+        "generation": 4
+      }
+    ]
+  },
+  "scopeSHA256": "2a4b230e1199ffbb47894cfa218118bdb38ca79f88189e126d589ace75b4a8d1",
+  "mode": "observe",
+  "publicationLedgerSHA256": "f41ba544d682d85f715ae0d93e838b31d3ef4dc96acf15b6082430f02a0d5fc9"
+}

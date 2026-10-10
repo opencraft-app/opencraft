@@ -1126,7 +1126,18 @@ func (l *logic) ResumeInstance(ctx pctx.Context, instanceID string, req *transpo
 	}
 
 	operationID := l.recordOperation(ctx, instanceID, operationhistory.OperationTypeResume)
-	defer func() { l.completeOperation(ctx, operationID, retErr) }()
+	accepted := false
+	defer func() {
+		if !accepted {
+			if l.executeTasksInline {
+				l.completeOperation(ctx, operationID, retErr)
+			} else {
+				backgroundCtx, cancel := stdctx.WithTimeout(stdctx.WithoutCancel(ctx), 5*time.Second)
+				defer cancel()
+				l.completeOperation(ctx.WithContext(backgroundCtx), operationID, retErr)
+			}
+		}
+	}()
 	if req == nil {
 		req = &transport.ResumeInstanceRequest{}
 	}
@@ -1141,21 +1152,45 @@ func (l *logic) ResumeInstance(ctx pctx.Context, instanceID string, req *transpo
 	if err != nil {
 		return nil, err
 	}
-	if entity.Status != modelinstance.InstanceStatusPaused {
+	if entity.Status != modelinstance.InstanceStatusPaused && !(entity.Status == modelinstance.InstanceStatusResuming && !l.executeTasksInline) {
 		return nil, errcode.ErrInstanceStatusInvalid
 	}
 	if err := l.requireActivePass(ctx); err != nil {
 		return nil, activePassGuardError("resume instance", err)
 	}
-	if err := l.instanceDao.TransitionStatus(
-		ctx,
-		entity.Id,
-		[]string{modelinstance.InstanceStatusPaused},
-		modelinstance.InstanceStatusResuming,
-	); err != nil {
-		return nil, err
+	transitioned := entity.Status == modelinstance.InstanceStatusPaused
+	if transitioned {
+		if err := l.instanceDao.TransitionStatus(
+			ctx,
+			entity.Id,
+			[]string{modelinstance.InstanceStatusPaused},
+			modelinstance.InstanceStatusResuming,
+		); err != nil {
+			return nil, err
+		}
+		entity.Status = modelinstance.InstanceStatusResuming
 	}
-	entity.Status = modelinstance.InstanceStatusResuming
+	if !l.executeTasksInline {
+		// The task is durable and runs independently of the HTTP request context.
+		// A repeated request in Resuming can recover a crash between CAS and enqueue.
+		backgroundCtx, cancel := stdctx.WithTimeout(stdctx.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		taskCtx := ctx.WithContext(backgroundCtx)
+		l.markOperationRunning(taskCtx, operationID)
+		_, err := l.enqueueTaskWithSchedule(taskCtx, TaskNameResumeInstance, &ResumeInstanceTaskPayload{
+			InstanceID: entity.InstanceId, Timeout: timeout, OperationID: operationID,
+		}, operationID, 30, 1<<30)
+		if err != nil {
+			if transitioned {
+				rollbackCtx, rollbackCancel := stdctx.WithTimeout(stdctx.WithoutCancel(ctx), 5*time.Second)
+				l.rollbackResumingInstance(ctx.WithContext(rollbackCtx), entity)
+				rollbackCancel()
+			}
+			return nil, errcode.Wrap(errcode.ErrSandboxServiceError, "enqueue resume task: %v", err)
+		}
+		accepted = true
+		return toInstanceResponse(entity, false), nil
+	}
 	if err := l.requireActivePass(ctx); err != nil {
 		l.rollbackResumingInstance(ctx, entity)
 		return nil, activePassGuardError("resume instance", err)

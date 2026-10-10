@@ -1,0 +1,48 @@
+<slide id="s10">
+  <background color="bg-page" />
+  <shape type="line" x="40" y="26" width="1200" height="0" stroke="border" />
+  <shape type="line" x="520" y="26" width="240" height="0" stroke="primary" stroke-width="3" />
+  <text x="40" y="36" width="1200" height="24" font="caption" color="primary">03 产品现状 · 能力组织</text>
+  <text x="40" y="77" width="1200" height="50" font="heading" color="text-main">
+    <strong>日常能力与进阶探索分层组织</strong>
+  </text>
+  <text x="40" y="132" width="1200" height="30" font="body" color="text-muted">多 Bot 和实验室功能，继续探索更深的个性化与协作场景。</text>
+  <shape type="rect" x="40" y="184" width="578" height="221" fill="bg-surface" corner-radius="4" />
+  <shape type="rect" x="662" y="184" width="578" height="221" fill="bg-surface" corner-radius="4" />
+  <shape type="rect" x="40" y="429" width="578" height="221" fill="bg-surface" corner-radius="4" />
+  <shape type="rect" x="662" y="429" width="578" height="221" fill="bg-surface" corner-radius="4" />
+  <text x="60" y="202" width="310" height="36" font="strong" color="primary">
+    <strong>日常与探索</strong>
+  </text>
+  <text x="60" y="252" width="310" height="131" font="body" color="text-main" line-height="1.5">
+    <p>日常：对话、通道、技能、自动任务。</p>
+    <p space-before="10">探索：人设、记忆、模型和诊断中心等进阶配置。</p>
+  </text>
+  <image x="394" y="202" width="202" height="179" src="/assets/source_26.png" fit="contain" />
+  <text x="682" y="202" width="304" height="36" font="strong" color="primary">
+    <strong>多 Bot</strong>
+  </text>
+  <text x="682" y="252" width="304" height="131" font="body" color="text-main" line-height="1.5">
+    <p>9 月基于 Hermes 原生能力上线。</p>
+    <p space-before="10">每个 Bot 拥有独立个性、记忆和工作空间，探索多 Agent 玩法。</p>
+  </text>
+  <image x="1024" y="202" width="190" height="179" src="/assets/source_27.png" fit="contain" />
+  <text x="60" y="447" width="310" height="36" font="strong" color="primary">
+    <strong>个人工作台</strong>
+  </text>
+  <text x="60" y="497" width="310" height="127" font="body" color="text-main" line-height="1.5">
+    <p>在实验室内承载云端应用部署场景。</p>
+    <p space-before="10">用于验证用户反馈，逐步打磨场景化能力。</p>
+  </text>
+  <image x="394" y="447" width="202" height="177" src="/assets/source_28.png" fit="contain" />
+  <text x="682" y="447" width="310" height="36" font="strong" color="primary">
+    <strong>DeepSeek Harness</strong>
+  </text>
+  <text x="682" y="497" width="310" height="127" font="body" color="text-main" line-height="1.5">
+    <p>探索云端 Hermes Agent 与 Coding Agent 的协作模式。</p>
+    <p space-before="10">通过实验室验证，再决定后续产品化方式。</p>
+  </text>
+  <image x="1016" y="447" width="202" height="177" src="/assets/source_29.png" fit="contain" />
+  <text x="40" y="684" width="1130" height="20" font="caption" color="text-muted">LightVela｜来源：原文 Agent 配置、多 Bot 与实验室界面</text>
+  <text x="1180" y="684" width="60" height="20" font="caption" color="text-muted" align="right">10 / 24</text>
+</slide>

@@ -84,7 +84,7 @@ describe("Agent settings navigation groups", () => {
     const settingsGroups = readNavigationSource();
 
     expect(settingsGroups).toContain('id: "website"');
-    expect(settingsGroups).not.toMatch(/isGlobal\s*&&\s*showHiddenAgentTools/);
+    expect(settingsGroups).toMatch(/id: "labs",[\s\S]*?sections: \[\s*\{\s*id: "website",/);
   });
 
   it("将工作台导航标记为当前用户的个人工作台", () => {

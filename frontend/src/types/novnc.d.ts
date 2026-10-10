@@ -1,7 +1,7 @@
 /**
  * @novnc/novnc 类型 shim（最小 API 面）。
  *
- * noVNC 1.5.0 npm 包不带 TS 声明；本文件只声明云桌面面板
+ * noVNC 1.5.0 npm 包不带 TS 声明；本文件只声明云电脑面板
  * （agent-cloud-desktop-panel.tsx）实际用到的 RFB API：
  * 构造、凭证、viewport 缩放、connect/disconnect 事件、断开。
  * 事件负载参照 noVNC 官方文档（disconnect 为 CustomEvent<{clean}>）。

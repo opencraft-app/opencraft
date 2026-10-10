@@ -1,0 +1,78 @@
+{
+  "checkedAt": "2026-10-06T10:02:25.168216+00:00",
+  "profile": "main",
+  "productionMutations": 0,
+  "scope": "regional TKE cluster metadata only; no credential acquisition or network change",
+  "regions": [
+    {
+      "region": "ap-shanghai",
+      "complete": true,
+      "clusters": [
+        {
+          "id": "cls-baiv5l5p",
+          "name": "llmgateway-prod-sh-tke",
+          "state": "Running",
+          "type": "MANAGED_CLUSTER",
+          "vpcId": "vpc-koyqjscu"
+        },
+        {
+          "id": "cls-56a1mbml",
+          "name": "temporal-worker-sh-tke",
+          "state": "Running",
+          "type": "MANAGED_CLUSTER",
+          "vpcId": "vpc-gv5n6ury"
+        },
+        {
+          "id": "cls-197kqpgx",
+          "name": "temporal-vitess-sh-tke",
+          "state": "Running",
+          "type": "MANAGED_CLUSTER",
+          "vpcId": "vpc-1ifkzc3y"
+        },
+        {
+          "id": "cls-a0ol7bit",
+          "name": "tke-shprod",
+          "state": "Running",
+          "type": "MANAGED_CLUSTER",
+          "vpcId": "vpc-2y7p1lk6"
+        }
+      ],
+      "requestIds": [
+        "84620973-7e72-47ec-a00b-1f6e593e2852"
+      ],
+      "totalCount": 4
+    },
+    {
+      "region": "ap-singapore",
+      "complete": true,
+      "clusters": [
+        {
+          "id": "cls-agq89bfe",
+          "name": "temporal-vitess-sg-tke",
+          "state": "Running",
+          "type": "MANAGED_CLUSTER",
+          "vpcId": "vpc-ksrugxz3"
+        },
+        {
+          "id": "cls-j350bwok",
+          "name": "tke-sgprod",
+          "state": "Running",
+          "type": "MANAGED_CLUSTER",
+          "vpcId": "vpc-253zjh0f"
+        },
+        {
+          "id": "cls-249ml7cq",
+          "name": "tke-sg1",
+          "state": "Running",
+          "type": "MANAGED_CLUSTER",
+          "vpcId": "vpc-gupogcjj"
+        }
+      ],
+      "requestIds": [
+        "fa7609ea-9052-462e-b8d9-05a27c6f879a"
+      ],
+      "totalCount": 3
+    }
+  ],
+  "accountId": "100045199955"
+}

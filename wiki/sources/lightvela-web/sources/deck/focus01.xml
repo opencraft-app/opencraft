@@ -1,0 +1,30 @@
+<slide id="focus01">
+  <background color="bg-page" />
+  <shape type="line" x="40" y="26" width="1200" height="0" stroke="border" />
+  <shape type="line" x="520" y="26" width="240" height="0" stroke="primary" stroke-width="3" />
+  <text x="40" y="36" width="1200" height="24" font="caption" color="primary">03 产品现状 · 场景选择</text>
+  <text x="40" y="77" width="1200" height="50" font="heading" color="text-main"><strong>优先服务泛开发者，聚焦云端应用、协作与开放接入</strong></text>
+  <text x="40" y="132" width="1200" height="56" font="body" color="text-muted">面向借助 Agent 搭建应用、配置工具、组织流程或连接设备的用户，先打磨目标明确、结果可检查、需要持续运行的任务。</text>
+  <shape type="rect" x="40" y="212" width="345" height="450" fill="bg-surface" corner-radius="4" />
+  <text x="62" y="232" width="301" height="32" font="strong" size="22" color="text-main"><strong>为什么先做泛开发者</strong></text>
+  <text x="62" y="284" width="301" height="30" font="strong" size="20" color="primary"><strong>01 用户和任务更熟悉</strong></text>
+  <text x="62" y="324" width="301" height="60" font="body" size="17" color="text-main">从团队熟悉的用户需求入手，围绕建站、看板与自动化逐项打磨。</text>
+  <text x="62" y="412" width="301" height="30" font="strong" size="20" color="primary"><strong>02 已有能力更匹配</strong></text>
+  <text x="62" y="452" width="301" height="66" font="body" size="17" color="text-main">可定制模型、工具、脚本和定时任务，结合持续运行的云端工作环境。</text>
+  <text x="62" y="540" width="301" height="30" font="strong" size="20" color="primary"><strong>03 结果可检查，便于验证</strong></text>
+  <text x="62" y="580" width="301" height="68" font="body" size="17" color="text-main">应用能否访问、流程是否完成、设备是否响应，均可具体检查并持续改进。</text>
+  <text x="430" y="212" width="810" height="30" font="body" size="16" color="text-muted">优先打磨的三类任务 · 当前基础与后续探索分开呈现</text>
+  <text x="430" y="254" width="810" height="34" font="strong" color="primary"><strong>云端应用｜搭建并持续维护自己的工具</strong></text>
+  <text x="430" y="296" width="810" height="42" font="body" color="text-main">用 Agent 创建网页、数据看板或轻量业务工具，云端部署后继续更新、维护。</text>
+  <text x="430" y="342" width="810" height="34" font="body" size="15" color="text-muted">原文基础：个人工作台已在实验室上线，已有建站、看板与业务监控尝试。</text>
+  <shape type="line" x="430" y="382" width="810" height="0" stroke="border" />
+  <text x="430" y="394" width="810" height="34" font="strong" color="primary"><strong>多 Agent 协作｜按职能组织持续工作的流程</strong></text>
+  <text x="430" y="436" width="810" height="42" font="body" color="text-main">独立配置不同 Bot，探索 Hermes 与 Coding Agent 分工，承接开发、更新与跟进。</text>
+  <text x="430" y="482" width="810" height="34" font="body" size="15" color="text-muted">原文基础：独立多 Bot 已上线；DeepSeek Harness 为实验入口，协同继续探索。</text>
+  <shape type="line" x="430" y="522" width="810" height="0" stroke="border" />
+  <text x="430" y="534" width="810" height="34" font="strong" color="primary"><strong>开放与接入｜连接自己的服务、工具和设备</strong></text>
+  <text x="430" y="576" width="810" height="42" font="body" color="text-main">接入服务与专业工具，配置自动化流程；用屏幕、按钮、摄像头制作硬件原型并连接 Agent。</text>
+  <text x="430" y="622" width="810" height="40" font="body" size="15" color="text-muted">原文基础：已有工具配置；标准接口与设备接入继续探索，外部操作仍需授权。</text>
+  <text x="40" y="684" width="1130" height="20" font="caption" color="text-muted">LightVela｜依据原文提炼的场景选择，非用户职业分布；完整配置、实验室与接入探索见“详细参考”</text>
+  <text x="1180" y="684" width="60" height="20" font="caption" color="text-muted" align="right">18 / 23</text>
+</slide>

@@ -13,6 +13,15 @@
 5. 运行态：Pod/服务健康，版本/selfcheck 与预期一致。
 6. 业务：通过公共入口完成最小关键路径；必要时执行灰度、监控和回滚演练。
 
+## 前端 OCI 制品的渠道边界
+
+`build-release-artifacts.mjs` 按矩阵中的 `FRONTEND_RELEASE_CHANNEL` 冻结渠道产物。
+Cloudflare (`cf`) 在归档和计算内容身份之前移除生成的 `.edgeone` 目录；该目录
+包含 EdgeOne 专用的静态副本与部署配置，不属于 Cloudflare 的公共站点资源。
+公共 HTML、RSC 文本、API 静态响应和工作台资产保持不变。EdgeOne (`eo`)
+仍保留完整 `.edgeone` 部署格式，交给既有 EdgeOne 发布器选择部署目录。
+不能在拉取并校验已归档制品之后再删目录，以免实际发布内容偏离不可变制品身份。
+
 ## 前端预览制品（StaticPages）
 
 `.ci/runtime/commands/publish_frontend_preview.sh` 构建双站（cn/intl）Next 产物并经 `staticpages_pack.py` 以 packs 分卷（target 32MB / max 48MB）直传对象存储，不经 API 网关。两个边界决策：
@@ -39,3 +48,21 @@ outbox/inbox/reward 记录保留用于恢复；不得通过删除审计记录或
 ## 授权
 
 commit、push、MR、流水线触发、GitOps 合并、Argo 操作和生产验证是不同授权面。用户只批准前一层时不得自动扩大到后一层。
+
+### Frontend Docker local dependency closure
+
+The frontend Docker build must stage the complete recursive `file:` package
+closure from `frontend/package.json` before `pnpm install --frozen-lockfile`.
+This includes the collaboration and chat-core shared packages, the mobile
+account and bot SDKs, and the bot SDK's workbench-panels dependency. Keep
+`frontend/deploy/Dockerfile` and its narrow Dockerfile-specific context allowlist
+in sync; do not copy the entire OpenCraft repository to repair a missing package.
+The specific ignore file must also exclude host node_modules and local credentials,
+because it supersedes the repository-root Docker ignore file. The recursive
+contract regression catches dependency additions missing either COPY or context
+allowlist. It does not replace a real image build and regional release acceptance.
+
+
+### Website backend rollout and existing navigation
+
+Deploying a new website backend must preserve the existing My Workbench navigation in both regions. Do not gate that existing menu behind console `show()`: existing static-site users need continuous access. Backend regional enablement, persistence qualification and API authorization remain separate release gates, not menu-visibility controls. A frontend candidate containing the withdrawn navigation gate must be superseded by a reviewed and verified artifact before production promotion.

@@ -18,6 +18,25 @@ configMapGenerator:
       - site-gateway-platform.env
 
 patches:
+  # Closed until this region's persistent runtime and share-read path pass acceptance.
+  - target:
+      kind: Deployment
+      name: site-gateway
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: site-gateway
+        namespace: ctl
+      spec:
+        template:
+          spec:
+            containers:
+              - name: site-gateway
+                env:
+                  - name: SITE_GATEWAY_BACKEND_SHARED_READ
+                    value: "false"
+                    valueFrom: null
   - target:
       kind: Ingress
       name: lightclaw-sites-public

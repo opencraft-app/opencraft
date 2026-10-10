@@ -1,0 +1,43 @@
+<slide id="s18">
+  <background color="bg-page" />
+  <shape type="line" x="40" y="26" width="1200" height="0" stroke="border" />
+  <shape type="line" x="760" y="26" width="240" height="0" stroke="primary" stroke-width="3" />
+  <text x="40" y="36" width="1200" height="24" font="caption" color="primary">04 产品演进 · 身份与主动性</text>
+  <text x="40" y="77" width="1200" height="50" font="heading" color="text-main">
+    <strong>探索独立身份与主动跟进，先建立信任</strong>
+  </text>
+  <text x="40" y="132" width="1200" height="30" font="body" color="text-muted">从可验证任务积累信任，再尝试更多个人事务和主动行为。</text>
+  <shape type="line" x="140" y="236" width="996" height="0" stroke="chart-sec" stroke-width="3" arrow-end="arrow" />
+  <text x="40" y="195" width="362" height="33" font="strong" color="primary">
+    <strong>任务完成价值</strong>
+  </text>
+  <text x="451" y="195" width="363" height="33" font="strong" color="primary">
+    <strong>独立主体能力</strong>
+  </text>
+  <text x="862" y="195" width="378" height="33" font="strong" color="primary">
+    <strong>主动提醒与跟进</strong>
+  </text>
+  <text x="40" y="279" width="362" height="215" font="body" color="text-main" line-height="1.6">
+    <p>优先选择目标明确、结果可检查、权限边界清楚的任务。</p>
+    <p space-before="16">长期记忆、复杂偏好和高风险个人决策，需要更充分的实际任务验证。</p>
+    <p space-before="16">各家对“个人助手”的定义不同，产品价值还要持续验证。</p>
+  </text>
+  <text x="451" y="279" width="363" height="215" font="body" color="text-main" line-height="1.6">
+    <p>下一阶段探索专属邮箱、Agent 钱包等能力。</p>
+    <p space-before="16">长期尝试硬件与智能家居接入。</p>
+    <p space-before="16">原文用户需求包含控制设备、接入私有 NAS 等场景。</p>
+  </text>
+  <text x="862" y="279" width="378" height="215" font="body" color="text-main" line-height="1.6">
+    <p>结合用户目标、记忆、历史上下文与环境变化，研究主动提醒、推荐和任务跟进。</p>
+    <p space-before="16">探索过程中保留用户授权、清晰边界和可控过程。</p>
+  </text>
+  <shape type="rect" x="40" y="548" width="1200" height="103" fill="bg-surface" />
+  <text x="60" y="566" width="1160" height="68" font="strong" size="22" color="text-main" line-height="1.5">
+    <p>
+      <strong color="primary">推进前提</strong>
+    </p>
+    <p>用户授权明确　·　权限边界清楚　·　执行过程可控　·　任务结果可验证</p>
+  </text>
+  <text x="40" y="684" width="1130" height="20" font="caption" color="text-muted">LightVela｜来源：原文个人助手价值判断、身份探索与主动性研究；非已上线能力清单</text>
+  <text x="1180" y="684" width="60" height="20" font="caption" color="text-muted" align="right">18 / 24</text>
+</slide>

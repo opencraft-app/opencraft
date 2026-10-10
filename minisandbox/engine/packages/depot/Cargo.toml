@@ -16,6 +16,7 @@ test-faults = []
 anyhow.workspace = true
 async-channel.workspace = true
 async-trait.workspace = true
+aws-credential-types.workspace = true
 aws-config.workspace = true
 aws-sdk-s3.workspace = true
 base64.workspace = true
