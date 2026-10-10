@@ -189,8 +189,10 @@ function primaryActionCopy(state: ConnectorUiState): string {
     case "installing": return t("配置中...");
     case "detaching": return t("解除中…");
     case "auth_expired": return t("重新授权");
+    // 失败态统一「重试」：先保授权重发配置（enableBuiltin）；授权已失效时
+    // 服务端返回 auth_required，前端自动转重新授权——用户无需区分两种失败
     case "runtime_missing":
-    case "operation_failed": return t("重新配置");
+    case "operation_failed": return t("重试");
     default: return t("去授权");
   }
 }
@@ -553,11 +555,13 @@ export function ConnectorsPanel({
   );
 
   /**
-   * local_cli 型启用（tmeet 模式，对齐 AgentChat retryPending local_cli 分支）：
-   * enable → finishOperation（TAT local_cli_enable 可能带 authUrl）→
-   * 打开授权页 → 轮询 checkBuiltinLocal 至 success。
+   * 统一重试/启用入口（对齐 AgentChat retryPending）：
+   * enableBuiltin（服务端按类型路由——local_cli 走 local_cli_enable TAT、
+   * OAuth 型已授权则重发 MCP 配置）→ finishOperation →
+   * local_cli 的 authUrl 走授权页轮询；OAuth 型返回 auth_required
+   * （授权已失效）时自动转重新授权，用户无需区分。
    */
-  const enableLocalCli = useCallback(
+  const retryDelivery = useCallback(
     async (connectorKey: string) => {
       const busyKey = connectorKey;
       // busy action 用状态机语义名（upsert），deriveConnectorUiState 据此
@@ -579,6 +583,15 @@ export function ConnectorsPanel({
           return;
         }
         const result = await enableBuiltinConnector(token, instanceId, connectorKey);
+        // OAuth 型授权已失效：enable 只会返回 auth_required（不带 TAT）——
+        // 关掉预开窗、释放 busy 后自动转重新授权（startAuthorization 会重新
+        // claimBusy 为 authorize），用户无需先手动「重新授权」
+        if (result.status === "auth_required") {
+          popup?.close();
+          releaseBusy(busyKey);
+          void startAuthorization(connectorKey);
+          return;
+        }
         const report = await finishOperation(result);
         if (report?.authUrl) {
           // 轮询期间卡片切到「等待完成授权」（busy action = authorize），
@@ -616,7 +629,7 @@ export function ConnectorsPanel({
       }
       releaseBusy(busyKey);
     },
-    [claimBusy, fetchToken, finishOperation, instanceId, refresh, releaseBusy],
+    [claimBusy, fetchToken, finishOperation, instanceId, refresh, releaseBusy, startAuthorization],
   );
 
   /** 解除授权（对齐 AgentChat detachBuiltin）：detach → finishOperation（TAT remove） */
@@ -696,17 +709,21 @@ export function ConnectorsPanel({
     };
   }, [instanceId]);
 
-  /** 主操作路由（对齐 AgentChat handleOfficialPrimary） */
+  /** 主操作路由（对齐 AgentChat handleOfficialPrimary）：失败态统一走重试 */
   const handlePrimary = (item: InstanceBuiltinConnectorView, state: ConnectorUiState) => {
     if (state === "ready") {
       setPendingDisconnect(item);
+      return;
+    }
+    if (state === "operation_failed" || state === "runtime_missing") {
+      void retryDelivery(item.connectorKey);
       return;
     }
     if (isOAuthType(item.authType)) {
       void startAuthorization(item.connectorKey);
       return;
     }
-    void enableLocalCli(item.connectorKey);
+    void retryDelivery(item.connectorKey);
   };
 
   const [pendingDisconnect, setPendingDisconnect] = useState<InstanceBuiltinConnectorView | null>(null);
@@ -724,7 +741,7 @@ export function ConnectorsPanel({
     void detachConnector(target.connectorKey);
   };
 
-  const busyItem = (key: string) => Boolean(busy[key]);
+  const busyItem = (key: string) => busy[key]?.active === true;
   const opFailed = (key: string) => busy[key]?.failed === true;
 
   return (
@@ -799,16 +816,6 @@ export function ConnectorsPanel({
                     </span>
                   </span>
                   <span className="flex shrink-0 items-center gap-3">
-                    {(state === "operation_failed" || state === "runtime_missing") && (
-                      <button
-                        type="button"
-                        disabled={disabled}
-                        onClick={() => void enableLocalCli(item.connectorKey)}
-                        className="text-xs text-[#2563eb] disabled:opacity-50"
-                      >
-                        {t("重试下发")}
-                      </button>
-                    )}
                     <button
                       type="button"
                       disabled={disabled}

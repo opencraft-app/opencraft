@@ -84,14 +84,19 @@ describe("ConnectorsPanel 列表与状态", () => {
     expect(screen.getByRole("button", { name: "去授权" })).toBeTruthy();
   });
 
-  it("下发失败状态显示重试下发", async () => {
+  it("下发失败状态显示重试（单一主按钮，可点击）", async () => {
     vi.mocked(client.listInstanceConnectors).mockResolvedValue({
       builtin: [builtinView({ deliverStatus: "failed" })],
       customMcp: [],
     });
     render(<ConnectorsPanel instanceId="ins-1" />);
     expect(await screen.findByText("下发失败")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "重试下发" })).toBeTruthy();
+    // 失败态合并为单一「重试」主按钮（保授权重发配置；授权失效自动转重新授权）
+    const retryButton = screen.getByRole("button", { name: "重试" });
+    expect(retryButton).toBeTruthy();
+    // busy 失败残留（active: false + failed: true）不再禁用按钮——此前
+    // busyItem 误把失败态算作进行中，失败后按钮永久不可点击
+    expect((retryButton as HTMLButtonElement).disabled).toBe(false);
   });
 
   it("空列表显示引导文案", async () => {
