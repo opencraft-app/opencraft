@@ -37,6 +37,11 @@ LightVela 的隐藏协作实验室位于 `/agents/labs/collaboration`，仅在�
 客户端复用 `shared/vela-collaboration-web` 的 Human 协作状态与腾讯 IM adapter，由既有登录账户借出请求端口，
 不持久化第二份 token，不依赖 Bot 或付费 Agent 权益。关闭入口、退出或切换账户时注销原 IM scope，
 新 scope 等待旧连接销毁后再登录。该入口的可见性不是后端鉴权或发布完成的证据。
+mono2 的 OpenCraft 构建中，该共享源码通过 file 链接位于工作台目录之外；聊天
+contract 与腾讯 IM SDK/upload 依赖仍由工作台的包依赖图解析，不依赖共享源码
+旁边偶然存在的 node_modules。聊天 contract 的机械快照保留 canonical 的
+messaging/platform 子路径导出，发布构建必须实际打包这些依赖，不将其标记为
+external 来掩盖解析失败。构建边界见 [Build Matrix](../../../opencraft/docs/build-matrix.md)。
 
 LightVela `/agents` 多 Bot 桌面页由 OpenCraft 内嵌工作台独立呈现已有会话标题、重命名及预览面板开关；
 站点宿主不再向会话顶栏插入 Bot 名称。Bot 管理菜单由宿主在工作台 Shadow DOM 外、最左 Bot 竖栏底部渲染，
