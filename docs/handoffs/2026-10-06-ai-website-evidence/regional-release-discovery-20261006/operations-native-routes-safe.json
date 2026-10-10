@@ -1,0 +1,61 @@
+{
+  "checkedAt": "2026-10-06T10:41:52.281632+00:00",
+  "scope": "Exact production operations VPC metadata and route tables only; no writes/no credentials acquisition",
+  "productionMutations": 0,
+  "regions": [
+    {
+      "region": "ap-shanghai",
+      "expectedVpcName": "lightclaw-shprod",
+      "vpcId": "vpc-2y7p1lk6",
+      "cidr": "10.0.0.0/12",
+      "vpcRequestId": "f0da9802-41ba-4fbf-81ed-7cd40e6933e6",
+      "routeRequestId": "db3978ae-78b8-41b8-bdf6-8a73692ad1ed",
+      "routeTableTotal": 2,
+      "complete": true,
+      "routeTables": [
+        {
+          "id": "rtb-fkfi6jzj",
+          "routes": [
+            {
+              "destination": "0.0.0.0/0",
+              "gatewayType": "NAT",
+              "gatewayId": "nat-npvpr8on",
+              "enabled": true
+            }
+          ]
+        },
+        {
+          "id": "rtb-os666sa3",
+          "routes": []
+        }
+      ]
+    },
+    {
+      "region": "ap-singapore",
+      "expectedVpcName": "lightclaw-sgprod",
+      "vpcId": "vpc-253zjh0f",
+      "cidr": "10.0.0.0/12",
+      "vpcRequestId": "31003a60-8b80-4c9e-9423-e0e8983855ae",
+      "routeRequestId": "440a1bcb-24f0-48ad-a997-aac516ce018a",
+      "routeTableTotal": 2,
+      "complete": true,
+      "routeTables": [
+        {
+          "id": "rtb-e9lj6vfi",
+          "routes": [
+            {
+              "destination": "0.0.0.0/0",
+              "gatewayType": "NAT",
+              "gatewayId": "nat-h1enfj7u",
+              "enabled": true
+            }
+          ]
+        },
+        {
+          "id": "rtb-7tnzvvcg",
+          "routes": []
+        }
+      ]
+    }
+  ]
+}

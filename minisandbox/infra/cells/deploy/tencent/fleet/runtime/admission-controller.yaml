@@ -160,6 +160,8 @@ spec:
               value: 5s
             - name: RUNTIME_ADMISSION_IMAGE_PULL_SECRET
               value: actor-fleet-tcr
+            - name: RUNTIME_ADMISSION_INJECTED_IMAGE_PULL_SECRETS
+              value: ""
             - name: RUNTIME_ADMISSION_BOOTSTRAP_IMAGE
               value: __RUNTIME_IMAGE__
             - name: RUNTIME_ADMISSION_PROBE_TIMEOUT

@@ -5733,13 +5733,13 @@ export const AgentSettingsPage = ({
                   id: "labs",
                   label: t("实验室"),
                   sections: [
-                    {
+                    ...(showHiddenAgentTools ? [{
                       id: "website",
                       label: t("我的工作台"),
                       icon: <Globe2 className="h-4 w-4" />,
                       path: AGENT_SECTION_PATH_BY_ID.website,
                       badge: "Beta",
-                    },
+                    } as SettingsSectionLink] : []),
                     {
                       id: "deepseek-harness",
                       label: "DeepSeek Harness",

@@ -159,3 +159,33 @@ func TestBackendReleaseGatePreservesSiteStateGuards(t *testing.T) {
 		})
 	}
 }
+
+func TestBackendDataCapabilityRequiresIndependentGateAndBackendConfiguration(t *testing.T) {
+	for _, tc := range []struct {
+		name, dataGate, backendGate, baseURL, token, userID string
+		want                                                bool
+	}{
+		{"data default closed", "", "1", "http://runtime.internal", "fixture-deploy-token", "user-1", false},
+		{"explicit open", "1", "1", "http://runtime.internal", "fixture-deploy-token", "user-1", true},
+		{"another authenticated user open", "1", "1", "http://runtime.internal", "fixture-deploy-token", "user-2", true},
+		{"unknown data flag closed", "true", "1", "http://runtime.internal", "fixture-deploy-token", "user-1", false},
+		{"backend default closed", "1", "", "http://runtime.internal", "fixture-deploy-token", "user-1", false},
+		{"backend disabled", "1", "0", "http://runtime.internal", "fixture-deploy-token", "user-1", false},
+		{"unknown backend flag closed", "1", "true", "http://runtime.internal", "fixture-deploy-token", "user-1", false},
+		{"empty user closed", "1", "1", "http://runtime.internal", "fixture-deploy-token", "", false},
+		{"missing runtime closed", "1", "1", "", "fixture-deploy-token", "user-1", false},
+		{"missing token closed", "1", "1", "http://runtime.internal", "", "user-1", false},
+		{"invalid URL closed", "1", "1", "http://runtime.internal/unexpected", "fixture-deploy-token", "user-1", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("WEBSITE_BACKEND_DATA_ENABLED", tc.dataGate)
+			t.Setenv("WEBSITE_BACKEND_ENABLED", tc.backendGate)
+			t.Setenv("WEBSITE_BACKEND_BETA_USERS", "different-legacy-owner")
+			t.Setenv("WEBSITE_RUNTIME_BASE_URL", tc.baseURL)
+			t.Setenv("WEBSITE_RUNTIME_DEPLOY_TOKEN", tc.token)
+			if got := backendDataEnabledFor(tc.userID); got != tc.want {
+				t.Fatalf("data gate = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}

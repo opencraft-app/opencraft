@@ -51,15 +51,20 @@ class WebsiteBackendReleaseBindingsTests(unittest.TestCase):
                 patch = json.loads(item['patch'])
                 env = patch['spec']['template']['spec']['containers'][0]['env']
                 for entry in env:
-                    if entry['name'] == 'WEBSITE_BACKEND_BETA_USERS':
-                        self.assertEqual(entry['value'], '')
+                    if entry['name'] == 'WEBSITE_BACKEND_ENABLED':
+                        self.assertEqual(entry['value'], '0')
 
-    def test_enable_requires_explicit_phase_and_nonempty_owner_allowlist(self):
+    def test_enable_requires_explicit_phase_not_owner_list(self):
         result = self.api.prepare(fixture(), phase='enable')
         self.assertEqual(result['phase'], 'enable')
         cfg = fixture(); cfg['beta_users'] = []
-        with self.assertRaises(ValueError):
-            self.api.prepare(cfg, phase='enable')
+        self.assertEqual(self.api.prepare(cfg, phase='enable')['phase'], 'enable')
+        cfg['schema_version'] = 3
+        cfg.pop('beta_users')
+        cfg['data_enabled'] = True
+        cfg['runtime']['driver'] = 'minisandbox'
+        self.assertTrue(self.api.prepare(cfg, phase='enable')['data_enabled'])
+        self.assertFalse(self.api.prepare(cfg)['data_enabled'])
 
     def test_role_separation_and_read_only_ca_in_every_consumer(self):
         result = self.api.prepare(fixture())
@@ -233,9 +238,13 @@ class WebsiteBackendSourceRenderTests(unittest.TestCase):
                             self.assertEqual(env[other], {'name': other, 'value': ''})
                             self.assertEqual(env['WEBSITE_RUNTIME_BASE_URL']['value'], cfg['runtime']['base_url'])
                             self.assertEqual(env['SSL_CERT_FILE']['value'], self.api.CA_PATH)
+                            data_enabled = phase == 'enable' and cfg.get('data_enabled', False)
                             if service == 'ctl':
-                                self.assertEqual(env['WEBSITE_BACKEND_BETA_USERS']['value'],
-                                                 'usr_testowner' if phase == 'enable' else '')
+                                self.assertEqual(env['WEBSITE_BACKEND_ENABLED']['value'],
+                                                 '1' if phase == 'enable' else '0')
+                                self.assertEqual(env['WEBSITE_BACKEND_DATA_ENABLED']['value'], '1' if data_enabled else '0')
+                            if service == 'site-gateway':
+                                self.assertEqual(env['SITE_GATEWAY_BACKEND_SHARED_READ']['value'], str(data_enabled).lower())
                             volume = next(x for x in pod['volumes'] if x['name'] == 'website-runtime-ca')
                             self.assertEqual(volume['secret'], {'secretName': 'website-runtime-ca',
                                 'defaultMode': 292, 'items': [{'key': 'ca-bundle.pem', 'path': 'ca-bundle.pem'}]})
@@ -250,12 +259,14 @@ class WebsiteBackendSourceRenderTests(unittest.TestCase):
                             if not annotations and 'annotations' not in before['spec']['template']['metadata']:
                                 dep['spec']['template']['metadata'].pop('annotations')
                             container['env'] = [x for x in container['env'] if x['name'] not in
-                                {own, other, 'WEBSITE_RUNTIME_BASE_URL', 'SSL_CERT_FILE', 'WEBSITE_BACKEND_BETA_USERS'}]
+                                {own, other, 'WEBSITE_RUNTIME_BASE_URL', 'SSL_CERT_FILE', 'WEBSITE_BACKEND_ENABLED',
+                                 'WEBSITE_BACKEND_DATA_ENABLED', 'SITE_GATEWAY_BACKEND_SHARED_READ'}]
                             prior_container = next(c for c in before['spec']['template']['spec']['containers']
                                                    if c['name'] == container_name)
                             container['env'].extend(copy.deepcopy(v) for v in prior_container.get('env', [])
                                                     if v['name'] in {own, other, 'WEBSITE_RUNTIME_BASE_URL',
-                                                                     'SSL_CERT_FILE', 'WEBSITE_BACKEND_BETA_USERS'})
+                                                                     'SSL_CERT_FILE', 'WEBSITE_BACKEND_ENABLED',
+                                 'WEBSITE_BACKEND_DATA_ENABLED', 'SITE_GATEWAY_BACKEND_SHARED_READ'})
                             if not container['env'] and 'env' not in next(c for c in before['spec']['template']['spec']['containers']
                                                                        if c['name'] == container_name):
                                 container.pop('env')
@@ -290,8 +301,22 @@ class WebsiteBackendSourceRenderTests(unittest.TestCase):
                     dep = next(x for x in documents if x.get('kind') == 'Deployment' and x['metadata']['name'] == name)
                     container = dep['spec']['template']['spec']['containers'][0]
                     variables = {v['name']: v for v in container.get('env', [])}
-                    self.assertEqual(variables.get('WEBSITE_BACKEND_BETA_USERS'),
-                                     {'name': 'WEBSITE_BACKEND_BETA_USERS', 'value': ''})
+                    self.assertEqual(variables.get('WEBSITE_BACKEND_ENABLED'),
+                                     {'name': 'WEBSITE_BACKEND_ENABLED', 'value': '0'})
+                    self.assertEqual(variables.get('WEBSITE_BACKEND_DATA_ENABLED'),
+                                     {'name': 'WEBSITE_BACKEND_DATA_ENABLED', 'value': '0'})
+
+    def test_hidden_release_closes_shared_backend_reads_in_both_regions(self):
+        for region in ['shprod', 'sgprod']:
+            with self.subTest(region=region), tempfile.TemporaryDirectory() as tmp:
+                mirror = Path(tmp)
+                self.copy_sources(mirror)
+                documents = self.render(mirror / f'argocd/services/site-gateway/{region}')
+                dep = next(x for x in documents if x.get('kind') == 'Deployment' and
+                           x['metadata']['name'] == 'site-gateway')
+                env = {v['name']: v for v in dep['spec']['template']['spec']['containers'][0].get('env', [])}
+                self.assertEqual(env.get('SITE_GATEWAY_BACKEND_SHARED_READ'),
+                                 {'name': 'SITE_GATEWAY_BACKEND_SHARED_READ', 'value': 'false'})
 
     def test_explicit_values_override_envfrom_and_old_key_references(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -811,10 +811,12 @@ Hermes 回复中独立成项的 `MEDIA:<明确 Markdown 路径>`（普通文本�
 
 ## 建站动态接入：能力与发布边界
 
-2026-09-29 候选实现，未部署。`GET /v1/websites/capability` 增量返回
+2026-10-10 源码启用契约（合入不等于生产开放）。`GET /v1/websites/capability` 增量返回
 `backend.enabled/contract` 和 `data.enabled`。backend 仅在 runtime URL、部署凭据
-配置有效且用户精确命中 `WEBSITE_BACKEND_BETA_USERS` 时为 true，契约 `fetch-v1`；
-data 始终 false。缺失/null/非布尔 true 均 fail-closed。源码开关不是生产开放证据。
+配置有效、用户身份非空且区域 `WEBSITE_BACKEND_ENABLED=1` 时为 true，契约 `fetch-v1`；
+data 还要求 `WEBSITE_BACKEND_DATA_ENABLED=1`，契约 `rivet-sql-v1`。不按账号筛选。
+前端建站导航默认隐藏，控制台 `show()` 可切换显示；此状态不是 API 权限，
+登录用户直接请求 API 仍须通过 ownership、quota、Origin 与分享会话校验。缺失/null/非布尔 true 均 fail-closed。源码开关不是生产开放证据。
 
 release `kind` 缺省/static 保持静态，fullstack 需要能力门禁与 SHA-256；静态包不得
 携带私有 `__backend` 内容。worker 单独上传 `__backend/app.mjs` 到内部 runtime，
@@ -835,6 +837,138 @@ Skill 同步提供动态流程与离线打包器；新镜像/存量机器共用�
 [Fullstack Beta 实施](../../proposals/2026-09-29-website-fullstack-beta.md) 与
 [Skill 双通路交付](../../proposals/2026-09-29-website-skill-delivery.md)。
 
+### Website persistent backend adapter (candidate, 2026-10-02)
+
+The persistent driver consumes Skip's imported `minisandbox` Workers API;
+`WEBSITE_RUNTIME_DRIVER=minisandbox` selects it explicitly. There is no host-JS,
+local-SQLite or browser-storage fallback. The existing runsc driver remains a
+separate stateless compatibility path, not the persistent implementation.
+
+- The immutable backend contract remains `fetch-v1`. CTL exposes `data.enabled`
+  and `rivet-sql-v1` only when `WEBSITE_BACKEND_DATA_ENABLED=1`, a configured backend
+  runtime and `WEBSITE_BACKEND_ENABLED=1` all pass. Static sites are unchanged;
+  frontend visibility still follows its existing hidden `show()` boundary.
+- Static publication is independent of runtime availability for sites CTL certifies as backend-free.
+  Claimed/internal operation responses carry optional `HasBackendHistory` and `PreviousStorageBytes`
+  facts derived from current site kind, all release history (including failed/pruned history), and
+  the site's last reported storage total. These are transient response fields, not new DB columns.
+  A current static kind alone never establishes that no backend exists; omitted history is unknown.
+  Certified static sites use legacy COS retention and COS-only accounting without runtime calls.
+  A static transition with backend/unknown history keeps old release resources for joint rollback.
+  Optional runtime accounting reads for static publication have a five-second deadline. If unavailable, a new CTL snapshot allows
+  conservative accounting of current COS bytes plus the previous reported total; this may overcount,
+  is still subject to CTL quota checks, and is replaced by exact accounting on the next successful
+  runtime read. It is not a live database-size measurement. Missing/invalid fallback facts do not
+  become zero backend usage. Legacy responses without a runtime keep the old static publishing
+  contract while preserving history. Fullstack publication still requires runtime accounting.
+  Site deletion bypasses runtime only for certified backend-free sites. Backend/unknown history
+  requires successful runtime deletion before COS cleanup and completion; unavailable runtime does
+  not release quota or report success. Delete completion recounts COS without another runtime call.
+  Rollout order is CTL first, then workers; older responses keep conservative cleanup behavior.
+- Offline release bindings use schema3 to declare the regional runtime driver and a boolean
+  `data_enabled` input. Persistent data is rejected for `runsc`. The explicit `enable` phase
+  sets the regional `WEBSITE_BACKEND_ENABLED=1` gate and renders CTL `WEBSITE_BACKEND_DATA_ENABLED=1` with
+  gateway `SITE_GATEWAY_BACKEND_SHARED_READ=true` together. `prepare`, legacy schema1 and a
+  false data input explicitly override inherited gates to closed values; they never establish
+  live runtime/storage readiness. See [regional release bindings](../../../site-runtime/deploy/RELEASE-BINDINGS.md).
+- Regional infrastructure can consume expiring, bucket-scoped storage sessions without
+  placing the issuer's root credentials in runtime Pods. Worker Registry opts in through
+  `ACTOR_CODE_STORAGE_SESSION_FILE` and rereads the bounded projected file for each COS
+  request; the third session token is signed with the request. Depot opts in through
+  `ACTOR_COLD_STORAGE_SESSION_FILE` and supplies expiry-aware credentials to its S3 client.
+  Missing, malformed or expiring session files fail closed rather than falling back to
+  static environment credentials. Without these options, the existing credential path
+  is unchanged. Projected Secret volumes must not use `subPath`; issuer renewal and
+  consumer refresh must be qualified on the actual regional runtime. FoundationDB backup
+  uses its native token-bearing credential file, not a two-part key substituted for STS.
+  Role creation, Secret delivery and a successful source build are separate preparation
+  evidence, not proof of runtime renewal or regional business readiness.
+- A trusted `(environment scope, site ID)` deterministically identifies one
+  Worker and one `VelaSite` Durable Object. Releases select a verified backend
+  digest within the retained Worker package; they do not create a new database.
+  Storage is native Durable Object SQL through Depot/FoundationDB and inherits
+  the platform commit/output gate. Each bounded SQL call rolls back on quota or
+  result overflow. Database limit is 256 MiB; SQL/query and response limits are
+  enforced in the platform wrapper, not delegated to generated application code.
+- Preparation activates via `expected_deployment_id` CAS and fences the exact
+  deployment ID/targets before and after stateless and durable compiled-package
+  probes, without invoking application fetch or SQL. The versioned canonical
+  package fingerprint covers main-module identity, all module contents,
+  compatibility date and Durable Object bindings, excluding only its own exact
+  injected marker. An old warm durable isolate cannot satisfy new readiness.
+  After observing a valid stale marker, the private durable probe may use native
+  `DurableObjectState.abort` to break a retained old class container, without
+  changing Actor/Depot identity or deleting storage. It never replays an
+  application handler. Deployment/recovery and managed readiness hold the
+  exclusive site lock, waiting for in-flight invocations before such a reset.
+  Failed linking
+  compensates the previous deployment with CAS against only its own activation;
+  cancellation cannot cancel the bounded compensation. A conflicting or failed
+  compensation is an error, never reported as a successful preparation. Initial
+  failed candidates have no website active pointer or local readiness receipt.
+- A fsynced write-ahead deployment journal and atomic receipts bind retained
+  digests to the actual upstream deployment, version and endpoint/scope identity.
+  Unknown/borrowed ownership cannot authorize compensation. Incomplete journals,
+  corrupt receipts, unbound legacy receipts and legacy source-only fingerprints
+  fail invocation/readiness/publication closed; they are not silently adopted,
+  rebound or removed. Interrupted native publication and disk receipt publication
+  reconcile to an explicit commit or exact owned-pointer CAS restoration before
+  readiness. External deployment and filesystem writes are not one transaction.
+  Each DataDir has one manager; the service executable holds a nonblocking
+  exclusive OS file lock for its lifetime.
+- Explicit site deletion is terminal rather than transaction recovery. Only the
+  reviewed native adapter may supersede a pending publication: it first validates
+  the journal/receipt's original endpoint/scope identity, then acknowledges the
+  permanent Object tombstone and Actor deletion. Local journal/artifact removal
+  is fsynced before releasing the in-memory fence. Failure or foreign identity
+  stays closed; no activation replay, inferred ownership, hand-erased lock or
+  Worker deletion is used. A late activation cannot recreate the Object identity.
+- Gateway freshly verifies share policy, generation and expiration before a
+  GET/HEAD backend read. `SITE_GATEWAY_BACKEND_SHARED_READ=true` is separately
+  required. Browser-supplied internal headers are discarded; the gateway creates
+  `read_only` and the runtime creates private dispatch headers. Share SQL permits
+  one SELECT only and cannot initialize schema or perform writes. SQL capabilities
+  are request-scoped and revoked when the handler completes. Handlers in one DO
+  run serially so cached owner capabilities cannot be borrowed by a concurrent
+  share request; private class rotation returns busy while a handler is active.
+  A wrapper wall-clock deadline revokes suspended handlers and releases the queue
+  before the outer invocation deadline; late continuations keep revoked SQL objects.
+  All writes still require an authenticated site owner and exact same-origin checks.
+- Site deletion uses the logical Object terminal fence. Individual release
+  retention removes code artifacts only, not the site database. Worker hard delete
+  is not used to bypass the upstream historical Object inventory requirement.
+- New-image and single-instance Skill delivery use the same content-addressed
+  business-agnostic bundle containing only the Skill and fullstack packager.
+  The Skill describes only generic execution, data and same-origin request contracts;
+  it carries no predetermined application routes, entities or request fields.
+  Application fixtures remain in runtime tests and are never installed on user
+  machines. Previous bundle manifests remain verifiable for exact rollback;
+  existing credentials are not part of that bundle. Data capability is queried independently; absent/unknown fields are off.
+
+Native dispatch retains only plain generation/Worker/class bindings and code recipes
+in module state. Worker and Durable Object handles are recreated per request;
+reusing them violates workerd I/O ownership. Eviction uses the validated same-class
+recipe without a registry lookup, fences pending readiness by epoch, and retains
+the immutable generation binding after unloading. Different Worker versions require
+a new admitted generation; native containers retain their first class. Deployment-bound
+Host execution fences user dispatch while requesting normal Engine-owned sleep.
+Only StopActor performs eviction and SQLite capability cleanup; StartActor resolves
+the active Deployment for its newly admitted generation, preserving the stable
+Actor/database identity. Generation-scoped sleep intents have bounded recovery;
+private preparation may poll an observed transition, never replay application work.
+Local native
+dispatch qualification is not a regional Workers/Depot/FDB rollout receipt.
+
+This is a source design, not a launch receipt. Release gates require a real healthy
+regional Workers/Depot/FDB path, persistence across deployment and host replacement,
+site isolation, share read/owner write checks, static regression and the public Agent
+flow. `/readyz=200` on Workers API alone does not prove admission or executor
+availability. Beijing has passed native SQL write/read, retained-version reads,
+  warm version propagation and isolated adapter restart in scoped fixtures; this
+  does not prove native Host replacement, public Agent/browser flow or production
+  acceptance. Korea and both production configurations remain unqualified. Do not
+route international persistent data to Beijing simply to obtain a passing test.
+
 ### Website backend test findings (2026-09-30 Beijing time)
 
 Dedicated runtime reconciliation runs under the manager store lock before accepting
@@ -847,8 +981,9 @@ complete the same workflow. These source changes are not evidence of live routin
 
 ### Website fullstack revision retention (candidate implementation)
 
-Fullstack publication retains historical static and backend artifacts together;
-legacy static-only publication retains its existing two-prefix behavior. Cleanup
+Fullstack publication retains historical static and backend artifacts together.
+Legacy static publication keeps its two-prefix layout; unconfigured runtime storage
+cannot authorize prefix pruning, so publication preserves history in that case. Cleanup
 requires a CTL transaction to mark a non-active historical release `pruning`, removing
 rollback eligibility before remote deletion. The worker deletes only that revision,
 checks current lease/generation between stages, and finalizes `pruned`; partial COS
@@ -858,7 +993,7 @@ The internal authenticated `POST /internal/ctl/websites/sites/{siteId}/retention
 reserves at most one candidate using deployment policy, never request-supplied ages.
 It is disabled unless `WEBSITE_RETENTION_ENABLED=true`, `WEBSITE_RETENTION_KEEP`
 is explicitly 1–16, and `WEBSITE_RETENTION_GRACE` is explicitly 1h–720h. It additionally
-requires a fullstack site owned by a backend-enabled allowlisted user. A successful
+requires a fullstack site owned by a backend-enabled authenticated user. A successful
 response with `scheduled=false` means no eligible candidate, not a completed cleanup;
 when scheduled, follow the operation to terminal success. Worker polling is durable.
 No recurring scheduler or production policy is enabled by this source change.
@@ -876,7 +1011,7 @@ An opt-in worker scheduler now calls authenticated
 `POST /internal/ctl/websites/retention/sweep?cursor=...`. Set worker
 `WEBSITE_RETENTION_SWEEP_INTERVAL` explicitly (1m–24h); an absent value disables it.
 Each tick scans at most 20 active fullstack sites in site-ID order, filtering owners
-through the backend allowlist; each eligible site still uses the fenced reservation.
+through the regional backend gate; each eligible site still uses the fenced reservation.
 A complete scan resets the cursor, HTTP/response failures preserve it for retry,
 and shutdown cancels the scheduler before draining workers. CTL policy must also
 be explicitly enabled. No deployment environment is enabled by the source defaults.
@@ -888,6 +1023,39 @@ snapshot has no unsettled work. Successful history is considered first. Failed
 releases do not count toward the rollback window. Cleanup includes the exact
 private upload ZIP key as well as the exact static/backend revision; unknown runtime
 directories without authoritative release records are not automatically removed.
+
+Website native response stamping captures brand-checked getters across the pristine Response/Body prototype chain. workerd inherits body from Body.prototype; Node-only own-property assumptions must not prevent native Worker preparation. User response properties/proxies are never used to obtain execution identity.
+
+User backend Request boundary is distinct from the browser request: the gateway checks owner/share authorization, Origin and release identity before invocation. The Native wrapper forwards only Content-Type and Accept headers into generated application code, preserving the URL, method and body; it does not expose Cookie, Authorization, browser release headers or private control headers. Application handlers must not reject an otherwise accepted request merely because those platform headers are absent. The shipped website-builder Skill documents this boundary while continuing to require the browser release header and retaining platform write restrictions.
+
+
+Native deployment readiness must be qualified at both the management registry
+read path and the private stateless/durable execution path. Ready runtime Hosts
+and matching binaries do not establish a readable active-deployment pointer.
+A management GET503 before preparation is not evidence of a package mismatch
+or permission to replay activation, application writes, Sleep or rollback.
+The manager's bounded startup reconciliation preserves unresolved per-site
+journals as invocation fences; actual normal journal recovery and private package
+validation remain separate acceptance requirements from Pod health.
+
+### Website share generation cache consistency
+
+Site share form policy and authenticated share cookies must use fresh CTL metadata, not the ordinary site metadata TTL. A newly rotated valid share session otherwise conflicts with the cached generation and redirects back to the share form; revocation must not wait for the positive cache TTL either. Owner sessions retain their existing fresh-owner check, backend API reads retain their existing fresh generation gate, and share writes remain denied. This correction is not deployment evidence.
+
+### Final regional test candidate consistency (2026-10-06)
+
+The final manager r12, website worker r13 and gateway share-cache candidate are
+source-bound test overlays, not formal production CI images. Beijing final manager
+and gateway observation accepted both exact deployments and actual executable
+bindings; the final real website passed independent owner/share browser refresh,
+original record preservation and visitor write denial with ordinary DNS/strict TLS.
+Korean real code upgrade, joint rollback, static publication and static-to-fullstack
+rollback preserved the same original complete record. Generic Skill delivery is
+qualified in fresh test images in both regions; no production image/pool adoption
+is implied. Exact final Native lifecycle/isolation and regional release bindings
+remain separate gates. A local international TLS handshake failure does not prove
+a production service outage. The current task authorization is preparation only,
+without production, GitOps promotion or stock Skill rollout.
 
 ## 建站 Skill-only 新实例补丁（2026-10-02）
 

@@ -1,0 +1,80 @@
+{
+  "checkedAt": "2026-10-06T11:36:40.438594+00:00",
+  "accountId": "100045199955",
+  "profile": "main",
+  "productionMutations": 0,
+  "credentialAcquisitions": 0,
+  "scope": "SH/SG existing VPC CIDR metadata and live available-zone metadata only; not a provisioned deployment or approved plan",
+  "regions": [
+    {
+      "region": "ap-shanghai",
+      "sourcePlannedActorAggregate": "10.176.0.0/12",
+      "expectedOperationsVpc": "vpc-2y7p1lk6",
+      "vpcInventoryComplete": true,
+      "actorAggregateOverlapVpcs": [],
+      "requestIds": [
+        "2d22a8d0-7815-4bb3-a27e-5b169f584e76",
+        "7804006b-2830-41bf-aaf9-5b1946ea96e6"
+      ],
+      "vpcTotalCount": 7,
+      "operationsVpc": {
+        "id": "vpc-2y7p1lk6",
+        "cidr": "10.0.0.0/12"
+      },
+      "zones": [
+        {
+          "zone": "ap-shanghai-2",
+          "state": "AVAILABLE"
+        },
+        {
+          "zone": "ap-shanghai-5",
+          "state": "AVAILABLE"
+        },
+        {
+          "zone": "ap-shanghai-8",
+          "state": "AVAILABLE"
+        }
+      ],
+      "availableZoneCount": 3,
+      "expectedOperationsIdentityMatched": true,
+      "sourceAggregateHasNoObservedVpcCollision": true
+    },
+    {
+      "region": "ap-singapore",
+      "sourcePlannedActorAggregate": "10.224.0.0/12",
+      "expectedOperationsVpc": "vpc-253zjh0f",
+      "vpcInventoryComplete": true,
+      "actorAggregateOverlapVpcs": [],
+      "requestIds": [
+        "6d8ac06d-6efb-42e0-aff3-c79a08d190d7",
+        "aa3d5eb8-40e5-4ccb-ba68-0d05d037377f"
+      ],
+      "vpcTotalCount": 3,
+      "operationsVpc": {
+        "id": "vpc-253zjh0f",
+        "cidr": "10.0.0.0/12"
+      },
+      "zones": [
+        {
+          "zone": "ap-singapore-1",
+          "state": "AVAILABLE"
+        },
+        {
+          "zone": "ap-singapore-2",
+          "state": "AVAILABLE"
+        },
+        {
+          "zone": "ap-singapore-3",
+          "state": "AVAILABLE"
+        },
+        {
+          "zone": "ap-singapore-4",
+          "state": "AVAILABLE"
+        }
+      ],
+      "availableZoneCount": 4,
+      "expectedOperationsIdentityMatched": true,
+      "sourceAggregateHasNoObservedVpcCollision": true
+    }
+  ]
+}

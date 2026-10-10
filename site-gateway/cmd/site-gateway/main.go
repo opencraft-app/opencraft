@@ -93,7 +93,7 @@ func main() {
 		DomainLookup: siteMetaClient,
 		Origin:       fetcher,
 		Usage:        meter,
-		Auth: httpapi.AuthOptions{
+		Auth: httpapi.AuthOptions{BackendSharedRead: cfg.BackendSharedRead,
 			Required:          cfg.AuthMode == config.AuthModeRequired,
 			EndpointsEnabled:  cfg.AuthEndpointsEnabled,
 			FixedAuthHost:     cfg.AuthFixedHost,

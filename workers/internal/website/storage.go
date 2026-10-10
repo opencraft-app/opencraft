@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/tencentyun/cos-go-sdk-v5"
 )
@@ -116,7 +118,7 @@ func (d *Deployer) listCosObjects(client *cosClient, prefix string) ([]cos.Objec
 // 两个前缀都算：sites/{siteID}/ 是保留的不可变 release，_artifacts/{siteID}/
 // 是发布中的临时 zip。成功发布会先删除本次 zip 再调用这里；若历史清理失败仍有临时
 // 对象残留，它们也按实际占用计入额度，直到代码重试或桶生命周期清理。
-func (d *Deployer) siteStorageBytes(client *cosClient, siteID string) (int64, error) {
+func (d *Deployer) cosStorageBytes(client *cosClient, siteID string) (int64, error) {
 	var total int64
 	for _, prefix := range []string{
 		fmt.Sprintf("sites/%s/", siteID),
@@ -128,12 +130,51 @@ func (d *Deployer) siteStorageBytes(client *cosClient, siteID string) (int64, er
 		}
 		total += sumObjectSizes(objects)
 	}
+	return total, nil
+}
+
+func (d *Deployer) siteStorageBytes(client *cosClient, siteID string) (int64, error) {
+	total, err := d.cosStorageBytes(client, siteID)
+	if err != nil {
+		return 0, err
+	}
 	backendBytes, err := d.backendStorage(siteID)
 	if err != nil {
 		return 0, err
 	}
-	total += backendBytes
-	return total, nil
+	return total + backendBytes, nil
+}
+
+// For a static transition, retain history and conservatively charge previous
+// reported total plus current COS usage if runtime accounting is unavailable.
+// This can overcount; a failed query must never become zero backend usage.
+func (d *Deployer) publicationStorageBytes(client *cosClient, op Operation) (int64, error) {
+	if op.Kind == "fullstack" {
+		return d.siteStorageBytes(client, op.SiteID)
+	}
+	total, err := d.cosStorageBytes(client, op.SiteID)
+	if err != nil {
+		return 0, err
+	}
+	if op.HasBackendHistory != nil && !*op.HasBackendHistory {
+		return total, nil
+	}
+	// Preserve the legacy static-only deployment contract during a rolling
+	// upgrade with an older CTL and no configured runtime. History is still kept.
+	if d.runtimeURL == "" && op.HasBackendHistory == nil && op.PreviousStorageBytes == nil {
+		return total, nil
+	}
+	if d.runtimeURL != "" {
+		backendBytes, err := d.backendStorageWithTimeout(op.SiteID, 5*time.Second)
+		if err == nil {
+			return total + backendBytes, nil
+		}
+	}
+	if op.PreviousStorageBytes == nil || *op.PreviousStorageBytes < 0 || total > math.MaxInt64-*op.PreviousStorageBytes {
+		return 0, fmt.Errorf("retained backend storage cannot be accounted")
+	}
+	log.Printf("website %s: retaining backend history and conservative storage accounting", op.SiteID)
+	return total + *op.PreviousStorageBytes, nil
 }
 
 func sumObjectSizes(objects []cos.Object) int64 {

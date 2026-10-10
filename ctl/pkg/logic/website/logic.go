@@ -41,7 +41,7 @@ type FeatureAvailability struct {
 }
 
 type Capability struct {
-	// Backend requires an explicit user allowlist and configured runtime. Data is unavailable.
+	// Backend requires an explicit user allowlist and configured runtime. Data additionally requires the qualified Minisandbox release gate.
 	Backend             FeatureAvailability `json:"backend"`
 	Data                FeatureAvailability `json:"data"`
 	MaxSites            int                 `json:"max_sites"`
@@ -480,6 +480,7 @@ func (l *logic) GetCapability(userID string) (*Capability, error) {
 
 	return &Capability{
 		Backend:             FeatureAvailability{Enabled: backendEnabledFor(userID), Contract: "fetch-v1"},
+		Data:                FeatureAvailability{Enabled: backendDataEnabledFor(userID), Contract: "rivet-sql-v1"},
 		MaxSites:            q.MaxSites,
 		UsedSites:           int(usedSites),
 		MonthlyTrafficBytes: q.MonthlyTrafficBytes,
@@ -993,6 +994,22 @@ func (l *logic) GetOperationInternal(operationID string) (*website.OperationEnti
 		op.ArtifactHash = release.ArtifactHash
 		op.ArtifactSize = release.ArtifactSize
 	}
+	// A currently static site can still own backend data from an earlier release.
+	// Do not filter by release status: failed/purged releases can leave a durable
+	// site identity that must be cleaned up before site deletion completes.
+	hasBackend := site.Kind == "fullstack" || op.Kind == "fullstack"
+	if !hasBackend {
+		var history []struct{ ReleaseID string }
+		if err := resource.GormDB.Table(website.ReleasesTable).Select("release_id").
+			Where("site_id = ? AND (kind = ? OR backend_sha256 <> '')", site.SiteID, "fullstack").
+			Limit(1).Find(&history).Error; err != nil {
+			return nil, fmt.Errorf("inspect website backend history: %w", err)
+		}
+		hasBackend = len(history) != 0
+	}
+	op.HasBackendHistory = &hasBackend
+	previousStorage := site.StorageBytes
+	op.PreviousStorageBytes = &previousStorage
 	return op, nil
 }
 

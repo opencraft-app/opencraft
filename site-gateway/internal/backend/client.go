@@ -22,11 +22,12 @@ var identifier = regexp.MustCompile(`^[a-z][a-z0-9-]{1,95}$`)
 var digest = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
 type Invocation struct {
-	SHA256  string            `json:"sha256"`
-	Method  string            `json:"method"`
-	Path    string            `json:"path"`
-	Headers map[string]string `json:"headers,omitempty"`
-	Body    []byte            `json:"body,omitempty"`
+	SHA256   string            `json:"sha256"`
+	ReadOnly bool              `json:"read_only,omitempty"`
+	Method   string            `json:"method"`
+	Path     string            `json:"path"`
+	Headers  map[string]string `json:"headers,omitempty"`
+	Body     []byte            `json:"body,omitempty"`
 }
 type Result struct {
 	Status  int               `json:"status"`

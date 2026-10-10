@@ -1,0 +1,152 @@
+{
+  "status": "NATURAL_RENEWAL_PASS_REGISTRY_CODE_GET_LOG_UNVERIFIED",
+  "mutations": 0,
+  "tokenMints": 0,
+  "businessRequests": 0,
+  "rawLogsSaved": false,
+  "secretDataValuesOutput": false,
+  "newRenewerBinding": {
+    "pod": "actor-kr-q01-storage-session-renewer-6fbff6bf6c-rw76h",
+    "podUID": "8fcb49d9-f25d-4af5-b5d6-0164dd812404",
+    "imageID": "lightclaw-kr1.tencentcloudcr.com/actor-fleet/storage-session-renewer@sha256:23a1d69133b0ffe87ee0d110cf9cffec06b7d2b94c6107e7acdeabc54b855734",
+    "containerID": "containerd://ba0deb71b56524f76ed9eb52d5d4ad43ec2a50e5fdcdfb23103c0f1de90fc69c",
+    "containerStartedAt": "2026-10-06T11:10:53Z"
+  },
+  "leaseBefore": {
+    "name": "actor-kr-q01-storage-session-renewer",
+    "uid": "e148864f-1393-4f9b-b6ac-ff28fe976886",
+    "holderSHA256": "3f49a0ee027e13096b1fb395707d430182471b101b4823124f71a0997de88e3e",
+    "resourceVersion": "19549742873",
+    "acquireTime": "2026-10-06T11:12:03.110454Z",
+    "renewTime": "2026-10-06T11:35:07.271108Z",
+    "leaseTransitions": 3,
+    "leaseDurationSeconds": 60,
+    "leaseFresh": true,
+    "leaseAcquiredAfterNewPodStart": true
+  },
+  "sessions": [
+    {
+      "role": "cold",
+      "name": "actor-kr-q01-cold-credentials",
+      "uid": "70623f51-3716-40f2-8dff-1021746f1007",
+      "generation": "20f94f65125115a58e3cbfe4",
+      "expiry": 1791287973,
+      "expiryUTC": "2026-10-06T11:59:33+00:00",
+      "generationChangedFromBaseline": true,
+      "expiryAdvancedFromBaseline": true,
+      "oldBaselineExpiry": 1791254796,
+      "baselineForCode": "original normal600 receipt",
+      "issuedAfterNewPodStartByFixed1800sSessionContract": true,
+      "estimatedIssuedAtUTC": "2026-10-06T11:29:33+00:00",
+      "nextNormalRenewDueUTC": "2026-10-06T11:49:33+00:00",
+      "fresh": true,
+      "dataFallbackUsed": false
+    },
+    {
+      "role": "backup",
+      "name": "actor-kr-q01-backup-credentials",
+      "uid": "52614263-bb15-4b63-9687-060c95adac18",
+      "generation": "39caf61d835401ac0f8f17cd",
+      "expiry": 1791287973,
+      "expiryUTC": "2026-10-06T11:59:33+00:00",
+      "generationChangedFromBaseline": true,
+      "expiryAdvancedFromBaseline": true,
+      "oldBaselineExpiry": 1791254826,
+      "baselineForCode": "original normal600 receipt",
+      "issuedAfterNewPodStartByFixed1800sSessionContract": true,
+      "estimatedIssuedAtUTC": "2026-10-06T11:29:33+00:00",
+      "nextNormalRenewDueUTC": "2026-10-06T11:49:33+00:00",
+      "fresh": true,
+      "dataFallbackUsed": false
+    },
+    {
+      "role": "code",
+      "name": "actor-kr-q01-code-credentials",
+      "uid": "5bed9419-69f0-4413-8583-e67955761bfe",
+      "generation": "24f1dec5ea8bc4db0bfa0899",
+      "expiry": 1791287973,
+      "expiryUTC": "2026-10-06T11:59:33+00:00",
+      "generationChangedFromBaseline": true,
+      "expiryAdvancedFromBaseline": true,
+      "oldBaselineExpiry": 1791286752,
+      "baselineForCode": "new-image observation",
+      "issuedAfterNewPodStartByFixed1800sSessionContract": true,
+      "estimatedIssuedAtUTC": "2026-10-06T11:29:33+00:00",
+      "nextNormalRenewDueUTC": "2026-10-06T11:49:33+00:00",
+      "fresh": true,
+      "dataFallbackUsed": false
+    }
+  ],
+  "leaseAfter": {
+    "name": "actor-kr-q01-storage-session-renewer",
+    "uid": "e148864f-1393-4f9b-b6ac-ff28fe976886",
+    "holderSHA256": "3f49a0ee027e13096b1fb395707d430182471b101b4823124f71a0997de88e3e",
+    "resourceVersion": "19549744236",
+    "acquireTime": "2026-10-06T11:12:03.110454Z",
+    "renewTime": "2026-10-06T11:35:12.283869Z",
+    "leaseTransitions": 3,
+    "leaseDurationSeconds": 60,
+    "leaseFresh": true,
+    "leaseAcquiredAfterNewPodStart": true
+  },
+  "leaseHolderStableDuringRead": true,
+  "normalConfig": {
+    "durationSeconds": 1800,
+    "renewBeforeSeconds": 600,
+    "pollSeconds": 30,
+    "readyMinSeconds": 300
+  },
+  "naturalRenewalStatus": "NEW_RENEWER_NORMAL_THREE_ROLE_RENEWAL_METADATA_LEASE_BINDING_PASS",
+  "issuanceAttribution": "Fixed-duration expiry-derived issuance timing plus same exact new process and fresh acquired Lease; no direct STS log claim",
+  "registryLogCounts": [
+    {
+      "podUID": "04d467f4-34df-440d-8ea7-c21052b0e47a",
+      "imageID": "lightclaw-kr1.tencentcloudcr.com/actor-fleet/worker-registry@sha256:11b865927c8794dcf5d39225d1778e1b75a1c40d6af59c877411419664498bfe",
+      "containerID": "containerd://c02fae5530ab4f6aa85ee4b0ecb2e338c50cfee3fffbcec521831fefcdf94c4a",
+      "logReadExit": 0,
+      "maxLines": 200,
+      "maxBytes": 32768,
+      "rawOutputSaved": false,
+      "explicitSuccessfulCodeGETCount": 0,
+      "explicitFailedCodeGETCount": 0,
+      "storageErrorCount": 0,
+      "readinessErrorCount": 0,
+      "parsedJSONLogCount": 1
+    },
+    {
+      "podUID": "75566dd2-dd34-445b-a800-5a18c0a19d9f",
+      "imageID": "lightclaw-kr1.tencentcloudcr.com/actor-fleet/worker-registry@sha256:11b865927c8794dcf5d39225d1778e1b75a1c40d6af59c877411419664498bfe",
+      "containerID": "containerd://cfbe77bee1971130d198d6641a25547a2aa3965873efb7b27cc8b5ddaf494052",
+      "logReadExit": 0,
+      "maxLines": 200,
+      "maxBytes": 32768,
+      "rawOutputSaved": false,
+      "explicitSuccessfulCodeGETCount": 0,
+      "explicitFailedCodeGETCount": 0,
+      "storageErrorCount": 0,
+      "readinessErrorCount": 0,
+      "parsedJSONLogCount": 1
+    },
+    {
+      "podUID": "67d9b8dc-60d9-434f-a82e-099f32d59678",
+      "imageID": "lightclaw-kr1.tencentcloudcr.com/actor-fleet/worker-registry@sha256:11b865927c8794dcf5d39225d1778e1b75a1c40d6af59c877411419664498bfe",
+      "containerID": "containerd://2eabc7777b5db4b71e48ad59faf5b3b8526115d3c1d00b204e8c9da91d475ba2",
+      "logReadExit": 0,
+      "maxLines": 200,
+      "maxBytes": 32768,
+      "rawOutputSaved": false,
+      "explicitSuccessfulCodeGETCount": 0,
+      "explicitFailedCodeGETCount": 0,
+      "storageErrorCount": 0,
+      "readinessErrorCount": 0,
+      "parsedJSONLogCount": 1
+    }
+  ],
+  "registryCodeGETLogGate": "UNVERIFIED_NO_EXPLICIT_SUCCESS_LOG_IN_BOUNDED_WINDOW",
+  "registryLogGateBoundary": "No error or no access log is not successful code GET proof. App source does not log successful getVersion path.",
+  "checkedAt": "2026-10-06T11:35:15.810351+00:00",
+  "baselinePaths": [
+    "/Users/shawnmy/.codex/worktrees/website-backend-hidden-release/mono2/.tmp/minisandbox-integration/kr-ready-20261006/kr-normal-renew600-live.json",
+    "/Users/shawnmy/.codex/worktrees/website-backend-hidden-release/mono2/.tmp/minisandbox-integration/full-source-native-go-readiness-20261006/kr-verification/successor-live-image-consumer-safe-receipt.json"
+  ]
+}
