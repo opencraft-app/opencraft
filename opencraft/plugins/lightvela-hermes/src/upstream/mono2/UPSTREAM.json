@@ -1,6 +1,6 @@
 {
   "source": "frontend/src",
-  "sourceRevision": "2f96b1b974008af5e9c0dc85a4462746a122229e",
+  "sourceRevision": "63a243bb02d4c7bfd2bc5335724347000844740e",
   "generatedBy": "scripts/sync-mono2-agent-console.mjs",
   "files": [
     {
@@ -117,11 +117,11 @@
     },
     {
       "file": "i18n/generated/th-TH.json",
-      "sourceSha256": "36540ca37d5cd16c10ea012b0bf380d81513c079a0ce717e797f927c3ec208dd"
+      "sourceSha256": "3566f79b40b8fbc7ba727561754c783a659aa08af876b645657088469f263808"
     },
     {
       "file": "i18n/generated/thai-public-copy.json",
-      "sourceSha256": "a9138780aadcba5c534401bb8ff0e0081a49a0edd452190d4eaf0c2206f880b2"
+      "sourceSha256": "f6dea6c1a20cdfdb2f42ff5e82ea22b8bdcbd01e344541ada15042acaa1be497"
     },
     {
       "file": "i18n/generated/zh-CN.json",
@@ -249,7 +249,7 @@
     },
     {
       "file": "pages/marketing/agent-automations-panel.tsx",
-      "sourceSha256": "2d42b5e882e28b97dd8226cf936cb41f14e34b5d2ea4cd2973a5636b1a10c98b"
+      "sourceSha256": "47afe2f1e2d75e2495894ab54025aa11b5389ba2c07060819d5f7fefdefcf917"
     },
     {
       "file": "pages/marketing/agent-channel-panel.tsx",
