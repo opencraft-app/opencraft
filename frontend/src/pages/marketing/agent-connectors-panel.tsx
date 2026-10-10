@@ -223,6 +223,23 @@ function classifyCompletion(status: string): "wait" | "done" | "abandoned" {
   return "abandoned"; // expired / cancelled / superseded
 }
 
+/**
+ * 预开窗写入加载提示页：authUrl 要等网络请求（OAuth 型 startOAuth）甚至
+ * TAT 实例执行（local_cli 型 tmeet auth login 提取 URL，可达数秒）才有，
+ * 纯 about:blank 空白窗会让用户误以为卡死。about:blank 与本页同源可安全
+ * 写入；拿到真实 URL 后 location.href 导航即整体替换。
+ */
+function primePopupLoading(popup: Window | null, loadingText: string) {
+  if (!popup) return;
+  try {
+    const doc = popup.document;
+    doc.title = loadingText;
+    doc.body.innerHTML = `<div style="display:flex;height:100vh;margin:0;align-items:center;justify-content:center;font-family:system-ui,-apple-system,sans-serif;color:#646a73;font-size:14px;">${loadingText}</div>`;
+  } catch {
+    // 极端环境写入失败无碍——空白窗仍可正常导航
+  }
+}
+
 export function ConnectorsPanel({
   instanceId,
   execCommand,
@@ -507,6 +524,9 @@ export function ConnectorsPanel({
       if (fallbackToSameTab) {
         message.info({ content: t("浏览器拦截了授权弹窗，将在当前页打开授权，完成后请返回本页"), duration: 6000 });
       }
+      // 立即写入加载提示页——授权 URL 到手前用户看到的是「正在准备授权」
+      // 而非空白窗（startOAuth 网络请求需数百 ms）
+      primePopupLoading(popup, t("正在准备授权，请稍候..."));
       try {
         const token = launchTokenRef.current ?? (await fetchToken());
         if (!token) {
@@ -579,6 +599,9 @@ export function ConnectorsPanel({
       // 就绪后当前页跳转，提示用户授权完成后返回）
       const fallbackToSameTab = popup === null;
       let navigated = false;
+      // local_cli 的 authUrl 要等 TAT 下发实例执行 tmeet auth login 才能提取
+      // （可达数秒）——加载提示页对腾讯会议尤其重要，避免用户面对空白窗
+      primePopupLoading(popup, t("正在准备授权，请稍候..."));
       try {
         const token = launchTokenRef.current ?? (await fetchToken());
         if (!token) {
