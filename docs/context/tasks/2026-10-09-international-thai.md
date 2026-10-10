@@ -157,3 +157,11 @@ derived: false
 - verified: Node 22.12.0 固定环境 pnpm check 通过，Thai 3,062/3,062、0 错误/告警；TypeScript 164 当前/171 基线、0 新增/7 消除。4 文件 69 项测试通过，旧建议条/FX/法律错误重新注入后三条新回归均 RED。文档校验通过。
 - unverified: 22 文件完整 guard 与双站构建仍在执行，最终机械同步和新 HEAD 远端 CI 未完成。
 - next_action: 提交 frontend 真源并独立生成同步副本，等待完整构建完成再推送同一 MR。
+
+## checkpoint — CR 完整验收与交付
+- verified: 完整隔离 frontend guard 22 文件 329 测试通过；CN/global 完整 static builds，SEO 8/58 路由检查通过；222 embedded-ci 与 136 生成文件一致性通过。4/4 真实 Chromium 案例通过：桌面/手机 Thai 浏览器在英文首页得到 Thai 建议并跳转 /th-th/；Vietnam/Kenya 法规编号年份正确；英文手机文档导航入口位于顶栏下（y=71.5px）且可打开目录。已查看手机建议条与英文移动目录截图。
+- evidence: /tmp/lightvela-thai-review-guard.log；/tmp/lightvela-thai-review-embedded.log；/tmp/lightvela-thai-review-sync-check.log；/tmp/lightvela-thai-review-validation/report.html。
+- failed_harness: 两次英文目录脚本初始选择器误用 Toggle Menu / Quick Start，实际为 Open Sidebar / Quickstart；修正脚本后 4/4 通过，无产品代码变更。
+- source_revision: 63a243bb02；generated_revision: 9c4003af86；master: 3b6cbe9127。
+- unverified: 推送后的新 HEAD 远端 CI 与 MR merge_status 仍需核对；尚未合并、发布或母语审校。
+- next_action: 沿用用户授权推送同一 MR !5146 并更新说明，核对远端流水线和合并状态，不自动合并或发布。
