@@ -391,6 +391,7 @@ export function ConnectorsPanel({
         const cleanup = () => {
           window.removeEventListener("message", handleMessage);
           window.clearInterval(timer);
+          window.clearInterval(closedWatcher);
           window.clearTimeout(hardDeadline);
         };
         const finish = (fn: () => void) => {
@@ -449,6 +450,14 @@ export function ConnectorsPanel({
           void complete();
         }
         window.addEventListener("message", handleMessage);
+        // 关窗实时检测：不等下个轮询 tick（2s）——500ms 高频探测 popup.closed，
+        // 发现关窗立即触发一次 complete 确认服务端状态。若授权实际已成功
+        // （用户授权后回调页自动关窗），complete 返回终态直接 resolve；
+        // 若仍 pending，complete 内的关窗宽限逻辑（10s）接管判定未完成。
+        // 浏览器无原生「弹窗被关闭」事件，轮询 closed 是唯一可靠手段。
+        const closedWatcher = window.setInterval(() => {
+          if (popup?.closed) void complete();
+        }, 500);
         // 硬性 deadline 兜底：interval 轮询/abandon 内部都依赖 fetch（虽已加
         // 15s 超时，仍可能被极端环境拖住）——此处独立 setTimeout 强制 settle，
         // 保证 Promise 必然结束 → busy 必然释放，卡片不会永久卡在「授权中」。
