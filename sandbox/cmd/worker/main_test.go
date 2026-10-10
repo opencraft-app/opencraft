@@ -27,6 +27,57 @@ const (
 
 var testSecurityGroups = []string{"sg-test"}
 
+func TestShouldRunPoolSupplyLoop(t *testing.T) {
+	for _, tc := range []struct {
+		shardTotal int
+		shardIndex int
+		interval   time.Duration
+		want       bool
+	}{
+		{0, 0, 5 * time.Minute, true},
+		{8, 0, 5 * time.Minute, true},
+		{8, 1, 5 * time.Minute, false},
+		{8, 0, 0, false},
+	} {
+		if got := shouldRunPoolSupplyLoop(tc.shardTotal, tc.shardIndex, tc.interval); got != tc.want {
+			t.Fatalf("shards=%d/%d interval=%s: got %t want %t", tc.shardIndex, tc.shardTotal, tc.interval, got, tc.want)
+		}
+	}
+}
+
+type poolSupplyLoopStore struct {
+	store.Store
+	called chan struct{}
+}
+
+func (s *poolSupplyLoopStore) ListPools(context.Context) ([]core.Pool, error) { return nil, nil }
+func (s *poolSupplyLoopStore) SyncPoolSupplyOverview(context.Context, []store.PoolSupplyOverview) error {
+	s.called <- struct{}{}
+	return nil
+}
+
+func TestPoolSupplyLoopRunsImmediately(t *testing.T) {
+	backend := &poolSupplyLoopStore{called: make(chan struct{}, 1)}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		runPoolSupplyLoop(ctx, service.NewService(backend), nil, "", time.Hour)
+	}()
+	select {
+	case <-backend.called:
+	case <-time.After(time.Second):
+		cancel()
+		t.Fatal("first sync did not run immediately")
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("worker did not stop after cancellation")
+	}
+}
+
 // stubProvider lets tests script TerminateInstance results while satisfying the interface.
 type stubProvider struct {
 	mu sync.Mutex

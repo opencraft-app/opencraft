@@ -603,10 +603,10 @@ function normalizePathname(pathname: string): string {
  * - `/en-us/`             → { bare: "/", urlLang: "en-us" }
  * - `/about` （裸）    → { bare: "/about", urlLang: null }
  */
-type UrlLang = "en" | "zh" | "en-us" | "zh-cn" | "zh-sg" | "zh-hant" | "id-id" | "ms-my" | "es" | "ja-jp" | "ko-kr";
+type UrlLang = "en" | "zh" | "en-us" | "zh-cn" | "zh-sg" | "zh-hant" | "id-id" | "ms-my" | "th-th" | "es" | "ja-jp" | "ko-kr";
 
 function stripUrlLangPrefix(pathname: string): { bare: string; urlLang: UrlLang | null } {
-  const m = pathname.match(/^\/(en-us|zh-cn|zh-sg|zh-hant|id-id|ms-my|es|ja-jp|ko-kr|en|zh)(?:\/(.*))?$/);
+  const m = pathname.match(/^\/(en-us|zh-cn|zh-sg|zh-hant|id-id|ms-my|th-th|es|ja-jp|ko-kr|en|zh)(?:\/(.*))?$/);
   if (!m) return { bare: pathname, urlLang: null };
   const rest = m[2] ?? "";
   return {
@@ -625,6 +625,7 @@ const URL_LANG_TO_HTML_LANG: Record<UrlLang, string> = {
   "zh-hant": "zh-Hant",
   "id-id": "id-ID",
   "ms-my": "ms-MY",
+  "th-th": "th-TH",
   es: "es",
   "ja-jp": "ja-JP",
   "ko-kr": "ko-KR",
@@ -639,6 +640,7 @@ const URL_LANG_TO_OG_LOCALE: Record<UrlLang, string> = {
   "zh-hant": "zh_HK",
   "id-id": "id_ID",
   "ms-my": "ms_MY",
+  "th-th": "th_TH",
   es: "es_ES",
   "ja-jp": "ja_JP",
   "ko-kr": "ko_KR",

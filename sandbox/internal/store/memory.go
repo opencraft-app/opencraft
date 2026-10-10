@@ -29,6 +29,7 @@ type MemoryStore struct {
 	vpcShardCreateLocks map[string]core.VPCShardCreateLock
 	vpcShardCleanup     map[string]map[string]core.VPCShardCleanupResource
 	modifyOperations    map[string]core.ModifyOperation
+	supplyOverview      map[poolSupplyKey]PoolSupplyOverview
 	// modifyOperationKeys mirrors the uniq_modify_operations_idempotency_key index.
 	modifyOperationKeys map[string]string
 }
@@ -52,6 +53,7 @@ func NewMemoryStore() *MemoryStore {
 		vpcShardCreateLocks: make(map[string]core.VPCShardCreateLock),
 		vpcShardCleanup:     make(map[string]map[string]core.VPCShardCleanupResource),
 		modifyOperations:    make(map[string]core.ModifyOperation),
+		supplyOverview:      make(map[poolSupplyKey]PoolSupplyOverview),
 		modifyOperationKeys: make(map[string]string),
 	}
 }

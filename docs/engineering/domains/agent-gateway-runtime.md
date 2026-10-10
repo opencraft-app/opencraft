@@ -2,7 +2,7 @@
 
 ## 渠道聊天记录只读接口（待启用）
 
-CTL 的 `/v1/instances/{id}/bots/{bot_id}/channel-sessions` 与消息子资源按登录账号限定实例，再解析该实例下的 Bot/Profile。Hermes 查询脚本只读打开对应 Profile 的 `state.db`，由数据库文件路径隔离 Bot；当前非 multiplex 部署下每个 Profile 的渠道会话键都使用 `agent:main:` 命名空间，缺少这一渠道会话键的记录不返回。列表和消息均分页，消息投影只包含用户与助手文本，排除工具调用和原始推理。
+CTL 的 `/v1/instances/{id}/bots/{bot_id}/channel-sessions` 与消息子资源按登录账号限定实例。每次请求在一条地域 TAT 命令中读取 Hermes Profile 列表、确认 Bot 仍存在，再只读打开对应 Profile 的 `state.db`；不缓存 Bot/Profile 映射。数据库文件路径隔离 Bot；当前非 multiplex 部署下每个 Profile 的渠道会话键都使用 `agent:main:` 命名空间，缺少这一渠道会话键的记录不返回。列表和消息均分页，消息投影只包含用户与助手文本，排除工具调用和原始推理。
 
 `CHANNEL_HISTORY_ENABLED` 默认关闭。目标 Hermes 镜像的 schema、渠道覆盖及群聊参与者可见范围须在启用前核验；接口不得退化为浏览器直接执行命令或访问数据库。公共入口还需网关单独放行两条只读路径，CTL 源码上线本身不代表记录已可访问。
 
@@ -472,6 +472,7 @@ Pages 制品对嵌入内容哈希资源声明 immutable，稳定 loader/version/
 - CTL 对外兼容腾讯云 Cloud API 的 `DescribePass` 以影子账号 `Uin` 为必填查询作用域，请求和成功响应的 `Uin` 均按字符串传输，请求值校验为正整数；`AppId` 与 `PassId` 均可选，显式传入非正 `AppId` 必须拒绝。调用方提供的每个条件都须与同一 Pass 匹配，归属不匹配统一返回资源不存在；省略 `PassId` 时按匹配条件取 `created_time DESC, pass_id ASC` 的首条记录，省略 `AppId` 时不得附加 AppId 过滤。成功响应使用 `ExternalUserId` 返回 Pass 归属的 LightVela 用户 ID，不再返回语义含混的 `UserId`。
 
 - Sandbox 请求路径不创建/重装机器，只分配/释放；后台 worker 执行重置与补货。
+- Sandbox worker 在 shard 0 启动后及此后每五分钟同步一次资源池供给观测。按 Pool 的 region、zone 和机型族调用 CVM `DescribeZoneInstanceConfigInfos`，`zone` 与 `instance-family` 的每组 Filter Values 最多五项，并固定按量计费与 `realStatus` 过滤。`pool_supply_overview` 按 region、zone、完整机型聚合：`resource_count` 保存接口返回的库存值，`sales_state` 仅由同组 Pool 是否有 `status=active` 决定，与库存值无关。地域内任一查询批次失败时不刷新该地域库存与 `updated_time`，但仍同步 Pool 售卖状态；该表仅供观测，不作为下单或补货门禁。实现见 `sandbox/internal/service/pool_supply.go` 与 `sandbox/migrations/000013_pool_supply_overview.up.sql`。
 - Sandbox Pool 是云地域归属的生命周期 owner：Pool 创建后不得跨 region 修改；同 region 内可调整 zone、VPC 与 subnet。实例仍通过 `pool_id` 归属 Pool，CVM、CBS、TAT 交付校验、停启、销毁与同 SP 升配必须携带由 Pool zone 严格推导的 region，禁止以进程级 `TENCENT_REGION` 覆盖存量实例归属或在 region 缺失时静默回退。
 - Sandbox 因安全组配额触顶裂变 Pool 时，新 Pool 的 `instance_type` 继承源 Pool，并持久化在 capacity bundle 的 lineage 中以支持中断后重试；普通 SKU 容量扩张仍使用 SKU 默认机型。
 - Sandbox Pool 的补货熔断与接流量是两个独立状态：终局云创建错误或连续失败仅设置持久化 `refill_paused`，worker 不再补货，但 `status=active` 且 `capacity_state=active` 的已验收 CLEAN 库存仍可分配；显式 Pool 暂停仍挡住两者。运营可通过 Pool PATCH 清除 `refill_paused` 恢复补货。由容量 bundle 自动派生的 Pool 初始为 `capacity_state=warming`、绑定 admission paused；worker 通过数据库条件更新仅在 Pool 仍 active 且存在已验证 CLEAN 实例时切为 active，并只同步目标 Pool 的绑定。warming Pool 计入扩容目标，避免补货期间重复派生；没有 CLEAN 或手工暂停时不得自动开放。
@@ -954,6 +955,9 @@ the same local DOM runtime. Service intent, tabs and resource lifetimes stay wit
 the original conversation panel owner. Only narrow/full-width capacity uses replacement
 presentation; held movement, interruption, cancellation and geometry changes share
 the same driver, without a second visibility authority or duplicated application.
+
+泰语国际站的嵌入式工作台使用 `th-TH` 目录，由原有 WorkbenchLocaleController 装载并随宿主语言切换；独立 OpenCraft 语言菜单不扩大。泰语目录保持全部消息 ID、ICU 参数及复数结构，必须通过应用消息提取与 ICU 校验。前端真源提交后通过同步脚本生成 Agent Console 副本，生成层独立提交且通过只读漂移检查。
+
 ### Bot IM 客户端首次安装
 
 `vela-computer` 的首次安装产物使用北京 COS 的版本化目录，安装入口复用现有

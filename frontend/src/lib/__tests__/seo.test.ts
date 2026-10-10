@@ -91,6 +91,12 @@ describe("seo meta — global multi-URL language prefix", () => {
     expect(getSeoMeta("/zh/changelog", "global").title).toBe(`更新日志 | ${cnSuffix}`);
   });
 
+  it("recognizes the Thai public URL prefix", () => {
+    const meta = getFullSeoMeta("/th-th/about", "global");
+    expect(meta.htmlLang).toBe("th-TH");
+    expect(meta.title).not.toContain("Page Not Found");
+  });
+
   it("getFullSeoMeta htmlLang follows URL prefix", () => {
     expect(getFullSeoMeta("/en-us/about", "global").htmlLang).toBe("en-US");
     expect(getFullSeoMeta("/zh-cn/about", "global").htmlLang).toBe("zh-CN");

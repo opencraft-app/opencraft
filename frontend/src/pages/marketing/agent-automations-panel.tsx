@@ -1873,6 +1873,7 @@ export function RecentCronRunsPanel({
           <div className="divide-y divide-black/[0.06] px-4">
             {runs.map((run) => {
               const presentation = getScenarioRunPresentation(run, displayLocale);
+              const runStatus = getRecentRunStatusInfo(run.status, t);
               const taskTypeLabel = run.zero_token_config
                 ? run.zero_token_config.kind === "fixed_notification"
                   ? t("0 Token · 固定通知")
@@ -1916,15 +1917,7 @@ export function RecentCronRunsPanel({
                     >
                       {taskTypeLabel}
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => setViewingRun(run)}
-                      className="rounded-full bg-black/[0.06] px-2 py-0.5 text-[11px] text-black/55 transition hover:bg-black/[0.1] hover:text-black/75"
-                      aria-label={t("查看任务详情")}
-                      title={t("查看任务详情")}
-                    >
-                      {run.status ? formatLastStatus(run.status, t) : t("已执行")}
-                    </button>
+                    <RecentRunStatusButton status={runStatus} onClick={() => setViewingRun(run)} />
                     <time className="text-right text-xs text-black/55" dateTime={run.run_at}>
                       {formatTime(run.run_at)}
                     </time>
@@ -1952,6 +1945,75 @@ export function RecentCronRunsPanel({
         </div>
       )}
     </div>
+  );
+}
+
+function RecentRunStatusButton({
+  status,
+  onClick,
+}: {
+  status: ReturnType<typeof getRecentRunStatusInfo>;
+  onClick: () => void;
+}) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const tooltipId = useId();
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const error = status.description && status.raw ? status.raw : null;
+
+  useEffect(() => () => {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+  }, []);
+
+  const showTooltip = () => {
+    if (!error) return;
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    closeTimer.current = null;
+    setOpen(true);
+  };
+  const hideTooltip = () => {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    closeTimer.current = setTimeout(() => setOpen(false), 150);
+  };
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverAnchor asChild>
+        <button
+          type="button"
+          onClick={() => {
+            setOpen(false);
+            onClick();
+          }}
+          onMouseEnter={showTooltip}
+          onMouseLeave={hideTooltip}
+          onFocus={showTooltip}
+          onBlur={hideTooltip}
+          className="rounded-full bg-black/[0.06] px-2 py-0.5 text-[11px] text-black/55 transition hover:bg-black/[0.1] hover:text-black/75"
+          aria-label={t("查看任务详情")}
+          aria-describedby={open ? tooltipId : undefined}
+        >
+          {status.label}
+        </button>
+      </PopoverAnchor>
+      {error && (
+        <PopoverContent
+          id={tooltipId}
+          role="tooltip"
+          side="top"
+          align="end"
+          sideOffset={8}
+          onOpenAutoFocus={(event) => event.preventDefault()}
+          onCloseAutoFocus={(event) => event.preventDefault()}
+          onMouseEnter={showTooltip}
+          onMouseLeave={hideTooltip}
+          className="pointer-events-auto max-h-48 w-[min(26rem,calc(100vw-2rem))] overflow-y-auto rounded-md border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium leading-relaxed text-black/80 shadow-[0_8px_24px_rgba(15,23,42,0.12)] select-text"
+        >
+          <p>{status.description}</p>
+          <p className="mt-1 break-words font-normal text-black/60">{error}</p>
+        </PopoverContent>
+      )}
+    </Popover>
   );
 }
 
@@ -1996,6 +2058,7 @@ function RecentCronRunDetailModal({
   const t = useT();
   const { i18n } = useTranslation();
   const presentation = getScenarioRunPresentation(run, getAutomationDisplayLocale(i18n.language));
+  const runStatus = getRecentRunStatusInfo(run.status, t);
   const visiblePrompt = getVisibleAutomationPrompt(presentation.prompt);
   const zeroTokenConfig = run.zero_token_config;
   const [output, setOutput] = useState<string | null>(null);
@@ -2052,7 +2115,7 @@ function RecentCronRunDetailModal({
         <div className="flex items-center gap-2 pr-8">
           <h2 className="truncate text-balance text-lg font-semibold text-black/90">{presentation.name || t("未命名任务")}</h2>
           <span className="shrink-0 rounded-full bg-black/[0.06] px-2 py-0.5 text-[11px] text-black/55">
-            {run.status ? formatLastStatus(run.status, t) : t("已执行")}
+            {runStatus.label}
           </span>
         </div>
 
@@ -2089,6 +2152,20 @@ function RecentCronRunDetailModal({
           )}
           <DetailRow label={t("执行时间")} value={run.schedule ? formatScheduleFriendly(runToCronJob(run), t) : "—"} />
           <DetailRow label={t("本次执行")} value={formatTime(run.run_at)} />
+          {runStatus.raw && (
+            <DetailRow
+              label={t("状态说明")}
+              value={(
+                <div className="min-w-0 text-left">
+                  {runStatus.description && <p className="text-pretty">{runStatus.description}</p>}
+                  <details className="mt-1 text-left text-xs text-black/55">
+                    <summary className="cursor-pointer text-black/60">{t("查看原始状态")}</summary>
+                    <p className="mt-2 whitespace-pre-wrap break-words rounded-md bg-black/[0.03] p-2 font-mono leading-5">{runStatus.raw}</p>
+                  </details>
+                </div>
+              )}
+            />
+          )}
           {currentUpstream && (
             <DetailRow
               label={t("当前关联上游")}
@@ -3120,6 +3197,33 @@ function formatLastStatus(status: string | null, t: ReturnType<typeof useT>): st
   return status || "";
 }
 
+function getRecentRunStatusInfo(status: string | null, t: ReturnType<typeof useT>) {
+  const normalized = (status || "").trim().toLowerCase();
+  if (!normalized) return { label: t("已执行"), description: null, raw: null };
+  if (normalized.includes("result was not delivered")) {
+    return {
+      label: t("通知未送达"),
+      description: t("任务已执行，但通知发送失败。请检查通知通道配置。"),
+      raw: status,
+    };
+  }
+  if (normalized.includes("the requested model is not available in your current plan")) {
+    return {
+      label: t("执行失败"),
+      description: t("当前模型暂不可用，请稍后重试或切换模型。"),
+      raw: status,
+    };
+  }
+  if (["ok", "success", "succeeded", "done", "completed", "failed", "failure", "error", "not_executed", "running", "pending"].includes(normalized)) {
+    return { label: formatLastStatus(status, t), description: null, raw: null };
+  }
+  return {
+    label: /^(failed|failure|error)(?:\s|:)/.test(normalized) ? t("执行失败") : t("状态异常"),
+    description: null,
+    raw: status,
+  };
+}
+
 type EffectiveWindowStatus = "always" | "pending" | "active" | "ended";
 
 export function normalizeEffectiveWindowInput(value: string): string {
@@ -3576,6 +3680,9 @@ const SCENARIO_TEMPLATE_PROMPT_VALUE_OVERRIDES: Record<string, Partial<Record<Au
     "ms-MY": {
       rentInfo: "sewa 2,000 CNY serta yuran pengurusan harta 800 CNY, perlu dibayar kepada pemilik atau pengurus harta melalui pindahan wang melalui bank",
     },
+    "th-TH": {
+      rentInfo: "ค่าเช่า 2,000 หยวน และค่าบริหารทรัพย์สิน 800 หยวน ต้องชำระให้เจ้าของหรือนายหน้าทรัพย์สินผ่านการโอนเงินทางธนาคาร",
+    },
   },
   "country-fx-alert": {
     "zh-CN": {
@@ -3606,6 +3713,10 @@ const SCENARIO_TEMPLATE_PROMPT_VALUE_OVERRIDES: Record<string, Partial<Record<Au
       fromCurrency: "USD",
       toCurrency: "CNY",
     },
+    "th-TH": {
+      fromCurrency: "USD",
+      toCurrency: "CNY",
+    },
   },
   "calorie-fitness-checkin": {
     "zh-CN": {
@@ -3628,6 +3739,9 @@ const SCENARIO_TEMPLATE_PROMPT_VALUE_OVERRIDES: Record<string, Partial<Record<Au
     },
     "ms-MY": {
       bodyProfile: "168 cm, 62 kg, sasaran 58 kg, latihan kekuatan 3 kali seminggu",
+    },
+    "th-TH": {
+      bodyProfile: "168 ซม., 62 กก., เป้าหมาย 58 กก., ฝึกความแข็งแรง 3 ครั้งต่อสัปดาห์",
     },
   },
 };
@@ -3691,6 +3805,11 @@ const SCENARIO_TEMPLATE_PROMPT_LABELS: Record<AutomationDisplayLocale, {
     yes: "ya",
     no: "Tidak",
   },
+  "th-TH": {
+    config: "ตัวอย่างนี้อาจถูกลบหรือเปลี่ยนแปลง; หากฉันเขียนรายละเอียดใหม่ ให้ใช้รายละเอียดใหม่",
+    yes: "ใช่",
+    no: "ไม่",
+  },
 };
 
 const SCENARIO_TEMPLATE_NATURAL_PROMPTS: Record<string, Partial<Record<AutomationDisplayLocale, string[]>>> = {
@@ -3702,6 +3821,7 @@ const SCENARIO_TEMPLATE_NATURAL_PROMPTS: Record<string, Partial<Record<Automatio
     es: ["Recuérdame beber agua y tomar mi medicación habitual según la receta."],
     "id-ID": ["Ingatkan saya minum air dan obat rutin sesuai resep."],
     "ms-MY": ["Ingatkan saya untuk minum air dan ubat dengan kerap seperti yang ditetapkan."],
+    "th-TH": ["เตือนฉันให้ดื่มน้ำและทานยาอย่างสม่ำเสมอตามที่กำหนด"],
   },
   "rent-reminder": {
     "zh-CN": ["请在账期临近时提醒我支付房租 2000 元和物业费 800 元。"],
@@ -3711,6 +3831,7 @@ const SCENARIO_TEMPLATE_NATURAL_PROMPTS: Record<string, Partial<Record<Automatio
     es: ["Recuérdame pagar 2000 CNY de alquiler y 800 CNY de comunidad cuando se acerque la fecha."],
     "id-ID": ["Ingatkan saya saat sewa CNY 2.000 dan biaya pengelolaan CNY 800 mendekati jatuh tempo."],
     "ms-MY": ["Ingatkan saya apabila sewa CNY 2,000 dan yuran pengurusan CNY 800 hampir matang."],
+    "th-TH": ["เตือนฉันเมื่อค่าเช่า 2,000 หยวนและค่าบริหารจัดการ 800 หยวนใกล้ครบกำหนด"],
   },
   "country-fx-alert": {
     "zh-CN": ["请关注 USD/CNY，较前一日涨跌达到 1% 时提醒我。"],
@@ -3720,6 +3841,7 @@ const SCENARIO_TEMPLATE_NATURAL_PROMPTS: Record<string, Partial<Record<Automatio
     es: ["Vigila USD/CNY y avísame cuando cambie un 1 % frente al día anterior."],
     "id-ID": ["Pantau USD/CNY dan beri tahu saat berubah 1% dari hari sebelumnya."],
     "ms-MY": ["Pantau USD/CNY dan maklumkan apabila ia berubah 1% daripada hari sebelumnya."],
+    "th-TH": ["ติดตาม USD/CNY และแจ้งเมื่อมันเปลี่ยนแปลง 1% จากวันก่อนหน้า"],
   },
   "calorie-fitness-checkin": {
     "zh-CN": ["请记录今天的饮食、运动和体重；目标减脂并保持力量训练，168cm、62kg、目标 58kg。"],
@@ -3729,6 +3851,7 @@ const SCENARIO_TEMPLATE_NATURAL_PROMPTS: Record<string, Partial<Record<Automatio
     es: ["Registra la comida, el ejercicio y el peso de hoy para llegar a 58 kg manteniendo la fuerza."],
     "id-ID": ["Catat makanan, olahraga, dan berat hari ini untuk target 58 kg sambil menjaga latihan kekuatan."],
     "ms-MY": ["Catatkan makanan, senaman dan berat hari ini untuk matlamat 58 kg sambil mengekalkan latihan kekuatan."],
+    "th-TH": ["บันทึกอาหาร การออกกำลังกาย และน้ำหนักวันนี้เพื่อเป้าหมาย 58 กก. พร้อมกับการรักษาการฝึกความแข็งแรง"],
   },
   "global-holiday-reminder": {
     "zh-CN": ["请关注泰国、印尼的公共假期和天气预警，旅行、发货或会议前提醒我。"],
@@ -3738,6 +3861,7 @@ const SCENARIO_TEMPLATE_NATURAL_PROMPTS: Record<string, Partial<Record<Automatio
     es: ["Vigila festivos y alertas del tiempo en Tailandia e Indonesia antes de viajes, envíos o reuniones."],
     "id-ID": ["Pantau hari libur dan peringatan cuaca di Thailand dan Indonesia sebelum perjalanan, pengiriman, atau rapat."],
     "ms-MY": ["Pantau amaran cuti dan cuaca di Thailand dan Indonesia sebelum perjalanan, penghantaran atau mesyuarat."],
+    "th-TH": ["ตรวจสอบคำเตือนวันหยุดและสภาพอากาศในประเทศไทยและอินโดนีเซียก่อนการเดินทาง การจัดส่ง หรือการประชุม"],
   },
   "stock-info-digest": {
     "zh-CN": ["请整理腾讯控股 00700、NVIDIA NVDA 和贵州茅台 600519 的价格、公告及财报动态。"],
@@ -3747,6 +3871,7 @@ const SCENARIO_TEMPLATE_NATURAL_PROMPTS: Record<string, Partial<Record<Automatio
     es: ["Resume precios, anuncios y resultados de Tencent 00700, NVIDIA NVDA y Kweichow Moutai 600519."],
     "id-ID": ["Rangkum harga, pengumuman, dan laporan keuangan Tencent 00700, NVIDIA NVDA, dan Kweichow Moutai 600519."],
     "ms-MY": ["Ringkaskan harga, pengumuman dan laporan kewangan Tencent 00700, NVIDIA NVDA dan Kweichow Moutai 600519."],
+    "th-TH": ["สรุปราคา ประกาศ และรายงานการเงิน Tencent 00700, NVIDIA NVDA และ Kweichow Moutai 600519"],
   },
 };
 
@@ -3754,7 +3879,7 @@ function getScenarioDefaultValues(pack: ScenarioTaskPack): Record<string, string
   return Object.fromEntries(pack.fields.map((field) => [field.key, field.defaultValue]));
 }
 
-function getScenarioTemplatePromptValues(
+export function getScenarioTemplatePromptValues(
   pack: ScenarioTaskPack,
   displayLocale: AutomationDisplayLocale,
 ): Record<string, string> {

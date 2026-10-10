@@ -29,7 +29,7 @@ class CollaborationDeliveryTests(unittest.TestCase):
         self.assertEqual(config["collaboration"], {
             "upstream": "http://collaboration.lightvela-collaboration.svc.cluster.local",
             "upstream_bearer_token_env": "COLLABORATION_GATEWAY_TOKEN",
-            "allowed_origins": ["http://localhost:*", "http://127.0.0.1:*"],
+            "allowed_origins": ["https://lightclaw.pages.dev", "http://localhost:*", "http://127.0.0.1:*"],
         })
 
         kustomization = yaml.safe_load((overlay / "kustomization.yaml").read_text())

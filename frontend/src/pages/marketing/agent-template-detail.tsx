@@ -17,7 +17,7 @@ import { useMemo, useState } from "react";
 
 import { useT } from "@/i18n/t";
 import { cn } from "@/lib/utils";
-import { GeometricAvatar } from "@/pages/marketing/agent-avatar-shapes";
+import { AgentTemplateAvatar } from "@/pages/marketing/agent-template-avatar";
 import type { AgentTemplate } from "@/pages/marketing/agent-demo-templates";
 
 type TemplateTabId = "instructions" | "profile" | "skills" | "routines";
@@ -167,8 +167,8 @@ export const TemplateDetailView = ({
       {/* 头部：头像 + 名称 + 描述 + 主按钮 */}
       <div className="flex items-start justify-between gap-4 pr-6">
         <div className="flex min-w-0 items-start gap-3">
-          {/* 弹窗主视觉，开启呼吸与眨眼 */}
-          <GeometricAvatar shapeId={template.shapeId} color={template.color} size={56} alive />
+          {/* 与推荐卡片共用首页 3D 形象头像 */}
+          <AgentTemplateAvatar templateId={template.id} size={56} />
           <div className="min-w-0">
             <h2 className="text-lg font-semibold leading-7 text-black/[0.92]">{template.name}</h2>
             <p className="mt-1 text-[13px] leading-5 text-black/50">{template.description}</p>
