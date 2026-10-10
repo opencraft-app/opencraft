@@ -175,3 +175,77 @@ Full frontend pnpm check passes: i18n structure 0 errors (47 existing warnings),
 630 doc metadata entries valid, MDX generated, TypeScript 164 current / 171
 baseline / 0 new. Node syntax and diff checks pass. No source/public UI edits;
 the Agent Console copy boundary is not changed by this packaging-only fix.
+
+## 2026-10-10 CF provider-boundary MR checkpoint
+
+Source 70c6b0a7b4b31ea65dae4724896b0ae7922121f1 is pushed; MR !5168
+(global ID 27624176) created against master. Authenticated mingyuxiao was
+explicitly invited and submitted the authorized approval after reviewing the
+provider-specific pre-hash exclusion. AI review reports SUCCESS, no comments.
+MR CI p-4ed28a7f9b6a4468a10dcfa92d3f9fe4 /
+b-fd9238e9052645189b604e4cc43c4628 is freshly verified RUNNING; no merge
+or override while that required gate is pending. Desktop artifact attachment
+rejects Gongfeng URLs; the MR remains available in Gongfeng.
+
+Current-turn checks: four affected suites 51/51 PASS; Node syntax and git diff
+checks PASS. Full frontend pnpm check exits 0: i18n zero errors / 47 warnings,
+630 doc metadata checks, TypeScript 164 current / 171 baseline / zero new.
+
+Fresh Argo host read: /data free 159329878016 bytes (barely above the
+158502316800-byte eviction threshold), node Ready=True / DiskPressure=True;
+active Argo control-plane replacements are Pending. Terminal historical Pods
+are not recovery evidence. No further cleanup, runner pause, infrastructure
+provisioning, production approval or GitOps sync was executed this turn.
+Separate Shanghai/Singapore runtime identity and human-reviewed regional
+capacity inputs remain unresolved. Production hidden release is not achieved.
+
+## 2026-10-10 authorized Argo-only restart and postcheck
+
+User explicitly authorized restarting Argo. Issued standard kubectl rollout
+restart for six argocd-* Deployments and argocd-application-controller StatefulSet
+in namespace argocd; command exit 0, all seven acknowledged. Did not restart
+k0s/host/shared CI or the tkex-csig-api-server Deployment. Acknowledgement does
+not mean replacement Pods became Ready. Fresh scheduler messages show the
+node.kubernetes.io/disk-pressure NoSchedule taint blocking replacements.
+
+Bounded watch 08:33:11Z through 08:38:32Z: DiskPressure=True and zero of seven
+Argo workloads Ready on all eleven observations. Fresh /data free
+151747805184 bytes, below the 158502316800-byte threshold. Six production
+website-related Applications remain sync Unknown / ComparisonError; stored
+health Healthy is not fresh deployment/reconciliation proof. No force taint,
+eviction-threshold change, production sync or backend enablement performed.
+
+In parallel, !5168 MR CI succeeded (build b-fd9238e9052645189b604e4cc43c4628),
+mingyuxiao approval confirmed; standard merge succeeded at
+57f22da784f0a9d16efe1c4f1983bd24c6c7eab2, fetched ancestry verified.
+New frontend producer build b-a54ff1a2603d418fa8f3968ded6f6693
+(p-d7b21a8b85b2495683c8afd1d806f763) was observed RUNNING at this merge.
+Tokyo build b-631edd372837458e9b939a48c2ffe5bc also RUNNING. These are new
+artifact validation, not production release. Goal remains incomplete.
+
+## 2026-10-10 frontend image dependency closure and authorized CI drain
+
+Frontend producer b-a54ff1a2603d418fa8f3968ded6f6693 now reports STAGE_SUCCESS:
+construction stage SUCCEED; formal-site candidate confirmation PAUSE. No
+production candidate approval executed. Tokyo image build b-631edd... is FAILED
+at pnpm install: missing /shared/vela-collaboration-web. Root cause confirmed
+against the Dockerfile and its context allowlist: five direct/transitive file:
+packages were omitted (collaboration, chat core, mobile account/bot SDKs and
+workbench panels). Added an automatically recursive dependency-closure test;
+old Docker contract fails on five packages, repaired contract passes all 25
+build-image tests. Dockerfile adds only those packages; context allows only
+those package trees, excludes host node_modules/local credential patterns.
+Actual container rebuild is not yet verified (local Docker daemon unavailable;
+shared runner is being paused, not used for another build).
+
+User explicitly authorized temporary suspension of shared runner new intake.
+Confirmed project git_1731878 / agent prowgrgm / node mbkkaqrp on the Argo host.
+Verified official BK-CI implementation: zero parallelism means unlimited,
+not pause. Original normal/docker concurrency 4/4 recorded; changed both to
+1/1 while the single existing frontend task drained, not canceled. After the
+producer reached its approval wait, node RUNNING task count became zero;
+no worker Java process remained. Under a guarded child-process absence check,
+stopped only devops_agent_prowgrgm.service and its two dispatcher processes.
+Service inactive, daemon PID 1307 and agent PID 1338 absent; no task/group kill,
+no shared pnpm/npm store cleanup and no build cancellation. Original 4/4 must
+be restored when explicitly resuming service after stable disk recovery.
