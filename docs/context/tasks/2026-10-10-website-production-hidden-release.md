@@ -175,3 +175,10 @@ Full frontend pnpm check passes: i18n structure 0 errors (47 existing warnings),
 630 doc metadata entries valid, MDX generated, TypeScript 164 current / 171
 baseline / 0 new. Node syntax and diff checks pass. No source/public UI edits;
 the Agent Console copy boundary is not changed by this packaging-only fix.
+
+
+## 2026-10-10 workbench visibility correction
+
+The owner explicitly revoked hiding the existing My Workbench navigation: users already depend on it. Restore the unconditional website navigation in both regions, preserve all other advanced-tool show toggles, and keep backend API authorization and regional enablement separate from UI visibility. The old static candidate at 57f22da78 contains the rejected hidden navigation and must not be promoted as the final frontend release; qualify a newly reviewed candidate containing this correction. Regression tests must prove unconditional website navigation rather than merely reject the historical global-only condition.
+
+Live release observations at 09:15Z: frontend build b-a54ff1a2603d418fa8f3968ded6f6693 finished FAILED at formal-candidate confirmation due to build-agent allocation timeout; frontend construction succeeded but formal candidate launch did not execute. Argo still has DiskPressure and only two of seven Argo workloads ready; shared runner remains intentionally inactive. Docker fix MR !5171 is open with mingyuxiao invited and required check pending. None of these observations proves production backend or frontend completion.
