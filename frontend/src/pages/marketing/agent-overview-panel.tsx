@@ -17,7 +17,6 @@ import {
   Activity,
   ChevronRight,
   Newspaper,
-  RefreshCw,
   Wallet,
 } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
@@ -29,11 +28,11 @@ import { AppLink } from "@/lib/app-navigation";
 import { assetUrl } from "@/lib/asset-url";
 import { cn } from "@/lib/utils";
 import {
-  AVATAR_SHAPES,
-  getAvatarShapeLabel,
   GeometricAvatar,
-  randomizeAvatarBatch,
 } from "@/pages/marketing/agent-avatar-shapes";
+import { AgentHomepageAvatar } from '@/pages/marketing/agent-template-avatar';
+import { DEFAULT_HERMES_APPEARANCE, type HermesAppearance } from '@/lib/hermes-appearance';
+import { AgentDressupStudio, HermesAppearanceAvatar } from '@/pages/marketing/agent-dressup-studio';
 import { CreatingLoadingView } from "@/pages/marketing/agent-creating-loading";
 import type { BuddyProfile } from "@/pages/marketing/agent-buddy-profile";
 import { buildBuddySetupPlan } from "@/pages/marketing/agent-buddy-setup";
@@ -335,36 +334,37 @@ export const ProfileEditDialog = ({
   onSave,
   errorMessage,
   saving = false,
+  avatarOnly = false,
 }: {
   profile: BuddyProfile;
   onClose: () => void;
   onSave: (next: BuddyProfile) => void;
   errorMessage?: string | null;
   saving?: boolean;
+  avatarOnly?: boolean;
 }) => {
   const t = useT();
   const [name, setName] = useState(profile.name);
   const [description, setDescription] = useState(profile.description);
-  /* 头像：与创建引导同一套交互（形状候选 + 换一批） */
-  const [shapeId, setShapeId] = useState(profile.shapeId);
-  const [color, setColor] = useState(profile.color);
-  const [shapeBatch, setShapeBatch] = useState(() => AVATAR_SHAPES.slice(0, 8));
+  const [appearance, setAppearance] = useState<HermesAppearance | null>(profile.appearance ?? null);
+  const [draftAppearance, setDraftAppearance] = useState<HermesAppearance>(profile.appearance ?? DEFAULT_HERMES_APPEARANCE);
+  const [dressupOpen, setDressupOpen] = useState(avatarOnly);
 
   const canSave = name.trim().length > 0 && !saving;
 
-  /** 换一批：重抽候选形状 + 换配色；当前形状不在新批次时顺延第一个 */
-  const handleRandomize = () => {
-    const next = randomizeAvatarBatch({ currentColor: color });
-    setShapeBatch(next.shapes);
-    setColor(next.color);
-    if (!next.shapes.some((item) => item.id === shapeId)) {
-      setShapeId(next.shapes[0]!.id);
-    }
-  };
-
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="rounded-[0.875rem] md:w-[32rem]">
+      <DialogContent className={cn("max-h-[95dvh] overflow-y-auto rounded-[0.875rem]", dressupOpen ? "md:w-[min(64rem,calc(100vw-3rem))]" : "md:w-[35rem]")}>
+        {dressupOpen && <DialogTitle className="sr-only">{t("修改资料")}</DialogTitle>}
+        {dressupOpen && errorMessage && <p role="alert" className="text-sm text-red-700">{errorMessage}</p>}
+        {dressupOpen ? <AgentDressupStudio
+          value={draftAppearance}
+          saving={saving}
+          onChange={setDraftAppearance}
+          onBack={() => avatarOnly ? onClose() : setDressupOpen(false)}
+          onConfirm={(next) => { if (avatarOnly) onSave({ ...profile, appearance: next, legacyMascot: undefined }); else { setAppearance(next); setDressupOpen(false); } }}
+          className="border-0 shadow-none"
+        /> : <>
         <div className="pr-6">
           <DialogTitle className="text-lg font-semibold leading-7 text-black/[0.92]">{t("修改资料")}</DialogTitle>
           <DialogDescription className="mt-1 text-[13px] leading-5 text-black/50">
@@ -372,36 +372,11 @@ export const ProfileEditDialog = ({
           </DialogDescription>
         </div>
 
-        {/* ── 头像：大预览 + 形状候选 + 换一批 ── */}
+        {/* 资料与创建页使用同一外观，名称和描述在切换舞台时保留。 */}
         <div className="mt-5 flex flex-col items-center">
-          <GeometricAvatar shapeId={shapeId} color={color} size={72} alive />
-          <div className="mt-3 flex flex-nowrap justify-center gap-2">
-            {shapeBatch.map((shape) => (
-              <button
-                key={shape.id}
-                type="button"
-                aria-label={getAvatarShapeLabel(shape.id, t)}
-                aria-pressed={shape.id === shapeId}
-                onClick={() => setShapeId(shape.id)}
-                className={cn(
-                  // 无边框：几何体本身有形状与配色，方框反而抢视线
-                  "inline-flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-[4px] transition",
-                  shape.id === shapeId
-                    ? "bg-black/[0.06]"
-                    : "hover:bg-black/[0.03]",
-                )}
-              >
-                <GeometricAvatar shapeId={shape.id} color={color} size={24} />
-              </button>
-            ))}
-          </div>
-          <button
-            type="button"
-            onClick={handleRandomize}
-            className="mt-2.5 inline-flex cursor-pointer items-center gap-1.5 rounded-[3px] px-2.5 py-1 text-[13px] font-medium text-black/55 transition hover:bg-black/[0.03] hover:text-black/80"
-          >
-            <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
-            {t("换一批")}
+          {appearance ? <HermesAppearanceAvatar appearance={appearance} size={96} alive /> : <GeometricAvatar shapeId={profile.shapeId} color={profile.color} size={96} alive />}
+          <button type="button" onClick={() => { setDraftAppearance(appearance ?? DEFAULT_HERMES_APPEARANCE); setDressupOpen(true); }} className="mt-2 min-h-11 cursor-pointer rounded-lg px-3 text-sm font-medium text-violet-700 hover:bg-violet-50 focus-visible:outline-2 focus-visible:outline-violet-500">
+            {t("更换头像")}
           </button>
         </div>
 
@@ -448,8 +423,7 @@ export const ProfileEditDialog = ({
               ...profile,
               name: name.trim(),
               description,
-              shapeId,
-              color,
+              appearance,
             })}
             className={cn(
               "rounded-full px-4 py-2 text-sm font-medium transition",
@@ -462,6 +436,7 @@ export const ProfileEditDialog = ({
             {t("保存")}
           </button>
         </div>
+        </>}
       </DialogContent>
     </Dialog>
   );
@@ -480,7 +455,11 @@ export const BuddyProfileAvatar = ({ profile, hasCustomAvatar, fallbackAvatarUrl
   hasCustomAvatar: boolean;
   fallbackAvatarUrl: string;
   size?: number;
-}) => (hasCustomAvatar || !fallbackAvatarUrl ? (
+}) => profile.legacyMascot ? (
+  <AgentHomepageAvatar mascot={profile.legacyMascot} size={size} />
+) : profile.appearance ? (
+  <HermesAppearanceAvatar appearance={profile.appearance} size={size} className="shrink-0" />
+) : (hasCustomAvatar || !fallbackAvatarUrl ? (
   <GeometricAvatar shapeId={profile.shapeId} color={profile.color} size={size} className="shrink-0" />
 ) : (
   <img src={fallbackAvatarUrl} alt="" width={size} height={size} className="shrink-0 rounded-full object-contain" />
@@ -734,6 +713,7 @@ export const useOverviewProfileEditor = ({ botId, profileId = "", execDebugComma
       profile: { name: next.name, description: next.description },
       profileId: resolvedProfileId,
       avatar: { shapeId: next.shapeId, color: next.color },
+      appearance: next.appearance ?? undefined,
       timestamp: new Date().toISOString().replace(/[:.]/g, "-"),
       // 仅成功读取到明确的 missing 状态时允许新建；其他读取失败均已中止。
       preserveSoulContent: Boolean(existingSoul),

@@ -1,0 +1,100 @@
+{
+  "generator": "built-in image_gen",
+  "generatedAt": "2026-10-05",
+  "reference": [
+    "doodle/body-bean.webp",
+    "doodle/glasses.webp"
+  ],
+  "style": "Flat pastel illustration; frontal view; restrained color facets; transparency for compositing.",
+  "status": "Asset alpha and contact sheet reviewed; runtime fit requires consuming component QA.",
+  "assets": [
+    {
+      "name": "crown",
+      "prompt": "Use case: stylized-concept. Asset type: production 2D avatar accessory, flat illustration transparent sprite. Image 1 is the existing pale lilac bean avatar as STYLE REFERENCE ONLY, Image 2 its existing round glasses to match simplicity and lineweight. Create ONLY the requested isolated accessory, no avatar. Match matte gentle hand-cut vector-like shapes, clean rounded edges, pastel colors, at most one slightly darker color plane. No outline unless specified. Frontal orthographic view. Genuine transparent canvas, ample padding. No body, eyes, words, checkerboard, background, 3D, metallic shine, texture, shadows or UI. Designed to read as a tiny 24–80px ornament. SUBJECT: One small friendly three-point royal crown, buttercream pale yellow #ffe29c, three tiny coral pink round tips, minimal curved base and a single coral dot jewel. Soft rounded triangle tips, cute compact silhouette. Width about 1.6 times height. No sparkle decorations.",
+      "source": "/Users/keria/.codex/generated_images/01a1079f-570c-75c2-9a64-23836a365341/exec-593924c4-9327-4b6c-a3c7-079c6df39285.png",
+      "file": "crown.webp",
+      "sourceDimensions": [
+        1586,
+        992
+      ],
+      "crop": {
+        "left": 347,
+        "top": 229,
+        "width": 891,
+        "height": 534
+      },
+      "width": 600,
+      "height": 360,
+      "aspectRatio": 1.6666666666666667,
+      "normalizations": "Deterministic crop to alpha > 8 plus 2 px padding; resize fit within 600x600; WebP quality95 alpha100. No recoloring or redrawing.",
+      "transparentCanvasFraction": 0.8359276481715007,
+      "hasAlpha": true
+    },
+    {
+      "name": "star-glasses",
+      "prompt": "Use case: stylized-concept. Asset type: production 2D avatar accessory, flat illustration transparent sprite. Image 1 is the existing pale lilac bean avatar as STYLE REFERENCE ONLY, Image 2 its existing round glasses to match simplicity and lineweight. Create ONLY the requested isolated accessory, no avatar. Match matte gentle hand-cut vector-like shapes, clean rounded edges, pastel colors, at most one slightly darker color plane. No outline unless specified. Frontal orthographic view. Genuine transparent canvas, ample padding. No body, eyes, words, checkerboard, background, 3D, metallic shine, texture, shadows or UI. Designed to read as a tiny 24–80px ornament. SUBJECT: One pair of front-facing STAR-shaped eyeglasses: two equal softly rounded five-point star frames, connected by a small curved bridge and short outward temple arms. Thin muted coral red #ee817b frames, solid flat color, frame stroke width about 2% of total pair width. The two lens interiors MUST be completely transparent empty holes so underlying avatar eyes remain visible. No lenses, no reflections, no tint, no filling, no eyes. Symmetric pair, width about 2.2 times height.",
+      "source": "/Users/keria/.codex/generated_images/01a1079f-570c-75c2-9a64-23836a365341/exec-b7dc6101-3b13-4bed-bb4d-f03caf54f372.png",
+      "file": "star-glasses.webp",
+      "sourceDimensions": [
+        1860,
+        846
+      ],
+      "crop": {
+        "left": 85,
+        "top": 92,
+        "width": 1689,
+        "height": 630
+      },
+      "width": 600,
+      "height": 224,
+      "aspectRatio": 2.6785714285714284,
+      "normalizations": "Deterministic crop to alpha > 8 plus 2 px padding; resize fit within 600x600; WebP quality95 alpha100. No recoloring or redrawing.",
+      "transparentCanvasFraction": 0.8396978825084521,
+      "hasAlpha": true
+    },
+    {
+      "name": "sparkle-cheeks",
+      "prompt": "Use case: stylized-concept. Asset type: production 2D avatar accessory, flat illustration transparent sprite. Image 1 is the existing pale lilac bean avatar as STYLE REFERENCE ONLY, Image 2 its existing round glasses to match simplicity and lineweight. Create ONLY the requested isolated accessory, no avatar. Match matte gentle hand-cut vector-like shapes, clean rounded edges, pastel colors, at most one slightly darker color plane. No outline unless specified. Frontal orthographic view. Genuine transparent canvas, ample padding. No body, eyes, words, checkerboard, background, 3D, metallic shine, texture, shadows or UI. Designed to read as a tiny 24–80px ornament. SUBJECT: One single tiny butter yellow five-point STAR cheek sticker, rounded points, flat #ffe29c fill with a subtle pale peach corner facet, like a small happy sticker, compact silhouette. No glow, no outline, no face. Only one star, no scattered particles.",
+      "source": "/Users/keria/.codex/generated_images/01a1079f-570c-75c2-9a64-23836a365341/exec-982d93b5-63f7-4545-b292-8588f87232b7.png",
+      "file": "sparkle-cheeks.webp",
+      "sourceDimensions": [
+        1254,
+        1254
+      ],
+      "crop": {
+        "left": 412,
+        "top": 419,
+        "width": 430,
+        "height": 415
+      },
+      "width": 430,
+      "height": 415,
+      "aspectRatio": 1.036144578313253,
+      "normalizations": "Deterministic crop to alpha > 8 plus 2 px padding; resize fit within 600x600; WebP quality95 alpha100. No recoloring or redrawing.",
+      "transparentCanvasFraction": 0.9284026362847818,
+      "hasAlpha": true
+    },
+    {
+      "name": "wings",
+      "prompt": "Use case: stylized-concept. Asset type: production 2D avatar accessory, flat illustration transparent sprite. Image 1 is the existing pale lilac bean avatar as STYLE REFERENCE ONLY, Image 2 its existing round glasses to match simplicity and lineweight. Create ONLY the requested isolated accessory, no avatar. Match matte gentle hand-cut vector-like shapes, clean rounded edges, pastel colors, at most one slightly darker color plane. No outline unless specified. Frontal orthographic view. Genuine transparent canvas, ample padding. No body, eyes, words, checkerboard, background, 3D, metallic shine, texture, shadows or UI. Designed to read as a tiny 24–80px ornament. SUBJECT: One matched PAIR of small pale sky-blue cartoon wings, symmetric frontal spread, separated by generous transparent center gap equal to one wing's width. Each wing has only three broad round feather lobes pointing upward and outward. Minimal pastel #c9e4f8 with a slightly darker #abd3ef lower feather. Root tips face inward and will be hidden behind a mascot's body. Wings pair overall width about 3.8 times height; no body, no connector, no central object.",
+      "source": "/Users/keria/.codex/generated_images/01a1079f-570c-75c2-9a64-23836a365341/exec-d42e6642-809e-41bd-8850-424c37acdcc9.png",
+      "file": "wings.webp",
+      "sourceDimensions": [
+        2021,
+        778
+      ],
+      "crop": {
+        "left": 73,
+        "top": 93,
+        "width": 1876,
+        "height": 593
+      },
+      "width": 600,
+      "height": 190,
+      "aspectRatio": 3.1578947368421053,
+      "normalizations": "Deterministic crop to alpha > 8 plus 2 px padding; resize fit within 600x600; WebP quality95 alpha100. No recoloring or redrawing.",
+      "transparentCanvasFraction": 0.6739225281078242,
+      "hasAlpha": true
+    }
+  ]
+}

@@ -155,10 +155,10 @@ describe("post-subscribe naming intent (/agents?create=1)", () => {
     /*
      * 订阅成功回跳后直接进创建引导，不再弹「只问名字」的旧弹窗 ——
      * 这是新用户订阅后的第一屏，看到的必须是新流程（可换头像、填描述、
-     * 挑模板）。用「换一批」认引导页：它是引导独有的头像操作。
+     * 挑模板）。用「随机样式」认引导页：它是引导独有的头像操作。
      */
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "换一批" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "随机样式" })).toBeInTheDocument();
     });
     expect(screen.queryByRole("heading", { name: "创建 Bot" })).not.toBeInTheDocument();
     // 首个创建不自动建 bot（等用户在引导页点「创建」才建）
@@ -169,19 +169,19 @@ describe("post-subscribe naming intent (/agents?create=1)", () => {
 
   it("reopens first creation on a later direct visit until a Bot is created", async () => {
     const firstVisit = render(page(""));
-    await waitFor(() => expect(screen.getByRole("button", { name: "换一批" })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole("button", { name: "随机样式" })).toBeInTheDocument());
     expect(addBot).not.toHaveBeenCalled();
     firstVisit.unmount();
 
     render(page(""));
-    await waitFor(() => expect(screen.getByRole("button", { name: "换一批" })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole("button", { name: "随机样式" })).toBeInTheDocument());
     expect(addBot).not.toHaveBeenCalled();
   });
 
   it("reopens creation after all Bots were deleted, even with a legacy browser marker", async () => {
     window.localStorage.setItem("lightvela:bot-created:usr-test", "1");
     render(page(""));
-    await waitFor(() => expect(screen.getByRole("button", { name: "换一批" })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole("button", { name: "随机样式" })).toBeInTheDocument());
     expect(addBot).not.toHaveBeenCalled();
   });
 
@@ -189,7 +189,7 @@ describe("post-subscribe naming intent (/agents?create=1)", () => {
     botsLoading = true;
     render(page(""));
     await Promise.resolve();
-    expect(screen.queryByRole("button", { name: "换一批" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "随机样式" })).not.toBeInTheDocument();
   });
 
   /*
@@ -206,7 +206,7 @@ describe("post-subscribe naming intent (/agents?create=1)", () => {
     render(page("?create=1"));
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "换一批" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "随机样式" })).toBeInTheDocument();
     });
 
     // 引导表单自己的提交按钮只能有一个

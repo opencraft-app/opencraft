@@ -1,0 +1,74 @@
+{
+  "headphones": {
+    "source": "/Users/keria/.codex/generated_images/01a0fabe-e857-77f1-94c9-06e39bab64be/exec-15078643-78bb-494f-b1e1-4e755e364f2b.png",
+    "width": 1084,
+    "height": 884,
+    "aspect": 0.8154981549815498,
+    "asset": "frontend/public/assets/mascot-dressup/plush/headphones-v2.webp",
+    "approval": "本轮技术接入，待用户视觉确认；不标记为已认可素材",
+    "processing": "透明区域裁边，宽度640px，WebP质量95"
+  },
+  "goggles": {
+    "source": "/Users/keria/.codex/generated_images/01a0fabe-e857-77f1-94c9-06e39bab64be/exec-524a6f0e-81bf-4252-9056-71ec236fed76.png",
+    "width": 1097,
+    "height": 462,
+    "aspect": 0.4211485870556062,
+    "asset": "frontend/public/assets/mascot-dressup/plush/goggles-v2.webp",
+    "approval": "本轮技术接入，待用户视觉确认；不标记为已认可素材",
+    "processing": "透明区域裁边，宽度640px，WebP质量95"
+  },
+  "scarf": {
+    "source": "/Users/keria/.codex/generated_images/01a0fabe-e857-77f1-94c9-06e39bab64be/exec-62bdcfda-a104-4a36-970f-6c71d99e200a.png",
+    "width": 1177,
+    "height": 513,
+    "aspect": 0.4358538657604078,
+    "asset": "frontend/public/assets/mascot-dressup/plush/scarf-v2.webp",
+    "approval": "本轮技术接入，待用户视觉确认；不标记为已认可素材",
+    "processing": "透明区域裁边，宽度640px，WebP质量95"
+  },
+  "record": {
+    "source": "/Users/keria/.codex/generated_images/01a0fabe-e857-77f1-94c9-06e39bab64be/exec-c557e941-7ecf-42a9-be24-f6e47bb74537.png",
+    "width": 977,
+    "height": 970,
+    "aspect": 0.9928352098259979,
+    "asset": "frontend/public/assets/mascot-dressup/plush/record-v2.webp",
+    "approval": "本轮技术接入，待用户视觉确认；不标记为已认可素材",
+    "processing": "透明区域裁边，宽度640px，WebP质量95"
+  },
+  "bucket-hat": {
+    "source": "/Users/keria/.codex/generated_images/01a0fabe-e857-77f1-94c9-06e39bab64be/exec-c353822a-f4ca-4b27-85fb-e15f2f985e44.png",
+    "width": 997,
+    "height": 573,
+    "aspect": 0.5747241725175527,
+    "asset": "frontend/public/assets/mascot-dressup/plush/bucket-hat-v2.webp",
+    "approval": "本轮技术接入，待用户视觉确认；不标记为已认可素材",
+    "processing": "透明区域裁边，宽度640px，WebP质量95"
+  },
+  "book": {
+    "source": "/Users/keria/.codex/generated_images/01a0fabe-e857-77f1-94c9-06e39bab64be/exec-e9954d65-66e0-4b2a-a84c-8a25d82b8724.png",
+    "width": 597,
+    "height": 641,
+    "aspect": 1.0737018425460636,
+    "asset": "frontend/public/assets/mascot-dressup/plush/book-v2.webp",
+    "approval": "本轮技术接入，待用户视觉确认；不标记为已认可素材",
+    "processing": "透明区域裁边，宽度640px，WebP质量95"
+  },
+  "beret": {
+    "source": "/Users/keria/.codex/generated_images/01a0fabe-e857-77f1-94c9-06e39bab64be/exec-a195c510-9791-419b-adea-ab439824b8d0.png",
+    "width": 1007,
+    "height": 571,
+    "aspect": 0.5670307845084409,
+    "asset": "frontend/public/assets/mascot-dressup/plush/beret-v2.webp",
+    "approval": "本轮技术接入，待用户视觉确认；不标记为已认可素材",
+    "processing": "透明区域裁边，宽度640px，WebP质量95"
+  },
+  "camera": {
+    "source": "/Users/keria/.codex/generated_images/01a0fabe-e857-77f1-94c9-06e39bab64be/exec-ac303ac5-b0fa-4c81-9329-fe6ad3cc4ec9.png",
+    "width": 918,
+    "height": 634,
+    "aspect": 0.690631808278867,
+    "asset": "frontend/public/assets/mascot-dressup/plush/camera-v2.webp",
+    "approval": "本轮技术接入，待用户视觉确认；不标记为已认可素材",
+    "processing": "透明区域裁边，宽度640px，WebP质量95"
+  }
+}
