@@ -572,6 +572,12 @@ sandbox-bj-7 继续使用独立 testing 入口。
 不改上海生产和新加坡生产的点石入口。ConfigMap 更新后应核对 Trade Pod 实际环境变量与镜像，
 并验证无续费活动配置时普通续费仍走计费。
 
+北京预发布 Trade 单独设置 `DIANSHI_RENEW_PRICE_BASE_URL` / `DIANSHI_RENEW_ORDER_BASE_URL`，
+经 tkexgz 生产 `dianshi-renew-price` / `dianshi-renew-order` 路由分别调用
+`get_price_renew` / `do_goods_renew`，两条后端都指向 `opc-dianshi-activity.production.polaris:80`。
+共享网关配置中的新后端默认不可达，仅 tkexgz 生产工作负载覆盖；先发布网关，再启用北京预发布 Trade。
+其他地域和点石新购维持原路由。发布后必须核对 Argo、Pod 环境变量和真实续费调用。
+
 ## OpenCraft 第一方 OIDC 配置与镜像门禁
 
 原生与 Web 客户端复用现有 OIDC 登录渠道，不是新增身份渠道。上海与新加坡生产环境登记

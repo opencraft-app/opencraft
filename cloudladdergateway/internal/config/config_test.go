@@ -149,7 +149,7 @@ func TestExampleConfigIsReadyForRequiredAuthCutover(t *testing.T) {
 		"jifei-billing-apigw-test", "jifei-billing-apigw-prod",
 		"qbilling-send-resource-test",
 		"qbilling-send-resource-cn-prod", "qbilling-send-resource-intl-prod",
-		"dianshi-price", "dianshi-order",
+		"dianshi-price", "dianshi-order", "dianshi-renew-price", "dianshi-renew-order",
 		"tcapi-billing-trade-intl-test", "tcapi-billing-trade-intl-prod",
 		"billing-query-via-polaris",
 		"billing-trade-cn-test", "billing-trade-cn-pre", "billing-trade-cn-prod",
@@ -158,6 +158,55 @@ func TestExampleConfigIsReadyForRequiredAuthCutover(t *testing.T) {
 	for _, routeID := range sensitiveOutbound {
 		if _, ok := allowUnauthenticated[routeID]; ok {
 			t.Errorf("sensitive outbound route %q remains anonymously accessible", routeID)
+		}
+	}
+}
+
+func TestExampleConfigDianshiRenewRoutes(t *testing.T) {
+	t.Setenv("CLOUDLADDERGATEWAY_BACKEND_DIANSHI_RENEW_PRICE_BASE_URL", "")
+	t.Setenv("CLOUDLADDERGATEWAY_BACKEND_DIANSHI_RENEW_ORDER_BASE_URL", "")
+	cfg, err := Load(filepath.Join("..", "..", "config.example.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"dianshi-renew-price", "dianshi-renew-order"} {
+		var backendFound, routeFound, callerFound bool
+		for _, backend := range cfg.Backends {
+			if backend.Alias == id {
+				backendFound = true
+				if backend.Upstream.BaseURL != "http://127.0.0.1:1" {
+					t.Errorf("backend %s URL=%q", id, backend.Upstream.BaseURL)
+				}
+			}
+		}
+		for _, route := range cfg.Routes {
+			if route.ID == id {
+				routeFound = true
+				if route.Upstream.Backend != id || !slices.Contains(route.Callers, "lightvela-trade") {
+					t.Errorf("route %s backend=%q callers=%v", id, route.Upstream.Backend, route.Callers)
+				}
+			}
+		}
+		for _, caller := range cfg.Auth.Callers {
+			if caller.ID == "lightvela-trade" && slices.Contains(caller.Routes, id) {
+				callerFound = true
+			}
+		}
+		if !backendFound || !routeFound || !callerFound {
+			t.Errorf("route %s wiring incomplete: backend=%t route=%t caller=%t", id, backendFound, routeFound, callerFound)
+		}
+	}
+	t.Setenv("CLOUDLADDERGATEWAY_BACKEND_DIANSHI_RENEW_PRICE_BASE_URL", "http://opc-dianshi-activity.production.polaris:80")
+	t.Setenv("CLOUDLADDERGATEWAY_BACKEND_DIANSHI_RENEW_ORDER_BASE_URL", "http://opc-dianshi-activity.production.polaris:80")
+	cfg, err = Load(filepath.Join("..", "..", "config.example.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, backend := range cfg.Backends {
+		if backend.Alias == "dianshi-renew-price" || backend.Alias == "dianshi-renew-order" {
+			if backend.Upstream.BaseURL != "http://opc-dianshi-activity.production.polaris:80" {
+				t.Errorf("backend %s override URL=%q", backend.Alias, backend.Upstream.BaseURL)
+			}
 		}
 	}
 }

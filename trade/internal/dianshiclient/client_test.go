@@ -203,6 +203,35 @@ func TestGetRenewPrice_UsesStagingOrderRouteAndRenewPayload(t *testing.T) {
 	}
 }
 
+func TestRenewalUsesDedicatedPriceAndOrderRoutes(t *testing.T) {
+	var pricePath, orderPath string
+	price := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		pricePath = r.URL.Path
+		_, _ = io.WriteString(w, `{"returnCode":0,"data":[{"price":100}]}`)
+	}))
+	defer price.Close()
+	order := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		orderPath = r.URL.Path
+		_, _ = io.WriteString(w, `{"returnCode":0,"data":{"deal_names":["deal-1"]}}`)
+	}))
+	defer order.Close()
+	c := New("", "http://example.invalid/activity_web/activity/do_goods", Options{
+		RenewBaseURL:      "http://example.invalid/activity_web/activity",
+		RenewPriceBaseURL: price.URL + "/v1/proxy/dianshi-renew-price/activity_web/activity",
+		RenewOrderBaseURL: order.URL + "/v1/proxy/dianshi-renew-order/activity_web/activity",
+	})
+	if _, err := c.GetRenewPrice(context.Background(), &GetRenewPriceRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.DoGoodsRenew(context.Background(), &DoGoodsRenewRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	if pricePath != "/v1/proxy/dianshi-renew-price/activity_web/activity/get_price_renew" ||
+		orderPath != "/v1/proxy/dianshi-renew-order/activity_web/activity/do_goods_renew" {
+		t.Fatalf("renewal paths: price=%q order=%q", pricePath, orderPath)
+	}
+}
+
 func TestDoGoodsRenew_UsesRenewEndpointAndAutoPayOnlyWhenRequested(t *testing.T) {
 	for _, tc := range []struct {
 		name    string

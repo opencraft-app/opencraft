@@ -53,6 +53,9 @@
 - 续费联调期间，点石续费询价、普通续费下单及内部续费下单显式发送 `preview=1`；新购请求不设置
   请求级 preview，继续沿用既有 `DIANSHI_PREVIEW` 客户端配置。请求级设置只能开启 preview，不能关闭
   客户端级开关，避免改变已有新购环境行为。
+- 北京预发布的续费询价和下单分别通过 `dianshi-renew-price`、`dianshi-renew-order` 路由转发到
+  点石正式服务；对应接口仍是 `get_price_renew` 和 `do_goods_renew`。只有北京预发布启用专用
+  URL，其他环境继续使用原续费地址，新购路由不变。
 - 自动化续费折扣使用 Trade 专属内部接口
   `POST /internal/trade/dianshi/orders/renew/place-and-pay` 调用点石 `do_goods_and_pay`。该入口不读取或写入
   控制台参与资格，可重复调用，但只允许国内站和已登记的续费活动 Bundle。原计费内部续费接口
