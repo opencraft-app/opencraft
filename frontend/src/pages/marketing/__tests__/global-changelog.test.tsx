@@ -54,6 +54,48 @@ afterEach(() => {
 });
 
 describe("global changelog skill package entry", () => {
+  it("announces Malay in the October changelog with the Malay homepage screenshot", async () => {
+    const copies = [
+      {
+        locale: "zh-CN",
+        month: "2026 年 10 月",
+        title: "LightVela 国际站支持马来语",
+        description: "现在可以使用马来语浏览 LightVela 国际站的公开页面、产品界面和产品文档。",
+      },
+      {
+        locale: "en-US",
+        month: "October 2026",
+        title: "LightVela International Site Now Supports Malay",
+        description: "You can now browse LightVela's international public pages, product interface, and product documentation in Malay.",
+      },
+      {
+        locale: "ms-MY",
+        month: "Oktober 2026",
+        title: "Laman Antarabangsa LightVela Kini Menyokong Bahasa Melayu",
+        description: "Kini anda boleh melayari halaman awam, antara muka produk dan dokumentasi produk LightVela versi antarabangsa dalam Bahasa Melayu.",
+      },
+    ] as const;
+
+    for (const copy of copies) {
+      await ensureLocaleDictionary(copy.locale);
+      await i18n.changeLanguage(copy.locale);
+      render(<MemoryRouter><ChangelogPage /></MemoryRouter>);
+
+      const octoberSection = screen.getByText(copy.month).closest("section");
+      expect(octoberSection).not.toBeNull();
+      const heading = within(octoberSection!).getByRole("heading", { name: copy.title });
+      expect(within(octoberSection!).getAllByRole("heading")[0]).toBe(heading);
+      expect(within(octoberSection!).getByText(copy.description)).toBeInTheDocument();
+      expect(within(octoberSection!).getByAltText(copy.title)).toHaveAttribute(
+        "src", expect.stringContaining("/assets/changelog/lightvela-malay-international-home.webp"),
+      );
+      expect(within(octoberSection!).getByAltText(copy.title).parentElement).toHaveStyle({
+        aspectRatio: "1440 / 900",
+      });
+      cleanup();
+    }
+  });
+
   it("puts channel test messages first in the English September changelog", async () => {
     await i18n.changeLanguage("en-US");
     render(<MemoryRouter><ChangelogPage /></MemoryRouter>);
