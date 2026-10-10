@@ -143,3 +143,17 @@ derived: false
 ## checkpoint — 上游 CI 契约修复验证通过
 - verified: 完整 ci-runtime 656 tests 通过（4 个既有 skip），materialized runtime smoke、YAML/manifest 与 diff 检查全部通过；完全按 CI 入口隔离 npm ci --ignore-scripts 的 opencraft guard 222/222 通过，包含生成层只读检查。
 - next_action: 推送精确名单测试修复到同一 MR !5146，核对新提交 SHA 的远端 CI；浏览器与产品代码仍为已验证 d2b246f303，不涉及新产品实现变更。
+
+## checkpoint — !5146 CR 与 master 冲突修复
+- request: 用户要求查看 !5146 会话 CR 并处理合并冲突，沿用本会话已有 commit/push/MR 授权。
+- context_receipt: AGENTS.md、frontend/AGENTS.md、opencraft/AGENTS.md、site-environment-routing、tapd-gongfeng-delivery、frontend-runtime-openspec-i18n 邻接卡和 gongfeng/cloud runtime 技能。
+- verified: 工蜂 API 读取全部会话；最新 master 3b6cbe9127，唯一冲突为 UPSTREAM.json，采用同步脚本重新生成并合并 master。
+- changes: 泰语建议条明确 Thai；FX 默认参数保留 USD/CNY；越南 19/2023/QH15 与 20 June 2023、肯尼亚 2012 法规保留公历编号年份。补实际建议条交互、FX dropdown 参数、法律引用与 Thai SEO 前缀回归。
+- failed_queries: 初始精确路径 thai-public-copy.json 与 scenario* tests 无结果，已改查 generated/ 与实际 __tests__；不将检索失败当作验证失败。
+- unverified: 新代码 check/tests/build、最终机械同步和远端 CI 尚待复验。
+- next_action: 完成门禁，提交真源后独立同步，推送同一 MR；不自动合并或发布。
+
+## checkpoint — CR 真源回归通过
+- verified: Node 22.12.0 固定环境 pnpm check 通过，Thai 3,062/3,062、0 错误/告警；TypeScript 164 当前/171 基线、0 新增/7 消除。4 文件 69 项测试通过，旧建议条/FX/法律错误重新注入后三条新回归均 RED。文档校验通过。
+- unverified: 22 文件完整 guard 与双站构建仍在执行，最终机械同步和新 HEAD 远端 CI 未完成。
+- next_action: 提交 frontend 真源并独立生成同步副本，等待完整构建完成再推送同一 MR。

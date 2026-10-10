@@ -14,6 +14,8 @@ import { CURATED_SKILL_CATEGORIES } from '@/pages/marketing/skills-demo/curated-
 import { getOverviewScenarioTaskPacks } from '@/pages/marketing/scenario-tasks/overview-packs';
 import { buildScenarioTaskDraft } from '@/pages/marketing/scenario-tasks/scenario-task-builder';
 
+import { getScenarioTemplatePromptValues } from '@/pages/marketing/agent-automations-panel';
+
 const dictionary: Record<string, string> = thai;
 
 describe('Thai international site', () => {
@@ -53,6 +55,27 @@ describe('Thai international site', () => {
     expect(getPrivacyPolicyCopy('th-TH').title).toBe('นโยบายความเป็นส่วนตัว');
     expect(getCookiePolicyCopy('th-TH').title).toBe('นโยบายคุกกี้');
     expect(translateNoticeText('Terms of the MIT License:', 'th-TH')).toContain('MIT License');
+  });
+  it('preserves foreign legal citation numbers and Gregorian years', () => {
+    const vietnam = localizeThai('The consumer protection provisions of the Law No. 19/2023/QH15 on Protection of Consumer Rights dated 20 June 2023 ("Law on Consumer Protection", as amended from time to time) and its implementing regulations apply to the extent you use the Service as an individual for personal or household purposes other than trading. The following provisions apply in addition to, and shall prevail in case of inconsistency with, the corresponding provisions of the Terms.');
+    expect(vietnam).toContain('19/2023/QH15');
+    expect(vietnam).toContain('20 มิถุนายน 2023');
+    expect(vietnam).not.toContain('2566');
+    const kenya = localizeThai('Governing Consumer Protection Laws. Nothing in the Terms shall be construed as excluding or limiting any rights you may have under the Consumer Protection Act, 2012 (Kenya) that cannot be excluded or limited by contract.');
+    expect(kenya).toContain('ค.ศ. 2012 (เคนยา)');
+    expect(kenya).not.toContain('2555');
+  });
+  it('keeps Thai FX template defaults as supported currency codes', () => {
+    const pack = getOverviewScenarioTaskPacks('th-TH').find((item) => item.id === 'country-fx-alert');
+    expect(pack).toBeDefined();
+    if (!pack) throw new Error('Missing Thai FX template');
+    const values = getScenarioTemplatePromptValues(pack, 'th-TH');
+    expect(values).toMatchObject({ fromCurrency: 'USD', toCurrency: 'CNY' });
+    for (const key of ['fromCurrency', 'toCurrency']) {
+      const field = pack.fields.find((item) => item.key === key);
+      expect(field?.type).toBe('dropdown');
+      expect(field?.options?.map((option) => option.value)).toContain(values[key]);
+    }
   });
   it('preserves identities, links, and inherited property names', () => {
     expect(localizeThai({ id: 'Home', href: '/docs/overview', title: 'Home', nested: { fieldKey: 'Home' } })).toEqual({ id: 'Home', href: '/docs/overview', title: 'หน้าหลัก', nested: { fieldKey: 'Home' } });

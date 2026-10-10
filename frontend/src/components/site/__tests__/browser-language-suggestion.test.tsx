@@ -53,6 +53,8 @@ describe("browser language suggestion", () => {
     ["ja", "ja-JP"],
     ["ko-KR", "ko-KR"],
     ["id", "id-ID"],
+    ["th", "th-TH"],
+    ["th-TH", "th-TH"],
     ["en-GB", null],
     ["fr-FR", null],
     ["invalid_tag_!", null],
@@ -111,6 +113,20 @@ describe("browser language suggestion", () => {
 
     expect(await screen.findByRole("region", { name: label })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: switchLabel })).toBeInTheDocument();
+  });
+
+  it("offers Thai browser visitors Thai copy and a Thai destination", async () => {
+    prefer("th-TH", "en-US");
+    render(<BrowserLanguageSuggestion />);
+
+    const region = await screen.findByRole("region", { name: "ข้อเสนอภาษา" });
+    expect(region).toHaveAttribute("lang", "th-TH");
+    expect(region).toHaveTextContent("เบราว์เซอร์ของคุณตั้งค่าภาษาไทยไว้ ต้องการเปลี่ยนเป็นภาษาไทยไหม?");
+    expect(region).not.toHaveTextContent("มาเลย์");
+    const link = screen.getByRole("link", { name: "เปลี่ยนเป็นภาษาไทย" });
+    expect(link).toHaveAttribute("href", "/th-th/");
+    fireEvent.click(link);
+    expect(setLocaleMock).toHaveBeenCalledWith("th-TH");
   });
 
   it("does not prompt on a localized URL, the domestic site, or after an earlier choice", async () => {

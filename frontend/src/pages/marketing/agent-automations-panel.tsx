@@ -3610,8 +3610,8 @@ const SCENARIO_TEMPLATE_PROMPT_VALUE_OVERRIDES: Record<string, Partial<Record<Au
       toCurrency: "CNY",
     },
     "th-TH": {
-      fromCurrency: "ดอลลาร์สหรัฐ",
-      toCurrency: "ตรุษจีน",
+      fromCurrency: "USD",
+      toCurrency: "CNY",
     },
   },
   "calorie-fitness-checkin": {
@@ -3775,7 +3775,7 @@ function getScenarioDefaultValues(pack: ScenarioTaskPack): Record<string, string
   return Object.fromEntries(pack.fields.map((field) => [field.key, field.defaultValue]));
 }
 
-function getScenarioTemplatePromptValues(
+export function getScenarioTemplatePromptValues(
   pack: ScenarioTaskPack,
   displayLocale: AutomationDisplayLocale,
 ): Record<string, string> {
