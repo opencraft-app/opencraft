@@ -1,5 +1,11 @@
 # Agent、网关与运行时领域
 
+## 渠道聊天记录只读接口（待启用）
+
+CTL 的 `/v1/instances/{id}/bots/{bot_id}/channel-sessions` 与消息子资源按登录账号限定实例，再解析该实例下的 Bot/Profile。Hermes 查询脚本只读打开对应 Profile 的 `state.db`，并要求每条 session 的 `session_key` 带相同 Profile 前缀；缺少可验证归属字段时拒绝读取。列表和消息均分页，消息投影只包含用户与助手文本，排除工具调用和原始推理。
+
+`CHANNEL_HISTORY_ENABLED` 默认关闭。目标 Hermes 镜像的 schema、渠道覆盖及群聊参与者可见范围须在启用前核验；接口不得退化为浏览器直接执行命令或访问数据库。公共入口还需网关单独放行两条只读路径，CTL 源码上线本身不代表记录已可访问。
+
 国际站界面语言由站点宿主传入内嵌 OpenCraft 工作台的 `ideLocale`，
 WorkbenchLocaleController 装载对应目录并随宿主语言更新。马来语 `ms-MY`
 目录覆盖工作台应用自有消息，保留 ICU 参数；界面译文不改写用户会话标题或消息。
