@@ -160,3 +160,4 @@ Chrome 在 scrollY 1673 和 1748 验证 video state=playing 且 visibleImages=0�
 - 曲线与玩偶共用固定布局坐标，按 track offsetLeft/offsetTop/offsetWidth 计算脚部锚点；track 保留淡入但取消整体纵向位移。国内、国际与全部语言使用同一控制器与样式。
 - 回归测试模拟带 48px 入场位移的矩形，确认定位仍使用布局坐标；27 项生成/定位测试与 20 项动效测试通过。
 - 提交门禁：pnpm check 0 新增类型错误；OpenCraft 136 文件同步检查通过；清理开发缓存后国内构建通过（200 HTML，8 public routes）。
+- 用户刷新仍见旧效果；本地 HTTP 已确认新脚本和样式，但静态资源 query 仍为 v136。共享资源版本升级为 step-anchor-v137，使刷新获取新控制器与样式，双站多语言共用。
