@@ -490,6 +490,12 @@ export function ConnectorsPanel({
       // 弹窗会被拦截（时灵时不灵的原因）。先同步开 about:blank（必不被拦），
       // 拿到 authorizeUrl 再导航；失败路径关掉空白窗不残留。
       const popup = window.open("about:blank", "_blank");
+      // popup 为 null：浏览器禁弹窗（拦截器/隐私模式）——降级当前页跳转，
+      // 同页导航不受弹窗拦截约束；授权完成回来由挂载恢复逻辑接管 flow
+      const fallbackToSameTab = popup === null;
+      if (fallbackToSameTab) {
+        message.info({ content: t("浏览器拦截了授权弹窗，将在当前页打开授权，完成后请返回本页"), duration: 6000 });
+      }
       try {
         const token = launchTokenRef.current ?? (await fetchToken());
         if (!token) {
@@ -503,9 +509,12 @@ export function ConnectorsPanel({
         }
         const flow = await startConnectorOAuth(token, instanceId, connectorKey, window.location.href);
         pendingFlowRef.current = { connectorKey, flowId: flow.flowId };
-        // popup 为 null 说明浏览器拦截了预开窗（禁弹窗模式）；已关则说明用户在
-        // 等待期手动关掉——两种情况都无法继续授权，报错引导重试
-        if (!popup) throw new Error(t("授权窗口打开失败，请允许浏览器弹窗后重试"));
+        if (fallbackToSameTab) {
+          // 弹窗被拦：当前页跳授权页。flow 已在服务端挂起，用户授权完成回
+          // 到本页后由挂载恢复逻辑（pending 检测）接管，无需本地等待
+          window.location.href = flow.authorizeUrl;
+          return;
+        }
         // about:blank 与本页同源可安全导航；closed 的窗导航无效，跳过不报错
         // （waitForOAuth 的关窗宽限逻辑会正确处理这种「关窗」场景）
         if (!popup.closed) popup.location.href = flow.authorizeUrl;
@@ -550,6 +559,9 @@ export function ConnectorsPanel({
       // 用户手势上下文（window.open 会被浏览器拦截）——先同步开 about:blank，
       // 有 authUrl 再导航，无 authUrl 或失败则关掉，不残留空白标签页
       const popup = window.open("about:blank", "_blank");
+      // popup 为 null：浏览器禁弹窗——与 OAuth 入口同款降级策略（authUrl
+      // 就绪后当前页跳转，提示用户授权完成后返回）
+      const fallbackToSameTab = popup === null;
       let navigated = false;
       try {
         const token = launchTokenRef.current ?? (await fetchToken());
@@ -564,8 +576,11 @@ export function ConnectorsPanel({
           // 对齐 AgentChat setBusyAction(busy, 'authorize')。
           setBusy((prev) => ({ ...prev, [busyKey]: { action: "authorize", active: true } }));
           busyRef.current[busyKey] = { action: "authorize", active: true };
-          // popup 为 null 说明浏览器拦截了预开窗；closed 则由后续轮询自然结束
-          if (!popup) throw new Error(t("授权窗口打开失败，请允许浏览器弹窗后重试"));
+          if (fallbackToSameTab) {
+            message.info({ content: t("浏览器拦截了授权弹窗，将在当前页打开授权，完成后请返回本页"), duration: 6000 });
+            window.location.href = report.authUrl;
+            return;
+          }
           if (!popup.closed) popup.location.href = report.authUrl;
           navigated = true;
           for (let attempt = 0; attempt < LOCAL_CLI_AUTH_MAX_POLL; attempt += 1) {
