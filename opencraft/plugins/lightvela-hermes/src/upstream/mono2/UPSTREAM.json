@@ -1,6 +1,6 @@
 {
   "source": "frontend/src",
-  "sourceRevision": "9cd4edf78bad141cc3116045e3a1476b04d3d53e",
+  "sourceRevision": "45ba5991cf5bce577e8a75cf3b97613624b0d326",
   "generatedBy": "scripts/sync-mono2-agent-console.mjs",
   "files": [
     {
@@ -65,7 +65,7 @@
     },
     {
       "file": "contexts/runtime-config-context.tsx",
-      "sourceSha256": "c4372c91bd4840d48d6db32496773856fa015e2f4cfcec9286f1600550cdcb0b"
+      "sourceSha256": "d3374beedd69532a7410627f79d8582ac3980e1a44ef78332899832fc1553b70"
     },
     {
       "file": "domain/credit-pack.ts",
@@ -81,7 +81,7 @@
     },
     {
       "file": "domain/types.ts",
-      "sourceSha256": "e09684faebc5ebf9c4267bb6c537629276f9bf4327bf5480a68e531087d8b98d"
+      "sourceSha256": "ddd9d5f472749270c151dca86117be7003700bd60aa70e70e8d8f4df08859ea7"
     },
     {
       "file": "i18n/default-agent-name.ts",
@@ -89,23 +89,23 @@
     },
     {
       "file": "i18n/generated/en-US.json",
-      "sourceSha256": "48cd49b814788d22e5a6e10abb8c5b08e58b5100a2912e7d6b0bc6244bb3cb58"
+      "sourceSha256": "9363f7714f31a8a08354cf0140305353c804037c57f00f5c193c6079ce6e6311"
     },
     {
       "file": "i18n/generated/es.json",
-      "sourceSha256": "081b5b66c51187e2ee17063e38dedb182a1753055e4d9d4200028b80e8a0da16"
+      "sourceSha256": "36697c875455d1d4d29a00bacd8a9524d6d0579f3e2eca2709f86269beab22c3"
     },
     {
       "file": "i18n/generated/id-ID.json",
-      "sourceSha256": "3ad6cba85483bc1cd2aa55abd9fdbc234458bf743247dc13015fe026a8e7f1b4"
+      "sourceSha256": "eb72abd7ed6960bc4c851b14dc4359cb4da795560c8ec971dd155895adeaf29a"
     },
     {
       "file": "i18n/generated/ja-JP.json",
-      "sourceSha256": "9ad372303372044337d7c5512e41ed6a0cefb9f3a609713996f07973ee929da4"
+      "sourceSha256": "95d0ce923fc452961596fc5e21d3b321b11ca6e5a8035093064b5000ae5f3a27"
     },
     {
       "file": "i18n/generated/ko-KR.json",
-      "sourceSha256": "b111c4627f23946bf19bbcaa259479f863fb760dd7ae479fb1697ea304e56b93"
+      "sourceSha256": "6435cb9d5b2f1af175b014e4dd2f59a532f3954799227540d7eb38472d73807a"
     },
     {
       "file": "i18n/generated/malay-public-copy.json",
@@ -113,11 +113,11 @@
     },
     {
       "file": "i18n/generated/ms-MY.json",
-      "sourceSha256": "2c0cd3b924dd00ddbae170bbf9d895509e23a94a3ab3dc59b5966525cdb50f70"
+      "sourceSha256": "7551865eabd1cdad880f9a5a024761dc06caf2af61905956668ddbc525943c24"
     },
     {
       "file": "i18n/generated/th-TH.json",
-      "sourceSha256": "9d1e2e9901092df031908789f5fe2737312bf64a780c1cbbe8c1738dc2094390"
+      "sourceSha256": "cd5aaf0f96e23782a14b50efdc839418ea8e71b034a7857a4c995a738a656d60"
     },
     {
       "file": "i18n/generated/thai-public-copy.json",
@@ -125,15 +125,15 @@
     },
     {
       "file": "i18n/generated/zh-CN.json",
-      "sourceSha256": "408f4502e79704c8d0339abb80c39c1a7b1812ed6c4495c6c9f5c687013244d7"
+      "sourceSha256": "06316030758b580c6f75a50a733a5c75d7ca56e0b43873411cc154617ff57ba0"
     },
     {
       "file": "i18n/generated/zh-Hant.json",
-      "sourceSha256": "a10b849cbab2c410837e7535b8579d03d90c20529fd48a30dc0578305b01dac6"
+      "sourceSha256": "eebc8816702ff9d5eafba1be11b36e8de957253050d02de581957e4276e19fbd"
     },
     {
       "file": "i18n/generated/zh-to-key.json",
-      "sourceSha256": "eb81c6a1164d067c731456a48af38751a68b345aa19f3495dffebad4e3795132"
+      "sourceSha256": "eb599bf56e73c51a44c56ee8534afa168ad26fc29fc13aeef73971a31902a378"
     },
     {
       "file": "i18n/index.ts",
@@ -533,15 +533,15 @@
     },
     {
       "file": "repositories/fake-repositories.ts",
-      "sourceSha256": "70665237c15ef9ce446a465d81af98908c2cc51cbded1151d883e00ddd357f25"
+      "sourceSha256": "772af6029974114c8a849fb83cf237882dfeb5b47d5decc4756da1345263533b"
     },
     {
       "file": "repositories/http-repositories.ts",
-      "sourceSha256": "ae70f025e2591cae56978b14112681a32ae3d000610e5040922223d3bccc81ef"
+      "sourceSha256": "a00a1a1b5a8aa5f1e092029f11d3742b484983db9a7427d5b834d5bae902cb4f"
     },
     {
       "file": "repositories/types.ts",
-      "sourceSha256": "77df985ea14413bd9290513e433a79eebfc54dd0b8fc087ea4034cbf175d991c"
+      "sourceSha256": "58e8c3923d90c02d321140760270818fd38d89747f0afada0ab02e38aee13d1f"
     },
     {
       "file": "services/use-async-resource.ts",

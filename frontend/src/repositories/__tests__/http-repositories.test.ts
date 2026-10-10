@@ -430,6 +430,22 @@ describe("http repositories auth token bootstrap", () => {
     );
   });
 
+  it.each([
+    ["install_phase", "configuring_wallpaper"],
+    ["installPhase", "installing_desktop"],
+    ["install_phase", "future_phase"],
+  ])("maps desktop %s=%s without depending on message text", async (field, phase) => {
+    writeStoredAuthToken("persisted-bearer-token");
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async () => new Response(JSON.stringify({
+      code: "OK", data: { status: "Installing", install_progress: 95, [field]: phase, message: "legacy" },
+    }), { status: 200 })));
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    for (const session of [await repositories.bots.ensureDesktopSession("ins-1"), await repositories.bots.getDesktopSession("ins-1")]) {
+      expect(session.installPhase).toBe(phase);
+      expect(session.installProgress).toBe(95);
+    }
+  });
+
   it("starts a FaceID attempt with the new contract", async () => {
     writeStoredAuthToken("persisted-bearer-token");
     const fetchMock = vi.fn().mockResolvedValue(

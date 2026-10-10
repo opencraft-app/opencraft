@@ -259,7 +259,7 @@ const defaultTools: ToolBinding[] = [
 
 const botStore = new Map<string, Bot>();
 const messageStore = new Map<string, WorkspaceMessage[]>();
-// fake 云桌面按需装图形层进度：POST 置 0，GET 逐步 +25 直至 100 转 Ready。
+// fake 云电脑按需装图形层进度：POST 置 0，GET 逐步 +25 直至 100 转 Ready。
 const desktopInstallProgress = new Map<string, number>();
 
 const seedMessagesFor = (botId: string) => {
@@ -1757,6 +1757,7 @@ const createBotRepository = (): BotRepository => {
       return {
         status: "Installing" as const,
         installProgress: 0,
+        installPhase: "installing_desktop",
         message: "正在安装桌面环境（约 2-4 分钟）…",
       };
     },
@@ -1769,13 +1770,14 @@ const createBotRepository = (): BotRepository => {
       }
       const progress = desktopInstallProgress.get(botId);
       if (progress !== undefined && progress < 100) {
-        const next = Math.min(100, progress + 25);
+        const next = progress < 75 ? progress + 25 : progress < 95 ? 95 : 100;
         desktopInstallProgress.set(botId, next);
         if (next < 100) {
           return {
             status: "Installing" as const,
             installProgress: next,
-            message: "正在安装桌面环境（约 2-4 分钟）…",
+            installPhase: next === 95 ? "configuring_wallpaper" : "installing_desktop",
+            message: next === 95 ? "正在配置桌面壁纸…" : "正在安装桌面环境（约 2-4 分钟）…",
           };
         }
       }

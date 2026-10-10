@@ -32,7 +32,8 @@ import (
 //   - 会话状态（VNC 密码 / 状态机 / lastActive）存进程内 sync.Map；sandboxID
 //     不再缓存于会话，每次从 entity.SandboxId 取（主机生命周期归实例主流程）。
 //     ctl 重启后状态丢失，下次请求幂等重建（storepasswd + systemctl 均幂等）。
-//   - TAT 命令受 sandbox 300s / 1MiB 硬上限约束：provision 命令只做
+//   - TAT commands 的完整脚本输入上限是 64 KiB；300s 执行时间与 1MiB 输出限制
+//     不代表输入可达 1MiB。provision 命令只做
 //     「检测图形层已装 + 注入密码 + 拉起 4 个 systemd unit + 快速探测一次」
 //     （120s 超时），就绪判定由 GET 轮询外层完成（探测命令 20s 超时）。
 //   - **按需装图形层（§12 TB.2，范式 C）**：provision 检测到图形层未装时，
@@ -121,10 +122,11 @@ type desktopSession struct {
 	provisionStartedAt time.Time
 
 	// 按需装图形层（§12 TB.2）：installing 防止重复启动后台安装 goroutine；
-	// installProgress/installMessage 供 GET 轮询展示进度。均由 mu 保护。
+	// 安装进度、阶段码及兼容文案均由 mu 保护。
 	installing      bool
 	installProgress int
 	installMessage  string
+	installPhase    string
 }
 
 func (s *desktopSession) snapshot() (sandboxID, password, status, reason string, lastActive time.Time) {
@@ -182,11 +184,12 @@ func (s *desktopSession) tryBeginInstall(message string) bool {
 	s.reason = ""
 	s.installProgress = 0
 	s.installMessage = message
+	s.installPhase = transport.DesktopInstallPhaseInstallingDesktop
 	return true
 }
 
-// setInstallProgress 更新安装进度（0-100）与提示文案。
-func (s *desktopSession) setInstallProgress(progress int, message string) {
+// setInstallProgress 原子更新进度、语言无关阶段码和兼容文案。
+func (s *desktopSession) setInstallProgress(progress int, message, phase string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if progress < 0 {
@@ -196,6 +199,7 @@ func (s *desktopSession) setInstallProgress(progress int, message string) {
 		progress = 100
 	}
 	s.installProgress = progress
+	s.installPhase = phase
 	if message != "" {
 		s.installMessage = message
 	}
@@ -212,17 +216,12 @@ func (s *desktopSession) endInstall(status, reason string) {
 		// Installation only creates units; startup must run immediately, not
 		// inherit the earlier missing-layer command's pending-probe window.
 		s.provisionStartedAt = time.Time{}
+		s.installProgress = 100
 	}
 	if status != transport.DesktopSessionStatusInstalling {
 		s.installMessage = ""
+		s.installPhase = ""
 	}
-}
-
-// installSnapshot 读安装进度快照（供响应组装）。
-func (s *desktopSession) installSnapshot() (progress int, message string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.installProgress, s.installMessage
 }
 
 // isInstalling 线程安全读安装标记，供测试等待后台安装 goroutine 收敛。
@@ -512,17 +511,18 @@ func (l *logic) probeDesktopLocked(ctx pctx.Context, session *desktopSession) (*
 
 // desktopSessionResponse 组装对外响应；Ready 时附 ws_url / password / 分辨率。
 func (l *logic) desktopSessionResponse(session *desktopSession) (*transport.DesktopSessionResponse, error) {
-	sandboxID, password, status, reason, _ := session.snapshot()
+	session.mu.Lock()
+	sandboxID, password, status := session.sandboxID, session.password, session.status
 	resp := &transport.DesktopSessionResponse{
 		Status: status,
-		Reason: reason,
+		Reason: session.reason,
 	}
 	if status == transport.DesktopSessionStatusInstalling {
-		progress, message := session.installSnapshot()
-		resp.InstallProgress = progress
-		resp.Message = message
-		return resp, nil
+		resp.InstallProgress = session.installProgress
+		resp.InstallPhase = session.installPhase
+		resp.Message = session.installMessage
 	}
+	session.mu.Unlock()
 	if status != transport.DesktopSessionStatusReady {
 		return resp, nil
 	}
@@ -756,13 +756,24 @@ func (l *logic) runDesktopInstall(ctx pctx.Context, sandboxID string, session *d
 			return
 		}
 		if strings.Contains(out, desktopInstallDoneMarker) {
-			session.setInstallProgress(100, "安装完成，正在启动桌面…")
+			session.setInstallProgress(95, "正在配置桌面壁纸…", transport.DesktopInstallPhaseConfiguringWallpaper)
+			if err := l.installDesktopWallpaper(ctx, session, sandboxID); err != nil {
+				l.logger.Warn("desktop wallpaper unavailable; keeping existing backdrop", zap.Error(err))
+			}
+			if ctx.Err() != nil {
+				session.endInstall(transport.DesktopSessionStatusFailed, desktopInstallTimeoutReason(ctx.Err().Error()))
+				return
+			}
+			if l.validateDesktopSession(ctx, session) != nil {
+				session.endInstall(transport.DesktopSessionStatusFailed, "desktop target changed")
+				return
+			}
 			// 转 Provisioning：下次 GET/POST 幂等走 provision 拉起服务并探测。
 			session.endInstall(transport.DesktopSessionStatusProvisioning, "")
 			return
 		}
 		if p := parseDesktopInstallProgress(out); p >= 0 {
-			session.setInstallProgress(p, "")
+			session.setInstallProgress(min(p, 90), "", transport.DesktopInstallPhaseInstallingDesktop)
 		}
 	}
 	session.endInstall(transport.DesktopSessionStatusFailed, desktopInstallTimeoutReason(lastFailureDetail))
@@ -783,6 +794,9 @@ func desktopInstallTimeoutReason(lastFailureDetail string) string {
 // Serialize local TAT dispatches and fence detached jobs. This cannot revoke an
 // already dispatched remote nohup installer; its file lock remains authoritative.
 func (l *logic) execDesktopInstallCommand(ctx pctx.Context, session *desktopSession, sandboxID, command string) (*psandbox.ExecCommandResult, error) {
+	if len(command) >= desktopInstallCommandLimit {
+		return nil, fmt.Errorf("desktop command exceeds input budget: %d bytes", len(command))
+	}
 	op := session.operationMutex()
 	op.Lock()
 	defer op.Unlock()

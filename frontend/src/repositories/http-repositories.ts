@@ -642,6 +642,8 @@ const mapDesktopSession = (raw: Record<string, unknown>): CloudDesktopSession =>
   const session: CloudDesktopSession = { status };
   const installProgress = numberField(raw, "install_progress", "installProgress");
   if (installProgress !== undefined) session.installProgress = installProgress;
+  const installPhase = stringField(raw, "install_phase", "installPhase");
+  if (installPhase !== undefined) session.installPhase = installPhase;
   const message = stringField(raw, "message");
   if (message !== undefined) session.message = message;
   const wsUrl = stringField(raw, "ws_url", "wsUrl");
