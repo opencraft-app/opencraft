@@ -267,6 +267,8 @@ type Options struct {
 	NowProvider           func() time.Time
 	Preview               int
 	RenewBaseURL          string
+	RenewPriceBaseURL     string
+	RenewOrderBaseURL     string
 	CloudLadderHMACSecret string
 }
 
@@ -274,6 +276,8 @@ type client struct {
 	priceBaseURL          string
 	orderBaseURL          string
 	renewBaseURL          string
+	renewPriceBaseURL     string
+	renewOrderBaseURL     string
 	httpClient            *http.Client
 	eventIDProvider       func() int64
 	nowProvider           func() time.Time
@@ -311,6 +315,8 @@ func New(priceBaseURL, orderBaseURL string, opts ...Options) Client {
 		}
 		c.cloudLadderHMACSecret = strings.TrimSpace(o.CloudLadderHMACSecret)
 		c.renewBaseURL = strings.TrimRight(strings.TrimSpace(o.RenewBaseURL), "/")
+		c.renewPriceBaseURL = strings.TrimRight(strings.TrimSpace(o.RenewPriceBaseURL), "/")
+		c.renewOrderBaseURL = strings.TrimRight(strings.TrimSpace(o.RenewOrderBaseURL), "/")
 	}
 	return c
 }
@@ -370,8 +376,12 @@ func (c *client) GetRenewPrice(ctx context.Context, req *GetRenewPriceRequest) (
 	}
 	var targetURL string
 	var err error
-	if c.renewBaseURL != "" {
-		targetURL, err = neturl.JoinPath(c.renewBaseURL, "get_price_renew")
+	renewBaseURL := c.renewPriceBaseURL
+	if renewBaseURL == "" {
+		renewBaseURL = c.renewBaseURL
+	}
+	if renewBaseURL != "" {
+		targetURL, err = neturl.JoinPath(renewBaseURL, "get_price_renew")
 	} else {
 		targetURL, err = renewPriceURL(c.orderBaseURL)
 	}
@@ -428,8 +438,12 @@ func (c *client) DoGoodsRenew(ctx context.Context, req *DoGoodsRenewRequest) (*D
 	}
 	var targetURL string
 	var err error
-	if c.renewBaseURL != "" {
-		targetURL, err = neturl.JoinPath(c.renewBaseURL, "do_goods_renew")
+	renewBaseURL := c.renewOrderBaseURL
+	if renewBaseURL == "" {
+		renewBaseURL = c.renewBaseURL
+	}
+	if renewBaseURL != "" {
+		targetURL, err = neturl.JoinPath(renewBaseURL, "do_goods_renew")
 	} else {
 		targetURL, err = renewalURL(c.orderBaseURL, "do_goods_renew")
 	}
