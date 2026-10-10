@@ -3319,9 +3319,6 @@ export const AgentSettingsPage = ({
     navigate(getAgentBotSectionHref(AGENT_SECTION_PATH_BY_ID.channel, activeBot.id), { replace: true });
   }, [activeBot?.id, activeSection, consoleShowStateReady, isActiveBotChatAvailable, navigate]);
 
-  const weixinOccupiedByOther = Boolean(
-    activeBot?.weixinOwner && activeBot.weixinOwner.botId !== activeBot.id,
-  );
   const whatsAppOccupiedByOther = Boolean(
     activeBot?.whatsAppOwner && activeBot.whatsAppOwner.botId !== activeBot.id,
   );
@@ -4091,14 +4088,14 @@ export const AgentSettingsPage = ({
     adpChannel: false,
     wecomLongConn: true,
     yuanbaoChannel: false,
-    weixinChannel: !weixinOccupiedByOther,
+    weixinChannel: true,
     qrConfig: true,
     skills: true,
     webUI: false,
     memoryManagement: false,
     memoryV2: false,
     qqbotplugin: false,
-  }), [weixinOccupiedByOther]);
+  }), []);
   // 从七彩石拉取模型列表移到 TeaSdkSettingsPanel（需 runtime.useModelProviders）
   const { i18n } = useTranslation();
   const useEnglish = shouldUseEnglishProviderData(i18n.language);
@@ -6659,22 +6656,6 @@ export const AgentSettingsPage = ({
                               whatsAppOccupiedByOther={whatsAppOccupiedByOther}
                               channelAfterDescription={(
                                 <>
-                                  {weixinOccupiedByOther && activeBot.weixinOwner && (
-                                    <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                                      <span className="text-pretty">
-                                        {t("微信已由 {{name}} 占用，同一实例只能连接一个 Bot。", {
-                                          name: activeBot.weixinOwner.botName || t("其他 Bot"),
-                                        })}
-                                      </span>
-                                      <button
-                                        type="button"
-                                        className="font-medium text-amber-950 underline underline-offset-2"
-                                        onClick={() => handleSelectBot(activeBot.weixinOwner!.botId)}
-                                      >
-                                        {t("前往管理")}
-                                      </button>
-                                    </div>
-                                  )}
                                   {whatsAppOccupiedByOther && activeBot.whatsAppOwner && (
                                     <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
                                       <span className="text-pretty">

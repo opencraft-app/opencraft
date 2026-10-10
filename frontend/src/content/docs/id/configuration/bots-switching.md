@@ -73,14 +73,10 @@ Kombinasi kanal yang tersedia bergantung pada wilayah LightVela:
 
 | Versi LightVela | Kanal yang mendukung integrasi multi-Bot |
 | --- | --- |
-| Versi China | QQ, WeCom, Lark, DingTalk |
-| Versi global | Telegram, Discord, Slack, QQ, WeCom, Lark |
+| Versi China | WeChat, QQ, WeCom, Lark, DingTalk |
+| Versi global | Telegram, Discord, WeChat, Slack, QQ, WeCom, Lark |
 
-Untuk kanal seperti WeChat dan WhatsApp, konfigurasi saat ini dapat mengizinkan hanya satu Bot per instans.
-
-Jika kanal sudah dimiliki Bot lain, LightVela menampilkan pemberitahuan dan menyediakan cara untuk mengelola Bot pemilik kanal tersebut.
-
-![Pemberitahuan LightVela bahwa WeChat sudah digunakan Bot lain dan hanya satu Bot yang dapat terhubung](../../images/bots-switching-wechat.webp)
+Bot yang berbeda pada satu instans dapat menghubungkan akun WeChat yang berbeda. Setiap Bot mengelola koneksi WeChat miliknya sendiri. WhatsApp tetap dibatasi ke satu Bot yang terhubung per instans; Bot lain akan melihat pemberitahuan kepemilikan dan tautan untuk mengelolanya.
 
 ## Memverifikasi peralihan Bot atau koneksi kanal
 

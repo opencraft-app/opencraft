@@ -63,12 +63,10 @@
 
 | LightVela 版本 | 支持多 Bot 集成的通道 |
 | --- | --- |
-| 中国版本 | QQ、企业微信、飞书、钉钉 |
-| 国际版本 | Telegram、Discord、Slack、QQ、企业微信、飞书 |
+| 中国版本 | 微信、QQ、企业微信、飞书、钉钉 |
+| 国际版本 | Telegram、Discord、微信、Slack、QQ、企业微信、飞书 |
 
-对于微信和 WhatsApp 等通道，当前配置可能限制每个实例只能连接一个 Bot。如果通道已经由另一个 Bot 占用，LightVela 会显示提示，并提供前往管理占用该通道的 Bot 的入口。
-
-![LightVela 提示微信已被另一个 Bot 占用，且每个实例只能连接一个 Bot](../../images/bots-switching-wechat.webp)
+同一实例中的不同 Bot 可以分别连接不同微信账号；每个 Bot 独立管理自己的微信连接。WhatsApp 仍限制同一实例同时只由一个 Bot 连接；其他 Bot 会看到占用提示和管理入口。
 
 ## 检查 Bot 切换或通道连接结果
 

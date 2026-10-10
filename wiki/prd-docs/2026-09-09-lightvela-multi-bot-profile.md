@@ -88,7 +88,7 @@
 
 #### 场景二：为不同渠道绑定不同 Bot
 
-用户希望 Telegram 面向社群答疑，企业微信面向内部运营。用户在 Bot 列表中进入“社群助手”，连接 Telegram；再进入“内部运营”，连接企业微信。支持多 Bot 连接的渠道状态、密钥、二维码和回调配置都按 Bot/Profile 隔离。若用户选择微信这类国内站同一实例只支持一个 Bot 连接的渠道，页面需要展示已被哪个 Bot 占用，并引导用户先断开原 Bot 或切换到已连接 Bot 管理。
+用户希望 Telegram 面向社群答疑，企业微信面向内部运营。用户在 Bot 列表中进入“社群助手”，连接 Telegram；再进入“内部运营”，连接企业微信。支持多 Bot 连接的渠道状态、密钥、二维码和回调配置都按 Bot/Profile 隔离。微信也按 Bot/Profile 隔离：同一实例中的不同 Bot 可以分别连接不同微信账号，各自管理连接。
 
 #### 场景三：试验新模型而不影响主 Bot
 
@@ -136,7 +136,7 @@
 - Bot 列表、当前 Bot 切换、Bot 基本信息编辑和默认 Bot 标识。
 - Provider、模型、通道、Gateway、Skills、自动任务、Memory、User Profile、SOUL 等 Profile 级能力按当前 Bot 路由。
 - 支持多 Bot 的外部通道可以由每个 Bot 独立连接和管理，包括通道状态、连接凭据、二维码、回调配置和断开操作。
-- 不支持多 Bot 的国内站通道按实例级唯一资源处理；微信本期按同一实例同时只支持一个 Bot 连接设计。
+- 微信按 Bot/Profile 独立连接，同一实例的不同 Bot 可分别接入不同微信账号；每个 Bot 只管理自己的微信连接。
 - 实例级能力继续按实例执行，不追加 Profile 参数。
 - ACLI capability 版本兼容与灰度门槛。
 - 国内站上线所需的前端、后端、运行时和文档更新。
@@ -151,7 +151,7 @@
 - 把存量根 Profile 自动迁移到命名 Profile。
 - 将外部渠道的一个 Bot Token 同时绑定到多个 LightVela Bot。
 - 默认共享或复用其他 Bot 的通道凭据。
-- 让微信等实例级唯一通道同时连接多个 Bot。
+- 将一个微信账号的凭据同时共享给多个 Bot。
 - 后端套餐配额、独立计费套餐、按 Bot 收费或 Bot 数量售卖策略调整。
 - 国际站发布与同步。
 - Hermes 底层 Profile 语义变更。
@@ -302,7 +302,7 @@ Bot 管理页包含：
 
 通道连接默认按 Bot/Profile 级配置处理，但是否允许多个 Bot 同时连接同一类通道，必须由通道 capability 决定。Telegram、Slack、QQ、企微等支持多 Bot 的通道在 Bot A 连接时，只影响 Bot A 对应的 Hermes Profile；切换到 Bot B 后，通道状态、二维码、Token、回调和断开操作都必须读取和写入 Bot B 的 Profile。
 
-微信等国内站实例级唯一通道不能照搬“每个 Bot 独立连接”的规则。本期微信按同一实例同时只支持一个 Bot 连接处理：若 Bot A 已连接微信，Bot B 的微信入口展示占用状态、占用 Bot 名称和管理入口，不允许直接覆盖或静默复用 Bot A 的微信凭据。产品不得把某个外部平台的同一 Bot Token 默认复制、共享或同时绑定到多个 LightVela Bot；如后续需要复用外部认证，必须按平台能力和安全策略单独设计。
+微信按 Bot/Profile 独立连接。若 Bot A 已连接微信，Bot B 仍可使用另一个微信账号扫码连接；Bot B 不得覆盖或静默复用 Bot A 的微信凭据。每个 Bot 同时只管理一个微信连接。产品不得把某个外部平台的同一凭据默认复制、共享或同时绑定到多个 LightVela Bot；如后续需要复用外部认证，必须按平台能力和安全策略单独设计。
 
 Home channel 按 Bot/Profile 和平台分配，不设计成整个实例唯一的全局 home channel。每个 Bot 维护自己的 `home_channels` 映射，例如 Bot A 可以有自己的企微 home channel 和 Telegram home channel，Bot B 可以有另一组同平台或不同平台的 home channel。定时任务、通知投递和 `deliver=<platform>` 这类省略具体 chat 的发送逻辑，都必须在当前 Bot 的 Profile scope 内解析 home channel。
 
@@ -485,7 +485,7 @@ Home channel 按 Bot/Profile 和平台分配，不设计成整个实例唯一的
 5. Bot 切换后，Provider、模型、通道、Skills、自动任务、Memory、User Profile 和 SOUL 页面显示目标 Bot 的数据，不串读、不串写。
 6. `/agents` 页面及 `/agents/<section>` 分区页面都具备当前 Bot 切换能力，切换后 URL 分区保持不变，页面数据刷新到目标 Bot。
 7. 支持多 Bot 的通道可以由每个 Bot 独立连接、查看、刷新二维码、断开和重连；Bot A 的通道凭据和连接状态不得在 Bot B 中默认显示、复用或被修改。
-8. 微信等实例级唯一通道同一实例同时只能被一个 Bot 连接；其他 Bot 看到占用态和管理入口，不允许直接覆盖、静默复用或同时连接。
+8. 微信按 Bot/Profile 独立连接；同一实例的两个 Bot 可分别连接不同微信账号，互不覆盖、复用或断开对方的连接。
 9. 每个 Bot/Profile 按平台维护自己的 home channel；定时任务、通知投递和省略 chat 的发送逻辑必须解析到当前 Bot 的 home channel，不得落到实例全局或其他 Bot。
 10. 删除普通 Bot 需要二次确认；删除成功后不影响其他 Bot 和实例级能力；删除失败时进入可恢复异常状态。
 11. 主 Bot 存在同实例其他 Bot 时禁止删除；只剩主 Bot 时，经明确二次确认销毁整个 Agent，后端重新检查 Profile 数量。不支持更换主 Bot，也不自动迁移根 Profile。
@@ -522,7 +522,7 @@ Home channel 按 Bot/Profile 和平台分配，不设计成整个实例唯一的
 ## 待确认问题
 
 - 国内站灰度是否要求只开放给内部账号或白名单用户。
-- 通道认证与 home channel 是否允许克隆，需要按 QQ、企微、Telegram、Slack、Discord 等渠道逐项确认；微信本期已按实例级唯一通道处理。
+- 通道认证与 home channel 是否允许克隆，需要按 QQ、企微、Telegram、Slack、Discord 等渠道逐项确认；微信连接保持 Bot/Profile 隔离，不随克隆复制。
 - 命名 `profile_id` 的生成规则是否由后端统一生成，是否允许用户重命名。
 - 删除 Bot 时是否保留 Profile 备份，以及备份保留时长。
 

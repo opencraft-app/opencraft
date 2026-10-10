@@ -63,12 +63,10 @@
 
 | LightVela 버전 | 여러 Bot 통합을 지원하는 채널 |
 | --- | --- |
-| 중국 버전 | QQ, WeCom, Lark, DingTalk |
-| 글로벌 버전 | Telegram, Discord, Slack, QQ, WeCom, Lark |
+| 중국 버전 | WeChat, QQ, WeCom, Lark, DingTalk |
+| 글로벌 버전 | Telegram, Discord, WeChat, Slack, QQ, WeCom, Lark |
 
-WeChat 및 WhatsApp과 같은 채널에서는 현재 설정에 따라 인스턴스 하나에 하나의 Bot만 연결할 수 있습니다. 다른 Bot이 이미 채널을 소유하고 있으면 LightVela는 알림을 표시하고 해당 채널을 소유한 Bot을 관리할 수 있는 방법을 제공합니다.
-
-![WeChat이 다른 Bot에 사용 중이며 하나의 Bot만 연결할 수 있음을 보여 주는 LightVela 알림](../../images/bots-switching-wechat.webp)
+같은 인스턴스의 서로 다른 Bot은 각각 다른 WeChat 계정을 연결할 수 있습니다. WeChat 연결은 Bot별로 관리합니다. WhatsApp은 여전히 인스턴스당 한 Bot만 연결할 수 있으며, 다른 Bot에는 소유자 안내와 관리 링크가 표시됩니다.
 
 ## Bot 전환 또는 채널 연결 확인
 

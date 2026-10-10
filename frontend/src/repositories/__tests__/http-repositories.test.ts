@@ -663,9 +663,9 @@ describe("http repositories auth token bootstrap", () => {
             created_at: "2026-09-09T00:00:00Z",
             updated_at: "2026-09-09T00:00:00Z",
             weixin_owner: {
-              bot_id: "bot_sales",
-              profile_id: "sales-123",
-              bot_name: "销售 Bot",
+              bot_id: "ins_multi",
+              profile_id: "main",
+              bot_name: "主 Bot",
               status: "connected",
             },
             whatsapp_owner: {
@@ -686,6 +686,12 @@ describe("http repositories auth token bootstrap", () => {
             source_bot_id: "ins_multi",
             created_at: "2026-09-09T01:00:00Z",
             updated_at: "2026-09-09T01:00:00Z",
+            weixin_owner: {
+              bot_id: "bot_sales",
+              profile_id: "sales-123",
+              bot_name: "销售 Bot",
+              status: "connected",
+            },
           },
         ] });
       }
@@ -741,7 +747,7 @@ describe("http repositories auth token bootstrap", () => {
         instanceId: "ins_multi",
         profileId: "main",
         isDefault: true,
-        weixinOwner: expect.objectContaining({ botId: "bot_sales", botName: "销售 Bot" }),
+        weixinOwner: expect.objectContaining({ botId: "ins_multi", botName: "主 Bot" }),
         whatsAppOwner: expect.objectContaining({ botId: "bot_sales", botName: "销售 Bot" }),
       }),
       expect.objectContaining({
@@ -749,6 +755,7 @@ describe("http repositories auth token bootstrap", () => {
         instanceId: "ins_multi",
         profileId: "sales-123",
         sourceBotId: "ins_multi",
+        weixinOwner: expect.objectContaining({ botId: "bot_sales", botName: "销售 Bot" }),
       }),
     ]);
 
