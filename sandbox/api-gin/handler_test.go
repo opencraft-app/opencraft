@@ -1859,6 +1859,14 @@ func (p *stubPauseProvider) DescribeInstanceSnapshot(context.Context, string, st
 	return "", "", errors.New("stubPauseProvider: DescribeInstanceSnapshot not configured")
 }
 
+type asyncStartProvider struct{ *stubPauseProvider }
+
+func (p *asyncStartProvider) SubmitStartInstance(_ context.Context, instance provider.CloudInstanceRef) error {
+	p.startCalls++
+	p.startWith = append(p.startWith, instance)
+	return p.startErr
+}
+
 func TestPostSandboxesSandboxIDPauseUsesLegacyReleaseWhenCloudPauseResumeDisabled(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	svc := service.NewService(store.NewMemoryStore())
@@ -2202,6 +2210,37 @@ func TestPostSandboxesSandboxIDResumeHappyPath(t *testing.T) {
 	}
 	if got.State != core.StateAllocated {
 		t.Fatalf("expected instance state ALLOCATED after resume, got %s", got.State)
+	}
+}
+
+func TestResumeSubmitsStartAndReconcilesOnGet(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := service.NewService(store.NewMemoryStore())
+	_, inst, sb := createPausedSandbox(t, svc)
+	cp := &asyncStartProvider{stubPauseProvider: &stubPauseProvider{describeStates: []string{"STARTING", "RUNNING"}}}
+	router := newHandlerTestRouter(&handler{svc: svc, cloud: cp, cloudPauseResume: true})
+
+	post := httptest.NewRequest(http.MethodPost, "/sandboxes/"+sb.ID+"/resume", nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, post)
+	if rr.Code != http.StatusCreated || cp.startCalls != 1 {
+		t.Fatalf("resume submit: status=%d calls=%d body=%s", rr.Code, cp.startCalls, rr.Body.String())
+	}
+	got, err := svc.GetInstance(context.Background(), inst.ID)
+	if err != nil || got.State != core.StateResuming {
+		t.Fatalf("after submit: instance=%+v err=%v", got, err)
+	}
+	for _, want := range []core.InstanceState{core.StateResuming, core.StateAllocated} {
+		get := httptest.NewRequest(http.MethodGet, "/sandboxes/"+sb.ID, nil)
+		getRR := httptest.NewRecorder()
+		router.ServeHTTP(getRR, get)
+		got, err = svc.GetInstance(context.Background(), inst.ID)
+		if getRR.Code != http.StatusOK || err != nil || got.State != want {
+			t.Fatalf("GET: status=%d instance=%+v err=%v body=%s", getRR.Code, got, err, getRR.Body.String())
+		}
+	}
+	if cp.startCalls != 1 {
+		t.Fatalf("GET must not resubmit StartInstances, calls=%d", cp.startCalls)
 	}
 }
 
