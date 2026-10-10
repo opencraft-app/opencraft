@@ -188,6 +188,12 @@ export async function runFrontendArtifactBuildCommand(
   if (outDir !== resolve(outputDir)) {
     cpSync(outDir, outputDir, { recursive: true });
   }
+  // EdgeOne's generated bundle mirrors the public tree and is not consumed
+  // by Cloudflare. Exclude it before OCI content identity/archive creation;
+  // do not mutate a verified immutable artifact at deployment time.
+  if (env.FRONTEND_RELEASE_CHANNEL === "cf") {
+    rmSync(join(outputDir, ".edgeone"), { recursive: true, force: true });
+  }
 }
 
 async function runWithConcurrency(items, concurrency, task) {

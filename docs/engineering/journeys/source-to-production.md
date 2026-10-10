@@ -13,6 +13,15 @@
 5. 运行态：Pod/服务健康，版本/selfcheck 与预期一致。
 6. 业务：通过公共入口完成最小关键路径；必要时执行灰度、监控和回滚演练。
 
+## 前端 OCI 制品的渠道边界
+
+`build-release-artifacts.mjs` 按矩阵中的 `FRONTEND_RELEASE_CHANNEL` 冻结渠道产物。
+Cloudflare (`cf`) 在归档和计算内容身份之前移除生成的 `.edgeone` 目录；该目录
+包含 EdgeOne 专用的静态副本与部署配置，不属于 Cloudflare 的公共站点资源。
+公共 HTML、RSC 文本、API 静态响应和工作台资产保持不变。EdgeOne (`eo`)
+仍保留完整 `.edgeone` 部署格式，交给既有 EdgeOne 发布器选择部署目录。
+不能在拉取并校验已归档制品之后再删目录，以免实际发布内容偏离不可变制品身份。
+
 ## 前端预览制品（StaticPages）
 
 `.ci/runtime/commands/publish_frontend_preview.sh` 构建双站（cn/intl）Next 产物并经 `staticpages_pack.py` 以 packs 分卷（target 32MB / max 48MB）直传对象存储，不经 API 网关。两个边界决策：

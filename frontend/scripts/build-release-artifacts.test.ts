@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -32,6 +32,47 @@ describe("build release artifacts", () => {
     expect(calls).toEqual([]);
   });
 
+  it.each([false, true])("keeps CF public pages and RSC files without the EdgeOne copy (in-place=%s)", async (inPlace) => {
+    const root = mkdtempSync(join(tmpdir(), "frontend-cf-artifact-boundary-"));
+    const workspaceRoot = join(root, "workspace");
+    const workspaceOut = join(workspaceRoot, "out");
+    const outputDir = inPlace ? workspaceOut : join(root, "cf-artifact");
+    mkdirSync(workspaceRoot, { recursive: true });
+    try {
+      await runFrontendArtifactBuildCommand("build:next", {
+        FRONTEND_BUILD_OUTPUT_DIR: outputDir,
+        FRONTEND_RELEASE_CHANNEL: "cf",
+        NODE_BIN: "node-bin",
+        PNPM_BIN: "pnpm-bin",
+      }, async (command: string, args: string[]) => {
+        if (command === "pnpm-bin" && args.join(" ") === "exec next build") {
+          mkdirSync(join(workspaceOut, "docs"), { recursive: true });
+          mkdirSync(join(workspaceOut, "api"), { recursive: true });
+          writeFileSync(join(workspaceOut, "index.html"), "public homepage");
+          writeFileSync(join(workspaceOut, "docs", "index.html"), "public docs");
+          writeFileSync(join(workspaceOut, "docs", "index.txt"), "public RSC payload");
+          writeFileSync(join(workspaceOut, "api", "search"), "public search response");
+          mkdirSync(join(workspaceOut, ".edgeone", "assets", "docs"), { recursive: true });
+          writeFileSync(join(workspaceOut, ".edgeone", "assets", "docs", "index.html"), "EdgeOne copy");
+        }
+        if (args.join(" ") === "scripts/write-edgeone-config.mjs") {
+          writeFileSync(join(workspaceOut, ".edgeone", "edgeone.json"), "{}");
+        }
+      }, workspaceRoot);
+      expect(existsSync(join(outputDir, ".edgeone"))).toBe(false);
+      expect(existsSync(join(outputDir, "index.html"))).toBe(true);
+      expect(existsSync(join(outputDir, "docs", "index.html"))).toBe(true);
+      expect(existsSync(join(outputDir, "docs", "index.txt"))).toBe(true);
+      expect(existsSync(join(outputDir, "api", "search"))).toBe(true);
+      expect(readFileSync(join(outputDir, "index.html"), "utf8")).toBe("public homepage");
+      expect(readFileSync(join(outputDir, "docs", "index.html"), "utf8")).toBe("public docs");
+      expect(readFileSync(join(outputDir, "docs", "index.txt"), "utf8")).toBe("public RSC payload");
+      expect(readFileSync(join(outputDir, "api", "search"), "utf8")).toBe("public search response");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("runs the Next static docs build and copies out into the artifact output dir", async () => {
     const calls: string[] = [];
     const root = mkdtempSync(join(tmpdir(), "frontend-next-artifact-"));
@@ -54,6 +95,7 @@ describe("build release artifacts", () => {
     try {
       await runFrontendArtifactBuildCommand("build:next", {
         FRONTEND_BUILD_OUTPUT_DIR: outputDir,
+        FRONTEND_RELEASE_CHANNEL: "eo",
         NODE_BIN: "node-bin",
         PNPM_BIN: "pnpm-bin",
         NEXT_PUBLIC_OPENCRAFT_EMBED_SCRIPT_URL: "/__opencraft/embedded-workbench.js",
