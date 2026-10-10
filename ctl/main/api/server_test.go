@@ -31,6 +31,10 @@ type stubLogic struct {
 	channelBindingAction                   string
 	listInstanceBotsResp                   *transport.ListInstanceBotsResponse
 	listInstanceBotsErr                    error
+	channelSessionsResp                    *transport.ChannelSessionsResponse
+	channelSessionsErr                     error
+	channelMessagesResp                    *transport.ChannelMessagesResponse
+	channelMessagesErr                     error
 	getInstanceResp                        *transport.InstanceResponse
 	getInstanceErr                         error
 	getInstanceID                          string
@@ -154,6 +158,14 @@ type stubLogic struct {
 func (s *stubLogic) ListInstanceBots(ctx pctx.Context, instanceID string) (*transport.ListInstanceBotsResponse, error) {
 	s.listInstanceBotsInstanceID = instanceID
 	return s.listInstanceBotsResp, s.listInstanceBotsErr
+}
+
+func (s *stubLogic) ListChannelSessions(pctx.Context, string, string, string, string, int) (*transport.ChannelSessionsResponse, error) {
+	return s.channelSessionsResp, s.channelSessionsErr
+}
+
+func (s *stubLogic) ListChannelMessages(pctx.Context, string, string, string, string, int) (*transport.ChannelMessagesResponse, error) {
+	return s.channelMessagesResp, s.channelMessagesErr
 }
 
 func (s *stubLogic) CreateInstanceBot(ctx pctx.Context, instanceID string, req *transport.CreateInstanceBotRequest) (*transport.InstanceBotResponse, error) {
