@@ -21,9 +21,9 @@ var channelHistorySources = map[string]bool{
 	"telegram": true, "discord": true, "slack": true, "whatsapp": true,
 }
 
-// The script runs as agentuser. It opens only the selected Hermes Profile's
-// state.db in read-only mode and refuses rows without a matching session_key.
-// This deliberately excludes old rows whose Bot ownership cannot be proven.
+// The script runs as agentuser. The selected Profile's state.db isolates Bots;
+// non-multiplexed Hermes gateways use agent:main: keys in every Profile.
+// Rows without a channel session_key remain excluded.
 const readChannelHistoryScript = `import json
 import os
 import re
@@ -34,7 +34,7 @@ from pathlib import Path
 KIND = "lightvela.channel-history.v1"
 SOURCES = ("weixin", "qq", "qqbot", "feishu", "lark", "dingtalk", "wecom", "yuanbao", "telegram", "discord", "slack", "whatsapp")
 mode, profile, source, before, raw_limit, session_id = sys.argv[1:]
-prefix = "agent:" + profile + ":"
+prefix = "agent:main:"
 limit = min(max(int(raw_limit), 1), 50)
 
 def emit(**payload):
@@ -169,7 +169,13 @@ func (l *logic) readChannelHistory(ctx pctx.Context, instanceID, botID, mode, so
 		return nil, errcode.ErrChannelHistoryUnavailable
 	}
 	var payload channelHistoryPayload
-	if parseLastJSONLine(result.Output, &payload) != nil || payload.Kind != channelHistoryKind || payload.Error != "" {
+	if parseLastJSONLine(result.Output, &payload) != nil || payload.Kind != channelHistoryKind {
+		return nil, errcode.ErrChannelHistoryUnavailable
+	}
+	if payload.Error == "invalid_cursor" {
+		return nil, errcode.ErrInstanceInvalidParam
+	}
+	if payload.Error != "" {
 		return nil, errcode.ErrChannelHistoryUnavailable
 	}
 	return &payload, nil

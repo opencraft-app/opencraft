@@ -23,7 +23,7 @@ for profile in ('main','sales'):
     folder.mkdir(parents=True,exist_ok=True)
     db=sqlite3.connect(folder/'state.db')
     db.executescript('CREATE TABLE sessions (id TEXT PRIMARY KEY, source TEXT, session_key TEXT, started_at REAL, display_name TEXT, chat_type TEXT); CREATE TABLE messages (id INTEGER PRIMARY KEY, session_id TEXT, role TEXT, content TEXT, timestamp REAL, tool_calls TEXT, active INTEGER DEFAULT 1, compacted INTEGER DEFAULT 0, _compressed_summary INTEGER DEFAULT 0, display_kind TEXT, display_metadata TEXT);')
-    db.execute('INSERT INTO sessions VALUES (?,?,?,?,?,?)',(profile+'-session','feishu','agent:'+profile+':feishu:group:test',100,'Project group','group'))
+    db.execute('INSERT INTO sessions VALUES (?,?,?,?,?,?)',(profile+'-session','feishu','agent:main:feishu:group:test',100,'Project group','group'))
     db.execute('INSERT INTO messages (session_id,role,content,timestamp,tool_calls) VALUES (?,?,?,?,?)',(profile+'-session','user','hello '+profile,101,None))
     db.execute('INSERT INTO messages (session_id,role,content,timestamp,tool_calls) VALUES (?,?,?,?,?)',(profile+'-session','assistant','secret tool call',102,'[{"name":"secret"}]'))
     db.execute('INSERT INTO messages (session_id,role,content,timestamp,tool_calls) VALUES (?,?,?,?,?)',(profile+'-session','assistant','reply '+profile,103,None))
@@ -32,7 +32,7 @@ for profile in ('main','sales'):
     db.execute('INSERT INTO messages (session_id,role,content,timestamp,tool_calls,_compressed_summary) VALUES (?,?,?,?,?,?)',(profile+'-session','assistant','internal summary',105,None,1))
     db.execute('INSERT INTO messages (session_id,role,content,timestamp,tool_calls,display_metadata) VALUES (?,?,?,?,?,?)',(profile+'-session','user','model only',106,None,'{"model_only":true}'))
     db.execute('INSERT INTO messages (session_id,role,content,timestamp,tool_calls) VALUES (?,?,?,?,?)',(profile+'-session','user','\x00json:[{"type":"text","text":"image caption"},{"type":"image_url","image_url":{"url":"data:image/png;base64,AAA"}}]',107,None))
-    db.execute('INSERT INTO sessions VALUES (?,?,?,?,?,?)',(profile+'-old','qqbot','agent:'+profile+':qqbot:private:test',1,'Old chat','private'))
+    db.execute('INSERT INTO sessions VALUES (?,?,?,?,?,?)',(profile+'-old','qqbot','agent:main:qqbot:private:test',1,'Old chat','private'))
     db.commit()
     db.close()
 `
@@ -56,11 +56,17 @@ for profile in ('main','sales'):
 	}
 	main := run("list", "main", "", "", "1", "")
 	sales := run("list", "sales", "", "", "20", "")
-	if string(main.Items) == string(sales.Items) || main.Error != "" || sales.Error != "" {
+	if string(main.Items) == string(sales.Items) || main.Error != "" || sales.Error != "" ||
+		!bytes.Contains(sales.Items, []byte("sales-session")) ||
+		bytes.Contains(sales.Items, []byte("main-session")) {
 		t.Fatalf("profile lists were not isolated: main=%s sales=%s", main.Items, sales.Items)
 	}
 	if len(main.Sources) != 2 || main.Sources[0] != "feishu" || main.Sources[1] != "qqbot" {
 		t.Fatalf("source list did not include older conversations: %+v", main.Sources)
+	}
+	invalidCursor := run("list", "sales", "", "missing-session", "20", "")
+	if invalidCursor.Error != "invalid_cursor" {
+		t.Fatalf("missing cursor was not rejected: %+v", invalidCursor)
 	}
 	foreign := run("messages", "sales", "", "", "30", "main-session")
 	if !foreign.NotFound {

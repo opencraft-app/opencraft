@@ -14,18 +14,20 @@ func TestChannelHistoryRoutesRequireFlagAndUser(t *testing.T) {
 	router := newRouter(&instanceHandler{logic: stub}, &bundleHandler{}, &passHandler{})
 	path := "/v1/instances/ins-1/bots/bot-1/channel-sessions"
 
-	t.Setenv("CHANNEL_HISTORY_ENABLED", "false")
-	req := httptest.NewRequest(http.MethodGet, path, nil)
-	req.Header.Set("X-User-Id", "user-1")
-	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, req)
-	if rec.Code != http.StatusServiceUnavailable {
-		t.Fatalf("disabled status=%d body=%s", rec.Code, rec.Body.String())
+	for _, flag := range []string{"", "false"} {
+		t.Setenv("CHANNEL_HISTORY_ENABLED", flag)
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("X-User-Id", "user-1")
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if rec.Code != http.StatusServiceUnavailable {
+			t.Fatalf("flag=%q disabled status=%d body=%s", flag, rec.Code, rec.Body.String())
+		}
 	}
 
 	t.Setenv("CHANNEL_HISTORY_ENABLED", "true")
-	req = httptest.NewRequest(http.MethodGet, path, nil)
-	rec = httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("no user status=%d body=%s", rec.Code, rec.Body.String())
@@ -37,6 +39,14 @@ func TestChannelHistoryRoutesRequireFlagAndUser(t *testing.T) {
 	router.ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("invalid limit status=%d body=%s", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, path+"/session-1/messages?limit=21", nil)
+	req.Header.Set("X-User-Id", "user-1")
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("invalid message limit status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }
 

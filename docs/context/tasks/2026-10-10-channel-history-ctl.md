@@ -11,7 +11,7 @@
 ## interface_refs / data_structure_refs
 - `GET /v1/instances/{instance_id}/bots/{bot_id}/channel-sessions`
 - `GET /v1/instances/{instance_id}/bots/{bot_id}/channel-sessions/{session_id}/messages`
-- Hermes Profile `state.db` 的 `sessions.session_key` 与 `messages`；缺少可验证 Profile 归属的记录不返回。
+- Hermes Profile 独立的 `state.db` 与 `sessions.session_key`、`messages`；当前非 multiplex 部署在所有 Profile 使用 `agent:main:` 会话键，缺少渠道会话键的记录不返回。
 
 ## history_context
 - current_design_refs：`docs/engineering/domains/agent-gateway-runtime.md`、`docs/context/project/services/ctl.md`。
@@ -43,13 +43,14 @@
 - `CGO_ENABLED=0 go test ./pkg/instance ./main/api -run 'TestReadChannelHistory|TestChannelHistory' -count=1`：两个包通过。
 - `CGO_ENABLED=0 go vet ./pkg/instance ./main/api`：通过；文档检查 0 条 broken first-party links；暂存变更影响检查通过。
 - `CGO_ENABLED=0 go test ./...`：失败，现有 sqlite 集成测试需要 CGO，另有测试需 rootless Docker；与本次聚焦用例失败无关。
+- 2026-10-10 对照用户提供的 `CR-MR5147.md` 核对本机 Hermes `gateway/session.py`：非 multiplex 默认会为所有独立 Profile 生成 `agent:main:` 会话键。将测试 fixture 改成实际键后旧实现先失败；改用独立 Profile 数据库作为 Bot 隔离边界后聚焦测试通过。此证据未代替目标生产镜像验收。
 
 ## risks
-- 目标 Hermes 镜像 schema 和群聊第三方消息可见性尚未现场核验；开关默认关闭，无法验证归属的记录拒绝返回。
+- 目标 Hermes 镜像 schema、非 multiplex 会话键和群聊第三方消息可见性尚未现场核验；开关默认关闭，数据库路径及渠道会话键不符合预期的记录拒绝返回。
 - 公共网关尚未放行新路径；直连 CTL 测试不能证明浏览器可用。
 
 ## validation
-- CTL 聚焦测试、go vet、文档和变更影响检查通过；`git diff --cached --check` 通过。
+- CTL 聚焦测试覆盖命名 Bot 的实际会话键、跨 Bot 数据隔离、无效列表游标、消息上限 20 和空开关默认关闭；go vet、文档和变更影响检查通过；`git diff --cached --check` 通过。
 - 全量 CTL 集成测试本轮尝试失败：宿主缺 rootless Docker，`CGO_ENABLED=0` 的 go-sqlite3 为 stub；不能据聚焦测试宣称全量通过。
 
 ## decisions
