@@ -13,11 +13,11 @@ const getText = (id: string): string => {
 const current = pages.find((p) => p.id === 's11')!;
 
 describe('两站注册与Pass转化更新', () => {
-  it('第13页与31页顺序不变，六个最新数字全部显示', () => {
-    expect(pages).toHaveLength(31); expect(current.number).toBe(13);
+  it('第13页数据保持不变，正文新增画像为33页，六个最新数字全部显示', () => {
+    expect(pages).toHaveLength(33); expect(current.number).toBe(13);
     expect(current.title).toBe('国内站注册更多，Pass 开通率低于国际站');
     render(<SlideCanvas page={current} content={content} />);
-    ['89,122', '25,218', '17,807', '14,036', '开通率 28.3%', '开通率 78.8%', '国内站', '国际站', '13 / 31'].forEach((term) => expect(screen.getByText(term)).toBeInTheDocument());
+    ['89,122', '25,218', '17,807', '14,036', '开通率 28.3%', '开通率 78.8%', '国内站', '国际站', '13 / 33'].forEach((term) => expect(screen.getByText(term)).toBeInTheDocument());
   });
   it('比例取一位小数，差异按百分点表达', () => {
     expect((25218 / 89122 * 100).toFixed(1)).toBe('28.3');
@@ -41,7 +41,7 @@ describe('两站注册与Pass转化更新', () => {
     ['3.76 万', '3.53 万', '1.48 万', '39.4%'].forEach((term) => expect(text).not.toContain(term));
   });
   it('完整旧规模仅在历史参考，定义与旧数据原样保留', () => {
-    expect(supplements).toHaveLength(14);
+    expect(supplements).toHaveLength(16);
     const history = supplements.find((p) => p.id === 'historical-scale')!;
     expect(history.group).toBe('产品现状'); expect(pages.find((p) => p.id === history.id)).toBeUndefined();
     ['3.76 万', '3.53 万', '1.48 万', '39.4%', '10 月 9 日', '唯一用户 ID 数', '与底层 CVM 数量 1:1', '包含自动任务产生的会话记录'].forEach((term) => expect(getText(history.id)).toContain(term));

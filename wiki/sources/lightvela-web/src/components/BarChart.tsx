@@ -9,40 +9,53 @@ function label(value: number, expression?: string) {
 
 export default function BarChart({ attrs, data }: { attrs: Attributes; data: RichNode }) {
   const categories = (data.attrs.categories ?? '').split(',');
-  const series = data.children?.find((n) => n.tag === 'series');
-  const values = (series?.attrs.values ?? '').split(',').map(Number);
-  const percentages = series?.attrs.percentages?.split(',');
-  const valueLabel = (i: number) => `${label(values[i], series?.attrs['label-expr'])}${percentages?.[i] ? ` · ${percentages[i]}%` : ''}`;
+  const datasets = (data.children?.filter((n) => n.tag === 'series') ?? []).map((series) => {
+    const values = (series.attrs.values ?? '').split(',').map(Number);
+    const percentages = series.attrs.percentages?.split(',');
+    return {
+      name: series.attrs.name ?? '', values,
+      fill: color(series.attrs.color ?? data.attrs.color ?? 'primary'),
+      valueLabel: (i: number) => `${label(values[i], series.attrs['label-expr'])}${percentages?.[i] ? ` · ${percentages[i]}%` : ''}`,
+    };
+  });
   const width = numeric(attrs.width);
   const height = numeric(attrs.height);
-  const max = numeric(attrs['y-max'], Math.max(...values, 1));
+  const max = numeric(attrs['y-max'], Math.max(...datasets.flatMap((s) => s.values), 1));
   const left = numeric(attrs['label-width'], Math.min(145, width * 0.28));
   const top = 18;
   const bottom = 34;
   const plotWidth = width - left - numeric(attrs['value-width'], 90);
   const rowHeight = (height - top - bottom) / categories.length;
-  const fill = color(series?.attrs.color ?? data.attrs.color ?? 'primary');
   const fontSize = numeric(attrs['text-size'], 15);
   const valueSize = numeric(attrs['value-size'], fontSize);
+  const tickCount = Math.max(2, numeric(attrs['tick-count'], 5));
 
   return (
     <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img"
-      aria-label={categories.map((name, i) => `${name} ${valueLabel(i)}`).join('；')}>
-      {Array.from({ length: 5 }, (_, i) => {
-        const x = left + plotWidth * i / 4;
+      aria-label={categories.map((name, i) => `${name} ${datasets.map((s) => `${datasets.length > 1 ? `${s.name} ` : ''}${s.valueLabel(i)}`).join('，')}`).join('；')}>
+      {Array.from({ length: tickCount }, (_, i) => {
+        const x = left + plotWidth * i / (tickCount - 1);
         return <g key={i}>
           <line x1={x} y1={top} x2={x} y2={height - bottom} stroke={color('border')} />
-          <text x={x} y={height - 8} textAnchor="middle" fill={color('text-muted')} fontSize={12}>{(max * i / 4).toLocaleString('zh-CN')}</text>
+          <text x={x} y={height - 8} textAnchor="middle" fill={color('text-muted')} fontSize={12}>{(max * i / (tickCount - 1)).toLocaleString('zh-CN')}{attrs['axis-suffix'] ?? ''}</text>
         </g>;
       })}
       {categories.map((category, i) => {
         const y = top + i * rowHeight;
-        const barHeight = Math.min(36, rowHeight * 0.52);
-        const barWidth = plotWidth * values[i] / max;
+        const gap = datasets.length > 1 ? 3 : 0;
+        const barHeight = Math.min(36, rowHeight * (datasets.length > 1 ? 0.7 / datasets.length : 0.52));
+        const groupHeight = barHeight * datasets.length + gap * (datasets.length - 1);
         return <g key={category}>
           <text x={left - 12} y={y + rowHeight / 2 + 5} textAnchor="end" fill={color('text-main')} fontSize={fontSize}>{category}</text>
-          <rect x={left} y={y + (rowHeight - barHeight) / 2} width={barWidth} height={barHeight} fill={fill} rx={2} />
-          <text x={left + barWidth + 8} y={y + rowHeight / 2 + 5} fill={color('text-main')} fontSize={valueSize}>{valueLabel(i)}</text>
+          {datasets.map((s, j) => {
+            const barWidth = plotWidth * s.values[i] / max;
+            const barY = y + (rowHeight - groupHeight) / 2 + j * (barHeight + gap);
+            const labelX = attrs['value-position'] === 'fixed' ? left + plotWidth + 12 : left + barWidth + 8;
+            return <g key={j} data-series={s.name}>
+              <rect x={left} y={barY} width={barWidth} height={barHeight} fill={s.fill} rx={2} />
+              <text x={labelX} y={barY + barHeight / 2 + (datasets.length > 1 ? valueSize * 0.34 : 5)} fill={datasets.length > 1 ? s.fill : color('text-main')} fontSize={valueSize}>{s.valueLabel(i)}</text>
+            </g>;
+          })}
         </g>;
       })}
     </svg>

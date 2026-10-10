@@ -2365,8 +2365,221 @@
     "label": "10 月 9 日历史规模与统计口径"
   },
   {
-    "id": "s16",
+    "id": "domestic-profile",
     "number": 10,
+    "title": "国内站画像：原始数据与统计口径",
+    "section": "产品现状 · 国内站用户画像详细参考",
+    "elements": [
+      {
+        "key": "domestic-profile_background_00",
+        "type": "background",
+        "attrs": {
+          "color": "bg-page"
+        }
+      },
+      {
+        "key": "domestic-profile_shape_01",
+        "type": "shape",
+        "attrs": {
+          "type": "line",
+          "x": "40",
+          "y": "26",
+          "width": "1200",
+          "height": "0",
+          "stroke": "border"
+        }
+      },
+      {
+        "key": "domestic-profile_shape_02",
+        "type": "shape",
+        "attrs": {
+          "type": "line",
+          "x": "520",
+          "y": "26",
+          "width": "240",
+          "height": "0",
+          "stroke": "primary",
+          "stroke-width": "3"
+        }
+      },
+      {
+        "key": "domestic-profile_text_03",
+        "type": "text",
+        "attrs": {
+          "x": "40",
+          "y": "36",
+          "width": "1200",
+          "height": "24",
+          "font": "caption",
+          "color": "primary"
+        },
+        "contentKey": "domestic-profile_text_03"
+      },
+      {
+        "key": "domestic-profile_text_04",
+        "type": "text",
+        "attrs": {
+          "x": "40",
+          "y": "77",
+          "width": "1200",
+          "height": "50",
+          "font": "heading",
+          "color": "text-main"
+        },
+        "contentKey": "domestic-profile_text_04"
+      },
+      {
+        "key": "domestic-profile_text_05",
+        "type": "text",
+        "attrs": {
+          "x": "40",
+          "y": "132",
+          "width": "1200",
+          "height": "30",
+          "font": "body",
+          "size": "18",
+          "color": "text-muted"
+        },
+        "contentKey": "domestic-profile_text_05"
+      },
+      {
+        "key": "domestic-profile_profile-data",
+        "type": "table",
+        "attrs": {
+          "id": "profile-data",
+          "x": "40",
+          "y": "184",
+          "width": "820",
+          "height": "320",
+          "columns": "1.4,1.35,1,1.35,1.3,1.1,1,1",
+          "rows": "32,32,32,32,32,32,32,32,32,32",
+          "font": "body",
+          "size": "13",
+          "color": "text-main",
+          "align": "left",
+          "padding": "5 8",
+          "header-fill": "bg-surface",
+          "line-height": "1.2"
+        },
+        "contentKey": "domestic-profile_profile-data"
+      },
+      {
+        "key": "domestic-profile_text_07",
+        "type": "text",
+        "attrs": {
+          "x": "40",
+          "y": "520",
+          "width": "820",
+          "height": "149",
+          "font": "caption",
+          "size": "13",
+          "color": "text-muted",
+          "line-height": "1.35"
+        },
+        "contentKey": "domestic-profile_text_07"
+      },
+      {
+        "key": "domestic-profile_text_08",
+        "type": "text",
+        "attrs": {
+          "x": "895",
+          "y": "184",
+          "width": "345",
+          "height": "22",
+          "font": "caption",
+          "size": "15",
+          "color": "primary"
+        },
+        "contentKey": "domestic-profile_text_08"
+      },
+      {
+        "key": "domestic-profile_image_09",
+        "type": "image",
+        "attrs": {
+          "x": "895",
+          "y": "212",
+          "width": "345",
+          "height": "174",
+          "fit": "contain",
+          "stroke": "border"
+        },
+        "contentKey": "domestic-profile_image_09"
+      },
+      {
+        "key": "domestic-profile_text_10",
+        "type": "text",
+        "attrs": {
+          "x": "895",
+          "y": "408",
+          "width": "345",
+          "height": "22",
+          "font": "caption",
+          "size": "15",
+          "color": "primary"
+        },
+        "contentKey": "domestic-profile_text_10"
+      },
+      {
+        "key": "domestic-profile_image_11",
+        "type": "image",
+        "attrs": {
+          "x": "895",
+          "y": "436",
+          "width": "345",
+          "height": "190",
+          "fit": "contain",
+          "stroke": "border"
+        },
+        "contentKey": "domestic-profile_image_11"
+      },
+      {
+        "key": "domestic-profile_text_12",
+        "type": "text",
+        "attrs": {
+          "x": "895",
+          "y": "644",
+          "width": "345",
+          "height": "24",
+          "font": "caption",
+          "size": "12.5",
+          "color": "text-muted"
+        },
+        "contentKey": "domestic-profile_text_12"
+      },
+      {
+        "key": "domestic-profile_text_13",
+        "type": "text",
+        "attrs": {
+          "x": "40",
+          "y": "684",
+          "width": "1130",
+          "height": "20",
+          "font": "caption",
+          "color": "text-muted"
+        },
+        "contentKey": "domestic-profile_text_13"
+      },
+      {
+        "key": "domestic-profile_text_14",
+        "type": "text",
+        "attrs": {
+          "x": "1180",
+          "y": "684",
+          "width": "60",
+          "height": "20",
+          "font": "caption",
+          "color": "text-muted",
+          "align": "right"
+        },
+        "contentKey": "domestic-profile_text_14"
+      }
+    ],
+    "group": "产品现状",
+    "label": "国内站用户画像原图与统计口径"
+  },
+  {
+    "id": "s16",
+    "number": 11,
     "title": "围绕长期在线、状态保留与权限管理演进",
     "section": "04 产品演进 · 基础设施",
     "elements": [
@@ -2616,7 +2829,7 @@
   },
   {
     "id": "s17",
-    "number": 11,
+    "number": 12,
     "title": "优先建设泛开发者场景，并补齐执行能力",
     "section": "04 产品演进 · 核心能力",
     "elements": [
@@ -2896,7 +3109,7 @@
   },
   {
     "id": "s18",
-    "number": 12,
+    "number": 13,
     "title": "探索独立身份与主动跟进，先建立信任",
     "section": "04 产品演进 · 身份与主动性",
     "elements": [
@@ -3126,7 +3339,7 @@
   },
   {
     "id": "s19",
-    "number": 13,
+    "number": 14,
     "title": "向开发者开放工具，并尝试设备接入",
     "section": "04 产品演进 · 开放与接入",
     "elements": [
@@ -3408,7 +3621,7 @@
   },
   {
     "id": "s20",
-    "number": 14,
+    "number": 15,
     "title": "降低使用门槛，完善任务与授权体验",
     "section": "04 产品演进 · 产品体验",
     "elements": [
@@ -3659,5 +3872,203 @@
     ],
     "group": "产品演进",
     "label": "原文体验截图与视觉方向"
+  },
+  {
+    "id": "capacity-assumptions",
+    "number": 16,
+    "title": "增长假设、当前估算基线与统计口径",
+    "section": "核数规模估算 · 详细参考",
+    "elements": [
+      {
+        "key": "capacity-assumptions_background_00",
+        "type": "background",
+        "attrs": {
+          "color": "bg-page"
+        }
+      },
+      {
+        "key": "capacity-assumptions_shape_01",
+        "type": "shape",
+        "attrs": {
+          "type": "line",
+          "x": "40",
+          "y": "26",
+          "width": "1200",
+          "height": "0",
+          "stroke": "border"
+        }
+      },
+      {
+        "key": "capacity-assumptions_shape_02",
+        "type": "shape",
+        "attrs": {
+          "type": "line",
+          "x": "1000",
+          "y": "26",
+          "width": "240",
+          "height": "0",
+          "stroke": "primary",
+          "stroke-width": "3"
+        }
+      },
+      {
+        "key": "capacity-assumptions_text_03",
+        "type": "text",
+        "attrs": {
+          "x": "40",
+          "y": "36",
+          "width": "1200",
+          "height": "24",
+          "font": "caption",
+          "color": "primary"
+        },
+        "contentKey": "capacity-assumptions_text_03"
+      },
+      {
+        "key": "capacity-assumptions_text_04",
+        "type": "text",
+        "attrs": {
+          "x": "40",
+          "y": "77",
+          "width": "1200",
+          "height": "50",
+          "font": "heading",
+          "color": "text-main"
+        },
+        "contentKey": "capacity-assumptions_text_04"
+      },
+      {
+        "key": "capacity-assumptions_text_05",
+        "type": "text",
+        "attrs": {
+          "x": "40",
+          "y": "132",
+          "width": "1200",
+          "height": "30",
+          "font": "body",
+          "color": "text-muted"
+        },
+        "contentKey": "capacity-assumptions_text_05"
+      },
+      {
+        "key": "capacity-assumptions_capacity-assumptions",
+        "type": "table",
+        "attrs": {
+          "id": "capacity-assumptions",
+          "x": "40",
+          "y": "178",
+          "width": "1200",
+          "height": "323",
+          "columns": "3,2.2,2.2,4.6",
+          "rows": "38,52,52,52,52,77",
+          "font": "body",
+          "size": "16",
+          "color": "text-main",
+          "align": "left",
+          "padding": "8 14",
+          "header-fill": "bg-surface",
+          "line-height": "1.3"
+        },
+        "contentKey": "capacity-assumptions_capacity-assumptions"
+      },
+      {
+        "key": "capacity-assumptions_shape_07",
+        "type": "shape",
+        "attrs": {
+          "type": "rect",
+          "x": "40",
+          "y": "520",
+          "width": "1200",
+          "height": "94",
+          "fill": "bg-surface",
+          "corner-radius": "4"
+        }
+      },
+      {
+        "key": "capacity-assumptions_text_08",
+        "type": "text",
+        "attrs": {
+          "x": "56",
+          "y": "529",
+          "width": "1168",
+          "height": "24",
+          "font": "strong",
+          "size": "18",
+          "color": "primary"
+        },
+        "contentKey": "capacity-assumptions_text_08"
+      },
+      {
+        "key": "capacity-assumptions_text_09",
+        "type": "text",
+        "attrs": {
+          "x": "56",
+          "y": "560",
+          "width": "1168",
+          "height": "20",
+          "font": "body",
+          "size": "15",
+          "color": "text-main"
+        },
+        "contentKey": "capacity-assumptions_text_09"
+      },
+      {
+        "key": "capacity-assumptions_text_10",
+        "type": "text",
+        "attrs": {
+          "x": "56",
+          "y": "587",
+          "width": "1168",
+          "height": "20",
+          "font": "body",
+          "size": "15",
+          "color": "text-main"
+        },
+        "contentKey": "capacity-assumptions_text_10"
+      },
+      {
+        "key": "capacity-assumptions_text_11",
+        "type": "text",
+        "attrs": {
+          "x": "40",
+          "y": "632",
+          "width": "1200",
+          "height": "39",
+          "font": "caption",
+          "color": "text-muted",
+          "line-height": "1.45"
+        },
+        "contentKey": "capacity-assumptions_text_11"
+      },
+      {
+        "key": "capacity-assumptions_text_12",
+        "type": "text",
+        "attrs": {
+          "x": "40",
+          "y": "684",
+          "width": "1130",
+          "height": "20",
+          "font": "caption",
+          "color": "text-muted"
+        },
+        "contentKey": "capacity-assumptions_text_12"
+      },
+      {
+        "key": "capacity-assumptions_text_13",
+        "type": "text",
+        "attrs": {
+          "x": "1180",
+          "y": "684",
+          "width": "60",
+          "height": "20",
+          "font": "caption",
+          "color": "text-muted",
+          "align": "right"
+        },
+        "contentKey": "capacity-assumptions_text_13"
+      }
+    ],
+    "group": "核数规模估算",
+    "label": "完整增长假设与核数估算口径"
   }
 ]

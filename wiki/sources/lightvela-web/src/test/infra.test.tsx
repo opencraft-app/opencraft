@@ -12,15 +12,15 @@ function send(frame: HTMLIFrameElement, action: string, extra = {}, options: { t
 }
 
 describe('基础设施8页完整动画', () => {
-  it('8个稳定ID按原顺序加入正文21–28页，原参考不替换', () => {
+  it('8个稳定ID按原顺序加入正文22–29页，原参考不替换', () => {
     const dynamic = pages.filter((p) => p.id.startsWith('infra'));
     expect(dynamic.map((p) => p.id)).toEqual(Array.from({ length: 8 }, (_, i) => `infra0${i}`));
-    expect(dynamic.map((p) => p.number)).toEqual([21, 22, 23, 24, 25, 26, 27, 28]);
+    expect(dynamic.map((p) => p.number)).toEqual([22, 23, 24, 25, 26, 27, 28, 29]);
     dynamic.forEach((p, i) => {
       const e = p.elements.find((n) => n.type === 'dynamic')!;
       expect(content[e.contentKey!]).toEqual({ pageIndex: i, title: p.title });
     });
-    expect(pages[28].id).toBe('evo03'); expect(pages[29].id).toBe('s21'); expect(pages[30].id).toBe('s24');
+    expect(pages[29].id).toBe('evo03'); expect(pages[30].id).toBe('s21'); expect(pages[31].id).toBe('capacity01'); expect(pages[32].id).toBe('s24');
   });
   it('完整8个section、原SVG与动画定义均保留', () => {
     expect(template.match(/<section class="slide/g)).toHaveLength(8);

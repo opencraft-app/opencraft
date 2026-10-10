@@ -12,16 +12,16 @@ function pageText(id: string) {
 }
 
 describe('文稿内容完整性', () => {
-  it('31页正文顺序准确，所有正文和补充内容引用可解析', () => {
-    expect(pages).toHaveLength(31);
-    expect(pages.map((p) => p.id)).toEqual(['s01', 's02', 's03', 's06', 's07', 'insight01', 'insight02', 'insight03', 'insight04', 's15', 'app01', 'visual01', 's11', 's12', 's13', 's14', 's08', 'focus01', 'evo01', 'evo02', 'infra00', 'infra01', 'infra02', 'infra03', 'infra04', 'infra05', 'infra06', 'infra07', 'evo03', 's21', 's24']);
+  it('33页正文顺序准确，所有正文和补充内容引用可解析', () => {
+    expect(pages).toHaveLength(33);
+    expect(pages.map((p) => p.id)).toEqual(['s01', 's02', 's03', 's06', 's07', 'insight01', 'insight02', 'insight03', 'insight04', 's15', 'app01', 'visual01', 's11', 'profile01', 's12', 's13', 's14', 's08', 'focus01', 'evo01', 'evo02', 'infra00', 'infra01', 'infra02', 'infra03', 'infra04', 'infra05', 'infra06', 'infra07', 'evo03', 's21', 'capacity01', 's24']);
     pages.forEach((page, i) => expect(page.number).toBe(i + 1));
     [...pages, ...supplements].forEach((page) => page.elements.forEach((el) => { if (el.contentKey) expect(content[el.contentKey]).toBeDefined(); }));
   });
   it('出圈回顾仅三页，阶段判断归入产品现状', () => {
     expect(pages.filter((page) => page.section.startsWith('01 出圈回顾')).map((p) => p.id)).toEqual(['s03', 's06', 's07']);
-    expect(pages[16].id).toBe('s08');
-    expect(pages[16].section).toBe('03 产品现状 · 阶段判断');
+    expect(pages[17].id).toBe('s08');
+    expect(pages[17].section).toBe('03 产品现状 · 阶段判断');
     expect(sections.find((s) => s.name === '出圈回顾')?.range).toEqual([3, 5]);
   });
   it('新品牌形象仅用于封面、目录和封底', () => {
@@ -55,7 +55,7 @@ describe('文稿内容完整性', () => {
     expect(text).not.toMatch(/2\s*万|10\s*万/);
   });
   it('图表读取原始值，不重算未满100%的场景比例', () => {
-    const charts = Object.values(content).filter((data): data is RichNode => 'tag' in data && data.tag === 'chart');
+    const charts = Object.entries(content).filter(([key]) => !key.startsWith('profile01_')).map(([, data]) => data).filter((data): data is RichNode => 'tag' in data && data.tag === 'chart');
     expect(charts.map((chart) => chart.children?.[0].attrs.values)).toEqual(['251,177,117,111,101,65,15', '8212,6575,5078,2641', '27.8,16.1,8.5']);
   });
   it('所有页面均无指定AI式衔接句', () => {
@@ -65,8 +65,8 @@ describe('文稿内容完整性', () => {
   it('首页不显示已删除说明，自动页脚与正文页数一致', () => {
     render(<SlideCanvas page={pages[0]} content={content} />);
     expect(screen.queryByText('LightVela｜依据原始汇报材料整理；数据截至 10 月 9 日，另有说明除外')).not.toBeInTheDocument();
-    expect(screen.getByText('01 / 31')).toBeInTheDocument();
-    pages.forEach((p) => expect(pageText(p.id)).toContain(`${String(p.number).padStart(2, '0')} / 31`));
+    expect(screen.getByText('01 / 33')).toBeInTheDocument();
+    pages.forEach((p) => expect(pageText(p.id)).toContain(`${String(p.number).padStart(2, '0')} / 33`));
   });
   it('目录保留指定文案并更新传播回顾描述', () => {
     render(<SlideCanvas page={pages[1]} content={content} />);
@@ -83,7 +83,7 @@ describe('文稿内容完整性', () => {
     expect(card05?.attrs.width).toBe(card03?.attrs.width); expect(card05?.attrs.width).toBe('575');
   });
   it('完整保留三张国内公众号图和前期材料，不进入正文页数', () => {
-    expect(supplements.map((p) => p.id)).toEqual(['recap-background', 's04', 's05', 's22', 's23', 's09', 's10', 'product-comparison', 'historical-scale', 's16', 's17', 's18', 's19', 's20']);
+    expect(supplements.map((p) => p.id)).toEqual(['recap-background', 's04', 's05', 's22', 's23', 's09', 's10', 'product-comparison', 'historical-scale', 'domestic-profile', 's16', 's17', 's18', 's19', 's20', 'capacity-assumptions']);
     const archive = supplements.find((p) => p.id === 's04')!;
     const images = archive.elements.filter((el) => el.type === 'image');
     expect(images.map((el) => el.contentKey && content[el.contentKey]).filter((data) => data && 'src' in data).map((data) => data && 'src' in data ? data.src : '')).toEqual([
@@ -96,8 +96,8 @@ describe('文稿内容完整性', () => {
     expect(pages.slice(5, 9).map((p) => p.id)).toEqual(['insight01', 'insight02', 'insight03', 'insight04']);
     expect(pages[9].id).toBe('s15');
     expect(sections.find((s) => s.name === '个人助理产品洞察')?.range).toEqual([6, 9]);
-    expect(sections.find((s) => s.name === '产品现状')?.range).toEqual([10, 18]);
-    expect(sections.find((s) => s.name === '产品演进')?.range).toEqual([19, 29]);
+    expect(sections.find((s) => s.name === '产品现状')?.range).toEqual([10, 19]);
+    expect(sections.find((s) => s.name === '产品演进')?.range).toEqual([20, 30]);
     expect(sections.find((s) => s.name === '补充材料')).toBeUndefined();
   });
   it('4–5月上线及个人助理定位完整，海外日期沿用原文', () => {
@@ -122,7 +122,7 @@ describe('文稿内容完整性', () => {
   });
   it('一页讲清定制化、IM入口和独立多Bot，不扩成三页', () => {
     expect(pages[9].title).toBe('LightVela：可按需定制的云端个人助理');
-    expect(pages.slice(9, 18).map((p) => p.id)).toEqual(['s15', 'app01', 'visual01', 's11', 's12', 's13', 's14', 's08', 'focus01']);
+    expect(pages.slice(9, 19).map((p) => p.id)).toEqual(['s15', 'app01', 'visual01', 's11', 'profile01', 's12', 's13', 's14', 's08', 'focus01']);
     ['定制化', '入口灵活', '多 Bot', '网页打磨，IM 接收', '微信、Telegram', '也可日常对话', 'Hermes 原生能力', '独立个性', '记忆和工作空间'].forEach((term) => expect(pageText('s15')).toContain(term));
     expect(pageText('s15')).not.toMatch(/唯一支持|全部不支持|自动协同已/);
     expect(pageText('s08')).not.toContain('独立站覆盖 Agent 创建与配置、多 Bot、通道、技能和定时任务');
@@ -131,15 +131,15 @@ describe('文稿内容完整性', () => {
     expect(pageText('s09')).toContain('订阅 / 免费体验');
     ['DeepSeek Harness', '个人工作台', '9 月基于 Hermes 原生能力上线'].forEach((term) => expect(pageText('s10')).toContain(term));
     ['Meta Muse', 'OpenAI Dot', 'Instinct / Manus Cue', '海外优先验证', '国内持续打磨'].forEach((term) => expect(pageText('product-comparison')).toContain(term));
-    expect(supplements.filter((p) => p.group === '产品现状')).toHaveLength(4);
+    expect(supplements.filter((p) => p.group === '产品现状')).toHaveLength(5);
   });
   it('演进三页与基础设施资料衔接，聚焦泛开发者，硬件同级而多云降为参考', () => {
     expect(pages.filter((p) => p.id.startsWith('evo')).map((p) => p.id)).toEqual(['evo01', 'evo02', 'evo03']);
     ['聚焦泛开发者场景', 'AI 建站与云端应用', '多 Agent 协作', '硬件开发与接入', '屏幕、按钮、摄像头', '低成本接入实验'].forEach((term) => expect(pageText('evo01')).toContain(term));
     ['evo01', 'evo02', 'evo03'].forEach((id) => expect(pageText(id)).not.toContain('多云资源管理'));
     expect(pageText('s17')).toContain('多云资源管理');
-    expect(sections.find((s) => s.name === '增长与运营')?.range).toEqual([30, 30]);
-    expect(sections.find((s) => s.name === '下一阶段')?.range).toEqual([31, 31]);
+    expect(sections.find((s) => s.name === '增长与运营')?.range).toEqual([31, 31]);
+    expect(sections.find((s) => s.name === '下一阶段')?.range).toEqual([33, 33]);
   });
   it('能力亮点与体验明确，当前基础与探索不混写', () => {
     ['多 Bot', '云电脑', '硬件生态', '协同执行继续探索', '执行范围仍需补齐', 'API、SDK、MCP', '设备 ↔ 云端 Agent'].forEach((term) => expect(pageText('evo02')).toContain(term));
@@ -156,10 +156,10 @@ describe('文稿内容完整性', () => {
   });
   it('官网新视觉已上线置于App路线之后，原数据仍完整连续', () => {
     expect(pages[11].id).toBe('visual01');
-    expect(pages.slice(12, 16).map((p) => p.id)).toEqual(['s11', 's12', 's13', 's14']);
+    expect(pages.slice(12, 17).map((p) => p.id)).toEqual(['s11', 'profile01', 's12', 's13', 's14']);
     ['官网首页已上线首版新视觉', '可信赖、亲和、灵动', '官网当前首页', '新视觉演示 · 中文版', '设计目标', '产品内交互视觉后续继续优化'].forEach((term) => expect(pageText('visual01')).toContain(term));
     expect(pageText('visual01')).not.toMatch(/转化率提升|留存提升|全面上线/);
-    expect(pages[28].title).toBe('持续优化产品交互，完善角色识别与任务反馈');
+    expect(pages[29].title).toBe('持续优化产品交互，完善角色识别与任务反馈');
     ['Bot 切换', '执行状态', '授权确认', '异常反馈', '后续产品内交互优化'].forEach((term) => expect(pageText('evo03')).toContain(term));
   });
   it('视频源与真实首帧是同源数据，仅新增现状页含视频', () => {
@@ -173,8 +173,8 @@ describe('文稿内容完整性', () => {
   });
   it('演进前场景选择仅一页，三类任务及选择理由都有原文依据', () => {
     const page = pages.find((p) => p.id === 'focus01')!;
-    expect(page.number).toBe(18);
-    expect(pages.slice(16, 19).map((p) => p.id)).toEqual(['s08', 'focus01', 'evo01']);
+    expect(page.number).toBe(19);
+    expect(pages.slice(17, 20).map((p) => p.id)).toEqual(['s08', 'focus01', 'evo01']);
     expect(page.section).toBe('03 产品现状 · 场景选择');
     const text = pageText('focus01');
     ['优先服务泛开发者', '用户和任务更熟悉', '已有能力更匹配', '结果可检查', '搭建并持续维护自己的工具', '按职能组织持续工作的流程', '连接自己的服务、工具和设备', '个人工作台已在实验室上线', '独立多 Bot 已上线', 'DeepSeek Harness 为实验入口', '协同继续探索', '屏幕、按钮、摄像头', '标准接口与设备接入继续探索', '外部操作仍需授权', '非用户职业分布'].forEach((term) => expect(text).toContain(term));
@@ -221,10 +221,10 @@ describe('演示交互', () => {
     expect(screen.getByRole('article')).toHaveAttribute('data-slide-id', 's01');
     expect(screen.getByRole('button', { name: /13 国内站注册更多，Pass 开通率低于国际站/ })).toBeInTheDocument();
   });
-  it('总览仅包含31页正文', () => {
+  it('总览仅包含33页正文', () => {
     window.history.replaceState(null, '', '#/s11'); render(<App />); fireEvent.click(screen.getByRole('button', { name: '总览' }));
-    const grid = screen.getByLabelText('页面总览'); expect(within(grid).getAllByRole('button')).toHaveLength(31);
-    fireEvent.click(within(grid).getAllByRole('button')[30]); expect(window.location.hash).toBe('#/s24');
+    const grid = screen.getByLabelText('页面总览'); expect(within(grid).getAllByRole('button')).toHaveLength(33);
+    fireEvent.click(within(grid).getAllByRole('button')[32]); expect(window.location.hash).toBe('#/s24');
   });
   it('全屏按钮调用浏览器API', () => {
     const request = vi.fn().mockResolvedValue(undefined); HTMLElement.prototype.requestFullscreen = request;
@@ -329,7 +329,7 @@ describe('演示交互', () => {
   });
   it.each(['#/s16', '#/s17', '#/s18', '#/s19', '#/s20', '#/supplements/s20'])('演进旧链接%s打开完整原材料', (hash) => {
     window.history.replaceState(null, '', hash); render(<App />);
-    expect(pageFromHash(hash)).toBe(18); expect(screen.getByRole('dialog')).toHaveAttribute('aria-label', '产品演进补充材料');
+    expect(pageFromHash(hash)).toBe(19); expect(screen.getByRole('dialog')).toHaveAttribute('aria-label', '产品演进补充材料');
     fireEvent.click(screen.getByRole('button', { name: '关闭弹窗' })); expect(window.location.hash).toBe('#/evo01');
   });
   it('体验摘图可打开完整角色对话和外部参考原图', () => {
@@ -366,7 +366,7 @@ describe('演示交互', () => {
   it('阶段判断接场景选择再到演进，参考返回不丢失落点', () => {
     window.history.replaceState(null, '', '#/s08'); render(<App />);
     fireEvent.click(screen.getByRole('button', { name: '下一页' })); expect(window.location.hash).toBe('#/focus01');
-    expect(pageFromHash('#/focus01')).toBe(17);
+    expect(pageFromHash('#/focus01')).toBe(18);
     fireEvent.click(screen.getByRole('button', { name: '详细参考' }));
     expect(screen.getByRole('dialog')).toHaveAttribute('aria-label', '产品现状补充材料');
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '配置能力、多 Bot 与实验室' }));
@@ -375,10 +375,10 @@ describe('演示交互', () => {
     fireEvent.keyDown(window, { key: 'ArrowRight' }); expect(window.location.hash).toBe('#/evo01');
     fireEvent.keyDown(window, { key: 'ArrowLeft' }); expect(window.location.hash).toBe('#/focus01');
   });
-  it('搜索场景选择能跳转到第18页', () => {
+  it('搜索场景选择能跳转到第19页', () => {
     render(<App />);
     fireEvent.change(screen.getByRole('textbox', { name: '搜索页面' }), { target: { value: '优先服务泛开发者' } });
-    fireEvent.click(screen.getByRole('button', { name: /18 优先服务泛开发者/ }));
+    fireEvent.click(screen.getByRole('button', { name: /19 优先服务泛开发者/ }));
     expect(window.location.hash).toBe('#/focus01');
   });
   it('视频可手动控制，弹窗不会触发翻页，Esc关闭停止播放', () => {
@@ -411,6 +411,6 @@ describe('演示交互', () => {
     fireEvent.click(screen.getByRole('button', { name: '详细参考' })); expect(screen.getByRole('dialog')).toHaveAttribute('aria-label', '产品现状补充材料');
   });
   it('无效页码与hash回落到边界', () => {
-    expect(clampPage(-1)).toBe(0); expect(clampPage(99)).toBe(30); expect(pageFromHash('#/invalid')).toBe(0);
+    expect(clampPage(-1)).toBe(0); expect(clampPage(99)).toBe(32); expect(pageFromHash('#/invalid')).toBe(0);
   });
 });

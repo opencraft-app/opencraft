@@ -1,5 +1,5 @@
 {
-  "pages": ["s01", "s02", "s03", "s06", "s07", "insight01", "insight02", "insight03", "insight04", "s15", "app01", "visual01", "s11", "s12", "s13", "s14", "s08", "focus01", "evo01", "evo02", "infra00", "infra01", "infra02", "infra03", "infra04", "infra05", "infra06", "infra07", "evo03", "s21", "s24"],
+  "pages": ["s01", "s02", "s03", "s06", "s07", "insight01", "insight02", "insight03", "insight04", "s15", "app01", "visual01", "s11", "profile01", "s12", "s13", "s14", "s08", "focus01", "evo01", "evo02", "infra00", "infra01", "infra02", "infra03", "infra04", "infra05", "infra06", "infra07", "evo03", "s21", "capacity01", "s24"],
   "supplements": [
     {"id": "recap-background", "source": "../supplements/recap-background.xml", "group": "出圈回顾", "label": "背景与完整时间线"},
     {"id": "s04", "source": "s04.xml", "group": "出圈回顾", "label": "前期账号与公众号截图"},
@@ -10,10 +10,12 @@
     {"id": "s10", "source": "s10.xml", "group": "产品现状", "label": "配置能力、多 Bot 与实验室"},
     {"id": "product-comparison", "source": "../supplements/product-comparison.xml", "group": "产品现状", "label": "友商比较与市场验证重点"},
     {"id": "historical-scale", "source": "../supplements/historical-scale.xml", "group": "产品现状", "label": "10 月 9 日历史规模与统计口径"},
+    {"id": "domestic-profile", "source": "../supplements/domestic-profile.xml", "group": "产品现状", "label": "国内站用户画像原图与统计口径"},
     {"id": "s16", "source": "s16.xml", "group": "产品演进", "label": "基础设施与原架构参考"},
     {"id": "s17", "source": "s17.xml", "group": "产品演进", "label": "完整场景与通用执行能力"},
     {"id": "s18", "source": "s18.xml", "group": "产品演进", "label": "身份与主动性探索"},
     {"id": "s19", "source": "s19.xml", "group": "产品演进", "label": "开放接口与设备接入"},
-    {"id": "s20", "source": "s20.xml", "group": "产品演进", "label": "原文体验截图与视觉方向"}
+    {"id": "s20", "source": "s20.xml", "group": "产品演进", "label": "原文体验截图与视觉方向"},
+    {"id": "capacity-assumptions", "source": "../supplements/capacity-assumptions.xml", "group": "核数规模估算", "label": "完整增长假设与核数估算口径"}
   ]
 }

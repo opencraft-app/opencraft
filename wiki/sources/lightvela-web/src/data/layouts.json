@@ -4348,8 +4348,458 @@
     ]
   },
   {
-    "id": "s12",
+    "id": "profile01",
     "number": 14,
+    "title": "国内站用户画像",
+    "section": "03 产品现状 · 国内站用户画像",
+    "elements": [
+      {
+        "key": "profile01_background_00",
+        "type": "background",
+        "attrs": {
+          "color": "bg-page"
+        }
+      },
+      {
+        "key": "profile01_shape_01",
+        "type": "shape",
+        "attrs": {
+          "type": "line",
+          "x": "40",
+          "y": "26",
+          "width": "1200",
+          "height": "0",
+          "stroke": "border"
+        }
+      },
+      {
+        "key": "profile01_shape_02",
+        "type": "shape",
+        "attrs": {
+          "type": "line",
+          "x": "520",
+          "y": "26",
+          "width": "240",
+          "height": "0",
+          "stroke": "primary",
+          "stroke-width": "3"
+        }
+      },
+      {
+        "key": "profile01_text_03",
+        "type": "text",
+        "attrs": {
+          "x": "40",
+          "y": "36",
+          "width": "1200",
+          "height": "24",
+          "font": "caption",
+          "color": "primary"
+        },
+        "contentKey": "profile01_text_03"
+      },
+      {
+        "key": "profile01_text_04",
+        "type": "text",
+        "attrs": {
+          "x": "40",
+          "y": "77",
+          "width": "1200",
+          "height": "50",
+          "font": "heading",
+          "color": "text-main"
+        },
+        "contentKey": "profile01_text_04"
+      },
+      {
+        "key": "profile01_text_05",
+        "type": "text",
+        "attrs": {
+          "x": "40",
+          "y": "132",
+          "width": "1200",
+          "height": "30",
+          "font": "body",
+          "color": "text-muted"
+        },
+        "contentKey": "profile01_text_05"
+      },
+      {
+        "key": "profile01_shape_06",
+        "type": "shape",
+        "attrs": {
+          "type": "rect",
+          "x": "40",
+          "y": "178",
+          "width": "575",
+          "height": "454",
+          "fill": "bg-surface",
+          "corner-radius": "4"
+        }
+      },
+      {
+        "key": "profile01_shape_07",
+        "type": "shape",
+        "attrs": {
+          "type": "rect",
+          "x": "665",
+          "y": "178",
+          "width": "575",
+          "height": "454",
+          "fill": "bg-surface",
+          "corner-radius": "4"
+        }
+      },
+      {
+        "key": "profile01_text_08",
+        "type": "text",
+        "attrs": {
+          "x": "62",
+          "y": "194",
+          "width": "531",
+          "height": "32",
+          "font": "strong",
+          "size": "22",
+          "color": "primary"
+        },
+        "contentKey": "profile01_text_08"
+      },
+      {
+        "key": "profile01_text_09",
+        "type": "text",
+        "attrs": {
+          "x": "62",
+          "y": "240",
+          "width": "165",
+          "height": "22",
+          "font": "caption",
+          "size": "14",
+          "color": "text-muted"
+        },
+        "contentKey": "profile01_text_09"
+      },
+      {
+        "key": "profile01_text_10",
+        "type": "text",
+        "attrs": {
+          "x": "62",
+          "y": "264",
+          "width": "165",
+          "height": "40",
+          "font": "heading",
+          "size": "32",
+          "color": "text-main"
+        },
+        "contentKey": "profile01_text_10"
+      },
+      {
+        "key": "profile01_text_11",
+        "type": "text",
+        "attrs": {
+          "x": "246",
+          "y": "240",
+          "width": "158",
+          "height": "22",
+          "font": "caption",
+          "size": "14",
+          "color": "text-muted"
+        },
+        "contentKey": "profile01_text_11"
+      },
+      {
+        "key": "profile01_text_12",
+        "type": "text",
+        "attrs": {
+          "x": "246",
+          "y": "264",
+          "width": "158",
+          "height": "40",
+          "font": "heading",
+          "size": "32",
+          "color": "text-main"
+        },
+        "contentKey": "profile01_text_12"
+      },
+      {
+        "key": "profile01_text_13",
+        "type": "text",
+        "attrs": {
+          "x": "427",
+          "y": "240",
+          "width": "166",
+          "height": "22",
+          "font": "caption",
+          "size": "14",
+          "color": "text-muted"
+        },
+        "contentKey": "profile01_text_13"
+      },
+      {
+        "key": "profile01_text_14",
+        "type": "text",
+        "attrs": {
+          "x": "427",
+          "y": "264",
+          "width": "166",
+          "height": "40",
+          "font": "heading",
+          "size": "32",
+          "color": "text-main"
+        },
+        "contentKey": "profile01_text_14"
+      },
+      {
+        "key": "profile01_text_15",
+        "type": "text",
+        "attrs": {
+          "x": "62",
+          "y": "308",
+          "width": "531",
+          "height": "20",
+          "font": "caption",
+          "size": "14",
+          "color": "text-muted"
+        },
+        "contentKey": "profile01_text_15"
+      },
+      {
+        "key": "profile01_verified-age",
+        "type": "chart",
+        "attrs": {
+          "id": "verified-age",
+          "type": "bar",
+          "x": "62",
+          "y": "332",
+          "width": "531",
+          "height": "292",
+          "y-max": "8000",
+          "label-width": "88",
+          "value-width": "132",
+          "value-position": "fixed",
+          "text-size": "14",
+          "value-size": "13"
+        },
+        "contentKey": "profile01_verified-age"
+      },
+      {
+        "key": "profile01_text_17",
+        "type": "text",
+        "attrs": {
+          "x": "687",
+          "y": "194",
+          "width": "531",
+          "height": "32",
+          "font": "strong",
+          "size": "22",
+          "color": "primary"
+        },
+        "contentKey": "profile01_text_17"
+      },
+      {
+        "key": "profile01_text_18",
+        "type": "text",
+        "attrs": {
+          "x": "687",
+          "y": "240",
+          "width": "206",
+          "height": "22",
+          "font": "caption",
+          "size": "14",
+          "color": "text-muted"
+        },
+        "contentKey": "profile01_text_18"
+      },
+      {
+        "key": "profile01_text_19",
+        "type": "text",
+        "attrs": {
+          "x": "687",
+          "y": "264",
+          "width": "206",
+          "height": "40",
+          "font": "heading",
+          "size": "32",
+          "color": "text-main"
+        },
+        "contentKey": "profile01_text_19"
+      },
+      {
+        "key": "profile01_text_20",
+        "type": "text",
+        "attrs": {
+          "x": "902",
+          "y": "240",
+          "width": "180",
+          "height": "22",
+          "font": "caption",
+          "size": "14",
+          "color": "text-muted"
+        },
+        "contentKey": "profile01_text_20"
+      },
+      {
+        "key": "profile01_text_21",
+        "type": "text",
+        "attrs": {
+          "x": "902",
+          "y": "264",
+          "width": "180",
+          "height": "40",
+          "font": "heading",
+          "size": "32",
+          "color": "text-main"
+        },
+        "contentKey": "profile01_text_21"
+      },
+      {
+        "key": "profile01_text_22",
+        "type": "text",
+        "attrs": {
+          "x": "1097",
+          "y": "240",
+          "width": "121",
+          "height": "22",
+          "font": "caption",
+          "size": "14",
+          "color": "text-muted"
+        },
+        "contentKey": "profile01_text_22"
+      },
+      {
+        "key": "profile01_text_23",
+        "type": "text",
+        "attrs": {
+          "x": "1097",
+          "y": "264",
+          "width": "121",
+          "height": "40",
+          "font": "heading",
+          "size": "30",
+          "color": "primary"
+        },
+        "contentKey": "profile01_text_23"
+      },
+      {
+        "key": "profile01_shape_24",
+        "type": "shape",
+        "attrs": {
+          "type": "rect",
+          "x": "687",
+          "y": "310",
+          "width": "12",
+          "height": "12",
+          "fill": "primary",
+          "corner-radius": "2"
+        }
+      },
+      {
+        "key": "profile01_text_25",
+        "type": "text",
+        "attrs": {
+          "x": "706",
+          "y": "307",
+          "width": "215",
+          "height": "20",
+          "font": "caption",
+          "size": "14",
+          "color": "text-muted"
+        },
+        "contentKey": "profile01_text_25"
+      },
+      {
+        "key": "profile01_shape_26",
+        "type": "shape",
+        "attrs": {
+          "type": "rect",
+          "x": "934",
+          "y": "310",
+          "width": "12",
+          "height": "12",
+          "fill": "#B59BF3",
+          "corner-radius": "2"
+        }
+      },
+      {
+        "key": "profile01_text_27",
+        "type": "text",
+        "attrs": {
+          "x": "953",
+          "y": "307",
+          "width": "265",
+          "height": "20",
+          "font": "caption",
+          "size": "14",
+          "color": "text-muted"
+        },
+        "contentKey": "profile01_text_27"
+      },
+      {
+        "key": "profile01_package-usage-age",
+        "type": "chart",
+        "attrs": {
+          "id": "package-usage-age",
+          "type": "bar",
+          "x": "687",
+          "y": "332",
+          "width": "531",
+          "height": "292",
+          "y-max": "50",
+          "label-width": "88",
+          "value-width": "65",
+          "text-size": "14",
+          "value-size": "13",
+          "tick-count": "6",
+          "axis-suffix": "%"
+        },
+        "contentKey": "profile01_package-usage-age"
+      },
+      {
+        "key": "profile01_text_29",
+        "type": "text",
+        "attrs": {
+          "x": "40",
+          "y": "644",
+          "width": "1200",
+          "height": "36",
+          "font": "caption",
+          "size": "12.5",
+          "color": "text-muted",
+          "line-height": "1.35"
+        },
+        "contentKey": "profile01_text_29"
+      },
+      {
+        "key": "profile01_text_30",
+        "type": "text",
+        "attrs": {
+          "x": "40",
+          "y": "684",
+          "width": "1130",
+          "height": "20",
+          "font": "caption",
+          "color": "text-muted"
+        },
+        "contentKey": "profile01_text_30"
+      },
+      {
+        "key": "profile01_text_31",
+        "type": "text",
+        "attrs": {
+          "x": "1180",
+          "y": "684",
+          "width": "60",
+          "height": "20",
+          "font": "caption",
+          "color": "text-muted",
+          "align": "right"
+        },
+        "contentKey": "profile01_text_31"
+      }
+    ]
+  },
+  {
+    "id": "s12",
+    "number": 15,
     "title": "使用频次分化，自动任务贡献大量消息",
     "section": "03 产品现状 · 使用频次与消息结构",
     "elements": [
@@ -4619,7 +5069,7 @@
   },
   {
     "id": "s13",
-    "number": 15,
+    "number": 16,
     "title": "资讯、金融行情与监控聚集高频需求",
     "section": "03 产品现状 · 典型场景",
     "elements": [
@@ -4809,7 +5259,7 @@
   },
   {
     "id": "s14",
-    "number": 16,
+    "number": 17,
     "title": "多数用户保持观察，承接体验需要跟上",
     "section": "03 产品现状 · 用户反馈",
     "elements": [
@@ -5044,7 +5494,7 @@
   },
   {
     "id": "s08",
-    "number": 17,
+    "number": 18,
     "title": "短期关注已经形成，持续使用仍需验证",
     "section": "03 产品现状 · 阶段判断",
     "elements": [
@@ -5386,7 +5836,7 @@
   },
   {
     "id": "focus01",
-    "number": 18,
+    "number": 19,
     "title": "优先服务泛开发者，聚焦云端应用、协作与开放接入",
     "section": "03 产品现状 · 场景选择",
     "elements": [
@@ -5761,7 +6211,7 @@
   },
   {
     "id": "evo01",
-    "number": 19,
+    "number": 20,
     "title": "聚焦泛开发者场景，建设应用、协作与硬件接入",
     "section": "04 产品演进 · 场景重点",
     "elements": [
@@ -6068,7 +6518,7 @@
   },
   {
     "id": "evo02",
-    "number": 20,
+    "number": 21,
     "title": "完善多 Bot、云电脑与硬件连接能力",
     "section": "04 产品演进 · 产品亮点",
     "elements": [
@@ -6376,7 +6826,7 @@
   },
   {
     "id": "infra00",
-    "number": 21,
+    "number": 22,
     "title": "让 Agent 弄坏的只是可替换的部分",
     "section": "04 产品演进 · 基础设施建设",
     "elements": [
@@ -6444,7 +6894,7 @@
   },
   {
     "id": "infra01",
-    "number": 22,
+    "number": 23,
     "title": "现状与风险：Agent 能弄坏整台 VM",
     "section": "04 产品演进 · 基础设施建设",
     "elements": [
@@ -6512,7 +6962,7 @@
   },
   {
     "id": "infra02",
-    "number": 23,
+    "number": 24,
     "title": "缩小破坏范围，坏了能恢复",
     "section": "04 产品演进 · 基础设施建设",
     "elements": [
@@ -6580,7 +7030,7 @@
   },
   {
     "id": "infra03",
-    "number": 24,
+    "number": 25,
     "title": "方案一：单 VM + Sandbox",
     "section": "04 产品演进 · 基础设施建设",
     "elements": [
@@ -6648,7 +7098,7 @@
   },
   {
     "id": "infra04",
-    "number": 25,
+    "number": 26,
     "title": "方案二：大脑与工作台分离",
     "section": "04 产品演进 · 基础设施建设",
     "elements": [
@@ -6716,7 +7166,7 @@
   },
   {
     "id": "infra05",
-    "number": 26,
+    "number": 27,
     "title": "预热：换机恢复，目标最快约 10 秒",
     "section": "04 产品演进 · 基础设施建设",
     "elements": [
@@ -6784,7 +7234,7 @@
   },
   {
     "id": "infra06",
-    "number": 27,
+    "number": 28,
     "title": "两套方案对比：各有取舍",
     "section": "04 产品演进 · 基础设施建设",
     "elements": [
@@ -6852,7 +7302,7 @@
   },
   {
     "id": "infra07",
-    "number": 28,
+    "number": 29,
     "title": "管家 Agent：已跑通 POC",
     "section": "04 产品演进 · 基础设施建设",
     "elements": [
@@ -6920,7 +7370,7 @@
   },
   {
     "id": "evo03",
-    "number": 29,
+    "number": 30,
     "title": "持续优化产品交互，完善角色识别与任务反馈",
     "section": "04 产品演进 · 体验升级",
     "elements": [
@@ -7250,7 +7700,7 @@
   },
   {
     "id": "s21",
-    "number": 30,
+    "number": 31,
     "title": "坚持用户路线，连接传播、使用与留存",
     "section": "05 增长与运营 · 坚持用户路线",
     "elements": [
@@ -7555,8 +8005,382 @@
     ]
   },
   {
+    "id": "capacity01",
+    "number": 32,
+    "title": "LightVela 核数规模估算",
+    "section": "末尾补充 · 核数规模估算",
+    "elements": [
+      {
+        "key": "capacity01_background_00",
+        "type": "background",
+        "attrs": {
+          "color": "bg-page"
+        }
+      },
+      {
+        "key": "capacity01_shape_01",
+        "type": "shape",
+        "attrs": {
+          "type": "line",
+          "x": "40",
+          "y": "26",
+          "width": "1200",
+          "height": "0",
+          "stroke": "border"
+        }
+      },
+      {
+        "key": "capacity01_shape_02",
+        "type": "shape",
+        "attrs": {
+          "type": "line",
+          "x": "1000",
+          "y": "26",
+          "width": "240",
+          "height": "0",
+          "stroke": "primary",
+          "stroke-width": "3"
+        }
+      },
+      {
+        "key": "capacity01_text_03",
+        "type": "text",
+        "attrs": {
+          "x": "40",
+          "y": "36",
+          "width": "1040",
+          "height": "24",
+          "font": "caption",
+          "color": "primary"
+        },
+        "contentKey": "capacity01_text_03"
+      },
+      {
+        "key": "capacity01_text_04",
+        "type": "text",
+        "attrs": {
+          "x": "1120",
+          "y": "37",
+          "width": "120",
+          "height": "24",
+          "font": "caption",
+          "color": "primary",
+          "align": "right"
+        },
+        "contentKey": "capacity01_text_04"
+      },
+      {
+        "key": "capacity01_text_05",
+        "type": "text",
+        "attrs": {
+          "x": "40",
+          "y": "77",
+          "width": "1200",
+          "height": "50",
+          "font": "heading",
+          "color": "text-main"
+        },
+        "contentKey": "capacity01_text_05"
+      },
+      {
+        "key": "capacity01_text_06",
+        "type": "text",
+        "attrs": {
+          "x": "40",
+          "y": "132",
+          "width": "1200",
+          "height": "30",
+          "font": "body",
+          "color": "text-muted"
+        },
+        "contentKey": "capacity01_text_06"
+      },
+      {
+        "key": "capacity01_shape_07",
+        "type": "shape",
+        "attrs": {
+          "type": "rect",
+          "x": "40",
+          "y": "178",
+          "width": "584",
+          "height": "96",
+          "fill": "bg-surface",
+          "corner-radius": "4"
+        }
+      },
+      {
+        "key": "capacity01_shape_08",
+        "type": "shape",
+        "attrs": {
+          "type": "rect",
+          "x": "656",
+          "y": "178",
+          "width": "584",
+          "height": "96",
+          "fill": "chart-light",
+          "corner-radius": "4"
+        }
+      },
+      {
+        "key": "capacity01_text_09",
+        "type": "text",
+        "attrs": {
+          "x": "62",
+          "y": "192",
+          "width": "300",
+          "height": "24",
+          "font": "body",
+          "size": "16",
+          "color": "text-main"
+        },
+        "contentKey": "capacity01_text_09"
+      },
+      {
+        "key": "capacity01_text_10",
+        "type": "text",
+        "attrs": {
+          "x": "62",
+          "y": "226",
+          "width": "535",
+          "height": "39",
+          "font": "heading",
+          "size": "30",
+          "color": "primary"
+        },
+        "contentKey": "capacity01_text_10"
+      },
+      {
+        "key": "capacity01_text_11",
+        "type": "text",
+        "attrs": {
+          "x": "678",
+          "y": "192",
+          "width": "300",
+          "height": "24",
+          "font": "body",
+          "size": "16",
+          "color": "text-main"
+        },
+        "contentKey": "capacity01_text_11"
+      },
+      {
+        "key": "capacity01_text_12",
+        "type": "text",
+        "attrs": {
+          "x": "678",
+          "y": "226",
+          "width": "535",
+          "height": "39",
+          "font": "heading",
+          "size": "30",
+          "color": "primary"
+        },
+        "contentKey": "capacity01_text_12"
+      },
+      {
+        "key": "capacity01_capacity-forecast",
+        "type": "table",
+        "attrs": {
+          "id": "capacity-forecast",
+          "x": "40",
+          "y": "290",
+          "width": "1200",
+          "height": "200",
+          "columns": "3.4,2.6,2.6,3.4",
+          "rows": "36,41,41,41,41",
+          "font": "body",
+          "size": "17",
+          "color": "text-main",
+          "align": "left",
+          "padding": "7 16",
+          "header-fill": "bg-surface",
+          "line-height": "1.2"
+        },
+        "contentKey": "capacity01_capacity-forecast"
+      },
+      {
+        "key": "capacity01_text_14",
+        "type": "text",
+        "attrs": {
+          "x": "40",
+          "y": "510",
+          "width": "385",
+          "height": "25",
+          "font": "strong",
+          "size": "17",
+          "color": "primary"
+        },
+        "contentKey": "capacity01_text_14"
+      },
+      {
+        "key": "capacity01_text_15",
+        "type": "text",
+        "attrs": {
+          "x": "40",
+          "y": "542",
+          "width": "385",
+          "height": "45",
+          "font": "body",
+          "size": "14",
+          "color": "text-main",
+          "line-height": "1.45"
+        },
+        "contentKey": "capacity01_text_15"
+      },
+      {
+        "key": "capacity01_shape_16",
+        "type": "shape",
+        "attrs": {
+          "type": "line",
+          "x": "445",
+          "y": "510",
+          "width": "0",
+          "height": "73",
+          "stroke": "border"
+        }
+      },
+      {
+        "key": "capacity01_text_17",
+        "type": "text",
+        "attrs": {
+          "x": "465",
+          "y": "510",
+          "width": "375",
+          "height": "25",
+          "font": "strong",
+          "size": "17",
+          "color": "primary"
+        },
+        "contentKey": "capacity01_text_17"
+      },
+      {
+        "key": "capacity01_text_18",
+        "type": "text",
+        "attrs": {
+          "x": "465",
+          "y": "542",
+          "width": "375",
+          "height": "45",
+          "font": "body",
+          "size": "14",
+          "color": "text-main",
+          "line-height": "1.45"
+        },
+        "contentKey": "capacity01_text_18"
+      },
+      {
+        "key": "capacity01_shape_19",
+        "type": "shape",
+        "attrs": {
+          "type": "line",
+          "x": "860",
+          "y": "510",
+          "width": "0",
+          "height": "73",
+          "stroke": "border"
+        }
+      },
+      {
+        "key": "capacity01_text_20",
+        "type": "text",
+        "attrs": {
+          "x": "880",
+          "y": "510",
+          "width": "360",
+          "height": "25",
+          "font": "strong",
+          "size": "17",
+          "color": "primary"
+        },
+        "contentKey": "capacity01_text_20"
+      },
+      {
+        "key": "capacity01_text_21",
+        "type": "text",
+        "attrs": {
+          "x": "880",
+          "y": "542",
+          "width": "360",
+          "height": "45",
+          "font": "body",
+          "size": "14",
+          "color": "text-main",
+          "line-height": "1.45"
+        },
+        "contentKey": "capacity01_text_21"
+      },
+      {
+        "key": "capacity01_shape_22",
+        "type": "shape",
+        "attrs": {
+          "type": "rect",
+          "x": "40",
+          "y": "604",
+          "width": "1200",
+          "height": "60",
+          "fill": "bg-surface",
+          "corner-radius": "4"
+        }
+      },
+      {
+        "key": "capacity01_text_23",
+        "type": "text",
+        "attrs": {
+          "x": "54",
+          "y": "611",
+          "width": "1172",
+          "height": "20",
+          "font": "body",
+          "size": "13",
+          "color": "text-main"
+        },
+        "contentKey": "capacity01_text_23"
+      },
+      {
+        "key": "capacity01_text_24",
+        "type": "text",
+        "attrs": {
+          "x": "54",
+          "y": "637",
+          "width": "1172",
+          "height": "18",
+          "font": "caption",
+          "color": "text-muted"
+        },
+        "contentKey": "capacity01_text_24"
+      },
+      {
+        "key": "capacity01_text_25",
+        "type": "text",
+        "attrs": {
+          "x": "40",
+          "y": "684",
+          "width": "1130",
+          "height": "20",
+          "font": "caption",
+          "color": "text-muted"
+        },
+        "contentKey": "capacity01_text_25"
+      },
+      {
+        "key": "capacity01_text_26",
+        "type": "text",
+        "attrs": {
+          "x": "1180",
+          "y": "684",
+          "width": "60",
+          "height": "20",
+          "font": "caption",
+          "color": "text-muted",
+          "align": "right"
+        },
+        "contentKey": "capacity01_text_26"
+      }
+    ]
+  },
+  {
     "id": "s24",
-    "number": 31,
+    "number": 33,
     "title": "把高频场景做稳，把用户留下",
     "section": "LightVela · 下一阶段",
     "elements": [

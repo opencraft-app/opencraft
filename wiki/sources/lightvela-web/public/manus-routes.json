@@ -57,6 +57,10 @@
       "title": "国内站注册更多，Pass 开通率低于国际站"
     },
     {
+      "path": "/#/profile01",
+      "title": "国内站用户画像"
+    },
+    {
       "path": "/#/s12",
       "title": "使用频次分化，自动任务贡献大量消息"
     },
@@ -125,6 +129,10 @@
       "title": "坚持用户路线，连接传播、使用与留存"
     },
     {
+      "path": "/#/capacity01",
+      "title": "LightVela 核数规模估算"
+    },
+    {
       "path": "/#/s24",
       "title": "把高频场景做稳，把用户留下"
     },
@@ -165,6 +173,10 @@
       "title": "10 月 9 日历史规模与统计口径"
     },
     {
+      "path": "/#/supplements/domestic-profile",
+      "title": "国内站用户画像原图与统计口径"
+    },
+    {
       "path": "/#/supplements/s16",
       "title": "基础设施与原架构参考"
     },
@@ -183,6 +195,10 @@
     {
       "path": "/#/supplements/s20",
       "title": "原文体验截图与视觉方向"
+    },
+    {
+      "path": "/#/supplements/capacity-assumptions",
+      "title": "完整增长假设与核数估算口径"
     },
     {
       "path": "/#/s04",
