@@ -1,3 +1,4 @@
+import type { MascotLanding } from './home-mascot-landing';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { CAST, heroPose, clamp, smooth } from './home-scroll-cast-state';
@@ -32,13 +33,13 @@ function heroFriendLabel(locale: string, index: number): string {
   if (lower.startsWith('ko')) return `${n}번째 Hermes에게 손 흔들어 인사하기`;
   return `Wave hello to Hermes friend ${n}`;
 }
-export function mountHeroArtwork(root: HTMLElement): () => void {
+export function mountHeroArtwork(root: HTMLElement, landing?: MascotLanding): () => void {
   const locale = root.dataset.locale || document.documentElement.lang || 'en-US';
   const hero = root.querySelector<HTMLElement>('.hero');
   if (!hero) return () => {};
   const heroElement: HTMLElement = hero;
   const frame = hero.querySelector<HTMLElement>('.hero__frame');
-  const featuresHeading = root.querySelector<HTMLElement>('.about__head');
+  const featuresHeading = landing?.element ?? root.querySelector<HTMLElement>('.about__head');
   const navigation = root.querySelector<HTMLElement>('.nav');
   const gripEnd = () => Math.max(280, Math.min(window.innerHeight * .90, heroElement.offsetHeight - window.innerHeight * .65));
   const exitEnd = () => {
@@ -47,7 +48,7 @@ export function mountHeroArtwork(root: HTMLElement): () => void {
     for (let element: HTMLElement | null = featuresHeading; element; element = element.offsetParent as HTMLElement | null) {
       top += element.offsetTop;
     }
-    return Math.max(gripEnd(), top - (navigation?.offsetHeight ?? 64) - 32);
+    return Math.max(gripEnd(), landing ? top + landing.element.offsetHeight * .7 - window.innerHeight * .65 : top - (navigation?.offsetHeight ?? 64) - 32);
   };
   gsap.registerPlugin(ScrollTrigger);
   const layer = document.createElement('div');
@@ -111,7 +112,7 @@ export function mountHeroArtwork(root: HTMLElement): () => void {
       gsap.set(life, { y: 0 });
     }
     async function greet() {
-      if (reduce.matches || progress > .22 || disposed || requested) return;
+      if (reduce.matches || document.hidden || progress > .22 || disposed || requested) return;
       requested = true;
       await prepared;
       if (!requested || disposed || reduce.matches || progress > .22 || !ready) { requested = false; return; }
@@ -135,7 +136,7 @@ export function mountHeroArtwork(root: HTMLElement): () => void {
     button.addEventListener('focus', enter);
     button.addEventListener('blur', endWave);
     button.addEventListener('click', click);
-    return { button, life, showScrollFrame, endWave, stop: () => {
+    return { button, life, showScrollFrame, endWave, greet, prepared, stop: () => {
       endWave();
       button.removeEventListener('pointerenter', enter); button.removeEventListener('pointerleave', leave);
       button.removeEventListener('focus', enter); button.removeEventListener('blur', endWave);
@@ -144,6 +145,17 @@ export function mountHeroArtwork(root: HTMLElement): () => void {
 
   });
   document.body.append(layer);
+  const introductionTimers: Array<ReturnType<typeof setTimeout>> = [];
+  void Promise.all(actors.map(actor => actor.prepared)).then(() => {
+    if (disposed || reduce.matches) return;
+    actors.forEach((actor, index) => {
+      introductionTimers.push(setTimeout(() => {
+        if (disposed || document.hidden || progress > .22 || reduce.matches) return;
+        void actor.greet();
+        introductionTimers.push(setTimeout(actor.endWave, 1450));
+      }, 700 + index * 1600));
+    });
+  });
   let lastEdge = { top: NaN, left: NaN };
   function syncFrameEntrance() {
     if (!frame) return;
@@ -203,6 +215,12 @@ export function mountHeroArtwork(root: HTMLElement): () => void {
     const end = exitEnd();
     const grip = gripEnd();
     const scrollPosition = progress * end;
+    const landingRect = landing?.element.getBoundingClientRect();
+    const contentLeft = root.querySelector<HTMLElement>('.about__head')?.getBoundingClientRect().left ?? 24;
+    const reachedLanding = !!landing && progress >= .92 && landing.ready() && !mobile && !reduce.matches;
+    if (reachedLanding) landing!.land();
+    else if (landing && progress < .7) landing.reset();
+    const videoOwnsCast = !!landing && landing.active() && !mobile && !reduce.matches;
     // All four friends perch over the chat window's inner border, with one just
     // spilling past its left edge rather than floating in the page margin.
     // Tuck the entire group inside the chat window, keeping their overlap.
@@ -217,7 +235,7 @@ export function mountHeroArtwork(root: HTMLElement): () => void {
       const pose = heroPose(progress, delay);
       // The narrow layout needs the tabs and chat header clear of decoration.
       // Reduced motion keeps the friends perched instead of letting them fall.
-      const shown = !mobile && (reduce.matches || pose.visible);
+      const shown = !mobile && !videoOwnsCast && (reduce.matches || pose.visible) && (!landing || reduce.matches || contentLeft >= 140 || progress < .22);
       button.hidden = !shown;
 
       if (!shown) { endWave(); return; }
@@ -243,7 +261,7 @@ export function mountHeroArtwork(root: HTMLElement): () => void {
       // the page moving up carries them up with it. Only a small wobble plays
       // in place. Leaving the edge starts once they let go.
       const releaseAt = grip * (delay + (1 - delay) * .38);
-      const slip = Math.pow(clamp((scrollPosition - releaseAt) / Math.max(1, end - releaseAt)), 1.5);
+      const slip = Math.pow(clamp((scrollPosition - releaseAt) / Math.max(1, end * (landing ? .92 : 1) - releaseAt)), 1.5);
       const struggle = Math.sin(local * Math.PI * 16 + i) * Math.sin(Math.PI * clamp((local - .16) / .30));
       const fall = reduce.matches ? 0 : slip;
       const wobble = reduce.matches ? 0 : struggle * (1 - fall);
@@ -251,9 +269,15 @@ export function mountHeroArtwork(root: HTMLElement): () => void {
       const fallDistance = Math.max(0, window.innerHeight + size * .25 - releaseTop);
       const scrollCompensation = reduce.matches ? 0 : Math.max(0, scrollPosition - releaseAt);
       const drift = Math.min(180 + i * 55, Math.max(0, clusterStart + layout.left - window.scrollX - 16));
-      gsap.set(button, { y: scrollCompensation + fall * fallDistance - wobble * 2.5,
+      const landingMediaRect = landing?.element.querySelector<HTMLElement>('.home-mascot-landing__media')?.getBoundingClientRect();
+      const landingTop = landingMediaRect ? landingMediaRect.top + window.scrollY : 0;
+      const startTop = docTop - size * layout.crop / 512;
+      const marginLane = Math.max(0, contentLeft - size - 22 - i * 8);
+      const laneLeft = landingRect ? (landingMediaRect?.left ?? 0) + [63, 160.5, 256.5, 366][i]! - size * .5 : Math.max(0, contentLeft - size - 22 - i * 8);
+      gsap.set(button, landingRect ? { y: fall * (landingTop - startTop) - wobble * 2.5,
+        x: smooth(fall / .12) * (marginLane - clusterStart - layout.left) + smooth((fall - .20) / .60) * (laneLeft - marginLane) + wobble * 2 } : { y: scrollCompensation + fall * fallDistance - wobble * 2.5,
         x: -fall * drift + wobble * 2 });
-      gsap.set(life, { rotation: [9, -3, 5, -7, -8, 3, -5][i]! + spec.side * fall * 32 + wobble * 1.3 });
+      gsap.set(life, { rotation: landingRect ? [9, -3, 5, -7][i]! * (1 - fall) + [0, 0, 0, 180][i]! * fall + wobble * 1.3 : [9, -3, 5, -7, -8, 3, -5][i]! + spec.side * fall * 32 + wobble * 1.3 });
       // Each friend hides its body below the border until it lets go itself,
       // so the ones still holding on never spill over the tabs or search box.
       const release = reduce.matches ? 0 : smooth((local - .36) / .1);
@@ -277,14 +301,16 @@ export function mountHeroArtwork(root: HTMLElement): () => void {
   });
   // Keep document-coordinate anchors current even outside the trigger range.
   const follow = () => draw();
+  root.addEventListener('mascotlandingready', draw);
   window.addEventListener('scroll', follow, { passive: true });
   document.addEventListener('visibilitychange', draw);
   window.addEventListener('resize', draw);
   reduce.addEventListener('change', draw);
   draw();
-  return () => { disposed = true; trigger.kill(); frameObserver?.disconnect();
+  return () => { disposed = true; introductionTimers.forEach(clearTimeout); trigger.kill(); frameObserver?.disconnect();
     heroVisibility?.disconnect(); stopTicker();
     actors.forEach(actor => actor.stop()); layer.remove();
+    root.removeEventListener('mascotlandingready', draw);
     window.removeEventListener('scroll', follow);
     document.removeEventListener('visibilitychange', draw);
     window.removeEventListener('resize', draw); reduce.removeEventListener('change', draw); };

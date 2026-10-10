@@ -15,7 +15,7 @@
  *   - 已创建态：点「创建」后自动进入
  */
 
-import { ChevronLeft, ChevronRight, HelpCircle, RefreshCw } from "lucide-react";
+import { ChevronLeft, ChevronRight, HelpCircle, RefreshCw, X } from "lucide-react";
 
 import {
   Select,
@@ -271,6 +271,7 @@ export const AgentOnboardingPanel = ({
   initialName,
   cloneOptions,
   onSetupStart,
+  onCancel,
 }: {
   /**
    * 目标 bot。订阅开通 instance 时后端已自带一个 default bot，
@@ -301,6 +302,8 @@ export const AgentOnboardingPanel = ({
    * 置 false，进而卸载本面板 —— 用户点完模板瞬间被弹回表单，配置一步都没跑。
    */
   onSetupStart?: () => void;
+  /** Optional exit for additional creation, available only before setup starts. */
+  onCancel?: () => void;
   /**
    * 创建 bot 本身（多 bot 入口用）。
    *
@@ -982,7 +985,13 @@ export const AgentOnboardingPanel = ({
   }
 
   return (
-    <div className="mx-auto flex min-w-0 max-w-[720px] flex-col py-6">
+    <div className="relative mx-auto flex min-w-0 max-w-[720px] flex-col py-6">
+      {onCancel ? (
+        <button type="button" onClick={onCancel} aria-label={t("关闭")}
+          className="absolute right-0 top-0 inline-flex h-11 w-11 items-center justify-center rounded-lg text-black/45 transition-colors hover:bg-black/5 hover:text-black/75 focus-visible:outline-2 focus-visible:outline-offset-2">
+          <X className="h-5 w-5" aria-hidden="true" />
+        </button>
+      ) : null}
       {partialFailureCount > 0 ? (
         <p className="mb-4 rounded-[3px] border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
           {t("有 {{count}} 项配置未完成，可在技能 / 定时任务页面重试", { count: partialFailureCount })}

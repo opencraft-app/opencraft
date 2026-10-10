@@ -55,7 +55,7 @@ vi.mock("@/lib/region", async () => {
 vi.mock("@/observability/datong-tracker", () => ({
   trackDatongClick: trackDatongClickMock,
 }));
-vi.mock("@next-site/language-switcher", () => ({ renderNextLanguageSwitcher: () => null }));
+vi.mock("@next-site/language-switcher", () => ({ renderNextLanguageSwitcher: () => <button aria-label="Choose language">Language</button> }));
 
 import { PublicHeaderAuthIsland } from "@next-site/public-header-auth-island";
 import { REOPEN_PRICING_MODAL_EVENT } from "@next-site/use-post-login-redirect";
@@ -338,3 +338,10 @@ describe("PublicHeaderAuthIsland", () => {
     }
   });
 });
+
+ it("keeps language switching available while authentication is resolving", () => {
+  runtimeMock.authReady = false;
+  render(<PublicHeaderAuthIsland appearance="immersive" locale="zh-CN" showLanguageSwitcher />);
+  expect(screen.getByRole("button", { name: "Choose language" })).toBeTruthy();
+  expect(screen.queryByTestId("header-avatar")).toBeNull();
+ });

@@ -304,6 +304,18 @@ describe("create bot: all entry paths", () => {
     expect(addBot).not.toHaveBeenCalled();
   });
 
+  it("allows additional creation to close without creating a Bot and preserves the current Bot", async () => {
+    bots = [buildBot("ins-main", { name: "主 Bot" })];
+    render(page("?bot=ins-main"));
+    fireEvent.click(await screen.findByRole("button", { name: "新建 Bot" }));
+    await waitForForm();
+    expect(screen.getByRole("button", { name: "高级" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "换一批" })).not.toBeInTheDocument());
+    expect(addBot).not.toHaveBeenCalled();
+    expect(navigateMock).toHaveBeenCalledWith("/agents/chat?bot=ins-main", { replace: true });
+  });
+
   it("B. multi-bot: creating a second bot keeps the panel mounted", async () => {
     bots = [buildBot("ins-main", { name: "主 Bot" })];
     render(page("?bot=ins-main"));

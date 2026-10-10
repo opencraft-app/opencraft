@@ -161,6 +161,8 @@ describe("post-subscribe naming intent (/agents?create=1)", () => {
       expect(screen.getByRole("button", { name: "换一批" })).toBeInTheDocument();
     });
     expect(screen.queryByRole("heading", { name: "创建 Bot" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "关闭" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "高级" })).not.toBeInTheDocument();
     // 首个创建不自动建 bot（等用户在引导页点「创建」才建）
     expect(addBot).not.toHaveBeenCalled();
     // 消费一次即清掉 create 参数，避免刷新/取消后重复自动弹出
