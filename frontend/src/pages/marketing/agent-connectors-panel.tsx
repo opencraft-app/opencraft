@@ -391,6 +391,7 @@ export function ConnectorsPanel({
         const cleanup = () => {
           window.removeEventListener("message", handleMessage);
           window.clearInterval(timer);
+          window.clearTimeout(hardDeadline);
         };
         const finish = (fn: () => void) => {
           if (settled) return;
@@ -448,6 +449,12 @@ export function ConnectorsPanel({
           void complete();
         }
         window.addEventListener("message", handleMessage);
+        // 硬性 deadline 兜底：interval 轮询/abandon 内部都依赖 fetch（虽已加
+        // 15s 超时，仍可能被极端环境拖住）——此处独立 setTimeout 强制 settle，
+        // 保证 Promise 必然结束 → busy 必然释放，卡片不会永久卡在「授权中」。
+        const hardDeadline = window.setTimeout(() => {
+          finish(() => reject(new Error(t("授权等待超时，请重试"))));
+        }, OAUTH_TIMEOUT_MS + 15_000);
         const timer = window.setInterval(() => {
           if (Date.now() - startedAt >= OAUTH_TIMEOUT_MS) {
             // 超时：已进入绑定/下发阶段（binding）= 授权已成功，保留 flow 不
@@ -478,9 +485,17 @@ export function ConnectorsPanel({
       const busyKey = connectorKey;
       if (!claimBusy(busyKey, "authorize")) return;
       setError(null);
+      // 预开窗：window.open 必须在用户手势的同步上下文内调用——await 两个网络
+      // 请求（fetchToken/startOAuth）后浏览器 transient activation 已失效，
+      // 弹窗会被拦截（时灵时不灵的原因）。先同步开 about:blank（必不被拦），
+      // 拿到 authorizeUrl 再导航；失败路径关掉空白窗不残留。
+      const popup = window.open("about:blank", "_blank");
       try {
         const token = launchTokenRef.current ?? (await fetchToken());
-        if (!token) return;
+        if (!token) {
+          popup?.close();
+          return;
+        }
         // 取消上一条未完成的 flow（双击/换连接器连点）
         const previous = pendingFlowRef.current;
         if (previous) {
@@ -488,8 +503,12 @@ export function ConnectorsPanel({
         }
         const flow = await startConnectorOAuth(token, instanceId, connectorKey, window.location.href);
         pendingFlowRef.current = { connectorKey, flowId: flow.flowId };
-        const popup = window.open(flow.authorizeUrl, "_blank");
+        // popup 为 null 说明浏览器拦截了预开窗（禁弹窗模式）；已关则说明用户在
+        // 等待期手动关掉——两种情况都无法继续授权，报错引导重试
         if (!popup) throw new Error(t("授权窗口打开失败，请允许浏览器弹窗后重试"));
+        // about:blank 与本页同源可安全导航；closed 的窗导航无效，跳过不报错
+        // （waitForOAuth 的关窗宽限逻辑会正确处理这种「关窗」场景）
+        if (!popup.closed) popup.location.href = flow.authorizeUrl;
         popupRef.current = popup;
         const completion = await waitForOAuth(connectorKey, flow.flowId, popup);
         pendingFlowRef.current = null;
@@ -500,6 +519,9 @@ export function ConnectorsPanel({
         await refresh();
       } catch (err) {
         pendingFlowRef.current = null;
+        // 已导航到授权页的弹窗保留（用户可能还停留在授权流程上）；
+        // 仅未导航成功的 about:blank 空白窗关掉，不残留垃圾标签页
+        if (popupRef.current !== popup) popup?.close();
         popupRef.current = null;
         const msg = err instanceof Error ? err.message : String(err);
         setError(msg);
@@ -524,9 +546,17 @@ export function ConnectorsPanel({
       // 将卡片切到「正在配置当前实例」+ 按钮「配置中...」spinner。
       if (!claimBusy(busyKey, "upsert")) return;
       setError(null);
+      // 预开窗：authUrl 要等 enable/finishOperation 网络响应才有，届时已脱离
+      // 用户手势上下文（window.open 会被浏览器拦截）——先同步开 about:blank，
+      // 有 authUrl 再导航，无 authUrl 或失败则关掉，不残留空白标签页
+      const popup = window.open("about:blank", "_blank");
+      let navigated = false;
       try {
         const token = launchTokenRef.current ?? (await fetchToken());
-        if (!token) return;
+        if (!token) {
+          popup?.close();
+          return;
+        }
         const result = await enableBuiltinConnector(token, instanceId, connectorKey);
         const report = await finishOperation(result);
         if (report?.authUrl) {
@@ -534,7 +564,10 @@ export function ConnectorsPanel({
           // 对齐 AgentChat setBusyAction(busy, 'authorize')。
           setBusy((prev) => ({ ...prev, [busyKey]: { action: "authorize", active: true } }));
           busyRef.current[busyKey] = { action: "authorize", active: true };
-          window.open(report.authUrl, "_blank");
+          // popup 为 null 说明浏览器拦截了预开窗；closed 则由后续轮询自然结束
+          if (!popup) throw new Error(t("授权窗口打开失败，请允许浏览器弹窗后重试"));
+          if (!popup.closed) popup.location.href = report.authUrl;
+          navigated = true;
           for (let attempt = 0; attempt < LOCAL_CLI_AUTH_MAX_POLL; attempt += 1) {
             await new Promise((r) => setTimeout(r, LOCAL_CLI_AUTH_POLL_INTERVAL_MS));
             if (!mountedRef.current) return;
@@ -544,9 +577,13 @@ export function ConnectorsPanel({
               break;
             }
           }
+        } else {
+          // enable 响应不带 authUrl（无需浏览器授权），关掉预开的空白窗
+          popup?.close();
         }
         await refresh();
       } catch (err) {
+        if (!navigated) popup?.close();
         const msg = err instanceof Error ? err.message : String(err);
         setError(msg);
         message.error({ content: msg, duration: 4000 });

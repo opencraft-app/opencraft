@@ -284,7 +284,7 @@ describe("ConnectorsPanel 操作", () => {
       });
       // 弹窗关闭（closed=true）：关窗 ≠ 失败——complete 一直 pending 时，
       // 宽限窗口（10s）内不 cancel，超窗才 cancel 兜底
-      vi.stubGlobal("open", vi.fn(() => ({ closed: true }) as unknown as Window));
+      vi.stubGlobal("open", vi.fn(() => ({ closed: true, location: { href: "" } }) as unknown as Window));
       vi.mocked(client.startConnectorOAuth).mockResolvedValue({
         authorizeUrl: "https://oauth.example.com/auth",
         state: "s1",
@@ -336,7 +336,7 @@ describe("ConnectorsPanel 操作", () => {
       });
       // 用户授权成功、回调页自动关闭，postMessage 丢失：complete 先 pending
       // 后 binding，最终 completed → 静默 resolve，全程不 cancel
-      vi.stubGlobal("open", vi.fn(() => ({ closed: true }) as unknown as Window));
+      vi.stubGlobal("open", vi.fn(() => ({ closed: true, location: { href: "" } }) as unknown as Window));
       vi.mocked(client.startConnectorOAuth).mockResolvedValue({
         authorizeUrl: "https://oauth.example.com/auth",
         state: "s1",
