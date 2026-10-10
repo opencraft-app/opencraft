@@ -14,8 +14,8 @@ export type ChangelogEntry = {
   title: string;
   desc?: string;
   badge?: string;
-  /** 卡片视觉样式：lobster=上线图 / multiBot=创建多个 Bot 图 / planUpgrade=套餐升配页图 / cloudStorage=云存储图 / instanceStorage=实例存储图 / skillPackages=技能包图 / skillsRevamp=技能页面图 / skillPackagesRevamp=技能包页面图 / diagnosticsCenter=诊断中心图 / achievements=成就图 / wecom=企业微信通道图 / dingtalk=钉钉通道图 / personaUpload=上传人设文件图 / schedule=定时任务图 / zeroTokenScheduledTasks=0 Token 定时任务图 / automationSkill=定时任务调用技能图 / automationUpstream=定时任务上游任务图 / chat=网页对话图 / memory=记忆页图 / skillsBulkInstall=技能批量安装图 / automationTemplates=定时任务模板图 / qqGroupMentions=QQ 群聊 @ 机器人图 / traditionalChinese=繁体中文图 / deepseekHarness=DeepSeek Harness 图 / workbench=工作台图 / none=无图 */
-  visual: "lobster" | "multiBot" | "planUpgrade" | "cloudStorage" | "instanceStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "advancedSettings" | "deepseekHarness" | "achievements" | "wecom" | "dingtalk" | "personaUpload" | "soul" | "schedule" | "zeroTokenScheduledTasks" | "automationSkill" | "automationUpstream" | "chat" | "memory" | "skillsBulkInstall" | "automationTemplates" | "qqGroupMentions" | "traditionalChinese" | "skill-package" | "workbench" | "none";
+  /** 卡片视觉样式：lobster=上线图 / multiBot=创建多个 Bot 图 / planUpgrade=套餐升配页图 / cloudStorage=云存储图 / instanceStorage=实例存储图 / skillPackages=技能包图 / skillsRevamp=技能页面图 / skillPackagesRevamp=技能包页面图 / diagnosticsCenter=诊断中心图 / achievements=成就图 / wecom=企业微信通道图 / dingtalk=钉钉通道图 / personaUpload=上传人设文件图 / schedule=定时任务图 / zeroTokenScheduledTasks=0 Token 定时任务图 / automationSkill=定时任务调用技能图 / automationUpstream=定时任务上游任务图 / chat=网页对话图 / memory=记忆页图 / skillsBulkInstall=技能批量安装图 / automationTemplates=定时任务模板图 / qqGroupMentions=QQ 群聊 @ 机器人图 / traditionalChinese=繁体中文图 / malayLanguage=马来语首页图 / deepseekHarness=DeepSeek Harness 图 / workbench=工作台图 / none=无图 */
+  visual: "lobster" | "multiBot" | "planUpgrade" | "cloudStorage" | "instanceStorage" | "skillPackages" | "skillsRevamp" | "skillPackagesRevamp" | "diagnosticsCenter" | "advancedSettings" | "deepseekHarness" | "achievements" | "wecom" | "dingtalk" | "personaUpload" | "soul" | "schedule" | "zeroTokenScheduledTasks" | "automationSkill" | "automationUpstream" | "chat" | "memory" | "skillsBulkInstall" | "automationTemplates" | "qqGroupMentions" | "traditionalChinese" | "malayLanguage" | "skill-package" | "workbench" | "none";
 };
 
 export type ChangelogMonthGroup = {
@@ -74,9 +74,9 @@ export function buildChangelogGroups(t: TranslateFn, locale: string): ChangelogM
         ...(isGlobal
           ? [{
               id: "malay-language",
-              title: t("LightVela 支持马来语"),
-              desc: t("现在可以使用马来语浏览 LightVela 国际站的公开页面、产品界面、产品文档和账号流程。"),
-              visual: "none" as const,
+              title: t("LightVela 国际站支持马来语"),
+              desc: t("现在可以使用马来语浏览 LightVela 国际站的公开页面、产品界面和产品文档。"),
+              visual: "malayLanguage" as const,
             }]
           : []),
         {

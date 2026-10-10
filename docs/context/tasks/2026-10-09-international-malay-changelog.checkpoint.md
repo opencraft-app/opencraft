@@ -7,9 +7,9 @@ owner: wisp/mono2-maintainers
 authority: primary
 source_of_truth: ["docs/context/tasks/2026-10-09-international-malay-changelog.md"]
 status: candidate
-reviewed_at: 2026-10-09
+reviewed_at: 2026-10-10
 review_due: 2026-11-09
-revision: 1.0.0
+revision: 1.1.0
 precedence: task
 derived: false
 ---
@@ -17,18 +17,19 @@ derived: false
 # 国际站马来语产品动态 Checkpoint
 
 ## stage
-- Local implementation and required focused validation complete; user requested MR submission.
+- Updating MR !5140 with the user's revised Chinese copy and a live Malay homepage screenshot.
 
 ## verified
 - October 2026 international changelog contains the Malay announcement; domestic branch does not include it.
-- English and Malay render test passed (13/13 test file); international build passed and generated Malay HTML contains the announcement.
-- `pnpm check` passed with 0 new TypeScript diagnostics; documentation validation passed.
+- Chinese, English and Malay render test passed (13/13 test file); international build passed and generated Malay HTML contains the revised announcement and screenshot asset.
+- `pnpm check` passed with 0 new TypeScript diagnostics; documentation validation passed with 0 broken first-party links.
 - Context catalog validation reports no errors in this task's files but fails on historical task documents.
+- Live international Malay homepage screenshot captured and converted to WebP at 1440×900.
 
 ## unverified
 - Full Vitest suite did not complete: unrelated failures and a worker heap out-of-memory error occurred. See `/tmp/lightvela-malay-changelog-test.log`.
 - No online release check or production verification was requested or performed.
-- OpenCraft generated-copy sync must run after the frontend source commit.
+- OpenCraft generated-copy sync and MR update remain.
 
 ## discard
 - Temporary Vitest config for `127.0.0.1` and Next-generated `next-env.d.ts` change were removed after validation.
@@ -38,4 +39,4 @@ derived: false
 - Task Pack: `docs/context/tasks/2026-10-09-international-malay-changelog.md`.
 
 ## next_action
-- Commit frontend source, synchronize OpenCraft generated copies in a separate commit, then push, create the MR, and verify its remote state.
+- Commit validated frontend source, sync OpenCraft generated copies separately, push to MR !5140, and verify its remote state.

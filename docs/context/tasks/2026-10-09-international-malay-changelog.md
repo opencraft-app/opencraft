@@ -7,9 +7,9 @@ owner: wisp/mono2-maintainers
 authority: primary
 source_of_truth: ["frontend/src/pages/marketing/changelog-data.ts", "frontend/src/i18n/locales.json"]
 status: active
-reviewed_at: 2026-10-09
+reviewed_at: 2026-10-10
 review_due: 2026-11-09
-revision: 1.0.0
+revision: 1.1.0
 precedence: task
 derived: false
 ---
@@ -25,6 +25,7 @@ Add the international site's Malay release to the October 2026 changelog.
 
 ## requirement_ids / requirement_refs / requirement_excerpt
 - User request (2026-10-09): “国际站增加了马来语版本，更新一下国际站的changelog”.
+- User correction (2026-10-10): use “LightVela 国际站支持马来语” and “现在可以使用马来语浏览 LightVela 国际站的公开页面、产品界面和产品文档。”; add an actual Malay international-homepage screenshot.
 - Implemented feature: `docs/context/tasks/2026-10-08-international-malay.md` and commits `49a5790e9`, `6802d5abe` on `origin/master`.
 
 ## interface_refs / data_structure_refs
@@ -38,11 +39,14 @@ Add the international site's Malay release to the October 2026 changelog.
 
 ## acceptance
 - October 2026 shows a Malay language announcement on the international changelog and recent product updates.
+- The announcement uses the user's Chinese copy and a real screenshot of the international Malay homepage without distortion.
 - All published international locales show translated copy; domestic content remains unchanged.
 - Frontend `check`, test, and build gates pass.
 
 ## affected_paths
 - `frontend/src/pages/marketing/changelog-data.ts`
+- `frontend/src/pages/marketing/changelog-page.tsx`
+- `frontend/public/assets/changelog/lightvela-malay-international-home.webp`
 - `frontend/src/i18n/generated/`
 - `frontend/src/pages/marketing/__tests__/global-changelog.test.tsx`
 
@@ -68,15 +72,18 @@ Add the international site's Malay release to the October 2026 changelog.
 - `validate_documentation.py --repo . --format json`: passed, 0 broken first-party links.
 - `validate_context.py --build-catalog`: repository-wide validation still reports historical Task Pack errors; no errors mention this task or its checkpoint. Generated catalog changes were discarded because they include unrelated records.
 - `check:mono2-agent-console` found i18n generated-copy drift, as expected after adding translation keys. Frontend instructions require committing source first, then syncing the vendored copy in a separate commit.
+- Captured the public `https://lightvela.ai/ms-my/` homepage on 2026-10-10 at 1440×900; the screenshot shows Malay navigation, hero and product UI, and was converted to a 57,682-byte WebP asset.
+- For the revised copy and image, `pnpm check` passed (3052/3052 required translations and 0 new TypeScript diagnostics), the focused changelog test passed (13/13), and `pnpm build:global` generated the Malay changelog page with the screenshot. A 1440×900 local preview showed the image at its native aspect ratio. Documentation validation passed with no errors or broken first-party links.
 
 ## risks
 - Missing translations would leave raw Chinese or empty copy; mitigate with i18n check and localized rendering test.
+- Homepage content may change after capture; the screenshot reflects the live public page on 2026-10-10.
 
 ## validation
 - `pnpm check`, `pnpm test`, `pnpm build`, and focused changelog test.
 
 ## decisions
-- Add a text-only global entry in the existing October group, matching the Indonesian announcement format.
+- Keep the entry global-only in the existing October group, use the user's exact Chinese wording, and show the Malay homepage screenshot at its native 1440 / 900 aspect ratio.
 - Keep the OpenCraft generated-copy synchronization as a separate commit after the frontend source commit.
 
 ## scan_scope
