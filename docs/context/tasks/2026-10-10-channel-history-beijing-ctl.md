@@ -68,4 +68,4 @@
 - 精确检索确认开关只被 `ctl-api` 路由读取，CTL bundle 包含北京配置，master CI 自动构建并 pin 北京镜像。
 
 ## handoff
-- 待提交独立 MR；不合并、不部署。需确认 CTL 新镜像、Argo 状态和真实权限验收后再判断可用性。
+- 独立 MR !5169 目标 `master`，分支 `codex/channel-history-beijing-ctl`；尚未合并或部署。需确认 CTL 新镜像、Argo 状态和真实权限验收后再判断可用性。
