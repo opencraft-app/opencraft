@@ -1874,6 +1874,7 @@ export function RecentCronRunsPanel({
           <div className="divide-y divide-black/[0.06] px-4">
             {runs.map((run) => {
               const presentation = getScenarioRunPresentation(run, displayLocale);
+              const runStatus = getRecentRunStatusInfo(run.status, t);
               const taskTypeLabel = run.zero_token_config
                 ? run.zero_token_config.kind === "fixed_notification"
                   ? t("0 Token · 固定通知")
@@ -1917,15 +1918,7 @@ export function RecentCronRunsPanel({
                     >
                       {taskTypeLabel}
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => setViewingRun(run)}
-                      className="rounded-full bg-black/[0.06] px-2 py-0.5 text-[11px] text-black/55 transition hover:bg-black/[0.1] hover:text-black/75"
-                      aria-label={t("查看任务详情")}
-                      title={t("查看任务详情")}
-                    >
-                      {run.status ? formatLastStatus(run.status, t) : t("已执行")}
-                    </button>
+                    <RecentRunStatusButton status={runStatus} onClick={() => setViewingRun(run)} />
                     <time className="text-right text-xs text-black/55" dateTime={run.run_at}>
                       {formatTime(run.run_at)}
                     </time>
@@ -1953,6 +1946,75 @@ export function RecentCronRunsPanel({
         </div>
       )}
     </div>
+  );
+}
+
+function RecentRunStatusButton({
+  status,
+  onClick,
+}: {
+  status: ReturnType<typeof getRecentRunStatusInfo>;
+  onClick: () => void;
+}) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const tooltipId = useId();
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const error = status.description && status.raw ? status.raw : null;
+
+  useEffect(() => () => {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+  }, []);
+
+  const showTooltip = () => {
+    if (!error) return;
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    closeTimer.current = null;
+    setOpen(true);
+  };
+  const hideTooltip = () => {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    closeTimer.current = setTimeout(() => setOpen(false), 150);
+  };
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverAnchor asChild>
+        <button
+          type="button"
+          onClick={() => {
+            setOpen(false);
+            onClick();
+          }}
+          onMouseEnter={showTooltip}
+          onMouseLeave={hideTooltip}
+          onFocus={showTooltip}
+          onBlur={hideTooltip}
+          className="rounded-full bg-black/[0.06] px-2 py-0.5 text-[11px] text-black/55 transition hover:bg-black/[0.1] hover:text-black/75"
+          aria-label={t("查看任务详情")}
+          aria-describedby={open ? tooltipId : undefined}
+        >
+          {status.label}
+        </button>
+      </PopoverAnchor>
+      {error && (
+        <PopoverContent
+          id={tooltipId}
+          role="tooltip"
+          side="top"
+          align="end"
+          sideOffset={8}
+          onOpenAutoFocus={(event) => event.preventDefault()}
+          onCloseAutoFocus={(event) => event.preventDefault()}
+          onMouseEnter={showTooltip}
+          onMouseLeave={hideTooltip}
+          className="pointer-events-auto max-h-48 w-[min(26rem,calc(100vw-2rem))] overflow-y-auto rounded-md border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium leading-relaxed text-black/80 shadow-[0_8px_24px_rgba(15,23,42,0.12)] select-text"
+        >
+          <p>{status.description}</p>
+          <p className="mt-1 break-words font-normal text-black/60">{error}</p>
+        </PopoverContent>
+      )}
+    </Popover>
   );
 }
 
@@ -1997,6 +2059,7 @@ function RecentCronRunDetailModal({
   const t = useT();
   const { i18n } = useTranslation();
   const presentation = getScenarioRunPresentation(run, getAutomationDisplayLocale(i18n.language));
+  const runStatus = getRecentRunStatusInfo(run.status, t);
   const visiblePrompt = getVisibleAutomationPrompt(presentation.prompt);
   const zeroTokenConfig = run.zero_token_config;
   const [output, setOutput] = useState<string | null>(null);
@@ -2053,7 +2116,7 @@ function RecentCronRunDetailModal({
         <div className="flex items-center gap-2 pr-8">
           <h2 className="truncate text-balance text-lg font-semibold text-black/90">{presentation.name || t("未命名任务")}</h2>
           <span className="shrink-0 rounded-full bg-black/[0.06] px-2 py-0.5 text-[11px] text-black/55">
-            {run.status ? formatLastStatus(run.status, t) : t("已执行")}
+            {runStatus.label}
           </span>
         </div>
 
@@ -2090,6 +2153,20 @@ function RecentCronRunDetailModal({
           )}
           <DetailRow label={t("执行时间")} value={run.schedule ? formatScheduleFriendly(runToCronJob(run), t) : "—"} />
           <DetailRow label={t("本次执行")} value={formatTime(run.run_at)} />
+          {runStatus.raw && (
+            <DetailRow
+              label={t("状态说明")}
+              value={(
+                <div className="min-w-0 text-left">
+                  {runStatus.description && <p className="text-pretty">{runStatus.description}</p>}
+                  <details className="mt-1 text-left text-xs text-black/55">
+                    <summary className="cursor-pointer text-black/60">{t("查看原始状态")}</summary>
+                    <p className="mt-2 whitespace-pre-wrap break-words rounded-md bg-black/[0.03] p-2 font-mono leading-5">{runStatus.raw}</p>
+                  </details>
+                </div>
+              )}
+            />
+          )}
           {currentUpstream && (
             <DetailRow
               label={t("当前关联上游")}
@@ -3119,6 +3196,33 @@ function formatLastStatus(status: string | null, t: ReturnType<typeof useT>): st
   if (normalized === "not_executed") return t("未执行");
   if (["running", "pending"].includes(normalized)) return t("执行中");
   return status || "";
+}
+
+function getRecentRunStatusInfo(status: string | null, t: ReturnType<typeof useT>) {
+  const normalized = (status || "").trim().toLowerCase();
+  if (!normalized) return { label: t("已执行"), description: null, raw: null };
+  if (normalized.includes("result was not delivered")) {
+    return {
+      label: t("通知未送达"),
+      description: t("任务已执行，但通知发送失败。请检查通知通道配置。"),
+      raw: status,
+    };
+  }
+  if (normalized.includes("the requested model is not available in your current plan")) {
+    return {
+      label: t("执行失败"),
+      description: t("当前模型暂不可用，请稍后重试或切换模型。"),
+      raw: status,
+    };
+  }
+  if (["ok", "success", "succeeded", "done", "completed", "failed", "failure", "error", "not_executed", "running", "pending"].includes(normalized)) {
+    return { label: formatLastStatus(status, t), description: null, raw: null };
+  }
+  return {
+    label: /^(failed|failure|error)(?:\s|:)/.test(normalized) ? t("执行失败") : t("状态异常"),
+    description: null,
+    raw: status,
+  };
 }
 
 type EffectiveWindowStatus = "always" | "pending" | "active" | "ended";
