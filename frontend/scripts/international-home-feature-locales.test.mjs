@@ -152,7 +152,10 @@ test('step placement scales the generated foot anchor using the rendered artwork
   dom.window.matchMedia = (query) => ({ matches: query === '(min-width: 900px)', addEventListener() {}, removeEventListener() {} });
   const document = dom.window.document;
   document.querySelector('.deploy').getBoundingClientRect = () => ({ left: 10, top: 100 });
-  document.querySelector('.track').getBoundingClientRect = () => ({ left: 30, top: 300, width: 1000 });
+  document.querySelector('.track').getBoundingClientRect = () => ({ left: 30, top: 348, width: 1000 });
+  Object.defineProperties(document.querySelector('.track'), {
+    offsetLeft: { value: 20 }, offsetTop: { value: 200 }, offsetWidth: { value: 1000 },
+  });
   const mascot = document.querySelector('.home-step-mascot');
   let renderedWidth = 112;
   mascot.querySelector('img').getBoundingClientRect = () => ({ width: renderedWidth });
@@ -289,7 +292,10 @@ test('step companion recovers when lazy artwork dimensions arrive and cleans up 
   dom.window.matchMedia = query => ({ matches: query === '(min-width: 900px)', addEventListener() {}, removeEventListener() {} });
   const document = dom.window.document;
   document.querySelector('.deploy').getBoundingClientRect = () => ({ left: 10, top: 100 });
-  document.querySelector('.track').getBoundingClientRect = () => ({ left: 30, top: 300, width: 1000 });
+  document.querySelector('.track').getBoundingClientRect = () => ({ left: 30, top: 348, width: 1000 });
+  Object.defineProperties(document.querySelector('.track'), {
+    offsetLeft: { value: 20 }, offsetTop: { value: 200 }, offsetWidth: { value: 1000 },
+  });
   const mascot = document.querySelector('.home-step-mascot');
   const image = mascot.querySelector('img');
   let width = 0;

@@ -1928,3 +1928,6 @@ html:not(.hero-sequence-ready) #lightvela-intl-home .hero .hero__stage .hero__fr
 
 #lightvela-intl-home .play__list li { text-wrap:pretty; }
 #lightvela-intl-home .home-copy-tail { white-space:nowrap; }
+
+/* The curve is the companion's ground; keep it fixed during the track reveal. */
+#lightvela-intl-home .track.sr { transform: none !important; }

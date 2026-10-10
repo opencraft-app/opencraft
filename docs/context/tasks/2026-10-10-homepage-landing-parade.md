@@ -153,3 +153,10 @@ Chrome 在 scrollY 1673 和 1748 验证 video state=playing 且 visibleImages=0�
 - After fixes: 83 focused Vitest passed; typecheck 164 current, 171 baseline, 0 new, 7 resolved. Node generator 27 passed.
 - Global build passed after clearing Next cache; 1562 static HTML files, 58 public routes verified. CN build passed earlier.
 - Branch preview pipeline p-9a3eeb676e0a4b0bacd778af7e39a952 triggered by authorized push; publication pending latest revision.
+
+### 曲线玩偶定位修正（2026-10-11）
+
+- 用户截图显示玩偶被曲线穿过。预览 DOM 证据：track 的 offsetTop 为 211px，而 getBoundingClientRect 包含入场 translateY(48px)。玩偶位置不跟随这项位移，导致入场中曲线压在身体上。
+- 曲线与玩偶共用固定布局坐标，按 track offsetLeft/offsetTop/offsetWidth 计算脚部锚点；track 保留淡入但取消整体纵向位移。国内、国际与全部语言使用同一控制器与样式。
+- 回归测试模拟带 48px 入场位移的矩形，确认定位仍使用布局坐标；27 项生成/定位测试与 20 项动效测试通过。
+- 提交门禁：pnpm check 0 新增类型错误；OpenCraft 136 文件同步检查通过；清理开发缓存后国内构建通过（200 HTML，8 public routes）。

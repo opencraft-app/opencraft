@@ -19,12 +19,14 @@
     var footY = Number(mascot.dataset.footY);
     var renderedWidth = artwork.getBoundingClientRect().width;
     if (!(sourceWidth > 0 && footY > 0 && renderedWidth > 0)) return;
-    var base = deploy.getBoundingClientRect();
-    var line = track.getBoundingClientRect();
+    // Layout offsets exclude the scroll entrance transform on the track.
+    var lineLeft = track.offsetLeft;
+    var lineTop = track.offsetTop;
+    var lineWidth = track.offsetWidth;
     // Curve crest: x=80%, y=70/170 of its 132px rendered height.
     // Artwork dimensions and foot anchor come from the sole markup generator.
-    mascot.style.setProperty('--step-left', (line.left - base.left + line.width * 0.8 - renderedWidth / 2) + 'px');
-    mascot.style.setProperty('--step-top', (line.top - base.top - 112 + 132 * 70 / 170 - renderedWidth * footY / sourceWidth) + 'px');
+    mascot.style.setProperty('--step-left', (lineLeft + lineWidth * 0.8 - renderedWidth / 2) + 'px');
+    mascot.style.setProperty('--step-top', (lineTop - 112 + 132 * 70 / 170 - renderedWidth * footY / sourceWidth) + 'px');
   }
   // Lazy artwork and restored-scroll layout can settle after the first pass.
   var stepArtwork = root.querySelector('.home-step-mascot img');
