@@ -993,6 +993,14 @@ resource loading failure as logout.
 
 `lightvela.collaboration` owns one routed Collaboration Workspace and the Human
 Tencent IM Web data plane for Server, Channel, private Group and Member surfaces.
+Its UI, service implementations and Tencent adapters are shared through
+`shared/vela-collaboration-web`. The extension preserves its activation owner;
+the LightVela `/agents/labs/collaboration` laboratory provides a separate
+account-bound owner through the same request port. It is default-hidden behind
+`show()` and only eligible when the site's selected authority is
+the Beijing test API. It does not borrow Agent entitlement or Bot execution,
+switch Shanghai credentials to Beijing, or create another token store. Closing
+the laboratory disposes its IM scope; reopening waits for prior logout.
 The current Human is read from `GET /v1/collaboration/me/profile`; the delegated
 actor profile does not require a locally stored email. The legacy email-based
 `/me` response remains available under its published contract.

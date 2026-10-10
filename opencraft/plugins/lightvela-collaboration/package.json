@@ -13,7 +13,8 @@
     "@opencraft/extension-runtime": "0.1.0",
     "@tencentcloud/chat": "3.6.6",
     "tim-upload-plugin": "1.4.3",
-    "react": "19.2.3"
+    "react": "19.2.3",
+    "@lightvela/collaboration-web": "file:../../../shared/vela-collaboration-web"
   },
   "devDependencies": {
     "@types/react": "~19.2.2",

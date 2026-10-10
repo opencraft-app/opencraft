@@ -1,0 +1,21 @@
+{
+  "name": "@lightvela/collaboration-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./styles.css": "./src/styles.css",
+    "./collaboration-workspace-view": "./src/collaboration-workspace-view.tsx",
+    "./im/*": "./src/im/*.ts",
+    "./*": "./src/*.ts"
+  },
+  "dependencies": {
+    "@lightvela/vela-chat-client-core": "file:../vela-chat-client-core",
+    "@tencentcloud/chat": "3.6.6",
+    "tim-upload-plugin": "1.4.3"
+  },
+  "peerDependencies": {
+    "react": "^19.1.1"
+  }
+}

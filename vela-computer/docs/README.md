@@ -20,6 +20,9 @@ IM、恢复并排序入站消息、向 Agent Runtime 交付工作，并提供受
 
 ## 当前迁移状态
 
+托管 Bot 的版本化产物与首次安装入口见 [Bot IM 客户端首次安装](bot-im-client-install.md)。
+安装复用现有 Bot 执行权限，二进制准备与 Runtime IM 鉴权/启动分别验证。
+
 当前目录先保留 Velachat `agent/` 的源码忠实基线。旧 daemon/TAT/安装/升级/Human TUI
 外壳仍待分批裁剪；消息、恢复、幂等和受控 capability 测试必须在每个删除切片中保持。
 

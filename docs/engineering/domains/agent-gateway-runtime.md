@@ -26,6 +26,12 @@ File 字节及临时 Side Chat 尚不承诺跨刷新恢复，失效附件不能�
 
 本领域覆盖 Agent 请求进入、实例/渠道编排、Sandbox 分配、CloudAgent 执行、模型网关/provider 路由、流式响应和后台 workflow。
 
+LightVela 的隐藏协作实验室位于 `/agents/labs/collaboration`，仅在当前账户 API 为北京测试环境时可由
+`show()` 显式开启。入口、路由和请求适配器都保持此环境约束；上海和国际站不接入。
+客户端复用 `shared/vela-collaboration-web` 的 Human 协作状态与腾讯 IM adapter，由既有登录账户借出请求端口，
+不持久化第二份 token，不依赖 Bot 或付费 Agent 权益。关闭入口、退出或切换账户时注销原 IM scope，
+新 scope 等待旧连接销毁后再登录。该入口的可见性不是后端鉴权或发布完成的证据。
+
 LightVela `/agents` 多 Bot 桌面页由 OpenCraft 内嵌工作台独立呈现已有会话标题、重命名及预览面板开关；
 站点宿主不再向会话顶栏插入 Bot 名称。Bot 管理菜单由宿主在工作台 Shadow DOM 外、最左 Bot 竖栏底部渲染，
 避免弹层事件跨边界后立即关闭。账户入口保留在左下角。内嵌工作台仅在已有会话显示右侧预览开关，
@@ -942,3 +948,11 @@ the same local DOM runtime. Service intent, tabs and resource lifetimes stay wit
 the original conversation panel owner. Only narrow/full-width capacity uses replacement
 presentation; held movement, interruption, cancellation and geometry changes share
 the same driver, without a second visibility authority or duplicated application.
+### Bot IM 客户端首次安装
+
+`vela-computer` 的首次安装产物使用北京 COS 的版本化目录，安装入口复用现有
+Bot 归属校验与 `agentuser` 命令执行权限，不新增地域白名单。长下载通过后台任务
+和状态轮询完成，安装器与二进制在执行前核验固定摘要，重复安装复用已验证程序。
+二进制安装与 Agent Runtime Session/UserSig 的签发、Hermes 启动接线分别验收；
+安装完成不能作为 Bot 已连接腾讯 IM 的证据。详细步骤见
+[Bot IM 客户端首次安装](../../../vela-computer/docs/bot-im-client-install.md)。
