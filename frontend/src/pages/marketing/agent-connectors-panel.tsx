@@ -510,7 +510,10 @@ export function ConnectorsPanel({
       try {
         const token = launchTokenRef.current ?? (await fetchToken());
         if (!token) {
+          // fetchToken 失败返回 null（不 throw）——释放 busy 让卡片可重试，
+          // 否则 busy 永久占位导致按钮禁用（错误详情已由 fetchToken 内 setError）
           popup?.close();
+          releaseBusy(busyKey);
           return;
         }
         // 取消上一条未完成的 flow（双击/换连接器连点）
@@ -579,7 +582,9 @@ export function ConnectorsPanel({
       try {
         const token = launchTokenRef.current ?? (await fetchToken());
         if (!token) {
+          // fetchToken 失败返回 null（不 throw）——释放 busy 让卡片可重试
           popup?.close();
+          releaseBusy(busyKey);
           return;
         }
         const result = await enableBuiltinConnector(token, instanceId, connectorKey);
@@ -642,7 +647,11 @@ export function ConnectorsPanel({
       setError(null);
       try {
         const token = launchTokenRef.current ?? (await fetchToken());
-        if (!token) return;
+        if (!token) {
+          // fetchToken 失败返回 null——释放 busy，否则「解除中...」永久转圈
+          releaseBusy(busyKey);
+          return;
+        }
         const result = await detachBuiltinConnector(token, instanceId, connectorKey);
         await finishOperation(result);
         await refresh();
