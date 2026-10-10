@@ -32,6 +32,10 @@ master 源码
   → 服务健康、路由和业务 E2E
 ```
 
+## 北京渠道聊天记录测试门禁
+
+渠道记录的北京验收需要配对的 CTL 镜像、`ctl-api` 的 `CHANNEL_HISTORY_ENABLED` 环境开关，以及 Service Gateway 的两条只读 GET 白名单。北京 CTL 开关应保存在 master 的 `argocd/services/ctl/beijing-sandbox/kustomization.yaml`，由 CTL release bundle 投影到 `gitops`；只改 `gitops` 容易在下次镜像晋级时被 master 的旧配置覆盖。开关不扩散到生产或其他 CTL 工作负载。验收时核对 Argo revision、CTL 镜像、开关和网关配置，再用真实账号验证自身 Bot 的私聊、群聊及跨账号拒绝；MR 合并和本地前端构建均不能代替运行态证据。
+
 ## AI 建站后端隐藏发布绑定
 
 - 离线绑定生成器 `.ci/runtime/support/prepare_website_backend_release.py` 只生成最终 overlay
