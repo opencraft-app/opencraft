@@ -2,7 +2,6 @@ package instance
 
 import (
 	"encoding/json"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -13,32 +12,49 @@ import (
 
 const channelHistoryKind = "lightvela.channel-history.v1"
 
-var safeHermesProfileID = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
-
 var channelHistorySources = map[string]bool{
 	"weixin": true, "qq": true, "qqbot": true, "feishu": true,
 	"lark": true, "dingtalk": true, "wecom": true, "yuanbao": true,
 	"telegram": true, "discord": true, "slack": true, "whatsapp": true,
 }
 
-// The script runs as agentuser. The selected Profile's state.db isolates Bots;
+// The script runs as agentuser and resolves the Bot from Hermes before reading.
+// The selected Profile's state.db isolates Bots;
 // non-multiplexed Hermes gateways use agent:main: keys in every Profile.
 // Rows without a channel session_key remain excluded.
-const readChannelHistoryScript = `import json
-import os
+const readChannelHistoryScript = hermesProfileListFunctions + `
 import re
 import sqlite3
 import sys
-from pathlib import Path
 
 KIND = "lightvela.channel-history.v1"
 SOURCES = ("weixin", "qq", "qqbot", "feishu", "lark", "dingtalk", "wecom", "yuanbao", "telegram", "discord", "slack", "whatsapp")
-mode, profile, source, before, raw_limit, session_id = sys.argv[1:]
+mode, bot_id, instance_id, source, before, raw_limit, session_id = sys.argv[1:]
 prefix = "agent:main:"
 limit = min(max(int(raw_limit), 1), 50)
 
 def emit(**payload):
     print(json.dumps({"kind": KIND, **payload}, ensure_ascii=False, separators=(",", ":")))
+
+try:
+    profiles = asyncio.run(list_hermes_profiles())["items"]
+except Exception:
+    emit(error="profile_list_failed")
+    sys.exit(0)
+
+profile = ""
+for item in profiles:
+    native_id = item.get("native_id", "")
+    is_default = item.get("is_default") or native_id == "default"
+    if (instance_id if is_default else native_id) == bot_id:
+        profile = "main" if is_default else native_id
+        break
+if not profile:
+    emit(error="bot_not_found")
+    sys.exit(0)
+if not re.fullmatch(r"[a-zA-Z0-9_-]+", profile):
+    emit(error="invalid_profile")
+    sys.exit(0)
 
 def clip(value):
     return value if len(value) <= 2000 else value[:2000] + "…（内容已截断）"
@@ -154,15 +170,10 @@ func (l *logic) readChannelHistory(ctx pctx.Context, instanceID, botID, mode, so
 	if limit < 1 || limit > 50 || strings.TrimSpace(botID) == "" {
 		return nil, errcode.ErrInstanceInvalidParam
 	}
-	bot, err := l.getInstanceBotResponse(ctx, instanceID, botID)
-	if err != nil {
+	if _, err := l.instanceDao.GetByInstanceID(ctx, instanceID); err != nil {
 		return nil, err
 	}
-	profileID := strings.TrimSpace(bot.ProfileID)
-	if !safeHermesProfileID.MatchString(profileID) {
-		return nil, errcode.ErrChannelHistoryUnavailable
-	}
-	command := buildHermesPythonCommand(readChannelHistoryScript, mode, profileID, source, before, strconv.Itoa(limit), sessionID)
+	command := buildHermesPythonCommand(readChannelHistoryScript, mode, strings.TrimSpace(botID), instanceID, source, before, strconv.Itoa(limit), sessionID)
 	result, err := l.execHermesProfileCommand(ctx, instanceID, command)
 	if err != nil || result == nil {
 		// Command output may contain message text; never forward it in errors.
@@ -174,6 +185,12 @@ func (l *logic) readChannelHistory(ctx pctx.Context, instanceID, botID, mode, so
 	}
 	if payload.Error == "invalid_cursor" {
 		return nil, errcode.ErrInstanceInvalidParam
+	}
+	if payload.Error == "bot_not_found" {
+		return nil, errcode.ErrInstanceBotNotFound
+	}
+	if payload.Error == "profile_list_failed" {
+		return nil, errcode.ErrInstanceBotProfileFailed
 	}
 	if payload.Error != "" {
 		return nil, errcode.ErrChannelHistoryUnavailable
