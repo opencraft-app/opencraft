@@ -61,3 +61,8 @@ The specific ignore file must also exclude host node_modules and local credentia
 because it supersedes the repository-root Docker ignore file. The recursive
 contract regression catches dependency additions missing either COPY or context
 allowlist. It does not replace a real image build and regional release acceptance.
+
+
+### Website backend rollout and existing navigation
+
+Deploying a new website backend must preserve the existing My Workbench navigation in both regions. Do not gate that existing menu behind console `show()`: existing static-site users need continuous access. Backend regional enablement, persistence qualification and API authorization remain separate release gates, not menu-visibility controls. A frontend candidate containing the withdrawn navigation gate must be superseded by a reviewed and verified artifact before production promotion.

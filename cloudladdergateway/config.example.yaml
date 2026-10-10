@@ -209,6 +209,19 @@ backends:
       timeout: 10s
       allowed_methods: ["POST"]
 
+  # Shared config is loaded by all gateway workloads. Only tkexgz production
+  # overrides these renewal backends to the Dianshi production service.
+  - alias: dianshi-renew-price
+    upstream:
+      base_url: "http://127.0.0.1:1"
+      timeout: 10s
+      allowed_methods: ["POST"]
+  - alias: dianshi-renew-order
+    upstream:
+      base_url: "http://127.0.0.1:1"
+      timeout: 10s
+      allowed_methods: ["POST"]
+
   - alias: billing-trade-cn-pre
     upstream:
       scheme: http
@@ -506,6 +519,8 @@ auth:
         - qbilling-send-resource-intl-prod
         - dianshi-price
         - dianshi-order
+        - dianshi-renew-price
+        - dianshi-renew-order
         - tcapi-billing-trade-intl-test
         - tcapi-billing-trade-intl-prod
 
@@ -775,6 +790,20 @@ routes:
     condition: 'request.method == "POST"'
     upstream:
       backend: dianshi-order
+
+  - id: dianshi-renew-price
+    description: "Beijing pre-release trade Dianshi renewal quote"
+    callers: ["lightvela-trade"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: dianshi-renew-price
+
+  - id: dianshi-renew-order
+    description: "Beijing pre-release trade Dianshi renewal order"
+    callers: ["lightvela-trade"]
+    condition: 'request.method == "POST"'
+    upstream:
+      backend: dianshi-renew-order
 
   - id: billing-trade-cn-pre
     description: "Proxy Tencent billing trade domestic pre-release environment."

@@ -249,3 +249,17 @@ stopped only devops_agent_prowgrgm.service and its two dispatcher processes.
 Service inactive, daemon PID 1307 and agent PID 1338 absent; no task/group kill,
 no shared pnpm/npm store cleanup and no build cancellation. Original 4/4 must
 be restored when explicitly resuming service after stable disk recovery.
+
+
+## 2026-10-10 workbench visibility correction
+
+The owner explicitly revoked hiding the existing My Workbench navigation: users already depend on it. Restore the unconditional website navigation in both regions, preserve all other advanced-tool show toggles, and keep backend API authorization and regional enablement separate from UI visibility. The old static candidate at 57f22da78 contains the rejected hidden navigation and must not be promoted as the final frontend release; qualify a newly reviewed candidate containing this correction. Regression tests must prove unconditional website navigation rather than merely reject the historical global-only condition.
+
+Live release observations at 09:15Z: frontend build b-a54ff1a2603d418fa8f3968ded6f6693 finished FAILED at formal-candidate confirmation due to build-agent allocation timeout; frontend construction succeeded but formal candidate launch did not execute. Argo still has DiskPressure and only two of seven Argo workloads ready; shared runner remains intentionally inactive. Docker fix MR !5171 is open with mingyuxiao invited and required check pending. None of these observations proves production backend or frontend completion.
+
+
+## Owner-confirmed release scope and restored control plane
+
+The owner explicitly requests independent frontend production release and parallel backend preparation. Existing My Workbench navigation stays visible in both regions; no console show gate for it. Keep the existing website Skill and production new-user image adoption unchanged; do not execute Skill delivery or Hermes image/pool rollout in this release. Production Hermes SKU mappings were read-only checked: Shanghai maps to img-imoc6yi5, Singapore maps to img-2lu4wxsc / img-2299bown / img-7ycxsp3v; all are stable with update timestamps before 2026-10-10.
+
+Control-plane recovery is now separately verified: DiskPressure=False, all seven Argo workloads ready, six CTL/site-gateway/website-deployer apps Synced/Healthy at existing gitops revision 7ea00c9342f1cdd55658f264f5e82473b6be55d9 and unchanged recorded image digests. This does not qualify the new backend. Both regional consumer configs still lack runtime base URL and role credentials, with backend/data gates closed. CI intake resumed and concurrency is temporarily 2/2 after scoped old-cache reclamation and a live disk headroom check, not the original 4/4. Frontend producer b-525eb3b2cf804915af6a15e11350b282 at source 9f44c7aced5f89b7a9a84645f838e6410fc7eb84 was retried after allocation timeout; no formal-site deployment is proven yet.

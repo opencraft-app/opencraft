@@ -10,12 +10,10 @@ const readSource = (relativePath: string) =>
 // 真实 debug exec adapter 定义在 agent-tat-adapter，
 // authApiBaseUrl 空值守卫收敛到 repositories 层。
 describe("agent settings TEA SDK boundary", () => {
-  it("reveals website navigation only through the shared show state in both regions", () => {
+  it("keeps the existing website navigation visible without show in both regions", () => {
     const page = readSource("src/pages/marketing/agent-settings-page.tsx");
-    expect(page).toContain("useState(false)");
-    expect(page).toMatch(/subscribeConsoleShow\(\(enabled\) => \{\s*setShowHiddenAgentTools\(enabled\)/);
-    expect(page).toMatch(/\.\.\.\(showHiddenAgentTools \? \[\{\s*id: "website",/);
-    expect(page).toMatch(/enableShowCommand: true/);
+    expect(page).toMatch(/id: "labs",[\s\S]*?sections: \[\s*\{\s*id: "website",/);
+    expect(page).not.toMatch(/\.\.\.\(showHiddenAgentTools \? \[\{\s*id: "website",/);
   });
 
   it("claims WhatsApp at CTL even when the browser cached a connected owner", () => {

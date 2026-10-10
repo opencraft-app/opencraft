@@ -137,6 +137,8 @@ func main() {
 			dianshiclient.Options{
 				Preview:               cfg.DianshiPreview,
 				RenewBaseURL:          cfg.DianshiRenewBaseURL,
+				RenewPriceBaseURL:     cfg.DianshiRenewPriceBaseURL,
+				RenewOrderBaseURL:     cfg.DianshiRenewOrderBaseURL,
 				CloudLadderHMACSecret: cfg.CloudLadderHMACSecret,
 			},
 		)

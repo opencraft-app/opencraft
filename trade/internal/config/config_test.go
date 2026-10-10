@@ -62,6 +62,27 @@ func TestLoadDianshiRenewBaseURL(t *testing.T) {
 	}
 }
 
+func TestLoadDianshiDedicatedRenewRoutes(t *testing.T) {
+	setRequiredLoadEnv(t)
+	t.Setenv("SHADOW_INTERNAL_BASE_URL", "http://shadow.local")
+	t.Setenv("DIANSHI_PRICE_BASE_URL", "http://gateway.local/dianshi-price/get_price")
+	t.Setenv("DIANSHI_ORDER_BASE_URL", "http://gateway.local/dianshi-order/do_goods")
+	t.Setenv("DIANSHI_RENEW_PRICE_BASE_URL", "http://gateway.local/dianshi-renew-price/activity_web/activity")
+	t.Setenv("DIANSHI_RENEW_ORDER_BASE_URL", "http://gateway.local/dianshi-renew-order/activity_web/activity")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DianshiRenewPriceBaseURL != "http://gateway.local/dianshi-renew-price/activity_web/activity" ||
+		cfg.DianshiRenewOrderBaseURL != "http://gateway.local/dianshi-renew-order/activity_web/activity" {
+		t.Fatalf("renew routes: price=%q order=%q", cfg.DianshiRenewPriceBaseURL, cfg.DianshiRenewOrderBaseURL)
+	}
+	t.Setenv("DIANSHI_RENEW_ORDER_BASE_URL", "")
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() accepted only one dedicated renewal route")
+	}
+}
+
 func TestLoadUsesAccountBindingInternalBaseURL(t *testing.T) {
 	setRequiredLoadEnv(t)
 	t.Setenv("ACCOUNT_BINDING_INTERNAL_BASE_URL", "http://auth.local")
