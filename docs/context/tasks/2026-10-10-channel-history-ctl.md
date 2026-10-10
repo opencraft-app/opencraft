@@ -63,4 +63,4 @@
 - 命中 `ctl/main/api/server.go`、`ctl/main/api/channel_history_test.go`、`ctl/pkg/instance/channel_history.go` 及相邻测试。
 
 ## handoff
-- 待 MR 远端核验；未合并、未部署、未启用。
+- MR !5147 已更新并核验远端分支；CI 即时 pending，未合并、未部署、未启用。前端 MR !5139 以本分支为目标。
