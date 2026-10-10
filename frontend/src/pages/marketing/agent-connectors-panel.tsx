@@ -517,15 +517,14 @@ export function ConnectorsPanel({
       // 请求（fetchToken/startOAuth）后浏览器 transient activation 已失效，
       // 弹窗会被拦截（时灵时不灵的原因）。先同步开 about:blank（必不被拦），
       // 拿到 authorizeUrl 再导航；失败路径关掉空白窗不残留。
-      const popup = window.open("about:blank", "_blank");
-      // popup 为 null：浏览器禁弹窗（拦截器/隐私模式）——降级当前页跳转，
-      // 同页导航不受弹窗拦截约束；授权完成回来由挂载恢复逻辑接管 flow
+      const popup = window.open("about:blank", "_blank", "width=520,height=720");
+      // popup 为 null：浏览器默认/设置阻止了弹窗——降级当前页跳转（同页导航
+      // 不受弹窗拦截约束），flow 在服务端挂起，回来由挂载恢复逻辑接管
       const fallbackToSameTab = popup === null;
       if (fallbackToSameTab) {
         message.info({ content: t("浏览器拦截了授权弹窗，将在当前页打开授权，完成后请返回本页"), duration: 6000 });
       }
-      // 立即写入加载提示页——授权 URL 到手前用户看到的是「正在准备授权」
-      // 而非空白窗（startOAuth 网络请求需数百 ms）
+      // 立即写入加载提示页——授权 URL 到手前用户看到「正在准备授权」而非空白窗
       primePopupLoading(popup, t("正在准备授权，请稍候..."));
       try {
         const token = launchTokenRef.current ?? (await fetchToken());
@@ -594,7 +593,8 @@ export function ConnectorsPanel({
       // 预开窗：authUrl 要等 enable/finishOperation 网络响应才有，届时已脱离
       // 用户手势上下文（window.open 会被浏览器拦截）——先同步开 about:blank，
       // 有 authUrl 再导航，无 authUrl 或失败则关掉，不残留空白标签页
-      const popup = window.open("about:blank", "_blank");
+      // 尺寸对齐 AgentChat（520×720 小弹窗，用户不离开面板）
+      const popup = window.open("about:blank", "_blank", "width=520,height=720");
       // popup 为 null：浏览器禁弹窗——与 OAuth 入口同款降级策略（authUrl
       // 就绪后当前页跳转，提示用户授权完成后返回）
       const fallbackToSameTab = popup === null;
