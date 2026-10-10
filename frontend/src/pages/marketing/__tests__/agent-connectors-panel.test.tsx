@@ -324,7 +324,7 @@ describe("ConnectorsPanel 操作", () => {
     }
   });
 
-  it("OAuth：关窗后 complete 返回 binding（已授权绑定中）→ 等 complete 终态，不 cancel", async () => {
+  it("OAuth：binding 即完成——complete 返回 binding（带 tat）立即 resolve 执行下发，不傻等", async () => {
     vi.useFakeTimers();
     try {
       vi.mocked(client.listInstanceConnectors).mockResolvedValue({
@@ -340,20 +340,25 @@ describe("ConnectorsPanel 操作", () => {
         customMcp: [],
       });
       // 用户授权成功、回调页自动关闭，postMessage 丢失：complete 先 pending
-      // 后 binding，最终 completed → 静默 resolve，全程不 cancel
+      // 后 binding——binding 即授权成功且携带 tat 下发计划，必须立即 resolve
+      // 并执行下发（reportDelivery 回写后状态才流转到 completed），不 cancel
       vi.stubGlobal("open", vi.fn(() => ({ closed: true, location: { href: "" } }) as unknown as Window));
       vi.mocked(client.startConnectorOAuth).mockResolvedValue({
         authorizeUrl: "https://oauth.example.com/auth",
         state: "s1",
         flowId: "flow-1",
       });
+      const tatPayload = { action: "upsert", installId: "ins-1" } as never;
       vi.mocked(client.completeConnectorOAuth)
         .mockResolvedValueOnce({ status: "pending" } as never)
-        .mockResolvedValueOnce({ status: "binding" } as never)
         .mockResolvedValue({
-          status: "completed",
+          status: "binding",
           connectorKey: "tencent-docs",
+          installId: "install-1",
+          installType: "builtin",
           operationId: "op-1",
+          bindingVersion: 1,
+          tat: tatPayload,
         } as never);
       vi.mocked(client.reportConnectorDelivery).mockResolvedValue({ status: "ok" } as never);
 
@@ -362,12 +367,12 @@ describe("ConnectorsPanel 操作", () => {
       await vi.advanceTimersByTimeAsync(100);
       fireEvent.click(await authButton);
       await vi.advanceTimersByTimeAsync(50);
-      // 轮询推进：pending → binding → completed（远超关窗 pending 宽限，
-      // 但 binding 后不再受宽限约束，completed 即 resolve，不 cancel）
-      await vi.advanceTimersByTimeAsync(30_000);
+      // 两个轮询 tick：pending → binding 即 resolve（无需等到 completed）
+      await vi.advanceTimersByTimeAsync(5_000);
       expect(client.cancelConnectorOAuth).not.toHaveBeenCalled();
-      // completed 后 finishOperation（complete 响应无 tat → 跳过下发）→ refresh
-      expect(client.completeConnectorOAuth).toHaveBeenCalled();
+      // binding 响应的 tat 已被执行并 reportDelivery（此前的 bug：binding 被
+      // 当 wait 傻等，tat 无人执行，状态停摆至超时）
+      expect(client.reportConnectorDelivery).toHaveBeenCalled();
       expect(client.listInstanceConnectors).toHaveBeenCalled();
     } finally {
       vi.useRealTimers();

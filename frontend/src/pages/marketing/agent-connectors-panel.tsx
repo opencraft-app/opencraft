@@ -216,10 +216,17 @@ const OAUTH_CLOSED_PENDING_GRACE_MS = 10_000;
 const LOCAL_CLI_AUTH_POLL_INTERVAL_MS = 3000;
 const LOCAL_CLI_AUTH_MAX_POLL = 20;
 
-/** OAuth 完成状态分类（对齐 AgentChat classifyOAuthPollingStatus） */
+/**
+ * OAuth 完成状态分类（对齐 AgentChat classifyOAuthPollingStatus）。
+ * binding = 授权已成功、服务端已绑定，响应携带 tat 下发计划——客户端应
+ * 立即 resolve 并执行下发（finishOperation → reportDelivery 回写后
+ * current_operation_id 清空，状态自然流转到 completed/active）。若把
+ * binding 当 wait 傻等，没人执行下发则状态永远停在 binding，只能靠
+ * 超时兜底（表现为授权成功后卡片迟迟不转「已授权」）。
+ */
 function classifyCompletion(status: string): "wait" | "done" | "abandoned" {
-  if (status === "pending" || status === "binding") return "wait";
-  if (status === "completed" || status === "active") return "done";
+  if (status === "pending") return "wait";
+  if (status === "completed" || status === "active" || status === "binding") return "done";
   return "abandoned"; // expired / cancelled / superseded
 }
 
@@ -404,8 +411,6 @@ export function ConnectorsPanel({
         const startedAt = Date.now();
         let settled = false;
         let completing = false;
-        let lastStatus: string | null = null;
-        let lastResult: OAuthCompletionResponse | null = null;
         let closedPendingSince: number | null = null;
         const cleanup = () => {
           window.removeEventListener("message", handleMessage);
@@ -431,13 +436,11 @@ export function ConnectorsPanel({
           completing = true;
           try {
             const result = await completeConnectorOAuth(token, instanceId, connectorKey, flowId);
-            lastStatus = result.status;
-            lastResult = result;
             const outcome = classifyCompletion(result.status);
             if (outcome === "wait") {
-              // 关窗后的判定：binding = 已授权，继续轮询至终态；pending 给宽限窗口
-              // （覆盖回调处理延迟），超窗才判定未完成。
-              if (popup?.closed && result.status !== "binding") {
+              // 关窗后 pending 给宽限窗口（覆盖回调处理延迟），超窗才判定
+              // 未完成；binding/completed 已在上面 done 分支直接 resolve。
+              if (popup?.closed) {
                 const now = Date.now();
                 if (closedPendingSince === null) closedPendingSince = now;
                 if (now - closedPendingSince >= OAUTH_CLOSED_PENDING_GRACE_MS) {
@@ -485,14 +488,8 @@ export function ConnectorsPanel({
         }, OAUTH_TIMEOUT_MS + 15_000);
         const timer = window.setInterval(() => {
           if (Date.now() - startedAt >= OAUTH_TIMEOUT_MS) {
-            // 超时：已进入绑定/下发阶段（binding）= 授权已成功，保留 flow 不
-            // cancel——resolve 最后一次 complete 响应走正常收尾（finishOperation
-            // 缺 tat 时跳过 → refresh），卡片转「正在配置中」，不误报「请重新授权」
-            if (lastStatus === "binding" && lastResult) {
-              const completion = lastResult;
-              finish(() => resolve(completion));
-              return;
-            }
+            // 超时：binding 早已在 complete 内直接 resolve（分类修正后 done），
+            // 走到此处的只可能是 pending 卡死——abandon 兜底
             void abandon(t("授权等待超时，请重试"));
             return;
           }
