@@ -1,3 +1,4 @@
+import json
 import subprocess
 import sys
 import tempfile
@@ -108,8 +109,52 @@ class BuildReleaseImageTests(unittest.TestCase):
                 "!shared/",
                 "!shared/lightvela-agent-core/",
                 "!shared/lightvela-agent-core/**",
+                "!opencraft/",
+                "!opencraft/packages/",
+                "!shared/vela-collaboration-web/",
+                "!shared/vela-collaboration-web/**",
+                "!shared/vela-chat-client-core/",
+                "!shared/vela-chat-client-core/**",
+                "!opencraft/packages/mobile-account-sdk/",
+                "!opencraft/packages/mobile-account-sdk/**",
+                "!opencraft/packages/mobile-bot-bridge/",
+                "!opencraft/packages/mobile-bot-bridge/**",
+                "!opencraft/packages/workbench-panels/",
+                "!opencraft/packages/workbench-panels/**",
+                "**/node_modules",
+                "**/.env",
+                "**/.env.*",
+                "**/.secret",
+                "**/*.key",
+                "**/*.pem",
             ],
         )
+
+    def test_frontend_dockerfile_copies_recursive_file_dependencies_before_install(self) -> None:
+        dockerfile = (REPO_ROOT / "frontend/deploy/Dockerfile").read_text()
+        patterns = (REPO_ROOT / "frontend/deploy/Dockerfile.dockerignore").read_text().splitlines()
+        visited = set()
+
+        def check_dependencies(directory: Path) -> None:
+            if directory in visited:
+                return
+            visited.add(directory)
+            manifest = json.loads((directory / "package.json").read_text())
+            for section in ("dependencies", "devDependencies", "optionalDependencies"):
+                for version in manifest.get(section, {}).values():
+                    if not version.startswith("file:"):
+                        continue
+                    dependency = (directory / version[5:]).resolve()
+                    relative = dependency.relative_to(REPO_ROOT).as_posix()
+                    copy = f"COPY {relative} /{relative}"
+                    with self.subTest(dependency=relative):
+                        self.assertIn(copy, dockerfile)
+                        self.assertLess(dockerfile.index(copy), dockerfile.index("pnpm install"))
+                        self.assertIn(f"!{relative}/", patterns)
+                        self.assertIn(f"!{relative}/**", patterns)
+                    check_dependencies(dependency)
+
+        check_dependencies(REPO_ROOT / "frontend")
 
     def test_playground_frontend_region_uses_cluster_region(self) -> None:
         self.assertEqual(playground_frontend_region("sandbox-bj-7"), "cn")
