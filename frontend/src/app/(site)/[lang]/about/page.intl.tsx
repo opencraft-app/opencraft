@@ -17,6 +17,7 @@ const TITLE_BY_LOCALE: Record<PublicSiteLocale, string> = {
   [PUBLIC_SITE_LOCALES.ZH_HANT]: '關於我們',
   [PUBLIC_SITE_LOCALES.ID_ID]: 'Tentang LightVela',
   [PUBLIC_SITE_LOCALES.MS_MY]: "Mengenai LightVela",
+  [PUBLIC_SITE_LOCALES.TH_TH]: "เกี่ยวกับ LightVela",
   [PUBLIC_SITE_LOCALES.ES]: 'Acerca de LightVela',
   [PUBLIC_SITE_LOCALES.JA_JP]: japaneseRouteTitle('/about'),
   [PUBLIC_SITE_LOCALES.KO_KR]: koreanRouteTitle('/about'),
@@ -32,6 +33,7 @@ const DESCRIPTION_BY_LOCALE: Record<PublicSiteLocale, string> = {
     'LightVela menghadirkan pengalaman Agent cloud yang terkelola dan mudah digunakan untuk lebih banyak orang.',
   [PUBLIC_SITE_LOCALES.MS_MY]:
     "LightVela membawa pengalaman awan Agen yang terurus dan mudah digunakan kepada lebih ramai orang.",
+  [PUBLIC_SITE_LOCALES.TH_TH]: "LightVela นำประสบการณ์คลาวด์เอเจนต์ที่จัดการได้ง่ายและใช้งานง่ายไปสู่ผู้คนมากขึ้น",
   [PUBLIC_SITE_LOCALES.ES]:
     'Conoce cómo LightVela acerca los agentes de IA en la nube a más personas mediante una experiencia gestionada y sencilla.',
   [PUBLIC_SITE_LOCALES.JA_JP]: japaneseRouteDescription('/about'),

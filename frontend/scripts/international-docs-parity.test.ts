@@ -705,6 +705,7 @@ describe("international docs publication inventory", () => {
         "zh-hant",
         "id-id",
         "ms-my",
+        "th-th",
         "es",
         "ja-jp",
         "ko-kr",
@@ -712,6 +713,7 @@ describe("international docs publication inventory", () => {
       expect(docsRouteApi.docsRouteLocalesForRegion("cn")).toEqual([]);
       expect(docsRouteApi.publicLocaleForDocsRoute("es")).toBe("es");
       expect(docsRouteApi.publicLocaleForDocsRoute("ms-my")).toBe("ms-MY");
+      expect(docsRouteApi.publicLocaleForDocsRoute("th-th")).toBe("th-TH");
       expect(docsRouteApi.docsRouteLocalesForRegion("global")).toContain("ja-jp");
       expect(docsRouteApi.docsRouteLocalesForRegion("global")).toContain("ko-kr");
     });

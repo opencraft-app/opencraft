@@ -14,6 +14,7 @@ const menuCopy: Record<PublicSiteLocale, [string, string]> = {
   'zh-Hant': ['開啟選單', '關閉選單'],
   'id-ID': ['Buka menu', 'Tutup menu'],
   'ms-MY': ["Buka menu", "Tutup menu"],
+  'th-TH': ["เปิดเมนู", "ปิดเมนู"],
   es: ['Abrir menú', 'Cerrar menú'],
   'ja-JP': ['メニューを開く', 'メニューを閉じる'],
   'ko-KR': ['메뉴 열기', '메뉴 닫기'],
@@ -21,6 +22,7 @@ const menuCopy: Record<PublicSiteLocale, [string, string]> = {
 
 const languageLabel: Record<PublicSiteLocale, string> = {
   'ms-MY': 'Bahasa',
+  'th-TH': "ภาษา",
   'en-US': 'Language',
   'zh-CN': '语言',
   'zh-SG': '语言',

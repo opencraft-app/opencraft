@@ -162,6 +162,7 @@ export const CTA_COPY_BY_LOCALE: Record<
   Record<CtaCopyKey, string>
 > = {
   "ms-MY": { startFree: "Cuba percuma", myCompanion: "Rakan AI Saya" },
+  "th-TH": { startFree: "ลองใช้ฟรี", myCompanion: "เพื่อน AI ของฉัน" },
   "en-US": { startFree: "Free trial", myCompanion: "My AI Companion" },
   "zh-CN": { startFree: "免费试用", myCompanion: "我的智能体伙伴" },
   "zh-SG": { startFree: "免费试用", myCompanion: "我的智能体伙伴" },

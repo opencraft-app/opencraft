@@ -12,6 +12,7 @@
  */
 
 import { localizeMalay } from '../../../i18n/malay-copy';
+import { localizeThai } from '../../../i18n/thai-copy';
 import {
   ArrowLeft,
   BookOpen,
@@ -381,6 +382,7 @@ function getSkillOverview(
 }
 
 function getCategoryLabel(label: SkillCategoryLabel, overviewLocale: CuratedSkillOverviewLocale): string {
+  if (overviewLocale === "th-TH") return localizeThai(label.en);
   if (overviewLocale === "ms-MY") return localizeMalay(label.en);
 
   const labelByLocale: Partial<Record<CuratedSkillOverviewLocale, string>> = {
@@ -1924,6 +1926,8 @@ export function SkillsDemoPanel({
   // 印尼语、西班牙语、日语、韩语，其余回退英文。未收录条目回退英文。
   const overviewLocale: CuratedSkillOverviewLocale = isChinese
     ? "zh-CN"
+    : i18n.resolvedLanguage === "th-TH"
+      ? "th-TH"
     : i18n.resolvedLanguage === "ms-MY"
       ? "ms-MY"
     : i18n.resolvedLanguage === "id-ID"

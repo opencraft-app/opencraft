@@ -13946,3 +13946,16 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
     white-space: nowrap;
   }
 }
+
+/* Thai uses system glyph coverage without adding a font download. */
+#lightvela-intl-home[data-locale='th-TH'] {
+  --font-sans: "Leelawadee UI", "Thonburi", "Noto Sans Thai", Tahoma, system-ui, sans-serif;
+  --font-ui: var(--font-sans);
+  --font-hero: var(--font-sans);
+  --font-footer-display: var(--font-sans);
+}
+#lightvela-intl-home[data-locale='th-TH'] .foot__title,
+#lightvela-intl-home[data-locale='th-TH'] .foot__title .row {
+  font-family: var(--font-sans) !important;
+  font-style: normal !important;
+}

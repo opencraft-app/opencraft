@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { JSDOM } from "jsdom";
 import { polishCapabilityCards } from "./international-home-capability-polish.mjs";
 import { localizeFeatureCards, normalizeHeroRuntime } from "./international-home-feature-locales.mjs";
+import { generateThaiHome } from './generate-thai-home.mjs';
 import { generateMalayHome } from "./generate-malay-home.mjs";
 import * as OpenCC from "opencc-js";
 
@@ -8843,12 +8844,13 @@ const heroChat = (await readFile(path.join(sourceRoot, "assets/hero-chat.js"), "
   }`,
   );
 
-await writeFile(path.join(targetRoot, "style.css"), cleanGeneratedText(css));
+await writeFile(path.join(targetRoot, "style.css"), cleanGeneratedText(css + '\n/* Thai uses system glyph coverage without adding a font download. */\n#lightvela-intl-home[data-locale=\'th-TH\'] {\n  --font-sans: "Leelawadee UI", "Thonburi", "Noto Sans Thai", Tahoma, system-ui, sans-serif;\n  --font-ui: var(--font-sans);\n  --font-hero: var(--font-sans);\n  --font-footer-display: var(--font-sans);\n}\n#lightvela-intl-home[data-locale=\'th-TH\'] .foot__title,\n#lightvela-intl-home[data-locale=\'th-TH\'] .foot__title .row {\n  font-family: var(--font-sans) !important;\n  font-style: normal !important;\n}\n'));
 await writeFile(path.join(targetRoot, "runtime.js"), cleanGeneratedText(runtime));
 await writeFile(path.join(targetRoot, "hero-chat.js"), cleanGeneratedText(heroChat));
 await copyFile(path.join(sourceRoot, "assets/scene-wheel.js"), path.join(targetRoot, "scene-wheel.js"));
 
 await generateMalayHome(targetRoot);
+await generateThaiHome(targetRoot);
 await initializeInternationalHomeFragmentAccessibility(targetRoot);
 const voiceAvatarSummary = await optimizeInternationalHomeVoiceAvatars(targetRoot);
 
