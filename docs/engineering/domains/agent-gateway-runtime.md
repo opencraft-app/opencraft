@@ -846,7 +846,7 @@ separate stateless compatibility path, not the persistent implementation.
 
 - The immutable backend contract remains `fetch-v1`. CTL exposes `data.enabled`
   and `rivet-sql-v1` only when `WEBSITE_BACKEND_DATA_ENABLED=1`, a configured backend
-  runtime and the exact user beta allowlist all pass. Static sites are unchanged;
+  runtime and `WEBSITE_BACKEND_ENABLED=1` all pass. Static sites are unchanged;
   frontend visibility still follows its existing hidden `show()` boundary.
 - Static publication is independent of runtime availability for sites CTL certifies as backend-free.
   Claimed/internal operation responses carry optional `HasBackendHistory` and `PreviousStorageBytes`
@@ -865,9 +865,9 @@ separate stateless compatibility path, not the persistent implementation.
   requires successful runtime deletion before COS cleanup and completion; unavailable runtime does
   not release quota or report success. Delete completion recounts COS without another runtime call.
   Rollout order is CTL first, then workers; older responses keep conservative cleanup behavior.
-- Offline release bindings use schema2 to declare the regional runtime driver and a boolean
+- Offline release bindings use schema3 to declare the regional runtime driver and a boolean
   `data_enabled` input. Persistent data is rejected for `runsc`. The explicit `enable` phase
-  requires a nonempty owner allowlist and renders CTL `WEBSITE_BACKEND_DATA_ENABLED=1` with
+  sets the regional `WEBSITE_BACKEND_ENABLED=1` gate and renders CTL `WEBSITE_BACKEND_DATA_ENABLED=1` with
   gateway `SITE_GATEWAY_BACKEND_SHARED_READ=true` together. `prepare`, legacy schema1 and a
   false data input explicitly override inherited gates to closed values; they never establish
   live runtime/storage readiness. See [regional release bindings](../../../site-runtime/deploy/RELEASE-BINDINGS.md).
@@ -993,7 +993,7 @@ The internal authenticated `POST /internal/ctl/websites/sites/{siteId}/retention
 reserves at most one candidate using deployment policy, never request-supplied ages.
 It is disabled unless `WEBSITE_RETENTION_ENABLED=true`, `WEBSITE_RETENTION_KEEP`
 is explicitly 1–16, and `WEBSITE_RETENTION_GRACE` is explicitly 1h–720h. It additionally
-requires a fullstack site owned by a backend-enabled allowlisted user. A successful
+requires a fullstack site owned by a backend-enabled authenticated user. A successful
 response with `scheduled=false` means no eligible candidate, not a completed cleanup;
 when scheduled, follow the operation to terminal success. Worker polling is durable.
 No recurring scheduler or production policy is enabled by this source change.
@@ -1011,7 +1011,7 @@ An opt-in worker scheduler now calls authenticated
 `POST /internal/ctl/websites/retention/sweep?cursor=...`. Set worker
 `WEBSITE_RETENTION_SWEEP_INTERVAL` explicitly (1m–24h); an absent value disables it.
 Each tick scans at most 20 active fullstack sites in site-ID order, filtering owners
-through the backend allowlist; each eligible site still uses the fenced reservation.
+through the regional backend gate; each eligible site still uses the fenced reservation.
 A complete scan resets the cursor, HTTP/response failures preserve it for retry,
 and shutdown cancels the scheduler before draining workers. CTL policy must also
 be explicitly enabled. No deployment environment is enabled by the source defaults.

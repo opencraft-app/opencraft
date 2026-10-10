@@ -118,7 +118,7 @@ Use [RELEASE-BINDINGS.md](RELEASE-BINDINGS.md) and the references-only renderer 
 regional final-overlay patches. Append them after existing positional source patches; never
 insert a Component into the CTL overlay. Both regional real-source renders preserve the
 existing static/auth/DSH settings. Prepare keeps new fullstack disabled, enable requires an
-explicit nonempty owner allowlist. No production identity or secret is inferred from tests.
+explicit regional enablement approval. No production identity or secret is inferred from tests.
 
 ## Rollout order after explicit release authorization
 

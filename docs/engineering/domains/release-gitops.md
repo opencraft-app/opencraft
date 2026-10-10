@@ -722,7 +722,7 @@ Markdown 与 `scripts/package_fullstack.py`。存量批次使用独立的
 
 `.ci/runtime/commands/prepare_website_backend_release.py` 只接受固定源码树 hash、
 同地域私有 HTTPS endpoint 和 CA/deploy/invoke 的 Secret 引用，不读取凭据或 apply。
-默认 prepare 显式关闭 CTL 新 fullstack；enable 必须单独批准非空 owner allowlist。
+默认 prepare 显式关闭 CTL 新 fullstack；enable 必须独立确认区域运行时验收并开启区域总开关。
 按 [地域接线说明](../../../site-runtime/deploy/RELEASE-BINDINGS.md) 将生成 patch 列表
 追加到三个服务现有 source-facing overlay 的最后，走原 bundle 的 publish_paths。
 不能嵌入 Component：CTL 原有 positional JSON patch 会误删已存在的 rewrite 配置挂载。
@@ -735,7 +735,8 @@ Markdown 与 `scripts/package_fullstack.py`。存量批次使用独立的
 ### 建站后端隐藏发布（2026-10-01）
 
 国内与国际 production CTL overlay 在最后对 API/service/bypass 显式设置
-`WEBSITE_BACKEND_BETA_USERS=""`，覆盖 envFrom，保证后端代码发布不等于功能开放。
+`WEBSITE_BACKEND_ENABLED="0"` 与 `WEBSITE_BACKEND_DATA_ENABLED="0"`，覆盖 envFrom，
+保证后端代码发布不等于功能开放。站点网关显式关闭共享后端读取。
 本阶段不发布平台前端、不启用任何 owner allowlist、不执行生产存量 Skill 下发。
 可先发布兼容 CTL、website worker、site-gateway 镜像、migration32 及 service-gateway
 rollback 路由配置；runtime/TLS/角色凭据未落地时，capability 必须 fail-closed。
@@ -771,8 +772,8 @@ Go registry 与 Rust Depot 的 file-session 消费者必须和 renewer 配套：
 ### 建站区域启用契约（2026-10-10）
 
 当前代码使用 `WEBSITE_BACKEND_ENABLED=1` 区域总开关与独立的
-`WEBSITE_BACKEND_DATA_ENABLED=1` 数据开关，不使用账号白名单。旧 overlay 的空
-beta 变量仅是历史准备配置，不再控制当前代码；总开关未配置仍关闭。
+`WEBSITE_BACKEND_DATA_ENABLED=1` 数据开关，不使用账号白名单。生产 overlay 显式关闭
+总开关与数据开关，后续 enable binding 覆盖这些默认值；总开关未配置仍关闭。
 离线 binding schema3 删除 beta_users，prepare 显式写总开关/数据开关为 0，
 enable 写总开关为 1，并按 data_enabled 写数据与共享读取开关。
 区域 runtime/TLS/角色凭据与持久化验收仍是发布前提；本次只修改源码。

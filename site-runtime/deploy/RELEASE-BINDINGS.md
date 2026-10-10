@@ -110,7 +110,7 @@ image digest, Synced/Healthy and real business flows. A local render is not Argo
 
 ## Explicit enable and new-machine adoption
 
-Enable is a separate rendering phase with an approved nonempty owner allowlist:
+Enable is a separate rendering phase with approved regional runtime acceptance:
 
 ```sh
 python3 .ci/runtime/commands/prepare_website_backend_release.py \

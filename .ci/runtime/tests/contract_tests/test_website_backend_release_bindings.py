@@ -301,8 +301,22 @@ class WebsiteBackendSourceRenderTests(unittest.TestCase):
                     dep = next(x for x in documents if x.get('kind') == 'Deployment' and x['metadata']['name'] == name)
                     container = dep['spec']['template']['spec']['containers'][0]
                     variables = {v['name']: v for v in container.get('env', [])}
-                    self.assertEqual(variables.get('WEBSITE_BACKEND_BETA_USERS'),
-                                     {'name': 'WEBSITE_BACKEND_BETA_USERS', 'value': ''})
+                    self.assertEqual(variables.get('WEBSITE_BACKEND_ENABLED'),
+                                     {'name': 'WEBSITE_BACKEND_ENABLED', 'value': '0'})
+                    self.assertEqual(variables.get('WEBSITE_BACKEND_DATA_ENABLED'),
+                                     {'name': 'WEBSITE_BACKEND_DATA_ENABLED', 'value': '0'})
+
+    def test_hidden_release_closes_shared_backend_reads_in_both_regions(self):
+        for region in ['shprod', 'sgprod']:
+            with self.subTest(region=region), tempfile.TemporaryDirectory() as tmp:
+                mirror = Path(tmp)
+                self.copy_sources(mirror)
+                documents = self.render(mirror / f'argocd/services/site-gateway/{region}')
+                dep = next(x for x in documents if x.get('kind') == 'Deployment' and
+                           x['metadata']['name'] == 'site-gateway')
+                env = {v['name']: v for v in dep['spec']['template']['spec']['containers'][0].get('env', [])}
+                self.assertEqual(env.get('SITE_GATEWAY_BACKEND_SHARED_READ'),
+                                 {'name': 'SITE_GATEWAY_BACKEND_SHARED_READ', 'value': 'false'})
 
     def test_explicit_values_override_envfrom_and_old_key_references(self):
         with tempfile.TemporaryDirectory() as tmp:
