@@ -104,6 +104,13 @@ partial 提交并校验后才返回 ready。后端持有认证、主机信任、
 不宣告本机队列、Goal 或桌面能力。详见
 [Attachment staging](../../../opencraft/docs/chat-ui-architecture.md)。
 
+SSH Codex 的原生 Goal 属于远端 Thread。共享 broker 在物理初始化时保留上游
+显式声明的 Goal read/write 能力；原生 Codex 未提供 OpenCraft 扩展时，以只读
+功能目录中的 goals.enabled 发现支持，再开放对应的 get/set/clear RPC。禁用、
+旧版不支持或探测超时不宣告能力，也不阻止普通会话就绪。工作台按 Thread 读取
+已有目标；读取和发现不创建、激活或恢复 Goal。自主续跑仍归远端 Codex，SSH
+broker 不追加 Goal 写入或执行轮次。见 [Thread goals](../../../opencraft/docs/chat-ui-architecture.md#thread-goals)。
+
 OpenCraft 会话置顶属于原生 Server 的目录元数据，不属于执行轮次或客户端偏好。
 Codex adapter 使用原生置顶 section；Hermes adapter 复用既有 TAT HTTP 通道和
 会话凭据调用 Dashboard 的 Profile-scoped metadata API，不修改 Hermes。

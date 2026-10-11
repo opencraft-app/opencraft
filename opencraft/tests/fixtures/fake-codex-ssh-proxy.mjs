@@ -34,6 +34,10 @@ const server = createServer();
 const sockets = new WebSocketServer({ noServer: true, autoPong: process.env.FIXTURE_NO_PONG !== "1" });
 const workbenchFixture = process.env.FIXTURE_WORKBENCH_UI === "1";
 const activeFixture = process.env.FIXTURE_WORKBENCH_UI_ACTIVE === "1";
+const nativeGoals = process.env.FIXTURE_NATIVE_GOALS;
+let nativeGoal = { threadId: "ssh-ui-thread", objective: "Existing remote goal", status: "active",
+  tokenBudget: null, tokensUsed: 731, timeUsedSeconds: 82,
+  createdAt: Math.floor(Date.now() / 1000) - 82, updatedAt: Math.floor(Date.now() / 1000) };
 const attachmentRoot = process.env.FIXTURE_ATTACHMENT_ROOT;
 const attachmentHistoryFile = attachmentRoot ? join(attachmentRoot, "fixture-history.json") : null;
 const attachmentHistory = new Map(attachmentHistoryFile && existsSync(attachmentHistoryFile) ? JSON.parse(readFileSync(attachmentHistoryFile, "utf8")) : []);
@@ -99,6 +103,7 @@ function workbenchResult(message) {
       additionalSpeedTiers: [], serviceTiers: [],
     }], nextCursor: null };
     case "thread/list": return { data: process.env.FIXTURE_WORKBENCH_UI_EMPTY_HISTORY === "1" ? [] : [fixtureThread], nextCursor: null };
+    case "threadSection/list": return { data: [], nextCursor: null };
     case "thread/read": return { thread: fixtureHistory };
     case "thread/resume": return { thread: { ...fixtureThread, turns: [] }, model: "fixture-model", modelProvider: "openai",
       cwd: "/remote", runtimeWorkspaceRoots: ["/remote"], instructionSources: [],
@@ -134,6 +139,31 @@ sockets.on("connection", ws => {
     if (!message.method || message.id === undefined) return;
     if (workbenchFixture || attachmentRoot) process.send?.({ method: message.method, params: message.params });
     try {
+    if (message.method === "experimentalFeature/list" && nativeGoals) {
+      if (nativeGoals === "unsupported") {
+        ws.send(JSON.stringify({ id: message.id, error: { code: -32601, message: "Unknown method" } })); return;
+      }
+      if (nativeGoals === "delayed") await new Promise(resolve => setTimeout(resolve, 300));
+      ws.send(JSON.stringify({ id: message.id, result: { data: [{ name: "goals", enabled: nativeGoals !== "disabled" }], nextCursor: null } })); return;
+    }
+    if (nativeGoals && message.method.startsWith("thread/goal/")) {
+      if (message.method === "thread/goal/get") {
+        ws.send(JSON.stringify({ id: message.id, result: { goal: nativeGoal } }));
+        // Reproduce a native completion after hydration: the bridge must not
+        // add a second autonomous Goal continuation on the remote Server.
+        ws.send(JSON.stringify({ method: "turn/completed", params: { threadId: "ssh-ui-thread",
+          turn: { id: "native-goal-turn", status: "completed", items: [], error: null } } }));
+      } else if (message.method === "thread/goal/set") {
+        nativeGoal = { ...nativeGoal, ...message.params };
+        ws.send(JSON.stringify({ id: message.id, result: { goal: nativeGoal } }));
+        ws.send(JSON.stringify({ method: "thread/goal/updated", params: { threadId: "ssh-ui-thread", goal: nativeGoal } }));
+      } else {
+        nativeGoal = null;
+        ws.send(JSON.stringify({ id: message.id, result: { cleared: true } }));
+        ws.send(JSON.stringify({ method: "thread/goal/cleared", params: { threadId: "ssh-ui-thread" } }));
+      }
+      return;
+    }
     const result = (attachmentRoot ? await attachmentResult(message) : undefined) ?? (workbenchFixture ? workbenchResult(message) : undefined) ?? (message.method === "initialize" ? { userAgent: "fixture-codex", platform: "linux", codexHome: "/synthetic" }
       : message.method === "thread/resume" ? { thread: { id: message.params.threadId, status: { type: "idle" } } }
       : message.method === "thread/read" ? { thread: { id: message.params.threadId, status: { type: "idle" } } }
