@@ -77,4 +77,4 @@ stages:
               ci_ensure_jq
               ci_require_commands tccli kubectl jq curl python3
               ci_load_tencentcloud_credentials
-              python3 .ci/runtime/commands/pin_beijing_hermes_existing_vms.py
+              python3 .ci/runtime/commands/pin_beijing_hermes_existing_vms.py --execute
