@@ -51,6 +51,8 @@ derived: false
 - `frontend/src/components/site/maintenance-announcement-banner.tsx`
 - `frontend/src/components/site/__tests__/maintenance-announcement-banner.*.test.tsx`
 - `frontend/src/i18n/generated/*.json`
+- `opencraft/plugins/lightvela-hermes/src/upstream/mono2/i18n/generated/*.json`
+- `opencraft/plugins/lightvela-hermes/src/upstream/mono2/UPSTREAM.json`
 - `docs/engineering/domains/site-environment-routing.md`
 
 ## required_context
@@ -67,6 +69,10 @@ derived: false
 | `frontend/AGENTS.md` | 服务规则 | 前端修改与验证 |
 | `docs/context/project/adjacency/frontend-runtime-openspec-i18n.md` | i18n 邻接 | 生成字典并检查翻译 |
 | `frontend/openspec/changes/2026-07-06-frontsandbox-hermes-agent-upgrade-announcement-0706.md` | 历史方案 | 复用公告条 |
+| `docs/context/project/services/opencraft.md` | OpenCraft 共享边界 | 同步 frontend 翻译副本 |
+| `docs/context/project/upstream-subtrees.md` | 生成副本所有权 | 从 frontend 真源生成，不直接编辑副本 |
+| `docs/context/domains/agent-gateway-runtime.md` | 运行时边界 | 公告不改变 Agent runtime |
+| `opencraft/AGENTS.md` | OpenCraft 服务规则 | 执行生成副本同步检查 |
 
 ## evidence
 
@@ -77,6 +83,7 @@ derived: false
 - 当前 frontend 未配置 `lint` 脚本；`pnpm lint` 返回 Command not found。
 - 分支提交 `e88462a26` 已推送到 `origin/codex/oct-upgrade-announcement`；工蜂 MR !5191 已创建，初次查询为 opened / can_be_merged。
 - 全量 Context catalog / 单测因仓库现存旧 Task Pack 元数据错误失败；本次 Task Pack 与 checkpoint 已补齐对应元数据和字段。全量门禁仍需独立治理。
+- MR 初次 CI 在 5 分 34 秒后失败；本地复现 `sync-mono2-agent-console.mjs --check` 报翻译副本漂移。已运行同步命令并复验 136 个文件同步通过，待 CI 重跑。
 - 待记录线上状态。
 
 ## risks
@@ -103,4 +110,4 @@ derived: false
 
 ## handoff
 
-- 本地验证完成，MR !5191 已创建；待合并、正式发布与线上双站核验。
+- MR !5191 正在补齐 OpenCraft 生成副本；待最新 CI、合并、正式发布与线上双站核验。

@@ -17,7 +17,7 @@ derived: false
 
 ## stage
 
-本地实现与验证完成，工蜂 MR !5191 已创建；下一道门禁是 CI、合并和双站正式发布。
+本地实现与验证完成，工蜂 MR !5191 首次 CI 发现 OpenCraft 翻译副本漂移；已生成同步副本，下一道门禁是最新 CI、合并和双站正式发布。
 
 ## verified
 
@@ -25,10 +25,11 @@ derived: false
 - 8 个语种翻译均已补齐，i18n 检查通过。
 - 相关 48 项测试、`pnpm check` 和国内/国际构建通过。
 - 提交 `e88462a26` 已推送到远端，MR !5191 初次查询为 opened / can_be_merged。
+- `sync-mono2-agent-console.mjs --check` 的副本漂移已复现；同步后 136 个文件检查通过。
 
 ## unverified
 
-- MR CI、生产构建与两站线上显示。
+- 同步副本提交后的 MR CI、生产构建与两站线上显示。
 
 ## discard
 
@@ -43,7 +44,7 @@ derived: false
 
 ## next_action
 
-确认 MR CI 状态并准备双站正式发布。
+提交同步副本，等待 MR CI 重跑并准备双站正式发布。
 
 ## requirement_ids / requirement_refs / requirement_excerpt
 
