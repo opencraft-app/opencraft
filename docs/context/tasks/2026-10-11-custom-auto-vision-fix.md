@@ -99,7 +99,8 @@ derived: false
 - 测试日志 /tmp/custom-auto-*.log；不含真实凭据。
 
 ## handoff
+- 已创建 MR !5186：https://git.woa.com/wisp/mono2/-/merge_requests/5186，状态 opened，可合并；尚未合并或发布。
 - 真源与 OpenCraft 生成副本分开提交，分支 fix/custom-auto-vision-20261011，目标 master。
 - 远端连接与已有工蜂认证已恢复；用户已授权 push 与创建 MR，未授权合并或发布。
 - 新主干 instance 包测试（跳过既有 Docker 用例）、go vet、同步和文档检查通过；完整前端构建、Docker 用例及线上网关请求尚未验证。
-- 当前主干配置套件 7 文件 / 235 测试通过；前端检查结果记录在 MR 描述中。
+- 当前主干配置套件 7 文件 / 235 测试通过；前端语言与文档检查通过，修正测试断言类型问题后类型检查 164 current / 171 baseline / 0 new；95 聚焦测试再次通过。

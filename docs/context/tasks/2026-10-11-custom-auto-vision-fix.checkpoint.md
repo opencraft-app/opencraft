@@ -17,9 +17,10 @@ derived: false
 ---
 
 ## stage
-真源与生成副本已独立提交并更新到当前主干；既有认证验证通过，准备推送 MR，尚未发布。
+分支已推送，工蜂 MR !5186 已创建，目标 master；未合并、未发布。
 
 ## verified
+- 当前主干配置套件 235 测试通过；测试断言类型问题修正后，95 聚焦测试再次通过，类型检查新增诊断为 0。
 - 当前主干 9efa2102f 上 instance 包测试（跳过一个 Docker 用例）、go vet、136 文件同步检查通过。
 - MR 新基线配置套件 234 tests passed；下面其他验证来自原实现基线，不能代替新基线完整门禁。
 - CTL custom/auto 写入后合并并回读 supports_vision=true，ACLI/harness/legacy/幂等测试通过。
@@ -44,4 +45,5 @@ derived: false
 - 详情见 2026-10-11-custom-auto-vision-fix.md；日志 /tmp/custom-auto-*.log。
 
 ## next_action
+- MR：https://git.woa.com/wisp/mono2/-/merge_requests/5186；等待评审与 CI。
 - 使用已恢复连接推送 fix/custom-auto-vision-20261011 并创建面向 master 的 MR；新基线 Go 包测试（跳过 Docker 用例）与静态检查已通过；继续前端检查，完整构建及 Docker 门禁待 CI。MR 描述保存在 /tmp/custom-auto-mr-description.md。
