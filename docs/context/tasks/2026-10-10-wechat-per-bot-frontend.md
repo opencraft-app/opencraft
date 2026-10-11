@@ -64,6 +64,11 @@ Show Weixin as an independent connection for each Bot and update dual-site guida
 ## handoff
 - Submit this MR separately from CTL, targeting `master`; mark CTL MR as prerequisite. Neither MR is a production release.
 
+## cr_followup_2026_10_11
+- !5180 was merged locally with current `origin/master`; the only content conflict was generated `UPSTREAM.json`, rebuilt with `sync:mono2-agent-console` after the merge commit.
+- `pnpm check`, `pnpm build`, 88 focused Vitest cases and `check:mono2-agent-console` pass after the merge. Vitest used `--api.host 127.0.0.1` because this host cannot resolve `localhost`.
+- Frontend rollout remains dependent on CTL migration and deployment. Real two-account and duplicate-account Weixin scans remain unverified.
+
 ## checkpoint
 ### stage
 Split frontend branch prepared; source commit, generated locale and OpenCraft sync, and MR are next.
@@ -83,4 +88,4 @@ Split frontend branch prepared; source commit, generated locale and OpenCraft sy
 - Worktree: `/Users/pablozhong/.codex/worktrees/wechat-per-bot/lightvela`.
 
 ### next_action
-- Commit frontend source, regenerate locale dictionaries, sync the OpenCraft copy in a second commit, then open the dependent MR.
+- Commit the regenerated OpenCraft manifest, update !5180, and verify remote mergeability and checks.
