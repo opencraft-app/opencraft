@@ -75,6 +75,11 @@ Allow separate Bots on one LightVela instance to connect separate Weixin account
 - `validate_change_impact.py` passed for the changed CTL and frontend paths, matching the agent-gateway-runtime design document. `git diff --check` passed.
 - Regenerating i18n dictionaries removed the obsolete message but would require an OpenCraft vendored-copy update. The repository requires the frontend source to be committed before that sync; without commit authorization, generated dictionaries were restored. The obsolete message is no longer referenced by the UI.
 
+## cr_followup_2026_10_11
+- For !5179, added regression assertions for the Profile used by the Bot deletion guard, the Bot/Profile fields handed to session persistence, and durable session targeting after the in-memory runtime ends.
+- The targeted CTL tests and `CGO_ENABLED=0 go vet ./pkg/instance ./pkg/model/channelloginsession` pass. Full `CGO_ENABLED=0 go test ./...` remains blocked by SQLite's CGO requirement and missing rootless Docker.
+- Duplicate login of one Weixin account across two Profiles remains unverified. Tencent's QR status contract does not establish whether an earlier session is revoked or shared; run this case with nonproduction accounts before rollout. No account deduplication was added on an unverified assumption.
+
 ## checkpoint
 ### stage
 Implementation and local review complete; prepare the separate CTL MR.
@@ -98,4 +103,4 @@ Implementation and local review complete; prepare the separate CTL MR.
 - Frontend worktree: `/Users/pablozhong/.codex/worktrees/wechat-per-bot/lightvela`.
 
 ### next_action
-- Validate the split CTL branch, then commit, push, create and verify its MR.
+- Update !5179 with the regression tests and verify its remote branch and checks; complete nonproduction two-account and duplicate-account login before rollout.

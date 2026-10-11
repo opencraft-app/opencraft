@@ -905,6 +905,9 @@ func TestDeleteInstanceBotRejectsWeixinOwner(t *testing.T) {
 	if len(adapter.ptyCalls) != 2 || len(adapter.processCalls) != 0 {
 		t.Fatalf("connected Weixin owner rejection must only use TAT lookups, pty=%d envd=%d", len(adapter.ptyCalls), len(adapter.processCalls))
 	}
+	if !strings.Contains(adapter.ptyCalls[1].Command, "sales-123") {
+		t.Fatal("delete guard must query the Bot's Weixin profile")
+	}
 }
 
 func TestDeleteInstanceBotRejectsWhatsAppOwner(t *testing.T) {
