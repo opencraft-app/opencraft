@@ -1,0 +1,9 @@
+{
+  "environment": "beijing-sandbox",
+  "region": "ap-beijing",
+  "source_build": 33,
+  "image_id": "img-64bzjwpv",
+  "src_version": "0.21.5",
+  "archive_url": "https://hermes-code-1325194254.cos.ap-guangzhou.myqcloud.com/hermes/hermes-agent-v20260928/hermes-agent.tar.gz",
+  "archive_sha256": "176a1526eb994184d2ef55781aab1dc67b5ac7e06e3ed527bffc34d143c4a94c"
+}
