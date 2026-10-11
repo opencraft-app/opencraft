@@ -1,0 +1,101 @@
+{
+  "generator": "built-in imagegen",
+  "source": "/Users/keria/.codex/generated_images/01a1079f-2125-7d13-8a19-ae6fdb87a971/exec-7a1e3518-ea3b-4ca4-a9fa-296cb29a3756.png",
+  "reference": "/Users/keria/.codex/generated_images/01a0fabe-e857-77f1-94c9-06e39bab64be/exec-abb86e79-60ff-4087-bd9c-073d7ba36aad.png",
+  "style": "flat 2D dark-purple ink, organic eye with genuine alpha highlight notch, happy closed eye, curved smile",
+  "normalization": "Three equal columns segmented by alpha >4, tight bounds, aspect-preserving resize and 2px transparent padding, lossless WebP",
+  "entries": [
+    {
+      "name": "eye",
+      "sourceCrop": {
+        "left": 259,
+        "top": 220,
+        "width": 185,
+        "height": 284
+      },
+      "alpha": {
+        "foregroundPixels": 36877,
+        "transparentPixels": 487299
+      },
+      "output": {
+        "format": "webp",
+        "width": 87,
+        "height": 132,
+        "space": "srgb",
+        "channels": 4,
+        "depth": "uchar",
+        "isProgressive": false,
+        "hasProfile": false,
+        "hasAlpha": true
+      }
+    },
+    {
+      "name": "closed-eye",
+      "sourceCrop": {
+        "left": 932,
+        "top": 277,
+        "width": 308,
+        "height": 156
+      },
+      "alpha": {
+        "foregroundPixels": 20170,
+        "transparentPixels": 504006
+      },
+      "output": {
+        "format": "webp",
+        "width": 130,
+        "height": 68,
+        "space": "srgb",
+        "channels": 4,
+        "depth": "uchar",
+        "isProgressive": false,
+        "hasProfile": false,
+        "hasAlpha": true
+      }
+    },
+    {
+      "name": "mouth",
+      "sourceCrop": {
+        "left": 1687,
+        "top": 332,
+        "width": 249,
+        "height": 117
+      },
+      "alpha": {
+        "foregroundPixels": 13749,
+        "transparentPixels": 510427
+      },
+      "output": {
+        "format": "webp",
+        "width": 140,
+        "height": 68,
+        "space": "srgb",
+        "channels": 4,
+        "depth": "uchar",
+        "isProgressive": false,
+        "hasProfile": false,
+        "hasAlpha": true
+      }
+    }
+  ],
+  "prompt": "Create exactly three detached flat 2D face components on genuine transparent alpha: dark-purple #292637 bean-shaped upright eye with tiny transparent notch at upper-left; smooth closed happy-eye arch with rounded ends; small smile-mouth U curve with rounded ends. Equal horizontal thirds, generous spacing. No whites, body, shadows, gloss, texture or text. Selected mock used as style reference.",
+  "cheek": {
+    "source": "/Users/keria/.codex/generated_images/01a1079f-2125-7d13-8a19-ae6fdb87a971/exec-41b694f0-8387-443a-be59-ab7a6eade63d.png",
+    "prompt": "Single pale coral pink #ffc0ca translucent flat 2D organic oval blush, width 1.2 times height, alpha background, no outline/shadows/lights/texture/body/eyes/UI. Selected mock style reference.",
+    "normalization": "Tight alpha >4 bounds, aspect-preserving 128px width, 2px transparent padding, lossless WebP",
+    "crop": {
+      "left": 547,
+      "top": 493,
+      "width": 280,
+      "height": 159
+    },
+    "maxAlpha": 255,
+    "transparentPixels": 1538798,
+    "output": {
+      "path": "/tmp/hermes-doodle-assets/cheek.webp",
+      "width": 132,
+      "height": 77,
+      "hasAlpha": true
+    }
+  }
+}

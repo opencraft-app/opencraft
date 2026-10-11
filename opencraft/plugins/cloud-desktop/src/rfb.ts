@@ -1,6 +1,10 @@
 import type { DesktopConnection, DesktopConnectionSnapshot, DesktopControlLease } from "./contract";
 import type { DesktopSurface, DesktopSurfaceFactory } from "./viewer";
 import { loadRfbClient, type RfbClient, type RfbClientConstructor } from "./rfb-client";
+import { bindDesktopPointerInput } from "./pointer-input";
+import { createDesktopTextInput } from "./text-input";
+import { captureFramePreview } from "./frame-preview";
+import type { DesktopFramePreview } from "./contract";
 
 /** Supplied by an authorized backend adapter, never inferred from a Host URL.
  * The server must reject input without a grant; viewOnly is only local UX.
@@ -47,8 +51,19 @@ class RfbConnection implements DesktopConnection {
   private mounted = false;
   private requesting = false;
   private activeInput: DesktopControlLease | null = null;
+  private surfaceActive = true;
   private pasteHandler: ((readText: () => Promise<string>) => void) | null = null;
   private cancelPaste: (() => void) | null = null;
+  private pointerInput: ReturnType<typeof bindDesktopPointerInput> | null = null;
+  private textInput: ReturnType<typeof createDesktopTextInput> | null = null;
+  private preview: DesktopFramePreview | null = null;
+
+  capturePreview = (): DesktopFramePreview | null => {
+    if (!this.closed && this.snapshot.videoReady && this.client) {
+      this.preview = captureFramePreview(this.client.getInputCanvas());
+    }
+    return this.preview;
+  };
 
   constructor(private readonly session: DesktopRfbSession, private readonly Client: RfbClientConstructor) {}
 
@@ -94,6 +109,14 @@ class RfbConnection implements DesktopConnection {
       client.scaleViewport = true;
       client.resizeSession = false; // Observing must not resize the shared desktop.
       client.background = "transparent";
+      client.setSurfaceActive(this.surfaceActive);
+      this.pointerInput = bindDesktopPointerInput(element, client,
+        () => !this.closed && this.surfaceActive && this.activeInput?.isValid() === true,
+        () => this.textInput?.finish(() => client.focus({ preventScroll: true })));
+      this.disposers.push(() => { this.pointerInput?.dispose(); this.pointerInput = null; });
+      this.textInput = createDesktopTextInput(element, () => !this.closed && this.surfaceActive && this.activeInput?.isValid() === true,
+        keysym => { if (!this.closed && this.activeInput?.isValid()) client.sendKey(keysym); });
+      this.disposers.push(() => { this.textInput?.reset(); this.textInput = null; });
       const ready = () => {
         if (this.closed) return;
         try { this.publish({ ...this.snapshot, inputReady: true,
@@ -101,8 +124,27 @@ class RfbConnection implements DesktopConnection {
         catch { this.close(); }
       };
       const firstFrame = () => {
-        if (!this.closed && this.snapshot.inputReady) this.publish({ ...this.snapshot, videoReady: true });
+        if (!this.closed && this.snapshot.inputReady) {
+          syncGeometry();
+          this.publish({ ...this.snapshot, videoReady: true });
+        }
       };
+      // Decoder-owned backing dimensions are authoritative. Never infer aspect
+      // from the scaled viewport or resize the shared desktop to fit a card.
+      const canvas = client.getInputCanvas();
+      const syncGeometry = () => {
+        if (this.closed || !(canvas.width > 0 && canvas.height > 0)) return;
+        const ratio = canvas.width / canvas.height;
+        if (Number.isFinite(ratio) && ratio !== this.snapshot.mediaAspectRatio) {
+          this.publish({ ...this.snapshot, mediaAspectRatio: ratio });
+        }
+      };
+      const Observer = canvas.ownerDocument?.defaultView?.MutationObserver;
+      if (Observer) {
+        const observer = new Observer(syncGeometry);
+        observer.observe(canvas, { attributes: true, attributeFilter: ["width", "height"] });
+        this.disposers.push(() => observer.disconnect());
+      }
       const fail = () => this.close(false, "authorization");
       const disconnected = () => this.close(this.snapshot.videoReady
         && this.session.getTermination?.() === "transport-lost");
@@ -119,7 +161,7 @@ class RfbConnection implements DesktopConnection {
       this.disposers.push(() => {
         channel.removeEventListener("close", disconnected); channel.removeEventListener("error", channelError);
       });
-      const focus = () => { if (!this.closed && this.snapshot.videoReady) client.focus({ preventScroll: true }); };
+      const focus = () => { if (!this.closed && this.surfaceActive && this.snapshot.videoReady) client.focus({ preventScroll: true }); };
       let pasteKey = false;
       const keyDown = (event: KeyboardEvent) => {
         if (this.session.control?.canPaste?.() === false || !this.activeInput?.isValid() || !this.pasteHandler || event.key.toLowerCase() !== "v"
@@ -152,8 +194,10 @@ class RfbConnection implements DesktopConnection {
         element.removeEventListener("paste", paste, true);
       });
       const connection = this;
-      return { enableInput: lease => this.enableInput(lease), disableInput: () => this.disableInput(),
-        focus, setPasteHandler: handler => { this.pasteHandler = handler; },
+      return { setActive: active => this.setActive(active),
+        enableInput: lease => this.enableInput(lease), disableInput: () => this.disableInput(),
+        focus, focusTextInput: label => this.textInput?.focus(label),
+        setPasteHandler: handler => { this.pasteHandler = handler; },
         get pasteText() { return connection.session.control?.canPaste?.() === false ? undefined
           : (text: string, lease: DesktopControlLease, signal: AbortSignal) => connection.pasteText(text, lease, signal); },
         dispose: () => this.close() };
@@ -203,20 +247,24 @@ class RfbConnection implements DesktopConnection {
   }
 
   private enableInput(lease: DesktopControlLease): void {
-    if (!this.client || !this.snapshot.videoReady || !this.snapshot.controlAvailable
+    if (!this.client || !this.surfaceActive || !this.snapshot.videoReady || !this.snapshot.controlAvailable
       || !this.leases.has(lease) || !lease.isValid()) throw new Error("Desktop control grant is unavailable");
+    this.pointerInput?.reset(); this.textInput?.reset();
+    if (!lease.isValid() || this.closed) throw new Error("Desktop control grant retired");
     this.activeInput = lease;
     this.client.viewOnly = false;
     this.client.focusOnClick = true;
-    // The controller focuses only after this exact lease has been confirmed.
+    // Focus was acquired by Take; this confirms input, without stealing focus.
   }
 
   private pasteText(text: string, lease: DesktopControlLease, signal: AbortSignal): Promise<void> {
     const client = this.client;
-    const allowed = () => !this.closed && this.activeInput === lease && lease.isValid() && !signal.aborted;
+    const allowed = () => !this.closed && this.surfaceActive && this.activeInput === lease && lease.isValid() && !signal.aborted;
     if (!client || !allowed() || this.cancelPaste || typeof text !== "string" || text.length > 16_384) {
       return Promise.reject(new Error("Desktop paste unavailable"));
     }
+    this.textInput?.finish(() => client.focus({ preventScroll: true }));
+    if (!allowed()) return Promise.reject(new Error("Desktop paste retired"));
     return new Promise<void>((resolve, reject) => {
       const finish = () => {
         clearTimeout(timer); client.removeEventListener("clipboardready", ready);
@@ -245,8 +293,17 @@ class RfbConnection implements DesktopConnection {
     });
   }
 
+  private setActive(active: boolean): void {
+    if (this.closed || this.surfaceActive === active) return;
+    this.surfaceActive = active;
+    if (!active) this.disableInput();
+    if (!this.closed) this.client?.setSurfaceActive(this.surfaceActive);
+  }
+
   private disableInput(): void {
+    this.pointerInput?.reset();
     this.activeInput = null;
+    this.textInput?.reset();
     this.cancelPaste?.();
     if (!this.client) return;
     this.client.viewOnly = true;
@@ -262,6 +319,8 @@ class RfbConnection implements DesktopConnection {
 
   close(retryable = false, failure: DesktopConnectionSnapshot["failure"] = "transport"): void {
     if (this.closed) return;
+    if (failure === "transport") this.capturePreview();
+    else this.preview = null;
     this.closed = true;
     this.snapshot = { videoReady: false, inputReady: false, controlAvailable: false, ended: true,
       failure, ...(retryable ? { retryable: true } : {}) };
@@ -271,6 +330,7 @@ class RfbConnection implements DesktopConnection {
     const client = this.client, channel = this.channel;
     this.client = null; this.channel = null;
     this.pasteHandler = null;
+    cleanup(() => client?.setSurfaceActive(false));
     cleanup(() => client?.disconnect());
     cleanup(() => channel?.close());
     cleanup(() => this.session.close());

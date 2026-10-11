@@ -1,0 +1,25 @@
+{
+  "website": {
+    "url": "https://lightvela.ai/",
+    "capturedAt": "2026-10-10T13:42:00+08:00",
+    "locale": "国际首页",
+    "fullScreenshot": "/assets/lightvela-homepage-current-full.png",
+    "readingCrop": "/assets/lightvela-homepage-current.png",
+    "cropBox": [
+      0,
+      92,
+      856,
+      590
+    ]
+  },
+  "video": {
+    "source": "用户提供的原文新视觉演示视频",
+    "src": "/assets/lightvela-homepage-visual-demo.mp4",
+    "poster": "/assets/lightvela-homepage-video-poster.png",
+    "duration": 37.8,
+    "width": 1280,
+    "height": 704,
+    "sha256": "ed2155f52dd70c77fb3da9601f34accdcc302f73331dbeb422e48ff0fd4d0a06",
+    "locale": "中文演示"
+  }
+}

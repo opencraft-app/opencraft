@@ -680,7 +680,45 @@ func (a *SandboxAdapter) ResumeSandbox(ctx context.Context, sandboxID string, re
 	if err = a.doRequest(ctx, "resume", http.MethodPost, "/sandboxes/"+url.PathEscape(sandboxID)+"/resume", nil, req, http.StatusCreated, resp); err != nil {
 		return nil, err
 	}
+	if err = a.waitSandboxRunning(ctx, sandboxID); err != nil {
+		return nil, err
+	}
 	return resp, nil
+}
+
+func (a *SandboxAdapter) waitSandboxRunning(ctx context.Context, sandboxID string) error {
+	pollCtx, cancel := context.WithTimeout(ctx, pausePollTimeout)
+	defer cancel()
+
+	pollInterval := initialPollInterval
+	for {
+		detail, err := a.GetSandbox(pollCtx, sandboxID)
+		if err != nil {
+			if errors.Is(err, context.DeadlineExceeded) {
+				return errcode.Wrap(errcode.ErrSandboxTimeout, "wait sandbox running")
+			}
+			return err
+		}
+		switch strings.ToLower(strings.TrimSpace(detail.State)) {
+		case "running":
+			return nil
+		case "paused", "resuming":
+		default:
+			return errcode.Wrap(errcode.ErrSandboxStatusConflict, "unexpected sandbox state %q while resuming", detail.State)
+		}
+		if err := sleepWithContext(pollCtx, pollInterval); err != nil {
+			if errors.Is(err, context.DeadlineExceeded) {
+				return errcode.Wrap(errcode.ErrSandboxTimeout, "wait sandbox running")
+			}
+			return err
+		}
+		if pollInterval < maxPollInterval {
+			pollInterval *= 2
+			if pollInterval > maxPollInterval {
+				pollInterval = maxPollInterval
+			}
+		}
+	}
 }
 
 // SetTimeout overwrites the sandbox timeout.

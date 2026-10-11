@@ -1,5 +1,79 @@
 # 工作区不变量
 
+## Embedded panel host presentation
+
+- Embedded panel viewport and its complete DOM content reuse the current conversation's panel service,
+  renderer registrations and resource lifetime. Host commands must match the
+  current runtime, Bot instance/Profile and conversation owner; unknown tabs or
+  actions cannot bypass the product presentation policy.
+- External container layout is explicit opt-in. Expo and standalone Web/Electron
+  reuse the complete original toolbar, menus and content. Expo adds only host
+  geometry and native shell controls/input, without a replacement tab manager,
+  new Applications or per-tab WebViews.
+- Host geometry uses available container space and the shared panel minimum/Chat
+  reserve. A single embedded parent allocates sibling grid columns; Chat AppShell
+  consumes its own containing viewport. Only narrow/full-width mode replaces Chat.
+  One transient motion owner follows held input and completes/interrupts service
+  intents; it does not own tabs or create a second persisted open state.
+  Overlay makes only Chat inert; the same DOM plane remains accessible for
+  panel content. Resize/full-width changes preserve tabs and drafts; closing
+  releases resources through the original service lifecycle.
+
+## Native conversation pinning
+
+- PIN-01：置顶由原生 Server 持久化；OpenCraft 不维护第二份数据库或浏览器置顶集合，DSH 不支持时不补本地 fallback。
+- PIN-02：接口准入不等于原生能力。当前连接成功发现支持后才显示置顶菜单；暂时失败不冒充不支持或空置顶列表。
+- PIN-03：置顶读写只处理元数据，不 Resume/Start；Hermes 明确携带所属 profile，身份歧义拒绝写入，压缩链由 Hermes 自身处理。
+- PIN-04：置顶目录返回完整摘要、独立于近期窗口；侧栏去重后单独分组，置顶不占十条近期预算。刷新/重连从后端重新读取。
+- PIN-05：同一会话写入串行；操作前列表不能覆盖操作后状态；连接撤销拒绝晚到结果且不重放写入。菜单复用现有受控互斥 owner，不拥有存储或轮询。
+- PIN-06：LightVela 站点的外层会话侧栏只消费嵌入式 Workbench 投影的置顶状态、能力和动作；置顶会话不占近期分页名额，站点不持久化第二份置顶集合。
+
+## Desktop input ownership
+
+Desktop control presentation preserves the mounted control strip's geometry
+while hiding and making it inert before current video/input readiness. Confirmed
+ownership fades the shared action's solid decorative layer over 240ms; intent,
+press feedback and reduced motion do not delay input retirement or cancel.
+
+The mounted desktop interaction scope, confirmed backend grant and physical
+gesture have separate lifetimes. Unknown mobile focusout does not prove leaving:
+internal toolbar/media/editable handoff retains control; explicit outside presses
+(including blank space), known outside focus, hidden page and window blur retire
+it. The interaction owner never grants input or restores focus. Geometry changes
+retire held input and queued samples without revoking the grant; old physical
+contacts must lift before another gesture can start in the new geometry.
+Managed-media native touch activation consumes a fixed Take command once on
+single-finger tap release; movement, second contact, cancellation and capture
+loss cancel it. It never emits a synthetic click or replays a compatibility
+click. Ordinary toolbar buttons retain native click/keyboard activation.
+
+Desktop visor shoulder masks preserve their exterior curve and world-space
+origin while extending only the interior fill into the center background.
+Independent raster edges must have opaque overlap, not a butt joint; moving
+the entire shoulder to conceal a seam is not equivalent. Mobile and wide
+container variants share this contract. Pixel regression distinguishes ordinary
+rendering from simulated background-edge retraction; neither proves iOS Safari.
+
+WSP-36 桌面输入补充：手势与坐标仅由媒体适配层一个owner写入，decoder显式关闭
+原指针输出。观看缩放/平移不等于远端操作；捏合始终调整本地画面，只有确认授权
+后单指点击/拖动与双指滚动才发远端输入。滚轮和触控滚动共用有界规则，双指按
+同一帧采样，防止先后到达的事件造成错误分类。停止、失焦、新授权取消未消费帧、
+按键和滚动；旧物理指针须抬起才可被后继授权消费。缩放后坐标从实际画面与留白
+计算，不能拿Shell宽度当远端像素。手机文字入口在显式操作及确认授权下创建，
+候选词不发送，确认一次发送一次；撤权销毁该DOM而非复用给下一次输入。
+Take在用户激活时先取得媒体焦点而不提前启用输入；平台只读焦点归属在请求与确认
+两端检查，迟到授权不得再次聚焦。文字事务短于控制授权：远端点击/拖动/粘贴前先
+将焦点在Panel内交接，平台同步确认的组词先发到原目标；其余候选随原事务退休。
+旧输入DOM不得在同授权下后继输入复活；交接中撤权/换代也不得发送原指针按下。
+Surface消费Shell的同一逻辑active投影：隐藏立即退出模拟光标覆盖层及监听，不能
+等待触屏不保证的mouseleave；隐藏中迟到光标形状只更新媒体状态，不能复活覆盖层。
+本地控制光标资格复用输入授权投影与active，不另存控制开关；观看/申请中不挂载。
+停止、撤权或失焦立即移除覆盖层与监听，并恢复普通鼠标；迟到形状或mouseover不得复活。
+重新展开保留媒体连接但不抢焦点或恢复控制；只有新确认授权才挂载最新形状。
+此规则不清除远端画面内已有的光标像素；重复启用不能清空仍有效的光标附件。
+模型/真实decoder浏览器验收不等于iPhone系统键盘或原生执行器验收，详见
+[桌面输入策略](../docs/cloud-desktop-plugin.md#pointer-viewing-gestures-and-mobile-text-input)。
+
 ## SSH connection management
 
 - SSH-01：部署后端数据库是管理连接的配置/凭据唯一 authority，字段和 revision/CAS 同事务；秘密只写不回读，密钥留在私有后端文件。未知或冲突 schema 历史保留原数据并拒绝写入。
@@ -19,6 +93,12 @@
 状态：实施及验证中。下表记录目标与责任，不把测试名称当成已运行的证据。最新结果在 [progress.md](progress.md)。
 
 ## Application navigation restoration
+
+任务草稿保留：Application 级输入槽拥有原 Controller、File、预览与处理任务，View 只借用。20 个非活动页面的缓存淘汰不得删除非空输入；输入槽按 50 份非空草稿单独执行 LRU，空输入不计数，淘汰同时丢弃持久文档并释放附件资源。正在编辑或发送的所有者不可淘汰；全部受保护时拒绝新内容，不超限。侧栏完整 A→B→A 回到最后成功呈现的槽位，显式新 View 与 POP 仍独立。Scope promotion 必须更新无页面但仍保留的草稿；账号撤销清除全部槽位与目标缓存。验证：`test:task-draft-switching`、`smoke:task-draft-switching`。
+
+浏览器草稿补充：任务输入槽由 ConversationDraftOwnerRegistry 保留，ConversationDraftContinuity 仍是唯一文档持久化写入者，不叠加另一套持久化写入者。Bot Composer 通过平台存储端口保存 document、context 与附件元数据，不保存提交回执、执行状态、临时听写或发送锁；存储按产品／账号和 Host + Conversation 身份隔离。只有显式内容编辑和接受发送后的清空写入存储，生命周期变化与卸载不能覆盖其他 View 的输入。账号作用域变化撤销并清除旧适配器，迟到写入不得复活旧内容；新应用实例绑定新账号。浏览器 File 字节及临时侧聊不在当前持久化承诺内；失效 Object URL 或未完成附件恢复为可移除、不可发送的文件卡片。验证见 `chat-browser-drafts.test.ts` 和 `smoke:browser-drafts`。
+
+确定被拒绝的排队跟进由 Conversation Runtime 本地持有，尚无 Server 队列 ID；用户删除只撤销该本地记录，不请求 Host 队列删除，也不自动重发。投递结果未知的记录不得当作失败项删除或再次提交，直到同一 client message ID 出现在 Host 队列或权威历史中。提交中的记录不可删除，已确认入队的消息仍以 Server 队列 ID 删除。
 
 历史记录只持有聊天引用，不拥有草稿的存活事实。启动与历史恢复必须先由 Host 配置、ScopeRegistry 和 BindingStore 校验/规范化，再让 Router 与激活层消费同一个目标；有效当前 entry 优先于跨标签页共享的最后使用偏好。失效 Draft 不按旧 ID 重建，已提交 Draft 经持久 alias 找回 Thread。Router 唯一写回纠正结果并保留 Settings/Extension 目的地；失效引用回到当前实际保留的 View 与输入，View 不能跨 Scope 复用。规范化为 REPLACE 的 POP 仍须被资源事务消费。
 
@@ -73,6 +153,14 @@ WSP-32 远端目录补充：目录选择与持久 Project 记录是独立能力�
 ## Conversation loading presentation
 
 会话首次加载只在无可见历史的空槽中显示居中中性圆环，不显示加载文字；辅助技术可读取本地化状态名。Thread runtime 拥有加载/失败事实，视图不添加恢复计时器或第二套 authority。Design System 拥有共享圆环、主题色与减少动态效果规则；Conversation 拥有空槽几何和滚动。后台重连保留历史、输入和 View 身份，失败切换为可操作的重试而非永久转圈。
+
+Bot 的空展示页与历史耗尽分开：仍有更早源记录时，视口可在没有滚动手势的情况下
+按一次恢复意图最多推进三页，串行且有界；额度耗尽或失败在原状态槽提供继续／重试，
+不呈现新会话欢迎页、不自动排空全历史。重同步保留有持久锚点的已加载前缀及独立
+本地提交，不以展示缓存恢复执行权限。协议所有权见
+[Hermes message windows](../docs/chat-ui-architecture.md#hermes-message-windows-and-bot-history-continuity)；
+`hermes-bot-history-integration.test.ts` 和 `smoke-hermes-bot-history.ts` 验证真实组件与模拟远端端口，
+不代表已替换运行预览或实测远端 Hermes。
 
 ## Application navigation glyphs（Codex 26.930.31428 参考）
 
@@ -186,12 +274,14 @@ Connector 目录浏览不套用设置行：采用限宽品牌卡片，已配置�
 - 一个执行轮次可以有多个有序问答与活动片段；执行所有者唯一，不等于折叠组唯一。问答、追问与交互边界不得被“回答区/活动区”重新分桶。Renderer 只消费共享呈现计划。
 - 异步提问的可见文字与原生 phase 不赋予最终回答资格；折叠边界、最终回答资格和执行完成相互独立。折叠只控制连续片段的显隐，不改变消息位置。
 - 源消息与边界身份决定显示 key；流式、完成与补历史不按数组索引重建已有回复。历史片段保持结束状态，当前响应最多一个 Thinking owner；总用时与完成信息不因分段而重复。
+- 引擎实际返回的思考摘要/文本与 Bash/Read 工具记录是同一连续响应工作容器内的独立 Item 折叠面，不是工具标题的正文，也不是与“用时”平级的工作区。各引擎默认接入且内层初始折叠；无实际内容不暴露空按钮，不切开工作区或制造“历史消息”标题。真实思考仅分开相邻内层工具组，不重建外层身份；有效最终回答授予该连续工作容器一个外层折叠，最终回答保留在外面。只有真实思考、没有工具也属于有内容的工作，完成后可在真实用时下折叠；不得伪造时间。用户输入、异步提问与交互边界保持原顺序，不同已完成响应保留独立折叠。Turn 用时与实时 Thinking 各只有一个 owner，不跨响应回派。流式、完成及外层收起不改内层用户选择；Web View 与 Native 稳定外层组件按 Item 身份保存选择，动画组件只管理过渡。共享 `chat-core` 选择一份非空内容、保留时序和唯一实时 owner，Web/Native 只消费；契约与证据见 [Returned thinking content](../docs/chat-ui-architecture.md#returned-thinking-content)。
+- 思考折叠行以脑形轮廓图标区分状态，不用 Bot 图标暗示另一个智能体；短状态文案须完整可读，嵌入式聊天按宿主站点语言本地化，空间不足时由后面的内容预览收缩并省略，不挤压状态文案。实际返回的思考正文保留引擎原文。
 - 回归须覆盖同轮次的异步提问→用户回答→工作→回答→多次追问，包含桌面/触控、折叠、刷新、补历史和正在输出期间的 DOM 身份。
 - 2026-10-06 折叠资格补充：共享 `AgentActivitySegmentEnd` 只记录时序结束原因；插话、异步问题、审批、图片及 Turn 完成不赋予折叠资格，旧回答也不赋予后续工作段资格。普通任务段须到达自身有效非异步最终回答，才可默认折叠；取消保留正文。资格、默认值、用户选择与临时强制展开独立，显隐结果不得反写选择；禁止收起按钮的呈现必须保留完整有序正文，不丢失/重复 persistent 项。最终回答保留独立槽位，内层分区也不得隐藏有效最终回答。两端消费唯一 reducer，保留既有 ID、时钟与视口 lease。契约/测试见 [Activity closure and disclosure authority](../docs/chat-ui-architecture.md#activity-closure-and-disclosure-authority)。
 
 ## 图片附件呈现（2026-09-27）
 
-- 草稿图片的语义身份和处理状态只属于 Composer Draft；浏览器 `File`、临时预览 URL 和处理任务属于其 View 级附件会话，不写入可序列化 Draft。切换目标后的晚到结果只能修改原 Draft；移除、清空或 View 销毁须中止任务并释放 URL。
+- 草稿图片的语义身份和处理状态只属于 Composer Draft；浏览器 `File`、临时预览 URL 和处理任务属于 Controller 的草稿所有者附件会话，不写入可序列化 Draft。切换会话或页面缓存淘汰保留资源，晚到结果只能修改原 Draft；移除、清空或草稿所有者销毁须中止任务并释放 URL。新内容准入失败必须回收尚未被草稿接收的 File 预览，不启动孤立任务。
 - 图片选中即在输入卡片内显示方形缩略图；处理中、失败和删除均原位反馈。触控删除始终可见，不能依赖 hover；处理中不宣称网络上传百分比，失败图片不允许发送。
 - 已发送图片由 Timeline 及媒体加载边界投影。缩略图进入图片查看器，不绕过通用链接策略来打开 `data:` URL；查看器按原资源身份加载并在关闭后恢复焦点。
 
@@ -218,3 +308,12 @@ Markdown preview entry: explicit `.md` / `.markdown` paths in completed inline c
 国内桌面嵌入聊天由控制台占满侧栏右侧的内容列，去除设置页外围 gutter 和宽度上限；宿主通过 `--lightvela-console-header-height` 对齐 68px 导航表头。嵌入根将其投影到 toolbar token（缺省 46px），消息正文保留内部间距；移动端与旧聊天入口沿用原布局。
 
 只读 Markdown 文件预览的“源码”直接呈现转义后的原文，可选择复制和键盘滚动，不依赖按需加载的编辑器模块；可编辑工作台继续由 CodeMirror 持有草稿。
+
+### Shared side-panel glyphs
+
+Web/Electron and Expo consume one platform-neutral geometry definition in
+`@opencraft/design-system/sidebar-toggle-glyphs`. The renderer owns SVG primitives
+and platform hit testing; the 16-unit optical box does not dictate the touch
+target. Mobile keeps 44-point targets with neutral, transparent toolbar buttons.
+Panel visibility remains a projection of its existing owner, including after
+a swipe; icon adaptation must not introduce a parallel navigation state.

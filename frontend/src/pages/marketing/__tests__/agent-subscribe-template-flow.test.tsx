@@ -37,6 +37,7 @@ vi.mock("@/contexts/runtime-config-context", () => ({
   useCloudDesktopEnabled: () => false,
   usePaidBillingEnabled: () => false,
   useMultiBotEnabled: () => true,
+  useReferralEnabled: () => false,
   useRealnamePhoneVerificationEnabled: () => false,
 }));
 
@@ -167,7 +168,7 @@ describe("subscribe path: picking a template enters the setup flow", () => {
 
     // 先确认引导表单在
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "换一批" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "随机样式" })).toBeInTheDocument();
     });
 
 
@@ -195,13 +196,14 @@ describe("subscribe path: picking a template enters the setup flow", () => {
     // 模拟实例从 provisioning 变 active，目标 profile 不能随过滤结果丢失。
     bots = [{ ...buildBot(), status: "running" }];
     view.rerender(page("?creating=ins-372"));
+    fireEvent.click(await screen.findByRole("button", { name: "开始旅程" }, { timeout: 25000 }));
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith(
-      "/agents/overview?bot=ins-372", { replace: true },
+      "/agents/chat?bot=ins-372", { replace: true },
     ));
     expect(addBot).not.toHaveBeenCalled();
     expect(execDebugCommand.mock.calls.some(([id, command]) =>
       id === "ins-372" && command.includes("__CTL_SOUL_EOF__") && command.includes("profile-372"),
     )).toBe(true);
-    expect(screen.queryByRole("button", { name: "换一批" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "随机样式" })).not.toBeInTheDocument();
   });
 });

@@ -16,7 +16,8 @@ const actions=[];
 function row(i,remote=false){const hostId=remote?'ssh:remote':'local';return{id:'thread-'+i,title:'Task '+i,project:'workspace',status:'ready',updatedAt:Date.now()-i*1000,connectionHostId:hostId,connectionHostLabel:remote?'Remote':'Local',...legacyDirectServerProjectionFromHost({hostId,hostKind:remote?'remote-ssh':'local',label:remote?'Remote':'Local'})};}
 function App(){const[threads,setThreads]=useState([]);const[catalogs,setCatalogs]=useState([{hostId:'ssh:remote',label:'Remote',phase:'loading'}]);const[discovery,setDiscovery]=useState(null);
 window.fixture={setThreads,setCatalogs,setDiscovery,row,actions,setThemePreference};
-return <div style={{height:'100vh',width:300,display:'flex',flexDirection:'column'}}><Sidebar threads={threads} activeHostId='local' activeThreadId='thread-0' sidebarLayout={layout} threadCatalogs={catalogs} threadCatalogDiscovery={discovery} onRetryThreadCatalogDiscovery={()=>{actions.push('discovery-read');setDiscovery('loading');}} onRetryThreadCatalog={id=>{actions.push(id);setCatalogs([{hostId:id,label:'Remote',phase:'loading'}]);}} onSelectThread={(hostId,id)=>actions.push({hostId,id})} onNewTask={()=>{}} onOpenSettings={()=>{}} /></div>;}
+const threadActions={onRename:async()=>{},onFork:async()=>{},onArchive:async()=>{},onDelete:async()=>{},onSetPinned:async(target,pinned)=>{actions.push({pin:target.threadId,pinned});setThreads(rows=>rows.map(row=>row.id===target.threadId&&row.connectionHostId===target.hostId?{...row,pinned}:row));}};
+return <div style={{height:'100vh',width:300,display:'flex',flexDirection:'column'}}><Sidebar threads={threads} activeHostId='local' activeThreadId='thread-0' sidebarLayout={layout} threadActions={threadActions} threadCapabilities={hostId=>({pin:hostId==='ssh:remote',rename:false,archive:false,fork:false,delete:false})} threadCatalogs={catalogs} threadCatalogDiscovery={discovery} onRetryThreadCatalogDiscovery={()=>{actions.push('discovery-read');setDiscovery('loading');}} onRetryThreadCatalog={id=>{actions.push(id);setCatalogs([{hostId:id,label:'Remote',phase:'loading'}]);}} onSelectThread={(hostId,id)=>actions.push({hostId,id})} onNewTask={()=>{}} onOpenSettings={()=>{}} /></div>;}
 createIntlTestRoot(document.getElementById('root')).render(<App/>);`;
 const vite = await createServer({
   configFile: false, root: process.cwd(), logLevel: "error",
@@ -94,10 +95,36 @@ try {
     await page.getByRole("button", { name: "Show less", exact: true }).waitFor();
     assert.equal(await page.locator(".sidebar-activity-item").count(), 13);
     assert.equal(await page.locator(".sidebar-catalog-feedback").count(), 0);
+    await page.getByRole("button", { name: "Show less", exact: true }).click();
+    await page.evaluate(() => {
+      const f = (window as any).fixture;
+      f.setThreads([...Array.from({ length: 13 }, (_, i) => f.row(i, i >= 10)), { ...f.row(100, true), pinned: true }]);
+    });
+    const pinnedSection = page.getByRole("region", { name: "置顶", exact: true });
+    await pinnedSection.waitFor();
+    assert.equal(await pinnedSection.locator(".sidebar-activity-item").count(), 1);
+    assert.equal(await page.locator(".sidebar-activity-item").count(), 11, "pins do not consume ten recent slots");
+    assert.equal(await page.getByRole("button", { name: "Task 0 的操作", exact: true }).count(), 0, "unsupported host hides the operation trigger");
+    const trigger = page.getByRole("button", { name: "Task 100 的操作", exact: true });
+    if (!touch) await pinnedSection.locator(".sidebar-activity-row").hover();
+    if (touch) await trigger.tap(); else await trigger.click();
+    const unpin = page.getByRole("menuitem", { name: "取消置顶", exact: true });
+    await unpin.waitFor();
+    if (touch) await unpin.tap(); else await unpin.click();
+    await pinnedSection.waitFor({ state: "detached" });
+    assert.equal(await page.locator(".sidebar-activity-item").count(), 10);
+    assert.equal(await page.evaluate(() => (window as any).fixture.actions.at(-1).pinned), false);
+    await page.getByRole("button", { name: "Show more (4 remote)", exact: true }).click();
+    if (!touch) await page.locator(".sidebar-activity-row").filter({ has: page.getByRole("button", { name: "Task 100 的操作", exact: true }) }).hover();
+    await page.getByRole("button", { name: "Task 100 的操作", exact: true }).click();
+    await page.getByRole("menuitem", { name: "置顶", exact: true }).click();
+    await pinnedSection.waitFor();
+    assert.equal(await pinnedSection.locator(".sidebar-activity-item").count(), 1, "pin appears once after acknowledgement");
+    assert.equal(await page.locator(".sidebar-activity-item").count(), 14);
     await page.evaluate(() => (window as any).fixture.setThreads([]));
     await page.locator(".sidebar-activity-empty").waitFor();
     assert.deepEqual(errors, []);
-    evidence.push({ touch, theme, reducedMotion: true, quietLoading: true, loadingNotEmpty: true, stableHistoryGeometry: true, failedHostIsolation: true, scopedRetry: true, discoveryRetryWithoutProfiles: true, hiddenRemoteEntry: true, successfulEmpty: true });
+    evidence.push({ touch, theme, reducedMotion: true, quietLoading: true, loadingNotEmpty: true, stableHistoryGeometry: true, failedHostIsolation: true, scopedRetry: true, discoveryRetryWithoutProfiles: true, hiddenRemoteEntry: true, successfulEmpty: true, nativePinPresentation: true, unsupportedPinHidden: true, pinDoesNotConsumeRecentBudget: true });
     await context.close();
   }
   console.log(JSON.stringify({ ok: true, realSidebar: true, evidence }));

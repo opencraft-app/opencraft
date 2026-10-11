@@ -902,7 +902,7 @@ const SubscriptionSection = ({
     };
   }, [operablePass, t]);
   const { sources: creditSources, summary: creditSummary, failed: creditPacksFailed, reload: reloadCreditPacks } =
-    useCreditSources(planCreditInput, freeCreditInput);
+    useCreditSources(planCreditInput, freeCreditInput, true, session.user?.id ?? "");
 
   /* 进度、汇总和告警统一计算所有积分来源；free 已在 hook 中去重。 */
   const allCreditsTotal = creditSummary.total;

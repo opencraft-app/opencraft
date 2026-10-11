@@ -16,7 +16,9 @@ require a backend schema or endpoint change.
   stored-session ID. Rebuilding the adapter transfers snapshots, not old HTTP
   clients. Account reset clears them. Bookkeeping is bounded to 256 entries.
 - Refresh grafts a new tail onto a previously loaded prefix only at a shared
-  durable row anchor. Failed/stale reads cannot commit cursor or cache changes.
+  durable row anchor. Its next offset advances past that retained prefix, and
+  a previously exhausted older edge stays exhausted. Failed/stale reads cannot
+  commit cursor or cache changes.
 
 ## AppServer boundary
 
@@ -33,7 +35,9 @@ require a backend schema or endpoint change.
   exactly that hydrated window. There is no second bootstrap REST request.
 - `thread/turns/list` backfills one REST page and returns the **loaded window**,
   not a disjoint batch of complete execution Turns. Its cursor is opaque.
-  `limit` does not redefine Hermes' 120-row source paging policy.
+  `limit` remains accepted for protocol compatibility; it does not cap the
+  projected groups or redefine Hermes' 120-row source paging policy. The next
+  cursor comes from source-row progress, never the number of projected Turns.
 - History groups carry `historyWindowId`. Loading earlier rows can change a
   partial group's membership/ID. The session layer replaces previous history
   groups instead of append-merging them, and preserves separately owned live
@@ -58,4 +62,6 @@ Workbench preview/readiness, one-request bootstrap, coalesced backfill and
 reconnect. `hermes-history-reconstruction.test.ts` checks a 522-row execution
 without eager loading, orphan boundaries and nonduplicating regrouping.
 `hermes-transcript-window.test.ts` and `hermes-history-cancellation.test.ts`
-cover source parameters, shifted offsets, stale generations and cancellation.
+cover source parameters, shifted offsets, retained backfill progress across
+tail refresh, stale generations and cancellation. Reconstruction also covers
+many small Turns with a `limit` of one to ensure source windows stay complete.

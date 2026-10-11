@@ -1,0 +1,28 @@
+<slide id="insight03">
+  <background color="bg-page" />
+  <shape type="line" x="40" y="26" width="1200" height="0" stroke="border" />
+  <shape type="line" x="280" y="26" width="240" height="0" stroke="primary" stroke-width="3" />
+  <text x="40" y="36" width="1200" height="24" font="caption" color="primary">02 个人助理产品洞察 · 海外热度</text>
+  <text x="40" y="77" width="1200" height="50" font="heading" color="text-main"><strong>产品体验、落地条件与分发共同推动关注</strong></text>
+  <text x="40" y="132" width="1200" height="34" font="body" color="text-muted">云端持续执行提供可展示的能力，日常服务承接具体任务，社区与平台分发进一步放大关注。</text>
+  <text x="40" y="212" width="70" height="43" font="heading" color="primary"><strong>01</strong></text>
+  <text x="126" y="214" width="260" height="38" font="strong" color="text-main"><strong>用户容易看懂</strong></text>
+  <text x="126" y="268" width="260" height="36" font="caption" color="text-muted">简易交互与可识别的助理形象</text>
+  <text x="422" y="209" width="818" height="72" font="body" color="text-main" line-height="1.65">Grok Bot 的简易体验和形象设计，以及 Muse 的个人助理形态，让用户更容易理解“把一件事情交给它处理”。</text>
+  <text x="422" y="297" width="818" height="27" font="caption" color="text-muted">原文线索：Grok Bot 的体验、形象设计，Muse 的个人助理产品形态。</text>
+  <shape type="line" x="40" y="345" width="1200" height="0" stroke="border" />
+  <text x="40" y="368" width="70" height="43" font="heading" color="primary"><strong>02</strong></text>
+  <text x="126" y="370" width="260" height="38" font="strong" color="text-main"><strong>任务有落地条件</strong></text>
+  <text x="126" y="424" width="260" height="36" font="caption" color="text-muted">海外 Web 服务支持能力复用</text>
+  <text x="422" y="365" width="818" height="72" font="body" color="text-main" line-height="1.65">海外大量核心服务以 Web 形态提供，浏览器、连接器和云端执行可在邮箱、购物、旅行等场景复用，适合优先验证助理任务。</text>
+  <text x="422" y="453" width="818" height="27" font="caption" color="text-muted">原文线索：海外场景与应用生态的判断，云端工作环境和持续执行的产品探索。</text>
+  <shape type="line" x="40" y="501" width="1200" height="0" stroke="border" />
+  <text x="40" y="524" width="70" height="43" font="heading" color="primary"><strong>03</strong></text>
+  <text x="126" y="526" width="260" height="38" font="strong" color="text-main"><strong>关注得到集中放大</strong></text>
+  <text x="126" y="580" width="260" height="36" font="caption" color="text-muted">社区分享、大平台与同期发布</text>
+  <text x="422" y="521" width="818" height="72" font="body" color="text-main" line-height="1.65">X 社区和 Meta 的分发能力推动产品进入更多用户视野。多款产品在相近时间发布，进一步放大个人助理话题。</text>
+  <text x="422" y="609" width="818" height="27" font="caption" color="text-muted">原文线索：X 分发、Meta 的平台能力，以及榜单和科技媒体讨论。</text>
+  <text x="40" y="650" width="1200" height="24" font="body" color="primary">热度说明市场关注正在形成，长期价值仍需通过任务完成和持续使用验证。</text>
+  <text x="40" y="684" width="1130" height="20" font="caption" color="text-muted">LightVela｜依据原文热度回顾、市场特点与海外场景判断提炼；未测量各因素的增长贡献，不将热度等同于长期价值</text>
+  <text x="1180" y="684" width="60" height="20" font="caption" color="text-muted" align="right">08 / 24</text>
+</slide>

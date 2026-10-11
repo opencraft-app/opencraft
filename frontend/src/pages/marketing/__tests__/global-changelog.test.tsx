@@ -54,6 +54,48 @@ afterEach(() => {
 });
 
 describe("global changelog skill package entry", () => {
+  it("announces Malay in the October changelog with the Malay homepage screenshot", async () => {
+    const copies = [
+      {
+        locale: "zh-CN",
+        month: "2026 年 10 月",
+        title: "LightVela 国际站支持马来语",
+        description: "现在可以使用马来语浏览 LightVela 国际站的公开页面、产品界面和产品文档。",
+      },
+      {
+        locale: "en-US",
+        month: "October 2026",
+        title: "LightVela International Site Now Supports Malay",
+        description: "You can now browse LightVela's international public pages, product interface, and product documentation in Malay.",
+      },
+      {
+        locale: "ms-MY",
+        month: "Oktober 2026",
+        title: "Laman Antarabangsa LightVela Kini Menyokong Bahasa Melayu",
+        description: "Kini anda boleh melayari halaman awam, antara muka produk dan dokumentasi produk LightVela versi antarabangsa dalam Bahasa Melayu.",
+      },
+    ] as const;
+
+    for (const copy of copies) {
+      await ensureLocaleDictionary(copy.locale);
+      await i18n.changeLanguage(copy.locale);
+      render(<MemoryRouter><ChangelogPage /></MemoryRouter>);
+
+      const octoberSection = screen.getByText(copy.month).closest("section");
+      expect(octoberSection).not.toBeNull();
+      const heading = within(octoberSection!).getByRole("heading", { name: copy.title });
+      expect(within(octoberSection!).getAllByRole("heading")[0]).toBe(heading);
+      expect(within(octoberSection!).getByText(copy.description)).toBeInTheDocument();
+      expect(within(octoberSection!).getByAltText(copy.title)).toHaveAttribute(
+        "src", expect.stringContaining("/assets/changelog/lightvela-malay-international-home.webp"),
+      );
+      expect(within(octoberSection!).getByAltText(copy.title).parentElement).toHaveStyle({
+        aspectRatio: "1440 / 900",
+      });
+      cleanup();
+    }
+  });
+
   it("puts channel test messages first in the English September changelog", async () => {
     await i18n.changeLanguage("en-US");
     render(<MemoryRouter><ChangelogPage /></MemoryRouter>);
@@ -70,6 +112,8 @@ describe("global changelog skill package entry", () => {
 
   it("localizes the subscription-upgrade entry for every public-site locale", async () => {
     const copies = {
+      "th-TH": ["กันยายน 2026", "LightVela รองรับการอัปเกรดแพ็กเกจแล้ว", "อัปเกรดแพ็กเกจปัจจุบันเป็นระดับที่สูงขึ้น ยอดที่ต้องชำระจริงเป็นราคาสุดท้ายที่แสดงในหน้าชำระเงิน"],
+      "ms-MY": ["September 2026", "LightVela Kini Menyokong Naik Taraf Pelan", "Naik taraf pelan semasa anda ke peringkat yang lebih tinggi. Amaun sebenar yang perlu dibayar ialah harga akhir yang dipaparkan semasa pembayaran."],
       "zh-CN": ["2026 年 9 月", "LightVela 支持套餐升配", "现有套餐可升配至更高规格，实际应付价格以最终支付页显示为准。"],
       "zh-SG": ["2026 年 9 月", "LightVela 支持套餐升配", "现有套餐可升配至更高规格，实际应付价格以最终支付页显示为准。"],
       "zh-Hant": ["2026 年 9 月", "LightVela 支援套餐升級", "現有套餐可升級至更高規格，實際應付價格以最終支付頁顯示為準。"],

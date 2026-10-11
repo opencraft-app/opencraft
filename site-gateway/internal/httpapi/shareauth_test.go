@@ -92,7 +92,12 @@ func shareFormRequest(host, code, returnTo string) *http.Request {
 
 func TestShareModeRedirectsToSameOriginPageAndRendersPrivateForm(t *testing.T) {
 	verifier := &fakeShareCodeVerifier{verification: activeShareVerification()}
-	handler, _ := newShareHandler(t, activeShareSite("ws-abc"), &fakeOrigin{}, verifier, false)
+	sites := activeShareSite("ws-abc")
+	fresh := *sites.sites["ws-abc"]
+	sites.freshSites = map[string]*sitemeta.Site{"ws-abc": &fresh}
+	// Newly enabled sharing must take effect for a reader with no cookie.
+	sites.sites["ws-abc"].AccessMode = sitemeta.AccessModeOwnerOnly
+	handler, _ := newShareHandler(t, sites, &fakeOrigin{}, verifier, false)
 	host := "ws-abc." + domesticRootDomain
 
 	redirectRec := httptest.NewRecorder()
@@ -169,6 +174,10 @@ func TestShareCodeIssuesHostOnlyCookieBoundedByExpiryAndGenerationRevokesIt(t *t
 	verification := activeShareVerification()
 	verifier := &fakeShareCodeVerifier{verification: verification}
 	sites := activeShareSite("ws-abc")
+	// The cached generation stays stale through both issuance and revocation.
+	fresh := *sites.sites["ws-abc"]
+	sites.freshSites = map[string]*sitemeta.Site{"ws-abc": &fresh}
+	sites.sites["ws-abc"].ShareGeneration = "generation-old"
 	obj := &fakeOrigin{objects: map[string]string{"sites/ws-abc/current/about/index.html": "shared content"}}
 	handler, codec := newShareHandler(t, sites, obj, verifier, false)
 	host := "ws-abc." + domesticRootDomain
@@ -200,7 +209,7 @@ func TestShareCodeIssuesHostOnlyCookieBoundedByExpiryAndGenerationRevokesIt(t *t
 		t.Fatalf("shared content=%d/%q", contentRec.Code, contentRec.Body.String())
 	}
 
-	sites.sites["ws-abc"].ShareGeneration = "generation-4"
+	sites.freshSites["ws-abc"].ShareGeneration = "generation-4"
 	revokedReq := requestWithHost(http.MethodGet, host, "/about")
 	revokedReq.AddCookie(cookie)
 	revokedRec := httptest.NewRecorder()

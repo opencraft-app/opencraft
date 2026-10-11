@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "generatedAt": "2026-10-05",
+  "tool": "built-in imagegen",
+  "styleReference": "/Users/keria/.codex/worktrees/homepage-mascot-master/lightvela工作区/frontend/public/assets/mascot-dressup/doodle/crown.webp",
+  "style": "Flat 2D softly rounded illustration, two-tone mint / coral / ivory-yellow, separate accessories without body",
+  "normalization": "Tight alpha>4 crop, fit600x600 preserving aspect,4px transparentpadding,WebP94 alpha100",
+  "qa": "Alpha preserved, headphone central opening explicitly verified transparent, source and 96px white/lilac contact sheet visually inspected",
+  "entries": [
+    {
+      "id": "headphones",
+      "prompt": "Create one isolated avatar accessory sprite matching the reference crown's clean flat 2D illustration style. Genuinely transparent background, no body, no face, no UI, no labels, no ground shadow, no glow. Smooth simple rounded shapes, very soft two-tone palette, mostly solid color with one subtle flat darker region, NO 3D rendering, no outlines. Centered complete item with plenty of transparent padding. Readable as a tiny avatar accessory.One pair of LIGHTWEIGHT MINT GREEN over-ear headphones from exact front view: a slim rounded inverted-U headband and two small rounded ear cups at the sides, mint cream highlights, darker sage accent only. Center between headband and cups must be fully transparent empty space, not filled. Make headband thin rather than bulky, symmetry, no cable or microphone.",
+      "source": "/Users/keria/.codex/generated_images/01a1079f-2125-7d13-8a19-ae6fdb87a971/exec-2fca17c1-efb6-44cd-913d-7de2da4ccd3e.png",
+      "file": "headphones.webp",
+      "crop": {
+        "left": 373,
+        "top": 128,
+        "width": 873,
+        "height": 695
+      },
+      "width": 608,
+      "height": 486,
+      "bytes": 37288,
+      "alpha": {
+        "transparentPixels": 208817,
+        "solidPixels": 79538,
+        "centerAlpha": 0
+      }
+    },
+    {
+      "id": "bow-tie",
+      "prompt": "Create one isolated avatar accessory sprite matching the reference crown's clean flat 2D illustration style. Genuinely transparent background, no body, no face, no UI, no labels, no ground shadow, no glow. Smooth simple rounded shapes, very soft two-tone palette, mostly solid color with one subtle flat darker region, NO 3D rendering, no outlines. Centered complete item with plenty of transparent padding. Readable as a tiny avatar accessory.One compact coral-orange bow tie from front view: two gently rounded butterfly-shaped triangular wings and one small round middle knot, coral pink primary, subtle salmon darker lower-right detail. Horizontal 2:1 silhouette, not fabric-realistic, no straps or collar.",
+      "source": "/Users/keria/.codex/generated_images/01a1079f-2125-7d13-8a19-ae6fdb87a971/exec-dfd9675c-657c-4aaf-9837-f595dc2b4781.png",
+      "file": "bow-tie.webp",
+      "crop": {
+        "left": 288,
+        "top": 184,
+        "width": 1198,
+        "height": 523
+      },
+      "width": 608,
+      "height": 270,
+      "bytes": 22122,
+      "alpha": {
+        "transparentPixels": 50296,
+        "solidPixels": 109959,
+        "centerAlpha": 254
+      }
+    },
+    {
+      "id": "flower",
+      "prompt": "Create one isolated avatar accessory sprite matching the reference crown's clean flat 2D illustration style. Genuinely transparent background, no body, no face, no UI, no labels, no ground shadow, no glow. Smooth simple rounded shapes, very soft two-tone palette, mostly solid color with one subtle flat darker region, NO 3D rendering, no outlines. Centered complete item with plenty of transparent padding. Readable as a tiny avatar accessory.One small ivory-white daisy, exact front view, FIVE rounded petals around a circular warm butter-yellow center. Delicate pale cream secondary shapes for slight separation, clean flat 2D cutout. No stem, no leaves, no outlines. Whole flower compact near-circular.",
+      "source": "/Users/keria/.codex/generated_images/01a1079f-2125-7d13-8a19-ae6fdb87a971/exec-dd2e426a-7619-4718-a4be-0d14fac1a38e.png",
+      "file": "flower.webp",
+      "crop": {
+        "left": 242,
+        "top": 201,
+        "width": 827,
+        "height": 795
+      },
+      "width": 608,
+      "height": 585,
+      "bytes": 31630,
+      "alpha": {
+        "transparentPixels": 115124,
+        "solidPixels": 232626,
+        "centerAlpha": 254
+      }
+    }
+  ]
+}

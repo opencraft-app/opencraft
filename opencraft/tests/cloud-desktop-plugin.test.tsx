@@ -9,6 +9,7 @@ import { createWorkbenchPanelReactRuntime } from "@opencraft/workbench-panels-re
 import { createCloudDesktopWorkbenchPanelPlugin, DesktopViewController,
   type DesktopAttachment, type DesktopBackend, type DesktopConnection,
   type DesktopConnectionSnapshot, type DesktopControlLease, type DesktopTarget } from "../plugins/cloud-desktop/src/index";
+import { captureFramePreview, validFramePreview } from "../plugins/cloud-desktop/src/frame-preview";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -52,6 +53,7 @@ function fixture(timeoutMs = 120_000) {
   const surfaces = { mount: () => {
     calls.push("surface:mount");
     return { enableInput: () => { calls.push("input:enable"); }, disableInput: () => { calls.push("input:disable"); },
+      setActive: (active: boolean) => { calls.push(`surface:active:${active}`); },
       focus: () => { calls.push("input:focus"); },
       pasteText: async (text: string) => { calls.push(`paste:${text}`); },
       dispose: () => { calls.push("surface:dispose"); } };
@@ -64,6 +66,90 @@ function fixture(timeoutMs = 120_000) {
     revoke() { valid = false; for (const listener of revocationListeners) listener(); },
   };
 }
+
+test("current connection geometry projects without remounting or granting input and clears with identity", async () => {
+  const f = fixture();
+  try {
+    f.controller.start(); await flush();
+    f.setState({ videoReady: true, inputReady: true, mediaAspectRatio: 1.6 });
+    assert.equal(f.controller.getSnapshot().mediaAspectRatio, 1.6);
+    f.setState({ mediaAspectRatio: .625 });
+    assert.equal(f.controller.getSnapshot().mediaAspectRatio, .625);
+    assert.equal(f.calls.filter(call => call === 'surface:mount').length, 1);
+    assert.equal(f.calls.includes('control:request'), false);
+    f.setTarget(null);
+    assert.equal(f.controller.getSnapshot().mediaAspectRatio, undefined);
+  } finally { f.controller.dispose(); }
+});
+
+test("recovery frame is reused only after a fresh matching physical binding, never grants input", async () => {
+  const f = fixture();
+  const frame = { dataUrl: 'data:image/jpeg;base64,YWJj', aspectRatio: 1.6 };
+  try {
+    f.connection.capturePreview = () => frame;
+    f.controller.start(); await flush(); f.setState({ videoReady: true, inputReady: true });
+    f.setState({ ended: true });
+    const prepared = deferred<DesktopAttachment>();
+    f.backend.prepare = () => prepared.promise;
+    f.controller.retry();
+    assert.equal(f.controller.getSnapshot().preview, undefined, 'new authorization is pending');
+    f.setState({ ended: false, videoReady: false, inputReady: false });
+    prepared.resolve(f.attachment); await flush();
+    assert.deepEqual(f.controller.getSnapshot().preview, frame);
+    assert.equal(f.controller.getSnapshot().mediaAspectRatio, 1.6);
+    assert.equal(f.controller.getSnapshot().canControl, false);
+    assert.equal(f.calls.includes('control:request'), false);
+    f.setState({ videoReady: true, inputReady: true });
+    assert.equal(f.controller.getSnapshot().control, 'observing');
+    f.setTarget(null);
+    assert.equal(f.controller.getSnapshot().preview, undefined);
+    f.controller.dispose(); assert.equal(f.controller.getSnapshot().preview, undefined);
+  } finally { f.controller.dispose(); }
+});
+
+test("new physical incarnation, principal, or denied authorization cannot reuse a frame", async () => {
+  for (const reason of ['incarnation', 'principal', 'authorization'] as const) {
+    const f = fixture();
+    try {
+      f.connection.capturePreview = () => ({ dataUrl: 'data:image/jpeg;base64,YWJj', aspectRatio: 1.6 });
+      f.controller.start(); await flush(); f.setState({ videoReady: true, inputReady: true });
+      f.setState({ ended: true, failure: reason === 'authorization' ? 'authorization' : 'transport' });
+      const next = { ...f.attachment, incarnation: reason === 'incarnation' ? 'run:2' : 'run:1' };
+      if (reason === 'principal') {
+        const target = { ...f.attachment.target, principalId: 'account:b' };
+        f.backend.prepare = async () => ({ ...next, target });
+        f.setTarget(target);
+      } else { f.backend.prepare = async () => next; f.controller.retry(); }
+      f.setState({ ended: false, videoReady: false, inputReady: false }); await flush();
+      assert.equal(f.controller.getSnapshot().preview, undefined, reason);
+    } finally { f.controller.dispose(); }
+  }
+});
+
+test("invalid and reentrant frame capture cannot poison a successor view", async () => {
+  const f = fixture();
+  try {
+    f.controller.start(); await flush(); f.setState({ videoReady: true, inputReady: true });
+    f.connection.capturePreview = () => { f.setTarget(null); return { dataUrl: 'data:image/jpeg;base64,YWJj', aspectRatio: 1.6 }; };
+    f.setState({ ended: true });
+    assert.equal(f.controller.getSnapshot().phase, 'unavailable');
+    assert.equal(f.controller.getSnapshot().preview, undefined);
+    assert.equal(validFramePreview({ dataUrl: 'https://external/image.jpg', aspectRatio: 1 }), false);
+    assert.equal(validFramePreview({ dataUrl: 'data:image/jpeg;base64,YWJj', aspectRatio: Infinity }), false);
+  } finally { f.controller.dispose(); }
+});
+
+test("frame capture uses bounded backing pixels and failure is optional", () => {
+  const calls: unknown[] = [];
+  const copy = { width: 0, height: 0, getContext: () => ({ drawImage: (...args: unknown[]) => calls.push(args) }),
+    toDataURL: (type: string, quality: number) => { calls.push([type, quality]); return 'data:image/jpeg;base64,YWJj'; } };
+  const canvas = { width: 3840, height: 2160, ownerDocument: { createElement: () => copy } } as unknown as HTMLCanvasElement;
+  assert.deepEqual(captureFramePreview(canvas), { dataUrl: 'data:image/jpeg;base64,YWJj', aspectRatio: 3840 / 2160 });
+  assert.equal(copy.width, 1280); assert.equal(copy.height, 720);
+  assert.deepEqual(calls[1], ['image/jpeg', .85]);
+  copy.toDataURL = () => { throw new Error('tainted'); };
+  assert.equal(captureFramePreview(canvas), null);
+});
 
 test("control activations are single-use fixed actions and cannot affect a successor intent", async () => {
   const f = fixture();
@@ -124,11 +210,13 @@ test("inactive presentation keeps viewing but retires control intent and late gr
     assert.equal(f.controller.getSnapshot().phase, "ready");
     assert.equal(f.controller.getSnapshot().control, "observing");
     assert.ok(f.calls.includes("input:disable")); assert.ok(f.calls.includes("control:release"));
+    assert.equal(f.calls.at(-1), "surface:active:false", "logical hide retires overlays before exit animation");
     assert.equal(f.calls.includes("connection:close"), false);
     assert.equal(f.calls.includes("attachment:release"), false);
     const count = f.calls.filter(call => call === "control:request").length;
     await f.controller.requestControl(); assert.equal(f.calls.filter(call => call === "control:request").length, count);
     f.controller.setActive(true);
+    assert.equal(f.calls.at(-1), "surface:active:true", "reopening restores presentation, not input");
     const grant = deferred<DesktopControlLease>(); f.connection.requestControl = () => grant.promise;
     const take = f.controller.prepareControlAction("take");
     const pending = f.controller.requestControl(); f.controller.setActive(false); f.controller.setActive(true);
@@ -139,6 +227,57 @@ test("inactive presentation keeps viewing but retires control intent and late gr
     assert.equal(f.calls.slice(callsBefore).includes("input:enable"), false);
     assert.equal(f.calls.filter(call => call === "surface:mount").length, 1);
   } finally { f.controller.dispose(); }
+});
+
+test("media arriving while hidden receives current presentation activity without dropping viewing", async () => {
+  const f = fixture();
+  const prepared = deferred<DesktopAttachment>(); f.backend.prepare = () => prepared.promise;
+  try {
+    f.controller.start(); f.controller.setActive(false);
+    prepared.resolve(f.attachment); await flush();
+    assert.equal(f.calls.filter(x => x.startsWith("surface:active:")).at(-1), "surface:active:false");
+    assert.equal(f.calls.includes("connection:close"), false);
+    f.controller.setActive(true);
+    assert.equal(f.calls.at(-1), "surface:active:true");
+    assert.equal(f.calls.includes("input:enable"), false);
+    assert.equal(f.calls.filter(x => x === "surface:mount").length, 1);
+  } finally { f.controller.dispose(); }
+});
+
+test("Take acquires focus before requesting; late confirmation cannot reclaim departed focus", async () => {
+  const f = fixture(); let focused = true;
+  const grant = deferred<DesktopControlLease>();
+  f.connection.requestControl = () => { f.calls.push("control:request"); return grant.promise; };
+  const controller = new DesktopViewController(f.backend, f.surfaces, "thread:a", {} as HTMLElement,
+    undefined, undefined, () => focused);
+  try {
+    controller.start(); await flush(); f.setState({ videoReady: true, inputReady: true });
+    const pending = controller.requestControl();
+    assert.equal(controller.getSnapshot().control, "requesting");
+    assert.ok(f.calls.indexOf("input:focus") < f.calls.indexOf("control:request"));
+    assert.equal(f.calls.includes("input:enable"), false);
+    focused = false; // An adapter may miss focusout; derived eligibility still fences the grant.
+    grant.resolve(f.lease); await pending;
+    assert.equal(controller.getSnapshot().control, "observing");
+    assert.equal(f.calls.includes("input:enable"), false);
+    assert.equal(f.calls.filter(call => call === "input:focus").length, 1);
+    assert.ok(f.calls.includes("control:release"));
+  } finally { controller.dispose(); }
+});
+
+test("failed or synchronously cancelled focus does not request control", async () => {
+  for (const cancelled of [false, true]) {
+    const f = fixture();
+    const controller = new DesktopViewController(f.backend, { mount() {
+      return { ...f.surfaces.mount(), focus() { if (cancelled) controller.releaseControl(); } };
+    } }, "thread:a", {} as HTMLElement, undefined, undefined, () => false);
+    try {
+      controller.start(); await flush(); f.setState({ videoReady: true, inputReady: true });
+      await controller.requestControl();
+      assert.equal(controller.getSnapshot().control, "observing");
+      assert.equal(f.calls.includes("control:request"), false);
+    } finally { controller.dispose(); }
+  }
 });
 
 test("paste availability is a surface capability, not an exclusive control state", async () => {
@@ -184,7 +323,8 @@ test("clipboard reads are user initiated, coalesced and fenced by the original c
     await f.controller.pasteClipboard(async () => { reads++; return "unexpected"; });
     assert.equal(reads, 0, "observe mode cannot read local clipboard");
     f.setState({ videoReady: true, inputReady: true }); await f.controller.requestControl();
-    assert.ok(f.calls.indexOf("input:focus") > f.calls.indexOf("input:enable"));
+    assert.ok(f.calls.indexOf("input:focus") < f.calls.indexOf("control:request"));
+    assert.ok(f.calls.indexOf("input:enable") > f.calls.indexOf("control:request"));
     const paste = f.controller.pasteClipboard(() => { reads++; return pending.promise; });
     await f.controller.pasteClipboard(async () => { reads++; return "duplicate"; });
     assert.equal(reads, 1);
@@ -493,7 +633,9 @@ test("self-registration is capability-gated; opening twice focuses one tab per c
 });
 
 test("real panel component mounts observe-only, releases on blur, and cleans up on unload", async () => {
-  const dom = new JSDOM("<!doctype html><body><div id='root'></div></body>", { url: "https://example.test" });
+  const dom = new JSDOM("<!doctype html><body><div id='root'></div></body>", {
+    url: "https://example.test", pretendToBeVisual: true,
+  });
   const values = { window: dom.window, document: dom.window.document, Node: dom.window.Node,
     HTMLElement: dom.window.HTMLElement, IS_REACT_ACT_ENVIRONMENT: true };
   const previous = Object.fromEntries(Object.keys(values).map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
@@ -502,7 +644,12 @@ test("real panel component mounts observe-only, releases on blur, and cleans up 
   const root = createRoot(dom.window.document.getElementById("root")!);
   const locale = new LocaleRuntime([]); await locale.update({ ideLocale: "en-US" });
   try {
-    const installed = await runtime.install(createCloudDesktopWorkbenchPanelPlugin(f));
+    const installed = await runtime.install(createCloudDesktopWorkbenchPanelPlugin({ ...f,
+      surfaces: { mount(element) {
+        const surface = f.surfaces.mount();
+        return { ...surface, focus() { surface.focus(); element.focus({ preventScroll: true }); } };
+      } },
+    }));
     const tab = runtime.panels.open("panel:a", "cloud-desktop", { conversationId: "thread:a" });
     const Panel = runtime.renderers.getSnapshot()[0]!.Component;
     assert.equal(runtime.renderers.getSnapshot()[0]!.residency, "while-tab-open");
@@ -513,9 +660,29 @@ test("real panel component mounts observe-only, releases on blur, and cleans up 
     const surface = dom.window.document.querySelector(".cloud-desktop-panel__surface");
     assert.ok(dom.window.document.querySelector(".ui-empty-state__title")?.textContent?.includes("Connecting to desktop"));
     assert.equal(dom.window.document.querySelector("button")!.disabled, true);
+    const controls = dom.window.document.querySelector('.ui-desktop-view__controls')!;
+    assert.equal(controls.getAttribute('data-visible'), 'false');
+    assert.equal(controls.getAttribute('aria-hidden'), 'true');
+    assert.equal(controls.hasAttribute('inert'), true);
     await act(async () => { f.setState({ videoReady: true, inputReady: true }); });
+    assert.equal(controls.getAttribute('data-visible'), 'true');
+    assert.equal(controls.hasAttribute('aria-hidden'), false);
+    assert.equal(controls.hasAttribute('inert'), false);
     const button = dom.window.document.querySelector<HTMLButtonElement>("button[aria-pressed]")!;
     assert.equal(button.getAttribute("aria-pressed"), "false");
+    const touch = (name: string, id: number, x: number, primary = true) => {
+      const event = new dom.window.MouseEvent(name, { bubbles: true, button: 0, clientX: x, clientY: 20 });
+      Object.defineProperties(event, { pointerId: { value: id }, pointerType: { value: "touch" }, isPrimary: { value: primary } });
+      surface!.dispatchEvent(event);
+    };
+    await act(async () => {
+      touch("pointerdown", 10, 20); touch("pointermove", 10, 40); touch("pointerup", 10, 40);
+      touch("pointerdown", 11, 20); touch("pointerdown", 12, 30, false);
+      touch("pointerup", 11, 20); touch("pointerup", 12, 30, false);
+      touch("pointerdown", 13, 20); touch("pointercancel", 13, 20); touch("pointerup", 13, 20);
+      await flush();
+    });
+    assert.equal(f.calls.includes("control:request"), false, "drag, second finger and cancellation never take control");
     const grant = deferred<DesktopControlLease>();
     f.connection.requestControl = () => grant.promise;
     await act(async () => { button.click(); await flush(); });
@@ -524,8 +691,11 @@ test("real panel component mounts observe-only, releases on blur, and cleans up 
     assert.equal(button.getAttribute("aria-busy"), null, "stop intent remains actionable while awaiting authorization");
     assert.equal(button.querySelector('[data-current="true"]')!.textContent, "Stop controlling");
     assert.equal(f.calls.includes("input:enable"), false);
+    assert.equal(dom.window.document.querySelector('.ui-desktop-view')!.getAttribute('data-owned'), 'false',
+      "requesting cannot paint confirmed control");
     await act(async () => { grant.resolve(f.lease); await flush(); });
     assert.equal(button.getAttribute("aria-pressed"), "true");
+    assert.equal(dom.window.document.querySelector('.ui-desktop-view')!.getAttribute('data-owned'), 'true');
     assert.equal(dom.window.document.querySelector(".cloud-desktop-panel__surface"), surface,
       "presentation phases cannot replace the media owner DOM");
     await act(async () => {
@@ -539,7 +709,7 @@ test("real panel component mounts observe-only, releases on blur, and cleans up 
       button.dispatchEvent(down);
       (surface as HTMLElement).blur();
     });
-    assert.equal(button.getAttribute("aria-pressed"), "false");
+    assert.equal(button.getAttribute("aria-pressed"), "true", "an unknown focus destination does not reinterpret a held stop");
     await act(async () => { button.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true, detail: 1 })); await flush(); });
     assert.equal(button.getAttribute("aria-pressed"), "false", "a held stop cannot flip into take after null blur");
     assert.equal(dom.window.document.querySelector(".cloud-desktop-panel__toolbar")!.getAttribute("aria-busy"), "false");

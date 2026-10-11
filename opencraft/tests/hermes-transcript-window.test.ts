@@ -20,9 +20,12 @@ test("Desktop tail reads exactly 120 rows once even if all belong to one long ex
 
 test("older demand is single-flight, deduplicates shifted offsets and preserves backfill on refresh", async () => {
   let calls = 0;
-  const window = new HermesTranscriptWindow({ async readMessages() {
+  const offsets: number[] = [];
+  const window = new HermesTranscriptWindow({ async readMessages(_id, query) {
     calls++;
-    return calls === 1 ? page(121, 120) : calls === 2 ? page(2, 120, 120) : page(125, 120);
+    offsets.push(query.offset);
+    return calls === 1 ? page(121, 120) : calls === 2 ? page(2, 120, 120)
+      : calls === 3 ? page(125, 120) : page(1, 1, 243);
   }, dispose() {} }, "s");
   await window.readTail();
   const first = window.readOlder();
@@ -35,6 +38,52 @@ test("older demand is single-flight, deduplicates shifted offsets and preserves 
   const refresh = await window.readTail();
   assert.equal(refresh.messages[0].id, 2);
   assert.equal(refresh.messages.at(-1)?.id, 244);
+  assert.equal(refresh.nextOffset, 243, "the refreshed cursor advances past the retained prefix");
+  const complete = await window.readOlder();
+  assert.deepEqual(offsets, [0, 120, 0, 243], "refresh cannot rescan already backfilled rows");
+  assert.equal(complete.messages.length, 244);
+  assert.equal(complete.possiblyTruncated, false);
+});
+
+test("tail refresh retains a fully loaded prefix and its exhausted older edge", async () => {
+  let count = 250;
+  const offsets: number[] = [];
+  const window = new HermesTranscriptWindow({ async readMessages(_id, query) {
+    offsets.push(query.offset);
+    const end = Math.max(0, count - query.offset);
+    return page(Math.max(0, end - query.limit) + 1, Math.min(query.limit, end), query.offset);
+  }, dispose() {} }, "s");
+  await window.readTail();
+  await window.readOlder();
+  const complete = await window.readOlder();
+  assert.equal(complete.messages.length, 250);
+  assert.equal(complete.possiblyTruncated, false);
+
+  count += 4;
+  const refresh = await window.readTail();
+  assert.equal(refresh.messages.length, 254);
+  assert.equal(refresh.nextOffset, 254);
+  assert.equal(refresh.possiblyTruncated, false);
+  assert.equal(await window.readOlder(), refresh);
+  assert.deepEqual(offsets, [0, 120, 240, 0], "an exhausted older edge stays exhausted after an anchored tail refresh");
+});
+
+test("an exhausted exact-size tail keeps its older edge closed on refresh", async () => {
+  const offsets: number[] = [];
+  const window = new HermesTranscriptWindow({ async readMessages(_id, query) {
+    offsets.push(query.offset);
+    return query.offset === 0 ? page(1, 120) : page(1, 0, query.offset);
+  }, dispose() {} }, "s");
+  await window.readTail();
+  const complete = await window.readOlder();
+  assert.equal(complete.possiblyTruncated, false);
+
+  const refresh = await window.readTail();
+  assert.equal(refresh.messages.length, 120);
+  assert.equal(refresh.nextOffset, 120);
+  assert.equal(refresh.possiblyTruncated, false);
+  assert.equal(await window.readOlder(), refresh);
+  assert.deepEqual(offsets, [0, 120, 0]);
 });
 
 test("stale older response cannot modify a refreshed window or advance its cursor", async () => {

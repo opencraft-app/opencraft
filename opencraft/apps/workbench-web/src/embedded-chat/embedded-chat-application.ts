@@ -1,4 +1,7 @@
 import { createEmbeddedAccountStorage } from "./embedded-account-storage";
+import { EmbeddedNativeAudioCapture, embeddedNativeAudioAvailable } from "./embedded-native-audio";
+import { EmbeddedSpeechService } from "./embedded-speech-service";
+import { CloudSpeechInputProvider } from "@opencraft/plugin-voice-input/cloud-speech";
 import { HermesPhysicalConnectionPreparation } from "@opencraft/plugin-lightvela-hermes/physical-connection";
 import {
   createWebWorkbenchApplication,
@@ -32,7 +35,12 @@ export async function createEmbeddedChatApplication(
   // Browser pages and conversation bindings belong to this Bot lifetime.
   // Never restore standalone or another embedded account's browser metadata.
   const browserMetadata = new Map<string, string>();
+  const speech = new EmbeddedSpeechService(options.apiBase ?? "", options.getSessionToken ?? (() => null));
+  const speechProvider = new CloudSpeechInputProvider(speech, embeddedNativeAudioAvailable() ? new EmbeddedNativeAudioCapture() : undefined, { unavailableMessage: "语音识别暂不可用，请稍后重试" });
+  void speech.refresh();
+  const closeSpeech = () => { speechProvider.close(); speech.close(); };
   const application = await createWebWorkbenchApplication({
+    speechInputProvider: speechProvider,
     browserMetadataStorage: {
       getItem: key => browserMetadata.get(key) ?? null,
       setItem: (key, value) => { browserMetadata.set(key, value); },
@@ -48,7 +56,7 @@ export async function createEmbeddedChatApplication(
     lightVelaPhysicalConnection: options.physicalConnection,
     navigationMode: "memory",
     deferOptionalFeatures: true,
-  });
+  }).catch(error => { closeSpeech(); throw error; });
   try {
     if (application.supervisor.mode !== "active") {
       throw new Error("Embedded Chat could not construct an active OpenCraft Host");
@@ -56,9 +64,10 @@ export async function createEmbeddedChatApplication(
     return {
       application,
       hostId: profile.hostId,
-      dispose: () => application.dispose(),
+      dispose: () => { closeSpeech(); return application.dispose(); },
     };
   } catch (error) {
+    closeSpeech();
     await application.dispose().catch(() => undefined);
     throw error;
   }

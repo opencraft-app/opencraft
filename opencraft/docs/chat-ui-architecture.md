@@ -1,5 +1,59 @@
 # ChatUI integration architecture
 
+## Browser-local input drafts
+
+`ComposerStoreServices.drafts` is a platform-neutral content storage port;
+`BrowserComposerDrafts` adapts browser localStorage for Bot input without server or
+device synchronization. Task input slots use an account-bound
+`ConversationDraftOwnerRegistry`; `ConversationDraftContinuity` remains their
+sole document persistence writer.
+Bot input is isolated by product/account and exact Host/conversation identity. Document, context and
+attachment metadata are saved on explicit edits and cleared after an accepted
+send. Lifecycle, selection and disposal changes never overwrite stored content.
+Restore creates a fresh editing state, not a submitting lock, receipt or outbox
+entry, and never sends automatically. Account credential-scope changes revoke
+and clear the old Bot adapter; a fresh application creates the next account's
+adapter. Task sidebar selection resumes the conversation's last successfully
+presented input slot; explicit navigation and POP preserve independent Views.
+
+Task presentation caching and input retention have separate budgets. A cached
+View borrows its slot's original Controller and does not retain that draft owner.
+Evicting the presentation after 20 inactive Views releases Scope/UI resources,
+not the Controller, original Files, previews or attachment jobs. The Application
+retains at most 50 nonempty unsent input slots, evicting the least-recently-used
+inactive slot and discarding its stored document. Empty inputs do not count.
+Physical editing and in-flight submissions protect a slot from eviction; if all
+50 are protected, new-content admission is refused rather than deleting live
+input or exceeding the budget. Late attachment status changes do not refresh
+recency. Promotion updates every slot of the Scope, including slots whose View
+has been evicted; the owner holds no Scope, Thread or Host lease. Clear/accepted
+settlement releases assets, failed settlement retains input, and account
+revocation clears all slots and target caches. Tests: `test:task-draft-switching`
+and `smoke:task-draft-switching` (real CodexComposer, synthetic remote boundaries).
+New-chat Scope metadata uses a separate 20-empty-record budget; records with
+retained input and in-flight first submissions cannot be pruned by that budget.
+It queries input ownership rather than retaining an execution lease. Evicted
+input cannot rehydrate from its discarded document even while empty navigation
+metadata remains.
+
+Task continuity includes new-Draft placement in its existing document envelope,
+not a second storage writer. Browser bootstrap can restore that exact client
+Draft ID and configured, enabled Host before the View hydrates its document.
+Canonical promotion aliases take precedence; old envelopes remain readable.
+Browser edits enqueue local writes immediately rather than leaving the last
+input behind a debounce window. No execution state is inferred from placement.
+Account service disposal revokes asynchronous authority without rotating the
+persisted credential scope. Only actual identity/credential transitions rotate
+that scope; otherwise every ordinary browser refresh would orphan saved input.
+
+Original browser File bytes survive Task conversation switching within the same
+Application. File persistence across a full refresh and ephemeral Side Chat
+reload restoration are not implemented. Expired Object URLs and unfinished attachment staging restore as
+failed removable cards asking the user to re-add the file, never as ready files.
+Storage corruption, denial or quota failures retain in-memory editing; diagnostics
+do not log content. Mounted Views do not subscribe to cross-tab changes.
+Tests: `tests/chat-browser-drafts.test.ts`, `npm run smoke:browser-drafts`.
+
 Thread identity, execution activation, capability leases and revocation follow
 the [execution ownership contract](execution-ownership.md), including its
 explicit distinction between implemented coordination and pending delivery guarantees.
@@ -25,7 +79,7 @@ retain their own suggestions and have no Hermes shortcut menu.
 
 ## 跨桌面、手机和平板的会话连续性
 
-Conversation Scope 是会话身份，View 是一个具体窗口或页面的输入与滚动状态。`workbench-runtime` 的 `ConversationDraftContinuity` 管理 View 文档的保存、恢复、发送成功后的丢弃和迟到读取仲裁；平台只提供本地存储。移动端用 SQLite，并以区域、凭证摘要和 Bot 实例/Profile 分区；Web/Electron 用浏览器本地存储，并以产品和账号服务的凭证作用域分区。退出登录或切换凭证时撤销旧存储、清除 View 与其内部目标缓存。附件与临时文件引用不在这个文档缓存中恢复，避免把已失效的本地 URI 当成可发送资产。
+Conversation Scope 是会话身份，View 是具体窗口或页面的呈现与滚动状态；任务输入槽位以 View ID 标识，但其 Application 级草稿所有权独立于页面缓存。`workbench-runtime` 的 `ConversationDraftOwnerRegistry` 保留原 Controller 与附件资源，`ConversationDraftContinuity` 管理同一输入槽文档的保存、恢复、发送成功后的丢弃和迟到读取仲裁；平台只提供本地存储。移动端用 SQLite，并以区域、凭证摘要和 Bot 实例/Profile 分区；Web/Electron 用浏览器本地存储，并以产品和账号服务的凭证作用域分区。退出登录或切换凭证时撤销旧存储、清除所有草稿所有者及其内部目标缓存，包括已无页面的草稿。附件与临时文件引用不从文档缓存恢复；会话切换保留内存附件不等于刷新恢复字节。
 
 `ConversationReturnProbe` 统一短暂离开、较长前台恢复和断网恢复的触发条件。iOS 把 AppState/Expo Network 事件交给它，Web/Electron 把 visibility/online 事件交给它；真正的追平仍调用当前 Thread lease 的 `retryRestore()`。追平不创建新会话，不重置可读历史。已经显示的内容是否权威，仍由 Replica/Session 决定。
 
@@ -405,9 +459,11 @@ produce neither a blank interval nor a duplicate row. This does not redefine
 steer as a hard interrupt: the current provider request and tool step remain
 owned by DSH and may finish before the next-step inbox is consumed.
 
-The main conversation defaults fresh follow-up input to direct steering during
+The standalone main conversation defaults fresh follow-up input to direct steering during
 an active response. Chat settings can persist `queue` instead through
-`UiPreferencesRuntime` (`chat.defaultFollowUpAction`, installation scope).
+`UiPreferencesRuntime` (`chat.defaultFollowUpAction`, installation scope). The
+LightVela embedded conversation defaults to `queue` while a response is active,
+independent of the standalone preference.
 Ctrl/Cmd+Enter temporarily chooses the opposite action; idle input still starts
 a normal response. A preference change does not replace the Composer document,
 editor or selections, and submission rechecks the actual active Turn. Side Chat
@@ -438,6 +494,9 @@ by client-message identity and is never retried automatically. The Composer
 disables later Send/Steer and reorder while such a claim is unresolved, and
 must not offer a generic Resume action behind it. Editing and removing ordinary
 queued rows remain available.
+Queued-message action hints use a hover/focus tooltip mounted in the Workbench
+presentation root, outside the scroll-clipped queue tray. The tooltip remains
+hoverable and text-selectable; native `title` is not used for these actions.
 This does not prove Codex never saw the input. `unconfirmedSteerDiscard` remains
 a separate Host capability; DSH's `atomicSteer` does not imply it. A failed
 history read also rejects discard. Ordinary direct steering and idle queue Send
@@ -601,13 +660,48 @@ revision per Item: this protects observed updates, not a claim of server-wide
 causal sequencing or a V4 Journal. Dot and task-chat renderers may differ while
 consuming this same identity-versus-position distinction.
 
+### Hermes message windows and Bot history continuity
+
+Hermes REST pagination owns source-row offsets, not rendered Turn or Bot-message
+counts. Each read adds one 120-row page to the scoped chronological window;
+the bridge returns that complete loaded projection. AppServer `limit` must not
+slice it again. A tail refresh grafts at a durable row anchor, accounts for the
+preserved prefix in its next offset, and does not reopen a known exhausted edge.
+Partial Turn regrouping can change execution/causal associations while retaining
+message IDs. Bot backfill therefore refreshes covered durable message metadata,
+rather than keeping stale associations merely because those IDs already exist.
+
+The Bot Source keeps durable history separate from local/live overlays. Resync
+may preserve an older prefix only within the same conversation incarnation and
+with a shared durable anchor; descriptor, execution and interaction authority
+always comes from the new read. A new cursor is opaque and cannot be calculated
+from visible message count. Delayed older reads are generation-scoped and cannot
+commit after resync, deletion or disposal. Old-epoch remote events are discarded;
+unadopted local submissions retain their independent client-message ownership.
+Once a durable row confirms that client-message identity, it adopts the local
+overlay, whether obtained by refresh or backfill. A delayed send failure or
+receipt then settles from the confirmed receipt; it cannot restore a failed
+optimistic row or regress completed execution. Concurrent reuse of an in-flight
+client-message identity does not issue another request.
+
+An empty display projection is not proof of empty source history. Completed
+tool-only rows can legitimately produce no Bot-chat units. The viewport requests
+at most three older pages per recovery intent, one page at a time, without
+requiring a physical top-scroll gesture. Remaining history or a failed read
+offers an explicit load/retry action in the existing status slot; unchanged or
+cyclic cursors stop automatic traversal. This is bounded display demand, not
+eager draining, transcript persistence, or execution readiness.
+
 ### Activity closure and disclosure authority
 
 `AgentActivitySegmentEnd` records why a contiguous slice ended (`user-input`,
-`content`, `final-answer`, `turn-terminal`, or still `open`). This is chronology
+`content`, `reasoning`, `final-answer`, `turn-terminal`, or still `open`). This is chronology
 and live-header ownership, not permission to hide content. Ordinary task
-disclosure is eligible only when that slice reaches its own displayable,
-non-async final answer. A Steer, hook, question, approval, image, unphased text,
+disclosure is eligible only for the nearest meaningful work slice reaching its
+own displayable, non-async final answer. Readable reasoning may separate physical
+work slices, but cannot multiply that response's outer fold owners. Earlier
+slices retain their ordinary tool summaries and their tools' independent choices.
+A Steer, hook, question, approval, image, unphased text,
 terminal Turn, or a final answer in an earlier response cannot grant eligibility.
 No phase is inferred to make a disclosure work. Earlier completed commentary
 therefore stays visible when the user follows up, rather than becoming a stack
@@ -812,6 +906,110 @@ session and invoking `session.delete`. An interrupt failure or missing idle
 confirmation leaves the conversation intact. UI adapters must retain the
 operation Promise long enough to expose pending and failure state.
 
+### Returned thinking content
+
+Engine-returned reasoning is a chronological Item-owned inner disclosure within
+the response's work container, not the body of a tool group's live “Thinking” header. Codex, DSH and Hermes
+consume the same default policy: nonempty explicit summary text wins; when no
+summary is returned, the actual returned textual detail/content is available.
+The body selects that content once, without concatenating duplicate summary
+and detail. Empty Items and opaque/encrypted fields create no disclosure and
+cannot be used to fabricate an explanation. This product policy intentionally
+differs from the older recovered Codex tool classifier that hid reasoning.
+
+Request policy and disclosure policy are different owners. The Codex Host's
+single native request writer supplies `summary: "auto"` on `turn/start` only
+when the caller omits that field. The same boundary covers normal/new/forked
+conversations, empty continuation and Host-owned queued starts, over local
+stdio or remote Codex transport. Explicit modes (including `none`) are retained;
+explicit `null` keeps native thread/Host inheritance. Invalid explicit values
+remain the native validator's responsibility. Each omitted-field start reapplies
+the product default rather than inheriting a previous explicit `none`; callers
+wanting native inheritance use `null`. No summary field is added to Steer,
+Thread lifecycle requests or generic Hermes/DSH submissions. Codex's
+native model capability gate still owns upstream support; asking for a summary
+does not guarantee returned text. Existing running turns and historical Items
+are not rewritten. The UI stays initially collapsed and only actual returned
+text creates its disclosure.
+
+Hermes already projects actual `reasoning.delta` and its durable reasoning
+columns by default, without a separate display opt-in. Its ordinary Responses
+transport asks for an automatic summary, but provider-specific transports and
+explicit session/model/global reasoning settings can differ. “Enabled by
+default” therefore means accepting returned text, not promising content on
+every response or treating `reasoning.available` liveness as that content.
+
+`chat-core` owns selection, chronological slots and single live Thinking
+arbitration. Stable Turn/Item identity survives streaming, completion and
+history updates. Reasoning and Bash/Read/tool groups have separate inner
+disclosures inside the same contiguous response work container. The newest
+current-response reasoning may own live feedback; later tools, answers,
+questions or inputs retire that feedback without deleting readable content.
+When no returned content exists, the existing noninteractive Thinking status
+retains its current owner rather than becoming an empty expand button.
+
+Both platforms initially fold reasoning, even while streaming. Only an explicit
+View action changes that choice; new deltas or completion never automatically
+expand, collapse or write a preference. Web reuses its existing View restore
+receipt and disclosure reflow owner; Native keeps Item-keyed inner choices on
+the stable outer work component. Collapsing the outer container may unmount its
+body but must not reset either reasoning or tool-group choices. The header uses a short localized status plus the latest
+nonempty visible document line when active, or first visible line when settled.
+The status label stays readable in full; the document-line preview yields space
+and truncates when the header is narrow or the line is long.
+Embedded LightVela status labels follow the host locale for all supported site
+languages; returned reasoning text stays in the language supplied by the engine.
+`chat-document` owns the shared assistant Markdown grammar and plain-text
+projection: labels omit formatting controls and link destinations, but preserve
+escaped literals and code identifiers. `chat-core` selects the line and keeps
+the selected Markdown body unchanged; neither platform regex-strips content.
+The expanded body uses the ordinary Web/Native document renderer, with stable
+Item document identity, the existing Host resource/media policy and the Web
+viewport measurement ingress. Block Markdown is never nested in a raw paragraph;
+its renderer owns whitespace and narrow code/table overflow. Only current live
+feedback animates the document. Rendering a resource or a stream update cannot
+change either disclosure choice or take tool/final-answer ownership.
+The full selected text is available during and after execution. It is not
+copied into the final response's copy action or tool statistics.
+
+Adapter event names are not content authority. In the inspected Hermes agent
+revision `3c3ab69abb9b08683b5eb15b4e2b8be1198c875f`,
+`turn_response_intake._relay_thinking` sends up to 500 characters of
+`assistant_message.content` as `reasoning.available`; it is an assistant-body
+preview, not returned reasoning. The Hermes bridge uses this only for liveness,
+leaving body ownership to `message.delta/interim/complete`. Actual
+`reasoning.delta` and durable reasoning columns own separate reasoning Items;
+an answer with equal or prefix-continuous text cannot erase them. History
+aliases select one returned representation instead of duplicating it.
+An empty or opaque reasoning source Item remains a work observation; it does not
+flush/re-key a work slice, close an adjacent tool group or create a history-count
+heading. Actual nonempty text owns a source-identified chronological disclosure.
+First returned text inserts a new inner disclosure, including when later Items
+already exist in restored history; it never splits or re-keys the outer work
+container. Source identity and existing valid View choices survive. Nonempty
+reasoning separates adjacent inner tool groups, not responses or outer folds.
+Within the same contiguous response, a real final answer grants exactly one
+outer work disclosure containing both reasoning and tools in source order.
+The final answer remains outside. Tools never move into the reasoning body.
+Real user input, an asynchronous question or other content/interaction retains
+its existing ordering boundary; separate completed responses keep their own
+legitimate folds even though execution shares one Turn. Only one work container
+owns the Turn-total clock; reasoning cannot redirect it across a response/input
+boundary. Actual reasoning alone is meaningful work, so a completed reasoning-only
+response has a real outer fold, even with no tools. Its Worked-for label uses
+only the provided clock, never fabricated timing. Empty reasoning alone does
+not create an empty toggle. Outer visibility and independent inner choices are
+different authorities; streaming, completion and outer collapse never rewrite
+those inner choices.
+
+The interaction draws on DSH `ReasoningRow` in locally inspected
+`@deepseek-ai/dsh-client-ui-conversation@0.1.1-rc.2`. Shared model and adapter
+tests plus `scripts/smoke-reasoning-disclosure.ts` cover empty/summary/detail
+content, first control activation, browser touch/mouse/keyboard, separate tool groups,
+in-place streaming, completion, prepended history and View restoration. The
+browser fixture uses synthetic engine text; it does not claim paid-provider
+execution, hidden reasoning availability or iPhone OS acceptance.
+
 The embedded canvas permits the existing `vela.voice-input.toggle` Composer
 action. Dictation uses the platform speech provider and the same transient input
 transaction as the full Workbench; no microphone starts until user interaction.
@@ -960,7 +1158,7 @@ history, or remounting the Conversation.
 
 The Web Composer displays a selected image immediately from a browser-owned
 object URL. The object URL and original `File` belong to the Composer
-Controller's View-scoped attachment session, keyed by Draft ID and attachment
+Controller's draft-owner attachment session, keyed by Draft ID and attachment
 ID; neither enters the serializable Draft or AppServer input. The session owns
 compression/resolve work across React mount changes, updates only the Draft
 that initiated the work, and aborts/revokes on removal, clear or Controller
@@ -970,7 +1168,7 @@ image preparation, not measured network upload progress. The existing
 For iPhone camera HEIC/HEIF input, browser image decode and canvas encoding
 produce a JPEG upload derivative. This is required format conversion, so it is
 kept even if larger than the selected HEIC; the original File stays with the
-View-scoped session for retry. A browser without that decode/encode path leaves
+draft-owner session for retry. A browser without that decode/encode path leaves
 the attachment failed rather than sending HEIC under an unsupported MIME.
 The post-conversion inline byte cap still applies before base64 allocation.
 Failed image cards show the preparation error beside the thumbnail, so touch
@@ -1209,6 +1407,7 @@ bundles are independent quality gates; a static fixture alone is not accepted.
 内嵌新会话（draft 存在且尚无 submission）由 sessions bridge 显式发布 isDraft；启用右侧预览时保留顶部面板开关，已有会话继续展示标题与重命名。国内控制台内嵌聊天的加载、新会话和已有会话均无宿主圆角外框，内嵌主内容表面无阴影；保留标题重命名入口与输入框边界。预览面板默认关闭，网页标签随会话 scope 切换；文件只读预览不展示目录树、搜索或编辑。
 
 内嵌会话列表由宿主分页呈现。OpenCraft 的 Thread catalog 仍以 30 条为一个后端分页单元，sessions bridge 将当前已取会话和 `hasMoreSessions` 一并发布，并通过 `loadMoreConversations()` 显式读取下一页；宿主初始展示最近 20 条，每次「查看更多」最多增加 20 条，「收起」逐批撤回。加载失败时不推进宿主的可见数量。
+首次连接的 Thread catalog 在查询尚未开始或尚未取得结果时也报告加载中；Host 进入错误态后停止报告加载，由聊天主区呈现错误和重试。空列表只有在首次读取结束后才能作为已确认的空状态投影。宿主切换 Bot 时不显示短暂的「默认对话」或可见的加载文案，待目标 Bot 的会话结果到达后再呈现列表或空列表入口。
 
 内嵌右侧预览面板的入口、标签列表/空态、缩放与关闭提示、宽度调整无障碍标签以及不可用状态均通过稳定消息 ID 跟随宿主语言；网页自身正文由目标站点控制，不由控制台翻译。
 

@@ -15,7 +15,7 @@ import {
 type TooltipPosition = {
   left: number;
   top: number;
-  placement: "top" | "bottom";
+  placement: "top" | "bottom" | "right";
 };
 
 const TOOLTIP_GAP = 8;
@@ -25,10 +25,14 @@ export function ModelActionTooltip({
   children,
   content,
   preserveWrapper = false,
+  focusable = true,
+  side = "auto",
 }: {
   children: ReactNode;
   content?: string;
   preserveWrapper?: boolean;
+  focusable?: boolean;
+  side?: "auto" | "right";
 }) {
   const tooltipId = useId();
   const triggerRef = useRef<HTMLSpanElement>(null);
@@ -62,6 +66,19 @@ export function ModelActionTooltip({
     if (!trigger) return;
     const triggerRect = trigger.getBoundingClientRect();
     const tooltipRect = tooltipRef.current?.getBoundingClientRect();
+    if (side === "right") {
+      const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+      const halfHeight = (tooltipRect?.height ?? 0) / 2;
+      setPosition({
+        left: triggerRect.right + TOOLTIP_GAP,
+        top: Math.min(
+          Math.max(triggerRect.top + triggerRect.height / 2, VIEWPORT_MARGIN + halfHeight),
+          Math.max(VIEWPORT_MARGIN + halfHeight, viewportHeight - VIEWPORT_MARGIN - halfHeight),
+        ),
+        placement: "right",
+      });
+      return;
+    }
     const halfWidth = (tooltipRect?.width ?? 0) / 2;
     const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
     const centeredLeft = triggerRect.left + triggerRect.width / 2;
@@ -75,7 +92,7 @@ export function ModelActionTooltip({
       top: placement === "top" ? triggerRect.top - TOOLTIP_GAP : triggerRect.bottom + TOOLTIP_GAP,
       placement,
     });
-  }, []);
+  }, [side]);
 
   useLayoutEffect(() => {
     if (open) updatePosition();
@@ -116,7 +133,7 @@ export function ModelActionTooltip({
       aria-label={content || undefined}
       aria-describedby={open ? tooltipId : undefined}
       className={`inline-flex rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/30 ${preserveWrapper ? "w-full" : ""}`}
-      tabIndex={interactive ? 0 : undefined}
+      tabIndex={interactive && focusable ? 0 : undefined}
       onMouseEnter={interactive ? showTooltip : undefined}
       onMouseLeave={interactive ? scheduleClose : undefined}
       onFocus={interactive ? showTooltip : undefined}
@@ -130,16 +147,18 @@ export function ModelActionTooltip({
               ref={tooltipRef}
               id={tooltipId}
               role="tooltip"
-              className={`pointer-events-auto fixed z-[260] w-max max-w-[min(16rem,calc(100vw-2rem))] -translate-x-1/2 select-text rounded-md border border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium leading-relaxed text-[var(--text-primary)] shadow-[0_8px_24px_rgba(15,23,42,0.12)] ${position.placement === "top" ? "-translate-y-full" : ""}`}
+              className={position.placement === "right"
+                ? "lv-agent-rail-tooltip pointer-events-auto fixed z-[260] max-w-[min(16rem,calc(100vw-2rem))] -translate-y-1/2 select-text"
+                : `pointer-events-auto fixed z-[260] w-max max-w-[min(16rem,calc(100vw-2rem))] -translate-x-1/2 select-text rounded-md border border-[var(--border-subtle)] bg-white px-3 py-1.5 text-[11px] font-medium leading-relaxed text-[var(--text-primary)] shadow-[0_8px_24px_rgba(15,23,42,0.12)] ${position.placement === "top" ? "-translate-y-full" : ""}`}
               style={{ left: position.left, top: position.top }}
               onMouseEnter={showTooltip}
               onMouseLeave={scheduleClose}
             >
               {content}
-              <span
+              {position.placement !== "right" && <span
                 aria-hidden="true"
                 className={`absolute left-1/2 size-2 -translate-x-1/2 rotate-45 border-[var(--border-subtle)] bg-white ${position.placement === "top" ? "top-full -translate-y-1/2 border-b border-r" : "bottom-full translate-y-1/2 border-l border-t"}`}
-              />
+              />}
             </span>,
             document.body,
           )

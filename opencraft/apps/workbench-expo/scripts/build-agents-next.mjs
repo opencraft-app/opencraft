@@ -1,0 +1,25 @@
+import { spawn } from 'node:child_process';
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const monoRoot = path.resolve(appRoot, '../../..');
+const target = path.join(monoRoot, 'frontend/public/__expo-agents');
+const output = path.join(appRoot, 'dist/agents-next');
+const run = (args, env = {}) => new Promise((resolve, reject) => {
+  const child = spawn(process.execPath, args, { cwd: appRoot, env: { ...process.env, ...env }, stdio: 'inherit' });
+  child.once('error', reject);
+  child.once('exit', code => code === 0 ? resolve() : reject(new Error(`Build exited ${code}`)));
+});
+await run(['scripts/build-mobile-bot-runtime.mjs']);
+await run(['scripts/run-expo.cjs', 'export', '--platform', 'web', '--output-dir', output], { OPENCRAFT_EXPO_SURFACE: 'agents-next' });
+const index = await fs.readFile(path.join(output, 'index.html'), 'utf8');
+const sources = [...index.matchAll(/<script[^>]*src="([^"]+)"/g)].map(match => match[1]);
+const styles = [...index.matchAll(/<link[^>]*href="([^"]+\.css)"/g)].map(match => match[1]);
+if (!sources.length) throw new Error('Expo Web export has no entry script');
+await fs.mkdir(target, { recursive: true });
+await fs.cp(output, target, { recursive: true });
+await fs.copyFile(path.join(appRoot, 'assets/mobile-bot-runtime.html'), path.join(target, 'bot-runtime.html'));
+const asset = value => value.startsWith('/__expo-agents/') ? value : `/__expo-agents/${value.replace(/^\//, '')}`;
+await fs.writeFile(path.join(target, 'manifest.json'), JSON.stringify({ version: 1, scripts: sources.map(asset), styles: [...new Set(styles.map(asset))], runtimeHtmlUrl: '/__expo-agents/bot-runtime.html' }, null, 2));
+console.log('Expo Web surface exported for /agents-next');

@@ -18,6 +18,8 @@
 }
 
 .lv-docs-shell {
+  /* The public site header occupies the top 60px of the viewport. */
+  --fd-banner-height: 60px;
   --fd-layout-width: 1400px;
   --fd-sidebar-width: 268px;
   --fd-toc-width: 232px;

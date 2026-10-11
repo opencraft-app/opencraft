@@ -25,6 +25,7 @@ import { journeyHref, resolveCtaRoute } from "@/lib/cta-journey";
 
 const navigateMock = vi.fn();
 const execDebugCommand = vi.fn();
+const listMyPasses = vi.fn();
 const testRegion = vi.hoisted(() => ({ isCN: true, isGlobal: false }));
 
 let currentSessionUser: User;
@@ -105,7 +106,7 @@ vi.mock("@/contexts/repository-context", () => ({
       })),
       getDashboardSnapshot: vi.fn().mockResolvedValue({ bots }),
     },
-    plans: { getRenewPrice: vi.fn(), createRenewOrder: vi.fn(), listMyPasses: vi.fn() },
+    plans: { getRenewPrice: vi.fn(), createRenewOrder: vi.fn(), listMyPasses },
   }),
 }));
 
@@ -124,6 +125,7 @@ vi.mock("@/pages/marketing/agent-deepseek-harness-panel", () => ({
 
 // 创建路径不测试聊天/通道 SDK，避免动态加载其浏览器 CSS。
 vi.mock("@/pages/marketing/agent-chat-panel", () => ({ AgentChatPanel: () => null }));
+vi.mock("@/pages/marketing/opencraft-embedded-workbench", () => ({ AgentChatMigrationSurface: () => null }));
 vi.mock("@/pages/marketing/agent-channel-panel", () => ({ ChannelPanel: () => null }));
 
 function buildBot(id = "ins-main", overrides: Partial<OpenClawBot> = {}): OpenClawBot {
@@ -173,9 +175,27 @@ function FirstBotJourney({ initialSearch }: { initialSearch: string }) {
   );
 }
 
-/** 等引导表单出现（「换一批」是表单独有的头像操作） */
+function MultiBotHistoryJourney() {
+  const initialSearch = "?bot=ins-main";
+  const [search, setSearch] = useState(initialSearch);
+  const navigate = useCallback<AppNavigationValue["navigate"]>((to, options) => {
+    navigateMock(to, options);
+    setSearch(typeof to === "string" ? new URL(to, "https://lightvela.com").search : to.search ?? "");
+  }, []);
+  const navigation = useMemo(() => ({
+    ...createNavigation(search), pathname: "/agents/chat", navigate,
+  }), [search, navigate]);
+  return (
+    <AppNavigationProvider value={navigation}>
+      <button type="button" onClick={() => setSearch(initialSearch)}>模拟浏览器返回</button>
+      <AgentSettingsPage showHeader={false} sectionId="chat" />
+    </AppNavigationProvider>
+  );
+}
+
+/** 等引导表单出现（「随机样式」是表单独有的头像操作） */
 const waitForForm = () => waitFor(() => {
-  expect(screen.getByRole("button", { name: "换一批" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "随机样式" })).toBeInTheDocument();
 });
 
 /** 点模板卡片 → 弹窗 → 点「创建」 */
@@ -257,7 +277,7 @@ describe("create bot: all entry paths", () => {
     await waitFor(() => expect(addBot).toHaveBeenCalledTimes(1));
     expect(addBot).toHaveBeenCalledWith(expect.objectContaining({ name: "首页小助手" }));
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith(
-      "/agents/overview?bot=ins-new-0", { replace: true },
+      "/agents/chat?bot=ins-new-0", { replace: true },
     ));
     expect(execDebugCommand.mock.calls.some(([id, command]) =>
       id === "ins-new-0" && command.includes("__CTL_SOUL_EOF__"),
@@ -273,10 +293,10 @@ describe("create bot: all entry paths", () => {
     await settle();
 
     // 不该被弹回表单
-    expect(screen.queryByRole("button", { name: "换一批" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "随机样式" })).not.toBeInTheDocument();
     // 已就绪的实例应完成配置并进入总览；不能把卡在进度页当成成功。
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith(
-      "/agents/overview?bot=ins-sub", { replace: true },
+      "/agents/chat?bot=ins-sub", { replace: true },
     ));
     expect(execDebugCommand.mock.calls.some(([id, command]) =>
       id === "ins-sub" && command.includes("__CTL_SOUL_EOF__"),
@@ -296,7 +316,7 @@ describe("create bot: all entry paths", () => {
 
     // 新实例是 provisioning —— 这正是「刷新恢复」effect 会翻转 isCreating 的时机
     expect(addBot).toHaveBeenCalled();
-    expect(screen.queryByRole("button", { name: "换一批" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "随机样式" })).not.toBeInTheDocument();
     /*
      * 判据用「正在保存 Bot 资料」：它在所有路径下都有。
      * soul 那步的文案会随模式变（写入人设 / 更新名称与简介 / 保留模式），
@@ -304,6 +324,21 @@ describe("create bot: all entry paths", () => {
      */
     await expectSetupRunning();
     expect(execDebugCommand.mock.calls.length).toBeGreaterThan(0);
+  });
+
+  it("browser Back leaves the new Bot page and restores the previous Agent page", async () => {
+    bots = [buildBot("ins-main", { name: "主 Bot" })];
+    render(<MultiBotHistoryJourney />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "新建 Bot" }));
+    await waitForForm();
+    expect(navigateMock).toHaveBeenCalledWith("/agents/chat?bot=ins-main&newBot=1", undefined);
+
+    fireEvent.click(screen.getByRole("button", { name: "模拟浏览器返回" }));
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "随机样式" })).not.toBeInTheDocument();
+    });
+    expect(addBot).not.toHaveBeenCalled();
   });
 
   it("B2. multi-bot onboarding takes over the whole page", async () => {
@@ -337,7 +372,7 @@ describe("create bot: all entry paths", () => {
     await settle();
 
     expect(addBot).toHaveBeenCalled();
-    expect(screen.queryByRole("button", { name: "换一批" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "随机样式" })).not.toBeInTheDocument();
     // 空白创建也要写资料
     await expectSetupRunning();
   });

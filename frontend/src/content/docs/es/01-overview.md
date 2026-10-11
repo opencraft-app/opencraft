@@ -2,19 +2,19 @@
 
 ## Resumen
 
-**LightVela es una plataforma de Agents alojada en la nube del equipo de Tencent Lighthouse, y su producto actual es Hermes Agent — un Agent de IA construido sobre modelos de lenguaje grandes. LightVela se encarga de la implementación, la operación y la disponibilidad 24/7 en la nube, por lo que nunca tienes que escribir archivos de configuración ni conectarte por SSH a un servidor: todo lo configuras haciendo clic y arrastrar en un panel visual, y luego conversas con tu Bot desde Chat en la web o conectas las aplicaciones de mensajería que ya utilizas. Se recuerda a través de las conversaciones, y tú eliges el modelo, las herramientas y la personalidad. Los planes y las ofertas para nuevos usuarios se muestran en la [página de suscripción](/subscribe/).**
+**LightVela es un producto de agentes de IA en la nube del equipo de Tencent Lighthouse. Los asistentes personales de IA que creas funcionan actualmente con Hermes Agent. LightVela se encarga de la implementación, la operación y la disponibilidad 24/7 en la nube, por lo que nunca tienes que escribir archivos de configuración ni conectarte por SSH a un servidor: todo lo configuras haciendo clic y arrastrar en un panel visual, y luego conversas con tu Bot desde Chat en la web o conectas las aplicaciones de mensajería que ya utilizas. Se recuerda a través de las conversaciones, y tú eliges el modelo, las herramientas y la personalidad. Los planes y las ofertas para nuevos usuarios se muestran en la [página de suscripción](/subscribe/).**
 
 ---
 
 > Un Hermes Agent alojado en la nube que te entiende mejor con el tiempo.
 
-LightVela es un producto de alojamiento de Agents en la nube del equipo de Tencent Lighthouse. Está diseñado para permitir que todos posean un **compañero de IA que verdaderamente les pertenece** —no una herramienta que te pida que te presentes cada vez, sino una presencia a largo plazo que **te conoce, te recuerda y te entiende mejor con el tiempo**.
+LightVela es un producto de agentes de IA en la nube del equipo de Tencent Lighthouse. Está diseñado para permitir que todos posean un **compañero de IA que verdaderamente les pertenece** —no una herramienta que te pida que te presentes cada vez, sino una presencia a largo plazo que **te conoce, te recuerda y te entiende mejor con el tiempo**.
 
 Tu Agent permanece en línea 24/7, se ejecuta de forma independiente y siempre está listo para chatear. Tú decides su modelo, sus herramientas y su personalidad.
 
 Reducimos la barrera de configuración mediante una consola visual: sin archivos de configuración, sin inicio de sesión en el servidor, solo selecciona opciones en la página web para completar la configuración.
 
-El producto actual de LightVela es **Hermes Agent**, un Agent de IA impulsado por modelos de lenguaje grandes. Es posible que se agreguen más productos listos para usar en el futuro. Esta documentación se centra en Hermes Agent.
+Los asistentes personales de IA que creas funcionan actualmente con Hermes Agent. Esta documentación explica cómo configurar sus modelos, herramientas, personalidad y canales de conversación.
 
 ![1.00](../images/1-1.webp)
 

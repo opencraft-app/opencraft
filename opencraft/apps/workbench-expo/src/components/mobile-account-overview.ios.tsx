@@ -10,7 +10,6 @@ import {
   parseReferralOverview,
   parseReferralStats,
   projectAccountOverview,
-  ACCOUNT_UPDATED_EVENT,
   type AccountOverviewModel,
   type ReferralOverview,
   type ReferralStats,
@@ -98,7 +97,7 @@ async function referralData(base: string, token: string, path: string, method: "
   return payload.data;
 }
 
-export function MobileAccountOverview({ region, accountScope, language, onOpenDetails, onOpenRealname, onOpenBilling, onSignOut, onProfileUpdated }: {
+export function MobileAccountOverview({ region, accountScope, language, onOpenDetails, onOpenRealname, onOpenBilling, onSignOut }: {
   readonly region: LightVelaRegion;
   readonly accountScope: string;
   readonly language: MobileLanguage;
@@ -106,7 +105,6 @@ export function MobileAccountOverview({ region, accountScope, language, onOpenDe
   readonly onOpenRealname: () => void;
   readonly onOpenBilling: () => void;
   readonly onSignOut: () => Promise<void>;
-  readonly onProfileUpdated: (event: typeof ACCOUNT_UPDATED_EVENT) => void;
 }) {
   const [model, setModel] = useState<AccountOverviewModel | null>(() => mobileAccountQueryClient.getQueryData<AccountOverviewModel>(["account", "overview", accountScope]) ?? null);
   const [display, setDisplay] = useState<AccountDisplaySnapshot | null>(null);
@@ -247,7 +245,6 @@ export function MobileAccountOverview({ region, accountScope, language, onOpenDe
           CachedImage.clearMemoryCache().catch(() => undefined),
         ]);
         setAvatarGeneration(value => value + 1);
-        onProfileUpdated(ACCOUNT_UPDATED_EVENT);
         await mobileAccountQueryClient.invalidateQueries({ queryKey: ["account", "profile"] });
         setRevision(value => value + 1);
       }
@@ -374,6 +371,6 @@ export function MobileAccountOverview({ region, accountScope, language, onOpenDe
     </Button>
     {signOutError ? <Text style={styles.inlineError} accessibilityRole="alert">{t.signOutError}</Text> : null}
   </ScrollView>
-    {editor ? <MobileAccountEditor key={editor} editor={editor} currentName={model.displayName} currentPhone={model.phone} region={region} language={language} onClose={() => setEditor(null)} onSaved={() => { setEditor(null); onProfileUpdated(ACCOUNT_UPDATED_EVENT); void mobileAccountQueryClient.invalidateQueries({ queryKey: ["account", "profile"] }); setRevision(value => value + 1); }} /> : null}
+    {editor ? <MobileAccountEditor key={editor} editor={editor} currentName={model.displayName} currentPhone={model.phone} region={region} language={language} onClose={() => setEditor(null)} onSaved={() => { setEditor(null); void mobileAccountQueryClient.invalidateQueries({ queryKey: ["account", "profile"] }); setRevision(value => value + 1); }} /> : null}
   </>;
 }

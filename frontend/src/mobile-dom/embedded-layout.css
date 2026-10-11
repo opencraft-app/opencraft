@@ -21,6 +21,54 @@ html.lv-mobile-bot-runtime .lv-agent-settings-grid {
   min-width: 0;
 }
 
+/* Native chrome has already allocated this viewport and its safe area. The
+   embedded Web chat owns the only message scroller and composer within it. */
+html.lv-mobile-bot-runtime:has(.lv-agent-embedded-chat-page),
+html.lv-mobile-bot-runtime:has(.lv-agent-embedded-chat-page) body,
+html.lv-mobile-bot-runtime:has(.lv-agent-embedded-chat-page) #root {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+html.lv-mobile-bot-runtime .lv-agent-embedded-chat-page {
+  height: var(--lv-agent-chat-viewport-height, 100dvh);
+  min-height: 0;
+}
+/* Embedded mode intentionally omits the website chrome classes. Allocate
+   the actual main/section chain, not classes exclusive to the hosted page. */
+html.lv-mobile-bot-runtime .lv-agent-embedded-chat-page > main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0;
+}
+html.lv-mobile-bot-runtime .lv-agent-embedded-chat-page > main > .lw-settings-shell {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  width: 100%;
+  max-width: none;
+  padding: 0;
+  margin: 0;
+  overflow: hidden;
+}
+html.lv-mobile-bot-runtime .lv-agent-embedded-chat-page .lv-agent-settings-grid {
+  display: flex !important;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+html.lv-mobile-bot-runtime .lv-agent-embedded-chat-page .lv-agent-settings-content {
+  flex: 1;
+  min-height: 0;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+
 html.lv-mobile-bot-runtime .lv-agent-settings-content,
 html.lv-mobile-bot-runtime ._lh-claw-bot-panel,
 html.lv-mobile-bot-runtime ._lh-claw-bot-panel__cards {
@@ -187,4 +235,7 @@ html.lv-mobile-bot-runtime body [contenteditable="true"] * {
   -webkit-user-select: text;
   user-select: text;
   -webkit-touch-callout: default;
+}
+.lv-mobile-bot-runtime .lv-agent-settings-grid[hidden] {
+  display: none !important;
 }

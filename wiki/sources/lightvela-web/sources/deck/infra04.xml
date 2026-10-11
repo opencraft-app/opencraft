@@ -1,0 +1,7 @@
+<slide id="infra04">
+  <background color="bg-page" />
+  <text x="40" y="36" width="1200" height="24" font="caption" color="primary" opacity="0">04 产品演进 · 基础设施建设</text>
+  <text x="40" y="77" width="1200" height="50" font="heading" color="text-main" opacity="0">方案二：大脑与工作台分离</text>
+  <text x="1180" y="684" width="60" height="20" font="caption" color="text-muted" opacity="0">25 / 31</text>
+  <dynamic x="0" y="0" width="1280" height="720" page-index="4" title="方案二：大脑与工作台分离" />
+</slide>

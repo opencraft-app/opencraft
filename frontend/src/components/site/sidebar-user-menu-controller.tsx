@@ -1,10 +1,12 @@
-import { useEffect, useId, useState } from "react";
+import { lazy, Suspense, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSession } from "@/contexts/session-context";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useOpenClaw } from "@/contexts/agent-context";
 import { useRepositories } from "@/contexts/repository-context";
-import { usePaidBillingEnabled } from "@/contexts/runtime-config-context";
-import { useT } from "@/i18n/t";
+import { usePaidBillingEnabled, useReferralEnabled } from "@/contexts/runtime-config-context";
+import { useCurrentLocale, useT } from "@/i18n/t";
+import { formatExpiryDate } from "@/lib/agent-account-dates";
 import { AGENT_SECTION_PATH_BY_ID, getAgentSectionHref, shouldShowWorkbenchEntry } from "@/lib/agent-routes";
 import { useAppNavigate, useAppSearchParams } from "@/lib/app-navigation";
 import { avatarImageUrl } from "@/lib/avatar-image";
@@ -14,29 +16,68 @@ import { publicSiteHref } from "@/lib/public-site-navigation";
 import { resolveVisiblePublicSiteLocale } from "@/lib/public-site-routing";
 import { isGlobal } from "@/lib/region";
 import { useAccountPassSummary } from "@/lib/use-account-pass-summary";
+import { useCreditSources } from "@/lib/use-credit-sources";
 import { usePassUpgrade } from "@/lib/use-pass-upgrade";
 import { installConsoleShowCommand, isConsoleShowEnabled, subscribeConsoleShow } from "@/lib/console-show-event";
 import { PRODUCT_FEEDBACK_URL } from "@/constants/product-feedback";
 import { InternationalLanguageMenu } from "./language-switcher";
 import { SidebarUserMenu, type SidebarUserMenuProps } from "./sidebar-user-menu";
 
-export function SidebarUserMenuController({ showLanguageSwitcher = false }: { showLanguageSwitcher?: boolean }) {
+const TatFileManagerPanel = lazy(() =>
+  import("@/components/domain/tat-file-manager-panel").then((module) => ({ default: module.TatFileManagerPanel })),
+);
+
+export function SidebarUserMenuController({ showLanguageSwitcher = false, cloudStorageBotId, renewalReminder }: { showLanguageSwitcher?: boolean; cloudStorageBotId?: string; renewalReminder?: { label: string; tooltip: string; actionLabel: string; onRenew?: () => void } }) {
   const { session, signOut } = useSession();
-  const { activePass, modifyingPass, passUpgradeFailed, passesLoading, passesError } = useOpenClaw();
-  const { plans } = useRepositories();
+  const { activePass, modifyingPass, passUpgradeFailed, passesLoading, passesError, bots, botsLoading, botsError, hasResolvedBots } = useOpenClaw();
+  const { plans, auth } = useRepositories();
   const paidBillingActive = isPaidBillingEnabled(usePaidBillingEnabled());
+  const referralEnabled = useReferralEnabled();
   const t = useT();
+  const locale = useCurrentLocale();
   const { i18n } = useTranslation();
   const navigate = useAppNavigate();
   const [searchParams] = useAppSearchParams();
   const languageId = useId();
   const [open, setOpen] = useState(false);
+  const [cloudStorageOpen, setCloudStorageOpen] = useState(false);
+  const accountTriggerRef = useRef<HTMLButtonElement>(null);
   const [loadedUserId, setLoadedUserId] = useState<string>();
+  const [referralStats, setReferralStats] = useState<{ userId: string; count: number } | null>(null);
   const userId = session.user?.id;
+  useEffect(() => {
+    if (!open || !userId || !referralEnabled || referralStats?.userId === userId) return undefined;
+    let cancelled = false;
+    void auth.getReferralStats().then((stats) => {
+      if (!cancelled) setReferralStats({ userId, count: stats.successfulReferrals ?? 0 });
+    }).catch(() => { if (!cancelled) setReferralStats(null); });
+    return () => { cancelled = true; };
+  }, [open, userId, referralEnabled, referralStats?.userId, auth]);
   // 首次展开才读账务；同一账号关闭后保留摘要，换号关闭态不额外发请求。
   const enabled = open || Boolean(userId && loadedUserId === userId);
   const summary = useAccountPassSummary({ userId, activePass, modifyingPass, paidBillingActive, global: isGlobal, enabled, listMyPasses: plans.listMyPasses });
   const operablePass = summary.pass;
+  // 与「套餐与费用」页同一口径：套餐 + 额外积分 + 付费积分包。
+  const planCreditInput = useMemo(() => operablePass
+    ? { displayName: "", creditTotal: operablePass.credit_total, creditAvailable: operablePass.credit_available }
+    : null, [operablePass]);
+  const freeCreditInput = useMemo(() => {
+    const creditTotal = Math.max(0, operablePass?.free_credit_total ?? 0);
+    return creditTotal > 0
+      ? { displayName: "", creditTotal, creditAvailable: Math.min(creditTotal, Math.max(0, operablePass?.free_credit_available ?? 0)) }
+      : null;
+  }, [operablePass]);
+  // 积分包独立于 Pass（取消 Pass 后仍保留），所以只看账号，不等 Pass 就绪。
+  const creditSources = useCreditSources(planCreditInput, freeCreditInput, enabled && Boolean(userId), userId ?? "");
+  const creditSummary = creditSources.summary;
+  // 积分包没读到时不展示数字：加载中显示加载态，失败显示可重试的错误态，避免把部分余额当成全部。
+  const creditsSettled = !creditSources.loading && !creditSources.failed;
+  const credits = creditsSettled && (operablePass || creditSummary.total > 0) ? {
+    total: creditSummary.total,
+    available: creditSummary.available,
+    used: creditSummary.used,
+    usedPercent: creditSummary.total > 0 ? Math.min(100, Math.round(creditSummary.used / creditSummary.total * 100)) : 0,
+  } : null;
   const upgrade = usePassUpgrade({ userId, passId: operablePass?.pass_id, currentPass: operablePass, enabled: enabled && paidBillingActive });
   const canRenew = accountPassCanRenew(operablePass, isGlobal, paidBillingActive);
   const subscribeHref = publicSiteHref("/subscribe", resolveVisiblePublicSiteLocale(null, i18n.language), { localized: isGlobal });
@@ -57,9 +98,18 @@ export function SidebarUserMenuController({ showLanguageSwitcher = false }: { sh
     ? { text: passUpgradeFailed ? t("套餐升级失败") : t("套餐升级中"), tone: "warning" }
     : status === "expired" ? { text: t("已过期"), tone: "danger" }
     : status === "isolated" ? { text: t("套餐已隔离，请前往续费。"), tone: "warning" } : undefined;
-  const credit: SidebarUserMenuProps["credit"] = summary.credits
-    ? { state: "ready", label: t("已使用积分"), ...summary.credits }
+  const credit: SidebarUserMenuProps["credit"] = credits
+    ? { state: "ready", label: t("已使用积分"), ...credits }
+    : creditSources.failed ? { state: "error", label: t("积分包额度加载失败，点击重试"), onRetry: creditSources.reload }
+    : creditSources.loading ? { state: "loading", label: t("加载中...") }
     : { state: state === "ready" ? "idle" : state, label: creditLabel };
+  const overview: SidebarUserMenuProps["overview"] = {
+    expiresAt: formatExpiryDate(operablePass?.expired_time, locale) ?? "—",
+    remainingCredits: credits ? credits.available.toLocaleString() : "—",
+    botCount: !userId || !hasResolvedBots || botsLoading || botsError ? "—" : bots.length.toLocaleString(),
+    invitedFriends: referralEnabled ? (referralStats && referralStats.userId === userId ? referralStats.count.toLocaleString() : "—") : undefined,
+    labels: { expiresAt: t("有效期至"), remainingCredits: t("剩余 AI 积分"), botCount: t("Bot 数量"), invitedFriends: t("已邀请好友") },
+  };
   const entries: SidebarUserMenuProps["entries"][number][] = [];
   entries.push(
     {
@@ -73,11 +123,32 @@ export function SidebarUserMenuController({ showLanguageSwitcher = false }: { sh
   );
   if (shouldShowWorkbenchEntry({ hostname, revealed: hiddenEntriesRevealed })) entries.push({ id: "workbench", kind: "workbench", href: AGENT_SECTION_PATH_BY_ID.workbench, label: t("工作台") });
   if (hiddenEntriesRevealed && !isGlobal) entries.push({ id: "feedback", kind: "feedback", href: PRODUCT_FEEDBACK_URL, label: t("产品反馈") });
-  return <SidebarUserMenu open={open} onOpenChange={(next) => { if (next) setLoadedUserId(userId); setOpen(next); }}
+  return <><SidebarUserMenu open={open} onOpenChange={(next) => { if (next) setLoadedUserId(userId); setOpen(next); }}
     name={session.user?.name || t("用户")} email={session.user?.email || undefined} avatarSrc={avatarImageUrl(session.user?.avatarUrl ?? null)}
-    planLabel={planLabel} credit={credit} status={statusText} entries={entries}
+    planLabel={planLabel} credit={credit} overview={overview} status={statusText} entries={entries} renewalReminder={renewalReminder}
+    onFilesSelect={cloudStorageBotId ? () => setCloudStorageOpen(true) : undefined}
+    triggerRef={accountTriggerRef}
     upgrade={canRenew && upgrade.pass && upgrade.pass.pass_id === operablePass?.pass_id && upgrade.options.length > 0 ? { href: `${subscribeHref}/?upgrade_pass_id=${encodeURIComponent(upgrade.pass.pass_id)}`, label: t("升级套餐") } : undefined}
     labels={{ trigger: t("打开用户菜单"), menu: t("账号管理"), logout: t("退出登录"), language: t("语言") }}
     languageContent={isGlobal && showLanguageSwitcher ? <InternationalLanguageMenu id={languageId} ariaLabel={t("语言")} reloadAfterSwitch /> : undefined}
-    onSignOut={() => { navigate("/", { replace: true }); void signOut(); }} />;
+    onSignOut={() => { navigate("/", { replace: true }); void signOut(); }} />
+    <Dialog open={cloudStorageOpen} onOpenChange={setCloudStorageOpen}>
+      <DialogContent
+        className="flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden rounded-lg p-0 md:max-h-[85dvh] md:w-[min(88vw,64rem)] [&_.lv-tat-files-panel_.text-sm]:text-[13px]"
+        closeLabel={t("关闭")}
+        onInteractOutside={(event) => event.preventDefault()}
+        onCloseAutoFocus={(event) => { event.preventDefault(); accountTriggerRef.current?.focus(); }}
+      >
+        <DialogHeader className="mb-0 shrink-0 border-b border-[var(--border-subtle)] px-5 py-4 pr-12">
+          <DialogTitle className="text-lg">{t("云存储")}</DialogTitle>
+          <DialogDescription className="text-[13px]">{t("查看、管理云存储中的文件")}</DialogDescription>
+        </DialogHeader>
+        <div className="min-h-0 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6">
+          {cloudStorageOpen && cloudStorageBotId && <Suspense fallback={<p role="status">{t("加载中...")}</p>}>
+            <TatFileManagerPanel botId={cloudStorageBotId} showHeader={false} />
+          </Suspense>}
+        </div>
+      </DialogContent>
+    </Dialog>
+  </>;
 }

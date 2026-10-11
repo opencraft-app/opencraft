@@ -9,11 +9,58 @@ OpenCraft 内置本地 Codex 的 Web 与 Electron Host profile 默认启用自�
 侧栏读取会话目录时复用现有 HostRuntimeRegistry 建立连接，不切换当前聊天 Host；
 远端 SSH 连接仍由用户显式发起。该默认值由内置插件贡献，不需要迁移浏览器保存的数据。
 
+## 渠道聊天记录只读接口（待启用）
+
+CTL 的 `/v1/instances/{id}/bots/{bot_id}/channel-sessions` 与消息子资源按登录账号限定实例。每次请求在一条地域 TAT 命令中读取 Hermes Profile 列表、确认 Bot 仍存在，再只读打开对应 Profile 的 `state.db`；不缓存 Bot/Profile 映射。数据库文件路径隔离 Bot；当前非 multiplex 部署下每个 Profile 的渠道会话键都使用 `agent:main:` 命名空间，缺少这一渠道会话键的记录不返回。列表和消息均分页，消息投影只包含用户与助手文本，排除工具调用和原始推理。
+
+`CHANNEL_HISTORY_ENABLED` 默认关闭。目标 Hermes 镜像的 schema、渠道覆盖及群聊参与者可见范围须在启用前核验；接口不得退化为浏览器直接执行命令或访问数据库。公共入口还需网关单独放行两条只读路径，CTL 源码上线本身不代表记录已可访问。
+
+国际站界面语言由站点宿主传入内嵌 OpenCraft 工作台的 `ideLocale`，
+WorkbenchLocaleController 装载对应目录并随宿主语言更新。马来语 `ms-MY`
+目录覆盖工作台应用自有消息，保留 ICU 参数；界面译文不改写用户会话标题或消息。
+没有生产调用方的兼容 AgentChat SDK 入口不注册马来语运行时；国际站产品语言由上述内嵌工作台消费。
+
+内嵌 OpenCraft 语音输入使用独立的应用级转写 transport，不经过 Hermes/DSH 的聊天模型配置。
+浏览器登录态经 Service Gateway 转为用户 default-purpose VelaGW Key；录音与标准 multipart
+均不落盘，混元转换仍由 NewAPI 拥有。通用语音插件复用录音、取消和 final-only 草稿写入，
+产品适配器持有账号/区域代次，取消或换账号后的迟到结果不能写入新草稿。
+此入口不回落到本地预览服务或浏览器系统识别，不影响独立工作台原有语音配置。
+详见 [Service Gateway 语音输入](../../../service-gateway/docs/README.md#内嵌-opencraft-语音输入)。
+
 OpenCraft 的聊天跟进偏好由客户端 `UiPreferencesRuntime` 持有：运行中的
-普通会话默认立即跟进，设置中可改为下一轮排队，空闲发送不受影响。
+独立工作台普通会话默认立即跟进，设置中可改为下一轮排队；主站嵌入式 Chat 在运行中默认排队，空闲发送不受影响。
 该偏好不改变 Server 能力或投递确认；临时侧聊仍受其无持久队列的能力边界约束。
 
+OpenCraft Web 的未发送输入与执行投递分开持有：任务 View 保留原有账号隔离的
+ConversationDraftContinuity；Bot Room 通过共享 Composer 的客户端存储 port
+保存结构化正文、上下文及附件描述，不同步到 Server/其他设备，也不恢复提交锁
+或自动重发请求。Bot 存储只由实际内容编辑更新，旧 View 的状态变更/销毁不能
+覆写它；账号作用域变化撤销并清除旧适配器，新应用实例绑定新账号。原始浏览器
+File 字节及临时 Side Chat 尚不承诺跨刷新恢复，失效附件不能假装可发送。详见
+[Chat UI 草稿边界](../../../opencraft/docs/chat-ui-architecture.md#browser-local-input-drafts)。
+
 本领域覆盖 Agent 请求进入、实例/渠道编排、Sandbox 分配、CloudAgent 执行、模型网关/provider 路由、流式响应和后台 workflow。
+
+LightVela 的隐藏协作实验室位于 `/agents/labs/collaboration`，仅在当前账户 API 为北京测试环境时可由
+`show()` 显式开启。入口、路由和请求适配器都保持此环境约束；上海和国际站不接入。
+客户端复用 `shared/vela-collaboration-web` 的 Human 协作状态与腾讯 IM adapter，由既有登录账户借出请求端口，
+不持久化第二份 token，不依赖 Bot 或付费 Agent 权益。关闭入口、退出或切换账户时注销原 IM scope，
+新 scope 等待旧连接销毁后再登录。该入口的可见性不是后端鉴权或发布完成的证据。
+mono2 的 OpenCraft 构建中，该共享源码通过 file 链接位于工作台目录之外；聊天
+contract 与腾讯 IM SDK/upload 依赖仍由工作台的包依赖图解析，不依赖共享源码
+旁边偶然存在的 node_modules。聊天 contract 的机械快照保留 canonical 的
+messaging/platform 子路径导出，发布构建必须实际打包这些依赖，不将其标记为
+external 来掩盖解析失败。构建边界见 [Build Matrix](../../../opencraft/docs/build-matrix.md)。
+
+LightVela `/agents` 多 Bot 桌面页由 OpenCraft 内嵌工作台独立呈现已有会话标题、重命名及预览面板开关；
+站点宿主不再向会话顶栏插入 Bot 名称。Bot 管理菜单由宿主在工作台 Shadow DOM 外、最左 Bot 竖栏底部渲染，
+避免弹层事件跨边界后立即关闭。账户入口保留在左下角。内嵌工作台仅在已有会话显示右侧预览开关，
+新建会话页不呈现标题、该开关或右侧预览面板。这一呈现调整不改变会话身份、运行时操作或独立
+OpenCraft 工作台的标题所有权。
+
+`/agents` 入口只有在选出可用 Bot 后才替换到该 Bot 的新建会话；无 Bot 的过期历史用户留在入口，
+与权益门禁的允许落点一致。桌面多 Bot 模式隐藏旧资料卡时，临期续费提示由账户入口承接，
+原续费资格、实名检查与弹窗流程不变；当前 Bot 重启失败由竖栏管理入口标记并在菜单内展示错误。
 
 OpenCraft 的活动分段结束原因与折叠资格分别建模。插话/异步问题等只关闭
 连续时序段，不隐藏先前文字；普通任务过程必须到达自身有效非异步最终回答
@@ -22,6 +69,22 @@ OpenCraft 的活动分段结束原因与折叠资格分别建模。插话/异步
 无折叠按钮时完整保留正文，不反写选择。执行、稳定消息身份和滚动 owner
 不变；独立 Bot 聊天不强行复用任务折叠。详见
 [Activity disclosure authority](../../../opencraft/docs/chat-ui-architecture.md#activity-closure-and-disclosure-authority)。
+
+OpenCraft 对 Codex、Hermes 与 DSH 实际返回的思考摘要/文本统一提供独立、
+默认折叠的呈现；不是工具记录组的正文，也不还原未返回或不透明的内部内容。
+共享模型选择非空内容、稳定 Item 身份与唯一实时 Thinking owner，View 只记录
+显式展开选择，流式及完成不反写该选择。空或不透明的思考记录仅是工作观察，
+不切开界面工作区；有正文的思考可以按原序独立展示，但同一响应只由最近有实际
+内容的工作段领取最终回答的外层折叠资格，不能逐段制造历史消息标题。唯一 Turn
+用时优先附着同一响应的实际工作，不越过插话/回答边界回派到旧工作。详见
+[Returned thinking content](../../../opencraft/docs/chat-ui-architecture.md#returned-thinking-content)。
+
+摘要请求与折叠呈现是不同责任：OpenCraft 的 Codex Host 在唯一原生请求边界，
+仅对未指定摘要字段的 `turn/start` 补入自动摘要请求，覆盖普通发送、继续与后台
+排队起轮；显式模式及 `null` 的原生继承语义保留，Steer 和其他引擎不注入该字段。
+模型支持和实际返回仍归引擎/provider，不能把已接展示当作已启用请求。
+Hermes 默认接收真实思考事件及历史字段；其供应方和会话配置仍可能不返回文字。
+以上不改已有轮次或历史记录，也不自动替换正在运行的预览。
 
 OpenCraft 的轮次文件变更汇总由 Turn 的 diff 字段持有，属于附属资源，不是
 消息顺序中的 Item。共享 chat-core 在 transcript 分段之外派生 changeSummary，
@@ -40,6 +103,23 @@ partial 提交并校验后才返回 ready。后端持有认证、主机信任、
 重试与持久历史元数据；发送使用真实远端路径，已发送资源不随草稿删除。补齐附件
 不宣告本机队列、Goal 或桌面能力。详见
 [Attachment staging](../../../opencraft/docs/chat-ui-architecture.md)。
+
+OpenCraft 会话置顶属于原生 Server 的目录元数据，不属于执行轮次或客户端偏好。
+Codex adapter 使用原生置顶 section；Hermes adapter 复用既有 TAT HTTP 通道和
+会话凭据调用 Dashboard 的 Profile-scoped metadata API，不修改 Hermes。
+协议扩展可发现不等于原生能力已支持：当前连接读取成功后才提供置顶操作，
+DSH 或旧 Server 不伪造支持。桥接器和浏览器均不另存置顶集合；刷新从原生数据
+回补近期窗口以外的置顶摘要，跨页按会话身份去重。写入按会话串行，迟到读取
+与断线代次隔离，未知结果刷新核对而非盲重放，不触发 resume 或执行。
+详见 [Thread lifecycle ownership](../../../opencraft/docs/platform-architecture.md#thread-lifecycle-ownership)。
+
+LightVela 站点的 Agent 会话侧栏由 `frontend` 持有，不使用 OpenCraft 完整工作台的
+Sidebar。嵌入式 Workbench 仅投影会话的置顶状态、当前 Host 的置顶能力与置顶动作；
+站点按该能力显示菜单，置顶会话独立于近期分页配额展示。侧栏的会话缓存不作为
+置顶写入权威，操作后由原生目录刷新确认。
+内嵌 Workbench 的首次会话目录查询在 Host 尚未就绪时属于待加载状态，不能把
+尚未发起查询的空数组投影为已确认的空列表；Host 进入错误态后停止报告加载，由聊天主区呈现失败和重试。切换 Bot 后，站点侧栏保留既有栏位，
+等待目标 Bot 的目录结果；只有首次读取结束且仍为空时才显示默认会话入口。
 
 OpenCraft 的可选 `tencentoa.identity` 插件按每个 HTTP 请求核验太湖签名、
 解密 TOF 员工身份并检查有效期。安装级私有密钥仅属于后端，员工身份仅投影到
@@ -83,6 +163,21 @@ RFB 分片保留起始字节时的授权，不把旧缓存晋升为新输入。�
 按钮立即投影“停止控制”的意图，确认授权前仍禁止输入。详见
 [观看续期](../../../opencraft/docs/cloud-desktop-plugin.md#confirmed-viewing-renewal)。
 
+桌面手势和坐标归通用Web适配层：观察时捏合/平移只改变观看，确认控制后单指
+操作与双指滚动才发送远端输入，滚轮消费同一有界规则。原decoder指针写入者
+显式关闭，不与插件重复发送。手机文字入口拥有一次授权下的独立DOM，候选词
+不发送，停止后销毁，不把迟到输入带入后继授权。浏览器验证与手机系统键盘
+验收分开，详见[输入策略](../../../opencraft/docs/cloud-desktop-plugin.md#pointer-viewing-gestures-and-mobile-text-input)。
+接管激活时同步取得Panel内焦点，确认授权不再抢焦点；平台焦点/页面可见性
+不是后端授权。文字事务短于控制授权，远端点击/拖动/粘贴前先结束原组词，
+同步确认发到原目标，迟到候选随原事务退休，不进入同授权下的后继输入。
+桌面DOM交互范围独立于后端授权：内部媒体/工具栏/软键盘交接及未知焦点去向
+不单独撤销既有控制；明确外部点击或焦点、页面隐藏、窗口失焦仍立即撤销。
+物理手势独立于控制授权：视口/画面几何变化取消旧手势与待发送样本，不把旧
+起点映射到新画面；旧触点抬起后才接受新手势，不因此重新申请或恢复控制。
+桌面控制底座的几何与遮罩仍归设计系统：圆弧只延伸内侧覆盖，不移动外轮廓。
+像素回归分别检查普通渲染与独立遮罩边缘裁切容错，不以模拟裁切替代手机Safari验收。
+
 OpenCraft 后端 SSH Codex 接入复用既有 logical Client 路由、Thread 读者与交互
 owner，物理通道由 AppHost 持有；普通 Linux 与 HyperNode 共用 SSH exec 内的
 WebSocket 契约。远端模式不构造本机账号池、附件或队列，不自动安装/杀远端服务，
@@ -102,6 +197,10 @@ WebSocket 契约。远端模式不构造本机账号池、附件或队列，不�
 | `opencraft` | Codex-faithful Chat Runtime、多端 Workbench、AppServer/Hermes 转译与扩展运行时 |
 | `collaboration` | Server、Member、Channel、Task、Reminder 与腾讯 IM 资源映射控制面 |
 | `vela-computer` | 托管 Computer 内的 Agent Chat Client、IM 入站恢复与受控回复能力 |
+
+CTL 为国内站存量免费 Pass 创建计费迁移单前，可仅将已过期但仍为 `active` 的 Pass 到期时间延至下一天；这不触发 Sandbox/CVM 开机或实例状态迁移。曾在隔离中关机的实例保持关机，直到用户续费链路明确恢复。
+
+用户发起实例恢复时，CTL 先将 `Paused` 持久化为 `Resuming`，投递可重试任务后立即响应；HTTP 请求不等待 CVM 开机。Sandbox 的恢复接口只提交 `StartInstances`，`GET sandbox` 根据云端 `RUNNING` 将 `RESUMING` 收敛为 `ALLOCATED`；CTL 后台任务确认 Sandbox 已运行后，才把实例置为 `Running` 并重算超时。模糊超时不得直接回滚状态，重试应以云端实际状态幂等收敛；Pass 不再有效时先完成补偿关机，再回退为 `Paused`。自动续费与变配的业务入口保持原有语义。
 
 OpenCraft 独立 Web 入口在创建应用级 `LightVelaAccountService` 前解析显式的
 `VITE_LIGHTVELA_API_BASE_URL` 与 `VITE_LIGHTVELA_REGION`，并将结果传入应用启动边界。
@@ -130,6 +229,7 @@ OpenCraft Web 输入框在当前 Host 的 provider 为 `lightvela.hermes` 时展
 OpenCraft 的 Codex Host 持有排队 steer 的持久投递权，同一 Thread 的物理准入串行化。匹配目标 Turn 的 `turn/steer` 获确认后先持久化为 `steering`，后续消息即可继续准入；历史物化和 client-message ID 对账在后台完成。只有正在投递或结果未知的前序投递阻止后续准入，未知结果不得自动重发或交给普通 Resume 猜测恢复。具体状态与回归边界见 [OpenCraft ChatUI 架构](../../../opencraft/docs/chat-ui-architecture.md)。
 
 OpenCraft Composer 的排队消息预览保留正文提示；其排序、插入、编辑、取消编辑和删除按钮的悬浮提示由各自操作定义，不继承消息正文。无确认投递的丢弃入口单独显示其操作提示。
+确定被拒绝的排队跟进仅属于客户端 Conversation Runtime，尚无 Server 队列 ID；其删除操作只移除本地失败记录，不请求 Host 删除。超时或断线导致投递结果未知时，Host 可能已经入队：客户端保留未确认记录，禁止本地删除与再次提交，直到同一 client message ID 出现在 Host 队列或权威历史中。已确认入队的消息仍按 Server 队列 ID 删除，提交中的消息不得提前删除。
 
 OpenCraft Web 文件更改入口消费同一 Turn-owned changeSummary：实际 Composer 唯一呈现 active Turn 的运行中入口（含浮动位置），主/mini transcript 按该 Turn 身份抑制重复，完成后恢复为消息区资源卡。卡片对齐 Codex 26.930 原始 Renderer 的图标、主题几何、正负计数、前三文件和查看交互；悬浮状态与展开状态只属于 View，不能改变执行、排序、折叠或资源身份。点击悬浮子项先关闭列表，再交给已有 Review；没有真实回退能力不显示撤销。见 [Changed-file review](../../../opencraft/docs/chat-ui-architecture.md#changed-file-review)。
 
@@ -153,6 +253,10 @@ OpenCraft iOS 套壳在 Expo Go 和独立安装版中使用同一原生登录与
 Pages 制品对嵌入内容哈希资源声明 immutable，稳定 loader/version/SW 仍重验证；具体边界见上述平台架构。
 
 嵌入聊天的语音、协作、Bot Chat/管理呈现与 Terminal 面板模块由同一 Application 在首个可用可见帧后按依赖顺序启动，不再阻塞 Host/Thread 就绪。账户身份、实例/Profile 校验与协议声明所需服务仍为必需依赖。未完成模块加载在超时或销毁时撤销工厂 scope；已开始的扩展激活排空后才销毁借用的 registry/Host。Full Workbench 默认保持原 eager 策略；这不等于 Host 启动超时已修复。详见 [Embedded Shell](../../../opencraft/docs/platform-architecture.md#embedded-workbench-shell)。
+
+嵌入式 Chat 的绘制与可发送分属两个就绪点。启动草稿是本地身份，不依赖 Host 连接，因此 Embedded 元素在 Application 创建并渲染出草稿后即兑现 `prepare()`/`show()`（painted）；启动恢复已记忆的会话时没有启动草稿，以会话视图就绪作为首次绘制；Host 连接进度只经 `opencraft-connection` 事件发布，`opencraft-ready` 仍表示会话视图激活完成，模板 prompt 的自动提交继续以连接就绪为前提。连接未就绪时 Composer 自身以 `submissionDisabled` 拒绝准入，已输入内容时在输入框下方提示等待连接；宿主不再以「已接管」推断「已连接」，仅对从不上报连接阶段的旧制品保留该兜底。宿主遮罩只覆盖画布尚未绘制（超过 1 秒才显示加载状态）与真实异常；首次连接超过 10 秒提示慢网并提供重连，「正在重新连接」仅用于曾连接成功之后。国际站与国内站同样在 Bot 发现期间并行准备嵌入资源与物理连接，地域按站点传递。`/agents/*` 的控制台由路由 layout 常驻，切换分区不重建 Application 与 Host 连接。
+
+嵌入式工作台与 Next 站点共用 vendored 的 `frontend/src`，但构建期环境不同：Vite 把 vendored 源码读取的 `process.env.NEXT_PUBLIC_*` 逐个静态替换（`vendoredEnvKeys`），其中 `NEXT_PUBLIC_REGION` 固定为 `cn`。因此**按区域裁剪产物的开关不得直接读 `NEXT_PUBLIC_REGION`**：嵌入式产物两站共用，必须保留国际站控制台要用的各语种资源。此类开关一律另立变量、由 Next 侧按区域派生，并在 `vendoredEnvKeys` 中登记成「空值＝保持全量」的语义，使嵌入式构建取到空值即维持既有行为。首屏同步 i18n 字典的 `NEXT_PUBLIC_I18N_LAZY_LOCALES` 即按此约定实现。
 
 OpenCraft 弱网恢复按共享 AppHost 连接、每 Host 的协议就绪、各 Thread/资源恢复和查询缓存重新验证分别持有状态。
 前台/网络恢复提示由共享连接 owner 合并；协商后的探测仅证明接入通路可达，不激活或重启引擎。
@@ -197,6 +301,9 @@ Pages 制品对嵌入内容哈希资源声明 immutable，稳定 loader/version/
 
 - 本机桌面观看的自动恢复只有在 adapter 声明可安全重复获取短期观看授权、且 wire/media 将已建立流的异常中断分类为可恢复时启用。观看 controller 先撤销旧输入/流/attachment，再按有限退避重新授权；不复用一次性票据、不自动接管控制权、不重建执行引擎。Vela 资源准备的未知 POST 结果不能由恢复流程重放。详见 [有限观看恢复](../../../opencraft/docs/cloud-desktop-plugin.md#bounded-viewing-recovery)。
 - 云桌面面板的连接/失败反馈只是观看 controller 的投影，不重建媒体宿主、不创建第二个输入 owner。通用插件拥有短用户文案和领域操作，设计系统拥有空态尺度/主题，Shell 拥有标签与最大化；控制请求可取消，只有有效后端 grant 才确认控制。视觉验收必须消费实际生成的主题属性与当前构建 CSS，不能把透明空态或零面积角色当通过。见 [面板呈现](../../../opencraft/docs/cloud-desktop-plugin.md#panel-presentation)。
+- 云桌面的卡片几何来自当前连接解码后的画面比例，不来自窗口比例，也不请求改变共享远端分辨率。设计系统拥有圆角、阴影、底部控制条与接管动效；彩色边框/连体底座只投影当前可交互视图已确认的控制授权，不能由点击意图、按钮按下态或缓存画面代替。媒体缩放与输入坐标仍由 adapter 单独拥有，观看状态不推断助手正在控制。
+- 桌面控制条在当前画面与输入就绪之前保留布局空间但不可见、不可聚焦或操作，不用重复禁用按钮代替连接反馈。已确认授权只改变按钮底层的 240ms 淡出/淡入；减少动态效果时立即切换，不延迟取消或输入撤权。具体呈现仍归设计系统，领域就绪与授权仍归桌面 controller。
+- 桌面控制材质不借用应用全局强调色：设计系统提供独立紫色背景与白色前景的默认配对，描边、底座与交还按钮共用同一局部配色。当前本机路径没有助手外观 authority，不虚构身份偏好；全局主题及远端操作系统主题不随接管变化。
 - 桌面按钮的一次原生激活拥有固定动作；View 在按下时捕获接管或停止/取消，controller 按连接/控制意图代次消费一次。中途失焦仍立即撤销，不能把同一停止 click 翻成新接管或释放后继授权；取消物理手势和页面失焦也撤销旧激活。媒体的剪贴板能力与当前是否授权粘贴分开，不支持时隐藏入口，操作标签共享本征槽位防止 pending 推动邻项。见 [桌面所有权](../../../opencraft/docs/cloud-desktop-plugin.md#ownership)。
 
 - OpenCraft 的本机桌面路径不依赖 Vela/TAT：执行 Host 从 native Codex Thread 元数据和后端机器/主体注册构造观看授权，客户端 Scope/Host 别名只用于定位请求，不能提交任意实例/端点。一次性 attachment 按逻辑 Client 代次撤权，物理桌面只读策略由原生进程执行；观看关闭不停止 Agent。显式 `--local-desktop` 只允许 exact-Origin 回环入口，公开/DevCloud 多租户组合仍需独立可信鉴权和目录，不能据此声称 TAT 已验收。详见 [本机 Host 授权](../../../opencraft/docs/cloud-desktop-plugin.md#local-execution-server-authority)。
@@ -389,6 +496,7 @@ Pages 制品对嵌入内容哈希资源声明 immutable，稳定 loader/version/
 - CTL 对外兼容腾讯云 Cloud API 的 `DescribePass` 以影子账号 `Uin` 为必填查询作用域，请求和成功响应的 `Uin` 均按字符串传输，请求值校验为正整数；`AppId` 与 `PassId` 均可选，显式传入非正 `AppId` 必须拒绝。调用方提供的每个条件都须与同一 Pass 匹配，归属不匹配统一返回资源不存在；省略 `PassId` 时按匹配条件取 `created_time DESC, pass_id ASC` 的首条记录，省略 `AppId` 时不得附加 AppId 过滤。成功响应使用 `ExternalUserId` 返回 Pass 归属的 LightVela 用户 ID，不再返回语义含混的 `UserId`。
 
 - Sandbox 请求路径不创建/重装机器，只分配/释放；后台 worker 执行重置与补货。
+- Sandbox worker 在 shard 0 启动后及此后每五分钟同步一次资源池供给观测。按 Pool 的 region、zone 和机型族调用 CVM `DescribeZoneInstanceConfigInfos`，`zone` 与 `instance-family` 的每组 Filter Values 最多五项，并固定按量计费与 `realStatus` 过滤。`pool_supply_overview` 按 region、zone、完整机型聚合：`resource_count` 保存接口返回的库存值，`sales_state` 仅由同组 Pool 是否有 `status=active` 决定，与库存值无关。地域内任一查询批次失败时不刷新该地域库存与 `updated_time`，但仍同步 Pool 售卖状态；该表仅供观测，不作为下单或补货门禁。实现见 `sandbox/internal/service/pool_supply.go` 与 `sandbox/migrations/000013_pool_supply_overview.up.sql`。
 - Sandbox Pool 是云地域归属的生命周期 owner：Pool 创建后不得跨 region 修改；同 region 内可调整 zone、VPC 与 subnet。实例仍通过 `pool_id` 归属 Pool，CVM、CBS、TAT 交付校验、停启、销毁与同 SP 升配必须携带由 Pool zone 严格推导的 region，禁止以进程级 `TENCENT_REGION` 覆盖存量实例归属或在 region 缺失时静默回退。
 - Sandbox 因安全组配额触顶裂变 Pool 时，新 Pool 的 `instance_type` 继承源 Pool，并持久化在 capacity bundle 的 lineage 中以支持中断后重试；普通 SKU 容量扩张仍使用 SKU 默认机型。
 - Sandbox Pool 的补货熔断与接流量是两个独立状态：终局云创建错误或连续失败仅设置持久化 `refill_paused`，worker 不再补货，但 `status=active` 且 `capacity_state=active` 的已验收 CLEAN 库存仍可分配；显式 Pool 暂停仍挡住两者。运营可通过 Pool PATCH 清除 `refill_paused` 恢复补货。由容量 bundle 自动派生的 Pool 初始为 `capacity_state=warming`、绑定 admission paused；worker 通过数据库条件更新仅在 Pool 仍 active 且存在已验证 CLEAN 实例时切为 active，并只同步目标 Pool 的绑定。warming Pool 计入扩容目标，避免补货期间重复派生；没有 CLEAN 或手工暂停时不得自动开放。
@@ -510,6 +618,10 @@ Pages 制品对嵌入内容哈希资源声明 immutable，稳定 loader/version/
 
 ## 云桌面（CTL Desktop）provision 语义
 
+- 桌面恢复预览只保存客户端内存中的一张受限 JPEG；新观看 attachment 完成授权并匹配原会话/主体/资源/实例后才可呈现。图片没有输入能力，不替代实时首帧或后端控制授权；身份替换、授权拒绝及销毁清除复用资格，缓存不写磁盘、不跨 View 共享。归属与淡入行为见 [桌面呈现](../../../opencraft/docs/cloud-desktop-plugin.md#panel-presentation)。
+
+- OpenCraft 富桌面的状态/接管意图仍由通用插件 controller 持有，媒体尺寸来自当前连接；共享设计系统只投影局部语言文案的自然宽度、分档衔接曲线和阴影层过渡。等待期间保留取消动作与稳定几何，已确认接管才应用底部连接形态；视觉过渡不延迟撤销输入，不建立第二份授权状态。详见 [面板呈现](../../../opencraft/docs/cloud-desktop-plugin.md#panel-presentation)。
+
 - 桌面观看就绪必须来自实际媒体绘制，不是握手、资源 prepared 或 socket open。通用插件持有分阶段有界等待与安全原因分类，用户界面只呈现简短任务文案；输入焦点与剪贴板传输受同一有效控制授权约束，取消/撤销/重连隔离迟到读取。解码器固定版本公共事件补丁须在安装时核验摘要与完整替换，不能用任意延时或读取私有字段掩盖首帧问题。详情与真实/合成验收边界见 [桌面契约](../../../opencraft/docs/cloud-desktop-plugin.md#focus-clipboard-and-diagnostics)；当前本机仍为后端不可变只读，未增加原生控制执行器或公网授权。
 
 - OpenCraft 桌面观看与远端资源分开：Sandbox 的授权 [viewer broker](../../../sandbox/docs/desktop-viewer-broker.md) 使用一次性、主体与物理绑定固定的短凭证和独立 WSS；通用桌面插件拥有媒体/确认式控制协议，Vela 插件拥有账号与产品绑定。Provider 的 verified observer 经独立回环代理校验实际 Xvfb/x11vnc、socket 归属与每连接 root-key 挑战，不提供控制；新 resource 准备才启动它，旧四 unit provision 不变。Handler 尚未挂载公共路由，生产会话权威目录与原生控制执行器仍未接入；CTL 只有用户/实例/Sandbox DAO，不能把客户端 Server 投影、模拟 grant、CTL prepared 或前端 viewOnly 当成会话/输入授权。
@@ -517,7 +629,15 @@ Pages 制品对嵌入内容哈希资源声明 immutable，稳定 loader/version/
 - 桌面 provision/probe/install 脚本与上层判定之间以 stdout marker 传递状态（`DESKTOP_LAYER_MISSING`、`DESKTOP_PROBE_OK`/`DESKTOP_PROBE_PENDING`、`DESKTOP_PROVISION_FAILED`、install STARTED/进度/DONE/FAIL）。provision 脚本不得使用 errexit 选项：PTY 流式执行下检测行里 `systemctl` 等非零返回会污染会话最终退出码，导致上层误判命令失败、永远走不到按需安装分支（现网 bj-7 复现）。上层判定顺序必须是 marker 优先于 `sandboxCommandSucceeded`：stdout 含 `DESKTOP_LAYER_MISSING` 时无论退出码一律触发按需安装；只有图形层缺失（Missing）和探测未就绪（Pending）是正常业务信号可返回成功——密码写入、服务启动等关键步骤失败必须输出 `DESKTOP_PROVISION_FAILED <reason>` 并 exit 非零，不得用 `|| true` 吞掉，否则会被当成 Pending 反复轮询、永久卡 Provisioning 且无可见原因（旧 noVNC 甚至可能误报 Ready）。
 - 桌面 systemd units（`vela-xvfb`/`vela-desktop-wm`/`vela-x11vnc`/`vela-novnc`）以 agent 运行用户（`agentuser`）运行：镜像预装（`images/build.sh --with-desktop`）与按需安装（`renderDesktopInstallCommand` 生成的脚本）两套 unit 必须保持一致——`User=agentuser`、显式注入 `HOME` 与 `DISPLAY=:1`、WM 用 `dbus-run-session` 包裹 `startxfce4`、`Requires/After` 补齐依赖链、`Restart=on-failure`。`images/build.sh --with-desktop` 在 `install_desktop_layer` 入口强制校验 `RUNTIME_USER` 必须与 CTL 契约（`desktopRuntimeUser=agentuser`）一致，不一致直接失败；这防止 openclaw 默认 `lightclaw` 用户跑 `--with-desktop` 生成错配镜像（unit 属 lightclaw 而 CTL 往 agentuser home 写密码，导致 x11vnc 读不到密码、桌面起不来且无报错）。不允许回退为 root 会话：root 会话会造成"桌面里创建的文件属主 root、agent 读不了"的错配，并放大公网 noVNC 暴露 root 的风险。
 - 按需安装只将包选择交给发行版分支：Ubuntu/Debian 保留 apt；`ID=tencentos` 且 `VERSION_ID=4.4` 使用 dnf 和目标配置的 BaseOS/AppStream/EPOL 原生包，不从 `ID_LIKE` 推断兼容性、不安装第三方仓库、不关闭 SELinux/防火墙。安装前验证非交互 sudo、运行中的 systemd、既有非 root agentuser 与 `/home/agentuser`；安装后核验 unit 使用的二进制和 noVNC 静态资源。包安装、unit 写入、daemon-reload 任一步失败均写 FAIL、不得写 DONE。镜像构建仍为 Ubuntu 专用；包查询和模拟测试不替代真机安装/连接验收。依赖和验收见 [云桌面验证文档](../../../ctl/docs/cloud-desktop-vnc-verification.md#腾讯-os-44-按需安装前提)。
-- 品牌壁纸采用"随镜像打包"方式预置：壁纸文件由 `images/build.sh` 打进镜像，不在 provision/install 脚本中网络下发；脚本只负责激活桌面环境。
+- 品牌壁纸是桌面资源，**镜像预装与按需安装两条路径都必须覆盖**，不能只做镜像预置（现网事故：只改 `images/build.sh`，按需装出来的实例仍是 XFCE 默认壁纸）。两条路径共用同一份素材、同一份 `xfce4-desktop.xml` 语义（`last-image` 指向系统级路径、`image-style=5` 缩放填充、workspace0-3 全覆盖、`monitorscreen`/`monitor0` 双写兼容）：
+  - 镜像预装：`images/build.sh` 的 `install_desktop_wallpaper` 把素材打进镜像，安装到 `/usr/share/backgrounds/vela/vela-wallpaper.png` 并预写 `xfce4-desktop.xml`。
+  - 按需安装：CTL 保留 `go:embed` 素材（`ctl/pkg/instance/vela-wallpaper.png`），但**图片不再嵌入安装脚本**。包与 unit 仍由远端 `nohup` 安装；CTL 在原有后台任务收到 DONE 后、进入 Provisioning 前分次上传图片并配置壁纸。无需机器从公网下载图片，也不把安装变成 HTTP 请求内的同步等待。
+  - 实验室云电脑的 `POST/GET /desktop/session` 在 `Installing` 时增加可选 `install_phase`：`installing_desktop`（包/unit 安装，界面进度最多 90%）与 `configuring_wallpaper`（95%）。状态、阶段和进度在同一锁内读写；结束安装不再返回阶段，重试重置阶段。兼容保留原始 `message`，它不是本地化契约。前端仓库映射成 `installPhase`，加载期间只在中央占位区按阶段码通过 i18n 展示提示和安装百分比，不重复展示顶部状态及进度条；连接成功后保留顶部绿色状态（壁纸阶段不再提示“安装图形组件约需 2–4 分钟”）；缺失/未知阶段回退通用安装提示，不按中文消息或百分比猜步骤。排障优先：POST/GET 返回 `Failed` 时在同一个错误框优先展示后端 `reason`，请求异常保留非空 `Error.message`；缺失或空白时才回退本地化失败提示。诊断信息以 React 纯文本渲染，不作为 HTML 执行；保留重试按钮并在重试时清除旧错误。安装中的原始 `message` 仍不作为本地化文案。此变化仅用于实验室前端，不修改 OpenCraft 或 `/desktop/resource` 契约。
+  - 每个 32 KiB 原始图片块编码成约 44 KiB 的**独立 `ExecCommand` 请求**。完整命令在下发前限制为小于 60 KiB，给 adapter 前缀保留余量以满足 Sandbox 的 64 KiB `bash` 字段限制；envd 的 shell `-c` 参数还受 Linux 单参数限制。1 MiB 是输出限额，不能拿来证明输入安全；`nohup` 和在同一脚本内换行均不能绕过输入限制。线上 `debug/exec` 探测可用于确认其自身限额，不能替代 `/tat/commands` 的接口验证。
+  - 上传使用 root 创建的 `mktemp -d` 私有目录（0700）、编号块文件与完整 PNG SHA256 校验；同一块重试覆盖原块，不能追加重复内容。校验成功后从同目录临时文件原子替换系统图片。正常及校验失败由 shell `trap` 清理，异常/取消由保留 SessionAuth 的独立有界上下文清理，仍校验实例归属和绑定；CTL 退出、创建响应丢失或换绑后无法清理时由远端 15 分钟到期任务兜底。
+  - 图片一致只跳过图片替换，不能跳过配置修复。配置以 `agentuser` 写入：已有 XFCE 会话时通过其真实 D-Bus 会话更新 xfconf 并 reload；无会话时原子合并 XML，补齐两个 monitor 的 workspace0-3，保留其他设置并修复缺失/损坏配置。不重启桌面或 Agent 服务。壁纸任务最多 90 秒且为清理保留 25 秒主任务预算，余额不足就跳过可选壁纸并记录警告。
+  - 素材在 `images/runtime/desktop/` 与 `ctl/pkg/instance/` 各存一份（`go:embed` 不能跨包目录，且 `ctl/Dockerfile` 构建上下文只有 `ctl/`），由测试用 SHA256 强制两处逐字节一致；换图必须两处同步。
+  - 壁纸失败只降级为默认壁纸并 `log_warn`，**绝不中断安装**（与镜像路径行为一致）。推而广之：unit、包、**资源类素材（图片等）**都必须两条安装路径对齐，不能只在一条路径上新增。
 
 ## 定时任务执行模式
 
@@ -725,10 +845,12 @@ NewAPI 在锁定有效订阅后优先选择名称为 `free-credit:*` 的赠送�
 
 ## 建站动态接入：能力与发布边界
 
-2026-09-29 候选实现，未部署。`GET /v1/websites/capability` 增量返回
+2026-10-10 源码启用契约（合入不等于生产开放）。`GET /v1/websites/capability` 增量返回
 `backend.enabled/contract` 和 `data.enabled`。backend 仅在 runtime URL、部署凭据
-配置有效且用户精确命中 `WEBSITE_BACKEND_BETA_USERS` 时为 true，契约 `fetch-v1`；
-data 始终 false。缺失/null/非布尔 true 均 fail-closed。源码开关不是生产开放证据。
+配置有效、用户身份非空且区域 `WEBSITE_BACKEND_ENABLED=1` 时为 true，契约 `fetch-v1`；
+data 还要求 `WEBSITE_BACKEND_DATA_ENABLED=1`，契约 `rivet-sql-v1`。不按账号筛选。
+前端建站导航默认隐藏，控制台 `show()` 可切换显示；此状态不是 API 权限，
+登录用户直接请求 API 仍须通过 ownership、quota、Origin 与分享会话校验。缺失/null/非布尔 true 均 fail-closed。源码开关不是生产开放证据。
 
 release `kind` 缺省/static 保持静态，fullstack 需要能力门禁与 SHA-256；静态包不得
 携带私有 `__backend` 内容。worker 单独上传 `__backend/app.mjs` 到内部 runtime，
@@ -749,6 +871,138 @@ Skill 同步提供动态流程与离线打包器；新镜像/存量机器共用�
 [Fullstack Beta 实施](../../proposals/2026-09-29-website-fullstack-beta.md) 与
 [Skill 双通路交付](../../proposals/2026-09-29-website-skill-delivery.md)。
 
+### Website persistent backend adapter (candidate, 2026-10-02)
+
+The persistent driver consumes Skip's imported `minisandbox` Workers API;
+`WEBSITE_RUNTIME_DRIVER=minisandbox` selects it explicitly. There is no host-JS,
+local-SQLite or browser-storage fallback. The existing runsc driver remains a
+separate stateless compatibility path, not the persistent implementation.
+
+- The immutable backend contract remains `fetch-v1`. CTL exposes `data.enabled`
+  and `rivet-sql-v1` only when `WEBSITE_BACKEND_DATA_ENABLED=1`, a configured backend
+  runtime and `WEBSITE_BACKEND_ENABLED=1` all pass. Static sites are unchanged;
+  frontend visibility still follows its existing hidden `show()` boundary.
+- Static publication is independent of runtime availability for sites CTL certifies as backend-free.
+  Claimed/internal operation responses carry optional `HasBackendHistory` and `PreviousStorageBytes`
+  facts derived from current site kind, all release history (including failed/pruned history), and
+  the site's last reported storage total. These are transient response fields, not new DB columns.
+  A current static kind alone never establishes that no backend exists; omitted history is unknown.
+  Certified static sites use legacy COS retention and COS-only accounting without runtime calls.
+  A static transition with backend/unknown history keeps old release resources for joint rollback.
+  Optional runtime accounting reads for static publication have a five-second deadline. If unavailable, a new CTL snapshot allows
+  conservative accounting of current COS bytes plus the previous reported total; this may overcount,
+  is still subject to CTL quota checks, and is replaced by exact accounting on the next successful
+  runtime read. It is not a live database-size measurement. Missing/invalid fallback facts do not
+  become zero backend usage. Legacy responses without a runtime keep the old static publishing
+  contract while preserving history. Fullstack publication still requires runtime accounting.
+  Site deletion bypasses runtime only for certified backend-free sites. Backend/unknown history
+  requires successful runtime deletion before COS cleanup and completion; unavailable runtime does
+  not release quota or report success. Delete completion recounts COS without another runtime call.
+  Rollout order is CTL first, then workers; older responses keep conservative cleanup behavior.
+- Offline release bindings use schema3 to declare the regional runtime driver and a boolean
+  `data_enabled` input. Persistent data is rejected for `runsc`. The explicit `enable` phase
+  sets the regional `WEBSITE_BACKEND_ENABLED=1` gate and renders CTL `WEBSITE_BACKEND_DATA_ENABLED=1` with
+  gateway `SITE_GATEWAY_BACKEND_SHARED_READ=true` together. `prepare`, legacy schema1 and a
+  false data input explicitly override inherited gates to closed values; they never establish
+  live runtime/storage readiness. See [regional release bindings](../../../site-runtime/deploy/RELEASE-BINDINGS.md).
+- Regional infrastructure can consume expiring, bucket-scoped storage sessions without
+  placing the issuer's root credentials in runtime Pods. Worker Registry opts in through
+  `ACTOR_CODE_STORAGE_SESSION_FILE` and rereads the bounded projected file for each COS
+  request; the third session token is signed with the request. Depot opts in through
+  `ACTOR_COLD_STORAGE_SESSION_FILE` and supplies expiry-aware credentials to its S3 client.
+  Missing, malformed or expiring session files fail closed rather than falling back to
+  static environment credentials. Without these options, the existing credential path
+  is unchanged. Projected Secret volumes must not use `subPath`; issuer renewal and
+  consumer refresh must be qualified on the actual regional runtime. FoundationDB backup
+  uses its native token-bearing credential file, not a two-part key substituted for STS.
+  Role creation, Secret delivery and a successful source build are separate preparation
+  evidence, not proof of runtime renewal or regional business readiness.
+- A trusted `(environment scope, site ID)` deterministically identifies one
+  Worker and one `VelaSite` Durable Object. Releases select a verified backend
+  digest within the retained Worker package; they do not create a new database.
+  Storage is native Durable Object SQL through Depot/FoundationDB and inherits
+  the platform commit/output gate. Each bounded SQL call rolls back on quota or
+  result overflow. Database limit is 256 MiB; SQL/query and response limits are
+  enforced in the platform wrapper, not delegated to generated application code.
+- Preparation activates via `expected_deployment_id` CAS and fences the exact
+  deployment ID/targets before and after stateless and durable compiled-package
+  probes, without invoking application fetch or SQL. The versioned canonical
+  package fingerprint covers main-module identity, all module contents,
+  compatibility date and Durable Object bindings, excluding only its own exact
+  injected marker. An old warm durable isolate cannot satisfy new readiness.
+  After observing a valid stale marker, the private durable probe may use native
+  `DurableObjectState.abort` to break a retained old class container, without
+  changing Actor/Depot identity or deleting storage. It never replays an
+  application handler. Deployment/recovery and managed readiness hold the
+  exclusive site lock, waiting for in-flight invocations before such a reset.
+  Failed linking
+  compensates the previous deployment with CAS against only its own activation;
+  cancellation cannot cancel the bounded compensation. A conflicting or failed
+  compensation is an error, never reported as a successful preparation. Initial
+  failed candidates have no website active pointer or local readiness receipt.
+- A fsynced write-ahead deployment journal and atomic receipts bind retained
+  digests to the actual upstream deployment, version and endpoint/scope identity.
+  Unknown/borrowed ownership cannot authorize compensation. Incomplete journals,
+  corrupt receipts, unbound legacy receipts and legacy source-only fingerprints
+  fail invocation/readiness/publication closed; they are not silently adopted,
+  rebound or removed. Interrupted native publication and disk receipt publication
+  reconcile to an explicit commit or exact owned-pointer CAS restoration before
+  readiness. External deployment and filesystem writes are not one transaction.
+  Each DataDir has one manager; the service executable holds a nonblocking
+  exclusive OS file lock for its lifetime.
+- Explicit site deletion is terminal rather than transaction recovery. Only the
+  reviewed native adapter may supersede a pending publication: it first validates
+  the journal/receipt's original endpoint/scope identity, then acknowledges the
+  permanent Object tombstone and Actor deletion. Local journal/artifact removal
+  is fsynced before releasing the in-memory fence. Failure or foreign identity
+  stays closed; no activation replay, inferred ownership, hand-erased lock or
+  Worker deletion is used. A late activation cannot recreate the Object identity.
+- Gateway freshly verifies share policy, generation and expiration before a
+  GET/HEAD backend read. `SITE_GATEWAY_BACKEND_SHARED_READ=true` is separately
+  required. Browser-supplied internal headers are discarded; the gateway creates
+  `read_only` and the runtime creates private dispatch headers. Share SQL permits
+  one SELECT only and cannot initialize schema or perform writes. SQL capabilities
+  are request-scoped and revoked when the handler completes. Handlers in one DO
+  run serially so cached owner capabilities cannot be borrowed by a concurrent
+  share request; private class rotation returns busy while a handler is active.
+  A wrapper wall-clock deadline revokes suspended handlers and releases the queue
+  before the outer invocation deadline; late continuations keep revoked SQL objects.
+  All writes still require an authenticated site owner and exact same-origin checks.
+- Site deletion uses the logical Object terminal fence. Individual release
+  retention removes code artifacts only, not the site database. Worker hard delete
+  is not used to bypass the upstream historical Object inventory requirement.
+- New-image and single-instance Skill delivery use the same content-addressed
+  business-agnostic bundle containing only the Skill and fullstack packager.
+  The Skill describes only generic execution, data and same-origin request contracts;
+  it carries no predetermined application routes, entities or request fields.
+  Application fixtures remain in runtime tests and are never installed on user
+  machines. Previous bundle manifests remain verifiable for exact rollback;
+  existing credentials are not part of that bundle. Data capability is queried independently; absent/unknown fields are off.
+
+Native dispatch retains only plain generation/Worker/class bindings and code recipes
+in module state. Worker and Durable Object handles are recreated per request;
+reusing them violates workerd I/O ownership. Eviction uses the validated same-class
+recipe without a registry lookup, fences pending readiness by epoch, and retains
+the immutable generation binding after unloading. Different Worker versions require
+a new admitted generation; native containers retain their first class. Deployment-bound
+Host execution fences user dispatch while requesting normal Engine-owned sleep.
+Only StopActor performs eviction and SQLite capability cleanup; StartActor resolves
+the active Deployment for its newly admitted generation, preserving the stable
+Actor/database identity. Generation-scoped sleep intents have bounded recovery;
+private preparation may poll an observed transition, never replay application work.
+Local native
+dispatch qualification is not a regional Workers/Depot/FDB rollout receipt.
+
+This is a source design, not a launch receipt. Release gates require a real healthy
+regional Workers/Depot/FDB path, persistence across deployment and host replacement,
+site isolation, share read/owner write checks, static regression and the public Agent
+flow. `/readyz=200` on Workers API alone does not prove admission or executor
+availability. Beijing has passed native SQL write/read, retained-version reads,
+  warm version propagation and isolated adapter restart in scoped fixtures; this
+  does not prove native Host replacement, public Agent/browser flow or production
+  acceptance. Korea and both production configurations remain unqualified. Do not
+route international persistent data to Beijing simply to obtain a passing test.
+
 ### Website backend test findings (2026-09-30 Beijing time)
 
 Dedicated runtime reconciliation runs under the manager store lock before accepting
@@ -761,8 +1015,9 @@ complete the same workflow. These source changes are not evidence of live routin
 
 ### Website fullstack revision retention (candidate implementation)
 
-Fullstack publication retains historical static and backend artifacts together;
-legacy static-only publication retains its existing two-prefix behavior. Cleanup
+Fullstack publication retains historical static and backend artifacts together.
+Legacy static publication keeps its two-prefix layout; unconfigured runtime storage
+cannot authorize prefix pruning, so publication preserves history in that case. Cleanup
 requires a CTL transaction to mark a non-active historical release `pruning`, removing
 rollback eligibility before remote deletion. The worker deletes only that revision,
 checks current lease/generation between stages, and finalizes `pruned`; partial COS
@@ -772,7 +1027,7 @@ The internal authenticated `POST /internal/ctl/websites/sites/{siteId}/retention
 reserves at most one candidate using deployment policy, never request-supplied ages.
 It is disabled unless `WEBSITE_RETENTION_ENABLED=true`, `WEBSITE_RETENTION_KEEP`
 is explicitly 1–16, and `WEBSITE_RETENTION_GRACE` is explicitly 1h–720h. It additionally
-requires a fullstack site owned by a backend-enabled allowlisted user. A successful
+requires a fullstack site owned by a backend-enabled authenticated user. A successful
 response with `scheduled=false` means no eligible candidate, not a completed cleanup;
 when scheduled, follow the operation to terminal success. Worker polling is durable.
 No recurring scheduler or production policy is enabled by this source change.
@@ -790,7 +1045,7 @@ An opt-in worker scheduler now calls authenticated
 `POST /internal/ctl/websites/retention/sweep?cursor=...`. Set worker
 `WEBSITE_RETENTION_SWEEP_INTERVAL` explicitly (1m–24h); an absent value disables it.
 Each tick scans at most 20 active fullstack sites in site-ID order, filtering owners
-through the backend allowlist; each eligible site still uses the fenced reservation.
+through the regional backend gate; each eligible site still uses the fenced reservation.
 A complete scan resets the cursor, HTTP/response failures preserve it for retry,
 and shutdown cancels the scheduler before draining workers. CTL policy must also
 be explicitly enabled. No deployment environment is enabled by the source defaults.
@@ -803,6 +1058,39 @@ releases do not count toward the rollback window. Cleanup includes the exact
 private upload ZIP key as well as the exact static/backend revision; unknown runtime
 directories without authoritative release records are not automatically removed.
 
+Website native response stamping captures brand-checked getters across the pristine Response/Body prototype chain. workerd inherits body from Body.prototype; Node-only own-property assumptions must not prevent native Worker preparation. User response properties/proxies are never used to obtain execution identity.
+
+User backend Request boundary is distinct from the browser request: the gateway checks owner/share authorization, Origin and release identity before invocation. The Native wrapper forwards only Content-Type and Accept headers into generated application code, preserving the URL, method and body; it does not expose Cookie, Authorization, browser release headers or private control headers. Application handlers must not reject an otherwise accepted request merely because those platform headers are absent. The shipped website-builder Skill documents this boundary while continuing to require the browser release header and retaining platform write restrictions.
+
+
+Native deployment readiness must be qualified at both the management registry
+read path and the private stateless/durable execution path. Ready runtime Hosts
+and matching binaries do not establish a readable active-deployment pointer.
+A management GET503 before preparation is not evidence of a package mismatch
+or permission to replay activation, application writes, Sleep or rollback.
+The manager's bounded startup reconciliation preserves unresolved per-site
+journals as invocation fences; actual normal journal recovery and private package
+validation remain separate acceptance requirements from Pod health.
+
+### Website share generation cache consistency
+
+Site share form policy and authenticated share cookies must use fresh CTL metadata, not the ordinary site metadata TTL. A newly rotated valid share session otherwise conflicts with the cached generation and redirects back to the share form; revocation must not wait for the positive cache TTL either. Owner sessions retain their existing fresh-owner check, backend API reads retain their existing fresh generation gate, and share writes remain denied. This correction is not deployment evidence.
+
+### Final regional test candidate consistency (2026-10-06)
+
+The final manager r12, website worker r13 and gateway share-cache candidate are
+source-bound test overlays, not formal production CI images. Beijing final manager
+and gateway observation accepted both exact deployments and actual executable
+bindings; the final real website passed independent owner/share browser refresh,
+original record preservation and visitor write denial with ordinary DNS/strict TLS.
+Korean real code upgrade, joint rollback, static publication and static-to-fullstack
+rollback preserved the same original complete record. Generic Skill delivery is
+qualified in fresh test images in both regions; no production image/pool adoption
+is implied. Exact final Native lifecycle/isolation and regional release bindings
+remain separate gates. A local international TLS handshake failure does not prove
+a production service outage. The current task authorization is preparation only,
+without production, GitOps promotion or stock Skill rollout.
+
 ## 建站 Skill-only 新实例补丁（2026-10-02）
 
 CTL 新实例成功持久化 Running 后，以独立精确地域 `WEBSITE_SKILL_TAT_COMMAND_IDS_BY_REGION`
@@ -814,3 +1102,69 @@ Skill POST 不盲重试，metadata 成功不等于 Skill 已 UPDATED；其它 cr
 [建站 Skill auth fallback 运维说明](../operations/website-skill-auth-fallback.md)。
 
 远端/Web 的工作区文件浏览仍通过当前 Host 的 AppServer 文件系统端口读取、监听和写入；浏览器不成为文件真相来源。OpenCraft Web 文件面板把读取结果视为可刷新的服务端快照，未保存草稿按 Host 与路径隔离。切换文件和迟到响应不能覆盖草稿，异步写入必须锁定提交时的 Host、路径与文本；检测到磁盘内容与草稿基线不同则阻止覆盖保存，交由用户处理。文件类型图标和 CSS/JS 语言渲染属于 Web 展示层，不改变 Host 文件协议。
+
+## CTL 云桌面后台安装的会话鉴权传播（2026-10-08）
+
+CTL 云桌面准备把实际安装编排放在 POST 返回后的独立后台任务里执行，但该任务经 Sandbox
+adapter 的 TAT 命令通道（`/tat/*`）下发命令，而该通道的鉴权只认请求 `ctx` 透传的用户
+session（`applySandboxSessionAuth` 注入 Authorization/Cookie），不存在服务级凭据回退。
+因此后台编排的派生 `ctx` 必须显式继承发起请求的 `SessionAuth`，否则安装命令鉴权失败
+（`authentication failed`），安装无法真正落到实例机器。provision 探测阶段走的是 PTY
+流式 endpoint（`/internal/.../exec-stream`，`X-API-Key` 服务级鉴权），不依赖 session，
+故探测可成功而安装失败——两条通道鉴权来源不同是该责任面的既定语义，安装路径不得假定
+存在服务级凭据。后台编排对进度轮询的瞬时失败可有界重试，但连续失败须带原因快速判失败，
+不得把持续的鉴权/不可达故障静默停留在“安装中”直至整体超时。TAT 命令按进程内绑定锁串行化、
+换用户/换 Sandbox/失败重试隔离旧状态等既有约束不变。实现见 `ctl/pkg/instance/desktop.go`，
+通道鉴权见 `ctl/pkg/adapter/sandbox/adapter.go`。
+
+## Parallel Expo Agent Console (2026-10-08)
+
+`/agents-next` is an Expo Web presentation entry, without replacing `/agents`.
+The native Expo console and this Web entry share a vertical Bot icon rail beside
+the selected Bot feature/session pane, plus a fixed account/settings footer;
+creation is the rail plus button and Bot switching keeps navigation open. They share navigation and session controls;
+frontend retains Bot/session business ownership. Existing OpenCraft Web chat is
+bundled locally into the DOM runtime. Actual container dimensions determine
+foldable/phone/tablet/desktop layout and never reset conversation or draft state.
+See [embedded Bot bridge](../../../opencraft/docs/mobile-bot-bridge.md) for the
+validated mount/command ports and [mobile shell](../../../opencraft/docs/mobile-shell.md)
+for geometry and platform responsibilities. Electron entry integration and
+hardware keyboard/folding evidence remain separate acceptance work; Android
+standalone and Electron entry wiring are explicitly excluded from this iteration.
+The embedded Chat height chain targets its actual main/section/grid/content
+elements, rather than website-only chrome classes. Runtime registration and
+visible layout are separate acceptance boundaries: packaged HTML parsing plus
+measured nonzero Chat bounds across container sizes precede device/transport
+acceptance.
+
+The Expo Chat right pane now opts into external host presentation: the original
+conversation panel service owns tab identity, selection, ordering, close/MRU,
+preview replacement and browser/resource lifetimes. Host-measured bounds and a
+native shell open/close button contain the complete original DOM toolbar, menus and content; no new tab
+manager replaces them. The original pane renders in a sibling outlet of the same
+local custom element/runtime;
+there is no per-tab Application or hosted-page fallback. Runtime generation,
+Bot instance/Profile and conversation owner scope every command/state update.
+Narrow content capacity overlays Chat; wider capacity places it alongside the
+pane without rebuilding the runtime. Default website/Electron chrome remains
+unchanged. Contract and acceptance limits are in
+[Chat panel host presentation](../../../opencraft/docs/mobile-bot-bridge.md#chat-panel-host-presentation).
+
+The external panel layout parent now allocates genuine sibling grid viewports;
+Chat’s embedded AppShell consumes its own column instead of a document-wide fixed
+viewport. Native controls/gesture input feed one transient presentation driver in
+the same local DOM runtime. Service intent, tabs and resource lifetimes stay with
+the original conversation panel owner. Only narrow/full-width capacity uses replacement
+presentation; held movement, interruption, cancellation and geometry changes share
+the same driver, without a second visibility authority or duplicated application.
+
+泰语国际站的嵌入式工作台使用 `th-TH` 目录，由原有 WorkbenchLocaleController 装载并随宿主语言切换；独立 OpenCraft 语言菜单不扩大。泰语目录保持全部消息 ID、ICU 参数及复数结构，必须通过应用消息提取与 ICU 校验。前端真源提交后通过同步脚本生成 Agent Console 副本，生成层独立提交且通过只读漂移检查。
+
+### Bot IM 客户端首次安装
+
+`vela-computer` 的首次安装产物使用北京 COS 的版本化目录，安装入口复用现有
+Bot 归属校验与 `agentuser` 命令执行权限，不新增地域白名单。长下载通过后台任务
+和状态轮询完成，安装器与二进制在执行前核验固定摘要，重复安装复用已验证程序。
+二进制安装与 Agent Runtime Session/UserSig 的签发、Hermes 启动接线分别验收；
+安装完成不能作为 Bot 已连接腾讯 IM 的证据。详细步骤见
+[Bot IM 客户端首次安装](../../../vela-computer/docs/bot-im-client-install.md)。

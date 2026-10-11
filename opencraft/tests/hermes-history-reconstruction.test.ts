@@ -54,6 +54,29 @@ test("a 522-row Turn paints one 120-row tail; only explicit backfill reads anoth
   const before = structuredClone(painted);
   page = await h.adapter.readTurnsPage("s", 0, 5, "desc");
   assert.deepEqual(reconcileHistoryWindow(painted, page.chronological), before, "tail refresh grafts onto backfilled prefix");
+  assert.equal(page.nextOffset, null, "refresh must not reopen fully loaded history");
+});
+
+test("Turn limits cannot slice a row window or replace its row cursor", async t => {
+  const h = await harness(); t.after(() => h.adapter.dispose());
+  for (let index = 0; index < 150; index++) h.appendTurn(`turn-${index}`, 0);
+  const tail = await h.adapter.readTurnsPage("s", 0, 1, "desc");
+  assert.equal(tail.chronological.length, 60, "all groups in the 120-row tail belong to the history window");
+  assert.deepEqual(tail.data, [...tail.chronological].reverse());
+  assert.equal(tail.nextOffset, 120);
+
+  const older = await h.adapter.readTurnsPage("s", tail.nextOffset!, 1, "asc");
+  assert.deepEqual(h.requests.map(request => request.offset), [0, 120]);
+  assert.equal(older.chronological.length, 120);
+  assert.deepEqual(older.data, older.chronological);
+  assert.deepEqual(older.chronological.slice(-tail.chronological.length), tail.chronological);
+  assert.equal(older.nextOffset, 240);
+
+  const complete = await h.adapter.readTurnsPage("s", older.nextOffset!, 1, "desc");
+  assert.deepEqual(h.requests.map(request => request.offset), [0, 120, 240]);
+  assert.equal(complete.chronological.length, 150);
+  assert.equal(complete.nextOffset, null);
+  assert.equal(reconcileHistoryWindow(older.chronological, complete.chronological).length, 150);
 });
 
 test("backfill owns historical groups, not a concurrently streaming execution", () => {

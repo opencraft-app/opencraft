@@ -10,8 +10,8 @@ import (
 	"git.woa.com/wisp/mono/site-gateway/internal/sitemeta"
 )
 
-// Fullstack Beta APIs are owner-only, including on public static-site domains.
-// A share-view cookie is not an application authentication/authorization system.
+// Mutations require a fresh owner session. A qualified persistent runtime may
+// accept fresh site-share sessions for GET/HEAD using a read-only SQL capability.
 func (h *SiteHandler) tryServeBackend(w http.ResponseWriter, r *http.Request) bool {
 	if r.URL.Path != "/api" && !strings.HasPrefix(r.URL.Path, "/api/") {
 		return false
@@ -48,18 +48,22 @@ func (h *SiteHandler) tryServeBackend(w http.ResponseWriter, r *http.Request) bo
 		writeAuthFailure(w, 503, "site backend unavailable")
 		return true
 	}
-	cookie, err := r.Cookie(siteSessionCookie)
-	if err != nil {
-		writeAuthFailure(w, 401, "site authentication required")
-		return true
+	owner := false
+	if cookie, cookieErr := r.Cookie(siteSessionCookie); cookieErr == nil {
+		session, openErr := h.auth.TokenCodec.OpenSession(cookie.Value, resolved.Host)
+		if openErr == nil && session.SiteID == resolved.SiteID && session.UserID == site.UserID {
+			owner = true
+		}
 	}
-	session, err := h.auth.TokenCodec.OpenSession(cookie.Value, resolved.Host)
-	if err != nil {
-		writeAuthFailure(w, 401, "site authentication required")
-		return true
+	readOnly := false
+	if !owner && h.auth.BackendSharedRead && (r.Method == http.MethodGet || r.Method == http.MethodHead) && site.ShareAccessActiveAt(h.authNow()) {
+		if cookie, cookieErr := r.Cookie(shareSessionCookie); cookieErr == nil {
+			session, openErr := h.auth.TokenCodec.OpenShareSession(cookie.Value, resolved.Host)
+			readOnly = openErr == nil && session.SiteID == resolved.SiteID && session.Generation == site.ShareGeneration
+		}
 	}
-	if session.SiteID != resolved.SiteID || session.UserID != site.UserID {
-		writeAuthFailure(w, 403, "site owner required")
+	if !owner && !readOnly {
+		writeAuthFailure(w, 401, "site authentication required")
 		return true
 	}
 	switch r.Method {
@@ -93,7 +97,7 @@ func (h *SiteHandler) tryServeBackend(w http.ResponseWriter, r *http.Request) bo
 			headers[key] = value
 		}
 	}
-	result, err := h.backend.Invoke(r.Context(), resolved.SiteID, site.ReleaseID, backend.Invocation{SHA256: site.BackendSHA256, Method: r.Method, Path: r.URL.RequestURI(), Headers: headers, Body: body})
+	result, err := h.backend.Invoke(r.Context(), resolved.SiteID, site.ReleaseID, backend.Invocation{SHA256: site.BackendSHA256, ReadOnly: readOnly, Method: r.Method, Path: r.URL.RequestURI(), Headers: headers, Body: body})
 	if err != nil {
 		writeAuthFailure(w, 502, "site backend request failed")
 		return true

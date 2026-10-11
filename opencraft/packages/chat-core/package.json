@@ -6,6 +6,9 @@
   "exports": {
     ".": "./src/index.ts"
   },
+  "dependencies": {
+    "@opencraft/chat-document": "0.1.0"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit"
   }

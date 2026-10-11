@@ -88,6 +88,9 @@ var (
 	// ErrDianshiActivityRequired 点石专用入口收到未配置活动映射的 bundle。
 	ErrDianshiActivityRequired = errors.New("placeorder: dianshi activity required")
 
+	// ErrLegacyDianshiOrderPending requires the caller to finish an earlier do_goods order.
+	ErrLegacyDianshiOrderPending = errors.New("placeorder: legacy dianshi order pending payment")
+
 	// ErrUnsupportedSite 表示当前站点不开放对应业务能力。
 	ErrUnsupportedSite = errors.New("placeorder: unsupported site")
 
@@ -2492,6 +2495,9 @@ func (s *Service) placeOrderDianshiWith(
 	if err == nil && order != nil {
 		log.Printf("[dianshi-order-idempotency] hit externalUserId=%s activityId=%d bundleId=%s dealName=%s status=%s createdTime=%s",
 			req.ExternalUserID, mapping.ActivityID, req.BundleID, order.DealName, order.Status, order.CreatedTime.Format(time.RFC3339Nano))
+		if interfaceName == dianshiclient.InterfaceNameDoGoodsAndPay && !isIntlSite(s.deps.SiteKind) {
+			return nil, fmt.Errorf("%w: dealName=%s", ErrLegacyDianshiOrderPending, order.DealName)
+		}
 		return &PlaceOrderResult{
 			DealName:   order.DealName,
 			BigOrderID: order.BigOrderID,

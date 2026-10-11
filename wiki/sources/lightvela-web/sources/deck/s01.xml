@@ -1,0 +1,17 @@
+<slide id="s01">
+  <background color="bg-page" />
+  <shape type="line" x="40" y="26" width="1200" height="0" stroke="border" />
+  <shape type="line" x="40" y="26" width="240" height="0" stroke="primary" stroke-width="3" />
+  <text x="40" y="36" width="1200" height="24" font="caption" color="primary">LightVela · 产品与增长汇报</text>
+  <text x="80" y="225" width="1000" height="78" font="display" size="64" color="text-main" wrap="false">
+    <strong>LightVela</strong>
+  </text>
+  <text x="80" y="316" width="1040" height="70" font="display" color="text-main" wrap="false">
+    <strong>产品与增长汇报</strong>
+  </text>
+  <shape type="line" x="80" y="418" width="88" height="0" stroke="primary" stroke-width="4" />
+  <text x="80" y="445" width="860" height="60" font="strong" color="text-muted">出圈回顾 · 产品现状 · 下一阶段建设</text>
+  <text x="80" y="552" width="820" height="35" font="body" color="text-main">2026 年 10 月</text>
+  <image x="1050" y="482" width="135" height="168" src="/assets/round-coral_trim.png" fit="contain" />
+  <text x="1180" y="684" width="60" height="20" font="caption" color="text-muted" align="right">01 / 24</text>
+</slide>

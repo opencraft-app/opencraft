@@ -16,6 +16,7 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@radix-ui/react-dropdown-menu": "^2.1.24",
     "@radix-ui/react-alert-dialog": "^1.1.15",
+    "@radix-ui/react-tooltip": "^1.2.8",
     "@opencraft/composer-core": "0.1.0",
     "@opencraft/design-system-web": "0.1.0",
     "lucide-react": "^1.35.0",

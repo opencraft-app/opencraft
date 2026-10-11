@@ -1,4 +1,5 @@
 import { HermesRpcError, type HermesRpcClient } from "./rpc-transport";
+import type { HermesSessionMetadataClient } from "./session-metadata-client";
 import type { HermesHistoryClient } from "./history-client";
 import {
   decodeHermesModelSelection,
@@ -549,12 +550,10 @@ function projectTurnItems(
   // Tool boundaries retain independent narration even when text is equal.
   const lastToolIndex = items.findLastIndex(item => item.type === "dynamicToolCall");
   const lastAgentByText = new Map<string, number>();
-  const finalAgentTexts: string[] = [];
   items.forEach((item, index) => {
     if (item.type !== "agentMessage" || typeof item.text !== "string") return;
     const key = normalizeVisibleText(item.text);
     if (key !== "") lastAgentByText.set(key, index);
-    if (item.phase === "final_answer" && key !== "") finalAgentTexts.push(key);
   });
   return items.filter((item, index) => {
     if (item.type === "agentMessage" && typeof item.text === "string") {
@@ -563,13 +562,8 @@ function projectTurnItems(
       // Restrict final-preview reconciliation to the tail after the last tool.
       return index <= lastToolIndex || key === "" || lastAgentByText.get(key) === index;
     }
-    if (item.type === "reasoning" && Array.isArray(item.content)) {
-      const key = normalizeVisibleText(item.content.filter((value): value is string => typeof value === "string").join("\n"));
-      // Same ownership rule as Hermes Desktop's final-text merge: the final
-      // answer supersedes reasoning only when it fully starts with it. A short
-      // final must never erase a longer, genuinely distinct reasoning trace.
-      return index <= lastToolIndex || key === "" || !finalAgentTexts.some((finalText) => finalText.startsWith(key));
-    }
+    // Provider reasoning columns own separate Items, even if their text equals
+    // or prefixes the answer. Only body previews reconcile with body text.
     return true;
   }).map(projectHermesTool);
 }
@@ -672,7 +666,7 @@ function makeThread(summary: HermesSessionSummary, cwd: string, turns: AppServer
       profile: summary.profile ?? "default",
     } },
     forkedFromId: null, parentThreadId: null, preview: title, ephemeral: false, section: null, sectionEnteredAt: null,
-    projectId: null, historyMode: "message-window", modelProvider: "hermes", createdAt: when, updatedAt: when, recencyAt: when,
+    projectId: null, historyMode: "message-window", modelProvider: "hermes", createdAt: when, updatedAt: summary.last_active ?? when, recencyAt: summary.last_active ?? when,
     status: running ? { type: "active", activeFlags: [] } : { type: "idle" }, path: null, cwd,
     cliVersion: "hemesclient/0.2.0", source: { custom: "hermes" }, canAcceptDirectInput: true, threadSource: null,
     agentNickname: null, agentRole: null, gitInfo: null, name: title, turns,
@@ -789,6 +783,40 @@ interface PendingClarifyOwnership {
 }
 
 export class HermesAppServerAdapter {
+  async listPinnedThreads(client: HermesSessionMetadataClient, signal?: AbortSignal) {
+    const profiles = this.profileScope !== null ? [this.profileScope] : (await this.listProfiles()).map(row => row.name.trim() || "default");
+    if (profiles.length === 0) throw new Error("无法确认会话所属连接，请稍后重试");
+    const bindings = new Map<string, string>();
+    const data: AppServerThread[] = [];
+    for (const profile of new Set(profiles)) {
+      const result = await client.readPinned(profile, signal);
+      throwIfSignalAborted(signal);
+      if (!result.supported) return { supported: false, data: [] };
+      for (const row of result.rows) {
+        const previous = bindings.get(row.id) ?? this.profileByStored.get(row.id);
+        if (previous !== undefined && previous !== profile) throw new Error("Ambiguous Hermes session profile identity");
+        bindings.set(row.id, profile);
+        data.push(makeThread(row, row.cwd ?? this.defaultCwd, [], this.payloadByStored.get(row.id)?.running === true));
+      }
+    }
+    for (const [id, profile] of bindings) this.profileByStored.set(id, profile);
+    return { supported: true, data };
+  }
+
+  async setThreadPinned(client: HermesSessionMetadataClient, threadId: string, pinned: boolean, signal?: AbortSignal) {
+    if (!threadId || typeof pinned !== "boolean") throw new Error("Invalid Hermes pin command");
+    // Unlike execution's resolveThreadProfile fallback, pinning never resumes a session.
+    let profile = this.profileScope ?? this.profileByStored.get(threadId);
+    if (profile === undefined || profile === null) {
+      await this.listPinnedThreads(client, signal);
+      profile = this.profileByStored.get(threadId);
+    }
+    if (!profile) throw new Error("无法确认会话所属连接，请刷新列表后重试");
+    await client.setPinned(threadId, profile, pinned, signal);
+    throwIfSignalAborted(signal);
+    this.emit("thread/pins/updated", { threadId });
+    return { pinned };
+  }
   private skillValidator?: (profile: string, skills: readonly { name: string; path: string }[]) => Promise<void>;
   setSkillValidator(validator: (profile: string, skills: readonly { name: string; path: string }[]) => Promise<void>): void { this.skillValidator = validator; }
   composerProfile(): string {
@@ -847,7 +875,6 @@ export class HermesAppServerAdapter {
   private readonly transcriptSnapshots: Map<string, HermesTranscriptWindowSnapshot>;
   /** One cursor-zero history page shared by Resume and its first page read. */
   private readonly preparedHistoryByStored = new Map<string, {
-    readonly limit: number;
     readonly sortDirection: "asc" | "desc";
     readonly page: {
       data: AppServerTurn[];
@@ -1186,7 +1213,7 @@ export class HermesAppServerAdapter {
   async readTurnsPage(
     threadId: string,
     offset: number,
-    limit: number,
+    _limit: number,
     sortDirection: "asc" | "desc",
     signal?: AbortSignal,
   ): Promise<{
@@ -1204,7 +1231,7 @@ export class HermesAppServerAdapter {
       this.preparedHistoryByStored.delete(threadId);
       return prepared.page;
     }
-    return this.fetchTurnsPage(threadId, offset, limit, sortDirection, signal);
+    return this.fetchTurnsPage(threadId, offset, sortDirection, signal);
   }
 
   /**
@@ -1214,7 +1241,7 @@ export class HermesAppServerAdapter {
    */
   async prepareTurnsPage(
     threadId: string,
-    limit: number,
+    _limit: number,
     sortDirection: "asc" | "desc",
     signal?: AbortSignal,
   ): Promise<{
@@ -1222,16 +1249,15 @@ export class HermesAppServerAdapter {
     chronological: AppServerTurn[];
     nextOffset: number | null;
   }> {
-    const page = await this.fetchTurnsPage(threadId, 0, limit, sortDirection, signal);
+    const page = await this.fetchTurnsPage(threadId, 0, sortDirection, signal);
     throwIfSignalAborted(signal);
-    this.preparedHistoryByStored.set(threadId, { limit, sortDirection, page });
+    this.preparedHistoryByStored.set(threadId, { sortDirection, page });
     return page;
   }
 
   private async fetchTurnsPage(
     threadId: string,
     offset: number,
-    limit: number,
     sortDirection: "asc" | "desc",
     signal?: AbortSignal,
   ): Promise<{
@@ -1265,30 +1291,18 @@ export class HermesAppServerAdapter {
       this.transcriptWindows.get(oldest)?.invalidate();
       this.transcriptWindows.delete(oldest);
     }
-    // The durable transport is row-paged while AppServer is Turn-paged. Keep
-    // the larger Desktop-compatible row window cached, but project only the
-    // requested Turn slice. The cursor remains a count from the newest row,
-    // so subsequent pages can be served from this window until its older edge
-    // is reached and the transport must backfill again.
-    const end = Math.max(0, page.messages.length - offset);
+    // Earlier rows can regroup the partial leading Turn. Message-window
+    // consumers replace their historical groups, so every response must
+    // project the complete loaded row window and carry its source cursor.
     const attachmentNames = await this.resolveAttachmentNames(page.messages);
-    const eligible = mapMessageRanges(threadId, [...page.messages], false, attachmentNames)
-      .filter(({ end: rangeEnd }) => rangeEnd <= end);
-    const selected = eligible.slice(-limit);
-    const chronological = selected.map(({ turn }) => ({
+    const chronological = mapMessages(threadId, [...page.messages], false, attachmentNames).map(turn => ({
       ...turn, historyWindowId: key,
     }));
     for (const turn of chronological) this.cacheTurnItems(turn);
-    const consumedOffset = selected.length > 0
-      ? page.messages.length - selected[0]!.start
-      : Math.max(offset, page.nextOffset);
-    const nextOffset = eligible.length > selected.length || page.possiblyTruncated
-      ? consumedOffset
-      : null;
     return {
       data: sortDirection === "desc" ? [...chronological].reverse() : chronological,
       chronological,
-      nextOffset,
+      nextOffset: page.possiblyTruncated ? page.nextOffset : null,
     };
   }
 
@@ -2458,6 +2472,10 @@ export class HermesAppServerAdapter {
   }
 
   private projectGatewayEvent(event: Record<string, unknown>): void {
+    if (event.type === "sessions.changed") {
+      this.emit("thread/pins/updated", {});
+      return;
+    }
     const live = typeof event.session_id === "string" ? event.session_id : "";
     const threadId = this.storedByLive.get(live);
     if (threadId === undefined) return;

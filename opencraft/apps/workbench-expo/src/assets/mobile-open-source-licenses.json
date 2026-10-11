@@ -6,12 +6,27 @@
   },
   {
     "name": "@expo/metro-runtime",
-    "version": "57.0.14",
+    "version": "57.0.16",
     "license": "MIT"
   },
   {
     "name": "@gorhom/bottom-sheet",
     "version": "5.2.14",
+    "license": "MIT"
+  },
+  {
+    "name": "@radix-ui/react-dismissable-layer",
+    "version": "1.1.19",
+    "license": "MIT"
+  },
+  {
+    "name": "@radix-ui/react-focus-scope",
+    "version": "1.1.16",
+    "license": "MIT"
+  },
+  {
+    "name": "@radix-ui/react-roving-focus",
+    "version": "1.1.19",
     "license": "MIT"
   },
   {
@@ -35,6 +50,11 @@
     "license": "MIT"
   },
   {
+    "name": "expo-audio",
+    "version": "57.0.5",
+    "license": "MIT"
+  },
+  {
     "name": "expo-blur",
     "version": "57.0.2",
     "license": "MIT"
@@ -46,7 +66,7 @@
   },
   {
     "name": "expo-constants",
-    "version": "57.0.16",
+    "version": "57.0.19",
     "license": "MIT"
   },
   {

@@ -111,3 +111,26 @@ test("a HEIC filename without browser MIME still enters image preparation with a
   assert.match(session.previewUrl(draft.id, attachment.id) ?? "", /^blob:/u);
   composer.dispose();
 });
+
+test("refused content admission releases the unowned image preview without starting a resolver", async (context) => {
+  const base = createController();
+  const composer = { ...base, dispatch() { throw new Error("content admission refused"); } };
+  const session = attachmentPreviewSession(composer);
+  const createUrl = URL.createObjectURL;
+  const revokeUrl = URL.revokeObjectURL;
+  let preview = "";
+  const revoked: string[] = [];
+  context.mock.method(URL, "createObjectURL", (file: Blob) => { preview = createUrl(file); return preview; });
+  context.mock.method(URL, "revokeObjectURL", (url: string) => { revoked.push(url); revokeUrl(url); });
+  let resolutions = 0;
+  assert.throws(() => session.addFiles([new File(["image"], "photo.png", { type: "image/png" })], async (_, pending) => {
+    resolutions++;
+    return { ...pending, lifecycle: "ready", uri: "data:image/png;base64,aW1hZ2U=" };
+  }), /content admission refused/u);
+  assert.equal(base.getSnapshot().draft.attachments.length, 0);
+  assert.deepEqual(revoked, [preview]);
+  await Promise.resolve();
+  assert.equal(resolutions, 0);
+  await assert.rejects(fetch(preview));
+  base.dispose();
+});

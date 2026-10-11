@@ -333,6 +333,40 @@ test("a pre-success quota rejection advances to the next account and pins it", a
   }
 });
 
+test("a pre-header transport timeout is surfaced without replaying the request", async () => {
+  const root = await mkdtemp(join(tmpdir(), "opencraft-account-pool-"));
+  try {
+    const pool = new AccountPoolStore({ databasePath: join(root, "pool.sqlite"), secretsDirectory: join(root, "secrets") });
+    for (const [id, priority] of [["account-a", 1], ["account-b", 2]] as const) {
+      pool.addAccount({ id, provider: "codex", label: id, upstreamAccountId: `chatgpt-${id}`, priority, enabled: true },
+        { accessToken: `access-${id}`, refreshToken: null, expiresAt: null });
+    }
+    const token = pool.issueHostToken("local");
+    const attempts: string[] = [];
+    const proxy = new CodexAccountPoolProxy({
+      store: pool,
+      upstreamBaseUrl: "https://chatgpt.example.test/backend-api/codex",
+      fetch: async (_input, init) => {
+        const id = new Headers(init?.headers).get("chatgpt-account-id") ?? "";
+        attempts.push(id);
+        const error = new TypeError("fetch failed") as TypeError & { cause: Error & { code: string } };
+        error.cause = Object.assign(new Error("Headers Timeout Error"), { code: "UND_ERR_HEADERS_TIMEOUT" });
+        throw error;
+      },
+    });
+    await assert.rejects(proxy.handle(new Request("http://127.0.0.1/v1/responses", {
+      method: "POST",
+      headers: { "content-type": "application/json", "thread-id": "thread-timeout", "x-opencraft-account-pool-token": token },
+      body: JSON.stringify({ model: "gpt-test", input: [] }),
+    })), /fetch failed/);
+    assert.deepEqual(attempts, ["chatgpt-account-a"]);
+    assert.equal(pool.select({ provider: "codex", hostId: "local", affinityId: "thread-timeout" }).account.id, "account-a");
+    pool.close();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("account management projections never expose credentials and secret files stay private", async () => {
   const root = await mkdtemp(join(tmpdir(), "opencraft-account-pool-"));
   const secretsDirectory = join(root, "secrets");

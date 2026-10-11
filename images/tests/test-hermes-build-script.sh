@@ -482,6 +482,11 @@ test -s "${RUNTIME_HOME}/.hermes/skills/website-builder/SKILL.md"
 test -s "${RUNTIME_HOME}/.hermes/skills/website-builder/scripts/package_fullstack.py"
 cmp -s "$(dirname "${HERMES_WEBSITE_BUILDER_SKILL_FILE}")/scripts/package_fullstack.py" "${RUNTIME_HOME}/.hermes/skills/website-builder/scripts/package_fullstack.py"
 cmp -s "${HERMES_WEBSITE_BUILDER_SKILL_FILE}" "${RUNTIME_HOME}/.hermes/skills/website-builder/SKILL.md"
+test ! -d "${RUNTIME_HOME}/.hermes/skills/website-builder/templates"
+if grep -Riq "todo" "${RUNTIME_HOME}/.hermes/skills/website-builder"; then
+  echo "installed website Skill contains a business-specific fixture" >&2
+  exit 1
+fi
 ORIGINAL_WEBSITE_BUILDER_SKILL_FILE="${HERMES_WEBSITE_BUILDER_SKILL_FILE}"
 HERMES_WEBSITE_BUILDER_SKILL_FILE="${TMPDIR}/missing-website-builder-SKILL.md"
 if install_hermes_website_builder_skill >/dev/null 2>&1; then

@@ -35,8 +35,9 @@ const (
 
 // Defines values for SandboxState.
 const (
-	Paused  SandboxState = "paused"
-	Running SandboxState = "running"
+	Paused   SandboxState = "paused"
+	Resuming SandboxState = "resuming"
+	Running  SandboxState = "running"
 )
 
 // CPUCount CPU cores for the sandbox

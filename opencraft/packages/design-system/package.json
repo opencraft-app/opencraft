@@ -22,7 +22,9 @@
     "./focus.web": "./src/focus.web.scss",
     "./empty-state.web": "./src/empty-state.web.scss",
     "./panel-controls.web": "./src/panel-controls.web.scss",
-    "./identity-color": "./src/identity-color.ts"
+    "./desktop-view.web": "./src/desktop-view.web.scss",
+    "./identity-color": "./src/identity-color.ts",
+    "./sidebar-toggle-glyphs": "./src/sidebar-toggle-glyphs.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

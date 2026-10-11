@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 
 import type { LightVelaSession, LightVelaSessionState } from "./agent-chat-panel";
 
-// Agents 子页面会重挂载；只缓存列表数据，操作句柄仍由当前页面的聊天实例提供。
+// 控制台由 agents/layout 常驻，切换子页面不再重挂载；此缓存只兜底控制台整体重挂载（如切换 Bot、重新登录）。
+// 只缓存列表数据，操作句柄仍由当前页面的聊天实例提供。
 const sessionsByBot = new Map<string, LightVelaSession[]>();
 const unreadStorageKey = (botKey: string) => `lightvela:agents:unread-sessions:${botKey}`;
 
@@ -55,6 +56,21 @@ export function resolveAgentSidebarEmptySessionState({
 }): "loading" | "default" | null {
   if (sessionCount > 0 || botPaused) return null;
   return loading || botKey === null ? "loading" : "default";
+}
+
+export async function runBotScopedSessionPin(
+  setPinned: () => Promise<void>,
+  isCurrentBot: () => boolean,
+  onError: () => void,
+  onSettled: () => void,
+): Promise<void> {
+  try {
+    await setPinned();
+  } catch {
+    if (isCurrentBot()) onError();
+  } finally {
+    if (isCurrentBot()) onSettled();
+  }
 }
 
 export function useAgentSidebarSessionList(botKey: string | null) {

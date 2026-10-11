@@ -6,6 +6,8 @@ const root = path.resolve('public/lightvela-intl-home');
 const fragments = readdirSync(root).filter((file) => /^index-fragment(?:\.[\w-]+)?\.html$/.test(file));
 // Keep these expected strings aligned with the importer copy and checked-in locale fragments.
 const introByLocale = {
+  "th-TH": "ติดตั้งเทมเพลตจากคลังได้โดยตรง งานแจ้งเตือนและงานสคริปต์ไม่ใช้โทเค็น",
+  "ms-MY": "Pasang templat terus dari perpustakaan. Tugas pemberitahuan dan skrip tidak menggunakan token.",
   "en-US": "Install templates directly from the library. Notification and script tasks consume no tokens.",
   "zh-CN": "有模版库，直接装。通知任务&脚本任务无需消耗任何token。",
   "zh-SG": "有模版库，直接装。通知任务&脚本任务无需消耗任何token。",
@@ -40,7 +42,7 @@ describe('homepage play tab badges', () => {
     for (const [id, text] of [['pl-2', '0 Token'], ['pl-3', 'New'], ['pl-4', 'New']]) {
       const badges = tabs?.querySelectorAll(`label[for="${id}"] .play__new-badge`);
       expect(badges).toHaveLength(1);
-      expect(badges?.[0].textContent).toBe(text);
+      expect(badges?.[0].textContent).toBe(text === 'New' ? file.includes('ms-MY') ? 'Baharu' : file.includes('th-TH') ? 'ใหม่' : text : text);
     }
   });
 });

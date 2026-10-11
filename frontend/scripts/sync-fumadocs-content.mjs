@@ -39,6 +39,8 @@ const LOCALES = Object.freeze({
   ZH_SG: 'zh-SG',
   ZH_HANT: 'zh-Hant',
   ID_ID: 'id-ID',
+  MS_MY: 'ms-MY',
+  TH_TH: 'th-TH',
   ES: 'es',
   JA_JP: 'ja-JP',
   KO_KR: 'ko-KR',
@@ -51,6 +53,8 @@ const URL_LANGS = Object.freeze({
   ZH_SG: 'zh-sg',
   ZH_HANT: 'zh-hant',
   ID_ID: 'id-id',
+  MS_MY: 'ms-my',
+  TH_TH: 'th-th',
   ES: 'es',
   JA_JP: 'ja-jp',
   KO_KR: 'ko-kr',
@@ -84,7 +88,7 @@ const defaultDocsOutputPrefix = buildRegion === 'global' ? 'en-us' : 'zh-cn';
  */
 const cnDocs = [
   // 开始使用
-  { slug: 'overview', title: 'LightVela 是什么', file: '01-overview.md', group: '开始使用', description: 'LightVela 是腾讯轻量云团队推出的云端 Agent 托管产品，让每个人都能拥有认识你、记得你、越聊越懂你的专属 AI 伙伴。你的 Agent 7×24 小时在线、独立运行、随时可对话，模型、工具、人设都由你自己决定。', hideDescription: true },
+  { slug: 'overview', title: 'LightVela 是什么', file: '01-overview.md', group: '开始使用', description: 'LightVela 是腾讯轻量云团队推出的云端 AI Agent 产品，让每个人都能拥有认识你、记得你、越聊越懂你的专属 AI 伙伴。你的 Agent 7×24 小时在线、独立运行、随时可对话，模型、工具、人设都由你自己决定。', hideDescription: true },
   { slug: 'quickstart', title: '快速开始', file: '02-quickstart.md', group: '开始使用', description: '5 分钟跑通第一个 LightVela 对话。', hideDescription: true },
   { slug: 'create-first-hermes', title: '开通第一个 Hermes Agent', file: 'create-first-hermes.md', group: '开始使用', description: '登录并实名认证、开通套餐、为首个 Bot 命名，然后按引导完成初始配置。', hideDescription: true },
   { slug: 'core-concepts', title: '核心概念', file: '04-core-concepts.md', group: '开始使用', description: '理解 Hermes、模型、通道和技能。', hideDescription: true },
@@ -1524,7 +1528,27 @@ function koreanDocMetadata(file) {
   };
 }
 
+const thMetadata = JSON.parse(readFileSync(join(sourceRoot, 'th', 'metadata.json'), 'utf8'));
+const msMetadata = JSON.parse(readFileSync(join(sourceRoot, 'ms', 'metadata.json'), 'utf8'));
 for (const doc of globalDocs) {
+  const thaiMetadata = thMetadata[doc.file];
+  if (!thaiMetadata) throw new Error(`missing Thai docs metadata: ${doc.file}`);
+  doc.title[LOCALES.TH_TH] = thaiMetadata.title;
+  doc.description[LOCALES.TH_TH] = thaiMetadata.description;
+  if (doc.group && typeof doc.group === 'object') {
+    const group = thMetadata.groups[doc.group[LOCALES.EN_US]];
+    if (!group) throw new Error(`missing Thai docs group: ${doc.group[LOCALES.EN_US]}`);
+    doc.group[LOCALES.TH_TH] = group;
+  }
+  const metadata = msMetadata[doc.file];
+  if (!metadata) throw new Error(`missing Malay docs metadata: ${doc.file}`);
+  doc.title[LOCALES.MS_MY] = metadata.title;
+  doc.description[LOCALES.MS_MY] = metadata.description;
+  if (doc.group && typeof doc.group === 'object') {
+    const group = msMetadata.groups[doc.group[LOCALES.EN_US]];
+    if (!group) throw new Error(`missing Malay docs group: ${doc.group[LOCALES.EN_US]}`);
+    doc.group[LOCALES.MS_MY] = group;
+  }
   if (doc.group && typeof doc.group === 'object') {
     const englishGroup = doc.group[LOCALES.EN_US];
     const esGroup = ES_GROUP_LABELS[englishGroup];
@@ -1588,6 +1612,10 @@ const globalDocsForIndonesian = globalDocs.filter(
     existsSync(join(sourceRoot, 'id', doc.file)) &&
     !isHiddenFor(doc, LOCALES.ID_ID),
 );
+
+const globalDocsForThai = globalDocsForEnglish.filter((doc) => existsSync(join(sourceRoot, 'th', doc.file)));
+
+const globalDocsForMalay = globalDocsForEnglish.filter((doc) => existsSync(join(sourceRoot, 'ms', doc.file)));
 
 const globalDocsForSpanish = globalDocsForEnglish.filter((doc) =>
   existsSync(join(sourceRoot, 'es', doc.file)),
@@ -1662,6 +1690,20 @@ const docSets = [
     title: 'Dokumentasi LightVela',
   },
   {
+    outputPrefix: URL_LANGS.MS_MY,
+    sourcePrefix: 'ms',
+    locale: LOCALES.MS_MY,
+    docs: globalDocsForMalay,
+    title: 'Dokumentasi LightVela',
+  },
+  {
+    outputPrefix: URL_LANGS.TH_TH,
+    sourcePrefix: 'th',
+    locale: LOCALES.TH_TH,
+    docs: globalDocsForThai,
+    title: 'เอกสาร LightVela',
+  },
+  {
     outputPrefix: URL_LANGS.ES,
     sourcePrefix: 'es',
     locale: LOCALES.ES,
@@ -1729,6 +1771,10 @@ function allDocsForLinks(outputPrefix) {
     localeDocs = globalDocsForChineseLocale(LOCALES.ZH_HANT);
   } else if (outputPrefix === URL_LANGS.ID_ID) {
     localeDocs = globalDocsForIndonesian;
+  } else if (outputPrefix === URL_LANGS.TH_TH) {
+    localeDocs = globalDocsForThai;
+  } else if (outputPrefix === URL_LANGS.MS_MY) {
+    localeDocs = globalDocsForMalay;
   } else if (outputPrefix === URL_LANGS.ES) {
     localeDocs = globalDocsForSpanish;
   } else if (outputPrefix === URL_LANGS.JA_JP) {
@@ -1738,7 +1784,7 @@ function allDocsForLinks(outputPrefix) {
   } else {
     localeDocs = globalDocsForEnglish;
   }
-  return [URL_LANGS.ES, URL_LANGS.JA_JP, URL_LANGS.KO_KR].includes(outputPrefix)
+  return [URL_LANGS.TH_TH, URL_LANGS.MS_MY, URL_LANGS.ES, URL_LANGS.JA_JP, URL_LANGS.KO_KR].includes(outputPrefix)
     ? localeDocs
     : [...cnDocs, ...localeDocs];
 }
@@ -1761,6 +1807,8 @@ function fileToHrefFor(outputPrefix) {
 function localizedImageName(imageName, locale) {
   const suffixesByLocale = {
     [LOCALES.EN_US]: ['-en'],
+    [LOCALES.TH_TH]: ['-th', '-en'],
+    [LOCALES.MS_MY]: ['-ms', '-en'],
     [LOCALES.ZH_HANT]: ['-zh-hant'],
     [LOCALES.ID_ID]: ['-id', '-en'],
     [LOCALES.ES]: ['-es', '-en'],
@@ -1804,11 +1852,14 @@ function rewriteMarkdownLinkDestination(destination, currentDir, fileToHref, out
     return target ? `${target}${suffix}${titleSuffix}` : destination;
   }
 
-  if (![URL_LANGS.ES, URL_LANGS.JA_JP, URL_LANGS.KO_KR].includes(outputPrefix)) return destination;
+  if (![URL_LANGS.TH_TH, URL_LANGS.MS_MY, URL_LANGS.ES, URL_LANGS.JA_JP, URL_LANGS.KO_KR].includes(outputPrefix)) return destination;
 
   const docsPath = hrefPath.startsWith('https://lightvela.ai/')
     ? hrefPath.slice('https://lightvela.ai'.length)
     : hrefPath;
+  if ([URL_LANGS.TH_TH, URL_LANGS.MS_MY].includes(outputPrefix) && /^\/(?:$|(?:subscribe|changelog|about|blog|support|privacy-policy|terms-of-service|open-source-licenses|cookie-policy)(?:\/|$))/.test(docsPath)) {
+    return `/${outputPrefix}${docsPath}${suffix}${titleSuffix}`;
+  }
   if (docsPath !== '/docs' && !docsPath.startsWith('/docs/')) return destination;
 
   const slug = docsPath.slice('/docs'.length).replace(/^\//, '').replace(/\/$/, '');
@@ -1859,7 +1910,7 @@ function writeDoc(docSet, doc) {
   const raw = readFileSync(inputPath, 'utf8').replace(/\r\n/g, '\n');
   const body = convert(
     normalizeMarkdownLinks(
-      stripTitle(raw, rawTitle, [LOCALES.ES, LOCALES.JA_JP, LOCALES.KO_KR].includes(docSet.locale)),
+      stripTitle(raw, rawTitle, [LOCALES.TH_TH, LOCALES.MS_MY, LOCALES.ES, LOCALES.JA_JP, LOCALES.KO_KR].includes(docSet.locale)),
       doc.file,
       docSet.outputPrefix,
       docSet.locale,

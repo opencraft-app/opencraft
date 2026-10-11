@@ -155,3 +155,37 @@ causing an invalid declaration and inherited unreadable text. Validate the
 computed color pair and contrast in light, dark and extension themes, including
 the enabled confirm state and long-path/error states, before claiming visual
 completion.
+
+
+## Expo design constraints
+
+The mobile direction uses iOS interaction conventions and OpenCraft semantic roles. It is not a pixel copy of system Settings or a separate feature palette. Constrain implementation choices and observable behavior before changing local appearance. Importing HeroUI is not evidence that a control is correctly composed.
+
+### Owners and composition
+
+| Decision | Owner / constraint |
+|---|---|
+| Color, material, density and typography | Existing design-system semantic tokens and typography registry. mobile-visual-tokens is the mobile brand adapter; HeroUI CSS variables must project the same roles. A feature must not introduce another palette or font scale. |
+| Ordinary editable field | HeroUI TextField, Label, Input, Description and FieldError as needed. The composition owns label, invalid/disabled semantics and its surface variant; the feature owns value, validation and submission. |
+| Actions | HeroUI Button variants, or the existing shared Workbench button adapter after documenting its semantic mapping. One primary transaction per action group; navigation, cancellation and secondary actions do not compete with it. |
+| Options and preferences | Switch for a boolean, RadioGroup for exclusive alternatives, Select for a collapsed option list, Tabs for sibling content. A checkmark inside a Button does not implement the complete control contract. |
+| Identity, rows and feedback | Avatar, ListGroup, Spinner, Separator, Skeleton where applicable. Cache and failure fallback stay outside the component's visual state. |
+| Menus and local dialogs | Library Menu/Dialog/BottomSheet composition owns overlay, dismiss and animation. The host owns available viewport, safe area and keyboard admission once. A navigation page or persistent multi-pane surface keeps its existing Shell owner. |
+| Specialist editor / runtime content | Rich attributed native text, virtual lists and original embedded DOM retain their own adapters. Do not replace them with ordinary Input to improve a library-import count. |
+
+Before implementation, record the semantic role, current owner, installed API, surface context and expected interaction states. Inspect the installed version instead of copying a newer demo. A missing capability may use a platform adapter with a stated responsibility and verification; it does not justify a new feature control family. Theme/background capabilities are opt-in and must not be inferred from a screenshot or component name.
+
+### Override and state rules
+
+- Feature styles may allocate layout, slots and content width. Color, typography, control radius, focus, pressed, selected, disabled and loading treatments belong to the shared primitive/theme adapter. If a repeated override is necessary, move the role mapping to that existing owner and migrate its consumers together.
+- Do not combine a hand-painted border/shadow/pressed layer with the library's animated layer. Never override animation-owned opacity/transform with a second driver. Configure the library's supported variant/animation/background ports.
+- Input focus, invalidity, disabled state and selected navigation are distinct. Decide the platform focus treatment centrally; preserve cursor, selection, VoiceOver semantics and Web/external-keyboard focus visibility. Do not globally remove focus indicators to make one iPhone screenshot quieter. The field's resting surface must not change geometry on focus or validation.
+- Button optical size and touch capacity are separate. Touch controls must have at least the shared 44-point target; font scaling and long localized labels may enlarge it. Avoid fixed content heights and clipping. Icon roles use the shared OpenCraft glyph/size contract rather than feature-selected alternatives.
+- Form presentation reads actual host capacity and keyboard occlusion, preserving field focus, selection and draft during resizing. Short editing/confirmation and navigation/persistent panels are different intents; do not implement every one as a full-width bottom sheet. No device-name thresholds or fixed keyboard height. The host selects sheet/dialog/panel geometry without remounting the form.
+- Destructive and transaction commands retain their existing confirmation, validation, pending and failure contracts during component migration. A style change cannot replace domain behavior or hide an error.
+
+### Acceptance and exceptions
+
+For an affected control, inspect the actual mounted surface at rest, press, focus, invalid, disabled and pending states. For fields also check selection, submit, cancel, keyboard show/hide, long text, font scaling, and preservation of draft/focus under resize. On Expo Web include mouse, keyboard and coarse touch; on native include the system keyboard and accessible modal isolation. Check phone and a wide/short container separately; iPad floating/external keyboard and hardware motion require device evidence, not a typecheck or browser fixture.
+
+Maintain the local audit as a migration baseline, not a retrospective blanket ban. For a justified exception, record the missing capability, semantic owner, scope of the override and observable acceptance in the Task Pack. Use that receipt to retire obsolete exceptions on library upgrades. Do not add a global visual test suite or require new screenshot artifacts for unrelated edits.

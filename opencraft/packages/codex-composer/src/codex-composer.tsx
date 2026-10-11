@@ -666,9 +666,10 @@ export interface CodexComposerHandle {
 export interface ComposerQueuedSubmissionPresentation {
   readonly id: string;
   readonly preview: string;
-  readonly state: "submitting" | "queued" | "failed";
+  readonly state: "submitting" | "queued" | "failed" | "unknown";
   readonly operation: "idle" | "updating" | "deleting" | "starting";
   readonly actionable: boolean;
+  readonly dismissible?: boolean;
   /** Whether this runtime permits changing authoritative queue order. */
   readonly reorderable?: boolean;
   readonly editableContent: ComposerQueuedSubmissionContent;
@@ -1787,6 +1788,9 @@ export const CodexComposer = forwardRef<
             ? "Steer active response"
             : intl.formatMessage({ id: "chat.send", defaultMessage: "Send message" });
   const inverseFollowUpAction = resolveComposerFollowUpAction(invertComposerFollowUpAction(defaultFollowUpAction), availableFollowUpActions);
+  // Typed content that cannot be sent yet explains why, instead of a silently grey button.
+  const waitingForHostWithContent = submissionDisabled && !disabled && primaryAction !== "stop"
+    && composerSnapshot.canSubmit;
   const primaryActionTitle = submissionDisabled && primaryAction !== "stop"
     ? "Waiting for execution host"
     : isStreaming && primaryAction !== "stop" && inverseFollowUpAction !== null && inverseFollowUpAction !== defaultFollowUpAction
@@ -1808,6 +1812,10 @@ export const CodexComposer = forwardRef<
           ...item,
           actionable:
             item.actionable &&
+            (editingQueuedSubmissionId === null ||
+              item.id === editingQueuedSubmissionId),
+          dismissible:
+            item.dismissible &&
             (editingQueuedSubmissionId === null ||
               item.id === editingQueuedSubmissionId),
           editing: item.id === editingQueuedSubmissionId,
@@ -2497,6 +2505,11 @@ export const CodexComposer = forwardRef<
           </div>
         </div>
       </div>
+      {waitingForHostWithContent ? (
+        <p className="codex-composer-connection-hint" role="status">
+          {intl.formatMessage({ id: "chat.waitingForHostToSend", defaultMessage: "Connecting. You can send once connected." })}
+        </p>
+      ) : null}
     </div>
   );
 });

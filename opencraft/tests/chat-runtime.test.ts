@@ -1949,6 +1949,8 @@ test("explicit follow-up submission alone owns optimistic queue state", async ()
   const operation = runtime.submit(intent);
   assert.equal(runtime.getSnapshot().queuedSubmissions[0]?.state, "submitting");
   assert.equal(runtime.getSnapshot().pendingSubmissions.length, 0);
+  assert.equal(runtime.getSnapshot().timeline.frames.flatMap((frame) => frame.blocks)
+    .some((block) => block.type === "user-message" && block.message === "Next"), false);
   resolveSubmission({
     commandId: intent.commandId,
     clientMessageId: intent.clientMessageId,
@@ -1960,6 +1962,119 @@ test("explicit follow-up submission alone owns optimistic queue state", async ()
   });
   await operation;
   assert.equal(runtime.getSnapshot().queuedSubmissions[0]?.state, "queued");
+  assert.equal(runtime.getSnapshot().timeline.frames.flatMap((frame) => frame.blocks)
+    .some((block) => block.type === "user-message" && block.message === "Next"), false);
+  runtime.dispose();
+});
+
+test("deleting a failed local follow-up removes it without a Host queue request", async () => {
+  const key = createConversationKey("local", "thread-one");
+  let hostDeletes = 0;
+  const runtime = createReplicaConversationRuntime({
+    key,
+    replica: new FakeReplica(threadView()),
+    commands: commands({
+      async submit() { throw new Error("Model unavailable"); },
+      async deleteQueuedSubmission() { hostDeletes += 1; return true; },
+    }),
+    history: { async loadOlder() {} },
+  });
+  const composer = createComposerController({ type: "enqueue-follow-up", key }, { now: () => 100, createId: () => "failed-follow-up" });
+  composer.dispatch({ type: "set-document", document: { version: 1, blocks: [
+    { type: "paragraph", children: [{ type: "text", text: "Next" }] },
+  ] } });
+  const intent = composer.createSubmitIntent();
+  await assert.rejects(runtime.submit(intent), /Model unavailable/);
+  assert.equal(runtime.getSnapshot().queuedSubmissions[0]?.state, "failed");
+  await runtime.deleteQueuedSubmission(intent.commandId);
+  assert.equal(runtime.getSnapshot().queuedSubmissions.length, 0);
+  assert.equal(hostDeletes, 0);
+  runtime.dispose();
+});
+
+test("an unconfirmed follow-up cannot be dismissed or deleted before Host reconciliation", async () => {
+  const key = createConversationKey("local", "thread-one");
+  let submits = 0;
+  let hostDeletes = 0;
+  const runtime = createReplicaConversationRuntime({
+    key,
+    replica: new FakeReplica(threadView()),
+    commands: commands({
+      async submit() { submits += 1; throw new SubmissionOutcomeUnknownError(); },
+      async deleteQueuedSubmission() { hostDeletes += 1; return true; },
+    }),
+    history: { async loadOlder() {} },
+  });
+  const composer = createComposerController({ type: "enqueue-follow-up", key }, { now: () => 100, createId: () => "unknown-follow-up" });
+  composer.dispatch({ type: "set-document", document: { version: 1, blocks: [
+    { type: "paragraph", children: [{ type: "text", text: "Next" }] },
+  ] } });
+  const intent = composer.createSubmitIntent();
+  await assert.rejects(runtime.submit(intent), SubmissionOutcomeUnknownError);
+  assert.equal(runtime.getSnapshot().queuedSubmissions[0]?.state, "unknown");
+  runtime.dismissFailedSubmission(intent.commandId);
+  await assert.rejects(runtime.deleteQueuedSubmission(intent.commandId), /not deletable/);
+  await assert.rejects(runtime.submit(intent), SubmissionOutcomeUnknownError);
+  assert.equal(submits, 1);
+  assert.equal(hostDeletes, 0);
+  runtime.replaceQueuedSubmissions([{
+    id: "server-follow-up",
+    clientUserMessageId: intent.clientMessageId,
+    input: [{ type: "text", text: "Next", text_elements: [] }],
+    createdAt: 101,
+    pausedReason: null,
+  }]);
+  assert.deepEqual(runtime.getSnapshot().queuedSubmissions.map((item) => [item.serverSubmissionId, item.state]),
+    [["server-follow-up", "queued"]]);
+  runtime.replaceQueuedSubmissions([]);
+  assert.equal(runtime.getSnapshot().queuedSubmissions.length, 0);
+  runtime.dispose();
+});
+
+test("an unconfirmed follow-up retires when its client message appears in authoritative history", async () => {
+  const key = createConversationKey("local", "thread-one");
+  const replica = new FakeReplica(threadView());
+  const runtime = createReplicaConversationRuntime({
+    key, replica,
+    commands: commands({ async submit() { throw new SubmissionOutcomeUnknownError(); } }),
+    history: { async loadOlder() {} },
+  });
+  const composer = createComposerController({ type: "enqueue-follow-up", key }, { now: () => 100, createId: () => "unknown-follow-up" });
+  composer.dispatch({ type: "set-document", document: { version: 1, blocks: [
+    { type: "paragraph", children: [{ type: "text", text: "Next" }] },
+  ] } });
+  const intent = composer.createSubmitIntent();
+  await assert.rejects(runtime.submit(intent), SubmissionOutcomeUnknownError);
+  replica.setEntity(threadView({ turns: [{ id: "confirmed", status: "inProgress", items: [
+    { id: "confirmed-user", type: "userMessage", clientId: intent.clientMessageId, content: [{ type: "text", text: "Next" }] },
+  ] }] }));
+  assert.equal(runtime.getSnapshot().queuedSubmissions.length, 0);
+  runtime.dispose();
+});
+
+test("Host queue acknowledgement arriving before a lost receipt does not leave a local unknown claim", async () => {
+  const key = createConversationKey("local", "thread-one");
+  let rejectReceipt!: (error: Error) => void;
+  const runtime = createReplicaConversationRuntime({
+    key,
+    replica: new FakeReplica(threadView()),
+    commands: commands({ submit: () => new Promise((_resolve, reject) => { rejectReceipt = reject; }) }),
+    history: { async loadOlder() {} },
+  });
+  const composer = createComposerController({ type: "enqueue-follow-up", key }, { now: () => 100, createId: () => "racing-follow-up" });
+  composer.dispatch({ type: "set-document", document: { version: 1, blocks: [
+    { type: "paragraph", children: [{ type: "text", text: "Next" }] },
+  ] } });
+  const intent = composer.createSubmitIntent();
+  const operation = runtime.submit(intent);
+  runtime.replaceQueuedSubmissions([{
+    id: "server-follow-up", clientUserMessageId: intent.clientMessageId,
+    input: [{ type: "text", text: "Next", text_elements: [] }], createdAt: 101, pausedReason: null,
+  }]);
+  rejectReceipt(new SubmissionOutcomeUnknownError());
+  await assert.rejects(operation, SubmissionOutcomeUnknownError);
+  runtime.replaceQueuedSubmissions([]);
+  assert.equal(runtime.getSnapshot().queuedSubmissions.length, 0);
   runtime.dispose();
 });
 

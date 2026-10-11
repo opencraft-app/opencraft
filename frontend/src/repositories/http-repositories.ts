@@ -331,7 +331,7 @@ const authStorage = () => {
   return storage;
 };
 
-export const readStoredAuthToken = (): string | null => {
+export const readStoredAuthToken = (_target?: unknown): string | null => {
   if (typeof window !== "undefined") {
     const embedded = (window as Window & { __LIGHTVELA_EMBEDDED_TOKEN__?: string }).__LIGHTVELA_EMBEDDED_TOKEN__;
     if (typeof embedded === "string" && embedded.trim()) return embedded.trim();
@@ -345,7 +345,7 @@ export const readStoredAuthToken = (): string | null => {
   return value ? value : null;
 };
 
-export const writeStoredAuthToken = (token?: string | null) => {
+export const writeStoredAuthToken = (token?: string | null, _target?: unknown) => {
   const previous = readStoredAuthToken();
   const normalized = token?.trim();
   if (typeof window !== "undefined") {
@@ -642,6 +642,8 @@ const mapDesktopSession = (raw: Record<string, unknown>): CloudDesktopSession =>
   const session: CloudDesktopSession = { status };
   const installProgress = numberField(raw, "install_progress", "installProgress");
   if (installProgress !== undefined) session.installProgress = installProgress;
+  const installPhase = stringField(raw, "install_phase", "installPhase");
+  if (installPhase !== undefined) session.installPhase = installPhase;
   const message = stringField(raw, "message");
   if (message !== undefined) session.message = message;
   const wsUrl = stringField(raw, "ws_url", "wsUrl");

@@ -33,6 +33,7 @@ vi.mock("@/contexts/runtime-config-context", () => ({
   usePaidBillingEnabled: () => false,
   useRealnamePhoneVerificationEnabled: () => false,
   useCloudDesktopEnabled: () => true,
+  useReferralEnabled: () => false,
 }));
 
 vi.mock("@/contexts/session-context", () => ({
@@ -146,7 +147,7 @@ const renderLabPage = () => render(
   </AppNavigationProvider>,
 );
 
-describe("AgentSettingsPage 实验室 › 云桌面导航", () => {
+describe("AgentSettingsPage 实验室 › 云电脑导航", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     delete (window as Window & { show?: unknown }).show;
@@ -167,13 +168,13 @@ describe("AgentSettingsPage 实验室 › 云桌面导航", () => {
     cleanup();
   });
 
-  it("实验室分组包含云桌面入口并标记当前页", async () => {
+  it("实验室分组包含云电脑入口并标记当前页", async () => {
     renderLabPage();
 
     const navigation = await screen.findByRole("navigation", { name: "探索" });
     const labsGroup = within(navigation).getByRole("group", { name: "实验室" });
 
-    const desktopLink = within(labsGroup).getByRole("link", { name: "云桌面" });
+    const desktopLink = within(labsGroup).getByRole("link", { name: "云电脑" });
     expect(desktopLink).toHaveAttribute("href", "/agents/labs/cloud-desktop");
     expect(desktopLink).toHaveAttribute("aria-current", "page");
 
@@ -184,12 +185,12 @@ describe("AgentSettingsPage 实验室 › 云桌面导航", () => {
     expect(await screen.findByText("Cloud Desktop panel")).toBeInTheDocument();
   });
 
-  it("云桌面入口带 Beta 标记", async () => {
+  it("云电脑入口带 Beta 标记", async () => {
     renderLabPage();
 
     const navigation = await screen.findByRole("navigation", { name: "探索" });
     const labsGroup = within(navigation).getByRole("group", { name: "实验室" });
-    const desktopLink = within(labsGroup).getByRole("link", { name: "云桌面" });
+    const desktopLink = within(labsGroup).getByRole("link", { name: "云电脑" });
 
     expect(within(desktopLink).getByText("Beta")).toBeInTheDocument();
   });

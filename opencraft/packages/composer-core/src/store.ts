@@ -52,6 +52,16 @@ export type ComposerAction =
 export interface ComposerStoreServices {
   readonly now: () => number;
   readonly createId: () => string;
+  /** Client-local content only. Submission receipts and execution are not drafts. */
+  readonly drafts?: ComposerDraftStorage;
+  readonly onDraftStorageError?: (error: unknown) => void;
+}
+
+export type ComposerSavedContent = Pick<ComposerDraft, "document" | "attachments" | "context">;
+
+export interface ComposerDraftStorage {
+  read(target: ComposerTarget): ComposerSavedContent | null;
+  write(target: ComposerTarget, content: ComposerSavedContent): void;
 }
 
 export interface ComposerStoreSnapshot {
@@ -116,6 +126,10 @@ export interface ComposerTransientTextInputFinalization {
 
 export interface ComposerController {
   getSnapshot(): ComposerStoreSnapshot;
+  /** Content retained by this Controller, including inactive target drafts. */
+  hasRetainedContent(): boolean;
+  /** Content already owned by an active or cached semantic target. */
+  hasTargetContent(target: ComposerTarget): boolean;
   subscribe(listener: () => void): () => void;
   getInputInteractionSnapshot(): ComposerDictationInteraction | null;
   subscribeInputInteraction(listener: () => void): () => void;
@@ -250,6 +264,12 @@ function reduce(
   }
 }
 
+function draftHasContent(draft: ComposerDraft): boolean {
+  return !isComposerDocumentEmpty(draft.document)
+    || draft.attachments.length > 0
+    || draft.context.length > 0;
+}
+
 function snapshot(
   revision: number,
   draft: ComposerDraft,
@@ -264,11 +284,7 @@ function snapshot(
   const hasUnavailableAssets = draft.attachments.some(
     (attachment) => attachment.lifecycle !== "ready" || attachment.uri === null,
   );
-  const hasContent =
-    !isComposerDocumentEmpty(draft.document) ||
-    draft.attachments.length > 0 ||
-    draft.context.length > 0 ||
-    hasTransientText;
+  const hasContent = draftHasContent(draft) || hasTransientText;
   return {
     revision,
     draft,
@@ -287,9 +303,20 @@ export function createComposerController(
   target: ComposerTarget,
   services: ComposerStoreServices,
 ): ComposerController {
+  const restoreDraft = (nextTarget: ComposerTarget): ComposerDraft => {
+    const fresh = createDraft(nextTarget, services);
+    try {
+      const saved = services.drafts?.read(nextTarget);
+      return saved ? { ...fresh, ...saved } : fresh;
+    } catch (error) { services.onDraftStorageError?.(error); return fresh; }
+  };
+  const persist = (value: ComposerDraft) => {
+    try { services.drafts?.write(value.target, { document: value.document, attachments: value.attachments, context: value.context }); }
+    catch (error) { services.onDraftStorageError?.(error); }
+  };
   let revision = 0;
   let contentEpoch = 0;
-  let draft = createDraft(target, services);
+  let draft = restoreDraft(target);
   let currentSnapshot = snapshot(revision, draft);
   const draftCache = new Map<string, ComposerDraft>();
   const listeners = new Set<() => void>();
@@ -329,6 +356,13 @@ export function createComposerController(
 
   const publish = (next: ComposerDraft) => {
     if (next === draft) return;
+    // Lifecycle/selection changes must not overwrite another surface's content.
+    // Only actual content edits (including accepted-send clear) write storage.
+    if (next.document !== draft.document || next.attachments !== draft.attachments || next.context !== draft.context) {
+      if (encodeComposerTarget(next.target) === encodeComposerTarget(draft.target)) persist(next);
+    } else if (next.target !== draft.target && next.target.type === "new-thread") {
+      persist(next); // Execution placement changed without changing Draft identity.
+    }
     draft = next;
     revision += 1;
     currentSnapshot = snapshot(
@@ -373,6 +407,19 @@ export function createComposerController(
 
   return {
     getSnapshot: () => currentSnapshot,
+    hasRetainedContent() {
+      if (disposed) return false;
+      const activeTarget = encodeComposerTarget(draft.target);
+      return currentSnapshot.hasContent || [...draftCache.entries()]
+        .some(([key, cached]) => key !== activeTarget && draftHasContent(cached));
+    },
+    hasTargetContent(target) {
+      if (disposed) return false;
+      const key = encodeComposerTarget(target);
+      if (key === encodeComposerTarget(draft.target)) return currentSnapshot.hasContent;
+      const cached = draftCache.get(key);
+      return cached !== undefined && draftHasContent(cached);
+    },
     getInputInteractionSnapshot: () => transient?.interaction ?? null,
     subscribeInputInteraction(listener) {
       ensureOpen(); interactionListeners.add(listener);
@@ -417,7 +464,7 @@ export function createComposerController(
           return;
         }
         const restored = draftCache.get(targetKey);
-        publish(restored ?? createDraft(action.target, services));
+        publish(restored ?? restoreDraft(action.target));
         return;
       }
       if (action.type === "clear") draftCache.delete(encodeComposerTarget(draft.target));
@@ -444,7 +491,9 @@ export function createComposerController(
       }
       for (const [key, cached] of draftCache) {
         if (cached.id !== draftId || !cached.attachments.some(attachment => attachment.id === attachmentId)) continue;
-        draftCache.set(key, reduce(cached, { type: "update-attachment", id: attachmentId, patch }, services));
+        const next = reduce(cached, { type: "update-attachment", id: attachmentId, patch }, services);
+        draftCache.set(key, next);
+        persist(next);
         return true;
       }
       return false;

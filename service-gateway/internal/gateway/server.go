@@ -82,6 +82,7 @@ type Handler struct {
 	adminBridgeConfigured  bool
 	realnameWallEnabled    bool
 	workerActions          *workerActionService
+	speech                 *speechService
 	workerActionBackend    workerActionBackend
 	trustedProxyCIDRs      []netip.Prefix
 }
@@ -195,6 +196,20 @@ func NewHandler(cfg Config, opts ...Option) (http.Handler, error) {
 	authTransport := newUpstreamTransport(defaultResponseHeaderTimeout)
 
 	configuredRoutes := append([]Route(nil), cfg.Routes...)
+	var speech *speechService
+	if cfg.Speech != nil {
+		for _, route := range cfg.Routes {
+			if route.Name == speechRouteName || strings.HasPrefix(route.Prefix, "/api/speech") {
+				return nil, errors.New("speech route conflicts with a configured route")
+			}
+		}
+		var err error
+		speech, err = newSpeechService(*cfg.Speech)
+		if err != nil {
+			return nil, err
+		}
+		configuredRoutes = append(configuredRoutes, speechRoute(*cfg.Speech))
+	}
 	if cfg.Collaboration != nil {
 		if strings.TrimSpace(cfg.Collaboration.Upstream) == "" ||
 			strings.TrimSpace(cfg.Collaboration.UpstreamBearerTokenEnv) == "" {
@@ -263,6 +278,7 @@ func NewHandler(cfg Config, opts ...Option) (http.Handler, error) {
 			Transport: authTransport,
 		},
 		routes:                routes,
+		speech:                speech,
 		adminRealm:            "Lightclaw Admin",
 		adminBridgeCookieName: defaultAdminBridgeCookieName,
 		adminBridgeCookieTTL:  defaultAdminBridgeCookieTTL,
@@ -634,6 +650,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		injectIdentityHeaders(r.Header, session)
 		rec := newStatusRecorder(w)
+		if matched.route.Name == speechRouteName && h.speech != nil {
+			h.speech.serve(rec, r, session.Session.User.ID)
+			h.observeRequest(start, matched.route.Name, r, rec.statusCode())
+			h.logRequest(start, matched, session, r, rec.statusCode(), "")
+			return
+		}
 		matched.proxy.ServeHTTP(rec, r)
 		h.observeRequest(start, matched.route.Name, r, rec.statusCode())
 		h.logRequest(start, matched, session, r, rec.statusCode(), "")

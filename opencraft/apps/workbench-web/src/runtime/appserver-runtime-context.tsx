@@ -14,7 +14,7 @@ import {
 } from "@tanstack/react-query";
 import { composerCapabilitiesOptions, invalidateComposerCapabilities, changesComposerCapabilities } from "./composer-capabilities-query";
 import { requiresEmbeddedLightVelaAccountPreflight } from "./lightvela-web-bootstrap";
-import { changesThreadCatalog, sidebarThreadCatalogQueryKey, threadCatalogPhase, managedCatalogDiscoveryPhase, type HostThreadCatalogState } from "./thread-catalog-query";
+import { changesThreadCatalog, mergeThreadCatalogPages, sidebarThreadCatalogQueryKey, threadCatalogPhase, managedCatalogDiscoveryPhase, type HostThreadCatalogState } from "./thread-catalog-query";
 import { webSshDiscoveryLifecycle } from "./web-ssh-discovery";
 import {
   AppServerRpcError,
@@ -40,6 +40,7 @@ import { BlobResourceService } from "@opencraft/blob-resources";
 import { ImageProcessingService } from "@opencraft/image-processing";
 import { processBrowserImage } from "@opencraft/image-processing/browser";
 import { IndexedDbBlobStorage } from "@opencraft/blob-resources/browser";
+import { BrowserComposerDrafts } from "./browser-composer-drafts";
 import {
   OPENCRAFT_BROWSER_CAPABILITY,
   OPENCRAFT_BROWSER_EXTENSION,
@@ -200,7 +201,8 @@ export interface AppServerHostCatalog {
   readonly connectorApprovals: ConnectorApprovalQueue;
   readonly agentRuntimes: AgentRuntimeAccess;
   readonly threadManagement: {
-    capabilities(hostId: string): { fork: boolean; rename: boolean; archive: boolean; delete: boolean };
+    capabilities(hostId: string): { fork: boolean; rename: boolean; archive: boolean; delete: boolean; pin?: boolean };
+    setPinned(hostId: string, threadId: string, pinned: boolean): Promise<void>;
     rename(hostId: string, threadId: string, name: string): Promise<void>;
     delete(hostId: string, threadId: string): Promise<void>;
     fork(hostId: string, threadId: string): Promise<string>;
@@ -616,6 +618,8 @@ export type WebWorkbenchApplicationSupervisor =
   | ActiveWebWorkbenchApplicationSupervisor;
 
 export interface WebWorkbenchSupervisorOptions {
+  /** Product-supplied provider; embedded credentials never enter the generic voice extension. */
+  readonly speechInputProvider?: import("@opencraft/plugin-voice-input").SpeechInputProvider;
   /** Internal Application-owned lane; absent keeps full Workbench eager behavior. */
   readonly optionalFeatureStartup?: OptionalFeatureStartup;
   /** Application-owned profiles that must never enter the durable Host store. */
@@ -1058,6 +1062,15 @@ export async function createWebWorkbenchApplicationSupervisor(
       ),
     });
     startupRollback.push(() => lightVelaAccount.dispose());
+    // Existing task View continuity remains its sole persistence owner. Bot
+    // content uses a separate account-bound adapter; an old account cannot
+    // read or write through it after its credential scope is revoked.
+    const botDraftScope = lightVelaAccount.getSnapshot().credentialScope;
+    const botDrafts = new BrowserComposerDrafts(window.localStorage,
+      currentProductStorageKey(`opencraft.composer-drafts.v1.bot.${botDraftScope}`));
+    startupRollback.push(lightVelaAccount.subscribe(() => {
+      if (lightVelaAccount.getSnapshot().credentialScope !== botDraftScope) botDrafts.revokeAndClear();
+    }));
     const extensionPersistence = await openClientExtensionPersistence(currentProductDatabaseName);
     startupRollback.push(() => extensionPersistence.backend.close());
     const extensions = new ExtensionSupervisor({
@@ -1127,7 +1140,8 @@ export async function createWebWorkbenchApplicationSupervisor(
         await import("@opencraft/plugin-voice-input/runtime-entry")
       ).default;
       signal?.throwIfAborted();
-      return createVoiceInputExtension(undefined, platform === "web" ? { webSpeech: { usePreferences: useVoiceInputPreference } } : {});
+      return createVoiceInputExtension(options.speechInputProvider, options.speechInputProvider
+        ? {} : platform === "web" ? { webSpeech: { usePreferences: useVoiceInputPreference } } : {});
     });
     if (import.meta.env.VITE_INCLUDE_BUILTIN_AGENTS_PLUGIN === "true") {
       await extensions.loadOptional("vela.builtin-agents", async () => {
@@ -1225,6 +1239,7 @@ export async function createWebWorkbenchApplicationSupervisor(
         source: botSource,
         resolver: new AppServerBotConversationResolver(botConversations.service),
         showNavigation: false,
+        drafts: botDrafts,
       });
     });
     let connectBotHost: (hostId: string) => Promise<void> = async () => { throw new Error("暂无可连接的实例。"); };
@@ -1360,10 +1375,21 @@ export async function createWebWorkbenchApplicationSupervisor(
     startupRollback.length = 0;
     return hostless;
   }
-  const bootstrapLocation = requestedBootstrapLocation === null ? null : resolveRetainedWorkbenchLocation(
+  let draftCredentialScope = lightVelaAccount.getSnapshot().credentialScope;
+  let browserDraftStore = createBrowserConversationDraftStorage(`${workbenchProductId}.${draftCredentialScope}`);
+  const normalizedBootstrapLocation = requestedBootstrapLocation === null ? null : resolveRetainedWorkbenchLocation(
     requestedBootstrapLocation,
     { hasHost: hostId => profiles.some(profile => profile.hostId === hostId), bindings: conversationBindings, scopes: null },
   );
+  const savedNewTarget = normalizedBootstrapLocation?.kind !== "thread" && requestedBootstrapLocation?.kind === "draft"
+    ? await browserDraftStore.loadNewTarget(requestedBootstrapLocation.draftId) : null;
+  const restoredNewTarget = savedNewTarget && requestedBootstrapLocation?.kind === "draft"
+    && savedNewTarget.execution.hostId === requestedBootstrapLocation.hostId
+    && profiles.some(profile => profile.hostId === savedNewTarget.execution.hostId && profile.enabled)
+    ? savedNewTarget : null;
+  const bootstrapLocation = restoredNewTarget
+    ? createWorkbenchDraftLocation(restoredNewTarget.execution.hostId, restoredNewTarget.draftId)
+    : normalizedBootstrapLocation;
   const persistedHostId = window.localStorage.getItem(currentProductStorageKey("vela.active-host-id"));
   const requestedHostId = bootstrapLocation?.kind === "thread"
     ? bootstrapLocation.key.hostId
@@ -1476,12 +1502,14 @@ export async function createWebWorkbenchApplicationSupervisor(
       ? createWorkbenchThreadLocation(initialHostId, persistedThreadId)
       : null;
   const conversationScopes = createConversationScopeRegistry({
-    // A process-local Draft cannot be resurrected from a history ID. Only a
-    // durable promotion alias can recover its canonical Thread on bootstrap.
+    isInputRetained: (scopeId) => conversationViews.hasRetainedInput(scopeId),
+    // Local persisted input may restore its client identity and placement.
+    // A canonical promotion alias still wins; execution locks never restore.
     initialDraft: initialThreadLocation === null
       ? {
           entrypoint: "home",
-          execution: {
+          ...(restoredNewTarget ? { draftId: restoredNewTarget.draftId } : {}),
+          execution: restoredNewTarget?.execution ?? {
             hostId: active.hostId,
             workspace: {
               cwd: initialWorkspaceRoot,
@@ -1507,8 +1535,6 @@ export async function createWebWorkbenchApplicationSupervisor(
     },
   });
   startupRollback.push(() => conversationLeases.dispose());
-  let draftCredentialScope = lightVelaAccount.getSnapshot().credentialScope;
-  let browserDraftStore = createBrowserConversationDraftStorage(`${workbenchProductId}.${draftCredentialScope}`);
   let currentDisplayContinuity = createConversationDisplayContinuity({
     namespace: `${workbenchProductId}.${draftCredentialScope}`,
     storage: browserDraftStore.displayStorage,
@@ -1536,10 +1562,14 @@ export async function createWebWorkbenchApplicationSupervisor(
     draftContinuity: createConversationDraftContinuity({
       namespace: `${workbenchProductId}.${draftCredentialScope}`,
       storage: browserDraftStore.storage,
+      delayMs: 0,
     }),
     onDisposeView(viewId) {
       disposeViewResources(viewId);
       routeCheckpoints.delete(viewId);
+    },
+    onEvictDraft(viewId) {
+      navigation.forgetView(viewId);
     },
   });
   startupRollback.push(() => conversationViews.dispose());
@@ -1558,9 +1588,11 @@ export async function createWebWorkbenchApplicationSupervisor(
       storage: browserDraftStore.displayStorage,
     });
     for (const listener of displayListeners) listener();
+    navigation.clearPreferredViews();
     conversationViews.replaceDraftContinuity(createConversationDraftContinuity({
       namespace: `${workbenchProductId}.${nextScope}`,
       storage: browserDraftStore.storage,
+      delayMs: 0,
     }));
   });
   startupRollback.push(stopDraftScope);
@@ -1578,6 +1610,21 @@ export async function createWebWorkbenchApplicationSupervisor(
     conversationScopes,
     {
       ...routerOptions,
+      resolveCanonicalLocation(location) {
+        return resolveRetainedWorkbenchLocation(location, {
+          hasHost: () => true,
+          bindings: conversationBindings,
+          scopes: conversationScopes,
+        }) ?? location;
+      },
+      isRetainedView(location, viewId) {
+        const owner = conversationViews.getDraftOwner(viewId);
+        if (owner === null) return false;
+        const target = owner.composer.getSnapshot().draft.target;
+        return location.kind === "draft"
+          ? target.type === "new-thread" && target.execution.hostId === location.hostId && target.draftId === location.draftId
+          : target.type === "existing-thread" && target.key.hostId === location.key.hostId && target.key.threadId === location.key.threadId;
+      },
       resolveRestoredEntry: createWorkbenchEntryResolver({
         hasHost: hostId => hostProfiles.getSnapshot().profiles.some(profile => profile.enabled && profile.hostId === hostId),
         bindings: conversationBindings,
@@ -1794,7 +1841,7 @@ export function AppServerRuntimeProvider({
   }
   const composerController = conversationView.composer;
   const threadManagement = useMemo<AppServerHostCatalog["threadManagement"]>(() => {
-    const manager = async (hostId: string, operation: "rename" | "archive" | "delete" | "fork") => {
+    const manager = async (hostId: string, operation: "rename" | "archive" | "delete" | "fork" | "pin") => {
       const host = await registry.ensureConnected(hostId);
       if (!host.resources.threads.capabilities?.()[operation]) throw new Error("此宿主未接通该会话操作");
       return host.resources.threads;
@@ -1802,6 +1849,7 @@ export function AppServerRuntimeProvider({
     return {
       capabilities: hostId => registry.peekRuntime(hostId)?.resources.threads.capabilities?.() ?? { rename: false, archive: false, delete: false, fork: false },
       rename: async (hostId, id, name) => { const port = await manager(hostId, "rename"); await port.rename!(id, name); },
+      setPinned: async (hostId, id, pinned) => { const port = await manager(hostId, "pin"); await port.setPinned!(id, pinned); },
       delete: async (hostId, id) => { const port = await manager(hostId, "delete"); await port.delete!(id); },
       archive: async (hostId, id) => { const port = await manager(hostId, "archive"); await port.archive!(id); },
       unarchive: async (hostId, id) => { const port = await manager(hostId, "archive"); await port.unarchive!(id); },
@@ -2050,6 +2098,7 @@ export function useThreadCatalog(): {
   readonly threads: readonly WorkbenchThread[];
   readonly hasNextPage: boolean;
   readonly fetchNextPage: () => Promise<unknown>;
+  readonly isPending: boolean;
   readonly isFetching: boolean;
 } {
   const runtime = useAppServerRuntime();
@@ -2063,7 +2112,7 @@ export function useThreadCatalog(): {
     staleTime: 30_000,
   });
   const protocolThreads = useMemo(
-    () => query.data?.pages.flatMap((page) => page.data) ?? [],
+    () => mergeThreadCatalogPages(query.data?.pages ?? []),
     [query.data],
   );
   const threads = useMemo(() => protocolThreads.map((thread) => projectAppServerThread(thread)), [protocolThreads]);
@@ -2072,6 +2121,7 @@ export function useThreadCatalog(): {
     threads,
     hasNextPage: query.hasNextPage,
     fetchNextPage: query.fetchNextPage,
+    isPending: query.isPending,
     isFetching: query.isFetching,
   };
 }

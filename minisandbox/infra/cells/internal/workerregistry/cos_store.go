@@ -20,11 +20,12 @@ type COSObjectStore struct {
 }
 
 type COSConfig struct {
-	BucketURL    string
-	SecretID     string
-	SecretKey    string
-	SessionToken string
-	Timeout      time.Duration
+	BucketURL       string
+	SecretID        string
+	SecretKey       string
+	SessionToken    string
+	CredentialsFile string
+	Timeout         time.Duration
 }
 
 func NewCOSObjectStore(config COSConfig) (*COSObjectStore, error) {
@@ -41,8 +42,12 @@ func NewCOSObjectStore(config COSConfig) (*COSObjectStore, error) {
 		SessionToken: config.SessionToken,
 		Transport:    http.DefaultTransport,
 	}
+	var signingTransport http.RoundTripper = transport
+	if config.CredentialsFile != "" {
+		signingTransport = &rotatingCOSCredentials{path: config.CredentialsFile}
+	}
 	client := cos.NewClient(&cos.BaseURL{BucketURL: bucketURL}, &http.Client{
-		Transport: transport,
+		Transport: signingTransport,
 		Timeout:   config.Timeout,
 	})
 	client.Conf.RetryOpt.Count = 2

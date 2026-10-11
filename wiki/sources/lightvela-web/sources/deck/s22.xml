@@ -1,0 +1,111 @@
+<slide id="s22">
+  <background color="bg-page" />
+  <shape type="line" x="40" y="26" width="1200" height="0" stroke="border" />
+  <shape type="line" x="280" y="26" width="240" height="0" stroke="primary" stroke-width="3" />
+  <text x="40" y="36" width="1200" height="24" font="caption" color="primary">02 个人助理产品洞察 · 详细参考</text>
+  <text x="40" y="77" width="1200" height="50" font="heading" color="text-main">
+    <strong>附录｜个人 Agent 市场与潜在竞品</strong>
+  </text>
+  <text x="40" y="132" width="1200" height="30" font="body" color="text-muted">海外玩家分别强调云端执行、独立身份和日常场景；国内同时面临入口与任务能力竞争。</text>
+  <table x="40" y="186" width="1200" height="271" columns="1.25,2,2,2.15,2.4,2.2" rows="40,38,122,71" font="body" size="14" color="text-main" align="left" padding="8 10" header-fill="bg-surface" border-h="1 border" header-border="2 primary">
+    <tr>
+      <td>
+        <strong>海外产品</strong>
+      </td>
+      <td>
+        <strong>Grok Bot</strong>
+      </td>
+      <td>
+        <strong>Instinct</strong>
+      </td>
+      <td>
+        <strong>Meta Muse</strong>
+      </td>
+      <td>
+        <strong>Manus Cue</strong>
+      </td>
+      <td>
+        <strong>OpenAI Dot</strong>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <strong>发布时间</strong>
+      </td>
+      <td>2026.08.11</td>
+      <td>2026.08.26</td>
+      <td>2026.09.08</td>
+      <td>2026.09.28</td>
+      <td>2026.09.29</td>
+    </tr>
+    <tr>
+      <td>
+        <strong>主打亮点</strong>
+      </td>
+      <td>
+        <p>多 Bot</p>
+        <p space-before="8">云电脑</p>
+      </td>
+      <td>
+        <p>真人助理感</p>
+        <p space-before="8">手机号、电脑、邮箱</p>
+      </td>
+      <td>
+        <p>长期在线</p>
+        <p space-before="8">云端工作环境</p>
+        <p space-before="8">主动工作</p>
+      </td>
+      <td>
+        <p>每个 Agent 独立身份</p>
+        <p space-before="8">多 Agent 组队</p>
+        <p space-before="8">邮箱、手机号、钱包、云端电脑</p>
+      </td>
+      <td>
+        <p>持续工作</p>
+        <p space-before="8">云电脑与浏览器</p>
+        <p space-before="8">调度其他工作 Agent</p>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <strong>原文用户数据</strong>
+      </td>
+      <td>上线首月周活 41.8 万</td>
+      <td>9 月中旬突破 10 万；增速约 10%–11%</td>
+      <td>美国移动端日活 64.2 万</td>
+      <td>暂无公开数据</td>
+      <td>暂无公开数据</td>
+    </tr>
+  </table>
+  <text x="40" y="483" width="1200" height="34" font="strong" color="primary">
+    <strong>国内市场｜用户心智层面的潜在竞争</strong>
+  </text>
+  <table x="40" y="536" width="1200" height="123" columns="2,2,2,2,2" rows="42,81" font="body" size="14" color="text-main" align="left" padding="8 10" header-fill="bg-surface" border-h="1 border">
+    <tr>
+      <td>
+        <strong>微信小微</strong>
+      </td>
+      <td>
+        <strong>ChatBot｜豆包 / 元宝</strong>
+      </td>
+      <td>
+        <strong>模型厂商 Agent</strong>
+      </td>
+      <td>
+        <strong>多端助理｜Siri / 小爱</strong>
+      </td>
+      <td>
+        <strong>Coding Agent 分化</strong>
+      </td>
+    </tr>
+    <tr>
+      <td>微信入口、数据、内容与小程序生态</td>
+      <td>原文未单列核心优势</td>
+      <td>如 Minimax Agent；大模型第一方优势</td>
+      <td>掌握默认入口，用户心智成熟</td>
+      <td>WB / TRAE / Qoder；任务完成与委派能力更强</td>
+    </tr>
+  </table>
+  <text x="40" y="684" width="1130" height="20" font="caption" color="text-muted">LightVela｜全部沿用原文市场资料；用户数据的时间与指标不同，不作规模排名，未作外部更新</text>
+  <text x="1180" y="684" width="60" height="20" font="caption" color="text-muted" align="right">22 / 24</text>
+</slide>

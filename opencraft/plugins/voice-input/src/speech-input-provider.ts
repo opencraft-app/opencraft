@@ -31,6 +31,8 @@ export interface SpeechInputSession {
 }
 
 export interface SpeechInputProvider {
+  /** Optional capability updates for asynchronously discovered transports. */
+  subscribe?(listener: () => void): () => void;
   readonly unavailableMessage?: string;
   readonly id: string;
   isAvailable(): boolean;

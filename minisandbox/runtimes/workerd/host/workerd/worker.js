@@ -12,6 +12,15 @@ const MANAGEMENT_PREFIX = "/__rivet/";
 const EVICT_PATH = "/__rivet/evict";
 const HEALTH_PATH = "/__rivet/healthz";
 const PREPARE_PATH = "/__rivet/prepare";
+// Cache plain activation metadata/code only: Worker and DO handles belong to
+// one request. Retain the generation binding after eviction because native
+// containers keep their first class, even after the running instance is evicted.
+// Cleanup cannot consult the host registry after its admission fence removes it.
+const activations = new Map();
+// Qualification identities must not later be reused for user code while the
+// native container can retain its original class. Keep this private set bounded.
+const MAX_FIXTURE_IDENTITIES = 4096;
+const fixtureIdentities = new Set();
 const ACTOR_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 const WORKER_NAME_PATTERN = /^[a-z][a-z0-9-]{0,62}$/;
 const WORKER_VERSION_PATTERN = /^v_[0-9a-f]{64}$/;
@@ -67,27 +76,79 @@ function workerReference(request) {
 	return workerName === null ? null : { workerName, workerVersion };
 }
 
-function loadWorker(env, identity, durableObjectClass = null) {
+async function actorWorkerCode(env, identity) {
+	const response = await env.WORKER_CODE.fetch(
+		`http://worker-code/__rivet/worker-code/${identity.actorId}/${identity.generation}`,
+		{ headers: { [TOKEN_HEADER]: env.RIVET_WORKERD_TOKEN } },
+	);
+	if (!response.ok) throw new Error(`Worker code unavailable: ${response.status}`);
+	const code = await response.json();
+	const actor = code?.env?.RIVET_ACTOR;
+	if (
+		code?.env === null ||
+		typeof code?.env !== "object" ||
+		Array.isArray(code.env) ||
+		actor === null ||
+		typeof actor !== "object" ||
+		Array.isArray(actor) ||
+		actor.id !== identity.actorId ||
+		actor.generation !== identity.generation
+	) {
+		throw new TypeError("Worker code is missing its exact actor binding");
+	}
+	if (
+		actor.durableObjectClass !== undefined &&
+		(typeof actor.durableObjectClass !== "string" ||
+			!DURABLE_OBJECT_CLASS_PATTERN.test(actor.durableObjectClass))
+	) {
+		throw new TypeError("Worker code has an invalid Durable Object class");
+	}
+	return code;
+}
+
+function loadWorker(env, identity, durableObjectClass = null, activation = null) {
 	return env.WORKER_LOADER.get(isolateName(identity), async () => {
-		const response = await env.WORKER_CODE.fetch(
-			`http://worker-code/__rivet/worker-code/${identity.actorId}/${identity.generation}`,
-			{ headers: { [TOKEN_HEADER]: env.RIVET_WORKERD_TOKEN } },
-		);
-		if (!response.ok) throw new Error(`Worker code unavailable: ${response.status}`);
-		const code = await response.json();
-		if (code.env === undefined) code.env = {};
-		if (code.env === null || typeof code.env !== "object" || Array.isArray(code.env)) {
-			throw new TypeError("Worker code env must be an object");
+		const code = activation?.code ?? await actorWorkerCode(env, identity);
+		if ((code.env.RIVET_ACTOR.durableObjectClass ?? null) !== durableObjectClass) {
+			throw new TypeError("Worker code Durable Object class does not match dispatch");
 		}
-		// The loaded isolate receives only the exact Durable Object stub derived from
-		// its authenticated actor identity. It never receives the ACTOR namespace,
-		// the workerd token, or an actor ID selector, so it cannot mint a capability
-		// for another actor or generation.
+		if (activation !== null) activation.code = code;
+		// Keep request-owned storage handles out of the retained code recipe.
+		const loaded = { ...code, env: { ...code.env } };
 		if (durableObjectClass === null) {
-			code.env.RIVET_STORAGE = env.ACTOR.get(env.ACTOR.idFromName(isolateName(identity)));
+			loaded.env.RIVET_STORAGE = env.ACTOR.get(env.ACTOR.idFromName(isolateName(identity)));
 		}
-		return code;
+		return loaded;
 	});
+}
+
+async function activateWorker(env, identity, reference, className) {
+	const name = isolateName(identity);
+	let activation = activations.get(name);
+	if (activation !== undefined && (
+		activation.active === false ||
+		activation.workerName !== reference.workerName ||
+		activation.workerVersion !== reference.workerVersion ||
+		activation.className !== className
+	)) return null;
+	if (activation === undefined) {
+		activation = { ...reference, className, code: null, active: true, epoch: 0, dispatched: false, validated: false };
+		activations.set(name, activation);
+	}
+	const epoch = activation.epoch;
+	// WorkerLoader reuses native code by name, but its JS handle must be freshly
+	// obtained in this request, never stored in module-global activation state.
+	const worker = loadWorker(env, identity, className, activation);
+	try {
+		await worker.ready();
+		if (className !== null) await worker.validateDurableObjectClass(className);
+		if (activation.active === false || activation.epoch !== epoch || activations.get(name) !== activation) return null;
+		activation.validated = true;
+		return { worker, record: activation };
+	} catch (error) {
+		if (!activation.validated && activations.get(name) === activation) activations.delete(name);
+		throw error;
+	}
 }
 
 function durableObjectClass(request) {
@@ -211,13 +272,43 @@ export default {
 		} catch {
 			return new Response("invalid actor identity", { status: 400 });
 		}
+		const name = isolateName(identity);
 		if (request.method === "POST" && url.pathname === EVICT_PATH) {
-			env.WORKER_LOADER.unload(isolateName(identity));
-			const stub = env.ACTOR.get(env.ACTOR.idFromName(isolateName(identity)));
+			const activation = activations.get(name);
+			// Fence pending preparation without waiting for it. An epoch change
+			// prevents a late ready() from dispatching after cleanup completes.
+			if (activation !== undefined) {
+				activation.active = false;
+				activation.epoch++;
+			}
 			try {
-				await unsafe.evict(stub, { webSockets: "close" });
-			} catch (error) {
-				if (!String(error?.message).includes("not currently running")) throw error;
+				if (activation?.dispatched) {
+					// Recreate the SAME logical capability in this request. A saved
+					// JS stub/Worker would retain the earlier request's OutgoingFactory.
+					let stub;
+					if (activation.fixture === true) {
+						stub = env.ACTOR.get(env.ACTOR.idFromName(name));
+					} else {
+						const worker = loadWorker(env, identity, activation.className, activation);
+						await worker.ready();
+						stub = env.ACTOR.get(env.ACTOR.idFromName(name), {
+							rivetClass: worker.getDurableObjectClass(activation.className),
+						});
+					}
+					try {
+						await unsafe.evict(stub, { webSockets: "close" });
+					} catch (error) {
+						if (!String(error?.message).includes("not currently running")) throw error;
+					}
+				}
+			} finally {
+				env.WORKER_LOADER.unload(name);
+			}
+			if (activations.get(name) === activation && activation !== undefined) {
+				// Release source memory, but keep the immutable generation binding.
+				activation.code = null;
+				activation.dispatched = false;
+				activation.active = true;
 			}
 			return new Response(null, { status: 204 });
 		}
@@ -233,10 +324,14 @@ export default {
 			if (reference === null) {
 				return Response.json({ code: "missing_worker_reference" }, { status: 400 });
 			}
-			const worker = loadWorker(env, identity, className);
-			await worker.ready();
-			await worker.validateEntrypoint();
-			if (className !== null) await worker.validateDurableObjectClass(className);
+			if (fixtureIdentities.has(name)) {
+				return Response.json({ code: "actor_binding_mismatch" }, { status: 409 });
+			}
+			const activation = await activateWorker(env, identity, reference, className);
+			if (activation === null) {
+				return Response.json({ code: "actor_binding_mismatch" }, { status: 409 });
+			}
+			await activation.worker.validateEntrypoint();
 			return new Response(null, { status: 204 });
 		}
 		if (url.pathname.startsWith(MANAGEMENT_PREFIX)) {
@@ -266,21 +361,43 @@ export default {
 			return Response.json({ code: "invalid_original_url" }, { status: 400 });
 		}
 		if (reference !== null) {
-			const worker = loadWorker(env, identity, className);
+			if (fixtureIdentities.has(name)) {
+				return Response.json({ code: "actor_binding_mismatch" }, { status: 409 });
+			}
+			const activation = await activateWorker(env, identity, reference, className);
+			if (activation === null) {
+				return Response.json({ code: "actor_binding_mismatch" }, { status: 409 });
+			}
 			if (className !== null) {
-				const actorClass = worker.getDurableObjectClass(className);
-				const stub = env.ACTOR.get(env.ACTOR.idFromName(isolateName(identity)), {
-					rivetClass: actorClass,
+				const stub = env.ACTOR.get(env.ACTOR.idFromName(name), {
+					rivetClass: activation.worker.getDurableObjectClass(className),
 				});
+				activation.record.dispatched = true;
 				return stub.fetch(forwarded);
 			}
-			return worker.getEntrypoint().fetch(forwarded);
+			return activation.worker.getEntrypoint().fetch(forwarded);
 		}
-		if (className !== null) {
+		// Preserve the authenticated, header-free legacy qualification contract.
+		// Match the forwarded path so an original business URL cannot hide at '/'.
+		const fixturePath = new URL(forwarded.url).pathname;
+		if (
+			className !== null ||
+			!["/", "/increment", "/bottomless-fill", "/bottomless-verify"].includes(fixturePath)
+		) {
 			return Response.json({ code: "missing_worker_reference" }, { status: 400 });
 		}
-
-		const stub = env.ACTOR.get(env.ACTOR.idFromName(isolateName(identity)));
+		const current = activations.get(name);
+		if (current !== undefined && (current.active === false || current.workerName !== undefined)) {
+			return Response.json({ code: "actor_binding_mismatch" }, { status: 409 });
+		}
+		if (!fixtureIdentities.has(name) && fixtureIdentities.size >= MAX_FIXTURE_IDENTITIES) {
+			return Response.json({ code: "fixture_capacity_exceeded" }, { status: 503 });
+		}
+		fixtureIdentities.add(name);
+		const activation = current ?? { fixture: true, active: true, epoch: 0, dispatched: false };
+		activations.set(name, activation);
+		const stub = env.ACTOR.get(env.ACTOR.idFromName(name));
+		activation.dispatched = true;
 		return stub.fetch(forwarded);
 	},
 };

@@ -17,6 +17,7 @@ type Store interface {
 	GetPool(ctx context.Context, id string) (core.Pool, error)
 	ListPools(ctx context.Context) ([]core.Pool, error)
 	ListPoolsByIDs(ctx context.Context, ids []string) ([]core.Pool, error)
+	SyncPoolSupplyOverview(ctx context.Context, rows []PoolSupplyOverview) error
 	AddInstances(ctx context.Context, poolID string, instances []core.Instance) ([]core.Instance, error)
 	ListInstances(ctx context.Context, poolID string) ([]core.Instance, error)
 	ListInstancesByStates(ctx context.Context, poolID string, states []core.InstanceState, limit int) ([]core.Instance, error)

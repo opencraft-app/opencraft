@@ -1,0 +1,247 @@
+openapi: 3.0.3
+info:
+  title: Vela Computer Update API
+  version: 1.0.0
+  description: 内网 Computer Release Channel、平台运营提升与审计的独立机器契约。
+servers:
+  - url: /
+x-error-code-registry:
+  invalid_channel: {status: 400}
+  invalid_target: {status: 400}
+  invalid_request: {status: 400}
+  operator_forbidden: {status: 403}
+  release_not_found: {status: 404}
+  release_incomplete: {status: 409}
+  revision_conflict: {status: 409}
+  channel_signing_unavailable: {status: 503}
+  update_storage_unavailable: {status: 503}
+  internal_error: {status: 500}
+paths:
+  /computer-releases/{channel}/{target}:
+    parameters:
+      - {$ref: '#/components/parameters/Channel'}
+      - {$ref: '#/components/parameters/Target'}
+    get:
+      operationId: getComputerReleaseChannel
+      summary: 匿名读取指定 Channel 与 target 的已签名期望版本
+      security: []
+      responses:
+        '200':
+          description: 已签名 Channel envelope 与短期制品下载位置
+          headers:
+            Cache-Control: {$ref: '#/components/headers/NoStore'}
+            ETag:
+              required: true
+              schema: {type: string, minLength: 66, maxLength: 80}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ComputerReleaseChannelEnvelope'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /ops/computer-updates/channels:
+    get:
+      operationId: listComputerReleaseChannels
+      summary: 查询 stable/canary 当前已签名指针
+      security:
+        - OperatorProxy: []
+      responses:
+        '200':
+          description: 当前 Channel 视图
+          headers:
+            Cache-Control: {$ref: '#/components/headers/NoStore'}
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 4
+                items: {$ref: '#/components/schemas/ComputerReleaseChannelView'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /ops/computer-updates/channels/{channel}:
+    parameters:
+      - {$ref: '#/components/parameters/Channel'}
+    put:
+      operationId: promoteComputerReleaseChannel
+      summary: 把完整且已验签的 Release Set 原子提升到 Channel
+      security:
+        - OperatorProxy: []
+      parameters:
+        - name: If-Match
+          in: header
+          required: true
+          schema: {type: string, pattern: '^"[0-9]+"$'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PromoteComputerReleaseChannelRequest'}
+      responses:
+        '200':
+          description: 原子提升后的双 target Channel 视图
+          headers:
+            Cache-Control: {$ref: '#/components/headers/NoStore'}
+          content:
+            application/json:
+              schema:
+                type: array
+                minItems: 2
+                maxItems: 2
+                items: {$ref: '#/components/schemas/ComputerReleaseChannelView'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /ops/computer-updates/audit:
+    get:
+      operationId: listComputerReleaseAudit
+      summary: 查询 Channel 变更审计
+      security:
+        - OperatorProxy: []
+      parameters:
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 200, default: 50}
+      responses:
+        '200':
+          description: 最近审计记录
+          headers:
+            Cache-Control: {$ref: '#/components/headers/NoStore'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ComputerReleaseAuditPage'}
+        default: {$ref: '#/components/responses/Error'}
+
+components:
+  securitySchemes:
+    OperatorProxy:
+      type: apiKey
+      in: header
+      name: X-Vela-Operator-Fingerprint
+      description: 仅信任受 NetworkPolicy 约束的内部 mTLS Ingress 剥离后注入的证书指纹。
+  parameters:
+    Channel:
+      name: channel
+      in: path
+      required: true
+      schema: {type: string, enum: [stable, canary]}
+    Target:
+      name: target
+      in: path
+      required: true
+      schema: {type: string, enum: [darwin-arm64, linux-amd64]}
+  headers:
+    NoStore:
+      required: true
+      schema: {type: string, enum: [no-store]}
+    NoCache:
+      required: true
+      schema: {type: string, enum: [no-cache]}
+  responses:
+    Error:
+      description: 稳定错误响应
+      headers:
+        Cache-Control: {$ref: '#/components/headers/NoStore'}
+        Pragma: {$ref: '#/components/headers/NoCache'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+  schemas:
+    ComputerReleaseChannelDescriptor:
+      type: object
+      additionalProperties: false
+      required:
+        [schemaVersion, channel, target, sequence, expectedVersion, catalogSHA256, issuedAt]
+      properties:
+        schemaVersion: {type: integer, enum: [1]}
+        channel: {type: string, enum: [stable, canary]}
+        target: {type: string, enum: [darwin-arm64, linux-amd64]}
+        sequence: {type: integer, format: int64, minimum: 1}
+        expectedVersion:
+          type: string
+          pattern: '^v[0-9]+\.[0-9]+\.[0-9]+(?:[.-][A-Za-z0-9]+)*$'
+        catalogSHA256: {type: string, pattern: '^[0-9a-f]{64}$'}
+        issuedAt: {type: string, format: date-time}
+    ComputerReleaseSignature:
+      type: object
+      additionalProperties: false
+      required: [algorithm, keyId, value]
+      properties:
+        algorithm: {type: string, enum: [ed25519]}
+        keyId: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'}
+        value: {type: string, minLength: 86, maxLength: 88}
+    ComputerReleaseDownloads:
+      type: object
+      additionalProperties: false
+      required: [catalogUrl, manifestUrl, manifestSignatureUrl, programUrl, expiresAt]
+      properties:
+        catalogUrl: {type: string, format: uri, maxLength: 4096}
+        manifestUrl: {type: string, format: uri, maxLength: 4096}
+        manifestSignatureUrl: {type: string, format: uri, maxLength: 4096}
+        programUrl: {type: string, format: uri, maxLength: 4096}
+        expiresAt: {type: string, format: date-time}
+    ComputerReleaseChannelEnvelope:
+      type: object
+      additionalProperties: false
+      required: [schemaVersion, payload, signature, downloads]
+      properties:
+        schemaVersion: {type: integer, enum: [1]}
+        payload: {type: string, minLength: 32, maxLength: 4096}
+        signature: {$ref: '#/components/schemas/ComputerReleaseSignature'}
+        downloads: {$ref: '#/components/schemas/ComputerReleaseDownloads'}
+    PromoteComputerReleaseChannelRequest:
+      type: object
+      additionalProperties: false
+      required: [version]
+      properties:
+        version:
+          type: string
+          pattern: '^v[0-9]+\.[0-9]+\.[0-9]+(?:[.-][A-Za-z0-9]+)*$'
+    ComputerReleaseChannelView:
+      type: object
+      additionalProperties: false
+      required:
+        [channel, target, sequence, expectedVersion, catalogSHA256, descriptorSHA256, issuedAt, keyId]
+      properties:
+        channel: {type: string, enum: [stable, canary]}
+        target: {type: string, enum: [darwin-arm64, linux-amd64]}
+        sequence: {type: integer, format: int64, minimum: 1}
+        expectedVersion: {type: string, minLength: 1, maxLength: 128}
+        catalogSHA256: {type: string, pattern: '^[0-9a-f]{64}$'}
+        descriptorSHA256: {type: string, pattern: '^[0-9a-f]{64}$'}
+        issuedAt: {type: string, format: date-time}
+        keyId: {type: string, minLength: 1, maxLength: 128}
+    ComputerReleaseAuditEntry:
+      type: object
+      additionalProperties: false
+      required: [id, operatorFingerprint, channel, fromSequence, toSequence, version, createdAt]
+      properties:
+        id: {type: string, format: uuid}
+        operatorFingerprint: {type: string, pattern: '^[0-9a-f]{64}$'}
+        channel: {type: string, enum: [stable, canary]}
+        fromSequence: {type: integer, format: int64, minimum: 0}
+        toSequence: {type: integer, format: int64, minimum: 1}
+        version: {type: string, minLength: 1, maxLength: 128}
+        createdAt: {type: string, format: date-time}
+    ComputerReleaseAuditPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 200
+          items: {$ref: '#/components/schemas/ComputerReleaseAuditEntry'}
+    ErrorDetail:
+      type: object
+      additionalProperties: false
+      required: [code, message, requestId]
+      properties:
+        code: {type: string, minLength: 1, maxLength: 100}
+        message: {type: string, minLength: 1, maxLength: 500}
+        requestId: {type: string, minLength: 1, maxLength: 200}
+        details: {nullable: true}
+    ErrorEnvelope:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error: {$ref: '#/components/schemas/ErrorDetail'}
+

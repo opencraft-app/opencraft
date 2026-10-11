@@ -1,0 +1,38 @@
+<slide id="s04">
+  <background color="bg-page" />
+  <shape type="line" x="40" y="26" width="1200" height="0" stroke="border" />
+  <shape type="line" x="40" y="26" width="240" height="0" stroke="primary" stroke-width="3" />
+  <text x="40" y="36" width="1200" height="24" font="caption" color="primary">01 出圈回顾</text>
+  <text x="40" y="77" width="1200" height="50" font="heading" color="text-main">
+    <strong>前期持续发布，国内关注度仍然有限</strong>
+  </text>
+  <text x="40" y="132" width="1200" height="30" font="body" color="text-muted">产品更新、使用教程和社区互动，为后续传播留下了可引用的内容。</text>
+  <text x="40" y="190" width="420" height="38" font="strong" color="text-main">
+    <strong>X 官方账号持续参与</strong>
+  </text>
+  <text x="40" y="243" width="420" height="150" font="body" color="text-main" line-height="1.55">
+    <p>6 月建立官方账号。</p>
+    <p>持续发布产品相关更新、实用教程，并回应社区讨论。</p>
+    <p>早期内容覆盖产品介绍、赛事资讯 Agent 和成就体系。</p>
+  </text>
+  <image x="504" y="186" width="344" height="196" src="/assets/source_01.png" fit="contain" />
+  <image x="896" y="186" width="344" height="196" src="/assets/source_03.png" fit="contain" />
+  <text x="504" y="394" width="344" height="20" font="caption" color="text-muted" align="center">6 月官方账号的产品介绍</text>
+  <text x="896" y="394" width="344" height="20" font="caption" color="text-muted" align="center">实用教程：FIFA 资讯跟踪</text>
+  <shape type="line" x="40" y="428" width="1200" height="0" stroke="border" />
+  <text x="40" y="454" width="420" height="38" font="strong" color="text-main">
+    <strong>国内公众号开始试水</strong>
+  </text>
+  <text x="40" y="507" width="420" height="130" font="body" color="text-main" line-height="1.55">
+    <p>9 月上旬，产品同学以多个个人账号发布推文。</p>
+    <p>阅读和关注较少，微信指数尚未出现明显突破。</p>
+  </text>
+  <image x="504" y="450" width="116" height="182" src="/assets/source_05.png" fit="contain" />
+  <image x="636" y="450" width="116" height="182" src="/assets/source_06.png" fit="contain" />
+  <image x="768" y="450" width="116" height="182" src="/assets/source_07.png" fit="contain" />
+  <image x="912" y="450" width="328" height="182" src="/assets/source_08.png" fit="contain" />
+  <text x="504" y="644" width="380" height="20" font="caption" color="text-muted" align="center">国内个人公众号内容</text>
+  <text x="912" y="644" width="328" height="20" font="caption" color="text-muted" align="center">9 月 9 日　LightVela　微信指数 487</text>
+  <text x="40" y="684" width="1130" height="20" font="caption" color="text-muted">LightVela｜来源：原文 X 推文、公众号和微信指数截图</text>
+  <text x="1180" y="684" width="60" height="20" font="caption" color="text-muted" align="right">04 / 24</text>
+</slide>

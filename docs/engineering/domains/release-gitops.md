@@ -32,6 +32,26 @@ master 源码
   → 服务健康、路由和业务 E2E
 ```
 
+## 北京渠道聊天记录测试门禁
+
+渠道记录的北京验收需要配对的 CTL 镜像、`ctl-api` 的 `CHANNEL_HISTORY_ENABLED` 环境开关，以及 Service Gateway 的两条只读 GET 白名单。北京 CTL 开关应保存在 master 的 `argocd/services/ctl/beijing-sandbox/kustomization.yaml`，由 CTL release bundle 投影到 `gitops`；只改 `gitops` 容易在下次镜像晋级时被 master 的旧配置覆盖。开关不扩散到生产或其他 CTL 工作负载。验收时核对 Argo revision、CTL 镜像、开关和网关配置，再用真实账号验证自身 Bot 的私聊、群聊及跨账号拒绝；MR 合并和本地前端构建均不能代替运行态证据。
+
+## AI 建站后端隐藏发布绑定
+
+- 离线绑定生成器 `.ci/runtime/support/prepare_website_backend_release.py` 只生成最终 overlay
+  patch，不读取 Secret 值、不部署、不自动授权发布。真实 consumer 变更仍走上述源码到 GitOps 链。
+- Schema1 保留旧无状态输入且关闭持久化/分享读取；Schema2 显式声明地域 runtime driver 与
+  布尔 `data_enabled`。只有已完成该地域资格验收的 `minisandbox` 可以申请持久化，`runsc` 拒绝该组合。
+- `prepare` 明确清空 CTL owner allowlist、设置 data=0 与 gateway shared-read=false，覆盖历史
+  envFrom 门禁；不会触碰静态站或鉴权配置。收紧已有 Beta 会影响分享链接，仍须 owner 审核。
+- `enable` 要求非空的已批准 owner allowlist；在 data=true 时同时生成 CTL data=1 与 gateway
+  shared-read=true。分享仍要求有效 generation-bound session，写入仍要求 owner；不开放匿名建站。
+- 生成器的语法、双区域源 overlay 合并与无关配置保留检查不能证明 live driver、TLS、Secret、
+  schema、持久化或 Argo 收敛。国内/国际分别完成真实闭环后才可按独立发布授权晋级。
+- 发布前读取真实地域 schema，migration32 仅在确实未应用时执行；不能因 Git 中存在该文件而重跑。
+  详见 [发布绑定](../../../site-runtime/deploy/RELEASE-BINDINGS.md) 与
+  [验收和回退契约](../../../site-runtime/deploy/RELEASE-CHECKLIST.md)。
+
 ## 权威分工
 
 - `.ci`：流水线与可复用构建/晋级命令。
@@ -181,6 +201,7 @@ master 源码
   frozen install。完整实现由 `.ci/checks/frontend_guard.sh` 持有，旧 `frontend/checks/guard.sh` 仅转发。
   MR runner 仍从可信 `origin/master` 提取注册入口；旧 guard 无法校验自身修复时，先通过独立
   `.ci` bootstrap MR 引入新可信入口，再收敛旧入口，不修改可信 ref 或豁免检查。
+  前端 guard 同时执行马来语首页重生成一致性、公共词典按需加载与就绪、消费界面、法律链接和搜索分词测试，再验证国内/国际静态构建；新增语种不能只依赖资源条目校验。
   回归测试应实际执行复制命令并逐个验证本地依赖源码存在，并验证转发保留参数、环境与退出码。
 - 正式发布只认 Argo CD；service-local apply/release 脚本不是主线。
 - 服务级生产审核人由对应 `.ci/<service>.yml` 的 `PROD_REVIEWERS` 跟踪，并通过契约测试锁定服务边界；
@@ -555,6 +576,12 @@ sandbox-bj-7 继续使用独立 testing 入口。
 不改上海生产和新加坡生产的点石入口。ConfigMap 更新后应核对 Trade Pod 实际环境变量与镜像，
 并验证无续费活动配置时普通续费仍走计费。
 
+北京预发布 Trade 单独设置 `DIANSHI_RENEW_PRICE_BASE_URL` / `DIANSHI_RENEW_ORDER_BASE_URL`，
+经 tkexgz 生产 `dianshi-renew-price` / `dianshi-renew-order` 路由分别调用
+`get_price_renew` / `do_goods_renew`，两条后端都指向 `opc-dianshi-activity.production.polaris:80`。
+共享网关配置中的新后端默认不可达，仅 tkexgz 生产工作负载覆盖；先发布网关，再启用北京预发布 Trade。
+其他地域和点石新购维持原路由。发布后必须核对 Argo、Pod 环境变量和真实续费调用。
+
 ## OpenCraft 第一方 OIDC 配置与镜像门禁
 
 原生与 Web 客户端复用现有 OIDC 登录渠道，不是新增身份渠道。上海与新加坡生产环境登记
@@ -592,6 +619,7 @@ sgprod 旧 Auth 镜像（源码 `bf1c36960ed4`）只接受一个 Sites client，
 
 - 环境 Secret 的长期真源是 SSM；`master` 中的 SOPS 文件是 source-facing 快照，`gitops` 中的 SOPS 文件是 deploy-facing 期望。修复顺序必须是 SSM → `master` → `gitops`，不能只 patch live 或只修改 `gitops`。
 - SSM manifest 应声明运行时必填键。重新导出时缺少 required key 必须失败，避免后续 promotion 静默删除 live 已有凭据。
+- Service Gateway 云语音按上海、新加坡独立启用。区域 manifest 从同地域 CTL 的固定 SSM 版本仅投影 `CTL_LLMGATEWAY_ADMIN_TOKEN` 为 `VELAGW_SPEECH_ADMIN_TOKEN`，以专用 SOPS Secret、KSOPS generator 和该区域 bundle publish paths 一起晋级；不复制其他 CTL 密钥，不跨区域复用令牌。区域 control/traffic origin 与具体浏览器 origin 必须随配置交付，镜像与 Secret 完整校验后才同步对应 Gateway Application。
 
 ## nextgen-dashboard 下线的 GitOps 处置（2026-09-22）
 
@@ -704,7 +732,7 @@ Markdown 与 `scripts/package_fullstack.py`。存量批次使用独立的
 
 `.ci/runtime/commands/prepare_website_backend_release.py` 只接受固定源码树 hash、
 同地域私有 HTTPS endpoint 和 CA/deploy/invoke 的 Secret 引用，不读取凭据或 apply。
-默认 prepare 显式关闭 CTL 新 fullstack；enable 必须单独批准非空 owner allowlist。
+默认 prepare 显式关闭 CTL 新 fullstack；enable 必须独立确认区域运行时验收并开启区域总开关。
 按 [地域接线说明](../../../site-runtime/deploy/RELEASE-BINDINGS.md) 将生成 patch 列表
 追加到三个服务现有 source-facing overlay 的最后，走原 bundle 的 publish_paths。
 不能嵌入 Component：CTL 原有 positional JSON patch 会误删已存在的 rewrite 配置挂载。
@@ -717,7 +745,8 @@ Markdown 与 `scripts/package_fullstack.py`。存量批次使用独立的
 ### 建站后端隐藏发布（2026-10-01）
 
 国内与国际 production CTL overlay 在最后对 API/service/bypass 显式设置
-`WEBSITE_BACKEND_BETA_USERS=""`，覆盖 envFrom，保证后端代码发布不等于功能开放。
+`WEBSITE_BACKEND_ENABLED="0"` 与 `WEBSITE_BACKEND_DATA_ENABLED="0"`，覆盖 envFrom，
+保证后端代码发布不等于功能开放。站点网关显式关闭共享后端读取。
 本阶段不发布平台前端、不启用任何 owner allowlist、不执行生产存量 Skill 下发。
 可先发布兼容 CTL、website worker、site-gateway 镜像、migration32 及 service-gateway
 rollback 路由配置；runtime/TLS/角色凭据未落地时，capability 必须 fail-closed。
@@ -731,6 +760,35 @@ Owner review、生产 DB 备份/迁移门禁、Argo 手工 sync 及静态兼容�
 hermes-importer 的自动 pin。建站继续走 `.ci/workers-website-deployer.yml` 的双区域
 人工 production 通道；共享 go.mod/go.sum/Dockerfile 和其他 worker 目录触发规则保留。
 
+
+### 建站持久化运行时的短期存储身份（待发布）
+
+`minisandbox/infra/cells/cmd/storage-session-renewer` 是集群内短期存储会话的正式
+实现入口，不依赖开发机 STS 循环或长期云密钥。配置绑定真实 namespace/Cell/Lease
+及三枚既有 Secret 的 UID、精确 role/provider/audience；投射 ServiceAccount OIDC
+JWT 每次重新读取，通过严格 TLS 调用 STS。三枚 Secret 分别完整 CAS 更新，
+没有跨 Secret 事务；部分更新、租约丢失或会话余量不足都不能标记 Ready。
+
+Go registry 与 Rust Depot 的 file-session 消费者必须和 renewer 配套：整目录
+只读挂载，禁止 `subPath` 和静态凭据回退，使用真实 STS 到期时间。构建通过、
+角色建好和 Secret 已写入均不等于运行时已接通；验收必须包含实际身份换取、
+真实续签后 code/cold/backup 请求，以及对应地域 Agent 和独立浏览器的共享
+持久化路径。短测试续签窗口与最终配置分别冻结，不伪造到期时间。
+
+部署与配置细节见 [renewer 入口](../../../minisandbox/infra/cells/cmd/storage-session-renewer/README.md)
+和 [建站发布清单](../../../site-runtime/deploy/RELEASE-CHECKLIST.md)。当前工作仅
+准备国内/国际待隐藏发布，不授权生产、GitOps 晋级或存量全量 Skill 下发。
+
+### 建站区域启用契约（2026-10-10）
+
+当前代码使用 `WEBSITE_BACKEND_ENABLED=1` 区域总开关与独立的
+`WEBSITE_BACKEND_DATA_ENABLED=1` 数据开关，不使用账号白名单。生产 overlay 显式关闭
+总开关与数据开关，后续 enable binding 覆盖这些默认值；总开关未配置仍关闭。
+离线 binding schema3 删除 beta_users，prepare 显式写总开关/数据开关为 0，
+enable 写总开关为 1，并按 data_enabled 写数据与共享读取开关。
+区域 runtime/TLS/角色凭据与持久化验收仍是发布前提；本次只修改源码。
+平台前端入口保持默认隐藏，通过控制台 show() 展示；UI 隐藏不是鉴权。
+
 ## 建站 auth-only Skill hook 的配对发布（2026-10-02）
 
 `argocd/services/{ctl,sandbox}/{shprod,sgprod}` source env 的独立 Skill 地域映射必须配对；
@@ -739,3 +797,23 @@ Sandbox replacements 消费进 runtime ConfigMap，CTL 创建任务 worker optio
 再发布 CTL new-instance hook；回退先关闭 CTL Skill map 再关闭 Sandbox Skill allowlist。
 源配置/render 通过不等于 live GitOps/Argo revision/image 或新实例业务验收；本轮无实际发布。
 详细步骤及已交接 ID 见 [建站 Skill auth fallback](../operations/website-skill-auth-fallback.md)。
+
+## 现网云桌面环境配置的真源归属（2026-10-08）
+
+`CLOUD_DESKTOP_ENABLED` 与 `DESKTOP_INGRESS_DOMAIN` 是 CTL 云桌面的环境级业务配置，
+其真源必须落在 `master` 的 `argocd/services/ctl/{shprod,sgprod}/ctl-platform.env`，而非只手工
+写入 `gitops` 分支。CI 从 `master` 的 source env 渲染 deploy-facing 清单回写 `gitops`，
+仅 image pin 等制品字段由发布流程覆盖；源 env 中缺失的业务键在每次渲染后不会出现在 `gitops`。
+因此只改 `gitops`（如早期 !4837）的桌面开关与泛域名会在下一次 CTL 发布渲染时被覆盖丢失，
+表现为桌面就绪后拼接 wss 地址报 `DESKTOP_NOT_CONFIGURED`。本次把两站点的两键补回 `master`
+source env：shprod=`desktop.lightvela.tech`（cert bAnCmJOZ / CLB lb-ohkm8fm5），
+sgprod=`desktop.lightvela.site`（cert bAnD57eL / CLB lb-8kenwgvc）。该改动只调整 CTL 运行时
+业务配置，不改变镜像构建、制品晋级、Argo Application 或同步模型；CLB 证书（SNI）、泛解析 DNS
+与含云桌面代码的 CTL 镜像仍是独立的发布前置，源配置 render 通过不等于 live 验收。
+
+## MR 复用工作区源码一致性（2026-10-10）
+
+MR 占位检查在 checkout 后校验期望提交和该提交下的全部受跟踪文件（含 index）。
+提交号相同不能证明工作树正确：复用 runner 可能残留旧前端源码或旧 OpenCraft 生成副本。
+发现提交或受跟踪文件不一致时，对本次构建工作区执行既有 reset/clean，再核验 HEAD 和完整 tracked diff。
+这只恢复构建输入，不执行机械同步来掩盖源码中真实的生成漂移，也不修改 trusted guard 或发布权限。

@@ -1760,6 +1760,30 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertNotIn("values", item)
         self.assertNotIn("stringData", item)
 
+    def test_regional_speech_secret_is_projected_and_promotable(self) -> None:
+        for region, domain in (("shprod", "com"), ("sgprod", "ai")):
+            with self.subTest(region=region):
+                source = yaml.safe_load((REPO_ROOT / f"scripts/ssm_manifest.ctl.{region}.yaml").read_text())
+                authority = next(item for item in source["items"] if item["id"] == "ctl-runtime-secrets")
+                manifest = yaml.safe_load((REPO_ROOT / f"scripts/ssm_manifest.service-gateway.{region}.yaml").read_text())
+                speech = next(item for item in manifest["items"] if item["id"] == "service-gateway-speech-secrets")
+                self.assertEqual(speech["secret_name"], authority["secret_name"])
+                self.assertEqual(speech["version_id"], authority["version_id"])
+                self.assertEqual(speech["key_mappings"], {"CTL_LLMGATEWAY_ADMIN_TOKEN": "VELAGW_SPEECH_ADMIN_TOKEN"})
+                generator = yaml.safe_load((REPO_ROOT / f"argocd/services/service-gateway/{region}/ksops-secret-generator.yaml").read_text())
+                self.assertIn(f"../../../secrets/{region}/service-gateway-speech-secrets.sops.yaml", generator["files"])
+                bundle = yaml.safe_load((REPO_ROOT / ".ci/runtime/bundles/service-gateway.bundle").read_text())["bundles"]["service-gateway"]
+                self.assertIn(speech["output_path"], bundle["publish_paths_by_env"][region])
+                encrypted = yaml.safe_load((REPO_ROOT / speech["output_path"]).read_text())
+                self.assertEqual(set(encrypted["stringData"]), {"VELAGW_SPEECH_ADMIN_TOKEN"})
+                self.assertTrue(encrypted["stringData"]["VELAGW_SPEECH_ADMIN_TOKEN"].startswith("ENC["))
+                self.assertIn("sops", encrypted)
+                config = yaml.safe_load((REPO_ROOT / f"argocd/services/service-gateway/{region}/config.yaml").read_text())["speech"]
+                self.assertEqual(config["control_url"], f"https://token-admin.lightvela.{domain}")
+                self.assertEqual(config["traffic_url"], f"https://token.lightvela.{domain}")
+                self.assertEqual(config["admin_token_env"], "VELAGW_SPEECH_ADMIN_TOKEN")
+                self.assertNotIn("*", config["allowed_origins"])
+
     def test_japan_runtime_ssm_manifest_is_independent_and_complete(self) -> None:
         manifest_path = REPO_ROOT / "scripts/ssm_manifest.runtime.sandbox-jp-1.yaml"
         manifest = yaml.safe_load(manifest_path.read_text())
@@ -2874,7 +2898,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertEqual(approval_reviews.get("name"), "确认发起 frontend EdgeOne 正式站发布候选")
         self.assertEqual(
             approval_reviews.get("reviewers"),
-            ["skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang", "mingyuxiao"],
+            ["skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang", "mingyuxiao", "xinqishang"],
         )
         self.assertIn("本阶段确认是否允许本次 frontend 构建发起 EdgeOne 正式站发布候选", workflow_text)
         self.assertIn("本阶段只控制是否允许从本次构建发起生产发布候选", workflow_text)
@@ -2914,7 +2938,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         release_reviews = (((stages[0].get("check-in") or {}).get("reviews") or {}).get("flows") or [])[0]
         self.assertEqual(
             release_reviews.get("reviewers"),
-            ["skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang", "mingyuxiao"],
+            ["skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang", "mingyuxiao", "xinqishang"],
         )
         self.assertNotIn("if:", template_text)
         self.assertIn("release_frontend_edgeone_artifact.sh", template_text)
@@ -3537,7 +3561,7 @@ refresh_skus http://unused img-jhb "$pools_json" ap-johorbahru
         )
         self.assertIn('"$PNPM_BIN" check', guard_text)
         self.assertIn('FRONTEND_GUARD_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/lightclaw-frontend-guard.XXXXXX")"', guard_text)
-        self.assertIn('-cf - frontend velalink shared/lightvela-agent-core opencraft/packages/mobile-account-sdk opencraft/packages/mobile-bot-bridge | tar -C "$FRONTEND_GUARD_ROOT" -xf -', guard_text)
+        self.assertIn('-cf - frontend velalink shared opencraft/packages/mobile-account-sdk opencraft/packages/mobile-bot-bridge opencraft/packages/workbench-panels | tar -C "$FRONTEND_GUARD_ROOT" -xf -', guard_text)
         self.assertIn('--exclude="velalink/node_modules"', guard_text)
         self.assertIn('--exclude="velalink/target"', guard_text)
         self.assertIn('"$PNPM_BIN" build:cn', guard_text)
@@ -3606,7 +3630,7 @@ refresh_skus http://unused img-jhb "$pools_json" ap-johorbahru
         self.assertEqual(template_stages[4].get("if"), "${{ variables.MIGRATION_DECISION }} == run_migration")
         self.assertNotIn("${{ci.actor}}", template_text)
         self.assertNotIn("${{ ci.actor }}", template_text)
-        self.assertIn('reviewers: [ "skipzhang", "xinqishang", "mingyuxiao" ]', template_text)
+        self.assertIn('reviewers: [ "skipzhang", "xinqishang", "mingyuxiao", "sarahzzhang" ]', template_text)
         self.assertIn("请先检查上一阶段 dry-run 日志中的执行计划", template_text)
         self.assertEqual(template_text.count("run_prod_db_migration.py"), 2)
         self.assertIn("SKIP_IF_NO_MIGRATION_CHANGE", template_text)
@@ -4144,7 +4168,7 @@ refresh_skus http://unused img-jhb "$pools_json" ap-johorbahru
         second_approval_reviews = (((second_approval_stage.get("check-in") or {}).get("reviews") or {}).get("flows") or [])[0]
         self.assertEqual(second_approval_reviews.get("name"), "二次确认生产镜像升级")
         template_parameters = {parameter.get("name"): parameter for parameter in template.get("parameters") or []}
-        self.assertEqual(template_parameters.get("PROD_REVIEWERS", {}).get("default"), '["skipzhang", "xinqishang", "mingyuxiao"]')
+        self.assertEqual(template_parameters.get("PROD_REVIEWERS", {}).get("default"), '["skipzhang", "xinqishang", "mingyuxiao", "sarahzzhang"]')
         self.assertEqual(template_parameters.get("IMAGE_PIN_VARIANT", {}).get("default"), "all")
         self.assertEqual(template_parameters.get("MANUAL_PROMOTE_IMAGE_PIN_VARIANT", {}).get("default"), "")
         self.assertEqual(entry_reviews.get("reviewers"), "${{ parameters.PROD_REVIEWERS }}")
@@ -4218,18 +4242,19 @@ refresh_skus http://unused img-jhb "$pools_json" ap-johorbahru
         self.assertIn('value: "shprod"', template_text)
         self.assertIn('value: "sgprod"', template_text)
 
-    def test_frontend_template_consumers_keep_frontend_prod_reviewers(self) -> None:
-        frontend_reviewers = '["skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang"]'
-        workflows = [
-            ".ci/tokyo-gateway-dashboard.yml",
-            ".ci/tokyo-frontend.yml",
-        ]
+    def test_frontend_template_consumer_and_owner_include_prod_reviewer(self) -> None:
+        reviewers_by_workflow = {
+            ".ci/tokyo-gateway-dashboard.yml": '["skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang"]',
+            ".ci/tokyo-frontend.yml": '["skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang", "xinqishang"]',
+        }
 
-        for workflow_path in workflows:
+        for workflow_path, reviewers in reviewers_by_workflow.items():
             with self.subTest(workflow=workflow_path):
                 workflow = yaml.safe_load((REPO_ROOT / workflow_path).read_text())
                 parameters = (workflow.get("extends") or {}).get("parameters") or {}
-                self.assertEqual(parameters.get("PROD_REVIEWERS"), frontend_reviewers)
+                self.assertEqual(parameters.get("PROD_REVIEWERS"), reviewers)
+
+        self.assertIn("xinqishang", (REPO_ROOT / "frontend/OWNERS").read_text().splitlines())
 
     def test_gateway_dashboard_adds_service_prod_reviewer(self) -> None:
         workflow = yaml.safe_load((REPO_ROOT / ".ci/gateway-dashboard.yml").read_text())

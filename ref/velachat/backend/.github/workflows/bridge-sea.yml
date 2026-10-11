@@ -1,0 +1,48 @@
+name: Bridge SEA
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  native-sea:
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - macos-14
+          - ubuntu-latest
+          - windows-latest
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 1.25.12
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.18.0
+          cache: npm
+          cache-dependency-path: bridge/package-lock.json
+      - name: 安装固定依赖
+        working-directory: bridge
+        run: npm ci --ignore-scripts
+      - name: 测试并构建原生 SEA
+        run: |
+          node_binary="$(node -p 'process.execPath')"
+          CHATSERVER_NODE_BINARY="$node_binary" node --test bridge/test/*.test.cjs
+          CHATSERVER_NODE_BINARY="$node_binary" ./scripts/build-release.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chatserver-im-bridge-${{ runner.os }}-${{ runner.arch }}
+          path: dist/release/
+          if-no-files-found: error

@@ -34,6 +34,7 @@ import {
   presentApprovalRequest,
   presentAutomationUpdate,
   presentMcpElicitationDisplayValue,
+  presentReasoning,
   presentToolActivity,
   summarizeAutomaticApprovalReviewAction,
   threadHandoffToolResult,
@@ -60,6 +61,7 @@ import {
   type WebMcpToolSurfaceCall,
   type McpElicitationDraft,
   type McpElicitationDraftValue,
+  type ReasoningContentPresentation,
   type UserInputQuestionDraft,
   validateMcpElicitationDraft,
 } from "@opencraft/chat-core";
@@ -423,21 +425,40 @@ function elicitationDraftText(value: McpElicitationDraftValue | undefined): stri
   return typeof value === "string" ? value : "";
 }
 
-function ReasoningBlock({ block }: { block: Extract<TimelineBlock, { type: "reasoning" }> }) {
-  const [open, setOpen] = useState(false);
+function ReasoningBlock({ block, active = false, presentation = presentReasoning(block, active), collapsed, onCollapsedChange }: {
+  readonly block: Extract<TimelineBlock, { type: "reasoning" }>;
+  readonly active?: boolean;
+  readonly presentation?: ReasoningContentPresentation | null;
+  readonly collapsed?: boolean;
+  readonly onCollapsedChange?: (collapsed: boolean) => void;
+}) {
+  // One stable Item owns one explicit choice; deltas and completion cannot
+  // replace it with a running/settled default or open the tool-work group.
+  const [localOpen, setLocalOpen] = useState(() => !(presentation?.initiallyCollapsed ?? true));
+  const open = collapsed === undefined ? localOpen : !collapsed;
   const { theme } = useWorkbenchTheme();
-  const expandable = block.detail !== null && block.detail.trim() !== "";
+  const { language } = useContext(NativeDocumentHostContext);
+  if (presentation === null) return null;
+  const label = language === "zh-CN"
+    ? active ? "思考中..." : "思考过程"
+    : active ? "Thinking" : "Thought";
   const header = <>
-    <View style={[styles.reasoningDot, block.streaming ? styles.reasoningActive : styles.reasoningDone]} />
-    <Text numberOfLines={open ? undefined : 1} style={styles.reasoningTitle}>{block.summary || "Reasoning"}</Text>
-    {expandable ? <ChevronRight color={theme.color.icon.tertiary} size={theme.metrics.control.iconSmall} strokeWidth={1.8} style={open ? styles.chevronOpen : undefined} /> : null}
+    <NativeCadencedText active={active} numberOfLines={1} style={styles.reasoningStatus}>{label}</NativeCadencedText>
+    <Text numberOfLines={1} style={styles.reasoningTitle}>{presentation.header}</Text>
+    <ChevronRight color={theme.color.icon.tertiary} size={theme.metrics.control.iconSmall} strokeWidth={1.8} style={open ? styles.chevronOpen : undefined} />
   </>;
   return (
     <View style={styles.reasoning}>
-      {expandable
-        ? <InteractiveSurface onPress={() => setOpen((value) => !value)} style={styles.reasoningButton}>{header}</InteractiveSurface>
-        : <View style={styles.reasoningButton}>{header}</View>}
-      {expandable && open ? <Text style={styles.reasoningDetail}>{block.detail}</Text> : null}
+      <InteractiveSurface
+        accessibilityLabel={`${label}: ${presentation.header}`}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        onPress={() => onCollapsedChange ? onCollapsedChange(open) : setLocalOpen(!open)}
+        style={styles.reasoningButton}
+      >{header}</InteractiveSurface>
+      {open ? <View style={styles.reasoningDetail}>
+        <NativeConversationChatDocument documentId={block.id} source={presentation.content} streaming={active} />
+      </View> : null}
     </View>
   );
 }
@@ -933,7 +954,11 @@ function NativeSubagentActivity({ unit }: { readonly unit: SubagentActivityRende
   );
 }
 
-function NativeAgentActivityGroup({ unit }: { readonly unit: AgentActivityGroupContentUnit }) {
+function NativeAgentActivityGroup({ unit, collapsed, onCollapsedChange }: {
+  readonly unit: AgentActivityGroupContentUnit;
+  readonly collapsed?: boolean;
+  readonly onCollapsedChange?: (collapsed: boolean) => void;
+}) {
   const { theme } = useWorkbenchTheme();
   const registry = useContext(NativeToolActivityPresenterContext);
   const detailLevel = useContext(NativeConversationDetailContext);
@@ -946,7 +971,8 @@ function NativeAgentActivityGroup({ unit }: { readonly unit: AgentActivityGroupC
     () => unit.blocks.filter((block) => isVisibleAgentActivityRow(block, registry, detailLevel)),
     [registry, unit.blocks, version, detailLevel],
   );
-  const [open, setOpen] = useState(false);
+  const [localOpen, setLocalOpen] = useState(false);
+  const open = collapsed === undefined ? localOpen : !collapsed;
   const hasExpandableContent = visibleBlocks.length > 0;
   const isThinking = header.state === "thinking";
   const headerStyle = isThinking ? styles.thinkingPlaceholder : styles.reasoningButton;
@@ -960,7 +986,7 @@ function NativeAgentActivityGroup({ unit }: { readonly unit: AgentActivityGroupC
   return (
     <View style={styles.agentActivity}>
       {hasExpandableContent
-        ? <InteractiveSurface onPress={() => setOpen((value) => !value)} style={headerStyle}>{headerContent}</InteractiveSurface>
+        ? <InteractiveSurface onPress={() => onCollapsedChange ? onCollapsedChange(open) : setLocalOpen(!open)} style={headerStyle}>{headerContent}</InteractiveSurface>
         : <View style={headerStyle}>{headerContent}</View>}
       {open && hasExpandableContent ? (
         <View style={styles.agentActivityRows}>
@@ -1030,21 +1056,34 @@ function NativeActivityExpansion({ animateEntrance, children }: {
   return <Animated.View style={[styles.activityContent, { opacity: progress, transform: [{ translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [reduced ? 0 : -8, 0] }) }] }]}>{children}</Animated.View>;
 }
 
-function NativeActivityContent({ units }: { readonly units: readonly AgentActivityContentUnit[] }) {
+function NativeActivityContent({ units, innerCollapsedById, onInnerCollapsedChange }: {
+  readonly units: readonly AgentActivityContentUnit[];
+  readonly innerCollapsedById: Readonly<Record<string, boolean>>;
+  readonly onInnerCollapsedChange: (id: string, collapsed: boolean) => void;
+}) {
   return <View style={styles.activityContent}>{units.map((unit) =>
     unit.type === "worked-for" ? <NativeWorkStatusDivider key={unit.id} item={unit.item} />
-      : unit.type === "group" ? <NativeAgentActivityGroup key={unit.id} unit={unit} />
+      : unit.type === "group" ? <NativeAgentActivityGroup key={unit.id} unit={unit}
+          collapsed={innerCollapsedById[unit.id] ?? true}
+          onCollapsedChange={collapsed => onInnerCollapsedChange(unit.id, collapsed)} />
+        : unit.type === "reasoning" ? <ReasoningBlock key={unit.id} block={unit.block} active={unit.active}
+            presentation={unit.presentation} collapsed={innerCollapsedById[unit.id] ?? true}
+            onCollapsedChange={collapsed => onInnerCollapsedChange(unit.id, collapsed)} />
         : <Block key={unit.id} block={unit.block} />)}</View>;
 }
 
 function NativeAgentActivity({ unit }: { readonly unit: AgentActivityRenderUnit }) {
   const { theme } = useWorkbenchTheme();
   const [persistedCollapsed, setPersistedCollapsed] = useState<boolean>();
+  const [innerCollapsedById, setInnerCollapsedById] = useState<Readonly<Record<string, boolean>>>({});
+  const renderContent = (units: readonly AgentActivityContentUnit[]) => <NativeActivityContent units={units}
+    innerCollapsedById={innerCollapsedById}
+    onInnerCollapsedChange={(id, collapsed) => setInnerCollapsedById(current => ({ ...current, [id]: collapsed }))} />;
   // Native consumes the same disclosure/partition authority as Web. A local
   // `open` initialized once cannot own completion-triggered auto-collapse.
   const layout = resolveAgentActivityLayout(unit, persistedCollapsed);
   return <View style={styles.activityContent}>
-    {layout.preToggleUnits.length > 0 ? <NativeActivityContent units={layout.preToggleUnits} /> : null}
+    {layout.preToggleUnits.length > 0 ? renderContent(layout.preToggleUnits) : null}
     {layout.showToggle ? <View>
       <InteractiveSurface accessibilityRole="button" accessibilityState={{ expanded: !layout.isCollapsed }}
         onPress={() => setPersistedCollapsed(!layout.isCollapsed)} style={styles.workStatusButton}>
@@ -1056,9 +1095,9 @@ function NativeAgentActivity({ unit }: { readonly unit: AgentActivityRenderUnit 
       </InteractiveSurface>
       <View style={styles.workStatusRuleRow}><View style={styles.workStatusRule} /></View>
     </View> : null}
-    {layout.persistentUnits.length > 0 ? <NativeActivityContent units={layout.persistentUnits} /> : null}
+    {layout.persistentUnits.length > 0 ? renderContent(layout.persistentUnits) : null}
     {!layout.isCollapsed ? <NativeActivityExpansion animateEntrance={layout.showToggle}>
-      {layout.visibleUnits.length > 0 ? <NativeActivityContent units={layout.visibleUnits} /> : null}
+      {layout.visibleUnits.length > 0 ? renderContent(layout.visibleUnits) : null}
       {unit.inlineSubagentActivity !== null ? <NativeSubagentActivity unit={unit.inlineSubagentActivity} /> : null}
     </NativeActivityExpansion> : null}
   </View>;
@@ -1862,7 +1901,9 @@ function Frame({
           ? <NativeAgentActivity key={unit.id} unit={unit} />
           : unit.type === "subagent-activity"
             ? <NativeSubagentActivity key={unit.id} unit={unit} />
-            : <View key={unit.id}><Block block={unit.block} /></View>)}
+            : unit.type === "reasoning"
+              ? <ReasoningBlock active={unit.active} block={unit.block} key={unit.id} presentation={unit.presentation} />
+              : <View key={unit.id}><Block block={unit.block} /></View>)}
       {assistantPlan?.changeSummary == null ? null : <View key={assistantPlan.changeSummary.id}><Block block={assistantPlan.changeSummary} /></View>}
       {thinkingId === null ? null : <NativeThinkingPlaceholder key={thinkingId} label={thinkingLabel} />}
       {frame.type === "assistant" && showActions && (actions?.completed || frame.hookStats != null) ? (
@@ -2171,16 +2212,14 @@ const styles = StyleSheet.create((theme) => ({
   hookStatsRunError: { color: theme.color.accent.negative, ...theme.platformTypography.caption },
   reasoning: { gap: theme.spacing[2] },
   reasoningButton: { flexDirection: "row", alignItems: "center", gap: theme.spacing[2], minHeight: theme.metrics.toolbar.touchTarget },
-  reasoningDot: { width: theme.metrics.control.activityDot, height: theme.metrics.control.activityDot, borderRadius: theme.radii.full },
-  reasoningDone: { backgroundColor: theme.color.accent.positive },
-  reasoningActive: { backgroundColor: theme.color.accent.blue },
+  reasoningStatus: { color: theme.color.text.secondary, ...theme.platformTypography.body, fontWeight: "500" },
   reasoningTitle: { flex: 1, color: theme.color.text.secondary, ...theme.platformTypography.body, fontWeight: "500" },
   thinkingPlaceholder: { minHeight: theme.metrics.toolbar.touchTarget, flexDirection: "row", alignItems: "center", gap: theme.spacing[2] },
   thinkingPlaceholderText: { color: theme.color.text.secondary, ...theme.platformTypography.body },
   cadencedText: { position: "relative", minWidth: 0, flexShrink: 1, overflow: "hidden" },
   cadencedTextSweep: { position: "absolute", top: 0, bottom: 0, left: 0, overflow: "hidden" },
   cadencedTextHighlight: { color: theme.color.text.workingHighlight },
-  reasoningDetail: { marginLeft: theme.spacing[4], color: theme.color.text.tertiary, ...theme.platformTypography.body },
+  reasoningDetail: { marginLeft: theme.spacing[4], minWidth: 0 },
   chevronOpen: { transform: [{ rotate: "90deg" }] },
   activityDisclosure: { minWidth: 0, maxWidth: "100%" },
   activityDisclosureHeader: { minHeight: theme.metrics.toolbar.touchTarget, maxWidth: "100%", flexDirection: "row", alignItems: "center", alignSelf: "flex-start", gap: theme.spacing[2], paddingHorizontal: 0 },

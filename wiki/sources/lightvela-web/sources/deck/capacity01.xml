@@ -1,0 +1,35 @@
+<slide id="capacity01">
+  <background color="bg-page" />
+  <shape type="line" x="40" y="26" width="1200" height="0" stroke="border" />
+  <shape type="line" x="1000" y="26" width="240" height="0" stroke="primary" stroke-width="3" />
+  <text x="40" y="36" width="1040" height="24" font="caption" color="primary">末尾补充 · 核数规模估算</text>
+  <text x="1120" y="37" width="120" height="24" font="caption" color="primary" align="right">情景估算</text>
+  <text x="40" y="77" width="1200" height="50" font="heading" color="text-main"><strong>LightVela 核数规模估算</strong></text>
+  <text x="40" y="132" width="1200" height="30" font="body" color="text-muted">注册增长与套餐结构共同推升核数规模；预测不代表当前实际在用或峰值并发。</text>
+  <shape type="rect" x="40" y="178" width="584" height="96" fill="bg-surface" corner-radius="4" />
+  <shape type="rect" x="656" y="178" width="584" height="96" fill="chart-light" corner-radius="4" />
+  <text x="62" y="192" width="300" height="24" font="body" size="16" color="text-main">2026 年末 · 两站合计</text>
+  <text x="62" y="226" width="535" height="39" font="heading" size="30" color="primary"><strong>32.4–33.1 万核</strong></text>
+  <text x="678" y="192" width="300" height="24" font="body" size="16" color="text-main">2027 年末 · 两站合计</text>
+  <text x="678" y="226" width="535" height="39" font="heading" size="30" color="primary"><strong>65.5–91.3 万核</strong></text>
+  <table id="capacity-forecast" x="40" y="290" width="1200" height="200" columns="3.4,2.6,2.6,3.4" rows="36,41,41,41,41" font="body" size="17" color="text-main" align="left" padding="7 16" header-fill="bg-surface" line-height="1.2">
+    <tr><td><strong>指标</strong></td><td><strong>国内站</strong></td><td><strong>国际站</strong></td><td><strong>两站合计</strong></td></tr>
+    <tr><td>2026 年末预计注册</td><td>约 13.8 万</td><td>约 6.0 万</td><td>—</td></tr>
+    <tr><td>2026 年末预计核数</td><td>17.7–18.1 万核</td><td>14.7–15.0 万核</td><td color="primary"><strong>32.4–33.1 万核</strong></td></tr>
+    <tr><td>2027 年末预计注册</td><td>22–26 万</td><td>10.8–13.2 万</td><td>—</td></tr>
+    <tr><td>2027 年末预计核数</td><td>37.8–53.6 万核</td><td>27.7–37.7 万核</td><td color="primary"><strong>65.5–91.3 万核</strong></td></tr>
+  </table>
+  <text x="40" y="510" width="385" height="25" font="strong" size="17" color="primary"><strong>注册增长</strong></text>
+  <text x="40" y="542" width="385" height="45" font="body" size="14" color="text-main" line-height="1.45"><p>2026 剩余时间：近 30 天速度 × 1.2／1.25。</p><p>2027 规模：国内 × 1.6–1.9，国际 × 1.8–2.2。</p></text>
+  <shape type="line" x="445" y="510" width="0" height="73" stroke="border" />
+  <text x="465" y="510" width="375" height="25" font="strong" size="17" color="primary"><strong>巡游套餐占比提升</strong></text>
+  <text x="465" y="542" width="375" height="45" font="body" size="14" color="text-main" line-height="1.45"><p>2026：国内 5%–7.5%，国际 4%–6%。</p><p>2027：国内 8%–12%，国际 6%–10%。</p></text>
+  <shape type="line" x="860" y="510" width="0" height="73" stroke="border" />
+  <text x="880" y="510" width="360" height="25" font="strong" size="17" color="primary"><strong>国际站开通与创建更充分</strong></text>
+  <text x="880" y="542" width="360" height="45" font="body" size="14" color="text-main" line-height="1.45">同等注册规模下，国际站对应的核数需求更高；按团队当前观察纳入假设。</text>
+  <shape type="rect" x="40" y="604" width="1200" height="60" fill="bg-surface" corner-radius="4" />
+  <text x="54" y="611" width="1172" height="20" font="body" size="13" color="text-main"><strong>当前估算基线：</strong>累计创建实例事件对应国内约 6.5 万核、国际约 3.4 万核；按成功创建用户，保守参考约 5.0 万核／2.6 万核。</text>
+  <text x="54" y="637" width="1172" height="18" font="caption" color="text-muted">累计事件可能含重复创建、重建或已释放实例，不等同实际在用容量。完整增长假设与模型口径见“详细参考”。</text>
+  <text x="40" y="684" width="1130" height="20" font="caption" color="text-muted">LightVela｜来源：本次补充的核数预测与增长假设；未补造实例规格、创建率或并发参数</text>
+  <text x="1180" y="684" width="60" height="20" font="caption" color="text-muted" align="right">31 / 32</text>
+</slide>

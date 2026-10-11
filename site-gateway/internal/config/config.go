@@ -30,6 +30,7 @@ type Config struct {
 	CTLInternalToken string
 	CTLTimeout       time.Duration
 
+	BackendSharedRead    bool
 	AuthMode             AuthMode
 	AuthEndpointsEnabled bool
 	AuthFixedHost        string
@@ -117,6 +118,10 @@ func FromEnv() (Config, error) {
 	default:
 		return Config{}, fmt.Errorf("SITE_GATEWAY_AUTH_MODE must be public or required")
 	}
+	if cfg.BackendSharedRead, err = getBool("SITE_GATEWAY_BACKEND_SHARED_READ", false); err != nil {
+		return Config{}, err
+	}
+
 	if cfg.AuthAEADKeys, err = parseAuthAEADKeys(os.Getenv("SITE_GATEWAY_AUTH_AEAD_KEYS")); err != nil {
 		return Config{}, err
 	}

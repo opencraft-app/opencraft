@@ -7,6 +7,20 @@ SKILL_PATH = REPO_ROOT / ".agents" / "skills" / "website-builder" / "SKILL.md"
 
 
 class WebsiteBuilderSkillContractTests(unittest.TestCase):
+    def test_skill_is_business_agnostic(self) -> None:
+        source = SKILL_PATH.parent
+        for path in source.rglob("*"):
+            if path.is_file() and "__pycache__" not in path.parts:
+                with self.subTest(file=str(path.relative_to(source))):
+                    self.assertNotIn("todo", str(path.relative_to(source)).lower())
+                    self.assertFalse(b"todo" in path.read_bytes().lower(), "business-specific fixture in Skill")
+        skill = SKILL_PATH.read_text()
+        self.assertNotIn("/api/sum", skill)
+        self.assertNotIn("JSON.stringify({ a: 2, b: 3 })", skill)
+        for contract in ("fetch-v1", "rivet-sql-v1", "参数绑定", "幂等", "向后兼容", "独立浏览器"):
+            with self.subTest(contract=contract):
+                self.assertIn(contract, skill)
+
     def test_backend_capability_is_fail_closed(self) -> None:
         skill = SKILL_PATH.read_text()
         for text in ("data.backend.enabled", "data.data.enabled", "缺失", "false",
@@ -17,7 +31,7 @@ class WebsiteBuilderSkillContractTests(unittest.TestCase):
     def test_skill_does_not_contradict_the_gated_stateless_backend(self) -> None:
         skill = SKILL_PATH.read_text()
         overview = skill.split("## ⚠️", 1)[0]
-        self.assertIn("无状态后端", overview)
+        self.assertIn("后端执行与数据存储是两项独立能力", overview)
         self.assertIn("能力门禁", overview)
         self.assertIn("站点所有者登录", skill)
         for contradiction in (
@@ -30,7 +44,8 @@ class WebsiteBuilderSkillContractTests(unittest.TestCase):
         self.assertIn("data.backend.enabled", skill)
         self.assertIn("data.data.enabled", skill)
         self.assertIn("fetch-v1", skill)
-        self.assertIn("不支持公开访客写入或持久化", skill)
+        self.assertIn("不支持公开访客写入", skill)
+        self.assertIn("rivet-sql-v1", skill)
 
     def test_public_url_examples_use_the_international_https_domain(self) -> None:
         skill = SKILL_PATH.read_text()

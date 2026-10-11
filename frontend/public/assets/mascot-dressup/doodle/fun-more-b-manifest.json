@@ -1,0 +1,76 @@
+{
+  "tool": "built-in imagegen",
+  "date": "2026-10-05",
+  "style": "Existing doodle/crown.webp and wings.webp flat two-tone accessory family",
+  "assets": [
+    {
+      "name": "beret",
+      "prompt": "Use case: stylized-concept. Asset type: isolated 2D avatar accessory sprite. Create ONLY a small coral-orange French beret, no character or body. Match the supplied crown reference's clean soft flat vector-like two-tone illustration with subtly darker lower-right edge, no thick outlines, no photoreal materials, no3D. A charming gently asymmetric oval puff, small stem on top, short curved thin lower band. Beret naturally tilted 12degrees as if perched on upper LEFT of a mascot head, leaving the right half open for a tall antenna; compact brimless design. Color coral #FF927D and edge #EF7967. Single accessory centered and fully visible, isolated true transparent alpha background, tight content plus modest transparent padding, no floor, no shadow, no label, no text, no face, no hands, no mannequin. Clear silhouette at32pixels. Filled opaque illustration shapes with clean antialiased edges.",
+      "source": "/Users/keria/.codex/generated_images/01a1079e-ef58-7f10-bdc5-4fd0dafdc720/exec-98378086-dd12-49fc-9e95-7ffcab25d0cb.png",
+      "output": "beret.webp",
+      "normalization": {
+        "method": "Alpha>128 bounds plus8px padding, preserve original alpha and RGB, proportional600px width WebP",
+        "crop": {
+          "left": 246,
+          "top": 118,
+          "width": 1186,
+          "height": 721
+        },
+        "width": 600,
+        "height": 365
+      },
+      "qa": {
+        "transparentPixels": 92389,
+        "fileBytes": 21518,
+        "centerAlpha": 254,
+        "inspected": true
+      }
+    },
+    {
+      "name": "saturn",
+      "prompt": "Use case: stylized-concept. Asset type: isolated 2D mascot accessory badge sprite. Create ONLY a cute tiny Saturn planet pin: a soft sky-blue circular planet with a pale butter-yellow orbit ring diagonally around it. Match supplied crown reference clean flat soft two-tone vector-like illustration, opaque color fills, subtle darker flat edge segment, NO thick outlines, NO3D or photoreal material. Planet color #ADD1F4, lower-right accent #8BBCEB. Ring #FFE4A4, slight edge #F6D07D. The ring visibly passes in front of lower planet and behind upper planet, simple readable geometry; modest 15degree diagonal. No pin hardware. One centered complete accessory, true transparent alpha outside, modest padding, no body, no face, no antenna, no stars around it, no groundshadow, no text. Charming and legible at32pixels.",
+      "source": "/Users/keria/.codex/generated_images/01a1079e-ef58-7f10-bdc5-4fd0dafdc720/exec-260b8c7f-2582-4e54-b552-cc2080353de7.png",
+      "output": "saturn.webp",
+      "normalization": {
+        "method": "Alpha>128 bounds plus8px padding, preserve original alpha and RGB, proportional600px width WebP",
+        "crop": {
+          "left": 319,
+          "top": 231,
+          "width": 988,
+          "height": 574
+        },
+        "width": 600,
+        "height": 349
+      },
+      "qa": {
+        "transparentPixels": 85413,
+        "fileBytes": 26446,
+        "centerAlpha": 254,
+        "inspected": true
+      }
+    },
+    {
+      "name": "cape",
+      "prompt": "Use case: stylized-concept. Asset type: isolated2D avatar accessory layer. Create ONLY a short pale-lavender superhero cape viewed straight from front, designed to sit BEHIND a round mascot. Match reference wings' flat clean soft vector-like two-tone illustration, no thick outline, no3D. Cape consists of TWO separate softly flaring cloth panels visible on far left and far right, with a wide genuinely TRANSPARENT central opening taking60% of overall width to reveal the character. Panel tops meet at neck height via a very fine curved lilac fastening cord and one tiny cream round clasp centered. Cape hangs only as short as torso, lower tips gently rounded, two simple darker lilac fold shapes. Main #D2C0F5 edge #B9A0E7, clasp cream #FFE6AB. It must be hollow center, not a solid purple rectangle behind body; no body or head supplied. Both panels roughly mirror each other, minimal and cute, no letters/emblems/stars, no floor/shadows, no text. Full cape fully contained, transparent alpha background and central opening. Opaque cloth fill, tight cropping plus transparent padding. Clear silhouette at48pixels.",
+      "source": "/Users/keria/.codex/generated_images/01a1079e-ef58-7f10-bdc5-4fd0dafdc720/exec-53b482c3-1d45-42f6-a354-44a2fce96244.png",
+      "output": "cape.webp",
+      "normalization": {
+        "method": "Alpha>128 bounds plus8px padding, preserve original alpha and RGB, proportional600px width WebP",
+        "crop": {
+          "left": 107,
+          "top": 160,
+          "width": 1561,
+          "height": 571
+        },
+        "width": 600,
+        "height": 219
+      },
+      "qa": {
+        "transparentPixels": 85899,
+        "fileBytes": 20250,
+        "centerAlpha": 0,
+        "inspected": true
+      }
+    }
+  ]
+}

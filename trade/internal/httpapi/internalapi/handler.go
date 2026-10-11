@@ -604,6 +604,8 @@ func classifyPlaceOrderError(err error) (string, int) {
 		return "BillingAccountOpenFailed", http.StatusConflict
 	case errors.Is(err, placeorder.ErrDianshiActivityRequired):
 		return "DianshiActivityRequired", http.StatusUnprocessableEntity
+	case errors.Is(err, placeorder.ErrLegacyDianshiOrderPending):
+		return "LegacyDianshiOrderPending", http.StatusConflict
 	case errors.Is(err, placeorder.ErrUnsupportedSite):
 		return "UnsupportedSite", http.StatusUnprocessableEntity
 	default:

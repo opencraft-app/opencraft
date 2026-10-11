@@ -20,16 +20,17 @@ import { useWorkbenchPresentationRoot } from "./workbench-presentation-root";
 import type { SidebarThreadMenuKind } from "./sidebar-thread-menu-state";
 import "../styles/context-menu.scss";
 
-export interface ThreadActionTarget { readonly hostId: string; readonly threadId: string; readonly title: string }
-export interface ThreadActionCapabilities { readonly rename: boolean; readonly archive: boolean; readonly fork: boolean; readonly delete: boolean }
+export interface ThreadActionTarget { readonly hostId: string; readonly threadId: string; readonly title: string; readonly pinned?: boolean }
+export interface ThreadActionCapabilities { readonly rename: boolean; readonly archive: boolean; readonly fork: boolean; readonly delete: boolean; readonly pin?: boolean }
 export interface ThreadActionCallbacks {
   readonly onRename: (target: ThreadActionTarget, title: string) => Promise<void>;
   readonly onFork: (target: ThreadActionTarget) => Promise<void>;
   readonly onArchive: (target: ThreadActionTarget) => Promise<void>;
   readonly onDelete: (target: ThreadActionTarget) => Promise<void>;
+  readonly onSetPinned?: (target: ThreadActionTarget, pinned: boolean) => Promise<void>;
 }
 
-export function ThreadRowMenu({ target, capabilities, children, openMenuKind, onOpenMenuChange, onRename, onFork, onArchive, onDelete }: ThreadActionCallbacks & {
+export function ThreadRowMenu({ target, capabilities, children, openMenuKind, onOpenMenuChange, onRename, onFork, onArchive, onDelete, onSetPinned }: ThreadActionCallbacks & {
   target: ThreadActionTarget; capabilities: ThreadActionCapabilities; children: ReactNode;
   openMenuKind: SidebarThreadMenuKind | null;
   onOpenMenuChange: (kind: SidebarThreadMenuKind, open: boolean) => void;
@@ -49,6 +50,7 @@ export function ThreadRowMenu({ target, capabilities, children, openMenuKind, on
   // Shared item model for both the right-click context menu and the row
   // "..." dropdown, mirroring the actions(entry).map pattern in bot-management.
   const menuItems = [
+    capabilities.pin && onSetPinned ? { key: "pin", label: target.pinned ? "取消置顶" : "置顶", onSelect: () => { void run(() => onSetPinned(target, target.pinned !== true)); } } : null,
     capabilities.rename ? { key: "rename", label: "重命名", onSelect: () => { modalHandoff.current = true; setDraft(target.title); setError(null); setRenaming(true); } } : null,
     capabilities.fork ? { key: "fork", label: "新建分支", onSelect: () => { void run(() => onFork(target), "fork"); } } : null,
     capabilities.archive ? { key: "archive", label: "归档", onSelect: () => { void run(() => onArchive(target)); } } : null,

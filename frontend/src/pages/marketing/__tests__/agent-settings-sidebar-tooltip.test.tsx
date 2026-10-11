@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { WorkspaceActionTooltip } from "@/pages/marketing/agent-settings-page";
+import { ModelActionTooltip } from "@/pages/marketing/agent-model-config/model-action-tooltip";
 
 const rect = (left: number, top: number, width: number, height: number): DOMRect => ({
   x: left,
@@ -22,6 +23,40 @@ afterEach(() => {
 });
 
 describe("Agent sidebar action tooltip", () => {
+  it("places collapsed navigation and Bot tooltips to the right with the shared rail style", async () => {
+    vi.stubGlobal("innerHeight", 800);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      if (this.getAttribute("role") === "tooltip") return rect(0, 0, 100, 36);
+      return rect(this.closest("[data-rail]")?.getAttribute("data-rail") === "bot" ? 8 : 64, 120, 40, 40);
+    });
+
+    render(<>
+      <div data-rail="bot">
+        <ModelActionTooltip content="Bot A · 在线" side="right" focusable={false}>
+          <button type="button">Bot A</button>
+        </ModelActionTooltip>
+      </div>
+      <div data-rail="navigation">
+        <WorkspaceActionTooltip content="技能" side="right" compact focusable={false}>
+          <button type="button">技能</button>
+        </WorkspaceActionTooltip>
+      </div>
+    </>);
+
+    fireEvent.mouseEnter(screen.getByRole("button", { name: "Bot A" }).parentElement!);
+    fireEvent.mouseEnter(screen.getByRole("button", { name: "技能" }).parentElement!);
+    await waitFor(() => {
+      const botTooltip = screen.getByRole("tooltip", { name: "Bot A · 在线" });
+      const navTooltip = screen.getByRole("tooltip", { name: "技能" });
+      expect(botTooltip).toHaveClass("lv-agent-rail-tooltip");
+      expect(navTooltip).toHaveClass("lv-agent-rail-tooltip");
+      expect(botTooltip).toHaveStyle({ left: "56px", top: "140px" });
+      expect(navTooltip).toHaveStyle({ left: "112px", top: "140px" });
+      expect(botTooltip.parentElement).toBe(document.body);
+      expect(navTooltip.parentElement).toBe(document.body);
+    });
+  });
+
   it("shows a disabled Chat tab explanation outside the clipped sidebar", async () => {
     vi.stubGlobal("innerWidth", 320);
     const sidebar = document.createElement("div");

@@ -2,6 +2,7 @@
 
 import React, { Suspense } from 'react';
 
+import { AgentCollaborationLab } from "@/pages/marketing/agent-collaboration-lab";
 import { AgentSidebarToggle, useAgentSidebarCollapse } from '@/components/site/agent-sidebar';
 import { ProductReturnHomeHeader } from '@/components/site/product-chrome';
 import type { AgentSectionId, AgentSettingsSectionId } from '@/lib/agent-routes';
@@ -35,7 +36,14 @@ export function AgentsPageClient({
       showLanguageSwitcher={false}
     />
   );
-  const loadingFallback = isWorkbench ? productHeader : <AgentsRouteLoading />;
+  const loadingFallback = isWorkbench ? productHeader : <AgentsRouteLoading collapsed={collapsed} onToggle={toggle} isChat={!sectionId || sectionId === 'chat'} />;
+
+  // Human collaboration is independent of paid Agent/instance entitlements.
+  if (sectionId === 'collaboration') return (
+    <AppRouteShell loadingFallback={productHeader} showAuthGateFooter={false}>
+      {productHeader}<AgentCollaborationLab />
+    </AppRouteShell>
+  );
 
   return (
     <AppRouteShell loadingFallback={loadingFallback} showAuthGateFooter={false}>

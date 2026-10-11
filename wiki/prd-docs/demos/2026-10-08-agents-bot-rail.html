@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LightVela Bot 独立竖栏 · 产品交互 Demo</title>
+  <style>
+    :root { font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #202229; background: #eef0f4; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    button { font: inherit; cursor: pointer; }
+    button:focus-visible { outline: 2px solid #3f67da; outline-offset: 2px; }
+    button:disabled { cursor: not-allowed; }
+    .demo-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 20px; background: #20232c; color: #fff; }
+    .demo-bar strong { font-size: 15px; }
+    .demo-bar span { margin-left: 10px; color: #bbc1cd; font-size: 12px; }
+    .demo-tools { display: flex; align-items: center; gap: 10px; }
+    .demo-tools button { padding: 6px 12px; border: 1px solid #727b8b; border-radius: 7px; background: transparent; color: #fff; }
+    .demo-tools button[aria-pressed="true"] { border-color: #fff; background: #fff; color: #20232c; }
+    .demo-tools label { display: flex; align-items: center; gap: 5px; font-size: 12px; }
+    .stage { max-width: 1440px; margin: 24px auto; padding: 0 20px; }
+    .app { position: relative; min-height: 650px; overflow: hidden; border: 1px solid #dcdfe6; border-radius: 14px; background: #fff; box-shadow: 0 16px 42px rgb(24 31 45 / 9%); }
+    .site-header { display: flex; height: 60px; align-items: center; justify-content: space-between; padding: 0 20px; border-bottom: 1px solid #e9eaf0; }
+    .brand { font-weight: 750; letter-spacing: -.4px; font-size: 18px; }
+    .site-header small { color: #8b909b; }
+    .workspace { display: grid; grid-template-columns: 68px 260px minmax(0, 1fr); min-height: 590px; }
+    .rail { display: flex; min-height: 0; flex-direction: column; align-items: center; border-right: 1px solid #e7e9ee; background: #f8f9fb; }
+    .rail-label { display: block; width: 100%; padding: 14px 0 9px; color: #9298a5; font-size: 10px; font-weight: 700; letter-spacing: .08em; text-align: center; }
+    .bot-list { display: flex; min-height: 0; width: 100%; flex: 1; flex-direction: column; align-items: center; gap: 8px; overflow-y: auto; overscroll-behavior: contain; padding: 4px 0 10px; }
+    .bot-btn, .add-btn { display: grid; width: 48px; min-height: 48px; place-items: center; position: relative; border: 0; border-radius: 12px; background: transparent; }
+    .bot-btn:hover, .add-btn:hover:not(:disabled) { background: #eceef3; }
+    .bot-btn[aria-current="true"] { background: #e9edfa; }
+    .bot-btn[aria-current="true"]::before { position: absolute; left: -10px; width: 3px; height: 24px; border-radius: 0 3px 3px 0; background: #5472d2; content: ""; }
+    .avatar { display: grid; width: 34px; height: 34px; place-items: center; overflow: hidden; border-radius: 10px; color: #fff; font-size: 14px; font-weight: 700; }
+    .rail-bottom { display: grid; width: 100%; min-height: 70px; place-items: center; border-top: 1px solid #e7e9ee; }
+    .add-btn { border: 1px dashed #bbc2d0; color: #536078; font-size: 25px; line-height: 1; }
+    .add-btn:disabled { opacity: .4; }
+    .sidebar { display: flex; flex-direction: column; min-width: 0; border-right: 1px solid #e7e9ee; padding: 16px; }
+    .profile { position: relative; padding: 12px; border: 1px solid #dedfe5; border-radius: 13px; }
+    .profile-top { display: flex; align-items: center; gap: 9px; }
+    .profile-top .avatar { flex: none; width: 32px; height: 32px; border-radius: 50%; }
+    .profile-name { min-width: 0; flex: 1; font-weight: 650; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .status { display: flex; align-items: center; gap: 6px; margin: 8px 0 0 41px; color: #68707f; font-size: 12px; }
+    .status::before { display: block; width: 7px; height: 7px; border-radius: 50%; background: var(--status-color); content: ""; }
+    .actions { display: flex; gap: 7px; margin: 12px 0 0 41px; }
+    .actions button { padding: 5px 8px; border: 1px solid #e0e3e9; border-radius: 6px; background: #fafbfc; color: #505866; font-size: 12px; }
+    .actions button[data-action="delete"] { color: #c4494b; }
+    .actions button:hover { background: #eef0f4; }
+    .manage-menu { position: absolute; top: calc(100% - 4px); right: 12px; z-index: 5; width: 126px; padding: 5px; border: 1px solid #dfe2e9; border-radius: 8px; background: #fff; box-shadow: 0 10px 25px rgb(25 31 45 / 12%); }
+    .manage-menu button { display: block; width: 100%; padding: 7px 9px; border: 0; border-radius: 5px; background: transparent; text-align: left; }
+    .manage-menu button:hover { background: #f3f4f7; }
+    .tabs { display: flex; gap: 4px; margin-top: 20px; padding: 3px; border-radius: 8px; background: #f0f1f4; }
+    .tabs button { flex: 1; padding: 7px; border: 0; border-radius: 6px; background: transparent; color: #7a808b; }
+    .tabs button[aria-selected="true"] { background: #fff; color: #252933; box-shadow: 0 1px 4px rgb(25 34 50 / 10%); }
+    .nav-title { margin: 24px 8px 8px; color: #9298a3; font-size: 11px; font-weight: 700; }
+    .nav-item { display: block; width: 100%; padding: 9px 12px; border: 0; border-radius: 7px; background: transparent; color: #515967; text-align: left; }
+    .nav-item:hover { background: #f3f4f7; }
+    .nav-item.active { background: #eef1f8; color: #354f9a; font-weight: 600; }
+    .sidebar-foot { position: relative; margin-top: auto; padding-top: 16px; border-top: 1px solid #e9eaf0; }
+    .account-button { display: flex; width: 100%; align-items: center; gap: 9px; padding: 8px; border: 0; border-radius: 9px; background: transparent; text-align: left; }
+    .account-button:hover, .account-button[aria-expanded="true"] { background: #f3f4f7; }
+    .account-button .avatar { flex: none; border-radius: 50%; }
+    .account-button span:nth-child(2) { flex: 1; }
+    .account-button small { display: block; color: #808794; }
+    .account-popover { position: absolute; bottom: calc(100% + 8px); left: 0; z-index: 4; width: 288px; max-width: calc(100vw - 35px); padding: 16px; border: 1px solid #dfe2e9; border-radius: 12px; background: #fff; box-shadow: 0 14px 32px rgb(25 31 45 / 14%); }
+    .account-popover h2 { margin: 0 0 10px; font-size: 14px; }
+    .account-pass { padding: 12px; border-radius: 9px; background: #f4f2fe; }
+    .account-pass strong { display: block; margin-top: 2px; font-size: 18px; }
+    .account-pass small { color: #737b8b; }
+    .account-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px; }
+    .account-stats div { padding: 8px; border: 1px solid #e8eaf0; border-radius: 8px; }
+    .account-stats small { display: block; color: #7b8290; font-size: 10px; white-space: nowrap; }
+    .account-stats strong { font-size: 16px; }
+    .account-link { margin-top: 12px; padding: 6px 0; border: 0; background: transparent; color: #354f9a; }
+    .main { min-width: 0; padding: 32px 42px; }
+    .main h1 { margin: 0 0 6px; font-size: 25px; letter-spacing: -.03em; }
+    .main p { margin: 0; color: #7b8290; }
+    .example-card { max-width: 580px; margin-top: 30px; padding: 24px; border: 1px solid #e8eaf0; border-radius: 12px; background: #fbfcfd; }
+    .example-card strong { font-size: 15px; }
+    .example-card p { margin-top: 8px; line-height: 1.8; }
+    .new-chat { display: flex; min-height: 450px; flex-direction: column; align-items: center; justify-content: center; }
+    .new-chat .avatar { width: 54px; height: 54px; border-radius: 16px; font-size: 21px; }
+    .new-chat h1 { margin-top: 18px; text-align: center; }
+    .chat-composer { width: min(680px, 100%); margin-top: 34px; padding: 12px; border: 1px solid #dfe2e9; border-radius: 14px; box-shadow: 0 7px 24px rgb(20 28 45 / 6%); }
+    .chat-composer textarea { display: block; width: 100%; min-height: 80px; resize: vertical; border: 0; outline: 0; font: inherit; }
+    .chat-composer button { display: block; margin-left: auto; padding: 7px 13px; border: 0; border-radius: 8px; background: #202229; color: #fff; }
+    .mobile-toggle { display: none; }
+    .mobile-strip { display: none; }
+    .modal-backdrop { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; padding: 20px; background: rgb(20 25 35 / 38%); }
+    .modal { width: min(390px, 100%); padding: 24px; border-radius: 12px; background: #fff; box-shadow: 0 18px 50px rgb(0 0 0 / 15%); }
+    .modal h2 { margin: 0 0 10px; font-size: 18px; }
+    .modal p { margin: 0 0 22px; color: #68707e; }
+    .modal button { padding: 8px 14px; border: 1px solid #dfe2e9; border-radius: 7px; background: #f8f9fb; }
+    .preview-mobile { width: 390px; max-width: 100%; margin: auto; }
+    .preview-mobile .app { min-height: 740px; }
+    .preview-mobile .workspace { display: block; min-height: 680px; }
+    .preview-mobile .rail { display: none; }
+    .preview-mobile .site-header { padding: 0 16px; }
+    .preview-mobile .mobile-toggle { display: inline-block; border: 0; background: transparent; font-size: 22px; }
+    .preview-mobile .sidebar { display: none; }
+    .preview-mobile.drawer-open .sidebar { display: flex; position: absolute; z-index: 3; width: min(330px, calc(100vw - 40px)); height: 680px; background: #fff; box-shadow: 8px 8px 22px rgb(20 25 35 / 12%); }
+    .preview-mobile .mobile-strip { display: flex; align-items: center; gap: 7px; overflow-x: auto; min-height: 62px; margin: -4px -4px 12px; padding: 4px; border-bottom: 1px solid #e7e9ee; }
+    .preview-mobile .mobile-strip .bot-btn, .preview-mobile .mobile-strip .add-btn { flex: none; }
+    .preview-mobile .main { padding: 25px; }
+    .preview-mobile .main h1 { font-size: 21px; }
+    .preview-mobile .example-card { padding: 18px; }
+    .preview-mobile .new-chat { min-height: 520px; }
+    @media (max-width: 700px) { .demo-bar { align-items: flex-start; } .stage { margin: 10px auto; padding: 0 10px; } .stage:not(.preview-desktop) { width: 390px; max-width: 100%; } }
+  </style>
+</head>
+<body>
+  <div class="demo-bar">
+    <div><strong>Bot 独立竖栏</strong><span>产品交互 Demo · 模拟数据，不执行真实操作</span></div>
+    <div class="demo-tools">
+      <button id="desktop-mode" type="button" aria-pressed="true">桌面</button>
+      <button id="mobile-mode" type="button" aria-pressed="false">手机预览</button>
+      <label><input id="quota-toggle" type="checkbox">模拟配额已满</label>
+    </div>
+  </div>
+  <div id="stage" class="stage preview-desktop">
+    <div class="app">
+      <header class="site-header"><div><button id="mobile-toggle" class="mobile-toggle" type="button" aria-label="打开导航">☰</button><span class="brand">LightVela</span></div><small>Agent 控制台</small></header>
+      <div class="workspace">
+        <aside class="rail" aria-label="Bot 切换"><span class="rail-label">BOTS</span><div id="desktop-bots" class="bot-list"></div><div class="rail-bottom"><button id="desktop-add" class="add-btn" type="button" aria-label="新建 Bot" title="新建 Bot">＋</button></div></aside>
+        <aside class="sidebar" aria-label="当前 Bot 导航"><div id="mobile-bots" class="mobile-strip" aria-label="Bot 切换"></div><div id="profile" class="profile"></div><div class="tabs" role="tablist" aria-label="侧边栏视图切换"><button id="daily-tab" type="button" role="tab" aria-selected="true">日常</button><button id="explore-tab" type="button" role="tab" aria-selected="false">探索</button></div><div id="nav"></div><div id="account-foot" class="sidebar-foot"></div></aside>
+        <main id="main" class="main"></main>
+      </div>
+    </div>
+  </div>
+  <div id="modal-root"></div>
+  <script>
+    const bots = [
+      { id: "bot-a", name: "我的个人助手", short: "我", color: "#5373d2", status: "运行中", statusColor: "#22a36a" },
+      { id: "bot-b", name: "客服 Bot", short: "客", color: "#17a899", status: "运行中", statusColor: "#22a36a" },
+      { id: "bot-c", name: "内容研究助手", short: "研", color: "#aa6bc7", status: "已暂停", statusColor: "#aab1bd" },
+      { id: "bot-d", name: "代码搭档", short: "码", color: "#db925a", status: "运行中", statusColor: "#22a36a" },
+      { id: "bot-e", name: "运营助手", short: "运", color: "#688ca5", status: "运行中", statusColor: "#22a36a" },
+      { id: "bot-f", name: "资料整理", short: "资", color: "#7d8e5a", status: "运行中", statusColor: "#22a36a" },
+      { id: "bot-g", name: "长名称 Bot 示例", short: "长", color: "#bf7290", status: "运行中", statusColor: "#22a36a" },
+      { id: "bot-h", name: "列表滚动示例", short: "列", color: "#8876ba", status: "运行失败", statusColor: "#d45a5a" },
+    ];
+    let selectedId = bots[0].id;
+    let section = "日常";
+    let view = "新建会话";
+    let accountOpen = false;
+    let manageOpen = false;
+    const stage = document.querySelector("#stage");
+    const quota = document.querySelector("#quota-toggle");
+    const botById = () => bots.find((bot) => bot.id === selectedId);
+    const avatar = (bot) => `<span class="avatar" style="background:${bot.color}">${bot.short}</span>`;
+    function botButtons() {
+      return bots.map((bot) => `<button class="bot-btn" type="button" data-bot="${bot.id}" aria-label="切换到 ${bot.name}" aria-current="${bot.id === selectedId}" title="${bot.name}">${avatar(bot)}</button>`).join("");
+    }
+    function render() {
+      const bot = botById();
+      document.querySelector("#desktop-bots").innerHTML = botButtons();
+      document.querySelector("#mobile-bots").innerHTML = `${botButtons()}<button class="add-btn" type="button" data-add="true" aria-label="新建 Bot" title="新建 Bot" ${quota.checked ? "disabled" : ""}>＋</button>`;
+      document.querySelector("#desktop-add").disabled = quota.checked;
+      document.querySelector("#desktop-add").title = quota.checked ? "已达到 Bot 数量上限" : "新建 Bot";
+      const restartLabel = bot.status === "运行失败" ? "修复" : "重启";
+      const restartDisabled = bot.status === "已暂停";
+      document.querySelector("#profile").innerHTML = `<div class="profile-top">${avatar(bot)}<span class="profile-name" title="${bot.name}">${bot.name}</span></div><div class="status" style="--status-color:${bot.statusColor}">${bot.status}</div><div class="actions"><button type="button" data-action="restart" ${restartDisabled ? "disabled title=\"当前状态不可重启\"" : ""}>${restartLabel}</button><button type="button" data-action="delete">删除</button><button type="button" data-action="manage" aria-expanded="${manageOpen}">管理</button></div>${manageOpen ? `<div class="manage-menu"><button type="button" data-manage-item="修改资料">修改资料</button><button type="button" data-manage-item="复制 Bot">复制 Bot</button></div>` : ""}`;
+      document.querySelector("#daily-tab").setAttribute("aria-selected", String(section === "日常"));
+      document.querySelector("#explore-tab").setAttribute("aria-selected", String(section === "探索"));
+      document.querySelector("#nav").innerHTML = section === "日常"
+        ? `<div class="nav-title">当前 Bot</div>${["新建会话", "定时任务", "技能"].map((item) => `<button class="nav-item ${view === item ? "active" : ""}" type="button" data-view="${item}">${item === "新建会话" ? "＋　" : ""}${item}</button>`).join("")}`
+        : `<div class="nav-title">当前 Bot</div>${["通道", "模型", "人设与记忆"].map((item) => `<button class="nav-item ${view === item ? "active" : ""}" type="button" data-view="${item}">${item}</button>`).join("")}`;
+      document.querySelector("#account-foot").innerHTML = `<button id="account-button" class="account-button" type="button" aria-expanded="${accountOpen}" aria-controls="account-popover"><span class="avatar" style="background:#c99d65">吴</span><span><strong>吴所滑</strong><small>账户与套餐</small></span><span aria-hidden="true">⌃</span></button>${accountOpen ? `<div id="account-popover" class="account-popover" role="region" aria-label="账户权益概览"><h2>账户权益</h2><div class="account-pass"><small>LightVela 已经为你服务</small><strong>7 天</strong><small>有效期至 2026 年 11 月 1 日 · 模拟数据</small></div><div class="account-stats"><div><small>剩余 AI 积分</small><strong>4483</strong></div><div><small>Bot 数量</small><strong>${bots.length}</strong></div><div><small>已邀请好友</small><strong>0</strong></div></div><button class="account-link" type="button" data-account-link="true">查看套餐与积分 →</button></div>` : ""}`;
+      document.querySelector("#main").innerHTML = view === "新建会话"
+        ? `<div class="new-chat">${avatar(bot)}<h1>与 ${bot.name} 开始新会话</h1><p>切换 Bot 后默认打开空白新会话，历史会话仍归属原 Bot。</p><div class="chat-composer"><textarea aria-label="给 ${bot.name} 发送消息" placeholder="给 ${bot.name} 发送消息…"></textarea><button type="button" data-send="true">发送</button></div></div>`
+        : `<h1>${view}</h1><p>${bot.name} · ${section}</p><div class="example-card"><strong>当前 Bot 的${view}页面</strong><p>点击左侧另一 Bot 头像，将进入目标 Bot 的新建会话，不保留此分区。</p></div>`;
+    }
+    function showModal(title, detail) {
+      document.querySelector("#modal-root").innerHTML = `<div class="modal-backdrop"><div class="modal" role="dialog" aria-modal="true" aria-label="${title}"><h2>${title}</h2><p>${detail}</p><button type="button" data-close="true">关闭 Demo 提示</button></div></div>`;
+      document.querySelector("[data-close]").focus();
+    }
+    document.addEventListener("click", (event) => {
+      const botButton = event.target.closest("[data-bot]");
+      if (botButton) { if (botButton.dataset.bot === selectedId) return; selectedId = botButton.dataset.bot; section = "日常"; view = "新建会话"; accountOpen = false; manageOpen = false; stage.classList.remove("drawer-open"); render(); return; }
+      if (event.target.closest("[data-add]") || event.target.closest("#desktop-add")) { if (!quota.checked) showModal("新建 Bot", "正式产品复用现有创建引导、配额和权限校验。此 Demo 不创建资源。"); return; }
+      if (event.target.closest("#account-button")) { accountOpen = !accountOpen; render(); return; }
+      if (event.target.closest("[data-account-link]")) { showModal("套餐与积分", "正式产品沿用现有账户与权益入口。此 Demo 不跳转。"); return; }
+      if (event.target.closest("[data-send]")) { showModal("模拟新会话", "正式产品会向当前 Bot 发送消息。此 Demo 不发送内容。"); return; }
+      const manageItem = event.target.closest("[data-manage-item]");
+      if (manageItem) { manageOpen = false; render(); showModal(`${manageItem.dataset.manageItem} · ${botById().name}`, "正式产品沿用原总览卡片的资格与禁用规则。此 Demo 不修改 Bot。"); return; }
+      const navButton = event.target.closest("[data-view]");
+      if (navButton) { view = navButton.dataset.view; stage.classList.remove("drawer-open"); render(); return; }
+      const action = event.target.closest("[data-action]");
+      if (action) { if (action.dataset.action === "manage") { manageOpen = !manageOpen; render(); return; } showModal(action.dataset.action === "delete" ? `删除 ${botById().name}` : `${action.textContent} ${botById().name}`, "正式产品沿用当前确认、禁用和修复规则。此 Demo 不执行操作。"); return; }
+      if (event.target.closest("[data-close]") || event.target.classList.contains("modal-backdrop")) document.querySelector("#modal-root").innerHTML = "";
+    });
+    document.querySelector("#daily-tab").addEventListener("click", () => { section = "日常"; view = "新建会话"; render(); });
+    document.querySelector("#explore-tab").addEventListener("click", () => { section = "探索"; view = "通道"; render(); });
+    document.querySelector("#desktop-mode").addEventListener("click", () => { stage.className = "stage preview-desktop"; document.querySelector("#desktop-mode").setAttribute("aria-pressed", "true"); document.querySelector("#mobile-mode").setAttribute("aria-pressed", "false"); });
+    document.querySelector("#mobile-mode").addEventListener("click", () => { stage.className = "stage preview-mobile drawer-open"; document.querySelector("#desktop-mode").setAttribute("aria-pressed", "false"); document.querySelector("#mobile-mode").setAttribute("aria-pressed", "true"); });
+    document.querySelector("#mobile-toggle").addEventListener("click", () => stage.classList.toggle("drawer-open"));
+    quota.addEventListener("change", render);
+    render();
+    if (window.matchMedia("(max-width: 700px)").matches) document.querySelector("#mobile-mode").click();
+  </script>
+</body>
+</html>

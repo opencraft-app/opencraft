@@ -66,7 +66,7 @@ patches:
           secretRef:
             name: ctl-website-runtime-secrets
 
-  # Hidden website backend release: explicit empty env masks any envFrom allowlist.
+  # Hidden website backend preparation: explicit closed regional gates mask envFrom.
   - target:
       kind: Deployment
       name: ctl-api
@@ -82,10 +82,13 @@ patches:
             containers:
               - name: api
                 env:
-                  - name: WEBSITE_BACKEND_BETA_USERS
-                    value: ""
+                  - name: WEBSITE_BACKEND_ENABLED
+                    value: "0"
                     valueFrom: null
-  # Hidden website backend release: explicit empty env masks any envFrom allowlist.
+                  - name: WEBSITE_BACKEND_DATA_ENABLED
+                    value: "0"
+                    valueFrom: null
+  # Hidden website backend preparation: explicit closed regional gates mask envFrom.
   - target:
       kind: Deployment
       name: ctl-service
@@ -101,10 +104,13 @@ patches:
             containers:
               - name: service
                 env:
-                  - name: WEBSITE_BACKEND_BETA_USERS
-                    value: ""
+                  - name: WEBSITE_BACKEND_ENABLED
+                    value: "0"
                     valueFrom: null
-  # Hidden website backend release: explicit empty env masks any envFrom allowlist.
+                  - name: WEBSITE_BACKEND_DATA_ENABLED
+                    value: "0"
+                    valueFrom: null
+  # Hidden website backend preparation: explicit closed regional gates mask envFrom.
   - target:
       kind: Deployment
       name: ctl-bypass
@@ -120,8 +126,11 @@ patches:
             containers:
               - name: bypass
                 env:
-                  - name: WEBSITE_BACKEND_BETA_USERS
-                    value: ""
+                  - name: WEBSITE_BACKEND_ENABLED
+                    value: "0"
+                    valueFrom: null
+                  - name: WEBSITE_BACKEND_DATA_ENABLED
+                    value: "0"
                     valueFrom: null
 
 generators:

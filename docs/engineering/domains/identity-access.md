@@ -13,6 +13,12 @@
 
 ## 稳定不变量
 
+- 内嵌 OpenCraft 语音代理只接受现有登录态，通过 session 内省取得用户 ID，
+  服务端复用该用户 default-purpose VelaGW Key。管理令牌和推理 Key 不返回浏览器；
+  客户端身份头、owner 查询参数与自报 Key 不参与代理授权。
+  短 TTL 进程缓存不替代 VelaGW 的撤销/用户鉴权；上游 Key 拒绝不等于会话失效。
+  配置与边界见 [Service Gateway 语音输入](../../../service-gateway/docs/README.md#内嵌-opencraft-语音输入)。
+
 - 会话、实名和权限结果来自服务 API/权威存储，不从 UI 状态或用户名推断。
 - 一次性 `auth_code`、临时凭据和回调 token 必须保持最小暴露与明确过期语义。
 - 公共行为至少验证网关路径；直连 `user/auth` 只证明内部 API。

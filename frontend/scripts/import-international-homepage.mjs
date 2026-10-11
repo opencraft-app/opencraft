@@ -4,6 +4,8 @@ import { fileURLToPath } from "node:url";
 import { JSDOM } from "jsdom";
 import { polishCapabilityCards } from "./international-home-capability-polish.mjs";
 import { localizeFeatureCards, normalizeHeroRuntime } from "./international-home-feature-locales.mjs";
+import { generateThaiHome } from './generate-thai-home.mjs';
+import { generateMalayHome } from "./generate-malay-home.mjs";
 import * as OpenCC from "opencc-js";
 
 import { initializeInternationalHomeFragmentAccessibility } from "./international-home-fragment-accessibility.mjs";
@@ -47,6 +49,34 @@ const preservedHarnessAssetNames = [
   "figma-feature-chat-orbit.webp",
   "hermes-door.webp",
   "hermes-door-background.webp",
+  "hermes-door-white.webp",
+  // The carousel uses the approved 128px portraits; preserve their exact bytes.
+  "voice-aclassickoder-128.webp",
+  "voice-aina-cart-128.webp",
+  "voice-anhar-128.webp",
+  "voice-bellyacher-128.webp",
+  "voice-jiamin-study-128.webp",
+  "voice-leon-128.webp",
+  "voice-mason-builds-128.webp",
+  "voice-mika-calls-128.webp",
+  "voice-niran-tech-128.webp",
+  "voice-pixelpioneer-128.webp",
+  "voice-rachel-ledger-128.webp",
+  "voice-stxrrrymoon-128.webp",
+  "voice-xm-128.webp",
+  "footer-group-portrait.webp",
+  "footer-cast-video.mp4",
+  "footer-cast-pingpong.mp4",
+  "footer-cast-first.webp",
+  "footer-cast-final.webp",
+  ...["bean-lilac", "round-coral", "square-mint", "drop-sky", "cloud-butter", "round-peach", "bean-periwinkle"].map(name => `peek-friends/${name}.webp`),
+  "hero-poses/manifest.json",
+  ...["bean-lilac", "round-coral", "square-mint", "drop-sky", "cloud-butter", "round-peach", "bean-periwinkle"].flatMap(name => [
+    ...[0, 1, 2].map(frame => `hero-poses/${name}-${frame}.webp`),
+    ...[0, 1].map(frame => `hero-poses/${name}-wave-${frame}.webp`),
+  ]),
+  "footer-parade/manifest.json",
+  ...["bean-lilac", "round-coral", "square-mint", "drop-sky", "cloud-butter", "round-peach", "bean-periwinkle"].flatMap(name => Array.from({ length: 12 }, (_, frame) => `footer-parade/${name}-v3-${frame}.webp`)),
   "hermes-door-character.webp",
   "wcard-cloud-runtime-v2.webp",
   "wcard-skills-atlas-v1.webp",
@@ -138,6 +168,17 @@ const trialTitleCopyByLocale = {
   "en-US": "Try it free, activate in 10 seconds",
   "zh-SG": "免费体验，10秒极速开通",
   "zh-Hant": "免費體驗，10秒極速開通",
+};
+// The user voice section has no heading in the approved source pages.
+const voiceTitleCopyByLocale = {
+  "en-US": "See what they're saying",
+  "zh-CN": "看看他们怎么说？",
+  "zh-SG": "看看他们怎么说？",
+  "zh-Hant": "看看他們怎麼說？",
+  "id-ID": "Lihat kata mereka",
+  es: "Mira lo que dicen",
+  "ja-JP": "みんなの声を聞いてみよう",
+  "ko-KR": "그들의 이야기를 들어보세요",
 };
 const soulStripSecondaryCopyByLocale = {
   "en-US": {
@@ -3105,10 +3146,15 @@ const domesticStableHeroPrefixCss = `
 }
 `;
 const longLocaleDesktopHeadingCss = `
+/* Long-sentence locales (Indonesian, Spanish, Korean) wrap to a balanced,
+   centred two-line desktop headline at a readable size (set with the editorial
+   !important rule in hermes-home.css). The width is capped so the headline ends
+   before the companion art instead of running under it. */
 @media (min-width: 1024px) {
-  #lightvela-intl-home:is([data-locale^='id'], [data-locale='es']) .hero__line--main {
-    max-width: min(1680px, calc(100vw - 64px));
-    white-space: nowrap;
+  #lightvela-intl-home:is([data-locale^='id'], [data-locale='es'], [data-locale^='ko']) .hero__line--main {
+    max-width: min(840px, calc(100vw - 420px));
+    white-space: normal;
+    text-wrap: balance;
   }
 
   #lightvela-intl-home[data-locale^='id'] .about__head {
@@ -3117,28 +3163,6 @@ const longLocaleDesktopHeadingCss = `
 
   #lightvela-intl-home[data-locale^='id'] .about__head .k {
     white-space: nowrap;
-  }
-}
-
-@media (min-width: 1024px) and (max-width: 1279px) {
-  #lightvela-intl-home:is([data-locale^='id'], [data-locale='es']) .hero__line--main {
-    font-size: 25px;
-  }
-
-  #lightvela-intl-home[data-locale^='id'] .about__head .k {
-    font-size: 36px;
-  }
-}
-
-@media (min-width: 1280px) and (max-width: 1439px) {
-  #lightvela-intl-home:is([data-locale^='id'], [data-locale='es']) .hero__line--main {
-    font-size: 32px;
-  }
-}
-
-@media (min-width: 1440px) {
-  #lightvela-intl-home:is([data-locale^='id'], [data-locale='es']) .hero__line--main {
-    font-size: 36px;
   }
 }
 `;
@@ -4220,6 +4244,16 @@ function prepareDocumentForLocale(document, locale) {
   if (trialTitle && trialTitleCopyByLocale[locale]) {
     trialTitle.textContent = trialTitleCopyByLocale[locale];
   }
+  const voice = document.querySelector("#voice");
+  if (voice && !voice.querySelector(".voice__head")) {
+    const head = document.createElement("header");
+    head.className = "voice__head sr";
+    const title = document.createElement("h2");
+    title.className = "voice__title";
+    title.textContent = voiceTitleCopyByLocale[locale] ?? voiceTitleCopyByLocale["en-US"];
+    head.append(title);
+    voice.prepend(head);
+  }
   const root = document.querySelector("#lightvela-intl-home");
   const rotator = document.querySelector("#hero-rotator");
   const words = rotatorWordsByLocale[locale] ?? rotatorWordsByLocale["en-US"];
@@ -4531,7 +4565,8 @@ for (const locale of supportedLocales) {
 
   const companionDecorations = [
     [".hero__rotator-line", "afterend", "home-cover-mascot", "lv-cover-lavender.webp", 528, 410],
-    [".cta", "afterbegin", "home-cta-mascot", "hermes-black-companion.webp", 460, 500],
+    // The companion rides on the primary trial button, not the section edge.
+    [".cta__acts .btn-dark", "afterbegin", "home-cta-mascot", "hermes-black-companion.webp", 460, 500],
   ];
   for (const [selector, position, className, asset, width, height] of companionDecorations) {
     if (!document.querySelector(`.${className}`)) {
@@ -8060,73 +8095,180 @@ if (
 ) {
   throw new Error("Unable to add accessible activation to homepage scene buttons");
 }
-const voiceScrollRuntime = `
+const voiceCarouselRuntime = String.raw`
 (function () {
+  // Center-mode testimonial carousel. The static marquee cards stay in the
+  // fragment as the data source and as the no-JS fallback.
   var voice = document.querySelector('#lightvela-intl-home .voice');
-  if (!voice || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  var rows = Array.prototype.slice.call(voice.querySelectorAll('.mrow'));
-  if (!rows.length) return;
-  rows.forEach(function (row) {
-    var track = row.querySelector('.mrow__track');
-    if (track) track.style.animation = 'none';
+  if (!voice || voice.querySelector('.vcar')) return;
+  var seen = {};
+  var items = [];
+  Array.prototype.slice.call(voice.querySelectorAll('.marquee__rows .tcard')).forEach(function (card) {
+    var name = card.querySelector('.tcard__head b');
+    var quote = card.querySelector('p');
+    if (!name || !quote) return;
+    var key = name.textContent.trim();
+    if (!key || seen[key]) return;
+    seen[key] = true;
+    var image = card.querySelector('.tcard__head img');
+    var place = card.querySelector('.tcard__head span');
+    items.push({
+      name: key,
+      place: place ? place.textContent.trim() : '',
+      quote: quote.textContent.trim(),
+      avatar: image ? image.getAttribute('src').replace(/-64\.webp(\?.*)?$/, '-128.webp') : ''
+    });
   });
-  var voiceFrame = 0;
-  var isActive = false;
-  function renderVoiceMotion() {
-    voiceFrame = 0;
-    var rect = voice.getBoundingClientRect();
-    var viewport = window.innerHeight || document.documentElement.clientHeight || 1;
-    var progress = (viewport - rect.top) / (viewport + rect.height);
-    var clamped = Math.max(0, Math.min(1, progress));
-    var measurements = rows.map(function (row) {
-      var track = row.querySelector('.mrow__track');
-      if (!track) return null;
-      return {
-        track: track,
-        maxOffset: Math.max(0, track.scrollWidth - row.clientWidth),
-        reverse: row.classList.contains('mrow--r')
-      };
-    });
-    measurements.forEach(function (measurement) {
-      if (!measurement) return;
-      var offset = measurement.reverse
-        ? (-measurement.maxOffset + clamped * measurement.maxOffset).toFixed(2)
-        : (-clamped * measurement.maxOffset).toFixed(2);
-      measurement.track.style.transform = 'translate3d(' + offset + 'px, 0, 0)';
-    });
+  if (items.length < 3) return;
+  var reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
+  var star = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 1.6l2.47 5.16 5.66.72-4.15 3.92 1.05 5.6L10 14.27 4.97 17l1.05-5.6L1.87 7.48l5.66-.72z"/></svg>';
+  var badge = '<svg class="vcar__badge" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 1.2l2.1 1.5 2.6-.1.8 2.4 2.1 1.6-.8 2.4.8 2.4-2.1 1.6-.8 2.4-2.6-.1L10 18.8l-2.1-1.5-2.6.1-.8-2.4-2.1-1.6.8-2.4-.8-2.4 2.1-1.6.8-2.4 2.6.1z"/><path d="M6.6 10.2l2.3 2.3 4.6-4.8" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  var root = document.createElement('div');
+  root.className = 'vcar';
+  // Announce the widget as a carousel named after the localized section title.
+  var heading = voice.querySelector('.voice__title');
+  root.setAttribute('role', 'region');
+  root.setAttribute('aria-roledescription', 'carousel');
+  if (heading) {
+    heading.id = heading.id || 'voice-title';
+    root.setAttribute('aria-labelledby', heading.id);
   }
-  function requestVoiceMotion() {
-    if (!isActive || voiceFrame) return;
-    voiceFrame = window.requestAnimationFrame(renderVoiceMotion);
-  }
-  function startVoiceMotion() {
-    if (isActive) return;
-    isActive = true;
-    window.addEventListener('scroll', requestVoiceMotion, { passive: true });
-    window.addEventListener('resize', requestVoiceMotion);
-    requestVoiceMotion();
-  }
-  function stopVoiceMotion() {
-    if (!isActive) return;
-    isActive = false;
-    window.removeEventListener('scroll', requestVoiceMotion);
-    window.removeEventListener('resize', requestVoiceMotion);
-    if (voiceFrame) {
-      window.cancelAnimationFrame(voiceFrame);
-      voiceFrame = 0;
+  var viewport = document.createElement('div');
+  viewport.className = 'vcar__viewport';
+  var dots = document.createElement('div');
+  dots.className = 'vcar__dots';
+  var active = 1;
+  // Ordered so neighbouring indicators never share a body colour.
+  var DOLLS = ['round-coral', 'bean-lilac', 'square-mint', 'cloud-butter', 'drop-sky', 'round-peach', 'bean-periwinkle'];
+  var cards = items.map(function (item, index) {
+    var card = document.createElement('article');
+    card.className = 'vcar__card';
+    var head = document.createElement('header');
+    head.className = 'vcar__head';
+    var avatar = document.createElement('span');
+    avatar.className = 'vcar__avatar';
+    if (item.avatar) {
+      var img = document.createElement('img');
+      img.src = item.avatar; img.alt = ''; img.width = 64; img.height = 64;
+      img.loading = 'lazy'; img.decoding = 'async';
+      avatar.appendChild(img);
     }
-  }
-  if (typeof IntersectionObserver === 'undefined') {
-    startVoiceMotion();
-    return;
-  }
-  var observer = new IntersectionObserver(function (entries) {
-    entries.forEach(function (entry) {
-      if (entry.isIntersecting) startVoiceMotion();
-      else stopVoiceMotion();
+    var who = document.createElement('div');
+    who.className = 'vcar__who';
+    var name = document.createElement('b');
+    name.className = 'vcar__name';
+    name.textContent = item.name;
+    name.insertAdjacentHTML('beforeend', badge);
+    var place = document.createElement('span');
+    place.className = 'vcar__place';
+    place.textContent = item.place;
+    who.appendChild(name); who.appendChild(place);
+    head.appendChild(avatar); head.appendChild(who);
+    var stars = document.createElement('div');
+    stars.className = 'vcar__stars';
+    stars.innerHTML = star + star + star + star + star;
+    var quote = document.createElement('p');
+    quote.className = 'vcar__quote';
+    quote.textContent = item.quote;
+    card.appendChild(head); card.appendChild(stars); card.appendChild(quote);
+    card.addEventListener('click', function () {
+      if (index !== active) { go(index); restart(); }
     });
-  }, { rootMargin: '120px 0px', threshold: 0 });
-  observer.observe(voice);
+    viewport.appendChild(card);
+    var dot = document.createElement('button');
+    dot.type = 'button';
+    dot.className = 'vcar__dot';
+    dot.setAttribute('aria-label', item.name);
+    // Each indicator is a doll "ID photo"; the active one regains its colour.
+    var doll = document.createElement('img');
+    doll.src = '/lightvela-intl-home/assets/peek-friends/' + DOLLS[index % DOLLS.length] + '.webp';
+    doll.alt = ''; doll.width = 512; doll.height = 512;
+    doll.loading = 'lazy'; doll.decoding = 'async'; doll.draggable = false;
+    var face = document.createElement('span');
+    face.className = 'vcar__face';
+    face.appendChild(doll);
+    dot.appendChild(face);
+    dot.addEventListener('click', function () { go(index); restart(); });
+    dots.appendChild(dot);
+    return card;
+  });
+  root.appendChild(viewport);
+  root.appendChild(dots);
+  // Below the section heading, above the (hidden) static marquee cards.
+  voice.insertBefore(root, voice.querySelector('.marquee__rows'));
+  voice.classList.add('has-voice-carousel');
+  var count = items.length;
+  var timer = 0;
+  var disposed = false;
+  var observer;
+  var inView = typeof IntersectionObserver === 'undefined';
+  var hovering = false;
+  function offsetOf(index) {
+    var offset = (index - active + count) % count;
+    return offset > count / 2 ? offset - count : offset;
+  }
+  // A B C → B C D → C D E: the middle card is the stage, one neighbour each side.
+  function go(index) {
+    active = (index + count) % count;
+    cards.forEach(function (card, i) {
+      var offset = offsetOf(i);
+      card.style.setProperty('--vcar-pos', String(Math.max(-2, Math.min(2, offset))));
+      card.dataset.pos = Math.abs(offset) > 1 ? 'off' : offset === 0 ? 'center' : 'side';
+      card.setAttribute('aria-hidden', offset === 0 ? 'false' : 'true');
+    });
+    Array.prototype.forEach.call(dots.children, function (dot, i) {
+      dot.setAttribute('aria-current', i === active ? 'true' : 'false');
+    });
+  }
+  function stop() { if (timer) window.clearInterval(timer); timer = 0; }
+  function restart() {
+    stop();
+    if (disposed || reduced.matches || hovering || !inView || document.hidden) return;
+    timer = window.setInterval(function () { go(active + 1); }, 1500);
+  }
+  root.addEventListener('pointerenter', function () { hovering = true; stop(); });
+  root.addEventListener('pointerleave', function () { hovering = false; restart(); });
+  root.addEventListener('focusin', function () { hovering = true; stop(); });
+  root.addEventListener('focusout', function () { hovering = false; restart(); });
+  var startX = null;
+  var swiped = false;
+  viewport.addEventListener('pointerdown', function (event) { startX = event.clientX; swiped = false; });
+  viewport.addEventListener('pointerup', function (event) {
+    if (startX === null) return;
+    var delta = event.clientX - startX;
+    startX = null;
+    if (Math.abs(delta) > 40) { swiped = true; go(active + (delta < 0 ? 1 : -1)); restart(); }
+  });
+  // A swipe ends with a click on the card it started from; without this the
+  // card's own click handler would immediately jump back to it.
+  viewport.addEventListener('click', function (event) {
+    if (!swiped) return;
+    swiped = false;
+    event.stopPropagation();
+  }, true);
+  document.addEventListener('visibilitychange', restart);
+  if (reduced.addEventListener) reduced.addEventListener('change', restart);
+  if (typeof IntersectionObserver !== 'undefined') {
+    observer = new IntersectionObserver(function (entries) {
+      inView = entries[0].isIntersecting;
+      restart();
+    }, { threshold: 0.25 });
+    observer.observe(root);
+  }
+  function dispose() {
+    if (disposed) return;
+    disposed = true;
+    stop();
+    if (observer) observer.disconnect();
+    document.removeEventListener('visibilitychange', restart);
+    if (reduced.removeEventListener) reduced.removeEventListener('change', restart);
+    document.removeEventListener('lightvela-home-dispose', dispose);
+    root.remove();
+    voice.classList.remove('has-voice-carousel');
+  }
+  document.addEventListener('lightvela-home-dispose', dispose);
+  go(active);
+  restart();
 })();
 `;
 const playHoverRuntime = `
@@ -8240,7 +8382,7 @@ const playHoverRuntime = `
   document.addEventListener('lightvela-home-dispose', dispose, { once: true });
 })();
 `;
-const capabilityCardMotion = `
+const capabilityCardMotion = String.raw`
 /* 国际站能力卡动效：静止停在完成帧 → 进入视口播一次 → 桌面 Hover 重播关键变化。
    状态机：idle → playing → complete；Hover 时 complete → playing → complete。
    已经开始播放的卡片重复 Hover 不会重启；移动端同一时间只播一张。 */
@@ -8315,7 +8457,7 @@ const capabilityCardMotion = `
      动画由 case 自己的 15s 周期驱动，避免卡片重播状态与三组 case 相位互相覆盖。 */
   var AUT_DELIVERY_DELAY = 0;
   var AUT_TYPE_SPEED = 32;
-  var AUT_HOLDER = "\\u200b"; /* 零宽空格：清空后仍保留行高，气泡不塌陷 */
+  var AUT_HOLDER = "\u200b"; /* 零宽空格：清空后仍保留行高，气泡不塌陷 */
   var autTimers = [];
   var autFirstCycleQueued = false;
   var autCases = Array.prototype.slice.call(
@@ -8380,9 +8522,9 @@ const capabilityCardMotion = `
     caseElement.addEventListener("animationstart", onAutCaseCycle);
     caseElement.addEventListener("animationiteration", onAutCaseCycle);
   });
-  /* 默认保留完整文案作为兜底：如果某个 case 的 animationstart 在 JS
-     listener 挂载前已经错过，切换到该 case 时也不会出现只有 LightVela 的空泡泡。
-     真正播放时只清空当前 case，并在通知出现前开始逐字打出。 */
+  /* Keep full copy as the fallback. If animationstart fires before this listener
+     is attached, the next visible case still shows content instead of an empty
+     LightVela bubble. The active case is cleared only when typing is scheduled. */
   var onResize = function () {
     if (!autAnimated()) {
       clearAutTimers();
@@ -8480,22 +8622,34 @@ const capabilityCardMotion = `
     return;
   }
 
-  /* 桌面：整块进入视口 40% 后，标题淡入、卡片间隔 70ms 依次播一次 */
+  /* 每次完整离开后重新入场；保持观察，支持上下滚动。 */
+  var sectionEntered = false;
   sectionObserver = new IntersectionObserver(
     function (entries) {
       entries.forEach(function (entry) {
-        if (!entry.isIntersecting || entry.intersectionRatio < 0.4) return;
-        sectionObserver.disconnect();
+        if (!entry.isIntersecting) {
+          sectionEntered = false;
+          var head = section.querySelector(".about__head");
+          if (head) head.classList.remove("is-in");
+          cards.forEach(function (card) { card.classList.remove("is-in"); });
+          return;
+        }
+        if (entry.intersectionRatio < 0.4 || sectionEntered) return;
+        sectionEntered = true;
         revealHead();
         cards.forEach(function (card, index) {
           setTimer(function () {
+            if (!sectionEntered) return;
             card.classList.add("is-in");
-            if (!isPhone()) play(card);
+            if (!isPhone()) {
+              if (card.getAttribute("data-motion") === MOTION_COMPLETE) replay(card);
+              else play(card);
+            }
           }, index * 70);
         });
       });
     },
-    { threshold: [0.4] },
+    { threshold: [0, 0.4] },
   );
   sectionObserver.observe(section);
 
@@ -8518,12 +8672,14 @@ const capabilityCardMotion = `
   /* 移动端：单卡进入视口 60% 时播一次，同一时间只播一张 */
   if (isPhone()) {
     var queue = [];
+    var enteredCards = new Set();
     var busy = false;
     var drain = function () {
       if (busy || !queue.length) return;
       var card = queue.shift();
       busy = true;
-      play(card);
+      if (card.getAttribute("data-motion") === MOTION_COMPLETE) replay(card);
+      else play(card);
       setTimer(function () {
         busy = false;
         drain();
@@ -8532,14 +8688,20 @@ const capabilityCardMotion = `
     cardObserver = new IntersectionObserver(
       function (entries) {
         entries.forEach(function (entry) {
-          if (entry.intersectionRatio < 0.6) return;
-          cardObserver.unobserve(entry.target);
+          if (!entry.isIntersecting) {
+            entry.target.classList.remove("is-in");
+            enteredCards.delete(entry.target);
+            queue = queue.filter(function (card) { return card !== entry.target; });
+            return;
+          }
+          if (entry.intersectionRatio < 0.6 || enteredCards.has(entry.target)) return;
           entry.target.classList.add("is-in");
+          enteredCards.add(entry.target);
           queue.push(entry.target);
           drain();
         });
       },
-      { threshold: [0.6] },
+      { threshold: [0, 0.6] },
     );
     cards.forEach(function (card) {
       cardObserver.observe(card);
@@ -8563,7 +8725,7 @@ const capabilityCardMotion = `
 })();
 `;
 
-const runtime = `/* Generated from the approved international homepage motion. */\n${runtimeSource}\n${voiceScrollRuntime}\n${playHoverRuntime}\n${capabilityCardMotion}\n`;
+const runtime = `/* Generated from the approved international homepage motion. */\n${[runtimeSource.trim(), voiceCarouselRuntime.trim(), playHoverRuntime.trim(), capabilityCardMotion.trim()].join("\n\n")}\n`;
 const heroChatCopies = JSON.stringify(heroLiveCopyByLocale);
 const heroChat = (await readFile(path.join(sourceRoot, "assets/hero-chat.js"), "utf8"))
   .replace(
@@ -8682,11 +8844,13 @@ const heroChat = (await readFile(path.join(sourceRoot, "assets/hero-chat.js"), "
   }`,
   );
 
-await writeFile(path.join(targetRoot, "style.css"), cleanGeneratedText(css));
+await writeFile(path.join(targetRoot, "style.css"), cleanGeneratedText(css + '\n/* Thai uses system glyph coverage without adding a font download. */\n#lightvela-intl-home[data-locale=\'th-TH\'] {\n  --font-sans: "Leelawadee UI", "Thonburi", "Noto Sans Thai", Tahoma, system-ui, sans-serif;\n  --font-ui: var(--font-sans);\n  --font-hero: var(--font-sans);\n  --font-footer-display: var(--font-sans);\n}\n#lightvela-intl-home[data-locale=\'th-TH\'] .foot__title,\n#lightvela-intl-home[data-locale=\'th-TH\'] .foot__title .row {\n  font-family: var(--font-sans) !important;\n  font-style: normal !important;\n}\n'));
 await writeFile(path.join(targetRoot, "runtime.js"), cleanGeneratedText(runtime));
 await writeFile(path.join(targetRoot, "hero-chat.js"), cleanGeneratedText(heroChat));
 await copyFile(path.join(sourceRoot, "assets/scene-wheel.js"), path.join(targetRoot, "scene-wheel.js"));
 
+await generateMalayHome(targetRoot);
+await generateThaiHome(targetRoot);
 await initializeInternationalHomeFragmentAccessibility(targetRoot);
 const voiceAvatarSummary = await optimizeInternationalHomeVoiceAvatars(targetRoot);
 

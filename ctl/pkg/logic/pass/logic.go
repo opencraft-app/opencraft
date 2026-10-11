@@ -49,6 +49,10 @@ const (
 	payURLRequestTimeout = 50 * time.Second
 )
 
+// 付费积分包（credit 服务）也是 LLMGateway 命名订阅，余量由 /v1/credit/packages 单独返回，
+// 不能计入套餐积分，否则账号页会把积分包算两次。
+const creditPackageSubscriptionNamePrefix = "credit-package:"
+
 func packageSubscriptionName(userID, passID string) string {
 	return packageSubscriptionNamePrefix + strings.TrimSpace(userID) + ":" + strings.TrimSpace(passID)
 }
@@ -749,6 +753,9 @@ func (l *logic) MigrateFreeTrialPassToBilling(req *transport.PassBillingMigratio
 	if req == nil || strings.TrimSpace(req.UserID) == "" || req.Uin <= 0 || req.AppID <= 0 {
 		return nil, errcode.ErrPassInvalidParam
 	}
+	if !isDomesticBillingMigrationRegion(config.ServerConf.MiscConfig.Region) {
+		return &transport.PassBillingMigrationResult{Status: "skipped_international", Message: "billing migration is only available in domestic regions"}, nil
+	}
 
 	userID := strings.TrimSpace(req.UserID)
 	passDao := modelfactory.DefaultDaoFactory.PassDao(nil)
@@ -804,12 +811,35 @@ func (l *logic) MigrateFreeTrialPassToBilling(req *transport.PassBillingMigratio
 	if _, err := l.bundleLogic.GetBundleByID(billingMigrationTargetBundleID); err != nil {
 		return nil, err
 	}
+	now := time.Now().UTC()
+	if !candidate.ExpiredTime.After(now) {
+		newExpiredTime := now.Add(24 * time.Hour).Truncate(time.Second)
+		if _, err := passDao.ExtendExpiredTimeForBillingMigration(candidate.PassID, allowedFreeTrialBundleID, now, newExpiredTime); err != nil {
+			return nil, fmt.Errorf("pass billing migration extend expired pass: %w", err)
+		}
+		candidate, err = passDao.GetByPassID(candidate.PassID)
+		if err != nil {
+			return nil, fmt.Errorf("pass billing migration reload pass: %w", err)
+		}
+		if candidate.BundleID != allowedFreeTrialBundleID || candidate.Status != passmodel.StatusActive || !candidate.ExpiredTime.After(now) {
+			return &transport.PassBillingMigrationResult{Status: "skipped_no_active_free_pass", PassID: candidate.PassID, Message: "free pass is no longer active"}, nil
+		}
+	}
 	record := passmigrationmodel.New(candidate.PassID, userID, allowedFreeTrialBundleID, billingMigrationTargetBundleID, req.Uin, req.AppID, passmigrationmodel.StatusPendingTransfer)
 	if err := migrationDao.Upsert(record); err != nil {
 		return nil, fmt.Errorf("pass billing migration persist state: %w", err)
 	}
 
 	return l.callTradeMoveIn(candidate, req, migrationDao)
+}
+
+func isDomesticBillingMigrationRegion(region string) bool {
+	switch strings.TrimSpace(region) {
+	case "ap-beijing", "ap-shanghai", "ap-guangzhou", "ap-chengdu", "ap-nanjing":
+		return true
+	default:
+		return false
+	}
 }
 
 func selectPassForBillingMigration(passes []*passmodel.Entity) (*passmodel.Entity, *transport.PassBillingMigrationResult) {
@@ -1438,6 +1468,9 @@ func getCompatibleCreditBalances(ctx context.Context, userID string) (creditBala
 func creditBalancesFromLLMSubscriptions(subs []llmgateway.Subscription) creditBalances {
 	var balances creditBalances
 	for _, sub := range subs {
+		if strings.HasPrefix(strings.TrimSpace(sub.Name), creditPackageSubscriptionNamePrefix) {
+			continue
+		}
 		if strings.HasPrefix(strings.TrimSpace(sub.Name), freeCreditSubscriptionNamePrefix) {
 			tokenTotal := sub.TokenTotal
 			if tokenTotal == 0 && sub.TokenBalance > 0 {
@@ -1455,7 +1488,8 @@ func creditBalancesFromLLMSubscriptions(subs []llmgateway.Subscription) creditBa
 
 func firstPackageSubscription(subs []llmgateway.Subscription) llmgateway.Subscription {
 	for _, sub := range subs {
-		if !strings.HasPrefix(strings.TrimSpace(sub.Name), freeCreditSubscriptionNamePrefix) {
+		name := strings.TrimSpace(sub.Name)
+		if !strings.HasPrefix(name, freeCreditSubscriptionNamePrefix) && !strings.HasPrefix(name, creditPackageSubscriptionNamePrefix) {
 			return sub
 		}
 	}
@@ -1877,6 +1911,8 @@ func mapTradePlaceOrderError(err error) error {
 			return errcode.ErrPassBillingAccountOpenFailed
 		case "DianshiActivityRequired":
 			return errcode.Wrap(errcode.ErrPassInvalidParam, "%s", tradeErr.Message)
+		case "LegacyDianshiOrderPending":
+			return errcode.ErrPassLegacyDianshiOrderPending
 		}
 	}
 	return nil

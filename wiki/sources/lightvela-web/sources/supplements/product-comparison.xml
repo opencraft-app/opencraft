@@ -1,0 +1,61 @@
+<slide id="product-comparison">
+  <background color="bg-page" />
+  <shape type="line" x="40" y="26" width="1200" height="0" stroke="border" />
+  <shape type="line" x="520" y="26" width="240" height="0" stroke="primary" stroke-width="3" />
+  <text x="40" y="36" width="1200" height="24" font="caption" color="primary">03 产品现状 · 详细参考</text>
+  <text x="40" y="77" width="1200" height="50" font="heading" color="text-main">
+    <strong>继续投入可定制能力、开放接入与云端环境</strong>
+  </text>
+  <text x="40" y="132" width="1200" height="30" font="body" color="text-muted">当前支持更自主的配置和任务组织，产品体验与品牌认知还需要追赶。</text>
+  <table x="40" y="188" width="1200" height="276" columns="1.6,4.7,4.7" rows="48,76,76,76" font="body" size="17" color="text-main" align="left" padding="10 14" header-fill="bg-surface" border-h="1 border" header-border="2 primary">
+    <tr>
+      <td>
+        <strong>维度</strong>
+      </td>
+      <td>
+        <strong color="primary">LightVela 当前特点</strong>
+      </td>
+      <td>
+        <strong>主要玩家的领先探索</strong>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <strong>Agent 配置</strong>
+      </td>
+      <td>模型、IM、连接器、外部工具可选择；用户可显式定义性格。</td>
+      <td>Meta Muse：App + 开源硬件组件，深入日常场景并沉淀上下文。</td>
+    </tr>
+    <tr>
+      <td>
+        <strong>任务组织</strong>
+      </td>
+      <td>脚本、定时任务、Agent 配置和建站能力支持深度定制，仍待完善。</td>
+      <td>OpenAI Dot：联动 Codex / ChatGPT Work，持续完成任务的能力更强。</td>
+    </tr>
+    <tr>
+      <td>
+        <strong>运行与身份</strong>
+      </td>
+      <td>VM、浏览器、文件系统和应用连接提供可持续建设的云端工作环境。</td>
+      <td>Instinct / Manus Cue：更人格化的身份，探索电话、邮箱、钱包等工具。</td>
+    </tr>
+  </table>
+  <text x="40" y="490" width="1200" height="35" font="body" color="text-main">友商的产品包装、用户分发和社区声量更早建立市场认知；LightVela 仍需打磨完整体验。</text>
+  <shape type="rect" x="40" y="548" width="578" height="107" fill="bg-surface" />
+  <shape type="rect" x="662" y="548" width="578" height="107" fill="bg-surface" />
+  <text x="60" y="565" width="538" height="70" font="body" color="text-main" line-height="1.5">
+    <p>
+      <strong color="primary">海外优先验证</strong>
+    </p>
+    <p>Web 服务丰富，浏览器、连接器和云端执行可在邮箱、购物、旅行、社交等场景复用。</p>
+  </text>
+  <text x="682" y="565" width="538" height="70" font="body" color="text-main" line-height="1.5">
+    <p>
+      <strong color="primary">国内持续打磨</strong>
+    </p>
+    <p>继续完善产品体验和 ToC 易用性，降低理解成本与操作门槛。</p>
+  </text>
+  <text x="40" y="684" width="1130" height="20" font="caption" color="text-muted">LightVela｜来源：原文竞品比较与市场选择判断；非外部更新后的产品评测</text>
+  <text x="1180" y="684" width="60" height="20" font="caption" color="text-muted" align="right">15 / 24</text>
+</slide>

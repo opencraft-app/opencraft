@@ -16,6 +16,7 @@
   "chat.queue.edit": "编辑排队消息",
   "chat.queue.delete": "删除排队消息",
   "chat.thinking": "思考中...",
+  "chat.thought": "思考过程",
   "composer.skills.title": "技能",
   "composer.commands": "指令库",
   "composer.commands.new": "新建会话",
@@ -199,6 +200,9 @@
   "desktop.controlFailed": "暂时无法取得控制。",
   "desktop.controlling": "你正在控制桌面。",
   "desktop.connected": "已连接",
+  "desktop.ownership.local": "你已接管",
+  "desktop.ownership.requesting": "正在接管…",
+  "desktop.ownership.watching": "正在观看",
   "desktop.viewing": "正在观看桌面。",
   "desktop.requesting": "正在请求控制…",
   "desktop.cancel": "取消",
@@ -206,6 +210,8 @@
   "desktop.retry": "重新连接",
   "desktop.release": "停止控制",
   "desktop.control": "接管桌面",
+  "desktop.keyboard": "显示键盘",
+  "desktop.textInput": "在桌面输入",
   "desktop.accessFailed": "桌面访问权限已变更。",
   "desktop.prepareFailed": "暂时无法启动桌面。",
   "desktop.videoFailed": "暂时无法加载桌面画面。",
@@ -230,6 +236,7 @@
   "panel.addressHint": "在上方输入网址即可浏览",
   "panel.closeTab": "关闭 {title}",
   "panel.openTabs": "已打开的标签页",
+  "panel.actionFailed": "暂时无法打开预览，请重试。",
   "panel.noTabs": "暂无打开的标签页",
   "panel.tabList": "预览标签页",
   "panel.noActions": "当前连接暂无可用预览。",
@@ -247,5 +254,6 @@
   "pdf.download": "下载文件",
   "pdf.loading": "正在加载 PDF…",
   "pdf.failed": "无法显示此 PDF，请下载后使用其他阅读器打开。",
-  "media.unavailable": "暂不支持预览此文件，请下载后打开。"
+  "media.unavailable": "暂不支持预览此文件，请下载后打开。",
+  "chat.waitingForHostToSend": "正在连接，连上后即可发送"
 }

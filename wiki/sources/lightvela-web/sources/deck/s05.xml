@@ -1,0 +1,36 @@
+<slide id="s05">
+  <background color="bg-page" />
+  <shape type="line" x="40" y="26" width="1200" height="0" stroke="border" />
+  <shape type="line" x="40" y="26" width="240" height="0" stroke="primary" stroke-width="3" />
+  <text x="40" y="36" width="1200" height="24" font="caption" color="primary">01 出圈回顾</text>
+  <text x="40" y="77" width="1200" height="50" font="heading" color="text-main">
+    <strong>免费权益与邀请活动推动海外传播</strong>
+  </text>
+  <text x="40" y="132" width="1200" height="30" font="body" color="text-muted">“免费 + 云端服务器 + AI 积分”引发分享，官方权益更新继续放大关注。</text>
+  <text x="40" y="186" width="560" height="38" font="strong" color="primary">
+    <strong>9 月中旬｜海外 KOL 先行分享</strong>
+  </text>
+  <text x="670" y="186" width="570" height="38" font="strong" color="primary">
+    <strong>9 月 24 日前｜权益更新与官方推送</strong>
+  </text>
+  <shape type="line" x="635" y="186" width="0" height="465" stroke="border" />
+  <image x="40" y="245" width="294" height="331" src="/assets/source_09.png" fit="contain" />
+  <text x="358" y="252" width="244" height="180" font="body" color="text-main" line-height="1.5">
+    <p>专注推荐 AI 产品的 KOL，开始在 X、Telegram 分享。</p>
+    <p space-before="12">免费云端环境与积分权益降低了体验门槛。</p>
+  </text>
+  <image x="351" y="443" width="259" height="136" src="/assets/source_10.png" fit="contain" />
+  <text x="351" y="596" width="259" height="35" font="caption" color="text-muted">原文标注：国际站的第一轮增长</text>
+  <image x="670" y="245" width="297" height="332" src="/assets/source_11.png" fit="contain" />
+  <text x="991" y="250" width="249" height="212" font="body" color="text-main" line-height="1.5">
+    <p>更新新用户免费体验权益。</p>
+    <p space-before="12">好友邀请双方各得 AI 积分。</p>
+    <p space-before="12">官方 X 推文针对新加坡进行小额加热，浏览量远超预期。</p>
+  </text>
+  <text x="991" y="502" width="249" height="66" font="display" color="primary">
+    <strong>$10</strong>
+  </text>
+  <text x="991" y="578" width="249" height="45" font="body" color="text-main">原文记录的帖子加热投入</text>
+  <text x="40" y="684" width="1130" height="20" font="caption" color="text-muted">LightVela｜来源：原文 KOL、X 官方推文及国际站趋势截图</text>
+  <text x="1180" y="684" width="60" height="20" font="caption" color="text-muted" align="right">05 / 24</text>
+</slide>

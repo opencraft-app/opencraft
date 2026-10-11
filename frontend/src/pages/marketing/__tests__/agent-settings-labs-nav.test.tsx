@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -10,6 +10,7 @@ import { AgentSettingsPage } from "@/pages/marketing/agent-settings-page";
 const execDebugCommand = vi.fn();
 const refreshProfile = vi.fn();
 const listMyPasses = vi.fn().mockResolvedValue([]);
+const deleteBot = vi.fn();
 
 let currentSessionUser: User;
 let bots: OpenClawBot[] = [];
@@ -39,6 +40,7 @@ vi.mock("@/contexts/runtime-config-context", () => ({
   useCloudDesktopEnabled: () => false,
   usePaidBillingEnabled: () => false,
   useRealnamePhoneVerificationEnabled: () => false,
+  useReferralEnabled: () => false,
 }));
 
 vi.mock("@/contexts/session-context", () => ({
@@ -57,7 +59,7 @@ vi.mock("@/contexts/agent-context", () => ({
   useOpenClaw: () => ({
     bots,
     botsLoading: false,
-    deleteBot: vi.fn(),
+    deleteBot,
     user: {
       plan: {
         name: "启航套餐",
@@ -161,6 +163,9 @@ const renderLabPage = () => render(
 describe("AgentSettingsPage 实验室导航", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === "(min-width: 1024px)", addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} }));
+    deleteBot.mockReset();
+    deleteBot.mockResolvedValue(undefined);
     delete (window as Window & { show?: unknown }).show;
     currentSessionUser = {
       id: "usr_dsh_lab",
@@ -178,6 +183,26 @@ describe("AgentSettingsPage 实验室导航", () => {
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
+  });
+
+  // The persistent /agents console keeps this page mounted across sections, so the
+  // sidebar tab must follow the route (e.g. Explore workbench → "创建我的工作台" → Chat).
+  it("follows the route section with the sidebar tab while staying mounted", async () => {
+    const navigation = createNavigation();
+    const view = render(
+      <AppNavigationProvider value={navigation}>
+        <AgentSettingsPage sectionId="deepseek-harness" showHeader={false} />
+      </AppNavigationProvider>,
+    );
+    const tab = (name: string) => screen.getAllByRole("tab", { name })[0]!;
+    await waitFor(() => expect(tab("探索")).toHaveAttribute("aria-selected", "true"));
+    view.rerender(
+      <AppNavigationProvider value={{ ...navigation, pathname: "/agents/skills" }}>
+        <AgentSettingsPage sectionId="skill" showHeader={false} />
+      </AppNavigationProvider>,
+    );
+    await waitFor(() => expect(tab("日常")).toHaveAttribute("aria-selected", "true"));
+    expect(tab("探索")).toHaveAttribute("aria-selected", "false");
   });
 
   it("keeps account, billing, and cloud storage reachable at the bottom of the mobile drawer", async () => {
@@ -227,13 +252,68 @@ describe("AgentSettingsPage 实验室导航", () => {
     expect(await screen.findByText("DeepSeek Harness panel")).toBeInTheDocument();
   });
 
-  it("直接展示 Agent 顶部的重启和删除图标操作", async () => {
+  it("在 Bot 竖栏的管理菜单提供重启和删除操作", async () => {
     renderLabPage();
-
-    await screen.findByText("Hermes Lab");
+    expect(await screen.findByRole("button", { name: /切换到 Hermes Lab/ })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "管理 Bot" }));
     expect(screen.getByRole("button", { name: "重启" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "删除整个 Agent" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "更多操作" })).toBeNull();
+  });
+
+  it("重启失败后在竖栏管理入口提示，并在菜单中展示错误", async () => {
+    execDebugCommand.mockRejectedValue(new Error("网关重启失败"));
+    renderLabPage();
+    const manage = screen.getByRole("button", { name: "管理 Bot" });
+    await userEvent.click(manage);
+    await userEvent.click(screen.getByRole("button", { name: "重启" }));
+    await userEvent.click(screen.getByRole("button", { name: "确认重启" }));
+
+    await waitFor(() => expect(manage.querySelector(".bg-red-500")).toBeInTheDocument());
+    if (manage.getAttribute("aria-expanded") === "false") await userEvent.click(manage);
+    expect(screen.getByRole("alert")).toHaveTextContent("网关重启失败");
+  });
+
+  it.each([
+    { isDefault: true, action: "删除整个 Agent", confirm: "确认删除 Agent" },
+    { isDefault: false, action: "删除 Bot", confirm: "确认删除 Bot" },
+  ])("$action 请求期间显示转圈并防止重复提交", async ({ isDefault, action, confirm }) => {
+    bots = [{ ...buildBot(), isDefault }];
+    let finishDelete!: () => void;
+    deleteBot.mockImplementation(() => new Promise<void>((resolve) => { finishDelete = resolve; }));
+    renderLabPage();
+
+    await userEvent.click(await screen.findByRole("button", { name: "管理 Bot" }));
+    await userEvent.click(screen.getByRole("button", { name: action }));
+    await userEvent.type(screen.getByPlaceholderText("请输入 {{name}}"), "Hermes Lab");
+    await userEvent.click(screen.getByRole("button", { name: confirm }));
+
+    const deletingButton = screen.getByRole("button", { name: "删除中..." });
+    expect(deletingButton).toBeDisabled();
+    expect(deletingButton).toHaveAttribute("aria-busy", "true");
+    expect(deletingButton.querySelector(".motion-safe\\:animate-spin")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "取消" })).toBeDisabled();
+    await userEvent.click(deletingButton);
+    expect(deleteBot).toHaveBeenCalledTimes(1);
+
+    await act(async () => { finishDelete(); });
+    expect(screen.queryByRole("button", { name: "删除中..." })).not.toBeInTheDocument();
+  });
+
+  it("删除失败后恢复确认操作并显示错误", async () => {
+    let failDelete!: (error: Error) => void;
+    deleteBot.mockImplementation(() => new Promise<void>((_, reject) => { failDelete = reject; }));
+    renderLabPage();
+
+    await userEvent.click(await screen.findByRole("button", { name: "管理 Bot" }));
+    await userEvent.click(screen.getByRole("button", { name: "删除整个 Agent" }));
+    await userEvent.type(screen.getByPlaceholderText("请输入 {{name}}"), "Hermes Lab");
+    await userEvent.click(screen.getByRole("button", { name: "确认删除 Agent" }));
+    await act(async () => { failDelete(new Error("删除请求失败")); });
+
+    expect(screen.getByText("删除请求失败")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "确认删除 Agent" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "取消" })).toBeEnabled();
   });
 
   it("在日常中显示通道、技能、定时任务和对话", async () => {

@@ -17,7 +17,8 @@ import (
 )
 
 func main() {
-	if goruntime.GOOS != "linux" {
+	driver := os.Getenv("WEBSITE_RUNTIME_DRIVER")
+	if goruntime.GOOS != "linux" && driver != "minisandbox" {
 		log.Fatal("production runtime requires Linux with Docker/runsc; host execution is prohibited")
 	}
 	addr := os.Getenv("WEBSITE_RUNTIME_ADDR")
@@ -43,32 +44,44 @@ func main() {
 	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		log.Fatal("runtime store already owned")
 	}
-	runner, err := runtime.NewDockerRunner(os.Getenv("WEBSITE_RUNTIME_IMAGE"), dir)
-	if err != nil {
-		log.Fatal(err)
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	err = runner.Reconcile(ctx)
-	cancel()
-	if err != nil {
-		log.Fatal("runtime reconciliation failed: ", err)
-	}
-	ctx, cancel = context.WithTimeout(context.Background(), 20*time.Second)
-	err = runner.Preflight(ctx, dir)
-	cancel()
-	if err != nil {
-		log.Fatal("runtime preflight failed: ", err)
+	var runner runtime.Runner
+	switch driver {
+	case "minisandbox":
+		runner, err = runtime.NewMinisandboxRunner(os.Getenv("WEBSITE_MINISANDBOX_API_URL"), os.Getenv("WEBSITE_MINISANDBOX_SCOPE"))
+		if err != nil {
+			log.Fatal(err)
+		}
+	case "", "runsc":
+		docker, createErr := runtime.NewDockerRunner(os.Getenv("WEBSITE_RUNTIME_IMAGE"), dir)
+		if createErr != nil {
+			log.Fatal(createErr)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		err = docker.Reconcile(ctx)
+		cancel()
+		if err != nil {
+			log.Fatal("runtime reconciliation failed: ", err)
+		}
+		ctx, cancel = context.WithTimeout(context.Background(), 20*time.Second)
+		err = docker.Preflight(ctx, dir)
+		cancel()
+		if err != nil {
+			log.Fatal("runtime preflight failed: ", err)
+		}
+		runner = docker
+	default:
+		log.Fatal("unknown WEBSITE_RUNTIME_DRIVER; no fallback is permitted")
 	}
 	service, err := runtime.New(runtime.Options{DataDir: dir, DeployToken: os.Getenv("WEBSITE_RUNTIME_DEPLOY_TOKEN"), InvokeToken: os.Getenv("WEBSITE_RUNTIME_INVOKE_TOKEN"), Runner: runner, Concurrency: 8, SiteConcurrency: 2})
 	if err != nil {
 		log.Fatal(err)
 	}
-	server := &http.Server{Addr: addr, TLSConfig: tlsConfig, Handler: service, ReadHeaderTimeout: 3 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 25 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 << 10}
+	server := &http.Server{Addr: addr, TLSConfig: tlsConfig, Handler: service, ReadHeaderTimeout: 3 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: runtime.PrepareTimeout + runtime.RollbackTimeout + 5*time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 << 10}
 	signals, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 	go func() {
 		<-signals.Done()
-		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), runtime.PrepareTimeout+runtime.RollbackTimeout+10*time.Second)
 		defer cancel()
 		if err := server.Shutdown(ctx); err != nil {
 			log.Print("shutdown deadline exceeded")

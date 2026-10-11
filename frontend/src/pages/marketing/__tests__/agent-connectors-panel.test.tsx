@@ -67,6 +67,10 @@ describe("ConnectorsPanel 列表与状态", () => {
     });
     render(<ConnectorsPanel instanceId="ins-1" />);
     expect(await screen.findByText("腾讯会议")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "连接器" })).toBeTruthy();
+    expect(screen.getByText("连接常用服务，扩展 Agent 能力边界，帮你完成更多任务")).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "应用连接" })).toBeNull();
+    expect(screen.queryByText("更多连接器逐步接入中…")).toBeNull();
     expect(await screen.findByText("已授权")).toBeTruthy();
   });
 
@@ -80,14 +84,19 @@ describe("ConnectorsPanel 列表与状态", () => {
     expect(screen.getByRole("button", { name: "去授权" })).toBeTruthy();
   });
 
-  it("下发失败状态显示重试下发", async () => {
+  it("下发失败状态显示重试（单一主按钮，可点击）", async () => {
     vi.mocked(client.listInstanceConnectors).mockResolvedValue({
       builtin: [builtinView({ deliverStatus: "failed" })],
       customMcp: [],
     });
     render(<ConnectorsPanel instanceId="ins-1" />);
     expect(await screen.findByText("下发失败")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "重试下发" })).toBeTruthy();
+    // 失败态合并为单一「重试」主按钮（保授权重发配置；授权失效自动转重新授权）
+    const retryButton = screen.getByRole("button", { name: "重试" });
+    expect(retryButton).toBeTruthy();
+    // busy 失败残留（active: false + failed: true）不再禁用按钮——此前
+    // busyItem 误把失败态算作进行中，失败后按钮永久不可点击
+    expect((retryButton as HTMLButtonElement).disabled).toBe(false);
   });
 
   it("空列表显示引导文案", async () => {
@@ -215,6 +224,7 @@ describe("ConnectorsPanel 操作", () => {
 
     render(<ConnectorsPanel instanceId="ins-1" execCommand={noopExecutor} />);
     fireEvent.click(await screen.findByRole("button", { name: "解除授权" }));
+    expect(screen.getByText(/当前实例下的所有 Bot 都将无法使用该连接器/)).toBeTruthy();
     fireEvent.click(await screen.findByRole("button", { name: "确认解除" }));
     await waitFor(() => expect(client.detachBuiltinConnector).toHaveBeenCalled());
     await waitFor(() => expect(executeConnectorTat).toHaveBeenCalled());
@@ -279,7 +289,7 @@ describe("ConnectorsPanel 操作", () => {
       });
       // 弹窗关闭（closed=true）：关窗 ≠ 失败——complete 一直 pending 时，
       // 宽限窗口（10s）内不 cancel，超窗才 cancel 兜底
-      vi.stubGlobal("open", vi.fn(() => ({ closed: true }) as unknown as Window));
+      vi.stubGlobal("open", vi.fn(() => ({ closed: true, location: { href: "" } }) as unknown as Window));
       vi.mocked(client.startConnectorOAuth).mockResolvedValue({
         authorizeUrl: "https://oauth.example.com/auth",
         state: "s1",
@@ -314,7 +324,7 @@ describe("ConnectorsPanel 操作", () => {
     }
   });
 
-  it("OAuth：关窗后 complete 返回 binding（已授权绑定中）→ 等 complete 终态，不 cancel", async () => {
+  it("OAuth：binding 即完成——complete 返回 binding（带 tat）立即 resolve 执行下发，不傻等", async () => {
     vi.useFakeTimers();
     try {
       vi.mocked(client.listInstanceConnectors).mockResolvedValue({
@@ -330,20 +340,25 @@ describe("ConnectorsPanel 操作", () => {
         customMcp: [],
       });
       // 用户授权成功、回调页自动关闭，postMessage 丢失：complete 先 pending
-      // 后 binding，最终 completed → 静默 resolve，全程不 cancel
-      vi.stubGlobal("open", vi.fn(() => ({ closed: true }) as unknown as Window));
+      // 后 binding——binding 即授权成功且携带 tat 下发计划，必须立即 resolve
+      // 并执行下发（reportDelivery 回写后状态才流转到 completed），不 cancel
+      vi.stubGlobal("open", vi.fn(() => ({ closed: true, location: { href: "" } }) as unknown as Window));
       vi.mocked(client.startConnectorOAuth).mockResolvedValue({
         authorizeUrl: "https://oauth.example.com/auth",
         state: "s1",
         flowId: "flow-1",
       });
+      const tatPayload = { action: "upsert", installId: "ins-1" } as never;
       vi.mocked(client.completeConnectorOAuth)
         .mockResolvedValueOnce({ status: "pending" } as never)
-        .mockResolvedValueOnce({ status: "binding" } as never)
         .mockResolvedValue({
-          status: "completed",
+          status: "binding",
           connectorKey: "tencent-docs",
+          installId: "install-1",
+          installType: "builtin",
           operationId: "op-1",
+          bindingVersion: 1,
+          tat: tatPayload,
         } as never);
       vi.mocked(client.reportConnectorDelivery).mockResolvedValue({ status: "ok" } as never);
 
@@ -352,12 +367,12 @@ describe("ConnectorsPanel 操作", () => {
       await vi.advanceTimersByTimeAsync(100);
       fireEvent.click(await authButton);
       await vi.advanceTimersByTimeAsync(50);
-      // 轮询推进：pending → binding → completed（远超关窗 pending 宽限，
-      // 但 binding 后不再受宽限约束，completed 即 resolve，不 cancel）
-      await vi.advanceTimersByTimeAsync(30_000);
+      // 两个轮询 tick：pending → binding 即 resolve（无需等到 completed）
+      await vi.advanceTimersByTimeAsync(5_000);
       expect(client.cancelConnectorOAuth).not.toHaveBeenCalled();
-      // completed 后 finishOperation（complete 响应无 tat → 跳过下发）→ refresh
-      expect(client.completeConnectorOAuth).toHaveBeenCalled();
+      // binding 响应的 tat 已被执行并 reportDelivery（此前的 bug：binding 被
+      // 当 wait 傻等，tat 无人执行，状态停摆至超时）
+      expect(client.reportConnectorDelivery).toHaveBeenCalled();
       expect(client.listInstanceConnectors).toHaveBeenCalled();
     } finally {
       vi.useRealTimers();

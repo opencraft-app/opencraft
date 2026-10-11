@@ -163,7 +163,7 @@ describe("onboarding warmup visibility", () => {
     // 预热行出现，并且是在跑的状态（带等待计时，而不是灰色 pending）
     expect(await screen.findByText("正在唤醒 Bot 实例")).toBeTruthy();
     await waitFor(() => {
-      expect(screen.getByText(/已等待 \d+s/)).toBeTruthy();
+      expect(screen.getAllByText(/已等待 \d+ 秒/).length).toBeGreaterThan(0);
     });
   }, 20000);
 
@@ -214,6 +214,7 @@ describe("onboarding warmup visibility", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "创建" }));
 
+    await userEvent.click(await screen.findByRole("button", { name: "开始旅程" }, { timeout: 25000 }));
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith("bot-new"), { timeout: 15000 });
     // 第一条 exec 是探活用的 `true`，不是配置命令
     expect(execDebugCommand.mock.calls[0]?.[1]).toBe("true");
@@ -253,6 +254,7 @@ describe("onboarding warmup visibility", () => {
     await userEvent.click(screen.getByRole("button", { name: "创建" }));
 
     // 没有当场失败，而是等到实例就绪后把配置写完
+    await userEvent.click(await screen.findByRole("button", { name: "开始旅程" }, { timeout: 25000 }));
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith("bot-new"), { timeout: 25000 });
     // 确实重试了探活，而不是一次就放弃
     expect(probes).toBeGreaterThanOrEqual(3);

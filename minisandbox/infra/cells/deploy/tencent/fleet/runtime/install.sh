@@ -112,6 +112,27 @@ worker_registry_url=${RIVET_WORKER_REGISTRY_URL:?RIVET_WORKER_REGISTRY_URL must 
 cold_bucket=${RIVET_COLD_BUCKET:?RIVET_COLD_BUCKET must be the exact Terraform Cell cold bucket}
 cold_region=${RIVET_COLD_REGION:-${TENCENT_REGION:-ap-beijing}}
 cold_endpoint=${RIVET_COLD_ENDPOINT:-https://cos.${cold_region}.myqcloud.com}
+# Opt-in only. The default continues to consume the immutable two-key Secret.
+cold_credential_mode=${RIVET_COLD_CREDENTIAL_MODE:-legacy}
+cold_session_identity_args=()
+case "$cold_credential_mode" in
+legacy) ;;
+session-file)
+	: "${RIVET_COLD_SESSION_REFS_FILE:?session-file requires frozen Cell/Secret UID references}"
+	# This projection contains references only, never credential data. Freeze it
+	# once so validation, manifest identity and rendering use the same binding.
+	cold_session_binding=$(python3 "$script_dir/render-cold-session.py" references \
+		--references "$RIVET_COLD_SESSION_REFS_FILE" --cell-name "$cell_name" \
+		--namespace "$namespace" --cold-bucket "$cold_bucket")
+	cold_session_secret=$(printf '%s' "$cold_session_binding" | jq -er '.coldSecret.name')
+	cold_session_identity_args=(--file "$script_dir/render-cold-session.py" \
+		--value "$cold_credential_mode" --value "$cold_session_binding")
+	;;
+*)
+	echo "RIVET_COLD_CREDENTIAL_MODE must be legacy or session-file" >&2
+	exit 2
+	;;
+esac
 depot_reclaim_interval_ms=${RIVET_DEPOT_RECLAIM_INTERVAL_MS:-$default_depot_reclaim_interval_ms}
 cold_max_concurrent_requests=${RIVET_COLD_MAX_CONCURRENT_REQUESTS:-16}
 gasoline_worker_poll_interval_ms=${RIVET_GASOLINE_WORKER_POLL_INTERVAL_MS:-2000}
@@ -325,7 +346,7 @@ runtime_manifest_sha=$(python3 "$script_dir/manifest-identity.py" \
 	--value "$runtime_tke_oidc_role_arn" \
 	--value "${RUNTIME_MACHINE_SET:-np-runtime0}" \
 	--value "$availability_mode" \
-	--value "$worker_registry_url")
+	--value "$worker_registry_url" ${cold_session_identity_args[@]+"${cold_session_identity_args[@]}"})
 
 temporary_root=${TMPDIR:-/data/tmp}
 mkdir -p "$temporary_root"
@@ -334,6 +355,22 @@ cleanup() {
 	rm -rf -- "$temporary"
 }
 trap cleanup EXIT
+
+validate_cold_session_secret() {
+	# Live credentials stay in the API-to-validator pipe; never echo or persist.
+	kubectl "${kubeconfig_args[@]}" -n "$namespace" get rivetcell "$cell_name" \
+		-o json >"$temporary/cold-session-cell.json"
+	kubectl "${kubeconfig_args[@]}" -n "$namespace" get secret "$cold_session_secret" -o json | \
+		python3 "$script_dir/render-cold-session.py" validate-secret \
+			--references "$temporary/cold-session-refs.json" \
+			--cell-name "$cell_name" --namespace "$namespace" --cold-bucket "$cold_bucket" \
+			--cell-json "$temporary/cold-session-cell.json"
+}
+if [[ $cold_credential_mode == session-file ]]; then
+	printf '%s\n' "$cold_session_binding" >"$temporary/cold-session-refs.json"
+	# Fail before the first installer mutation if the live UID/session is wrong.
+	validate_cold_session_secret
+fi
 
 runtime_install_required_nodes=$(kubectl "${kubeconfig_args[@]}" -n "$namespace" get statefulset \
 	"${cell_name}-runtime-hosts" -o jsonpath='{.spec.replicas}')
@@ -815,6 +852,7 @@ kubectl "${kubeconfig_args[@]}" -n "$controller_namespace" \
 	python3 -c 'import json,sys; d=json.load(sys.stdin); m=d["metadata"]; m["name"]="actor-fleet-tcr"; m["namespace"]=sys.argv[1]; [m.pop(k,None) for k in ("uid","resourceVersion","creationTimestamp","managedFields")]; print(json.dumps(d))' "$namespace" | \
 	kubectl "${kubeconfig_args[@]}" apply -f - >/dev/null
 
+if [[ $cold_credential_mode == legacy ]]; then
 # Storage bootstrap owns this immutable, least-privilege Secret. Runtime
 # releases may consume it but never derive or rotate it from FDB backup keys.
 kubectl "${kubeconfig_args[@]}" -n "$namespace" get secret "${cell_name}-runtime-cos" \
@@ -830,6 +868,10 @@ jq -e --arg cell "$cell_name" --arg bucket "$cold_bucket" '
 	echo "runtime COS Secret is not the exact immutable Cell cold-storage identity" >&2
 	exit 1
 }
+else
+	# Re-read after installer preparation; rotation is allowed, UID drift is not.
+	validate_cold_session_secret
+fi
 
 sed \
 	-e "s|actor-bj-k01|$cell_name|g" \
@@ -952,6 +994,12 @@ sed \
 	-e "s|__RIVET_WORKER_REGISTRY_URL__|$worker_registry_url|g" \
 	-e "s|__RIVET_DEPOT_RECLAIM_INTERVAL_MS__|$depot_reclaim_interval_ms|g" \
 	"$script_dir/runtime.yaml" >"$temporary/runtime.yaml"
+if [[ $cold_credential_mode == session-file ]]; then
+	python3 "$script_dir/render-cold-session.py" render \
+		--references "$temporary/cold-session-refs.json" \
+		--cell-name "$cell_name" --namespace "$namespace" --cold-bucket "$cold_bucket" \
+		--input "$temporary/runtime.yaml" --output "$temporary/runtime.yaml"
+fi
 if [[ $cell_reporter_mode == disabled ]]; then
 	python3 - "$temporary/runtime.yaml" "${cell_name}-cell-reporter" <<'PY'
 import sys

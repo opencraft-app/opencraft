@@ -43,6 +43,22 @@ export const COOKIE_CONSENT_COPY = {
     accept: "Terima semua",
     necessary: "Hanya yang diperlukan",
   },
+  [PUBLIC_SITE_LOCALES.MS_MY]: {
+    title: "Kami menggunakan kuki",
+    description:
+      "Kami menggunakan Kuki untuk memastikan LightVela stabil, memahami penggunaan tapak dan meningkatkan pengalaman anda. Anda boleh menerima semua Kuki atau Kuki yang diperlukan sahaja. Butiran boleh didapati di",
+    policy: "Dasar Kuki",
+    accept: "Terima semua",
+    necessary: "Hanya kuki yang diperlukan",
+  },
+  [PUBLIC_SITE_LOCALES.TH_TH]: {
+    title: "เราจะใช้คุกกี้",
+    description:
+      "เราใช้คุกกี้เพื่อให้ LightVela มีความเสถียร เข้าใจการใช้งานเว็บไซต์ และปรับปรุงประสบการณ์ของคุณ คุณสามารถยอมรับคุกกี้ทั้งหมดหรือคุกกี้ที่จำเป็นเท่านั้น รายละเอียดสามารถดูได้ที่",
+    policy: "นโยบายคุกกี้",
+    accept: "ยอมรับทั้งหมด",
+    necessary: "เฉพาะคุกกี้ที่จำเป็น",
+  },
   [PUBLIC_SITE_LOCALES.ES]: {
     title: "Usamos cookies",
     description:

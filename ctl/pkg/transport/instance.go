@@ -210,6 +210,34 @@ type ListInstanceBotsResponse struct {
 	Items []*InstanceBotResponse `json:"items"`
 }
 
+// Channel history is a read-only projection of Hermes messages for one Bot.
+type ChannelSession struct {
+	ID        string  `json:"id"`
+	Source    string  `json:"source"`
+	Title     string  `json:"title"`
+	ChatType  string  `json:"chat_type"`
+	UpdatedAt float64 `json:"updated_at"`
+	Preview   string  `json:"preview"`
+}
+
+type ChannelSessionsResponse struct {
+	Items      []ChannelSession `json:"items"`
+	Sources    []string         `json:"sources"`
+	NextCursor string           `json:"next_cursor,omitempty"`
+}
+
+type ChannelMessage struct {
+	ID        int64   `json:"id"`
+	Role      string  `json:"role"`
+	Text      string  `json:"text"`
+	Timestamp float64 `json:"timestamp"`
+}
+
+type ChannelMessagesResponse struct {
+	Items      []ChannelMessage `json:"items"`
+	NextCursor string           `json:"next_cursor,omitempty"`
+}
+
 type CreateInstanceBotRequest struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
@@ -662,6 +690,11 @@ const (
 	DesktopSessionStatusFailed       = "Failed"
 )
 
+const (
+	DesktopInstallPhaseInstallingDesktop    = "installing_desktop"
+	DesktopInstallPhaseConfiguringWallpaper = "configuring_wallpaper"
+)
+
 // DesktopSessionResponse 云桌面会话响应（POST 触发 / GET 轮询共用）。
 // 异步模型：首次触发返回 Provisioning；前端轮询 GET 直到 Ready 才拿 ws_url/password。
 type DesktopSessionResponse struct {
@@ -669,7 +702,9 @@ type DesktopSessionResponse struct {
 	Status string `json:"status" example:"Provisioning"`
 	// 按需安装图形层进度（0-100），仅 Installing 时返回（§12 TB.2）
 	InstallProgress int `json:"install_progress,omitempty" example:"40"`
-	// 安装/当前阶段人类可读提示，Installing 时展示给用户（如「正在安装桌面环境…」）
+	// 语言无关的安装阶段；前端本地化，未知值回退通用安装提示。
+	InstallPhase string `json:"install_phase,omitempty" example:"configuring_wallpaper"`
+	// 兼容旧客户端的固定文案，不用于新客户端本地化或状态判定。
 	Message string `json:"message,omitempty" example:"正在安装桌面环境（约 2-4 分钟）"`
 	// noVNC WebSocket 地址，仅 Ready 时返回；形如 wss://6080-<sandboxID>.<domain>/websockify
 	WsURL string `json:"ws_url,omitempty" example:"wss://6080-sb-xxx.ingress.example.com/websockify"`

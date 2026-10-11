@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createWorkbenchDraftLocation } from "../packages/workbench-runtime/src/index.ts";
+import { createWorkbenchDraftLocation, createWorkbenchThreadLocation } from "../packages/workbench-runtime/src/index.ts";
 import { createApplicationNavigation } from "../apps/workbench-web/src/runtime/workbench-navigation.ts";
 import { createWorkbenchNavigationTransaction } from "../apps/workbench-web/src/runtime/workbench-navigation-transaction.ts";
 
@@ -268,4 +268,229 @@ test("disposed async navigation commands reject through their Promise contract",
   await assert.rejects(nav.navigate(a), /disposed/);
   await assert.rejects(nav.openChat(), /disposed/);
   await assert.rejects(nav.selectConversation(a), /disposed/);
+});
+
+test("sidebar A to B to A restores the last presented View", async () => {
+  const a = createWorkbenchThreadLocation("local", "a"), b = createWorkbenchThreadLocation("local", "b");
+  const activated: string[] = [];
+  const nav = createWorkbenchNavigationTransaction(a, { setViewId() {}, cancelPending() {},
+    prepare: async () => ({ commit: (scope: string) => { activated.push(scope); return true; }, cancel() {} }),
+  } as any, { getActiveDraft: () => null } as any, { mode: "memory" });
+  try {
+    const original = nav.getSnapshot().routeScopeId;
+    assert.equal(await nav.selectConversation(b), true);
+    const bView = nav.getSnapshot().routeScopeId;
+    assert.equal(await nav.selectConversation(a), true);
+    assert.equal(nav.getSnapshot().routeScopeId, original);
+    assert.equal(activated.at(-1), original);
+    assert.equal(await nav.selectConversation(b), true);
+    assert.equal(nav.getSnapshot().routeScopeId, bView);
+  } finally { nav.dispose(); }
+});
+
+test("explicit open creates a separate View and sidebar remembers the successful View", async () => {
+  const a = createWorkbenchThreadLocation("local", "a"), b = createWorkbenchThreadLocation("local", "b");
+  const nav = createWorkbenchNavigationTransaction(a, { setViewId() {}, cancelPending() {},
+    prepare: async () => ({ commit: () => true, cancel() {} }),
+  } as any, { getActiveDraft: () => null } as any, { mode: "memory" });
+  try {
+    const original = nav.getSnapshot().routeScopeId;
+    assert.equal(await nav.navigate(a), true);
+    const second = nav.getSnapshot().routeScopeId;
+    assert.notEqual(second, original);
+    await nav.selectConversation(b);
+    await nav.selectConversation(a);
+    assert.equal(nav.getSnapshot().routeScopeId, second);
+  } finally { nav.dispose(); }
+});
+
+test("successful POP restores its own View and makes that View the sidebar preference", async () => {
+  const a = createWorkbenchThreadLocation("local", "a"), b = createWorkbenchThreadLocation("local", "b");
+  const nav = createWorkbenchNavigationTransaction(a, { setViewId() {}, cancelPending() {},
+    prepare: async () => ({ commit: () => true, cancel() {} }),
+  } as any, { getActiveDraft: () => null } as any, { mode: "memory" });
+  try {
+    const original = nav.getSnapshot().routeScopeId;
+    await nav.navigate(a);
+    const second = nav.getSnapshot().routeScopeId;
+    await nav.selectConversation(b);
+    nav.back(); await settle();
+    assert.equal(nav.getSnapshot().routeScopeId, second);
+    nav.back(); await settle();
+    assert.equal(nav.getSnapshot().routeScopeId, original);
+    await nav.selectConversation(b);
+    await nav.selectConversation(a);
+    assert.equal(nav.getSnapshot().routeScopeId, original);
+  } finally { nav.dispose(); }
+});
+
+test("failed and superseded explicit opens cannot overwrite a presented View preference", async () => {
+  const a = createWorkbenchThreadLocation("local", "a"), b = createWorkbenchThreadLocation("local", "b");
+  let mode: "success" | "reject" | "late" = "success", finish!: (value: any) => void, cancelled = 0;
+  const nav = createWorkbenchNavigationTransaction(a, { setViewId() {}, cancelPending() {},
+    prepare: () => mode === "late" ? new Promise(resolve => { finish = resolve; })
+      : Promise.resolve({ commit: () => mode !== "reject", cancel() { cancelled++; } }),
+  } as any, { getActiveDraft: () => null } as any, { mode: "memory" });
+  try {
+    const original = nav.getSnapshot().routeScopeId;
+    await nav.selectConversation(b);
+    mode = "reject";
+    assert.equal(await nav.navigate(a), false);
+    mode = "late";
+    const late = nav.navigate(a);
+    nav.openSettings();
+    finish({ commit() { throw new Error("superseded open committed"); }, cancel() { cancelled++; } });
+    assert.equal(await late, false);
+    mode = "success";
+    await nav.selectConversation(a);
+    assert.equal(nav.getSnapshot().routeScopeId, original);
+    assert.equal(cancelled, 2);
+  } finally { nav.dispose(); }
+});
+
+test("preferred View identity includes Host even when Thread IDs match", async () => {
+  const a = createWorkbenchThreadLocation("host-a", "same"), b = createWorkbenchThreadLocation("host-b", "same");
+  const nav = createWorkbenchNavigationTransaction(a, { setViewId() {}, cancelPending() {},
+    prepare: async () => ({ commit: () => true, cancel() {} }),
+  } as any, { getActiveDraft: () => null } as any, { mode: "memory" });
+  try {
+    const original = nav.getSnapshot().routeScopeId;
+    await nav.selectConversation(b);
+    const otherHost = nav.getSnapshot().routeScopeId;
+    assert.notEqual(otherHost, original);
+    await nav.selectConversation(a);
+    assert.equal(nav.getSnapshot().routeScopeId, original);
+    await nav.selectConversation(b);
+    assert.equal(nav.getSnapshot().routeScopeId, otherHost);
+  } finally { nav.dispose(); }
+});
+
+test("promotion aliases share the latest successfully presented canonical Thread View", async () => {
+  const draft = createWorkbenchDraftLocation("local", "draft"), a = createWorkbenchThreadLocation("local", "a"),
+    b = createWorkbenchThreadLocation("local", "b");
+  const nav = createWorkbenchNavigationTransaction(draft, { setViewId() {}, cancelPending() {},
+    prepare: async () => ({ commit: () => true, cancel() {} }),
+    preparePromotion: async () => ({ location: a, commit: () => true, cancel() {} }),
+  } as any, { getActiveDraft: () => null } as any, { mode: "memory" });
+  try {
+    const promotedView = nav.getSnapshot().routeScopeId;
+    assert.deepEqual(await nav.promoteDraft("draft", {} as any), a);
+    await nav.selectConversation(b);
+    await nav.selectConversation(draft);
+    assert.deepEqual(nav.getSnapshot().location, a);
+    assert.equal(nav.getSnapshot().routeScopeId, promotedView);
+    await nav.navigate(a);
+    const second = nav.getSnapshot().routeScopeId;
+    await nav.selectConversation(b);
+    await nav.selectConversation(draft);
+    assert.deepEqual(nav.getSnapshot().location, a);
+    assert.equal(nav.getSnapshot().routeScopeId, second);
+  } finally { nav.dispose(); }
+});
+
+test("owner eviction and retained-View validation revoke preferred slots", async () => {
+  const a = createWorkbenchThreadLocation("local", "a"), b = createWorkbenchThreadLocation("local", "b");
+  const invalid = new Set<string>();
+  const nav = createWorkbenchNavigationTransaction(a, { setViewId() {}, cancelPending() {},
+    prepare: async () => ({ commit: () => true, cancel() {} }),
+  } as any, { getActiveDraft: () => null } as any, {
+    mode: "memory", isRetainedView: (_location, viewId) => !invalid.has(viewId),
+  });
+  try {
+    const original = nav.getSnapshot().routeScopeId;
+    await nav.selectConversation(b);
+    invalid.add(original);
+    await nav.selectConversation(a);
+    const restored = nav.getSnapshot().routeScopeId;
+    assert.notEqual(restored, original);
+    await nav.selectConversation(b);
+    nav.forgetView(restored);
+    await nav.selectConversation(a);
+    assert.notEqual(nav.getSnapshot().routeScopeId, restored);
+  } finally { nav.dispose(); }
+});
+
+test("preferred history remains bounded independently of Router entries", async () => {
+  const a = createWorkbenchThreadLocation("local", "a"), b = createWorkbenchThreadLocation("local", "b"),
+    c = createWorkbenchThreadLocation("local", "c");
+  const nav = createWorkbenchNavigationTransaction(a, { setViewId() {}, cancelPending() {},
+    prepare: async () => ({ commit: () => true, cancel() {} }),
+  } as any, { getActiveDraft: () => null } as any, { mode: "memory", maxPreferredViews: 2 });
+  try {
+    const original = nav.getSnapshot().routeScopeId;
+    await nav.selectConversation(b);
+    await nav.selectConversation(c);
+    await nav.selectConversation(a);
+    assert.notEqual(nav.getSnapshot().routeScopeId, original);
+  } finally { nav.dispose(); }
+});
+
+test("recycled empty Views cannot evict a preferred View whose draft owner remains retained", async () => {
+  const a = createWorkbenchThreadLocation("local", "a"), b = createWorkbenchThreadLocation("local", "b"),
+    c = createWorkbenchThreadLocation("local", "c");
+  const recycled = new Set<string>();
+  const nav = createWorkbenchNavigationTransaction(a, { setViewId() {}, cancelPending() {},
+    prepare: async () => ({ commit: () => true, cancel() {} }),
+  } as any, { getActiveDraft: () => null } as any, {
+    mode: "memory", maxPreferredViews: 2, isRetainedView: (_location, viewId) => !recycled.has(viewId),
+  });
+  try {
+    const original = nav.getSnapshot().routeScopeId;
+    await nav.selectConversation(b);
+    recycled.add(nav.getSnapshot().routeScopeId);
+    await nav.selectConversation(c);
+    await nav.selectConversation(a);
+    assert.equal(nav.getSnapshot().routeScopeId, original);
+  } finally { nav.dispose(); }
+});
+
+test("account reset clears preferences and fences pending presentation", async () => {
+  const a = createWorkbenchThreadLocation("local", "a"), b = createWorkbenchThreadLocation("local", "b");
+  let finish!: (value: any) => void, late = false, cancelled = 0;
+  const nav = createWorkbenchNavigationTransaction(a, { setViewId() {}, cancelPending() {},
+    prepare: () => late ? new Promise(resolve => { finish = resolve; })
+      : Promise.resolve({ commit: () => true, cancel() {} }),
+  } as any, { getActiveDraft: () => null } as any, { mode: "memory" });
+  try {
+    const original = nav.getSnapshot().routeScopeId;
+    await nav.selectConversation(b);
+    late = true;
+    const pending = nav.navigate(a);
+    nav.clearPreferredViews();
+    finish({ commit() { throw new Error("previous account committed"); }, cancel() { cancelled++; } });
+    assert.equal(await pending, false);
+    assert.equal(cancelled, 1);
+    late = false;
+    await nav.selectConversation(a);
+    assert.notEqual(nav.getSnapshot().routeScopeId, original);
+  } finally { nav.dispose(); }
+});
+
+test("account reset rolls back an unaccepted POP before releasing its late activation", async () => {
+  const a = createWorkbenchThreadLocation("local", "a"), b = createWorkbenchThreadLocation("local", "b"),
+    c = createWorkbenchThreadLocation("local", "c");
+  let finish!: (value: any) => void, late = false, cancelled = 0;
+  const nav = createWorkbenchNavigationTransaction(a, { setViewId() {}, cancelPending() {},
+    prepare: () => late ? new Promise(resolve => { finish = resolve; })
+      : Promise.resolve({ commit: () => true, cancel() {} }),
+  } as any, { getActiveDraft: () => null } as any, { mode: "memory" });
+  try {
+    await nav.selectConversation(b);
+    const bView = nav.getSnapshot().routeScopeId;
+    late = true;
+    nav.back(); await settle();
+    assert.deepEqual(nav.getSnapshot().location, b, "unaccepted POP has not published its target");
+    nav.clearPreferredViews(); await settle();
+    finish({ commit() { throw new Error("previous account POP committed"); }, cancel() { cancelled++; } });
+    await settle();
+    assert.equal(cancelled, 1);
+    assert.deepEqual(nav.getSnapshot().location, b);
+    assert.equal(nav.getSnapshot().routeScopeId, bView);
+    assert.equal(nav.getSnapshot().canGoBack, true);
+    assert.equal(nav.getSnapshot().canGoForward, false);
+    late = false;
+    await nav.selectConversation(c);
+    await nav.selectConversation(b);
+    assert.notEqual(nav.getSnapshot().routeScopeId, bView, "rollback cannot reintroduce account-cleared preferences");
+  } finally { nav.dispose(); }
 });

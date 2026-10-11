@@ -156,10 +156,14 @@ async function post<T>(
     "X-Product": "lightvela",
     Authorization: `Bearer ${accessToken}`,
   };
+  // 15s 客户端超时：ai-server 无响应/网络挂起时请求必然失败进 catch——
+  // 防止 OAuth 等待链路（complete/cancel 轮询）因挂起的 fetch 永久 pending，
+  // 导致卡片 busy 永不释放（一直「授权中」）
   const res = await fetch(`${aiServerBase()}${path}`, {
     method: "POST",
     headers,
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(15_000),
   });
   if (res.status === 401) throw new Error("登录已过期，请重新登录后再试");
   if (!res.ok) throw new Error(`连接器服务异常（${res.status}）`);

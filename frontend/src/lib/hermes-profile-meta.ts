@@ -21,6 +21,7 @@
  */
 
 import { DEFAULT_HERMES_AGENT_ID, getHermesProfileRootCommand } from "@/lib/hermes-agent-command";
+import { parseHermesAppearance, type HermesAppearance } from "@/lib/hermes-appearance";
 
 /**
  * UTF-8 安全的 base64。
@@ -37,6 +38,7 @@ const encodeBase64 = (input: string): string => {
 
 /** 几何体头像在 ui_meta 里的 key */
 export const UI_META_AVATAR_KEY = "lightvela_avatar";
+export const UI_META_APPEARANCE_KEY = "lightvela_appearance";
 
 export type HermesProfileMeta = {
   displayName: string;
@@ -45,6 +47,7 @@ export type HermesProfileMeta = {
   descriptionAuto: boolean;
   /** 几何体头像，null 表示未设置（存量用户） */
   avatar: { shapeId: string; color: string } | null;
+  appearance: HermesAppearance | null;
 };
 
 export const EMPTY_PROFILE_META: HermesProfileMeta = {
@@ -52,6 +55,7 @@ export const EMPTY_PROFILE_META: HermesProfileMeta = {
   description: "",
   descriptionAuto: false,
   avatar: null,
+  appearance: null,
 };
 
 /**
@@ -123,6 +127,7 @@ export const buildProfileMetaWriteCommand = (
     description?: string;
     descriptionAuto?: boolean;
     avatar?: { shapeId: string; color: string };
+    appearance?: HermesAppearance;
   },
   profileId: string = DEFAULT_HERMES_AGENT_ID,
 ): string => {
@@ -138,6 +143,7 @@ export const buildProfileMetaWriteCommand = (
     description: input.description,
     description_auto: input.descriptionAuto,
     avatar: input.avatar ? `${input.avatar.shapeId}:${input.avatar.color}` : undefined,
+    appearance: input.appearance,
   }));
 
   return withHermesPython(
@@ -155,7 +161,7 @@ export const buildProfileMetaWriteCommand = (
       "if data.get('description_auto') is not None: kw['description_auto'] = data['description_auto']",
       "if kw: write_profile_meta(d, **kw)",
       // 头像写 ui_meta：读全量 → 只改这一个 key → 原子写回
-      "if data.get('avatar') is not None:",
+      "if data.get('avatar') is not None or data.get('appearance') is not None:",
       "    import yaml",
       "    from utils import atomic_yaml_write",
       "    p = d / 'profile.yaml'",
@@ -166,7 +172,8 @@ export const buildProfileMetaWriteCommand = (
       "    if not isinstance(raw, dict): raw = {}",
       "    um = raw.get('ui_meta')",
       "    if not isinstance(um, dict): um = {}",
-      `    um[${JSON.stringify(UI_META_AVATAR_KEY)}] = data['avatar']`,
+      `    if data.get('avatar') is not None: um[${JSON.stringify(UI_META_AVATAR_KEY)}] = data['avatar']`,
+      `    if data.get('appearance') is not None: um[${JSON.stringify(UI_META_APPEARANCE_KEY)}] = data['appearance']`,
       "    raw['ui_meta'] = um",
       "    atomic_yaml_write(p, raw, sort_keys=False)",
       "print('__LV_META_OK__')",
@@ -200,6 +207,7 @@ export const parseProfileMetaOutput = (output: string): HermesProfileMeta => {
       description: raw.description ?? "",
       descriptionAuto: Boolean(raw.descriptionAuto),
       avatar,
+      appearance: parseHermesAppearance(raw.ui_meta?.[UI_META_APPEARANCE_KEY]),
     };
   } catch {
     return EMPTY_PROFILE_META;

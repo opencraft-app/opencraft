@@ -36,6 +36,7 @@ import { SubagentActivityGroup } from "../tool/tool-renderers";
 import { ToolActivityPresenterContext, ConversationDetailContext } from "../render-contexts";
 import { ActivityDisclosureHeader, WorkStatusDivider } from "./work-status";
 import { useDisclosureReflow } from "../../use-disclosure-reflow";
+import { ReasoningBlock } from "./command-and-review-renderers";
 
 function GenericBlock({ block, onRetry, richText = true }: { block: TimelineBlock; onRetry?: () => void; richText?: boolean }): ReactNode {
   return <TimelineBlockView block={block} onRetry={onRetry} richText={richText} />;
@@ -63,9 +64,13 @@ function AgentActivitySummaryView({ summary }: { readonly summary: AgentActivity
 function AgentActivityGroup({
   group,
   onRetry,
+  collapsed,
+  onCollapsedChange,
 }: {
   group: AgentActivityGroupContentUnit;
   onRetry?: () => void;
+  collapsed: boolean | undefined;
+  onCollapsedChange: (collapsed: boolean) => void;
 }) {
   const registry = useContext(ToolActivityPresenterContext);
   const detailLevel = useContext(ConversationDetailContext);
@@ -82,6 +87,8 @@ function AgentActivityGroup({
     <div className="thread-agent-activity__group" data-activity-group-id={group.id}>
       <AgentActivityGroupDisclosure
         canExpand={visibleBlocks.length > 0}
+        collapsed={collapsed}
+        onCollapsedChange={onCollapsedChange}
         icon={header.icon === null ? undefined : activityIcon(header.icon)}
         shouldAnimateInitialCollapse={group.lifecycle.isLatestVisibleUnit && group.lifecycle.inProgress && !group.lifecycle.isActivitySliceClosed}
         summary={<CadencedShimmer active={header.active}>{header.state === "thinking" && header.summary.kind === "text"
@@ -103,12 +110,16 @@ function AgentActivityGroup({
 function AgentActivityContent({
   contentUnits,
   onRetry,
+  innerCollapsedById,
+  onInnerCollapsedChange,
 }: {
   contentUnits: readonly AgentActivityContentUnit[];
   onRetry?: () => void;
+  innerCollapsedById: Readonly<Record<string, boolean>>;
+  onInnerCollapsedChange: (id: string, collapsed: boolean) => void;
 }) {
   const followContentRef = useLatestTurnFollowContentRef();
-  const followUnit = contentUnits.findLast((unit) => unit.type === "group"
+  const followUnit = contentUnits.findLast((unit) => unit.type === "group" || unit.type === "reasoning"
     || (unit.type === "standalone" && unit.block.type !== "user-message"));
   return (
     <div className="thread-agent-activity__content" data-unit-count={contentUnits.length}>
@@ -119,7 +130,13 @@ function AgentActivityContent({
           key={contentUnit.id}
         >
           {contentUnit.type === "group"
-            ? <AgentActivityGroup group={contentUnit} onRetry={onRetry} />
+            ? <AgentActivityGroup group={contentUnit} onRetry={onRetry}
+                collapsed={innerCollapsedById[contentUnit.id]}
+                onCollapsedChange={collapsed => onInnerCollapsedChange(contentUnit.id, collapsed)} />
+            : contentUnit.type === "reasoning" ? <ReasoningBlock block={contentUnit.block}
+                presentation={contentUnit.presentation} active={contentUnit.active}
+                collapsed={innerCollapsedById[contentUnit.id] ?? true}
+                onCollapsedChange={collapsed => onInnerCollapsedChange(contentUnit.id, collapsed)} />
             : contentUnit.type === "worked-for" ? <WorkStatusDivider item={contentUnit.item} />
               : <GenericBlock block={contentUnit.block} onRetry={onRetry} />}
         </div>
@@ -133,11 +150,15 @@ function AgentActivity({
   onCollapsedChange,
   onRetry,
   unit,
+  innerCollapsedById,
+  onInnerCollapsedChange,
 }: {
   persistedCollapsed: boolean | undefined;
   onCollapsedChange: (collapsed: boolean) => void;
   onRetry?: () => void;
   unit: AgentActivityRenderUnit;
+  innerCollapsedById: Readonly<Record<string, boolean>>;
+  onInnerCollapsedChange: (id: string, collapsed: boolean) => void;
 }) {
   const prefersReducedMotion = useReducedMotion();
   const layout = resolveAgentActivityLayout(unit, persistedCollapsed);
@@ -145,6 +166,9 @@ function AgentActivity({
   const inlineSubagentActivity = unit.inlineSubagentActivity;
   const reflow = useDisclosureReflow();
   const hasAnimatedContent = layout.visibleUnits.length > 0 || inlineSubagentActivity !== null;
+  const renderContent = (contentUnits: readonly AgentActivityContentUnit[]) => <AgentActivityContent
+    contentUnits={contentUnits} onRetry={onRetry} innerCollapsedById={innerCollapsedById}
+    onInnerCollapsedChange={onInnerCollapsedChange} />;
   useLayoutEffect(() => {
     // Closing removes this body synchronously; opening an empty body has no
     // animation. Both still need the viewport's final layout settlement.
@@ -160,7 +184,7 @@ function AgentActivity({
     >
       {layout.preToggleUnits.length > 0 ? (
         <div className="thread-agent-activity__pre-toggle">
-          <AgentActivityContent contentUnits={layout.preToggleUnits} onRetry={onRetry} />
+          {renderContent(layout.preToggleUnits)}
           {layout.showToggle ? <div aria-hidden="true" className="thread-agent-activity__section-divider" /> : null}
         </div>
       ) : null}
@@ -177,7 +201,7 @@ function AgentActivity({
       {layout.persistentUnits.length > 0 ? (
         <div className="thread-agent-activity__persistent-content">
           {layout.showToggle ? <div aria-hidden="true" className="thread-agent-activity__section-divider" /> : null}
-          <AgentActivityContent contentUnits={layout.persistentUnits} onRetry={onRetry} />
+          {renderContent(layout.persistentUnits)}
         </div>
       ) : null}
       {/* This disclosure only animates entry. A presence owner without an exit
@@ -196,7 +220,7 @@ function AgentActivity({
           >
             {layout.showToggle ? <div aria-hidden="true" className="thread-agent-activity__section-divider" /> : null}
             {layout.visibleUnits.length > 0
-              ? <AgentActivityContent contentUnits={layout.visibleUnits} onRetry={onRetry} />
+              ? renderContent(layout.visibleUnits)
               : null}
             {inlineSubagentActivity === null ? null : (
               <>

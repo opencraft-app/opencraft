@@ -15,8 +15,11 @@ import { cn } from "@/lib/utils";
 import { useEmbeddedPhysicalConnectionPreparation } from "@/lib/opencraft-embedded-connection";
 import {
   EMBEDDED_WORKBENCH_ELEMENT_NAME as ELEMENT_NAME,
+  clearEmbeddedWorkbenchModuleReload,
   embeddedWorkbenchScriptUrl,
   loadEmbeddedWorkbench,
+  markEmbeddedWorkbenchModuleReload,
+  reloadEmbeddedWorkbenchPage,
 } from "@/lib/opencraft-embedded-resources";
 import type {
   LightVelaMultiSessionOptions,
@@ -25,6 +28,7 @@ import type {
 } from "@/pages/marketing/agent-chat-panel";
 
 interface EmbeddedWorkbenchConfig {
+  readonly externalPanelChrome?: boolean;
   /** In-process credential accessor; never serialize into an HTML attribute. */
   readonly getSessionToken?: () => string | null;
   readonly accountId?: string;
@@ -50,6 +54,7 @@ interface EmbeddedWorkbenchElement extends HTMLElement {
   selectConversation(conversationId: string): void;
   renameConversation(conversationId: string, title: string): Promise<void>;
   deleteConversation(conversationId: string): Promise<void>;
+  setConversationPinned(conversationId: string, pinned: boolean): Promise<void>;
 }
 
 function isEmbeddedWorkbenchElement(element: HTMLElement): element is EmbeddedWorkbenchElement {
@@ -74,6 +79,7 @@ interface AgentChatMigrationSurfaceProps extends Omit<EmbeddedWorkbenchConfig, "
   readonly onOwnerChange?: (owner: "legacy" | "opencraft") => void;
   readonly onSessionCommandsChange?: (commands: EmbeddedSessionCommands | null) => void;
   readonly onHasMoreSessionsChange?: (hasMore: boolean) => void;
+  readonly onPinSupportChange?: (supported: boolean) => void;
   readonly onSessionMutationStateChange?: (state: EmbeddedSessionMutationState | null) => void;
   readonly onTurnCompleted?: (chatId: string) => void;
 }
@@ -88,12 +94,14 @@ export interface EmbeddedSessionMutationState {
 export interface EmbeddedSessionCommands {
   createSession(): Promise<void>;
   loadMoreSessions?(): Promise<void>;
+  setPinned(chatId: string, pinned: boolean): Promise<void>;
 }
 
 interface EmbeddedSessionsDetail {
   readonly sessions: LightVelaSessionState["sessions"];
   readonly loading: boolean;
   readonly hasMoreSessions?: boolean;
+  readonly pinSupported?: boolean;
   readonly error: string | null;
   readonly selectedChatId: string | null;
   readonly isDraft?: boolean;
@@ -115,6 +123,11 @@ export function useEmbeddedWorkbenchResourcePreparation(enabled: boolean, active
   }, [enabled, active]);
 }
 
+/** Startup waits shorter than this show a plain canvas instead of the loading notice. */
+export const LOADING_NOTICE_DELAY_MS = 1_000;
+/** A connection still pending after this long offers the slow-network notice and retry. */
+export const CONNECTION_SLOW_NOTICE_MS = 10_000;
+
 export function AgentChatMigrationSurface({
   active,
   preloadSessions = false,
@@ -129,12 +142,15 @@ export function AgentChatMigrationSurface({
   onOwnerChange,
   onSessionCommandsChange,
   onHasMoreSessionsChange,
+  onPinSupportChange,
   onSessionMutationStateChange,
   onTurnCompleted,
   profileId,
   region,
 }: AgentChatMigrationSurfaceProps) {
   const t = useT();
+  const mutationFailure = useRef(t("操作失败，请稍后重试"));
+  mutationFailure.current = t("操作失败，请稍后重试");
   const physicalConnection = useEmbeddedPhysicalConnectionPreparation();
   const physicalConnectionRef = useRef(physicalConnection);
   physicalConnectionRef.current = physicalConnection;
@@ -152,6 +168,8 @@ export function AgentChatMigrationSurface({
   onSessionCommandsChangeRef.current = onSessionCommandsChange;
   const onHasMoreSessionsChangeRef = useRef(onHasMoreSessionsChange);
   onHasMoreSessionsChangeRef.current = onHasMoreSessionsChange;
+  const onPinSupportChangeRef = useRef(onPinSupportChange);
+  onPinSupportChangeRef.current = onPinSupportChange;
   const onSessionMutationStateChangeRef = useRef(onSessionMutationStateChange);
   onSessionMutationStateChangeRef.current = onSessionMutationStateChange;
   const onTurnCompletedRef = useRef(onTurnCompleted);
@@ -160,7 +178,10 @@ export function AgentChatMigrationSurface({
   activeRef.current = active;
   const [connection, setConnection] = useState<{ phase: string; failureCode: string | null }>({ phase: "connecting", failureCode: null });
   const [startupFailed, setStartupFailed] = useState(false);
+  const [moduleReloadPending, setModuleReloadPending] = useState(false);
   const [connectionSlow, setConnectionSlow] = useState(false);
+  const [everReady, setEverReady] = useState(false);
+  const [loadingNoticeDue, setLoadingNoticeDue] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [sessionRevision, setSessionRevision] = useState(0);
   const [owner, setOwner] = useState<"loading" | "legacy" | "opencraft">("loading");
@@ -169,16 +190,28 @@ export function AgentChatMigrationSurface({
 
   const unavailable = enabled && (agentPaused || owner !== "opencraft" || connection.phase !== "ready");
   useEffect(() => {
+    if (connection.phase === "ready") setEverReady(true);
+  }, [connection.phase]);
+  // A short startup paints the Composer directly; only a slow one earns the loading
+  // notice, so a sub-second wait never flashes a different page.
+  const startingUp = enabled && active && owner === "loading";
+  useEffect(() => {
+    setLoadingNoticeDue(false);
+    if (!startingUp) return;
+    const timer = window.setTimeout(() => setLoadingNoticeDue(true), LOADING_NOTICE_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [startingUp, sessionRevision]);
+  useEffect(() => {
     setConnectionSlow(false);
     if (!unavailable || agentPaused) return;
-    const timer = window.setTimeout(() => setConnectionSlow(true), 30_000);
+    const timer = window.setTimeout(() => setConnectionSlow(true), CONNECTION_SLOW_NOTICE_MS);
     return () => window.clearTimeout(timer);
   }, [agentPaused, unavailable, sessionRevision]);
 
   const retryConnection = async () => {
     const element = elementRef.current;
     if (agentPaused || retrying) return;
-    if (startupFailed || element === null) {
+    if (element === null) {
       setSessionRevision(value => value + 1);
       return;
     }
@@ -203,7 +236,9 @@ export function AgentChatMigrationSurface({
     if (mount === null) return;
     setOwner("loading");
     setStartupFailed(false);
+    setModuleReloadPending(false);
     setRetrying(false);
+    setEverReady(false);
     setConnection({ phase: "connecting", failureCode: null });
     if (!profileId.trim()) {
       setConnection({ phase: "error", failureCode: "intervention:configuration-required" });
@@ -216,7 +251,11 @@ export function AgentChatMigrationSurface({
     let retired = false;
     let failed = false;
     let adopted = false;
+    // Adoption now precedes the Host connection, so it can no longer imply "ready".
+    // Only an artifact that never reports its connection keeps the legacy assumption.
+    let reportedConnection = false;
     let element: EmbeddedWorkbenchElement | null = null;
+    let moduleLoaded = false;
     const initialToken = readStoredAuthToken();
     const getSessionToken = () => {
       if (retired || !initialToken || readStoredAuthToken() !== initialToken) {
@@ -250,30 +289,44 @@ export function AgentChatMigrationSurface({
         historyLoading: false,
       });
       onHasMoreSessionsChangeRef.current?.(latestSessions.hasMoreSessions === true);
+      onPinSupportChangeRef.current?.(latestSessions.pinSupported === true);
       if (latestSessions.selectedChatId !== null && !preserveHostSelection) {
         multiSessionRef.current.onSelectedChatIdChange(latestSessions.selectedChatId);
       }
     };
     const sessionCommands: EmbeddedSessionCommands = {
+      async setPinned(chatId, pinned) {
+        if (retired || typeof element?.setConversationPinned !== "function") {
+          throw new Error("Embedded Workbench cannot pin conversations");
+        }
+        await element.setConversationPinned(chatId, pinned);
+      },
       async loadMoreSessions() {
-        if (typeof element?.loadMoreConversations !== "function") {
+        if (retired || typeof element?.loadMoreConversations !== "function") {
           throw new Error("Embedded Workbench cannot load more conversations");
         }
         await element.loadMoreConversations();
       },
       async createSession() {
+        // The host may still hold these commands after this artifact retired.
+        if (retired || typeof element?.createConversation !== "function") {
+          throw new Error("Embedded Workbench cannot create a conversation");
+        }
+        const current = element;
         onSessionMutationStateChangeRef.current?.({
           operation: "create", chatId: "", pending: true, error: null,
         });
         try {
-          await element!.createConversation();
+          await current.createConversation();
+          if (retired) return;
           onSessionMutationStateChangeRef.current?.(null);
         } catch (cause) {
+          if (retired) return;
           onSessionMutationStateChangeRef.current?.({
             operation: "create",
             chatId: "",
             pending: false,
-            error: cause instanceof Error ? cause.message : String(cause),
+            error: mutationFailure.current,
           });
           throw cause;
         }
@@ -281,32 +334,38 @@ export function AgentChatMigrationSurface({
     };
     const sessionActions: LightVelaSessionActions = {
       renameSession: (chatId, title) => {
+        if (retired || element === null) return;
         onSessionMutationStateChangeRef.current?.({
           operation: "rename", chatId, pending: true, error: null,
         });
         void element!.renameConversation(chatId, title).then(() => {
+          if (retired) return;
           onSessionMutationStateChangeRef.current?.(null);
-        }).catch((cause: unknown) => {
+        }).catch(() => {
+          if (retired) return;
           onSessionMutationStateChangeRef.current?.({
             operation: "rename",
             chatId,
             pending: false,
-            error: cause instanceof Error ? cause.message : String(cause),
+            error: mutationFailure.current,
           });
         });
       },
       deleteSession: (chatId) => {
+        if (retired || element === null) return;
         onSessionMutationStateChangeRef.current?.({
           operation: "delete", chatId, pending: true, error: null,
         });
         void element!.deleteConversation(chatId).then(() => {
+          if (retired) return;
           onSessionMutationStateChangeRef.current?.(null);
-        }).catch((cause: unknown) => {
+        }).catch(() => {
+          if (retired) return;
           onSessionMutationStateChangeRef.current?.({
             operation: "delete",
             chatId,
             pending: false,
-            error: cause instanceof Error ? cause.message : String(cause),
+            error: mutationFailure.current,
           });
         });
       },
@@ -338,6 +397,7 @@ export function AgentChatMigrationSurface({
     const handleConnection = (event: Event) => {
       if (retired) return;
       const detail = (event as CustomEvent<{ phase: string; failureCode: string | null }>).detail;
+      reportedConnection = true;
       setConnection(detail);
     };
     const handleEmbeddedError = () => {
@@ -348,6 +408,8 @@ export function AgentChatMigrationSurface({
     };
 
     void loadEmbeddedWorkbench(scriptUrl).then(async () => {
+      moduleLoaded = true;
+      clearEmbeddedWorkbenchModuleReload();
       if (retired) return;
       const candidate = document.createElement(ELEMENT_NAME);
       if (!isEmbeddedWorkbenchElement(candidate)) {
@@ -355,12 +417,15 @@ export function AgentChatMigrationSurface({
       }
       element = candidate;
       elementRef.current = element;
+      element.dataset.instanceId = instanceId;
+      element.dataset.profileId = profileId;
       element.className = "block size-full";
       element.addEventListener("opencraft-sessions", handleSessions);
       element.addEventListener("opencraft-turn-completed", handleTurnCompleted);
       element.addEventListener("opencraft-error", handleEmbeddedError);
       element.addEventListener("opencraft-connection", handleConnection);
       element.configure({ accountId, apiBase, instanceId, profileId, region, getSessionToken,
+        externalPanelChrome: Boolean((window as Window & { __LIGHTVELA_BOT_RUNTIME_ID__?: string }).__LIGHTVELA_BOT_RUNTIME_ID__),
         ...(localeRef.current ? { localization: { ideLocale: localeRef.current, localeSource: "IDE" as const } } : {}),
         physicalConnection: physicalConnectionRef.current ?? undefined });
       mount.append(element);
@@ -375,13 +440,17 @@ export function AgentChatMigrationSurface({
         onSessionCommandsChangeRef.current?.(sessionCommands);
         publishSessions();
         setOwner("opencraft");
-        setConnection(current => current.phase === "connecting" ? { phase: "ready", failureCode: null } : current);
+        if (!reportedConnection) {
+          setConnection(current => current.phase === "connecting" ? { phase: "ready", failureCode: null } : current);
+        }
       }
     }).catch((cause: unknown) => {
       if (retired) return;
-      console.warn("[opencraft-embed] startup failed", { stage: element === null ? "module" : "application", error: cause });
+      const moduleFailed = !moduleLoaded;
+      console.warn("[opencraft-embed] startup failed", { stage: moduleFailed ? "module" : "application", error: cause });
       failed = true;
       setStartupFailed(true);
+      if (moduleFailed && scriptUrl !== "bundled:opencraft") setModuleReloadPending(true);
     });
 
     return () => {
@@ -393,6 +462,7 @@ export function AgentChatMigrationSurface({
       if (adopted) multiSessionRef.current.onSessionActionsChange?.(null);
       onSessionCommandsChangeRef.current?.(null);
       onHasMoreSessionsChangeRef.current?.(false);
+      onPinSupportChangeRef.current?.(false);
       onSessionMutationStateChangeRef.current?.(null);
       const current = element;
       element = null;
@@ -408,6 +478,12 @@ export function AgentChatMigrationSurface({
       }
     };
   }, [accountId, apiBase, enabled, instanceId, profileId, region, sessionRevision, started]);
+
+  useEffect(() => {
+    if (active && enabled && moduleReloadPending && markEmbeddedWorkbenchModuleReload()) {
+      reloadEmbeddedWorkbenchPage();
+    }
+  }, [active, enabled, moduleReloadPending]);
 
   useEffect(() => {
     if (!locale) return;
@@ -446,14 +522,15 @@ export function AgentChatMigrationSurface({
   }, [active, enabled, owner]);
 
   const connectionMessage = agentPaused ? t("Agent 已暂停运行。如因套餐到期，续费后即可恢复使用。")
-    : startupFailed ? t("会话加载失败，请重试")
+    : startupFailed ? t("对话加载失败")
     : connection.failureCode === "intervention:authentication-required" ? t("登录已过期，请重新登录后重试")
     : connection.failureCode === "remote-resource-not-found" ? t("当前 AI 伙伴不可用，请检查运行状态")
     : connection.failureCode === "intervention:configuration-required" ? t("请检查 AI 伙伴状态后重试")
     : connection.phase === "error" ? t("连接暂时中断，正在尝试恢复…")
     : connectionSlow ? t("连接时间较长，请检查网络或重试")
-    : presentedOwner === "opencraft" ? t("正在重新连接，输入内容已保留…")
+    : presentedOwner === "opencraft" && everReady ? t("正在重新连接，输入内容已保留…")
     : null;
+  const reloadConversation = startupFailed || (connectionSlow && presentedOwner === "loading");
 
   return (
     <div
@@ -477,16 +554,18 @@ export function AgentChatMigrationSurface({
       >
         {presentedOwner === "legacy" ? legacy : null}
       </div>
-      {unavailable && active && (
+      {unavailable && active && (connectionMessage !== null || presentedOwner === "loading") && (
         <div className={cn(
           "absolute z-10 flex items-center justify-center gap-3 bg-white/95 px-4 py-3 text-sm text-black/60",
           presentedOwner === "loading" ? "inset-0 flex-col" : "inset-x-0 top-0 border-b border-black/[0.08]",
         )}>
-          {connectionMessage === null ? <ChatLoadingState /> : <span role="status">{connectionMessage}</span>}
+          {connectionMessage !== null ? <span role="status">{connectionMessage}</span>
+            : loadingNoticeDue ? <ChatLoadingState /> : null}
           {!agentPaused && (startupFailed || connectionSlow || connection.phase === "error" || presentedOwner === "opencraft") && (
-            <button type="button" disabled={retrying} onClick={() => { void retryConnection(); }}
+            <button type="button" disabled={!reloadConversation && retrying}
+              onClick={() => { if (reloadConversation) reloadEmbeddedWorkbenchPage(); else void retryConnection(); }}
               className="shrink-0 rounded-md border border-black/15 px-3 py-1 text-black/80 hover:bg-black/5 disabled:opacity-50">
-              {retrying ? t("正在连接…") : t("重新连接")}
+              {reloadConversation ? t("重新加载对话") : retrying ? t("正在连接…") : t("重新连接")}
             </button>
           )}
         </div>

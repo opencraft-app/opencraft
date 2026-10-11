@@ -12,6 +12,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { getLegacyHermesAppearance, getLegacyHermesMascot, type HermesHomepageMascot, type HermesAppearance } from '@/lib/hermes-appearance';
 
 import {
   buildHermesSoulContentReadCommand,
@@ -35,6 +36,8 @@ export type BuddyProfile = {
   shapeId: AvatarShapeId;
   color: string;
   description: string;
+  appearance?: HermesAppearance | null;
+  legacyMascot?: HermesHomepageMascot;
 };
 
 const SOUL_READ_TIMEOUT_MS = 30_000;
@@ -88,6 +91,8 @@ export const useBuddyProfile = (params: {
   profileId: string | undefined;
   fallbackName: string;
   exec: SetupExec;
+  avatarIdentity?: string;
+  readEnabled?: boolean;
 }): BuddyProfileState => {
   const { botId, profileId, fallbackName, exec } = params;
 
@@ -98,23 +103,28 @@ export const useBuddyProfile = (params: {
   const [loadingKey, setLoadingKey] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
   const reload = useCallback(() => setReloadToken((value) => value + 1), []);
+  const avatarIdentity = params.avatarIdentity ?? JSON.stringify([botId ?? "", resolvedProfileId]);
+  const legacyMascot = getLegacyHermesMascot(avatarIdentity);
+  const legacyAppearance = useMemo(() => getLegacyHermesAppearance(avatarIdentity), [avatarIdentity]);
   const fallback = useMemo<ProfileSnapshot>(() => ({
     profile: {
       name: fallbackName,
       shapeId: DEFAULT_AVATAR_SHAPE,
       color: DEFAULT_AVATAR_COLOR,
       description: "",
+      appearance: legacyAppearance,
+      legacyMascot,
     },
     soulExists: null,
     hasBuddyConfig: null,
-  }), [fallbackName]);
+  }), [fallbackName, legacyAppearance, legacyMascot]);
   // 切 Bot/profile 的首帧也不能展示上一个目标的数据。
   const snapshot = (scopeKey && (loaded?.key === scopeKey ? loaded.value : profileCache.get(scopeKey))) || fallback;
   const { profile, soulExists, hasBuddyConfig } = snapshot;
   const loading = Boolean(scopeKey && loadingKey === scopeKey);
 
   useEffect(() => {
-    if (!botId || !resolvedProfileId) return undefined;
+    if (!botId || !resolvedProfileId || params.readEnabled === false) return undefined;
     let cancelled = false;
     setLoadingKey(scopeKey);
 
@@ -134,15 +144,15 @@ export const useBuddyProfile = (params: {
           }).catch(() => null),
           exec(botId, buildHermesSoulContentReadCommand(resolvedProfileId), {
             timeoutMs: SOUL_READ_TIMEOUT_MS,
-          }),
+          }).catch(() => null),
         ]);
-        if (cancelled) return;
+        if (cancelled || (!metaResult && !soulResult)) return;
 
         const meta = metaResult
           ? parseProfileMetaOutput(metaResult.output || "")
           : EMPTY_PROFILE_META;
 
-        const parsed = parseHermesSoulContent(soulResult.output || "");
+        const parsed = parseHermesSoulContent(soulResult?.output || "");
         const soulFields = parsed.status === "ready"
           ? parseBuddyProfileFromSoul(parsed.markdown)
           : { name: null, summary: null, avatar: null };
@@ -159,9 +169,11 @@ export const useBuddyProfile = (params: {
             shapeId,
             color: avatar?.color || DEFAULT_AVATAR_COLOR,
             description: meta.description || soulFields.summary || "",
+            legacyMascot: meta.appearance?.style === "doodle" ? undefined : legacyMascot,
+            appearance: meta.appearance?.style === "doodle" ? meta.appearance : legacyAppearance,
           },
-          soulExists: parsed.status === "ready" || parsed.status === "too_large",
-          hasBuddyConfig: avatar !== null,
+          soulExists: soulResult ? parsed.status === "ready" || parsed.status === "too_large" : null,
+          hasBuddyConfig: avatar !== null || meta.appearance !== null,
         };
         profileCache.set(scopeKey, value);
         setLoaded({ key: scopeKey, value });
@@ -173,7 +185,7 @@ export const useBuddyProfile = (params: {
     })();
 
     return () => { cancelled = true; };
-  }, [botId, resolvedProfileId, scopeKey, fallbackName, exec, reloadToken]);
+  }, [botId, resolvedProfileId, scopeKey, fallbackName, exec, reloadToken, legacyAppearance, legacyMascot, params.readEnabled]);
 
   /*
    * 必须 memo。

@@ -27,6 +27,22 @@ for command in kubectl python3 sha256sum; do
 	command -v "$command" >/dev/null || { echo "required command is missing: $command" >&2; exit 2; }
 done
 
+# Platform additions are opt-in exact Secret names, never a prefix exemption.
+injected_image_pull_secrets=${RUNTIME_ADMISSION_INJECTED_IMAGE_PULL_SECRETS:-}
+python3 - "$injected_image_pull_secrets" <<'PYSECRETS'
+import re, sys
+raw = sys.argv[1]
+names = raw.split(",") if raw else []
+if len(names) != len(set(names)) or "actor-fleet-tcr" in names:
+    raise SystemExit("injected image pull Secret names must be unique and exclude the primary")
+for name in names:
+    if not name or len(name) > 253 or any(
+        len(label) > 63 or not re.fullmatch(r"[a-z0-9](?:[-a-z0-9]*[a-z0-9])?", label)
+        for label in name.split(".")
+    ):
+        raise SystemExit("invalid injected image pull Secret name")
+PYSECRETS
+
 temporary=$(mktemp -d /data/tmp/${cell}-stateless-admission.XXXXXX)
 cleanup() { rm -rf -- "$temporary"; }
 trap cleanup EXIT INT TERM
@@ -77,7 +93,7 @@ done
 manifest_sha=$(
 	{
 		sha256sum "$manifest"
-		printf '%s\n' "$cell" "$machine_set" "$machine_set_uid" "$min_replicas" "$max_replicas" "$reporter_image" "$runtime_image"
+		printf '%s\n' "$cell" "$machine_set" "$machine_set_uid" "$min_replicas" "$max_replicas" "$reporter_image" "$runtime_image" "$injected_image_pull_secrets"
 	} | sha256sum | cut -d' ' -f1
 )
 sed \
@@ -85,6 +101,7 @@ sed \
 	-e "s|__STATELESS_MACHINE_SET__|$machine_set|g" \
 	-e "s|__REPORTER_IMAGE__|$reporter_image|g" \
 	-e "s|__RUNTIME_IMAGE__|$runtime_image|g" \
+	-e "/name: RUNTIME_ADMISSION_INJECTED_IMAGE_PULL_SECRETS/{n;s|value: \"\"|value: \"$injected_image_pull_secrets\"|;}" \
 	-e "s|__MANIFEST_SHA256__|$manifest_sha|g" \
 	"$manifest" >"$temporary/rendered.yaml"
 if grep -Eq '__[A-Z0-9_]+__' "$temporary/rendered.yaml"; then

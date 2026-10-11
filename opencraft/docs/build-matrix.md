@@ -86,6 +86,14 @@ mechanical snapshots of their `shared/` authorities. Run
 The check validates the committed snapshot manifest even when the parent
 `shared/` directory is intentionally absent.
 
+For mono2 builds, file-linked Collaboration sources outside `opencraft/` resolve
+`@lightvela/vela-chat-client-core`, `@tencentcloud/chat` and `tim-upload-plugin`
+from the workbench-owned dependency graph via Vite deduplication. Keep the
+canonical chat package's messaging/platform subpath exports in its generated
+snapshot; do not externalize those imports to make a release build succeed.
+Verify `npm run build:embedded-workbench:release` after changing either boundary.
+This mono2 build check is not standalone-mirror qualification.
+
 `deploy:lightvela-web` builds the LightVela product and publishes only
 `apps/workbench-web/dist-lightvela-web`, after its product boundary check.
 `publish:lightvela-web` explicitly selects that same input even when the generic

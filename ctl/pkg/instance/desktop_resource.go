@@ -119,8 +119,17 @@ func (l *logic) EnsureDesktopResource(ctx pctx.Context, instanceID string) (*tra
 		return nil, err
 	}
 	job, cancel := context.WithTimeout(context.Background(), desktopResourcePreparationTimeout)
-	worker := pctx.NewContext(job).WithUserID(ctx.GetUserID()).WithRegion(ctx.GetRegion())
-	worker.SetGormDB(ctx.GormDB()) // Deliberately do not retain HTTP auth/session material.
+	// observer 准备（prepareDesktopResource → execDesktopInstallCommand）经
+	// /sandboxes/{id}/tat/commands 下发，该 TAT endpoint 鉴权只认 ctx 透传的用户
+	// session（见 adapter.applySandboxSessionAuth，无服务级凭据回退）。请求早已返回，
+	// 这里必须从 ctx 显式继承 SessionAuth，否则后台 worker 的 session 为空，TAT 调用
+	// 会鉴权失败 → "desktop observation unavailable" → Failed（与 startDesktopInstall
+	// 同源）。注意 provision/probe 走 PTY（X-API-Key 服务级密钥）不受此影响。
+	worker := pctx.NewContext(job).
+		WithUserID(ctx.GetUserID()).
+		WithRegion(ctx.GetRegion()).
+		WithSessionAuth(ctx.GetSessionAuthorization(), ctx.GetSessionCookie())
+	worker.SetGormDB(ctx.GormDB())
 	session.mu.Lock()
 	if (session.status == transport.DesktopSessionStatusReady && session.observerPrepared) || session.preparing {
 		session.mu.Unlock()

@@ -59,6 +59,12 @@ type CloudProvider interface {
 	DescribeInstanceSnapshot(ctx context.Context, region, snapshotID string) (SnapshotStatus, string, error)
 }
 
+// StartSubmitter only submits a cloud start operation. Callers reconcile the
+// final state through DescribeInstance; resize continues to use StartInstance.
+type StartSubmitter interface {
+	SubmitStartInstance(ctx context.Context, instance CloudInstanceRef) error
+}
+
 // CloudInstanceRef identifies a regional cloud instance. Tencent Cloud instance
 // IDs are only meaningful inside their owning region, so lifecycle operations
 // must carry both values together.

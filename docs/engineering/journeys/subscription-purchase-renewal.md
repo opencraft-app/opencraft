@@ -20,6 +20,23 @@
 - 权益应用失败：保留可重试状态，不重复创建外部订单。
 - CTL 开通失败：订单/支付事实不可丢失，补偿与重试单独记录。
 
+## 国内站 Pass 零元新购
+
+- 国内站付费开关开启且询价实付为 0 元时，前端在订单确认后调用
+  `POST /v1/passes/dianshi/order-and-pay`。Trade 仍须校验在线 Bundle、影子账号及 `purchase`
+  活动参与资格；符合条件的新单调用点石 `do_goods_and_pay`，同步发货后再等待 Pass 权益可见。
+- 若同用户、同活动、同 Bundle 存在可复用的旧 `do_goods` 未完成单，Trade 不再把它当作
+  `do_goods_and_pay` 成功结果，而是返回 `LegacyDianshiOrderPending`（HTTP 409）。CTL 映射为
+  `DIANSHI_LEGACY_ORDER_PENDING`；国内站前端仅对该码回退原 `POST /v1/passes/order`，复用旧单并获取
+  `auth_code`，随后展示微信扫码中转页。其他点石错误不触发重新下单。
+- 该兼容回退只用于国内站；国际站沿用既有行为。发布顺序为 Trade、CTL、前端，避免前端先收到尚未映射的冲突码。
+
+## 国内站免费 Pass 迁入计费
+
+- 影子账号绑定成功后，Auth 通知 CTL 尝试为存量免费 Pass 创建计费迁移单；自动绑定失败后的手动重试复用同一入口。仅国内地域执行，国际站不创建这类迁移单。
+- CTL 仅选择 `bundle_free_trial_01` 且 `status=active` 的 Pass。若到期时间已过，创建迁移单前以条件更新将 `expired_time` 延至当前时刻后 24 小时，再用重新读取的时间作为计费 `curDeadline`。未过期 Pass 不改，`isolated` Pass 不恢复。
+- 该步骤只更新 Pass 到期时间，不修改实例状态，也不调用开机；此前因隔离已关机的实例仍等待用户续费后再恢复。迁移已完成或已有待回调订单时不得再次延期。
+
 ## 国内站 Pass 续费点石
 
 - Pass 续费仍以原 `expired_time` 为计费与延长基线。询价与下单必须在收款前校验
@@ -36,6 +53,9 @@
 - 续费联调期间，点石续费询价、普通续费下单及内部续费下单显式发送 `preview=1`；新购请求不设置
   请求级 preview，继续沿用既有 `DIANSHI_PREVIEW` 客户端配置。请求级设置只能开启 preview，不能关闭
   客户端级开关，避免改变已有新购环境行为。
+- 北京预发布的续费询价和下单分别通过 `dianshi-renew-price`、`dianshi-renew-order` 路由转发到
+  点石正式服务；对应接口仍是 `get_price_renew` 和 `do_goods_renew`。只有北京预发布启用专用
+  URL，其他环境继续使用原续费地址，新购路由不变。
 - 自动化续费折扣使用 Trade 专属内部接口
   `POST /internal/trade/dianshi/orders/renew/place-and-pay` 调用点石 `do_goods_and_pay`。该入口不读取或写入
   控制台参与资格，可重复调用，但只允许国内站和已登记的续费活动 Bundle。原计费内部续费接口

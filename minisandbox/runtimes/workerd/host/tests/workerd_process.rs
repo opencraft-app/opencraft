@@ -290,6 +290,7 @@ async fn worker_loader_runs_actor_pinned_code_in_distinct_isolates() -> Result<(
 						"memoryBytes": 134217728
 					},
 					"mainModule": "worker.js",
+					"env": worker_actor_env(&uri),
 					"modules": {
 						"worker.js": source
 					}
@@ -818,8 +819,8 @@ async fn dynamic_worker_storage_waits_for_depot_ack_and_survives_process_restart
 	} };"#;
 	let code_requests = Arc::new(AtomicUsize::new(0));
 	let request_count = code_requests.clone();
-	let code_router =
-		axum::Router::new().fallback(axum::routing::get(move |headers: axum::http::HeaderMap| {
+	let code_router = axum::Router::new().fallback(axum::routing::get(
+		move |uri: axum::http::Uri, headers: axum::http::HeaderMap| {
 			let request_count = request_count.clone();
 			async move {
 				if headers
@@ -839,11 +840,13 @@ async fn dynamic_worker_storage_waits_for_depot_ack_and_survives_process_restart
 						"memoryBytes": 134217728
 					},
 					"mainModule": "worker.js",
+					"env": worker_actor_env(&uri),
 					"modules": { "worker.js": source }
 				}))
 				.into_response()
 			}
-		}));
+		},
+	));
 	let code_listener = TcpListener::bind("127.0.0.1:0").await?;
 	let code_address = code_listener.local_addr()?;
 	let code_server = tokio::spawn(async move {
@@ -1100,6 +1103,21 @@ async fn wait_until_ready(
 		sleep(Duration::from_millis(50)).await;
 	}
 	bail!("workerd did not become ready")
+}
+
+// Match the actor-scoped metadata returned by the real Rust Worker Code router.
+fn worker_actor_env(uri: &axum::http::Uri) -> Value {
+	let selector = uri
+		.path()
+		.strip_prefix("/__rivet/worker-code/")
+		.expect("actor-scoped Worker Code path");
+	let (actor_id, generation) = selector.rsplit_once('/').expect("actor generation selector");
+	serde_json::json!({
+		"RIVET_ACTOR": {
+			"id": actor_id,
+			"generation": generation.parse::<u32>().expect("u32 actor generation"),
+		}
+	})
 }
 
 async fn actor_request(

@@ -1,0 +1,16 @@
+<design>
+<size width="1280" height="720"></size>
+<color name="primary" value="#6842FF"/>
+<color name="bg-page" value="#FFFFFF"/>
+<color name="bg-surface" value="#F5F5F7"/>
+<color name="text-main" value="#1D1D1F"/>
+<color name="text-muted" value="#86868B"/>
+<color name="chart-sec" value="#B39FFF"/>
+<color name="chart-light" value="#E0D4FF"/>
+<color name="border" value="#E5E5EA"/>
+<font name="display" family="Noto Sans SC" size="48"/>
+<font name="heading" family="Noto Sans SC" size="32"/>
+<font name="strong" family="Noto Sans SC" size="24"/>
+<font name="body" family="Noto Sans SC" size="18"/>
+<font name="caption" family="Noto Sans SC" size="12"/>
+</design>

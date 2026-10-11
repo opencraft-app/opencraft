@@ -1,0 +1,14 @@
+{
+  "schema": "chatserver.im-human-identifier-test/v1",
+  "algorithm": "u_first29_base32nopad_hmac_sha256",
+  "fixtureHmacKeyUtf8": "TEST-ONLY-NOT-A-SECRET-chatserver-v1",
+  "accountId": "0198f4c2-7a30-7b21-9f61-30ac8b0a1570",
+  "lengthPrefix": "uint32be_utf8_byte_length",
+  "hmacInputHex": "0000002430313938663463322d376133302d376232312d396636312d333061633862306131353730",
+  "hmacSha256Hex": "308657b77e87050f39d4cb5d8d0734ecfdd77abf2a9fecf6e89946de0f823da8",
+  "base32NoPad": "GCDFPN36Q4CQ6OOUZNOY2BZU5T65O6V7FKP6Z5XITFDN4D4CHWUA",
+  "imHumanUserId": "u_GCDFPN36Q4CQ6OOUZNOY2BZU5T65O",
+  "utf8ByteLength": 31,
+  "pattern": "^u_[A-Z2-7]{29}$",
+  "invariant": "同一 Account 加入任意 Server 时都复用这个 UserID"
+}

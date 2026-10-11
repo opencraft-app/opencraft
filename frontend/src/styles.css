@@ -104,6 +104,7 @@
   --font-chuangji: "ChuangJiHei", -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
   --font-latin: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-japanese: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", "YuGothic", "Noto Sans JP", system-ui, sans-serif;
+  --font-thai: "Leelawadee UI", "Thonburi", "Noto Sans Thai", Tahoma, system-ui, sans-serif;
   --font-korean: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", system-ui, sans-serif;
 }
 
@@ -115,6 +116,11 @@ html[lang="es"] {
 html[lang="ja-JP"] {
   --font-heading: var(--font-japanese);
   --font-body: var(--font-japanese);
+}
+
+html[lang="th-TH"] {
+  --font-heading: var(--font-thai);
+  --font-body: var(--font-thai);
 }
 
 html[lang="ko-KR"] {
@@ -173,6 +179,10 @@ html.lw-settings-scrollbar-stable body[data-scroll-locked] {
     position: fixed;
     top: var(--lv-agents-sidebar-locked-top, 68px);
   }
+
+  html.lw-settings-scrollbar-stable body[data-scroll-locked]:has(.lv-agent-bot-rail-enabled) .lv-agents-sidebar-scroll-isolated {
+    top: var(--lv-agents-sidebar-locked-top, 60px);
+  }
 }
 
 html.lw-settings-scrollbar-stable {
@@ -216,6 +226,13 @@ html.lw-settings-scrollbar-stable {
   background: var(--surface-muted);
 }
 
+.lv-agent-bot-menu-delete:disabled,
+.lv-agent-bot-menu-delete:disabled:hover {
+  color: rgb(0 0 0 / 35%);
+  background: transparent;
+  cursor: not-allowed;
+}
+
 .lv-sidebar-user-menu-item:focus-visible,
 .lv-sidebar-user-menu-upgrade:focus-visible {
   outline: 2px solid var(--ring);
@@ -223,10 +240,21 @@ html.lw-settings-scrollbar-stable {
 }
 
 .lv-sidebar-user-menu-upgrade {
-  justify-content: space-between;
-  color: var(--surface-base);
-  background: var(--text-primary);
+  min-height: 24px;
+  flex-shrink: 0;
+  gap: 2px;
+  padding: 2px 6px;
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  background: var(--surface-muted);
+  font-size: 11px;
+  line-height: 16px;
   font-weight: 600;
+  white-space: nowrap;
+}
+
+.lv-sidebar-user-menu-upgrade:hover {
+  background: color-mix(in srgb, var(--surface-muted) 80%, var(--text-primary) 8%);
 }
 
 .lv-sidebar-user-menu-status[data-tone="warning"] { color: #92400e; }
@@ -306,6 +334,35 @@ html.lw-settings-scrollbar-stable {
   transition: none;
 }
 
+.lv-agent-bot-context-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+}
+
+.lv-agent-bot-context-trigger {
+  display: flex;
+  width: 30px;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #e4e4e7;
+  border-radius: 8px;
+  background: #f4f4f5;
+  color: #52525b;
+}
+
+.lv-agent-bot-context-trigger:hover,
+.lv-agent-bot-context-trigger:focus-visible {
+  background: #f4f4f5;
+  color: #27272a;
+}
+
+.lv-agent-bot-context-trigger:focus-visible {
+  outline: 2px solid #a78bfa;
+  outline-offset: 2px;
+}
+
 @media (min-width: 768px) {
   .lw-settings-shell {
     width: min(1440px, calc(100vw - 160px));
@@ -345,6 +402,27 @@ html.lw-settings-scrollbar-stable {
     transition-duration: 260ms;
   }
 
+  body:has(.lv-agent-bot-rail-enabled) header.lv-agent-sidebar-header {
+    width: 288px;
+    height: 60px;
+  }
+
+  body:has(.lv-agent-bot-rail-enabled) header.lv-agent-sidebar-header > div {
+    height: 60px !important;
+  }
+
+  body:has(.lv-agent-bot-rail-enabled) header.lv-agent-sidebar-header [data-testid="site-header-brand"] img {
+    height: 28px !important;
+  }
+
+  body:has(.lv-agent-bot-rail-enabled) header.lv-agent-sidebar-header--collapsed {
+    width: 112px;
+  }
+
+  .lv-agent-bot-rail-enabled .lv-agents-sidebar-controls {
+    padding-top: 4px;
+  }
+
   header.lv-agent-sidebar-header--collapsed [data-testid="site-header-brand"] {
     display: none !important;
   }
@@ -352,6 +430,25 @@ html.lw-settings-scrollbar-stable {
   header.lv-agent-sidebar-header--collapsed > div {
     display: flex !important;
     justify-content: center;
+  }
+
+  body:has(.lv-agent-bot-rail-enabled) header.lv-agent-sidebar-header--collapsed > div {
+    justify-content: space-between;
+  }
+
+  body:has(.lv-agent-bot-rail-enabled) header.lv-agent-sidebar-header--collapsed [data-testid="site-header-brand"] {
+    display: flex !important;
+  }
+
+  body:has(.lv-agent-bot-rail-enabled) header.lv-agent-sidebar-header--collapsed [data-testid="site-header-brand"] img {
+    display: none;
+  }
+
+  body:has(.lv-agent-bot-rail-enabled) header.lv-agent-sidebar-header--collapsed [data-testid="site-header-brand"] a::after {
+    content: "";
+    width: 32px;
+    height: 32px;
+    background: url("/lightvela-icon.svg") center / contain no-repeat;
   }
 
   .lw-settings-shell.lv-agent-settings-shell {
@@ -364,6 +461,10 @@ html.lw-settings-scrollbar-stable {
 
   .lw-app-top-pad.lv-agent-settings-main {
     padding-top: 68px;
+  }
+
+  .lv-agent-bot-rail-enabled:not(.lv-agent-embedded-chat-page) .lw-app-top-pad.lv-agent-settings-main {
+    padding-top: 60px;
   }
 
   .lv-agent-chat-page {
@@ -413,6 +514,18 @@ html.lw-settings-scrollbar-stable {
     --lightvela-console-header-height: 68px;
     max-width: none;
     margin: 0;
+  }
+
+  /* Bot rail: header is 60px, and the chat divider must meet the sidebar border. */
+  .lv-agent-bot-rail-enabled.lv-agent-embedded-chat-page .lv-agent-settings-content {
+    --lightvela-console-header-height: 60px;
+    padding-left: 0;
+  }
+
+  /* Collapsed grid columns are 16px wider than the 112px sidebar. */
+  .lv-agent-bot-rail-enabled.lv-agent-embedded-chat-page.lv-agent-sidebar-collapsed .lv-agent-settings-content {
+    width: calc(100% + 16px);
+    margin-left: -16px;
   }
 
   header.lv-agent-sidebar-header > div {
@@ -481,6 +594,19 @@ html.lw-settings-scrollbar-stable {
 .lv-agent-sidebar-toggle:hover::after,
 .lv-agent-sidebar-toggle:focus-visible::after {
   opacity: 1;
+}
+
+.lv-agent-rail-tooltip {
+  width: max-content;
+  padding: 8px 12px;
+  border: 1px solid #e9ecf1;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 12%);
+  color: #171717;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
 }
 
 .lv-agent-chat-mobile-nav-toggle,
@@ -932,6 +1058,183 @@ a {
   border-right: 1px solid #e9ecf1;
 }
 
+.lv-agent-bot-rail {
+  display: none;
+}
+
+.lv-agent-bot-strip {
+  display: none;
+}
+
+.lv-agent-bot-rail-button {
+  position: relative;
+  display: flex;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #596171;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.lv-agent-bot-rail-button:hover {
+  background: #eef1f7;
+}
+
+.lv-agent-bot-strip .lv-agent-bot-rail-button.is-active::before {
+  position: absolute;
+  bottom: -5px;
+  left: 8px;
+  width: 28px;
+  height: 3px;
+  border-radius: 4px;
+  background: #7051d6;
+  content: "";
+}
+
+.lv-agent-bot-rail-button:focus-visible {
+  outline: 2px solid #536b9f;
+  outline-offset: 2px;
+}
+
+.lv-agent-bot-rail-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.lv-agent-bot-rail-avatar {
+  display: flex;
+  width: 34px;
+  height: 34px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.lv-agent-bot-rail-avatar-wrap {
+  position: relative;
+  display: flex;
+  width: 34px;
+  height: 34px;
+  align-items: center;
+  justify-content: center;
+}
+
+.lv-agent-bot-rail-create {
+  border: 1px dashed #c4cbd5;
+}
+
+@media (min-width: 1024px) {
+  .lv-agent-bot-rail {
+    position: fixed;
+    z-index: 2;
+    top: 60px;
+    bottom: 60px;
+    left: 0;
+    display: flex;
+    width: 56px;
+    min-height: 0;
+    flex-direction: column;
+    align-items: center;
+    border-right: 1px solid #e9ecf1;
+    background: #fff;
+  }
+
+  .lv-agent-bot-rail-list {
+    display: flex;
+    width: 100%;
+    min-height: 0;
+    flex: 1;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 12px 0 8px;
+  }
+
+  .lv-agent-bot-rail-list .lv-agent-bot-rail-create {
+    margin-top: -3px;
+    border: 0;
+  }
+
+  .lv-agent-bot-rail-list .lv-agent-bot-rail-create::before {
+    position: absolute;
+    inset: 6px;
+    border: 1px dashed #c4cbd5;
+    border-radius: 8px;
+    content: "";
+  }
+
+  .lv-agent-bot-rail-management {
+    display: flex;
+    width: 100%;
+    flex: 0 0 auto;
+    justify-content: center;
+    padding: 8px 0 10px;
+  }
+
+  .lv-agent-bot-rail-management .lv-agent-bot-context-trigger {
+    position: relative;
+    width: 44px;
+    height: 44px;
+    border: 0;
+    background: transparent;
+  }
+
+  .lv-agent-bot-rail-management .lv-agent-bot-context-trigger:hover,
+  .lv-agent-bot-rail-management .lv-agent-bot-context-trigger[data-state="open"] {
+    background: #f2f2ef;
+  }
+
+  .lv-agent-bot-rail-management .lv-agent-bot-context-trigger::after {
+    position: absolute;
+    z-index: 60;
+    top: 50%;
+    left: calc(100% + 8px);
+    padding: 8px 12px;
+    transform: translateY(-50%);
+    border: 1px solid #e9ecf1;
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: 0 4px 12px rgb(0 0 0 / 12%);
+    color: #171717;
+    content: attr(data-tooltip);
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .lv-agent-bot-rail-management .lv-agent-bot-context-trigger:not([data-state="open"]):hover::after,
+  .lv-agent-bot-rail-management .lv-agent-bot-context-trigger:not([data-state="open"]):focus-visible::after {
+    opacity: 1;
+  }
+}
+
+@media (max-width: 1023px) {
+  .lv-agent-mobile-nav-open .lv-agent-bot-strip {
+    display: flex;
+    min-height: 58px;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 6px;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    border-bottom: 1px solid #e9ecf1;
+    padding: 5px 0 9px;
+  }
+}
+
 .lv-agent-account-footer {
   display: flex;
   width: calc(100% + 12px + 16px);
@@ -1327,6 +1630,17 @@ a {
   line-height: 20px;
 }
 
+.lv-agents-session-hint--error {
+  color: #b91c1c;
+}
+
+.lv-agents-session-group-label {
+  padding: 8px 12px 2px 20px;
+  color: rgb(0 0 0 / 45%);
+  font-size: 12px;
+  line-height: 16px;
+}
+
 .lv-agents-session-item-wrap {
   position: relative;
   display: flex;
@@ -1339,17 +1653,18 @@ a {
 
 .lv-agents-session-list-actions {
   display: flex;
-  justify-content: center;
-  gap: 8px;
-  padding: 2px 24px 4px 8px;
+  justify-content: flex-start;
+  gap: 12px;
+  padding: 2px 12px 4px 14px;
 }
 
 .lv-agents-session-list-actions button {
   padding: 4px 6px;
   border-radius: 6px;
-  color: #596273;
+  color: rgb(0 0 0 / 45%);
   font-size: 12px;
   line-height: 16px;
+  white-space: nowrap;
 }
 
 .lv-agents-session-list-actions button:hover:not(:disabled) {
@@ -1612,6 +1927,37 @@ a {
     transition: width 200ms ease-in-out;
   }
 
+  .lv-agent-bot-rail-enabled .lv-agents-sidebar-scroll-isolated {
+    top: 60px;
+    left: 56px;
+    width: 232px;
+    max-height: calc(100dvh - 60px);
+  }
+
+  .lv-agent-bot-rail-enabled .lv-agents-sidebar {
+    --lv-agents-nav-width: 188px;
+    height: calc(100dvh - 60px);
+    padding-bottom: 60px;
+  }
+
+  .lv-agent-bot-rail-enabled .lv-agents-sidebar-tabs {
+    width: 188px;
+  }
+
+  /* Bot rail: items, chat header and session labels share the 12px group-label inset. */
+  .lv-agent-bot-rail-enabled:not(.lv-agent-sidebar-collapsed) .lv-agents-nav-group .lv-agents-nav-item {
+    padding-left: 12px;
+  }
+
+  .lv-agent-bot-rail-enabled:not(.lv-agent-sidebar-collapsed) .lv-agents-chat-header {
+    padding-left: 12px;
+  }
+
+  .lv-agent-bot-rail-enabled:not(.lv-agent-sidebar-collapsed) .lv-agents-session-group-label,
+  .lv-agent-bot-rail-enabled:not(.lv-agent-sidebar-collapsed) .lv-agents-session-hint {
+    padding-left: 12px;
+  }
+
   .lv-agents-sidebar {
     display: flex;
     height: calc(100dvh - 68px);
@@ -1642,7 +1988,7 @@ a {
   .lv-agents-sidebar-profile .lv-agent-profile-wrap {
     width: auto;
     padding: 3px 8px;
-    border: 1px solid #dedee2;
+    border: 1px solid #e8e8eb;
     border-radius: 16px;
     background: #fff;
   }
@@ -1677,6 +2023,25 @@ a {
     margin-left: 0;
     padding-left: 0;
     border-top: 0;
+  }
+
+  .lv-agent-bot-rail-enabled .lv-agents-sidebar-footer {
+    position: fixed;
+    z-index: 3;
+    right: auto;
+    bottom: 0;
+    left: 0;
+    display: flex;
+    width: 288px;
+    height: 60px;
+    align-items: center;
+    margin: 0;
+    padding: 4px 12px max(4px, env(safe-area-inset-bottom)) 16px;
+    border-right: 1px solid #e9ecf1;
+  }
+
+  .lv-agent-bot-rail-enabled .lv-agents-sidebar-footer .lv-agent-account-footer {
+    padding-top: 0;
   }
 
   .lv-agents-sidebar-controls::after,
@@ -1792,11 +2157,32 @@ a {
     transition-duration: 260ms;
   }
 
+  .lv-agent-bot-rail-enabled.lv-agent-sidebar-collapsed .lv-agents-sidebar-scroll-isolated {
+    width: 56px;
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+
+  .lv-agent-bot-rail-enabled.lv-agent-sidebar-collapsed .lv-agents-sidebar-controls {
+    width: 56px;
+    margin-left: -8px;
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+
   .lv-agent-sidebar-collapsed .lv-agents-sidebar-profile,
   .lv-agent-sidebar-collapsed .lv-agents-sidebar-controls,
   .lv-agent-sidebar-collapsed .lv-agents-sidebar-footer {
     width: 72px;
     padding-right: 16px;
+  }
+
+  .lv-agent-bot-rail-enabled.lv-agent-sidebar-collapsed .lv-agents-sidebar-footer {
+    width: 112px;
+  }
+
+  .lv-agent-bot-rail-enabled.lv-agent-sidebar-collapsed .lv-agents-sidebar-profile {
+    display: none;
   }
 
   .lv-agent-sidebar-collapsed .lv-agent-profile-wrap,
@@ -1885,6 +2271,35 @@ a {
     padding: 2px;
   }
 
+  .lv-agent-bot-rail-enabled.lv-agent-sidebar-collapsed .lv-agent-account-footer,
+  .lv-agent-bot-rail-enabled.lv-agent-sidebar-collapsed .lv-agent-account-menu,
+  .lv-agent-bot-rail-enabled.lv-agent-sidebar-collapsed .lv-agent-account-trigger {
+    width: 100%;
+  }
+
+  .lv-agent-bot-rail-enabled.lv-agent-sidebar-collapsed .lv-agent-account-trigger {
+    justify-content: space-between;
+  }
+
+  .lv-agent-bot-rail-enabled.lv-agent-sidebar-collapsed .lv-agent-account-trigger > svg {
+    display: block;
+  }
+
+  .lv-agent-bot-rail-enabled.lv-agent-sidebar-collapsed .lv-agent-account-trigger[data-renewal-reminder="true"] {
+    position: relative;
+  }
+
+  .lv-agent-bot-rail-enabled.lv-agent-sidebar-collapsed .lv-agent-account-trigger[data-renewal-reminder="true"]::after {
+    position: absolute;
+    top: 6px;
+    left: 36px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #d97706;
+    content: "";
+  }
+
 }
 
 @media (min-width: 1024px) and (max-height: 860px) {
@@ -1951,6 +2366,10 @@ a {
 @media (max-width: 1023px) {
   .lv-agents-nav-group-items.lv-agents-session-list {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .lv-agents-session-list-actions {
+    padding-left: 6px;
   }
 }
 

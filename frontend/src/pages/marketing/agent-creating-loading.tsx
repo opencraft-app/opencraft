@@ -23,9 +23,7 @@ import type { SetupStepState } from "@/pages/marketing/agent-buddy-setup-runner"
 /**
  * 预热行正在跑时显示已等待秒数。
  *
- * 实例冷启动最坏要等数分钟（海外节点拉镜像更慢）。没有这个计时，用户面对
- * 一行「正在唤醒 Bot 实例」同样分不清是在推进还是已经卡死 —— 一个会变的
- * 数字是这段等待里唯一可信的「还活着」信号。
+ * 通常 10 秒内完成；慢启动时继续显示真实已等待时间，避免固定预计时间失准。
  */
 const ElapsedHint = ({ running }: { running: boolean }) => {
   const t = useT();
@@ -45,7 +43,9 @@ const ElapsedHint = ({ running }: { running: boolean }) => {
   if (!running) return null;
   return (
     <span className="mt-0.5 block text-[11px] leading-4 text-black/35">
-      {t("已等待 {{seconds}}s，实例首次启动可能需要几分钟", { seconds })}
+      {seconds < 10
+        ? t("通常 10 秒内完成，已等待 {{seconds}} 秒", { seconds })
+        : t("已等待 {{seconds}} 秒，仍在创建中", { seconds })}
     </span>
   );
 };
@@ -118,7 +118,7 @@ export const CreatingLoadingView = ({
    * 「创建成功」，进去才发现技能没装、定时任务是空的。
    */
   partialFailureCount?: number;
-  /** 「完成」回调，仅在 partialFailureCount > 0 时用到 */
+  /** 「开始旅程」回调，仅在必需创建配置结束后提供 */
   onContinue?: () => void;
   /** 阻断失败后继续配置同一个 Bot */
   onRetry?: () => void;
@@ -135,6 +135,7 @@ export const CreatingLoadingView = ({
   }, []);
 
   const dots = ".".repeat(dotCount);
+  const completed = Boolean(onContinue) && !errorMessage;
   const hasSteps = Boolean(steps && steps.length > 0);
   const doneCount = steps?.filter((state) => state.status === "done").length ?? 0;
 
@@ -179,6 +180,8 @@ export const CreatingLoadingView = ({
           errorMessage
         ) : partialFailureCount > 0 ? (
           t("Bot 已创建，但有 {{count}} 项配置没成功", { count: partialFailureCount })
+        ) : completed ? (
+          t("创建成功")
         ) : (
           <>
             {t("正在给 LightVela Bot 喂咖啡，唤醒大脑中")}
@@ -220,17 +223,17 @@ export const CreatingLoadingView = ({
             部分失败时的收尾：说清去哪补，再给一个明确的出口。
             没有这个按钮用户就卡在这页了（流程已经不会自己往下走）。
           */}
-          {partialFailureCount > 0 && onContinue ? (
+          {completed && onContinue ? (
             <div className="mt-5 rounded-[6px] bg-black/[0.02] p-3.5">
-              <p className="text-[12px] leading-[18px] text-black/55">
+              {partialFailureCount > 0 && <p className="text-[12px] leading-[18px] text-black/55">
                 {t("安装过程遇到了小阻碍，稍后可在「技能」和「定时任务」页面手动安装，Bot 本身已安装成功。")}
-              </p>
+              </p>}
               <button
                 type="button"
                 onClick={onContinue}
                 className="mt-3 h-9 w-full rounded-full bg-black text-[13px] font-medium text-white transition hover:bg-black/85"
               >
-                {t("进入 Bot")}
+                {t("开始旅程")}
               </button>
             </div>
           ) : null}

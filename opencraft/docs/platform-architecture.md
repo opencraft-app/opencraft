@@ -174,7 +174,15 @@ unsupported adapters do not render a dead toolbar action.
 The desktop renderer alone opts into `while-tab-open` residency. Shell hiding
 and tool-tab selection project logical `active=false`: the controller releases
 input immediately, while viewing stays mounted. Reopening never reacquires input;
-closing the tab or changing the panel owner disposes the viewer. Other tools keep
+the surface consumes the same activity to detach out-of-aperture cursor overlays
+and their listeners. Hidden cursor updates cannot recreate them; reopening only
+restores observation, never the previous control or focus. The adapter owns this
+projection, not Shell DOM queries or a second visibility registry.
+Local control-cursor attachment additionally requires the same confirmed input
+grant projection: observation/requesting never attaches it; Stop/revocation/blur
+restore the ordinary cursor and retire fallback listeners immediately. Late shape
+updates stay cached until a fresh valid grant; the framebuffer itself is unchanged.
+Closing the tab or changing the panel owner disposes the viewer. Other tools keep
 their existing physical-presentation lifetime. The control button projects the
 user's intention immediately as Stop; only a valid backend grant enables input.
 
@@ -447,6 +455,31 @@ synthetic desktop test do not prove real microphone permission or recognition;
 that acceptance is reported separately in [the native speech plan](../design/native-speech/task_plan.md).
 
 ### Thread lifecycle ownership
+
+Conversation pinning is native Server metadata, not a Sidebar preference or a
+bridge database. The `opencraft/thread-pins` extension declares a discovery
+adapter; its list response separately proves support for the current initialized
+connection. Codex uses its reserved native pinned section and metadata-only
+section moves; legacy peers without that section remain unsupported. Hermes
+uses the already-authenticated Dashboard HTTP channel, passes the owning profile
+in each PATCH, and preserves native compression-lineage persistence. DSH has no
+fallback pin store. Neither discovery nor mutation resumes or starts a Thread.
+
+The normalized pinned catalog returns complete summaries beyond recent pages.
+Runtime merges them once into the initial Sidebar catalog; pinned rows have a
+separate visible group and do not consume the recent-row display budget.
+The native backend remains authoritative after reload. In-memory write tails
+serialize each Thread's intents, and a metadata revision fences reads issued
+before a write. A revoked connection cannot publish a late pin result or replay
+its write on a successor. Discovery failures remain errors, not unpin-all or
+unsupported success. Catalog notifications and connection recovery invalidate
+the same shared queries; no menu owns a polling loop or persistent pin set.
+
+The LightVela site renders its own Agent sidebar around the embedded Workbench.
+The embedded element passes each Thread's pinned state and the current Host's
+discovered pin capability to that sidebar, and forwards pin commands to the same
+Thread management resource. The site shows pinned rows outside its recent-page
+budget and never persists a second pin list.
 
 DSH display recovery uses [JIT history](../design/dsh-jit-history.md): native
 message pages retain their original unit and are mapped to requested Turn
@@ -960,6 +993,14 @@ resource loading failure as logout.
 
 `lightvela.collaboration` owns one routed Collaboration Workspace and the Human
 Tencent IM Web data plane for Server, Channel, private Group and Member surfaces.
+Its UI, service implementations and Tencent adapters are shared through
+`shared/vela-collaboration-web`. The extension preserves its activation owner;
+the LightVela `/agents/labs/collaboration` laboratory provides a separate
+account-bound owner through the same request port. It is default-hidden behind
+`show()` and only eligible when the site's selected authority is
+the Beijing test API. It does not borrow Agent entitlement or Bot execution,
+switch Shanghai credentials to Beijing, or create another token store. Closing
+the laboratory disposes its IM scope; reopening waits for prior logout.
 The current Human is read from `GET /v1/collaboration/me/profile`; the delegated
 actor profile does not require a locally stored email. The legacy email-based
 `/me` response remains available under its published contract.
@@ -1099,6 +1140,13 @@ priority order; recovery of an earlier account does not pull new Threads back.
 The loopback HTTP bridge owns each response stream until completion. When its
 client disconnects, it aborts the upstream request and consumes the resulting
 stream error without terminating the Host process or replaying the request.
+The proxy uses a dedicated HTTP/1.1 pool with sixteen non-pipelined connections
+and the loopback bridge admits at most sixteen concurrent upstream requests.
+Waiting for response headers is bounded to 60 seconds and an idle response body
+to 180 seconds. Slow headers, queue delay and transport failure emit
+content-free diagnostics keyed only by provider Thread/account identity. A
+timeout or other transport failure is surfaced to the owning Turn and is never
+replayed on another account, because the upstream execution outcome is unknown.
 The bridge accepts request bodies up to 32 MiB. It drains an oversized body
 without forwarding it and returns HTTP 413, so a large Codex history produces
 an explicit size error instead of a disconnected stream.
@@ -1380,6 +1428,21 @@ that decision: reuse the remembered entry's View (or the actual retained View),
 coalesce an in-flight destination only when its View also matches, and no-op only for the presented View with no
 competing destination. `navigate` remains a distinct explicit-open operation, so
 different history Views of one Thread keep independent Composer documents.
+For a completed sidebar A→B→A cycle, the transaction remembers the last
+successfully presented View per canonical conversation in a bounded preferred
+map. It validates that input slot against its account-bound draft owner, not
+just the 20-View presentation cache. Failed or superseded preparations never
+publish a preferred View; POP updates it only after acceptance. Draft eviction
+forgets the slot, and account revocation clears the map and fences pending work.
+`ConversationDraftOwnerRegistry` owns at most 50 nonempty input slots and their
+original Controllers independently of View/Scope resource caching. It does not
+retain Thread or Host leases. Physical editing/submission protects input;
+unprotected slots are evicted in last-used order, releasing attachment resources
+and deleting document continuity. Empty editors are not content slots. Scope
+promotion updates all retained slots, including ones with no cached View.
+Unsubmitted New-chat Scope metadata also queries that input ownership: its
+20-empty-record budget cannot evict a Scope with retained input. Empty history
+records remain bounded separately and confer no retained-content authority.
 All preparations use one intent/lifetime/Router-revision eligibility check and
 one accept-or-release path, including local Draft readiness and promotion. A
 promotion must originate from the still-active Draft and capture its View before

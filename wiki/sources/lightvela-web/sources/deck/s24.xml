@@ -1,0 +1,24 @@
+<slide id="s24">
+  <background color="bg-page" />
+  <shape type="line" x="40" y="26" width="1200" height="0" stroke="border" />
+  <shape type="line" x="1000" y="26" width="240" height="0" stroke="primary" stroke-width="3" />
+  <text x="40" y="36" width="1200" height="24" font="caption" color="primary">LightVela · 下一阶段</text>
+  <text x="80" y="172" width="1100" height="72" font="display" color="text-main" wrap="false">
+    <strong>把高频场景做稳，把用户留下</strong>
+  </text>
+  <shape type="line" x="80" y="281" width="88" height="0" stroke="primary" stroke-width="4" />
+  <text x="80" y="326" width="925" height="183" font="strong" size="23" color="text-main" line-height="1.65">
+    <p>
+      <strong color="primary">完善基础体验</strong>　稳定在线、状态保留、权限管理与异常承接</p>
+    <p space-before="18">
+      <strong color="primary">聚焦场景建设</strong>　泛开发者场景优先，海外验证，国内打磨易用性</p>
+    <p space-before="18">
+      <strong color="primary">持续用户运营</strong>　社区参与、分享激励、分层权益与内容共创</p>
+  </text>
+  <text x="80" y="586" width="730" height="49" font="heading" color="text-main">
+    <strong>谢谢</strong>
+  </text>
+  <image x="1080" y="482" width="114" height="168" src="/assets/bean-lilac_trim.png" fit="contain" />
+  <text x="40" y="684" width="1130" height="20" font="caption" color="text-muted">LightVela｜产品与增长汇报 · 2026 年 10 月</text>
+  <text x="1180" y="684" width="60" height="20" font="caption" color="text-muted" align="right">24 / 24</text>
+</slide>

@@ -27,7 +27,7 @@ export const useEmbeddedPhysicalConnectionPreparation = () => useContext(Prepara
 
 /** Lives inside the auth gate but outside the Profile/content gate. */
 export function EmbeddedChatPreparation({ active, children }: { active: boolean; children: ReactNode }) {
-  useEmbeddedWorkbenchResourcePreparation(!isGlobal, active);
+  useEmbeddedWorkbenchResourcePreparation(true, active);
   const { instanceDiscovery } = useOpenClaw();
   const { session } = useSession();
   const repositories = useRepositories();
@@ -45,7 +45,7 @@ export function EmbeddedChatPreparation({ active, children }: { active: boolean;
   useEffect(() => {
     setPreparation(null);
     const scriptUrl = embeddedWorkbenchScriptUrl();
-    if (!active || isGlobal || !apiBase || !scriptUrl || !instanceId || !accountId
+    if (!active || !apiBase || !scriptUrl || !instanceId || !accountId
       || instanceDiscovery?.accountId !== accountId || !instanceDiscovery.isCurrent()) return;
     let retired = false;
     let owned: EmbeddedPhysicalConnectionPreparation | null = null;
@@ -74,7 +74,7 @@ export function EmbeddedChatPreparation({ active, children }: { active: boolean;
       // Old independently deployed Embedded artifacts retain the ordinary path.
       if (typeof constructor?.preparePhysicalConnection !== "function") return;
       owned = constructor.preparePhysicalConnection({
-        accountId, instanceId, region: "cn", apiBase, assertAuthority,
+        accountId, instanceId, region: isGlobal ? "intl" : "cn", apiBase, assertAuthority,
         createSession: async signal => {
           assertAuthority();
           const result = await repositories.bots.getTerminalSession(instanceId, {

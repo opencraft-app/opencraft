@@ -46,14 +46,16 @@ tar \
   --exclude="velalink/out" \
   --exclude="velalink/target" \
   --exclude="velalink/crates/*/target" \
-  --exclude="shared/lightvela-agent-core/node_modules" \
-  --exclude="shared/lightvela-agent-core/dist" \
+  --exclude="shared/*/node_modules" \
+  --exclude="shared/*/dist" \
   --exclude="opencraft/packages/mobile-account-sdk/node_modules" \
   --exclude="opencraft/packages/mobile-account-sdk/dist" \
   --exclude="opencraft/packages/mobile-bot-bridge/node_modules" \
   --exclude="opencraft/packages/mobile-bot-bridge/dist" \
+  --exclude="opencraft/packages/workbench-panels/node_modules" \
+  --exclude="opencraft/packages/workbench-panels/dist" \
   -C "$REPO_ROOT" \
-  -cf - frontend velalink shared/lightvela-agent-core opencraft/packages/mobile-account-sdk opencraft/packages/mobile-bot-bridge | tar -C "$FRONTEND_GUARD_ROOT" -xf -
+  -cf - frontend velalink shared opencraft/packages/mobile-account-sdk opencraft/packages/mobile-bot-bridge opencraft/packages/workbench-panels | tar -C "$FRONTEND_GUARD_ROOT" -xf -
 
 cd "$FRONTEND_GUARD_DIR"
 if [[ ! -f pnpm-lock.yaml ]]; then
@@ -85,6 +87,18 @@ echo "frontend 约束：运行 release matrix / static route guard 单测"
 echo "目的：防止 Pages / EdgeOne 发布矩阵与 Next static export 约束回归"
 echo "============================================================"
 "$PNPM_BIN" test \
+  next-site/__tests__/thai-consumers.test.tsx \
+  next-site/__tests__/search-dialog-locale.test.tsx \
+  scripts/thai-home.test.ts \
+  src/i18n/__tests__/thai.test.ts \
+  src/i18n/__tests__/thai-loading.test.ts \
+  src/pages/marketing/skills-demo/SkillsDemoPanel.test.tsx \
+  scripts/malay-home.test.ts \
+  src/i18n/__tests__/malay.test.ts \
+  src/i18n/__tests__/malay-loading.test.ts \
+  next-site/__tests__/malay-consumers.test.tsx \
+  next-site/__tests__/search-tokenizer.test.ts \
+  src/pages/marketing/__tests__/legal-page-routing.test.ts \
   scripts/international-docs-parity.test.ts \
   scripts/release-matrix.test.ts \
   scripts/frontend-artifact.test.ts \

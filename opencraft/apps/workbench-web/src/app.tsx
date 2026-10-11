@@ -1,4 +1,5 @@
 import { submitEmbeddedPrompt } from "./embedded-chat/embedded-prompt-submission";
+import { isEmbeddedConversationPainted } from "./embedded-chat/embedded-paint";
 import { WorkspaceResourcePreviewPanel } from "./panels/workspace-resource-panel";
 import { EditableThreadTitle } from "./components/editable-thread-title";
 import { shouldTypeToCompose } from "./type-to-compose";
@@ -17,6 +18,7 @@ import {
   compileSubmitIntent,
   restoreQueuedInput,
 } from "@opencraft/composer-appserver";
+import { queuedSubmissionPresentation } from "./queued-submission-presentation";
 import {
   CodexComposer,
   type ComposerSelectionCatalog,
@@ -35,9 +37,14 @@ import { readCachedThreadName, writeCachedThreadName } from "./runtime/thread-ti
 import { forkAndOpenThread } from "./runtime/thread-fork-navigation";
 import { formatDocumentTitle } from "./runtime/document-title";
 import {
+  canInvokeHostPanelCommand,
   type PanelAction,
   type PanelTabDescriptor,
+  type HostPanelCommand,
+  type HostPanelState,
+  type PanelToolbarActionContext,
 } from "@opencraft/workbench-panels";
+import { createPortal } from "react-dom";
 import {
   createInteractionResponse,
   createWorkbenchDraftLocation,
@@ -203,6 +210,7 @@ export interface EmbeddedWorkbenchAppSession {
   readonly updatedAt: number;
   readonly readOnly: boolean;
   readonly running: boolean;
+  readonly pinned: boolean;
 }
 
 export interface EmbeddedWorkbenchAppActions {
@@ -212,16 +220,26 @@ export interface EmbeddedWorkbenchAppActions {
   loadMoreThreads(): Promise<void>;
   renameThread(threadId: string, title: string): Promise<void>;
   deleteThread(threadId: string): Promise<void>;
+  setThreadPinned(threadId: string, pinned: boolean): Promise<void>;
 }
 
 export interface EmbeddedWorkbenchAppPresentation {
+  readonly panelHost?: {
+    readonly target: HTMLElement;
+    readonly presentation?: { subscribe: (listener: () => void) => (() => void); getSnapshot: () => boolean };
+    readonly publish: (state: HostPanelState) => void;
+    readonly bind: (command: (command: HostPanelCommand) => boolean) => (() => void);
+  };
   readonly hostId: string;
+  /** The conversation surface has painted; the Host may still be connecting. */
+  readonly onPainted: () => void;
   readonly onReady: (threadId: string | null) => void;
   readonly onError: (error: Error) => void;
   readonly onSessionsChange: (detail: {
     readonly sessions: readonly EmbeddedWorkbenchAppSession[];
     readonly loading: boolean;
     readonly hasMoreSessions: boolean;
+    readonly pinSupported: boolean;
     readonly selectedChatId: string | null;
     readonly isDraft: boolean;
   }) => void;
@@ -1126,6 +1144,7 @@ export function App({
         updatedAt,
         readOnly: false,
         running: thread.status === "running",
+        pinned: thread.pinned === true,
       };
     });
   }, [catalog.protocolThreads, catalog.threads, embedded]);
@@ -1133,12 +1152,20 @@ export function App({
     if (embedded === undefined) return;
     embedded.onSessionsChange({
       sessions: embeddedSessions,
-      loading: catalog.isFetching,
+      loading: (catalog.isPending && snapshot.phase !== "error") || catalog.isFetching,
       hasMoreSessions: catalog.hasNextPage,
+      pinSupported: hostCatalog.threadManagement.capabilities(embedded.hostId).pin === true,
       selectedChatId: snapshot.hostId === embedded.hostId ? activeThreadId : null,
       isDraft: draft !== null && draft.submission === null,
     });
-  }, [activeThreadId, catalog.hasNextPage, catalog.isFetching, draft, embedded, embeddedSessions, snapshot.hostId]);
+  }, [activeThreadId, catalog.hasNextPage, catalog.isFetching, catalog.isPending, draft, embedded, embeddedSessions, hostCatalog.threadManagement, snapshot.hostId, snapshot.phase]);
+  // The local Draft paints before the Host connects (the Composer stays
+  // submission-disabled until ready); a restored Thread paints when ready.
+  const painted = isEmbeddedConversationPainted(draft, conversationViewActivation.phase);
+  useEffect(() => {
+    if (embedded === undefined || !painted) return;
+    embedded.onPainted();
+  }, [embedded, painted]);
   useEffect(() => {
     if (embedded === undefined) return;
     if (conversationViewActivation.phase === "error") {
@@ -1180,6 +1207,10 @@ export function App({
         await hostCatalog.threadManagement.delete(embedded.hostId, threadId);
         await queryClient.invalidateQueries({ queryKey: ["appserver", embedded.hostId, "threads"] });
         if (activeThreadId === threadId) navigateToHome();
+      },
+      setThreadPinned: async (threadId, pinned) => {
+        try { await hostCatalog.threadManagement.setPinned(embedded.hostId, threadId, pinned); }
+        finally { await queryClient.invalidateQueries({ queryKey: ["appserver", embedded.hostId, "threads"] }); }
       },
     });
   }, [activeThreadId, catalog.fetchNextPage, composerController, embedded, hostCatalog, navigateToHome, queryClient, sendMessage, snapshot.phase]);
@@ -1354,6 +1385,62 @@ export function App({
     presentation.rightPanel && panelState.right.open;
   const presentedRightPanelFullWidth =
     presentation.rightPanel && panelState.rightPanelFullWidth;
+  const conversationRightPanelAvailable = conversationSurfaceVisible
+    && (embedded === undefined || (draft === null && activeThreadId !== null));
+  const panelHost = embedded?.panelHost;
+  const hostPanelActive = useSyncExternalStore(panelHost?.presentation?.subscribe ?? (() => () => {}),
+    panelHost?.presentation?.getSnapshot ?? (() => false), () => false);
+  const panelToolbarContext: PanelToolbarActionContext = {
+    ownerId: panelOwnerId, resourceOwnerId: conversationResourceOwnerId, hostId: snapshot.hostId,
+    cwd: snapshot.conversation?.execution.cwd ?? activeProtocolThread?.cwd
+      ?? draft?.target.execution.workspace.cwd ?? activeHost.workspaceBrowseRoots[0] ?? null,
+  };
+  const panelHostProjection: HostPanelState = {
+    ownerId: panelOwnerId, available: conversationRightPanelAvailable,
+    open: panelState.right.open, fullWidth: panelState.rightPanelFullWidth,
+    activeTabId: panelState.right.activeTabId,
+    tabs: panelState.right.tabs.map(tab => ({ id: tab.id,
+      title: tab.kind === "browser" && tab.title === "New tab"
+        ? intl.formatMessage({ id: "panel.newTab", defaultMessage: "New tab" }) : tab.title.slice(0, 512),
+      kind: tab.kind, closable: tab.closable, preview: tab.preview })),
+    actions: (conversationRouteOpen ? panelToolbarActions : []).filter(action => action.region === "right"
+      && (action.isAvailable?.(panelToolbarContext) ?? true))
+      .map(action => ({ id: action.id, label: action.creationLabel ?? action.label, icon: action.icon })),
+  };
+  const panelHostWire = JSON.stringify(panelHostProjection);
+  useEffect(() => { panelHost?.publish(JSON.parse(panelHostWire) as HostPanelState); }, [panelHost, panelHostWire]);
+  // The same panel owner admits Web and native actions. Retired owner commands
+  // cannot select/close a resource in the next conversation.
+  const invokeHostPanel = useStableEvent((command: HostPanelCommand) => {
+    if (!conversationRouteOpen || !canInvokeHostPanelCommand(panelHostProjection, command)) return false;
+    const tab = "tabId" in command ? panelState.right.tabs.find(tab => tab.id === command.tabId) : undefined;
+    switch (command.action) {
+      case "open": dispatchPanel({ type: "set-region-open", region: "right", open: command.open, reason: "manual", allowEmpty: true }); return true;
+      case "full-width": dispatchPanel({ type: "toggle-right-full-width" }); return true;
+      case "select": if (!tab) return false; dispatchPanel({ type: "activate-tab", region: "right", tabId: tab.id }); return true;
+      case "close": if (!tab?.closable) return false; requestClosePanel(tab); return true;
+      case "move": if (!tab || (command.beforeTabId !== null && !panelState.right.tabs.some(tab => tab.id === command.beforeTabId))) return false;
+        dispatchPanel({ type: "move-tab", region: "right", tabId: tab.id, beforeTabId: command.beforeTabId }); return true;
+      case "launch": {
+        const action = panelToolbarActions.find(action => action.id === command.actionId && action.region === "right"
+          && (action.isAvailable?.(panelToolbarContext) ?? true));
+        if (!action) return false;
+        try {
+          void Promise.resolve(action.run(panelToolbarContext)).catch(() => {
+            window.dispatchEvent(new CustomEvent("opencraft-panel-action-failed"));
+          });
+        } catch { window.dispatchEvent(new CustomEvent("opencraft-panel-action-failed")); }
+        return true;
+      }
+    }
+  });
+  useEffect(() => panelHost?.bind(invokeHostPanel), [panelHost, invokeHostPanel]);
+  const rightPanelView = !presentation.rightPanel ? null : <RightPanel
+    hostPresentationActive={panelHost ? conversationRightPanelAvailable && (panelState.right.open || hostPanelActive) : undefined}
+    emptyHint={presentation.filePreviewOnly ? intl.formatMessage({ id: "panel.fileHint", defaultMessage: "Click a file in the conversation to preview it here." }) : undefined}
+    state={panelState} presentationId={panelPresentationId} renderers={presentedPanelRenderers}
+    toolbarActions={conversationRouteOpen ? panelToolbarActions : []} toolbarActionContext={panelToolbarContext}
+    onAction={dispatchPanel} onCloseTab={requestClosePanel} portalContainer={portalContainer} />;
   // Applications replace context/content, never the Shell control plane.
   // Target management remains an independent modal semantic surface.
   const headerNavigationActions = chromePolicy.leadingNavigationActions;
@@ -1393,9 +1480,9 @@ export function App({
             : null
       }
       sidebarOpen={shellSidebarOpen}
-      rightPanelOpen={conversationSurfaceVisible && presentedRightPanelOpen}
-      rightPanelFullWidth={conversationSurfaceVisible && presentedRightPanelFullWidth}
-      showRightPanelAction={conversationSurfaceVisible && presentation.rightPanel}
+      rightPanelOpen={conversationRightPanelAvailable && presentedRightPanelOpen}
+      rightPanelFullWidth={conversationRightPanelAvailable && presentedRightPanelFullWidth}
+      showRightPanelAction={!panelHost && conversationRightPanelAvailable && presentation.rightPanel}
       canGoBack={canGoBack}
       canGoForward={canGoForward}
       onToggleSidebar={() => setSidebarOpen((value) => !value)}
@@ -1446,10 +1533,10 @@ export function App({
           onSidebarCollapse={collapseSidebar}
           onSidebarExpand={expandSidebar}
           onSidebarResizeEnd={commitSidebarWidth}
-          rightPanelOpen={conversationSurfaceVisible && presentedRightPanelOpen}
-          rightPanelKeepMounted={presentation.rightPanel && panelState.right.tabs.some(tab =>
+          rightPanelOpen={!panelHost && conversationRightPanelAvailable && presentedRightPanelOpen}
+          rightPanelKeepMounted={!panelHost && presentation.rightPanel && panelState.right.tabs.some(tab =>
             presentedPanelRenderers.some(renderer => renderer.kind === tab.kind && renderer.residency === "while-tab-open"))}
-          rightPanelFullWidth={conversationSurfaceVisible && presentedRightPanelFullWidth}
+          rightPanelFullWidth={!panelHost && conversationRightPanelAvailable && presentedRightPanelFullWidth}
           rightPanelDefaultSize={presentation.rightPanelDefaultSize}
           onRightPanelOpenChange={(open) =>
             dispatchPanel({
@@ -1492,6 +1579,10 @@ export function App({
               threadCapabilities={hostId => hostCatalog.threadManagement.capabilities(hostId)}
               pendingTitle={(hostId, threadId) => threadTitleWriter.pendingTitle({ hostId, threadId })}
               threadActions={{
+                onSetPinned: async (target, pinned) => {
+                  try { await hostCatalog.threadManagement.setPinned(target.hostId, target.threadId, pinned); }
+                  finally { await queryClient.invalidateQueries({ queryKey: ["appserver", target.hostId, "threads"] }); }
+                },
                 onRename: (target, title) => threadTitleWriter.rename(target, title),
                 onFork: target => forkAndOpenThread({
                   routeScopeId: () => workbenchNavigation.getSnapshot().routeScopeId,
@@ -1540,33 +1631,9 @@ export function App({
               onOpenSettings={openSettingsFromConversation}
             /> : null
           )}
-          rightPanel={!presentation.rightPanel ? null : (
-            <RightPanel
-              emptyHint={presentation.filePreviewOnly ? intl.formatMessage({ id: "panel.fileHint", defaultMessage: "Click a file in the conversation to preview it here." }) : undefined}
-              state={panelState}
-              presentationId={panelPresentationId}
-              renderers={presentedPanelRenderers}
-              // Route ownership gates launchers even while the panel's exit
-              // animation keeps its physical surface mounted. Do not unregister
-              // plugins or close their resources when entering Settings.
-              toolbarActions={conversationRouteOpen ? panelToolbarActions : []}
-              toolbarActionContext={{
-                ownerId: panelOwnerId,
-                resourceOwnerId: conversationResourceOwnerId,
-                hostId: snapshot.hostId,
-                cwd:
-                  snapshot.conversation?.execution.cwd
-                  ?? activeProtocolThread?.cwd
-                  ?? draft?.target.execution.workspace.cwd
-                  ?? activeHost.workspaceBrowseRoots[0]
-                  ?? null,
-              }}
-              onAction={dispatchPanel}
-              onCloseTab={requestClosePanel}
-              portalContainer={portalContainer}
-            />
-          )}
+          rightPanel={panelHost ? null : rightPanelView}
         >
+        {panelHost ? createPortal(rightPanelView, panelHost.target) : null}
         <div className="workbench-route-stage">
           <div
             aria-hidden={!conversationRouteOpen || undefined}
@@ -1726,25 +1793,14 @@ export function App({
                       >{(goalMenuItem) => (
                       <CodexComposer
                         controller={composerController}
-                        defaultFollowUpAction={defaultFollowUpAction}
+                        defaultFollowUpAction={embedded ? "queue" : defaultFollowUpAction}
                         availableFollowUpActions={(["steer", "queue"] as const).filter(action => runtime.resources.host.canRequest?.(action === "queue" ? "thread/queue/add" : "turn/steer") !== false)}
                         portalContainer={portalContainer}
                         isStreaming={isStreaming}
                         submissionDisabled={snapshot.phase !== "ready" || snapshot.conversation?.authoritative !== true}
                         queuedSubmissions={[
-                          ...(snapshot.conversation?.queuedSubmissions ?? []).map((submission) => ({
-                          id:
-                            submission.serverSubmissionId ??
-                            submission.commandId,
-                          preview: submission.preview,
-                          state: submission.state,
-                          operation: submission.operation,
-                          actionable: submission.serverSubmissionId !== null,
-                          reorderable: queueReorderable,
-                          editableContent: restoreQueuedInput(submission.input),
-                          pausedReason: submission.pausedReason,
-                          error: submission.error?.message ?? null,
-                          })),
+                          ...(snapshot.conversation?.queuedSubmissions ?? []).map((submission) =>
+                            queuedSubmissionPresentation(submission, queueReorderable)),
                           ...(queueUnconfirmedSteerDiscard ? snapshot.conversation?.unconfirmedSteers ?? [] : []).map((claim) => ({
                             id: claim.id,
                             preview: claim.input.find((input) => input.type === "text")?.text ?? "Unconfirmed steering message",

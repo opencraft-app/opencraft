@@ -8,11 +8,14 @@ import {
   isAutomaticApprovalReviewWarning,
   summarizeAutomaticApprovalReviewAction,
   skillReadPresentation,
+  presentReasoning,
+  type ReasoningContentPresentation,
   type AutomaticApprovalReview,
   type TimelineBlock,
 } from "@opencraft/chat-core";
 import {
   AnsiTerminalText,
+  WebChatDocument,
   normalizeTerminalOutput,
   resolveStandardChatResource,
   writeTextToClipboard,
@@ -20,7 +23,7 @@ import {
 } from "@opencraft/chat-render-web";
 import {
   AlertCircle,
-  Bot,
+  Brain,
   Check,
   ChevronRight,
   Copy,
@@ -45,19 +48,53 @@ import {
 } from "./activity-disclosure";
 import { useToolActivityPresentation, ConversationDetailContext } from "../render-contexts";
 
-function ReasoningBlock({ block }: { block: Extract<TimelineBlock, { type: "reasoning" }> }) {
-  const [open, setOpen] = useCodexActivityOpen(block.streaming);
-  const detail = block.detail || null;
+function ReasoningBlock({ block, presentation, active = block.streaming, collapsed, onCollapsedChange }: {
+  readonly block: Extract<TimelineBlock, { type: "reasoning" }>;
+  readonly presentation?: ReasoningContentPresentation;
+  readonly active?: boolean;
+  readonly collapsed?: boolean;
+  readonly onCollapsedChange?: (collapsed: boolean) => void;
+}) {
+  const intl = useIntl();
+  const document = useContext(ConversationDocumentContext);
+  // One View choice across running/settled phases, unlike tool activity's
+  // independent live/history defaults. Only explicit activation writes it.
+  const [localOpen, setLocalOpen] = useState(false);
+  const content = presentation ?? presentReasoning(block, active);
+  const open = collapsed === undefined ? localOpen : !collapsed;
+  const setOpen = (next: boolean) => {
+    if (onCollapsedChange) onCollapsedChange(!next);
+    else setLocalOpen(next);
+  };
+  if (content === null) return null;
   return (
-    <ActivityDisclosure
-      icon={<Bot size={14} />}
-      onOpenChange={setOpen}
-      open={open}
-      running={block.streaming}
-      summary={block.streaming ? <ThinkingLabel summary={block.summary} /> : (block.summary || "Thought")}
-    >
-      {detail ? <p className="thread-activity-item__prose">{detail}</p> : null}
-    </ActivityDisclosure>
+    <div className="thread-reasoning" data-reasoning-id={block.id} data-reasoning-active={active}>
+      <ActivityDisclosure
+        icon={<Brain size={14} />}
+        onOpenChange={setOpen}
+        open={open}
+        running={active}
+        summary={active ? <ThinkingLabel /> : intl.formatMessage({ id: "chat.thought", defaultMessage: "Thought" })}
+        detail={content.header}
+        unmountBodyWhenCollapsed
+      >
+        <div className="thread-activity-item__prose">
+          <WebChatDocument
+            documentId={block.id}
+            source={content.content}
+            streaming={active}
+            conversationId={document.conversationId}
+            hostId={document.hostId}
+            cwd={document.cwd}
+            theme={document.theme}
+            allowWideBlocks={false}
+            onOpenResource={document.onOpenResource}
+            loadMediaSource={document.loadMediaSource}
+            onMeasurementRequest={document.onMeasurementRequest}
+          />
+        </div>
+      </ActivityDisclosure>
+    </div>
   );
 }
 

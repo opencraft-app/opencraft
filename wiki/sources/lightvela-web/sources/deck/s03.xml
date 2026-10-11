@@ -1,0 +1,28 @@
+<slide id="s03">
+  <background color="bg-page" />
+  <shape type="line" x="40" y="26" width="1200" height="0" stroke="border" />
+  <shape type="line" x="40" y="26" width="240" height="0" stroke="primary" stroke-width="3" />
+  <text x="40" y="36" width="1200" height="24" font="caption" color="primary">01 出圈回顾 · 三项动作</text>
+  <text x="40" y="77" width="1200" height="50" font="heading" color="text-main"><strong>三项动作叠加，带动试用与分享</strong></text>
+  <text x="40" y="132" width="1200" height="30" font="body" color="text-muted">X 推文、邀请积分与首月免费体验在同一阶段推出，推动关注、试用和分享。</text>
+  <shape type="rect" x="40" y="190" width="384" height="222" fill="bg-surface" corner-radius="5" />
+  <shape type="rect" x="448" y="190" width="384" height="222" fill="bg-surface" corner-radius="5" />
+  <shape type="rect" x="856" y="190" width="384" height="222" fill="bg-surface" corner-radius="5" />
+  <text x="64" y="210" width="336" height="40" font="heading" color="primary"><strong>01</strong></text>
+  <text x="64" y="267" width="336" height="38" font="strong" color="text-main"><strong>X 官方发声</strong></text>
+  <text x="64" y="319" width="336" height="72" font="body" color="text-main" line-height="1.55">发布一条产品推文，集中介绍产品与体验权益。</text>
+  <text x="472" y="210" width="336" height="40" font="heading" color="primary"><strong>02</strong></text>
+  <text x="472" y="267" width="336" height="38" font="strong" color="text-main"><strong>邀请送积分同步开放</strong></text>
+  <text x="472" y="319" width="336" height="72" font="body" color="text-main" line-height="1.55">原计划的好友邀请活动上线，邀请双方均可获得 AI 积分。</text>
+  <text x="880" y="210" width="336" height="40" font="heading" color="primary"><strong>03</strong></text>
+  <text x="880" y="267" width="336" height="38" font="strong" color="text-main"><strong>免费体验一个月</strong></text>
+  <text x="880" y="319" width="336" height="72" font="body" color="text-main" line-height="1.55">新用户首月免费，包含云端电脑与 AI 积分，降低尝试门槛。</text>
+  <text x="40" y="437" width="792" height="24" font="caption" color="text-muted">官方 X 推文 · 9 月 24 日 · 点击查看完整原图</text>
+  <image x="40" y="468" width="792" height="184" src="/assets/source_11_rights_crop.png" original-src="/assets/source_11.png" alt="官方推文中的首月免费、云端电脑与 AI 积分权益" fit="contain" />
+  <text x="880" y="449" width="360" height="35" font="strong" color="primary"><strong>社区分享继续放大关注</strong></text>
+  <text x="880" y="498" width="360" height="112" font="body" color="text-main" line-height="1.6">海外 KOL 在 X、Telegram 分享免费云端环境与积分权益，带来第一轮关注。</text>
+  <text x="880" y="622" width="360" height="30" font="caption" color="text-muted">官方帖子初始加热投入 $10。</text>
+  <text x="40" y="659" width="1200" height="20" font="caption" color="text-muted">背景：Grok Bot、Meta Muse 推高个人 Agent 讨论热度，相关关注逐步传入国内。</text>
+  <text x="40" y="684" width="1130" height="20" font="caption" color="text-muted">LightVela｜依据原文传播复盘与官方 X 推文</text>
+  <text x="1180" y="684" width="60" height="20" font="caption" color="text-muted" align="right">03 / 22</text>
+</slide>

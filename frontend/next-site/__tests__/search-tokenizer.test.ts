@@ -1,11 +1,26 @@
-import { create, insert, search } from '@orama/orama';
+import { create, insert, load, save, search } from '@orama/orama';
 import { describe, expect, it } from 'vitest';
 
 import { createDocsSearchTokenizer } from '../search-tokenizer';
 
 describe('docs search tokenizer', () => {
-  it('uses the Orama default tokenizer for English', () => {
-    expect(createDocsSearchTokenizer('en-us')).toBeUndefined();
+  it('finds Thai words without spaces after loading the exported index', () => {
+    const tokenizer = createDocsSearchTokenizer('th-th');
+    const db = create({ schema: { content: 'string' }, components: { tokenizer } });
+    const content = 'กำหนดค่าโมเดลและจัดการหน่วยความจำของ Hermes Agent';
+    insert(db, { content });
+    expect(tokenizer?.tokenize(content)).not.toContain(content);
+    const restored = create({ schema: { content: 'string' }, components: { tokenizer: createDocsSearchTokenizer('th-th') } });
+    load(restored, save(db));
+    for (const term of ['โมเดล', 'หน่วยความจำ', 'Hermes', 'hermes']) {
+      expect(search(restored, { term }).count, term).toBe(1);
+    }
+  });
+  it.each(['en-us', 'ms-my'] as const)('uses the Orama Latin tokenizer for %s', (locale) => {
+    expect(createDocsSearchTokenizer(locale)).toBeUndefined();
+    const db = create({ schema: { content: 'string' }, components: { tokenizer: createDocsSearchTokenizer(locale) } });
+    insert(db, { content: 'Panduan kredit untuk Hermes Agent' });
+    expect(search(db, { term: 'kredit' }).count).toBe(1);
   });
 
   it.each(['zh-cn', 'zh-sg', 'zh-hant'] as const)(

@@ -37,6 +37,11 @@ def labels_from_inspect(value: dict[str, Any]) -> dict[str, str]:
 
 
 def verify_labels(labels: dict[str, str], source_revision: str, source_manifest_digest: str) -> None:
+    # An overlay inherits its parent source labels; they do not attest the
+    # composed product. Until a reviewed inventory composition contract exists,
+    # accept only ordinary full-source products, never quarantine overlays.
+    if any(key.startswith(("fleet.actor.dev/composition-", "fleet.actor.dev/overlay-")) for key in labels):
+        raise ValueError("composition images are quarantine-only and cannot receive a product build receipt")
     revisions = {
         labels.get("org.opencontainers.image.revision"),
         labels.get("fleet.actor.dev/source-revision"),

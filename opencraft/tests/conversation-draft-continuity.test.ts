@@ -9,12 +9,25 @@ import {
   createConversationDraftContinuity,
   createConversationScopeLeaseRegistry,
   createConversationViewRegistry,
+  parseConversationDraftTarget,
+  serializeConversationDraftDocument,
   type ConversationDraftStorage,
 } from "@opencraft/workbench-runtime";
 
 const target = { type: "existing-thread", key: createConversationKey("local", "thread-1") } as const;
 const document = (text: string): ComposerDocument => ({ version: 1, blocks: [{ type: "paragraph", children: [{ type: "text", text }] }] });
 const tick = () => new Promise<void>(resolve => setTimeout(resolve, 5));
+
+test("new Draft placement shares the existing content envelope, never execution lifecycle", () => {
+  const draftTarget = { type: "new-thread", draftId: "new-A", execution: {
+    hostId: asHostId("ssh"), workspace: { cwd: "/fixture", runtimeWorkspaceRoots: ["/fixture"] },
+  } } as const;
+  const saved = serializeConversationDraftDocument(document("unsent"), draftTarget);
+  assert.deepEqual(parseConversationDraftTarget(saved), draftTarget);
+  assert.equal(parseConversationDraftTarget(serializeConversationDraftDocument(document("legacy"))), null);
+  assert.equal(parseConversationDraftTarget(JSON.stringify({ version: 1, document: document("bad"), target: { ...draftTarget, execution: { hostId: "ssh", workspace: {} } } })), null);
+  assert.equal(serializeConversationDraftDocument(document(""), draftTarget), null);
+});
 
 function memoryStorage(): ConversationDraftStorage & { readonly data: Map<string, string> } {
   const data = new Map<string, string>();
@@ -78,6 +91,26 @@ test("a late cached read cannot replace text already typed in the View", async (
   assert.equal(composerDocumentToPlainText(second.getSnapshot().draft.document), "newer");
   stopSecond();
   second.dispose();
+});
+
+test("reattaching continuity never replaces already retained in-memory content", async () => {
+  const storage = memoryStorage();
+  const continuity = createConversationDraftContinuity({ namespace: "account", storage, delayMs: 0 });
+  const seed = createComposerController(target, { now: Date.now, createId: () => "seed" });
+  const stopSeed = continuity.attach("retained", seed);
+  seed.dispatch({ type: "set-document", document: document("older stored input") });
+  await tick();
+  stopSeed();
+  seed.dispose();
+  await tick();
+
+  const retained = createComposerController(target, { now: Date.now, createId: () => "retained" });
+  retained.dispatch({ type: "set-document", document: document("newer retained input") });
+  const stopRetained = continuity.attach("retained", retained);
+  await tick();
+  assert.equal(composerDocumentToPlainText(retained.getSnapshot().draft.document), "newer retained input");
+  stopRetained();
+  retained.dispose();
 });
 
 test("promoting an accepted first turn discards the original new-thread draft", async () => {

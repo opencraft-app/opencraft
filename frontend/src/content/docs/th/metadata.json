@@ -1,0 +1,283 @@
+{
+  "groups": {
+    "Getting Started": "เริ่มต้น",
+    "Plans & Activation": "แผนและการเปิดใช้งาน",
+    "Features & Configuration": "คุณสมบัติและการกำหนดค่า",
+    "Use Cases": "กรณีการใช้งาน",
+    "Compare & Choose": "เปรียบเทียบและเลือก",
+    "Hermes Agent Deep Dive": "Hermes การเจาะลึกเอเจนต์",
+    "Support": "สนับสนุน"
+  },
+  "01-overview.md": {
+    "title": "อะไร LightVela",
+    "description": "LightVela คือเพื่อน Hermes เอเจนต์ที่โฮสต์ซึ่งทำให้มั่นใจว่าการสนทนาและระบบอัตโนมัติทำงานบนคลาวด์"
+  },
+  "02-quickstart.md": {
+    "title": "เริ่มเร็ว",
+    "description": "เตรียมบทสนทนา LightVela แรกของคุณในไม่กี่นาที"
+  },
+  "04-core-concepts.md": {
+    "title": "แนวคิดหลัก",
+    "description": "เข้าใจ Hermes แบบจำลอง ช่องทาง ทักษะ และการทำงานอัตโนมัติใน LightVela"
+  },
+  "who-is-lightvela-for.md": {
+    "title": "สำหรับใคร LightVela?",
+    "description": "ทราบว่า LightVela ถูกออกแบบมาสำหรับใคร รวมถึงผู้ที่ต้องการเพื่อน AI ส่วนตัวที่โฮสต์บนคลาวด์โดยไม่ต้องจัดการเซิร์ฟเวอร์หรือโครงสร้างพื้นฐาน"
+  },
+  "plans.md": {
+    "title": "แผน",
+    "description": "เปรียบเทียบแผน LightVela, สภาพแวดล้อมคลาวด์เฉพาะ, เครดิต AI รายเดือน, กฎการคืนสินค้า, และขั้นตอนการขอคืนสินค้าผ่านอีเมล"
+  },
+  "credits.md": {
+    "title": "เครดิต",
+    "description": "เรียนรู้วิธีที่เครดิตของโมเดล LightVela ถูกจัดสรร ใช้โดยการใช้งานโทเคน และเกี่ยวข้องกับแผนและโมเดล"
+  },
+  "create-first-hermes.md": {
+    "title": "ฉันจะเปิดใช้งานตัวอย่าง Hermes แรกของฉันได้อย่างไร?",
+    "description": "เปิดใช้งานตัวอย่าง Hermes แรกของคุณด้วย Google หรือ GitHub แผนที่มีให้ การจัดสรรคลาวด์อัตโนมัติ และช่องทางการส่งข้อความระหว่างประเทศ"
+  },
+  "05-configuration.md": {
+    "title": "ภาพรวมการตั้งค่า",
+    "description": "ตรวจสอบกระแสการกำหนดค่าคอนโซล LightVela"
+  },
+  "configuration/bots.md": {
+    "title": "จัดการบอท",
+    "description": "สร้าง คัดลอก เปลี่ยน แก้ไขชื่อ และลบบอทในเอเจนต์ Hermes เดียว"
+  },
+  "configuration/model.md": {
+    "title": "กำหนดค่าโมเดล",
+    "description": "เชื่อมต่อและจัดการโมเดลภาษาโดย Hermes"
+  },
+  "configuration/channel-telegram.md": {
+    "title": "Telegram",
+    "description": "เชื่อมต่อ Telegram กับ Hermes เอเจนต์ของคุณ"
+  },
+  "configuration/channel-whatsapp.md": {
+    "title": "WhatsApp",
+    "description": "เชื่อมต่อ WhatsApp กับ Hermes เอเจนต์ของคุณ"
+  },
+  "configuration/channel-discord.md": {
+    "title": "ความขัดแย้ง",
+    "description": "เชื่อมต่อ Discord กับ Hermes เอเจนต์ของคุณ"
+  },
+  "configuration/channel-slack.md": {
+    "title": "หลวม",
+    "description": "เชื่อมต่อ Slack กับ Hermes เอเจนต์ของคุณด้วย Slack โทเค็นบอทและโทเค็นแอป"
+  },
+  "configuration/channel-wechat.md": {
+    "title": "WeChat",
+    "description": "เชื่อมต่อ WeChat กับ Hermes เอเจนต์ของคุณ"
+  },
+  "configuration/channel-qq.md": {
+    "title": "QQ",
+    "description": "เชื่อมต่อ QQ กับ Hermes เอเจนต์ของคุณ"
+  },
+  "configuration/channel-wecom.md": {
+    "title": "WeCom",
+    "description": "เชื่อมต่อ WeCom กับ Hermes เอเจนต์ของคุณ"
+  },
+  "configuration/channel-feishu.md": {
+    "title": "Lark",
+    "description": "เชื่อมต่อ Lark กับ Hermes เอเจนต์ของคุณ"
+  },
+  "configuration/skill.md": {
+    "title": "กำหนดค่าทักษะ",
+    "description": "ติดตั้งทักษะเพื่อขยายความสามารถ Hermes."
+  },
+  "configuration/personality.md": {
+    "title": "จิตวิญญาณ",
+    "description": "เลือกและใช้จิตวิญญาณเพื่อกำหนดบทบาท เสียง ลำดับความสำคัญ และขอบเขตพฤติกรรมของเอเจนต์ Hermes"
+  },
+  "configuration/achievements.md": {
+    "title": "ความสำเร็จ",
+    "description": "ตรวจสอบความสำเร็จ ความก้าวหน้า กฎเกณฑ์การคำนวณ และสถานะการสแกนประวัติของ Hermes Agent Bot ปัจจุบัน"
+  },
+  "configuration/memory.md": {
+    "title": "การจัดการหน่วยความจำ",
+    "description": "เรียนรู้วิธี Hermes จัดเก็บและจัดการความทรงจำระยะยาว รวมถึงโปรไฟล์ผู้ใช้ข้ามอุปกรณ์และช่องทางการส่งข้อความ"
+  },
+  "configuration/automation.md": {
+    "title": "งานตามกำหนด",
+    "description": "สร้างระบบอัตโนมัติตามตารางสำหรับ Hermes เอเจนต์ของคุณ"
+  },
+  "configuration/files.md": {
+    "title": "การจัดเก็บข้อมูลบนคลาวด์",
+    "description": ""
+  },
+  "configuration/agent-chat.md": {
+    "title": "แชท",
+    "description": "พูดคุยกับ Hermes และตรวจสอบพฤติกรรมการสนทนา"
+  },
+  "configuration/diagnostics.md": {
+    "title": "การวินิจฉัย",
+    "description": ""
+  },
+  "configuration/advanced-settings.md": {
+    "title": "การตั้งค่าขั้นสูง",
+    "description": "ตรวจสอบและปรับHermesการตั้งค่าความปลอดภัยของเอเจนต์ การจดจำ และการจัดการบริบท"
+  },
+  "configuration/multiple-models.md": {
+    "title": "การเปลี่ยนโมเดล",
+    "description": ""
+  },
+  "configuration/bots-switching.md": {
+    "title": "เปลี่ยนบอท",
+    "description": "สร้าง กำหนดค่า และสลับระหว่างบอทเฉพาะตัวในเอเจนต์คลาวด์เดียว LightVela"
+  },
+  "configuration/deepseek-harness.md": {
+    "title": "DeepSeek Harness",
+    "description": "ตั้งค่าและจัดการเวลาเดิน DeepSeek Harness Labs ร่วมกับ Hermes Agent ใน LightVela"
+  },
+  "configuration/workbench.md": {
+    "title": "โต๊ะทำงาน",
+    "description": "สร้าง ใช้งาน และจัดการเว็บไซต์สถิติกับเอเจนต์ AI ใน LightVela"
+  },
+  "use-cases/personal-ai-assistant.md": {
+    "title": "วิธีสร้างผู้ช่วย AI ส่วนตัวด้วย LightVela",
+    "description": ""
+  },
+  "use-cases/chinese-messaging-channels.md": {
+    "title": "วิธีเชื่อมต่อเอเจนต์ AI เข้ากับแพลตฟอร์มส่งข้อความ",
+    "description": ""
+  },
+  "use-cases/telegram-persona-agent.md": {
+    "title": "วิธีการตั้งค่า Hermes เอเจนต์ด้วยบุคลิกที่แตกต่างกันใน Telegram",
+    "description": ""
+  },
+  "use-cases/whatsapp-persona-agent.md": {
+    "title": "วิธีการตั้งค่า Hermes เอเจนต์ด้วยบุคลิกที่แตกต่างกันใน WhatsApp",
+    "description": ""
+  },
+  "use-cases/im-agent-persona-soul-md.md": {
+    "title": "วิธีการกำหนดบทบาท บุคลิกภาพ และเสียงของตัวแทน IM ด้วย SOUL.md",
+    "description": ""
+  },
+  "use-cases/multi-channel-personality-memory.md": {
+    "title": "วิธีเชื่อมต่อเอเจนต์หนึ่งไปยัง Telegram และ WhatsApp ในขณะที่รักษาบุคลิกและความทรงจำระยะยาว",
+    "description": ""
+  },
+  "use-cases/telegram-group-community-assistant.md": {
+    "title": "วิธีใช้ Telegram ผู้ช่วยชุมชน AI ของกลุ่ม: คำถามและคำตอบ, สรุป และการเตือน",
+    "description": ""
+  },
+  "use-cases/daily-summary.md": {
+    "title": "วิธีทำสรุปรายวันด้วย Hermes เอเจนต์",
+    "description": ""
+  },
+  "use-cases/hermes-agent-24-7.md": {
+    "title": "วิธีรักษา Hermes เอเจนต์ออนไลน์ตลอด 24/7",
+    "description": ""
+  },
+  "use-cases/memory-and-knowledge.md": {
+    "title": "วิธีจัดการความทรงจำระยะยาวและความรู้ส่วนตัวด้วยเอเย่นต์",
+    "description": ""
+  },
+  "use-cases/discord-community-agent.md": {
+    "title": "พบ LightVela สำหรับ Discord: ตัวแทน AI ของคุณ Discord บอทให้บริการช่องของคุณ",
+    "description": "กำหนดค่า Discord ตัวแทนเพื่อแบ่งปันสำหรับคำถามของชุมชน การเริ่มใช้งาน และการสนับสนุนกิจกรรม"
+  },
+  "use-cases/discord-event-agent.md": {
+    "title": "เสริมกำลัง Discord บอทเหตุการณ์ของคุณด้วยความสามารถ AI-Agentic",
+    "description": "ใช้ Discord เอเจนต์เพื่อตอบคำถามเกี่ยวกับกิจกรรม สนับสนุนการเตือนความจำ และเพื่อให้การดำเนินงานของกิจกรรมสอดคล้องกัน"
+  },
+  "use-cases/scheduled-task-agent.md": {
+    "title": "ทำให้งานของเอเจนต์เป็นอัตโนมัติด้วย LightVela",
+    "description": ""
+  },
+  "use-cases/scheduled-task-notifications.md": {
+    "title": "ตั้งค่าหน้าที่การแจ้งเตือนใน LightVela",
+    "description": ""
+  },
+  "use-cases/scheduled-task-script.md": {
+    "title": "ดำเนินงานสคริปต์ใน LightVela",
+    "description": ""
+  },
+  "compare/lightvela-vs-localhost-ai-agent.md": {
+    "title": "LightVela กับ Ejen Selfhost: อันไหนดีที่สุด?",
+    "description": ""
+  },
+  "compare/lightvela-vs-hostinger.md": {
+    "title": "LightVela vs Hostinger: VPS ใดดีที่สุดสำหรับการโฮสต์ตัวแทน?",
+    "description": ""
+  },
+  "compare/lightvela-vs-manus.md": {
+    "title": "LightVela vs Manus: อะไรดีที่สุดในการเป็นโฮสต์เอเจนต์ AI ของคุณ?",
+    "description": ""
+  },
+  "compare/lightvela-vs-chatgpt.md": {
+    "title": "LightVela กับ ChatGPT: อันไหนดีที่สุดในการสร้างผู้ช่วย AI ส่วนตัวของคุณ?",
+    "description": ""
+  },
+  "compare/lightvela-vs-genspark.md": {
+    "title": "LightVela vs Genspark: อันไหนดีที่สุดในการเป็นโฮสต์เอเจนต์ AI ของคุณ?",
+    "description": ""
+  },
+  "compare/lightvela-vs-grok-bot.md": {
+    "title": "LightVela กับ Grok Bot: อันไหนดีที่สุดในการใช้งานตัวแทน AI ส่วนตัวของคุณ?",
+    "description": "เปรียบเทียบ LightVela กับ Grok Bot สำหรับการใช้งานตัวแทน AI ส่วนตัว ตั้งแต่กิจวัตรประจำวันและการเข้าถึงข้อความไปจนถึงคอมพิวเตอร์คลาวด์และงานที่มอบหมาย"
+  },
+  "compare/lightvela-vs-mira.md": {
+    "title": "LightVela vs Mira: อะไรดีที่สุดในการใช้งานเอเจนต์ AI ส่วนตัวของคุณ?",
+    "description": "เปรียบเทียบ LightVela และ Mira ในการใช้งานเอเจนต์ AI ส่วนบุคคล ตั้งแต่กิจวัตรประจำวันและช่องทางการส่งข้อความไปจนถึงการทำงานเป็นทีม Telegram และการดำเนินการตามการแชทเป็นครั้งแรก"
+  },
+  "compare/lightvela-vs-viktor.md": {
+    "title": "LightVela vs Viktor.com: อันไหนดีที่สุดในการใช้งานตัวแทน AI ส่วนตัวของคุณ?",
+    "description": "เปรียบเทียบ LightVela และ Viktor.com สำหรับการใช้งานเอเจนต์ AI ส่วนตัว ตั้งแต่ความช่วยเหลือส่วนตัวต่อเนื่องไปจนถึงเวิร์กโฟลว์ทีมที่แชร์ข้ามเครื่องมือธุรกิจ"
+  },
+  "compare/lightvela-vs-today-ai.md": {
+    "title": "LightVela vs Today.AI: อันไหนดีที่สุดสำหรับผู้ช่วย AI ส่วนตัวที่เปิดใช้งานตลอดเวลา?",
+    "description": "เปรียบเทียบ LightVela และ Today.AI สำหรับผู้ช่วย AI ส่วนตัวที่เปิดใช้งานอยู่ตลอดเวลา ตั้งแต่การโฮสต์ตัวแทนที่ชัดเจนและงานที่กำหนดเวลา ไปจนถึงบริบทส่วนตัวเชิงรุกข้ามอุปกรณ์"
+  },
+  "hermes-agent/01-hermes-vs-openclaw.md": {
+    "title": "Hermes Agent vs OpenClaw: ความแตกต่างพื้นฐานระหว่างเอเจนต์โอเพ่นซอร์สสองตัว",
+    "description": "เปรียบเทียบ Hermes Agent และ OpenClaw ข้ามหน่วยความจำระยะยาว ระบบนิเวศทักษะ และการรวมหลายแพลตฟอร์ม เพื่อดูเอเจนต์โอเพ่นซอร์สที่เหมาะกับกรณีการใช้งานของคุณ"
+  },
+  "hermes-agent/02-why-hermes-remembers-you.md": {
+    "title": "เอเจนต์ Hermes จำคุณได้อย่างไร?",
+    "description": "ค้นพบระบบความจำระยะยาวสี่ชั้นที่อยู่ด้านหลัง Hermes เอเจนต์: USER.md, MEMORY.md, เก็บบันทึกการสนทนา SQLite+FTS5 และทักษะ รวมถึงวิธีการเขียนและเรียกคืนที่ออกแบบมา"
+  },
+  "hermes-agent/03-user-md-vs-memory-md.md": {
+    "title": "ทำไม USER.md และ MEMORY.md ไม่สามารถรวมกันได้",
+    "description": "ข้อจำกัดสามประการที่เข้มงวด — ความจุ กลยุทธ์การบรรทุก และการอัปเดตเชิงความหมาย — อธิบายเหตุผลที่ Hermes Agent เก็บความทรงจำระยะยาวในสองบันทึกแยกกัน แทนที่จะเป็นไฟล์รวมเดียว"
+  },
+  "hermes-agent/04-hermes-memory-curation.md": {
+    "title": "Hermes การจัดเก็บความทรงจำระยะยาวของเอเจนต์: กฎเหล็กสี่ข้อสำหรับ \"น้อยแต่แม่นยำ\"",
+    "description": "ทำลายกฎเหล็กสี่ข้อ — ผูกมัด แข็งตัว โปร่งใส รวมตัว — ซึ่งรับประกันความทรงจำระยะยาวของตัวแทน Hermes แม่นยำและไม่บวม"
+  },
+  "hermes-agent/05-memory-vs-skill.md": {
+    "title": "ความจำกับทักษะ: ความจำแบบบอกเล่าและความจำแบบกระบวนการ",
+    "description": "บนพื้นฐานของความทรงจำแบบประกาศและแบบกระบวนการจากวิทยาศาสตร์ด้านสติปัญญา อธิบายเหตุผลที่ Hermes เอเย่นต์แบ่งความทรงจำระยะยาวออกเป็นความทรงจำและทักษะ และความแตกต่างในด้านตัวกระตุ้น รูปแบบ และความเร็วของวิวัฒนาการ"
+  },
+  "hermes-agent/06-model-vs-agent-layer.md": {
+    "title": "คุณสามารถเปลี่ยน Hermes สมองของตัวแทนได้หรือไม่? ชั้นของโมเดล vs ชั้นของตัวแทน",
+    "description": "ทราบความรับผิดชอบใดที่เป็นของโมเดลและความรับผิดชอบใดที่ยังคงอยู่กับเอเจนต์ รวมถึงอัตลักษณ์ ความทรงจำ เครื่องมือ ช่องทาง และงานที่กำหนดเวลา"
+  },
+  "hermes-agent/07-message-gateway.md": {
+    "title": "ตัวแทนสามารถปรากฏผ่านหลายแอปส่งข้อความได้อย่างไร?",
+    "description": "ดูวิธีที่เกตเวย์การส่งข้อความเปลี่ยนเหตุการณ์ช่องทางเฉพาะเป็นการสนทนาของเอเจนต์ที่ใช้ร่วมกันในขณะเดียวกันก็ยังคงการกำหนดเส้นทาง บริบท และการตอบกลับอยู่"
+  },
+  "hermes-agent/08-automation-scheduling.md": {
+    "title": "เอเจนต์ Hermes จะติดต่อคุณตามตารางเวลาอย่างไร?",
+    "description": "เข้าใจเหตุการณ์ ตาราง เวลาในการดำเนินการ และชั้นการส่งข้อมูลที่ช่วยให้เอเจนต์สามารถทำงานซ้ำได้อย่างเชิงรุก"
+  },
+  "hermes-agent/09-model-switching-memory.md": {
+    "title": "การเปลี่ยนโมเดลทำให้เอเจนต์ลืมหรือไม่?",
+    "description": "เรียนรู้วิธีการออกแบบโมเดล บุคลิก และความทรงจำที่แยกออกช่วยให้เอเจนต์สลับเครื่องยนต์การอ้างเหตุผลโดยไม่สูญเสียบริบทระยะยาว"
+  },
+  "hermes-agent/10-persona-user-memory.md": {
+    "title": "บุคลิกของเอเจนต์มาจากไหน Hermes?",
+    "description": "สำรวจวิธีที่การกำหนดลักษณะตัวตน ตัวเลือกของผู้ใช้ และความทรงจำระยะยาว ทำงานร่วมกันเพื่อสร้างบุคลิกของเอเจนต์ที่มั่นคงแต่ปรับเปลี่ยนได้ง่าย"
+  },
+  "hermes-agent/11-workspace-context-storage.md": {
+    "title": "เอเจนต์ Hermes วางไฟล์ไว้ที่ไหน?",
+    "description": "ทราบบทบาทที่แตกต่างของไดเรกทอรีงาน ไฟล์บริบท และที่เก็บถาวรเมื่อเอเจนสร้างและนำงานกลับมาใช้ใหม่"
+  },
+  "hermes-agent/12-skills-self-improvement.md": {
+    "title": "ทำไมเอเย่นต์ถึงเก่งขึ้นเมื่อใช้งาน?",
+    "description": "ดูวิธีที่ทักษะสามารถนำกลับมาใช้ใหม่เพื่อเปลี่ยนรูปแบบการทำงานที่ประสบความสำเร็จให้กลายเป็นคำแนะนำที่ยั่งยืนซึ่งทำให้ภารกิจของตัวแทนในอนาคตน่าเชื่อถือมากขึ้น"
+  },
+  "contact-us.md": {
+    "title": "ติดต่อเรา",
+    "description": "เข้าร่วมชุมชน LightVela พูดคุยโดยตรงกับทีมผลิตภัณฑ์ และแบ่งปันคำถามเกี่ยวกับการใช้งาน ข้อเสนอแนะเกี่ยวกับผลิตภัณฑ์ รวมถึงความคิดเห็นจากโลกแห่งความเป็นจริง"
+  }
+}

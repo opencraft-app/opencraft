@@ -1,0 +1,18 @@
+{
+  "schema": "chatserver.tat-managed-computer-test/v1",
+  "computer": {
+    "id": "0198f4c2-7a35-7f14-86ab-2e57552e473f",
+    "serverId": "0198f4c2-7a31-7c91-a6d2-7d76f9188c38",
+    "tatRegion": "ap-shanghai",
+    "tatInstanceKind": "managed",
+    "tatInstanceId": "rins-demo0001",
+    "osType": "linux",
+    "lifecycleState": "active",
+    "tatAgentState": "online"
+  },
+  "invariants": [
+    "rins 托管实例与原生实例使用同一 TAT 生命周期接口",
+    "Computer 不持有平台 Token",
+    "Computer 不连接平台 WebSocket"
+  ]
+}

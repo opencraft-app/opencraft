@@ -786,6 +786,52 @@ func (p *TencentCloudProvider) stopInstanceWithMode(ctx context.Context, instanc
 	}
 }
 
+// SubmitStartInstance mirrors StopInstance: accept the cloud operation without
+// waiting for RUNNING. The Sandbox GET path reconciles completion.
+func (p *TencentCloudProvider) SubmitStartInstance(ctx context.Context, instance CloudInstanceRef) error {
+	instance, err := normalizeCloudInstanceRef(instance)
+	if err != nil {
+		return err
+	}
+	client, err := p.cvmClientForRegion(instance.Region)
+	if err != nil {
+		return err
+	}
+	state, err := describeInstanceState(ctx, client, instance.CloudID)
+	if err != nil {
+		return fmt.Errorf("check state before starting %s: %w", instance.CloudID, err)
+	}
+	switch state {
+	case "RUNNING", "STARTING":
+		return nil
+	case "STOPPED":
+	default:
+		return fmt.Errorf("start %s: unsupported instance state %s", instance.CloudID, state)
+	}
+	req := cvm.NewStartInstancesRequest()
+	req.InstanceIds = []*string{common.StringPtr(instance.CloudID)}
+	req.SetContext(ctx)
+	err = retryRateLimit(ctx, "StartInstances", func() error {
+		_, e := client.StartInstances(req)
+		return e
+	})
+	if err == nil {
+		return nil
+	}
+	if sdk, ok := err.(*tcerrors.TencentCloudSDKError); ok {
+		switch sdk.Code {
+		case "UnsupportedOperation.InstanceStateRunning", "InvalidInstanceState.Running":
+			return nil
+		case "OperationDenied.InstanceOperationInProgress":
+			state, stateErr := describeInstanceState(ctx, client, instance.CloudID)
+			if stateErr == nil && (state == "STARTING" || state == "RUNNING") {
+				return nil
+			}
+		}
+	}
+	return err
+}
+
 // StartInstance boots a previously stopped instance back to RUNNING.
 // Reserved for renewal/restore flows that follow trade pass isolation.
 func (p *TencentCloudProvider) StartInstance(ctx context.Context, instance CloudInstanceRef) error {

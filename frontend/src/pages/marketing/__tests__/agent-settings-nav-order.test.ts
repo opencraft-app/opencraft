@@ -48,7 +48,7 @@ describe("Agent settings navigation groups", () => {
     const manage = settingsGroups.slice(manageStart, labsStart);
     const labs = settingsGroups.slice(labsStart);
 
-    expect(daily).toMatch(/id: "channel"[\s\S]*id: "skill"[\s\S]*id: "automations"/);
+    expect(daily).toMatch(/id: "channel"[\s\S]*id: "skill"[\s\S]*id: "connectors"[\s\S]*id: "automations"/);
     expect(daily).not.toContain('id: "model"');
     expect(daily).not.toContain('id: "website"');
     expect(growth.match(/id: "(buddy|memory|achievement)"/g)).toEqual([
@@ -84,7 +84,7 @@ describe("Agent settings navigation groups", () => {
     const settingsGroups = readNavigationSource();
 
     expect(settingsGroups).toContain('id: "website"');
-    expect(settingsGroups).not.toMatch(/isGlobal\s*&&\s*showHiddenAgentTools/);
+    expect(settingsGroups).toMatch(/id: "labs",[\s\S]*?sections: \[\s*\{\s*id: "website",/);
   });
 
   it("将工作台导航标记为当前用户的个人工作台", () => {

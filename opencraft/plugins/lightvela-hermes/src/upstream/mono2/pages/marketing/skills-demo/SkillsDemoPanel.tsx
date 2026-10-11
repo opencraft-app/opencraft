@@ -11,6 +11,8 @@
  * 仅国际站渲染（见 agent-skills-panel.tsx 的 isGlobal 分支）。
  */
 
+import { localizeMalay } from '../../../i18n/malay-copy';
+import { localizeThai } from '../../../i18n/thai-copy';
 import {
   ArrowLeft,
   BookOpen,
@@ -380,9 +382,13 @@ function getSkillOverview(
 }
 
 function getCategoryLabel(label: SkillCategoryLabel, overviewLocale: CuratedSkillOverviewLocale): string {
+  if (overviewLocale === "th-TH") return localizeThai(label.en);
+  if (overviewLocale === "ms-MY") return localizeMalay(label.en);
+
   const labelByLocale: Partial<Record<CuratedSkillOverviewLocale, string>> = {
     "zh-CN": label.zh,
-    "id-ID": label.id, es: label.es, "ja-JP": label.ja, "ko-KR": label.ko ?? label.en,
+    "id-ID": label.id,
+    es: label.es, "ja-JP": label.ja, "ko-KR": label.ko ?? label.en,
     "en-US": label.en,
   };
 
@@ -1393,7 +1399,7 @@ function FeaturedSkillCard({
           className="absolute inset-0 size-full object-cover"
         />
         <div
-          className={cn("absolute inset-0", entry.id !== "lh6-anniversary-blessing" && "bg-[linear-gradient(90deg,rgba(0,0,0,0.34)_0%,rgba(0,0,0,0.16)_55%,rgba(0,0,0,0.04)_100%)]")}
+          className="absolute inset-0 bg-[linear-gradient(90deg,rgba(0,0,0,0.34)_0%,rgba(0,0,0,0.16)_55%,rgba(0,0,0,0.04)_100%)]"
           aria-hidden="true"
         />
         <div className="relative z-10 max-w-[64%]">
@@ -1920,6 +1926,10 @@ export function SkillsDemoPanel({
   // 印尼语、西班牙语、日语、韩语，其余回退英文。未收录条目回退英文。
   const overviewLocale: CuratedSkillOverviewLocale = isChinese
     ? "zh-CN"
+    : i18n.resolvedLanguage === "th-TH"
+      ? "th-TH"
+    : i18n.resolvedLanguage === "ms-MY"
+      ? "ms-MY"
     : i18n.resolvedLanguage === "id-ID"
       ? "id-ID"
       : i18n.resolvedLanguage?.startsWith("es")
@@ -1931,10 +1941,20 @@ export function SkillsDemoPanel({
             : "en-US";
   const isDomestic = mode === "domestic";
   const featuredSkillCopy: Record<string, { title: string; subtitle: string; description: string }> = {
-    "lh6-anniversary-blessing": {
-      title: t("精选技能：轻量云六周年送祝福"),
-      subtitle: t("送祝福，赢实例"),
-      description: t("为轻量云六周年生成祝福文案与海报，支持多场景风格定制"),
+    "tencent-docs": {
+      title: t("精选技能：腾讯文档"),
+      subtitle: t("文档协作，一站完成"),
+      description: t("创建、编辑和管理文档、表格与知识库"),
+    },
+    "parenting-expert": {
+      title: t("精选技能：育儿大师.Skill"),
+      subtitle: t("陪伴成长，改善沟通"),
+      description: t("面向 0–18 岁家庭的养育与沟通支持"),
+    },
+    "dev-expert": {
+      title: t("精选技能：编程专家.Skill"),
+      subtitle: t("代码生成、审查与调试"),
+      description: t("覆盖开发、测试和工程实践的编程助手"),
     },
     "suno-lyrics-to-song": {
       title: t("精选技能：Suno歌词成曲"),
@@ -2231,7 +2251,8 @@ export function SkillsDemoPanel({
     configuredSkills.forEach((skill) => {
       const shortSlugKey = `${skill.registry}:${skill.slug.trim().toLowerCase()}`;
       const identity = skillIdentity(skill);
-      identities.set(shortSlugKey, identities.has(shortSlugKey) ? null : identity);
+      const existing = identities.get(shortSlugKey);
+      identities.set(shortSlugKey, existing === undefined || existing === identity ? identity : null);
     });
     return identities;
   }, [isDomestic]);

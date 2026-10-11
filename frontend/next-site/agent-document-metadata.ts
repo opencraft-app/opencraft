@@ -11,6 +11,8 @@ const AGENT_DOCUMENT_TITLE_BY_LOCALE: Record<I18nDictKey, string> = {
   'zh-CN': '我的智能体伙伴',
   'zh-Hant': '我的智能體夥伴',
   'id-ID': 'Agent Saya',
+  'ms-MY': "Ejen saya",
+  'th-TH': "ตัวแทนของฉัน",
   es: 'Mi agente',
   'ja-JP': 'マイエージェント',
   'ko-KR': '내 에이전트',

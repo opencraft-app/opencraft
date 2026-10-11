@@ -18,7 +18,11 @@ import {
   ES_LOCALE,
   ES_URL_LANG,
   ID_ID_LOCALE,
+  MS_MY_LOCALE,
+  TH_TH_LOCALE,
   ID_ID_URL_LANG,
+  MS_MY_URL_LANG,
+  TH_TH_URL_LANG,
   JA_JP_LOCALE,
   JA_JP_URL_LANG,
   KO_KR_LOCALE,
@@ -117,6 +121,8 @@ const LOCALE_TO_URL_LANG: Record<SeoLocale, PublicUrlLang> = {
   'zh-SG': 'zh-sg',
   'zh-Hant': 'zh-hant',
   'id-ID': 'id-id',
+  'ms-MY': "ms-my",
+  'th-TH': "th-th",
   es: 'es',
   'ja-JP': 'ja-jp',
   'ko-KR': 'ko-kr',
@@ -128,6 +134,8 @@ const URL_LANG_TO_LOCALE: Record<PublicUrlLang, SeoLocale> = {
   'zh-sg': 'zh-SG',
   'zh-hant': 'zh-Hant',
   'id-id': 'id-ID',
+  'ms-my': "ms-MY",
+  'th-th': "th-TH",
   es: 'es',
   'ja-jp': 'ja-JP',
   'ko-kr': 'ko-KR',
@@ -140,6 +148,8 @@ const LOCALE_TO_OG_LOCALE: Record<SeoLocale, string> = {
   // OpenGraph 无 `zh_Hant` 泛区标准；繁体站采用香港用语（OpenCC cn→hk），故用 `zh_HK`。
   'zh-Hant': 'zh_HK',
   'id-ID': 'id_ID',
+  'ms-MY': "ms_MY",
+  'th-TH': "th_TH",
   es: 'es_ES',
   'ja-JP': 'ja_JP',
   'ko-KR': 'ko_KR',
@@ -207,6 +217,32 @@ const DEFAULT_KEYWORDS: Record<SeoLocale, readonly string[]> = {
     'Discord bot',
     'Slack bot',
   ],
+  'ms-MY': [
+    "LightVela",
+    "ejen AI awan",
+    "ejen AI peribadi",
+    "Rakan AI",
+    "Hermes Agent",
+    "ejen hosting",
+    "automasi",
+    "bot Telegram",
+    "Bot WhatsApp",
+    "bot Discord",
+    "bot Slack",
+  ],
+  'th-TH': [
+    "LightVela",
+    "ตัวแทน AI บนคลาวด์",
+    "เอเจนต์ AI ส่วนตัว",
+    "เพื่อน AI",
+    "Hermes เอเจนต์",
+    "ตัวแทนโฮสติ้ง",
+    "ระบบอัตโนมัติ",
+    "บอท Telegram",
+    "บอท WhatsApp",
+    "หุ่นยนต์ Discord",
+    "หุ่นยนต์ Slack",
+  ],
   es: [
     'LightVela',
     'agente de IA en la nube',
@@ -242,14 +278,16 @@ const DEFAULT_KEYWORDS: Record<SeoLocale, readonly string[]> = {
 };
 
 export const SOFTWARE_APPLICATION_DESCRIPTIONS: Record<SeoLocale, string> = {
-  'en-US': 'LightVela is a cloud Agent hosting product for creating a long-term personal AI companion.',
-  'zh-CN': 'LightVela 是云端 Agent 托管产品，用于创建长期在线、越聊越懂你的个人 AI 伙伴。',
-  'zh-SG': 'LightVela 是云端 Agent 托管产品，用于创建长期在线、越聊越懂你的个人 AI 伙伴。',
-  'zh-Hant': 'LightVela 是雲端 Agent 託管產品，用於建立長期在線、越聊越懂你的個人 AI 夥伴。',
-  'id-ID': 'LightVela adalah produk hosting Agent berbasis cloud untuk membuat pendamping AI pribadi jangka panjang.',
-  es: 'LightVela es una plataforma de agentes de IA en la nube para crear un asistente personal siempre disponible.',
-  'ja-JP': 'LightVelaは、長期的に使える自分専用のAIアシスタントを作成するためのクラウドAIエージェント基盤です。',
-  'ko-KR': 'LightVela는 장기간 사용할 수 있는 개인 AI 어시스턴트를 만드는 클라우드 AI 에이전트 플랫폼입니다.',
+  'en-US': 'LightVela is a cloud AI agent product for creating a long-term personal AI companion.',
+  'zh-CN': 'LightVela 是云端 AI Agent 产品，用于创建长期在线、越聊越懂你的个人 AI 伙伴。',
+  'zh-SG': 'LightVela 是云端 AI Agent 产品，用于创建长期在线、越聊越懂你的个人 AI 伙伴。',
+  'zh-Hant': 'LightVela 是雲端 AI Agent 產品，用於建立長期在線、越聊越懂你的個人 AI 夥伴。',
+  'id-ID': 'LightVela adalah produk AI Agent berbasis cloud untuk membuat pendamping AI pribadi jangka panjang.',
+  es: 'LightVela es un producto de agentes de IA en la nube para crear un asistente personal siempre disponible.',
+  'ja-JP': 'LightVelaは、長期的に使える自分専用のAIアシスタントを作成するためのクラウド型AIエージェント製品です。',
+  'ko-KR': 'LightVela는 장기간 사용할 수 있는 개인 AI 어시스턴트를 만드는 클라우드 AI 에이전트 제품입니다.',
+  'ms-MY': 'LightVela ialah produk ejen AI berasaskan awan untuk mencipta rakan AI peribadi jangka panjang.',
+  'th-TH': "LightVela เป็นผลิตภัณฑ์ตัวแทน AI บนคลาวด์สำหรับสร้างเพื่อน AI ส่วนตัวระยะยาว",
 };
 
 const GLOBAL_PUBLISHED_URL_LANGS = PUBLIC_URL_LANGS.filter((lang) => lang !== ZH_CN_URL_LANG);
@@ -350,6 +388,8 @@ export function urlLangForLocale(locale: SeoLocale): PublicUrlLang {
   if (locale === ES_LOCALE) return ES_URL_LANG;
   if (locale === JA_JP_LOCALE) return JA_JP_URL_LANG;
   if (locale === KO_KR_LOCALE) return KO_KR_URL_LANG;
+  if (isGlobal && locale === TH_TH_LOCALE) return TH_TH_URL_LANG;
+  if (isGlobal && locale === MS_MY_LOCALE) return MS_MY_URL_LANG;
   if (isGlobal && locale === ID_ID_LOCALE) return ID_ID_URL_LANG;
   if (isGlobal && locale === ZH_HANT_LOCALE) return ZH_HANT_URL_LANG;
   if (isGlobal && locale.startsWith('zh')) return ZH_SG_URL_LANG;
@@ -533,7 +573,7 @@ export function SiteJsonLd() {
     },
   ];
 
-  return <JsonLd id="lightvela-site-jsonld" data={data} />;
+  return <JsonLd id="lightvela-site-jsonld" data={{ '@context': 'https://schema.org', '@graph': data }} />;
 }
 
 export function SoftwareApplicationJsonLd({ locale = DEFAULT_PUBLIC_ROUTE_LOCALE.locale }: { locale?: SeoLocale }) {

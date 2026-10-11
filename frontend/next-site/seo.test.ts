@@ -95,10 +95,11 @@ describe("next-site SEO origin", () => {
   it("omits international social sameAs links from cn structured data", async () => {
     const { OrganizationJsonLd, SiteJsonLd } = await importSeoWithRegion("cn");
 
-    const siteData = jsonLdData(SiteJsonLd());
+    const siteData = jsonLdData(SiteJsonLd()) as { '@context': string; '@graph': unknown[] };
     const organizationData = jsonLdData(OrganizationJsonLd());
 
-    expect(siteData).toEqual([
+    expect(siteData['@context'].toLowerCase()).toBe('https://schema.org');
+    expect(siteData['@graph']).toEqual([
       expect.not.objectContaining({
         sameAs: expect.arrayContaining([
           "https://discord.gg/Myh58xEMe2",
@@ -113,7 +114,9 @@ describe("next-site SEO origin", () => {
   it("keeps global structured data linked to official international profiles", async () => {
     const { OrganizationJsonLd, SiteJsonLd } = await importSeoWithRegion("global");
 
-    const [siteOrganization] = jsonLdData(SiteJsonLd()) as [{ sameAs: string[] }];
+    const siteData = jsonLdData(SiteJsonLd()) as { '@context': string; '@graph': [{ sameAs: string[] }] };
+    expect(siteData['@context'].toLowerCase()).toBe('https://schema.org');
+    const [siteOrganization] = siteData['@graph'];
     const organization = jsonLdData(OrganizationJsonLd()) as { sameAs: string[] };
 
     expect(siteOrganization.sameAs).toEqual(
@@ -146,6 +149,8 @@ describe("global public SEO URL contract", () => {
       "zh-SG": "https://lightvela.ai/zh-sg/about/",
       "zh-Hant": "https://lightvela.ai/zh-hant/about/",
       "id-ID": "https://lightvela.ai/id-id/about/",
+      "ms-MY": "https://lightvela.ai/ms-my/about/",
+      "th-TH": "https://lightvela.ai/th-th/about/",
       es: "https://lightvela.ai/es/about/",
       "ja-JP": "https://lightvela.ai/ja-jp/about/",
       "ko-KR": "https://lightvela.ai/ko-kr/about/",
@@ -172,16 +177,16 @@ describe("global public SEO URL contract", () => {
     } = await importSeoWithRegion("global");
 
     expect(SEO_PUBLIC_URL_LANGS).toEqual([
-      "en-us", "zh-sg", "zh-hant", "id-id", "es", "ja-jp", "ko-kr",
+      "en-us", "zh-sg", "zh-hant", "id-id", "ms-my", "th-th", "es", "ja-jp", "ko-kr",
     ]);
     expect(SEO_DOCS_ROUTE_LOCALES).toEqual([
-      "en-us", "zh-sg", "zh-hant", "id-id", "es", "ja-jp", "ko-kr",
+      "en-us", "zh-sg", "zh-hant", "id-id", "ms-my", "th-th", "es", "ja-jp", "ko-kr",
     ]);
     expect(SEO_ALL_PUBLIC_URL_LANGS).toEqual([
-      "zh-cn", "en-us", "zh-sg", "zh-hant", "id-id", "es", "ja-jp", "ko-kr",
+      "zh-cn", "en-us", "zh-sg", "zh-hant", "id-id", "ms-my", "th-th", "es", "ja-jp", "ko-kr",
     ]);
     expect(SEO_ALL_DOCS_ROUTE_LOCALES).toEqual([
-      "zh-cn", "en-us", "zh-sg", "zh-hant", "id-id", "es", "ja-jp", "ko-kr",
+      "zh-cn", "en-us", "zh-sg", "zh-hant", "id-id", "ms-my", "th-th", "es", "ja-jp", "ko-kr",
     ]);
     expect(buildPublicAlternates("/es/about")).toMatchObject({
       es: "https://lightvela.ai/es/about/",
@@ -279,7 +284,7 @@ describe("global public SEO URL contract", () => {
     const { prefixedPublicRouteLocale, SEO_PREFIXED_PUBLIC_URL_LANGS } = await importSeoWithRegion("global");
 
     expect([...SEO_PREFIXED_PUBLIC_URL_LANGS]).toEqual([
-      "zh-sg", "zh-hant", "id-id", "es", "ja-jp", "ko-kr",
+      "zh-sg", "zh-hant", "id-id", "ms-my", "th-th", "es", "ja-jp", "ko-kr",
     ]);
     // 默认语言只有裸路径，前缀路由一律拒绝
     expect(prefixedPublicRouteLocale("en-us")).toBeNull();
@@ -296,7 +301,7 @@ describe("global public SEO URL contract", () => {
     const { prefixedPublicRouteLocale, SEO_PREFIXED_PUBLIC_URL_LANGS } = await importSeoWithRegion("cn");
 
     expect([...SEO_PREFIXED_PUBLIC_URL_LANGS]).toEqual([]);
-    for (const lang of ["zh-cn", "en-us", "zh-sg", "zh-hant", "id-id", "es"]) {
+    for (const lang of ["zh-cn", "en-us", "zh-sg", "zh-hant", "id-id", "ms-my", "th-th", "es"]) {
       expect(prefixedPublicRouteLocale(lang)).toBeNull();
     }
   });
@@ -315,12 +320,14 @@ describe("global public SEO URL contract", () => {
     expect(canonicalDocsPath("zh-sg", ["overview"])).toBe("/zh-sg/docs/overview");
     expect(canonicalDocsPath("id-id", ["overview"])).toBe("/id-id/docs/overview");
 
-    expect(buildDocsAlternates(["overview"], ["en-us", "zh-cn", "zh-sg", "id-id"])).toEqual({
+    expect(buildDocsAlternates(["overview"], ["en-us", "zh-cn", "zh-sg", "id-id", "ms-my", "th-th"])).toEqual({
       "x-default": "https://lightvela.ai/docs/overview/",
       "zh-CN": "https://lightvela.com/docs/overview/",
       "en-US": "https://lightvela.ai/docs/overview/",
       "zh-SG": "https://lightvela.ai/zh-sg/docs/overview/",
       "id-ID": "https://lightvela.ai/id-id/docs/overview/",
+      "ms-MY": "https://lightvela.ai/ms-my/docs/overview/",
+      "th-TH": "https://lightvela.ai/th-th/docs/overview/",
     });
   });
 

@@ -4,4 +4,5 @@ metadata:
   name: trade-config
   namespace: trade
 data:
-  DIANSHI_RENEW_BASE_URL: http://43.140.62.77/v1/proxy/dianshi-order/activity_web/activity
+  DIANSHI_RENEW_PRICE_BASE_URL: http://81.71.196.13/v1/proxy/dianshi-renew-price/activity_web/activity
+  DIANSHI_RENEW_ORDER_BASE_URL: http://81.71.196.13/v1/proxy/dianshi-renew-order/activity_web/activity
