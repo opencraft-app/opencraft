@@ -12,10 +12,12 @@ import { projectCodexAttachmentNotification, projectCodexAttachmentResult } from
 import type { DuplexTransport, TransportStatus } from "@opencraft/appserver-client/transport";
 import { LOGICAL_CLIENT_FIELD } from "@opencraft/app-host-protocol";
 import { LocalAttachmentStagingService } from "@opencraft/local-agent-host/attachments/local-staging";
+import { SshAttachmentStagingService, type SshAttachmentStorage } from "./ssh-attachment-staging.js";
 import type { LocalDesktopService, LocalDesktopOwner } from "@opencraft/local-agent-host/desktop";
 import { OPENCRAFT_DESKTOP_ATTACH, OPENCRAFT_DESKTOP_RELEASE, OPENCRAFT_DESKTOP_EXTENSION, type HostDesktopCapability } from "@opencraft/appserver-protocol/desktop";
 import {
   OPENCRAFT_ATTACHMENT_STAGING_EXTENSION,
+  OPENCRAFT_METHOD_ACCESS_EXTENSION,
   OPENCRAFT_FIRST_TURN_DURABILITY_CAPABILITY,
   OPENCRAFT_THREAD_LIFECYCLE_EXTENSION,
   OPENCRAFT_THREAD_PINS_EXTENSION,
@@ -89,6 +91,8 @@ interface LocalCodexEngineOptions extends SharedCodexRoutingOptions {
 export interface RemoteCodexEngineOptions extends SharedCodexRoutingOptions {
   readonly kind: "remote";
   readonly transport: DuplexTransport;
+  readonly attachments?: Omit<SshAttachmentStorage, "request">;
+  readonly attachmentHistoryDirectory?: string;
 }
 
 const SHARED_NATIVE_METHODS: ReadonlySet<string> = new Set(CODEX_NATIVE_SHARED_METHODS);
@@ -153,7 +157,8 @@ function withCodexHostCapabilities(value: unknown, attachmentStaging: Attachment
 }
 
 export class CodexEngineAdapter implements DuplexTransport {
-  private readonly attachmentStaging: LocalAttachmentStagingService | null;
+  private readonly attachmentStaging: LocalAttachmentStagingService | SshAttachmentStagingService | null;
+  private remoteAttachmentsReady = false;
   private readonly listeners = new Set<(frame: string) => void>();
   private readonly statusListeners = new Set<(status: TransportStatus) => void>();
   private readonly pending = new Map<string, PendingRequest>();
@@ -194,7 +199,13 @@ export class CodexEngineAdapter implements DuplexTransport {
   private readonly remoteDisposers: Array<() => void> = [];
 
   constructor(private readonly options: LocalCodexEngineOptions | RemoteCodexEngineOptions) {
-    this.attachmentStaging = options.kind === "remote" ? null : new LocalAttachmentStagingService(join(options.dataDirectory, "attachments"));
+    this.attachmentStaging = options.kind === "remote"
+      ? options.attachments && options.attachmentHistoryDirectory
+        ? new SshAttachmentStagingService({ ...options.attachments,
+            isRetained: id => this.messageAttachments?.hasReference(id) === true,
+            request: (method, params) => this.requestPhysical(method, params, 120_000) })
+        : null
+      : new LocalAttachmentStagingService(join(options.dataDirectory, "attachments"));
   }
 
   private get physicalAvailable(): boolean {
@@ -249,6 +260,10 @@ export class CodexEngineAdapter implements DuplexTransport {
     this.publishStatus({ state: "connecting" });
     if (this.options.kind === "remote") {
       const transport = this.options.transport;
+      if (this.attachmentStaging && this.options.attachmentHistoryDirectory) {
+        await mkdir(this.options.attachmentHistoryDirectory, { recursive: true, mode: 0o700 });
+        this.messageAttachments = new CodexMessageAttachments(this.options.attachmentHistoryDirectory);
+      }
       this.remoteDisposers.push(transport.subscribeMessage(this.receivePhysicalLine), transport.subscribeStatus(status => {
         if (["closing", "closed"].includes(this.statusValue.state)) return;
         if (status.state === "failed" || status.state === "closed") this.rejectInternalRequests(new Error("Remote connection was interrupted"));
@@ -367,7 +382,8 @@ export class CodexEngineAdapter implements DuplexTransport {
       return;
     }
     const id = responseId(message.id);
-    if (this.options.kind === "remote" && typeof message.method === "string" && !SHARED_NATIVE_METHODS.has(message.method)) {
+    if (this.options.kind === "remote" && typeof message.method === "string" && !SHARED_NATIVE_METHODS.has(message.method)
+      && !(this.remoteAttachmentsReady && (message.method === "attachment/stage" || message.method === "attachment/remove"))) {
       if (id !== null) this.emit({ id, error: { code: -32601, message: "This operation is unavailable on the remote connection" } }, clientId);
       return;
     }
@@ -520,6 +536,8 @@ export class CodexEngineAdapter implements DuplexTransport {
     this.revokeDesktopOwners();
     this.closeOperation = (async () => {
       for (const dispose of this.remoteDisposers.splice(0)) dispose();
+      this.rejectInternalRequests(new Error("Codex AppServer closed"));
+      if (this.attachmentStaging instanceof SshAttachmentStagingService) await this.attachmentStaging.close();
       if (this.options.kind === "remote") await this.options.transport.close();
       const child = this.child;
       this.child = null;
@@ -646,9 +664,23 @@ export class CodexEngineAdapter implements DuplexTransport {
         if (pending.method === "initialize") {
           this.physicalInitializePending = false;
           if ("result" in message) {
-            this.initializeResult = this.attachmentStaging
-              ? withCodexHostCapabilities(message.result, this.attachmentStaging.capability, this.desktopService?.capability())
-              : projectSharedNativeCodexInitialize(message.result);
+            if (this.attachmentStaging instanceof SshAttachmentStagingService) {
+              this.remoteAttachmentsReady = this.attachmentStaging.initialize(record(message.result).codexHome);
+              const shared = projectSharedNativeCodexInitialize(message.result);
+              this.initializeResult = shared;
+              if (this.remoteAttachmentsReady) {
+                const capabilities = record(shared.capabilities);
+                this.initializeResult = { ...shared, capabilities: { ...capabilities, extensions: {
+                  ...record(capabilities.extensions),
+                  [OPENCRAFT_ATTACHMENT_STAGING_EXTENSION]: this.attachmentStaging.capability,
+                  [OPENCRAFT_METHOD_ACCESS_EXTENSION]: { version: 1, methods: [...CODEX_NATIVE_SHARED_METHODS, "attachment/stage", "attachment/remove"] },
+                } } };
+              }
+            } else {
+              this.initializeResult = this.attachmentStaging
+                ? withCodexHostCapabilities(message.result, this.attachmentStaging.capability, this.desktopService?.capability())
+                : projectSharedNativeCodexInitialize(message.result);
+            }
             message = { ...message, result: this.initializeResult };
             void this.writePhysical({ method: "initialized", params: {} })?.catch(() => undefined);
           }

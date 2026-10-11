@@ -196,8 +196,8 @@ export async function startHeadlessServer(options = {}) {
       physicalHostLifetime: "server",
       createTransport(hostId) {
         const remote = remoteServers.get(hostId);
-        if (remote) return createSshCodexEngineAdapter(remote);
-        if (hostId.startsWith("ssh:")) return createSshCodexEngineAdapter(sshManagement.store.binding(hostId));
+        if (remote) return createSshCodexEngineAdapter(remote, dataDirectory);
+        if (hostId.startsWith("ssh:")) return createSshCodexEngineAdapter(sshManagement.store.binding(hostId), dataDirectory);
         if (hostId !== "local-codex") throw new Error(`Unknown server Host ${hostId}`);
         return options.createCodexTransport?.() ?? new CodexEngineAdapter({
           executable: options.codexExecutable ?? join(root, "runtime/codex/bin/codex"),

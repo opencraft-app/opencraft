@@ -68,7 +68,7 @@ test("actual SSH transport + shared broker + Runtime restores paginated items, o
     await runtime.connect();
     assert.equal(runtime.resources.host.canRequest?.("thread/turns/list"), true);
     assert.equal(runtime.resources.host.canRequest?.("thread/queue/add"), false);
-    assert.deepEqual(runtime.resources.threads.capabilities?.(), { fork: true, rename: true, archive: true, delete: false });
+    assert.deepEqual(runtime.resources.threads.capabilities?.(), { fork: true, rename: true, archive: true, delete: false, pin: false });
     assert.equal(runtime.resources.attachments.capabilities(), null);
     assert.equal(runtime.resources.goals.capability(), null);
     await runtime.resources.composerCatalog.listSkills();

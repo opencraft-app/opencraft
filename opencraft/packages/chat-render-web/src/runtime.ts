@@ -11,7 +11,7 @@ import { ShikiWebExtension } from "./extensions/shiki/plugin";
 import { BaseCodeBlockRenderer } from "./renderers/code/code-block";
 import { createImageRenderer } from "./renderers/media/image-renderer";
 import { proseNodeKinds, ProseRenderer } from "./renderers/prose/prose-renderer";
-import { createFileCitationRenderer, createInlineMarkdownFileRenderer, createLinkRenderer, createMediaMarkdownFileRenderer, createReferenceRenderer, mediaMarkdownPath } from "./renderers/resource-link/resource-link";
+import { createFileCitationRenderer, createInlineMarkdownFileRenderer, createLinkRenderer, createMediaFileRenderer, createReferenceRenderer, mediaFilePath } from "./renderers/resource-link/resource-link";
 import { TableRenderer } from "./renderers/table/table-renderer";
 import { ChatEnhancementService } from "./services/chat-enhancement-service";
 
@@ -32,12 +32,12 @@ const WebBuiltinRenderers = Object.assign(function WebBuiltinRenderers(ctx: Cont
       component: createInlineMarkdownFileRenderer(ctx.chatResourcePolicies),
     }),
     ctx.chatNodeRenderers.register({
-      name: "web-media-markdown-file",
+      name: "web-media-file",
       priority: 1,
       kinds: ["text"],
       matches: (node, context) => node.kind === "text" && !context.streaming
-        && context.openResource !== undefined && mediaMarkdownPath(node.text) !== null,
-      component: createMediaMarkdownFileRenderer(ctx.chatResourcePolicies),
+        && context.openResource !== undefined && mediaFilePath(node.text) !== null,
+      component: createMediaFileRenderer(ctx.chatResourcePolicies),
     }),
     ctx.chatNodeRenderers.register({
       name: "web-code-fallback",
