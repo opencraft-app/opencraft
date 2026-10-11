@@ -1,3 +1,21 @@
+---
+id: custom-auto-vision-fix
+type: task
+scope: 平台默认模型图片能力修复与合并请求交付
+triggers: ["custom auto vision"]
+owner: wisp/mono2-maintainers
+authority: primary
+source_of_truth:
+  - ctl/pkg/instance/async.go
+  - frontend/src/pages/marketing/agent-model-config/hermes-model-config-command.ts
+status: active
+reviewed_at: 2026-10-11
+review_due: 2026-11-30
+revision: 1.0.0
+precedence: task
+derived: false
+---
+
 # custom/auto 新实例与恢复默认配置修复
 
 ## goal
@@ -17,7 +35,7 @@
 
 ## history_context
 - current_design_refs: docs/engineering/domains/agent-gateway-runtime.md；frontend/openspec/changes/2026-09-03-configured-model-provider-switch-design.md。
-- relevant_evolution: 原实现 checkout 468da9350；MR 分支基于本地缓存 origin/master 3bc4384e5（2026-10-10），fetch 因 git.woa.com DNS 失败，未确认远端最新；Hermes 官方源码说明模型级字段与热读取；现有新建链路只传模型 ID/名称。
+- relevant_evolution: 原实现 checkout 468da9350；MR 分支已 fetch 并 rebase 当前 origin/master 9efa2102f；原 DNS 问题已恢复，复用迁移目录的既有 Git 与工蜂认证；Hermes 官方源码说明模型级字段与热读取；现有新建链路只传模型 ID/名称。
 - superseded_refs: input 字段不能代替 Hermes supports_vision；镜像不属于本次修复面。
 
 ## acceptance
@@ -64,6 +82,7 @@
 - 完整 CTL 包门禁仍需 Docker 环境；实际运行实例与网关请求未验证。
 
 ## validation
+- 远端恢复后更新到当前主干 9efa2102f，当前 instance 包测试（跳过既有 Docker 用例）通过，go vet 通过；同步闭包 136 文件通过。
 - MR 分支配置套件重新执行：7 files / 234 tests passed。
 - MR 分支 CTL 包测试因新主干 OpenTelemetry sdk/metric v1.39.0 缓存缺失，GOPROXY=off 无法解析，尚未编译；不沿用旧基线结果宣称新基线通过。
 - 已有工蜂技能连接发现完成：默认及宿主配置无 gongfeng 连接；git.woa.com DNS 不可用。
@@ -80,4 +99,7 @@
 - 测试日志 /tmp/custom-auto-*.log；不含真实凭据。
 
 ## handoff
-- MR 分支 fix/custom-auto-vision-20261011，待本地提交、生成副本独立提交和 push；网络阻碍远端交付，不宣称 MR 已创建。验证缺口须在正常 CI 补齐。
+- 真源与 OpenCraft 生成副本分开提交，分支 fix/custom-auto-vision-20261011，目标 master。
+- 远端连接与已有工蜂认证已恢复；用户已授权 push 与创建 MR，未授权合并或发布。
+- 新主干 instance 包测试（跳过既有 Docker 用例）、go vet、同步和文档检查通过；完整前端构建、Docker 用例及线上网关请求尚未验证。
+- 当前主干配置套件 7 文件 / 235 测试通过；前端检查结果记录在 MR 描述中。

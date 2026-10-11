@@ -1,7 +1,26 @@
+---
+id: custom-auto-vision-fix-checkpoint
+type: task
+scope: 默认模型图片能力修复的交接状态
+triggers: ["custom auto vision"]
+owner: wisp/mono2-maintainers
+authority: primary
+source_of_truth:
+  - ctl/pkg/instance/async.go
+  - frontend/src/pages/marketing/agent-model-config/hermes-model-config-command.ts
+status: active
+reviewed_at: 2026-10-11
+review_due: 2026-11-30
+revision: 1.0.0
+precedence: task
+derived: false
+---
+
 ## stage
-源码修复与聚焦验证完成；完整发布门禁未全通过，用户已授权提交 MR；尚未发布。
+真源与生成副本已独立提交并更新到当前主干；既有认证验证通过，准备推送 MR，尚未发布。
 
 ## verified
+- 当前主干 9efa2102f 上 instance 包测试（跳过一个 Docker 用例）、go vet、136 文件同步检查通过。
 - MR 新基线配置套件 234 tests passed；下面其他验证来自原实现基线，不能代替新基线完整门禁。
 - CTL custom/auto 写入后合并并回读 supports_vision=true，ACLI/harness/legacy/幂等测试通过。
 - 恢复默认配置补齐能力，移除旧顶层能力覆盖，保存失败回滚；配置套件 234 tests passed。
@@ -21,8 +40,8 @@
 - 不把筛选 Node 测试的文件级 pass 当作具体功能测试通过。
 
 ## restore
-- /data/mono2-custom-auto-vision-20261011，基于缓存 origin/master 3bc4384e5；本任务业务变更仅 ctl、frontend helper、OpenCraft 生成副本；现有其他脏文件不属于本任务。
+- /data/mono2-custom-auto-vision-20261011，已 rebase 当前 origin/master 9efa2102f；本任务业务变更仅 ctl、frontend helper、OpenCraft 生成副本；现有其他脏文件不属于本任务。
 - 详情见 2026-10-11-custom-auto-vision-fix.md；日志 /tmp/custom-auto-*.log。
 
 ## next_action
-- 按用户授权创建两个本地提交（真源、生成副本），尝试 push/MR；DNS 和缺失连接妨碍远端交付时保留明确证据。新基线 CTL 缺 OpenTelemetry 缓存，完整构建/Docker 门禁待正常 CI；镜像无需修改。
+- 使用已恢复连接推送 fix/custom-auto-vision-20261011 并创建面向 master 的 MR；新基线 Go 包测试（跳过 Docker 用例）与静态检查已通过；继续前端检查，完整构建及 Docker 门禁待 CI。MR 描述保存在 /tmp/custom-auto-mr-description.md。
