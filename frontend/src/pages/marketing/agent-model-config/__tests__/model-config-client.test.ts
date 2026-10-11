@@ -123,7 +123,7 @@ describe("reset to the platform default model", () => {
       { type: "resetToPlatformDefault", apiKey: "platform-default-secret", model: { ...platformModel, id: "text-model" } },
       {},
     );
-    expect(reset.config.providers.custom.models["text-model"]).toEqual({ lightvela_configured: true });
+    expect(reset.config).toHaveProperty("providers.custom.models.text-model", { lightvela_configured: true });
   });
 
   it("rolls back when the runtime drops auto's vision declaration", () => {
