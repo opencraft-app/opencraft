@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pin an existing Hermes source package while preserving profiles and sessions."""
+"""Upgrade via official ACLI with a fixed COS target and verify actual runtime."""
 from __future__ import annotations
 
 import hashlib
@@ -13,7 +13,6 @@ import stat
 import subprocess
 import tarfile
 import tempfile
-import time
 import urllib.request
 
 
@@ -87,85 +86,36 @@ def environment_checks(account):
     return result
 
 
-def install_pin(account, archive_path: Path, expected: str, log, identity: Path | None = None):
-    runtime_home = Path(account.pw_dir)
-    data_home = runtime_home / '.hermes'
-    runtime_dir = data_home / 'hermes-agent'
-    identity = identity if identity is not None else Path('/etc/acli/identity.yaml')
+def install_pin(account, archive_path: Path, expected: str, log, *, blueprint: str, cos_version: str, display_version: str):
+    runtime_dir = Path(account.pw_dir) / '.hermes/hermes-agent'
+    identity = Path('/etc/acli/identity.yaml')
     before = versions(account, runtime_dir, identity)
     if all(value == expected for value in before.values()):
         return dict(before, changed=False)
-    if not runtime_dir.is_dir() or runtime_dir.is_symlink():
-        raise RuntimeError('existing managed runtime directory missing or symlinked')
-    if shutil.disk_usage(data_home).free < 1024 ** 3:
-        raise RuntimeError('insufficient space for preserved runtime backup')
-    identity_before = identity.read_bytes()
-    stage = Path(tempfile.mkdtemp(prefix='.hermes-runtime-stage-', dir=data_home))
-    backup_root = data_home / '.runtime-backups'
-    backup_root.mkdir(mode=0o700, exist_ok=True)
-    backup_root.chmod(0o700)
-    backup = backup_root / ('hermes-agent-' + str(time.time_ns()))
-    switched = False
-    runtime_env, units = active_gateway_units(account)
-    stopped = []
-    try:
-        with tarfile.open(archive_path, 'r:gz') as archive:
-            archive.extractall(stage, members=checked_members(archive))
-        new_dir = stage / 'hermes-agent'
-        if source_version(new_dir / 'pyproject.toml') != expected:
+    with tarfile.open(archive_path, 'r:gz') as archive:
+        checked_members(archive)
+        project = archive.extractfile('hermes-agent/pyproject.toml').read().decode()
+        section = re.search(r'(?ms)^\[project\]\s*\n(.*?)(?=^\[|\Z)', project)
+        match = re.search(r'(?m)^version\s*=\s*["\x27]([^"\x27]+)', section.group(1)) if section else None
+        if not match or match.group(1) != expected:
             raise RuntimeError('pinned archive source version differs from expected version')
-        installer = new_dir / 'scripts/install.sh'
-        if not installer.is_file() or installer.is_symlink():
-            raise RuntimeError('pinned installer missing or symlinked')
-        for unit in units:
-            runtime_command(account, [*runtime_env, 'stop', unit], stdout=log, stderr=log, timeout=60)
-            stopped.append(unit)
-        runtime_dir.rename(backup)
-        new_dir.rename(runtime_dir)
-        switched = True
-        shutil.chown(runtime_dir, user=account.pw_uid, group=account.pw_gid)
-        subprocess.run(['chown', '-R', f'{account.pw_uid}:{account.pw_gid}', str(runtime_dir)], check=True, stdout=log, stderr=log)
-        for stage_name in ('venv', 'python-deps', 'node-deps'):
-            runtime_command(account, ['bash', str(runtime_dir / 'scripts/install.sh'), '--skip-setup', '--dir', str(runtime_dir), '--hermes-home', str(data_home), '--non-interactive', '--stage', stage_name], stdout=log, stderr=log, timeout=600)
-        uv = runtime_home / '.local/bin/uv'
-        if not uv.is_file():
-            raise RuntimeError('runtime uv executable missing')
-        python = runtime_dir / 'venv/bin/python'
-        runtime_command(account, [str(uv), 'pip', 'install', '--python', str(python), '--no-deps', '--reinstall-package', 'hermes-agent', '-e', str(runtime_dir)], stdout=log, stderr=log, timeout=180)
-        runtime_command(account, [str(uv), 'pip', 'install', '--python', str(python), '--index-url', 'https://mirrors.tencent.com/pypi/simple', '--extra-index-url', 'https://mirrors.cloud.tencent.com/pypi/simple', 'lark-oapi==1.5.3', 'qrcode==7.4.2'], stdout=log, stderr=log, timeout=180)
-        after = versions(account, runtime_dir, identity)
-        if any(after[key] != expected for key in ('cliVersion', 'importVersion', 'distributionVersion')):
-            raise RuntimeError('installed runtime version verification failed')
-        checks = environment_checks(account)
-        if not all(checks.values()):
-            raise RuntimeError('runtime environment checks failed')
-        identity_text = identity_before.decode()
-        identity_text, count = re.subn(r'(?m)^runtime_version:.*$', 'runtime_version: ' + expected, identity_text)
-        if not count:
-            identity_text += '\nruntime_version: ' + expected + '\n'
-        identity.write_text(identity_text)
-        for unit in stopped:
-            runtime_command(account, [*runtime_env, 'start', unit], stdout=log, stderr=log, timeout=60)
-            runtime_command(account, [*runtime_env, 'is-active', '--quiet', unit], stdout=log, stderr=log, timeout=20)
-        after = versions(account, runtime_dir, identity)
-        if any(value != expected for value in after.values()):
-            raise RuntimeError('final version verification failed')
-        return dict(after, changed=True, gatewayUnitsRestored=len(stopped), previousSourcePreserved=True, **checks)
-    except BaseException:
-        if switched:
-            for unit in stopped:
-                subprocess.run(['sudo', '-u', account.pw_name, '-H', *runtime_env, 'stop', unit], stdout=log, stderr=log, timeout=60)
-            failed = backup_root / ('failed-' + str(time.time_ns()))
-            runtime_dir.rename(failed)
-            backup.rename(runtime_dir)
-            identity.write_bytes(identity_before)
-        elif backup.exists() and not runtime_dir.exists():
-            backup.rename(runtime_dir)
-        for unit in stopped:
-            subprocess.run(['sudo', '-u', account.pw_name, '-H', *runtime_env, 'start', unit], stdout=log, stderr=log, timeout=60)
-        raise
-    finally:
-        shutil.rmtree(stage)
+    runtime_env, units = active_gateway_units(account)
+    # An available backend command may still carry stale blueprint -> COS mappings.
+    # Refresh before starting the official transaction; pass the fixed COS target
+    # explicitly so a missing mapping cannot silently select its default package.
+    runtime_command(account, ['acli', 'bundle-update'], stdout=log, stderr=log, timeout=180)
+    runtime_command(account, ['acli', 'backend', 'upgrade-start', '--blueprint-id', blueprint,
+                    '--cos-version', cos_version, '--display-version', display_version,
+                    '--wait=true', '--force=true'], stdout=log, stderr=log, timeout=1100)
+    after = versions(account, runtime_dir, identity)
+    if any(value != expected for value in after.values()):
+        raise RuntimeError('official upgrade completed but actual runtime version differs from target')
+    for unit in units:
+        runtime_command(account, [*runtime_env, 'is-active', '--quiet', unit], stdout=log, stderr=log, timeout=20)
+    checks = environment_checks(account)
+    if not all(checks.values()):
+        raise RuntimeError('runtime environment checks failed')
+    return dict(after, changed=True, gatewayUnitsVerified=len(units), officialBackendUpgrade=True, **checks)
 
 
 def main():
@@ -176,6 +126,13 @@ def main():
         raise ValueError('invalid pinned version or checksum')
     if not url.startswith('https://hermes-code-1325194254.cos.ap-guangzhou.myqcloud.com/hermes/'):
         raise ValueError('unexpected archive origin')
+    blueprint = os.environ['HERMES_PIN_BLUEPRINT_ID']
+    cos_version = os.environ['HERMES_PIN_COS_VERSION']
+    display_version = os.environ['HERMES_PIN_DISPLAY_VERSION']
+    if not re.fullmatch(r'lhbp-[A-Za-z0-9]+', blueprint) or not re.fullmatch(r'hermes-agent-v[0-9]{8}', cos_version) or not re.fullmatch(r'[0-9]+(?:\.[0-9]+){2}', display_version):
+        raise ValueError('invalid official backend target')
+    if not url.endswith('/' + cos_version + '/hermes-agent.tar.gz'):
+        raise ValueError('COS package differs from pinned archive')
     account = pwd.getpwnam('agentuser')
     runtime_dir = Path(account.pw_dir) / '.hermes/hermes-agent'
     before = versions(account, runtime_dir, Path('/etc/acli/identity.yaml'))
@@ -196,7 +153,7 @@ def main():
             raise RuntimeError('archive checksum mismatch')
         log_path = root / 'install.log'
         with log_path.open('w') as log:
-            report.update(install_pin(account, archive, expected, log))
+            report.update(install_pin(account, archive, expected, log, blueprint=blueprint, cos_version=cos_version, display_version=display_version))
         checks = environment_checks(account)
         if not all(checks.values()):
             raise RuntimeError('runtime environment checks failed')
