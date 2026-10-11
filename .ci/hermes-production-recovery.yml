@@ -1,0 +1,78 @@
+version: v2.0
+name: 新加坡 Hermes 失败实例定向补救
+on:
+  push:
+    branches: [master]
+    paths: [images/hermes-production-recovery-targets.json]
+concurrency:
+  group: mono2-hermes-production-recovery
+  cancel-in-progress: false
+  queue-length: 1
+stages:
+  - name: 源码检查和只读预检
+    jobs:
+      check:
+        runs-on:
+          self-hosted: true
+          pool-name: cn-pool
+        steps:
+          - checkout: self
+            with:
+              fetchDepth: 1
+          - name: 检查与预检
+            shell: bash
+            run: |
+              set -euo pipefail
+              bash .ci/runtime/check_ci_runtime.sh
+              python3 images/tests/test_hermes_production_recovery.py
+              source .ci/init.sh
+              ci_init_repo_root
+              ci_ensure_tccli
+              ci_ensure_kubectl
+              ci_ensure_jq
+              ci_load_tencentcloud_credentials
+              export TCCLI_PROFILE="${TCCLI_PROFILE:-lightclaw-ci-cn-pool}"
+              python3 .ci/runtime/commands/recover_hermes_production.py
+  - name: 确认新加坡失败实例补救
+    if: "${{ ci.branch }} == master"
+    check-in:
+      reviews:
+        flows:
+          - name: 确认定向补救
+            reviewers: [skipzhang, pablozhong, erichuyuehu, sarahzzhang]
+        description: |
+          仅处理提交中显式列出的新加坡 ALLOCATED 实例，核对原 TAT 任务已失败。
+          不刷新 Pool、不启动暂停实例、不重复升级其他成功实例。
+          刷新 ACLI bundle，使用公网 npm 源执行官方升级，保留配置与备份。
+          每台等待终态，验证官方 COMPLETED、四处版本 0.21.5 和网关活跃后才继续。
+      timeout-hours: 24
+    jobs:
+      approve:
+        runs-on:
+          self-hosted: true
+          pool-name: cn-pool
+        steps:
+          - run: echo "Targeted production recovery approved"
+  - name: 定向补救并严格验证
+    if: "${{ ci.branch }} == master"
+    jobs:
+      recover:
+        runs-on:
+          self-hosted: true
+          pool-name: cn-pool
+        steps:
+          - checkout: self
+            with:
+              fetchDepth: 1
+          - name: 执行官方升级并验证
+            shell: bash
+            run: |
+              set -euo pipefail
+              source .ci/init.sh
+              ci_init_repo_root
+              ci_ensure_tccli
+              ci_ensure_kubectl
+              ci_ensure_jq
+              ci_load_tencentcloud_credentials
+              export TCCLI_PROFILE="${TCCLI_PROFILE:-lightclaw-ci-cn-pool}"
+              python3 .ci/runtime/commands/recover_hermes_production.py --execute
