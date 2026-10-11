@@ -126,6 +126,16 @@ master 源码
   存量 VM 的 TAT 修补必须以 build ID 和环境为作用域持久化逐台派发 checkpoint；runner 重启或阶段
   重试时只跳过已有 `INVOKED` 的 cloud instance，继续失败和未处理项。checkpoint JSONL 的中断尾行
   可以忽略，但不得因读取失败退化成全量 `--force=true` 重复升级。
+  Backend blueprint 的 TAT `upgrade-start` 成功不能代替 Hermes 源码包升级。北京实际 CLI、Python
+  import/distribution 与 identity 仍为旧版本时，通过 `.ci/hermes-beijing-runtime.yml` 独立执行北京
+  运行时修复；目标来自 `images/hermes-beijing-runtime-trigger` 中固定的镜像、COS 归档 URL、SHA256
+  和源码版本，不在运行中重新解析浮动 latest。先等待 CLEAN 库存采用目标镜像，再审批运行一台
+  已分配 VM canary；canary 的 TAT 终态及全部版本检查通过后才处理其余在线 VM。已正确的版本
+  只验证，PAUSED VM 保持暂停并显式暂缓；不刷新 Pool、不重新升级 backend、不进入生产地域。
+  只替换 `.hermes/hermes-agent` 管理源码，保留用户配置、会话与旧源码备份；归档校验或安装失败
+  不得返回成功，切换后失败须恢复旧源码和 identity，并恢复原先活跃的 Hermes gateway。
+  最终必须等待每个目标 TAT 任务 `SUCCESS/ExitCode=0` 且真实版本全部匹配，不能将 `INVOKED`
+  作为验收。命令内容及接受回执按 build ID 保存，重试只继续未接受的目标并核对命令摘要。
 
 - Website Builder 的存量凭据补发与新购自动下发分开验收。逐实例凭据 TAT Command 的
   `website_key` 必须是 hidden parameter，不能写入 Command content、日志或 Git；默认安装器
