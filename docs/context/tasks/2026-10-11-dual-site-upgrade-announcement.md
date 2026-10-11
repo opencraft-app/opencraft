@@ -75,7 +75,9 @@ derived: false
 - `pnpm check`：通过，TypeScript 0 个新增诊断。
 - `pnpm build:cn`、`pnpm build:global`：均通过。
 - 当前 frontend 未配置 `lint` 脚本；`pnpm lint` 返回 Command not found。
-- 待记录远端与线上状态。
+- 分支提交 `e88462a26` 已推送到 `origin/codex/oct-upgrade-announcement`；工蜂 MR !5191 已创建，初次查询为 opened / can_be_merged。
+- 全量 Context catalog / 单测因仓库现存旧 Task Pack 元数据错误失败；本次 Task Pack 与 checkpoint 已补齐对应元数据和字段。全量门禁仍需独立治理。
+- 待记录线上状态。
 
 ## risks
 
@@ -101,4 +103,4 @@ derived: false
 
 ## handoff
 
-- 本地验证完成；待提交、发布与线上双站核验。
+- 本地验证完成，MR !5191 已创建；待合并、正式发布与线上双站核验。
