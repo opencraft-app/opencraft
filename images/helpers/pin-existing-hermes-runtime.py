@@ -125,7 +125,7 @@ def install_pin(account, archive_path: Path, expected: str, log, identity: Path 
         switched = True
         shutil.chown(runtime_dir, user=account.pw_uid, group=account.pw_gid)
         subprocess.run(['chown', '-R', f'{account.pw_uid}:{account.pw_gid}', str(runtime_dir)], check=True, stdout=log, stderr=log)
-        for stage_name in ('venv', 'python-deps', 'node-deps', 'path'):
+        for stage_name in ('venv', 'python-deps', 'node-deps'):
             runtime_command(account, ['bash', str(runtime_dir / 'scripts/install.sh'), '--skip-setup', '--dir', str(runtime_dir), '--hermes-home', str(data_home), '--non-interactive', '--stage', stage_name], stdout=log, stderr=log, timeout=600)
         uv = runtime_home / '.local/bin/uv'
         if not uv.is_file():
@@ -136,6 +136,9 @@ def install_pin(account, archive_path: Path, expected: str, log, identity: Path 
         after = versions(account, runtime_dir, identity)
         if any(after[key] != expected for key in ('cliVersion', 'importVersion', 'distributionVersion')):
             raise RuntimeError('installed runtime version verification failed')
+        checks = environment_checks(account)
+        if not all(checks.values()):
+            raise RuntimeError('runtime environment checks failed')
         identity_text = identity_before.decode()
         identity_text, count = re.subn(r'(?m)^runtime_version:.*$', 'runtime_version: ' + expected, identity_text)
         if not count:
@@ -147,7 +150,7 @@ def install_pin(account, archive_path: Path, expected: str, log, identity: Path 
         after = versions(account, runtime_dir, identity)
         if any(value != expected for value in after.values()):
             raise RuntimeError('final version verification failed')
-        return dict(after, changed=True, gatewayUnitsRestored=len(stopped), previousSourcePreserved=True)
+        return dict(after, changed=True, gatewayUnitsRestored=len(stopped), previousSourcePreserved=True, **checks)
     except BaseException:
         if switched:
             for unit in stopped:
