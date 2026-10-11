@@ -2,7 +2,7 @@ import importlib.util
 from pathlib import Path
 import unittest
 
-spec = importlib.util.spec_from_file_location('beijing_verify', Path(__file__).parents[2] / '.ci/runtime/commands/pin_beijing_hermes_existing_vms.py')
+spec = importlib.util.spec_from_file_location('beijing_verify', Path(__file__).parents[2] / '.ci/runtime/support/pin_beijing_hermes_existing_vms.py')
 verify = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(verify)
 
