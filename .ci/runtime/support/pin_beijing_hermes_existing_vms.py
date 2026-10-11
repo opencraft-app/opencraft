@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import argparse
 import collections
 import hashlib
 import json
@@ -188,6 +189,12 @@ def run():
 
 
 def main():
+    parser = argparse.ArgumentParser(description='北京存量 Hermes 运行时 canary、固定源码升级与严格验证')
+    parser.add_argument('--execute', action='store_true', help='执行已批准的北京运行时修复；省略此参数仅显示帮助')
+    args = parser.parse_args()
+    if not args.execute:
+        parser.print_help()
+        return 0
     try:
         run()
         return 0
