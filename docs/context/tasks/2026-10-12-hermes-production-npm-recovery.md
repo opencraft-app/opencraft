@@ -2,7 +2,7 @@
 id: task-hermes-production-npm-recovery-20261012
 type: task
 scope: 新加坡 Hermes 失败实例的定向 CI 补救与严格验收。
-triggers: ["Hermes 生产 npm 补救"]
+triggers: ["Hermes 生产 npm 补救", "新加坡升级超时", "定向 CI 补救"]
 owner: wisp/mono2-maintainers
 authority: primary
 source_of_truth: [".ci/hermes-production-recovery.yml", "images/helpers/recover-hermes-runtime.py"]
@@ -28,9 +28,9 @@ derived: false
 官方 ACLI 升级 capability 要求 root，运行时身份仍必须是 agentuser。TAT 接受下发不等于执行成功。
 
 ## history_context
-当前设计见 `docs/engineering/domains/release-gitops.md` 和 `images/README.md`。
-!5193 / 430726f9 已修复升级前未刷新 ACLI bundle 的问题；本轮 #35 使用该源码。
-旧记录仅作为失败证据，不替代实时验收。
+- current_design_refs：`docs/engineering/domains/release-gitops.md` 和 `images/README.md`。
+- relevant_evolution：!5193 / 430726f9 已修复升级前未刷新 ACLI bundle 的问题；本轮 #35 使用该源码。
+- superseded_refs：旧记录仅作为失败证据，不替代实时验收。
 
 ## acceptance
 仅名单内、原任务终态失败且仍为新加坡 ALLOCATED/RUNNING 的机器可补救。
