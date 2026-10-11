@@ -42,49 +42,58 @@ class RuntimePinTests(unittest.TestCase):
             self.assertEqual(pin.source_version(path), '0.21.5')
 
     def test_matching_runtime_is_not_reinstalled(self):
-        account = SimpleNamespace(pw_dir='/nonexistent', pw_uid=os.getuid(), pw_gid=os.getgid())
-        versions = dict.fromkeys(('cliVersion', 'importVersion', 'distributionVersion', 'identityVersion'), '0.21.5')
-        with patch.object(pin, 'versions', return_value=versions):
-            result = pin.install_pin(account, Path('/nonexistent'), '0.21.5', io.StringIO())
+        account = SimpleNamespace(pw_dir='/nonexistent', pw_uid=os.getuid(), pw_name='agentuser')
+        values = dict.fromkeys(('cliVersion', 'importVersion', 'distributionVersion', 'identityVersion'), '0.21.5')
+        with patch.object(pin, 'versions', return_value=values), patch.object(pin, 'runtime_command') as command:
+            result = pin.install_pin(account, Path('/nonexistent'), '0.21.5', io.StringIO(), **self.target())
         self.assertFalse(result['changed'])
+        command.assert_not_called()
 
-    def test_failed_install_restores_runtime_and_identity_preserves_config(self):
-        with tempfile.TemporaryDirectory() as scratch:
-            root = Path(scratch)
-            data = root / '.hermes'
-            runtime = data / 'hermes-agent'
-            runtime.mkdir(parents=True)
-            (runtime / 'old-source').write_text('preserve old tree')
-            config = data / 'config.yaml'
-            config.write_text('preserve user configuration')
-            identity = root / 'identity.yaml'
-            identity.write_text('runtime: hermes\nruntime_version: 0.21.3\n')
-            archive = root / 'source.tar.gz'
-            self.archive(archive)
-            account = SimpleNamespace(pw_dir=str(root), pw_uid=os.getuid(), pw_gid=os.getgid())
-            before = dict.fromkeys(('cliVersion', 'importVersion', 'distributionVersion', 'identityVersion'), '0.21.3')
-            with patch.object(pin, 'versions', return_value=before), patch.object(pin, 'active_gateway_units', return_value=([], [])), patch.object(pin, 'runtime_command', side_effect=subprocess.CalledProcessError(1, 'installer')), (root / 'log').open('w') as log:
-                with self.assertRaises(subprocess.CalledProcessError):
-                    pin.install_pin(account, archive, '0.21.5', log, identity=identity)
-            self.assertEqual((runtime / 'old-source').read_text(), 'preserve old tree')
-            self.assertEqual(config.read_text(), 'preserve user configuration')
-            self.assertEqual(pin.identity_version(identity), '0.21.3')
+    def target(self):
+        return dict(blueprint='lhbp-7wrz1nyu', cos_version='hermes-agent-v20260928', display_version='2026.9.24')
 
-    def test_wrong_source_version_is_rejected_before_switch(self):
+    def run_upgrade(self, after_version, command_effect=None, archive_version='0.21.5'):
+        account = SimpleNamespace(pw_dir='/nonexistent', pw_uid=os.getuid(), pw_name='agentuser')
+        keys = ('cliVersion', 'importVersion', 'distributionVersion', 'identityVersion')
         with tempfile.TemporaryDirectory() as scratch:
-            root = Path(scratch)
-            runtime = root / '.hermes/hermes-agent'
-            runtime.mkdir(parents=True)
-            (runtime / 'old-source').touch()
-            identity = root / 'identity.yaml'
-            identity.write_text('runtime_version: 0.21.3\n')
-            archive = root / 'source.tar.gz'
-            self.archive(archive, version='0.21.3')
-            account = SimpleNamespace(pw_dir=str(root), pw_uid=os.getuid(), pw_gid=os.getgid())
-            with patch.object(pin, 'versions', return_value={'cliVersion': '0.21.3'}), patch.object(pin, 'active_gateway_units', return_value=([], [])), io.StringIO() as log:
-                with self.assertRaisesRegex(RuntimeError, 'source version'):
-                    pin.install_pin(account, archive, '0.21.5', log, identity=identity)
-            self.assertTrue((runtime / 'old-source').exists())
+            archive = Path(scratch) / 'source.tar.gz'
+            self.archive(archive, archive_version)
+            with patch.object(pin, 'versions', side_effect=[dict.fromkeys(keys,'0.21.3'),dict.fromkeys(keys,after_version)]), patch.object(pin, 'active_gateway_units', return_value=(['env','systemctl'],['hermes-gateway.service'])), patch.object(pin, 'environment_checks', return_value={'valid':True}), patch.object(pin, 'runtime_command', side_effect=command_effect) as command:
+                result = pin.install_pin(account, archive, '0.21.5', io.StringIO(), **self.target())
+                return result, [call.args[1] for call in command.call_args_list]
+
+    def test_refresh_precedes_official_upgrade_and_target_is_explicit(self):
+        result, calls = self.run_upgrade('0.21.5')
+        target = self.target()
+        self.assertEqual(calls[0], ['acli','bundle-update'])
+        self.assertEqual(calls[1], ['acli','backend','upgrade-start','--blueprint-id',target['blueprint'],'--cos-version',target['cos_version'],'--display-version',target['display_version'],'--wait=true','--force=true'])
+        self.assertIn('is-active',calls[2])
+        self.assertTrue(result['officialBackendUpgrade'])
+
+    def test_bundle_refresh_failure_aborts_before_upgrade(self):
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.run_upgrade('0.21.5', command_effect=subprocess.CalledProcessError(1,'acli bundle-update'))
+
+    def test_exit_zero_with_old_runtime_is_rejected(self):
+        with self.assertRaisesRegex(RuntimeError, 'actual runtime version'):
+            self.run_upgrade('0.21.3')
+
+    def test_wrong_archive_version_is_rejected_before_upgrade(self):
+        with self.assertRaisesRegex(RuntimeError, 'archive source version'):
+            self.run_upgrade('0.21.5', archive_version='0.21.3')
+
+    def test_existing_repair_refreshes_even_when_backend_available_and_fails_closed(self):
+        script = (Path(__file__).parents[1] / 'helpers/config-hermes-python-mirrors.sh').read_text()
+        function = script[script.index('ensure_acli_backend() {'):script.index('\nconfig_dir=')]
+        for fail in (False,True):
+            with self.subTest(refresh_fails=fail), tempfile.TemporaryDirectory() as scratch:
+                calls = Path(scratch)/'calls'
+                code = 'user=agentuser\nacli_supports_backend() { return 0; }\nrun_as_target_user() { printf "%s\\n" "$1" >> "$CALLS"; if [[ "$1" == "acli bundle-update" ]]; then return "$FAIL"; fi; return 0; }\n' + function + '\nensure_acli_backend\nprintf upgraded >> "$CALLS"\n'
+                result = subprocess.run(['bash','-c',code],env=dict(os.environ,CALLS=str(calls),FAIL=str(int(fail))),capture_output=True,text=True)
+                commands = calls.read_text()
+                self.assertIn('acli bundle-update',commands)
+                self.assertEqual('upgraded' in commands,not fail)
+                self.assertEqual(result.returncode,int(fail))
 
 
 if __name__ == '__main__':
