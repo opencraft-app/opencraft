@@ -29,7 +29,7 @@ stages:
             run: |
               set -euo pipefail
               bash .ci/runtime/check_ci_runtime.sh
-              python3 -m py_compile images/helpers/pin-existing-hermes-runtime.py .ci/runtime/commands/pin_beijing_hermes_existing_vms.py
+              python3 -m py_compile images/helpers/pin-existing-hermes-runtime.py .ci/runtime/commands/pin_beijing_hermes_existing_vms.py .ci/runtime/support/pin_beijing_hermes_existing_vms.py
               python3 images/tests/test_existing_hermes_runtime_pin.py
               python3 images/tests/test_beijing_hermes_runtime_verification.py
   - name: 确认北京存量 Hermes 运行时版本修复
