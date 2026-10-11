@@ -54,8 +54,11 @@ import {
   type WorkspaceSaveTarget,
 } from "./workspace-resource-model";
 import { WorkspaceFileIcon } from "./workspace-file-icon";
+import { chatMediaKind } from "@opencraft/chat-render-react";
+import { WorkspaceMediaPreview } from "./workspace-media-preview";
 
 const WorkspaceCodeEditor = lazy(() => import("./workspace-code-editor").then((module) => ({ default: module.WorkspaceCodeEditor })));
+const WorkspacePdfPreview = lazy(() => import("./workspace-pdf-preview").then((module) => ({ default: module.WorkspacePdfPreview })));
 
 interface LoadedWorkspaceResource {
   readonly blob: Blob | null;
@@ -313,7 +316,7 @@ export function WorkspaceResourcePanel({ tab, previewOnly = false }: PanelRender
       const unsubscribe = lease.subscribe(report);
       let blob: Blob;
       try { blob = await lease.promise; } finally { unsubscribe(); lease.release(); }
-      const bytes = blob.size > MAX_EDITABLE_FILE_BYTES || workspaceImageMime(selectedPath)
+      const bytes = blob.size > MAX_EDITABLE_FILE_BYTES || chatMediaKind(selectedPath) !== "file"
         ? null : new Uint8Array(await blob.arrayBuffer());
       return {
         blob,
@@ -485,6 +488,12 @@ export function WorkspaceResourcePanel({ tab, previewOnly = false }: PanelRender
             <img alt={workspaceResourceBasename(selectedPath)} src={imageSource.url} />
             <small><ImageIcon size={12} /> {resource.data.size.toLocaleString()} bytes</small>
           </div>
+        ) : chatMediaKind(selectedPath) === "pdf" && resource.data?.blob ? (
+          <Suspense fallback={<div className="workspace-file-viewer__state"><LoaderCircle className="is-spinning" size={18} />{intl.formatMessage({ id: "pdf.loading", defaultMessage: "Loading PDF…" })}</div>}>
+            <WorkspacePdfPreview key={fileKey} blob={resource.data.blob} name={workspaceResourceBasename(selectedPath)} />
+          </Suspense>
+        ) : (chatMediaKind(selectedPath) === "audio" || chatMediaKind(selectedPath) === "video") && resource.data?.blob ? (
+          <WorkspaceMediaPreview key={fileKey} blob={resource.data.blob} name={workspaceResourceBasename(selectedPath)} kind={chatMediaKind(selectedPath) === "audio" ? "audio" : "video"} />
         ) : resource.data?.text !== null && resource.data?.text !== undefined ? (
           <Suspense fallback={<div className="workspace-file-viewer__state"><LoaderCircle className="is-spinning" size={18} />Loading editor…</div>}>
             {language === "markdown" && !showSource && !editing ? (
@@ -526,6 +535,8 @@ export function WorkspaceResourcePanel({ tab, previewOnly = false }: PanelRender
               />
             )}
           </Suspense>
+        ) : resource.data?.blob ? (
+          <WorkspaceMediaPreview key={fileKey} blob={resource.data.blob} name={workspaceResourceBasename(selectedPath)} kind="file" />
         ) : (
           <div className="workspace-file-viewer__state"><AlertTriangle size={18} />{intl.formatMessage({ id: "panel.unsupportedFile", defaultMessage: "Preview unavailable for this file type or size." })}</div>
         )}

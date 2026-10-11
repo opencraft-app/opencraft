@@ -452,11 +452,34 @@ Attachment staging is a Host resource, not a Renderer filesystem convention.
 The `opencraft/attachment-staging` capability declares accepted source kinds,
 returned location kinds and the byte limit; Composer consumes only the shared
 `pending/processing/ready/failed` lifecycle and an opaque `AttachmentRef`.
+The browser/Headless AppServer gateway allows bounded 48 MiB WebSocket messages
+to carry the local 32 MiB file allowance after Base64 expansion and JSON/AppHost
+wrapping. File validation still enforces the 32 MiB decoded-byte limit; exceeding
+that file limit is a staging error rather than a reason to disconnect the Host.
 Local v1 stages `client-bytes` beneath the Local Host data root and returns a
 `host-file`; the Renderer never derives a directory from `codexHome` or calls
-generic `fs/writeFile` for this workflow. Remote RPC/SFTP and Cloud object-store
-adapters may later return `host-file` or `object-url` through the same contract,
-but are unsupported until their Host advertises them. Failed or unresolved
+generic `fs/writeFile` for this workflow. SSH Hosts with installation-owned
+attachment storage now implement that same staging contract: bodies up to
+10 MiB use native `fs/writeFile`; larger bodies, up to the same 32 MiB limit,
+use backend SFTP. The remote root comes from native `initialize.codexHome` and
+is isolated by stable Server/endpoint namespace, never by a browser or connection
+generation. A private partial file is committed by SFTP rename and verified
+against the submitted size and SHA-256 before `ready` is returned. Small-file
+verification uses native RPC; large-file verification downloads through SFTP,
+so an expanded large Base64 payload never enters the remote RPC channel.
+Saved passwords use the existing private askpass IPC plus a fixed private SSH
+wrapper that overrides SFTP batch-mode authentication; keys/agents retain normal
+batch authentication. All transfers retain the binding's strict host-key trust.
+The Hub persists only lifecycle/display metadata in private Server storage;
+temporary upload and verification spools are removed after each operation.
+An unknown upload outcome keeps an `uploading` intent for identical-ID retry;
+metadata/content conflicts cannot overwrite the resource. Failed removals keep
+`pending-removal` for retry, and sent refs cannot be removed from history.
+Remote send/steer verifies owned refs and adds the same model-visible locator;
+display metadata survives reopening and follows native forks. Queue, Goal,
+desktop and other Local-only capabilities remain absent on SSH Hosts.
+Cloud object-store adapters remain unsupported until their Host advertises them.
+Failed or unresolved
 attachments block submission and retain their precise error; removing an
 unsubmitted ready attachment asks its owning Host to release the staged ref.
 The local Codex Host uses the same staging service beneath its own data root,
@@ -1192,4 +1215,21 @@ bundles are independent quality gates; a static fixture alone is not accepted.
 Embedded file previews retain the mutation-level read-only guard alongside snapshot-based saves in the standalone workspace editor. Markdown preview/source switching and lazy syntax editors share the same resource lifecycle. The read-only regression renders the real panel and invokes its captured Query mutation, asserting zero filesystem writes and cache invalidations.
 
 Markdown preview entry: explicit `.md` / `.markdown` paths in completed inline code are clickable and use the same resource policy and Host-scoped right panel as Markdown links. Bare names, commands, external URLs, streaming paths and code within an explicit link retain their original semantics. No file is read before clicking.
-Completed standalone Hermes `MEDIA:<path>` text or inline code for an explicit Markdown file uses that same click and Host permission flow. Non-Markdown media, embedded prose, malformed paths, streaming content and code inside an explicit link remain inert; the Renderer never treats `MEDIA:` as a browser URL or reads the file before clicking.
+Completed standalone `MEDIA:<path>` text or inline code uses that same click and resource policy flow regardless of the engine that produced it. This delivery directive is independent of file type: images, audio, video, PDFs and unknown files all open the existing resource preview. Absolute and relative file paths, quoted paths with spaces, and HTTP(S) addresses are recognized; external addresses retain the existing external-navigation policy. Embedded prose, malformed paths, streaming content and code inside an explicit link remain inert. The Renderer never treats the literal `MEDIA:` prefix as a browser URL or reads a file before clicking; ordinary bare inline paths retain the existing Markdown-only rule.
+
+The shared media classifier selects an image, audio, video, PDF or generic file
+branch using the path's extension as a presentation hint. Actual decoders still
+validate the bytes. Resource previews read through the Host filesystem and the
+existing Blob cache. Audio and video use browser controls over a View-owned Blob
+URL; this is whole-file playback, not an HTTP Range streaming contract. Unsupported
+codecs and unknown binary files retain a download action.
+
+PDF previews lazily load PDF.js and its build-owned Worker, CJK CMaps, standard
+fonts and image codecs; no CDN or remote-file URL is introduced. PDF bytes bypass
+the text editor's 4 MiB limit. One selected page is painted at a time, with
+pagination, fit-width, zoom, text selection and original-file download. The
+backing canvas has a bounded pixel budget. A View owns its document loading and
+render tasks and destroys/cancels them on replacement or unmount; late results
+cannot paint a different resource. Invalid or password-protected documents show
+a generic failure with download available. Web and Electron share this Renderer;
+this does not declare a native Expo PDF viewer.

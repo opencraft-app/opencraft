@@ -2,6 +2,9 @@ import { createServer } from "node:http";
 import { Duplex } from "node:stream";
 import { WebSocketServer } from "ws";
 import { execFileSync } from "node:child_process";
+import { mkdir, lstat, readFile, writeFile, rm } from "node:fs/promises";
+import { readFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
 
 // Authentication precedes the proxy marker, just as in actual OpenSSH. This
 // avoids racing a synthetic askpass child against WebSocket-open cleanup.
@@ -31,6 +34,40 @@ const server = createServer();
 const sockets = new WebSocketServer({ noServer: true, autoPong: process.env.FIXTURE_NO_PONG !== "1" });
 const workbenchFixture = process.env.FIXTURE_WORKBENCH_UI === "1";
 const activeFixture = process.env.FIXTURE_WORKBENCH_UI_ACTIVE === "1";
+const attachmentRoot = process.env.FIXTURE_ATTACHMENT_ROOT;
+const attachmentHistoryFile = attachmentRoot ? join(attachmentRoot, "fixture-history.json") : null;
+const attachmentHistory = new Map(attachmentHistoryFile && existsSync(attachmentHistoryFile) ? JSON.parse(readFileSync(attachmentHistoryFile, "utf8")) : []);
+async function attachmentResult(message) {
+  const params = message.params ?? {};
+  switch (message.method) {
+    case "initialize": return { userAgent: "fixture-codex", codexHome: attachmentRoot, platformFamily: "unix", platformOs: "linux" };
+    case "fs/createDirectory": await mkdir(params.path, { recursive: params.recursive !== false }); return {};
+    case "fs/getMetadata": {
+      const info = await lstat(params.path);
+      return { isFile: info.isFile(), isDirectory: info.isDirectory(), isSymlink: info.isSymbolicLink(), createdAtMs: 0, modifiedAtMs: 0 };
+    }
+    case "fs/writeFile":
+      if (params.dataBase64.length > 14 * 1024 * 1024) throw new Error("Fixture RPC file too large");
+      await writeFile(params.path, Buffer.from(params.dataBase64, "base64")); return {};
+    case "fs/readFile": return { dataBase64: (await readFile(params.path)).toString("base64") };
+    case "fs/remove": await rm(params.path, { recursive: params.recursive !== false, force: params.force !== false }); return {};
+    case "thread/start": return { thread: { ...fixtureThread, id: "attachment-thread" }, model: "fixture-model", modelProvider: "openai" };
+    case "turn/start": {
+      const item = { type: "userMessage", id: `user-${params.clientUserMessageId}`, clientId: params.clientUserMessageId, content: params.input };
+      const rows = attachmentHistory.get(params.threadId) ?? [];
+      rows.push({ turnId: "attachment-turn", item }); attachmentHistory.set(params.threadId, rows);
+      await writeFile(attachmentHistoryFile, JSON.stringify([...attachmentHistory]));
+      return { turn: { id: "attachment-turn", status: "inProgress", items: [item] } };
+    }
+    case "thread/items/list": return { data: attachmentHistory.get(params.threadId) ?? [], nextCursor: null, backwardsCursor: null };
+    case "thread/fork": {
+      attachmentHistory.set("attachment-fork", attachmentHistory.get(params.threadId) ?? []);
+      await writeFile(attachmentHistoryFile, JSON.stringify([...attachmentHistory]));
+      return { thread: { ...fixtureThread, id: "attachment-fork" } };
+    }
+    default: return undefined;
+  }
+}
 const fixtureThread = {
   id: "ssh-ui-thread", sessionId: "ssh-ui-thread", name: "Remote history fixture",
   preview: "Remote history fixture", modelProvider: "openai", model: "fixture-model",
@@ -92,16 +129,18 @@ server.on("upgrade", (request, socket, head) => {
   sockets.handleUpgrade(request, socket, head, ws => sockets.emit("connection", ws));
 });
 sockets.on("connection", ws => {
-  ws.on("message", data => {
+  ws.on("message", async data => {
     const message = JSON.parse(data.toString());
     if (!message.method || message.id === undefined) return;
-    if (workbenchFixture) process.send?.({ method: message.method, params: message.params });
-    const result = (workbenchFixture ? workbenchResult(message) : undefined) ?? (message.method === "initialize" ? { userAgent: "fixture-codex", platform: "linux", codexHome: "/synthetic" }
+    if (workbenchFixture || attachmentRoot) process.send?.({ method: message.method, params: message.params });
+    try {
+    const result = (attachmentRoot ? await attachmentResult(message) : undefined) ?? (workbenchFixture ? workbenchResult(message) : undefined) ?? (message.method === "initialize" ? { userAgent: "fixture-codex", platform: "linux", codexHome: "/synthetic" }
       : message.method === "thread/resume" ? { thread: { id: message.params.threadId, status: { type: "idle" } } }
       : message.method === "thread/read" ? { thread: { id: message.params.threadId, status: { type: "idle" } } }
       : message.method === "thread/unsubscribe" ? { status: "unsubscribed" }
       : message.method === "thread/list" || message.method === "model/list" ? { data: [], nextCursor: null }
       : { echo: message.params });
     ws.send(JSON.stringify({ id: message.id, result }));
+    } catch (error) { ws.send(JSON.stringify({ id: message.id, error: { code: -32000, message: error.message } })); }
   });
 });

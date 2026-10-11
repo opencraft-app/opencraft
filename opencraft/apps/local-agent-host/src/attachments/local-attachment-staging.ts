@@ -37,7 +37,7 @@ interface AttachmentManifest {
 
 const ATTACHMENT_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
 
-function safeFilename(value: string): string {
+export function safeAttachmentFilename(value: string): string {
   const name = value
     .normalize("NFKC")
     .replace(/[\\/\0]/gu, "-")
@@ -68,10 +68,26 @@ function decodeBase64(value: string): Buffer {
   return bytes;
 }
 
-function validateIdentity(id: string): void {
+export function validateAttachmentIdentity(id: string): void {
   if (!ATTACHMENT_ID.test(id)) {
     throw new Error("Invalid attachment identity");
   }
+}
+
+/** Shared admission for local storage and SSH staging; transport never relaxes it. */
+export function validateClientAttachment(request: AttachmentStageParams): { bytes: Buffer; contentSha256: string } {
+  validateAttachmentIdentity(request.clientAttachmentId);
+  if (typeof request.name !== "string" || request.name.length === 0 || request.name.length > 255) {
+    throw new Error("Attachment name must contain 1 to 255 characters");
+  }
+  if (typeof request.mimeType !== "string" || request.mimeType.length > 255) throw new Error("Attachment MIME type is invalid");
+  if (request.source?.kind !== "client-bytes") throw new Error("Unsupported attachment source");
+  if (!Number.isSafeInteger(request.size) || request.size <= 0) throw new Error("Attachment size must be a positive integer");
+  if (request.size > LOCAL_ATTACHMENT_MAX_BYTES) throw new Error(`Attachment exceeds ${LOCAL_ATTACHMENT_MAX_BYTES} bytes`);
+  if (typeof request.source.dataBase64 !== "string") throw new Error("Attachment bytes are not valid base64");
+  const bytes = decodeBase64(request.source.dataBase64);
+  if (bytes.byteLength !== request.size) throw new Error("Attachment size does not match its bytes");
+  return { bytes, contentSha256: createHash("sha256").update(bytes).digest("hex") };
 }
 
 function sameRequest(manifest: AttachmentManifest, request: AttachmentStageParams): boolean {
@@ -101,7 +117,7 @@ export class LocalAttachmentStagingService {
     if (!id || !filename || extra !== undefined || !filename.startsWith("content-")) {
       throw new Error("Invalid staged attachment path");
     }
-    validateIdentity(id);
+    validateAttachmentIdentity(id);
     const manifest = JSON.parse(await readFile(join(this.root, id, "manifest.json"), "utf8")) as AttachmentManifest;
     if (manifest.protocolVersion !== 1 || manifest.ref.id !== id || manifest.ref.name !== name
       || manifest.ref.location.kind !== "host-file" || resolve(manifest.ref.location.path) !== filePath) {
@@ -115,27 +131,7 @@ export class LocalAttachmentStagingService {
   }
 
   async stage(request: AttachmentStageParams): Promise<AttachmentStageResponse> {
-    validateIdentity(request.clientAttachmentId);
-    if (typeof request.name !== "string" || request.name.length === 0 || request.name.length > 255) {
-      throw new Error("Attachment name must contain 1 to 255 characters");
-    }
-    if (typeof request.mimeType !== "string" || request.mimeType.length > 255) {
-      throw new Error("Attachment MIME type is invalid");
-    }
-    if (request.source.kind !== "client-bytes") {
-      throw new Error(`Unsupported Local attachment source: ${request.source.kind}`);
-    }
-    if (!Number.isSafeInteger(request.size) || request.size <= 0) {
-      throw new Error("Attachment size must be a positive integer");
-    }
-    if (request.size > this.capability.maxBytes) {
-      throw new Error(`Attachment exceeds ${this.capability.maxBytes} bytes`);
-    }
-    const bytes = decodeBase64(request.source.dataBase64);
-    if (bytes.byteLength !== request.size) {
-      throw new Error("Attachment size does not match its bytes");
-    }
-    const contentSha256 = createHash("sha256").update(bytes).digest("hex");
+    const { bytes, contentSha256 } = validateClientAttachment(request);
 
     await mkdir(this.root, { recursive: true, mode: 0o700 });
     const directory = join(this.root, request.clientAttachmentId);
@@ -173,7 +169,7 @@ export class LocalAttachmentStagingService {
     try {
       await mkdir(directory, { mode: 0o700 });
       ownsDirectory = true;
-      const filePath = join(directory, `content-${safeFilename(request.name)}`);
+      const filePath = join(directory, `content-${safeAttachmentFilename(request.name)}`);
       const partPath = join(directory, `.${randomUUID()}.part`);
       await writeFile(partPath, bytes, { flag: "wx", mode: 0o600 });
       await rename(partPath, filePath);
@@ -199,7 +195,7 @@ export class LocalAttachmentStagingService {
   }
 
   async remove(params: AttachmentRemoveParams): Promise<AttachmentRemoveResponse> {
-    validateIdentity(params.id);
+    validateAttachmentIdentity(params.id);
     const directory = join(this.root, params.id);
     try {
       await rm(directory, { recursive: true });
