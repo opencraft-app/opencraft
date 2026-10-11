@@ -71,21 +71,22 @@ Show Weixin as an independent connection for each Bot and update dual-site guida
 
 ## checkpoint
 ### stage
-Split frontend branch prepared; source commit, generated locale and OpenCraft sync, and MR are next.
+MR !5180 conflict resolved locally against `origin/master` at `07fda41ea`; regenerated OpenCraft manifest is ready for the follow-up commit.
 
 ### verified
-- Focused 88 frontend tests, `pnpm check`, and production build passed before branch split.
-- The original generated dictionaries were restored until the source-first sync sequence can run.
+- The only content conflict was generated `UPSTREAM.json`; source and locale changes merged automatically.
+- Focused 88 frontend tests, `pnpm check`, `pnpm build`, and `check:mono2-agent-console` passed after the merge.
+- Relative to current `origin/master`, the MR still changes the intended Weixin UI, tests, guidance, and generated locale closure.
 
 ### unverified
 - Live two-account Weixin login through the public gateway.
-- Full frontend suite on CI.
+- CI and remote mergeability after pushing this conflict resolution.
 
 ### discard
-- The interim locale regeneration before source commit was restored.
+- Build-only `frontend/next-env.d.ts` and font subset changes were restored.
 
 ### restore
 - Worktree: `/Users/pablozhong/.codex/worktrees/wechat-per-bot/lightvela`.
 
 ### next_action
-- Commit the regenerated OpenCraft manifest, update !5180, and verify remote mergeability and checks.
+- Commit the generated manifest and this checkpoint, push the existing MR branch, then verify remote mergeability and CI separately.
