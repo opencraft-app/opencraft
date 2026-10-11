@@ -97,3 +97,23 @@ A最终帧作为B起始图，保留最终帧原文件；要求背景、光源、
 - 用户截图显示玩偶被曲线穿过。预览 DOM 证据：track 的 offsetTop 为 211px，而 getBoundingClientRect 包含入场 translateY(48px)。玩偶位置不跟随这项位移，导致入场中曲线压在身体上。
 - 曲线与玩偶共用固定布局坐标，按 track offsetLeft/offsetTop/offsetWidth 计算脚部锚点；track 保留淡入但取消整体纵向位移。国内、国际与全部语言使用同一控制器与样式。
 - 回归测试模拟带 48px 入场位移的矩形，确认定位仍使用布局坐标；27 项生成/定位测试与 20 项动效测试通过。
+
+### 2026-10-11 第二轮 MR 审查修正
+- context_receipt: frontend 服务与站点路由 pack、frontend/AGENTS.md、frontend/DESIGN.md、frontend-runtime-openspec-i18n 邻接卡；检查 landing/hero 相邻测试及 runtime 样式注册。
+- 重复挂载先完整销毁旧 landing 控制器再创建，旧 stop 幂等，避免遗留播放器/observer 或回退到错误落点。
+- 进入后台或用户 pointerenter/focus/click 时取消剩余自动招呼及结束计时器；解码完成后检查取消状态，避免异步重新排队。
+- hero-in 已定义于 public/lightvela-intl-home/style.css，international-home-runtime.tsx 加载该基础样式及 hermes-home.css；无需重复声明 keyframes。
+- checkpoint: verify；生命周期与交互竞争回归、check、构建待执行。
+
+### 2026-10-11 定时任务微信提示确认
+- 用户确认沿用原提示「微信不建议频繁通知，否则可能会被限流」。已撤回本轮加长文案与对应翻译，通知组件、原有渠道选择和频率限制没有本轮差异。
+- MR 继续处理重复挂载、招呼取消与样式定义核对；中文文档留在独立审阅分支。
+
+### 微信提醒补充（2026-10-11）
+用户确认保留原频率提示，再补充「较长时间未在微信中与 Bot 对话，提醒可能暂时无法送达，可先发送一条消息再试。」不出现具体数字，不改变原有任务与渠道逻辑。
+
+### 最终构建交付证据（2026-10-11）
+- 双站最终构建通过：国内 200 HTML / 8 条公共路由；国际 1562 HTML / 58 条公共路由。
+- 84 项聚焦回归通过，前端 check 零新增类型错误，文案在九个 UI 字典中完整。变更范围设计门禁通过。
+- 全仓 context 的历史失败已记录，当前 Task Pack schema、契约字段与中文记录检查通过。
+- 按既有授权更新 !5181；中文文档位于独立审阅分支，不随本 MR 提交。

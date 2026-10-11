@@ -3,10 +3,16 @@ const STILL = '/lightvela-intl-home/assets/mascot-four-landing-v6-refined-still.
 const LANDING_STATE = { STILL: 'still', WAITING: 'waiting', BUFFERING: 'buffering', PLAYING: 'playing' } as const;
 export type MascotLanding = { element: HTMLElement; land: () => void; reset: () => void; ready: () => boolean; active: () => boolean; stop: () => void };
 
+const mountedLandings = new WeakMap<HTMLElement, MascotLanding>();
+
 /** Finite playback of the approved tumble-and-rescue clip; pauses outside the viewport. */
 export function mountMascotLanding(root: HTMLElement): MascotLanding | undefined {
   const scenes = root.querySelector<HTMLElement>('.scenes');
-  if (!scenes || root.querySelector('.home-mascot-landing')) return;
+  if (!scenes) return;
+  // Dispose the old owner, including its observers and media listeners.
+  // A late cleanup from that owner must not remove the replacement.
+  mountedLandings.get(root)?.stop();
+  root.querySelectorAll('.home-mascot-landing').forEach(element => element.remove());
   const element = document.createElement('div');
   element.className = 'home-mascot-landing'; element.setAttribute('aria-hidden', 'true');
   const media = document.createElement('div');
@@ -121,8 +127,9 @@ export function mountMascotLanding(root: HTMLElement): MascotLanding | undefined
   layoutObserver?.observe(scenes);
   void document.fonts?.ready.then(() => { if (!disposed) alignWithTitle(); });
   reset();
-  return { element, land, reset, ready: () => video.readyState >= 2, active: () => landed, stop: () => {
-    disposed = true; greeting?.cancel(); still.removeEventListener('pointerenter', greet); cancelAnimationFrame(visibilityFrame); video.pause(); observer?.disconnect(); layoutObserver?.disconnect();
+  const controller: MascotLanding = { element, land, reset, ready: () => video.readyState >= 2, active: () => landed, stop: () => {
+    if (disposed) return;
+    disposed = true; mountedLandings.delete(root); greeting?.cancel(); still.removeEventListener('pointerenter', greet); cancelAnimationFrame(visibilityFrame); video.pause(); observer?.disconnect(); layoutObserver?.disconnect();
     video.removeEventListener('loadeddata', decoded);
     video.removeEventListener('playing', playing); video.removeEventListener('ended', ended);
     video.removeEventListener('error', showStill);
@@ -131,4 +138,6 @@ export function mountMascotLanding(root: HTMLElement): MascotLanding | undefined
     window.removeEventListener('scroll', updateVisibility);
     window.removeEventListener('resize', resize); reduced.removeEventListener('change', preference);
   } };
+  mountedLandings.set(root, controller);
+  return controller;
 }

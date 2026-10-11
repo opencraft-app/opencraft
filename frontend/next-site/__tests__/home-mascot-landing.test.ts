@@ -15,7 +15,6 @@ it('plays only the supplied landing clip, freezes its ending and resets on rever
  const root = document.querySelector<HTMLElement>('main')!;
  const landing = mountMascotLanding(root)!; cleanup = landing.stop;
  expect(root.querySelector('.scenes')!.previousElementSibling).toBe(landing.element);
- expect(mountMascotLanding(root)).toBeUndefined();
  const video = landing.element.querySelector('video')!;
  expect(video.src).toContain('mascot-four-landing-v6-refined.webm');
  expect(video.muted).toBe(true); expect(video.loop).toBe(false);
@@ -71,4 +70,26 @@ it('anchors the floor to layout rather than the heading entrance translation', (
  landing.element.querySelector('video')!.dispatchEvent(new Event('loadeddata'));
  expect(media.style.top).toBe('-28px');
  expect(100 + Number.parseFloat(media.style.top) + 270).toBe(350 - 8);
+});
+
+it('replaces an existing owner and ignores its late cleanup', () => {
+ vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
+ const disconnect = vi.fn();
+ vi.stubGlobal('IntersectionObserver', class { observe() {} disconnect = disconnect; });
+ vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+ document.body.innerHTML = '<main><section class="scenes"></section></main>';
+ const root = document.querySelector<HTMLElement>('main')!;
+ const first = mountMascotLanding(root)!;
+ const previousVideo = first.element.querySelector('video')!;
+ const second = mountMascotLanding(root)!; cleanup = second.stop;
+ expect(disconnect).toHaveBeenCalledTimes(1);
+ expect(previousVideo.hasAttribute('src')).toBe(false);
+ expect(first.element.isConnected).toBe(false);
+ expect(root.querySelectorAll('.home-mascot-landing')).toHaveLength(1);
+ expect(root.querySelector('.home-mascot-landing')).toBe(second.element);
+ first.stop(); expect(second.element.isConnected).toBe(true);
+ second.land(); expect(second.active()).toBe(true);
+ second.stop(); cleanup = undefined;
+ const third = mountMascotLanding(root)!; cleanup = third.stop;
+ expect(third.element.isConnected).toBe(true);
 });

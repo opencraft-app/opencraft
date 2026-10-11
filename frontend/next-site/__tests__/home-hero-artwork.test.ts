@@ -244,3 +244,52 @@ it('greets once from left to right and clears introduction timers on disposal', 
  stop!(); stop = undefined;
  expect(vi.getTimerCount()).toBe(0);
 });
+
+it('cancels the whole introduction when backgrounded and does not replay on return', async () => {
+ vi.useFakeTimers();
+ const scene = mountFeatureScene(); await flush();
+ vi.advanceTimersByTime(700); await flush();
+ expect(scene.buttons[0]!.dataset.waving).toBe('true');
+ vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+ document.dispatchEvent(new Event('visibilitychange'));
+ expect(scene.buttons.every(button => button.dataset.waving === 'false')).toBe(true);
+ vi.spyOn(document, 'hidden', 'get').mockReturnValue(false);
+ document.dispatchEvent(new Event('visibilitychange'));
+ vi.advanceTimersByTime(10000); await flush();
+ expect(scene.buttons.some(button => button.dataset.waving === 'true')).toBe(false);
+ expect(vi.getTimerCount()).toBe(0);
+});
+
+it.each(['pointerenter', 'focus', 'click'])('gives %s priority over automatic greetings and their end timers', async event => {
+ vi.useFakeTimers();
+ const scene = mountFeatureScene(); await flush();
+ vi.advanceTimersByTime(700); await flush();
+ vi.advanceTimersByTime(1000);
+ scene.buttons[0]!.dispatchEvent(new Event(event)); await flush();
+ // The old automatic end timer would fire at 2150ms, interrupting this greeting.
+ vi.advanceTimersByTime(450); await flush();
+ expect(scene.buttons[0]!.dataset.waving).toBe('true');
+ vi.advanceTimersByTime(10000); await flush();
+ expect(scene.buttons.slice(1).some(button => button.dataset.waving === 'true')).toBe(false);
+});
+
+it('does not enqueue the introduction after interaction during image decoding', async () => {
+ vi.useFakeTimers();
+ const resolvers: Array<() => void> = [];
+ const original = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, 'decode');
+ Object.defineProperty(HTMLImageElement.prototype, 'decode', {
+  configurable: true,
+  value: () => new Promise<void>(resolve => resolvers.push(resolve)),
+ });
+ try {
+  const scene = mountFeatureScene();
+  scene.buttons[2]!.dispatchEvent(new Event('click'));
+  resolvers.forEach(resolve => resolve()); await flush();
+  vi.advanceTimersByTime(10000); await flush();
+  expect(scene.buttons.some(button => button.dataset.waving === 'true')).toBe(false);
+  expect(vi.getTimerCount()).toBe(0);
+ } finally {
+  if (original) Object.defineProperty(HTMLImageElement.prototype, 'decode', original);
+  else Reflect.deleteProperty(HTMLImageElement.prototype, 'decode');
+ }
+});

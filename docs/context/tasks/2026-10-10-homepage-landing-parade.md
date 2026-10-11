@@ -1,19 +1,45 @@
+---
+id: task-homepage-landing-parade-20261010
+type: task
+scope: 双站首页动效与多 Bot 创建表单审查修正。
+triggers: ["homepage mascot landing", "MR 5181 review fixes", "微信定时任务提示"]
+owner: wisp/mono2-maintainers
+authority: primary
+source_of_truth:
+  - frontend/next-site/home-mascot-landing.ts
+  - frontend/next-site/home-hero-artwork.ts
+  - wiki/prd-docs/2026-10-10-homepage-landing-parade.md
+status: active
+reviewed_at: 2026-10-11
+review_due: 2026-11-11
+revision: 1.1.0
+precedence: task
+derived: false
+---
+
 # 首页落地与队列动画
 
 ## goal
 双站首页四个玩偶沿左侧空白下落，在核心特征与使用场景之间落地，并准备与页脚同质量的真实行走视频交接。
 
 ## non_goals
-不发布、不修改路由与正文，不用整体弹跳冒充真实迈腿。
+不发布生产、不修改路由与正文；仅按用户授权更新现有 MR 与分支预览。
 
-## requirement_refs
-用户本轮截图与文字；wiki/prd-docs/2026-10-10-homepage-landing-parade.md。
+## requirement_ids / requirement_refs / requirement_excerpt
+MR !5181 与用户本轮截图、评审结论；wiki/prd-docs/2026-10-10-homepage-landing-parade.md。最新要求是修复重复挂载和自动招呼竞争，并在微信通知频率提示下补充长期不对话的温和说明。
 
 ## affected_paths
 frontend/next-site/home-hero-artwork.ts、home-scroll-cast-loader.ts、home-mascot-landing.ts；共用 hermes-home.css。
 
+## interface_refs / data_structure_refs
+- mountMascotLanding 返回 MascotLanding 控制器；WeakMap 记录 root 的当前所有者，旧 stop 幂等。
+- mountHeroArtwork 监听 visibilitychange、pointerenter、focus 与 click；用户交互取消自动序列，异步解码不得重建已取消的序列。
+- AutomationFormModal 沿用 deliverPlatforms 与 weixinBlockedByFrequency，仅增加文案。
+
 ## history_context
 current_design_refs: frontend/DESIGN.md；基线 origin/master 3bc4384e53。旧设计保留 stash，当前分支 codex/homepage-redesign-20261010。
+relevant_evolution: MR !5181 后续分支 frontsandbox/homepage-mascot-polish-20261011 已到 5f7be2630b；本轮继续处理其审查意见。
+superseded_refs: 原返回 undefined 的重复挂载守卫、未取消的自动招呼计时器；仅供对比，不再作为实现依据。
 
 ## context_receipt
 - docs/context/domains/site-environment-routing.md：双站独立验收
@@ -137,22 +163,21 @@ Chrome 在 scrollY 1673 和 1748 验证 video state=playing 且 visibleImages=0�
 ### 2026-10-11 步骤玩偶和孤字换行
 用户确认刷新截图问题是左侧步骤玩偶位置。为未就绪的步定位变量添加模块内 CSS 回退，懒加载图 load 和 deploy/track ResizeObserver 重新定位，卸载清理。中文 play__list 末尾四字 nowrap，与 text-wrap:pretty 配合防孤字，不改原文。浏览器落地标题完整媒体间距 8px、plays 横线为 0px。checkpoint: verify；聚焦播放器回归35项、类型0新增，JS生命周期回归进行中。
 
-## 2026-10-11 MR delivery checkpoint
-- User authorized commit, push, MR and domestic/international branch previews; all locales included.
-- context_receipt: docs/context/domains/release-gitops.md; docs/context/flows/tapd-gongfeng-delivery.md; .agents/skills/product-skills/lv-vibe-coding/SKILL.md; .agents/skills/gongfeng/SKILL.md.
-- Final assets: mascot-four-landing-v6-refined.webm and its WebP still. Historical drafts remain local.
-- 81 focused Vitest tests and 27 Node generator tests passed. pnpm check passed (164 current, 171 baseline, 0 new). Domestic build and OpenCraft 136-file sync check passed.
-- Full pnpm test encountered cross-module timeouts and Node test collection incompatibility; stopped to release resources. Full suite is not verified green.
-- Browser evidence: 8px heading/frame gap, plays separator 0px, Chinese final phrase kept together. Step mascot to be reviewed in branch preview.
-- Limitation: landing hover uses group feedback; a real wave needs independent assets. Hero sequential greetings use existing wave frames.
+## 2026-10-11 MR 交付检查点
+- 用户已授权提交、推送、MR，以及国内/国际多语言分支预览。
+- context_receipt：docs/context/domains/release-gitops.md、docs/context/flows/tapd-gongfeng-delivery.md、lv-vibe-coding 与 gongfeng Skill。
+- 最终资源是 mascot-four-landing-v6-refined.webm 和对应 WebP 停帧，历史草稿仅保留本地。
+- 当时 81 项聚焦测试、27 项 Node 生成测试通过；前端检查零新增类型错误，国内构建和 OpenCraft 136 文件检查通过。
+- 全量测试有跨模块超时和 Node 测试收集兼容问题；未宣称全量通过。
+- 浏览器确认标题和完整画幅间距 8px、长横线为 0px、中文句尾保持完整。落地悬停只有整体反馈，真实挥手仍需要独立素材。
 
-## 2026-10-11 Review and delivery checkpoint
-- MR: https://git.woa.com/wisp/mono2/merge_requests/5181; target master; branch frontsandbox/homepage-mascot-polish-20261011.
-- Latest master merged. Required dialog preserved; only additional-creation form can dismiss; tests cover 1, 2 and 4 existing Bots.
-- AI review fixes: guard cached Map lookups, optional clone-source count, centralized LANDING_STATE constants.
-- After fixes: 83 focused Vitest passed; typecheck 164 current, 171 baseline, 0 new, 7 resolved. Node generator 27 passed.
-- Global build passed after clearing Next cache; 1562 static HTML files, 58 public routes verified. CN build passed earlier.
-- Branch preview pipeline p-9a3eeb676e0a4b0bacd778af7e39a952 triggered by authorized push; publication pending latest revision.
+## 2026-10-11 评审与交付检查点
+- MR：https://git.woa.com/wisp/mono2/merge_requests/5181；目标 master，分支 frontsandbox/homepage-mascot-polish-20261011。
+- 已合并当时最新 master；仅额外创建表单可关闭，首次创建仍为必做流程；覆盖已有 1、2、4 个 Bot 的测试。
+- AI 评论修正：Map 空值守卫、可选的复制来源数量、集中 LANDING_STATE 常量。
+- 当时 83 项聚焦测试、27 项 Node 生成测试通过；类型检查 164 current / 171 baseline / 0 new / 7 resolved。
+- 清除 Next 缓存后国际构建通过（1562 HTML、58 条公共路由），国内构建亦通过。
+- 授权推送触发分支预览流水线，最新预览版本仍需核对。
 
 ### 曲线玩偶定位修正（2026-10-11）
 
@@ -161,3 +186,36 @@ Chrome 在 scrollY 1673 和 1748 验证 video state=playing 且 visibleImages=0�
 - 回归测试模拟带 48px 入场位移的矩形，确认定位仍使用布局坐标；27 项生成/定位测试与 20 项动效测试通过。
 - 提交门禁：pnpm check 0 新增类型错误；OpenCraft 136 文件同步检查通过；清理开发缓存后国内构建通过（200 HTML，8 public routes）。
 - 用户刷新仍见旧效果；本地 HTTP 已确认新脚本和样式，但静态资源 query 仍为 v136。共享资源版本升级为 step-anchor-v137，使刷新获取新控制器与样式，双站多语言共用。
+
+### 2026-10-11 第二轮 MR 审查修正
+- context_receipt: frontend 服务与站点路由 pack、frontend/AGENTS.md、frontend/DESIGN.md、frontend-runtime-openspec-i18n 邻接卡；检查 landing/hero 相邻测试及 runtime 样式注册。
+- 重复挂载先完整销毁旧 landing 控制器再创建，旧 stop 幂等，避免遗留播放器/observer 或回退到错误落点。
+- 进入后台或用户 pointerenter/focus/click 时取消剩余自动招呼及结束计时器；解码完成后检查取消状态，避免异步重新排队。
+- hero-in 已定义于 public/lightvela-intl-home/style.css，international-home-runtime.tsx 加载该基础样式及 hermes-home.css；无需重复声明 keyframes。
+- checkpoint: verify；生命周期与交互竞争回归、check、构建待执行。
+
+### 2026-10-11 定时任务微信提示确认
+- 用户确认沿用原提示「微信不建议频繁通知，否则可能会被限流」。已撤回本轮加长文案与对应翻译，通知组件、原有渠道选择和频率限制没有本轮差异。
+- MR 继续处理重复挂载、招呼取消与样式定义核对；中文文档留在独立审阅分支。
+
+### 2026-10-11 微信提示补充与门禁检查点
+- 用户最新确认：原频率提示保留，另外加「较长时间未在微信中与 Bot 对话，提醒可能暂时无法送达，可先发送一条消息再试。」不写时长和次数。
+- 提示复用通知渠道现有区域，不改变任务执行、连接状态或频率限制；八个译文字典同步维护。
+- 全仓上下文测试有四项失败，涉及大量既有 Task Pack 元数据和英文段落。已修正本任务元数据及中文记录；不扩展修改其他历史任务。
+- 有界预览脚本搜索先后失败于 frontend/scripts/*preview*、.ci/runtime/scripts/frontend_preview*.py、commands/support/staticpages_preview.py；由包装器 import 定位到 .ci/runtime/support/staticpages_preview.py。未修改流水线或生产资源。
+- checkpoint: verify；继续验证最新短提示、双站构建与变更范围门禁，之后更新现有 MR。中文文档在独立工作树等待用户审阅。
+
+## handoff
+当前处于最终验证；类型、聚焦测试与双站构建证据分别保存在工作区 output。已有提交推送授权，验证后更新原 MR；文档审阅稿单独保留，不提交。
+
+### 最终短提示验收（2026-10-11）
+- 原频率文案保留，新文案只说明长期未在微信对话时提醒可能无法送达，不包含数字。
+- 最新聚焦回归合计 84 项通过（21 生命周期、62 首页集成、1 微信渠道选择与提示）；前端 check 0 新类型错误，3156 条国际 UI 文案无缺失。
+- 国内最终构建通过，国际最终构建执行中；变更范围设计检查通过，当前 Task Pack schema 与必需字段检查通过。
+- 全仓 context 测试四项失败来自大量历史 Pack 格式及英文段落；context-audit 测试 33 项通过，文档校验零错误。未宣称全仓门禁全绿。
+
+### 最终构建交付证据（2026-10-11）
+- 双站最终构建通过：国内 200 HTML / 8 条公共路由；国际 1562 HTML / 58 条公共路由。
+- 84 项聚焦回归通过，前端 check 零新增类型错误，文案在九个 UI 字典中完整。变更范围设计门禁通过。
+- 全仓 context 的历史失败已记录，当前 Task Pack schema、契约字段与中文记录检查通过。
+- 按既有授权更新 !5181；中文文档位于独立审阅分支，不随本 MR 提交。

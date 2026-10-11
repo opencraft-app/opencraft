@@ -60,6 +60,13 @@ export function mountHeroArtwork(root: HTMLElement, landing?: MascotLanding): ()
   const reduce = window.matchMedia('(prefers-reduced-motion: reduce)');
   let progress = 0;
   let disposed = false;
+  let introductionCancelled = false;
+  const introductionTimers: Array<ReturnType<typeof setTimeout>> = [];
+  function cancelIntroduction() {
+    introductionCancelled = true;
+    introductionTimers.splice(0).forEach(clearTimeout);
+    actors.forEach(actor => actor.endWave());
+  }
   const actors = ART.map(([name, size], i) => {
     const button = document.createElement('button');
     button.type = 'button';
@@ -115,7 +122,7 @@ export function mountHeroArtwork(root: HTMLElement, landing?: MascotLanding): ()
       if (reduce.matches || document.hidden || progress > .22 || disposed || requested) return;
       requested = true;
       await prepared;
-      if (!requested || disposed || reduce.matches || progress > .22 || !ready) { requested = false; return; }
+      if (!requested || disposed || document.hidden || reduce.matches || progress > .22 || !ready) { requested = false; return; }
       waving = true; button.dataset.waving = 'true';
       frames.forEach(image => { image.hidden = true; });
       waveFrames.forEach((image, index) => { image.hidden = index !== 0; });
@@ -128,9 +135,9 @@ export function mountHeroArtwork(root: HTMLElement, landing?: MascotLanding): ()
         if (beat >= 6) { clearInterval(timer); timer = undefined; }
       }, 220);
     }
-    const enter = () => { void greet(); };
+    const enter = () => { cancelIntroduction(); void greet(); };
     const leave = () => { if (document.activeElement !== button) endWave(); };
-    const click = () => { endWave(); void greet(); clickTimer = setTimeout(endWave, 1750); };
+    const click = () => { cancelIntroduction(); endWave(); void greet(); clickTimer = setTimeout(endWave, 1750); };
     button.addEventListener('pointerenter', enter);
     button.addEventListener('pointerleave', leave);
     button.addEventListener('focus', enter);
@@ -145,12 +152,11 @@ export function mountHeroArtwork(root: HTMLElement, landing?: MascotLanding): ()
 
   });
   document.body.append(layer);
-  const introductionTimers: Array<ReturnType<typeof setTimeout>> = [];
   void Promise.all(actors.map(actor => actor.prepared)).then(() => {
-    if (disposed || reduce.matches) return;
+    if (disposed || introductionCancelled || document.hidden || reduce.matches) return;
     actors.forEach((actor, index) => {
       introductionTimers.push(setTimeout(() => {
-        if (disposed || document.hidden || progress > .22 || reduce.matches) return;
+        if (disposed || introductionCancelled || document.hidden || progress > .22 || reduce.matches) return;
         void actor.greet();
         introductionTimers.push(setTimeout(actor.endWave, 1450));
       }, 700 + index * 1600));
@@ -303,15 +309,16 @@ export function mountHeroArtwork(root: HTMLElement, landing?: MascotLanding): ()
   const follow = () => draw();
   root.addEventListener('mascotlandingready', draw);
   window.addEventListener('scroll', follow, { passive: true });
-  document.addEventListener('visibilitychange', draw);
+  const visibilityChanged = () => { if (document.hidden) cancelIntroduction(); draw(); };
+  document.addEventListener('visibilitychange', visibilityChanged);
   window.addEventListener('resize', draw);
   reduce.addEventListener('change', draw);
   draw();
-  return () => { disposed = true; introductionTimers.forEach(clearTimeout); trigger.kill(); frameObserver?.disconnect();
+  return () => { disposed = true; cancelIntroduction(); trigger.kill(); frameObserver?.disconnect();
     heroVisibility?.disconnect(); stopTicker();
     actors.forEach(actor => actor.stop()); layer.remove();
     root.removeEventListener('mascotlandingready', draw);
     window.removeEventListener('scroll', follow);
-    document.removeEventListener('visibilitychange', draw);
+    document.removeEventListener('visibilitychange', visibilityChanged);
     window.removeEventListener('resize', draw); reduce.removeEventListener('change', draw); };
 }

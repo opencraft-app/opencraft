@@ -2730,6 +2730,7 @@ describe("automation notification channel options", () => {
     fireEvent.click(screen.getByRole("button", { name: "按间隔" }));
     expect(weixin).toBeDisabled();
     expect(screen.getByText("微信不建议频繁通知，否则可能会被限流")).toBeTruthy();
+    expect(screen.getByText("较长时间未在微信中与 Bot 对话，提醒可能暂时无法送达，可先发送一条消息再试。")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "小时" }));
     fireEvent.click(screen.getByRole("option", { name: "分钟" }));
