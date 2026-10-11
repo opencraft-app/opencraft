@@ -87,7 +87,7 @@ def invoke(command, instances):
     receipts = []
     for offset in range(0, len(instances), 5):
         batch = instances[offset:offset + 5]
-        data = cloud('tat', 'InvokeCommand', CommandId=command, InstanceIds=batch, Timeout=1200)
+        data = cloud('tat', 'InvokeCommand', CommandId=command, InstanceIds=batch, Timeout=1800)
         receipts.append({'InvocationId': data['InvocationId'], 'InstanceIds': batch})
         with (OUTPUT / 'invocations.jsonl').open('a') as target:
             target.write(json.dumps(receipts[-1]) + '\n')
@@ -106,6 +106,10 @@ def run():
         raise ValueError('invalid target version or checksum')
     if not trigger['archive_url'].startswith('https://hermes-code-1325194254.cos.ap-guangzhou.myqcloud.com/hermes/'):
         raise ValueError('unexpected archive origin')
+    if not re.fullmatch(r'lhbp-[A-Za-z0-9]+', trigger['blueprint_id']) or not re.fullmatch(r'hermes-agent-v[0-9]{8}', trigger['cos_version']) or not re.fullmatch(r'[0-9]+(?:\.[0-9]+){2}', trigger['display_version']):
+        raise ValueError('invalid fixed official backend target')
+    if not trigger['archive_url'].endswith('/' + trigger['cos_version'] + '/hermes-agent.tar.gz'):
+        raise ValueError('COS package differs from pinned archive')
     deadline = time.monotonic() + 1800
     while True:
         rows = inventory()
@@ -145,7 +149,7 @@ def run():
             raise RuntimeError('CLEAN VM has not adopted target image')
     source = (ROOT / 'images/helpers/pin-existing-hermes-runtime.py').read_text()
     shell = '#!/usr/bin/env bash\nset -euo pipefail\n'
-    for key, value in [('HERMES_PIN_SRC_VERSION', trigger['src_version']), ('HERMES_PIN_ARCHIVE_URL', trigger['archive_url']), ('HERMES_PIN_SHA256', trigger['archive_sha256'])]:
+    for key, value in [('HERMES_PIN_SRC_VERSION', trigger['src_version']), ('HERMES_PIN_ARCHIVE_URL', trigger['archive_url']), ('HERMES_PIN_SHA256', trigger['archive_sha256']), ('HERMES_PIN_BLUEPRINT_ID', trigger['blueprint_id']), ('HERMES_PIN_COS_VERSION', trigger['cos_version']), ('HERMES_PIN_DISPLAY_VERSION', trigger['display_version'])]:
         # Immutable checked-in non-secret values; shell quoting is explicit.
         shell += 'export ' + key + "='" + value.replace("'", "'\\''") + "'\n"
     shell += "python3 - <<'HERMES_PIN_PY'\n" + source + '\nHERMES_PIN_PY\n'
@@ -157,7 +161,7 @@ def run():
             raise RuntimeError('TAT checkpoint source or target differs from current build')
         command = checkpoint['CommandId']
     else:
-        created = cloud('tat', 'CreateCommand', CommandName='hermes-beijing-runtime-' + os.environ.get('BK_CI_BUILD_NUM', str(int(time.time()))), Description='CI Beijing runtime pin; preserve paused VMs and user data; verify actual versions', Content=base64.b64encode(shell.encode()).decode(), CommandType='SHELL', Username='root', WorkingDirectory='/tmp', Timeout=1200)
+        created = cloud('tat', 'CreateCommand', CommandName='hermes-beijing-runtime-' + os.environ.get('BK_CI_BUILD_NUM', str(int(time.time()))), Description='CI Beijing runtime pin; preserve paused VMs and user data; verify actual versions', Content=base64.b64encode(shell.encode()).decode(), CommandType='SHELL', Username='root', WorkingDirectory='/tmp', Timeout=1800)
         command = created['CommandId']
         command_file.write_text(json.dumps({'CommandId': command, 'trigger': trigger, 'sourceSha256': digest}))
     accepted = set()
@@ -175,7 +179,7 @@ def run():
         raise RuntimeError('accepted TAT scope differs from current inventory')
     # Read provider receipts too: an API success may precede a local checkpoint crash.
     accepted.update(row['InstanceId'] for row in task_results(command))
-    # Upgrade one allocated VM first; a bad installer must not reach the fleet.
+    # Upgrade one allocated VM first; a failed official upgrade must not reach the fleet.
     canary = next((row['cloud_id'] for row in targets if row['state'] == 'ALLOCATED'), ids[0])
     if canary not in accepted:
         invoke(command, [canary])
