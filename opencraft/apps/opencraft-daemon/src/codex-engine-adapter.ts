@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { CodexHostQueue, type HostQueuedSubmission } from "./codex-host-queue.js";
 import { CodexMessageAttachments } from "./codex-message-attachments.js";
 import { CodexThreadPins } from "./codex-thread-pins.js";
-import { CODEX_NATIVE_SHARED_METHODS, projectSharedNativeCodexInitialize } from "./codex-native-surface.js";
+import { CODEX_NATIVE_SHARED_METHODS, discoverNativeCodexGoalCapability, projectSharedNativeCodexInitialize } from "./codex-native-surface.js";
 import { projectCodexAttachmentNotification, projectCodexAttachmentResult } from "./codex-message-attachment-projection.js";
 
 import type { DuplexTransport, TransportStatus } from "@opencraft/appserver-client/transport";
@@ -27,6 +27,7 @@ import {
   OPENCRAFT_THREAD_START_DURABILITY_EXTENSION,
   type OpenCraftThreadLifecycleCapability,
   type OpenCraftThreadQueueCapability,
+  type OpenCraftThreadGoalCapability,
   type CodexAccountView,
   codexPermissionMode,
   parsePermissionModeProfileId,
@@ -188,6 +189,8 @@ export class CodexEngineAdapter implements DuplexTransport {
   private initializeResult: unknown | null = null;
   private threadPins: CodexThreadPins | null = null;
   private physicalInitializePending = false;
+  private physicalInitialized = false;
+  private remoteGoalCapability: OpenCraftThreadGoalCapability | null = null;
   private poolStore: AccountPoolStore | null = null;
   private poolServer: Awaited<ReturnType<typeof startCodexAccountPoolServer>> | null = null;
   private login: CodexDeviceLoginService | null = null;
@@ -383,6 +386,8 @@ export class CodexEngineAdapter implements DuplexTransport {
     }
     const id = responseId(message.id);
     if (this.options.kind === "remote" && typeof message.method === "string" && !SHARED_NATIVE_METHODS.has(message.method)
+      && !(message.method === "thread/goal/get" && this.remoteGoalCapability?.read)
+      && !((message.method === "thread/goal/set" || message.method === "thread/goal/clear") && this.remoteGoalCapability?.write)
       && !(this.remoteAttachmentsReady && (message.method === "attachment/stage" || message.method === "attachment/remove"))) {
       if (id !== null) this.emit({ id, error: { code: -32601, message: "This operation is unavailable on the remote connection" } }, clientId);
       return;
@@ -533,6 +538,8 @@ export class CodexEngineAdapter implements DuplexTransport {
   close(): Promise<void> {
     if (this.closeOperation !== null) return this.closeOperation;
     this.publishStatus({ state: "closing" });
+    this.physicalInitialized = false;
+    this.remoteGoalCapability = null;
     this.revokeDesktopOwners();
     this.closeOperation = (async () => {
       for (const dispose of this.remoteDisposers.splice(0)) dispose();
@@ -638,6 +645,62 @@ export class CodexEngineAdapter implements DuplexTransport {
     } : { ...message, id: physicalId });
   }
 
+  private async completeInitialize(pending: PendingRequest, response: RpcRecord): Promise<void> {
+    let message = response;
+    if ("result" in message) {
+      await this.writePhysical({ method: "initialized", params: {} });
+      if (this.statusValue.state !== "open") return;
+      this.physicalInitialized = true;
+      if (this.options.kind === "remote") {
+        let goalCapability: OpenCraftThreadGoalCapability | null = null;
+        try {
+          goalCapability = await discoverNativeCodexGoalCapability(message.result,
+            (method, params) => this.requestPhysical(method, params, 3_000));
+        } catch (error) {
+          this.diagnostic({ event: "remote-goal-capability-unavailable", reason: errorMessage(error) });
+        }
+        // Closing/replacing the physical connection revokes a late discovery.
+        if (this.statusValue.state !== "open" || !this.physicalAvailable) return;
+        this.remoteGoalCapability = goalCapability;
+        const shared = projectSharedNativeCodexInitialize(message.result, this.remoteGoalCapability);
+        if (this.attachmentStaging instanceof SshAttachmentStagingService) {
+          this.remoteAttachmentsReady = this.attachmentStaging.initialize(record(message.result).codexHome);
+          if (this.remoteAttachmentsReady) {
+            const capabilities = record(shared.capabilities);
+            const extensions = record(capabilities.extensions);
+            const methods = record(extensions[OPENCRAFT_METHOD_ACCESS_EXTENSION]).methods as readonly string[];
+            this.initializeResult = { ...shared, capabilities: { ...capabilities, extensions: {
+              ...extensions,
+              [OPENCRAFT_ATTACHMENT_STAGING_EXTENSION]: this.attachmentStaging.capability,
+              [OPENCRAFT_METHOD_ACCESS_EXTENSION]: { version: 1, methods: [...methods, "attachment/stage", "attachment/remove"] },
+            } } };
+          } else this.initializeResult = shared;
+        } else this.initializeResult = shared;
+      } else {
+        this.initializeResult = this.attachmentStaging
+          ? withCodexHostCapabilities(message.result, this.attachmentStaging.capability, this.desktopService?.capability())
+          : projectSharedNativeCodexInitialize(message.result);
+      }
+      message = { ...message, result: this.initializeResult };
+    }
+    this.physicalInitializePending = false;
+    if (this.validClientRequest(pending)) this.emit({ ...message, id: pending.originalId }, pending.clientId);
+    this.diagnostic({ event: "client-initialize", clientId: pending.clientId, source: "physical",
+      outcome: "result" in message ? "succeeded" : "failed", pid: this.child?.pid ?? null });
+    for (const waiter of this.initializeWaiters.splice(0)) {
+      if (this.validClientRequest(waiter)) this.emit("result" in message
+        ? { id: waiter.originalId, result: message.result }
+        : { id: waiter.originalId, error: message.error }, waiter.clientId);
+      this.diagnostic({ event: "client-initialize", clientId: waiter.clientId, source: "physical-waiter",
+        outcome: "result" in message ? "succeeded" : "failed", pid: this.child?.pid ?? null });
+    }
+    if ("result" in message) {
+      for (const threadId of this.queue?.pendingThreads() ?? []) this.scheduleQueueMaintenance(threadId);
+      if (this.options.kind !== "remote") void this.discoverActiveGoals()
+        .catch(error => this.diagnostic({ event: "goal-discovery-failed", reason: errorMessage(error) }));
+    }
+  }
+
   private readonly receivePhysicalLine = (line: string): void => {
     let message: RpcRecord;
     try { message = record(JSON.parse(line)); } catch { return; }
@@ -662,46 +725,17 @@ export class CodexEngineAdapter implements DuplexTransport {
         this.pending.delete(String(id));
         if (pending.timer) clearTimeout(pending.timer);
         if (pending.method === "initialize") {
-          this.physicalInitializePending = false;
-          if ("result" in message) {
-            if (this.attachmentStaging instanceof SshAttachmentStagingService) {
-              this.remoteAttachmentsReady = this.attachmentStaging.initialize(record(message.result).codexHome);
-              const shared = projectSharedNativeCodexInitialize(message.result);
-              this.initializeResult = shared;
-              if (this.remoteAttachmentsReady) {
-                const capabilities = record(shared.capabilities);
-                this.initializeResult = { ...shared, capabilities: { ...capabilities, extensions: {
-                  ...record(capabilities.extensions),
-                  [OPENCRAFT_ATTACHMENT_STAGING_EXTENSION]: this.attachmentStaging.capability,
-                  [OPENCRAFT_METHOD_ACCESS_EXTENSION]: { version: 1, methods: [...CODEX_NATIVE_SHARED_METHODS, "attachment/stage", "attachment/remove"] },
-                } } };
-              }
-            } else {
-              this.initializeResult = this.attachmentStaging
-                ? withCodexHostCapabilities(message.result, this.attachmentStaging.capability, this.desktopService?.capability())
-                : projectSharedNativeCodexInitialize(message.result);
+          void this.completeInitialize(pending, message).catch(error => {
+            this.physicalInitializePending = false;
+            if (["closing", "closed"].includes(this.statusValue.state)) return;
+            for (const request of [pending, ...this.initializeWaiters.splice(0)]) {
+              if (this.validClientRequest(request)) this.emit({ id: request.originalId, error: {
+                code: -32000, message: "Codex initialization failed",
+              } }, request.clientId);
             }
-            message = { ...message, result: this.initializeResult };
-            void this.writePhysical({ method: "initialized", params: {} })?.catch(() => undefined);
-          }
-          if (this.validClientRequest(pending)) this.emit({ ...message, id: pending.originalId }, pending.clientId);
-          this.diagnostic({
-            event: "client-initialize", clientId: pending.clientId, source: "physical",
-            outcome: "result" in message ? "succeeded" : "failed", pid: this.child?.pid ?? null,
+            this.diagnostic({ event: "client-initialize-failed", reason: errorMessage(error) });
+            this.publishStatus({ state: "failed", reason: "Codex initialization failed" });
           });
-          for (const waiter of this.initializeWaiters.splice(0)) {
-            if (this.validClientRequest(waiter)) this.emit("result" in message
-              ? { id: waiter.originalId, result: message.result }
-              : { id: waiter.originalId, error: message.error }, waiter.clientId);
-            this.diagnostic({
-              event: "client-initialize", clientId: waiter.clientId, source: "physical-waiter",
-              outcome: "result" in message ? "succeeded" : "failed", pid: this.child?.pid ?? null,
-            });
-          }
-          if ("result" in message) {
-            for (const threadId of this.queue?.pendingThreads() ?? []) this.scheduleQueueMaintenance(threadId);
-            if (this.options.kind !== "remote") void this.discoverActiveGoals().catch(error => this.diagnostic({ event: "goal-discovery-failed", reason: errorMessage(error) }));
-          }
           return;
         }
         if (pending.method === "permissionProfile/list" && "result" in message) {
@@ -1166,7 +1200,7 @@ export class CodexEngineAdapter implements DuplexTransport {
   }
 
   private requestPhysical(method: string, params: RpcRecord, timeoutMs = 30_000): Promise<unknown> {
-    if (this.statusValue.state !== "open" || !this.physicalAvailable || this.initializeResult === null) {
+    if (this.statusValue.state !== "open" || !this.physicalAvailable || !this.physicalInitialized) {
       return Promise.reject(new Error("Codex AppServer is not initialized"));
     }
     const id = `opencraft:host:${++this.sequence}`;
@@ -1253,7 +1287,7 @@ export class CodexEngineAdapter implements DuplexTransport {
 
   /** Goal continuation belongs to the Host, not a browser View or websocket lease. */
   private scheduleGoalContinuation(threadId: string): void {
-    if (!this.activeGoalThreads.has(threadId) || this.goalContinuationTimers.has(threadId)) return;
+    if (this.options.kind === "remote" || !this.activeGoalThreads.has(threadId) || this.goalContinuationTimers.has(threadId)) return;
     const timer = setTimeout(() => {
       this.goalContinuationTimers.delete(threadId);
       void this.withThreadOperation(threadId, async () => {

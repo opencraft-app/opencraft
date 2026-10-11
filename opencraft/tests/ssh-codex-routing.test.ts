@@ -27,12 +27,19 @@ function setup() {
   adapter.subscribeMessage(frame => frames.push(JSON.parse(frame)));
   const send = (client: string, id: number | string, method: string, params: unknown = {}) => adapter.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: client }));
   const detach = (client: string) => adapter.send(JSON.stringify({ method: "runtime/client/disconnect", [LOGICAL_CLIENT_FIELD]: client }));
+  const settleDiscovery = async () => {
+    await new Promise<void>(resolve => setImmediate(resolve));
+    const query = physical.sent.find(frame => frame.method === "experimentalFeature/list");
+    assert.ok(query, "shared initialization queries native capabilities before replying");
+    physical.receive({ id: query.id, result: { data: [], nextCursor: null } });
+    await new Promise<void>(resolve => setImmediate(resolve));
+  };
   const initialize = async () => {
     await adapter.connect(); await send("a", 1, "initialize", { capabilities: { experimentalApi: false } });
     physical.receive({ id: physical.sent.at(-1).id, result: { platform: "linux", codexHome: "/remote" } });
-    await send("b", 1, "initialize"); frames.length = 0;
+    await send("b", 1, "initialize"); await settleDiscovery(); frames.length = 0;
   };
-  return { physical, adapter, frames, send, detach, initialize };
+  return { physical, adapter, frames, send, detach, initialize, settleDiscovery };
 }
 test("shared remote broker initializes once with backend policy; no local extensions or internal route reaches upstream", async () => {
   const f = setup();
@@ -43,6 +50,8 @@ test("shared remote broker initializes once with backend policy; no local extens
     assert.equal(f.physical.sent.length, 1);
     assert.deepEqual(f.physical.sent[0].params.capabilities, { experimentalApi: true });
     f.physical.receive({ id: f.physical.sent[0].id, result: { platform: "linux", capabilities: { extensions: { [OPENCRAFT_DESKTOP_EXTENSION]: { version: 1 } } } } });
+    assert.equal(f.frames.length, 0, "initialization waits for shared capability discovery");
+    await f.settleDiscovery();
     const [a, b] = f.frames;
     assert.equal(a.id, 1); assert.equal(b.id, "1");
     for (const extension of [OPENCRAFT_ATTACHMENT_STAGING_EXTENSION, OPENCRAFT_THREAD_QUEUE_EXTENSION, OPENCRAFT_THREAD_GOAL_EXTENSION, OPENCRAFT_DESKTOP_EXTENSION]) {
@@ -51,8 +60,65 @@ test("shared remote broker initializes once with backend policy; no local extens
     }
     await f.detach("a");
     assert.equal(f.physical.sent.filter(message => message.method === "initialize").length, 1);
+    assert.equal(f.physical.sent.filter(message => message.method === "experimentalFeature/list").length, 1);
     assert.ok(f.physical.sent.every(message => !message[LOGICAL_CLIENT_FIELD]));
     assert.ok(f.physical.sent.every(message => message.method !== "runtime/client/disconnect"));
+  } finally { await f.adapter.close(); }
+});
+
+test("silent Goal discovery times out without blocking ordinary SSH initialization", async context => {
+  context.mock.timers.enable({ apis: ["setTimeout"] });
+  const f = setup();
+  try {
+    await f.adapter.connect(); await f.send("a", 1, "initialize"); await f.send("b", 1, "initialize");
+    f.physical.receive({ id: f.physical.sent[0].id, result: {} });
+    await new Promise<void>(resolve => setImmediate(resolve));
+    const query = f.physical.sent.find(frame => frame.method === "experimentalFeature/list");
+    assert.ok(query);
+    context.mock.timers.tick(3_000);
+    await new Promise<void>(resolve => setImmediate(resolve));
+    assert.equal(f.frames.length, 2);
+    assert.equal(f.adapter.status.state, "open");
+    for (const frame of f.frames) assert.equal(frame.result.capabilities.extensions[OPENCRAFT_THREAD_GOAL_EXTENSION], undefined);
+    f.physical.receive({ id: query.id, result: { data: [{ name: "goals", enabled: true }] } });
+    assert.equal(f.frames.length, 2, "late capabilities cannot alter initialized Clients");
+  } finally { await f.adapter.close(); }
+});
+
+test("closing the connection fences a pending native Goal discovery", async () => {
+  const f = setup();
+  try {
+    await f.adapter.connect(); await f.send("a", 1, "initialize");
+    f.physical.receive({ id: f.physical.sent[0].id, result: {} });
+    await new Promise<void>(resolve => setImmediate(resolve));
+    const query = f.physical.sent.find(frame => frame.method === "experimentalFeature/list");
+    assert.ok(query);
+    const queuedReceive = [...f.physical.messages][0]!;
+    await f.adapter.close();
+    queuedReceive(JSON.stringify({ id: query.id, result: { data: [{ name: "goals", enabled: true }] } }));
+    await new Promise<void>(resolve => setImmediate(resolve));
+    assert.equal(f.frames.length, 0);
+    assert.equal(f.adapter.status.state, "closed");
+  } finally { await f.adapter.close(); }
+});
+
+test("explicit read-only upstream Goal capability only admits native reads", async () => {
+  const f = setup();
+  try {
+    await f.adapter.connect(); await f.send("a", 1, "initialize");
+    f.physical.receive({ id: f.physical.sent[0].id, result: { capabilities: { extensions: {
+      [OPENCRAFT_THREAD_GOAL_EXTENSION]: { version: 1, read: true, write: false },
+    } } } });
+    await new Promise<void>(resolve => setImmediate(resolve));
+    assert.equal(f.frames[0].result.capabilities.extensions[OPENCRAFT_THREAD_GOAL_EXTENSION].write, false);
+    assert.ok(!f.physical.sent.some(frame => frame.method === "experimentalFeature/list"));
+    await f.send("a", 2, "thread/goal/get", { threadId: "existing" });
+    assert.equal(f.physical.sent.at(-1).method, "thread/goal/get");
+    const count = f.physical.sent.length;
+    await f.send("a", 3, "thread/goal/set", { threadId: "existing", status: "active" });
+    await f.send("a", 4, "thread/goal/clear", { threadId: "existing" });
+    assert.equal(f.physical.sent.length, count);
+    assert.equal(f.frames.at(-1).error.code, -32601);
   } finally { await f.adapter.close(); }
 });
 test("reverse RPC replies preserve client and numeric/string ID; stale incarnation cannot receive a late reply", async () => {

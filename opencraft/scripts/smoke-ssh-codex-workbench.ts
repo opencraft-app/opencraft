@@ -12,6 +12,7 @@ import { assertHeadlessWebRelease } from "./headless-web-release.mjs";
 // bind a real credential, create a Thread or invoke an actual model here.
 const webRoot = process.env.OPENCRAFT_SSH_UI_WEB_ROOT;
 const activeFixture = process.env.OPENCRAFT_SSH_UI_ACTIVE_FIXTURE === "true";
+const goalFixture = process.env.OPENCRAFT_SSH_UI_GOAL_FIXTURE === "true";
 assert.ok(webRoot, "Set OPENCRAFT_SSH_UI_WEB_ROOT to an isolated headless Web build");
 await assertHeadlessWebRelease(resolve(webRoot));
 const calls: { hostId: string; method: string; params: any }[] = [];
@@ -29,7 +30,7 @@ const appHost = new AppHostServer({ logicalClientRouting: true, physicalHostLife
       spawnSsh: (args, env) => {
         connections.set(hostId, (connections.get(hostId) ?? 0) + 1);
         const child = spawn(process.execPath, [new URL("../tests/fixtures/fake-codex-ssh-proxy.mjs", import.meta.url).pathname, args.at(-1)!], {
-          stdio: ["pipe", "pipe", "pipe", "ipc"], env: { ...env, FIXTURE_WORKBENCH_UI: "1", FIXTURE_WORKBENCH_UI_ACTIVE: activeFixture ? "1" : "0" },
+          stdio: ["pipe", "pipe", "pipe", "ipc"], env: { ...env, FIXTURE_WORKBENCH_UI: "1", FIXTURE_WORKBENCH_UI_ACTIVE: activeFixture ? "1" : "0", ...(goalFixture ? { FIXTURE_NATIVE_GOALS: "enabled" } : {}) },
         });
         child.on("message", (frame: any) => calls.push({ hostId, ...frame }));
         return child;
@@ -94,9 +95,16 @@ try {
     await page.goto(`${origin}/local/ssh-ui-thread?hostId=ssh%3Afixture`);
     await page.getByText("Remote history fixture", { exact: true }).first().waitFor({ timeout: 30_000 });
     await page.getByText("Historical remote answer", { exact: true }).waitFor({ timeout: 30_000 });
+    if (goalFixture) {
+      const summary = page.getByRole("button", { name: /正在推进目标/u });
+      await summary.waitFor(); await summary.click();
+      await page.getByText("Existing remote goal", { exact: true }).waitFor();
+      await summary.click();
+    }
     assert.equal(await page.getByText("Historical remote question", { exact: true }).count(), 1);
     await page.reload();
     await page.getByText("Historical remote answer", { exact: true }).waitFor({ timeout: 30_000 });
+    if (goalFixture) await page.getByRole("button", { name: /正在推进目标/u }).waitFor();
     assert.equal(await page.getByText("Historical remote question", { exact: true }).count(), 1);
     await page.locator(".codex-composer-editor").waitFor();
     if (activeFixture) {
@@ -127,11 +135,16 @@ try {
   assert.ok(calls.some(call => call.hostId === "ssh:fixture" && call.method === "fs/readDirectory" && call.params.path === "/remote/project"));
   assert.ok(calls.every(call => !["thread/start", "turn/start", "fs/writeFile", "fs/watch", "fuzzyFileSearch/sessionStart"].includes(call.method) && !call.method.startsWith("thread/queue/")));
   assert.equal(calls.filter(call => call.hostId === "ssh:fixture" && call.method === "turn/steer").length, activeFixture ? 8 : 0);
+  if (goalFixture) {
+    assert.ok(calls.some(call => call.hostId === "ssh:fixture" && call.method === "thread/goal/get"));
+    assert.equal(calls.filter(call => call.hostId === "ssh:fixture" && call.method === "experimentalFeature/list").length, 1);
+    assert.ok(!calls.some(call => ["thread/goal/set", "thread/goal/clear"].includes(call.method)));
+  }
   console.log(JSON.stringify({ ok: true, actualWorkbenchUI: true, desktop: true, touch: true,
     backendCatalog: true, remoteSelection: true, targetReload: true, draftRetainedDuringSelection: true,
     remoteDirectorySelection: true, historyRestore: true, paginatedItems: true, lightAndDark: true,
     activeFollowUpAdmission: activeFixture, queuePreferenceRetained: activeFixture, inverseShortcutAdmitted: activeFixture,
-    sharedPhysicalConnection: true, sshExecFixture: true, realRemoteWrites: false }));
+    sharedPhysicalConnection: true, existingNativeGoal: goalFixture, sshExecFixture: true, realRemoteWrites: false }));
 } catch (error) {
   // Only this synthetic profile is reachable; no user history/credential data
   // is loaded into the fixture. Keep failed UI sequences diagnosable.

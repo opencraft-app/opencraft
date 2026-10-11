@@ -130,6 +130,14 @@ is connected. Queued user input has priority over autonomous continuation;
 continuation is serialized with other per-Thread Host operations. The DSH Host
 currently advertises read-only Goal support, never a simulated write path.
 
+For SSH Codex, Goals remain native remote Thread state. The shared broker
+preserves an explicit upstream Goal capability, or discovers enabled Goals
+through the native feature catalog during physical initialization. It exposes
+the corresponding native get/set/clear methods, retains read-only declarations,
+and omits the capability when discovery fails or Goals are disabled. Reading an
+existing Goal does not create, activate, or resume it. The remote Codex owns
+autonomous continuation; the SSH bridge never schedules an additional Goal Turn.
+
 Workbench Runtime owns a per-Thread Goal resource: get-on-view activation,
 notification projection, revision-fenced reads, reconnect invalidation, and
 single-flight writes followed by a confirming read. A failed confirmation is
