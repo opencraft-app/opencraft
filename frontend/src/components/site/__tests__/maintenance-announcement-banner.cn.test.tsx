@@ -25,7 +25,7 @@ vi.mock("@/lib/region", () => ({
 }));
 
 beforeEach(async () => {
-  vi.spyOn(Date, "now").mockReturnValue(Date.UTC(2026, 8, 23, 12, 0, 0));
+  vi.spyOn(Date, "now").mockReturnValue(Date.UTC(2026, 9, 11, 12, 0, 0));
   window.localStorage.clear();
   navigationMock.usePathname.mockReturnValue("/");
   await i18n.changeLanguage("zh-CN");
@@ -39,19 +39,19 @@ afterEach(() => {
 });
 
 describe("MaintenanceAnnouncementBanner China maintenance window", () => {
-  it("renders the Sep 23 maintenance window in Beijing time", async () => {
+  it("renders the Oct 11 maintenance window in Beijing time", async () => {
     render(<MaintenanceAnnouncementBanner />);
 
     expect(
       await screen.findByText(
-        "LightVela 将于北京时间 2026 年 9 月 23 日 22:00-次日 06:00 进行系统升级，期间服务可能短暂中断，带来不便敬请谅解。",
+        "LightVela 将于北京时间 2026 年 10 月 11 日 22:00-次日 06:00 进行系统升级，期间服务可能短暂中断，带来不便敬请谅解。",
       ),
     ).toBeInTheDocument();
   });
 
   it("ignores the dismissal state from the previous announcement", async () => {
     window.localStorage.setItem(
-      "lw-announcement-dismissed:0907-hermes-agent-upgrade",
+      "lw-announcement-dismissed:0923-system-upgrade",
       "1",
     );
 
@@ -59,7 +59,7 @@ describe("MaintenanceAnnouncementBanner China maintenance window", () => {
 
     expect(
       await screen.findByText(
-        "LightVela 将于北京时间 2026 年 9 月 23 日 22:00-次日 06:00 进行系统升级，期间服务可能短暂中断，带来不便敬请谅解。",
+        "LightVela 将于北京时间 2026 年 10 月 11 日 22:00-次日 06:00 进行系统升级，期间服务可能短暂中断，带来不便敬请谅解。",
       ),
     ).toBeInTheDocument();
   });
@@ -75,7 +75,7 @@ describe("MaintenanceAnnouncementBanner China maintenance window", () => {
   });
 
   it("removes the maintenance announcement at 06:00 Beijing time", async () => {
-    const expiresAt = Date.UTC(2026, 8, 23, 22, 0, 0);
+    const expiresAt = Date.UTC(2026, 9, 11, 22, 0, 0);
     vi.useFakeTimers();
     vi.setSystemTime(expiresAt - 1_000);
 
