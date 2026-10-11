@@ -50,7 +50,7 @@ describe("reset to the platform default model", () => {
     const reset = runHelper(
       { type: "resetToPlatformDefault", apiKey: "platform-default-secret", model: platformModel },
       {
-        model: { provider: configuredModel.providerKey, default: configuredModel.id },
+        model: { provider: configuredModel.providerKey, default: configuredModel.id, supports_vision: false },
         fallback_providers: [{ provider: "stale", model: "stale-model" }],
         providers: {
           [configuredModel.providerKey]: {
@@ -88,7 +88,7 @@ describe("reset to the platform default model", () => {
           transport: "openai_chat",
           discover_models: true,
           key_env: "KEY_custom",
-          models: { auto: { lightvela_configured: true } },
+          models: { auto: { lightvela_configured: true, supports_vision: true } },
         },
       },
       lightvela: { retained: true },
@@ -116,6 +116,26 @@ describe("reset to the platform default model", () => {
     const action = JSON.parse(Buffer.from(encoded!, "base64").toString("utf8")) as Record<string, unknown>;
     expect(action).toMatchObject({ type: "resetToPlatformDefault", model: platformModel });
     expect(action).not.toHaveProperty("apiKey");
+  });
+
+  it("does not declare vision for another platform model", () => {
+    const reset = runHelper(
+      { type: "resetToPlatformDefault", apiKey: "platform-default-secret", model: { ...platformModel, id: "text-model" } },
+      {},
+    );
+    expect(reset.config.providers.custom.models["text-model"]).toEqual({ lightvela_configured: true });
+  });
+
+  it("rolls back when the runtime drops auto's vision declaration", () => {
+    const originalConfig = { model: { provider: "custom", default: "auto" }, unrelated: { retained: true } };
+    const reset = runHelper(
+      { type: "resetToPlatformDefault", apiKey: "platform-default-secret", model: platformModel },
+      originalConfig,
+      { DROP_SAVED_VISION: "1" },
+    );
+    expect(reset.output).toContain("save_failed");
+    expect(reset.config).toEqual(originalConfig);
+    expect(reset.credentials).not.toHaveProperty("KEY_custom");
   });
 
   it("rolls config and credentials back when platform reset validation fails", () => {
@@ -486,6 +506,9 @@ def save_config(value):
     if os.environ.get("DROP_SAVED_FALLBACKS") and save_count == 1:
         value = copy.deepcopy(value)
         value["fallback_providers"] = []
+    if os.environ.get("DROP_SAVED_VISION") and save_count == 1:
+        value = copy.deepcopy(value)
+        value["providers"]["custom"]["models"]["auto"].pop("supports_vision", None)
     (ROOT / "config.json").write_text(json.dumps(value))
 def save_env_value(key, value):
     event("save_env_value")
