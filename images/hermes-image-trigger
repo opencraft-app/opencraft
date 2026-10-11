@@ -5,3 +5,4 @@
 2026-09-07T23:52:04+08:00 hermes-0.21.0-image-rebuild reuse=
 2026-09-09T15:17:34+08:00 keep-automation-blueprint-skills reuse=
 2026-09-23T23:52:28+08:00 hermes-0.21.3-johor-rollout reuse=
+2026-10-11T19:09:04+08:00 beijing-strict-validation hermes=0.21.5 source_build=33 reuse=hermes-agent-b-f6f72d0b7da84125adc929d2c8f24506
