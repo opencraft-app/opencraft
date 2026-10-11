@@ -49,7 +49,7 @@ if [ "${1:-}" = "view" ]; then
     exit 69
   fi
   case "${specification}" in
-    '@deepseek-ai/dsh@0.1.1-rc.2') package_name='@deepseek-ai/dsh'; version='0.1.1-rc.2'; integrity='sha512-runtime' ;;
+    '@deepseek-ai/dsh@latest') package_name='@deepseek-ai/dsh'; version='0.2.0-rc.2'; integrity='sha512-runtime' ;;
     '@cocofhu/skillhub@latest') package_name='@cocofhu/skillhub'; version='0.2.16'; integrity='sha512-skillhub' ;;
     'deepseek-harness-qqbot@latest') package_name='deepseek-harness-qqbot'; version='0.1.5'; integrity='sha512-qqbot' ;;
     'deepseek-harness-weixin@latest') package_name='deepseek-harness-weixin'; version='0.2.5'; integrity='sha512-weixin' ;;
@@ -99,7 +99,7 @@ case "${directory}" in
 set -euo pipefail
 printf 'dsh %s\n' "$*" >>"${LIGHTVELA_DSH_TEST_CALLS}"
 if [ "${1:-}" = "--version" ]; then
-  printf '0.1.1-rc.2\n'
+  printf '0.2.0-rc.2\n'
   exit 0
 fi
 if [ "${1:-}" = "plugin" ]; then
@@ -136,15 +136,23 @@ fi
 exit 0
 INNER
     chmod +x "${directory}/node_modules/.bin/dsh"
-    printf '%s\n' '{"name":"@deepseek-ai/dsh","version":"0.1.1-rc.2"}' >"${directory}/node_modules/@deepseek-ai/dsh/package.json"
+    printf '%s\n' '{"name":"@deepseek-ai/dsh","version":"0.2.0-rc.2"}' >"${directory}/node_modules/@deepseek-ai/dsh/package.json"
     cat >"${directory}/node_modules/@deepseek-ai/dsh-client-connection/lib/client.js" <<'INNER'
 const handle = {
   api,
-  isLoopback: pageLocation === void 0 || isLoopbackHostname(pageLocation.hostname),
+  isLoopback: transport?.ownsHost === true || pageLocation === void 0 || isLoopbackHostname(pageLocation.hostname),
 };
 INNER
     printf '%s\n' 'if (hmr === void 0) throw new Error(`${binName}: user patch-layer watching requires the Cordis HMR service`);' \
       >"${directory}/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js"
+    cat >"${directory}/node_modules/@deepseek-ai/dsh-client-connection/lib/index.js" <<'INNER_AUTH'
+const AUTH_RECORD_KEY = "auth";
+class BrowserAuth {
+	authorizeIndex(req, res) {
+        return false;
+    }
+}
+INNER_AUTH
     ;;
   */profiles/web)
     if [[ "$*" == *"--lockfile-only"* ]]; then
@@ -274,7 +282,7 @@ export PATH="${FAKE_BIN}:${PATH}"
 umask 077
 
 mode_of() {
-  stat -f '%Lp' "$1" 2>/dev/null || stat -c '%a' "$1"
+  stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1"
 }
 
 reset_instance() {
@@ -374,7 +382,7 @@ grep -Fq 'systemctl restart deepseek-harness.service' "${CALLS}"
 ! grep -Fq 'systemctl --user' "${CALLS}"
 assert_task_status "${first_task}" succeeded
 assert_no_worktree
-test "$(stat -f '%Lp' "${TEST_ROOT}/var/lib/lightvela/dsh/work" 2>/dev/null || stat -c '%a' "${TEST_ROOT}/var/lib/lightvela/dsh/work")" = "711"
+test "$(mode_of "${TEST_ROOT}/var/lib/lightvela/dsh/work")" = "711"
 for runtime_root in \
   "${TEST_ROOT}/opt/lightvela/dsh" \
   "${TEST_ROOT}/opt/lightvela/dsh/releases" \
@@ -393,8 +401,10 @@ import sys
 with open(sys.argv[1], encoding="utf-8") as handle:
     manifest = json.load(handle)
 patch = manifest["browserTrustPatch"]
-assert patch == {"version": 1, "hostname": sys.argv[2]}, patch
-assert manifest["runtime"]["requested"] == "0.1.1-rc.2", manifest["runtime"]
+assert patch == {"version": 3, "hostname": sys.argv[2]}, patch
+assert manifest["runtime"]["requested"] == "latest", manifest["runtime"]
+assert manifest["runtime"]["version"] == "0.2.0-rc.2", manifest["runtime"]
+assert manifest["runtime"]["integrity"] == "sha512-runtime", manifest["runtime"]
 PY
 
 printf '%s\n' 'custom-provider-patch' >"${profile}/cordis.patch.yml"
@@ -638,7 +648,7 @@ drift_manifest="${TMPDIR}/drift-manifest.json"
 mkdir -p "${drift_runtime}/node_modules/@deepseek-ai/dsh-client-connection/lib"
 printf '%s\n' 'const handle = { isLoopback: false };' \
   >"${drift_runtime}/node_modules/@deepseek-ai/dsh-client-connection/lib/client.js"
-printf '{"browserTrustPatch":{"version":1,"hostname":"%s"}}\n' \
+printf '{"browserTrustPatch":{"version":3,"hostname":"%s"}}\n' \
   "${trusted_browser_host}" >"${drift_manifest}"
 if bash -c 'source "$1"; patch_browser_connection "$2" "$3"' \
   lightvela-dsh-test "${INSTALLER}" "${drift_runtime}" "${drift_manifest}" >/dev/null 2>&1; then
@@ -653,9 +663,15 @@ printf '%s\n' 'if (hmr === void 0) throw new Error(`${binName}: user patch-layer
 bash -c 'source "$1"; patch_missing_hmr_fallback "$2"' \
   lightvela-dsh-test "${INSTALLER}" "${hmr_runtime}" >/dev/null
 grep -Fq 'patch-layer live watching disabled' "${hmr_boot}"
+bash -c 'source "$1"; patch_missing_hmr_fallback "$2"' \
+  lightvela-dsh-test "${INSTALLER}" "${hmr_runtime}" >/dev/null
+printf '%s\n' 'if (hmr === void 0) throw new Error(`${binName}: user patch-layer watching requires the Cordis HMR service`);' \
+  >>"${hmr_boot}"
+printf '%s\n' 'if (hmr === void 0) throw new Error(`${binName}: user patch-layer watching requires the Cordis HMR service`);' \
+  >>"${hmr_boot}"
 if bash -c 'source "$1"; patch_missing_hmr_fallback "$2"' \
   lightvela-dsh-test "${INSTALLER}" "${hmr_runtime}" >/dev/null 2>&1; then
-  echo 'HMR source drift unexpectedly accepted' >&2
+  echo 'ambiguous HMR source unexpectedly accepted' >&2
   exit 1
 fi
 
@@ -710,4 +726,6 @@ if ${INSTALLER} providers --region cn >/dev/null 2>&1; then
   exit 1
 fi
 
+bash "${ROOT_DIR}/images/tests/test-deepseek-harness-browser-bootstrap.sh"
+bash "${ROOT_DIR}/images/tests/test-deepseek-harness-plugin-payload.sh"
 echo "deepseek harness installer tests passed"
