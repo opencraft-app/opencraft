@@ -24,7 +24,7 @@ stages:
           - checkout: self
             with:
               fetchDepth: 1
-          - name: 检查归档边界、失败恢复和幂等性
+          - name: 检查归档边界、官方升级目标和幂等性
             shell: bash
             run: |
               set -euo pipefail
@@ -41,10 +41,10 @@ stages:
             reviewers: [ "skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang" ]
         description: |
           仅 beijing-sandbox / ap-beijing。等待 Pool 库存重置完成，以一台已分配 VM 为 canary。
-          TAT 只在实际版本不匹配时安装固定 COS 源码包，保存旧 runtime 源码，失败恢复。
-          保留配置、会话及所有 PAUSED VM；原来活跃的 Hermes gateway 完成后恢复。
+          TAT 只在实际版本不匹配时先刷新 ACLI bundle，再用官方 backend 升级到固定 COS 包。
+          官方升级备份并保留配置、会话；所有 PAUSED VM 暂缓，原来活跃的 gateway 必须仍活跃。
           全部在线目标必须执行成功且 CLI、Python import/distribution、identity 版本一致。
-          此流水线没有生产发布步骤，不刷新 Pool，也不再次升级 backend blueprint。
+          此流水线没有生产发布步骤，不刷新 Pool；固定北京目标蓝图和 COS 包，单机失败停止批量。
       timeout-hours: 24
     jobs:
       approved:
