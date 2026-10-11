@@ -1,6 +1,7 @@
 import importlib.util
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location('beijing_verify', Path(__file__).parents[2] / '.ci/runtime/support/pin_beijing_hermes_existing_vms.py')
 verify = importlib.util.module_from_spec(spec)
@@ -8,6 +9,11 @@ spec.loader.exec_module(verify)
 
 
 class TerminalProofTests(unittest.TestCase):
+    def test_without_execute_flag_has_no_vm_actions(self):
+        with patch('sys.argv', ['pin_beijing_hermes_existing_vms.py']), patch.object(verify, 'run') as run:
+            self.assertEqual(verify.main(), 0)
+            run.assert_not_called()
+
     def proof(self):
         return {'TaskStatus': 'SUCCESS', 'ExitCode': 0, 'probe': dict.fromkeys(('cliVersion', 'importVersion', 'distributionVersion', 'identityVersion', 'expectedVersion'), '0.21.5') | {'passed': True}}
 
