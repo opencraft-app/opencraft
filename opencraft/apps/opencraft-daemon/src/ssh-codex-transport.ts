@@ -90,7 +90,7 @@ export class SshProbeStream extends Duplex {
 }
 
 /** Password is delivered through a private local socket, never argv/env/stdin RPC. */
-async function createPasswordAgent(resolvePassword: () => Promise<string>): Promise<{ env: NodeJS.ProcessEnv; close(): Promise<void> }> {
+export async function createSshPasswordAgent(resolvePassword: () => Promise<string>): Promise<{ env: NodeJS.ProcessEnv; close(): Promise<void> }> {
   const directory = await mkdtemp(join(tmpdir(), "opencraft-ssh-auth-"));
   await chmod(directory, 0o700);
   const socketPath = join(directory, "askpass.sock");
@@ -130,7 +130,7 @@ async function createPasswordAgent(resolvePassword: () => Promise<string>): Prom
   } catch (error) { await close(); throw error; }
 }
 
-function classifySshFailure(stderr: string, code: number | null): SshCodexConnectionError {
+export function classifySshFailure(stderr: string, code: number | null): SshCodexConnectionError {
   if (/REMOTE HOST IDENTIFICATION HAS CHANGED|Host key verification failed|No .* host key is known/u.test(stderr)) {
     return new SshCodexConnectionError("SSH_HOST_KEY", false, "SSH host identity must be verified");
   }
@@ -150,7 +150,7 @@ export class SshCodexTransport implements DuplexTransport {
   private child: ChildProcessWithoutNullStreams | null = null;
   private socket: WebSocket | null = null;
   private stream: SshProbeStream | null = null;
-  private auth: Awaited<ReturnType<typeof createPasswordAgent>> | null = null;
+  private auth: Awaited<ReturnType<typeof createSshPasswordAgent>> | null = null;
   private operation: Promise<void> | null = null;
   private closing: Promise<void> | null = null;
   private heartbeat: NodeJS.Timeout | null = null;
@@ -183,7 +183,7 @@ export class SshCodexTransport implements DuplexTransport {
     let abort: (() => void) | undefined;
     try {
       if (signal?.aborted) throw signal.reason;
-      if (this.options.authentication.kind === "password") this.auth = await createPasswordAgent(this.options.authentication.resolvePassword);
+      if (this.options.authentication.kind === "password") this.auth = await createSshPasswordAgent(this.options.authentication.resolvePassword);
       if (generation !== this.generation || signal?.aborted) throw new Error("SSH connection was cancelled");
       const marker = randomBytes(8);
       const args = ["-F", "/dev/null", "-T", "-p", String(this.options.port), "-l", this.options.username,

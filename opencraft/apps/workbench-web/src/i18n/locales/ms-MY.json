@@ -220,5 +220,15 @@
   "desktop.textInput": "Taip di komputer",
   "desktop.paste": "Tampal",
   "desktop.view": "Paparan desktop",
-  "panel.actionFailed": "Pratonton tidak dapat dibuka buat masa ini. Sila cuba lagi."
+  "panel.actionFailed": "Pratonton tidak dapat dibuka buat masa ini. Sila cuba lagi.",
+  "pdf.previous": "Halaman sebelumnya",
+  "pdf.next": "Halaman seterusnya",
+  "pdf.page": "{page} / {total}",
+  "pdf.zoomOut": "Zum keluar",
+  "pdf.zoomIn": "Zum masuk",
+  "pdf.fit": "Muat mengikut lebar",
+  "pdf.download": "Muat turun fail",
+  "pdf.loading": "Memuatkan PDF…",
+  "pdf.failed": "PDF ini tidak dapat dipaparkan. Muat turun untuk membukanya dalam pembaca lain.",
+  "media.unavailable": "Pratonton fail ini tidak disokong. Muat turun untuk membukanya."
 }

@@ -8,7 +8,7 @@ import { createRoot } from 'react-dom/client';
 
 const output = await build({
   stdin: { contents: `
-    export { createInlineMarkdownFileRenderer, createMediaMarkdownFileRenderer, createLinkRenderer } from './packages/chat-render-web/src/renderers/resource-link/resource-link';
+    export { createInlineMarkdownFileRenderer, createMediaFileRenderer, createLinkRenderer } from './packages/chat-render-web/src/renderers/resource-link/resource-link';
     export { ChatDocumentCompiler } from './packages/chat-document/src/compiler';
     export { resolveStandardChatResource } from '@opencraft/chat-render-react';
     export { WorkbenchPanelService } from '@opencraft/workbench-panels';
@@ -33,7 +33,7 @@ test('inline Markdown path click opens the existing right-panel resource flow', 
   ctx.workbenchPanels.register({kind:'resource', createTab:({resource})=>({id:resource,resource,kind:'resource',region:'right',title:'file',closable:true,preview:true})});
   const resources = {resolve:exports.resolveStandardChatResource};
   const Inline = exports.createInlineMarkdownFileRenderer(resources);
-  const Media = exports.createMediaMarkdownFileRenderer(resources);
+  const Media = exports.createMediaFileRenderer(resources);
   const Link = exports.createLinkRenderer(resources);
   const calls=[];
   const context={cwd:'/home/agentuser',externalResourcePolicy:'allow',streaming:false,
@@ -63,6 +63,17 @@ test('inline Markdown path click opens the existing right-panel resource flow', 
     await act(()=>mediaLink.dispatchEvent(new window.MouseEvent('click',{bubbles:true,cancelable:true})));
     assert.deepEqual(calls,['file:///home/agentuser/顺德攻略.md','file:///home/agentuser/国庆江西行作文.md']);
     assert.equal(ctx.workbenchPanels.getOwnerSnapshot('bot-a:thread-a').right.tabs.at(-1).resource,calls.at(-1));
+    for (const path of ['/tmp/report.pdf','/tmp/clip.mp4','/tmp/voice.mp3','/tmp/image.png','/tmp/archive.zip','/tmp/no-extension']) {
+      await act(()=>root.render(React.createElement(Media,mediaProps('MEDIA:'+path))));
+      assert.ok(document.querySelector('a'),path);
+      assert.equal(document.querySelector('a').getAttribute('href'),'file://'+path);
+    }
+    for (const [value, target] of [['MEDIA:report.pdf','file:///home/agentuser/report.pdf'],['MEDIA:assets/clip.webm','file:///home/agentuser/assets/clip.webm'],['MEDIA:"/tmp/未知 文件.xyz"','file:///tmp/未知 文件.xyz'],['MEDIA:https://example.com/a.pdf','https://example.com/a.pdf']]) {
+      await act(()=>root.render(React.createElement(Media,mediaProps(value))));
+      assert.equal(document.querySelector('a')?.getAttribute('href'),target,value);
+    }
+    await act(()=>root.render(React.createElement(Media,mediaProps('MEDIA:https://example.com/a.pdf',{externalResourcePolicy:'restricted'}))));
+    assert.equal(document.querySelector('a'),null,'MEDIA must preserve external resource restrictions');
     const inlineMediaParsed=new exports.ChatDocumentCompiler().compile('`MEDIA:/home/agentuser/国庆江西行作文.md`');
     const inlineMediaNode=inlineMediaParsed.nodes[0].children.find((node)=>node.kind==='inline-code');
     assert.ok(inlineMediaNode,'backticked MEDIA path must parse as inline code');
@@ -75,7 +86,7 @@ test('inline Markdown path click opens the existing right-panel resource flow', 
     await act(()=>inlineMediaLink.dispatchEvent(new window.MouseEvent('click',{bubbles:true,cancelable:true})));
     assert.equal(calls.at(-1),'file:///home/agentuser/国庆江西行作文.md');
     assert.equal(ctx.workbenchPanels.getOwnerSnapshot('bot-a:thread-a').right.tabs.at(-1).resource,calls.at(-1));
-    for(const value of ['MEDIA:README.md','MEDIA:https://example.com/a.md','MEDIA://example.com/a.md','MEDIA:/tmp/a.pdf',
+    for(const value of ['MEDIA:javascript:alert(1)','MEDIA://example.com/a.md',
       'MEDIA:/tmp/a.md; cat /tmp/b.md','See MEDIA:/tmp/a.md','MEDIA:/tmp/a.md and more']){
       await act(()=>root.render(React.createElement(Media,mediaProps(value))));
       assert.equal(document.querySelector('a'),null,value);
@@ -87,8 +98,8 @@ test('inline Markdown path click opens the existing right-panel resource flow', 
       await act(()=>root.render(React.createElement(Inline,props(code))));
       assert.equal(document.querySelector('a'),null,code);
     }
-    for(const code of ['MEDIA:README.md','MEDIA:https://example.com/a.md','MEDIA://example.com/a.md',
-      'MEDIA:/tmp/a.pdf','MEDIA:/tmp/a.md; cat /tmp/b.md']){
+    for(const code of ['MEDIA:javascript:alert(1)','MEDIA://example.com/a.md',
+      'MEDIA:/tmp/a.md; cat /tmp/b.md']){
       await act(()=>root.render(React.createElement(Inline,props(code))));
       assert.equal(document.querySelector('a'),null,code);
     }

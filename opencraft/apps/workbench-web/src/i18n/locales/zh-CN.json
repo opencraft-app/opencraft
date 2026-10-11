@@ -245,5 +245,15 @@
   "panel.resize": "调整预览面板宽度",
   "panel.markdownPreview": "预览",
   "panel.markdownSource": "源码",
+  "pdf.previous": "上一页",
+  "pdf.next": "下一页",
+  "pdf.page": "{page} / {total}",
+  "pdf.zoomOut": "缩小",
+  "pdf.zoomIn": "放大",
+  "pdf.fit": "适应宽度",
+  "pdf.download": "下载文件",
+  "pdf.loading": "正在加载 PDF…",
+  "pdf.failed": "无法显示此 PDF，请下载后使用其他阅读器打开。",
+  "media.unavailable": "暂不支持预览此文件，请下载后打开。",
   "chat.waitingForHostToSend": "正在连接，连上后即可发送"
 }

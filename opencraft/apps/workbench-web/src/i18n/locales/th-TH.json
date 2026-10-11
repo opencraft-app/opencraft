@@ -220,5 +220,15 @@
   "desktop.keyboard": "แสดงแป้นพิมพ์",
   "desktop.textInput": "พิมพ์บนเดสก์ท็อป",
   "desktop.paste": "วาง",
-  "desktop.view": "มุมมองเดสก์ท็อป"
+  "desktop.view": "มุมมองเดสก์ท็อป",
+  "pdf.previous": "หน้าก่อนหน้า",
+  "pdf.next": "หน้าถัดไป",
+  "pdf.page": "{page} / {total}",
+  "pdf.zoomOut": "ย่อ",
+  "pdf.zoomIn": "ขยาย",
+  "pdf.fit": "พอดีความกว้าง",
+  "pdf.download": "ดาวน์โหลดไฟล์",
+  "pdf.loading": "กำลังโหลด PDF…",
+  "pdf.failed": "ไม่สามารถแสดง PDF นี้ได้ โปรดดาวน์โหลดเพื่อเปิดด้วยโปรแกรมอ่านอื่น",
+  "media.unavailable": "ยังไม่รองรับการแสดงตัวอย่างไฟล์นี้ โปรดดาวน์โหลดเพื่อเปิด"
 }

@@ -3,6 +3,7 @@ import { isAbsolute } from "node:path";
 import { CodexEngineAdapter } from "./codex-engine-adapter.js";
 import { SshCodexTransport, type SshCodexTransportOptions } from "./ssh-codex-transport.js";
 import type { SshCodexServerDescriptor } from "@opencraft/app-host-protocol";
+import { createSshAttachmentOptions } from "./ssh-attachment-options.js";
 
 export interface SshCodexServerBinding {
   readonly descriptor: SshCodexServerDescriptor;
@@ -54,6 +55,9 @@ export async function readSshCodexServerBindings(path: string): Promise<readonly
   });
 }
 
-export function createSshCodexEngineAdapter(binding: SshCodexServerBinding): CodexEngineAdapter {
-  return new CodexEngineAdapter({ kind: "remote", transport: new SshCodexTransport(binding.connection) });
+export function createSshCodexEngineAdapter(binding: SshCodexServerBinding, stateDirectory?: string): CodexEngineAdapter {
+  const connection = binding.connection;
+  return new CodexEngineAdapter({ kind: "remote", transport: new SshCodexTransport(connection),
+    ...createSshAttachmentOptions(binding, stateDirectory),
+  });
 }

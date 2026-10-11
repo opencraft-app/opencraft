@@ -9,6 +9,8 @@ import {
   OPENCRAFT_THREAD_GOAL_EXTENSION,
   OPENCRAFT_ATTACHMENT_STAGING_EXTENSION,
   OPENCRAFT_PERMISSION_MODES_EXTENSION,
+  parseThreadGoalCapability,
+  type OpenCraftThreadGoalCapability,
 } from "@opencraft/appserver-protocol";
 import { OPENCRAFT_DESKTOP_EXTENSION } from "@opencraft/appserver-protocol/desktop";
 
@@ -26,13 +28,17 @@ export const CODEX_NATIVE_SHARED_METHODS = Object.freeze([
   "fs/readDirectory", "fs/getMetadata", "fs/readFile", "fs/writeFile", "fs/createDirectory",
 ] as const);
 
+export const CODEX_NATIVE_GOAL_METHODS = Object.freeze([
+  "thread/goal/get", "thread/goal/set", "thread/goal/clear",
+] as const);
+
 function record(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown> : {};
 }
 
 /** Preserve upstream metadata, but never advertise stores owned by this machine. */
-export function projectSharedNativeCodexInitialize(value: unknown): Record<string, unknown> {
+export function projectSharedNativeCodexInitialize(value: unknown, goalCapability: OpenCraftThreadGoalCapability | null = null): Record<string, unknown> {
   const result = record(value);
   const capabilities = record(result.capabilities);
   const extensions = { ...record(capabilities.extensions) };
@@ -44,8 +50,27 @@ export function projectSharedNativeCodexInitialize(value: unknown): Record<strin
     version: 1, fork: true, rename: true, archive: true, unsubscribe: true,
     ephemeral: false, injectItems: false, delete: false,
   };
-  extensions[OPENCRAFT_METHOD_ACCESS_EXTENSION] = { version: 1, methods: CODEX_NATIVE_SHARED_METHODS };
+  const goalMethods = goalCapability ? goalCapability.write ? CODEX_NATIVE_GOAL_METHODS : ["thread/goal/get"] : [];
+  if (goalCapability) extensions[OPENCRAFT_THREAD_GOAL_EXTENSION] = goalCapability;
+  extensions[OPENCRAFT_METHOD_ACCESS_EXTENSION] = { version: 1, methods: [...CODEX_NATIVE_SHARED_METHODS, ...goalMethods] };
   extensions[OPENCRAFT_THREAD_PINS_EXTENSION] = OPENCRAFT_THREAD_PINS_CAPABILITY;
   extensions[OPENCRAFT_THREAD_START_DURABILITY_EXTENSION] = OPENCRAFT_FIRST_TURN_DURABILITY_CAPABILITY;
   return { ...result, capabilities: { ...capabilities, extensions } };
+}
+
+/** Native Codex has no OpenCraft extension; its feature catalog is the authority. */
+export async function discoverNativeCodexGoalCapability(
+  initialize: unknown,
+  request: (method: string, params: Record<string, unknown>) => Promise<unknown>,
+): Promise<OpenCraftThreadGoalCapability | null> {
+  const extensions = record(record(record(initialize).capabilities).extensions);
+  if (OPENCRAFT_THREAD_GOAL_EXTENSION in extensions) {
+    return parseThreadGoalCapability(extensions[OPENCRAFT_THREAD_GOAL_EXTENSION]);
+  }
+  // Omitting the limit requests the complete native feature catalog. This read
+  // neither materializes a Thread nor changes/resumes its Goal.
+  const catalog = record(await request("experimentalFeature/list", {}));
+  if (!Array.isArray(catalog.data)) return null;
+  const goals = catalog.data.find(entry => record(entry).name === "goals");
+  return record(goals).enabled === true ? { version: 1, read: true, write: true } : null;
 }

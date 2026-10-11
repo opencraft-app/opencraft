@@ -1,5 +1,16 @@
 # Agent、网关与运行时领域
 
+OpenCraft Web/Headless 文件附件的 WebSocket 消息上限为 48 MiB，以容纳原有
+32 MiB 文件额度经过 Base64 与 JSON/AppHost 包装后的体积。附件存储仍按解码后
+32 MiB 限额校验，超出文件额度返回错误，不提前断开共享 Host；桌面观看通道
+仍保留独立限额。此前 16 MiB 消息限额会使约 12 MiB 以上附件上传时断连。
+
+OpenCraft 内置本地 Codex 的 Web 与 Electron Host profile 默认启用自动连接。
+侧栏读取会话目录时复用现有 HostRuntimeRegistry 建立连接，不切换当前聊天 Host；
+远端 SSH 连接仍由用户显式发起。该默认值由内置插件贡献，不需要迁移浏览器保存的数据。
+
+平台网关的 Hermes `custom/auto` 模型使用模型级 `supports_vision: true` 声明图片输入能力；`auto` 是网关别名，不能依赖公共模型目录推断。CTL 初始化（含 ACLI 与 harness 路径）在模型写入后补齐并回读该字段，前端恢复平台默认配置时在重建 provider 后声明并验证能力。恢复默认配置同时清除旧主模型的顶层 `model.supports_vision`，避免它覆盖新默认模型的声明；用户显式的图片路由策略仍保留。此契约不为其他模型声明能力，不要求重做 CVM 镜像，也不自动修改存量实例。相关实现与回归测试见 `ctl/pkg/instance/async.go`、`ctl/pkg/instance/auto_vision_test.go`、`frontend/src/pages/marketing/agent-model-config/hermes-model-config-command.ts`。
+
 ## 渠道聊天记录只读接口（待启用）
 
 CTL 的 `/v1/instances/{id}/bots/{bot_id}/channel-sessions` 与消息子资源按登录账号限定实例。每次请求在一条地域 TAT 命令中读取 Hermes Profile 列表、确认 Bot 仍存在，再只读打开对应 Profile 的 `state.db`；不缓存 Bot/Profile 映射。数据库文件路径隔离 Bot；当前非 multiplex 部署下每个 Profile 的渠道会话键都使用 `agent:main:` 命名空间，缺少这一渠道会话键的记录不返回。列表和消息均分页，消息投影只包含用户与助手文本，排除工具调用和原始推理。
@@ -86,6 +97,21 @@ Web 与 Native 消费同一呈现计划；运行中 diff 更新不得关闭活�
 源码验证不等于当前预览已经替换。
 
 ## 服务与责任
+
+OpenCraft SSH Host 附件复用 `attachment/stage` 与 `attachment/remove`：文件内容
+不超过 10 MiB 通过原生 RPC 写入，更大文件通过后端 SFTP；当前仍限 32 MiB。
+远端目录来自原生 initialize 的 CodexHome，按稳定 Server 与端点隔离；私有
+partial 提交并校验后才返回 ready。后端持有认证、主机信任、幂等记录、失败删除
+重试与持久历史元数据；发送使用真实远端路径，已发送资源不随草稿删除。补齐附件
+不宣告本机队列、Goal 或桌面能力。详见
+[Attachment staging](../../../opencraft/docs/chat-ui-architecture.md)。
+
+SSH Codex 的原生 Goal 属于远端 Thread。共享 broker 在物理初始化时保留上游
+显式声明的 Goal read/write 能力；原生 Codex 未提供 OpenCraft 扩展时，以只读
+功能目录中的 goals.enabled 发现支持，再开放对应的 get/set/clear RPC。禁用、
+旧版不支持或探测超时不宣告能力，也不阻止普通会话就绪。工作台按 Thread 读取
+已有目标；读取和发现不创建、激活或恢复 Goal。自主续跑仍归远端 Codex，SSH
+broker 不追加 Goal 写入或执行轮次。见 [Thread goals](../../../opencraft/docs/chat-ui-architecture.md#thread-goals)。
 
 OpenCraft 会话置顶属于原生 Server 的目录元数据，不属于执行轮次或客户端偏好。
 Codex adapter 使用原生置顶 section；Hermes adapter 复用既有 TAT HTTP 通道和
@@ -813,7 +839,9 @@ NewAPI 在锁定有效订阅后优先选择名称为 `free-credit:*` 的赠送�
 文件保存统一通过 writeWorkspaceResource 执行只读检查及目标快照写入；组件与 helper 均有拒绝写入测试。OpenCraft CI guard 在闭包校验后执行锁定依赖安装和串行 test:embedded-ci，包含真实预览面板的写入保护测试。
 
 国内嵌入聊天的 Markdown 文件入口同时支持标准文件链接与回复中行内代码形式的明确文件路径（`.md` / `.markdown`）。点击后由既有资源策略交给当前 Bot 的只读右栏；展示文字不提前触发远端读取，不把路径当命令执行。
-Hermes 回复中独立成项的 `MEDIA:<明确 Markdown 路径>`（普通文本或行内代码）也走同一入口，只在回复完成后可点；非 Markdown、夹在正文中的文本及无效路径保持原样。`MEDIA:` 前缀仅用于识别，不进入文件路径或绕过 Host 文件权限。
+回复中独立成项的 `MEDIA:<文件路径>`（普通文本或行内代码）也走同一入口，只在回复完成后可点，且不限定引擎或 Markdown 扩展名。支持绝对/相对路径、带空格的引用路径及 HTTP(S) 地址；外部地址仍走既有导航策略，夹在正文中的文本及无效路径保持原样。`MEDIA:` 前缀仅用于识别，不进入文件路径或绕过 Host 文件权限。
+
+共享资源面板按文件类型选择图片、音频、视频、PDF 或普通文件分支。PDF.js 的文档、单页绘制任务、Worker 与下载 URL 归当前 View，所有能提供文件字节的 Host 共用此预览；文件读取与鉴权仍由原 Host/Blob 服务持有。PDF 不受文本预览的 4 MiB 上限约束；未知格式或无法解码的媒体保留下载。音视频当前使用完整文件 Blob，不声明远程 Range 流式读取；Worker、字体、CMap 与 WASM 来自构建制品。详见 [共享文件预览](../../../opencraft/docs/chat-ui-architecture.md)。
 
 国内嵌入聊天采用 compact 右栏初始宽度：既有默认宽度的 2/3，并继续遵守面板最小宽度和聊天内容保留宽度；拖拽调整由原 Shell owner 负责，独立工作台保持 standard 默认。
 
