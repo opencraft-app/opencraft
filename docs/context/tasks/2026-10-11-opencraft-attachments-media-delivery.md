@@ -32,6 +32,7 @@
 - 工蜂原有配置可发现，但缺少 GONGFENG_TOKEN 环境变量；复用本机 Git 凭据的只读 get_current_user 返回 Unauthorized。未执行 MR 写操作，已请求用户恢复认证；Git SSH 推送独立验证。
 - 全仓文档校验与 staged docs-impact 通过；相对 origin/master 的本轮差异 whitespace 与高置信度凭据扫描通过。完整 merge stage 的 whitespace 检查命中 master 既有文档尾空格，未改动无关历史内容。
 - 集成提交 70963611249cb7494ce9160bbe02d0e99e7bff04 已通过 Git SSH 推送；ls-remote 回读来源分支精确匹配，master 仍为 c292a250f1a0a047fea53f495fc2fc9ad2c6e7ee。工作区干净；MR 标题、正文和 master 目标已准备，未创建 MR。
+- 后续用户提供工蜂认证；已在仓库外私有 mcporter 配置恢复，get_current_user 验证通过。重新 fetch master 后确认交付分支包含最新 master，继续正常 MR 合并流程，不更改审批或门禁规则。
 
 ## handoff
-- 实现与集成提交已推送，合入 master 仍需恢复工蜂 MR 认证。用户确认问题已发送，认证失败期间不执行 MR 写操作；当前在线服务不属于此次 Git 合入操作。
+- 实现与集成提交已推送，认证已恢复，正在创建 MR 并核对合入结果；当前在线服务不属于此次 Git 合入操作。
