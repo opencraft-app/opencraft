@@ -1,13 +1,88 @@
 package instance
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
 	psandbox "ctl/pkg/adapter/sandbox"
 	pctx "ctl/pkg/context"
+	"ctl/pkg/logic/objectid"
 	"ctl/pkg/model/channelloginsession"
+	modelinstance "ctl/pkg/model/instance"
+	"ctl/pkg/transport"
+
+	"go.uber.org/zap"
 )
+
+type weixinSessionDaoStub struct {
+	channelloginsession.Dao
+	created   *channelloginsession.Entity
+	createErr error
+	session   *channelloginsession.Entity
+}
+
+func (s *weixinSessionDaoStub) Create(_ pctx.Context, entity *channelloginsession.Entity) error {
+	s.created = entity
+	return s.createErr
+}
+
+func (s *weixinSessionDaoStub) GetActiveByInstance(_ pctx.Context, _, _ string) (*channelloginsession.Entity, error) {
+	return nil, nil
+}
+
+func (s *weixinSessionDaoStub) GetBySessionID(_ pctx.Context, _, _ string) (*channelloginsession.Entity, error) {
+	return s.session, nil
+}
+
+func TestCreateWeixinLoginSessionPersistsBotTarget(t *testing.T) {
+	batch := func(body string) []psandbox.PtyExecStreamEvent {
+		return []psandbox.PtyExecStreamEvent{
+			{Type: "output", Chunk: body},
+			{Type: "finished", ExitCode: 0, Status: "SUCCESS"},
+		}
+	}
+	adapter := &commandSandboxAdapterStub{ptyBatches: [][]psandbox.PtyExecStreamEvent{
+		batch(`{"items":[{"native_id":"sales-123","display_name":"Sales","is_default":false}]}`),
+		batch(`{"items":[{"native_id":"sales-123","display_name":"Sales","is_default":false}]}`),
+		batch(`{"ok":true,"channel":"weixin","bot_id":"sales-123","profile_id":"sales-123","status":"reserved"}`),
+		batch(`{"ok":true}`),
+	}}
+	stopAtCreate := errors.New("stop after capturing session record")
+	dao := &weixinSessionDaoStub{createErr: stopAtCreate}
+	l := &logic{
+		instanceDao: &commandInstanceDaoStub{entity: &modelinstance.Entity{
+			InstanceId: "ins-1", SandboxId: "sbx-1", Status: modelinstance.InstanceStatusRunning,
+		}},
+		sandboxAdapter:         adapter,
+		channelLoginSessionDao: dao,
+		objectIdLogic:          objectid.NewLogic(),
+		logger:                 zap.NewNop(),
+	}
+	_, err := l.CreateWeixinLoginSession(
+		pctx.NewContext(nil).WithUserID("user-1"), "ins-1",
+		&transport.CreateWeixinLoginSessionRequest{BotID: "sales-123", ProfileID: "sales-123"},
+	)
+	if !errors.Is(err, stopAtCreate) {
+		t.Fatalf("expected capture to stop at session persistence, got %v", err)
+	}
+	if dao.created == nil || dao.created.BotID != "sales-123" || dao.created.ProfileID != "sales-123" ||
+		dao.created.InstanceID != "ins-1" || dao.created.Channel != channelloginsession.ChannelWeixin ||
+		dao.created.SessionID == "" {
+		t.Fatalf("session persistence lost its Bot target: %+v", dao.created)
+	}
+}
+
+func TestWeixinSessionTargetUsesPersistedBotAfterRuntimeEnds(t *testing.T) {
+	dao := &weixinSessionDaoStub{session: &channelloginsession.Entity{
+		SessionID: "wxs-1", InstanceID: "ins-1", BotID: "sales-123", ProfileID: "sales-123",
+	}}
+	l := &logic{weixinHub: newWeixinLoginHub(), channelLoginSessionDao: dao}
+	botID, profileID, err := l.weixinSessionTarget(pctx.NewContext(nil).WithUserID("user-1"), "ins-1", "wxs-1")
+	if err != nil || botID != "sales-123" || profileID != "sales-123" {
+		t.Fatalf("expected durable Bot target without runtime or catalog lookup, got bot=%q profile=%q err=%v", botID, profileID, err)
+	}
+}
 
 func TestOpenclawWeixinProtocolCommandUsesStructuredEntryPoint(t *testing.T) {
 	cmd := openclawWeixinProtocolCommand(
@@ -39,6 +114,16 @@ func TestOpenclawWeixinProtocolCommandScopesNamedProfileHome(t *testing.T) {
 	}
 	if !strings.Contains(cmd, `HERMES_PROFILE=`) || !strings.Contains(cmd, "sales-123") {
 		t.Fatalf("expected named HERMES_PROFILE, got %q", cmd)
+	}
+}
+
+func TestWeixinSessionResponseKeepsBotTargetAfterRuntimeEnds(t *testing.T) {
+	entity := &channelloginsession.Entity{
+		SessionID: "wxs-1", InstanceID: "ins-1", BotID: "sales", ProfileID: "sales", Status: channelloginsession.StatusSuccess,
+	}
+	response := toWeixinSessionResponse(entity, nil)
+	if response.BotID != "sales" || response.ProfileID != "sales" {
+		t.Fatalf("durable session target was lost: %+v", response)
 	}
 }
 

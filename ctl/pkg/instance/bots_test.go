@@ -407,7 +407,7 @@ func TestChannelBindingScriptUsesLockAndInstanceLocalHermesMetadata(t *testing.T
 	}
 }
 
-func TestChannelBindingScriptEnforcesOneOwnerAndPreservesConnectedBinding(t *testing.T) {
+func TestChannelBindingScriptIsolatesWeixinOwnersAndPreservesConnectedBinding(t *testing.T) {
 	home := t.TempDir()
 	run := func(channel, action, botID, profileID string) channelBindingPayload {
 		t.Helper()
@@ -427,8 +427,11 @@ func TestChannelBindingScriptEnforcesOneOwnerAndPreservesConnectedBinding(t *tes
 	if claim := run("weixin", "claim", "bot-1", "profile-1"); !claim.OK || claim.Status != "reserved" {
 		t.Fatalf("unexpected first claim: %+v", claim)
 	}
-	if occupied := run("weixin", "claim", "bot-2", "profile-2"); occupied.OK || occupied.Reason != "occupied" || occupied.BotID != "bot-1" {
-		t.Fatalf("expected occupied binding, got %+v", occupied)
+	if claim := run("weixin", "claim", "bot-2", "profile-2"); !claim.OK || claim.BotID != "bot-2" {
+		t.Fatalf("another Profile must claim its own Weixin account: %+v", claim)
+	}
+	if occupied := run("weixin", "claim", "bot-3", "profile-1"); occupied.OK || occupied.Reason != "occupied" || occupied.BotID != "bot-1" {
+		t.Fatalf("the same Profile must reject a second Bot: %+v", occupied)
 	}
 	if claim := run("whatsapp", "claim", "bot-2", "profile-2"); !claim.OK || claim.Channel != "whatsapp" || claim.BotID != "bot-2" {
 		t.Fatalf("independent WhatsApp claim failed: %+v", claim)
@@ -440,15 +443,63 @@ func TestChannelBindingScriptEnforcesOneOwnerAndPreservesConnectedBinding(t *tes
 		t.Fatalf("unexpected confirmation: %+v", confirmed)
 	}
 	run("weixin", "release_reserved", "bot-1", "profile-1")
-	if current := run("weixin", "get", "", ""); current.BotID != "bot-1" || current.Status != "connected" {
+	if current := run("weixin", "get", "", "profile-1"); current.BotID != "bot-1" || current.Status != "connected" {
 		t.Fatalf("connected owner must survive reserved cleanup: %+v", current)
 	}
+	if current := run("weixin", "get", "", "profile-2"); current.BotID != "bot-2" {
+		t.Fatalf("the second Profile lost its Weixin owner: %+v", current)
+	}
 	run("weixin", "release", "bot-1", "profile-1")
-	if current := run("weixin", "get", "", ""); current.BotID != "" {
+	if current := run("weixin", "get", "", "profile-1"); current.BotID != "" {
 		t.Fatalf("expected released binding, got %+v", current)
+	}
+	if current := run("weixin", "get", "", "profile-2"); current.BotID != "bot-2" {
+		t.Fatalf("releasing the first Profile changed the second: %+v", current)
 	}
 	if current := run("whatsapp", "get", "", ""); current.BotID != "bot-2" {
 		t.Fatalf("Weixin release changed WhatsApp owner: %+v", current)
+	}
+}
+
+func TestChannelBindingScriptPreservesLegacyWeixinOwnerWhenAnotherBotConnects(t *testing.T) {
+	home := t.TempDir()
+	root := filepath.Join(home, ".lightvela", "channel-bindings")
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	legacy := `{"ok":true,"channel":"weixin","bot_id":"bot-1","profile_id":"profile-1","status":"connected"}`
+	if err := os.WriteFile(filepath.Join(root, "weixin.json"), []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	run := func(action, botID, profileID string) channelBindingPayload {
+		t.Helper()
+		command := exec.Command("python3", "-c", manageChannelBindingScript, action, "weixin", botID, profileID, "default-bot")
+		command.Env = append(os.Environ(), "HERMES_HOME="+home)
+		output, err := command.Output()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var result channelBindingPayload
+		if err := json.Unmarshal(output, &result); err != nil {
+			t.Fatal(err)
+		}
+		return result
+	}
+	if claim := run("claim", "bot-2", "profile-2"); !claim.OK || claim.BotID != "bot-2" {
+		t.Fatalf("second Profile cannot claim Weixin: %+v", claim)
+	}
+	if owner := run("get", "", "profile-1"); owner.BotID != "bot-1" || owner.Status != "connected" {
+		t.Fatalf("legacy owner was lost: %+v", owner)
+	}
+	data, err := os.ReadFile(filepath.Join(root, "weixin.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stored struct {
+		Bindings map[string]channelBindingPayload `json:"bindings"`
+	}
+	if err := json.Unmarshal(data, &stored); err != nil || len(stored.Bindings) != 2 {
+		t.Fatalf("legacy binding was not migrated with the new one: %s %v", data, err)
 	}
 }
 
@@ -853,6 +904,9 @@ func TestDeleteInstanceBotRejectsWeixinOwner(t *testing.T) {
 	}
 	if len(adapter.ptyCalls) != 2 || len(adapter.processCalls) != 0 {
 		t.Fatalf("connected Weixin owner rejection must only use TAT lookups, pty=%d envd=%d", len(adapter.ptyCalls), len(adapter.processCalls))
+	}
+	if !strings.Contains(adapter.ptyCalls[1].Command, "sales-123") {
+		t.Fatal("delete guard must query the Bot's Weixin profile")
 	}
 }
 
