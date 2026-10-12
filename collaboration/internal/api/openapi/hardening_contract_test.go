@@ -315,6 +315,7 @@ func effectiveAuthDomain(spec, operation map[string]any, declared string) string
 		"ComputerCredentialAuth": "computer-credential", "ComputerBearer": "computer-bearer",
 		"EnrollmentAuth":    "enrollment",
 		"BotCredentialAuth": "bot-credential", "BotRuntimeBearer": "bot-runtime",
+		"AdminBearer": "admin",
 	}[schemes[0]]
 }
 

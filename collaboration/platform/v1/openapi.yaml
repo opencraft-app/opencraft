@@ -51,6 +51,8 @@ tags:
     description: 平台创建的腾讯普通群、成员与 Agent 回复规则；平台不保存消息正文。
   - name: BotRuntime
     description: LightVela Bot 运行时的受限平台接口。
+  - name: Admin
+    description: LightVela 管理后台的 IM 运营接口：只经 gateway-dashboard BFF 以服务端管理员 Token 调用。
 security:
   - HumanBearer: []
 x-database-modes:
@@ -77,6 +79,7 @@ x-tdsql-routing:
     imIdentity: imUserId
     imGroup: groupId
   botRuntimeScopedPaths: accountId from verified Bot Runtime Token
+  adminScopedPaths: 低频运营查询；列表允许分页扫描，写操作只定位单个 imUserId、groupId 或 accountId+botAgentId
   rule: 缺失可验证 shardkey 时不得退化为在线全分片搜索。
 x-auth-domain-registry:
   callback: [observeTencentIMState]
@@ -94,6 +97,9 @@ x-auth-domain-registry:
      refreshComputerAgentSession, putComputerAgentObservation, sendComputerHeartbeat]
   enrollment: [claimComputerEnrollment, getComputerArtifact]
   bot-credential: [createBotSession]
+  admin:
+    [getImAdminSummary, listImAdminIdentities, restrictImAdminIdentity, releaseImAdminIdentity,
+     listImAdminGroups, getImAdminGroup, dismissImAdminGroup, disableImAdminBot, checkImAdminTencent]
   bot-runtime:
     [getBotRuntimeMe, createBotRuntimeGroup, getBotRuntimeGroup, updateBotRuntimeGroup,
      dismissBotRuntimeGroup, addBotRuntimeGroupMember, removeBotRuntimeGroupMember]
@@ -117,7 +123,7 @@ x-auth-domain-registry:
      listActivity, getOperation,
      listBotAgents, provisionBotAgent, updateBotAgent, deleteBotAgent, rotateBotAgentCredential,
      createImGroup, getImGroup, updateImGroup, dismissImGroup, addImGroupMember,
-     removeImGroupMember]
+     removeImGroupMember, createImGroupInviteLink, acceptImGroupInvite]
 x-error-code-registry:
   unauthenticated: {status: 401}
   account_already_exists: {status: 409}
@@ -217,6 +223,7 @@ x-error-code-registry:
   im_group_not_ready: {status: 409}
   im_identity_unknown: {status: 422}
   im_identity_restricted: {status: 403}
+  im_group_invite_invalid: {status: 410}
 
 paths:
   /callbacks/tencent-im/state:
@@ -523,7 +530,7 @@ paths:
       tags: [Groups]
       operationId: addImGroupMember
       summary: 把一个 Human 或 Bot 加入平台群
-      description: 只有群主和管理员可以拉人；重复添加是幂等的。
+      description: 群主和管理员可以拉任何平台已知身份；普通成员只能拉自己账号下的 Bot。重复添加是幂等的。
       responses:
         '200':
           description: 更新后的平台群
@@ -535,10 +542,48 @@ paths:
       tags: [Groups]
       operationId: removeImGroupMember
       summary: 移出成员或自己退群
-      description: 群主和管理员可以移出普通成员；任何成员都可以移出自己；群主不能被移出。
+      description: 群主和管理员可以移出普通成员；普通成员可以移出自己账号下的 Bot；任何成员都可以移出自己；群主不能被移出。
       responses:
         '200':
           description: 更新后的平台群
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ImGroup'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /me/groups/{groupId}/invite-link:
+    parameters:
+      - {$ref: '#/components/parameters/GroupId'}
+    post:
+      tags: [Groups]
+      operationId: createImGroupInviteLink
+      summary: 生成群邀请凭据
+      description: 只有群主和管理员可以生成；凭据 7 天内有效，登录 LightVela 的人凭它加入该群。
+      responses:
+        '200':
+          description: 邀请凭据
+          headers:
+            Cache-Control:
+              schema: {type: string, enum: [no-store]}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ImGroupInvite'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /me/group-invites/accept:
+    post:
+      tags: [Groups]
+      operationId: acceptImGroupInvite
+      summary: 凭邀请加入平台群
+      description: 已是成员时直接返回群；凭据过期、被篡改或群已解散时返回 im_group_invite_invalid。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AcceptImGroupInviteRequest'}
+      responses:
+        '200':
+          description: 加入后的平台群
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ImGroup'}
@@ -2534,6 +2579,169 @@ paths:
               schema: {$ref: '#/components/schemas/Operation'}
         default: {$ref: '#/components/responses/Error'}
 
+  /admin/im/summary:
+    get:
+      tags: [Admin]
+      operationId: getImAdminSummary
+      summary: IM 运营概览
+      description: 平台记录的人类与 Bot IM 账号、平台群和被限制身份的数量。
+      security:
+        - AdminBearer: []
+      responses:
+        '200':
+          description: 概览
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ImAdminSummary'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /admin/im/identities:
+    get:
+      tags: [Admin]
+      operationId: listImAdminIdentities
+      summary: 列出平台创建的腾讯 IM 账号
+      description: q 精确匹配 IM UserID、LightVela 用户 ID（usr_）或本地账号 ID，否则按名称包含匹配。
+      security:
+        - AdminBearer: []
+      parameters:
+        - {$ref: '#/components/parameters/AdminQuery'}
+        - name: kind
+          in: query
+          required: false
+          schema: {type: string, enum: [human, bot]}
+        - {$ref: '#/components/parameters/AdminLimit'}
+        - {$ref: '#/components/parameters/AdminOffset'}
+      responses:
+        '200':
+          description: IM 账号
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ImAdminIdentityList'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /admin/im/identities/{userId}/restrict:
+    parameters:
+      - {$ref: '#/components/parameters/IMUserIdPath'}
+    post:
+      tags: [Admin]
+      operationId: restrictImAdminIdentity
+      summary: 限制一个 IM 身份
+      description: 不再签发 UserSig 并立即使腾讯登录态失效；配置了发消息前回调时其消息会被拒绝。
+      security:
+        - AdminBearer: []
+      responses:
+        '200':
+          description: 更新后的身份
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ImAdminIdentity'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /admin/im/identities/{userId}/release:
+    parameters:
+      - {$ref: '#/components/parameters/IMUserIdPath'}
+    post:
+      tags: [Admin]
+      operationId: releaseImAdminIdentity
+      summary: 解除对 IM 身份的限制
+      security:
+        - AdminBearer: []
+      responses:
+        '200':
+          description: 更新后的身份
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ImAdminIdentity'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /admin/im/groups:
+    get:
+      tags: [Admin]
+      operationId: listImAdminGroups
+      summary: 列出平台群
+      description: q 精确匹配群 ID、腾讯 GroupId 或群主 LightVela 用户 ID，否则按群名包含匹配。
+      security:
+        - AdminBearer: []
+      parameters:
+        - {$ref: '#/components/parameters/AdminQuery'}
+        - name: state
+          in: query
+          required: false
+          schema: {type: string, enum: [provisioning, active, dismissed]}
+        - {$ref: '#/components/parameters/AdminLimit'}
+        - {$ref: '#/components/parameters/AdminOffset'}
+      responses:
+        '200':
+          description: 平台群
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ImAdminGroupList'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /admin/im/groups/{groupId}:
+    parameters:
+      - {$ref: '#/components/parameters/GroupId'}
+    get:
+      tags: [Admin]
+      operationId: getImAdminGroup
+      summary: 查看平台群与成员
+      security:
+        - AdminBearer: []
+      responses:
+        '200':
+          description: 群与成员
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ImAdminGroupDetail'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /admin/im/groups/{groupId}/dismiss:
+    parameters:
+      - {$ref: '#/components/parameters/GroupId'}
+    post:
+      tags: [Admin]
+      operationId: dismissImAdminGroup
+      summary: 解散平台群
+      description: 解散腾讯群并把平台群标记为 dismissed；重复调用是幂等的。
+      security:
+        - AdminBearer: []
+      responses:
+        '204':
+          description: 已解散
+        default: {$ref: '#/components/responses/Error'}
+
+  /admin/im/accounts/{accountId}/bots/{botAgentId}/disable:
+    parameters:
+      - {$ref: '#/components/parameters/AccountIdPath'}
+      - {$ref: '#/components/parameters/BotAgentId'}
+    post:
+      tags: [Admin]
+      operationId: disableImAdminBot
+      summary: 停用 Bot 的 IM 身份
+      description: 与用户删除 Bot 相同：下线、删除腾讯账号、吊销凭据。用户之后可以重新开通。
+      security:
+        - AdminBearer: []
+      responses:
+        '204':
+          description: 已停用
+        default: {$ref: '#/components/responses/Error'}
+
+  /admin/im/tencent-check:
+    post:
+      tags: [Admin]
+      operationId: checkImAdminTencent
+      summary: 与腾讯核对平台记录的 IM 账号
+      description: 腾讯不提供列出全部账号的接口，按平台记录逐批 account_check，报告不一致的账号。
+      security:
+        - AdminBearer: []
+      responses:
+        '200':
+          description: 核对结果
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ImAdminTencentCheck'}
+        default: {$ref: '#/components/responses/Error'}
+
 components:
   securitySchemes:
     HumanBearer:
@@ -2569,6 +2777,10 @@ components:
       scheme: bearer
       bearerFormat: Bot Runtime JWT
       description: 只接受 kind=bot_runtime_access 且凭据版本仍为当前版本的短期 Token。
+    AdminBearer:
+      type: http
+      scheme: bearer
+      description: 管理后台 BFF 的服务端 Token（--admin-token-file）；不得下发浏览器。
 
   headers:
     ResourceRevision:
@@ -2576,6 +2788,27 @@ components:
       schema: {type: integer, format: int64, minimum: 0}
 
   parameters:
+    AccountIdPath:
+      name: accountId
+      in: path
+      required: true
+      schema: {$ref: '#/components/schemas/Id'}
+      x-tdsql-shard-key: account_id
+    AdminQuery:
+      name: q
+      in: query
+      required: false
+      schema: {type: string, minLength: 1, maxLength: 128}
+    AdminLimit:
+      name: limit
+      in: query
+      required: false
+      schema: {type: integer, minimum: 1, maximum: 200, default: 50}
+    AdminOffset:
+      name: offset
+      in: query
+      required: false
+      schema: {type: integer, minimum: 0, maximum: 100000, default: 0}
     BotAgentId:
       name: botAgentId
       in: path
@@ -2903,6 +3136,149 @@ components:
           uniqueItems: true
           items: {$ref: '#/components/schemas/ImUserId'}
         replyMode: {$ref: '#/components/schemas/GroupReplyMode'}
+
+    ImGroupInvite:
+      type: object
+      additionalProperties: false
+      required: [groupId, token, expiresAt]
+      properties:
+        groupId: {$ref: '#/components/schemas/Id'}
+        token: {type: string, readOnly: true, x-sensitive: true}
+        expiresAt: {$ref: '#/components/schemas/Timestamp'}
+
+    AcceptImGroupInviteRequest:
+      type: object
+      additionalProperties: false
+      required: [token]
+      properties:
+        token: {type: string, minLength: 16, maxLength: 1024, x-sensitive: true}
+
+    ImAdminBotCounts:
+      type: object
+      additionalProperties: false
+      required: [ready, provisioning, error, deleted]
+      properties:
+        ready: {type: integer, minimum: 0}
+        provisioning: {type: integer, minimum: 0}
+        error: {type: integer, minimum: 0}
+        deleted: {type: integer, minimum: 0}
+
+    ImAdminSummary:
+      type: object
+      additionalProperties: false
+      required: [humansReady, humansPending, bots, groupsActive, groupsDismissed, restrictedIdentities, estimatedTencentAccounts]
+      properties:
+        humansReady: {type: integer, minimum: 0}
+        humansPending: {type: integer, minimum: 0}
+        bots: {$ref: '#/components/schemas/ImAdminBotCounts'}
+        groupsActive: {type: integer, minimum: 0}
+        groupsDismissed: {type: integer, minimum: 0}
+        restrictedIdentities: {type: integer, minimum: 0}
+        estimatedTencentAccounts:
+          type: integer
+          minimum: 0
+          description: 平台认为仍占用腾讯账号的数量（就绪或开通中的人类与未删除的 Bot）。
+
+    ImAdminIdentity:
+      type: object
+      additionalProperties: false
+      required: [userId, kind, state, displayName, restricted]
+      properties:
+        userId: {$ref: '#/components/schemas/ImUserId'}
+        kind: {type: string, enum: [human, bot]}
+        state: {type: string}
+        displayName: {type: string}
+        accountId: {type: string, nullable: true}
+        lightvelaUserId: {type: string, nullable: true}
+        botAgentId: {type: string, nullable: true}
+        instanceId: {type: string, nullable: true}
+        botId: {type: string, nullable: true}
+        restricted: {type: boolean}
+        restrictedAt: {allOf: [{$ref: '#/components/schemas/Timestamp'}], nullable: true}
+        createdAt: {allOf: [{$ref: '#/components/schemas/Timestamp'}], nullable: true}
+
+    ImAdminIdentityList:
+      type: object
+      additionalProperties: false
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          maxItems: 200
+          items: {$ref: '#/components/schemas/ImAdminIdentity'}
+        total: {type: integer, minimum: 0}
+
+    ImAdminGroup:
+      type: object
+      additionalProperties: false
+      required: [id, tencentGroupId, name, ownerAccountId, createdByUserId, replyMode, state, memberCount]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        tencentGroupId: {type: string}
+        name: {type: string}
+        ownerAccountId: {type: string}
+        ownerLightvelaUserId: {type: string, nullable: true}
+        createdByUserId: {type: string}
+        replyMode: {$ref: '#/components/schemas/GroupReplyMode'}
+        state: {type: string, enum: [provisioning, active, dismissed]}
+        memberCount: {type: integer, minimum: 0}
+        createdAt: {allOf: [{$ref: '#/components/schemas/Timestamp'}], nullable: true}
+
+    ImAdminGroupList:
+      type: object
+      additionalProperties: false
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          maxItems: 200
+          items: {$ref: '#/components/schemas/ImAdminGroup'}
+        total: {type: integer, minimum: 0}
+
+    ImAdminGroupMember:
+      type: object
+      additionalProperties: false
+      required: [userId, kind, role, state]
+      properties:
+        userId: {$ref: '#/components/schemas/ImUserId'}
+        kind: {type: string, enum: [human, bot]}
+        role: {type: string, enum: [owner, admin, member]}
+        state: {type: string}
+        displayName: {type: string, nullable: true}
+
+    ImAdminGroupDetail:
+      type: object
+      additionalProperties: false
+      required: [group, members]
+      properties:
+        group: {$ref: '#/components/schemas/ImAdminGroup'}
+        members:
+          type: array
+          maxItems: 500
+          items: {$ref: '#/components/schemas/ImAdminGroupMember'}
+
+    ImAdminTencentMismatch:
+      type: object
+      additionalProperties: false
+      required: [userId, kind, state, expected, tencent]
+      properties:
+        userId: {type: string}
+        kind: {type: string}
+        state: {type: string}
+        expected: {type: string, enum: [present, absent]}
+        tencent: {type: string, enum: [imported, missing]}
+
+    ImAdminTencentCheck:
+      type: object
+      additionalProperties: false
+      required: [checked, imported, mismatches]
+      properties:
+        checked: {type: integer, minimum: 0}
+        imported: {type: integer, minimum: 0}
+        mismatches:
+          type: array
+          maxItems: 2000
+          items: {$ref: '#/components/schemas/ImAdminTencentMismatch'}
 
     UpdateImGroupRequest:
       type: object

@@ -31,6 +31,7 @@ const (
 	CandidateComputerCredential CandidateKind = "computer_credential"
 	CandidateBotCredential      CandidateKind = "bot_credential"
 	CandidateBotRuntimeBearer   CandidateKind = "bot_runtime_bearer"
+	CandidateAdminBearer        CandidateKind = "admin_bearer"
 )
 
 // PrincipalKind 标识已经过 currentness 校验的主体类型。
@@ -44,6 +45,7 @@ const (
 	PrincipalComputer        PrincipalKind = "computer"
 	PrincipalBotCredential   PrincipalKind = "bot_credential"
 	PrincipalBotRuntime      PrincipalKind = "bot_runtime"
+	PrincipalAdmin           PrincipalKind = "admin"
 )
 
 // SensitiveCredential 包装只允许在认证调用期间显式读取的 Secret。
@@ -621,3 +623,31 @@ func validID(value string) bool {
 	parsed, err := uuid.Parse(value)
 	return err == nil && parsed != uuid.Nil
 }
+
+// AdminBearerCandidate 是管理后台 BFF 的服务端 Token 候选。
+type AdminBearerCandidate struct {
+	credential SensitiveCredential
+}
+
+func NewAdminBearerCandidate(rawToken string) (AdminBearerCandidate, error) {
+	credential, err := newSensitiveCredential(rawToken)
+	if err != nil {
+		return AdminBearerCandidate{}, err
+	}
+	return AdminBearerCandidate{credential: credential}, nil
+}
+
+func (AdminBearerCandidate) Kind() CandidateKind { return CandidateAdminBearer }
+
+func (AdminBearerCandidate) credentialCandidate() {}
+
+func (c AdminBearerCandidate) Credential() SensitiveCredential { return c.credential }
+
+// CurrentAdminPrincipal 是已通过管理员 Token 校验的管理后台调用方；它不代表任何账号。
+type CurrentAdminPrincipal struct{}
+
+func NewCurrentAdminPrincipal() CurrentAdminPrincipal { return CurrentAdminPrincipal{} }
+
+func (CurrentAdminPrincipal) Kind() PrincipalKind { return PrincipalAdmin }
+
+func (CurrentAdminPrincipal) currentPrincipal() {}

@@ -22,6 +22,7 @@ const (
 	enrollmentScheme         = "EnrollmentAuth"
 	botCredentialScheme      = "BotCredentialAuth"
 	botRuntimeBearerScheme   = "BotRuntimeBearer"
+	adminBearerScheme        = "AdminBearer"
 	lightVelaUserIDHeader    = "X-Lightclaw-User-ID"
 )
 
@@ -195,6 +196,16 @@ func candidateFromAuthorization(
 		candidate, err := authnport.NewBotRuntimeBearerCandidate(token)
 		if err != nil {
 			return nil, apperror.New("runtime_credential_invalid", "Bot Runtime Bearer 凭证无效", err)
+		}
+		return candidate, nil
+	case adminBearerScheme:
+		token, ok := parseAuthorization(authorization, "Bearer")
+		if !ok {
+			return nil, apperror.New("unauthenticated", "缺少管理员 Token", nil)
+		}
+		candidate, err := authnport.NewAdminBearerCandidate(token)
+		if err != nil {
+			return nil, apperror.New("unauthenticated", "管理员 Token 无效", err)
 		}
 		return candidate, nil
 	default:

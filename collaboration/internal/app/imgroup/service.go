@@ -3,8 +3,13 @@ package imgroup
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
 	"errors"
+	"strconv"
 	"strings"
+	"time"
 
 	"git.woa.com/wisp/mono2/collaboration/internal/apperror"
 	botimport "git.woa.com/wisp/mono2/collaboration/internal/ports/botim"
@@ -54,6 +59,26 @@ type Service struct {
 	repository botimport.Repository
 	tencent    botimport.TencentGroups
 	clock      clockport.Clock
+	inviteKey  []byte
+}
+
+// InviteTTL 是群邀请凭据的有效期。
+const InviteTTL = 7 * 24 * time.Hour
+
+// Invite 是一次性下发给群主或管理员的邀请凭据。
+type Invite struct {
+	GroupID   string
+	Token     string
+	ExpiresAt time.Time
+}
+
+// EnableInvites 配置邀请凭据的 HMAC 密钥；未配置时邀请接口不可用。
+func (s *Service) EnableInvites(key []byte) error {
+	if len(key) < 32 {
+		return errors.New("群邀请密钥至少 32 字节")
+	}
+	s.inviteKey = append([]byte(nil), key...)
+	return nil
 }
 
 func NewService(
@@ -65,6 +90,87 @@ func NewService(
 		return nil, errors.New("平台群服务配置无效")
 	}
 	return &Service{repository: repository, tencent: tencent, clock: clock}, nil
+}
+
+// CreateInvite 为平台群生成邀请凭据：群 ID 与过期时间的 HMAC 签名，不落库，7 天后失效。
+func (s *Service) CreateInvite(ctx context.Context, actor Actor, groupID string) (Invite, error) {
+	if len(s.inviteKey) == 0 {
+		return Invite{}, internal("群邀请未启用", nil)
+	}
+	_, members, err := s.activeGroup(ctx, groupID)
+	if err != nil {
+		return Invite{}, err
+	}
+	if err := requireManager(members, actor.IMUserID); err != nil {
+		return Invite{}, err
+	}
+	expiresAt := s.clock.Now().UTC().Add(InviteTTL).Truncate(time.Second)
+	payload := groupID + "." + strconv.FormatInt(expiresAt.Unix(), 10)
+	token := base64.RawURLEncoding.EncodeToString([]byte(payload)) + "." +
+		base64.RawURLEncoding.EncodeToString(s.inviteMAC(payload))
+	return Invite{GroupID: groupID, Token: token, ExpiresAt: expiresAt}, nil
+}
+
+// AcceptInvite 让持有有效凭据的人类加入平台群；已是成员时直接返回群。
+func (s *Service) AcceptInvite(ctx context.Context, actor Actor, token string) (View, error) {
+	invalid := apperror.New("im_group_invite_invalid", "邀请已失效，请向群主重新索取", nil)
+	groupID, ok := s.verifyInvite(token)
+	if !ok || actor.Kind != botimport.IdentityKindHuman {
+		return View{}, invalid
+	}
+	group, members, err := s.activeGroup(ctx, groupID)
+	if err != nil {
+		return View{}, invalid
+	}
+	if _, ok := activeRole(members, actor.IMUserID); ok {
+		return s.Get(ctx, actor, groupID)
+	}
+	if _, err := s.memberRoute(ctx, actor.IMUserID); err != nil {
+		return View{}, err
+	}
+	if countActive(members) >= MaxMembers {
+		return View{}, apperror.New("invalid_request", "群成员已达上限", nil)
+	}
+	if err := s.tencent.AddMembers(ctx, group.TencentGroupID, []string{actor.IMUserID}); err != nil {
+		return View{}, apperror.New("tencent_unavailable", "暂时无法加入腾讯云 IM 群", err)
+	}
+	if err := s.repository.UpsertMember(ctx, botimport.GroupMember{
+		GroupID: groupID, IMUserID: actor.IMUserID, Kind: botimport.IdentityKindHuman,
+		Role: botimport.RoleMember, State: botimport.MemberStateActive, AddedByIMUserID: actor.IMUserID,
+	}); err != nil {
+		return View{}, internal("暂时无法保存群成员", err)
+	}
+	return s.Get(ctx, actor, groupID)
+}
+
+func (s *Service) inviteMAC(payload string) []byte {
+	mac := hmac.New(sha256.New, s.inviteKey)
+	mac.Write([]byte("vela-im-group-invite\n" + payload))
+	return mac.Sum(nil)
+}
+
+func (s *Service) verifyInvite(token string) (string, bool) {
+	if len(s.inviteKey) == 0 || len(token) > 1024 {
+		return "", false
+	}
+	encodedPayload, encodedMAC, ok := strings.Cut(token, ".")
+	if !ok {
+		return "", false
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(encodedPayload)
+	if err != nil {
+		return "", false
+	}
+	presented, err := base64.RawURLEncoding.DecodeString(encodedMAC)
+	if err != nil || !hmac.Equal(presented, s.inviteMAC(string(payload))) {
+		return "", false
+	}
+	groupID, expires, ok := strings.Cut(string(payload), ".")
+	unix, err := strconv.ParseInt(expires, 10, 64)
+	if !ok || err != nil || !s.clock.Now().Before(time.Unix(unix, 0)) {
+		return "", false
+	}
+	return groupID, true
 }
 
 // HumanActor 把 LightVela 账号解析为群操作者，并登记其 IM 路由。
@@ -256,24 +362,29 @@ func (s *Service) Update(ctx context.Context, actor Actor, groupID string, input
 	return s.Get(ctx, actor, groupID)
 }
 
-// AddMember 把平台已知的 IM 身份加入群；重复添加是幂等的。
+// AddMember 把平台已知的 IM 身份加入群；重复添加是幂等的。群主和管理员可以拉任何人，
+// 普通成员只能拉自己账号下的 Bot（多人群里每个人带自己的 Agent）。
 func (s *Service) AddMember(ctx context.Context, actor Actor, groupID, userID string) (View, error) {
 	group, members, err := s.activeGroup(ctx, groupID)
 	if err != nil {
 		return View{}, err
 	}
-	if err := requireManager(members, actor.IMUserID); err != nil {
-		return View{}, err
+	actorRole, ok := activeRole(members, actor.IMUserID)
+	if !ok {
+		return View{}, notFound(nil)
 	}
 	if _, ok := activeRole(members, userID); ok {
 		return s.Get(ctx, actor, groupID)
 	}
-	if countActive(members) >= MaxMembers {
-		return View{}, apperror.New("invalid_request", "群成员已达上限", nil)
-	}
 	route, err := s.memberRoute(ctx, userID)
 	if err != nil {
 		return View{}, err
+	}
+	if actorRole == botimport.RoleMember && !ownBot(actor, route) {
+		return View{}, apperror.New("permission_denied", "普通成员只能拉入自己的 Agent", nil)
+	}
+	if countActive(members) >= MaxMembers {
+		return View{}, apperror.New("invalid_request", "群成员已达上限", nil)
 	}
 	if err := s.tencent.AddMembers(ctx, group.TencentGroupID, []string{userID}); err != nil {
 		return View{}, apperror.New("tencent_unavailable", "暂时无法把成员加入腾讯云 IM 群", err)
@@ -305,7 +416,10 @@ func (s *Service) RemoveMember(ctx context.Context, actor Actor, groupID, userID
 		return View{}, apperror.New("owner_immutable", "群主不能被移出；请解散群聊", nil)
 	}
 	if userID != actor.IMUserID && actorRole == botimport.RoleMember {
-		return View{}, apperror.New("permission_denied", "只有群主和管理员可以移出成员", nil)
+		route, err := s.repository.FindRoute(ctx, userID)
+		if err != nil || !ownBot(actor, route) {
+			return View{}, apperror.New("permission_denied", "普通成员只能移出自己的 Agent", nil)
+		}
 	}
 	if err := s.tencent.RemoveMembers(ctx, group.TencentGroupID, []string{userID}); err != nil {
 		return View{}, apperror.New("tencent_unavailable", "暂时无法把成员移出腾讯云 IM 群", err)
@@ -335,6 +449,21 @@ func (s *Service) Dismiss(ctx context.Context, actor Actor, groupID string) erro
 	}
 	if role != botimport.RoleOwner {
 		return apperror.New("permission_denied", "只有群主可以解散群聊", nil)
+	}
+	if group.State == botimport.GroupStateDismissed {
+		return nil
+	}
+	if err := s.tencent.Destroy(ctx, group.TencentGroupID); err != nil {
+		return apperror.New("tencent_unavailable", "暂时无法解散腾讯云 IM 群", err)
+	}
+	return s.markDismissed(ctx, group)
+}
+
+// AdminDismiss 由管理后台解散平台群；不校验群主身份，重复调用是幂等的。
+func (s *Service) AdminDismiss(ctx context.Context, groupID string) error {
+	group, _, err := s.load(ctx, groupID)
+	if err != nil {
+		return err
 	}
 	if group.State == botimport.GroupStateDismissed {
 		return nil
@@ -534,6 +663,11 @@ func activeRole(members []botimport.GroupMember, userID string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// ownBot 判断目标是不是操作者账号下的 Bot。
+func ownBot(actor Actor, route botimport.Route) bool {
+	return route.Kind == botimport.IdentityKindBot && actor.AccountID != "" && route.AccountID == actor.AccountID
 }
 
 func requireManager(members []botimport.GroupMember, userID string) error {

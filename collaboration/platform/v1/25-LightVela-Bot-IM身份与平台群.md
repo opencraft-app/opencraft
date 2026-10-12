@@ -62,8 +62,11 @@ Host 两种实现收发同一份 JSON：生产 `--bot-host-ctl-url` + `--bot-hos
 - 创建：`POST /v1/me/groups` 或 `/v1/runtime/bot/groups`，客户端生成 UUIDv7 `groupId` 使重试幂等；
   后台以 App 管理员 `create_group`（Public 群）并写成员。成员必须是本服务已知的 IM 身份（否则 422 `im_identity_unknown`），最多 49 个。
 - 读取返回 `replyMode`、`effectiveReplyMode`（没有人类成员时为 `all`）、`contextMessages`（10）、成员与 `viewerRole`。
-- 修改名称 / 回复规则、拉人、踢人：群主和管理员；解散：只有群主；任何成员可以移除自己（退群），群主不能被移出。
-  人和 Bot 适用同一套权限。
+- 修改名称 / 回复规则、拉任何人、踢任何人：群主和管理员；解散：只有群主；任何成员可以移除自己（退群），群主不能被移出。
+  普通成员可以拉入、移出自己账号下的 Bot（多人群里每个人带自己的 Agent）。人和 Bot 适用同一套权限。
+- 邀请：群主或管理员 `POST /v1/me/groups/{id}/invite-link` 得到 7 天有效的凭据（群 ID + 过期时间的 HMAC，
+  密钥由访问令牌密钥派生，不落库）；其他 LightVela 用户 `POST /v1/me/group-invites/accept` 加入，已是成员时幂等返回。
+  凭据过期、被篡改或群已解散返回 410 `im_group_invite_invalid`。
   规则变化后以管理员发送自定义消息 `{"businessID":"vela_group_policy","groupId","replyMode","revision"}`，各端据此刷新缓存。
   建群成功后以管理员发送与腾讯客户端建群相同格式的 `{"businessID":"group_create","opUser":<建群人>}`，
   管理员 REST 建群时腾讯不会自动发送这条通知。两种通知都不计未读，Bot 不会回复。
@@ -96,7 +99,25 @@ chatserver im accounts [--list] [--check --im-sdk-app-id ID --im-admin-user-id U
 “平台已删除但腾讯还在”的账号。只读打开数据库，可与 `serve` 并存。各环境应使用独立 SDKAppID，
 并且不能丢弃数据库后复用同一个 SDKAppID，否则旧账号会成为无人记录的孤儿。
 
-## 8. 错误码
+## 8. 管理后台接口
+
+`--admin-token-file` 配置后注册 `/v1/admin/im/**`（安全方案 `AdminBearer`），只由 gateway-dashboard BFF
+以服务端 Token 调用，经 admin-gateway 暴露为 `/admin/api/collaboration/*`：
+
+| 接口 | 作用 |
+| --- | --- |
+| `GET /admin/im/summary` | 人类 / Bot 账号、平台群、被限制身份数量，以及预计占用的腾讯账号数 |
+| `GET /admin/im/identities?q=&kind=` | 按 IM UserID、`usr_`、账号 ID 精确或按名称查找账号 |
+| `POST /admin/im/identities/{userId}/restrict`、`/release` | 限制（下线 + 停发 UserSig）或解除 |
+| `GET /admin/im/groups?q=&state=`、`GET /admin/im/groups/{id}` | 平台群与成员 |
+| `POST /admin/im/groups/{id}/dismiss` | 解散平台群 |
+| `POST /admin/im/accounts/{accountId}/bots/{botAgentId}/disable` | 停用 Bot（等同用户删除） |
+| `POST /admin/im/tencent-check` | 与腾讯逐批核对平台记录的账号 |
+
+列表在 2 万行内扫描后分页，属于低频运营查询；写操作只定位单个身份、群或账号下的 Bot。
+
+## 9. 错误码
 
 `bot_agent_not_found` 404、`bot_agent_not_ready` 409、`bot_instance_not_owned` 403、`bot_host_unavailable` 503、`bot_quota_exceeded` 409、
-`im_group_not_found` 404、`im_group_not_ready` 409、`im_identity_unknown` 422、`im_identity_restricted` 403。
+`im_group_not_found` 404、`im_group_not_ready` 409、`im_identity_unknown` 422、`im_identity_restricted` 403、
+`im_group_invite_invalid` 410。

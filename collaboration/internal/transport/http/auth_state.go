@@ -182,3 +182,13 @@ func (s *AuthState) currentEnrollmentToken() (string, bool) {
 	defer s.mu.RUnlock()
 	return s.enrollmentToken, s.enrollmentTokenAssigned && s.enrollmentToken != ""
 }
+
+// IsAdmin 判断当前请求是否已通过管理员 Token 认证。
+func IsAdmin(ctx context.Context) bool {
+	principal, ok := CurrentPrincipal(ctx)
+	if !ok {
+		return false
+	}
+	_, ok = principal.(authnport.CurrentAdminPrincipal)
+	return ok
+}

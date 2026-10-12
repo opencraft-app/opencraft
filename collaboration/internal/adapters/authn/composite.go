@@ -58,7 +58,8 @@ func knownCandidateKind(kind authnport.CandidateKind) bool {
 		authnport.CandidateComputerBearer,
 		authnport.CandidateComputerCredential,
 		authnport.CandidateBotCredential,
-		authnport.CandidateBotRuntimeBearer:
+		authnport.CandidateBotRuntimeBearer,
+		authnport.CandidateAdminBearer:
 		return true
 	default:
 		return false

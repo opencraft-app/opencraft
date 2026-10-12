@@ -64,6 +64,8 @@ func principalMatchesCandidate(
 		return principal.Kind() == authnport.PrincipalBotCredential
 	case authnport.CandidateBotRuntimeBearer:
 		return principal.Kind() == authnport.PrincipalBotRuntime
+	case authnport.CandidateAdminBearer:
+		return principal.Kind() == authnport.PrincipalAdmin
 	default:
 		return false
 	}

@@ -115,6 +115,7 @@ var errorMappings = []ErrorMapping{
 	{Code: "im_group_not_ready", Status: http.StatusConflict, Message: "群聊尚未就绪"},
 	{Code: "im_identity_unknown", Status: http.StatusUnprocessableEntity, Message: "IM 身份尚未在平台开通"},
 	{Code: "im_identity_restricted", Status: http.StatusForbidden, Message: "该 IM 身份已被限制"},
+	{Code: "im_group_invite_invalid", Status: http.StatusGone, Message: "群邀请已失效"},
 }
 
 var errorMappingByCode = func() map[string]ErrorMapping {

@@ -34,6 +34,8 @@ type imGroupService interface {
 	AddMember(context.Context, appimgroup.Actor, string, string) (appimgroup.View, error)
 	RemoveMember(context.Context, appimgroup.Actor, string, string) (appimgroup.View, error)
 	Dismiss(context.Context, appimgroup.Actor, string) error
+	CreateInvite(context.Context, appimgroup.Actor, string) (appimgroup.Invite, error)
+	AcceptInvite(context.Context, appimgroup.Actor, string) (appimgroup.View, error)
 }
 
 // BotIMHandler 实现 Bot IM 身份、平台群与 Bot Runtime strict operation。
@@ -41,6 +43,7 @@ type BotIMHandler struct {
 	openapi.StrictServerInterface
 	bots   botAgentService
 	groups imGroupService
+	admin  ImAdminService
 }
 
 var _ openapi.StrictServerInterface = (*BotIMHandler)(nil)
@@ -245,6 +248,47 @@ func (h *BotIMHandler) RemoveImGroupMember(
 		return nil, err
 	}
 	return openapi.RemoveImGroupMember200JSONResponse(imGroupDTO(view)), nil
+}
+
+func (h *BotIMHandler) CreateImGroupInviteLink(
+	ctx context.Context,
+	request openapi.CreateImGroupInviteLinkRequestObject,
+) (openapi.CreateImGroupInviteLinkResponseObject, error) {
+	actor, err := h.humanActor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	invite, err := h.groups.CreateInvite(ctx, actor, request.GroupId.String())
+	if err != nil {
+		return nil, err
+	}
+	groupID, err := uuid.Parse(invite.GroupID)
+	if err != nil {
+		return nil, apperror.New("internal_error", "平台群 ID 无效", err)
+	}
+	token := invite.Token
+	return openapi.CreateImGroupInviteLink200JSONResponse{
+		Body:    openapi.ImGroupInvite{GroupId: groupID, Token: &token, ExpiresAt: invite.ExpiresAt},
+		Headers: openapi.CreateImGroupInviteLink200ResponseHeaders{CacheControl: "no-store"},
+	}, nil
+}
+
+func (h *BotIMHandler) AcceptImGroupInvite(
+	ctx context.Context,
+	request openapi.AcceptImGroupInviteRequestObject,
+) (openapi.AcceptImGroupInviteResponseObject, error) {
+	if request.Body == nil {
+		return nil, apperror.New("invalid_request", "缺少邀请凭据", nil)
+	}
+	actor, err := h.humanActor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	view, err := h.groups.AcceptInvite(ctx, actor, request.Body.Token)
+	if err != nil {
+		return nil, err
+	}
+	return openapi.AcceptImGroupInvite200JSONResponse(imGroupDTO(view)), nil
 }
 
 // ── Bot Runtime ──
@@ -519,7 +563,8 @@ func imGroupDTO(view appimgroup.View) openapi.ImGroup {
 }
 
 // NewBotIMRoutes 注册 Bot IM 身份、平台群与 Bot Runtime 路由。
-func NewBotIMRoutes(bots botAgentService, groups imGroupService, encoder *ErrorEncoder) (http.Handler, error) {
+// NewBotIMRoutes 组装 Bot IM 路由；admin 为 nil 时不注册管理后台接口。
+func NewBotIMRoutes(bots botAgentService, groups imGroupService, admin ImAdminService, encoder *ErrorEncoder) (http.Handler, error) {
 	if encoder == nil {
 		return nil, ErrValidatorEncoderRequired
 	}
@@ -527,10 +572,15 @@ func NewBotIMRoutes(bots botAgentService, groups imGroupService, encoder *ErrorE
 	if err != nil {
 		return nil, err
 	}
+	handler.admin = admin
 	strict := openapi.NewStrictHandlerWithOptions(handler, nil, StrictServerOptions(encoder))
 	wrapper := &openapi.ServerInterfaceWrapper{Handler: strict, ErrorHandlerFunc: StdHTTPErrorHandler(encoder)}
 	mux := http.NewServeMux()
-	for _, route := range BotIMImplementedRoutes() {
+	routes := BotIMImplementedRoutes()
+	if admin != nil {
+		routes = append(routes, ImAdminImplementedRoutes()...)
+	}
+	for _, route := range routes {
 		pattern := route.Method + " " + route.Path
 		switch route.Path + " " + route.Method {
 		case "/v1/me/bots GET":
@@ -545,6 +595,28 @@ func NewBotIMRoutes(bots botAgentService, groups imGroupService, encoder *ErrorE
 			mux.HandleFunc(pattern, wrapper.RotateBotAgentCredential)
 		case "/v1/me/groups POST":
 			mux.HandleFunc(pattern, wrapper.CreateImGroup)
+		case "/v1/me/groups/{groupId}/invite-link POST":
+			mux.HandleFunc(pattern, wrapper.CreateImGroupInviteLink)
+		case "/v1/me/group-invites/accept POST":
+			mux.HandleFunc(pattern, wrapper.AcceptImGroupInvite)
+		case "/v1/admin/im/summary GET":
+			mux.HandleFunc(pattern, wrapper.GetImAdminSummary)
+		case "/v1/admin/im/identities GET":
+			mux.HandleFunc(pattern, wrapper.ListImAdminIdentities)
+		case "/v1/admin/im/identities/{userId}/restrict POST":
+			mux.HandleFunc(pattern, wrapper.RestrictImAdminIdentity)
+		case "/v1/admin/im/identities/{userId}/release POST":
+			mux.HandleFunc(pattern, wrapper.ReleaseImAdminIdentity)
+		case "/v1/admin/im/groups GET":
+			mux.HandleFunc(pattern, wrapper.ListImAdminGroups)
+		case "/v1/admin/im/groups/{groupId} GET":
+			mux.HandleFunc(pattern, wrapper.GetImAdminGroup)
+		case "/v1/admin/im/groups/{groupId}/dismiss POST":
+			mux.HandleFunc(pattern, wrapper.DismissImAdminGroup)
+		case "/v1/admin/im/accounts/{accountId}/bots/{botAgentId}/disable POST":
+			mux.HandleFunc(pattern, wrapper.DisableImAdminBot)
+		case "/v1/admin/im/tencent-check POST":
+			mux.HandleFunc(pattern, wrapper.CheckImAdminTencent)
 		case "/v1/me/groups/{groupId} GET":
 			mux.HandleFunc(pattern, wrapper.GetImGroup)
 		case "/v1/me/groups/{groupId} PATCH":
@@ -592,6 +664,8 @@ func BotIMImplementedRoutes() []ImplementedRoute {
 		{Method: http.MethodDelete, Path: "/v1/me/groups/{groupId}"},
 		{Method: http.MethodPut, Path: "/v1/me/groups/{groupId}/members/{userId}"},
 		{Method: http.MethodDelete, Path: "/v1/me/groups/{groupId}/members/{userId}"},
+		{Method: http.MethodPost, Path: "/v1/me/groups/{groupId}/invite-link"},
+		{Method: http.MethodPost, Path: "/v1/me/group-invites/accept"},
 		{Method: http.MethodPost, Path: "/v1/runtime/bot/session"},
 		{Method: http.MethodGet, Path: "/v1/runtime/bot/me"},
 		{Method: http.MethodPost, Path: "/v1/runtime/bot/groups"},

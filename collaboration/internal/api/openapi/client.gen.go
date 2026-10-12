@@ -89,6 +89,33 @@ func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
 
 // The interface specification for the client above.
 type ClientInterface interface {
+	// DisableImAdminBot request
+	DisableImAdminBot(ctx context.Context, accountId AccountIdPath, botAgentId BotAgentId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListImAdminGroups request
+	ListImAdminGroups(ctx context.Context, params *ListImAdminGroupsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetImAdminGroup request
+	GetImAdminGroup(ctx context.Context, groupId GroupId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DismissImAdminGroup request
+	DismissImAdminGroup(ctx context.Context, groupId GroupId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListImAdminIdentities request
+	ListImAdminIdentities(ctx context.Context, params *ListImAdminIdentitiesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ReleaseImAdminIdentity request
+	ReleaseImAdminIdentity(ctx context.Context, userId IMUserIdPath, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RestrictImAdminIdentity request
+	RestrictImAdminIdentity(ctx context.Context, userId IMUserIdPath, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetImAdminSummary request
+	GetImAdminSummary(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CheckImAdminTencent request
+	CheckImAdminTencent(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// LoginWithBody request with any body
 	LoginWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -189,6 +216,11 @@ type ClientInterface interface {
 	// RotateBotAgentCredential request
 	RotateBotAgentCredential(ctx context.Context, botAgentId BotAgentId, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// AcceptImGroupInviteWithBody request with any body
+	AcceptImGroupInviteWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	AcceptImGroupInvite(ctx context.Context, body AcceptImGroupInviteJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// CreateImGroupWithBody request with any body
 	CreateImGroupWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -204,6 +236,9 @@ type ClientInterface interface {
 	UpdateImGroupWithBody(ctx context.Context, groupId GroupId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	UpdateImGroup(ctx context.Context, groupId GroupId, body UpdateImGroupJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateImGroupInviteLink request
+	CreateImGroupInviteLink(ctx context.Context, groupId GroupId, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// RemoveImGroupMember request
 	RemoveImGroupMember(ctx context.Context, groupId GroupId, userId IMUserIdPath, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -532,6 +567,114 @@ type ClientInterface interface {
 	UpdateTaskWithBody(ctx context.Context, serverId ServerId, taskId TaskId, params *UpdateTaskParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	UpdateTask(ctx context.Context, serverId ServerId, taskId TaskId, params *UpdateTaskParams, body UpdateTaskJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+}
+
+func (c *Client) DisableImAdminBot(ctx context.Context, accountId AccountIdPath, botAgentId BotAgentId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDisableImAdminBotRequest(c.Server, accountId, botAgentId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListImAdminGroups(ctx context.Context, params *ListImAdminGroupsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListImAdminGroupsRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetImAdminGroup(ctx context.Context, groupId GroupId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetImAdminGroupRequest(c.Server, groupId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DismissImAdminGroup(ctx context.Context, groupId GroupId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDismissImAdminGroupRequest(c.Server, groupId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListImAdminIdentities(ctx context.Context, params *ListImAdminIdentitiesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListImAdminIdentitiesRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ReleaseImAdminIdentity(ctx context.Context, userId IMUserIdPath, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewReleaseImAdminIdentityRequest(c.Server, userId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RestrictImAdminIdentity(ctx context.Context, userId IMUserIdPath, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRestrictImAdminIdentityRequest(c.Server, userId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetImAdminSummary(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetImAdminSummaryRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CheckImAdminTencent(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCheckImAdminTencentRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
 }
 
 func (c *Client) LoginWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -990,6 +1133,30 @@ func (c *Client) RotateBotAgentCredential(ctx context.Context, botAgentId BotAge
 	return c.Client.Do(req)
 }
 
+func (c *Client) AcceptImGroupInviteWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAcceptImGroupInviteRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) AcceptImGroupInvite(ctx context.Context, body AcceptImGroupInviteJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAcceptImGroupInviteRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) CreateImGroupWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewCreateImGroupRequestWithBody(c.Server, contentType, body)
 	if err != nil {
@@ -1052,6 +1219,18 @@ func (c *Client) UpdateImGroupWithBody(ctx context.Context, groupId GroupId, con
 
 func (c *Client) UpdateImGroup(ctx context.Context, groupId GroupId, body UpdateImGroupJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewUpdateImGroupRequest(c.Server, groupId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateImGroupInviteLink(ctx context.Context, groupId GroupId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateImGroupInviteLinkRequest(c.Server, groupId)
 	if err != nil {
 		return nil, err
 	}
@@ -2490,6 +2669,431 @@ func (c *Client) UpdateTask(ctx context.Context, serverId ServerId, taskId TaskI
 	return c.Client.Do(req)
 }
 
+// NewDisableImAdminBotRequest generates requests for DisableImAdminBot
+func NewDisableImAdminBotRequest(server string, accountId AccountIdPath, botAgentId BotAgentId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "accountId", accountId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "botAgentId", botAgentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/admin/im/accounts/%s/bots/%s/disable", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListImAdminGroupsRequest generates requests for ListImAdminGroups
+func NewListImAdminGroupsRequest(server string, params *ListImAdminGroupsParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/admin/im/groups")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Q != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "q", *params.Q, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.State != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "state", *params.State, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Offset != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "offset", *params.Offset, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetImAdminGroupRequest generates requests for GetImAdminGroup
+func NewGetImAdminGroupRequest(server string, groupId GroupId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "groupId", groupId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/admin/im/groups/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewDismissImAdminGroupRequest generates requests for DismissImAdminGroup
+func NewDismissImAdminGroupRequest(server string, groupId GroupId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "groupId", groupId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/admin/im/groups/%s/dismiss", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListImAdminIdentitiesRequest generates requests for ListImAdminIdentities
+func NewListImAdminIdentitiesRequest(server string, params *ListImAdminIdentitiesParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/admin/im/identities")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Q != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "q", *params.Q, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Kind != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "kind", *params.Kind, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Offset != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "offset", *params.Offset, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewReleaseImAdminIdentityRequest generates requests for ReleaseImAdminIdentity
+func NewReleaseImAdminIdentityRequest(server string, userId IMUserIdPath) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "userId", userId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/admin/im/identities/%s/release", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewRestrictImAdminIdentityRequest generates requests for RestrictImAdminIdentity
+func NewRestrictImAdminIdentityRequest(server string, userId IMUserIdPath) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "userId", userId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/admin/im/identities/%s/restrict", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetImAdminSummaryRequest generates requests for GetImAdminSummary
+func NewGetImAdminSummaryRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/admin/im/summary")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCheckImAdminTencentRequest generates requests for CheckImAdminTencent
+func NewCheckImAdminTencentRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/admin/im/tencent-check")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewLoginRequest calls the generic Login builder with application/json body
 func NewLoginRequest(server string, body LoginJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -3590,6 +4194,46 @@ func NewRotateBotAgentCredentialRequest(server string, botAgentId BotAgentId) (*
 	return req, nil
 }
 
+// NewAcceptImGroupInviteRequest calls the generic AcceptImGroupInvite builder with application/json body
+func NewAcceptImGroupInviteRequest(server string, body AcceptImGroupInviteJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewAcceptImGroupInviteRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewAcceptImGroupInviteRequestWithBody generates requests for AcceptImGroupInvite with any type of body
+func NewAcceptImGroupInviteRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/me/group-invites/accept")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewCreateImGroupRequest calls the generic CreateImGroup builder with application/json body
 func NewCreateImGroupRequest(server string, body CreateImGroupJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -3741,6 +4385,40 @@ func NewUpdateImGroupRequestWithBody(server string, groupId GroupId, contentType
 	}
 
 	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewCreateImGroupInviteLinkRequest generates requests for CreateImGroupInviteLink
+func NewCreateImGroupInviteLinkRequest(server string, groupId GroupId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "groupId", groupId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/me/groups/%s/invite-link", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
 
 	return req, nil
 }
@@ -8500,6 +9178,33 @@ func WithBaseURL(baseURL string) ClientOption {
 
 // ClientWithResponsesInterface is the interface specification for the client with responses above.
 type ClientWithResponsesInterface interface {
+	// DisableImAdminBotWithResponse request
+	DisableImAdminBotWithResponse(ctx context.Context, accountId AccountIdPath, botAgentId BotAgentId, reqEditors ...RequestEditorFn) (*DisableImAdminBotResponse, error)
+
+	// ListImAdminGroupsWithResponse request
+	ListImAdminGroupsWithResponse(ctx context.Context, params *ListImAdminGroupsParams, reqEditors ...RequestEditorFn) (*ListImAdminGroupsResponse, error)
+
+	// GetImAdminGroupWithResponse request
+	GetImAdminGroupWithResponse(ctx context.Context, groupId GroupId, reqEditors ...RequestEditorFn) (*GetImAdminGroupResponse, error)
+
+	// DismissImAdminGroupWithResponse request
+	DismissImAdminGroupWithResponse(ctx context.Context, groupId GroupId, reqEditors ...RequestEditorFn) (*DismissImAdminGroupResponse, error)
+
+	// ListImAdminIdentitiesWithResponse request
+	ListImAdminIdentitiesWithResponse(ctx context.Context, params *ListImAdminIdentitiesParams, reqEditors ...RequestEditorFn) (*ListImAdminIdentitiesResponse, error)
+
+	// ReleaseImAdminIdentityWithResponse request
+	ReleaseImAdminIdentityWithResponse(ctx context.Context, userId IMUserIdPath, reqEditors ...RequestEditorFn) (*ReleaseImAdminIdentityResponse, error)
+
+	// RestrictImAdminIdentityWithResponse request
+	RestrictImAdminIdentityWithResponse(ctx context.Context, userId IMUserIdPath, reqEditors ...RequestEditorFn) (*RestrictImAdminIdentityResponse, error)
+
+	// GetImAdminSummaryWithResponse request
+	GetImAdminSummaryWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetImAdminSummaryResponse, error)
+
+	// CheckImAdminTencentWithResponse request
+	CheckImAdminTencentWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*CheckImAdminTencentResponse, error)
+
 	// LoginWithBodyWithResponse request with any body
 	LoginWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*LoginResponse, error)
 
@@ -8600,6 +9305,11 @@ type ClientWithResponsesInterface interface {
 	// RotateBotAgentCredentialWithResponse request
 	RotateBotAgentCredentialWithResponse(ctx context.Context, botAgentId BotAgentId, reqEditors ...RequestEditorFn) (*RotateBotAgentCredentialResponse, error)
 
+	// AcceptImGroupInviteWithBodyWithResponse request with any body
+	AcceptImGroupInviteWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AcceptImGroupInviteResponse, error)
+
+	AcceptImGroupInviteWithResponse(ctx context.Context, body AcceptImGroupInviteJSONRequestBody, reqEditors ...RequestEditorFn) (*AcceptImGroupInviteResponse, error)
+
 	// CreateImGroupWithBodyWithResponse request with any body
 	CreateImGroupWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateImGroupResponse, error)
 
@@ -8615,6 +9325,9 @@ type ClientWithResponsesInterface interface {
 	UpdateImGroupWithBodyWithResponse(ctx context.Context, groupId GroupId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateImGroupResponse, error)
 
 	UpdateImGroupWithResponse(ctx context.Context, groupId GroupId, body UpdateImGroupJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateImGroupResponse, error)
+
+	// CreateImGroupInviteLinkWithResponse request
+	CreateImGroupInviteLinkWithResponse(ctx context.Context, groupId GroupId, reqEditors ...RequestEditorFn) (*CreateImGroupInviteLinkResponse, error)
 
 	// RemoveImGroupMemberWithResponse request
 	RemoveImGroupMemberWithResponse(ctx context.Context, groupId GroupId, userId IMUserIdPath, reqEditors ...RequestEditorFn) (*RemoveImGroupMemberResponse, error)
@@ -8943,6 +9656,211 @@ type ClientWithResponsesInterface interface {
 	UpdateTaskWithBodyWithResponse(ctx context.Context, serverId ServerId, taskId TaskId, params *UpdateTaskParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateTaskResponse, error)
 
 	UpdateTaskWithResponse(ctx context.Context, serverId ServerId, taskId TaskId, params *UpdateTaskParams, body UpdateTaskJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateTaskResponse, error)
+}
+
+type DisableImAdminBotResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r DisableImAdminBotResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DisableImAdminBotResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ListImAdminGroupsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *ImAdminGroupList
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r ListImAdminGroupsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListImAdminGroupsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetImAdminGroupResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *ImAdminGroupDetail
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r GetImAdminGroupResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetImAdminGroupResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type DismissImAdminGroupResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r DismissImAdminGroupResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DismissImAdminGroupResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ListImAdminIdentitiesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *ImAdminIdentityList
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r ListImAdminIdentitiesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListImAdminIdentitiesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ReleaseImAdminIdentityResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *ImAdminIdentity
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r ReleaseImAdminIdentityResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ReleaseImAdminIdentityResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type RestrictImAdminIdentityResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *ImAdminIdentity
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r RestrictImAdminIdentityResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RestrictImAdminIdentityResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetImAdminSummaryResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *ImAdminSummary
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r GetImAdminSummaryResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetImAdminSummaryResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type CheckImAdminTencentResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *ImAdminTencentCheck
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r CheckImAdminTencentResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CheckImAdminTencentResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
 }
 
 type LoginResponse struct {
@@ -9492,6 +10410,29 @@ func (r RotateBotAgentCredentialResponse) StatusCode() int {
 	return 0
 }
 
+type AcceptImGroupInviteResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *ImGroup
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r AcceptImGroupInviteResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r AcceptImGroupInviteResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type CreateImGroupResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -9577,6 +10518,29 @@ func (r UpdateImGroupResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r UpdateImGroupResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type CreateImGroupInviteLinkResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *ImGroupInvite
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateImGroupInviteLinkResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateImGroupInviteLinkResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -11649,6 +12613,87 @@ func (r UpdateTaskResponse) StatusCode() int {
 	return 0
 }
 
+// DisableImAdminBotWithResponse request returning *DisableImAdminBotResponse
+func (c *ClientWithResponses) DisableImAdminBotWithResponse(ctx context.Context, accountId AccountIdPath, botAgentId BotAgentId, reqEditors ...RequestEditorFn) (*DisableImAdminBotResponse, error) {
+	rsp, err := c.DisableImAdminBot(ctx, accountId, botAgentId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDisableImAdminBotResponse(rsp)
+}
+
+// ListImAdminGroupsWithResponse request returning *ListImAdminGroupsResponse
+func (c *ClientWithResponses) ListImAdminGroupsWithResponse(ctx context.Context, params *ListImAdminGroupsParams, reqEditors ...RequestEditorFn) (*ListImAdminGroupsResponse, error) {
+	rsp, err := c.ListImAdminGroups(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListImAdminGroupsResponse(rsp)
+}
+
+// GetImAdminGroupWithResponse request returning *GetImAdminGroupResponse
+func (c *ClientWithResponses) GetImAdminGroupWithResponse(ctx context.Context, groupId GroupId, reqEditors ...RequestEditorFn) (*GetImAdminGroupResponse, error) {
+	rsp, err := c.GetImAdminGroup(ctx, groupId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetImAdminGroupResponse(rsp)
+}
+
+// DismissImAdminGroupWithResponse request returning *DismissImAdminGroupResponse
+func (c *ClientWithResponses) DismissImAdminGroupWithResponse(ctx context.Context, groupId GroupId, reqEditors ...RequestEditorFn) (*DismissImAdminGroupResponse, error) {
+	rsp, err := c.DismissImAdminGroup(ctx, groupId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDismissImAdminGroupResponse(rsp)
+}
+
+// ListImAdminIdentitiesWithResponse request returning *ListImAdminIdentitiesResponse
+func (c *ClientWithResponses) ListImAdminIdentitiesWithResponse(ctx context.Context, params *ListImAdminIdentitiesParams, reqEditors ...RequestEditorFn) (*ListImAdminIdentitiesResponse, error) {
+	rsp, err := c.ListImAdminIdentities(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListImAdminIdentitiesResponse(rsp)
+}
+
+// ReleaseImAdminIdentityWithResponse request returning *ReleaseImAdminIdentityResponse
+func (c *ClientWithResponses) ReleaseImAdminIdentityWithResponse(ctx context.Context, userId IMUserIdPath, reqEditors ...RequestEditorFn) (*ReleaseImAdminIdentityResponse, error) {
+	rsp, err := c.ReleaseImAdminIdentity(ctx, userId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseReleaseImAdminIdentityResponse(rsp)
+}
+
+// RestrictImAdminIdentityWithResponse request returning *RestrictImAdminIdentityResponse
+func (c *ClientWithResponses) RestrictImAdminIdentityWithResponse(ctx context.Context, userId IMUserIdPath, reqEditors ...RequestEditorFn) (*RestrictImAdminIdentityResponse, error) {
+	rsp, err := c.RestrictImAdminIdentity(ctx, userId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRestrictImAdminIdentityResponse(rsp)
+}
+
+// GetImAdminSummaryWithResponse request returning *GetImAdminSummaryResponse
+func (c *ClientWithResponses) GetImAdminSummaryWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetImAdminSummaryResponse, error) {
+	rsp, err := c.GetImAdminSummary(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetImAdminSummaryResponse(rsp)
+}
+
+// CheckImAdminTencentWithResponse request returning *CheckImAdminTencentResponse
+func (c *ClientWithResponses) CheckImAdminTencentWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*CheckImAdminTencentResponse, error) {
+	rsp, err := c.CheckImAdminTencent(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCheckImAdminTencentResponse(rsp)
+}
+
 // LoginWithBodyWithResponse request with arbitrary body returning *LoginResponse
 func (c *ClientWithResponses) LoginWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*LoginResponse, error) {
 	rsp, err := c.LoginWithBody(ctx, contentType, body, reqEditors...)
@@ -11977,6 +13022,23 @@ func (c *ClientWithResponses) RotateBotAgentCredentialWithResponse(ctx context.C
 	return ParseRotateBotAgentCredentialResponse(rsp)
 }
 
+// AcceptImGroupInviteWithBodyWithResponse request with arbitrary body returning *AcceptImGroupInviteResponse
+func (c *ClientWithResponses) AcceptImGroupInviteWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AcceptImGroupInviteResponse, error) {
+	rsp, err := c.AcceptImGroupInviteWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAcceptImGroupInviteResponse(rsp)
+}
+
+func (c *ClientWithResponses) AcceptImGroupInviteWithResponse(ctx context.Context, body AcceptImGroupInviteJSONRequestBody, reqEditors ...RequestEditorFn) (*AcceptImGroupInviteResponse, error) {
+	rsp, err := c.AcceptImGroupInvite(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAcceptImGroupInviteResponse(rsp)
+}
+
 // CreateImGroupWithBodyWithResponse request with arbitrary body returning *CreateImGroupResponse
 func (c *ClientWithResponses) CreateImGroupWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateImGroupResponse, error) {
 	rsp, err := c.CreateImGroupWithBody(ctx, contentType, body, reqEditors...)
@@ -12027,6 +13089,15 @@ func (c *ClientWithResponses) UpdateImGroupWithResponse(ctx context.Context, gro
 		return nil, err
 	}
 	return ParseUpdateImGroupResponse(rsp)
+}
+
+// CreateImGroupInviteLinkWithResponse request returning *CreateImGroupInviteLinkResponse
+func (c *ClientWithResponses) CreateImGroupInviteLinkWithResponse(ctx context.Context, groupId GroupId, reqEditors ...RequestEditorFn) (*CreateImGroupInviteLinkResponse, error) {
+	rsp, err := c.CreateImGroupInviteLink(ctx, groupId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateImGroupInviteLinkResponse(rsp)
 }
 
 // RemoveImGroupMemberWithResponse request returning *RemoveImGroupMemberResponse
@@ -13071,6 +14142,289 @@ func (c *ClientWithResponses) UpdateTaskWithResponse(ctx context.Context, server
 	return ParseUpdateTaskResponse(rsp)
 }
 
+// ParseDisableImAdminBotResponse parses an HTTP response from a DisableImAdminBotWithResponse call
+func ParseDisableImAdminBotResponse(rsp *http.Response) (*DisableImAdminBotResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DisableImAdminBotResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListImAdminGroupsResponse parses an HTTP response from a ListImAdminGroupsWithResponse call
+func ParseListImAdminGroupsResponse(rsp *http.Response) (*ListImAdminGroupsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListImAdminGroupsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ImAdminGroupList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetImAdminGroupResponse parses an HTTP response from a GetImAdminGroupWithResponse call
+func ParseGetImAdminGroupResponse(rsp *http.Response) (*GetImAdminGroupResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetImAdminGroupResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ImAdminGroupDetail
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDismissImAdminGroupResponse parses an HTTP response from a DismissImAdminGroupWithResponse call
+func ParseDismissImAdminGroupResponse(rsp *http.Response) (*DismissImAdminGroupResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DismissImAdminGroupResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListImAdminIdentitiesResponse parses an HTTP response from a ListImAdminIdentitiesWithResponse call
+func ParseListImAdminIdentitiesResponse(rsp *http.Response) (*ListImAdminIdentitiesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListImAdminIdentitiesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ImAdminIdentityList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseReleaseImAdminIdentityResponse parses an HTTP response from a ReleaseImAdminIdentityWithResponse call
+func ParseReleaseImAdminIdentityResponse(rsp *http.Response) (*ReleaseImAdminIdentityResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ReleaseImAdminIdentityResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ImAdminIdentity
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRestrictImAdminIdentityResponse parses an HTTP response from a RestrictImAdminIdentityWithResponse call
+func ParseRestrictImAdminIdentityResponse(rsp *http.Response) (*RestrictImAdminIdentityResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RestrictImAdminIdentityResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ImAdminIdentity
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetImAdminSummaryResponse parses an HTTP response from a GetImAdminSummaryWithResponse call
+func ParseGetImAdminSummaryResponse(rsp *http.Response) (*GetImAdminSummaryResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetImAdminSummaryResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ImAdminSummary
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCheckImAdminTencentResponse parses an HTTP response from a CheckImAdminTencentWithResponse call
+func ParseCheckImAdminTencentResponse(rsp *http.Response) (*CheckImAdminTencentResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CheckImAdminTencentResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ImAdminTencentCheck
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseLoginResponse parses an HTTP response from a LoginWithResponse call
 func ParseLoginResponse(rsp *http.Response) (*LoginResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -13828,6 +15182,39 @@ func ParseRotateBotAgentCredentialResponse(rsp *http.Response) (*RotateBotAgentC
 	return response, nil
 }
 
+// ParseAcceptImGroupInviteResponse parses an HTTP response from a AcceptImGroupInviteWithResponse call
+func ParseAcceptImGroupInviteResponse(rsp *http.Response) (*AcceptImGroupInviteResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &AcceptImGroupInviteResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ImGroup
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseCreateImGroupResponse parses an HTTP response from a CreateImGroupWithResponse call
 func ParseCreateImGroupResponse(rsp *http.Response) (*CreateImGroupResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -13936,6 +15323,39 @@ func ParseUpdateImGroupResponse(rsp *http.Response) (*UpdateImGroupResponse, err
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest ImGroup
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateImGroupInviteLinkResponse parses an HTTP response from a CreateImGroupInviteLinkWithResponse call
+func ParseCreateImGroupInviteLinkResponse(rsp *http.Response) (*CreateImGroupInviteLinkResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateImGroupInviteLinkResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ImGroupInvite
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

@@ -45,7 +45,7 @@ func TestEveryOperationHasRouteCaseAndValidSuccessResponse(t *testing.T) {
 		method    string
 		operation string
 	}
-	cases := make([]contractCase, 0, 118)
+	cases := make([]contractCase, 0, 129)
 	for path, pathItem := range spec.Paths.Map() {
 		for method, operation := range pathItem.Operations() {
 			cases = append(cases, contractCase{
@@ -58,8 +58,8 @@ func TestEveryOperationHasRouteCaseAndValidSuccessResponse(t *testing.T) {
 	sort.Slice(cases, func(left int, right int) bool {
 		return cases[left].operation < cases[right].operation
 	})
-	if len(cases) != 118 {
-		t.Fatalf("contract cases = %d, want 118", len(cases))
+	if len(cases) != 129 {
+		t.Fatalf("contract cases = %d, want 129", len(cases))
 	}
 
 	for _, test := range cases {

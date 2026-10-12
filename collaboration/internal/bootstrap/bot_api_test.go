@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -66,6 +67,16 @@ func (identities *fakeIdentities) DeleteIdentity(_ context.Context, userID strin
 	identities.deleted = append(identities.deleted, userID)
 	return nil
 }
+
+func (identities *fakeIdentities) CheckIdentities(_ context.Context, userIDs []string) (map[string]bool, error) {
+	imported := map[string]bool{}
+	for _, userID := range userIDs {
+		imported[userID] = !slices.Contains(identities.deleted, userID)
+	}
+	return imported, nil
+}
+
+const botTestAdminToken = "admin-token-for-tests-0123456789"
 
 type fakeTencentGroups struct {
 	created        []botimport.TencentGroup
@@ -149,6 +160,8 @@ func newBotAPIFixture(t *testing.T) *botAPIFixture {
 		TencentGroups:           fixture.tencent,
 		BotRuntimeAPIBaseURL:    "http://127.0.0.1:18080/v1",
 		MaxActiveBotsPerAccount: 2,
+		AdminToken:              []byte(botTestAdminToken),
+		AdminIdentities:         fixture.identities,
 		RequestTimeout:          5 * time.Second,
 		MaxBodyBytes:            16 * 1024,
 	})
@@ -202,6 +215,14 @@ func (fixture *botAPIFixture) do(method, path, authorization, subject string, bo
 
 func (fixture *botAPIFixture) human(method, path string, body any) (int, map[string]any) {
 	return fixture.do(method, path, "Bearer "+botTestGatewayToken, "usr_0123456789abcdef01234567", body)
+}
+
+func (fixture *botAPIFixture) other(method, path string, body any) (int, map[string]any) {
+	return fixture.do(method, path, "Bearer "+botTestGatewayToken, "usr_fedcba9876543210fedcba98", body)
+}
+
+func (fixture *botAPIFixture) admin(method, path string, body any) (int, map[string]any) {
+	return fixture.do(method, path, "Bearer "+botTestAdminToken, "", body)
 }
 
 func errorCode(body map[string]any) string {
@@ -407,5 +428,115 @@ func TestBotIMAPIRejectsUnknownGroupMembers(t *testing.T) {
 	}
 	if len(fixture.tencent.created) != 0 {
 		t.Fatal("tencent group created for invalid members")
+	}
+}
+
+func TestBotIMAPIMultiPersonGroupsAndAdminOperations(t *testing.T) {
+	fixture := newBotAPIFixture(t)
+	provision := func(as func(string, string, any) (int, map[string]any), botID string) map[string]any {
+		status, bot := as(http.MethodPost, "/v1/me/bots", map[string]any{"instanceId": "ins-" + botID, "botId": botID, "displayName": botID})
+		if status != http.StatusOK {
+			t.Fatalf("provision %s = %d %#v", botID, status, bot)
+		}
+		return bot
+	}
+	ownerBot := provision(fixture.human, "owner-bot")
+	ownerSpare := provision(fixture.human, "owner-spare")
+	guestBot := provision(fixture.other, "guest-bot")
+	fixture.markHumansReady()
+
+	groupID := uuid.Must(uuid.NewV7()).String()
+	if status, body := fixture.human(http.MethodPost, "/v1/me/groups", map[string]any{
+		"groupId": groupID, "name": "多人", "memberUserIds": []string{ownerBot["userId"].(string)},
+	}); status != http.StatusOK {
+		t.Fatalf("create group = %d %#v", status, body)
+	}
+	status, invite := fixture.human(http.MethodPost, "/v1/me/groups/"+groupID+"/invite-link", nil)
+	token, _ := invite["token"].(string)
+	if status != http.StatusOK || token == "" || invite["groupId"] != groupID {
+		t.Fatalf("invite = %d %#v", status, invite)
+	}
+	if status, body := fixture.other(http.MethodPost, "/v1/me/group-invites/accept", map[string]any{"token": token + "x"}); status != http.StatusGone ||
+		errorCode(body) != "im_group_invite_invalid" {
+		t.Fatalf("tampered invite = %d %#v", status, body)
+	}
+	status, joined := fixture.other(http.MethodPost, "/v1/me/group-invites/accept", map[string]any{"token": token})
+	if status != http.StatusOK || joined["viewerRole"] != "member" || len(joined["members"].([]any)) != 3 {
+		t.Fatalf("accept = %d %#v", status, joined)
+	}
+	if status, again := fixture.other(http.MethodPost, "/v1/me/group-invites/accept", map[string]any{"token": token}); status != http.StatusOK ||
+		len(again["members"].([]any)) != 3 {
+		t.Fatalf("accept again = %d %#v", status, again)
+	}
+
+	memberPath := "/v1/me/groups/" + groupID + "/members/"
+	if status, body := fixture.other(http.MethodPut, memberPath+guestBot["userId"].(string), nil); status != http.StatusOK {
+		t.Fatalf("guest adds own bot = %d %#v", status, body)
+	}
+	if status, body := fixture.other(http.MethodPut, memberPath+ownerSpare["userId"].(string), nil); status != http.StatusForbidden ||
+		errorCode(body) != "permission_denied" {
+		t.Fatalf("guest adds someone else's bot = %d %#v", status, body)
+	}
+	if status, body := fixture.other(http.MethodDelete, memberPath+ownerBot["userId"].(string), nil); status != http.StatusForbidden {
+		t.Fatalf("guest removes someone else's bot = %d %#v", status, body)
+	}
+	if status, body := fixture.other(http.MethodDelete, memberPath+guestBot["userId"].(string), nil); status != http.StatusOK {
+		t.Fatalf("guest removes own bot = %d %#v", status, body)
+	}
+
+	if status, _ := fixture.do(http.MethodGet, "/v1/admin/im/summary", "Bearer "+botTestGatewayToken, "", nil); status != http.StatusUnauthorized {
+		t.Fatalf("summary without admin token = %d", status)
+	}
+	status, summary := fixture.admin(http.MethodGet, "/v1/admin/im/summary", nil)
+	bots, _ := summary["bots"].(map[string]any)
+	if status != http.StatusOK || summary["humansReady"] != float64(2) || bots["ready"] != float64(3) || summary["groupsActive"] != float64(1) {
+		t.Fatalf("summary = %d %#v", status, summary)
+	}
+	status, listed := fixture.admin(http.MethodGet, "/v1/admin/im/identities?q=usr_fedcba9876543210fedcba98", nil)
+	if status != http.StatusOK || listed["total"] != float64(2) {
+		t.Fatalf("identities of the guest = %d %#v", status, listed)
+	}
+	status, groups := fixture.admin(http.MethodGet, "/v1/admin/im/groups?q=多人", nil)
+	items, _ := groups["items"].([]any)
+	if status != http.StatusOK || len(items) != 1 || items[0].(map[string]any)["memberCount"] != float64(3) {
+		t.Fatalf("groups = %d %#v", status, groups)
+	}
+	if status, detail := fixture.admin(http.MethodGet, "/v1/admin/im/groups/"+groupID, nil); status != http.StatusOK || len(detail["members"].([]any)) != 4 {
+		t.Fatalf("group detail = %d %#v", status, detail)
+	}
+
+	guestHuman := ""
+	for _, item := range listed["items"].([]any) {
+		if identity := item.(map[string]any); identity["kind"] == "human" {
+			guestHuman = identity["userId"].(string)
+		}
+	}
+	status, restricted := fixture.admin(http.MethodPost, "/v1/admin/im/identities/"+guestHuman+"/restrict", nil)
+	if status != http.StatusOK || restricted["restricted"] != true || !slices.Contains(fixture.identities.kicked, guestHuman) {
+		t.Fatalf("restrict = %d %#v kicked=%v", status, restricted, fixture.identities.kicked)
+	}
+	if status, body := fixture.other(http.MethodGet, "/v1/me/groups/"+groupID, nil); status != http.StatusForbidden {
+		t.Fatalf("restricted human still acts = %d %#v", status, body)
+	}
+	if status, released := fixture.admin(http.MethodPost, "/v1/admin/im/identities/"+guestHuman+"/release", nil); status != http.StatusOK || released["restricted"] != false {
+		t.Fatalf("release = %d %#v", status, released)
+	}
+
+	accountID := ""
+	for _, item := range listed["items"].([]any) {
+		if identity := item.(map[string]any); identity["kind"] == "bot" {
+			accountID = identity["accountId"].(string)
+		}
+	}
+	if status, body := fixture.admin(http.MethodPost, "/v1/admin/im/accounts/"+accountID+"/bots/"+guestBot["id"].(string)+"/disable", nil); status != http.StatusNoContent ||
+		!slices.Contains(fixture.identities.deleted, guestBot["userId"].(string)) {
+		t.Fatalf("disable bot = %d %#v", status, body)
+	}
+	status, check := fixture.admin(http.MethodPost, "/v1/admin/im/tencent-check", nil)
+	if status != http.StatusOK || check["checked"] != float64(5) || len(check["mismatches"].([]any)) != 0 {
+		t.Fatalf("tencent check = %d %#v", status, check)
+	}
+	if status, body := fixture.admin(http.MethodPost, "/v1/admin/im/groups/"+groupID+"/dismiss", nil); status != http.StatusNoContent || len(fixture.tencent.destroys) != 1 {
+		t.Fatalf("dismiss = %d %#v", status, body)
 	}
 }

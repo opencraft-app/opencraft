@@ -180,6 +180,7 @@ func TestRegistryCoversEveryStableProductAndTransportCode(t *testing.T) {
 		"im_group_not_ready",
 		"im_identity_unknown",
 		"im_identity_restricted",
+		"im_group_invite_invalid",
 	}
 
 	for _, code := range stableCodes {

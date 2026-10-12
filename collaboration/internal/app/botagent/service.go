@@ -256,6 +256,11 @@ func (s *Service) Delete(ctx context.Context, human Human, botAgentID string) er
 	return nil
 }
 
+// AdminDelete 由管理后台停用某账号下的 Bot，效果与用户删除相同。
+func (s *Service) AdminDelete(ctx context.Context, accountID, subject, botAgentID string) error {
+	return s.Delete(ctx, Human{AccountID: accountID, Subject: subject}, botAgentID)
+}
+
 // Rotate 轮换凭据版本并重新交付到实例；旧版本立即失效。
 func (s *Service) Rotate(ctx context.Context, human Human, botAgentID string) (botimport.BotAgent, error) {
 	bot, err := s.ownedBot(ctx, human, botAgentID)

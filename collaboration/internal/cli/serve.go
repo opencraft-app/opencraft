@@ -94,6 +94,7 @@ type serveConfig struct {
 	botRuntimeAPIURL                 string
 	restrictClientGroupCreate        bool
 	maxBotsPerAccount                int
+	adminTokenFile                   string
 }
 
 type repeatedStrings []string
@@ -234,6 +235,7 @@ func parseServeConfig(args []string) (serveConfig, error) {
 		botRuntimeAPIURL                 string
 		restrictClientGroupCreate        bool
 		maxBotsPerAccount                int
+		adminTokenFile                   string
 	)
 	if databaseDriver == "" {
 		databaseDriver = string(config.DatabaseDriverSQLite)
@@ -341,6 +343,7 @@ func parseServeConfig(args []string) (serveConfig, error) {
 	flags.StringVar(&botRuntimeAPIURL, "bot-runtime-api-url", "", "Bot 运行时访问本服务的基础 URL（交付到实例）")
 	flags.BoolVar(&restrictClientGroupCreate, "im-restrict-client-group-create", false, "腾讯建群前回调只允许 App 管理员建群")
 	flags.IntVar(&maxBotsPerAccount, "max-im-bots-per-account", 20, "每个账号同时开通 IM 身份的 Bot 上限（1-200）")
+	flags.StringVar(&adminTokenFile, "admin-token-file", "", "管理后台 BFF 调用 IM 运营接口的服务端 Token 文件（可选）")
 	flags.Var(&origins, "cors-origin", "允许的浏览器 Origin，可重复")
 	if err := flags.Parse(args); err != nil || flags.NArg() != 0 {
 		return serveConfig{}, apperror.New("CONFIG_INVALID", "serve 参数无效", err)
@@ -460,6 +463,7 @@ func parseServeConfig(args []string) (serveConfig, error) {
 		botRuntimeAPIURL:                 botRuntimeAPIURL,
 		restrictClientGroupCreate:        restrictClientGroupCreate,
 		maxBotsPerAccount:                maxBotsPerAccount,
+		adminTokenFile:                   strings.TrimSpace(adminTokenFile),
 		database:                         databaseConfig,
 		databaseAutoMigrate:              databaseAutoMigrate,
 		collaborationOnly:                collaborationOnly,
@@ -1112,6 +1116,14 @@ func serveHumanPlatform(
 		if err != nil {
 			return apperror.New("CONFIG_INVALID", "腾讯云 IM 群配置无效", err)
 		}
+		var adminToken []byte
+		if cfg.adminTokenFile != "" {
+			value, err := loadTextSecret(cfg.adminTokenFile, "管理后台 Token")
+			if err != nil {
+				return err
+			}
+			adminToken = []byte(value)
+		}
 		botIM, err = bootstrap.NewBotIMAPI(bootstrap.BotIMAPIConfig{
 			Database:                       handle,
 			AccessTokenKey:                 accessTokenKey,
@@ -1127,6 +1139,8 @@ func serveHumanPlatform(
 			TencentGroups:                  groupManager,
 			BotRuntimeAPIBaseURL:           cfg.botRuntimeAPIURL,
 			MaxActiveBotsPerAccount:        cfg.maxBotsPerAccount,
+			AdminToken:                     adminToken,
+			AdminIdentities:                provisioner,
 			RequestTimeout:                 2 * time.Minute,
 			MaxBodyBytes:                   16 * 1024,
 		})
@@ -1232,7 +1246,8 @@ func serveHumanPlatform(
 	rootHandler.Handle("/v1/runtime/", runtimeHandler)
 	if botIM != nil {
 		for _, prefix := range []string{
-			"/v1/me/bots", "/v1/me/bots/", "/v1/me/groups", "/v1/me/groups/", "/v1/runtime/bot/",
+			"/v1/me/bots", "/v1/me/bots/", "/v1/me/groups", "/v1/me/groups/", "/v1/me/group-invites/", "/v1/runtime/bot/",
+			"/v1/admin/im/",
 		} {
 			rootHandler.Handle(prefix, botIM.Handler)
 		}
