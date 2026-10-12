@@ -54,3 +54,12 @@ preview; the mobile probe now opens the collapsed sidebar before checking it.
 Actual applied TOF access point or network reachability is required for real
 employee pictures. The documented domain times out before an HTTP response.
 MR !5252 remains subject to protected review; master merge is not claimed.
+
+## actual_access_point
+User confirmed the applied internal domain api.sgw.woa.com. Live service now
+sets OPENCRAFT_TENCENTOA_PHOTO_ORIGIN=http://api.sgw.woa.com; the independent
+guarded update completed with ACTUAL_PHOTO_ORIGIN_VERIFIED, followed by
+post-reconnect Environment/MainPID and health checks. Both default and direct
+HTTP plus direct HTTPS connections to the resolved 11.176.19.108 time out before
+an HTTP response. Photo fallback remains active; actual employee photos are
+still unavailable until the preview host can reach this internal gateway.
