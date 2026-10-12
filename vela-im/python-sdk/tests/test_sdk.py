@@ -11,7 +11,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from vela_im import AgentWorker, VelaClient, WorkerError, GroupReplyMode, platform_group_id, uuid7, state_dir_for  # noqa: E402
+from vela_im import AgentWorker, VelaClient, WorkerError, GroupReplyMode, media_kind, platform_group_id, uuid7, state_dir_for  # noqa: E402
 from vela_im import cli  # noqa: E402
 
 # Behaves like the real worker's process contract: Unix socket, worker.json, parent PID, SIGTERM cleanup.
@@ -118,6 +118,10 @@ class ClientMappingTest(unittest.TestCase):
             c.send("a_peer", "C2C", "sticker-pack")
         c.send("GROUPvg_0198f4c27a357f1486ab2e57552e473f", "GROUP", "text", {"text": "hi"}, reply_to_message_id="m1")
         self.assertEqual((c.requests[-1][1]["to"], c.requests[-1][1]["replyToMessageID"]), ("vg_0198f4c27a357f1486ab2e57552e473f", "m1"))
+
+    def test_local_images_and_mp4_preview_inline_other_files_stay_files(self):
+        self.assertEqual([media_kind(p) for p in ("a.PNG", "b.jpeg", "c.gif", "d.webp", "e.mp4", "f.mov", "g.pdf", "h")],
+                         ["image", "image", "image", "image", "video", "file", "file", "file"])
 
     def test_platform_group_ids_and_uuid7(self):
         group = "0198f4c2-7a35-7f14-86ab-2e57552e473f"

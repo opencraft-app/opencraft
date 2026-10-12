@@ -5,12 +5,16 @@ import { VelaHumanAPI, type BotAgent, type IMMessage } from "@vela/im-client";
 import type { VelaBrowserClient } from "@vela/im-client/browser";
 import { resolveVelaImApiBase } from "./vela-im-env";
 import {
+  agentStatus,
+  applyAgentStatus,
+  pruneWorking,
   toApplications,
   toContacts,
   toConversations,
   type ApplicationItem,
   type ContactItem,
   type ConversationItem,
+  type WorkingAgents,
 } from "./vela-im-model";
 
 export type VelaImStatus = "idle" | "connecting" | "ready" | "reconnecting" | "offline" | "error";
@@ -42,6 +46,8 @@ export function useVelaIm(lightvelaToken: string | null, lightvelaUserID: string
   const [contacts, setContacts] = useState<ContactItem[]>([]);
   const [applications, setApplications] = useState<ApplicationItem[]>([]);
   const [agents, setAgents] = useState<AgentItem[]>([]);
+  /** Kept per conversation for the whole session, so switching chats or devices never loses who is working. */
+  const [working, setWorking] = useState<WorkingAgents>({});
   const [generation, setGeneration] = useState(0);
   const events = useRef<VelaImEvents>({});
   const lifecycle = useRef<Promise<unknown>>(Promise.resolve());
@@ -61,6 +67,7 @@ export function useVelaIm(lightvelaToken: string | null, lightvelaUserID: string
     setConversations([]);
     setContacts([]);
     setApplications([]);
+    setWorking({});
     const connect = async () => {
       setStatus("connecting");
       const api = new VelaHumanAPI(base, { headers: () => ({ Authorization: `Bearer ${lightvelaToken}` }) });
@@ -83,7 +90,13 @@ export function useVelaIm(lightvelaToken: string | null, lightvelaUserID: string
       observe("FRIEND_APPLICATION_LIST_UPDATED", () => {
         void client.getFriendApplications().then((list) => setApplications(toApplications(list)), () => undefined);
       });
-      observe("MESSAGE_RECEIVED", (e) => events.current.onMessages?.(e.data as IMMessage[]));
+      observe("MESSAGE_RECEIVED", (e) => {
+        const list = (e.data as IMMessage[]) ?? [];
+        const signals = list.filter((m) => agentStatus(m));
+        if (signals.length) setWorking((old) => applyAgentStatus(old, signals));
+        const messages = list.filter((m) => !agentStatus(m));
+        if (messages.length) events.current.onMessages?.(messages);
+      });
       observe("MESSAGE_MODIFIED", (e) => events.current.onModified?.(e.data as IMMessage[]));
       observe("MESSAGE_READ_BY_PEER", (e) => events.current.onModified?.(e.data as IMMessage[]));
       observe("MESSAGE_REVOKED", (e) => events.current.onRevoked?.(e.data as IMMessage[]));
@@ -123,6 +136,13 @@ export function useVelaIm(lightvelaToken: string | null, lightvelaUserID: string
     return () => clearInterval(timer);
   }, [provisioning, refreshAgents]);
 
+  const anyWorking = Object.keys(working).length > 0;
+  useEffect(() => {
+    if (!anyWorking) return;
+    const timer = setInterval(() => setWorking((old) => pruneWorking(old)), 4000);
+    return () => clearInterval(timer);
+  }, [anyWorking]);
+
   const refreshContacts = useCallback(async () => {
     if (!connection) return;
     const [friends, apps] = await Promise.all([connection.client.getFriends(), connection.client.getFriendApplications()]);
@@ -143,6 +163,7 @@ export function useVelaIm(lightvelaToken: string | null, lightvelaUserID: string
     contacts,
     applications,
     agents,
+    working,
     events,
     reconnect,
     refreshAgents,

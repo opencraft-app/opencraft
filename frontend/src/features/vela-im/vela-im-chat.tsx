@@ -42,8 +42,6 @@ const REVOKE_WINDOW_SECONDS = 120;
 const MENTION_ALL_ID = "@all";
 const MENTION_ALL_TEXT = "所有人";
 const MAX_ATTACHMENTS = 9;
-/** An Agent re-announces "working" every 15 seconds; without that it has stopped or gone offline. */
-const WORKING_TTL_MS = 40_000;
 /** Hermes commands offered by the command menu, the same set as the Agent's direct chat. */
 const COMMANDS = ["new", "compress", "status", "usage", "stop", "help"] as const;
 
@@ -98,8 +96,6 @@ export function VelaImChat({ controller, client, selfID, conversation, onBack, o
   const [commandsOpen, setCommandsOpen] = useState(false);
   const [pending, setPending] = useState<PendingAttachment[]>([]);
   const [dragging, setDragging] = useState(false);
-  /** Agents working on a reply in this conversation, with when their last "working" signal expires. */
-  const [working, setWorking] = useState<Record<string, number>>({});
   const pendingRef = useRef<PendingAttachment[]>([]);
   pendingRef.current = pending;
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -116,7 +112,6 @@ export function VelaImChat({ controller, client, selfID, conversation, onBack, o
     setText("");
     setQuoting(null);
     setPicked([]);
-    setWorking({});
     setPending((old) => { old.forEach((item) => item.preview && URL.revokeObjectURL(item.preview)); return []; });
     void client.getMessages(conversationID).then(async (page) => {
       if (cancelled) return;
@@ -147,20 +142,7 @@ export function VelaImChat({ controller, client, selfID, conversation, onBack, o
   useEffect(() => {
     controller.events.current = {
       onMessages: (incoming) => {
-        const here = incoming.filter((m) => m.conversationID === conversationID);
-        const signals = here.filter((m) => agentStatus(m));
-        if (signals.length) {
-          setWorking((old) => {
-            const next = { ...old };
-            for (const signal of signals) {
-              if (!signal.from) continue;
-              if (agentStatus(signal)?.state === "working") next[signal.from] = Date.now() + WORKING_TTL_MS;
-              else delete next[signal.from];
-            }
-            return next;
-          });
-        }
-        const mine = here.filter((m) => !agentStatus(m));
+        const mine = incoming.filter((m) => m.conversationID === conversationID);
         if (!mine.length) return;
         setMessages((old) => mergeMessages(old, mine));
         void client.markRead(conversationID).catch(() => undefined);
@@ -173,15 +155,8 @@ export function VelaImChat({ controller, client, selfID, conversation, onBack, o
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ block: "end" }); }, [messages.length, conversationID]);
   useEffect(() => () => { pendingRef.current.forEach((item) => item.preview && URL.revokeObjectURL(item.preview)); }, []);
+  const working = controller.working[conversationID] ?? {};
   const anyWorking = Object.keys(working).length > 0;
-  useEffect(() => {
-    if (!anyWorking) return;
-    const timer = setInterval(() => {
-      const now = Date.now();
-      setWorking((old) => Object.fromEntries(Object.entries(old).filter(([, until]) => until > now)));
-    }, 5000);
-    return () => clearInterval(timer);
-  }, [anyWorking]);
 
   const loadEarlier = async () => {
     try {

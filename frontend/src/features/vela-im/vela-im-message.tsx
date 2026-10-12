@@ -28,6 +28,14 @@ export function VelaImMessageContent({ message }: { message: IMMessage }) {
     case "video":
       return view.url ? <video controls src={view.url} poster={view.poster || undefined} className="max-h-64 max-w-full rounded-lg" /> : <p className="text-black/45">{t("[视频]")}</p>;
     case "file":
+      // Images that arrive as plain files (other clients, Agents' tools) still preview inline.
+      if (view.url && /\.(png|jpe?g|gif|webp|bmp)$/i.test(view.name)) {
+        return (
+          <a href={view.url} target="_blank" rel="noreferrer" className="block" title={view.name}>
+            <img src={view.url} alt={view.name} className="max-h-72 max-w-full rounded-xl border border-black/[0.06] object-contain" loading="lazy" />
+          </a>
+        );
+      }
       return (
         <a href={view.url || undefined} target="_blank" rel="noreferrer" download={view.name}
           className="group/file flex w-72 max-w-full items-center gap-3 rounded-xl border border-black/[0.08] bg-white px-3 py-2.5 text-black/75 transition-colors hover:border-black/15">

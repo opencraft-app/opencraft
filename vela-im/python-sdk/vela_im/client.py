@@ -74,6 +74,16 @@ def uuid7():
     return str(uuid.UUID(bytes=bytes(raw)))
 
 
+IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"}
+VIDEO_SUFFIXES = {".mp4"}
+
+
+def media_kind(path):
+    """Message type for a local file: Tencent previews images and mp4 videos inline, everything else is a file."""
+    suffix = Path(str(path)).suffix.lower()
+    return "image" if suffix in IMAGE_SUFFIXES else "video" if suffix in VIDEO_SUFFIXES else "file"
+
+
 def reply_custom_data(lineage, sender_kind="bot"):
     """cloudCustomData for an automatic reply: same chain, one more hop."""
     return json.dumps({"vela": {"chainId": lineage["chainId"], "hops": int(lineage["hops"]) + 1, "senderKind": sender_kind}})
@@ -156,9 +166,9 @@ class VelaClient:
     def send_text(self, to, text, conversation_type="C2C", **options):
         return self.send(to, conversation_type, "text", {"text": text}, **options)
 
-    def send_file(self, to, path, message_type="file", conversation_type="C2C", payload=None, **options):
-        """Upload a local image/audio/video/file as a native Tencent media message."""
-        return self.send(to, conversation_type, message_type, payload, attachment=self.attachment(path), **options)
+    def send_file(self, to, path, message_type=None, conversation_type="C2C", payload=None, **options):
+        """Upload a local file as a native Tencent media message; images and mp4 videos preview inline by default."""
+        return self.send(to, conversation_type, message_type or media_kind(path), payload, attachment=self.attachment(path), **options)
 
     @staticmethod
     def attachment(path):

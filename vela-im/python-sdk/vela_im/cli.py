@@ -9,7 +9,7 @@ import json
 import os
 import sys
 
-from .client import MESSAGE_TYPES, GroupReplyMode, VelaClient, VelaHTTPError, platform_group_id
+from .client import MESSAGE_TYPES, GroupReplyMode, VelaClient, VelaHTTPError, media_kind, platform_group_id
 from .worker import WorkerError
 
 
@@ -59,7 +59,7 @@ def cmd_send(client, args):
     to, kind = _target(args)
     reply_to = None if args.to else os.getenv("HERMES_SESSION_MESSAGE_ID") or None
     if args.file:
-        message_type = args.type if args.type in ("image", "audio", "video", "file") else "file"
+        message_type = args.type if args.type in ("image", "audio", "video", "file") else media_kind(args.file)
         payload = json.loads(args.payload) if args.payload else {}
         _print(client.send(to, kind, message_type, payload, reply_to_message_id=reply_to, attachment=client.attachment(args.file)))
         return

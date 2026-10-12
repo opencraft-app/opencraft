@@ -257,6 +257,36 @@ export const agentStatus = (message: IMMessage): { state: "working" | "idle"; me
   }
 };
 
+/** Agents working in each conversation: conversationID → agent userID → when its last signal expires (ms). */
+export type WorkingAgents = Record<string, Record<string, number>>;
+
+/** An Agent re-announces "working" every 8 seconds; past this it has stopped or gone offline. */
+export const WORKING_TTL_MS = 20_000;
+
+export const applyAgentStatus = (old: WorkingAgents, signals: IMMessage[], now = Date.now()): WorkingAgents => {
+  const next: WorkingAgents = { ...old };
+  for (const signal of signals) {
+    const status = agentStatus(signal);
+    const conversationID = str(signal.conversationID);
+    if (!status || !signal.from || !conversationID) continue;
+    const agents = { ...(next[conversationID] ?? {}) };
+    if (status.state === "working") agents[signal.from] = now + WORKING_TTL_MS;
+    else delete agents[signal.from];
+    if (Object.keys(agents).length) next[conversationID] = agents;
+    else delete next[conversationID];
+  }
+  return next;
+};
+
+export const pruneWorking = (old: WorkingAgents, now = Date.now()): WorkingAgents => {
+  const next: WorkingAgents = {};
+  for (const [conversationID, agents] of Object.entries(old)) {
+    const alive = Object.fromEntries(Object.entries(agents).filter(([, until]) => until > now));
+    if (Object.keys(alive).length) next[conversationID] = alive;
+  }
+  return next;
+};
+
 /** One-line preview of a message, used when quoting it. */
 export const messageAbstract = (message: IMMessage): string => {
   const view = describeMessage(message);

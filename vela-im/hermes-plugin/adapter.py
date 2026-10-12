@@ -19,13 +19,13 @@ try:
 except ImportError:  # Hermes older releases
     from gateway.platforms.base import MessageEvent, MessageType
 from .runtime import configured, setting, worker_for, outbound_lineage
-from .vela_im import VelaClient, VelaHTTPError, reply_custom_data
+from .vela_im import VelaClient, VelaHTTPError, media_kind, reply_custom_data
 
 logger = logging.getLogger(__name__)
 SYSTEM_TYPES = ("TIMGroupTipElem", "TIMGroupSystemNoticeElem")
 STATUS_BUSINESS_ID = "vela_agent_status"
 SYSTEM_BUSINESS_IDS = ("vela_group_policy", "group_create", STATUS_BUSINESS_ID)  # reply rules, group created, working
-STATUS_HEARTBEAT_SECONDS = 15
+STATUS_HEARTBEAT_SECONDS = 8
 
 
 def is_system(message):
@@ -507,7 +507,8 @@ class VelaAdapter(BasePlatformAdapter):
         return await self._send_media(chat_id, path, "image", caption)
 
     async def send_document(self, chat_id, file_path, caption=None, **kwargs):
-        return await self._send_media(chat_id, file_path, "file", caption)
+        # An image or mp4 sent as a "document" still previews inline for people in the chat.
+        return await self._send_media(chat_id, file_path, media_kind(file_path), caption)
 
     async def send_video(self, chat_id, video_path, caption=None, **kwargs):
         return await self._send_media(chat_id, video_path, "video", caption)

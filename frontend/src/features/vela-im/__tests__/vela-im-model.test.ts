@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { fileVisual, formatBytes } from "../vela-im-files";
 import {
+  applyAgentStatus,
   applyRevoked,
   bundleOf,
   describeMessage,
@@ -8,6 +9,7 @@ import {
   mergeMessages,
   messageAbstract,
   parseIDs,
+  pruneWorking,
   quoteCustomData,
   quotedMessage,
   resolveMentions,
@@ -151,5 +153,16 @@ describe("vela-im model", () => {
 
   it("strips Markdown markers from quote previews", () => {
     expect(messageAbstract({ ID: "q", type: "TIMTextElem", payload: { text: "## 标题\n**加粗** 和 `代码`" } })).toBe("标题 加粗 和 代码");
+  });
+
+  it("tracks working Agents per conversation from their online-only signals", () => {
+    const signal = (from: string, conversationID: string, state: string) =>
+      ({ ID: `${from}-${state}`, from, conversationID, type: "TIMCustomElem", payload: { data: JSON.stringify({ businessID: "vela_agent_status", state }) } });
+    let working = applyAgentStatus({}, [signal("a_1", "GROUPg", "working"), signal("a_2", "C2Ca_2", "working")], 1000);
+    expect(Object.keys(working).sort()).toEqual(["C2Ca_2", "GROUPg"]);
+    working = applyAgentStatus(working, [signal("a_1", "GROUPg", "idle")], 2000);
+    expect(working.GROUPg).toBeUndefined();
+    expect(pruneWorking(working, 1000 + 25_000)).toEqual({});
+    expect(applyAgentStatus({}, [{ ID: "t", from: "u", conversationID: "GROUPg", type: "TIMTextElem", payload: { text: "hi" } }])).toEqual({});
   });
 });
