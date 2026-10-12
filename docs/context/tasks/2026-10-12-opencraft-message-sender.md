@@ -52,8 +52,8 @@ Relevant typechecks, boundaries, i18n and identity/Host/Chat regressions require
 ## operational boundary
 Real gateway header forwarding is deployment-specific; signed local WebSocket
 fixtures establish code behavior, not actual employee gateway coverage. Previous
-employee-footer preview is live, but this sender change is not deployed yet. Remote
-footer MR !5235 is waiting for protected review; do not bypass the review gate.
+employee-footer preview is live, but this sender change is not deployed yet. Footer MR !5235 has merged as 52897784a; sender MR !5252 is waiting for
+protected review. Do not bypass the review gate.
 
 ## validation evidence
 Final focused sender/identity/Host/adapter/attachment tests passed (62 tests).
@@ -64,7 +64,9 @@ platform boundaries, i18n and formal change-impact validation passed. Headless
 runtime bundle built successfully. Own native node-pty rebuilt for runtime tests.
 All identity fixtures use synthetic keys and users; no real employee inputs or
 model inference are used. Source is on feat/opencraft-message-sender-20261012;
-delivery continues through existing employee-identity MR !5235. No sender runtime
+source commit a7321adf5 is pushed in feat/opencraft-message-sender-20261012 and
+reviewed separately in https://git.woa.com/wisp/mono2/-/merge_requests/5252.
+Normal merge API returned `Review check not passed. 409 conflict`. No sender runtime
 cutover has been performed. Web typecheck requires the shared source packages
 to resolve the same isolated worktree dependencies; an untracked root node_modules
 link points to this checkout's own opencraft/node_modules, without borrowing another
