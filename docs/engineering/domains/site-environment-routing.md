@@ -73,7 +73,7 @@ OpenCraft iOS 的内置 Bot DOM runtime 同时包含国内与国际的 frontend 
 
 - 国内站与国际站共享同一组 LightVela favicon 资源与浏览器页签品牌形象；`layout.next.tsx` 的 icon/shortcut/apple 声明和 `manifest.webmanifest` 必须引用同一版本化 URL。图标内容更新时应同步更换版本标识，避免任一生产域名继续命中旧 favicon 缓存。
 - 国内站与国际站根路由分别以默认 `zh-CN` / `en-US` locale 直接渲染 `InternationalHomePage` 的已提交静态片段，不再静态引入旧 `PublicHomePage`；带 locale 的路由仍保留 V2 选择与旧页面 fallback。
-- 双站 V2 首页的限时运营公告由 `InternationalHomeRuntime` 挂载 `MaintenanceAnnouncementBanner`；公告文案随首页 locale 翻译，国内与国际的时间口径分别写明北京时间与新加坡时间。每次公告须更换 ID 以区分关闭记忆，并设定到期时间自动撤下；发布时分别验证两站首页与到期行为。
+- V2 首页的限时运营公告由 `InternationalHomeRuntime` 挂载 `MaintenanceAnnouncementBanner`；当前 2026-10-12 升级公告仅在国内站首页展示，北京时间 22:00 至次日 06:00，国际站不展示。每次公告须更换 ID 以区分关闭记忆，并设定到期时间自动撤下；发布时分别验证两站首页与到期行为。
 - 国际站首页使用 `frontend/scripts/import-international-homepage.mjs` 维护导入与本地化规则，运行时消费 `frontend/public/lightvela-intl-home/index-fragment*.html` 中已提交的多语言静态片段。
 - 国际站首页文案或结构变更必须同步导入脚本、所有开放 locale 的静态片段与 `international-home-page` 聚焦测试；不得只修改默认英文片段。
 - 国际站英文首页主标语使用 `Your AI companion—always on, always evolving with you.`，明确表达云端 Agent 始终在线并持续成长；其他 locale 保留各自自然的同义表达。
