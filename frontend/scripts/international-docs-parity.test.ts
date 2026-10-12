@@ -515,7 +515,9 @@ describe("international docs publication inventory", () => {
 
     it("keeps the expected locale route inventories", () => {
       expect(docsRouteSlugs["en-us"]).toHaveLength(69);
-      expect(docsRouteSlugs["zh-cn"]).toHaveLength(49);
+      expect(docsRouteSlugs["zh-cn"]).toHaveLength(50);
+      expect(docsRouteSlugs["zh-cn"]).toContainEqual(["user-feedback"]);
+      expect(docsRouteSlugs["en-us"]).not.toContainEqual(["user-feedback"]);
       expect(docsRouteSlugs["zh-sg"]).toHaveLength(69);
       expect(docsRouteSlugs["zh-hant"]).toHaveLength(69);
       expect(docsRouteSlugs["id-id"]).toHaveLength(66);
@@ -626,7 +628,7 @@ describe("international docs publication inventory", () => {
         expect(syncDocsApi.normalizeMarkdownLinks).toBeTypeOf("function");
         if (!syncDocsApi.normalizeMarkdownLinks) return;
         expect(syncDocsApi.normalizeMarkdownLinks("[反馈](/support?from=docs#form)", "contact-us.md", locale, locale)).toBe(
-          `[反馈](/${locale}/support?from=docs#form)`,
+          locale === "zh-cn" ? "[反馈](/support?from=docs#form)" : `[反馈](/${locale}/support?from=docs#form)`,
         );
       },
     );

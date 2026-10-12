@@ -1,3 +1,4 @@
+import { ensureMalayPublicCopy } from '@/i18n/malay-copy';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -64,4 +65,18 @@ describe('optional feedback email', () => {
       expect(placeholder).not.toBe('邮箱（选填）');
     },
   );
+});
+
+
+describe('Korean and Malay survey labels', () => {
+  it.each(['ko-KR', 'ms-MY'] as const)('localizes all option groups for %s', async (locale) => {
+    if (locale === 'ms-MY') await ensureMalayPublicCopy();
+    const options = [...BUG_FREQUENCY_OPTIONS, ...PROFILE_FREQUENCY_OPTIONS,
+      ...PROFILE_INDUSTRY_OPTIONS, ...PROFILE_ROLE_OPTIONS, ...PROFILE_SOURCE_OPTIONS];
+    for (const { label } of options) {
+      const translated = localizeSupportLabel(label, locale);
+      expect(translated, label).not.toBe(label);
+      expect(translated, label).not.toMatch(/[\u3400-\u9fff]/u);
+    }
+  });
 });

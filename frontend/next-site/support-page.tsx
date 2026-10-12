@@ -404,6 +404,54 @@ const SUPPORT_LABELS_JA: Record<string, string> = {
   '邮箱（选填）': 'メールアドレス（任意）',
 };
 
+const SUPPORT_LABELS_KO: Record<string, string> = {
+  '每次必现': '항상 발생',
+  '经常发生': '자주 발생',
+  '偶尔发生': '가끔 발생',
+  '仅出现一次': '한 번만 발생',
+  '搜索引擎': '검색 엔진',
+  '朋友/同事推荐': '친구 또는 동료의 추천',
+  '社交媒体': '소셜 미디어',
+  '官网/文档': '공식 사이트 / 문서',
+  '社区/论坛': '커뮤니티 / 포럼',
+  '广告投放': '광고',
+  '新闻/媒体': '뉴스 / 미디어',
+  '其他': '기타',
+  '学生': '학생',
+  '开发者': '개발자',
+  '设计师': '디자이너',
+  '产品经理': '제품 관리자',
+  '创业者': '창업자',
+  '运营/其他': '운영 / 기타',
+  '科研/学术': '연구 / 학술',
+  '工程师（非开发）': '엔지니어 (개발직 제외)',
+  '市场/营销': '마케팅',
+  '销售/商务': '영업 / 비즈니스',
+  '人力/招聘': '인사 / 채용',
+  '写作/内容': '글쓰기 / 콘텐츠',
+  '教师/教育': '교사 / 교육',
+  '自由职业者': '프리랜서',
+  '分析师/咨询': '분석가 / 컨설팅',
+  '团队负责人/管理者': '팀장 / 관리자',
+  '几乎每天': '거의 매일',
+  '每周几次': '주 몇 회',
+  '每月几次': '월 몇 회',
+  '偶尔用用': '가끔 사용',
+  '刚接触': '이제 막 시작',
+  '互联网/软件': '인터넷 / 소프트웨어',
+  'AI/科技': 'AI / 기술',
+  '教育': '교육',
+  '金融/保险': '금융 / 보험',
+  '媒体/内容': '미디어 / 콘텐츠',
+  '电商/零售': '전자상거래 / 소매',
+  '医疗/生物': '의료 / 바이오',
+  '制造/硬件': '제조 / 하드웨어',
+  '游戏/文娱': '게임 / 엔터테인먼트',
+  '政府/公共': '정부 / 공공',
+  '自由职业/个体': '프리랜서 / 자영업',
+  '调研问卷': '설문조사',
+};
+
 export function localizeSupportLabel(label: string, locale: PublicSiteLocale): string {
   if (locale === PUBLIC_SITE_LOCALES.TH_TH) {
     if (label === '您的联系方式（选填，建议填写邮箱）') return 'ข้อมูลติดต่อ (ไม่บังคับ แนะนำให้ใช้อีเมล)';
@@ -415,13 +463,14 @@ export function localizeSupportLabel(label: string, locale: PublicSiteLocale): s
     if (label === '您的联系方式（选填，建议填写邮箱）') return 'Maklumat hubungan anda (pilihan; e-mel disyorkan)';
     if (label === '邮箱（选填）') return 'E-mel (pilihan)';
     if (label === '邮箱示例：1234@gmail.com') return 'Contoh: 1234@gmail.com';
+    return localizeMalay(SUPPORT_LABELS_EN[label] ?? label);
   }
   if (locale === PUBLIC_SITE_LOCALES.KO_KR) {
     if (label === '您的联系方式（选填，建议填写邮箱）') return '연락처 (선택 사항, 이메일 권장)';
     if (label === '邮箱（选填）') return '이메일 (선택 사항)';
     if (label === '邮箱示例：1234@gmail.com') return '예: 1234@gmail.com';
+    return SUPPORT_LABELS_KO[label] ?? label;
   }
-  if (locale === PUBLIC_SITE_LOCALES.MS_MY) return localizeMalay(SUPPORT_LABELS_EN[label] ?? label);
   if (locale === PUBLIC_SITE_LOCALES.ID_ID) return SUPPORT_LABELS_ID[label] ?? label;
   if (locale === PUBLIC_SITE_LOCALES.EN_US) return SUPPORT_LABELS_EN[label] ?? label;
   if (locale === PUBLIC_SITE_LOCALES.ZH_HANT) return SUPPORT_LABELS_HANT[label] ?? label;

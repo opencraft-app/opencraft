@@ -1854,7 +1854,7 @@ function rewriteMarkdownLinkDestination(destination, currentDir, fileToHref, out
   }
 
   // Keep the official feedback entry in the current documentation language.
-  if (hrefPath === '/support' || hrefPath === '/support/') {
+  if (outputPrefix !== URL_LANGS.ZH_CN && (hrefPath === '/support' || hrefPath === '/support/')) {
     return `/${outputPrefix}/support${suffix}${titleSuffix}`;
   }
 

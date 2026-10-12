@@ -47,7 +47,7 @@ OpenCraft iOS 的内置 Bot DOM runtime 同时包含国内与国际的 frontend 
 
 ## 产品文档区域
 
-国内 `/docs/user-feedback/` 为独立中文反馈指南，在国内侧栏、slug 映射和生成注册表同时登记，并与 `/docs/contact-us/` 互链；提交入口仍为国内 `/support`。国际文档不回退到该国内页面。反馈表单联系方式保持选填，展示邮箱示例，不再展示重复的联系提示句。
+国内 `/docs/user-feedback/` 为独立中文反馈指南，在国内侧栏、slug 映射和生成注册表同时登记，并与 `/docs/contact-us/` 互链；提交入口仍为国内 `/support`，文档链接同步不得添加 `/zh-cn` 前缀；国际反馈链接才使用对应语言前缀。国际文档不回退到该国内页面。反馈表单联系方式保持选填，展示邮箱示例，不再展示重复的联系提示句。
 
 国际站马来语使用 `ms-MY`（Bahasa Melayu），公开路径前缀为 `/ms-my/`，语言注册表 `frontend/src/i18n/locales.json` 同时控制语言切换与公开发布。马来语文档以 `src/content/docs/ms/` 为独立源，覆盖国际站英文文档清单，不跨区域或语言回退；标题、简介与分类来自同目录 `metadata.json`，生成 `/ms-my/docs/` 页面与独立搜索索引。国内站不生成马来语公开页面。
 
