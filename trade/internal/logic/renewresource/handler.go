@@ -63,6 +63,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"strconv"
 	"time"
 
@@ -120,16 +121,17 @@ const flowType = store.FlowTypeRenewResource
 //     续费成功后状态推进可在 R-D 联调阶段补 OrderRenewUpdater 接口）。
 //   - 其余 4 字段（OrderStore / FlowStore / CTLClient / Builder）与 createresource 同型。
 //
-// **v1.7.32 BUG-XX 修订（2026-06-08）**：runMainFlow 已不再调用 OrderStore — 原 v1.7.28 BUG-25
+// **v1.7.32 BUG-XX 修订（2026-06-08）**：发货主链路不依赖 OrderStore — 原 v1.7.28 BUG-25
 // 引入的"trade_order.resource_id 已回填 → 幂等回放"分支在续费场景下永远命中（续费的 trade_order.resource_id
 // 在 PlaceRenewOrder INSERT 时就是 pass_id，非新购的"createResource 后回填"语义），导致每次续费都
-// 跳过 ctl.RenewPass 调用。Step T2 已删除；OrderStore 字段保留仅为向后兼容（外部装配代码不需调整），
-// 主链路完全不依赖。jifei 重投幂等由外层 TryAcquireSlot + handleLoser 抢占式状态机覆盖。
+// 跳过 ctl.RenewPass 调用。Step T2 已删除；OrderStore 仅在 CTL 成功后辅助记录点石参与资格，
+// 发货仍不依赖订单存在。jifei 重投幂等由外层 TryAcquireSlot + handleLoser 抢占式状态机覆盖。
 type Deps struct {
-	OrderStore store.OrderStore        // 已废弃（v1.7.32 BUG-XX）；保留仅为向后兼容，runMainFlow 不再调用
-	FlowStore  store.FlowStore         // §3.6 抢占式幂等
-	CTLClient  ctlclient.Client        // §3.6 反向调 ctl/pass.RenewPass
-	Builder    *jifei.FrameworkBuilder // 构造 jifei framework 双层出参
+	OrderStore            store.OrderStore        // 仅辅助记录点石参与资格；发货不依赖订单存在
+	FlowStore             store.FlowStore         // §3.6 抢占式幂等
+	CTLClient             ctlclient.Client        // §3.6 反向调 ctl/pass.RenewPass
+	Builder               *jifei.FrameworkBuilder // 构造 jifei framework 双层出参
+	ParticipationRecorder store.ParticipationRecorder
 }
 
 // Install 把 renewResource 真 handler 注册到 dispatcher，替代 InstallStubHandlers
@@ -321,6 +323,11 @@ func runMainFlow(
 			"ctl RenewPass returned empty passId",
 		)
 	}
+	if deps.ParticipationRecorder != nil {
+		if err := recordDianshiRenewParticipation(ctx, deps, para); err != nil {
+			log.Printf("[dianshi-renew-cb] record participation failed (non-blocking) dealName=%s err=%v", para.DealName, err)
+		}
+	}
 
 	// Step T4：返 framework 双层成功响应。
 	//
@@ -335,6 +342,38 @@ func runMainFlow(
 	return deps.Builder.NewSuccess(map[string]any{
 		"flowId": flowID,
 	})
+}
+
+func recordDianshiRenewParticipation(ctx context.Context, deps Deps, para *callbackPara) error {
+	if deps.OrderStore == nil {
+		return nil
+	}
+	order, err := deps.OrderStore.GetOrderByDealName(ctx, para.DealName)
+	if errors.Is(err, store.ErrTradeOrderNotFound) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("get renewal order: %w", err)
+	}
+	if order == nil || order.Source != store.OrderSourceDianshi || order.OrderType != store.OrderTypeRenew ||
+		(order.Status != store.OrderStatusPendingPay && order.Status != store.OrderStatusPaidPendingProvision) {
+		return nil
+	}
+	if order.ResourceID != para.ResourceID || order.Uin != para.Uin || order.AppID != strconv.FormatInt(para.AppID, 10) {
+		return fmt.Errorf("renewal order identity mismatch for dealName=%s", para.DealName)
+	}
+	if order.ActivityID <= 0 || order.ActID <= 0 || order.BundleID == "" {
+		return fmt.Errorf("renewal activity metadata missing for dealName=%s", para.DealName)
+	}
+	row := &store.UserActivityParticipation{
+		Uin: para.Uin, AppID: strconv.FormatInt(para.AppID, 10), ExternalUserID: order.ExternalUserID,
+		ActivityID: order.ActivityID, Scene: store.ActivitySceneRenew, BundleID: order.BundleID,
+		ActID: order.ActID, DealName: para.DealName, BigDealNo: order.BigOrderID,
+	}
+	if err := deps.ParticipationRecorder.RecordUserParticipation(ctx, row); err != nil && !errors.Is(err, store.ErrActivityParticipationDuplicate) {
+		return err
+	}
+	return nil
 }
 
 // extractStringFromGoodsDetail 从 jifei goodsDetail map 中安全取出 string 字段。

@@ -225,8 +225,7 @@ type Deps struct {
 	// CreatePayUrl calls. Callers can still override either field explicitly.
 	BillingPayRedirectURL string
 	OrderWriter           store.OrderWriter
-	OrderStore            store.OrderStore // GeneratePayURL 反查 trade_order.pay_url 用
-	DianshiRenewWriter    store.DianshiRenewOrderWriter
+	OrderStore            store.OrderStore    // GeneratePayURL 反查 trade_order.pay_url 用
 	ParticipationReader   participationReader // 专用赠送按请求 activity_id 做防重复检查
 	ShadowClient          shadowclient.Client // 可选，nil 表示由调用方传 Uin/AppID
 	SiteKind              string              // 可选，v1.7.x 国际站接入；"cn" / "intl"，缺省 cn 兜底
@@ -2334,7 +2333,7 @@ func (s *Service) findReusableDianshiRenewOrder(
 	}, true, nil
 }
 
-// placeRenewOrderDianshi 创建国内站点石续费订单，并在同一 DB 事务中消费 renew 资格。
+// placeRenewOrderDianshi creates a pending-payment order; renewResource records participation after delivery.
 func (s *Service) placeRenewOrderDianshi(
 	ctx context.Context,
 	req PlaceRenewOrderRequest,
@@ -2343,9 +2342,6 @@ func (s *Service) placeRenewOrderDianshi(
 ) (*PlaceOrderResult, error) {
 	if s.deps.DianshiClient == nil {
 		return nil, fmt.Errorf("placeorder: dianshi client not configured")
-	}
-	if s.deps.DianshiRenewWriter == nil {
-		return nil, fmt.Errorf("placeorder: dianshi renew writer not configured")
 	}
 
 	timeSpanUnit := strconv.Itoa(req.Period) + strings.ToLower(strings.TrimSpace(req.TimeUnit))
@@ -2401,27 +2397,7 @@ func (s *Service) placeRenewOrderDianshi(
 		ActivityID:     mapping.ActivityID,
 		ActID:          mapping.ActID,
 	}
-	participation := store.UserActivityParticipation{
-		Uin:            req.Uin,
-		AppID:          req.AppID,
-		ExternalUserID: req.ExternalUserID,
-		ActivityID:     mapping.ActivityID,
-		Scene:          store.ActivitySceneRenew,
-		BundleID:       req.BundleID,
-		ActID:          mapping.ActID,
-		DealName:       dealName,
-		BigDealNo:      resp.BigDealNo,
-	}
-	if err := s.deps.DianshiRenewWriter.CreateDianshiRenewOrderWithParticipation(ctx, order, participation); err != nil {
-		if errors.Is(err, store.ErrActivityParticipationDuplicate) {
-			reused, hit, reuseErr := s.findReusableDianshiRenewOrder(ctx, req, mapping)
-			if reuseErr != nil {
-				return nil, reuseErr
-			}
-			if hit {
-				return reused, nil
-			}
-		}
+	if err := s.deps.OrderWriter.CreateOrder(ctx, order); err != nil {
 		if errors.Is(err, store.ErrTradeOrderDuplicate) {
 			return nil, fmt.Errorf("%w (dianshi renew): dealName=%s", ErrDealNameDuplicate, dealName)
 		}
