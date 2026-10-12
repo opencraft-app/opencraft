@@ -150,6 +150,7 @@ export const PROFILE_INDUSTRY_OPTIONS = [
 export type ProfileIndustry = (typeof PROFILE_INDUSTRY_OPTIONS)[number]['value'];
 
 const SUPPORT_LABELS_EN: Record<string, string> = {
+  '您的联系方式（选填，建议填写邮箱）': 'Your contact details (optional; email recommended)',
   '每次必现': 'Always reproducible',
   '经常发生': 'Often',
   '偶尔发生': 'Sometimes',
@@ -195,11 +196,13 @@ const SUPPORT_LABELS_EN: Record<string, string> = {
   '政府/公共': 'Government / public sector',
   '自由职业/个体': 'Freelance / self-employed',
   '调研问卷': 'Survey',
-  '可留下微信号或邮箱；': 'You can leave a WeChat ID or email;',
-  '微信号如：lightvela_demo，邮箱如：1234@gmail.com': 'For example: WeChat lightvela_demo, or email 1234@gmail.com',
+  '请留下邮箱，方便我们与您联系。': 'Please provide an email address so we can follow up.',
+  '邮箱示例：1234@gmail.com': 'Example: 1234@gmail.com',
+  '邮箱（选填）': 'Email (optional)',
 };
 
 const SUPPORT_LABELS_ID: Record<string, string> = {
+  '您的联系方式（选填，建议填写邮箱）': 'Kontak Anda (opsional; email disarankan)',
   '每次必现': 'Selalu terjadi',
   '经常发生': 'Sering terjadi',
   '偶尔发生': 'Kadang terjadi',
@@ -245,11 +248,13 @@ const SUPPORT_LABELS_ID: Record<string, string> = {
   '政府/公共': 'Pemerintah / sektor publik',
   '自由职业/个体': 'Freelance / wiraswasta',
   '调研问卷': 'Survei',
-  '可留下微信号或邮箱；': 'Anda dapat meninggalkan ID WeChat atau email;',
-  '微信号如：lightvela_demo，邮箱如：1234@gmail.com': 'Contoh: WeChat lightvela_demo, atau email 1234@gmail.com',
+  '请留下邮箱，方便我们与您联系。': 'Isi alamat email agar kami dapat menghubungi Anda.',
+  '邮箱示例：1234@gmail.com': 'Contoh: 1234@gmail.com',
+  '邮箱（选填）': 'Email (opsional)',
 };
 
 const SUPPORT_LABELS_HANT: Record<string, string> = {
+  '您的联系方式（选填，建议填写邮箱）': '您的聯絡方式（選填，建議填寫郵箱）',
   '每次必现': '每次必現',
   '经常发生': '經常發生',
   '偶尔发生': '偶爾發生',
@@ -295,11 +300,13 @@ const SUPPORT_LABELS_HANT: Record<string, string> = {
   '政府/公共': '政府/公共',
   '自由职业/个体': '自由職業/個體',
   '调研问卷': '調研問卷',
-  '可留下微信号或邮箱；': '可留下微信號或郵箱；',
-  '微信号如：lightvela_demo，邮箱如：1234@gmail.com': '微信號如：lightvela_demo，郵箱如：1234@gmail.com',
+  '请留下邮箱，方便我们与您联系。': '請留下郵箱，方便我們與您聯絡。',
+  '邮箱示例：1234@gmail.com': '郵箱示例：1234@gmail.com',
+  '邮箱（选填）': '郵箱（選填）',
 };
 
 const SUPPORT_LABELS_ES: Record<string, string> = {
+  '您的联系方式（选填，建议填写邮箱）': 'Tus datos de contacto (opcional; se recomienda el correo electrónico)',
   '每次必现': 'Siempre ocurre',
   '经常发生': 'Ocurre con frecuencia',
   '偶尔发生': 'Ocurre ocasionalmente',
@@ -345,11 +352,13 @@ const SUPPORT_LABELS_ES: Record<string, string> = {
   '政府/公共': 'Gobierno / sector público',
   '自由职业/个体': 'Trabajo independiente / autónomo',
   '调研问卷': 'Encuesta',
-  '可留下微信号或邮箱；': 'Puedes dejar tu ID de WeChat o correo electrónico;',
-  '微信号如：lightvela_demo，邮箱如：1234@gmail.com': 'Por ejemplo: WeChat lightvela_demo o correo 1234@gmail.com',
+  '请留下邮箱，方便我们与您联系。': 'Deja tu correo electrónico para que podamos contactarte.',
+  '邮箱示例：1234@gmail.com': 'Ejemplo: 1234@gmail.com',
+  '邮箱（选填）': 'Correo electrónico (opcional)',
 };
 
 const SUPPORT_LABELS_JA: Record<string, string> = {
+  '您的联系方式（选填，建议填写邮箱）': '連絡先（任意・メールアドレス推奨）',
   '每次必现': '常に発生',
   '经常发生': '頻繁に発生',
   '偶尔发生': 'ときどき発生',
@@ -395,12 +404,31 @@ const SUPPORT_LABELS_JA: Record<string, string> = {
   '政府/公共': '行政・公共',
   '自由职业/个体': 'フリーランス・個人事業',
   '调研问卷': 'アンケート',
-  '可留下微信号或邮箱；': 'WeChat IDまたはメールアドレスを入力できます。',
-  '微信号如：lightvela_demo，邮箱如：1234@gmail.com': '例：WeChat lightvela_demo、メール 1234@gmail.com',
+  '请留下邮箱，方便我们与您联系。': '連絡用のメールアドレスをご記入ください。',
+  '邮箱示例：1234@gmail.com': '例：1234@gmail.com',
+  '邮箱（选填）': 'メールアドレス（任意）',
 };
 
 export function localizeSupportLabel(label: string, locale: PublicSiteLocale): string {
-  if (locale === PUBLIC_SITE_LOCALES.TH_TH) return localizeThai(SUPPORT_LABELS_EN[label] ?? label);
+  if (locale === PUBLIC_SITE_LOCALES.TH_TH) {
+    if (label === '您的联系方式（选填，建议填写邮箱）') return 'ข้อมูลติดต่อ (ไม่บังคับ แนะนำให้ใช้อีเมล)';
+    if (label === '邮箱（选填）') return 'อีเมล (ไม่บังคับ)';
+    if (label === '请留下邮箱，方便我们与您联系。') return 'กรุณาระบุอีเมลเพื่อให้เราติดต่อกลับได้';
+    if (label === '邮箱示例：1234@gmail.com') return 'ตัวอย่าง: 1234@gmail.com';
+    return localizeThai(SUPPORT_LABELS_EN[label] ?? label);
+  }
+  if (locale === PUBLIC_SITE_LOCALES.MS_MY) {
+    if (label === '您的联系方式（选填，建议填写邮箱）') return 'Maklumat hubungan anda (pilihan; e-mel disyorkan)';
+    if (label === '邮箱（选填）') return 'E-mel (pilihan)';
+    if (label === '请留下邮箱，方便我们与您联系。') return 'Sila berikan alamat e-mel supaya kami dapat menghubungi anda.';
+    if (label === '邮箱示例：1234@gmail.com') return 'Contoh: 1234@gmail.com';
+  }
+  if (locale === PUBLIC_SITE_LOCALES.KO_KR) {
+    if (label === '您的联系方式（选填，建议填写邮箱）') return '연락처 (선택 사항, 이메일 권장)';
+    if (label === '邮箱（选填）') return '이메일 (선택 사항)';
+    if (label === '请留下邮箱，方便我们与您联系。') return '연락드릴 수 있도록 이메일 주소를 남겨 주세요.';
+    if (label === '邮箱示例：1234@gmail.com') return '예: 1234@gmail.com';
+  }
   if (locale === PUBLIC_SITE_LOCALES.MS_MY) return localizeMalay(SUPPORT_LABELS_EN[label] ?? label);
   if (locale === PUBLIC_SITE_LOCALES.ID_ID) return SUPPORT_LABELS_ID[label] ?? label;
   if (locale === PUBLIC_SITE_LOCALES.EN_US) return SUPPORT_LABELS_EN[label] ?? label;
@@ -516,8 +544,8 @@ export function SupportPage({
   const pageCopy = {
     pageTitle: t('产品反馈'),
     pageDesc: t('您可以将使用 LightVela 过程中的任何体验问题或需求建议告诉我们，帮助我们变得更好！'),
-    contactHintPrimary: localizeSupportLabel('可留下微信号或邮箱；', activePublicLocale),
-    contactHintExamples: localizeSupportLabel('微信号如：lightvela_demo，邮箱如：1234@gmail.com', activePublicLocale),
+    contactHintPrimary: localizeSupportLabel('请留下邮箱，方便我们与您联系。', activePublicLocale),
+    contactHintExamples: localizeSupportLabel('邮箱示例：1234@gmail.com', activePublicLocale),
   };
 
   const effectiveUserId = userId;
@@ -1209,7 +1237,7 @@ export function SupportPage({
               <div className="space-y-3">
                 <Label className="flex items-center gap-1.5">
                   <span className="font-semibold text-[var(--text-tertiary)]">03</span>
-                  {t('您的联系方式（选填）')}
+                  {localizeSupportLabel('您的联系方式（选填，建议填写邮箱）', activePublicLocale)}
                 </Label>
                 <div className="space-y-1 text-xs text-[var(--text-tertiary)]">
                   <p>{pageCopy.contactHintPrimary}</p>
@@ -1219,7 +1247,7 @@ export function SupportPage({
                   type="text"
                   value={contactInfo}
                   onChange={(e) => setContactInfo(e.target.value)}
-                  placeholder={t('微信号 / 邮箱（选填）')}
+                  placeholder={localizeSupportLabel('邮箱（选填）', activePublicLocale)}
                 />
               </div>
 

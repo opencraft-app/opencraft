@@ -144,7 +144,7 @@ const cnDocs = [
   { slug: 'compare/lightvela-vs-ai-chatbot', title: 'LightVela vs AI Chatbot：哪个更适合搭建个人 AI 助手？', file: 'compare/lightvela-vs-ai-chatbot.md', group: '对比与选型', description: '比较托管 Hermes Agent 与通用 AI Chatbot 的日常入口、记忆、定时任务、模型积分和重复任务体验。', hideDescription: true },
   // 管理与排障：问题和支持
   { slug: 'faq', title: '常见问题 FAQ', file: '07-faq.md', group: '管理与排障', description: '', hideDescription: true },
-  { slug: 'contact-us', title: '联系我们', file: 'contact-us.md', group: '管理与排障', description: '加入 LightVela 用户交流群，与产品团队面对面交流。继续把使用问题、产品建议和真实场景反馈给我们。', hideDescription: true },
+  { slug: 'contact-us', title: '联系我们', file: 'contact-us.md', group: '管理与排障', description: '通过用户反馈入口提交使用问题或产品建议，也可加入微信社群交流。', hideDescription: true },
 ];
 
 /** 国内站侧边栏分组顺序；与 CN_SIDEBAR 的可见任务路径一致。 */
@@ -910,7 +910,7 @@ const globalDocs = [
     group: { 'en-US': 'Support', 'zh-CN': '联系与支持' },
     description: {
       'en-US': 'Join the LightVela community, talk to the product team directly, and share usage questions, product suggestions, and real-world feedback.',
-      'zh-CN': '加入 LightVela 用户社区，与产品团队交流使用问题、产品建议和真实场景反馈。',
+      'zh-CN': '通过用户反馈入口提交使用问题或产品建议，也可加入官方社群交流。',
     },
     hideDescription: true,
   },
@@ -1850,6 +1850,11 @@ function rewriteMarkdownLinkDestination(destination, currentDir, fileToHref, out
     const resolved = relative('.', join(currentDir, hrefPath)).replaceAll('\\', '/').replace(/^\.\//, '');
     const target = fileToHref.get(resolved);
     return target ? `${target}${suffix}${titleSuffix}` : destination;
+  }
+
+  // Keep the official feedback entry in the current documentation language.
+  if (hrefPath === '/support' || hrefPath === '/support/') {
+    return `/${outputPrefix}/support${suffix}${titleSuffix}`;
   }
 
   if (![URL_LANGS.TH_TH, URL_LANGS.MS_MY, URL_LANGS.ES, URL_LANGS.JA_JP, URL_LANGS.KO_KR].includes(outputPrefix)) return destination;

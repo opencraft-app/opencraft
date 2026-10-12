@@ -620,6 +620,17 @@ describe("international docs publication inventory", () => {
       );
     });
 
+    it.each(["zh-cn", "zh-sg", "en-us", "th-th", "ms-my", "es", "ja-jp", "ko-kr"])(
+      "keeps the feedback link in the %s documentation locale",
+      (locale) => {
+        expect(syncDocsApi.normalizeMarkdownLinks).toBeTypeOf("function");
+        if (!syncDocsApi.normalizeMarkdownLinks) return;
+        expect(syncDocsApi.normalizeMarkdownLinks("[反馈](/support?from=docs#form)", "contact-us.md", locale, locale)).toBe(
+          `[反馈](/${locale}/support?from=docs#form)`,
+        );
+      },
+    );
+
     it("replaces a fallback image suffix with the requested locale when available", () => {
       expect(syncDocsApi.normalizeMarkdownLinks).toBeTypeOf("function");
       if (!syncDocsApi.normalizeMarkdownLinks) return;
