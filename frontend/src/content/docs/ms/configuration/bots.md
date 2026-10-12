@@ -4,9 +4,6 @@
 
 **Bot adalah profil berdikari di dalam Hermes Agent anda. Bot utama dibuat bersama Ejen, dan setiap Bot tambahan boleh mempunyai tetapan model sendiri, persona, ingatan, Kemahiran, saluran, dan tugas terjadual. Apabila anda membuat Bot, pilih sama ada untuk menyalin Bot sedia ada atau memulakan dengan tetapan Asas. Pelan anda menentukan berapa banyak Bot yang boleh anda buat, termasuk Bot utama.**
 
-> **Ketersediaan di laman antarabangsa**
->
-> Penciptaan Bot tambahan diperkenalkan secara berperingkat. Entri **Buat Bot** tidak dipaparkan secara lalai di laman antarabangsa semasa pengenalan ini. Jika entri tidak tersedia, teruskan menggunakan Bot utama.
 
 ## Halaman ini meliputi
 
@@ -23,38 +20,26 @@
 
 ## Cipta Bot
 
-Apabila entri penciptaan tersedia:
+Untuk mencipta Bot seterusnya, pilih **Bot Baharu** jika tersedia dan kuota pelan mencukupi. Isi **Nama** (wajib) dan **Penerangan** (pilihan), kemudian laraskan penampilan jika perlu. Pilihan lalai ialah **Persediaan asas**. Jika ada Bot sumber yang sah, buka **Lanjutan** dan pilih Bot tertentu untuk disalin. Untuk menyalin Bot yang sedang digunakan, buka **Urus Bot → Salin Bot**; borang akan memilih sumber itu terlebih dahulu. Semak sumber, pilih **Buat**, dan tunggu sehingga selesai.
 
-1. Pilih **Bot Baru**.
-2. Masukkan nama Bot tidak melebihi 60 aksara.
-3. Pilih kaedah penciptaan.
-4. Semak ringkasan pewarisan, kemudian pilih **Sahkan penciptaan**.
-5. Tunggu Bot baru selesai penyediaan sebelum mengkonfigurasi atau menggunakannya.
-
-Pilihan salin yang tersedia bergantung pada Bot yang sedang dipilih. Dari Bot utama, konsol menunjukkan **Salin semasa (Bot utama)**. Dari Bot lain, anda boleh memilih **Klon semasa** atau **Klon Bot utama**.
+Kawalan tutup dan pilihan salinan lanjutan hanya tersedia apabila ada Bot sumber yang sah. Persediaan pertama tanpa sumber perlu dilengkapkan. Kawalan penampilan mengubah warna, bentuk, dan aksesori, bukan sumber salinan.
 
 ## Pilih kaedah penciptaan
 
 | Kaedah | Warisan | Tidak diwarisi |
 | --- | --- | --- |
-| Salin semasa, Klon semasa, atau Klon Bot utama | Model, persona, Kemahiran, keutamaan pengguna, dan memori jangka panjang daripada Bot sumber yang dipilih | Perbualan semasa, sejarah sembang, tugas yang dijadualkan, keadaan semasa, dan sambungan saluran |
+| Salin Bot | Model, persona, Kemahiran, keutamaan pengguna, dan memori jangka panjang daripada Bot sumber yang dipilih | Perbualan semasa, sejarah sembang, tugas yang dijadualkan, keadaan semasa, dan sambungan saluran |
 | Persediaan asas | Model utama semasa Bot dan kelayakan Penyedia, ditambah Kemahiran sistem terbina dalam | Model sandaran, model lain yang dikonfigurasikan, persona, memori, Kemahiran yang dipasang kemudian pada Bot utama, saluran, dan tugas yang dijadualkan |
 
 **Persediaan asas bukanlah Bot kosong.** Ia menyimpan model minimum dan konfigurasi Kemahiran bawaan yang diperlukan untuk memulakan, sambil memisahkan tingkah laku peribadi, memori, dan integrasi.
 
 ## Sahkan Bot baru
 
-Selepas penyediaan selesai:
-
-1. Sahkan bahawa tab Bot baru muncul dengan nama yang anda masukkan.
-2. Pilih Bot baru dan periksa bahawa model dan Kemahiran sesuai dengan kaedah penciptaan yang anda pilih.
-3. Buka halaman konfigurasi yang berkaitan sebelum menambah [Soul](./personality.md), memasang [Skills](./skill.md), menyambungkan saluran, atau membuat [Scheduled Tasks](./automation.md).
+Selepas penciptaan, semak nama Bot baharu dalam pemilih, buka sembang webnya, dan hantar mesej ujian ringkas. Jika penciptaan atau konfigurasi awal gagal, ikut tindakan cuba semula yang dipaparkan dan semak senarai Bot sebelum mencipta lagi. Jika tiada balasan, semak status Bot serta kredit atau konfigurasi model.
 
 ## Bekerja dengan Pelbagai Bot
 
-Tab Bot muncul di bahagian atas konsol Ejen. Pilih tab sebelum menukar tetapan model, persona, memori, Kemahiran, saluran, tugas yang dijadualkan, atau diagnostik supaya anda bekerja dengan Bot yang dimaksudkan.
-
-Setiap Bot mempunyai profil dan data sendiri. Perubahan pada satu Bot tidak akan mengemas kini Bot lain secara automatik. Ciri **Sembang** konsol kini hanya tersedia untuk Bot utama, dan penyelenggaraan peringkat Ejen juga harus dilakukan dari Bot utama.
+Pilih avatar Bot yang dikehendaki pada bar Bot. Pada skrin sempit, buka panel navigasi terlebih dahulu. Semak namanya sebelum mengubah model, memori, kemahiran, saluran, atau tugas berjadual. Sembang web dan senarai perbualan mengikut Bot yang dipilih; Bot tambahan juga boleh menggunakan sembang web. Sembang web tidak memerlukan saluran pemesejan.
 
 Untuk menamakan semula Bot, pilih Bot tersebut dan sunting nama yang dipaparkan. Nama baharu boleh mengandungi sehingga 60 aksara.
 
@@ -71,7 +56,7 @@ Pemadaman tidak dapat dibatalkan. Baca mesej pengesahan dengan teliti dan masukk
 
 ### Mengapa saya tidak boleh mencipta Bot lain?
 
-Entri penciptaan mungkin masih tersembunyi semasa pelancaran antarabangsa, keupayaan multi-Bot mungkin tidak tersedia untuk versi Ejen semasa, Ejen mungkin tidak berjalan, atau pelan anda mungkin telah mencapai had Bot.
+Semak sama ada penciptaan berbilang Bot diaktifkan untuk akaun, Agent sedang berjalan, kuota pelan mencukupi, dan tiada penciptaan atau pemadaman lain sedang berlangsung.
 
 ### Mengapa Bot yang disalin tiada perbualan, tugasan, atau saluran?
 

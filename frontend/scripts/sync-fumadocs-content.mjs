@@ -99,7 +99,7 @@ const cnDocs = [
   // Bot 与模型
   { slug: 'configuration/index', title: '配置总览', file: '05-configuration.md', group: 'Bot 与模型', description: 'LightVela 管理台配置流程。', hideDescription: true },
   { slug: 'configuration/bots-switching', title: '管理与切换 Bot', file: 'configuration/bots-switching.md', group: 'Bot 与模型', description: '在一个 LightVela 云端 Agent 中管理、切换和按权限创建多个专用 Bot。', hideDescription: true },
-  { slug: 'configuration/agent-chat', title: '网页对话', file: 'configuration/agent-chat.md', group: 'Bot 与模型', description: '在网页中与主 Bot 对话、检查回复并排查不可用状态。', hideDescription: true },
+  { slug: 'configuration/agent-chat', title: '网页对话', file: 'configuration/agent-chat.md', group: 'Bot 与模型', description: '在网页中与当前选中的 Bot 对话、检查回复并排查不可用状态。', hideDescription: true },
   { slug: 'configuration/model', title: '配置模型', file: 'configuration/model.md', group: 'Bot 与模型', description: '接入和管理 Hermes 使用的大语言模型。', hideDescription: true },
   { slug: 'configuration/multiple-models', title: '模型切换', file: 'configuration/multiple-models.md', group: 'Bot 与模型', description: '在多个已配置模型之间切换 Agent 当前使用的模型。', hideDescription: true },
   // 成长
@@ -144,7 +144,8 @@ const cnDocs = [
   { slug: 'compare/lightvela-vs-ai-chatbot', title: 'LightVela vs AI Chatbot：哪个更适合搭建个人 AI 助手？', file: 'compare/lightvela-vs-ai-chatbot.md', group: '对比与选型', description: '比较托管 Hermes Agent 与通用 AI Chatbot 的日常入口、记忆、定时任务、模型积分和重复任务体验。', hideDescription: true },
   // 管理与排障：问题和支持
   { slug: 'faq', title: '常见问题 FAQ', file: '07-faq.md', group: '管理与排障', description: '', hideDescription: true },
-  { slug: 'contact-us', title: '联系我们', file: 'contact-us.md', group: '管理与排障', description: '加入 LightVela 用户交流群，与产品团队面对面交流。继续把使用问题、产品建议和真实场景反馈给我们。', hideDescription: true },
+  { slug: 'user-feedback', title: '用户反馈', file: 'user-feedback.md', group: '管理与排障', description: '登录后提交产品建议或故障反馈，了解必填内容、选填联系方式及附件限制。' },
+  { slug: 'contact-us', title: '联系我们', file: 'contact-us.md', group: '管理与排障', description: '通过用户反馈入口提交使用问题或产品建议，也可加入微信社群交流。', hideDescription: true },
 ];
 
 /** 国内站侧边栏分组顺序；与 CN_SIDEBAR 的可见任务路径一致。 */
@@ -910,7 +911,7 @@ const globalDocs = [
     group: { 'en-US': 'Support', 'zh-CN': '联系与支持' },
     description: {
       'en-US': 'Join the LightVela community, talk to the product team directly, and share usage questions, product suggestions, and real-world feedback.',
-      'zh-CN': '加入 LightVela 用户社区，与产品团队交流使用问题、产品建议和真实场景反馈。',
+      'zh-CN': '通过用户反馈入口提交使用问题或产品建议，也可加入官方社群交流。',
     },
     hideDescription: true,
   },
@@ -1850,6 +1851,11 @@ function rewriteMarkdownLinkDestination(destination, currentDir, fileToHref, out
     const resolved = relative('.', join(currentDir, hrefPath)).replaceAll('\\', '/').replace(/^\.\//, '');
     const target = fileToHref.get(resolved);
     return target ? `${target}${suffix}${titleSuffix}` : destination;
+  }
+
+  // Keep the official feedback entry in the current documentation language.
+  if (outputPrefix !== URL_LANGS.ZH_CN && (hrefPath === '/support' || hrefPath === '/support/')) {
+    return `/${outputPrefix}/support${suffix}${titleSuffix}`;
   }
 
   if (![URL_LANGS.TH_TH, URL_LANGS.MS_MY, URL_LANGS.ES, URL_LANGS.JA_JP, URL_LANGS.KO_KR].includes(outputPrefix)) return destination;

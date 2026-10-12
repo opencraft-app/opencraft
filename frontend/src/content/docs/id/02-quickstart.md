@@ -30,9 +30,9 @@ Tutorial ini dimulai dengan Chat web, lalu menjelaskan cara menghubungkan WeChat
 
 ## 1. Masuk ke LightVela
 
-Buka [lightvela.ai](https://lightvela.ai), lalu klik "Masuk" di kanan atas. Di dialog login, pilih Google atau GitHub, setujui perjanjian yang ditampilkan, lalu selesaikan otorisasi.
+Buka [lightvela.ai](https://lightvela.ai) dan pilih **Masuk** di sudut kanan atas. Pada dialog masuk, baca dan setujui perjanjian, lalu pilih **Google** atau **GitHub** dan selesaikan otorisasi.
 
-![](../images/2-1.webp)
+![Dialog masuk LightVela dengan Google dan GitHub](../images/2-1.webp)
 
 ---
 
@@ -50,7 +50,7 @@ Buka [halaman Subscribe](/subscribe), pilih opsi **Launch dengan 100 kredit** da
 
 ## 3. Buka Hermes Agent
 
-Setelah paket aktif, buka [konsol Agent](/agents/overview/). LightVela menyiapkan instans cloud untuk paket Anda. Jika konsol meminta Anda membuat Agent, ikuti petunjuk di layar dan tunggu hingga statusnya **Running**. Sidebar kemudian menyediakan **Channels**, **Models**, **Skills**, dan **Scheduled Tasks**. Kredit model paket dapat dipakai tanpa API key sendiri.
+Setelah masuk dengan Google atau GitHub dan mengaktifkan paket yang tersedia, buka [konsol Agent](/agents/overview/). Selesaikan pengaturan Bot pertama: isi nama yang wajib, tambahkan deskripsi jika perlu, dan atur tampilannya. Pilih **Buat**, lalu tunggu pembuatan dan konfigurasi awal selesai. Setelah konfigurasi selesai, pilih **Mulai perjalanan**, lalu buka Chat web untuk Bot tersebut. Kanal pesan bersifat opsional; balasan memerlukan kredit model paket yang tersedia atau model yang telah dikonfigurasi.
 
 ---
 
@@ -68,11 +68,11 @@ Buka **Channels** di sidebar Agent. Pada kartu **WeChat**, pilih **+ Connect** d
 
 Cari akun bot yang sudah ditambahkan di WeChat, lalu kirim pesan uji:
 
-```
+```text
 Hi
 ```
 
-![](../images/2-7.webp)
+![Pesan uji dan balasan Bot di WeChat](../images/2-7.webp)
 
 Anda seharusnya menerima balasan dari Hermes dalam beberapa detik. Sekarang Hermes sudah bisa diajak chat lewat WeChat.
 

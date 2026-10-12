@@ -30,9 +30,9 @@ Tutorial ini bermula dengan Web Chat, kemudian menunjukkan cara untuk menyambung
 
 ## 1. Log masuk ke LightVela
 
-Lawati [lightvela.ai](https://lightvela.ai) dan klik "Log masuk" di penjuru kanan sebelah atas. Dalam dialog log masuk, pilih Google atau GitHub, terima perjanjian dan lengkapkan kebenaran.
+Buka [lightvela.ai](https://lightvela.ai) dan pilih **Log Masuk** di sudut kanan atas. Dalam dialog log masuk, baca dan setujui perjanjian, kemudian pilih **Google** atau **GitHub** dan lengkapkan kebenaran.
 
-![](../images/2-1.webp)
+![Dialog log masuk LightVela dengan Google dan GitHub](../images/2-1.webp)
 
 ---
 
@@ -48,7 +48,7 @@ Buka [halaman Langgan](/subscribe), pilih pilihan **100-kredit Pelancaran** dala
 
 ## 3. Buka Hermes Agent anda
 
-Selepas pengaktifan pelan, buka [konsol Ejen](/agents/overview/). LightVela menyediakan instans awan untuk pelan anda. Jika konsol meminta anda untuk membuat Ejen, ikuti langkah pada skrin itu dan tunggu sehingga statusnya **Berjalan**. Bar sisi kemudian menyediakan **Saluran**, **Model**, **Kemahiran**, dan **Tugas Berjadual**. Anda boleh menggunakan kredit model pelan tanpa memasukkan kunci API anda sendiri.
+Selepas log masuk dengan Google atau GitHub dan mengaktifkan pelan yang tersedia, buka [konsol Agent](/agents/overview/). Lengkapkan persediaan Bot pertama: masukkan nama yang wajib, tambah penerangan jika perlu, dan laraskan penampilannya. Pilih **Buat** dan tunggu penciptaan serta konfigurasi awal selesai. Selepas konfigurasi selesai, pilih **Mulakan perjalanan**, kemudian buka sembang web untuk Bot itu. Saluran pemesejan adalah pilihan; balasan memerlukan kredit model pelan yang tersedia atau model yang telah dikonfigurasi.
 
 ---
 
@@ -66,11 +66,11 @@ Buka **Saluran** di bar sisi Ejen. Pada kad **WeChat**, pilih **+ Sambung** dan 
 
 Cari akaun bot yang ditambahkan dalam WeChat dan hantar mesej ujian:
 
-```
+```text
 Hi
 ```
 
-![](../images/2-7.webp)
+![Mesej ujian dan balasan Bot dalam WeChat](../images/2-7.webp)
 
 Anda akan menerima balasan daripada Hermes dalam masa beberapa saat. Hermes kini boleh bersembang melalui WeChat.
 

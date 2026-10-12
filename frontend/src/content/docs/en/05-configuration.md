@@ -32,7 +32,9 @@ Web Chat is under Daily; connect an external Channel only when you want to use a
 
 ## Bots and selected Bot information
 
-The top of the console contains Bot tabs for the current Hermes Agent. The first tab is the main Bot; each additional tab is a separate Bot profile. Your plan determines the total Bot limit, including the main Bot. During the staged international rollout, the creation entry is not shown by default. See [Manage Bots](./configuration/bots.md) for creation methods and inheritance rules.
+Select the intended Bot’s avatar in the Bot bar. On narrow screens, first expand the navigation panel. Confirm its name before changing models, memory, skills, channels, or scheduled tasks. Web Chat and its conversation list belong to the selected Bot; additional Bots can use Web Chat too. Connecting a messaging channel is not required for Web Chat.
+
+To create another Bot, select **New Bot** when the entry is available and your plan has capacity. Enter **Name** (required) and **Description** (optional), and adjust the appearance if needed. The default is **Basic setup**. If valid existing Bots can be copied, expand **Advanced** and select a specific source Bot. To copy the Bot you are using, open **Manage Bot → Copy Bot**; the creation form preselects that source. Review the source, then select **Create** and wait for completion.
 
 After selecting a Bot, its basic information is shown below:
 

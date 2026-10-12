@@ -2,7 +2,7 @@
 
 ## Summary
 
-**Bots Switching lets one LightVela cloud Agent contain multiple specialized Bots. You can create Bots for research, planning, coding, content, support, or recurring workflows, then switch between them from the Agent profile menu.**
+**Bots Switching lets one LightVela cloud Agent contain multiple specialized Bots. You can create Bots for research, planning, coding, content, support, or recurring workflows, then switch between them from the Bot avatar bar.**
 
 **Each Bot has its own workspace context. Depending on whether you create a blank Bot or clone an existing Bot, LightVela applies different inheritance rules to model settings, memory, skills, personality, scheduled tasks, and channel connections.**
 
@@ -14,36 +14,30 @@
 
 ## Creating your bot
 
-After selecting **New Bot**, choose an avatar, enter a name and description, and choose whether to create a blank Bot or clone an existing Bot.
+After signing in with Google or GitHub and activating an available plan, open the [Agent console](/agents/overview/). Complete the first Bot setup: enter a required name, optionally add a description, and adjust its appearance. Select **Create** and wait for creation and initial configuration to finish. Select **Start your journey** once configuration finishes, then open Web Chat for that Bot. A messaging channel is optional; available plan model credits or a configured model are required for replies.
 
-When another Bot already exists, the creation dialog can offer **Copy current**, **Copy main Bot**, or **Blank create**.
+To create another Bot, select **New Bot** when the entry is available and your plan has capacity. Enter **Name** (required) and **Description** (optional), and adjust the appearance if needed. The default is **Basic setup**. If valid existing Bots can be copied, expand **Advanced** and select a specific source Bot. To copy the Bot you are using, open **Manage Bot → Copy Bot**; the creation form preselects that source. Review the source, then select **Create** and wait for completion.
 
-For example, to create a Financial Analyst Bot, you may enter:
+The close control and advanced copy options are provided only when valid existing copy sources are available. The first setup without a source must be completed. Appearance controls let you change color, shape, and accessories; they do not choose the copy source.
 
-> <strong>Name:</strong> Alpha Analyst
->
-> <strong>Description:</strong> Alpha Analyst is specialized in analyzing company reports, market news, portfolio performance, valuation, and financial risks. Produces concise, evidence-based insights, clearly separates facts from assumptions, and avoids presenting analysis as guaranteed financial advice.
+The screenshots below show the current additional-Bot creation form and recommended templates. The close control and Advanced section are available because this Agent already has Bots; this is not the first-Bot setup screen.
 
 ![LightVela Bot creation form with an avatar selector, name field, description field, and Create button](../../images/bots-switching-create.webp)
 
-The creation screen may also show templates for specific roles, such as Health Manager, Market Watcher, or AI Study Buddy.
-
-![LightVela Bot creation templates including Health Manager, Market Watcher, and AI Study Buddy](../../images/bots-switching-templates.webp)
-
-After entering the details, confirm the creation and wait for the new Bot to finish provisioning.
+![LightVela Bot creation templates including Health Steward, Market Analyst, and Industry Researcher](../../images/bots-switching-templates.webp)
 
 ## Bot workspace and settings
 
-After creation, the Bot opens its own settings workspace. From the Bot tab in the main Agent page, you can select that Bot and manage the settings available for it, including memory, skills, personality, scheduled tasks, and connected channels.
+Select the intended Bot’s avatar in the Bot bar. On narrow screens, first expand the navigation panel. Confirm its name before changing models, memory, skills, channels, or scheduled tasks. Web Chat and its conversation list belong to the selected Bot; additional Bots can use Web Chat too. Connecting a messaging channel is not required for Web Chat.
 
-![LightVela Agent overview showing a Bot card in the My Bots section](../../images/bots-switching-overview.webp)
+![LightVela Bot avatar bar beside Channels, Skills, and Scheduled Tasks navigation](../../images/bots-switching-overview.webp)
 
 The creation mode determines what the new Bot inherits:
 
 | Creation mode | Inherited | Starts separately |
 | --- | --- | --- |
-| Blank create | The primary model and its provider credentials, plus system-provided skills | Backup models, other configured models, personality, memory, skills installed later on the main Bot, channels, and scheduled tasks |
-| Copy current or Copy main Bot | Models, personality, skills, user preferences, and long-term memory | Current conversation, previous chat history, scheduled tasks, runtime state, and channel connections |
+| Basic setup | The primary model and its provider credentials, plus system-provided skills | Backup models, other configured models, personality, memory, skills installed later on the main Bot, channels, and scheduled tasks |
+| Copy Bot | Models, personality, skills, user preferences, and long-term memory | Current conversation, previous chat history, scheduled tasks, runtime state, and channel connections |
 
 Review the creation dialog before confirming if you need to keep settings separate. You can then manage each Bot's [memory](./memory.md), [skills](./skill.md), and [scheduled tasks](./automation.md) independently.
 
@@ -53,9 +47,9 @@ One Bot can handle many tasks, but its context becomes harder to manage as its r
 
 Independent Bots also make it easier to test a different working style without changing the Bot you already use for another task.
 
-![LightVela Bot profile menu showing multiple Bots that can be selected](../../images/bots-switching-selector.webp)
+![LightVela Bot avatar bar with two Bots and the New Bot control](../../images/bots-switching-selector.webp)
 
-The result is a more organized LightVela workspace. To switch between Bots, click the active Bot profile in the upper-left area of the Agent workspace, then choose another Bot from the menu.
+Select the intended Bot’s avatar in the Bot bar. On narrow screens, first expand the navigation panel. Confirm its name before changing models, memory, skills, channels, or scheduled tasks. Web Chat and its conversation list belong to the selected Bot; additional Bots can use Web Chat too. Connecting a messaging channel is not required for Web Chat.
 
 ## How to use multiple Bots at once
 
@@ -63,12 +57,10 @@ You can connect multiple Bots to supported messaging channels. The available cha
 
 | LightVela version | Channels that support multiple Bot integration |
 | --- | --- |
-| China version | QQ, WeCom, Lark, DingTalk |
 | Global version | Telegram, Discord, Slack, QQ, WeCom, Lark |
 
 For channels such as WeChat and WhatsApp, the current configuration may allow only one Bot per instance. If a channel is already owned by another Bot, LightVela displays a notice and provides a way to manage the Bot that owns it.
 
-![LightVela notice showing that WeChat is occupied by another Bot and only one Bot can connect](../../images/bots-switching-wechat.webp)
 
 ## Verify a Bot switch or channel connection
 
@@ -86,7 +78,7 @@ For a group channel, send a test message with the permission level you configure
 | Issue | Likely cause | What to do |
 | --- | --- | --- |
 | **New Bot** is unavailable | Your plan has reached its Bot limit, or another Bot is still being created or deleted | Wait for the current operation to finish, delete an unused Bot, or upgrade to a plan with a higher limit |
-| A clone option is unavailable | There is no valid current or main Bot to copy | Choose **Blank create**, or return to the intended Bot before opening the creation dialog |
+| A clone option is unavailable | There is no valid current or main Bot to copy | Choose **Basic setup**, or return to the intended Bot before opening the creation dialog |
 | The Bot list is temporarily unavailable | The Agent instance is stopped or the Bot list request failed | Start or refresh the Agent, then reload the Bot settings page |
 | A channel is already connected to another Bot | The channel has a single-Bot ownership restriction | Use the notice to open the owning Bot, or disconnect and reconnect the channel according to the channel configuration page |
 | A group message receives no reply | The Bot's group permission or channel configuration is incomplete | Review the relevant [Telegram](./channel-telegram.md), [Discord](./channel-discord.md), or other channel configuration page, then send another test message |

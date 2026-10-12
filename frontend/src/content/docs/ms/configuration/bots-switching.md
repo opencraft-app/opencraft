@@ -2,7 +2,7 @@
 
 ## Ringkasan
 
-**Menukar Bots membolehkan satu Ejen awan LightVela mengandungi pelbagai Bots khusus. Anda boleh mencipta Bots untuk penyelidikan, perancangan, pengekodan, kandungan, sokongan, atau aliran kerja berkala, kemudian menukar antara mereka dari menu profil Ejen.**
+**Menukar Bots membolehkan satu Ejen awan LightVela mengandungi pelbagai Bots khusus. Anda boleh mencipta Bots untuk penyelidikan, perancangan, pengekodan, kandungan, sokongan, atau aliran kerja berkala, kemudian menukar antara mereka dari bar avatar Bot.**
 
 **Setiap Bot mempunyai konteks ruang kerja sendiri. Bergantung pada sama ada anda mencipta Bot kosong atau menyalin Bot sedia ada, LightVela menerapkan peraturan pewarisan yang berbeza ke atas tetapan model, memori, kemahiran, personaliti, tugasan berjadual, dan sambungan saluran.**
 
@@ -14,36 +14,30 @@
 
 ## Mencipta bot anda
 
-Selepas memilih **Bot Baru**, pilih avatar, masukkan nama dan penerangan, dan pilih sama ada untuk membuat Bot kosong atau menyalin Bot sedia ada.
+Selepas log masuk dengan Google atau GitHub dan mengaktifkan pelan yang tersedia, buka [konsol Agent](/agents/overview/). Lengkapkan persediaan Bot pertama: masukkan nama yang wajib, tambah penerangan jika perlu, dan laraskan penampilannya. Pilih **Buat** dan tunggu penciptaan serta konfigurasi awal selesai. Selepas konfigurasi selesai, pilih **Mulakan perjalanan**, kemudian buka sembang web untuk Bot itu. Saluran pemesejan adalah pilihan; balasan memerlukan kredit model pelan yang tersedia atau model yang telah dikonfigurasi.
 
-Apabila Bot lain sudah wujud, dialog penciptaan boleh menawarkan **Salin semasa**, **Salin Bot utama**, atau **Cipta kosong**.
+Untuk mencipta Bot seterusnya, pilih **Bot Baharu** jika tersedia dan kuota pelan mencukupi. Isi **Nama** (wajib) dan **Penerangan** (pilihan), kemudian laraskan penampilan jika perlu. Pilihan lalai ialah **Persediaan asas**. Jika ada Bot sumber yang sah, buka **Lanjutan** dan pilih Bot tertentu untuk disalin. Untuk menyalin Bot yang sedang digunakan, buka **Urus Bot → Salin Bot**; borang akan memilih sumber itu terlebih dahulu. Semak sumber, pilih **Buat**, dan tunggu sehingga selesai.
 
-Sebagai contoh, untuk membuat Bot Penganalisis Kewangan, anda boleh memasukkan:
+Kawalan tutup dan pilihan salinan lanjutan hanya tersedia apabila ada Bot sumber yang sah. Persediaan pertama tanpa sumber perlu dilengkapkan. Kawalan penampilan mengubah warna, bentuk, dan aksesori, bukan sumber salinan.
 
-> <strong>Nama:</strong> Alpha Analyst
->
-> <strong>Deskripsi:</strong> Alpha Analyst pakar dalam menganalisis laporan syarikat, berita pasaran, prestasi portfolio, penilaian, dan risiko kewangan. Menghasilkan pandangan yang ringkas dan berasaskan bukti, memisahkan fakta daripada andaian dengan jelas, dan mengelakkan pembentangan analisis sebagai nasihat kewangan yang dijamin.
+Tangkapan skrin di bawah menunjukkan borang penciptaan Bot tambahan dan templat yang disyorkan dalam UI semasa. Kawalan tutup dan bahagian Lanjutan tersedia kerana Ejen ini sudah mempunyai Bot; ini bukan skrin persediaan Bot pertama.
 
 ![Borang penciptaan Bot LightVela dengan pemilih avatar, medan nama, medan deskripsi, dan butang Cipta](../../images/bots-switching-create.webp)
 
-Skrin penciptaan juga mungkin menunjukkan templat untuk peranan tertentu, seperti Pengurus Kesihatan, Pemerhati Pasaran, atau Rakan Kajian AI.
-
-![Templat penciptaan Bot LightVela termasuk Pengurus Kesihatan, Pemerhati Pasaran, dan Rakan Kajian AI](../../images/bots-switching-templates.webp)
-
-Selepas memasukkan butiran, sahkan penciptaan dan tunggu Bot baru selesai disediakan.
+![Templat Bot yang disyorkan dalam borang penciptaan Bot tambahan LightVela](../../images/bots-switching-templates.webp)
 
 ## Ruang kerja Bot dan tetapan
 
-Selepas penciptaan, Bot membuka ruang kerja tetapan sendiri. Dari tab Bot di halaman Utama Ejen, anda boleh memilih Bot itu dan menguruskan tetapan yang tersedia untuknya, termasuk memori, kemahiran, personaliti, tugas yang dijadualkan, dan saluran yang disambungkan.
+Pilih avatar Bot yang dikehendaki pada bar Bot. Pada skrin sempit, buka panel navigasi terlebih dahulu. Semak namanya sebelum mengubah model, memori, kemahiran, saluran, atau tugas berjadual. Sembang web dan senarai perbualan mengikut Bot yang dipilih; Bot tambahan juga boleh menggunakan sembang web. Sembang web tidak memerlukan saluran pemesejan.
 
-![Tinjauan Ejen LightVela menunjukkan kad Bot dalam bahagian My Bots](../../images/bots-switching-overview.webp)
+![Bar avatar Bot LightVela di sebelah navigasi Saluran, Kemahiran dan Tugas Berjadual](../../images/bots-switching-overview.webp)
 
 Mod penciptaan menentukan apa yang diwarisi oleh Bot baru:
 
 | Mod penciptaan | Pewarisan | Bermula secara berasingan |
 | --- | --- | --- |
-| Cipta kosong | Model utama dan kelayakan penyediaannya, serta kemahiran yang disediakan oleh sistem | Model sandaran, model lain yang dikonfigurasi, personaliti, memori, kemahiran yang dipasang kemudian pada Bot utama, saluran, dan tugas yang dijadualkan |
-| Salin semasa atau Salin Bot utama | Model, personaliti, kemahiran, keutamaan pengguna, dan memori jangka panjang | Perbualan semasa, sejarah sembang sebelumnya, tugas yang dijadualkan, keadaan masa jalan, dan sambungan saluran |
+| Persediaan asas | Model utama dan kelayakan penyediaannya, serta kemahiran yang disediakan oleh sistem | Model sandaran, model lain yang dikonfigurasi, personaliti, memori, kemahiran yang dipasang kemudian pada Bot utama, saluran, dan tugas yang dijadualkan |
+| Salin Bot | Model, personaliti, kemahiran, keutamaan pengguna, dan memori jangka panjang | Perbualan semasa, sejarah sembang sebelumnya, tugas yang dijadualkan, keadaan masa jalan, dan sambungan saluran |
 
 Semak dialog penciptaan sebelum mengesahkan jika anda perlu mengekalkan tetapan secara berasingan. Anda kemudian boleh menguruskan setiap [memori](./memory.md), [kemahiran](./skill.md), dan [tugas berjadual](./automation.md) Bot secara berdikari.
 
@@ -53,9 +47,9 @@ Satu Bot boleh mengendalikan banyak tugas, tetapi konteksnya menjadi lebih sukar
 
 Bots Bebas juga memudahkan untuk menguji gaya kerja yang berbeza tanpa menukar Bot yang sudah anda gunakan untuk tugas lain.
 
-![Menu profil Bot LightVela menunjukkan pelbagai Bot yang boleh dipilih](../../images/bots-switching-selector.webp)
+![Bar avatar Bot LightVela dengan dua Bot dan kawalan Bot baharu](../../images/bots-switching-selector.webp)
 
-Hasilnya ialah ruang kerja LightVela yang lebih teratur. Untuk bertukar antara Bots, klik profil Bot yang aktif di bahagian kiri atas ruang kerja Ejen, kemudian pilih Bot lain daripada menu.
+Pilih avatar Bot yang dikehendaki pada bar Bot. Pada skrin sempit, buka panel navigasi terlebih dahulu. Semak namanya sebelum mengubah model, memori, kemahiran, saluran, atau tugas berjadual. Sembang web dan senarai perbualan mengikut Bot yang dipilih; Bot tambahan juga boleh menggunakan sembang web. Sembang web tidak memerlukan saluran pemesejan.
 
 ## Cara menggunakan pelbagai Bots sekaligus
 
@@ -63,12 +57,10 @@ Anda boleh menyambungkan pelbagai Bots ke saluran mesej yang disokong. Gabungan 
 
 | Versi LightVela | Saluran yang menyokong integrasi Bot berganda |
 | --- | --- |
-| Versi China | QQ, WeCom, Lark, DingTalk |
 | Versi Global | Telegram, Discord, Slack, QQ, WeCom, Lark |
 
 Untuk saluran seperti WeChat dan WhatsApp, konfigurasi semasa mungkin membenarkan hanya satu Bot setiap contoh. Jika saluran sudah dimiliki oleh Bot lain, LightVela akan memaparkan notis dan menyediakan cara untuk mengurus Bot yang memilikinya.
 
-![Notis LightVela menunjukkan bahawa WeChat sedang digunakan oleh Bot lain dan hanya satu Bot boleh disambungkan](../../images/bots-switching-wechat.webp)
 
 ## Sahkan pertukaran Bot atau sambungan saluran
 

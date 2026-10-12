@@ -2,11 +2,11 @@
 
 ## Ringkasan
 
-**Mencipta contoh Hermes pertama anda dilakukan seperti ini: log masuk dengan Google atau GitHub, pilih pelan yang tersedia, aktifkan di bawah peraturan pelan semasa, biarkan platform mencipta contoh secara automatik, kemudian gunakan Web Chat; sambungkan saluran apabila anda ingin menggunakan aplikasi pesanan. Segalanya berlaku di penyemak imbas — tiada pelayan untuk dibeli, tiada apa yang perlu dikerahkan secara tempatan. Contoh Hermes ialah runtime awan tempat ejen anda berada, dan selepas dicipta ia kekal dalam talian 24/7. Setelah ia sedia, buka My Agent untuk menggunakan Daily → Chat, kemudian konfigurasikan model, saluran pesanan, atau Kemahiran mengikut keperluan; jika anda belum mempunyai kunci model API sendiri, anda boleh mula bercakap segera menggunakan kredit model yang disertakan dengan pelan anda.**
+**Selepas log masuk dengan Google atau GitHub dan mengaktifkan pelan yang tersedia, buka [konsol Agent](/agents/overview/). Lengkapkan persediaan Bot pertama: masukkan nama yang wajib, tambah penerangan jika perlu, dan laraskan penampilannya. Pilih Buat dan tunggu penciptaan serta konfigurasi awal selesai. Selepas konfigurasi selesai, pilih Mulakan perjalanan, kemudian buka sembang web untuk Bot itu. Saluran pemesejan adalah pilihan; balasan memerlukan kredit model pelan yang tersedia atau model yang telah dikonfigurasi.**
 
 ---
 
-Satu instance Hermes adalah runtime awan di mana Ejen LightVela anda berada. Mengaktifkan instance pertama anda mengikuti lima langkah: **log masuk dengan Google atau GitHub → pilih pelan yang tersedia → aktifkan melalui aliran pengaktifan semasa → biarkan LightVela menyediakan instance → mula dalam Web Chat, kemudian sambungkan saluran jika perlu**. Semuanya berlaku di pelayar, tanpa perlu membeli pelayan atau penyebaran tempatan. Laman ini membimbing proses secara berperingkat.
+Kawalan tutup dan pilihan salinan lanjutan hanya tersedia apabila ada Bot sumber yang sah. Persediaan pertama tanpa sumber perlu dilengkapkan. Kawalan penampilan mengubah warna, bentuk, dan aksesori, bukan sumber salinan.
 
 ## Perkara yang dilindungi oleh halaman ini
 
@@ -42,9 +42,9 @@ Tiada langkah pengesahan nama sebenar China di tapak antarabangsa. Selepas log m
 
 Pilih pelan yang tersedia di [halaman Langgan](/subscribe/) dan ikuti kad pelan untuk mengaktifkannya. Semak halaman tersebut untuk tawaran pengenalan dan harga semasa.
 
-### 4. Biarkan LightVela menyediakan contoh secara automatik
+### 4. Lengkapkan persediaan Bot pertama
 
-Selepas pelan diaktifkan, LightVela **menetapkan persekitaran awan khusus secara automatik dan mencipta contoh Hermes pertama anda**. Anda tidak perlu membeli, menggunakan atau mengkonfigurasi pelayan. Peruntukan biasanya bermula serta-merta, dan anda boleh membuka konsol apabila contoh sudah sedia.
+Selepas log masuk dengan Google atau GitHub dan mengaktifkan pelan yang tersedia, buka [konsol Agent](/agents/overview/). Lengkapkan persediaan Bot pertama: masukkan nama yang wajib, tambah penerangan jika perlu, dan laraskan penampilannya. Pilih **Buat** dan tunggu penciptaan serta konfigurasi awal selesai. Selepas konfigurasi selesai, pilih **Mulakan perjalanan**, kemudian buka sembang web untuk Bot itu. Saluran pemesejan adalah pilihan; balasan memerlukan kredit model pelan yang tersedia atau model yang telah dikonfigurasi.
 
 ### 5. Konfigurasikan dan bangunkan Ejen anda
 
@@ -66,7 +66,7 @@ Hermes Agent pertama anda kini bersedia untuk kekal dalam talian di awan 24/7.
 
 ### Berapa lama saya boleh menggunakan contoh selepas pengaktifan?
 
-LightVela mula menyediakan contoh Hermes secara automatik selepas pengaktifan pelan. Setelah Bot sedia dan kredit pelan tersedia atau model dikonfigurasikan, hantar mesej di Daily → Chat. Sambungkan saluran luaran kemudian jika perlu.
+Selepas penciptaan, semak nama Bot baharu dalam pemilih, buka sembang webnya, dan hantar mesej ujian ringkas. Jika penciptaan atau konfigurasi awal gagal, ikut tindakan cuba semula yang dipaparkan dan semak senarai Bot sebelum mencipta lagi. Jika tiada balasan, semak status Bot serta kredit atau konfigurasi model.
 
 ### Di mana saya boleh menyemak pelan dan tawaran semasa?
 

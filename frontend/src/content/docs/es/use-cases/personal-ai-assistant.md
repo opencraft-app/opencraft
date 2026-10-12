@@ -2,9 +2,9 @@
 
 ## Resumen
 
-**El orden correcto para construir un asistente personal de IA no es automatizar todo de una vez. Comience haciendo que un Hermes Agent en la nube sea accesible en la aplicación de chat que ya utiliza, luego capas de memoria, Skills y tareas programadas.** Cada uno de los cinco bloques de construcción resuelve un problema: el modelo determina la calidad del razonamiento, el canal determina dónde lo accede, la memoria le permite retener cómo trabaja, las Skills le dan métodos reutilizables y las tareas programadas le permiten completar trabajos acordados mientras usted está ausente. Durante la primera semana, haga solo tres cosas: configure un modelo, conecte un canal y verifique que la memoria persista realmente entre sesiones. Una vez que esta ruta sea confiable, agregue Skills y tareas programadas; de esta manera, cuando algo falle, podrá indicar qué capa lo causó.
+**Empiece su asistente de IA personal creando y seleccionando un Bot y comprobando una respuesta en el chat web con créditos de modelo disponibles o un modelo configurado. Conecte un canal de mensajería solo si quiere usar esa aplicación. Después, pruebe una preferencia estable entre conversaciones, añada una Skill para una tarea concreta y programe una tarea cuando sus instrucciones ya funcionen. La memoria, las Skills, los canales y las tareas se gestionan para el Bot seleccionado.**
 
-![Un asistente personal de IA con LightVela a través de varios canales](../../images/use-case-personal-ai-assistant.webp)
+![Nueva conversación de Web Chat en la consola internacional de LightVela](../../images/use-case-personal-ai-assistant.webp)
 
 ## Para quién es esto
 
@@ -14,11 +14,11 @@ Es especialmente útil cuando se encuentra repitiendo contexto como su zona hora
 
 ## Requisitos previos
 
-- Una cuenta de LightVela y un Hermes Agent en funcionamiento. Si aún no ha creado uno, comience con el [Quickstart](https://lightvela.ai/docs/quickstart).
+- Una cuenta de LightVela y un Hermes Agent en funcionamiento. Si aún no ha creado uno, comience con el [Quickstart](../02-quickstart.md).
 
-- Un canal de conversación. Telegram, WhatsApp, Discord, Slack y WeChat son puntos de partida comunes; elija el uno con el que sea más probable que abra cada día.
+- El chat web basta para empezar. Si prefiere una aplicación de mensajería, conecte un canal siguiendo las instrucciones que aparecen a continuación.
 
-- Una configuración de modelo funcional o créditos de prueba disponibles. Consulte [Configure Models](https://lightvela.ai/docs/configuration/model) si Hermes aún no puede responder.
+- Una configuración de modelo funcional o créditos de prueba disponibles. Consulte [Configure Models](../configuration/model.md) si Hermes aún no puede responder.
 
 - Una breve idea de lo que desea ayuda con primero. Una sola rutina, como planificar su día o recopilar seguimientos, es suficiente.
 
@@ -26,7 +26,11 @@ Es especialmente útil cuando se encuentra repitiendo contexto como su zona hora
 
 ### 1. Darle a Hermes un lugar en su rutina diaria
 
-Conecte un canal de mensajería y luego envíe los primeros mensajes desde el mismo lugar donde normalmente organiza su día. El canal no es solo un método de entrega; es el hábito que hace que el asistente sea fácil de volver a utilizar. Siga la página de configuración para [Telegram](https://lightvela.ai/docs/configuration/channel-telegram), [WhatsApp](https://lightvela.ai/docs/configuration/channel-whatsapp), [Discord](https://lightvela.ai/docs/configuration/channel-discord), [Slack](https://lightvela.ai/docs/configuration/channel-slack) o [WeChat](https://lightvela.ai/docs/configuration/channel-wechat).
+Seleccione el avatar del Bot deseado en la barra de Bots. En pantallas estrechas, abra primero el panel de navegación. Compruebe su nombre antes de cambiar modelos, memoria, Skills, canales o tareas programadas. El chat web y la lista de conversaciones pertenecen al Bot seleccionado; los Bots adicionales también pueden usar el chat web. No necesita conectar un canal de mensajería para usarlo.
+
+El chat web basta para empezar. Si prefiere una aplicación de mensajería, conecte un canal siguiendo las instrucciones que aparecen a continuación.
+
+Si desea usar una aplicación de mensajería, conecte un canal y compruebe que el Bot responde allí. Consulte la guía de [Telegram](../configuration/channel-telegram.md), [WhatsApp](../configuration/channel-whatsapp.md), [Discord](../configuration/channel-discord.md), [WeChat](../configuration/channel-wechat.md), [Slack](../configuration/channel-slack.md).
 
 ![La página de Canal en la consola de LightVela](../../images/personal-ai-assistant-channel.webp)
 
@@ -48,7 +52,9 @@ Remember that I prefer a concise weekday briefing at 8:00 AM,
 with meetings, deadlines, and the three most important next actions.
 ```
 
-Utilice la página de [Memory Management](https://lightvela.ai/docs/configuration/memory) para revisar la memoria y la información de perfil de usuario que Hermes ha acumulado. La memoria debe reducir la repetición, no convertirse en un lugar de vertido para cada detalle que pase.
+Utilice la página de [Memory Management](../configuration/memory.md) para revisar la memoria y la información de perfil de usuario que Hermes ha acumulado. La memoria debe reducir la repetición, no convertirse en un lugar de vertido para cada detalle que pase.
+
+Recordar que prefiere un resumen los días laborables a las 8:00 no crea una tarea programada. Configure el horario por separado, verifique la primera ejecución y compruebe la entrega en el canal de notificaciones elegido.
 
 ### 3. Agregar una Skill solo cuando una tarea real lo requiera
 
@@ -69,15 +75,27 @@ Every weekday at 8:00 AM, prepare a concise plan for today.
 Start with deadlines and meetings, then suggest three focused next actions.
 ```
 
-Establezca el horario y el canal de notificación en [Tareas programadas](https://lightvela.ai/docs/configuration/automation). Mantenga la primera tarea programada pequeña; puede refinar la instrucción después de haber visto unos pocos resultados reales.
+Establezca el horario y el canal de notificación en [Tareas programadas](../configuration/automation.md). Mantenga la primera tarea programada pequeña; puede refinar la instrucción después de haber visto unos pocos resultados reales.
 
-![La página de Tareas programadas en la consola de LightVela](../../images/personal-ai-assistant-automations.webp)
+![Plantillas oficiales en la página Tareas programadas de LightVela](../../images/personal-ai-assistant-automations.webp)
+
+## Comprobar cada capa
+
+| Capa | Comprobación | Límite |
+| --- | --- | --- |
+| Bot y chat web | Seleccione el Bot deseado y envíe un mensaje breve | Las respuestas requieren un Bot en línea y créditos o una configuración de modelo utilizable |
+| Memoria | Indique una preferencia estable, abra una conversación nueva y compruébela | Una conversación nueva no borra la memoria a largo plazo |
+| Tarea programada | Revise el horario, el canal de notificación y el resultado | Crear o copiar un Bot no copia las tareas programadas ni las conexiones de canales |
+
+## Verificar el resultado
+
+Compruebe una respuesta en el chat web antes de conectar un canal. Pruebe una preferencia recordada en una conversación nueva y revise el primer resultado programado. Si falla un canal o una tarea, compruebe el Bot seleccionado, su configuración y su estado antes de añadir más funciones.
 
 ## Preguntas frecuentes
 
 ### ¿Necesito configurar cada característica antes de que Hermes sea útil?
 
-No. Un canal y un modelo funcional son suficientes para comenzar. Agregue memoria, Skills y tareas programadas gradualmente a medida que descubra qué tareas repetidas valen la pena mantener.
+El chat web basta para empezar. Si prefiere una aplicación de mensajería, conecte un canal siguiendo las instrucciones que aparecen a continuación.
 
 ### ¿Recordará Hermes cada mensaje que envíe?
 
@@ -85,16 +103,12 @@ No. La memoria está destinada a la información que permanece útil entre conve
 
 ### ¿Puedo usar el mismo asistente desde más de un canal?
 
-Sí. Varios canales conectados pueden apuntar al mismo Hermes Agent, por lo que el asistente puede retener el mismo contexto mientras se mueve entre plataformas de mensajería compatibles.
+Sí, si esos canales están conectados al mismo Bot. La memoria a largo plazo y las preferencias pertenecen a ese Bot. Otro Bot tiene su propio espacio de trabajo: copiarlo proporciona un estado inicial, sin sincronizar los cambios posteriores.
 
 ### ¿Qué debería automatizar primero?
 
 Elija una tarea que ya repita en un horario predecible. La planificación matutina, una revisión diaria breve o una verificación de prioridades semanal son buenos primeros candidatos porque puede determinar rápidamente si la salida está ayudando.
 
-## Próximos pasos
+## Conclusión
 
-- [Chat](https://lightvela.ai/docs/configuration/agent-chat) — trabaje con Hermes directamente en la consola.
-
-- [Memory Management](https://lightvela.ai/docs/configuration/memory) — revise lo que su asistente retiene entre conversaciones.
-
-- [Tareas programadas](https://lightvela.ai/docs/configuration/automation) — programe las rutinas que demuestran ser útiles.
+Centre el primer asistente en una rutina. Cuando el chat, la memoria y la primera tarea programada funcionen para el Bot seleccionado, amplíe sus responsabilidades gradualmente.
