@@ -18,7 +18,7 @@ export function createTencentOaAccountContribution(controller: TencentOaControll
           phase: snapshot.identity ? "authenticated" : "anonymous",
           anonymousLabel: "员工身份",
           name: snapshot.identity?.loginName ?? null,
-          avatarUrl: null,
+          avatarUrl: snapshot.avatarUrl,
           planLabel: "员工身份",
           usageRemainingPercent: null,
           error: snapshot.phase === "error" ? "暂时无法确认员工身份，请重试" : null,

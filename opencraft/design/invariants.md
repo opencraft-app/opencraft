@@ -11,6 +11,12 @@ and is excluded from copied message text and native model input.
 
 ## Employee account entrance
 
+- The IOA plugin owns the employee footer photo, same-origin authenticated proxy
+  and revocable object URL. No employee photo is added to message labels. Photo
+  failure preserves the verified name and generic account icon; old account
+  responses cannot replace the current account's avatar.
+
+
 - A configured Tencent OA identity provider automatically projects the verified
   request identity into the existing Sidecar footer. The label is the employee
   login name, or “员工身份” when anonymous; clicking opens details and refresh.

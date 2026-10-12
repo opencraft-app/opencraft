@@ -20,6 +20,11 @@ import { PlatformAccountContributionRegistry } from "../apps/workbench-web/src/r
 import { createTencentOaAccountContribution } from "../plugins/tencentoa/src/account";
 import type { PlatformAccountContribution } from "@opencraft/extension-react";
 
+function identityOnlyController(fetcher: typeof fetch, now?: () => number): TencentOaController {
+  return new TencentOaController((async (url, options) => String(url).includes("/photo/")
+    ? new Response("", { status: 404 }) : await fetcher(url, options)) as typeof fetch, now);
+}
+
 const token = Buffer.alloc(32, 97);
 const now = Date.parse("2026-10-06T00:00:00Z");
 function request(payload: unknown = { LoginName: "employee.one", StaffId: 123, Expiration: new Date(now + 60_000).toISOString(), open_id: "must-not-project" }, algorithm: unknown = { alg: "dir", enc: "A256GCM" }) {
@@ -80,7 +85,7 @@ test("private token files reject shared permissions and symlinks", async (t) => 
 const response = (name: string) => new Response(JSON.stringify({ available: true, identity: { loginName: name, staffId: "123", expiresAt: new Date(Date.now() + 60_000).toISOString() } }));
 test("late responses cannot overwrite a newer employee or resurrect disposed identity", async (t) => {
   const pending: Array<(value: Response) => void> = [];
-  const controller = new TencentOaController((() => new Promise<Response>((resolve) => pending.push(resolve))) as typeof fetch);
+  const controller = identityOnlyController((() => new Promise<Response>((resolve) => pending.push(resolve))) as typeof fetch);
   t.after(() => controller.dispose());
   const first = controller.refresh(), second = controller.refresh();
   pending[1]!(response("new.employee")); await second;
@@ -92,7 +97,7 @@ test("late responses cannot overwrite a newer employee or resurrect disposed ide
 });
 test("unauthorized response revokes identity; unconfigured endpoint is unavailable", async (t) => {
   let next = response("employee");
-  const controller = new TencentOaController((async () => next) as typeof fetch);
+  const controller = identityOnlyController((async () => next) as typeof fetch);
   t.after(() => controller.dispose());
   await controller.refresh(); assert.equal(controller.getSession().status, "authenticated");
   next = new Response(JSON.stringify({ available: true, identity: null }), { status: 401 });
@@ -102,7 +107,7 @@ test("unauthorized response revokes identity; unconfigured endpoint is unavailab
 });
 test("network errors preserve only unexpired verified projection", async (t) => {
   let clock = Date.now(), fail = false;
-  const controller = new TencentOaController((async () => { if (fail) throw new Error("offline"); return response("employee"); }) as typeof fetch, () => clock);
+  const controller = identityOnlyController((async () => { if (fail) throw new Error("offline"); return response("employee"); }) as typeof fetch, () => clock);
   t.after(() => controller.dispose());
   await controller.refresh(); fail = true;
   await controller.refresh(); assert.equal(controller.getSnapshot().phase, "error"); assert.equal(controller.getSession().status, "authenticated");
@@ -111,7 +116,7 @@ test("network errors preserve only unexpired verified projection", async (t) => 
 });
 test("cancelling sign-in fences its result", async (t) => {
   let resolve!: (value: Response) => void;
-  const controller = new TencentOaController((() => new Promise<Response>((done) => { resolve = done; })) as typeof fetch);
+  const controller = identityOnlyController((() => new Promise<Response>((done) => { resolve = done; })) as typeof fetch);
   t.after(() => controller.dispose());
   const operation = controller.signIn(); await controller.cancelSignIn(); resolve(response("employee"));
   assert.deepEqual(await operation, { status: "cancelled" });
@@ -150,7 +155,7 @@ test("real extension activation owns provider and settings; unload withdraws bot
     platformAccount: accounts.createAdapter(),
   } });
   t.after(async () => { await supervisor.dispose(); await auth.dispose(); });
-  await supervisor.loadOptional("tencentoa.identity", async () => createTencentOaExtension(new TencentOaController((async () => response("employee")) as typeof fetch)));
+  await supervisor.loadOptional("tencentoa.identity", async () => createTencentOaExtension(identityOnlyController((async () => response("employee")) as typeof fetch)));
   assert.equal(supervisor.getSnapshot().extensions[0]?.status, "active");
   assert.equal(context.authentication.getSession(TENCENTOA_PROVIDER_ID)?.status, "authenticated");
   assert.equal(supervisor.contributions.getSnapshot().settingsPages.length, 1);
@@ -162,7 +167,7 @@ test("real extension activation owns provider and settings; unload withdraws bot
 });
 test("employee entrance follows verified identity and revocation, with no gateway logout or fixed login URL", async (t) => {
   let next = response("employee");
-  const controller = new TencentOaController((async () => next) as typeof fetch);
+  const controller = identityOnlyController((async () => next) as typeof fetch);
   t.after(() => controller.dispose());
   const account = createTencentOaAccountContribution(controller);
   assert.equal(account.getSnapshot(), account.getSnapshot());
@@ -190,7 +195,7 @@ test("employee footer precedence preserves independent product authority and res
   };
   const removeProduct = adapter.prepare(owner, product).commit();
   assert.throws(() => adapter.prepare({ ...owner, activationId: "duplicate" }, product), /already registered/u);
-  const controller = new TencentOaController((async () => response("employee")) as typeof fetch);
+  const controller = identityOnlyController((async () => response("employee")) as typeof fetch);
   t.after(() => controller.dispose());
   await controller.refresh();
   const employee = createTencentOaAccountContribution(controller);
@@ -211,7 +216,7 @@ test("employee footer precedence preserves independent product authority and res
 test("unconfigured plugin has no false identity capability or settings entry", async (t) => {
   const supervisor = new ExtensionSupervisor({ platform: "web", context: new Context() });
   t.after(() => supervisor.dispose());
-  await supervisor.loadOptional("tencentoa.identity", async () => createTencentOaExtension(new TencentOaController((async () => new Response("", { status: 404 })) as typeof fetch)));
+  await supervisor.loadOptional("tencentoa.identity", async () => createTencentOaExtension(identityOnlyController((async () => new Response("", { status: 404 })) as typeof fetch)));
   assert.equal(supervisor.getSnapshot().extensions[0]?.status, "active");
   assert.equal(supervisor.contributions.getSnapshot().settingsPages.length, 0);
 });
@@ -254,4 +259,53 @@ test("signed WebSocket handshakes bind separate server contexts even when render
   }
   const clientIds = captures.map(c => JSON.parse(c.frame).__opencraftClient);
   assert.equal(new Set(clientIds).size, 3);
+});
+
+test("employee photo proxy binds the target to verified identity and never forwards gateway credentials", async t => {
+  const { createServer } = await import("node:http");
+  const calls: Array<{ url: string; options?: RequestInit }> = [];
+  let unavailable = false;
+  const service = new TencentOaServerPlugin(token, { now: () => now, fetcher: (async (url, options) => {
+    calls.push({ url: String(url), options });
+    return unavailable ? new Response("failure", { status: 503 }) : new Response(new Uint8Array([137, 80, 78, 71]), { headers: { "content-type": "image/png" } });
+  }) as typeof fetch });
+  const server = createServer((req, res) => { service.handle(req, res); });
+  server.listen(0, "127.0.0.1"); await once(server, "listening");
+  t.after(async () => { service.close(); await new Promise<void>(resolve => server.close(() => resolve())); });
+  const origin = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  const path = "/__opencraft_tencentoa/photo/100/employee.one.png";
+  assert.equal((await fetch(origin + path)).status, 401); assert.equal(calls.length, 0);
+  assert.equal((await fetch(origin + "/__opencraft_tencentoa/photo/100/employee.two.png", request())).status, 403); assert.equal(calls.length, 0);
+  const photo = await fetch(origin + path, request());
+  assert.equal(photo.status, 200); assert.equal(photo.headers.get("content-type"), "image/png");
+  assert.match(photo.headers.get("cache-control")!, /no-store/);
+  assert.equal(calls[0]!.url, "http://api-idc.sgw.woa.com/ebus/rhrc/photo/100/employee.one.png");
+  assert.doesNotMatch(JSON.stringify(calls[0]!.options), /signature|x-tai|staffId/);
+  assert.equal((await fetch(origin + "/__opencraft_tencentoa/photo/101/employee.one.png", request())).status, 404);
+  unavailable = true; assert.equal((await fetch(origin + path, request())).status, 502);
+  assert.equal((await fetch(origin + "/__opencraft_tencentoa/session", request())).status, 200);
+});
+
+test("avatar belongs to the employee plugin and a late former account photo cannot replace the current account", async t => {
+  let name = "employee.one";
+  let finishOld!: (response: Response) => void;
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6G1sAAAAASUVORK5CYII=", "base64");
+  const controller = new TencentOaController((async url => {
+    if (String(url).includes("/photo/")) {
+      if (String(url).includes("employee.one")) return await new Promise<Response>(resolve => { finishOld = resolve; });
+      return new Response(png, { headers: { "content-type": "image/png" } });
+    }
+    return name ? response(name) : new Response(JSON.stringify({ available: true, identity: null }), { status: 401 });
+  }) as typeof fetch);
+  t.after(() => controller.dispose());
+  const account = createTencentOaAccountContribution(controller);
+  await controller.refresh(); assert.equal(account.getSnapshot().avatarUrl, null);
+  name = "employee.two"; await controller.refresh();
+  for (let i = 0; i < 100 && !account.getSnapshot().avatarUrl; i++) await new Promise(resolve => setTimeout(resolve, 5));
+  const avatar = account.getSnapshot().avatarUrl;
+  assert.match(avatar!, /^blob:/); assert.equal(account.getSnapshot().name, "employee.two");
+  finishOld(new Response(png, { headers: { "content-type": "image/png" } }));
+  await new Promise(resolve => setTimeout(resolve, 10)); assert.equal(account.getSnapshot().avatarUrl, avatar);
+  name = ""; await controller.refresh();
+  assert.equal(account.getSnapshot().avatarUrl, null);
 });

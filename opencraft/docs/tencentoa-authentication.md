@@ -3,7 +3,7 @@
 The optional `tencentoa.identity` plugin recognizes the employee authenticated by
 the site's TAI/TOF gateway. It registers an independent authentication provider
 and an “员工身份” settings page. When configured, it owns the shared bottom-left
-account entrance: the verified employee login name is shown automatically, and
+account entrance: the verified employee login name and available employee photo are shown automatically, and
 clicking opens employee details and refresh. Without a verified identity the same
 entrance is labelled “员工身份” and opens those details; no fixed login URL or
 separate OAuth flow is configured. The current site's gateway supplies identity
@@ -92,3 +92,20 @@ Stored historical sender snapshots do not expire with the originating connection
 Remote Codex Hosts keep their records in their stable local Host metadata directory.
 No sender field is forwarded to native Codex or injected into model input. Non-Codex
 transports and direct `/appserver` proxy traffic do not advertise this capability.
+
+## Employee footer photo
+
+The IOA/Tencent OA plugin owns employee avatar lookup and Blob URL lifetime;
+the shared account renderer only consumes its existing avatarUrl contract.
+After verified identity resolves, the controller requests its 100px photo through
+`/__opencraft_tencentoa/photo/100/<loginName>.png` without delaying identity display.
+The server authenticates each request and only permits the current employee's
+English account name and the documented 48/100/150/500 sizes. It fetches the
+fixed `/ebus/rhrc/photo/<size>/<loginName>.png` route at the deployment-controlled
+`OPENCRAFT_TENCENTOA_PHOTO_ORIGIN` (default `http://api-idc.sgw.woa.com`).
+Gateway identity headers and application credentials are not forwarded upstream.
+Images are raster-only, bounded to 1MiB, with a four-second upstream timeout and
+private no-store responses. Photo availability grants no identity or resource
+authority. Network failure leaves the existing name and default account icon.
+Identity revocation, account changes and plugin disposal abort obsolete loads
+and revoke Blob URLs; late responses cannot replace another account's photo.

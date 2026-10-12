@@ -4,7 +4,7 @@ import { constants } from "node:fs";
 import { open } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { isAbsolute } from "node:path";
-import { TENCENTOA_CLOCK_SKEW_MS, TENCENTOA_SESSION_PATH, type TencentOaIdentity } from "./contract";
+import { TENCENTOA_CLOCK_SKEW_MS, TENCENTOA_PHOTO_PATH, TENCENTOA_SESSION_PATH, type TencentOaIdentity } from "./contract";
 
 type IdentityRequest = Pick<IncomingMessage, "headers"> & Partial<Pick<IncomingMessage, "rawHeaders">>;
 const protectedHeaders = new Set(["timestamp", "signature", "x-rio-seq", "staffid", "staffname", "x-ext-data", "x-tai-identity"]);
@@ -44,11 +44,17 @@ function parseExpiration(value: unknown): string {
 export class TencentOaServerPlugin {
   readonly #key: Buffer;
   readonly #now: () => number;
+  readonly #fetcher: typeof fetch;
+  readonly #photoOrigin: string;
   #closed = false;
-  constructor(token: Uint8Array, options: { readonly now?: () => number } = {}) {
+  constructor(token: Uint8Array, options: { readonly now?: () => number; readonly fetcher?: typeof fetch; readonly photoOrigin?: string } = {}) {
     if (token.byteLength !== 32) throw new Error("Tencent OA requires a 32-byte application token");
     try { utf8.decode(token); } catch { throw new Error("Tencent OA requires a UTF-8 application token"); }
     this.#key = Buffer.from(token); this.#now = options.now ?? Date.now;
+    this.#fetcher = options.fetcher ?? globalThis.fetch.bind(globalThis);
+    const origin = new URL(options.photoOrigin ?? process.env.OPENCRAFT_TENCENTOA_PHOTO_ORIGIN ?? "http://api-idc.sgw.woa.com");
+    if (!["http:", "https:"].includes(origin.protocol) || origin.username || origin.password || origin.pathname !== "/" || origin.search || origin.hash) throw new Error("Invalid Tencent OA photo origin");
+    this.#photoOrigin = origin.origin;
   }
   static async fromTokenFile(path: string): Promise<TencentOaServerPlugin> {
     if (!isAbsolute(path)) throw new Error("Tencent OA requires an absolute private token-file path");
@@ -118,7 +124,9 @@ export class TencentOaServerPlugin {
     response.setHeader("content-type", "application/json; charset=utf-8");
     response.setHeader("x-content-type-options", "nosniff");
     const reply = (status: number, value: unknown): true => { response.statusCode = status; response.end(JSON.stringify(value)); return true; };
-    if (url.pathname !== TENCENTOA_SESSION_PATH || url.search) return reply(404, { error: "missing" });
+    const photo = url.pathname.startsWith(TENCENTOA_PHOTO_PATH)
+      ? /^(48|100|150|500)\/([A-Za-z0-9._-]{1,128})\.png$/.exec(url.pathname.slice(TENCENTOA_PHOTO_PATH.length)) : null;
+    if ((url.pathname !== TENCENTOA_SESSION_PATH && !photo) || url.search) return reply(404, { error: "missing" });
     if (request.method !== "GET") { response.setHeader("allow", "GET"); return reply(405, { error: "method_not_allowed" }); }
     if (request.headers["sec-fetch-site"] === "cross-site") return reply(403, { error: "forbidden" });
     if (request.headers.origin !== undefined) {
@@ -128,7 +136,39 @@ export class TencentOaServerPlugin {
       } catch { return reply(403, { error: "forbidden" }); }
     }
     const identity = this.authenticate(request);
+    if (photo) {
+      if (!identity) return reply(401, { error: "unauthenticated" });
+      if (photo[2] !== identity.loginName) return reply(403, { error: "forbidden" });
+      void this.servePhoto(response, photo[1]!, identity.loginName);
+      return true;
+    }
     return reply(identity ? 200 : 401, { available: true, identity });
+  }
+  private async servePhoto(response: ServerResponse, size: string, loginName: string): Promise<void> {
+    try {
+      const upstream = await this.#fetcher(`${this.#photoOrigin}/ebus/rhrc/photo/${size}/${encodeURIComponent(loginName)}.png`, {
+        headers: { "content-type": "application/json", accept: "image/png,image/jpeg,image/webp,image/gif" },
+        redirect: "error", signal: AbortSignal.timeout(4_000),
+      });
+      const contentType = upstream.headers.get("content-type") ?? "";
+      if (!upstream.ok || !/^image\/(png|jpeg|webp|gif)(?:;|$)/i.test(contentType) || !upstream.body) throw new Error();
+      const reader = upstream.body.getReader(), chunks: Uint8Array[] = [];
+      let length = 0;
+      try {
+        for (;;) {
+          const part = await reader.read(); if (part.done) break;
+          length += part.value.byteLength;
+          if (length > 1_048_576) { await reader.cancel(); throw new Error(); }
+          chunks.push(part.value);
+        }
+      } finally { reader.releaseLock(); }
+      if (!length || this.#closed || response.destroyed) throw new Error();
+      response.setHeader("content-type", contentType);
+      response.statusCode = 200; response.end(Buffer.concat(chunks));
+    } catch {
+      if (response.destroyed) return;
+      response.statusCode = 502; response.end(JSON.stringify({ error: "photo_unavailable" }));
+    }
   }
   close(): void { this.#closed = true; this.#key.fill(0); }
 }

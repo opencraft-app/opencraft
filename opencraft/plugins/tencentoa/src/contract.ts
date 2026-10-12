@@ -9,6 +9,7 @@ export interface TencentOaSessionResponse {
   readonly identity: TencentOaIdentity | null;
 }
 export const TENCENTOA_SESSION_PATH = "/__opencraft_tencentoa/session";
+export const TENCENTOA_PHOTO_PATH = "/__opencraft_tencentoa/photo/";
 export const TENCENTOA_PROVIDER_ID = "tencentoa.identity.employee";
 /** TAI's documented clock-skew grace, shared by server and client. */
 export const TENCENTOA_CLOCK_SKEW_MS = 180_000;

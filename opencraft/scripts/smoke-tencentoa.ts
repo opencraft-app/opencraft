@@ -5,7 +5,8 @@ import { TencentOaServerPlugin } from "../plugins/tencentoa/src/server";
 
 const { chromium } = await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE ?? "playwright");
 const token = Buffer.alloc(32, 97);
-const service = new TencentOaServerPlugin(token);
+const photo = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6G1sAAAAASUVORK5CYII=", "base64");
+const service = new TencentOaServerPlugin(token, { fetcher: (async () => new Response(photo, { headers: { "content-type": "image/png" } })) as typeof fetch });
 let unauthorized = false;
 function headers(loginName: string) {
   const timestamp = String(Math.floor(Date.now() / 1000));
@@ -65,6 +66,10 @@ try {
     assert.equal(await page.evaluate(() => (window as any).controller.getSnapshot().identity?.loginName), "employee.two");
     const entrance = page.locator('.shell-navigation__entrance[data-surface="account"]');
     await entrance.waitFor();
+    await page.waitForFunction(() => {
+      const image = document.querySelector('.shell-navigation__entrance[data-surface="account"] img') as HTMLImageElement | null;
+      return image !== null && image.complete && image.naturalWidth > 0;
+    });
     assert.equal(await entrance.locator('.shell-navigation__name').textContent(), "employee.two");
     assert.equal(await page.getByRole("dialog").count(), 0);
     await entrance.click();
@@ -80,5 +85,5 @@ try {
     assert.equal(await entrance.textContent(), "员工身份");
     assert.deepEqual(errors, []); await context.close();
   }
-  console.log("Tencent OA real footer/details: mobile/desktop, light/dark, automatic identity, isolation and revocation passed");
+  console.log("Tencent OA real footer/details: mobile/desktop, light/dark, automatic identity, IOA-owned employee avatar, isolation and revocation passed");
 } finally { await browser?.close(); await vite.close(); service.close(); token.fill(0); }
