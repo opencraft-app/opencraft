@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { fileVisual, formatBytes } from "../vela-im-files";
 import {
   applyRevoked,
   describeMessage,
@@ -109,5 +110,25 @@ describe("vela-im model", () => {
     expect(timeDivider({ ID: "b", time: at(17, 3) }, { ID: "c", time: at(17, 9) }, now)).toBe("17:09");
     expect(timeDivider(undefined, { ID: "d", time: at(9, 5, 11) }, now)).toBe("昨天 09:05");
     expect(timeDivider(undefined, { ID: "e", time: at(9, 5, 1) }, now)).toBe("10月1日 09:05");
+  });
+
+  it("shows an image this tab just sent from its local preview URL, never other schemes", () => {
+    expect(describeMessage({ ID: "i", type: "TIMImageElem", payload: { imageInfoArray: [{ url: "blob:https://x/1" }] } }))
+      .toMatchObject({ kind: "image", url: "blob:https://x/1" });
+    expect(describeMessage({ ID: "j", type: "TIMImageElem", payload: { imageInfoArray: [{ imageUrl: "https://x/a.png" }] } }))
+      .toMatchObject({ kind: "image", url: "https://x/a.png" });
+    expect(describeMessage({ ID: "k", type: "TIMImageElem", payload: { imageInfoArray: [{ url: "data:image/png;base64,AA" }] } }))
+      .toMatchObject({ kind: "image", url: "" });
+  });
+
+  it("gives common file types their own icon and a readable size", () => {
+    expect(fileVisual("报告.PDF").label).toBe("PDF");
+    expect(fileVisual("data.xlsx").label).toBe("XLS");
+    expect(fileVisual("deck.pptx").label).toBe("PPT");
+    expect(fileVisual("src.tar.gz").label).toBe("ZIP");
+    expect(fileVisual("README").label).toBe("README".slice(0, 4));
+    expect(formatBytes(512)).toBe("512 B");
+    expect(formatBytes(2048)).toBe("2.0 KB");
+    expect(formatBytes(5 * 1024 * 1024)).toBe("5.0 MB");
   });
 });

@@ -1,6 +1,7 @@
-import { FileText, MapPin } from "lucide-react";
+import { Download, MapPin } from "lucide-react";
 import type { IMMessage } from "@vela/im-client";
 import { useT } from "@/i18n/t";
+import { FileTypeIcon, formatBytes } from "./vela-im-files";
 import { VelaImMarkdown } from "./vela-im-markdown";
 import { describeMessage } from "./vela-im-model";
 
@@ -16,8 +17,8 @@ export function VelaImMessageContent({ message, mine = false }: { message: IMMes
       return <VelaImMarkdown text={view.text} className={mine ? ON_DARK : undefined} />;
     case "image":
       return view.url ? (
-        <a href={view.fullUrl || view.url} target="_blank" rel="noreferrer">
-          <img src={view.url} alt={t("图片消息")} className="max-h-64 max-w-full rounded-lg object-contain" loading="lazy" />
+        <a href={view.fullUrl || view.url} target="_blank" rel="noreferrer" className="block">
+          <img src={view.url} alt={t("图片消息")} className="max-h-72 max-w-full rounded-xl border border-black/[0.06] object-contain" loading="lazy" />
         </a>
       ) : <p className="text-black/45">{t("[图片]")}</p>;
     case "audio":
@@ -31,12 +32,14 @@ export function VelaImMessageContent({ message, mine = false }: { message: IMMes
       return view.url ? <video controls src={view.url} poster={view.poster || undefined} className="max-h-64 max-w-full rounded-lg" /> : <p className="text-black/45">{t("[视频]")}</p>;
     case "file":
       return (
-        <a href={view.url || undefined} target="_blank" rel="noreferrer" className="flex items-center gap-3 rounded-lg border border-black/[0.08] bg-white px-3 py-2 text-black/75 hover:border-black/15">
-          <FileText className="size-5 shrink-0 text-black/45" />
-          <span className="min-w-0">
-            <span className="block truncate text-sm font-medium">{view.name}</span>
-            <span className="block text-xs text-black/45">{Math.max(1, Math.round(view.size / 1024))} KB</span>
+        <a href={view.url || undefined} target="_blank" rel="noreferrer" download={view.name}
+          className="group/file flex w-72 max-w-full items-center gap-3 rounded-xl border border-black/[0.08] bg-white px-3 py-2.5 text-black/75 transition-colors hover:border-black/15">
+          <FileTypeIcon name={view.name} />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-medium" title={view.name}>{view.name}</span>
+            <span className="block text-xs text-black/45">{formatBytes(view.size) || t("文件")}</span>
           </span>
+          {view.url ? <Download className="size-4 shrink-0 text-black/35 group-hover/file:text-black/60" aria-hidden="true" /> : null}
         </a>
       );
     case "location":

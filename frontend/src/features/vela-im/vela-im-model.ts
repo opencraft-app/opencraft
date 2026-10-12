@@ -142,9 +142,10 @@ export type MessageView =
   | { kind: "revoked" }
   | { kind: "unknown"; label: string };
 
+/** Remote media, or the browser's local preview (`blob:`) on a message this tab just sent. */
 const httpURL = (value: unknown): string => {
   const url = str(value);
-  return /^https?:\/\//.test(url) ? url : "";
+  return /^(https?:\/\/|blob:)/.test(url) ? url : "";
 };
 
 /** Maps every message type Tencent IM can deliver to something renderable; unknown types stay visible. */
@@ -156,7 +157,8 @@ export const describeMessage = (message: IMMessage): MessageView => {
       return { kind: "text", text: str(p.text) };
     case "TIMImageElem": {
       const images = Array.isArray(p.imageInfoArray) ? p.imageInfoArray.map(dict) : [];
-      return { kind: "image", url: httpURL(images[0]?.url) || httpURL(images.at(-1)?.url), fullUrl: httpURL(images.at(-1)?.url) || httpURL(images[0]?.url) };
+      const urlOf = (image: Dict | undefined) => httpURL(image?.url) || httpURL(image?.imageUrl);
+      return { kind: "image", url: urlOf(images[0]) || urlOf(images.at(-1)), fullUrl: urlOf(images.at(-1)) || urlOf(images[0]) };
     }
     case "TIMSoundElem":
       return { kind: "audio", url: httpURL(p.url) || httpURL(p.remoteAudioUrl), seconds: num(p.second) };

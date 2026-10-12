@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { ArrowLeft, ArrowUp, Check, Copy, Loader2, MoreHorizontal, Paperclip, Pin, Quote, Settings2, Trash2, Undo2, Users, X } from "lucide-react";
+import { ArrowLeft, ArrowUp, Check, ChevronDown, Copy, Loader2, MoreHorizontal, Pin, Plus, Quote, Settings2, Sparkles, Trash2, Undo2, Users, X } from "lucide-react";
 import { defaultGroupPolicy, platformGroupId, policyFromGroup, type GroupReplyPolicy, type IMMessage, type MessageInput } from "@vela/im-client";
 import type { VelaBrowserClient } from "@vela/im-client/browser";
 import { Badge } from "@/components/ui/badge";
@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useT } from "@/i18n/t";
 import { cn } from "@/lib/utils";
 import { VelaImAvatar } from "./vela-im-avatar";
+import { FileTypeIcon, formatBytes } from "./vela-im-files";
 import { VelaImMessageContent } from "./vela-im-message";
 import {
   applyRevoked,
@@ -38,6 +39,16 @@ const REVOKE_WINDOW_SECONDS = 120;
 /** Picker entry for @everyone; inserting `@所有人` is what resolveMentions turns into Tencent's @all. */
 const MENTION_ALL_ID = "@all";
 const MENTION_ALL_TEXT = "所有人";
+const MAX_ATTACHMENTS = 9;
+/** Hermes commands offered by the command menu, the same set as the Agent's direct chat. */
+const COMMANDS = ["new", "compress", "status", "usage", "stop", "help"] as const;
+
+interface PendingAttachment {
+  id: string;
+  file: File;
+  /** Object URL for image thumbnails; revoked once the attachment leaves the composer. */
+  preview?: string;
+}
 
 const attachmentKind = (file: File): MessageInput["type"] =>
   file.type.startsWith("image/") ? "image" : file.type.startsWith("video/") ? "video" : file.type.startsWith("audio/") ? "audio" : "file";
@@ -78,6 +89,11 @@ export function VelaImChat({ controller, client, selfID, conversation, onBack, o
   const [members, setMembers] = useState<MemberItem[]>([]);
   const [policy, setPolicy] = useState<GroupReplyPolicy | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [commandsOpen, setCommandsOpen] = useState(false);
+  const [pending, setPending] = useState<PendingAttachment[]>([]);
+  const [dragging, setDragging] = useState(false);
+  const pendingRef = useRef<PendingAttachment[]>([]);
+  pendingRef.current = pending;
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -90,6 +106,8 @@ export function VelaImChat({ controller, client, selfID, conversation, onBack, o
     setLoading(true);
     setError("");
     setText("");
+    setQuoting(null);
+    setPending((old) => { old.forEach((item) => item.preview && URL.revokeObjectURL(item.preview)); return []; });
     void client.getMessages(conversationID).then(async (page) => {
       if (cancelled) return;
       setMessages(mergeMessages([], page.messageList));
@@ -131,6 +149,7 @@ export function VelaImChat({ controller, client, selfID, conversation, onBack, o
   }, [client, controller.events, conversationID]);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ block: "end" }); }, [messages.length, conversationID]);
+  useEffect(() => () => { pendingRef.current.forEach((item) => item.preview && URL.revokeObjectURL(item.preview)); }, []);
 
   const loadEarlier = async () => {
     try {
@@ -166,40 +185,77 @@ export function VelaImChat({ controller, client, selfID, conversation, onBack, o
   }, [caret, text]);
 
   const deliver = async (input: MessageInput) => {
+    const result = await client.send(input);
+    const sent = (result as { data?: { message?: IMMessage } }).data?.message;
+    if (sent) setMessages((old) => mergeMessages(old, [sent]));
+  };
+
+  const addFiles = (files: File[]) => {
+    if (!files.length) return;
+    setPending((old) => {
+      const room = Math.max(0, MAX_ATTACHMENTS - old.length);
+      if (files.length > room) setError(t("一次最多发送 {{count}} 个附件", { count: MAX_ATTACHMENTS }));
+      return [...old, ...files.slice(0, room).map((file) => ({
+        id: `${file.name}:${file.size}:${file.lastModified}:${Math.random().toString(36).slice(2)}`,
+        file,
+        ...(file.type.startsWith("image/") ? { preview: URL.createObjectURL(file) } : {}),
+      }))];
+    });
+  };
+  const removePending = (id: string) => setPending((old) => old.filter((item) => {
+    if (item.id === id && item.preview) URL.revokeObjectURL(item.preview);
+    return item.id !== id;
+  }));
+
+  /** Attachments go first, each as its own message, then the text; a failure keeps what was not sent. */
+  const submit = async () => {
+    const body = text.trim();
+    if ((!body && !pending.length) || sending) return;
     setSending(true);
     setError("");
+    const conversationType = isGroup ? "GROUP" : "C2C";
     try {
-      const result = await client.send(input);
-      const sent = (result as { data?: { message?: IMMessage } }).data?.message;
-      if (sent) setMessages((old) => mergeMessages(old, [sent]));
-      return true;
+      for (const item of pending) {
+        await deliver({ to: conversation.targetID, conversationType, type: attachmentKind(item.file), payload: { file: item.file } });
+        removePending(item.id);
+      }
+      if (body) {
+        const atUserList = isGroup ? resolveMentions(body, others) : [];
+        await deliver({
+          to: conversation.targetID,
+          conversationType,
+          type: atUserList.length ? "textAt" : "text",
+          payload: atUserList.length ? { text: body, atUserList } : { text: body },
+          ...(quoting ? { cloudCustomData: quoteCustomData(quoting) } : {}),
+        });
+        setText("");
+        setQuoting(null);
+      }
     } catch (e) {
       setError(errorText(e, t("发送失败")));
-      return false;
     } finally {
       setSending(false);
     }
   };
 
-  const sendText = async () => {
-    const body = text.trim();
-    if (!body || sending) return;
-    const atUserList = isGroup ? resolveMentions(body, others) : [];
-    const ok = await deliver({
-      to: conversation.targetID,
-      conversationType: conversation.kind === "GROUP" ? "GROUP" : "C2C",
-      type: atUserList.length ? "textAt" : "text",
-      payload: atUserList.length ? { text: body, atUserList } : { text: body },
-      ...(quoting ? { cloudCustomData: quoteCustomData(quoting) } : {}),
-    });
-    if (ok) {
-      setText("");
-      setQuoting(null);
-    }
+  const commandLabels: Record<(typeof COMMANDS)[number], string> = {
+    new: t("新建会话"), compress: t("压缩上下文"), status: t("查看状态"), usage: t("查看用量"), stop: t("停止当前任务"), help: t("全部指令"),
   };
-
-  const sendFile = async (file: File) => {
-    await deliver({ to: conversation.targetID, conversationType: isGroup ? "GROUP" : "C2C", type: attachmentKind(file), payload: { file } });
+  const insertCommand = (name: string) => {
+    setCommandsOpen(false);
+    const command = `/${name} `;
+    // In a group a command goes to one Agent: open the @ picker in front of it first.
+    if (isGroup && !resolveMentions(text, others).some(isAgentID)) {
+      setText(`@ ${command}`);
+      setCaret(1);
+      setDismissedMention(null);
+      requestAnimationFrame(() => { textareaRef.current?.focus(); textareaRef.current?.setSelectionRange(1, 1); });
+      return;
+    }
+    const next = text.trim() ? `${text.trimEnd()} ${command}` : command;
+    setText(next);
+    setCaret(next.length);
+    requestAnimationFrame(() => { textareaRef.current?.focus(); textareaRef.current?.setSelectionRange(next.length, next.length); });
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -224,7 +280,7 @@ export function VelaImChat({ controller, client, selfID, conversation, onBack, o
     }
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
-      void sendText();
+      void submit();
     }
   };
 
@@ -292,7 +348,15 @@ export function VelaImChat({ controller, client, selfID, conversation, onBack, o
     : peerIsAgent ? "Agent" : t("人类");
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="relative flex h-full min-h-0 flex-col"
+      onDragOver={(e) => { if (ready && e.dataTransfer.types.includes("Files")) { e.preventDefault(); setDragging(true); } }}
+      onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false); }}
+      onDrop={(e) => { if (!e.dataTransfer.files.length) return; e.preventDefault(); setDragging(false); addFiles(Array.from(e.dataTransfer.files)); }}>
+      {dragging ? (
+        <div className="pointer-events-none absolute inset-2 z-20 flex items-center justify-center rounded-2xl border-2 border-dashed border-black/20 bg-white/80 text-sm font-medium text-black/55">
+          {t("松开即可添加附件")}
+        </div>
+      ) : null}
       <header className="flex items-center gap-3 border-b border-black/[0.06] px-4 py-3">
         <button type="button" onClick={onBack} aria-label={t("返回会话列表")} className="-ml-1 inline-flex size-9 items-center justify-center rounded-lg text-black/55 hover:bg-black/[0.04] md:hidden">
           <ArrowLeft className="size-4" />
@@ -330,7 +394,8 @@ export function VelaImChat({ controller, client, selfID, conversation, onBack, o
         </Popover>
       </header>
 
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto bg-[color-mix(in_oklab,var(--surface-muted)_45%,white)] px-4 py-5">
+      <div className="min-h-0 flex-1 overflow-y-auto bg-[color-mix(in_oklab,var(--surface-muted)_45%,white)] px-4 py-5">
+      <div className="mx-auto w-full max-w-3xl space-y-4">
         {!complete && messages.length ? (
           <div className="flex justify-center">
             <button type="button" onClick={() => void loadEarlier()} className="inline-flex h-8 min-w-28 items-center justify-center gap-1.5 rounded-full border border-black/[0.08] bg-transparent px-3 text-xs font-semibold text-black/60 transition-colors hover:border-black/15 hover:text-black/80">
@@ -357,6 +422,7 @@ export function VelaImChat({ controller, client, selfID, conversation, onBack, o
           const canRevoke = mine && !m.isRevoked && now - at < REVOKE_WINDOW_SECONDS;
           const quoted = m.isRevoked ? null : quotedMessage(m);
           const copyText = m.isRevoked ? "" : view.kind === "text" ? view.text : view.kind === "custom" ? view.description : "";
+          const bare = !quoted && (view.kind === "image" || view.kind === "video" || view.kind === "file");
           const action = "inline-flex items-center gap-1 rounded px-1 opacity-0 transition-opacity hover:text-black/70 focus-visible:opacity-100 group-hover:opacity-100";
           return (
             <Fragment key={m.ID}>
@@ -371,6 +437,11 @@ export function VelaImChat({ controller, client, selfID, conversation, onBack, o
                       <time title={fullTime(at)}>{formatTime(at)}</time>
                     </span>
                   ) : null}
+                  {bare ? (
+                    <div className={cn("max-w-full rounded-xl transition-shadow", highlightID === m.ID && "ring-2 ring-[var(--ring)]")}>
+                      <VelaImMessageContent message={m} mine={mine} />
+                    </div>
+                  ) : (
                   <ChatBubble tone={mine ? "user" : "assistant"}
                     className={cn("max-w-full px-3.5 py-2 transition-shadow", mine && "ml-0", highlightID === m.ID && "ring-2 ring-[var(--ring)]")}>
                     {quoted ? (
@@ -382,6 +453,7 @@ export function VelaImChat({ controller, client, selfID, conversation, onBack, o
                     ) : null}
                     <VelaImMessageContent message={m} mine={mine} />
                   </ChatBubble>
+                  )}
                   <span className={cn("flex items-center gap-1.5 px-1 text-[11px] text-black/40", mine && "flex-row-reverse")}>
                     {mine ? <time title={fullTime(at)}>{formatTime(at)}</time> : null}
                     {mine && !isGroup && !peerIsAgent && !m.isRevoked ? <span>{m.isPeerRead ? t("已读") : t("未读")}</span> : null}
@@ -408,34 +480,27 @@ export function VelaImChat({ controller, client, selfID, conversation, onBack, o
         })}
         <div ref={bottomRef} />
       </div>
+      </div>
 
-      <div className="border-t border-black/[0.06] bg-white p-3">
+      <div className="bg-[color-mix(in_oklab,var(--surface-muted)_45%,white)] px-4 pb-4 pt-1">
+      <div className="mx-auto w-full max-w-3xl">
         {isGroup && others.some((m) => isAgentID(m.userID)) ? (
           <div className="mb-2 flex flex-wrap gap-1.5" aria-label={t("快速 @ Agent")}>
             {others.length > 1 ? (
               <button type="button" onClick={() => { setText((v) => `${v}${v && !v.endsWith(" ") ? " " : ""}@${MENTION_ALL_TEXT} `); textareaRef.current?.focus(); }}
-                className="inline-flex h-7 items-center rounded-full border border-black/[0.08] px-2.5 text-xs text-black/60 hover:border-black/15 hover:text-black/80">
+                className="inline-flex h-7 items-center rounded-full border border-black/[0.08] bg-white px-2.5 text-xs text-black/60 hover:border-black/15 hover:text-black/80">
                 @{t("所有人")}
               </button>
             ) : null}
             {others.filter((m) => isAgentID(m.userID)).map((m) => (
               <button key={m.userID} type="button" onClick={() => { setText((v) => `${v}${v && !v.endsWith(" ") ? " " : ""}@${m.name} `); textareaRef.current?.focus(); }}
-                className="inline-flex h-7 items-center rounded-full border border-black/[0.08] px-2.5 text-xs text-black/60 hover:border-black/15 hover:text-black/80">
+                className="inline-flex h-7 items-center rounded-full border border-black/[0.08] bg-white px-2.5 text-xs text-black/60 hover:border-black/15 hover:text-black/80">
                 @{m.name}
               </button>
             ))}
           </div>
         ) : null}
-        {quoting ? (
-          <div className="mb-2 flex items-center gap-2 rounded-lg bg-black/[0.04] px-3 py-2 text-xs text-black/60">
-            <Quote className="size-3.5 shrink-0 text-black/40" />
-            <span className="min-w-0 flex-1 truncate"><span className="font-medium">{quoting.sender}</span>：{quoting.abstract}</span>
-            <button type="button" onClick={() => setQuoting(null)} aria-label={t("取消引用")} className="inline-flex size-6 items-center justify-center rounded-md text-black/45 hover:bg-black/[0.06] hover:text-black/70">
-              <X className="size-3.5" />
-            </button>
-          </div>
-        ) : null}
-        <div className="relative">
+        <div className="relative rounded-2xl border border-black/[0.08] bg-white shadow-[0_1px_1px_rgba(0,0,0,0.04),0_9px_30px_-14px_rgba(0,0,0,0.34)]">
           {suggestions.length ? (
             <ul id="vela-im-mentions" role="listbox" aria-label={t("提及成员")} className="absolute bottom-[calc(100%+6px)] left-0 z-10 w-64 rounded-xl border border-black/10 bg-white p-1.5 shadow-xl">
               {suggestions.map((m, index) => (
@@ -454,33 +519,86 @@ export function VelaImChat({ controller, client, selfID, conversation, onBack, o
               ))}
             </ul>
           ) : null}
-          <div className="flex items-end gap-2">
-            <input ref={fileRef} type="file" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ""; if (file) void sendFile(file); }} />
-            <Button type="button" variant="ghost" size="sm" className="h-10 w-10 shrink-0 rounded-lg p-0" aria-label={t("发送图片、语音、视频或文件")} disabled={!ready || sending} onClick={() => fileRef.current?.click()}>
-              <Paperclip className="size-4" />
-            </Button>
-            <Textarea
-              ref={textareaRef}
-              aria-label={t("消息内容")}
-              aria-autocomplete="list"
-              aria-controls={suggestions.length ? "vela-im-mentions" : undefined}
-              aria-expanded={suggestions.length > 0}
-              aria-activedescendant={suggestions.length ? `vela-im-mention-${Math.min(activeMention, suggestions.length - 1)}` : undefined}
-              rows={1}
-              value={text}
-              disabled={!ready}
-              placeholder={isGroup ? t("输入消息，@ 提及 Agent 或成员") : t("输入消息")}
-              onChange={(e) => { setText(e.target.value); setCaret(e.target.selectionStart ?? e.target.value.length); }}
-              onSelect={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
-              onKeyDown={onKeyDown}
-              className="max-h-40 min-h-10 resize-none rounded-md py-2 leading-6"
-            />
-            <Button type="button" className="h-10 w-10 shrink-0 rounded-lg p-0" aria-label={t("发送")} disabled={!ready || sending || !text.trim()} onClick={() => void sendText()}>
+          {quoting ? (
+            <div className="mx-2 mt-2 flex items-center gap-2 rounded-lg bg-black/[0.04] px-3 py-2 text-xs text-black/60">
+              <Quote className="size-3.5 shrink-0 text-black/40" />
+              <span className="min-w-0 flex-1 truncate"><span className="font-medium">{quoting.sender}</span>：{quoting.abstract}</span>
+              <button type="button" onClick={() => setQuoting(null)} aria-label={t("取消引用")} className="inline-flex size-6 items-center justify-center rounded-md text-black/45 hover:bg-black/[0.06] hover:text-black/70">
+                <X className="size-3.5" />
+              </button>
+            </div>
+          ) : null}
+          {pending.length ? (
+            <ul className="flex flex-wrap gap-2 px-3 pt-3" aria-label={t("待发送的附件")}>
+              {pending.map((item) => (
+                <li key={item.id} className="group/att relative">
+                  {item.preview ? (
+                    <img src={item.preview} alt={item.file.name} className="size-16 rounded-lg border border-black/[0.08] object-cover" />
+                  ) : (
+                    <span className="flex h-16 w-52 items-center gap-2.5 rounded-lg border border-black/[0.08] bg-black/[0.02] px-2.5">
+                      <FileTypeIcon name={item.file.name} />
+                      <span className="min-w-0">
+                        <span className="block truncate text-xs font-medium text-black/75" title={item.file.name}>{item.file.name}</span>
+                        <span className="block text-[11px] text-black/40">{formatBytes(item.file.size)}</span>
+                      </span>
+                    </span>
+                  )}
+                  <button type="button" onClick={() => removePending(item.id)} aria-label={t("移除 {{name}}", { name: item.file.name })}
+                    className="absolute -right-1.5 -top-1.5 inline-flex size-5 items-center justify-center rounded-full bg-black/70 text-white opacity-90 hover:bg-black">
+                    <X className="size-3" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          <Textarea
+            ref={textareaRef}
+            aria-label={t("消息内容")}
+            aria-autocomplete="list"
+            aria-controls={suggestions.length ? "vela-im-mentions" : undefined}
+            aria-expanded={suggestions.length > 0}
+            aria-activedescendant={suggestions.length ? `vela-im-mention-${Math.min(activeMention, suggestions.length - 1)}` : undefined}
+            rows={1}
+            value={text}
+            disabled={!ready}
+            placeholder={isGroup ? t("输入消息，@ 提及 Agent 或成员；可粘贴图片") : t("输入消息；可粘贴图片")}
+            onChange={(e) => { setText(e.target.value); setCaret(e.target.selectionStart ?? e.target.value.length); }}
+            onSelect={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
+            onKeyDown={onKeyDown}
+            onPaste={(e) => { const files = Array.from(e.clipboardData.files); if (files.length) { e.preventDefault(); addFiles(files); } }}
+            className="max-h-48 min-h-11 resize-none border-0 bg-transparent px-3.5 pb-1 pt-3 leading-6 shadow-none [field-sizing:content] focus-visible:ring-0 focus-visible:ring-offset-0"
+          />
+          <div className="flex items-center gap-1.5 px-2 pb-2">
+            <input ref={fileRef} type="file" multiple className="hidden" onChange={(e) => { const files = Array.from(e.target.files ?? []); e.target.value = ""; addFiles(files); }} />
+            <button type="button" aria-label={t("添加图片或文件")} disabled={!ready || sending} onClick={() => fileRef.current?.click()}
+              className="inline-flex size-7 items-center justify-center rounded-full text-black/55 transition-colors hover:bg-black/[0.05] hover:text-black/80 disabled:opacity-40">
+              <Plus className="size-4" />
+            </button>
+            <Popover open={commandsOpen} onOpenChange={setCommandsOpen}>
+              <PopoverTrigger asChild>
+                <button type="button" disabled={!ready} aria-label={t("指令库")}
+                  className="inline-flex h-7 items-center gap-1 rounded-full border border-black/[0.08] px-2 text-xs text-black/60 transition-colors hover:border-black/15 hover:text-black/80 disabled:opacity-40">
+                  <Sparkles className="size-3.5" />{t("指令库")}<ChevronDown className="size-3" />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent side="top" align="start" className="w-60 rounded-xl border border-black/10 p-1.5 shadow-xl">
+                {COMMANDS.map((command) => (
+                  <button key={command} type="button" onClick={() => insertCommand(command)}
+                    className="flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left text-sm hover:bg-black/[0.04]">
+                    <span className="w-20 shrink-0 font-mono text-[13px] text-black/80">/{command}</span>
+                    <span className="truncate text-black/50">{commandLabels[command]}</span>
+                  </button>
+                ))}
+              </PopoverContent>
+            </Popover>
+            <Button type="button" className="ml-auto size-8 shrink-0 rounded-full p-0" aria-label={t("发送")}
+              disabled={!ready || sending || (!text.trim() && !pending.length)} onClick={() => void submit()}>
               {sending ? <Loader2 className="size-4 animate-spin" /> : <ArrowUp className="size-4" />}
             </Button>
           </div>
         </div>
         {error ? <p role="alert" className="mt-2 text-xs text-[var(--danger)]">{error}</p> : null}
+      </div>
       </div>
     </div>
   );
