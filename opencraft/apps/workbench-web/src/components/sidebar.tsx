@@ -57,6 +57,7 @@ interface SidebarProps {
   onNewTask(): void;
   onOpenSettings(): void;
   showFooter?: boolean;
+  showStart?: boolean;
   threadActions?: ThreadActionCallbacks;
   threadBadge?: ThreadBadgeContribution | null;
   threadCapabilities?(hostId: string): ThreadActionCapabilities;
@@ -106,6 +107,7 @@ export function Sidebar({
   onNewTask,
   onOpenSettings,
   showFooter = true,
+  showStart = true,
   threadActions,
   threadBadge = null,
   threadCapabilities,
@@ -173,7 +175,7 @@ export function Sidebar({
     <SidebarEntityDndCoordinator items={bots} layout={sidebarLayout}>
       <div className="sidebar-panel" data-app-shell-focus-area="left-panel">
       <nav className="sidebar-navigation" aria-label="Primary">
-        <SidebarNavigationItem icon={<SquarePen size={15} />} title={intl.formatMessage({ id: "sidebar.start", defaultMessage: "Start" })} onInvoke={onNewTask} />
+        {showStart ? <SidebarNavigationItem icon={<SquarePen size={15} />} title={intl.formatMessage({ id: "sidebar.start", defaultMessage: "Start" })} onInvoke={onNewTask} /> : null}
         {primaryActions.map((action) => (
           <SidebarNavigationItem
             key={action.id}

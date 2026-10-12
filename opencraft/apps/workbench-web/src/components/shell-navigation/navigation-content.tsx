@@ -23,6 +23,7 @@ export interface ShellSignIn {
 }
 
 export interface ShellNavigationConfig {
+  readonly layout?: "unified";
   readonly actions: readonly NavigationAction[];
   readonly account: ShellAccount | null;
   readonly onOpenSettings: () => void;
@@ -60,10 +61,11 @@ export function AccountLeadingVisual({ account }: { account: ShellAccount | null
 }
 
 /** The same content is placed in a rail or a transient surface by the Shell. */
-export function NavigationContent({ config, surface, compact = false, onInvoke }: {
+export function NavigationContent({ config, surface, compact = false, includeSettings = true, onInvoke }: {
   config: ShellNavigationConfig;
   surface: "applications" | "account";
   compact?: boolean;
+  includeSettings?: boolean;
   onInvoke: (action: () => void) => void;
 }) {
   const intl = useIntl();
@@ -72,7 +74,7 @@ export function NavigationContent({ config, surface, compact = false, onInvoke }
       aria-current={action.active ? "page" : undefined} title={compact ? action.title : undefined} onClick={() => onInvoke(action.onInvoke)}>
       <NavigationIcon name={action.icon} selected={action.active} /><span className="shell-navigation__item-label">{action.title}</span>
     </button>)}
-    <button type="button" aria-current={config.settingsActive ? "page" : undefined} title={compact ? intl.formatMessage({ id: "settings.title", defaultMessage: "Settings" }) : undefined} onClick={() => onInvoke(config.onOpenSettings)}><NavigationIcon name="settings" selected={config.settingsActive} /><span className="shell-navigation__item-label"><FormattedMessage id="settings.title" defaultMessage="Settings" /></span></button>
+    {includeSettings ? <button type="button" aria-current={config.settingsActive ? "page" : undefined} title={compact ? intl.formatMessage({ id: "settings.title", defaultMessage: "Settings" }) : undefined} onClick={() => onInvoke(config.onOpenSettings)}><NavigationIcon name="settings" selected={config.settingsActive} /><span className="shell-navigation__item-label"><FormattedMessage id="settings.title" defaultMessage="Settings" /></span></button> : null}
   </nav> : <AccountContent compact={compact} config={config} onInvoke={onInvoke} />;
 }
 

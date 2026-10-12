@@ -9,6 +9,7 @@ import { CodexMessageSenders } from "./codex-message-senders.js";
 import { projectCodexMessageResult, projectCodexMessageNotification } from "./codex-message-projection.js";
 import { CodexMessageAttachments } from "./codex-message-attachments.js";
 import { CodexThreadPins } from "./codex-thread-pins.js";
+import { TasksService, TasksFault } from "@opencraft/plugin-tasks/server";
 import { CODEX_NATIVE_SHARED_METHODS, discoverNativeCodexGoalCapability, projectSharedNativeCodexInitialize } from "./codex-native-surface.js";
 import { projectCodexAttachmentNotification, projectCodexAttachmentResult } from "./codex-message-attachment-projection.js";
 
@@ -196,6 +197,7 @@ export class CodexEngineAdapter implements DuplexTransport {
   private lines: ReadLineInterface | null = null;
   private initializeResult: unknown | null = null;
   private threadPins: CodexThreadPins | null = null;
+  private readonly tasks: TasksService;
   private physicalInitializePending = false;
   private physicalInitialized = false;
   private remoteGoalCapability: OpenCraftThreadGoalCapability | null = null;
@@ -210,6 +212,9 @@ export class CodexEngineAdapter implements DuplexTransport {
   private readonly remoteDisposers: Array<() => void> = [];
 
   constructor(private readonly options: LocalCodexEngineOptions | RemoteCodexEngineOptions) {
+    this.tasks = new TasksService(options.kind === "remote" ? null : join(options.dataDirectory, "tasks.sqlite"), () => {
+      for (const subscriber of this.initializedClients) this.emit({ method: "opencraft/tasks/changed", params: {} }, subscriber);
+    });
     this.attachmentStaging = options.kind === "remote"
       ? options.attachments && options.attachmentHistoryDirectory
         ? new SshAttachmentStagingService({ ...options.attachments,
@@ -443,6 +448,15 @@ export class CodexEngineAdapter implements DuplexTransport {
         return;
       }
       const requestClientEpoch = this.clientEpoch(clientId);
+      if (message.method.startsWith("opencraft/tasks/")) {
+        try {
+          const result = this.tasks.handle(message.method, message.params);
+          this.emit({ id, result }, clientId);
+        } catch (error) {
+          this.emit({ id, error: { code: error instanceof TasksFault ? error.code : -32050, message: error instanceof TasksFault ? error.message : "Tasks storage unavailable" } }, clientId);
+        }
+        return;
+      }
       if (message.method === "opencraft/thread-pins/list" || message.method === "opencraft/thread-pins/set") {
         try {
           const pins = this.threadPins ??= new CodexThreadPins((method, params) => this.requestPhysical(method, params));
@@ -615,6 +629,7 @@ export class CodexEngineAdapter implements DuplexTransport {
       this.hostState = null;
       this.messageAttachments?.close();
       this.messageAttachments = null;
+      this.tasks.close();
       for (const request of this.pending.values()) if (request.timer) clearTimeout(request.timer);
       this.pending.clear();
       this.initializeWaiters.length = 0;

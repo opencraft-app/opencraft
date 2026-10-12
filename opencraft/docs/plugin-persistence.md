@@ -51,6 +51,7 @@ Electron profile 下新增 `opencraft-extensions.sqlite`，设置和安装记录
 
 - **设置**继续使用现有 ExtensionSettingsStore 的 schema 校验、串行写入和保存后通知。实现时补齐其持久化适配/边界，不新增第二个设置真源，不把领域凭据当普通 setting。
 - **通用数据**使用上述 KV 契约，适合插件配置以外的小型状态。namespace 为宿主授权区域内的插件私有空间，不是一张供插件直接修改的核心表。
+- **Tasks 领域行存储**：内建 `opencraft.tasks` 的任务与多会话关联使用独立 `tasks.sqlite` 的 tasks/task_conversations 结构化表，经后端打包的 typed domain API 访问。后端事务负责 CAS、排序、变更通知和 schema 基线；客户端不提交 SQL、不修改通用文档表。旧卡片库不迁移、不删除。详见 [Tasks 存储](../plugins/tasks/README.md)。
 - **Host 只提供 API**：不建设 Host 插件装载器、安装/激活服务或插件专用 SQL 能力。插件经已有 token 授权的 Host API 使用文档存储，不能上传 JS、SQL 或转换函数，不通过断线落本地替代。首个 Local Host 的权限粒度是整个 Host 会话，不宣称按插件或多租户安全隔离。
 - **secret**只引用既有 Host 凭据身份及授权能力。不得给 Web 插件一个返回所有 token 的通用 KV；仍遵守“凭据只存数据库”，不迁到 Obsidian 的本地存储或 BB 的 secrets 文件。
 

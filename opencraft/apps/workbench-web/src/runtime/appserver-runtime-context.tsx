@@ -1,6 +1,7 @@
 import { ThreadBadgeContributionRegistry } from "./thread-badge-contributions";
 // @refresh reset
 import { useVoiceInputPreference } from "./use-voice-input-preference";
+import { TaskConversationFlow } from "./task-conversation-flow";
 import {
   preflightHostConnection,
   type ConversationTerminalToolHost,
@@ -64,6 +65,7 @@ import {
   type ComposerTarget,
   type SubmissionReceipt,
   type ComposerExecutionTarget,
+  type SubmitIntent,
 } from "@opencraft/composer-core";
 import type {
   PermissionProfileSummary,
@@ -72,6 +74,8 @@ import type {
 } from "@opencraft/appserver-protocol/generated/v2";
 import {
   OPENCRAFT_SCOPED_MODEL_CATALOG_EXTENSION,
+  TASKS,
+  type TasksRequestPort,
   type CatalogModel as Model,
 } from "@opencraft/appserver-protocol";
 import {
@@ -195,6 +199,7 @@ const readNoManagedCatalog = () => null;
 
 // The Context object itself is part of the renderer's hot-reload state.
 export interface AppServerHostCatalog {
+  readonly tasks: TasksRequestPort | null;
   readonly displayContinuity: BrowserDisplayContinuity;
   readonly extensionRuntime: Pick<ExtensionSupervisor, "subscribe" | "getSnapshot" | "contributions">;
   readonly connectors: ConnectorRuntime;
@@ -240,6 +245,7 @@ export interface AppServerHostCatalog {
   promoteDraft(draftId: string, receipt: SubmissionReceipt): Promise<WorkbenchLocation>;
   navigateToHome(options: {
     readonly execution: ComposerExecutionTarget;
+    readonly draftId?: string;
     readonly entrypoint?: "home" | "new-chat";
     readonly mode?: WorkbenchHistoryMode;
   }): WorkbenchLocation;
@@ -262,6 +268,7 @@ export interface WebWorkbenchCommands {
   selectConversation(location: WorkbenchLocation): Promise<boolean>;
   navigateToHome(options: {
     readonly execution: ComposerExecutionTarget;
+    readonly draftId?: string;
     readonly entrypoint?: "home" | "new-chat";
     readonly mode?: WorkbenchHistoryMode;
   }): WorkbenchLocation;
@@ -599,6 +606,7 @@ export interface HostlessWebWorkbenchApplicationSupervisor extends WebWorkbenchA
 }
 
 export interface ActiveWebWorkbenchApplicationSupervisor extends WebWorkbenchApplicationBase {
+  readonly tasks: TasksRequestPort | null;
   readonly displayContinuity: BrowserDisplayContinuity;
   readonly mode: "active";
   readonly managedHostCatalog: ManagedHostCatalogSource | null;
@@ -736,6 +744,7 @@ function createWebWorkbenchCommands(input: {
     profile: HostConnectionProfile,
   ) => HostRuntimeRegistration<AppServerWorkbenchRuntime>;
   readonly connectionProviders: CordisHostConnectionProviderRuntime["providers"];
+  readonly onThreadCreated?: (intent: SubmitIntent, receipt: SubmissionReceipt) => Promise<void>;
 }): WebWorkbenchCommands {
   let commands: WebWorkbenchCommands;
   let submissionPipeline: ReturnType<typeof createWorkbenchSubmissionPipeline>;
@@ -802,6 +811,7 @@ function createWebWorkbenchCommands(input: {
       ++hostSelectionEpoch;
       const draft = input.scopes.openDraft({
         execution: options.execution,
+        draftId: options.draftId,
         entrypoint: options.entrypoint,
       });
       const location = createWorkbenchDraftLocation(options.execution.hostId, draft.id);
@@ -916,9 +926,13 @@ function createWebWorkbenchCommands(input: {
   };
   submissionPipeline = createWorkbenchSubmissionPipeline({
     scopes: input.scopes,
-    submitNewThread(intent) {
+    async submitNewThread(intent) {
       if (intent.target.type !== "new-thread") throw new Error("Expected a New Thread intent");
-      return input.registry.getRuntime(intent.target.execution.hostId).createThread(intent);
+      const receipt = await input.registry.getRuntime(intent.target.execution.hostId).createThread(intent);
+      // Link recovery must never turn an irreversible thread receipt into a
+      // failed thread/start or cause the submission pipeline to replay it.
+      try { void input.onThreadCreated?.(intent, receipt).catch(() => {}); } catch {}
+      return receipt;
     },
     submitExistingThread(intent) {
       const lease = input.coordinator.getActiveThreadLease();
@@ -981,6 +995,8 @@ export async function createWebWorkbenchApplicationSupervisor(
   options: WebWorkbenchSupervisorOptions = {},
 ): Promise<WebWorkbenchApplicationSupervisor> {
   const startupRollback: Array<() => void | Promise<void>> = [];
+  let taskConversationFlow: TaskConversationFlow | undefined;
+  let prepareTaskConversation: ((taskId: string, hostId: string) => Promise<void>) | undefined;
   try {
     const blobFiber = cordis.plugin(BlobResourceService, { storage: new IndexedDbBlobStorage() });
     startupRollback.push(() => blobFiber.dispose());
@@ -1141,6 +1157,62 @@ export async function createWebWorkbenchApplicationSupervisor(
         await activate();
       }
     };
+    if (import.meta.env.VITE_INCLUDE_TASKS_PLUGIN === "true") {
+      await loadPresentationExtension("opencraft.tasks", async signal => {
+        const { createTasksExtension } = await import("@opencraft/plugin-tasks");
+        signal?.throwIfAborted();
+        return createTasksExtension({
+          storageHostId: platform === "electron" ? "local-codex" : headlessAppHost ? "opencraft-server" : bootstrapDefinitions[0]?.hostId ?? null,
+          request: (hostId, method, params) => agentRuntimes.request(hostId, method, params),
+          prepareConversation: (taskId, hostId) => {
+            if (!prepareTaskConversation) return Promise.reject(new Error("Workbench not ready"));
+            return prepareTaskConversation(taskId, hostId);
+          },
+          pendingConversationLinks: () => taskConversationFlow?.pending() ?? [],
+          retryConversationLinks: async taskId => { await taskConversationFlow?.retry(taskId); },
+          listThreads: async (hostId, search) => {
+            const page = await agentRuntimes.request(hostId, "thread/list", { limit: 100, searchTerm: search || null, archived: false });
+            return page.data.map(thread => ({ id: thread.id, title: thread.name?.trim() || thread.preview?.trim() || thread.id }));
+          },
+          listProjects: async hostId => {
+            const result = await agentRuntimes.request(hostId, "project/list", {});
+            return result.data.map(project => ({ id: project.id, title: project.name }));
+          },
+          readConversation: async (hostId, threadId) => {
+            const { thread } = await agentRuntimes.request(hostId, "thread/read", { threadId, includeTurns: false });
+            const status = thread.status;
+            const type = status && typeof status === "object" && "type" in status ? status.type : null;
+            const flags = status && typeof status === "object" && "activeFlags" in status ? status.activeFlags : null;
+            const waiting = Array.isArray(flags) && flags.some(flag => flag === "waitingOnApproval" || flag === "waitingOnUserInput");
+            return {
+              title: typeof thread.name === "string" && thread.name.trim() ? thread.name.trim() : (typeof thread.preview === "string" ? thread.preview.trim() : "") || thread.id,
+              state: type === "active" ? waiting ? "waiting" : "running"
+                : type === "idle" ? "idle" : type === "systemError" ? "failed" : "unknown",
+            };
+          },
+          subscribe: listener => {
+            const flowStop = taskConversationFlow?.subscribe(() => listener("tasks"));
+            const subscriptions = new Map<string, () => void>();
+            const bind = (client: ReturnType<typeof appServerRegistry.clients.getOrThrow>) => {
+              subscriptions.get(client.hostId)?.();
+              const notifications = client.subscribeNotification(notification => {
+                if (notification.method === "opencraft/tasks/changed") listener("tasks");
+                else if (notification.method.startsWith("thread/") || notification.method.startsWith("turn/")) listener("activity");
+              });
+              const status = client.subscribeStatus(() => { listener("activity"); listener("tasks"); });
+              subscriptions.set(client.hostId, () => { notifications(); status(); });
+            };
+            for (const client of appServerRegistry.clients.getAll()) bind(client);
+            const stop = appServerRegistry.clients.subscribeEvent(event => {
+              if (event.type === "added") bind(event.client);
+              else { subscriptions.get(event.hostId)?.(); subscriptions.delete(event.hostId); }
+              listener("activity"); listener("tasks");
+            });
+            return () => { flowStop?.(); stop(); for (const dispose of subscriptions.values()) dispose(); subscriptions.clear(); };
+          },
+        });
+      });
+    }
     await loadPresentationExtension("vela.voice-input", async signal => {
       const createVoiceInputExtension = (
         await import("@opencraft/plugin-voice-input/runtime-entry")
@@ -1583,6 +1655,7 @@ export async function createWebWorkbenchApplicationSupervisor(
   const stopDraftScope = lightVelaAccount.subscribe(() => {
     const nextScope = lightVelaAccount.getSnapshot().credentialScope;
     if (nextScope === draftCredentialScope) return;
+    taskConversationFlow?.revoke();
     browserDraftStore.revokeAndClear();
     // The old Thread lease may remain readable briefly while authentication
     // changes. Never seed a new account's cache from that old lease.
@@ -1661,8 +1734,61 @@ export async function createWebWorkbenchApplicationSupervisor(
     hostProfiles,
     createHostRegistration,
     connectionProviders: connectionProviders.providers,
+    onThreadCreated: (intent, receipt) => taskConversationFlow?.created(intent, receipt) ?? Promise.resolve(),
   });
+  const tasksStorageHostId = platform === "electron" ? "local-codex" : headlessAppHost ? "opencraft-server" : bootstrapDefinitions[0]?.hostId;
+  const tasks: TasksRequestPort | null = import.meta.env.VITE_INCLUDE_TASKS_PLUGIN === "true" ? {
+    request: (method, params) => {
+      if (!tasksStorageHostId) return Promise.reject(new Error("Tasks storage unavailable"));
+      return agentRuntimes.request(tasksStorageHostId, method, params);
+    },
+  } : null;
+  if (tasks) {
+    const storageHostId = tasksStorageHostId;
+    const serverId = (hostId: string) => {
+      const profile = hostProfiles.getSnapshot().profiles.find(profile => profile.hostId === hostId && profile.enabled);
+      if (!profile) throw new Error("Task conversation connection unavailable");
+      return legacyDirectServerProjectionFromHost({ hostId, hostKind: profile.hostKind, label: profile.displayName }).serverOrigin.serverId;
+    };
+    const flow = taskConversationFlow = new TaskConversationFlow({
+      storage: window.localStorage,
+      storageKey: () => `opencraft.task-conversations.v1.${workbenchProductId}.${draftCredentialScope}`,
+      serverId,
+      request: (method, params) => {
+        if (!storageHostId) return Promise.reject(new Error("Tasks storage unavailable"));
+        return agentRuntimes.request(storageHostId, method, params);
+      },
+    });
+    startupRollback.push(() => flow.dispose());
+    prepareTaskConversation = async (taskId, hostId) => {
+      const scope = draftCredentialScope;
+      const revision = navigation.getSnapshot().revision;
+      if (!storageHostId) throw new Error("Tasks storage unavailable");
+      await agentRuntimes.ensureReady(hostId);
+      const task = await agentRuntimes.request(storageHostId, TASKS.read, { id: taskId });
+      const project = task.projectServerId === serverId(hostId) && task.projectId
+        ? (await agentRuntimes.request(hostId, "project/list", {})).data.find(project => project.id === task.projectId)
+        : null;
+      if (task.projectServerId === serverId(hostId) && task.projectId && !project) throw new Error("Task project unavailable");
+      if (scope !== draftCredentialScope || revision !== navigation.getSnapshot().revision) throw new Error("Task navigation superseded");
+      const cwd = project?.roots[0]?.path ?? registry.getSnapshot().hosts.find(host => host.hostId === hostId)?.workspaceBrowseRoots[0] ?? null;
+      const draftId = `client-new-thread:${crypto.randomUUID()}`;
+      flow.register(draftId, task.id);
+      let location: WorkbenchLocation;
+      try { location = commands.navigateToHome({ draftId, execution: { hostId: asHostId(hostId), workspace: {
+        cwd, runtimeWorkspaceRoots: project?.roots.map(root => root.path) ?? (cwd ? [cwd] : []),
+        ...(project ? { projectId: project.id } : {}),
+      } }, entrypoint: "new-chat" }); } catch (error) { flow.cancel(draftId); throw error; }
+      if (location.kind !== "draft") throw new Error("Expected task draft");
+      const view = conversationViews.get(navigation.getSnapshot().routeScopeId);
+      if (!view) throw new Error("Task composer unavailable");
+      view.composer.dispatch({ type: "replace-content", document: { version: 1, blocks: [{ type: "paragraph", children: [
+        { type: "text", text: [task.title, task.description].filter(Boolean).join("\n\n") },
+      ] }] }, attachments: [], context: [] });
+    };
+  }
   const supervisor: WebWorkbenchApplicationSupervisor = {
+    tasks,
     environmentDirectory,
     authenticationFlows,
     connectors,
@@ -1705,6 +1831,7 @@ export async function createWebWorkbenchApplicationSupervisor(
     removeHost: commands.removeHost,
     async dispose() {
       await disposeOwnedSteps([
+        () => taskConversationFlow?.dispose(),
         stopEnvironmentRegistry,
         stopDraftScope,
         () => displayListeners.clear(),
@@ -1880,6 +2007,7 @@ export function AppServerRuntimeProvider({
     };
   }, [registry]);
   const applicationContextValue = useMemo<AppServerApplicationContextValue>(() => ({
+    tasks: supervisor.tasks,
     managedHostCatalog: supervisor.managedHostCatalog,
     hostProfiles,
     displayContinuity: supervisor.displayContinuity,

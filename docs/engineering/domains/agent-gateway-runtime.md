@@ -32,6 +32,41 @@ Thread 和 clientUserMessageId 保存英文账号名，不保存员工编号。�
 
 平台网关的 Hermes `custom/auto` 模型使用模型级 `supports_vision: true` 声明图片输入能力；`auto` 是网关别名，不能依赖公共模型目录推断。CTL 初始化（含 ACLI 与 harness 路径）在模型写入后补齐并回读该字段，前端恢复平台默认配置时在重建 provider 后声明并验证能力。恢复默认配置同时清除旧主模型的顶层 `model.supports_vision`，避免它覆盖新默认模型的声明；用户显式的图片路由策略仍保留。此契约不为其他模型声明能力，不要求重做 CVM 镜像，也不自动修改存量实例。相关实现与回归测试见 `ctl/pkg/instance/async.go`、`ctl/pkg/instance/auto_vision_test.go`、`frontend/src/pages/marketing/agent-model-config/hermes-model-config-command.ts`。
 
+## OpenCraft Tasks 与看板
+
+独立 Web/Electron 工作台通过内建 `opencraft.tasks` 扩展在外侧导航呈现任务。
+列表与看板读取同一批 `tasks` 行，关联存于 `task_conversations`；业务状态与
+原生会话执行活动分开。一个任务允许多个 Server/Thread，同一会话可关联多个任务。
+任务详情消费真实会话/项目目录，通过应用 Router 打开已有会话。卡片直接进入关联会话；
+新任务支持保存并关联已有会话，详情内调整状态保留其他编辑草稿。
+
+任务呈现分离为精简看板卡片、紧凑列表行和非模态详情工作页；卡片显示活动集合与一个会话快捷入口，完整关联和编辑动作位于详情。宽容器详情显示属性栏，窄容器堆叠同一内容。概览隐藏时保留节点/滚动，草稿和 CAS 写入沿用原 owner；呈现切换不启动执行、不改变 SQLite authority 或会话所有权。
+
+固定工作台后端拥有独立 `tasks.sqlite`（Headless Web 的 opencraft-server、
+Electron 的 local-codex），聊天 Host 切换不改变存储。Local Agent Host 与本地
+Codex adapter 打包 `opencraft/tasks/*`，提交后广播变更。事务内检查 revision，
+移动同时更新受影响行的排序和版本。写入未知结果先读取核对，冲突保留草稿。
+后端记录带校验和的 schema 基线，拒绝未知历史；不迁移或删除旧卡片数据库。
+
+看板按 View 容器宽度切换六列或共享状态按钮加单列；列表与编辑器复用同一数据
+和草稿。活动从原生 thread/read 读取，失联显示未知，不自动把空闲解释为完成。
+手动「新建会话」复用原生 Composer：保存任务、选择执行连接、预填任务说明，由用户发送。
+同 Server 项目提供原生工作目录，跨 Server 不复用另一机器的项目路径。应用在 thread/start
+确认回执时关联任务，首次 Turn 失败也保留关系。按产品/账号隔离的客户端交接记录只持有
+草稿身份与确认回执，任务内容和关系仍在 SQLite；关联失败读取核对和重试，不能重放执行。
+本阶段没有自动任务派工或工作流；不宣称已打包 Electron/手机真机验收。
+详见 [Tasks 模型](../../../opencraft/docs/tasks-model.md) 与
+[存储和验证入口](../../../opencraft/plugins/tasks/README.md)。
+已有会话顶部“…”菜单提供归属任务选择，入口位于右侧面板按钮左边；允许多任务关联、搜索和解除。会话 Server/Thread 与固定任务存储 authority 分开，每行按 revision 写入并重新读取结果。草稿不显示入口，关联变化不启动、停止或删除会话。
+
+同一顶部菜单按原生 Host 能力提供重命名、置顶/取消置顶，复用侧栏既有标题写入者和会话管理端口，刷新后由原生目录恢复。Tasks 可用性只控制归属任务入口，不控制会话管理动作；菜单按账号/Host/Thread 绑定，不添加另一份标题或置顶存储。
+
+手机顶部（不超过 640px）隐藏会话标题旁的项目附文；同一“…”菜单以共享只读详情展示项目及工作目录。目录来自当前执行信息或同一 Thread 的规范元数据，不新增 IO、执行或持久化，长路径完整换行。
+
+## OpenCraft 文件预览下载
+
+文件预览标题栏提供下载原文件，复用当前 Host/path/runtime generation 的 Blob 读取结果与 URL lease，不以浏览器 `file://` 直接访问 Host 文件。空文件、图片与不可预览的二进制均可下载；读取中/失败时禁用。只读内嵌预览允许保存到用户设备，仍不允许 Host 写入；详情见 [文件面板所有权](../../../opencraft/docs/platform-architecture.md#workspace-file-explorer-ownership)。
+
 Hermes 默认模型目录投影与已有会话使用同一提供商身份匹配：接受目录的 `slug`、名称及明确声明的 `aliases`，不通过删除 `custom:` 前缀猜测身份。默认模型仍须属于该提供商且通过现有可用性过滤；例如配置 `custom:custom / auto`、目录 `slug=custom, aliases=[custom:custom]` 时，AppServer 默认模型应为目录规范身份 `custom / auto`。该投影不改写 Profile 配置、凭据或已有会话的模型选择。
 
 ## 渠道聊天记录只读接口（待启用）
