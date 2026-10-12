@@ -11,6 +11,13 @@ export interface TencentOaSessionResponse {
 export const TENCENTOA_SESSION_PATH = "/__opencraft_tencentoa/session";
 export const TENCENTOA_PHOTO_PATH = "/__opencraft_tencentoa/photo/";
 export const TENCENTOA_PROVIDER_ID = "tencentoa.identity.employee";
+export const TENCENTOA_PARTICIPANTS_METHOD = "opencraft/ioa/thread-participants/list";
+export const TENCENTOA_PARTICIPANTS_CHANGED = "opencraft/ioa/thread-participants/changed";
+export interface TencentOaThreadParticipants {
+  readonly threadId: string;
+  readonly revision: number;
+  readonly participants: readonly string[];
+}
 /** TAI's documented clock-skew grace, shared by server and client. */
 export const TENCENTOA_CLOCK_SKEW_MS = 180_000;
 export function identityValidUntil(identity: TencentOaIdentity): number {

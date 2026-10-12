@@ -109,3 +109,32 @@ private no-store responses. Photo availability grants no identity or resource
 authority. Network failure leaves the existing name and default account icon.
 Identity revocation, account changes and plugin disposal abort obsolete loads
 and revoke Blob URLs; late responses cannot replace another account's photo.
+
+## Conversation participants
+
+The IOA plugin contributes a circular `+N` badge to each supported sidebar Thread.
+N counts distinct identified employee login names in retained user-message history,
+including the current employee. Opening a conversation does not join it. Clicking
+the badge opens a participant Popover without selecting the Thread; no employee
+number or per-participant photo is displayed. Unknown history is not reattributed.
+
+The deployment enables a plugin-owned Thread metadata provider only when Tencent OA
+is configured. `opencraft/ioa/thread-participants/list` batches up to 100 Thread IDs;
+its version-1 capability is advertised by the Host, including native method-access
+catalogs. Unsupported Hosts contribute no badge. The derived `ioa_message_presence`
+and `ioa_participant_state` tables share the existing `codex-host-queue.sqlite` and
+transaction owner. Verified message sender bindings remain the identity authority.
+
+Only observed native user Items and native history message IDs establish presence.
+Binding an identity, waiting in the queue or a rejected delivery does not count.
+Confirmed input remains participation if model execution fails or is interrupted.
+Each provider instance reconciles complete native history on first read; successful
+start/steer and completion reconcile the affected Turn, while fork/rollback reconcile
+retained full history. Concurrent Items fence late history reads. Closing the Host
+revokes pending projection work before the shared DB closes.
+
+Distinct set changes send `opencraft/ioa/thread-participants/changed` to initialized
+readers of this Host, including readers viewing another Thread. The plugin batches
+visible-row reads, fences connection/account changes, and keeps prior names on
+transient errors with retry. Names and counts are display metadata only: no IOA RPC
+is forwarded to native Codex, and metadata is never injected into model input.

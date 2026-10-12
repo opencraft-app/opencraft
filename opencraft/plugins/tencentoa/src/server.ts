@@ -1,4 +1,5 @@
 // Node-only subpath; never re-export from the Renderer entry.
+export { TencentOaParticipants } from "./participants-server";
 import { createDecipheriv, createHash, timingSafeEqual } from "node:crypto";
 import { constants } from "node:fs";
 import { open } from "node:fs/promises";

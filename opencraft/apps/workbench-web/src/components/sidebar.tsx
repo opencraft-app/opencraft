@@ -1,3 +1,5 @@
+import type { ThreadBadgeContribution } from "@opencraft/extension-react";
+import { useWorkbenchPresentationRoot } from "./workbench-presentation-root";
 // Semantically restored from the r1442 AppShell left-panel ownership model.
 import { useIntl } from "@opencraft/i18n/react";
 import {
@@ -56,6 +58,7 @@ interface SidebarProps {
   onOpenSettings(): void;
   showFooter?: boolean;
   threadActions?: ThreadActionCallbacks;
+  threadBadge?: ThreadBadgeContribution | null;
   threadCapabilities?(hostId: string): ThreadActionCapabilities;
   pendingTitle?(hostId: string, threadId: string): string | null;
   threadCatalogs?: readonly HostThreadCatalogState[];
@@ -104,6 +107,7 @@ export function Sidebar({
   onOpenSettings,
   showFooter = true,
   threadActions,
+  threadBadge = null,
   threadCapabilities,
   pendingTitle,
   threadCatalogs = [],
@@ -113,12 +117,16 @@ export function Sidebar({
 }: SidebarProps) {
   const intl = useIntl();
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const portalContainer = useWorkbenchPresentationRoot();
   const [activityExpanded, setActivityExpanded] = useState(false);
   const [openThreadMenu, setOpenThreadMenu] = useState<OpenSidebarThreadMenu | null>(null);
+  const openThreadMenuRef = useRef(openThreadMenu);
+  openThreadMenuRef.current = openThreadMenu;
   const selectedThreadKey =
     pendingThreadId === null
       ? `${activeHostId}:${activeThreadId}`
       : `${pendingHostId ?? activeHostId}:${pendingThreadId}`;
+  useLayoutEffect(() => { setOpenThreadMenu(null); }, [selectedThreadKey, threadBadge]);
   const pinnedThreads = threads.filter(thread => thread.pinned === true);
   const orderedThreads = threads.filter(thread => thread.pinned !== true).sort((left, right) => right.updatedAt - left.updatedAt);
   const visibleThreads = activityExpanded
@@ -139,6 +147,9 @@ export function Sidebar({
     })),
   ];
   const visibleKeys = new Set([...pinnedThreads, ...visibleThreads].map(thread => `${thread.connectionHostId}:${thread.id}`));
+  useLayoutEffect(() => {
+    if (openThreadMenu && !visibleKeys.has(`${openThreadMenu.hostId}:${openThreadMenu.threadId}`)) setOpenThreadMenu(null);
+  }, [threads, activityExpanded, openThreadMenu]);
   const hiddenRemoteCount = orderedThreads.filter(thread => thread.serverRouteLocality === "remote"
     && !visibleKeys.has(`${thread.connectionHostId}:${thread.id}`)).length;
 
@@ -225,13 +236,27 @@ export function Sidebar({
                       title={title}
                       tooltip={`${title} · ${metadata.project} · ${thread.serverOrigin.label} · ${thread.id}`}
                       unread={thread.unread === true}
+                      badge={threadBadge ? <threadBadge.Component hostId={thread.connectionHostId} threadId={thread.id}
+                        portalContainer={portalContainer}
+                        onCloseAutoFocus={event => {
+                          const current = openThreadMenuRef.current;
+                          if (current && !(current.kind === "badge" && current.hostId === thread.connectionHostId && current.threadId === thread.id)) event.preventDefault();
+                        }}
+                        open={openThreadMenu?.hostId === thread.connectionHostId && openThreadMenu.threadId === thread.id && openThreadMenu.kind === "badge"}
+                        onOpenChange={open => setOpenThreadMenu(current => updateOpenSidebarThreadMenu(current,
+                          { hostId: thread.connectionHostId, threadId: thread.id, kind: "badge" }, open))}
+                      /> : null}
                     />;
                     if (threadActions && threadCapabilities) return (
                       <ThreadRowMenu
                         key={threadKey}
                         target={{ hostId: thread.connectionHostId, threadId: thread.id, title, pinned: thread.pinned }}
                         capabilities={threadCapabilities(thread.connectionHostId)}
-                        openMenuKind={openThreadMenu?.hostId === thread.connectionHostId && openThreadMenu.threadId === thread.id
+                        onCloseAutoFocus={event => {
+                          const current = openThreadMenuRef.current;
+                          if (current && (current.kind === "badge" || current.hostId !== thread.connectionHostId || current.threadId !== thread.id)) event.preventDefault();
+                        }}
+                        openMenuKind={openThreadMenu?.hostId === thread.connectionHostId && openThreadMenu.threadId === thread.id && openThreadMenu.kind !== "badge"
                           ? openThreadMenu.kind
                           : null}
                         onOpenMenuChange={(kind: SidebarThreadMenuKind, open) => setOpenThreadMenu(current => updateOpenSidebarThreadMenu(

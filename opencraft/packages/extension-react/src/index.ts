@@ -178,3 +178,5 @@ export class PlatformViewRendererRegistry {
   }
 }
 import type { AuthenticationFlowPort } from "@opencraft/workbench-runtime";
+
+export * from "./thread-badges";

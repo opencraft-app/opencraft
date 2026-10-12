@@ -230,5 +230,13 @@
   "pdf.download": "ดาวน์โหลดไฟล์",
   "pdf.loading": "กำลังโหลด PDF…",
   "pdf.failed": "ไม่สามารถแสดง PDF นี้ได้ โปรดดาวน์โหลดเพื่อเปิดด้วยโปรแกรมอ่านอื่น",
-  "media.unavailable": "ยังไม่รองรับการแสดงตัวอย่างไฟล์นี้ โปรดดาวน์โหลดเพื่อเปิด"
+  "media.unavailable": "ยังไม่รองรับการแสดงตัวอย่างไฟล์นี้ โปรดดาวน์โหลดเพื่อเปิด",
+  "ioa.participants.viewCount": "View {count} participants",
+  "ioa.participants.view": "View conversation participants",
+  "ioa.participants.heading": "Participants",
+  "ioa.participants.description": "Identified message senders",
+  "ioa.participants.error": "Unable to update participants",
+  "ioa.participants.retry": "Retry",
+  "ioa.participants.loading": "Loading…",
+  "ioa.participants.empty": "No identified participants yet"
 }

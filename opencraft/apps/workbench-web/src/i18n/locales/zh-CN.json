@@ -255,5 +255,13 @@
   "pdf.loading": "正在加载 PDF…",
   "pdf.failed": "无法显示此 PDF，请下载后使用其他阅读器打开。",
   "media.unavailable": "暂不支持预览此文件，请下载后打开。",
-  "chat.waitingForHostToSend": "正在连接，连上后即可发送"
+  "chat.waitingForHostToSend": "正在连接，连上后即可发送",
+  "ioa.participants.viewCount": "查看 {count} 位参与者",
+  "ioa.participants.view": "查看会话参与者",
+  "ioa.participants.heading": "参与者",
+  "ioa.participants.description": "已识别的消息发送者",
+  "ioa.participants.error": "暂时无法更新名单",
+  "ioa.participants.retry": "重试",
+  "ioa.participants.loading": "加载中…",
+  "ioa.participants.empty": "还没有已识别的参与者"
 }

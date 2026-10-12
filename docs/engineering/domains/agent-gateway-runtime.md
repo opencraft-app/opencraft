@@ -1218,3 +1218,13 @@ CTL 的微信 claim 在实例本地保存私有扫码回滚快照，并返回 re
 微信 Profile 的变更由独立操作锁串行化；实例元数据锁只保护绑定读写和账号查重，网关 stop/restart 在释放实例锁后执行，并在重新获取锁后重读绑定，保留其他 Profile 的并发更新。回滚先标记 `recovery_required`，即使网关命令失败也恢复微信配置和账号文件；失败保留私有快照和原账号身份，返回 `WEIXIN_RECOVERY_FAILED`，再次 claim/release 可重试恢复，成功后才撤销恢复标记。旧预约不能清理新的扫码。快照使用可选的 runtime status helper，版本不兼容时保守恢复网关，不依赖私有 CLI 函数。
 
 删除 Bot 的 `CHANNEL_OCCUPIED` 使用 `details.channel` 区分 `weixin` / `whatsapp`；前端不能依赖 HTTP 传输会丢弃的内部错误包装文本。
+
+### IOA conversation participants
+
+IOA owns a derived native-history participant index in the existing per-Host
+codex-host-queue.sqlite. Optional Host metadata hooks expose only native message IDs
+and immutable verified authors; optional sidebar badge slots expose presentation.
+Participants are distinct employee login names of retained user messages, not viewers
+or queued submissions. Capability-scoped IOA RPCs remain local to the Host adapter
+and never enter the execution engine/model. See OpenCraft Tencent OA authentication
+and ChatUI architecture for reconciliation, lifetime and overlay ownership.

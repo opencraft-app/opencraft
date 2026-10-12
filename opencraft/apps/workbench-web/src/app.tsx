@@ -486,6 +486,7 @@ export function App({
     replaceViewResource: workbenchNavigation.replaceExtensionViewResource,
     prepareImageUpload: async (blob) => (await images.compress(blob)).blob,
   }), [extensionPlatform, hostCatalog, images, snapshot.hostId, workbenchNavigation]);
+  const threadBadge = useSyncExternalStore(hostCatalog.threadBadges.subscribe, hostCatalog.threadBadges.getSnapshot).contribution;
   const extensionProjection = useExtensionWorkbenchProjection({
     contributions: hostCatalog.extensionContributions,
     renderers: hostCatalog.platformViewRenderers,
@@ -1576,6 +1577,7 @@ export function App({
               ) : null}
               showFooter={false}
               threadCapabilities={hostId => hostCatalog.threadManagement.capabilities(hostId)}
+              threadBadge={threadBadge}
               pendingTitle={(hostId, threadId) => threadTitleWriter.pendingTitle({ hostId, threadId })}
               threadActions={{
                 onSetPinned: async (target, pinned) => {

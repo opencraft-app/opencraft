@@ -230,5 +230,13 @@
   "pdf.download": "Muat turun fail",
   "pdf.loading": "Memuatkan PDF…",
   "pdf.failed": "PDF ini tidak dapat dipaparkan. Muat turun untuk membukanya dalam pembaca lain.",
-  "media.unavailable": "Pratonton fail ini tidak disokong. Muat turun untuk membukanya."
+  "media.unavailable": "Pratonton fail ini tidak disokong. Muat turun untuk membukanya.",
+  "ioa.participants.viewCount": "View {count} participants",
+  "ioa.participants.view": "View conversation participants",
+  "ioa.participants.heading": "Participants",
+  "ioa.participants.description": "Identified message senders",
+  "ioa.participants.error": "Unable to update participants",
+  "ioa.participants.retry": "Retry",
+  "ioa.participants.loading": "Loading…",
+  "ioa.participants.empty": "No identified participants yet"
 }

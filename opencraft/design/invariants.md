@@ -350,3 +350,16 @@ and platform hit testing; the 16-unit optical box does not dictate the touch
 target. Mobile keeps 44-point targets with neutral, transparent toolbar buttons.
 Panel visibility remains a projection of its existing owner, including after
 a swipe; icon adaptation must not introduce a parallel navigation state.
+
+### Plugin-owned conversation participant badges
+
+- IOA projects verified authors of retained user-message history, not viewers,
+  submitted identity bindings, queued input or Turn count. The same distinct set
+  supplies the circular `+N` badge and its login-name list.
+- Presence is a derived index in the existing Host SQLite file. First-read native
+  reconciliation, fork/rollback and live Item fences prevent stale or unused mappings
+  from creating participants. Model failure does not remove accepted user input.
+- The generic Thread metadata hook and badge slot carry no IOA domain policy. The
+  plugin is enabled by deployment and advertised capability, never a client switch.
+- Sidebar owns one open Thread overlay. Badge buttons are independent of navigation;
+  old close/focus callbacks cannot close or focus away from a newer overlay.

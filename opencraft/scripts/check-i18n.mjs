@@ -39,6 +39,7 @@ async function scan(directory) {
 await scan(join(root, "apps/workbench-web/src"));
 await scan(join(root, "packages/codex-composer/src"));
 await scan(join(root, "plugins/cloud-desktop/src"));
+await scan(join(root, "plugins/tencentoa/src"));
 function parameters(message) {
   const found = new Set();
   function visit(elements) {

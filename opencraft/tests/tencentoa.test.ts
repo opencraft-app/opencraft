@@ -265,7 +265,7 @@ test("employee photo proxy binds the target to verified identity and never forwa
   const { createServer } = await import("node:http");
   const calls: Array<{ url: string; options?: RequestInit }> = [];
   let unavailable = false;
-  const service = new TencentOaServerPlugin(token, { now: () => now, fetcher: (async (url, options) => {
+  const service = new TencentOaServerPlugin(token, { now: () => now, photoOrigin: "http://api-idc.sgw.woa.com", fetcher: (async (url, options) => {
     calls.push({ url: String(url), options });
     return unavailable ? new Response("failure", { status: 503 }) : new Response(new Uint8Array([137, 80, 78, 71]), { headers: { "content-type": "image/png" } });
   }) as typeof fetch });

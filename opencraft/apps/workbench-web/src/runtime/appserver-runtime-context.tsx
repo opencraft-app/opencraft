@@ -1,3 +1,4 @@
+import { ThreadBadgeContributionRegistry } from "./thread-badge-contributions";
 // @refresh reset
 import { useVoiceInputPreference } from "./use-voice-input-preference";
 import {
@@ -222,6 +223,7 @@ export interface AppServerHostCatalog {
   readonly extensionManager: ExtensionManager;
   readonly platformViewRenderers: PlatformViewRendererRegistry;
   readonly platformAccounts: PlatformAccountContributionRegistry;
+  readonly threadBadges: ThreadBadgeContributionRegistry;
   readonly composerActionRenderers: ComposerActionRendererRegistry;
   readonly botDirectory: AppServerBotDirectory;
   readonly sidebarLayout: SidebarLayoutStore;
@@ -288,6 +290,7 @@ interface AppServerApplicationContextValue extends AppServerHostCatalog {
   readonly announcements: AnnouncementCenter;
   readonly platformViewRenderers: PlatformViewRendererRegistry;
   readonly platformAccounts: PlatformAccountContributionRegistry;
+  readonly threadBadges: ThreadBadgeContributionRegistry;
 }
 
 interface ConversationViewRuntimeContextValue {
@@ -569,6 +572,7 @@ interface WebWorkbenchApplicationBase {
   readonly extensionSettings: ExtensionSettingsStore;
   readonly platformViewRenderers: PlatformViewRendererRegistry;
   readonly platformAccounts: PlatformAccountContributionRegistry;
+  readonly threadBadges: ThreadBadgeContributionRegistry;
   readonly composerActionRenderers: ComposerActionRendererRegistry;
   readonly botDirectory: AppServerBotDirectory;
   readonly sidebarLayout: SidebarLayoutStore;
@@ -1010,6 +1014,7 @@ export async function createWebWorkbenchApplicationSupervisor(
     const environmentDirectory = cordis.environmentDirectory.directory;
     const platformViewRenderers = new PlatformViewRendererRegistry();
     const platformAccounts = new PlatformAccountContributionRegistry();
+    const threadBadges = new ThreadBadgeContributionRegistry();
     const authenticationFiber = cordis.plugin(AuthenticationService);
     startupRollback.push(() => authenticationFiber.dispose());
     await authenticationFiber;
@@ -1092,6 +1097,7 @@ export async function createWebWorkbenchApplicationSupervisor(
         [ENVIRONMENT_SOURCE_CHANNEL]: environmentSourceAdapter(environmentDirectory),
         platformViewRenderer: createPlatformViewRendererContributionAdapter(platformViewRenderers),
         platformAccount: platformAccounts.createAdapter(),
+        threadBadge: threadBadges.createAdapter(),
         [AUTHENTICATION_PROVIDER_CHANNEL]: authenticationProviderAdapter(cordis.authentication),
         composerActionRenderer: createComposerActionRendererContributionAdapter(composerActionRenderers),
       },
@@ -1175,7 +1181,7 @@ export async function createWebWorkbenchApplicationSupervisor(
     if (headlessAppHost !== null) {
       await extensions.loadOptional("tencentoa.identity", async () => {
         const { createTencentOaExtension } = await import("@opencraft/plugin-tencentoa");
-        return createTencentOaExtension();
+        return createTencentOaExtension(undefined, { getClient: hostId => appServerRegistry.clients.get(hostId) ?? undefined });
       });
       await extensions.loadOptional("vela.headless-codex", async () => {
         const { readSshServerCatalog } = await import("./ssh-server-catalog");
@@ -1330,6 +1336,7 @@ export async function createWebWorkbenchApplicationSupervisor(
       extensionSettings,
       platformViewRenderers,
       platformAccounts,
+      threadBadges,
       composerActionRenderers,
       botDirectory,
       sidebarLayout,
@@ -1674,6 +1681,7 @@ export async function createWebWorkbenchApplicationSupervisor(
     extensionSettings,
     platformViewRenderers,
     platformAccounts,
+    threadBadges,
     composerActionRenderers,
     botDirectory,
     sidebarLayout,
@@ -1784,6 +1792,7 @@ export function AppServerRuntimeProvider({
     extensions,
     platformViewRenderers,
     platformAccounts,
+    threadBadges,
     composerActionRenderers,
     botDirectory,
     sidebarLayout,
@@ -1892,6 +1901,7 @@ export function AppServerRuntimeProvider({
     announcements: extensions.announcements,
     platformViewRenderers,
     platformAccounts,
+    threadBadges,
     composerActionRenderers,
     botDirectory,
     sidebarLayout,

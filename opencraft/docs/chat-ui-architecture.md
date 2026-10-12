@@ -1477,3 +1477,13 @@ render tasks and destroys/cancels them on replacement or unmount; late results
 cannot paint a different resource. Invalid or password-protected documents show
 a generic failure with download available. Web and Electron share this Renderer;
 this does not declare a native Expo PDF viewer.
+
+## Product Thread badge slot
+
+The Shell offers one trusted `threadBadge` contribution. Its React contract supplies
+Host/Thread identity, portal root and controlled Popover state; IOA owns the circular
+participant badge and data reads. The badge is a sibling of the Thread navigation
+button. Sidebar owns exclusivity across participant Popovers and existing context/
+dropdown menus, clears state on selection/hidden-row/unload, and prevents a retired
+Popover from restoring focus into a newer one. Escape retains normal focus return.
+No IOA-specific query, count, identity or badge styling belongs to Sidebar.

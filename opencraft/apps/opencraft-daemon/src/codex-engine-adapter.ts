@@ -75,6 +75,7 @@ interface PendingServerRequest {
 const MAX_PENDING_SERVER_REQUESTS = 256;
 
 interface SharedCodexRoutingOptions {
+  readonly createThreadMetadata?: (database: import("node:sqlite").DatabaseSync, context: import("@opencraft/appserver-client").ThreadMetadataContext) => import("@opencraft/appserver-client").ThreadMetadataExtension;
   readonly logDiagnostic?: (event: Record<string, unknown>) => void;
   readonly nativeSubscriptionGraceMs?: number;
 }
@@ -177,7 +178,7 @@ export class CodexEngineAdapter implements DuplexTransport {
   private readonly nativeReleases = new Map<string, Promise<void>>();
   private readonly threadInteractionOwners = new Map<string, string>();
   private readonly serverRequests = new Map<string, PendingServerRequest>();
-  private readonly internalRequests = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout>; threadId: string; method: string }>();
+  private readonly internalRequests = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout>; threadId: string; method: string; params: RpcRecord }>();
   private readonly threadOperations = new Map<string, Promise<void>>();
   private readonly activeTurns = new Map<string, string>();
   private readonly activeGoalThreads = new Set<string>();
@@ -185,6 +186,8 @@ export class CodexEngineAdapter implements DuplexTransport {
   private queue: CodexHostQueue | null = null;
   private hostState: CodexHostStateDatabase | null = null;
   private messageSenders: CodexMessageSenders | null = null;
+  private threadMetadata: import("@opencraft/appserver-client").ThreadMetadataExtension | null = null;
+  private metadataRequests = 0;
   private messageAttachments: CodexMessageAttachments | null = null;
   private statusValue: TransportStatus = { state: "idle" };
   private sequence = 0;
@@ -276,6 +279,7 @@ export class CodexEngineAdapter implements DuplexTransport {
         await mkdir(this.options.attachmentHistoryDirectory, { recursive: true, mode: 0o700 });
         this.hostState = new CodexHostStateDatabase(this.options.attachmentHistoryDirectory);
         this.messageSenders = new CodexMessageSenders(this.hostState.database);
+        this.installThreadMetadata();
       }
       this.remoteDisposers.push(transport.subscribeMessage(this.receivePhysicalLine), transport.subscribeStatus(status => {
         if (["closing", "closed"].includes(this.statusValue.state)) return;
@@ -303,6 +307,7 @@ export class CodexEngineAdapter implements DuplexTransport {
     this.queue = queue;
     this.messageAttachments = new CodexMessageAttachments(dataRoot);
     this.messageSenders = new CodexMessageSenders(this.hostState.database);
+        this.installThreadMetadata();
     const store = new AccountPoolStore({
       databasePath: join(dataRoot, "account-pool.sqlite"),
       secretsDirectory: join(dataRoot, "secrets"),
@@ -401,6 +406,19 @@ export class CodexEngineAdapter implements DuplexTransport {
       return;
     }
     const id = responseId(message.id);
+    if (id !== null && typeof message.method === "string" && this.threadMetadata?.supports(message.method)) {
+      if (!this.initializedClients.has(clientId)) { this.emit({ id, error: { code: -32600, message: "Client is not initialized" } }, clientId); return; }
+      if (this.metadataRequests >= 16) { this.emit({ id, error: { code: -32000, message: "Metadata request limit exceeded" } }, clientId); return; }
+      const epoch = this.clientEpoch(clientId);
+      this.metadataRequests++;
+      try {
+        const result = await this.threadMetadata.request(message.method, record(message.params));
+        if (this.initializedClients.has(clientId) && epoch === this.clientEpoch(clientId)) this.emit({ id, result }, clientId);
+      } catch {
+        if (this.initializedClients.has(clientId) && epoch === this.clientEpoch(clientId)) this.emit({ id, error: { code: -32000, message: "Thread metadata is unavailable" } }, clientId);
+      } finally { this.metadataRequests--; }
+      return;
+    }
     if (this.options.kind === "remote" && typeof message.method === "string" && !SHARED_NATIVE_METHODS.has(message.method)
       && !(message.method === "thread/goal/get" && this.remoteGoalCapability?.read)
       && !((message.method === "thread/goal/set" || message.method === "thread/goal/clear") && this.remoteGoalCapability?.write)
@@ -590,6 +608,8 @@ export class CodexEngineAdapter implements DuplexTransport {
       await Promise.allSettled([...this.threadOperations.values()]);
       this.queue?.close();
       this.queue = null;
+      this.threadMetadata?.close();
+      this.threadMetadata = null;
       this.messageSenders = null;
       this.hostState?.close();
       this.hostState = null;
@@ -703,6 +723,13 @@ export class CodexEngineAdapter implements DuplexTransport {
           ? withCodexHostCapabilities(message.result, this.attachmentStaging.capability, this.desktopService?.capability())
           : projectSharedNativeCodexInitialize(message.result);
       }
+      if (this.threadMetadata) {
+        const value = record(this.initializeResult), capabilities = record(value.capabilities), extensions = record(capabilities.extensions);
+        const access = record(extensions[OPENCRAFT_METHOD_ACCESS_EXTENSION]);
+        this.initializeResult = { ...value, capabilities: { ...capabilities, extensions: { ...extensions, ...this.threadMetadata.capabilities,
+          ...(Array.isArray(access.methods) ? { [OPENCRAFT_METHOD_ACCESS_EXTENSION]: { ...access, methods: [...new Set([...access.methods, ...this.threadMetadata.methods])] } } : {}),
+        } } };
+      }
       message = { ...message, result: this.initializeResult };
     }
     this.physicalInitializePending = false;
@@ -738,6 +765,7 @@ export class CodexEngineAdapter implements DuplexTransport {
             this.nativeSubscribedThreads.add(internal.threadId);
             this.cancelNativeRelease(internal.threadId);
           }
+          this.observeMetadataResult(internal.method, internal.params, message.result);
           internal.resolve(message.result);
         }
         return;
@@ -800,6 +828,7 @@ export class CodexEngineAdapter implements DuplexTransport {
           threadId: string(pending.params.threadId),
           outcome: "result" in message ? "succeeded" : "failed", pid: this.child?.pid ?? null,
         });
+        if ("result" in message) this.observeMetadataResult(pending.method, pending.params, message.result);
         if (this.messageSenders && "result" in message) message = { ...message, result: projectCodexMessageResult(
           this.projectSender, pending.method, pending.params, message.result) };
         if (this.validClientRequest(pending)) this.emit({
@@ -852,6 +881,8 @@ export class CodexEngineAdapter implements DuplexTransport {
     }
     if (message.method === "thread/goal/updated" && threadId) this.noteGoal(threadId, record(message.params).goal);
     if (message.method === "thread/goal/cleared" && threadId) this.noteGoal(threadId, null);
+    try { this.threadMetadata?.observeNotification(message); }
+    catch { this.diagnostic({ event: "thread-metadata-observation-failed" }); }
     if (this.messageSenders) message = projectCodexMessageNotification(this.projectSender, message);
     if (this.messageAttachments) message = projectCodexAttachmentNotification(this.messageAttachments, message);
     const targets = threadId ? this.threadTargets(threadId) : [];
@@ -1236,7 +1267,7 @@ export class CodexEngineAdapter implements DuplexTransport {
         this.internalRequests.delete(id);
         reject(new Error(`Codex ${method} delivery outcome is unknown after timeout`));
       }, timeoutMs);
-      this.internalRequests.set(id, { resolve, reject, timer, threadId: string(params.threadId), method });
+      this.internalRequests.set(id, { resolve, reject, timer, threadId: string(params.threadId), method, params });
       try {
         const write = this.writePhysical({ id, method, params });
         void write?.catch(error => {
@@ -1268,6 +1299,45 @@ export class CodexEngineAdapter implements DuplexTransport {
   private attachmentRecords(): CodexMessageAttachments {
     if (!this.messageAttachments) throw new Error("Codex message attachments are unavailable");
     return this.messageAttachments;
+  }
+
+  private installThreadMetadata(): void {
+    if (!this.options.createThreadMetadata || !this.hostState) return;
+    this.threadMetadata = this.options.createThreadMetadata(this.hostState.database, {
+      getSender: (threadId, messageId) => this.messageSenders?.get(threadId, messageId) ?? null,
+      hasSenders: threadId => this.messageSenders?.hasEmployees(threadId) === true,
+      readMessageIds: async (threadId, turnId) => {
+        const ids: string[] = [];
+        let cursor: string | null = null;
+        const cursors = new Set<string>();
+        for (let page = 0; page < 100; page++) {
+          const value = record(await this.requestPhysical("thread/items/list", {
+            threadId, ...(turnId ? { turnId } : {}), ...(cursor ? { cursor } : {}), limit: 100,
+          }));
+          if (!Array.isArray(value.data)) throw new Error("Invalid metadata history page");
+          for (const entry of value.data) {
+            const item = record(record(entry).item);
+            if (item.type === "userMessage") {
+              const id = string(item.clientId) || string(item.client_id) || string(item.clientUserMessageId);
+              if (id) ids.push(id);
+            }
+          }
+          if (value.nextCursor == null) return ids;
+          if (typeof value.nextCursor !== "string" || cursors.has(value.nextCursor)) throw new Error("Invalid metadata history cursor");
+          cursor = value.nextCursor; cursors.add(cursor);
+        }
+        throw new Error("Metadata history exceeds reconciliation limit");
+      },
+      notify: (method, params) => {
+        // Every initialized reader on this Host receives catalog metadata changes.
+        for (const clientId of this.initializedClients) this.emit({ method, params }, clientId);
+      },
+    });
+  }
+
+  private observeMetadataResult(method: string, params: RpcRecord, result: unknown): void {
+    try { this.threadMetadata?.observeResult(method, params, result); }
+    catch { this.diagnostic({ event: "thread-metadata-observation-failed" }); }
   }
 
   private readonly projectSender = (threadId: string, clientId: string, value: RpcRecord): RpcRecord => {
