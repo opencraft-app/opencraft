@@ -104,6 +104,7 @@ import {
   connectEnvironmentRuntimeRegistry,
   type EnvironmentDirectory,
   createAppServerWorkbenchRuntime,
+  createThreadViewFrameScheduler,
   createConversationActivationCoordinator,
   createConversationScopeLeaseRegistry,
   createConversationScopeRegistry,
@@ -1503,6 +1504,11 @@ export async function createWebWorkbenchApplicationSupervisor(
         };
         const normalizedConfig = providerLease.provider.validate(profile.providerConfig, providerContext);
         runtime = createAppServerWorkbenchRuntime({
+        frameScheduler: createThreadViewFrameScheduler((flush) => {
+          if (document.visibilityState === "hidden") return undefined;
+          const frame = requestAnimationFrame(flush);
+          return () => cancelAnimationFrame(frame);
+        }),
         modelSelectionPolicy: options.modelSelectionPolicy,
         hostId: profile.hostId,
         hostKind: profile.hostKind,

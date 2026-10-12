@@ -9,7 +9,7 @@ type SegmentedTextNode = Extract<ChatDocumentNode, { kind: "text" | "color-swatc
 function SegmentedText({ node, props }: { readonly node: SegmentedTextNode; readonly props: ChatNodeRendererProps }) {
   return <>{node.segments.map((segment, index) => (
     <span
-      className={segment.entering && !props.context.fadeTimeline?.isSettled(segment.key) ? "chat-stream-fade-in" : undefined}
+      className={segment.entering && !props.context.fadeTimeline?.isSettled(segment.key, performance.now()) ? "chat-stream-fade-in" : undefined}
       data-chat-stream-enter={segment.entering || undefined}
       key={segment.key}
       ref={segment.entering && props.context.fadeTimeline !== undefined ? (element) => {
@@ -17,7 +17,7 @@ function SegmentedText({ node, props }: { readonly node: SegmentedTextNode; read
         const delayMs = props.context.fadeTimeline?.delayFor(segment.key, performance.now()) ?? 0;
         element.style.setProperty("--fade-delay", `${delayMs}ms`);
       } : undefined}
-      style={segment.entering ? { "--fade-delay": `${props.context.fadeTimeline?.cachedDelayFor(segment.key) ?? index * 16}ms` } as CSSProperties : undefined}
+      style={segment.entering ? { "--fade-delay": `${props.context.fadeTimeline?.cachedDelayFor(segment.key, performance.now()) ?? Math.min(index * 16, 96)}ms` } as CSSProperties : undefined}
       onAnimationEnd={(event) => {
         if (event.target !== event.currentTarget) return;
         props.context.fadeTimeline?.settle(segment.key);

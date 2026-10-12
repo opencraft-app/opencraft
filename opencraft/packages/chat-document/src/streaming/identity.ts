@@ -9,6 +9,39 @@ export interface IdentityReconciliationResult {
   readonly nextIdentity: number;
 }
 
+let wordSegmenter: { segment(input: string): Iterable<{ segment: string; isWordLike?: boolean }> } | undefined;
+const wordSegmentsByNode = new WeakMap<ChatDocumentNode, readonly string[]>();
+const settledNodes = new WeakMap<ChatDocumentNode, ChatDocumentNode>();
+
+function wordsForNode(node: Extract<ChatDocumentNode, { kind: "text" | "reference" | "color-swatch" }>): readonly string[] {
+  const cached = wordSegmentsByNode.get(node);
+  if (cached !== undefined) return cached;
+  const words = segmentWords(node.text);
+  wordSegmentsByNode.set(node, words);
+  return words;
+}
+
+/** Entering is a one-commit observation, not a property of immutable syntax. */
+function settledNode(node: ChatDocumentNode): ChatDocumentNode {
+  const cached = settledNodes.get(node);
+  if (cached !== undefined) return cached;
+  let result = node;
+  if (node.kind === "text" || node.kind === "reference" || node.kind === "color-swatch") {
+    if (node.segments.some((segment) => segment.entering)) {
+      result = { ...node, segments: node.segments.map((segment) => segment.entering ? { ...segment, entering: false } : segment) };
+    }
+  } else if (node.kind === "table") {
+    result = { ...node, header: node.header.map((cell) => cell.map(settledNode)),
+      rows: node.rows.map((row) => row.map((cell) => cell.map(settledNode))) };
+  } else if ("children" in node) {
+    const children = node.children.map(settledNode);
+    if (children.some((child, index) => child !== node.children[index])) result = withChildren(node, children);
+  }
+  settledNodes.set(node, result);
+  settledNodes.set(result, result);
+  return result;
+}
+
 function compatible(left: ChatDocumentNode | undefined, right: ChatDocumentNode): boolean {
   if (left === undefined || left.kind !== right.kind) return false;
   if (left.kind === "math" && right.kind === "math") return left.display === right.display;
@@ -107,7 +140,8 @@ function segmentWords(text: string): readonly string[] {
     }).Segmenter;
     if (Segmenter !== undefined) {
       const result: string[] = [];
-      for (const part of new Segmenter(undefined, { granularity: "word" }).segment(text)) {
+      wordSegmenter ??= new Segmenter(undefined, { granularity: "word" });
+      for (const part of wordSegmenter.segment(text)) {
         if (part.isWordLike || result.length === 0) result.push(part.segment);
         else result[result.length - 1] = `${result[result.length - 1] ?? ""}${part.segment}`;
       }
@@ -140,7 +174,7 @@ function collectSegmentContents(nodes: readonly ChatDocumentNode[]): string[] {
   const result: string[] = [];
   for (const node of nodes) {
     if (node.kind === "text" || node.kind === "reference" || node.kind === "color-swatch") {
-      result.push(...segmentWords(node.text));
+      result.push(...wordsForNode(node));
       continue;
     }
     if (node.kind === "table") {
@@ -266,7 +300,7 @@ function reconcileNodeList(
     if (prior !== undefined) usedPrevious.add(prior);
     const stableKey = prior?.stableKey || `${documentId}:node:${identity.value++}`;
     if (node.kind === "text" || node.kind === "reference" || node.kind === "color-swatch") {
-      const count = segmentWords(node.text).length;
+      const count = wordsForNode(node).length;
       const segments = segmentAssignments.values.slice(segmentAssignments.cursor, segmentAssignments.cursor + count);
       segmentAssignments.cursor += count;
       return {
@@ -307,24 +341,35 @@ export function reconcileChatDocumentIdentity(
   previous: ChatDocumentSnapshot | null,
   nextIdentity: number,
   streaming: boolean,
+  previousParsedNodes: readonly ChatDocumentNode[] = [],
 ): IdentityReconciliationResult {
   const identity = { value: nextIdentity };
+  let prefixCount = 0;
+  if (streaming && previous !== null) {
+    while (prefixCount < nodes.length && prefixCount < previous.nodes.length
+      && nodes[prefixCount] === previousParsedNodes[prefixCount]) prefixCount += 1;
+  }
+  const tailNodes = nodes.slice(prefixCount);
+  const previousTail = previous?.nodes.slice(prefixCount) ?? [];
   const segments = reconcileGlobalSegments(
     documentId,
-    collectSegmentContents(nodes),
-    collectTextSegments(previous?.nodes ?? []),
+    collectSegmentContents(tailNodes),
+    collectTextSegments(previousTail),
     streaming,
     identity,
   );
   return {
-    nodes: reconcileNodeList(
-      nodes,
-      previous?.nodes ?? [],
-      documentId,
-      identity,
-      streaming,
-      { values: segments, cursor: 0 },
-    ),
+    nodes: [
+      ...(previous?.nodes.slice(0, prefixCount).map(settledNode) ?? []),
+      ...reconcileNodeList(
+        tailNodes,
+        previousTail,
+        documentId,
+        identity,
+        streaming,
+        { values: segments, cursor: 0 },
+      ),
+    ],
     nextIdentity: identity.value,
   };
 }

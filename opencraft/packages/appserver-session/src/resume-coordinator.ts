@@ -6,6 +6,7 @@ import type { HydratedThreadHistory, ResumeHistoryContext } from "./history-stra
 import { mergeTurns, reconcileHistoryTurns, reconcileHistoryWindow } from "./merge-turns";
 import type { ThreadStreamRole, ThreadView } from "./models";
 import { resolveThreadId } from "./notification-buffer";
+import type { ThreadViewFrameScheduler } from "./view-store";
 
 declare module "@deepseek-ai/cordis" {
   interface Context {
@@ -14,6 +15,13 @@ declare module "@deepseek-ai/cordis" {
 }
 
 export type AppServerHostKind = "local" | "remote-ssh" | "durable" | "remote-control" | "wsl";
+
+const TEXT_DELTA_METHODS = new Set([
+  "item/agentMessage/delta",
+  "item/plan/delta",
+  "item/reasoning/summaryTextDelta",
+  "item/reasoning/textDelta",
+]);
 
 export interface ThreadResumeCoordinatorConfig {
   client: AppServerClient;
@@ -24,6 +32,7 @@ export interface ThreadResumeCoordinatorConfig {
   pageSize?: number;
   requestTimeoutMs?: number;
   drainTailHistory?: boolean;
+  frameScheduler?: ThreadViewFrameScheduler;
 }
 
 export interface ResumeThreadOptions {
@@ -117,7 +126,7 @@ export class ThreadResumeCoordinatorService extends Service {
 
     const removeNotification = this.client.subscribeNotification((notification) => {
       const threadId = resolveThreadId(notification.params);
-      if (threadId === null || ctx.threadViews.get(threadId) === null) return;
+      if (threadId === null || !ctx.threadViews.has(threadId)) return;
       if (notification.method === "thread/history/preview") {
         const params = notification.params;
         if (!isRecord(params) || typeof params.token !== "string" || params.token !== this.previewTokens.get(threadId) || !Array.isArray(params.turns)) return;
@@ -128,7 +137,14 @@ export class ThreadResumeCoordinatorService extends Service {
         }));
         return;
       }
-      ctx.threadViews.update(threadId, (current) => ctx.threadNotificationProjectors.project(current, notification));
+      const project = (current: ThreadView) => ctx.threadNotificationProjectors.project(current, notification);
+      const params = notification.params as Record<string, unknown> | null;
+      if (TEXT_DELTA_METHODS.has(notification.method) && typeof params?.delta === "string") {
+        ctx.threadViews.queueProjection(threadId, this.client.connectionGeneration, project, params.delta.length * 2);
+      } else {
+        // Lifecycle/replacement/unknown notifications are ordered flush barriers.
+        ctx.threadViews.update(threadId, project);
+      }
     });
     const removeStatus = this.client.subscribeStatus((status) => {
       if (status.state !== "closed" && status.state !== "failed") return;

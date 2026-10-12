@@ -268,7 +268,7 @@ export function createReferenceRenderer(resources: ChatResourcePolicyService) {
     const decision = referenceTarget === null ? null : resources.resolve(referenceTarget, context);
     const contents = node.segments.map((segment, index) => (
       <span
-        className={segment.entering && !context.fadeTimeline?.isSettled(segment.key) ? "chat-stream-fade-in" : undefined}
+        className={segment.entering && !context.fadeTimeline?.isSettled(segment.key, performance.now()) ? "chat-stream-fade-in" : undefined}
         key={segment.key}
         onAnimationEnd={(event) => {
           if (event.target !== event.currentTarget) return;
@@ -282,7 +282,7 @@ export function createReferenceRenderer(resources: ChatResourcePolicyService) {
           if (element === null) return;
           element.style.setProperty("--fade-delay", `${context.fadeTimeline?.delayFor(segment.key, performance.now()) ?? 0}ms`);
         } : undefined}
-        style={segment.entering ? { "--fade-delay": `${context.fadeTimeline?.cachedDelayFor(segment.key) ?? index * 16}ms` } as CSSProperties : undefined}
+        style={segment.entering ? { "--fade-delay": `${context.fadeTimeline?.cachedDelayFor(segment.key, performance.now()) ?? Math.min(index * 16, 96)}ms` } as CSSProperties : undefined}
       >{segment.text}</span>
     ));
     if (decision === null || !decision.allowed || decision.target === null) {

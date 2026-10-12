@@ -2,12 +2,14 @@ import { ChatDocumentCompiler, type ChatDocumentCompilerOptions } from "../compi
 import type {
   ChatDocumentCompileCandidate,
   ChatDocumentSnapshot,
+  ChatDocumentNode,
 } from "../model";
 import { reconcileChatDocumentIdentity } from "./identity";
 
 export class ChatDocumentStreamingSession {
   private committed: ChatDocumentSnapshot | null = null;
   private nextIdentity = 0;
+  private committedParsedNodes: readonly ChatDocumentNode[] = [];
 
   constructor(
     readonly documentId: string,
@@ -29,6 +31,7 @@ export class ChatDocumentStreamingSession {
       base,
       this.nextIdentity,
       options.streaming === true,
+      this.committedParsedNodes,
     );
     const snapshot: ChatDocumentSnapshot = {
       documentId: this.documentId,
@@ -46,6 +49,7 @@ export class ChatDocumentStreamingSession {
         // An abandoned concurrent render cannot overwrite a newer snapshot.
         if (this.committed !== base) return;
         this.committed = snapshot;
+        this.committedParsedNodes = parsed.nodes;
         this.nextIdentity = reconciled.nextIdentity;
       },
     };
