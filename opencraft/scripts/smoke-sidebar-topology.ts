@@ -23,7 +23,7 @@ createRoot(document.getElementById('root')).render(<App/>);`;
 const vite = await createServer({ configFile: false, root: process.cwd(), logLevel: "error", resolve: { dedupe: ["react", "react-dom"] }, cacheDir: "node_modules/.vite-sidebar-topology", esbuild: { jsx: "automatic" }, server: { host: "127.0.0.1", port: 0 },
   optimizeDeps: { include: ["react", "react-dom/client", "@radix-ui/react-dialog", "@radix-ui/react-dropdown-menu", "@radix-ui/react-popover", "@tanstack/react-query"] },
   plugins: [{ name: "shared-sidebar-fixture", resolveId: id => id === "/shared-probe.tsx" ? id : null, load: id => id === "/shared-probe.tsx" ? source : null,
-    configureServer(server) { server.middlewares.use((req, res, next) => { if (req.url !== "/") return next(); res.setHeader("content-type", "text/html"); res.end('<div id="root"></div><script type="module" src="/shared-probe.tsx"></script>'); }); },
+    configureServer(server) { server.middlewares.use((req, res, next) => { if (req.url !== "/") return next(); res.setHeader("content-type", "text/html"); res.end('<meta name="viewport" content="width=device-width, initial-scale=1"><div id="root"></div><script type="module" src="/shared-probe.tsx"></script>'); }); },
   }],
 });
 
@@ -82,6 +82,29 @@ try {
   const mobile=await floating.boundingBox();assert.ok(mobile && mobile.width<=366 && mobile.x>=0 && mobile.x+mobile.width<=390);
   await floating.getByRole('button',{name:'Kanban',exact:true}).click();await floating.waitFor({state:'hidden'});
   assert.equal(await page.getByLabel('Main draft').inputValue(),'Preserve draft');
+  // Exercise native touch hit testing: a programmatic click would miss an
+  // inherited pointer-events:none defect on the outside dismiss surface.
+  const touchPage=await browser.newPage({viewport:{width:390,height:844},hasTouch:true,isMobile:true,reducedMotion:"reduce"});
+  touchPage.on("pageerror",(e:Error)=>errors.push(e.message));
+  await touchPage.addInitScript("window.__name=value=>value");
+  await touchPage.goto(`http://127.0.0.1:${(vite.httpServer!.address() as any).port}`);
+  await touchPage.getByLabel('Main draft').fill('Keep touch draft');
+  await touchPage.evaluate(()=>(window as any).fixture.setOpen(false));
+  await touchPage.getByRole('button',{name:'Show sidebar',exact:true}).tap();
+  const touchPanel=touchPage.locator('.app-shell-floating-left-panel');await touchPanel.waitFor();
+  await touchPanel.getByRole('button',{name:'Local',exact:true}).tap();
+  assert.equal(await touchPanel.isVisible(),true,'inside interactions must retain the sidebar');
+  const touchBounds=await touchPanel.boundingBox();assert.ok(touchBounds && touchBounds.x+touchBounds.width<390);
+  const heading=await touchPage.getByRole('heading',{name:'Workspace',exact:true}).boundingBox();assert.ok(heading);
+  const point={x:(touchBounds.x+touchBounds.width+390)/2,y:heading.y+heading.height/2};
+  assert.equal(await touchPage.evaluate(({x,y})=>document.elementFromPoint(x,y)?.classList.contains('app-shell-floating-sidebar-dismiss'),point),true);
+  const actionsBefore=await touchPage.evaluate(()=>(window as any).fixture.actions.slice());
+  await touchPage.touchscreen.tap(point.x,point.y);await touchPanel.waitFor({state:'hidden'});
+  assert.deepEqual(await touchPage.evaluate(()=>(window as any).fixture.actions),actionsBefore,'closing touch must not activate covered content');
+  assert.equal(await touchPage.getByLabel('Main draft').inputValue(),'Keep touch draft');
+  await touchPage.touchscreen.tap(point.x,point.y);
+  assert.deepEqual(await touchPage.evaluate(()=>(window as any).fixture.actions),[...actionsBefore,'Main'],'content must recover after sidebar exit');
+  await touchPage.close();
   assert.deepEqual(errors,[]);
-  console.log(JSON.stringify({ok:true,geometry,held,mobile,checks:'single pane; shared DOM/draft/scroll; held resize; context-free route; mobile navigation dismiss'}));
+  console.log(JSON.stringify({ok:true,geometry,held,mobile,checks:'single pane; shared DOM/draft/scroll; held resize; context-free route; mobile navigation dismiss; outside touch consumes first tap and preserves draft'}));
 } finally {await browser?.close();await vite.close();}

@@ -1688,7 +1688,8 @@ the in-overlay rail (or opens the existing drawer on very narrow widths), never
 implicitly docks the entire Sidecar. Docking remains a separate header action.
 Escape/outside dismissal retires both explicit peek and pointer-hover intent.
 While floating, AppShell owns a transparent outside hit surface behind the
-sidebar and above the conversation. A tap dismisses the transient presentation
+sidebar and above the conversation. Its pointer hit testing explicitly overrides
+the non-interactive overlay host so blank-space taps reach it. A tap dismisses the transient presentation
 without dispatching the same activation to the covered conversation; it does
 not change the saved dock intent. Because this hit surface covers the viewport,
 its touch highlight must remain transparent rather than flashing the whole

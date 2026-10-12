@@ -422,6 +422,7 @@ html[data-timeline-tracks-visual-viewport="true"] .app-shell-root {
 }
 
 .app-shell-floating-sidebar-dismiss {
+  pointer-events: auto;
   position: fixed;
   z-index: 1;
   inset: 0;
