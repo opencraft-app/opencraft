@@ -1212,3 +1212,7 @@ CTL 的微信 claim 在实例本地保存私有扫码回滚快照，并返回 re
 微信 Profile 的变更由独立操作锁串行化；实例元数据锁只保护绑定读写和账号查重，网关 stop/restart 在释放实例锁后执行，并在重新获取锁后重读绑定，保留其他 Profile 的并发更新。回滚先标记 `recovery_required`，即使网关命令失败也恢复微信配置和账号文件；失败保留私有快照和原账号身份，返回 `WEIXIN_RECOVERY_FAILED`，再次 claim/release 可重试恢复，成功后才撤销恢复标记。旧预约不能清理新的扫码。快照使用可选的 runtime status helper，版本不兼容时保守恢复网关，不依赖私有 CLI 函数。
 
 删除 Bot 的 `CHANNEL_OCCUPIED` 使用 `details.channel` 区分 `weixin` / `whatsapp`；前端不能依赖 HTTP 传输会丢弃的内部错误包装文本。
+
+### GUI 浏览器首次启动的凭据存储（2026-10-12）
+
+LightVela 复用镜像浏览器的专用 GUI 启动入口显式选择 `--password-store=basic`，避免未通过 PAM 密码登录的 XFCE 云桌面首次启动等待默认钥匙环。该凭据存储安全取舍已经产品确认，只作用于 GUI 入口，不更改 Agent 浏览器参数、不删除用户钥匙环或浏览器数据。存量旧入口需要校验 manifest 后单独升级；源码变更不能代替两地域发布与 GUI 验收。详见 `ctl/docs/desktop-browser-reuse.md`。
