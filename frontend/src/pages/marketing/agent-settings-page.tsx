@@ -56,7 +56,7 @@ import { AgentSectionHeader } from "@/components/domain/agent-section-header";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { agentConversations, NewAgentChatDialog, useVelaImConsole, VelaImConversationView, VelaImSessionItems } from "@/features/vela-im/vela-im-console";
+import { agentConversations, NewAgentChatDialog, useVelaImConsole, useVelaImInviteLink, VelaImConversationView, VelaImSessionItems } from "@/features/vela-im/vela-im-console";
 import { isVelaImEnabled } from "@/features/vela-im/vela-im-env";
 import type { ConversationItem as VelaImConversation } from "@/features/vela-im/vela-im-model";
 import { useOpenClaw, type OpenClawBot } from "@/contexts/agent-context";
@@ -2860,6 +2860,10 @@ export const AgentSettingsPage = ({
   const [newAgentChatOpen, setNewAgentChatOpen] = useState(false);
   const [newChatMenuOpen, setNewChatMenuOpen] = useState(false);
   const velaImChatActive = activeSection === "chat" && velaImConversation !== null;
+  useVelaImInviteLink(velaIm, (conversation) => {
+    setVelaImConversation(conversation);
+    if (activeSection !== "chat") navigate(getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.chat, searchParams));
+  });
   const lastVisibleChatIdRef = useRef<string | null>(null);
   useEffect(() => {
     const visibleChatId = activeSection === "chat" ? selectedChatId ?? null : null;

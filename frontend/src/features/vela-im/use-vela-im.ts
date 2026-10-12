@@ -105,6 +105,11 @@ export function useVelaIm(lightvelaToken: string | null, lightvelaUserID: string
       observe("SDK_READY", () => setStatus("ready"));
       setConnection({ api, client, selfID: client.userID, selfName });
       setStatus("ready");
+      // Others see this person by their LightVela name, not the backend's placeholder.
+      if (selfName.trim()) {
+        void client.getMyProfile().then((profile: { nick?: string } | undefined) =>
+          profile?.nick === selfName ? undefined : client.updateMyProfile({ nick: selfName })).catch(() => undefined);
+      }
       const [list, friends, apps] = await Promise.allSettled([client.getConversations(), client.getFriends(), client.getFriendApplications()]);
       if (cancelled) return;
       if (list.status === "fulfilled") setConversations(toConversations(list.value));

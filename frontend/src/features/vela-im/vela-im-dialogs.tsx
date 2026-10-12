@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Check, Loader2, Search, UserMinus, UserPlus } from "lucide-react";
+import { Check, Link2, Loader2, MessageCircle, Search, UserMinus, UserPlus } from "lucide-react";
 import { platformGroupId, type GroupReplyMode, type ImGroup, type VelaHumanAPI } from "@vela/im-client";
 import type { VelaBrowserClient } from "@vela/im-client/browser";
 import { Badge } from "@/components/ui/badge";
@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useT } from "@/i18n/t";
 import { cn } from "@/lib/utils";
 import { VelaImAvatar } from "./vela-im-avatar";
-import { errorText, isAgentID, toMembers } from "./vela-im-model";
+import { errorText, groupInviteLink, isAgentID, toMembers } from "./vela-im-model";
 
 export interface Person {
   userID: string;
@@ -98,7 +98,7 @@ export function PeoplePicker({ candidates, selected, onChange, exclude = [] }: {
 }
 
 /** Group members, Agent reply rules and membership changes, all kept by the platform. */
-export function GroupSettingsDialog({ open, onOpenChange, client, api, groupID, groupName, selfID, candidates, onLeft }: {
+export function GroupSettingsDialog({ open, onOpenChange, client, api, groupID, groupName, selfID, candidates, onLeft, onMessage }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   client: VelaBrowserClient;
@@ -108,9 +108,12 @@ export function GroupSettingsDialog({ open, onOpenChange, client, api, groupID, 
   selfID: string;
   candidates: Person[];
   onLeft: () => void;
+  /** Open a single chat with a member. */
+  onMessage?: (userID: string, name: string) => void;
 }) {
   const t = useT();
   const platformID = platformGroupId(groupID);
+  const [inviteCopied, setInviteCopied] = useState(false);
   const [group, setGroup] = useState<ImGroup | null>(null);
   const [names, setNames] = useState<Record<string, string>>({});
   const [adding, setAdding] = useState<string[]>([]);
@@ -128,6 +131,7 @@ export function GroupSettingsDialog({ open, onOpenChange, client, api, groupID, 
     setAdding([]);
     setError("");
     setConfirmDismiss(false);
+    setInviteCopied(false);
     void load().catch((e: unknown) => setError(errorText(e, t("读取群信息失败"))));
   }, [open, groupID]);
   const role = group?.viewerRole ?? "member";
@@ -147,6 +151,15 @@ export function GroupSettingsDialog({ open, onOpenChange, client, api, groupID, 
   const nameOf = (userID: string) => names[userID] || candidates.find((c) => c.userID === userID)?.name || t("未命名成员");
   const members = [...(group?.members ?? [])].sort((a, b) => ["owner", "admin", "member"].indexOf(a.role) - ["owner", "admin", "member"].indexOf(b.role));
   const botOnly = !!members.length && members.every((m) => m.kind === "bot");
+  const mine = (userID: string) => candidates.some((c) => c.userID === userID && c.mine);
+  const canRemove = (m: (typeof members)[number]) => m.userId !== selfID && m.role !== "owner" &&
+    (canManage ? !(role === "admin" && m.role === "admin") : m.kind === "bot" && mine(m.userId));
+  const copyInvite = () => void act("invite", async () => {
+    if (!platformID || !api) return;
+    const invite = await api.createGroupInvite(platformID);
+    await navigator.clipboard.writeText(groupInviteLink(window.location.origin, invite.token));
+    setInviteCopied(true);
+  }, false);
   if (!platformID) {
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
@@ -198,7 +211,13 @@ export function GroupSettingsDialog({ open, onOpenChange, client, api, groupID, 
                 <PersonRow key={m.userId} person={{ userID: m.userId, name: m.userId === selfID ? `${nameOf(m.userId)}（${t("我")}）` : nameOf(m.userId) }}>
                   <div className="flex shrink-0 items-center gap-1.5">
                     <span className="text-xs text-black/45">{m.role === "owner" ? t("群主") : m.role === "admin" ? t("管理员") : t("成员")}</span>
-                    {canManage && m.userId !== selfID && m.role !== "owner" && !(role === "admin" && m.role === "admin") ? (
+                    {onMessage && m.userId !== selfID ? (
+                      <Button size="sm" variant="ghost" className={buttonClass} aria-label={t("给 {{name}} 发消息", { name: nameOf(m.userId) })}
+                        onClick={() => onMessage(m.userId, nameOf(m.userId))}>
+                        <MessageCircle className="size-3.5" />{t("发消息")}
+                      </Button>
+                    ) : null}
+                    {canRemove(m) ? (
                       <Button size="sm" variant="ghost" className={buttonClass} style={{ color: "var(--danger)" }} disabled={!!busy} aria-label={t("移出 {{name}}", { name: nameOf(m.userId) })}
                         onClick={() => void act(`kick:${m.userId}`, () => api!.removeGroupMember(platformID, m.userId))}>
                         {busy === `kick:${m.userId}` ? <Loader2 className="size-3.5 animate-spin" /> : <UserMinus className="size-3.5" />}{t("移出")}
@@ -212,7 +231,18 @@ export function GroupSettingsDialog({ open, onOpenChange, client, api, groupID, 
 
           {canManage ? (
             <section className="space-y-2">
-              <h3 className="text-sm font-semibold text-black/80">{t("邀请成员")}</h3>
+              <h3 className="text-sm font-semibold text-black/80">{t("邀请其他人")}</h3>
+              <p className="text-xs leading-5 text-black/50">{t("把链接发给对方，对方登录 LightVela 后打开即可入群，7 天内有效。")}</p>
+              <Button size="sm" variant="outline" className={buttonClass} disabled={!!busy} onClick={copyInvite}>
+                {busy === "invite" ? <Loader2 className="size-3.5 animate-spin" /> : inviteCopied ? <Check className="size-3.5" /> : <Link2 className="size-3.5" />}
+                {inviteCopied ? t("已复制邀请链接") : t("复制邀请链接")}
+              </Button>
+            </section>
+          ) : null}
+
+          {canManage || candidates.some((c) => c.mine) ? (
+            <section className="space-y-2">
+              <h3 className="text-sm font-semibold text-black/80">{canManage ? t("拉入成员") : t("拉入我的 Agent")}</h3>
               <PeoplePicker candidates={candidates} selected={adding} onChange={setAdding} exclude={members.map((m) => m.userId)} />
               <div className="flex justify-end">
                 <Button className={buttonClass} disabled={!adding.length || !!busy}

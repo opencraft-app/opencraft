@@ -4,6 +4,7 @@ import {
   applyAgentStatus,
   applyRevoked,
   bundleOf,
+  groupInviteLink,
   describeMessage,
   isAgentID,
   mergeMessages,
@@ -164,5 +165,11 @@ describe("vela-im model", () => {
     expect(working.GROUPg).toBeUndefined();
     expect(pruneWorking(working, 1000 + 25_000)).toEqual({});
     expect(applyAgentStatus({}, [{ ID: "t", from: "u", conversationID: "GROUPg", type: "TIMTextElem", payload: { text: "hi" } }])).toEqual({});
+  });
+
+  it("builds group invite links that the chat page recognises", () => {
+    const link = groupInviteLink("https://lightvela.com", "a.b/c+d");
+    expect(link).toBe("https://lightvela.com/agents/chat?imInvite=a.b%2Fc%2Bd");
+    expect(new URL(link).searchParams.get("imInvite")).toBe("a.b/c+d");
   });
 });

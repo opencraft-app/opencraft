@@ -257,6 +257,12 @@ export const agentStatus = (message: IMMessage): { state: "working" | "idle"; me
   }
 };
 
+/** URL parameter carrying a group invite; the chat page joins the group and opens it. */
+export const GROUP_INVITE_PARAM = "imInvite";
+
+export const groupInviteLink = (origin: string, token: string): string =>
+  `${origin}/agents/chat?${GROUP_INVITE_PARAM}=${encodeURIComponent(token)}`;
+
 /** Agents working in each conversation: conversationID → agent userID → when its last signal expires (ms). */
 export type WorkingAgents = Record<string, Record<string, number>>;
 

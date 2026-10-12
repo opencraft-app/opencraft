@@ -24,6 +24,7 @@ export interface BotAgent {
 }
 export interface ImGroupMember { userId:string; kind:IdentityKind; role:'owner'|'admin'|'member' }
 /** A platform group: membership and reply rules live in the LightVela backend, messages in Tencent IM. */
+export interface ImGroupInvite {groupId:string;token:string;expiresAt:string}
 export interface ImGroup {
   id:string; tencentGroupId:string; name:string; replyMode:GroupReplyMode; effectiveReplyMode:GroupReplyMode;
   contextMessages:number; state:'provisioning'|'active'|'dismissed'; revision:number;
@@ -69,7 +70,7 @@ export const PLATFORM_METHODS = ['me','createGroup','group','updateGroup','dismi
 export type PlatformMethod = typeof PLATFORM_METHODS[number];
 
 export const VELA_CAPABILITIES = {
- humanAPI:['imSession','bots','provisionBot','updateBot','deleteBot','rotateBotCredential','createGroup','group','updateGroup','dismissGroup','addGroupMember','removeGroupMember'],
+ humanAPI:['imSession','bots','provisionBot','updateBot','deleteBot','rotateBotCredential','createGroup','group','updateGroup','dismissGroup','addGroupMember','removeGroupMember','createGroupInvite','acceptGroupInvite'],
  botAPI:['session','me',...PLATFORM_METHODS.filter(m=>m!=='me')],
  imMethods:IM_METHODS,
  groupReplies:{modes:Object.values(GroupReplyModes),contextMessages:10,botGroupMode:'all',manageRoles:['owner','admin'],defaultMaxAgentHops:6},
@@ -143,6 +144,10 @@ export class VelaHumanAPI {
   dismissGroup(groupId:string) {return this.request<void>('DELETE',`/me/groups/${path(groupId)}`)}
   addGroupMember(groupId:string,userId:string) {return this.request<ImGroup>('PUT',`/me/groups/${path(groupId)}/members/${path(userId)}`)}
   removeGroupMember(groupId:string,userId:string) {return this.request<ImGroup>('DELETE',`/me/groups/${path(groupId)}/members/${path(userId)}`)}
+  /** A 7-day invite to this group; group owners and admins only. */
+  createGroupInvite(groupId:string) {return this.request<ImGroupInvite>('POST',`/me/groups/${path(groupId)}/invite-link`)}
+  /** Join a group with an invite someone shared; joining again is a no-op. */
+  acceptGroupInvite(token:string) {return this.request<ImGroup>('POST','/me/group-invites/accept',{token})}
 }
 
 /**

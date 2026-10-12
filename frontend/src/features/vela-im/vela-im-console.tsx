@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Bot, Check, Loader2, Plus, UserPlus, Users } from "lucide-react";
 import { platformGroupId, type IMMessage, type ImGroup } from "@vela/im-client";
 import { Badge } from "@/components/ui/badge";
@@ -15,7 +15,8 @@ import { VelaImPortraitContext, type VelaImPortrait } from "./vela-im-avatar";
 import { VelaImChat } from "./vela-im-chat";
 import { GroupSettingsDialog } from "./vela-im-dialogs";
 import { isVelaImEnabled } from "./vela-im-env";
-import { describeMessage, errorText, isAgentID, toMembers, type ConversationItem } from "./vela-im-model";
+import { describeMessage, errorText, GROUP_INVITE_PARAM, isAgentID, toMembers, type ConversationItem } from "./vela-im-model";
+import { toast } from "@/lib/toast";
 
 /** Connects the signed-in person to IM in the background; the chat page only surfaces conversations once ready. */
 export function useVelaImConsole(): VelaImController {
@@ -86,6 +87,32 @@ async function resolveAgents(im: VelaImController, options: AgentOption[], keys:
 const groupConversation = (group: ImGroup, name: string): ConversationItem => ({
   conversationID: `GROUP${group.tencentGroupId}`, kind: "GROUP", targetID: group.tencentGroupId, name, lastText: "", lastTime: 0, unread: 0, isPinned: false,
 });
+
+const directConversation = (userID: string, name: string): ConversationItem => ({
+  conversationID: `C2C${userID}`, kind: "C2C", targetID: userID, name, lastText: "", lastTime: 0, unread: 0, isPinned: false,
+});
+
+/** Joins the group in an invite link (`?imInvite=`) once IM is connected, then opens it; the token leaves the URL. */
+export function useVelaImInviteLink(im: VelaImController, onOpened: (conversation: ConversationItem) => void) {
+  const t = useT();
+  const handled = useRef(false);
+  const opened = useRef(onOpened);
+  opened.current = onOpened;
+  const connection = im.connection;
+  useEffect(() => {
+    if (handled.current || !connection || typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    const token = url.searchParams.get(GROUP_INVITE_PARAM);
+    if (!token) return;
+    handled.current = true;
+    url.searchParams.delete(GROUP_INVITE_PARAM);
+    window.history.replaceState(window.history.state, "", url.toString());
+    void connection.api.acceptGroupInvite(token).then((group) => {
+      opened.current(groupConversation(group, group.name));
+      void im.refreshConversations();
+    }, (e: unknown) => toast.error(errorText(e, t("加入群聊失败"))));
+  }, [connection, im, t]);
+}
 
 function AgentPicker({ options, selected, onChange, exclude = [] }: {
   options: AgentOption[];
@@ -330,6 +357,7 @@ export function VelaImConversationView({ im, bots, conversation, onOpen, onClose
           selfID={connection.selfID}
           candidates={im.agents.filter((a) => a.state === "ready").map((a) => ({ userID: a.userId, name: a.displayName, mine: true }))}
           onLeft={() => { onClose(); void im.refreshConversations(); }}
+          onMessage={(userID, name) => { setDialog(null); onOpen(directConversation(userID, name)); }}
         />
       ) : null}
     </div>
