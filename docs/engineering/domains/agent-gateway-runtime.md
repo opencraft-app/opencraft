@@ -11,6 +11,8 @@ OpenCraft 内置本地 Codex 的 Web 与 Electron Host profile 默认启用自�
 
 平台网关的 Hermes `custom/auto` 模型使用模型级 `supports_vision: true` 声明图片输入能力；`auto` 是网关别名，不能依赖公共模型目录推断。CTL 初始化（含 ACLI 与 harness 路径）在模型写入后补齐并回读该字段，前端恢复平台默认配置时在重建 provider 后声明并验证能力。恢复默认配置同时清除旧主模型的顶层 `model.supports_vision`，避免它覆盖新默认模型的声明；用户显式的图片路由策略仍保留。此契约不为其他模型声明能力，不要求重做 CVM 镜像，也不自动修改存量实例。相关实现与回归测试见 `ctl/pkg/instance/async.go`、`ctl/pkg/instance/auto_vision_test.go`、`frontend/src/pages/marketing/agent-model-config/hermes-model-config-command.ts`。
 
+Hermes 默认模型目录投影与已有会话使用同一提供商身份匹配：接受目录的 `slug`、名称及明确声明的 `aliases`，不通过删除 `custom:` 前缀猜测身份。默认模型仍须属于该提供商且通过现有可用性过滤；例如配置 `custom:custom / auto`、目录 `slug=custom, aliases=[custom:custom]` 时，AppServer 默认模型应为目录规范身份 `custom / auto`。该投影不改写 Profile 配置、凭据或已有会话的模型选择。
+
 ## 渠道聊天记录只读接口（待启用）
 
 CTL 的 `/v1/instances/{id}/bots/{bot_id}/channel-sessions` 与消息子资源按登录账号限定实例。每次请求在一条地域 TAT 命令中读取 Hermes Profile 列表、确认 Bot 仍存在，再只读打开对应 Profile 的 `state.db`；不缓存 Bot/Profile 映射。数据库文件路径隔离 Bot；当前非 multiplex 部署下每个 Profile 的渠道会话键都使用 `agent:main:` 命名空间，缺少这一渠道会话键的记录不返回。列表和消息均分页，消息投影只包含用户与助手文本，排除工具调用和原始推理。
