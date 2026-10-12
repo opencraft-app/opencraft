@@ -108,6 +108,7 @@ class PluginTest(unittest.TestCase):
 class AdapterTest(unittest.IsolatedAsyncioTestCase):
     def adapter(self, client):
         adapter = object.__new__(VelaAdapter); adapter.client = client; adapter._lineage = {}; adapter.user_id = 'a_self'
+        adapter._turns, adapter._waiting, adapter._rechecked = {}, {}, set()
         return adapter
 
     async def test_adapter_starts_its_worker_on_connect_and_stops_it_on_disconnect(self):
@@ -182,6 +183,39 @@ class AdapterTest(unittest.IsolatedAsyncioTestCase):
         for message_id in ('yes', 'no'):
             await adapter._receive({'ID': message_id, 'from': 'u_a', 'type': 'TIMTextElem', 'conversationID': 'GROUPvg_g', 'payload': {'text': 'hi'}})
         self.assertEqual([e['message_id'] for e in adapter.handled], ['yes'])
+
+    async def test_group_messages_wait_for_the_running_turn_instead_of_interrupting_it(self):
+        def prepared(message_id):
+            return {'shouldReply': True, 'message': {'ID': message_id, 'from': 'u_a', 'type': 'TIMTextElem',
+                    'conversationID': 'GROUPvg_g', 'payload': {'text': 'hi'}}, 'policy': {'contextMessages': 0},
+                    'context': [], 'contextStatus': 'not_requested'}
+        adapter = self.commanded('owner', prepared=prepared)
+        for message_id in ('first', 'second', 'third'):
+            await adapter._receive({'ID': message_id, 'from': 'u_a', 'type': 'TIMTextElem', 'conversationID': 'GROUPvg_g', 'payload': {'text': 'hi'}})
+        await adapter._receive({'ID': 'dm', 'from': 'u_a', 'type': 'TIMTextElem', 'conversationID': 'C2Cu_a', 'payload': {'text': 'hi'}})
+        self.assertEqual([e['message_id'] for e in adapter.handled], ['first', 'dm'])
+        done = lambda message_id, chat_id: types.SimpleNamespace(message_id=message_id, source=types.SimpleNamespace(chat_id=chat_id))
+        await adapter.on_processing_complete(done('first', 'GROUPvg_g'), 'success')
+        await asyncio.sleep(0)
+        self.assertEqual([e['message_id'] for e in adapter.handled], ['first', 'dm', 'second'])
+
+        await adapter._receive({'ID': 'stop', 'from': 'u_owner', 'type': 'TIMTextElem', 'conversationID': 'GROUPvg_g',
+                                'atUserList': ['a_self'], 'payload': {'text': '@Hermes Alpha /stop'}})
+        self.assertEqual(adapter.handled[-1]['text'], '/stop')
+        self.assertNotIn('third', adapter.state['pending'])
+        await adapter.on_processing_complete(done('second', 'GROUPvg_g'), 'success')
+        await asyncio.sleep(0)
+        self.assertNotIn('third', [e['message_id'] for e in adapter.handled])
+
+    async def test_pending_group_messages_are_rechecked_against_current_rules_after_a_restart(self):
+        decisions = {'kept': True, 'stale': False}
+        adapter = self.commanded('owner', prepared=lambda message_id: {'shouldReply': decisions[message_id]})
+        message = lambda message_id: {'ID': message_id, 'from': 'a_peer', 'type': 'TIMTextElem', 'conversationID': 'GROUPvg_g', 'payload': {'text': 'hi'}}
+        adapter.state['pending'] = {m: {'message': message(m), 'attempts': 0} for m in ('stale', 'kept')}
+        for message_id in ('stale', 'kept'):
+            await adapter._replay(message_id, message(message_id))
+        self.assertEqual(list(adapter.state['pending']), ['kept'])
+        self.assertEqual([e['message_id'] for e in adapter.handled], ['kept'])
 
     async def test_agent_recognises_its_owner_in_ordinary_messages(self):
         adapter = self.commanded('owner')

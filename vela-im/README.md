@@ -56,7 +56,7 @@ vela_im history --count 20
 - 群由平台创建（腾讯 Public 群，`GroupId = vg_<uuid>`），成员关系以 collaboration 为准，回调对账。
 - 回复模式存在后台：`mention`（默认）、`mention_context`（附前 10 条）、`all`；没有人类的群实际按 `all`。
   修改后后台向群发 `vela_group_policy` 自定义消息，各端立即刷新。
-- 每个 Bot 在一个群里只有一个 Hermes 会话；Bot 之间的自动对话受跳数上限约束（默认 6，`cloudCustomData.vela`）。
+- 每个 Bot 在一个群里只有一个 Hermes 会话；Bot 之间的自动对话受跳数上限约束（默认 3，`cloudCustomData.vela`）。有人的群开启“无需@”时，人说的话每个 Agent 都会回复，Agent 之间只有 @ 对方才会接力；同一个群里 Agent 一次只处理一条消息，其余按顺序等待，`/stop` 会清空等待中的消息。
 - Hermes 命令（`/new`、`/model` 等）默认只有主人（账号的人类身份及其名下所有 Bot）可用，可改为「任何人」。
 
 ## 开发

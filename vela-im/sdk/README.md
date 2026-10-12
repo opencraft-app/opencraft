@@ -77,4 +77,4 @@ worker 用凭据文件换 1 小时访问令牌与 UserSig（第 45 分钟续换�
 | `all` | 每条普通消息触发 |
 
 没有人类的群实际按 `all`。`prepareGroupReply` 排除自己的消息、撤回、群系统通知、`vela_group_policy` 规则通知和达到跳数上限的消息
-（默认 6，`cloudCustomData.vela.hops`）；自动回复用 `replyCustomData(input.lineage)` 生成下一跳。
+（默认 3，`cloudCustomData.vela.hops`）；自动回复用 `replyCustomData(input.lineage)` 生成下一跳。

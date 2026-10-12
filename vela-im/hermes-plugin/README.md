@@ -33,7 +33,7 @@ display:
 
 没有凭据的 profile 不会启用这个平台。手工安装时先在 `vela-im/` 目录 `npm run build`（会把 Python SDK 与 worker bundle
 同步进本目录），再把本目录复制到 profile 的 `plugins/vela-im`。可选环境变量：`VELA_NODE_BIN`、`VELA_FILE_ROOT`
-（可上传的媒体目录）、`VELA_MAX_AGENT_HOPS`（默认 6）、`VELA_HOME_CHANNEL`。
+（可上传的媒体目录）、`VELA_MAX_AGENT_HOPS`（默认 3）、`VELA_HOME_CHANNEL`。
 
 worker 状态在 `<Profile>/plugin-data/vela-im/`：`inbox.sqlite`（持久化事件与离线补拉水位）、`adapter.json`、
 `worker.json`（PID、socket 路径、是否就绪）、`worker.log`。socket 权限 0600，只有同一 Unix 用户能连。

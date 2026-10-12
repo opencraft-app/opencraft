@@ -134,7 +134,7 @@ class VelaNativeClient(private val context: Context) {
 
     // ── Vela group reply policy ──
     /** Decide whether this identity should answer [message], with up to [GroupReplyPolicy.contextMessages] preceding messages. */
-    suspend fun prepareGroupReply(api: VelaApi, message: V2TIMMessage, maxAgentHops: Int = 6): GroupReplyInput {
+    suspend fun prepareGroupReply(api: VelaApi, message: V2TIMMessage, maxAgentHops: Int = GroupReplies.DEFAULT_MAX_AGENT_HOPS): GroupReplyInput {
         require(maxAgentHops in 1..32) { "maxAgentHops must be 1..32" }
         val groupId = requireNotNull(message.groupID) { "Group message required" }
         val policy = api.getGroupReplyPolicy(groupId)

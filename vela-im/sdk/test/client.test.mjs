@@ -92,6 +92,21 @@ test('admission and lineage are identical for humans and bots; the platform poli
  const looped=m({cloudCustomData:replyCustomData({chainId:'root',hops:5})});
  assert.deepEqual(readLineage(looped),{chainId:'root',hops:6});
  assert.equal(groupReplyReason(looped,'a_self',{effectiveMode:'all'}),'hop_limit');
+ const third=m({cloudCustomData:replyCustomData({chainId:'root',hops:2})});
+ assert.equal(groupReplyReason(third,'a_self',{effectiveMode:'all'}),'hop_limit','three Agent hops by default');
+});
+
+test('"no @ needed" wakes every Agent for people, but Agents hand off to each other only by @ when people are present',()=>{
+ const members=[{userId:'u_owner',kind:'human',role:'owner'},{userId:'a_peer',kind:'bot',role:'member'},{userId:'a_self',kind:'bot',role:'member'}];
+ const withPeople={effectiveMode:'all',members};
+ const said=(from,extra={})=>({ID:'m',from,type:'TIMTextElem',payload:{text:'hi'},...extra});
+ assert.equal(groupReplyReason(said('u_owner'),'a_self',withPeople),'accepted');
+ const answer=said('a_peer',{cloudCustomData:replyCustomData({chainId:'root',hops:0})});
+ assert.equal(groupReplyReason(answer,'a_self',withPeople),'agent_not_mentioned');
+ assert.equal(groupReplyReason({...answer,atUserList:['a_self']},'a_self',withPeople),'accepted');
+ assert.equal(groupReplyReason(said('a_peer'),'a_self',withPeople),'agent_not_mentioned','an Agent posting without lineage is still an Agent');
+ const agentsOnly={effectiveMode:'all',members:members.filter(m=>m.kind==='bot')};
+ assert.equal(groupReplyReason(answer,'a_self',agentsOnly),'accepted');
 });
 
 test('platform group IDs round-trip between UUID and Tencent GroupId; foreign groups default to mention-only',()=>{

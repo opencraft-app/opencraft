@@ -42,13 +42,18 @@ data class GroupReplyInput(
 
 object GroupReplies {
     private const val AT_ALL = "__kImSDK_MesssageAtALL__"
+    const val DEFAULT_MAX_AGENT_HOPS = 3
+    /** The platform issues Agent IM user IDs with this prefix. */
+    const val AGENT_ID_PREFIX = "a_"
 
-    fun reason(message: V2TIMMessage, userId: String, policy: GroupReplyPolicy, maxAgentHops: Int = 6): String = when {
+    /** "No @ needed" chosen by people covers what people say; Agents still hand off to each other only by @. */
+    fun reason(message: V2TIMMessage, userId: String, policy: GroupReplyPolicy, maxAgentHops: Int = DEFAULT_MAX_AGENT_HOPS): String = when {
         message.sender == userId -> "self"
         message.status == V2TIMMessage.V2TIM_MSG_STATUS_LOCAL_REVOKED -> "revoked"
         message.elemType == V2TIMMessage.V2TIM_ELEM_TYPE_GROUP_TIPS -> "system"
         Lineage.of(message).hops >= maxAgentHops -> "hop_limit"
         policy.effectiveMode != GroupReplyMode.ALL && !mentions(message, userId) -> "not_mentioned"
+        policy.mode == GroupReplyMode.ALL && message.sender.orEmpty().startsWith(AGENT_ID_PREFIX) && !mentions(message, userId) -> "agent_not_mentioned"
         else -> "accepted"
     }
 

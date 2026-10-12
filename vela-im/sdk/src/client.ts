@@ -1,5 +1,5 @@
 import {
- VelaError,FACTORIES,SDK_METHODS,VELA_CAPABILITIES,assertMethod,normalizeGroupID,groupReplyReason,readLineage,isSystemMessage,
+ VelaError,FACTORIES,SDK_METHODS,VELA_CAPABILITIES,assertMethod,normalizeGroupID,groupReplyReason,readLineage,isSystemMessage,DEFAULT_MAX_AGENT_HOPS,
  type Attachment,type MessageInput,type MessageKind,type Credentials,type GroupReplyInput,type GroupReplyPolicy,type IMMessage,
  type FriendApplication,type VelaCapabilities,
 } from './index.ts';
@@ -218,7 +218,7 @@ export class VelaIMClient {
   * 10 preceding messages when the rules ask for them.
   */
  async prepareGroupReply(message:IMMessage,policy:GroupReplyPolicy,options:{maxAgentHops?:number}={}):Promise<GroupReplyInput> {
-  const maxAgentHops=options.maxAgentHops??6;
+  const maxAgentHops=options.maxAgentHops??DEFAULT_MAX_AGENT_HOPS;
   if(!Number.isInteger(maxAgentHops)||maxAgentHops<1||maxAgentHops>32)throw new VelaError('maxAgentHops 必须在 1 到 32 之间','INVALID_HOPS',400);
   if(!message?.conversationID?.startsWith('GROUP'))throw new VelaError('需要群消息','NOT_GROUP_MESSAGE',400);
   const reason=groupReplyReason(message,this.userID,policy,maxAgentHops);

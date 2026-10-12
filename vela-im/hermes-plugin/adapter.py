@@ -53,6 +53,8 @@ def quoted(message):
 
 
 BUNDLE_WAIT_SECONDS = 30
+# A group turn that never reports completion (older Hermes, crashed run) stops holding the queue after this long.
+GROUP_TURN_TIMEOUT_SECONDS = 600
 
 
 def bundle_of(message):
@@ -78,7 +80,7 @@ def chain(message):
         return {"chainId": str(message.get("ID") or uuid4().hex), "hops": 0}
 
 
-def should_reply(message, user_id, group_mode="mention", max_hops=6):
+def should_reply(message, user_id, group_mode="mention", max_hops=3):
     """Direct chats and groups the platform admitted. Group admission itself comes from the platform rules."""
     if message.get("from") == user_id or message.get("isRevoked"):
         return False
@@ -178,12 +180,17 @@ class VelaAdapter(BasePlatformAdapter):
         # One Agent → one worker: the adapter owns its lifecycle; the vela_im CLI attaches to the same worker.
         self.worker = worker_for()
         self.client = None
-        self.max_hops = int(extra.get("max_agent_hops") or setting("VELA_MAX_AGENT_HOPS", "6"))
+        self.max_hops = int(extra.get("max_agent_hops") or setting("VELA_MAX_AGENT_HOPS", "3"))
         self._poll_task = None
         self._inflight = set()
         self._lineage = {}
         self._bundles = {}  # bundle id -> {"at": monotonic time, "parts": [attachment messages]}
         self._heartbeats = {}  # message id -> task re-announcing "working" while Hermes processes it
+        # Hermes interrupts a running turn whenever its session gets a new message; in a group every other member's
+        # message would cut this Agent off. Group chats therefore answer one message at a time, in order.
+        self._turns = {}  # group chat id -> (message id, monotonic start) of the turn Hermes is running there
+        self._waiting = {}  # group chat id -> messages that arrived during that turn
+        self._rechecked = set()  # pending group messages already checked against the current rules in this process
         self.user_id = ""
         self.identity_name = ""
         # Until the platform answers, commands are owner-only and no owner is known: nobody may command.
@@ -247,7 +254,7 @@ class VelaAdapter(BasePlatformAdapter):
                     await self._attach()  # the worker died: start a fresh one; its durable inbox keeps the cursor valid
                 for message_id, record in list(self.state["pending"].items()):
                     if message_id not in self._inflight and record.get("attempts", 0) < 5:
-                        await self._dispatch(record["message"])
+                        await self._replay(message_id, record["message"])
                 result = await asyncio.to_thread(self.client.events, self.state["cursor"], 25000)
                 for item in result["events"]:
                     if item["event"] == "MESSAGE_RECEIVED":
@@ -269,6 +276,28 @@ class VelaAdapter(BasePlatformAdapter):
                 logger.exception("Vela polling failed; retrying")
                 await asyncio.sleep(delay)
                 delay = min(delay * 2, 30)
+
+    async def _replay(self, message_id, message):
+        """Pending group messages from before a restart face the group's current rules once more, so a rule change or a
+        runaway Agent exchange does not come back to life."""
+        if message.get("conversationID", "").startswith("GROUP") and message_id not in self._rechecked:
+            self._rechecked.add(message_id)
+            if not await self._still_admitted(message):
+                logger.info("Vela pending message %s no longer admitted by the group rules; dropped", message_id)
+                self.state["pending"].pop(message_id, None)
+                self._save()
+                return
+        await self._dispatch(message)
+
+    async def _still_admitted(self, message):
+        if chain(message)["hops"] >= self.max_hops:
+            return False
+        try:
+            prepared = await asyncio.to_thread(self.client.prepare_group_reply, message["ID"], self.max_hops)
+        except VelaHTTPError as error:
+            if error.status not in (403, 404): raise
+            return False
+        return bool(prepared["shouldReply"])
 
     async def _flush_bundles(self):
         """Attachments whose text never arrived are handled on their own."""
@@ -361,6 +390,14 @@ class VelaAdapter(BasePlatformAdapter):
             await self.send(chat_id, f"只有我的主人可以对我使用 Hermes 命令（{command.split()[0]}）。")
             return
         logger.info("Vela command accepted identity=%s sender=%s command=%s", self.user_id, message.get("from"), command.split()[0])
+        if command.split()[0].lower() == "/stop":
+            # Stopping means stopping: drop what was waiting behind the current turn too.
+            dropped = self._waiting.pop(chat_id, [])
+            for waiting in dropped:
+                self.state["pending"].pop(waiting["ID"], None)
+            if dropped:
+                logger.info("Vela /stop dropped %d waiting messages identity=%s chat=%s", len(dropped), self.user_id, chat_id)
+                self._save()
         # allow_gateway_control keeps its default (True): this event is a gateway command, not chat content.
         await self.handle_message(MessageEvent(text=command, message_type=MessageType.TEXT, source=self._source(message),
                                                message_id=message["ID"], raw_message=message))
@@ -368,18 +405,58 @@ class VelaAdapter(BasePlatformAdapter):
     async def _dispatch(self, message):
         message_id = message["ID"]
         if message_id in self._inflight: return
+        chat_id = message.get("conversationID", "")
+        group = chat_id.startswith("GROUP")
+        if group and self._busy(chat_id, message_id):
+            waiting = self._waiting.setdefault(chat_id, [])
+            if all(m["ID"] != message_id for m in waiting): waiting.append(message)
+            return
         self._inflight.add(message_id)
+        if group: self._turns[chat_id] = (message_id, time.monotonic())
         try:
             await self._dispatch_event(message)
         except asyncio.CancelledError:
             self._inflight.discard(message_id)
+            self._end_turn(chat_id, message_id)
             raise
         except Exception:
             self._inflight.discard(message_id)
             if message_id in self.state["pending"]:
                 self.state["pending"][message_id]["attempts"] += 1
                 self._save()
+            self._end_turn(chat_id, message_id)
             raise
+
+    def _busy(self, chat_id, message_id):
+        turn = self._turns.get(chat_id)
+        if not turn or turn[0] == message_id:
+            return False
+        if time.monotonic() - turn[1] > GROUP_TURN_TIMEOUT_SECONDS:
+            logger.warning("Vela group turn %s in %s never completed; moving on", turn[0], chat_id)
+            del self._turns[chat_id]
+            return False
+        return True
+
+    def _end_turn(self, chat_id, message_id):
+        """Free the group for the next waiting message once its turn is over."""
+        turn = self._turns.get(chat_id)
+        if not turn or turn[0] != message_id:
+            return
+        del self._turns[chat_id]
+        waiting = self._waiting.get(chat_id) or []
+        while waiting:
+            following = waiting.pop(0)
+            if following["ID"] in self.state["pending"]:
+                asyncio.get_running_loop().create_task(self._dispatch_next(following))
+                break
+        if not waiting:
+            self._waiting.pop(chat_id, None)
+
+    async def _dispatch_next(self, message):
+        try:
+            await self._dispatch(message)
+        except Exception:
+            logger.exception("Vela message %s could not be handed to Hermes", message.get("ID"))
 
     async def _dispatch_event(self, message):
         message_id = message["ID"]
@@ -472,6 +549,7 @@ class VelaAdapter(BasePlatformAdapter):
             if self.state["pending"][event.message_id]["attempts"] >= 5:
                 logger.error("Vela message %s moved to persistent pending after 5 failures", event.message_id)
         self._save()
+        self._end_turn(event.source.chat_id, event.message_id)
 
     async def on_processing_start(self, event):
         logger.info("Vela processing start identity=%s message=%s chat=%s", self.user_id, event.message_id, event.source.chat_id)

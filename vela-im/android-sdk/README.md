@@ -33,7 +33,7 @@ val policy = api.getGroupReplyPolicy(groupId)
 if (policy.canManage) api.setGroupReplyPolicy(groupId, GroupReplyMode.MENTION_CONTEXT)
 
 // 宿主运行 Agent 时：对收到的群消息做与 JS/Python 相同的判断，并取此前最多 10 条消息
-val input = im.prepareGroupReply(api, message, maxAgentHops = 6)
+val input = im.prepareGroupReply(api, message, maxAgentHops = 3)
 if (input.shouldReply) {
     val answer = runYourAgent(input.message, input.context)
     im.send(im.text(answer), groupId, group = true, cloudCustomData = input.lineage.reply())

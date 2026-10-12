@@ -191,7 +191,7 @@ class VelaClient:
         """A message this Bot received or sent, from the worker's durable inbox."""
         return self.request("/message?id=" + quote(str(message_id), safe=""))
 
-    def prepare_group_reply(self, message_id, max_agent_hops=6) -> GroupReplyInput:
+    def prepare_group_reply(self, message_id, max_agent_hops=3) -> GroupReplyInput:
         """Platform reply decision plus up to 10 preceding messages for a group message this Bot received."""
         return self.request("/group-reply", {"messageID": message_id, "maxAgentHops": max_agent_hops})
 

@@ -4,7 +4,7 @@ import {createHash} from 'node:crypto';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {
- VelaBotAPI,VelaError,IM_METHODS,PLATFORM_METHODS,defaultGroupPolicy,isAgentStatus,isPolicyNotice,normalizeGroupID,platformGroupId,
+ VelaBotAPI,VelaError,IM_METHODS,PLATFORM_METHODS,DEFAULT_MAX_AGENT_HOPS,defaultGroupPolicy,isAgentStatus,isPolicyNotice,normalizeGroupID,platformGroupId,
  policyFromGroup,readLineage,replyCustomData,type GroupReplyPolicy,type IMMessage,type MessageInput,
 } from './index.ts';
 import {VelaNodeClient,safeJSON} from './node.ts';
@@ -187,7 +187,7 @@ export async function startWorker(o:WorkerOptions):Promise<RunningWorker> {
    const message:IMMessage|undefined=typeof b.messageID==='string'?inbox.message(b.messageID):undefined;
    if(!message)throw new HttpError(404,'当前身份的 inbox 中没有这条消息','MESSAGE_NOT_FOUND');
    if(!message.conversationID?.startsWith('GROUP'))throw new HttpError(400,'需要群消息','NOT_GROUP_MESSAGE');
-   return client.prepareGroupReply(message,await groupPolicy(message.conversationID),{maxAgentHops:b.maxAgentHops??6});
+   return client.prepareGroupReply(message,await groupPolicy(message.conversationID),{maxAgentHops:b.maxAgentHops??DEFAULT_MAX_AGENT_HOPS});
   },
   'GET /events':async(req,url)=>{
    const after=Number(url.searchParams.get('after')??0),wait=Number(url.searchParams.get('wait')??25000);

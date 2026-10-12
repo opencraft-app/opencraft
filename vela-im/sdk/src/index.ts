@@ -47,7 +47,11 @@ export interface GroupReplyPolicy {
   contextMessages:number; members:ImGroupMember[]; canManage:boolean;
 }
 export type IMMessage = {ID:string;from?:string;type?:string;conversationID?:string;conversationType?:string;payload?:Record<string,any>;[key:string]:any};
-export type GroupReplyReason = 'accepted'|'self'|'revoked'|'system'|'hop_limit'|'not_mentioned';
+export type GroupReplyReason = 'accepted'|'self'|'revoked'|'system'|'hop_limit'|'not_mentioned'|'agent_not_mentioned';
+/** How many times Agents may answer each other after a person speaks. */
+export const DEFAULT_MAX_AGENT_HOPS=3;
+/** The platform issues Agent (bot) IM user IDs with this prefix; people get u_. */
+export const AGENT_ID_PREFIX='a_';
 export interface Lineage {chainId:string;hops:number}
 export interface GroupReplyInput {
  message:IMMessage;policy:GroupReplyPolicy;shouldReply:boolean;reason:GroupReplyReason;
@@ -75,7 +79,7 @@ export const VELA_CAPABILITIES = {
  humanAPI:['imSession','bots','provisionBot','updateBot','deleteBot','rotateBotCredential','createGroup','group','updateGroup','dismissGroup','addGroupMember','removeGroupMember','createGroupInvite','acceptGroupInvite'],
  botAPI:['session','me',...PLATFORM_METHODS.filter(m=>m!=='me')],
  imMethods:IM_METHODS,
- groupReplies:{modes:Object.values(GroupReplyModes),contextMessages:10,botGroupMode:'all',manageRoles:['owner','admin'],defaultMaxAgentHops:6},
+ groupReplies:{modes:Object.values(GroupReplyModes),contextMessages:10,botGroupMode:'all',manageRoles:['owner','admin'],defaultMaxAgentHops:DEFAULT_MAX_AGENT_HOPS},
 } as const;
 export interface VelaCapabilities {identity:{id:string;kind?:IdentityKind;name?:string};messageTypes:MessageKind[];methods:string[];documentedMethods:readonly string[];extensions:typeof VELA_CAPABILITIES}
 export class VelaError extends Error {
@@ -294,12 +298,22 @@ export function mentions(message:IMMessage,userID:string):boolean {
  const at=message.atUserList??message.payload?.atUserList??[];
  return Array.isArray(at)&&(at.includes(userID)||at.some((id:string)=>AT_ALL.includes(id)))||String(message.payload?.text??'').includes('@'+userID);
 }
-/** The single reply decision every Agent runtime uses: own/revoked/system messages, hop limit and the group's effective mode. */
-export function groupReplyReason(message:IMMessage,userID:string,policy:Pick<GroupReplyPolicy,'effectiveMode'>,maxAgentHops=6):GroupReplyReason {
+function fromAgent(message:IMMessage,members:readonly ImGroupMember[]):boolean {
+ return members.some(m=>m.userId===message.from&&m.kind==='bot')||String(message.from??'').startsWith(AGENT_ID_PREFIX);
+}
+/**
+ * The single reply decision every Agent runtime uses: own/revoked/system messages, hop limit and the group's effective
+ * mode. "No @ needed" in a group with people covers what people say; Agents there still hand work to each other only by
+ * @, otherwise every Agent answer wakes all the others. Agent-only groups answer everything within the hop limit.
+ */
+export function groupReplyReason(message:IMMessage,userID:string,policy:Pick<GroupReplyPolicy,'effectiveMode'>&{members?:readonly ImGroupMember[]},maxAgentHops=DEFAULT_MAX_AGENT_HOPS):GroupReplyReason {
  if(message.from===userID)return 'self';
  if(message.isRevoked)return 'revoked';
  if(isSystemMessage(message))return 'system';
  if(readLineage(message).hops>=maxAgentHops)return 'hop_limit';
- if(policy.effectiveMode!=='all'&&!mentions(message,userID))return 'not_mentioned';
+ const mentioned=mentions(message,userID);
+ if(policy.effectiveMode!=='all')return mentioned?'accepted':'not_mentioned';
+ const members=policy.members??[];
+ if(!mentioned&&members.some(m=>m.kind==='human')&&fromAgent(message,members))return 'agent_not_mentioned';
  return 'accepted';
 }

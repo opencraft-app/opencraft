@@ -57,7 +57,7 @@ while True:
         message = event["data"]
         if event["event"] != "MESSAGE_RECEIVED" or not message.get("conversationID", "").startswith("GROUP"):
             continue
-        item = im.prepare_group_reply(message["ID"], max_agent_hops=6)   # 按后台群规则判断，附上下文
+        item = im.prepare_group_reply(message["ID"], max_agent_hops=3)   # 按后台群规则判断，附上下文
         if item["shouldReply"]:
             answer = your_agent(item["message"], item["context"])
             im.send_text(item["policy"]["groupID"], answer, "GROUP", cloudCustomData=reply_custom_data(item["lineage"]))
