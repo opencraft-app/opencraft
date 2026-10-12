@@ -229,6 +229,7 @@ func newRouterWithWebsiteAuth(
 	mux.HandleFunc("/internal/bots/", handler.handleInternalBotSubresource)
 	mux.HandleFunc("/internal/instances/", handler.handleInternalInstanceSubresource)
 	mux.HandleFunc("/internal/users/", handler.handleInternalUserSubresource)
+	mux.HandleFunc("/internal/vela-im/", handler.handleInternalVelaIM)
 	mux.Handle("/internal/ctl/instances/", &websiteCredentialHandler{
 		store:     credentialStore,
 		instances: instanceReader,
@@ -449,6 +450,10 @@ func normalizePath(path string) string {
 	}
 	if strings.HasPrefix(path, "/internal/ctl/bundles/") {
 		return "/internal/ctl/bundles/{bundleId}"
+	}
+	switch path {
+	case "/internal/vela-im/bots:verify", "/internal/vela-im/bots:deliver", "/internal/vela-im/bots:revoke":
+		return path
 	}
 	if strings.HasPrefix(path, "/internal/ctl/passes/") {
 		// 当前仅 /complete 为已知；其它（renew / isolate / destroy 等）归一到 {action} 占位
