@@ -63,6 +63,8 @@ Codex adapter 打包 `opencraft/tasks/*`，提交后广播变更。事务内检�
 
 手机顶部（不超过 640px）隐藏会话标题旁的项目附文；同一“…”菜单以共享只读详情展示项目及工作目录。目录来自当前执行信息或同一 Thread 的规范元数据，不新增 IO、执行或持久化，长路径完整换行。
 
+浮动侧栏由 Shell 的透明外侧命中层收起；该命中层显式允许指针事件，覆盖宿主的默认穿透设置。首次点击或触摸外部空白只收起侧栏，退出完成后正文恢复交互。
+
 ## OpenCraft 文件预览下载
 
 文件预览标题栏提供下载原文件，复用当前 Host/path/runtime generation 的 Blob 读取结果与 URL lease，不以浏览器 `file://` 直接访问 Host 文件。空文件、图片与不可预览的二进制均可下载；读取中/失败时禁用。只读内嵌预览允许保存到用户设备，仍不允许 Host 写入；详情见 [文件面板所有权](../../../opencraft/docs/platform-architecture.md#workspace-file-explorer-ownership)。
