@@ -2833,8 +2833,8 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn('AUTO_PIN_ENVS="$(resolve_playground_envs "auto" "$PLAYGROUND_ENV")"', workflow_text)
         self.assertIn("skip frontend artifact matrix build for playground branch", workflow_text)
         self.assertIn("shared Pages artifacts are master-only", workflow_text)
-        self.assertIn("skip Cloudflare artifact release for playground branch", workflow_text)
-        self.assertIn("shared Cloudflare staging is master-only", workflow_text)
+        self.assertIn("skip EdgeOne prerelease artifact release for playground branch", workflow_text)
+        self.assertIn("shared EdgeOne prerelease is master-only", workflow_text)
         self.assertIn("SHORT_SHA='${{ ci.sha }}'", workflow_text)
         self.assertIn('SHORT_SHA="${BK_CI_GIT_HEAD_COMMITS%%,*}"', workflow_text)
         self.assertNotIn('SHORT_SHA="${{ ci.sha }}"', workflow_text)
@@ -2889,7 +2889,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertNotIn("FRONTEND_EDGEONE_RELEASE_MATRIX", workflow_text)
         self.assertNotIn("确认发布 frontend EdgeOne 正式站", workflow_text)
         self.assertNotIn("发布 frontend EdgeOne 正式站", workflow_text)
-        self.assertNotIn("ci_load_edgeone_credentials", workflow_text)
+        self.assertNotIn("ci_load_edgeone_credentials", yaml.safe_dump(fanout_stage))
         self.assertNotIn("trigger_frontend_edgeone_releases.py", workflow_text)
         self.assertNotIn("--target orchestrator", workflow_text)
         self.assertNotIn("BK_CI_ACCESS_TOKEN", workflow_text)
@@ -2969,13 +2969,13 @@ class ReleaseBundleContractTests(unittest.TestCase):
         frontend_variables = frontend_workflow.get("variables") or {}
         self.assertEqual(
             frontend_variables.get("FRONTEND_ARTIFACT_MATRIX", {}).get("value"),
-            "cf:cn-lightvela-staging,cf:global-lightvela-intl-staging,eo:cn-lightvela-prod-next,eo:global-lightvela-intl-prod-next",
+            "eo:cn-lightvela-prerelease,eo:global-lightvela-prerelease-preview,eo:cn-lightvela-prod-next,eo:global-lightvela-intl-prod-next",
         )
         self.assertEqual(
             frontend_variables.get("FRONTEND_RELEASE_MATRIX", {}).get("value"),
-            "cf:cn-lightvela-staging,cf:global-lightvela-intl-staging",
+            "eo:cn-lightvela-prerelease,eo:global-lightvela-prerelease-preview",
         )
-        self.assertIn("frontend 发布决策：进入 Cloudflare 预发 artifact 发布流程", frontend_text)
+        self.assertIn("frontend 发布决策：进入 EdgeOne 北京预发 artifact 发布流程", frontend_text)
         self.assertIn("SubPipelineExecStream@1.*", frontend_text)
 
         self.assertFalse((REPO_ROOT / ".ci/subpipeline-call-probe.yml").exists())

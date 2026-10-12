@@ -224,6 +224,20 @@ class WebsiteBackendSourceRenderTests(unittest.TestCase):
                         path.write_text(yaml.safe_dump(k))
                         rendered = self.render(overlay)
                         expected_targets = [t for t in self.api.TARGETS[region] if t[0] == service]
+                        if service == 'ctl':
+                            api_deployment = next(x for x in rendered if x.get('kind') == 'Deployment' and
+                                                  x['metadata']['name'] == 'ctl-api')
+                            desktop = next((x for x in rendered if x.get('kind') == 'Deployment' and
+                                            x['metadata']['name'] == 'ctl-desktop'), None)
+                            if desktop is not None:
+                                # The source overlay copies ctl-api's pod spec and annotations to desktop.
+                                # Verify those inherited bindings before removing only the intended additions.
+                                self.assertEqual(desktop['spec']['template']['spec'],
+                                                 api_deployment['spec']['template']['spec'])
+                                self.assertEqual(desktop['spec']['template']['metadata']['annotations'],
+                                                 api_deployment['spec']['template']['metadata']['annotations'])
+                                _, namespace, _, container_name, role = next(t for t in expected_targets if t[2] == 'ctl-api')
+                                expected_targets.append(('ctl', namespace, 'ctl-desktop', container_name, role))
                         self.assertEqual(len(rendered), len(baseline))
                         for _, namespace, name, container_name, role in expected_targets:
                             dep = next(x for x in rendered if x.get('kind') == 'Deployment' and
