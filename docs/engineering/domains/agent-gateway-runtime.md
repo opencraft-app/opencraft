@@ -32,6 +32,8 @@ Thread 和 clientUserMessageId 保存英文账号名，不保存员工编号。�
 
 平台网关的 Hermes `custom/auto` 模型使用模型级 `supports_vision: true` 声明图片输入能力；`auto` 是网关别名，不能依赖公共模型目录推断。CTL 初始化（含 ACLI 与 harness 路径）在模型写入后补齐并回读该字段，前端恢复平台默认配置时在重建 provider 后声明并验证能力。恢复默认配置同时清除旧主模型的顶层 `model.supports_vision`，避免它覆盖新默认模型的声明；用户显式的图片路由策略仍保留。此契约不为其他模型声明能力，不要求重做 CVM 镜像，也不自动修改存量实例。相关实现与回归测试见 `ctl/pkg/instance/async.go`、`ctl/pkg/instance/auto_vision_test.go`、`frontend/src/pages/marketing/agent-model-config/hermes-model-config-command.ts`。
 
+Hermes 默认模型目录投影与已有会话使用同一提供商身份匹配：接受目录的 `slug`、名称及明确声明的 `aliases`，不通过删除 `custom:` 前缀猜测身份。默认模型仍须属于该提供商且通过现有可用性过滤；例如配置 `custom:custom / auto`、目录 `slug=custom, aliases=[custom:custom]` 时，AppServer 默认模型应为目录规范身份 `custom / auto`。该投影不改写 Profile 配置、凭据或已有会话的模型选择。
+
 ## 渠道聊天记录只读接口（待启用）
 
 CTL 的 `/v1/instances/{id}/bots/{bot_id}/channel-sessions` 与消息子资源按登录账号限定实例。每次请求在一条地域 TAT 命令中读取 Hermes Profile 列表、确认 Bot 仍存在，再只读打开对应 Profile 的 `state.db`；不缓存 Bot/Profile 映射。数据库文件路径隔离 Bot；当前非 multiplex 部署下每个 Profile 的渠道会话键都使用 `agent:main:` 命名空间，缺少这一渠道会话键的记录不返回。列表和消息均分页，消息投影只包含用户与助手文本，排除工具调用和原始推理。
@@ -341,9 +343,13 @@ Pages 制品对嵌入内容哈希资源声明 immutable，稳定 loader/version/
 - 云桌面后端观看底座使用独立回环、原生只读 x11vnc 入口及后端专用 TAT 物理 socket；原四 unit 的启动保持不变。固定观看端口/本地原生测试不等于用户授权、可信桌面 incarnation 或云上验收。CTL 安装文件与 Sandbox provider 字节通道尚未接入公开 broker；生产 attachment 必须核验绑定、到期与撤权，页面不得获得任意 TCP TAT 凭据。详见 [桌面资源契约](../../../ctl/docs/cloud-desktop-resource.md)。
 - 云桌面插件与 Vela 插件单向依赖：cloud-desktop 拥有通用 contract、面板和 noVNC 媒体；lightvela-platform/desktop 拥有账户/目录绑定校验、一次 POST 准备及 GET 观察、后端观看 attachment 交接，不读取 activeBotId 猜测会话目标，也不消费 Chat 物理隧道。换机/权限代次变更直接回收旧观看连接，即使稳定 target ID 不变。默认缺少真实 viewer port 与目录组合，生产后端观看授权/输入门禁未实现，能力入口仍隐藏；本地浏览器 framebuffer/input 回归不替代云上安全验收。
 
+- 实验室云电脑的进程内状态由专用 `ctl-desktop` 单副本/Recreate 工作负载承载；网关仅对七个合法桌面方法路径使用 `desktop_upstream`，不改变普通API HPA或其他业务上游。已配置六环境的普通API禁用桌面入口及回收器，专用实例不重复执行业务cron/relay；shared base保留空角色兼容未接入环境，JP未补完整发布根不得宣称多副本可用。发布需要桌面维护窗口并协调角色切换/路由，不依赖旧前端字段兼容来保证无中断。换代先撤权确认或保留未知记录，沙箱epoch CAS绑定generation/incarnation，物理目标在prepare/mint/claim和输入连接生命周期复核。grant容忍30秒偏差且单调时钟限制本地300秒，revoke不受grant未来期限上限阻断；当前同步身份探测可耗时1秒，不承诺毫秒级撤权。前端claim仅编码一次，桌面callback-only消费不积压ReadableStream，失败建连完整关闭且共享终端默认行为不变。
+
+- 实验室云电脑 TAT 输入链路使用沙箱 5904 网关绑定单次 attachment/ticket，完成 RFB 握手后才解析会话输入；准备命令同时安装输入端点及网关 unit。已有 writer 不因新 mint 被撤销；失败授权须确认条件 revoke 后才降只读，未知执行结果保留槽位。远端文件锁、attachment 匹配撤权与到期 tombstone 阻断旧 release 和迟到 grant；网关在撤销/到期时释放按键并断连，前端有限重建而非无缝降级。首连瞬时故障有限重试，准备与握手都有时限。该约束仅针对 5904：实例级 TCP TAT 仍可访问底层回环端口，不是跨主体不可绕过的 Broker 边界；OpenCraft 本轮未接入。见 [实验室 TAT 方案](../../context/tasks/2026-10-10-cloud-desktop-tat-transport.md)。
+
 - 云桌面传输不从“未开放 UDP”直接推导不可用，也不把 TURN/TLS 当 HTTP/WSS 隧道。当前 ingressproxy 是 HTTP/WebSocket 代理；TAT session 另有 TCP 字节流代理，可复用为 WSS 适配边界，不能直接注入浏览器 ICE。初期采用 WSS 候选，但真实媒体、授权 attachment 和服务端输入门禁尚未接通。桌面应独立拥有物理连接，避免共享 Chat 隧道的媒体排队；逻辑通道隔离关闭不等于隔离吞吐。客户端 `viewOnly` 不代替后端输入仲裁。见 [传输评估](../../../opencraft/docs/cloud-desktop-plugin.md#transport-assessment-2026-10-04)。
 
-- OpenCraft 云桌面框架以 Conversation 为标签作用域，后端按 Server、账户主体、环境和实例代次解析资源并授权；legacy Host 路由不拥有资源身份。可信插件自行注册入口，未接通真实适配器时不宣称可用；视图关闭仅释放观看/控制租约，不停止桌面或 Agent。独占输入由后端仲裁，客户端等待授权后才绑定输入；迟到结果和权限变更按连接代次失效。CTL 源码已增加显式桌面资源准备与只读查询：后台任务不依赖 HTTP 请求和 GET 推进，缓存核验用户/Sandbox 绑定，换机和重试替换状态对象；响应不包含 VNC 密码。编排 generation 不等于媒体 incarnation，当前进程内锁不保证跨副本唯一执行。媒体、Conversation 授权适配与真实输入仲裁仍未接通，入口继续隐藏。新路径尚未加入五个环境的精确 Gateway path_allow；JP/KR 测试环境仍是实例前缀路由，部署新版 CTL 前需另核对。见 [云桌面插件契约](../../../opencraft/docs/cloud-desktop-plugin.md)和 [CTL 准备契约](../../../ctl/docs/cloud-desktop-resource.md)。
+- OpenCraft 云桌面框架以 Conversation 为标签作用域，后端按 Server、账户主体、环境和实例代次解析资源并授权；legacy Host 路由不拥有资源身份。可信插件自行注册入口，未接通真实适配器时不宣称可用；视图关闭仅释放观看/控制租约，不停止桌面或 Agent。独占输入由后端仲裁，客户端等待授权后才绑定输入；迟到结果和权限变更按连接代次失效。CTL 源码已增加显式桌面资源准备与只读查询：后台任务不依赖 HTTP 请求和 GET 推进，缓存核验用户/Sandbox 绑定，换机和重试替换状态对象；响应不包含 VNC 密码。编排 generation 不等于媒体 incarnation，当前进程内锁不保证跨副本唯一执行。媒体、Conversation 授权适配与真实输入仲裁仍未接通，入口继续隐藏。实验室云电脑的 TAT 链路已在北京三个环境、shprod、sgprod 配置中加入五条精确 Gateway path_allow：GET/POST desktop/resource、POST desktop/viewer、DELETE desktop/viewer/{attachment_id}、POST desktop/viewer/{attachment_id}/claim。所有请求仍需登录，POST 沿用实名墙；GET 查询和 DELETE 释放沿用既有实名豁免，实例归属与租约校验仍由 CTL 执行。JP/KR 测试环境保留原实例前缀策略；配置及契约测试就绪不代表已发布或 OpenCraft 已接入。见 [云桌面插件契约](../../../opencraft/docs/cloud-desktop-plugin.md)和 [CTL 准备契约](../../../ctl/docs/cloud-desktop-resource.md)。
 
 - NewAPI 在选渠道失败时区分配置缺失与运行时不可用：当前授权分组（`auto` 为其可用分组集合）没有该模型的任何 `ability`，返回 HTTP 404 与 `model_not_found`；已配置但禁用的渠道、路径筛选后无候选、选渠道出错或配置查询失败继续返回 HTTP 503 与 `get_channel_failed`。正常选渠道路径不增加数据库查询。404 文案同时保留 `model_not_found` 标识，以兼容只保留异常 message 的 Hermes provider wrapper。
 
@@ -668,6 +674,17 @@ Pages 制品对嵌入内容哈希资源声明 immutable，稳定 loader/version/
   - 图片一致只跳过图片替换，不能跳过配置修复。配置以 `agentuser` 写入：已有 XFCE 会话时通过其真实 D-Bus 会话更新 xfconf 并 reload；无会话时原子合并 XML，补齐两个 monitor 的 workspace0-3，保留其他设置并修复缺失/损坏配置。不重启桌面或 Agent 服务。壁纸任务最多 90 秒且为清理保留 25 秒主任务预算，余额不足就跳过可选壁纸并记录警告。
   - 素材在 `images/runtime/desktop/` 与 `ctl/pkg/instance/` 各存一份（`go:embed` 不能跨包目录，且 `ctl/Dockerfile` 构建上下文只有 `ctl/`），由测试用 SHA256 强制两处逐字节一致；换图必须两处同步。
   - 壁纸失败只降级为默认壁纸并 `log_warn`，**绝不中断安装**（与镜像路径行为一致）。推而广之：unit、包、**资源类素材（图片等）**都必须两条安装路径对齐，不能只在一条路径上新增。
+
+- 实验室云电脑的桌面媒体不再经 ingressproxy 泛域名（`6080-<sandboxID>.<domain>`）传输：国际站下线 ingressproxy 后泛域名不可达，而国内站单地域不受影响。新链路改为「产品登录 + 实例级 TAT session」隧道到沙箱内回环端点，后端只下发 `{mode, ip, port}`，**不下发任何公网主机名**。这是地域无关的：只要该地域终端可用（TAT 通），桌面即可用，不再依赖 ingressproxy 在各地域的部署情况。
+- 观看授权从「向浏览器下发 VNC 密码」改为一次性租约：`POST /desktop/viewer` 签发（响应只含 `attachmentId`/`ticket`/回环端点/`access`，**不含密码、不含 URL、不含 sandbox id**），`POST /desktop/viewer/{id}/claim` 兑换成功后才允许打开隧道；服务端只存 `SHA-256(ticket)`。租约绑定准备代次与**物理 incarnation**：签发前在沙箱内以 root 运行验证脚本，用仅 root 可读的 key 向回环 observer 代理发起 nonce 挑战并校验 HMAC，**只回传 incarnation**（key 与 MAC 不出沙箱），因此本机普通进程占位后重放旧证明会被拒绝；验证失败、incarnation 非 64 位 hex 或丢失只读保证一律拒签。租约 5 分钟硬到期、30 秒未兑换回收、单次使用、代次替换即撤权；客户端另守 TTL 本地自断，不依赖服务端通知。准备代次只是 CTL 进程内的编排计数，**不是物理身份**，不能当作 incarnation 使用。详见 [任务记录](../../../docs/context/tasks/2026-10-10-cloud-desktop-tat-transport.md)。
+- `incarnation` 的**覆盖范围与残余风险**：它等于 `sha256(boot_id + 只读 observer(5901) 进程身份 + Xvfb 进程身份)`，覆盖**机器与观察端**，但**不直接包含可写端点 5903**。因此它防的是「租约被重放到另一台机器或另一个 Xvfb 实例」，不防「同机替换 5903 进程」。后者残余风险可接受：替换 5903 需要沙箱内权限，而 `agentuser` 作为 `:1` display 的拥有者本就可用 XTest/xdotool 直接控制键鼠，该场景**不新增攻击面**；5903 另由 `-localhost`（不可从网络到达）与网关 grant（无授权即丢弃输入）双重约束。若日后要覆盖，可在验证脚本中并入 `vela-desktop-input` 的 systemd `MainPID` 与 `/proc/<pid>/stat` 的 starttime——但验证是 fail-closed（失败即拒签、用户完全看不到桌面），多一次 systemd 查询就多一个可用性失败点，需权衡后再做。
+- 键鼠由新增的可写回环端点 `vela-desktop-input`（5903，`-nopw -localhost -nevershared -dontdisconnect`）承载，但**浏览器绝不直连它**：可写租约的隧道目标固定为输入网关 `opencraft-desktop-input-gateway`（5904），网关再中继到 5903。端点只绑回环、只能经已鉴权的 TAT 隧道到达，因此不再有需要下发到浏览器的 RFB 密码——这与只读 observer（5901）的安全模型一致，差别只在去掉 `-viewonly`。`-nevershared` 作为纵深防御保留；`-dontdisconnect` 保证不踢掉既有的 5900/5901。旧可控端点 5900 与 websockify 6080 保持原样，仍使用 ingressproxy 的区域不受影响。
+- **租约状态在 CTL 进程内存**，因此「单次使用」依赖签发与兑换落在同一副本。当前 argocd 的 CTL 清单未设置 `replicas`（Kubernetes 默认 1），约束成立；**若后续扩容到多副本，必须先把租约挪到共享存储或改为自签名票据**，否则会出现副本 A 签发、副本 B 兑换不到的情况。这是本方案相较集中式 broker 唯一更脆弱的点，扩副本前必须先处理。
+- **输入默认拒绝**：网关按 RFB 成帧解析客户端→服务器的消息，只分类输入类（`KeyEvent`/`PointerEvent`/`ClientCutText`），其余原样中继。输入类消息在无有效授权时**一律丢弃**，因此「谁能控制」不依赖前端 viewOnly 开关，也不依赖连上端口这一事实本身。授权是一个 root-only 的有界文件（`/run/opencraft-desktop-input/grant`，含 `expiresAt` 与 `attachmentId`）：只在票据兑换成功后由 CTL 经 TAT 写入，释放或撤权时删除。网关每 0.5s 复验，一旦授权消失或到期就**释放仍按住的键与鼠标键后断开**，不会把桌面留在卡键状态。可写租约每实例限 1（服务端独占，不依赖 `-nevershared`），只读租约可共享；可写端点未就绪时降级为只读观看，不让桌面整体不可用。隧道目标被配置成绕过网关直连 5903 时，CTL 强制回退到网关端口——原始可写端口没有输入仲裁，不能作为下发目标。
+- 授权下发是**尽力而为**：TAT 命令失败时用户仍能看到画面，但网关继续拒绝输入（失败即降级为只读，fail safe），不会出现「以为有键鼠但静默失效」之外的更坏情况。
+- **发布顺序硬约束**：必须先完成部署与配置、确认新链路可用（网关 unit active、租约能签发、incarnation 能拿到），**再**下线 ingressproxy；反序会在切换窗口内造成云电脑全断且无回退。国内站与国际站应同批切换，避免两端行为不一致。
+- 单人浏览器使用场景下不挂载 Sandbox 的 viewer broker：`OpenVerified` 走强制只读的回环核验代理，而 5903 在沙箱内、Sandbox 服务侧没有任何能仲裁它输入的执行器，挂载后 `Control` 只能为 nil（等于用可写换只读）；鉴权与加密中继已由 TAT 隧道承担。因此第 610 行的「Handler 尚未挂载公共路由」维持现状，且属于刻意选择而非遗漏。已知代价（可写独占、主动撤权依赖 TAT 下发、集中管控弱、与 OpenCraft 契约分叉）与四条重新评估触发条件（多人同时观看、毫秒级撤权与集中熔断、独立扩展/SLO、接入 OpenCraft 生态）见任务记录。
+- 网关白名单：service-gateway 使用 `PathPolicyAllowlist`，未登记的实例级路径在网关层直接返回 `route_not_allowed`（不回源）。因此 `/desktop/resource` 与 `/desktop/viewer` 三条路由必须在各环境 `argocd/services/service-gateway/*/config.yaml` 登记，否则前端一律调不通——这类配置缺失不会有任何后端日志，只能从网关响应码发现。
 
 ## 定时任务执行模式
 
@@ -1215,7 +1232,7 @@ CTL 的微信 claim 在实例本地保存私有扫码回滚快照，并返回 re
 
 ### 微信回滚失败与删除契约
 
-微信 Profile 的变更由独立操作锁串行化；实例元数据锁只保护绑定读写和账号查重，网关 stop/restart 在释放实例锁后执行，并在重新获取锁后重读绑定，保留其他 Profile 的并发更新。回滚先标记 `recovery_required`，即使网关命令失败也恢复微信配置和账号文件；失败保留私有快照和原账号身份，返回 `WEIXIN_RECOVERY_FAILED`，再次 claim/release 可重试恢复，成功后才撤销恢复标记。旧预约不能清理新的扫码。快照使用可选的 runtime status helper，版本不兼容时保守恢复网关，不依赖私有 CLI 函数。
+微信 Profile 的变更由独立操作锁串行化；实例元数据锁只保护绑定读写和账号查重，网关 stop/restart 在释放实例锁后执行，并在重新获取锁后重读绑定，保留其他 Profile 的并发更新。回滚先标记 `recovery_required`，使用 Hermes 原生 `gateway stop`（默认 Bot 不传 `-p`，子 Bot 显式传 `-p <profile>` 并设置目标 `HERMES_HOME`），停止后通过运行时 PID helper 确认目标网关已退出，才恢复微信配置和账号文件；共享多 Profile 网关暂不自动停止，返回恢复失败。停止失败不覆盖当前配置；失败保留私有快照和原账号身份，返回 `WEIXIN_RECOVERY_FAILED`，再次 claim/release 可重试恢复，成功后才撤销恢复标记。旧预约不能清理新的扫码。快照使用可选的 runtime status helper，版本不兼容时保守恢复网关，不依赖私有 CLI 函数。
 
 删除 Bot 的 `CHANNEL_OCCUPIED` 使用 `details.channel` 区分 `weixin` / `whatsapp`；前端不能依赖 HTTP 传输会丢弃的内部错误包装文本。
 
@@ -1230,3 +1247,11 @@ and never enter the execution engine/model. See OpenCraft Tencent OA authenticat
 and ChatUI architecture for reconciliation, lifetime and overlay ownership.
 
 Participant reconciliation isolates failures per conversation in batched responses. Native retained-history pagination uses larger pages with a bounded cursor walk so long-running conversations do not invalidate every visible sidebar count. Verification copies the Host sender DB and bridges only native read requests in an isolated instance; publication remains gated on live RPC and rendered circle/popover acceptance with automatic rollback.
+
+### GUI 浏览器首次启动的凭据存储（2026-10-12）
+
+LightVela 复用镜像浏览器的专用 GUI 启动入口显式选择 `--password-store=basic`，避免未通过 PAM 密码登录的 XFCE 云桌面首次启动等待默认钥匙环。该凭据存储安全取舍已经产品确认，只作用于 GUI 入口，不更改 Agent 浏览器参数、不删除用户钥匙环或浏览器数据。存量旧入口需要校验 manifest 后单独升级；源码变更不能代替两地域发布与 GUI 验收。详见 `ctl/docs/desktop-browser-reuse.md`。
+
+OpenCraft Composer 的权限菜单由客户端语言包翻译已验证的标准档位、中文说明、加载/错误状态和待生效提示；引擎自定义 profile 名称与说明仍由 Host 提供。翻译不改变 profile ID、权限绑定或提交策略。实现契约见 `opencraft/docs/chat-ui-architecture.md`。
+
+中文聊天 Markdown 在标准 Marked 强调解析失败时，仅对 Han 与标点相邻的星号边界重试，保留代码遮罩、源文与权限/执行策略。对应回归覆盖截图原句、英语、转义与代码。

@@ -4,3 +4,29 @@ kind: Kustomization
 resources:
   - manifests.yaml
   - cls-logconfig.yaml
+
+replacements:
+  - source:
+      kind: Deployment
+      name: ctl-api
+      fieldPath: spec.template.spec
+    targets:
+      - select:
+          kind: Deployment
+          name: ctl-desktop
+        fieldPaths:
+          - spec.template.spec
+        options:
+          create: true
+  - source:
+      kind: Deployment
+      name: ctl-api
+      fieldPath: spec.template.metadata.annotations
+    targets:
+      - select:
+          kind: Deployment
+          name: ctl-desktop
+        fieldPaths:
+          - spec.template.metadata.annotations
+        options:
+          create: true

@@ -99,6 +99,7 @@ spec:
     metadata:
       labels:
         app: ctl-api
+        ctl.clawhub.dev/role: ""
       annotations:
         ctl.clawhub.dev/redeploy-at: REPLACE_CTL_DEPLOYED_AT
     spec:
@@ -112,6 +113,10 @@ spec:
             - secretRef:
                 name: ctl-runtime-secrets
           env:
+            - name: CTL_API_ROLE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['ctl.clawhub.dev/role']
             - name: SHADOW_ACCOUNT_ENABLED
               valueFrom:
                 configMapKeyRef:
@@ -206,6 +211,47 @@ spec:
             name: ctl-soul-templates
         - name: apps-data
           emptyDir: {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ctl-desktop
+  namespace: ctl
+  labels:
+    app: ctl-desktop
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: ctl-desktop
+  template:
+    metadata:
+      labels:
+        app: ctl-desktop
+        ctl.clawhub.dev/role: desktop
+      annotations: {}
+    spec: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ctl-desktop
+  namespace: ctl
+  labels:
+    app: ctl-desktop
+    metrics-target: "true"
+spec:
+  selector:
+    app: ctl-desktop
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+    - name: metrics
+      port: 9591
+      targetPort: metrics
 ---
 apiVersion: apps/v1
 kind: Deployment

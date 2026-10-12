@@ -1,5 +1,6 @@
 import {
   Marked,
+  Tokenizer,
   type Token,
   type Tokens,
   type TokenizerExtension,
@@ -579,15 +580,34 @@ const mathInlineTokenizer: TokenizerExtension = {
   },
 };
 
+/** Keep Marked's delimiter matching/code masking, relaxing only Han/punctuation
+ * boundaries rejected by CommonMark (e.g. 是***“重点”*** and **句子。**后文).
+ * The mask keeps UTF-16 offsets; canonical source and token raw bytes are intact.
+ */
+const hanEmphasisTokenizer = {
+  emStrong(this: Tokenizer, source: string, maskedSource: string, previous = "") {
+    const standard = Tokenizer.prototype.emStrong.call(this, source, maskedSource, previous);
+    if (standard || !source.startsWith("*")) return standard ?? false;
+    const previousBoundary = /\p{Script=Han}$/u.test(previous) && /^\*+\p{P}/u.test(source)
+      ? "" : previous;
+    const relaxedMask = maskedSource.replace(/(\p{P})(\*+)(\p{Script=Han})/gu,
+      (match, punctuation: string, delimiter: string, han: string) => punctuation === "*" ? match : `${punctuation}${delimiter}${" ".repeat(han.length)}`);
+    if (previousBoundary === previous && relaxedMask === maskedSource) return false;
+    return Tokenizer.prototype.emStrong.call(this, source, relaxedMask, previousBoundary) ?? false;
+  },
+};
+
 const assistantMarked = new Marked({
   gfm: true,
   breaks: true,
+  tokenizer: hanEmphasisTokenizer,
   extensions: [mathBlockTokenizer, mathInlineTokenizer],
 });
 
 const userMessageMarked = new Marked({
   gfm: true,
   breaks: true,
+  tokenizer: hanEmphasisTokenizer,
   extensions: [mathBlockTokenizer, mathInlineTokenizer, userMessageImageTokenizer, composerLinkTokenizer],
 });
 

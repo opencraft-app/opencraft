@@ -363,3 +363,5 @@ a swipe; icon adaptation must not introduce a parallel navigation state.
   plugin is enabled by deployment and advertised capability, never a client switch.
 - Sidebar owns one open Thread overlay. Badge buttons are independent of navigation;
   old close/focus callbacks cannot close or focus away from a newer overlay.
+
+宽屏 Composer 默认编辑区以容器自身宽度为准：达到 768px 时最小高度为 52px；低于该宽度保持 26px。内容继续自动增高至既有滚动上限。

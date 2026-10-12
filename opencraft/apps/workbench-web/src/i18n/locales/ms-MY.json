@@ -238,5 +238,20 @@
   "ioa.participants.error": "Unable to update participants",
   "ioa.participants.retry": "Retry",
   "ioa.participants.loading": "Loading…",
-  "ioa.participants.empty": "No identified participants yet"
+  "ioa.participants.empty": "No identified participants yet",
+  "composer.permissions.readOnly": "Read only",
+  "composer.permissions.acceptEdits": "Accept edits",
+  "composer.permissions.auto": "Auto review",
+  "composer.permissions.full": "Full access",
+  "composer.permissions.readOnly.description": "Read-only access to files.",
+  "composer.permissions.acceptEdits.description": "Allow editing files in the workspace.",
+  "composer.permissions.auto.description": "Automatically review permission requests.",
+  "composer.permissions.full.description": "Full access to files and the execution environment.",
+  "composer.permissions": "Permissions",
+  "composer.permissions.onSend": "{profile} · on send",
+  "composer.permissions.nextTurn": "{profile} · next turn",
+  "composer.permissions.engineProfiles": "Engine profiles",
+  "composer.permissions.disabled": "Disabled by AppServer requirements",
+  "composer.permissions.loading": "Loading permission profiles…",
+  "composer.permissions.refreshError": "Could not refresh permission profiles. Try again when connected. Current permissions remain unchanged."
 }

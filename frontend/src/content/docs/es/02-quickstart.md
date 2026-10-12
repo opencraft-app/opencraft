@@ -30,9 +30,9 @@ Este tutorial comienza con el Chat web y después explica cómo conectar WeChat 
 
 ## 1. Iniciar sesión en LightVela
 
-Visite [lightvela.ai](https://lightvela.ai) y haga clic en "Iniciar sesión" en la esquina superior derecha. En el cuadro de diálogo de inicio de sesión, seleccione Google o GitHub, acepte los acuerdos y complete la autorización.
+Abra [lightvela.ai](https://lightvela.ai) y seleccione **Iniciar sesión** en la esquina superior derecha. En el diálogo, lea y acepte los acuerdos; después elija **Google** o **GitHub** y complete la autorización.
 
-![](../images/2-1.webp)
+![Diálogo de inicio de sesión de LightVela con Google y GitHub](../images/2-1.webp)
 
 ---
 
@@ -50,7 +50,7 @@ Abre la [página de suscripción](/subscribe), elige la opción **Launch de 100 
 
 ## 3. Abrir Hermes Agent
 
-Después de activar el plan, abre la [consola de Agent](/agents/overview/). LightVela prepara la instancia en la nube. Si la consola solicita crear el Agent, sigue las instrucciones y espera al estado **Running**. La barra lateral muestra **Channels**, **Models**, **Skills** y **Scheduled Tasks**. Puedes usar los créditos del plan sin introducir tu propia clave de API.
+Tras iniciar sesión con Google o GitHub y activar un plan disponible, abra la [consola del Agent](/agents/overview/). Complete la configuración del primer Bot: introduzca el nombre obligatorio, añada una descripción opcional y ajuste su apariencia. Seleccione **Crear** y espere a que terminen la creación y la configuración inicial. Cuando termine la configuración, seleccione **Empieza tu viaje** y abra el chat web de ese Bot. El canal de mensajería es opcional; las respuestas requieren créditos de modelo disponibles o un modelo configurado.
 
 ---
 
@@ -68,11 +68,11 @@ Abre **Channels** en la barra lateral de Agent. En la tarjeta **WeChat**, selecc
 
 Encuentre la cuenta de bot agregada en WeChat y envíe un mensaje de prueba:
 
-```
+```text
 Hi
 ```
 
-![](../images/2-7.webp)
+![Mensaje de prueba y respuesta del Bot en WeChat](../images/2-7.webp)
 
 Debería recibir una respuesta de Hermes en unos pocos segundos. Hermes ahora puede chatear a través de WeChat.
 

@@ -10,6 +10,11 @@ import type {
   BotChannelConfigResult,
   BotTerminalSession,
   CloudDesktopSession,
+  CloudDesktopResource,
+  CloudDesktopTunnel,
+  CloudDesktopViewerAccess,
+  CloudDesktopViewerClaim,
+  CloudDesktopViewerLease,
   BotRuntime,
   BotSiblingsUnknownReason,
   BotVersion,
@@ -87,6 +92,7 @@ interface ApiErrorPayload {
   request_id?: string;
   requestId?: string;
   retryAfterSeconds?: number;
+  details?: { channel?: unknown; occupied_by_bot?: { channel?: unknown; bot_id?: unknown; bot_name?: unknown } };
 }
 
 interface DebugExecStreamEvent {
@@ -281,6 +287,8 @@ class RepositoryError extends Error {
   status: number;
   code?: string;
   retryAfterSeconds?: number;
+  occupiedByBot?: { botId: string; botName: string };
+  occupiedChannel?: "weixin" | "whatsapp";
 
   constructor(message: string, status: number, code?: string, retryAfterSeconds?: number) {
     super(message);
@@ -540,7 +548,18 @@ const parseApiError = async (response: Response): Promise<RepositoryError> => {
   const requestId = payload?.request_id?.trim() || payload?.requestId?.trim();
   const detail = [code, requestId ? `request_id=${requestId}` : ""].filter(Boolean).join(", ");
   const message = payload?.message?.trim() || payload?.error?.trim() || `请求失败（${response.status}）`;
-  return new RepositoryError(detail ? `${message}（${detail}）` : message, response.status, code, payload?.retryAfterSeconds);
+  const error = new RepositoryError(detail ? `${message}（${detail}）` : message, response.status, code, payload?.retryAfterSeconds);
+  const channel = payload?.details?.channel;
+  if (code === "CHANNEL_OCCUPIED" && (channel === "weixin" || channel === "whatsapp")) {
+    error.occupiedChannel = channel;
+  }
+  const owner = payload?.details?.occupied_by_bot;
+  if (code === "WEIXIN_ACCOUNT_OCCUPIED" && owner?.channel === "weixin"
+    && typeof owner.bot_id === "string" && owner.bot_id.trim()
+    && typeof owner.bot_name === "string" && owner.bot_name.trim()) {
+    error.occupiedByBot = { botId: owner.bot_id, botName: owner.bot_name };
+  }
+  return error;
 };
 
 const request = async <T>(
@@ -658,6 +677,55 @@ const mapDesktopSession = (raw: Record<string, unknown>): CloudDesktopSession =>
   if (reason !== undefined) session.reason = reason;
   return session;
 };
+
+const mapDesktopResource = (raw: Record<string, unknown>): CloudDesktopResource => ({
+  resourceId: stringField(raw, "resource_id", "resourceId") ?? "",
+  generationId: stringField(raw, "generation_id", "generationId"),
+  state: (stringField(raw, "state") ?? "unprepared") as CloudDesktopResource["state"],
+  progress: numberField(raw, "progress"),
+});
+
+// 隧道端点只描述沙箱内回环目标。这里刻意不接受任何主机名：ingressproxy 下线后
+// 不再有对外泛域名，后端若下发 URL 说明契约被破坏，前端直接判为不可用。
+const mapDesktopTunnel = (raw: unknown): CloudDesktopTunnel => {
+  const payload = (raw ?? {}) as Record<string, unknown>;
+  const mode = stringField(payload, "mode") === "ws" ? "ws" : "rfb";
+  const tunnel: CloudDesktopTunnel = {
+    mode,
+    ip: stringField(payload, "ip") ?? "127.0.0.1",
+    port: stringField(payload, "port") ?? "5901",
+  };
+  const path = stringField(payload, "path");
+  if (path !== undefined) tunnel.path = path;
+  return tunnel;
+};
+
+// access 缺失时按只读处理：宁可少给权限，也不能把可写端点当成默认。
+const mapDesktopViewerAccess = (raw: Record<string, unknown>): CloudDesktopViewerAccess =>
+  stringField(raw, "access") === "write" ? "write" : "read";
+
+const mapDesktopViewerLease = (raw: Record<string, unknown>): CloudDesktopViewerLease => ({
+  version: numberField(raw, "version") ?? 1,
+  attachmentId: stringField(raw, "attachment_id", "attachmentId") ?? "",
+  ticket: stringField(raw, "ticket") ?? "",
+  resourceId: stringField(raw, "resource_id", "resourceId") ?? "",
+  generationId: stringField(raw, "generation_id", "generationId") ?? "",
+  access: mapDesktopViewerAccess(raw),
+  incarnation: stringField(raw, "incarnation") ?? "",
+  expiresAt: numberField(raw, "expires_at", "expiresAt") ?? 0,
+  tunnel: mapDesktopTunnel(raw.tunnel ?? raw.Tunnel),
+});
+
+const mapDesktopViewerClaim = (raw: Record<string, unknown>): CloudDesktopViewerClaim => ({
+  version: numberField(raw, "version") ?? 1,
+  attachmentId: stringField(raw, "attachment_id", "attachmentId") ?? "",
+  resourceId: stringField(raw, "resource_id", "resourceId") ?? "",
+  generationId: stringField(raw, "generation_id", "generationId") ?? "",
+  access: mapDesktopViewerAccess(raw),
+  incarnation: stringField(raw, "incarnation") ?? "",
+  expiresAt: numberField(raw, "expires_at", "expiresAt") ?? 0,
+  tunnel: mapDesktopTunnel(raw.tunnel ?? raw.Tunnel),
+});
 
 const normalizeWorkerActionLogs = (value: unknown): WorkerActionStatusLog[] => {
   if (!Array.isArray(value)) {
@@ -1301,6 +1369,46 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
       return mapDesktopSession(raw);
     },
 
+    async ensureDesktopResource(botId) {
+      const { instanceId } = await resolveBotScope(botId);
+      const raw = await requestEnvelope<Record<string, unknown>>(baseUrl, `/v1/instances/${encodeURIComponent(instanceId)}/desktop/resource`, {
+        method: "POST",
+      });
+      return mapDesktopResource(raw);
+    },
+
+    async getDesktopResource(botId) {
+      const { instanceId } = await resolveBotScope(botId);
+      const raw = await requestEnvelope<Record<string, unknown>>(baseUrl, `/v1/instances/${encodeURIComponent(instanceId)}/desktop/resource`, {
+        method: "GET",
+      });
+      return mapDesktopResource(raw);
+    },
+
+    async createDesktopViewer(botId) {
+      const { instanceId } = await resolveBotScope(botId);
+      const raw = await requestEnvelope<Record<string, unknown>>(baseUrl, `/v1/instances/${encodeURIComponent(instanceId)}/desktop/viewer`, {
+        method: "POST",
+      });
+      return mapDesktopViewerLease(raw);
+    },
+
+    async claimDesktopViewer(botId, attachmentId, ticket) {
+      const { instanceId } = await resolveBotScope(botId);
+      const raw = await requestEnvelope<Record<string, unknown>>(baseUrl, `/v1/instances/${encodeURIComponent(instanceId)}/desktop/viewer/${encodeURIComponent(attachmentId)}/claim`, {
+        method: "POST",
+        body: { ticket },
+      });
+      return mapDesktopViewerClaim(raw);
+    },
+
+    async releaseDesktopViewer(botId, attachmentId) {
+      const { instanceId } = await resolveBotScope(botId);
+      await requestEnvelope<null>(baseUrl, `/v1/instances/${encodeURIComponent(instanceId)}/desktop/viewer/${encodeURIComponent(attachmentId)}`, {
+        method: "DELETE",
+      });
+    },
+
     async configureQQChannel(botId, input) {
       const appId = input.appId.trim();
       const appSecret = input.appSecret.trim();
@@ -1353,7 +1461,7 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
       const { instanceId } = await resolveBotScope(botId);
       await requestEnvelope(baseUrl, `/v1/instances/${encodeURIComponent(instanceId)}/bots/${encodeURIComponent(botId)}/channel-bindings/${channel}`, {
         method: "DELETE",
-        body: channel === "whatsapp" ? (reservationId ? { reservation_id: reservationId } : { disconnect: true }) : undefined,
+        body: reservationId ? { reservation_id: reservationId } : { disconnect: true },
       });
     },
 

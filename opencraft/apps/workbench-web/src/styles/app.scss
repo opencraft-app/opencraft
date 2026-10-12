@@ -9324,6 +9324,12 @@ html[data-codex-window-type="electron"] .thread-scroll {
   }
 }
 
+@container codex-composer (min-width: 768px) {
+  .codex-composer-editor {
+    min-height: 52px;
+  }
+}
+
 .codex-composer-placeholder {
   position: absolute;
   color: var(--color-text-tertiary);

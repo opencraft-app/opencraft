@@ -863,8 +863,8 @@ thumb, highlight and shadow consume the active Design System theme tokens.
 The Composer permissions menu contains only declared permission profiles, without
 an AppServer-default row or explanatory question. An absent or null draft choice
 inherits the runtime's effective profile for display only; rendering never writes
-that derived value into the draft. Until resolved, the trigger reads `Permissions`
-and no profile is checked. Explicit choices still use the existing submit path.
+that derived value into the draft. Until resolved, the trigger reads localized `Permissions` (`权限` in Chinese)
+and no profile is checked. Explicit choices still use the existing submit path. Standard Host-verified mode names, Chinese descriptions, menu status and pending-change hints use the application locale catalog. Native/custom profile names and descriptions remain engine-owned.
 
 Temporary Side Chat forks are adopted by `ThreadResumeCoordinator.adoptFork` from
 the validated `thread/fork` response in its original connection generation. They
@@ -1487,3 +1487,5 @@ button. Sidebar owns exclusivity across participant Popovers and existing contex
 dropdown menus, clears state on selection/hidden-row/unload, and prevents a retired
 Popover from restoring focus into a newer one. Escape retains normal focus return.
 No IOA-specific query, count, identity or badge styling belongs to Sidebar.
+
+Chinese emphasis uses the standard Marked tokenizer first. If it rejects an asterisk delimiter at a Han/punctuation boundary, the compiler retries with a length-preserving delimiter mask and a relaxed Han opener boundary. This preserves canonical source, code/escape masking and standard English/underscore behavior. The Codex reference uses Marked 16.4.1 without this override and reproduces both reported completed-text cases.

@@ -18,6 +18,7 @@ bash -n \
   .ci/runtime/create_playground_from_gitops.sh \
   .ci/runtime/gitops_promotion_bootstrap.sh \
   .ci/runtime/commands/publish_frontend_preview.sh \
+  .ci/runtime/commands/build_frontend_next_artifacts.sh \
   .ci/runtime/commands/release_frontend_edgeone_artifact.sh \
   .ci/runtime/pin_image_to_gitops.sh \
   .ci/runtime/promote_bundle_image_to_gitops.sh \

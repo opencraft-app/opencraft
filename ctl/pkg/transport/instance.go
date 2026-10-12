@@ -733,3 +733,71 @@ type DesktopResourceResponse struct {
 	State        string `json:"state"`
 	Progress     int    `json:"progress,omitempty"`
 }
+
+// Desktop viewer transport modes. Neither mode publishes a browser-reachable
+// URL: the endpoint is a loopback target inside the sandbox that the client
+// can only reach through the authenticated TAT session tunnel.
+const (
+	// DesktopViewerTunnelModeRFB tunnels raw RFB bytes (read-only observer).
+	DesktopViewerTunnelModeRFB = "rfb"
+	// DesktopViewerTunnelModeWS tunnels a WebSocket conversation (broker).
+	DesktopViewerTunnelModeWS = "ws"
+)
+
+// Desktop viewer access levels. "write" means keyboard and mouse are accepted
+// on the tunneled endpoint; "read" degrades to the read-only observer.
+const (
+	DesktopViewerAccessWrite = "write"
+	DesktopViewerAccessRead  = "read"
+)
+
+// DesktopViewerTunnel is the in-sandbox loopback target of the desktop media.
+// It is deliberately not a public URL: removing ingressproxy removed the
+// wildcard domain, so no host name is published to the browser here.
+type DesktopViewerTunnel struct {
+	Mode string `json:"mode" example:"rfb"`
+	IP   string `json:"ip" example:"127.0.0.1"`
+	Port string `json:"port" example:"5903"`
+	// Path is only meaningful for DesktopViewerTunnelModeWS.
+	Path string `json:"path,omitempty" example:"/desktop/connect"`
+}
+
+// DesktopViewerResponse is a short-lived, single-use viewer lease bound to one
+// prepared desktop generation. It carries no VNC password and no public URL:
+// authorization is the product login plus the instance-scoped TAT tunnel, and
+// the ticket is only redeemable by the viewer broker.
+type DesktopViewerResponse struct {
+	Version      int    `json:"version" example:"1"`
+	AttachmentID string `json:"attachment_id" example:"8b0f5f1e-0f1a-4f3f-9f0e-1f2a3b4c5d6e"`
+	Ticket       string `json:"ticket"`
+	ResourceID   string `json:"resource_id" example:"ins-1"`
+	GenerationID string `json:"generation_id"`
+	// Access is DesktopViewerAccessWrite when the writable endpoint is ready and
+	// DesktopViewerAccessRead when the viewer must fall back to the observer.
+	Access string `json:"access" example:"write"`
+	// Incarnation is the verified physical desktop identity the lease is pinned
+	// to, not the CTL preparation generation.
+	Incarnation string `json:"incarnation"`
+	// ExpiresAt is a Unix millisecond timestamp.
+	ExpiresAt int64               `json:"expires_at" example:"1770000000000"`
+	Tunnel    DesktopViewerTunnel `json:"tunnel"`
+}
+
+// DesktopViewerClaimRequest redeems the one-time ticket before any desktop
+// media is relayed. The ticket is the capability; no bearer token is repeated.
+type DesktopViewerClaimRequest struct {
+	Ticket string `json:"ticket"`
+}
+
+// DesktopViewerClaimResponse is the authority answer to a successful claim.
+// It repeats the tunnel target and never a password or a public URL.
+type DesktopViewerClaimResponse struct {
+	Version      int                 `json:"version" example:"1"`
+	AttachmentID string              `json:"attachment_id"`
+	ResourceID   string              `json:"resource_id" example:"ins-1"`
+	GenerationID string              `json:"generation_id"`
+	Access       string              `json:"access" example:"write"`
+	Incarnation  string              `json:"incarnation"`
+	ExpiresAt    int64               `json:"expires_at" example:"1770000000000"`
+	Tunnel       DesktopViewerTunnel `json:"tunnel"`
+}

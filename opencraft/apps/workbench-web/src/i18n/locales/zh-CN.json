@@ -263,5 +263,20 @@
   "ioa.participants.error": "暂时无法更新名单",
   "ioa.participants.retry": "重试",
   "ioa.participants.loading": "加载中…",
-  "ioa.participants.empty": "还没有已识别的参与者"
+  "ioa.participants.empty": "还没有已识别的参与者",
+  "composer.permissions": "权限",
+  "composer.permissions.readOnly": "只读",
+  "composer.permissions.acceptEdits": "允许编辑",
+  "composer.permissions.auto": "自动审核",
+  "composer.permissions.full": "完全访问",
+  "composer.permissions.readOnly.description": "仅允许读取文件。",
+  "composer.permissions.acceptEdits.description": "允许编辑工作区内的文件。",
+  "composer.permissions.auto.description": "自动审核权限请求。",
+  "composer.permissions.full.description": "允许完整访问文件和执行环境。",
+  "composer.permissions.onSend": "{profile} · 发送时生效",
+  "composer.permissions.nextTurn": "{profile} · 下一轮生效",
+  "composer.permissions.engineProfiles": "引擎配置",
+  "composer.permissions.disabled": "受 AppServer 要求限制，无法选择",
+  "composer.permissions.loading": "正在加载权限配置…",
+  "composer.permissions.refreshError": "无法刷新权限配置，请连接后重试。当前权限保持不变。"
 }

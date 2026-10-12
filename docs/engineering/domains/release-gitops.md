@@ -52,6 +52,27 @@ master 源码
   详见 [发布绑定](../../../site-runtime/deploy/RELEASE-BINDINGS.md) 与
   [验收和回退契约](../../../site-runtime/deploy/RELEASE-CHECKLIST.md)。
 
+## EdgeOne 北京预发（2026-10-12，源码准备）
+
+默认 frontend Pages 预发从 Cloudflare 切换到 EO 项目 `lightvela-prerelease`。
+国内预发组合 `eo:cn-lightvela-prerelease` 使用项目 Production 稳定入口
+`https://lightvela-prerelease-tn2l7wnk.edgeone.dev`；国际预发组合
+`eo:global-lightvela-prerelease-preview` 仅创建同项目 Preview，避免覆盖国内稳定入口。
+两套预发都使用北京 API `https://lightclaw.tech`，沿用 Next Build Output、版本化静态资源、
+Embedded Workbench 归档和正式站相同的 artifact 校验/EO 发布脚本。国内预发先通过签名 Preview
+烟测再更新项目 Production；国际 Preview 同样必须通过烟测。`Production` 是 EO 项目内环境名，
+不意味着允许该自动步骤发布 `lightvela` / `lightvela-intl` 正式项目；入口仅允许两个预发组合。
+
+预发凭据使用 CI setting `EDGEONE_PRERELEASE_API_TOKEN` 或 runner 受保护文件
+`/etc/lightclaw-ci/edgeone_lightvela_prerelease_token`。未配置时失败，不能复用正式项目令牌
+或自动创建新项目。既有 CF 工具保留供历史制品读取，但默认工作流不再构建或发布 CF 预发。
+独立的 StaticPages 分支预览不属于本次 CF 预发替换，保持既有入口与发现方式。
+
+2026-10-12 只读核验显示 `lightvela-prerelease` 为 `overseas`，国内正式项目为 `global`。
+发布参数按已存在项目设置；地域差异仍需 owner 独立评估，不能将此预发验收视为国内全地域验证。
+北京公共 API 当前已对给定预发 Origin 返回 credentialed CORS；无需增加生产 API 的 Origin 授权。
+源码准备不代表流水线或站点已切换，仍须合入、配置专用凭据、运行构建并核对部署与公共路径。
+
 ## 权威分工
 
 - `.ci`：流水线与可复用构建/晋级命令。
@@ -832,6 +853,30 @@ sgprod=`desktop.lightvela.site`（cert bAnD57eL / CLB lb-8kenwgvc）。该改动
 业务配置，不改变镜像构建、制品晋级、Argo Application 或同步模型；CLB 证书（SNI）、泛解析 DNS
 与含云桌面代码的 CTL 镜像仍是独立的发布前置，源配置 render 通过不等于 live 验收。
 
+## 云桌面专用工作负载的独立承载与发布顺序（2026-10-12）
+
+云桌面的会话、观看票据与输入授权是长连接、常驻状态，与普通 CTL API 混在同一组 `ctl-api`
+副本时会互相争抢连接与内存，因此新增独立工作负载 `ctl-desktop` 承载桌面请求。
+
+- `ctl-desktop` 在 `ctl/k8s/base/manifests.yaml` 中只声明 `replicas: 1`、`strategy: Recreate`
+  与空 `template.spec`，其 `spec.template.spec` 与 `metadata.annotations` 由
+  `ctl/k8s/base/kustomization.yaml` 的 `replacements` 从 `ctl-api` 整体继承（镜像、`envFrom`、
+  configMapKeyRef env、volume、probe 全部继承，逐环境 overlay 的 platform 值同样生效）；
+  差异仅来自 label `ctl.clawhub.dev/role`，`CTL_API_ROLE` 由该 label 经 fieldRef 注入。
+- 角色切换与路由必须配对：`ctl-api` 打 `role=api` 后拒收桌面路径，Service Gateway 的
+  `desktop_upstream` 把桌面请求投到 `ctl-desktop`。**发布顺序是硬约束：先确认 `ctl-desktop`
+  已 Ready，再切 `role=api` 与网关 `desktop_upstream`**；顺序颠倒会出现桌面功能短暂 404
+  （仅云桌面受影响，不影响聊天、订单、登录等其他能力）。
+- 环境矩阵（本轮合入状态）：`sandbox-bj-7`、`sandbox-kr-1`、`sgprod`、`shprod` 为完整隔离；
+  `beijing-sandbox`、`beijing-sandbox-2` 只建 `ctl-desktop` 未给 `ctl-api` 打 `role=api`，
+  空角色按兼容模式全放行，隔离不生效但不断链；`sandbox-jp-1` 未接入（`desktop_upstream`
+  缺省即沿用原 upstream）。半配与未接入环境均不得宣称多副本隔离可用。
+- `Recreate` 单副本意味着角色切换瞬间桌面连接本就会重建，发布应安排在桌面维护窗口并协调
+  角色切换与网关路由；源码 render 通过不等于 live 验收，仍需独立核对 Argo `Synced/Healthy`、
+  `CTL_API_ROLE` 实际取值与真实环境回归。
+- 回滚不依赖镜像：把目标环境 `desktop_upstream` 移除且 `role` 置空即回到兼容全放行，
+  已建立的桌面会话按空闲回收收敛。
+
 ## MR 复用工作区源码一致性（2026-10-10）
 
 MR 占位检查在 checkout 后校验期望提交和该提交下的全部受跟踪文件（含 index）。
@@ -842,3 +887,11 @@ MR 占位检查在 checkout 后校验期望提交和该提交下的全部受跟�
 ### CTL 微信 MR 回归门禁
 
 `ctl-weixin` changed guard 使用临时 Python venv，固定 python-dotenv / PyYAML 依赖，并显式传给 Go 脚本测试；缺依赖或任何所选用例 skip 均失败。聚焦实例/HTTP 契约测试与 vet 以 CGO=0 执行，不代替 SQLite/Docker 全量测试。MR 执行器使用 trusted base 的 guard 定义，新 guard 合入可信基座后才会自动选择；当前 MR 必须单独运行该 guard 留证。
+
+### frontend-next 平台构建机试验入口
+
+`.ci/frontend-next.yml` 使用 Stream v2 的公共 Docker 构建池（`self-hosted: false`、`pool-name: docker`），采用平台默认构建镜像，手动触发并独立排队。入口通过 `.ci/runtime/commands/build_frontend_next_artifacts.sh` 在当前 checkout 完整提交上构建 OpenCraft Embedded Workbench，再安装 frontend 冻结依赖、检查并构建四组静态 OCI artifact；默认保留原四组矩阵；后续新增预发组合可通过 FRONTEND_ARTIFACT_MATRIX 手动选择。仅归档到现有 frontend-pages 仓库并回读验证，已有同源码/组合 artifact 按既有 reuse 策略保留；不将该策略当作独立环境逐字节重现的证明。
+
+构建凭据仅由 settings.TCR_SHPROD_PASSWORD 注入 REGISTRY_PASSWORD，不能依赖自建机 /etc/lightclaw-ci。Node、pnpm、ORAS 使用现有版本 bootstrap，平台需具备 bash/git/python3/curl/tar/xz/flock，并能访问源码、Node/ORAS 下载源、包源和 TCR。此入口不启动 Cloudflare、EdgeOne 发布或 GitOps 晋级；实际平台调度、资源容量和网络需首次手动构建验收，不能只凭本地 YAML/测试宣布迁移完成。
+
+公共构建池语义依据[蓝盾上游 StreamDispatchUtils](https://github.com/Tencent/bk-ci/blob/67a7662f9cf8aad4af5ad42426df1ad44937e904/src/backend/ci/core/common/common-pipeline-yaml/src/main/kotlin/com/tencent/devops/process/yaml/v2/utils/StreamDispatchUtils.kt)的公共 Docker 分派。

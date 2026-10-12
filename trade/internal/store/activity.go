@@ -53,7 +53,7 @@ type BundleActivity struct {
 
 // UserActivityParticipation 是 trade_user_activity_participation 表的领域对象（设计稿 §3.2）。
 //
-// 写入路径：新购由 createResource 同事务写入，续费由点石续费下单事务写入。
+// 写入路径：新购由 createResource 写入，续费由 renewResource 发货回调写入。
 // 读取路径：Resolver 仅做 (uin, activity_id, scene) 是否存在判断、不消费具体字段值；
 // 单测断言时偶尔需要拿到完整字段集做行为校验。
 type UserActivityParticipation struct {
@@ -111,6 +111,11 @@ type ActivityStore interface {
 		tx *sql.Tx,
 		row *UserActivityParticipation,
 	) (int64, error)
+}
+
+// ParticipationRecorder records a delivered renewal without requiring a caller-owned transaction.
+type ParticipationRecorder interface {
+	RecordUserParticipation(ctx context.Context, row *UserActivityParticipation) error
 }
 
 // DianshiAdminStore 是后台管理点石订单和参与记录所需的 DAO 能力。
@@ -213,11 +218,28 @@ func (s *MySQLStore) InsertUserParticipation(
 	tx *sql.Tx,
 	row *UserActivityParticipation,
 ) (int64, error) {
-	if row == nil {
-		return 0, fmt.Errorf("trade_user_activity_participation: nil row")
-	}
 	if tx == nil {
 		return 0, fmt.Errorf("trade_user_activity_participation: nil tx (must be called within a transaction)")
+	}
+	return insertUserParticipation(ctx, tx, row)
+}
+
+// RecordUserParticipation uses one atomic INSERT for the renewResource callback.
+func (s *MySQLStore) RecordUserParticipation(ctx context.Context, row *UserActivityParticipation) error {
+	if s == nil || s.db == nil {
+		return fmt.Errorf("trade_user_activity_participation: store is nil")
+	}
+	_, err := insertUserParticipation(ctx, s.db, row)
+	return err
+}
+
+type participationExecer interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+}
+
+func insertUserParticipation(ctx context.Context, exec participationExecer, row *UserActivityParticipation) (int64, error) {
+	if row == nil {
+		return 0, fmt.Errorf("trade_user_activity_participation: nil row")
 	}
 	if !row.Scene.Valid() {
 		return 0, fmt.Errorf("trade_user_activity_participation: invalid scene %q", row.Scene)
@@ -228,7 +250,7 @@ func (s *MySQLStore) InsertUserParticipation(
 		   deal_name, big_deal_no, created_time)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(6))
 	`
-	res, err := tx.ExecContext(ctx, q,
+	res, err := exec.ExecContext(ctx, q,
 		row.Uin, row.AppID, row.ExternalUserID, row.ActivityID, row.Scene, row.BundleID, row.ActID,
 		row.DealName, row.BigDealNo,
 	)

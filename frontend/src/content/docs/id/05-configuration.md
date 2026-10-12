@@ -32,7 +32,9 @@ Chat web ada di Daily; hubungkan kanal eksternal hanya saat ingin memakai aplika
 
 ## Bot dan informasi Bot yang dipilih
 
-Bagian atas konsol berisi tab Bot untuk Hermes Agent saat ini. Tab pertama adalah Bot utama, sedangkan setiap tab tambahan adalah profil Bot terpisah. Paket Anda menentukan jumlah total Bot, termasuk Bot utama. Selama peluncuran internasional bertahap, pintu masuk pembuatan tidak ditampilkan secara default.
+Pilih avatar Bot yang dituju pada deretan Bot. Pada layar sempit, buka panel navigasi terlebih dahulu. Pastikan namanya sebelum mengubah model, memori, Skill, kanal, atau tugas terjadwal. Chat web dan daftar percakapan mengikuti Bot yang dipilih; Bot tambahan juga dapat memakai Chat web. Chat web tidak memerlukan kanal pesan.
+
+Untuk membuat Bot berikutnya, pilih **Bot Baru** jika tombol tersedia dan kuota paket mencukupi. Isi **Nama** (wajib) dan **Deskripsi** (opsional), lalu sesuaikan tampilan jika perlu. Pilihan bawaan adalah **Buat Bot kosong**. Jika ada Bot yang valid untuk disalin, buka **Lanjutan** dan pilih Bot sumber tertentu. Untuk menyalin Bot yang sedang digunakan, buka **Kelola Bot → Salin Bot**; formulir akan memilih sumber itu. Periksa sumber, pilih **Buat**, lalu tunggu hingga selesai.
 
 Setelah memilih Bot, informasi dasarnya ditampilkan di bawah:
 

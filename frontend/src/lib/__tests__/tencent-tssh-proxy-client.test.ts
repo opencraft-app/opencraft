@@ -1,7 +1,8 @@
 import { Binary, deserialize, serialize } from "bson";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TatTransportError } from "@/lib/tat-transport-error";
-import { TencentTsshProxyClient } from "@/lib/tencent-tssh-proxy-client";
+import { TencentTsshProxyClient, TencentTsshProxyConnection } from "@/lib/tencent-tssh-proxy-client";
+import { openDesktopTatSocket } from "@/lib/desktop-tat-transport";
 
 const bootstrap = {
   sandboxId: "sb-1",
@@ -112,6 +113,144 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+});
+
+describe("TencentTsshProxyConnection consumption", () => {
+  it("keeps stream and callback delivery compatible by default", async () => {
+    const client = new TencentTsshProxyClient(bootstrap, { WebSocketImpl });
+    const onData = vi.fn();
+    const connection = new TencentTsshProxyConnection("default", "default", client, { onData });
+    const bytes = new Uint8Array([1, 2, 3]);
+    connection.receive(bytes);
+    expect(onData).toHaveBeenCalledExactlyOnceWith(bytes);
+    const reader = connection.readable.getReader();
+    await expect(reader.read()).resolves.toEqual({ done: false, value: bytes });
+    connection.markClosed();
+  });
+
+  it("does not retain unread bytes in explicit callback mode", async () => {
+    const client = new TencentTsshProxyClient(bootstrap, { WebSocketImpl });
+    const onData = vi.fn();
+    const connection = new TencentTsshProxyConnection("callback", "callback", client, {
+      onData,
+      consumptionMode: "callback",
+    });
+    for (let index = 0; index < 256; index += 1) connection.receive(new Uint8Array(64 * 1024));
+    expect(onData).toHaveBeenCalledTimes(256);
+    connection.markClosed();
+    await expect(connection.readable.getReader().read()).resolves.toEqual({ done: true, value: undefined });
+  });
+
+  it("preserves the error object and allows reentrant close from onError", async () => {
+    const client = new TencentTsshProxyClient(bootstrap, { WebSocketImpl });
+    const onClose = vi.fn();
+    const onError = vi.fn(() => connection.close());
+    const connection = new TencentTsshProxyConnection("failed", "failed", client, { onError, onClose });
+    const error = new TatTransportError("fatal", "denied", { phase: "open_proxy" });
+    expect(() => connection.fail(error)).not.toThrow();
+    expect(onError).toHaveBeenCalledExactlyOnceWith(error.message, error);
+    await expect(connection.waitClosed()).rejects.toBe(error);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    connection.close();
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("default desktop Tencent client", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  const installSocket = () => vi.stubGlobal("WebSocket", class extends FakeWebSocket {
+    static CONNECTING = 0;
+    static OPEN = 1;
+    static CLOSING = 2;
+    static CLOSED = 3;
+  });
+
+  it("buffers the raw first packet for noVNC without keeping a second stream queue", async () => {
+    installSocket();
+    const openSpy = vi.spyOn(TencentTsshProxyClient.prototype, "openProxy");
+    const opened = openDesktopTatSocket({ bootstrap, tunnel: { mode: "rfb", ip: "127.0.0.1", port: "5901" } });
+    const socket = FakeWebSocket.instances[0]!;
+    socket.open();
+    vi.advanceTimersByTime(200);
+    await flushPromises();
+    const request = parseBsonFrames(socket)[0]!;
+    const proxyId = ((request.Data as Record<string, unknown>).Data as Record<string, unknown>).ProxyId as string;
+    socket.receive(bsonResponse("PtyProxyReady", proxyId, { ProxyId: proxyId }));
+    socket.receive(bsonResponse("PtyProxyData", proxyId, { ProxyId: proxyId, Data: new TextEncoder().encode("RFB 003.008\n") }));
+    const desktop = await opened;
+    const proxyConnection = await openSpy.mock.results[0]!.value as TencentTsshProxyConnection;
+    const onmessage = vi.fn();
+    desktop.channel.onmessage = onmessage;
+    expect(onmessage).not.toHaveBeenCalled();
+    await flushPromises();
+    expect(onmessage).toHaveBeenCalledTimes(1);
+    expect(new TextDecoder().decode(onmessage.mock.calls[0]![0].data)).toBe("RFB 003.008\n");
+    desktop.close();
+    await expect(proxyConnection.readable.getReader().read()).resolves.toEqual({ done: true, value: undefined });
+  });
+
+  it.each([false, true])("preserves raw proxy failure and closes native resources when close send throws: %s", async (closeThrows) => {
+    installSocket();
+    const fail = vi.spyOn(TencentTsshProxyConnection.prototype, "fail");
+    const closeProxy = vi.spyOn(TencentTsshProxyClient.prototype, "closeProxy");
+    const closeClient = vi.spyOn(TencentTsshProxyClient.prototype, "close");
+    const opened = openDesktopTatSocket({ bootstrap, tunnel: { mode: "rfb", ip: "127.0.0.1", port: "5901" } });
+    const rejection = opened.catch((error: unknown) => error);
+    const socket = FakeWebSocket.instances[0]!;
+    const close = vi.spyOn(socket, "close");
+    socket.open();
+    vi.advanceTimersByTime(200);
+    await flushPromises();
+    const request = parseBsonFrames(socket)[0]!;
+    const proxyId = ((request.Data as Record<string, unknown>).Data as Record<string, unknown>).ProxyId as string;
+    if (closeThrows) vi.spyOn(socket, "send").mockImplementation(() => { throw new Error("close send failed"); });
+    socket.receive(bsonResponse("PtyProxyReady", proxyId, { ProxyId: proxyId, Error: "permission denied" }));
+    const error = await rejection;
+    expect(error).toBe(fail.mock.calls[0]![0]);
+    expect(error).toMatchObject({ kind: "fatal", phase: "open_proxy", retryable: false });
+    expect(closeProxy).toHaveBeenCalledTimes(1);
+    expect(closeClient).toHaveBeenCalledTimes(1);
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["connection_lost", "request_timeout", "lease_expired"])("keeps default raw %s failures retryable and preserves their identity", async (kind) => {
+    installSocket();
+    const fail = vi.spyOn(TencentTsshProxyConnection.prototype, "fail");
+    const opened = openDesktopTatSocket({ bootstrap, tunnel: { mode: "rfb", ip: "127.0.0.1", port: "5901" } });
+    const rejection = opened.catch((error: unknown) => error);
+    const socket = FakeWebSocket.instances[0]!;
+    const close = vi.spyOn(socket, "close");
+    socket.open();
+    vi.advanceTimersByTime(200);
+    await flushPromises();
+    if (kind === "connection_lost") socket.onerror?.call(socket as unknown as WebSocket, new Event("error"));
+    else if (kind === "request_timeout") await vi.advanceTimersByTimeAsync(30_000);
+    else {
+      const request = parseBsonFrames(socket)[0]!;
+      const proxyId = ((request.Data as Record<string, unknown>).Data as Record<string, unknown>).ProxyId as string;
+      socket.receive(bsonResponse("PtyProxyReady", proxyId, { ProxyId: proxyId, Error: "session not valid" }));
+    }
+    const error = await rejection;
+    expect(error).toBe(fail.mock.calls[0]![0]);
+    expect(error).toMatchObject({ kind, retryable: true });
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it("closes the native socket and preserves auth failure on default raw setup", async () => {
+    installSocket();
+    const opened = openDesktopTatSocket({ bootstrap, tunnel: { mode: "rfb", ip: "127.0.0.1", port: "5901" } });
+    const assertion = expect(opened).rejects.toMatchObject({ kind: "fatal", phase: "websocket", retryable: false });
+    const socket = FakeWebSocket.instances[0]!;
+    const close = vi.spyOn(socket, "close");
+    socket.open();
+    socket.receive(JSON.stringify({ Type: "Error", Data: { Message: "permission denied" } }));
+    await assertion;
+    expect(close).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("TencentTsshProxyClient", () => {
