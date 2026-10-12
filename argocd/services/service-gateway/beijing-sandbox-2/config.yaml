@@ -54,6 +54,7 @@ routes:
   - DELETE
   - OPTIONS
   upstream: http://ctl-api.ctl.svc.cluster.local
+  desktop_upstream: http://ctl-desktop.ctl.svc.cluster.local
   access: authenticated
   path_policy: allowlist
   path_allow:
@@ -89,6 +90,16 @@ routes:
     path: /v1/instances/{instance_id}/desktop/session
   - method: GET
     path: /v1/instances/{instance_id}/desktop/session
+  - method: POST
+    path: /v1/instances/{instance_id}/desktop/resource
+  - method: GET
+    path: /v1/instances/{instance_id}/desktop/resource
+  - method: POST
+    path: /v1/instances/{instance_id}/desktop/viewer
+  - method: DELETE
+    path: /v1/instances/{instance_id}/desktop/viewer/{attachment_id}
+  - method: POST
+    path: /v1/instances/{instance_id}/desktop/viewer/{attachment_id}/claim
   - method: POST
     path: /v1/instances/{instance_id}/config/reset
   - method: POST

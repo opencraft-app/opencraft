@@ -18,6 +18,9 @@ import type {
   BotChannelConfigResult,
   BotTerminalSession,
   CloudDesktopSession,
+  CloudDesktopResource,
+  CloudDesktopViewerClaim,
+  CloudDesktopViewerLease,
   BotRuntime,
   BotVersion,
   BundleTimeUnit,
@@ -468,6 +471,16 @@ export interface BotRepository {
   ensureDesktopSession(botId: string): Promise<CloudDesktopSession>;
   /** 云电脑（VNC）：GET 轮询会话状态；Ready 时兼作 idle 回收心跳。 */
   getDesktopSession(botId: string): Promise<CloudDesktopSession>;
+  /** 云电脑资源准备：POST 幂等触发（无凭据下发）。 */
+  ensureDesktopResource(botId: string): Promise<CloudDesktopResource>;
+  /** 云电脑资源准备：GET 轮询准备态。 */
+  getDesktopResource(botId: string): Promise<CloudDesktopResource>;
+  /** 签发一次性观看租约（无 VNC 密码、无公网 URL）。 */
+  createDesktopViewer(botId: string): Promise<CloudDesktopViewerLease>;
+  /** 兑换观看票据：成功才允许打开桌面隧道。 */
+  claimDesktopViewer(botId: string, attachmentId: string, ticket: string): Promise<CloudDesktopViewerClaim>;
+  /** 释放观看租约（幂等）。 */
+  releaseDesktopViewer(botId: string, attachmentId: string): Promise<void>;
   configureQQChannel(botId: string, input: { appId: string; appSecret: string; account?: string }): Promise<BotChannelConfigResult>;
   claimUniqueChannel(botId: string, channel: "weixin" | "whatsapp"): Promise<string | undefined>;
   confirmUniqueChannel(botId: string, channel: "weixin" | "whatsapp", reservationId?: string): Promise<void>;
