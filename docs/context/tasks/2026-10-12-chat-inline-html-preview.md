@@ -2,7 +2,7 @@
 Clicking an explicit HTML file path in Chat inline code opens a rendered, read-only page preview in the existing right-side panel.
 
 ## non_goals
-- Run scripts or load external subresources from the HTML preview.
+- Run scripts, load external subresources, or navigate to external pages from the HTML preview.
 - Change `MEDIA:` resource syntax, file authorization, downloads, or deployment.
 
 ## requirement_ids / requirement_refs / requirement_excerpt
@@ -21,11 +21,13 @@ Clicking an explicit HTML file path in Chat inline code opens a rendered, read-o
 - The screenshot's backticked HTML path becomes a `file:` resource link and clicking opens the current Bot's right panel.
 - `.htm` works; bare filenames, commands, streaming output, and nested explicit links keep existing behavior.
 - HTML preview renders self-contained layout and inline styles, offers source view, and remains subject to Host file access.
+- Clicking links or encountering a refresh redirect in the preview never requests the target page or its resources; Source retains the original HTML.
 
 ## affected_paths
 - `opencraft/packages/chat-render-web/src/renderers/resource-link/resource-link.tsx`
 - `opencraft/tests/inline-markdown-file-preview.test.mjs`
 - `opencraft/apps/workbench-web/src/panels/workspace-resource-panel.tsx`
+- `opencraft/apps/workbench-web/package.json` and `opencraft/package-lock.json`
 - `opencraft/apps/workbench-web/src/panels/workspace-resource-model.ts`
 - `opencraft/apps/workbench-web/src/styles/app.scss`
 - `opencraft/tests/workbench-resource-readonly.test.mjs`
@@ -55,6 +57,7 @@ Clicking an explicit HTML file path in Chat inline code opens a rendered, read-o
 | `docs/context/project/services/opencraft.md@8c46dd35d` | Routed service | Panel and shared renderer boundaries |
 | `opencraft/design/README.md@8c46dd35d` and `opencraft/design/invariants.md@8c46dd35d` | Workspace presentation | Update preview behavior |
 | `docs/context/project/adjacency/frontend-runtime-openspec-i18n.md@8c46dd35d` | Closest site adjacency card | No frontend config or locale path changed |
+| `docs/context/project/services/frontend.md` | CR follow-up route | Check frontend boundary; work remains in OpenCraft |
 
 ## evidence
 - `node --test tests/inline-markdown-file-preview.test.mjs`: passed; the screenshot HTML path resolves to a `file:` link and clicking opens the Bot-scoped right panel.
@@ -65,9 +68,10 @@ Clicking an explicit HTML file path in Chat inline code opens a rendered, read-o
 - `validate_documentation.py --repo . --format json`: zero broken first-party links or warnings.
 - `npm run typecheck --workspace @opencraft/workbench-web`: passed after installing the shared collaboration package's local dependencies in the isolated checkout.
 - `npx tsx scripts/smoke-workspace-media.ts` with the bundled Playwright module and local Chrome executable: real headless Chromium passed; the inline HTML link opened a styled page in the right panel, Source/Preview switched, and scripts/external subresources stayed blocked. Screenshot saved outside the repository.
+- CR follow-up: before the fix, clicking a link in the real Chromium preview requested both `/fixture/navigated.html` and `/fixture/navigated.png`; SVG `set` animation reproduced the same bypass after ordinary links were stripped. After removing navigation destinations, refresh redirects and SVG animation elements, both clicks left the report visible with zero target requests.
 
 ## risks
-- HTML content is untrusted. The iframe has an opaque sandbox origin and a restrictive content policy; scripts and external subresources are blocked. The existing Host resource policy retains file-read authority.
+- HTML content is untrusted. The iframe has an opaque sandbox origin and a restrictive content policy; a parsed preview also removes link destinations, refresh redirects and SVG animation elements because Chromium does not enforce `navigate-to`. Scripts and external subresources are blocked. The existing Host resource policy retains file-read authority.
 
 ## validation
 - `node --test tests/inline-markdown-file-preview.test.mjs` in `opencraft/`.
@@ -88,4 +92,4 @@ Clicking an explicit HTML file path in Chat inline code opens a rendered, read-o
 - Exact search `explicitMarkdownPath` located the sole recognition rule and its focused test. No repository-wide scan used.
 
 ## handoff
-- Local implementation and validation complete; no commit, MR, or deployment requested for this new change.
+- MR !5203 is open and includes this CR follow-up. Merge and deployment are separate actions.

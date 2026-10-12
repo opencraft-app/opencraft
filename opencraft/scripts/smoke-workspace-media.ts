@@ -13,7 +13,7 @@ function simplePdf() {
   return Buffer.from(pdf);
 }
 const pdf = process.env.OPENCRAFT_PDF_FIXTURE ? await readFile(process.env.OPENCRAFT_PDF_FIXTURE) : simplePdf();
-const reportHtml = Buffer.from('<!doctype html><html><head><style>h1{color:rgb(0,80,160)}</style></head><body><h1>Visual report</h1><img src="/fixture/external.png"><script>document.body.dataset.scriptRan="yes";window.parent.htmlInjected=true</script></body></html>');
+const reportHtml = Buffer.from('<!doctype html><html><head><meta http-equiv="refresh" content="0;url=/fixture/navigated.html"><style>h1{color:rgb(0,80,160)}</style></head><body><h1>Visual report</h1><a href="/fixture/navigated.html">Follow report</a><svg><a><set attributeName="href" to="/fixture/navigated.html" begin="0s" fill="freeze"/><text x="0" y="20">Animated report link</text></a></svg><img src="/fixture/external.png"><script>document.body.dataset.scriptRan="yes";window.parent.htmlInjected=true</script></body></html>');
 let video: Buffer = Buffer.alloc(0);
 const wave = Buffer.alloc(44 + 16000); wave.write("RIFF"); wave.writeUInt32LE(wave.length - 8, 4); wave.write("WAVEfmt ", 8); wave.writeUInt32LE(16, 16); wave.writeUInt16LE(1, 20); wave.writeUInt16LE(1, 22); wave.writeUInt32LE(8000, 24); wave.writeUInt32LE(16000, 28); wave.writeUInt16LE(2, 32); wave.writeUInt16LE(16, 34); wave.write("data", 36); wave.writeUInt32LE(16000, 40);
 const aliasPlugin: NonNullable<UserConfig["plugins"]>[number] = { name: "workspace-media-runtime", enforce: "pre", resolveId(source, importer) {
@@ -38,9 +38,9 @@ const vite = await createServer({
       response.setHeader("content-type", /\.m?js$/u.test(request.url) ? "application/javascript" : request.url.endsWith(".css") ? "text/css" : request.url.endsWith(".wasm") ? "application/wasm" : "application/octet-stream");
       void readFile(resolve(fixtureBuild, request.url.slice(1))).then(data => response.end(data), () => { response.statusCode = 404; response.end(); }); return;
     }
-    const files: Record<string, Buffer> = { "/fixture/report.pdf": pdf, "/fixture/small.pdf": simplePdf(), "/fixture/broken.pdf": Buffer.from("invalid pdf"), "/fixture/voice.wav": wave, "/fixture/clip.webm": video, "/fixture/unknown.bin": Buffer.from([0, 255, 1]), "/fixture/report.html": reportHtml };
+    const files: Record<string, Buffer> = { "/fixture/report.pdf": pdf, "/fixture/small.pdf": simplePdf(), "/fixture/broken.pdf": Buffer.from("invalid pdf"), "/fixture/voice.wav": wave, "/fixture/clip.webm": video, "/fixture/unknown.bin": Buffer.from([0, 255, 1]), "/fixture/report.html": reportHtml, "/fixture/navigated.html": Buffer.from('<!doctype html><h1>Navigated outside preview</h1><img src="/fixture/navigated.png">'), "/fixture/navigated.png": Buffer.from([137, 80, 78, 71]) };
     const file = files[request.url ?? ""]; if (file === undefined) { next(); return; }
-    response.setHeader("content-type", "application/octet-stream"); response.end(file);
+    response.setHeader("content-type", request.url === "/fixture/navigated.html" ? "text/html" : request.url === "/fixture/navigated.png" ? "image/png" : "application/octet-stream"); response.end(file);
   }); } }],
 });
 let browser;
@@ -49,7 +49,7 @@ try {
   browser = await chromium.launch({ headless: true, executablePath: process.env.OPENCRAFT_CHROMIUM_EXECUTABLE, args: ["--no-sandbox"] });
   const page = await browser.newPage({ viewport: { width: 1100, height: 800 } });
   const errors: string[] = []; page.on("pageerror", error => errors.push(error.message));
-  const externalHtmlRequests: string[] = []; page.on("request", request => { if (request.url().endsWith("/fixture/external.png")) externalHtmlRequests.push(request.url()); });
+  const externalHtmlRequests: string[] = []; page.on("request", request => { if (/\/fixture\/(external|navigated)(\.html|\.png)$/u.test(request.url())) externalHtmlRequests.push(request.url()); });
   await page.goto(`http://127.0.0.1:${(vite.httpServer!.address() as { port: number }).port}`);
   const open = async (name: string) => { await page.getByRole("link", { name: `/fixture/${name}`, exact: true }).click(); };
   await page.getByRole("link", { name: "/fixture/report.pdf", exact: true }).waitFor();
@@ -96,6 +96,11 @@ try {
   assert.deepEqual(externalHtmlRequests, [], "HTML preview must block external subresources");
   assert.equal(await htmlFrame.locator("body").getAttribute("data-script-ran"), null, "HTML scripts must not run in the preview frame");
   assert.equal(await page.evaluate(() => (window as unknown as { htmlInjected?: boolean }).htmlInjected), undefined, "HTML scripts must not run in the parent page");
+  await htmlFrame.getByText("Follow report", { exact: true }).click();
+  await htmlFrame.getByText("Animated report link", { exact: true }).click();
+  await page.waitForTimeout(300);
+  assert.deepEqual(externalHtmlRequests, [], "HTML preview links must not request external pages or their resources");
+  await htmlFrame.getByRole("heading", { name: "Visual report" }).waitFor();
   await page.getByRole("button", { name: "Source", exact: true }).click();
   assert.equal(await page.locator("iframe.workspace-file-html").count(), 0);
   assert.match(await page.locator(".workspace-file-source").innerText(), /<h1>Visual report<\/h1>/u);

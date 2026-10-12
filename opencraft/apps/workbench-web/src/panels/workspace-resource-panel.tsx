@@ -3,6 +3,7 @@ import { useAppearanceTheme } from "../appearance-theme";
 import { createAppServerMediaSourceLoader } from "../runtime/appserver-media-loader";
 import { useIntl } from "@opencraft/i18n/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { parse, serialize, type DefaultTreeAdapterTypes } from "parse5";
 import type { BlobProgress } from "@opencraft/blob-resources";
 import type { FuzzyFileSearchResult } from "@opencraft/appserver-protocol/generated";
 import type { FsReadDirectoryEntry } from "@opencraft/appserver-protocol/generated/v2";
@@ -254,12 +255,35 @@ export function WorkspaceResourcePreviewPanel(props: PanelRendererProps) {
   return <WorkspaceResourcePanel {...props} previewOnly />;
 }
 
-const htmlPreviewPolicy = "default-src 'none'; img-src data: blob:; media-src data: blob:; font-src data:; style-src 'unsafe-inline'; script-src 'none'; connect-src 'none'; frame-src 'none'; object-src 'none'; form-action 'none'; base-uri 'none'; navigate-to 'none'";
+const htmlPreviewPolicy = "default-src 'none'; img-src data: blob:; media-src data: blob:; font-src data:; style-src 'unsafe-inline'; script-src 'none'; connect-src 'none'; frame-src 'none'; object-src 'none'; form-action 'none'; base-uri 'none'";
+const htmlPreviewAnimationTags = new Set(["animate", "animateMotion", "animateTransform", "set", "discard"]);
+
+function removeHtmlPreviewNavigation(document: DefaultTreeAdapterTypes.Document): void {
+  const pending: DefaultTreeAdapterTypes.ParentNode[] = [document];
+  while (pending.length > 0) {
+    const parent = pending.pop()!;
+    parent.childNodes = parent.childNodes.filter((child) => {
+      if (!("tagName" in child)) return true;
+      if (child.tagName === "meta" && child.attrs.some((attr) => attr.name === "http-equiv" && attr.value.trim().toLowerCase() === "refresh")) return false;
+      // SVG animation can restore a stripped link destination without running script.
+      if (htmlPreviewAnimationTags.has(child.tagName)) return false;
+      if (child.tagName === "a" || child.tagName === "area") {
+        child.attrs = child.attrs.filter((attr) => attr.name !== "href" && attr.name !== "ping" && attr.name !== "target");
+      }
+      pending.push(child);
+      if ("content" in child) pending.push(child.content);
+      return true;
+    });
+  }
+}
 
 function htmlPreviewDocument(source: string): string {
-  const doctype = /^\s*<!doctype[^>]*>/iu.exec(source)?.[0] ?? "";
+  const document = parse(source);
+  removeHtmlPreviewNavigation(document);
+  const sanitized = serialize(document);
+  const doctype = /^<!doctype[^>]*>/iu.exec(sanitized)?.[0] ?? "";
   const policy = `<meta http-equiv="Content-Security-Policy" content="${htmlPreviewPolicy}">`;
-  return `${doctype}${policy}${source.slice(doctype.length)}`;
+  return `${doctype}${policy}${sanitized.slice(doctype.length)}`;
 }
 
 export function WorkspaceResourcePanel({ tab, previewOnly = false }: PanelRendererProps & { readonly previewOnly?: boolean }) {
