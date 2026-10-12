@@ -3050,6 +3050,7 @@
   "k_f88d11ae": "Crea varios Bots en un solo Agent para que cada uno cumpla su función, manteniendo aisladas entre sí la memoria, las Skills, las tareas programadas y las configuraciones de modelos y canales.",
   "k_f88e6c44": "Bailian (Qwen)",
   "k_f8c11a29": "Pregunta anterior",
+  "k_f8c3648f": "Desconecta WhatsApp de este Bot antes de eliminarlo.",
   "k_f8d33961": "No se pudo ejecutar el comando",
   "k_f8de3dbe": "Eliminando",
   "k_f8dfedcd": "Guardado",

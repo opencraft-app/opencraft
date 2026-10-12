@@ -10,7 +10,7 @@ source_of_truth:
 status: retired
 reviewed_at: 2026-10-12
 review_due: 2026-11-12
-revision: 1.0.0
+revision: 1.1.0
 precedence: task
 derived: false
 ---
@@ -88,3 +88,13 @@ derived: false
 - discard: earlier rectangular button mock。
 - restore: isolated worktrees above, preserve primary dirty checkout。
 - next_action: commit frontend source, sync OpenCraft, update !5180。
+
+## CR r3 checkpoint
+- 已授权修复删除提示：使用 HTTP details.channel，不读内部包装文本；Repository 删除流程集成断言微信/WhatsApp。
+- next_action: focused tests, i18n/type/build gates; source commit then generated closure; update !5180.
+
+## CR r3 handoff checkpoint
+- verified: 97 focused Vitest cases; HTTP serialization-shaped payload reaches deletion hints; pnpm check (0 new TS diagnostics), CN build, 8 locale translations passed.
+- generated closure: source commit precedes OpenCraft sync; final check required before push.
+- unverified: live WeChat scan/provider tokens; no CTL deployment or merge authorized.
+- next_action: push source and generated closure, update !5180, restore Beijing preview on 5176.

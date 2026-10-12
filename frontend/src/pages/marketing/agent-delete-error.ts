@@ -6,10 +6,15 @@ export const getAgentDeleteErrorMessage = (
   const code = error && typeof error === "object" && "code" in error
     ? error.code
     : undefined;
-  const message = error instanceof Error ? error.message : "";
+  const channel = error && typeof error === "object" && "occupiedChannel" in error
+    ? error.occupiedChannel
+    : undefined;
 
-  if (code === "CHANNEL_OCCUPIED" && message.includes("disconnect weixin before deleting bot")) {
+  if (code === "CHANNEL_OCCUPIED" && channel === "weixin") {
     return t("请先断开该 Bot 的微信，再删除 Bot。");
+  }
+  if (code === "CHANNEL_OCCUPIED" && channel === "whatsapp") {
+    return t("请先断开该 Bot 的 WhatsApp，再删除 Bot。");
   }
   if (code === "INSTANCE_BOTS_REMAIN") {
     return t("请先删除其他 Bot，再删除整个 Agent。");

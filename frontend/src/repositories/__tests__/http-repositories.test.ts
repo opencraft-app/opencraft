@@ -1,3 +1,4 @@
+import { getAgentDeleteErrorMessage } from "@/pages/marketing/agent-delete-error";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { INSTANCE_BOT_ERROR_CODE } from "@/domain/instance-bot-errors";
 import i18n from "@/i18n";
@@ -797,6 +798,19 @@ describe("http repositories auth token bootstrap", () => {
       { method: "DELETE", body: { reservation_id: "test-reservation" } },
       { method: "DELETE", body: { disconnect: true } },
     ]);
+    // This is writeHTTPError's actual serialized contract, without the internal
+    // wrapped error context. Exercise HTTP parsing through the deletion flow.
+    for (const channel of ["weixin", "whatsapp"] as const) {
+      fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({
+        code: "CHANNEL_OCCUPIED", message: "channel is already connected to another bot",
+        details: { channel },
+      }), { status: 409, headers: { "Content-Type": "application/json" } }));
+      const failure = await repositories.bots.destroyBot("bot_sales").catch((error: unknown) => error);
+      expect(failure).toMatchObject({ code: "CHANNEL_OCCUPIED", occupiedChannel: channel });
+      expect(getAgentDeleteErrorMessage(failure, true, (message) => message)).toBe(
+        channel === "weixin" ? "请先断开该 Bot 的微信，再删除 Bot。" : "请先断开该 Bot 的 WhatsApp，再删除 Bot。",
+      );
+    }
     await repositories.bots.destroyBot("bot_sales");
     expect(calls[calls.length - 1]).toEqual({
       url: "https://lightclaw.tech/v1/instances/ins_multi/bots/bot_sales",

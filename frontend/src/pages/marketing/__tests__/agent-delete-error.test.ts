@@ -5,16 +5,20 @@ const t = (message: string) => message;
 
 describe("Bot deletion errors", () => {
   it.each([false, true])("explains the Weixin disconnect step (embedded=%s)", (embedded) => {
-    const error = Object.assign(new Error("disconnect weixin before deleting bot sales（CHANNEL_OCCUPIED）"), {
+    const error = Object.assign(new Error("channel is already connected to another bot（CHANNEL_OCCUPIED）"), {
       code: "CHANNEL_OCCUPIED",
+      occupiedChannel: "weixin",
     });
     expect(getAgentDeleteErrorMessage(error, embedded, t)).toBe("请先断开该 Bot 的微信，再删除 Bot。");
   });
 
-  it("does not label WhatsApp ownership as a Weixin error", () => {
-    const error = Object.assign(new Error("disconnect whatsapp before deleting bot sales"), {
-      code: "CHANNEL_OCCUPIED",
-    });
+  it("explains WhatsApp independently", () => {
+    const error = { code: "CHANNEL_OCCUPIED", occupiedChannel: "whatsapp" };
+    expect(getAgentDeleteErrorMessage(error, false, t)).toBe("请先断开该 Bot 的 WhatsApp，再删除 Bot。");
+  });
+
+  it("does not guess a channel from unstructured server text", () => {
+    const error = Object.assign(new Error("disconnect weixin before deleting bot sales"), { code: "CHANNEL_OCCUPIED" });
     expect(getAgentDeleteErrorMessage(error, false, t)).toBe(error.message);
   });
 
