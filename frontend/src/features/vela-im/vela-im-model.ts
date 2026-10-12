@@ -60,7 +60,7 @@ export const toConversation = (raw: unknown): ConversationItem | null => {
     kind,
     targetID,
     name: kind === "SYSTEM" ? "" : name,
-    lastText: last.isRevoked ? "" : last.type === "TIMCustomElem" && groupCreateNotice(dict(last.payload)) ? "" : str(last.messageForShow),
+    lastText: last.isRevoked || (last.type === "TIMCustomElem" && (groupCreateNotice(dict(last.payload)) || agentStatus(last as IMMessage))) ? "" : str(last.messageForShow),
     lastTime: num(last.lastTime),
     unread: num(c.unreadCount),
     isPinned: c.isPinned === true,
@@ -244,6 +244,18 @@ export const resolveMentions = (text: string, members: MentionCandidate[], picke
 
 /** Splits pasted member lists (newline, comma, Chinese comma, space) into unique IDs. */
 export const parseIDs = (value: string): string[] => [...new Set(value.split(/[\s,，]+/).map((s) => s.trim()).filter(Boolean))];
+
+/** An Agent's online-only "working on it" signal; it is shown as an indicator, never as a message. */
+export const agentStatus = (message: IMMessage): { state: "working" | "idle"; messageID: string } | null => {
+  if (message.type !== "TIMCustomElem") return null;
+  try {
+    const data = JSON.parse(str(dict(message.payload).data)) as unknown;
+    if (!isDict(data) || data.businessID !== "vela_agent_status") return null;
+    return { state: data.state === "working" ? "working" : "idle", messageID: str(data.messageID) };
+  } catch {
+    return null;
+  }
+};
 
 /** One-line preview of a message, used when quoting it. */
 export const messageAbstract = (message: IMMessage): string => {

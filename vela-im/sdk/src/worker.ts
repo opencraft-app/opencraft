@@ -4,7 +4,7 @@ import {createHash} from 'node:crypto';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {
- VelaBotAPI,VelaError,IM_METHODS,PLATFORM_METHODS,defaultGroupPolicy,isPolicyNotice,normalizeGroupID,platformGroupId,
+ VelaBotAPI,VelaError,IM_METHODS,PLATFORM_METHODS,defaultGroupPolicy,isAgentStatus,isPolicyNotice,normalizeGroupID,platformGroupId,
  policyFromGroup,readLineage,replyCustomData,type GroupReplyPolicy,type IMMessage,type MessageInput,
 } from './index.ts';
 import {VelaNodeClient,safeJSON} from './node.ts';
@@ -109,7 +109,10 @@ export async function startWorker(o:WorkerOptions):Promise<RunningWorker> {
    try {
     await client.connect(()=>api.credentials());
     for(const name of Object.keys(client.TencentCloudChat.EVENT))if(RECORDED_EVENTS(name))client.on(name,(event:any)=>{
-     try{inbox.save(name,safeJSON(event.data))}catch(e:any){log('inbox write failed:',e?.message)}
+     // Other Agents' "working" signals are transient; keeping them would only grow the inbox.
+     const data=name==='MESSAGE_RECEIVED'&&Array.isArray(event.data)?event.data.filter((m:IMMessage)=>!isAgentStatus(m)):event.data;
+     if(name==='MESSAGE_RECEIVED'&&!data.length)return;
+     try{inbox.save(name,safeJSON(data))}catch(e:any){log('inbox write failed:',e?.message)}
      if(name==='SDK_READY')void backfill();
      if(name==='MESSAGE_RECEIVED')for(const m of event.data??[])if(isPolicyNotice(m))policies.delete(normalizeGroupID(String(m.conversationID??'').replace(/^GROUP/,'')));
     });

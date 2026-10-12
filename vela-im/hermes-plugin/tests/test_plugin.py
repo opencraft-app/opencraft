@@ -247,6 +247,23 @@ class AdapterTest(unittest.IsolatedAsyncioTestCase):
                                 'payload': {'text': '这段呢'}, 'cloudCustomData': json.dumps(reply)})
         self.assertIn('第一段。第一段…', adapter.handled[1]['text'], 'without the original the preview is still passed on')
 
+    async def test_agent_shows_it_is_working_until_processing_completes(self):
+        client = Recorder(); adapter = self.adapter(client); adapter._heartbeats = {}
+        adapter.state, adapter._inflight, adapter._save = {'pending': {}}, set(), lambda: None
+        event = types.SimpleNamespace(message_id='m', raw_message={'ID': 'm'}, source=types.SimpleNamespace(chat_id='GROUPvg_g'))
+        await adapter.on_processing_start(event)
+        await asyncio.sleep(0.05)
+        name, args, kwargs = next(c for c in client.calls if c[0] == 'send')
+        self.assertEqual(args[:3], ('vg_g', 'GROUP', 'custom'))
+        self.assertEqual(json.loads(args[3]['data']), {'businessID': 'vela_agent_status', 'state': 'working', 'messageID': 'm'})
+        self.assertTrue(kwargs['options']['onlineUserOnly'], 'status is online-only: no history, no unread')
+        await adapter.on_processing_complete(event, types.SimpleNamespace(value='success'))
+        await asyncio.sleep(0.05)
+        self.assertEqual(json.loads([c for c in client.calls if c[0] == 'send'][-1][1][3]['data'])['state'], 'idle')
+        self.assertEqual(adapter._heartbeats, {})
+        self.assertTrue(is_system({'type': 'TIMCustomElem', 'payload': {'data': json.dumps({'businessID': 'vela_agent_status', 'state': 'working'})}}))
+        outbound_lineage.set(None)
+
     async def test_context_failure_does_not_leave_a_message_permanently_inflight(self):
         adapter = self.adapter(None); adapter._inflight = set(); adapter.state = {'pending': {'m': {'attempts': 0}}}; adapter._save = lambda: None
         async def fail(message): raise RuntimeError('history temporarily unavailable')

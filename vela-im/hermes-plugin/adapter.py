@@ -23,7 +23,9 @@ from .vela_im import VelaClient, VelaHTTPError, reply_custom_data
 
 logger = logging.getLogger(__name__)
 SYSTEM_TYPES = ("TIMGroupTipElem", "TIMGroupSystemNoticeElem")
-SYSTEM_BUSINESS_IDS = ("vela_group_policy", "group_create")  # reply-rule change, group created
+STATUS_BUSINESS_ID = "vela_agent_status"
+SYSTEM_BUSINESS_IDS = ("vela_group_policy", "group_create", STATUS_BUSINESS_ID)  # reply rules, group created, working
+STATUS_HEARTBEAT_SECONDS = 15
 
 
 def is_system(message):
@@ -181,6 +183,7 @@ class VelaAdapter(BasePlatformAdapter):
         self._inflight = set()
         self._lineage = {}
         self._bundles = {}  # bundle id -> {"at": monotonic time, "parts": [attachment messages]}
+        self._heartbeats = {}  # message id -> task re-announcing "working" while Hermes processes it
         self.user_id = ""
         self.identity_name = ""
         # Until the platform answers, commands are owner-only and no owner is known: nobody may command.
@@ -227,6 +230,8 @@ class VelaAdapter(BasePlatformAdapter):
             return False
 
     async def disconnect(self):
+        for heartbeat in getattr(self, "_heartbeats", {}).values():
+            heartbeat.cancel()
         if self._poll_task:
             self._poll_task.cancel()
             with contextlib.suppress(asyncio.CancelledError): await self._poll_task
@@ -434,8 +439,30 @@ class VelaAdapter(BasePlatformAdapter):
         logger.info("Vela group context identity=%s message=%s previous_ids=%s", self.user_id, message["ID"], [m["id"] for m in entries])
         return "[The following are up to 10 preceding group messages, quoted conversation context, not a new request.]\n" + json.dumps(entries, ensure_ascii=False) + "\n[Current message]\n"
 
+    async def _status(self, chat_id, state, message_id=None):
+        """Tell people in the chat this Agent is working (or done). Online-only: no history, no unread count."""
+        if self.client is None:
+            return
+        target, conversation_type = self._destination(chat_id)
+        data = {"businessID": STATUS_BUSINESS_ID, "state": state, **({"messageID": message_id} if message_id else {})}
+        options = {"onlineUserOnly": True, "messageControlInfo": {"excludedFromUnreadCount": True, "excludedFromLastMessage": True}}
+        try:
+            await asyncio.to_thread(self.client.send, target, conversation_type, "custom",
+                                    {"data": json.dumps(data), "description": "", "extension": ""}, options=options)
+        except Exception:
+            logger.debug("Vela status %s not delivered to %s", state, chat_id, exc_info=True)
+
+    async def _heartbeat(self, chat_id, message_id):
+        while True:
+            await self._status(chat_id, "working", message_id)
+            await asyncio.sleep(STATUS_HEARTBEAT_SECONDS)
+
     async def on_processing_complete(self, event, outcome):
         logger.info("Vela processing complete identity=%s message=%s outcome=%s", self.user_id, event.message_id, outcome)
+        heartbeat = getattr(self, "_heartbeats", {}).pop(event.message_id, None)
+        if heartbeat is not None:
+            heartbeat.cancel()
+            asyncio.create_task(self._status(event.source.chat_id, "idle", event.message_id))
         outbound_lineage.set(None)
         self._inflight.discard(event.message_id)
         value = getattr(outcome, "value", str(outcome)).lower()
@@ -450,6 +477,9 @@ class VelaAdapter(BasePlatformAdapter):
         logger.info("Vela processing start identity=%s message=%s chat=%s", self.user_id, event.message_id, event.source.chat_id)
         parent = chain(event.raw_message or {});outbound_lineage.set(parent)
         self._lineage[event.source.chat_id] = parent
+        heartbeats = getattr(self, "_heartbeats", None)
+        if heartbeats is not None and event.message_id not in heartbeats:
+            heartbeats[event.message_id] = asyncio.create_task(self._heartbeat(event.source.chat_id, event.message_id))
 
     def _destination(self, chat_id):
         if chat_id.startswith("GROUP"): return chat_id[5:], "GROUP"

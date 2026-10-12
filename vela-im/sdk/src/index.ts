@@ -259,7 +259,10 @@ export const GROUP_POLICY_BUSINESS_ID='vela_group_policy';
 
 const AT_ALL=['@all','all','__kImSDK_MesssageAtALL__'];
 export const isSystemMessage=(m:IMMessage)=>['TIMGroupTipElem','TIMGroupSystemNoticeElem'].includes(m.type??'')||
- [GROUP_POLICY_BUSINESS_ID,GROUP_CREATE_BUSINESS_ID].includes(customBusinessID(m));
+ [GROUP_POLICY_BUSINESS_ID,GROUP_CREATE_BUSINESS_ID,AGENT_STATUS_BUSINESS_ID].includes(customBusinessID(m));
+/** Online-only "an Agent is working on it" signal: never stored, never unread, never answered. */
+export const AGENT_STATUS_BUSINESS_ID='vela_agent_status';
+export const isAgentStatus=(m:IMMessage)=>customBusinessID(m)===AGENT_STATUS_BUSINESS_ID;
 /** The backend's reply-rule notice: a system event, never something an Agent answers. */
 export const isPolicyNotice=(m:IMMessage)=>customBusinessID(m)===GROUP_POLICY_BUSINESS_ID;
 /** "Created the group" notice, sent by the backend in Tencent's own client format. */
