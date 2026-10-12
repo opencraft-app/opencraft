@@ -1,7 +1,6 @@
-"""Import-light Hermes platform plugin, with eagerly registered outbound tools."""
+"""Import-light Hermes platform plugin. Agents use the `vela_im` command line instead of model tools."""
 def register(ctx):
     from .adapter import register_platform
+    from .runtime import install_cli
     register_platform(ctx)
-    # 老版本 Hermes 没有 provides_tools eager loader，兼容性通过 ctx 中标记去重。
-    from .tools import register_tools
-    register_tools(ctx)
+    install_cli()

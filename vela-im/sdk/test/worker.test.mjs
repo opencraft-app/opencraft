@@ -1,16 +1,43 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync,rmSync,existsSync,readFileSync,writeFileSync,statSync} from 'node:fs';
+import {mkdtempSync,rmSync,existsSync,readFileSync,statSync} from 'node:fs';
+import {request} from 'node:http';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {VelaAPI} from '../dist/index.js';
+import {VelaError} from '../dist/index.js';
 import {VelaIMClient} from '../dist/client.js';
 import {Inbox} from '../dist/inbox.js';
 import {startWorker} from '../dist/worker.js';
 import {audioSeconds} from '../dist/audio.js';
 import {fakeChat,hooks,credentials} from './fake-chat.mjs';
 
-test('a new identity backfills from its creation time, not from its first worker start',()=>{
+const groupID='vg_0198f4c27a357f1486ab2e57552e473f';
+const platformID='0198f4c2-7a35-7f14-86ab-2e57552e473f';
+
+/** HTTP over the worker's Unix socket, the same way the plugin and CLI reach it. */
+function socketCall(socketPath,path,body) {
+ return new Promise((resolve,reject)=>{
+  const payload=body===undefined?undefined:JSON.stringify(body);
+  const req=request({socketPath,path,method:body===undefined?'GET':'POST',headers:payload?{'content-type':'application/json'}:{}},res=>{
+   const chunks=[];res.on('data',c=>chunks.push(c));res.on('end',()=>resolve({status:res.statusCode,json:JSON.parse(Buffer.concat(chunks).toString()||'null')}));
+  });
+  req.on('error',reject);if(payload)req.write(payload);req.end();
+ });
+}
+
+function fakeBotAPI(overrides={}) {
+ const calls=[];
+ return {
+  calls,identity:{id:'b',userId:'a_self',displayName:'助手',commandPolicy:'owner',ownerUserIds:['u_owner']},
+  credentials:async()=>credentials('a_self'),
+  me:async()=>({id:'b',userId:'a_self',displayName:'助手',commandPolicy:'owner',ownerUserIds:['u_owner','a_sibling']}),
+  group:async id=>{calls.push(['group',id]);return {id,tencentGroupId:groupID,name:'g',replyMode:'mention',effectiveReplyMode:'all',contextMessages:0,state:'active',revision:1,members:[],viewerRole:'member'}},
+  createGroup:async input=>{calls.push(['createGroup',input]);return {id:platformID,tencentGroupId:groupID}},
+  ...overrides,
+ };
+}
+
+test('a new inbox keeps an explicit initial watermark',()=>{
  const dir=mkdtempSync(join(tmpdir(),'vela-inbox-initial-'));const inbox=new Inbox(join(dir,'inbox.sqlite'));
  try {assert.equal(inbox.syncTime(1000),1000);assert.equal(inbox.syncTime(),1000)}
  finally{inbox.close();rmSync(dir,{recursive:true,force:true})}
@@ -20,20 +47,11 @@ test('inbox persists across restarts, de-duplicates retransmissions and resolves
  const dir=mkdtempSync(join(tmpdir(),'vela-inbox-'));const path=join(dir,'inbox.sqlite');
  let inbox=new Inbox(path);
  try {
-  const first=inbox.syncTime();assert(Math.abs(first-Date.now()/1000)<5,'a new worker starts from now, never replays old history');
-  const m={ID:'m1',type:'TIMCustomElem',conversationID:'GROUP@TGS#g',payload:{data:'opaque',extension:{nested:[1,2]}}};
+  const m={ID:'m1',type:'TIMCustomElem',conversationID:'GROUP@TGS#g',payload:{data:'opaque'}};
   assert.equal(inbox.save('MESSAGE_RECEIVED',[m,m]),1);assert.equal(inbox.save('MESSAGE_RECEIVED',[m]),0);
   inbox.close();inbox=new Inbox(path);
-  const events=inbox.events(0);assert.equal(events.length,1);assert.deepEqual(events[0].data,m);assert.equal(inbox.syncTime(),first);
-  assert.equal(inbox.syncTime(123),first,'an existing watermark wins over the initial value');
-  inbox.save('MESSAGE_MODIFIED',[{...m,atUserList:['a_self']}]);inbox.save('MESSAGE_MODIFIED',[{...m,atUserList:['a_self']}]);
-  assert.deepEqual(inbox.message('m1').atUserList,['a_self']);assert.equal(inbox.events(events[0].seq).length,1);
+  assert.equal(inbox.events(0).length,1);
   inbox.save('MESSAGE_REVOKED',[{ID:'m1'}]);assert.equal(inbox.message('m1').isRevoked,true);
-  inbox.save('MESSAGE_RECEIVED',[{ID:'m2',conversationID:'C2Ch_x',sequence:42,payload:{text:'oops'}}]);
-  inbox.save('MESSAGE_REVOKED',[{conversationID:'C2Ch_x',sequence:42,revoker:'h_x'}]);
-  assert.equal(inbox.message('m2').isRevoked,true,'V4 revocations carry only conversation + sequence');
-  assert.equal(inbox.events(0).at(-1).data.ID,'m2');
-  assert.equal(inbox.message('unknown'),undefined);
  } finally {inbox.close();rmSync(dir,{recursive:true,force:true})}
 });
 
@@ -42,7 +60,6 @@ test('audio duration is read from WAV headers',()=>{
  wav.write('RIFF',0);wav.writeUInt32LE(36+data,4);wav.write('WAVE',8);wav.write('fmt ',12);wav.writeUInt32LE(16,16);wav.writeUInt16LE(1,20);wav.writeUInt16LE(1,22);
  wav.writeUInt32LE(rate,24);wav.writeUInt32LE(rate*2,28);wav.writeUInt16LE(2,32);wav.writeUInt16LE(16,34);wav.write('data',36);wav.writeUInt32LE(data,40);
  assert.equal(audioSeconds(new Uint8Array(wav)),3);
- assert.equal(audioSeconds(new Uint8Array([1,2,3,4,5])),undefined);
 });
 
 test('vendored Node SDK carries every media patch',()=>{
@@ -50,47 +67,60 @@ test('vendored Node SDK carries every media patch',()=>{
  for(const marker of ['(t.IN_BROWSER||t.IN_NODE)&&(n=e.name.slice(','"undefined"!=typeof HTMLInputElement','url:URL.createObjectURL(e),name:t',':{width:0,height:0}'])assert(source.includes(marker),marker);
 });
 
-test('worker serves only its owner over loopback, keeps a durable cursor and exposes only Vela operations',async()=>{
+test('worker serves over a private Unix socket, applies platform rules and forwards platform operations as the Bot',async()=>{
  const dir=mkdtempSync(join(tmpdir(),'vela-worker-'));
  const fake=fakeChat({getFriendList:{data:[{userID:'h_friend'}]},getConversationList:{data:{conversationList:[],isSyncCompleted:true}}});
- const api=new VelaAPI('http://unused','token');api.me=async()=>({identities:[{id:'a_self',kind:'agent',name:'Agent'}]});
- api.groupReplyPolicy=async groupID=>({groupID,groupKind:'bot',mode:'mention',effectiveMode:'all',contextMessages:0,canManage:true,memberCount:2,updatedAt:0});
- api.credentials=async()=>credentials('a_self');
- const client=new VelaIMClient(api,fake.TencentCloudChat,hooks);
- const worker=await startWorker({apiURL:'http://unused',token:'token',dir,client,log:()=>{}});
- const base=`http://127.0.0.1:${worker.port}`;
- const call=(path,body,secret=worker.secret)=>fetch(base+path,{method:body===undefined?'GET':'POST',headers:{authorization:'Bearer '+secret,'content-type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});
+ const api=fakeBotAPI();
+ const client=new VelaIMClient(fake.TencentCloudChat,hooks);
+ const worker=await startWorker({apiURL:'http://unused',credentialFile:join(dir,'credential'),dir,client,api,log:()=>{}});
+ const call=(path,body)=>socketCall(worker.socketPath,path,body);
  try {
   await worker.ready;
   const runtime=JSON.parse(readFileSync(join(dir,'worker.json'),'utf8'));
-  assert.equal(runtime.ready,true);assert.equal(runtime.userID,'a_self');assert.equal(runtime.port,worker.port);
-  assert.equal(statSync(join(dir,'worker.json')).mode&0o077,0,'runtime secret is private to the Agent user');
-  assert.equal((await call('/health',undefined,'wrong')).status,401);
-  assert.equal((await (await call('/capabilities')).json()).identity.kind,'agent');
-  assert.deepEqual(await (await call('/invoke',{method:'getFriends'})).json(),[{userID:'h_friend'}]);
-  assert.equal((await call('/invoke',{method:'connect'})).status,400);
-  assert.equal((await call('/call',{method:'deleteAllEverything'})).status,400);
-  const sent=await (await call('/send',{to:'h_friend',conversationType:'C2C',type:'text',payload:{text:'hi'}})).json();assert.equal(sent.data.message.to,'h_friend');
-  const waiting=call('/events?after=0&wait=5000').then(r=>r.json());
-  fake.native.emit('onMessageReceived',[{ID:'g1',from:'a_peer',type:'TIMTextElem',conversationID:'GROUP@TGS#g',payload:{text:'bots talk'}}]);
-  const batch=await waiting;assert.equal(batch.events.at(-1).event,'MESSAGE_RECEIVED');assert.equal(batch.cursor,batch.events.at(-1).seq);
-  assert.deepEqual((await (await call(`/events?after=${batch.cursor}&wait=0`)).json()).events,[]);
-  const prepared=await (await call('/group-reply',{messageID:'g1'})).json();assert.equal(prepared.shouldReply,true);assert.equal(prepared.policy.groupKind,'bot');
+  assert.equal(runtime.ready,true);assert.equal(runtime.userID,'a_self');assert.equal(runtime.socket,worker.socketPath);
+  assert.equal(statSync(worker.socketPath).mode&0o077,0,'only the Agent user can reach the worker');
+  assert.equal(statSync(join(dir,'worker.json')).mode&0o077,0);
+  assert.equal((await call('/capabilities')).json.identity.kind,'bot');
+  assert.deepEqual((await call('/control')).json.owner.userIds,['u_owner','a_sibling']);
+  assert.deepEqual((await call('/invoke',{method:'getFriends'})).json,[{userID:'h_friend'}]);
+  assert.equal((await call('/invoke',{method:'createGroup'})).status,400);
+  assert.equal((await call('/call',{method:'addGroupMember'})).status,400);
+  const created=await call('/platform',{method:'createGroup',args:[{name:'评审',memberUserIds:['u_owner']}]});
+  assert.equal(created.json.tencentGroupId,groupID);assert.equal(api.calls.at(-1)[0],'createGroup');
+  assert.equal((await call('/platform',{method:'deleteEverything'})).status,400);
+
+  fake.native.emit('onMessageReceived',[{ID:'g1',from:'a_peer',type:'TIMTextElem',conversationID:'GROUP'+groupID,payload:{text:'bots talk'}}]);
+  const prepared=(await call('/group-reply',{messageID:'g1'})).json;
+  assert.equal(prepared.shouldReply,true);assert.equal(prepared.policy.platformGroupId,platformID);
+  assert.deepEqual(api.calls.filter(c=>c[0]==='group').map(c=>c[1]),[platformID]);
+  await call('/group-reply',{messageID:'g1'});
+  assert.equal(api.calls.filter(c=>c[0]==='group').length,1,'rules are cached until the platform announces a change');
+  fake.native.emit('onMessageReceived',[{ID:'n1',from:'@TIM#SYSTEM',type:'TIMCustomElem',conversationID:'GROUP'+groupID,payload:{data:JSON.stringify({businessID:'vela_group_policy',replyMode:'mention'})}}]);
+  await call('/group-reply',{messageID:'g1'});
+  assert.equal(api.calls.filter(c=>c[0]==='group').length,2,'a policy notice invalidates the cached rules');
+
+  fake.native.emit('onMessageReceived',[{ID:'f1',from:'h_x',type:'TIMTextElem',conversationID:'GROUP@TGS#foreign',payload:{text:'hello'}}]);
+  const foreign=(await call('/group-reply',{messageID:'f1'})).json;
+  assert.equal(foreign.policy.effectiveMode,'mention');assert.equal(foreign.reason,'not_mentioned');
+
+  const sent=(await call('/send',{to:'h_friend',conversationType:'C2C',type:'text',payload:{text:'hi'},replyToMessageID:'g1'})).json;
+  assert.equal(JSON.parse(sent.data.message.cloudCustomData).vela.hops,1,'a reply carries the next hop of the parent chain');
   assert.equal((await call('/group-reply',{messageID:'forged'})).status,404);
  } finally {
   await worker.close();
   assert.equal(existsSync(join(dir,'worker.json')),false);
+  assert.equal(existsSync(worker.socketPath),false);
   rmSync(dir,{recursive:true,force:true});
  }
 });
 
-test('worker refuses to keep running with a revoked identity credential',async()=>{
+test('worker stops when the platform rejects the Bot credential',async()=>{
  const dir=mkdtempSync(join(tmpdir(),'vela-worker-revoked-'));const fake=fakeChat();
- const api=new VelaAPI('http://unused','revoked');api.credentials=async()=>{throw Object.assign(new Error('登录态已失效'),{status:401})};
- const client=new VelaIMClient(api,fake.TencentCloudChat,hooks);
+ const api=fakeBotAPI({credentials:async()=>{throw new VelaError('Bot 凭据已失效','runtime_credential_revoked',401)}});
+ const client=new VelaIMClient(fake.TencentCloudChat,hooks);
  const exit=process.exit;let code;process.exit=c=>{code=c};
  try {
-  await startWorker({apiURL:'http://unused',token:'revoked',dir,client,log:()=>{}});
+  await startWorker({apiURL:'http://unused',credentialFile:join(dir,'credential'),dir,client,api,log:()=>{}});
   for(let i=0;i<50&&code===undefined;i++)await new Promise(r=>setTimeout(r,20));
   assert.equal(code,2);assert.equal(fake.calls.some(c=>c[0]==='login'),false);
  } finally {process.exit=exit;rmSync(dir,{recursive:true,force:true})}

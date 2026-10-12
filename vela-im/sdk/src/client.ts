@@ -1,7 +1,7 @@
 import {
- VelaAPI,VelaError,FACTORIES,SDK_METHODS,VELA_CAPABILITIES,assertMethod,normalizeGroupID,groupReplyReason,readLineage,isSystemMessage,
- type Attachment,type MessageInput,type MessageKind,type Credentials,type GroupReplyMode,type GroupReplyInput,type IMMessage,
- type CreateGroupOptions,type FriendApplication,type VelaCapabilities,
+ VelaError,FACTORIES,SDK_METHODS,VELA_CAPABILITIES,assertMethod,normalizeGroupID,groupReplyReason,readLineage,isSystemMessage,
+ type Attachment,type MessageInput,type MessageKind,type Credentials,type GroupReplyInput,type GroupReplyPolicy,type IMMessage,
+ type FriendApplication,type VelaCapabilities,
 } from './index.ts';
 
 /** Platform differences: how attachments become SDK File objects and how audio duration is measured. */
@@ -9,10 +9,8 @@ export interface PlatformHooks {
  toFile(attachment:Attachment):Promise<Blob>;
  audioSeconds(file:Blob):Promise<number|undefined>;
 }
-export interface ConnectOptions {
- /** Called again before the 2-hour UserSig expires; defaults to api.credentials(). */
- credentials?:()=>Promise<Credentials>;
-}
+/** Returns a fresh short-lived UserSig; called again before each one expires and when Tencent reports it expired. */
+export type CredentialSource = ()=>Promise<Credentials>;
 
 export const safeJSON=(value:any):any=>{
  const seen=new WeakSet<object>();
@@ -32,7 +30,8 @@ export const safeJSON=(value:any):any=>{
  return plain(value);
 };
 
-const RENEW_BEFORE_MS=20*60000;
+/** With one-hour UserSigs this renews at the 45th minute. */
+const RENEW_BEFORE_MS=15*60000;
 
 /** A normal Tencent IM user. Humans and Agents use this same class and the same Tencent permission rules. */
 export class VelaIMClient {
@@ -41,16 +40,16 @@ export class VelaIMClient {
  private messages=new Map<string,any>();
  private subscriptions:Array<[string,(event:any)=>void]>=[];
  private renewTimer:ReturnType<typeof setTimeout>|undefined;
- private credentialSource:(()=>Promise<Credentials>)|undefined;
+ private credentialSource:CredentialSource|undefined;
  private renewing:Promise<void>|undefined;
  private disconnecting:Promise<void>|undefined;
- constructor(public readonly api:VelaAPI,public readonly TencentCloudChat:any,private readonly hooks:PlatformHooks) {}
+ constructor(public readonly TencentCloudChat:any,private readonly hooks:PlatformHooks) {}
  get userID() {return this.credentials?.userID??''}
  get TYPES() {return this.TencentCloudChat.TYPES}
 
- async connect(credentials?:Credentials,options:ConnectOptions={}) {
-  this.credentialSource=options.credentials??(()=>this.api.credentials());
-  const c=credentials??await this.credentialSource();
+ async connect(source:CredentialSource) {
+  this.credentialSource=source;
+  const c=await source();
   this.native=this.TencentCloudChat.create({SDKAppID:c.SDKAppID});
   this.native.setLogLevel(4);
   this.subscribe('MESSAGE_RECEIVED',({data}:any)=>{for(const m of data)this.cache(m)});
@@ -196,22 +195,9 @@ export class VelaIMClient {
  async refuseFriend(userID:string) {return (await this.call('refuseFriendApplication',[{userID}])).data}
  async deleteFriend(userID:string) {return (await this.call('deleteFriend',[{userIDList:[userID],type:this.TYPES.SNS_DELETE_TYPE_BOTH}])).data}
 
- // ── Groups: Tencent enforces owner/admin permissions for every identity ──
+ // ── Groups: reads only. Creating, membership changes, quitting and dismissing go through the platform API ──
  async getGroups() {return (await this.call('getGroupList')).data?.groupList??[]}
- async createGroup({name,memberIDs=[],type='Public',inviteOption='FreeAccess',...native}:CreateGroupOptions) {
-  const options:any={type,name,memberList:memberIDs.map(userID=>({userID})),...native};
-  // 工作群（Private）不支持 inviteOption；其余类型默认允许群主直接拉人。
-  if(type!=='Private'&&type!=='AVChatRoom')options.inviteOption=inviteOption;
-  const group=(await this.call('createGroup',[options])).data.group;
-  this.createdGroups.set(group.groupID,Date.now());
-  return group;
- }
- private createdGroups=new Map<string,number>();
  async getGroupProfile(groupID:string) {return (await this.call('getGroupProfile',[{groupID:normalizeGroupID(groupID)}])).data.group}
- async updateGroupProfile(groupID:string,profile:Record<string,unknown>) {return (await this.call('updateGroupProfile',[{...profile,groupID:normalizeGroupID(groupID)}])).data.group}
- async joinGroup(groupID:string,applyMessage?:string) {return (await this.call('joinGroup',[{groupID:normalizeGroupID(groupID),...(applyMessage?{applyMessage}:{})}])).data}
- async quitGroup(groupID:string) {return (await this.call('quitGroup',[normalizeGroupID(groupID)])).data}
- async dismissGroup(groupID:string) {return (await this.call('dismissGroup',[normalizeGroupID(groupID)])).data}
  async getGroupMembers(groupID:string) {
   const members:any[]=[];let offset:any=0;
   for(let page=0;page<100;page++){
@@ -221,38 +207,20 @@ export class VelaIMClient {
   }
   return members;
  }
- async addGroupMembers(groupID:string,userIDs:string[]) {
-  const id=normalizeGroupID(groupID);
-  for(let attempt=0;;attempt++) {
-   try {return (await this.call('addGroupMember',[{groupID:id,userIDList:userIDs}])).data}
-   catch(e:any) {
-    // Tencent occasionally answers 10010 (no such group) for a few seconds after creating it.
-    if(e?.code!==10010||attempt>=4||Date.now()-(this.createdGroups.get(id)??0)>15000)throw e;
-    await new Promise(r=>setTimeout(r,800*(attempt+1)));
-   }
-  }
- }
- async removeGroupMembers(groupID:string,userIDs:string[],reason?:string) {return (await this.call('deleteGroupMember',[{groupID:normalizeGroupID(groupID),userIDList:userIDs,...(reason?{reason}:{})}])).data}
- async setGroupMemberRole(groupID:string,userID:string,role:'Admin'|'Member') {return (await this.call('setGroupMemberRole',[{groupID:normalizeGroupID(groupID),userID,role}])).data}
- async muteGroupMember(groupID:string,userID:string,seconds:number) {return (await this.call('setGroupMemberMuteTime',[{groupID:normalizeGroupID(groupID),userID,muteTime:seconds}])).data}
- async transferGroupOwner(groupID:string,userID:string) {return (await this.call('changeGroupOwner',[{groupID:normalizeGroupID(groupID),newOwnerID:userID}])).data}
 
  // ── Profiles ──
  async getMyProfile() {return (await this.call('getMyProfile')).data}
  async getUserProfiles(userIDs:string[]) {return (await this.call('getUserProfile',[{userIDList:userIDs}])).data??[]}
  async updateMyProfile(profile:Record<string,unknown>) {return (await this.call('updateMyProfile',[profile])).data}
 
- // ── Vela group reply policy (an extension stored by the identity service) ──
- /** Who controls this identity: its command policy and its owner's identities. */
- control() {return this.api.control()}
- groupReplyPolicy(groupID:string) {return this.api.groupReplyPolicy(groupID)}
- setGroupReplyPolicy(groupID:string,mode:GroupReplyMode) {return this.api.setGroupReplyPolicy(groupID,mode)}
- /** Decide whether this identity should answer a received group message, with up to 10 preceding messages when the policy asks for them. */
- async prepareGroupReply(message:IMMessage,options:{maxAgentHops?:number}={}):Promise<GroupReplyInput> {
+ /**
+  * Decide whether this identity should answer a received group message under the group's platform rules, with up to
+  * 10 preceding messages when the rules ask for them.
+  */
+ async prepareGroupReply(message:IMMessage,policy:GroupReplyPolicy,options:{maxAgentHops?:number}={}):Promise<GroupReplyInput> {
   const maxAgentHops=options.maxAgentHops??6;
   if(!Number.isInteger(maxAgentHops)||maxAgentHops<1||maxAgentHops>32)throw new VelaError('maxAgentHops 必须在 1 到 32 之间','INVALID_HOPS',400);
   if(!message?.conversationID?.startsWith('GROUP'))throw new VelaError('需要群消息','NOT_GROUP_MESSAGE',400);
-  const policy=await this.groupReplyPolicy(message.conversationID.slice(5));
   const reason=groupReplyReason(message,this.userID,policy,maxAgentHops);
   const result:GroupReplyInput={message,policy,shouldReply:reason==='accepted',reason,context:[],contextStatus:'not_requested',lineage:readLineage(message)};
   if(result.shouldReply&&policy.contextMessages>0)Object.assign(result,await this.precedingMessages(message,policy.contextMessages));

@@ -1,18 +1,19 @@
-"""Identity-scoped Vela IM client for Python Agents. Standard library only.
+"""Bot-scoped Vela IM client for Python Agents. Standard library only.
 
-Python cannot run Tencent's SDK, so each identity gets a local Node worker (started on demand) that logs
-in with the official SDK. This client speaks to that worker; the high-level methods mirror the JS SDK.
+Python cannot run Tencent's SDK, so each Bot has a local Node worker that logs in with the official SDK. This client
+talks to that worker over its Unix socket. IM operations go to Tencent directly; platform group operations (create,
+members, reply rules) go to the LightVela backend with the Bot's own short-lived session.
 """
 import json
 import os
+import re
+import time
+import uuid
 from enum import Enum
 from pathlib import Path
 from typing import Literal, TypedDict
-from urllib.error import HTTPError
-from urllib.parse import quote
-from urllib.request import Request, urlopen
 
-from .worker import AgentWorker, WorkerEndpoint
+from .worker import AgentWorker, WorkerEndpoint, WorkerError, read_endpoint, socket_request
 
 
 class GroupReplyMode(str, Enum):
@@ -23,13 +24,12 @@ class GroupReplyMode(str, Enum):
 
 class GroupReplyPolicy(TypedDict):
     groupID: str
-    groupKind: Literal["bot", "mixed"]
+    platformGroupId: str | None
     mode: Literal["mention", "mention_context", "all"]
     effectiveMode: Literal["mention", "mention_context", "all"]
     contextMessages: int
+    members: list[dict]
     canManage: bool
-    memberCount: int
-    updatedAt: int
 
 
 class GroupReplyInput(TypedDict):
@@ -43,18 +43,53 @@ class GroupReplyInput(TypedDict):
 
 
 MESSAGE_TYPES = ("text", "textAt", "image", "audio", "video", "file", "location", "face", "custom", "merger", "forward")
+_PLATFORM_GROUP = re.compile(r"^(?:GROUP)?vg_([0-9a-f]{32})$", re.IGNORECASE)
 
 
 def destination(to, conversation_type):
-    # Built-in Tencent group IDs are unambiguous; custom IDs may legitimately start GROUP.
-    if conversation_type == "GROUP" and to.startswith("GROUP@TGS#"):
+    """Tencent addressing: groups use the raw GroupId, never the GROUP conversation prefix."""
+    if conversation_type == "GROUP" and (to.startswith("GROUP@TGS#") or to.startswith("GROUPvg_")):
         return to[5:]
     return to
 
 
-def reply_custom_data(lineage, sender_kind="agent"):
+def platform_group_id(value):
+    """Platform group UUID from a UUID, Tencent GroupId (vg_…) or GROUP conversation ID; None for other groups."""
+    value = str(value or "").strip()
+    try:
+        return str(uuid.UUID(value))
+    except ValueError:
+        pass
+    match = _PLATFORM_GROUP.match(value)
+    return str(uuid.UUID(match.group(1))) if match else None
+
+
+def uuid7():
+    """RFC 9562 UUIDv7 for client-generated platform IDs (retry-safe group creation)."""
+    millis = time.time_ns() // 1_000_000
+    raw = bytearray(millis.to_bytes(6, "big") + os.urandom(10))
+    raw[6] = (raw[6] & 0x0F) | 0x70
+    raw[8] = (raw[8] & 0x3F) | 0x80
+    return str(uuid.UUID(bytes=bytes(raw)))
+
+
+def reply_custom_data(lineage, sender_kind="bot"):
     """cloudCustomData for an automatic reply: same chain, one more hop."""
     return json.dumps({"vela": {"chainId": lineage["chainId"], "hops": int(lineage["hops"]) + 1, "senderKind": sender_kind}})
+
+
+def state_dir_for(hermes_home=None):
+    """Where a Hermes profile keeps this plugin's credential, config, inbox and worker.json."""
+    home = Path(hermes_home or os.getenv("HERMES_HOME") or Path.home() / ".hermes")
+    return home / "plugin-data" / "vela-im"
+
+
+def delivered_config(state_dir):
+    """Config the platform delivered with the credential (apiBaseUrl, imUserId, …); empty before provisioning."""
+    try:
+        return json.loads((Path(state_dir) / "config.json").read_text())
+    except (OSError, ValueError):
+        return {}
 
 
 class VelaHTTPError(RuntimeError):
@@ -65,52 +100,57 @@ class VelaHTTPError(RuntimeError):
 
 
 class VelaClient:
-    """A normal IM identity. Humans and Agents have identical permissions; Tencent enforces them."""
+    """A normal IM identity. Humans and Bots have identical permissions in groups; the platform enforces them."""
 
-    def __init__(self, endpoint: WorkerEndpoint | None = None, *, api_url=None, token=None, state_dir=None, file_root=None, worker=None):
-        self.worker = worker
-        if endpoint is None:
-            self.worker = worker or AgentWorker(api_url or os.getenv("VELA_API_URL", ""), token or os.getenv("VELA_IDENTITY_TOKEN", ""),
-                                                state_dir, file_root or os.getenv("VELA_FILE_ROOT") or None)
-            endpoint = self.worker.start()
+    def __init__(self, endpoint: WorkerEndpoint, worker: AgentWorker | None = None):
         self.endpoint = endpoint
+        self.worker = worker
 
     @classmethod
-    def connect(cls, api_url=None, token=None, **options):
-        """Start (or reuse) this identity's worker and return a connected client."""
-        return cls(api_url=api_url, token=token, **options)
+    def for_profile(cls, hermes_home=None):
+        """Attach to the worker already serving this Hermes profile; never starts one or reads the credential."""
+        endpoint = read_endpoint(state_dir_for(hermes_home))
+        if endpoint is None:
+            raise WorkerError("当前环境没有在线的 Vela IM worker：请在已开通 IM 的 Agent 里运行，或等待网关连接完成")
+        return cls(endpoint)
+
+    @classmethod
+    def start(cls, api_url, credential_file, state_dir, file_root=None):
+        """Start (or reuse) this Bot's worker and return a connected client."""
+        worker = AgentWorker(api_url, credential_file, state_dir, file_root)
+        return cls(worker.start(), worker=worker)
 
     @property
     def user_id(self):
         return self.endpoint.user_id
 
     def request(self, path, body=None, method=None, timeout=65):
-        data = None if body is None else json.dumps(body, ensure_ascii=False).encode()
-        request = Request(self.endpoint.url + path, data=data, method=method or ("GET" if data is None else "POST"),
-                          headers={"Authorization": "Bearer " + self.endpoint.secret, "Content-Type": "application/json"})
-        try:
-            with urlopen(request, timeout=timeout) as response:
-                return json.load(response)
-        except HTTPError as error:
-            try:
-                detail = json.loads(error.read())
-            except ValueError:
-                detail = {}
-            raise VelaHTTPError(error.code, detail.get("error", "IM request failed"), detail.get("code")) from None
+        status, data = socket_request(self.endpoint.socket, method or ("GET" if body is None else "POST"), path, body, timeout)
+        if status >= 400:
+            data = data or {}
+            raise VelaHTTPError(status, data.get("error", "IM request failed"), data.get("code"))
+        return data
 
     def call(self, method, *args):
         """Any user-level Tencent SDK method with its official positional arguments."""
         return self.request("/call", {"method": method, "args": list(args)})
 
     def invoke(self, method, *args):
-        """A Vela high-level operation (same names as the JS SDK)."""
+        """A high-level IM operation (same names as the JS SDK)."""
         return self.request("/invoke", {"method": method, "args": list(args)})
 
-    def send(self, to, conversation_type="C2C", message_type="text", payload=None, **options):
+    def platform(self, method, *args):
+        """A platform operation performed as this Bot (groups, members, reply rules, own identity)."""
+        return self.request("/platform", {"method": method, "args": list(args)})
+
+    def send(self, to, conversation_type="C2C", message_type="text", payload=None, reply_to_message_id=None, **options):
         if message_type not in MESSAGE_TYPES:
             raise ValueError(f"Unsupported message type {message_type}")
-        return self.request("/send", {"to": destination(to, conversation_type), "conversationType": conversation_type,
-                                      "type": message_type, "payload": payload or {}, **options})
+        body = {"to": destination(to, conversation_type), "conversationType": conversation_type,
+                "type": message_type, "payload": payload or {}, **options}
+        if reply_to_message_id:
+            body["replyToMessageID"] = reply_to_message_id
+        return self.request("/send", body)
 
     def send_text(self, to, text, conversation_type="C2C", **options):
         return self.send(to, conversation_type, "text", {"text": text}, **options)
@@ -129,11 +169,15 @@ class VelaClient:
     def capabilities(self):
         return self.request("/capabilities")
 
+    def control(self):
+        """This Bot's command policy ("owner" or "anyone") and every IM identity of its owner."""
+        return self.request("/control")
+
     def events(self, after=0, wait=25000):
         return self.request(f"/events?after={int(after)}&wait={int(wait)}", timeout=max(65, wait / 1000 + 30))
 
     def prepare_group_reply(self, message_id, max_agent_hops=6) -> GroupReplyInput:
-        """Trigger decision plus up to 10 preceding messages for a group message this identity received."""
+        """Platform reply decision plus up to 10 preceding messages for a group message this Bot received."""
         return self.request("/group-reply", {"messageID": message_id, "maxAgentHops": max_agent_hops})
 
     # Conversations and messages
@@ -169,45 +213,58 @@ class VelaClient:
     def delete_friend(self, user_id):
         return self.invoke("deleteFriend", user_id)
 
-    # Groups
+    # Groups: reads come from Tencent; every change goes through the platform so membership and rules stay authoritative.
     def get_groups(self):
         return self.invoke("getGroups")
-
-    def create_group(self, name, member_ids=(), type="Public", **native):
-        return self.invoke("createGroup", {"name": name, "memberIDs": list(member_ids), "type": type, **native})
 
     def get_group_profile(self, group_id):
         return self.invoke("getGroupProfile", destination(group_id, "GROUP"))
 
-    def update_group_profile(self, group_id, **profile):
-        return self.invoke("updateGroupProfile", destination(group_id, "GROUP"), profile)
-
-    def join_group(self, group_id, apply_message=None):
-        return self.invoke("joinGroup", destination(group_id, "GROUP"), *([apply_message] if apply_message else []))
-
-    def quit_group(self, group_id):
-        return self.invoke("quitGroup", destination(group_id, "GROUP"))
-
-    def dismiss_group(self, group_id):
-        return self.invoke("dismissGroup", destination(group_id, "GROUP"))
-
     def get_group_members(self, group_id):
         return self.invoke("getGroupMembers", destination(group_id, "GROUP"))
 
+    def create_group(self, name, member_ids=(), reply_mode=None, group_id=None):
+        body = {"name": name, "memberUserIds": list(member_ids), "groupId": group_id or uuid7()}
+        if reply_mode:
+            body["replyMode"] = GroupReplyMode(reply_mode).value
+        return self.platform("createGroup", body)
+
+    def group(self, group_id):
+        return self.platform("group", self._platform_id(group_id))
+
+    def update_group(self, group_id, name=None, reply_mode=None):
+        body = {k: v for k, v in (("name", name), ("replyMode", reply_mode and GroupReplyMode(reply_mode).value)) if v}
+        if not body:
+            raise ValueError("Nothing to update")
+        return self.platform("updateGroup", self._platform_id(group_id), body)
+
+    def set_group_reply_mode(self, group_id, mode: GroupReplyMode | str):
+        return self.update_group(group_id, reply_mode=mode)
+
     def add_group_members(self, group_id, user_ids):
-        return self.invoke("addGroupMembers", destination(group_id, "GROUP"), list(user_ids))
+        platform_id, result = self._platform_id(group_id), None
+        for user_id in user_ids:
+            result = self.platform("addGroupMember", platform_id, user_id)
+        return result
 
-    def remove_group_members(self, group_id, user_ids, reason=None):
-        return self.invoke("removeGroupMembers", destination(group_id, "GROUP"), list(user_ids), *([reason] if reason else []))
+    def remove_group_members(self, group_id, user_ids):
+        platform_id, result = self._platform_id(group_id), None
+        for user_id in user_ids:
+            result = self.platform("removeGroupMember", platform_id, user_id)
+        return result
 
-    def set_group_member_role(self, group_id, user_id, role):
-        return self.invoke("setGroupMemberRole", destination(group_id, "GROUP"), user_id, role)
+    def quit_group(self, group_id):
+        return self.remove_group_members(group_id, [self.user_id])
 
-    def mute_group_member(self, group_id, user_id, seconds):
-        return self.invoke("muteGroupMember", destination(group_id, "GROUP"), user_id, int(seconds))
+    def dismiss_group(self, group_id):
+        return self.platform("dismissGroup", self._platform_id(group_id))
 
-    def transfer_group_owner(self, group_id, user_id):
-        return self.invoke("transferGroupOwner", destination(group_id, "GROUP"), user_id)
+    @staticmethod
+    def _platform_id(group_id):
+        platform_id = platform_group_id(group_id)
+        if not platform_id:
+            raise ValueError(f"{group_id} 不是平台群；只有平台创建的群可以管理成员和回复规则")
+        return platform_id
 
     # Profiles
     def get_my_profile(self):
@@ -218,20 +275,6 @@ class VelaClient:
 
     def update_my_profile(self, **profile):
         return self.invoke("updateMyProfile", profile)
-
-    def get_control(self):
-        """This identity's command policy ("owner" or "anyone") and the identities of its owner."""
-        return self.invoke("control")
-
-    # Group reply policy (Vela extension; owner/admin may change it)
-    def get_group_reply_policy(self, group_id) -> GroupReplyPolicy:
-        return self.invoke("groupReplyPolicy", destination(group_id, "GROUP"))
-
-    def set_group_reply_policy(self, group_id, mode: GroupReplyMode | str) -> GroupReplyPolicy:
-        return self.invoke("setGroupReplyPolicy", destination(group_id, "GROUP"), GroupReplyMode(mode).value)
-
-    def group_policy(self, group_id, mode=None):
-        return self.get_group_reply_policy(group_id) if mode is None else self.set_group_reply_policy(group_id, mode)
 
     def close(self):
         if self.worker:

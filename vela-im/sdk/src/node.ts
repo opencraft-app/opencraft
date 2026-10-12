@@ -3,7 +3,7 @@ import {readFile,stat} from 'node:fs/promises';
 import {basename,extname,resolve,sep} from 'node:path';
 import {realpathSync} from 'node:fs';
 import ChatPackage from './vendor/lite-chat-node.mjs';
-import {VelaAPI,VelaError,type Attachment} from './index.ts';
+import {VelaError,type Attachment} from './index.ts';
 import {VelaIMClient} from './client.ts';
 import {audioSeconds} from './audio.ts';
 export {safeJSON} from './client.ts';
@@ -33,8 +33,8 @@ export class VelaNodeClient extends VelaIMClient {
  override async disconnect() {
   try{await super.disconnect()}finally{if(active===this)active=undefined}
  }
- constructor(api:VelaAPI,options:NodeClientOptions={}) {
-  super(api,TencentCloudChat,{
+ constructor(options:NodeClientOptions={}) {
+  super(TencentCloudChat,{
    async toFile(a:Attachment) {
     let bytes:Uint8Array,name:string,type:string;
     if('base64' in a){bytes=Buffer.from(a.base64,'base64');name=a.name;type=a.mimeType}

@@ -1,7 +1,7 @@
 import ChatPackage from '@tencentcloud/lite-chat/professional';
-import {VelaAPI,VelaError,type Attachment} from './index.ts';
+import {VelaError,type Attachment} from './index.ts';
 import {VelaIMClient} from './client.ts';
-export {safeJSON} from './client.ts';
+export {safeJSON,type CredentialSource} from './client.ts';
 
 // 腾讯的声明使用 export=；NodeNext 对 UMD 包的 default 类型需显式归一化。
 export const TencentCloudChat:any=ChatPackage;
@@ -23,7 +23,10 @@ async function toFile(a:Attachment):Promise<Blob> {
  return new File([bytes],a.name,{type:a.mimeType});
 }
 
-/** Browser / WKWebView client: connects this identity directly to Tencent with a short-lived UserSig. */
+/**
+ * Browser / WKWebView client: connects this identity directly to Tencent with a short-lived UserSig.
+ * Pass `() => humanAPI.imSession()` to `connect`.
+ */
 export class VelaBrowserClient extends VelaIMClient {
- constructor(api:VelaAPI) {super(api,TencentCloudChat,{toFile,audioSeconds})}
+ constructor() {super(TencentCloudChat,{toFile,audioSeconds})}
 }

@@ -1,33 +1,17 @@
 name: vela-im
 label: Vela IM
 kind: platform
-version: "0.2.0"
-description: 腾讯 IM 普通账号连接；每个 Agent 一个本机 Node worker，与人类平等收发、好友、群聊和完整消息类型。
+version: "0.3.0"
+description: 腾讯 IM 普通账号连接；每个 Bot 一个本机 Node worker，按平台群规则回复，用 vela_im 命令行收发消息和管理群聊。
 author: Vela
-requires_env:
-  - name: VELA_API_URL
-    description: Vela 身份服务地址（只签发该身份的 UserSig，不中转消息）
-    password: false
-  - name: VELA_IDENTITY_TOKEN
-    description: 当前 Agent 的身份专用凭证（不是腾讯应用密钥）
-    password: true
+requires_env: []
 optional_env:
+  - VELA_API_URL
+  - VELA_BOT_CREDENTIAL_FILE
   - VELA_ALLOWED_USERS
   - VELA_ALLOW_ALL_USERS
-  - VELA_GROUP_REPLY_MODE
   - VELA_MAX_AGENT_HOPS
   - VELA_HOME_CHANNEL
   - VELA_FILE_ROOT
   - VELA_NODE_BIN
-provides_tools:
-  - vela_identity
-  - vela_send_message
-  - vela_send_file
-  - vela_conversations
-  - vela_history
-  - vela_friends
-  - vela_groups
-  - vela_group_members
-  - vela_profile
-  - vela_sdk_call
-  - vela_events
+provides_tools: []
