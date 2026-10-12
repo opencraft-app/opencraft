@@ -60,8 +60,11 @@
   `POST /internal/trade/dianshi/orders/renew/place-and-pay` 调用点石 `do_goods_and_pay`。该入口不读取或写入
   控制台参与资格，可重复调用，但只允许国内站和已登记的续费活动 Bundle。原计费内部续费接口
   `POST /internal/trade/orders/renew/place-and-pay` 保持不变。
-- 点石同步回调可能早于本地续费订单写入；续费资源回调必须仅依赖稳定资源和外部订单事实完成幂等处理，
-  不能假设 `trade_order` 已经存在。Trade 在点石调用成功后仍须原子写入本地续费订单和 `renew` 参与记录。
+- 点石续费下单只写 `pending_pay` 订单，不消耗 `renew` 活动资格。续费询价在未付款时仍可命中活动；
+  同一用户、活动、套餐和 Pass 的待支付订单在配置窗口内复用。只有计费 `renewResource` 发货回调中 CTL
+  接受续费后，Trade 才按 `(uin, activity_id, scene)` 幂等写入参与记录。只为已存在的控制台点石
+  待支付续费订单登记参与；内部 `do_goods_and_pay` 可在订单写入前同步回调，不消耗控制台资格，
+  发货本身也不依赖 `trade_order` 已存在。
 - 点石续费下单触发的 `checkRenew` 回调可能把 DescribePass 的 RFC3339 到期时间原样放入
   `goodsDetail.curDeadline`；原计费链路使用北京时间 `YYYY-MM-DD HH:mm:ss`。Trade 同时接受这两种格式，
   解析为绝对时刻后与 CTL Pass 到期时间严格比较；非法格式或实际时刻不一致仍返回 `600404`。
