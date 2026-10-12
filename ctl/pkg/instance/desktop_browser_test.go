@@ -95,3 +95,14 @@ func TestDesktopBrowserEnsureTransportDecodesBeforeExecution(t *testing.T) {
 		t.Fatal("shell must receive decoded script, not base64 text")
 	}
 }
+
+// Desktop sessions do not unlock a login keyring through PAM. The agreed
+// basic backend must be explicit on the GUI launcher, never on Agent browsers.
+func TestDesktopBrowserEnsureUsesExplicitBasicPasswordStore(t *testing.T) {
+	if !strings.Contains(desktopBrowserEnsureScript, "--password-store=basic --no-first-run") {
+		t.Fatal("GUI launcher must select basic storage to avoid first-run keyring prompt")
+	}
+	if strings.Count(desktopBrowserEnsureScript, "--password-store=basic") != 1 {
+		t.Fatal("basic backend must be scoped to the managed GUI launcher")
+	}
+}
