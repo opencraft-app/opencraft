@@ -86,3 +86,15 @@ fails `Failed to connect to bus: Operation not permitted`; current service confi
 selects a Codex inbound candidate and does not supply `--tencentoa-token-file`.
 Do not claim push, remote master merge, live employee recognition or preview
 replacement. Preserve other worktrees and current preview files.
+
+## delivery checkpoint
+Source committed as `6904f15cb5b0dc69f5c78a289f4be1ef1dd678a8`; local master
+fast-forwarded in the isolated `/data/opencraft-tencentoa-master-integration-20261012`
+worktree. The repository had no author identity configured, so the local commit
+uses `Codex <codex@local.invalid>`, without attributing an unverified employee.
+Both feature-branch push and master push failed before authentication because
+git.woa.com cannot be resolved in this execution sandbox. Remote master was not
+updated. No service restart or live Web replacement was performed. Source and
+data outside this task remain unchanged. Resume remote fetch/review/delivery and
+verified independent preview cutover from a host-capable environment; configure
+the existing private TAI application key without exporting it into source/logs.
