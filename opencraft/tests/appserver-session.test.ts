@@ -4,8 +4,11 @@ import test from "node:test";
 import { AppServerRpcError, JsonRpcAppServerClient } from "@opencraft/appserver-client";
 import {
   createCordisThreadSessionRuntime,
+  createCodexThreadReplicaSource,
+  createThreadViewFrameScheduler,
   reconcileHistoryTurns,
   type CordisThreadSessionRuntime,
+  type ThreadViewFrameScheduler,
 } from "@opencraft/appserver-session";
 import {
   MemoryTransport,
@@ -25,6 +28,7 @@ interface WireRequest {
 }
 
 interface HarnessOptions {
+  frameScheduler?: ThreadViewFrameScheduler;
   historyMode?: "legacy" | "paginated";
   responseTurns?: readonly Record<string, unknown>[];
   initialTurnsPage?: { data: readonly Record<string, unknown>[]; nextCursor: string | null } | null;
@@ -197,6 +201,7 @@ async function createHarness(options: HarnessOptions = {}): Promise<{
   await client.connect({ clientInfo: { name: "session-test", version: "1" } });
   const runtime = await createCordisThreadSessionRuntime({
     client,
+    frameScheduler: options.frameScheduler,
     hostKind: options.hostKind,
     useTailHydration: options.useTailHydration,
     drainTailHistory: options.drainTailHistory,
@@ -220,6 +225,125 @@ async function createHarness(options: HarnessOptions = {}): Promise<{
     },
   };
 }
+
+function manualFrames() {
+  const callbacks = new Set<() => void>();
+  return {
+    scheduler: { schedule(flush: () => void) { callbacks.add(flush); return () => { callbacks.delete(flush); }; } },
+    tick() { for (const flush of [...callbacks]) { callbacks.delete(flush); flush(); } },
+    get size() { return callbacks.size; },
+  };
+}
+
+test("ordered text bursts publish once and completion catches up without a frame", async () => {
+  const frames = manualFrames();
+  const harness = await createHarness({ frameScheduler: frames.scheduler });
+  try {
+    harness.runtime.resume.adoptFork(resumeResult({ responseTurns: [{ id: "live", items: [] }] }) as never,
+      harness.client.connectionGeneration);
+    await harness.emit("turn/started", { threadId: "thread-one", turn: { id: "live", status: "inProgress", items: [] } });
+    let publications = 0;
+    harness.runtime.views.subscribeThread("thread-one", () => { publications += 1; });
+    const replicaEvents: string[] = [];
+    const source = createCodexThreadReplicaSource(harness.runtime.views, harness.client.hostId, "thread-one");
+    const removeReplica = source.subscribe(event => replicaEvents.push(event.kind));
+    const delta = (itemId: string, text: string) => harness.emit("item/agentMessage/delta",
+      { threadId: "thread-one", turnId: "live", itemId, delta: text });
+    for (const text of ["你", "好", "\ud83d", "\ude00", "\n"]) await delta("a", text);
+    await delta("b", "second");
+    for (const [summaryIndex, text] of [[0, "x"], [1, "a"], [0, "y"], [1, "b"]] as const) {
+      await harness.emit("item/reasoning/summaryTextDelta", {
+        threadId: "thread-one", turnId: "live", itemId: "reasoning", summaryIndex, delta: text,
+      });
+    }
+    assert.equal(publications, 0);
+    assert.equal(frames.size, 1);
+    frames.tick();
+    assert.equal(publications, 1);
+    const batch = harness.runtime.views.get("thread-one")!;
+    assert.equal(batch.turns[0]?.items?.find(item => item.id === "a")?.text, "你好😀\n");
+    assert.deepEqual(batch.turns[0]?.items?.find(item => item.id === "reasoning")?.summary, ["xy", "ab"]);
+    const revision = batch.revision;
+    const notificationRevision = batch.notificationRevision;
+    await delta("a", "finished");
+    await harness.emit("item/completed", { threadId: "thread-one", turnId: "live", item: {
+      id: "a", type: "agentMessage", text: "你好😀\nfinished", status: "completed",
+    } });
+    assert.equal(publications, 2);
+    assert.equal(frames.size, 0);
+    const completed = harness.runtime.views.get("thread-one")!;
+    assert.equal(completed.revision, revision + 1);
+    assert.equal(completed.notificationRevision, notificationRevision + 2);
+    assert.equal(completed.turns[0]?.items?.find(item => item.id === "a")?.completed, true);
+    frames.tick();
+    assert.equal(publications, 2);
+    assert.deepEqual(replicaEvents, ["entry", "entry"]);
+    removeReplica();
+  } finally { await harness.close(); }
+});
+
+test("frame fallback flushes a suspended clock and cancellation fences late frame callbacks", async () => {
+  let lateFrame: (() => void) | undefined;
+  let flushes = 0;
+  const scheduler = createThreadViewFrameScheduler(flush => { lateFrame = flush; return () => {}; });
+  const cancel = scheduler.schedule(() => { flushes += 1; });
+  cancel();
+  lateFrame?.();
+  await new Promise(resolve => setTimeout(resolve, 40));
+  assert.equal(flushes, 0);
+  scheduler.schedule(() => { flushes += 1; });
+  await new Promise(resolve => setTimeout(resolve, 40));
+  assert.equal(flushes, 1);
+  lateFrame?.();
+  assert.equal(flushes, 1);
+});
+
+test("queued projections reject expired generations and never resurrect removed views", async () => {
+  const frames = manualFrames();
+  const harness = await createHarness({ frameScheduler: frames.scheduler });
+  try {
+    harness.runtime.resume.adoptFork(resumeResult({ responseTurns: [] }) as never,
+      harness.client.connectionGeneration);
+    let applied = 0;
+    harness.runtime.views.queueProjection("thread-one", harness.client.connectionGeneration - 1,
+      view => { applied += 1; return view; }, 10);
+    frames.tick();
+    assert.equal(applied, 0);
+    harness.runtime.views.queueProjection("thread-one", harness.client.connectionGeneration,
+      view => { applied += 1; return view; }, 10);
+    harness.runtime.views.remove("thread-one");
+    frames.tick();
+    assert.equal(applied, 0);
+    assert.equal(harness.runtime.views.get("thread-one"), null);
+  } finally { await harness.close(); }
+});
+
+test("authoritative reads, interaction writes and full turn snapshots flush preceding text", async () => {
+  const frames = manualFrames();
+  const harness = await createHarness({ frameScheduler: frames.scheduler });
+  try {
+    harness.runtime.resume.adoptFork(resumeResult({ responseTurns: [{ id: "live", items: [] }] }) as never,
+      harness.client.connectionGeneration);
+    const delta = (text: string) => harness.emit("item/agentMessage/delta",
+      { threadId: "thread-one", turnId: "live", itemId: "a", delta: text });
+    await delta("read");
+    assert.equal(harness.runtime.views.get("thread-one")?.turns[0]?.items?.[0]?.text, "read");
+    assert.equal(frames.size, 0);
+    await delta(" before interaction");
+    harness.runtime.views.update("thread-one", view => ({ ...view, pendingInteractions: [] }));
+    assert.equal(harness.runtime.views.get("thread-one")?.turns[0]?.items?.[0]?.text, "read before interaction");
+    await delta(" must not append twice");
+    await harness.emit("turn/completed", { threadId: "thread-one", turn: {
+      id: "live", status: "completed", itemsView: "full",
+      items: [{ id: "final", type: "agentMessage", text: "authoritative" }],
+    } });
+    assert.deepEqual(harness.runtime.views.get("thread-one")?.turns[0]?.items?.map(item => item.id), ["final"]);
+    frames.tick();
+    assert.deepEqual(harness.runtime.views.get("thread-one")?.turns[0]?.items?.map(item => item.id), ["final"]);
+    await delta("old callback");
+  } finally { await harness.close(); }
+  frames.tick();
+});
 
 test("ephemeral fork adopts its live baseline without issuing rollout Resume", async () => {
   const harness = await createHarness({});

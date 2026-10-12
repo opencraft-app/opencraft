@@ -13,6 +13,59 @@ import {
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
+function semanticDocument(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(semanticDocument);
+  if (value === null || typeof value !== "object") return value;
+  return Object.fromEntries(Object.entries(value).filter(([key]) => key !== "stableKey" && key !== "completeness")
+    .map(([key, entry]) => [key, semanticDocument(entry)]));
+}
+
+test("streaming prefix cache preserves full-parser semantics at every input split", () => {
+  const examples = [
+    "- a\n\n- b",
+    "- a\n\n  continuation\n\n  - nested\n\n- b\n\nnext",
+    "1. one\n\n2. two\n\nnext",
+    "    a\n\n    b\n\nnext",
+    "> a\n>\n> b\n\nlazy continuation\n\nnext",
+    "[x][id]\n\n[id]: https://example.com",
+    "[id]: https://example.com\n\n[x][id]",
+    "````\na\n```\n\nb\n````\n\nnext",
+    "~~~ts\na\n~~~ wrong closer\nb\n~~~\n\nnext",
+    "title\n---\n\n| a | b |\n| --- | --- |\n| x | y |\n\nnext",
+    "first **bold**\n\nsecond *italic*\n\nthird",
+    "$$\na+b\n$$\n\nnext",
+    "$$\na\n\nb\n$$\n\nnext",
+    "<div>\ninside\n\nmore\n</div>\n\nnext",
+    "same\n\nsame\n\nsame",
+  ];
+  for (const dialect of ["assistant", "user-message"] as const) {
+    for (const source of examples) {
+      const compiler = new ChatDocumentCompiler();
+      for (let end = 1; end <= source.length; end++) {
+        const input = source.slice(0, end);
+        const normalized = dialect === "user-message" ? preprocessUserMessageMarkdown(input) : input;
+        const repaired = preprocessChatMarkdown(normalized, { streaming: true }).markdown;
+        const expected = new ChatDocumentCompiler().compile(repaired).nodes;
+        assert.deepEqual(semanticDocument(compiler.compile(input, { dialect, streaming: true }).nodes),
+          semanticDocument(expected), `${dialect} split ${end}: ${JSON.stringify(input)}`);
+      }
+    }
+  }
+});
+
+test("stable nodes and segment identities are reused without replaying entering state", () => {
+  const session = new ChatDocumentStreamingSession("prefix-reuse");
+  const first = session.compile("稳定段落。\n\n正在", { streaming: true });
+  first.commit();
+  const second = session.compile("稳定段落。\n\n正在输出", { streaming: true });
+  second.commit();
+  const third = session.compile("稳定段落。\n\n正在输出更多", { streaming: true });
+  assert.equal(second.snapshot.nodes[0]?.stableKey, first.snapshot.nodes[0]?.stableKey);
+  assert.equal(third.snapshot.nodes[0], second.snapshot.nodes[0]);
+  assert.ok(flatten(third.snapshot.nodes.slice(0, 1)).every((node) =>
+    !("segments" in node) || node.segments.every((segment) => !segment.entering)));
+});
+
 const codeBlockStyles = readFileSync(
   resolve(process.cwd(), "packages/chat-render-web/src/renderers/code/code-block.scss"),
   "utf8",
@@ -133,6 +186,17 @@ test("an incomplete Mermaid fence remains an open source block", () => {
   assert.equal(code.language, "mer");
   assert.equal(code.completeness, "open");
   assert.match(code.code, /graph TD/);
+});
+
+test("nested and longer fences retain open state until their actual delimiter closes", () => {
+  const compiler = new ChatDocumentCompiler();
+  for (const source of ["> ```mermaid\n> graph TD\n> A-->B", "- code\n\n    ````mermaid\n    A-->B\n    ```"]) {
+    const node = flatten(compiler.compile(source, { streaming: true }).nodes).find(node => node.kind === "code-fence");
+    assert.equal(node?.completeness, "open");
+  }
+  const closed = flatten(compiler.compile("> ````mermaid\n> A-->B\n> ```\n> ````", { streaming: true }).nodes)
+    .find(node => node.kind === "code-fence");
+  assert.equal(closed?.completeness, "complete");
 });
 
 test("streaming markdown stabilizes incomplete Codex syntax without mutating canonical source", () => {

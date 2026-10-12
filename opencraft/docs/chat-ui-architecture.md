@@ -8,6 +8,50 @@ the same label. Unknown or absent senders leave no label. The label consumes
 the individual message snapshot, never the current footer account or Turn author,
 and is excluded from copied message text and native model input.
 
+## Streaming projection and document reuse
+
+The Host session buffers only append-only assistant, plan and indexed reasoning
+text notifications. ThreadViewStore reduces original notifications in order and
+publishes one consecutive View revision per batch; notification revision and
+last notification retain their original semantics. Web/Electron and Expo inject
+frame scheduling with a 32ms timer fallback; headless uses a 16ms timer. Timers
+do not guarantee progress while the event loop is blocked. Lifecycle,
+replacement, history, interaction writes, authoritative reads and commands flush
+preceding text. Completion and its preceding deltas share one publication;
+full terminal snapshots still replace Item membership. Generation guards,
+cancelled-callback fencing and disposal prevent replay into newer sessions.
+Pressure flushes at 512KiB of UTF-16 delta data or 2048 notifications preserve
+all text. Batching reduces downstream JSON/Replica/timeline work while still
+running each original projector.
+
+The compiler caches immutable prefix AST nodes using Marked's actual top-level
+token boundaries, then parses the remaining tail. It retains the last block
+and preceding live container, protecting lists, quotes, indented code and
+partial markers that can rejoin them. Brackets, CRLF and display math
+conservatively use full parsing for cross-block dependencies and normalization.
+The dialect-scoped cache is bounded to 64 entries and one million key
+characters; only matching preprocessed prefixes can be reused. Unclosed fences
+retain their real delimiter length and source bytes, without synthetic triple
+backticks. This is not a fully incremental parser: a long single block or
+fallback still has whole-document costs.
+
+Sessions reuse committed stable node/segment identities and reconcile only
+the remaining tail, with cached word segmentation. Immutable parsing memo is
+safe for abandoned renders; committed parsed nodes and identity counters move
+only under the existing candidate CAS. Reused segments cease to be new entrants
+without changing their keys. Completion uses the full parser.
+
+Fade owns no execution state. Absolute segment starts have a real 96ms maximum
+future wait, followed by the existing 150ms fade, excluding CPU/frame cost.
+Remount computes remaining delay; elapsed motion is settled even without
+animationend. Prose and resource labels share this scheduler. Completed
+documents disable animation at the root and reveal all text. Replica
+projection completion remains distinct from React commit and paint.
+
+Tests cover session ordering, document equivalence and segment identity.
+`scripts/smoke-streaming-presentation.mjs` checks actual Web DOM/CSS with
+synthetic text in an isolated browser; it does not update a running Host or
+establish real-provider throughput.
 
 ## Browser-local input drafts
 

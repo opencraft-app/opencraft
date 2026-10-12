@@ -85,6 +85,7 @@ import {
   projectThreadViewForReplica,
   type AppServerHostKind,
   type CordisThreadSessionRuntime,
+  type ThreadViewFrameScheduler,
 } from "@opencraft/appserver-session";
 import {
   asHostId,
@@ -189,6 +190,7 @@ export interface AppServerWorkbenchRuntimeConfig {
     AppServerClientRegistryService,
     "create" | "remove"
   >;
+  readonly frameScheduler?: ThreadViewFrameScheduler;
 }
 
 /** Count the model-callable definitions in an AppServer dynamic-tool catalog. */
@@ -756,6 +758,7 @@ export function createAppServerWorkbenchRuntime(
   ): Promise<T> => {
     if (binding.disposed)
       throw new Error(`Thread ${binding.threadId} is disposed`);
+    session?.views.flush(binding.threadId);
     binding.pendingCommandCount += 1;
     touchBinding(binding);
     publish();
@@ -1257,6 +1260,7 @@ export function createAppServerWorkbenchRuntime(
         : null;
       session = await createCordisThreadSessionRuntime({
         client,
+        frameScheduler: config.frameScheduler,
         hostKind:
           config.hostKind ?? (hostId === "durable" ? "durable" : "local"),
         supportsPaginatedHistory: true,

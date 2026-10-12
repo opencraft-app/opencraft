@@ -1,49 +1,52 @@
 export interface ChatFadeTimelineOptions {
   readonly segmentDelayMs?: number;
   readonly maximumDelayMs?: number | null;
+  readonly animationDurationMs?: number;
 }
 
 /**
- * Renderer-neutral reconstruction of Codex's per-message fade scheduler.
- * Stable segment keys retain their first delay and settled segments never
- * animate again when React revisits the same document candidate.
+ * Decorative motion cannot build an unbounded queue behind received text.
+ * Absolute start times keep remounts from replaying a segment's original delay.
  */
 export class ChatFadeTimeline {
-  private readonly delayMsByKey = new Map<string, number>();
+  private readonly startAtMsByKey = new Map<string, number>();
   private readonly settledKeys = new Set<string>();
   private nextSegmentStartAtMs = 0;
   private readonly segmentDelayMs: number;
   private readonly maximumDelayMs: number | null;
+  private readonly animationDurationMs: number;
 
   constructor(options: ChatFadeTimelineOptions = {}) {
     this.segmentDelayMs = options.segmentDelayMs ?? 16;
-    this.maximumDelayMs = options.maximumDelayMs ?? 96;
+    this.maximumDelayMs = options.maximumDelayMs === undefined ? 96 : options.maximumDelayMs;
+    this.animationDurationMs = options.animationDurationMs ?? 150;
   }
 
   delayFor(key: string, nowMs: number): number {
-    const cached = this.delayMsByKey.get(key);
-    if (cached !== undefined) return cached;
-    const startAtMs = Math.max(this.nextSegmentStartAtMs, nowMs);
+    const cached = this.cachedDelayFor(key, nowMs);
+    if (cached !== null) return cached;
+    const desiredStartAtMs = Math.max(this.nextSegmentStartAtMs, nowMs);
+    const startAtMs = this.maximumDelayMs === null ? desiredStartAtMs
+      : Math.min(desiredStartAtMs, nowMs + this.maximumDelayMs);
     const delayMs = Math.max(Math.round(startAtMs - nowMs), 0);
-    this.delayMsByKey.set(key, delayMs);
-    this.nextSegmentStartAtMs = startAtMs + this.nextStepMs(delayMs);
+    this.startAtMsByKey.set(key, startAtMs);
+    this.nextSegmentStartAtMs = startAtMs + this.segmentDelayMs;
     return delayMs;
   }
 
-  cachedDelayFor(key: string): number | null {
-    return this.delayMsByKey.get(key) ?? null;
+  cachedDelayFor(key: string, nowMs: number): number | null {
+    const startAtMs = this.startAtMsByKey.get(key);
+    return startAtMs === undefined ? null : Math.max(0, Math.round(startAtMs - nowMs));
   }
 
   settle(key: string): void {
     this.settledKeys.add(key);
   }
 
-  isSettled(key: string): boolean {
-    return this.settledKeys.has(key);
-  }
-
-  private nextStepMs(delayMs: number): number {
-    if (this.maximumDelayMs === null || delayMs < this.maximumDelayMs) return this.segmentDelayMs;
-    return Math.max(1, this.segmentDelayMs * 0.25);
+  isSettled(key: string, nowMs?: number): boolean {
+    if (this.settledKeys.has(key)) return true;
+    const startAtMs = this.startAtMsByKey.get(key);
+    return nowMs !== undefined && startAtMs !== undefined
+      && nowMs >= startAtMs + this.animationDurationMs;
   }
 }

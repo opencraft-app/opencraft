@@ -10,3 +10,4 @@ export * from "./replica-adapter";
 export * from "./resume-coordinator";
 export * from "./stream-ownership";
 export * from "./view-store";
+export * from "./frame-scheduler";
