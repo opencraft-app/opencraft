@@ -15,7 +15,7 @@ import { VelaImPortraitContext, type VelaImPortrait } from "./vela-im-avatar";
 import { VelaImChat } from "./vela-im-chat";
 import { GroupSettingsDialog } from "./vela-im-dialogs";
 import { isVelaImEnabled } from "./vela-im-env";
-import { describeMessage, errorText, GROUP_INVITE_PARAM, isAgentID, toMembers, type ConversationItem } from "./vela-im-model";
+import { describeMessage, errorText, GROUP_INVITE_PARAM, toMembers, type ConversationItem } from "./vela-im-model";
 import { toast } from "@/lib/toast";
 
 /** Connects the signed-in person to IM in the background; the chat page only surfaces conversations once ready. */
@@ -25,9 +25,11 @@ export function useVelaImConsole(): VelaImController {
   return useVelaIm(token, session.user?.id, session.user?.name ?? "");
 }
 
-/** Conversations with Agents (single chats and groups) shown in the chat page's session list. */
-export const agentConversations = (im: VelaImController): ConversationItem[] =>
-  im.conversations.filter((c) => c.kind === "GROUP" || (c.kind === "C2C" && isAgentID(c.targetID)));
+/** The selected Agent's conversations for the chat page's session list: its single chat and the groups it is in. */
+export const agentConversations = (im: VelaImController, agentUserID: string | null): ConversationItem[] =>
+  agentUserID
+    ? im.conversations.filter((c) => c.kind === "C2C" ? c.targetID === agentUserID : !!im.groupMembers[c.targetID]?.includes(agentUserID))
+    : [];
 
 const CONTEXT_MESSAGES = 10;
 const defaultGroupName = (names: string[]) => {
@@ -310,6 +312,10 @@ export function VelaImConversationView({ im, bots, conversation, onOpen, onClose
   const [refreshKey, setRefreshKey] = useState(0);
   const connection = im.connection;
   const current = useMemo(() => im.conversations.find((c) => c.conversationID === conversation.conversationID) ?? conversation, [im.conversations, conversation]);
+  const { refreshGroupMembers } = im;
+  useEffect(() => {
+    if (current.kind === "GROUP") void refreshGroupMembers(current.targetID).catch(() => undefined);
+  }, [current.kind, current.targetID, refreshKey, refreshGroupMembers]);
   const portrait = useMemo<VelaImPortrait>(() => {
     const byBot = new Map(bots.map((bot) => [botKey(bot.instanceId, bot.id), bot]));
     const byUser = new Map(im.agents.map((agent) => [agent.userId, byBot.get(botKey(agent.instanceId, agent.botId))]));

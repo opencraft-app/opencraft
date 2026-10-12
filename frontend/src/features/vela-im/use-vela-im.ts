@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { VelaHumanAPI, type BotAgent, type IMMessage } from "@vela/im-client";
+import { platformGroupId, VelaHumanAPI, type BotAgent, type IMMessage } from "@vela/im-client";
 import type { VelaBrowserClient } from "@vela/im-client/browser";
 import { resolveVelaImApiBase } from "./vela-im-env";
 import {
@@ -48,6 +48,9 @@ export function useVelaIm(lightvelaToken: string | null, lightvelaUserID: string
   const [agents, setAgents] = useState<AgentItem[]>([]);
   /** Kept per conversation for the whole session, so switching chats or devices never loses who is working. */
   const [working, setWorking] = useState<WorkingAgents>({});
+  /** IM user IDs in each platform group, keyed by Tencent group ID; membership lives in the backend, not in Tencent. */
+  const [groupMembers, setGroupMembers] = useState<Record<string, string[]>>({});
+  const requestedGroups = useRef(new Set<string>());
   const [generation, setGeneration] = useState(0);
   const events = useRef<VelaImEvents>({});
   const lifecycle = useRef<Promise<unknown>>(Promise.resolve());
@@ -68,6 +71,8 @@ export function useVelaIm(lightvelaToken: string | null, lightvelaUserID: string
     setContacts([]);
     setApplications([]);
     setWorking({});
+    setGroupMembers({});
+    requestedGroups.current = new Set();
     const connect = async () => {
       setStatus("connecting");
       const api = new VelaHumanAPI(base, { headers: () => ({ Authorization: `Bearer ${lightvelaToken}` }) });
@@ -160,6 +165,23 @@ export function useVelaIm(lightvelaToken: string | null, lightvelaUserID: string
     setConversations(toConversations(await connection.client.getConversations()));
   }, [connection]);
 
+  const refreshGroupMembers = useCallback(async (groupID: string) => {
+    const id = platformGroupId(groupID);
+    if (!connection || !id) return;
+    const group = await connection.api.group(id);
+    setGroupMembers((old) => ({ ...old, [groupID]: group.members.map((m) => m.userId) }));
+  }, [connection]);
+
+  // Reloaded whenever Tencent reports a different member count, so joins and leaves elsewhere show up too.
+  const groupKeys = conversations.filter((c) => c.kind === "GROUP").map((c) => `${c.targetID}|${c.memberCount ?? ""}`).join(",");
+  useEffect(() => {
+    for (const key of groupKeys.split(",").filter(Boolean)) {
+      if (requestedGroups.current.has(key)) continue;
+      requestedGroups.current.add(key);
+      void refreshGroupMembers(key.slice(0, key.lastIndexOf("|"))).catch(() => requestedGroups.current.delete(key));
+    }
+  }, [groupKeys, refreshGroupMembers]);
+
   return {
     status,
     error,
@@ -169,11 +191,13 @@ export function useVelaIm(lightvelaToken: string | null, lightvelaUserID: string
     applications,
     agents,
     working,
+    groupMembers,
     events,
     reconnect,
     refreshAgents,
     refreshContacts,
     refreshConversations,
+    refreshGroupMembers,
   };
 }
 

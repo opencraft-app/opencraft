@@ -2849,7 +2849,10 @@ export const AgentSettingsPage = ({
   const [selectedChatId, setSelectedChatId] = useState<string | undefined>(undefined);
   const velaIm = useVelaImConsole();
   const velaImEnabled = isVelaImEnabled();
-  const velaImItems = agentConversations(velaIm);
+  const activeImAgent = activeBot
+    ? velaIm.agents.find((a) => a.state !== "deleted" && a.instanceId === (activeBot.instanceId ?? activeBot.id) && a.botId === activeBot.id)
+    : undefined;
+  const velaImItems = agentConversations(velaIm, activeImAgent?.userId ?? null);
   const execBotCommand = repositories.bots.execDebugCommand;
   const velaImBots = useMemo(() => visibleBots.map((bot) => ({
     id: bot.id, instanceId: bot.instanceId ?? bot.id, name: bot.name,
@@ -2860,6 +2863,11 @@ export const AgentSettingsPage = ({
   const [newAgentChatOpen, setNewAgentChatOpen] = useState(false);
   const [newChatMenuOpen, setNewChatMenuOpen] = useState(false);
   const velaImChatActive = activeSection === "chat" && velaImConversation !== null;
+  const previousActiveBotIdRef = useRef(activeBot?.id);
+  useEffect(() => {
+    if (previousActiveBotIdRef.current && previousActiveBotIdRef.current !== activeBot?.id) setVelaImConversation(null);
+    previousActiveBotIdRef.current = activeBot?.id;
+  }, [activeBot?.id]);
   useVelaImInviteLink(velaIm, (conversation) => {
     setVelaImConversation(conversation);
     if (activeSection !== "chat") navigate(getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.chat, searchParams));
