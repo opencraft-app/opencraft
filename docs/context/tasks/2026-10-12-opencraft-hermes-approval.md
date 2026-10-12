@@ -39,10 +39,10 @@ Hermes adapter/types/recovery, shared approval contract and renderer.
 Permanent grants must be explicit scope metadata, never a fabricated Codex exec-policy amendment. Missing/malformed choices fail closed. No binary changes.
 
 ## stage
-Source implementation and scoped verification complete. User authorized commit, push and merge into master on 2026-10-12; Git delivery in progress, no deployment authorized.
+Source committed as `88a4dbe2c`, merged with current master and pushed on `feat/opencraft-hermes-approval-20261012`. MR [!5214](https://git.woa.com/wisp/mono2/-/merge_requests/5214) created. Merge attempted through the normal API; blocked by `Review check not passed. 409 conflict`. No deployment authorized.
 
 ## verified
-- 175 combined core/approval/clarify/recovery/response/history/queue/Profile tests passed; newest reminted-session regression raises approval-only suite to 17 passing tests.
+- 176 combined core/approval/clarify/recovery/response/history/queue/Profile tests passed after integrating current master; approval-only suite has 17 passing tests.
 - Bot-management gate: 32 passing tests, including group approval neighbors.
 - Hermes adapter and shared protocol/core/runtime/broker package typechecks passed. Expo typecheck passed. Web supplemental ESNext/DOM check passed after preparing this checkout's dependencies.
 - Real client/broker delivered persistent metadata through to native RPC boundary (Hermes gateway mocked at that boundary).
@@ -55,7 +55,7 @@ Source implementation and scoped verification complete. User authorized commit, 
 - Initial smoke dependency failure, dependency-reinstall concurrent test failure, headless build missing-profile failure, and assertion synchronization failure were corrected and rerun; not evidence of product behavior.
 
 ## restore / next_action
-Integrate on a dedicated approval branch, validate against current master, push and merge via Gongfeng with normal checks/review. Keep preview and production untouched. Isolated build is in this checkout, not the running server.
+Await required Owner review on MR !5214, then merge via Gongfeng with normal checks. Keep preview and production untouched. Isolated build is in this checkout, not the running server.
 
 ## handoff
-Implementation delivery is proceeding under explicit commit/push/merge authorization. Preview and production remain unchanged; merge results must be verified from Gongfeng and remote master before reporting completion.
+Commit and push completed under explicit user authorization; master merge remains blocked by the platform review gate. Current-master regression, boundaries and supplemental Web typecheck passed. Preview and production remain unchanged. Do not bypass review or describe this as merged.
