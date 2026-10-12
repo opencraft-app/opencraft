@@ -1,3 +1,4 @@
+import { getAgentDeleteErrorMessage } from "@/pages/marketing/agent-delete-error";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { INSTANCE_BOT_ERROR_CODE } from "@/domain/instance-bot-errors";
 import i18n from "@/i18n";
@@ -690,9 +691,9 @@ describe("http repositories auth token bootstrap", () => {
             created_at: "2026-09-09T00:00:00Z",
             updated_at: "2026-09-09T00:00:00Z",
             weixin_owner: {
-              bot_id: "bot_sales",
-              profile_id: "sales-123",
-              bot_name: "销售 Bot",
+              bot_id: "ins_multi",
+              profile_id: "main",
+              bot_name: "主 Bot",
               status: "connected",
             },
             whatsapp_owner: {
@@ -713,6 +714,12 @@ describe("http repositories auth token bootstrap", () => {
             source_bot_id: "ins_multi",
             created_at: "2026-09-09T01:00:00Z",
             updated_at: "2026-09-09T01:00:00Z",
+            weixin_owner: {
+              bot_id: "bot_sales",
+              profile_id: "sales-123",
+              bot_name: "销售 Bot",
+              status: "connected",
+            },
           },
         ] });
       }
@@ -751,7 +758,7 @@ describe("http repositories auth token bootstrap", () => {
         });
       }
       if (url.includes("/channel-bindings/weixin")) {
-        return jsonResponse({});
+        return jsonResponse(method === "PUT" ? { reservation_id: "weixin-lease" } : {});
       }
       if (url.includes("/channel-bindings/whatsapp")) {
         return jsonResponse(method === "PUT" ? { reservation_id: "test-reservation" } : {});
@@ -768,7 +775,7 @@ describe("http repositories auth token bootstrap", () => {
         instanceId: "ins_multi",
         profileId: "main",
         isDefault: true,
-        weixinOwner: expect.objectContaining({ botId: "bot_sales", botName: "销售 Bot" }),
+        weixinOwner: expect.objectContaining({ botId: "ins_multi", botName: "主 Bot" }),
         whatsAppOwner: expect.objectContaining({ botId: "bot_sales", botName: "销售 Bot" }),
       }),
       expect.objectContaining({
@@ -776,6 +783,7 @@ describe("http repositories auth token bootstrap", () => {
         instanceId: "ins_multi",
         profileId: "sales-123",
         sourceBotId: "ins_multi",
+        weixinOwner: expect.objectContaining({ botId: "bot_sales", botName: "销售 Bot" }),
       }),
     ]);
 
@@ -791,6 +799,17 @@ describe("http repositories auth token bootstrap", () => {
       { url: "https://lightclaw.tech/v1/instances/ins_multi/bots/bot_sales/channel-bindings/weixin", method: "POST" },
       { url: "https://lightclaw.tech/v1/instances/ins_multi/bots/bot_sales/channel-bindings/weixin", method: "DELETE" },
     ]);
+    const weixinLease = await repositories.bots.claimUniqueChannel("bot_sales", "weixin");
+    expect(weixinLease).toBe("weixin-lease");
+    await repositories.bots.releaseUniqueChannel("bot_sales", "weixin", weixinLease);
+    expect(JSON.parse(String(fetchMock.mock.calls.at(-1)?.[1]?.body))).toEqual({ reservation_id: "weixin-lease" });
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({
+      code: "WEIXIN_ACCOUNT_OCCUPIED", message: "account occupied",
+      details: { occupied_by_bot: { channel: "weixin", bot_id: "ins_multi", bot_name: "工作助手" } },
+    }), { status: 409, headers: { "Content-Type": "application/json" } }));
+    await expect(repositories.bots.confirmUniqueChannel("bot_sales", "weixin", weixinLease)).rejects.toMatchObject({
+      status: 409, code: "WEIXIN_ACCOUNT_OCCUPIED", occupiedByBot: { botId: "ins_multi", botName: "工作助手" },
+    });
     const reservationId = await repositories.bots.claimUniqueChannel("bot_sales", "whatsapp");
     expect(reservationId).toBe("test-reservation");
     await repositories.bots.confirmUniqueChannel("bot_sales", "whatsapp", reservationId);
@@ -806,6 +825,19 @@ describe("http repositories auth token bootstrap", () => {
       { method: "DELETE", body: { reservation_id: "test-reservation" } },
       { method: "DELETE", body: { disconnect: true } },
     ]);
+    // This is writeHTTPError's actual serialized contract, without the internal
+    // wrapped error context. Exercise HTTP parsing through the deletion flow.
+    for (const channel of ["weixin", "whatsapp"] as const) {
+      fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({
+        code: "CHANNEL_OCCUPIED", message: "channel is already connected to another bot",
+        details: { channel },
+      }), { status: 409, headers: { "Content-Type": "application/json" } }));
+      const failure = await repositories.bots.destroyBot("bot_sales").catch((error: unknown) => error);
+      expect(failure).toMatchObject({ code: "CHANNEL_OCCUPIED", occupiedChannel: channel });
+      expect(getAgentDeleteErrorMessage(failure, true, (message) => message)).toBe(
+        channel === "weixin" ? "请先断开该 Bot 的微信，再删除 Bot。" : "请先断开该 Bot 的 WhatsApp，再删除 Bot。",
+      );
+    }
     await repositories.bots.destroyBot("bot_sales");
     expect(calls[calls.length - 1]).toEqual({
       url: "https://lightclaw.tech/v1/instances/ins_multi/bots/bot_sales",

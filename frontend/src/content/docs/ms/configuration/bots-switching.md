@@ -57,10 +57,9 @@ Anda boleh menyambungkan pelbagai Bots ke saluran mesej yang disokong. Gabungan 
 
 | Versi LightVela | Saluran yang menyokong integrasi Bot berganda |
 | --- | --- |
-| Versi Global | Telegram, Discord, Slack, QQ, WeCom, Lark |
+| Versi Global | Telegram, Discord, WeChat, Slack, QQ, WeCom, Lark |
 
-Untuk saluran seperti WeChat dan WhatsApp, konfigurasi semasa mungkin membenarkan hanya satu Bot setiap contoh. Jika saluran sudah dimiliki oleh Bot lain, LightVela akan memaparkan notis dan menyediakan cara untuk mengurus Bot yang memilikinya.
-
+Bot yang berbeza pada instans yang sama boleh menghubungkan akaun WeChat yang berbeza. Setiap Bot mengurus sambungan WeChat sendiri. WhatsApp masih terhad kepada satu Bot yang bersambung bagi setiap instans; Bot lain akan melihat notis pemilikan dan pautan untuk mengurus Bot tersebut.
 
 ## Sahkan pertukaran Bot atau sambungan saluran
 

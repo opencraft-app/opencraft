@@ -57,10 +57,9 @@ You can connect multiple Bots to supported messaging channels. The available cha
 
 | LightVela version | Channels that support multiple Bot integration |
 | --- | --- |
-| Global version | Telegram, Discord, Slack, QQ, WeCom, Lark |
+| Global version | Telegram, Discord, WeChat, Slack, QQ, WeCom, Lark |
 
-For channels such as WeChat and WhatsApp, the current configuration may allow only one Bot per instance. If a channel is already owned by another Bot, LightVela displays a notice and provides a way to manage the Bot that owns it.
-
+Different Bots on the same instance can connect separate WeChat accounts. Each Bot manages its own WeChat connection. WhatsApp remains limited to one connected Bot per instance; other Bots see an ownership notice and a link to manage that Bot.
 
 ## Verify a Bot switch or channel connection
 

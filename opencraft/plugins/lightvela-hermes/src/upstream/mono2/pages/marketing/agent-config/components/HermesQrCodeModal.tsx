@@ -103,6 +103,7 @@ export const HermesQrCodeModal = forwardRef<IHermesQrCodeModalHandle, IHermesQrC
     const [visible, setVisible] = useState(false);
     const [qrUrl, setQrUrl] = useState('');
     const [status, setStatus] = useState<HermesQrUiStatus>('init');
+    const [recoveryFailed, setRecoveryFailed] = useState(false);
     const { openAuth: openWecomBotAuth } = useWecomAIBotSDK();
 
     const qrUrlRef = useRef('');
@@ -117,6 +118,7 @@ export const HermesQrCodeModal = forwardRef<IHermesQrCodeModalHandle, IHermesQrC
     };
 
     const resetState = () => {
+      setRecoveryFailed(false);
       qrUrlRef.current = '';
       setQrUrl('');
       updateStatus('init');
@@ -141,8 +143,16 @@ export const HermesQrCodeModal = forwardRef<IHermesQrCodeModalHandle, IHermesQrC
       qrUrlRef.current = '';
       setQrUrl('');
       setVisible(true);
+      setRecoveryFailed(false);
       updateStatus('loading');
 
+      let scanSucceeded = false;
+      const finishSuccess = () => {
+        updateStatus('success');
+        setVisible(false);
+        resetState();
+        onSuccess?.();
+      };
       try {
         const command = scriptCommands.hermes.channel.getQrUrlCommand({
           platform,
@@ -167,11 +177,9 @@ export const HermesQrCodeModal = forwardRef<IHermesQrCodeModalHandle, IHermesQrC
               return;
             }
             if (line.status === 'success') {
-              // 扫码成功，关闭弹窗
-              updateStatus('success');
-              setVisible(false);
-              resetState();
-              onSuccess?.();
+              scanSucceeded = true;
+              // Weixin success includes CTL account confirmation, which follows the stream.
+              if (platform !== 'weixin') finishSuccess();
               return;
             }
             // status === 'pending'：二维码 URL 就绪
@@ -184,6 +192,7 @@ export const HermesQrCodeModal = forwardRef<IHermesQrCodeModalHandle, IHermesQrC
         });
 
         if (!isFlowValid()) return;
+        if (platform === 'weixin' && scanSucceeded && result.success) finishSuccess();
 
         // acli 流式协议：ready/success/failed 状态已在 onProgress 中处理；
         // 这里只在"还卡在 loading（即始终没收到任何 pending/success/failed 行）"
@@ -197,6 +206,15 @@ export const HermesQrCodeModal = forwardRef<IHermesQrCodeModalHandle, IHermesQrC
         }
       } catch (error) {
         if (!isFlowValid()) return;
+        if (platform === 'weixin' && error instanceof Error && 'code' in error
+          && error.code === 'WEIXIN_ACCOUNT_OCCUPIED' && 'occupiedByBot' in error && error.occupiedByBot) {
+          // The host displays the owning Bot's conflict dialog.
+          setVisible(false);
+          resetState();
+          return;
+        }
+        setRecoveryFailed(platform === 'weixin' && error instanceof Error && 'code' in error
+          && error.code === 'WEIXIN_RECOVERY_FAILED');
         console.error('[HermesQrCodeModal] startQrCodeFlow failed:', error);
         updateStatus('failed');
       }
@@ -248,7 +266,7 @@ export const HermesQrCodeModal = forwardRef<IHermesQrCodeModalHandle, IHermesQrC
         }
       } catch (error) {
         if (!isFlowValid()) return;
-        if (error?.code === 'CANCELLED') {
+        if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'CANCELLED') {
           resetState();
           return;
         }
@@ -275,12 +293,13 @@ export const HermesQrCodeModal = forwardRef<IHermesQrCodeModalHandle, IHermesQrC
         return t('请使用微信扫码完成授权');
       }
       if (status === 'expired') return t('二维码已过期');
-      if (status === 'failed') return t('获取二维码失败');
+      if (status === 'failed') return recoveryFailed ? t('微信连接恢复失败') : t('获取二维码失败');
       return '';
     };
 
     const getDescription = () => {
       if (status === 'ready') {
+        if (channel === 'weixin') return t('请使用未连接其他 Bot 的微信账号扫码，并在微信上确认授权。');
         if (channel === 'feishu') return t('扫码后请在飞书上确认授权');
         if (channel === 'yuanbao') return t('扫码后请在元宝 App 上点击确认');
         if (channel === 'qqbot') return t('扫码后请在 QQ 上确认授权');
@@ -289,7 +308,9 @@ export const HermesQrCodeModal = forwardRef<IHermesQrCodeModalHandle, IHermesQrC
         return t('扫码后请在微信上确认授权');
       }
       if (status === 'expired') return t('二维码已超时失效，请点击重试重新获取');
-      if (status === 'failed') return t('配置失败，请重试或检查网络连接');
+      if (status === 'failed') return recoveryFailed
+        ? t('上次扫码后的配置尚未恢复，请重试；若仍失败，请联系支持。')
+        : t('配置失败，请重试或检查网络连接');
       return undefined;
     };
 

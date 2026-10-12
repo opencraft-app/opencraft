@@ -57,10 +57,9 @@ Bot バーで目的の Bot のアバターを選択します。画面が狭い�
 
 | LightVelaのバージョン | 複数Botの連携に対応するチャンネル |
 | --- | --- |
-| グローバル版 | Telegram、Discord、Slack、QQ、WeCom、Lark |
+| グローバル版 | Telegram、Discord、WeChat、Slack、QQ、WeCom、Lark |
 
-WeChatやWhatsAppなどのチャンネルでは、現在の設定により1つのインスタンスに接続できるBotが1つだけになる場合があります。別のBotがチャンネルを所有している場合、LightVelaは通知を表示し、そのチャンネルを所有するBotを管理する入口を提供します。
-
+同じインスタンスの異なるBotは、それぞれ別のWeChatアカウントを接続できます。WeChat接続はBotごとに管理します。WhatsAppは引き続き1インスタンスにつき1つのBotのみ接続可能です。他のBotには所有者の案内と管理リンクが表示されます。
 
 ## Botの切り替えとチャンネル接続を確認する
 
