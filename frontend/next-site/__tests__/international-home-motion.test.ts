@@ -97,7 +97,7 @@ describe('international homepage motion', () => {
     const cardEntrance = triggers.find((trigger) => trigger.trigger?.matches('.wcard'))!.animation as gsap.core.Timeline;
     const tween = cardEntrance.getChildren()[0];
     expect(tween.vars.startAt.rotationX).toBeUndefined();
-    expect(tween.vars.startAt.y).toBe(32);
+    expect(tween.vars.startAt.y).toBe(20);
     expect(tween.duration()).toBeLessThanOrEqual(0.7);
   });
 

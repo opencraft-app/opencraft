@@ -2543,6 +2543,9 @@ test("approval presentation keeps command, scope and permission details typed", 
       { label: "Working directory", value: "/vela" },
     ],
     allowSession: false,
+    allowOnce: true,
+    allowDeny: true,
+    allowAlways: false,
     approveLabel: "Allow once",
     identityLabel: "Terminal",
     leadingApproval: null,
@@ -2596,11 +2599,29 @@ test("command approval policy metadata produces Codex scoped and network actions
     description: "api.example.com isn't on the current network allowlist",
     details: [],
     allowSession: true,
+    allowOnce: true,
+    allowDeny: true,
+    allowAlways: false,
     approveLabel: "Allow once",
     identityLabel: "Internet access",
     leadingApproval: { kind: "network-policy", label: "Always allow" },
     scopedApproval: { kind: "session", label: "Allow this conversation", info: null },
   });
+});
+
+test("provider approval scopes project independently of Codex policy amendments", () => {
+  for (const scopes of [["once", "deny"], ["once", "session", "always", "deny"], ["unknown"]]) {
+    const snapshot = projectTimeline(source([{ id: "turn", status: "streaming", items: [{ id: "approval", type: "interaction:approval",
+      payload: { requestId: "approval", approvalKind: "command", title: "Allow?", approvalScopes: scopes } }] }]), createDefaultTimelineProjectorRegistry());
+    const block = snapshot.frames[0]?.blocks[0];
+    assert.equal(block?.type, "approval"); if (block?.type !== "approval") continue;
+    const presentation = presentApprovalRequest(block);
+    assert.equal(presentation.allowOnce, scopes.includes("once"));
+    assert.equal(presentation.allowDeny, scopes.includes("deny"));
+    assert.equal(presentation.allowSession, scopes.includes("session"));
+    assert.equal(presentation.allowAlways, scopes.includes("always"));
+    assert.deepEqual(block.proposedExecpolicyAmendment, []);
+  }
 });
 
 test("MCP elicitation forms normalize primitive schemas and validate typed content", () => {

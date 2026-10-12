@@ -1040,6 +1040,34 @@ Core status strings remain renderer-neutral; real reasoning summaries are preser
 
 ## Agent-originated async questions
 
+### Hermes direct approval ownership
+
+Direct/embedded Hermes Threads translate native `approval.request` into
+`item/commandExecution/requestApproval`. The existing OpenCraft approval card
+owns presentation; Hermes owns the pending request and authorization policy.
+Native request ID plus durable Thread ID identifies the prompt independently
+of its revocable live session route. Each prompt has its own synthetic Item ID,
+so the interaction ledger cannot replay another prompt's grant.
+
+The optional OpenCraft `approvalScopes` extension carries the provider's offered
+`once/session/always/deny` scopes. Canonical `accept`, `acceptForSession`, and
+`decline/cancel` map to native `once/session/deny`. An explicitly offered
+persistent grant uses `{decision: "accept", _meta: {persist: "always"}}`;
+it is not a Codex exec-policy amendment and cannot be sent to an unextended
+Codex request. Web and Native require a separate confirmation for that scope,
+using their existing interaction card controls and design tokens. Backend
+restrictions such as smart denial and disabled permanent grants remain binding.
+
+Resume restores `pending_approval`; a quiet heartbeat is not completion while
+approval is outstanding. Disposing a View/bridge never answers it. Native tool
+completion and successful answers refresh the oldest pending approval snapshot,
+not a fabricated complete queue. Snapshot absence clears stale prompts; newer
+events and revoked live-session routes fence late snapshots. Failed RPCs or
+`resolved=false` retain the approval. A delivery failure needs reconnect to
+restore the response channel; it must not manufacture an empty or approving
+response. Follow-up snapshot failure cannot turn an accepted grant into a
+request to send it again. Group-conversation approval routing is unchanged.
+
 Codex `agentMessage` Items with `delivery: "async"` and `questions` are not
 `item/tool/requestUserInput` server requests. The former remain ordinary
 assistant messages: their question cards are projected from the Item ID and
@@ -1421,8 +1449,8 @@ bundles are independent quality gates; a static fixture alone is not accepted.
 
 Embedded file previews retain the mutation-level read-only guard alongside snapshot-based saves in the standalone workspace editor. Markdown preview/source switching and lazy syntax editors share the same resource lifecycle. The read-only regression renders the real panel and invokes its captured Query mutation, asserting zero filesystem writes and cache invalidations.
 
-Markdown preview entry: explicit `.md` / `.markdown` paths in completed inline code are clickable and use the same resource policy and Host-scoped right panel as Markdown links. Bare names, commands, external URLs, streaming paths and code within an explicit link retain their original semantics. No file is read before clicking.
-Completed standalone `MEDIA:<path>` text or inline code uses that same click and resource policy flow regardless of the engine that produced it. This delivery directive is independent of file type: images, audio, video, PDFs and unknown files all open the existing resource preview. Absolute and relative file paths, quoted paths with spaces, and HTTP(S) addresses are recognized; external addresses retain the existing external-navigation policy. Embedded prose, malformed paths, streaming content and code inside an explicit link remain inert. The Renderer never treats the literal `MEDIA:` prefix as a browser URL or reads a file before clicking; ordinary bare inline paths retain the existing Markdown-only rule.
+Document preview entry: explicit `.md` / `.markdown` / `.html` / `.htm` paths in completed inline code are clickable and use the same resource policy and Host-scoped right panel as Markdown links. HTML opens in a sandboxed, read-only page preview with a Source switch. Scripts cannot run; the preview's content policy permits inline styles and embedded data/Blob media while blocking external subresources. Before creating the frame, the preview removes link destinations, refresh redirects and SVG animation elements that can restore navigation because Chromium can navigate a sandboxed frame away from its original content policy. The Source view preserves the original file. This supports self-contained reports without granting page code access to the Workbench. Bare names, commands, external URLs, streaming paths and code within an explicit link retain their original semantics. No file is read before clicking.
+Completed standalone `MEDIA:<path>` text or inline code uses that same click and resource policy flow regardless of the engine that produced it. This delivery directive is independent of file type: images, audio, video, PDFs and unknown files all open the existing resource preview. Absolute and relative file paths, quoted paths with spaces, and HTTP(S) addresses are recognized; external addresses retain the existing external-navigation policy. Embedded prose, malformed paths, streaming content and code inside an explicit link remain inert. The Renderer never treats the literal `MEDIA:` prefix as a browser URL or reads a file before clicking; ordinary bare inline paths retain the document-extension rule above.
 
 The shared media classifier selects an image, audio, video, PDF or generic file
 branch using the path's extension as a presentation hint. Actual decoders still

@@ -2,7 +2,7 @@
  * 首页公告条。
  *
  * 显示位置：仅 landing（"/"）页顶部。
- * 显示条件：国内站或国际站首页、存在未过期且未关闭的公告。
+ * 显示条件：国内站首页、存在未过期且未关闭的公告。
  * 布局方式：普通文档流顶部条，出现时把首页整体向下推，避免覆盖首屏内容。
  *
  * 关闭行为：localStorage key 按公告 ID 分别记忆；下一次发新公告时换 ID 即可重新弹。
@@ -10,10 +10,10 @@
 
 import { Megaphone, X } from "lucide-react";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useT } from "@/i18n/t";
 import { stripPublicSiteLocalePrefix } from "@/lib/public-site-routing";
-import { isCN, isGlobal } from "@/lib/region";
+import { isCN } from "@/lib/region";
 
 type AnnouncementItem = {
   id: string;
@@ -21,20 +21,20 @@ type AnnouncementItem = {
   expiresAt: number;
 };
 
-const SYSTEM_UPGRADE_ANNOUNCEMENT_ID = "1011-system-upgrade";
+const SYSTEM_UPGRADE_ANNOUNCEMENT_ID = "1012-system-upgrade";
 
-/** 北京时间 / 新加坡时间 2026-10-12 06:00:00 = UTC 2026-10-11 22:00:00 */
+/** 北京时间 2026-10-13 06:00:00 = UTC 2026-10-12 22:00:00 */
 const SYSTEM_UPGRADE_EXPIRES_AT = Date.UTC(
   2026,
   9 /* 0-indexed: October */,
-  11,
+  12,
   22,
   0,
   0,
 );
 const MAX_SAFE_TIMEOUT_MS = 2_147_000_000;
 
-/** 显示的路径白名单。国际站会先剥离 /en-us、/zh-cn、/zh-sg 等语言前缀。 */
+/** 显示的路径白名单。 */
 const VISIBLE_PATHS = new Set<string>(["/"]);
 
 /** 公告条占据的页面高度（px）。 */
@@ -47,16 +47,12 @@ function getStorageKey(id: string) {
 export function MaintenanceAnnouncementBanner() {
   const t = useT();
   const pathname = usePathname();
+  const bannerRef = useRef<HTMLDivElement>(null);
   const announcement: AnnouncementItem = {
     id: SYSTEM_UPGRADE_ANNOUNCEMENT_ID,
     expiresAt: SYSTEM_UPGRADE_EXPIRES_AT,
-    message: isGlobal
-      ? t(
-          "LightVela 将于新加坡时间 2026 年 10 月 11 日 22:00-次日 06:00 进行系统升级，期间服务可能短暂中断，带来不便敬请谅解。",
-        )
-      : t(
-          "LightVela 将于北京时间 2026 年 10 月 11 日 22:00-次日 06:00 进行系统升级，期间服务可能短暂中断，带来不便敬请谅解。",
-        ),
+    message:
+      "LightVela 将于北京时间 2026 年 10 月 12 日 22:00-次日 06:00 进行系统升级，期间服务可能短暂中断，带来不便敬请谅解。",
   };
   // 默认不显示，挂载时再读 localStorage —— 避免 SSR / 首屏 flash 不一致
   const [dismissedIds, setDismissedIds] = useState<Set<string> | null>(null);
@@ -95,15 +91,27 @@ export function MaintenanceAnnouncementBanner() {
     !dismissedIds.has(announcement.id);
 
   const visible =
-    (isCN || isGlobal) &&
+    isCN &&
     pathname !== null &&
     VISIBLE_PATHS.has(stripPublicSiteLocalePrefix(pathname)) &&
     hasActiveAnnouncement;
 
-  useEffect(() => {
-    document.body.classList.toggle("lw-has-announcement", visible);
+  useLayoutEffect(() => {
+    const body = document.body;
+    body.classList.toggle("lw-has-announcement", visible);
+    if (!visible) return;
+
+    const updateNavOffset = () => {
+      const bannerBottom = bannerRef.current?.getBoundingClientRect().bottom ?? 0;
+      const visibleHeight = Math.max(0, Math.min(ANNOUNCEMENT_BANNER_HEIGHT_PX, bannerBottom));
+      body.style.setProperty("--lw-announcement-visible-height", `${visibleHeight}px`);
+    };
+    updateNavOffset();
+    window.addEventListener("scroll", updateNavOffset, { passive: true });
     return () => {
-      document.body.classList.remove("lw-has-announcement");
+      window.removeEventListener("scroll", updateNavOffset);
+      body.classList.remove("lw-has-announcement");
+      body.style.removeProperty("--lw-announcement-visible-height");
     };
   }, [visible]);
 
@@ -124,6 +132,7 @@ export function MaintenanceAnnouncementBanner() {
 
   return (
     <div
+      ref={bannerRef}
       // 公告条强制 36px 单行高（h-9）。正文在可用宽度内居中；过长时
       // 自动外边距归零，从开头横向滚动。左右等宽安全区确保视觉中心
       // 与页面中心一致，并避免关闭按钮遮住文案。

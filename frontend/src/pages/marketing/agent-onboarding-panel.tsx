@@ -15,7 +15,7 @@
  *   - 已创建态：点「创建」后自动进入
  */
 
-import { ChevronLeft, ChevronRight, HelpCircle } from "lucide-react";
+import { ChevronLeft, ChevronRight, HelpCircle, X } from "lucide-react";
 
 import {
   Select,
@@ -113,15 +113,19 @@ export const useDemoOnboarding = () => {
 };
 
 /** Required onboarding cannot be dismissed while profile setup is incomplete. */
-function RequiredOnboardingDialog({ children }: { children: ReactNode }) {
+function RequiredOnboardingDialog({ children, onCancel }: { children: ReactNode; onCancel?: () => void }) {
   const t = useT();
-  return <Dialog open>
-    <DialogContent className="max-h-[92dvh] overflow-y-auto rounded-3xl p-6 md:w-[56rem] [&>button]:hidden"
-      onEscapeKeyDown={(event) => event.preventDefault()}
+  return <Dialog open onOpenChange={(open) => { if (!open) onCancel?.(); }}>
+    <DialogContent className="max-h-[92dvh] overflow-y-auto rounded-3xl p-6 md:w-[56rem] [&>button:last-child]:hidden"
+      onEscapeKeyDown={(event) => { if (!onCancel) event.preventDefault(); }}
       onPointerDownOutside={(event) => event.preventDefault()}
       onInteractOutside={(event) => event.preventDefault()}>
       <DialogTitle className="text-2xl font-semibold">{t("创建你的 LightVela Bot")}</DialogTitle>
       <DialogDescription className="sr-only">{t("名字")}</DialogDescription>
+      {onCancel ? <button type="button" onClick={onCancel} aria-label={t("关闭")}
+        className="absolute right-4 top-4 inline-flex h-11 w-11 items-center justify-center rounded-lg text-black/45 transition-colors hover:bg-black/5 hover:text-black/75 focus-visible:outline-2 focus-visible:outline-offset-2">
+        <X className="h-5 w-5" aria-hidden="true" />
+      </button> : null}
       {children}
     </DialogContent>
   </Dialog>;
@@ -281,6 +285,7 @@ export const AgentOnboardingPanel = ({
   initialName,
   cloneOptions,
   onSetupStart,
+  onCancel,
 }: {
   /**
    * 目标 bot。订阅开通 instance 时后端已自带一个 default bot，
@@ -311,6 +316,8 @@ export const AgentOnboardingPanel = ({
    * 置 false，进而卸载本面板 —— 用户点完模板瞬间被弹回表单，配置一步都没跑。
    */
   onSetupStart?: () => void;
+  /** Optional exit for additional creation, available only before setup starts. */
+  onCancel?: () => void;
   /**
    * 创建 bot 本身（多 bot 入口用）。
    *
@@ -995,7 +1002,7 @@ export const AgentOnboardingPanel = ({
   }
 
   return (
-    <RequiredOnboardingDialog><div className="flex min-w-0 flex-col py-2">
+    <RequiredOnboardingDialog onCancel={onCancel}><div className="flex min-w-0 flex-col py-2">
       {partialFailureCount > 0 ? (
         <p className="mb-4 rounded-[3px] border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
           {t("有 {{count}} 项配置未完成，可在技能 / 定时任务页面重试", { count: partialFailureCount })}

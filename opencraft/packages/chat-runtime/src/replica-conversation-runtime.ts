@@ -448,6 +448,7 @@ function interactionPayload(interaction: PendingInteraction): {
           availableDecisions: array(params.availableDecisions).filter(
             (value): value is string => typeof value === "string",
           ),
+          ...(params.approvalScopes === undefined ? {} : { approvalScopes: params.approvalScopes }),
           state: "pending",
           method: interaction.method,
           itemId: interaction.itemId,

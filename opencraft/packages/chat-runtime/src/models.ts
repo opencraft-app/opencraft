@@ -102,6 +102,7 @@ export type InteractionResponse =
       readonly type: "command-approval";
       readonly requestId: string;
       readonly decision: CommandExecutionApprovalDecision;
+      readonly _meta?: { readonly persist: "always" };
     }
   | {
       readonly type: "file-change-approval";

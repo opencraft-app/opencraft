@@ -31,6 +31,7 @@ const languageByExtension: Readonly<Record<string, string>> = Object.freeze({
   h: "cpp",
   hpp: "cpp",
   html: "html",
+  htm: "html",
   java: "java",
   js: "javascript",
   cjs: "javascript",

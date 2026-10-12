@@ -1,0 +1,80 @@
+version: v2.0
+name: 北京 Hermes 存量运行时严格验证
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - images/hermes-beijing-runtime-trigger
+
+concurrency:
+  group: mono2-hermes-beijing-runtime
+  cancel-in-progress: false
+  queue-length: 1
+
+stages:
+  - name: 北京存量运行时源码检查
+    jobs:
+      preflight:
+        runs-on:
+          self-hosted: true
+          pool-name: cn-pool
+        steps:
+          - checkout: self
+            with:
+              fetchDepth: 1
+          - name: 检查归档边界、官方升级目标和幂等性
+            shell: bash
+            run: |
+              set -euo pipefail
+              bash .ci/runtime/check_ci_runtime.sh
+              python3 -m py_compile images/helpers/pin-existing-hermes-runtime.py .ci/runtime/commands/pin_beijing_hermes_existing_vms.py .ci/runtime/support/pin_beijing_hermes_existing_vms.py
+              python3 images/tests/test_existing_hermes_runtime_pin.py
+              python3 images/tests/test_beijing_hermes_runtime_verification.py
+  - name: 确认北京存量 Hermes 运行时版本修复
+    if: "${{ ci.branch }} == master"
+    check-in:
+      reviews:
+        flows:
+          - name: 确认北京存量 Hermes 运行时版本修复
+            reviewers: [ "skipzhang", "pablozhong", "erichuyuehu", "sarahzzhang" ]
+        description: |
+          仅 beijing-sandbox / ap-beijing。等待 Pool 库存重置完成，以一台已分配 VM 为 canary。
+          TAT 只在实际版本不匹配时先刷新 ACLI bundle，再用官方 backend 升级到固定 COS 包。
+          官方升级备份并保留配置、会话；所有 PAUSED VM 暂缓，原来活跃的 gateway 必须仍活跃。
+          全部在线目标必须执行成功且 CLI、Python import/distribution、identity 版本一致。
+          此流水线没有生产发布步骤，不刷新 Pool；固定北京目标蓝图和 COS 包，单机失败停止批量。
+      timeout-hours: 24
+    jobs:
+      approved:
+        runs-on:
+          self-hosted: true
+          pool-name: cn-pool
+        steps:
+          - name: 北京运行时修复已确认
+            shell: bash
+            run: echo "Beijing runtime correction approved"
+  - name: 修复并严格验证北京存量 Hermes 运行时
+    if: "${{ ci.branch }} == master"
+    jobs:
+      repair:
+        runs-on:
+          self-hosted: true
+          pool-name: cn-pool
+        steps:
+          - checkout: self
+            with:
+              fetchDepth: 1
+          - name: Canary、版本修复与逐台终态验证
+            shell: bash
+            run: |
+              set -euo pipefail
+              source .ci/init.sh
+              ci_init_repo_root
+              ci_ensure_tccli
+              ci_ensure_kubectl
+              ci_ensure_jq
+              ci_require_commands tccli kubectl jq curl python3
+              ci_load_tencentcloud_credentials
+              python3 .ci/runtime/commands/pin_beijing_hermes_existing_vms.py --execute

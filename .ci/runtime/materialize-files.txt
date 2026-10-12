@@ -152,3 +152,8 @@
 
 .ci/runtime/commands/website_bootstrap_command.py
 .ci/runtime/support/website_bootstrap_command.py
+.ci/runtime/commands/pin_beijing_hermes_existing_vms.py
+.ci/runtime/support/pin_beijing_hermes_existing_vms.py
+
+.ci/runtime/commands/recover_hermes_production.py
+.ci/runtime/support/recover_hermes_production.py

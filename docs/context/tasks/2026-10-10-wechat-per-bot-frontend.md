@@ -1,3 +1,21 @@
+---
+id: task-wechat-per-bot-frontend-20261010
+type: task
+scope: Deliver the per-Bot Weixin frontend and repair MR !5180 target drift.
+triggers: []
+owner: pablozhong
+authority: derived
+source_of_truth:
+  - frontend/src/pages/marketing/agent-settings-page.tsx
+  - wiki/prd-docs/2026-09-09-lightvela-multi-bot-profile.md
+status: retired
+reviewed_at: 2026-10-12
+review_due: 2026-11-30
+revision: 1.1.0
+precedence: task
+derived: true
+---
+
 ## goal
 Show Weixin as an independent connection for each Bot and update dual-site guidance after the CTL binding change.
 
@@ -38,6 +56,8 @@ Show Weixin as an independent connection for each Bot and update dual-site guida
 | `frontend/AGENTS.md` | Service gate | Run check, tests, build, OpenCraft guard |
 | `frontend/DESIGN.md` | UI interaction | Preserve the existing card layout |
 | `docs/context/project/adjacency/frontend-runtime-openspec-i18n.md` | Neighbor | Validate locale and docs generation |
+| `docs/context/flows/tapd-gongfeng-delivery.md` | Existing MR conflict repair | Update the original source branch and verify remote state |
+| `docs/context/tasks/TASK-TEMPLATE.md` and `CHECKPOINT-TEMPLATE.md` | Task state contract | Record this conflict repair and its validation |
 
 ## evidence
 - Exact search located the Weixin occupancy banner and `weixinChannel` gate in `agent-settings-page.tsx`; the repository mapping already reads `weixin_owner` per Bot.
@@ -71,16 +91,16 @@ Show Weixin as an independent connection for each Bot and update dual-site guida
 
 ## checkpoint
 ### stage
-MR !5180 conflict resolved locally against `origin/master` at `07fda41ea`; regenerated OpenCraft manifest is ready for the follow-up commit.
+MR !5180 is being synchronized with `origin/master` at `a527d0c13` on 2026-10-12; frontend validation precedes source commit and OpenCraft regeneration.
 
 ### verified
 - The only content conflict was generated `UPSTREAM.json`; source and locale changes merged automatically.
-- Focused 88 frontend tests, `pnpm check`, `pnpm build`, and `check:mono2-agent-console` passed after the merge.
+- Current 88 focused tests, `pnpm check`, `pnpm build`, documentation validation and staged change-impact checks pass against `a527d0c13`.
 - Relative to current `origin/master`, the MR still changes the intended Weixin UI, tests, guidance, and generated locale closure.
 
 ### unverified
 - Live two-account Weixin login through the public gateway.
-- CI and remote mergeability after pushing this conflict resolution.
+- Current generated closure, CI and remote mergeability.
 
 ### discard
 - Build-only `frontend/next-env.d.ts` and font subset changes were restored.
@@ -89,4 +109,4 @@ MR !5180 conflict resolved locally against `origin/master` at `07fda41ea`; regen
 - Worktree: `/Users/pablozhong/.codex/worktrees/wechat-per-bot/lightvela`.
 
 ### next_action
-- Commit the generated manifest and this checkpoint, push the existing MR branch, then verify remote mergeability and CI separately.
+- Validate the merged frontend, commit the source merge, regenerate OpenCraft, then push and verify the original MR.

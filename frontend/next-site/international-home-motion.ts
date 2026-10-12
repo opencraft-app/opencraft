@@ -63,19 +63,21 @@ export function mountInternationalHomeMotion(root: HTMLElement): () => void {
 
     if (desktop) {
       const cards = Array.from(root.querySelectorAll<HTMLElement>('.about__cards .wcard'));
+      const positions = new Map(cards.map(card => [card, card.getBoundingClientRect()]));
       cards.sort((a, b) => {
-        const first = a.getBoundingClientRect();
-        const second = b.getBoundingClientRect();
+        const first = positions.get(a);
+        const second = positions.get(b);
+        if (!first || !second) return 0;
         return Math.abs(first.top - second.top) > 8 ? first.top - second.top : first.left - second.left;
       });
       cards.forEach((card, index) => entrance(card, card, {
-        y: 32, opacity: 0.3, duration: 0.65,
-      }, (index % 3) * 0.09));
+        y: 20, opacity: 0.3, duration: 0.45,
+      }, (index % 3) * 0.05));
     } else {
       entrance(select('.about__cards'), select('.about__cards'), { y: 6, opacity: 0.8, duration: 0.24 });
     }
 
-    stops.push(mountStageMotion(root, { desktop: Boolean(desktop), hover: Boolean(hover) }));
+    stops.push(mountStageMotion(root, { desktop: Boolean(desktop), hover: Boolean(hover), preserveHeroCss: true }));
     stops.push(mountFeaturePreviews(root));
 
     const finishPanels = () => {

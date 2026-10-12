@@ -27,6 +27,8 @@ const preservedHarnessAssetNames = [
   "hermes-black-companion.webp",
   "hermes-home.css",
   "feature-motion.js",
+  "mascot-four-landing-v6-refined.webm",
+  "mascot-four-landing-v6-refined-still.webp",
   "whatsapp.svg",
   "telegram.svg",
   "discord.svg",
