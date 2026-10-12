@@ -408,6 +408,7 @@ func TestChannelBindingScriptUsesLockAndInstanceLocalHermesMetadata(t *testing.T
 }
 
 func TestChannelBindingScriptIsolatesWeixinOwnersAndPreservesConnectedBinding(t *testing.T) {
+	requireWeixinPython(t)
 	home := t.TempDir()
 	run := func(channel, action, botID, profileID string) channelBindingPayload {
 		t.Helper()
@@ -477,6 +478,7 @@ func TestChannelBindingScriptIsolatesWeixinOwnersAndPreservesConnectedBinding(t 
 }
 
 func TestChannelBindingScriptPreservesLegacyWeixinOwnerWhenAnotherBotConnects(t *testing.T) {
+	requireWeixinPython(t)
 	home := t.TempDir()
 	root := filepath.Join(home, ".lightvela", "channel-bindings")
 	if err := os.MkdirAll(root, 0o700); err != nil {

@@ -14,11 +14,15 @@ type weixinFixture struct {
 	home, bin string
 }
 
-func newWeixinFixture(t *testing.T) *weixinFixture {
+func requireWeixinPython(t *testing.T) {
 	t.Helper()
 	if err := exec.Command("python3", "-c", "import dotenv").Run(); err != nil {
-		t.Skip("python-dotenv unavailable")
+		t.Skip("Hermes Python test dependency python-dotenv unavailable")
 	}
+}
+func newWeixinFixture(t *testing.T) *weixinFixture {
+	t.Helper()
+	requireWeixinPython(t)
 	f := &weixinFixture{t: t, home: t.TempDir(), bin: t.TempDir()}
 	f.write(filepath.Join(f.bin, "acli"), "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$HERMES_HOME/.acli-calls\"\n", 0700)
 	return f
