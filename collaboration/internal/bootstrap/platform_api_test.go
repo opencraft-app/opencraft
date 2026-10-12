@@ -615,7 +615,7 @@ func TestPlatformAPIExposesAuthenticatedServerCreateAndQueries(t *testing.T) {
 	var rootChannel *openapi.Channel
 	for index := range channels {
 		if channels[index].SystemKey != nil &&
-			*channels[index].SystemKey == openapi.All {
+			*channels[index].SystemKey == openapi.ChannelSystemKeyAll {
 			rootChannel = &channels[index]
 			break
 		}

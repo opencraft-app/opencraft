@@ -29,6 +29,9 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && args[0] == "serve" {
 		return runServeCommand(ctx, args[1:], stdout, stderr)
 	}
+	if len(args) > 1 && args[0] == "im" && args[1] == "restrict" {
+		return runIMRestrictCommand(ctx, args[2:], stdout, stderr)
+	}
 	if len(args) < 2 || args[0] != "database" {
 		writeUsage(stderr)
 		return 2
@@ -378,6 +381,7 @@ func writeUsage(output io.Writer) {
 	fmt.Fprintln(output, "  chatserver database <migrate|status|verify> [--database-driver sqlite|mysql|tdsql]")
 	fmt.Fprintln(output, "  chatserver database recover-empty-baseline --database-driver mysql --database-dsn-file 文件 [--apply]")
 	fmt.Fprintln(output, "  chatserver database check-consistency --scope server|account|registry --partition-key KEY [--registry-type TYPE]")
+	fmt.Fprintln(output, "  chatserver im restrict --im-user-id ID [--release] --im-sdk-app-id ID --im-admin-user-id UserID --im-secret-key-file 文件")
 	fmt.Fprintln(
 		output,
 		"  chatserver serve --jwt-key-file 文件 --im-sdk-app-id ID "+

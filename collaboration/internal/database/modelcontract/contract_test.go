@@ -51,8 +51,8 @@ func TestPlatformContractMatchesEntAndRoutingManifest(t *testing.T) {
 	if err := modelcontract.Validate(contract, physical); err != nil {
 		t.Fatalf("领域模型契约漂移：%v", err)
 	}
-	if len(contract.Tables) != 28 {
-		t.Fatalf("contract tables = %d，期望 27", len(contract.Tables))
+	if len(contract.Tables) != 32 {
+		t.Fatalf("contract tables = %d，期望 32", len(contract.Tables))
 	}
 }
 

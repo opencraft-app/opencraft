@@ -37,7 +37,7 @@ func TestEmbeddedDirForTDSQL只加载TDSQL物理Baseline(t *testing.T) {
 		if file.Version() == "20260801000000" && !strings.Contains(string(file.Bytes()), "shardkey=`") {
 			t.Fatalf("TDSQL baseline 缺少物理 shardkey：%s", file.Name())
 		}
-		if file.Version() != "20260801000000" && file.Version() != "20260802180000" && file.Version() != "20260804130000" && file.Version() != "20260914141219" && strings.Contains(string(file.Bytes()), "CREATE TABLE") {
+		if file.Version() != "20260801000000" && file.Version() != "20260802180000" && file.Version() != "20260804130000" && file.Version() != "20260914141219" && file.Version() != "20261012070306" && strings.Contains(string(file.Bytes()), "CREATE TABLE") {
 			t.Fatalf("TDSQL 增量 migration 不应重建已发布表：%s", file.Name())
 		}
 		if file.Version() == "20260802180000" &&
@@ -54,6 +54,18 @@ func TestEmbeddedDirForTDSQL只加载TDSQL物理Baseline(t *testing.T) {
 			(!strings.Contains(string(file.Bytes()), "CREATE TABLE `computer_provider_bindings`") ||
 				!strings.Contains(string(file.Bytes()), "shardkey=`binding_hash`")) {
 			t.Fatalf("Computer provider binding 增量 migration 缺少新表或 shardkey：%s", file.Name())
+		}
+		if file.Version() == "20261012070306" {
+			for _, fragment := range []string{
+				"CREATE TABLE `bot_agents`", "shardkey=`account_id`",
+				"CREATE TABLE `im_groups`", "shardkey=`id`",
+				"CREATE TABLE `im_group_members`", "shardkey=`group_id`",
+				"CREATE TABLE `im_identity_routes`", "shardkey=`im_user_id`",
+			} {
+				if !strings.Contains(string(file.Bytes()), fragment) {
+					t.Fatalf("Bot IM 增量 migration 缺少 %q：%s", fragment, file.Name())
+				}
+			}
 		}
 	}
 }

@@ -60,6 +60,10 @@ func principalMatchesCandidate(
 	case authnport.CandidateComputerBearer,
 		authnport.CandidateComputerCredential:
 		return principal.Kind() == authnport.PrincipalComputer
+	case authnport.CandidateBotCredential:
+		return principal.Kind() == authnport.PrincipalBotCredential
+	case authnport.CandidateBotRuntimeBearer:
+		return principal.Kind() == authnport.PrincipalBotRuntime
 	default:
 		return false
 	}
@@ -75,7 +79,9 @@ func candidateMismatchError(kind authnport.CandidateKind) error {
 		)
 	}
 	if kind == authnport.CandidateRuntimeBearer ||
-		kind == authnport.CandidateAgentCredential {
+		kind == authnport.CandidateAgentCredential ||
+		kind == authnport.CandidateBotCredential ||
+		kind == authnport.CandidateBotRuntimeBearer {
 		return apperror.New(
 			"runtime_credential_invalid",
 			"Runtime 或 Agent 凭证无效",

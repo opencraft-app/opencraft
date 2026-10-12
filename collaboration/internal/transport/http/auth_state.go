@@ -107,6 +107,19 @@ func CurrentComputerPrincipal(
 	return typed, ok
 }
 
+// CurrentBotPrincipal 返回指定来源（长期凭据或短期 Token）的 Bot 主体。
+func CurrentBotPrincipal(
+	ctx context.Context,
+	kind authnport.PrincipalKind,
+) (authnport.CurrentBotPrincipal, bool) {
+	principal, ok := CurrentPrincipal(ctx)
+	if !ok {
+		return authnport.CurrentBotPrincipal{}, false
+	}
+	typed, ok := principal.(authnport.CurrentBotPrincipal)
+	return typed, ok && typed.Kind() == kind
+}
+
 func authStateFromContext(ctx context.Context) (*AuthState, bool) {
 	if ctx == nil {
 		return nil, false

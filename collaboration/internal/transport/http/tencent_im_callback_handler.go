@@ -149,13 +149,30 @@ func (handler *tencentIMStateCallbackHandler) ServeHTTP(
 func (handler *tencentIMStateCallbackHandler) authenticate(
 	request *http.Request,
 ) bool {
+	return verifyTencentCallback(
+		request,
+		handler.config.SDKAppID,
+		handler.config.Token,
+		handler.config.Clock,
+		tencentIMStateCommand,
+	)
+}
+
+// verifyTencentCallback 校验 SDKAppID、回调命令、60 秒时间窗与 sha256(Token+RequestTime) 签名。
+func verifyTencentCallback(
+	request *http.Request,
+	sdkAppIDValue int64,
+	token []byte,
+	clock clockport.Clock,
+	expectedCommand string,
+) bool {
 	query := request.URL.Query()
 	sdkAppID, ok := singleQueryValue(query["SdkAppid"])
-	if !ok || sdkAppID != strconv.FormatInt(handler.config.SDKAppID, 10) {
+	if !ok || sdkAppID != strconv.FormatInt(sdkAppIDValue, 10) {
 		return false
 	}
 	command, ok := singleQueryValue(query["CallbackCommand"])
-	if !ok || command != tencentIMStateCommand {
+	if !ok || command != expectedCommand {
 		return false
 	}
 	contentType, ok := singleQueryValue(query["contenttype"])
@@ -171,7 +188,7 @@ func (handler *tencentIMStateCallbackHandler) authenticate(
 		return false
 	}
 	requestTime := time.Unix(requestTimeUnix, 0).UTC()
-	delta := handler.config.Clock.Now().UTC().Sub(requestTime)
+	delta := clock.Now().UTC().Sub(requestTime)
 	if delta < -callbackClockSkew || delta > callbackClockSkew {
 		return false
 	}
@@ -183,8 +200,8 @@ func (handler *tencentIMStateCallbackHandler) authenticate(
 	if err != nil || len(provided) != sha256.Size {
 		return false
 	}
-	material := make([]byte, 0, len(handler.config.Token)+len(requestTimeValue))
-	material = append(material, handler.config.Token...)
+	material := make([]byte, 0, len(token)+len(requestTimeValue))
+	material = append(material, token...)
 	material = append(material, requestTimeValue...)
 	expected := sha256.Sum256(material)
 	return subtle.ConstantTimeCompare(provided, expected[:]) == 1

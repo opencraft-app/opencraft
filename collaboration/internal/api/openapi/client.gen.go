@@ -170,11 +170,80 @@ type ClientInterface interface {
 	// GetMe request
 	GetMe(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// ListBotAgents request
+	ListBotAgents(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ProvisionBotAgentWithBody request with any body
+	ProvisionBotAgentWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	ProvisionBotAgent(ctx context.Context, body ProvisionBotAgentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteBotAgent request
+	DeleteBotAgent(ctx context.Context, botAgentId BotAgentId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateBotAgentWithBody request with any body
+	UpdateBotAgentWithBody(ctx context.Context, botAgentId BotAgentId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	UpdateBotAgent(ctx context.Context, botAgentId BotAgentId, body UpdateBotAgentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RotateBotAgentCredential request
+	RotateBotAgentCredential(ctx context.Context, botAgentId BotAgentId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateImGroupWithBody request with any body
+	CreateImGroupWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CreateImGroup(ctx context.Context, body CreateImGroupJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DismissImGroup request
+	DismissImGroup(ctx context.Context, groupId GroupId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetImGroup request
+	GetImGroup(ctx context.Context, groupId GroupId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateImGroupWithBody request with any body
+	UpdateImGroupWithBody(ctx context.Context, groupId GroupId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	UpdateImGroup(ctx context.Context, groupId GroupId, body UpdateImGroupJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RemoveImGroupMember request
+	RemoveImGroupMember(ctx context.Context, groupId GroupId, userId IMUserIdPath, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// AddImGroupMember request
+	AddImGroupMember(ctx context.Context, groupId GroupId, userId IMUserIdPath, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// CreateHumanImSession request
 	CreateHumanImSession(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetHumanProfile request
 	GetHumanProfile(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateBotRuntimeGroupWithBody request with any body
+	CreateBotRuntimeGroupWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CreateBotRuntimeGroup(ctx context.Context, body CreateBotRuntimeGroupJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DismissBotRuntimeGroup request
+	DismissBotRuntimeGroup(ctx context.Context, groupId GroupId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetBotRuntimeGroup request
+	GetBotRuntimeGroup(ctx context.Context, groupId GroupId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateBotRuntimeGroupWithBody request with any body
+	UpdateBotRuntimeGroupWithBody(ctx context.Context, groupId GroupId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	UpdateBotRuntimeGroup(ctx context.Context, groupId GroupId, body UpdateBotRuntimeGroupJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RemoveBotRuntimeGroupMember request
+	RemoveBotRuntimeGroupMember(ctx context.Context, groupId GroupId, userId IMUserIdPath, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// AddBotRuntimeGroupMember request
+	AddBotRuntimeGroupMember(ctx context.Context, groupId GroupId, userId IMUserIdPath, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetBotRuntimeMe request
+	GetBotRuntimeMe(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateBotSession request
+	CreateBotSession(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetRuntimeChannelMembers request
 	GetRuntimeChannelMembers(ctx context.Context, channelId ChannelId, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -837,6 +906,186 @@ func (c *Client) GetMe(ctx context.Context, reqEditors ...RequestEditorFn) (*htt
 	return c.Client.Do(req)
 }
 
+func (c *Client) ListBotAgents(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListBotAgentsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ProvisionBotAgentWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewProvisionBotAgentRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ProvisionBotAgent(ctx context.Context, body ProvisionBotAgentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewProvisionBotAgentRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DeleteBotAgent(ctx context.Context, botAgentId BotAgentId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteBotAgentRequest(c.Server, botAgentId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdateBotAgentWithBody(ctx context.Context, botAgentId BotAgentId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateBotAgentRequestWithBody(c.Server, botAgentId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdateBotAgent(ctx context.Context, botAgentId BotAgentId, body UpdateBotAgentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateBotAgentRequest(c.Server, botAgentId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RotateBotAgentCredential(ctx context.Context, botAgentId BotAgentId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRotateBotAgentCredentialRequest(c.Server, botAgentId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateImGroupWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateImGroupRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateImGroup(ctx context.Context, body CreateImGroupJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateImGroupRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DismissImGroup(ctx context.Context, groupId GroupId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDismissImGroupRequest(c.Server, groupId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetImGroup(ctx context.Context, groupId GroupId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetImGroupRequest(c.Server, groupId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdateImGroupWithBody(ctx context.Context, groupId GroupId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateImGroupRequestWithBody(c.Server, groupId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdateImGroup(ctx context.Context, groupId GroupId, body UpdateImGroupJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateImGroupRequest(c.Server, groupId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RemoveImGroupMember(ctx context.Context, groupId GroupId, userId IMUserIdPath, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRemoveImGroupMemberRequest(c.Server, groupId, userId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) AddImGroupMember(ctx context.Context, groupId GroupId, userId IMUserIdPath, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAddImGroupMemberRequest(c.Server, groupId, userId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) CreateHumanImSession(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewCreateHumanImSessionRequest(c.Server)
 	if err != nil {
@@ -851,6 +1100,126 @@ func (c *Client) CreateHumanImSession(ctx context.Context, reqEditors ...Request
 
 func (c *Client) GetHumanProfile(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetHumanProfileRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateBotRuntimeGroupWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateBotRuntimeGroupRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateBotRuntimeGroup(ctx context.Context, body CreateBotRuntimeGroupJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateBotRuntimeGroupRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DismissBotRuntimeGroup(ctx context.Context, groupId GroupId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDismissBotRuntimeGroupRequest(c.Server, groupId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetBotRuntimeGroup(ctx context.Context, groupId GroupId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetBotRuntimeGroupRequest(c.Server, groupId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdateBotRuntimeGroupWithBody(ctx context.Context, groupId GroupId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateBotRuntimeGroupRequestWithBody(c.Server, groupId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdateBotRuntimeGroup(ctx context.Context, groupId GroupId, body UpdateBotRuntimeGroupJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateBotRuntimeGroupRequest(c.Server, groupId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) RemoveBotRuntimeGroupMember(ctx context.Context, groupId GroupId, userId IMUserIdPath, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRemoveBotRuntimeGroupMemberRequest(c.Server, groupId, userId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) AddBotRuntimeGroupMember(ctx context.Context, groupId GroupId, userId IMUserIdPath, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAddBotRuntimeGroupMemberRequest(c.Server, groupId, userId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetBotRuntimeMe(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetBotRuntimeMeRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateBotSession(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateBotSessionRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -3039,6 +3408,425 @@ func NewGetMeRequest(server string) (*http.Request, error) {
 	return req, nil
 }
 
+// NewListBotAgentsRequest generates requests for ListBotAgents
+func NewListBotAgentsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/me/bots")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewProvisionBotAgentRequest calls the generic ProvisionBotAgent builder with application/json body
+func NewProvisionBotAgentRequest(server string, body ProvisionBotAgentJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewProvisionBotAgentRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewProvisionBotAgentRequestWithBody generates requests for ProvisionBotAgent with any type of body
+func NewProvisionBotAgentRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/me/bots")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeleteBotAgentRequest generates requests for DeleteBotAgent
+func NewDeleteBotAgentRequest(server string, botAgentId BotAgentId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "botAgentId", botAgentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/me/bots/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("DELETE", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewUpdateBotAgentRequest calls the generic UpdateBotAgent builder with application/json body
+func NewUpdateBotAgentRequest(server string, botAgentId BotAgentId, body UpdateBotAgentJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdateBotAgentRequestWithBody(server, botAgentId, "application/json", bodyReader)
+}
+
+// NewUpdateBotAgentRequestWithBody generates requests for UpdateBotAgent with any type of body
+func NewUpdateBotAgentRequestWithBody(server string, botAgentId BotAgentId, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "botAgentId", botAgentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/me/bots/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PATCH", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewRotateBotAgentCredentialRequest generates requests for RotateBotAgentCredential
+func NewRotateBotAgentCredentialRequest(server string, botAgentId BotAgentId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "botAgentId", botAgentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/me/bots/%s/credential", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateImGroupRequest calls the generic CreateImGroup builder with application/json body
+func NewCreateImGroupRequest(server string, body CreateImGroupJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateImGroupRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreateImGroupRequestWithBody generates requests for CreateImGroup with any type of body
+func NewCreateImGroupRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/me/groups")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDismissImGroupRequest generates requests for DismissImGroup
+func NewDismissImGroupRequest(server string, groupId GroupId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "groupId", groupId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/me/groups/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("DELETE", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetImGroupRequest generates requests for GetImGroup
+func NewGetImGroupRequest(server string, groupId GroupId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "groupId", groupId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/me/groups/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewUpdateImGroupRequest calls the generic UpdateImGroup builder with application/json body
+func NewUpdateImGroupRequest(server string, groupId GroupId, body UpdateImGroupJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdateImGroupRequestWithBody(server, groupId, "application/json", bodyReader)
+}
+
+// NewUpdateImGroupRequestWithBody generates requests for UpdateImGroup with any type of body
+func NewUpdateImGroupRequestWithBody(server string, groupId GroupId, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "groupId", groupId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/me/groups/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PATCH", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewRemoveImGroupMemberRequest generates requests for RemoveImGroupMember
+func NewRemoveImGroupMemberRequest(server string, groupId GroupId, userId IMUserIdPath) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "groupId", groupId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "userId", userId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/me/groups/%s/members/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("DELETE", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewAddImGroupMemberRequest generates requests for AddImGroupMember
+func NewAddImGroupMemberRequest(server string, groupId GroupId, userId IMUserIdPath) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "groupId", groupId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "userId", userId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/me/groups/%s/members/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PUT", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewCreateHumanImSessionRequest generates requests for CreateHumanImSession
 func NewCreateHumanImSessionRequest(server string) (*http.Request, error) {
 	var err error
@@ -3086,6 +3874,297 @@ func NewGetHumanProfileRequest(server string) (*http.Request, error) {
 	}
 
 	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateBotRuntimeGroupRequest calls the generic CreateBotRuntimeGroup builder with application/json body
+func NewCreateBotRuntimeGroupRequest(server string, body CreateBotRuntimeGroupJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateBotRuntimeGroupRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreateBotRuntimeGroupRequestWithBody generates requests for CreateBotRuntimeGroup with any type of body
+func NewCreateBotRuntimeGroupRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/runtime/bot/groups")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDismissBotRuntimeGroupRequest generates requests for DismissBotRuntimeGroup
+func NewDismissBotRuntimeGroupRequest(server string, groupId GroupId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "groupId", groupId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/runtime/bot/groups/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("DELETE", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetBotRuntimeGroupRequest generates requests for GetBotRuntimeGroup
+func NewGetBotRuntimeGroupRequest(server string, groupId GroupId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "groupId", groupId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/runtime/bot/groups/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewUpdateBotRuntimeGroupRequest calls the generic UpdateBotRuntimeGroup builder with application/json body
+func NewUpdateBotRuntimeGroupRequest(server string, groupId GroupId, body UpdateBotRuntimeGroupJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdateBotRuntimeGroupRequestWithBody(server, groupId, "application/json", bodyReader)
+}
+
+// NewUpdateBotRuntimeGroupRequestWithBody generates requests for UpdateBotRuntimeGroup with any type of body
+func NewUpdateBotRuntimeGroupRequestWithBody(server string, groupId GroupId, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "groupId", groupId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/runtime/bot/groups/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PATCH", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewRemoveBotRuntimeGroupMemberRequest generates requests for RemoveBotRuntimeGroupMember
+func NewRemoveBotRuntimeGroupMemberRequest(server string, groupId GroupId, userId IMUserIdPath) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "groupId", groupId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "userId", userId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/runtime/bot/groups/%s/members/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("DELETE", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewAddBotRuntimeGroupMemberRequest generates requests for AddBotRuntimeGroupMember
+func NewAddBotRuntimeGroupMemberRequest(server string, groupId GroupId, userId IMUserIdPath) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "groupId", groupId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "userId", userId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/runtime/bot/groups/%s/members/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PUT", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetBotRuntimeMeRequest generates requests for GetBotRuntimeMe
+func NewGetBotRuntimeMeRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/runtime/bot/me")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateBotSessionRequest generates requests for CreateBotSession
+func NewCreateBotSessionRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/runtime/bot/session")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -7502,11 +8581,80 @@ type ClientWithResponsesInterface interface {
 	// GetMeWithResponse request
 	GetMeWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetMeResponse, error)
 
+	// ListBotAgentsWithResponse request
+	ListBotAgentsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListBotAgentsResponse, error)
+
+	// ProvisionBotAgentWithBodyWithResponse request with any body
+	ProvisionBotAgentWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ProvisionBotAgentResponse, error)
+
+	ProvisionBotAgentWithResponse(ctx context.Context, body ProvisionBotAgentJSONRequestBody, reqEditors ...RequestEditorFn) (*ProvisionBotAgentResponse, error)
+
+	// DeleteBotAgentWithResponse request
+	DeleteBotAgentWithResponse(ctx context.Context, botAgentId BotAgentId, reqEditors ...RequestEditorFn) (*DeleteBotAgentResponse, error)
+
+	// UpdateBotAgentWithBodyWithResponse request with any body
+	UpdateBotAgentWithBodyWithResponse(ctx context.Context, botAgentId BotAgentId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateBotAgentResponse, error)
+
+	UpdateBotAgentWithResponse(ctx context.Context, botAgentId BotAgentId, body UpdateBotAgentJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateBotAgentResponse, error)
+
+	// RotateBotAgentCredentialWithResponse request
+	RotateBotAgentCredentialWithResponse(ctx context.Context, botAgentId BotAgentId, reqEditors ...RequestEditorFn) (*RotateBotAgentCredentialResponse, error)
+
+	// CreateImGroupWithBodyWithResponse request with any body
+	CreateImGroupWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateImGroupResponse, error)
+
+	CreateImGroupWithResponse(ctx context.Context, body CreateImGroupJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateImGroupResponse, error)
+
+	// DismissImGroupWithResponse request
+	DismissImGroupWithResponse(ctx context.Context, groupId GroupId, reqEditors ...RequestEditorFn) (*DismissImGroupResponse, error)
+
+	// GetImGroupWithResponse request
+	GetImGroupWithResponse(ctx context.Context, groupId GroupId, reqEditors ...RequestEditorFn) (*GetImGroupResponse, error)
+
+	// UpdateImGroupWithBodyWithResponse request with any body
+	UpdateImGroupWithBodyWithResponse(ctx context.Context, groupId GroupId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateImGroupResponse, error)
+
+	UpdateImGroupWithResponse(ctx context.Context, groupId GroupId, body UpdateImGroupJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateImGroupResponse, error)
+
+	// RemoveImGroupMemberWithResponse request
+	RemoveImGroupMemberWithResponse(ctx context.Context, groupId GroupId, userId IMUserIdPath, reqEditors ...RequestEditorFn) (*RemoveImGroupMemberResponse, error)
+
+	// AddImGroupMemberWithResponse request
+	AddImGroupMemberWithResponse(ctx context.Context, groupId GroupId, userId IMUserIdPath, reqEditors ...RequestEditorFn) (*AddImGroupMemberResponse, error)
+
 	// CreateHumanImSessionWithResponse request
 	CreateHumanImSessionWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*CreateHumanImSessionResponse, error)
 
 	// GetHumanProfileWithResponse request
 	GetHumanProfileWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetHumanProfileResponse, error)
+
+	// CreateBotRuntimeGroupWithBodyWithResponse request with any body
+	CreateBotRuntimeGroupWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateBotRuntimeGroupResponse, error)
+
+	CreateBotRuntimeGroupWithResponse(ctx context.Context, body CreateBotRuntimeGroupJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateBotRuntimeGroupResponse, error)
+
+	// DismissBotRuntimeGroupWithResponse request
+	DismissBotRuntimeGroupWithResponse(ctx context.Context, groupId GroupId, reqEditors ...RequestEditorFn) (*DismissBotRuntimeGroupResponse, error)
+
+	// GetBotRuntimeGroupWithResponse request
+	GetBotRuntimeGroupWithResponse(ctx context.Context, groupId GroupId, reqEditors ...RequestEditorFn) (*GetBotRuntimeGroupResponse, error)
+
+	// UpdateBotRuntimeGroupWithBodyWithResponse request with any body
+	UpdateBotRuntimeGroupWithBodyWithResponse(ctx context.Context, groupId GroupId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateBotRuntimeGroupResponse, error)
+
+	UpdateBotRuntimeGroupWithResponse(ctx context.Context, groupId GroupId, body UpdateBotRuntimeGroupJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateBotRuntimeGroupResponse, error)
+
+	// RemoveBotRuntimeGroupMemberWithResponse request
+	RemoveBotRuntimeGroupMemberWithResponse(ctx context.Context, groupId GroupId, userId IMUserIdPath, reqEditors ...RequestEditorFn) (*RemoveBotRuntimeGroupMemberResponse, error)
+
+	// AddBotRuntimeGroupMemberWithResponse request
+	AddBotRuntimeGroupMemberWithResponse(ctx context.Context, groupId GroupId, userId IMUserIdPath, reqEditors ...RequestEditorFn) (*AddBotRuntimeGroupMemberResponse, error)
+
+	// GetBotRuntimeMeWithResponse request
+	GetBotRuntimeMeWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetBotRuntimeMeResponse, error)
+
+	// CreateBotSessionWithResponse request
+	CreateBotSessionWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*CreateBotSessionResponse, error)
 
 	// GetRuntimeChannelMembersWithResponse request
 	GetRuntimeChannelMembersWithResponse(ctx context.Context, channelId ChannelId, reqEditors ...RequestEditorFn) (*GetRuntimeChannelMembersResponse, error)
@@ -8230,6 +9378,257 @@ func (r GetMeResponse) StatusCode() int {
 	return 0
 }
 
+type ListBotAgentsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *BotAgentList
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r ListBotAgentsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListBotAgentsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ProvisionBotAgentResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *BotAgent
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r ProvisionBotAgentResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ProvisionBotAgentResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type DeleteBotAgentResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteBotAgentResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteBotAgentResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type UpdateBotAgentResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *BotAgent
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdateBotAgentResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdateBotAgentResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type RotateBotAgentCredentialResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *BotAgent
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r RotateBotAgentCredentialResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RotateBotAgentCredentialResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type CreateImGroupResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *ImGroup
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateImGroupResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateImGroupResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type DismissImGroupResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r DismissImGroupResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DismissImGroupResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetImGroupResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *ImGroup
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r GetImGroupResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetImGroupResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type UpdateImGroupResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *ImGroup
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdateImGroupResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdateImGroupResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type RemoveImGroupMemberResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *ImGroup
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r RemoveImGroupMemberResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RemoveImGroupMemberResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type AddImGroupMemberResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *ImGroup
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r AddImGroupMemberResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r AddImGroupMemberResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type CreateHumanImSessionResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -8270,6 +9669,189 @@ func (r GetHumanProfileResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetHumanProfileResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type CreateBotRuntimeGroupResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *ImGroup
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateBotRuntimeGroupResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateBotRuntimeGroupResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type DismissBotRuntimeGroupResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r DismissBotRuntimeGroupResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DismissBotRuntimeGroupResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetBotRuntimeGroupResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *ImGroup
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r GetBotRuntimeGroupResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetBotRuntimeGroupResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type UpdateBotRuntimeGroupResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *ImGroup
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdateBotRuntimeGroupResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdateBotRuntimeGroupResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type RemoveBotRuntimeGroupMemberResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *ImGroup
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r RemoveBotRuntimeGroupMemberResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RemoveBotRuntimeGroupMemberResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type AddBotRuntimeGroupMemberResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *ImGroup
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r AddBotRuntimeGroupMemberResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r AddBotRuntimeGroupMemberResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetBotRuntimeMeResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *BotRuntimeIdentity
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r GetBotRuntimeMeResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetBotRuntimeMeResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type CreateBotSessionResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *BotSession
+	JSONDefault  *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateBotSessionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateBotSessionResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -10334,6 +11916,137 @@ func (c *ClientWithResponses) GetMeWithResponse(ctx context.Context, reqEditors 
 	return ParseGetMeResponse(rsp)
 }
 
+// ListBotAgentsWithResponse request returning *ListBotAgentsResponse
+func (c *ClientWithResponses) ListBotAgentsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListBotAgentsResponse, error) {
+	rsp, err := c.ListBotAgents(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListBotAgentsResponse(rsp)
+}
+
+// ProvisionBotAgentWithBodyWithResponse request with arbitrary body returning *ProvisionBotAgentResponse
+func (c *ClientWithResponses) ProvisionBotAgentWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ProvisionBotAgentResponse, error) {
+	rsp, err := c.ProvisionBotAgentWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseProvisionBotAgentResponse(rsp)
+}
+
+func (c *ClientWithResponses) ProvisionBotAgentWithResponse(ctx context.Context, body ProvisionBotAgentJSONRequestBody, reqEditors ...RequestEditorFn) (*ProvisionBotAgentResponse, error) {
+	rsp, err := c.ProvisionBotAgent(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseProvisionBotAgentResponse(rsp)
+}
+
+// DeleteBotAgentWithResponse request returning *DeleteBotAgentResponse
+func (c *ClientWithResponses) DeleteBotAgentWithResponse(ctx context.Context, botAgentId BotAgentId, reqEditors ...RequestEditorFn) (*DeleteBotAgentResponse, error) {
+	rsp, err := c.DeleteBotAgent(ctx, botAgentId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteBotAgentResponse(rsp)
+}
+
+// UpdateBotAgentWithBodyWithResponse request with arbitrary body returning *UpdateBotAgentResponse
+func (c *ClientWithResponses) UpdateBotAgentWithBodyWithResponse(ctx context.Context, botAgentId BotAgentId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateBotAgentResponse, error) {
+	rsp, err := c.UpdateBotAgentWithBody(ctx, botAgentId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateBotAgentResponse(rsp)
+}
+
+func (c *ClientWithResponses) UpdateBotAgentWithResponse(ctx context.Context, botAgentId BotAgentId, body UpdateBotAgentJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateBotAgentResponse, error) {
+	rsp, err := c.UpdateBotAgent(ctx, botAgentId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateBotAgentResponse(rsp)
+}
+
+// RotateBotAgentCredentialWithResponse request returning *RotateBotAgentCredentialResponse
+func (c *ClientWithResponses) RotateBotAgentCredentialWithResponse(ctx context.Context, botAgentId BotAgentId, reqEditors ...RequestEditorFn) (*RotateBotAgentCredentialResponse, error) {
+	rsp, err := c.RotateBotAgentCredential(ctx, botAgentId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRotateBotAgentCredentialResponse(rsp)
+}
+
+// CreateImGroupWithBodyWithResponse request with arbitrary body returning *CreateImGroupResponse
+func (c *ClientWithResponses) CreateImGroupWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateImGroupResponse, error) {
+	rsp, err := c.CreateImGroupWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateImGroupResponse(rsp)
+}
+
+func (c *ClientWithResponses) CreateImGroupWithResponse(ctx context.Context, body CreateImGroupJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateImGroupResponse, error) {
+	rsp, err := c.CreateImGroup(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateImGroupResponse(rsp)
+}
+
+// DismissImGroupWithResponse request returning *DismissImGroupResponse
+func (c *ClientWithResponses) DismissImGroupWithResponse(ctx context.Context, groupId GroupId, reqEditors ...RequestEditorFn) (*DismissImGroupResponse, error) {
+	rsp, err := c.DismissImGroup(ctx, groupId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDismissImGroupResponse(rsp)
+}
+
+// GetImGroupWithResponse request returning *GetImGroupResponse
+func (c *ClientWithResponses) GetImGroupWithResponse(ctx context.Context, groupId GroupId, reqEditors ...RequestEditorFn) (*GetImGroupResponse, error) {
+	rsp, err := c.GetImGroup(ctx, groupId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetImGroupResponse(rsp)
+}
+
+// UpdateImGroupWithBodyWithResponse request with arbitrary body returning *UpdateImGroupResponse
+func (c *ClientWithResponses) UpdateImGroupWithBodyWithResponse(ctx context.Context, groupId GroupId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateImGroupResponse, error) {
+	rsp, err := c.UpdateImGroupWithBody(ctx, groupId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateImGroupResponse(rsp)
+}
+
+func (c *ClientWithResponses) UpdateImGroupWithResponse(ctx context.Context, groupId GroupId, body UpdateImGroupJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateImGroupResponse, error) {
+	rsp, err := c.UpdateImGroup(ctx, groupId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateImGroupResponse(rsp)
+}
+
+// RemoveImGroupMemberWithResponse request returning *RemoveImGroupMemberResponse
+func (c *ClientWithResponses) RemoveImGroupMemberWithResponse(ctx context.Context, groupId GroupId, userId IMUserIdPath, reqEditors ...RequestEditorFn) (*RemoveImGroupMemberResponse, error) {
+	rsp, err := c.RemoveImGroupMember(ctx, groupId, userId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRemoveImGroupMemberResponse(rsp)
+}
+
+// AddImGroupMemberWithResponse request returning *AddImGroupMemberResponse
+func (c *ClientWithResponses) AddImGroupMemberWithResponse(ctx context.Context, groupId GroupId, userId IMUserIdPath, reqEditors ...RequestEditorFn) (*AddImGroupMemberResponse, error) {
+	rsp, err := c.AddImGroupMember(ctx, groupId, userId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAddImGroupMemberResponse(rsp)
+}
+
 // CreateHumanImSessionWithResponse request returning *CreateHumanImSessionResponse
 func (c *ClientWithResponses) CreateHumanImSessionWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*CreateHumanImSessionResponse, error) {
 	rsp, err := c.CreateHumanImSession(ctx, reqEditors...)
@@ -10350,6 +12063,94 @@ func (c *ClientWithResponses) GetHumanProfileWithResponse(ctx context.Context, r
 		return nil, err
 	}
 	return ParseGetHumanProfileResponse(rsp)
+}
+
+// CreateBotRuntimeGroupWithBodyWithResponse request with arbitrary body returning *CreateBotRuntimeGroupResponse
+func (c *ClientWithResponses) CreateBotRuntimeGroupWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateBotRuntimeGroupResponse, error) {
+	rsp, err := c.CreateBotRuntimeGroupWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateBotRuntimeGroupResponse(rsp)
+}
+
+func (c *ClientWithResponses) CreateBotRuntimeGroupWithResponse(ctx context.Context, body CreateBotRuntimeGroupJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateBotRuntimeGroupResponse, error) {
+	rsp, err := c.CreateBotRuntimeGroup(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateBotRuntimeGroupResponse(rsp)
+}
+
+// DismissBotRuntimeGroupWithResponse request returning *DismissBotRuntimeGroupResponse
+func (c *ClientWithResponses) DismissBotRuntimeGroupWithResponse(ctx context.Context, groupId GroupId, reqEditors ...RequestEditorFn) (*DismissBotRuntimeGroupResponse, error) {
+	rsp, err := c.DismissBotRuntimeGroup(ctx, groupId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDismissBotRuntimeGroupResponse(rsp)
+}
+
+// GetBotRuntimeGroupWithResponse request returning *GetBotRuntimeGroupResponse
+func (c *ClientWithResponses) GetBotRuntimeGroupWithResponse(ctx context.Context, groupId GroupId, reqEditors ...RequestEditorFn) (*GetBotRuntimeGroupResponse, error) {
+	rsp, err := c.GetBotRuntimeGroup(ctx, groupId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetBotRuntimeGroupResponse(rsp)
+}
+
+// UpdateBotRuntimeGroupWithBodyWithResponse request with arbitrary body returning *UpdateBotRuntimeGroupResponse
+func (c *ClientWithResponses) UpdateBotRuntimeGroupWithBodyWithResponse(ctx context.Context, groupId GroupId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateBotRuntimeGroupResponse, error) {
+	rsp, err := c.UpdateBotRuntimeGroupWithBody(ctx, groupId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateBotRuntimeGroupResponse(rsp)
+}
+
+func (c *ClientWithResponses) UpdateBotRuntimeGroupWithResponse(ctx context.Context, groupId GroupId, body UpdateBotRuntimeGroupJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateBotRuntimeGroupResponse, error) {
+	rsp, err := c.UpdateBotRuntimeGroup(ctx, groupId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateBotRuntimeGroupResponse(rsp)
+}
+
+// RemoveBotRuntimeGroupMemberWithResponse request returning *RemoveBotRuntimeGroupMemberResponse
+func (c *ClientWithResponses) RemoveBotRuntimeGroupMemberWithResponse(ctx context.Context, groupId GroupId, userId IMUserIdPath, reqEditors ...RequestEditorFn) (*RemoveBotRuntimeGroupMemberResponse, error) {
+	rsp, err := c.RemoveBotRuntimeGroupMember(ctx, groupId, userId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRemoveBotRuntimeGroupMemberResponse(rsp)
+}
+
+// AddBotRuntimeGroupMemberWithResponse request returning *AddBotRuntimeGroupMemberResponse
+func (c *ClientWithResponses) AddBotRuntimeGroupMemberWithResponse(ctx context.Context, groupId GroupId, userId IMUserIdPath, reqEditors ...RequestEditorFn) (*AddBotRuntimeGroupMemberResponse, error) {
+	rsp, err := c.AddBotRuntimeGroupMember(ctx, groupId, userId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAddBotRuntimeGroupMemberResponse(rsp)
+}
+
+// GetBotRuntimeMeWithResponse request returning *GetBotRuntimeMeResponse
+func (c *ClientWithResponses) GetBotRuntimeMeWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetBotRuntimeMeResponse, error) {
+	rsp, err := c.GetBotRuntimeMe(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetBotRuntimeMeResponse(rsp)
+}
+
+// CreateBotSessionWithResponse request returning *CreateBotSessionResponse
+func (c *ClientWithResponses) CreateBotSessionWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*CreateBotSessionResponse, error) {
+	rsp, err := c.CreateBotSession(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateBotSessionResponse(rsp)
 }
 
 // GetRuntimeChannelMembersWithResponse request returning *GetRuntimeChannelMembersResponse
@@ -11869,6 +13670,355 @@ func ParseGetMeResponse(rsp *http.Response) (*GetMeResponse, error) {
 	return response, nil
 }
 
+// ParseListBotAgentsResponse parses an HTTP response from a ListBotAgentsWithResponse call
+func ParseListBotAgentsResponse(rsp *http.Response) (*ListBotAgentsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListBotAgentsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest BotAgentList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseProvisionBotAgentResponse parses an HTTP response from a ProvisionBotAgentWithResponse call
+func ParseProvisionBotAgentResponse(rsp *http.Response) (*ProvisionBotAgentResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ProvisionBotAgentResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest BotAgent
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteBotAgentResponse parses an HTTP response from a DeleteBotAgentWithResponse call
+func ParseDeleteBotAgentResponse(rsp *http.Response) (*DeleteBotAgentResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteBotAgentResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUpdateBotAgentResponse parses an HTTP response from a UpdateBotAgentWithResponse call
+func ParseUpdateBotAgentResponse(rsp *http.Response) (*UpdateBotAgentResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdateBotAgentResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest BotAgent
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRotateBotAgentCredentialResponse parses an HTTP response from a RotateBotAgentCredentialWithResponse call
+func ParseRotateBotAgentCredentialResponse(rsp *http.Response) (*RotateBotAgentCredentialResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RotateBotAgentCredentialResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest BotAgent
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateImGroupResponse parses an HTTP response from a CreateImGroupWithResponse call
+func ParseCreateImGroupResponse(rsp *http.Response) (*CreateImGroupResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateImGroupResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ImGroup
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDismissImGroupResponse parses an HTTP response from a DismissImGroupWithResponse call
+func ParseDismissImGroupResponse(rsp *http.Response) (*DismissImGroupResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DismissImGroupResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetImGroupResponse parses an HTTP response from a GetImGroupWithResponse call
+func ParseGetImGroupResponse(rsp *http.Response) (*GetImGroupResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetImGroupResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ImGroup
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUpdateImGroupResponse parses an HTTP response from a UpdateImGroupWithResponse call
+func ParseUpdateImGroupResponse(rsp *http.Response) (*UpdateImGroupResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdateImGroupResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ImGroup
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRemoveImGroupMemberResponse parses an HTTP response from a RemoveImGroupMemberWithResponse call
+func ParseRemoveImGroupMemberResponse(rsp *http.Response) (*RemoveImGroupMemberResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RemoveImGroupMemberResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ImGroup
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseAddImGroupMemberResponse parses an HTTP response from a AddImGroupMemberWithResponse call
+func ParseAddImGroupMemberResponse(rsp *http.Response) (*AddImGroupMemberResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &AddImGroupMemberResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ImGroup
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseCreateHumanImSessionResponse parses an HTTP response from a CreateHumanImSessionWithResponse call
 func ParseCreateHumanImSessionResponse(rsp *http.Response) (*CreateHumanImSessionResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -11918,6 +14068,263 @@ func ParseGetHumanProfileResponse(rsp *http.Response) (*GetHumanProfileResponse,
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest HumanProfile
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateBotRuntimeGroupResponse parses an HTTP response from a CreateBotRuntimeGroupWithResponse call
+func ParseCreateBotRuntimeGroupResponse(rsp *http.Response) (*CreateBotRuntimeGroupResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateBotRuntimeGroupResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ImGroup
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDismissBotRuntimeGroupResponse parses an HTTP response from a DismissBotRuntimeGroupWithResponse call
+func ParseDismissBotRuntimeGroupResponse(rsp *http.Response) (*DismissBotRuntimeGroupResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DismissBotRuntimeGroupResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetBotRuntimeGroupResponse parses an HTTP response from a GetBotRuntimeGroupWithResponse call
+func ParseGetBotRuntimeGroupResponse(rsp *http.Response) (*GetBotRuntimeGroupResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetBotRuntimeGroupResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ImGroup
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUpdateBotRuntimeGroupResponse parses an HTTP response from a UpdateBotRuntimeGroupWithResponse call
+func ParseUpdateBotRuntimeGroupResponse(rsp *http.Response) (*UpdateBotRuntimeGroupResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdateBotRuntimeGroupResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ImGroup
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRemoveBotRuntimeGroupMemberResponse parses an HTTP response from a RemoveBotRuntimeGroupMemberWithResponse call
+func ParseRemoveBotRuntimeGroupMemberResponse(rsp *http.Response) (*RemoveBotRuntimeGroupMemberResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RemoveBotRuntimeGroupMemberResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ImGroup
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseAddBotRuntimeGroupMemberResponse parses an HTTP response from a AddBotRuntimeGroupMemberWithResponse call
+func ParseAddBotRuntimeGroupMemberResponse(rsp *http.Response) (*AddBotRuntimeGroupMemberResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &AddBotRuntimeGroupMemberResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ImGroup
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetBotRuntimeMeResponse parses an HTTP response from a GetBotRuntimeMeWithResponse call
+func ParseGetBotRuntimeMeResponse(rsp *http.Response) (*GetBotRuntimeMeResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetBotRuntimeMeResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest BotRuntimeIdentity
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateBotSessionResponse parses an HTTP response from a CreateBotSessionWithResponse call
+func ParseCreateBotSessionResponse(rsp *http.Response) (*CreateBotSessionResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateBotSessionResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest BotSession
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

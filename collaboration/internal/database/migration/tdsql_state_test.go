@@ -19,7 +19,7 @@ func TestTDSQLRuntimeExpectation包含冻结Baseline和增量迁移(t *testing.T
 	if err != nil {
 		t.Fatalf("tdsqlRuntimeExpectationFromDir() error = %v", err)
 	}
-	if len(runtime.Migrations) != 10 ||
+	if len(runtime.Migrations) != 11 ||
 		runtime.Migrations[0].Version != "20260801000000" ||
 		runtime.Migrations[0].Hash != "EVq8iLGKqGF4ak8nxCZL94xTu4j4VAZWpwG3q0+m/Xk=" ||
 		runtime.Migrations[1].Version != "20260802100000" ||
@@ -31,7 +31,8 @@ func TestTDSQLRuntimeExpectation包含冻结Baseline和增量迁移(t *testing.T
 		runtime.Migrations[7].Version != "20260804130000" ||
 		runtime.Migrations[8].Version != "20260914141219" ||
 		runtime.Migrations[9].Version != "20260917040000" ||
-		len(runtime.UserTables) != 28 {
+		runtime.Migrations[10].Version != "20261012070306" ||
+		len(runtime.UserTables) != 32 {
 		t.Fatalf("runtime expectation = %#v", runtime)
 	}
 	for _, migration := range runtime.Migrations {
@@ -51,7 +52,7 @@ func TestMySQLRuntimeExpectation匹配发布链且不包含物理分片(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(runtime.Migrations) != 10 || len(runtime.UserTables) != 28 {
+	if len(runtime.Migrations) != 11 || len(runtime.UserTables) != 32 {
 		t.Fatalf("runtime=%#v", runtime)
 	}
 	if runtime.Migrations[0].Total != 25 {
@@ -139,7 +140,8 @@ func TestClassifyTDSQLRuntime允许已完成Baseline后等待增量(t *testing.T
 	snapshot := TDSQLSnapshot{
 		RevisionTableExists:  true,
 		RevisionColumnsValid: true,
-		UserTables:           withoutTables(runtime.UserTables, "computer_setup_codes", "direct_conversations", "computer_provider_bindings"),
+		UserTables: withoutTables(runtime.UserTables, "computer_setup_codes", "direct_conversations", "computer_provider_bindings",
+			"bot_agents", "im_identity_routes", "im_groups", "im_group_members"),
 		Revisions: []TDSQLRevision{{
 			Version: baseline.Version, Hash: baseline.Hash,
 			ClaimID: strings.Repeat("d", 32), Applied: baseline.Total, Total: baseline.Total,
@@ -159,6 +161,10 @@ func TestClassifyTDSQLRuntime允许已完成Baseline后等待增量(t *testing.T
 		}
 		if incremental.Version == "20260914141219" {
 			snapshot.UserTables = append(snapshot.UserTables, "computer_provider_bindings")
+		}
+		if incremental.Version == "20261012070306" {
+			snapshot.UserTables = append(snapshot.UserTables,
+				"bot_agents", "im_identity_routes", "im_groups", "im_group_members")
 		}
 		snapshot.Revisions = append(snapshot.Revisions, TDSQLRevision{
 			Version: incremental.Version, Hash: incremental.Hash,

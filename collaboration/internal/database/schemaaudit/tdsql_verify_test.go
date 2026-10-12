@@ -59,6 +59,19 @@ func TestVerifyTDSQLInspector接受完整物理Schema并拒绝Noshard(t *testing
 		t.Fatal(err)
 	}
 	tables = append(tables, computerV2Tables...)
+	botIMSource, err := os.ReadFile("../../../migrations/tdsql/20261012070306_bot_agents_and_im_groups.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	botIMCreateOffset := strings.Index(string(botIMSource), "CREATE TABLE")
+	if botIMCreateOffset < 0 {
+		t.Fatal("Bot IM migration missing CREATE TABLE")
+	}
+	botIMTables, err := tdsqlddl.ParseDocument(string(botIMSource[botIMCreateOffset:]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tables = append(tables, botIMTables...)
 	inspector := &fakeTDSQLInspector{
 		sets: []Set{
 			{OpaqueID: "set-a", RangeStart: 0, RangeEnd: 31},

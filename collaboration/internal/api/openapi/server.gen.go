@@ -27,6 +27,8 @@ import (
 )
 
 const (
+	BotCredentialAuthScopes      = "BotCredentialAuth.Scopes"
+	BotRuntimeBearerScopes       = "BotRuntimeBearer.Scopes"
 	ComputerBearerScopes         = "ComputerBearer.Scopes"
 	ComputerCredentialAuthScopes = "ComputerCredentialAuth.Scopes"
 	EnrollmentAuthScopes         = "EnrollmentAuth.Scopes"
@@ -253,6 +255,30 @@ func (e AgentReplyPolicy) Valid() bool {
 	}
 }
 
+// Defines values for BotAgentState.
+const (
+	BotAgentStateDeleted      BotAgentState = "deleted"
+	BotAgentStateError        BotAgentState = "error"
+	BotAgentStateProvisioning BotAgentState = "provisioning"
+	BotAgentStateReady        BotAgentState = "ready"
+)
+
+// Valid indicates whether the value is a known member of the BotAgentState enum.
+func (e BotAgentState) Valid() bool {
+	switch e {
+	case BotAgentStateDeleted:
+		return true
+	case BotAgentStateError:
+		return true
+	case BotAgentStateProvisioning:
+		return true
+	case BotAgentStateReady:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ChannelImState.
 const (
 	ChannelImStateError        ChannelImState = "error"
@@ -276,13 +302,13 @@ func (e ChannelImState) Valid() bool {
 
 // Defines values for ChannelSystemKey.
 const (
-	All ChannelSystemKey = "all"
+	ChannelSystemKeyAll ChannelSystemKey = "all"
 )
 
 // Valid indicates whether the value is a known member of the ChannelSystemKey enum.
 func (e ChannelSystemKey) Valid() bool {
 	switch e {
-	case All:
+	case ChannelSystemKeyAll:
 		return true
 	default:
 		return false
@@ -301,6 +327,24 @@ func (e ChannelVisibility) Valid() bool {
 	case ChannelVisibilityPrivate:
 		return true
 	case ChannelVisibilityPublic:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CommandPolicy.
+const (
+	CommandPolicyAnyone CommandPolicy = "anyone"
+	CommandPolicyOwner  CommandPolicy = "owner"
+)
+
+// Valid indicates whether the value is a known member of the CommandPolicy enum.
+func (e CommandPolicy) Valid() bool {
+	switch e {
+	case CommandPolicyAnyone:
+		return true
+	case CommandPolicyOwner:
 		return true
 	default:
 		return false
@@ -859,6 +903,27 @@ func (e DirectConversationStatus) Valid() bool {
 	}
 }
 
+// Defines values for GroupReplyMode.
+const (
+	GroupReplyModeAll            GroupReplyMode = "all"
+	GroupReplyModeMention        GroupReplyMode = "mention"
+	GroupReplyModeMentionContext GroupReplyMode = "mention_context"
+)
+
+// Valid indicates whether the value is a known member of the GroupReplyMode enum.
+func (e GroupReplyMode) Valid() bool {
+	switch e {
+	case GroupReplyModeAll:
+		return true
+	case GroupReplyModeMention:
+		return true
+	case GroupReplyModeMentionContext:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for HumanProfileImState.
 const (
 	HumanProfileImStateError        HumanProfileImState = "error"
@@ -892,6 +957,87 @@ func (e IMMessageRefKind) Valid() bool {
 	case IMMessageRefKindC2c:
 		return true
 	case IMMessageRefKindGroup:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ImGroupState.
+const (
+	ImGroupStateActive       ImGroupState = "active"
+	ImGroupStateDismissed    ImGroupState = "dismissed"
+	ImGroupStateProvisioning ImGroupState = "provisioning"
+)
+
+// Valid indicates whether the value is a known member of the ImGroupState enum.
+func (e ImGroupState) Valid() bool {
+	switch e {
+	case ImGroupStateActive:
+		return true
+	case ImGroupStateDismissed:
+		return true
+	case ImGroupStateProvisioning:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ImGroupViewerRole.
+const (
+	ImGroupViewerRoleAdmin  ImGroupViewerRole = "admin"
+	ImGroupViewerRoleMember ImGroupViewerRole = "member"
+	ImGroupViewerRoleOwner  ImGroupViewerRole = "owner"
+)
+
+// Valid indicates whether the value is a known member of the ImGroupViewerRole enum.
+func (e ImGroupViewerRole) Valid() bool {
+	switch e {
+	case ImGroupViewerRoleAdmin:
+		return true
+	case ImGroupViewerRoleMember:
+		return true
+	case ImGroupViewerRoleOwner:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ImGroupMemberKind.
+const (
+	ImGroupMemberKindBot   ImGroupMemberKind = "bot"
+	ImGroupMemberKindHuman ImGroupMemberKind = "human"
+)
+
+// Valid indicates whether the value is a known member of the ImGroupMemberKind enum.
+func (e ImGroupMemberKind) Valid() bool {
+	switch e {
+	case ImGroupMemberKindBot:
+		return true
+	case ImGroupMemberKindHuman:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ImGroupMemberRole.
+const (
+	ImGroupMemberRoleAdmin  ImGroupMemberRole = "admin"
+	ImGroupMemberRoleMember ImGroupMemberRole = "member"
+	ImGroupMemberRoleOwner  ImGroupMemberRole = "owner"
+)
+
+// Valid indicates whether the value is a known member of the ImGroupMemberRole enum.
+func (e ImGroupMemberRole) Valid() bool {
+	switch e {
+	case ImGroupMemberRoleAdmin:
+		return true
+	case ImGroupMemberRoleMember:
+		return true
+	case ImGroupMemberRoleOwner:
 		return true
 	default:
 		return false
@@ -1599,16 +1745,16 @@ func (e UpdateReminderRequestStatus) Valid() bool {
 
 // Defines values for UpdateRuntimeReminderRequestStatus.
 const (
-	Active UpdateRuntimeReminderRequestStatus = "active"
-	Paused UpdateRuntimeReminderRequestStatus = "paused"
+	UpdateRuntimeReminderRequestStatusActive UpdateRuntimeReminderRequestStatus = "active"
+	UpdateRuntimeReminderRequestStatusPaused UpdateRuntimeReminderRequestStatus = "paused"
 )
 
 // Valid indicates whether the value is a known member of the UpdateRuntimeReminderRequestStatus enum.
 func (e UpdateRuntimeReminderRequestStatus) Valid() bool {
 	switch e {
-	case Active:
+	case UpdateRuntimeReminderRequestStatusActive:
 		return true
-	case Paused:
+	case UpdateRuntimeReminderRequestStatusPaused:
 		return true
 	default:
 		return false
@@ -1798,6 +1944,44 @@ type AuthResult struct {
 	RefreshToken *string   `json:"refreshToken,omitempty"`
 }
 
+// BotAgent defines model for BotAgent.
+type BotAgent struct {
+	BotId         string        `json:"botId"`
+	CommandPolicy CommandPolicy `json:"commandPolicy"`
+	DisplayName   string        `json:"displayName"`
+	Id            Id            `json:"id"`
+	InstanceId    string        `json:"instanceId"`
+	LastErrorCode *string       `json:"lastErrorCode,omitempty"`
+	Revision      Revision      `json:"revision"`
+	State         BotAgentState `json:"state"`
+	UserId        ImUserId      `json:"userId"`
+}
+
+// BotAgentState defines model for BotAgent.State.
+type BotAgentState string
+
+// BotAgentList defines model for BotAgentList.
+type BotAgentList struct {
+	Items []BotAgent `json:"items"`
+}
+
+// BotRuntimeIdentity defines model for BotRuntimeIdentity.
+type BotRuntimeIdentity struct {
+	CommandPolicy CommandPolicy `json:"commandPolicy"`
+	DisplayName   string        `json:"displayName"`
+	Id            Id            `json:"id"`
+	OwnerUserIds  []ImUserId    `json:"ownerUserIds"`
+	UserId        ImUserId      `json:"userId"`
+}
+
+// BotSession defines model for BotSession.
+type BotSession struct {
+	AccessToken *string            `json:"accessToken,omitempty"`
+	Bot         BotRuntimeIdentity `json:"bot"`
+	ExpiresAt   Timestamp          `json:"expiresAt"`
+	Im          ImSession          `json:"im"`
+}
+
 // Channel defines model for Channel.
 type Channel struct {
 	Description *string        `json:"description,omitempty"`
@@ -1823,6 +2007,9 @@ type ChannelSystemKey string
 
 // ChannelVisibility defines model for Channel.Visibility.
 type ChannelVisibility string
+
+// CommandPolicy defines model for CommandPolicy.
+type CommandPolicy string
 
 // Computer defines model for Computer.
 type Computer struct {
@@ -2156,6 +2343,15 @@ type CreateDirectConversationRequest struct {
 	PeerMemberId Id `json:"peerMemberId"`
 }
 
+// CreateImGroupRequest defines model for CreateImGroupRequest.
+type CreateImGroupRequest struct {
+	// GroupId 客户端生成的 UUIDv7；同一创建请求重试时保持不变。
+	GroupId       Id              `json:"groupId"`
+	MemberUserIds []ImUserId      `json:"memberUserIds"`
+	Name          string          `json:"name"`
+	ReplyMode     *GroupReplyMode `json:"replyMode,omitempty"`
+}
+
 // CreateInviteRequest defines model for CreateInviteRequest.
 type CreateInviteRequest struct {
 	ExpiresAt        Timestamp               `json:"expiresAt"`
@@ -2247,6 +2443,9 @@ type ErrorEnvelope struct {
 	} `json:"error"`
 }
 
+// GroupReplyMode defines model for GroupReplyMode.
+type GroupReplyMode string
+
 // HumanProfile defines model for HumanProfile.
 type HumanProfile struct {
 	DisplayName string              `json:"displayName"`
@@ -2276,6 +2475,39 @@ type IMMessageRefKind string
 // Id defines model for Id.
 type Id = openapi_types.UUID
 
+// ImGroup defines model for ImGroup.
+type ImGroup struct {
+	ContextMessages    int               `json:"contextMessages"`
+	EffectiveReplyMode GroupReplyMode    `json:"effectiveReplyMode"`
+	Id                 Id                `json:"id"`
+	Members            []ImGroupMember   `json:"members"`
+	Name               string            `json:"name"`
+	ReplyMode          GroupReplyMode    `json:"replyMode"`
+	Revision           Revision          `json:"revision"`
+	State              ImGroupState      `json:"state"`
+	TencentGroupId     string            `json:"tencentGroupId"`
+	ViewerRole         ImGroupViewerRole `json:"viewerRole"`
+}
+
+// ImGroupState defines model for ImGroup.State.
+type ImGroupState string
+
+// ImGroupViewerRole defines model for ImGroup.ViewerRole.
+type ImGroupViewerRole string
+
+// ImGroupMember defines model for ImGroupMember.
+type ImGroupMember struct {
+	Kind   ImGroupMemberKind `json:"kind"`
+	Role   ImGroupMemberRole `json:"role"`
+	UserId ImUserId          `json:"userId"`
+}
+
+// ImGroupMemberKind defines model for ImGroupMember.Kind.
+type ImGroupMemberKind string
+
+// ImGroupMemberRole defines model for ImGroupMember.Role.
+type ImGroupMemberRole string
+
 // ImSession defines model for ImSession.
 type ImSession struct {
 	ExpiresAt Timestamp `json:"expiresAt"`
@@ -2283,6 +2515,9 @@ type ImSession struct {
 	UserId    string    `json:"userId"`
 	UserSig   *string   `json:"userSig,omitempty"`
 }
+
+// ImUserId defines model for ImUserId.
+type ImUserId = string
 
 // InboxItem defines model for InboxItem.
 type InboxItem struct {
@@ -2418,6 +2653,13 @@ type OperationService string
 
 // OperationState defines model for Operation.State.
 type OperationState string
+
+// ProvisionBotAgentRequest defines model for ProvisionBotAgentRequest.
+type ProvisionBotAgentRequest struct {
+	BotId       string `json:"botId"`
+	DisplayName string `json:"displayName"`
+	InstanceId  string `json:"instanceId"`
+}
 
 // RefreshRequest defines model for RefreshRequest.
 type RefreshRequest struct {
@@ -2782,10 +3024,21 @@ type UpdateAgentRequest struct {
 // UpdateAgentRequestReplyPolicy defines model for UpdateAgentRequest.ReplyPolicy.
 type UpdateAgentRequestReplyPolicy string
 
+// UpdateBotAgentRequest defines model for UpdateBotAgentRequest.
+type UpdateBotAgentRequest struct {
+	CommandPolicy CommandPolicy `json:"commandPolicy"`
+}
+
 // UpdateChannelRequest defines model for UpdateChannelRequest.
 type UpdateChannelRequest struct {
 	Description *string `json:"description,omitempty"`
 	Name        *string `json:"name,omitempty"`
+}
+
+// UpdateImGroupRequest defines model for UpdateImGroupRequest.
+type UpdateImGroupRequest struct {
+	Name      *string         `json:"name,omitempty"`
+	ReplyMode *GroupReplyMode `json:"replyMode,omitempty"`
 }
 
 // UpdateMemberRequest defines model for UpdateMemberRequest.
@@ -2840,6 +3093,9 @@ type UpdateTaskRequestStatus string
 // AgentId defines model for AgentId.
 type AgentId = Id
 
+// BotAgentId defines model for BotAgentId.
+type BotAgentId = Id
+
 // ChannelId defines model for ChannelId.
 type ChannelId = Id
 
@@ -2851,6 +3107,12 @@ type Cursor = string
 
 // DirectConversationId defines model for DirectConversationId.
 type DirectConversationId = Id
+
+// GroupId defines model for GroupId.
+type GroupId = Id
+
+// IMUserIdPath defines model for IMUserIdPath.
+type IMUserIdPath = ImUserId
 
 // IdempotencyKey defines model for IdempotencyKey.
 type IdempotencyKey = string
@@ -3272,6 +3534,24 @@ type AcceptInviteJSONRequestBody AcceptInviteJSONBody
 // AcceptJoinLinkJSONRequestBody defines body for AcceptJoinLink for application/json ContentType.
 type AcceptJoinLinkJSONRequestBody = AcceptJoinLinkRequest
 
+// ProvisionBotAgentJSONRequestBody defines body for ProvisionBotAgent for application/json ContentType.
+type ProvisionBotAgentJSONRequestBody = ProvisionBotAgentRequest
+
+// UpdateBotAgentJSONRequestBody defines body for UpdateBotAgent for application/json ContentType.
+type UpdateBotAgentJSONRequestBody = UpdateBotAgentRequest
+
+// CreateImGroupJSONRequestBody defines body for CreateImGroup for application/json ContentType.
+type CreateImGroupJSONRequestBody = CreateImGroupRequest
+
+// UpdateImGroupJSONRequestBody defines body for UpdateImGroup for application/json ContentType.
+type UpdateImGroupJSONRequestBody = UpdateImGroupRequest
+
+// CreateBotRuntimeGroupJSONRequestBody defines body for CreateBotRuntimeGroup for application/json ContentType.
+type CreateBotRuntimeGroupJSONRequestBody = CreateImGroupRequest
+
+// UpdateBotRuntimeGroupJSONRequestBody defines body for UpdateBotRuntimeGroup for application/json ContentType.
+type UpdateBotRuntimeGroupJSONRequestBody = UpdateImGroupRequest
+
 // AcknowledgeRuntimeReminderOccurrenceJSONRequestBody defines body for AcknowledgeRuntimeReminderOccurrence for application/json ContentType.
 type AcknowledgeRuntimeReminderOccurrenceJSONRequestBody AcknowledgeRuntimeReminderOccurrenceJSONBody
 
@@ -3412,12 +3692,69 @@ type ServerInterface interface {
 	// 获取当前账号
 	// (GET /me)
 	GetMe(w http.ResponseWriter, r *http.Request)
+	// 列出当前账号已开通 IM 身份的 LightVela Bot
+	// (GET /me/bots)
+	ListBotAgents(w http.ResponseWriter, r *http.Request)
+	// 为一个 LightVela Bot 幂等开通 IM 身份
+	// (POST /me/bots)
+	ProvisionBotAgent(w http.ResponseWriter, r *http.Request)
+	// 停用 Bot IM 身份
+	// (DELETE /me/bots/{botAgentId})
+	DeleteBotAgent(w http.ResponseWriter, r *http.Request, botAgentId BotAgentId)
+	// 修改谁可以给 Bot 发运行时命令
+	// (PATCH /me/bots/{botAgentId})
+	UpdateBotAgent(w http.ResponseWriter, r *http.Request, botAgentId BotAgentId)
+	// 轮换 Bot 凭据并重新交付到实例
+	// (POST /me/bots/{botAgentId}/credential)
+	RotateBotAgentCredential(w http.ResponseWriter, r *http.Request, botAgentId BotAgentId)
+	// 创建平台群
+	// (POST /me/groups)
+	CreateImGroup(w http.ResponseWriter, r *http.Request)
+	// 解散平台群
+	// (DELETE /me/groups/{groupId})
+	DismissImGroup(w http.ResponseWriter, r *http.Request, groupId GroupId)
+	// 读取平台群、成员与回复规则
+	// (GET /me/groups/{groupId})
+	GetImGroup(w http.ResponseWriter, r *http.Request, groupId GroupId)
+	// 修改群名或 Agent 回复模式
+	// (PATCH /me/groups/{groupId})
+	UpdateImGroup(w http.ResponseWriter, r *http.Request, groupId GroupId)
+	// 移出成员或自己退群
+	// (DELETE /me/groups/{groupId}/members/{userId})
+	RemoveImGroupMember(w http.ResponseWriter, r *http.Request, groupId GroupId, userId IMUserIdPath)
+	// 把一个 Human 或 Bot 加入平台群
+	// (PUT /me/groups/{groupId}/members/{userId})
+	AddImGroupMember(w http.ResponseWriter, r *http.Request, groupId GroupId, userId IMUserIdPath)
 	// 签发 Human 的短期腾讯云 IM Session
 	// (POST /me/im/session)
 	CreateHumanImSession(w http.ResponseWriter, r *http.Request)
 	// 获取当前 Human 的协作身份资料
 	// (GET /me/profile)
 	GetHumanProfile(w http.ResponseWriter, r *http.Request)
+	// 以当前 Bot 身份创建平台群
+	// (POST /runtime/bot/groups)
+	CreateBotRuntimeGroup(w http.ResponseWriter, r *http.Request)
+	// 以当前 Bot 身份解散平台群
+	// (DELETE /runtime/bot/groups/{groupId})
+	DismissBotRuntimeGroup(w http.ResponseWriter, r *http.Request, groupId GroupId)
+	// 读取当前 Bot 所在平台群的成员与回复规则
+	// (GET /runtime/bot/groups/{groupId})
+	GetBotRuntimeGroup(w http.ResponseWriter, r *http.Request, groupId GroupId)
+	// 以当前 Bot 身份修改群名或回复模式
+	// (PATCH /runtime/bot/groups/{groupId})
+	UpdateBotRuntimeGroup(w http.ResponseWriter, r *http.Request, groupId GroupId)
+	// 以当前 Bot 身份移出成员或退群
+	// (DELETE /runtime/bot/groups/{groupId}/members/{userId})
+	RemoveBotRuntimeGroupMember(w http.ResponseWriter, r *http.Request, groupId GroupId, userId IMUserIdPath)
+	// 以当前 Bot 身份拉人
+	// (PUT /runtime/bot/groups/{groupId}/members/{userId})
+	AddBotRuntimeGroupMember(w http.ResponseWriter, r *http.Request, groupId GroupId, userId IMUserIdPath)
+	// 获取当前 Bot 身份、主人与命令权限
+	// (GET /runtime/bot/me)
+	GetBotRuntimeMe(w http.ResponseWriter, r *http.Request)
+	// 用 Bot 凭据换取短期运行会话与 UserSig
+	// (POST /runtime/bot/session)
+	CreateBotSession(w http.ResponseWriter, r *http.Request)
 	// 获取当前 Agent 有权查看的 Channel 成员
 	// (GET /runtime/channels/{channelId}/members)
 	GetRuntimeChannelMembers(w http.ResponseWriter, r *http.Request, channelId ChannelId)
@@ -4362,6 +4699,332 @@ func (siw *ServerInterfaceWrapper) GetMe(w http.ResponseWriter, r *http.Request)
 	handler.ServeHTTP(w, r)
 }
 
+// ListBotAgents operation middleware
+func (siw *ServerInterfaceWrapper) ListBotAgents(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, HumanBearerScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListBotAgents(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ProvisionBotAgent operation middleware
+func (siw *ServerInterfaceWrapper) ProvisionBotAgent(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, HumanBearerScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ProvisionBotAgent(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteBotAgent operation middleware
+func (siw *ServerInterfaceWrapper) DeleteBotAgent(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "botAgentId" -------------
+	var botAgentId BotAgentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "botAgentId", r.PathValue("botAgentId"), &botAgentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "botAgentId", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, HumanBearerScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteBotAgent(w, r, botAgentId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateBotAgent operation middleware
+func (siw *ServerInterfaceWrapper) UpdateBotAgent(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "botAgentId" -------------
+	var botAgentId BotAgentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "botAgentId", r.PathValue("botAgentId"), &botAgentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "botAgentId", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, HumanBearerScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateBotAgent(w, r, botAgentId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RotateBotAgentCredential operation middleware
+func (siw *ServerInterfaceWrapper) RotateBotAgentCredential(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "botAgentId" -------------
+	var botAgentId BotAgentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "botAgentId", r.PathValue("botAgentId"), &botAgentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "botAgentId", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, HumanBearerScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RotateBotAgentCredential(w, r, botAgentId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateImGroup operation middleware
+func (siw *ServerInterfaceWrapper) CreateImGroup(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, HumanBearerScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateImGroup(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DismissImGroup operation middleware
+func (siw *ServerInterfaceWrapper) DismissImGroup(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "groupId" -------------
+	var groupId GroupId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "groupId", r.PathValue("groupId"), &groupId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "groupId", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, HumanBearerScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DismissImGroup(w, r, groupId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetImGroup operation middleware
+func (siw *ServerInterfaceWrapper) GetImGroup(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "groupId" -------------
+	var groupId GroupId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "groupId", r.PathValue("groupId"), &groupId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "groupId", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, HumanBearerScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetImGroup(w, r, groupId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateImGroup operation middleware
+func (siw *ServerInterfaceWrapper) UpdateImGroup(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "groupId" -------------
+	var groupId GroupId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "groupId", r.PathValue("groupId"), &groupId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "groupId", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, HumanBearerScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateImGroup(w, r, groupId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RemoveImGroupMember operation middleware
+func (siw *ServerInterfaceWrapper) RemoveImGroupMember(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "groupId" -------------
+	var groupId GroupId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "groupId", r.PathValue("groupId"), &groupId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "groupId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "userId" -------------
+	var userId IMUserIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "userId", r.PathValue("userId"), &userId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "userId", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, HumanBearerScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RemoveImGroupMember(w, r, groupId, userId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AddImGroupMember operation middleware
+func (siw *ServerInterfaceWrapper) AddImGroupMember(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "groupId" -------------
+	var groupId GroupId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "groupId", r.PathValue("groupId"), &groupId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "groupId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "userId" -------------
+	var userId IMUserIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "userId", r.PathValue("userId"), &userId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "userId", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, HumanBearerScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AddImGroupMember(w, r, groupId, userId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // CreateHumanImSession operation middleware
 func (siw *ServerInterfaceWrapper) CreateHumanImSession(w http.ResponseWriter, r *http.Request) {
 
@@ -4393,6 +5056,239 @@ func (siw *ServerInterfaceWrapper) GetHumanProfile(w http.ResponseWriter, r *htt
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetHumanProfile(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateBotRuntimeGroup operation middleware
+func (siw *ServerInterfaceWrapper) CreateBotRuntimeGroup(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BotRuntimeBearerScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateBotRuntimeGroup(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DismissBotRuntimeGroup operation middleware
+func (siw *ServerInterfaceWrapper) DismissBotRuntimeGroup(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "groupId" -------------
+	var groupId GroupId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "groupId", r.PathValue("groupId"), &groupId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "groupId", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BotRuntimeBearerScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DismissBotRuntimeGroup(w, r, groupId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetBotRuntimeGroup operation middleware
+func (siw *ServerInterfaceWrapper) GetBotRuntimeGroup(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "groupId" -------------
+	var groupId GroupId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "groupId", r.PathValue("groupId"), &groupId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "groupId", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BotRuntimeBearerScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetBotRuntimeGroup(w, r, groupId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateBotRuntimeGroup operation middleware
+func (siw *ServerInterfaceWrapper) UpdateBotRuntimeGroup(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "groupId" -------------
+	var groupId GroupId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "groupId", r.PathValue("groupId"), &groupId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "groupId", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BotRuntimeBearerScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateBotRuntimeGroup(w, r, groupId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RemoveBotRuntimeGroupMember operation middleware
+func (siw *ServerInterfaceWrapper) RemoveBotRuntimeGroupMember(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "groupId" -------------
+	var groupId GroupId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "groupId", r.PathValue("groupId"), &groupId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "groupId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "userId" -------------
+	var userId IMUserIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "userId", r.PathValue("userId"), &userId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "userId", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BotRuntimeBearerScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RemoveBotRuntimeGroupMember(w, r, groupId, userId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AddBotRuntimeGroupMember operation middleware
+func (siw *ServerInterfaceWrapper) AddBotRuntimeGroupMember(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "groupId" -------------
+	var groupId GroupId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "groupId", r.PathValue("groupId"), &groupId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "groupId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "userId" -------------
+	var userId IMUserIdPath
+
+	err = runtime.BindStyledParameterWithOptions("simple", "userId", r.PathValue("userId"), &userId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "userId", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BotRuntimeBearerScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AddBotRuntimeGroupMember(w, r, groupId, userId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetBotRuntimeMe operation middleware
+func (siw *ServerInterfaceWrapper) GetBotRuntimeMe(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BotRuntimeBearerScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetBotRuntimeMe(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateBotSession operation middleware
+func (siw *ServerInterfaceWrapper) CreateBotSession(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BotCredentialAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateBotSession(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -8906,8 +9802,27 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc("POST "+options.BaseURL+"/invites/accept", wrapper.AcceptInvite)
 	m.HandleFunc("POST "+options.BaseURL+"/join-links/accept", wrapper.AcceptJoinLink)
 	m.HandleFunc("GET "+options.BaseURL+"/me", wrapper.GetMe)
+	m.HandleFunc("GET "+options.BaseURL+"/me/bots", wrapper.ListBotAgents)
+	m.HandleFunc("POST "+options.BaseURL+"/me/bots", wrapper.ProvisionBotAgent)
+	m.HandleFunc("DELETE "+options.BaseURL+"/me/bots/{botAgentId}", wrapper.DeleteBotAgent)
+	m.HandleFunc("PATCH "+options.BaseURL+"/me/bots/{botAgentId}", wrapper.UpdateBotAgent)
+	m.HandleFunc("POST "+options.BaseURL+"/me/bots/{botAgentId}/credential", wrapper.RotateBotAgentCredential)
+	m.HandleFunc("POST "+options.BaseURL+"/me/groups", wrapper.CreateImGroup)
+	m.HandleFunc("DELETE "+options.BaseURL+"/me/groups/{groupId}", wrapper.DismissImGroup)
+	m.HandleFunc("GET "+options.BaseURL+"/me/groups/{groupId}", wrapper.GetImGroup)
+	m.HandleFunc("PATCH "+options.BaseURL+"/me/groups/{groupId}", wrapper.UpdateImGroup)
+	m.HandleFunc("DELETE "+options.BaseURL+"/me/groups/{groupId}/members/{userId}", wrapper.RemoveImGroupMember)
+	m.HandleFunc("PUT "+options.BaseURL+"/me/groups/{groupId}/members/{userId}", wrapper.AddImGroupMember)
 	m.HandleFunc("POST "+options.BaseURL+"/me/im/session", wrapper.CreateHumanImSession)
 	m.HandleFunc("GET "+options.BaseURL+"/me/profile", wrapper.GetHumanProfile)
+	m.HandleFunc("POST "+options.BaseURL+"/runtime/bot/groups", wrapper.CreateBotRuntimeGroup)
+	m.HandleFunc("DELETE "+options.BaseURL+"/runtime/bot/groups/{groupId}", wrapper.DismissBotRuntimeGroup)
+	m.HandleFunc("GET "+options.BaseURL+"/runtime/bot/groups/{groupId}", wrapper.GetBotRuntimeGroup)
+	m.HandleFunc("PATCH "+options.BaseURL+"/runtime/bot/groups/{groupId}", wrapper.UpdateBotRuntimeGroup)
+	m.HandleFunc("DELETE "+options.BaseURL+"/runtime/bot/groups/{groupId}/members/{userId}", wrapper.RemoveBotRuntimeGroupMember)
+	m.HandleFunc("PUT "+options.BaseURL+"/runtime/bot/groups/{groupId}/members/{userId}", wrapper.AddBotRuntimeGroupMember)
+	m.HandleFunc("GET "+options.BaseURL+"/runtime/bot/me", wrapper.GetBotRuntimeMe)
+	m.HandleFunc("POST "+options.BaseURL+"/runtime/bot/session", wrapper.CreateBotSession)
 	m.HandleFunc("GET "+options.BaseURL+"/runtime/channels/{channelId}/members", wrapper.GetRuntimeChannelMembers)
 	m.HandleFunc("GET "+options.BaseURL+"/runtime/directory", wrapper.GetRuntimeDirectory)
 	m.HandleFunc("GET "+options.BaseURL+"/runtime/me", wrapper.GetRuntimeMe)
@@ -9736,6 +10651,348 @@ func (response GetMedefaultJSONResponse) VisitGetMeResponse(w http.ResponseWrite
 	return json.NewEncoder(w).Encode(response.Body)
 }
 
+type ListBotAgentsRequestObject struct {
+}
+
+type ListBotAgentsResponseObject interface {
+	VisitListBotAgentsResponse(w http.ResponseWriter) error
+}
+
+type ListBotAgents200JSONResponse BotAgentList
+
+func (response ListBotAgents200JSONResponse) VisitListBotAgentsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ListBotAgentsdefaultJSONResponse struct {
+	Body       ErrorEnvelope
+	Headers    ErrorResponseHeaders
+	StatusCode int
+}
+
+func (response ListBotAgentsdefaultJSONResponse) VisitListBotAgentsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
+	w.WriteHeader(response.StatusCode)
+
+	return json.NewEncoder(w).Encode(response.Body)
+}
+
+type ProvisionBotAgentRequestObject struct {
+	Body *ProvisionBotAgentJSONRequestBody
+}
+
+type ProvisionBotAgentResponseObject interface {
+	VisitProvisionBotAgentResponse(w http.ResponseWriter) error
+}
+
+type ProvisionBotAgent200JSONResponse BotAgent
+
+func (response ProvisionBotAgent200JSONResponse) VisitProvisionBotAgentResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ProvisionBotAgentdefaultJSONResponse struct {
+	Body       ErrorEnvelope
+	Headers    ErrorResponseHeaders
+	StatusCode int
+}
+
+func (response ProvisionBotAgentdefaultJSONResponse) VisitProvisionBotAgentResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
+	w.WriteHeader(response.StatusCode)
+
+	return json.NewEncoder(w).Encode(response.Body)
+}
+
+type DeleteBotAgentRequestObject struct {
+	BotAgentId BotAgentId `json:"botAgentId"`
+}
+
+type DeleteBotAgentResponseObject interface {
+	VisitDeleteBotAgentResponse(w http.ResponseWriter) error
+}
+
+type DeleteBotAgent204Response struct {
+}
+
+func (response DeleteBotAgent204Response) VisitDeleteBotAgentResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteBotAgentdefaultJSONResponse struct {
+	Body       ErrorEnvelope
+	Headers    ErrorResponseHeaders
+	StatusCode int
+}
+
+func (response DeleteBotAgentdefaultJSONResponse) VisitDeleteBotAgentResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
+	w.WriteHeader(response.StatusCode)
+
+	return json.NewEncoder(w).Encode(response.Body)
+}
+
+type UpdateBotAgentRequestObject struct {
+	BotAgentId BotAgentId `json:"botAgentId"`
+	Body       *UpdateBotAgentJSONRequestBody
+}
+
+type UpdateBotAgentResponseObject interface {
+	VisitUpdateBotAgentResponse(w http.ResponseWriter) error
+}
+
+type UpdateBotAgent200JSONResponse BotAgent
+
+func (response UpdateBotAgent200JSONResponse) VisitUpdateBotAgentResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type UpdateBotAgentdefaultJSONResponse struct {
+	Body       ErrorEnvelope
+	Headers    ErrorResponseHeaders
+	StatusCode int
+}
+
+func (response UpdateBotAgentdefaultJSONResponse) VisitUpdateBotAgentResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
+	w.WriteHeader(response.StatusCode)
+
+	return json.NewEncoder(w).Encode(response.Body)
+}
+
+type RotateBotAgentCredentialRequestObject struct {
+	BotAgentId BotAgentId `json:"botAgentId"`
+}
+
+type RotateBotAgentCredentialResponseObject interface {
+	VisitRotateBotAgentCredentialResponse(w http.ResponseWriter) error
+}
+
+type RotateBotAgentCredential200JSONResponse BotAgent
+
+func (response RotateBotAgentCredential200JSONResponse) VisitRotateBotAgentCredentialResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type RotateBotAgentCredentialdefaultJSONResponse struct {
+	Body       ErrorEnvelope
+	Headers    ErrorResponseHeaders
+	StatusCode int
+}
+
+func (response RotateBotAgentCredentialdefaultJSONResponse) VisitRotateBotAgentCredentialResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
+	w.WriteHeader(response.StatusCode)
+
+	return json.NewEncoder(w).Encode(response.Body)
+}
+
+type CreateImGroupRequestObject struct {
+	Body *CreateImGroupJSONRequestBody
+}
+
+type CreateImGroupResponseObject interface {
+	VisitCreateImGroupResponse(w http.ResponseWriter) error
+}
+
+type CreateImGroup200JSONResponse ImGroup
+
+func (response CreateImGroup200JSONResponse) VisitCreateImGroupResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type CreateImGroupdefaultJSONResponse struct {
+	Body       ErrorEnvelope
+	Headers    ErrorResponseHeaders
+	StatusCode int
+}
+
+func (response CreateImGroupdefaultJSONResponse) VisitCreateImGroupResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
+	w.WriteHeader(response.StatusCode)
+
+	return json.NewEncoder(w).Encode(response.Body)
+}
+
+type DismissImGroupRequestObject struct {
+	GroupId GroupId `json:"groupId"`
+}
+
+type DismissImGroupResponseObject interface {
+	VisitDismissImGroupResponse(w http.ResponseWriter) error
+}
+
+type DismissImGroup204Response struct {
+}
+
+func (response DismissImGroup204Response) VisitDismissImGroupResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DismissImGroupdefaultJSONResponse struct {
+	Body       ErrorEnvelope
+	Headers    ErrorResponseHeaders
+	StatusCode int
+}
+
+func (response DismissImGroupdefaultJSONResponse) VisitDismissImGroupResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
+	w.WriteHeader(response.StatusCode)
+
+	return json.NewEncoder(w).Encode(response.Body)
+}
+
+type GetImGroupRequestObject struct {
+	GroupId GroupId `json:"groupId"`
+}
+
+type GetImGroupResponseObject interface {
+	VisitGetImGroupResponse(w http.ResponseWriter) error
+}
+
+type GetImGroup200JSONResponse ImGroup
+
+func (response GetImGroup200JSONResponse) VisitGetImGroupResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetImGroupdefaultJSONResponse struct {
+	Body       ErrorEnvelope
+	Headers    ErrorResponseHeaders
+	StatusCode int
+}
+
+func (response GetImGroupdefaultJSONResponse) VisitGetImGroupResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
+	w.WriteHeader(response.StatusCode)
+
+	return json.NewEncoder(w).Encode(response.Body)
+}
+
+type UpdateImGroupRequestObject struct {
+	GroupId GroupId `json:"groupId"`
+	Body    *UpdateImGroupJSONRequestBody
+}
+
+type UpdateImGroupResponseObject interface {
+	VisitUpdateImGroupResponse(w http.ResponseWriter) error
+}
+
+type UpdateImGroup200JSONResponse ImGroup
+
+func (response UpdateImGroup200JSONResponse) VisitUpdateImGroupResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type UpdateImGroupdefaultJSONResponse struct {
+	Body       ErrorEnvelope
+	Headers    ErrorResponseHeaders
+	StatusCode int
+}
+
+func (response UpdateImGroupdefaultJSONResponse) VisitUpdateImGroupResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
+	w.WriteHeader(response.StatusCode)
+
+	return json.NewEncoder(w).Encode(response.Body)
+}
+
+type RemoveImGroupMemberRequestObject struct {
+	GroupId GroupId      `json:"groupId"`
+	UserId  IMUserIdPath `json:"userId"`
+}
+
+type RemoveImGroupMemberResponseObject interface {
+	VisitRemoveImGroupMemberResponse(w http.ResponseWriter) error
+}
+
+type RemoveImGroupMember200JSONResponse ImGroup
+
+func (response RemoveImGroupMember200JSONResponse) VisitRemoveImGroupMemberResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type RemoveImGroupMemberdefaultJSONResponse struct {
+	Body       ErrorEnvelope
+	Headers    ErrorResponseHeaders
+	StatusCode int
+}
+
+func (response RemoveImGroupMemberdefaultJSONResponse) VisitRemoveImGroupMemberResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
+	w.WriteHeader(response.StatusCode)
+
+	return json.NewEncoder(w).Encode(response.Body)
+}
+
+type AddImGroupMemberRequestObject struct {
+	GroupId GroupId      `json:"groupId"`
+	UserId  IMUserIdPath `json:"userId"`
+}
+
+type AddImGroupMemberResponseObject interface {
+	VisitAddImGroupMemberResponse(w http.ResponseWriter) error
+}
+
+type AddImGroupMember200JSONResponse ImGroup
+
+func (response AddImGroupMember200JSONResponse) VisitAddImGroupMemberResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type AddImGroupMemberdefaultJSONResponse struct {
+	Body       ErrorEnvelope
+	Headers    ErrorResponseHeaders
+	StatusCode int
+}
+
+func (response AddImGroupMemberdefaultJSONResponse) VisitAddImGroupMemberResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
+	w.WriteHeader(response.StatusCode)
+
+	return json.NewEncoder(w).Encode(response.Body)
+}
+
 type CreateHumanImSessionRequestObject struct {
 }
 
@@ -9799,6 +11056,264 @@ type GetHumanProfiledefaultJSONResponse struct {
 }
 
 func (response GetHumanProfiledefaultJSONResponse) VisitGetHumanProfileResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
+	w.WriteHeader(response.StatusCode)
+
+	return json.NewEncoder(w).Encode(response.Body)
+}
+
+type CreateBotRuntimeGroupRequestObject struct {
+	Body *CreateBotRuntimeGroupJSONRequestBody
+}
+
+type CreateBotRuntimeGroupResponseObject interface {
+	VisitCreateBotRuntimeGroupResponse(w http.ResponseWriter) error
+}
+
+type CreateBotRuntimeGroup200JSONResponse ImGroup
+
+func (response CreateBotRuntimeGroup200JSONResponse) VisitCreateBotRuntimeGroupResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type CreateBotRuntimeGroupdefaultJSONResponse struct {
+	Body       ErrorEnvelope
+	Headers    ErrorResponseHeaders
+	StatusCode int
+}
+
+func (response CreateBotRuntimeGroupdefaultJSONResponse) VisitCreateBotRuntimeGroupResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
+	w.WriteHeader(response.StatusCode)
+
+	return json.NewEncoder(w).Encode(response.Body)
+}
+
+type DismissBotRuntimeGroupRequestObject struct {
+	GroupId GroupId `json:"groupId"`
+}
+
+type DismissBotRuntimeGroupResponseObject interface {
+	VisitDismissBotRuntimeGroupResponse(w http.ResponseWriter) error
+}
+
+type DismissBotRuntimeGroup204Response struct {
+}
+
+func (response DismissBotRuntimeGroup204Response) VisitDismissBotRuntimeGroupResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DismissBotRuntimeGroupdefaultJSONResponse struct {
+	Body       ErrorEnvelope
+	Headers    ErrorResponseHeaders
+	StatusCode int
+}
+
+func (response DismissBotRuntimeGroupdefaultJSONResponse) VisitDismissBotRuntimeGroupResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
+	w.WriteHeader(response.StatusCode)
+
+	return json.NewEncoder(w).Encode(response.Body)
+}
+
+type GetBotRuntimeGroupRequestObject struct {
+	GroupId GroupId `json:"groupId"`
+}
+
+type GetBotRuntimeGroupResponseObject interface {
+	VisitGetBotRuntimeGroupResponse(w http.ResponseWriter) error
+}
+
+type GetBotRuntimeGroup200JSONResponse ImGroup
+
+func (response GetBotRuntimeGroup200JSONResponse) VisitGetBotRuntimeGroupResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetBotRuntimeGroupdefaultJSONResponse struct {
+	Body       ErrorEnvelope
+	Headers    ErrorResponseHeaders
+	StatusCode int
+}
+
+func (response GetBotRuntimeGroupdefaultJSONResponse) VisitGetBotRuntimeGroupResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
+	w.WriteHeader(response.StatusCode)
+
+	return json.NewEncoder(w).Encode(response.Body)
+}
+
+type UpdateBotRuntimeGroupRequestObject struct {
+	GroupId GroupId `json:"groupId"`
+	Body    *UpdateBotRuntimeGroupJSONRequestBody
+}
+
+type UpdateBotRuntimeGroupResponseObject interface {
+	VisitUpdateBotRuntimeGroupResponse(w http.ResponseWriter) error
+}
+
+type UpdateBotRuntimeGroup200JSONResponse ImGroup
+
+func (response UpdateBotRuntimeGroup200JSONResponse) VisitUpdateBotRuntimeGroupResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type UpdateBotRuntimeGroupdefaultJSONResponse struct {
+	Body       ErrorEnvelope
+	Headers    ErrorResponseHeaders
+	StatusCode int
+}
+
+func (response UpdateBotRuntimeGroupdefaultJSONResponse) VisitUpdateBotRuntimeGroupResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
+	w.WriteHeader(response.StatusCode)
+
+	return json.NewEncoder(w).Encode(response.Body)
+}
+
+type RemoveBotRuntimeGroupMemberRequestObject struct {
+	GroupId GroupId      `json:"groupId"`
+	UserId  IMUserIdPath `json:"userId"`
+}
+
+type RemoveBotRuntimeGroupMemberResponseObject interface {
+	VisitRemoveBotRuntimeGroupMemberResponse(w http.ResponseWriter) error
+}
+
+type RemoveBotRuntimeGroupMember200JSONResponse ImGroup
+
+func (response RemoveBotRuntimeGroupMember200JSONResponse) VisitRemoveBotRuntimeGroupMemberResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type RemoveBotRuntimeGroupMemberdefaultJSONResponse struct {
+	Body       ErrorEnvelope
+	Headers    ErrorResponseHeaders
+	StatusCode int
+}
+
+func (response RemoveBotRuntimeGroupMemberdefaultJSONResponse) VisitRemoveBotRuntimeGroupMemberResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
+	w.WriteHeader(response.StatusCode)
+
+	return json.NewEncoder(w).Encode(response.Body)
+}
+
+type AddBotRuntimeGroupMemberRequestObject struct {
+	GroupId GroupId      `json:"groupId"`
+	UserId  IMUserIdPath `json:"userId"`
+}
+
+type AddBotRuntimeGroupMemberResponseObject interface {
+	VisitAddBotRuntimeGroupMemberResponse(w http.ResponseWriter) error
+}
+
+type AddBotRuntimeGroupMember200JSONResponse ImGroup
+
+func (response AddBotRuntimeGroupMember200JSONResponse) VisitAddBotRuntimeGroupMemberResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type AddBotRuntimeGroupMemberdefaultJSONResponse struct {
+	Body       ErrorEnvelope
+	Headers    ErrorResponseHeaders
+	StatusCode int
+}
+
+func (response AddBotRuntimeGroupMemberdefaultJSONResponse) VisitAddBotRuntimeGroupMemberResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
+	w.WriteHeader(response.StatusCode)
+
+	return json.NewEncoder(w).Encode(response.Body)
+}
+
+type GetBotRuntimeMeRequestObject struct {
+}
+
+type GetBotRuntimeMeResponseObject interface {
+	VisitGetBotRuntimeMeResponse(w http.ResponseWriter) error
+}
+
+type GetBotRuntimeMe200JSONResponse BotRuntimeIdentity
+
+func (response GetBotRuntimeMe200JSONResponse) VisitGetBotRuntimeMeResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetBotRuntimeMedefaultJSONResponse struct {
+	Body       ErrorEnvelope
+	Headers    ErrorResponseHeaders
+	StatusCode int
+}
+
+func (response GetBotRuntimeMedefaultJSONResponse) VisitGetBotRuntimeMeResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
+	w.WriteHeader(response.StatusCode)
+
+	return json.NewEncoder(w).Encode(response.Body)
+}
+
+type CreateBotSessionRequestObject struct {
+}
+
+type CreateBotSessionResponseObject interface {
+	VisitCreateBotSessionResponse(w http.ResponseWriter) error
+}
+
+type CreateBotSession200ResponseHeaders struct {
+	CacheControl string
+	Pragma       string
+}
+
+type CreateBotSession200JSONResponse struct {
+	Body    BotSession
+	Headers CreateBotSession200ResponseHeaders
+}
+
+func (response CreateBotSession200JSONResponse) VisitCreateBotSessionResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", fmt.Sprint(response.Headers.CacheControl))
+	w.Header().Set("Pragma", fmt.Sprint(response.Headers.Pragma))
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response.Body)
+}
+
+type CreateBotSessiondefaultJSONResponse struct {
+	Body       ErrorEnvelope
+	Headers    ErrorResponseHeaders
+	StatusCode int
+}
+
+func (response CreateBotSessiondefaultJSONResponse) VisitCreateBotSessionResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Retry-After", fmt.Sprint(response.Headers.RetryAfter))
 	w.WriteHeader(response.StatusCode)
@@ -12538,12 +14053,69 @@ type StrictServerInterface interface {
 	// 获取当前账号
 	// (GET /me)
 	GetMe(ctx context.Context, request GetMeRequestObject) (GetMeResponseObject, error)
+	// 列出当前账号已开通 IM 身份的 LightVela Bot
+	// (GET /me/bots)
+	ListBotAgents(ctx context.Context, request ListBotAgentsRequestObject) (ListBotAgentsResponseObject, error)
+	// 为一个 LightVela Bot 幂等开通 IM 身份
+	// (POST /me/bots)
+	ProvisionBotAgent(ctx context.Context, request ProvisionBotAgentRequestObject) (ProvisionBotAgentResponseObject, error)
+	// 停用 Bot IM 身份
+	// (DELETE /me/bots/{botAgentId})
+	DeleteBotAgent(ctx context.Context, request DeleteBotAgentRequestObject) (DeleteBotAgentResponseObject, error)
+	// 修改谁可以给 Bot 发运行时命令
+	// (PATCH /me/bots/{botAgentId})
+	UpdateBotAgent(ctx context.Context, request UpdateBotAgentRequestObject) (UpdateBotAgentResponseObject, error)
+	// 轮换 Bot 凭据并重新交付到实例
+	// (POST /me/bots/{botAgentId}/credential)
+	RotateBotAgentCredential(ctx context.Context, request RotateBotAgentCredentialRequestObject) (RotateBotAgentCredentialResponseObject, error)
+	// 创建平台群
+	// (POST /me/groups)
+	CreateImGroup(ctx context.Context, request CreateImGroupRequestObject) (CreateImGroupResponseObject, error)
+	// 解散平台群
+	// (DELETE /me/groups/{groupId})
+	DismissImGroup(ctx context.Context, request DismissImGroupRequestObject) (DismissImGroupResponseObject, error)
+	// 读取平台群、成员与回复规则
+	// (GET /me/groups/{groupId})
+	GetImGroup(ctx context.Context, request GetImGroupRequestObject) (GetImGroupResponseObject, error)
+	// 修改群名或 Agent 回复模式
+	// (PATCH /me/groups/{groupId})
+	UpdateImGroup(ctx context.Context, request UpdateImGroupRequestObject) (UpdateImGroupResponseObject, error)
+	// 移出成员或自己退群
+	// (DELETE /me/groups/{groupId}/members/{userId})
+	RemoveImGroupMember(ctx context.Context, request RemoveImGroupMemberRequestObject) (RemoveImGroupMemberResponseObject, error)
+	// 把一个 Human 或 Bot 加入平台群
+	// (PUT /me/groups/{groupId}/members/{userId})
+	AddImGroupMember(ctx context.Context, request AddImGroupMemberRequestObject) (AddImGroupMemberResponseObject, error)
 	// 签发 Human 的短期腾讯云 IM Session
 	// (POST /me/im/session)
 	CreateHumanImSession(ctx context.Context, request CreateHumanImSessionRequestObject) (CreateHumanImSessionResponseObject, error)
 	// 获取当前 Human 的协作身份资料
 	// (GET /me/profile)
 	GetHumanProfile(ctx context.Context, request GetHumanProfileRequestObject) (GetHumanProfileResponseObject, error)
+	// 以当前 Bot 身份创建平台群
+	// (POST /runtime/bot/groups)
+	CreateBotRuntimeGroup(ctx context.Context, request CreateBotRuntimeGroupRequestObject) (CreateBotRuntimeGroupResponseObject, error)
+	// 以当前 Bot 身份解散平台群
+	// (DELETE /runtime/bot/groups/{groupId})
+	DismissBotRuntimeGroup(ctx context.Context, request DismissBotRuntimeGroupRequestObject) (DismissBotRuntimeGroupResponseObject, error)
+	// 读取当前 Bot 所在平台群的成员与回复规则
+	// (GET /runtime/bot/groups/{groupId})
+	GetBotRuntimeGroup(ctx context.Context, request GetBotRuntimeGroupRequestObject) (GetBotRuntimeGroupResponseObject, error)
+	// 以当前 Bot 身份修改群名或回复模式
+	// (PATCH /runtime/bot/groups/{groupId})
+	UpdateBotRuntimeGroup(ctx context.Context, request UpdateBotRuntimeGroupRequestObject) (UpdateBotRuntimeGroupResponseObject, error)
+	// 以当前 Bot 身份移出成员或退群
+	// (DELETE /runtime/bot/groups/{groupId}/members/{userId})
+	RemoveBotRuntimeGroupMember(ctx context.Context, request RemoveBotRuntimeGroupMemberRequestObject) (RemoveBotRuntimeGroupMemberResponseObject, error)
+	// 以当前 Bot 身份拉人
+	// (PUT /runtime/bot/groups/{groupId}/members/{userId})
+	AddBotRuntimeGroupMember(ctx context.Context, request AddBotRuntimeGroupMemberRequestObject) (AddBotRuntimeGroupMemberResponseObject, error)
+	// 获取当前 Bot 身份、主人与命令权限
+	// (GET /runtime/bot/me)
+	GetBotRuntimeMe(ctx context.Context, request GetBotRuntimeMeRequestObject) (GetBotRuntimeMeResponseObject, error)
+	// 用 Bot 凭据换取短期运行会话与 UserSig
+	// (POST /runtime/bot/session)
+	CreateBotSession(ctx context.Context, request CreateBotSessionRequestObject) (CreateBotSessionResponseObject, error)
 	// 获取当前 Agent 有权查看的 Channel 成员
 	// (GET /runtime/channels/{channelId}/members)
 	GetRuntimeChannelMembers(ctx context.Context, request GetRuntimeChannelMembersRequestObject) (GetRuntimeChannelMembersResponseObject, error)
@@ -13374,6 +14946,316 @@ func (sh *strictHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// ListBotAgents operation middleware
+func (sh *strictHandler) ListBotAgents(w http.ResponseWriter, r *http.Request) {
+	var request ListBotAgentsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListBotAgents(ctx, request.(ListBotAgentsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListBotAgents")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListBotAgentsResponseObject); ok {
+		if err := validResponse.VisitListBotAgentsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ProvisionBotAgent operation middleware
+func (sh *strictHandler) ProvisionBotAgent(w http.ResponseWriter, r *http.Request) {
+	var request ProvisionBotAgentRequestObject
+
+	var body ProvisionBotAgentJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ProvisionBotAgent(ctx, request.(ProvisionBotAgentRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ProvisionBotAgent")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ProvisionBotAgentResponseObject); ok {
+		if err := validResponse.VisitProvisionBotAgentResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteBotAgent operation middleware
+func (sh *strictHandler) DeleteBotAgent(w http.ResponseWriter, r *http.Request, botAgentId BotAgentId) {
+	var request DeleteBotAgentRequestObject
+
+	request.BotAgentId = botAgentId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteBotAgent(ctx, request.(DeleteBotAgentRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteBotAgent")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteBotAgentResponseObject); ok {
+		if err := validResponse.VisitDeleteBotAgentResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateBotAgent operation middleware
+func (sh *strictHandler) UpdateBotAgent(w http.ResponseWriter, r *http.Request, botAgentId BotAgentId) {
+	var request UpdateBotAgentRequestObject
+
+	request.BotAgentId = botAgentId
+
+	var body UpdateBotAgentJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateBotAgent(ctx, request.(UpdateBotAgentRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateBotAgent")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateBotAgentResponseObject); ok {
+		if err := validResponse.VisitUpdateBotAgentResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RotateBotAgentCredential operation middleware
+func (sh *strictHandler) RotateBotAgentCredential(w http.ResponseWriter, r *http.Request, botAgentId BotAgentId) {
+	var request RotateBotAgentCredentialRequestObject
+
+	request.BotAgentId = botAgentId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RotateBotAgentCredential(ctx, request.(RotateBotAgentCredentialRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RotateBotAgentCredential")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RotateBotAgentCredentialResponseObject); ok {
+		if err := validResponse.VisitRotateBotAgentCredentialResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateImGroup operation middleware
+func (sh *strictHandler) CreateImGroup(w http.ResponseWriter, r *http.Request) {
+	var request CreateImGroupRequestObject
+
+	var body CreateImGroupJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateImGroup(ctx, request.(CreateImGroupRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateImGroup")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateImGroupResponseObject); ok {
+		if err := validResponse.VisitCreateImGroupResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DismissImGroup operation middleware
+func (sh *strictHandler) DismissImGroup(w http.ResponseWriter, r *http.Request, groupId GroupId) {
+	var request DismissImGroupRequestObject
+
+	request.GroupId = groupId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DismissImGroup(ctx, request.(DismissImGroupRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DismissImGroup")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DismissImGroupResponseObject); ok {
+		if err := validResponse.VisitDismissImGroupResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetImGroup operation middleware
+func (sh *strictHandler) GetImGroup(w http.ResponseWriter, r *http.Request, groupId GroupId) {
+	var request GetImGroupRequestObject
+
+	request.GroupId = groupId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetImGroup(ctx, request.(GetImGroupRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetImGroup")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetImGroupResponseObject); ok {
+		if err := validResponse.VisitGetImGroupResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateImGroup operation middleware
+func (sh *strictHandler) UpdateImGroup(w http.ResponseWriter, r *http.Request, groupId GroupId) {
+	var request UpdateImGroupRequestObject
+
+	request.GroupId = groupId
+
+	var body UpdateImGroupJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateImGroup(ctx, request.(UpdateImGroupRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateImGroup")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateImGroupResponseObject); ok {
+		if err := validResponse.VisitUpdateImGroupResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RemoveImGroupMember operation middleware
+func (sh *strictHandler) RemoveImGroupMember(w http.ResponseWriter, r *http.Request, groupId GroupId, userId IMUserIdPath) {
+	var request RemoveImGroupMemberRequestObject
+
+	request.GroupId = groupId
+	request.UserId = userId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RemoveImGroupMember(ctx, request.(RemoveImGroupMemberRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RemoveImGroupMember")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RemoveImGroupMemberResponseObject); ok {
+		if err := validResponse.VisitRemoveImGroupMemberResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AddImGroupMember operation middleware
+func (sh *strictHandler) AddImGroupMember(w http.ResponseWriter, r *http.Request, groupId GroupId, userId IMUserIdPath) {
+	var request AddImGroupMemberRequestObject
+
+	request.GroupId = groupId
+	request.UserId = userId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AddImGroupMember(ctx, request.(AddImGroupMemberRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AddImGroupMember")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AddImGroupMemberResponseObject); ok {
+		if err := validResponse.VisitAddImGroupMemberResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // CreateHumanImSession operation middleware
 func (sh *strictHandler) CreateHumanImSession(w http.ResponseWriter, r *http.Request) {
 	var request CreateHumanImSessionRequestObject
@@ -13415,6 +15297,224 @@ func (sh *strictHandler) GetHumanProfile(w http.ResponseWriter, r *http.Request)
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetHumanProfileResponseObject); ok {
 		if err := validResponse.VisitGetHumanProfileResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateBotRuntimeGroup operation middleware
+func (sh *strictHandler) CreateBotRuntimeGroup(w http.ResponseWriter, r *http.Request) {
+	var request CreateBotRuntimeGroupRequestObject
+
+	var body CreateBotRuntimeGroupJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateBotRuntimeGroup(ctx, request.(CreateBotRuntimeGroupRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateBotRuntimeGroup")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateBotRuntimeGroupResponseObject); ok {
+		if err := validResponse.VisitCreateBotRuntimeGroupResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DismissBotRuntimeGroup operation middleware
+func (sh *strictHandler) DismissBotRuntimeGroup(w http.ResponseWriter, r *http.Request, groupId GroupId) {
+	var request DismissBotRuntimeGroupRequestObject
+
+	request.GroupId = groupId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DismissBotRuntimeGroup(ctx, request.(DismissBotRuntimeGroupRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DismissBotRuntimeGroup")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DismissBotRuntimeGroupResponseObject); ok {
+		if err := validResponse.VisitDismissBotRuntimeGroupResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetBotRuntimeGroup operation middleware
+func (sh *strictHandler) GetBotRuntimeGroup(w http.ResponseWriter, r *http.Request, groupId GroupId) {
+	var request GetBotRuntimeGroupRequestObject
+
+	request.GroupId = groupId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetBotRuntimeGroup(ctx, request.(GetBotRuntimeGroupRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetBotRuntimeGroup")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetBotRuntimeGroupResponseObject); ok {
+		if err := validResponse.VisitGetBotRuntimeGroupResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateBotRuntimeGroup operation middleware
+func (sh *strictHandler) UpdateBotRuntimeGroup(w http.ResponseWriter, r *http.Request, groupId GroupId) {
+	var request UpdateBotRuntimeGroupRequestObject
+
+	request.GroupId = groupId
+
+	var body UpdateBotRuntimeGroupJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateBotRuntimeGroup(ctx, request.(UpdateBotRuntimeGroupRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateBotRuntimeGroup")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateBotRuntimeGroupResponseObject); ok {
+		if err := validResponse.VisitUpdateBotRuntimeGroupResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RemoveBotRuntimeGroupMember operation middleware
+func (sh *strictHandler) RemoveBotRuntimeGroupMember(w http.ResponseWriter, r *http.Request, groupId GroupId, userId IMUserIdPath) {
+	var request RemoveBotRuntimeGroupMemberRequestObject
+
+	request.GroupId = groupId
+	request.UserId = userId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RemoveBotRuntimeGroupMember(ctx, request.(RemoveBotRuntimeGroupMemberRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RemoveBotRuntimeGroupMember")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RemoveBotRuntimeGroupMemberResponseObject); ok {
+		if err := validResponse.VisitRemoveBotRuntimeGroupMemberResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AddBotRuntimeGroupMember operation middleware
+func (sh *strictHandler) AddBotRuntimeGroupMember(w http.ResponseWriter, r *http.Request, groupId GroupId, userId IMUserIdPath) {
+	var request AddBotRuntimeGroupMemberRequestObject
+
+	request.GroupId = groupId
+	request.UserId = userId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AddBotRuntimeGroupMember(ctx, request.(AddBotRuntimeGroupMemberRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AddBotRuntimeGroupMember")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AddBotRuntimeGroupMemberResponseObject); ok {
+		if err := validResponse.VisitAddBotRuntimeGroupMemberResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetBotRuntimeMe operation middleware
+func (sh *strictHandler) GetBotRuntimeMe(w http.ResponseWriter, r *http.Request) {
+	var request GetBotRuntimeMeRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetBotRuntimeMe(ctx, request.(GetBotRuntimeMeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetBotRuntimeMe")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetBotRuntimeMeResponseObject); ok {
+		if err := validResponse.VisitGetBotRuntimeMeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateBotSession operation middleware
+func (sh *strictHandler) CreateBotSession(w http.ResponseWriter, r *http.Request) {
+	var request CreateBotSessionRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateBotSession(ctx, request.(CreateBotSessionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateBotSession")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateBotSessionResponseObject); ok {
+		if err := validResponse.VisitCreateBotSessionResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -15727,281 +17827,318 @@ func (sh *strictHandler) UpdateTask(w http.ResponseWriter, r *http.Request, serv
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"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",
+	"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",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

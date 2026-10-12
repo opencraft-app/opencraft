@@ -20,6 +20,8 @@ const (
 	computerCredentialScheme = "ComputerCredentialAuth"
 	computerBootstrapScheme  = "ComputerBootstrapAuth"
 	enrollmentScheme         = "EnrollmentAuth"
+	botCredentialScheme      = "BotCredentialAuth"
+	botRuntimeBearerScheme   = "BotRuntimeBearer"
 	lightVelaUserIDHeader    = "X-Lightclaw-User-ID"
 )
 
@@ -173,6 +175,26 @@ func candidateFromAuthorization(
 		)
 		if err != nil {
 			return nil, apperror.New("computer_credential_invalid", "Computer credential 无效", err)
+		}
+		return candidate, nil
+	case botCredentialScheme:
+		secret, ok := parseAuthorization(authorization, "BotCredential")
+		if !ok || len(secret) > 512 {
+			return nil, apperror.New("runtime_credential_invalid", "缺少 Bot 凭据", nil)
+		}
+		candidate, err := authnport.NewBotCredentialCandidate(secret)
+		if err != nil {
+			return nil, apperror.New("runtime_credential_invalid", "Bot 凭据无效", err)
+		}
+		return candidate, nil
+	case botRuntimeBearerScheme:
+		token, ok := parseAuthorization(authorization, "Bearer")
+		if !ok {
+			return nil, apperror.New("runtime_credential_invalid", "缺少 Bot Runtime Bearer 凭证", nil)
+		}
+		candidate, err := authnport.NewBotRuntimeBearerCandidate(token)
+		if err != nil {
+			return nil, apperror.New("runtime_credential_invalid", "Bot Runtime Bearer 凭证无效", err)
 		}
 		return candidate, nil
 	default:

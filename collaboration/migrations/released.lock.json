@@ -142,6 +142,13 @@
       "logicalMigration": "20260917040000_computer_v2_column_order"
     },
     {
+      "dialect": "mysql-runtime",
+      "path": "migrations/mysql/20261012070306_bot_agents_and_im_groups.sql",
+      "sha256": "84e5447b3db201db069a9273bfdd5a1afcac2e46830fc2a3e3ee6c4ae4b6758b",
+      "migrationId": "20261012070306_bot_agents_and_im_groups",
+      "logicalMigration": "20261012070306_bot_agents_and_im_groups"
+    },
+    {
       "dialect": "sqlite",
       "path": "migrations/sqlite/20260730040159_baseline.sql",
       "sha256": "569523da2cb4b1d838128642626dc1af950147ad67110ae90a3208395d3bdfec",
@@ -260,6 +267,13 @@
       "logicalMigration": "20260914141219_computer_v2"
     },
     {
+      "dialect": "sqlite",
+      "path": "migrations/sqlite/20261012070610_bot_agents_and_im_groups.sql",
+      "sha256": "b8221567f33a20ec006b221eb42dec9ec8804dc234868d3242f9098bc26fea22",
+      "migrationId": "20261012070610_bot_agents_and_im_groups",
+      "logicalMigration": "20261012070610_bot_agents_and_im_groups"
+    },
+    {
       "dialect": "tdsql-runtime",
       "path": "migrations/tdsql/20260801000000_baseline.sql",
       "sha256": "82f5c1ae99f40185d02a72fb5e891488a753577470e3205f03e178514296fa7b",
@@ -328,6 +342,13 @@
       "sha256": "7495548f36c5e4a39b98dd25e79b3472bcf951c34e63571f7b973dbd36d6eab8",
       "migrationId": "20260917040000_computer_v2_column_order",
       "logicalMigration": "20260917040000_computer_v2_column_order"
+    },
+    {
+      "dialect": "tdsql-runtime",
+      "path": "migrations/tdsql/20261012070306_bot_agents_and_im_groups.sql",
+      "sha256": "c891fc85f58aaf5c8588ce1a34b971b5a934181ef243a778bef78326cd05a0e3",
+      "migrationId": "20261012070306_bot_agents_and_im_groups",
+      "logicalMigration": "20261012070306_bot_agents_and_im_groups"
     }
   ]
 }

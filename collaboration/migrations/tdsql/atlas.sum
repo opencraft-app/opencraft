@@ -1,4 +1,4 @@
-h1:WqAxP6XKK6jLx/aeELOyioBnbA6NBijkSdNHBZpb2dc=
+h1:L9tCLYUk8j0RoneGslE/8Mg4LomcD6xnCDiBIqQXNVU=
 20260801000000_baseline.sql h1:EVq8iLGKqGF4ak8nxCZL94xTu4j4VAZWpwG3q0+m/Xk=
 20260802100000_computer_enrollment.sql h1:fgsAhBkRHsKyBfkr0gSRTTYq6yfIF+R0PTIYnmLu+I0=
 20260802170000_reminder_anchors.sql h1:gcBoQFBOWzB+oqTEbUb/FIWDz9LsVbB1jBorGyVDukM=
@@ -9,3 +9,4 @@ h1:WqAxP6XKK6jLx/aeELOyioBnbA6NBijkSdNHBZpb2dc=
 20260804130000_server_scoped_direct_messages.sql h1:XTD9IbmhBOwj7x+D8xMtxZwqkzIHcD2Ac8HaTkhhYIU=
 20260914141219_computer_v2.sql h1:B8c7RHC5jR52n5ZECNd0RXPEoAv8nWu4ENvfBLhPjDw=
 20260917040000_computer_v2_column_order.sql h1:7ZYuUiO+fppLp7FT1cB5ajZ5/q3kywyAOnAq5zNli/Q=
+20261012070306_bot_agents_and_im_groups.sql h1:6u++LOkP9EmtQrW+evQThxHPGwGaQY1Hxy6Dkezr9YU=

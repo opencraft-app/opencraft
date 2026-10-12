@@ -590,7 +590,92 @@ tables:
       aggregate_id: reference
       state: lifecycle
 
+  - schema: BotAgent
+    table: bot_agents
+    domain: account
+    kind: authority
+    shardKey: account_id
+    logicalId: id
+    immutableRouteFields: [account_id, im_user_id]
+    references:
+      - {field: account_id, table: accounts}
+    lifecycle: {field: state, values: [provisioning, ready, error, deleted]}
+    deletePolicy: tombstone
+    retention: permanent
+    rebuildable: false
+    semanticFields:
+      account_id: reference
+      im_user_id: reference
+      state: lifecycle
+      credential_version: lifecycle
+      credential_digest: credential
+
+  - schema: IMIdentityRoute
+    table: im_identity_routes
+    domain: registry
+    kind: registry
+    shardKey: im_user_id
+    logicalId: id
+    immutableRouteFields: [im_user_id]
+    references:
+      - {field: account_id, table: accounts, crossShard: true}
+      - {field: bot_agent_id, table: bot_agents, crossShard: true}
+    deletePolicy: tombstone
+    retention: permanent
+    rebuildable: false
+    semanticFields:
+      im_user_id: reference
+      account_id: reference
+      bot_agent_id: reference
+      restricted_at: lifecycle
+
+  - schema: IMGroup
+    table: im_groups
+    domain: group
+    kind: authority
+    shardKey: id
+    logicalId: id
+    immutableRouteFields: [id, tencent_group_id]
+    references:
+      - {field: owner_account_id, table: accounts, crossShard: true}
+    lifecycle: {field: state, values: [provisioning, active, dismissed]}
+    deletePolicy: tombstone
+    retention: permanent
+    rebuildable: false
+    semanticFields:
+      tencent_group_id: reference
+      owner_account_id: reference
+      created_by_im_user_id: reference
+      state: lifecycle
+
+  - schema: IMGroupMember
+    table: im_group_members
+    domain: group
+    kind: authority
+    shardKey: group_id
+    logicalId: id
+    immutableRouteFields: [group_id, im_user_id]
+    references:
+      - {field: group_id, table: im_groups}
+    lifecycle: {field: state, values: [active, removed]}
+    deletePolicy: tombstone
+    retention: permanent
+    rebuildable: false
+    semanticFields:
+      group_id: reference
+      im_user_id: reference
+      added_by_im_user_id: reference
+      state: lifecycle
+
 crossShardWorkflows:
+  - name: bot-agent-im-route
+    tables: [bot_agents, im_identity_routes]
+    routeKeys: {bot_agents: account_id, im_identity_routes: im_user_id}
+    direction: two-way
+  - name: account-im-route
+    tables: [accounts, im_identity_routes]
+    routeKeys: {accounts: id, im_identity_routes: im_user_id}
+    direction: one-way
   - name: account-login-registration
     tables: [account_login_identities, accounts]
     routeKeys: {account_login_identities: login_hash, accounts: id}

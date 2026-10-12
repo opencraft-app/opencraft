@@ -74,6 +74,8 @@ type HumanAPIConfig struct {
 	SDKAppID      int
 	UserSigTTL    time.Duration
 	UserSigIssuer tencentimport.UserSigIssuer
+	// IdentityGuard 可选；登记 Human IM 路由并阻止被封禁身份取得 UserSig。
+	IdentityGuard apphumanaccount.IdentityGuard
 }
 
 // PlatformAPIConfig 在 Human API 上增加首组 Server/Member 管理面。
@@ -128,6 +130,7 @@ func NewHumanAPIHandler(config HumanAPIConfig) (http.Handler, error) {
 		apphumanaccount.Config{
 			SDKAppID:   config.SDKAppID,
 			UserSigTTL: config.UserSigTTL,
+			Guard:      config.IdentityGuard,
 		},
 	)
 	if err != nil {
@@ -159,6 +162,7 @@ func NewPlatformAPIHandler(config PlatformAPIConfig) (http.Handler, error) {
 		apphumanaccount.Config{
 			SDKAppID:   config.Human.SDKAppID,
 			UserSigTTL: config.Human.UserSigTTL,
+			Guard:      config.Human.IdentityGuard,
 		},
 	)
 	if err != nil {

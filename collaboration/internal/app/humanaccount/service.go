@@ -14,10 +14,17 @@ import (
 	"github.com/google/uuid"
 )
 
+// IdentityGuard 在签发 UserSig 前登记 Human 的 IM 路由并检查封禁状态。
+type IdentityGuard interface {
+	AdmitHuman(ctx context.Context, accountID string, imUserID string) error
+}
+
 // Config 配置 Human IM Session 的公开 SDKAppID 和短期 TTL。
 type Config struct {
 	SDKAppID   int
 	UserSigTTL time.Duration
+	// Guard 可选；配置后被封禁的身份不能再取得 UserSig。
+	Guard IdentityGuard
 }
 
 // IMSession 是只在一次 HTTP 响应中存在的短期 IM 登录信息。
@@ -97,6 +104,11 @@ func (service *Service) CreateIMSession(
 			"IM 身份尚未就绪",
 			nil,
 		)
+	}
+	if service.config.Guard != nil {
+		if err := service.config.Guard.AdmitHuman(ctx, account.ID, account.IMUserID); err != nil {
+			return IMSession{}, err
+		}
 	}
 	issued, err := service.issuer.Issue(
 		ctx,

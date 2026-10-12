@@ -20,6 +20,7 @@ import (
 
 	agentidentityadapter "git.woa.com/wisp/mono2/collaboration/internal/adapters/agentidentity"
 	agentpresenceadapter "git.woa.com/wisp/mono2/collaboration/internal/adapters/agentpresence"
+	bothostadapter "git.woa.com/wisp/mono2/collaboration/internal/adapters/bothost"
 	credentialsadapter "git.woa.com/wisp/mono2/collaboration/internal/adapters/credentials"
 	imcommunityadapter "git.woa.com/wisp/mono2/collaboration/internal/adapters/imcommunity"
 	imdirectconversationadapter "git.woa.com/wisp/mono2/collaboration/internal/adapters/imdirectconversation"
@@ -34,6 +35,7 @@ import (
 	tencentoperationadapter "git.woa.com/wisp/mono2/collaboration/internal/adapters/tencentoperation"
 	appagentidentity "git.woa.com/wisp/mono2/collaboration/internal/app/agentidentity"
 	appagentpresence "git.woa.com/wisp/mono2/collaboration/internal/app/agentpresence"
+	apphumanaccount "git.woa.com/wisp/mono2/collaboration/internal/app/humanaccount"
 	appimcommunity "git.woa.com/wisp/mono2/collaboration/internal/app/imcommunity"
 	appimdirectconversation "git.woa.com/wisp/mono2/collaboration/internal/app/imdirectconversation"
 	appimidentity "git.woa.com/wisp/mono2/collaboration/internal/app/imidentity"
@@ -47,6 +49,7 @@ import (
 	"git.woa.com/wisp/mono2/collaboration/internal/computerrelease"
 	"git.woa.com/wisp/mono2/collaboration/internal/config"
 	"git.woa.com/wisp/mono2/collaboration/internal/database"
+	botimport "git.woa.com/wisp/mono2/collaboration/internal/ports/botim"
 	clockport "git.woa.com/wisp/mono2/collaboration/internal/ports/clock"
 	idport "git.woa.com/wisp/mono2/collaboration/internal/ports/id"
 	tencenttatport "git.woa.com/wisp/mono2/collaboration/internal/ports/tencenttat"
@@ -85,6 +88,11 @@ type serveConfig struct {
 	computerReleaseFile              string
 	computerArtifactBucket           string
 	computerArtifactRegion           string
+	botHostCommand                   string
+	botHostCTLURL                    string
+	botHostCTLTokenFile              string
+	botRuntimeAPIURL                 string
+	restrictClientGroupCreate        bool
 }
 
 type repeatedStrings []string
@@ -219,6 +227,11 @@ func parseServeConfig(args []string) (serveConfig, error) {
 		computerReleaseFile              string
 		computerArtifactBucket           string
 		computerArtifactRegion           string
+		botHostCommand                   string
+		botHostCTLURL                    string
+		botHostCTLTokenFile              string
+		botRuntimeAPIURL                 string
+		restrictClientGroupCreate        bool
 	)
 	if databaseDriver == "" {
 		databaseDriver = string(config.DatabaseDriverSQLite)
@@ -320,6 +333,11 @@ func parseServeConfig(args []string) (serveConfig, error) {
 		"",
 		"Computer 私有制品桶地域",
 	)
+	flags.StringVar(&botHostCommand, "bot-host-command", "", "开发机：交付 Bot 凭据的本地命令（JSON 走 stdin）")
+	flags.StringVar(&botHostCTLURL, "bot-host-ctl-url", "", "生产：CTL 内部接口地址，用于校验实例归属并交付 Bot 凭据")
+	flags.StringVar(&botHostCTLTokenFile, "bot-host-ctl-token-file", "", "collaboration 到 CTL 的内部 Bearer 文件")
+	flags.StringVar(&botRuntimeAPIURL, "bot-runtime-api-url", "", "Bot 运行时访问本服务的基础 URL（交付到实例）")
+	flags.BoolVar(&restrictClientGroupCreate, "im-restrict-client-group-create", false, "腾讯建群前回调只允许 App 管理员建群")
 	flags.Var(&origins, "cors-origin", "允许的浏览器 Origin，可重复")
 	if err := flags.Parse(args); err != nil || flags.NArg() != 0 {
 		return serveConfig{}, apperror.New("CONFIG_INVALID", "serve 参数无效", err)
@@ -416,7 +434,25 @@ func parseServeConfig(args []string) (serveConfig, error) {
 			nil,
 		)
 	}
+	botHostCommand = strings.TrimSpace(botHostCommand)
+	botHostCTLURL = strings.TrimSpace(botHostCTLURL)
+	botHostCTLTokenFile = strings.TrimSpace(botHostCTLTokenFile)
+	botRuntimeAPIURL = strings.TrimSpace(botRuntimeAPIURL)
+	if botHostCommand != "" && botHostCTLURL != "" ||
+		(botHostCTLURL == "") != (botHostCTLTokenFile == "") ||
+		(botHostCommand != "" || botHostCTLURL != "") && botRuntimeAPIURL == "" {
+		return serveConfig{}, apperror.New(
+			"CONFIG_INVALID",
+			"Bot 宿主只能选择本地命令或 CTL 之一，并且必须同时提供 Bot 运行时访问地址",
+			nil,
+		)
+	}
 	return serveConfig{
+		botHostCommand:                   botHostCommand,
+		botHostCTLURL:                    botHostCTLURL,
+		botHostCTLTokenFile:              botHostCTLTokenFile,
+		botRuntimeAPIURL:                 botRuntimeAPIURL,
+		restrictClientGroupCreate:        restrictClientGroupCreate,
 		database:                         databaseConfig,
 		databaseAutoMigrate:              databaseAutoMigrate,
 		collaborationOnly:                collaborationOnly,
@@ -1042,6 +1078,58 @@ func serveHumanPlatform(
 		}
 		workers = append(workers, tatWorker, reminderWorker, taskNotificationWorker)
 	}
+	var botIM *bootstrap.BotIMAPI
+	if cfg.botHostCommand != "" || cfg.botHostCTLURL != "" {
+		var host botimport.Host
+		if cfg.botHostCommand != "" {
+			host, err = bothostadapter.NewCommandHost(cfg.botHostCommand, 2*time.Minute)
+		} else {
+			var ctlToken string
+			ctlToken, err = loadTextSecret(cfg.botHostCTLTokenFile, "CTL Bot 宿主 token")
+			if err == nil {
+				host, err = bothostadapter.NewCTLHost(cfg.botHostCTLURL, ctlToken, &http.Client{Timeout: 90 * time.Second})
+			}
+		}
+		if err != nil {
+			return apperror.New("CONFIG_INVALID", "Bot 宿主配置无效", err)
+		}
+		groupManager, err := tencentimadapter.NewRESTGroupManager(tencentimadapter.RESTConfig{
+			SDKAppID:        cfg.imSDKAppID,
+			AdminUserID:     cfg.imAdminUserID,
+			BaseURL:         cfg.imRESTBaseURL,
+			HTTPClient:      &http.Client{Timeout: 15 * time.Second},
+			Random:          rand.Reader,
+			AdminSignatures: userSigs,
+			AdminSigTTL:     10 * time.Minute,
+		})
+		if err != nil {
+			return apperror.New("CONFIG_INVALID", "腾讯云 IM 群配置无效", err)
+		}
+		botIM, err = bootstrap.NewBotIMAPI(bootstrap.BotIMAPIConfig{
+			Database:                       handle,
+			AccessTokenKey:                 accessTokenKey,
+			GatewayHumanToken:              []byte(lightVelaGatewayToken),
+			ExternalHumanProvisioningEpoch: externalHumanProvisioningEpoch(identityKey, imSecret),
+			SDKAppID:                       cfg.imSDKAppID,
+			AccessTTL:                      time.Hour,
+			UserSigTTL:                     time.Hour,
+			UserSigIssuer:                  userSigs,
+			Identities:                     provisioner,
+			Deriver:                        deriver,
+			Host:                           host,
+			TencentGroups:                  groupManager,
+			BotRuntimeAPIBaseURL:           cfg.botRuntimeAPIURL,
+			RequestTimeout:                 2 * time.Minute,
+			MaxBodyBytes:                   16 * 1024,
+		})
+		if err != nil {
+			return apperror.New("CONFIG_INVALID", "无法组装 Bot IM API", err)
+		}
+	}
+	var identityGuard apphumanaccount.IdentityGuard
+	if botIM != nil {
+		identityGuard = botIM.Groups
+	}
 	platformHandler, err := bootstrap.NewPlatformAPIHandler(bootstrap.PlatformAPIConfig{
 		Human: bootstrap.HumanAPIConfig{
 			Auth: bootstrap.AuthAPIConfig{
@@ -1059,6 +1147,7 @@ func serveHumanPlatform(
 			SDKAppID:      cfg.imSDKAppID,
 			UserSigTTL:    time.Hour,
 			UserSigIssuer: userSigs,
+			IdentityGuard: identityGuard,
 		},
 		IMResourceKey:      identityKey,
 		ServerCreationWait: 10 * time.Second,
@@ -1113,9 +1202,33 @@ func serveHumanPlatform(
 				err,
 			)
 		}
+		if botIM != nil {
+			callbackHandler, err = httptransport.NewTencentIMCallbackDispatcher(
+				callbackHandler,
+				httptransport.TencentIMGroupCallbackConfig{
+					SDKAppID:                  int64(cfg.imSDKAppID),
+					Token:                     []byte(imCallbackToken),
+					Clock:                     clock,
+					MaxBodyBytes:              64 << 10,
+					AdminUserID:               cfg.imAdminUserID,
+					RestrictClientGroupCreate: cfg.restrictClientGroupCreate,
+				},
+				botIM.Groups,
+			)
+			if err != nil {
+				return apperror.New("CONFIG_INVALID", "腾讯云 IM 群回调配置无效", err)
+			}
+		}
 		rootHandler.Handle("/v1/callbacks/tencent-im/state", callbackHandler)
 	}
 	rootHandler.Handle("/v1/runtime/", runtimeHandler)
+	if botIM != nil {
+		for _, prefix := range []string{
+			"/v1/me/bots", "/v1/me/bots/", "/v1/me/groups", "/v1/me/groups/", "/v1/runtime/bot/",
+		} {
+			rootHandler.Handle(prefix, botIM.Handler)
+		}
+	}
 	if !cfg.collaborationOnly {
 		computerHandler, err := bootstrap.NewComputerAPIHandler(
 			bootstrap.ComputerAPIConfig{

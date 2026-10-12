@@ -23,9 +23,10 @@ var (
 type ClaimsKind string
 
 const (
-	ClaimsHumanAccess    ClaimsKind = "human_access"
-	ClaimsRuntimeAccess  ClaimsKind = "runtime_access"
-	ClaimsComputerAccess ClaimsKind = "computer_access"
+	ClaimsHumanAccess      ClaimsKind = "human_access"
+	ClaimsRuntimeAccess    ClaimsKind = "runtime_access"
+	ClaimsComputerAccess   ClaimsKind = "computer_access"
+	ClaimsBotRuntimeAccess ClaimsKind = "bot_runtime_access"
 )
 
 // Claims 是经过基础结构校验的访问令牌声明。
@@ -136,6 +137,28 @@ func NewComputerClaims(
 		version:    credentialVersion,
 		issuedAt:   issuedAt.UTC(),
 		expiresAt:  expiresAt.UTC(),
+	}, nil
+}
+
+// NewBotRuntimeClaims 创建 LightVela Bot 短期运行令牌声明；AccountID 是 Bot 所属账号分片键。
+func NewBotRuntimeClaims(
+	accountID string,
+	botAgentID string,
+	credentialVersion uint64,
+	issuedAt time.Time,
+	expiresAt time.Time,
+) (Claims, error) {
+	if !validID(accountID) || !validID(botAgentID) || credentialVersion == 0 ||
+		!validLifetime(issuedAt, expiresAt) {
+		return Claims{}, ErrInvalidClaims
+	}
+	return Claims{
+		kind:      ClaimsBotRuntimeAccess,
+		accountID: accountID,
+		agentID:   botAgentID,
+		version:   credentialVersion,
+		issuedAt:  issuedAt.UTC(),
+		expiresAt: expiresAt.UTC(),
 	}, nil
 }
 

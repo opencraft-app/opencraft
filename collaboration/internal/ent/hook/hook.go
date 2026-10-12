@@ -93,6 +93,18 @@ func (f AuthSessionFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value,
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AuthSessionMutation", m)
 }
 
+// The BotAgentFunc type is an adapter to allow the use of ordinary
+// function as BotAgent mutator.
+type BotAgentFunc func(context.Context, *ent.BotAgentMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f BotAgentFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.BotAgentMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.BotAgentMutation", m)
+}
+
 // The ChannelFunc type is an adapter to allow the use of ordinary
 // function as Channel mutator.
 type ChannelFunc func(context.Context, *ent.ChannelMutation) (ent.Value, error)
@@ -187,6 +199,42 @@ func (f DirectConversationFunc) Mutate(ctx context.Context, m ent.Mutation) (ent
 		return f(ctx, mv)
 	}
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.DirectConversationMutation", m)
+}
+
+// The IMGroupFunc type is an adapter to allow the use of ordinary
+// function as IMGroup mutator.
+type IMGroupFunc func(context.Context, *ent.IMGroupMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f IMGroupFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.IMGroupMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.IMGroupMutation", m)
+}
+
+// The IMGroupMemberFunc type is an adapter to allow the use of ordinary
+// function as IMGroupMember mutator.
+type IMGroupMemberFunc func(context.Context, *ent.IMGroupMemberMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f IMGroupMemberFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.IMGroupMemberMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.IMGroupMemberMutation", m)
+}
+
+// The IMIdentityRouteFunc type is an adapter to allow the use of ordinary
+// function as IMIdentityRoute mutator.
+type IMIdentityRouteFunc func(context.Context, *ent.IMIdentityRouteMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f IMIdentityRouteFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.IMIdentityRouteMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.IMIdentityRouteMutation", m)
 }
 
 // The IdempotencyRecordFunc type is an adapter to allow the use of ordinary

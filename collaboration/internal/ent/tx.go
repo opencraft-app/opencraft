@@ -26,6 +26,8 @@ type Tx struct {
 	AgentRuntimeCredential *AgentRuntimeCredentialClient
 	// AuthSession is the client for interacting with the AuthSession builders.
 	AuthSession *AuthSessionClient
+	// BotAgent is the client for interacting with the BotAgent builders.
+	BotAgent *BotAgentClient
 	// Channel is the client for interacting with the Channel builders.
 	Channel *ChannelClient
 	// ChannelMember is the client for interacting with the ChannelMember builders.
@@ -42,6 +44,12 @@ type Tx struct {
 	ComputerSetupCode *ComputerSetupCodeClient
 	// DirectConversation is the client for interacting with the DirectConversation builders.
 	DirectConversation *DirectConversationClient
+	// IMGroup is the client for interacting with the IMGroup builders.
+	IMGroup *IMGroupClient
+	// IMGroupMember is the client for interacting with the IMGroupMember builders.
+	IMGroupMember *IMGroupMemberClient
+	// IMIdentityRoute is the client for interacting with the IMIdentityRoute builders.
+	IMIdentityRoute *IMIdentityRouteClient
 	// IdempotencyRecord is the client for interacting with the IdempotencyRecord builders.
 	IdempotencyRecord *IdempotencyRecordClient
 	// Member is the client for interacting with the Member builders.
@@ -206,6 +214,7 @@ func (tx *Tx) init() {
 	tx.AgentIMRoute = NewAgentIMRouteClient(tx.config)
 	tx.AgentRuntimeCredential = NewAgentRuntimeCredentialClient(tx.config)
 	tx.AuthSession = NewAuthSessionClient(tx.config)
+	tx.BotAgent = NewBotAgentClient(tx.config)
 	tx.Channel = NewChannelClient(tx.config)
 	tx.ChannelMember = NewChannelMemberClient(tx.config)
 	tx.Computer = NewComputerClient(tx.config)
@@ -214,6 +223,9 @@ func (tx *Tx) init() {
 	tx.ComputerRuntimeCredential = NewComputerRuntimeCredentialClient(tx.config)
 	tx.ComputerSetupCode = NewComputerSetupCodeClient(tx.config)
 	tx.DirectConversation = NewDirectConversationClient(tx.config)
+	tx.IMGroup = NewIMGroupClient(tx.config)
+	tx.IMGroupMember = NewIMGroupMemberClient(tx.config)
+	tx.IMIdentityRoute = NewIMIdentityRouteClient(tx.config)
 	tx.IdempotencyRecord = NewIdempotencyRecordClient(tx.config)
 	tx.Member = NewMemberClient(tx.config)
 	tx.MessageThreadRead = NewMessageThreadReadClient(tx.config)

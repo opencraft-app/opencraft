@@ -56,7 +56,9 @@ func knownCandidateKind(kind authnport.CandidateKind) bool {
 		authnport.CandidateRuntimeBearer,
 		authnport.CandidateAgentCredential,
 		authnport.CandidateComputerBearer,
-		authnport.CandidateComputerCredential:
+		authnport.CandidateComputerCredential,
+		authnport.CandidateBotCredential,
+		authnport.CandidateBotRuntimeBearer:
 		return true
 	default:
 		return false
@@ -67,7 +69,9 @@ func unsupportedCandidate(kind authnport.CandidateKind) error {
 	if kind == authnport.CandidateRuntimeBearer ||
 		kind == authnport.CandidateAgentCredential ||
 		kind == authnport.CandidateComputerBearer ||
-		kind == authnport.CandidateComputerCredential {
+		kind == authnport.CandidateComputerCredential ||
+		kind == authnport.CandidateBotCredential ||
+		kind == authnport.CandidateBotRuntimeBearer {
 		return apperror.New(
 			"runtime_credential_invalid",
 			"Runtime 或 Agent 凭证无效",

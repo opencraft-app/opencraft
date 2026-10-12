@@ -29,6 +29,8 @@ const (
 	CandidateAgentCredential    CandidateKind = "agent_credential"
 	CandidateComputerBearer     CandidateKind = "computer_bearer"
 	CandidateComputerCredential CandidateKind = "computer_credential"
+	CandidateBotCredential      CandidateKind = "bot_credential"
+	CandidateBotRuntimeBearer   CandidateKind = "bot_runtime_bearer"
 )
 
 // PrincipalKind 标识已经过 currentness 校验的主体类型。
@@ -40,6 +42,8 @@ const (
 	PrincipalRuntime         PrincipalKind = "runtime"
 	PrincipalAgentCredential PrincipalKind = "agent_credential"
 	PrincipalComputer        PrincipalKind = "computer"
+	PrincipalBotCredential   PrincipalKind = "bot_credential"
+	PrincipalBotRuntime      PrincipalKind = "bot_runtime"
 )
 
 // SensitiveCredential 包装只允许在认证调用期间显式读取的 Secret。
@@ -516,6 +520,97 @@ func (p CurrentComputerPrincipal) ComputerID() string { return p.computerID }
 func (p CurrentComputerPrincipal) CredentialVersion() uint64 {
 	return p.credentialVersion
 }
+
+// BotCredentialCandidate 是 LightVela Bot 长期凭据的请求局部候选。
+type BotCredentialCandidate struct {
+	credential SensitiveCredential
+}
+
+func NewBotCredentialCandidate(rawSecret string) (BotCredentialCandidate, error) {
+	credential, err := newSensitiveCredential(rawSecret)
+	if err != nil {
+		return BotCredentialCandidate{}, err
+	}
+	return BotCredentialCandidate{credential: credential}, nil
+}
+
+func (BotCredentialCandidate) Kind() CandidateKind { return CandidateBotCredential }
+
+func (BotCredentialCandidate) credentialCandidate() {}
+
+func (c BotCredentialCandidate) Credential() SensitiveCredential { return c.credential }
+
+// BotRuntimeBearerCandidate 是 Bot 短期运行 Token 的请求局部候选。
+type BotRuntimeBearerCandidate struct {
+	credential SensitiveCredential
+}
+
+func NewBotRuntimeBearerCandidate(rawToken string) (BotRuntimeBearerCandidate, error) {
+	credential, err := newSensitiveCredential(rawToken)
+	if err != nil {
+		return BotRuntimeBearerCandidate{}, err
+	}
+	return BotRuntimeBearerCandidate{credential: credential}, nil
+}
+
+func (BotRuntimeBearerCandidate) Kind() CandidateKind { return CandidateBotRuntimeBearer }
+
+func (BotRuntimeBearerCandidate) credentialCandidate() {}
+
+func (c BotRuntimeBearerCandidate) Credential() SensitiveCredential { return c.credential }
+
+// CurrentBotPrincipal 是已确认凭据版本仍为当前版本的 LightVela Bot。
+//
+// Kind 区分它来自长期凭据还是短期运行 Token；两者授权面互不重叠。
+type CurrentBotPrincipal struct {
+	kind              PrincipalKind
+	accountID         string
+	botAgentID        string
+	credentialVersion uint64
+}
+
+func NewCurrentBotCredentialPrincipal(
+	accountID string,
+	botAgentID string,
+	credentialVersion uint64,
+) (CurrentBotPrincipal, error) {
+	return newCurrentBotPrincipal(PrincipalBotCredential, accountID, botAgentID, credentialVersion)
+}
+
+func NewCurrentBotRuntimePrincipal(
+	accountID string,
+	botAgentID string,
+	credentialVersion uint64,
+) (CurrentBotPrincipal, error) {
+	return newCurrentBotPrincipal(PrincipalBotRuntime, accountID, botAgentID, credentialVersion)
+}
+
+func newCurrentBotPrincipal(
+	kind PrincipalKind,
+	accountID string,
+	botAgentID string,
+	credentialVersion uint64,
+) (CurrentBotPrincipal, error) {
+	if !validID(accountID) || !validID(botAgentID) || credentialVersion == 0 {
+		return CurrentBotPrincipal{}, ErrInvalidPrincipal
+	}
+	return CurrentBotPrincipal{
+		kind:              kind,
+		accountID:         accountID,
+		botAgentID:        botAgentID,
+		credentialVersion: credentialVersion,
+	}, nil
+}
+
+func (p CurrentBotPrincipal) Kind() PrincipalKind { return p.kind }
+
+func (CurrentBotPrincipal) currentPrincipal() {}
+
+func (p CurrentBotPrincipal) AccountID() string { return p.accountID }
+
+func (p CurrentBotPrincipal) BotAgentID() string { return p.botAgentID }
+
+func (p CurrentBotPrincipal) CredentialVersion() uint64 { return p.credentialVersion }
 
 // Authenticator 把候选凭证验证为当前有效主体。
 type Authenticator interface {

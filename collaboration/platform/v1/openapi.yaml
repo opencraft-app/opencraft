@@ -45,6 +45,12 @@ tags:
     description: 脱敏的腾讯云异步操作状态。
   - name: Callbacks
     description: 腾讯云服务端回调；只由受信任的腾讯云控制面调用。
+  - name: Bots
+    description: LightVela Bot 的独立 IM 身份；不属于任何 Server。
+  - name: Groups
+    description: 平台创建的腾讯普通群、成员与 Agent 回复规则；平台不保存消息正文。
+  - name: BotRuntime
+    description: LightVela Bot 运行时的受限平台接口。
 security:
   - HumanBearer: []
 x-database-modes:
@@ -68,6 +74,9 @@ x-tdsql-routing:
     agentIM: imUserId
     computerSetupCode: codeHash
     computerProvider: bindingHash
+    imIdentity: imUserId
+    imGroup: groupId
+  botRuntimeScopedPaths: accountId from verified Bot Runtime Token
   rule: 缺失可验证 shardkey 时不得退化为在线全分片搜索。
 x-auth-domain-registry:
   callback: [observeTencentIMState]
@@ -84,6 +93,10 @@ x-auth-domain-registry:
     [rotateComputerCredential, getComputerAssignments, createComputerAgentLaunch,
      refreshComputerAgentSession, putComputerAgentObservation, sendComputerHeartbeat]
   enrollment: [claimComputerEnrollment, getComputerArtifact]
+  bot-credential: [createBotSession]
+  bot-runtime:
+    [getBotRuntimeMe, createBotRuntimeGroup, getBotRuntimeGroup, updateBotRuntimeGroup,
+     dismissBotRuntimeGroup, addBotRuntimeGroupMember, removeBotRuntimeGroupMember]
   human:
     [logout, getMe, getHumanProfile, createHumanImSession, listServers, createServer, getServer,
      updateServer, resolveServerSlug, listInvites, createInvite, revokeInvite,
@@ -101,7 +114,10 @@ x-auth-domain-registry:
      createComputerRuntimeCredential, refreshComputer, createTerminalSession,
      listTasks, createTask, getTask, updateTask, listReminders,
      createReminder, getReminder, updateReminder, cancelReminder, listInbox,
-     listActivity, getOperation]
+     listActivity, getOperation,
+     listBotAgents, provisionBotAgent, updateBotAgent, deleteBotAgent, rotateBotAgentCredential,
+     createImGroup, getImGroup, updateImGroup, dismissImGroup, addImGroupMember,
+     removeImGroupMember]
 x-error-code-registry:
   unauthenticated: {status: 401}
   account_already_exists: {status: 409}
@@ -192,6 +208,14 @@ x-error-code-registry:
   route_not_found: {status: 404}
   method_not_allowed: {status: 405}
   internal_error: {status: 500}
+  bot_agent_not_found: {status: 404}
+  bot_agent_not_ready: {status: 409}
+  bot_instance_not_owned: {status: 403}
+  bot_host_unavailable: {status: 503}
+  im_group_not_found: {status: 404}
+  im_group_not_ready: {status: 409}
+  im_identity_unknown: {status: 422}
+  im_identity_restricted: {status: 403}
 
 paths:
   /callbacks/tencent-im/state:
@@ -349,6 +373,174 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ImSession'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /me/bots:
+    get:
+      tags: [Bots]
+      operationId: listBotAgents
+      summary: 列出当前账号已开通 IM 身份的 LightVela Bot
+      description: 不分页；单个账号的 Bot 数量由 LightVela 实例上限约束，最多返回 200 个。
+      responses:
+        '200':
+          description: 当前账号的 Bot IM 身份
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/BotAgentList'}
+        default: {$ref: '#/components/responses/Error'}
+    post:
+      tags: [Bots]
+      operationId: provisionBotAgent
+      summary: 为一个 LightVela Bot 幂等开通 IM 身份
+      description: |
+        同一账号下同一 instanceId/botId 重复调用返回同一身份；未完成或失败时重新执行开通。
+        平台先确认实例属于当前账号，再导入腾讯账号、签发 Bot 凭据并交付到 Bot 所在实例。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ProvisionBotAgentRequest'}
+      responses:
+        '200':
+          description: Bot IM 身份
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/BotAgent'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /me/bots/{botAgentId}:
+    parameters:
+      - {$ref: '#/components/parameters/BotAgentId'}
+    patch:
+      tags: [Bots]
+      operationId: updateBotAgent
+      summary: 修改谁可以给 Bot 发运行时命令
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UpdateBotAgentRequest'}
+      responses:
+        '200':
+          description: 更新后的 Bot IM 身份
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/BotAgent'}
+        default: {$ref: '#/components/responses/Error'}
+    delete:
+      tags: [Bots]
+      operationId: deleteBotAgent
+      summary: 停用 Bot IM 身份
+      description: 吊销凭据并使腾讯登录态失效；群成员关系保留，Bot 不能再登录。
+      responses:
+        '204': {description: 已停用}
+        default: {$ref: '#/components/responses/Error'}
+
+  /me/bots/{botAgentId}/credential:
+    parameters:
+      - {$ref: '#/components/parameters/BotAgentId'}
+    post:
+      tags: [Bots]
+      operationId: rotateBotAgentCredential
+      summary: 轮换 Bot 凭据并重新交付到实例
+      description: 旧版本立即失效；响应不包含凭据明文。
+      responses:
+        '200':
+          description: 轮换后的 Bot IM 身份
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/BotAgent'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /me/groups:
+    post:
+      tags: [Groups]
+      operationId: createImGroup
+      summary: 创建平台群
+      description: |
+        当前 Human 成为群主。groupId 是客户端生成的 UUIDv7，重试时使用同一值返回同一个群。
+        成员只能是平台已知且未被封禁的 IM 身份。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateImGroupRequest'}
+      responses:
+        '200':
+          description: 平台群
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ImGroup'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /me/groups/{groupId}:
+    parameters:
+      - {$ref: '#/components/parameters/GroupId'}
+    get:
+      tags: [Groups]
+      operationId: getImGroup
+      summary: 读取平台群、成员与回复规则
+      description: 只有当前 active 成员可以读取。
+      responses:
+        '200':
+          description: 平台群
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ImGroup'}
+        default: {$ref: '#/components/responses/Error'}
+    patch:
+      tags: [Groups]
+      operationId: updateImGroup
+      summary: 修改群名或 Agent 回复模式
+      description: 只有群主和管理员可以修改；回复模式变化后平台向群内发送一条规则通知。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UpdateImGroupRequest'}
+      responses:
+        '200':
+          description: 更新后的平台群
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ImGroup'}
+        default: {$ref: '#/components/responses/Error'}
+    delete:
+      tags: [Groups]
+      operationId: dismissImGroup
+      summary: 解散平台群
+      description: 只有群主可以解散。
+      responses:
+        '204': {description: 已解散}
+        default: {$ref: '#/components/responses/Error'}
+
+  /me/groups/{groupId}/members/{userId}:
+    parameters:
+      - {$ref: '#/components/parameters/GroupId'}
+      - {$ref: '#/components/parameters/IMUserIdPath'}
+    put:
+      tags: [Groups]
+      operationId: addImGroupMember
+      summary: 把一个 Human 或 Bot 加入平台群
+      description: 只有群主和管理员可以拉人；重复添加是幂等的。
+      responses:
+        '200':
+          description: 更新后的平台群
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ImGroup'}
+        default: {$ref: '#/components/responses/Error'}
+    delete:
+      tags: [Groups]
+      operationId: removeImGroupMember
+      summary: 移出成员或自己退群
+      description: 群主和管理员可以移出普通成员；任何成员都可以移出自己；群主不能被移出。
+      responses:
+        '200':
+          description: 更新后的平台群
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ImGroup'}
         default: {$ref: '#/components/responses/Error'}
 
   /servers:
@@ -1091,6 +1283,139 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Operation'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /runtime/bot/session:
+    post:
+      tags: [BotRuntime]
+      operationId: createBotSession
+      summary: 用 Bot 凭据换取短期运行会话与 UserSig
+      description: |
+        凭据由平台交付到 Bot 所在实例，只能换取该 Bot 自己的会话。
+        响应同时包含短期 Bot Runtime Token、腾讯 UserSig 与当前规则快照。
+      security:
+        - BotCredentialAuth: []
+      responses:
+        '200':
+          description: 一次性短期 Bot 会话
+          headers:
+            Cache-Control:
+              schema: {type: string, enum: [no-store]}
+            Pragma:
+              schema: {type: string, enum: [no-cache]}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/BotSession'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /runtime/bot/me:
+    get:
+      tags: [BotRuntime]
+      operationId: getBotRuntimeMe
+      summary: 获取当前 Bot 身份、主人与命令权限
+      security:
+        - BotRuntimeBearer: []
+      responses:
+        '200':
+          description: 当前 Bot
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/BotRuntimeIdentity'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /runtime/bot/groups:
+    post:
+      tags: [BotRuntime]
+      operationId: createBotRuntimeGroup
+      summary: 以当前 Bot 身份创建平台群
+      security:
+        - BotRuntimeBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateImGroupRequest'}
+      responses:
+        '200':
+          description: 平台群
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ImGroup'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /runtime/bot/groups/{groupId}:
+    parameters:
+      - {$ref: '#/components/parameters/GroupId'}
+    get:
+      tags: [BotRuntime]
+      operationId: getBotRuntimeGroup
+      summary: 读取当前 Bot 所在平台群的成员与回复规则
+      security:
+        - BotRuntimeBearer: []
+      responses:
+        '200':
+          description: 平台群
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ImGroup'}
+        default: {$ref: '#/components/responses/Error'}
+    patch:
+      tags: [BotRuntime]
+      operationId: updateBotRuntimeGroup
+      summary: 以当前 Bot 身份修改群名或回复模式
+      security:
+        - BotRuntimeBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UpdateImGroupRequest'}
+      responses:
+        '200':
+          description: 更新后的平台群
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ImGroup'}
+        default: {$ref: '#/components/responses/Error'}
+    delete:
+      tags: [BotRuntime]
+      operationId: dismissBotRuntimeGroup
+      summary: 以当前 Bot 身份解散平台群
+      security:
+        - BotRuntimeBearer: []
+      responses:
+        '204': {description: 已解散}
+        default: {$ref: '#/components/responses/Error'}
+
+  /runtime/bot/groups/{groupId}/members/{userId}:
+    parameters:
+      - {$ref: '#/components/parameters/GroupId'}
+      - {$ref: '#/components/parameters/IMUserIdPath'}
+    put:
+      tags: [BotRuntime]
+      operationId: addBotRuntimeGroupMember
+      summary: 以当前 Bot 身份拉人
+      security:
+        - BotRuntimeBearer: []
+      responses:
+        '200':
+          description: 更新后的平台群
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ImGroup'}
+        default: {$ref: '#/components/responses/Error'}
+    delete:
+      tags: [BotRuntime]
+      operationId: removeBotRuntimeGroupMember
+      summary: 以当前 Bot 身份移出成员或退群
+      security:
+        - BotRuntimeBearer: []
+      responses:
+        '200':
+          description: 更新后的平台群
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ImGroup'}
         default: {$ref: '#/components/responses/Error'}
 
   /runtime/me:
@@ -2233,6 +2558,16 @@ components:
       in: header
       name: Authorization
       description: 使用短期 `Enrollment <cen1...>` 安装令牌；只允许认领和读取固化制品。
+    BotCredentialAuth:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: 使用 `BotCredential <vbc_...>`；只能换取该 Bot 自己的短期会话。
+    BotRuntimeBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: Bot Runtime JWT
+      description: 只接受 kind=bot_runtime_access 且凭据版本仍为当前版本的短期 Token。
 
   headers:
     ResourceRevision:
@@ -2240,6 +2575,22 @@ components:
       schema: {type: integer, format: int64, minimum: 0}
 
   parameters:
+    BotAgentId:
+      name: botAgentId
+      in: path
+      required: true
+      schema: {$ref: '#/components/schemas/Id'}
+    GroupId:
+      name: groupId
+      in: path
+      required: true
+      schema: {$ref: '#/components/schemas/Id'}
+      x-tdsql-shard-key: id
+    IMUserIdPath:
+      name: userId
+      in: path
+      required: true
+      schema: {$ref: '#/components/schemas/ImUserId'}
     ServerId:
       name: serverId
       in: path
@@ -2429,6 +2780,136 @@ components:
         userId: {type: string}
         userSig: {type: string, readOnly: true, x-sensitive: true}
         expiresAt: {$ref: '#/components/schemas/Timestamp'}
+
+    ImUserId:
+      type: string
+      pattern: '^[A-Za-z0-9_-]{1,32}$'
+
+    CommandPolicy:
+      type: string
+      enum: [owner, anyone]
+
+    GroupReplyMode:
+      type: string
+      enum: [mention, mention_context, all]
+
+    BotAgent:
+      type: object
+      additionalProperties: false
+      required: [id, instanceId, botId, displayName, userId, state, commandPolicy, revision]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        instanceId: {type: string, minLength: 1, maxLength: 128}
+        botId: {type: string, minLength: 1, maxLength: 128}
+        displayName: {type: string, minLength: 1, maxLength: 64}
+        userId: {$ref: '#/components/schemas/ImUserId'}
+        state: {type: string, enum: [provisioning, ready, error, deleted]}
+        lastErrorCode: {type: string, nullable: true}
+        commandPolicy: {$ref: '#/components/schemas/CommandPolicy'}
+        revision: {$ref: '#/components/schemas/Revision'}
+
+    BotAgentList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 200
+          items: {$ref: '#/components/schemas/BotAgent'}
+
+    ProvisionBotAgentRequest:
+      type: object
+      additionalProperties: false
+      required: [instanceId, botId, displayName]
+      properties:
+        instanceId: {type: string, minLength: 1, maxLength: 128, pattern: '^[A-Za-z0-9._:-]+$'}
+        botId: {type: string, minLength: 1, maxLength: 128, pattern: '^[A-Za-z0-9._:-]+$'}
+        displayName: {type: string, minLength: 1, maxLength: 64}
+
+    UpdateBotAgentRequest:
+      type: object
+      additionalProperties: false
+      required: [commandPolicy]
+      properties:
+        commandPolicy: {$ref: '#/components/schemas/CommandPolicy'}
+
+    BotRuntimeIdentity:
+      type: object
+      additionalProperties: false
+      required: [id, userId, displayName, commandPolicy, ownerUserIds]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        userId: {$ref: '#/components/schemas/ImUserId'}
+        displayName: {type: string}
+        commandPolicy: {$ref: '#/components/schemas/CommandPolicy'}
+        ownerUserIds:
+          type: array
+          maxItems: 201
+          items: {$ref: '#/components/schemas/ImUserId'}
+
+    BotSession:
+      type: object
+      additionalProperties: false
+      required: [accessToken, expiresAt, bot, im]
+      properties:
+        accessToken: {type: string, readOnly: true, x-sensitive: true}
+        expiresAt: {$ref: '#/components/schemas/Timestamp'}
+        bot: {$ref: '#/components/schemas/BotRuntimeIdentity'}
+        im: {$ref: '#/components/schemas/ImSession'}
+
+    ImGroupMember:
+      type: object
+      additionalProperties: false
+      required: [userId, kind, role]
+      properties:
+        userId: {$ref: '#/components/schemas/ImUserId'}
+        kind: {type: string, enum: [human, bot]}
+        role: {type: string, enum: [owner, admin, member]}
+
+    ImGroup:
+      type: object
+      additionalProperties: false
+      required: [id, tencentGroupId, name, replyMode, effectiveReplyMode, contextMessages, state, revision, members, viewerRole]
+      properties:
+        id: {$ref: '#/components/schemas/Id'}
+        tencentGroupId: {type: string}
+        name: {type: string}
+        replyMode: {$ref: '#/components/schemas/GroupReplyMode'}
+        effectiveReplyMode: {$ref: '#/components/schemas/GroupReplyMode'}
+        contextMessages: {type: integer, minimum: 0, maximum: 10}
+        state: {type: string, enum: [provisioning, active, dismissed]}
+        revision: {$ref: '#/components/schemas/Revision'}
+        members:
+          type: array
+          maxItems: 200
+          items: {$ref: '#/components/schemas/ImGroupMember'}
+        viewerRole: {type: string, enum: [owner, admin, member]}
+
+    CreateImGroupRequest:
+      type: object
+      additionalProperties: false
+      required: [groupId, name, memberUserIds]
+      properties:
+        groupId:
+          allOf:
+            - {$ref: '#/components/schemas/Id'}
+          description: 客户端生成的 UUIDv7；同一创建请求重试时保持不变。
+        name: {type: string, minLength: 1, maxLength: 100}
+        memberUserIds:
+          type: array
+          maxItems: 49
+          uniqueItems: true
+          items: {$ref: '#/components/schemas/ImUserId'}
+        replyMode: {$ref: '#/components/schemas/GroupReplyMode'}
+
+    UpdateImGroupRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name: {type: string, minLength: 1, maxLength: 100}
+        replyMode: {$ref: '#/components/schemas/GroupReplyMode'}
 
     Server:
       type: object

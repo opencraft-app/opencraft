@@ -256,6 +256,41 @@ var (
 			},
 		},
 	}
+	// BotAgentsColumns holds the columns for the "bot_agents" table.
+	BotAgentsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString, SchemaType: map[string]string{"mysql": "varchar(64)", "sqlite3": "text"}},
+		{Name: "account_id", Type: field.TypeString, SchemaType: map[string]string{"mysql": "varchar(64)", "sqlite3": "text"}},
+		{Name: "instance_id", Type: field.TypeString, Size: 128},
+		{Name: "bot_id", Type: field.TypeString, Size: 128},
+		{Name: "display_name", Type: field.TypeString, Size: 64},
+		{Name: "im_user_id", Type: field.TypeString, Size: 32, SchemaType: map[string]string{"mysql": "varchar(32)", "sqlite3": "text"}},
+		{Name: "state", Type: field.TypeString, Size: 32},
+		{Name: "last_error_code", Type: field.TypeString, Nullable: true, Size: 64},
+		{Name: "command_policy", Type: field.TypeString, Size: 32},
+		{Name: "credential_version", Type: field.TypeInt64},
+		{Name: "credential_digest", Type: field.TypeBytes, Nullable: true, Size: 32, SchemaType: map[string]string{"mysql": "binary(32)", "sqlite3": "blob"}},
+		{Name: "revision", Type: field.TypeInt64},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"mysql": "datetime(3)", "sqlite3": "datetime"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"mysql": "datetime(3)", "sqlite3": "datetime"}},
+	}
+	// BotAgentsTable holds the schema information for the "bot_agents" table.
+	BotAgentsTable = &schema.Table{
+		Name:       "bot_agents",
+		Columns:    BotAgentsColumns,
+		PrimaryKey: []*schema.Column{BotAgentsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "botagent_account_id_instance_id_bot_id",
+				Unique:  true,
+				Columns: []*schema.Column{BotAgentsColumns[1], BotAgentsColumns[2], BotAgentsColumns[3]},
+			},
+			{
+				Name:    "botagent_account_id_state_id",
+				Unique:  false,
+				Columns: []*schema.Column{BotAgentsColumns[1], BotAgentsColumns[6], BotAgentsColumns[0]},
+			},
+		},
+	}
 	// ChannelsColumns holds the columns for the "channels" table.
 	ChannelsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeString, SchemaType: map[string]string{"mysql": "varchar(64)", "sqlite3": "text"}},
@@ -596,6 +631,79 @@ var (
 				Name:    "directconversation_server_id_im_state_id",
 				Unique:  false,
 				Columns: []*schema.Column{DirectConversationsColumns[1], DirectConversationsColumns[6], DirectConversationsColumns[0]},
+			},
+		},
+	}
+	// ImGroupsColumns holds the columns for the "im_groups" table.
+	ImGroupsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString, SchemaType: map[string]string{"mysql": "varchar(64)", "sqlite3": "text"}},
+		{Name: "tencent_group_id", Type: field.TypeString, Size: 48},
+		{Name: "owner_account_id", Type: field.TypeString, SchemaType: map[string]string{"mysql": "varchar(64)", "sqlite3": "text"}},
+		{Name: "created_by_im_user_id", Type: field.TypeString, Size: 32, SchemaType: map[string]string{"mysql": "varchar(32)", "sqlite3": "text"}},
+		{Name: "name", Type: field.TypeString, Size: 100},
+		{Name: "reply_mode", Type: field.TypeString, Size: 32},
+		{Name: "state", Type: field.TypeString, Size: 32},
+		{Name: "revision", Type: field.TypeInt64},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"mysql": "datetime(3)", "sqlite3": "datetime"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"mysql": "datetime(3)", "sqlite3": "datetime"}},
+	}
+	// ImGroupsTable holds the schema information for the "im_groups" table.
+	ImGroupsTable = &schema.Table{
+		Name:       "im_groups",
+		Columns:    ImGroupsColumns,
+		PrimaryKey: []*schema.Column{ImGroupsColumns[0]},
+	}
+	// ImGroupMembersColumns holds the columns for the "im_group_members" table.
+	ImGroupMembersColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString, SchemaType: map[string]string{"mysql": "varchar(64)", "sqlite3": "text"}},
+		{Name: "group_id", Type: field.TypeString, SchemaType: map[string]string{"mysql": "varchar(64)", "sqlite3": "text"}},
+		{Name: "im_user_id", Type: field.TypeString, Size: 32, SchemaType: map[string]string{"mysql": "varchar(32)", "sqlite3": "text"}},
+		{Name: "kind", Type: field.TypeString, Size: 16},
+		{Name: "role", Type: field.TypeString, Size: 16},
+		{Name: "state", Type: field.TypeString, Size: 32},
+		{Name: "added_by_im_user_id", Type: field.TypeString, Size: 32, SchemaType: map[string]string{"mysql": "varchar(32)", "sqlite3": "text"}},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"mysql": "datetime(3)", "sqlite3": "datetime"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"mysql": "datetime(3)", "sqlite3": "datetime"}},
+	}
+	// ImGroupMembersTable holds the schema information for the "im_group_members" table.
+	ImGroupMembersTable = &schema.Table{
+		Name:       "im_group_members",
+		Columns:    ImGroupMembersColumns,
+		PrimaryKey: []*schema.Column{ImGroupMembersColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "imgroupmember_group_id_im_user_id",
+				Unique:  true,
+				Columns: []*schema.Column{ImGroupMembersColumns[1], ImGroupMembersColumns[2]},
+			},
+			{
+				Name:    "imgroupmember_group_id_state_id",
+				Unique:  false,
+				Columns: []*schema.Column{ImGroupMembersColumns[1], ImGroupMembersColumns[5], ImGroupMembersColumns[0]},
+			},
+		},
+	}
+	// ImIdentityRoutesColumns holds the columns for the "im_identity_routes" table.
+	ImIdentityRoutesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString, SchemaType: map[string]string{"mysql": "varchar(64)", "sqlite3": "text"}},
+		{Name: "im_user_id", Type: field.TypeString, Size: 32, SchemaType: map[string]string{"mysql": "varchar(32)", "sqlite3": "text"}},
+		{Name: "kind", Type: field.TypeString, Size: 16},
+		{Name: "account_id", Type: field.TypeString, SchemaType: map[string]string{"mysql": "varchar(64)", "sqlite3": "text"}},
+		{Name: "bot_agent_id", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"mysql": "varchar(64)", "sqlite3": "text"}},
+		{Name: "restricted_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"mysql": "datetime(3)", "sqlite3": "datetime"}},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"mysql": "datetime(3)", "sqlite3": "datetime"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"mysql": "datetime(3)", "sqlite3": "datetime"}},
+	}
+	// ImIdentityRoutesTable holds the schema information for the "im_identity_routes" table.
+	ImIdentityRoutesTable = &schema.Table{
+		Name:       "im_identity_routes",
+		Columns:    ImIdentityRoutesColumns,
+		PrimaryKey: []*schema.Column{ImIdentityRoutesColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "imidentityroute_im_user_id",
+				Unique:  true,
+				Columns: []*schema.Column{ImIdentityRoutesColumns[1]},
 			},
 		},
 	}
@@ -1067,6 +1175,7 @@ var (
 		AgentImRoutesTable,
 		AgentRuntimeCredentialsTable,
 		AuthSessionsTable,
+		BotAgentsTable,
 		ChannelsTable,
 		ChannelMembersTable,
 		ComputersTable,
@@ -1075,6 +1184,9 @@ var (
 		ComputerRuntimeCredentialsTable,
 		ComputerSetupCodesTable,
 		DirectConversationsTable,
+		ImGroupsTable,
+		ImGroupMembersTable,
+		ImIdentityRoutesTable,
 		IdempotencyRecordsTable,
 		MembersTable,
 		MessageThreadReadsTable,
@@ -1113,6 +1225,9 @@ func init() {
 	AuthSessionsTable.Annotation = &entsql.Annotation{
 		Table: "auth_sessions",
 	}
+	BotAgentsTable.Annotation = &entsql.Annotation{
+		Table: "bot_agents",
+	}
 	ChannelsTable.Annotation = &entsql.Annotation{
 		Table: "channels",
 	}
@@ -1136,6 +1251,15 @@ func init() {
 	}
 	DirectConversationsTable.Annotation = &entsql.Annotation{
 		Table: "direct_conversations",
+	}
+	ImGroupsTable.Annotation = &entsql.Annotation{
+		Table: "im_groups",
+	}
+	ImGroupMembersTable.Annotation = &entsql.Annotation{
+		Table: "im_group_members",
+	}
+	ImIdentityRoutesTable.Annotation = &entsql.Annotation{
+		Table: "im_identity_routes",
 	}
 	IdempotencyRecordsTable.Annotation = &entsql.Annotation{
 		Table: "idempotency_records",

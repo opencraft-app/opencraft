@@ -181,6 +181,11 @@ func scannerReferenceCoverage() []referenceCoverage {
 		{table: "reminder_occurrences", field: "agent_id", scope: ScopeServer, check: "occurrence_refs"},
 		{table: "tencent_operations", field: "server_id", scope: ScopeServer, check: "operation_partition"},
 		{table: "outbox_events", field: "server_id", scope: ScopeServer, check: "outbox_partition"},
+		{table: "bot_agents", field: "account_id", scope: ScopeAccount, check: "account_authority"},
+		{table: "im_identity_routes", field: "account_id", scope: ScopeRegistry, check: "registry_target"},
+		{table: "im_identity_routes", field: "bot_agent_id", scope: ScopeRegistry, check: "registry_target"},
+		{table: "im_groups", field: "owner_account_id", scope: ScopeRegistry, check: "registry_target"},
+		{table: "im_group_members", field: "group_id", scope: ScopeRegistry, check: "registry_target"},
 	}
 }
 
@@ -592,7 +597,22 @@ func (scanner *Scanner) scanRegistry(ctx context.Context, registryType, key, aft
 		return nil, nil
 	}
 	var registryQuery, authorityQuery, resourceType string
+	// targetlessAuthorityQuery 用于同一 registry 中没有二级目标的行（例如人类 IM 路由）。
+	targetlessAuthorityQuery := ""
 	switch registryType {
+	case "im-identity":
+		registryQuery = `SELECT id,account_id,COALESCE(bot_agent_id,'') FROM im_identity_routes WHERE im_user_id=? AND id>?`
+		authorityQuery = `SELECT COUNT(*) FROM bot_agents WHERE account_id=? AND id=?`
+		targetlessAuthorityQuery = `SELECT COUNT(*) FROM accounts WHERE id=?`
+		resourceType = "im_identity_route"
+	case "im-group":
+		registryQuery = `SELECT id,owner_account_id,'' FROM im_groups WHERE id=? AND id>?`
+		authorityQuery = `SELECT COUNT(*) FROM accounts WHERE id=?`
+		resourceType = "im_group"
+	case "im-group-member":
+		registryQuery = `SELECT id,group_id,'' FROM im_group_members WHERE group_id=? AND id>?`
+		authorityQuery = `SELECT COUNT(*) FROM im_groups WHERE id=?`
+		resourceType = "im_group_member"
 	case "login":
 		registryQuery = `SELECT id,account_id,'' FROM account_login_identities WHERE login_hash=? AND id>?`
 		authorityQuery = `SELECT COUNT(*) FROM accounts WHERE id=?`
@@ -639,7 +659,9 @@ func (scanner *Scanner) scanRegistry(ctx context.Context, registryType, key, aft
 	for _, value := range values {
 		var count int
 		var err error
-		if value.target == "" {
+		if value.target == "" && targetlessAuthorityQuery != "" {
+			err = scanner.db.QueryRowContext(ctx, targetlessAuthorityQuery, value.route).Scan(&count)
+		} else if value.target == "" {
 			err = scanner.db.QueryRowContext(ctx, authorityQuery, value.route).Scan(&count)
 		} else {
 			err = scanner.db.QueryRowContext(ctx, authorityQuery, value.route, value.target).Scan(&count)
@@ -656,7 +678,8 @@ func (scanner *Scanner) scanRegistry(ctx context.Context, registryType, key, aft
 
 func knownRegistry(value string) bool {
 	switch value {
-	case "login", "server-slug", "tat-binding", "computer-provider", "agent-im-route", "computer-setup":
+	case "login", "server-slug", "tat-binding", "computer-provider", "agent-im-route", "computer-setup",
+		"im-identity", "im-group", "im-group-member":
 		return true
 	default:
 		return false

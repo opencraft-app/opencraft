@@ -15,8 +15,8 @@ func TestCurrent包含完整物理规格(t *testing.T) {
 		t.Fatalf("Current() error = %v", err)
 	}
 	tables := catalog.Tables()
-	if len(tables) != 28 {
-		t.Fatalf("Tables() 数量 = %d，期望 28", len(tables))
+	if len(tables) != 32 {
+		t.Fatalf("Tables() 数量 = %d，期望 32", len(tables))
 	}
 	for _, table := range tables {
 		wantPK := []string{table.ShardKey, "id"}

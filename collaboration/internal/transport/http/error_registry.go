@@ -105,6 +105,15 @@ var errorMappings = []ErrorMapping{
 	{Code: "route_not_found", Status: http.StatusNotFound, Message: "接口不存在"},
 	{Code: "method_not_allowed", Status: http.StatusMethodNotAllowed, Message: "请求方法不受支持"},
 	{Code: "internal_error", Status: http.StatusInternalServerError, Message: "服务暂时无法完成请求"},
+
+	{Code: "bot_agent_not_found", Status: http.StatusNotFound, Message: "Bot IM 身份不存在"},
+	{Code: "bot_agent_not_ready", Status: http.StatusConflict, Message: "Bot IM 身份尚未就绪"},
+	{Code: "bot_instance_not_owned", Status: http.StatusForbidden, Message: "LightVela 实例或 Bot 不属于当前账号"},
+	{Code: "bot_host_unavailable", Status: http.StatusServiceUnavailable, Message: "暂时无法把凭据交付到 Bot 所在实例"},
+	{Code: "im_group_not_found", Status: http.StatusNotFound, Message: "群聊不存在或当前身份不在群内"},
+	{Code: "im_group_not_ready", Status: http.StatusConflict, Message: "群聊尚未就绪"},
+	{Code: "im_identity_unknown", Status: http.StatusUnprocessableEntity, Message: "IM 身份尚未在平台开通"},
+	{Code: "im_identity_restricted", Status: http.StatusForbidden, Message: "该 IM 身份已被限制"},
 }
 
 var errorMappingByCode = func() map[string]ErrorMapping {

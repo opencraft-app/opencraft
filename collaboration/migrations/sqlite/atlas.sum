@@ -1,4 +1,4 @@
-h1:bYImVs4e5sVhgfnA4z5jU7/EvjG9prUdXa5K0Pb/haM=
+h1:uXo4PYD0dyMkBR+ALulRhbq+bbVUPKDEAI6WQVqyI5c=
 20260730040159_baseline.sql h1:va9A487WcrBqc/OmVLdwyxdgZO9bsk8Zc129H6r7cwE=
 20260731031305_agent_presence.sql h1:sh7kjkREUckI+7n1uR2jCRt9f2ammYtpy5cGLnU9UEg=
 20260731071908_message_threads.sql h1:X/OrOn4YWQeqgkGuhgraaknKxdKKxpaRFIray9HZ/MM=
@@ -13,3 +13,4 @@ h1:bYImVs4e5sVhgfnA4z5jU7/EvjG9prUdXa5K0Pb/haM=
 20260804120000_agent_handle_reuse.sql h1:1xnbmGoyLbS9AFeH5FfaauHCCYu+I9o6rmsvgwWckJQ=
 20260804130000_server_scoped_direct_messages.sql h1:4psTy0f6sO8Qnp0VHEMYLzWfYMKZR6OBRNwijI1fYRQ=
 20260914141219_computer_v2.sql h1:n4BjFJ9X123xT9mOJpRiLXnrYtoPvaehTLqimOeKEAk=
+20261012070610_bot_agents_and_im_groups.sql h1:hMwphK0hgxf5HwU+c2lPYgzKlurAFEEfPjClRkcOeWQ=

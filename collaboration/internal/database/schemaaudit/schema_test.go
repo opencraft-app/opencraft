@@ -213,6 +213,23 @@ func schemaContracts() map[string]tableContract {
 			fields:  "id server_id channel_id member_id state im_state membership_version created_at updated_at",
 			indexes: []indexContract{u("server_id,channel_id,member_id"), n("server_id,member_id,state,channel_id"), n("server_id,channel_id,state,member_id")},
 		},
+		"bot_agents": {
+			fields:   "id account_id instance_id bot_id display_name im_user_id state last_error_code command_policy credential_version credential_digest revision created_at updated_at",
+			nillable: "last_error_code credential_digest",
+			indexes:  []indexContract{u("account_id,instance_id,bot_id"), n("account_id,state,id")},
+		},
+		"im_identity_routes": {
+			fields:   "id im_user_id kind account_id bot_agent_id restricted_at created_at updated_at",
+			nillable: "bot_agent_id restricted_at",
+			indexes:  []indexContract{u("im_user_id")},
+		},
+		"im_groups": {
+			fields: "id tencent_group_id owner_account_id created_by_im_user_id name reply_mode state revision created_at updated_at",
+		},
+		"im_group_members": {
+			fields:  "id group_id im_user_id kind role state added_by_im_user_id created_at updated_at",
+			indexes: []indexContract{u("group_id,im_user_id"), n("group_id,state,id")},
+		},
 		"direct_conversations": {
 			fields:  "id server_id member_a_id member_b_id im_group_id status im_state revision created_at updated_at",
 			indexes: []indexContract{u("server_id,member_a_id,member_b_id"), u("server_id,im_group_id"), n("server_id,member_a_id,updated_at,id"), n("server_id,member_b_id,updated_at,id"), n("server_id,im_state,id")},

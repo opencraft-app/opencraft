@@ -7,10 +7,10 @@ import (
 	"strconv"
 	"strings"
 
-	entmigrate "git.woa.com/wisp/mono2/collaboration/internal/ent/migrate"
 	"entgo.io/ent/dialect"
 	entschema "entgo.io/ent/dialect/sql/schema"
 	"entgo.io/ent/schema/field"
+	entmigrate "git.woa.com/wisp/mono2/collaboration/internal/ent/migrate"
 )
 
 // TableKind 是 TDSQL 业务表的物理分布类型。
@@ -68,8 +68,7 @@ func Baseline20260801000000() (*Catalog, error) {
 	}
 	baselineDesired := desired[:0]
 	for _, table := range desired {
-		if table.Name == "computer_setup_codes" || table.Name == "direct_conversations" ||
-			table.Name == "computer_provider_bindings" {
+		if isPostBaselineTable(table.Name) {
 			continue
 		}
 		if table.Name == "computers" {
@@ -134,12 +133,21 @@ func Baseline20260801000000() (*Catalog, error) {
 	entries := Manifest()
 	baselineEntries := entries[:0]
 	for _, entry := range entries {
-		if entry.Table != "computer_setup_codes" && entry.Table != "direct_conversations" &&
-			entry.Table != "computer_provider_bindings" {
+		if !isPostBaselineTable(entry.Table) {
 			baselineEntries = append(baselineEntries, entry)
 		}
 	}
 	return Build(baselineEntries, baselineDesired)
+}
+
+func isPostBaselineTable(name string) bool {
+	switch name {
+	case "computer_setup_codes", "direct_conversations", "computer_provider_bindings",
+		"bot_agents", "im_identity_routes", "im_groups", "im_group_members":
+		return true
+	default:
+		return false
+	}
 }
 
 func isComputerV2Column(name string) bool {

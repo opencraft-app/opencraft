@@ -82,6 +82,9 @@ func (s *HMACJWT) Sign(
 	case tokenport.ClaimsComputerAccess:
 		payload.ServerID = claims.ServerID()
 		payload.ComputerID = claims.ComputerID()
+	case tokenport.ClaimsBotRuntimeAccess:
+		payload.Subject = claims.AccountID()
+		payload.AgentID = claims.AgentID()
 	default:
 		return "", tokenport.ErrInvalidClaims
 	}
@@ -172,6 +175,19 @@ func (s *HMACJWT) Verify(
 			payload.Version,
 			issuedAt,
 			expiresAt,
+		)
+		if err != nil {
+			return tokenport.Claims{}, tokenport.ErrInvalidToken
+		}
+		return claims, nil
+	case tokenport.ClaimsBotRuntimeAccess:
+		if payload.SessionID != "" || payload.ServerID != "" || payload.ComputerID != "" ||
+			payload.LaunchID != "" || payload.AssignmentEpoch != "" ||
+			payload.ConfigGeneration != 0 || payload.Attempt != 0 {
+			return tokenport.Claims{}, tokenport.ErrInvalidToken
+		}
+		claims, err := tokenport.NewBotRuntimeClaims(
+			payload.Subject, payload.AgentID, payload.Version, issuedAt, expiresAt,
 		)
 		if err != nil {
 			return tokenport.Claims{}, tokenport.ErrInvalidToken

@@ -37,6 +37,10 @@ var manifest = []Entry{
 	{Schema: "TencentOperation", Table: "tencent_operations", ShardKey: "partition_key"},
 	{Schema: "IdempotencyRecord", Table: "idempotency_records", ShardKey: "partition_key"},
 	{Schema: "OutboxEvent", Table: "outbox_events", ShardKey: "partition_key"},
+	{Schema: "BotAgent", Table: "bot_agents", ShardKey: "account_id"},
+	{Schema: "IMIdentityRoute", Table: "im_identity_routes", ShardKey: "im_user_id"},
+	{Schema: "IMGroup", Table: "im_groups", ShardKey: "id"},
+	{Schema: "IMGroupMember", Table: "im_group_members", ShardKey: "group_id"},
 }
 
 // Manifest 返回物理路由清单的副本。

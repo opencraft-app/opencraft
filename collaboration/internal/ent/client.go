@@ -21,6 +21,7 @@ import (
 	"git.woa.com/wisp/mono2/collaboration/internal/ent/agentimroute"
 	"git.woa.com/wisp/mono2/collaboration/internal/ent/agentruntimecredential"
 	"git.woa.com/wisp/mono2/collaboration/internal/ent/authsession"
+	"git.woa.com/wisp/mono2/collaboration/internal/ent/botagent"
 	"git.woa.com/wisp/mono2/collaboration/internal/ent/channel"
 	"git.woa.com/wisp/mono2/collaboration/internal/ent/channelmember"
 	"git.woa.com/wisp/mono2/collaboration/internal/ent/computer"
@@ -30,6 +31,9 @@ import (
 	"git.woa.com/wisp/mono2/collaboration/internal/ent/computersetupcode"
 	"git.woa.com/wisp/mono2/collaboration/internal/ent/directconversation"
 	"git.woa.com/wisp/mono2/collaboration/internal/ent/idempotencyrecord"
+	"git.woa.com/wisp/mono2/collaboration/internal/ent/imgroup"
+	"git.woa.com/wisp/mono2/collaboration/internal/ent/imgroupmember"
+	"git.woa.com/wisp/mono2/collaboration/internal/ent/imidentityroute"
 	"git.woa.com/wisp/mono2/collaboration/internal/ent/member"
 	"git.woa.com/wisp/mono2/collaboration/internal/ent/messagethreadread"
 	"git.woa.com/wisp/mono2/collaboration/internal/ent/messagethreadref"
@@ -63,6 +67,8 @@ type Client struct {
 	AgentRuntimeCredential *AgentRuntimeCredentialClient
 	// AuthSession is the client for interacting with the AuthSession builders.
 	AuthSession *AuthSessionClient
+	// BotAgent is the client for interacting with the BotAgent builders.
+	BotAgent *BotAgentClient
 	// Channel is the client for interacting with the Channel builders.
 	Channel *ChannelClient
 	// ChannelMember is the client for interacting with the ChannelMember builders.
@@ -79,6 +85,12 @@ type Client struct {
 	ComputerSetupCode *ComputerSetupCodeClient
 	// DirectConversation is the client for interacting with the DirectConversation builders.
 	DirectConversation *DirectConversationClient
+	// IMGroup is the client for interacting with the IMGroup builders.
+	IMGroup *IMGroupClient
+	// IMGroupMember is the client for interacting with the IMGroupMember builders.
+	IMGroupMember *IMGroupMemberClient
+	// IMIdentityRoute is the client for interacting with the IMIdentityRoute builders.
+	IMIdentityRoute *IMIdentityRouteClient
 	// IdempotencyRecord is the client for interacting with the IdempotencyRecord builders.
 	IdempotencyRecord *IdempotencyRecordClient
 	// Member is the client for interacting with the Member builders.
@@ -123,6 +135,7 @@ func (c *Client) init() {
 	c.AgentIMRoute = NewAgentIMRouteClient(c.config)
 	c.AgentRuntimeCredential = NewAgentRuntimeCredentialClient(c.config)
 	c.AuthSession = NewAuthSessionClient(c.config)
+	c.BotAgent = NewBotAgentClient(c.config)
 	c.Channel = NewChannelClient(c.config)
 	c.ChannelMember = NewChannelMemberClient(c.config)
 	c.Computer = NewComputerClient(c.config)
@@ -131,6 +144,9 @@ func (c *Client) init() {
 	c.ComputerRuntimeCredential = NewComputerRuntimeCredentialClient(c.config)
 	c.ComputerSetupCode = NewComputerSetupCodeClient(c.config)
 	c.DirectConversation = NewDirectConversationClient(c.config)
+	c.IMGroup = NewIMGroupClient(c.config)
+	c.IMGroupMember = NewIMGroupMemberClient(c.config)
+	c.IMIdentityRoute = NewIMIdentityRouteClient(c.config)
 	c.IdempotencyRecord = NewIdempotencyRecordClient(c.config)
 	c.Member = NewMemberClient(c.config)
 	c.MessageThreadRead = NewMessageThreadReadClient(c.config)
@@ -243,6 +259,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		AgentIMRoute:              NewAgentIMRouteClient(cfg),
 		AgentRuntimeCredential:    NewAgentRuntimeCredentialClient(cfg),
 		AuthSession:               NewAuthSessionClient(cfg),
+		BotAgent:                  NewBotAgentClient(cfg),
 		Channel:                   NewChannelClient(cfg),
 		ChannelMember:             NewChannelMemberClient(cfg),
 		Computer:                  NewComputerClient(cfg),
@@ -251,6 +268,9 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		ComputerRuntimeCredential: NewComputerRuntimeCredentialClient(cfg),
 		ComputerSetupCode:         NewComputerSetupCodeClient(cfg),
 		DirectConversation:        NewDirectConversationClient(cfg),
+		IMGroup:                   NewIMGroupClient(cfg),
+		IMGroupMember:             NewIMGroupMemberClient(cfg),
+		IMIdentityRoute:           NewIMIdentityRouteClient(cfg),
 		IdempotencyRecord:         NewIdempotencyRecordClient(cfg),
 		Member:                    NewMemberClient(cfg),
 		MessageThreadRead:         NewMessageThreadReadClient(cfg),
@@ -290,6 +310,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		AgentIMRoute:              NewAgentIMRouteClient(cfg),
 		AgentRuntimeCredential:    NewAgentRuntimeCredentialClient(cfg),
 		AuthSession:               NewAuthSessionClient(cfg),
+		BotAgent:                  NewBotAgentClient(cfg),
 		Channel:                   NewChannelClient(cfg),
 		ChannelMember:             NewChannelMemberClient(cfg),
 		Computer:                  NewComputerClient(cfg),
@@ -298,6 +319,9 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		ComputerRuntimeCredential: NewComputerRuntimeCredentialClient(cfg),
 		ComputerSetupCode:         NewComputerSetupCodeClient(cfg),
 		DirectConversation:        NewDirectConversationClient(cfg),
+		IMGroup:                   NewIMGroupClient(cfg),
+		IMGroupMember:             NewIMGroupMemberClient(cfg),
+		IMIdentityRoute:           NewIMIdentityRouteClient(cfg),
 		IdempotencyRecord:         NewIdempotencyRecordClient(cfg),
 		Member:                    NewMemberClient(cfg),
 		MessageThreadRead:         NewMessageThreadReadClient(cfg),
@@ -341,13 +365,13 @@ func (c *Client) Close() error {
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
 		c.Account, c.AccountLoginIdentity, c.AccountServerMembership, c.Agent,
-		c.AgentIMRoute, c.AgentRuntimeCredential, c.AuthSession, c.Channel,
+		c.AgentIMRoute, c.AgentRuntimeCredential, c.AuthSession, c.BotAgent, c.Channel,
 		c.ChannelMember, c.Computer, c.ComputerAgentObservation,
 		c.ComputerProviderBinding, c.ComputerRuntimeCredential, c.ComputerSetupCode,
-		c.DirectConversation, c.IdempotencyRecord, c.Member, c.MessageThreadRead,
-		c.MessageThreadRef, c.OutboxEvent, c.Reminder, c.ReminderOccurrence, c.Server,
-		c.ServerInvite, c.ServerSlugRegistry, c.TATInstanceBinding, c.Task,
-		c.TencentOperation,
+		c.DirectConversation, c.IMGroup, c.IMGroupMember, c.IMIdentityRoute,
+		c.IdempotencyRecord, c.Member, c.MessageThreadRead, c.MessageThreadRef,
+		c.OutboxEvent, c.Reminder, c.ReminderOccurrence, c.Server, c.ServerInvite,
+		c.ServerSlugRegistry, c.TATInstanceBinding, c.Task, c.TencentOperation,
 	} {
 		n.Use(hooks...)
 	}
@@ -358,13 +382,13 @@ func (c *Client) Use(hooks ...Hook) {
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
 		c.Account, c.AccountLoginIdentity, c.AccountServerMembership, c.Agent,
-		c.AgentIMRoute, c.AgentRuntimeCredential, c.AuthSession, c.Channel,
+		c.AgentIMRoute, c.AgentRuntimeCredential, c.AuthSession, c.BotAgent, c.Channel,
 		c.ChannelMember, c.Computer, c.ComputerAgentObservation,
 		c.ComputerProviderBinding, c.ComputerRuntimeCredential, c.ComputerSetupCode,
-		c.DirectConversation, c.IdempotencyRecord, c.Member, c.MessageThreadRead,
-		c.MessageThreadRef, c.OutboxEvent, c.Reminder, c.ReminderOccurrence, c.Server,
-		c.ServerInvite, c.ServerSlugRegistry, c.TATInstanceBinding, c.Task,
-		c.TencentOperation,
+		c.DirectConversation, c.IMGroup, c.IMGroupMember, c.IMIdentityRoute,
+		c.IdempotencyRecord, c.Member, c.MessageThreadRead, c.MessageThreadRef,
+		c.OutboxEvent, c.Reminder, c.ReminderOccurrence, c.Server, c.ServerInvite,
+		c.ServerSlugRegistry, c.TATInstanceBinding, c.Task, c.TencentOperation,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -387,6 +411,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.AgentRuntimeCredential.mutate(ctx, m)
 	case *AuthSessionMutation:
 		return c.AuthSession.mutate(ctx, m)
+	case *BotAgentMutation:
+		return c.BotAgent.mutate(ctx, m)
 	case *ChannelMutation:
 		return c.Channel.mutate(ctx, m)
 	case *ChannelMemberMutation:
@@ -403,6 +429,12 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.ComputerSetupCode.mutate(ctx, m)
 	case *DirectConversationMutation:
 		return c.DirectConversation.mutate(ctx, m)
+	case *IMGroupMutation:
+		return c.IMGroup.mutate(ctx, m)
+	case *IMGroupMemberMutation:
+		return c.IMGroupMember.mutate(ctx, m)
+	case *IMIdentityRouteMutation:
+		return c.IMIdentityRoute.mutate(ctx, m)
 	case *IdempotencyRecordMutation:
 		return c.IdempotencyRecord.mutate(ctx, m)
 	case *MemberMutation:
@@ -1362,6 +1394,139 @@ func (c *AuthSessionClient) mutate(ctx context.Context, m *AuthSessionMutation) 
 		return (&AuthSessionDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown AuthSession mutation op: %q", m.Op())
+	}
+}
+
+// BotAgentClient is a client for the BotAgent schema.
+type BotAgentClient struct {
+	config
+}
+
+// NewBotAgentClient returns a client for the BotAgent from the given config.
+func NewBotAgentClient(c config) *BotAgentClient {
+	return &BotAgentClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `botagent.Hooks(f(g(h())))`.
+func (c *BotAgentClient) Use(hooks ...Hook) {
+	c.hooks.BotAgent = append(c.hooks.BotAgent, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `botagent.Intercept(f(g(h())))`.
+func (c *BotAgentClient) Intercept(interceptors ...Interceptor) {
+	c.inters.BotAgent = append(c.inters.BotAgent, interceptors...)
+}
+
+// Create returns a builder for creating a BotAgent entity.
+func (c *BotAgentClient) Create() *BotAgentCreate {
+	mutation := newBotAgentMutation(c.config, OpCreate)
+	return &BotAgentCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of BotAgent entities.
+func (c *BotAgentClient) CreateBulk(builders ...*BotAgentCreate) *BotAgentCreateBulk {
+	return &BotAgentCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *BotAgentClient) MapCreateBulk(slice any, setFunc func(*BotAgentCreate, int)) *BotAgentCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &BotAgentCreateBulk{err: fmt.Errorf("calling to BotAgentClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*BotAgentCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &BotAgentCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for BotAgent.
+func (c *BotAgentClient) Update() *BotAgentUpdate {
+	mutation := newBotAgentMutation(c.config, OpUpdate)
+	return &BotAgentUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *BotAgentClient) UpdateOne(_m *BotAgent) *BotAgentUpdateOne {
+	mutation := newBotAgentMutation(c.config, OpUpdateOne, withBotAgent(_m))
+	return &BotAgentUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *BotAgentClient) UpdateOneID(id string) *BotAgentUpdateOne {
+	mutation := newBotAgentMutation(c.config, OpUpdateOne, withBotAgentID(id))
+	return &BotAgentUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for BotAgent.
+func (c *BotAgentClient) Delete() *BotAgentDelete {
+	mutation := newBotAgentMutation(c.config, OpDelete)
+	return &BotAgentDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *BotAgentClient) DeleteOne(_m *BotAgent) *BotAgentDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *BotAgentClient) DeleteOneID(id string) *BotAgentDeleteOne {
+	builder := c.Delete().Where(botagent.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &BotAgentDeleteOne{builder}
+}
+
+// Query returns a query builder for BotAgent.
+func (c *BotAgentClient) Query() *BotAgentQuery {
+	return &BotAgentQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeBotAgent},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a BotAgent entity by its id.
+func (c *BotAgentClient) Get(ctx context.Context, id string) (*BotAgent, error) {
+	return c.Query().Where(botagent.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *BotAgentClient) GetX(ctx context.Context, id string) *BotAgent {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *BotAgentClient) Hooks() []Hook {
+	return c.hooks.BotAgent
+}
+
+// Interceptors returns the client interceptors.
+func (c *BotAgentClient) Interceptors() []Interceptor {
+	return c.inters.BotAgent
+}
+
+func (c *BotAgentClient) mutate(ctx context.Context, m *BotAgentMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&BotAgentCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&BotAgentUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&BotAgentUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&BotAgentDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown BotAgent mutation op: %q", m.Op())
 	}
 }
 
@@ -2426,6 +2591,405 @@ func (c *DirectConversationClient) mutate(ctx context.Context, m *DirectConversa
 		return (&DirectConversationDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown DirectConversation mutation op: %q", m.Op())
+	}
+}
+
+// IMGroupClient is a client for the IMGroup schema.
+type IMGroupClient struct {
+	config
+}
+
+// NewIMGroupClient returns a client for the IMGroup from the given config.
+func NewIMGroupClient(c config) *IMGroupClient {
+	return &IMGroupClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `imgroup.Hooks(f(g(h())))`.
+func (c *IMGroupClient) Use(hooks ...Hook) {
+	c.hooks.IMGroup = append(c.hooks.IMGroup, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `imgroup.Intercept(f(g(h())))`.
+func (c *IMGroupClient) Intercept(interceptors ...Interceptor) {
+	c.inters.IMGroup = append(c.inters.IMGroup, interceptors...)
+}
+
+// Create returns a builder for creating a IMGroup entity.
+func (c *IMGroupClient) Create() *IMGroupCreate {
+	mutation := newIMGroupMutation(c.config, OpCreate)
+	return &IMGroupCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of IMGroup entities.
+func (c *IMGroupClient) CreateBulk(builders ...*IMGroupCreate) *IMGroupCreateBulk {
+	return &IMGroupCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *IMGroupClient) MapCreateBulk(slice any, setFunc func(*IMGroupCreate, int)) *IMGroupCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &IMGroupCreateBulk{err: fmt.Errorf("calling to IMGroupClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*IMGroupCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &IMGroupCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for IMGroup.
+func (c *IMGroupClient) Update() *IMGroupUpdate {
+	mutation := newIMGroupMutation(c.config, OpUpdate)
+	return &IMGroupUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *IMGroupClient) UpdateOne(_m *IMGroup) *IMGroupUpdateOne {
+	mutation := newIMGroupMutation(c.config, OpUpdateOne, withIMGroup(_m))
+	return &IMGroupUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *IMGroupClient) UpdateOneID(id string) *IMGroupUpdateOne {
+	mutation := newIMGroupMutation(c.config, OpUpdateOne, withIMGroupID(id))
+	return &IMGroupUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for IMGroup.
+func (c *IMGroupClient) Delete() *IMGroupDelete {
+	mutation := newIMGroupMutation(c.config, OpDelete)
+	return &IMGroupDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *IMGroupClient) DeleteOne(_m *IMGroup) *IMGroupDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *IMGroupClient) DeleteOneID(id string) *IMGroupDeleteOne {
+	builder := c.Delete().Where(imgroup.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &IMGroupDeleteOne{builder}
+}
+
+// Query returns a query builder for IMGroup.
+func (c *IMGroupClient) Query() *IMGroupQuery {
+	return &IMGroupQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeIMGroup},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a IMGroup entity by its id.
+func (c *IMGroupClient) Get(ctx context.Context, id string) (*IMGroup, error) {
+	return c.Query().Where(imgroup.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *IMGroupClient) GetX(ctx context.Context, id string) *IMGroup {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *IMGroupClient) Hooks() []Hook {
+	return c.hooks.IMGroup
+}
+
+// Interceptors returns the client interceptors.
+func (c *IMGroupClient) Interceptors() []Interceptor {
+	return c.inters.IMGroup
+}
+
+func (c *IMGroupClient) mutate(ctx context.Context, m *IMGroupMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&IMGroupCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&IMGroupUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&IMGroupUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&IMGroupDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown IMGroup mutation op: %q", m.Op())
+	}
+}
+
+// IMGroupMemberClient is a client for the IMGroupMember schema.
+type IMGroupMemberClient struct {
+	config
+}
+
+// NewIMGroupMemberClient returns a client for the IMGroupMember from the given config.
+func NewIMGroupMemberClient(c config) *IMGroupMemberClient {
+	return &IMGroupMemberClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `imgroupmember.Hooks(f(g(h())))`.
+func (c *IMGroupMemberClient) Use(hooks ...Hook) {
+	c.hooks.IMGroupMember = append(c.hooks.IMGroupMember, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `imgroupmember.Intercept(f(g(h())))`.
+func (c *IMGroupMemberClient) Intercept(interceptors ...Interceptor) {
+	c.inters.IMGroupMember = append(c.inters.IMGroupMember, interceptors...)
+}
+
+// Create returns a builder for creating a IMGroupMember entity.
+func (c *IMGroupMemberClient) Create() *IMGroupMemberCreate {
+	mutation := newIMGroupMemberMutation(c.config, OpCreate)
+	return &IMGroupMemberCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of IMGroupMember entities.
+func (c *IMGroupMemberClient) CreateBulk(builders ...*IMGroupMemberCreate) *IMGroupMemberCreateBulk {
+	return &IMGroupMemberCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *IMGroupMemberClient) MapCreateBulk(slice any, setFunc func(*IMGroupMemberCreate, int)) *IMGroupMemberCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &IMGroupMemberCreateBulk{err: fmt.Errorf("calling to IMGroupMemberClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*IMGroupMemberCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &IMGroupMemberCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for IMGroupMember.
+func (c *IMGroupMemberClient) Update() *IMGroupMemberUpdate {
+	mutation := newIMGroupMemberMutation(c.config, OpUpdate)
+	return &IMGroupMemberUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *IMGroupMemberClient) UpdateOne(_m *IMGroupMember) *IMGroupMemberUpdateOne {
+	mutation := newIMGroupMemberMutation(c.config, OpUpdateOne, withIMGroupMember(_m))
+	return &IMGroupMemberUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *IMGroupMemberClient) UpdateOneID(id string) *IMGroupMemberUpdateOne {
+	mutation := newIMGroupMemberMutation(c.config, OpUpdateOne, withIMGroupMemberID(id))
+	return &IMGroupMemberUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for IMGroupMember.
+func (c *IMGroupMemberClient) Delete() *IMGroupMemberDelete {
+	mutation := newIMGroupMemberMutation(c.config, OpDelete)
+	return &IMGroupMemberDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *IMGroupMemberClient) DeleteOne(_m *IMGroupMember) *IMGroupMemberDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *IMGroupMemberClient) DeleteOneID(id string) *IMGroupMemberDeleteOne {
+	builder := c.Delete().Where(imgroupmember.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &IMGroupMemberDeleteOne{builder}
+}
+
+// Query returns a query builder for IMGroupMember.
+func (c *IMGroupMemberClient) Query() *IMGroupMemberQuery {
+	return &IMGroupMemberQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeIMGroupMember},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a IMGroupMember entity by its id.
+func (c *IMGroupMemberClient) Get(ctx context.Context, id string) (*IMGroupMember, error) {
+	return c.Query().Where(imgroupmember.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *IMGroupMemberClient) GetX(ctx context.Context, id string) *IMGroupMember {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *IMGroupMemberClient) Hooks() []Hook {
+	return c.hooks.IMGroupMember
+}
+
+// Interceptors returns the client interceptors.
+func (c *IMGroupMemberClient) Interceptors() []Interceptor {
+	return c.inters.IMGroupMember
+}
+
+func (c *IMGroupMemberClient) mutate(ctx context.Context, m *IMGroupMemberMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&IMGroupMemberCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&IMGroupMemberUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&IMGroupMemberUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&IMGroupMemberDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown IMGroupMember mutation op: %q", m.Op())
+	}
+}
+
+// IMIdentityRouteClient is a client for the IMIdentityRoute schema.
+type IMIdentityRouteClient struct {
+	config
+}
+
+// NewIMIdentityRouteClient returns a client for the IMIdentityRoute from the given config.
+func NewIMIdentityRouteClient(c config) *IMIdentityRouteClient {
+	return &IMIdentityRouteClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `imidentityroute.Hooks(f(g(h())))`.
+func (c *IMIdentityRouteClient) Use(hooks ...Hook) {
+	c.hooks.IMIdentityRoute = append(c.hooks.IMIdentityRoute, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `imidentityroute.Intercept(f(g(h())))`.
+func (c *IMIdentityRouteClient) Intercept(interceptors ...Interceptor) {
+	c.inters.IMIdentityRoute = append(c.inters.IMIdentityRoute, interceptors...)
+}
+
+// Create returns a builder for creating a IMIdentityRoute entity.
+func (c *IMIdentityRouteClient) Create() *IMIdentityRouteCreate {
+	mutation := newIMIdentityRouteMutation(c.config, OpCreate)
+	return &IMIdentityRouteCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of IMIdentityRoute entities.
+func (c *IMIdentityRouteClient) CreateBulk(builders ...*IMIdentityRouteCreate) *IMIdentityRouteCreateBulk {
+	return &IMIdentityRouteCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *IMIdentityRouteClient) MapCreateBulk(slice any, setFunc func(*IMIdentityRouteCreate, int)) *IMIdentityRouteCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &IMIdentityRouteCreateBulk{err: fmt.Errorf("calling to IMIdentityRouteClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*IMIdentityRouteCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &IMIdentityRouteCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for IMIdentityRoute.
+func (c *IMIdentityRouteClient) Update() *IMIdentityRouteUpdate {
+	mutation := newIMIdentityRouteMutation(c.config, OpUpdate)
+	return &IMIdentityRouteUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *IMIdentityRouteClient) UpdateOne(_m *IMIdentityRoute) *IMIdentityRouteUpdateOne {
+	mutation := newIMIdentityRouteMutation(c.config, OpUpdateOne, withIMIdentityRoute(_m))
+	return &IMIdentityRouteUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *IMIdentityRouteClient) UpdateOneID(id string) *IMIdentityRouteUpdateOne {
+	mutation := newIMIdentityRouteMutation(c.config, OpUpdateOne, withIMIdentityRouteID(id))
+	return &IMIdentityRouteUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for IMIdentityRoute.
+func (c *IMIdentityRouteClient) Delete() *IMIdentityRouteDelete {
+	mutation := newIMIdentityRouteMutation(c.config, OpDelete)
+	return &IMIdentityRouteDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *IMIdentityRouteClient) DeleteOne(_m *IMIdentityRoute) *IMIdentityRouteDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *IMIdentityRouteClient) DeleteOneID(id string) *IMIdentityRouteDeleteOne {
+	builder := c.Delete().Where(imidentityroute.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &IMIdentityRouteDeleteOne{builder}
+}
+
+// Query returns a query builder for IMIdentityRoute.
+func (c *IMIdentityRouteClient) Query() *IMIdentityRouteQuery {
+	return &IMIdentityRouteQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeIMIdentityRoute},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a IMIdentityRoute entity by its id.
+func (c *IMIdentityRouteClient) Get(ctx context.Context, id string) (*IMIdentityRoute, error) {
+	return c.Query().Where(imidentityroute.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *IMIdentityRouteClient) GetX(ctx context.Context, id string) *IMIdentityRoute {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *IMIdentityRouteClient) Hooks() []Hook {
+	return c.hooks.IMIdentityRoute
+}
+
+// Interceptors returns the client interceptors.
+func (c *IMIdentityRouteClient) Interceptors() []Interceptor {
+	return c.inters.IMIdentityRoute
+}
+
+func (c *IMIdentityRouteClient) mutate(ctx context.Context, m *IMIdentityRouteMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&IMIdentityRouteCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&IMIdentityRouteUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&IMIdentityRouteUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&IMIdentityRouteDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown IMIdentityRoute mutation op: %q", m.Op())
 	}
 }
 
@@ -4162,20 +4726,22 @@ func (c *TencentOperationClient) mutate(ctx context.Context, m *TencentOperation
 type (
 	hooks struct {
 		Account, AccountLoginIdentity, AccountServerMembership, Agent, AgentIMRoute,
-		AgentRuntimeCredential, AuthSession, Channel, ChannelMember, Computer,
-		ComputerAgentObservation, ComputerProviderBinding, ComputerRuntimeCredential,
-		ComputerSetupCode, DirectConversation, IdempotencyRecord, Member,
-		MessageThreadRead, MessageThreadRef, OutboxEvent, Reminder, ReminderOccurrence,
-		Server, ServerInvite, ServerSlugRegistry, TATInstanceBinding, Task,
+		AgentRuntimeCredential, AuthSession, BotAgent, Channel, ChannelMember,
+		Computer, ComputerAgentObservation, ComputerProviderBinding,
+		ComputerRuntimeCredential, ComputerSetupCode, DirectConversation, IMGroup,
+		IMGroupMember, IMIdentityRoute, IdempotencyRecord, Member, MessageThreadRead,
+		MessageThreadRef, OutboxEvent, Reminder, ReminderOccurrence, Server,
+		ServerInvite, ServerSlugRegistry, TATInstanceBinding, Task,
 		TencentOperation []ent.Hook
 	}
 	inters struct {
 		Account, AccountLoginIdentity, AccountServerMembership, Agent, AgentIMRoute,
-		AgentRuntimeCredential, AuthSession, Channel, ChannelMember, Computer,
-		ComputerAgentObservation, ComputerProviderBinding, ComputerRuntimeCredential,
-		ComputerSetupCode, DirectConversation, IdempotencyRecord, Member,
-		MessageThreadRead, MessageThreadRef, OutboxEvent, Reminder, ReminderOccurrence,
-		Server, ServerInvite, ServerSlugRegistry, TATInstanceBinding, Task,
+		AgentRuntimeCredential, AuthSession, BotAgent, Channel, ChannelMember,
+		Computer, ComputerAgentObservation, ComputerProviderBinding,
+		ComputerRuntimeCredential, ComputerSetupCode, DirectConversation, IMGroup,
+		IMGroupMember, IMIdentityRoute, IdempotencyRecord, Member, MessageThreadRead,
+		MessageThreadRef, OutboxEvent, Reminder, ReminderOccurrence, Server,
+		ServerInvite, ServerSlugRegistry, TATInstanceBinding, Task,
 		TencentOperation []ent.Interceptor
 	}
 )

@@ -12,6 +12,7 @@ import (
 	"git.woa.com/wisp/mono2/collaboration/internal/ent/agentimroute"
 	"git.woa.com/wisp/mono2/collaboration/internal/ent/agentruntimecredential"
 	"git.woa.com/wisp/mono2/collaboration/internal/ent/authsession"
+	"git.woa.com/wisp/mono2/collaboration/internal/ent/botagent"
 	"git.woa.com/wisp/mono2/collaboration/internal/ent/channel"
 	"git.woa.com/wisp/mono2/collaboration/internal/ent/channelmember"
 	"git.woa.com/wisp/mono2/collaboration/internal/ent/computer"
@@ -21,6 +22,9 @@ import (
 	"git.woa.com/wisp/mono2/collaboration/internal/ent/computersetupcode"
 	"git.woa.com/wisp/mono2/collaboration/internal/ent/directconversation"
 	"git.woa.com/wisp/mono2/collaboration/internal/ent/idempotencyrecord"
+	"git.woa.com/wisp/mono2/collaboration/internal/ent/imgroup"
+	"git.woa.com/wisp/mono2/collaboration/internal/ent/imgroupmember"
+	"git.woa.com/wisp/mono2/collaboration/internal/ent/imidentityroute"
 	"git.woa.com/wisp/mono2/collaboration/internal/ent/member"
 	"git.woa.com/wisp/mono2/collaboration/internal/ent/messagethreadread"
 	"git.woa.com/wisp/mono2/collaboration/internal/ent/messagethreadref"
@@ -311,6 +315,113 @@ func init() {
 	authsessionDescID := authsessionMixinFields0[0].Descriptor()
 	// authsession.DefaultID holds the default value on creation for the id field.
 	authsession.DefaultID = authsessionDescID.Default.(func() string)
+	botagentMixin := schema.BotAgent{}.Mixin()
+	botagentMixinFields0 := botagentMixin[0].Fields()
+	_ = botagentMixinFields0
+	botagentFields := schema.BotAgent{}.Fields()
+	_ = botagentFields
+	// botagentDescInstanceID is the schema descriptor for instance_id field.
+	botagentDescInstanceID := botagentFields[1].Descriptor()
+	// botagent.InstanceIDValidator is a validator for the "instance_id" field. It is called by the builders before save.
+	botagent.InstanceIDValidator = func() func(string) error {
+		validators := botagentDescInstanceID.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(instance_id string) error {
+			for _, fn := range fns {
+				if err := fn(instance_id); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// botagentDescBotID is the schema descriptor for bot_id field.
+	botagentDescBotID := botagentFields[2].Descriptor()
+	// botagent.BotIDValidator is a validator for the "bot_id" field. It is called by the builders before save.
+	botagent.BotIDValidator = func() func(string) error {
+		validators := botagentDescBotID.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(bot_id string) error {
+			for _, fn := range fns {
+				if err := fn(bot_id); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// botagentDescDisplayName is the schema descriptor for display_name field.
+	botagentDescDisplayName := botagentFields[3].Descriptor()
+	// botagent.DisplayNameValidator is a validator for the "display_name" field. It is called by the builders before save.
+	botagent.DisplayNameValidator = botagentDescDisplayName.Validators[0].(func(string) error)
+	// botagentDescImUserID is the schema descriptor for im_user_id field.
+	botagentDescImUserID := botagentFields[4].Descriptor()
+	// botagent.ImUserIDValidator is a validator for the "im_user_id" field. It is called by the builders before save.
+	botagent.ImUserIDValidator = func() func(string) error {
+		validators := botagentDescImUserID.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(im_user_id string) error {
+			for _, fn := range fns {
+				if err := fn(im_user_id); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// botagentDescState is the schema descriptor for state field.
+	botagentDescState := botagentFields[5].Descriptor()
+	// botagent.StateValidator is a validator for the "state" field. It is called by the builders before save.
+	botagent.StateValidator = botagentDescState.Validators[0].(func(string) error)
+	// botagentDescLastErrorCode is the schema descriptor for last_error_code field.
+	botagentDescLastErrorCode := botagentFields[6].Descriptor()
+	// botagent.LastErrorCodeValidator is a validator for the "last_error_code" field. It is called by the builders before save.
+	botagent.LastErrorCodeValidator = botagentDescLastErrorCode.Validators[0].(func(string) error)
+	// botagentDescCommandPolicy is the schema descriptor for command_policy field.
+	botagentDescCommandPolicy := botagentFields[7].Descriptor()
+	// botagent.CommandPolicyValidator is a validator for the "command_policy" field. It is called by the builders before save.
+	botagent.CommandPolicyValidator = botagentDescCommandPolicy.Validators[0].(func(string) error)
+	// botagentDescCredentialDigest is the schema descriptor for credential_digest field.
+	botagentDescCredentialDigest := botagentFields[9].Descriptor()
+	// botagent.CredentialDigestValidator is a validator for the "credential_digest" field. It is called by the builders before save.
+	botagent.CredentialDigestValidator = func() func([]byte) error {
+		validators := botagentDescCredentialDigest.Validators
+		fns := [...]func([]byte) error{
+			validators[0].(func([]byte) error),
+			validators[1].(func([]byte) error),
+		}
+		return func(credential_digest []byte) error {
+			for _, fn := range fns {
+				if err := fn(credential_digest); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// botagentDescCreatedAt is the schema descriptor for created_at field.
+	botagentDescCreatedAt := botagentFields[11].Descriptor()
+	// botagent.DefaultCreatedAt holds the default value on creation for the created_at field.
+	botagent.DefaultCreatedAt = botagentDescCreatedAt.Default.(func() time.Time)
+	// botagentDescUpdatedAt is the schema descriptor for updated_at field.
+	botagentDescUpdatedAt := botagentFields[12].Descriptor()
+	// botagent.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	botagent.DefaultUpdatedAt = botagentDescUpdatedAt.Default.(func() time.Time)
+	// botagent.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	botagent.UpdateDefaultUpdatedAt = botagentDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// botagentDescID is the schema descriptor for id field.
+	botagentDescID := botagentMixinFields0[0].Descriptor()
+	// botagent.DefaultID holds the default value on creation for the id field.
+	botagent.DefaultID = botagentDescID.Default.(func() string)
 	channelMixin := schema.Channel{}.Mixin()
 	channelMixinFields0 := channelMixin[0].Fields()
 	_ = channelMixinFields0
@@ -709,6 +820,181 @@ func init() {
 	directconversationDescID := directconversationMixinFields0[0].Descriptor()
 	// directconversation.DefaultID holds the default value on creation for the id field.
 	directconversation.DefaultID = directconversationDescID.Default.(func() string)
+	imgroupMixin := schema.IMGroup{}.Mixin()
+	imgroupMixinFields0 := imgroupMixin[0].Fields()
+	_ = imgroupMixinFields0
+	imgroupFields := schema.IMGroup{}.Fields()
+	_ = imgroupFields
+	// imgroupDescTencentGroupID is the schema descriptor for tencent_group_id field.
+	imgroupDescTencentGroupID := imgroupFields[0].Descriptor()
+	// imgroup.TencentGroupIDValidator is a validator for the "tencent_group_id" field. It is called by the builders before save.
+	imgroup.TencentGroupIDValidator = func() func(string) error {
+		validators := imgroupDescTencentGroupID.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(tencent_group_id string) error {
+			for _, fn := range fns {
+				if err := fn(tencent_group_id); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// imgroupDescCreatedByImUserID is the schema descriptor for created_by_im_user_id field.
+	imgroupDescCreatedByImUserID := imgroupFields[2].Descriptor()
+	// imgroup.CreatedByImUserIDValidator is a validator for the "created_by_im_user_id" field. It is called by the builders before save.
+	imgroup.CreatedByImUserIDValidator = func() func(string) error {
+		validators := imgroupDescCreatedByImUserID.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(created_by_im_user_id string) error {
+			for _, fn := range fns {
+				if err := fn(created_by_im_user_id); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// imgroupDescName is the schema descriptor for name field.
+	imgroupDescName := imgroupFields[3].Descriptor()
+	// imgroup.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	imgroup.NameValidator = imgroupDescName.Validators[0].(func(string) error)
+	// imgroupDescReplyMode is the schema descriptor for reply_mode field.
+	imgroupDescReplyMode := imgroupFields[4].Descriptor()
+	// imgroup.ReplyModeValidator is a validator for the "reply_mode" field. It is called by the builders before save.
+	imgroup.ReplyModeValidator = imgroupDescReplyMode.Validators[0].(func(string) error)
+	// imgroupDescState is the schema descriptor for state field.
+	imgroupDescState := imgroupFields[5].Descriptor()
+	// imgroup.StateValidator is a validator for the "state" field. It is called by the builders before save.
+	imgroup.StateValidator = imgroupDescState.Validators[0].(func(string) error)
+	// imgroupDescCreatedAt is the schema descriptor for created_at field.
+	imgroupDescCreatedAt := imgroupFields[7].Descriptor()
+	// imgroup.DefaultCreatedAt holds the default value on creation for the created_at field.
+	imgroup.DefaultCreatedAt = imgroupDescCreatedAt.Default.(func() time.Time)
+	// imgroupDescUpdatedAt is the schema descriptor for updated_at field.
+	imgroupDescUpdatedAt := imgroupFields[8].Descriptor()
+	// imgroup.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	imgroup.DefaultUpdatedAt = imgroupDescUpdatedAt.Default.(func() time.Time)
+	// imgroup.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	imgroup.UpdateDefaultUpdatedAt = imgroupDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// imgroupDescID is the schema descriptor for id field.
+	imgroupDescID := imgroupMixinFields0[0].Descriptor()
+	// imgroup.DefaultID holds the default value on creation for the id field.
+	imgroup.DefaultID = imgroupDescID.Default.(func() string)
+	imgroupmemberMixin := schema.IMGroupMember{}.Mixin()
+	imgroupmemberMixinFields0 := imgroupmemberMixin[0].Fields()
+	_ = imgroupmemberMixinFields0
+	imgroupmemberFields := schema.IMGroupMember{}.Fields()
+	_ = imgroupmemberFields
+	// imgroupmemberDescImUserID is the schema descriptor for im_user_id field.
+	imgroupmemberDescImUserID := imgroupmemberFields[1].Descriptor()
+	// imgroupmember.ImUserIDValidator is a validator for the "im_user_id" field. It is called by the builders before save.
+	imgroupmember.ImUserIDValidator = func() func(string) error {
+		validators := imgroupmemberDescImUserID.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(im_user_id string) error {
+			for _, fn := range fns {
+				if err := fn(im_user_id); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// imgroupmemberDescKind is the schema descriptor for kind field.
+	imgroupmemberDescKind := imgroupmemberFields[2].Descriptor()
+	// imgroupmember.KindValidator is a validator for the "kind" field. It is called by the builders before save.
+	imgroupmember.KindValidator = imgroupmemberDescKind.Validators[0].(func(string) error)
+	// imgroupmemberDescRole is the schema descriptor for role field.
+	imgroupmemberDescRole := imgroupmemberFields[3].Descriptor()
+	// imgroupmember.RoleValidator is a validator for the "role" field. It is called by the builders before save.
+	imgroupmember.RoleValidator = imgroupmemberDescRole.Validators[0].(func(string) error)
+	// imgroupmemberDescState is the schema descriptor for state field.
+	imgroupmemberDescState := imgroupmemberFields[4].Descriptor()
+	// imgroupmember.StateValidator is a validator for the "state" field. It is called by the builders before save.
+	imgroupmember.StateValidator = imgroupmemberDescState.Validators[0].(func(string) error)
+	// imgroupmemberDescAddedByImUserID is the schema descriptor for added_by_im_user_id field.
+	imgroupmemberDescAddedByImUserID := imgroupmemberFields[5].Descriptor()
+	// imgroupmember.AddedByImUserIDValidator is a validator for the "added_by_im_user_id" field. It is called by the builders before save.
+	imgroupmember.AddedByImUserIDValidator = func() func(string) error {
+		validators := imgroupmemberDescAddedByImUserID.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(added_by_im_user_id string) error {
+			for _, fn := range fns {
+				if err := fn(added_by_im_user_id); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// imgroupmemberDescCreatedAt is the schema descriptor for created_at field.
+	imgroupmemberDescCreatedAt := imgroupmemberFields[6].Descriptor()
+	// imgroupmember.DefaultCreatedAt holds the default value on creation for the created_at field.
+	imgroupmember.DefaultCreatedAt = imgroupmemberDescCreatedAt.Default.(func() time.Time)
+	// imgroupmemberDescUpdatedAt is the schema descriptor for updated_at field.
+	imgroupmemberDescUpdatedAt := imgroupmemberFields[7].Descriptor()
+	// imgroupmember.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	imgroupmember.DefaultUpdatedAt = imgroupmemberDescUpdatedAt.Default.(func() time.Time)
+	// imgroupmember.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	imgroupmember.UpdateDefaultUpdatedAt = imgroupmemberDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// imgroupmemberDescID is the schema descriptor for id field.
+	imgroupmemberDescID := imgroupmemberMixinFields0[0].Descriptor()
+	// imgroupmember.DefaultID holds the default value on creation for the id field.
+	imgroupmember.DefaultID = imgroupmemberDescID.Default.(func() string)
+	imidentityrouteMixin := schema.IMIdentityRoute{}.Mixin()
+	imidentityrouteMixinFields0 := imidentityrouteMixin[0].Fields()
+	_ = imidentityrouteMixinFields0
+	imidentityrouteFields := schema.IMIdentityRoute{}.Fields()
+	_ = imidentityrouteFields
+	// imidentityrouteDescImUserID is the schema descriptor for im_user_id field.
+	imidentityrouteDescImUserID := imidentityrouteFields[0].Descriptor()
+	// imidentityroute.ImUserIDValidator is a validator for the "im_user_id" field. It is called by the builders before save.
+	imidentityroute.ImUserIDValidator = func() func(string) error {
+		validators := imidentityrouteDescImUserID.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(im_user_id string) error {
+			for _, fn := range fns {
+				if err := fn(im_user_id); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// imidentityrouteDescKind is the schema descriptor for kind field.
+	imidentityrouteDescKind := imidentityrouteFields[1].Descriptor()
+	// imidentityroute.KindValidator is a validator for the "kind" field. It is called by the builders before save.
+	imidentityroute.KindValidator = imidentityrouteDescKind.Validators[0].(func(string) error)
+	// imidentityrouteDescCreatedAt is the schema descriptor for created_at field.
+	imidentityrouteDescCreatedAt := imidentityrouteFields[5].Descriptor()
+	// imidentityroute.DefaultCreatedAt holds the default value on creation for the created_at field.
+	imidentityroute.DefaultCreatedAt = imidentityrouteDescCreatedAt.Default.(func() time.Time)
+	// imidentityrouteDescUpdatedAt is the schema descriptor for updated_at field.
+	imidentityrouteDescUpdatedAt := imidentityrouteFields[6].Descriptor()
+	// imidentityroute.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	imidentityroute.DefaultUpdatedAt = imidentityrouteDescUpdatedAt.Default.(func() time.Time)
+	// imidentityroute.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	imidentityroute.UpdateDefaultUpdatedAt = imidentityrouteDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// imidentityrouteDescID is the schema descriptor for id field.
+	imidentityrouteDescID := imidentityrouteMixinFields0[0].Descriptor()
+	// imidentityroute.DefaultID holds the default value on creation for the id field.
+	imidentityroute.DefaultID = imidentityrouteDescID.Default.(func() string)
 	idempotencyrecordMixin := schema.IdempotencyRecord{}.Mixin()
 	idempotencyrecordMixinFields0 := idempotencyrecordMixin[0].Fields()
 	_ = idempotencyrecordMixinFields0

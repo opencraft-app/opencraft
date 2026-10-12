@@ -19,6 +19,7 @@ import (
 	"git.woa.com/wisp/mono2/collaboration/internal/ent/agentimroute"
 	"git.woa.com/wisp/mono2/collaboration/internal/ent/agentruntimecredential"
 	"git.woa.com/wisp/mono2/collaboration/internal/ent/authsession"
+	"git.woa.com/wisp/mono2/collaboration/internal/ent/botagent"
 	"git.woa.com/wisp/mono2/collaboration/internal/ent/channel"
 	"git.woa.com/wisp/mono2/collaboration/internal/ent/channelmember"
 	"git.woa.com/wisp/mono2/collaboration/internal/ent/computer"
@@ -28,6 +29,9 @@ import (
 	"git.woa.com/wisp/mono2/collaboration/internal/ent/computersetupcode"
 	"git.woa.com/wisp/mono2/collaboration/internal/ent/directconversation"
 	"git.woa.com/wisp/mono2/collaboration/internal/ent/idempotencyrecord"
+	"git.woa.com/wisp/mono2/collaboration/internal/ent/imgroup"
+	"git.woa.com/wisp/mono2/collaboration/internal/ent/imgroupmember"
+	"git.woa.com/wisp/mono2/collaboration/internal/ent/imidentityroute"
 	"git.woa.com/wisp/mono2/collaboration/internal/ent/member"
 	"git.woa.com/wisp/mono2/collaboration/internal/ent/messagethreadread"
 	"git.woa.com/wisp/mono2/collaboration/internal/ent/messagethreadref"
@@ -107,6 +111,7 @@ func checkColumn(t, c string) error {
 			agentimroute.Table:              agentimroute.ValidColumn,
 			agentruntimecredential.Table:    agentruntimecredential.ValidColumn,
 			authsession.Table:               authsession.ValidColumn,
+			botagent.Table:                  botagent.ValidColumn,
 			channel.Table:                   channel.ValidColumn,
 			channelmember.Table:             channelmember.ValidColumn,
 			computer.Table:                  computer.ValidColumn,
@@ -115,6 +120,9 @@ func checkColumn(t, c string) error {
 			computerruntimecredential.Table: computerruntimecredential.ValidColumn,
 			computersetupcode.Table:         computersetupcode.ValidColumn,
 			directconversation.Table:        directconversation.ValidColumn,
+			imgroup.Table:                   imgroup.ValidColumn,
+			imgroupmember.Table:             imgroupmember.ValidColumn,
+			imidentityroute.Table:           imidentityroute.ValidColumn,
 			idempotencyrecord.Table:         idempotencyrecord.ValidColumn,
 			member.Table:                    member.ValidColumn,
 			messagethreadread.Table:         messagethreadread.ValidColumn,

@@ -171,6 +171,14 @@ func TestRegistryCoversEveryStableProductAndTransportCode(t *testing.T) {
 		"route_not_found",
 		"method_not_allowed",
 		"internal_error",
+		"bot_agent_not_found",
+		"bot_agent_not_ready",
+		"bot_instance_not_owned",
+		"bot_host_unavailable",
+		"im_group_not_found",
+		"im_group_not_ready",
+		"im_identity_unknown",
+		"im_identity_restricted",
 	}
 
 	for _, code := range stableCodes {

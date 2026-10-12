@@ -2,7 +2,7 @@ package schemaaudit
 
 import "testing"
 
-func TestManifest包含且只包含28张业务表(t *testing.T) {
+func TestManifest包含且只包含32张业务表(t *testing.T) {
 	want := map[string]string{
 		"account_login_identities":     "login_hash",
 		"accounts":                     "id",
@@ -32,6 +32,10 @@ func TestManifest包含且只包含28张业务表(t *testing.T) {
 		"tencent_operations":           "partition_key",
 		"idempotency_records":          "partition_key",
 		"outbox_events":                "partition_key",
+		"bot_agents":                   "account_id",
+		"im_identity_routes":           "im_user_id",
+		"im_groups":                    "id",
+		"im_group_members":             "group_id",
 	}
 
 	entries := Entries()

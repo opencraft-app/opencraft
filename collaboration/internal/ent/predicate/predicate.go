@@ -27,6 +27,9 @@ type AgentRuntimeCredential func(*sql.Selector)
 // AuthSession is the predicate function for authsession builders.
 type AuthSession func(*sql.Selector)
 
+// BotAgent is the predicate function for botagent builders.
+type BotAgent func(*sql.Selector)
+
 // Channel is the predicate function for channel builders.
 type Channel func(*sql.Selector)
 
@@ -50,6 +53,15 @@ type ComputerSetupCode func(*sql.Selector)
 
 // DirectConversation is the predicate function for directconversation builders.
 type DirectConversation func(*sql.Selector)
+
+// IMGroup is the predicate function for imgroup builders.
+type IMGroup func(*sql.Selector)
+
+// IMGroupMember is the predicate function for imgroupmember builders.
+type IMGroupMember func(*sql.Selector)
+
+// IMIdentityRoute is the predicate function for imidentityroute builders.
+type IMIdentityRoute func(*sql.Selector)
 
 // IdempotencyRecord is the predicate function for idempotencyrecord builders.
 type IdempotencyRecord func(*sql.Selector)
