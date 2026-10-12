@@ -23,6 +23,8 @@ async function writeHeadlessVersion(webRoot) {
 }
 
 test("headless command accepts a private data root and rejects unsupported flags", () => {
+  assert.equal(parseHeadlessArguments(["--tencentoa-token-file", "/private/token"]).tencentOaTokenFile, "/private/token");
+  assert.throws(() => parseHeadlessArguments(["--tencentoa-token-file", "relative"]));
   assert.deepEqual(parseHeadlessArguments(["--port", "10001", "--data-dir", "/tmp/opencraft-test"], {}), {
     help: false,
     host: "127.0.0.1",

@@ -3,10 +3,12 @@ import { AUTHENTICATION_PROVIDER_CHANNEL, type AuthenticationProvider } from "@o
 import { TENCENTOA_PROVIDER_ID } from "./contract";
 import { TencentOaController } from "./controller";
 import { createEmployeeIdentityView } from "./view";
+import { createTencentOaAccountContribution } from "./account";
 
 export { TencentOaController } from "./controller";
 export type { TencentOaSnapshot } from "./controller";
 export type { TencentOaIdentity } from "./contract";
+export { createTencentOaAccountContribution } from "./account";
 
 export function createTencentOaExtension(controller = new TencentOaController()): TrustedExtensionDefinition {
   return {
@@ -25,6 +27,7 @@ export function createTencentOaExtension(controller = new TencentOaController())
       api.views.register({ id: "tencentoa.identity.employee-view", title: "员工身份", viewType: "tencentoa.identity.employee", platforms: ["web"] });
       api.settings.registerPage({ id: "tencentoa.identity.employee", title: "员工身份", viewId: "tencentoa.identity.employee-view", group: "通用", icon: "user", platforms: ["web"], order: 45 });
       api.internal.register("platformViewRenderer", { viewType: "tencentoa.identity.employee", Component: createEmployeeIdentityView(controller) });
+      api.internal.register("platformAccount", createTencentOaAccountContribution(controller));
       const onVisible = () => { if (document.visibilityState === "visible") void controller.refresh(); };
       document.addEventListener("visibilitychange", onVisible);
       api.subscriptions.add(() => document.removeEventListener("visibilitychange", onVisible));

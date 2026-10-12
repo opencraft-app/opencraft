@@ -146,8 +146,8 @@ export function HostlessWorkbench({
     }
   }, [applicationRoute.kind, extensionProjection.activeView]);
   useEffect(() => {
-    if (extensionProjection.account?.snapshot.phase === "anonymous") setAccountOpen(false);
-  }, [extensionProjection.account?.snapshot.phase]);
+    if (extensionProjection.account?.snapshot.phase === "anonymous" && extensionProjection.account.provider.signInViewId) setAccountOpen(false);
+  }, [extensionProjection.account?.snapshot.phase, extensionProjection.account?.provider]);
   const authenticationPresentation = useAuthenticationPresentation(supervisor.authenticationFlows, extensionProjection.account, JSON.stringify(applicationRoute));
   const sharedSidebarOpen = sidebarOpen;
   const selectSettingsSection = (section: string, mode?: "push" | "replace") => openSettings(section, mode);
@@ -302,7 +302,7 @@ export function HostlessWorkbench({
           account: extensionProjection.account === null ? null : {
             snapshot: extensionProjection.account.snapshot,
             signIn: authenticationPresentation.signIn,
-            onOpen: () => extensionProjection.account?.snapshot.phase === "anonymous" ? authenticationPresentation.open() : setAccountOpen(true),
+            onOpen: () => extensionProjection.account?.snapshot.phase === "anonymous" && extensionProjection.account.provider.signInViewId ? authenticationPresentation.open() : setAccountOpen(true),
             onRefresh: extensionProjection.account.provider.refresh,
             onSignOut: extensionProjection.account.provider.signOut,
           },

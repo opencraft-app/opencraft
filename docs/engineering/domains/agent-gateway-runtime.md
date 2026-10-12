@@ -9,6 +9,14 @@ OpenCraft 内置本地 Codex 的 Web 与 Electron Host profile 默认启用自�
 侧栏读取会话目录时复用现有 HostRuntimeRegistry 建立连接，不切换当前聊天 Host；
 远端 SSH 连接仍由用户显式发起。该默认值由内置插件贡献，不需要迁移浏览器保存的数据。
 
+Headless OpenCraft 配置 Tencent OA 验证密钥后，从同源身份请求的 TAI/TOF
+网关头自动识别员工。员工插件以显式入口优先级在左下角显示已验证账号，点击
+查看员工编号和刷新；无身份时仍可打开详情，不配置固定登录 URL。入口选择仅
+改变 Shell 呈现，LightVela 会话、凭据和资源授权保持独立；员工插件卸载后恢复
+原账号入口。401 或身份过期清除员工展示，不提供未接通的网关退出操作，也不
+把员工身份注入模型上下文。验证密钥仍由服务端私有文件持有，不能仅凭未验证
+请求头建立身份。详见 [Tencent OA 身份接入](../../../opencraft/docs/tencentoa-authentication.md)。
+
 平台网关的 Hermes `custom/auto` 模型使用模型级 `supports_vision: true` 声明图片输入能力；`auto` 是网关别名，不能依赖公共模型目录推断。CTL 初始化（含 ACLI 与 harness 路径）在模型写入后补齐并回读该字段，前端恢复平台默认配置时在重建 provider 后声明并验证能力。恢复默认配置同时清除旧主模型的顶层 `model.supports_vision`，避免它覆盖新默认模型的声明；用户显式的图片路由策略仍保留。此契约不为其他模型声明能力，不要求重做 CVM 镜像，也不自动修改存量实例。相关实现与回归测试见 `ctl/pkg/instance/async.go`、`ctl/pkg/instance/auto_vision_test.go`、`frontend/src/pages/marketing/agent-model-config/hermes-model-config-command.ts`。
 
 ## 渠道聊天记录只读接口（待启用）
