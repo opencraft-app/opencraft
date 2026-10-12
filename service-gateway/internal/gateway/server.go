@@ -156,6 +156,7 @@ func WithWorkerActionBackend(backend workerActionBackend) Option {
 type compiledRoute struct {
 	route          Route
 	proxy          *httputil.ReverseProxy
+	desktopProxy   *httputil.ReverseProxy
 	allowedOrigins originAllowlist
 	corsAllow      []compiledCORSRule
 }
@@ -254,9 +255,23 @@ func NewHandler(cfg Config, opts ...Option) (http.Handler, error) {
 				allowedOrigins: normalizeAllowedOrigins(rule.AllowedOrigins),
 			})
 		}
+		var desktopProxy *httputil.ReverseProxy
+		if route.DesktopUpstream != "" {
+			if route.Prefix != "/v1/instances" || route.Access != AccessAuthenticated || route.RewritePrefix != "" {
+				return nil, fmt.Errorf("route %s desktop_upstream requires authenticated /v1/instances without rewriting", route.Name)
+			}
+			desktopTarget, err := url.Parse(route.DesktopUpstream)
+			if err != nil || (desktopTarget.Scheme != "http" && desktopTarget.Scheme != "https") || desktopTarget.Hostname() == "" ||
+				desktopTarget.User != nil || (desktopTarget.Path != "" && desktopTarget.Path != "/") ||
+				desktopTarget.RawQuery != "" || desktopTarget.ForceQuery || desktopTarget.Fragment != "" {
+				return nil, fmt.Errorf("route %s desktop_upstream must be an HTTP(S) origin without credentials, query or fragment", route.Name)
+			}
+			desktopProxy = newSingleHostReverseProxy(desktopTarget, newUpstreamTransport(responseHeaderTimeout), route.Prefix, "", route.UpstreamBearerTokenEnv, trustedProxyCIDRs, route.stripBrowserOrigin)
+		}
 		routes = append(routes, compiledRoute{
 			route:          route,
 			proxy:          newSingleHostReverseProxy(target, newUpstreamTransport(responseHeaderTimeout), route.Prefix, route.RewritePrefix, route.UpstreamBearerTokenEnv, trustedProxyCIDRs, route.stripBrowserOrigin),
+			desktopProxy:   desktopProxy,
 			allowedOrigins: normalizeAllowedOrigins(routeAllowedOrigins),
 			corsAllow:      corsAllow,
 		})
@@ -529,7 +544,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !matched.allowsRequest(r) {
+	if !matched.allowsRequest(r) || (matched.desktopProxy != nil && isDesktopNamespace(r.URL.Path) && !isDesktopRequest(r)) {
 		rec := newStatusRecorder(w)
 		writeJSON(rec, http.StatusNotFound, map[string]string{"error": "route_not_allowed"})
 		h.observeRequest(start, matched.route.Name, r, rec.statusCode())
@@ -656,7 +671,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			h.logRequest(start, matched, session, r, rec.statusCode(), "")
 			return
 		}
-		matched.proxy.ServeHTTP(rec, r)
+		proxy := matched.proxy
+		if matched.desktopProxy != nil && isDesktopRequest(r) {
+			proxy = matched.desktopProxy
+		}
+		proxy.ServeHTTP(rec, r)
 		h.observeRequest(start, matched.route.Name, r, rec.statusCode())
 		h.logRequest(start, matched, session, r, rec.statusCode(), "")
 		return
@@ -667,6 +686,43 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.logRequest(start, matched, nil, r, rec.statusCode(), "")
 		return
 	}
+}
+
+func isDesktopNamespace(requestPath string) bool {
+	path := strings.TrimPrefix(requestPath, "/v1/instances/")
+	parts := strings.Split(path, "/")
+	if len(parts) > 1 && parts[1] == "desktop" {
+		return true
+	}
+	// CTL trims leading and trailing slashes before dispatching instance paths.
+	parts = strings.Split(strings.Trim(path, "/"), "/")
+	return len(parts) > 1 && parts[1] == "desktop"
+}
+
+func isDesktopRequest(r *http.Request) bool {
+	parts := strings.Split(r.URL.Path, "/")
+	if len(parts) < 6 || len(parts) > 8 || parts[0] != "" || parts[1] != "v1" || parts[2] != "instances" || parts[4] != "desktop" {
+		return false
+	}
+	for _, part := range parts[1:] {
+		if part == "" || part == "." || part == ".." {
+			return false
+		}
+	}
+	switch len(parts) {
+	case 6:
+		switch parts[5] {
+		case "session", "resource":
+			return r.Method == http.MethodGet || r.Method == http.MethodPost
+		case "viewer":
+			return r.Method == http.MethodPost
+		}
+	case 7:
+		return parts[5] == "viewer" && r.Method == http.MethodDelete
+	case 8:
+		return parts[5] == "viewer" && parts[7] == "claim" && r.Method == http.MethodPost
+	}
+	return false
 }
 
 func (h *Handler) serveWeChatOAuthVerification(w http.ResponseWriter, r *http.Request) {

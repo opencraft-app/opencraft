@@ -4,9 +4,6 @@
 
 **A Bot is an independent profile inside your Hermes Agent. The main Bot is created with the Agent, and each additional Bot can have its own model settings, persona, memory, Skills, channels, and scheduled tasks. When you create a Bot, choose whether to copy an existing Bot or start with Basic setup. Your plan determines how many Bots you can create, including the main Bot.**
 
-> **Availability on the international site**
->
-> Additional Bot creation is being introduced in stages. The **Create Bot** entry is not shown by default on the international site during this rollout. If the entry is unavailable, continue using the main Bot.
 
 ## This page covers
 
@@ -23,38 +20,26 @@
 
 ## Create a Bot
 
-When the creation entry is available:
+To create another Bot, select **New Bot** when the entry is available and your plan has capacity. Enter **Name** (required) and **Description** (optional), and adjust the appearance if needed. The default is **Basic setup**. If valid existing Bots can be copied, expand **Advanced** and select a specific source Bot. To copy the Bot you are using, open **Manage Bot → Copy Bot**; the creation form preselects that source. Review the source, then select **Create** and wait for completion.
 
-1. Select **New Bot**.
-2. Enter a Bot name of no more than 60 characters.
-3. Choose a creation method.
-4. Review the inheritance summary, then select **Confirm creation**.
-5. Wait for the new Bot to finish provisioning before configuring or using it.
-
-The available copy option depends on the Bot currently selected. From the main Bot, the console shows **Copy current (main Bot)**. From another Bot, you can choose **Clone current** or **Clone main Bot**.
+The close control and advanced copy options are provided only when valid existing copy sources are available. The first setup without a source must be completed. Appearance controls let you change color, shape, and accessories; they do not choose the copy source.
 
 ## Choose a creation method
 
 | Method | Inherited | Not inherited |
 | --- | --- | --- |
-| Copy current, Clone current, or Clone main Bot | Model, persona, Skills, user preferences, and long-term memory from the selected source Bot | Current conversation, chat history, scheduled tasks, runtime state, and channel connections |
+| Copy Bot | Model, persona, Skills, user preferences, and long-term memory from the selected source Bot | Current conversation, chat history, scheduled tasks, runtime state, and channel connections |
 | Basic setup | The main Bot's current primary model and its Provider credentials, plus built-in system Skills | Fallback models, other configured models, persona, memory, Skills installed later on the main Bot, channels, and scheduled tasks |
 
 **Basic setup is not an empty Bot.** It keeps the minimum model and built-in Skill configuration needed to get started, while leaving personal behavior, memory, and integrations separate.
 
 ## Confirm the new Bot
 
-After provisioning finishes:
-
-1. Confirm that a new Bot tab appears with the name you entered.
-2. Select the new Bot and check that its model and Skills match the creation method you chose.
-3. Open the relevant configuration page before adding a [Soul](./personality.md), installing [Skills](./skill.md), connecting channels, or creating [Scheduled Tasks](./automation.md).
+After creation, confirm the new Bot name in the selector, open its Web Chat, and send a short test message. If creation or initial configuration reports a failure, follow the displayed retry action and inspect the Bot list before starting another creation. If no reply arrives, check the Bot status and model credits or model configuration.
 
 ## Work with multiple Bots
 
-Bot tabs appear at the top of the Agent console. Select a tab before changing model settings, persona, memory, Skills, channels, scheduled tasks, or diagnostics so that you are working with the intended Bot.
-
-Each Bot has its own profile and data. Changes to one Bot do not automatically update the other Bots. The console **Chat** feature is currently available only for the main Bot, and Agent-level maintenance should also be performed from the main Bot.
+Select the intended Bot’s avatar in the Bot bar. On narrow screens, first expand the navigation panel. Confirm its name before changing models, memory, skills, channels, or scheduled tasks. Web Chat and its conversation list belong to the selected Bot; additional Bots can use Web Chat too. Connecting a messaging channel is not required for Web Chat.
 
 To rename a Bot, select it and edit its displayed name. The new name can contain up to 60 characters.
 
@@ -71,7 +56,7 @@ Deletion cannot be undone. Read the confirmation message carefully and enter the
 
 ### Why can't I create another Bot?
 
-The creation entry may still be hidden during the international rollout, the multi-Bot capability may be unavailable for the current Agent version, the Agent may not be running, or your plan may have reached its Bot limit.
+Check whether multi-Bot creation is enabled for the account, whether the Agent is running, whether the plan has capacity, and whether another creation or deletion is in progress.
 
 ### Why is a copied Bot missing conversations, tasks, or channels?
 

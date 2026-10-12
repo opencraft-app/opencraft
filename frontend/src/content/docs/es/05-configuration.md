@@ -32,7 +32,9 @@ El Chat web está en la sección de uso diario; conecte un canal externo solo si
 
 ## Bots e información del Bot seleccionado
 
-La parte superior de la consola contiene las pestañas de Bot del Agent de Hermes actual. La primera pestaña es el Bot principal y cada pestaña adicional corresponde a un perfil de Bot independiente. El plan determina el límite total de Bots, incluido el principal. Durante el despliegue gradual en el sitio internacional, la entrada de creación no se muestra de forma predeterminada. Consulte [Gestionar Bots](./configuration/bots.md) para conocer los métodos de creación y las reglas de herencia.
+Seleccione el avatar del Bot deseado en la barra de Bots. En pantallas estrechas, abra primero el panel de navegación. Compruebe su nombre antes de cambiar modelos, memoria, Skills, canales o tareas programadas. El chat web y la lista de conversaciones pertenecen al Bot seleccionado; los Bots adicionales también pueden usar el chat web. No necesita conectar un canal de mensajería para usarlo.
+
+Para crear otro Bot, seleccione **Nuevo bot** si la opción está disponible y el plan tiene capacidad. Introduzca **Nombre** (obligatorio) y **Descripción** (opcional), y ajuste la apariencia si lo necesita. La opción predeterminada es **Crear en blanco**. Si hay Bots válidos para copiar, abra **Avanzado** y seleccione un Bot de origen concreto. Para copiar el Bot que está usando, abra **Gestionar bot → Copiar Bot**; el formulario selecciona ese origen. Revise el origen, seleccione **Crear** y espere a que termine.
 
 Después de seleccionar un Agent de Hermes, se muestran sus información básica a continuación:
 

@@ -112,6 +112,8 @@ export interface UserMessageTimelineBlock extends TimelineBlockBase<"user-messag
   readonly attachments: readonly UserMessageAttachment[];
   readonly messageKind: "user" | "steering" | "hook-prompt";
   readonly clientId: string | null;
+  /** Host-authored hidden provenance, independent of message text and Turn owner. */
+  readonly sender?: { readonly kind: "employee"; readonly loginName: string } | null;
   readonly steeringStatus: "pending" | "accepted" | "declined" | "cancelled" | null;
   /** Turn start time for the leading message; steering/hook messages may be timeless. */
   readonly sentAtMs: number | null;

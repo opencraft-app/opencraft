@@ -45,10 +45,12 @@ function fromRow(row: Record<string, unknown>): HostQueuedSubmission {
 
 export class CodexHostQueue {
   private readonly db: DatabaseSync;
+  private readonly ownsDatabase: boolean;
 
-  constructor(dataDirectory: string) {
+  constructor(dataDirectory: string, database?: DatabaseSync) {
     const path = join(dataDirectory, "codex-host-queue.sqlite");
-    this.db = new DatabaseSync(path);
+    this.db = database ?? new DatabaseSync(path);
+    this.ownsDatabase = database === undefined;
     chmodSync(path, 0o600);
     this.db.exec(`PRAGMA journal_mode=WAL;
       CREATE TABLE IF NOT EXISTS codex_host_queue (
@@ -69,7 +71,7 @@ export class CodexHostQueue {
     this.db.prepare("UPDATE codex_host_queue SET state='unknown', paused_reason='steer-delivery-unconfirmed', updated_at_ms=? WHERE state='dispatching'").run(Date.now());
   }
 
-  close(): void { this.db.close(); }
+  close(): void { if (this.ownsDatabase) this.db.close(); }
 
   private row(threadId: string, id: string): HostQueuedSubmission | null {
     const row = this.db.prepare("SELECT * FROM codex_host_queue WHERE thread_id=? AND id=?").get(threadId, id);

@@ -2,11 +2,11 @@
 
 ## Resumen
 
-**Crear su primera instancia de Hermes es tan sencillo como esto: inicie sesión con Google o GitHub, elija un plan disponible, actívelo según las reglas del plan actual, permita que la plataforma cree la instancia automáticamente, luego use el Chat web; conecte un canal si desea usar una aplicación de mensajería. Todo ocurre en el navegador — no necesita comprar servidores ni desplegar nada localmente. Una instancia de Hermes es el entorno de ejecución en la nube donde reside su Agent, y una vez creada permanece en línea las 24 horas del día, los 7 días de la semana. Una vez que esté lista, abra My Agent para utilizar el Chat web y configure modelos, canales o Skills según sea necesario; si aún no tiene su propia clave de API de modelo, puede comenzar a hablar de inmediato utilizando los créditos de modelo incluidos en su plan.**
+**Tras iniciar sesión con Google o GitHub y activar un plan disponible, abra la [consola del Agent](/agents/overview/). Complete la configuración del primer Bot: introduzca el nombre obligatorio, añada una descripción opcional y ajuste su apariencia. Seleccione Crear y espere a que terminen la creación y la configuración inicial. Cuando termine la configuración, seleccione Empieza tu viaje y abra el chat web de ese Bot. El canal de mensajería es opcional; las respuestas requieren créditos de modelo disponibles o un modelo configurado.**
 
 ---
 
-Una instancia de Hermes es el entorno de ejecución en la nube donde reside su LightVela Agent. Activar su primera instancia sigue cinco pasos: **iniciar sesión con Google o GitHub → seleccionar un plan disponible → activarlo mediante el flujo de activación actual → permitir que LightVela provisione la instancia → comenzar en el Chat web y conectar un canal si lo desea**. Todo ocurre en el navegador, sin necesidad de comprar servidores ni desplegar localmente. Esta página guía paso a paso el proceso.
+El control para cerrar y las opciones avanzadas de copia solo aparecen cuando hay Bots de origen válidos. La primera configuración sin origen debe completarse. Los controles de apariencia cambian el color, la forma y los accesorios; no seleccionan el origen de la copia.
 
 ## ¿Qué cubre esta página
 
@@ -42,9 +42,9 @@ No hay un paso de verificación de identidad real en China en el sitio internaci
 
 Elige un plan disponible en la [página de suscripción](/subscribe/) y sigue las indicaciones de la tarjeta para activarlo. Consulta la página para conocer las ofertas y los precios actuales.
 
-### 4. Permita que LightVela provisione la instancia automáticamente
+### 4. Completar la configuración del primer Bot
 
-Una vez activado el plan, LightVela **asigna automáticamente un entorno de nube dedicado y crea su primera instancia de Hermes**. No necesita comprar, desplegar ni configurar un servidor. La provisión normalmente comienza inmediatamente, y puede abrir el consuelo cuando la instancia esté lista.
+Tras iniciar sesión con Google o GitHub y activar un plan disponible, abra la [consola del Agent](/agents/overview/). Complete la configuración del primer Bot: introduzca el nombre obligatorio, añada una descripción opcional y ajuste su apariencia. Seleccione **Crear** y espere a que terminen la creación y la configuración inicial. Cuando termine la configuración, seleccione **Empieza tu viaje** y abra el chat web de ese Bot. El canal de mensajería es opcional; las respuestas requieren créditos de modelo disponibles o un modelo configurado.
 
 ### 5. Configure y despierte su Agent
 
@@ -66,7 +66,7 @@ Su primer Agent de Hermes ya está listo para permanecer en línea en la nube la
 
 ### ¿Cuánto tiempo puedo utilizar la instancia después de la activación?
 
-LightVela comienza a provisionar la instancia de Hermes automáticamente después de la activación del plan. Cuando el Bot esté listo y haya créditos disponibles o un modelo configurado, envíe un mensaje en el Chat web. Conecte un canal externo más adelante si lo necesita.
+Tras la creación, compruebe el nombre del nuevo Bot en el selector, abra su chat web y envíe un mensaje breve de prueba. Si falla la creación o la configuración inicial, siga la opción de reintento mostrada y revise la lista de Bots antes de crear otro. Si no recibe respuesta, compruebe el estado del Bot y los créditos o la configuración del modelo.
 
 ### ¿Dónde puedo consultar los planes y las ofertas actuales?
 

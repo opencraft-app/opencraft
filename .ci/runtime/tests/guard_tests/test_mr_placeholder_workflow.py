@@ -10,7 +10,7 @@ REPO_ROOT = next(parent for parent in Path(__file__).resolve().parents if (paren
 
 
 class MRPlaceholderWorkflowTests(unittest.TestCase):
-    def test_every_ci_job_uses_the_domestic_runner_pool(self) -> None:
+    def test_every_ci_job_uses_an_approved_runner_pool(self) -> None:
         parameterized_pool = "${{ parameters.RUNNER_POOL_NAME }}"
         for workflow_path in sorted((REPO_ROOT / ".ci").glob("**/*.yml")):
             with self.subTest(workflow=workflow_path.relative_to(REPO_ROOT)):
@@ -25,6 +25,13 @@ class MRPlaceholderWorkflowTests(unittest.TestCase):
                             REPO_ROOT / ".ci/templates/service-release.yml",
                             f"parameterized runner pool at {workflow_path}:{line_number}",
                         )
+                        continue
+                    if workflow_path == REPO_ROOT / ".ci/frontend-next.yml":
+                        self.assertEqual(pool_name, "docker")
+                        workflow = yaml.safe_load(workflow_path.read_text())
+                        for stage in workflow["stages"]:
+                            for job in stage["jobs"].values():
+                                self.assertEqual(job["runs-on"], {"self-hosted": False, "pool-name": "docker"})
                         continue
                     self.assertEqual(
                         pool_name,

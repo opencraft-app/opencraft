@@ -1492,11 +1492,27 @@ and late restoration from undoing sign-out.
 
 ### Authentication ownership
 
-The optional `tencentoa.identity` plugin contributes a separate employee provider
-and settings page, not the singleton LightVela account footer. Its Node-only
+The optional `tencentoa.identity` plugin contributes a separate employee provider,
+settings page and the account entrance when its server endpoint is configured.
+The entrance displays the verified employee login name automatically and opens
+identity details/refresh without a fixed login URL. Account contributions have
+explicit presentation precedence (`entrancePriority`, default 0; Tencent OA 100);
+equal priorities remain exclusive, and unloading the higher-priority contribution
+restores the product entrance. Provider session/storage authority is unchanged.
+Gateway-owned identities omit `signOut` when no logout operation is supported.
+An anonymous employee entrance remains useful for identity details and refresh.
+Its Node-only
 verifier owns the private TAI application key and independently validates each
 request's signature, authenticated JWE and expiration. Browser projections are
 memory-only and generation-fenced. Recognition does not authorize shared resources.
+Verified employee message provenance is owned by the Codex Host, not the Turn
+or Renderer. The Web gateway derives a trusted connection context from signed
+WebSocket handshake headers; AppHost passes it through an in-process submission
+port. Each user message is keyed by stable Host + Thread + client message ID.
+Only the English login name is persisted in the existing Host queue SQLite; queue
+admission and provenance share a transaction. Queue dispatch never reattributes
+the original submitter. History/live/shared Chat projection carry hidden sender
+metadata; the native model input remains free of employee provenance.
 See [Tencent OA authentication](tencentoa-authentication.md).
 
 The application supervisor installs two renderer-neutral Cordis services before

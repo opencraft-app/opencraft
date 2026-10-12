@@ -320,6 +320,8 @@ function userMessageMetadata(
     message: string(source.displayMessage)
       ?? (attachments.length === 0 && content.length === 1 ? displayAsyncQuestionReply(rawMessage) : null)
       ?? semantics.message,
+    ...(record(source.sender).kind === "employee" && typeof record(source.sender).loginName === "string"
+      ? { sender: { kind: "employee" as const, loginName: record(source.sender).loginName as string } } : {}),
     sentAtMs: explicitSentAtMs ?? (leadingUserMessage ? context.turn.startedAtMs ?? null : null),
     deliveryStatus: userMessageDeliveryStatus(source.deliveryStatus) ?? (hookBlocked ? "not-sent" as const : null),
     referencesPriorConversation: boolean(source.referencesPriorConversation) ?? semantics.referencesPriorConversation,

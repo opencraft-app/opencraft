@@ -2,9 +2,9 @@
 
 ## Ringkasan
 
-**Susunan yang betul untuk membina pembantu AI peribadi bukanlah mengautomasikan semuanya sekaligus. Mulakan dengan membuat awan Hermes Agent boleh dicapai dalam apl sembang yang telah anda gunakan, kemudian lapisan pada memori, kemahiran dan tugasan yang dijadualkan.** Lima blok binaan setiap satu menyelesaikan satu masalah: model menentukan kualiti penaakulan, saluran menentukan di mana anda mencapainya, memori membolehkannya mengekalkan cara anda bekerja, kemahiran memberikannya kaedah yang boleh diguna semula dan tugas berjadual membolehkannya menyelesaikan kerja yang dipersetujui semasa anda tidak hadir. Untuk minggu pertama, lakukan hanya tiga perkara: konfigurasikan satu model, sambungkan satu saluran dan sahkan memori benar-benar berterusan merentas sesi. Setelah laluan itu boleh dipercayai, tambah kemahiran dan tugasan yang dijadualkan — dengan cara ini, apabila sesuatu pecah, anda boleh mengetahui lapisan mana yang menyebabkannya.
+**Mulakan pembantu AI peribadi dengan mencipta dan memilih satu Bot, kemudian uji balasan dalam sembang web menggunakan kredit model yang tersedia atau model yang dikonfigurasi. Sambungkan saluran pemesejan hanya jika mahu menggunakan aplikasi itu. Seterusnya, uji keutamaan tetap dalam perbualan baharu, tambah kemahiran untuk tugas tertentu, dan jadualkan tugas selepas arahannya berjaya. Memori, kemahiran, saluran, dan tugas diurus untuk Bot yang dipilih.**
 
-![Pembantu AI peribadi dengan LightVela merentasi saluran](../../images/use-case-personal-ai-assistant.webp)
+![Perbualan Web Chat baharu dalam konsol antarabangsa LightVela](../../images/use-case-personal-ai-assistant.webp)
 
 ## Untuk siapa ini
 
@@ -14,11 +14,11 @@ Ia amat berguna apabila anda mendapati diri anda mengulangi konteks seperti zon 
 
 ## Prasyarat
 
-- Akaun LightVela dan Hermes Agent yang sedang berjalan. Jika anda belum menciptanya lagi, mulakan dengan [Mula Pantas](https://lightvela.ai/docs/quickstart).
+- Akaun LightVela dan Hermes Agent yang sedang berjalan. Jika anda belum menciptanya lagi, mulakan dengan [Mula Pantas](../02-quickstart.md).
 
-- Satu saluran perbualan. Telegram, WhatsApp, Discord, Slack, dan WeChat adalah titik permulaan biasa; pilih yang paling mungkin anda buka setiap hari.
+- Sembang web mencukupi untuk bermula. Jika anda lebih suka aplikasi pemesejan, sambungkan saluran mengikut panduan berikut.
 
-- Konfigurasi model yang berfungsi atau kredit percubaan yang tersedia. Lihat [Konfigurasikan Model](https://lightvela.ai/docs/configuration/model) jika Hermes tidak boleh membalas lagi.
+- Konfigurasi model yang berfungsi atau kredit percubaan yang tersedia. Lihat [Konfigurasikan Model](../configuration/model.md) jika Hermes tidak boleh membalas lagi.
 
 - Idea ringkas tentang perkara yang anda mahukan bantuan dahulu. Satu rutin, seperti merancang hari anda atau mengumpul susulan, sudah memadai.
 
@@ -26,7 +26,11 @@ Ia amat berguna apabila anda mendapati diri anda mengulangi konteks seperti zon 
 
 ### 1. Memberi Hermes tempat dalam rutin harian anda
 
-Sambungkan satu saluran pemesejan, kemudian hantar beberapa mesej pertama dari tempat yang sama yang biasa anda aturkan hari anda. Saluran itu bukan sekadar kaedah penyampaian—ialah tabiat yang menjadikan pembantu mudah untuk kembali. Ikuti halaman persediaan untuk [Telegram](https://lightvela.ai/docs/configuration/channel-telegram), [WhatsApp](https://lightvela.ai/docs/configuration/channel-whatsapp), [Discord](https://lightvela.ai/docs/configuration/channel-discord), [Slack](https://lightvela.ai/docs/configuration/channel-slack), atau [WeChat](https://lightvela.ai/docs/configuration/channel-wechat).
+Pilih avatar Bot yang dikehendaki pada bar Bot. Pada skrin sempit, buka panel navigasi terlebih dahulu. Semak namanya sebelum mengubah model, memori, kemahiran, saluran, atau tugas berjadual. Sembang web dan senarai perbualan mengikut Bot yang dipilih; Bot tambahan juga boleh menggunakan sembang web. Sembang web tidak memerlukan saluran pemesejan.
+
+Sembang web mencukupi untuk bermula. Jika anda lebih suka aplikasi pemesejan, sambungkan saluran mengikut panduan berikut.
+
+Jika mahu menggunakan aplikasi pemesejan, sambungkan satu saluran dan pastikan Bot membalas di situ. Ikuti panduan untuk [Telegram](../configuration/channel-telegram.md), [WhatsApp](../configuration/channel-whatsapp.md), [Discord](../configuration/channel-discord.md), [WeChat](../configuration/channel-wechat.md), [Slack](../configuration/channel-slack.md).
 
 ![Halaman Saluran dalam konsol LightVela](../../images/personal-ai-assistant-channel.webp)
 
@@ -48,7 +52,9 @@ Remember that I prefer a concise weekday briefing at 8:00 AM,
 with meetings, deadlines, and the three most important next actions.
 ```
 
-Gunakan halaman [Pengurusan Memori](https://lightvela.ai/docs/configuration/memory) untuk menyemak memori dan maklumat profil pengguna yang Hermes telah terkumpul. Ingatan harus mengurangkan pengulangan, bukan menjadi tempat pembuangan untuk setiap butiran yang berlalu.
+Gunakan halaman [Pengurusan Memori](../configuration/memory.md) untuk menyemak memori dan maklumat profil pengguna yang Hermes telah terkumpul. Ingatan harus mengurangkan pengulangan, bukan menjadi tempat pembuangan untuk setiap butiran yang berlalu.
+
+Mengingati keutamaan ringkasan hari bekerja pada 8:00 pagi tidak mencipta tugas berjadual. Tetapkan jadual secara berasingan, semak pelaksanaan pertama, dan pastikan hasil dihantar melalui saluran pemberitahuan yang dipilih.
 
 ### 3. Tambahkan kemahiran hanya apabila tugas sebenar memerlukannya
 
@@ -69,15 +75,27 @@ Every weekday at 8:00 AM, prepare a concise plan for today.
 Start with deadlines and meetings, then suggest three focused next actions.
 ```
 
-Tetapkan jadual dan saluran pemberitahuan dalam [Tugas Berjadual](https://lightvela.ai/docs/configuration/automation). Pastikan tugas yang dijadualkan pertama kecil; anda boleh memperhalusi arahan selepas anda melihat beberapa hasil sebenar.
+Tetapkan jadual dan saluran pemberitahuan dalam [Tugas Berjadual](../configuration/automation.md). Pastikan tugas yang dijadualkan pertama kecil; anda boleh memperhalusi arahan selepas anda melihat beberapa hasil sebenar.
 
-![Halaman Tugas Berjadual dalam konsol LightVela](../../images/personal-ai-assistant-automations.webp)
+![Templat tugas rasmi pada halaman Tugas Berjadual LightVela](../../images/personal-ai-assistant-automations.webp)
+
+## Semak setiap lapisan
+
+| Lapisan | Semakan | Batasan |
+| --- | --- | --- |
+| Bot dan sembang web | Pilih Bot yang dikehendaki dan hantar mesej ringkas | Balasan memerlukan Bot dalam talian serta kredit atau konfigurasi model yang boleh digunakan |
+| Memori | Nyatakan keutamaan tetap, buka perbualan baharu, dan semak | Perbualan baharu tidak memadam memori jangka panjang |
+| Tugas berjadual | Semak jadual, saluran pemberitahuan, dan hasil | Penciptaan atau penyalinan Bot tidak menyalin tugas berjadual atau sambungan saluran |
+
+## Sahkan hasil
+
+Pastikan sembang web membalas sebelum menyambungkan saluran. Uji keutamaan yang diingati dalam perbualan baharu dan semak hasil tugas berjadual pertama. Jika saluran atau tugas gagal, semak Bot yang dipilih, konfigurasi, dan statusnya sebelum menambah ciri.
 
 ## Soalan Lazim
 
 ### Adakah saya perlu mengkonfigurasi setiap ciri sebelum Hermes berguna?
 
-Tidak. Saluran dan model yang berfungsi sudah cukup untuk bermula. Tambahkan memori, kemahiran dan tugasan berjadual secara beransur-ansur apabila anda menemui tugasan berulang yang patut disimpan.
+Sembang web mencukupi untuk bermula. Jika anda lebih suka aplikasi pemesejan, sambungkan saluran mengikut panduan berikut.
 
 ### Adakah Hermes akan mengingati setiap mesej yang saya hantar?
 
@@ -85,16 +103,12 @@ Tidak. Memori bertujuan untuk maklumat yang kekal berguna merentas perbualan, se
 
 ### Bolehkah saya menggunakan pembantu yang sama daripada lebih daripada satu saluran?
 
-ya. Berbilang saluran yang disambungkan boleh menghala ke Hermes Agent yang sama, jadi pembantu boleh mengekalkan konteks yang sama semasa anda bergerak antara platform pemesejan yang disokong.
+Ya, jika saluran tersebut disambungkan kepada Bot yang sama. Memori jangka panjang dan keutamaan adalah milik Bot itu. Bot lain mempunyai ruang kerja sendiri: penyalinan hanya menyediakan keadaan awal, bukan penyegerakan perubahan selepas itu.
 
 ### Apakah yang perlu saya automatikkan dahulu?
 
 Pilih tugasan yang telah anda ulangi pada masa yang boleh diramal. Perancangan pagi, semakan harian pendek atau semakan keutamaan mingguan adalah calon pertama yang baik kerana anda boleh mengetahui dengan cepat sama ada output itu membantu.
 
-## Langkah seterusnya
+## Kesimpulan
 
-- [Sembang](https://lightvela.ai/docs/configuration/agent-chat) — bekerja dengan Hermes terus dalam konsol.
-
-- [Pengurusan Memori](https://lightvela.ai/docs/configuration/memory) — semak perkara yang disimpan oleh pembantu anda merentas perbualan.
-
-- [Tugas Berjadual](https://lightvela.ai/docs/configuration/automation) — jadualkan rutin yang terbukti berguna.
+Fokuskan pembantu pertama pada satu rutin. Selepas sembang, memori, dan tugas berjadual pertama berfungsi untuk Bot yang dipilih, luaskan tanggungjawabnya secara beransur-ansur.

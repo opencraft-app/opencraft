@@ -2,7 +2,20 @@
 
 The optional `tencentoa.identity` plugin recognizes the employee authenticated by
 the site's TAI/TOF gateway. It registers an independent authentication provider
-and an “员工身份” settings page. It does not replace the LightVela account owner.
+and an “员工身份” settings page. When configured, it owns the shared bottom-left
+account entrance: the verified employee login name is shown automatically, and
+clicking opens employee details and refresh. Without a verified identity the same
+entrance is labelled “员工身份” and opens those details; no fixed login URL or
+separate OAuth flow is configured. The current site's gateway supplies identity
+headers on the same-origin session request.
+
+Footer selection uses explicit `entrancePriority` (Tencent OA: 100; existing
+product accounts: 0). Equal priorities remain exclusive. This changes only the
+Shell presentation: LightVela's authentication, resources and account storage
+remain independently owned, and its entrance returns when Tencent OA unloads.
+There is no employee logout control because this integration has no gateway
+logout contract. A 401 or identity expiration removes the displayed employee;
+an open identity detail view remains available for refresh.
 
 ## Enablement
 
@@ -42,3 +55,40 @@ this source change.
 
 Protocol basis: user-provided TAI mobile signing and TOF JWE documentation, with
 read-only real gateway validation. Unit tests use synthetic credentials exclusively.
+
+## Per-message sender provenance
+
+Headless Web verifies TAI headers on each `/apphost` or `/ssh-apphost` WebSocket
+handshake. The gateway binds the verified English login name and validity deadline
+to a server-owned connection context. Renderer IDs, frame fields and client-supplied
+`sender` values cannot establish an employee identity. The deployment gateway must
+forward the signed identity headers on WebSocket upgrades as well as HTTP session
+requests. Missing or invalid handshake identity yields unattributed submissions;
+an established employee context past its validity deadline rejects new submissions
+until the client reconnects through employee authentication.
+
+AppHost passes this context through an optional in-process `sendWithContext` port.
+Codex Host accepts provenance for `turn/start`, `turn/steer` and `thread/queue/add`.
+It records only `{ kind: "employee", loginName }`, without staff number, private
+headers, credentials or token expiration, keyed by `(threadId, clientUserMessageId)`
+in the stable Host's existing `codex-host-queue.sqlite`. Queue and provenance share
+one connection; adding a queued submission and its sender is one transaction.
+An existing message identity cannot be attributed to a different employee or
+upgraded from an unknown sender. Native legacy submissions without a client ID
+remain unattributed; authenticated submissions require that ID.
+
+The enqueue-time sender remains the submitter through queue editing, reordering,
+reconnects and dispatch by another client. Queue edits do not relabel the original
+submitter; this feature does not provide an editor audit trail. Dispatch and
+unconfirmed-delivery reconciliation retain the existing queue authority. Sender
+records are stored before dispatch; they do not themselves prove native delivery.
+Only matching native history items or pending queue rows expose provenance.
+
+Live notifications, paginated history, resumed threads and shared Chat projection
+carry OpenCraft's `sender` field independently of visible message text. Full-history
+forks inherit provenance mappings; excluded history is not displayed and blank
+forks (`excludeTurns`) do not inherit them. Unknown old messages remain unattributed.
+Stored historical sender snapshots do not expire with the originating connection.
+Remote Codex Hosts keep their records in their stable local Host metadata directory.
+No sender field is forwarded to native Codex or injected into model input. Non-Codex
+transports and direct `/appserver` proxy traffic do not advertise this capability.

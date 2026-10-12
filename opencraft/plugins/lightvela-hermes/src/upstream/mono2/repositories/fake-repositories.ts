@@ -12,6 +12,7 @@ import type {
   CreatePassOrderAndPayResult,
   CreatePassOrderResult,
   CreatePassOrderUrlResult,
+  CloudDesktopViewerLease,
   CurrentSubscription,
   DeletePassResult,
   Pass,
@@ -261,6 +262,9 @@ const botStore = new Map<string, Bot>();
 const messageStore = new Map<string, WorkspaceMessage[]>();
 // fake 云电脑按需装图形层进度：POST 置 0，GET 逐步 +25 直至 100 转 Ready。
 const desktopInstallProgress = new Map<string, number>();
+// fake 云桌面资源准备进度与观看租约（desktop/resource + desktop/viewer）。
+const desktopResourceProgress = new Map<string, number>();
+const desktopViewerLeases = new Map<string, CloudDesktopViewerLease>();
 
 const seedMessagesFor = (botId: string) => {
   if (messageStore.has(botId)) {
@@ -1788,6 +1792,80 @@ const createBotRepository = (): BotRepository => {
         width: 1440,
         height: 900,
       };
+    },
+
+    async ensureDesktopResource(botId) {
+      await wait(NETWORK_DELAY_MS / 2);
+      if (!botStore.get(botId)) {
+        throw new Error("Bot 不存在，请先创建。");
+      }
+      desktopResourceProgress.set(botId, 0);
+      return {
+        resourceId: botId,
+        generationId: `gen-fake-${botId}`,
+        state: "preparing" as const,
+        progress: 0,
+      };
+    },
+
+    async getDesktopResource(botId) {
+      await wait(NETWORK_DELAY_MS / 2);
+      if (!botStore.get(botId)) {
+        throw new Error("Bot 不存在，请先创建。");
+      }
+      const progress = desktopResourceProgress.get(botId) ?? 0;
+      const next = Math.min(100, progress + 50);
+      desktopResourceProgress.set(botId, next);
+      return {
+        resourceId: botId,
+        generationId: `gen-fake-${botId}`,
+        state: (next < 100 ? "preparing" : "prepared") as "preparing" | "prepared",
+        progress: next,
+      };
+    },
+
+    async createDesktopViewer(botId) {
+      await wait(NETWORK_DELAY_MS / 2);
+      if (!botStore.get(botId)) {
+        throw new Error("Bot 不存在，请先创建。");
+      }
+      const lease: CloudDesktopViewerLease = {
+        version: 1,
+        attachmentId: `att-fake-${botId}`,
+        ticket: "fake-ticket",
+        resourceId: botId,
+        generationId: `gen-fake-${botId}`,
+        access: "write",
+        incarnation: "a".repeat(64),
+        expiresAt: Date.now() + 5 * 60_000,
+        // 本地 mock 无法真正代理桌面流：这里只演示契约（无密码、无公网 URL）。
+        tunnel: { mode: "rfb", ip: "127.0.0.1", port: "5903" },
+      };
+      desktopViewerLeases.set(lease.attachmentId, lease);
+      return lease;
+    },
+
+    async claimDesktopViewer(_botId, attachmentId, ticket) {
+      await wait(NETWORK_DELAY_MS / 2);
+      const lease = desktopViewerLeases.get(attachmentId);
+      if (!lease || lease.ticket !== ticket) {
+        throw new Error("观看票据无效或已过期。");
+      }
+      desktopViewerLeases.delete(attachmentId);
+      return {
+        version: lease.version,
+        attachmentId: lease.attachmentId,
+        resourceId: lease.resourceId,
+        generationId: lease.generationId,
+        access: lease.access,
+        incarnation: lease.incarnation,
+        expiresAt: lease.expiresAt,
+        tunnel: lease.tunnel,
+      };
+    },
+
+    async releaseDesktopViewer(_botId, attachmentId) {
+      desktopViewerLeases.delete(attachmentId);
     },
 
     async configureQQChannel(botId, input) {

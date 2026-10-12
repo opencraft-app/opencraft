@@ -4,9 +4,11 @@
 
 **Selepas mendaftar masuk dan mengaktifkan pelan LightVela, anda boleh berbual dengan Bot yang dipilih dari Daily → Chat dalam Ejen Saya tanpa perlu menyambungkan saluran mesej terlebih dahulu. Bar sisi menyimpan perbualan Bot itu, supaya anda boleh memulakan perbualan baru atau kembali ke perbualan sedia ada. Sebelum menghantar mesej, pastikan Bot dalam talian dan kredit model pelan tersedia atau model telah dikonfigurasikan.**
 
-![Perbualan baru dalam konsol antarabangsa LightVela, dengan bar sisi ditutup](../../images/chat-overview-en.webp)
+![Perbualan Web Chat baharu dalam konsol antarabangsa LightVela](../../images/chat-overview-en.webp)
 
 ## Mulakan perbualan
+
+Selepas log masuk dengan Google atau GitHub dan mengaktifkan pelan yang tersedia, buka [konsol Agent](/agents/overview/). Lengkapkan persediaan Bot pertama: masukkan nama yang wajib, tambah penerangan jika perlu, dan laraskan penampilannya. Pilih **Buat** dan tunggu penciptaan serta konfigurasi awal selesai. Selepas konfigurasi selesai, pilih **Mulakan perjalanan**, kemudian buka sembang web untuk Bot itu. Saluran pemesejan adalah pilihan; balasan memerlukan kredit model pelan yang tersedia atau model yang telah dikonfigurasi.
 
 1. Buka My Agent dan pilih Bot yang anda ingin gunakan di bahagian atas bar sisi.  
 2. Di bawah Harian, kembangkan Chat dan pilih Perbualan baru. Anda juga boleh memulakan perbualan untuk Bot tertentu dari kadnya di halaman Gambaran Keseluruhan.  

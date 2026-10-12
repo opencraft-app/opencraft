@@ -104,6 +104,7 @@ const CN_SIDEBAR: DocGroup[] = [
       { slug: "configuration/diagnostics", title: "诊断中心" },
       { slug: "configuration/advanced-settings", title: "高级设置" },
       { slug: "faq", title: "常见问题 FAQ" },
+      { slug: "user-feedback", title: "用户反馈" },
       { slug: "contact-us", title: "联系我们" },
     ],
   },
@@ -392,6 +393,7 @@ const CN_SLUG_TO_FILE: Record<string, string> = {
   // 管理与排障
   faq: "07-faq.md",
   // 管理与排障：支持
+  "user-feedback": "user-feedback.md",
   "contact-us": "contact-us.md",
   // 对比与选型
   "compare/lightvela-vs-manus": "compare/lightvela-vs-manus.md",

@@ -31,7 +31,9 @@ Sembang Web berada di bawah Harian; sambungkan Saluran luaran hanya apabila anda
 
 ## Bot dan maklumat Bot yang dipilih
 
-Bahagian atas konsol mengandungi tab Bot untuk Hermes Agent semasa. Tab pertama ialah Bot utama; setiap tab tambahan ialah profil Bot yang berasingan. Pelan anda menentukan jumlah had Bot, termasuk Bot utama. Semasa pelancaran antarabangsa secara berperingkat, entri penciptaan tidak dipaparkan secara lalai. Lihat [Urus Bot](./configuration/bots.md) untuk kaedah penciptaan dan peraturan pewarisan.
+Pilih avatar Bot yang dikehendaki pada bar Bot. Pada skrin sempit, buka panel navigasi terlebih dahulu. Semak namanya sebelum mengubah model, memori, kemahiran, saluran, atau tugas berjadual. Sembang web dan senarai perbualan mengikut Bot yang dipilih; Bot tambahan juga boleh menggunakan sembang web. Sembang web tidak memerlukan saluran pemesejan.
+
+Untuk mencipta Bot seterusnya, pilih **Bot Baharu** jika tersedia dan kuota pelan mencukupi. Isi **Nama** (wajib) dan **Penerangan** (pilihan), kemudian laraskan penampilan jika perlu. Pilihan lalai ialah **Persediaan asas**. Jika ada Bot sumber yang sah, buka **Lanjutan** dan pilih Bot tertentu untuk disalin. Untuk menyalin Bot yang sedang digunakan, buka **Urus Bot → Salin Bot**; borang akan memilih sumber itu terlebih dahulu. Semak sumber, pilih **Buat**, dan tunggu sehingga selesai.
 
 Selepas memilih Bot, maklumat asasnya ditunjukkan di bawah:
 

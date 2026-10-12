@@ -47,6 +47,8 @@ OpenCraft iOS 的内置 Bot DOM runtime 同时包含国内与国际的 frontend 
 
 ## 产品文档区域
 
+国内 `/docs/user-feedback/` 为独立中文反馈指南，在国内侧栏、slug 映射和生成注册表同时登记，并与 `/docs/contact-us/` 互链；提交入口仍为国内 `/support`，文档链接同步不得添加 `/zh-cn` 前缀；国际反馈链接才使用对应语言前缀。国际文档不回退到该国内页面。反馈表单联系方式保持选填，展示邮箱示例，不再展示重复的联系提示句。
+
 国际站马来语使用 `ms-MY`（Bahasa Melayu），公开路径前缀为 `/ms-my/`，语言注册表 `frontend/src/i18n/locales.json` 同时控制语言切换与公开发布。马来语文档以 `src/content/docs/ms/` 为独立源，覆盖国际站英文文档清单，不跨区域或语言回退；标题、简介与分类来自同目录 `metadata.json`，生成 `/ms-my/docs/` 页面与独立搜索索引。国内站不生成马来语公开页面。
 
 马来语主界面和公共结构化词典均通过语言就绪流程按需装载；非马来语浏览器不下载公共词典，马来语资源与公共词典都准备完成后才渲染，服务端预载保证静态首帧完整。场景任务文案仅在马来语消费时翻译，避免模块加载时计算。公共结构化文案仅收录实际消费的英文文本，保留字段绑定、内部标识和链接值；字典读取只允许自身键，避免把对象原型属性当作译文。产品对话使用嵌入式 OpenCraft 工作台，`opencraft/apps/workbench-web/src/i18n/catalogs.ts` 的 embeddedLocaleCatalogs 注册 `ms-MY`，宿主语言更新由 WorkbenchLocaleController 消费；独立 OpenCraft 的语言列表仍由独立目录管理。马来语工作台目录须通过 ICU 参数和完整条目检查。

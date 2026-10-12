@@ -1,3 +1,4 @@
+import type { MessageSender } from "./message-sender";
 export type ThreadHistoryItemsView = "full" | "notLoaded";
 export type ThreadHistorySortDirection = "asc" | "desc";
 
@@ -13,6 +14,8 @@ export interface ThreadHistoryCursors {
 }
 
 export interface AppServerThreadItem {
+  /** Host-owned user-message provenance; absent on native/legacy items. */
+  readonly sender?: MessageSender | null;
   id: string;
   type?: string;
   [field: string]: unknown;

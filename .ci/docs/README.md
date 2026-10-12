@@ -15,3 +15,7 @@
 ## 验证
 
 按变更范围运行 `.ci/runtime/check_ci_runtime.py` 和对应命令的测试或 dry-run；任何真实构建、晋级或发布均需用户单独授权。
+
+## frontend-next 托管构建
+
+候选入口 [frontend-next.yml](../frontend-next.yml) 在平台公共 Docker 构建池运行，手动触发。设置 `TCR_SHPROD_PASSWORD` 后，复用既有四组 frontend 静态 artifact 构建/归档验证，不自动发布站点。可用 `FRONTEND_ARTIFACT_MATRIX` 选择更小矩阵。配置和首次真实构建验收边界见 [正式设计](../../docs/engineering/domains/release-gitops.md#frontend-next-平台构建机试验入口)。

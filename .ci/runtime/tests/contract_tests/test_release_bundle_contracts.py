@@ -1715,7 +1715,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         pin_text = (REPO_ROOT / ".ci/runtime/pin_image_to_gitops.sh").read_text()
         self.assertIn("playground/sandbox-jp-*", template_text)
         jp_registry_credential = "${{ settings.TCR_JP1_REGISTRY_CREDENTIAL.password }}"
-        self.assertEqual(template_text.count(jp_registry_credential), 2)
+        self.assertEqual(template_text.count(jp_registry_credential), 3)
         self.assertNotIn("${{ settings.TCR_JP1_PASSWORD }}", template_text)
         self.assertIn("sandbox-jp-*|tokyo-sandbox", init_text)
         self.assertIn("/etc/lightclaw-ci/tcr_jp1_password", init_text)
@@ -2833,8 +2833,8 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertIn('AUTO_PIN_ENVS="$(resolve_playground_envs "auto" "$PLAYGROUND_ENV")"', workflow_text)
         self.assertIn("skip frontend artifact matrix build for playground branch", workflow_text)
         self.assertIn("shared Pages artifacts are master-only", workflow_text)
-        self.assertIn("skip Cloudflare artifact release for playground branch", workflow_text)
-        self.assertIn("shared Cloudflare staging is master-only", workflow_text)
+        self.assertIn("skip EdgeOne prerelease artifact release for playground branch", workflow_text)
+        self.assertIn("shared EdgeOne prerelease is master-only", workflow_text)
         self.assertIn("SHORT_SHA='${{ ci.sha }}'", workflow_text)
         self.assertIn('SHORT_SHA="${BK_CI_GIT_HEAD_COMMITS%%,*}"', workflow_text)
         self.assertNotIn('SHORT_SHA="${{ ci.sha }}"', workflow_text)
@@ -2889,7 +2889,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         self.assertNotIn("FRONTEND_EDGEONE_RELEASE_MATRIX", workflow_text)
         self.assertNotIn("确认发布 frontend EdgeOne 正式站", workflow_text)
         self.assertNotIn("发布 frontend EdgeOne 正式站", workflow_text)
-        self.assertNotIn("ci_load_edgeone_credentials", workflow_text)
+        self.assertNotIn("ci_load_edgeone_credentials", yaml.safe_dump(fanout_stage))
         self.assertNotIn("trigger_frontend_edgeone_releases.py", workflow_text)
         self.assertNotIn("--target orchestrator", workflow_text)
         self.assertNotIn("BK_CI_ACCESS_TOKEN", workflow_text)
@@ -2969,13 +2969,13 @@ class ReleaseBundleContractTests(unittest.TestCase):
         frontend_variables = frontend_workflow.get("variables") or {}
         self.assertEqual(
             frontend_variables.get("FRONTEND_ARTIFACT_MATRIX", {}).get("value"),
-            "cf:cn-lightvela-staging,cf:global-lightvela-intl-staging,eo:cn-lightvela-prod-next,eo:global-lightvela-intl-prod-next",
+            "eo:cn-lightvela-prerelease,eo:global-lightvela-prerelease-preview,eo:cn-lightvela-prod-next,eo:global-lightvela-intl-prod-next",
         )
         self.assertEqual(
             frontend_variables.get("FRONTEND_RELEASE_MATRIX", {}).get("value"),
-            "cf:cn-lightvela-staging,cf:global-lightvela-intl-staging",
+            "eo:cn-lightvela-prerelease,eo:global-lightvela-prerelease-preview",
         )
-        self.assertIn("frontend 发布决策：进入 Cloudflare 预发 artifact 发布流程", frontend_text)
+        self.assertIn("frontend 发布决策：进入 EdgeOne 北京预发 artifact 发布流程", frontend_text)
         self.assertIn("SubPipelineExecStream@1.*", frontend_text)
 
         self.assertFalse((REPO_ROOT / ".ci/subpipeline-call-probe.yml").exists())
@@ -3991,6 +3991,7 @@ refresh_skus http://unused img-jhb "$pools_json" ap-johorbahru
         self.assertEqual(parameters.get("MASTER_AUTO_PIN_ENVS"), "tkexgz,tkexsg")
         self.assertEqual(parameters.get("IMAGE_PIN_VARIANT"), "testing,staging")
         self.assertEqual(parameters.get("MANUAL_PROMOTE_IMAGE_PIN_VARIANT"), "primary")
+        self.assertIs(parameters.get("PRINT_RUNNER_DIAGNOSTICS"), False)
         self.assertEqual(parameters.get("ENABLE_MASTER_PROD_PROMOTE"), False)
         self.assertEqual(parameters.get("PLAYGROUND_BUILD_ENVS"), "none")
         self.assertEqual(parameters.get("PLAYGROUND_AUTO_PIN_ENVS"), "none")
@@ -4005,6 +4006,24 @@ refresh_skus http://unused img-jhb "$pools_json" ap-johorbahru
         self.assertIn("argocd/services/cloudladdergateway/**", watched_paths)
         self.assertIn("argocd/secrets/*/cloudladdergateway-krsbx-callback-secrets.sops.yaml", watched_paths)
         self.assertIn("argocd/secrets/*/cloudladdergateway-polaris-*.sops.yaml", watched_paths)
+
+    def test_manual_promote_receives_registry_credentials(self) -> None:
+        template = yaml.safe_load((REPO_ROOT / ".ci/templates/service-release.yml").read_text())
+        steps = template["stages"][0]["jobs"]["release"]["steps"]
+        build_step = next(step for step in steps if step["name"] == "构建 ${{ parameters.DISPLAY_NAME }} 镜像矩阵")
+        promote_step = next(step for step in steps if step["name"] == "手动发布 ${{ parameters.DISPLAY_NAME }} 到 GitOps")
+
+        for credential in (
+            "TCR_BEIJING_PASSWORD",
+            "TCR_BEIJING_LLMGATEWAY_PASSWORD",
+            "TCR_KR1_PASSWORD",
+            "TCR_JP1_PASSWORD",
+            "TCR_SHPROD_PASSWORD",
+            "TCR_SGPROD_PASSWORD",
+            "CSIGHUB_USERNAME",
+            "CSIGHUB_PASSWORD",
+        ):
+            self.assertEqual(promote_step["env"][credential], build_step["env"][credential])
 
     def test_lightclaw_auth_workflow_watches_release_contract_inputs(self) -> None:
         workflow = yaml.safe_load((REPO_ROOT / ".ci/lightclaw-auth.yml").read_text())

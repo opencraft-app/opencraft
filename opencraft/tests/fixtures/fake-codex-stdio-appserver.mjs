@@ -6,6 +6,7 @@ let nextServerRequestId = 901;
 let nextTurnId = 1;
 const turns = new Map();
 const history = new Map();
+const acceptedInputs = [];
 const deferredSteerHistory = new Map();
 const loadedThreads = new Set();
 // stdio is one physical AppServer connection even when OpenCraft has many logical Clients.
@@ -69,6 +70,7 @@ input.on("line", line => {
     return;
   }
   if (message.method === "turn/start") {
+    acceptedInputs.push({ method: message.method, params: message.params });
     const threadId = message.params.threadId;
     if (turns.has(threadId)) {
       send({ id: message.id, error: { code: -32600, message: "thread already has an active or pending turn" } });
@@ -87,6 +89,7 @@ input.on("line", line => {
     return;
   }
   if (message.method === "turn/steer") {
+    acceptedInputs.push({ method: message.method, params: message.params });
     const threadId = message.params.threadId;
     const turnId = turns.get(threadId);
     if (!turnId) {
@@ -200,5 +203,6 @@ input.on("line", line => {
     send({ method: "serverRequest/resolved", params: { threadId: "codex-thread-1", requestId: message.id } });
     return;
   }
+  if (message.method === "test/readAcceptedInputs") { send({ id: message.id, result: { data: acceptedInputs } }); return; }
   send({ id: message.id, result: {} });
 });

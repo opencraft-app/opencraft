@@ -364,6 +364,33 @@ describe("http repositories auth token bootstrap", () => {
     );
   });
 
+  it("claims a desktop viewer with a JSON object body at the attachment-scoped endpoint", async () => {
+    const ticket = "viewer-ticket";
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          code: "OK",
+          message: "success",
+          data: { attachment_id: "att/1" },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const repositories = createHttpRepositories("https://lightclaw.tech");
+    const claim = await repositories.bots.claimDesktopViewer("ins-1", "att/1", ticket);
+
+    expect(claim.attachmentId).toBe("att/1");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("https://lightclaw.tech/v1/instances/ins-1/desktop/viewer/att%2F1/claim");
+    expect(init.method).toBe("POST");
+    expect(new Headers(init.headers).get("Content-Type")).toBe("application/json");
+    expect(typeof init.body).toBe("string");
+    expect(JSON.parse(init.body as string)).toEqual({ ticket });
+  });
+
   it("maps a Ready desktop session from snake_case ctl payload to camelCase", async () => {
     writeStoredAuthToken("persisted-bearer-token");
     const fetchMock = vi.fn().mockResolvedValue(

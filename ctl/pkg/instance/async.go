@@ -1068,6 +1068,7 @@ func (l *logic) RunCreateInstanceTask(ctx pctx.Context, payload *CreateInstanceT
 	l.recordCreateSuccessEvent(ctx, entity.InstanceId)
 	l.deliverWebsiteSkillOnCreate(ctx, entity, sandboxResp.SandboxID)
 	l.deliverWebsiteCredentialOnCreate(ctx, entity, sandboxResp.SandboxID)
+	l.ensureDesktopBrowserOnCreate(ctx, sandboxResp.SandboxID)
 
 	return nil
 }

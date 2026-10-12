@@ -2,9 +2,9 @@
 
 ## 요약
 
-**개인 AI 비서를 만들 때는 모든 기능을 한꺼번에 자동화하지 마세요. 먼저 평소 사용하는 채팅 앱에서 클라우드 Hermes Agent에 접속할 수 있게 한 뒤 메모리, 스킬, 예약 작업을 차례로 추가하는 것이 좋습니다.** 다섯 구성 요소는 각각 다른 문제를 해결합니다. 모델은 추론 품질을, 채널은 에이전트에 접속할 위치를 결정합니다. 메모리는 사용자의 작업 방식을 계속 기억하게 하고, 스킬은 재사용 가능한 절차를 제공하며, 예약 작업은 사용자가 자리를 비운 동안 합의한 일을 실행합니다. 첫 주에는 모델 하나를 설정하고 채널 하나를 연결한 뒤 메모리가 세션을 넘어 유지되는지만 확인하세요. 이 경로가 안정된 다음 스킬과 예약 작업을 추가하면 문제가 생겼을 때 원인이 어느 레이어에 있는지 쉽게 찾을 수 있습니다.
+**개인 AI 비서는 먼저 Bot 하나를 생성하고 선택한 뒤 사용 가능한 모델 크레딧이나 설정된 모델로 웹 채팅 답변을 확인하는 것부터 시작합니다. 메시징 앱을 사용하려는 경우에만 채널을 연결하세요. 다음으로 새 대화에서도 일정한 선호가 기억되는지 확인하고, 구체적인 작업에 필요한 스킬을 추가합니다. 예약 작업은 지시가 잘 작동하는지 확인한 뒤 설정하세요. 메모리, 스킬, 채널, 작업은 선택한 Bot별로 관리합니다.**
 
-![채널 전반에 걸쳐 LightVela를 갖춘 개인 AI 비서](../../images/use-case-personal-ai-assistant.webp)
+![LightVela 국제 콘솔의 새 Web Chat 대화](../../images/use-case-personal-ai-assistant.webp)
 
 ## 대상 독자
 
@@ -14,11 +14,11 @@
 
 ## 전제 조건
 
-- LightVela 계정 및 실행 중인 Hermes Agent. 아직 생성하지 않았다면 [빠른 시작](https://lightvela.ai/docs/quickstart)부터 시작하세요.
+- LightVela 계정 및 실행 중인 Hermes Agent. 아직 생성하지 않았다면 [빠른 시작](../02-quickstart.md)부터 시작하세요.
 
-- 하나의 대화 채널. Telegram, WhatsApp, Discord, Slack 및 WeChat는 일반적인 시작점입니다. 매일 열 가능성이 가장 높은 것을 선택하세요.
+- 웹 채팅만으로 시작할 수 있습니다. 메시징 앱을 선호한다면 아래 안내에 따라 채널을 연결하세요.
 
-- 작동하는 모델 구성 또는 사용 가능한 평가판 크레딧. Hermes가 아직 응답할 수 없는 경우 [모델 구성](https://lightvela.ai/docs/configuration/model)을 참조하세요.
+- 작동하는 모델 구성 또는 사용 가능한 평가판 크레딧. Hermes가 아직 응답할 수 없는 경우 [모델 구성](../configuration/model.md)을 참조하세요.
 
 - 먼저 도움을 받고 싶은 내용에 대한 간략한 아이디어. 하루 계획을 세우거나 후속 조치를 취하는 것과 같은 단일 루틴이면 충분합니다.
 
@@ -26,7 +26,11 @@
 
 ### 1. Hermes를 일상 흐름에 연결합니다
 
-메시징 채널 하나를 연결한 뒤, 평소 하루 일정을 정리하는 곳에서 첫 메시지를 보내세요. 채널은 단순한 전달 수단이 아니라 비서에게 자연스럽게 다시 돌아오게 만드는 사용 습관입니다. [Telegram](https://lightvela.ai/docs/configuration/channel-telegram), [WhatsApp](https://lightvela.ai/docs/configuration/channel-whatsapp), [Discord](https://lightvela.ai/docs/configuration/channel-discord), [Slack](https://lightvela.ai/docs/configuration/channel-slack), [WeChat](https://lightvela.ai/docs/configuration/channel-wechat) 설정 가이드를 참고하세요.
+Bot 표시줄에서 원하는 Bot의 아바타를 선택합니다. 화면이 좁으면 먼저 탐색 패널을 여세요. 모델, 메모리, 스킬, 채널, 예약 작업을 바꾸기 전에 이름을 확인하세요. 웹 채팅과 대화 목록은 선택한 Bot에 속하며 추가 Bot도 웹 채팅을 사용할 수 있습니다. 웹 채팅에는 메시징 채널 연결이 필요하지 않습니다.
+
+웹 채팅만으로 시작할 수 있습니다. 메시징 앱을 선호한다면 아래 안내에 따라 채널을 연결하세요.
+
+메시징 앱을 사용하려면 채널 하나를 연결하고 Bot의 답변을 확인하세요. 다음 설정 가이드를 참고하세요: [Telegram](../configuration/channel-telegram.md), [WhatsApp](../configuration/channel-whatsapp.md), [Discord](../configuration/channel-discord.md), [WeChat](../configuration/channel-wechat.md), [Slack](../configuration/channel-slack.md).
 
 ![LightVela 콘솔의 채널 페이지](../../images/personal-ai-assistant-channel.webp)
 
@@ -48,7 +52,9 @@ Remember that I prefer a concise weekday briefing at 8:00 AM,
 with meetings, deadlines, and the three most important next actions.
 ```
 
-[메모리 관리](https://lightvela.ai/docs/configuration/memory) 페이지에서는 메모리와 Hermes가 축적한 사용자 프로필 정보를 검토할 수 있습니다. 메모리는 반복을 줄여야 하며, 지나가는 모든 세부 사항에 대한 쓰레기장이 되어서는 안 됩니다.
+[메모리 관리](../configuration/memory.md) 페이지에서는 메모리와 Hermes가 축적한 사용자 프로필 정보를 검토할 수 있습니다. 메모리는 반복을 줄여야 하며, 지나가는 모든 세부 사항에 대한 쓰레기장이 되어서는 안 됩니다.
+
+평일 오전 8시에 브리핑을 받고 싶다는 선호를 기억하게 해도 예약 작업이 생성되지는 않습니다. 일정을 별도로 설정하고 첫 실행 결과와 선택한 알림 채널의 수신 여부를 확인하세요.
 
 ### 3. 실제 작업에 필요할 때만 스킬을 추가합니다
 
@@ -69,15 +75,27 @@ Every weekday at 8:00 AM, prepare a concise plan for today.
 Start with deadlines and meetings, then suggest three focused next actions.
 ```
 
-[예약 작업](https://lightvela.ai/docs/configuration/automation)에서 일정 및 알림 채널을 설정하세요. 첫 번째 예약 작업을 작게 유지하십시오. 몇 가지 실제 결과를 본 후에 지침을 구체화할 수 있습니다.
+[예약 작업](../configuration/automation.md)에서 일정 및 알림 채널을 설정하세요. 첫 번째 예약 작업을 작게 유지하십시오. 몇 가지 실제 결과를 본 후에 지침을 구체화할 수 있습니다.
 
-![LightVela 콘솔의 예약 작업 페이지](../../images/personal-ai-assistant-automations.webp)
+![LightVela 예약 작업 페이지의 공식 작업 템플릿](../../images/personal-ai-assistant-automations.webp)
+
+## 각 구성 요소 확인
+
+| 구성 요소 | 확인 방법 | 제한 |
+| --- | --- | --- |
+| Bot과 웹 채팅 | 원하는 Bot을 선택하고 짧은 메시지 보내기 | 온라인 Bot과 사용 가능한 크레딧 또는 모델 설정이 필요함 |
+| 메모리 | 일정한 선호를 전달하고 새 대화에서 확인하기 | 새 대화는 장기 메모리를 지우지 않음 |
+| 예약 작업 | 일정, 알림 채널, 결과 확인하기 | Bot 생성이나 복사는 예약 작업과 채널 연결을 복사하지 않음 |
+
+## 결과 확인
+
+채널을 연결하기 전에 웹 채팅 답변을 확인하세요. 새 대화에서 기억한 선호를 시험하고 첫 예약 작업 결과를 확인합니다. 채널이나 작업이 실패하면 기능을 추가하기 전에 선택한 Bot, 설정, 상태를 확인하세요.
 
 ## FAQ
 
 ### Hermes를 유용하게 사용하려면 모든 기능을 구성해야 하나요?
 
-아니요. 채널과 작동하는 모델만으로 시작하기에 충분합니다. 유지할 가치가 있는 반복 작업을 찾으면서 메모리, 스킬 및 예약 작업을 점차적으로 추가하세요.
+웹 채팅만으로 시작할 수 있습니다. 메시징 앱을 선호한다면 아래 안내에 따라 채널을 연결하세요.
 
 ### Hermes는 내가 보내는 모든 메시지를 기억하나요?
 
@@ -85,16 +103,12 @@ Start with deadlines and meetings, then suggest three focused next actions.
 
 ### 두 대 이상의 채널에서 동일한 어시스턴트를 사용할 수 있나요?
 
-예. 여러 연결된 채널은 동일한 Hermes Agent를 가리킬 수 있으므로 지원되는 메시징 플랫폼 간에 이동하는 동안 도우미가 동일한 컨텍스트를 유지할 수 있습니다.
+예, 해당 채널이 같은 Bot에 연결되어 있다면 가능합니다. 장기 메모리와 선호는 그 Bot에 속합니다. 다른 Bot은 별도의 작업 공간을 가지며, 복사는 생성 시점의 상태만 전달합니다. 이후 변경 사항은 동기화되지 않습니다.
 
 ### 무엇을 먼저 자동화해야 하나요?
 
 예측 가능한 시간에 이미 반복하고 있는 작업을 선택하세요. 아침 계획, 짧은 일일 검토 또는 주간 우선순위 확인은 결과가 도움이 되는지 빠르게 알 수 있기 때문에 좋은 첫 번째 후보입니다.
 
-## 다음 단계
+## 마무리
 
-- [채팅](https://lightvela.ai/docs/configuration/agent-chat) — 콘솔에서 직접 Hermes와 작업합니다.
-
-- [메모리 관리](https://lightvela.ai/docs/configuration/memory) — 어시스턴트가 대화 전반에 걸쳐 유지하는 내용을 검토하세요.
-
-- [예약 작업](https://lightvela.ai/docs/configuration/automation) — 유용하다고 입증된 루틴을 예약합니다.
+첫 비서는 하나의 일상 작업에 집중하게 하세요. 선택한 Bot에서 채팅, 메모리, 첫 예약 작업이 잘 작동하면 역할을 점차 넓히세요.

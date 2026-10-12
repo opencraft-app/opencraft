@@ -509,6 +509,16 @@ func (s *MySQLStore) markStatus(
 	} else {
 		bodyArg = nil
 	}
+	if newStatus == FlowStatusFailed {
+		return s.markFailedAndOrder(ctx, q,
+			[]any{newStatus, bodyArg, dealName, flowType, appID, FlowStatusInProgress},
+			`UPDATE trade_order AS o JOIN trade_flow AS f ON f.deal_name = o.deal_name AND f.app_id = o.app_id
+			 SET o.status = 'provision_failed', o.updated_time = NOW()
+			 WHERE f.deal_name = ? AND f.flow_type = ? AND f.app_id = ? AND f.status = 'failed'
+			 AND f.flow_type IN ('create_resource', 'renew_resource', 'modify_resource')
+			 AND o.status IN ('created', 'pending_pay', 'paid_pending_provision')`,
+			dealName, flowType, appID)
+	}
 	if _, err := s.db.ExecContext(ctx, q, newStatus, bodyArg, dealName, flowType, appID, FlowStatusInProgress); err != nil {
 		return fmt.Errorf("trade_flow: mark %s dealName=%s: %w", newStatus, dealName, err)
 	}
@@ -536,8 +546,37 @@ func (s *MySQLStore) markStatusByID(
 	} else {
 		bodyArg = nil
 	}
+	if newStatus == FlowStatusFailed {
+		return s.markFailedAndOrder(ctx, q,
+			[]any{newStatus, bodyArg, id, FlowStatusInProgress},
+			`UPDATE trade_order AS o JOIN trade_flow AS f ON f.deal_name = o.deal_name AND f.app_id = o.app_id
+			 SET o.status = 'provision_failed', o.updated_time = NOW()
+			 WHERE f.id = ? AND f.status = 'failed'
+			 AND f.flow_type IN ('create_resource', 'renew_resource', 'modify_resource')
+			 AND o.status IN ('created', 'pending_pay', 'paid_pending_provision')`, id)
+	}
 	if _, err := s.db.ExecContext(ctx, q, newStatus, bodyArg, id, FlowStatusInProgress); err != nil {
 		return fmt.Errorf("trade_flow: mark %s id=%d: %w", newStatus, id, err)
+	}
+	return nil
+}
+
+// markFailedAndOrder commits the terminal flow and its order projection together.
+// Replays also repair an order inserted after the first callback.
+func (s *MySQLStore) markFailedAndOrder(ctx context.Context, flowSQL string, flowArgs []any, orderSQL string, orderArgs ...any) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("trade_flow: begin failure transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, flowSQL, flowArgs...); err != nil {
+		return fmt.Errorf("trade_flow: mark failed: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, orderSQL, orderArgs...); err != nil {
+		return fmt.Errorf("trade_order: project failed flow: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("trade_flow: commit failed flow and order: %w", err)
 	}
 	return nil
 }

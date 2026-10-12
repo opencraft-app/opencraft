@@ -1,5 +1,18 @@
 # 工作区不变量
 
+## Employee account entrance
+
+- A configured Tencent OA identity provider automatically projects the verified
+  request identity into the existing Sidecar footer. The label is the employee
+  login name, or “员工身份” when anonymous; clicking opens details and refresh.
+- Footer precedence changes presentation only. Product account credentials and
+  resource authority remain independently owned; equal precedence is rejected
+  and unloading an employee provider restores the product entrance.
+- No fixed employee login URL, synthetic identity or unsupported logout control
+  is presented. Authoritative 401/expiration clears the footer; details remain
+  available for refresh. Covered by `tests/tencentoa.test.ts` and the real footer
+  controls in `scripts/smoke-tencentoa.ts`; live gateway evidence is separate.
+
 ## Embedded panel host presentation
 
 - Embedded panel viewport and its complete DOM content reuse the current conversation's panel service,
@@ -322,3 +335,5 @@ and platform hit testing; the 16-unit optical box does not dictate the touch
 target. Mobile keeps 44-point targets with neutral, transparent toolbar buttons.
 Panel visibility remains a projection of its existing owner, including after
 a swipe; icon adaptation must not introduce a parallel navigation state.
+
+宽屏 Composer 默认编辑区以容器自身宽度为准：达到 768px 时最小高度为 52px；低于该宽度保持 26px。内容继续自动增高至既有滚动上限。

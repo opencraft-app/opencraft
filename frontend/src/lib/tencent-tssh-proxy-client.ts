@@ -28,9 +28,11 @@ export interface TsshProxyTarget {
 }
 
 export interface TsshProxyConnectionHandlers {
+  /** Defaults to stream delivery alongside onData; callback avoids retaining an unread stream queue. */
+  consumptionMode?: "stream" | "callback";
   onStateChange?: (state: TsshProxyConnectionState) => void;
   onData?: (data: Uint8Array) => void;
-  onError?: (message: string) => void;
+  onError?: (message: string, error?: Error) => void;
   onClose?: () => void;
 }
 
@@ -180,31 +182,35 @@ export class TencentTsshProxyConnection {
   }
 
   receive(data: Uint8Array) {
-    if (this.state === "closed") {
+    if (this.state === "closed" || this.state === "error") {
       return;
     }
     this.handlers.onData?.(data);
-    this.controller?.enqueue(data);
+    if (this.handlers.consumptionMode !== "callback") this.controller?.enqueue(data);
   }
 
   fail(error: Error) {
     if (this.state === "closed" || this.state === "error") {
       return;
     }
-    this.setState("error");
-    this.handlers.onError?.(error.message);
-    this.controller?.error(error);
+    const controller = this.controller;
+    this.controller = null;
+    controller?.error(error);
     this.rejectClosed?.(error);
+    this.setState("error");
+    this.handlers.onError?.(error.message, error);
   }
 
   markClosed() {
     if (this.state === "closed") {
       return;
     }
+    const controller = this.controller;
+    this.controller = null;
     this.setState("closed");
-    this.controller?.close();
-    this.handlers.onClose?.();
+    controller?.close();
     this.resolveClosed?.();
+    this.handlers.onClose?.();
   }
 
   private setState(state: TsshProxyConnectionState) {
@@ -267,7 +273,7 @@ export class TencentTsshProxyClient {
 
     this.readyPromise = new Promise<void>((resolve, reject) => {
       let settled = false;
-      let readyTimer: ReturnType<typeof window.setTimeout> | null = null;
+      let readyTimer: number | null = null;
       const clearReadyTimer = () => {
         if (readyTimer !== null) {
           window.clearTimeout(readyTimer);
@@ -455,19 +461,27 @@ export class TencentTsshProxyClient {
   }
 
   closeProxy(connection: TencentTsshProxyConnection) {
-    this.sendBson("PtyProxyClose", connection.channelId, {
-      ProxyId: connection.proxyId,
-    });
-    this.connections.delete(connection.proxyId);
-    connection.markClosed();
+    try {
+      this.sendBson("PtyProxyClose", connection.channelId, {
+        ProxyId: connection.proxyId,
+      });
+    } finally {
+      this.connections.delete(connection.proxyId);
+      connection.markClosed();
+    }
   }
 
   close() {
     for (const connection of this.connections.values()) {
-      this.closeProxy(connection);
+      try {
+        this.closeProxy(connection);
+      } catch {
+        // A failed close frame must not prevent releasing the remaining channels/socket.
+      }
     }
-    this.socket?.close();
+    const socket = this.socket;
     this.socket = null;
+    socket?.close();
   }
 
   private async handleMessage(data: string | Blob | ArrayBuffer) {
@@ -552,14 +566,14 @@ export class TencentTsshProxyClient {
     this.readyPromise = null;
     this.rejectReady?.(error);
     this.rejectReady = null;
-    this.socket = null;
     this.options.onError?.(error.message);
-    for (const pending of this.pending.values()) {
-      window.clearTimeout(pending.timer);
-      pending.connection.fail(error);
-      pending.reject(error);
-    }
+    const pendingProxies = [...this.pending.values()];
     this.pending.clear();
+    for (const pending of pendingProxies) {
+      window.clearTimeout(pending.timer);
+      pending.reject(error);
+      pending.connection.fail(error);
+    }
     for (const connection of this.connections.values()) {
       connection.fail(error);
     }

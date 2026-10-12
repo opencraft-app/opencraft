@@ -52,14 +52,15 @@ const (
 //
 //	created / pending_pay  →  paid_pending_provision  →  provisioned  ✅终态
 //	                                                  ↘  payment_failed     ✅终态（预留）
-//	                                                  ↘  provision_failed   ✅终态（预留）
+//	                                                  ↘  provision_failed   ✅终态
 //	                                                  ↘  cancelled          ✅终态（v1.7.32 新增）
 //
 // 写入时机：
 //   - OrderStatusCreated / OrderStatusPendingPay：PlaceOrder 入口（双步式新购，等待用户跳支付页）
 //   - OrderStatusPaidPendingProvision：PlaceOrderAndPay 一体化下单+支付（迭代 8B-1.5）
 //   - OrderStatusProvisioned：createResource 收尾 / 一体化 BUG-22/23 同步链路
-//   - OrderStatusPaymentFailed / OrderStatusProvisionFailed：本期 jifei 协议未直接落，预留
+//   - OrderStatusPaymentFailed：预留
+//   - OrderStatusProvisionFailed：同步发货失败或失败的交付 Flow 投影
 //   - OrderStatusCancelled：orderstatus.QueryStatus 在 jifei 反查到 canceled / overdue / delete
 //     时 CAS 推进（v1.7.32 引入，详见 .tmp/ctl-order-status-query-design.md §1 不变量 B2/B6）
 //
@@ -75,7 +76,7 @@ const (
 	OrderStatusProvisioned = "provisioned"
 	// OrderStatusPaymentFailed 支付失败（终态，本期未直接写入；预留）。
 	OrderStatusPaymentFailed = "payment_failed"
-	// OrderStatusProvisionFailed 发货失败（终态，本期未直接写入；预留）。
+	// OrderStatusProvisionFailed 发货失败（终态）。
 	OrderStatusProvisionFailed = "provision_failed"
 	// OrderStatusCancelled 已取消（终态，v1.7.32 引入）。
 	OrderStatusCancelled = "cancelled"

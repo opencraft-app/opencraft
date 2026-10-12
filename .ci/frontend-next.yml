@@ -1,0 +1,44 @@
+version: v2.0
+name: 构建 frontend-next（平台构建机）
+
+on:
+  manual: enabled
+
+concurrency:
+  group: mono2-frontend-next-artifacts
+  cancel-in-progress: false
+  queue-length: 5
+  queue-timeout-minutes: 120
+
+variables:
+  FRONTEND_ARTIFACT_MATRIX:
+    value: cf:cn-lightvela-staging,cf:global-lightvela-intl-staging,eo:cn-lightvela-prod-next,eo:global-lightvela-intl-prod-next
+    readonly: false
+    allow-modify-at-startup: true
+
+stages:
+  - name: 构建并归档 frontend-next
+    jobs:
+      build:
+        name: 平台公共构建机
+        runs-on:
+          self-hosted: false
+          pool-name: docker
+        env:
+          VITE_AUTH_API_BASE_URL: https://lightclaw.tech
+          FRONTEND_ARTIFACT_MATRIX: ${{ variables.FRONTEND_ARTIFACT_MATRIX }}
+          FRONTEND_ARTIFACT_MODE: required
+          FRONTEND_ARTIFACT_EXISTING_POLICY: reuse
+          FRONTEND_ARTIFACT_REPOSITORY: lightclaw-shprod.tencentcloudcr.com/lightclaw/frontend-pages
+          REGISTRY_USERNAME: "100045199955"
+          REGISTRY_PASSWORD: ${{ settings.TCR_SHPROD_PASSWORD }}
+          FRONTEND_NEXT_EXPECTED_SHA: ${{ ci.sha }}
+        steps:
+          - checkout: self
+            name: 拉取本次构建源码
+            with:
+              fetchDepth: 1
+              enableVirtualMergeBranch: false
+          - name: 构建、归档并校验静态制品
+            shell: bash
+            run: bash .ci/runtime/commands/build_frontend_next_artifacts.sh

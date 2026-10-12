@@ -498,8 +498,8 @@ export function App({
     openView: workbenchNavigation.openExtensionView,
   });
   useEffect(() => {
-    if (extensionProjection.account?.snapshot.phase === "anonymous") setAccountOpen(false);
-  }, [extensionProjection.account?.snapshot.phase]);
+    if (extensionProjection.account?.snapshot.phase === "anonymous" && extensionProjection.account.provider.signInViewId) setAccountOpen(false);
+  }, [extensionProjection.account?.snapshot.phase, extensionProjection.account?.provider]);
   const authenticationPresentation = useAuthenticationPresentation(hostCatalog.authenticationFlows, extensionProjection.account,
     JSON.stringify([hostCatalog.currentLocation, workbenchNavigationSnapshot.applicationRoute]));
   const hostConnectionIntervention = findHostConnectionInterventionError(
@@ -1515,7 +1515,7 @@ export function App({
             account: extensionProjection.account === null ? null : {
               snapshot: extensionProjection.account.snapshot,
               signIn: authenticationPresentation.signIn,
-            onOpen: () => extensionProjection.account?.snapshot.phase === "anonymous" ? authenticationPresentation.open() : setAccountOpen(true),
+              onOpen: () => extensionProjection.account?.snapshot.phase === "anonymous" && extensionProjection.account.provider.signInViewId ? authenticationPresentation.open() : setAccountOpen(true),
               onRefresh: extensionProjection.account.provider.refresh,
               onSignOut: extensionProjection.account.provider.signOut,
             },

@@ -14,36 +14,30 @@
 
 ## Crear tu Bot
 
-Después de seleccionar **Nuevo Bot**, elige un avatar, escribe un nombre y una descripción, y decide si quieres crear un Bot vacío o clonar un Bot existente.
+Tras iniciar sesión con Google o GitHub y activar un plan disponible, abra la [consola del Agent](/agents/overview/). Complete la configuración del primer Bot: introduzca el nombre obligatorio, añada una descripción opcional y ajuste su apariencia. Seleccione **Crear** y espere a que terminen la creación y la configuración inicial. Cuando termine la configuración, seleccione **Empieza tu viaje** y abra el chat web de ese Bot. El canal de mensajería es opcional; las respuestas requieren créditos de modelo disponibles o un modelo configurado.
 
-Cuando ya existe otro Bot, el diálogo de creación puede ofrecer **Copiar Bot actual**, **Copiar Bot principal** o **Crear vacío**.
+Para crear otro Bot, seleccione **Nuevo bot** si la opción está disponible y el plan tiene capacidad. Introduzca **Nombre** (obligatorio) y **Descripción** (opcional), y ajuste la apariencia si lo necesita. La opción predeterminada es **Crear en blanco**. Si hay Bots válidos para copiar, abra **Avanzado** y seleccione un Bot de origen concreto. Para copiar el Bot que está usando, abra **Gestionar bot → Copiar Bot**; el formulario selecciona ese origen. Revise el origen, seleccione **Crear** y espere a que termine.
 
-Por ejemplo, para crear un Bot de análisis financiero, puedes introducir:
+El control para cerrar y las opciones avanzadas de copia solo aparecen cuando hay Bots de origen válidos. La primera configuración sin origen debe completarse. Los controles de apariencia cambian el color, la forma y los accesorios; no seleccionan el origen de la copia.
 
-> <strong>Nombre:</strong> Alpha Analyst
->
-> <strong>Descripción:</strong> Alpha Analyst se especializa en analizar informes de empresas, noticias de mercado, rendimiento de carteras, valoración y riesgos financieros. Produce análisis concisos y basados en evidencias, distingue claramente los hechos de las suposiciones y no presenta el análisis como asesoramiento financiero garantizado.
+Las capturas siguientes muestran el formulario actual para crear un Bot adicional y sus plantillas recomendadas. El control para cerrar y la sección Avanzado están disponibles porque este Agent ya tiene Bots; no es la pantalla de configuración del primer Bot.
 
 ![Formulario de creación de un Bot de LightVela con selector de avatar, campos de nombre y descripción y botón Crear](../../images/bots-switching-create.webp)
 
-La pantalla de creación también puede mostrar plantillas para roles específicos, como Gestor de salud, Observador del mercado o Compañero de estudio de IA.
-
-![Plantillas de creación de Bots de LightVela con Gestor de salud, Observador del mercado y Compañero de estudio de IA](../../images/bots-switching-templates.webp)
-
-Después de introducir los datos, confirma la creación y espera a que el nuevo Bot termine de aprovisionarse.
+![Plantillas recomendadas en el formulario de creación de un Bot adicional de LightVela](../../images/bots-switching-templates.webp)
 
 ## Espacio de trabajo y configuración del Bot
 
-Después de crearlo, el Bot abre su propio espacio de configuración. Desde la pestaña del Bot en la página principal del Agent, puedes seleccionar ese Bot y administrar sus opciones disponibles, incluida la memoria, las Skills, la personalidad, las tareas programadas y los canales conectados.
+Seleccione el avatar del Bot deseado en la barra de Bots. En pantallas estrechas, abra primero el panel de navegación. Compruebe su nombre antes de cambiar modelos, memoria, Skills, canales o tareas programadas. El chat web y la lista de conversaciones pertenecen al Bot seleccionado; los Bots adicionales también pueden usar el chat web. No necesita conectar un canal de mensajería para usarlo.
 
-![Resumen del Agent de LightVela con una tarjeta de Bot en la sección My Bots](../../images/bots-switching-overview.webp)
+![Barra de avatares de Bots junto a la navegación de Canales, Skills y Tareas programadas de LightVela](../../images/bots-switching-overview.webp)
 
 El modo de creación determina qué hereda el nuevo Bot:
 
 | Modo de creación | Se hereda | Se inicia por separado |
 | --- | --- | --- |
-| Crear vacío | El modelo principal y sus credenciales del proveedor, además de las Skills proporcionadas por el sistema | Modelos de respaldo, otros modelos configurados, personalidad, memoria, Skills instaladas después en el Bot principal, canales y tareas programadas |
-| Copiar Bot actual o Copiar Bot principal | Modelos, personalidad, Skills, preferencias del usuario y memoria a largo plazo | Conversación actual, historial de chats, tareas programadas, estado de ejecución y conexiones de canales |
+| Crear en blanco | El modelo principal y sus credenciales del proveedor, además de las Skills proporcionadas por el sistema | Modelos de respaldo, otros modelos configurados, personalidad, memoria, Skills instaladas después en el Bot principal, canales y tareas programadas |
+| Copiar Bot | Modelos, personalidad, Skills, preferencias del usuario y memoria a largo plazo | Conversación actual, historial de chats, tareas programadas, estado de ejecución y conexiones de canales |
 
 Revisa el diálogo de creación antes de confirmar si necesitas mantener la configuración separada. Después puedes administrar de forma independiente la [memoria](./memory.md), las [Skills](./skill.md) y las [tareas programadas](./automation.md) de cada Bot.
 
@@ -53,9 +47,9 @@ Un Bot puede encargarse de muchas tareas, pero su contexto se vuelve más difíc
 
 Los Bots independientes también facilitan probar otro estilo de trabajo sin cambiar el Bot que ya usas para otra tarea.
 
-![Menú del perfil de Bot de LightVela con varios Bots que se pueden seleccionar](../../images/bots-switching-selector.webp)
+![Barra de avatares de LightVela con dos Bots y el control para crear otro Bot](../../images/bots-switching-selector.webp)
 
-El resultado es un espacio de trabajo de LightVela más organizado. Para cambiar de Bot, haz clic en el perfil del Bot activo en la esquina superior izquierda del espacio de trabajo del Agent y elige otro Bot en el menú.
+Seleccione el avatar del Bot deseado en la barra de Bots. En pantallas estrechas, abra primero el panel de navegación. Compruebe su nombre antes de cambiar modelos, memoria, Skills, canales o tareas programadas. El chat web y la lista de conversaciones pertenecen al Bot seleccionado; los Bots adicionales también pueden usar el chat web. No necesita conectar un canal de mensajería para usarlo.
 
 ## Cómo usar varios Bots a la vez
 
@@ -63,7 +57,6 @@ Puedes conectar varios Bots a los canales de mensajería compatibles. Las combin
 
 | Versión de LightVela | Canales que admiten la integración de varios Bots |
 | --- | --- |
-| Versión para China | WeChat, QQ, WeCom, Lark, DingTalk |
 | Versión global | Telegram, Discord, WeChat, Slack, QQ, WeCom, Lark |
 
 Distintos Bots de una misma instancia pueden conectar cuentas de WeChat diferentes. Cada Bot administra su propia conexión. WhatsApp sigue limitado a un Bot conectado por instancia; los demás Bots ven un aviso y un enlace para administrar al Bot propietario.

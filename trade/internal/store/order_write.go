@@ -13,12 +13,11 @@ import (
 //
 // 写端职责覆盖：
 //   - PlaceOrder 入口：CreateOrder（落地 status='created' 或 'pending_pay' 初始流水）
-//   - createResource 链路收尾（迭代 6 OrderProvisionUpdater 真实实现）：
-//     MarkOrderProvisioned（resource_id 反向回填 + status='provisioned'）
+//   - createResource 链路收尾：MarkOrderProvisioned（resource_id 反向回填 + status='provisioned'）
 //
 // 设计稿对齐（§4.2.1 / §6.2 / Q41~Q50）：
 //   - status 状态机：created → pending_pay → paid_pending_provision → provisioned
-//     （payment_failed / provision_failed 是分支终态，本期不实现状态降级 SQL）
+//     （provision_failed 由失败 flow 或同步发货失败推进）
 //   - resource_id 列允许 NULL；只有 createResource 收尾才写非空值
 //   - JSON 字段 goods_detail 在 DAO 层序列化为 raw JSON 落库，业务层不感知
 
@@ -151,16 +150,6 @@ type OrderWriter interface {
 	MarkOrderCancelled(ctx context.Context, dealName string) error
 }
 
-// DianshiRenewOrderWriter 原子写入点石续费订单和续费场景参与记录。
-// 独立于 OrderWriter，避免把点石活动能力扩散到所有订单写端测试替身。
-type DianshiRenewOrderWriter interface {
-	CreateDianshiRenewOrderWithParticipation(
-		ctx context.Context,
-		order CreateOrderInput,
-		participation UserActivityParticipation,
-	) error
-}
-
 // ErrTradeOrderResourceIDConflict 表示 trade_order 已被另一个不同 resource_id 占用。
 //
 // 这是数据不一致信号（同一 deal_name 不应被两个不同 pass 占用）；上层 createresource handler
@@ -169,7 +158,6 @@ var ErrTradeOrderResourceIDConflict = errors.New("trade_order: resource_id confl
 
 // 编译期断言 *MySQLStore 实现 OrderWriter 接口。
 var _ OrderWriter = (*MySQLStore)(nil)
-var _ DianshiRenewOrderWriter = (*MySQLStore)(nil)
 
 // CreateOrder 实现 OrderWriter。
 //
@@ -187,7 +175,39 @@ func (s *MySQLStore) CreateOrder(ctx context.Context, in CreateOrderInput) error
 	if s == nil || s.db == nil {
 		return fmt.Errorf("trade_order: store is nil")
 	}
-	return createOrder(ctx, s.db, in)
+	if err := createOrder(ctx, s.db, in); err != nil {
+		return err
+	}
+	// The provider may have called us back before GenerateDealsAndPay returned.
+	// Reconcile after INSERT; the callback-side failure transaction handles the
+	// opposite ordering. Only terminal failure flows can downgrade a pending order.
+	const q = `
+		UPDATE trade_order AS o JOIN trade_flow AS f ON f.deal_name = o.deal_name AND f.app_id = o.app_id
+		   SET o.status = 'provision_failed', o.updated_time = NOW()
+		 WHERE o.deal_name = ? AND o.status IN ('created', 'pending_pay', 'paid_pending_provision')
+		   AND f.status = 'failed'
+		   AND f.flow_type = CASE o.order_type
+		       WHEN 'renew' THEN 'renew_resource'
+		       WHEN 'modify' THEN 'modify_resource'
+		       ELSE 'create_resource' END
+	`
+	if _, err := s.db.ExecContext(ctx, q, in.DealName); err != nil {
+		return fmt.Errorf("trade_order: reconcile failed flow dealName=%s: %w", in.DealName, err)
+	}
+	// createResource can also finish before the order row exists. Only a
+	// completed flow with a concrete resource ID proves provisioning succeeded.
+	const successQ = `
+		UPDATE trade_order AS o JOIN trade_flow AS f ON f.deal_name = o.deal_name AND f.app_id = o.app_id
+		   SET o.status = 'provisioned', o.resource_id = f.resource_id, o.updated_time = NOW()
+		 WHERE o.deal_name = ? AND o.order_type = 'create'
+		   AND o.status IN ('created', 'pending_pay', 'paid_pending_provision')
+		   AND f.flow_type = 'create_resource' AND f.status = 'completed'
+		   AND f.resource_id IS NOT NULL AND f.resource_id <> ''
+	`
+	if _, err := s.db.ExecContext(ctx, successQ, in.DealName); err != nil {
+		return fmt.Errorf("trade_order: reconcile completed flow dealName=%s: %w", in.DealName, err)
+	}
+	return nil
 }
 
 type orderExecer interface {
@@ -262,50 +282,10 @@ func createOrder(ctx context.Context, exec orderExecer, in CreateOrderInput) err
 	return nil
 }
 
-// CreateDianshiRenewOrderWithParticipation 在一个本地事务中消费续费活动资格并记录订单。
-// 点石远端 do_goods 已在调用本方法前成功；本事务保证本地不会出现“有订单但资格未消费”。
-func (s *MySQLStore) CreateDianshiRenewOrderWithParticipation(
-	ctx context.Context,
-	order CreateOrderInput,
-	participation UserActivityParticipation,
-) error {
-	if s == nil || s.db == nil {
-		return fmt.Errorf("trade_order: store is nil")
-	}
-	if order.OrderType != OrderTypeRenew {
-		return fmt.Errorf("trade_order: dianshi renew order_type must be %q", OrderTypeRenew)
-	}
-	if order.Source != OrderSourceDianshi {
-		return fmt.Errorf("trade_order: dianshi renew source must be %q", OrderSourceDianshi)
-	}
-	if participation.Scene != ActivitySceneRenew {
-		return fmt.Errorf("trade_user_activity_participation: dianshi renew scene must be %q", ActivitySceneRenew)
-	}
-
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("trade_order: begin dianshi renew transaction: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	if err := createOrder(ctx, tx, order); err != nil {
-		return err
-	}
-	if _, err := s.InsertUserParticipation(ctx, tx, &participation); err != nil {
-		return fmt.Errorf("trade_order: insert dianshi renew participation: %w", err)
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("trade_order: commit dianshi renew transaction: %w", err)
-	}
-	return nil
-}
-
 // MarkOrderProvisioned 实现 OrderWriter。
 //
-// 状态机过渡：current_status → "provisioned"，其中 current_status 期望是
-// "paid_pending_provision"（付款完成等待发货）。但本期不强约束 current_status —
-// 只要 deal_name 命中、resource_id 不冲突就升级 — 因为 trade_order 写端流转
-// 期间可能因 jifei 多次回调造成状态不严格线性，强校验反而引入毛刺。
+// 状态机过渡：中态 → provisioned；重复成功回调允许 provisioned → provisioned。
+// 失败、取消等终态不可被晚到的成功回调覆盖。
 func (s *MySQLStore) MarkOrderProvisioned(ctx context.Context, dealName, resourceID string) error {
 	if s == nil || s.db == nil {
 		return fmt.Errorf("trade_order: store is nil")
@@ -335,8 +315,10 @@ func (s *MySQLStore) MarkOrderProvisioned(ctx context.Context, dealName, resourc
 		UPDATE trade_order
 		   SET resource_id = ?, status = 'provisioned', updated_time = NOW()
 		 WHERE deal_name = ?
+		   AND status IN ('created', 'pending_pay', 'paid_pending_provision', 'provisioned')
+		   AND (resource_id IS NULL OR resource_id = '' OR resource_id = ?)
 	`
-	res, err := s.db.ExecContext(ctx, q, resourceID, dealName)
+	res, err := s.db.ExecContext(ctx, q, resourceID, dealName, resourceID)
 	if err != nil {
 		return fmt.Errorf("trade_order: mark provisioned dealName=%s: %w", dealName, err)
 	}

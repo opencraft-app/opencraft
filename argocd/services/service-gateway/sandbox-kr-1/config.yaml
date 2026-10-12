@@ -46,6 +46,7 @@ routes:
   - DELETE
   - OPTIONS
   upstream: http://ctl-api.lightvela-playground-sandbox-kr-1.svc.cluster.local
+  desktop_upstream: http://ctl-desktop.lightvela-playground-sandbox-kr-1.svc.cluster.local
   access: authenticated
   require_realname: true
   auth_strategy: shadow_api_key_or_session
