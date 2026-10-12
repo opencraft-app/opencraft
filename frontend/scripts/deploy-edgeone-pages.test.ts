@@ -238,4 +238,38 @@ describe("deploy-edgeone-pages", () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+  it.each(["success", "missing-noslash", "stale-slash"])("checks slash variants and release identity: %s", async (behavior) => {
+    const root = mkdtempSync(join(tmpdir(), "edgeone-prerelease-routes-"));
+    const assets = join(root, "assets");
+    const script = "/__releases/expected/_next/static/main.js";
+    const html = `<html><script src="${script}"></script></html>`;
+    try {
+      mkdirSync(assets, { recursive: true });
+      writeFileSync(join(assets, "index.html"), html);
+      for (const route of ["agents", "account"]) {
+        mkdirSync(join(assets, route));
+        writeFileSync(join(assets, route, "index.html"), html);
+      }
+      const paths: string[] = [];
+      const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+        const url = new URL(String(input));
+        paths.push(url.pathname);
+        if (url.pathname === script) return response("asset");
+        if (behavior === "missing-noslash" && url.pathname === "/agents") return response("not found", { status: 403 });
+        if (url.pathname.includes("missing-edgeone-smoke")) return response("not found", { status: 404 });
+        const page = behavior === "stale-slash" && url.pathname === "/account/" ? html.replace("expected", "stale") : html;
+        return response(page, { headers: { "content-type": "text/html" } });
+      });
+      const result = verifyEdgeOneDeployment({ deployUrl: "https://prerelease.example.com", deployDir: root, fetchImpl, attempts: 1 });
+      if (behavior === "success") {
+        await expect(result).resolves.toBeUndefined();
+        expect(paths).toEqual(expect.arrayContaining(["/agents", "/agents/", "/account", "/account/"]));
+      } else {
+        await expect(result).rejects.toThrow(behavior === "missing-noslash" ? "/agents returned HTTP 403" : "expected release");
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
 });
