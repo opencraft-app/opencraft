@@ -4,6 +4,9 @@ import { chmod, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { once } from "node:events";
+import WebSocket from "ws";
+import { AppHostServer } from "@opencraft/app-host-server";
 import { TencentOaServerPlugin } from "../plugins/tencentoa/src/server";
 import { TencentOaController } from "../plugins/tencentoa/src/controller";
 import { createWorkbenchWebServer } from "../scripts/serve-workbench-web.mjs";
@@ -211,4 +214,44 @@ test("unconfigured plugin has no false identity capability or settings entry", a
   await supervisor.loadOptional("tencentoa.identity", async () => createTencentOaExtension(new TencentOaController((async () => new Response("", { status: 404 })) as typeof fetch)));
   assert.equal(supervisor.getSnapshot().extensions[0]?.status, "active");
   assert.equal(supervisor.contributions.getSnapshot().settingsPages.length, 0);
+});
+
+test("signed WebSocket handshakes bind separate server contexts even when renderers spoof the same ID", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "tencentoa-ws-"));
+  await writeFile(join(directory, "index.html"), "<!doctype html>");
+  const captures: Array<{ frame: string; context: unknown }> = [];
+  const host = new AppHostServer({ logicalClientRouting: true, createTransport: () => ({
+    status: { state: "open" }, connect: async () => {}, close: async () => {},
+    send: async () => { throw new Error("Expected trusted context path"); },
+    sendWithContext: async (frame, context) => { captures.push({ frame, context }); },
+    subscribeMessage: () => () => {}, subscribeStatus: () => () => {},
+  }) });
+  const plugin = new TencentOaServerPlugin(token, { now: () => now });
+  const web = await createWorkbenchWebServer({ root: directory, appServerTarget: null, appHostServer: host, tencentOaService: plugin });
+  const address = await web.listen({ host: "127.0.0.1", port: 0 });
+  const sockets: WebSocket[] = [];
+  t.after(async () => { sockets.forEach(s => s.terminate()); await web.close(); await host.close(); plugin.close(); await rm(directory, { recursive: true, force: true }); });
+  const wait = async (predicate: () => unknown) => {
+    for (let attempt = 0; attempt < 100; attempt++) { const value = predicate(); if (value) return value; await new Promise(r => setTimeout(r, 10)); }
+    throw new Error("WebSocket fixture timed out");
+  };
+  for (const loginName of ["employee.a", "employee.b", null]) {
+    const signed = loginName ? request({ loginname: loginName, staffid: 123, expiration: new Date(Date.now() + 60_000).toISOString() }).headers : {};
+    const socket = new WebSocket(`ws://127.0.0.1:${address.port}/apphost`, { headers: signed });
+    sockets.push(socket); const frames: any[] = []; socket.on("message", raw => frames.push(JSON.parse(String(raw))));
+    await once(socket, "open");
+    socket.send(JSON.stringify({ type: "hello", protocolVersion: 1, rendererId: "same-forged-renderer", sender: { loginName: "forged" } }));
+    await wait(() => frames.find(f => f.type === "ready"));
+    socket.send(JSON.stringify({ type: "host/connect", requestId: "connect", hostId: "local-codex", leaseId: "lease" }));
+    const connected: any = await wait(() => frames.find(f => f.requestId === "connect"));
+    const before = captures.length;
+    socket.send(JSON.stringify({ type: "host/send", requestId: "send", hostId: "local-codex", leaseId: "lease", generation: connected.result.generation,
+      frame: JSON.stringify({ id: 1, method: "turn/start", params: { sender: { loginName: "forged" } } }) }));
+    await wait(() => captures.length > before);
+    const context: any = captures.at(-1)!.context;
+    assert.deepEqual(context.sender, loginName ? { kind: "employee", loginName } : null);
+    assert.doesNotMatch(JSON.stringify(context), /staffId|signature|x-tai-identity|forged/);
+  }
+  const clientIds = captures.map(c => JSON.parse(c.frame).__opencraftClient);
+  assert.equal(new Set(clientIds).size, 3);
 });

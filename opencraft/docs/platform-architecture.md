@@ -1505,6 +1505,14 @@ Its Node-only
 verifier owns the private TAI application key and independently validates each
 request's signature, authenticated JWE and expiration. Browser projections are
 memory-only and generation-fenced. Recognition does not authorize shared resources.
+Verified employee message provenance is owned by the Codex Host, not the Turn
+or Renderer. The Web gateway derives a trusted connection context from signed
+WebSocket handshake headers; AppHost passes it through an in-process submission
+port. Each user message is keyed by stable Host + Thread + client message ID.
+Only the English login name is persisted in the existing Host queue SQLite; queue
+admission and provenance share a transaction. Queue dispatch never reattributes
+the original submitter. History/live/shared Chat projection carry hidden sender
+metadata; the native model input remains free of employee provenance.
 See [Tencent OA authentication](tencentoa-authentication.md).
 
 The application supervisor installs two renderer-neutral Cordis services before

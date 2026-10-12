@@ -1,3 +1,4 @@
+import type { MessageSender } from "./message-sender";
 import type { AppServerProcessMethodMap } from "./process";
 import type { ThreadPinsMethodMap } from "./thread-pins";
 import type { AppServerAttachmentMethodMap } from "./attachments";
@@ -243,6 +244,7 @@ export type TurnInterruptParams = GeneratedTurnInterruptParams;
 export type TurnInterruptResponse = GeneratedTurnInterruptResponse;
 export type ThreadQueueAddParams = GeneratedThreadQueueAddParams;
 export interface QueuedSubmission {
+  readonly sender?: MessageSender | null;
   readonly id: string;
   readonly input: readonly UserInput[];
   readonly clientUserMessageId: string;
