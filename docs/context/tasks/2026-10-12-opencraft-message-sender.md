@@ -100,3 +100,27 @@ bounded search located UserMessage and app.scss, and the adjacent layout test.
 Read maintenance verification, build matrix, Chat UI architecture and design invariants.
 Build preview from its current Web source 2e3958578 plus sender projection and
 this UI change; preserve task/header improvements and the running sender runtime.
+
+## sender UI preview delivered
+User-approved name labels are committed as a71febc3e, with formal boundary docs
+in 7c8787222, on the existing sender branch. Web typechecks passed in both the
+source checkout and the isolated integration based on current preview 2e3958578.
+17 user-message layout/collapse tests, boundaries and i18n passed. The real
+component browser smoke verified individual first/steering and attachment names,
+anonymous omission, 1200/390 px alignment and theme token consumption.
+
+Deployed Web build: 20261012-message-sender-ui-r2; service PID 2857330 and sender
+runtime hash are unchanged. The current task/header code is retained. Initial
+Web publication exposed a missing `kind` in the hand-written Host build config;
+original entry files were immediately restored, then the canonical headless
+profile (durable, /appserver, workspace roots) was used. Corrected packaged Web
+startup was verified with the actual native AppServer and isolated data before
+republishing. Rollback proof and original immutable asset hashes are retained.
+
+Actual served Web was verified from the public preview in desktop and mobile
+layouts. A browser-only receive-side fixture supplied a synthetic sender in
+native user-message responses: the compiled UI displayed it, and rename,
+pin/unpin and task membership menus remained available. No synthetic messages
+or real data changes were made. This establishes rendering, not real gateway
+WebSocket-header coverage. Delivery receipt, publication/rollback script and
+probes: /data/tmp/opencraft-message-sender-ui-preview-20261012/.
