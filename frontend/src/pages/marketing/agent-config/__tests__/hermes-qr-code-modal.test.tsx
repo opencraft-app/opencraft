@@ -8,7 +8,7 @@ import type { ICommandExecutor } from "@/pages/marketing/agent-config/local-comm
 vi.mock("@/i18n/t", () => ({ t: (message: string) => message }));
 vi.mock("qrcode.react", () => ({ QRCodeCanvas: () => <div data-testid="qr-code" /> }));
 
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 async function openQrCode(channel: string) {
   const ref = React.createRef<IHermesQrCodeModalHandle>();
@@ -73,6 +73,31 @@ describe("Weixin binding confirmation", () => {
       });
       expect(onSuccess).toHaveBeenCalledTimes(conflict ? 0 : 1);
       expect(screen.queryByTestId("qr-code")).not.toBeInTheDocument();
+    });
+  }
+});
+
+
+describe("Weixin recovery errors", () => {
+  for (const channel of ["weixin", "feishu"]) {
+    it(`shows recovery guidance only for ${channel} and clears it on retry`, async () => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      const ref = React.createRef<IHermesQrCodeModalHandle>();
+      const runWithProgress = vi.fn()
+        .mockRejectedValueOnce(Object.assign(new Error("recovery failed"), { code: "WEIXIN_RECOVERY_FAILED" }))
+        .mockRejectedValueOnce(new Error("network failure"));
+      render(<HermesQrCodeModal ref={ref} channel={channel}
+        executor={{ run: vi.fn(), runWithProgress }} scriptCommands={createAgentScriptCommands("secondary")}
+        instance={{ InstanceId: "instance-test", RegionId: 1 }} />);
+      await act(async () => { await ref.current?.startQrCodeFlow(); });
+      expect(screen.getByText(channel === "weixin" ? "微信连接恢复失败" : "获取二维码失败")).toBeInTheDocument();
+      if (channel === "weixin") {
+        expect(screen.getByText("上次扫码后的配置尚未恢复，请重试；若仍失败，请联系支持。")).toBeInTheDocument();
+      }
+      await act(async () => { screen.getByRole("button", { name: "重试" }).click(); });
+      expect(screen.getByText("获取二维码失败")).toBeInTheDocument();
+      expect(screen.getByText("配置失败，请重试或检查网络连接")).toBeInTheDocument();
+      expect(screen.queryByText("微信连接恢复失败")).not.toBeInTheDocument();
     });
   }
 });
