@@ -111,6 +111,35 @@ def weixin_snapshot(home, root, profile_id, current):
             os.chmod(child, 0o700 if child.is_dir() else 0o600)
 
 
+# Run in a separate process so the metadata lock is released during shutdown.
+weixin_stop_gateway_script = """import json, os, pathlib, subprocess, sys
+home = pathlib.Path(sys.argv[1])
+sys.path.insert(0, str(home / 'hermes-agent'))
+from gateway.status import get_running_pid, read_runtime_status, get_runtime_status_running_pid
+profile_id = sys.argv[2]
+profile_home = home if profile_id == 'default' else home / 'profiles' / profile_id
+
+def running(target):
+    return bool(get_running_pid(target / 'gateway.pid', cleanup_stale=False) or
+        get_runtime_status_running_pid(read_runtime_status(target / 'gateway_state.json'), expected_home=target))
+
+# A host serving multiple Profiles cannot be stopped without affecting other Bots.
+# Fail closed for this lifecycle until a confirmed per-Profile unserve is available.
+for target in [home, *list((home / 'profiles').glob('*'))]:
+    state_path = target / 'gateway_state.json'
+    if state_path.is_file():
+        state = json.loads(state_path.read_text(encoding='utf-8'))
+        if state.get('served_profiles') and running(target) and (target == profile_home or not running(profile_home)):
+            sys.exit(1)
+hermes = home / 'hermes-agent' / 'venv' / 'bin' / 'hermes'
+args = [str(hermes)] + ([] if profile_id == 'default' else ['-p', profile_id]) + ['gateway', 'stop']
+env = dict(os.environ, HERMES_HOME=str(profile_home))
+subprocess.run(args, env=env, check=True, timeout=45, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+# Hermes may return success while a service is still stopping.
+sys.exit(1 if running(profile_home) else 0)
+"""
+
+
 def weixin_rollback(home, root, profile_id, current, write_current, clear_current, gateway_command):
     from dotenv import dotenv_values, set_key, unset_key
     backup = root / 'weixin-scans' / profile_id
@@ -121,8 +150,10 @@ def weixin_rollback(home, root, profile_id, current, write_current, clear_curren
     except (OSError, ValueError):
         return False
     agent = 'main' if profile_id == 'default' else profile_id
-    # Stop only the rejected Profile; never manipulate the owning Bot's gateway.
-    stopped = gateway_command(['acli', 'gateway', 'stop', '--agent', agent], 45)
+    # ACLI 2026.9.30 has no gateway stop. Use Hermes' native Profile scope,
+    # and retain the snapshot/configuration until shutdown is confirmed.
+    if not gateway_command([sys.executable, '-c', weixin_stop_gateway_script, str(home), profile_id], 50):
+        return False
     try:
         profile_home = weixin_profile_home(home, profile_id)
         env_path = profile_home / '.env'
@@ -155,8 +186,6 @@ def weixin_rollback(home, root, profile_id, current, write_current, clear_curren
         # recovery record, never a raw traceback containing credential values.
         return False
     previous = state['binding']
-    if not stopped:
-        return False
     if state.get('gateway_running') or (previous and previous.get('status') == 'connected'):
         if not gateway_command(['acli', 'gateway', 'restart', '--agent', agent], 60):
             return False
