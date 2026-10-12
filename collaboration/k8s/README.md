@@ -47,3 +47,29 @@ The migration Job is intentionally excluded from `base/kustomization.yaml`; it
 is a release operation, not a second long-lived component. The
 `--collaboration-only` profile excludes legacy external Computer/TAT,
 Computer bootstrap, Task, and Reminder runtime assembly.
+
+## Bot IM 与管理后台（按需启用）
+
+人机群聊（LightVela Bot IM 身份、平台群、管理后台运营接口）默认不启用，base Deployment 也不带这些参数：
+Secret 里缺少对应文件时进程会拒绝启动。启用顺序：
+
+1. 在 `collaboration-runtime-secrets` 增加：
+   - `ctl.token`：collaboration 调用 CTL `/internal/vela-im/bots:*` 的内部 Token（与 CTL 侧配置一致）；
+   - `admin.token`：管理后台 BFF 调用 `/v1/admin/im/**` 的 Token（至少 24 字节），同值写入
+     `gateway-dashboard-runtime-secrets` 的 `COLLABORATION_ADMIN_TOKEN`。
+2. Deployment 追加参数：
+
+   ```text
+   --bot-host-ctl-url http://ctl-api.ctl.svc.cluster.local
+   --bot-host-ctl-token-file /var/run/secrets/collaboration/ctl.token
+   --bot-runtime-api-url https://<service-gateway 公网地址>/v1/collaboration
+   --admin-token-file /var/run/secrets/collaboration/admin.token
+   ```
+
+3. service-gateway 的 `/v1/collaboration` 路由必须让 `/v1/collaboration/runtime/bot/**` 不经 LightVela 登录校验直达
+   collaboration：Bot worker 用自己的 `BotCredential` / Bot Runtime Token 认证。
+4. gateway-dashboard 的 overlay 设置 `GATEWAY_DASHBOARD_COLLABORATION_API_URL`
+   （beijing-sandbox 已配置为 `http://collaboration.lightvela-collaboration.svc.cluster.local`），
+   「IM 群聊」页即可使用。
+
+接口与数据模型见 `collaboration/platform/v1/25-LightVela-Bot-IM身份与平台群.md`。

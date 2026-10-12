@@ -27,6 +27,24 @@ test("buildModuleAdminProxyRequest maps ai-gateway module to backend admin API",
   assert.equal(built.init.cache, "no-store");
 });
 
+test("buildModuleAdminProxyRequest maps collaboration to the IM admin API with the server token only", async () => {
+  const req = new Request("https://admin.example.com/admin/api/collaboration/identities?q=usr_1", {
+    headers: { "x-admin-token": "browser-token" },
+  });
+
+  const built = await buildModuleAdminProxyRequest(req, {
+    module: "collaboration",
+    path: ["identities"],
+    upstreamBaseURL: "http://collaboration.internal:8080",
+    upstreamToken: "collaboration-admin-token",
+    forwardBrowserToken: false,
+  });
+
+  assert.equal(built.url.toString(), "http://collaboration.internal:8080/v1/admin/im/identities?q=usr_1");
+  assert.equal(built.init.headers.get("authorization"), "Bearer collaboration-admin-token");
+  assert.equal(built.usedBrowserToken, false);
+});
+
 test("buildModuleAdminProxyRequest reads browser token from the session cookie", async () => {
   const sessionValue = createAdminSessionValue("browser-token", Math.floor(Date.now() / 1000));
   const req = new Request("https://admin.example.com/admin/api/ai-gateway/users", {

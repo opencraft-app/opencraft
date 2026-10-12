@@ -22,7 +22,7 @@ mkdir -p "$ROOT/bin" "$ROOT/web" "$ROOT/proxy" "$ROOT/retired-profiles"
 umask 077
 mkdir -p "$ROOT/collab-data"
 sed -n 's/^VELA_IM_SECRET_KEY=//p' "$S/im-secret.env" | tr -d '\r\n' > "$S/im-secret-key"
-for name in collab-jwt-key collab-identity-key collab-gateway-token; do
+for name in collab-jwt-key collab-identity-key collab-gateway-token collab-admin-token; do
   test -s "$S/$name" || head -c 32 /dev/urandom | base64 -w0 > "$S/$name"
 done
 umask 022
@@ -61,7 +61,8 @@ ExecStart=$ROOT/bin/chatserver serve --collaboration-only \\
   --im-secret-key-file $S/im-secret-key \\
   --im-identity-key-file $S/collab-identity-key \\
   --bot-host-command $ENV_DIR/bot-host.sh \\
-  --bot-runtime-api-url http://127.0.0.1:$COLLAB_PORT/v1
+  --bot-runtime-api-url http://127.0.0.1:$COLLAB_PORT/v1 \\
+  --admin-token-file $S/collab-admin-token
 Restart=always
 RestartSec=3
 [Install]

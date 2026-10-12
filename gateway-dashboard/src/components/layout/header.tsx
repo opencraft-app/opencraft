@@ -15,6 +15,7 @@ const pageTitles: Record<string, string> = {
   "/routing": "路由",
   "/cache": "缓存",
   "/playground": "测试",
+  "/im": "IM 群聊",
 };
 
 interface HeaderProps {

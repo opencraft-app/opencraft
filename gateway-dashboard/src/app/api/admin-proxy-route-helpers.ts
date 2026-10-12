@@ -13,6 +13,7 @@ export type AdminProxyModule =
   | "ctl-admin"
   | "credit"
   | "referral"
+  | "collaboration"
   | "support-feedback";
 
 interface BuildModuleAdminProxyRequestOptions {
@@ -44,6 +45,8 @@ const upstreamPathPrefixes: Record<AdminProxyModule, string> = {
   "ctl-admin": "/admin/api/ctl",
   credit: "/internal/credit/admin",
   referral: "/admin/api/referral",
+  // collaboration 的 IM 运营接口（AdminBearer）；BFF 注入 COLLABORATION_ADMIN_TOKEN。
+  collaboration: "/v1/admin/im",
   // ticket 反馈后台：经 supportAgentMiddleware 校验 X-User-Id（白名单），
   // 由 dashboard BFF 注入配置的运营账号 ID，dashboard 本身已 admin 登录。
   "support-feedback": "/support/feedback",

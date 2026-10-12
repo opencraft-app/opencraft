@@ -9,3 +9,14 @@ configMapGenerator:
 - name: gateway-dashboard-platform-values
   envs:
   - gateway-dashboard-platform.env
+replacements:
+- source:
+    kind: ConfigMap
+    name: gateway-dashboard-platform-values
+    fieldPath: data.GATEWAY_DASHBOARD_COLLABORATION_API_URL
+  targets:
+  - select:
+      kind: ConfigMap
+      name: gateway-dashboard-config
+    fieldPaths:
+    - data.COLLABORATION_API_URL

@@ -30,6 +30,9 @@ data:
   CREDIT_API_URL: "REPLACE_GATEWAY_DASHBOARD_CREDIT_API_URL"
   # CREDIT_INTERNAL_TOKEN is mapped from the shared internal-service token below.
   REFERRAL_ADMIN_API_URL: "REPLACE_GATEWAY_DASHBOARD_REFERRAL_ADMIN_API_URL"
+  # 「IM 群聊」页的 collaboration 上游；只有部署了 collaboration 的环境在 overlay 里设置，留空时页面提示未配置。
+  # COLLABORATION_ADMIN_TOKEN 来自 gateway-dashboard-runtime-secrets，须与 collaboration 的 admin.token 一致。
+  COLLABORATION_API_URL: ""
   # 反馈后台（用户反馈页）上游与代理身份：
   # TICKET_API_URL 指向 ticket 服务管理地址；
   # SUPPORT_FEEDBACK_AGENT_ID 须落在 ticket 的 SUPPORT_AGENT_IDS 白名单内，

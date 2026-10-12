@@ -52,6 +52,8 @@ npm run build
 | `CREDIT_API_URL` | Required for credit package administration | 指向 `credit` 的内部管理上游；仅积分包页面使用 |
 | `CREDIT_INTERNAL_TOKEN` | Required for credit package administration | Dashboard BFF 调用 Credit 查询与退款管理接口的服务端 Token；必须与 Credit 的 `LIGHTCLAW_INTERNAL_SERVICE_TOKEN` 一致，不得下发浏览器。标准部署从同值的共享内部服务 Token 显式映射 |
 | `REFERRAL_ADMIN_API_URL` | Required for referral administration | 指向 `referral` 的集群内管理上游；BFF 先校验 Dashboard 管理员会话，再转发精确归因查询和重置请求，不向浏览器暴露上游地址或内部凭据 |
+| `COLLABORATION_API_URL` | Required for IM administration | 指向 `collaboration` 的集群内地址（不含 `/v1`）；仅「IM 群聊」页使用 |
+| `COLLABORATION_ADMIN_TOKEN` | Required for IM administration | Dashboard BFF 调用 collaboration IM 运营接口的服务端 Token；必须与 collaboration `--admin-token-file` 的内容一致，不得下发浏览器 |
 | `TICKET_API_URL` | No | 指向 `ticket` 管理上游；仅「用户反馈」页使用。未配置时该页接口返回 500 |
 | `SUPPORT_FEEDBACK_AGENT_ID` | No | 白名单内运营账号的 lightclaw 用户 ID，由 BFF 作为 `X-User-Id` 注入 ticket 以通过 `SUPPORT_AGENT_IDS` 校验；需与 ticket 的 `SUPPORT_AGENT_IDS` 一致。未配置时反馈接口恒 401 |
 | `ADMIN_TOKEN` | Yes | Dashboard 登录所用的管理员 token |
@@ -77,6 +79,9 @@ npm run build
   - 经 `admin-gateway` 改写到 Dashboard BFF 的 `/admin/gateway/api/ctl/[...path]`
   - 代理 `ctl-api` 的 `/internal/*` 接口
   - 网关迁移和额度重置路径由 BFF 注入 `CTL_INTERNAL_TOKEN`，其他 CTL 只读路径不携带该 Token
+- `/admin/api/collaboration/[...path]`
+  - 经 `admin-gateway` 改写到 Dashboard BFF 的 `/admin/gateway/api/collaboration/[...path]`
+  - BFF 先校验 Dashboard 管理员会话，再以 `COLLABORATION_ADMIN_TOKEN` 代理 `collaboration` 的 `/v1/admin/im/*`（人机群聊的账号、Bot、群运营）
 - `/admin/api/credit/[...path]`
   - 经 `admin-gateway` 改写到 Dashboard BFF 的 `/admin/gateway/api/credit/[...path]`
   - 代理 `credit` 的 `/internal/credit/admin/*` 接口，并由 BFF 注入 `CREDIT_INTERNAL_TOKEN`
