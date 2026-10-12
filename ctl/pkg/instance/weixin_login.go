@@ -699,6 +699,20 @@ func normalizeWeixinProtocolStatus(status string, ok bool) string {
 }
 
 func (l *logic) finishWeixinLoginSuccess(ctx pctx.Context, sandboxID string, session *channelloginsession.Entity, botID, profileID string, update func(map[string]interface{}, transport.WeixinLoginSessionEvent)) error {
+	// Check the account before starting this Profile's gateway.
+	binding, err := l.runChannelBindingAction(ctx, session.InstanceID, uniqueChannelWeixin, "confirm", botID, profileID)
+	if err != nil || !binding.OK {
+		if err == nil {
+			err = l.channelBindingFailure(ctx, session.InstanceID, binding)
+		}
+		now := time.Now().UTC()
+		update(map[string]interface{}{
+			channelloginsession.ColumnStatus:       channelloginsession.StatusFailed,
+			channelloginsession.ColumnFinishedAt:   &now,
+			channelloginsession.ColumnErrorMessage: "weixin account confirmation failed",
+		}, transport.WeixinLoginSessionEvent{Type: "finished", Status: channelloginsession.StatusFailed, Error: err.Error()})
+		return err
+	}
 	restartStatus := "running"
 	update(map[string]interface{}{
 		channelloginsession.ColumnRestartStatus: restartStatus,
@@ -723,19 +737,6 @@ func (l *logic) finishWeixinLoginSuccess(ctx pctx.Context, sandboxID string, ses
 			channelloginsession.ColumnErrorMessage:  "gateway restart failed after login success",
 		}, transport.WeixinLoginSessionEvent{Type: "finished", Status: channelloginsession.StatusFailed, Error: restartErr.Error()})
 		return restartErr
-	}
-	binding, err := l.runChannelBindingAction(ctx, session.InstanceID, uniqueChannelWeixin, "confirm", botID, profileID)
-	if err != nil || !binding.OK {
-		if err == nil {
-			err = errcode.Wrap(errcode.ErrInstanceBotConflict, "confirm channel: %s", binding.Reason)
-		}
-		update(map[string]interface{}{
-			channelloginsession.ColumnStatus:        channelloginsession.StatusFailed,
-			channelloginsession.ColumnFinishedAt:    &now,
-			channelloginsession.ColumnRestartStatus: "success",
-			channelloginsession.ColumnErrorMessage:  "failed to persist channel owner after login success",
-		}, transport.WeixinLoginSessionEvent{Type: "finished", Status: channelloginsession.StatusFailed, Error: err.Error()})
-		return err
 	}
 	update(map[string]interface{}{
 		channelloginsession.ColumnStatus:        channelloginsession.StatusSuccess,

@@ -29,6 +29,31 @@ func (s *desktopResourceAPILogic) GetDesktopResource(ctx pctx.Context, id string
 	return s.response, s.err
 }
 
+func TestDesktopAPIRoleIsolation(t *testing.T) {
+	for _, role := range []string{"", "api", "desktop", "invalid"} {
+		t.Run(role, func(t *testing.T) {
+			t.Setenv("CTL_API_ROLE", role)
+			for _, path := range []string{"/health", "/v1/instances/ins-1/desktop/resource", "/v1/instances/ins-1/desktop/resource/", "/v1/instances/ins-1/desktop/viewer/att/claim", "/v1/instances/ins-1/tat/session", "/v1/instances/ins-1/debug/exec", "/v1/passes", "/internal/ctl/subscriptions/dianshi/grant"} {
+				called := false
+				handler := desktopRoleMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					called = true
+					w.WriteHeader(http.StatusNoContent)
+				}))
+				w := httptest.NewRecorder()
+				handler.ServeHTTP(w, httptest.NewRequest(http.MethodPost, path, nil))
+				desktopPath := strings.Contains(path, "/desktop/")
+				want := role == "" || (role == "api" && !desktopPath) || (role == "desktop" && (desktopPath || path == "/health"))
+				if called != want || (want && w.Code != http.StatusNoContent) || (!want && w.Code < 400) {
+					t.Errorf("role=%q path=%s called=%v status=%d, want allowed=%v", role, path, called, w.Code, want)
+				}
+			}
+			if got := desktopReaperEnabled(); got != (role == "" || role == "desktop") {
+				t.Errorf("reaper for role=%q: %v", role, got)
+			}
+		})
+	}
+}
+
 func TestDesktopResourceHTTP(t *testing.T) {
 	for _, tc := range []struct {
 		method, state, user string

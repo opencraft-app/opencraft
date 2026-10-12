@@ -125,6 +125,10 @@ type Logic interface {
 	GetDesktopSession(ctx pctx.Context, instanceID string) (*transport.DesktopSessionResponse, error)
 	EnsureDesktopResource(ctx pctx.Context, instanceID string) (*transport.DesktopResourceResponse, error)
 	GetDesktopResource(ctx pctx.Context, instanceID string) (*transport.DesktopResourceResponse, error)
+	// 云桌面观看租约：无 VNC 密码、无公网 URL，票据一次性且绑定准备代次。
+	CreateDesktopViewer(ctx pctx.Context, instanceID string) (*transport.DesktopViewerResponse, error)
+	ClaimDesktopViewer(ctx pctx.Context, instanceID, attachmentID string, req *transport.DesktopViewerClaimRequest) (*transport.DesktopViewerClaimResponse, error)
+	ReleaseDesktopViewer(ctx pctx.Context, instanceID, attachmentID string) error
 }
 
 type logic struct {

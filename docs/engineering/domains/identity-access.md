@@ -26,6 +26,11 @@
 - 外部 IdP、腾讯云账号/CAM/STS 的实时契约通过登记来源校验，不把凭据或完整响应复制进文档。
 - Frontend 的复用 OAuth 登录入口只负责呈现既有身份 Owner 构造的 authorize URL；无 URL 时不展示，也不在组件内签发 state、拼接 callback、交换 code 或保存 token。路由适配器只能在权威兑换完成后恢复站内路径，不能成为并行认证协议。
 - `service-gateway` 必须先完成会话、实名门禁和 Bot 所有权校验，再启动后台 Worker Action；认证完成后的 TAT 执行超时、重试和清理策略属于运行控制，不得改变或绕过身份判定。
+- `service-gateway` 对已认证 `/v1/instances` 路由可声明 `desktop_upstream`，仅把七个合法桌面方法
+  路径（`desktop/{session,resource}` 的 GET/POST、`desktop/viewer` 的 POST、`desktop/viewer/{attachmentId}`
+  的 DELETE、`desktop/viewer/{attachmentId}/claim` 的 POST）改投专用上游；上游选择发生在会话与门禁
+  **之后**，不改变身份判定、不放宽鉴权，也不影响 `X-User-Id` 的清除与权威用户 ID 注入。专用上游
+  不是公共身份入口，未配置 `desktop_upstream` 时全部沿用原 upstream。
 - Collaboration Human 请求必须经过 `service-gateway`。浏览器只携现有 LightVela session，不能持有 Gateway 到 Collaboration 的内部 Bearer，也不能通过自定义身份头声明用户。
 - 邀请返利上下文不是访问邀请码或登录凭据。浏览器先通过公开接口校验返利码；未登录用户由 Auth 写入
   30 分钟 HttpOnly Cookie，在 OAuth/手机号/密码认证成功后消费。新用户写 `user.registered.v1`，存量用户

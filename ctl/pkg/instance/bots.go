@@ -221,7 +221,8 @@ write_profile_meta(get_profile_dir(profile_id), **fields)
 print(json.dumps({"ok": True}))
 `
 
-const hermesChannelBindingFunctions = `import fcntl
+const hermesChannelBindingFunctions = weixinAccountBindingFunctions + `import contextlib
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -260,6 +261,7 @@ def manage_channel_binding(action, channel, bot_id, profile_id, default_bot_id, 
                 return None
             if channel == "weixin":
                 if isinstance(value.get("bindings"), dict):
+                    bindings.clear()
                     bindings.update(value["bindings"])
                 elif value.get("bot_id"):
                     # Preserve the owner written by the former instance-wide format.
@@ -305,9 +307,32 @@ def manage_channel_binding(action, channel, bot_id, profile_id, default_bot_id, 
         except (OSError, KeyError, TypeError, ValueError):
             return False
 
-    with lock_path.open("a", encoding="utf-8") as lock:
+    with contextlib.ExitStack() as locks:
+        # A rejected Profile may need slow gateway recovery. Serialize only its
+        # mutations while releasing the instance metadata lock around CLI calls.
+        if channel == "weixin" and action != "get":
+            operation = locks.enter_context((root / ("weixin-" + profile_id + ".lock")).open("a"))
+            try:
+                fcntl.flock(operation.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return {"ok": False, "reason": "scan_in_progress"}
+        lock = locks.enter_context(lock_path.open("a", encoding="utf-8"))
         fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        def gateway_command(args, timeout):
+            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+            try:
+                subprocess.run(args, check=True, timeout=timeout, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                return True
+            except (OSError, subprocess.SubprocessError):
+                return False
+            finally:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+                bindings.clear()
+                read_current()
+
         current = read_current()
+        if channel == "weixin":
+            return manage_weixin_account(action, home, root, profile_id, bot_id, reservation_id, current, bindings, write_current, clear_current, gateway_command)
         if channel == "whatsapp" and not legacy_marker.exists():
             if not current and whatsapp_credentials_path("default").is_file():
                 current = {
@@ -818,14 +843,14 @@ func (l *logic) DeleteInstanceBot(ctx pctx.Context, instanceID, botID string) (*
 		return nil, err
 	}
 	if weixinOwner != nil && weixinOwner.BotID == bot.BotID {
-		return nil, errcode.Wrap(errcode.ErrChannelOccupied, "disconnect weixin before deleting bot %s", botID)
+		return nil, &BotChannelOccupiedError{Channel: uniqueChannelWeixin}
 	}
 	whatsAppOwner, err := l.getChannelBindingResponse(ctx, instanceID, uniqueChannelWhatsApp, "")
 	if err != nil {
 		return nil, err
 	}
 	if whatsAppOwner != nil && whatsAppOwner.BotID == bot.BotID {
-		return nil, errcode.Wrap(errcode.ErrChannelOccupied, "disconnect whatsapp before deleting bot %s", botID)
+		return nil, &BotChannelOccupiedError{Channel: uniqueChannelWhatsApp}
 	}
 	if _, err := l.execHermesProfileCommand(ctx, instanceID, buildHermesProfileDeleteCommand(bot.ProfileID)); err != nil {
 		return nil, errcode.Wrap(errcode.ErrInstanceBotProfileFailed, "delete Hermes profile %s: %v", bot.ProfileID, err)
@@ -941,7 +966,7 @@ func (l *logic) ClaimInstanceBotChannel(ctx pctx.Context, instanceID, botID, cha
 		if binding.Reason == "occupied" {
 			return nil, errcode.Wrap(errcode.ErrChannelOccupied, "%s is already connected to bot %s", channel, binding.BotID)
 		}
-		return nil, errcode.Wrap(errcode.ErrInstanceBotConflict, "claim channel: %s", binding.Reason)
+		return nil, l.channelBindingFailure(ctx, instanceID, binding)
 	}
 	return &transport.InstanceChannelBindingResponse{
 		Channel: binding.Channel, BotID: binding.BotID, ProfileID: binding.ProfileID,
@@ -970,7 +995,7 @@ func (l *logic) ReleaseInstanceBotChannel(ctx pctx.Context, instanceID, botID, c
 		return err
 	}
 	if !binding.OK {
-		return errcode.Wrap(errcode.ErrInstanceBotConflict, "release channel: %s", binding.Reason)
+		return l.channelBindingFailure(ctx, instanceID, binding)
 	}
 	return nil
 }
@@ -994,7 +1019,7 @@ func (l *logic) ConfirmInstanceBotChannel(ctx pctx.Context, instanceID, botID, c
 		return err
 	}
 	if !binding.OK {
-		return errcode.Wrap(errcode.ErrInstanceBotConflict, "confirm channel: %s", binding.Reason)
+		return l.channelBindingFailure(ctx, instanceID, binding)
 	}
 	return nil
 }

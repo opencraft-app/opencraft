@@ -68,15 +68,30 @@ func (l *logic) desktopSessionForEntity(ctx pctx.Context, entity *modelinstance.
 			operationMu.Unlock()
 			return nil, errcode.ErrSandboxServiceError
 		}
-		// An unbound initial record (also used by legacy fixtures) can be adopted.
-		if session.userID == "" && (session.sandboxID == "" || session.sandboxID == entity.SandboxId) {
+		// An unbound initial record (also used by legacy fixtures) can be adopted,
+		// but losing the session does not prove a pending remote grant is gone.
+		adopt := session.userID == "" && (session.sandboxID == "" || session.sandboxID == entity.SandboxId)
+		cancel := session.prepareCancel
+		session.mu.Unlock()
+		if err := l.revokeDesktopViewersLocked(ctx, session); err != nil {
+			operationMu.Unlock()
+			return nil, err
+		}
+		fresh, err = l.loadDesktopInstance(ctx, entity.InstanceId)
+		if err != nil || fresh.UserId != entity.UserId || fresh.SandboxId != entity.SandboxId {
+			operationMu.Unlock()
+			if err != nil {
+				return nil, err
+			}
+			return nil, errcode.ErrDesktopTargetChanged
+		}
+		if adopt {
+			session.mu.Lock()
 			session.userID, session.sandboxID, session.generation = entity.UserId, entity.SandboxId, id.String()
 			session.mu.Unlock()
 			operationMu.Unlock()
 			return session, nil
 		}
-		cancel := session.prepareCancel
-		session.mu.Unlock()
 		next := &desktopSession{instanceID: entity.InstanceId, userID: entity.UserId,
 			sandboxID: entity.SandboxId, generation: id.String(), provisionMu: operationMu}
 		desktopSessions.Store(entity.InstanceId, next)
@@ -161,16 +176,24 @@ func (l *logic) desktopResourceRetry(ctx pctx.Context, session *desktopSession) 
 		return nil, err
 	}
 	session.mu.Lock()
-	defer session.mu.Unlock()
 	if session.preparing || (session.status != transport.DesktopSessionStatusPaused && session.status != transport.DesktopSessionStatusFailed) {
+		session.mu.Unlock()
 		return session, nil
 	}
+	next := &desktopSession{instanceID: session.instanceID, userID: session.userID,
+		sandboxID: session.sandboxID, provisionMu: op}
+	session.mu.Unlock()
 	id, err := uuid.NewRandom()
 	if err != nil {
 		return nil, errcode.ErrSandboxServiceError
 	}
-	next := &desktopSession{instanceID: session.instanceID, userID: session.userID,
-		sandboxID: session.sandboxID, generation: id.String(), provisionMu: op}
+	next.generation = id.String()
+	if err := l.revokeDesktopViewersLocked(ctx, session); err != nil {
+		return nil, err
+	}
+	if err := l.validateDesktopSession(ctx, session); err != nil {
+		return nil, err
+	}
 	desktopSessions.Store(session.instanceID, next)
 	return next, nil
 }
@@ -205,7 +228,7 @@ func (l *logic) desktopResourceResponse(session *desktopSession) *transport.Desk
 	switch session.status {
 	case transport.DesktopSessionStatusReady:
 		state = transport.DesktopResourceStatePreparing
-		if session.observerPrepared {
+		if session.observerPrepared && !session.preparing {
 			state = transport.DesktopResourceStatePrepared
 		}
 	case transport.DesktopSessionStatusPaused:
@@ -221,6 +244,72 @@ func (l *logic) desktopResourceResponse(session *desktopSession) *transport.Desk
 	}
 	return &transport.DesktopResourceResponse{ResourceID: session.instanceID, GenerationID: session.generation,
 		State: state, Progress: session.installProgress}
+}
+
+func (l *logic) prepareDesktopInput(ctx pctx.Context, session *desktopSession, sandboxID string) error {
+	op := session.operationMutex()
+	op.Lock()
+	defer op.Unlock()
+	session.mu.Lock()
+	generation := session.generation
+	session.inputPrepared = false
+	session.mu.Unlock()
+	result, err := l.execDesktopInstallCommandLocked(ctx, session, sandboxID, renderDesktopInputPrepareCommand())
+	if err != nil {
+		return err
+	}
+	if !sandboxCommandSucceeded(result) {
+		return errcode.ErrDesktopNotConfigured
+	}
+	incarnation, err := l.verifyDesktopIncarnationLocked(ctx, session, sandboxID)
+	if err != nil {
+		return err
+	}
+	result, err = l.execDesktopInstallCommandLocked(ctx, session, sandboxID, renderDesktopInputEpochCommand())
+	if err != nil {
+		return err
+	}
+	if !sandboxCommandSucceeded(result) {
+		return errcode.ErrDesktopNotConfigured
+	}
+	expected, ok := parseDesktopInputEpoch(result.Output)
+	if !ok {
+		expected, ok = parseDesktopInputEpoch(result.Stdout)
+	}
+	if !ok || ctx.Err() != nil {
+		return errcode.ErrDesktopNotConfigured
+	}
+	session.mu.Lock()
+	matches := session.generation == generation
+	session.mu.Unlock()
+	if !matches {
+		return errcode.ErrDesktopTargetChanged
+	}
+	result, err = l.execDesktopInstallCommandLocked(ctx, session, sandboxID,
+		renderDesktopInputActivateCommand(generation, expected, incarnation))
+	if err != nil {
+		return err
+	}
+	if !sandboxCommandSucceeded(result) || ctx.Err() != nil {
+		return errcode.ErrDesktopNotConfigured
+	}
+	currentIncarnation, err := l.verifyDesktopIncarnationLocked(ctx, session, sandboxID)
+	if err != nil {
+		return err
+	}
+	if currentIncarnation != incarnation || ctx.Err() != nil {
+		return errcode.ErrDesktopTargetChanged
+	}
+	if err := l.validateDesktopSession(ctx, session); err != nil {
+		return err
+	}
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	if session.generation != generation {
+		return errcode.ErrDesktopTargetChanged
+	}
+	session.incarnation, session.inputPrepared = incarnation, true
+	return nil
 }
 
 func (l *logic) prepareDesktopResource(ctx pctx.Context, session *desktopSession, cancel context.CancelFunc) {
@@ -245,6 +334,11 @@ func (l *logic) prepareDesktopResource(ctx pctx.Context, session *desktopSession
 			session.mu.Lock()
 			session.observerPrepared = true
 			session.mu.Unlock()
+			// A process restart may lose local grants while the gateway retains them.
+			// Without a confirmed epoch fence, even a read-only fallback is unsafe.
+			if err := l.prepareDesktopInput(ctx, session, sandboxID); err != nil {
+				session.setStatus(transport.DesktopSessionStatusFailed, "desktop input authorization unavailable")
+			}
 			return
 		}
 		if status == transport.DesktopSessionStatusFailed {

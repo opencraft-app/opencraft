@@ -2,7 +2,20 @@
 
 The optional `tencentoa.identity` plugin recognizes the employee authenticated by
 the site's TAI/TOF gateway. It registers an independent authentication provider
-and an “员工身份” settings page. It does not replace the LightVela account owner.
+and an “员工身份” settings page. When configured, it owns the shared bottom-left
+account entrance: the verified employee login name is shown automatically, and
+clicking opens employee details and refresh. Without a verified identity the same
+entrance is labelled “员工身份” and opens those details; no fixed login URL or
+separate OAuth flow is configured. The current site's gateway supplies identity
+headers on the same-origin session request.
+
+Footer selection uses explicit `entrancePriority` (Tencent OA: 100; existing
+product accounts: 0). Equal priorities remain exclusive. This changes only the
+Shell presentation: LightVela's authentication, resources and account storage
+remain independently owned, and its entrance returns when Tencent OA unloads.
+There is no employee logout control because this integration has no gateway
+logout contract. A 401 or identity expiration removes the displayed employee;
+an open identity detail view remains available for refresh.
 
 ## Enablement
 

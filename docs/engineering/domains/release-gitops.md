@@ -832,9 +832,37 @@ sgprod=`desktop.lightvela.site`（cert bAnD57eL / CLB lb-8kenwgvc）。该改动
 业务配置，不改变镜像构建、制品晋级、Argo Application 或同步模型；CLB 证书（SNI）、泛解析 DNS
 与含云桌面代码的 CTL 镜像仍是独立的发布前置，源配置 render 通过不等于 live 验收。
 
+## 云桌面专用工作负载的独立承载与发布顺序（2026-10-12）
+
+云桌面的会话、观看票据与输入授权是长连接、常驻状态，与普通 CTL API 混在同一组 `ctl-api`
+副本时会互相争抢连接与内存，因此新增独立工作负载 `ctl-desktop` 承载桌面请求。
+
+- `ctl-desktop` 在 `ctl/k8s/base/manifests.yaml` 中只声明 `replicas: 1`、`strategy: Recreate`
+  与空 `template.spec`，其 `spec.template.spec` 与 `metadata.annotations` 由
+  `ctl/k8s/base/kustomization.yaml` 的 `replacements` 从 `ctl-api` 整体继承（镜像、`envFrom`、
+  configMapKeyRef env、volume、probe 全部继承，逐环境 overlay 的 platform 值同样生效）；
+  差异仅来自 label `ctl.clawhub.dev/role`，`CTL_API_ROLE` 由该 label 经 fieldRef 注入。
+- 角色切换与路由必须配对：`ctl-api` 打 `role=api` 后拒收桌面路径，Service Gateway 的
+  `desktop_upstream` 把桌面请求投到 `ctl-desktop`。**发布顺序是硬约束：先确认 `ctl-desktop`
+  已 Ready，再切 `role=api` 与网关 `desktop_upstream`**；顺序颠倒会出现桌面功能短暂 404
+  （仅云桌面受影响，不影响聊天、订单、登录等其他能力）。
+- 环境矩阵（本轮合入状态）：`sandbox-bj-7`、`sandbox-kr-1`、`sgprod`、`shprod` 为完整隔离；
+  `beijing-sandbox`、`beijing-sandbox-2` 只建 `ctl-desktop` 未给 `ctl-api` 打 `role=api`，
+  空角色按兼容模式全放行，隔离不生效但不断链；`sandbox-jp-1` 未接入（`desktop_upstream`
+  缺省即沿用原 upstream）。半配与未接入环境均不得宣称多副本隔离可用。
+- `Recreate` 单副本意味着角色切换瞬间桌面连接本就会重建，发布应安排在桌面维护窗口并协调
+  角色切换与网关路由；源码 render 通过不等于 live 验收，仍需独立核对 Argo `Synced/Healthy`、
+  `CTL_API_ROLE` 实际取值与真实环境回归。
+- 回滚不依赖镜像：把目标环境 `desktop_upstream` 移除且 `role` 置空即回到兼容全放行，
+  已建立的桌面会话按空闲回收收敛。
+
 ## MR 复用工作区源码一致性（2026-10-10）
 
 MR 占位检查在 checkout 后校验期望提交和该提交下的全部受跟踪文件（含 index）。
 提交号相同不能证明工作树正确：复用 runner 可能残留旧前端源码或旧 OpenCraft 生成副本。
 发现提交或受跟踪文件不一致时，对本次构建工作区执行既有 reset/clean，再核验 HEAD 和完整 tracked diff。
 这只恢复构建输入，不执行机械同步来掩盖源码中真实的生成漂移，也不修改 trusted guard 或发布权限。
+
+### CTL 微信 MR 回归门禁
+
+`ctl-weixin` changed guard 使用临时 Python venv，固定 python-dotenv / PyYAML 依赖，并显式传给 Go 脚本测试；缺依赖或任何所选用例 skip 均失败。聚焦实例/HTTP 契约测试与 vet 以 CGO=0 执行，不代替 SQLite/Docker 全量测试。MR 执行器使用 trusted base 的 guard 定义，新 guard 合入可信基座后才会自动选择；当前 MR 必须单独运行该 guard 留证。

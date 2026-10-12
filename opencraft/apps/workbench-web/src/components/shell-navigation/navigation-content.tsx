@@ -10,7 +10,7 @@ export interface ShellAccount {
   readonly snapshot: PlatformAccountSnapshot;
   readonly onOpen: () => void;
   readonly onRefresh: () => Promise<unknown>;
-  readonly onSignOut: () => Promise<void>;
+  readonly onSignOut?: (() => Promise<void>) | undefined;
 }
 
 export interface ShellSignIn {
@@ -39,6 +39,7 @@ export function shellAccountEntranceLabel(account: ShellAccount | null, intl: In
   if (isAnonymousShellAccount(account)) {
     if (account.signIn?.pending) return intl.formatMessage({ id: "account.signingIn", defaultMessage: "Signing in…" });
     if (account.signIn?.error) return intl.formatMessage({ id: "account.signInIncomplete", defaultMessage: "Sign-in incomplete" });
+    if (account.snapshot.anonymousLabel) return account.snapshot.anonymousLabel;
     return intl.formatMessage({ id: "account.signIn", defaultMessage: "Sign in" });
   }
   return account.snapshot.name || intl.formatMessage({ id: "account.title", defaultMessage: "Account" });
@@ -91,7 +92,7 @@ function AccountContent({ config, compact, onInvoke }: {
   if (isAnonymousShellAccount(account)) {
     return <div className="shell-navigation__items">
       <button type="button" onClick={() => onInvoke(account.onOpen)}>
-        <LogIn size={16} /><span><FormattedMessage id="account.signInLightVela" defaultMessage="Sign in to LightVela" /></span>
+        <LogIn size={16} /><span>{account.snapshot.anonymousLabel ?? <FormattedMessage id="account.signInLightVela" defaultMessage="Sign in to LightVela" />}</span>
       </button>
     </div>;
   }
@@ -109,13 +110,13 @@ function AccountContent({ config, compact, onInvoke }: {
       <button type="button" onClick={() => onInvoke(account.onOpen)}><User size={16} /><span><FormattedMessage id="account.title" defaultMessage="Account" /></span></button>
     </>
     <button type="button" onClick={() => onInvoke(config.onOpenSettings)}><Settings size={16} /><span><FormattedMessage id="settings.title" defaultMessage="Settings" /></span></button>
-    <button type="button" disabled={signingOut} onClick={async () => {
+    {account.onSignOut ? <button type="button" disabled={signingOut} onClick={async () => {
       setSigningOut(true);
       setError(null);
-      try { await account.onSignOut(); onInvoke(() => undefined); }
+      try { await account.onSignOut?.(); onInvoke(() => undefined); }
       catch { setError("Could not sign out. Please try again."); }
       finally { setSigningOut(false); }
-    }}><LogOut size={16} /><span>{intl.formatMessage(signingOut ? { id: "account.signingOut", defaultMessage: "Signing out…" } : { id: "account.signOut", defaultMessage: "Sign out" })}</span></button>
+    }}><LogOut size={16} /><span>{intl.formatMessage(signingOut ? { id: "account.signingOut", defaultMessage: "Signing out…" } : { id: "account.signOut", defaultMessage: "Sign out" })}</span></button> : null}
     {error ? <p role="alert">{error}</p> : null}
   </div>;
 }

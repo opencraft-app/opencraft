@@ -301,19 +301,48 @@ func newRouterWithWebsiteAuth(
 	mux.HandleFunc("/internal/ctl/websites/domains/bind", wh.handleInternalDomainBind)
 	mux.HandleFunc("/internal/ctl/websites/domains/unbind", wh.handleInternalDomainUnbind)
 
-	return requestMetadataMiddleware(metricsMiddleware(notFoundMiddleware(mux)))
+	return requestMetadataMiddleware(metricsMiddleware(notFoundMiddleware(desktopRoleMiddleware(mux))))
+}
+
+func desktopReaperEnabled() bool {
+	role := strings.TrimSpace(os.Getenv("CTL_API_ROLE"))
+	return role == "" || role == "desktop"
+}
+
+func desktopRoleMiddleware(next http.Handler) http.Handler {
+	role := strings.TrimSpace(os.Getenv("CTL_API_ROLE"))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		parts := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.Path, "/v1/instances/"), "/"), "/")
+		isDesktop := strings.HasPrefix(r.URL.Path, "/v1/instances/") && len(parts) >= 2 && parts[1] == "desktop"
+		switch role {
+		case "": // Existing deployments remain compatible until explicitly separated.
+		case "api":
+			if isDesktop {
+				writeHTTPError(w, r, errcode.ErrNotFound)
+				return
+			}
+		case "desktop":
+			if !isDesktop && r.URL.Path != "/health" {
+				writeHTTPError(w, r, errcode.ErrNotFound)
+				return
+			}
+		default:
+			http.Error(w, "invalid API role", http.StatusServiceUnavailable)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (gs *apiServer) run() error {
-	// 启动后台定时任务
 	cronDone := make(chan struct{})
-	bundlelogic.StartDailyAvailCountRefresh(resource.ZapLogger, 10, cronDone) // 每天 10:00 (UTC+8)
-	// trade-pass-destroy snapshot 清理 cron（设计稿 §4.10 / Q7 拍板，默认凌晨 03:00 UTC+8 低峰期跑）
-	snapshotlogic.StartDailyExpiredSnapshotCleanup(resource.ZapLogger, 3, cronDone)
-	// 云桌面 idle 回收（cloud-desktop-vnc-plan §4.5 / CR-1）：默认 30 分钟无活跃即
-	// PauseSandbox 关机省费；阈值由 DESKTOP_IDLE_TIMEOUT_MINUTES 控制（<=0 禁用）。
-	// 扫描间隔由 DESKTOP_REAP_INTERVAL_MINUTES 控制，默认 5 分钟（CR-D）。
-	instancelogic.StartDesktopIdleReaper(resource.ZapLogger, instancelogic.DesktopReapInterval(), cronDone)
+	if strings.TrimSpace(os.Getenv("CTL_API_ROLE")) != "desktop" {
+		bundlelogic.StartDailyAvailCountRefresh(resource.ZapLogger, 10, cronDone)
+		snapshotlogic.StartDailyExpiredSnapshotCleanup(resource.ZapLogger, 3, cronDone)
+	}
+	if desktopReaperEnabled() {
+		instancelogic.StartDesktopIdleReaper(resource.ZapLogger, instancelogic.DesktopReapInterval(), cronDone)
+	}
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -440,6 +469,16 @@ func normalizePath(path string) string {
 	}
 	if strings.HasPrefix(path, "/v1/instances/") && strings.HasSuffix(path, "/desktop/resource") {
 		return "/v1/instances/{id}/desktop/resource"
+	}
+	// 云桌面观看租约：创建/释放/兑换共用一个归一化路径，避免高基数。
+	if strings.HasPrefix(path, "/v1/instances/") && strings.HasSuffix(path, "/desktop/viewer") {
+		return "/v1/instances/{id}/desktop/viewer"
+	}
+	if strings.HasPrefix(path, "/v1/instances/") && strings.HasSuffix(path, "/desktop/viewer/claim") {
+		return "/v1/instances/{id}/desktop/viewer/{attachment_id}/claim"
+	}
+	if strings.HasPrefix(path, "/v1/instances/") && strings.Contains(path, "/desktop/viewer/") {
+		return "/v1/instances/{id}/desktop/viewer/{attachment_id}"
 	}
 	if strings.HasPrefix(path, "/internal/instances/") && strings.HasSuffix(path, "/gateway/migrate") {
 		return "/internal/instances/{id}/gateway/migrate"
@@ -743,6 +782,50 @@ func (h *instanceHandler) handleInstance(w http.ResponseWriter, r *http.Request)
 			status = http.StatusAccepted
 		}
 		writeSuccess(w, r, status, resp)
+	case len(parts) == 3 && parts[1] == "desktop" && parts[2] == "viewer" && r.Method == http.MethodPost:
+		// 云桌面观看租约：desktop/resource 准备完成后才签发。响应不含 VNC 密码、
+		// 也不含公网 URL —— 媒体只经实例级 TAT 隧道访问沙箱内回环端点。
+		ctx, ok := newRequestContext(r)
+		if !ok {
+			writeHTTPError(w, r, errcode.ErrInstanceMissingUserID)
+			return
+		}
+		resp, err := h.logic.CreateDesktopViewer(ctx, instanceID)
+		if err != nil {
+			writeHTTPError(w, r, err)
+			return
+		}
+		writeSuccess(w, r, http.StatusOK, resp)
+	case len(parts) == 4 && parts[1] == "desktop" && parts[2] == "viewer" && r.Method == http.MethodDelete:
+		// 释放观看租约（幂等）：撤权后票据不能再兑换。
+		ctx, ok := newRequestContext(r)
+		if !ok {
+			writeHTTPError(w, r, errcode.ErrInstanceMissingUserID)
+			return
+		}
+		if err := h.logic.ReleaseDesktopViewer(ctx, instanceID, parts[3]); err != nil {
+			writeHTTPError(w, r, err)
+			return
+		}
+		writeSuccess(w, r, http.StatusOK, nil)
+	case len(parts) == 5 && parts[1] == "desktop" && parts[2] == "viewer" && parts[4] == "claim" && r.Method == http.MethodPost:
+		// 兑换一次性票据：只有兑换成功才允许打开桌面隧道（到期/重放/换代次均拒绝）。
+		ctx, ok := newRequestContext(r)
+		if !ok {
+			writeHTTPError(w, r, errcode.ErrInstanceMissingUserID)
+			return
+		}
+		var req transport.DesktopViewerClaimRequest
+		if err := decodeJSONBody(r, &req); err != nil {
+			writeHTTPError(w, r, errcode.Wrap(errcode.ErrInvalidParam, "%s", err.Error()))
+			return
+		}
+		resp, err := h.logic.ClaimDesktopViewer(ctx, instanceID, parts[3], &req)
+		if err != nil {
+			writeHTTPError(w, r, err)
+			return
+		}
+		writeSuccess(w, r, http.StatusOK, resp)
 	case len(parts) == 3 && parts[1] == "desktop" && parts[2] == "session" && r.Method == http.MethodPost:
 		// 云桌面（VNC）：POST 幂等触发 provision（Provisioning→Ready 状态机入口）。
 		ctx, ok := newRequestContext(r)

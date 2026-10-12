@@ -1628,6 +1628,10 @@ func TestFinishWeixinLoginSuccessFailsOnCommandFailure(t *testing.T) {
 			InstanceId: "ins-1", SandboxId: "sbx-1", Status: modelinstance.InstanceStatusRunning,
 		}},
 		sandboxAdapter: &commandSandboxAdapterStub{
+			ptyEvents: []psandbox.PtyExecStreamEvent{
+				{Type: "output", Chunk: `{"ok":true,"channel":"weixin","bot_id":"ins-1","profile_id":"default","status":"connected"}`},
+				{Type: "finished", ExitCode: 0, Status: "SUCCESS"},
+			},
 			processEvents: []psandbox.ProcessStreamEvent{
 				{Stdout: "restart failed"},
 				{Ended: true, ExitCode: 1, Status: "FAILED", Stderr: "restart failed"},

@@ -96,6 +96,7 @@ routes:
     prefix: /v1/instances
     methods: [GET, POST, PUT, DELETE, OPTIONS]
     upstream: http://ctl-api.ctl.svc.cluster.local
+    desktop_upstream: http://ctl-desktop.ctl.svc.cluster.local
     access: authenticated
     path_policy: allowlist
     path_allow:
@@ -115,6 +116,11 @@ routes:
       - { method: POST, path: "/v1/instances/{instance_id}/tat/session" }
       - { method: POST, path: "/v1/instances/{instance_id}/desktop/session" }
       - { method: GET, path: "/v1/instances/{instance_id}/desktop/session" }
+      - { method: POST, path: "/v1/instances/{instance_id}/desktop/resource" }
+      - { method: GET, path: "/v1/instances/{instance_id}/desktop/resource" }
+      - { method: POST, path: "/v1/instances/{instance_id}/desktop/viewer" }
+      - { method: DELETE, path: "/v1/instances/{instance_id}/desktop/viewer/{attachment_id}" }
+      - { method: POST, path: "/v1/instances/{instance_id}/desktop/viewer/{attachment_id}/claim" }
       - { method: POST, path: "/v1/instances/{instance_id}/config/reset" }
       - { method: POST, path: "/v1/instances/{instance_id}/agentchat/launch-token" }
       - { method: POST, path: "/v1/instances/{instance_id}/channels/config" }

@@ -1,5 +1,18 @@
 # 工作区不变量
 
+## Employee account entrance
+
+- A configured Tencent OA identity provider automatically projects the verified
+  request identity into the existing Sidecar footer. The label is the employee
+  login name, or “员工身份” when anonymous; clicking opens details and refresh.
+- Footer precedence changes presentation only. Product account credentials and
+  resource authority remain independently owned; equal precedence is rejected
+  and unloading an employee provider restores the product entrance.
+- No fixed employee login URL, synthetic identity or unsupported logout control
+  is presented. Authoritative 401/expiration clears the footer; details remain
+  available for refresh. Covered by `tests/tencentoa.test.ts` and the real footer
+  controls in `scripts/smoke-tencentoa.ts`; live gateway evidence is separate.
+
 ## Embedded panel host presentation
 
 - Embedded panel viewport and its complete DOM content reuse the current conversation's panel service,

@@ -8,6 +8,13 @@ resources:
   - ctl-conf-rewrite.yaml
 
 patches:
+  - target:
+      kind: Deployment
+      name: ctl-api
+    patch: |-
+      - op: add
+        path: /spec/template/metadata/labels/ctl.clawhub.dev~1role
+        value: api
   - path: delete-migration-job.yaml
   - path: delete-servicemonitor.yaml
   - path: patch-referral.yaml
@@ -245,3 +252,27 @@ replacements:
           name: ctl-runtime
         fieldPaths:
           - spec.clsDetail.topicId
+  - source:
+      kind: Deployment
+      name: ctl-api
+      fieldPath: spec.template.spec
+    targets:
+      - select:
+          kind: Deployment
+          name: ctl-desktop
+        fieldPaths:
+          - spec.template.spec
+        options:
+          create: true
+  - source:
+      kind: Deployment
+      name: ctl-api
+      fieldPath: spec.template.metadata.annotations
+    targets:
+      - select:
+          kind: Deployment
+          name: ctl-desktop
+        fieldPaths:
+          - spec.template.metadata.annotations
+        options:
+          create: true

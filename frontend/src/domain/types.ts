@@ -131,6 +131,62 @@ export interface CloudDesktopSession {
   reason?: string;
 }
 
+/** desktop/resource 的准备态（ctl DesktopResourceResponse）。不含任何凭据。 */
+export interface CloudDesktopResource {
+  resourceId: string;
+  generationId?: string;
+  state: "unprepared" | "preparing" | "prepared" | "paused" | "failed";
+  progress?: number;
+}
+
+/**
+ * 桌面媒体在沙箱内的回环端点。
+ *
+ * ingressproxy 下线后不再有 `6080-<sandboxID>.<domain>` 泛域名，因此这里只有
+ * 沙箱内部的 ip/port —— 浏览器只能经实例级、已鉴权的 TAT 隧道到达它。
+ * 任何公网主机名都不应出现在此结构中。
+ */
+export interface CloudDesktopTunnel {
+  /** rfb：隧道内直接是 RFB 字节流（只读 observer）；ws：隧道内是 WebSocket。 */
+  mode: "rfb" | "ws";
+  ip: string;
+  port: string;
+  path?: string;
+}
+
+/**
+ * 桌面观看权限：write 表示键鼠可用（可写回环端点已就绪），
+ * read 表示降级为只读 observer（可写端点未就绪）。
+ */
+export type CloudDesktopViewerAccess = "write" | "read";
+
+/** desktop/viewer 签发的观看租约：一次性票据，不含 VNC 密码与公网 URL。 */
+export interface CloudDesktopViewerLease {
+  version: number;
+  attachmentId: string;
+  ticket: string;
+  resourceId: string;
+  generationId: string;
+  access: CloudDesktopViewerAccess;
+  /** 沙箱内 HMAC 校验出的物理机器身份（64 位 hex），不是准备代次。 */
+  incarnation: string;
+  /** Unix 毫秒时间戳 */
+  expiresAt: number;
+  tunnel: CloudDesktopTunnel;
+}
+
+/** 票据兑换结果：兑换成功才允许打开桌面隧道。 */
+export interface CloudDesktopViewerClaim {
+  version: number;
+  attachmentId: string;
+  resourceId: string;
+  generationId: string;
+  access: CloudDesktopViewerAccess;
+  incarnation: string;
+  expiresAt: number;
+  tunnel: CloudDesktopTunnel;
+}
+
 export interface BotChannelConfigResult {
   status: string;
   channel: string;
