@@ -2,7 +2,10 @@
 id: task-wechat-per-bot-frontend-20261010
 type: task
 scope: Deliver the per-Bot Weixin frontend and repair MR !5180 target drift.
-triggers: []
+triggers:
+  - wechat per-bot frontend
+  - MR 5180 conflict repair
+  - Weixin channel ownership
 owner: pablozhong
 authority: derived
 source_of_truth:
@@ -91,7 +94,7 @@ Show Weixin as an independent connection for each Bot and update dual-site guida
 
 ## checkpoint
 ### stage
-MR !5180 conflict repair is complete locally against `origin/master` at `a527d0c13` on 2026-10-12; ready to push the original branch and inspect remote CI.
+MR !5180 conflict repair was pushed against `origin/master` at `a527d0c13` on 2026-10-12; remote reports `opened/can_be_merged`, with CI running. Final Task Pack metadata cleanup and local preview restart remain.
 
 ### verified
 - The only content conflict was generated `UPSTREAM.json`; source and locale changes merged automatically.
@@ -99,10 +102,11 @@ MR !5180 conflict repair is complete locally against `origin/master` at `a527d0c
 - Source merge commit is `faa2e194f`; the official sync/check scripts regenerated and verified 136 OpenCraft Agent Console files.
 - Relative to current `origin/master`, the MR still changes the intended Weixin UI, tests, guidance, and generated locale closure.
 - Repository-wide Context catalog and contract tests still fail on pre-existing historical Task Pack metadata; the same missing metadata is present in target-branch documents. This task's front matter was repaired.
+- Context-audit's 33 tests pass and the repository audit command exits 0; the final catalog check exposed the minimum-three-trigger requirement, now corrected in this retired historical Task Pack.
 
 ### unverified
 - Live two-account Weixin login through the public gateway.
-- CI and remote mergeability after the final push.
+- CI completion after the final documentation commit.
 
 ### discard
 - Build-only `frontend/next-env.d.ts` and font subset changes were restored.
@@ -111,4 +115,4 @@ MR !5180 conflict repair is complete locally against `origin/master` at `a527d0c
 - Worktree: `/Users/pablozhong/.codex/worktrees/wechat-per-bot/lightvela`.
 
 ### next_action
-- Commit the regenerated manifest, push the existing MR branch, verify its remote source SHA and mergeability, then resume the Beijing-backed local preview on port 5176.
+- Push the Task Pack metadata cleanup, verify final remote SHA/mergeability, and resume the Beijing-backed local preview on port 5176.
