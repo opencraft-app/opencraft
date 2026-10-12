@@ -103,6 +103,7 @@ export const HermesQrCodeModal = forwardRef<IHermesQrCodeModalHandle, IHermesQrC
     const [visible, setVisible] = useState(false);
     const [qrUrl, setQrUrl] = useState('');
     const [status, setStatus] = useState<HermesQrUiStatus>('init');
+    const [recoveryFailed, setRecoveryFailed] = useState(false);
     const { openAuth: openWecomBotAuth } = useWecomAIBotSDK();
 
     const qrUrlRef = useRef('');
@@ -117,6 +118,7 @@ export const HermesQrCodeModal = forwardRef<IHermesQrCodeModalHandle, IHermesQrC
     };
 
     const resetState = () => {
+      setRecoveryFailed(false);
       qrUrlRef.current = '';
       setQrUrl('');
       updateStatus('init');
@@ -141,6 +143,7 @@ export const HermesQrCodeModal = forwardRef<IHermesQrCodeModalHandle, IHermesQrC
       qrUrlRef.current = '';
       setQrUrl('');
       setVisible(true);
+      setRecoveryFailed(false);
       updateStatus('loading');
 
       let scanSucceeded = false;
@@ -210,6 +213,8 @@ export const HermesQrCodeModal = forwardRef<IHermesQrCodeModalHandle, IHermesQrC
           resetState();
           return;
         }
+        setRecoveryFailed(platform === 'weixin' && error instanceof Error && 'code' in error
+          && error.code === 'WEIXIN_RECOVERY_FAILED');
         console.error('[HermesQrCodeModal] startQrCodeFlow failed:', error);
         updateStatus('failed');
       }
@@ -288,7 +293,7 @@ export const HermesQrCodeModal = forwardRef<IHermesQrCodeModalHandle, IHermesQrC
         return t('请使用微信扫码完成授权');
       }
       if (status === 'expired') return t('二维码已过期');
-      if (status === 'failed') return t('获取二维码失败');
+      if (status === 'failed') return recoveryFailed ? t('微信连接恢复失败') : t('获取二维码失败');
       return '';
     };
 
@@ -303,7 +308,9 @@ export const HermesQrCodeModal = forwardRef<IHermesQrCodeModalHandle, IHermesQrC
         return t('扫码后请在微信上确认授权');
       }
       if (status === 'expired') return t('二维码已超时失效，请点击重试重新获取');
-      if (status === 'failed') return t('配置失败，请重试或检查网络连接');
+      if (status === 'failed') return recoveryFailed
+        ? t('上次扫码后的配置尚未恢复，请重试；若仍失败，请联系支持。')
+        : t('配置失败，请重试或检查网络连接');
       return undefined;
     };
 
