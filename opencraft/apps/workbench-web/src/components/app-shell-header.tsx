@@ -1,7 +1,6 @@
 import {
   ArrowLeft,
   ArrowRight,
-  Code2,
 } from "lucide-react";
 import { motion, useTransform } from "motion/react";
 import { useIntl } from "@opencraft/i18n/react";
@@ -190,7 +189,6 @@ export function AppShellNavigationControls({
 export interface AppShellHeaderProps {
   readonly title: string | null;
   readonly project: string | null;
-  readonly showProjectIcon?: boolean;
   readonly titleContent?: ReactNode;
   readonly routeHeaderActive?: boolean;
   readonly routeHeaderHostRef?: RefCallback<HTMLDivElement>;
@@ -217,7 +215,6 @@ export interface AppShellHeaderProps {
 export function AppShellHeader({
   title,
   project,
-  showProjectIcon = true,
   titleContent,
   routeHeaderActive = false,
   routeHeaderHostRef,
@@ -310,9 +307,6 @@ export function AppShellHeader({
           />
           {!routeHeaderActive && title !== null ? (
             <div className="thread-header-title">
-              {showProjectIcon ? <span className="thread-header-project-icon">
-                <Code2 size={14} />
-              </span> : null}
               {titleContent ?? <span className="thread-header-copy">
                 <strong>{title}</strong>
                 {project === null ? null : <small>{project} · main</small>}

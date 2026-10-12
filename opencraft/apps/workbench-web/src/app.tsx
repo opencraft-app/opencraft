@@ -1463,7 +1463,6 @@ export function App({
   }, [embedded]);
   const header = (
     <AppShellHeader
-      showProjectIcon={embedded === undefined}
       titleContent={embedded !== undefined && conversationSurfaceVisible && draft === null && activeThread !== undefined && hostCatalog.threadManagement.capabilities(snapshot.hostId).rename ? (
         <EditableThreadTitle
           key={JSON.stringify([snapshot.hostId, activeThread.id])}
