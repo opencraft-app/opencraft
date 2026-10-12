@@ -20,6 +20,8 @@
 
 首次创建没有可复制的来源，不显示「高级」中的复制选项；已有可复制 Bot 时，再次创建才提供相关选项及关闭入口。创建过程中若页面提示等待，请以管理台显示的实际状态为准，不要重复创建。套餐和续费规则见[套餐管理](./plans.md)，更完整的首次开通说明见[如何开通第一个 Hermes 智能体伙伴](./create-first-hermes.md)。
 
+![国内站 Bot 头像栏与日常导航入口](./images/cn-bots-switching-overview.webp)
+
 ## 3. 检查模型
 
 进入 Bot 管理台后，先确认模型是否可用。套餐内模型积分可用时，可直接进行下一步；若要使用自有模型，在「模型」中添加提供商与凭证，并选择当前生效模型。一个 Bot 可保存多个模型配置，但同一时间只有一个模型生效。详见[配置模型](./configuration/model.md)。
@@ -28,11 +30,15 @@
 
 创建引导完成、Bot 就绪且模型积分可用后，在侧栏「日常 → 对话」点击「新建对话」，发送「你好」。收到回复即完成第一次网页对话；界面和会话管理见[对话](./configuration/agent-chat.md)。
 
+![国内站网页对话输入区](./images/cn-chat-overview.webp)
+
 ## 5. 按需连接微信
 
 如需增加微信这个外部入口，在「通道」中选择微信并发起连接。按照管理台显示的二维码与手机提示完成授权，再确认管理台显示连接成功。接入细节和常见问题见[配置通道 - 微信](./configuration/channel-wechat.md)。
 
 也可根据使用场景选择 [QQ](./configuration/channel-qq.md)、[企业微信](./configuration/channel-wecom.md)、[飞书](./configuration/channel-feishu.md)或[钉钉](./configuration/channel-dingtalk.md)。
+
+![国内站通道页面中的微信等接入入口](./images/cn-channels-overview.webp)
 
 ## 6. 在微信中发送消息
 

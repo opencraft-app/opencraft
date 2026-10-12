@@ -450,6 +450,9 @@ export const DOCS_ROUTE_SLUGS = {
       "faq"
     ],
     [
+      "user-feedback"
+    ],
+    [
       "contact-us"
     ]
   ],
@@ -2711,6 +2714,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "compare/lightvela-vs-localhost-ai-agent": "2026-08-12",
     "compare/lightvela-vs-ai-chatbot": "2026-08-12",
     "faq": "2026-09-27",
+    "user-feedback": "2026-10-12",
     "contact-us": "2026-10-12",
     "": "2026-09-27"
   },

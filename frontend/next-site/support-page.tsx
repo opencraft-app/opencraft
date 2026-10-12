@@ -196,7 +196,6 @@ const SUPPORT_LABELS_EN: Record<string, string> = {
   '政府/公共': 'Government / public sector',
   '自由职业/个体': 'Freelance / self-employed',
   '调研问卷': 'Survey',
-  '请留下邮箱，方便我们与您联系。': 'Please provide an email address so we can follow up.',
   '邮箱示例：1234@gmail.com': 'Example: 1234@gmail.com',
   '邮箱（选填）': 'Email (optional)',
 };
@@ -248,7 +247,6 @@ const SUPPORT_LABELS_ID: Record<string, string> = {
   '政府/公共': 'Pemerintah / sektor publik',
   '自由职业/个体': 'Freelance / wiraswasta',
   '调研问卷': 'Survei',
-  '请留下邮箱，方便我们与您联系。': 'Isi alamat email agar kami dapat menghubungi Anda.',
   '邮箱示例：1234@gmail.com': 'Contoh: 1234@gmail.com',
   '邮箱（选填）': 'Email (opsional)',
 };
@@ -300,7 +298,6 @@ const SUPPORT_LABELS_HANT: Record<string, string> = {
   '政府/公共': '政府/公共',
   '自由职业/个体': '自由職業/個體',
   '调研问卷': '調研問卷',
-  '请留下邮箱，方便我们与您联系。': '請留下郵箱，方便我們與您聯絡。',
   '邮箱示例：1234@gmail.com': '郵箱示例：1234@gmail.com',
   '邮箱（选填）': '郵箱（選填）',
 };
@@ -352,7 +349,6 @@ const SUPPORT_LABELS_ES: Record<string, string> = {
   '政府/公共': 'Gobierno / sector público',
   '自由职业/个体': 'Trabajo independiente / autónomo',
   '调研问卷': 'Encuesta',
-  '请留下邮箱，方便我们与您联系。': 'Deja tu correo electrónico para que podamos contactarte.',
   '邮箱示例：1234@gmail.com': 'Ejemplo: 1234@gmail.com',
   '邮箱（选填）': 'Correo electrónico (opcional)',
 };
@@ -404,7 +400,6 @@ const SUPPORT_LABELS_JA: Record<string, string> = {
   '政府/公共': '行政・公共',
   '自由职业/个体': 'フリーランス・個人事業',
   '调研问卷': 'アンケート',
-  '请留下邮箱，方便我们与您联系。': '連絡用のメールアドレスをご記入ください。',
   '邮箱示例：1234@gmail.com': '例：1234@gmail.com',
   '邮箱（选填）': 'メールアドレス（任意）',
 };
@@ -413,20 +408,17 @@ export function localizeSupportLabel(label: string, locale: PublicSiteLocale): s
   if (locale === PUBLIC_SITE_LOCALES.TH_TH) {
     if (label === '您的联系方式（选填，建议填写邮箱）') return 'ข้อมูลติดต่อ (ไม่บังคับ แนะนำให้ใช้อีเมล)';
     if (label === '邮箱（选填）') return 'อีเมล (ไม่บังคับ)';
-    if (label === '请留下邮箱，方便我们与您联系。') return 'กรุณาระบุอีเมลเพื่อให้เราติดต่อกลับได้';
     if (label === '邮箱示例：1234@gmail.com') return 'ตัวอย่าง: 1234@gmail.com';
     return localizeThai(SUPPORT_LABELS_EN[label] ?? label);
   }
   if (locale === PUBLIC_SITE_LOCALES.MS_MY) {
     if (label === '您的联系方式（选填，建议填写邮箱）') return 'Maklumat hubungan anda (pilihan; e-mel disyorkan)';
     if (label === '邮箱（选填）') return 'E-mel (pilihan)';
-    if (label === '请留下邮箱，方便我们与您联系。') return 'Sila berikan alamat e-mel supaya kami dapat menghubungi anda.';
     if (label === '邮箱示例：1234@gmail.com') return 'Contoh: 1234@gmail.com';
   }
   if (locale === PUBLIC_SITE_LOCALES.KO_KR) {
     if (label === '您的联系方式（选填，建议填写邮箱）') return '연락처 (선택 사항, 이메일 권장)';
     if (label === '邮箱（选填）') return '이메일 (선택 사항)';
-    if (label === '请留下邮箱，方便我们与您联系。') return '연락드릴 수 있도록 이메일 주소를 남겨 주세요.';
     if (label === '邮箱示例：1234@gmail.com') return '예: 1234@gmail.com';
   }
   if (locale === PUBLIC_SITE_LOCALES.MS_MY) return localizeMalay(SUPPORT_LABELS_EN[label] ?? label);
@@ -544,7 +536,6 @@ export function SupportPage({
   const pageCopy = {
     pageTitle: t('产品反馈'),
     pageDesc: t('您可以将使用 LightVela 过程中的任何体验问题或需求建议告诉我们，帮助我们变得更好！'),
-    contactHintPrimary: localizeSupportLabel('请留下邮箱，方便我们与您联系。', activePublicLocale),
     contactHintExamples: localizeSupportLabel('邮箱示例：1234@gmail.com', activePublicLocale),
   };
 
@@ -1240,7 +1231,6 @@ export function SupportPage({
                   {localizeSupportLabel('您的联系方式（选填，建议填写邮箱）', activePublicLocale)}
                 </Label>
                 <div className="space-y-1 text-xs text-[var(--text-tertiary)]">
-                  <p>{pageCopy.contactHintPrimary}</p>
                   <p>{pageCopy.contactHintExamples}</p>
                 </div>
                 <Input

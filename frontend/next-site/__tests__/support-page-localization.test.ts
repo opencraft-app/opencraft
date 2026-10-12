@@ -20,7 +20,6 @@ describe('Spanish support form labels', () => {
     ].map((option) => option.label);
     labels.push(
       '调研问卷',
-      '请留下邮箱，方便我们与您联系。',
       '邮箱示例：1234@gmail.com',
     );
 
@@ -42,7 +41,6 @@ describe('Japanese support form labels', () => {
     ].map((option) => option.label);
     labels.push(
       '调研问卷',
-      '请留下邮箱，方便我们与您联系。',
       '邮箱示例：1234@gmail.com',
     );
 
@@ -61,10 +59,8 @@ describe('optional feedback email', () => {
     'localizes the email label and hint for %s',
     (locale) => {
       const label = localizeSupportLabel('您的联系方式（选填，建议填写邮箱）', locale);
-      const hint = localizeSupportLabel('请留下邮箱，方便我们与您联系。', locale);
       const placeholder = localizeSupportLabel('邮箱（选填）', locale);
       expect(label).not.toBe('您的联系方式（选填，建议填写邮箱）');
-      expect(hint).not.toBe('请留下邮箱，方便我们与您联系。');
       expect(placeholder).not.toBe('邮箱（选填）');
     },
   );
