@@ -224,6 +224,17 @@ class WebsiteBackendSourceRenderTests(unittest.TestCase):
                         path.write_text(yaml.safe_dump(k))
                         rendered = self.render(overlay)
                         expected_targets = [t for t in self.api.TARGETS[region] if t[0] == service]
+                        if service == 'ctl':
+                            # Regional Kustomize replacements intentionally copy ctl-api's
+                            # Pod spec and annotations into the derived desktop workload.
+                            api = next(x for x in rendered if x.get('kind') == 'Deployment' and
+                                       x['metadata']['name'] == 'ctl-api')
+                            desktop = next(x for x in rendered if x.get('kind') == 'Deployment' and
+                                           x['metadata']['name'] == 'ctl-desktop')
+                            self.assertEqual(desktop['spec']['template']['spec'], api['spec']['template']['spec'])
+                            self.assertEqual(desktop['spec']['template']['metadata']['annotations'],
+                                             api['spec']['template']['metadata']['annotations'])
+                            expected_targets.append(('ctl', 'ctl', 'ctl-desktop', 'api', 'deploy'))
                         self.assertEqual(len(rendered), len(baseline))
                         for _, namespace, name, container_name, role in expected_targets:
                             dep = next(x for x in rendered if x.get('kind') == 'Deployment' and
