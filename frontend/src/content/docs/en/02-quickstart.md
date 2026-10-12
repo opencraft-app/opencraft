@@ -30,9 +30,9 @@ This tutorial starts with Web Chat, then shows how to connect WeChat if needed. 
 
 ## 1. Sign in to LightVela
 
-Visit [lightvela.ai](https://lightvela.ai) and click "Log in" in the upper-right corner. In the login dialog, choose Google or GitHub, accept the agreements, and complete authorization.
+Visit [lightvela.ai](https://lightvela.ai) and select **Sign In** in the upper-right corner. In the login dialog, read and accept the agreements, then choose **Google** or **GitHub** and complete authorization.
 
-![](../images/2-1.webp)
+![LightVela sign-in dialog with Google and GitHub](../images/2-1.webp)
 
 ---
 
@@ -48,7 +48,7 @@ Open the [Subscribe page](/subscribe), choose the **100-credit Launch** option i
 
 ## 3. Open your Hermes Agent
 
-After plan activation, open the [Agent console](/agents/overview/). LightVela provisions the cloud instance for your plan. If the console asks you to create the Agent, follow that on-screen step and wait until its status is **Running**. The sidebar then provides **Channels**, **Models**, **Skills**, and **Scheduled Tasks**. You can use plan model credits without entering your own API key.
+After signing in with Google or GitHub and activating an available plan, open the [Agent console](/agents/overview/). Complete the first Bot setup: enter a required name, optionally add a description, and adjust its appearance. Select **Create** and wait for creation and initial configuration to finish. Select **Start your journey** once configuration finishes, then open Web Chat for that Bot. A messaging channel is optional; available plan model credits or a configured model are required for replies.
 
 ---
 
@@ -66,11 +66,11 @@ Open **Channels** in the Agent sidebar. On the **WeChat** card, select **+ Conne
 
 Find the added bot account in WeChat and send a test message:
 
-```
+```text
 Hi
 ```
 
-![](../images/2-7.webp)
+![A test message and Bot reply in WeChat](../images/2-7.webp)
 
 You should receive a reply from Hermes within a few seconds. Hermes can now chat through WeChat.
 
