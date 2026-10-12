@@ -13,12 +13,11 @@ import (
 //
 // 写端职责覆盖：
 //   - PlaceOrder 入口：CreateOrder（落地 status='created' 或 'pending_pay' 初始流水）
-//   - createResource 链路收尾（迭代 6 OrderProvisionUpdater 真实实现）：
-//     MarkOrderProvisioned（resource_id 反向回填 + status='provisioned'）
+//   - createResource 链路收尾：MarkOrderProvisioned（resource_id 反向回填 + status='provisioned'）
 //
 // 设计稿对齐（§4.2.1 / §6.2 / Q41~Q50）：
 //   - status 状态机：created → pending_pay → paid_pending_provision → provisioned
-//     （payment_failed / provision_failed 是分支终态，本期不实现状态降级 SQL）
+//     （provision_failed 由失败 flow 或同步发货失败推进）
 //   - resource_id 列允许 NULL；只有 createResource 收尾才写非空值
 //   - JSON 字段 goods_detail 在 DAO 层序列化为 raw JSON 落库，业务层不感知
 
@@ -187,7 +186,39 @@ func (s *MySQLStore) CreateOrder(ctx context.Context, in CreateOrderInput) error
 	if s == nil || s.db == nil {
 		return fmt.Errorf("trade_order: store is nil")
 	}
-	return createOrder(ctx, s.db, in)
+	if err := createOrder(ctx, s.db, in); err != nil {
+		return err
+	}
+	// The provider may have called us back before GenerateDealsAndPay returned.
+	// Reconcile after INSERT; the callback-side failure transaction handles the
+	// opposite ordering. Only terminal failure flows can downgrade a pending order.
+	const q = `
+		UPDATE trade_order AS o JOIN trade_flow AS f ON f.deal_name = o.deal_name AND f.app_id = o.app_id
+		   SET o.status = 'provision_failed', o.updated_time = NOW()
+		 WHERE o.deal_name = ? AND o.status IN ('created', 'pending_pay', 'paid_pending_provision')
+		   AND f.status = 'failed'
+		   AND f.flow_type = CASE o.order_type
+		       WHEN 'renew' THEN 'renew_resource'
+		       WHEN 'modify' THEN 'modify_resource'
+		       ELSE 'create_resource' END
+	`
+	if _, err := s.db.ExecContext(ctx, q, in.DealName); err != nil {
+		return fmt.Errorf("trade_order: reconcile failed flow dealName=%s: %w", in.DealName, err)
+	}
+	// createResource can also finish before the order row exists. Only a
+	// completed flow with a concrete resource ID proves provisioning succeeded.
+	const successQ = `
+		UPDATE trade_order AS o JOIN trade_flow AS f ON f.deal_name = o.deal_name AND f.app_id = o.app_id
+		   SET o.status = 'provisioned', o.resource_id = f.resource_id, o.updated_time = NOW()
+		 WHERE o.deal_name = ? AND o.order_type = 'create'
+		   AND o.status IN ('created', 'pending_pay', 'paid_pending_provision')
+		   AND f.flow_type = 'create_resource' AND f.status = 'completed'
+		   AND f.resource_id IS NOT NULL AND f.resource_id <> ''
+	`
+	if _, err := s.db.ExecContext(ctx, successQ, in.DealName); err != nil {
+		return fmt.Errorf("trade_order: reconcile completed flow dealName=%s: %w", in.DealName, err)
+	}
+	return nil
 }
 
 type orderExecer interface {
@@ -302,10 +333,8 @@ func (s *MySQLStore) CreateDianshiRenewOrderWithParticipation(
 
 // MarkOrderProvisioned 实现 OrderWriter。
 //
-// 状态机过渡：current_status → "provisioned"，其中 current_status 期望是
-// "paid_pending_provision"（付款完成等待发货）。但本期不强约束 current_status —
-// 只要 deal_name 命中、resource_id 不冲突就升级 — 因为 trade_order 写端流转
-// 期间可能因 jifei 多次回调造成状态不严格线性，强校验反而引入毛刺。
+// 状态机过渡：中态 → provisioned；重复成功回调允许 provisioned → provisioned。
+// 失败、取消等终态不可被晚到的成功回调覆盖。
 func (s *MySQLStore) MarkOrderProvisioned(ctx context.Context, dealName, resourceID string) error {
 	if s == nil || s.db == nil {
 		return fmt.Errorf("trade_order: store is nil")
@@ -335,8 +364,10 @@ func (s *MySQLStore) MarkOrderProvisioned(ctx context.Context, dealName, resourc
 		UPDATE trade_order
 		   SET resource_id = ?, status = 'provisioned', updated_time = NOW()
 		 WHERE deal_name = ?
+		   AND status IN ('created', 'pending_pay', 'paid_pending_provision', 'provisioned')
+		   AND (resource_id IS NULL OR resource_id = '' OR resource_id = ?)
 	`
-	res, err := s.db.ExecContext(ctx, q, resourceID, dealName)
+	res, err := s.db.ExecContext(ctx, q, resourceID, dealName, resourceID)
 	if err != nil {
 		return fmt.Errorf("trade_order: mark provisioned dealName=%s: %w", dealName, err)
 	}

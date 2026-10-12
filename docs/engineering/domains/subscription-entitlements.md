@@ -17,6 +17,12 @@
 ## 稳定不变量
 
 - 支付成功、订单成功和权益生效是不同阶段，必须分别建模和验证。
+- Trade 一体化下单拿到订单号后保留 `trade_order` 流水：计费同步发货成功写
+  `provisioned`，明确永久发货失败写 `provision_failed`，其余异步/可重试状态保留
+  `paid_pending_provision`。`create_resource`、`renew_resource`、`modify_resource` 的
+  `trade_flow` 进入 `failed` 终态时须与对应非终态订单在同一事务中推进；订单晚于回调
+  插入时也要对账已失败 Flow。`create_resource` 已成功且有资源 ID 时可补写订单成功态；
+  不得以暂时的 CTL/计费错误推断永久发货失败。
 - 回调、权益应用和开通都必须幂等；失败补偿不能重复创建外部资源。
 - Credit 积分包是无续费能力的一次性资源包。Trade 只承载订单和外部计费协议，Credit 持有商品、
   live/history 积分包和用量真源；自然到期由 Credit 删除对应 LLMGateway 订阅并原子归档，计费隔离

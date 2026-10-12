@@ -273,7 +273,9 @@ func (s *Service) PlaceOrderAndPay(ctx context.Context, req Request) (*OrderResu
 	if deliver, ok := resp.DealDeliverResults[dealName]; ok {
 		state, _ := deliver["state"].(string)
 		resourceIDs := resp.ResourceIDs[dealName]
-		if state == "0" && len(resourceIDs) > 0 && resourceIDs[0] != "" {
+		if state == "3" {
+			status = store.OrderStatusProvisionFailed
+		} else if state == "0" && len(resourceIDs) > 0 && resourceIDs[0] != "" {
 			status = store.OrderStatusProvisioned
 			resourceID = resourceIDs[0]
 		}

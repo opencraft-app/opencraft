@@ -990,59 +990,35 @@ func (s *Service) PlaceOrderAndPay(ctx context.Context, req PlaceOrderRequest) (
 	dealName := dealsResp.DealNames[0]
 	bigDealID := dealsResp.BigDealIDs[0]
 
-	// 6. v1.7.28 BUG-22 / BUG-23 修订（2026-05-21 用户拍板）：
-	//    PlaceOrderAndPay 只在 jifei 同步发货成功（dealDeliverResults.state="0"）时
-	//    INSERT 完成态 trade_order，发货失败 / 异步中等态一律不落库。
-	//
-	// 设计动机（与原"先落 paid_pending_provision 等异步推进"对比）：
-	//   - 原方案需要 trade_order 中间态 + createResource handler 回填 resource_id，
-	//     但 jifei 同步推 createResource 早于 trade INSERT 导致死锁（已通过 BUG-22
-	//     goodsDetail.externalUserId 透传机制让 createResource 完全脱离 trade_order
-	//     反查依赖，发货流程不依赖 trade_order）。
-	//   - trade_order 退化为"订单流水记录"职责，只承载已成功完成的订单信息；中间态
-	//     / 失败态没有落库价值（jifei 这一侧已有完整生命周期记录）。
-	//
-	// jifei state 码（PDF §5.1 + 实测）：
-	//   - "0" 发货成功：resourceIds[dealName] 非空 → INSERT trade_order(provisioned)
-	//   - "1" 发货中 / "2" 重试 queryFlow / "4" 部分失败：异步中态，不落库（jifei
-	//     后续回调 trade.createResource，handler 独立完成发货 + 写 trade_flow）
-	//   - "3" 发货失败：永久失败，不落库
-	//
-	// 协议层成功响应字段（dealName + bigOrderId）仍按原契约返给调用方，
-	// 让上游（控制台 / e2e 测试）能拿到订单号做后续操作（生成支付页 URL 等）。
-	if shouldPersistOrderAfterPay(dealsResp, dealName) {
-		passID := dealsResp.ResourceIDs[dealName][0]
-		in := store.CreateOrderInput{
-			BigOrderID:     bigDealID,
-			DealName:       dealName,
-			ExternalUserID: req.ExternalUserID,
-			Uin:            req.Uin,
-			AppID:          req.AppID,
-			SubProductCode: def.SubProductCode,
-			BundleID:       req.BundleID,
-			Period:         req.Period,
-			TimeUnit:       req.TimeUnit,
-			GoodsNum:       req.GoodsNum,
-			// v1.7.x A6.1：流水留痕 region_id 跟随出向 envelope.resInfo 同源
-			RegionID:     s.region.RegionID,
-			PayMode:      req.PayMode,
-			GoodsDetail:  goodsDetail,
-			Status:       "provisioned", // BUG-22/23：直接落完成态（state=0 + resourceId 已知）
-			ResourceType: "pass",
-			ResourceID:   passID, // BUG-22/23：jifei 同步返的 pass_id，一次到位回填
-		}
-		if err := s.deps.OrderWriter.CreateOrder(ctx, in); err != nil {
-			if errors.Is(err, store.ErrTradeOrderDuplicate) {
-				return nil, fmt.Errorf("%w: dealName=%s", ErrDealNameDuplicate, dealName)
-			}
-			// 已支付但写库失败：理论极少发生，运维介入。透传 raw error。
-			return nil, fmt.Errorf("placeorder: persist trade_order (paid bigDealID=%s dealName=%s passID=%s): %w",
-				bigDealID, dealName, passID, err)
-		}
+	// Callback delivery may finish before this response returns. Always retain the
+	// order identity; CreateOrder reconciles any terminal failure flow already stored.
+	status, passID := orderOutcomeAfterPay(dealsResp, dealName)
+	in := store.CreateOrderInput{
+		BigOrderID:     bigDealID,
+		DealName:       dealName,
+		ExternalUserID: req.ExternalUserID,
+		Uin:            req.Uin,
+		AppID:          req.AppID,
+		SubProductCode: def.SubProductCode,
+		BundleID:       req.BundleID,
+		Period:         req.Period,
+		TimeUnit:       req.TimeUnit,
+		GoodsNum:       req.GoodsNum,
+		// v1.7.x A6.1：流水留痕 region_id 跟随出向 envelope.resInfo 同源
+		RegionID:     s.region.RegionID,
+		PayMode:      req.PayMode,
+		GoodsDetail:  goodsDetail,
+		Status:       status,
+		ResourceType: "pass",
+		ResourceID:   passID,
 	}
-	// state != "0" 或 resourceIds 为空：异步中态 / 失败态，不落 trade_order；
-	// 仍按协议返 dealName + bigOrderId 给调用方，业务发货状态由 jifei 异步链路（→ trade
-	// /trade/jifei/callback createResource handler）独立推进 + ctl pass 落地为真源。
+	if err := s.deps.OrderWriter.CreateOrder(ctx, in); err != nil {
+		if errors.Is(err, store.ErrTradeOrderDuplicate) {
+			return nil, fmt.Errorf("%w: dealName=%s", ErrDealNameDuplicate, dealName)
+		}
+		return nil, fmt.Errorf("placeorder: persist trade_order (paid bigDealID=%s dealName=%s): %w",
+			bigDealID, dealName, err)
+	}
 
 	return &PlaceOrderResult{
 		DealName:   dealName,
@@ -1328,16 +1304,14 @@ func (s *Service) prepareDianshiOrderBase(
 	return req, def, nil
 }
 
-// shouldPersistOrderAfterPay 判定 generateDealsAndPay 同步响应是否满足"一次到位落
-// 完成态 trade_order"条件（v1.7.28 BUG-22/23 用户拍板）。
+// shouldPersistOrderAfterPay 判定 generateDealsAndPay 同步响应是否足以确认发货完成。
 //
 // 满足以下两条同时成立才落库：
 //
 //  1. dealDeliverResults[dealName].state == "0"（发货成功，PDF §5.1 状态码定义）
 //  2. resourceIds[dealName] 非空（jifei 同步返了 pass_id，可一次性回填 resource_id）
 //
-// 任一不满足都视为"异步发货中 / 发货失败"，不落 trade_order；上游协议响应仍照常
-// 返 dealName + bigOrderId（jifei 协议契约不变）。
+// 任一不满足都不能直接标为成功；新购和续费仍落流水，变配调用方另行处理。
 func shouldPersistOrderAfterPay(resp *jifeiclient.GenerateDealsAndPayResponse, dealName string) bool {
 	if resp == nil {
 		return false
@@ -1355,6 +1329,24 @@ func shouldPersistOrderAfterPay(resp *jifeiclient.GenerateDealsAndPayResponse, d
 		return false
 	}
 	return true
+}
+
+func orderOutcomeAfterPay(resp *jifeiclient.GenerateDealsAndPayResponse, dealName string) (status, resourceID string) {
+	if resp != nil {
+		if deliver, ok := resp.DealDeliverResults[dealName]; ok {
+			state, _ := deliver["state"].(string)
+			if state == "3" {
+				return store.OrderStatusProvisionFailed, ""
+			}
+			if state == "0" {
+				ids := resp.ResourceIDs[dealName]
+				if len(ids) > 0 && ids[0] != "" {
+					return store.OrderStatusProvisioned, ids[0]
+				}
+			}
+		}
+	}
+	return store.OrderStatusPaidPendingProvision, ""
 }
 
 // PlaceRenewOrderAndPay 执行 jifei "续费下单并支付"一体化流程（R-D-7 / 测试用）。
@@ -1502,62 +1494,36 @@ func (s *Service) PlaceRenewOrderAndPay(ctx context.Context, req PlaceRenewOrder
 	dealName := dealsResp.DealNames[0]
 	bigDealID := dealsResp.BigDealIDs[0]
 
-	// 6. v1.7.28 BUG-25 / BUG-26 修订（2026-05-21 用户拍板，与新购 BUG-22 / BUG-23 同模式）：
-	//    PlaceRenewOrderAndPay 只在 jifei 同步发货成功（dealDeliverResults.state="0"）时
-	//    INSERT 完成态 trade_order，发货失败 / 异步中等态一律不落库。
-	//
-	// 设计动机（与新购 BUG-23 同范式）：
-	//   - trade_order 退化为 "订单流水记录" 职责，只承载已成功完成的订单信息；
-	//     中间态 / 失败态没有落库价值（jifei 这一侧已有完整生命周期记录）。
-	//   - 发货流程不依赖 trade_order（BUG-25 已让 renewResource handler 完全脱离 trade_order
-	//     反查依赖，与新购 BUG-22 同范式）。
-	//
-	// jifei state 码（PDF §5.1 + 实测）：
-	//   - "0" 发货成功：resourceIds[dealName] 非空 → INSERT trade_order(provisioned)
-	//   - "1" 发货中 / "2" 重试 queryFlow / "4" 部分失败：异步中态，不落库（jifei 后续
-	//     回调 trade.renewResource，handler 独立完成续费 + 写 trade_flow）
-	//   - "3" 发货失败：永久失败，不落库
-	//
-	// 协议层成功响应字段（dealName + bigOrderId）仍按原契约返给调用方，
-	// 让上游（控制台 / e2e 测试）能拿到订单号做后续操作（生成支付页 URL 等）。
-	//
-	// **与新购 PlaceOrderAndPay 的差异点**（与调用 PlaceRenewOrder 与 PlaceOrder 的 3 点差异同范式）：
-	//   - OrderType=OrderTypeRenew（续费独有）
-	//   - ResourceID=req.ResourceID（续费入参就有 pass_id，不需从 jifei 同步返取；
-	//     jifei 返的 resourceIds[dealName][0] 是透传回的 req.ResourceID，二者该一致）
-	if shouldPersistOrderAfterPay(dealsResp, dealName) {
-		in := store.CreateOrderInput{
-			BigOrderID:     bigDealID,
-			DealName:       dealName,
-			ExternalUserID: req.ExternalUserID,
-			Uin:            req.Uin,
-			AppID:          req.AppID,
-			SubProductCode: def.SubProductCode,
-			BundleID:       req.BundleID,
-			OrderType:      store.OrderTypeRenew,
-			Period:         req.Period,
-			TimeUnit:       req.TimeUnit,
-			GoodsNum:       req.GoodsNum,
-			// v1.7.x A6.1：流水留痕 region_id 跟随出向 envelope.resInfo 同源
-			RegionID:     s.region.RegionID,
-			PayMode:      req.PayMode,
-			GoodsDetail:  goodsDetail,
-			Status:       "provisioned", // BUG-26：直接落完成态（state=0 + resourceId 已知）
-			ResourceType: "pass",
-			ResourceID:   req.ResourceID, // 续费以入参 pass_id 为准（与 jifei 返一致）
-		}
-		if err := s.deps.OrderWriter.CreateOrder(ctx, in); err != nil {
-			if errors.Is(err, store.ErrTradeOrderDuplicate) {
-				return nil, fmt.Errorf("%w (renew): dealName=%s", ErrDealNameDuplicate, dealName)
-			}
-			// 已支付但写库失败：理论极少发生，运维介入。透传 raw error。
-			return nil, fmt.Errorf("placeorder: persist trade_order (renew-and-pay paid bigDealID=%s dealName=%s passID=%s): %w",
-				bigDealID, dealName, req.ResourceID, err)
-		}
+	// Keep the identity even when delivery is asynchronous or terminally failed;
+	// renewResource does not depend on trade_order being present at callback time.
+	status, _ := orderOutcomeAfterPay(dealsResp, dealName)
+	in := store.CreateOrderInput{
+		BigOrderID:     bigDealID,
+		DealName:       dealName,
+		ExternalUserID: req.ExternalUserID,
+		Uin:            req.Uin,
+		AppID:          req.AppID,
+		SubProductCode: def.SubProductCode,
+		BundleID:       req.BundleID,
+		OrderType:      store.OrderTypeRenew,
+		Period:         req.Period,
+		TimeUnit:       req.TimeUnit,
+		GoodsNum:       req.GoodsNum,
+		// v1.7.x A6.1：流水留痕 region_id 跟随出向 envelope.resInfo 同源
+		RegionID:     s.region.RegionID,
+		PayMode:      req.PayMode,
+		GoodsDetail:  goodsDetail,
+		Status:       status,
+		ResourceType: "pass",
+		ResourceID:   req.ResourceID,
 	}
-	// state != "0" 或 resourceIds 为空：异步中态 / 失败态，不落 trade_order；
-	// 仍按协议返 dealName + bigOrderId 给调用方，业务发货状态由 jifei 异步链路（→ trade
-	// /trade/jifei/callback renewResource handler）独立推进 + ctl pass 落地为真源。
+	if err := s.deps.OrderWriter.CreateOrder(ctx, in); err != nil {
+		if errors.Is(err, store.ErrTradeOrderDuplicate) {
+			return nil, fmt.Errorf("%w (renew): dealName=%s", ErrDealNameDuplicate, dealName)
+		}
+		return nil, fmt.Errorf("placeorder: persist trade_order (renew-and-pay bigDealID=%s dealName=%s passID=%s): %w",
+			bigDealID, dealName, req.ResourceID, err)
+	}
 
 	return &PlaceOrderResult{
 		DealName:   dealName,

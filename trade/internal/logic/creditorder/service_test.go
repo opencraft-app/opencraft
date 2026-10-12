@@ -410,6 +410,30 @@ func TestPlaceOrderAndPayKeepsPendingUntilSynchronousDeliveryCompletes(t *testin
 	}
 }
 
+func TestPlaceOrderAndPayPersistsPermanentDeliveryFailure(t *testing.T) {
+	jifei := &fakeJifei{dealsAndPayResp: &jifeiclient.GenerateDealsAndPayResponse{
+		BigDealIDs: []string{"big-1"},
+		DealNames:  []string{"deal-1"},
+		DealDeliverResults: map[string]map[string]interface{}{
+			"deal-1": {"state": "3"},
+		},
+	}}
+	writer := &fakeOrderWriter{}
+	svc := New(Deps{
+		CreditDefinitionStore: fakeCreditDefStore{def: stdCreditDefinition()},
+		JifeiClient:           jifei,
+		OrderWriter:           writer,
+	})
+	if _, err := svc.PlaceOrderAndPay(context.Background(), Request{
+		ExternalUserID: "usr_1", Uin: "700000164995", AppID: "1300000001", ProductID: "credit_prod_100",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if writer.in.Status != store.OrderStatusProvisionFailed || writer.in.ResourceID != "" {
+		t.Fatalf("status=%s resourceID=%s", writer.in.Status, writer.in.ResourceID)
+	}
+}
+
 func TestValidatePeriodSupportsAllResourcePackageUnits(t *testing.T) {
 	for _, unit := range []string{"y", "m", "d", "h", "M", "s"} {
 		t.Run(unit, func(t *testing.T) {
