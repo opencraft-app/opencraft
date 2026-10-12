@@ -136,7 +136,7 @@ func main() {
 }
 
 func startReferralOutboxRelay() (*eventoutbox.Relay, error) {
-	if strings.TrimSpace(os.Getenv("REFERRAL_OUTBOX_RELAY_ENABLED")) != "true" {
+	if strings.TrimSpace(os.Getenv("CTL_API_ROLE")) == "desktop" || strings.TrimSpace(os.Getenv("REFERRAL_OUTBOX_RELAY_ENABLED")) != "true" {
 		return nil, nil
 	}
 	sqlDB, err := resource.GormDB.DB()

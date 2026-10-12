@@ -111,12 +111,16 @@ type desktopSession struct {
 	generation       string
 	preparing        bool
 	observerPrepared bool // Successful optional observer startup, NOT incarnation proof.
-	prepareCancel    context.CancelFunc
-	sandboxID        string
-	password         string
-	status           string // transport.DesktopSessionStatus*
-	reason           string
-	lastActive       time.Time
+	inputPrepared    bool // Successful writable endpoint startup; false degrades to read-only.
+	// incarnation is the verified physical desktop identity (boot id + process
+	// start ticks), never the CTL preparation generation.
+	incarnation   string
+	prepareCancel context.CancelFunc
+	sandboxID     string
+	password      string
+	status        string // transport.DesktopSessionStatus*
+	reason        string
+	lastActive    time.Time
 	// provisionStartedAt：进入 Provisioning 态的时刻。GET 轮询据此判断
 	// 是否仍在「轻量探测窗口」内（CR-C），避免每次轮询重发 provision 命令。
 	provisionStartedAt time.Time
@@ -150,6 +154,9 @@ func (s *desktopSession) setStatus(status, reason string) {
 	s.status = status
 	if status != transport.DesktopSessionStatusReady {
 		s.observerPrepared = false
+		s.inputPrepared = false
+		// 物理身份随桌面进程一起失效，必须重新验证。
+		s.incarnation = ""
 	}
 	s.reason = reason
 }
@@ -509,7 +516,8 @@ func (l *logic) probeDesktopLocked(ctx pctx.Context, session *desktopSession) (*
 	return l.desktopSessionResponse(session)
 }
 
-// desktopSessionResponse 组装对外响应；Ready 时附 ws_url / password / 分辨率。
+// desktopSessionResponse 组装对外响应：状态机与分辨率；ws_url/password 仅作
+// 过渡期兼容，且 ingress 域名缺失时不得让 GET 失败。
 func (l *logic) desktopSessionResponse(session *desktopSession) (*transport.DesktopSessionResponse, error) {
 	session.mu.Lock()
 	sandboxID, password, status := session.sandboxID, session.password, session.status
@@ -526,31 +534,32 @@ func (l *logic) desktopSessionResponse(session *desktopSession) (*transport.Desk
 	if status != transport.DesktopSessionStatusReady {
 		return resp, nil
 	}
-	wsURL, err := buildDesktopWSURL(sandboxID)
-	if err != nil {
-		return nil, err
-	}
-	resp.WsURL = wsURL
-	resp.Password = password
 	resp.Width = desktopWidth
 	resp.Height = desktopHeight
+	// 新前端走 desktop/resource + desktop/viewer + TAT 隧道，不读这两个字段。
+	//
+	// 过渡期兼容（发布顺序无关）：已发布的旧前端仍凭 ws_url/password 直连
+	// ingressproxy。CTL 若先于前端上线而直接删字段，旧前端会卡在「连接中」。
+	// 因此仅在地域配置了 DESKTOP_INGRESS_DOMAIN 时 best-effort 回填；未配置
+	// （ingressproxy 已下线的地域）时静默省略，绝不让 Ready 轮询失败。
+	// 新前端全量后移除该环境变量即可彻底停止下发密码，再删除本段。
+	if wsURL, ok := buildLegacyDesktopWSURL(sandboxID); ok {
+		resp.WsURL = wsURL
+		resp.Password = password
+	}
 	return resp, nil
 }
 
-// buildDesktopWSURL 组装 noVNC WebSocket 地址：
-// wss://<6080>-<sandboxID>.<DESKTOP_INGRESS_DOMAIN>/websockify
-// 端口来自域名（ingressproxy route.Rule 不绑端口，见方案 §4.2）。
-// v3（§12 TB.5）：sandboxID 为**实例主 sandbox**，ingress 泛域名证书需覆盖
-// `*-<主 sandboxID>.<域名>`（原覆盖独立桌面 sandboxID，现随复用切换）。
-func buildDesktopWSURL(sandboxID string) (string, error) {
+// buildLegacyDesktopWSURL 组装旧前端使用的 noVNC 地址：
+// wss://<6080>-<sandboxID>.<DESKTOP_INGRESS_DOMAIN>/websockify。
+// 仅用于过渡期兼容；域名或 sandboxID 缺失时返回 ok=false，不报错。
+func buildLegacyDesktopWSURL(sandboxID string) (string, bool) {
 	domain := strings.TrimSpace(os.Getenv(desktopIngressDomainEnv))
-	if domain == "" {
-		return "", errcode.Wrap(errcode.ErrDesktopNotConfigured, "env %s is not set", desktopIngressDomainEnv)
+	sandboxID = strings.TrimSpace(sandboxID)
+	if domain == "" || sandboxID == "" {
+		return "", false
 	}
-	if strings.TrimSpace(sandboxID) == "" {
-		return "", errcode.ErrDesktopNotConfigured
-	}
-	return fmt.Sprintf("wss://%d-%s.%s/websockify", desktopNoVNCPort, sandboxID, domain), nil
+	return fmt.Sprintf("wss://%d-%s.%s/websockify", desktopNoVNCPort, sandboxID, domain), true
 }
 
 // generateDesktopPassword 生成 8 位字母数字 VNC 密码（免 shell 转义）。
@@ -794,14 +803,25 @@ func desktopInstallTimeoutReason(lastFailureDetail string) string {
 // Serialize local TAT dispatches and fence detached jobs. This cannot revoke an
 // already dispatched remote nohup installer; its file lock remains authoritative.
 func (l *logic) execDesktopInstallCommand(ctx pctx.Context, session *desktopSession, sandboxID, command string) (*psandbox.ExecCommandResult, error) {
-	if len(command) >= desktopInstallCommandLimit {
-		return nil, fmt.Errorf("desktop command exceeds input budget: %d bytes", len(command))
-	}
 	op := session.operationMutex()
 	op.Lock()
 	defer op.Unlock()
+	return l.execDesktopInstallCommandLocked(ctx, session, sandboxID, command)
+}
+
+// Caller holds the session operation mutex across dispatch and result handling.
+func (l *logic) execDesktopInstallCommandLocked(ctx pctx.Context, session *desktopSession, sandboxID, command string) (*psandbox.ExecCommandResult, error) {
+	if len(command) >= desktopInstallCommandLimit {
+		return nil, fmt.Errorf("desktop command exceeds input budget: %d bytes", len(command))
+	}
 	if err := l.validateDesktopSession(ctx, session); err != nil {
 		return nil, err
+	}
+	session.mu.Lock()
+	matches := session.sandboxID == sandboxID
+	session.mu.Unlock()
+	if !matches {
+		return nil, errcode.ErrDesktopTargetChanged
 	}
 	return l.sandboxAdapter.ExecCommand(ctx, sandboxID, command, desktopProbeTimeoutS)
 }
@@ -1051,6 +1071,11 @@ func reapIdleDesktops(logger *zap.Logger) {
 		}
 		sandboxID, _, status, _, lastActive := session.snapshot()
 		if status != transport.DesktopSessionStatusReady || sandboxID == "" {
+			return true
+		}
+		// 有存活的观看租约说明仍有人在观看：desktop/resource 的准备态只读、
+		// 不提供心跳，租约本身就是活跃信号，此时不得停桌面服务。
+		if hasDesktopViewer(instanceID) {
 			return true
 		}
 		if time.Since(lastActive) < threshold {

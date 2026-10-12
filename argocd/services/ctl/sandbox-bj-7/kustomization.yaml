@@ -16,8 +16,40 @@ configMapGenerator:
   - SOUL-humor.md=souls/SOUL-humor.md
   - SOUL-pro.md=souls/SOUL-pro.md
 patches:
+- target:
+    kind: Deployment
+    name: ctl-api
+  patch: |-
+    - op: add
+      path: /spec/template/metadata/labels/ctl.clawhub.dev~1role
+      value: api
 - path: delete-shared-namespace.yaml
 - path: delete-shared-serviceaccount.yaml
 - path: delete-servicemonitor.yaml
 - path: delete-logconfig.yaml
 - path: patch-ctl-conf-rewrite.yaml
+replacements:
+- source:
+    kind: Deployment
+    name: ctl-api
+    fieldPath: spec.template.spec
+  targets:
+  - select:
+      kind: Deployment
+      name: ctl-desktop
+    fieldPaths:
+    - spec.template.spec
+    options:
+      create: true
+- source:
+    kind: Deployment
+    name: ctl-api
+    fieldPath: spec.template.metadata.annotations
+  targets:
+  - select:
+      kind: Deployment
+      name: ctl-desktop
+    fieldPaths:
+    - spec.template.metadata.annotations
+    options:
+      create: true

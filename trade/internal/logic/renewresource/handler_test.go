@@ -20,6 +20,16 @@ type fakeOrderStore struct {
 	getFunc func(ctx context.Context, dealName string) (*store.TradeOrder, error)
 }
 
+type fakeParticipationRecorder struct {
+	rows []*store.UserActivityParticipation
+	err  error
+}
+
+func (f *fakeParticipationRecorder) RecordUserParticipation(_ context.Context, row *store.UserActivityParticipation) error {
+	f.rows = append(f.rows, row)
+	return f.err
+}
+
 func (f *fakeOrderStore) GetOrderByDealName(ctx context.Context, dealName string) (*store.TradeOrder, error) {
 	return f.getFunc(ctx, dealName)
 }
@@ -588,6 +598,134 @@ func TestHandler_HappyPath_RenewSuccess(t *testing.T) {
 	// 验证响应 data.flowId（PDF renewResource.pdf §3.2 要 int 不为 0，BUG-28 修订）
 	if got, ok := resp.Data["flowId"].(int64); !ok || got != testWinnerFlowID {
 		t.Errorf("expect data.flowId=%d, got %v", testWinnerFlowID, resp.Data["flowId"])
+	}
+}
+
+func TestHandler_DianshiParticipationRecordedAfterDelivery(t *testing.T) {
+	order := validOrder()
+	order.Source = store.OrderSourceDianshi
+	order.ActivityID = 166165503931688
+	order.ActID = 1975812517099088
+	recorder := &fakeParticipationRecorder{}
+	deps, _ := makeWinnerDeps(
+		func(context.Context, string) (*store.TradeOrder, error) { return order, nil },
+		func(context.Context, string, *ctlclient.RenewPassRequest) (*ctlclient.RenewPassResponse, error) {
+			if len(recorder.rows) != 0 {
+				t.Fatal("participation recorded before delivery")
+			}
+			return &ctlclient.RenewPassResponse{PassID: "pass-r1"}, nil
+		},
+	)
+	deps.ParticipationRecorder = recorder
+	resp := callHandler(t, deps, stdParaMap())
+	if resp.ReturnCode != 0 || len(recorder.rows) != 1 {
+		t.Fatalf("response=%d participation rows=%d", resp.ReturnCode, len(recorder.rows))
+	}
+	row := recorder.rows[0]
+	if row.Scene != store.ActivitySceneRenew || row.DealName != order.DealName ||
+		row.ActivityID != order.ActivityID || row.BigDealNo != order.BigOrderID {
+		t.Fatalf("unexpected participation: %+v", row)
+	}
+}
+
+func TestHandler_DianshiParticipationNotRecordedOnDeliveryFailure(t *testing.T) {
+	recorder := &fakeParticipationRecorder{}
+	deps, _ := makeWinnerDeps(nil,
+		func(context.Context, string, *ctlclient.RenewPassRequest) (*ctlclient.RenewPassResponse, error) {
+			return nil, &ctlclient.Error{HTTPStatus: 403, Code: ctlclient.ErrCodePassNotRenewable}
+		},
+	)
+	deps.ParticipationRecorder = recorder
+	resp := callHandler(t, deps, stdParaMap())
+	if resp.ReturnCode != jifei.RefundReturnCode || len(recorder.rows) != 0 {
+		t.Fatalf("response=%d participation rows=%d", resp.ReturnCode, len(recorder.rows))
+	}
+}
+
+func TestHandler_InternalDianshiRenewBeforeOrderInsertSkipsParticipation(t *testing.T) {
+	recorder := &fakeParticipationRecorder{}
+	deps, _ := makeWinnerDeps(
+		func(context.Context, string) (*store.TradeOrder, error) { return nil, store.ErrTradeOrderNotFound },
+		func(context.Context, string, *ctlclient.RenewPassRequest) (*ctlclient.RenewPassResponse, error) {
+			return &ctlclient.RenewPassResponse{PassID: "pass-r1"}, nil
+		},
+	)
+	deps.ParticipationRecorder = recorder
+	para := stdParaMap()
+	para["billingActivityId"] = "166165503931688"
+	para["goodsDetail"].(map[string]any)["bundleId"] = "bdl-x"
+	resp := callHandler(t, deps, para)
+	if resp.ReturnCode != 0 || len(recorder.rows) != 0 {
+		t.Fatalf("response=%d participation rows=%d", resp.ReturnCode, len(recorder.rows))
+	}
+}
+
+func TestHandler_InternalDianshiRenewProvisionedOrderSkipsParticipation(t *testing.T) {
+	order := validOrder()
+	order.Source = store.OrderSourceDianshi
+	order.Status = store.OrderStatusProvisioned
+	recorder := &fakeParticipationRecorder{}
+	deps, _ := makeWinnerDeps(
+		func(context.Context, string) (*store.TradeOrder, error) { return order, nil },
+		func(context.Context, string, *ctlclient.RenewPassRequest) (*ctlclient.RenewPassResponse, error) {
+			return &ctlclient.RenewPassResponse{PassID: "pass-r1"}, nil
+		},
+	)
+	deps.ParticipationRecorder = recorder
+	resp := callHandler(t, deps, stdParaMap())
+	if resp.ReturnCode != 0 || len(recorder.rows) != 0 {
+		t.Fatalf("response=%d participation rows=%d", resp.ReturnCode, len(recorder.rows))
+	}
+}
+
+func TestHandler_JifeiRenewSkipsDianshiParticipation(t *testing.T) {
+	order := validOrder()
+	order.Source = store.OrderSourceJifei
+	recorder := &fakeParticipationRecorder{}
+	deps, _ := makeWinnerDeps(
+		func(context.Context, string) (*store.TradeOrder, error) { return order, nil },
+		func(context.Context, string, *ctlclient.RenewPassRequest) (*ctlclient.RenewPassResponse, error) {
+			return &ctlclient.RenewPassResponse{PassID: "pass-r1"}, nil
+		},
+	)
+	deps.ParticipationRecorder = recorder
+	resp := callHandler(t, deps, stdParaMap())
+	if resp.ReturnCode != 0 || len(recorder.rows) != 0 {
+		t.Fatalf("response=%d participation rows=%d", resp.ReturnCode, len(recorder.rows))
+	}
+}
+
+func TestHandler_DianshiParticipationWriteFailureDoesNotFailDelivery(t *testing.T) {
+	order := validOrder()
+	order.Source = store.OrderSourceDianshi
+	order.ActivityID = 166165503931688
+	order.ActID = 1975812517099088
+	recorder := &fakeParticipationRecorder{err: errors.New("db unavailable")}
+	deps, flow := makeWinnerDeps(
+		func(context.Context, string) (*store.TradeOrder, error) { return order, nil },
+		func(context.Context, string, *ctlclient.RenewPassRequest) (*ctlclient.RenewPassResponse, error) {
+			return &ctlclient.RenewPassResponse{PassID: "pass-r1"}, nil
+		},
+	)
+	deps.ParticipationRecorder = recorder
+	resp := callHandler(t, deps, stdParaMap())
+	if resp.ReturnCode != 0 || len(flow.markCompletedCalls) != 1 {
+		t.Fatalf("response=%d completed flows=%d", resp.ReturnCode, len(flow.markCompletedCalls))
+	}
+}
+
+func TestRecordDianshiRenewParticipation_DuplicateIsIdempotent(t *testing.T) {
+	order := validOrder()
+	order.Source = store.OrderSourceDianshi
+	order.ActivityID = 166165503931688
+	order.ActID = 1975812517099088
+	recorder := &fakeParticipationRecorder{err: store.ErrActivityParticipationDuplicate}
+	deps := Deps{OrderStore: &fakeOrderStore{getFunc: func(context.Context, string) (*store.TradeOrder, error) {
+		return order, nil
+	}}, ParticipationRecorder: recorder}
+	para := &callbackPara{DealName: order.DealName, AppID: 67890, Uin: order.Uin, ResourceID: order.ResourceID}
+	if err := recordDianshiRenewParticipation(context.Background(), deps, para); err != nil {
+		t.Fatalf("duplicate participation should be idempotent: %v", err)
 	}
 }
 

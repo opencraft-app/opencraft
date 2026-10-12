@@ -1,9 +1,14 @@
 package gateway
 
 import (
+	"bytes"
+	"io"
+	"io/fs"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"sort"
 	"strings"
@@ -24,6 +29,181 @@ func deployConfigPaths(t *testing.T, repoRoot string) []string {
 	}
 	sort.Strings(matches)
 	return matches
+}
+
+func TestDesktopDeploymentUpstreamCoverage(t *testing.T) {
+	for _, file := range deployConfigPaths(t, "../../..") {
+		cfg, err := LoadConfigFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, route := range cfg.Routes {
+			if route.Prefix != "/v1/instances" {
+				if route.DesktopUpstream != "" {
+					t.Fatalf("non-desktop route changed in %s", file)
+				}
+				continue
+			}
+			want := strings.Replace(route.Upstream, "//ctl-api.", "//ctl-desktop.", 1)
+			if filepath.Base(filepath.Dir(file)) == "sandbox-jp-1" {
+				want = "" // No CTL deployment root is maintained here for JP yet.
+			}
+			if route.DesktopUpstream != want {
+				t.Errorf("%s desktop upstream=%q, want %q", file, route.DesktopUpstream, want)
+			}
+		}
+	}
+}
+
+func TestDesktopWorkloadRenderedIsolation(t *testing.T) {
+	binary := os.Getenv("KUSTOMIZE")
+	if binary == "" {
+		var err error
+		binary, err = exec.LookPath("kustomize")
+		if err != nil {
+			t.Skip("set KUSTOMIZE to render desktop deployment contracts")
+		}
+	}
+	root, err := filepath.Abs("../../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree := t.TempDir()
+	// Use real public manifests and replacements. Omit only the secret generator:
+	// validating PodSpecs must not require decrypting production credentials.
+	for _, source := range []string{"ctl/k8s", "argocd/services/ctl"} {
+		err := filepath.WalkDir(filepath.Join(root, source), func(path string, entry fs.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			relative, err := filepath.Rel(root, path)
+			if err != nil {
+				return err
+			}
+			target := filepath.Join(tree, relative)
+			if entry.IsDir() {
+				return os.MkdirAll(target, 0700)
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			if entry.Name() == "kustomization.yaml" {
+				var document map[string]interface{}
+				if err := yaml.Unmarshal(data, &document); err != nil {
+					return err
+				}
+				var assets bytes.Buffer
+				generators, _ := document["generators"].([]interface{})
+				for _, generator := range generators {
+					generatorPath := filepath.Join(filepath.Dir(path), generator.(string))
+					generatorData, err := os.ReadFile(generatorPath)
+					if err != nil {
+						return err
+					}
+					var generatorSpec struct {
+						Files []string `yaml:"files"`
+					}
+					if err := yaml.Unmarshal(generatorData, &generatorSpec); err != nil {
+						return err
+					}
+					for _, input := range generatorSpec.Files {
+						// Names follow the existing assets convention. Some SOPS files
+						// encrypt even metadata; this test never reads encrypted payloads.
+						name := strings.TrimSuffix(filepath.Base(input), ".sops.yaml")
+						kind := "Secret"
+						if strings.HasPrefix(name, "ctl-conf-") {
+							kind = "ConfigMap"
+						}
+						stub, err := yaml.Marshal(map[string]interface{}{
+							"apiVersion": "v1", "kind": kind,
+							"metadata": map[string]interface{}{"name": name, "namespace": "ctl"},
+						})
+						if err != nil {
+							return err
+						}
+						assets.WriteString("---\n")
+						assets.Write(stub)
+					}
+				}
+				if assets.Len() > 0 {
+					if err := os.WriteFile(filepath.Join(filepath.Dir(target), "test-asset-metadata.yaml"), assets.Bytes(), 0600); err != nil {
+						return err
+					}
+					resources, _ := document["resources"].([]interface{})
+					document["resources"] = append(resources, "test-asset-metadata.yaml")
+				}
+				delete(document, "generators")
+				data, err = yaml.Marshal(document)
+				if err != nil {
+					return err
+				}
+			}
+			return os.WriteFile(target, data, 0600)
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, env := range []string{"beijing-sandbox", "beijing-sandbox-2", "sandbox-bj-7", "sandbox-kr-1", "sgprod", "shprod"} {
+		t.Run(env, func(t *testing.T) {
+			command := exec.Command(binary, "build", filepath.Join(tree, "argocd/services/ctl", env))
+			output, err := command.CombinedOutput()
+			if err != nil {
+				t.Fatalf("render failed: %v: %s", err, output)
+			}
+			decoder := yaml.NewDecoder(bytes.NewReader(output))
+			documents := map[string]map[string]interface{}{}
+			for {
+				var document map[string]interface{}
+				if err := decoder.Decode(&document); err == io.EOF {
+					break
+				} else if err != nil {
+					t.Fatal(err)
+				}
+				if document == nil {
+					continue
+				}
+				metadata := document["metadata"].(map[string]interface{})
+				documents[document["kind"].(string)+"/"+metadata["name"].(string)] = document
+			}
+			api := documents["Deployment/ctl-api"]["spec"].(map[string]interface{})
+			desktop := documents["Deployment/ctl-desktop"]["spec"].(map[string]interface{})
+			if desktop["replicas"] != 1 || !reflect.DeepEqual(desktop["strategy"], map[string]interface{}{"type": "Recreate"}) {
+				t.Fatal("desktop must remain singleton with Recreate updates")
+			}
+			apiTemplate := api["template"].(map[string]interface{})
+			desktopTemplate := desktop["template"].(map[string]interface{})
+			if !reflect.DeepEqual(apiTemplate["spec"], desktopTemplate["spec"]) {
+				t.Fatal("desktop lost final image, environment, volumes or other PodSpec configuration")
+			}
+			for name, template := range map[string]map[string]interface{}{"api": apiTemplate, "desktop": desktopTemplate} {
+				metadata := template["metadata"].(map[string]interface{})
+				labels := metadata["labels"].(map[string]interface{})
+				if labels["app"] != "ctl-"+name || labels["ctl.clawhub.dev/role"] != name {
+					t.Fatalf("incorrect role or overlapping workload labels: %v", labels)
+				}
+			}
+			for name, document := range documents {
+				if strings.HasPrefix(name, "HorizontalPodAutoscaler/") {
+					spec := document["spec"].(map[string]interface{})
+					if spec["scaleTargetRef"].(map[string]interface{})["name"] == "ctl-desktop" {
+						t.Fatal("desktop cannot be independently scaled while state is process-local")
+					}
+				}
+			}
+			for _, name := range []string{"ctl-api", "ctl-api-internal", "ctl-desktop"} {
+				service := documents["Service/"+name]["spec"].(map[string]interface{})
+				want := "ctl-api"
+				if name == "ctl-desktop" {
+					want = name
+				}
+				if service["selector"].(map[string]interface{})["app"] != want {
+					t.Fatalf("service %s may select the wrong workload", name)
+				}
+			}
+		})
+	}
 }
 
 func TestDeployConfigsExposeOnlyExactFederationPublicPaths(t *testing.T) {
@@ -377,6 +557,11 @@ func TestDeployConfigsAllowOnlyFrontendInstanceRoutes(t *testing.T) {
 		http.MethodPost + " /v1/instances/{instance_id}/debug/exec":                                         {},
 		http.MethodGet + " /v1/instances/{instance_id}/desktop/session":                                     {},
 		http.MethodPost + " /v1/instances/{instance_id}/desktop/session":                                    {},
+		http.MethodGet + " /v1/instances/{instance_id}/desktop/resource":                                    {},
+		http.MethodPost + " /v1/instances/{instance_id}/desktop/resource":                                   {},
+		http.MethodPost + " /v1/instances/{instance_id}/desktop/viewer":                                     {},
+		http.MethodDelete + " /v1/instances/{instance_id}/desktop/viewer/{attachment_id}":                   {},
+		http.MethodPost + " /v1/instances/{instance_id}/desktop/viewer/{attachment_id}/claim":               {},
 		http.MethodPost + " /v1/instances/{instance_id}/tat/session":                                        {},
 		http.MethodPost + " /v1/instances/{instance_id}/config/reset":                                       {},
 		http.MethodPost + " /v1/instances/{instance_id}/agentchat/launch-token":                             {},
