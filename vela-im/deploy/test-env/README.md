@@ -28,13 +28,17 @@ bash vela-im/deploy/test-env/bootstrap.sh
 install -m 600 /dev/stdin $HOME/vela-test/secrets/im-secret.env <<< 'VELA_IM_SECRET_KEY=...'
 # 3. 构建 vela-im（SDK、worker bundle、插件）
 cd vela-im && npm ci && npm run build && cd ..
-# 4. 构建前端（同源代理模式 + 开启 IM）。pnpm 把 file: 依赖拷贝进 node_modules，SDK 改动后先同步一次
+# 4. 构建 OpenCraft 嵌入对话面板（Bot 单聊用；没有它页面会显示“对话加载失败”）
+cd opencraft && ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci && npm run build:embedded-workbench:release && cd ..
+# 5. 构建前端（同源代理模式 + 开启 IM + 同源 OpenCraft）。pnpm 把 file: 依赖拷贝进 node_modules，SDK 改动后先同步一次
 cd frontend && pnpm install
 SDK=node_modules/.pnpm/@vela+im-client@file+..+vela-im+sdk/node_modules/@vela/im-client
 rsync -a --delete ../vela-im/sdk/src/ $SDK/src/ && rsync -a --delete ../vela-im/sdk/dist/ $SDK/dist/
-NEXT_PUBLIC_AUTH_API_BASE_URL=local-proxy NEXT_PUBLIC_VELA_IM_API_BASE=/v1/collaboration NEXT_PUBLIC_REGION=cn pnpm build
+NEXT_PUBLIC_AUTH_API_BASE_URL=local-proxy NEXT_PUBLIC_VELA_IM_API_BASE=/v1/collaboration \
+  NEXT_PUBLIC_OPENCRAFT_EMBED_SCRIPT_URL=/__opencraft/embedded-workbench.js NEXT_PUBLIC_REGION=cn npm run build
+rsync -a --delete --exclude .vite --exclude '*.map' ../opencraft/apps/workbench-web/dist-embedded-workbench/ out/__opencraft/
 rsync -a --delete out/ $HOME/vela-test/web/ && cd ..
-# 5. collaboration + 开发网关 + Hermes gateway（systemd）与 nginx（docker）
+# 6. collaboration + 开发网关 + Hermes gateway（systemd）与 nginx（docker）
 bash vela-im/deploy/test-env/install.sh
 ```
 
