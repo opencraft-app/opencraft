@@ -1,6 +1,6 @@
 {
   "source": "frontend/src",
-  "sourceRevision": "bd69281d6d9547e4c00047de74228260bf5213c2",
+  "sourceRevision": "eda51f4a3149ed0745a9757424fc1cc08dd15834",
   "generatedBy": "scripts/sync-mono2-agent-console.mjs",
   "files": [
     {
@@ -89,23 +89,23 @@
     },
     {
       "file": "i18n/generated/en-US.json",
-      "sourceSha256": "db7193c1a4aff4c49d50fc076b80044759d1127d14d14b3bcce9eeec77eae4d9"
+      "sourceSha256": "107794f142a325b56a1157b96e5a41cc33aa488458e200c278ee30a62d74e6dc"
     },
     {
       "file": "i18n/generated/es.json",
-      "sourceSha256": "01806ad9f2b183cbb8f85f0f1b639ae0990d974887287ef274cff2432cbd5547"
+      "sourceSha256": "aa688377ab871a2fe4d2b8db2e7649b74fffe5d31d2abb76eeee6fed4666d55b"
     },
     {
       "file": "i18n/generated/id-ID.json",
-      "sourceSha256": "12b06299589284e57df692f0a383ae54b2323b58b318efa3e5be8ad845bd76fb"
+      "sourceSha256": "04f0c1ef2d58477c2120f021d538c76463c9056fe5c638dffd815789c3d548fd"
     },
     {
       "file": "i18n/generated/ja-JP.json",
-      "sourceSha256": "c6d78b020e39f8b002ec73bf5ef695951fc56421c9c3647b7dcdc6d275e1647a"
+      "sourceSha256": "98b852118f92d7282a08d4a2bc5a005cba83933b986c88ac69989da66e8d5145"
     },
     {
       "file": "i18n/generated/ko-KR.json",
-      "sourceSha256": "a3ea71bd2588613c23a1c5e7219162be4205647997f8a1dd17ec92391c015df7"
+      "sourceSha256": "5464790f3549a2b90dc6630a83d3df96ceac3670dc5092b5fdc8a918bd3b8a0c"
     },
     {
       "file": "i18n/generated/malay-public-copy.json",
@@ -113,11 +113,11 @@
     },
     {
       "file": "i18n/generated/ms-MY.json",
-      "sourceSha256": "f3db048b6324010c6ec322cbdbe0b46e56bf52021ec9e3cf1b6a8d94cb8b0f45"
+      "sourceSha256": "a809e5e87914069cf2a360b4f06bb7ddbc669c87ffb492ec05d5946fe6db80ef"
     },
     {
       "file": "i18n/generated/th-TH.json",
-      "sourceSha256": "364f008aaddff8c6933482da17fd20ce7606c314010b074f56846840712675fd"
+      "sourceSha256": "aa990bc0719be737dcd5df38a2af6ff2a5c34b30b126616d9afcd547b56bd163"
     },
     {
       "file": "i18n/generated/thai-public-copy.json",
@@ -125,15 +125,15 @@
     },
     {
       "file": "i18n/generated/zh-CN.json",
-      "sourceSha256": "e21511e8ca222f48474b394e46c5716d091c1ac1129fa5d3112e00e50565b0f9"
+      "sourceSha256": "6bb0a750c5b507810372a39b80c2b3095434d3c8820fe4ef94ddc9991884b4d3"
     },
     {
       "file": "i18n/generated/zh-Hant.json",
-      "sourceSha256": "04d1100b9adc71e0088d0055feddfe98d2a7c8bf15fd3e26c51a99d66db918d1"
+      "sourceSha256": "6f5a1be0609e3682148b8efbf31b99f6dcab40f8564b63ccb5c76b7d0ac2577b"
     },
     {
       "file": "i18n/generated/zh-to-key.json",
-      "sourceSha256": "dc5c1de79cb50985bfd25bef9aa83bdcd9aed76691f096f3e84d88d7edc73112"
+      "sourceSha256": "57654efa300e0ccc99debb034b0c48b421ec3c1f09b6148bad54296a7241a20a"
     },
     {
       "file": "i18n/index.ts",
@@ -261,7 +261,7 @@
     },
     {
       "file": "pages/marketing/agent-config/components/HermesQrCodeModal.tsx",
-      "sourceSha256": "9b5ae0b63ea3a8b71af6895c6f54065985ebd54b9c558892f4363677c7c836e3"
+      "sourceSha256": "0ba7fdb14ab0a0d4dca7b48687474eae53e53f9e9dee4828e315dc7cd1bcb1d6"
     },
     {
       "file": "pages/marketing/agent-config/components/WecomIcon.tsx",
@@ -537,7 +537,7 @@
     },
     {
       "file": "repositories/http-repositories.ts",
-      "sourceSha256": "a00a1a1b5a8aa5f1e092029f11d3742b484983db9a7427d5b834d5bae902cb4f"
+      "sourceSha256": "64fe00e06b23f0d1bb1ee29e0ef6d913e4db038765fb757bacae02bf935799df"
     },
     {
       "file": "repositories/types.ts",
