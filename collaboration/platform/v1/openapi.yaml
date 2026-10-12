@@ -212,6 +212,7 @@ x-error-code-registry:
   bot_agent_not_ready: {status: 409}
   bot_instance_not_owned: {status: 403}
   bot_host_unavailable: {status: 503}
+  bot_quota_exceeded: {status: 409}
   im_group_not_found: {status: 404}
   im_group_not_ready: {status: 409}
   im_identity_unknown: {status: 422}

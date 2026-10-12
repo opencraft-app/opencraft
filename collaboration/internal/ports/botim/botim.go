@@ -111,6 +111,8 @@ type Repository interface {
 	FindBotByRef(ctx context.Context, accountID, instanceID, botID string) (BotAgent, error)
 	FindBot(ctx context.Context, accountID, botAgentID string) (BotAgent, error)
 	ListBots(ctx context.Context, accountID string, limit int) ([]BotAgent, error)
+	// CountActiveBots 统计账号下未删除的 Bot，即该账号占用的腾讯 Bot 账号数。
+	CountActiveBots(ctx context.Context, accountID string) (int, error)
 	// InsertBot 插入新 Bot；同一账号下 instance/bot 已存在时返回 ErrConflict。
 	InsertBot(context.Context, BotAgent) (BotAgent, error)
 	// SaveBot 以 expectedRevision 做 CAS，成功后返回 revision+1 的新事实。

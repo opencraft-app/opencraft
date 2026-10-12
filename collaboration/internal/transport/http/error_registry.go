@@ -110,6 +110,7 @@ var errorMappings = []ErrorMapping{
 	{Code: "bot_agent_not_ready", Status: http.StatusConflict, Message: "Bot IM 身份尚未就绪"},
 	{Code: "bot_instance_not_owned", Status: http.StatusForbidden, Message: "LightVela 实例或 Bot 不属于当前账号"},
 	{Code: "bot_host_unavailable", Status: http.StatusServiceUnavailable, Message: "暂时无法把凭据交付到 Bot 所在实例"},
+	{Code: "bot_quota_exceeded", Status: http.StatusConflict, Message: "账号的 Bot IM 身份已达上限"},
 	{Code: "im_group_not_found", Status: http.StatusNotFound, Message: "群聊不存在或当前身份不在群内"},
 	{Code: "im_group_not_ready", Status: http.StatusConflict, Message: "群聊尚未就绪"},
 	{Code: "im_identity_unknown", Status: http.StatusUnprocessableEntity, Message: "IM 身份尚未在平台开通"},

@@ -35,8 +35,11 @@ POST /v1/me/bots {instanceId, botId, displayName}        Human（gateway）
 ```
 
 - 幂等：已 ready 直接返回；失败停在可重试状态，`lastErrorCode` 记录原因。
+- 上限：每个账号同时开通的 Bot（未删除）不超过 `--max-im-bots-per-account`（默认 20，1–200），
+  新开通或恢复已删除 Bot 时检查，超出返回 409 `bot_quota_exceeded`，不产生任何腾讯侧副作用。
 - `POST /v1/me/bots/{id}/credential` 轮换：`credential_version + 1` 并重新交付，旧凭据立即失效。
-- `DELETE /v1/me/bots/{id}`：踢下线、吊销凭据（Host.Revoke 删除实例上的凭据文件），群成员关系保留。
+- `DELETE /v1/me/bots/{id}`：踢下线、删除腾讯账号（释放名额）、吊销凭据（Host.Revoke 删除实例上的凭据文件）；
+  平台群成员记录保留。重新开通时以同一 UserID 再导入。
 - `PATCH /v1/me/bots/{id} {commandPolicy}`：Hermes 命令仅主人 / 任何人可用。主人 = 账号的人类 IM 身份 + 名下全部未删除 Bot。
 
 Host 两种实现收发同一份 JSON：生产 `--bot-host-ctl-url` + `--bot-host-ctl-token-file`
@@ -77,7 +80,21 @@ Host 两种实现收发同一份 JSON：生产 `--bot-host-ctl-url` + `--bot-hos
 
 封禁：`chatserver im restrict --im-user-id ID [--release]`，写 `restricted_at` 并踢下线。
 
-## 7. 错误码
+## 7. 腾讯账号清单
 
-`bot_agent_not_found` 404、`bot_agent_not_ready` 409、`bot_instance_not_owned` 403、`bot_host_unavailable` 503、
+腾讯 IM 没有列出全部账号的接口，控制台也看不到，所以平台库是账号清单的唯一来源：三条导入路径
+（人类 `accounts`、Bot `bot_agents`、Computer Agent `agents`）都先落库再调用 `account_import`，
+任何其他组件都不持有 SecretKey、不导入账号。
+
+```text
+chatserver im accounts [--list] [--check --im-sdk-app-id ID --im-admin-user-id UserID --im-secret-key-file 文件]
+```
+
+按类型和状态统计平台记录的账号；`--check` 用 `account_check` 逐批核对，报告“平台认为在但腾讯没有”和
+“平台已删除但腾讯还在”的账号。只读打开数据库，可与 `serve` 并存。各环境应使用独立 SDKAppID，
+并且不能丢弃数据库后复用同一个 SDKAppID，否则旧账号会成为无人记录的孤儿。
+
+## 8. 错误码
+
+`bot_agent_not_found` 404、`bot_agent_not_ready` 409、`bot_instance_not_owned` 403、`bot_host_unavailable` 503、`bot_quota_exceeded` 409、
 `im_group_not_found` 404、`im_group_not_ready` 409、`im_identity_unknown` 422、`im_identity_restricted` 403。

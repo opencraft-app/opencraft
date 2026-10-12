@@ -93,6 +93,7 @@ type serveConfig struct {
 	botHostCTLTokenFile              string
 	botRuntimeAPIURL                 string
 	restrictClientGroupCreate        bool
+	maxBotsPerAccount                int
 }
 
 type repeatedStrings []string
@@ -232,6 +233,7 @@ func parseServeConfig(args []string) (serveConfig, error) {
 		botHostCTLTokenFile              string
 		botRuntimeAPIURL                 string
 		restrictClientGroupCreate        bool
+		maxBotsPerAccount                int
 	)
 	if databaseDriver == "" {
 		databaseDriver = string(config.DatabaseDriverSQLite)
@@ -338,6 +340,7 @@ func parseServeConfig(args []string) (serveConfig, error) {
 	flags.StringVar(&botHostCTLTokenFile, "bot-host-ctl-token-file", "", "collaboration 到 CTL 的内部 Bearer 文件")
 	flags.StringVar(&botRuntimeAPIURL, "bot-runtime-api-url", "", "Bot 运行时访问本服务的基础 URL（交付到实例）")
 	flags.BoolVar(&restrictClientGroupCreate, "im-restrict-client-group-create", false, "腾讯建群前回调只允许 App 管理员建群")
+	flags.IntVar(&maxBotsPerAccount, "max-im-bots-per-account", 20, "每个账号同时开通 IM 身份的 Bot 上限（1-200）")
 	flags.Var(&origins, "cors-origin", "允许的浏览器 Origin，可重复")
 	if err := flags.Parse(args); err != nil || flags.NArg() != 0 {
 		return serveConfig{}, apperror.New("CONFIG_INVALID", "serve 参数无效", err)
@@ -447,12 +450,16 @@ func parseServeConfig(args []string) (serveConfig, error) {
 			nil,
 		)
 	}
+	if maxBotsPerAccount < 1 || maxBotsPerAccount > 200 {
+		return serveConfig{}, apperror.New("CONFIG_INVALID", "每账号 Bot IM 身份上限必须在 1 到 200 之间", nil)
+	}
 	return serveConfig{
 		botHostCommand:                   botHostCommand,
 		botHostCTLURL:                    botHostCTLURL,
 		botHostCTLTokenFile:              botHostCTLTokenFile,
 		botRuntimeAPIURL:                 botRuntimeAPIURL,
 		restrictClientGroupCreate:        restrictClientGroupCreate,
+		maxBotsPerAccount:                maxBotsPerAccount,
 		database:                         databaseConfig,
 		databaseAutoMigrate:              databaseAutoMigrate,
 		collaborationOnly:                collaborationOnly,
@@ -1119,6 +1126,7 @@ func serveHumanPlatform(
 			Host:                           host,
 			TencentGroups:                  groupManager,
 			BotRuntimeAPIBaseURL:           cfg.botRuntimeAPIURL,
+			MaxActiveBotsPerAccount:        cfg.maxBotsPerAccount,
 			RequestTimeout:                 2 * time.Minute,
 			MaxBodyBytes:                   16 * 1024,
 		})

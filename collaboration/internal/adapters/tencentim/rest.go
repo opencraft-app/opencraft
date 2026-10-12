@@ -21,6 +21,8 @@ const (
 	accountImportPath = "/v4/im_open_login_svc/account_import"
 	accountKickPath   = "/v4/im_open_login_svc/kick"
 	accountDeletePath = "/v4/im_open_login_svc/account_delete"
+	accountCheckPath  = "/v4/im_open_login_svc/account_check"
+	accountCheckBatch = 100
 	maxResponseBytes  = 1 << 20
 )
 
@@ -163,6 +165,60 @@ func (client *RESTIdentityProvisioner) DeleteIdentity(
 		"tencent_"+strconv.Itoa(code),
 		retryableTencentCode(code),
 	)
+}
+
+// CheckIdentities 查询账号是否存在于腾讯 IM，返回 UserID → 是否已导入；腾讯没有列出全部账号的接口，
+// 只能按平台记录逐批核对。
+func (client *RESTIdentityProvisioner) CheckIdentities(
+	ctx context.Context,
+	userIDs []string,
+) (map[string]bool, error) {
+	if client == nil || ctx == nil {
+		return nil, newRESTError("tencent_invalid_identity", false)
+	}
+	type checkItem struct {
+		UserID string `json:"UserID"`
+	}
+	imported := make(map[string]bool, len(userIDs))
+	for start := 0; start < len(userIDs); start += accountCheckBatch {
+		batch := userIDs[start:min(start+accountCheckBatch, len(userIDs))]
+		body := struct {
+			CheckItem []checkItem `json:"CheckItem"`
+		}{CheckItem: make([]checkItem, 0, len(batch))}
+		for _, userID := range batch {
+			if !imUserIDPattern.MatchString(userID) {
+				return nil, newRESTError("tencent_invalid_identity", false)
+			}
+			body.CheckItem = append(body.CheckItem, checkItem{UserID: userID})
+		}
+		var result struct {
+			restEnvelope
+			ResultItem []struct {
+				UserID        string `json:"UserID"`
+				ResultCode    int    `json:"ResultCode"`
+				AccountStatus string `json:"AccountStatus"`
+			} `json:"ResultItem"`
+		}
+		if err := client.post(ctx, accountCheckPath, body, &result); err != nil {
+			return nil, err
+		}
+		if result.ErrorCode != 0 || result.ActionStatus != "OK" {
+			return nil, newRESTError(
+				"tencent_"+strconv.Itoa(result.ErrorCode),
+				retryableTencentCode(result.ErrorCode),
+			)
+		}
+		if len(result.ResultItem) != len(batch) {
+			return nil, newRESTError("tencent_response_invalid", true)
+		}
+		for _, item := range result.ResultItem {
+			if item.ResultCode != 0 {
+				return nil, newRESTError("tencent_"+strconv.Itoa(item.ResultCode), retryableTencentCode(item.ResultCode))
+			}
+			imported[item.UserID] = item.AccountStatus == "Imported"
+		}
+	}
+	return imported, nil
 }
 
 func (client *RESTIdentityProvisioner) post(

@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"io"
 	"strconv"
 	"strings"
@@ -30,10 +31,11 @@ type IdentityDeriver interface {
 	AgentUserID(string) (string, error)
 }
 
-// IdentityManager 是 Bot 腾讯账号的导入与下线能力。
+// IdentityManager 是 Bot 腾讯账号的导入、下线与删除能力。
 type IdentityManager interface {
 	EnsureIdentity(context.Context, tencentimport.Identity) error
 	KickIdentity(context.Context, string) error
+	DeleteIdentity(context.Context, string) error
 }
 
 // Config 控制凭据交付与短期会话。
@@ -42,6 +44,8 @@ type Config struct {
 	APIBaseURL string
 	AccessTTL  time.Duration
 	UserSigTTL time.Duration
+	// MaxActiveBots 是每个账号同时占用的腾讯 Bot 账号上限；删除 Bot 会释放名额。
+	MaxActiveBots int
 }
 
 // Human 是发起管理操作的 LightVela 账号。
@@ -105,6 +109,7 @@ func NewService(
 	if repository == nil || deriver == nil || identities == nil || host == nil ||
 		tokens == nil || userSigs == nil || ids == nil || clock == nil || random == nil ||
 		config.SDKAppID <= 0 || config.AccessTTL <= 0 || config.UserSigTTL <= 0 ||
+		config.MaxActiveBots <= 0 || config.MaxActiveBots > maxBotsPerAccount ||
 		strings.TrimSpace(config.APIBaseURL) == "" {
 		return nil, errors.New("Bot IM 身份服务配置无效")
 	}
@@ -141,6 +146,19 @@ func (s *Service) Provision(
 		return existing, nil
 	case err != nil && !errors.Is(err, botimport.ErrNotFound):
 		return botimport.BotAgent{}, internal("暂时无法读取 Bot", err)
+	}
+	if existing.ID == "" || existing.State == botimport.BotStateDeleted {
+		active, err := s.repository.CountActiveBots(ctx, human.AccountID)
+		if err != nil {
+			return botimport.BotAgent{}, internal("暂时无法统计 Bot", err)
+		}
+		if active >= s.config.MaxActiveBots {
+			return botimport.BotAgent{}, apperror.New(
+				"bot_quota_exceeded",
+				fmt.Sprintf("每个账号最多为 %d 个 Bot 开通 IM 身份，请先停用不用的 Bot", s.config.MaxActiveBots),
+				nil,
+			)
+		}
 	}
 
 	request := botimport.HostRequest{
@@ -207,7 +225,7 @@ func (s *Service) UpdateCommandPolicy(
 	return s.save(ctx, bot, expected)
 }
 
-// Delete 吊销凭据并使 Bot 的腾讯登录态失效。
+// Delete 吊销凭据、使 Bot 的腾讯登录态失效并删除其腾讯账号；重新开通时以同一 UserID 再导入。
 func (s *Service) Delete(ctx context.Context, human Human, botAgentID string) error {
 	bot, err := s.ownedBot(ctx, human, botAgentID)
 	if err != nil {
@@ -226,6 +244,9 @@ func (s *Service) Delete(ctx context.Context, human Human, botAgentID string) er
 	}
 	if err := s.identities.KickIdentity(ctx, bot.IMUserID); err != nil {
 		return apperror.New("tencent_unavailable", "暂时无法使 Bot 的 IM 登录态失效", err)
+	}
+	if err := s.identities.DeleteIdentity(ctx, bot.IMUserID); err != nil {
+		return apperror.New("tencent_unavailable", "暂时无法删除 Bot 的腾讯 IM 账号", err)
 	}
 	// 实例上的残留凭据已经失效；清理失败不影响吊销结果。
 	_ = s.host.Revoke(ctx, botimport.HostRequest{

@@ -79,6 +79,12 @@ func (r *EntRepository) ListBots(ctx context.Context, accountID string, limit in
 	return result, nil
 }
 
+func (r *EntRepository) CountActiveBots(ctx context.Context, accountID string) (int, error) {
+	return r.handle.Client().BotAgent.Query().
+		Where(botagent.AccountIDEQ(accountID), botagent.StateNEQ(botimport.BotStateDeleted)).
+		Count(ctx)
+}
+
 func (r *EntRepository) InsertBot(ctx context.Context, bot botimport.BotAgent) (botimport.BotAgent, error) {
 	create := r.handle.Client().BotAgent.Create().
 		SetID(bot.ID).

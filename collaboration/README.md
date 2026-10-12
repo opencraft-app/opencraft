@@ -204,7 +204,10 @@ LightVela 实例上的每个 Bot（Hermes profile）可以开通自己的腾讯 
 --bot-host-command /path/to/bot-host.sh                                                            # 开发机
 --bot-runtime-api-url https://网关地址/v1/collaboration     # 交付给实例上 worker 的本服务地址（其下 /runtime/bot/**）
 --im-restrict-client-group-create                            # 可选：腾讯建群前回调只允许 App 管理员建群
+--max-im-bots-per-account 20                                 # 每个账号同时开通 IM 身份的 Bot 上限
 ```
+
+平台创建过的全部腾讯账号（腾讯控制台看不到）用 `chatserver im accounts [--list] [--check …]` 查看与核对。
 
 未配置 Bot 宿主时 `/v1/me/bots`、`/v1/me/groups`、`/v1/runtime/bot/**` 不注册。开发机搭建见
 `vela-im/deploy/test-env/README.md`。

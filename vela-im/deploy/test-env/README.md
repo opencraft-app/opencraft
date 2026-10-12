@@ -61,7 +61,7 @@ bash vela-im/deploy/test-env/smoke.sh
 ```
 
 覆盖：网关拒绝无登录请求、人类换 UserSig、Bot 开通与重复开通、凭据文件权限与插件启用、凭据换会话、伪造凭据被拒、worker 上线与
-`vela_im whoami`、平台建群 / 改规则 / Bot 读群 / Bot 发群消息、解散、删除 Bot 后旧凭据失效。状态保存在 `$HOME/vela-test/smoke/`，
+`vela_im whoami`、平台建群 / 改规则 / Bot 读群 / Bot 发群消息、解散、删除 Bot 后旧凭据失效且腾讯账号被删除、平台账号清单与腾讯核对一致。状态保存在 `$HOME/vela-test/smoke/`，
 重复运行复用同一组腾讯账号。
 
 ## 运维
@@ -81,5 +81,13 @@ CHATSERVER_DATABASE_PATH=$HOME/vela-test/collab-data/collaboration.sqlite $HOME/
 sudo systemctl start vela-collaboration
 ```
 
+平台创建过的全部腾讯账号（腾讯控制台看不到）与腾讯侧核对：
+
+```bash
+CHATSERVER_DATABASE_PATH=$HOME/vela-test/collab-data/collaboration.sqlite $HOME/vela-test/bin/chatserver im accounts --list \
+  --check --im-sdk-app-id 1600166071 --im-admin-user-id administrator --im-secret-key-file $HOME/vela-test/secrets/im-secret-key
+```
+
 腾讯 IM 回调（成员对账、发消息前封禁、建群拦截）需要公网可达的回调地址，开发机收不到；平台自己发起的操作不依赖回调。
-试用版 IM 应用最多 100 个账号，超出时导入失败（腾讯错误 70398），需要清理旧账号或升级应用。
+试用版 IM 应用最多 100 个账号，超出时导入失败（腾讯错误 70398）。每个账号最多开通 20 个 Bot（`--max-im-bots-per-account`），
+删除 Bot 会删除其腾讯账号。不要删除 `collab-data/` 后继续用同一个 SDKAppID，否则旧账号会变成无人记录的孤儿。

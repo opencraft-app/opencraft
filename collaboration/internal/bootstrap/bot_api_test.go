@@ -50,7 +50,7 @@ func (host *fakeBotHost) lastCredential() string {
 	return host.credentials[len(host.credentials)-1]
 }
 
-type fakeIdentities struct{ imported, kicked []string }
+type fakeIdentities struct{ imported, kicked, deleted []string }
 
 func (identities *fakeIdentities) EnsureIdentity(_ context.Context, identity tencentimport.Identity) error {
 	identities.imported = append(identities.imported, identity.UserID)
@@ -59,6 +59,11 @@ func (identities *fakeIdentities) EnsureIdentity(_ context.Context, identity ten
 
 func (identities *fakeIdentities) KickIdentity(_ context.Context, userID string) error {
 	identities.kicked = append(identities.kicked, userID)
+	return nil
+}
+
+func (identities *fakeIdentities) DeleteIdentity(_ context.Context, userID string) error {
+	identities.deleted = append(identities.deleted, userID)
 	return nil
 }
 
@@ -132,13 +137,14 @@ func newBotAPIFixture(t *testing.T) *botAPIFixture {
 		UserSigIssuer: &recordingUserSigIssuer{result: tencentimport.UserSig{
 			Value: "test-usersig", ExpiresAt: time.Now().Add(time.Hour),
 		}},
-		Identities:           fixture.identities,
-		Deriver:              deriver,
-		Host:                 fixture.host,
-		TencentGroups:        fixture.tencent,
-		BotRuntimeAPIBaseURL: "http://127.0.0.1:18080/v1",
-		RequestTimeout:       5 * time.Second,
-		MaxBodyBytes:         16 * 1024,
+		Identities:              fixture.identities,
+		Deriver:                 deriver,
+		Host:                    fixture.host,
+		TencentGroups:           fixture.tencent,
+		BotRuntimeAPIBaseURL:    "http://127.0.0.1:18080/v1",
+		MaxActiveBotsPerAccount: 2,
+		RequestTimeout:          5 * time.Second,
+		MaxBodyBytes:            16 * 1024,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -327,6 +333,52 @@ func TestBotIMAPIRejectsBotOwnedByAnotherAccount(t *testing.T) {
 	}
 	if len(fixture.identities.imported) != 0 || len(fixture.host.deliveries) != 0 {
 		t.Fatalf("foreign bot side effects: imported=%v deliveries=%d", fixture.identities.imported, len(fixture.host.deliveries))
+	}
+}
+
+func TestBotIMAPICapsActiveBotsAndDeleteFreesTheTencentAccount(t *testing.T) {
+	fixture := newBotAPIFixture(t)
+	provision := func(botID string) (int, map[string]any) {
+		return fixture.human(http.MethodPost, "/v1/me/bots", map[string]any{
+			"instanceId": "ins-quota", "botId": botID, "displayName": botID,
+		})
+	}
+	_, first := provision("b1")
+	if status, _ := provision("b2"); status != http.StatusOK {
+		t.Fatalf("second bot = %d", status)
+	}
+	status, body := provision("b3")
+	if status != http.StatusConflict || errorCode(body) != "bot_quota_exceeded" {
+		t.Fatalf("bot over quota = %d %#v", status, body)
+	}
+	if len(fixture.identities.imported) != 2 || len(fixture.host.deliveries) != 2 {
+		t.Fatalf("over-quota side effects: imported=%v deliveries=%d", fixture.identities.imported, len(fixture.host.deliveries))
+	}
+
+	firstUserID := first["userId"].(string)
+	if status, _ := fixture.human(http.MethodDelete, "/v1/me/bots/"+first["id"].(string), nil); status != http.StatusNoContent {
+		t.Fatalf("delete = %d", status)
+	}
+	if len(fixture.identities.deleted) != 1 || fixture.identities.deleted[0] != firstUserID {
+		t.Fatalf("tencent account not deleted: %#v", fixture.identities.deleted)
+	}
+	if status, _ := provision("b3"); status != http.StatusOK {
+		t.Fatalf("bot after freeing a slot = %d", status)
+	}
+	if status, body := provision("b1"); status != http.StatusConflict || errorCode(body) != "bot_quota_exceeded" {
+		t.Fatalf("reviving a deleted bot bypassed the quota = %d %#v", status, body)
+	}
+
+	_, list := fixture.human(http.MethodGet, "/v1/me/bots", nil)
+	for _, item := range list["items"].([]any) {
+		if bot := item.(map[string]any); bot["botId"] == "b2" {
+			fixture.human(http.MethodDelete, "/v1/me/bots/"+bot["id"].(string), nil)
+		}
+	}
+	status, revived := provision("b1")
+	if status != http.StatusOK || revived["id"] != first["id"] || revived["userId"] != firstUserID ||
+		fixture.identities.imported[len(fixture.identities.imported)-1] != firstUserID {
+		t.Fatalf("revived bot = %d %#v imported=%v", status, revived, fixture.identities.imported)
 	}
 }
 

@@ -40,6 +40,7 @@ type BotIMAPIConfig struct {
 	Host                           botimport.Host
 	TencentGroups                  botimport.TencentGroups
 	BotRuntimeAPIBaseURL           string
+	MaxActiveBotsPerAccount        int
 	RequestTimeout                 time.Duration
 	MaxBodyBytes                   int64
 }
@@ -127,6 +128,7 @@ func NewBotIMAPI(config BotIMAPIConfig) (*BotIMAPI, error) {
 		appbotagent.Config{
 			SDKAppID: config.SDKAppID, APIBaseURL: config.BotRuntimeAPIBaseURL,
 			AccessTTL: config.AccessTTL, UserSigTTL: config.UserSigTTL,
+			MaxActiveBots: config.MaxActiveBotsPerAccount,
 		},
 	)
 	if err != nil {

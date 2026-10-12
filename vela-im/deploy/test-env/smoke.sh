@@ -112,4 +112,8 @@ expect 204 "$(human DELETE "/me/bots/$BOT_ID")" >/dev/null && echo "bot deleted"
 test ! -e "$DATA/credential" && echo "credential removed from profile"
 status=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "http://$COLLAB/v1/runtime/bot/session" -H "Authorization: BotCredential $CREDENTIAL")
 [ "$status" = 401 ] && echo "old credential rejected after delete (401)" || { echo "old credential still accepted: HTTP $status"; exit 1; }
+
+step "platform inventory of Tencent accounts, checked against Tencent"
+CHATSERVER_DATABASE_PATH=$T/collaboration.sqlite "$T/bin/chatserver" im accounts --list --check \
+  --im-sdk-app-id "${VELA_SDK_APP_ID:-1600166071}" --im-admin-user-id administrator --im-secret-key-file "$T/secrets/im-secret-key"
 echo; echo "SMOKE OK"
