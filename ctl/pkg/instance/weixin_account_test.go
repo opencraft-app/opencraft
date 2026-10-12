@@ -1,12 +1,14 @@
 package instance
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 type weixinFixture struct {
@@ -14,10 +16,16 @@ type weixinFixture struct {
 	home, bin string
 }
 
+func weixinTestPython() string {
+	if path := os.Getenv("HERMES_TEST_PYTHON"); path != "" {
+		return path
+	}
+	return "python3"
+}
 func requireWeixinPython(t *testing.T) {
 	t.Helper()
-	if err := exec.Command("python3", "-c", "import dotenv").Run(); err != nil {
-		t.Skip("Hermes Python test dependency python-dotenv unavailable")
+	if err := exec.Command(weixinTestPython(), "-c", "import dotenv, yaml").Run(); err != nil {
+		t.Fatalf("required Hermes test dependencies unavailable; run .ci/checks/ctl_weixin_guard.sh or set HERMES_TEST_PYTHON to its venv: %v", err)
 	}
 }
 func newWeixinFixture(t *testing.T) *weixinFixture {
@@ -49,7 +57,7 @@ func (f *weixinFixture) credentials(profile, account, user string) {
 }
 func (f *weixinFixture) run(action, bot, profile, lease string) channelBindingPayload {
 	f.t.Helper()
-	cmd := exec.Command("python3", "-c", manageChannelBindingScript, action, "weixin", bot, profile, "instance-test", lease)
+	cmd := exec.Command(weixinTestPython(), "-c", manageChannelBindingScript, action, "weixin", bot, profile, "instance-test", lease)
 	cmd.Env = append(os.Environ(), "HERMES_HOME="+f.home, "PATH="+f.bin+":"+os.Getenv("PATH"), "PYTHONPATH="+f.bin+":"+os.Getenv("PYTHONPATH"))
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -149,7 +157,7 @@ func TestWeixinConcurrentConfirmOnlyOneOwnerWins(t *testing.T) {
 	f.credentials("profile-b", "same-account", "same-user")
 	commands := []*exec.Cmd{}
 	for _, target := range []struct{ bot, profile, lease string }{{"bot-a", "default", a.ReservationID}, {"bot-b", "profile-b", b.ReservationID}} {
-		cmd := exec.Command("python3", "-c", manageChannelBindingScript, "confirm", "weixin", target.bot, target.profile, "instance-test", target.lease)
+		cmd := exec.Command(weixinTestPython(), "-c", manageChannelBindingScript, "confirm", "weixin", target.bot, target.profile, "instance-test", target.lease)
 		cmd.Env = append(os.Environ(), "HERMES_HOME="+f.home, "PATH="+f.bin+":"+os.Getenv("PATH"), "PYTHONPATH="+f.bin+":"+os.Getenv("PYTHONPATH"))
 		commands = append(commands, cmd)
 	}
@@ -182,9 +190,6 @@ func TestWeixinConcurrentConfirmOnlyOneOwnerWins(t *testing.T) {
 	}
 }
 func TestWeixinRollbackPreservesOtherPlatformConfig(t *testing.T) {
-	if exec.Command("python3", "-c", "import yaml").Run() != nil {
-		t.Skip("PyYAML unavailable")
-	}
 	f := newWeixinFixture(t)
 	f.connect("bot-a", "default", "account-a", "user-a")
 	f.write(filepath.Join(f.bin, "hermes_cli", "__init__.py"), "", 0600)
@@ -205,5 +210,141 @@ func TestWeixinRollbackPreservesOtherPlatformConfig(t *testing.T) {
 	calls, _ := os.ReadFile(filepath.Join(f.home, ".acli-calls"))
 	if !strings.Contains(string(calls), "restart --agent profile-b") {
 		t.Fatal("previous gateway was not restored for other channels")
+	}
+}
+
+func TestWeixinRollbackGatewayFailuresRemainRetryable(t *testing.T) {
+	for _, command := range []string{"stop", "restart"} {
+		t.Run(command, func(t *testing.T) {
+			f := newWeixinFixture(t)
+			f.connect("bot-a", "default", "account-a", "user-a")
+			f.connect("bot-b", "profile-b", "account-b", "user-b")
+			lease := f.run("claim", "bot-b", "profile-b", "").ReservationID
+			f.credentials("profile-b", "account-a", "user-a")
+			f.write(filepath.Join(f.bin, "acli"), "#!/bin/sh\n[ \"$2\" != \""+command+"\" ]\n", 0700)
+			if got := f.run("confirm", "bot-b", "profile-b", lease); got.Reason != "recovery_failed" {
+				t.Fatalf("failure: %+v", got)
+			}
+			if got := f.run("get", "bot-b", "profile-b", ""); got.Status != "recovery_required" {
+				t.Fatalf("stuck reservation: %+v", got)
+			}
+			env, _ := os.ReadFile(filepath.Join(f.profile("profile-b"), ".env"))
+			if !strings.Contains(string(env), "account-b") || strings.Contains(string(env), "account-a") {
+				t.Fatal("credentials were not restored despite CLI failure")
+			}
+			f.run("release", "bot-b", "profile-b", "stale")
+			if got := f.run("claim", "bot-b", "profile-b", ""); got.Reason != "recovery_failed" {
+				t.Fatalf("unrecovered gateway allowed scan: %+v", got)
+			}
+			f.write(filepath.Join(f.bin, "acli"), "#!/bin/sh\nexit 0\n", 0700)
+			next := f.run("claim", "bot-b", "profile-b", "")
+			if !next.OK || next.ReservationID == lease {
+				t.Fatalf("cannot retry recovery: %+v", next)
+			}
+			f.run("release", "bot-b", "profile-b", lease)
+			if got := f.run("get", "bot-b", "profile-b", ""); got.ReservationID != next.ReservationID {
+				t.Fatal("old cleanup removed new reservation")
+			}
+		})
+	}
+}
+
+func TestWeixinRollbackDoesNotBlockOtherProfiles(t *testing.T) {
+	f := newWeixinFixture(t)
+	f.connect("bot-a", "default", "account-a", "user-a")
+	lease := f.run("claim", "bot-b", "profile-b", "").ReservationID
+	f.credentials("profile-b", "account-a", "user-a")
+	f.write(filepath.Join(f.bin, "acli"), "#!/bin/sh\nif [ \"$2\" = stop ]; then touch \"$HERMES_HOME/stop-started\"; while [ ! -f \"$HERMES_HOME/stop-continue\" ]; do sleep 0.05; done; fi\n", 0700)
+	var output bytes.Buffer
+	cmd := exec.Command(weixinTestPython(), "-c", manageChannelBindingScript, "confirm", "weixin", "bot-b", "profile-b", "instance-test", lease)
+	cmd.Env = append(os.Environ(), "HERMES_HOME="+f.home, "PATH="+f.bin+":"+os.Getenv("PATH"))
+	cmd.Stdout = &output
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cmd.Process.Kill() })
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, err := os.Stat(filepath.Join(f.home, "stop-started")); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("stop did not start")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	// A list/read must complete while stop is deliberately blocked, and another
+	// Profile must be able to confirm without its update being lost on reacquire.
+	read := exec.Command(weixinTestPython(), "-c", manageChannelBindingScript, "get", "weixin", "bot-a", "default", "instance-test", "")
+	read.Env = cmd.Env
+	completed := make(chan error, 1)
+	go func() { completed <- read.Run() }()
+	select {
+	case err := <-completed:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		_ = read.Process.Kill()
+		t.Fatal("read waited for gateway stop")
+	}
+	f.connect("bot-c", "profile-c", "account-c", "user-c")
+	if got := f.run("claim", "bot-b", "profile-b", ""); got.Reason != "scan_in_progress" {
+		t.Fatal("same profile not serialized")
+	}
+	f.write(filepath.Join(f.home, "stop-continue"), "", 0600)
+	if err := cmd.Wait(); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.run("get", "bot-c", "profile-c", ""); got.Status != "connected" {
+		t.Fatal("concurrent profile update lost")
+	}
+}
+
+func TestWeixinSnapshotWithoutUpstreamStatusHelpers(t *testing.T) {
+	f := newWeixinFixture(t)
+	f.write(filepath.Join(f.profile("profile-b"), "gateway.pid"), "synthetic", 0600)
+	if got := f.run("claim", "bot-b", "profile-b", ""); !got.OK {
+		t.Fatal("optional helper blocked claim")
+	}
+}
+
+func TestWeixinReleaseAndExpiredReservationRecoverAfterStopFailure(t *testing.T) {
+	for _, action := range []string{"release", "expired_claim"} {
+		t.Run(action, func(t *testing.T) {
+			f := newWeixinFixture(t)
+			lease := f.run("claim", "bot-b", "profile-b", "").ReservationID
+			f.credentials("profile-b", "account-b", "user-b")
+			if action == "expired_claim" {
+				path := filepath.Join(f.home, ".lightvela", "channel-bindings", "weixin.json")
+				data, err := os.ReadFile(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var payload map[string]map[string]map[string]any
+				if err := json.Unmarshal(data, &payload); err != nil {
+					t.Fatal(err)
+				}
+				payload["bindings"]["profile-b"]["updated_at"] = "2000-01-01T00:00:00+00:00"
+				data, _ = json.Marshal(payload)
+				f.write(path, string(data), 0600)
+			}
+			f.write(filepath.Join(f.bin, "acli"), "#!/bin/sh\nexit 1\n", 0700)
+			requestAction := action
+			if action == "expired_claim" {
+				requestAction = "claim"
+			}
+			if got := f.run(requestAction, "bot-b", "profile-b", lease); got.Reason != "recovery_failed" {
+				t.Fatalf("failure: %+v", got)
+			}
+			env, _ := os.ReadFile(filepath.Join(f.profile("profile-b"), ".env"))
+			if strings.Contains(string(env), "WEIXIN_") {
+				t.Fatal("cancel/expiry retained credentials")
+			}
+			f.write(filepath.Join(f.bin, "acli"), "#!/bin/sh\nexit 0\n", 0700)
+			if got := f.run("claim", "bot-b", "profile-b", ""); !got.OK || got.ReservationID == lease {
+				t.Fatalf("retry: %+v", got)
+			}
+		})
 	}
 }

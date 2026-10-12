@@ -20,8 +20,11 @@ func (e *WeixinAccountOccupiedError) ErrorDetail() any {
 }
 
 func (l *logic) channelBindingFailure(ctx pctx.Context, instanceID string, binding *channelBindingPayload) error {
+	if binding.Reason == "recovery_failed" {
+		return errcode.ErrWeixinRecoveryFailed
+	}
 	if binding.Reason != "account_occupied" {
-		return errcode.Wrap(errcode.ErrInstanceBotConflict, "confirm channel: %s", binding.Reason)
+		return errcode.Wrap(errcode.ErrInstanceBotConflict, "channel binding: %s", binding.Reason)
 	}
 	owner, err := l.getInstanceBotResponse(ctx, instanceID, binding.BotID)
 	if err != nil {
@@ -31,6 +34,13 @@ func (l *logic) channelBindingFailure(ctx pctx.Context, instanceID string, bindi
 		Channel: uniqueChannelWeixin, BotID: owner.BotID, BotName: owner.Name, ProfileID: owner.ProfileID, Status: "connected",
 	}}
 }
+
+// BotChannelOccupiedError preserves the channel through HTTP error serialization.
+type BotChannelOccupiedError struct{ Channel string }
+
+func (e *BotChannelOccupiedError) Error() string    { return "disconnect channel before deleting bot" }
+func (e *BotChannelOccupiedError) Unwrap() error    { return errcode.ErrChannelOccupied }
+func (e *BotChannelOccupiedError) ErrorDetail() any { return map[string]string{"channel": e.Channel} }
 
 // This script runs inside the Hermes virtualenv; backup credentials stay private on the instance.
 const weixinAccountBindingFunctions = `import copy
@@ -78,8 +88,14 @@ def weixin_snapshot(home, root, profile_id, current):
     os.chmod(backup, 0o700)
     gateway_running = bool(current and current.get('status') == 'connected')
     if (profile_home / 'gateway.pid').exists() or (profile_home / 'gateway_state.json').exists():
-        from hermes_cli.profiles import _check_gateway_running
-        gateway_running = _check_gateway_running(profile_home)
+        # Runtime status helpers are optional across Hermes versions. Do not make
+        # a private CLI function a prerequisite for claiming a channel.
+        try:
+            from gateway.status import get_running_pid, read_runtime_status, get_runtime_status_running_pid
+            gateway_running = bool(get_running_pid(profile_home / 'gateway.pid', cleanup_stale=False) or
+                get_runtime_status_running_pid(read_runtime_status(profile_home / 'gateway_state.json'), expected_home=profile_home))
+        except (ImportError, AttributeError, OSError, ValueError, TypeError):
+            gateway_running = True  # Conservatively restore gateways used by other channels.
     state = {
         'binding': current,
         'gateway_running': gateway_running,
@@ -95,55 +111,73 @@ def weixin_snapshot(home, root, profile_id, current):
             os.chmod(child, 0o700 if child.is_dir() else 0o600)
 
 
-def weixin_rollback(home, root, profile_id, write_current, clear_current):
+def weixin_rollback(home, root, profile_id, current, write_current, clear_current, gateway_command):
     from dotenv import dotenv_values, set_key, unset_key
     backup = root / 'weixin-scans' / profile_id
-    state = json.loads((backup / 'state.json').read_text(encoding='utf-8'))
+    pending = {**current, 'status': 'recovery_required'}
+    write_current(pending)
+    try:
+        state = json.loads((backup / 'state.json').read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return False
     agent = 'main' if profile_id == 'default' else profile_id
     # Stop only the rejected Profile; never manipulate the owning Bot's gateway.
-    subprocess.run(['acli', 'gateway', 'stop', '--agent', agent], check=True, timeout=45, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    profile_home = weixin_profile_home(home, profile_id)
-    env_path = profile_home / '.env'
-    for key in dotenv_values(env_path, interpolate=False):
-        if key.startswith('WEIXIN_'):
-            unset_key(env_path, key)
-    for key, value in state['env'].items():
-        if value is not None:
-            set_key(env_path, key, value)
-    if env_path.exists():
-        os.chmod(env_path, 0o600)
-    config_path = profile_home / 'config.yaml'
-    if config_path.exists() or state['platform'] is not None:
-        import yaml
-        config = weixin_config(profile_home)
-        platforms = config.setdefault('platforms', {})
-        if state['platform'] is None:
-            platforms.pop('weixin', None)
-        else:
-            platforms['weixin'] = state['platform']
-        temporary = config_path.with_suffix('.weixin.tmp')
-        temporary.write_text(yaml.safe_dump(config, allow_unicode=True), encoding='utf-8')
-        os.chmod(temporary, 0o600)
-        temporary.replace(config_path)
-    shutil.rmtree(profile_home / 'weixin', ignore_errors=True)
-    if (backup / 'weixin').is_dir():
-        shutil.copytree(backup / 'weixin', profile_home / 'weixin')
+    stopped = gateway_command(['acli', 'gateway', 'stop', '--agent', agent], 45)
+    try:
+        profile_home = weixin_profile_home(home, profile_id)
+        env_path = profile_home / '.env'
+        for key in dotenv_values(env_path, interpolate=False):
+            if key.startswith('WEIXIN_'):
+                unset_key(env_path, key)
+        for key, value in state['env'].items():
+            if value is not None:
+                set_key(env_path, key, value)
+        if env_path.exists():
+            os.chmod(env_path, 0o600)
+        config_path = profile_home / 'config.yaml'
+        if config_path.exists() or state['platform'] is not None:
+            import yaml
+            config = weixin_config(profile_home)
+            platforms = config.setdefault('platforms', {})
+            if state['platform'] is None:
+                platforms.pop('weixin', None)
+            else:
+                platforms['weixin'] = state['platform']
+            temporary = config_path.with_suffix('.weixin.tmp')
+            temporary.write_text(yaml.safe_dump(config, allow_unicode=True), encoding='utf-8')
+            os.chmod(temporary, 0o600)
+            temporary.replace(config_path)
+        shutil.rmtree(profile_home / 'weixin', ignore_errors=True)
+        if (backup / 'weixin').is_dir():
+            shutil.copytree(backup / 'weixin', profile_home / 'weixin')
+    except Exception:
+        # Configuration parsers and filesystem errors must leave a retryable
+        # recovery record, never a raw traceback containing credential values.
+        return False
     previous = state['binding']
+    if not stopped:
+        return False
     if state.get('gateway_running') or (previous and previous.get('status') == 'connected'):
-        subprocess.run(['acli', 'gateway', 'restart', '--agent', agent], check=True, timeout=60, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if not gateway_command(['acli', 'gateway', 'restart', '--agent', agent], 60):
+            return False
     if previous:
         write_current(previous)
     else:
         clear_current()
     shutil.rmtree(backup)
+    return True
 
 
-def manage_weixin_account(action, home, root, profile_id, bot_id, reservation_id, current, bindings, write_current, clear_current):
+def manage_weixin_account(action, home, root, profile_id, bot_id, reservation_id, current, bindings, write_current, clear_current, gateway_command):
     if action == 'get':
         return current or {'ok': True}
     if action == 'claim':
         if current and current.get('bot_id') != bot_id:
             return {'ok': False, 'reason': 'occupied', 'bot_id': current.get('bot_id', '')}
+        if current and current.get('status') == 'recovery_required':
+            if not weixin_rollback(home, root, profile_id, current, write_current, clear_current, gateway_command):
+                return {'ok': False, 'reason': 'recovery_failed'}
+            current = bindings.get(profile_id)
         if current and current.get('status') == 'reserved':
             try:
                 expired = datetime.now(timezone.utc) - datetime.fromisoformat(current['updated_at']) >= timedelta(minutes=10)
@@ -151,7 +185,8 @@ def manage_weixin_account(action, home, root, profile_id, bot_id, reservation_id
                 expired = True
             if not expired:
                 return {'ok': False, 'reason': 'scan_in_progress'}
-            weixin_rollback(home, root, profile_id, write_current, clear_current)
+            if not weixin_rollback(home, root, profile_id, current, write_current, clear_current, gateway_command):
+                return {'ok': False, 'reason': 'recovery_failed'}
             current = bindings.get(profile_id)
         if current and current.get('status') == 'connected' and not current.get('account_id'):
             current = {**current, **weixin_credentials(home, profile_id)}
@@ -168,13 +203,14 @@ def manage_weixin_account(action, home, root, profile_id, bot_id, reservation_id
         if not identity['account_id']:
             return {'ok': False, 'reason': 'credentials_missing'}
         for other_profile, owner in bindings.items():
-            if other_profile == profile_id or owner.get('status') not in ('connected', 'reserved'):
+            if other_profile == profile_id or owner.get('status') not in ('connected', 'reserved', 'recovery_required'):
                 continue
             # Reserved reconnects keep their previous account identity. New scans have none.
             other = owner if owner.get('account_id') else (weixin_credentials(home, other_profile) if owner.get('status') == 'connected' else {})
             if identity['account_id'] == other.get('account_id') or (identity['user_id'] and identity['user_id'] == other.get('user_id')):
                 conflict = {'ok': False, 'reason': 'account_occupied', 'bot_id': owner.get('bot_id', ''), 'profile_id': other_profile}
-                weixin_rollback(home, root, profile_id, write_current, clear_current)
+                if not weixin_rollback(home, root, profile_id, current, write_current, clear_current, gateway_command):
+                    return {'ok': False, 'reason': 'recovery_failed'}
                 return conflict
         current.update({**identity, 'ok': True, 'status': 'connected', 'updated_at': datetime.now(timezone.utc).isoformat()})
         current.pop('reservation_id', None)
@@ -184,10 +220,11 @@ def manage_weixin_account(action, home, root, profile_id, bot_id, reservation_id
     if action in ('release', 'release_reserved', 'disconnect'):
         if not current or current.get('bot_id') != bot_id:
             return {'ok': True}
-        if current.get('status') == 'reserved':
+        if current.get('status') in ('reserved', 'recovery_required'):
             if reservation_id and current.get('reservation_id') != reservation_id:
                 return {'ok': True}
-            weixin_rollback(home, root, profile_id, write_current, clear_current)
+            if not weixin_rollback(home, root, profile_id, current, write_current, clear_current, gateway_command):
+                return {'ok': False, 'reason': 'recovery_failed'}
         elif action != 'release_reserved' and not weixin_credentials(home, profile_id)['account_id']:
             clear_current()
         return {'ok': True}

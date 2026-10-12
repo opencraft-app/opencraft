@@ -10,7 +10,7 @@ source_of_truth:
 status: retired
 reviewed_at: 2026-10-12
 review_due: 2026-11-12
-revision: 1.0.0
+revision: 1.1.0
 precedence: task
 derived: false
 ---
@@ -89,3 +89,22 @@ derived: false
 - discard: earlier rectangular button mock。
 - restore: isolated worktrees above, preserve primary dirty checkout。
 - next_action: commit backend, push feature branch, create standalone MR。
+
+## CR r3 implementation checkpoint
+- 用户授权修复回滚恢复、实例锁等待、上游兼容、删除错误契约及必执行测试门禁。
+- 读取 CI service / release-gitops / .ci AGENTS / adjacency argocd-ci-secrets；CI guard 只执行测试，不发布。
+- next_action: restore configuration independently from gateway failures; exercise rollback failures and concurrent reads; update existing MRs.
+
+## CR r3 handoff checkpoint
+- verified: stop/restart failures restore credentials and retain retryable recovery state; release/expiry recovery and stale lease tests; concurrent get/other Profile confirm complete during blocked stop; HTTP delete channel contract.
+- required test interpreter: guard creates a pinned dotenv/PyYAML venv; missing-dependency probe fails explicitly instead of skipping. Focused Go regression/vet passed.
+- baseline: merged origin/master 245d8785f with only an append-section documentation conflict, preserving both designs.
+- limitations: full CI runtime check fails on this host (Git 2.24 lacks init -b; missing kustomize / other runtime dependencies); new registry/dispatched guard checks passed; no release or real WeChat scan.
+- next_action: push fixes to !5222, capture remote SHA/mergeability/CI snapshot.
+
+## CR r3 context receipt additions
+- `.ci/AGENTS.md`: mandatory runtime check and release authorization boundary.
+- `docs/context/project/services/ci.md`: guard implementation routing.
+- `docs/context/domains/release-gitops.md`: trusted CI vs release evidence.
+- `docs/context/project/adjacency/argocd-ci-secrets.md`: inspected guards.manifest and referral guard neighbor.
+- Final mandatory guard: 61 test cases passed, zero skipped; focused vet passed.

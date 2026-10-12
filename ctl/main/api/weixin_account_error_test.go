@@ -29,3 +29,26 @@ func TestWeixinAccountConflictExposesOwnerName(t *testing.T) {
 		t.Fatalf("unexpected payload: %+v", payload)
 	}
 }
+
+func TestDeleteBotChannelConflictHTTPContract(t *testing.T) {
+	for _, channel := range []string{"weixin", "whatsapp"} {
+		t.Run(channel, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodDelete, "/v1/instances/test/bots/bot-b", nil)
+			writeHTTPError(rec, req, &instance.BotChannelOccupiedError{Channel: channel})
+			var payload struct {
+				Code    string `json:"code"`
+				Message string `json:"message"`
+				Details struct {
+					Channel string `json:"channel"`
+				} `json:"details"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+				t.Fatal(err)
+			}
+			if rec.Code != 409 || payload.Code != "CHANNEL_OCCUPIED" || payload.Message != "channel is already connected to another bot" || payload.Details.Channel != channel {
+				t.Fatalf("contract: %+v", payload)
+			}
+		})
+	}
+}

@@ -1191,3 +1191,9 @@ CTL 的微信 claim 在实例本地保存私有扫码回滚快照，并返回 re
 桌面入口 `/usr/local/lib/vela-desktop-browser-v2/chrome` 通过硬链接复用 root 控制的镜像缓存可执行文件，同目录资源用软链接。若内核限制 user namespace，AppArmor profile 只匹配该专用入口；不得给原 `/opt/ms-playwright/.../chrome` 添加该策略、修改全局 sysctl、关闭沙箱或放开用户可写浏览器缓存。桌面 profile 与 Agent 数据目录隔离，不新增 CDP/9222，不修改 Hermes/OpenClaw 配置或重启进程。
 
 已有系统浏览器或自定义 XFCE/MIME 关联保守跳过；缺浏览器、依赖、跨文件系统硬链接、路径/策略冲突及配置漂移均进入显式处理队列，不自动安装降级。`CONFIGURED`/`ALREADY_CONFIGURED` 是配置状态，不能替代默认启动器、真实 DOM、浏览器沙箱与公共网页的 GUI 验收。若实例还没有 XFCE/exo-open，需要后续桌面准备后验收入口。
+
+### 微信回滚失败与删除契约
+
+微信 Profile 的变更由独立操作锁串行化；实例元数据锁只保护绑定读写和账号查重，网关 stop/restart 在释放实例锁后执行，并在重新获取锁后重读绑定，保留其他 Profile 的并发更新。回滚先标记 `recovery_required`，即使网关命令失败也恢复微信配置和账号文件；失败保留私有快照和原账号身份，返回 `WEIXIN_RECOVERY_FAILED`，再次 claim/release 可重试恢复，成功后才撤销恢复标记。旧预约不能清理新的扫码。快照使用可选的 runtime status helper，版本不兼容时保守恢复网关，不依赖私有 CLI 函数。
+
+删除 Bot 的 `CHANNEL_OCCUPIED` 使用 `details.channel` 区分 `weixin` / `whatsapp`；前端不能依赖 HTTP 传输会丢弃的内部错误包装文本。

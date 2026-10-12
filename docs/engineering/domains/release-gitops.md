@@ -838,3 +838,7 @@ MR 占位检查在 checkout 后校验期望提交和该提交下的全部受跟�
 提交号相同不能证明工作树正确：复用 runner 可能残留旧前端源码或旧 OpenCraft 生成副本。
 发现提交或受跟踪文件不一致时，对本次构建工作区执行既有 reset/clean，再核验 HEAD 和完整 tracked diff。
 这只恢复构建输入，不执行机械同步来掩盖源码中真实的生成漂移，也不修改 trusted guard 或发布权限。
+
+### CTL 微信 MR 回归门禁
+
+`ctl-weixin` changed guard 使用临时 Python venv，固定 python-dotenv / PyYAML 依赖，并显式传给 Go 脚本测试；缺依赖或任何所选用例 skip 均失败。聚焦实例/HTTP 契约测试与 vet 以 CGO=0 执行，不代替 SQLite/Docker 全量测试。MR 执行器使用 trusted base 的 guard 定义，新 guard 合入可信基座后才会自动选择；当前 MR 必须单独运行该 guard 留证。

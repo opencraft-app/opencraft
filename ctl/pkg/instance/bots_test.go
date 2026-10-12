@@ -427,7 +427,7 @@ func TestChannelBindingScriptIsolatesWeixinOwnersAndPreservesConnectedBinding(t 
 		if action == "release" {
 			_ = os.Remove(filepath.Join(profileHome, ".env"))
 		}
-		command := exec.Command("python3", "-c", manageChannelBindingScript, action, channel, botID, profileID, "default-bot")
+		command := exec.Command(weixinTestPython(), "-c", manageChannelBindingScript, action, channel, botID, profileID, "default-bot")
 		command.Env = append(os.Environ(), "HERMES_HOME="+home)
 		output, err := command.Output()
 		if err != nil {
@@ -490,7 +490,7 @@ func TestChannelBindingScriptPreservesLegacyWeixinOwnerWhenAnotherBotConnects(t 
 	}
 	run := func(action, botID, profileID string) channelBindingPayload {
 		t.Helper()
-		command := exec.Command("python3", "-c", manageChannelBindingScript, action, "weixin", botID, profileID, "default-bot")
+		command := exec.Command(weixinTestPython(), "-c", manageChannelBindingScript, action, "weixin", botID, profileID, "default-bot")
 		command.Env = append(os.Environ(), "HERMES_HOME="+home)
 		output, err := command.Output()
 		if err != nil {
@@ -539,7 +539,7 @@ func TestWhatsAppBindingAdoptsLegacyDefaultSessionOnce(t *testing.T) {
 	}
 	run := func(action, botID string) channelBindingPayload {
 		t.Helper()
-		command := exec.Command("python3", "-c", manageChannelBindingScript, action, "whatsapp", botID, "default", "default-bot")
+		command := exec.Command(weixinTestPython(), "-c", manageChannelBindingScript, action, "whatsapp", botID, "default", "default-bot")
 		command.Env = append(os.Environ(), "HERMES_HOME="+home)
 		output, err := command.Output()
 		if err != nil {
@@ -568,7 +568,7 @@ func TestWhatsAppBindingAdoptsLegacyDefaultSessionOnce(t *testing.T) {
 
 func runWhatsAppBindingForTest(t *testing.T, home, action, botID, reservationID string) channelBindingPayload {
 	t.Helper()
-	command := exec.Command("python3", "-c", manageChannelBindingScript, action, "whatsapp", botID, "profile-1", "default-bot", reservationID)
+	command := exec.Command(weixinTestPython(), "-c", manageChannelBindingScript, action, "whatsapp", botID, "profile-1", "default-bot", reservationID)
 	command.Env = append(os.Environ(), "HERMES_HOME="+home)
 	output, err := command.Output()
 	if err != nil {
@@ -765,7 +765,7 @@ func TestWhatsAppConcurrentClaimsSerializeAcrossProcesses(t *testing.T) {
 	for _, botID := range []string{"bot-1", "bot-2"} {
 		go func(botID string) {
 			<-start
-			command := exec.Command("python3", "-c", manageChannelBindingScript, "claim", "whatsapp", botID, botID, "default-bot", "")
+			command := exec.Command(weixinTestPython(), "-c", manageChannelBindingScript, "claim", "whatsapp", botID, botID, "default-bot", "")
 			command.Env = append(os.Environ(), "HERMES_HOME="+home)
 			output, err := command.Output()
 			var result channelBindingPayload
@@ -919,6 +919,11 @@ func TestDeleteInstanceBotRejectsWeixinOwner(t *testing.T) {
 	if !errors.Is(err, errcode.ErrChannelOccupied) {
 		t.Fatalf("expected connected Weixin owner rejection, got %v", err)
 	}
+	var occupied *BotChannelOccupiedError
+	if !errors.As(err, &occupied) || occupied.Channel != uniqueChannelWeixin {
+		t.Fatal("delete error lost its channel contract")
+	}
+
 	if len(adapter.ptyCalls) != 2 || len(adapter.processCalls) != 0 {
 		t.Fatalf("connected Weixin owner rejection must only use TAT lookups, pty=%d envd=%d", len(adapter.ptyCalls), len(adapter.processCalls))
 	}
@@ -946,6 +951,11 @@ func TestDeleteInstanceBotRejectsWhatsAppOwner(t *testing.T) {
 	if !errors.Is(err, errcode.ErrChannelOccupied) {
 		t.Fatalf("expected connected WhatsApp owner rejection, got %v", err)
 	}
+	var occupied *BotChannelOccupiedError
+	if !errors.As(err, &occupied) || occupied.Channel != uniqueChannelWhatsApp {
+		t.Fatal("delete error lost its channel contract")
+	}
+
 	if len(adapter.ptyCalls) != 3 {
 		t.Fatalf("expected profile and both channel binding lookups, got %d", len(adapter.ptyCalls))
 	}
