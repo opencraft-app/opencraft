@@ -398,6 +398,15 @@ stages:
               AUTO_PIN_ONLY=true bash "$REPO_ROOT/.ci/runtime/build_and_promote_to_gitops.sh" "${{ parameters.SERVICE }}" "${{ parameters.BUNDLE }}" "${BUILD_ENVS}" "${AUTO_PIN_ENVS}"
           - name: 手动发布 ${{ parameters.DISPLAY_NAME }} 到 GitOps
             shell: bash
+            env:
+              TCR_BEIJING_PASSWORD: ${{ settings.TCR_BEIJING_PASSWORD }}
+              TCR_BEIJING_LLMGATEWAY_PASSWORD: ${{ settings.TCR_BEIJING_LLMGATEWAY_PASSWORD }}
+              TCR_KR1_PASSWORD: ${{ settings.TCR_KR1_PASSWORD }}
+              TCR_JP1_PASSWORD: ${{ settings.TCR_JP1_REGISTRY_CREDENTIAL.password }}
+              TCR_SHPROD_PASSWORD: ${{ settings.TCR_SHPROD_PASSWORD }}
+              TCR_SGPROD_PASSWORD: ${{ settings.TCR_SGPROD_PASSWORD }}
+              CSIGHUB_USERNAME: ${{ settings.CSIGHUB_USERNAME }}
+              CSIGHUB_PASSWORD: ${{ settings.CSIGHUB_PASSWORD }}
             run: |
               if [[ "${{ variables.PIPELINE_MODE }}" != "promote" ]]; then
                 echo "skip promote step because PIPELINE_MODE=${{ variables.PIPELINE_MODE }}"
