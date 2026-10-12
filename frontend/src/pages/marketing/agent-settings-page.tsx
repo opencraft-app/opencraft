@@ -1,3 +1,4 @@
+import { AgentWeixinAccountConflictDialog } from "@/pages/marketing/agent-weixin-account-conflict-dialog";
 import { useCollaborationShown } from "@/lib/collaboration-visibility";
 import { AgentSidebar, AgentSidebarToggle, useAgentSidebarCollapse } from "@/components/site/agent-sidebar";
 import { AgentConsoleHostProjection, type AgentConsoleHostPort } from "./agent-console-host";
@@ -92,7 +93,7 @@ import type {
   LightVelaSessionActions,
 } from "./agent-chat-panel";
 import { resolveAgentSidebarEmptySessionState, runBotScopedSessionPin, useAgentSidebarSessionList, useAgentSidebarUnreadSessions } from "./agent-sidebar-session-list";
-import { AUTH_SERVICE_UNAVAILABLE_MESSAGE, readStoredAuthToken } from "@/repositories/http-repositories";
+import { AUTH_SERVICE_UNAVAILABLE_MESSAGE, readStoredAuthToken, RepositoryError } from "@/repositories/http-repositories";
 import {
   AGENTS_HOME_PATH,
   AGENT_BOT_QUERY_KEY,
@@ -3533,6 +3534,8 @@ export const AgentSettingsPage = ({
    * 仅在 activeBot 存在时构造；无 bot 时传 undefined，面板内部 fallback 到空
    * executor 占位（实际操作路径不会触发）。
    */
+  const [weixinAccountConflict, setWeixinAccountConflict] = useState<{ botId: string; botName: string } | null>(null);
+
   const teaSdkCommandExecutor = useMemo<ICommandExecutor | undefined>(
     () => {
       if (!activeBotId) return undefined;
@@ -3568,6 +3571,10 @@ export const AgentSettingsPage = ({
         } catch (error) {
           if (shouldClaim && channel && (channel === "weixin" || reservationId)) {
             await repositories.bots.releaseUniqueChannel(activeBotId, channel, reservationId).catch(() => undefined);
+          }
+          if (channel === "weixin" && error instanceof RepositoryError && error.occupiedByBot) {
+            setWeixinAccountConflict(error.occupiedByBot);
+            await refreshBots().catch(() => undefined);
           }
           throw error;
         }
@@ -4956,6 +4963,15 @@ export const AgentSettingsPage = ({
       )}
       style={{ color: "rgba(0,0,0,0.90)" }}
     >
+      <AgentWeixinAccountConflictDialog
+        owner={weixinAccountConflict}
+        onClose={() => setWeixinAccountConflict(null)}
+        onVisit={(botId) => {
+          setWeixinAccountConflict(null);
+          prepareBotSwitch(botId);
+          navigate(getAgentBotSectionHref(AGENT_SECTION_PATH_BY_ID.channel, botId), { replace: true });
+        }}
+      />
       {showHeader && (
         <ProductReturnHomeHeader
           beforeUserMenu={(hasSidebarLayout || shouldShowDataLoading) ? (

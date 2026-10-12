@@ -142,6 +142,13 @@ export const HermesQrCodeModal = forwardRef<IHermesQrCodeModalHandle, IHermesQrC
       setVisible(true);
       updateStatus('loading');
 
+      let scanSucceeded = false;
+      const finishSuccess = () => {
+        updateStatus('success');
+        setVisible(false);
+        resetState();
+        onSuccess?.();
+      };
       try {
         const command = scriptCommands.hermes.channel.getQrUrlCommand({
           platform,
@@ -166,11 +173,9 @@ export const HermesQrCodeModal = forwardRef<IHermesQrCodeModalHandle, IHermesQrC
               return;
             }
             if (line.status === 'success') {
-              // 扫码成功，关闭弹窗
-              updateStatus('success');
-              setVisible(false);
-              resetState();
-              onSuccess?.();
+              scanSucceeded = true;
+              // Weixin success includes CTL account confirmation, which follows the stream.
+              if (platform !== 'weixin') finishSuccess();
               return;
             }
             // status === 'pending'：二维码 URL 就绪
@@ -183,6 +188,7 @@ export const HermesQrCodeModal = forwardRef<IHermesQrCodeModalHandle, IHermesQrC
         });
 
         if (!isFlowValid()) return;
+        if (platform === 'weixin' && scanSucceeded && result.success) finishSuccess();
 
         // acli 流式协议：ready/success/failed 状态已在 onProgress 中处理；
         // 这里只在"还卡在 loading（即始终没收到任何 pending/success/failed 行）"
@@ -196,6 +202,13 @@ export const HermesQrCodeModal = forwardRef<IHermesQrCodeModalHandle, IHermesQrC
         }
       } catch (error) {
         if (!isFlowValid()) return;
+        if (platform === 'weixin' && error instanceof Error && 'code' in error
+          && error.code === 'WEIXIN_ACCOUNT_OCCUPIED' && 'occupiedByBot' in error && error.occupiedByBot) {
+          // The host displays the owning Bot's conflict dialog.
+          setVisible(false);
+          resetState();
+          return;
+        }
         console.error('[HermesQrCodeModal] startQrCodeFlow failed:', error);
         updateStatus('failed');
       }
@@ -247,7 +260,7 @@ export const HermesQrCodeModal = forwardRef<IHermesQrCodeModalHandle, IHermesQrC
         }
       } catch (error) {
         if (!isFlowValid()) return;
-        if (error?.code === 'CANCELLED') {
+        if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'CANCELLED') {
           resetState();
           return;
         }

@@ -730,7 +730,7 @@ describe("http repositories auth token bootstrap", () => {
         });
       }
       if (url.includes("/channel-bindings/weixin")) {
-        return jsonResponse({});
+        return jsonResponse(method === "PUT" ? { reservation_id: "weixin-lease" } : {});
       }
       if (url.includes("/channel-bindings/whatsapp")) {
         return jsonResponse(method === "PUT" ? { reservation_id: "test-reservation" } : {});
@@ -771,6 +771,17 @@ describe("http repositories auth token bootstrap", () => {
       { url: "https://lightclaw.tech/v1/instances/ins_multi/bots/bot_sales/channel-bindings/weixin", method: "POST" },
       { url: "https://lightclaw.tech/v1/instances/ins_multi/bots/bot_sales/channel-bindings/weixin", method: "DELETE" },
     ]);
+    const weixinLease = await repositories.bots.claimUniqueChannel("bot_sales", "weixin");
+    expect(weixinLease).toBe("weixin-lease");
+    await repositories.bots.releaseUniqueChannel("bot_sales", "weixin", weixinLease);
+    expect(JSON.parse(String(fetchMock.mock.calls.at(-1)?.[1]?.body))).toEqual({ reservation_id: "weixin-lease" });
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({
+      code: "WEIXIN_ACCOUNT_OCCUPIED", message: "account occupied",
+      details: { occupied_by_bot: { channel: "weixin", bot_id: "ins_multi", bot_name: "工作助手" } },
+    }), { status: 409, headers: { "Content-Type": "application/json" } }));
+    await expect(repositories.bots.confirmUniqueChannel("bot_sales", "weixin", weixinLease)).rejects.toMatchObject({
+      status: 409, code: "WEIXIN_ACCOUNT_OCCUPIED", occupiedByBot: { botId: "ins_multi", botName: "工作助手" },
+    });
     const reservationId = await repositories.bots.claimUniqueChannel("bot_sales", "whatsapp");
     expect(reservationId).toBe("test-reservation");
     await repositories.bots.confirmUniqueChannel("bot_sales", "whatsapp", reservationId);

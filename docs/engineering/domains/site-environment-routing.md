@@ -241,3 +241,8 @@ OpenCraft iOS 的内置 Bot DOM runtime 同时包含国内与国际的 frontend 
 文档复用 Fumadocs 移动导航与搜索，并以 `--fd-banner-height: 60px` 为公开站点顶部栏预留空间，防止搜索和侧栏入口被覆盖。桌面保留原有文档侧栏搜索。
 
 全局搜索弹窗挂载在文档页面的语言 Provider 之外，因此弹窗根据当前文档路径解析语言，并复用 `docs-ui-translations.ts` 的 UI 目录，避免泰语结果仍配英文搜索框和关闭按钮。
+
+
+### 微信账号冲突的 API 消费
+
+Bot 通道确认返回 `409 WEIXIN_ACCOUNT_OCCUPIED` 时，Repository 读取 `details.occupied_by_bot` 中的真实 `bot_id` / `bot_name`。前端保留现有实例与 Bot 归属解析，弹窗提供前往原 Bot 通道配置页的操作；用户手动断开后再扫码。Weixin 流式成功只表示扫码完成，须等 CTL confirm 成功才触发连接成功提示。旧后端/无有效 owner details 的错误仍走原失败提示。回滚和账号唯一性由 CTL 负责；双站代码共享不构成任何站点已发布证据。

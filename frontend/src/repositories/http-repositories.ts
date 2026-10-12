@@ -87,6 +87,7 @@ interface ApiErrorPayload {
   request_id?: string;
   requestId?: string;
   retryAfterSeconds?: number;
+  details?: { occupied_by_bot?: { channel?: unknown; bot_id?: unknown; bot_name?: unknown } };
 }
 
 interface DebugExecStreamEvent {
@@ -281,6 +282,7 @@ class RepositoryError extends Error {
   status: number;
   code?: string;
   retryAfterSeconds?: number;
+  occupiedByBot?: { botId: string; botName: string };
 
   constructor(message: string, status: number, code?: string, retryAfterSeconds?: number) {
     super(message);
@@ -540,7 +542,14 @@ const parseApiError = async (response: Response): Promise<RepositoryError> => {
   const requestId = payload?.request_id?.trim() || payload?.requestId?.trim();
   const detail = [code, requestId ? `request_id=${requestId}` : ""].filter(Boolean).join(", ");
   const message = payload?.message?.trim() || payload?.error?.trim() || `请求失败（${response.status}）`;
-  return new RepositoryError(detail ? `${message}（${detail}）` : message, response.status, code, payload?.retryAfterSeconds);
+  const error = new RepositoryError(detail ? `${message}（${detail}）` : message, response.status, code, payload?.retryAfterSeconds);
+  const owner = payload?.details?.occupied_by_bot;
+  if (code === "WEIXIN_ACCOUNT_OCCUPIED" && owner?.channel === "weixin"
+    && typeof owner.bot_id === "string" && owner.bot_id.trim()
+    && typeof owner.bot_name === "string" && owner.bot_name.trim()) {
+    error.occupiedByBot = { botId: owner.bot_id, botName: owner.bot_name };
+  }
+  return error;
 };
 
 const request = async <T>(
@@ -1353,7 +1362,7 @@ const createHttpBotRepository = (baseUrl: string): BotRepository => {
       const { instanceId } = await resolveBotScope(botId);
       await requestEnvelope(baseUrl, `/v1/instances/${encodeURIComponent(instanceId)}/bots/${encodeURIComponent(botId)}/channel-bindings/${channel}`, {
         method: "DELETE",
-        body: channel === "whatsapp" ? (reservationId ? { reservation_id: reservationId } : { disconnect: true }) : undefined,
+        body: reservationId ? { reservation_id: reservationId } : { disconnect: true },
       });
     },
 
