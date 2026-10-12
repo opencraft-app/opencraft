@@ -63,6 +63,7 @@ Host 两种实现收发同一份 JSON：生产 `--bot-host-ctl-url` + `--bot-hos
   后台以 App 管理员 `create_group`（Public 群）并写成员。成员必须是本服务已知的 IM 身份（否则 422 `im_identity_unknown`），最多 49 个。
 - 读取返回 `replyMode`、`effectiveReplyMode`（没有人类成员时为 `all`）、`contextMessages`（10）、成员与 `viewerRole`。
 - 修改名称 / 回复规则、拉任何人、踢任何人：群主和管理员；解散：只有群主；任何成员可以移除自己（退群），群主不能被移出。
+- 解散后成员关系保留，成员仍能读取群：`dismissedBy` 是 `owner`、`admin` 或 `tencent`（在腾讯侧被解散），管理员解散时带 `dismissReason`。聊天页据此在输入框位置提示，向已解散群发消息失败时弹窗说明。
   普通成员可以拉入、移出自己账号下的 Bot（多人群里每个人带自己的 Agent）。人和 Bot 适用同一套权限。
 - 邀请：群主或管理员 `POST /v1/me/groups/{id}/invite-link` 得到 7 天有效的凭据（群 ID + 过期时间的 HMAC，
   密钥由访问令牌密钥派生，不落库）；其他 LightVela 用户 `POST /v1/me/group-invites/accept` 加入，已是成员时幂等返回。
@@ -110,7 +111,7 @@ chatserver im accounts [--list] [--check --im-sdk-app-id ID --im-admin-user-id U
 | `GET /admin/im/identities?q=&kind=` | 按 IM UserID、`usr_`、账号 ID 精确或按名称查找账号 |
 | `POST /admin/im/identities/{userId}/restrict`、`/release` | 限制（下线 + 停发 UserSig）或解除 |
 | `GET /admin/im/groups?q=&state=`、`GET /admin/im/groups/{id}` | 平台群与成员 |
-| `POST /admin/im/groups/{id}/dismiss` | 解散平台群 |
+| `POST /admin/im/groups/{id}/dismiss` | 解散平台群；`reason` 必填（1–200 字），群成员读取群时得到 `dismissedBy=admin` 和 `dismissReason` |
 | `POST /admin/im/accounts/{accountId}/bots/{botAgentId}/disable` | 停用 Bot（等同用户删除） |
 | `POST /admin/im/tencent-check` | 与腾讯逐批核对平台记录的账号 |
 
