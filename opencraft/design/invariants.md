@@ -335,3 +335,5 @@ and platform hit testing; the 16-unit optical box does not dictate the touch
 target. Mobile keeps 44-point targets with neutral, transparent toolbar buttons.
 Panel visibility remains a projection of its existing owner, including after
 a swipe; icon adaptation must not introduce a parallel navigation state.
+
+宽屏 Composer 默认编辑区以容器自身宽度为准：达到 768px 时最小高度为 52px；低于该宽度保持 26px。内容继续自动增高至既有滚动上限。

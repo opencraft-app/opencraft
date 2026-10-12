@@ -1226,3 +1226,7 @@ CTL 的微信 claim 在实例本地保存私有扫码回滚快照，并返回 re
 ### GUI 浏览器首次启动的凭据存储（2026-10-12）
 
 LightVela 复用镜像浏览器的专用 GUI 启动入口显式选择 `--password-store=basic`，避免未通过 PAM 密码登录的 XFCE 云桌面首次启动等待默认钥匙环。该凭据存储安全取舍已经产品确认，只作用于 GUI 入口，不更改 Agent 浏览器参数、不删除用户钥匙环或浏览器数据。存量旧入口需要校验 manifest 后单独升级；源码变更不能代替两地域发布与 GUI 验收。详见 `ctl/docs/desktop-browser-reuse.md`。
+
+OpenCraft Composer 的权限菜单由客户端语言包翻译已验证的标准档位、中文说明、加载/错误状态和待生效提示；引擎自定义 profile 名称与说明仍由 Host 提供。翻译不改变 profile ID、权限绑定或提交策略。实现契约见 `opencraft/docs/chat-ui-architecture.md`。
+
+中文聊天 Markdown 在标准 Marked 强调解析失败时，仅对 Han 与标点相邻的星号边界重试，保留代码遮罩、源文与权限/执行策略。对应回归覆盖截图原句、英语、转义与代码。

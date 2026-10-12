@@ -367,3 +367,35 @@ test("Codex user-message block preprocessing separates list kinds and protects f
     "```",
   ].join("\n"));
 });
+
+
+test("Han-adjacent punctuation emphasis from the Capacitor reply renders without literal markers", () => {
+  const compiler = new ChatDocumentCompiler();
+  const source = '你找不到是正常的，**Capacitor 不是 App Store 里的应用，而是供开发者制作 App 的框架。**官网是 [capacitorjs.com](https://capacitorjs.com)。\n\n如果你要找的是***“下载一个现成的 iOS App，就能打开网页，并给网页提供额外原生能力”***，Capacitor 不符合。';
+  for (const dialect of ["assistant", "user-message"] as const) {
+    for (const streaming of [false, true]) {
+      const parsed = compiler.compile(source, { dialect, streaming });
+      assert.equal(parsed.source, source);
+      const nodes = flatten(parsed.nodes);
+      const strong = nodes.filter(node => node.kind === "strong");
+      assert.equal(strong.length, 2);
+      assert.ok(nodes.some(node => node.kind === "emphasis"));
+      assert.match(chatDocumentPlainText(strong[0].children), /Capacitor.*框架。/u);
+      assert.match(chatDocumentPlainText(strong[1].children), /“下载.*原生能力”/u);
+      assert.doesNotMatch(chatDocumentPlainText(parsed.nodes), /\*\*/u);
+      assert.ok(nodes.some(node => node.kind === "link" && node.href === "https://capacitorjs.com"));
+    }
+  }
+});
+
+test("Han emphasis relaxation preserves code, escaped delimiters and English punctuation rules", () => {
+  const compiler = new ChatDocumentCompiler();
+  for (const source of ['`是***“代码”***`', '```text\n**句子。**后文\n```', String.raw`是\*\*“原样”\*\*`, 'word**“quoted”**word', '** leading**', '**trailing **']) {
+    const parsed = compiler.compile(source);
+    assert.equal(flatten(parsed.nodes).filter(node => node.kind === "strong").length, 0, source);
+  }
+  const parsed = compiler.compile('**包含 `**。**后文` 的句子。**结束');
+  assert.equal(flatten(parsed.nodes).filter(node => node.kind === "strong").length, 1);
+  assert.ok(flatten(parsed.nodes).some(node => node.kind === "inline-code" && node.code === '**。**后文'));
+  assert.equal(chatDocumentPlainText(compiler.compile('是***“还在输出').nodes).trimEnd(), '是***“还在输出');
+});
