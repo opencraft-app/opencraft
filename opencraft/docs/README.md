@@ -14,6 +14,7 @@ OpenCraft 是 mono2 内的多端 Agent Workbench 服务根，包含 Codex-faithf
 - 跨端存储生命周期：[SQLite / IndexedDB 升级与恢复](sqlite-lifecycle.md)、[插件持久化契约](plugin-persistence.md)、[Host 通用文档 API](host-document-storage.md)；client-local 与首个 Host 适配已实现，全量旧库恢复未实现，不引入 Drizzle。
 - Chat 与浏览器 Workbench：`opencraft/docs/chat-ui-architecture.md`、`opencraft/docs/browser-workbench-architecture.md`。
 - 执行所有权：[会话、运行实例与能力租约](execution-ownership.md)；明确创建提交、执行准入、断线撤销、释放及 warm 边界。
+- Tasks 与看板：[领域模型](tasks-model.md) 与 [实现入口](../plugins/tasks/README.md)；两张业务表，同源列表/看板、多会话关联与独立活动状态，首版源码已实现。
 - 构建目标：`opencraft/docs/build-matrix.md` 与 `opencraft/config/build-matrix.json`。
 - iOS 手机端容器与手势：[Mobile shell](mobile-shell.md)；打包的 frontend Bot runtime 与原生通信：[Embedded Bot bridge](mobile-bot-bridge.md)；缓存与请求状态：[Mobile data architecture](mobile-data-architecture.md)。
 

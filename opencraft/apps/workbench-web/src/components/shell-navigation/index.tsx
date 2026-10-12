@@ -48,6 +48,7 @@ export function useShellNavigation(input: {
   rightPanelOpen?: boolean;
   rightPanelFullWidth?: boolean;
   accountAvailable?: boolean;
+  unified?: boolean;
 }) {
   const preferences = useUiPreferencesRuntime();
   const preferenceSnapshot = useSyncExternalStore(
@@ -76,7 +77,7 @@ export function useShellNavigation(input: {
   const [previousLevel, setPreviousLevel] = useState<number>();
   const space = input.rightPanelOpen === undefined ? undefined : resolveShellSpace({
     width: input.viewportWidth,
-    navigationOpen: input.enabled && input.allowDock !== false && input.sidecarOpen
+    navigationOpen: !input.unified && input.enabled && input.allowDock !== false && input.sidecarOpen
       && (!input.contextAvailable || state.pinned.applications || (input.accountAvailable !== false && state.pinned.account)),
     navigationDetent: state.railDetent, navigationWidth: width,
     contextOpen: input.sidecarOpen && input.contextAvailable, contextWidth: input.contextWidth,
@@ -178,11 +179,15 @@ function ShellNavigationMotionFrame({ children, expandedWidth, frameWidth }: {
     data-shell-navigation-motion="geometry" style={style}>{children}</motion.div>;
 }
 
-export function ShellNavigationDock({ config, controller, expandedWidth, frameWidth, transient = false }: {
+export function ShellNavigationDock({ config, controller, expandedWidth, frameWidth, transient = false, onInvoke = action => action() }: {
   config: ShellNavigationConfig; controller: ShellNavigationController;
   expandedWidth?: MotionValue<number>; frameWidth?: MotionValue<number>; transient?: boolean;
+  onInvoke?: (action: () => void) => void;
 }) {
   const compact = !transient && controller.projection.railDetent === "compact";
+  if (config.layout === "unified") return <div className="shell-sidebar-navigation">
+    <NavigationContent config={config} surface="applications" includeSettings={false} onInvoke={onInvoke} />
+  </div>;
   const anonymousAccount = isAnonymousShellAccount(config.account);
   const content = surfaces.filter((surface) => {
     if (surface === "account") {
@@ -202,9 +207,10 @@ export function ShellNavigationDock({ config, controller, expandedWidth, frameWi
 }
 
 /** Stable footer of the Sidecar, never a window-wide bottom bar. */
-export function ShellNavigationFooter({ config, controller, visible = true, entranceId = "shell-entrance", onTogglePrimaryNavigation, onPin }: {
+export function ShellNavigationFooter({ config, controller, visible = true, entranceId = "shell-entrance", onTogglePrimaryNavigation, onPin, onInvoke = action => action() }: {
   config: ShellNavigationConfig; controller: ShellNavigationController; visible?: boolean; entranceId?: string;
   onTogglePrimaryNavigation?: () => void; onPin?: () => void;
+  onInvoke?: (action: () => void) => void;
 }) {
   const root = useRef<HTMLDivElement>(null);
   const { projection, state, dispatch } = controller;
@@ -216,14 +222,21 @@ export function ShellNavigationFooter({ config, controller, visible = true, entr
   const anonymousAccount = isAnonymousShellAccount(config.account);
   const intl = useIntl();
   const accountLabel = shellAccountEntranceLabel(config.account, intl);
-  const availableSurfaces = surfaces.filter((surface) => surface !== "account" || accountLabel !== null);
-  return <div ref={root} className="shell-navigation__footer" aria-label="Application entrances">
+  const unified = config.layout === "unified";
+  const availableSurfaces = surfaces.filter((surface) => surface === "applications" ? !unified : accountLabel !== null);
+  return <div ref={root} className={`shell-navigation__footer${unified ? " shell-navigation__footer--unified" : ""}`} aria-label="Application entrances">
+    {unified ? <button type="button" className="shell-navigation__entrance" data-surface="settings"
+      aria-label={intl.formatMessage({ id: "settings.title", defaultMessage: "Settings" })}
+      title={intl.formatMessage({ id: "settings.title", defaultMessage: "Settings" })}
+      aria-current={config.settingsActive ? "page" : undefined} onClick={() => onInvoke(config.onOpenSettings)}>
+      <NavigationIcon name="settings" selected={config.settingsActive} />
+    </button> : null}
     {availableSurfaces.map(surface => {
       const surfaceLabel = surface === "account" ? accountLabel! : labels.applications;
       const directSignIn = surface === "account" && anonymousAccount;
       if (directSignIn && config.account?.signIn) return <AccountSignInMenu key={surface}
         account={config.account} signIn={config.account.signIn} id={`${entranceId}-${surface}`}
-        visible={visible} container={root.current} onOpenSettings={config.onOpenSettings} />;
+        visible={visible} container={root.current} onOpenSettings={() => onInvoke(config.onOpenSettings)} />;
       return <Dialog.Root key={surface} modal={false}
       open={visible && projection.peek === surface}
       onOpenChange={open => {
@@ -256,7 +269,7 @@ export function ShellNavigationFooter({ config, controller, visible = true, entr
           <div className={surface === "applications" ? "shell-navigation__dock-content" : undefined}>
           <div className="shell-navigation__heading"><Dialog.Title>{labels[surface]}</Dialog.Title></div>
           <NavigationContent compact={false} config={config} surface={surface} onInvoke={action => {
-            dispatch({ type: "dismiss", surface }); action();
+            dispatch({ type: "dismiss", surface }); onInvoke(action);
           }} />
           </div>
         </Dialog.Content>

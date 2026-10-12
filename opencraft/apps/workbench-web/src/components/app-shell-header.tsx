@@ -187,6 +187,8 @@ export function AppShellNavigationControls({
 }
 
 export interface AppShellHeaderProps {
+  /** One route-owned action immediately before the right-panel toggle. */
+  readonly headerAction?: ReactNode;
   readonly title: string | null;
   readonly project: string | null;
   readonly titleContent?: ReactNode;
@@ -213,6 +215,7 @@ export interface AppShellHeaderProps {
 
 /** Shared titlebar projection for every route hosted by AppShell. */
 export function AppShellHeader({
+  headerAction,
   title,
   project,
   titleContent,
@@ -287,11 +290,12 @@ export function AppShellHeader({
           aria-hidden="true"
           className="app-shell-header__end-measure"
         >
-          {showRightPanelAction ? (
+          {showRightPanelAction || headerAction ? (
             <div className="app-shell-header__end-actions">
-              <span className="chrome-button app-shell-header__right-panel-toggle">
+              {headerAction ? <span className="chrome-button" /> : null}
+              {showRightPanelAction ? <span className="chrome-button app-shell-header__right-panel-toggle">
                 <RightPanelToggleIcon panelOpen={rightPanelOpen} />
-              </span>
+              </span> : null}
             </div>
           ) : null}
         </div>
@@ -323,6 +327,7 @@ export function AppShellHeader({
           }}
         >
           <div className="app-shell-header__end-actions no-drag">
+            {headerAction}
             {showRightPanelAction ? (
               <button
                 className="chrome-button app-shell-header__right-panel-toggle"

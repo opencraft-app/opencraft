@@ -137,7 +137,21 @@ export function projectShellNavigation(input: {
   readonly previouslyAvailable?: boolean;
   readonly metrics?: ShellNavigationMetrics;
   readonly space?: ShellSpaceProjection;
+  /** One sidebar holds global destinations and the current application context. */
+  readonly unified?: boolean;
 }) {
+  if (input.unified) {
+    const open = input.space?.contextOpen ?? input.sidecarOpen;
+    return {
+      dockAvailable: false, railDetent: "hidden" as const,
+      lastVisibleRailDetent: input.state.lastVisibleRailDetent,
+      railVisible: false, railWidth: 0, contextOpen: open,
+      primaryNavigation: false, docked: { applications: false, account: false },
+      dockOpen: false, footerVisible: open, peek: input.state.peek === "account" ? "account" : null,
+      footer: { left: shellNavigationMetrics.footerInset, bottom: shellNavigationMetrics.footerInset,
+        right: shellNavigationMetrics.footerInset, height: shellNavigationMetrics.footerHeight },
+    };
+  }
   const metrics = input.metrics ?? shellNavigationMetrics;
   const expandedWidth = resolveShellNavigationWidth(input.navigationWidth, metrics);
   const contextOpen = input.space?.contextOpen ?? (input.sidecarOpen && input.contextAvailable);

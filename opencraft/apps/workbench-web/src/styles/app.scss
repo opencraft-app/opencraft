@@ -966,6 +966,17 @@ html[data-codex-window-type="browser"] .main-content-top-fade {
   }
 }
 
+.conversation-details__directory .settings-control-list-item__copy small {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 640px) {
+  .thread-header-copy small {
+    display: none;
+  }
+}
+
 .app-shell-header__end-slot {
   position: relative;
   display: flex;
@@ -9690,7 +9701,7 @@ html[data-codex-window-type="electron"] .thread-scroll {
 
   &--intelligence {
     max-width: 220px;
-    flex: 1 1 auto;
+    flex: 0 1 auto;
     overflow: hidden;
   }
 
@@ -11461,7 +11472,8 @@ html[data-codex-window-type="electron"] .thread-scroll {
   align-items: center;
   gap: 3px;
 
-  button {
+  button,
+  a {
     display: inline-flex;
     height: 26px;
     align-items: center;
@@ -11472,13 +11484,15 @@ html[data-codex-window-type="electron"] .thread-scroll {
     background: transparent;
     color: var(--color-text-secondary);
     font-size: 10px;
+    text-decoration: none;
 
-    &:hover:not(:disabled) {
+    &:hover:not(:disabled):not([aria-disabled="true"]) {
       background: var(--color-background-button-tertiary-hover);
       color: var(--color-text);
     }
 
-    &:disabled {
+    &:disabled,
+    &[aria-disabled="true"] {
       opacity: 0.35;
     }
   }

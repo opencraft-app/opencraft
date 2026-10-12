@@ -15,6 +15,7 @@ import { DshExecutionAuthority } from "./dsh-execution-authority.js";
 import { DshCapabilityBroker, normalizeCapabilities } from "./dsh-capability-broker.js";
 import { ManagedConnectorService } from "@opencraft/connector-host";
 import { HostDocumentService, HostDocumentFault } from "./storage/host-document-service.js";
+import { TasksService, TasksFault } from "@opencraft/plugin-tasks/server";
 import { HOST_STORAGE } from "@opencraft/appserver-protocol/host-storage";
 import {
   DshCapabilityLink,
@@ -63,6 +64,7 @@ interface LogicalClient {
 
 function rpcError(error: unknown): { code: number; message: string; data?: unknown } {
   if (error instanceof HostDocumentFault) return { code: error.code, message: error.message };
+  if (error instanceof TasksFault) return { code: error.code, message: error.message };
   if (error instanceof DshClientError) return { code: -32001, message: error.message, data: { code: error.code, retryable: error.retryable } };
   if (typeof error === "object" && error !== null) {
     const candidate = error as { rpcCode?: unknown; domainData?: unknown; message?: unknown };
@@ -399,6 +401,9 @@ export async function startLocalAgentHost(options: {
   };
   const processes = new HostProcessService();
   const hostDocuments = new HostDocumentService(options.dataDirectory ? join(options.dataDirectory, "opencraft-host-documents.sqlite") : null);
+  const tasks = new TasksService(options.dataDirectory ? join(options.dataDirectory, "tasks.sqlite") : null, () => {
+    for (const client of websocketServer.clients) send(client, { jsonrpc: "2.0", method: "opencraft/tasks/changed", params: {} });
+  });
   const projects = new ProjectRepository(options.projectStorageDirectory ?? options.modelStorageDirectory ?? options.dataDirectory);
   const token = options.token ?? randomBytes(24).toString("base64url");
   const server = createServer((request, response) => {
@@ -490,6 +495,10 @@ export async function startLocalAgentHost(options: {
         return;
       }
       try {
+        if (request.method.startsWith("opencraft/tasks/")) {
+          const result = tasks.handle(request.method, request.params);
+          send(socket, { jsonrpc: "2.0", id: request.id, result }); return;
+        }
         if (request.method.startsWith("storage/documents/")) {
           const result = hostDocuments.handle(request.method, request.params);
           send(socket, { jsonrpc: "2.0", id: request.id, result }); return;
@@ -717,6 +726,7 @@ export async function startLocalAgentHost(options: {
       closing = true;
       managedConnectors?.close();
       hostDocuments.close();
+      tasks.close();
       await lifecycle.close();
       adapter.close();
       capabilities.close();

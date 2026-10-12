@@ -1,4 +1,4 @@
-import { Blocks, Bot, Cloud, Database, Folder, HardDrive, LayoutGrid, MessageCircle, MessageSquare, Server, Settings, type LucideIcon } from "lucide-react";
+import { Blocks, Bot, Cloud, Columns3, Database, Folder, HardDrive, LayoutGrid, MessageCircle, MessageSquare, Server, Settings, SquarePen, type LucideIcon } from "lucide-react";
 import { createElement } from "react";
 
 export interface NavigationAction {
@@ -21,6 +21,7 @@ export function NavigationIcon({ name, size = 15, selected = false }: {
   let silhouette = false;
   switch (name) {
     case "chat": icon = MessageSquare; silhouette = true; break;
+    case "write": icon = SquarePen; break;
     case "message-circle": icon = MessageCircle; silhouette = true; break;
     case "cloud": icon = Cloud; silhouette = true; break;
     case "database": icon = Database; break;
@@ -30,6 +31,7 @@ export function NavigationIcon({ name, size = 15, selected = false }: {
     case "bot": icon = Bot; break;
     case "settings": icon = Settings; break;
     case "applications": icon = LayoutGrid; silhouette = true; break;
+    case "columns": icon = Columns3; break;
     default: icon = Blocks; break;
   }
   const props = {

@@ -22,6 +22,8 @@ export interface PlatformViewHost {
   provisionHost(input: ProvisionHostInput): Promise<HostConnectionProfile>;
   removeHost(hostId: string): Promise<boolean>;
   openView(viewId: string, resourceUri?: string | null): void;
+  /** Resolve a stable Server/Thread identity through the application's current route directory. */
+  openConversation?(serverId: string, threadId: string): void | Promise<void>;
   openSettings?(section: string): void;
   /** Pushes a new deep-link entry for another resource owned by the active View. */
   pushViewResource(viewId: string, resourceUri: string): void;

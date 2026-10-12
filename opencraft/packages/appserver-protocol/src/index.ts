@@ -17,3 +17,5 @@ export * from "./host-storage";
 export * from "./attachments";
 export * from "./thread-pins";
 export * from "./message-sender";
+
+export * from "./tasks";

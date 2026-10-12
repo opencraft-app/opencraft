@@ -9,7 +9,7 @@ const render = (name: string, selected = false) => renderToStaticMarkup(
 );
 
 test("navigation glyph state is projected without changing the semantic name or SVG box", () => {
-  for (const name of ["chat", "message-circle", "cloud", "folder", "applications", "settings", "bot", "server", "unknown"]) {
+  for (const name of ["write", "chat", "message-circle", "cloud", "folder", "applications", "settings", "bot", "server", "unknown"]) {
     const normal = render(name);
     const selected = render(name, true);
     assert.match(normal, /data-navigation-glyph-variant="outline"/);

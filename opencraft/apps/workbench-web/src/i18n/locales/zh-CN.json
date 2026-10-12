@@ -1,4 +1,17 @@
 {
+  "panel.downloadFile": "下载文件",
+  "tasks.relation.title": "归属任务",
+  "tasks.relation.actions": "会话操作",
+  "tasks.relation.openTasks": "打开任务",
+  "tasks.relation.close": "完成",
+  "tasks.relation.hint": "此会话可关联多个任务，修改立即保存。",
+  "tasks.relation.search": "搜索任务",
+  "tasks.relation.loading": "正在读取任务…",
+  "tasks.relation.readError": "未能读取任务，请检查连接后重试。",
+  "tasks.relation.retry": "重试",
+  "tasks.relation.noMatches": "没有匹配的任务。",
+  "tasks.relation.empty": "暂无任务，请先创建任务再关联。",
+  "tasks.relation.saveError": "未能确认修改结果，请核对当前选择后重试。",
   "chat.changes.counts": "新增 {added} 行，删除 {removed} 行",
   "chat.changes.preview": "更改预览",
   "chat.changes.inlineLarge": "更改较多，请打开查看",
@@ -93,6 +106,9 @@
   "common.save": "保存",
   "common.delete": "删除",
   "common.rename": "重命名",
+  "chat.pin": "置顶",
+  "chat.unpin": "取消置顶",
+  "chat.pin.failed": "置顶更新失败，请重试。",
   "common.close": "关闭",
   "chat.placeholder": "继续提出修改要求",
   "chat.companionHeading": "今天想一起做点什么？",
@@ -278,5 +294,8 @@
   "composer.permissions.engineProfiles": "引擎配置",
   "composer.permissions.disabled": "受 AppServer 要求限制，无法选择",
   "composer.permissions.loading": "正在加载权限配置…",
-  "composer.permissions.refreshError": "无法刷新权限配置，请连接后重试。当前权限保持不变。"
+  "composer.permissions.refreshError": "无法刷新权限配置，请连接后重试。当前权限保持不变。",
+  "chat.details.title": "会话详情",
+  "chat.details.project": "项目",
+  "chat.details.directory": "工作目录"
 }

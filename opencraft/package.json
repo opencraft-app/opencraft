@@ -16,6 +16,7 @@
     "node-pty@1.1.0": true
   },
   "scripts": {
+    "smoke:sidebar:topology": "tsx scripts/smoke-sidebar-topology.ts",
     "pretest:extensions": "tsx --test tests/extension-artifacts.test.ts tests/extension-catalog.test.ts tests/optional-feature-startup.test.ts tests/embedded-workbench-host-profile.test.ts tests/embedded-workbench-authority.test.ts tests/hermes-approval.test.ts tests/hermes-recovery.test.ts tests/hermes-turn-admission.test.ts",
     "smoke:hermes-approval": "tsx scripts/smoke-hermes-approval.ts",
     "smoke:extensions": "tsx scripts/smoke-extension-lifecycle.ts",
@@ -175,7 +176,10 @@
     "test:chat": "tsx --test tests/chat-*.test.ts tests/conversation-history-order.test.ts tests/composer-core.test.ts tests/codex-composer-codec.test.ts tests/codex-composer-attachment-focus.test.ts tests/codex-composer-attachment-preview.test.ts",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "check:boundaries": "npm run check:typography && node scripts/check-platform-boundaries.mjs",
-    "gate": "npm run check:i18n && npm run test:i18n && npm run check:boundaries && npm run typecheck && npm run test:cloud-desktop && npm run test:electron-launch && npm run test:extensions && npm run test:connectors && npm run test:appserver && npm run test:projects && npm run test:thread-lifecycle && npm run test:native-speech && npm run test:hunyuan-speech && npm run test:dsh-bridge && npm run test:appserver:lab && npm run test:chat && npm run test:workbench:unit && npm run test:shell-space && npm run test:workspace-presentation && npm run test:environments && npm run test:desktop-login && npm run test:tencentoa && npm run test:headless-server && npm run test:web-release && npm run build:web && npm run build:expo:web && npm run build:expo:ios"
+    "gate": "npm run check:i18n && npm run test:i18n && npm run check:boundaries && npm run typecheck && npm run test:cloud-desktop && npm run test:electron-launch && npm run test:extensions && npm run test:connectors && npm run test:appserver && npm run test:projects && npm run test:thread-lifecycle && npm run test:native-speech && npm run test:hunyuan-speech && npm run test:dsh-bridge && npm run test:appserver:lab && npm run test:chat && npm run test:workbench:unit && npm run test:shell-space && npm run test:workspace-presentation && npm run test:environments && npm run test:desktop-login && npm run test:tencentoa && npm run test:headless-server && npm run test:web-release && npm run build:web && npm run build:expo:web && npm run build:expo:ios",
+    "test:tasks": "tsx --test tests/tasks-*.test.ts",
+    "smoke:tasks:workbench": "tsx scripts/smoke-tasks-workbench.ts",
+    "preview:tasks:workbench": "tsx scripts/preview-tasks-workbench.ts"
   },
   "dependencies": {
     "react": "19.2.3",

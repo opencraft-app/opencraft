@@ -12,6 +12,7 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronRight,
+  Download,
   Folder,
   FolderOpen,
   Image as ImageIcon,
@@ -365,15 +366,27 @@ export function WorkspaceResourcePanel({ tab, previewOnly = false }: PanelRender
     retry: false,
   });
 
-  const [imageSource, setImageSource] = useState<{ blob: Blob; url: string } | null>(null);
+  const [fileSource, setFileSource] = useState<{
+    blob: Blob;
+    url: string;
+    documentId: string;
+  } | null>(null);
   useEffect(() => {
     const blob = resource.data?.blob;
     const mime = workspaceImageMime(selectedPath);
-    if (!blob || !mime) { setImageSource(null); return; }
-    const handle = fileBlobUrls.acquire(blob.slice(0, blob.size, mime));
-    setImageSource({ blob, url: handle.source });
+    if (!blob) {
+      setFileSource(null);
+      return;
+    }
+    const handle = fileBlobUrls.acquire(mime ? blob.slice(0, blob.size, mime) : blob);
+    setFileSource({ blob, url: handle.source, documentId });
     return handle.release;
-  }, [resource.data?.blob, selectedPath]);
+  }, [resource.data?.blob, selectedPath, documentId]);
+  const canDownload =
+    !resource.isError &&
+    resource.data?.isFile === true &&
+    fileSource?.documentId === documentId &&
+    fileSource.blob === resource.data.blob;
 
   const fileKey = workspaceDraftKey(snapshot.hostId, selectedPath);
   const fileDraft = drafts[fileKey];
@@ -504,6 +517,17 @@ export function WorkspaceResourcePanel({ tab, previewOnly = false }: PanelRender
               )}
             </div>
           ) : null}
+          {!resource.data?.isDirectory ? <div className="workspace-file-viewer__actions">
+            <a
+              role="link"
+              aria-label={intl.formatMessage({ id: "panel.downloadFile", defaultMessage: "Download file" })}
+              title={intl.formatMessage({ id: "panel.downloadFile", defaultMessage: "Download file" })}
+              aria-disabled={!canDownload || undefined}
+              tabIndex={canDownload ? undefined : -1}
+              href={canDownload ? fileSource.url : undefined}
+              download={workspaceResourceBasename(selectedPath)}
+            ><Download size={14} aria-hidden="true" /></a>
+          </div> : null}
         </header>
         {resource.isPending ? (
           <div className="workspace-file-viewer__state"><LoaderCircle className="is-spinning" size={18} />
@@ -516,9 +540,9 @@ export function WorkspaceResourcePanel({ tab, previewOnly = false }: PanelRender
           <div className="workspace-file-viewer__state is-error"><AlertTriangle size={18} />{resource.error.message}</div>
         ) : resource.data?.isDirectory ? (
           <div className="workspace-file-viewer__state"><FolderOpen size={20} />{intl.formatMessage(previewOnly ? { id: "panel.directoryHint", defaultMessage: "Choose a file link in the conversation to preview its contents." } : { id: "panel.selectFile", defaultMessage: "Select a file from this directory." })}</div>
-        ) : imageMime !== null && resource.data?.blob && imageSource?.blob === resource.data.blob ? (
+        ) : imageMime !== null && resource.data?.blob && fileSource?.blob === resource.data.blob && fileSource.documentId === documentId ? (
           <div className="workspace-file-viewer__image">
-            <img alt={workspaceResourceBasename(selectedPath)} src={imageSource.url} />
+            <img alt={workspaceResourceBasename(selectedPath)} src={fileSource.url} />
             <small><ImageIcon size={12} /> {resource.data.size.toLocaleString()} bytes</small>
           </div>
         ) : chatMediaKind(selectedPath) === "pdf" && resource.data?.blob ? (
