@@ -77,7 +77,7 @@ function SummaryTab() {
     ["Bot IM 身份", data?.bots.ready, data ? `开通中 ${data.bots.provisioning} · 异常 ${data.bots.error} · 已停用 ${data.bots.deleted}` : ""],
     ["平台群", data?.groupsActive, data ? `已解散 ${data.groupsDismissed}` : ""],
     ["被限制的身份", data?.restrictedIdentities, ""],
-    ["预计占用腾讯账号", data?.estimatedTencentAccounts, "开通中与就绪的人类，加上未停用的 Bot"],
+    ["占用腾讯账号", data?.estimatedTencentAccounts, "就绪与开通中的人类，加上未停用的 Bot"],
   ];
   return (
     <div className="space-y-4">
@@ -96,7 +96,7 @@ function SummaryTab() {
       <Card>
         <CardHeader>
           <CardTitle>与腾讯核对</CardTitle>
-          <CardDescription>腾讯不提供列出全部账号的接口，控制台也看不到；这里按平台记录逐批向腾讯确认，找出“平台认为在但腾讯没有”和“平台已停用但腾讯还在”的账号。</CardDescription>
+          <CardDescription>腾讯账号只能由平台后台创建和删除，数量以平台记录为准。这里逐个向腾讯确认这些账号的实际状态，用来发现异常：比如后台调腾讯成功但写库失败，或有人绕过平台直接在腾讯侧删了账号。</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <Button onClick={() => check.mutate(undefined, { onError: (e) => toast.error(imAdminErrorMessage(e)) })} disabled={check.isPending}>
