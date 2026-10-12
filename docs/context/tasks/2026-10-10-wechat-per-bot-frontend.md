@@ -91,16 +91,18 @@ Show Weixin as an independent connection for each Bot and update dual-site guida
 
 ## checkpoint
 ### stage
-MR !5180 is being synchronized with `origin/master` at `a527d0c13` on 2026-10-12; frontend validation precedes source commit and OpenCraft regeneration.
+MR !5180 conflict repair is complete locally against `origin/master` at `a527d0c13` on 2026-10-12; ready to push the original branch and inspect remote CI.
 
 ### verified
 - The only content conflict was generated `UPSTREAM.json`; source and locale changes merged automatically.
 - Current 88 focused tests, `pnpm check`, `pnpm build`, documentation validation and staged change-impact checks pass against `a527d0c13`.
+- Source merge commit is `faa2e194f`; the official sync/check scripts regenerated and verified 136 OpenCraft Agent Console files.
 - Relative to current `origin/master`, the MR still changes the intended Weixin UI, tests, guidance, and generated locale closure.
+- Repository-wide Context catalog and contract tests still fail on pre-existing historical Task Pack metadata; the same missing metadata is present in target-branch documents. This task's front matter was repaired.
 
 ### unverified
 - Live two-account Weixin login through the public gateway.
-- Current generated closure, CI and remote mergeability.
+- CI and remote mergeability after the final push.
 
 ### discard
 - Build-only `frontend/next-env.d.ts` and font subset changes were restored.
@@ -109,4 +111,4 @@ MR !5180 is being synchronized with `origin/master` at `a527d0c13` on 2026-10-12
 - Worktree: `/Users/pablozhong/.codex/worktrees/wechat-per-bot/lightvela`.
 
 ### next_action
-- Validate the merged frontend, commit the source merge, regenerate OpenCraft, then push and verify the original MR.
+- Commit the regenerated manifest, push the existing MR branch, verify its remote source SHA and mergeability, then resume the Beijing-backed local preview on port 5176.
