@@ -1177,3 +1177,11 @@ Bot 归属校验与 `agentuser` 命令执行权限，不新增地域白名单。
 二进制安装与 Agent Runtime Session/UserSig 的签发、Hermes 启动接线分别验收；
 安装完成不能作为 Bot 已连接腾讯 IM 的证据。详细步骤见
 [Bot IM 客户端首次安装](../../../vela-computer/docs/bot-im-client-install.md)。
+
+## 云桌面浏览器与 Agent 浏览器隔离
+
+实例创建成功后的 `ensureDesktopBrowserOnCreate` 以 best-effort 注册镜像已有浏览器，不安装系统包、不启动桌面、不因可选浏览器能力失败销毁已创建机器。实现与存量 TAT 使用同一离线脚本，见 [镜像浏览器复用](../../../ctl/docs/desktop-browser-reuse.md)。这段源码只有随 CTL 发布后才影响新建机器。
+
+桌面入口 `/usr/local/lib/vela-desktop-browser-v2/chrome` 通过硬链接复用 root 控制的镜像缓存可执行文件，同目录资源用软链接。若内核限制 user namespace，AppArmor profile 只匹配该专用入口；不得给原 `/opt/ms-playwright/.../chrome` 添加该策略、修改全局 sysctl、关闭沙箱或放开用户可写浏览器缓存。桌面 profile 与 Agent 数据目录隔离，不新增 CDP/9222，不修改 Hermes/OpenClaw 配置或重启进程。
+
+已有系统浏览器或自定义 XFCE/MIME 关联保守跳过；缺浏览器、依赖、跨文件系统硬链接、路径/策略冲突及配置漂移均进入显式处理队列，不自动安装降级。`CONFIGURED`/`ALREADY_CONFIGURED` 是配置状态，不能替代默认启动器、真实 DOM、浏览器沙箱与公共网页的 GUI 验收。若实例还没有 XFCE/exo-open，需要后续桌面准备后验收入口。
