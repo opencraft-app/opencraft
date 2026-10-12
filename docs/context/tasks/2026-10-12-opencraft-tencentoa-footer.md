@@ -63,38 +63,18 @@ Existing signature/JWE verification is retained: headers alone without the
 operator's private application key cannot be treated as verified identity.
 
 ## evidence / validation
-Plugin and Web typechecks, platform boundaries and Headless-target Web release
-build passed. Own dependencies installed from local npm caches. Native PTY build
-is blocked by inaccessible Node headers; CLI parser assertions were moved to the
-existing headless test file so identity tests do not import unrelated PTY code.
-Direct identity test run: 12 passing, one real HTTP listener test blocked by
-`listen EPERM`. Browser HTTP smoke is also blocked by listener restrictions.
-Detailed remaining results and delivery state will be recorded at handoff.
-
-Additional validation: authentication flows 9/9 and LightVela account regressions
-2/2 passed. Plugin, Web, extension-react and LightVela platform typechecks passed;
-boundaries, i18n (232 messages) and whitespace checks passed. Browser HTTP smoke
-cannot listen on loopback; an independently built offline real-component fixture
-also cannot launch Chromium (`sandbox_host_linux.cc`, shutdown EPERM). Do not
-claim real browser/geometry acceptance. The isolated Headless-target Web release
-has buildId `20261012-tencentoa-footer` and the proper opencraft-server Host.
-
-## handoff / current checkpoint
-Implementation and isolated Web build ready. Git fetch cannot resolve
-git.woa.com; no external connector command tool is available. Host service control
-fails `Failed to connect to bus: Operation not permitted`; current service config
-selects a Codex inbound candidate and does not supply `--tencentoa-token-file`.
-Do not claim push, remote master merge, live employee recognition or preview
-replacement. Preserve other worktrees and current preview files.
+Host restrictions lifted. Identity tests 13/13 (including real HTTP), authentication
+flows 9/9 and LightVela account regressions 2/2 passed. Plugin, Web,
+extension-react and LightVela platform typechecks, boundaries and i18n passed.
+Real browser smoke passed at mobile/desktop widths and light/dark themes using
+the real account footer and ModalHost: automatic identity, details, independent
+users, refresh and revocation. Details use shared SettingsPanel to reserve the
+modal close track; anonymous instructions request refresh without a fixed URL.
 
 ## delivery checkpoint
-Source committed as `6904f15cb5b0dc69f5c78a289f4be1ef1dd678a8`; local master
-fast-forwarded in the isolated `/data/opencraft-tencentoa-master-integration-20261012`
-worktree. The repository had no author identity configured, so the local commit
-uses `Codex <codex@local.invalid>`, without attributing an unverified employee.
-Both feature-branch push and master push failed before authentication because
-git.woa.com cannot be resolved in this execution sandbox. Remote master was not
-updated. No service restart or live Web replacement was performed. Source and
-data outside this task remain unchanged. Resume remote fetch/review/delivery and
-verified independent preview cutover from a host-capable environment; configure
-the existing private TAI application key without exporting it into source/logs.
+Fetched and integrated latest origin/master `21158dd3d`. User supplied the
+application credential; installed outside source as a private 0600 file. Runtime
+already supports verified identity, so preserve the current inbound SSH/desktop
+runtime and update only Web plus the private token-file startup flag. Remote MR
+and independently supervised preview switch are being completed; verify actual
+live health, runtime hash, Web revision and identity endpoint before claiming delivery.
