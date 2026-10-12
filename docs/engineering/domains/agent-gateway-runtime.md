@@ -1228,3 +1228,5 @@ Participants are distinct employee login names of retained user messages, not vi
 or queued submissions. Capability-scoped IOA RPCs remain local to the Host adapter
 and never enter the execution engine/model. See OpenCraft Tencent OA authentication
 and ChatUI architecture for reconciliation, lifetime and overlay ownership.
+
+Participant reconciliation isolates failures per conversation in batched responses. Native retained-history pagination uses larger pages with a bounded cursor walk so long-running conversations do not invalidate every visible sidebar count. Verification copies the Host sender DB and bridges only native read requests in an isolated instance; publication remains gated on live RPC and rendered circle/popover acceptance with automatic rollback.
