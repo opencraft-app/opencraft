@@ -66,7 +66,7 @@ release-gitops、service-ci、根与.ci AGENTS、devops-pipeline技能。
 ## validation
 12项本次入口与runner约束聚焦测试通过（缺凭据前置失败、SHA绑定、工作台先于frontend、公共手动入口以及旧runner约束）。shell语法、文档、影响、runtime物化smoke检查通过。
 首轮完整runtime门禁的网站后端source render有4个子断言失败，在干净base工作树复现。上传CI日志确认同样失败；原因是ctl-desktop通过区域Kustomize replacements继承ctl-api Pod配置，而旧测试仍要求desktop不变。
-修正测试：显式断言desktop继承后的Pod spec/annotations与API一致，验证其网站凭据/CA/开关，再移除精确新增项与原基线比较；保留非目标资源的完整比较。网站相关20项测试通过，完整runtime 667项通过（既有4项跳过）；未实际触发frontend-next平台构建。
+修正测试：显式断言desktop继承后的Pod spec/annotations与API一致，验证其网站凭据/CA/开关，再移除精确新增项与原基线比较；保留非目标资源的完整比较。网站相关20项测试通过，完整runtime 667项通过（既有4项跳过）。随后master独立合入相同继承关系修复，合并冲突采用master实现，继续保留完整继承和非目标资源断言；未实际触发frontend-next平台构建。
 
 ## decisions
 新增手动候选而不切换已有发布；保留四组合默认矩阵与现有不可变artifact仓库契约。首次可将矩阵缩小到单组合；正式发布仍走现有专用入口。

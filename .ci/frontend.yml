@@ -33,11 +33,11 @@ variables:
     readonly: false
     allow-modify-at-startup: true
   FRONTEND_RELEASE_MATRIX:
-    value: cf:cn-lightvela-staging,cf:global-lightvela-intl-staging
+    value: eo:cn-lightvela-prerelease,eo:global-lightvela-prerelease-preview
     readonly: false
     allow-modify-at-startup: true
   FRONTEND_ARTIFACT_MATRIX:
-    value: cf:cn-lightvela-staging,cf:global-lightvela-intl-staging,eo:cn-lightvela-prod-next,eo:global-lightvela-intl-prod-next
+    value: eo:cn-lightvela-prerelease,eo:global-lightvela-prerelease-preview,eo:cn-lightvela-prod-next,eo:global-lightvela-intl-prod-next
     readonly: false
     allow-modify-at-startup: true
   TARGET_ENV:
@@ -219,75 +219,66 @@ stages:
               "$PNPM_BIN" --version
               "$PNPM_BIN" install --frozen-lockfile
               "$PNPM_BIN" build:release-artifacts
-          - name: 发布 frontend Cloudflare 预发 artifact 矩阵
+          - name: 发布 frontend EdgeOne 北京预发 artifact 矩阵
             shell: bash
             env:
-              CLOUDFLARE_API_TOKEN: ${{ settings.CLOUDFLARE_API_TOKEN }}
-              CLOUDFLARE_ACCOUNT_ID: ${{ settings.CLOUDFLARE_ACCOUNT_ID }}
+              EDGEONE_API_TOKEN: ${{ settings.EDGEONE_PRERELEASE_API_TOKEN }}
               TCR_SHPROD_PASSWORD: ${{ settings.TCR_SHPROD_PASSWORD }}
-              VITE_AUTH_API_BASE_URL: https://lightclaw.tech
-              CLOUDFLARE_PAGES_COMMIT_HASH: ${{ ci.sha }}
-              CLOUDFLARE_PAGES_COMMIT_MESSAGE: Cloudflare Pages deploy from archived frontend artifact
               FRONTEND_RELEASE_MATRIX: ${{ variables.FRONTEND_RELEASE_MATRIX }}
               FRONTEND_ARTIFACT_REPOSITORY: lightclaw-shprod.tencentcloudcr.com/lightclaw/frontend-pages
               FRONTEND_ARTIFACT_SOURCE_SHA: ${{ ci.sha }}
             run: |
               if [[ "${{ variables.PIPELINE_MODE }}" == "promote" || "${{ variables.PIPELINE_MODE }}" == "edgeone-release" || "${{ variables.PIPELINE_MODE }}" == "playground-build" ]]; then
-                echo "skip Cloudflare artifact release step because PIPELINE_MODE=${{ variables.PIPELINE_MODE }}"
+                echo "skip EdgeOne prerelease artifact release step because PIPELINE_MODE=${{ variables.PIPELINE_MODE }}"
                 exit 0
               fi
               case "${{ ci.branch }}" in
-                master)
-                  ;;
+                master) ;;
                 playground/sandbox-bj-*|playground/sandbox-kr-*)
-                  echo "skip Cloudflare artifact release for playground branch ${{ ci.branch }}: shared Cloudflare staging is master-only"
+                  echo "skip EdgeOne prerelease artifact release for playground branch ${{ ci.branch }}: shared EdgeOne prerelease is master-only"
                   exit 0
                   ;;
                 *)
-                  echo "skip Cloudflare artifact release for non-master branch ${{ ci.branch }}: shared Cloudflare staging is master-only"
+                  echo "skip EdgeOne prerelease artifact release for non-master branch ${{ ci.branch }}: shared EdgeOne prerelease is master-only"
                   exit 0
                   ;;
               esac
-              echo "============================================================"
-              echo "frontend 发布决策：进入 Cloudflare 预发 artifact 发布流程"
+              set -euo pipefail
+              echo "frontend 发布决策：进入 EdgeOne 北京预发 artifact 发布流程"
               echo "发布矩阵：${FRONTEND_RELEASE_MATRIX}"
-              echo "artifact 仓库：${FRONTEND_ARTIFACT_REPOSITORY}"
-              echo "artifact source sha：${FRONTEND_ARTIFACT_SOURCE_SHA}"
-              echo "发布模型：从 TCR 拉取已归档产物，校验后发布 Cloudflare，不现场构建"
-              echo "============================================================"
+              echo "目标项目：lightvela-prerelease；后端：https://lightclaw.tech"
               matrix_without_separators="${FRONTEND_RELEASE_MATRIX//,/}"
               matrix_without_separators="${matrix_without_separators//[[:space:]]/}"
               if [[ -z "$matrix_without_separators" ]]; then
-                echo "FRONTEND_RELEASE_MATRIX is empty; skip Cloudflare artifact release"
+                echo "FRONTEND_RELEASE_MATRIX is empty; skip EdgeOne prerelease"
                 exit 0
               fi
+              # Never allow this automatic step to publish a formal production project.
               IFS=',' read -ra release_combos <<< "$FRONTEND_RELEASE_MATRIX"
               for combo in "${release_combos[@]}"; do
                 combo="${combo//[[:space:]]/}"
-                if [[ -z "$combo" ]]; then
-                  continue
-                fi
-                if [[ "$combo" != cf:* ]]; then
-                  echo "frontend Cloudflare artifact release only allows cf:* combos; rejected ${combo}" >&2
-                  exit 1
-                fi
+                case "$combo" in
+                  "") continue ;;
+                  eo:cn-lightvela-prerelease|eo:global-lightvela-prerelease-preview) ;;
+                  *) echo "frontend prerelease rejects combo ${combo}" >&2; exit 1 ;;
+                esac
               done
               source .ci/init.sh
               ci_init_repo_root
-              ci_export_gongfeng_defaults
-              ci_load_cloudflare_credentials
+              EDGEONE_API_TOKEN_FILE=/etc/lightclaw-ci/edgeone_lightvela_prerelease_token
+              EDGEONE_API_TOKEN_REQUIRED=1
+              ci_load_edgeone_credentials
               ci_set_registry_credentials shprod
               ci_ensure_oras
               ci_ensure_node
               ci_ensure_pnpm
-
-              "$NODE_BIN" --version
-              "$NPM_BIN" --version
-
               cd "$REPO_ROOT/frontend"
-              "$PNPM_BIN" --version
               "$PNPM_BIN" install --frozen-lockfile
-              "$PNPM_BIN" release:cf:artifact
+              for combo in "${release_combos[@]}"; do
+                combo="${combo//[[:space:]]/}"
+                [[ -n "$combo" ]] || continue
+                FRONTEND_RELEASE_MATRIX="$combo" "$PNPM_BIN" release:eo:artifact
+              done
           - name: 构建 frontend GitOps 镜像
             shell: bash
             env:
