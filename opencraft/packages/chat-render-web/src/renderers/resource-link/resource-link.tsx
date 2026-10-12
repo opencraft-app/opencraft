@@ -122,7 +122,7 @@ export function ExternalUrlLink({
 
 // An inline code label inside an explicit Markdown link belongs to that link.
 const ResourceLinkLabel = createContext(false);
-const explicitMarkdownPath = /^(?:\/(?!\/)|\.\.?\/|[a-z]:[\\/]|file:\/\/\/)[^\r\n`<>|;]*\.(?:md|markdown)$/iu;
+const explicitDocumentPath = /^(?:\/(?!\/)|\.\.?\/|[a-z]:[\\/]|file:\/\/\/)[^\r\n`<>|;]*\.(?:md|markdown|html|htm)$/iu;
 
 export function mediaFilePath(value: string): string | null {
   const source = value.trim();
@@ -172,8 +172,8 @@ export function createInlineMarkdownFileRenderer(resources: ChatResourcePolicySe
     const insideLink = useContext(ResourceLinkLabel);
     if (node.kind !== "inline-code") return null;
     const code = <code className="chat-inline-code">{node.code}</code>;
-    const path = explicitMarkdownPath.test(node.code) ? node.code : mediaFilePath(node.code);
-    // Ordinary code retains its explicit Markdown path rule; MEDIA is the
+    const path = explicitDocumentPath.test(node.code) ? node.code : mediaFilePath(node.code);
+    // Ordinary code retains its explicit document path rule; MEDIA is the
     // type-independent delivery directive. The resource policy owns admission.
     if (insideLink || context.streaming || context.openResource === undefined
       || path === null) return code;

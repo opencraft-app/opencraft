@@ -292,6 +292,7 @@ Connector 目录浏览不套用设置行：采用限宽品牌卡片，已配置�
 ## Markdown 文件预览
 - 文件面板默认将 `.md` / `.markdown`（大小写不敏感）交给既有 WebChatDocument 排版，可切换到原始文本；不将原始 HTML 注入 DOM。相对文件链接与图片以当前文件目录解析，继续消费当前 Host 的资源接口和 Blob lease。
 - 内嵌模式维持只读、无目录/搜索/监听/写入；写入执行入口必须先检查只读状态，拒绝后不得调用 Host 写入或失效 Blob 缓存。预览/源码是文件身份下的局部状态，不修改会话或源文件。
+- HTML 预览在创建沙盒 iframe 前移除普通链接、图片热区及 SVG 链接的目标、自动刷新跳转和可恢复链接目标的 SVG 动画；点击预览正文不得将 iframe 导航到外部页面，避免离开初始 CSP 后加载外部资源。源码视图继续显示未经改写的文件内容。
 
 ## 通用媒体与 PDF 文件预览
 
@@ -302,6 +303,8 @@ Connector 目录浏览不套用设置行：采用限宽品牌卡片，已配置�
 内嵌控制台主 Composer 的编辑区域最小高度为 74px；新会话与已有会话保持一致，增长由同一输入区域承担，工具栏继续位于底部。
 
 Markdown preview entry: explicit `.md` / `.markdown` paths in completed inline code are clickable and use the same resource policy and Host-scoped right panel as Markdown links. Bare names, commands, external URLs, streaming paths and code within an explicit link retain their original semantics. No file is read before clicking.
+
+HTML preview entry: completed inline-code `.html` / `.htm` paths use that same right-panel resource flow. The read-only file panel defaults to a sandboxed page preview and can switch to escaped source without reading the file again. Scripts and external subresources are blocked; inline styles and embedded data/Blob media can render. The file remains owned by the Host, and changing files replaces the preview document.
 
 国内嵌入聊天采用 compact 右栏初始宽度：既有默认宽度的 2/3，并继续遵守面板最小宽度和聊天内容保留宽度；拖拽调整由原 Shell owner 负责，独立工作台保持 standard 默认。
 
