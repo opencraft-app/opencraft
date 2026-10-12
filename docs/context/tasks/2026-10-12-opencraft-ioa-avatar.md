@@ -33,3 +33,24 @@ The user-provided api-idc.sgw.woa.com resolves but HTTP access times out from th
 current server (both ordinary and direct transport). Actual applied access point
 was requested; implement the documented default and keep fallback behavior.
 Do not claim real TOF image retrieval from synthetic avatar fixtures.
+
+## verified_delivery
+Feature commit 6fd7d4d45 pushed to the existing sender branch. The current preview
+was switched by the independent guarded unit opencraft-ioa-avatar-cutover-20261012-r3.
+CUTOVER_VERIFIED recorded after real signed identity/photo authorization, native
+SSH banner, actual served asset checks and visible mobile footer image/fallback
+probes. Only the TOF image boundary was mocked for UI verification; actual upstream
+is unavailable and no real employee photo retrieval is claimed.
+
+Web build 20261012-ioa-avatar-r2 preserves sender labels, permission translations
+and composer height from the preceding preview. Runtime SHA256
+ab2b1d11a603f7e3a511bb2af0d207e71b59a63e0c45e596edc89765f436f25b;
+data directory unchanged. Receipt and rollback entries:
+/data/tmp/opencraft-ioa-avatar-preview-20261012/delivery.json and previous-web-entry.
+Initial stale-Web guard and mobile probe failures restored a healthy previous
+preview; the mobile probe now opens the collapsed sidebar before checking it.
+
+## remaining
+Actual applied TOF access point or network reachability is required for real
+employee pictures. The documented domain times out before an HTTP response.
+MR !5252 remains subject to protected review; master merge is not claimed.
