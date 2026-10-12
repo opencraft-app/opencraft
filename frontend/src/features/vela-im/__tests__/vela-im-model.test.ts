@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { fileVisual, formatBytes } from "../vela-im-files";
 import {
   applyRevoked,
+  bundleOf,
   describeMessage,
   isAgentID,
   mergeMessages,
@@ -130,5 +131,13 @@ describe("vela-im model", () => {
     expect(formatBytes(512)).toBe("512 B");
     expect(formatBytes(2048)).toBe("2.0 KB");
     expect(formatBytes(5 * 1024 * 1024)).toBe("5.0 MB");
+  });
+
+  it("reads attachment bundles: parts carry only the id, the text lists its parts", () => {
+    expect(bundleOf({ ID: "p", cloudCustomData: JSON.stringify({ velaBundle: "b" }) })).toEqual({ id: "b" });
+    expect(bundleOf({ ID: "t", cloudCustomData: JSON.stringify({ velaBundle: "b", velaBundleParts: ["p", 3, ""], messageReply: {} }) }))
+      .toEqual({ id: "b", parts: ["p"] });
+    expect(bundleOf({ ID: "x", cloudCustomData: JSON.stringify({ vela: { hops: 1 } }) })).toBeNull();
+    expect(bundleOf({ ID: "y" })).toBeNull();
   });
 });

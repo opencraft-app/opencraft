@@ -26,7 +26,8 @@ sys.modules["gateway.config"].Platform = str
 sys.modules["gateway.platforms.base"].BasePlatformAdapter = FakeBase
 sys.modules["gateway.platforms.base"].SendResult = dict
 sys.modules["gateway.platforms.event"].MessageEvent = dict
-sys.modules["gateway.platforms.event"].MessageType = types.SimpleNamespace(TEXT="text")
+sys.modules["gateway.platforms.event"].MessageType = types.SimpleNamespace(
+    TEXT="text", PHOTO="photo", VOICE="voice", VIDEO="video", DOCUMENT="document", LOCATION="location", STICKER="sticker")
 spec = importlib.util.spec_from_file_location("vela_test_plugin", ROOT / "__init__.py", submodule_search_locations=[str(ROOT)])
 package = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = package
@@ -54,7 +55,7 @@ class PluginTest(unittest.TestCase):
 
     def test_quoted_message_follows_tencent_reply_convention(self):
         reply = {"messageReply": {"messageID": "m1", "messageAbstract": "部署好了吗", "messageSender": "Alice", "version": 1}}
-        self.assertEqual(quoted({"cloudCustomData": json.dumps(reply)}), {"sender": "Alice", "abstract": "部署好了吗"})
+        self.assertEqual(quoted({"cloudCustomData": json.dumps(reply)}), {"sender": "Alice", "abstract": "部署好了吗", "messageID": "m1"})
         self.assertIsNone(quoted({"cloudCustomData": json.dumps({"vela": {"hops": 1}})}))
         self.assertIsNone(quoted({"cloudCustomData": "not json"}))
 
@@ -206,6 +207,32 @@ class AdapterTest(unittest.IsolatedAsyncioTestCase):
         entries = json.loads(text.split('\n')[1]); self.assertEqual(entries[0]['id'], 'prior'); self.assertIn('nested', entries[0]['text'])
         message['_vela_context_status'] = 'anchor_missing'
         text = await self.adapter(None)._history_context(message); self.assertNotIn('opaque', text)
+
+    async def test_attachments_typed_with_text_reach_the_model_with_that_text(self):
+        from vela_test_plugin.adapter import safe_file_name
+        adapter = self.commanded('owner'); adapter._bundles = {}
+        image = {'ID': 'p1', 'from': 'u_owner', 'conversationID': 'C2Cu_owner', 'type': 'TIMImageElem',
+                 'payload': {'imageInfoArray': [{'url': 'https://x.my-imcloud.com/a.png'}]}, 'cloudCustomData': json.dumps({'velaBundle': 'b1'})}
+        report = {'ID': 'p2', 'from': 'u_owner', 'conversationID': 'C2Cu_owner', 'type': 'TIMFileElem',
+                  'payload': {'fileUrl': 'https://x.my-imcloud.com/f', 'fileName': '周报.pdf'}, 'cloudCustomData': json.dumps({'velaBundle': 'b1'})}
+        adapter.client.message = lambda message_id: report if message_id == 'p2' else None
+        with patch('vela_test_plugin.adapter.download', side_effect=lambda url, mime, name: '/m/' + (name or 'image.jpg')):
+            await adapter._receive(image)
+            self.assertEqual(adapter.handled, [], 'an attachment waits for the text sent with it')
+            await adapter._receive({'ID': 't1', 'from': 'u_owner', 'conversationID': 'C2Cu_owner', 'type': 'TIMTextElem', 'payload': {'text': '这是什么'},
+                                    'cloudCustomData': json.dumps({'velaBundle': 'b1', 'velaBundleParts': ['p1', 'p2']})})
+            self.assertEqual(len(adapter.handled), 1)
+            self.assertIn('这是什么', adapter.handled[0]['text'])
+            self.assertEqual(adapter.handled[0]['media_urls'], ['/m/image.jpg', '/m/周报.pdf'])
+            self.assertEqual(adapter._bundles, {})
+
+            orphan = {**image, 'ID': 'p3', 'cloudCustomData': json.dumps({'velaBundle': 'b2'})}
+            await adapter._receive(orphan)
+            adapter._bundles['b2']['at'] -= 31
+            await adapter._flush_bundles()
+            self.assertEqual([e['message_id'] for e in adapter.handled], ['t1', 'p3'], 'an attachment whose text never came is handled alone')
+        self.assertEqual(safe_file_name('../../etc/passwd'), 'passwd')
+        self.assertEqual(safe_file_name('a/b\\c.pdf'), 'b_c.pdf')
 
     async def test_context_failure_does_not_leave_a_message_permanently_inflight(self):
         adapter = self.adapter(None); adapter._inflight = set(); adapter.state = {'pending': {'m': {'attempts': 0}}}; adapter._save = lambda: None

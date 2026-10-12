@@ -9,6 +9,7 @@ import os
 import re
 import time
 import uuid
+from urllib.parse import quote
 from enum import Enum
 from pathlib import Path
 from typing import Literal, TypedDict
@@ -175,6 +176,10 @@ class VelaClient:
 
     def events(self, after=0, wait=25000):
         return self.request(f"/events?after={int(after)}&wait={int(wait)}", timeout=max(65, wait / 1000 + 30))
+
+    def message(self, message_id):
+        """A message this Bot received or sent, from the worker's durable inbox."""
+        return self.request("/message?id=" + quote(str(message_id), safe=""))
 
     def prepare_group_reply(self, message_id, max_agent_hops=6) -> GroupReplyInput:
         """Platform reply decision plus up to 10 preceding messages for a group message this Bot received."""

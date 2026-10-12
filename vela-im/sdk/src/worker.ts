@@ -173,6 +173,12 @@ export async function startWorker(o:WorkerOptions):Promise<RunningWorker> {
    delete input.replyToMessageID;
    return client.send(input);
   },
+  /** A message this identity received or sent, from its durable inbox (attachments sent alongside a mention, quotes). */
+  'GET /message':async(_req,url)=>{
+   const message=inbox.message(url.searchParams.get('id')??'');
+   if(!message)throw new HttpError(404,'当前身份的 inbox 中没有这条消息','MESSAGE_NOT_FOUND');
+   return message;
+  },
   'POST /group-reply':async req=>{
    await whenOnline();const b=await body(req);
    const message:IMMessage|undefined=typeof b.messageID==='string'?inbox.message(b.messageID):undefined;

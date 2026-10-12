@@ -5,6 +5,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import re
 import tempfile
 import time
 from urllib.parse import urlsplit
@@ -45,7 +46,25 @@ def quoted(message):
         return None
     if not isinstance(reply, dict) or not str(reply.get("messageAbstract") or "").strip():
         return None
-    return {"sender": str(reply.get("messageSender") or ""), "abstract": str(reply["messageAbstract"])[:500]}
+    return {"sender": str(reply.get("messageSender") or ""), "abstract": str(reply["messageAbstract"])[:500],
+            "messageID": str(reply.get("messageID") or "")}
+
+
+BUNDLE_WAIT_SECONDS = 30
+
+
+def bundle_of(message):
+    """(bundle id, part IDs). Clients send attachments and the text typed with them as separate messages sharing a
+    bundle id; the text lists the attachment message IDs. Attachment parts return (id, None)."""
+    try:
+        data = json.loads(message.get("cloudCustomData") or "{}")
+    except (ValueError, TypeError):
+        return None, None
+    bundle = data.get("velaBundle") if isinstance(data, dict) else None
+    if not isinstance(bundle, str) or not bundle:
+        return None, None
+    parts = data.get("velaBundleParts")
+    return bundle, ([str(p) for p in parts][:20] if isinstance(parts, list) else None)
 
 
 def chain(message):
@@ -106,15 +125,21 @@ def normalized(message):
     if kind == "TIMTextElem": return payload.get("text", ""), "TEXT", media
     if kind == "TIMImageElem":
         images = payload.get("imageInfoArray", [])
-        if images: media.append((images[-1].get("url") or images[-1].get("imageUrl"), "image/jpeg"))
-    elif kind == "TIMSoundElem": media.append((payload.get("url") or payload.get("remoteAudioUrl"), "audio/mpeg"))
-    elif kind == "TIMVideoFileElem": media.append((payload.get("videoUrl") or payload.get("remoteVideoUrl"), "video/mp4"))
-    elif kind == "TIMFileElem": media.append((payload.get("fileUrl"), "application/octet-stream"))
+        if images: media.append((images[-1].get("url") or images[-1].get("imageUrl"), "image/jpeg", ""))
+    elif kind == "TIMSoundElem": media.append((payload.get("url") or payload.get("remoteAudioUrl"), "audio/mpeg", ""))
+    elif kind == "TIMVideoFileElem": media.append((payload.get("videoUrl") or payload.get("remoteVideoUrl"), "video/mp4", ""))
+    elif kind == "TIMFileElem": media.append((payload.get("fileUrl"), "application/octet-stream", str(payload.get("fileName") or "")))
     # 保留任意 SDK 消息结构，包括自定义和群系统通知；不把内容当控制指令。
-    return "[腾讯 IM " + str(kind) + "]\n" + json.dumps(payload, ensure_ascii=False), mapping.get(kind, "TEXT"), [(u, m) for u, m in media if u]
+    return "[腾讯 IM " + str(kind) + "]\n" + json.dumps(payload, ensure_ascii=False), mapping.get(kind, "TEXT"), [m for m in media if m[0]]
 
 
-def download(url, mime):
+def safe_file_name(name):
+    """The sender's file name, reduced to one safe path component (Hermes infers the type from its extension)."""
+    name = re.sub(r"[\x00-\x1f/\\]", "_", Path(str(name or "")).name).strip(" .")
+    return name[-120:] if name else ""
+
+
+def download(url, mime, name=""):
     parsed = urlsplit(url)
     allowed = (".my-imcloud.com", ".myqcloud.com", ".qcloud.com", ".tencentcos.cn", ".tencent-cloud.cn")
     if parsed.scheme != "https" or not any((parsed.hostname or "").endswith(s) for s in allowed):
@@ -123,7 +148,9 @@ def download(url, mime):
         def redirect_request(self, req, fp, code, msg, headers, newurl):
             return None
     suffix = {"image/jpeg": ".jpg", "audio/mpeg": ".mp3", "video/mp4": ".mp4"}.get(mime, ".bin")
-    path = Path(setting('VELA_FILE_ROOT') or str(Path(tempfile.gettempdir()) / 'vela-im-media')) / (uuid4().hex + suffix)
+    root = Path(setting('VELA_FILE_ROOT') or str(Path(tempfile.gettempdir()) / 'vela-im-media'))
+    file_name = safe_file_name(name)
+    path = root / uuid4().hex / file_name if file_name else root / (uuid4().hex + suffix)
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     try:
         with build_opener(NoRedirect).open(Request(url), timeout=30) as response:
@@ -153,6 +180,7 @@ class VelaAdapter(BasePlatformAdapter):
         self._poll_task = None
         self._inflight = set()
         self._lineage = {}
+        self._bundles = {}  # bundle id -> {"at": monotonic time, "parts": [attachment messages]}
         self.user_id = ""
         self.identity_name = ""
         # Until the platform answers, commands are owner-only and no owner is known: nobody may command.
@@ -223,6 +251,7 @@ class VelaAdapter(BasePlatformAdapter):
                         logger.warning("Vela IM event: %s %s", item["event"], item["data"])
                     self.state["cursor"] = item["seq"]
                     self._save()
+                await self._flush_bundles()
                 delay = 1
             except asyncio.CancelledError:
                 raise
@@ -236,11 +265,48 @@ class VelaAdapter(BasePlatformAdapter):
                 await asyncio.sleep(delay)
                 delay = min(delay * 2, 30)
 
-    async def _receive(self, message):
+    async def _flush_bundles(self):
+        """Attachments whose text never arrived are handled on their own."""
+        now = time.monotonic()
+        for bundle, entry in list(self._bundles.items()):
+            if now - entry["at"] > BUNDLE_WAIT_SECONDS:
+                del self._bundles[bundle]
+                for part in entry["parts"]:
+                    await self._receive(part, standalone=True)
+
+    def _lookup(self, message_id):
+        try:
+            return self.client.message(message_id)
+        except Exception:
+            return None
+
+    async def _attachments(self, message, stashed):
+        """Media the sender sent with this message (bundle parts) or quoted; the model sees them with the text."""
+        found, seen = [], set()
+        _, parts = bundle_of(message)
+        by_id = {m.get("ID"): m for m in stashed}
+        for part_id in parts or []:
+            part = by_id.get(part_id) or await asyncio.to_thread(self._lookup, part_id)
+            if part and part.get("ID") not in seen and not part.get("isRevoked"):
+                seen.add(part.get("ID")); found.append(part)
+        quote = quoted(message)
+        if quote and quote["messageID"] and quote["messageID"] not in seen:
+            original = await asyncio.to_thread(self._lookup, quote["messageID"])
+            if original and not original.get("isRevoked") and normalized(original)[2]:
+                found.append(original)
+        return found
+
+    async def _receive(self, message, standalone=False):
         mode = "all"
         group = message.get("conversationID", "").startswith("GROUP")
         if message.get("from") == self.user_id or message.get("isRevoked") or is_system(message):
             return
+        bundle, parts = bundle_of(message)
+        if bundle and parts is None and not standalone:
+            # An attachment typed together with text: wait for the text, which decides whether to answer.
+            self._bundles.setdefault(bundle, {"at": time.monotonic(), "parts": []})["parts"].append(message)
+            return
+        stashed = self._bundles.pop(bundle, {}).get("parts", []) if bundle and parts is not None else []
         control = await self._control_state()
         command = command_text(message, {self.user_id, self.identity_name})
         if command and addressed(message, self.user_id, self.identity_name):
@@ -256,6 +322,9 @@ class VelaAdapter(BasePlatformAdapter):
                 if error.status not in (403, 404): raise
                 mode = "off"  # Removed members / dissolved groups cannot block other chats.
         if should_reply(message, self.user_id, mode, self.max_hops):
+            attachments = await self._attachments(message, stashed)
+            if attachments:
+                message = {**message, "_vela_parts": attachments}
             message_id = message["ID"]
             self.state["pending"].setdefault(message_id, {"message": message, "attempts": 0})
             self._save()  # 先持久化，再交给 Hermes。
@@ -322,9 +391,11 @@ class VelaAdapter(BasePlatformAdapter):
                     "Reply normally and the adapter delivers your answer here; do not also send it with `vela_im send`. "
                     "Use `vela_im` only for other recipients, files or group administration. Do not report tool status or internal IDs in your answer.]\n"
                     + context + text)
+        for part in message.get("_vela_parts", []):
+            media = media + normalized(part)[2]
         paths, mimes = [], []
-        for url, mime in media:
-            path = await asyncio.to_thread(download, url, mime)
+        for url, mime, name in media:
+            path = await asyncio.to_thread(download, url, mime, name)
             if path: paths.append(path); mimes.append(mime)
         event = MessageEvent(text=text, message_type=getattr(MessageType, kind), source=self._source(message),
                              message_id=message_id, raw_message=message, media_urls=paths, media_types=mimes)

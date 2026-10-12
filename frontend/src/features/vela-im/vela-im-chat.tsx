@@ -16,6 +16,7 @@ import { FileTypeIcon, formatBytes } from "./vela-im-files";
 import { VelaImMessageContent } from "./vela-im-message";
 import {
   applyRevoked,
+  bundleOf,
   describeMessage,
   errorText,
   formatTime,
@@ -23,7 +24,7 @@ import {
   isAgentID,
   mergeMessages,
   messageAbstract,
-  quoteCustomData,
+  quoteData,
   quotedMessage,
   resolveMentions,
   timeDivider,
@@ -184,10 +185,11 @@ export function VelaImChat({ controller, client, selfID, conversation, onBack, o
     });
   }, [caret, text]);
 
-  const deliver = async (input: MessageInput) => {
+  const deliver = async (input: MessageInput): Promise<IMMessage | undefined> => {
     const result = await client.send(input);
     const sent = (result as { data?: { message?: IMMessage } }).data?.message;
     if (sent) setMessages((old) => mergeMessages(old, [sent]));
+    return sent;
   };
 
   const addFiles = (files: File[]) => {
@@ -214,19 +216,27 @@ export function VelaImChat({ controller, client, selfID, conversation, onBack, o
     setSending(true);
     setError("");
     const conversationType = isGroup ? "GROUP" : "C2C";
+    // Tencent's web SDK sends one element per message, so attachments typed with text share a bundle id.
+    const bundle = body && pending.length ? crypto.randomUUID() : null;
+    const parts: string[] = [];
     try {
       for (const item of pending) {
-        await deliver({ to: conversation.targetID, conversationType, type: attachmentKind(item.file), payload: { file: item.file } });
+        const sent = await deliver({
+          to: conversation.targetID, conversationType, type: attachmentKind(item.file), payload: { file: item.file },
+          ...(bundle ? { cloudCustomData: JSON.stringify({ velaBundle: bundle }) } : {}),
+        });
+        if (sent?.ID) parts.push(sent.ID);
         removePending(item.id);
       }
       if (body) {
         const atUserList = isGroup ? resolveMentions(body, others) : [];
+        const custom = { ...(quoting ? quoteData(quoting) : {}), ...(bundle ? { velaBundle: bundle, velaBundleParts: parts } : {}) };
         await deliver({
           to: conversation.targetID,
           conversationType,
           type: atUserList.length ? "textAt" : "text",
           payload: atUserList.length ? { text: body, atUserList } : { text: body },
-          ...(quoting ? { cloudCustomData: quoteCustomData(quoting) } : {}),
+          ...(Object.keys(custom).length ? { cloudCustomData: JSON.stringify(custom) } : {}),
         });
         setText("");
         setQuoting(null);
@@ -284,10 +294,12 @@ export function VelaImChat({ controller, client, selfID, conversation, onBack, o
     }
   };
 
-  const revoke = async (message: IMMessage) => {
+  const revoke = async (message: IMMessage, attachments: IMMessage[] = []) => {
     try {
+      for (const part of attachments) if (!part.isRevoked) await client.revokeMessage(part);
       await client.revokeMessage(message);
-      setMessages((old) => old.map((m) => (m.ID === message.ID ? { ...m, isRevoked: true } : m)));
+      const gone = new Set([message.ID, ...attachments.map((part) => part.ID)]);
+      setMessages((old) => old.map((m) => (gone.has(m.ID) ? { ...m, isRevoked: true } : m)));
     } catch (e) {
       setError(errorText(e, t("撤回失败")));
     }
@@ -340,6 +352,19 @@ export function VelaImChat({ controller, client, selfID, conversation, onBack, o
     return member?.name || String(m.nick || m.from || "");
   };
   const now = Math.floor(Date.now() / 1000);
+  /** Attachments shown inside the text they were sent with, keyed by that text's message ID. */
+  const { visible, attachmentsOf } = useMemo(() => {
+    const byID = new Map(messages.map((m) => [m.ID, m]));
+    const owned = new Map<string, IMMessage[]>();
+    const hidden = new Set<string>();
+    for (const m of messages) {
+      const parts = bundleOf(m)?.parts?.map((id) => byID.get(id)).filter((part): part is IMMessage => !!part) ?? [];
+      if (!parts.length) continue;
+      owned.set(m.ID, parts);
+      parts.forEach((part) => hidden.add(part.ID));
+    }
+    return { visible: messages.filter((m) => !hidden.has(m.ID)), attachmentsOf: owned };
+  }, [messages]);
   const peerIsAgent = !isGroup && isAgentID(conversation.targetID);
   const botOnly = !!policy?.members.length && policy.members.every((m) => m.kind === "bot");
   const subtitle = isGroup
@@ -410,10 +435,11 @@ export function VelaImChat({ controller, client, selfID, conversation, onBack, o
             <p className="mt-1 text-xs text-black/45">{isGroup ? t("在群里输入 @ 可以点名某个 Agent 或成员。") : peerIsAgent ? t("Agent 会像真人一样回复你。") : t("消息会实时送达对方的所有设备。")}</p>
           </div>
         ) : null}
-        {messages.map((m, index) => {
+        {visible.map((m, index) => {
           const mine = m.from === selfID;
           const view = describeMessage(m);
-          const divider = timeDivider(messages[index - 1], m);
+          const divider = timeDivider(visible[index - 1], m);
+          const attachments = attachmentsOf.get(m.ID) ?? [];
           const dividerLine = divider ? <p className="text-center text-[11px] text-black/35">{divider}</p> : null;
           if (view.kind === "event" || view.kind === "tip") {
             return <Fragment key={m.ID}>{dividerLine}<p className="px-6 text-center text-xs leading-5 text-black/40">{systemLine(view)}</p></Fragment>;
@@ -436,6 +462,13 @@ export function VelaImChat({ controller, client, selfID, conversation, onBack, o
                       {isAgentID(m.from) ? <Badge variant="warning" className="px-1.5 py-0.5 text-[10px]">Agent</Badge> : null}
                       <time title={fullTime(at)}>{formatTime(at)}</time>
                     </span>
+                  ) : null}
+                  {attachments.length ? (
+                    <div className={cn("flex max-w-full flex-col gap-1.5", mine && "items-end")}>
+                      {attachments.map((part) => (
+                        <div key={part.ID} id={`vela-im-msg-${part.ID}`} className="max-w-full"><VelaImMessageContent message={part} mine={mine} /></div>
+                      ))}
+                    </div>
                   ) : null}
                   {bare ? (
                     <div className={cn("max-w-full rounded-xl transition-shadow", highlightID === m.ID && "ring-2 ring-[var(--ring)]")}>
@@ -468,7 +501,7 @@ export function VelaImChat({ controller, client, selfID, conversation, onBack, o
                       </button>
                     ) : null}
                     {canRevoke ? (
-                      <button type="button" onClick={() => void revoke(m)} className={action}>
+                      <button type="button" onClick={() => void revoke(m, attachments)} className={action}>
                         <Undo2 className="size-3" />{t("撤回")}
                       </button>
                     ) : null}

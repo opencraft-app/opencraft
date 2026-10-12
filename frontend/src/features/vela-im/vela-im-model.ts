@@ -266,8 +266,25 @@ export const quotedMessage = (message: IMMessage): QuotedMessage | null => {
   }
 };
 
-export const quoteCustomData = (quote: QuotedMessage): string =>
-  JSON.stringify({ messageReply: { messageID: quote.messageID, messageAbstract: quote.abstract, messageSender: quote.sender, messageType: 1, version: 1 } });
+export const quoteData = (quote: QuotedMessage) =>
+  ({ messageReply: { messageID: quote.messageID, messageAbstract: quote.abstract, messageSender: quote.sender, messageType: 1, version: 1 } });
+
+export const quoteCustomData = (quote: QuotedMessage): string => JSON.stringify(quoteData(quote));
+
+/**
+ * Attachments and the text typed with them travel as separate IM messages that share a bundle id; the text lists
+ * the attachment message IDs so readers (and Agents) treat them as one message. Attachment parts have no `parts`.
+ */
+export const bundleOf = (message: IMMessage): { id: string; parts?: string[] } | null => {
+  try {
+    const data = JSON.parse(str(message.cloudCustomData) || "{}") as Dict;
+    const id = str(data.velaBundle);
+    if (!id) return null;
+    return Array.isArray(data.velaBundleParts) ? { id, parts: data.velaBundleParts.map(str).filter(Boolean) } : { id };
+  } catch {
+    return null;
+  }
+};
 
 /** A centred time line before a message that starts a new day or follows a gap of over five minutes. */
 export const timeDivider = (previous: IMMessage | undefined, message: IMMessage, now = Date.now()): string | null => {
