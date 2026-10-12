@@ -13,6 +13,7 @@ function simplePdf() {
   return Buffer.from(pdf);
 }
 const pdf = process.env.OPENCRAFT_PDF_FIXTURE ? await readFile(process.env.OPENCRAFT_PDF_FIXTURE) : simplePdf();
+const reportHtml = Buffer.from('<!doctype html><html><head><style>h1{color:rgb(0,80,160)}</style></head><body><h1>Visual report</h1><img src="/fixture/external.png"><script>document.body.dataset.scriptRan="yes";window.parent.htmlInjected=true</script></body></html>');
 let video: Buffer = Buffer.alloc(0);
 const wave = Buffer.alloc(44 + 16000); wave.write("RIFF"); wave.writeUInt32LE(wave.length - 8, 4); wave.write("WAVEfmt ", 8); wave.writeUInt32LE(16, 16); wave.writeUInt16LE(1, 20); wave.writeUInt16LE(1, 22); wave.writeUInt32LE(8000, 24); wave.writeUInt32LE(16000, 28); wave.writeUInt16LE(2, 32); wave.writeUInt16LE(16, 34); wave.write("data", 36); wave.writeUInt32LE(16000, 40);
 const aliasPlugin: NonNullable<UserConfig["plugins"]>[number] = { name: "workspace-media-runtime", enforce: "pre", resolveId(source, importer) {
@@ -37,7 +38,7 @@ const vite = await createServer({
       response.setHeader("content-type", /\.m?js$/u.test(request.url) ? "application/javascript" : request.url.endsWith(".css") ? "text/css" : request.url.endsWith(".wasm") ? "application/wasm" : "application/octet-stream");
       void readFile(resolve(fixtureBuild, request.url.slice(1))).then(data => response.end(data), () => { response.statusCode = 404; response.end(); }); return;
     }
-    const files: Record<string, Buffer> = { "/fixture/report.pdf": pdf, "/fixture/small.pdf": simplePdf(), "/fixture/broken.pdf": Buffer.from("invalid pdf"), "/fixture/voice.wav": wave, "/fixture/clip.webm": video, "/fixture/unknown.bin": Buffer.from([0, 255, 1]) };
+    const files: Record<string, Buffer> = { "/fixture/report.pdf": pdf, "/fixture/small.pdf": simplePdf(), "/fixture/broken.pdf": Buffer.from("invalid pdf"), "/fixture/voice.wav": wave, "/fixture/clip.webm": video, "/fixture/unknown.bin": Buffer.from([0, 255, 1]), "/fixture/report.html": reportHtml };
     const file = files[request.url ?? ""]; if (file === undefined) { next(); return; }
     response.setHeader("content-type", "application/octet-stream"); response.end(file);
   }); } }],
@@ -48,6 +49,7 @@ try {
   browser = await chromium.launch({ headless: true, executablePath: process.env.OPENCRAFT_CHROMIUM_EXECUTABLE, args: ["--no-sandbox"] });
   const page = await browser.newPage({ viewport: { width: 1100, height: 800 } });
   const errors: string[] = []; page.on("pageerror", error => errors.push(error.message));
+  const externalHtmlRequests: string[] = []; page.on("request", request => { if (request.url().endsWith("/fixture/external.png")) externalHtmlRequests.push(request.url()); });
   await page.goto(`http://127.0.0.1:${(vite.httpServer!.address() as { port: number }).port}`);
   const open = async (name: string) => { await page.getByRole("link", { name: `/fixture/${name}`, exact: true }).click(); };
   await page.getByRole("link", { name: "/fixture/report.pdf", exact: true }).waitFor();
@@ -85,7 +87,22 @@ try {
   }));
   await open("clip.webm"); await page.locator("video").waitFor(); await page.waitForFunction(() => (document.querySelector("video")?.readyState ?? 0) >= 1);
   await open("unknown.bin"); await page.getByText("Preview unavailable. Download this file to open it.", { exact: true }).waitFor();
+  await page.setViewportSize({ width: 1100, height: 800 });
+  await open("report.html");
+  const htmlFrame = page.frameLocator("iframe.workspace-file-html");
+  await htmlFrame.getByRole("heading", { name: "Visual report" }).waitFor();
+  assert.equal(await htmlFrame.getByRole("heading", { name: "Visual report" }).evaluate(node => getComputedStyle(node).color), "rgb(0, 80, 160)");
+  await htmlFrame.locator("img").evaluate(image => (image as HTMLImageElement).decode().catch(() => undefined));
+  assert.deepEqual(externalHtmlRequests, [], "HTML preview must block external subresources");
+  assert.equal(await htmlFrame.locator("body").getAttribute("data-script-ran"), null, "HTML scripts must not run in the preview frame");
+  assert.equal(await page.evaluate(() => (window as unknown as { htmlInjected?: boolean }).htmlInjected), undefined, "HTML scripts must not run in the parent page");
+  await page.getByRole("button", { name: "Source", exact: true }).click();
+  assert.equal(await page.locator("iframe.workspace-file-html").count(), 0);
+  assert.match(await page.locator(".workspace-file-source").innerText(), /<h1>Visual report<\/h1>/u);
+  await page.getByRole("button", { name: "Preview", exact: true }).click();
+  await htmlFrame.getByRole("heading", { name: "Visual report" }).waitFor();
+  await page.screenshot({ path: process.env.OPENCRAFT_HTML_SCREENSHOT ?? "/tmp/opencraft-html-preview.png" });
   await open("small.pdf"); await page.getByRole("button", { name: "Close", exact: true }).click(); await page.waitForTimeout(500); assert.equal(await page.locator(".workspace-pdf-preview__page canvas").count(), 0);
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ status: "passed", builtFixture: Boolean(fixtureBuild), pdfBytes: pdf.length, inkPixels: pixels, mediaEntry: true, zoom: true, pagination: true, download: true, phone: true, invalidFile: true, audio: true, video: true, unknownFile: true, unmount: true }));
+  console.log(JSON.stringify({ status: "passed", builtFixture: Boolean(fixtureBuild), pdfBytes: pdf.length, inkPixels: pixels, mediaEntry: true, zoom: true, pagination: true, download: true, phone: true, invalidFile: true, audio: true, video: true, unknownFile: true, htmlPreview: true, unmount: true }));
 } finally { await browser?.close(); await vite.close(); }

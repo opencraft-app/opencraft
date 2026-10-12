@@ -20,8 +20,8 @@ function Fixture() {
       <button onClick={() => document.documentElement.setAttribute("data-theme", "dark")}>Dark</button>
       <button onClick={() => document.documentElement.setAttribute("data-theme", "light")}>Light</button>
       {resource === null ? null : <button onClick={() => setResource(null)}>Close</button>}
-      {["report.pdf", "small.pdf", "broken.pdf", "voice.wav", "clip.webm", "unknown.bin"].map(name => <WebChatDocument
-        key={name} source={`MEDIA:/fixture/${name}`} documentId={name} hostId="media-fixture"
+      {["report.pdf", "small.pdf", "broken.pdf", "voice.wav", "clip.webm", "unknown.bin", "report.html"].map(name => <WebChatDocument
+        key={name} source={name === "report.html" ? "Report: `/fixture/report.html`" : `MEDIA:/fixture/${name}`} documentId={name} hostId="media-fixture"
         cwd="/fixture" theme="light" onOpenResource={target => setResource(target)}
       />)}
     </div>

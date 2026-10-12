@@ -11494,6 +11494,14 @@ html[data-codex-window-type="electron"] .thread-scroll {
   overflow-wrap: anywhere;
 }
 
+.workspace-file-html {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  border: 0;
+  background: #fff;
+}
+
 .workspace-file-viewer__state {
   display: flex;
   width: min(280px, calc(100% - 32px));

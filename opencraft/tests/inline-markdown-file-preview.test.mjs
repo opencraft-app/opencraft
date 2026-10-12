@@ -24,7 +24,7 @@ const bundled = {exports:{}};
 new Function('require', 'exports', 'module', output.outputFiles[0].text)(createRequire(import.meta.url), bundled.exports, bundled);
 const exports = bundled.exports;
 
-test('inline Markdown path click opens the existing right-panel resource flow', async () => {
+test('inline document path click opens the existing right-panel resource flow', async () => {
   const dom = new JSDOM('<div id="app"></div>', {url:'http://localhost'});
   const previous = Object.getOwnPropertyDescriptors(globalThis);
   Object.assign(globalThis, {window:dom.window, document:dom.window.document, IS_REACT_ACT_ENVIRONMENT:true});
@@ -94,7 +94,7 @@ test('inline Markdown path click opens the existing right-panel resource flow', 
     }
     await act(()=>root.render(React.createElement(Media,mediaProps('MEDIA:/tmp/a.md',{streaming:true}))));
     assert.equal(document.querySelector('a'),null,'streaming MEDIA paths remain inert');
-    for(const code of ['README.md','cat /home/agentuser/a.md','https://example.com/a.md','javascript:alert(1)','/tmp/a.md; cat /tmp/b.md']){
+    for(const code of ['README.md','report.html','cat /home/agentuser/a.md','cat /home/agentuser/a.html','https://example.com/a.md','javascript:alert(1)','/tmp/a.md; cat /tmp/b.md']){
       await act(()=>root.render(React.createElement(Inline,props(code))));
       assert.equal(document.querySelector('a'),null,code);
     }
@@ -109,6 +109,8 @@ test('inline Markdown path click opens the existing right-panel resource flow', 
     }
     await act(()=>root.render(React.createElement(Inline,props('/tmp/a.md',{streaming:true}))));
     assert.equal(document.querySelector('a'),null);
+    await act(()=>root.render(React.createElement(Inline,props('/tmp/a.html',{streaming:true}))));
+    assert.equal(document.querySelector('a'),null);
     await act(()=>root.render(React.createElement(Inline,props('MEDIA:/tmp/a.md',{streaming:true}))));
     assert.equal(document.querySelector('a'),null,'streaming inline MEDIA remains inert');
     await act(()=>root.render(React.createElement(Link,{node:{kind:'link',href:'/tmp/actual.md',children:[],title:null},context,
@@ -121,6 +123,20 @@ test('inline Markdown path click opens the existing right-panel resource flow', 
     await act(()=>root.render(React.createElement(Link,{node:{kind:'link',href:'/tmp/actual.md',children:[],title:null},context,
       renderNodes:()=>React.createElement(Media,mediaProps('MEDIA:/tmp/label.md'))})));
     assert.equal(document.querySelectorAll('a').length,1,'MEDIA path inside an explicit link must not create nested links');
+    const htmlPath='/home/agentuser/.hermes/cron/output/wage_report_2026-10-10.html';
+    const htmlParsed=new exports.ChatDocumentCompiler().compile(`报告文件：\`${htmlPath}\`。后续每天 cron 会自动按新逻辑跑。`);
+    const htmlNode=htmlParsed.nodes[0].children.find((node)=>node.kind==='inline-code');
+    assert.equal(htmlNode?.code,htmlPath,'screenshot path must parse as inline code');
+    await act(()=>root.render(React.createElement(Inline,{node:htmlNode,context,renderNodes:()=>null})));
+    const htmlLink=document.querySelector('a');
+    assert.equal(htmlLink?.getAttribute('href'),`file://${htmlPath}`);
+    assert.equal(htmlLink?.dataset.chatResourceKind,'file');
+    const callCount=calls.length;
+    await act(()=>htmlLink.dispatchEvent(new window.MouseEvent('click',{bubbles:true,cancelable:true})));
+    assert.equal(calls.length,callCount+1);
+    assert.equal(ctx.workbenchPanels.getOwnerSnapshot('bot-a:thread-a').right.tabs.at(-1).resource,`file://${htmlPath}`);
+    await act(()=>root.render(React.createElement(Inline,props('/tmp/report.htm'))));
+    assert.equal(document.querySelector('a')?.getAttribute('href'),'file:///tmp/report.htm');
   } finally {
     await act(()=>root.unmount());
     await fiber.dispose();dom.window.close();

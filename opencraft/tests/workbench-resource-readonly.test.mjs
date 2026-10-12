@@ -15,7 +15,7 @@ const { outputFiles } = await build({
   external: ["react", "react/jsx-runtime"],
   plugins: [{ name: "panel-boundaries", setup(builder) {
     const modules = {
-      "@tanstack/react-query": `export const useQuery = () => ({data:{text:'# Hello',blob:null}}); export const useQueryClient = () => ({invalidateQueries:async()=>{}}); export const useMutation = options => {globalThis.__panelTest.mutation=options.mutationFn;return {}};`,
+      "@tanstack/react-query": `export const useQuery = () => ({data:globalThis.__panelTest.resourceData ?? {text:'# Hello',blob:null}}); export const useQueryClient = () => ({invalidateQueries:async()=>{}}); export const useMutation = options => {globalThis.__panelTest.mutation=options.mutationFn;return {}};`,
       "../runtime/appserver-runtime-context": `export const useAppServerRuntime=()=>globalThis.__panelTest.runtime;export const useAppServerSnapshot=()=>({hostId:'bot-a',conversation:null});export const useBlobResources=()=>globalThis.__panelTest.blobs;`,
       "../runtime/blob-files": `export const fileBlobResource=(_runtime,hostId,path)=>({scope:hostId,path});export const fileBlobUrls={};export const acquireFileBlob=()=>{};`,
       "../appearance-theme": `export const useAppearanceTheme=()=>({resolvedTheme:'light'});`,
@@ -83,6 +83,51 @@ test("Markdown preview and source switch without loading the editor", async () =
       assert.ok(document.querySelector(".workspace-file-markdown"));
       assert.equal(document.querySelector("pre"), null);
     }
+  } finally {
+    await act(() => root.unmount());
+    dom.window.close();
+    delete globalThis.__panelTest;
+    for (const key of keys) {
+      if (previous[key]) Object.defineProperty(globalThis, key, previous[key]);
+      else delete globalThis[key];
+    }
+  }
+});
+
+test("HTML preview renders in an isolated frame and retains source access", async () => {
+  const { JSDOM } = require("jsdom");
+  const { createRoot } = require("react-dom/client");
+  const { act } = require("react");
+  const dom = new JSDOM('<div id="app"></div>', {url:"http://localhost"});
+  const keys = ["window", "document", "IS_REACT_ACT_ENVIRONMENT"];
+  const previous = Object.fromEntries(keys.map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
+  Object.assign(globalThis, {window:dom.window, document:dom.window.document, IS_REACT_ACT_ENVIRONMENT:true});
+  const html = '<!doctype html><html><head><style>h1{color:red}</style></head><body><h1>Report</h1><script>window.parent.bad = true</script></body></html>';
+  globalThis.__panelTest = {
+    runtime:{resources:{host:{canRequest:()=>false},fileSystem:{}}},
+    blobs:{},
+    resourceData:{text:html,blob:null},
+  };
+  const root = createRoot(document.getElementById("app"));
+  try {
+    await act(() => root.render(createElement(exports.WorkspaceResourcePreviewPanel, {tab:{resource:"/home/agentuser/.hermes/cron/output/wage_report_2026-10-10.html"}})));
+    const frame = document.querySelector("iframe.workspace-file-html");
+    assert.ok(frame);
+    assert.equal(frame.getAttribute("sandbox"), "");
+    assert.equal(frame.getAttribute("referrerpolicy"), "no-referrer");
+    assert.match(frame.getAttribute("srcdoc"), /^<!doctype html><meta http-equiv="Content-Security-Policy"/u);
+    assert.match(frame.getAttribute("srcdoc"), /script-src 'none'/u);
+    assert.match(frame.getAttribute("srcdoc"), /<h1>Report<\/h1>/u);
+    const preview = new JSDOM(frame.getAttribute("srcdoc"));
+    assert.equal(preview.window.document.compatMode, "CSS1Compat");
+    assert.equal(preview.window.getComputedStyle(preview.window.document.querySelector("h1")).color, "rgb(255, 0, 0)");
+    preview.window.close();
+    const button = name => Array.from(document.querySelectorAll("button")).find(node => node.textContent === name);
+    await act(() => button("Source").click());
+    assert.equal(document.querySelector("iframe"), null);
+    assert.equal(document.querySelector("pre code")?.textContent, html);
+    await act(() => button("Preview").click());
+    assert.ok(document.querySelector("iframe.workspace-file-html"));
   } finally {
     await act(() => root.unmount());
     dom.window.close();

@@ -303,6 +303,8 @@ Connector 目录浏览不套用设置行：采用限宽品牌卡片，已配置�
 
 Markdown preview entry: explicit `.md` / `.markdown` paths in completed inline code are clickable and use the same resource policy and Host-scoped right panel as Markdown links. Bare names, commands, external URLs, streaming paths and code within an explicit link retain their original semantics. No file is read before clicking.
 
+HTML preview entry: completed inline-code `.html` / `.htm` paths use that same right-panel resource flow. The read-only file panel defaults to a sandboxed page preview and can switch to escaped source without reading the file again. Scripts and external subresources are blocked; inline styles and embedded data/Blob media can render. The file remains owned by the Host, and changing files replaces the preview document.
+
 国内嵌入聊天采用 compact 右栏初始宽度：既有默认宽度的 2/3，并继续遵守面板最小宽度和聊天内容保留宽度；拖拽调整由原 Shell owner 负责，独立工作台保持 standard 默认。
 
 国内桌面嵌入聊天由控制台占满侧栏右侧的内容列，去除设置页外围 gutter 和宽度上限；宿主通过 `--lightvela-console-header-height` 对齐 68px 导航表头。嵌入根将其投影到 toolbar token（缺省 46px），消息正文保留内部间距；移动端与旧聊天入口沿用原布局。
