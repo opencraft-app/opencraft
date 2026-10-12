@@ -101,10 +101,10 @@ Show Weixin as an independent connection for each Bot and update dual-site guida
 - Re-read frontend service, site routing, frontend AGENTS and the relevant modal design guidance; the locale generator is the checked adjacent artifact.
 
 ### stage
-The two CR frontend hints and eight locale translations pass local frontend gates; source-first OpenCraft sync and updating !5180 remain.
+The two CR frontend hints and eight locale translations pass local frontend gates. Source commit `bd69281d6` is followed by official OpenCraft regeneration; push, remote verification and preview restart remain.
 
 ### verified
-- CR follow-up: 96 focused tests pass, `pnpm check` has zero new TypeScript diagnostics, `pnpm build` passes, and documentation validation reports no errors. Before source commit, OpenCraft check reports expected locale drift; regenerate only after committing source.
+- CR follow-up: 96 focused tests pass, `pnpm check` has zero new TypeScript diagnostics, `pnpm build` passes, and documentation validation reports no errors. After source commit `bd69281d6`, official OpenCraft sync/check verifies all 136 files. Staged change-impact and diff whitespace checks pass.
 - The only content conflict was generated `UPSTREAM.json`; source and locale changes merged automatically.
 - Current 88 focused tests, `pnpm check`, `pnpm build`, documentation validation and staged change-impact checks pass against `a527d0c13`.
 - Source merge commit is `faa2e194f`; the official sync/check scripts regenerated and verified 136 OpenCraft Agent Console files.
@@ -123,4 +123,4 @@ The two CR frontend hints and eight locale translations pass local frontend gate
 - Worktree: `/Users/pablozhong/.codex/worktrees/wechat-per-bot/lightvela`.
 
 ### next_action
-- Verify the QR dialog and deletion error handling, commit source and generated closure separately, update the original MR, and restore the Beijing-backed local preview on port 5176.
+- Push the source and generated commits to the original MR, verify remote SHA/mergeability and the CI snapshot, and restore the Beijing-backed local preview on port 5176.

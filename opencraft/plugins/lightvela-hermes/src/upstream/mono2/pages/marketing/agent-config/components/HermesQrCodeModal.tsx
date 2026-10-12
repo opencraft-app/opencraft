@@ -281,6 +281,7 @@ export const HermesQrCodeModal = forwardRef<IHermesQrCodeModalHandle, IHermesQrC
 
     const getDescription = () => {
       if (status === 'ready') {
+        if (channel === 'weixin') return t('请使用未连接其他 Bot 的微信账号扫码，并在微信上确认授权。');
         if (channel === 'feishu') return t('扫码后请在飞书上确认授权');
         if (channel === 'yuanbao') return t('扫码后请在元宝 App 上点击确认');
         if (channel === 'qqbot') return t('扫码后请在 QQ 上确认授权');
