@@ -79,6 +79,8 @@ type ProfileSnapshot = {
   hasBuddyConfig: boolean | null;
 };
 const profileCache = new Map<string, ProfileSnapshot>();
+/** Cache-only readers (readEnabled: false) re-render when another reader fills the cache. */
+const profileCacheListeners = new Set<() => void>();
 
 /**
  * 读取当前 bot 的资料。
@@ -103,6 +105,13 @@ export const useBuddyProfile = (params: {
   const [loadingKey, setLoadingKey] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
   const reload = useCallback(() => setReloadToken((value) => value + 1), []);
+  const [, setCacheVersion] = useState(0);
+  useEffect(() => {
+    if (params.readEnabled !== false) return undefined;
+    const listener = () => setCacheVersion((value) => value + 1);
+    profileCacheListeners.add(listener);
+    return () => { profileCacheListeners.delete(listener); };
+  }, [params.readEnabled]);
   const avatarIdentity = params.avatarIdentity ?? JSON.stringify([botId ?? "", resolvedProfileId]);
   const legacyMascot = getLegacyHermesMascot(avatarIdentity);
   const legacyAppearance = useMemo(() => getLegacyHermesAppearance(avatarIdentity), [avatarIdentity]);
@@ -176,6 +185,7 @@ export const useBuddyProfile = (params: {
           hasBuddyConfig: avatar !== null || meta.appearance !== null,
         };
         profileCache.set(scopeKey, value);
+        profileCacheListeners.forEach((listener) => listener());
         setLoaded({ key: scopeKey, value });
       } catch {
         // 暂时读不到时只保留同一 Bot/profile 的缓存；无缓存则仍为未知。

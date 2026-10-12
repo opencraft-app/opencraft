@@ -29,6 +29,16 @@ type AgentBotRailProps = {
   manageActions?: ReactNode;
 };
 
+/** A bot's own avatar, the same one the rail shows; reads only the profile cache and never runs a command. */
+export function AgentBotAvatar({ bot, size, execDebugCommand }: { bot: OpenClawBot; size: number; execDebugCommand: SetupExec }) {
+  const t = useT();
+  const avatarIdentity = JSON.stringify([bot.id, bot.profileId ?? ""]);
+  const profile = useBuddyProfile({ botId: bot.id, readEnabled: false, profileId: bot.profileId, fallbackName: resolveAgentDisplayName(bot.name, t), exec: execDebugCommand, avatarIdentity });
+  return profile.profile.appearance && !profile.profile.legacyMascot
+    ? <HermesAppearanceAvatar appearance={profile.profile.appearance} size={size} portrait />
+    : <AgentHomepageAvatar mascot={profile.profile.legacyMascot ?? getLegacyHermesMascot(avatarIdentity)} size={size} />;
+}
+
 function AgentBotRailItem({ bot, active, mobile, restarting, execDebugCommand, onSelect, onEditAvatar }: { bot: OpenClawBot; active: boolean; mobile: boolean; restarting: boolean; execDebugCommand: SetupExec; onSelect: (botId: string) => void; onEditAvatar?: () => void }) {
   const t = useT();
   const fallbackName = resolveAgentDisplayName(bot.name, t);

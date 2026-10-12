@@ -137,7 +137,7 @@ import {
 } from "@/pages/marketing/agent-memory-save";
 import { AgentOnboardingPanel, useDemoOnboarding } from "@/pages/marketing/agent-onboarding-panel";
 import { useBuddyProfile } from "@/pages/marketing/agent-buddy-profile";
-import { AgentBotRail } from "@/pages/marketing/agent-bot-rail";
+import { AgentBotAvatar, AgentBotRail } from "@/pages/marketing/agent-bot-rail";
 import { getBotStatusColor, getBotStatusLabel } from "@/pages/marketing/agent-bot-status";
 import {
   clearPendingOnboarding,
@@ -2850,7 +2850,11 @@ export const AgentSettingsPage = ({
   const velaIm = useVelaImConsole();
   const velaImEnabled = isVelaImEnabled();
   const velaImItems = agentConversations(velaIm);
-  const velaImBots = useMemo(() => visibleBots.map((bot) => ({ id: bot.id, instanceId: bot.instanceId ?? bot.id, name: bot.name })), [visibleBots]);
+  const execBotCommand = repositories.bots.execDebugCommand;
+  const velaImBots = useMemo(() => visibleBots.map((bot) => ({
+    id: bot.id, instanceId: bot.instanceId ?? bot.id, name: bot.name,
+    avatar: (size: number) => <AgentBotAvatar bot={bot} size={size} execDebugCommand={execBotCommand} />,
+  })), [visibleBots, execBotCommand]);
   // An Agent conversation (single or group) replaces the embedded chat while selected.
   const [velaImConversation, setVelaImConversation] = useState<VelaImConversation | null>(null);
   const [newAgentChatOpen, setNewAgentChatOpen] = useState(false);

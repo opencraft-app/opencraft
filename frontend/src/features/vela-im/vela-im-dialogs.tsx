@@ -44,7 +44,7 @@ function PersonRow({ person, children }: { person: Person; children: ReactNode }
           <span className="truncate text-sm font-medium text-black/80">{person.name}</span>
           <KindBadge userID={person.userID} />
         </span>
-        <span className="block truncate text-xs text-black/40">{person.mine ? `${t("我的 Agent")} · ` : ""}{person.userID}</span>
+        {person.mine ? <span className="block truncate text-xs text-black/40">{t("我的 Agent")}</span> : null}
       </span>
       {children}
     </li>
@@ -144,7 +144,7 @@ export function GroupSettingsDialog({ open, onOpenChange, client, api, groupID, 
       setBusy("");
     }
   };
-  const nameOf = (userID: string) => names[userID] || candidates.find((c) => c.userID === userID)?.name || userID;
+  const nameOf = (userID: string) => names[userID] || candidates.find((c) => c.userID === userID)?.name || t("未命名成员");
   const members = [...(group?.members ?? [])].sort((a, b) => ["owner", "admin", "member"].indexOf(a.role) - ["owner", "admin", "member"].indexOf(b.role));
   const botOnly = !!members.length && members.every((m) => m.kind === "bot");
   if (!platformID) {

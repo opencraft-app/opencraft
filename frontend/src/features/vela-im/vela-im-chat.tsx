@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { ArrowLeft, ArrowUp, Loader2, MoreHorizontal, Paperclip, Pin, Settings2, Trash2, Undo2 } from "lucide-react";
+import { ArrowLeft, ArrowUp, Loader2, MoreHorizontal, Paperclip, Pin, Settings2, Trash2, Undo2, Users } from "lucide-react";
 import { defaultGroupPolicy, platformGroupId, policyFromGroup, type GroupReplyPolicy, type IMMessage, type MessageInput } from "@vela/im-client";
 import type { VelaBrowserClient } from "@vela/im-client/browser";
 import { Badge } from "@/components/ui/badge";
@@ -29,6 +29,9 @@ import {
 import type { VelaImController } from "./use-vela-im";
 
 const REVOKE_WINDOW_SECONDS = 120;
+/** Picker entry for @everyone; inserting `@所有人` is what resolveMentions turns into Tencent's @all. */
+const MENTION_ALL_ID = "@all";
+const MENTION_ALL_TEXT = "所有人";
 
 const attachmentKind = (file: File): MessageInput["type"] =>
   file.type.startsWith("image/") ? "image" : file.type.startsWith("video/") ? "video" : file.type.startsWith("audio/") ? "audio" : "file";
@@ -135,9 +138,12 @@ export function VelaImChat({ controller, client, selfID, conversation, onBack, o
   const query = isGroup ? mentionQuery(text, caret) : null;
   const mentionKey = query === null ? null : `${caret}:${query}`;
   useEffect(() => { setActiveMention(0); }, [mentionKey]);
+  const mentionAll = others.length > 1 && query !== null && `${MENTION_ALL_TEXT} all ${t("所有人")}`.toLowerCase().includes(query.toLowerCase());
   const suggestions = query === null || mentionKey === dismissedMention ? [] : [
+    ...(mentionAll ? [{ userID: MENTION_ALL_ID, name: t("所有人") }] : []),
     ...others.filter((m) => `${m.name} ${m.userID}`.toLowerCase().includes(query.toLowerCase())).sort((a, b) => Number(isAgentID(b.userID)) - Number(isAgentID(a.userID))).slice(0, 6),
   ];
+  const mentionText = (m: { userID: string; name: string }) => (m.userID === MENTION_ALL_ID ? MENTION_ALL_TEXT : m.name);
 
   const insertMention = useCallback((name: string) => {
     const before = text.slice(0, caret).replace(/@[^\s@]*$/, `@${name} `);
@@ -194,7 +200,7 @@ export function VelaImChat({ controller, client, selfID, conversation, onBack, o
       }
       if (active && (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey))) {
         e.preventDefault();
-        insertMention(active.name);
+        insertMention(mentionText(active));
         return;
       }
       if (e.key === "Escape") {
@@ -347,6 +353,12 @@ export function VelaImChat({ controller, client, selfID, conversation, onBack, o
       <div className="border-t border-black/[0.06] bg-white p-3">
         {isGroup && others.some((m) => isAgentID(m.userID)) ? (
           <div className="mb-2 flex flex-wrap gap-1.5" aria-label={t("快速 @ Agent")}>
+            {others.length > 1 ? (
+              <button type="button" onClick={() => { setText((v) => `${v}${v && !v.endsWith(" ") ? " " : ""}@${MENTION_ALL_TEXT} `); textareaRef.current?.focus(); }}
+                className="inline-flex h-7 items-center rounded-full border border-black/[0.08] px-2.5 text-xs text-black/60 hover:border-black/15 hover:text-black/80">
+                @{t("所有人")}
+              </button>
+            ) : null}
             {others.filter((m) => isAgentID(m.userID)).map((m) => (
               <button key={m.userID} type="button" onClick={() => { setText((v) => `${v}${v && !v.endsWith(" ") ? " " : ""}@${m.name} `); textareaRef.current?.focus(); }}
                 className="inline-flex h-7 items-center rounded-full border border-black/[0.08] px-2.5 text-xs text-black/60 hover:border-black/15 hover:text-black/80">
@@ -361,11 +373,14 @@ export function VelaImChat({ controller, client, selfID, conversation, onBack, o
               {suggestions.map((m, index) => (
                 <li key={m.userID}>
                   <button id={`vela-im-mention-${index}`} type="button" role="option" aria-selected={index === activeMention} tabIndex={-1}
-                    onMouseEnter={() => setActiveMention(index)} onMouseDown={(e) => { e.preventDefault(); insertMention(m.name); }}
+                    onMouseEnter={() => setActiveMention(index)} onMouseDown={(e) => { e.preventDefault(); insertMention(mentionText(m)); }}
                     className={cn("flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm text-black/75", index === activeMention && "bg-black/[0.05]")}>
-                    <VelaImAvatar name={m.name} seed={m.userID} kind={isAgentID(m.userID) ? "agent" : "human"} size="sm" />
+                    {m.userID === MENTION_ALL_ID ? (
+                      <span className="inline-flex size-7 shrink-0 items-center justify-center rounded-full bg-black/[0.06] text-black/60"><Users className="size-4" /></span>
+                    ) : <VelaImAvatar name={m.name} seed={m.userID} kind={isAgentID(m.userID) ? "agent" : "human"} size="sm" />}
                     <span className="truncate">{m.name}</span>
-                    {isAgentID(m.userID) ? <Badge variant="warning" className="ml-auto">Agent</Badge> : null}
+                    {m.userID === MENTION_ALL_ID ? <span className="ml-auto text-xs text-black/40">{t("{{count}} 位成员", { count: others.length })}</span>
+                      : isAgentID(m.userID) ? <Badge variant="warning" className="ml-auto">Agent</Badge> : null}
                   </button>
                 </li>
               ))}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Bot, Check, Loader2, Plus, UserPlus, Users } from "lucide-react";
 import { platformGroupId, type IMMessage, type ImGroup } from "@vela/im-client";
 import { Badge } from "@/components/ui/badge";
@@ -11,6 +11,7 @@ import { useT } from "@/i18n/t";
 import { cn } from "@/lib/utils";
 import { readStoredAuthToken } from "@/repositories/http-repositories";
 import { useVelaIm, type AgentItem, type VelaImController } from "./use-vela-im";
+import { VelaImPortraitContext, type VelaImPortrait } from "./vela-im-avatar";
 import { VelaImChat } from "./vela-im-chat";
 import { GroupSettingsDialog } from "./vela-im-dialogs";
 import { isVelaImEnabled } from "./vela-im-env";
@@ -45,6 +46,8 @@ export interface ConsoleBot {
   id: string;
   instanceId: string;
   name: string;
+  /** The bot's own avatar as the host renders it elsewhere, at the given pixel size. */
+  avatar?: (sizePx: number) => ReactNode;
 }
 
 interface AgentOption {
@@ -106,7 +109,7 @@ function AgentPicker({ options, selected, onChange, exclude = [] }: {
               onClick={() => toggle(option.key)}
               className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-black/[0.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--ring)]"
             >
-              <span className="inline-flex size-7 shrink-0 items-center justify-center rounded-full bg-[#FCE0B5] text-black/70"><Bot className="size-3.5" /></span>
+              <span className="inline-flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#FCE0B5] text-black/70">{option.bot.avatar?.(28) ?? <Bot className="size-3.5" />}</span>
               <span className="min-w-0 flex-1 truncate text-sm font-medium text-black/80">{option.name}</span>
               {option.agent ? <AgentStateBadge agent={option.agent} /> : null}
               <span className={cn("inline-flex size-5 shrink-0 items-center justify-center rounded-md border",
@@ -280,10 +283,16 @@ export function VelaImConversationView({ im, bots, conversation, onOpen, onClose
   const [refreshKey, setRefreshKey] = useState(0);
   const connection = im.connection;
   const current = useMemo(() => im.conversations.find((c) => c.conversationID === conversation.conversationID) ?? conversation, [im.conversations, conversation]);
+  const portrait = useMemo<VelaImPortrait>(() => {
+    const byBot = new Map(bots.map((bot) => [botKey(bot.instanceId, bot.id), bot]));
+    const byUser = new Map(im.agents.map((agent) => [agent.userId, byBot.get(botKey(agent.instanceId, agent.botId))]));
+    return (userID, sizePx) => byUser.get(userID)?.avatar?.(sizePx) ?? null;
+  }, [bots, im.agents]);
   if (!connection) {
     return <div className="flex h-full items-center justify-center text-sm text-black/45"><Loader2 className="mr-2 size-4 animate-spin" />{t("正在加载…")}</div>;
   }
   return (
+    <VelaImPortraitContext.Provider value={portrait}>
     <div className="flex h-full min-h-0 flex-col">
       <VelaImChat
         key={current.conversationID}
@@ -324,6 +333,7 @@ export function VelaImConversationView({ im, bots, conversation, onOpen, onClose
         />
       ) : null}
     </div>
+    </VelaImPortraitContext.Provider>
   );
 }
 
