@@ -123,6 +123,7 @@ docker run -d --name vela-web-proxy --network host --restart unless-stopped \
   -v "$ROOT/proxy/nginx.conf:/etc/nginx/nginx.conf:ro" -v "$ROOT/web:/srv/vela-web:ro" nginx:1.28-alpine >/dev/null
 
 for _ in $(seq 1 30); do curl -fsS "http://127.0.0.1:$COLLAB_PORT/readyz" >/dev/null 2>&1 && break; sleep 1; done
+for _ in $(seq 1 30); do curl -fsS -o /dev/null http://127.0.0.1:13090/ 2>/dev/null && break; sleep 1; done
 curl -fsS -o /dev/null -w "collaboration readyz %{http_code}\n" "http://127.0.0.1:$COLLAB_PORT/readyz"
 curl -fsS -o /dev/null -w "dev gateway %{http_code}\n" "http://127.0.0.1:$GATEWAY_PORT/healthz"
 curl -sS -o /dev/null -w "unauthenticated /v1/collaboration/me/bots via nginx %{http_code} (expect 401)\n" \
