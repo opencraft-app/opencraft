@@ -99,7 +99,7 @@ const cnDocs = [
   // Bot 与模型
   { slug: 'configuration/index', title: '配置总览', file: '05-configuration.md', group: 'Bot 与模型', description: 'LightVela 管理台配置流程。', hideDescription: true },
   { slug: 'configuration/bots-switching', title: '管理与切换 Bot', file: 'configuration/bots-switching.md', group: 'Bot 与模型', description: '在一个 LightVela 云端 Agent 中管理、切换和按权限创建多个专用 Bot。', hideDescription: true },
-  { slug: 'configuration/agent-chat', title: '网页对话', file: 'configuration/agent-chat.md', group: 'Bot 与模型', description: '在网页中与主 Bot 对话、检查回复并排查不可用状态。', hideDescription: true },
+  { slug: 'configuration/agent-chat', title: '网页对话', file: 'configuration/agent-chat.md', group: 'Bot 与模型', description: '在网页中与当前选中的 Bot 对话、检查回复并排查不可用状态。', hideDescription: true },
   { slug: 'configuration/model', title: '配置模型', file: 'configuration/model.md', group: 'Bot 与模型', description: '接入和管理 Hermes 使用的大语言模型。', hideDescription: true },
   { slug: 'configuration/multiple-models', title: '模型切换', file: 'configuration/multiple-models.md', group: 'Bot 与模型', description: '在多个已配置模型之间切换 Agent 当前使用的模型。', hideDescription: true },
   // 成长

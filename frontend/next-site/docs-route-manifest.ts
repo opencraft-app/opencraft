@@ -2669,7 +2669,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "create-first-hermes": "2026-10-12",
     "core-concepts": "2026-09-27",
     "who-is-lightvela-for": "2026-09-27",
-    "account": "2026-09-20",
+    "account": "2026-10-12",
     "plans": "2026-09-28",
     "credits": "2026-08-20",
     "configuration": "2026-10-12",
