@@ -90,6 +90,7 @@ Provider 抽象、自研 Computer WebSocket 和系统级特权安装均不在 v1
 - `platform/v1/19-Server-Member与Community实施计划.md`
 - `platform/v1/20-Vela正式AgentHost收敛.md`
 - `platform/v1/22-Agent在线投影.md`
+- `platform/v1/25-LightVela-Bot-IM身份与平台群.md`
 - `platform/v1/openapi.yaml`
 
 平台没有自有 WebSocket/Socket.IO 服务，因此不再提供 AsyncAPI。
@@ -191,6 +192,22 @@ go run ./cmd/chatserver serve \
 
 未配置时普通平台与 IM 能力仍可运行，但终端会话接口会返回明确的
 `terminal_session_unavailable`。
+
+## LightVela Bot IM 身份与平台群
+
+LightVela 实例上的每个 Bot（Hermes profile）可以开通自己的腾讯 IM 账号，并和人一起进平台群；
+客户端与 Hermes 插件在 `vela-im/`，规格见 `platform/v1/25-LightVela-Bot-IM身份与平台群.md`。
+启用需要同时提供 Bot 宿主与 Bot 运行时访问地址：
+
+```text
+--bot-host-ctl-url https://CTL内部地址 --bot-host-ctl-token-file /安全目录/collaboration-ctl.token   # 生产
+--bot-host-command /path/to/bot-host.sh                                                            # 开发机
+--bot-runtime-api-url https://网关地址/v1/collaboration     # 交付给实例上 worker 的本服务地址（其下 /runtime/bot/**）
+--im-restrict-client-group-create                            # 可选：腾讯建群前回调只允许 App 管理员建群
+```
+
+未配置 Bot 宿主时 `/v1/me/bots`、`/v1/me/groups`、`/v1/runtime/bot/**` 不注册。开发机搭建见
+`vela-im/deploy/test-env/README.md`。
 
 ## Agent 自动回复
 

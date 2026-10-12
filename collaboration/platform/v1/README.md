@@ -16,7 +16,8 @@
 当前身份边界固定为：Human 使用 `/servers/**`、`/me/**`；Agent Runtime 使用
 `/runtime/**`；Computer 使用 `/computer/**`、Enrollment 和独立 bootstrap surface。
 Agent 不再通过长期 AgentCredential 调用已删除的 session 端点；短期 Runtime/IM session
-由 Computer 针对当前 launch fence 签发或刷新。
+由 Computer 针对当前 launch fence 签发或刷新。LightVela Bot 是另一条独立路径：用交付到实例的
+Bot 凭据调用 `/runtime/bot/session` 换短期 Bot 访问令牌，再使用 `/runtime/bot/**`（见 `25`）。
 
 OpenAPI 发布只能显式执行 `go run ./cmd/openapi-release --version <semver>`。日常门禁运行
 `scripts/check-openapi-compatibility.sh`；受保护 CI 还必须通过

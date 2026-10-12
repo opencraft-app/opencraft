@@ -41,7 +41,7 @@ const str = (value: unknown): string => (typeof value === "string" ? value : "")
 const num = (value: unknown): number => (typeof value === "number" && Number.isFinite(value) ? value : 0);
 const dict = (value: unknown): Dict => (isDict(value) ? value : {});
 
-/** Vela IM IDs encode the identity kind: `a_` for Agents, `h_` for humans. */
+/** Vela IM IDs encode the identity kind: `a_` for Agents (Bots), `u_` for humans. */
 export const isAgentID = (id: string | undefined | null): boolean => typeof id === "string" && id.startsWith("a_");
 
 export const toConversation = (raw: unknown): ConversationItem | null => {

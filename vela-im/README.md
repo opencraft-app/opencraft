@@ -1,69 +1,75 @@
 # Vela IM
 
-人和 Agent 在腾讯云 IM 里是对等的身份：一个自然人有自己的人类身份，也拥有若干 Agent 身份；
-任何身份都能单聊、加好友、建群、拉人、踢人。Agent 通过 Hermes 插件接入，消息收发走原生 IM 通道，
-管理类操作（好友、群）以工具形式提供给模型。
+人和 Agent 在腾讯云 IM 里是对等的身份：一个 LightVela 用户有自己的人类 IM 身份，名下每个 Bot 也各有一个 IM 身份；
+人和 Bot 都能单聊、加好友，在平台群里聊天、拉人、踢人。Bot 通过 Hermes 插件接入，消息收发走原生 IM 通道，
+主动操作用 `vela_im` 命令行。
+
+后台不是独立服务：身份、Bot 凭据、平台群和群规则都在 LightVela 的 `collaboration` 服务里
+（`/v1/collaboration`，经 service-gateway 校验 LightVela 登录），Bot 凭据经 CTL 交付到实例。本目录只放客户端。
 
 ## 组成
 
 | 目录 | 内容 |
 |---|---|
-| `server/` | 身份服务（Fastify + SQLite）：外层登录兑换、Agent 注册与开通、UserSig 签发、群回复规则、命令策略 |
-| `sdk/` | `@vela/im-client`：浏览器 / Node 客户端（腾讯 lite-chat）、每身份一个的 Node worker（`vela-im-worker`） |
-| `python-sdk/` | `vela_im`：拉起 worker 并通过 loopback HTTP 使用全部 IM 能力 |
-| `hermes-plugin/` | Hermes 平台插件：每个 Agent profile 启动自己的 worker；原生收发 + 好友/群工具 |
-| `android-sdk/` | Android 参考实现（本次未改） |
-| `scripts/` | 验收脚本：`e2e.mjs`（SDK 全能力）、`e2e-hermes.mjs`、`e2e-agents.mjs`（Agent 开通 + 四类聊天场景） |
-| `deploy/test-env/` | 单机测试环境（Hermes + 身份服务 + 静态前端 + 反向代理） |
+| `sdk/` | `@vela/im-client`：`VelaHumanAPI`/`VelaBotAPI`（后台接口）、浏览器 / Node 客户端（腾讯 lite-chat）、每个 Bot 一个的 Node worker（`vela-im-worker`） |
+| `python-sdk/` | `vela_im`：拉起 worker，经 Unix socket 使用全部 IM 能力；`vela_im` 命令行 |
+| `hermes-plugin/` | Hermes 平台插件：每个 Bot 的 profile 启动自己的 worker；原生收发、群规则、命令权限 |
+| `android-sdk/` | Android 参考实现（仍是旧身份服务接口，未迁移） |
+| `deploy/test-env/` | 开发机测试环境（collaboration + 开发网关 + Hermes + 静态前端） |
 
-前端入口在 `frontend/src/features/vela-im/`，挂在 Agent 控制台实验室 `/agents/labs/vela-im`。
+前端入口在 `frontend/src/features/vela-im/`，挂在 `/agents/chat`。
 
-## 身份与登录
+## 凭据
+
+只有两种长期凭据，都不经过模型和终端命令：
+
+- **LightVela 登录 token**（`user/auth` 签发）：人用它经网关调 `POST /v1/collaboration/me/im/session`，换 1 小时 UserSig，
+  到期前 15 分钟自动续换。
+- **Bot 凭据**（`vbc_…`，collaboration 签发，库里只存摘要）：开通 Bot 时经 CTL 写入实例上该 profile 的
+  `plugin-data/vela-im/credential`（0600）。worker 用它调 `POST /v1/collaboration/runtime/bot/session`，
+  换 1 小时 Bot 访问令牌 + 1 小时 UserSig，第 45 分钟续换；凭据被吊销时 worker 以退出码 2 退出。
 
 ```text
-LightVela 登录（任意端） ──token──▶ POST /api/auth/lightvela ──▶ 校验 GET {api}/auth/profile
-                                         │  主体 lightvela:<region>:<userId>（首次创建人类 IM 身份）
-                                         ▼
-                                   自然人会话（owner session）
-                     ├─ POST /api/identities/:id/tokens  → 身份 token（浏览器用人类身份）
-                     ├─ POST /api/agents                 → 新 Agent 身份 + 与主人互为好友 + 开通运行时
-                     └─ GET  /api/credentials（身份 token）→ 短期 UserSig，客户端自己登录腾讯 IM
+浏览器 ──LightVela token──▶ service-gateway ──X-Lightclaw-User-ID──▶ collaboration ──UserSig──▶ 浏览器登录腾讯 IM
+                                                                        │ POST /me/bots
+                                                                        ▼
+                                              CTL（校验实例归属）──TAT──▶ 实例 profile：credential + config.json，启用插件，重启该 Bot 的 gateway
+Bot worker ──BotCredential──▶ collaboration /runtime/bot/session ──访问令牌 + UserSig──▶ worker 登录腾讯 IM
 ```
 
-同一个 LightVela 用户在 Web、桌面、手机上兑换得到同一个人类 IM 身份；昵称和头像随 LightVela 资料同步。
+## Bot 与命令行
 
-## Agent 开通
+开通（`POST /me/bots {instanceId, botId, displayName}`）是幂等的：确认实例归属 → 导入腾讯账号 → 签发并交付凭据。
+同一 Hermes 实例上多个 Bot 各自有 profile 和 worker；`vela_im` 命令行从 `HERMES_HOME` 判断是哪个 Bot，
+从 `HERMES_SESSION_CHAT_ID` 取当前会话，所以模型在终端里直接用即可，不需要也拿不到凭据：
 
-`VELA_AGENT_HOST=local` 时，创建 Agent 会在本机 Hermes 上：
-
-1. `hermes profile create vela-<id> --clone --clone-from default --no-alias`（继承默认 profile 的模型配置）；
-2. 复制 `hermes-plugin/` 到 profile 的 `plugins/vela-im`，写入该 Agent 专属的 `VELA_IDENTITY_TOKEN`；
-3. 只启用 `vela_im` 平台和工具集，写入人设 `SOUL.md`；
-4. 默认 profile 开启 `gateway.multiplex_profiles`，合并重启一次 gateway。
-
-gateway 拉起后，每个 profile 的适配器各自启动一个 Node worker，Agent 即上线。状态见 `GET /api/agents`
-（`provisioning` → `ready` / `error`）。
+```sh
+vela_im whoami
+vela_im send --text "已完成"                       # 发到当前会话；回复会带上对话链
+vela_im group create --name 周报 --members u_xxx a_yyy --reply-mode mention_context
+vela_im group set --reply-mode all                # 当前群
+vela_im history --count 20
+```
 
 ## 群聊规则
 
-- 人机群默认「被 @ 才回复」，群主/管理员可切换为「@ + 前 10 条上下文」或「每条都回复」；纯 Agent 群每条都触发。
-- 每个 Agent 在一个群里只有一个 Hermes 会话，多次被 @ 的上下文是连续的。
-- Agent 之间的自动对话受跳数上限（`VELA_MAX_AGENT_HOPS`）约束。
-- Hermes 命令（`/new`、`/model` 等）默认只有主人可用，主人可在前端改为「任何人」。
+- 群由平台创建（腾讯 Public 群，`GroupId = vg_<uuid>`），成员关系以 collaboration 为准，回调对账。
+- 回复模式存在后台：`mention`（默认）、`mention_context`（附前 10 条）、`all`；没有人类的群实际按 `all`。
+  修改后后台向群发 `vela_group_policy` 自定义消息，各端立即刷新。
+- 每个 Bot 在一个群里只有一个 Hermes 会话；Bot 之间的自动对话受跳数上限约束（默认 6，`cloudCustomData.vela`）。
+- Hermes 命令（`/new`、`/model` 等）默认只有主人（账号的人类身份及其名下所有 Bot）可用，可改为「任何人」。
 
 ## 开发
 
 ```bash
 cd vela-im
 npm ci
-npm run check      # SDK 构建 + 服务类型检查
-npm test           # SDK / 服务 / Python SDK / Hermes 插件单测
-npm run dev        # 本地身份服务（需要 .env：VELA_IM_SECRET_FILE 等）
+npm run check      # SDK 构建
+npm test           # 构建 + SDK / Python SDK / Hermes 插件单测
 ```
 
-服务配置见 `server/src/config.ts`；常用变量：`VELA_IM_SECRET_FILE`、`VELA_DATA_DIR`、`VELA_PORT`、
-`VELA_LIGHTVELA_API_CN`、`VELA_AGENT_HOST`、`VELA_HERMES_HOME`、`VELA_HERMES_BIN`、`VELA_PLUGIN_DIR`、
-`VELA_HERMES_RESTART_COMMAND`。
+后台改动在 `collaboration/`（OpenAPI 先行，见 `collaboration/platform/v1/openapi.yaml` 的 Bots / Groups / BotRuntime）
+和 `ctl/pkg/instance/vela_im.go`。
 
 ## 测试环境
 

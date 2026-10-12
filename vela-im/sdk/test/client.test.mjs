@@ -121,6 +121,22 @@ test('Human API calls the backend with the host-provided login header and unwrap
  assert.match(created.groupId,/^[0-9a-f-]{36}$/,'creation carries a client-generated UUIDv7 so retries are idempotent');
 });
 
+test('Human UserSig exchange waits out the first-sighting IM import, but not other failures',async()=>{
+ let calls=0;
+ const pending=()=>new Response(JSON.stringify({error:{code:'im_session_unavailable',message:'IM 身份尚未就绪'}}),{status:503});
+ const ready=new VelaHumanAPI('https://x/v1/collaboration',{fetch:async()=>++calls<3?pending():
+  new Response(JSON.stringify({sdkAppId:7,userId:'u_me',userSig:'sig',expiresAt:'2030-01-01T00:00:00Z'}),{status:200})});
+ assert.equal((await ready.imSession(1)).userID,'u_me');
+ assert.equal(calls,3);
+ const never=new VelaHumanAPI('https://x/v1/collaboration',{fetch:async()=>pending()});
+ await assert.rejects(never.imSession(1,4),e=>e.code==='im_session_unavailable');
+ let restricted=0;
+ const banned=new VelaHumanAPI('https://x/v1/collaboration',{fetch:async()=>{restricted++;
+  return new Response(JSON.stringify({error:{code:'im_identity_restricted',message:'已封禁'}}),{status:403})}});
+ await assert.rejects(banned.imSession(1),e=>e.code==='im_identity_restricted');
+ assert.equal(restricted,1);
+});
+
 test('Bot API exchanges the credential once, then uses the short-lived token and renews it on 401',async()=>{
  const requests=[];let sessions=0;let rejectNext=false;
  const session=()=>({accessToken:`token-${++sessions}`,expiresAt:new Date(Date.now()+3600000).toISOString(),

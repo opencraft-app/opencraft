@@ -1,16 +1,22 @@
-# 单机测试环境
+# 开发机测试环境
 
-一台机器上跑齐：LightVela 前端（静态导出）+ LightVela API 反向代理 + Vela IM 身份服务 + Hermes（每个 Agent 一个
-profile，共用一个 multiplex gateway）。当前实例：<https://yuehuali.devcloud.woa.com>（DevCloud，iOA 网关终止 HTTPS）。
+一台机器上跑齐：LightVela 前端（静态导出）+ LightVela API 反向代理 + collaboration（SQLite）+ 开发网关 + Hermes
+（每个 Bot 一个 profile，共用一个 multiplex gateway）。当前实例：<https://yuehuali.devcloud.woa.com>（DevCloud，iOA 网关终止 HTTPS）。
 
 ```text
 浏览器 ──HTTPS──▶ iOA 网关 ──▶ :80 dsh-voice-proxy ──/──▶ 127.0.0.1:13090 vela-web-proxy (nginx)
-                                         │ /dsh-voice/ → 原 DSH 服务       ├─ /            静态前端（frontend/out）
-                                         │ /live-demo/ → 原静态页          ├─ /auth|/v1|…  api.lightvela.com（真实 LightVela 登录）
-                                                                          └─ /vela-im/    127.0.0.1:18787 身份服务
-身份服务 ──创建 Agent──▶ hermes profile create + 插件 + 重启 vela-hermes-gateway ──▶ 每个 Agent 一个 Node IM worker
-浏览器 / worker ──UserSig──▶ 腾讯云 IM（消息不经过本机服务）
+                                                         ├─ /                  静态前端（frontend/out）
+                                                         ├─ /auth|/v1|…        api.lightvela.com（真实 LightVela 登录）
+                                                         └─ /v1/collaboration/ 127.0.0.1:18786 开发网关
+开发网关：用 api.lightvela.com/auth/profile 校验 LightVela token，去掉客户端身份头，注入内部 Bearer + X-Lightclaw-User-ID
+         ──▶ 127.0.0.1:18791 collaboration（/v1/*）
+collaboration ──开通 Bot──▶ bot-host.sh：建 profile vb-<hash>、装插件、写 credential/config.json、重启 vela-hermes-gateway
+Bot worker ──凭据换会话──▶ 127.0.0.1:18791/v1/runtime/bot/session；浏览器 / worker ──UserSig──▶ 腾讯云 IM
 ```
+
+生产里这三处分别是 service-gateway、TDSQL 和 CTL（经 TAT 写实例）；collaboration 代码相同，只是启动参数不同
+（`--bot-host-ctl-url` 代替 `--bot-host-command`）。开发机没有 CTL，无法校验 Bot 实例归属：`bot-host.py` 默认放行，
+设 `VELA_DEV_ALLOWED_ACCOUNTS=usr_a,usr_b` 后只允许这些账号开通。
 
 ## 搭建
 
@@ -20,35 +26,60 @@ bash vela-im/deploy/test-env/bootstrap.sh
 #    给 $HOME/vela-test/hermes-home 默认 profile 配置模型：config.yaml 的 model/providers 与 .env 中的 key
 # 2. 腾讯 IM 密钥（不入库）
 install -m 600 /dev/stdin $HOME/vela-test/secrets/im-secret.env <<< 'VELA_IM_SECRET_KEY=...'
-# 3. 构建 vela-im
+# 3. 构建 vela-im（SDK、worker bundle、插件）
 cd vela-im && npm ci && npm run build && cd ..
-# 4. 构建前端（同源代理模式 + 开启 IM 实验室）
+# 4. 构建前端（同源代理模式 + 开启 IM）。pnpm 把 file: 依赖拷贝进 node_modules，SDK 改动后先同步一次
 cd frontend && pnpm install
-NEXT_PUBLIC_AUTH_API_BASE_URL=local-proxy NEXT_PUBLIC_VELA_IM_API_BASE=/vela-im NEXT_PUBLIC_REGION=cn pnpm build
+SDK=node_modules/.pnpm/@vela+im-client@file+..+vela-im+sdk/node_modules/@vela/im-client
+rsync -a --delete ../vela-im/sdk/src/ $SDK/src/ && rsync -a --delete ../vela-im/sdk/dist/ $SDK/dist/
+NEXT_PUBLIC_AUTH_API_BASE_URL=local-proxy NEXT_PUBLIC_VELA_IM_API_BASE=/v1/collaboration NEXT_PUBLIC_REGION=cn pnpm build
 rsync -a --delete out/ $HOME/vela-test/web/ && cd ..
-# 5. 服务与代理
-VELA_PUBLIC_ORIGIN=https://yuehuali.devcloud.woa.com bash vela-im/deploy/test-env/install.sh
+# 5. collaboration + 开发网关 + Hermes gateway（systemd）与 nginx（docker）
+bash vela-im/deploy/test-env/install.sh
 ```
 
-把域名的入口反向代理 `location /` 指向 `http://127.0.0.1:13090`。前端构建内存不足（exit 137）时临时加 swap。
+`install.sh` 会：
+
+- 在 `$HOME/vela-test/secrets/` 生成一次 `collab-jwt-key`、`collab-identity-key`、`collab-gateway-token`（0600，之后保留；
+  身份派生密钥决定所有 IM UserID，不能换），并从 `im-secret.env` 生成 `im-secret-key`；
+- 编译 `collaboration/cmd/chatserver` 到 `$HOME/vela-test/bin/`，数据库在 `$HOME/vela-test/collab-data/`；
+- 把旧身份服务留下的 `vela-*` profile 移到 `$HOME/vela-test/retired-profiles/`，停用 `vela-im.service`；
+- 安装并重启 `vela-collaboration`、`vela-collab-gateway`、`vela-hermes-gateway`，重建 `vela-web-proxy`。
+
+## 测试
+
+1. 打开站点并用真实 LightVela 账号登录，进入 `/agents/chat`。
+2. 在 IM 区新建群或把单聊升级为群，选择自己的 Bot：首次选择时自动开通（本机出现 `vb-…` profile，gateway 约几秒后重启，
+   该 Bot 的 worker 上线）。
+3. 在群里 @ Bot，确认按回复模式触发；在群设置里切换回复模式、邀请 / 移除成员、解散。
+4. 在 Bot 的终端里 `vela_im whoami`、`vela_im send --text …` 等（或在对话里让它用 `vela_im`）。
+
+不依赖登录的后台冒烟测试（真实腾讯 IM，独立端口与数据，不影响上面的服务）：
+
+```bash
+bash vela-im/deploy/test-env/smoke.sh
+```
+
+覆盖：网关拒绝无登录请求、人类换 UserSig、Bot 开通与重复开通、凭据文件权限与插件启用、凭据换会话、伪造凭据被拒、worker 上线与
+`vela_im whoami`、平台建群 / 改规则 / Bot 读群 / Bot 发群消息、解散、删除 Bot 后旧凭据失效。状态保存在 `$HOME/vela-test/smoke/`，
+重复运行复用同一组腾讯账号。
 
 ## 运维
 
 ```bash
-systemctl status vela-im vela-hermes-gateway
-journalctl -u vela-im -f
-tail -f $HOME/vela-test/hermes-home/logs/gateway.log       # 各 Agent 的 vela_im 适配器上线情况
+systemctl status vela-collaboration vela-collab-gateway vela-hermes-gateway
+journalctl -u vela-collaboration -f
+journalctl -u vela-collab-gateway -f
+tail -f $HOME/vela-test/hermes-home/logs/gateway.log          # 各 Bot 的 vela_im 适配器上线情况
+tail -f $HOME/vela-test/hermes-home/profiles/vb-*/plugin-data/vela-im/worker.log
 docker logs vela-web-proxy
+# 封禁 / 解封某个 IM 身份（SQLite 需先停服务）
+sudo systemctl stop vela-collaboration
+CHATSERVER_DATABASE_PATH=$HOME/vela-test/collab-data/collaboration.sqlite $HOME/vela-test/bin/chatserver im restrict \
+  --im-user-id a_xxx --im-sdk-app-id 1600166071 --im-admin-user-id administrator \
+  --im-secret-key-file $HOME/vela-test/secrets/im-secret-key        # 加 --release 解封
+sudo systemctl start vela-collaboration
 ```
 
-## 验收
-
-```bash
-# 临时起一个只监听 loopback 的演示实例来签发两个测试自然人（不暴露到域名）
-cd vela-im/server && set -a && . $HOME/vela-test/server.env && set +a
-VELA_PORT=18788 VELA_DEMO_MODE=true node dist/main.js &
-cd .. && VELA_TEST_URL=http://127.0.0.1:18788 VELA_AGENT_URL=http://127.0.0.1:18787 node scripts/e2e-agents.mjs
-```
-
-覆盖：Agent 注册与开通、自动与主人互为好友、单 Agent-单人单聊、多 Agent-非主人单聊、非主人命令被拒、
-多 Agent-单人群聊、单 Agent-多人群聊、多 Agent-多人群聊（@ 谁谁回复，未 @ 不插话）。
+腾讯 IM 回调（成员对账、发消息前封禁、建群拦截）需要公网可达的回调地址，开发机收不到；平台自己发起的操作不依赖回调。
+试用版 IM 应用最多 100 个账号，超出时导入失败（腾讯错误 70398），需要清理旧账号或升级应用。

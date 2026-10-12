@@ -116,10 +116,20 @@ export class VelaHumanAPI {
   private async request<T>(method:string,url:string,body?:unknown) {
     return this.http.request<T>(method,url,body,(await this.options.headers?.())??{});
   }
-  /** A fresh one-hour UserSig for this user's own IM identity. */
-  async imSession():Promise<Credentials> {
-    const session=await this.request<{sdkAppId:number;userId:string;userSig:string;expiresAt:string}>('POST','/me/im/session');
-    return {SDKAppID:session.sdkAppId,userID:session.userId,userSig:session.userSig,expiresAt:Date.parse(session.expiresAt)};
+  /**
+   * A fresh one-hour UserSig for this user's own IM identity. An account's first sighting queues its IM import, and
+   * the backend answers `im_session_unavailable` until it finishes, so that case is retried for a while.
+   */
+  async imSession(retryDelayMs=1500,attempts=20):Promise<Credentials> {
+    for(let attempt=1;;attempt++){
+      try {
+        const session=await this.request<{sdkAppId:number;userId:string;userSig:string;expiresAt:string}>('POST','/me/im/session');
+        return {SDKAppID:session.sdkAppId,userID:session.userId,userSig:session.userSig,expiresAt:Date.parse(session.expiresAt)};
+      } catch(error) {
+        if(!(error instanceof VelaError)||error.code!=='im_session_unavailable'||attempt>=attempts)throw error;
+        await new Promise(resolve=>setTimeout(resolve,retryDelayMs));
+      }
+    }
   }
   async bots():Promise<BotAgent[]> {return (await this.request<{items:BotAgent[]}>('GET','/me/bots')).items}
   /** Idempotently give a LightVela Bot its own IM identity and deliver its credential to the instance. */
