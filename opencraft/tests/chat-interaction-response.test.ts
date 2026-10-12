@@ -89,6 +89,16 @@ test("permission approval grants only requested capabilities and preserves scope
   });
 });
 
+test("persistent approval is explicit provider scope, never an implicit Codex grant", () => {
+  const command = { ...identity, method: "item/commandExecution/requestApproval" as const,
+    params: { kind: "command" as const, threadId: "thread", turnId: "turn", itemId: "item", startedAtMs: 0, environmentId: null } };
+  assert.throws(() => createInteractionResponse(command, { type: "approve-always" }), /not offered/);
+  const scoped = { ...command, params: { ...command.params, approvalScopes: ["once", "always", "deny"] as Array<"once" | "always" | "deny"> } };
+  assert.deepEqual(createInteractionResponse(scoped, { type: "approve-always" }), {
+    type: "command-approval", requestId: "request-1", decision: "accept", _meta: { persist: "always" },
+  });
+});
+
 test("request_user_input retains question identity and ordered answers", () => {
   const interaction = {
     ...identity,

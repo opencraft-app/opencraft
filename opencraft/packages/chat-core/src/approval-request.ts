@@ -11,6 +11,9 @@ export interface ApprovalRequestPresentation {
   readonly description: string | null;
   readonly details: readonly ApprovalDetailRow[];
   readonly allowSession: boolean;
+  readonly allowOnce: boolean;
+  readonly allowDeny: boolean;
+  readonly allowAlways: boolean;
   readonly approveLabel: string;
   readonly identityLabel: "Terminal" | "Internet access" | "Edit files" | "Ask permission";
   readonly leadingApproval: {
@@ -67,7 +70,9 @@ export function presentApprovalRequest(block: ApprovalTimelineBlock): ApprovalRe
   const decisions = new Set(block.availableDecisions);
   const networkAmendment = (block.proposedNetworkPolicyAmendments ?? []).find((amendment) => amendment.action === "allow") ?? null;
   const hasNetworkContext = block.networkApprovalContext !== null && block.networkApprovalContext !== undefined;
-  const canUseSession = decisions.size === 0 || decisions.has("acceptForSession");
+  const canUseSession = block.approvalScopes !== undefined
+    ? block.approvalScopes.includes("session")
+    : decisions.size === 0 || decisions.has("acceptForSession");
   const execPolicyCommand = (block.proposedExecpolicyAmendment ?? []).join(" ").trim();
   const scopedApproval = hasNetworkContext
     ? canUseSession ? { kind: "session" as const, label: "Allow this conversation", info: null } : null
@@ -87,6 +92,9 @@ export function presentApprovalRequest(block: ApprovalTimelineBlock): ApprovalRe
       : block.approvalKind !== "command" && details.length === 0 ? block.detail : null,
     details,
     allowSession: scopedApproval !== null,
+    allowOnce: block.approvalScopes === undefined || block.approvalScopes.includes("once"),
+    allowDeny: block.approvalScopes === undefined || block.approvalScopes.includes("deny"),
+    allowAlways: block.approvalScopes?.includes("always") === true,
     approveLabel: "Allow once",
     identityLabel: hasNetworkContext ? "Internet access"
       : block.approvalKind === "command" ? "Terminal"

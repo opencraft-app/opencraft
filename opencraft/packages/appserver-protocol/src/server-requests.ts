@@ -53,8 +53,14 @@ export interface SetupCodexContextPickerResponse {
 /** Server-to-client RPCs that require durable UI interaction state. */
 export interface AppServerServerRequestMap {
   "item/commandExecution/requestApproval": {
-    params: CommandExecutionRequestApprovalParams;
-    result: CommandExecutionRequestApprovalResponse;
+    params: CommandExecutionRequestApprovalParams & {
+      /** Provider-owned persistent grant; absent on native Codex requests. */
+      approvalScopes?: Array<"once" | "session" | "always" | "deny">;
+    };
+    result: CommandExecutionRequestApprovalResponse & {
+      /** Valid only when the provider explicitly offers the persistent scope. */
+      _meta?: { persist: "always" };
+    };
   };
   "item/fileChange/requestApproval": {
     params: FileChangeRequestApprovalParams;

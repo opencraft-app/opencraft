@@ -32,6 +32,16 @@ export interface HermesPendingClarify {
   answers?: unknown;
 }
 
+export interface HermesPendingApproval {
+  request_id: string;
+  command?: string;
+  description?: string;
+  choices?: unknown;
+  allow_session?: boolean;
+  allow_permanent?: boolean;
+  smart_denied?: boolean;
+}
+
 export interface HermesSessionSummary {
   cwd?: string;
   last_active?: number;
@@ -61,6 +71,7 @@ export interface HermesSessionPayload {
   running?: boolean; status?: string; info?: { cwd?: string; model?: string; provider?: string; [key: string]: unknown };
   /** Server-owned blocking prompt replayed by session.resume after reconnect. */
   pending_clarify?: HermesPendingClarify;
+  pending_approval?: HermesPendingApproval | null;
   turn_started_at?: number;
   inflight?: {
     user?: string; assistant?: string; streaming?: boolean;

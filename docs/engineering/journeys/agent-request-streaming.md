@@ -19,6 +19,13 @@ OpenCraft 的共享会话标题栏仅呈现标题、项目说明与实际操作�
 
 ## 诊断顺序
 
+Hermes 普通会话的 `approval.request` 经 OpenCraft 转译为现有 AppServer
+命令审批请求，不经过群聊 Bot interaction 分支。用户选择转回拥有该请求的
+原生 `approval.respond`；只有 `resolved=true` 才作为成功。等待、关闭页面、
+展示失败和网络失败都不构成同意。恢复从 `pending_approval` 快照读取；
+工具完成后对账，迟到结果受会话身份与审批代次限制。授权范围及视觉契约见
+[Hermes 审批](../../../opencraft/docs/chat-ui-architecture.md#hermes-direct-approval-ownership)。
+
 Hermes 历史恢复与执行流分开：REST 的 120 条源记录窗口和 offset 拥有分页，
 OpenCraft 桥接器返回完整累计投影，不按 Turn 数二次截断。Bot 聊天可能不展示
 已完成的工具记录，空展示页不能冒充空历史；视口按一次恢复意图最多连续请求三页，
