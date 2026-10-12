@@ -70,7 +70,7 @@ func (r *EntReader) Identities(ctx context.Context, limit int) ([]imadmin.Identi
 	result := make([]imadmin.Identity, 0, len(humans))
 	for _, human := range humans {
 		result = append(result, imadmin.Identity{
-			UserID: human.ImUserID, Kind: botimport.IdentityKindHuman, State: human.ImState, DisplayName: human.DisplayName,
+			UserID: human.ImUserID, Kind: botimport.IdentityKindHuman, State: human.ImState, DisplayName: humanName(subjects[human.ID], human.DisplayName),
 			AccountID: human.ID, LightVelaUserID: subjects[human.ID], RestrictedAt: restrictedAt(human.ImUserID), CreatedAt: human.CreatedAt,
 		})
 	}
@@ -135,8 +135,23 @@ func (r *EntReader) GroupMembers(ctx context.Context, groupID string) ([]imadmin
 		if err != nil {
 			return nil, err
 		}
+		accountIDs := make([]string, 0, len(humans))
 		for _, human := range humans {
-			names[human.ImUserID] = human.DisplayName
+			accountIDs = append(accountIDs, human.ID)
+		}
+		subjects := map[string]string{}
+		if len(accountIDs) > 0 {
+			logins, err := client.AccountLoginIdentity.Query().
+				Where(accountloginidentity.AccountIDIn(accountIDs...), accountloginidentity.StateEQ("active")).All(ctx)
+			if err != nil {
+				return nil, err
+			}
+			for _, login := range logins {
+				subjects[login.AccountID] = login.NormalizedLogin
+			}
+		}
+		for _, human := range humans {
+			names[human.ImUserID] = humanName(subjects[human.ID], human.DisplayName)
 		}
 		bots, err := client.BotAgent.Query().Where(botagent.ImUserIDIn(userIDs...)).All(ctx)
 		if err != nil {
@@ -165,4 +180,12 @@ func (r *EntReader) AccountSubject(ctx context.Context, accountID string) (strin
 		return "", err
 	}
 	return login.NormalizedLogin, nil
+}
+
+// humanName 用 LightVela 用户 ID（usr_）标识人类：本地账号的显示名只是占位，运营需要能定位到具体的人。
+func humanName(subject, displayName string) string {
+	if subject != "" {
+		return subject
+	}
+	return displayName
 }

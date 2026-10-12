@@ -509,6 +509,9 @@ func TestBotIMAPIMultiPersonGroupsAndAdminOperations(t *testing.T) {
 	for _, item := range listed["items"].([]any) {
 		if identity := item.(map[string]any); identity["kind"] == "human" {
 			guestHuman = identity["userId"].(string)
+			if identity["displayName"] != "usr_fedcba9876543210fedcba98" {
+				t.Fatalf("human admin name = %#v, want the LightVela user ID", identity["displayName"])
+			}
 		}
 	}
 	status, restricted := fixture.admin(http.MethodPost, "/v1/admin/im/identities/"+guestHuman+"/restrict", nil)

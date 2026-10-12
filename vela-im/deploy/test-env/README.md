@@ -68,6 +68,16 @@ bash vela-im/deploy/test-env/smoke.sh
 `vela_im whoami`、平台建群 / 改规则 / Bot 读群 / Bot 发群消息、解散、删除 Bot 后旧凭据失效且腾讯账号被删除、平台账号清单与腾讯核对一致。状态保存在 `$HOME/vela-test/smoke/`，
 重复运行复用同一组腾讯账号。
 
+## 管理后台（IM 群聊运营）
+
+```bash
+bash vela-im/deploy/test-env/install-admin.sh   # 构建 gateway-dashboard，systemd 常驻，nginx 挂到 /admin/gateway
+```
+
+打开 <https://yuehuali.devcloud.woa.com/admin/gateway/im>，用 `$HOME/vela-test/secrets/dashboard-admin-token` 的内容登录。
+开发机没有 AI Gateway：登录由 `dev-admin-auth.mjs` 校验这个 Token，只有「IM 群聊」页可用，其他页面会报错。
+后台调用 collaboration 的 `/v1/admin/im/**`，Token 是 `collab-admin-token`（`install.sh` 生成并传给 `--admin-token-file`）。
+
 ## 运维
 
 ```bash
