@@ -1183,3 +1183,11 @@ Bot 归属校验与 `agentuser` 命令执行权限，不新增地域白名单。
 CTL 的微信 claim 在实例本地保存私有扫码回滚快照，并返回 reservation_id。confirm 在 `weixin.lock` 内读取目标 Profile 的账号标识及已绑定 Profile；优先比较 account_id，同时利用账号文件中非空 user_id 防止同一微信账号的新登录身份绕过查重。冲突返回 `WEIXIN_ACCOUNT_OCCUPIED`，details.occupied_by_bot 仅包含授权实例内原 Bot 的 ID、名称、Profile 和通道状态，不返回账号凭据。
 
 重复扫码在当前 Profile 内停止网关、恢复扫码前微信配置与账号文件，保留其他配置及原 Bot 的连接记录。已有连接重扫时也保留原绑定；新连接失败只撤销自身预约。前端必须等待 CTL 确认后才能显示成功。此协议保护实例本地状态；微信服务端再次登录是否使原 token 失效须独立实测，不由本地回滚保证。旧浏览器不带预约 ID 的兼容确认仍受账号查重约束；绕过 CTL 的实例内 CLI 不受此入口协议保护。
+
+## 云桌面浏览器与 Agent 浏览器隔离
+
+实例创建成功后的 `ensureDesktopBrowserOnCreate` 以 best-effort 注册镜像已有浏览器，不安装系统包、不启动桌面、不因可选浏览器能力失败销毁已创建机器。实现与存量 TAT 使用同一离线脚本，见 [镜像浏览器复用](../../../ctl/docs/desktop-browser-reuse.md)。这段源码只有随 CTL 发布后才影响新建机器。
+
+桌面入口 `/usr/local/lib/vela-desktop-browser-v2/chrome` 通过硬链接复用 root 控制的镜像缓存可执行文件，同目录资源用软链接。若内核限制 user namespace，AppArmor profile 只匹配该专用入口；不得给原 `/opt/ms-playwright/.../chrome` 添加该策略、修改全局 sysctl、关闭沙箱或放开用户可写浏览器缓存。桌面 profile 与 Agent 数据目录隔离，不新增 CDP/9222，不修改 Hermes/OpenClaw 配置或重启进程。
+
+已有系统浏览器或自定义 XFCE/MIME 关联保守跳过；缺浏览器、依赖、跨文件系统硬链接、路径/策略冲突及配置漂移均进入显式处理队列，不自动安装降级。`CONFIGURED`/`ALREADY_CONFIGURED` 是配置状态，不能替代默认启动器、真实 DOM、浏览器沙箱与公共网页的 GUI 验收。若实例还没有 XFCE/exo-open，需要后续桌面准备后验收入口。

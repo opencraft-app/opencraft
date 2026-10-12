@@ -3991,6 +3991,7 @@ refresh_skus http://unused img-jhb "$pools_json" ap-johorbahru
         self.assertEqual(parameters.get("MASTER_AUTO_PIN_ENVS"), "tkexgz,tkexsg")
         self.assertEqual(parameters.get("IMAGE_PIN_VARIANT"), "testing,staging")
         self.assertEqual(parameters.get("MANUAL_PROMOTE_IMAGE_PIN_VARIANT"), "primary")
+        self.assertIs(parameters.get("PRINT_RUNNER_DIAGNOSTICS"), False)
         self.assertEqual(parameters.get("ENABLE_MASTER_PROD_PROMOTE"), False)
         self.assertEqual(parameters.get("PLAYGROUND_BUILD_ENVS"), "none")
         self.assertEqual(parameters.get("PLAYGROUND_AUTO_PIN_ENVS"), "none")
