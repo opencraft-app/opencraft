@@ -52,6 +52,27 @@ master 源码
   详见 [发布绑定](../../../site-runtime/deploy/RELEASE-BINDINGS.md) 与
   [验收和回退契约](../../../site-runtime/deploy/RELEASE-CHECKLIST.md)。
 
+## EdgeOne 北京预发（2026-10-12，源码准备）
+
+默认 frontend Pages 预发从 Cloudflare 切换到 EO 项目 `lightvela-prerelease`。
+国内预发组合 `eo:cn-lightvela-prerelease` 使用项目 Production 稳定入口
+`https://lightvela-prerelease-tn2l7wnk.edgeone.dev`；国际预发组合
+`eo:global-lightvela-prerelease-preview` 仅创建同项目 Preview，避免覆盖国内稳定入口。
+两套预发都使用北京 API `https://lightclaw.tech`，沿用 Next Build Output、版本化静态资源、
+Embedded Workbench 归档和正式站相同的 artifact 校验/EO 发布脚本。国内预发先通过签名 Preview
+烟测再更新项目 Production；国际 Preview 同样必须通过烟测。`Production` 是 EO 项目内环境名，
+不意味着允许该自动步骤发布 `lightvela` / `lightvela-intl` 正式项目；入口仅允许两个预发组合。
+
+预发凭据使用 CI setting `EDGEONE_PRERELEASE_API_TOKEN` 或 runner 受保护文件
+`/etc/lightclaw-ci/edgeone_lightvela_prerelease_token`。未配置时失败，不能复用正式项目令牌
+或自动创建新项目。既有 CF 工具保留供历史制品读取，但默认工作流不再构建或发布 CF 预发。
+独立的 StaticPages 分支预览不属于本次 CF 预发替换，保持既有入口与发现方式。
+
+2026-10-12 只读核验显示 `lightvela-prerelease` 为 `overseas`，国内正式项目为 `global`。
+发布参数按已存在项目设置；地域差异仍需 owner 独立评估，不能将此预发验收视为国内全地域验证。
+北京公共 API 当前已对给定预发 Origin 返回 credentialed CORS；无需增加生产 API 的 Origin 授权。
+源码准备不代表流水线或站点已切换，仍须合入、配置专用凭据、运行构建并核对部署与公共路径。
+
 ## 权威分工
 
 - `.ci`：流水线与可复用构建/晋级命令。

@@ -23,6 +23,8 @@ import {
 const ALLOWED_EDGEONE_NEXT_COMBOS = new Set([
   "eo:cn-lightvela-prod-next",
   "eo:global-lightvela-intl-prod-next",
+  "eo:cn-lightvela-prerelease",
+  "eo:global-lightvela-prerelease-preview",
 ]);
 
 function selectSingleEdgeOneCombo(env) {
@@ -94,6 +96,11 @@ export function executeEdgeOneArtifactRelease({
     EDGEONE_PAGES_ENV: "preview",
     EDGEONE_PAGES_VERIFY_DEPLOYMENT: "1",
   });
+  // The international prerelease shares the project with CN and stays in Preview.
+  if (combo.deployEnv?.EDGEONE_PAGES_ENV === "preview") {
+    log(`${colorText("frontend EO artifact release done:", "green", env)} ${highlightComboId(combo.id, env)}`);
+    return;
+  }
   // Production deployments get the same post-deploy verification as Preview:
   // a partial upload (missing chunks) must fail the release instead of going live.
   const productionEnv = {

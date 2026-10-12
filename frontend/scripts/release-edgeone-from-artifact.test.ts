@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 
+import { createComboEnvironment, loadReleaseMatrix } from "./release-matrix.mjs";
+import { resolveBakedEnv } from "./frontend-artifact.mjs";
+
 import { executeEdgeOneArtifactRelease } from "./release-edgeone-from-artifact.mjs";
 
 const sourceSha = "dfde008ca43aba0cb0dcdfcc1b0c66bd204a2ea8";
@@ -84,6 +87,35 @@ describe("EdgeOne release from frontend artifact", () => {
       "deploy:eo:/tmp/frontend-artifact-dist:lightvela:production:1",
     ]);
     expect(calls).not.toContain("release:matrix");
+  });
+
+  it.each([
+    ["eo:cn-lightvela-prerelease", ["preview", "production"]],
+    ["eo:global-lightvela-prerelease-preview", ["preview"]],
+  ])("publishes %s against Beijing without overwriting the other variant", (comboId, expectedEnvs) => {
+    const combo = loadReleaseMatrix().combos.find((item) => item.id === comboId)!;
+    const comboEnv = createComboEnvironment(combo, combo.projectName, baseEnv);
+    const tag = `${shortSha}-${comboId.replace(/:/g, "-")}`;
+    const ref = `${repository}:${tag}`;
+    const manifest = makeCnManifest({
+      comboId, projectName: combo.projectName, region: combo.region,
+      artifact: { repository, tag, ref }, bakedEnv: resolveBakedEnv(comboEnv),
+    });
+    const calls: Array<{ script: string; project: string; env: string; area: string; api: string }> = [];
+    executeEdgeOneArtifactRelease({
+      env: { ...baseEnv, FRONTEND_RELEASE_MATRIX: comboId },
+      log: () => {},
+      verifyArtifact: () => ({ manifest, ref, extractDir: "/tmp/prerelease-dist" }),
+      deployScript: (script: string, env: Record<string, string>) => {
+        calls.push({ script, project: env.EDGEONE_PAGES_PROJECT_NAME, env: env.EDGEONE_PAGES_ENV,
+          area: env.EDGEONE_PAGES_AREA, api: env.NEXT_PUBLIC_AUTH_API_BASE_URL });
+      },
+    });
+    expect(calls.map((call) => call.env)).toEqual(expectedEnvs);
+    for (const call of calls) {
+      expect(call).toMatchObject({ script: "deploy:eo", project: "lightvela-prerelease",
+        area: "overseas", api: "https://lightclaw.tech" });
+    }
   });
 
   it("does not deploy production when the Preview smoke check fails", () => {
