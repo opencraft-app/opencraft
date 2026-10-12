@@ -1177,3 +1177,9 @@ Bot 归属校验与 `agentuser` 命令执行权限，不新增地域白名单。
 二进制安装与 Agent Runtime Session/UserSig 的签发、Hermes 启动接线分别验收；
 安装完成不能作为 Bot 已连接腾讯 IM 的证据。详细步骤见
 [Bot IM 客户端首次安装](../../../vela-computer/docs/bot-im-client-install.md)。
+
+## 同实例微信账号唯一绑定
+
+CTL 的微信 claim 在实例本地保存私有扫码回滚快照，并返回 reservation_id。confirm 在 `weixin.lock` 内读取目标 Profile 的账号标识及已绑定 Profile；优先比较 account_id，同时利用账号文件中非空 user_id 防止同一微信账号的新登录身份绕过查重。冲突返回 `WEIXIN_ACCOUNT_OCCUPIED`，details.occupied_by_bot 仅包含授权实例内原 Bot 的 ID、名称、Profile 和通道状态，不返回账号凭据。
+
+重复扫码在当前 Profile 内停止网关、恢复扫码前微信配置与账号文件，保留其他配置及原 Bot 的连接记录。已有连接重扫时也保留原绑定；新连接失败只撤销自身预约。前端必须等待 CTL 确认后才能显示成功。此协议保护实例本地状态；微信服务端再次登录是否使原 token 失效须独立实测，不由本地回滚保证。旧浏览器不带预约 ID 的兼容确认仍受账号查重约束；绕过 CTL 的实例内 CLI 不受此入口协议保护。

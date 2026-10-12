@@ -411,6 +411,21 @@ func TestChannelBindingScriptIsolatesWeixinOwnersAndPreservesConnectedBinding(t 
 	home := t.TempDir()
 	run := func(channel, action, botID, profileID string) channelBindingPayload {
 		t.Helper()
+		profileHome := home
+		if profileID != "default" {
+			profileHome = filepath.Join(home, "profiles", profileID)
+		}
+		if action == "confirm" {
+			if err := os.MkdirAll(profileHome, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(profileHome, ".env"), []byte("WEIXIN_ACCOUNT_ID="+botID+"\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if action == "release" {
+			_ = os.Remove(filepath.Join(profileHome, ".env"))
+		}
 		command := exec.Command("python3", "-c", manageChannelBindingScript, action, channel, botID, profileID, "default-bot")
 		command.Env = append(os.Environ(), "HERMES_HOME="+home)
 		output, err := command.Output()

@@ -221,7 +221,7 @@ write_profile_meta(get_profile_dir(profile_id), **fields)
 print(json.dumps({"ok": True}))
 `
 
-const hermesChannelBindingFunctions = `import fcntl
+const hermesChannelBindingFunctions = weixinAccountBindingFunctions + `import fcntl
 import json
 import os
 from pathlib import Path
@@ -308,6 +308,8 @@ def manage_channel_binding(action, channel, bot_id, profile_id, default_bot_id, 
     with lock_path.open("a", encoding="utf-8") as lock:
         fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
         current = read_current()
+        if channel == "weixin":
+            return manage_weixin_account(action, home, root, profile_id, bot_id, reservation_id, current, bindings, write_current, clear_current)
         if channel == "whatsapp" and not legacy_marker.exists():
             if not current and whatsapp_credentials_path("default").is_file():
                 current = {
@@ -994,7 +996,7 @@ func (l *logic) ConfirmInstanceBotChannel(ctx pctx.Context, instanceID, botID, c
 		return err
 	}
 	if !binding.OK {
-		return errcode.Wrap(errcode.ErrInstanceBotConflict, "confirm channel: %s", binding.Reason)
+		return l.channelBindingFailure(ctx, instanceID, binding)
 	}
 	return nil
 }
