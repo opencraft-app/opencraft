@@ -1,0 +1,15 @@
+{
+ "name":"@vela/im-client","version":"0.3.0","type":"module","main":"dist/index.js","types":"src/index.ts",
+ "exports":{
+  ".":{"types":"./src/index.ts","default":"./src/index.ts"},
+  "./browser":{"types":"./src/browser.ts","default":"./src/browser.ts"},
+  "./node":{"types":"./dist/node.d.ts","import":"./dist/node.js"},
+  "./worker":{"types":"./dist/worker.d.ts","import":"./dist/worker.js"}
+ },
+ "bin":{"vela-im-worker":"dist/vela-im-worker.mjs"},
+ "engines":{"node":">=22.16"},
+ "files":["dist","src","README.md"],
+ "scripts":{"build":"node scripts/vendor-node-sdk.mjs && tsc -p tsconfig.json && node scripts/bundle-worker.mjs"},
+ "dependencies":{"@tencentcloud/lite-chat":"4.4.7"},
+ "devDependencies":{"esbuild":"0.28.2"}
+}

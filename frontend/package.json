@@ -96,7 +96,8 @@
     "tailwind-merge": "^3.3.1",
     "velachat": "file:../velalink",
     "zod": "^4.4.3",
-    "@lightvela/collaboration-web": "file:../shared/vela-collaboration-web"
+    "@lightvela/collaboration-web": "file:../shared/vela-collaboration-web",
+    "@vela/im-client": "file:../vela-im/sdk"
   },
   "devDependencies": {
     "@edgeone/makers-sdk": "0.1.0",

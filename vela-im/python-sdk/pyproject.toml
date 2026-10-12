@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vela-im-client"
+version = "0.2.0"
+description = "Vela IM client for Python Agents: one identity, one local Tencent IM worker"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.setuptools.packages.find]
+include = ["vela_im*"]
+
+[tool.setuptools.package-data]
+vela_im = ["_worker/*.mjs"]

@@ -50,7 +50,7 @@ const config = {
   devIndicators: false,
   // 只在本地开发时允许双 dev 实例使用独立 dist 目录，避免影响 CI / export build。
   distDir: isDevelopment && process.env.NEXT_DIST_DIR ? process.env.NEXT_DIST_DIR : '.next',
-  transpilePackages: ['@lightvela/collaboration-web', '@lightvela/vela-chat-client-core', 'velachat', '@lightvela/agent-core', '@opencraft/mobile-account-sdk', '@opencraft/mobile-bot-bridge', '@opencraft/workbench-panels'],
+  transpilePackages: ['@lightvela/collaboration-web', '@lightvela/vela-chat-client-core', 'velachat', '@lightvela/agent-core', '@opencraft/mobile-account-sdk', '@opencraft/mobile-bot-bridge', '@opencraft/workbench-panels', '@vela/im-client'],
   output: isDevelopment ? undefined : 'export',
   assetPrefix: process.env.NEXT_PUBLIC_ASSET_PREFIX || undefined,
   trailingSlash: true,

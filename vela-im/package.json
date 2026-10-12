@@ -1,0 +1,17 @@
+{
+  "name": "vela-im",
+  "version": "0.3.0",
+  "private": true,
+  "workspaces": ["sdk", "server"],
+  "scripts": {
+    "build": "npm run build -w @vela/im-client && node scripts/sync-agent-runtime.mjs && npm run build -w @vela/im-server",
+    "check": "npm run build -w @vela/im-client && tsc -p server/tsconfig.json --noEmit",
+    "dev": "npm run dev -w @vela/im-server",
+    "start": "npm run start -w @vela/im-server",
+    "test": "npm run build && node --disable-warning=ExperimentalWarning --test --test-force-exit sdk/test/*.test.mjs server/test/*.test.mjs && python3 -m unittest discover -s python-sdk/tests && python3 -m unittest discover -s hermes-plugin/tests",
+    "test:e2e": "node scripts/e2e.mjs",
+    "test:e2e:hermes": "node scripts/e2e-hermes.mjs"
+  },
+  "devDependencies": {"typescript": "^5.9.3", "@types/node": "^24.0.0"},
+  "engines": {"node": ">=22.16"}
+}

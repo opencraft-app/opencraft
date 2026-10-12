@@ -35,6 +35,7 @@ PRIMARY_SERVICES = {
     "user-auth": "user/auth",
     "velagw": "velagw",
     "vela-computer": "vela-computer",
+    "vela-im": "vela-im",
     "velalink": "velalink",
     "workers": "workers",
 }

@@ -9,9 +9,9 @@ source_of_truth:
   - AGENTS.md
   - .agents/context/context-routing.yaml
 status: active
-reviewed_at: 2026-09-14
+reviewed_at: 2026-10-10
 review_due: 2026-11-23
-revision: 2.1.0
+revision: 2.2.0
 precedence: project
 derived: true
 ---
@@ -24,6 +24,7 @@ derived: true
 | `opencraft/` | OpenCraft 应用、Workbench、平台能力和 first-party 插件唯一写入真源 |
 | `collaboration/` | Server/Member/Channel、腾讯 IM 资源映射和协作业务控制面 |
 | `vela-computer/` | 下发到托管 Computer 的 Agent Chat Client；不属于 `cloudagent/` |
+| `vela-im/` | 人与 Agent 对等 IM 身份：身份兑换服务、Web/Node/Python SDK、Hermes 插件 |
 | `shared/` | 跨服务、跨客户端的中立产品内核与契约 |
 | `user/auth/`, `shadow/` | 身份、会话、实名和影子账户行为 |
 | `service-gateway/`, `site-gateway/`, other gateways | 公共入口、路由和上游策略 |

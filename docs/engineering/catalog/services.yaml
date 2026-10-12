@@ -25,6 +25,7 @@
     {"id": "user-auth", "path": "user/auth", "catalog": "user/auth/catalog-info.yaml"},
     {"id": "velagw", "path": "velagw", "catalog": "velagw/catalog-info.yaml"},
     {"id": "vela-computer", "path": "vela-computer", "catalog": "vela-computer/catalog-info.yaml"},
+    {"id": "vela-im", "path": "vela-im", "catalog": "vela-im/catalog-info.yaml"},
     {"id": "velalink", "path": "velalink", "catalog": "velalink/catalog-info.yaml"},
     {"id": "workers", "path": "workers", "catalog": "workers/catalog-info.yaml"}
   ]

@@ -16,6 +16,7 @@ import {
   MessageCircle,
   Plug,
   MessageSquare,
+  UsersRound,
   Loader2,
   MoreVertical,
   Calendar,
@@ -55,6 +56,9 @@ import { AgentSectionHeader } from "@/components/domain/agent-section-header";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { agentConversations, NewAgentChatDialog, useVelaImConsole, VelaImConversationView, VelaImSessionItems } from "@/features/vela-im/vela-im-console";
+import { isVelaImEnabled } from "@/features/vela-im/vela-im-env";
+import type { ConversationItem as VelaImConversation } from "@/features/vela-im/vela-im-model";
 import { useOpenClaw, type OpenClawBot } from "@/contexts/agent-context";
 import { useRepositories } from "@/contexts/repository-context";
 import { useMultiBotEnabled, usePaidBillingEnabled, useRealnamePhoneVerificationEnabled, useCloudDesktopEnabled } from "@/contexts/runtime-config-context";
@@ -2843,6 +2847,15 @@ export const AgentSettingsPage = ({
   );
   /** 宿主持有的选中会话（受控值）；undefined 表示尚未指定。 */
   const [selectedChatId, setSelectedChatId] = useState<string | undefined>(undefined);
+  const velaIm = useVelaImConsole();
+  const velaImEnabled = isVelaImEnabled();
+  const velaImItems = agentConversations(velaIm);
+  const velaImBots = useMemo(() => visibleBots.map((bot) => ({ id: bot.id, name: bot.name })), [visibleBots]);
+  // An Agent conversation (single or group) replaces the embedded chat while selected.
+  const [velaImConversation, setVelaImConversation] = useState<VelaImConversation | null>(null);
+  const [newAgentChatOpen, setNewAgentChatOpen] = useState(false);
+  const [newChatMenuOpen, setNewChatMenuOpen] = useState(false);
+  const velaImChatActive = activeSection === "chat" && velaImConversation !== null;
   const lastVisibleChatIdRef = useRef<string | null>(null);
   useEffect(() => {
     const visibleChatId = activeSection === "chat" ? selectedChatId ?? null : null;
@@ -2921,6 +2934,7 @@ export const AgentSettingsPage = ({
   const createChatSession = () => {
     if (chatSessionCommands === null || chatSessionMutationState?.pending === true) return;
     const previousSelection = selectedChatId;
+    setVelaImConversation(null);
     setOpenSessionMenuChatId(null);
     setRenamingChatId(null);
     setSessionToDelete(null);
@@ -6297,6 +6311,45 @@ export const AgentSettingsPage = ({
                                       <ChevronDown className={cn("size-4 transition-transform", chatSessionsExpanded && "rotate-180")} aria-hidden="true" />
                                     </button>
                                   )}
+                                  {velaImEnabled && velaIm.connection ? (
+                                    <Popover open={newChatMenuOpen} onOpenChange={setNewChatMenuOpen}>
+                                      <WorkspaceActionTooltip content={t("新建对话")} compact focusable={false} className="shrink-0">
+                                        <PopoverTrigger asChild>
+                                          <button type="button" className="lv-agents-chat-create" aria-label={t("新建对话")} aria-haspopup="menu" disabled={isChatTabDisabled}>
+                                            <Plus className="size-4" aria-hidden="true" />
+                                          </button>
+                                        </PopoverTrigger>
+                                      </WorkspaceActionTooltip>
+                                      <PopoverContent align="start" className="w-44 rounded-xl border border-black/10 p-1.5 shadow-xl" role="menu">
+                                        <button
+                                          type="button"
+                                          role="menuitem"
+                                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-black/75 hover:bg-black/[0.04] disabled:opacity-40"
+                                          disabled={chatSessionMutationState?.pending === true || (activeSection === "chat" && chatSessionCommands === null)}
+                                          onClick={() => {
+                                            setNewChatMenuOpen(false);
+                                            setMobileChatNavOpen(false);
+                                            setChatSessionsExpanded(true);
+                                            if (activeSection === "chat") createChatSession();
+                                            else {
+                                              pendingNewChatSessionBotId = activeBot.id;
+                                              navigate(getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.chat, searchParams));
+                                            }
+                                          }}
+                                        >
+                                          <MessageSquare className="size-4" aria-hidden="true" />{t("新对话")}
+                                        </button>
+                                        <button
+                                          type="button"
+                                          role="menuitem"
+                                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-black/75 hover:bg-black/[0.04]"
+                                          onClick={() => { setNewChatMenuOpen(false); setMobileChatNavOpen(false); setNewAgentChatOpen(true); }}
+                                        >
+                                          <UsersRound className="size-4" aria-hidden="true" />{t("新建群聊")}
+                                        </button>
+                                      </PopoverContent>
+                                    </Popover>
+                                  ) : (
                                   <WorkspaceActionTooltip content={t("新建对话")} compact focusable={false} className="shrink-0">
                                     <button
                                       type="button"
@@ -6316,6 +6369,7 @@ export const AgentSettingsPage = ({
                                       <Plus className="size-4" aria-hidden="true" />
                                     </button>
                                   </WorkspaceActionTooltip>
+                                  )}
                                 </div>
                               )}
                               {!isChatTabDisabled && chatSessionsExpanded && !isSidebarCollapsed ? <>
@@ -6332,8 +6386,8 @@ export const AgentSettingsPage = ({
                                   <li>
                                     <AppLink
                                       to={getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.chat, searchParams)}
-                                      onClick={() => setMobileChatNavOpen(false)}
-                                      aria-current={activeSection === "chat" ? "page" : undefined}
+                                      onClick={() => { setVelaImConversation(null); setMobileChatNavOpen(false); }}
+                                      aria-current={activeSection === "chat" && !velaImChatActive ? "page" : undefined}
                                       title={isSidebarCollapsed ? t("默认对话") : undefined}
                                       className={cn(
                                         "lv-agents-session-item lv-agents-nav-item",
@@ -6398,6 +6452,7 @@ export const AgentSettingsPage = ({
                                               aria-label={isUnread ? `${sessionDisplayTitle} (${t("未读")})` : sessionDisplayTitle}
                                               title={isSidebarCollapsed ? sessionDisplayTitle : undefined}
                                               onClick={() => {
+                                                setVelaImConversation(null);
                                                 setSelectedChatId(session.chatId);
                                                 setUnread(session.chatId, false);
                                                 setMobileChatNavOpen(false);
@@ -6481,6 +6536,15 @@ export const AgentSettingsPage = ({
                                     );
                                   })
                                 )}
+                                <VelaImSessionItems
+                                  items={velaImItems}
+                                  selectedID={velaImChatActive ? velaImConversation.conversationID : null}
+                                  onSelect={(conversation) => {
+                                    setVelaImConversation(conversation);
+                                    setMobileChatNavOpen(false);
+                                    if (activeSection !== "chat") navigate(getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.chat, searchParams));
+                                  }}
+                                />
                                 {chatSessions.length > 0 && (chatSessionPagination.hasMoreVisible || chatSessionPagination.hasExpanded) ? (
                                   <li className="lv-agents-session-list-actions">
                                     {chatSessionPagination.hasMoreVisible ? (
@@ -6773,7 +6837,7 @@ export const AgentSettingsPage = ({
                           )}
                           {isActiveBotChatAvailable && (
                             <AgentChatMigrationSurface
-                              active={activeSection === "chat" && presentationActive && !showMultiBotOnboarding}
+                              active={activeSection === "chat" && presentationActive && !showMultiBotOnboarding && !velaImChatActive}
                               preloadSessions={activeBot.status !== "paused" && sidebarTab === "daily" && chatSessionsExpanded && !isSidebarCollapsed}
                               agentPaused={activeBot.status === "paused" && activeBot.siblingsUnknown === "instance_stopped"}
                               accountId={accountId}
@@ -6791,6 +6855,30 @@ export const AgentSettingsPage = ({
                               onTurnCompleted={(chatId) => setUnread(chatId, true)}
                               legacy={null}
                             />
+                          )}
+                          {velaImEnabled && (
+                            <NewAgentChatDialog
+                              im={velaIm}
+                              bots={velaImBots}
+                              open={newAgentChatOpen}
+                              onOpenChange={setNewAgentChatOpen}
+                              onOpened={(conversation) => {
+                                setVelaImConversation(conversation);
+                                setChatSessionsExpanded(true);
+                                if (activeSection !== "chat") navigate(getAgentSectionHref(AGENT_SECTION_PATH_BY_ID.chat, searchParams));
+                              }}
+                            />
+                          )}
+                          {velaImChatActive && velaImConversation !== null && (
+                            <div className="relative h-full min-h-[480px] overflow-hidden bg-white">
+                              <VelaImConversationView
+                                im={velaIm}
+                                bots={velaImBots}
+                                conversation={velaImConversation}
+                                onOpen={setVelaImConversation}
+                                onClose={() => setVelaImConversation(null)}
+                              />
+                            </div>
                           )}
                           {activeSection === "memory" && (
                             <MemoryPanel

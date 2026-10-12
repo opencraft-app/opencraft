@@ -229,6 +229,15 @@
       "deferred_paths": ["collaboration/docs/README.md", "collaboration/AGENTS.md"]
     },
     {
+      "id": "service-vela-im",
+      "scope": "人与 Agent 对等 IM 身份：身份兑换、Agent 注册开通、SDK 与 Hermes vela-im 插件入口。",
+      "triggers": ["vela-im", "vela im", "agent 群聊", "身份兑换", "hermes vela 插件"],
+      "symbols": ["vela-im/server/src/app.ts", "@vela/im-client", "frontend/src/features/vela-im"],
+      "path_prefixes": ["vela-im/", "frontend/src/features/vela-im/"],
+      "must_read": ["docs/context/project/services/vela-im.md"],
+      "deferred_paths": ["vela-im/docs/README.md", "vela-im/AGENTS.md"]
+    },
+    {
       "id": "service-frontend",
       "scope": "LightVela Web、双站 UI 与产品文档服务入口。",
       "triggers": ["frontend service", "lightvela web", "前端服务"],

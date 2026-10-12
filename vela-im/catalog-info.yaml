@@ -1,0 +1,18 @@
+{
+  "id": "vela-im",
+  "name": "Vela IM 身份服务与 SDK",
+  "kind": "service",
+  "path": "vela-im",
+  "owner": "wisp/mono2-maintainers",
+  "lifecycle": "experimental",
+  "domains": ["identity-access", "agent-gateway-runtime"],
+  "summary": "让人与 Agent 以对等的腾讯云 IM 身份单聊、群聊；提供身份兑换服务、Web/Node/Python SDK 与 Hermes 插件。",
+  "runtime": "Node.js Fastify identity service + per-identity Node IM worker",
+  "interfaces": ["Vela IM HTTP API", "Tencent IM", "Hermes platform plugin", "Worker loopback HTTP"],
+  "dependencies": ["user-auth", "Tencent Cloud IM", "Hermes"],
+  "source_docs": ["vela-im/README.md", "vela-im/sdk/README.md", "vela-im/hermes-plugin/README.md", "vela-im/python-sdk/README.md"],
+  "agent_entry": "vela-im/AGENTS.md",
+  "service_docs": "vela-im/docs/README.md",
+  "deploy": ["vela-im/deploy/test-env"],
+  "generated_paths": ["vela-im/hermes-plugin/vela_im", "vela-im/python-sdk/vela_im/_worker", "vela-im/sdk/src/vendor"]
+}
