@@ -616,6 +616,11 @@ img.icon--brand {
   animation: nav-in 0.55s var(--ease) both;
 }
 
+body.lw-has-announcement #lightvela-intl-home .nav {
+  top: var(--lw-announcement-visible-height, 0px);
+  animation: none;
+}
+
 /* 对齐 SkillHub .nav-container：移动端 16px 内边距；
    ≥1100px 用 max(48px, calc((100% - 1280px)/2)) 实现 1280px 居中 */
 .nav__inner {
@@ -8070,7 +8075,7 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
 
 .international-home-header-actions-layer {
   position: fixed;
-  top: 14px;
+  top: calc(14px + var(--lw-announcement-visible-height, 0px));
   right: max(24px, calc((100% - 1440px) / 2));
   z-index: 70;
   display: flex;
@@ -8100,14 +8105,14 @@ html[lang='zh-CN'] .scene-chat .bub__box p {
   }
 
   .international-home-header-actions-layer {
-    top: 12px;
+    top: calc(12px + var(--lw-announcement-visible-height, 0px));
     right: 16px;
   }
 }
 
 @media (max-width: 640px) {
   .international-home-header-actions-layer {
-    top: 12px;
+    top: calc(12px + var(--lw-announcement-visible-height, 0px));
     right: 16px;
   }
 }
