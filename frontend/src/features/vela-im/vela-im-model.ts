@@ -102,7 +102,7 @@ export const toApplications = (raw: unknown): ApplicationItem[] =>
   });
 
 /** Group lifecycle notices rendered as a centered system line instead of a chat bubble. */
-export type GroupEventKind = "created" | "joined" | "quit" | "kicked" | "admin_set" | "admin_canceled" | "profile_updated";
+export type GroupEventKind = "created" | "joined" | "quit" | "kicked" | "admin_set" | "admin_canceled" | "profile_updated" | "reply_mode_changed";
 
 // Tencent IM group tip operation types (TIM.TYPES.GRP_TIP_*).
 const GROUP_TIP_EVENTS: Record<number, GroupEventKind> = { 1: "joined", 2: "quit", 3: "kicked", 4: "admin_set", 5: "admin_canceled", 6: "profile_updated" };
@@ -112,6 +112,16 @@ const groupCreateNotice = (payload: Dict): { operator: string } | null => {
   try {
     const data = JSON.parse(str(payload.data)) as unknown;
     return isDict(data) && data.businessID === "group_create" ? { operator: str(data.opUser) } : null;
+  } catch {
+    return null;
+  }
+};
+
+/** The platform's reply-rule notice: `{"businessID":"vela_group_policy","replyMode":...}`. */
+const replyModeNotice = (payload: Dict): { mode: string } | null => {
+  try {
+    const data = JSON.parse(str(payload.data)) as unknown;
+    return isDict(data) && data.businessID === "vela_group_policy" ? { mode: str(data.replyMode) } : null;
   } catch {
     return null;
   }
@@ -163,6 +173,9 @@ export const describeMessage = (message: IMMessage): MessageView => {
     case "TIMCustomElem": {
       const created = groupCreateNotice(p);
       if (created) return { kind: "event", event: "created", operator: created.operator, targets: [] };
+      // The new mode travels in `operator` so the system line can name it.
+      const policy = replyModeNotice(p);
+      if (policy) return { kind: "event", event: "reply_mode_changed", operator: policy.mode, targets: [] };
       return { kind: "custom", description: str(p.description), data: str(p.data) };
     }
     case "TIMGroupTipElem": {

@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { VelaAPI, type AgentRecord, type Identity, type IMMessage, type Session } from "@vela/im-client";
+import { VelaHumanAPI, type BotAgent, type IMMessage } from "@vela/im-client";
 import type { VelaBrowserClient } from "@vela/im-client/browser";
-import { resolveVelaImApiBase, velaImRegion } from "./vela-im-env";
+import { resolveVelaImApiBase } from "./vela-im-env";
 import {
   toApplications,
   toContacts,
@@ -13,8 +13,9 @@ import {
   type ConversationItem,
 } from "./vela-im-model";
 
-export type VelaImStatus = "idle" | "exchanging" | "connecting" | "ready" | "reconnecting" | "offline" | "error";
-export type AgentItem = Identity & AgentRecord;
+export type VelaImStatus = "idle" | "connecting" | "ready" | "reconnecting" | "offline" | "error";
+/** A LightVela bot that has its own IM identity. */
+export type AgentItem = BotAgent;
 
 export interface VelaImEvents {
   onMessages?: (messages: IMMessage[]) => void;
@@ -23,18 +24,17 @@ export interface VelaImEvents {
 }
 
 interface Connection {
-  owner: Session;
-  human: Identity;
-  ownerApi: VelaAPI;
+  api: VelaHumanAPI;
   client: VelaBrowserClient;
+  selfID: string;
+  selfName: string;
 }
 
 /**
- * Owns one natural person's Vela IM presence in the browser: exchanges the LightVela session for the person's
- * stable human identity, connects that identity to Tencent IM through the SDK and mirrors lists the UI needs.
- * The same LightVela account yields the same IM identity on every device.
+ * Owns the signed-in person's IM presence in the browser. The existing LightVela login is the only credential: the
+ * backend turns it into a one-hour UserSig for this person's stable IM identity, and the SDK renews it on its own.
  */
-export function useVelaIm(lightvelaToken: string | null, lightvelaUserID: string | undefined) {
+export function useVelaIm(lightvelaToken: string | null, lightvelaUserID: string | undefined, selfName = "") {
   const [status, setStatus] = useState<VelaImStatus>("idle");
   const [error, setError] = useState("");
   const [connection, setConnection] = useState<Connection | null>(null);
@@ -42,7 +42,6 @@ export function useVelaIm(lightvelaToken: string | null, lightvelaUserID: string
   const [contacts, setContacts] = useState<ContactItem[]>([]);
   const [applications, setApplications] = useState<ApplicationItem[]>([]);
   const [agents, setAgents] = useState<AgentItem[]>([]);
-  const [agentHost, setAgentHost] = useState("none");
   const [generation, setGeneration] = useState(0);
   const events = useRef<VelaImEvents>({});
   const lifecycle = useRef<Promise<unknown>>(Promise.resolve());
@@ -57,30 +56,19 @@ export function useVelaIm(lightvelaToken: string | null, lightvelaUserID: string
     }
     let cancelled = false;
     let local: VelaBrowserClient | undefined;
-    let renewTimer: ReturnType<typeof setTimeout> | undefined;
     setError("");
     setConnection(null);
     setConversations([]);
     setContacts([]);
     setApplications([]);
     const connect = async () => {
-      setStatus("exchanging");
-      const owner = await new VelaAPI(base).lightvelaSession(lightvelaToken, velaImRegion());
-      if (cancelled) return;
-      const human = owner.identities.find((identity) => identity.kind === "human");
-      if (!human) throw new Error("没有找到你的 IM 身份");
-      const ownerApi = new VelaAPI(base, owner.token);
-      void ownerApi.agents().then((r) => {
-        if (cancelled) return;
-        setAgents(r.agents);
-        setAgentHost(r.host);
-      }, () => undefined);
       setStatus("connecting");
-      const issued = await ownerApi.issueIdentityToken(human.id);
+      const api = new VelaHumanAPI(base, { headers: () => ({ Authorization: `Bearer ${lightvelaToken}` }) });
+      void api.bots().then((list) => { if (!cancelled) setAgents(list); }, () => undefined);
       const { VelaBrowserClient } = await import("@vela/im-client/browser");
       if (cancelled) return;
-      local = new VelaBrowserClient(new VelaAPI(base, issued.token));
-      await local.connect();
+      local = new VelaBrowserClient();
+      await local.connect(() => api.imSession());
       if (cancelled) {
         await local.disconnect();
         return;
@@ -102,35 +90,30 @@ export function useVelaIm(lightvelaToken: string | null, lightvelaUserID: string
       observe("KICKED_OUT", () => setStatus("offline"));
       observe("SDK_NOT_READY", () => setStatus((s) => (s === "offline" ? s : "reconnecting")));
       observe("SDK_READY", () => setStatus("ready"));
-      setConnection({ owner, human, ownerApi, client });
+      setConnection({ api, client, selfID: client.userID, selfName });
       setStatus("ready");
       const [list, friends, apps] = await Promise.allSettled([client.getConversations(), client.getFriends(), client.getFriendApplications()]);
       if (cancelled) return;
       if (list.status === "fulfilled") setConversations(toConversations(list.value));
       if (friends.status === "fulfilled") setContacts(toContacts(friends.value));
       if (apps.status === "fulfilled") setApplications(toApplications(apps.value));
-      // UserSigs are short-lived; reconnect well before the identity's IM credential expires.
-      renewTimer = setTimeout(() => setGeneration((g) => g + 1), 90 * 60_000);
     };
     const run = lifecycle.current.catch(() => undefined).then(connect);
     lifecycle.current = run;
     void run.catch((e: unknown) => {
       if (cancelled) return;
       setStatus("error");
-      setError(e instanceof Error ? e.message : String((e as { error?: string })?.error ?? e));
+      setError(e instanceof Error ? e.message : String(e));
     });
     return () => {
       cancelled = true;
-      clearTimeout(renewTimer);
       lifecycle.current = run.catch(() => undefined).then(() => local?.disconnect());
     };
-  }, [lightvelaToken, lightvelaUserID, generation]);
+  }, [lightvelaToken, lightvelaUserID, selfName, generation]);
 
   const refreshAgents = useCallback(async () => {
     if (!connection) return;
-    const r = await connection.ownerApi.agents();
-    setAgents(r.agents);
-    setAgentHost(r.host);
+    setAgents(await connection.api.bots());
   }, [connection]);
 
   const provisioning = agents.some((a) => a.state === "provisioning");
@@ -160,7 +143,6 @@ export function useVelaIm(lightvelaToken: string | null, lightvelaUserID: string
     contacts,
     applications,
     agents,
-    agentHost,
     events,
     reconnect,
     refreshAgents,

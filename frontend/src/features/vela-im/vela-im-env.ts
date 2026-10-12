@@ -1,9 +1,6 @@
-import { isGlobal } from "@/lib/region";
-import type { LightVelaRegion } from "@vela/im-client";
-
 /**
- * Vela IM identity service base URL, e.g. `/vela-im` behind the same origin. Empty means this
- * deployment has no IM service, so the lab entry stays hidden.
+ * LightVela backend base for IM (the collaboration API behind the gateway), e.g. `/v1/collaboration` on the same
+ * origin. Empty means this deployment has no IM backend, so Agent group chats stay hidden.
  */
 export const resolveVelaImApiBase = (): string | null => {
   const raw = (process.env.NEXT_PUBLIC_VELA_IM_API_BASE ?? "").trim().replace(/\/$/, "");
@@ -13,6 +10,3 @@ export const resolveVelaImApiBase = (): string | null => {
 };
 
 export const isVelaImEnabled = (): boolean => resolveVelaImApiBase() !== null;
-
-/** LightVela region whose session token the identity service verifies. */
-export const velaImRegion = (): LightVelaRegion => (isGlobal ? "intl" : "cn");

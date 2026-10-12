@@ -74,6 +74,9 @@ describe("vela-im model", () => {
       .toEqual({ kind: "event", event: "joined", operator: "h_1", targets: ["a_1", "a_2"] });
     expect(describeMessage({ ID: "k", type: "TIMGroupTipElem", payload: { operationType: 3, operatorID: "h_1", memberList: [{ userID: "a_2" }] } }))
       .toEqual({ kind: "event", event: "kicked", operator: "h_1", targets: ["a_2"] });
+    const policy = { businessID: "vela_group_policy", groupId: "0192f3c4-0000-7000-8000-000000000001", replyMode: "all", revision: 3 };
+    expect(describeMessage({ ID: "p", type: "TIMCustomElem", payload: { data: JSON.stringify(policy) } }))
+      .toEqual({ kind: "event", event: "reply_mode_changed", operator: "all", targets: [] });
     expect(describeMessage({ ID: "x", type: "TIMCustomElem", payload: { data: "not json", description: "卡片" } })).toEqual({ kind: "custom", description: "卡片", data: "not json" });
     expect(toConversations([{ conversationID: "GROUPg", type: "GROUP", groupProfile: { groupID: "g", name: "群" }, lastMessage: { type: "TIMCustomElem", messageForShow: "[自定义消息]", payload: created.payload } }])[0]?.lastText).toBe("");
   });

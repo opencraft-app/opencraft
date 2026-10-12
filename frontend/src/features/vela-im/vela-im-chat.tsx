@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { ArrowLeft, ArrowUp, Loader2, MoreHorizontal, Paperclip, Pin, Settings2, Trash2, Undo2 } from "lucide-react";
-import type { GroupReplyPolicy, IMMessage, MessageInput } from "@vela/im-client";
+import { defaultGroupPolicy, platformGroupId, policyFromGroup, type GroupReplyPolicy, type IMMessage, type MessageInput } from "@vela/im-client";
 import type { VelaBrowserClient } from "@vela/im-client/browser";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -91,13 +91,18 @@ export function VelaImChat({ controller, client, selfID, conversation, onBack, o
   useEffect(() => {
     if (!isGroup) { setMembers([]); setPolicy(null); return; }
     let cancelled = false;
-    void Promise.all([client.getGroupMembers(conversation.targetID), client.groupReplyPolicy(conversation.targetID)]).then(([list, reply]) => {
+    const api = controller.connection?.api;
+    const groupId = platformGroupId(conversation.targetID);
+    const rules = groupId && api
+      ? api.group(groupId).then(policyFromGroup, () => defaultGroupPolicy(conversation.targetID))
+      : Promise.resolve(defaultGroupPolicy(conversation.targetID));
+    void Promise.all([client.getGroupMembers(conversation.targetID), rules]).then(([list, reply]) => {
       if (cancelled) return;
       setMembers(toMembers(list));
       setPolicy(reply);
     }, () => undefined);
     return () => { cancelled = true; };
-  }, [client, conversation.targetID, isGroup, refreshKey]);
+  }, [client, controller.connection, conversation.targetID, isGroup, refreshKey]);
 
   useEffect(() => {
     controller.events.current = {
@@ -228,6 +233,9 @@ export function VelaImChat({ controller, client, selfID, conversation, onBack, o
       case "kicked": return t("{{who}} 将 {{targets}} 移出了群聊", { who: who(view.operator), targets });
       case "admin_set": return t("{{targets}} 成为管理员", { targets });
       case "admin_canceled": return t("{{targets}} 不再是管理员", { targets });
+      case "reply_mode_changed": return t("Agent 回复规则已改为：{{mode}}", {
+        mode: ({ mention: t("仅在被 @ 时回复"), mention_context: t("被 @ 时回复，并参考前 10 条消息"), all: t("回复每条消息") } as Record<string, string>)[view.operator] ?? view.operator,
+      });
       default: return t("{{who}} 修改了群资料", { who: who(view.operator) });
     }
   };
@@ -237,8 +245,9 @@ export function VelaImChat({ controller, client, selfID, conversation, onBack, o
   };
   const now = Math.floor(Date.now() / 1000);
   const peerIsAgent = !isGroup && isAgentID(conversation.targetID);
+  const botOnly = !!policy?.members.length && policy.members.every((m) => m.kind === "bot");
   const subtitle = isGroup
-    ? [policy?.groupKind === "bot" ? t("纯 Agent 群") : t("人机群"), t("{{count}} 位成员", { count: policy?.memberCount ?? members.length }),
+    ? [botOnly ? t("纯 Agent 群") : t("人机群"), t("{{count}} 位成员", { count: policy?.members.length || members.length }),
       policy ? ({ mention: t("@ 时回复"), mention_context: t("@ 时回复并参考上下文"), all: t("每条消息回复") }[policy.effectiveMode]) : ""].filter(Boolean).join(" · ")
     : `${peerIsAgent ? "Agent" : t("人类")} · ${conversation.targetID}`;
 

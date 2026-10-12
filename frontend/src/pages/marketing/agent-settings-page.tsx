@@ -2850,7 +2850,7 @@ export const AgentSettingsPage = ({
   const velaIm = useVelaImConsole();
   const velaImEnabled = isVelaImEnabled();
   const velaImItems = agentConversations(velaIm);
-  const velaImBots = useMemo(() => visibleBots.map((bot) => ({ id: bot.id, name: bot.name })), [visibleBots]);
+  const velaImBots = useMemo(() => visibleBots.map((bot) => ({ id: bot.id, instanceId: bot.instanceId ?? bot.id, name: bot.name })), [visibleBots]);
   // An Agent conversation (single or group) replaces the embedded chat while selected.
   const [velaImConversation, setVelaImConversation] = useState<VelaImConversation | null>(null);
   const [newAgentChatOpen, setNewAgentChatOpen] = useState(false);
