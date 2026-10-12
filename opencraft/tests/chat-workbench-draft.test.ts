@@ -20,6 +20,10 @@ import {
   createAppServerWorkbenchRuntime,
   createConversationScopeRegistry,
 } from "@opencraft/workbench-runtime";
+import {
+  encodeHermesModelSelection,
+  mapHermesModelOptions,
+} from "../plugins/lightvela-hermes/src/hermes-appserver-bridge/model-catalog";
 
 interface DraftHarness {
   readonly requests: JsonRpcRequest[];
@@ -1222,6 +1226,26 @@ test("host-default policy ignores stale Composer models and follows current Host
       assert.equal(submission.selections.model, "auto", "original draft is not mutated");
     } finally { await runtime.dispose(); }
   }
+});
+
+test("host-default submits a Hermes default configured through a declared provider alias", async () => {
+  const models = mapHermesModelOptions({
+    provider: "custom:custom",
+    model: "auto",
+    providers: [{ slug: "custom", name: "custom", aliases: ["custom", "custom:custom"], authenticated: true, models: ["auto"] }],
+  });
+  const harness = createHarness(false, false, [], false, models.map(model => ({ ...model })));
+  const runtime = createAppServerWorkbenchRuntime({ hostId: "local", transport: harness.transport,
+    autoReconnect: false, modelSelectionPolicy: "host-default" });
+  try {
+    await runtime.connect();
+    await runtime.createThread(intent({ type: "new-thread", draftId: "hermes-default-alias", execution: {
+      hostId: "local", workspace: { cwd: "/workspace", runtimeWorkspaceRoots: ["/workspace"] },
+    } }));
+    const request = harness.requests.find(request => request.method === "thread/start");
+    assert.ok(request, "submission reaches the AppServer instead of failing capability resolution");
+    assert.equal((request.params as { model?: string }).model, encodeHermesModelSelection("custom", "auto"));
+  } finally { await runtime.dispose(); }
 });
 
 test("host-default does not send when the configured default is missing", async () => {
