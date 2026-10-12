@@ -1715,7 +1715,7 @@ class ReleaseBundleContractTests(unittest.TestCase):
         pin_text = (REPO_ROOT / ".ci/runtime/pin_image_to_gitops.sh").read_text()
         self.assertIn("playground/sandbox-jp-*", template_text)
         jp_registry_credential = "${{ settings.TCR_JP1_REGISTRY_CREDENTIAL.password }}"
-        self.assertEqual(template_text.count(jp_registry_credential), 2)
+        self.assertEqual(template_text.count(jp_registry_credential), 3)
         self.assertNotIn("${{ settings.TCR_JP1_PASSWORD }}", template_text)
         self.assertIn("sandbox-jp-*|tokyo-sandbox", init_text)
         self.assertIn("/etc/lightclaw-ci/tcr_jp1_password", init_text)
@@ -4005,6 +4005,24 @@ refresh_skus http://unused img-jhb "$pools_json" ap-johorbahru
         self.assertIn("argocd/services/cloudladdergateway/**", watched_paths)
         self.assertIn("argocd/secrets/*/cloudladdergateway-krsbx-callback-secrets.sops.yaml", watched_paths)
         self.assertIn("argocd/secrets/*/cloudladdergateway-polaris-*.sops.yaml", watched_paths)
+
+    def test_manual_promote_receives_registry_credentials(self) -> None:
+        template = yaml.safe_load((REPO_ROOT / ".ci/templates/service-release.yml").read_text())
+        steps = template["stages"][0]["jobs"]["release"]["steps"]
+        build_step = next(step for step in steps if step["name"] == "构建 ${{ parameters.DISPLAY_NAME }} 镜像矩阵")
+        promote_step = next(step for step in steps if step["name"] == "手动发布 ${{ parameters.DISPLAY_NAME }} 到 GitOps")
+
+        for credential in (
+            "TCR_BEIJING_PASSWORD",
+            "TCR_BEIJING_LLMGATEWAY_PASSWORD",
+            "TCR_KR1_PASSWORD",
+            "TCR_JP1_PASSWORD",
+            "TCR_SHPROD_PASSWORD",
+            "TCR_SGPROD_PASSWORD",
+            "CSIGHUB_USERNAME",
+            "CSIGHUB_PASSWORD",
+        ):
+            self.assertEqual(promote_step["env"][credential], build_step["env"][credential])
 
     def test_lightclaw_auth_workflow_watches_release_contract_inputs(self) -> None:
         workflow = yaml.safe_load((REPO_ROOT / ".ci/lightclaw-auth.yml").read_text())
