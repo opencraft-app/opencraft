@@ -234,6 +234,19 @@ class AdapterTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(safe_file_name('../../etc/passwd'), 'passwd')
         self.assertEqual(safe_file_name('a/b\\c.pdf'), 'b_c.pdf')
 
+    async def test_a_quote_reaches_the_model_in_full_not_just_its_preview(self):
+        adapter = self.commanded('owner'); adapter._bundles = {}
+        original = {'ID': 'm1', 'from': 'a_self', 'type': 'TIMTextElem', 'payload': {'text': '第一段。' * 200}}
+        adapter.client.message = lambda message_id: original if message_id == 'm1' else None
+        reply = {'messageReply': {'messageID': 'm1', 'messageAbstract': '第一段。第一段…', 'messageSender': 'Alpha'}}
+        await adapter._receive({'ID': 't', 'from': 'u_owner', 'conversationID': 'C2Cu_owner', 'type': 'TIMTextElem',
+                                'payload': {'text': '这段什么意思'}, 'cloudCustomData': json.dumps(reply)})
+        self.assertIn('第一段。' * 200, adapter.handled[0]['text'])
+        adapter.client.message = lambda message_id: None
+        await adapter._receive({'ID': 't2', 'from': 'u_owner', 'conversationID': 'C2Cu_owner', 'type': 'TIMTextElem',
+                                'payload': {'text': '这段呢'}, 'cloudCustomData': json.dumps(reply)})
+        self.assertIn('第一段。第一段…', adapter.handled[1]['text'], 'without the original the preview is still passed on')
+
     async def test_context_failure_does_not_leave_a_message_permanently_inflight(self):
         adapter = self.adapter(None); adapter._inflight = set(); adapter.state = {'pending': {'m': {'attempts': 0}}}; adapter._save = lambda: None
         async def fail(message): raise RuntimeError('history temporarily unavailable')

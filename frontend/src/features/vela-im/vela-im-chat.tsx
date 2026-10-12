@@ -82,6 +82,8 @@ export function VelaImChat({ controller, client, selfID, conversation, onBack, o
   const [caret, setCaret] = useState(0);
   const [activeMention, setActiveMention] = useState(0);
   const [quoting, setQuoting] = useState<QuotedMessage | null>(null);
+  /** Who each inserted `@name` means; members can share a display name. */
+  const [picked, setPicked] = useState<Array<{ userID: string; name: string }>>([]);
   const [copiedID, setCopiedID] = useState<string | null>(null);
   const [highlightID, setHighlightID] = useState<string | null>(null);
   const [dismissedMention, setDismissedMention] = useState<string | null>(null);
@@ -108,6 +110,7 @@ export function VelaImChat({ controller, client, selfID, conversation, onBack, o
     setError("");
     setText("");
     setQuoting(null);
+    setPicked([]);
     setPending((old) => { old.forEach((item) => item.preview && URL.revokeObjectURL(item.preview)); return []; });
     void client.getMessages(conversationID).then(async (page) => {
       if (cancelled) return;
@@ -174,7 +177,11 @@ export function VelaImChat({ controller, client, selfID, conversation, onBack, o
   ];
   const mentionText = (m: { userID: string; name: string }) => (m.userID === MENTION_ALL_ID ? MENTION_ALL_TEXT : m.name);
 
-  const insertMention = useCallback((name: string) => {
+  const pick = (userID: string | undefined, name: string) => {
+    if (userID && userID !== MENTION_ALL_ID) setPicked((old) => [...old.filter((p) => p.userID !== userID), { userID, name }]);
+  };
+  const insertMention = useCallback((name: string, userID?: string) => {
+    if (userID && userID !== MENTION_ALL_ID) setPicked((old) => [...old.filter((p) => p.userID !== userID), { userID, name }]);
     const before = text.slice(0, caret).replace(/@[^\s@]*$/, `@${name} `);
     const next = before + text.slice(caret);
     setText(next);
@@ -229,7 +236,7 @@ export function VelaImChat({ controller, client, selfID, conversation, onBack, o
         removePending(item.id);
       }
       if (body) {
-        const atUserList = isGroup ? resolveMentions(body, others) : [];
+        const atUserList = isGroup ? resolveMentions(body, others, picked) : [];
         const custom = { ...(quoting ? quoteData(quoting) : {}), ...(bundle ? { velaBundle: bundle, velaBundleParts: parts } : {}) };
         await deliver({
           to: conversation.targetID,
@@ -240,6 +247,7 @@ export function VelaImChat({ controller, client, selfID, conversation, onBack, o
         });
         setText("");
         setQuoting(null);
+        setPicked([]);
       }
     } catch (e) {
       setError(errorText(e, t("发送失败")));
@@ -255,7 +263,7 @@ export function VelaImChat({ controller, client, selfID, conversation, onBack, o
     setCommandsOpen(false);
     const command = `/${name} `;
     // In a group a command goes to one Agent: open the @ picker in front of it first.
-    if (isGroup && !resolveMentions(text, others).some(isAgentID)) {
+    if (isGroup && !resolveMentions(text, others, picked).some(isAgentID)) {
       setText(`@ ${command}`);
       setCaret(1);
       setDismissedMention(null);
@@ -279,7 +287,7 @@ export function VelaImChat({ controller, client, selfID, conversation, onBack, o
       }
       if (active && (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey))) {
         e.preventDefault();
-        insertMention(mentionText(active));
+        insertMention(mentionText(active), active.userID);
         return;
       }
       if (e.key === "Escape") {
@@ -315,7 +323,10 @@ export function VelaImChat({ controller, client, selfID, conversation, onBack, o
     const sender = message.from === selfID ? t("我") : nameOf(message);
     setQuoting({ messageID: message.ID, sender, abstract: messageAbstract(message) });
     // In a group the quoted Agent only answers when it is mentioned.
-    if (isGroup && message.from && isAgentID(message.from) && !text.includes(`@${sender}`)) setText((v) => `@${sender} ${v}`);
+    if (isGroup && message.from && isAgentID(message.from) && !picked.some((p) => p.userID === message.from)) {
+      pick(message.from, sender);
+      setText((v) => `@${sender} ${v}`);
+    }
     requestAnimationFrame(() => textareaRef.current?.focus());
   };
   const jumpTo = (messageID: string) => {
@@ -466,25 +477,24 @@ export function VelaImChat({ controller, client, selfID, conversation, onBack, o
                   {attachments.length ? (
                     <div className={cn("flex max-w-full flex-col gap-1.5", mine && "items-end")}>
                       {attachments.map((part) => (
-                        <div key={part.ID} id={`vela-im-msg-${part.ID}`} className="max-w-full"><VelaImMessageContent message={part} mine={mine} /></div>
+                        <div key={part.ID} id={`vela-im-msg-${part.ID}`} className="max-w-full"><VelaImMessageContent message={part} /></div>
                       ))}
                     </div>
                   ) : null}
                   {bare ? (
                     <div className={cn("max-w-full rounded-xl transition-shadow", highlightID === m.ID && "ring-2 ring-[var(--ring)]")}>
-                      <VelaImMessageContent message={m} mine={mine} />
+                      <VelaImMessageContent message={m} />
                     </div>
                   ) : (
-                  <ChatBubble tone={mine ? "user" : "assistant"}
-                    className={cn("max-w-full px-3.5 py-2 transition-shadow", mine && "ml-0", highlightID === m.ID && "ring-2 ring-[var(--ring)]")}>
+                  <ChatBubble tone={mine ? "system" : "assistant"}
+                    className={cn("max-w-full px-3.5 py-2 transition-shadow", mine && "ml-0 border-[#dbe3fb] bg-[#eef2fe] text-black/80", highlightID === m.ID && "ring-2 ring-[var(--ring)]")}>
                     {quoted ? (
                       <button type="button" onClick={() => jumpTo(quoted.messageID)}
-                        className={cn("mb-1.5 block w-full max-w-full rounded-md border-l-2 px-2 py-1 text-left text-xs",
-                          mine ? "border-white/50 bg-white/10 text-white/80" : "border-black/20 bg-black/[0.04] text-black/55")}>
+                        className="mb-1.5 block w-full max-w-full rounded-md border-l-2 border-black/20 bg-black/[0.04] px-2 py-1 text-left text-xs text-black/55">
                         <span className="font-medium">{quoted.sender}</span>：<span className="break-words">{quoted.abstract}</span>
                       </button>
                     ) : null}
-                    <VelaImMessageContent message={m} mine={mine} />
+                    <VelaImMessageContent message={m} />
                   </ChatBubble>
                   )}
                   <span className={cn("flex items-center gap-1.5 px-1 text-[11px] text-black/40", mine && "flex-row-reverse")}>
@@ -526,7 +536,7 @@ export function VelaImChat({ controller, client, selfID, conversation, onBack, o
               </button>
             ) : null}
             {others.filter((m) => isAgentID(m.userID)).map((m) => (
-              <button key={m.userID} type="button" onClick={() => { setText((v) => `${v}${v && !v.endsWith(" ") ? " " : ""}@${m.name} `); textareaRef.current?.focus(); }}
+              <button key={m.userID} type="button" onClick={() => { pick(m.userID, m.name); setText((v) => `${v}${v && !v.endsWith(" ") ? " " : ""}@${m.name} `); textareaRef.current?.focus(); }}
                 className="inline-flex h-7 items-center rounded-full border border-black/[0.08] bg-white px-2.5 text-xs text-black/60 hover:border-black/15 hover:text-black/80">
                 @{m.name}
               </button>
@@ -539,7 +549,7 @@ export function VelaImChat({ controller, client, selfID, conversation, onBack, o
               {suggestions.map((m, index) => (
                 <li key={m.userID}>
                   <button id={`vela-im-mention-${index}`} type="button" role="option" aria-selected={index === activeMention} tabIndex={-1}
-                    onMouseEnter={() => setActiveMention(index)} onMouseDown={(e) => { e.preventDefault(); insertMention(mentionText(m)); }}
+                    onMouseEnter={() => setActiveMention(index)} onMouseDown={(e) => { e.preventDefault(); insertMention(mentionText(m), m.userID); }}
                     className={cn("flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm text-black/75", index === activeMention && "bg-black/[0.05]")}>
                     {m.userID === MENTION_ALL_ID ? (
                       <span className="inline-flex size-7 shrink-0 items-center justify-center rounded-full bg-black/[0.06] text-black/60"><Users className="size-4" /></span>

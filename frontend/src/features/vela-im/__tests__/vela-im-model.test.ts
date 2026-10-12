@@ -140,4 +140,16 @@ describe("vela-im model", () => {
     expect(bundleOf({ ID: "x", cloudCustomData: JSON.stringify({ vela: { hops: 1 } }) })).toBeNull();
     expect(bundleOf({ ID: "y" })).toBeNull();
   });
+
+  it("resolves @mentions to the picked identity when members share a name, and never inside a longer name", () => {
+    const members = [{ userID: "a_1", name: "我的 AI 伙伴" }, { userID: "a_2", name: "我的 AI 伙伴" }, { userID: "a_3", name: "我的 AI 伙伴1" }];
+    expect(resolveMentions("@我的 AI 伙伴 你好", members)).toEqual([]);
+    expect(resolveMentions("@我的 AI 伙伴 你好", members, [{ userID: "a_2", name: "我的 AI 伙伴" }])).toEqual(["a_2"]);
+    expect(resolveMentions("@我的 AI 伙伴1 你好", members)).toEqual(["a_3"]);
+    expect(resolveMentions("@我的 AI 伙伴1 和 @我的 AI 伙伴", members, [{ userID: "a_1", name: "我的 AI 伙伴" }]).sort()).toEqual(["a_1", "a_3"]);
+  });
+
+  it("strips Markdown markers from quote previews", () => {
+    expect(messageAbstract({ ID: "q", type: "TIMTextElem", payload: { text: "## 标题\n**加粗** 和 `代码`" } })).toBe("标题 加粗 和 代码");
+  });
 });

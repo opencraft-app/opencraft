@@ -220,12 +220,24 @@ export interface MentionCandidate {
  * Resolves `@name` / `@userID` tokens in a group message to Tencent `atUserList` entries.
  * `@所有人` / `@all` mention everyone.
  */
-export const resolveMentions = (text: string, members: MentionCandidate[]): string[] => {
+export const resolveMentions = (text: string, members: MentionCandidate[], picked: MentionCandidate[] = []): string[] => {
   const ids = new Set<string>();
-  const byLongestName = [...members].sort((a, b) => b.name.length - a.name.length);
-  for (const member of byLongestName) {
-    if (text.includes(`@${member.userID}`) || (member.name && text.includes(`@${member.name}`))) ids.add(member.userID);
-  }
+  let rest = text;
+  /** Each `@token` resolves once, so `@助手` never also matches inside `@研究助手`. */
+  const take = (token: string) => {
+    const at = rest.indexOf(token);
+    if (at < 0) return false;
+    rest = rest.slice(0, at) + " ".repeat(token.length) + rest.slice(at + token.length);
+    return true;
+  };
+  for (const member of members) if (take(`@${member.userID}`)) ids.add(member.userID);
+  // Longest names first; at equal length an identity picked from the list wins, since members can share a name.
+  // A typed name shared by several members is ambiguous, so only a pick resolves it.
+  const candidates = [
+    ...picked.filter((p) => p.name).map((p) => ({ ...p, picked: true })),
+    ...members.filter((m) => m.name && members.filter((x) => x.name === m.name).length === 1).map((m) => ({ ...m, picked: false })),
+  ].sort((a, b) => b.name.length - a.name.length || Number(b.picked) - Number(a.picked));
+  for (const candidate of candidates) if (take(`@${candidate.name}`)) ids.add(candidate.userID);
   if (/@(?:所有人|all)(?=$|\s|[，。！？,.!?])/i.test(text)) ids.add("@all");
   return [...ids];
 };
@@ -244,7 +256,7 @@ export const messageAbstract = (message: IMMessage): string => {
       : view.kind === "location" ? `[位置] ${view.description}`
         : view.kind === "custom" ? view.description || "[自定义消息]"
           : label[view.kind] ?? "[消息]";
-  const line = text.replace(/\s+/g, " ").trim();
+  const line = text.replace(/\*\*|__|`+|^#{1,6}\s+|^>\s+/gm, "").replace(/\s+/g, " ").trim();
   return line.length > 120 ? `${line.slice(0, 120)}…` : line;
 };
 

@@ -281,8 +281,9 @@ class VelaAdapter(BasePlatformAdapter):
             return None
 
     async def _attachments(self, message, stashed):
-        """Media the sender sent with this message (bundle parts) or quoted; the model sees them with the text."""
-        found, seen = [], set()
+        """Media the sender sent with this message (bundle parts) or quoted, plus the quoted message's full text: the
+        quote itself only carries a short preview."""
+        found, seen, quote_text = [], set(), ""
         _, parts = bundle_of(message)
         by_id = {m.get("ID"): m for m in stashed}
         for part_id in parts or []:
@@ -290,11 +291,15 @@ class VelaAdapter(BasePlatformAdapter):
             if part and part.get("ID") not in seen and not part.get("isRevoked"):
                 seen.add(part.get("ID")); found.append(part)
         quote = quoted(message)
-        if quote and quote["messageID"] and quote["messageID"] not in seen:
+        if quote and quote["messageID"]:
             original = await asyncio.to_thread(self._lookup, quote["messageID"])
-            if original and not original.get("isRevoked") and normalized(original)[2]:
-                found.append(original)
-        return found
+            if original and not original.get("isRevoked"):
+                text, _, media = normalized(original)
+                if original.get("type") == "TIMTextElem":
+                    quote_text = text[:8000]
+                if media and quote["messageID"] not in seen:
+                    found.append(original)
+        return found, quote_text
 
     async def _receive(self, message, standalone=False):
         mode = "all"
@@ -322,9 +327,11 @@ class VelaAdapter(BasePlatformAdapter):
                 if error.status not in (403, 404): raise
                 mode = "off"  # Removed members / dissolved groups cannot block other chats.
         if should_reply(message, self.user_id, mode, self.max_hops):
-            attachments = await self._attachments(message, stashed)
+            attachments, quote_text = await self._attachments(message, stashed)
             if attachments:
                 message = {**message, "_vela_parts": attachments}
+            if quote_text:
+                message = {**message, "_vela_quote_text": quote_text}
             message_id = message["ID"]
             self.state["pending"].setdefault(message_id, {"message": message, "attempts": 0})
             self._save()  # 先持久化，再交给 Hermes。
@@ -375,7 +382,8 @@ class VelaAdapter(BasePlatformAdapter):
         text, kind, media = normalized(message)
         quote = quoted(message)
         if quote:
-            text = f"[Replying to a message from {quote['sender'] or 'someone'}: {json.dumps(quote['abstract'], ensure_ascii=False)}]\n" + text
+            quoted_text = message.get("_vela_quote_text") or quote["abstract"]
+            text = f"[Replying to a message from {quote['sender'] or 'someone'}: {json.dumps(quoted_text, ensure_ascii=False)}]\n" + text
         sender = f"{message.get('nick') or message.get('from')} ({message.get('from')})"
         if message.get("_vela_from_owner") and not group:
             text = f"[Vela IM: this message is from your owner {sender}, another identity of the person you belong to.]\n" + text
