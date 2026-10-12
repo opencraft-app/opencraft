@@ -485,9 +485,9 @@ Home channel 按 Bot/Profile 和平台分配，不设计成整个实例唯一的
 5. Bot 切换后，Provider、模型、通道、Skills、自动任务、Memory、User Profile 和 SOUL 页面显示目标 Bot 的数据，不串读、不串写。
 6. `/agents` 页面及 `/agents/<section>` 分区页面都具备当前 Bot 切换能力，切换后 URL 分区保持不变，页面数据刷新到目标 Bot。
 7. 支持多 Bot 的通道可以由每个 Bot 独立连接、查看、刷新二维码、断开和重连；Bot A 的通道凭据和连接状态不得在 Bot B 中默认显示、复用或被修改。
-8. 微信按 Bot/Profile 独立连接；同一实例的两个 Bot 可分别连接不同微信账号，互不覆盖、复用或断开对方的连接。
+8. 微信按 Bot/Profile 独立连接；同一实例的两个 Bot 可分别连接不同微信账号，互不覆盖、复用或断开对方的连接。微信二维码就绪时提示使用未连接其他 Bot 的微信账号。
 9. 每个 Bot/Profile 按平台维护自己的 home channel；定时任务、通知投递和省略 chat 的发送逻辑必须解析到当前 Bot 的 home channel，不得落到实例全局或其他 Bot。
-10. 删除普通 Bot 需要二次确认；删除成功后不影响其他 Bot 和实例级能力；删除失败时进入可恢复异常状态。
+10. 删除普通 Bot 需要二次确认；删除成功后不影响其他 Bot 和实例级能力；删除失败时进入可恢复异常状态。后端因微信仍连接而拒绝删除时，明确提示先断开该 Bot 的微信。
 11. 主 Bot 存在同实例其他 Bot 时禁止删除；只剩主 Bot 时，经明确二次确认销毁整个 Agent，后端重新检查 Profile 数量。不支持更换主 Bot，也不自动迁移根 Profile。
 12. 对不支持所需 `--agent` capability 的实例，产品入口被灰度或降级保护，不能静默执行到错误 Profile。
 13. 所有 Profile 级命令均使用后端返回的 `profile_id`，前端不得由实例 `botId` 推导 Hermes Profile。

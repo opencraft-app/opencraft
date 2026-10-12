@@ -14,7 +14,7 @@ source_of_truth:
 status: retired
 reviewed_at: 2026-10-12
 review_due: 2026-11-30
-revision: 1.1.0
+revision: 1.2.0
 precedence: task
 derived: true
 ---
@@ -93,10 +93,18 @@ Show Weixin as an independent connection for each Bot and update dual-site guida
 - Frontend rollout remains dependent on CTL migration and deployment. Real two-account and duplicate-account Weixin scans remain unverified.
 
 ## checkpoint
+### cr_followup_2026_10_12
+- User authorized only two frontend hints in !5180: use a Weixin account not connected to another Bot before scanning, and disconnect this Bot's Weixin before deleting it when CTL rejects deletion.
+- CTL account-ID deduplication and a separate backend MR are deferred by explicit user choice.
+- The current channel route uses `HermesQrCodeModal`; the legacy `ChannelModal` with instance-wide cancellation has no active opener, so this follow-up does not change it.
+- Exact search verified CTL uses `CHANNEL_OCCUPIED` for both Weixin and WhatsApp deletion; match the Weixin-specific rejection message to preserve other error behavior.
+- Re-read frontend service, site routing, frontend AGENTS and the relevant modal design guidance; the locale generator is the checked adjacent artifact.
+
 ### stage
-MR !5180 conflict repair was pushed against `origin/master` at `a527d0c13` on 2026-10-12; remote reports `opened/can_be_merged`, with CI running. Final Task Pack metadata cleanup and local preview restart remain.
+The two CR frontend hints and eight locale translations pass local frontend gates; source-first OpenCraft sync and updating !5180 remain.
 
 ### verified
+- CR follow-up: 96 focused tests pass, `pnpm check` has zero new TypeScript diagnostics, `pnpm build` passes, and documentation validation reports no errors. Before source commit, OpenCraft check reports expected locale drift; regenerate only after committing source.
 - The only content conflict was generated `UPSTREAM.json`; source and locale changes merged automatically.
 - Current 88 focused tests, `pnpm check`, `pnpm build`, documentation validation and staged change-impact checks pass against `a527d0c13`.
 - Source merge commit is `faa2e194f`; the official sync/check scripts regenerated and verified 136 OpenCraft Agent Console files.
@@ -106,7 +114,7 @@ MR !5180 conflict repair was pushed against `origin/master` at `a527d0c13` on 20
 
 ### unverified
 - Live two-account Weixin login through the public gateway.
-- CI completion after the final documentation commit.
+- CI for this CR follow-up and remote mergeability after push.
 
 ### discard
 - Build-only `frontend/next-env.d.ts` and font subset changes were restored.
@@ -115,4 +123,4 @@ MR !5180 conflict repair was pushed against `origin/master` at `a527d0c13` on 20
 - Worktree: `/Users/pablozhong/.codex/worktrees/wechat-per-bot/lightvela`.
 
 ### next_action
-- Push the Task Pack metadata cleanup, verify final remote SHA/mergeability, and resume the Beijing-backed local preview on port 5176.
+- Verify the QR dialog and deletion error handling, commit source and generated closure separately, update the original MR, and restore the Beijing-backed local preview on port 5176.

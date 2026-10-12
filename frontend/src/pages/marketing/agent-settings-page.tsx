@@ -106,6 +106,7 @@ import {
 import type { Repositories, WorkerActionStatusResult } from "@/repositories/types";
 import { composeDebugExecCommandLifecycles } from "@/pages/marketing/agent-debug-exec-lifecycle";
 import { getAgentCreateErrorMessage } from "@/pages/marketing/agent-create-error";
+import { getAgentDeleteErrorMessage } from "@/pages/marketing/agent-delete-error";
 import { useAutomationAwareModelSwitch } from "@/pages/marketing/agent-model-switch-automation-sync";
 import { createQqbotGroupPolicyCommandLifecycle } from "@/pages/marketing/agent-qqbot-group-policy";
 import { installOpenClawConsoleHelpers } from "@/pages/marketing/agent-console-helpers";
@@ -3628,15 +3629,7 @@ export const AgentSettingsPage = ({
       setDeleteTargetBot(null);
       setDeleteInput("");
     } catch (err) {
-      const errorCode = err && typeof err === "object" && "code" in err
-        ? (err as { code?: unknown }).code
-        : undefined;
-      setDeleteError(
-        errorCode === "INSTANCE_BOTS_REMAIN"
-          ? t("请先删除其他 Bot，再删除整个 Agent。")
-          : embedded ? t("删除失败，请稍后重试。")
-            : err instanceof Error ? err.message : t("删除失败，请稍后重试。"),
-      );
+      setDeleteError(getAgentDeleteErrorMessage(err, embedded, t));
     } finally {
       setDeletingBot(false);
     }
