@@ -3050,6 +3050,7 @@
   "k_f88d11ae": "Buat beberapa Bot dalam satu Agent agar masing-masing menjalankan perannya sendiri, dengan memori, Skills, tugas terjadwal, model, dan konfigurasi channel yang saling terisolasi.",
   "k_f88e6c44": "Bailian (Qwen)",
   "k_f8c11a29": "Pertanyaan sebelumnya",
+  "k_f8c3648f": "Putuskan koneksi WhatsApp Bot ini sebelum menghapus Bot.",
   "k_f8d33961": "Perintah gagal",
   "k_f8de3dbe": "Menghapus",
   "k_f8dfedcd": "Tersimpan",

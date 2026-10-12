@@ -3050,6 +3050,7 @@
   "k_f88d11ae": "Create multiple Bots in a single Agent, give each one a distinct role, and keep their memory, Skills, scheduled tasks, models, and channel settings isolated from one another.",
   "k_f88e6c44": "Bailian (Qwen)",
   "k_f8c11a29": "Previous question",
+  "k_f8c3648f": "Disconnect this Bot's WhatsApp before deleting the Bot.",
   "k_f8d33961": "Command failed",
   "k_f8de3dbe": "Deleting",
   "k_f8dfedcd": "Saved",
