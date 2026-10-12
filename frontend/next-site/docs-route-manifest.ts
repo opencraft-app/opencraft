@@ -2711,7 +2711,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "compare/lightvela-vs-localhost-ai-agent": "2026-08-12",
     "compare/lightvela-vs-ai-chatbot": "2026-08-12",
     "faq": "2026-09-27",
-    "contact-us": "2026-08-20",
+    "contact-us": "2026-10-12",
     "": "2026-09-27"
   },
   "zh-sg": {
@@ -2782,7 +2782,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "hermes-agent/persona-user-memory": "2026-08-12",
     "hermes-agent/workspace-context-storage": "2026-08-12",
     "hermes-agent/skills-self-improvement": "2026-08-12",
-    "contact-us": "2026-09-28",
+    "contact-us": "2026-10-12",
     "": "2026-09-27"
   },
   "zh-hant": {
@@ -2853,7 +2853,7 @@ export const DOCS_LAST_UPDATED: Record<DocsRouteLocale, Record<string, string | 
     "hermes-agent/persona-user-memory": "2026-08-12",
     "hermes-agent/workspace-context-storage": "2026-08-12",
     "hermes-agent/skills-self-improvement": "2026-08-12",
-    "contact-us": "2026-09-28",
+    "contact-us": "2026-10-12",
     "": "2026-09-27"
   },
   "id-id": {
