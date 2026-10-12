@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -491,6 +492,34 @@ func TestBotIMAPIMultiPersonGroupsAndAdminOperations(t *testing.T) {
 	bots, _ := summary["bots"].(map[string]any)
 	if status != http.StatusOK || summary["humansReady"] != float64(2) || bots["ready"] != float64(3) || summary["groupsActive"] != float64(1) {
 		t.Fatalf("summary = %d %#v", status, summary)
+	}
+	var paged []string
+	var previous time.Time
+	for offset := 0; offset < 6; offset += 2 {
+		status, page := fixture.admin(http.MethodGet, fmt.Sprintf("/v1/admin/im/identities?limit=2&offset=%d", offset), nil)
+		if status != http.StatusOK || page["total"] != float64(5) {
+			t.Fatalf("identities page %d = %d %#v", offset, status, page)
+		}
+		for _, item := range page["items"].([]any) {
+			identity := item.(map[string]any)
+			createdAt, _ := time.Parse(time.RFC3339Nano, identity["createdAt"].(string))
+			if !previous.IsZero() && createdAt.After(previous) {
+				t.Fatalf("identities are not newest first across humans and bots: %v", paged)
+			}
+			previous = createdAt
+			paged = append(paged, identity["userId"].(string))
+		}
+	}
+	if slices.Sort(paged); len(slices.Compact(paged)) != 5 {
+		t.Fatalf("paged identities = %v, want 5 distinct", paged)
+	}
+	if status, page := fixture.admin(http.MethodGet, "/v1/admin/im/identities?kind=bot&limit=2&offset=2", nil); status != http.StatusOK ||
+		page["total"] != float64(3) || len(page["items"].([]any)) != 1 {
+		t.Fatalf("last bot page = %d %#v", status, page)
+	}
+	if status, page := fixture.admin(http.MethodGet, "/v1/admin/im/groups?limit=1&offset=1", nil); status != http.StatusOK ||
+		page["total"] != float64(1) || len(page["items"].([]any)) != 0 {
+		t.Fatalf("group page past the end = %d %#v", status, page)
 	}
 	status, listed := fixture.admin(http.MethodGet, "/v1/admin/im/identities?q=usr_fedcba9876543210fedcba98", nil)
 	if status != http.StatusOK || listed["total"] != float64(2) {

@@ -114,7 +114,7 @@ chatserver im accounts [--list] [--check --im-sdk-app-id ID --im-admin-user-id U
 | `POST /admin/im/accounts/{accountId}/bots/{botAgentId}/disable` | 停用 Bot（等同用户删除） |
 | `POST /admin/im/tencent-check` | 与腾讯逐批核对平台记录的账号 |
 
-列表在 2 万行内扫描后分页，属于低频运营查询；写操作只定位单个身份、群或账号下的 Bot。
+列表的筛选、计数和分页都在数据库里完成（`limit` 最大 200，`offset` 从 0 开始），按创建时间倒序；不筛选类型时人类和 Bot 合并排序。腾讯核对按批次（每批 100 个）遍历全部记录。写操作只定位单个身份、群或账号下的 Bot。
 
 ## 9. 错误码
 

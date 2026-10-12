@@ -1,13 +1,12 @@
 // Package imadmin 是管理后台的 IM 运营能力：账号与群的查询、限制身份、解散群、停用 Bot、与腾讯核对。
 //
-// 列表是低频运营查询，在受限的行数内分页扫描；写操作只定位单个 IM 身份、群或账号下的 Bot，
+// 列表、概览与核对都在数据库里筛选、计数和分页；写操作只定位单个 IM 身份、群或账号下的 Bot，
 // 并复用用户侧相同的应用服务，保证效果与用户自己操作一致。
 package imadmin
 
 import (
 	"context"
 	"errors"
-	"sort"
 	"strings"
 	"time"
 
@@ -15,8 +14,11 @@ import (
 	botimport "git.woa.com/wisp/mono2/collaboration/internal/ports/botim"
 )
 
-// MaxScanRows 是单次列表扫描的行数上限；超过时只返回前面的部分并在 Total 中体现扫描到的数量。
-const MaxScanRows = 20000
+const (
+	defaultPageSize = 50
+	maxPageSize     = 200
+	checkBatchSize  = 100
+)
 
 // Identity 是平台创建的一个腾讯 IM 账号。
 type Identity struct {
@@ -80,10 +82,30 @@ type Check struct {
 	Mismatches        []Mismatch
 }
 
-// Reader 是运营查询的只读数据源。
+// IdentityFilter 是账号列表的筛选与分页条件。
+//
+// Query 精确匹配 IM UserID、usr_、账号 ID 或 Bot ID，否则按显示名包含匹配；结果按创建时间倒序。
+type IdentityFilter struct {
+	Query, Kind   string
+	Limit, Offset int
+}
+
+// GroupFilter 是群列表的筛选与分页条件。
+//
+// Query 精确匹配群 ID、腾讯 GroupId、群主账号或群主 usr_，否则按群名包含匹配；结果按创建时间倒序。
+type GroupFilter struct {
+	Query, State  string
+	Limit, Offset int
+}
+
+// Reader 是运营查询的只读数据源；筛选、计数与分页都由数据源完成。
 type Reader interface {
-	Identities(context.Context, int) ([]Identity, error)
-	Groups(context.Context, int) ([]Group, error)
+	Summary(context.Context) (Summary, error)
+	Identities(context.Context, IdentityFilter) ([]Identity, int, error)
+	// EachIdentity 按批次遍历全部 IM 身份，每批不超过 batch 个。
+	EachIdentity(ctx context.Context, batch int, visit func([]Identity) error) error
+	Groups(context.Context, GroupFilter) ([]Group, int, error)
+	Group(context.Context, string) (Group, bool, error)
 	GroupMembers(context.Context, string) ([]Member, error)
 	AccountSubject(context.Context, string) (string, error)
 }
@@ -122,105 +144,48 @@ func NewService(reader Reader, routes botimport.Repository, bots Bots, groups Gr
 }
 
 func (s *Service) Summary(ctx context.Context) (Summary, error) {
-	identities, err := s.reader.Identities(ctx, MaxScanRows)
+	summary, err := s.reader.Summary(ctx)
 	if err != nil {
 		return Summary{}, internal(err)
-	}
-	groups, err := s.reader.Groups(ctx, MaxScanRows)
-	if err != nil {
-		return Summary{}, internal(err)
-	}
-	var summary Summary
-	for _, identity := range identities {
-		if identity.RestrictedAt != nil {
-			summary.Restricted++
-		}
-		switch {
-		case identity.Kind == botimport.IdentityKindHuman && identity.State == "ready":
-			summary.HumansReady++
-		case identity.Kind == botimport.IdentityKindHuman:
-			summary.HumansPending++
-		case identity.State == botimport.BotStateReady:
-			summary.BotsReady++
-		case identity.State == botimport.BotStateProvisioning:
-			summary.BotsProvisioning++
-		case identity.State == botimport.BotStateDeleted:
-			summary.BotsDeleted++
-		default:
-			summary.BotsError++
-		}
-	}
-	for _, group := range groups {
-		switch group.State {
-		case botimport.GroupStateActive:
-			summary.GroupsActive++
-		case botimport.GroupStateDismissed:
-			summary.GroupsDismissed++
-		}
 	}
 	return summary, nil
 }
 
-// ListIdentities 精确匹配 IM UserID、usr_ 或账号 ID，否则按显示名包含匹配。
 func (s *Service) ListIdentities(ctx context.Context, query, kind string, limit, offset int) ([]Identity, int, error) {
-	identities, err := s.reader.Identities(ctx, MaxScanRows)
+	limit, offset = pageBounds(limit, offset)
+	identities, total, err := s.reader.Identities(ctx, IdentityFilter{
+		Query: strings.TrimSpace(query), Kind: kind, Limit: limit, Offset: offset,
+	})
 	if err != nil {
 		return nil, 0, internal(err)
 	}
-	query = strings.TrimSpace(query)
-	matched := make([]Identity, 0, len(identities))
-	for _, identity := range identities {
-		if kind != "" && identity.Kind != kind {
-			continue
-		}
-		if query != "" && identity.UserID != query && identity.LightVelaUserID != query && identity.AccountID != query &&
-			identity.BotAgentID != query && !strings.Contains(strings.ToLower(identity.DisplayName), strings.ToLower(query)) {
-			continue
-		}
-		matched = append(matched, identity)
-	}
-	sort.SliceStable(matched, func(i, j int) bool { return matched[i].CreatedAt.After(matched[j].CreatedAt) })
-	return page(matched, limit, offset), len(matched), nil
+	return identities, total, nil
 }
 
-// ListGroups 精确匹配群 ID、腾讯 GroupId 或群主 usr_，否则按群名包含匹配。
 func (s *Service) ListGroups(ctx context.Context, query, state string, limit, offset int) ([]Group, int, error) {
-	groups, err := s.reader.Groups(ctx, MaxScanRows)
+	limit, offset = pageBounds(limit, offset)
+	groups, total, err := s.reader.Groups(ctx, GroupFilter{
+		Query: strings.TrimSpace(query), State: state, Limit: limit, Offset: offset,
+	})
 	if err != nil {
 		return nil, 0, internal(err)
 	}
-	query = strings.TrimSpace(query)
-	matched := make([]Group, 0, len(groups))
-	for _, group := range groups {
-		if state != "" && group.State != state {
-			continue
-		}
-		if query != "" && group.ID != query && group.TencentGroupID != query && group.OwnerLightVelaUserID != query &&
-			group.OwnerAccountID != query && !strings.Contains(strings.ToLower(group.Name), strings.ToLower(query)) {
-			continue
-		}
-		matched = append(matched, group)
-	}
-	sort.SliceStable(matched, func(i, j int) bool { return matched[i].CreatedAt.After(matched[j].CreatedAt) })
-	return page(matched, limit, offset), len(matched), nil
+	return groups, total, nil
 }
 
 func (s *Service) Group(ctx context.Context, groupID string) (Group, []Member, error) {
-	groups, err := s.reader.Groups(ctx, MaxScanRows)
+	group, found, err := s.reader.Group(ctx, groupID)
 	if err != nil {
 		return Group{}, nil, internal(err)
 	}
-	for _, group := range groups {
-		if group.ID != groupID {
-			continue
-		}
-		members, err := s.reader.GroupMembers(ctx, groupID)
-		if err != nil {
-			return Group{}, nil, internal(err)
-		}
-		return group, members, nil
+	if !found {
+		return Group{}, nil, apperror.New("im_group_not_found", "平台群不存在", nil)
 	}
-	return Group{}, nil, apperror.New("im_group_not_found", "平台群不存在", nil)
+	members, err := s.reader.GroupMembers(ctx, groupID)
+	if err != nil {
+		return Group{}, nil, internal(err)
+	}
+	return group, members, nil
 }
 
 // Restrict 限制或解除一个 IM 身份；限制时立即使其腾讯登录态失效。
@@ -266,56 +231,65 @@ func (s *Service) DisableBot(ctx context.Context, accountID, botAgentID string) 
 
 // CheckTencent 逐批核对平台记录的账号是否存在于腾讯。
 func (s *Service) CheckTencent(ctx context.Context) (Check, error) {
-	identities, err := s.reader.Identities(ctx, MaxScanRows)
+	check := Check{Mismatches: []Mismatch{}}
+	var tencentErr error
+	err := s.reader.EachIdentity(ctx, checkBatchSize, func(identities []Identity) error {
+		userIDs := make([]string, 0, len(identities))
+		for _, identity := range identities {
+			userIDs = append(userIDs, identity.UserID)
+		}
+		imported, err := s.identities.CheckIdentities(ctx, userIDs)
+		if err != nil {
+			tencentErr = err
+			return err
+		}
+		for _, identity := range identities {
+			check.Checked++
+			if mismatch, ok := compare(identity, imported[identity.UserID]); ok {
+				check.Mismatches = append(check.Mismatches, mismatch)
+			}
+			if imported[identity.UserID] {
+				check.Imported++
+			}
+		}
+		return nil
+	})
+	if tencentErr != nil {
+		return Check{}, apperror.New("tencent_unavailable", "暂时无法向腾讯核对账号", tencentErr)
+	}
 	if err != nil {
 		return Check{}, internal(err)
-	}
-	userIDs := make([]string, 0, len(identities))
-	for _, identity := range identities {
-		userIDs = append(userIDs, identity.UserID)
-	}
-	imported, err := s.identities.CheckIdentities(ctx, userIDs)
-	if err != nil {
-		return Check{}, apperror.New("tencent_unavailable", "暂时无法向腾讯核对账号", err)
-	}
-	check := Check{Checked: len(identities), Mismatches: []Mismatch{}}
-	for _, identity := range identities {
-		present := imported[identity.UserID]
-		if present {
-			check.Imported++
-		}
-		expected := ""
-		switch {
-		case identity.State == "ready":
-			expected = "present"
-		case identity.Kind == botimport.IdentityKindBot && identity.State == botimport.BotStateDeleted:
-			expected = "absent"
-		}
-		if expected == "present" && !present || expected == "absent" && present {
-			tencent := "missing"
-			if present {
-				tencent = "imported"
-			}
-			check.Mismatches = append(check.Mismatches, Mismatch{
-				UserID: identity.UserID, Kind: identity.Kind, State: identity.State, Expected: expected, Tencent: tencent,
-			})
-		}
 	}
 	return check, nil
 }
 
-func page[T any](items []T, limit, offset int) []T {
-	if limit <= 0 || limit > 200 {
-		limit = 50
+// compare 只判断平台明确知道状态的账号：就绪的应在腾讯，已删除的 Bot 不应在腾讯。
+func compare(identity Identity, present bool) (Mismatch, bool) {
+	expected := ""
+	switch {
+	case identity.State == "ready":
+		expected = "present"
+	case identity.Kind == botimport.IdentityKindBot && identity.State == botimport.BotStateDeleted:
+		expected = "absent"
 	}
-	if offset < 0 || offset >= len(items) {
-		return []T{}
+	if expected == "present" && present || expected == "absent" && !present || expected == "" {
+		return Mismatch{}, false
 	}
-	end := offset + limit
-	if end > len(items) {
-		end = len(items)
+	tencent := "missing"
+	if present {
+		tencent = "imported"
 	}
-	return items[offset:end]
+	return Mismatch{UserID: identity.UserID, Kind: identity.Kind, State: identity.State, Expected: expected, Tencent: tencent}, true
+}
+
+func pageBounds(limit, offset int) (int, int) {
+	if limit <= 0 || limit > maxPageSize {
+		limit = defaultPageSize
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	return limit, offset
 }
 
 func internal(err error) error {
