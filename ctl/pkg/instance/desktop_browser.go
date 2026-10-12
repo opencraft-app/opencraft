@@ -16,7 +16,7 @@ var desktopBrowserEnsureScript string
 // This is the same offline capability used by the TAT rollout. It does not
 // install a browser, start a desktop, or change Agent browser configuration.
 func renderDesktopBrowserEnsureCommand() string {
-	return "printf %s " + shellQuoteArg(base64.StdEncoding.EncodeToString([]byte(desktopBrowserEnsureScript))) + " | sudo -n bash -s -- --apply agentuser"
+	return "printf %s " + shellQuoteArg(base64.StdEncoding.EncodeToString([]byte(desktopBrowserEnsureScript))) + " | base64 -d | sudo -n bash -s -- --apply agentuser"
 }
 
 // Browser registration is optional. An unsupported image or failed delivery

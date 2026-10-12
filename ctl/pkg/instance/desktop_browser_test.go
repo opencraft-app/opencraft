@@ -20,7 +20,7 @@ func TestDesktopBrowserEnsureCommandUsesSharedOfflineScript(t *testing.T) {
 		t.Fatal(err)
 	}
 	command := renderDesktopBrowserEnsureCommand()
-	if !strings.Contains(command, base64.StdEncoding.EncodeToString(data)) || !strings.Contains(command, "sudo -n bash -s -- --apply agentuser") {
+	if !strings.Contains(command, base64.StdEncoding.EncodeToString(data)) || !strings.Contains(command, "base64 -d | sudo -n bash -s -- --apply agentuser") {
 		t.Fatal("command must embed shared script and explicit root apply")
 	}
 	for _, forbidden := range []string{"--no-sandbox", "apt-get", "dnf install", "curl ", "9222", "systemctl restart", "/opt/ms-playwright/**"} {
@@ -80,5 +80,18 @@ func TestDesktopBrowserEnsurePreservesExistingConsumers(t *testing.T) {
 	}
 	if strings.Contains(desktopBrowserEnsureScript, "False and") {
 		t.Fatal("test-only preference override must never ship")
+	}
+}
+
+// Exercise the actual transport pipeline; merely finding the base64 payload
+// cannot detect a missing decoder before the privileged shell.
+func TestDesktopBrowserEnsureTransportDecodesBeforeExecution(t *testing.T) {
+	command := strings.Replace(renderDesktopBrowserEnsureCommand(), "sudo -n bash -s -- --apply agentuser", "cat", 1)
+	out, err := exec.Command("bash", "-c", command).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(out) != desktopBrowserEnsureScript {
+		t.Fatal("shell must receive decoded script, not base64 text")
 	}
 }
