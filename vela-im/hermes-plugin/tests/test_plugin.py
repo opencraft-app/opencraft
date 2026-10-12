@@ -31,7 +31,7 @@ spec = importlib.util.spec_from_file_location("vela_test_plugin", ROOT / "__init
 package = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = package
 spec.loader.exec_module(package)
-from vela_test_plugin.adapter import should_reply, normalized, chain, VelaAdapter, is_system  # noqa: E402
+from vela_test_plugin.adapter import should_reply, normalized, chain, quoted, VelaAdapter, is_system  # noqa: E402
 from vela_test_plugin.runtime import outbound_lineage, worker_for, configured, install_cli  # noqa: E402
 from vela_test_plugin.vela_im import WorkerEndpoint  # noqa: E402
 
@@ -51,6 +51,12 @@ class PluginTest(unittest.TestCase):
         for sender in ("u_person", "a_agent"):
             self.assertTrue(should_reply({"ID": "1", "from": sender, "type": "TIMTextElem", "conversationID": "C2C" + sender}, "a_self", "all"))
         self.assertFalse(should_reply({"from": "a_self"}, "a_self", "all"))
+
+    def test_quoted_message_follows_tencent_reply_convention(self):
+        reply = {"messageReply": {"messageID": "m1", "messageAbstract": "部署好了吗", "messageSender": "Alice", "version": 1}}
+        self.assertEqual(quoted({"cloudCustomData": json.dumps(reply)}), {"sender": "Alice", "abstract": "部署好了吗"})
+        self.assertIsNone(quoted({"cloudCustomData": json.dumps({"vela": {"hops": 1}})}))
+        self.assertIsNone(quoted({"cloudCustomData": "not json"}))
 
     def test_platform_policy_notice_and_group_tips_are_never_answered(self):
         notice = {"ID": "n", "from": "@TIM#SYSTEM", "type": "TIMCustomElem", "conversationID": "GROUPvg_x",

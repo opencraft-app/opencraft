@@ -231,6 +231,61 @@ export const resolveMentions = (text: string, members: MentionCandidate[]): stri
 /** Splits pasted member lists (newline, comma, Chinese comma, space) into unique IDs. */
 export const parseIDs = (value: string): string[] => [...new Set(value.split(/[\s,，]+/).map((s) => s.trim()).filter(Boolean))];
 
+/** One-line preview of a message, used when quoting it. */
+export const messageAbstract = (message: IMMessage): string => {
+  const view = describeMessage(message);
+  const label: Partial<Record<MessageView["kind"], string>> = {
+    image: "[图片]", audio: "[语音]", video: "[视频]", face: "[表情]", merger: "[聊天记录]", revoked: "[已撤回]",
+  };
+  const text = view.kind === "text" ? view.text
+    : view.kind === "file" ? `[文件] ${view.name}`
+      : view.kind === "location" ? `[位置] ${view.description}`
+        : view.kind === "custom" ? view.description || "[自定义消息]"
+          : label[view.kind] ?? "[消息]";
+  const line = text.replace(/\s+/g, " ").trim();
+  return line.length > 120 ? `${line.slice(0, 120)}…` : line;
+};
+
+export interface QuotedMessage {
+  messageID: string;
+  sender: string;
+  abstract: string;
+}
+
+/** Tencent IM's reply convention (`cloudCustomData.messageReply`), shared with other Tencent clients. */
+export const quotedMessage = (message: IMMessage): QuotedMessage | null => {
+  try {
+    const reply = (JSON.parse(str(message.cloudCustomData) || "{}") as Dict).messageReply;
+    if (!isDict(reply)) return null;
+    const abstract = str(reply.messageAbstract);
+    return abstract ? { messageID: str(reply.messageID), sender: str(reply.messageSender), abstract } : null;
+  } catch {
+    return null;
+  }
+};
+
+export const quoteCustomData = (quote: QuotedMessage): string =>
+  JSON.stringify({ messageReply: { messageID: quote.messageID, messageAbstract: quote.abstract, messageSender: quote.sender, messageType: 1, version: 1 } });
+
+/** A centred time line before a message that starts a new day or follows a gap of over five minutes. */
+export const timeDivider = (previous: IMMessage | undefined, message: IMMessage, now = Date.now()): string | null => {
+  const at = num(message.time);
+  if (!at) return null;
+  const before = previous ? num(previous.time) : 0;
+  const date = new Date(at * 1000);
+  if (before && at - before < 300 && new Date(before * 1000).toDateString() === date.toDateString()) return null;
+  const time = date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+  const today = new Date(now);
+  if (today.toDateString() === date.toDateString()) return time;
+  const yesterday = new Date(now - 86_400_000);
+  if (yesterday.toDateString() === date.toDateString()) return `昨天 ${time}`;
+  return today.getFullYear() === date.getFullYear()
+    ? `${date.getMonth() + 1}月${date.getDate()}日 ${time}`
+    : `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日 ${time}`;
+};
+
+export const fullTime = (seconds: number): string => (seconds ? new Date(seconds * 1000).toLocaleString("zh-CN", { hour12: false }) : "");
+
 export const formatTime = (seconds: number, now = Date.now()): string => {
   if (!seconds) return "";
   const date = new Date(seconds * 1000);

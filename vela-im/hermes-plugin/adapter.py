@@ -37,6 +37,17 @@ def is_system(message):
     return False
 
 
+def quoted(message):
+    """Tencent IM's reply convention: cloudCustomData.messageReply carries the quoted sender and a preview."""
+    try:
+        reply = json.loads(message.get("cloudCustomData") or "{}").get("messageReply")
+    except (ValueError, TypeError, AttributeError):
+        return None
+    if not isinstance(reply, dict) or not str(reply.get("messageAbstract") or "").strip():
+        return None
+    return {"sender": str(reply.get("messageSender") or ""), "abstract": str(reply["messageAbstract"])[:500]}
+
+
 def chain(message):
     try:
         data = json.loads(message.get("cloudCustomData") or "{}").get("vela", {})
@@ -293,6 +304,9 @@ class VelaAdapter(BasePlatformAdapter):
         message_id = message["ID"]
         group, chat_id = self._chat(message)
         text, kind, media = normalized(message)
+        quote = quoted(message)
+        if quote:
+            text = f"[Replying to a message from {quote['sender'] or 'someone'}: {json.dumps(quote['abstract'], ensure_ascii=False)}]\n" + text
         sender = f"{message.get('nick') or message.get('from')} ({message.get('from')})"
         if message.get("_vela_from_owner") and not group:
             text = f"[Vela IM: this message is from your owner {sender}, another identity of the person you belong to.]\n" + text

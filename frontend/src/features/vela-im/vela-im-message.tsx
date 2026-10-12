@@ -1,15 +1,19 @@
 import { FileText, MapPin } from "lucide-react";
 import type { IMMessage } from "@vela/im-client";
 import { useT } from "@/i18n/t";
+import { VelaImMarkdown } from "./vela-im-markdown";
 import { describeMessage } from "./vela-im-model";
 
+/** Markdown inside the user's own dark bubble. */
+const ON_DARK = "[&_a]:text-white [&_code]:bg-white/15 [&_pre]:bg-white/10 [&_blockquote]:border-white/40 [&_blockquote]:text-white/80 [&_th]:bg-white/10 [&_th]:border-white/20 [&_td]:border-white/20 [&_hr]:border-white/20";
+
 /** Renders any Tencent IM message type; unsupported ones stay visible as a labelled placeholder. */
-export function VelaImMessageContent({ message }: { message: IMMessage }) {
+export function VelaImMessageContent({ message, mine = false }: { message: IMMessage; mine?: boolean }) {
   const t = useT();
   const view = describeMessage(message);
   switch (view.kind) {
     case "text":
-      return <p className="whitespace-pre-wrap break-words">{view.text}</p>;
+      return <VelaImMarkdown text={view.text} className={mine ? ON_DARK : undefined} />;
     case "image":
       return view.url ? (
         <a href={view.fullUrl || view.url} target="_blank" rel="noreferrer">

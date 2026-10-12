@@ -4,11 +4,15 @@ import {
   describeMessage,
   isAgentID,
   mergeMessages,
+  messageAbstract,
   parseIDs,
+  quoteCustomData,
+  quotedMessage,
   resolveMentions,
   toApplications,
   toContacts,
   toConversations,
+  timeDivider,
   toMembers,
 } from "../vela-im-model";
 
@@ -85,5 +89,25 @@ describe("vela-im model", () => {
     expect(isAgentID("a_123")).toBe(true);
     expect(isAgentID("h_123")).toBe(false);
     expect(parseIDs("a_1, h_2，a_1\nh_3")).toEqual(["a_1", "h_2", "h_3"]);
+  });
+
+  it("quotes messages with Tencent's messageReply convention and a one-line abstract", () => {
+    const original = { ID: "m1", type: "TIMTextElem", payload: { text: "第一行\n第二行" } };
+    expect(messageAbstract(original)).toBe("第一行 第二行");
+    expect(messageAbstract({ ID: "m2", type: "TIMImageElem", payload: {} })).toBe("[图片]");
+    const data = quoteCustomData({ messageID: "m1", sender: "Alice", abstract: messageAbstract(original) });
+    expect(quotedMessage({ ID: "m3", cloudCustomData: data })).toEqual({ messageID: "m1", sender: "Alice", abstract: "第一行 第二行" });
+    expect(quotedMessage({ ID: "m4", cloudCustomData: JSON.stringify({ vela: { hops: 1 } }) })).toBeNull();
+    expect(quotedMessage({ ID: "m5", cloudCustomData: "oops" })).toBeNull();
+  });
+
+  it("puts a time divider at a new day or after a five-minute gap", () => {
+    const now = new Date(2026, 9, 12, 18, 0).getTime();
+    const at = (h: number, m: number, day = 12) => Math.floor(new Date(2026, 9, day, h, m).getTime() / 1000);
+    expect(timeDivider(undefined, { ID: "a", time: at(17, 0) }, now)).toBe("17:00");
+    expect(timeDivider({ ID: "a", time: at(17, 0) }, { ID: "b", time: at(17, 3) }, now)).toBeNull();
+    expect(timeDivider({ ID: "b", time: at(17, 3) }, { ID: "c", time: at(17, 9) }, now)).toBe("17:09");
+    expect(timeDivider(undefined, { ID: "d", time: at(9, 5, 11) }, now)).toBe("昨天 09:05");
+    expect(timeDivider(undefined, { ID: "e", time: at(9, 5, 1) }, now)).toBe("10月1日 09:05");
   });
 });

@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { ArrowLeft, ArrowUp, Loader2, MoreHorizontal, Paperclip, Pin, Settings2, Trash2, Undo2, Users } from "lucide-react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { ArrowLeft, ArrowUp, Check, Copy, Loader2, MoreHorizontal, Paperclip, Pin, Quote, Settings2, Trash2, Undo2, Users, X } from "lucide-react";
 import { defaultGroupPolicy, platformGroupId, policyFromGroup, type GroupReplyPolicy, type IMMessage, type MessageInput } from "@vela/im-client";
 import type { VelaBrowserClient } from "@vela/im-client/browser";
 import { Badge } from "@/components/ui/badge";
@@ -18,10 +18,16 @@ import {
   describeMessage,
   errorText,
   formatTime,
+  fullTime,
   isAgentID,
   mergeMessages,
+  messageAbstract,
+  quoteCustomData,
+  quotedMessage,
   resolveMentions,
+  timeDivider,
   toMembers,
+  type QuotedMessage,
   type ConversationItem,
   type MemberItem,
   type MessageView,
@@ -63,6 +69,9 @@ export function VelaImChat({ controller, client, selfID, conversation, onBack, o
   const [text, setText] = useState("");
   const [caret, setCaret] = useState(0);
   const [activeMention, setActiveMention] = useState(0);
+  const [quoting, setQuoting] = useState<QuotedMessage | null>(null);
+  const [copiedID, setCopiedID] = useState<string | null>(null);
+  const [highlightID, setHighlightID] = useState<string | null>(null);
   const [dismissedMention, setDismissedMention] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
@@ -181,8 +190,12 @@ export function VelaImChat({ controller, client, selfID, conversation, onBack, o
       conversationType: conversation.kind === "GROUP" ? "GROUP" : "C2C",
       type: atUserList.length ? "textAt" : "text",
       payload: atUserList.length ? { text: body, atUserList } : { text: body },
+      ...(quoting ? { cloudCustomData: quoteCustomData(quoting) } : {}),
     });
-    if (ok) setText("");
+    if (ok) {
+      setText("");
+      setQuoting(null);
+    }
   };
 
   const sendFile = async (file: File) => {
@@ -224,6 +237,27 @@ export function VelaImChat({ controller, client, selfID, conversation, onBack, o
     }
   };
 
+  const copy = (message: IMMessage, text: string) => {
+    void navigator.clipboard.writeText(text).then(() => {
+      setCopiedID(message.ID);
+      setTimeout(() => setCopiedID((id) => (id === message.ID ? null : id)), 1500);
+    }, () => setError(t("复制失败")));
+  };
+  const quote = (message: IMMessage) => {
+    const sender = message.from === selfID ? t("我") : nameOf(message);
+    setQuoting({ messageID: message.ID, sender, abstract: messageAbstract(message) });
+    // In a group the quoted Agent only answers when it is mentioned.
+    if (isGroup && message.from && isAgentID(message.from) && !text.includes(`@${sender}`)) setText((v) => `@${sender} ${v}`);
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  };
+  const jumpTo = (messageID: string) => {
+    const element = document.getElementById(`vela-im-msg-${messageID}`);
+    if (!element) return;
+    element.scrollIntoView({ behavior: "smooth", block: "center" });
+    setHighlightID(messageID);
+    setTimeout(() => setHighlightID((id) => (id === messageID ? null : id)), 1600);
+  };
+
   const memberName = (id: string) => members.find((x) => x.userID === id)?.name || id;
   const who = (id: string) => (id === selfID ? t("你") : `“${memberName(id)}”`);
   /** Group notices read like a chat app's system line, e.g. “你 邀请 “A”、“B” 加入了群聊”. */
@@ -255,7 +289,7 @@ export function VelaImChat({ controller, client, selfID, conversation, onBack, o
   const subtitle = isGroup
     ? [botOnly ? t("纯 Agent 群") : t("人机群"), t("{{count}} 位成员", { count: policy?.members.length || members.length }),
       policy ? ({ mention: t("@ 时回复"), mention_context: t("@ 时回复并参考上下文"), all: t("每条消息回复") }[policy.effectiveMode]) : ""].filter(Boolean).join(" · ")
-    : `${peerIsAgent ? "Agent" : t("人类")} · ${conversation.targetID}`;
+    : peerIsAgent ? "Agent" : t("人类");
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -311,40 +345,65 @@ export function VelaImChat({ controller, client, selfID, conversation, onBack, o
             <p className="mt-1 text-xs text-black/45">{isGroup ? t("在群里输入 @ 可以点名某个 Agent 或成员。") : peerIsAgent ? t("Agent 会像真人一样回复你。") : t("消息会实时送达对方的所有设备。")}</p>
           </div>
         ) : null}
-        {messages.map((m) => {
+        {messages.map((m, index) => {
           const mine = m.from === selfID;
           const view = describeMessage(m);
+          const divider = timeDivider(messages[index - 1], m);
+          const dividerLine = divider ? <p className="text-center text-[11px] text-black/35">{divider}</p> : null;
           if (view.kind === "event" || view.kind === "tip") {
-            return <p key={m.ID} className="px-6 text-center text-xs leading-5 text-black/40">{systemLine(view)}</p>;
+            return <Fragment key={m.ID}>{dividerLine}<p className="px-6 text-center text-xs leading-5 text-black/40">{systemLine(view)}</p></Fragment>;
           }
-          const canRevoke = mine && !m.isRevoked && now - Number(m.time ?? 0) < REVOKE_WINDOW_SECONDS;
+          const at = Number(m.time ?? 0);
+          const canRevoke = mine && !m.isRevoked && now - at < REVOKE_WINDOW_SECONDS;
+          const quoted = m.isRevoked ? null : quotedMessage(m);
+          const copyText = m.isRevoked ? "" : view.kind === "text" ? view.text : view.kind === "custom" ? view.description : "";
+          const action = "inline-flex items-center gap-1 rounded px-1 opacity-0 transition-opacity hover:text-black/70 focus-visible:opacity-100 group-hover:opacity-100";
           return (
-            <div key={m.ID} className={cn("group flex items-end gap-2.5", mine && "flex-row-reverse")}>
-              {!mine ? <VelaImAvatar name={nameOf(m)} seed={m.from} kind={isAgentID(m.from) ? "agent" : "human"} size="sm" /> : null}
-              <div className={cn("flex min-w-0 max-w-[78%] flex-col gap-1", mine && "items-end")}>
-                {!mine ? (
-                  <span className="flex items-center gap-1.5 px-1 text-xs text-black/45">
-                    <span className="font-medium text-black/60">{nameOf(m)}</span>
-                    {isAgentID(m.from) ? <Badge variant="warning" className="px-1.5 py-0.5 text-[10px]">Agent</Badge> : null}
-                    <span>{formatTime(Number(m.time ?? 0))}</span>
-                  </span>
-                ) : null}
-                <ChatBubble tone={mine ? "user" : "assistant"} className={cn("max-w-full px-3.5 py-2", mine && "ml-0")}>
-                  <VelaImMessageContent message={m} />
-                </ChatBubble>
-                {mine ? (
-                  <span className="flex items-center gap-2 px-1 text-[11px] text-black/40">
+            <Fragment key={m.ID}>
+              {dividerLine}
+              <div id={`vela-im-msg-${m.ID}`} className={cn("group flex items-start gap-2.5", mine && "flex-row-reverse")}>
+                {!mine ? <VelaImAvatar name={nameOf(m)} seed={m.from} kind={isAgentID(m.from) ? "agent" : "human"} size="sm" /> : null}
+                <div className={cn("flex min-w-0 max-w-[78%] flex-col gap-1", mine && "items-end")}>
+                  {!mine ? (
+                    <span className="flex h-7 items-center gap-1.5 px-1 text-xs text-black/45">
+                      <span className="font-medium text-black/60">{nameOf(m)}</span>
+                      {isAgentID(m.from) ? <Badge variant="warning" className="px-1.5 py-0.5 text-[10px]">Agent</Badge> : null}
+                      <time title={fullTime(at)}>{formatTime(at)}</time>
+                    </span>
+                  ) : null}
+                  <ChatBubble tone={mine ? "user" : "assistant"}
+                    className={cn("max-w-full px-3.5 py-2 transition-shadow", mine && "ml-0", highlightID === m.ID && "ring-2 ring-[var(--ring)]")}>
+                    {quoted ? (
+                      <button type="button" onClick={() => jumpTo(quoted.messageID)}
+                        className={cn("mb-1.5 block w-full max-w-full rounded-md border-l-2 px-2 py-1 text-left text-xs",
+                          mine ? "border-white/50 bg-white/10 text-white/80" : "border-black/20 bg-black/[0.04] text-black/55")}>
+                        <span className="font-medium">{quoted.sender}</span>：<span className="break-words">{quoted.abstract}</span>
+                      </button>
+                    ) : null}
+                    <VelaImMessageContent message={m} mine={mine} />
+                  </ChatBubble>
+                  <span className={cn("flex items-center gap-1.5 px-1 text-[11px] text-black/40", mine && "flex-row-reverse")}>
+                    {mine ? <time title={fullTime(at)}>{formatTime(at)}</time> : null}
+                    {mine && !isGroup && !peerIsAgent && !m.isRevoked ? <span>{m.isPeerRead ? t("已读") : t("未读")}</span> : null}
+                    {copyText ? (
+                      <button type="button" onClick={() => copy(m, copyText)} className={action} aria-label={t("复制")}>
+                        {copiedID === m.ID ? <Check className="size-3" /> : <Copy className="size-3" />}{copiedID === m.ID ? t("已复制") : t("复制")}
+                      </button>
+                    ) : null}
+                    {!m.isRevoked ? (
+                      <button type="button" onClick={() => quote(m)} className={action} aria-label={t("引用")}>
+                        <Quote className="size-3" />{t("引用")}
+                      </button>
+                    ) : null}
                     {canRevoke ? (
-                      <button type="button" onClick={() => void revoke(m)} className="inline-flex items-center gap-1 opacity-0 transition-opacity hover:text-black/70 focus-visible:opacity-100 group-hover:opacity-100">
+                      <button type="button" onClick={() => void revoke(m)} className={action}>
                         <Undo2 className="size-3" />{t("撤回")}
                       </button>
                     ) : null}
-                    <span>{formatTime(Number(m.time ?? 0))}</span>
-                    {!isGroup && !peerIsAgent && !m.isRevoked ? <span>{m.isPeerRead ? t("已读") : t("未读")}</span> : null}
                   </span>
-                ) : null}
+                </div>
               </div>
-            </div>
+            </Fragment>
           );
         })}
         <div ref={bottomRef} />
@@ -365,6 +424,15 @@ export function VelaImChat({ controller, client, selfID, conversation, onBack, o
                 @{m.name}
               </button>
             ))}
+          </div>
+        ) : null}
+        {quoting ? (
+          <div className="mb-2 flex items-center gap-2 rounded-lg bg-black/[0.04] px-3 py-2 text-xs text-black/60">
+            <Quote className="size-3.5 shrink-0 text-black/40" />
+            <span className="min-w-0 flex-1 truncate"><span className="font-medium">{quoting.sender}</span>：{quoting.abstract}</span>
+            <button type="button" onClick={() => setQuoting(null)} aria-label={t("取消引用")} className="inline-flex size-6 items-center justify-center rounded-md text-black/45 hover:bg-black/[0.06] hover:text-black/70">
+              <X className="size-3.5" />
+            </button>
           </div>
         ) : null}
         <div className="relative">
