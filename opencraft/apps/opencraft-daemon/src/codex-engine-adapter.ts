@@ -1310,9 +1310,9 @@ export class CodexEngineAdapter implements DuplexTransport {
         const ids: string[] = [];
         let cursor: string | null = null;
         const cursors = new Set<string>();
-        for (let page = 0; page < 100; page++) {
+        for (let page = 0; page < 1000; page++) {
           const value = record(await this.requestPhysical("thread/items/list", {
-            threadId, ...(turnId ? { turnId } : {}), ...(cursor ? { cursor } : {}), limit: 100,
+            threadId, ...(turnId ? { turnId } : {}), ...(cursor ? { cursor } : {}), limit: 1000,
           }));
           if (!Array.isArray(value.data)) throw new Error("Invalid metadata history page");
           for (const entry of value.data) {

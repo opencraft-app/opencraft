@@ -85,11 +85,13 @@ export class TencentOaParticipantsController {
     const current = () => !this.#closed && this.#hosts.get(hostId) === host && this.getClient(hostId) === host.client
       && generation === host.client.connectionGeneration && !abort.signal.aborted;
     try {
-      const result = await host.client.requestRaw<{ data: TencentOaThreadParticipants[] }>(TENCENTOA_PARTICIPANTS_METHOD, { threadIds }, { signal: abort.signal, timeoutMs: 15000, priority: "background" });
+      const result = await host.client.requestRaw<{ data: TencentOaThreadParticipants[]; errors?: { threadId: string }[] }>(TENCENTOA_PARTICIPANTS_METHOD, { threadIds }, { signal: abort.signal, timeoutMs: 15000, priority: "background" });
       if (!Array.isArray(result?.data)) throw new Error("Invalid participant response");
       const rows = new Map(result.data.map(row => [row.threadId, row]));
-      if (rows.size !== threadIds.length) throw new Error("Incomplete participant response");
+      const errors = new Set((result.errors ?? []).map(row => row.threadId));
+      if (rows.size + errors.size !== threadIds.length || [...errors].some(id => !threadIds.includes(id) || rows.has(id))) throw new Error("Incomplete participant response");
       for (const id of threadIds) {
+        if (errors.has(id)) continue;
         const row = rows.get(id);
         if (!row || !Number.isSafeInteger(row.revision) || row.revision < 0 || !Array.isArray(row.participants)
           || row.participants.length > 10000 || row.participants.some(name => typeof name !== "string" || !/^[A-Za-z0-9._-]{1,128}$/u.test(name))
@@ -97,7 +99,7 @@ export class TencentOaParticipantsController {
       }
       if (current()) for (const id of threadIds) {
         const entry = this.#entries.get(key(hostId, id));
-        if (entry && entry.revision === revisions.get(id)) this.#publish(entry, { phase: "ready", data: rows.get(id)! });
+        if (entry && entry.revision === revisions.get(id)) this.#publish(entry, errors.has(id) ? { phase: "error", data: entry.snapshot.data } : { phase: "ready", data: rows.get(id)! });
       }
     } catch {
       if (current()) for (const id of threadIds) { const entry = this.#entries.get(key(hostId, id)); if (entry && entry.revision === revisions.get(id)) this.#publish(entry, { phase: "error", data: entry.snapshot.data }); }

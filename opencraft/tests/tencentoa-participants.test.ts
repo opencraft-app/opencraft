@@ -95,6 +95,28 @@ function clientFixture() {
 }
 const settle = async () => { for (let i = 0; i < 5; i++) await new Promise(resolve => setImmediate(resolve)); };
 
+test("one unavailable history does not fail the other participant rows", async () => {
+  const f = setup();
+  try {
+    f.senders.record("good", "message", employee("alice"));
+    f.senders.record("bad", "message", employee("bob"));
+    f.context.readMessageIds = async threadId => { if (threadId === "bad") throw Error("native history unavailable"); return ["message"]; };
+    const result = await f.service.request(TENCENTOA_PARTICIPANTS_METHOD, { threadIds: ["bad", "good"] }) as any;
+    assert.deepEqual(result.data.map((row: any) => row.participants), [["alice"]]);
+    assert.deepEqual(result.errors, [{ threadId: "bad" }]);
+  } finally { f.close(); }
+  const client = clientFixture();
+  client.setRequest(async () => ({ data: [{ threadId: "good", revision: 1, participants: ["alice"] }], errors: [{ threadId: "bad" }] }));
+  const controller = new TencentOaParticipantsController(() => client.client);
+  const dispose = [controller.watch("host", "good"), controller.watch("host", "bad")];
+  try {
+    await settle();
+    assert.equal(controller.getSnapshot("host", "good").phase, "ready");
+    assert.deepEqual(controller.getSnapshot("host", "good").data?.participants, ["alice"]);
+    assert.equal(controller.getSnapshot("host", "bad").phase, "error");
+  } finally { dispose.forEach(fn => fn()); controller.dispose(); }
+});
+
 test("IOA client batches visible rows and refreshes a non-active conversation on metadata changes", async () => {
   const f = clientFixture(), controller = new TencentOaParticipantsController(() => f.client);
   const unwatch = [controller.watch("h", "t1"), controller.watch("h", "t2")];

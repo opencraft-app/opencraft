@@ -138,3 +138,5 @@ readers of this Host, including readers viewing another Thread. The plugin batch
 visible-row reads, fences connection/account changes, and keeps prior names on
 transient errors with retry. Names and counts are display metadata only: no IOA RPC
 is forwarded to native Codex, and metadata is never injected into model input.
+
+Participant list responses isolate reconciliation failures with `errors: [{ threadId }]`; successful snapshots remain in `data`. The frontend retains a previously known count on a failed row and offers retry. Native history reads use 1,000-item pages with a bounded 1,000-page cursor walk.

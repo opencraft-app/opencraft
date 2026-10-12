@@ -47,13 +47,16 @@ export class TencentOaParticipants implements ThreadMetadataExtension {
     if (!Array.isArray(params.threadIds) || params.threadIds.length > 100
       || params.threadIds.some(id => typeof id !== "string" || !id || id.length > 4096)) throw new Error("Invalid participant query");
     const ids = [...new Set(params.threadIds as string[])];
+    const failed = new Set<string>();
     // Bound the native reconciliation fan-out; the ordinary list needs only the visible rows.
     for (let index = 0; index < ids.length; index += 4) await Promise.all(ids.slice(index, index + 4).map(async id => {
-      await this.#jobs.get(id);
-      if (!this.#initialized.has(id)) await this.#refresh(id);
+      try {
+        await this.#jobs.get(id);
+        if (!this.#initialized.has(id)) await this.#refresh(id);
+      } catch { failed.add(id); }
     }));
     if (this.#closed) throw new Error("Participant service closed");
-    return { data: ids.map(id => this.snapshot(id)) };
+    return { data: ids.filter(id => !failed.has(id)).map(id => this.snapshot(id)), errors: [...failed].map(threadId => ({ threadId })) };
   }
   observeResult(method: string, params: Value, result: unknown): void {
     const value = record(result), thread = record(value.thread);
