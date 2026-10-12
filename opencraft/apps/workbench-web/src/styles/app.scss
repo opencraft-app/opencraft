@@ -4361,6 +4361,16 @@ html[data-codex-window-type="electron"] .thread-scroll {
   font-size: var(--codex-chat-font-size);
   line-height: calc(var(--codex-chat-font-size) + 8px);
 
+  &__sender {
+    max-width: 100%;
+    padding-inline-end: 3px;
+    color: var(--color-text-tertiary);
+    font-size: 12px;
+    line-height: 18px;
+    overflow-wrap: anywhere;
+    text-align: end;
+  }
+
   &__body {
     display: flex;
     width: 100%;

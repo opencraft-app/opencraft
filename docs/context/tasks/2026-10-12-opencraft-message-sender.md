@@ -90,3 +90,13 @@ No synthetic user messages were submitted into the live data directory.
 Deployment receipt, guarded overlay builder, cutover/rollback script and probes:
 `/data/tmp/opencraft-message-sender-preview-20261012/`. Master merge remains
 subject to MR !5252 protected review; preview deployment does not bypass it.
+
+## approved sender presentation
+User approved the visual mock and explicitly requested updating the running
+preview. Show loginName above each user message, muted and right aligned.
+Unknown identities show no name; attachment-only messages retain the sender.
+Context route `opencraft user message sender name presentation` had no match;
+bounded search located UserMessage and app.scss, and the adjacent layout test.
+Read maintenance verification, build matrix, Chat UI architecture and design invariants.
+Build preview from its current Web source 2e3958578 plus sender projection and
+this UI change; preserve task/header improvements and the running sender runtime.

@@ -1,5 +1,14 @@
 # ChatUI integration architecture
 
+## User message sender display
+
+Web/Electron show each user message's verified employee `loginName` above its
+content, in small muted text aligned to the end. Attachment-only messages use
+the same label. Unknown or absent senders leave no label. The label consumes
+the individual message snapshot, never the current footer account or Turn author,
+and is excluded from copied message text and native model input.
+
+
 ## Browser-local input drafts
 
 `ComposerStoreServices.drafts` is a platform-neutral content storage port;
