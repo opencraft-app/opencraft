@@ -68,12 +68,13 @@ func (identities *fakeIdentities) DeleteIdentity(_ context.Context, userID strin
 }
 
 type fakeTencentGroups struct {
-	created  []botimport.TencentGroup
-	added    []string
-	removed  []string
-	notices  []botimport.PolicyNotice
-	renamed  []string
-	destroys []string
+	created        []botimport.TencentGroup
+	added          []string
+	removed        []string
+	notices        []botimport.PolicyNotice
+	createdNotices []string
+	renamed        []string
+	destroys       []string
 }
 
 func (groups *fakeTencentGroups) EnsureGroup(_ context.Context, group botimport.TencentGroup) error {
@@ -98,6 +99,11 @@ func (groups *fakeTencentGroups) Rename(_ context.Context, _ string, name string
 
 func (groups *fakeTencentGroups) Destroy(_ context.Context, groupID string) error {
 	groups.destroys = append(groups.destroys, groupID)
+	return nil
+}
+
+func (groups *fakeTencentGroups) SendCreatedNotice(_ context.Context, groupID, creatorUserID string) error {
+	groups.createdNotices = append(groups.createdNotices, groupID+" "+creatorUserID)
 	return nil
 }
 
@@ -269,8 +275,12 @@ func TestBotIMAPIProvisionsBotIssuesSessionAndManagesGroups(t *testing.T) {
 		fixture.tencent.created[0].MemberUserIDs[0] != botUserID {
 		t.Fatalf("tencent created = %#v", fixture.tencent.created)
 	}
+	if len(fixture.tencent.createdNotices) != 1 || fixture.tencent.createdNotices[0] != group["tencentGroupId"].(string)+" u_HUMANA" {
+		t.Fatalf("created notices = %#v", fixture.tencent.createdNotices)
+	}
 	status, retried := fixture.human(http.MethodPost, "/v1/me/groups", create)
-	if status != http.StatusOK || retried["id"] != group["id"] || len(fixture.tencent.created) != 1 {
+	if status != http.StatusOK || retried["id"] != group["id"] || len(fixture.tencent.created) != 1 ||
+		len(fixture.tencent.createdNotices) != 1 {
 		t.Fatalf("retried create = %d %#v", status, retried)
 	}
 
@@ -307,6 +317,9 @@ func TestBotIMAPIProvisionsBotIssuesSessionAndManagesGroups(t *testing.T) {
 	status, _ = fixture.human(http.MethodPost, "/v1/me/bots/"+bot["id"].(string)+"/credential", nil)
 	if status != http.StatusOK || len(fixture.host.deliveries) != 2 {
 		t.Fatalf("rotate = %d deliveries=%d", status, len(fixture.host.deliveries))
+	}
+	if fixture.host.deliveries[0].OwnerIMUserID != "" || fixture.host.deliveries[1].OwnerIMUserID != "u_HUMANA" {
+		t.Fatalf("home channel owner = %q then %q", fixture.host.deliveries[0].OwnerIMUserID, fixture.host.deliveries[1].OwnerIMUserID)
 	}
 	status, body = fixture.do(http.MethodPost, "/v1/runtime/bot/session", "BotCredential "+credential, "", nil)
 	if status != http.StatusUnauthorized {

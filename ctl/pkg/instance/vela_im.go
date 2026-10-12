@@ -24,9 +24,11 @@ type VelaIMDelivery struct {
 	BotID      string
 	BotAgentID string
 	IMUserID   string
-	SDKAppID   int
-	APIBaseURL string
-	Credential string
+	// OwnerIMUserID 是主人的人类 IM 身份，写成该 Bot 的 home channel；可为空。
+	OwnerIMUserID string
+	SDKAppID      int
+	APIBaseURL    string
+	Credential    string
 }
 
 var (
@@ -55,6 +57,7 @@ func (l *logic) VerifyVelaIMBot(ctx pctx.Context, instanceID, botID string) (*Ve
 func (l *logic) DeliverVelaIMBot(ctx pctx.Context, delivery VelaIMDelivery) error {
 	if !velaIMCredentialPattern.MatchString(delivery.Credential) ||
 		!velaIMUserIDPattern.MatchString(delivery.IMUserID) ||
+		delivery.OwnerIMUserID != "" && !velaIMUserIDPattern.MatchString(delivery.OwnerIMUserID) ||
 		delivery.SDKAppID <= 0 || !strings.HasPrefix(delivery.APIBaseURL, "http") {
 		return errcode.ErrInstanceInvalidParam
 	}
@@ -64,6 +67,7 @@ func (l *logic) DeliverVelaIMBot(ctx pctx.Context, delivery VelaIMDelivery) erro
 	}
 	payload, err := json.Marshal(map[string]any{
 		"credential": delivery.Credential,
+		"owner":      delivery.OwnerIMUserID,
 		"config": map[string]any{
 			"apiBaseUrl": delivery.APIBaseURL,
 			"botAgentId": delivery.BotAgentID,
@@ -167,6 +171,17 @@ display = config.setdefault("display", {}).setdefault("platforms", {})
 display["vela_im"] = {"show_reasoning": False}
 config_path.write_text(yaml.safe_dump(config, allow_unicode=True, sort_keys=False), encoding="utf-8")
 os.chmod(config_path, 0o600)
+
+# Hermes drops every sender of a plugin platform without an allowlist; the platform decides who reaches the Bot.
+env_path = profile / ".env"
+lines = env_path.read_text(encoding="utf-8").splitlines() if env_path.exists() else []
+lines = [line for line in lines if not line.startswith(("VELA_ALLOW_ALL_USERS=", "VELA_HOME_CHANNEL="))]
+lines.append("VELA_ALLOW_ALL_USERS=true")
+if payload.get("owner"):
+    # Cron results and cross-platform notices go to the owner's direct chat.
+    lines.append("VELA_HOME_CHANNEL=C2C" + payload["owner"])
+env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+os.chmod(env_path, 0o600)
 print("vela-im delivered")
 `
 

@@ -186,6 +186,8 @@ func (s *Service) Create(ctx context.Context, actor Actor, input CreateInput) (V
 		if _, err := s.repository.SaveGroup(ctx, group, expected); err != nil && !errors.Is(err, botimport.ErrConflict) {
 			return View{}, internal("暂时无法保存群聊", err)
 		}
+		// 只是显示用的系统提示；发送失败不影响建群结果。
+		_ = s.tencent.SendCreatedNotice(ctx, group.TencentGroupID, group.CreatedByIMUserID)
 	}
 	return s.Get(ctx, actor, groupID)
 }

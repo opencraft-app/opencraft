@@ -86,6 +86,8 @@ test('admission and lineage are identical for humans and bots; the platform poli
  assert.equal(groupReplyReason(m({type:'TIMGroupSystemNoticeElem'}),'a_self',rules),'system');
  const notice=m({type:'TIMCustomElem',payload:{data:JSON.stringify({businessID:'vela_group_policy',replyMode:'all'})}});
  assert.equal(isPolicyNotice(notice),true);assert.equal(groupReplyReason(notice,'a_self',{effectiveMode:'all'}),'system');
+ const created=m({type:'TIMCustomElem',payload:{data:JSON.stringify({businessID:'group_create',opUser:'u_owner',cmd:0,version:4})}});
+ assert.equal(isPolicyNotice(created),false);assert.equal(groupReplyReason(created,'a_self',{effectiveMode:'all'}),'system');
  assert.equal(groupReplyReason(m({atUserList:['__kImSDK_MesssageAtALL__']}),'a_self',rules),'accepted');
  const looped=m({cloudCustomData:replyCustomData({chainId:'root',hops:5})});
  assert.deepEqual(readLineage(looped),{chainId:'root',hops:6});

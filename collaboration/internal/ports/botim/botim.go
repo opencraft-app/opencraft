@@ -151,9 +151,11 @@ type Delivery struct {
 	HostRequest
 	BotAgentID string
 	IMUserID   string
-	SDKAppID   int
-	APIBaseURL string
-	Credential authnport.SensitiveCredential
+	// OwnerIMUserID 是账号的人类 IM 身份，作为 Bot 的 home channel；人类 IM 尚未就绪时为空。
+	OwnerIMUserID string
+	SDKAppID      int
+	APIBaseURL    string
+	Credential    authnport.SensitiveCredential
 }
 
 // Host 抽象 Bot 所在实例的宿主控制面（生产为 CTL，开发机为本地命令）。
@@ -186,4 +188,6 @@ type TencentGroups interface {
 	Rename(ctx context.Context, tencentGroupID string, name string) error
 	Destroy(ctx context.Context, tencentGroupID string) error
 	SendPolicyNotice(ctx context.Context, tencentGroupID string, notice PolicyNotice) error
+	// SendCreatedNotice 发送 group_create 通知，让各端显示“某人创建了群聊”。
+	SendCreatedNotice(ctx context.Context, tencentGroupID, creatorUserID string) error
 }

@@ -58,6 +58,10 @@ class PluginTest(unittest.TestCase):
         self.assertTrue(is_system(notice))
         self.assertFalse(should_reply(notice, "a_self", "all"))
         self.assertFalse(should_reply({**notice, "type": "TIMGroupTipElem"}, "a_self", "all"))
+        created = {**notice, "from": "administrator",
+                   "payload": {"data": json.dumps({"businessID": "group_create", "opUser": "u_owner", "cmd": 0, "version": 4})}}
+        self.assertTrue(is_system(created))
+        self.assertFalse(should_reply(created, "a_self", "all"))
         self.assertFalse(is_system({"type": "TIMCustomElem", "payload": {"data": "opaque"}}))
 
     def test_agent_loop_bound(self):

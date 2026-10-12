@@ -12,6 +12,9 @@
 - `plugin-data/vela-im/credential`：Bot 凭据（0600），只有 worker 读取；
 - `plugin-data/vela-im/config.json`：`apiBaseUrl`、`botAgentId`、`imUserId`、`sdkAppId`；
 
+- profile 的 `.env` 写入 `VELA_ALLOW_ALL_USERS=true`：Hermes 默认丢弃插件平台上所有不在白名单里的发送者，
+  而谁能找到这个 Bot 由平台决定（群成员、回复规则、命令权限）；
+
 并在 profile 的 `config.yaml` 启用插件，然后重启该 Bot 的 gateway：
 
 ```yaml

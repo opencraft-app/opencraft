@@ -28,6 +28,7 @@ type velaIMRequest struct {
 	DisplayName    string `json:"displayName"`
 	BotAgentID     string `json:"botAgentId"`
 	IMUserID       string `json:"imUserId"`
+	OwnerIMUserID  string `json:"ownerImUserId"`
 	SDKAppID       int    `json:"sdkAppId"`
 	APIBaseURL     string `json:"apiBaseUrl"`
 	Credential     string `json:"credential"`
@@ -80,7 +81,7 @@ func (h *instanceHandler) handleInternalVelaIM(w http.ResponseWriter, r *http.Re
 	case "bots:deliver":
 		err := logic.DeliverVelaIMBot(ctx, instancelogic.VelaIMDelivery{
 			InstanceID: request.InstanceID, BotID: request.BotID, BotAgentID: request.BotAgentID,
-			IMUserID: request.IMUserID, SDKAppID: request.SDKAppID, APIBaseURL: request.APIBaseURL,
+			IMUserID: request.IMUserID, OwnerIMUserID: request.OwnerIMUserID, SDKAppID: request.SDKAppID, APIBaseURL: request.APIBaseURL,
 			Credential: request.Credential,
 		})
 		if err != nil {

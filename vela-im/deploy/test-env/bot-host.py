@@ -83,6 +83,20 @@ def enable_plugin(profile):
     dump_yaml(path, config)
 
 
+def write_profile_env(profile, owner):
+    """Hermes drops every sender of a plugin platform without an allowlist; who may reach the Bot is decided by the
+    platform (group membership, reply rules, command policy), so the profile opens the Hermes gate. Cron results and
+    cross-platform notices go to the owner's direct chat."""
+    path = profile / ".env"
+    lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+    lines = [line for line in lines if not line.startswith(("VELA_ALLOW_ALL_USERS=", "VELA_HOME_CHANNEL="))]
+    lines.append("VELA_ALLOW_ALL_USERS=true")
+    if owner:
+        lines.append("VELA_HOME_CHANNEL=C2C" + owner)
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    os.chmod(path, 0o600)
+
+
 def ensure_multiplex():
     """Secondary profiles only run inside the default profile's gateway when multiplexing is on."""
     path = HOME / "config.yaml"
@@ -148,6 +162,7 @@ def handle(request):
         install_plugin(profile)
         write_delivery(profile, request)
         enable_plugin(profile)
+        write_profile_env(profile, request.get("ownerImUserId") or "")
         ensure_multiplex()
         schedule_restart()
         return {}

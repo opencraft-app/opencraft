@@ -394,13 +394,18 @@ func (s *Service) issueAndDeliver(
 	if err != nil {
 		return botimport.BotAgent{}, err
 	}
+	owner := ""
+	if account, err := s.repository.FindAccount(ctx, bot.AccountID); err == nil && account.IMState == "ready" {
+		owner = account.IMUserID
+	}
 	if err := s.host.Deliver(ctx, botimport.Delivery{
-		HostRequest: request,
-		BotAgentID:  bot.ID,
-		IMUserID:    bot.IMUserID,
-		SDKAppID:    s.config.SDKAppID,
-		APIBaseURL:  s.config.APIBaseURL,
-		Credential:  credential.Credential(),
+		HostRequest:   request,
+		BotAgentID:    bot.ID,
+		IMUserID:      bot.IMUserID,
+		OwnerIMUserID: owner,
+		SDKAppID:      s.config.SDKAppID,
+		APIBaseURL:    s.config.APIBaseURL,
+		Credential:    credential.Credential(),
 	}); err != nil {
 		bot, _ = s.markError(ctx, bot, "bot_host_delivery_failed")
 		return botimport.BotAgent{}, hostError(err)

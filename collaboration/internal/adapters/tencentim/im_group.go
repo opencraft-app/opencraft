@@ -18,7 +18,8 @@ const (
 	sendGroupMessagePath    = "/v4/group_open_http_svc/send_group_msg"
 
 	// PolicyNoticeBusinessID 标识平台规则变化通知；客户端把它渲染为灰色系统提示。
-	PolicyNoticeBusinessID = "vela_group_policy"
+	PolicyNoticeBusinessID  = "vela_group_policy"
+	CreatedNoticeBusinessID = "group_create"
 )
 
 // RESTGroupManager 用 App 管理员身份幂等维护平台创建的腾讯普通群。
@@ -235,9 +236,6 @@ func (manager *RESTGroupManager) SendPolicyNotice(
 	groupID string,
 	notice botimport.PolicyNotice,
 ) error {
-	if manager == nil || ctx == nil || !validPlatformGroupID(groupID) {
-		return newRESTError("tencent_invalid_group", false)
-	}
 	data, err := json.Marshal(struct {
 		BusinessID string `json:"businessID"`
 		GroupID    string `json:"groupId"`
@@ -246,6 +244,31 @@ func (manager *RESTGroupManager) SendPolicyNotice(
 	}{PolicyNoticeBusinessID, notice.GroupID, notice.ReplyMode, notice.Revision})
 	if err != nil {
 		return newRESTError("tencent_request_encode_failed", false)
+	}
+	return manager.sendCustom(ctx, groupID, data, "group_policy")
+}
+
+// SendCreatedNotice 发送与腾讯客户端建群相同格式的 group_create 通知；管理员 REST 建群时腾讯不会自动发送。
+func (manager *RESTGroupManager) SendCreatedNotice(ctx context.Context, groupID, creatorUserID string) error {
+	if !imUserIDPattern.MatchString(creatorUserID) {
+		return newRESTError("tencent_invalid_identity", false)
+	}
+	data, err := json.Marshal(struct {
+		BusinessID string `json:"businessID"`
+		Content    string `json:"content"`
+		Cmd        int    `json:"cmd"`
+		OpUser     string `json:"opUser"`
+		Version    int    `json:"version"`
+	}{CreatedNoticeBusinessID, "创建群组", 0, creatorUserID, 4})
+	if err != nil {
+		return newRESTError("tencent_request_encode_failed", false)
+	}
+	return manager.sendCustom(ctx, groupID, data, "group_create")
+}
+
+func (manager *RESTGroupManager) sendCustom(ctx context.Context, groupID string, data []byte, desc string) error {
+	if manager == nil || ctx == nil || !validPlatformGroupID(groupID) {
+		return newRESTError("tencent_invalid_group", false)
 	}
 	randomBytes := make([]byte, 4)
 	if _, err := rand.Read(randomBytes); err != nil {
@@ -260,13 +283,15 @@ func (manager *RESTGroupManager) SendPolicyNotice(
 		MsgContent content `json:"MsgContent"`
 	}
 	request := struct {
-		GroupID string    `json:"GroupId"`
-		Random  uint32    `json:"Random"`
-		MsgBody []element `json:"MsgBody"`
+		GroupID        string    `json:"GroupId"`
+		Random         uint32    `json:"Random"`
+		MsgBody        []element `json:"MsgBody"`
+		SendMsgControl []string  `json:"SendMsgControl"`
 	}{
-		GroupID: groupID,
-		Random:  binary.BigEndian.Uint32(randomBytes),
-		MsgBody: []element{{MsgType: "TIMCustomElem", MsgContent: content{Data: string(data), Desc: "group_policy"}}},
+		GroupID:        groupID,
+		Random:         binary.BigEndian.Uint32(randomBytes),
+		MsgBody:        []element{{MsgType: "TIMCustomElem", MsgContent: content{Data: string(data), Desc: desc}}},
+		SendMsgControl: []string{"NoUnread"},
 	}
 	var response restEnvelope
 	if err := manager.client.postJSON(ctx, sendGroupMessagePath, request, &response); err != nil {

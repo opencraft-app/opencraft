@@ -135,6 +135,38 @@ func TestRESTGroupManagerSendsPolicyNoticeAsCustomElement(t *testing.T) {
 	}
 }
 
+func TestRESTGroupManagerSendsCreatedNoticeInTencentFormat(t *testing.T) {
+	var body struct {
+		MsgBody []struct {
+			MsgContent struct {
+				Data string `json:"Data"`
+			} `json:"MsgContent"`
+		} `json:"MsgBody"`
+		SendMsgControl []string `json:"SendMsgControl"`
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		_, _ = io.WriteString(writer, `{"ActionStatus":"OK","ErrorCode":0}`)
+	}))
+	t.Cleanup(server.Close)
+
+	manager := newTestRESTGroupManager(t, server)
+	if err := manager.SendCreatedNotice(context.Background(), testPlatformGroupID, "u_OWNER"); err != nil {
+		t.Fatal(err)
+	}
+	var data map[string]any
+	if len(body.MsgBody) != 1 || json.Unmarshal([]byte(body.MsgBody[0].MsgContent.Data), &data) != nil ||
+		data["businessID"] != "group_create" || data["opUser"] != "u_OWNER" ||
+		len(body.SendMsgControl) != 1 || body.SendMsgControl[0] != "NoUnread" {
+		t.Fatalf("created notice = %#v %#v", body, data)
+	}
+	if err := manager.SendCreatedNotice(context.Background(), testPlatformGroupID, "bad id!"); err == nil {
+		t.Fatal("invalid creator accepted")
+	}
+}
+
 func TestRESTGroupManagerRejectsNonPlatformGroupIDs(t *testing.T) {
 	manager := &RESTGroupManager{client: &RESTCommunityProvisioner{}}
 	if err := manager.Destroy(context.Background(), "@TGS#foreign"); err == nil {

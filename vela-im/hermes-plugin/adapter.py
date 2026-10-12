@@ -22,16 +22,16 @@ from .vela_im import VelaClient, VelaHTTPError, reply_custom_data
 
 logger = logging.getLogger(__name__)
 SYSTEM_TYPES = ("TIMGroupTipElem", "TIMGroupSystemNoticeElem")
-POLICY_BUSINESS_ID = "vela_group_policy"
+SYSTEM_BUSINESS_IDS = ("vela_group_policy", "group_create")  # reply-rule change, group created
 
 
 def is_system(message):
-    """Group tips and the platform's reply-rule notices are events, never something to answer."""
+    """Group tips and the platform's custom notices are events, never something to answer."""
     if message.get("type") in SYSTEM_TYPES:
         return True
     if message.get("type") == "TIMCustomElem":
         try:
-            return json.loads(message.get("payload", {}).get("data") or "{}").get("businessID") == POLICY_BUSINESS_ID
+            return json.loads(message.get("payload", {}).get("data") or "{}").get("businessID") in SYSTEM_BUSINESS_IDS
         except (ValueError, TypeError, AttributeError):
             return False
     return False

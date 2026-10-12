@@ -101,6 +101,12 @@ step "platform group: human creates with the Bot, changes reply mode, Bot reads 
 GROUP_ID=$("$PY" -c 'import sys; sys.path.insert(0, sys.argv[1]); from vela_im.client import uuid7; print(uuid7())' "$REPO/python-sdk")
 group=$(expect 200 "$(human POST /me/groups "{\"groupId\":\"$GROUP_ID\",\"name\":\"smoke\",\"memberUserIds\":[\"$BOT_IM\"],\"replyMode\":\"mention\"}")")
 echo "group $(json 'd["tencentGroupId"]' <<< "$group") members=$(json 'len(d["members"])' <<< "$group") mode=$(json 'd["effectiveReplyMode"]' <<< "$group")"
+TENCENT_GROUP=$(json 'd["tencentGroupId"]' <<< "$group")
+for _ in $(seq 1 10); do
+  vela_im history --conversation "GROUP$TENCENT_GROUP" --count 5 2>/dev/null | grep -q 'group_create' && break; sleep 1
+done
+vela_im history --conversation "GROUP$TENCENT_GROUP" --count 5 | grep -q 'group_create' && echo "created notice delivered" ||
+  { echo "created notice missing"; exit 1; }
 group=$(expect 200 "$(human PATCH "/me/groups/$GROUP_ID" '{"replyMode":"all"}')")
 echo "reply mode now $(json 'd["replyMode"]' <<< "$group")"
 vela_im group info "$GROUP_ID"

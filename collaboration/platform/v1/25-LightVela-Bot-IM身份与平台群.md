@@ -30,7 +30,7 @@ POST /v1/me/bots {instanceId, botId, displayName}        Human（gateway）
   2. 写 bot_agents / im_identity_routes，腾讯 account_import
   3. 生成凭据 vbc_<accountId>.<botAgentId>.<version>.<32B base64url>，库里只存摘要
   4. Host.Deliver：CTL 经 TAT 写入该 profile 的 plugin-data/vela-im/credential（0600）与 config.json，
-     启用 vela-im 插件，acli gateway restart --agent <profile>
+     启用 vela-im 插件，profile .env 写 VELA_ALLOW_ALL_USERS=true（准入由平台把关），acli gateway restart --agent <profile>
   5. state=ready
 ```
 
@@ -65,6 +65,8 @@ Host 两种实现收发同一份 JSON：生产 `--bot-host-ctl-url` + `--bot-hos
 - 修改名称 / 回复规则、拉人、踢人：群主和管理员；解散：只有群主；任何成员可以移除自己（退群），群主不能被移出。
   人和 Bot 适用同一套权限。
   规则变化后以管理员发送自定义消息 `{"businessID":"vela_group_policy","groupId","replyMode","revision"}`，各端据此刷新缓存。
+  建群成功后以管理员发送与腾讯客户端建群相同格式的 `{"businessID":"group_create","opUser":<建群人>}`，
+  管理员 REST 建群时腾讯不会自动发送这条通知。两种通知都不计未读，Bot 不会回复。
 - 回复模式：`mention`（默认）、`mention_context`、`all`。Bot 间自动对话的跳数由客户端 `cloudCustomData.vela` 约束（默认 6）。
 
 ## 6. 腾讯回调

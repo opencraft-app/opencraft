@@ -30,6 +30,7 @@ type request struct {
 	DisplayName    string `json:"displayName,omitempty"`
 	BotAgentID     string `json:"botAgentId,omitempty"`
 	IMUserID       string `json:"imUserId,omitempty"`
+	OwnerIMUserID  string `json:"ownerImUserId,omitempty"`
 	SDKAppID       int    `json:"sdkAppId,omitempty"`
 	APIBaseURL     string `json:"apiBaseUrl,omitempty"`
 	Credential     string `json:"credential,omitempty"`
@@ -52,7 +53,7 @@ func deliverRequest(input botimport.Delivery) request {
 	return request{
 		Action: "deliver", AccountSubject: input.AccountSubject, InstanceID: input.InstanceID,
 		BotID: input.BotID, DisplayName: input.DisplayName, BotAgentID: input.BotAgentID,
-		IMUserID: input.IMUserID, SDKAppID: input.SDKAppID, APIBaseURL: input.APIBaseURL,
+		IMUserID: input.IMUserID, OwnerIMUserID: input.OwnerIMUserID, SDKAppID: input.SDKAppID, APIBaseURL: input.APIBaseURL,
 		Credential: input.Credential.Reveal(),
 	}
 }

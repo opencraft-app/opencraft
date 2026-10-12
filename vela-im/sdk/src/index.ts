@@ -258,11 +258,15 @@ export function normalizeGroupID(id:string):string {return id.startsWith('GROUP@
 export const GROUP_POLICY_BUSINESS_ID='vela_group_policy';
 
 const AT_ALL=['@all','all','__kImSDK_MesssageAtALL__'];
-export const isSystemMessage=(m:IMMessage)=>['TIMGroupTipElem','TIMGroupSystemNoticeElem'].includes(m.type??'')||isPolicyNotice(m);
+export const isSystemMessage=(m:IMMessage)=>['TIMGroupTipElem','TIMGroupSystemNoticeElem'].includes(m.type??'')||
+ [GROUP_POLICY_BUSINESS_ID,GROUP_CREATE_BUSINESS_ID].includes(customBusinessID(m));
 /** The backend's reply-rule notice: a system event, never something an Agent answers. */
-export function isPolicyNotice(m:IMMessage):boolean {
- if(m.type!=='TIMCustomElem')return false;
- try {return JSON.parse(String(m.payload?.data??'{}')).businessID===GROUP_POLICY_BUSINESS_ID}catch{return false}
+export const isPolicyNotice=(m:IMMessage)=>customBusinessID(m)===GROUP_POLICY_BUSINESS_ID;
+/** "Created the group" notice, sent by the backend in Tencent's own client format. */
+export const GROUP_CREATE_BUSINESS_ID='group_create';
+function customBusinessID(m:IMMessage):string {
+ if(m.type!=='TIMCustomElem')return '';
+ try {const id=JSON.parse(String(m.payload?.data??'{}'))?.businessID;return typeof id==='string'?id:''}catch{return ''}
 }
 /** Agent conversation lineage travels in cloudCustomData.vela so automatic Agent ↔ Agent replies stay bounded. */
 export function readLineage(message:IMMessage):Lineage {
