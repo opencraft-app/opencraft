@@ -27,6 +27,10 @@ export class CodexMessageSenders {
     const row = this.db.prepare(`SELECT sender_json FROM message_senders WHERE thread_id=? AND client_message_id=?`).get(threadId, messageId);
     return row ? JSON.parse(String(row.sender_json)) as MessageSender | null : null;
   }
+  hasEmployees(threadId: string): boolean {
+    return this.db.prepare(`SELECT 1 FROM message_senders WHERE thread_id=?
+      AND json_extract(sender_json,'$.kind')='employee' LIMIT 1`).get(threadId) !== undefined;
+  }
   /** Only an observed history item is projected; an unused fork mapping creates no messages. */
   cloneThread(source: string, target: string): void {
     if (!source || !target || source === target) return;

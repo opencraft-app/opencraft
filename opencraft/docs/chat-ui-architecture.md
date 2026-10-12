@@ -1,5 +1,14 @@
 # ChatUI integration architecture
 
+## User message sender display
+
+Web/Electron show each user message's verified employee `loginName` above its
+content, in small muted text aligned to the end. Attachment-only messages use
+the same label. Unknown or absent senders leave no label. The label consumes
+the individual message snapshot, never the current footer account or Turn author,
+and is excluded from copied message text and native model input.
+
+
 ## Browser-local input drafts
 
 `ComposerStoreServices.drafts` is a platform-neutral content storage port;
@@ -1468,5 +1477,15 @@ render tasks and destroys/cancels them on replacement or unmount; late results
 cannot paint a different resource. Invalid or password-protected documents show
 a generic failure with download available. Web and Electron share this Renderer;
 this does not declare a native Expo PDF viewer.
+
+## Product Thread badge slot
+
+The Shell offers one trusted `threadBadge` contribution. Its React contract supplies
+Host/Thread identity, portal root and controlled Popover state; IOA owns the circular
+participant badge and data reads. The badge is a sibling of the Thread navigation
+button. Sidebar owns exclusivity across participant Popovers and existing context/
+dropdown menus, clears state on selection/hidden-row/unload, and prevents a retired
+Popover from restoring focus into a newer one. Escape retains normal focus return.
+No IOA-specific query, count, identity or badge styling belongs to Sidebar.
 
 Chinese emphasis uses the standard Marked tokenizer first. If it rejects an asterisk delimiter at a Han/punctuation boundary, the compiler retries with a length-preserving delimiter mask and a relaxed Han opener boundary. This preserves canonical source, code/escape masking and standard English/underscore behavior. The Codex reference uses Marked 16.4.1 without this override and reproduces both reported completed-text cases.

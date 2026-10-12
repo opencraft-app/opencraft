@@ -1466,7 +1466,7 @@ html[data-codex-window-type="browser"] .main-content-top-fade {
 }
 
 @media (any-hover: hover) and (any-pointer: fine) {
-  :root:not([data-touch-interaction]) .sidebar-activity-list .sidebar-activity-row:hover > .sidebar-activity-row__target > .sidebar-activity-item:not(.is-selected) {
+  :root:not([data-touch-interaction]) .sidebar-activity-list .sidebar-activity-row:hover > .sidebar-activity-row__target .sidebar-activity-item:not(.is-selected) {
     background: var(--color-background-button-tertiary-hover);
   }
 
@@ -1477,7 +1477,7 @@ html[data-codex-window-type="browser"] .main-content-top-fade {
 }
 
 :root[data-touch-interaction] .sidebar-activity-list {
-  .sidebar-activity-row__target > .sidebar-activity-item {
+  .sidebar-activity-row__target .sidebar-activity-item {
     padding-inline-end: calc(var(--padding-sidebar-activity-row-inline) + 44px);
   }
 
@@ -1491,7 +1491,7 @@ html[data-codex-window-type="browser"] .main-content-top-fade {
 }
 
 @media (hover: none), (any-pointer: coarse) {
-  .sidebar-activity-row__target > .sidebar-activity-item {
+  .sidebar-activity-row__target .sidebar-activity-item {
     padding-inline-end: calc(var(--padding-sidebar-activity-row-inline) + 44px);
   }
 
@@ -4360,6 +4360,16 @@ html[data-codex-window-type="electron"] .thread-scroll {
   color: var(--color-text);
   font-size: var(--codex-chat-font-size);
   line-height: calc(var(--codex-chat-font-size) + 8px);
+
+  &__sender {
+    max-width: 100%;
+    padding-inline-end: 3px;
+    color: var(--color-text-tertiary);
+    font-size: 12px;
+    line-height: 18px;
+    overflow-wrap: anywhere;
+    text-align: end;
+  }
 
   &__body {
     display: flex;
@@ -11799,4 +11809,23 @@ html[data-codex-window-type="electron"] .thread-scroll {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
   }
+}
+
+// Product badges are siblings of the navigation button; Shell owns placement only.
+.sidebar-activity-item-container {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  &:has(> .sidebar-activity-item__badge-slot > :not(style)) .sidebar-activity-item { grid-template-columns: minmax(0, 1fr) 92px; }
+  .sidebar-activity-item__trailing { justify-self: end; }
+}
+.sidebar-activity-item__badge-slot {
+  position: absolute;
+  top: 50%;
+  inset-inline-end: 50px;
+  transform: translateY(-50%);
+}
+:root[data-touch-interaction] .sidebar-activity-row .sidebar-activity-item__badge-slot { inset-inline-end: 94px; }
+@media (hover: none), (any-pointer: coarse) {
+  .sidebar-activity-row .sidebar-activity-item__badge-slot { inset-inline-end: 94px; }
 }

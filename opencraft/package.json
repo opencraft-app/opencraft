@@ -167,7 +167,7 @@
     "smoke:desktop-visor-seam": "node scripts/smoke-desktop-visor-seam.mjs",
     "test:environments": "tsx --test tests/workbench-environments.test.ts tests/lightvela-environment-creation.test.ts tests/environment-directory.test.ts",
     "test:desktop-login": "tsx --test tests/desktop-lightvela-login.test.ts tests/lightvela-account-auth.test.ts tests/authentication-flows.test.ts",
-    "test:tencentoa": "tsx --test tests/tencentoa.test.ts",
+    "test:tencentoa": "tsx --test tests/tencentoa.test.ts tests/codex-message-senders.test.ts tests/tencentoa-participants.test.ts",
     "smoke:tencentoa": "tsx scripts/smoke-tencentoa.ts",
     "smoke:account-controls": "tsx scripts/smoke-account-controls.ts",
     "check:lightvela-web-product": "node scripts/assert-lightvela-web-product.mjs",

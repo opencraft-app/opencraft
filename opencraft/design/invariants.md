@@ -1,6 +1,21 @@
 # 工作区不变量
 
+## User message sender display
+
+Web/Electron show each user message's verified employee `loginName` above its
+content, in small muted text aligned to the end. Attachment-only messages use
+the same label. Unknown or absent senders leave no label. The label consumes
+the individual message snapshot, never the current footer account or Turn author,
+and is excluded from copied message text and native model input.
+
+
 ## Employee account entrance
+
+- The IOA plugin owns the employee footer photo, same-origin authenticated proxy
+  and revocable object URL. No employee photo is added to message labels. Photo
+  failure preserves the verified name and generic account icon; old account
+  responses cannot replace the current account's avatar.
+
 
 - A configured Tencent OA identity provider automatically projects the verified
   request identity into the existing Sidecar footer. The label is the employee
@@ -335,5 +350,18 @@ and platform hit testing; the 16-unit optical box does not dictate the touch
 target. Mobile keeps 44-point targets with neutral, transparent toolbar buttons.
 Panel visibility remains a projection of its existing owner, including after
 a swipe; icon adaptation must not introduce a parallel navigation state.
+
+### Plugin-owned conversation participant badges
+
+- IOA projects verified authors of retained user-message history, not viewers,
+  submitted identity bindings, queued input or Turn count. The same distinct set
+  supplies the circular `+N` badge and its login-name list.
+- Presence is a derived index in the existing Host SQLite file. First-read native
+  reconciliation, fork/rollback and live Item fences prevent stale or unused mappings
+  from creating participants. Model failure does not remove accepted user input.
+- The generic Thread metadata hook and badge slot carry no IOA domain policy. The
+  plugin is enabled by deployment and advertised capability, never a client switch.
+- Sidebar owns one open Thread overlay. Badge buttons are independent of navigation;
+  old close/focus callbacks cannot close or focus away from a newer overlay.
 
 宽屏 Composer 默认编辑区以容器自身宽度为准：达到 768px 时最小高度为 52px；低于该宽度保持 26px。内容继续自动增高至既有滚动上限。

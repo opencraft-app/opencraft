@@ -3,7 +3,7 @@
 The optional `tencentoa.identity` plugin recognizes the employee authenticated by
 the site's TAI/TOF gateway. It registers an independent authentication provider
 and an “员工身份” settings page. When configured, it owns the shared bottom-left
-account entrance: the verified employee login name is shown automatically, and
+account entrance: the verified employee login name and available employee photo are shown automatically, and
 clicking opens employee details and refresh. Without a verified identity the same
 entrance is labelled “员工身份” and opens those details; no fixed login URL or
 separate OAuth flow is configured. The current site's gateway supplies identity
@@ -92,3 +92,51 @@ Stored historical sender snapshots do not expire with the originating connection
 Remote Codex Hosts keep their records in their stable local Host metadata directory.
 No sender field is forwarded to native Codex or injected into model input. Non-Codex
 transports and direct `/appserver` proxy traffic do not advertise this capability.
+
+## Employee footer photo
+
+The IOA/Tencent OA plugin owns employee avatar lookup and Blob URL lifetime;
+the shared account renderer only consumes its existing avatarUrl contract.
+After verified identity resolves, the controller requests its 100px photo through
+`/__opencraft_tencentoa/photo/100/<loginName>.png` without delaying identity display.
+The server authenticates each request and only permits the current employee's
+English account name and the documented 48/100/150/500 sizes. It fetches the
+fixed `/ebus/rhrc/photo/<size>/<loginName>.png` route at the deployment-controlled
+`OPENCRAFT_TENCENTOA_PHOTO_ORIGIN` (default `http://api-idc.sgw.woa.com`).
+Gateway identity headers and application credentials are not forwarded upstream.
+Images are raster-only, bounded to 1MiB, with a four-second upstream timeout and
+private no-store responses. Photo availability grants no identity or resource
+authority. Network failure leaves the existing name and default account icon.
+Identity revocation, account changes and plugin disposal abort obsolete loads
+and revoke Blob URLs; late responses cannot replace another account's photo.
+
+## Conversation participants
+
+The IOA plugin contributes a circular `+N` badge to each supported sidebar Thread.
+N counts distinct identified employee login names in retained user-message history,
+including the current employee. Opening a conversation does not join it. Clicking
+the badge opens a participant Popover without selecting the Thread; no employee
+number or per-participant photo is displayed. Unknown history is not reattributed.
+
+The deployment enables a plugin-owned Thread metadata provider only when Tencent OA
+is configured. `opencraft/ioa/thread-participants/list` batches up to 100 Thread IDs;
+its version-1 capability is advertised by the Host, including native method-access
+catalogs. Unsupported Hosts contribute no badge. The derived `ioa_message_presence`
+and `ioa_participant_state` tables share the existing `codex-host-queue.sqlite` and
+transaction owner. Verified message sender bindings remain the identity authority.
+
+Only observed native user Items and native history message IDs establish presence.
+Binding an identity, waiting in the queue or a rejected delivery does not count.
+Confirmed input remains participation if model execution fails or is interrupted.
+Each provider instance reconciles complete native history on first read; successful
+start/steer and completion reconcile the affected Turn, while fork/rollback reconcile
+retained full history. Concurrent Items fence late history reads. Closing the Host
+revokes pending projection work before the shared DB closes.
+
+Distinct set changes send `opencraft/ioa/thread-participants/changed` to initialized
+readers of this Host, including readers viewing another Thread. The plugin batches
+visible-row reads, fences connection/account changes, and keeps prior names on
+transient errors with retry. Names and counts are display metadata only: no IOA RPC
+is forwarded to native Codex, and metadata is never injected into model input.
+
+Participant list responses isolate reconciliation failures with `errors: [{ threadId }]`; successful snapshots remain in `data`. The frontend retains a previously known count on a failed row and offers retry. Native history reads use 1,000-item pages with a bounded 1,000-page cursor walk.

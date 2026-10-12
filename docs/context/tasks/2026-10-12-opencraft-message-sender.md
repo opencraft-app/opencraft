@@ -51,8 +51,8 @@ Relevant typechecks, boundaries, i18n and identity/Host/Chat regressions require
 
 ## operational boundary
 Real gateway header forwarding is deployment-specific; signed local WebSocket
-fixtures establish code behavior, not actual employee gateway coverage. Previous
-employee-footer preview is live, but this sender change is not deployed yet. Footer MR !5235 has merged as 52897784a; sender MR !5252 is waiting for
+fixtures establish code behavior, not actual employee gateway coverage. The sender change is deployed in the running preview using an additive overlay
+on its actual runtime; the current Web assets and data directory are preserved. Footer MR !5235 has merged as 52897784a; sender MR !5252 is waiting for
 protected review. Do not bypass the review gate.
 
 ## validation evidence
@@ -66,8 +66,61 @@ All identity fixtures use synthetic keys and users; no real employee inputs or
 model inference are used. Source is on feat/opencraft-message-sender-20261012;
 source commit a7321adf5 is pushed in feat/opencraft-message-sender-20261012 and
 reviewed separately in https://git.woa.com/wisp/mono2/-/merge_requests/5252.
-Normal merge API returned `Review check not passed. 409 conflict`. No sender runtime
-cutover has been performed. Web typecheck requires the shared source packages
+Normal merge API returned `Review check not passed. 409 conflict`. The sender runtime cutover completed and was verified on 2026-10-12. Web typecheck requires the shared source packages
 to resolve the same isolated worktree dependencies; an untracked root node_modules
 link points to this checkout's own opencraft/node_modules, without borrowing another
 worktree or changing the lockfile.
+
+## running preview delivery
+User authorized deploying into the running preview. Independent systemd unit
+`opencraft-message-sender-cutover-20261012` completed with CUTOVER_VERIFIED and
+exit status 0; rollback to the previous runtime was prepared before switching.
+Running unit: opencraft-migrated.service, verified PID 2857330. Runtime entry:
+`/data/tmp/opencraft-message-sender-preview-20261012/opencraft-server/runtime/server-message-sender.mjs`.
+SHA256: 88bc493cb73c0631e20ad85ac24a3b85021756f109222a8deee919fc169e090a.
+Preserved Web build: 20261012-tasks-header-preview-r2 (2e3958578).
+Preserved data directory: /data/opencraft-migration-20261009/data.
+Package-level fixtures verified first A / steer B / queued A dispatched by B,
+spoof and collision rejection, clean native model inputs, signed WebSocket
+connection isolation, anonymous unknown, native SSH and Desktop wire compatibility.
+Live post-reconnect checks verified PID, unit, working directory, runtime hash,
+health, unchanged Web version, signed identity isolation with synthetic accounts,
+missing/invalid signatures rejected, and native SSH banner on public port 80.
+No synthetic user messages were submitted into the live data directory.
+Deployment receipt, guarded overlay builder, cutover/rollback script and probes:
+`/data/tmp/opencraft-message-sender-preview-20261012/`. Master merge remains
+subject to MR !5252 protected review; preview deployment does not bypass it.
+
+## approved sender presentation
+User approved the visual mock and explicitly requested updating the running
+preview. Show loginName above each user message, muted and right aligned.
+Unknown identities show no name; attachment-only messages retain the sender.
+Context route `opencraft user message sender name presentation` had no match;
+bounded search located UserMessage and app.scss, and the adjacent layout test.
+Read maintenance verification, build matrix, Chat UI architecture and design invariants.
+Build preview from its current Web source 2e3958578 plus sender projection and
+this UI change; preserve task/header improvements and the running sender runtime.
+
+## sender UI preview delivered
+User-approved name labels are committed as a71febc3e, with formal boundary docs
+in 7c8787222, on the existing sender branch. Web typechecks passed in both the
+source checkout and the isolated integration based on current preview 2e3958578.
+17 user-message layout/collapse tests, boundaries and i18n passed. The real
+component browser smoke verified individual first/steering and attachment names,
+anonymous omission, 1200/390 px alignment and theme token consumption.
+
+Deployed Web build: 20261012-message-sender-ui-r2; service PID 2857330 and sender
+runtime hash are unchanged. The current task/header code is retained. Initial
+Web publication exposed a missing `kind` in the hand-written Host build config;
+original entry files were immediately restored, then the canonical headless
+profile (durable, /appserver, workspace roots) was used. Corrected packaged Web
+startup was verified with the actual native AppServer and isolated data before
+republishing. Rollback proof and original immutable asset hashes are retained.
+
+Actual served Web was verified from the public preview in desktop and mobile
+layouts. A browser-only receive-side fixture supplied a synthetic sender in
+native user-message responses: the compiled UI displayed it, and rename,
+pin/unpin and task membership menus remained available. No synthetic messages
+or real data changes were made. This establishes rendering, not real gateway
+WebSocket-header coverage. Delivery receipt, publication/rollback script and
+probes: /data/tmp/opencraft-message-sender-ui-preview-20261012/.

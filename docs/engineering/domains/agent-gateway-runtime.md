@@ -11,7 +11,9 @@ OpenCraft 内置本地 Codex 的 Web 与 Electron Host profile 默认启用自�
 
 Headless OpenCraft 配置 Tencent OA 验证密钥后，从同源身份请求的 TAI/TOF
 网关头自动识别员工。员工插件以显式入口优先级在左下角显示已验证账号，点击
-查看员工编号和刷新；无身份时仍可打开详情，不配置固定登录 URL。入口选择仅
+查看员工编号和刷新；员工头像获取、同源代理和 Blob URL 生命周期也归 IOA 插件
+所有，头像不可用时保留默认图标与已验证名字。代理只允许获取当前员工的头像，
+不向上游转发身份凭据，不因头像失败改变身份状态。无身份时仍可打开详情，不配置固定登录 URL。入口选择仅
 改变 Shell 呈现，LightVela 会话、凭据和资源授权保持独立；员工插件卸载后恢复
 原账号入口。401 或身份过期清除员工展示，不提供未接通的网关退出操作，也不
 把员工身份注入模型上下文。验证密钥仍由服务端私有文件持有，不能仅凭未验证
@@ -21,8 +23,10 @@ OpenCraft Codex 消息归属从验签后的 WebSocket 连接身份取得，按�
 Thread 和 clientUserMessageId 保存英文账号名，不保存员工编号。消息身份表
 复用现有 Host 队列 SQLite 和连接，入队与归属写入同一事务；重试不得覆盖
 原发送者。排队消息保留入队时的提交者，触发发送者和编辑者不替换它。
-实时和历史消息及共享 Chat 投影携带隐藏 sender 字段，模型输入不携带员工
-身份。缺失身份或旧消息保持未知；连接身份过期后拒绝新的已认证提交，重连
+实时和历史消息及共享 Chat 投影携带独立 sender 字段。Web/Electron 在每条
+用户消息上方以浅色小字显示其英文账号名，靠右对齐；附件消息复用同一标签。
+名字来自该条消息的服务端快照，未知身份不显示，不使用当前登录账号补齐历史
+归属。复制正文与模型输入均不携带员工身份。缺失身份或旧消息保持未知；连接身份过期后拒绝新的已认证提交，重连
 重新验证。部署网关需转发 WebSocket 握手的签名身份头。
 
 
@@ -1231,6 +1235,18 @@ CTL 的微信 claim 在实例本地保存私有扫码回滚快照，并返回 re
 微信 Profile 的变更由独立操作锁串行化；实例元数据锁只保护绑定读写和账号查重，网关 stop/restart 在释放实例锁后执行，并在重新获取锁后重读绑定，保留其他 Profile 的并发更新。回滚先标记 `recovery_required`，使用 Hermes 原生 `gateway stop`（默认 Bot 不传 `-p`，子 Bot 显式传 `-p <profile>` 并设置目标 `HERMES_HOME`），停止后通过运行时 PID helper 确认目标网关已退出，才恢复微信配置和账号文件；共享多 Profile 网关暂不自动停止，返回恢复失败。停止失败不覆盖当前配置；失败保留私有快照和原账号身份，返回 `WEIXIN_RECOVERY_FAILED`，再次 claim/release 可重试恢复，成功后才撤销恢复标记。旧预约不能清理新的扫码。快照使用可选的 runtime status helper，版本不兼容时保守恢复网关，不依赖私有 CLI 函数。
 
 删除 Bot 的 `CHANNEL_OCCUPIED` 使用 `details.channel` 区分 `weixin` / `whatsapp`；前端不能依赖 HTTP 传输会丢弃的内部错误包装文本。
+
+### IOA conversation participants
+
+IOA owns a derived native-history participant index in the existing per-Host
+codex-host-queue.sqlite. Optional Host metadata hooks expose only native message IDs
+and immutable verified authors; optional sidebar badge slots expose presentation.
+Participants are distinct employee login names of retained user messages, not viewers
+or queued submissions. Capability-scoped IOA RPCs remain local to the Host adapter
+and never enter the execution engine/model. See OpenCraft Tencent OA authentication
+and ChatUI architecture for reconciliation, lifetime and overlay ownership.
+
+Participant reconciliation isolates failures per conversation in batched responses. Native retained-history pagination uses larger pages with a bounded cursor walk so long-running conversations do not invalidate every visible sidebar count. Verification copies the Host sender DB and bridges only native read requests in an isolated instance; publication remains gated on live RPC and rendered circle/popover acceptance with automatic rollback.
 
 ### GUI 浏览器首次启动的凭据存储（2026-10-12）
 

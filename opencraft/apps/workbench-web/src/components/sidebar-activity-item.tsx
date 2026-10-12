@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { stableIdentityColor } from "@opencraft/design-system/identity-color";
 import type { ServerRouteLocality, ThreadServerOrigin, WorkbenchThread } from "@opencraft/workbench-runtime";
 import { useIntl } from "@opencraft/i18n/react";
@@ -64,6 +65,7 @@ function ThreadActivity({
 
 export function SidebarActivityItem({
   active,
+  badge = null,
   serverOrigin,
   serverRouteLocality,
   onInvoke,
@@ -76,6 +78,7 @@ export function SidebarActivityItem({
   unread,
 }: {
   readonly active: boolean;
+  readonly badge?: ReactNode;
   readonly serverOrigin: ThreadServerOrigin;
   readonly serverRouteLocality: ServerRouteLocality;
   readonly onInvoke: () => void;
@@ -88,7 +91,7 @@ export function SidebarActivityItem({
   readonly unread: boolean;
 }) {
   return (
-    <button
+    <div className="sidebar-activity-item-container" data-has-badge={badge ? "true" : undefined}><button
       type="button"
       className={[
         "sidebar-activity-item",
@@ -112,6 +115,6 @@ export function SidebarActivityItem({
         <ServerOriginBadge origin={serverOrigin} routeLocality={serverRouteLocality} />
         <ThreadActivity pending={pending} status={status} unread={unread} />
       </span>
-    </button>
+    </button>{badge ? <div className="sidebar-activity-item__badge-slot">{badge}</div> : null}</div>
   );
 }
