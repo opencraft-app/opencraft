@@ -437,7 +437,10 @@ export async function createWorkbenchWebServer({
     }
   });
 
-  const websocketServer = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024 * 1024 });
+  // A supported 32 MiB attachment expands to ~43 MiB in Base64, then travels
+  // inside JSON-RPC and (for Codex) an AppHost envelope. Keep a bounded 48 MiB
+  // message limit so valid files do not disconnect the shared Host transport.
+  const websocketServer = new WebSocketServer({ noServer: true, maxPayload: 48 * 1024 * 1024 });
   const desktopWebSockets = new WebSocketServer({ noServer: true, maxPayload: 1 << 20 });
   const activeAppHostSockets = new Set();
   const liveWebSockets = new WeakSet();

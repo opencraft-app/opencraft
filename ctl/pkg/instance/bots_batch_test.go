@@ -22,7 +22,7 @@ import (
 	"go.uber.org/zap"
 )
 
-const testHermesBotCatalog = `{"kind":"lightvela.instance-bots.v1","items":[{"native_id":"default","is_default":true},{"native_id":"profile-sales","display_name":"Sales","gateway_running":false}],"weixin_owner":{"ok":true,"channel":"weixin","bot_id":"ins-1","profile_id":"default","status":"connected"},"whatsapp_owner":{"ok":true,"channel":"whatsapp","bot_id":"profile-sales","profile_id":"profile-sales","status":"reserved"}}`
+const testHermesBotCatalog = `{"kind":"lightvela.instance-bots.v1","items":[{"native_id":"default","is_default":true},{"native_id":"profile-sales","display_name":"Sales","gateway_running":false}],"weixin_owners":{"default":{"ok":true,"channel":"weixin","bot_id":"ins-1","profile_id":"default","status":"connected"},"profile-sales":{"ok":true,"channel":"weixin","bot_id":"profile-sales","profile_id":"profile-sales","status":"connected"}},"whatsapp_owner":{"ok":true,"channel":"whatsapp","bot_id":"profile-sales","profile_id":"profile-sales","status":"reserved"}}`
 
 func TestListInstanceBotsUsesOneRegionalTATExecution(t *testing.T) {
 	adapter := &commandSandboxAdapterStub{ptyEvents: []psandbox.PtyExecStreamEvent{
@@ -58,9 +58,9 @@ func TestListInstanceBotsUsesOneRegionalTATExecution(t *testing.T) {
 		t.Fatal("unknown and stopped gateway state must remain distinct")
 	}
 	for _, bot := range response.Items {
-		if bot.WeixinOwner == nil || bot.WeixinOwner.ProfileID != "main" || bot.WeixinOwner.BotName != "Root Bot" ||
+		if bot.WeixinOwner == nil || bot.WeixinOwner.BotID != bot.BotID || bot.WeixinOwner.ProfileID != bot.ProfileID || bot.WeixinOwner.BotName != bot.Name ||
 			bot.WhatsAppOwner == nil || bot.WhatsAppOwner.BotName != "Sales" || bot.WhatsAppOwner.ProfileID != "profile-sales" {
-			t.Fatalf("shared channel owner/name projection changed: %+v", bot)
+			t.Fatalf("channel owner/name projection changed: %+v", bot)
 		}
 	}
 }
@@ -70,8 +70,9 @@ func TestParseHermesInstanceBotsRejectsIncompletePayloads(t *testing.T) {
 		"no-json":                          "loading profiles",
 		"legacy-profile-prefix":            `{"items":[]}`,
 		"missing-owners":                   `{"kind":"lightvela.instance-bots.v1","items":[]}`,
-		"null-owner":                       `{"kind":"lightvela.instance-bots.v1","items":[],"weixin_owner":null,"whatsapp_owner":{"ok":true}}`,
-		"null-items":                       `{"kind":"lightvela.instance-bots.v1","items":null,"weixin_owner":{"ok":true},"whatsapp_owner":{"ok":true}}`,
+		"null-owner":                       `{"kind":"lightvela.instance-bots.v1","items":[],"weixin_owners":null,"whatsapp_owner":{"ok":true}}`,
+		"null-items":                       `{"kind":"lightvela.instance-bots.v1","items":null,"weixin_owners":{},"whatsapp_owner":{"ok":true}}`,
+		"missing-profile-weixin":           strings.Replace(testHermesBotCatalog, `,"profile-sales":{"ok":true,"channel":"weixin","bot_id":"profile-sales","profile_id":"profile-sales","status":"connected"}`, "", 1),
 		"wrong-version":                    strings.Replace(testHermesBotCatalog, ".v1", ".v2", 1),
 		"wrong-items-type":                 strings.Replace(testHermesBotCatalog, `"items":[`, `"items":"broken", "discarded":[`, 1),
 		"progress-before-invalid-envelope": "{\"progress\":true}\n" + strings.Replace(testHermesBotCatalog, `"items":[`, `"items":"broken", "discarded":[`, 1),
@@ -87,11 +88,11 @@ func TestParseHermesInstanceBotsRejectsIncompletePayloads(t *testing.T) {
 }
 
 func TestParseHermesInstanceBotsPreservesEmptyCatalogAndAbsentBindings(t *testing.T) {
-	response, err := parseHermesInstanceBots(`{"kind":"lightvela.instance-bots.v1","items":[],"weixin_owner":{"ok":true},"whatsapp_owner":{"ok":true}}`, "ins-1", "Root")
+	response, err := parseHermesInstanceBots(`{"kind":"lightvela.instance-bots.v1","items":[],"weixin_owners":{},"whatsapp_owner":{"ok":true}}`, "ins-1", "Root")
 	if err != nil || response.Items == nil || len(response.Items) != 0 {
 		t.Fatalf("official empty catalog must remain a successful empty array: %+v %v", response, err)
 	}
-	response, err = parseHermesInstanceBots(`{"kind":"lightvela.instance-bots.v1","items":[{"native_id":"default","is_default":true}],"weixin_owner":{"ok":true},"whatsapp_owner":{"ok":true}}`, "ins-1", "Root")
+	response, err = parseHermesInstanceBots(`{"kind":"lightvela.instance-bots.v1","items":[{"native_id":"default","is_default":true}],"weixin_owners":{"default":{"ok":true}},"whatsapp_owner":{"ok":true}}`, "ins-1", "Root")
 	if err != nil || response.Items[0].WeixinOwner != nil || response.Items[0].WhatsAppOwner != nil {
 		t.Fatalf("unbound channels must remain nil: %+v %v", response, err)
 	}
@@ -202,7 +203,7 @@ func runHermesBatchPython(t *testing.T, env []string) hermesInstanceBotsPayload 
 }
 
 func TestHermesBatchScriptMatchesSeparateBindingReads(t *testing.T) {
-	for _, scenario := range []string{"unbound", "connected", "legacy", "expired-no-credentials", "expired-with-credentials"} {
+	for _, scenario := range []string{"unbound", "connected", "legacy-named-weixin", "two-weixin", "legacy", "expired-no-credentials", "expired-with-credentials"} {
 		t.Run(scenario, func(t *testing.T) {
 			home := t.TempDir()
 			root := filepath.Join(home, ".lightvela", "channel-bindings")
@@ -226,6 +227,15 @@ func TestHermesBatchScriptMatchesSeparateBindingReads(t *testing.T) {
 				write(filepath.Join(root, "weixin.json"), map[string]any{"ok": true, "channel": "weixin", "bot_id": "ins-1", "profile_id": "default", "status": "connected"})
 				write(filepath.Join(root, "whatsapp.json"), map[string]any{"ok": true, "channel": "whatsapp", "bot_id": "profile-sales", "profile_id": "profile-sales", "status": "connected"})
 			}
+			if scenario == "legacy-named-weixin" {
+				write(filepath.Join(root, "weixin.json"), map[string]any{"ok": true, "channel": "weixin", "bot_id": "profile-sales", "profile_id": "profile-sales", "status": "connected"})
+			}
+			if scenario == "two-weixin" {
+				write(filepath.Join(root, "weixin.json"), map[string]any{"bindings": map[string]any{
+					"default":       map[string]any{"ok": true, "channel": "weixin", "bot_id": "ins-1", "profile_id": "default", "status": "connected"},
+					"profile-sales": map[string]any{"ok": true, "channel": "weixin", "bot_id": "profile-sales", "profile_id": "profile-sales", "status": "connected"},
+				}})
+			}
 			if scenario == "legacy" {
 				write(filepath.Join(home, "whatsapp", "session", "creds.json"), map[string]any{})
 			}
@@ -239,7 +249,7 @@ func TestHermesBatchScriptMatchesSeparateBindingReads(t *testing.T) {
 			if payload.Kind != "lightvela.instance-bots.v1" || payload.Items == nil || len(*payload.Items) != 2 {
 				t.Fatalf("batch must read the official profile catalog: %+v", payload)
 			}
-			for channel, got := range map[string]*channelBindingPayload{"weixin": payload.WeixinOwner, "whatsapp": payload.WhatsAppOwner} {
+			for channel, got := range map[string]*channelBindingPayload{"weixin": payload.WeixinOwners["default"], "whatsapp": payload.WhatsAppOwner} {
 				command := exec.Command("python3", "-c", manageChannelBindingScript, "get", channel, "", "default", "ins-1")
 				command.Env = append(os.Environ(), "HERMES_HOME="+home)
 				output, err := command.Output()
@@ -253,6 +263,12 @@ func TestHermesBatchScriptMatchesSeparateBindingReads(t *testing.T) {
 				if !reflect.DeepEqual(got, &separate) {
 					t.Fatalf("%s batch owner differs from standalone: %+v vs %+v", channel, got, separate)
 				}
+			}
+			if scenario == "two-weixin" && payload.WeixinOwners["profile-sales"].BotID != "profile-sales" {
+				t.Fatal("named Profile Weixin binding was not listed")
+			}
+			if scenario == "legacy-named-weixin" && (payload.WeixinOwners["default"].BotID != "" || payload.WeixinOwners["profile-sales"].BotID != "profile-sales") {
+				t.Fatal("legacy named Weixin owner must remain on its Profile")
 			}
 			switch scenario {
 			case "legacy":
@@ -313,7 +329,7 @@ func TestHermesBatchScriptIsolatesProfileEnvironmentFromBindingReads(t *testing.
 	alternate := t.TempDir()
 	env := append(hermesBatchEnvironment(t, home), "TEST_PROFILE_MUTATES_HOME="+alternate)
 	payload := runHermesBatchPython(t, env)
-	if payload.WeixinOwner.BotID != "ins-1" {
+	if payload.WeixinOwners["default"].BotID != "ins-1" {
 		t.Fatal("Profile API process environment must not redirect instance channel reads")
 	}
 	if _, err := os.Stat(filepath.Join(alternate, ".lightvela")); !os.IsNotExist(err) {

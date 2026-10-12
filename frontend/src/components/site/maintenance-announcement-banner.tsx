@@ -21,13 +21,13 @@ type AnnouncementItem = {
   expiresAt: number;
 };
 
-const SYSTEM_UPGRADE_ANNOUNCEMENT_ID = "0923-system-upgrade";
+const SYSTEM_UPGRADE_ANNOUNCEMENT_ID = "1011-system-upgrade";
 
-/** 北京时间 / 新加坡时间 2026-09-24 06:00:00 = UTC 2026-09-23 22:00:00 */
+/** 北京时间 / 新加坡时间 2026-10-12 06:00:00 = UTC 2026-10-11 22:00:00 */
 const SYSTEM_UPGRADE_EXPIRES_AT = Date.UTC(
   2026,
-  8 /* 0-indexed: September */,
-  23,
+  9 /* 0-indexed: October */,
+  11,
   22,
   0,
   0,
@@ -52,10 +52,10 @@ export function MaintenanceAnnouncementBanner() {
     expiresAt: SYSTEM_UPGRADE_EXPIRES_AT,
     message: isGlobal
       ? t(
-          "LightVela 将于新加坡时间 2026 年 9 月 23 日 22:00-次日 06:00 进行系统升级，期间服务可能短暂中断，带来不便敬请谅解。",
+          "LightVela 将于新加坡时间 2026 年 10 月 11 日 22:00-次日 06:00 进行系统升级，期间服务可能短暂中断，带来不便敬请谅解。",
         )
       : t(
-          "LightVela 将于北京时间 2026 年 9 月 23 日 22:00-次日 06:00 进行系统升级，期间服务可能短暂中断，带来不便敬请谅解。",
+          "LightVela 将于北京时间 2026 年 10 月 11 日 22:00-次日 06:00 进行系统升级，期间服务可能短暂中断，带来不便敬请谅解。",
         ),
   };
   // 默认不显示，挂载时再读 localStorage —— 避免 SSR / 首屏 flash 不一致

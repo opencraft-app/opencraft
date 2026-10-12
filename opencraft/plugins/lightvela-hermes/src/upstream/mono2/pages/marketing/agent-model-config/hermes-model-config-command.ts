@@ -1168,8 +1168,13 @@ def reset_to_platform_default(config, action, credential):
         save_provider_env_credential(model["keyEnv"], credential)
         config["providers"] = {}
         config.pop("custom_providers", None)
-        ensure_provider_model(config, model)
+        provider = ensure_provider_model(config, model)
+        if model["id"] == "auto":
+            provider["models"]["auto"]["supports_vision"] = True
         apply_primary(config, model)
+        if model["id"] == "auto":
+            # A previous active model's shortcut must not shadow auto's metadata.
+            config["model"].pop("supports_vision", None)
         write_fallback_routes(config, [])
         lightvela = config.get("lightvela") if isinstance(config.get("lightvela"), dict) else None
         if lightvela is not None:
@@ -1177,6 +1182,8 @@ def reset_to_platform_default(config, action, credential):
             if not lightvela: config.pop("lightvela", None)
 
         saved = save_and_reload(config)
+        if model["id"] == "auto" and saved.get("providers", {}).get(model["providerKey"], {}).get("models", {}).get("auto", {}).get("supports_vision") is not True:
+            raise ValueError("platform auto vision capability was not saved")
         expect_fallback_config_saved(saved, config)
         snapshot = read_snapshot(saved)
         if not same_route(snapshot["primary"], model): raise ValueError("platform default was not restored")

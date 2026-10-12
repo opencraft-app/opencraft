@@ -21,12 +21,16 @@ acli_supports_backend() {
 
 ensure_acli_backend() {
   local tmp_install=""
-  if acli_supports_backend; then
-    return 0
+  # Backend availability does not imply a current blueprint -> COS mapping.
+  # Refresh the bundle before resolving the upgrade target, even when backend
+  # commands are already available. A refresh failure must not use stale specs.
+  if run_as_target_user 'command -v acli >/dev/null 2>&1'; then
+    echo "refreshing acli bundle before Hermes backend upgrade for $user"
+    if ! run_as_target_user 'acli bundle-update'; then
+      echo "acli bundle-update failed; aborting upgrade to avoid stale blueprint mapping" >&2
+      exit 1
+    fi
   fi
-
-  echo "acli backend command unavailable for $user; attempting acli bundle-update"
-  run_as_target_user 'command -v acli >/dev/null 2>&1 && acli bundle-update >/dev/null 2>&1' || true
   if acli_supports_backend; then
     echo "ensured acli backend command for $user via bundle-update"
     return 0

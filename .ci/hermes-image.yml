@@ -10,6 +10,9 @@ on:
     paths-ignore:
       - OWNERS
       - "**/OWNERS"
+      - images/helpers/recover-hermes-runtime.py
+      - images/tests/test_hermes_production_recovery.py
+      - images/hermes-production-recovery-targets.json
   manual: enabled
 
 concurrency:

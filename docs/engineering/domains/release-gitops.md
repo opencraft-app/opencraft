@@ -126,6 +126,27 @@ master 源码
   存量 VM 的 TAT 修补必须以 build ID 和环境为作用域持久化逐台派发 checkpoint；runner 重启或阶段
   重试时只跳过已有 `INVOKED` 的 cloud instance，继续失败和未处理项。checkpoint JSONL 的中断尾行
   可以忽略，但不得因读取失败退化成全量 `--force=true` 重复升级。
+  存量 TAT 的 backend 升级通过 ACLI bundle 中的 blueprint→COS 映射选择源码包；backend 命令
+  可用不代表映射已更新。升级前必须成功刷新 bundle，失败禁止使用旧映射继续。北京严格验收
+  `.ci/hermes-beijing-runtime.yml` 通过 `images/hermes-beijing-runtime-trigger` 固定镜像、蓝图、
+  COS 目录/归档 SHA256、展示版本和源码版本，不在运行中重新解析浮动 latest。等待 CLEAN
+  库存采用目标镜像，审批后先运行一台已分配 VM canary；通过后处理其余在线 VM。已正确的
+  版本只验证，PAUSED 保持暂停并暂缓；不刷新 Pool、不进入生产地域。旧版本经官方
+  `acli backend upgrade-start` 事务升级，显式传固定 `--cos-version` 与 `--display-version`，
+  避免未知蓝图回退默认包；使用官方用户数据备份和服务恢复流程，不自行替换用户源码树。
+  必须核对原来活跃的 gateway 仍活跃，并等待每个目标 TAT `SUCCESS/ExitCode=0` 且实际
+  CLI/import/distribution/identity 全部匹配。失败停止批量，不把派发 `INVOKED` 算验收；命令
+  内容及回执按 build ID 保存，重试只继续未接受目标并核对命令摘要。
+
+- 新加坡 Hermes 单机补救使用 `.ci/hermes-production-recovery.yml`，目标由
+  `images/hermes-production-recovery-targets.json` 显式声明（最多 5 台）。预检必须证明实例仍为
+  新加坡目标镜像 Pool 中的 ALLOCATED/RUNNING 机器，且原 TAT 已终态失败；不遍历重试暂停库存。
+  官方升级未写 COMPLETED 时，即使四处版本已一致也不得跳过。定向补救验证 identity 的
+  runtime、run_as 和 runtime_home 后，由 root TAT 直接调用 execution_user=root 的官方 ACLI
+  backend capability，保留 agentuser 身份和数据备份，使公网 npm 源参数无需穿越会过滤它的
+  sudo 环境白名单。TAT 超时 2400 秒覆盖官方 1800 秒升级及 bundle 刷新；日志保存在受保护的
+  机器文件，不把原始日志返回 CI。每台验收终态、完成标记、四处版本及网关后才处理下一台。
+  同一 CI build 保存 command 与计划，重试先按 command 对账，已接受但未完成任务不得重复派发。
 
 - Website Builder 的存量凭据补发与新购自动下发分开验收。逐实例凭据 TAT Command 的
   `website_key` 必须是 hidden parameter，不能写入 Command content、日志或 Git；默认安装器

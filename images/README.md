@@ -118,6 +118,7 @@ python3 images/build-image.py --runtime hermes --base-image-id img-id352nof --wi
 
 CI 入口：
 
+- 构建前严格校验 COS 的 `dsh/install-deepseek-harness.sh` 与 `images/helpers/install-deepseek-harness.sh` 字节一致。安装器先解析 npm 官方 latest 的版本与 integrity，再把运行时和插件锁定到同一安装快照；源码包含原生浏览器认证桥接和自定义插件构建产物保留逻辑。更新 COS 安装器时须同步源码与安装器测试，避免阻断镜像构建。
 - `master` 上 `images/**` 变更会触发 `.ci/hermes-image.yml`；如果只改 `.ci/**`，需要手动触发，或同时更新 `images/hermes-image-trigger`
 - CI 使用 `python3 images/build-image.py --runtime hermes --base-image-id img-id352nof --target-regions ap-beijing,ap-shanghai,ap-singapore,ap-tokyo,ap-johorbahru --with-verify`
 - CI 会在验证日志中打印 Hermes 命令路径、`hermes --version` 输出、解析版本和 `acli` identity runtime 字段

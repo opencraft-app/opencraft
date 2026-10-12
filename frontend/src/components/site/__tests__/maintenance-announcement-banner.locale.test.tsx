@@ -26,7 +26,7 @@ vi.mock("@/lib/region", () => ({
 }));
 
 beforeEach(async () => {
-  vi.spyOn(Date, "now").mockReturnValue(Date.UTC(2026, 8, 23, 12, 0, 0));
+  vi.spyOn(Date, "now").mockReturnValue(Date.UTC(2026, 9, 11, 12, 0, 0));
   window.localStorage.clear();
   navigationMock.usePathname.mockReturnValue("/");
   await i18n.changeLanguage("zh-CN");
@@ -39,7 +39,7 @@ afterEach(() => {
 });
 
 describe("MaintenanceAnnouncementBanner route locale", () => {
-  it("renders the Sep 23 maintenance window in English on a localized global homepage", async () => {
+  it("renders the Oct 11 maintenance window in English on a localized global homepage", async () => {
     navigationMock.usePathname.mockReturnValue("/en-us/");
 
     render(
@@ -50,12 +50,12 @@ describe("MaintenanceAnnouncementBanner route locale", () => {
 
     expect(
       await screen.findByText(
-        /LightVela will perform a system upgrade from 22:00 on Sep 23, 2026 to 06:00 the next day \(SGT\)/,
+        /LightVela will perform a system upgrade from 22:00 on Oct 11, 2026 to 06:00 the next day \(SGT\)/,
       ),
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        /LightVela will perform a system upgrade from 22:00 on Sep 23, 2026 to 06:00 the next day \(SGT\)/,
+        /LightVela will perform a system upgrade from 22:00 on Oct 11, 2026 to 06:00 the next day \(SGT\)/,
       ),
     ).toHaveClass("mx-auto");
     expect(screen.getByRole("status").firstElementChild).toHaveClass("mx-8");
@@ -68,7 +68,7 @@ describe("MaintenanceAnnouncementBanner route locale", () => {
   });
 
   it("does not render the retired announcement after the upgrade notice expires", async () => {
-    vi.mocked(Date.now).mockReturnValue(Date.UTC(2026, 8, 24, 0, 0, 0));
+    vi.mocked(Date.now).mockReturnValue(Date.UTC(2026, 9, 12, 0, 0, 0));
 
     render(
       <LocaleOverrideProvider locale="en-US">
