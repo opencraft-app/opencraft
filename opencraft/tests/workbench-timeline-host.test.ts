@@ -1003,12 +1003,11 @@ test("narrow desktop header keeps Codex's intrinsic action rail", () => {
   );
 });
 
-test("narrow desktop header preserves the thread identity icon", () => {
-  assert.match(appShellHeaderSource, /className="thread-header-project-icon"/u);
-  assert.doesNotMatch(
-    workbenchStyles,
-    /\.thread-header-project-icon\s*\{[^}]*display:\s*none;/u,
-  );
+test("shared header keeps the thread title without a decorative project icon", () => {
+  assert.doesNotMatch(appShellHeaderSource, /thread-header-project-icon|showProjectIcon|\bCode2\b/u);
+  assert.doesNotMatch(workbenchStyles, /\.thread-header-project-icon/u);
+  assert.match(appShellHeaderSource, /<strong>\{title\}<\/strong>/u);
+  assert.match(appShellHeaderSource, /<small>\{project\} · main<\/small>/u);
 });
 
 test("narrow header keeps the thread identity next to its navigation rail", () => {

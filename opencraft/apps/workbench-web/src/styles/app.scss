@@ -940,18 +940,6 @@ html[data-codex-window-type="browser"] .main-content-top-fade {
   @include typography.role(metadata, primary);
 }
 
-.thread-header-project-icon {
-  display: grid;
-  width: 24px;
-  height: 24px;
-  flex: 0 0 auto;
-  border: 1px solid var(--color-border-subtle);
-  border-radius: 7px;
-  place-items: center;
-  background: var(--color-background-elevated-secondary);
-  color: var(--color-icon-secondary);
-}
-
 .thread-header-copy {
   display: flex;
   min-width: 0;
