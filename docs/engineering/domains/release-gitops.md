@@ -887,3 +887,11 @@ MR 占位检查在 checkout 后校验期望提交和该提交下的全部受跟�
 ### CTL 微信 MR 回归门禁
 
 `ctl-weixin` changed guard 使用临时 Python venv，固定 python-dotenv / PyYAML 依赖，并显式传给 Go 脚本测试；缺依赖或任何所选用例 skip 均失败。聚焦实例/HTTP 契约测试与 vet 以 CGO=0 执行，不代替 SQLite/Docker 全量测试。MR 执行器使用 trusted base 的 guard 定义，新 guard 合入可信基座后才会自动选择；当前 MR 必须单独运行该 guard 留证。
+
+### frontend-next 平台构建机试验入口
+
+`.ci/frontend-next.yml` 使用 Stream v2 的公共 Docker 构建池（`self-hosted: false`、`pool-name: docker`），采用平台默认构建镜像，手动触发并独立排队。入口通过 `.ci/runtime/commands/build_frontend_next_artifacts.sh` 在当前 checkout 完整提交上构建 OpenCraft Embedded Workbench，再安装 frontend 冻结依赖、检查并构建四组静态 OCI artifact；默认保留原四组矩阵；后续新增预发组合可通过 FRONTEND_ARTIFACT_MATRIX 手动选择。仅归档到现有 frontend-pages 仓库并回读验证，已有同源码/组合 artifact 按既有 reuse 策略保留；不将该策略当作独立环境逐字节重现的证明。
+
+构建凭据仅由 settings.TCR_SHPROD_PASSWORD 注入 REGISTRY_PASSWORD，不能依赖自建机 /etc/lightclaw-ci。Node、pnpm、ORAS 使用现有版本 bootstrap，平台需具备 bash/git/python3/curl/tar/xz/flock，并能访问源码、Node/ORAS 下载源、包源和 TCR。此入口不启动 Cloudflare、EdgeOne 发布或 GitOps 晋级；实际平台调度、资源容量和网络需首次手动构建验收，不能只凭本地 YAML/测试宣布迁移完成。
+
+公共构建池语义依据[蓝盾上游 StreamDispatchUtils](https://github.com/Tencent/bk-ci/blob/67a7662f9cf8aad4af5ad42426df1ad44937e904/src/backend/ci/core/common/common-pipeline-yaml/src/main/kotlin/com/tencent/devops/process/yaml/v2/utils/StreamDispatchUtils.kt)的公共 Docker 分派。

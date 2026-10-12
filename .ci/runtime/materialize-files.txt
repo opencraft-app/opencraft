@@ -8,6 +8,7 @@
 .ci/runtime/commands/audit_gitops_drift.py
 .ci/runtime/commands/bootstrap_playground_environment.py
 .ci/runtime/commands/build_release_image.py
+.ci/runtime/commands/build_frontend_next_artifacts.sh
 .ci/runtime/commands/check_playground_environment_contract.py
 .ci/runtime/commands/cleanup_gitops_promotion.py
 .ci/runtime/commands/create_playground_environment.py
