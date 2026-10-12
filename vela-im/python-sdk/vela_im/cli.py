@@ -17,8 +17,15 @@ def _print(value):
     print(json.dumps(value, ensure_ascii=False, indent=2))
 
 
+def _in_vela_session():
+    """The terminal belongs to a Vela IM conversation. A QQ or WeChat session of the same Agent has its own chat and
+    message IDs, which must never be taken for IM ones."""
+    platform = os.getenv("HERMES_SESSION_PLATFORM", "")
+    return platform in ("", "vela_im")
+
+
 def _current_chat():
-    chat = os.getenv("HERMES_SESSION_CHAT_ID", "")
+    chat = os.getenv("HERMES_SESSION_CHAT_ID", "") if _in_vela_session() else ""
     if chat.startswith("GROUP"):
         return chat[5:], "GROUP"
     if chat.startswith("C2C"):
@@ -35,7 +42,7 @@ def _target(args):
         return args.to, "GROUP" if args.group or platform_group_id(args.to) or args.to.startswith("@TGS#") else "C2C"
     to, kind = _current_chat()
     if not to:
-        raise SystemExit("缺少 --to：当前不在某个会话里")
+        raise SystemExit("缺少 --to：当前不在 Vela IM 会话里" if _in_vela_session() else "当前是其他平台的会话，请用 --to 指定 Vela IM 的接收方")
     return to, kind
 
 
@@ -57,7 +64,7 @@ def cmd_whoami(client, args):
 
 def cmd_send(client, args):
     to, kind = _target(args)
-    reply_to = None if args.to else os.getenv("HERMES_SESSION_MESSAGE_ID") or None
+    reply_to = None if args.to or not _in_vela_session() else os.getenv("HERMES_SESSION_MESSAGE_ID") or None
     if args.file:
         message_type = args.type if args.type in ("image", "audio", "video", "file") else media_kind(args.file)
         payload = json.loads(args.payload) if args.payload else {}
@@ -80,7 +87,7 @@ def cmd_conversations(client, args):
 
 
 def cmd_history(client, args):
-    conversation = args.conversation or os.getenv("HERMES_SESSION_CHAT_ID")
+    conversation = args.conversation or (os.getenv("HERMES_SESSION_CHAT_ID") if _in_vela_session() else None)
     if not conversation:
         raise SystemExit("缺少 --conversation")
     _print(client.get_messages(conversation, args.next, args.count))

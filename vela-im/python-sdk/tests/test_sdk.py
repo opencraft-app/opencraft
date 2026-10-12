@@ -152,6 +152,17 @@ class CLITest(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(calls, [("send", ("vg_x", "GROUP", "text", {"text": "收到"}), {"reply_to_message_id": "m42"})])
 
+    def test_sessions_on_other_platforms_never_default_to_an_im_conversation(self):
+        qq = {"HERMES_SESSION_PLATFORM": "qqbot", "HERMES_SESSION_CHAT_ID": "C2Cqq-openid", "HERMES_SESSION_MESSAGE_ID": "qq-msg"}
+        with self.assertRaises(SystemExit) as refused:
+            self.run_cli(["send", "--text", "hi"], qq)
+        self.assertIn("--to", str(refused.exception))
+        code, calls = self.run_cli(["send", "--to", "u_owner", "--text", "hi"], qq)
+        self.assertEqual(calls[0][1][:2], ("u_owner", "C2C"))
+        self.assertIsNone(calls[0][2]["reply_to_message_id"], "a QQ message ID is not an IM reply anchor")
+        code, calls = self.run_cli(["send", "--text", "收到"], {**qq, "HERMES_SESSION_PLATFORM": "vela_im", "HERMES_SESSION_CHAT_ID": "GROUPvg_x"})
+        self.assertEqual(calls[0][1][:2], ("vg_x", "GROUP"))
+
     def test_explicit_recipient_starts_a_new_chain(self):
         code, calls = self.run_cli(["send", "--to", "u_owner", "--text", "完成了"], {"HERMES_SESSION_CHAT_ID": "GROUPvg_x", "HERMES_SESSION_MESSAGE_ID": "m42"})
         self.assertEqual(calls[0][1][:2], ("u_owner", "C2C"))
