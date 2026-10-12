@@ -100,7 +100,10 @@ function responseResult(
 ): unknown {
   switch (pending.method) {
     case "item/commandExecution/requestApproval":
-      if (response.type === "command-approval") return { decision: response.decision };
+      if (response.type === "command-approval") return {
+        decision: response.decision,
+        ...(response._meta === undefined ? {} : { _meta: response._meta }),
+      };
       break;
     case "item/fileChange/requestApproval":
       if (response.type === "file-change-approval") return { decision: response.decision };

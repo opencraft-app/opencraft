@@ -89,6 +89,8 @@ function useInteractionSubmission(requestId: string) {
 function ApprovalBlock({ block }: { block: Extract<TimelineBlock, { type: "approval" }> }) {
   const submission = useInteractionSubmission(block.requestId);
   const presentation = presentApprovalRequest(block);
+  const [confirmAlways, setConfirmAlways] = useState(false);
+  useEffect(() => setConfirmAlways(false), [block.requestId]);
   const scopedAction: ConversationInteractionAction | null = presentation.scopedApproval === null ? null
     : presentation.scopedApproval.kind === "exec-policy" ? { type: "approve-similar" }
     : { type: "approve-session" };
@@ -98,17 +100,25 @@ function ApprovalBlock({ block }: { block: Extract<TimelineBlock, { type: "appro
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target;
       if (target instanceof HTMLElement && target.closest("input, textarea, [contenteditable='true']") !== null) return;
-      if (event.key === "Enter") {
+      // Focused controls own Enter. The shortcut must not turn a keyboard
+      // activation of Deny/Always allow into an implicit one-time grant.
+      if (event.key === "Enter" && target instanceof HTMLElement && target.closest("button, a, summary, [role='menuitem']") !== null) return;
+      if (event.key === "Escape" && confirmAlways) {
+        event.preventDefault();
+        setConfirmAlways(false);
+        return;
+      }
+      if (event.key === "Enter" && presentation.allowOnce && !confirmAlways) {
         event.preventDefault();
         void submission.submit({ type: "approve-once" });
-      } else if (event.key === "Escape") {
+      } else if (event.key === "Escape" && presentation.allowDeny && !confirmAlways) {
         event.preventDefault();
         void submission.submit({ type: "decline" });
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [pending, submission]);
+  }, [pending, submission, presentation.allowOnce, presentation.allowDeny, confirmAlways]);
   return (
     <section className="thread-interaction-card thread-approval-request" data-approval-kind={block.approvalKind} data-interaction-kind="approval" data-state={block.state}>
       <div className="thread-interaction-card__copy">
@@ -131,9 +141,14 @@ function ApprovalBlock({ block }: { block: Extract<TimelineBlock, { type: "appro
               {presentation.leadingApproval.label}
             </button>
           ) : null}
-          <button disabled={submission.disabled} onClick={() => void submission.submit({ type: "decline" })} type="button">Deny</button>
+          <button disabled={submission.disabled || !presentation.allowDeny} onClick={() => void submission.submit({ type: "decline" })} type="button">Deny</button>
+          {presentation.allowAlways ? confirmAlways ? <>
+            <small className="thread-interaction-card__status">Allow similar actions in future conversations?</small>
+            <button disabled={submission.disabled} onClick={() => setConfirmAlways(false)} type="button">Cancel</button>
+            <button disabled={submission.disabled} title="Remember this permission for future conversations" onClick={() => void submission.submit({ type: "approve-always" })} type="button">Confirm always allow</button>
+          </> : <button disabled={submission.disabled} onClick={() => setConfirmAlways(true)} type="button">Always allow</button> : null}
           <div className="thread-approval-request__approve-group">
-            <button autoFocus className="is-primary" disabled={submission.disabled} onClick={() => void submission.submit({ type: "approve-once" })} type="button"><span>{presentation.approveLabel}</span><kbd>↵</kbd></button>
+            <button autoFocus className="is-primary" disabled={submission.disabled || !presentation.allowOnce} onClick={() => void submission.submit({ type: "approve-once" })} type="button"><span>{presentation.approveLabel}</span><kbd>↵</kbd></button>
             {presentation.allowSession && presentation.scopedApproval !== null && scopedAction !== null ? <details>
               <summary aria-label="Approval options"><ChevronDown size={13} /></summary>
               <div className="thread-approval-request__menu" role="menu">

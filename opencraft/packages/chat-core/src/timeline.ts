@@ -415,6 +415,7 @@ export interface ApprovalTimelineBlock extends TimelineBlockBase<"approval"> {
   }[];
   readonly additionalPermissions: unknown;
   readonly availableDecisions: readonly string[];
+  readonly approvalScopes?: readonly ("once" | "session" | "always" | "deny")[];
   readonly state: "pending" | "accepted" | "declined" | "cancelled";
 }
 

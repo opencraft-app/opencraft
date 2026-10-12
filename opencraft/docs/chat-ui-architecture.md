@@ -1040,6 +1040,34 @@ Core status strings remain renderer-neutral; real reasoning summaries are preser
 
 ## Agent-originated async questions
 
+### Hermes direct approval ownership
+
+Direct/embedded Hermes Threads translate native `approval.request` into
+`item/commandExecution/requestApproval`. The existing OpenCraft approval card
+owns presentation; Hermes owns the pending request and authorization policy.
+Native request ID plus durable Thread ID identifies the prompt independently
+of its revocable live session route. Each prompt has its own synthetic Item ID,
+so the interaction ledger cannot replay another prompt's grant.
+
+The optional OpenCraft `approvalScopes` extension carries the provider's offered
+`once/session/always/deny` scopes. Canonical `accept`, `acceptForSession`, and
+`decline/cancel` map to native `once/session/deny`. An explicitly offered
+persistent grant uses `{decision: "accept", _meta: {persist: "always"}}`;
+it is not a Codex exec-policy amendment and cannot be sent to an unextended
+Codex request. Web and Native require a separate confirmation for that scope,
+using their existing interaction card controls and design tokens. Backend
+restrictions such as smart denial and disabled permanent grants remain binding.
+
+Resume restores `pending_approval`; a quiet heartbeat is not completion while
+approval is outstanding. Disposing a View/bridge never answers it. Native tool
+completion and successful answers refresh the oldest pending approval snapshot,
+not a fabricated complete queue. Snapshot absence clears stale prompts; newer
+events and revoked live-session routes fence late snapshots. Failed RPCs or
+`resolved=false` retain the approval. A delivery failure needs reconnect to
+restore the response channel; it must not manufacture an empty or approving
+response. Follow-up snapshot failure cannot turn an accepted grant into a
+request to send it again. Group-conversation approval routing is unchanged.
+
 Codex `agentMessage` Items with `delivery: "async"` and `questions` are not
 `item/tool/requestUserInput` server requests. The former remain ordinary
 assistant messages: their question cards are projected from the Item ID and

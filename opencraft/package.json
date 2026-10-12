@@ -16,7 +16,8 @@
     "node-pty@1.1.0": true
   },
   "scripts": {
-    "pretest:extensions": "tsx --test tests/extension-artifacts.test.ts tests/extension-catalog.test.ts tests/optional-feature-startup.test.ts tests/embedded-workbench-host-profile.test.ts tests/embedded-workbench-authority.test.ts",
+    "pretest:extensions": "tsx --test tests/extension-artifacts.test.ts tests/extension-catalog.test.ts tests/optional-feature-startup.test.ts tests/embedded-workbench-host-profile.test.ts tests/embedded-workbench-authority.test.ts tests/hermes-approval.test.ts tests/hermes-recovery.test.ts tests/hermes-turn-admission.test.ts",
+    "smoke:hermes-approval": "tsx scripts/smoke-hermes-approval.ts",
     "smoke:extensions": "tsx scripts/smoke-extension-lifecycle.ts",
     "smoke:browser-drafts": "tsx scripts/smoke-browser-drafts.ts",
     "smoke:sidebar-execution-owner": "tsx scripts/smoke-sidebar-execution-owner.ts",

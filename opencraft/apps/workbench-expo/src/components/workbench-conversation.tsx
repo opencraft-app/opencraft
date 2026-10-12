@@ -1126,6 +1126,11 @@ const NativeSetupContextCatalog = createContext<{
 function NativeApprovalBlock({ block }: { block: Extract<TimelineBlock, { type: "approval" }> }) {
   const respond = useContext(NativeInteractionContext);
   const [submitting, setSubmitting] = useState(false);
+  const [confirmAlways, setConfirmAlways] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const activeRequestId = useRef(block.requestId);
+  activeRequestId.current = block.requestId;
+  useEffect(() => { setConfirmAlways(false); setError(null); setSubmitting(false); }, [block.requestId]);
   const presentation = presentApprovalRequest(block);
   const scopedAction: WorkbenchInteractionAction | null = presentation.scopedApproval === null ? null
     : presentation.scopedApproval.kind === "exec-policy" ? { type: "approve-similar" }
@@ -1133,7 +1138,13 @@ function NativeApprovalBlock({ block }: { block: Extract<TimelineBlock, { type: 
   const submit = (action: WorkbenchInteractionAction) => {
     if (respond === null || submitting) return;
     setSubmitting(true);
-    void respond(block.requestId, action).finally(() => setSubmitting(false));
+    setError(null);
+    const requestId = block.requestId;
+    void respond(requestId, action).catch(() => {
+      if (activeRequestId.current === requestId) setError("Could not send response. Reconnect to retry.");
+    }).finally(() => {
+      if (activeRequestId.current === requestId) setSubmitting(false);
+    });
   };
   return (
     <SemanticCard title={presentation.title} status={submitting ? "submitting" : block.state}>
@@ -1144,9 +1155,15 @@ function NativeApprovalBlock({ block }: { block: Extract<TimelineBlock, { type: 
       {block.state === "pending" ? <View style={styles.interactionActions}>
         {presentation.leadingApproval ? <Button disabled={submitting} onPress={() => submit({ type: "approve-network-host" })} size="sm" variant="secondary">{presentation.leadingApproval.label}</Button> : null}
         {presentation.allowSession && presentation.scopedApproval !== null && scopedAction !== null ? <Button disabled={submitting} onPress={() => submit(scopedAction)} size="sm" variant="secondary">{presentation.scopedApproval.label}</Button> : null}
-        <Button disabled={submitting} onPress={() => submit({ type: "decline" })} size="sm" variant="secondary">Deny</Button>
-        <Button disabled={submitting} onPress={() => submit({ type: "approve-once" })} size="sm">{presentation.approveLabel}</Button>
+        {presentation.allowAlways ? confirmAlways ? <>
+          <Text style={styles.semanticStatus}>Allow similar actions in future conversations?</Text>
+          <Button disabled={submitting} onPress={() => setConfirmAlways(false)} size="sm" variant="secondary">Cancel</Button>
+          <Button disabled={submitting} onPress={() => submit({ type: "approve-always" })} size="sm" variant="secondary">Confirm always allow</Button>
+        </> : <Button disabled={submitting} onPress={() => setConfirmAlways(true)} size="sm" variant="secondary">Always allow</Button> : null}
+        <Button disabled={submitting || !presentation.allowDeny} onPress={() => submit({ type: "decline" })} size="sm" variant="secondary">Deny</Button>
+        <Button disabled={submitting || !presentation.allowOnce} onPress={() => submit({ type: "approve-once" })} size="sm">{presentation.approveLabel}</Button>
       </View> : null}
+      {error ? <Text style={styles.semanticStatus}>{error}</Text> : null}
     </SemanticCard>
   );
 }

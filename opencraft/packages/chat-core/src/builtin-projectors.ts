@@ -1075,6 +1075,10 @@ export function createBuiltinTimelineProjectors(): readonly TimelineItemProjecto
         proposedNetworkPolicyAmendments: approvalNetworkPolicyAmendments(source.proposedNetworkPolicyAmendments),
         additionalPermissions: source.additionalPermissions ?? null,
         availableDecisions: stringArray(source.availableDecisions),
+        ...(source.approvalScopes === undefined ? {} : {
+          approvalScopes: stringArray(source.approvalScopes).filter((scope): scope is "once" | "session" | "always" | "deny" =>
+            scope === "once" || scope === "session" || scope === "always" || scope === "deny"),
+        }),
         state: source.state === "accepted" || source.state === "declined" || source.state === "cancelled" ? source.state : "pending",
       },
       anchors: [{ type: "request", id: string(source.requestId) ?? item.id }],
