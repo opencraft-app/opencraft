@@ -5658,6 +5658,14 @@ export const AgentSettingsPage = ({
                   handleBuddyCreated(createdBotId);
                 }}
                 onCreateBot={handleOnboardingCreateBot}
+                onCancel={(cloneSourceChoices?.length ?? 0) > 0 ? () => {
+                  setShowMultiBotOnboarding(false);
+                  setDirectCreateError(null);
+                  const params = new URLSearchParams(searchParams);
+                  params.delete(AGENT_CREATE_PAGE_QUERY_KEY);
+                  const search = params.toString();
+                  navigate(`${pathname}${search ? `?${search}` : ""}`, { replace: true });
+                } : undefined}
                 execDebugCommand={repositories.bots.execDebugCommand}
                 onSetupStart={() => { onboardingLockRef.current = true; }}
                 /*

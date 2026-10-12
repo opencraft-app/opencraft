@@ -19,12 +19,37 @@
     var footY = Number(mascot.dataset.footY);
     var renderedWidth = artwork.getBoundingClientRect().width;
     if (!(sourceWidth > 0 && footY > 0 && renderedWidth > 0)) return;
-    var base = deploy.getBoundingClientRect();
-    var line = track.getBoundingClientRect();
+    // Layout offsets exclude the scroll entrance transform on the track.
+    var lineLeft = track.offsetLeft;
+    var lineTop = track.offsetTop;
+    var lineWidth = track.offsetWidth;
     // Curve crest: x=80%, y=70/170 of its 132px rendered height.
     // Artwork dimensions and foot anchor come from the sole markup generator.
-    mascot.style.setProperty('--step-left', (line.left - base.left + line.width * 0.8 - renderedWidth / 2) + 'px');
-    mascot.style.setProperty('--step-top', (line.top - base.top - 112 + 132 * 70 / 170 - renderedWidth * footY / sourceWidth) + 'px');
+    mascot.style.setProperty('--step-left', (lineLeft + lineWidth * 0.8 - renderedWidth / 2) + 'px');
+    mascot.style.setProperty('--step-top', (lineTop - 112 + 132 * 70 / 170 - renderedWidth * footY / sourceWidth) + 'px');
+  }
+  // Lazy artwork and restored-scroll layout can settle after the first pass.
+  var stepArtwork = root.querySelector('.home-step-mascot img');
+  if (stepArtwork) stepArtwork.addEventListener('load', placeStepCompanion);
+  var stepLayoutObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(placeStepCompanion) : null;
+  var stepDeploy = root.querySelector('.deploy');
+  var stepTrack = root.querySelector('.track');
+  if (stepLayoutObserver && stepDeploy) stepLayoutObserver.observe(stepDeploy);
+  if (stepLayoutObserver && stepTrack) stepLayoutObserver.observe(stepTrack);
+  // Protect a short Chinese ending from becoming a one-character last line.
+  if ((root.dataset.locale || '').indexOf('zh') === 0) {
+    root.querySelectorAll('.play__list li').forEach(function (item) {
+      var tail = item.lastChild;
+      if (!tail || tail.nodeType !== 3 || item.querySelector('.home-copy-tail')) return;
+      var copy = tail.textContent;
+      var match = copy.match(/[\u3400-\u9fff]{2,4}[。！？]?$/);
+      if (!match) return;
+      var keep = document.createElement('span');
+      keep.className = 'home-copy-tail';
+      keep.textContent = match[0];
+      tail.textContent = copy.slice(0, -match[0].length);
+      item.appendChild(keep);
+    });
   }
   function sizeRotator() {
     if (!rotator || !rotatorWrap) return;
@@ -85,6 +110,8 @@
   document.addEventListener('lightvela-home-dispose', function () {
     window.removeEventListener('resize', sizeRotator);
     window.removeEventListener('resize', placeStepCompanion);
+    if (stepArtwork) stepArtwork.removeEventListener('load', placeStepCompanion);
+    if (stepLayoutObserver) stepLayoutObserver.disconnect();
     if (observer) observer.disconnect();
     document.removeEventListener('visibilitychange', sync);
     media.removeEventListener('change', sync);
