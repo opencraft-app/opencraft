@@ -29,5 +29,8 @@ func (IMGroup) Fields() []ent.Field {
 		field.Int64("revision"),
 		CreatedAtField(),
 		UpdatedAtField(),
+		// 解散后才有值：owner、admin，或 tencent（在腾讯侧被解散）；管理员解散必须填写原因，展示给群成员。
+		optionalBoundedStringField("dismissed_by", 16),
+		optionalBoundedStringField("dismiss_reason", 200),
 	}
 }

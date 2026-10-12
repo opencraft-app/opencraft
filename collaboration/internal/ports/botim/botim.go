@@ -89,10 +89,20 @@ type Group struct {
 	Name              string
 	ReplyMode         string
 	State             string
-	Revision          int64
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
+	// DismissedBy 与 DismissReason 只在解散后有值；DismissedBy 取 Dismissed* 常量。
+	DismissedBy   string
+	DismissReason string
+	Revision      int64
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
+
+// 群被谁解散。
+const (
+	DismissedByOwner   = "owner"
+	DismissedByAdmin   = "admin"
+	DismissedByTencent = "tencent"
+)
 
 // GroupMember 是平台群成员关系。
 type GroupMember struct {

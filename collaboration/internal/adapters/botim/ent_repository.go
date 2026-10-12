@@ -298,14 +298,24 @@ func (r *EntRepository) SaveGroup(
 	group botimport.Group,
 	expectedRevision int64,
 ) (botimport.Group, error) {
-	affected, err := r.handle.Client().IMGroup.Update().
+	update := r.handle.Client().IMGroup.Update().
 		Where(imgroup.IDEQ(group.ID), imgroup.RevisionEQ(expectedRevision)).
 		SetName(group.Name).
 		SetReplyMode(group.ReplyMode).
 		SetState(group.State).
 		SetRevision(expectedRevision + 1).
-		SetUpdatedAt(group.UpdatedAt).
-		Save(ctx)
+		SetUpdatedAt(group.UpdatedAt)
+	if group.DismissedBy != "" {
+		update.SetDismissedBy(group.DismissedBy)
+	} else {
+		update.ClearDismissedBy()
+	}
+	if group.DismissReason != "" {
+		update.SetDismissReason(group.DismissReason)
+	} else {
+		update.ClearDismissReason()
+	}
+	affected, err := update.Save(ctx)
 	if err != nil {
 		return botimport.Group{}, err
 	}
@@ -430,7 +440,7 @@ func routeFromEntity(entity *ent.IMIdentityRoute) botimport.Route {
 }
 
 func groupFromEntity(entity *ent.IMGroup) botimport.Group {
-	return botimport.Group{
+	group := botimport.Group{
 		ID:                entity.ID,
 		TencentGroupID:    entity.TencentGroupID,
 		OwnerAccountID:    entity.OwnerAccountID,
@@ -442,6 +452,13 @@ func groupFromEntity(entity *ent.IMGroup) botimport.Group {
 		CreatedAt:         entity.CreatedAt,
 		UpdatedAt:         entity.UpdatedAt,
 	}
+	if entity.DismissedBy != nil {
+		group.DismissedBy = *entity.DismissedBy
+	}
+	if entity.DismissReason != nil {
+		group.DismissReason = *entity.DismissReason
+	}
+	return group
 }
 
 func memberFromEntity(entity *ent.IMGroupMember) botimport.GroupMember {

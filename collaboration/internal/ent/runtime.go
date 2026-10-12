@@ -883,6 +883,14 @@ func init() {
 	imgroup.DefaultUpdatedAt = imgroupDescUpdatedAt.Default.(func() time.Time)
 	// imgroup.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	imgroup.UpdateDefaultUpdatedAt = imgroupDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// imgroupDescDismissedBy is the schema descriptor for dismissed_by field.
+	imgroupDescDismissedBy := imgroupFields[9].Descriptor()
+	// imgroup.DismissedByValidator is a validator for the "dismissed_by" field. It is called by the builders before save.
+	imgroup.DismissedByValidator = imgroupDescDismissedBy.Validators[0].(func(string) error)
+	// imgroupDescDismissReason is the schema descriptor for dismiss_reason field.
+	imgroupDescDismissReason := imgroupFields[10].Descriptor()
+	// imgroup.DismissReasonValidator is a validator for the "dismiss_reason" field. It is called by the builders before save.
+	imgroup.DismissReasonValidator = imgroupDescDismissReason.Validators[0].(func(string) error)
 	// imgroupDescID is the schema descriptor for id field.
 	imgroupDescID := imgroupMixinFields0[0].Descriptor()
 	// imgroup.DefaultID holds the default value on creation for the id field.

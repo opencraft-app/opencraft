@@ -31,6 +31,10 @@ const (
 	FieldCreatedAt = "created_at"
 	// FieldUpdatedAt holds the string denoting the updated_at field in the database.
 	FieldUpdatedAt = "updated_at"
+	// FieldDismissedBy holds the string denoting the dismissed_by field in the database.
+	FieldDismissedBy = "dismissed_by"
+	// FieldDismissReason holds the string denoting the dismiss_reason field in the database.
+	FieldDismissReason = "dismiss_reason"
 	// Table holds the table name of the imgroup in the database.
 	Table = "im_groups"
 )
@@ -47,6 +51,8 @@ var Columns = []string{
 	FieldRevision,
 	FieldCreatedAt,
 	FieldUpdatedAt,
+	FieldDismissedBy,
+	FieldDismissReason,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -76,6 +82,10 @@ var (
 	DefaultUpdatedAt func() time.Time
 	// UpdateDefaultUpdatedAt holds the default value on update for the "updated_at" field.
 	UpdateDefaultUpdatedAt func() time.Time
+	// DismissedByValidator is a validator for the "dismissed_by" field. It is called by the builders before save.
+	DismissedByValidator func(string) error
+	// DismissReasonValidator is a validator for the "dismiss_reason" field. It is called by the builders before save.
+	DismissReasonValidator func(string) error
 	// DefaultID holds the default value on creation for the "id" field.
 	DefaultID func() string
 )
@@ -131,4 +141,14 @@ func ByCreatedAt(opts ...sql.OrderTermOption) OrderOption {
 // ByUpdatedAt orders the results by the updated_at field.
 func ByUpdatedAt(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldUpdatedAt, opts...).ToFunc()
+}
+
+// ByDismissedBy orders the results by the dismissed_by field.
+func ByDismissedBy(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldDismissedBy, opts...).ToFunc()
+}
+
+// ByDismissReason orders the results by the dismiss_reason field.
+func ByDismissReason(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldDismissReason, opts...).ToFunc()
 }

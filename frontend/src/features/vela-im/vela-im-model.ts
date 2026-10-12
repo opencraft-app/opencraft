@@ -1,4 +1,4 @@
-import type { IMMessage } from "@vela/im-client";
+import type { ImGroup, IMMessage } from "@vela/im-client";
 
 /** View models for the IM panel. The SDK returns Tencent IM objects; these normalizers narrow them once. */
 export type ConversationKind = "C2C" | "GROUP" | "SYSTEM";
@@ -373,6 +373,27 @@ export const formatTime = (seconds: number, now = Date.now()): string => {
     ? date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })
     : date.toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit" });
 };
+
+/** Tencent IM error code, whether the SDK put it on the error or only inside its message text. */
+export const imErrorCode = (error: unknown): number | null => {
+  if (isDict(error) && typeof error.code === "number") return error.code;
+  const match = /"code"\s*:\s*(\d+)/.exec(errorText(error, ""));
+  return match ? Number(match[1]) : null;
+};
+
+/** Sending failed because the group no longer exists in Tencent IM (dismissed, or never created). */
+export const isGroupGoneError = (error: unknown): boolean => {
+  const code = imErrorCode(error);
+  return code === 10010 || code === 10015;
+};
+
+export interface GroupDismissal {
+  by: "owner" | "admin" | "tencent" | null;
+  reason: string;
+}
+
+export const groupDismissal = (group: ImGroup | null): GroupDismissal | null =>
+  group?.state === "dismissed" ? { by: group.dismissedBy ?? null, reason: group.dismissReason?.trim() ?? "" } : null;
 
 export const errorText = (error: unknown, fallback: string): string => {
   if (isDict(error)) {

@@ -224,7 +224,8 @@ func schemaContracts() map[string]tableContract {
 			indexes:  []indexContract{u("im_user_id")},
 		},
 		"im_groups": {
-			fields: "id tencent_group_id owner_account_id created_by_im_user_id name reply_mode state revision created_at updated_at",
+			fields:   "id tencent_group_id owner_account_id created_by_im_user_id name reply_mode state revision created_at updated_at dismissed_by dismiss_reason",
+			nillable: "dismissed_by dismiss_reason",
 		},
 		"im_group_members": {
 			fields:  "id group_id im_user_id kind role state added_by_im_user_id created_at updated_at",

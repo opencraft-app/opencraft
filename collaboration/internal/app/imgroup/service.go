@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"git.woa.com/wisp/mono2/collaboration/internal/apperror"
 	botimport "git.woa.com/wisp/mono2/collaboration/internal/ports/botim"
@@ -20,6 +21,9 @@ import (
 
 // MaxMembers 是平台群（含群主）的成员上限。
 const MaxMembers = 50
+
+// MaxDismissReasonRunes 是管理员解散原因的字数上限。
+const MaxDismissReasonRunes = 200
 
 // ContextMessages 是 mention_context 模式附带的前序消息条数。
 const ContextMessages = 10
@@ -456,11 +460,15 @@ func (s *Service) Dismiss(ctx context.Context, actor Actor, groupID string) erro
 	if err := s.tencent.Destroy(ctx, group.TencentGroupID); err != nil {
 		return apperror.New("tencent_unavailable", "暂时无法解散腾讯云 IM 群", err)
 	}
-	return s.markDismissed(ctx, group)
+	return s.markDismissed(ctx, group, botimport.DismissedByOwner, "")
 }
 
-// AdminDismiss 由管理后台解散平台群；不校验群主身份，重复调用是幂等的。
-func (s *Service) AdminDismiss(ctx context.Context, groupID string) error {
+// AdminDismiss 由管理后台解散平台群；不校验群主身份，原因必填并展示给群成员，重复调用是幂等的。
+func (s *Service) AdminDismiss(ctx context.Context, groupID, reason string) error {
+	reason = strings.TrimSpace(reason)
+	if reason == "" || utf8.RuneCountInString(reason) > MaxDismissReasonRunes {
+		return apperror.New("invalid_request", "请填写 1 到 200 字的解散原因", nil)
+	}
 	group, _, err := s.load(ctx, groupID)
 	if err != nil {
 		return err
@@ -471,7 +479,7 @@ func (s *Service) AdminDismiss(ctx context.Context, groupID string) error {
 	if err := s.tencent.Destroy(ctx, group.TencentGroupID); err != nil {
 		return apperror.New("tencent_unavailable", "暂时无法解散腾讯云 IM 群", err)
 	}
-	return s.markDismissed(ctx, group)
+	return s.markDismissed(ctx, group, botimport.DismissedByAdmin, reason)
 }
 
 // ObserveMembersJoined 用腾讯回调对账：平台群里出现了平台未登记的成员。
@@ -538,7 +546,7 @@ func (s *Service) ObserveGroupDestroyed(ctx context.Context, tencentGroupID stri
 	if group.State == botimport.GroupStateDismissed {
 		return nil
 	}
-	return s.markDismissed(ctx, group)
+	return s.markDismissed(ctx, group, botimport.DismissedByTencent, "")
 }
 
 // IsRestricted 供腾讯发消息前回调判断发送者是否被封禁。
@@ -553,9 +561,11 @@ func (s *Service) IsRestricted(ctx context.Context, userID string) (bool, error)
 	return route.RestrictedAt != nil, nil
 }
 
-func (s *Service) markDismissed(ctx context.Context, group botimport.Group) error {
+func (s *Service) markDismissed(ctx context.Context, group botimport.Group, by, reason string) error {
 	expected := group.Revision
 	group.State = botimport.GroupStateDismissed
+	group.DismissedBy = by
+	group.DismissReason = reason
 	group.UpdatedAt = s.clock.Now().UTC()
 	if _, err := s.repository.SaveGroup(ctx, group, expected); err != nil && !errors.Is(err, botimport.ErrConflict) {
 		return internal("暂时无法保存群聊", err)

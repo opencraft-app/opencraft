@@ -559,10 +559,19 @@ func imGroupDTO(view appimgroup.View) openapi.ImGroup {
 		Revision:           view.Group.Revision,
 		Members:            members,
 		ViewerRole:         openapi.ImGroupViewerRole(view.ViewerRole),
+		DismissedBy:        dismissedBy(view.Group.DismissedBy),
+		DismissReason:      optional(view.Group.DismissReason),
 	}
 }
 
-// NewBotIMRoutes 注册 Bot IM 身份、平台群与 Bot Runtime 路由。
+func dismissedBy(value string) *openapi.ImGroupDismissedBy {
+	if value == "" {
+		return nil
+	}
+	by := openapi.ImGroupDismissedBy(value)
+	return &by
+}
+
 // NewBotIMRoutes 组装 Bot IM 路由；admin 为 nil 时不注册管理后台接口。
 func NewBotIMRoutes(bots botAgentService, groups imGroupService, admin ImAdminService, encoder *ErrorEncoder) (http.Handler, error) {
 	if encoder == nil {

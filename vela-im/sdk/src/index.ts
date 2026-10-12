@@ -29,6 +29,8 @@ export interface ImGroup {
   id:string; tencentGroupId:string; name:string; replyMode:GroupReplyMode; effectiveReplyMode:GroupReplyMode;
   contextMessages:number; state:'provisioning'|'active'|'dismissed'; revision:number;
   members:ImGroupMember[]; viewerRole:'owner'|'admin'|'member';
+  /** Set once dismissed: by the owner, a LightVela admin (with a reason shown to members), or on Tencent's side. */
+  dismissedBy?:'owner'|'admin'|'tencent'|null; dismissReason?:string|null;
 }
 export interface CreateGroupInput { name:string; memberUserIds:string[]; replyMode?:GroupReplyMode; groupId?:string }
 export interface UpdateGroupInput { name?:string; replyMode?:GroupReplyMode }

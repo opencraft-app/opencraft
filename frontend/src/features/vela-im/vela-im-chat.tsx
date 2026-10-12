@@ -1,12 +1,13 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { ArrowLeft, ArrowUp, Check, ChevronDown, Copy, Loader2, MoreHorizontal, Pin, Plus, Quote, Settings2, Sparkles, Trash2, Undo2, Users, X } from "lucide-react";
+import { ArrowLeft, ArrowUp, Ban, Check, ChevronDown, Copy, Loader2, MoreHorizontal, Pin, Plus, Quote, Settings2, Sparkles, Trash2, Undo2, Users, X } from "lucide-react";
 import { defaultGroupPolicy, platformGroupId, policyFromGroup, type GroupReplyPolicy, type IMMessage, type MessageInput } from "@vela/im-client";
 import type { VelaBrowserClient } from "@vela/im-client/browser";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ChatBubble } from "@/components/ui/chat-bubble";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import { useT } from "@/i18n/t";
@@ -22,7 +23,9 @@ import {
   errorText,
   formatTime,
   fullTime,
+  groupDismissal,
   isAgentID,
+  isGroupGoneError,
   mergeMessages,
   messageAbstract,
   quoteData,
@@ -30,6 +33,7 @@ import {
   resolveMentions,
   timeDivider,
   toMembers,
+  type GroupDismissal,
   type QuotedMessage,
   type ConversationItem,
   type MemberItem,
@@ -38,6 +42,24 @@ import {
 import type { VelaImController } from "./use-vela-im";
 
 const REVOKE_WINDOW_SECONDS = 120;
+
+const dismissalTitle = (dismissal: GroupDismissal, t: ReturnType<typeof useT>) =>
+  dismissal.by === "admin" ? t("该群聊已被管理员解散") : dismissal.by === "owner" ? t("该群聊已被群主解散") : t("该群聊已解散");
+
+/** Takes the composer's place once the group is gone; an admin's reason is shown to every member. */
+function GroupDismissedNotice({ dismissal }: { dismissal: GroupDismissal }) {
+  const t = useT();
+  return (
+    <div role="status" className="flex items-start gap-3 rounded-2xl border border-black/[0.08] bg-black/[0.02] px-4 py-3 text-sm">
+      <Ban className="mt-0.5 size-4 shrink-0 text-black/40" aria-hidden="true" />
+      <div className="min-w-0 space-y-1">
+        <p className="font-medium text-black/75">{dismissalTitle(dismissal, t)}</p>
+        {dismissal.reason ? <p className="whitespace-pre-wrap break-words text-black/60">{t("原因：{{reason}}", { reason: dismissal.reason })}</p> : null}
+        <p className="text-xs text-black/45">{t("无法继续发送消息，历史消息仍可查看。如有疑问，请联系管理员。")}</p>
+      </div>
+    </div>
+  );
+}
 /** Picker entry for @everyone; inserting `@所有人` is what resolveMentions turns into Tencent's @all. */
 const MENTION_ALL_ID = "@all";
 const MENTION_ALL_TEXT = "所有人";
@@ -92,6 +114,8 @@ export function VelaImChat({ controller, client, selfID, conversation, onBack, o
   const [error, setError] = useState("");
   const [members, setMembers] = useState<MemberItem[]>([]);
   const [policy, setPolicy] = useState<GroupReplyPolicy | null>(null);
+  const [dismissal, setDismissal] = useState<GroupDismissal | null>(null);
+  const [dismissalOpen, setDismissalOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [commandsOpen, setCommandsOpen] = useState(false);
   const [pending, setPending] = useState<PendingAttachment[]>([]);
@@ -123,21 +147,25 @@ export function VelaImChat({ controller, client, selfID, conversation, onBack, o
     return () => { cancelled = true; };
   }, [client, conversationID, t]);
 
-  useEffect(() => {
-    if (!isGroup) { setMembers([]); setPolicy(null); return; }
-    let cancelled = false;
+  const loadGroup = useCallback(() => {
     const api = controller.connection?.api;
     const groupId = platformGroupId(conversation.targetID);
-    const rules = groupId && api
-      ? api.group(groupId).then(policyFromGroup, () => defaultGroupPolicy(conversation.targetID))
-      : Promise.resolve(defaultGroupPolicy(conversation.targetID));
-    void Promise.all([client.getGroupMembers(conversation.targetID), rules]).then(([list, reply]) => {
+    return groupId && api ? api.group(groupId).catch(() => null) : Promise.resolve(null);
+  }, [controller.connection, conversation.targetID]);
+
+  useEffect(() => {
+    setDismissal(null);
+    if (!isGroup) { setMembers([]); setPolicy(null); return; }
+    let cancelled = false;
+    // A dismissed group is gone from Tencent, so its member list fails while the platform still knows why.
+    void Promise.all([client.getGroupMembers(conversation.targetID).catch(() => []), loadGroup()]).then(([list, group]) => {
       if (cancelled) return;
       setMembers(toMembers(list));
-      setPolicy(reply);
-    }, () => undefined);
+      setPolicy(group ? policyFromGroup(group) : defaultGroupPolicy(conversation.targetID));
+      setDismissal(groupDismissal(group));
+    });
     return () => { cancelled = true; };
-  }, [client, controller.connection, conversation.targetID, isGroup, refreshKey]);
+  }, [client, loadGroup, conversation.targetID, isGroup, refreshKey]);
 
   useEffect(() => {
     controller.events.current = {
@@ -253,7 +281,12 @@ export function VelaImChat({ controller, client, selfID, conversation, onBack, o
         setPicked([]);
       }
     } catch (e) {
-      setError(errorText(e, t("发送失败")));
+      if (isGroup && isGroupGoneError(e)) {
+        setDismissal(groupDismissal(await loadGroup()) ?? { by: null, reason: "" });
+        setDismissalOpen(true);
+      } else {
+        setError(errorText(e, t("发送失败")));
+      }
     } finally {
       setSending(false);
     }
@@ -540,6 +573,7 @@ export function VelaImChat({ controller, client, selfID, conversation, onBack, o
             {t("{{names}} 正在处理…", { names: Object.keys(working).map((id) => (isGroup ? memberName(id) : conversation.name)).join("、") })}
           </p>
         ) : null}
+        {dismissal ? <GroupDismissedNotice dismissal={dismissal} /> : (<>
         {isGroup && others.some((m) => isAgentID(m.userID)) ? (
           <div className="mb-2 flex flex-wrap gap-1.5" aria-label={t("快速 @ Agent")}>
             {others.length > 1 ? (
@@ -653,9 +687,26 @@ export function VelaImChat({ controller, client, selfID, conversation, onBack, o
             </Button>
           </div>
         </div>
+        </>)}
         {error ? <p role="alert" className="mt-2 text-xs text-[var(--danger)]">{error}</p> : null}
       </div>
       </div>
+      {dismissal ? (
+        <Dialog open={dismissalOpen} onOpenChange={setDismissalOpen}>
+          <DialogContent className="sm:max-w-sm">
+            <DialogHeader>
+              <DialogTitle>{dismissalTitle(dismissal, t)}</DialogTitle>
+              <DialogDescription className="space-y-1">
+                {dismissal.reason ? <span className="block whitespace-pre-wrap break-words">{t("原因：{{reason}}", { reason: dismissal.reason })}</span> : null}
+                <span className="block">{t("消息没有发出。如有疑问，请联系管理员。")}</span>
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex justify-end">
+              <Button type="button" className="rounded-lg" onClick={() => setDismissalOpen(false)}>{t("我知道了")}</Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      ) : null}
     </div>
   );
 }

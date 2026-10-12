@@ -45,6 +45,8 @@ type Group struct {
 	CreatedByUserID      string
 	ReplyMode            string
 	State                string
+	DismissedBy          string
+	DismissReason        string
 	MemberCount          int
 	CreatedAt            time.Time
 }
@@ -117,7 +119,7 @@ type Bots interface {
 
 // Groups 是解散群时复用的群服务能力。
 type Groups interface {
-	AdminDismiss(ctx context.Context, groupID string) error
+	AdminDismiss(ctx context.Context, groupID, reason string) error
 }
 
 // Identities 是腾讯账号的下线与核对能力。
@@ -216,8 +218,9 @@ func (s *Service) Restrict(ctx context.Context, userID string, restricted bool) 
 	return identities[0], nil
 }
 
-func (s *Service) DismissGroup(ctx context.Context, groupID string) error {
-	return s.groups.AdminDismiss(ctx, groupID)
+// DismissGroup 解散群；原因必填，群成员会看到。
+func (s *Service) DismissGroup(ctx context.Context, groupID, reason string) error {
+	return s.groups.AdminDismiss(ctx, groupID, reason)
 }
 
 // DisableBot 与用户删除 Bot 相同：下线、删除腾讯账号、吊销凭据。

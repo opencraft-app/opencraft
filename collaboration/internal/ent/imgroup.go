@@ -34,8 +34,12 @@ type IMGroup struct {
 	// CreatedAt holds the value of the "created_at" field.
 	CreatedAt time.Time `json:"created_at,omitempty"`
 	// UpdatedAt holds the value of the "updated_at" field.
-	UpdatedAt    time.Time `json:"updated_at,omitempty"`
-	selectValues sql.SelectValues
+	UpdatedAt time.Time `json:"updated_at,omitempty"`
+	// DismissedBy holds the value of the "dismissed_by" field.
+	DismissedBy *string `json:"dismissed_by,omitempty"`
+	// DismissReason holds the value of the "dismiss_reason" field.
+	DismissReason *string `json:"dismiss_reason,omitempty"`
+	selectValues  sql.SelectValues
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -45,7 +49,7 @@ func (*IMGroup) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case imgroup.FieldRevision:
 			values[i] = new(sql.NullInt64)
-		case imgroup.FieldID, imgroup.FieldTencentGroupID, imgroup.FieldOwnerAccountID, imgroup.FieldCreatedByImUserID, imgroup.FieldName, imgroup.FieldReplyMode, imgroup.FieldState:
+		case imgroup.FieldID, imgroup.FieldTencentGroupID, imgroup.FieldOwnerAccountID, imgroup.FieldCreatedByImUserID, imgroup.FieldName, imgroup.FieldReplyMode, imgroup.FieldState, imgroup.FieldDismissedBy, imgroup.FieldDismissReason:
 			values[i] = new(sql.NullString)
 		case imgroup.FieldCreatedAt, imgroup.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -124,6 +128,20 @@ func (_m *IMGroup) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.UpdatedAt = value.Time
 			}
+		case imgroup.FieldDismissedBy:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field dismissed_by", values[i])
+			} else if value.Valid {
+				_m.DismissedBy = new(string)
+				*_m.DismissedBy = value.String
+			}
+		case imgroup.FieldDismissReason:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field dismiss_reason", values[i])
+			} else if value.Valid {
+				_m.DismissReason = new(string)
+				*_m.DismissReason = value.String
+			}
 		default:
 			_m.selectValues.Set(columns[i], values[i])
 		}
@@ -186,6 +204,16 @@ func (_m *IMGroup) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("updated_at=")
 	builder.WriteString(_m.UpdatedAt.Format(time.ANSIC))
+	builder.WriteString(", ")
+	if v := _m.DismissedBy; v != nil {
+		builder.WriteString("dismissed_by=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := _m.DismissReason; v != nil {
+		builder.WriteString("dismiss_reason=")
+		builder.WriteString(*v)
+	}
 	builder.WriteByte(')')
 	return builder.String()
 }

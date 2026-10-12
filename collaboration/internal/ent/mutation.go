@@ -17871,6 +17871,8 @@ type IMGroupMutation struct {
 	addrevision           *int64
 	created_at            *time.Time
 	updated_at            *time.Time
+	dismissed_by          *string
+	dismiss_reason        *string
 	clearedFields         map[string]struct{}
 	done                  bool
 	oldValue              func(context.Context) (*IMGroup, error)
@@ -18325,6 +18327,104 @@ func (m *IMGroupMutation) ResetUpdatedAt() {
 	m.updated_at = nil
 }
 
+// SetDismissedBy sets the "dismissed_by" field.
+func (m *IMGroupMutation) SetDismissedBy(s string) {
+	m.dismissed_by = &s
+}
+
+// DismissedBy returns the value of the "dismissed_by" field in the mutation.
+func (m *IMGroupMutation) DismissedBy() (r string, exists bool) {
+	v := m.dismissed_by
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDismissedBy returns the old "dismissed_by" field's value of the IMGroup entity.
+// If the IMGroup object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *IMGroupMutation) OldDismissedBy(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDismissedBy is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDismissedBy requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDismissedBy: %w", err)
+	}
+	return oldValue.DismissedBy, nil
+}
+
+// ClearDismissedBy clears the value of the "dismissed_by" field.
+func (m *IMGroupMutation) ClearDismissedBy() {
+	m.dismissed_by = nil
+	m.clearedFields[imgroup.FieldDismissedBy] = struct{}{}
+}
+
+// DismissedByCleared returns if the "dismissed_by" field was cleared in this mutation.
+func (m *IMGroupMutation) DismissedByCleared() bool {
+	_, ok := m.clearedFields[imgroup.FieldDismissedBy]
+	return ok
+}
+
+// ResetDismissedBy resets all changes to the "dismissed_by" field.
+func (m *IMGroupMutation) ResetDismissedBy() {
+	m.dismissed_by = nil
+	delete(m.clearedFields, imgroup.FieldDismissedBy)
+}
+
+// SetDismissReason sets the "dismiss_reason" field.
+func (m *IMGroupMutation) SetDismissReason(s string) {
+	m.dismiss_reason = &s
+}
+
+// DismissReason returns the value of the "dismiss_reason" field in the mutation.
+func (m *IMGroupMutation) DismissReason() (r string, exists bool) {
+	v := m.dismiss_reason
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDismissReason returns the old "dismiss_reason" field's value of the IMGroup entity.
+// If the IMGroup object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *IMGroupMutation) OldDismissReason(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDismissReason is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDismissReason requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDismissReason: %w", err)
+	}
+	return oldValue.DismissReason, nil
+}
+
+// ClearDismissReason clears the value of the "dismiss_reason" field.
+func (m *IMGroupMutation) ClearDismissReason() {
+	m.dismiss_reason = nil
+	m.clearedFields[imgroup.FieldDismissReason] = struct{}{}
+}
+
+// DismissReasonCleared returns if the "dismiss_reason" field was cleared in this mutation.
+func (m *IMGroupMutation) DismissReasonCleared() bool {
+	_, ok := m.clearedFields[imgroup.FieldDismissReason]
+	return ok
+}
+
+// ResetDismissReason resets all changes to the "dismiss_reason" field.
+func (m *IMGroupMutation) ResetDismissReason() {
+	m.dismiss_reason = nil
+	delete(m.clearedFields, imgroup.FieldDismissReason)
+}
+
 // Where appends a list predicates to the IMGroupMutation builder.
 func (m *IMGroupMutation) Where(ps ...predicate.IMGroup) {
 	m.predicates = append(m.predicates, ps...)
@@ -18359,7 +18459,7 @@ func (m *IMGroupMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *IMGroupMutation) Fields() []string {
-	fields := make([]string, 0, 9)
+	fields := make([]string, 0, 11)
 	if m.tencent_group_id != nil {
 		fields = append(fields, imgroup.FieldTencentGroupID)
 	}
@@ -18387,6 +18487,12 @@ func (m *IMGroupMutation) Fields() []string {
 	if m.updated_at != nil {
 		fields = append(fields, imgroup.FieldUpdatedAt)
 	}
+	if m.dismissed_by != nil {
+		fields = append(fields, imgroup.FieldDismissedBy)
+	}
+	if m.dismiss_reason != nil {
+		fields = append(fields, imgroup.FieldDismissReason)
+	}
 	return fields
 }
 
@@ -18413,6 +18519,10 @@ func (m *IMGroupMutation) Field(name string) (ent.Value, bool) {
 		return m.CreatedAt()
 	case imgroup.FieldUpdatedAt:
 		return m.UpdatedAt()
+	case imgroup.FieldDismissedBy:
+		return m.DismissedBy()
+	case imgroup.FieldDismissReason:
+		return m.DismissReason()
 	}
 	return nil, false
 }
@@ -18440,6 +18550,10 @@ func (m *IMGroupMutation) OldField(ctx context.Context, name string) (ent.Value,
 		return m.OldCreatedAt(ctx)
 	case imgroup.FieldUpdatedAt:
 		return m.OldUpdatedAt(ctx)
+	case imgroup.FieldDismissedBy:
+		return m.OldDismissedBy(ctx)
+	case imgroup.FieldDismissReason:
+		return m.OldDismissReason(ctx)
 	}
 	return nil, fmt.Errorf("unknown IMGroup field %s", name)
 }
@@ -18512,6 +18626,20 @@ func (m *IMGroupMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetUpdatedAt(v)
 		return nil
+	case imgroup.FieldDismissedBy:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDismissedBy(v)
+		return nil
+	case imgroup.FieldDismissReason:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDismissReason(v)
+		return nil
 	}
 	return fmt.Errorf("unknown IMGroup field %s", name)
 }
@@ -18556,7 +18684,14 @@ func (m *IMGroupMutation) AddField(name string, value ent.Value) error {
 // ClearedFields returns all nullable fields that were cleared during this
 // mutation.
 func (m *IMGroupMutation) ClearedFields() []string {
-	return nil
+	var fields []string
+	if m.FieldCleared(imgroup.FieldDismissedBy) {
+		fields = append(fields, imgroup.FieldDismissedBy)
+	}
+	if m.FieldCleared(imgroup.FieldDismissReason) {
+		fields = append(fields, imgroup.FieldDismissReason)
+	}
+	return fields
 }
 
 // FieldCleared returns a boolean indicating if a field with the given name was
@@ -18569,6 +18704,14 @@ func (m *IMGroupMutation) FieldCleared(name string) bool {
 // ClearField clears the value of the field with the given name. It returns an
 // error if the field is not defined in the schema.
 func (m *IMGroupMutation) ClearField(name string) error {
+	switch name {
+	case imgroup.FieldDismissedBy:
+		m.ClearDismissedBy()
+		return nil
+	case imgroup.FieldDismissReason:
+		m.ClearDismissReason()
+		return nil
+	}
 	return fmt.Errorf("unknown IMGroup nullable field %s", name)
 }
 
@@ -18602,6 +18745,12 @@ func (m *IMGroupMutation) ResetField(name string) error {
 		return nil
 	case imgroup.FieldUpdatedAt:
 		m.ResetUpdatedAt()
+		return nil
+	case imgroup.FieldDismissedBy:
+		m.ResetDismissedBy()
+		return nil
+	case imgroup.FieldDismissReason:
+		m.ResetDismissReason()
 		return nil
 	}
 	return fmt.Errorf("unknown IMGroup field %s", name)

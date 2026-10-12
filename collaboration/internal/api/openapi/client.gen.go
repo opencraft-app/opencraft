@@ -98,8 +98,10 @@ type ClientInterface interface {
 	// GetImAdminGroup request
 	GetImAdminGroup(ctx context.Context, groupId GroupId, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// DismissImAdminGroup request
-	DismissImAdminGroup(ctx context.Context, groupId GroupId, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// DismissImAdminGroupWithBody request with any body
+	DismissImAdminGroupWithBody(ctx context.Context, groupId GroupId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	DismissImAdminGroup(ctx context.Context, groupId GroupId, body DismissImAdminGroupJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListImAdminIdentities request
 	ListImAdminIdentities(ctx context.Context, params *ListImAdminIdentitiesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -605,8 +607,20 @@ func (c *Client) GetImAdminGroup(ctx context.Context, groupId GroupId, reqEditor
 	return c.Client.Do(req)
 }
 
-func (c *Client) DismissImAdminGroup(ctx context.Context, groupId GroupId, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewDismissImAdminGroupRequest(c.Server, groupId)
+func (c *Client) DismissImAdminGroupWithBody(ctx context.Context, groupId GroupId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDismissImAdminGroupRequestWithBody(c.Server, groupId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DismissImAdminGroup(ctx context.Context, groupId GroupId, body DismissImAdminGroupJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDismissImAdminGroupRequest(c.Server, groupId, body)
 	if err != nil {
 		return nil, err
 	}
@@ -2841,8 +2855,19 @@ func NewGetImAdminGroupRequest(server string, groupId GroupId) (*http.Request, e
 	return req, nil
 }
 
-// NewDismissImAdminGroupRequest generates requests for DismissImAdminGroup
-func NewDismissImAdminGroupRequest(server string, groupId GroupId) (*http.Request, error) {
+// NewDismissImAdminGroupRequest calls the generic DismissImAdminGroup builder with application/json body
+func NewDismissImAdminGroupRequest(server string, groupId GroupId, body DismissImAdminGroupJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewDismissImAdminGroupRequestWithBody(server, groupId, "application/json", bodyReader)
+}
+
+// NewDismissImAdminGroupRequestWithBody generates requests for DismissImAdminGroup with any type of body
+func NewDismissImAdminGroupRequestWithBody(server string, groupId GroupId, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -2867,10 +2892,12 @@ func NewDismissImAdminGroupRequest(server string, groupId GroupId) (*http.Reques
 		return nil, err
 	}
 
-	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	req, err := http.NewRequest("POST", queryURL.String(), body)
 	if err != nil {
 		return nil, err
 	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -9187,8 +9214,10 @@ type ClientWithResponsesInterface interface {
 	// GetImAdminGroupWithResponse request
 	GetImAdminGroupWithResponse(ctx context.Context, groupId GroupId, reqEditors ...RequestEditorFn) (*GetImAdminGroupResponse, error)
 
-	// DismissImAdminGroupWithResponse request
-	DismissImAdminGroupWithResponse(ctx context.Context, groupId GroupId, reqEditors ...RequestEditorFn) (*DismissImAdminGroupResponse, error)
+	// DismissImAdminGroupWithBodyWithResponse request with any body
+	DismissImAdminGroupWithBodyWithResponse(ctx context.Context, groupId GroupId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DismissImAdminGroupResponse, error)
+
+	DismissImAdminGroupWithResponse(ctx context.Context, groupId GroupId, body DismissImAdminGroupJSONRequestBody, reqEditors ...RequestEditorFn) (*DismissImAdminGroupResponse, error)
 
 	// ListImAdminIdentitiesWithResponse request
 	ListImAdminIdentitiesWithResponse(ctx context.Context, params *ListImAdminIdentitiesParams, reqEditors ...RequestEditorFn) (*ListImAdminIdentitiesResponse, error)
@@ -12640,9 +12669,17 @@ func (c *ClientWithResponses) GetImAdminGroupWithResponse(ctx context.Context, g
 	return ParseGetImAdminGroupResponse(rsp)
 }
 
-// DismissImAdminGroupWithResponse request returning *DismissImAdminGroupResponse
-func (c *ClientWithResponses) DismissImAdminGroupWithResponse(ctx context.Context, groupId GroupId, reqEditors ...RequestEditorFn) (*DismissImAdminGroupResponse, error) {
-	rsp, err := c.DismissImAdminGroup(ctx, groupId, reqEditors...)
+// DismissImAdminGroupWithBodyWithResponse request with arbitrary body returning *DismissImAdminGroupResponse
+func (c *ClientWithResponses) DismissImAdminGroupWithBodyWithResponse(ctx context.Context, groupId GroupId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DismissImAdminGroupResponse, error) {
+	rsp, err := c.DismissImAdminGroupWithBody(ctx, groupId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDismissImAdminGroupResponse(rsp)
+}
+
+func (c *ClientWithResponses) DismissImAdminGroupWithResponse(ctx context.Context, groupId GroupId, body DismissImAdminGroupJSONRequestBody, reqEditors ...RequestEditorFn) (*DismissImAdminGroupResponse, error) {
+	rsp, err := c.DismissImAdminGroup(ctx, groupId, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}

@@ -97,6 +97,46 @@ func (_u *IMGroupUpdate) SetUpdatedAt(v time.Time) *IMGroupUpdate {
 	return _u
 }
 
+// SetDismissedBy sets the "dismissed_by" field.
+func (_u *IMGroupUpdate) SetDismissedBy(v string) *IMGroupUpdate {
+	_u.mutation.SetDismissedBy(v)
+	return _u
+}
+
+// SetNillableDismissedBy sets the "dismissed_by" field if the given value is not nil.
+func (_u *IMGroupUpdate) SetNillableDismissedBy(v *string) *IMGroupUpdate {
+	if v != nil {
+		_u.SetDismissedBy(*v)
+	}
+	return _u
+}
+
+// ClearDismissedBy clears the value of the "dismissed_by" field.
+func (_u *IMGroupUpdate) ClearDismissedBy() *IMGroupUpdate {
+	_u.mutation.ClearDismissedBy()
+	return _u
+}
+
+// SetDismissReason sets the "dismiss_reason" field.
+func (_u *IMGroupUpdate) SetDismissReason(v string) *IMGroupUpdate {
+	_u.mutation.SetDismissReason(v)
+	return _u
+}
+
+// SetNillableDismissReason sets the "dismiss_reason" field if the given value is not nil.
+func (_u *IMGroupUpdate) SetNillableDismissReason(v *string) *IMGroupUpdate {
+	if v != nil {
+		_u.SetDismissReason(*v)
+	}
+	return _u
+}
+
+// ClearDismissReason clears the value of the "dismiss_reason" field.
+func (_u *IMGroupUpdate) ClearDismissReason() *IMGroupUpdate {
+	_u.mutation.ClearDismissReason()
+	return _u
+}
+
 // Mutation returns the IMGroupMutation object of the builder.
 func (_u *IMGroupUpdate) Mutation() *IMGroupMutation {
 	return _u.mutation
@@ -155,6 +195,16 @@ func (_u *IMGroupUpdate) check() error {
 			return &ValidationError{Name: "state", err: fmt.Errorf(`ent: validator failed for field "IMGroup.state": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.DismissedBy(); ok {
+		if err := imgroup.DismissedByValidator(v); err != nil {
+			return &ValidationError{Name: "dismissed_by", err: fmt.Errorf(`ent: validator failed for field "IMGroup.dismissed_by": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.DismissReason(); ok {
+		if err := imgroup.DismissReasonValidator(v); err != nil {
+			return &ValidationError{Name: "dismiss_reason", err: fmt.Errorf(`ent: validator failed for field "IMGroup.dismiss_reason": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -187,6 +237,18 @@ func (_u *IMGroupUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.UpdatedAt(); ok {
 		_spec.SetField(imgroup.FieldUpdatedAt, field.TypeTime, value)
+	}
+	if value, ok := _u.mutation.DismissedBy(); ok {
+		_spec.SetField(imgroup.FieldDismissedBy, field.TypeString, value)
+	}
+	if _u.mutation.DismissedByCleared() {
+		_spec.ClearField(imgroup.FieldDismissedBy, field.TypeString)
+	}
+	if value, ok := _u.mutation.DismissReason(); ok {
+		_spec.SetField(imgroup.FieldDismissReason, field.TypeString, value)
+	}
+	if _u.mutation.DismissReasonCleared() {
+		_spec.ClearField(imgroup.FieldDismissReason, field.TypeString)
 	}
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
@@ -277,6 +339,46 @@ func (_u *IMGroupUpdateOne) SetUpdatedAt(v time.Time) *IMGroupUpdateOne {
 	return _u
 }
 
+// SetDismissedBy sets the "dismissed_by" field.
+func (_u *IMGroupUpdateOne) SetDismissedBy(v string) *IMGroupUpdateOne {
+	_u.mutation.SetDismissedBy(v)
+	return _u
+}
+
+// SetNillableDismissedBy sets the "dismissed_by" field if the given value is not nil.
+func (_u *IMGroupUpdateOne) SetNillableDismissedBy(v *string) *IMGroupUpdateOne {
+	if v != nil {
+		_u.SetDismissedBy(*v)
+	}
+	return _u
+}
+
+// ClearDismissedBy clears the value of the "dismissed_by" field.
+func (_u *IMGroupUpdateOne) ClearDismissedBy() *IMGroupUpdateOne {
+	_u.mutation.ClearDismissedBy()
+	return _u
+}
+
+// SetDismissReason sets the "dismiss_reason" field.
+func (_u *IMGroupUpdateOne) SetDismissReason(v string) *IMGroupUpdateOne {
+	_u.mutation.SetDismissReason(v)
+	return _u
+}
+
+// SetNillableDismissReason sets the "dismiss_reason" field if the given value is not nil.
+func (_u *IMGroupUpdateOne) SetNillableDismissReason(v *string) *IMGroupUpdateOne {
+	if v != nil {
+		_u.SetDismissReason(*v)
+	}
+	return _u
+}
+
+// ClearDismissReason clears the value of the "dismiss_reason" field.
+func (_u *IMGroupUpdateOne) ClearDismissReason() *IMGroupUpdateOne {
+	_u.mutation.ClearDismissReason()
+	return _u
+}
+
 // Mutation returns the IMGroupMutation object of the builder.
 func (_u *IMGroupUpdateOne) Mutation() *IMGroupMutation {
 	return _u.mutation
@@ -348,6 +450,16 @@ func (_u *IMGroupUpdateOne) check() error {
 			return &ValidationError{Name: "state", err: fmt.Errorf(`ent: validator failed for field "IMGroup.state": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.DismissedBy(); ok {
+		if err := imgroup.DismissedByValidator(v); err != nil {
+			return &ValidationError{Name: "dismissed_by", err: fmt.Errorf(`ent: validator failed for field "IMGroup.dismissed_by": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.DismissReason(); ok {
+		if err := imgroup.DismissReasonValidator(v); err != nil {
+			return &ValidationError{Name: "dismiss_reason", err: fmt.Errorf(`ent: validator failed for field "IMGroup.dismiss_reason": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -397,6 +509,18 @@ func (_u *IMGroupUpdateOne) sqlSave(ctx context.Context) (_node *IMGroup, err er
 	}
 	if value, ok := _u.mutation.UpdatedAt(); ok {
 		_spec.SetField(imgroup.FieldUpdatedAt, field.TypeTime, value)
+	}
+	if value, ok := _u.mutation.DismissedBy(); ok {
+		_spec.SetField(imgroup.FieldDismissedBy, field.TypeString, value)
+	}
+	if _u.mutation.DismissedByCleared() {
+		_spec.ClearField(imgroup.FieldDismissedBy, field.TypeString)
+	}
+	if value, ok := _u.mutation.DismissReason(); ok {
+		_spec.SetField(imgroup.FieldDismissReason, field.TypeString, value)
+	}
+	if _u.mutation.DismissReasonCleared() {
+		_spec.ClearField(imgroup.FieldDismissReason, field.TypeString)
 	}
 	_node = &IMGroup{config: _u.config}
 	_spec.Assign = _node.assignValues

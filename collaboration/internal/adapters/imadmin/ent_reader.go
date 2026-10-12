@@ -432,6 +432,7 @@ func (r *EntReader) groups(ctx context.Context, rows []*ent.IMGroup) ([]imadmin.
 			ID: row.ID, TencentGroupID: row.TencentGroupID, Name: row.Name,
 			OwnerAccountID: row.OwnerAccountID, OwnerLightVelaUserID: subjects[row.OwnerAccountID],
 			CreatedByUserID: row.CreatedByImUserID, ReplyMode: row.ReplyMode, State: row.State,
+			DismissedBy: deref(row.DismissedBy), DismissReason: deref(row.DismissReason),
 			MemberCount: counts[row.ID], CreatedAt: row.CreatedAt,
 		})
 	}
@@ -485,6 +486,13 @@ func (r *EntReader) AccountSubject(ctx context.Context, accountID string) (strin
 		return "", err
 	}
 	return login.NormalizedLogin, nil
+}
+
+func deref(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 // humanName 用 LightVela 用户 ID（usr_）标识人类：本地账号的显示名只是占位，运营需要能定位到具体的人。

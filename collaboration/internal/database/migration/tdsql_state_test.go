@@ -19,7 +19,7 @@ func TestTDSQLRuntimeExpectation包含冻结Baseline和增量迁移(t *testing.T
 	if err != nil {
 		t.Fatalf("tdsqlRuntimeExpectationFromDir() error = %v", err)
 	}
-	if len(runtime.Migrations) != 11 ||
+	if len(runtime.Migrations) != 12 ||
 		runtime.Migrations[0].Version != "20260801000000" ||
 		runtime.Migrations[0].Hash != "EVq8iLGKqGF4ak8nxCZL94xTu4j4VAZWpwG3q0+m/Xk=" ||
 		runtime.Migrations[1].Version != "20260802100000" ||
@@ -32,6 +32,7 @@ func TestTDSQLRuntimeExpectation包含冻结Baseline和增量迁移(t *testing.T
 		runtime.Migrations[8].Version != "20260914141219" ||
 		runtime.Migrations[9].Version != "20260917040000" ||
 		runtime.Migrations[10].Version != "20261012070306" ||
+		runtime.Migrations[11].Version != "20261012120000" ||
 		len(runtime.UserTables) != 32 {
 		t.Fatalf("runtime expectation = %#v", runtime)
 	}
@@ -52,7 +53,7 @@ func TestMySQLRuntimeExpectation匹配发布链且不包含物理分片(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(runtime.Migrations) != 11 || len(runtime.UserTables) != 32 {
+	if len(runtime.Migrations) != 12 || len(runtime.UserTables) != 32 {
 		t.Fatalf("runtime=%#v", runtime)
 	}
 	if runtime.Migrations[0].Total != 25 {

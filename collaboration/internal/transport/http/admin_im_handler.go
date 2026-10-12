@@ -19,7 +19,7 @@ type ImAdminService interface {
 	ListGroups(ctx context.Context, query, state string, limit, offset int) ([]imadmin.Group, int, error)
 	Group(context.Context, string) (imadmin.Group, []imadmin.Member, error)
 	Restrict(ctx context.Context, userID string, restricted bool) (imadmin.Identity, error)
-	DismissGroup(context.Context, string) error
+	DismissGroup(ctx context.Context, groupID, reason string) error
 	DisableBot(ctx context.Context, accountID, botAgentID string) error
 	CheckTencent(context.Context) (imadmin.Check, error)
 }
@@ -175,7 +175,10 @@ func (h *BotIMHandler) DismissImAdminGroup(
 	if err := h.requireAdmin(ctx); err != nil {
 		return nil, err
 	}
-	if err := h.admin.DismissGroup(ctx, request.GroupId.String()); err != nil {
+	if request.Body == nil {
+		return nil, apperror.New("invalid_request", "请填写解散原因", nil)
+	}
+	if err := h.admin.DismissGroup(ctx, request.GroupId.String(), request.Body.Reason); err != nil {
 		return nil, err
 	}
 	return openapi.DismissImAdminGroup204Response{}, nil
@@ -233,6 +236,7 @@ func imAdminGroupDTO(group imadmin.Group) (openapi.ImAdminGroup, error) {
 		Id: id, TencentGroupId: group.TencentGroupID, Name: group.Name, OwnerAccountId: group.OwnerAccountID,
 		OwnerLightvelaUserId: optional(group.OwnerLightVelaUserID), CreatedByUserId: group.CreatedByUserID,
 		ReplyMode: openapi.GroupReplyMode(group.ReplyMode), State: openapi.ImAdminGroupState(group.State),
+		DismissedBy: dismissedBy(group.DismissedBy), DismissReason: optional(group.DismissReason),
 		MemberCount: group.MemberCount, CreatedAt: optionalTime(group.CreatedAt),
 	}, nil
 }

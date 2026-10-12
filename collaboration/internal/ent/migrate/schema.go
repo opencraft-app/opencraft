@@ -646,6 +646,8 @@ var (
 		{Name: "revision", Type: field.TypeInt64},
 		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"mysql": "datetime(3)", "sqlite3": "datetime"}},
 		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"mysql": "datetime(3)", "sqlite3": "datetime"}},
+		{Name: "dismissed_by", Type: field.TypeString, Nullable: true, Size: 16},
+		{Name: "dismiss_reason", Type: field.TypeString, Nullable: true, Size: 200},
 	}
 	// ImGroupsTable holds the schema information for the "im_groups" table.
 	ImGroupsTable = &schema.Table{

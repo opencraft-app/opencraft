@@ -6,7 +6,10 @@ import {
   bundleOf,
   groupInviteLink,
   describeMessage,
+  groupDismissal,
+  imErrorCode,
   isAgentID,
+  isGroupGoneError,
   mergeMessages,
   messageAbstract,
   parseIDs,
@@ -171,5 +174,23 @@ describe("vela-im model", () => {
     const link = groupInviteLink("https://lightvela.com", "a.b/c+d");
     expect(link).toBe("https://lightvela.com/agents/chat?imInvite=a.b%2Fc%2Bd");
     expect(new URL(link).searchParams.get("imInvite")).toBe("a.b/c+d");
+  });
+});
+
+describe("dismissed groups", () => {
+  it("reads the Tencent error code from the error or from its message text", () => {
+    expect(imErrorCode({ code: 10010, message: "x" })).toBe(10010);
+    const wrapped = new Error('Unknown failed. error: {"message": "群组不存在，或者曾经存在过，但是目前已经被解散。", "code": 10010} type:TIMTextElem');
+    expect(imErrorCode(wrapped)).toBe(10010);
+    expect(isGroupGoneError(wrapped)).toBe(true);
+    expect(isGroupGoneError({ code: 20003, message: "other" })).toBe(false);
+    expect(imErrorCode("network down")).toBeNull();
+  });
+
+  it("describes who dismissed the group and why", () => {
+    const group = { state: "dismissed", dismissedBy: "admin", dismissReason: " 违反社区规范 " } as Parameters<typeof groupDismissal>[0];
+    expect(groupDismissal(group)).toEqual({ by: "admin", reason: "违反社区规范" });
+    expect(groupDismissal({ state: "active" } as Parameters<typeof groupDismissal>[0])).toBeNull();
+    expect(groupDismissal(null)).toBeNull();
   });
 });

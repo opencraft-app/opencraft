@@ -568,7 +568,21 @@ func TestBotIMAPIMultiPersonGroupsAndAdminOperations(t *testing.T) {
 	if status != http.StatusOK || check["checked"] != float64(5) || len(check["mismatches"].([]any)) != 0 {
 		t.Fatalf("tencent check = %d %#v", status, check)
 	}
-	if status, body := fixture.admin(http.MethodPost, "/v1/admin/im/groups/"+groupID+"/dismiss", nil); status != http.StatusNoContent || len(fixture.tencent.destroys) != 1 {
+	dismissPath := "/v1/admin/im/groups/" + groupID + "/dismiss"
+	if status, body := fixture.admin(http.MethodPost, dismissPath, map[string]any{"reason": "  "}); status != http.StatusBadRequest ||
+		len(fixture.tencent.destroys) != 0 {
+		t.Fatalf("dismiss without a reason = %d %#v", status, body)
+	}
+	if status, body := fixture.admin(http.MethodPost, dismissPath, map[string]any{"reason": "违反社区规范"}); status != http.StatusNoContent ||
+		len(fixture.tencent.destroys) != 1 {
 		t.Fatalf("dismiss = %d %#v", status, body)
+	}
+	if status, group := fixture.other(http.MethodGet, "/v1/me/groups/"+groupID, nil); status != http.StatusOK || group["state"] != "dismissed" ||
+		group["dismissedBy"] != "admin" || group["dismissReason"] != "违反社区规范" {
+		t.Fatalf("member sees the dismissal = %d %#v", status, group)
+	}
+	if status, detail := fixture.admin(http.MethodGet, "/v1/admin/im/groups/"+groupID, nil); status != http.StatusOK ||
+		detail["group"].(map[string]any)["dismissReason"] != "违反社区规范" {
+		t.Fatalf("admin sees the dismissal = %d %#v", status, detail)
 	}
 }

@@ -35,6 +35,8 @@ export interface ImAdminGroup {
   createdByUserId: string;
   replyMode: "mention" | "mention_context" | "all";
   state: "provisioning" | "active" | "dismissed";
+  dismissedBy?: "owner" | "admin" | "tencent" | null;
+  dismissReason?: string | null;
   memberCount: number;
   createdAt?: string;
 }
@@ -122,9 +124,11 @@ export function useRestrictImIdentity() {
     apiClient<ImAdminIdentity>(`collaboration/identities/${encodeURIComponent(userId)}/${restricted ? "restrict" : "release"}`, { method: "POST" }));
 }
 
+export const IM_DISMISS_REASON_MAX = 200;
+
 export function useDismissImGroup() {
-  return useImAdminMutation((groupId: string) =>
-    apiClient<void>(`collaboration/groups/${encodeURIComponent(groupId)}/dismiss`, { method: "POST" }));
+  return useImAdminMutation(({ groupId, reason }: { groupId: string; reason: string }) =>
+    apiClient<void>(`collaboration/groups/${encodeURIComponent(groupId)}/dismiss`, { method: "POST", body: { reason } }));
 }
 
 export function useDisableImBot() {

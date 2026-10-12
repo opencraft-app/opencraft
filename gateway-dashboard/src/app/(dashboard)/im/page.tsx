@@ -8,12 +8,15 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { PageHeader } from "@/components/shared/page-header";
 import {
   IM_ADMIN_PAGE_SIZE,
+  IM_DISMISS_REASON_MAX,
   type ImAdminGroup,
   type ImAdminIdentity,
   imAdminErrorMessage,
@@ -29,6 +32,13 @@ import {
 import { formatDateTime, formatNumber } from "@/lib/utils";
 
 const REPLY_MODE: Record<string, string> = { mention: "@ 时回复", mention_context: "@ 时回复并参考上下文", all: "每条都回复" };
+
+const DISMISSED_BY: Record<string, string> = { admin: "管理员解散", owner: "群主解散", tencent: "在腾讯侧被解散" };
+
+const dismissalText = (group: ImAdminGroup) => {
+  const by = DISMISSED_BY[group.dismissedBy ?? ""] ?? "已解散";
+  return group.dismissReason ? `${by}：${group.dismissReason}` : by;
+};
 
 type PendingAction =
   | { kind: "restrict"; identity: ImAdminIdentity }
@@ -233,7 +243,10 @@ function GroupsTab({ onAction }: { onAction: (action: PendingAction) => void }) 
                 <TableCell className="font-mono text-xs">{group.ownerLightvelaUserId ?? group.ownerAccountId}</TableCell>
                 <TableCell>{group.memberCount}</TableCell>
                 <TableCell className="text-xs">{REPLY_MODE[group.replyMode] ?? group.replyMode}</TableCell>
-                <TableCell><Badge variant={group.state === "active" ? "default" : "secondary"}>{group.state}</Badge></TableCell>
+                <TableCell className="max-w-64">
+                  <Badge variant={group.state === "active" ? "default" : "secondary"}>{group.state}</Badge>
+                  {group.state === "dismissed" ? <div className="mt-1 text-xs whitespace-pre-wrap break-words text-muted-foreground">{dismissalText(group)}</div> : null}
+                </TableCell>
                 <TableCell className="text-xs">{group.createdAt ? formatDateTime(group.createdAt) : "—"}</TableCell>
                 <TableCell className="space-x-1 text-right">
                   <Button size="sm" variant="outline" onClick={() => setOpenGroup(group.id)}><Users className="size-4" />成员</Button>
@@ -255,6 +268,7 @@ function GroupsTab({ onAction }: { onAction: (action: PendingAction) => void }) 
           <DialogHeader>
             <DialogTitle>{detail.data?.group.name ?? "群成员"}</DialogTitle>
             <DialogDescription>{detail.data ? `${detail.data.group.tencentGroupId} · ${REPLY_MODE[detail.data.group.replyMode] ?? ""}` : "加载中…"}</DialogDescription>
+            {detail.data?.group.state === "dismissed" ? <p className="text-sm whitespace-pre-wrap break-words text-muted-foreground">{dismissalText(detail.data.group)}</p> : null}
           </DialogHeader>
           {detail.error ? <p className="text-sm text-destructive">{imAdminErrorMessage(detail.error)}</p> : null}
           <Table>
@@ -279,6 +293,7 @@ function GroupsTab({ onAction }: { onAction: (action: PendingAction) => void }) 
 
 export default function ImAdminPage() {
   const [action, setAction] = useState<PendingAction | null>(null);
+  const [reason, setReason] = useState("");
   const restrict = useRestrictImIdentity();
   const disable = useDisableImBot();
   const dismiss = useDismissImGroup();
@@ -288,12 +303,12 @@ export default function ImAdminPage() {
     if (!action) return;
     if (action.kind === "restrict") restrict.mutate({ userId: action.identity.userId, restricted: true }, done("已限制，并已使其登录态失效"));
     if (action.kind === "disable") disable.mutate({ accountId: action.identity.accountId!, botAgentId: action.identity.botAgentId! }, done("已停用 Bot 的 IM 身份"));
-    if (action.kind === "dismiss") dismiss.mutate(action.group.id, done("已解散"));
+    if (action.kind === "dismiss") dismiss.mutate({ groupId: action.group.id, reason: reason.trim() }, done("已解散"));
   };
   const copy = action === null ? null
     : action.kind === "restrict" ? { title: `限制 ${action.identity.displayName}？`, description: "立即使其腾讯 IM 登录态失效，并不再签发新的登录凭证；可随时解除。", label: "限制" }
       : action.kind === "disable" ? { title: `停用 Bot「${action.identity.displayName}」的 IM 身份？`, description: "与用户删除相同：下线、删除腾讯账号、吊销实例上的凭据。用户之后可以重新开通。", label: "停用" }
-        : { title: `解散群「${action.group.name}」？`, description: "腾讯群会被解散，所有成员都会失去这个群，聊天记录不再可见。", label: "解散" };
+        : { title: `解散群「${action.group.name}」？`, description: "腾讯群会被解散，成员无法再发消息。请填写原因，群成员会在聊天页看到它。", label: "解散" };
   return (
     <div className="space-y-6">
       <PageHeader title="IM 群聊" description="LightVela 人机群聊的账号、Bot 与平台群运营" />
@@ -308,8 +323,18 @@ export default function ImAdminPage() {
         <TabsContent value="groups" className="mt-4"><GroupsTab onAction={setAction} /></TabsContent>
       </Tabs>
       {copy ? (
-        <ConfirmDialog open={!!action} onOpenChange={(open) => { if (!open) setAction(null); }} title={copy.title} description={copy.description}
-          confirmLabel={copy.label} variant="destructive" onConfirm={confirm} loading={loading} />
+        <ConfirmDialog open={!!action} onOpenChange={(open) => { if (!open) { setAction(null); setReason(""); } }} title={copy.title} description={copy.description}
+          confirmLabel={copy.label} variant="destructive" onConfirm={confirm} loading={loading}
+          confirmDisabled={action?.kind === "dismiss" && !reason.trim()}>
+          {action?.kind === "dismiss" ? (
+            <div className="space-y-1.5">
+              <Label htmlFor="im-dismiss-reason">解散原因（必填，展示给群成员）</Label>
+              <Textarea id="im-dismiss-reason" value={reason} maxLength={IM_DISMISS_REASON_MAX} placeholder="例如：群内容违反社区规范"
+                onChange={(e) => setReason(e.target.value)} />
+              <p className="text-right text-xs text-muted-foreground">{reason.trim().length}/{IM_DISMISS_REASON_MAX}</p>
+            </div>
+          ) : null}
+        </ConfirmDialog>
       ) : null}
     </div>
   );

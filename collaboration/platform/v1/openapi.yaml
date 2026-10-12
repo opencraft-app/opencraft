@@ -2702,9 +2702,14 @@ paths:
       tags: [Admin]
       operationId: dismissImAdminGroup
       summary: 解散平台群
-      description: 解散腾讯群并把平台群标记为 dismissed；重复调用是幂等的。
+      description: 解散腾讯群并把平台群标记为 dismissed；原因必填并展示给群成员。重复调用是幂等的，不会改写第一次的原因。
       security:
         - AdminBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DismissImAdminGroupRequest'}
       responses:
         '204':
           description: 已解散
@@ -3119,6 +3124,14 @@ components:
           maxItems: 200
           items: {$ref: '#/components/schemas/ImGroupMember'}
         viewerRole: {type: string, enum: [owner, admin, member]}
+        dismissedBy: {$ref: '#/components/schemas/ImGroupDismissedBy'}
+        dismissReason: {type: string, nullable: true, maxLength: 200, description: 管理员解散时填写的原因}
+
+    ImGroupDismissedBy:
+      type: string
+      nullable: true
+      enum: [owner, admin, tencent]
+      description: 解散后才有值：群主、管理后台，或在腾讯侧被解散。
 
     CreateImGroupRequest:
       type: object
@@ -3152,6 +3165,13 @@ components:
       required: [token]
       properties:
         token: {type: string, minLength: 16, maxLength: 1024, x-sensitive: true}
+
+    DismissImAdminGroupRequest:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason: {type: string, minLength: 1, maxLength: 200, description: 解散原因，会展示给群成员}
 
     ImAdminBotCounts:
       type: object
@@ -3221,6 +3241,8 @@ components:
         createdByUserId: {type: string}
         replyMode: {$ref: '#/components/schemas/GroupReplyMode'}
         state: {type: string, enum: [provisioning, active, dismissed]}
+        dismissedBy: {$ref: '#/components/schemas/ImGroupDismissedBy'}
+        dismissReason: {type: string, nullable: true, maxLength: 200}
         memberCount: {type: integer, minimum: 0}
         createdAt: {allOf: [{$ref: '#/components/schemas/Timestamp'}], nullable: true}
 

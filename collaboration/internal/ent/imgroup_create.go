@@ -90,6 +90,34 @@ func (_c *IMGroupCreate) SetNillableUpdatedAt(v *time.Time) *IMGroupCreate {
 	return _c
 }
 
+// SetDismissedBy sets the "dismissed_by" field.
+func (_c *IMGroupCreate) SetDismissedBy(v string) *IMGroupCreate {
+	_c.mutation.SetDismissedBy(v)
+	return _c
+}
+
+// SetNillableDismissedBy sets the "dismissed_by" field if the given value is not nil.
+func (_c *IMGroupCreate) SetNillableDismissedBy(v *string) *IMGroupCreate {
+	if v != nil {
+		_c.SetDismissedBy(*v)
+	}
+	return _c
+}
+
+// SetDismissReason sets the "dismiss_reason" field.
+func (_c *IMGroupCreate) SetDismissReason(v string) *IMGroupCreate {
+	_c.mutation.SetDismissReason(v)
+	return _c
+}
+
+// SetNillableDismissReason sets the "dismiss_reason" field if the given value is not nil.
+func (_c *IMGroupCreate) SetNillableDismissReason(v *string) *IMGroupCreate {
+	if v != nil {
+		_c.SetDismissReason(*v)
+	}
+	return _c
+}
+
 // SetID sets the "id" field.
 func (_c *IMGroupCreate) SetID(v string) *IMGroupCreate {
 	_c.mutation.SetID(v)
@@ -207,6 +235,16 @@ func (_c *IMGroupCreate) check() error {
 	if _, ok := _c.mutation.UpdatedAt(); !ok {
 		return &ValidationError{Name: "updated_at", err: errors.New(`ent: missing required field "IMGroup.updated_at"`)}
 	}
+	if v, ok := _c.mutation.DismissedBy(); ok {
+		if err := imgroup.DismissedByValidator(v); err != nil {
+			return &ValidationError{Name: "dismissed_by", err: fmt.Errorf(`ent: validator failed for field "IMGroup.dismissed_by": %w`, err)}
+		}
+	}
+	if v, ok := _c.mutation.DismissReason(); ok {
+		if err := imgroup.DismissReasonValidator(v); err != nil {
+			return &ValidationError{Name: "dismiss_reason", err: fmt.Errorf(`ent: validator failed for field "IMGroup.dismiss_reason": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -277,6 +315,14 @@ func (_c *IMGroupCreate) createSpec() (*IMGroup, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.UpdatedAt(); ok {
 		_spec.SetField(imgroup.FieldUpdatedAt, field.TypeTime, value)
 		_node.UpdatedAt = value
+	}
+	if value, ok := _c.mutation.DismissedBy(); ok {
+		_spec.SetField(imgroup.FieldDismissedBy, field.TypeString, value)
+		_node.DismissedBy = &value
+	}
+	if value, ok := _c.mutation.DismissReason(); ok {
+		_spec.SetField(imgroup.FieldDismissReason, field.TypeString, value)
+		_node.DismissReason = &value
 	}
 	return _node, _spec
 }

@@ -109,6 +109,16 @@ func UpdatedAt(v time.Time) predicate.IMGroup {
 	return predicate.IMGroup(sql.FieldEQ(FieldUpdatedAt, v))
 }
 
+// DismissedBy applies equality check predicate on the "dismissed_by" field. It's identical to DismissedByEQ.
+func DismissedBy(v string) predicate.IMGroup {
+	return predicate.IMGroup(sql.FieldEQ(FieldDismissedBy, v))
+}
+
+// DismissReason applies equality check predicate on the "dismiss_reason" field. It's identical to DismissReasonEQ.
+func DismissReason(v string) predicate.IMGroup {
+	return predicate.IMGroup(sql.FieldEQ(FieldDismissReason, v))
+}
+
 // TencentGroupIDEQ applies the EQ predicate on the "tencent_group_id" field.
 func TencentGroupIDEQ(v string) predicate.IMGroup {
 	return predicate.IMGroup(sql.FieldEQ(FieldTencentGroupID, v))
@@ -617,6 +627,156 @@ func UpdatedAtLT(v time.Time) predicate.IMGroup {
 // UpdatedAtLTE applies the LTE predicate on the "updated_at" field.
 func UpdatedAtLTE(v time.Time) predicate.IMGroup {
 	return predicate.IMGroup(sql.FieldLTE(FieldUpdatedAt, v))
+}
+
+// DismissedByEQ applies the EQ predicate on the "dismissed_by" field.
+func DismissedByEQ(v string) predicate.IMGroup {
+	return predicate.IMGroup(sql.FieldEQ(FieldDismissedBy, v))
+}
+
+// DismissedByNEQ applies the NEQ predicate on the "dismissed_by" field.
+func DismissedByNEQ(v string) predicate.IMGroup {
+	return predicate.IMGroup(sql.FieldNEQ(FieldDismissedBy, v))
+}
+
+// DismissedByIn applies the In predicate on the "dismissed_by" field.
+func DismissedByIn(vs ...string) predicate.IMGroup {
+	return predicate.IMGroup(sql.FieldIn(FieldDismissedBy, vs...))
+}
+
+// DismissedByNotIn applies the NotIn predicate on the "dismissed_by" field.
+func DismissedByNotIn(vs ...string) predicate.IMGroup {
+	return predicate.IMGroup(sql.FieldNotIn(FieldDismissedBy, vs...))
+}
+
+// DismissedByGT applies the GT predicate on the "dismissed_by" field.
+func DismissedByGT(v string) predicate.IMGroup {
+	return predicate.IMGroup(sql.FieldGT(FieldDismissedBy, v))
+}
+
+// DismissedByGTE applies the GTE predicate on the "dismissed_by" field.
+func DismissedByGTE(v string) predicate.IMGroup {
+	return predicate.IMGroup(sql.FieldGTE(FieldDismissedBy, v))
+}
+
+// DismissedByLT applies the LT predicate on the "dismissed_by" field.
+func DismissedByLT(v string) predicate.IMGroup {
+	return predicate.IMGroup(sql.FieldLT(FieldDismissedBy, v))
+}
+
+// DismissedByLTE applies the LTE predicate on the "dismissed_by" field.
+func DismissedByLTE(v string) predicate.IMGroup {
+	return predicate.IMGroup(sql.FieldLTE(FieldDismissedBy, v))
+}
+
+// DismissedByContains applies the Contains predicate on the "dismissed_by" field.
+func DismissedByContains(v string) predicate.IMGroup {
+	return predicate.IMGroup(sql.FieldContains(FieldDismissedBy, v))
+}
+
+// DismissedByHasPrefix applies the HasPrefix predicate on the "dismissed_by" field.
+func DismissedByHasPrefix(v string) predicate.IMGroup {
+	return predicate.IMGroup(sql.FieldHasPrefix(FieldDismissedBy, v))
+}
+
+// DismissedByHasSuffix applies the HasSuffix predicate on the "dismissed_by" field.
+func DismissedByHasSuffix(v string) predicate.IMGroup {
+	return predicate.IMGroup(sql.FieldHasSuffix(FieldDismissedBy, v))
+}
+
+// DismissedByIsNil applies the IsNil predicate on the "dismissed_by" field.
+func DismissedByIsNil() predicate.IMGroup {
+	return predicate.IMGroup(sql.FieldIsNull(FieldDismissedBy))
+}
+
+// DismissedByNotNil applies the NotNil predicate on the "dismissed_by" field.
+func DismissedByNotNil() predicate.IMGroup {
+	return predicate.IMGroup(sql.FieldNotNull(FieldDismissedBy))
+}
+
+// DismissedByEqualFold applies the EqualFold predicate on the "dismissed_by" field.
+func DismissedByEqualFold(v string) predicate.IMGroup {
+	return predicate.IMGroup(sql.FieldEqualFold(FieldDismissedBy, v))
+}
+
+// DismissedByContainsFold applies the ContainsFold predicate on the "dismissed_by" field.
+func DismissedByContainsFold(v string) predicate.IMGroup {
+	return predicate.IMGroup(sql.FieldContainsFold(FieldDismissedBy, v))
+}
+
+// DismissReasonEQ applies the EQ predicate on the "dismiss_reason" field.
+func DismissReasonEQ(v string) predicate.IMGroup {
+	return predicate.IMGroup(sql.FieldEQ(FieldDismissReason, v))
+}
+
+// DismissReasonNEQ applies the NEQ predicate on the "dismiss_reason" field.
+func DismissReasonNEQ(v string) predicate.IMGroup {
+	return predicate.IMGroup(sql.FieldNEQ(FieldDismissReason, v))
+}
+
+// DismissReasonIn applies the In predicate on the "dismiss_reason" field.
+func DismissReasonIn(vs ...string) predicate.IMGroup {
+	return predicate.IMGroup(sql.FieldIn(FieldDismissReason, vs...))
+}
+
+// DismissReasonNotIn applies the NotIn predicate on the "dismiss_reason" field.
+func DismissReasonNotIn(vs ...string) predicate.IMGroup {
+	return predicate.IMGroup(sql.FieldNotIn(FieldDismissReason, vs...))
+}
+
+// DismissReasonGT applies the GT predicate on the "dismiss_reason" field.
+func DismissReasonGT(v string) predicate.IMGroup {
+	return predicate.IMGroup(sql.FieldGT(FieldDismissReason, v))
+}
+
+// DismissReasonGTE applies the GTE predicate on the "dismiss_reason" field.
+func DismissReasonGTE(v string) predicate.IMGroup {
+	return predicate.IMGroup(sql.FieldGTE(FieldDismissReason, v))
+}
+
+// DismissReasonLT applies the LT predicate on the "dismiss_reason" field.
+func DismissReasonLT(v string) predicate.IMGroup {
+	return predicate.IMGroup(sql.FieldLT(FieldDismissReason, v))
+}
+
+// DismissReasonLTE applies the LTE predicate on the "dismiss_reason" field.
+func DismissReasonLTE(v string) predicate.IMGroup {
+	return predicate.IMGroup(sql.FieldLTE(FieldDismissReason, v))
+}
+
+// DismissReasonContains applies the Contains predicate on the "dismiss_reason" field.
+func DismissReasonContains(v string) predicate.IMGroup {
+	return predicate.IMGroup(sql.FieldContains(FieldDismissReason, v))
+}
+
+// DismissReasonHasPrefix applies the HasPrefix predicate on the "dismiss_reason" field.
+func DismissReasonHasPrefix(v string) predicate.IMGroup {
+	return predicate.IMGroup(sql.FieldHasPrefix(FieldDismissReason, v))
+}
+
+// DismissReasonHasSuffix applies the HasSuffix predicate on the "dismiss_reason" field.
+func DismissReasonHasSuffix(v string) predicate.IMGroup {
+	return predicate.IMGroup(sql.FieldHasSuffix(FieldDismissReason, v))
+}
+
+// DismissReasonIsNil applies the IsNil predicate on the "dismiss_reason" field.
+func DismissReasonIsNil() predicate.IMGroup {
+	return predicate.IMGroup(sql.FieldIsNull(FieldDismissReason))
+}
+
+// DismissReasonNotNil applies the NotNil predicate on the "dismiss_reason" field.
+func DismissReasonNotNil() predicate.IMGroup {
+	return predicate.IMGroup(sql.FieldNotNull(FieldDismissReason))
+}
+
+// DismissReasonEqualFold applies the EqualFold predicate on the "dismiss_reason" field.
+func DismissReasonEqualFold(v string) predicate.IMGroup {
+	return predicate.IMGroup(sql.FieldEqualFold(FieldDismissReason, v))
+}
+
+// DismissReasonContainsFold applies the ContainsFold predicate on the "dismiss_reason" field.
+func DismissReasonContainsFold(v string) predicate.IMGroup {
+	return predicate.IMGroup(sql.FieldContainsFold(FieldDismissReason, v))
 }
 
 // And groups predicates with the AND operator between them.
