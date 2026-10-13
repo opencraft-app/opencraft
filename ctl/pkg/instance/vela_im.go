@@ -57,7 +57,9 @@ type velaIMPluginPackage struct {
 type VelaIMPluginResult struct {
 	InstanceID string `json:"instanceId"`
 	Status     string `json:"status,omitempty"`
-	Error      string `json:"error,omitempty"`
+	// Restarted 表示换上新版本后重启了 gateway，因为实例上已有 Agent 开通 IM。
+	Restarted bool   `json:"restarted,omitempty"`
+	Error     string `json:"error,omitempty"`
 }
 
 // VelaIMPluginBackfill 是一批存量实例的补装结果；Done 为 false 时用 NextAfterID 继续下一批。
@@ -180,6 +182,9 @@ func (l *logic) BackfillVelaIMPlugin(parent pctx.Context, afterID int64, limit i
 		ctx := pctx.NewContext(parent).WithUserID(entity.UserId)
 		status, err := l.InstallVelaIMPlugin(ctx, entity.InstanceId)
 		result := VelaIMPluginResult{InstanceID: entity.InstanceId, Status: status}
+		if err == nil && status == VelaIMPluginInstalled {
+			result.Restarted, err = l.restartVelaIMGatewayIfServing(ctx, entity.InstanceId)
+		}
 		if err != nil {
 			result.Error = err.Error()
 		}
@@ -218,10 +223,13 @@ func (l *logic) DeliverVelaIMBot(ctx pctx.Context, delivery VelaIMDelivery) erro
 		return err
 	}
 	// 新实例在第一个 Agent 加入 IM 时装上插件；已装同一版本时只是一次检查。
+	upgraded := false
 	if _, configured := configuredVelaIMPlugin(); configured {
-		if _, err := l.InstallVelaIMPlugin(ctx, delivery.InstanceID); err != nil {
+		status, err := l.InstallVelaIMPlugin(ctx, delivery.InstanceID)
+		if err != nil {
 			return err
 		}
+		upgraded = status == VelaIMPluginInstalled
 	}
 	payload, err := json.Marshal(map[string]any{
 		"credential": delivery.Credential,
@@ -246,8 +254,8 @@ func (l *logic) DeliverVelaIMBot(ctx pctx.Context, delivery VelaIMDelivery) erro
 	if result == nil || result.ExitCode != 0 {
 		return errcode.Wrap(errcode.ErrInstanceBotProfileFailed, "deliver vela-im failed")
 	}
-	if velaIMOutputHas(result.Stdout+"\n"+result.Output, velaIMPluginLinked) {
-		// 一个主机 gateway 服务所有 Profile，只在启动时加载各 Profile 的插件；重启单个 Profile 不会加载新链接的插件。
+	if upgraded || velaIMOutputHas(result.Stdout+"\n"+result.Output, velaIMPluginLinked) {
+		// 一个主机 gateway 服务所有 Profile，只在启动时加载各 Profile 的插件代码；重启单个 Profile 不会加载新链接或新版本的插件。
 		return l.restartVelaIMGateway(ctx, delivery.InstanceID, "")
 	}
 	return l.restartVelaIMGateway(ctx, delivery.InstanceID, bot.ProfileID)
@@ -285,6 +293,31 @@ func (l *logic) restartVelaIMGateway(ctx pctx.Context, instanceID, profileID str
 		return errcode.Wrap(errcode.ErrInstanceBotProfileFailed, "restart profile gateway failed")
 	}
 	return nil
+}
+
+// velaIMRestartIfServingCommand 在实例上有 Profile 已收到 Bot 凭据时重启主机 gateway，让它加载新版本插件。
+const velaIMRestartIfServingCommand = `set -eu
+home="${HERMES_HOME:-$HOME/.hermes}"
+served=
+for credential in "$home/plugin-data/vela-im/credential" "$home"/profiles/*/plugin-data/vela-im/credential; do
+  if [ -f "$credential" ]; then served=1; fi
+done
+if [ -n "$served" ]; then
+  acli gateway restart >/dev/null
+  echo ` + velaIMGatewayRestarted + `
+fi`
+
+const velaIMGatewayRestarted = "vela-im gateway restarted"
+
+func (l *logic) restartVelaIMGatewayIfServing(ctx pctx.Context, instanceID string) (bool, error) {
+	result, err := l.execHermesProfileCommand(ctx, instanceID, velaIMRestartIfServingCommand)
+	if err != nil {
+		return false, errcode.Wrap(errcode.ErrInstanceBotProfileFailed, "restart gateway for new vela-im plugin: %v", err)
+	}
+	if result == nil || result.ExitCode != 0 {
+		return false, errcode.Wrap(errcode.ErrInstanceBotProfileFailed, "restart gateway for new vela-im plugin failed")
+	}
+	return velaIMOutputHas(result.Stdout+"\n"+result.Output, velaIMGatewayRestarted), nil
 }
 
 // velaIMProfileDirFunction 与 Hermes Profile 布局一致：default 是 HERMES_HOME 根目录。

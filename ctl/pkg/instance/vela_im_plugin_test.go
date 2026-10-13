@@ -173,3 +173,41 @@ func TestDeliverVelaIMScriptLinksSharedPluginIntoProfile(t *testing.T) {
 		t.Fatalf("profile config must enable vela-im: %s %v", config, err)
 	}
 }
+
+func TestVelaIMRestartIfServingRestartsOnlyInstancesWithIMAgents(t *testing.T) {
+	home, bin := t.TempDir(), t.TempDir()
+	marker := filepath.Join(t.TempDir(), "restarted")
+	if err := os.WriteFile(filepath.Join(bin, "acli"), []byte("#!/bin/sh\necho \"$*\" >> "+marker+"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	run := func() string {
+		t.Helper()
+		command := exec.Command("bash", "-c", velaIMRestartIfServingCommand)
+		command.Env = append(os.Environ(), "HERMES_HOME="+home, "PATH="+bin+":"+os.Getenv("PATH"))
+		output, err := command.CombinedOutput()
+		if err != nil {
+			t.Fatalf("restart-if-serving: %v\n%s", err, output)
+		}
+		return string(output)
+	}
+
+	if output := run(); velaIMOutputHas(output, velaIMGatewayRestarted) {
+		t.Fatalf("no Agent has IM yet, gateway must keep running: %s", output)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("acli must not run without an IM Agent: %v", err)
+	}
+	data := filepath.Join(home, "profiles", "profile-2", "plugin-data", "vela-im")
+	if err := os.MkdirAll(data, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(data, "credential"), []byte("cred\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if output := run(); !velaIMOutputHas(output, velaIMGatewayRestarted) {
+		t.Fatalf("an IM Agent needs the new plugin loaded: %s", output)
+	}
+	if calls, _ := os.ReadFile(marker); strings.TrimSpace(string(calls)) != "gateway restart" {
+		t.Fatalf("acli calls = %q", calls)
+	}
+}
