@@ -1,7 +1,12 @@
-import { DatabaseSync } from "node:sqlite";
-import { chmodSync, mkdirSync } from "node:fs";
-import { dirname } from "node:path";
+import type { DatabaseSync } from "node:sqlite";
+import { openManagedDatabase, type DatabaseOutcome } from "@opencraft/sqlite-node";
 import { connectorDefinition, type ConnectorInstance } from "@opencraft/connector-core";
+
+const BASELINE = `
+CREATE TABLE connector_instances (id TEXT PRIMARY KEY, definition_id TEXT NOT NULL, title TEXT NOT NULL, revision INTEGER NOT NULL, enabled INTEGER NOT NULL, value TEXT NOT NULL, updated_at INTEGER NOT NULL) STRICT;
+CREATE TABLE connector_credentials (instance_id TEXT PRIMARY KEY REFERENCES connector_instances(id) ON DELETE CASCADE, secrets TEXT NOT NULL, oauth TEXT NOT NULL) STRICT;
+CREATE TABLE connector_oauth_transactions (id TEXT PRIMARY KEY, instance_id TEXT NOT NULL, revision INTEGER NOT NULL, state TEXT NOT NULL UNIQUE, expires_at INTEGER NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL) STRICT
+`.trim();
 
 export interface StoredConnection {
   id: string; definitionId: string; title: string; revision: number; enabled: boolean;
@@ -32,16 +37,15 @@ function strings(value: unknown): Record<string, string> {
 /** Host-private database only. Never return a StoredConnection from an RPC. */
 export class ConnectorDatabase {
   private readonly db: DatabaseSync;
+  readonly outcome: DatabaseOutcome;
   constructor(path: string) {
-    mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-    this.db = new DatabaseSync(path); chmodSync(path, 0o600);
-    this.db.exec(`PRAGMA journal_mode=WAL;
-      CREATE TABLE IF NOT EXISTS connector_instances (id TEXT PRIMARY KEY, definition_id TEXT NOT NULL, title TEXT NOT NULL, revision INTEGER NOT NULL, enabled INTEGER NOT NULL, value TEXT NOT NULL, updated_at INTEGER NOT NULL) STRICT;
-      CREATE TABLE IF NOT EXISTS connector_credentials (instance_id TEXT PRIMARY KEY REFERENCES connector_instances(id) ON DELETE CASCADE, secrets TEXT NOT NULL, oauth TEXT NOT NULL) STRICT;
-      CREATE TABLE IF NOT EXISTS connector_oauth_transactions (id TEXT PRIMARY KEY, instance_id TEXT NOT NULL, revision INTEGER NOT NULL, state TEXT NOT NULL UNIQUE, expires_at INTEGER NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL) STRICT;
-      PRAGMA foreign_keys=ON;`);
-    // A process restart has no surviving callback listener; never replay a pending login.
-    this.db.exec("UPDATE connector_oauth_transactions SET status='cancelled', data='{}' WHERE status='pending'");
+    const managed = openManagedDatabase({
+      path,
+      migrations: [{ version: 1, name: "managed-connectors", sql: BASELINE }],
+    });
+    this.db = managed.database;
+    this.outcome = managed.outcome;
+    this.db.exec("PRAGMA foreign_keys=ON; UPDATE connector_oauth_transactions SET status='cancelled', data='{}' WHERE status='pending'");
     this.prune();
   }
   private transaction<T>(work: () => T): T {

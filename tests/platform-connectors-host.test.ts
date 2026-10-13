@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { mkdtemp, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { createServer } from "node:http";
 import { ConnectorDatabase } from "../packages/connector-host/src/store";
 import { ManagedConnectorService } from "../packages/connector-host/src/service";
@@ -165,4 +166,68 @@ test("connector network rejects redirects and metadata targets without forwardin
     await assert.rejects(connectorFetch(["http://169.254.169.254"], true)("http://169.254.169.254/"), /invalid/);
     await assert.rejects(connectorFetch([origin])(origin), /invalid/);
   } finally { for (const server of [source, target]) { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); } }
+});
+
+import { DatabaseSync } from "node:sqlite";
+import { readdir } from "node:fs/promises";
+
+test("ConnectorDatabase manages SQLite lifecycle: fresh, up-to-date, adopted, and moved-aside", async () => {
+  const root = await mkdtemp(join(tmpdir(), "oc-connector-lifecycle-"));
+  const path = join(root, "managed.sqlite");
+  try {
+    // 1. Fresh
+    const fresh = new ConnectorDatabase(path);
+    assert.equal(fresh.outcome.status, "fresh");
+    fresh.save({ id: "inst-1", definitionId: "tencent-docs", title: "Doc", expectedRevision: 0, values: {}, secrets: { token: "secret" } });
+    fresh.close();
+
+    // 2. Up-to-date
+    const reopened = new ConnectorDatabase(path);
+    assert.equal(reopened.outcome.status, "up-to-date");
+    assert.equal(reopened.get("inst-1").title, "Doc");
+    reopened.close();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("ConnectorDatabase adopts legacy matching database and moves aside mismatched legacy database", async () => {
+  for (const matching of [true, false]) {
+    const root = await mkdtemp(join(tmpdir(), `oc-connector-legacy-${matching ? "match" : "mismatch"}-`));
+    const path = join(root, "managed.sqlite");
+    try {
+      const raw = new DatabaseSync(path);
+      raw.exec(`
+        CREATE TABLE connector_instances (id TEXT PRIMARY KEY, definition_id TEXT NOT NULL, title TEXT NOT NULL, revision INTEGER NOT NULL, enabled INTEGER NOT NULL, value TEXT NOT NULL, updated_at INTEGER NOT NULL) STRICT;
+        CREATE TABLE connector_credentials (instance_id TEXT PRIMARY KEY REFERENCES connector_instances(id) ON DELETE CASCADE, secrets TEXT NOT NULL, oauth TEXT NOT NULL) STRICT;
+        CREATE TABLE connector_oauth_transactions (id TEXT PRIMARY KEY, instance_id TEXT NOT NULL, revision INTEGER NOT NULL, state TEXT NOT NULL UNIQUE, expires_at INTEGER NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL) STRICT;
+      `);
+      if (matching) {
+        raw.prepare("INSERT INTO connector_instances VALUES(?,?,?,?,?,?,?)").run("inst-1", "tencent-docs", "Doc", 1, 1, "{}", 100);
+        raw.prepare("INSERT INTO connector_credentials VALUES(?,?,?)").run("inst-1", JSON.stringify({ token: "legacy-token" }), "{}");
+      } else {
+        raw.exec("CREATE TABLE extra_table (id TEXT PRIMARY KEY)");
+      }
+      raw.close();
+
+      const db = new ConnectorDatabase(path);
+      try {
+        assert.equal(db.outcome.status, matching ? "adopted" : "moved-aside");
+        assert.ok(db.outcome.backupPath);
+        const files = await readdir(root);
+        assert.ok(files.some(f => f.includes(".pre-v1-")));
+        assert.equal(files.some(f => f.includes(".legacy-")), !matching);
+
+        if (matching) {
+          assert.equal(db.get("inst-1").secrets.token, "legacy-token");
+        } else {
+          assert.equal(db.list().length, 0);
+        }
+      } finally {
+        db.close();
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }
 });

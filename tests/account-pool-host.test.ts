@@ -848,8 +848,8 @@ test("Codex subscription refresh records plan and limit windows without exposing
   }
 });
 
-test("existing account-pool databases migrate subscription columns without losing accounts", async () => {
-  const root = await mkdtemp(join(tmpdir(), "opencraft-account-pool-"));
+test("legacy account-pool database missing columns is moved aside with backups and leaves empty database", async () => {
+  const root = await mkdtemp(join(tmpdir(), "opencraft-account-pool-legacy-missing-"));
   const databasePath = join(root, "pool.sqlite");
   const secretsDirectory = join(root, "secrets");
   try {
@@ -861,13 +861,96 @@ test("existing account-pool databases migrate subscription columns without losin
     INSERT INTO pool_accounts VALUES('account-a','codex','A','chatgpt-a',1,1,1000);`);
     legacy.close();
     const pool = new AccountPoolStore({ databasePath, secretsDirectory, now: () => 2_000 });
-    assert.equal(pool.listAccounts()[0]?.id, "account-a");
-    assert.deepEqual(pool.listAccountStates()[0], {
-      accountId: "account-a", email: null, subscriptionType: null, rateLimitTier: null,
-      lastUsedAt: null, lastUsedHostId: null, observedAt: null, heldUntil: null, error: null,
-      limitWindows: [], status: "ready",
-    });
-    pool.close();
+    try {
+      assert.equal(pool.outcome.status, "moved-aside");
+      assert.ok(pool.outcome.backupPath);
+      assert.equal(pool.listAccounts().length, 0);
+      const files = await readdir(root);
+      assert.ok(files.some(name => name.includes(".pre-v1-")));
+      assert.ok(files.some(name => name.includes(".legacy-")));
+    } finally {
+      pool.close();
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("legacy account-pool database with matching schema is adopted without ledger and accounts remain readable", async () => {
+  const root = await mkdtemp(join(tmpdir(), "opencraft-account-pool-legacy-adopted-"));
+  const databasePath = join(root, "pool.sqlite");
+  const secretsDirectory = join(root, "secrets");
+  try {
+    const legacy = new DatabaseSync(databasePath);
+    legacy.exec(`
+      CREATE TABLE pool_accounts (
+        id TEXT PRIMARY KEY,
+        provider TEXT NOT NULL,
+        label TEXT NOT NULL,
+        upstream_account_id TEXT NOT NULL,
+        priority INTEGER NOT NULL,
+        enabled INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        email TEXT,
+        subscription_type TEXT,
+        rate_limit_tier TEXT,
+        last_used_at INTEGER,
+        last_used_host_id TEXT
+      ) STRICT;
+      CREATE TABLE pool_affinity (
+        affinity_key TEXT PRIMARY KEY,
+        account_id TEXT NOT NULL REFERENCES pool_accounts(id) ON DELETE CASCADE,
+        last_used_at INTEGER NOT NULL
+      ) STRICT;
+      CREATE TABLE pool_active_account (
+        provider TEXT PRIMARY KEY,
+        account_id TEXT NOT NULL REFERENCES pool_accounts(id) ON DELETE CASCADE
+      ) STRICT;
+      CREATE TABLE pool_quota (
+        account_id TEXT PRIMARY KEY REFERENCES pool_accounts(id) ON DELETE CASCADE,
+        utilization REAL,
+        reset_at INTEGER,
+        held_until INTEGER,
+        error TEXT,
+        observed_at INTEGER NOT NULL,
+        limit_windows_json TEXT NOT NULL DEFAULT '[]'
+      ) STRICT;
+      INSERT INTO pool_accounts VALUES('account-a','codex','A','chatgpt-a',1,1,1000,NULL,NULL,NULL,NULL,NULL);
+    `);
+    legacy.close();
+    const pool = new AccountPoolStore({ databasePath, secretsDirectory, now: () => 2_000 });
+    try {
+      assert.equal(pool.outcome.status, "adopted");
+      assert.ok(pool.outcome.backupPath);
+      assert.equal(pool.listAccounts()[0]?.id, "account-a");
+      assert.deepEqual(pool.listAccountStates()[0], {
+        accountId: "account-a", email: null, subscriptionType: null, rateLimitTier: null,
+        lastUsedAt: null, lastUsedHostId: null, observedAt: null, heldUntil: null, error: null,
+        limitWindows: [], status: "ready",
+      });
+      const files = await readdir(root);
+      assert.ok(files.some(name => name.includes(".pre-v1-")));
+      assert.equal(files.some(name => name.includes(".legacy-")), false);
+    } finally {
+      pool.close();
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("AccountPoolStore manages SQLite lifecycle: fresh and up-to-date", async () => {
+  const root = await mkdtemp(join(tmpdir(), "opencraft-account-pool-fresh-"));
+  const databasePath = join(root, "pool.sqlite");
+  const secretsDirectory = join(root, "secrets");
+  try {
+    const fresh = new AccountPoolStore({ databasePath, secretsDirectory });
+    assert.equal(fresh.outcome.status, "fresh");
+    fresh.close();
+
+    const reopened = new AccountPoolStore({ databasePath, secretsDirectory });
+    assert.equal(reopened.outcome.status, "up-to-date");
+    reopened.close();
   } finally {
     await rm(root, { recursive: true, force: true });
   }

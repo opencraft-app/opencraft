@@ -94,3 +94,138 @@ test("overlapping edits by one owner retain the lease until every edit settles",
     await authority.withWriteLease("t", b, async () => {});
   } finally { authority.close(); }
 });
+
+import { DatabaseSync } from "node:sqlite";
+import { readdir } from "node:fs/promises";
+import { schemaFingerprint, openManagedDatabase } from "@opencraft/sqlite-node";
+import { DSH_EXECUTION_BASELINE } from "../apps/local-agent-host/src/dsh-execution-authority.js";
+import { ThreadExecutionJournal } from "../apps/local-agent-host/src/hypernode/execution-authority.js";
+import { ThreadQueueStore } from "../apps/local-agent-host/src/hypernode/thread-queue.js";
+
+test("baseline migration is sole DDL authority and matches hypernode initializeSchema fingerprint exactly", () => {
+  const dbBaseline = openManagedDatabase({
+    path: ":memory:",
+    migrations: [{ version: 1, name: "executions", sql: DSH_EXECUTION_BASELINE }],
+  }).database;
+
+  const dbLegacy = new DatabaseSync(":memory:");
+  dbLegacy.exec(`CREATE TABLE opencraft_execution_inputs (
+    execution_id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, native_rpc_id TEXT NOT NULL UNIQUE,
+    client_message_id TEXT, actor_id TEXT NOT NULL
+  )`);
+  dbLegacy.exec(`CREATE TABLE opencraft_queue_inputs (
+    native_rpc_id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, client_message_id TEXT NOT NULL,
+    request_id TEXT NOT NULL, owner_id TEXT NOT NULL, owner_username TEXT NOT NULL, connection_id TEXT NOT NULL,
+    consumed INTEGER NOT NULL DEFAULT 0
+  )`);
+  const storage = {
+    available: true,
+    sql: {
+      exec: (sql: string, ...args: any[]) => {
+        const statement = dbLegacy.prepare(sql);
+        if (/^\s*(SELECT|WITH)\b/i.test(sql)) return { toArray: () => statement.all(...args) };
+        statement.run(...args);
+        return { toArray: () => [] };
+      },
+    },
+    transactionSync: (op: () => void) => {
+      dbLegacy.exec("BEGIN IMMEDIATE");
+      try { op(); dbLegacy.exec("COMMIT"); }
+      catch (e) { dbLegacy.exec("ROLLBACK"); throw e; }
+    },
+  };
+  new ThreadExecutionJournal(storage);
+  new ThreadQueueStore(storage);
+
+  try {
+    assert.equal(schemaFingerprint(dbBaseline), schemaFingerprint(dbLegacy));
+  } finally {
+    dbBaseline.close();
+    dbLegacy.close();
+  }
+});
+
+test("DshExecutionAuthority manages SQLite lifecycle: fresh, up-to-date, adopted, and moved-aside", async () => {
+  const root = await mkdtemp(join(tmpdir(), "opencraft-execution-lifecycle-"));
+  const path = join(root, "execution.sqlite");
+  try {
+    // 1. Fresh
+    const fresh = new DshExecutionAuthority(path, "boot-fresh");
+    assert.equal(fresh.outcome.status, "fresh");
+    const admitted = fresh.claim("t1", owner("c1"), "req-1");
+    fresh.rememberInput(admitted, "rpc-1", "msg-1");
+    fresh.close();
+
+    // 2. Up-to-date
+    const reopened = new DshExecutionAuthority(path, "boot-reopen");
+    assert.equal(reopened.outcome.status, "up-to-date");
+    const projected = reopened.projectInput("t1", { type: "user/message", seq: 1, time: 1, data: { source: { kind: "user", rpcId: "rpc-1" } } });
+    assert.equal((projected.data as any).source.rpcId, "msg-1");
+    reopened.close();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("DshExecutionAuthority adopts legacy matching database and moves aside mismatched legacy database", async () => {
+  for (const matching of [true, false]) {
+    const root = await mkdtemp(join(tmpdir(), `opencraft-execution-legacy-${matching ? "match" : "mismatch"}-`));
+    const path = join(root, "execution.sqlite");
+    try {
+      const raw = new DatabaseSync(path);
+      // Create legacy structure
+      raw.exec(`CREATE TABLE opencraft_execution_inputs (
+        execution_id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, native_rpc_id TEXT NOT NULL UNIQUE,
+        client_message_id TEXT, actor_id TEXT NOT NULL
+      )`);
+      raw.exec(`CREATE TABLE opencraft_queue_inputs (
+        native_rpc_id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, client_message_id TEXT NOT NULL,
+        request_id TEXT NOT NULL, owner_id TEXT NOT NULL, owner_username TEXT NOT NULL, connection_id TEXT NOT NULL,
+        consumed INTEGER NOT NULL DEFAULT 0
+      )`);
+      const storage = {
+        available: true,
+        sql: {
+          exec: (sql: string, ...args: any[]) => {
+            const statement = raw.prepare(sql);
+            if (/^\s*(SELECT|WITH)\b/i.test(sql)) return { toArray: () => statement.all(...args) };
+            statement.run(...args);
+            return { toArray: () => [] };
+          },
+        },
+        transactionSync: (op: () => void) => {
+          raw.exec("BEGIN IMMEDIATE");
+          try { op(); raw.exec("COMMIT"); }
+          catch (e) { raw.exec("ROLLBACK"); throw e; }
+        },
+      };
+      new ThreadExecutionJournal(storage);
+      new ThreadQueueStore(storage);
+
+      if (matching) {
+        raw.prepare("INSERT INTO opencraft_execution_inputs VALUES (?, ?, ?, ?, ?)").run("exec-legacy", "t-legacy", "rpc-legacy", "msg-legacy", "user-1");
+      } else {
+        raw.exec("CREATE TABLE extra_table (id TEXT PRIMARY KEY)");
+      }
+      raw.close();
+
+      const authority = new DshExecutionAuthority(path, "boot-legacy");
+      try {
+        assert.equal(authority.outcome.status, matching ? "adopted" : "moved-aside");
+        assert.ok(authority.outcome.backupPath);
+        const files = await readdir(root);
+        assert.ok(files.some(f => f.includes(".pre-v1-")));
+        assert.equal(files.some(f => f.includes(".legacy-")), !matching);
+
+        if (matching) {
+          const projected = authority.projectInput("t-legacy", { type: "user/message", seq: 1, time: 1, data: { source: { kind: "user", rpcId: "rpc-legacy" } } });
+          assert.equal((projected.data as any).source.rpcId, "msg-legacy");
+        }
+      } finally {
+        authority.close();
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }
+});

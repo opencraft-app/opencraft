@@ -1,10 +1,68 @@
-import { DatabaseSync } from "node:sqlite";
-import { mkdirSync, chmodSync } from "node:fs";
-import { dirname } from "node:path";
+import type { DatabaseSync } from "node:sqlite";
+import { openManagedDatabase, type DatabaseOutcome } from "@opencraft/sqlite-node";
 import { ThreadExecutionJournal, ThreadExecutionTable } from "./hypernode/execution-authority.js";
 import { ThreadWriteLeaseTable } from "./hypernode/write-lease.js";
 import type { DshEvent } from "./dsh-client.js";
 import { ThreadQueueStore } from "./hypernode/thread-queue.js";
+
+export const DSH_EXECUTION_BASELINE = `
+CREATE TABLE opencraft_execution_inputs (
+  execution_id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, native_rpc_id TEXT NOT NULL UNIQUE,
+  client_message_id TEXT, actor_id TEXT NOT NULL
+);
+CREATE TABLE opencraft_queue_inputs (
+  native_rpc_id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, client_message_id TEXT NOT NULL,
+  request_id TEXT NOT NULL, owner_id TEXT NOT NULL, owner_username TEXT NOT NULL, connection_id TEXT NOT NULL,
+  consumed INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE hypernode_thread_execution_epochs (
+  thread_id TEXT PRIMARY KEY,
+  epoch INTEGER NOT NULL
+);
+CREATE TABLE hypernode_turn_execution_attempts (
+  execution_id TEXT PRIMARY KEY,
+  thread_id TEXT NOT NULL,
+  epoch INTEGER NOT NULL,
+  request_id TEXT,
+  turn_id TEXT,
+  actor_user_id TEXT,
+  actor_username TEXT,
+  account_identity TEXT,
+  execution_profile_json TEXT,
+  runtime_id TEXT,
+  native_turn_id TEXT,
+  state TEXT NOT NULL,
+  owner_boot_id TEXT NOT NULL,
+  started_at_ms INTEGER NOT NULL,
+  updated_at_ms INTEGER NOT NULL,
+  terminal_at_ms INTEGER,
+  terminal_reason TEXT
+);
+CREATE INDEX hypernode_turn_execution_thread_epoch
+ON hypernode_turn_execution_attempts(thread_id, epoch);
+CREATE TABLE hypernode_thread_queue_submissions (
+  thread_id TEXT NOT NULL,
+  submission_id TEXT NOT NULL,
+  client_user_message_id TEXT NOT NULL,
+  actor_user_id TEXT,
+  input_json TEXT NOT NULL,
+  state TEXT NOT NULL,
+  position INTEGER NOT NULL,
+  created_at_ms INTEGER NOT NULL,
+  updated_at_ms INTEGER NOT NULL,
+  PRIMARY KEY(thread_id, submission_id),
+  UNIQUE(thread_id, client_user_message_id)
+);
+CREATE INDEX hypernode_thread_queue_pending
+ON hypernode_thread_queue_submissions(thread_id, state, position);
+CREATE INDEX hypernode_thread_queue_actor
+ON hypernode_thread_queue_submissions(actor_user_id, state);
+CREATE TABLE hypernode_thread_queue_state (
+  thread_id TEXT PRIMARY KEY,
+  paused_reason TEXT,
+  updated_at_ms INTEGER NOT NULL
+);
+`.trim();
 
 export interface DshExecutionOwner {
   readonly connectionId: string;
@@ -25,22 +83,17 @@ export class DshExecutionAuthority {
   readonly journal: ThreadExecutionJournal;
   readonly queueStore: ThreadQueueStore;
   readonly recoveredOrphans: readonly any[];
+  readonly outcome: DatabaseOutcome;
   private readonly database: DatabaseSync;
   private readonly disconnected = new WeakSet<object>();
   private readonly editing = new Map<string, { owner: DshExecutionOwner; count: number }>();
   constructor(path: string, bootId?: string) {
-    if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-    this.database = new DatabaseSync(path);
-    this.database.exec(`CREATE TABLE IF NOT EXISTS opencraft_execution_inputs (
-      execution_id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, native_rpc_id TEXT NOT NULL UNIQUE,
-      client_message_id TEXT, actor_id TEXT NOT NULL
-    )`);
-    this.database.exec(`CREATE TABLE IF NOT EXISTS opencraft_queue_inputs (
-      native_rpc_id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, client_message_id TEXT NOT NULL,
-      request_id TEXT NOT NULL, owner_id TEXT NOT NULL, owner_username TEXT NOT NULL, connection_id TEXT NOT NULL,
-      consumed INTEGER NOT NULL DEFAULT 0
-    )`);
-    if (path !== ":memory:") chmodSync(path, 0o600);
+    const managed = openManagedDatabase({
+      path,
+      migrations: [{ version: 1, name: "executions", sql: DSH_EXECUTION_BASELINE }],
+    });
+    this.database = managed.database;
+    this.outcome = managed.outcome;
     const storage = {
       available: true,
       sql: { exec: (sql: string, ...args: any[]) => {

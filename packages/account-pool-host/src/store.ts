@@ -9,8 +9,44 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { join } from "node:path";
+import type { DatabaseSync } from "node:sqlite";
+import { openManagedDatabase, type DatabaseOutcome } from "@opencraft/sqlite-node";
+
+const BASELINE = `
+CREATE TABLE pool_accounts (
+  id TEXT PRIMARY KEY,
+  provider TEXT NOT NULL,
+  label TEXT NOT NULL,
+  upstream_account_id TEXT NOT NULL,
+  priority INTEGER NOT NULL,
+  enabled INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  email TEXT,
+  subscription_type TEXT,
+  rate_limit_tier TEXT,
+  last_used_at INTEGER,
+  last_used_host_id TEXT
+) STRICT;
+CREATE TABLE pool_affinity (
+  affinity_key TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL REFERENCES pool_accounts(id) ON DELETE CASCADE,
+  last_used_at INTEGER NOT NULL
+) STRICT;
+CREATE TABLE pool_active_account (
+  provider TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL REFERENCES pool_accounts(id) ON DELETE CASCADE
+) STRICT;
+CREATE TABLE pool_quota (
+  account_id TEXT PRIMARY KEY REFERENCES pool_accounts(id) ON DELETE CASCADE,
+  utilization REAL,
+  reset_at INTEGER,
+  held_until INTEGER,
+  error TEXT,
+  observed_at INTEGER NOT NULL,
+  limit_windows_json TEXT NOT NULL DEFAULT '[]'
+) STRICT
+`.trim();
 
 export type AccountPoolProvider = "codex";
 
@@ -168,6 +204,7 @@ function affinityKey(provider: AccountPoolProvider, hostId: string, affinityId: 
 
 export class AccountPoolStore {
   private readonly database: DatabaseSync;
+  readonly outcome: DatabaseOutcome;
   private readonly secretsDirectory: string;
   private readonly now: () => number;
   private readonly switchThreshold: number;
@@ -182,7 +219,6 @@ export class AccountPoolStore {
     readonly affinityIdleTtlMs?: number;
     readonly maxAffinityBindings?: number;
   }) {
-    mkdirSync(dirname(options.databasePath), { recursive: true, mode: 0o700 });
     mkdirSync(options.secretsDirectory, { recursive: true, mode: 0o700 });
     chmodSync(options.secretsDirectory, 0o700);
     this.secretsDirectory = options.secretsDirectory;
@@ -193,42 +229,13 @@ export class AccountPoolStore {
     if (!(this.switchThreshold > 0 && this.switchThreshold <= 1)) throw new RangeError("Invalid switch threshold");
     if (!Number.isSafeInteger(this.affinityIdleTtlMs) || this.affinityIdleTtlMs <= 0) throw new RangeError("Invalid affinity idle TTL");
     if (!Number.isSafeInteger(this.maxAffinityBindings) || this.maxAffinityBindings <= 0) throw new RangeError("Invalid affinity binding limit");
-    this.database = new DatabaseSync(options.databasePath);
-    chmodSync(options.databasePath, 0o600);
-    this.database.exec(`PRAGMA journal_mode=WAL;
-      CREATE TABLE IF NOT EXISTS pool_accounts (
-        id TEXT PRIMARY KEY,
-        provider TEXT NOT NULL,
-        label TEXT NOT NULL,
-        upstream_account_id TEXT NOT NULL,
-        priority INTEGER NOT NULL,
-        enabled INTEGER NOT NULL,
-        created_at INTEGER NOT NULL
-      ) STRICT;
-      CREATE TABLE IF NOT EXISTS pool_affinity (
-        affinity_key TEXT PRIMARY KEY,
-        account_id TEXT NOT NULL REFERENCES pool_accounts(id) ON DELETE CASCADE,
-        last_used_at INTEGER NOT NULL
-      ) STRICT;
-      CREATE TABLE IF NOT EXISTS pool_active_account (
-        provider TEXT PRIMARY KEY,
-        account_id TEXT NOT NULL REFERENCES pool_accounts(id) ON DELETE CASCADE
-      ) STRICT;
-      CREATE TABLE IF NOT EXISTS pool_quota (
-        account_id TEXT PRIMARY KEY REFERENCES pool_accounts(id) ON DELETE CASCADE,
-        utilization REAL,
-        reset_at INTEGER,
-        held_until INTEGER,
-        error TEXT,
-        observed_at INTEGER NOT NULL
-      ) STRICT;
-      PRAGMA foreign_keys=ON;`);
-    this.ensureColumn("pool_accounts", "email", "TEXT");
-    this.ensureColumn("pool_accounts", "subscription_type", "TEXT");
-    this.ensureColumn("pool_accounts", "rate_limit_tier", "TEXT");
-    this.ensureColumn("pool_accounts", "last_used_at", "INTEGER");
-    this.ensureColumn("pool_accounts", "last_used_host_id", "TEXT");
-    this.ensureColumn("pool_quota", "limit_windows_json", "TEXT NOT NULL DEFAULT '[]'");
+    const managed = openManagedDatabase({
+      path: options.databasePath,
+      migrations: [{ version: 1, name: "account-pool", sql: BASELINE }],
+    });
+    this.database = managed.database;
+    this.outcome = managed.outcome;
+    this.database.exec("PRAGMA foreign_keys=ON;");
     this.pruneAffinity(this.now());
   }
 
@@ -612,12 +619,6 @@ export class AccountPoolStore {
         SELECT affinity_key FROM pool_affinity ORDER BY last_used_at DESC,rowid DESC LIMIT ?
       )`,
     ).run(this.maxAffinityBindings);
-  }
-
-  private ensureColumn(table: "pool_accounts" | "pool_quota", name: string, definition: string): void {
-    const columns = this.database.prepare(`PRAGMA table_info(${table})`).all();
-    if (columns.some(column => column.name === name)) return;
-    this.database.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${definition}`);
   }
 
   private secretPath(id: string): string {

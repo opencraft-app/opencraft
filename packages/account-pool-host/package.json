@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@opencraft/appserver-protocol": "0.1.0"
+    "@opencraft/appserver-protocol": "0.1.0",
+    "@opencraft/sqlite-node": "0.1.0"
   }
 }
