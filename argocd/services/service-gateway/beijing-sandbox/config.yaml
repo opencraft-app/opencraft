@@ -8,6 +8,7 @@ collaboration:
   upstream_bearer_token_env: COLLABORATION_GATEWAY_TOKEN
   allowed_origins:
     - https://lightclaw.pages.dev
+    - https://lightvela-prerelease-tn2l7wnk.edgeone.dev
     - http://localhost:*
     - http://127.0.0.1:*
 worker_actions:
