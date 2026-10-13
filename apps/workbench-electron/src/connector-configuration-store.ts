@@ -1,11 +1,19 @@
-import { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync } from "node:sqlite";
+import { openManagedDatabase, type DatabaseOutcome } from "@opencraft/sqlite-node";
 import { emptyConnectorConfiguration, parseConnectorConfiguration, type ConnectorConfigurationRecord } from "@opencraft/workbench-runtime/connectors/configuration";
+
+const BASELINE = "CREATE TABLE connector_configuration (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL, value TEXT NOT NULL) STRICT";
 
 export class DesktopConnectorConfigurationStore {
   private readonly db: DatabaseSync;
+  readonly outcome: DatabaseOutcome;
   constructor(path: string) {
-    this.db = new DatabaseSync(path);
-    this.db.exec("PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS connector_configuration (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL, value TEXT NOT NULL) STRICT");
+    const managed = openManagedDatabase({
+      path,
+      migrations: [{ version: 1, name: "connector-configuration", sql: BASELINE }],
+    });
+    this.db = managed.database;
+    this.outcome = managed.outcome;
   }
   load(): ConnectorConfigurationRecord {
     const row = this.db.prepare("SELECT revision, value FROM connector_configuration WHERE id=1").get() as { revision: number; value: string } | undefined;

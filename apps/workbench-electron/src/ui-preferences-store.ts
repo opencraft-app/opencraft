@@ -1,5 +1,6 @@
-import { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync } from "node:sqlite";
 import { resolve } from "node:path";
+import { openManagedDatabase, type DatabaseOutcome } from "@opencraft/sqlite-node";
 
 import {
   UI_PREFERENCE_KEYS,
@@ -7,6 +8,15 @@ import {
   type StoredUiPreference,
   type UiPreferenceKey,
 } from "@opencraft/ui-preferences";
+
+const BASELINE = `
+CREATE TABLE ui_preferences (
+  key TEXT PRIMARY KEY NOT NULL,
+  value_json TEXT NOT NULL,
+  revision INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+) STRICT
+`.trim();
 
 const ALLOWED_KEYS = new Set<string>(UI_PREFERENCE_KEYS);
 
@@ -35,19 +45,17 @@ function jsonValue(value: unknown): string {
 /** Installation authority for Electron; Renderer never supplies a database path. */
 export class DesktopUiPreferenceStore {
   readonly #database: DatabaseSync;
+  readonly outcome: DatabaseOutcome;
 
   constructor(path: string) {
-    this.#database = new DatabaseSync(resolve(path));
-    this.#database.exec(`
-      PRAGMA journal_mode = WAL;
-      PRAGMA synchronous = NORMAL;
-      CREATE TABLE IF NOT EXISTS ui_preferences (
-        key TEXT PRIMARY KEY NOT NULL,
-        value_json TEXT NOT NULL,
-        revision INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
-      ) STRICT;
-    `);
+    const resolvedPath = path === ":memory:" ? ":memory:" : resolve(path);
+    const managed = openManagedDatabase({
+      path: resolvedPath,
+      migrations: [{ version: 1, name: "ui-preferences", sql: BASELINE }],
+    });
+    this.#database = managed.database;
+    this.outcome = managed.outcome;
+    this.#database.exec("PRAGMA synchronous = NORMAL;");
   }
 
   load(rawKey: unknown): StoredUiPreference | null {
