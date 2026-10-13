@@ -44,7 +44,17 @@ BK_CI_ACCESS_TOKEN="your_token" python3 .agents/skills/devops-pipeline/scripts/p
 
 已验证该 projectId 可查询 `GitOps 验收与自动合并`、`北京沙箱族 GitOps 漂移审计` 等 mono2 流水线状态。
 
-### 停止 Stream 构建：渠道与最终状态缺一不可
+### mono2 Stream 触发与渠道规则（用户明确要求）
+
+入口、认证边界和 Git 替代方式见 [Stream 触发与记录](reference/stream-trigger.md)。
+
+- `wisp/mono2` / `git_1731878` 后续使用 Stream 的 GIT 触发路径，不使用 BS。**蓝盾通用 `build_start` 加 `X-DEVOPS-CHANNEL: GIT` 不等于 Stream 手动触发**：蓝盾创建的构建可能缺少 Stream 的事件登记，不能据此宣称用户在 Stream 能看到。
+- 优先使用已核验的 Stream 手动入口，并通过 Stream 的构建列表/详情确认事件与 buildId。缺少入口或正常认证时，使用用户已授权的 Git 触发：先读目标 `.ci/*.yml` 的 `on.push.branches/paths/paths-ignore`，准备相关的最小提交，经正常合入产生匹配的 Git push 事件。CTL 已有通过 `ctl/README.md` 的 Trigger note 触发重建的历史；不使用空提交，因为路径过滤可能不匹配。
+- 本技能客户端对 `git_*` 项目拒绝调用蓝盾通用 `start`，避免再创建只有蓝盾可查询的任务。只读查询可保留 GIT 请求头，但查询成功不证明 Stream 可见性。详情和历史的最终证据优先来自 Stream API/已登录 Stream 页面；无法访问时明确区分“蓝盾看到构建”与“Stream 已登记”，不要伪造 Stream 启动端点、抓取 Cookie 或绕过鉴权。
+- 启动回执、渠道变量、Stream URL 均不能单独证明触发成功：核对实际 Git 事件、源分支、checkout SHA、构建号与状态；`QUEUE` 不说成正在构建镜像。新任务或入参已获用户授权时继续执行，不重复索要同一授权。
+- 已创建的 #422（BS）和 #423（蓝盾 API 的 GIT）不能假装迁移为 Stream 构建。避免重复触发；取消历史任务需明确授权并按实际渠道核验最终状态。GIT 调用失败不回退 BS，不改写检查结果。
+
+### 停止已有构建：按实际归属核验
 
 - `build_stop` 返回 `status=0, data=true` **只代表接口返回成功，不代表任务已中止**。渠道不匹配时可能无动作而返回成功。
 - 停止前读取目标的 `build_status`，核对 `webhookInfo.channelCode` 与 `variables.BK_CI_START_CHANNEL` / `pipeline.start.channel`；请求头 `X-DEVOPS-CHANNEL` 必须匹配实际渠道。不要根据项目名硬编码 `GIT`，也不要省略后默认 `BS`。

@@ -61,7 +61,10 @@ def make_request(
     Returns:
         API 响应的 JSON 数据
     """
-    req_headers = headers or {}
+    req_headers = dict(headers or {})
+    # Stream projects must not inherit the gateway's BS default channel.
+    if "/projects/git_" in urllib.parse.urlparse(url).path:
+        req_headers.setdefault("X-DEVOPS-CHANNEL", "GIT")
     req_headers["Content-Type"] = "application/json"
 
     if access_token:
@@ -158,6 +161,12 @@ def cmd_start(args: argparse.Namespace) -> None:
 
     手动触发流水线构建，支持传递构建参数
     """
+    if args.project_id.startswith("git_"):
+        raise SystemExit(
+            "Stream 项目禁止用蓝盾 build_start 代替 Stream 启动；"
+            "使用已核验的 Stream 手动入口，或按 YAML on.push 通过 Git 事件触发。"
+            "仅设置 X-DEVOPS-CHANNEL=GIT 不证明 Stream 已记录构建。"
+        )
     access_token = get_access_token(args.access_token)
 
     url = f"{BASE_URL}/projects/{args.project_id}/build_start"
