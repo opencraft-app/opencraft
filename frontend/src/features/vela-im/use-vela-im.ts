@@ -116,7 +116,7 @@ export function useVelaIm(lightvelaToken: string | null, lightvelaUserID: string
         void api.imSession().catch((e: unknown) => { if (!cancelled && isRestricted(e)) setRestricted(true); });
       });
       observe("SDK_NOT_READY", () => setStatus((s) => (s === "offline" ? s : "reconnecting")));
-      observe("SDK_READY", () => setStatus("ready"));
+      observe("SDK_READY", () => { setStatus("ready"); setRestricted(false); });
       setConnection({ api, client, selfID: client.userID, selfName });
       setStatus("ready");
       // Others see this person by their LightVela name, not the backend's placeholder.

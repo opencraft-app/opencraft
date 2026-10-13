@@ -22,7 +22,7 @@ export function fakeChat(answers={}) {
  const TencentCloudChat={
   create:()=>native,
   EVENT:{SDK_READY:'sdkStateReady',MESSAGE_RECEIVED:'onMessageReceived',MESSAGE_MODIFIED:'onMessageModified',KICKED_OUT:'onKickedOut',FRIEND_LIST_UPDATED:'onFriendListUpdated'},
-  TYPES:{MSG_AT_ALL:'__kImSDK_MesssageAtALL__',SNS_ADD_TYPE_BOTH:'Add_Type_Both',SNS_APPLICATION_AGREE_AND_ADD:'Response_Action_AgreeAndAdd',SNS_DELETE_TYPE_BOTH:'Delete_Type_Both',SNS_APPLICATION_SENT_TO_ME:'Pendency_Type_ComeIn',KICKED_OUT_USERSIG_EXPIRED:'userSigExpired'},
+  TYPES:{MSG_AT_ALL:'__kImSDK_MesssageAtALL__',SNS_ADD_TYPE_BOTH:'Add_Type_Both',SNS_APPLICATION_AGREE_AND_ADD:'Response_Action_AgreeAndAdd',SNS_DELETE_TYPE_BOTH:'Delete_Type_Both',SNS_APPLICATION_SENT_TO_ME:'Pendency_Type_ComeIn',KICKED_OUT_USERSIG_EXPIRED:'userSigExpired',KICKED_OUT_REST_API:'REST_API_Kick'},
  };
  return {TencentCloudChat,native,calls};
 }

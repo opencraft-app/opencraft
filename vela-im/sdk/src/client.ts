@@ -32,6 +32,8 @@ export const safeJSON=(value:any):any=>{
 
 /** With one-hour UserSigs this renews at the 45th minute. */
 const RENEW_BEFORE_MS=15*60000;
+/** After the platform signs this identity out (e.g. an admin restricted it), ask for a new session at these intervals. */
+const RELOGIN_DELAYS_MS=[15000,30000,60000];
 
 /** A normal Tencent IM user. Humans and Agents use this same class and the same Tencent permission rules. */
 export class VelaIMClient {
@@ -42,6 +44,7 @@ export class VelaIMClient {
  private renewTimer:ReturnType<typeof setTimeout>|undefined;
  private credentialSource:CredentialSource|undefined;
  private renewing:Promise<void>|undefined;
+ private reloginTimer:ReturnType<typeof setTimeout>|undefined;
  private disconnecting:Promise<void>|undefined;
  constructor(public readonly TencentCloudChat:any,private readonly hooks:PlatformHooks) {}
  get userID() {return this.credentials?.userID??''}
@@ -54,7 +57,10 @@ export class VelaIMClient {
   this.native.setLogLevel(4);
   this.subscribe('MESSAGE_RECEIVED',({data}:any)=>{for(const m of data)this.cache(m)});
   this.subscribe('MESSAGE_MODIFIED',({data}:any)=>{for(const m of data)this.cache(m)});
-  this.subscribe('KICKED_OUT',({data}:any)=>{if(data?.type===this.TYPES.KICKED_OUT_USERSIG_EXPIRED)void this.renew().catch(()=>{})});
+  this.subscribe('KICKED_OUT',({data}:any)=>{
+   if(data?.type===this.TYPES.KICKED_OUT_USERSIG_EXPIRED)void this.renew().catch(()=>{});
+   else if(data?.type===this.TYPES.KICKED_OUT_REST_API)this.relogin();
+  });
   await this.login(c);
  }
  private async login(c:Credentials) {
@@ -87,6 +93,18 @@ export class VelaIMClient {
    await this.login(c);
   })().finally(()=>{this.renewing=undefined});
   return this.renewing;
+ }
+ /**
+  * A server-side kick is how the platform withdraws a session. Keep asking for a new one: while the identity stays
+  * restricted the platform refuses, and once it is released the client is back without a restart. A revoked
+  * credential (401) is final.
+  */
+ private relogin(attempt=0) {
+  clearTimeout(this.reloginTimer);
+  this.reloginTimer=setTimeout(()=>{
+   void this.renew().catch((e:unknown)=>{if(!(e instanceof VelaError&&e.status===401))this.relogin(attempt+1)});
+  },RELOGIN_DELAYS_MS[Math.min(attempt,RELOGIN_DELAYS_MS.length-1)]);
+  (this.reloginTimer as any).unref?.();
  }
  private subscribe(event:string,handler:(event:any)=>void) {
   const name=this.TencentCloudChat.EVENT[event];
@@ -250,6 +268,7 @@ export class VelaIMClient {
   if(this.disconnecting)return this.disconnecting;
   if(!this.native)return;
   clearTimeout(this.renewTimer);
+  clearTimeout(this.reloginTimer);
   const native=this.native;
   for(const [event,handler] of this.subscriptions)native.off(event,handler);
   this.subscriptions=[];this.messages.clear();

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
  VelaHumanAPI,VelaBotAPI,groupReplyReason,readLineage,replyCustomData,IM_METHODS,uuidv7,tencentGroupId,platformGroupId,
- policyFromGroup,defaultGroupPolicy,isPolicyNotice,assertMethod,
+ policyFromGroup,defaultGroupPolicy,isPolicyNotice,assertMethod,VelaError,
 } from '../dist/index.js';
 import {VelaIMClient} from '../dist/client.js';
 import {fakeChat,hooks,credentials} from './fake-chat.mjs';
@@ -172,6 +172,22 @@ test('Bot API exchanges the credential once, then uses the short-lived token and
  assert.equal(requests[1][1],'Bearer token-1');
  rejectNext=true;await api.me();
  assert.deepEqual(requests.slice(2).map(r=>r[1]),['Bearer token-1','BotCredential vbc_secret','Bearer token-2']);
+});
+
+test('after the platform signs the identity out, the client keeps asking and is back once the restriction is lifted',async(t)=>{
+ const fake=fakeChat();let restricted=false;let asked=0;
+ const client=new VelaIMClient(fake.TencentCloudChat,hooks);
+ await client.connect(async()=>{asked++;if(restricted)throw new VelaError('该 Bot 已被限制','im_identity_restricted',403);return credentials()});
+ t.mock.timers.enable({apis:['setTimeout']});
+ const settle=()=>new Promise(resolve=>setImmediate(resolve));
+ restricted=true;fake.native.user=null;fake.native.emit('onKickedOut',{type:'REST_API_Kick'});
+ t.mock.timers.tick(15000);await settle();
+ assert.equal(asked,2,'asks again while restricted');
+ restricted=false;
+ t.mock.timers.tick(30000);await settle();t.mock.timers.tick(0);await settle();
+ assert.equal(asked,3);
+ assert.deepEqual(fake.calls.filter(c=>c[0]==='login').map(c=>c[1]),['a_self','a_self'],'logged in again after release');
+ await client.disconnect();
 });
 
 test('UserSig renewal re-logs in with fresh credentials and keeps subscriptions; concurrent disconnects tear down once',async()=>{
