@@ -5,6 +5,23 @@ import { createShellNavigationState, projectShellNavigation, reduceShellNavigati
 const project = (state = createShellNavigationState(), viewportWidth = 1400, previouslyAvailable?: boolean) =>
   projectShellNavigation({ state, viewportWidth, contextWidth: 275, contextAvailable: true, sidecarOpen: true, previouslyAvailable });
 
+test("unified sidebar ignores former application rail pins and detents without changing preferences", () => {
+  for (const railDetent of ["expanded", "compact", "hidden"] as const) for (const sidecarOpen of [true, false]) {
+    const state = createShellNavigationState({ applications: true, account: true, railDetent });
+    const before = structuredClone(state);
+    const result = projectShellNavigation({ unified: true, state, viewportWidth: 1400,
+      contextWidth: 275, contextAvailable: true, sidecarOpen });
+    assert.equal(result.railWidth, 0, "no second column consumes the window budget");
+    assert.equal(result.dockOpen, false);
+    assert.equal(result.footerVisible, sidecarOpen, "footer follows the whole sidebar");
+    assert.equal(result.contextOpen, sidecarOpen);
+    assert.deepEqual(state, before, "migration presents one column without overwriting durable preferences");
+  }
+  const account = reduceShellNavigation(createShellNavigationState(), { type: "toggle", surface: "account", dockAvailable: false });
+  assert.equal(projectShellNavigation({ unified: true, state: account, viewportWidth: 390,
+    contextWidth: 275, contextAvailable: true, sidecarOpen: false }).peek, "account");
+});
+
 test("application width preferences are bounded and invalid storage falls back safely", () => {
   assert.equal(shellNavigationMetrics.compactActionSize, 36, "compact rail uses the shared 36px control rather than the 34px text row");
   assert.deepEqual({

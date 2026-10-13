@@ -7,7 +7,7 @@ INSTALLER="${ROOT_DIR}/images/helpers/install-deepseek-harness.sh"
 bash -n "${INSTALLER}"
 
 if grep -Fq 'readonly DSH_SPEC="@deepseek-ai/dsh@latest"' "${INSTALLER}"; then
-  echo "installer must not follow an unverified DSH latest release" >&2
+  echo "installer must resolve an integrity-checked snapshot before installing DSH latest" >&2
   exit 1
 fi
 
@@ -17,14 +17,16 @@ if grep -Eq 'LIGHTVELA_DSH_ASSETS_DIR|DEFAULT_ASSETS_DIR|runtime/pnpm-lock\.yaml
 fi
 
 for marker in \
-  'readonly DSH_COMPAT_VERSION="0.1.1-rc.2"' \
-  'readonly DSH_SPEC="@deepseek-ai/dsh@${DSH_COMPAT_VERSION}"' \
+  'readonly DSH_REQUESTED_VERSION="latest"' \
+  'readonly DSH_SPEC="@deepseek-ai/dsh@${DSH_REQUESTED_VERSION}"' \
   '@cocofhu/skillhub@latest' \
   'deepseek-harness-qqbot@latest' \
   'deepseek-harness-weixin@latest' \
   'deepseek-harness-wecom@latest' \
   'deepseek-harness-lark@latest' \
   'deepseek-harness-dingtalk@latest' \
+  'patch_gateway_browser_bootstrap' \
+  'restore_custom_plugin_payload' \
   'write_task running snapshot_resolved 28' \
   'write_task running runtime_lockfile 35' \
   'write_task running runtime_install 48' \

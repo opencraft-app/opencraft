@@ -99,7 +99,7 @@ func (s *desktopSandboxStub) ExecCommand(ctx context.Context, sandboxID string, 
 	if execResult != nil {
 		return execResult, nil
 	}
-	return &psandbox.ExecCommandResult{Status: "SUCCESS", ExitCode: 0}, nil
+	return desktopPreparationCommandResult(bash), nil
 }
 
 // execCmdCount 线程安全读 ExecCommand 调用次数。
@@ -349,23 +349,6 @@ func TestRenderDesktopStopServicesCommand(t *testing.T) {
 	}
 }
 
-func TestBuildDesktopWSURL(t *testing.T) {
-	t.Setenv(desktopIngressDomainEnv, "ingress.example.com")
-	got, err := buildDesktopWSURL("sb-abc123")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	want := "wss://6080-sb-abc123.ingress.example.com/websockify"
-	if got != want {
-		t.Fatalf("ws url mismatch: got %q want %q", got, want)
-	}
-
-	t.Setenv(desktopIngressDomainEnv, "")
-	if _, err := buildDesktopWSURL("sb-abc123"); !errors.Is(err, errcode.ErrDesktopNotConfigured) {
-		t.Fatalf("expected ErrDesktopNotConfigured when domain unset, got %v", err)
-	}
-}
-
 // ---- 状态机测试 ----
 
 // TestEnsureDesktopSessionRequiresInstanceSandbox 实例主机无 sandbox 时应 Failed（TB.1）。
@@ -427,15 +410,56 @@ func TestEnsureDesktopSessionReusesInstanceSandbox(t *testing.T) {
 	if !strings.Contains(sb.ptyCalls[0].Command, "x11vnc -storepasswd") {
 		t.Fatalf("expected provision command to inject VNC password, got:\n%s", sb.ptyCalls[0].Command)
 	}
-	// 复用主 sandbox 的 ID 组装 ws url。
+	// 过渡期兼容：配置了 ingress 域名的地域仍回填旧字段，保证 CTL 先于前端
+	// 发布时旧前端不回归。
 	if resp.WsURL != "wss://6080-sb-desktop-1.ingress.example.com/websockify" {
-		t.Fatalf("unexpected ws url: %q", resp.WsURL)
+		t.Fatalf("unexpected legacy ws url: %q", resp.WsURL)
 	}
 	if resp.Password == "" {
-		t.Fatal("expected non-empty VNC password on Ready")
+		t.Fatalf("legacy password must be kept while ingress domain is configured")
 	}
 	if resp.Width != desktopWidth || resp.Height != desktopHeight {
 		t.Fatalf("unexpected resolution: %dx%d", resp.Width, resp.Height)
+	}
+}
+
+// TestDesktopSessionReadyWithoutIngressDomain ingressproxy 已下线的地域（未配
+// DESKTOP_INGRESS_DOMAIN）：Ready 不得失败，也不得下发任何旧凭据。
+func TestDesktopSessionReadyWithoutIngressDomain(t *testing.T) {
+	resetDesktopSessionsForTest()
+	withDesktopEnv(t, "")
+	dao := &desktopInstanceDaoStub{entity: desktopTestEntity()}
+	sb := &desktopSandboxStub{
+		ptyOutputs: [][]psandbox.PtyExecStreamEvent{
+			ptyFinishEvents(desktopProbeOKMarker),
+		},
+	}
+	l := newDesktopTestLogic(dao, sb)
+	ctx := pctx.NewContext(nil).WithUserID("user-desktop-1")
+
+	resp, err := l.EnsureDesktopSession(ctx, "ins-desktop-1")
+	if err != nil {
+		t.Fatalf("Ready must not fail without ingress domain: %v", err)
+	}
+	if resp.Status != transport.DesktopSessionStatusReady {
+		t.Fatalf("expected Ready, got %q (reason=%q)", resp.Status, resp.Reason)
+	}
+	if resp.WsURL != "" || resp.Password != "" {
+		t.Fatalf("must not expose credentials without ingress domain, got wsURL=%q password=%q", resp.WsURL, resp.Password)
+	}
+}
+
+func TestBuildLegacyDesktopWSURL(t *testing.T) {
+	t.Setenv(desktopIngressDomainEnv, "ingress.example.com")
+	if got, ok := buildLegacyDesktopWSURL("sb-abc123"); !ok || got != "wss://6080-sb-abc123.ingress.example.com/websockify" {
+		t.Fatalf("unexpected legacy ws url: %q ok=%v", got, ok)
+	}
+	if _, ok := buildLegacyDesktopWSURL(" "); ok {
+		t.Fatalf("empty sandbox id must not build a url")
+	}
+	t.Setenv(desktopIngressDomainEnv, "")
+	if _, ok := buildLegacyDesktopWSURL("sb-abc123"); ok {
+		t.Fatalf("unset domain must not build a url")
 	}
 }
 
@@ -923,9 +947,9 @@ func TestGetDesktopSessionPausedRestartsServices(t *testing.T) {
 	if len(sb.resumeCalls) != 0 {
 		t.Fatalf("must not ResumeSandbox host on paused resume, got %v", sb.resumeCalls)
 	}
-	// 复用已有密码（幂等，不轮换）。
+	// 唤醒复用既有密码（幂等写入实例内），过渡期仍回填给旧前端。
 	if resp.Password != "aaaaaaaa" {
-		t.Fatalf("expected reused password, got %q", resp.Password)
+		t.Fatalf("expected reused password for legacy clients, got %q", resp.Password)
 	}
 }
 

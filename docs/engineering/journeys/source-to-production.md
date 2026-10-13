@@ -48,3 +48,21 @@ outbox/inbox/reward 记录保留用于恢复；不得通过删除审计记录或
 ## 授权
 
 commit、push、MR、流水线触发、GitOps 合并、Argo 操作和生产验证是不同授权面。用户只批准前一层时不得自动扩大到后一层。
+
+### Frontend Docker local dependency closure
+
+The frontend Docker build must stage the complete recursive `file:` package
+closure from `frontend/package.json` before `pnpm install --frozen-lockfile`.
+This includes the collaboration and chat-core shared packages, the mobile
+account and bot SDKs, and the bot SDK's workbench-panels dependency. Keep
+`frontend/deploy/Dockerfile` and its narrow Dockerfile-specific context allowlist
+in sync; do not copy the entire OpenCraft repository to repair a missing package.
+The specific ignore file must also exclude host node_modules and local credentials,
+because it supersedes the repository-root Docker ignore file. The recursive
+contract regression catches dependency additions missing either COPY or context
+allowlist. It does not replace a real image build and regional release acceptance.
+
+
+### Website backend rollout and existing navigation
+
+Deploying a new website backend must preserve the existing My Workbench navigation in both regions. Do not gate that existing menu behind console `show()`: existing static-site users need continuous access. Backend regional enablement, persistence qualification and API authorization remain separate release gates, not menu-visibility controls. A frontend candidate containing the withdrawn navigation gate must be superseded by a reviewed and verified artifact before production promotion.

@@ -1,6 +1,7 @@
 // Semantically adapted from the recovered Codex Composer/editor, queue tray,
 // and responsive footer boundaries. AppServer state remains externally owned.
 import { baseKeymap, newlineInCode, splitBlock } from "prosemirror-commands";
+import { defineMessages, type IntlShape } from "@opencraft/i18n";
 import { FormattedMessage, useIntl } from "@opencraft/i18n/react";
 import { DictationFooter } from "./dictation-footer";
 import { attachmentPreviewSession } from "./attachment-preview-session";
@@ -271,8 +272,27 @@ function formatSelectionLabel(value: string): string {
     .join(" ");
 }
 
-function permissionLabel(value: string): string {
-  return formatSelectionLabel(value);
+const permissionModeMessages = defineMessages({
+  "read-only": { id: "composer.permissions.readOnly", defaultMessage: "Read only" },
+  "accept-edits": { id: "composer.permissions.acceptEdits", defaultMessage: "Accept edits" },
+  auto: { id: "composer.permissions.auto", defaultMessage: "Auto review" },
+  full: { id: "composer.permissions.full", defaultMessage: "Full access" },
+});
+const permissionDescriptionMessages = defineMessages({
+  "read-only": { id: "composer.permissions.readOnly.description", defaultMessage: "Read-only access to files." },
+  "accept-edits": { id: "composer.permissions.acceptEdits.description", defaultMessage: "Allow editing files in the workspace." },
+  auto: { id: "composer.permissions.auto.description", defaultMessage: "Automatically review permission requests." },
+  full: { id: "composer.permissions.full.description", defaultMessage: "Full access to files and the execution environment." },
+});
+
+function displayPermissionLabel(permission: ComposerPermissionOption, intl: IntlShape): string {
+  return permission.mode == null ? permission.label : intl.formatMessage(permissionModeMessages[permission.mode]);
+}
+
+function displayPermissionDescription(permission: ComposerPermissionOption, intl: IntlShape): string | null {
+  // Engine-owned custom profiles retain their supplied policy description.
+  return permission.mode == null || !permission.description || !intl.locale.startsWith("zh")
+    ? permission.description : intl.formatMessage(permissionDescriptionMessages[permission.mode]);
 }
 
 const localCommandSuggestions: Suggestion[] = [
@@ -530,17 +550,12 @@ function createPlaceholderPlugin(placeholder: () => string): Plugin {
         ) {
           return DecorationSet.empty;
         }
-        const widget = Decoration.widget(
-          1,
-          () => {
-            const span = document.createElement("span");
-            span.className = "codex-composer-placeholder";
-            span.textContent = placeholder();
-            return span;
-          },
-          { side: -1 },
-        );
-        return DecorationSet.create(state.doc, [widget]);
+        // Keep the empty paragraph natively editable. An inline noneditable
+        // widget adds a caret boundary where iOS needs its empty editing target.
+        return DecorationSet.create(state.doc, [Decoration.node(0, first.nodeSize, {
+          class: "codex-composer-placeholder",
+          "data-placeholder": placeholder(),
+        })]);
       },
     },
   });
@@ -793,7 +808,7 @@ export const CodexComposer = forwardRef<
   const admittedFollowUpAction = resolveComposerFollowUpAction(preferredFollowUpAction, availableFollowUpActions);
   const defaultFollowUpAction = admittedFollowUpAction ?? preferredFollowUpAction;
   const intl = useIntl();
-  const placeholder = suppliedPlaceholder ?? intl.formatMessage({ id: "chat.placeholder", defaultMessage: "Ask for follow-up changes", description: "Follow-up composer placeholder" });
+  const placeholder = suppliedPlaceholder ?? intl.formatMessage({ id: "chat.companionFollowupPlaceholder", defaultMessage: "Tell me what you'd like to do next", description: "Follow-up composer placeholder" });
   const placeholderRef = useRef(placeholder);
   placeholderRef.current = placeholder;
   const mountRef = useRef<HTMLDivElement>(null);
@@ -895,6 +910,18 @@ export const CodexComposer = forwardRef<
   const catalogModels = selectionCatalog?.models ?? [];
   const catalogPermissions = selectionCatalog?.permissionProfiles ?? [];
   const showPermissionPicker = hasPermissionProfileChoices(catalogPermissions);
+  const newThreadDefaultPermission = catalogPermissions.find(permission =>
+    permission.mode === "full" && !permission.disabled)?.value;
+  useLayoutEffect(() => {
+    const draft = controller.getSnapshot().draft;
+    if (draft.target.type !== "new-thread"
+      || draft.selections.permissionProfile !== undefined
+      || newThreadDefaultPermission === undefined) return;
+    controller.dispatch({
+      type: "set-selections",
+      patch: { permissionProfile: newThreadDefaultPermission },
+    });
+  }, [controller, composerSnapshot.draft.id, composerSnapshot.draft.target.type, newThreadDefaultPermission]);
   const catalogDefaultModel = resolveModelSelection(catalogModels, undefined);
   const selectedModelValue = modelSelectionPolicy === "host-default" ? catalogDefaultModel?.value ?? null :
     composerSnapshot.draft.selections.model ??
@@ -1386,6 +1413,11 @@ export const CodexComposer = forwardRef<
                 dispatch,
               );
             }
+            // Software keyboards expose Return as a newline. iOS may also
+            // route a native paragraph insertion through this Enter command.
+            if (view?.dom.ownerDocument.defaultView?.matchMedia("(pointer: coarse)").matches) {
+              return splitBlock(state, dispatch);
+            }
             submitActionRef.current();
             return true;
           },
@@ -1759,15 +1791,16 @@ export const CodexComposer = forwardRef<
   const intelligenceLabel = selectedModel?.efforts.length
     ? `${modelLabel}, ${reasoningLabel}: ${effortLabel}`
     : modelLabel;
-  const permissionSelectionLabel =
-    selectedPermission?.label ??
-    (selectedPermissionValue === null
-      ? "Permissions"
-      : permissionLabel(selectedPermissionValue));
+  const permissionsLabel = intl.formatMessage({ id: "composer.permissions", defaultMessage: "Permissions" });
+  const permissionSelectionLabel = selectedPermission != null
+    ? displayPermissionLabel(selectedPermission, intl)
+    : selectedPermissionValue === null ? permissionsLabel : formatSelectionLabel(selectedPermissionValue);
   const permissionChangePending = composerSnapshot.draft.selections.permissionProfile != null
     && selectedPermissionValue !== effectiveDisplayPermissionValue;
   const permissionTriggerLabel = permissionChangePending
-    ? `${permissionSelectionLabel} · ${composerSnapshot.draft.target.type === "new-thread" ? "on send" : "next turn"}`
+    ? intl.formatMessage(composerSnapshot.draft.target.type === "new-thread"
+      ? { id: "composer.permissions.onSend", defaultMessage: "{profile} · on send" }
+      : { id: "composer.permissions.nextTurn", defaultMessage: "{profile} · next turn" }, { profile: permissionSelectionLabel })
     : permissionSelectionLabel;
   const modelPickerDisabled = disabled || catalogModels.length === 0;
 
@@ -2379,7 +2412,7 @@ export const CodexComposer = forwardRef<
                   <DropdownMenu.Portal container={portalContainer}>
                     <DropdownMenu.Content
                       className="codex-composer-selection-menu codex-composer-selection-menu--permissions"
-                      aria-label="Permissions"
+                      aria-label={permissionsLabel}
                       align="start"
                       sideOffset={1}
                       collisionPadding={6}
@@ -2390,7 +2423,7 @@ export const CodexComposer = forwardRef<
                         return (
                           <Fragment key={permission.id}>
                           {permission.mode == null && (index === 0 || catalogPermissions[index - 1]?.mode != null) ? (
-                            <div className="codex-composer-selection-menu__status">Engine profiles</div>
+                            <div className="codex-composer-selection-menu__status">{intl.formatMessage({ id: "composer.permissions.engineProfiles", defaultMessage: "Engine profiles" })}</div>
                           ) : null}
                           <DropdownMenu.Item
                             className={[
@@ -2407,14 +2440,14 @@ export const CodexComposer = forwardRef<
                             disabled={permission.disabled}
                             title={
                               permission.disabled
-                                ? "Disabled by AppServer requirements"
+                                ? intl.formatMessage({ id: "composer.permissions.disabled", defaultMessage: "Disabled by AppServer requirements" })
                                 : undefined
                             }
                             onSelect={() => selectPermission(permission.value)}
                           >
                             <SelectionMenuItemContent
-                              description={permission.description}
-                              label={permission.label}
+                              description={displayPermissionDescription(permission, intl)}
+                              label={displayPermissionLabel(permission, intl)}
                               leading={permissionMenuLeadingIcon(
                                 permission.mode,
                               )}
@@ -2427,13 +2460,12 @@ export const CodexComposer = forwardRef<
                       {selectionCatalog?.isFetching &&
                       catalogPermissions.length === 0 ? (
                         <div className="codex-composer-selection-menu__status">
-                          Loading permission profiles…
+                          {intl.formatMessage({ id: "composer.permissions.loading", defaultMessage: "Loading permission profiles…" })}
                         </div>
                       ) : null}
                       {selectionCatalog?.permissionProfileError ? (
                         <div className="codex-composer-selection-menu__status is-error">
-                          Could not refresh permission profiles. Try again when connected.
-                          Current permissions remain unchanged.
+                          {intl.formatMessage({ id: "composer.permissions.refreshError", defaultMessage: "Could not refresh permission profiles. Try again when connected. Current permissions remain unchanged." })}
                         </div>
                       ) : null}
                     </DropdownMenu.Content>

@@ -2,11 +2,11 @@
 
 ## Ringkasan
 
-**Alur membuat instance Hermes pertama: masuk dengan Google atau GitHub → pilih paket yang tersedia → aktifkan sesuai aturan paket saat ini → platform otomatis membuat instance → mulai Chat web; hubungkan kanal jika perlu. Semuanya dilakukan di browser, tanpa perlu membeli server atau melakukan deployment lokal. Instance Hermes adalah lingkungan runtime Agent di cloud LightVela, dan setelah dibuat ia daring 24/7. Setelah siap, buka My Agent untuk menggunakan Daily → Chat, lalu atur model, kanal pesan, dan Skill sesuai kebutuhan; jika belum memiliki API key model sendiri, Anda bisa langsung mulai berbicara memakai kredit model dari paket.**
+**Setelah masuk dengan Google atau GitHub dan mengaktifkan paket yang tersedia, buka [konsol Agent](/agents/overview/). Selesaikan pengaturan Bot pertama: isi nama yang wajib, tambahkan deskripsi jika perlu, dan atur tampilannya. Pilih Buat, lalu tunggu pembuatan dan konfigurasi awal selesai. Setelah konfigurasi selesai, pilih Mulai perjalanan, lalu buka Chat web untuk Bot tersebut. Kanal pesan bersifat opsional; balasan memerlukan kredit model paket yang tersedia atau model yang telah dikonfigurasi.**
 
 ---
 
-Instans Hermes adalah runtime cloud tempat LightVela Agent Anda berjalan. Aktivasi instans pertama dilakukan dalam lima langkah: **masuk dengan Google atau GitHub → pilih paket yang tersedia → aktifkan melalui alur aktivasi saat ini → biarkan LightVela menyiapkan instans → mulai Chat web, lalu hubungkan kanal bila perlu**. Semua dilakukan di browser, tanpa membeli server atau melakukan deployment lokal. Halaman ini memandu prosesnya secara berurutan.
+Tombol tutup dan opsi salin lanjutan hanya tersedia jika ada Bot sumber yang valid. Pengaturan pertama tanpa sumber harus diselesaikan. Kontrol tampilan mengubah warna, bentuk, dan aksesori, bukan memilih sumber salinan.
 
 ## Yang dibahas di halaman ini
 
@@ -42,9 +42,9 @@ Situs internasional tidak memiliki langkah verifikasi nama asli Tiongkok. Setela
 
 Pilih paket yang tersedia di [halaman Subscribe](/subscribe/) dan ikuti petunjuk pada kartu paket untuk mengaktifkannya. Periksa halaman tersebut untuk penawaran dan harga terbaru.
 
-### 4. Biarkan LightVela menyiapkan instans secara otomatis
+### 4. Selesaikan pengaturan Bot pertama
 
-Setelah paket diaktifkan, LightVela **otomatis menyediakan lingkungan cloud khusus dan membuat instans Hermes pertama Anda**. Anda tidak perlu membeli, men-deploy, atau mengonfigurasi server. Provisioning biasanya dimulai segera, dan Anda dapat membuka konsol saat instans sudah siap.
+Setelah masuk dengan Google atau GitHub dan mengaktifkan paket yang tersedia, buka [konsol Agent](/agents/overview/). Selesaikan pengaturan Bot pertama: isi nama yang wajib, tambahkan deskripsi jika perlu, dan atur tampilannya. Pilih **Buat**, lalu tunggu pembuatan dan konfigurasi awal selesai. Setelah konfigurasi selesai, pilih **Mulai perjalanan**, lalu buka Chat web untuk Bot tersebut. Kanal pesan bersifat opsional; balasan memerlukan kredit model paket yang tersedia atau model yang telah dikonfigurasi.
 
 ### 5. Atur dan aktifkan Agent Anda
 
@@ -66,7 +66,7 @@ Hermes Agent pertama Anda kini siap online di cloud 24/7.
 
 ### Seberapa cepat instans bisa digunakan setelah aktivasi?
 
-LightVela mulai menyiapkan instans Hermes secara otomatis setelah paket aktif. Saat Bot siap dan kredit paket tersedia atau model sudah dikonfigurasi, kirim pesan di Daily → Chat. Hubungkan kanal eksternal bila perlu.
+Setelah pembuatan selesai, pastikan nama Bot baru muncul di pemilih, buka Chat web-nya, dan kirim pesan uji singkat. Jika pembuatan atau konfigurasi awal gagal, ikuti tindakan coba lagi yang ditampilkan dan periksa daftar Bot sebelum membuat lagi. Jika tidak ada balasan, periksa status Bot serta kredit atau konfigurasi model.
 
 ### Di mana melihat paket dan penawaran saat ini?
 

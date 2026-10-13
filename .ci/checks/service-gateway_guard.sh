@@ -1,7 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Verify this service with the CI toolchain and its own module.
 cd "${GUARD_REPO_ROOT:-$(pwd)}"
+source .ci/init.sh
+ci_init_repo_root
+if [[ "$(uname -s)" == "Linux" ]]; then
+  ci_ensure_go
+else
+  ci_require_commands go
+fi
+export GOWORK=off
 
 echo "service-gateway guard: changed files"
 cat "${GUARD_CHANGED_FILES_FILE:?}"

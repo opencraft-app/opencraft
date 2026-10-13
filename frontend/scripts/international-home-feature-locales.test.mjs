@@ -29,14 +29,13 @@ test('hero runtime normalization removes all legacy measurements and keeps word 
   assert.ok(importer.includes('const runtimeSource = normalizeHeroRuntime('));
 });
 
-test('scene artwork is present once after both fresh and repeated generation', () => {
-  const html = '<header class="scenes__head sr"><h2 class="scenes__title">Scenes</h2></header>';
+test('retired scene artwork stays removed after fresh and repeated generation', () => {
+  const html = '<header class="scenes__head sr"><h2 class="scenes__title">Scenes</h2><span class="scenes__mascot" aria-hidden="true"><img src="/lightvela-intl-home/assets/scenes-mascot-duo.webp"></span></header>';
   const once = localizeFeatureCards(html, 'en-US');
   const twice = localizeFeatureCards(once, 'en-US');
   for (const result of [once, twice]) {
     const document = new JSDOM(result).window.document;
-    assert.equal(document.querySelectorAll('.scenes__mascot').length, 1);
-    assert.equal(document.querySelector('.scenes__mascot img').getAttribute('src'), '/lightvela-intl-home/assets/scenes-mascot-duo.webp?v=20260930-home-visual-v1');
+    assert.equal(document.querySelectorAll('.scenes__mascot').length, 0);
   }
   const importer = readFileSync(new URL('./import-international-homepage.mjs', import.meta.url), 'utf8');
   assert.ok(importer.includes('"scenes-mascot-duo.webp"'));
@@ -120,7 +119,7 @@ test('step mascot uses only original artwork sizing, without superseded backgrou
   const css = readFileSync(new URL('../public/lightvela-intl-home/assets/hermes-home.css', import.meta.url), 'utf8');
   assert.equal((css.match(/\.home-step-mascot img\s*\{/g) ?? []).length, 1);
   assert.match(css, /\.home-step-mascot img\s*\{[^}]*display: block;[^}]*width: 112px;/);
-  assert.match(css, /\.home-step-mascot\s*\{[^}]*left: var\(--step-left\);[^}]*top: var\(--step-top, 80px\)/);
+  assert.match(css, /\.home-step-mascot\s*\{[^}]*left: var\(--step-left, calc\(50% \+ min\(30vw, 384px\) - 56px\)\);[^}]*top: var\(--step-top, 80px\)/);
   for (const asset of ['hermes-cover-companion.webp', 'figma-steps-companion.webp']) {
     assert.ok(!css.includes(asset));
     assert.ok(!existsSync(new URL(`../public/lightvela-intl-home/assets/${asset}`, import.meta.url)));
@@ -153,7 +152,10 @@ test('step placement scales the generated foot anchor using the rendered artwork
   dom.window.matchMedia = (query) => ({ matches: query === '(min-width: 900px)', addEventListener() {}, removeEventListener() {} });
   const document = dom.window.document;
   document.querySelector('.deploy').getBoundingClientRect = () => ({ left: 10, top: 100 });
-  document.querySelector('.track').getBoundingClientRect = () => ({ left: 30, top: 300, width: 1000 });
+  document.querySelector('.track').getBoundingClientRect = () => ({ left: 30, top: 348, width: 1000 });
+  Object.defineProperties(document.querySelector('.track'), {
+    offsetLeft: { value: 20 }, offsetTop: { value: 200 }, offsetWidth: { value: 1000 },
+  });
   const mascot = document.querySelector('.home-step-mascot');
   let renderedWidth = 112;
   mascot.querySelector('img').getBoundingClientRect = () => ({ width: renderedWidth });
@@ -282,3 +284,42 @@ for (const locale of FEATURE_LOCALES) {
     if (locale !== 'en-US') assert.ok(!html.includes('Open a brighter way of working.'));
   });
 }
+
+test('step companion recovers when lazy artwork dimensions arrive and cleans up its load handler', (t) => {
+  const html = localizeFeatureCards('<div class="deploy"><div class="track"></div></div>', 'en-US');
+  const dom = new JSDOM(`<div id="lightvela-intl-home">${html}</div>`, { runScripts: 'outside-only' });
+  t.after(() => dom.window.close());
+  dom.window.matchMedia = query => ({ matches: query === '(min-width: 900px)', addEventListener() {}, removeEventListener() {} });
+  const document = dom.window.document;
+  document.querySelector('.deploy').getBoundingClientRect = () => ({ left: 10, top: 100 });
+  document.querySelector('.track').getBoundingClientRect = () => ({ left: 30, top: 348, width: 1000 });
+  Object.defineProperties(document.querySelector('.track'), {
+    offsetLeft: { value: 20 }, offsetTop: { value: 200 }, offsetWidth: { value: 1000 },
+  });
+  const mascot = document.querySelector('.home-step-mascot');
+  const image = mascot.querySelector('img');
+  let width = 0;
+  image.getBoundingClientRect = () => ({ width });
+  dom.window.eval(readFileSync(new URL('../public/lightvela-intl-home/assets/feature-motion.js', import.meta.url), 'utf8'));
+  assert.equal(mascot.style.getPropertyValue('--step-left'), '');
+  width = 112;
+  image.dispatchEvent(new dom.window.Event('load'));
+  assert.equal(parseFloat(mascot.style.getPropertyValue('--step-left')), 764);
+  document.dispatchEvent(new dom.window.Event('lightvela-home-dispose'));
+  width = 224;
+  image.dispatchEvent(new dom.window.Event('load'));
+  assert.equal(parseFloat(mascot.style.getPropertyValue('--step-left')), 764);
+});
+test('Chinese play copy protects its final characters without changing content or duplicating spans', (t) => {
+  const copy = '如喝水与用药提醒、房租到期通知、每日行情摘要';
+  const dom = new JSDOM(`<div id="lightvela-intl-home" data-locale="zh-CN"><ul class="play__list"><li><b>模版直接装</b>${copy}</li></ul></div>`, { runScripts: 'outside-only' });
+  t.after(() => dom.window.close());
+  dom.window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
+  const script = readFileSync(new URL('../public/lightvela-intl-home/assets/feature-motion.js', import.meta.url), 'utf8');
+  dom.window.eval(script);
+  assert.equal(dom.window.document.querySelector('li').textContent, '模版直接装' + copy);
+  assert.equal(dom.window.document.querySelector('.home-copy-tail').textContent, '行情摘要');
+  dom.window.document.dispatchEvent(new dom.window.Event('lightvela-home-dispose'));
+  dom.window.eval(script);
+  assert.equal(dom.window.document.querySelectorAll('.home-copy-tail').length, 1);
+});

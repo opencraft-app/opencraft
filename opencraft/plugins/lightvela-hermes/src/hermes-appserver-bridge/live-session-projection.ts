@@ -39,7 +39,7 @@ export function appendLiveSessionProjection(turns: AppServerTurn[], payload: Her
   const split = corrections.length > 0 && corrections.every(entry => Number.isInteger(entry.offset) && entry.offset! >= 0);
   // A quiet stream can be waiting on a tool/clarify; only a settled successful
   // snapshot can promote the flat tail to an authoritative final answer.
-  const settled = payload.running === false && !payload.pending_clarify && !inflight.streaming && !error;
+  const settled = payload.running === false && !payload.pending_clarify && !payload.pending_approval && !inflight.streaming && !error;
   const addAssistant = (text: string, id: string, interim: boolean) => upsert({
     id, type: "agentMessage", text, phase: interim ? "commentary" : settled ? "final_answer" : null,
     // A quiet transport is not an item/completed receipt. Preserve an open
@@ -62,7 +62,7 @@ export function appendLiveSessionProjection(turns: AppServerTurn[], payload: Her
     if (body || inflight.streaming) addAssistant(body.slice(cursor), `hermes-inflight-assistant-${sid}`, false);
   }
   if (!split || structured || error || !body) corrections.forEach((entry, index) => addUser(entry.text, `hermes-inflight-correction-${index}-${sid}`));
-  turn.status = error ? "failed" : payload.running || payload.pending_clarify ? "inProgress" : "completed";
+  turn.status = error ? "failed" : payload.running || payload.pending_clarify || payload.pending_approval ? "inProgress" : "completed";
   if (payload.turn_started_at !== undefined) turn.startedAt = payload.turn_started_at;
   if (error) turn.error = {
     message: error,

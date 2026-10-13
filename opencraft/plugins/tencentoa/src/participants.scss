@@ -1,0 +1,33 @@
+@use "@opencraft/design-system/typography.web" as typography;
+
+.ioa-participants__badge {
+  @include typography.role(metadata, secondary);
+  display: grid;
+  place-items: center;
+  width: max(28px, calc(var(--ioa-participant-digits, 2) * 7px + 12px));
+  aspect-ratio: 1;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  background: var(--color-background-button-secondary);
+  cursor: pointer;
+  &:hover, &[data-state="open"] { color: var(--color-text); background: var(--color-background-button-tertiary-hover); }
+  &:focus-visible { outline: var(--focus-outline); outline-offset: 2px; }
+}
+.ioa-participants__popover {
+  @include typography.role(body, primary);
+  z-index: 100;
+  min-width: 180px;
+  max-width: min(300px, calc(100vw - 24px));
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-background);
+  box-shadow: 0 8px 28px rgb(0 0 0 / 16%);
+  .ioa-participants__heading { @include typography.role(navigation-title, primary); }
+  .ioa-participants__description { @include typography.role(metadata, tertiary); margin: 4px 0 8px; }
+  ul { margin: 0; padding: 0; list-style: none; max-height: 260px; overflow-y: auto; }
+  li { padding: 5px 0; overflow-wrap: anywhere; }
+  .ioa-participants__notice { @include typography.role(metadata, secondary); }
+}

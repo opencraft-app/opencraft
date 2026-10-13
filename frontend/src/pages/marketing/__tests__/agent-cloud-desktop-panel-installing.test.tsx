@@ -123,10 +123,49 @@ describe("AgentCloudDesktopPanel 安装阶段与国际化", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Failed to start cloud computer");
   });
 
-  it("请求异常保留具体错误，便于排查接口失败", async () => {
+  it("瞬时请求异常有限重试后保留具体错误", async () => {
+    vi.useFakeTimers();
     repositories.bots.ensureDesktopSession.mockRejectedValue(new Error("HTTP 502: gateway unavailable"));
     render(<AgentCloudDesktopPanel botId="bot-test" />);
-    expect(await screen.findByRole("alert")).toHaveTextContent("HTTP 502: gateway unavailable");
+    await act(async () => {});
+    expect(screen.getByRole("status")).toHaveTextContent("正在重新连接");
+    for (const delay of [1_000, 2_000, 4_000, 8_000, 16_000]) {
+      await act(async () => { await vi.advanceTimersByTimeAsync(delay); });
+    }
+    expect(repositories.bots.ensureDesktopSession).toHaveBeenCalledTimes(6);
+    expect(screen.getByRole("alert")).toHaveTextContent("HTTP 502: gateway unavailable");
+  });
+
+  it.each(["ensure", "poll"])("%s 返回 Paused 时停止轮询并要求手动重试", async (stage) => {
+    vi.useFakeTimers();
+    prepare({ status: stage === "ensure" ? "Paused" : "Provisioning" });
+    repositories.bots.getDesktopSession.mockResolvedValue({ status: "Paused" });
+    render(<AgentCloudDesktopPanel botId="bot-test" />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+    expect(screen.getByRole("alert")).toHaveTextContent("云电脑已休眠，请点击重试");
+    expect(repositories.bots.ensureDesktopSession).toHaveBeenCalledTimes(1);
+    expect(repositories.bots.getDesktopSession).toHaveBeenCalledTimes(stage === "ensure" ? 0 : 1);
+  });
+
+  it("轮询鉴权失败立即停止，不消耗网络重试预算", async () => {
+    vi.useFakeTimers();
+    prepare({ status: "Provisioning" });
+    repositories.bots.getDesktopSession.mockRejectedValue(Object.assign(new Error("forbidden"), { status: 403 }));
+    render(<AgentCloudDesktopPanel botId="bot-test" />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+    expect(screen.getByRole("alert")).toHaveTextContent("forbidden");
+    expect(repositories.bots.getDesktopSession).toHaveBeenCalledTimes(1);
+    expect(repositories.bots.ensureDesktopSession).toHaveBeenCalledTimes(1);
+  });
+
+  it("卸载时取消安装轮询等待", async () => {
+    vi.useFakeTimers();
+    prepare({ status: "Installing" });
+    const view = render(<AgentCloudDesktopPanel botId="bot-test" />);
+    await act(async () => {});
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+    view.unmount();
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it("首次触发返回 Installing 时展示本地化文案与进度百分比", async () => {

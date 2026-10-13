@@ -8,6 +8,8 @@
 
 ## Start a conversation
 
+After signing in with Google or GitHub and activating an available plan, open the [Agent console](/agents/overview/). Complete the first Bot setup: enter a required name, optionally add a description, and adjust its appearance. Select **Create** and wait for creation and initial configuration to finish. Select **Start your journey** once configuration finishes, then open Web Chat for that Bot. A messaging channel is optional; available plan model credits or a configured model are required for replies.
+
 1. Open My Agent and select the Bot you want to use at the top of the sidebar.
 2. Under Daily, expand Chat and choose New conversation. You can also start a conversation for a specific Bot from its card on the Overview page.
 3. Enter your question or task in “Share your thoughts, or ask me to help with something,” then send it.

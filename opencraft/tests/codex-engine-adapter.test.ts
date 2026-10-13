@@ -1058,3 +1058,41 @@ test("enabling a Codex account returns before background subscription usage refr
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("Host binds each submission to its trusted sender and keeps queued authors through another client's dispatch", async () => {
+  const root = await mkdtemp(join(tmpdir(), "codex-message-senders-integration-"));
+  const frames: Array<Record<string, unknown>> = [];
+  const adapter = createRoutingAdapter(root, frames);
+  const a = { kind: "employee" as const, loginName: "employee.a" };
+  const b = { kind: "employee" as const, loginName: "employee.b" };
+  let seq = 0;
+  const request = async (client: string, method: string, params: Record<string, unknown>, sender = a, validUntil = Date.now() + 60_000) => {
+    const id = `sender-${++seq}`;
+    await adapter.sendWithContext(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: client }), { sender, validUntil });
+    return await waitFor(frames, frame => frame.id === id) as any;
+  };
+  try {
+    await adapter.connect();
+    await initializeClient(adapter, frames, "a"); await initializeClient(adapter, frames, "b");
+    const threadId = (await request("a", "thread/start", { testNoServerRequest: true })).result.thread.id;
+    const first = await request("a", "turn/start", { threadId, clientUserMessageId: "first", input: [{ type: "text", text: "one" }], sender: b });
+    const turnId = first.result.turn.id;
+    assert.ok((await request("b", "turn/steer", { threadId, expectedTurnId: turnId, clientUserMessageId: "second", input: [{ type: "text", text: "two" }] }, b)).result);
+    const added = await request("a", "thread/queue/add", { threadId, clientUserMessageId: "third", input: [{ type: "text", text: "three" }] });
+    assert.deepEqual(added.result.queuedSubmission.sender, a);
+    // A repeat ID from another employee must not change authorship or reach native Codex.
+    const collision = await request("b", "turn/steer", { threadId, expectedTurnId: turnId, clientUserMessageId: "first", input: [{ type: "text", text: "overwrite" }] }, b);
+    assert.match(collision.error.message, /another sender/);
+    const expired = await request("a", "turn/steer", { threadId, expectedTurnId: turnId, clientUserMessageId: "expired", input: [{ type: "text", text: "expired" }] }, a, Date.now() - 1);
+    assert.match(expired.error.message, /expired/);
+    // Explicit queue steer is initiated by B, while the queued message remains A's.
+    assert.ok((await request("b", "thread/queue/steer", { threadId, expectedTurnId: turnId, queuedSubmissionId: added.result.queuedSubmission.id }, b)).result);
+    const history = (await request("b", "thread/items/list", { threadId }, b)).result.data;
+    assert.deepEqual(history.map((entry: any) => entry.item.sender), [a, b, a]);
+    const native = (await request("a", "test/readAcceptedInputs", {})).result.data;
+    assert.deepEqual(native.map((entry: any) => entry.params.input[0].text), ["one", "two", "three"]);
+    assert.doesNotMatch(JSON.stringify(native), /employee\.|loginName|staffId|"sender"/);
+    const withoutId = await request("a", "turn/steer", { threadId, expectedTurnId: turnId, input: [{ type: "text", text: "no id" }] });
+    assert.match(withoutId.error.message, /Message identity/);
+  } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
+});

@@ -21,7 +21,7 @@ import { createNativeDesktopControl } from "../apps/local-agent-host/src/desktop
 import { ModelConfigurationRepository, ModelCredentialRepository } from "../apps/local-agent-host/src/model-config/repository.ts";
 import { SpeechModelConfiguration } from "../apps/local-agent-host/src/model-config/speech.ts";
 import { SpeechTranscriptionService } from "./speech-transcription-service.mjs";
-import { TencentOaServerPlugin } from "../plugins/tencentoa/src/server.ts";
+import { TencentOaServerPlugin, TencentOaParticipants } from "../plugins/tencentoa/src/server.ts";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -191,15 +191,17 @@ export async function startHeadlessServer(options = {}) {
       projectlessWorkspaceDirectory: join(dataDirectory, "workspaces"),
       skillsDirectory: join(dataDirectory, "skills"),
     });
+    const createThreadMetadata = tencentOa ? (database, context) => new TencentOaParticipants(database, context) : undefined;
     appHostServer = new AppHostServer({
       logicalClientRouting: true,
       physicalHostLifetime: "server",
       createTransport(hostId) {
         const remote = remoteServers.get(hostId);
-        if (remote) return createSshCodexEngineAdapter(remote);
-        if (hostId.startsWith("ssh:")) return createSshCodexEngineAdapter(sshManagement.store.binding(hostId));
+        if (remote) return createSshCodexEngineAdapter(remote, dataDirectory, createThreadMetadata);
+        if (hostId.startsWith("ssh:")) return createSshCodexEngineAdapter(sshManagement.store.binding(hostId), dataDirectory, createThreadMetadata);
         if (hostId !== "local-codex") throw new Error(`Unknown server Host ${hostId}`);
         return options.createCodexTransport?.() ?? new CodexEngineAdapter({
+          createThreadMetadata,
           executable: options.codexExecutable ?? join(root, "runtime/codex/bin/codex"),
           runtimeDirectory: join(root, "runtime"),
           dataDirectory: join(dataDirectory, "codex"),

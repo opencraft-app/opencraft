@@ -2,9 +2,9 @@
 
 ## 概要
 
-**パーソナルAIアシスタントを作る正しい順序は、すべてを一度にスケジュールタスクすることではありません。まず、すでに使っているチャットアプリでアクセス可能なクラウドHermes Agentを作り、その後メモリ、スキル、スケジュールタスクを重ねていきます。** 5つの構成要素はそれぞれ1つの問題を解決します：モデルは推論の質を決め、チャネルはどこでアクセスするかを決め、メモリは作業方法を保持させ、スキルは再利用可能な手法を与え、スケジュールタスクはあなたが不在の間に合意した作業を完了させます。最初の1週間は、次の3つだけを行います：1つのモデルを設定し、1つのチャネルを接続し、メモリが本当にセッション間で保持されることを確認します。その経路が信頼できるようになったら、スキルとスケジュールタスクを追加します — この方法で、何かが壊れたとき、どのレイヤーが原因かを判断できます。
+**個人 AI アシスタントは、まず Bot を一つ作成して選択し、利用可能なモデルクレジットまたは設定済みモデルで Web チャットの返信を確認します。メッセージアプリを使いたい場合にのみチャネルを接続します。次に、新しい会話でも安定した好みが記憶されるかを確認し、具体的な作業に必要なスキルを追加します。定期タスクは指示が機能することを確認してから設定してください。メモリ、スキル、チャネル、タスクは選択した Bot ごとに管理します。**
 
-![チャネル全体でLightVelaを備えたパーソナルAIアシスタント](../../images/use-case-personal-ai-assistant.webp)
+![LightVela 国際版コンソールの新しい Web Chat 会話](../../images/use-case-personal-ai-assistant.webp)
 
 ## 対象者
 
@@ -14,11 +14,11 @@
 
 ## 前提条件
 
-- LightVelaアカウントと稼働中のHermes Agent。まだ作成していない場合は、まずこちらから始めてください。[クイックスタート](https://lightvela.ai/docs/quickstart)。
+- LightVelaアカウントと稼働中のHermes Agent。まだ作成していない場合は、まずこちらから始めてください。[クイックスタート](../02-quickstart.md)。
 
-- 1つの会話チャネル。Telegram、WhatsApp、Discord、Slack、およびWeChatは一般的な開始点です。毎日最も開く可能性が高いものを選んでください。
+- Web チャットだけで始められます。メッセージアプリを使う場合は、以下の手順でチャネルを接続してください。
 
-- 動作中のモデル構成または利用可能な試用クレジット。参照してください[モデルの設定](https://lightvela.ai/docs/configuration/model)もしHermesがまだ返信できない場合。
+- 動作中のモデル構成または利用可能な試用クレジット。参照してください[モデルの設定](../configuration/model.md)もしHermesがまだ返信できない場合。
 
 - 最初に助けが欲しいことの簡単なアイデア。1つのルーチン、例えば1日の計画やフォローアップの収集で十分です。
 
@@ -26,7 +26,11 @@
 
 ### 1. Hermesをあなたの日課に組み込む
 
-1つのメッセージングチャネルを接続し、通常の日常を整理する場所から最初の数件のメッセージを送信します。チャネルは単なる配信手段ではなく、アシスタントを簡単に戻って利用できる習慣です。次のセットアップページに従ってください[Telegram](https://lightvela.ai/docs/configuration/channel-telegram), [WhatsApp](https://lightvela.ai/docs/configuration/channel-whatsapp), [Discord](https://lightvela.ai/docs/configuration/channel-discord), [Slack](https://lightvela.ai/docs/configuration/channel-slack)や[WeChat](https://lightvela.ai/docs/configuration/channel-wechat)。
+Bot バーで目的の Bot のアバターを選択します。画面が狭い場合は、先にナビゲーションパネルを開いてください。モデル、メモリ、スキル、チャネル、定期タスクを変更する前に名前を確認してください。Web チャットと会話一覧は選択した Bot に対応し、追加の Bot も Web チャットを利用できます。Web チャットにメッセージチャネルの接続は不要です。
+
+Web チャットだけで始められます。メッセージアプリを使う場合は、以下の手順でチャネルを接続してください。
+
+メッセージアプリを使う場合は、一つのチャネルを接続して返信を確認してください。接続手順は次のガイドを参照してください：[Telegram](../configuration/channel-telegram.md), [WhatsApp](../configuration/channel-whatsapp.md), [Discord](../configuration/channel-discord.md), [WeChat](../configuration/channel-wechat.md), [Slack](../configuration/channel-slack.md)。
 
 ![LightVelaコンソールのチャネルページ](../../images/personal-ai-assistant-channel.webp)
 
@@ -48,7 +52,9 @@ Remember that I prefer a concise weekday briefing at 8:00 AM,
 with meetings, deadlines, and the three most important next actions.
 ```
 
-次の[メモリ管理](https://lightvela.ai/docs/configuration/memory)ページで、Hermesが蓄積したメモリとユーザープロファイル情報を確認します。メモリは繰り返しを減らすためのものであり、あらゆる通過情報の捨て場になるべきではありません。
+次の[メモリ管理](../configuration/memory.md)ページで、Hermesが蓄積したメモリとユーザープロファイル情報を確認します。メモリは繰り返しを減らすためのものであり、あらゆる通過情報の捨て場になるべきではありません。
+
+平日の午前8時に要約が欲しいという好みを記憶させても、定期タスクは作成されません。実行日時を別途設定し、初回の実行結果と選択した通知チャネルでの配信を確認してください。
 
 ### 3. 実際の作業で必要な場合にのみスキルを追加する
 
@@ -69,15 +75,27 @@ Every weekday at 8:00 AM, prepare a concise plan for today.
 Start with deadlines and meetings, then suggest three focused next actions.
 ```
 
-でスケジュールと通知チャネルを設定します。最初のスケジュールタスクは小さく保ち、実際の結果をいくつか確認した後で指示を改善できます。[スケジュールタスク](https://lightvela.ai/docs/configuration/automation)。
+でスケジュールと通知チャネルを設定します。最初のスケジュールタスクは小さく保ち、実際の結果をいくつか確認した後で指示を改善できます。[スケジュールタスク](../configuration/automation.md)。
 
-![LightVelaコンソールのスケジュールタスクページ](../../images/personal-ai-assistant-automations.webp)
+![LightVela の定期タスク画面に表示される公式タスクテンプレート](../../images/personal-ai-assistant-automations.webp)
+
+## 各要素を確認する
+
+| 要素 | 確認方法 | 制約 |
+| --- | --- | --- |
+| Bot と Web チャット | 目的の Bot を選び、短いメッセージを送る | 返信にはオンラインの Bot と利用可能なクレジットまたはモデル設定が必要 |
+| メモリ | 安定した好みを伝え、新しい会話で確認する | 新しい会話を始めても長期メモリは消えない |
+| 定期タスク | 実行日時、通知チャネル、結果を確認する | Bot の作成やコピーでは定期タスクとチャネル接続はコピーされない |
+
+## 結果を確認する
+
+チャネルを接続する前に Web チャットの返信を確認してください。新しい会話で記憶した好みを試し、最初の定期タスクの結果を確認します。チャネルやタスクが失敗した場合は、機能を追加する前に選択した Bot、設定、状態を確認してください。
 
 ## FAQ
 
 ### ヘルメスが役立つようになる前に、すべての機能を設定する必要がありますか？
 
-いいえ。始めるためには、チャンネルと作業モデルがあれば十分です。どの繰り返しタスクを残す価値があるかを発見するにつれて、徐々にメモリ、スキル、スケジュールタスクを追加してください。
+Web チャットだけで始められます。メッセージアプリを使う場合は、以下の手順でチャネルを接続してください。
 
 ### Hermesは私が送るすべてのメッセージを覚えますか？
 
@@ -85,16 +103,12 @@ Start with deadlines and meetings, then suggest three focused next actions.
 
 ### 複数のチャンネルから同じアシスタントを使うことはできますか？
 
-はい。複数の接続されたチャネルが同じHermes Agentを指すことができるため、サポートされているメッセージングプラットフォーム間を移動してもアシスタントは同じコンテキストを保持できます。
+はい、各チャネルが同じ Bot に接続されている場合です。長期メモリと好みはその Bot に属します。別の Bot は独自のワークスペースを持ち、コピーで引き継ぐのは作成時点の内容です。その後の変更は同期されません。
 
 ### まず何をスケジュールタスクすべきですか？
 
 既に予測可能な時間に繰り返しているタスクを選んでください。朝の計画、短い日次レビュー、または週次の優先事項確認は、出力が役立っているかをすぐに判断できるため、最初の候補として適しています。
 
-## 次のステップ
+## まとめ
 
-- [チャット](https://lightvela.ai/docs/configuration/agent-chat)— コンソールで直接Hermesと作業します。
-
-- [メモリ管理](https://lightvela.ai/docs/configuration/memory)— アシスタントが会話全体で保持する内容を確認します。
-
-- [スケジュールタスク](https://lightvela.ai/docs/configuration/automation)— 役立つルーチンをスケジュールする。
+最初のアシスタントは一つの日課に集中させます。選択した Bot でチャット、メモリ、最初の定期タスクが機能したら、役割を少しずつ広げてください。

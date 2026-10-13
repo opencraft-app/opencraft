@@ -1,3 +1,11 @@
+import type { MessageSender } from "@opencraft/appserver-protocol";
+
+/** Trusted in-process context. Never decoded from a Renderer frame. */
+export interface TransportSubmissionContext {
+  readonly sender: MessageSender | null;
+  readonly validUntil?: number;
+}
+
 export type TransportState =
   | "idle"
   | "connecting"
@@ -28,6 +36,7 @@ export interface DuplexTransport {
   connect(signal?: AbortSignal): Promise<void>;
   /** Signal ends local request work, not an already-admitted remote Turn. */
   send(frame: string, signal?: AbortSignal): Promise<void>;
+  sendWithContext?(frame: string, context: TransportSubmissionContext, signal?: AbortSignal): Promise<void>;
   subscribeMessage(listener: (frame: string) => void): () => void;
   subscribeStatus(listener: (status: TransportStatus) => void): () => void;
   /** Platform hint (foreground/network return); connection owner decides whether to retry. */

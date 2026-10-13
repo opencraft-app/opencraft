@@ -1,0 +1,102 @@
+@use "@opencraft/design-system/typography.web" as typography;
+
+.workspace-pdf-preview {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.workspace-pdf-preview__toolbar {
+  @include typography.role("toolbar-meta", secondary);
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px;
+  border-bottom: 1px solid var(--color-border-subtle);
+
+  button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 30px;
+    height: 32px;
+    padding: 0 6px;
+    border: 0;
+    border-radius: 6px;
+    color: inherit;
+    background: transparent;
+    font: inherit;
+    &:hover:not(:disabled) { background: var(--color-background-button-tertiary-hover); }
+    &:disabled { opacity: 0.4; }
+  }
+
+  span { min-width: 64px; text-align: center; }
+}
+
+.workspace-pdf-preview__scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px;
+  background: var(--color-background-primary-ghost-hover);
+}
+
+.workspace-pdf-preview__page {
+  position: relative;
+  margin-inline: auto;
+  background: white;
+  color-scheme: only light;
+  box-shadow: var(--shadow-200);
+  canvas { display: block; }
+}
+
+// PDF.js owns text geometry; document glyph metrics must not inherit Shell
+// typography. These rules follow its TextLayer contract, scoped to this View.
+.workspace-pdf-preview__text {
+  position: absolute;
+  inset: 0;
+  overflow: clip;
+  line-height: 1;
+  letter-spacing: normal;
+  word-spacing: normal;
+  text-align: initial;
+  text-size-adjust: none;
+  transform-origin: 0 0;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+
+  :is(span, br) {
+    position: absolute;
+    white-space: pre;
+    color: transparent;
+    cursor: text;
+    transform-origin: 0% 0%;
+    user-select: text;
+    -webkit-user-select: text;
+  }
+  > :not(.markedContent), .markedContent span:not(.markedContent) {
+    --font-height: 0;
+    --scale-x: 1;
+    --rotate: 0deg;
+    font-size: calc(var(--text-scale-factor) * var(--font-height));
+    transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+  }
+  .markedContent { display: contents; }
+  ::selection { background: color-mix(in srgb, Highlight 35%, transparent); }
+}
+
+.workspace-pdf-preview__status {
+  @include typography.role("body", secondary);
+  display: flex;
+  min-height: 120px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+}

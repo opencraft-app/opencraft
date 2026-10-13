@@ -7,6 +7,8 @@ import { randomUUID } from "node:crypto";
 import { dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { identityValidUntil } from "@opencraft/plugin-tencentoa/contract";
+
 import WebSocket, { WebSocketServer } from "ws";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -181,7 +183,7 @@ function validAppHostDiagnostic(report) {
     && (report.closeCode === undefined || (Number.isInteger(report.closeCode) && report.closeCode >= 0 && report.closeCode <= 4999));
 }
 
-function bridgeAppHostSocket(client, appHostServer, logDiagnostic, authorize = () => true) {
+function bridgeAppHostSocket(client, appHostServer, logDiagnostic, authorize = () => true, submissionContext = { sender: null }) {
   const listeners = new Set();
   const pendingConnects = new Set();
   let connection = null;
@@ -219,7 +221,7 @@ function bridgeAppHostSocket(client, appHostServer, logDiagnostic, authorize = (
         client.close(1008, "App Host hello required");
         return;
       }
-      try { connection = appHostServer.accept(port, message.rendererId); }
+      try { connection = appHostServer.accept(port, message.rendererId, submissionContext); }
       catch { logDiagnostic("hello-rejected", { code: 1011 }); client.close(1011, "App Host unavailable"); return; }
       logDiagnostic("hello-accepted");
     }
@@ -437,7 +439,10 @@ export async function createWorkbenchWebServer({
     }
   });
 
-  const websocketServer = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024 * 1024 });
+  // A supported 32 MiB attachment expands to ~43 MiB in Base64, then travels
+  // inside JSON-RPC and (for Codex) an AppHost envelope. Keep a bounded 48 MiB
+  // message limit so valid files do not disconnect the shared Host transport.
+  const websocketServer = new WebSocketServer({ noServer: true, maxPayload: 48 * 1024 * 1024 });
   const desktopWebSockets = new WebSocketServer({ noServer: true, maxPayload: 1 << 20 });
   const activeAppHostSockets = new Set();
   const liveWebSockets = new WeakSet();
@@ -506,6 +511,11 @@ export async function createWorkbenchWebServer({
       return;
     }
     if ((pathname === "/apphost" || privateConnection) && appHostServer !== null) {
+      const employee = tencentOaService?.authenticate(request) ?? null;
+      const submissionContext = employee ? {
+        sender: { kind: "employee", loginName: employee.loginName },
+        validUntil: identityValidUntil(employee),
+      } : { sender: null };
       websocketServer.handleUpgrade(request, socket, head, (client) => {
         trackWebSocket(client, logAppHost);
         activeAppHostSockets.add(client);
@@ -521,7 +531,7 @@ export async function createWorkbenchWebServer({
           // bind the server-validated cookie, never the renderer-supplied ID.
           if (privateConnection) return sshManagement.authorized(request);
           return !sshManagement || !message.hostId?.startsWith("ssh:");
-        });
+        }, submissionContext);
       });
       return;
     }

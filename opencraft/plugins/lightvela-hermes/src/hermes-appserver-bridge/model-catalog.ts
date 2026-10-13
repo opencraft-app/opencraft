@@ -193,7 +193,7 @@ export function mapHermesModelOptions(
         serviceTiers: [],
         defaultServiceTier: null,
         isDefault:
-          providerSlug === payload.provider && model === payload.model,
+          sameProviderIdentity(provider, payload.provider ?? "") && model === payload.model,
       });
     }
   }

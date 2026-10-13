@@ -12,6 +12,7 @@ import {
   buildEditCommand,
   buildListAutomationBlueprintsCommand,
   buildReadCronRunOutputCommand,
+  buildReadCronJobMetadataCommand,
   buildTestRunMarker,
   buildZeroTokenScript,
   createCronJob,
@@ -318,7 +319,7 @@ describe("cronjob structured create and update", () => {
       if (command.includes("from tools.cronjob_tools import cronjob")) {
         return okExec('LIGHTVELA_CRON_CONTEXT_RESULT={"success":true,"job_id":"job-official","name":"daily digest"}');
       }
-      if (command.includes("cat ~/.hermes/cron/jobs.json")) {
+      if ((command.includes("cat ~/.hermes/cron/jobs.json") || command.includes("LIGHTVELA_CRON_LIST_METADATA"))) {
         return okExec(JSON.stringify([{ id: "job-official", provider: "openrouter", model: "deepseek-chat" }]));
       }
       if (command === "hermes cron edit 'job-official' --model 'openrouter/deepseek-chat'") return okExec("");
@@ -345,7 +346,7 @@ describe("cronjob structured create and update", () => {
       if (command.includes("from tools.cronjob_tools import cronjob")) {
         return okExec('LIGHTVELA_CRON_CONTEXT_RESULT={"success":true,"job":{"id":"job-new"}}');
       }
-      if (command.includes("cat ~/.hermes/cron/jobs.json")) {
+      if ((command.includes("cat ~/.hermes/cron/jobs.json") || command.includes("LIGHTVELA_CRON_LIST_METADATA"))) {
         return okExec(JSON.stringify([{ id: "job-new", provider: "openrouter", model: "deepseek-chat" }]));
       }
       if (command === "hermes cron edit 'job-new' --model 'openrouter/deepseek-chat'") return okExec("");
@@ -1135,6 +1136,62 @@ describe("zero-token managed script", () => {
 });
 
 describe("listCronJobs", () => {
+  it("reads the selected profile and rejects oversized projected metadata before emitting partial JSON", () => {
+    const root = mkdtempSync(join(tmpdir(), "lightvela-cron-profile-metadata-"));
+    try {
+      mkdirSync(join(root, "cron"), { recursive: true });
+      const file = join(root, "cron", "jobs.json");
+      const read = () => execFileSync("/bin/bash", ["-c", buildReadCronJobMetadataCommand()], {
+        env: { ...process.env, HERMES_PROFILE_ROOT: root }, stdio: ["pipe", "pipe", "pipe"],
+      });
+      writeFileSync(file, JSON.stringify({ jobs: [{ id: "profile-job", script: "task.py", context_from: ["upstream"] }] }));
+      expect(JSON.parse(read().toString("utf8"))).toEqual([{ id: "profile-job", script: "task.py", context_from: ["upstream"] }]);
+      writeFileSync(file, JSON.stringify({ jobs: [{ id: "profile-job", prompt: "中".repeat(50000) }] }));
+      let failure: unknown;
+      try { read(); } catch (error) { failure = error; }
+      expect(failure).toMatchObject({ status: 1, stdout: Buffer.alloc(0) });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it.each(["array", "envelope"])("hydrates dependencies through the 128 KiB exec cap with oversized history (%s)", async (format) => {
+    const root = mkdtempSync(join(tmpdir(), "lightvela-cron-metadata-"));
+    try {
+      mkdirSync(join(root, ".hermes", "cron"), { recursive: true });
+      const records = [{
+        id: "6e8b6fc74896", prompt: "完整提示词", created_at: "2026-10-12T08:00:00Z",
+        context_from: ["a1b2c3d4e5f6"], provider: "openrouter", model: "test-model", no_agent: false,
+        last_status: "历史错误".repeat(20000), last_delivery_error: "x".repeat(140000),
+      }];
+      const file = join(root, ".hermes", "cron", "jobs.json");
+      writeFileSync(file, JSON.stringify(format === "array" ? records : { jobs: records }));
+      const fetchMock = vi.fn().mockImplementation(async (_url: unknown, init: RequestInit) => {
+        const { command } = JSON.parse(String(init.body)) as { command: string };
+        if (command === "hermes cron list --all") return okExec(`
+  6e8b6fc74896 [active]
+    Name:      下游任务
+    Schedule:  every 2h
+    Deliver:   local
+`);
+        if (command.includes("lightvela-jobs-meta.json")) return okExec("");
+        const output = execFileSync("/bin/bash", ["-c", command], {
+          env: { ...process.env, HOME: root, HERMES_PROFILE_ROOT: "" }, maxBuffer: 1024 * 1024,
+        });
+        return okExec(output.subarray(-128 * 1024).toString("utf8"));
+      });
+      vi.stubGlobal("fetch", fetchMock);
+      const jobs = await listCronJobs("bot-1");
+      expect(jobs[0]?.context_from_hydrated).toBe(true);
+      expect(jobs[0]?.context_from).toEqual(["a1b2c3d4e5f6"]);
+      expect(jobs[0]?.prompt).toBe("完整提示词");
+      expect(jobs[0]?.created_at).toBe("2026-10-12T08:00:00Z");
+      expect(jobs[0]?.inference_config).toEqual({ provider: "openrouter", model: "test-model", no_agent: false });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("loads the public main Bot through Hermes' native default profile", async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(okExec("No scheduled jobs."));
     vi.stubGlobal("fetch", fetchMock);
@@ -1582,7 +1639,7 @@ describe("runCronJobAsTest", () => {
         return okExec("Job created.");
       }
       if (cmd.includes("lightvela-jobs-meta.json") && cmd.startsWith("python3")) return okExec("");
-      if (cmd.includes("cat ~/.hermes/cron/jobs.json")) {
+      if ((cmd.includes("cat ~/.hermes/cron/jobs.json") || cmd.includes("LIGHTVELA_CRON_LIST_METADATA"))) {
         return okExec(JSON.stringify([{
           id: "temp-zero",
           name: marker,
@@ -1654,7 +1711,7 @@ describe("runCronJobAsTest", () => {
         return okExec('LIGHTVELA_CRON_CONTEXT_RESULT={"success":true,"job_id":"temp-context"}');
       }
       if (command.includes("lightvela-jobs-meta.json")) return okExec("");
-      if (command.includes("cat ~/.hermes/cron/jobs.json")) {
+      if ((command.includes("cat ~/.hermes/cron/jobs.json") || command.includes("LIGHTVELA_CRON_LIST_METADATA"))) {
         return okExec(JSON.stringify([{
           id: "temp-context",
           last_run_at: "2026-08-28T10:00:00+08:00",
@@ -1696,7 +1753,7 @@ describe("runCronJobAsTest", () => {
       if (command.includes("from tools.cronjob_tools import cronjob")) {
         return okExec('LIGHTVELA_CRON_CONTEXT_RESULT={"success":true}');
       }
-      if (command.includes("cat ~/.hermes/cron/jobs.json")) {
+      if ((command.includes("cat ~/.hermes/cron/jobs.json") || command.includes("LIGHTVELA_CRON_LIST_METADATA"))) {
         jobsReadCount += 1;
         return okExec(JSON.stringify(jobsReadCount >= 2 ? [{ id: "temp-context", name: marker }] : []));
       }
@@ -1733,7 +1790,7 @@ describe("runCronJobAsTest", () => {
       if (cmd.includes("lightvela-jobs-meta.json") && cmd.startsWith("python3")) {
         return okExec("");
       }
-      if (cmd.includes("cat ~/.hermes/cron/jobs.json")) {
+      if ((cmd.includes("cat ~/.hermes/cron/jobs.json") || cmd.includes("LIGHTVELA_CRON_LIST_METADATA"))) {
         catCallCount += 1;
         // 前两次读取模拟"调度器还没到点执行"；第三次开始视为已被 tick 自然执行完
         const executed = catCallCount >= 3;
@@ -1782,7 +1839,7 @@ describe("runCronJobAsTest", () => {
       if (cmd.includes("lightvela-jobs-meta.json") && cmd.startsWith("python3")) {
         return okExec("");
       }
-      if (cmd.includes("cat ~/.hermes/cron/jobs.json")) {
+      if ((cmd.includes("cat ~/.hermes/cron/jobs.json") || cmd.includes("LIGHTVELA_CRON_LIST_METADATA"))) {
         catCallCount += 1;
         const executed = catCallCount >= 2;
         return okExec(JSON.stringify([executed
@@ -1830,7 +1887,7 @@ describe("runCronJobAsTest", () => {
       if (cmd.includes("lightvela-jobs-meta.json") && cmd.startsWith("python3")) {
         return okExec("");
       }
-      if (cmd.includes("cat ~/.hermes/cron/jobs.json")) {
+      if ((cmd.includes("cat ~/.hermes/cron/jobs.json") || cmd.includes("LIGHTVELA_CRON_LIST_METADATA"))) {
         catCallCount += 1;
         const executed = catCallCount >= 3;
         const record = executed
@@ -1880,7 +1937,7 @@ describe("runCronJobAsTest", () => {
       if (cmd.includes("lightvela-jobs-meta.json") && cmd.startsWith("python3")) {
         return okExec("");
       }
-      if (cmd.includes("cat ~/.hermes/cron/jobs.json")) {
+      if ((cmd.includes("cat ~/.hermes/cron/jobs.json") || cmd.includes("LIGHTVELA_CRON_LIST_METADATA"))) {
         catCallCount += 1;
         const executed = catCallCount >= 3;
         const record = executed
@@ -1923,7 +1980,7 @@ describe("runCronJobAsTest", () => {
       if (cmd.includes("lightvela-jobs-meta.json") && cmd.startsWith("python3")) {
         return okExec("");
       }
-      if (cmd.includes("cat ~/.hermes/cron/jobs.json")) {
+      if ((cmd.includes("cat ~/.hermes/cron/jobs.json") || cmd.includes("LIGHTVELA_CRON_LIST_METADATA"))) {
         catCallCount += 1;
         const executed = catCallCount >= 3;
         const record = executed
@@ -1964,7 +2021,7 @@ describe("runCronJobAsTest", () => {
       if (cmd.includes("lightvela-jobs-meta.json") && cmd.startsWith("python3")) {
         return okExec("");
       }
-      if (cmd.includes("cat ~/.hermes/cron/jobs.json")) {
+      if ((cmd.includes("cat ~/.hermes/cron/jobs.json") || cmd.includes("LIGHTVELA_CRON_LIST_METADATA"))) {
         // last_run_at 一直是空：模拟调度器一直没有自然执行这个临时任务
         return okExec(JSON.stringify([
           { id: "temp-1", name: capturedMarker, last_run_at: null, last_status: null, last_delivery_error: null },
@@ -2001,7 +2058,7 @@ describe("runCronJobAsTest", () => {
       if (cmd.includes("lightvela-jobs-meta.json") && cmd.startsWith("python3")) {
         return okExec("");
       }
-      if (cmd.includes("cat ~/.hermes/cron/jobs.json")) {
+      if ((cmd.includes("cat ~/.hermes/cron/jobs.json") || cmd.includes("LIGHTVELA_CRON_LIST_METADATA"))) {
         lookupCatCount += 1;
         // 前两次：jobs.json 尚未写入该临时任务（模拟写入延迟）→ 空数组
         if (lookupCatCount <= 2) return okExec("[]");
@@ -2039,7 +2096,7 @@ describe("runCronJobAsTest", () => {
       if (cmd.includes("lightvela-jobs-meta.json") && cmd.startsWith("python3")) {
         return okExec("");
       }
-      if (cmd.includes("cat ~/.hermes/cron/jobs.json")) {
+      if ((cmd.includes("cat ~/.hermes/cron/jobs.json") || cmd.includes("LIGHTVELA_CRON_LIST_METADATA"))) {
         catCount += 1;
         // 前几次是 lookup 重试；最后一次（重试耗尽后）是兜底清理的反查——都读不到该 marker
         void capturedMarker;
@@ -2075,7 +2132,7 @@ describe("runCronJobAsTest", () => {
       if (cmd.includes("lightvela-jobs-meta.json") && cmd.startsWith("python3")) {
         return okExec("");
       }
-      if (cmd.includes("cat ~/.hermes/cron/jobs.json")) {
+      if ((cmd.includes("cat ~/.hermes/cron/jobs.json") || cmd.includes("LIGHTVELA_CRON_LIST_METADATA"))) {
         catCallCount += 1;
         if (catCallCount === 1) {
           // 第一次读取：resolveConcreteDeliverForTestRun 查询原任务的 origin 字段
@@ -2144,7 +2201,7 @@ describe("runCronJobAsTest", () => {
       if (cmd.includes("lightvela-jobs-meta.json") && cmd.startsWith("python3")) {
         return okExec("");
       }
-      if (cmd.includes("cat ~/.hermes/cron/jobs.json")) {
+      if ((cmd.includes("cat ~/.hermes/cron/jobs.json") || cmd.includes("LIGHTVELA_CRON_LIST_METADATA"))) {
         catCallCount += 1;
         if (catCallCount === 1) {
           // resolveConcreteDeliverForTestRun 查询原任务 origin —— 线上真实结构：null
@@ -2200,7 +2257,7 @@ describe("runCronJobAsTest", () => {
       if (cmd.includes("lightvela-jobs-meta.json") && cmd.startsWith("python3")) {
         return okExec("");
       }
-      if (cmd.includes("cat ~/.hermes/cron/jobs.json")) {
+      if ((cmd.includes("cat ~/.hermes/cron/jobs.json") || cmd.includes("LIGHTVELA_CRON_LIST_METADATA"))) {
         catCallCount += 1;
         if (catCallCount === 1) {
           return okExec(JSON.stringify([{ id: "job-1", origin: null }]));

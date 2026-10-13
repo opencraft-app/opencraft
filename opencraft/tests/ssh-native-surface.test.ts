@@ -7,7 +7,7 @@ import { createAppServerWorkbenchRuntime } from "@opencraft/workbench-runtime";
 import { createComposerController } from "@opencraft/composer-core";
 import { createConversationKey } from "@opencraft/chat-core";
 import { CodexEngineAdapter } from "../apps/opencraft-daemon/src/codex-engine-adapter.js";
-import { CODEX_NATIVE_SHARED_METHODS, projectSharedNativeCodexInitialize } from "../apps/opencraft-daemon/src/codex-native-surface.js";
+import { CODEX_NATIVE_SHARED_METHODS, discoverNativeCodexGoalCapability, projectSharedNativeCodexInitialize } from "../apps/opencraft-daemon/src/codex-native-surface.js";
 import { SshCodexTransport } from "../apps/opencraft-daemon/src/ssh-codex-transport.js";
 
 test("method access is bridge admission, validated and compatible with legacy Servers", () => {
@@ -16,6 +16,76 @@ test("method access is bridge admission, validated and compatible with legacy Se
   assert.equal(allowsAppServerMethod({ [OPENCRAFT_METHOD_ACCESS_EXTENSION]: { version: 2, methods: [] } }, "thread/resume"), false);
   assert.deepEqual(parseAppServerMethodAccess({ version: 1, methods: ["thread/resume", "thread/resume"] })?.methods, ["thread/resume"]);
 });
+
+test("native Goal discovery uses the enabled feature catalog and preserves explicit read-only support", async () => {
+  const writable = await discoverNativeCodexGoalCapability({}, async (method, params) => {
+    assert.equal(method, "experimentalFeature/list");
+    assert.deepEqual(params, {});
+    return { data: [{ name: "goals", enabled: true }], nextCursor: null };
+  });
+  assert.deepEqual(writable, { version: 1, read: true, write: true });
+  const projected = projectSharedNativeCodexInitialize({}, writable) as any;
+  for (const method of ["thread/goal/get", "thread/goal/set", "thread/goal/clear"])
+    assert.equal(allowsAppServerMethod(projected.capabilities.extensions, method), true);
+  for (const catalog of [{ data: [{ name: "goals", enabled: false }] }, { data: [] }, { echo: {} }, { data: [{ name: "goals", enabled: "true" }] }])
+    assert.equal(await discoverNativeCodexGoalCapability({}, async () => catalog), null);
+  const readOnly = { version: 1 as const, read: true as const, write: false };
+  const explicit = { capabilities: { extensions: { "opencraft/thread-goal": readOnly } } };
+  const capability = await discoverNativeCodexGoalCapability(explicit, async () => { throw new Error("must not probe an explicit capability"); });
+  assert.deepEqual(capability, readOnly);
+  const readonlyProjection = projectSharedNativeCodexInitialize(explicit, capability) as any;
+  assert.equal(allowsAppServerMethod(readonlyProjection.capabilities.extensions, "thread/goal/get"), true);
+  assert.equal(allowsAppServerMethod(readonlyProjection.capabilities.extensions, "thread/goal/set"), false);
+  assert.equal(allowsAppServerMethod(readonlyProjection.capabilities.extensions, "thread/goal/clear"), false);
+});
+
+for (const mode of ["enabled", "disabled", "unsupported"] as const) {
+  test(`SSH native Goal ${mode}: Runtime discovers existing state without starting a continuation`, async () => {
+    const calls: string[] = [];
+    const adapter = new CodexEngineAdapter({ kind: "remote", logDiagnostic: () => undefined, transport: new SshCodexTransport({
+      hostname: "fixture.invalid", username: "fixture", port: 22, knownHostsFile: "/synthetic/known_hosts",
+      authentication: { kind: "agent" }, spawnSsh: (args, env) => {
+        const child = spawn(process.execPath, [new URL("./fixtures/fake-codex-ssh-proxy.mjs", import.meta.url).pathname, args.at(-1)!], {
+          stdio: ["pipe", "pipe", "pipe", "ipc"], env: { ...env, FIXTURE_WORKBENCH_UI: "1", FIXTURE_NATIVE_GOALS: mode },
+        });
+        child.on("message", (frame: any) => calls.push(frame.method));
+        return child;
+      },
+    }) });
+    const clientId = `native-goal-${mode}`;
+    const runtime = createAppServerWorkbenchRuntime({ hostId: "ssh:fixture", hostKind: "remote-ssh", autoReconnect: false,
+      requestTimeoutMs: 2_000, transport: {
+        get status() { return adapter.status; }, connect: signal => adapter.connect(signal),
+        send: frame => adapter.send(stampLogicalClientFrame(frame, clientId)),
+        subscribeMessage: listener => adapter.subscribeMessage(frame => {
+          const routed = routeLogicalClientFrame(frame, [clientId]);
+          if (routed !== null) listener(routed);
+        }), subscribeStatus: listener => adapter.subscribeStatus(listener), close: () => adapter.close(),
+      } });
+    try {
+      await runtime.connect();
+      assert.equal(calls.filter(method => method === "experimentalFeature/list").length, 1);
+      if (mode !== "enabled") {
+        assert.equal(runtime.resources.goals.capability(), null);
+        assert.equal(runtime.resources.host.canRequest?.("thread/goal/get"), false);
+        const skills = await runtime.resources.composerCatalog.listSkills();
+        assert.ok(skills);
+        return;
+      }
+      assert.deepEqual(runtime.resources.goals.capability(), { version: 1, read: true, write: true });
+      await runtime.resources.goals.refresh("ssh-ui-thread");
+      assert.equal(runtime.resources.goals.getSnapshot("ssh-ui-thread").goal?.objective, "Existing remote goal");
+      assert.equal(runtime.resources.goals.getSnapshot("ssh-ui-thread").goal?.tokensUsed, 731);
+      await new Promise(resolve => setTimeout(resolve, 250));
+      assert.ok(!calls.includes("thread/goal/set") && !calls.includes("turn/start") && !calls.includes("thread/resume"));
+      await runtime.resources.goals.set("ssh-ui-thread", { status: "paused" });
+      assert.equal(runtime.resources.goals.getSnapshot("ssh-ui-thread").goal?.status, "paused");
+      await runtime.resources.goals.clear("ssh-ui-thread");
+      assert.equal(runtime.resources.goals.getSnapshot("ssh-ui-thread").goal, null);
+      assert.ok(!calls.includes("thread/queue/add"));
+    } finally { await runtime.dispose(); }
+  });
+}
 
 test("native projection preserves upstream metadata and history but not local stores or connection handles", () => {
   const upstream = { platform: "linux", capabilities: { nativeFlag: true, extensions: {
@@ -68,7 +138,7 @@ test("actual SSH transport + shared broker + Runtime restores paginated items, o
     await runtime.connect();
     assert.equal(runtime.resources.host.canRequest?.("thread/turns/list"), true);
     assert.equal(runtime.resources.host.canRequest?.("thread/queue/add"), false);
-    assert.deepEqual(runtime.resources.threads.capabilities?.(), { fork: true, rename: true, archive: true, delete: false });
+    assert.deepEqual(runtime.resources.threads.capabilities?.(), { fork: true, rename: true, archive: true, delete: false, pin: false });
     assert.equal(runtime.resources.attachments.capabilities(), null);
     assert.equal(runtime.resources.goals.capability(), null);
     await runtime.resources.composerCatalog.listSkills();

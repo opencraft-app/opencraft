@@ -122,27 +122,39 @@ export function ExternalUrlLink({
 
 // An inline code label inside an explicit Markdown link belongs to that link.
 const ResourceLinkLabel = createContext(false);
-const explicitMarkdownPath = /^(?:\/(?!\/)|\.\.?\/|[a-z]:[\\/]|file:\/\/\/)[^\r\n`<>|;]*\.(?:md|markdown)$/iu;
+const explicitDocumentPath = /^(?:\/(?!\/)|\.\.?\/|[a-z]:[\\/]|file:\/\/\/)[^\r\n`<>|;]*\.(?:md|markdown|html|htm)$/iu;
 
-export function mediaMarkdownPath(value: string): string | null {
+export function mediaFilePath(value: string): string | null {
   const source = value.trim();
   if (!source.startsWith("MEDIA:")) return null;
-  const path = source.slice("MEDIA:".length);
-  return explicitMarkdownPath.test(path) ? path : null;
+  let path = source.slice("MEDIA:".length).trim();
+  const quote = path[0];
+  const quoted = quote !== undefined && ["`", "'", '"'].includes(quote) && path.at(-1) === quote;
+  if (quoted) path = path.slice(1, -1);
+  if (path.length === 0 || /[\r\n\x00`<>|;"']/u.test(path) || path.startsWith("//")) return null;
+  if (/^[a-z][a-z0-9+.-]*:/iu.test(path) && !/^(?:https?:\/\/|file:\/\/\/|[a-z]:[\\/])/iu.test(path)) return null;
+  if (/^https?:/iu.test(path)) {
+    try { new URL(path); } catch { return null; }
+    if (/\s/u.test(path)) return null;
+  }
+  // Unquoted prose after a path is not a delivery directive. Quoted paths
+  // may contain spaces; old explicit Markdown filenames keep that support.
+  if (!quoted && /\s/u.test(path) && !/\.[a-z0-9]{1,16}$/iu.test(path)) return null;
+  return path;
 }
 
-export function createMediaMarkdownFileRenderer(resources: ChatResourcePolicyService) {
-  return function MediaMarkdownFileRenderer(props: ChatNodeRendererProps) {
+export function createMediaFileRenderer(resources: ChatResourcePolicyService) {
+  return function MediaFileRenderer(props: ChatNodeRendererProps) {
     const { node, context } = props;
     const insideLink = useContext(ResourceLinkLabel);
     if (node.kind !== "text") return null;
-    const path = mediaMarkdownPath(node.text);
+    const path = mediaFilePath(node.text);
     if (insideLink || context.streaming || context.openResource === undefined || path === null) {
       return <ProseRenderer {...props} />;
     }
     const decision = resources.resolve(path, context);
     if (!decision.allowed || decision.target === null
-      || (decision.kind !== "file" && decision.kind !== "workspace-file")) return <ProseRenderer {...props} />;
+      || (decision.kind !== "file" && decision.kind !== "workspace-file" && decision.kind !== "external")) return <ProseRenderer {...props} />;
     return <a
       href={decision.target}
       title={path}
@@ -160,14 +172,14 @@ export function createInlineMarkdownFileRenderer(resources: ChatResourcePolicySe
     const insideLink = useContext(ResourceLinkLabel);
     if (node.kind !== "inline-code") return null;
     const code = <code className="chat-inline-code">{node.code}</code>;
-    const path = explicitMarkdownPath.test(node.code) ? node.code : mediaMarkdownPath(node.code);
-    // Only explicit file paths are actionable; commands, bare names and URLs
-    // remain code. The Host still decides whether a clicked file can be read.
+    const path = explicitDocumentPath.test(node.code) ? node.code : mediaFilePath(node.code);
+    // Ordinary code retains its explicit document path rule; MEDIA is the
+    // type-independent delivery directive. The resource policy owns admission.
     if (insideLink || context.streaming || context.openResource === undefined
       || path === null) return code;
     const decision = resources.resolve(path, context);
     if (!decision.allowed || decision.target === null
-      || (decision.kind !== "file" && decision.kind !== "workspace-file")) return code;
+      || (decision.kind !== "file" && decision.kind !== "workspace-file" && decision.kind !== "external")) return code;
     return <a
       href={decision.target}
       title={path}
@@ -256,7 +268,7 @@ export function createReferenceRenderer(resources: ChatResourcePolicyService) {
     const decision = referenceTarget === null ? null : resources.resolve(referenceTarget, context);
     const contents = node.segments.map((segment, index) => (
       <span
-        className={segment.entering && !context.fadeTimeline?.isSettled(segment.key) ? "chat-stream-fade-in" : undefined}
+        className={segment.entering && !context.fadeTimeline?.isSettled(segment.key, performance.now()) ? "chat-stream-fade-in" : undefined}
         key={segment.key}
         onAnimationEnd={(event) => {
           if (event.target !== event.currentTarget) return;
@@ -270,7 +282,7 @@ export function createReferenceRenderer(resources: ChatResourcePolicyService) {
           if (element === null) return;
           element.style.setProperty("--fade-delay", `${context.fadeTimeline?.delayFor(segment.key, performance.now()) ?? 0}ms`);
         } : undefined}
-        style={segment.entering ? { "--fade-delay": `${context.fadeTimeline?.cachedDelayFor(segment.key) ?? index * 16}ms` } as CSSProperties : undefined}
+        style={segment.entering ? { "--fade-delay": `${context.fadeTimeline?.cachedDelayFor(segment.key, performance.now()) ?? Math.min(index * 16, 96)}ms` } as CSSProperties : undefined}
       >{segment.text}</span>
     ));
     if (decision === null || !decision.allowed || decision.target === null) {

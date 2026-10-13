@@ -874,7 +874,7 @@ html:has(#lightvela-intl-home), body:has(#lightvela-intl-home) { background-colo
   #lightvela-intl-home .track { gap: 40px; }
   #lightvela-intl-home .track__body h3 { margin-top: 12px; font-size: 16px; }
   #lightvela-intl-home .track__body p { font-size: 13px; line-height: 1.7; }
-  #lightvela-intl-home .plays { margin-top: 36px; padding-top: 24px; border-top: 1px solid #ededed; }
+  #lightvela-intl-home .plays { margin-top: 36px; padding-top: 24px; border-top: 0; }
   #lightvela-intl-home .plays__head { margin-inline: auto; text-align: center; }
   #lightvela-intl-home .plays__tabs { justify-content: center; }
   #lightvela-intl-home #pl-2:checked ~ .plays__stage #play-2,
@@ -1209,7 +1209,7 @@ html:has(#lightvela-intl-home), body:has(#lightvela-intl-home) { background-colo
 }
 #lightvela-intl-home .foot { margin-top: 96px; }
 @media (min-width: 900px) {
-  #lightvela-intl-home .home-step-mascot { width: clamp(160px, 16vw, 220px); height: auto; left: var(--step-left); top: var(--step-top, 80px); right: auto; }
+  #lightvela-intl-home .home-step-mascot { width: clamp(160px, 16vw, 220px); height: auto; left: var(--step-left, calc(50% + min(30vw, 384px) - 56px)); top: var(--step-top, 80px); right: auto; }
 }
 /* One intrinsic caption and one shared card boundary across every locale. */
 #lightvela-intl-home .about .about__cards .wcard:nth-child(6) .wcard__demo {
@@ -1602,10 +1602,10 @@ canvas.home-scroll-cast { position: fixed; inset: 0; display: block; width: 100%
  #lightvela-intl-home .home-footer-cast { padding-top:12px; padding-bottom:0; }
 }
 
-/* One continuous sign-off surface; avoid stacked section/CTA spacing. */
+/* Separate the closing invitation from the footer navigation. */
 #lightvela-intl-home #get-started.cta { padding-bottom:32px; }
 #lightvela-intl-home .foot.has-footer-portrait > .foot__top {
- padding:48px 24px 40px !important;
+ padding:48px 24px 112px !important;
  min-height:0;
  gap:28px;
  background:transparent;
@@ -1613,7 +1613,7 @@ canvas.home-scroll-cast { position: fixed; inset: 0; display: block; width: 100%
 #lightvela-intl-home .foot.has-footer-portrait .foot__cta { margin-top:0; }
 @media(max-width:600px) {
  #lightvela-intl-home #get-started.cta { padding-bottom:20px; }
- #lightvela-intl-home .foot.has-footer-portrait > .foot__top { padding:32px 20px 28px !important; gap:24px; }
+ #lightvela-intl-home .foot.has-footer-portrait > .foot__top { padding:32px 20px 64px !important; gap:24px; }
 }
 
 /* Retire the doorway illustration; distribute the four domestic link groups. */
@@ -1841,3 +1841,93 @@ canvas.home-scroll-cast { position: fixed; inset: 0; display: block; width: 100%
   #lightvela-intl-home .vcar__dot { flex: 0 1 var(--vcar-dot); min-width: 14px; width: auto; height: auto; aspect-ratio: 1; }
   #lightvela-intl-home .vcar__dot[aria-current='true'] { flex: 0 0 var(--vcar-dot-on); width: auto; height: auto; box-shadow: 0 0 0 1.5px #fff, 0 0 0 3px #7b61ff; }
 }
+
+/* A quiet landing runway separates features from use cases. */
+#lightvela-intl-home .home-mascot-landing { position:relative; width:100%; height:320px; margin:24px auto 40px; overflow:visible; pointer-events:none; }
+#lightvela-intl-home .home-mascot-landing__media { position:absolute; left:0; top:calc(72% - 243px); width:480px; aspect-ratio:16/9; opacity:0; transition:opacity .14s ease-out; }
+#lightvela-intl-home .home-mascot-landing__media video,
+#lightvela-intl-home .home-mascot-landing__media img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; }
+#lightvela-intl-home .home-mascot-landing__media img { opacity:0; }
+#lightvela-intl-home .home-mascot-landing[data-state="playing"] .home-mascot-landing__media,
+#lightvela-intl-home .home-mascot-landing[data-state="still"] .home-mascot-landing__media { opacity:1; }
+#lightvela-intl-home .home-mascot-landing[data-state="still"] .home-mascot-landing__media > img { opacity:1; }
+#lightvela-intl-home .home-mascot-landing[data-state="still"] video { opacity:0; }
+@media(max-width:899px) {
+ #lightvela-intl-home .home-mascot-landing { height:180px; margin:12px auto 20px; }
+ #lightvela-intl-home .home-mascot-landing__media { width:min(320px,100%); }
+}
+@media(prefers-reduced-motion:reduce) { #lightvela-intl-home .home-mascot-landing__media { transition:none; } }
+
+
+/* Falling friends pass behind feature content, while the side gutter stays open. */
+#lightvela-intl-home .about { position:relative; z-index:auto; }
+#lightvela-intl-home .about__head,
+#lightvela-intl-home .about__cards { position:relative; z-index:10; background:transparent; }
+#lightvela-intl-home .about__head h2 { position:relative; width:fit-content; background:transparent; }
+
+/* The title is the landing perch; its top padding must not crop the friends. */
+#lightvela-intl-home .home-mascot-landing { z-index:1; }
+#lightvela-intl-home .scenes { background:transparent; }
+#lightvela-intl-home .scenes__head { position:relative; z-index:2; }
+
+/* The friends sit above an independent, unobstructed heading. */
+#lightvela-intl-home .home-mascot-landing { height:150px; margin:12px auto 16px; }
+@media(max-width:899px) {
+ #lightvela-intl-home .home-mascot-landing { height:110px; margin:8px auto 12px; }
+}
+
+/* A soft neutral floor anchors the friends without covering the heading. */
+#lightvela-intl-home .home-mascot-landing__media { isolation:isolate; }
+#lightvela-intl-home .home-mascot-landing__media::before {
+ content:''; position:absolute; z-index:-1;
+ left:15%; top:86%; width:78%; height:12%; border-radius:50%;
+ background:#f5f5f5; box-shadow:0 3px 8px rgb(33 26 42 / 3%);
+}
+
+/* Three short entrance beats keep the headline prominent without a long wait. */
+#lightvela-intl-home { --cta-delay:120ms !important; --tabs-delay:220ms !important; --frame-delay:220ms !important; }
+#lightvela-intl-home .hero .hero__char {
+ display:inline; animation:none !important; opacity:1; transform:none; filter:none;
+}
+#lightvela-intl-home .hero .hero__line--main { animation:hero-in .45s ease-out both !important; }
+#lightvela-intl-home .hero .hero__eyebrow,
+#lightvela-intl-home .hero .hero__rotator-wrap,
+#lightvela-intl-home .hero .hero__suffix {
+ animation:none !important; opacity:1 !important; transform:none !important;
+}
+#lightvela-intl-home .hero .hero__line--dynamic,
+#lightvela-intl-home .hero .hero__cta { animation:hero-in .35s ease-out .12s both !important; }
+#lightvela-intl-home .hero .hero__tabs,
+#lightvela-intl-home .hero .hero__stage .hero__frame { animation:hero-in .45s ease-out .22s both !important; }
+html:not(.hero-sequence-ready) #lightvela-intl-home .hero .hero__rotator-wrap,
+html:not(.hero-sequence-ready) #lightvela-intl-home .hero .hero__suffix,
+html:not(.hero-sequence-ready) #lightvela-intl-home .hero .hero__cta,
+html:not(.hero-sequence-ready) #lightvela-intl-home .hero .hero__tabs,
+html:not(.hero-sequence-ready) #lightvela-intl-home .hero .hero__stage .hero__frame { opacity:1; transform:none; }
+@media(prefers-reduced-motion:reduce) {
+ #lightvela-intl-home .hero .hero__line--main,
+ #lightvela-intl-home .hero .hero__line--dynamic,
+ #lightvela-intl-home .hero .hero__cta,
+ #lightvela-intl-home .hero .hero__tabs,
+ #lightvela-intl-home .hero .hero__stage .hero__frame { animation:none !important; }
+}
+
+/* Keep Chinese ribbon rider close to its shorter role label. */
+@media (min-width: 1280px) {
+ #lightvela-intl-home[data-locale^="zh"] .hero .home-cover-mascot { left: calc(100% - 28px) !important; }
+ #lightvela-intl-home[data-locale^="zh"] .hero .hero__rotator-line { right: -20px !important; }
+}
+@media (min-width: 900px) and (max-width: 1279px) {
+ #lightvela-intl-home[data-locale^="zh"] .hero .home-cover-mascot { left: calc(100% - 30px) !important; }
+}
+#lightvela-intl-home .nav { border-bottom: 0 !important; }
+
+#lightvela-intl-home .home-mascot-landing[data-state="still"] .home-mascot-landing__media > img { pointer-events:auto; transform-origin:50% 90%; }
+
+#lightvela-intl-home .plays { border-top:0 !important; }
+
+#lightvela-intl-home .play__list li { text-wrap:pretty; }
+#lightvela-intl-home .home-copy-tail { white-space:nowrap; }
+
+/* The curve is the companion's ground; keep it fixed during the track reveal. */
+#lightvela-intl-home .track.sr { transform: none !important; }

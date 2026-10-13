@@ -28,7 +28,7 @@ export const INTERNATIONAL_HOME_SCRIPT_SOURCES = [
   '/lightvela-intl-home/assets/feature-motion.js',
 ] as const;
 
-export const INTERNATIONAL_HOME_ASSET_VERSION = '20261009-runtime-v118';
+export const INTERNATIONAL_HOME_ASSET_VERSION = '20261011-step-anchor-v137';
 
 /** Homepage motion mode: GSAP-driven on the global site, CSS-only on the domestic site. */
 const MOTION_MODE_GSAP = 'gsap';

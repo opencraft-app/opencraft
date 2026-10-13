@@ -7,6 +7,15 @@ resources:
   - ../../base
   - generated/ctl-migrations-configmap.yaml
 
+patches:
+  - target:
+      kind: Deployment
+      name: ctl-api
+    patch: |-
+      - op: add
+        path: /spec/template/metadata/labels/ctl.clawhub.dev~1role
+        value: api
+
 generatorOptions:
   disableNameSuffixHash: true
 
@@ -140,3 +149,27 @@ replacements:
           name: REPLACE_CTL_MIGRATION_JOB_NAME
         fieldPaths:
           - spec.template.spec.initContainers.0.env.0.value
+  - source:
+      kind: Deployment
+      name: ctl-api
+      fieldPath: spec.template.spec
+    targets:
+      - select:
+          kind: Deployment
+          name: ctl-desktop
+        fieldPaths:
+          - spec.template.spec
+        options:
+          create: true
+  - source:
+      kind: Deployment
+      name: ctl-api
+      fieldPath: spec.template.metadata.annotations
+    targets:
+      - select:
+          kind: Deployment
+          name: ctl-desktop
+        fieldPaths:
+          - spec.template.metadata.annotations
+        options:
+          create: true

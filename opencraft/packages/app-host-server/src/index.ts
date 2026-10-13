@@ -6,7 +6,7 @@ import {
   type AppHostToRendererMessage,
   type RendererToAppHostMessage,
 } from "@opencraft/app-host-protocol";
-import type { DuplexTransport, TransportStatus } from "@opencraft/appserver-client/transport";
+import type { DuplexTransport, TransportStatus, TransportSubmissionContext } from "@opencraft/appserver-client/transport";
 
 export interface AppHostServerPort {
   postMessage(message: AppHostToRendererMessage): void;
@@ -72,13 +72,14 @@ export class AppHostServer {
 
   constructor(private readonly options: AppHostServerOptions) {}
 
-  accept(port: AppHostServerPort, connectionId: string): AppHostServerConnection {
+  accept(port: AppHostServerPort, connectionId: string, submissionContext: TransportSubmissionContext = { sender: null }): AppHostServerConnection {
     if (this.closed) throw new Error("App Host Server is closed");
     const connection = new AppHostServerConnection(
       this,
       port,
       connectionId,
       `connection:${++this.connectionSequence}`,
+      Object.freeze({ ...submissionContext, sender: submissionContext.sender ? Object.freeze({ ...submissionContext.sender }) : null }),
     );
     this.connections.add(connection);
     return connection;
@@ -171,8 +172,10 @@ export class AppHostServer {
         message.leaseId,
         message.generation,
       );
-      await record.transport.send(this.options.logicalClientRouting
-        ? stampLogicalClientFrame(message.frame, this.claimKey(connection, message.leaseId)) : message.frame);
+      const frame = this.options.logicalClientRouting
+        ? stampLogicalClientFrame(message.frame, this.claimKey(connection, message.leaseId)) : message.frame;
+      if (record.transport.sendWithContext) await record.transport.sendWithContext(frame, connection.submissionContext);
+      else await record.transport.send(frame);
       return undefined;
     }
     if (message.type === "host/disconnect") {
@@ -445,6 +448,7 @@ export class AppHostServerConnection {
     private readonly port: AppHostServerPort,
     readonly connectionId: string,
     readonly internalId: string,
+    readonly submissionContext: TransportSubmissionContext = { sender: null },
   ) {
     this.unsubscribePort = port.subscribe((message) => {
       // A reachability probe must never queue behind Host activation or sends.

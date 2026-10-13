@@ -1,7 +1,10 @@
+import type { ReactNode } from "react";
+import * as Tooltip from "@radix-ui/react-tooltip";
 import { stableIdentityColor } from "@opencraft/design-system/identity-color";
 import type { ServerRouteLocality, ThreadServerOrigin, WorkbenchThread } from "@opencraft/workbench-runtime";
 import { useIntl } from "@opencraft/i18n/react";
 import { Folder, Globe2 } from "lucide-react";
+import { useWorkbenchPresentationRoot } from "./workbench-presentation-root";
 
 function ServerOriginBadge({
   origin,
@@ -11,23 +14,39 @@ function ServerOriginBadge({
   readonly routeLocality: ServerRouteLocality;
 }) {
   const intl = useIntl();
+  const portalContainer = useWorkbenchPresentationRoot();
   const remote = routeLocality === "remote";
   const label = remote ? intl.formatMessage({
     id: "sidebar.serverOrigin",
     defaultMessage: "From {server}",
     description: "Accessible label for the remote Server that owns a sidebar task",
   }, { server: origin.label }) : undefined;
-  return (
+  const badge = (
     <span
       className="sidebar-activity-item__server-origin"
       data-route-locality={routeLocality}
       role={remote ? "img" : undefined}
       aria-label={label}
       aria-hidden={remote ? undefined : true}
-      title={label}
+      title=""
+      tabIndex={remote ? 0 : undefined}
     >
       {remote ? <Globe2 size={14} strokeWidth={1.75} style={{ color: stableIdentityColor(origin.serverId) }} /> : null}
     </span>
+  );
+  if (!remote) return badge;
+  return (
+    <Tooltip.Provider delayDuration={250}>
+      <Tooltip.Root>
+        <Tooltip.Trigger asChild>{badge}</Tooltip.Trigger>
+        <Tooltip.Portal container={portalContainer ?? undefined}>
+          <Tooltip.Content className="sidebar-server-origin-tooltip" side="top" align="center" sideOffset={8} collisionPadding={8}>
+            {label}
+            <Tooltip.Arrow className="sidebar-server-origin-tooltip__arrow" width={8} height={4} />
+          </Tooltip.Content>
+        </Tooltip.Portal>
+      </Tooltip.Root>
+    </Tooltip.Provider>
   );
 }
 
@@ -64,6 +83,7 @@ function ThreadActivity({
 
 export function SidebarActivityItem({
   active,
+  badge = null,
   serverOrigin,
   serverRouteLocality,
   onInvoke,
@@ -76,6 +96,7 @@ export function SidebarActivityItem({
   unread,
 }: {
   readonly active: boolean;
+  readonly badge?: ReactNode;
   readonly serverOrigin: ThreadServerOrigin;
   readonly serverRouteLocality: ServerRouteLocality;
   readonly onInvoke: () => void;
@@ -88,7 +109,7 @@ export function SidebarActivityItem({
   readonly unread: boolean;
 }) {
   return (
-    <button
+    <div className="sidebar-activity-item-container" data-has-badge={badge ? "true" : undefined}><button
       type="button"
       className={[
         "sidebar-activity-item",
@@ -112,6 +133,6 @@ export function SidebarActivityItem({
         <ServerOriginBadge origin={serverOrigin} routeLocality={serverRouteLocality} />
         <ThreadActivity pending={pending} status={status} unread={unread} />
       </span>
-    </button>
+    </button>{badge ? <div className="sidebar-activity-item__badge-slot">{badge}</div> : null}</div>
   );
 }

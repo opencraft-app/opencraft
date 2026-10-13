@@ -64,24 +64,6 @@ func (f *fakeResolver) GetMapping(_ context.Context, scene store.ActivityScene, 
 	return f.mapping, f.err
 }
 
-type fakeDianshiRenewWriter struct {
-	calls         atomic.Int32
-	order         store.CreateOrderInput
-	participation store.UserActivityParticipation
-	err           error
-}
-
-func (f *fakeDianshiRenewWriter) CreateDianshiRenewOrderWithParticipation(
-	_ context.Context,
-	order store.CreateOrderInput,
-	participation store.UserActivityParticipation,
-) error {
-	f.calls.Add(1)
-	f.order = order
-	f.participation = participation
-	return f.err
-}
-
 // fakeDianshi 是 dianshiclient.Client 的测试替身。
 type fakeDianshi struct {
 	doGoodsResp        *dianshiclient.DoGoodsResponse
@@ -699,17 +681,15 @@ func TestPlaceRenewOrder_DomesticFirstUseDispatchesToDianshi(t *testing.T) {
 	mapping.ActID = 1975812517099088
 	r := &fakeResolver{mapping: mapping, useDianshi: true}
 	dc := newFakeDianshiSuccess()
-	renewWriter := &fakeDianshiRenewWriter{}
 	d.service = New(Deps{
-		CTLClient:          d.ctl,
-		BundleStore:        d.bundle,
-		JifeiClient:        d.jifei,
-		OrderWriter:        d.writer,
-		OrderStore:         d.store,
-		ActivityResolver:   r,
-		DianshiClient:      dc,
-		DianshiRenewWriter: renewWriter,
-		SiteKind:           "cn",
+		CTLClient:        d.ctl,
+		BundleStore:      d.bundle,
+		JifeiClient:      d.jifei,
+		OrderWriter:      d.writer,
+		OrderStore:       d.store,
+		ActivityResolver: r,
+		DianshiClient:    dc,
+		SiteKind:         "cn",
 	})
 
 	_, err := d.service.PlaceRenewOrder(context.Background(), PlaceRenewOrderRequest{
@@ -741,19 +721,13 @@ func TestPlaceRenewOrder_DomesticFirstUseDispatchesToDianshi(t *testing.T) {
 	if goods.RegionID != 1 || goods.ResourceID != "pass_xxx" || goods.TimeSpanUnit != "1m" || goods.BundleID != "bundle_launch_01" {
 		t.Fatalf("goods_renew=%+v", goods)
 	}
-	if renewWriter.calls.Load() != 1 {
-		t.Fatalf("atomic renew writer calls=%d, want 1", renewWriter.calls.Load())
+	if d.writer.createOrderCalls.Load() != 1 {
+		t.Fatalf("order writer calls=%d, want 1", d.writer.createOrderCalls.Load())
 	}
-	if renewWriter.order.OrderType != store.OrderTypeRenew || renewWriter.order.ResourceID != "pass_xxx" {
-		t.Errorf("renew order=%+v", renewWriter.order)
-	}
-	if renewWriter.participation.Scene != store.ActivitySceneRenew ||
-		renewWriter.participation.ActivityID != mapping.ActivityID ||
-		renewWriter.participation.DealName == "" {
-		t.Errorf("renew participation=%+v", renewWriter.participation)
-	}
-	if d.writer.createOrderCalls.Load() != 0 {
-		t.Errorf("plain order writer calls=%d, want 0", d.writer.createOrderCalls.Load())
+	if order := d.writer.lastCreateOrderInput; order.OrderType != store.OrderTypeRenew ||
+		order.ResourceID != "pass_xxx" || order.Status != store.OrderStatusPendingPay ||
+		order.Source != store.OrderSourceDianshi || order.ActivityID != mapping.ActivityID {
+		t.Errorf("renew order=%+v", order)
 	}
 	if d.jifei.generateDealsCalls.Load() != 0 {
 		t.Errorf("jifei generateDeals calls=%d, want 0", d.jifei.generateDealsCalls.Load())

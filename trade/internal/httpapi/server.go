@@ -76,11 +76,12 @@ type ServerConfig struct {
 	// 允许 nil；nil 时 createResource handler 跳过 INSERT participation 分支，
 	// 与 v1.7.x 历史行为完全一致（jifei 单路径）。main.go 在 cfg.DianshiPriceBaseURL +
 	// cfg.DianshiOrderBaseURL 同时非空时才注入 mysqlStore；两者同进同退。
-	ActivityStore store.ActivityStore
+	ActivityStore         store.ActivityStore
+	ParticipationRecorder store.ParticipationRecorder
 
 	// ActivityDB 是 trade 主库 *sql.DB，createResource handler 在 source=='dianshi' 分支下
 	// 开事务 INSERT trade_user_activity_participation 需要。与 ActivityStore 同进同退；
-	// ActivityStore 为 nil 时 ActivityDB 也可为 nil（不使用）。
+	// ActivityStore 为 nil 时 ActivityDB 也可为 nil（不使用）。续费回调另用 ParticipationRecorder。
 	ActivityDB *sql.DB
 
 	// DianshiAdminStore 是点石后台管理查询/删除订单与参与记录的 DAO。
@@ -239,10 +240,11 @@ func NewRouter(cfg ServerConfig) *gin.Engine {
 	//    设计稿：.tmp/trade-pass-renew-design.md §3.6 R-C-3 / §12 Q11=a。
 	//    抢占式 trade_flow 幂等 + 反向调 ctl/pass.RenewPass 同步驱动 renewing 状态机。
 	renewresource.Install(dispatcher, renewresource.Deps{
-		OrderStore: cfg.OrderStore,
-		FlowStore:  cfg.FlowStore,
-		CTLClient:  cfg.CTLClient,
-		Builder:    builder,
+		OrderStore:            cfg.OrderStore,
+		FlowStore:             cfg.FlowStore,
+		CTLClient:             cfg.CTLClient,
+		Builder:               builder,
+		ParticipationRecorder: cfg.ParticipationRecorder,
 	})
 
 	// 8. 注册 destroyResource 真 handler（D-5b）。

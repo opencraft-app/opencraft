@@ -9,6 +9,7 @@ import { useOpenClaw } from '@/contexts/agent-context';
 import { useRepositories } from '@/contexts/repository-context';
 import { useSession } from '@/contexts/session-context';
 import { oauthErrorMessage } from '@/lib/oauth';
+import { avatarImageUrl } from '@/lib/avatar-image';
 import { type PublicSiteLocale } from '@/lib/public-site-navigation';
 import { isGlobal } from '@/lib/region';
 import { cn } from '@/lib/utils';
@@ -28,8 +29,13 @@ import { renderNextLanguageSwitcher } from './language-switcher';
 const LoginModal = dynamic(() =>
   import('@/components/site/login-modal').then((module) => module.LoginModal),
 );
+function HeaderAvatarPreview() {
+  const { session } = useSession();
+  return <img src={avatarImageUrl(session?.user?.avatarUrl ?? null)} alt="" aria-hidden="true" className="h-9 w-9 shrink-0 rounded-full object-cover" />;
+}
 const UserAvatarMenu = dynamic(() =>
   import('@/components/site/user-avatar-menu').then((module) => module.UserAvatarMenu),
+  { loading: HeaderAvatarPreview },
 );
 
 const secondaryButtonClass: Record<HeaderAppearance, string> = {
@@ -231,8 +237,8 @@ function PublicHeaderAuthControls({
   if (!authReady) {
     return (
       <>
-        <div className="hidden shrink-0 translate-x-6 items-center gap-2 lg:flex xl:gap-3" aria-hidden="true">
-          {showLanguageSwitcher && <span className="h-[36px] w-[70px] rounded-[100px] bg-black/[0.04]" />}
+        <div className="hidden shrink-0 translate-x-6 items-center gap-2 lg:flex xl:gap-3">
+          {showLanguageSwitcher && renderNextLanguageSwitcher({ activeLocale, reloadAfterSwitch: false, variant: 'dropdown' })}
           {!loginOnly && <span className="h-[36px] w-[96px] rounded-[100px] bg-black/[0.06]" />}
           <span className="h-[36px] w-[64px] rounded-[100px] bg-black/[0.04]" />
         </div>

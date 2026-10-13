@@ -1,3 +1,4 @@
+import { AgentWeixinAccountConflictDialog } from "@/pages/marketing/agent-weixin-account-conflict-dialog";
 import { useCollaborationShown } from "@/lib/collaboration-visibility";
 import { AgentSidebar, AgentSidebarToggle, useAgentSidebarCollapse } from "@/components/site/agent-sidebar";
 import { AgentConsoleHostProjection, type AgentConsoleHostPort } from "./agent-console-host";
@@ -96,7 +97,7 @@ import type {
   LightVelaSessionActions,
 } from "./agent-chat-panel";
 import { resolveAgentSidebarEmptySessionState, runBotScopedSessionPin, useAgentSidebarSessionList, useAgentSidebarUnreadSessions } from "./agent-sidebar-session-list";
-import { AUTH_SERVICE_UNAVAILABLE_MESSAGE, readStoredAuthToken } from "@/repositories/http-repositories";
+import { AUTH_SERVICE_UNAVAILABLE_MESSAGE, readStoredAuthToken, RepositoryError } from "@/repositories/http-repositories";
 import {
   AGENTS_HOME_PATH,
   AGENT_BOT_QUERY_KEY,
@@ -110,6 +111,7 @@ import {
 import type { Repositories, WorkerActionStatusResult } from "@/repositories/types";
 import { composeDebugExecCommandLifecycles } from "@/pages/marketing/agent-debug-exec-lifecycle";
 import { getAgentCreateErrorMessage } from "@/pages/marketing/agent-create-error";
+import { getAgentDeleteErrorMessage } from "@/pages/marketing/agent-delete-error";
 import { useAutomationAwareModelSwitch } from "@/pages/marketing/agent-model-switch-automation-sync";
 import { createQqbotGroupPolicyCommandLifecycle } from "@/pages/marketing/agent-qqbot-group-policy";
 import { installOpenClawConsoleHelpers } from "@/pages/marketing/agent-console-helpers";
@@ -3349,9 +3351,6 @@ export const AgentSettingsPage = ({
     navigate(getAgentBotSectionHref(AGENT_SECTION_PATH_BY_ID.channel, activeBot.id), { replace: true });
   }, [activeBot?.id, activeSection, consoleShowStateReady, isActiveBotChatAvailable, navigate]);
 
-  const weixinOccupiedByOther = Boolean(
-    activeBot?.weixinOwner && activeBot.weixinOwner.botId !== activeBot.id,
-  );
   const whatsAppOccupiedByOther = Boolean(
     activeBot?.whatsAppOwner && activeBot.whatsAppOwner.botId !== activeBot.id,
   );
@@ -3565,6 +3564,8 @@ export const AgentSettingsPage = ({
    * 仅在 activeBot 存在时构造；无 bot 时传 undefined，面板内部 fallback 到空
    * executor 占位（实际操作路径不会触发）。
    */
+  const [weixinAccountConflict, setWeixinAccountConflict] = useState<{ botId: string; botName: string } | null>(null);
+
   const teaSdkCommandExecutor = useMemo<ICommandExecutor | undefined>(
     () => {
       if (!activeBotId) return undefined;
@@ -3600,6 +3601,10 @@ export const AgentSettingsPage = ({
         } catch (error) {
           if (shouldClaim && channel && (channel === "weixin" || reservationId)) {
             await repositories.bots.releaseUniqueChannel(activeBotId, channel, reservationId).catch(() => undefined);
+          }
+          if (channel === "weixin" && error instanceof RepositoryError && error.occupiedByBot) {
+            setWeixinAccountConflict(error.occupiedByBot);
+            await refreshBots().catch(() => undefined);
           }
           throw error;
         }
@@ -3661,15 +3666,7 @@ export const AgentSettingsPage = ({
       setDeleteTargetBot(null);
       setDeleteInput("");
     } catch (err) {
-      const errorCode = err && typeof err === "object" && "code" in err
-        ? (err as { code?: unknown }).code
-        : undefined;
-      setDeleteError(
-        errorCode === "INSTANCE_BOTS_REMAIN"
-          ? t("请先删除其他 Bot，再删除整个 Agent。")
-          : embedded ? t("删除失败，请稍后重试。")
-            : err instanceof Error ? err.message : t("删除失败，请稍后重试。"),
-      );
+      setDeleteError(getAgentDeleteErrorMessage(err, embedded, t));
     } finally {
       setDeletingBot(false);
     }
@@ -4121,14 +4118,14 @@ export const AgentSettingsPage = ({
     adpChannel: false,
     wecomLongConn: true,
     yuanbaoChannel: false,
-    weixinChannel: !weixinOccupiedByOther,
+    weixinChannel: true,
     qrConfig: true,
     skills: true,
     webUI: false,
     memoryManagement: false,
     memoryV2: false,
     qqbotplugin: false,
-  }), [weixinOccupiedByOther]);
+  }), []);
   // 从七彩石拉取模型列表移到 TeaSdkSettingsPanel（需 runtime.useModelProviders）
   const { i18n } = useTranslation();
   const useEnglish = shouldUseEnglishProviderData(i18n.language);
@@ -4996,6 +4993,15 @@ export const AgentSettingsPage = ({
       )}
       style={{ color: "rgba(0,0,0,0.90)" }}
     >
+      <AgentWeixinAccountConflictDialog
+        owner={weixinAccountConflict}
+        onClose={() => setWeixinAccountConflict(null)}
+        onVisit={(botId) => {
+          setWeixinAccountConflict(null);
+          prepareBotSwitch(botId);
+          navigate(getAgentBotSectionHref(AGENT_SECTION_PATH_BY_ID.channel, botId), { replace: true });
+        }}
+      />
       {showHeader && (
         <ProductReturnHomeHeader
           beforeUserMenu={(hasSidebarLayout || shouldShowDataLoading) ? (
@@ -5688,6 +5694,14 @@ export const AgentSettingsPage = ({
                   handleBuddyCreated(createdBotId);
                 }}
                 onCreateBot={handleOnboardingCreateBot}
+                onCancel={(cloneSourceChoices?.length ?? 0) > 0 ? () => {
+                  setShowMultiBotOnboarding(false);
+                  setDirectCreateError(null);
+                  const params = new URLSearchParams(searchParams);
+                  params.delete(AGENT_CREATE_PAGE_QUERY_KEY);
+                  const search = params.toString();
+                  navigate(`${pathname}${search ? `?${search}` : ""}`, { replace: true });
+                } : undefined}
                 execDebugCommand={repositories.bots.execDebugCommand}
                 onSetupStart={() => { onboardingLockRef.current = true; }}
                 /*
@@ -5763,13 +5777,13 @@ export const AgentSettingsPage = ({
                   id: "labs",
                   label: t("实验室"),
                   sections: [
-                    ...(showHiddenAgentTools ? [{
+                    {
                       id: "website",
                       label: t("我的工作台"),
                       icon: <Globe2 className="h-4 w-4" />,
                       path: AGENT_SECTION_PATH_BY_ID.website,
                       badge: "Beta",
-                    } as SettingsSectionLink] : []),
+                    },
                     {
                       id: "deepseek-harness",
                       label: "DeepSeek Harness",
@@ -6743,22 +6757,6 @@ export const AgentSettingsPage = ({
                               whatsAppOccupiedByOther={whatsAppOccupiedByOther}
                               channelAfterDescription={(
                                 <>
-                                  {weixinOccupiedByOther && activeBot.weixinOwner && (
-                                    <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                                      <span className="text-pretty">
-                                        {t("微信已由 {{name}} 占用，同一实例只能连接一个 Bot。", {
-                                          name: activeBot.weixinOwner.botName || t("其他 Bot"),
-                                        })}
-                                      </span>
-                                      <button
-                                        type="button"
-                                        className="font-medium text-amber-950 underline underline-offset-2"
-                                        onClick={() => handleSelectBot(activeBot.weixinOwner!.botId)}
-                                      >
-                                        {t("前往管理")}
-                                      </button>
-                                    </div>
-                                  )}
                                   {whatsAppOccupiedByOther && activeBot.whatsAppOwner && (
                                     <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
                                       <span className="text-pretty">
@@ -6932,8 +6930,9 @@ export const AgentSettingsPage = ({
                           {activeSection === "files" && (
                             <TatFileManagerPanel botId={activeBot.id} />
                           )}
+                          {/* DSH is instance-scoped; sibling profiles share its host and installer. */}
                           {activeSection === "deepseek-harness" && (
-                            <AgentDeepSeekHarnessPanel botId={activeBot.id} />
+                            <AgentDeepSeekHarnessPanel botId={activeBot.instanceId ?? activeBot.id} />
                           )}
                           {activeSection === "cloud-desktop" && cloudDesktopEnabled && (
                             <AgentCloudDesktopPanel botId={activeBot.id} />

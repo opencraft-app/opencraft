@@ -28,7 +28,6 @@ const descriptions = {
   'ko-KR': ['평소 쓰는 채팅 앱에서 작업을 맡기세요.', '자리를 비워도 작업은 계속됩니다.', '시간이나 조건에 맞춰 작업을 실행합니다.', '채팅으로 웹페이지를 만들고 게시·수정하세요.', '스킬을 설치해 에이전트의 기능을 넓히세요.', '선호하는 작업 방식을 기억합니다.', '외부 작업은 먼저 승인을 받습니다.'],
 };
 descriptions[SINGAPORE_CHINESE] = descriptions[SIMPLIFIED_CHINESE];
-const notes = { 'en-US': 'On to greater things', 'zh-CN': '一起，走向更多可能', 'zh-SG': '一起，走向更多可能', 'zh-Hant': '一起，走向更多可能', 'id-ID': 'Menuju hal-hal hebat', es: 'Hacia nuevas posibilidades', 'ja-JP': 'もっと大きな可能性へ', 'ko-KR': '더 큰 가능성을 향해' };
 // Clockwise orbit coordinates, paired with their icons to avoid parallel-array drift.
 const SKILL_ORBIT_ITEMS = [
   { icon: 'search', x: 0, y: -85 },
@@ -65,9 +64,8 @@ export function localizeFeatureCards(html, locale) {
   });
   html = html.replace(/(?:\\n\s*)+$/, '\n');
   html = restoreFooterBoundary(html);
-  if (!html.includes('class="scenes__mascot"')) {
-    html = html.replace(/(<header class="scenes__head[^\"]*">[\s\S]*?)(<\/header>)/, `$1<span class="scenes__mascot" aria-hidden="true"><img src="/lightvela-intl-home/assets/scenes-mascot-duo.webp?v=${HOME_VISUAL_ASSET_VERSION}" alt="" width="261" height="174" loading="lazy" decoding="async"></span>$2`);
-  }
+  // Retire the previous duo artwork, including imported snapshots.
+  html = html.replace(/<span class="scenes__mascot"[^>]*><img[^>]*><\/span>/g, '');
   html = addFeatureMotion(html, locale);
   const words = copy[locale] ?? copy[DEFAULT_LOCALE];
   const bubbles = (items) => `<div class="feature-copy-preview">${items.map((text) => `<span>${text}</span>`).join('')}</div>`;
@@ -86,7 +84,7 @@ export function localizeFeatureCards(html, locale) {
     const caption = index === 1 ? `<p>${sentences[index]}</p>` : '';
     return `<div class="wcard__body">${heading}${caption}</div>`;
   });
-  const step = `<span class="home-step-mascot" aria-hidden="true" data-foot-y="${STEP_ARTWORK.footY}"><img src="/lightvela-intl-home/assets/${STEP_ARTWORK.asset}?v=${HOME_VISUAL_ASSET_VERSION}" alt="" width="${STEP_ARTWORK.width}" height="${STEP_ARTWORK.height}" loading="lazy"><em>${notes[locale] ?? notes[DEFAULT_LOCALE]} →</em></span>`;
+  const step = `<span class="home-step-mascot" aria-hidden="true" data-foot-y="${STEP_ARTWORK.footY}"><img src="/lightvela-intl-home/assets/${STEP_ARTWORK.asset}?v=${HOME_VISUAL_ASSET_VERSION}" alt="" width="${STEP_ARTWORK.width}" height="${STEP_ARTWORK.height}" loading="lazy"></span>`;
   const existingStep = /<span class="home-step-mascot"[^>]*>[\s\S]*?<\/span>/g;
   // This is the sole owner of the step artwork, for both fresh and legacy imports.
   if (existingStep.test(html)) return html.replace(existingStep, () => step);

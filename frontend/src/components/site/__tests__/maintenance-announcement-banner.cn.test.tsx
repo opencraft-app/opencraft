@@ -25,7 +25,7 @@ vi.mock("@/lib/region", () => ({
 }));
 
 beforeEach(async () => {
-  vi.spyOn(Date, "now").mockReturnValue(Date.UTC(2026, 8, 23, 12, 0, 0));
+  vi.spyOn(Date, "now").mockReturnValue(Date.UTC(2026, 9, 12, 12, 0, 0));
   window.localStorage.clear();
   navigationMock.usePathname.mockReturnValue("/");
   await i18n.changeLanguage("zh-CN");
@@ -39,19 +39,19 @@ afterEach(() => {
 });
 
 describe("MaintenanceAnnouncementBanner China maintenance window", () => {
-  it("renders the Sep 23 maintenance window in Beijing time", async () => {
+  it("renders the Oct 12 maintenance window in Beijing time", async () => {
     render(<MaintenanceAnnouncementBanner />);
 
     expect(
       await screen.findByText(
-        "LightVela 将于北京时间 2026 年 9 月 23 日 22:00-次日 06:00 进行系统升级，期间服务可能短暂中断，带来不便敬请谅解。",
+        "LightVela 将于北京时间 2026 年 10 月 12 日 22:00-次日 06:00 进行系统升级，期间服务可能短暂中断，带来不便敬请谅解。",
       ),
     ).toBeInTheDocument();
   });
 
   it("ignores the dismissal state from the previous announcement", async () => {
     window.localStorage.setItem(
-      "lw-announcement-dismissed:0907-hermes-agent-upgrade",
+      "lw-announcement-dismissed:1011-system-upgrade",
       "1",
     );
 
@@ -59,7 +59,7 @@ describe("MaintenanceAnnouncementBanner China maintenance window", () => {
 
     expect(
       await screen.findByText(
-        "LightVela 将于北京时间 2026 年 9 月 23 日 22:00-次日 06:00 进行系统升级，期间服务可能短暂中断，带来不便敬请谅解。",
+        "LightVela 将于北京时间 2026 年 10 月 12 日 22:00-次日 06:00 进行系统升级，期间服务可能短暂中断，带来不便敬请谅解。",
       ),
     ).toBeInTheDocument();
   });
@@ -74,8 +74,30 @@ describe("MaintenanceAnnouncementBanner China maintenance window", () => {
     expect(document.body).not.toHaveClass("lw-has-announcement");
   });
 
+  it("moves the fixed navigation only while the announcement remains in view", async () => {
+    let bannerBottom = 36;
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+      () => DOMRect.fromRect({ y: bannerBottom - 36, height: 36 }),
+    );
+
+    const { unmount } = render(<MaintenanceAnnouncementBanner />);
+    await screen.findByRole("status");
+    expect(document.body.style.getPropertyValue("--lw-announcement-visible-height")).toBe("36px");
+
+    bannerBottom = 12;
+    act(() => window.dispatchEvent(new Event("scroll")));
+    expect(document.body.style.getPropertyValue("--lw-announcement-visible-height")).toBe("12px");
+
+    bannerBottom = -1;
+    act(() => window.dispatchEvent(new Event("scroll")));
+    expect(document.body.style.getPropertyValue("--lw-announcement-visible-height")).toBe("0px");
+
+    unmount();
+    expect(document.body.style.getPropertyValue("--lw-announcement-visible-height")).toBe("");
+  });
+
   it("removes the maintenance announcement at 06:00 Beijing time", async () => {
-    const expiresAt = Date.UTC(2026, 8, 23, 22, 0, 0);
+    const expiresAt = Date.UTC(2026, 9, 12, 22, 0, 0);
     vi.useFakeTimers();
     vi.setSystemTime(expiresAt - 1_000);
 

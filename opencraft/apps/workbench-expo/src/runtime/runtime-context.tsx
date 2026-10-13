@@ -16,6 +16,7 @@ import {
 } from "@opencraft/composer-core";
 import {
   createAppServerWorkbenchRuntime,
+  createThreadViewFrameScheduler,
   createConversationBindingStore,
   createConversationActivationCoordinator,
   createConversationScopeLeaseRegistry,
@@ -141,6 +142,10 @@ export function createExpoWorkbenchApplication(options: ExpoWorkbenchApplication
     const hostId = asHostId(options.hostId ?? process.env.EXPO_PUBLIC_APPSERVER_HOST_ID ?? "local");
     const transport = options.transport ?? new WebSocketTransport({ url: appServerUrl() });
     const runtime = createAppServerWorkbenchRuntime({
+      frameScheduler: createThreadViewFrameScheduler((flush) => {
+        const frame = requestAnimationFrame(flush);
+        return () => cancelAnimationFrame(frame);
+      }),
       hostId,
       transport,
       autoReconnect: true,

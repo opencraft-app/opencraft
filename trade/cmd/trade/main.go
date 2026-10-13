@@ -137,6 +137,8 @@ func main() {
 			dianshiclient.Options{
 				Preview:               cfg.DianshiPreview,
 				RenewBaseURL:          cfg.DianshiRenewBaseURL,
+				RenewPriceBaseURL:     cfg.DianshiRenewPriceBaseURL,
+				RenewOrderBaseURL:     cfg.DianshiRenewOrderBaseURL,
 				CloudLadderHMACSecret: cfg.CloudLadderHMACSecret,
 			},
 		)
@@ -176,7 +178,6 @@ func main() {
 		BillingPayRedirectURL:  cfg.BillingCloudAPIPayRedirectURL,
 		OrderWriter:            mysqlStore,
 		OrderStore:             mysqlStore,
-		DianshiRenewWriter:     mysqlStore,
 		ParticipationReader:    mysqlStore,
 		ShadowClient:           shadowClient,
 		// v1.7.x 国际站接入 A6.1：出向 envelope.resInfo.region/zone + trade_order.region_id
@@ -278,6 +279,12 @@ func main() {
 		// 时 INSERT participation。两者同进同退；activityResolver==nil 时一并传 nil，
 		// createResource handler 自动跳过 participation 分支。
 		ActivityStore: func() store.ActivityStore {
+			if activityResolver != nil {
+				return mysqlStore
+			}
+			return nil
+		}(),
+		ParticipationRecorder: func() store.ParticipationRecorder {
 			if activityResolver != nil {
 				return mysqlStore
 			}

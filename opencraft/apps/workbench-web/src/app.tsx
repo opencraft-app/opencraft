@@ -32,7 +32,7 @@ import type {
 } from "@opencraft/timeline-virtualizer";
 import { useStableEvent } from "@opencraft/react-runtime";
 import { nativeProjectPicker } from "./runtime/project-folder-picker";
-import { ThreadTitleWriter } from "@opencraft/workbench-runtime";
+import { ThreadTitleWriter, legacyDirectServerProjectionFromHost } from "@opencraft/workbench-runtime";
 import { readCachedThreadName, writeCachedThreadName } from "./runtime/thread-title-cache";
 import { forkAndOpenThread } from "./runtime/thread-fork-navigation";
 import { formatDocumentTitle } from "./runtime/document-title";
@@ -169,6 +169,10 @@ import {
 const SettingsContent = lazy(async () => {
   const module = await import("./components/settings-page");
   return { default: module.SettingsContent };
+});
+const ConversationTaskMenu = lazy(async () => {
+  const module = await import("./components/conversation-task-menu");
+  return { default: module.ConversationTaskMenu };
 });
 const SettingsNavigation = lazy(async () => {
   const module = await import("./components/settings-page");
@@ -481,11 +485,19 @@ export function App({
     provisionHost: hostCatalog.provisionHost,
     removeHost: hostCatalog.removeHost,
     openView: workbenchNavigation.openExtensionView,
+    openConversation: async (serverId, threadId) => {
+      const profile = hostCatalog.profiles.find(profile => legacyDirectServerProjectionFromHost({
+        hostId: profile.hostId, hostKind: profile.hostKind, label: profile.displayName,
+      }).serverOrigin.serverId === serverId);
+      if (!profile) throw new Error("Conversation Server is not connected");
+      await workbenchNavigation.selectConversation(createWorkbenchThreadLocation(profile.hostId, threadId));
+    },
     openSettings: (section: string) => { setAccountOpen(false); workbenchNavigation.openSettings(section); },
     pushViewResource: workbenchNavigation.pushExtensionViewResource,
     replaceViewResource: workbenchNavigation.replaceExtensionViewResource,
     prepareImageUpload: async (blob) => (await images.compress(blob)).blob,
   }), [extensionPlatform, hostCatalog, images, snapshot.hostId, workbenchNavigation]);
+  const threadBadge = useSyncExternalStore(hostCatalog.threadBadges.subscribe, hostCatalog.threadBadges.getSnapshot).contribution;
   const extensionProjection = useExtensionWorkbenchProjection({
     contributions: hostCatalog.extensionContributions,
     renderers: hostCatalog.platformViewRenderers,
@@ -498,8 +510,8 @@ export function App({
     openView: workbenchNavigation.openExtensionView,
   });
   useEffect(() => {
-    if (extensionProjection.account?.snapshot.phase === "anonymous") setAccountOpen(false);
-  }, [extensionProjection.account?.snapshot.phase]);
+    if (extensionProjection.account?.snapshot.phase === "anonymous" && extensionProjection.account.provider.signInViewId) setAccountOpen(false);
+  }, [extensionProjection.account?.snapshot.phase, extensionProjection.account?.provider]);
   const authenticationPresentation = useAuthenticationPresentation(hostCatalog.authenticationFlows, extensionProjection.account,
     JSON.stringify([hostCatalog.currentLocation, workbenchNavigationSnapshot.applicationRoute]));
   const hostConnectionIntervention = findHostConnectionInterventionError(
@@ -1463,7 +1475,31 @@ export function App({
   }, [embedded]);
   const header = (
     <AppShellHeader
-      showProjectIcon={embedded === undefined}
+      headerAction={conversationSurfaceVisible && draft === null && activeThreadId !== null
+        && (hostCatalog.tasks || hostCatalog.threadManagement.capabilities(snapshot.hostId).rename || hostCatalog.threadManagement.capabilities(snapshot.hostId).pin || activeThread?.project || snapshot.conversation?.execution.cwd || activeProtocolThread?.cwd) ? (
+        <Suspense fallback={<span className="chrome-button" />}>
+          <ConversationTaskMenu
+            key={JSON.stringify([displayScope, snapshot.hostId, activeThreadId])}
+            port={hostCatalog.tasks ?? undefined}
+            scope={displayScope}
+            serverId={legacyDirectServerProjectionFromHost({ hostId: activeHost.hostId, hostKind: activeHost.kind, label: activeHost.label }).serverOrigin.serverId}
+            threadId={activeThreadId}
+            title={activeThread?.title ?? pageTitle ?? ""}
+            pinned={activeThread?.pinned}
+            project={activeThread?.project}
+            workspaceDirectory={snapshot.conversation?.execution.cwd ?? activeProtocolThread?.cwd ?? undefined}
+            onRename={hostCatalog.threadManagement.capabilities(snapshot.hostId).rename
+              ? title => threadTitleWriter.rename({ hostId: snapshot.hostId, threadId: activeThreadId }, title) : undefined}
+            onSetPinned={hostCatalog.threadManagement.capabilities(snapshot.hostId).pin
+              ? async pinned => {
+                try { await hostCatalog.threadManagement.setPinned(snapshot.hostId, activeThreadId, pinned); }
+                finally { await queryClient.invalidateQueries({ queryKey: ["appserver", snapshot.hostId, "threads"] }); }
+              } : undefined}
+            verifyConversation={async () => { await hostCatalog.agentRuntimes.request(snapshot.hostId, "thread/read", { threadId: activeThreadId, includeTurns: false }); }}
+            onOpenTasks={() => workbenchNavigation.openExtensionView("opencraft.tasks.board")}
+          />
+        </Suspense>
+      ) : undefined}
       titleContent={embedded !== undefined && conversationSurfaceVisible && draft === null && activeThread !== undefined && hostCatalog.threadManagement.capabilities(snapshot.hostId).rename ? (
         <EditableThreadTitle
           key={JSON.stringify([snapshot.hostId, activeThread.id])}
@@ -1505,18 +1541,17 @@ export function App({
       >
       <AppShell
           navigation={!presentation.shellNavigation ? undefined : {
+            layout: "unified",
             settingsActive: routeSettingsOpen,
             actions: [
-              { id: "shell.chat", title: "Chat", icon: "chat", active: conversationRouteOpen,
-                onInvoke: () => { void workbenchNavigation.openChat()
-                  .then(changed => { if (!changed) setThreadActionError("当前请求提交中，暂时无法切换页面。"); })
-                  .catch(error => setThreadActionError(error instanceof Error ? error.message : String(error))); } },
+              { id: "shell.chat", title: intl.formatMessage({ id: "sidebar.start", defaultMessage: "Start" }), icon: "write", active: conversationRouteOpen,
+                onInvoke: navigateToHome },
               ...extensionProjection.primaryActions, ...extensionProjection.footerActions,
             ],
             account: extensionProjection.account === null ? null : {
               snapshot: extensionProjection.account.snapshot,
               signIn: authenticationPresentation.signIn,
-            onOpen: () => extensionProjection.account?.snapshot.phase === "anonymous" ? authenticationPresentation.open() : setAccountOpen(true),
+              onOpen: () => extensionProjection.account?.snapshot.phase === "anonymous" && extensionProjection.account.provider.signInViewId ? authenticationPresentation.open() : setAccountOpen(true),
               onRefresh: extensionProjection.account.provider.refresh,
               onSignOut: extensionProjection.account.provider.signOut,
             },
@@ -1576,7 +1611,9 @@ export function App({
                 />
               ) : null}
               showFooter={false}
+              showStart={!presentation.shellNavigation}
               threadCapabilities={hostId => hostCatalog.threadManagement.capabilities(hostId)}
+              threadBadge={threadBadge}
               pendingTitle={(hostId, threadId) => threadTitleWriter.pendingTitle({ hostId, threadId })}
               threadActions={{
                 onSetPinned: async (target, pinned) => {

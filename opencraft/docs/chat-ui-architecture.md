@@ -1,5 +1,58 @@
 # ChatUI integration architecture
 
+## User message sender display
+
+Web/Electron show each user message's verified employee `loginName` above its
+content, in small muted text aligned to the end. Attachment-only messages use
+the same label. Unknown or absent senders leave no label. The label consumes
+the individual message snapshot, never the current footer account or Turn author,
+and is excluded from copied message text and native model input.
+
+## Streaming projection and document reuse
+
+The Host session buffers only append-only assistant, plan and indexed reasoning
+text notifications. ThreadViewStore reduces original notifications in order and
+publishes one consecutive View revision per batch; notification revision and
+last notification retain their original semantics. Web/Electron and Expo inject
+frame scheduling with a 32ms timer fallback; headless uses a 16ms timer. Timers
+do not guarantee progress while the event loop is blocked. Lifecycle,
+replacement, history, interaction writes, authoritative reads and commands flush
+preceding text. Completion and its preceding deltas share one publication;
+full terminal snapshots still replace Item membership. Generation guards,
+cancelled-callback fencing and disposal prevent replay into newer sessions.
+Pressure flushes at 512KiB of UTF-16 delta data or 2048 notifications preserve
+all text. Batching reduces downstream JSON/Replica/timeline work while still
+running each original projector.
+
+The compiler caches immutable prefix AST nodes using Marked's actual top-level
+token boundaries, then parses the remaining tail. It retains the last block
+and preceding live container, protecting lists, quotes, indented code and
+partial markers that can rejoin them. Brackets, CRLF and display math
+conservatively use full parsing for cross-block dependencies and normalization.
+The dialect-scoped cache is bounded to 64 entries and one million key
+characters; only matching preprocessed prefixes can be reused. Unclosed fences
+retain their real delimiter length and source bytes, without synthetic triple
+backticks. This is not a fully incremental parser: a long single block or
+fallback still has whole-document costs.
+
+Sessions reuse committed stable node/segment identities and reconcile only
+the remaining tail, with cached word segmentation. Immutable parsing memo is
+safe for abandoned renders; committed parsed nodes and identity counters move
+only under the existing candidate CAS. Reused segments cease to be new entrants
+without changing their keys. Completion uses the full parser.
+
+Fade owns no execution state. Absolute segment starts have a real 96ms maximum
+future wait, followed by the existing 150ms fade, excluding CPU/frame cost.
+Remount computes remaining delay; elapsed motion is settled even without
+animationend. Prose and resource labels share this scheduler. Completed
+documents disable animation at the root and reveal all text. Replica
+projection completion remains distinct from React commit and paint.
+
+Tests cover session ordering, document equivalence and segment identity.
+`scripts/smoke-streaming-presentation.mjs` checks actual Web DOM/CSS with
+synthetic text in an isolated browser; it does not update a running Host or
+establish real-provider throughput.
+
 ## Browser-local input drafts
 
 `ComposerStoreServices.drafts` is a platform-neutral content storage port;
@@ -129,6 +182,14 @@ Threads, and owns continuation after Turn completion, including when no browser
 is connected. Queued user input has priority over autonomous continuation;
 continuation is serialized with other per-Thread Host operations. The DSH Host
 currently advertises read-only Goal support, never a simulated write path.
+
+For SSH Codex, Goals remain native remote Thread state. The shared broker
+preserves an explicit upstream Goal capability, or discovers enabled Goals
+through the native feature catalog during physical initialization. It exposes
+the corresponding native get/set/clear methods, retains read-only declarations,
+and omits the capability when discovery fails or Goals are disabled. Reading an
+existing Goal does not create, activate, or resume it. The remote Codex owns
+autonomous continuation; the SSH bridge never schedules an additional Goal Turn.
 
 Workbench Runtime owns a per-Thread Goal resource: get-on-view activation,
 notification projection, revision-fenced reads, reconnect invalidation, and
@@ -459,8 +520,8 @@ produce neither a blank interval nor a duplicate row. This does not redefine
 steer as a hard interrupt: the current provider request and tool step remain
 owned by DSH and may finish before the next-step inbox is consumed.
 
-The standalone main conversation defaults fresh follow-up input to direct steering during
-an active response. Chat settings can persist `queue` instead through
+The standalone main conversation defaults fresh follow-up input to queueing during
+an active response. Chat settings can persist `steer` instead through
 `UiPreferencesRuntime` (`chat.defaultFollowUpAction`, installation scope). The
 LightVela embedded conversation defaults to `queue` while a response is active,
 independent of the standalone preference.
@@ -511,11 +572,34 @@ Attachment staging is a Host resource, not a Renderer filesystem convention.
 The `opencraft/attachment-staging` capability declares accepted source kinds,
 returned location kinds and the byte limit; Composer consumes only the shared
 `pending/processing/ready/failed` lifecycle and an opaque `AttachmentRef`.
+The browser/Headless AppServer gateway allows bounded 48 MiB WebSocket messages
+to carry the local 32 MiB file allowance after Base64 expansion and JSON/AppHost
+wrapping. File validation still enforces the 32 MiB decoded-byte limit; exceeding
+that file limit is a staging error rather than a reason to disconnect the Host.
 Local v1 stages `client-bytes` beneath the Local Host data root and returns a
 `host-file`; the Renderer never derives a directory from `codexHome` or calls
-generic `fs/writeFile` for this workflow. Remote RPC/SFTP and Cloud object-store
-adapters may later return `host-file` or `object-url` through the same contract,
-but are unsupported until their Host advertises them. Failed or unresolved
+generic `fs/writeFile` for this workflow. SSH Hosts with installation-owned
+attachment storage now implement that same staging contract: bodies up to
+10 MiB use native `fs/writeFile`; larger bodies, up to the same 32 MiB limit,
+use backend SFTP. The remote root comes from native `initialize.codexHome` and
+is isolated by stable Server/endpoint namespace, never by a browser or connection
+generation. A private partial file is committed by SFTP rename and verified
+against the submitted size and SHA-256 before `ready` is returned. Small-file
+verification uses native RPC; large-file verification downloads through SFTP,
+so an expanded large Base64 payload never enters the remote RPC channel.
+Saved passwords use the existing private askpass IPC plus a fixed private SSH
+wrapper that overrides SFTP batch-mode authentication; keys/agents retain normal
+batch authentication. All transfers retain the binding's strict host-key trust.
+The Hub persists only lifecycle/display metadata in private Server storage;
+temporary upload and verification spools are removed after each operation.
+An unknown upload outcome keeps an `uploading` intent for identical-ID retry;
+metadata/content conflicts cannot overwrite the resource. Failed removals keep
+`pending-removal` for retry, and sent refs cannot be removed from history.
+Remote send/steer verifies owned refs and adds the same model-visible locator;
+display metadata survives reopening and follows native forks. Queue, Goal,
+desktop and other Local-only capabilities remain absent on SSH Hosts.
+Cloud object-store adapters remain unsupported until their Host advertises them.
+Failed or unresolved
 attachments block submission and retain their precise error; removing an
 unsubmitted ready attachment asks its owning Host to release the staged ref.
 The local Codex Host uses the same staging service beneath its own data root,
@@ -821,10 +905,21 @@ highlight state; they do not introduce a feature-owned focus color. Track,
 thumb, highlight and shadow consume the active Design System theme tokens.
 
 The Composer permissions menu contains only declared permission profiles, without
-an AppServer-default row or explanatory question. An absent or null draft choice
-inherits the runtime's effective profile for display only; rendering never writes
-that derived value into the draft. Until resolved, the trigger reads `Permissions`
-and no profile is checked. Explicit choices still use the existing submit path.
+an AppServer-default row or explanatory question. A new-thread draft with no explicit
+permission choice initializes to a Host-declared, enabled `full` profile when its
+catalog arrives; the real draft selection travels through the existing submit path.
+Existing threads, explicit choices (including null inheritance), and Hosts without
+an available full profile retain their policy. Inherited runtime profiles remain
+display-only. Until resolved, the trigger reads localized `Permissions` (`权限` in Chinese)
+and no profile is checked. Standard Host-verified mode names, Chinese descriptions,
+menu status and pending-change hints use the application locale catalog.
+Native/custom profile names and descriptions remain engine-owned.
+
+The empty Web Composer paints its placeholder from paragraph decoration attributes
+and a noninteractive CSS pseudo-element. It must not insert a noneditable inline
+widget or separator into the empty editing target, preserving native caret, selection
+and clipboard behavior. Browser clipboard and DOM checks do not establish iPhone
+system menu behavior.
 
 Temporary Side Chat forks are adopted by `ThreadResumeCoordinator.adoptFork` from
 the validated `thread/fork` response in its original connection generation. They
@@ -1008,6 +1103,34 @@ for turn placeholders, live reasoning and activity-group gaps between tools.
 Core status strings remain renderer-neutral; real reasoning summaries are preserved.
 
 ## Agent-originated async questions
+
+### Hermes direct approval ownership
+
+Direct/embedded Hermes Threads translate native `approval.request` into
+`item/commandExecution/requestApproval`. The existing OpenCraft approval card
+owns presentation; Hermes owns the pending request and authorization policy.
+Native request ID plus durable Thread ID identifies the prompt independently
+of its revocable live session route. Each prompt has its own synthetic Item ID,
+so the interaction ledger cannot replay another prompt's grant.
+
+The optional OpenCraft `approvalScopes` extension carries the provider's offered
+`once/session/always/deny` scopes. Canonical `accept`, `acceptForSession`, and
+`decline/cancel` map to native `once/session/deny`. An explicitly offered
+persistent grant uses `{decision: "accept", _meta: {persist: "always"}}`;
+it is not a Codex exec-policy amendment and cannot be sent to an unextended
+Codex request. Web and Native require a separate confirmation for that scope,
+using their existing interaction card controls and design tokens. Backend
+restrictions such as smart denial and disabled permanent grants remain binding.
+
+Resume restores `pending_approval`; a quiet heartbeat is not completion while
+approval is outstanding. Disposing a View/bridge never answers it. Native tool
+completion and successful answers refresh the oldest pending approval snapshot,
+not a fabricated complete queue. Snapshot absence clears stale prompts; newer
+events and revoked live-session routes fence late snapshots. Failed RPCs or
+`resolved=false` retain the approval. A delivery failure needs reconnect to
+restore the response channel; it must not manufacture an empty or approving
+response. Follow-up snapshot failure cannot turn an accepted grant into a
+request to send it again. Group-conversation approval routing is unchanged.
 
 Codex `agentMessage` Items with `delivery: "async"` and `questions` are not
 `item/tool/requestUserInput` server requests. The former remain ordinary
@@ -1390,5 +1513,41 @@ bundles are independent quality gates; a static fixture alone is not accepted.
 
 Embedded file previews retain the mutation-level read-only guard alongside snapshot-based saves in the standalone workspace editor. Markdown preview/source switching and lazy syntax editors share the same resource lifecycle. The read-only regression renders the real panel and invokes its captured Query mutation, asserting zero filesystem writes and cache invalidations.
 
-Markdown preview entry: explicit `.md` / `.markdown` paths in completed inline code are clickable and use the same resource policy and Host-scoped right panel as Markdown links. Bare names, commands, external URLs, streaming paths and code within an explicit link retain their original semantics. No file is read before clicking.
-Completed standalone Hermes `MEDIA:<path>` text or inline code for an explicit Markdown file uses that same click and Host permission flow. Non-Markdown media, embedded prose, malformed paths, streaming content and code inside an explicit link remain inert; the Renderer never treats `MEDIA:` as a browser URL or reads the file before clicking.
+Document preview entry: explicit `.md` / `.markdown` / `.html` / `.htm` paths in completed inline code are clickable and use the same resource policy and Host-scoped right panel as Markdown links. HTML opens in a sandboxed, read-only page preview with a Source switch. Scripts cannot run; the preview's content policy permits inline styles and embedded data/Blob media while blocking external subresources. Before creating the frame, the preview removes link destinations, refresh redirects and SVG animation elements that can restore navigation because Chromium can navigate a sandboxed frame away from its original content policy. The Source view preserves the original file. This supports self-contained reports without granting page code access to the Workbench. Bare names, commands, external URLs, streaming paths and code within an explicit link retain their original semantics. No file is read before clicking.
+Completed standalone `MEDIA:<path>` text or inline code uses that same click and resource policy flow regardless of the engine that produced it. This delivery directive is independent of file type: images, audio, video, PDFs and unknown files all open the existing resource preview. Absolute and relative file paths, quoted paths with spaces, and HTTP(S) addresses are recognized; external addresses retain the existing external-navigation policy. Embedded prose, malformed paths, streaming content and code inside an explicit link remain inert. The Renderer never treats the literal `MEDIA:` prefix as a browser URL or reads a file before clicking; ordinary bare inline paths retain the document-extension rule above.
+
+The shared media classifier selects an image, audio, video, PDF or generic file
+branch using the path's extension as a presentation hint. Actual decoders still
+validate the bytes. Resource previews read through the Host filesystem and the
+existing Blob cache. Audio and video use browser controls over a View-owned Blob
+URL; this is whole-file playback, not an HTTP Range streaming contract. Unsupported
+codecs and unknown binary files retain a download action.
+
+PDF previews lazily load PDF.js and its build-owned Worker, CJK CMaps, standard
+fonts and image codecs; no CDN or remote-file URL is introduced. PDF bytes bypass
+the text editor's 4 MiB limit. One selected page is painted at a time, with
+pagination, fit-width, zoom, text selection and original-file download. The
+backing canvas has a bounded pixel budget. A View owns its document loading and
+render tasks and destroys/cancels them on replacement or unmount; late results
+cannot paint a different resource. Invalid or password-protected documents show
+a generic failure with download available. Web and Electron share this Renderer;
+this does not declare a native Expo PDF viewer.
+
+## Product Thread badge slot
+
+The Shell offers one trusted `threadBadge` contribution. Its React contract supplies
+Host/Thread identity, portal root and controlled Popover state; IOA owns the circular
+participant badge and data reads. The badge is a sibling of the Thread navigation
+button. Sidebar owns exclusivity across participant Popovers and existing context/
+dropdown menus, clears state on selection/hidden-row/unload, and prevents a retired
+Popover from restoring focus into a newer one. Escape retains normal focus return.
+No IOA-specific query, count, identity or badge styling belongs to Sidebar.
+
+Chinese emphasis uses the standard Marked tokenizer first. If it rejects an asterisk delimiter at a Han/punctuation boundary, the compiler retries with a length-preserving delimiter mask and a relaxed Han opener boundary. This preserves canonical source, code/escape masking and standard English/underscore behavior. The Codex reference uses Marked 16.4.1 without this override and reproduces both reported completed-text cases.
+
+
+Mobile Web Composer ordinary Return inserts a paragraph on coarse primary-pointer devices, including iOS native paragraph changes routed back through ProseMirror Enter. Suggestion, code and list commands keep their own precedence. Desktop Enter and explicit Ctrl/Cmd+Enter submissions remain available. Standalone and LightVela embedded Composer consume the same placeholder message IDs: new conversations use `chat.companionPlaceholder`, and follow-ups use `chat.companionFollowupPlaceholder`.
+
+Standalone and embedded Web entry points share one minimum Composer editing height: 64px for desktop viewports (at least 768px), and 48px below that breakpoint regardless of pointer type. This applies to new-thread and narrower panel containers; embedded styles do not override the height. Document growth and the scroll cap retain their existing behavior.
+
+Sidebar remote Server-origin badges use the shared styled Radix Tooltip surface rather than native title text. Tooltips mount under the Workbench Presentation Root outside the scrolling Sidebar, permit hover transfer and text selection, and support focus/Escape. Their light surface, border, 6px radius, 11px medium text, padding, shadow and arrow follow frontend/DESIGN.md Hover Tooltip.

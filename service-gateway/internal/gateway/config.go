@@ -41,6 +41,7 @@ type Route struct {
 	RewritePrefix          string       `yaml:"rewrite_prefix"`
 	Methods                []string     `yaml:"methods"`
 	Upstream               string       `yaml:"upstream"`
+	DesktopUpstream        string       `yaml:"desktop_upstream"`
 	UpstreamBearerTokenEnv string       `yaml:"upstream_bearer_token_env"`
 	Access                 Access       `yaml:"access"`
 	AllowedOrigins         []string     `yaml:"allowed_origins"`

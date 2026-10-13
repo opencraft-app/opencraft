@@ -5117,9 +5117,10 @@ export function AutomationFormModal({
                       </span>
                     </label>
                     {showRateLimitWarning && (
-                      <span className="text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>
-                        {t("微信不建议频繁通知，否则可能会被限流")}
-                      </span>
+                      <div className="space-y-1 text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>
+                        <p>{t("微信不建议频繁通知，否则可能会被限流")}</p>
+                        <p>{t("较长时间未在微信中与 Bot 对话，提醒可能暂时无法送达，可先发送一条消息再试。")}</p>
+                      </div>
                     )}
                     {selected && key === "qqbot" && (
                       <span className="inline-flex items-center text-sm text-black/40" style={MODAL_HELP_TEXT_STYLE}>

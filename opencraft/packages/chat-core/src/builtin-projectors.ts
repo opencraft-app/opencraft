@@ -320,6 +320,8 @@ function userMessageMetadata(
     message: string(source.displayMessage)
       ?? (attachments.length === 0 && content.length === 1 ? displayAsyncQuestionReply(rawMessage) : null)
       ?? semantics.message,
+    ...(record(source.sender).kind === "employee" && typeof record(source.sender).loginName === "string"
+      ? { sender: { kind: "employee" as const, loginName: record(source.sender).loginName as string } } : {}),
     sentAtMs: explicitSentAtMs ?? (leadingUserMessage ? context.turn.startedAtMs ?? null : null),
     deliveryStatus: userMessageDeliveryStatus(source.deliveryStatus) ?? (hookBlocked ? "not-sent" as const : null),
     referencesPriorConversation: boolean(source.referencesPriorConversation) ?? semantics.referencesPriorConversation,
@@ -1075,6 +1077,10 @@ export function createBuiltinTimelineProjectors(): readonly TimelineItemProjecto
         proposedNetworkPolicyAmendments: approvalNetworkPolicyAmendments(source.proposedNetworkPolicyAmendments),
         additionalPermissions: source.additionalPermissions ?? null,
         availableDecisions: stringArray(source.availableDecisions),
+        ...(source.approvalScopes === undefined ? {} : {
+          approvalScopes: stringArray(source.approvalScopes).filter((scope): scope is "once" | "session" | "always" | "deny" =>
+            scope === "once" || scope === "session" || scope === "always" || scope === "deny"),
+        }),
         state: source.state === "accepted" || source.state === "declined" || source.state === "cancelled" ? source.state : "pending",
       },
       anchors: [{ type: "request", id: string(source.requestId) ?? item.id }],

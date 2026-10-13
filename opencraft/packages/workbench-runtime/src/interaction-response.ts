@@ -5,6 +5,7 @@ import type { InteractionResponse, PendingInteraction } from "@opencraft/chat-ru
 export type WorkbenchInteractionAction =
   | { readonly type: "approve-once" }
   | { readonly type: "approve-session" }
+  | { readonly type: "approve-always" }
   | { readonly type: "approve-similar" }
   | { readonly type: "approve-network-host" }
   | { readonly type: "decline"; readonly persist?: "session" | "always" }
@@ -84,6 +85,10 @@ export function createInteractionResponse(
   switch (interaction.method) {
     case "item/commandExecution/requestApproval": {
       if (isAnswerAction(action)) throw new Error("A command approval requires an approval decision");
+      if (action.type === "approve-always") {
+        if (!interaction.params.approvalScopes?.includes("always")) throw new Error("Persistent approval is not offered");
+        return { type: "command-approval", requestId, decision: "accept", _meta: { persist: "always" } };
+      }
       if (action.type === "approve-similar") {
         const amendment = interaction.params.proposedExecpolicyAmendment;
         if (amendment === null || amendment === undefined || amendment.length === 0) {
@@ -115,7 +120,7 @@ export function createInteractionResponse(
     }
     case "item/fileChange/requestApproval": {
       if (isAnswerAction(action)) throw new Error("A file approval requires an approval decision");
-      if (action.type === "approve-similar" || action.type === "approve-network-host") {
+      if (action.type === "approve-always" || action.type === "approve-similar" || action.type === "approve-network-host") {
         throw new Error("A file approval cannot apply a command policy");
       }
       return {
@@ -129,7 +134,7 @@ export function createInteractionResponse(
     }
     case "item/permissions/requestApproval": {
       if (isAnswerAction(action)) throw new Error("A permission request requires an approval decision");
-      if (action.type === "approve-similar" || action.type === "approve-network-host") {
+      if (action.type === "approve-always" || action.type === "approve-similar" || action.type === "approve-network-host") {
         throw new Error("A permission request cannot apply a command policy");
       }
       const requested = interaction.params.permissions;
@@ -223,7 +228,7 @@ export function createInteractionResponse(
       };
     }
     case "mcpServer/elicitation/request": {
-      if (action.type === "approve-once" || action.type === "approve-session"
+      if (action.type === "approve-once" || action.type === "approve-session" || action.type === "approve-always"
         || action.type === "approve-similar" || action.type === "approve-network-host" || action.type === "answer-questions"
         || action.type === "submit-option-picker" || action.type === "submit-setup-role"
         || action.type === "submit-setup-task" || action.type === "submit-setup-context") {

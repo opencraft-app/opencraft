@@ -961,3 +961,16 @@ Web、Electron、Expo 和 SSH Host 锁死在一个不稳定的 TypeScript 内部
 
 这应当成为 OpenCraft Extension Platform 的正式目标架构；面向 Agent 的可选调用投影见
 [`agent-capability-fabric.md`](./agent-capability-fabric.md)。
+
+## Trusted product Thread metadata and badges
+
+`threadBadge` is an internal React contribution for one optional product-owned
+Thread adornment. Shell owns layout, identity and overlay exclusivity; the product
+owns data and content. IOA uses this slot for conversation participants.
+
+Codex Host accepts an optional Thread metadata factory against its existing shared
+SQLite and native-history port. The provider observes native results/notifications,
+owns explicitly advertised metadata RPCs and releases before Host storage closes.
+It does not intercept model input, claim native execution ownership or add another
+message identity store. Headless composition installs IOA's provider only alongside
+the configured Tencent OA authentication plugin; other deployments remain unchanged.

@@ -4,9 +4,6 @@
 
 **Un Bot es un perfil independiente dentro de su Agent de Hermes. El Bot principal se crea junto con el Agent, y cada Bot adicional puede tener sus propios ajustes de modelo, personalidad, memoria, Skills, canales y tareas programadas. Al crear un Bot, elija entre copiar uno existente o empezar con Basic setup. El plan determina cuántos Bots puede crear, incluido el principal.**
 
-> **Disponibilidad en el sitio internacional**
->
-> La creación de Bots adicionales se está introduciendo por etapas. Durante este despliegue, la entrada **Create Bot** no se muestra de forma predeterminada en el sitio internacional. Si la entrada no está disponible, continúe usando el Bot principal.
 
 ## Contenido de esta página
 
@@ -23,38 +20,26 @@
 
 ## Crear un Bot
 
-Cuando la entrada de creación esté disponible:
+Para crear otro Bot, seleccione **Nuevo bot** si la opción está disponible y el plan tiene capacidad. Introduzca **Nombre** (obligatorio) y **Descripción** (opcional), y ajuste la apariencia si lo necesita. La opción predeterminada es **Crear en blanco**. Si hay Bots válidos para copiar, abra **Avanzado** y seleccione un Bot de origen concreto. Para copiar el Bot que está usando, abra **Gestionar bot → Copiar Bot**; el formulario selecciona ese origen. Revise el origen, seleccione **Crear** y espere a que termine.
 
-1. Seleccione **New Bot**.
-2. Introduzca un nombre de Bot de hasta 60 caracteres.
-3. Elija un método de creación.
-4. Revise el resumen de herencia y seleccione **Confirm creation**.
-5. Espere a que termine el aprovisionamiento antes de configurar o usar el nuevo Bot.
-
-La opción de copia disponible depende del Bot seleccionado. Desde el Bot principal, la consola muestra **Copy current (main Bot)**. Desde otro Bot, puede elegir **Clone current** o **Clone main Bot**.
+El control para cerrar y las opciones avanzadas de copia solo aparecen cuando hay Bots de origen válidos. La primera configuración sin origen debe completarse. Los controles de apariencia cambian el color, la forma y los accesorios; no seleccionan el origen de la copia.
 
 ## Elegir un método de creación
 
 | Método | Se hereda | No se hereda |
 | --- | --- | --- |
-| Copy current, Clone current o Clone main Bot | Modelo, personalidad, Skills, preferencias del usuario y memoria a largo plazo del Bot de origen seleccionado | Conversación actual, historial de chat, tareas programadas, estado de ejecución y conexiones de canales |
-| Basic setup | Modelo principal actual y credenciales del Provider del Bot principal, además de las Skills integradas del sistema | Modelos alternativos, otros modelos configurados, personalidad, memoria, Skills instaladas posteriormente en el Bot principal, canales y tareas programadas |
+| Copiar Bot | Modelo, personalidad, Skills, preferencias del usuario y memoria a largo plazo del Bot de origen seleccionado | Conversación actual, historial de chat, tareas programadas, estado de ejecución y conexiones de canales |
+| Crear en blanco | Modelo principal actual y credenciales del Provider del Bot principal, además de las Skills integradas del sistema | Modelos alternativos, otros modelos configurados, personalidad, memoria, Skills instaladas posteriormente en el Bot principal, canales y tareas programadas |
 
-**Basic setup no crea un Bot vacío.** Conserva la configuración mínima del modelo y las Skills integradas necesaria para empezar, mientras mantiene separados el comportamiento personal, la memoria y las integraciones.
+**Crear en blanco no crea un Bot vacío.** Conserva la configuración mínima del modelo y las Skills integradas necesaria para empezar, mientras mantiene separados el comportamiento personal, la memoria y las integraciones.
 
 ## Confirmar el nuevo Bot
 
-Cuando termine el aprovisionamiento:
-
-1. Confirme que aparezca una nueva pestaña de Bot con el nombre introducido.
-2. Seleccione el nuevo Bot y compruebe que su modelo y sus Skills coincidan con el método de creación elegido.
-3. Abra la página de configuración correspondiente antes de añadir un [Soul](./personality.md), instalar [Skills](./skill.md), conectar canales o crear [tareas programadas](./automation.md).
+Tras la creación, compruebe el nombre del nuevo Bot en el selector, abra su chat web y envíe un mensaje breve de prueba. Si falla la creación o la configuración inicial, siga la opción de reintento mostrada y revise la lista de Bots antes de crear otro. Si no recibe respuesta, compruebe el estado del Bot y los créditos o la configuración del modelo.
 
 ## Trabajar con varios Bots
 
-Las pestañas de Bot aparecen en la parte superior de la consola del Agent. Seleccione una pestaña antes de cambiar modelos, personalidad, memoria, Skills, canales, tareas programadas o diagnósticos, para trabajar con el Bot previsto.
-
-Cada Bot tiene su propio perfil y sus propios datos. Los cambios realizados en uno no actualizan automáticamente los demás. La función **Chat** de la consola solo está disponible actualmente para el Bot principal, y el mantenimiento a nivel de Agent también debe realizarse desde ese Bot.
+Seleccione el avatar del Bot deseado en la barra de Bots. En pantallas estrechas, abra primero el panel de navegación. Compruebe su nombre antes de cambiar modelos, memoria, Skills, canales o tareas programadas. El chat web y la lista de conversaciones pertenecen al Bot seleccionado; los Bots adicionales también pueden usar el chat web. No necesita conectar un canal de mensajería para usarlo.
 
 Para renombrar un Bot, selecciónelo y edite el nombre mostrado. El nuevo nombre puede tener hasta 60 caracteres.
 
@@ -71,7 +56,7 @@ La eliminación no se puede deshacer. Lea atentamente el mensaje de confirmació
 
 ### ¿Por qué no puedo crear otro Bot?
 
-La entrada de creación puede seguir oculta durante el despliegue internacional, la versión actual del Agent puede no admitir varios Bots, el Agent puede no estar en ejecución o el plan puede haber alcanzado su límite de Bots.
+Compruebe si la cuenta tiene habilitada la creación de varios Bots, si el Agent está en ejecución, si el plan tiene capacidad y si hay otra creación o eliminación en curso.
 
 ### ¿Por qué al Bot copiado le faltan conversaciones, tareas o canales?
 

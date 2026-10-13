@@ -8,6 +8,7 @@
 .ci/runtime/commands/audit_gitops_drift.py
 .ci/runtime/commands/bootstrap_playground_environment.py
 .ci/runtime/commands/build_release_image.py
+.ci/runtime/commands/build_frontend_next_artifacts.sh
 .ci/runtime/commands/check_playground_environment_contract.py
 .ci/runtime/commands/cleanup_gitops_promotion.py
 .ci/runtime/commands/create_playground_environment.py
@@ -152,3 +153,8 @@
 
 .ci/runtime/commands/website_bootstrap_command.py
 .ci/runtime/support/website_bootstrap_command.py
+.ci/runtime/commands/pin_beijing_hermes_existing_vms.py
+.ci/runtime/support/pin_beijing_hermes_existing_vms.py
+
+.ci/runtime/commands/recover_hermes_production.py
+.ci/runtime/support/recover_hermes_production.py

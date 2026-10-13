@@ -852,10 +852,10 @@ export async function listCronJobs(
   // `buildTestRunMarker`），执行完会自动删除；但删除前存在的短暂窗口内
   // 如果用户恰好刷新列表，不应该让这类内部实现细节暴露给前端。
   const jobs = parseCronListOutput(text).filter((job) => !isTestRunMarkerName(job.name));
-  // hermes cron list 文本输出不含 prompt；额外尝试读 jobs.json 补 prompt 字段
-  // 文件不存在/读不到时静默跳过，仅影响 prompt 显示，不影响列表本身
+  // 在机器侧投影列表所需字段，避免历史错误/运行输出挤占 debug exec 的 128 KiB 配额。
+  // 读取失败仍显示列表，但依赖保持未可信状态，删除校验继续 fail closed。
   try {
-    const fileText = await readCronJobsJsonFile(target);
+    const fileText = (await execCommand(target, buildReadCronJobMetadataCommand())).output?.trim();
     if (fileText) {
       const parsed = JSON.parse(fileText) as unknown;
       const arr: unknown[] = Array.isArray(parsed)
@@ -1289,6 +1289,27 @@ function inferRunStatus(row: CronRunFileRow, job: CronJob | undefined): string |
     }
   }
   return stringValue(row.output_status) || null;
+}
+
+/** 仅返回列表水合字段；不修改 jobs.json，也不截断提示词或依赖。 */
+export function buildReadCronJobMetadataCommand(): string {
+  const script = [
+    "# LIGHTVELA_CRON_LIST_METADATA",
+    "import json, os",
+    "from pathlib import Path",
+    "root = Path(os.environ.get('HERMES_PROFILE_ROOT') or (Path.home() / '.hermes'))",
+    "raw = json.loads((root / 'cron' / 'jobs.json').read_text(encoding='utf-8'))",
+    "jobs = raw if isinstance(raw, list) else raw.get('jobs') if isinstance(raw, dict) else None",
+    "if not isinstance(jobs, list) or any(not isinstance(job, dict) for job in jobs):",
+    "    raise ValueError('Invalid cron jobs metadata')",
+    "fields = ('id', 'prompt', 'created_at', 'script', 'context_from', 'provider', 'model', 'no_agent')",
+    "payload = json.dumps([{key: job[key] for key in fields if key in job} for job in jobs], ensure_ascii=False, separators=(',', ':'))",
+    "# Fail before printing if even projected metadata cannot safely fit the command output cap.",
+    "if len(payload.encode('utf-8')) > 120 * 1024:",
+    "    raise ValueError('Cron jobs metadata exceeds safe output limit')",
+    "print(payload)",
+  ].join("\n");
+  return `python3 -c ${shellQuote(script)}`;
 }
 
 /** 兜底读 ~/.hermes/cron/jobs.json，失败返回空字符串 */

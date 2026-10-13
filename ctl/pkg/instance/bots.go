@@ -47,10 +47,10 @@ type hermesProfileListPayload struct {
 }
 
 type hermesInstanceBotsPayload struct {
-	Kind          string                 `json:"kind"`
-	Items         *[]hermesProfileRecord `json:"items"`
-	WeixinOwner   *channelBindingPayload `json:"weixin_owner"`
-	WhatsAppOwner *channelBindingPayload `json:"whatsapp_owner"`
+	Kind          string                            `json:"kind"`
+	Items         *[]hermesProfileRecord            `json:"items"`
+	WeixinOwners  map[string]*channelBindingPayload `json:"weixin_owners"`
+	WhatsAppOwner *channelBindingPayload            `json:"whatsapp_owner"`
 }
 
 type channelBindingPayload struct {
@@ -221,7 +221,8 @@ write_profile_meta(get_profile_dir(profile_id), **fields)
 print(json.dumps({"ok": True}))
 `
 
-const hermesChannelBindingFunctions = `import fcntl
+const hermesChannelBindingFunctions = weixinAccountBindingFunctions + `import contextlib
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -240,6 +241,8 @@ def manage_channel_binding(action, channel, bot_id, profile_id, default_bot_id, 
     lock_path = root / (channel + ".lock")
     scan_lock_path = root / "whatsapp-qr.lock"
     legacy_marker = root / "whatsapp-legacy-checked-v2"
+    profile_id = profile_id or "default"
+    bindings = {}
 
     def scan_busy():
         if channel != "whatsapp":
@@ -254,15 +257,39 @@ def manage_channel_binding(action, channel, bot_id, profile_id, default_bot_id, 
     def read_current():
         try:
             value = json.loads(path.read_text(encoding="utf-8"))
-            return value if isinstance(value, dict) else None
+            if not isinstance(value, dict):
+                return None
+            if channel == "weixin":
+                if isinstance(value.get("bindings"), dict):
+                    bindings.clear()
+                    bindings.update(value["bindings"])
+                elif value.get("bot_id"):
+                    # Preserve the owner written by the former instance-wide format.
+                    bindings[value.get("profile_id") or "default"] = value
+                return bindings.get(profile_id)
+            return value
         except (OSError, ValueError):
             return None
 
     def write_current(value):
+        if channel == "weixin":
+            bindings[profile_id] = value
+            value = {"bindings": bindings}
         temporary = path.with_suffix(".tmp")
         temporary.write_text(json.dumps(value, ensure_ascii=False), encoding="utf-8")
         os.chmod(temporary, 0o600)
         temporary.replace(path)
+
+    def clear_current():
+        if channel == "weixin":
+            bindings.pop(profile_id, None)
+            if bindings:
+                temporary = path.with_suffix(".tmp")
+                temporary.write_text(json.dumps({"bindings": bindings}, ensure_ascii=False), encoding="utf-8")
+                os.chmod(temporary, 0o600)
+                temporary.replace(path)
+                return
+        path.unlink(missing_ok=True)
 
     def whatsapp_credentials_path(native_profile_id):
         # ACLI --agent selects $HERMES_HOME/profiles/<id> for a named profile.
@@ -280,9 +307,32 @@ def manage_channel_binding(action, channel, bot_id, profile_id, default_bot_id, 
         except (OSError, KeyError, TypeError, ValueError):
             return False
 
-    with lock_path.open("a", encoding="utf-8") as lock:
+    with contextlib.ExitStack() as locks:
+        # A rejected Profile may need slow gateway recovery. Serialize only its
+        # mutations while releasing the instance metadata lock around CLI calls.
+        if channel == "weixin" and action != "get":
+            operation = locks.enter_context((root / ("weixin-" + profile_id + ".lock")).open("a"))
+            try:
+                fcntl.flock(operation.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return {"ok": False, "reason": "scan_in_progress"}
+        lock = locks.enter_context(lock_path.open("a", encoding="utf-8"))
         fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        def gateway_command(args, timeout):
+            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+            try:
+                subprocess.run(args, check=True, timeout=timeout, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                return True
+            except (OSError, subprocess.SubprocessError):
+                return False
+            finally:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+                bindings.clear()
+                read_current()
+
         current = read_current()
+        if channel == "weixin":
+            return manage_weixin_account(action, home, root, profile_id, bot_id, reservation_id, current, bindings, write_current, clear_current, gateway_command)
         if channel == "whatsapp" and not legacy_marker.exists():
             if not current and whatsapp_credentials_path("default").is_file():
                 current = {
@@ -370,7 +420,7 @@ def manage_channel_binding(action, channel, bot_id, profile_id, default_bot_id, 
             elif action == "release_reserved":
                 may_release = may_release and current.get("status") == "reserved"
             if may_release:
-                path.unlink(missing_ok=True)
+                clear_current()
         else:
             result = {"ok": False, "reason": "unsupported_action"}
         fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
@@ -394,12 +444,15 @@ finally:
     # each binding action was a new process with the instance's original env.
     os.environ.clear()
     os.environ.update(instance_environment)
-weixin = manage_channel_binding("get", "weixin", "", "default", sys.argv[1])
+weixin_owners = {
+    item["native_id"]: manage_channel_binding("get", "weixin", "", item["native_id"], sys.argv[1])
+    for item in profiles["items"]
+}
 whatsapp = manage_channel_binding("get", "whatsapp", "", "default", sys.argv[1])
 print(json.dumps({
     "kind": "lightvela.instance-bots.v1",
     "items": profiles["items"],
-    "weixin_owner": weixin,
+    "weixin_owners": weixin_owners,
     "whatsapp_owner": whatsapp,
 }, ensure_ascii=False))
 `
@@ -656,15 +709,14 @@ func parseHermesInstanceBots(output, instanceID, defaultName string) (*transport
 	// Select the JSON line before decoding its schema. Retrying json.Unmarshal
 	// into the same struct can retain fields from a preceding failed decode.
 	if parseLastJSONLine(output, &envelope) != nil || json.Unmarshal(envelope, &payload) != nil || payload.Kind != "lightvela.instance-bots.v1" ||
-		payload.Items == nil || payload.WeixinOwner == nil || payload.WhatsAppOwner == nil {
+		payload.Items == nil || payload.WeixinOwners == nil || payload.WhatsAppOwner == nil {
 		// Logs, truncated output and a successful prefix must not masquerade as
 		// a completed empty catalog or silently discard either channel's owner.
 		return nil, errcode.Wrap(errcode.ErrInstanceBotProfileFailed, "invalid Hermes bot list response")
 	}
 	profiles := projectHermesProfiles(*payload.Items, instanceID, defaultName)
-	weixinOwner := projectChannelBinding(payload.WeixinOwner)
 	whatsAppOwner := projectChannelBinding(payload.WhatsAppOwner)
-	for _, owner := range []*transport.InstanceChannelBindingResponse{weixinOwner, whatsAppOwner} {
+	for _, owner := range []*transport.InstanceChannelBindingResponse{whatsAppOwner} {
 		if owner == nil {
 			continue
 		}
@@ -676,7 +728,15 @@ func parseHermesInstanceBots(output, instanceID, defaultName string) (*transport
 		}
 	}
 	for _, bot := range profiles {
-		bot.WeixinOwner = weixinOwner
+		weixinBinding, ok := payload.WeixinOwners[hermesNativeProfileID(bot.ProfileID)]
+		if !ok || weixinBinding == nil || !weixinBinding.OK {
+			return nil, errcode.Wrap(errcode.ErrInstanceBotProfileFailed, "incomplete Weixin binding catalog")
+		}
+		weixinOwner := projectChannelBinding(weixinBinding)
+		if weixinOwner != nil && weixinOwner.BotID == bot.BotID {
+			weixinOwner.BotName = bot.Name
+			bot.WeixinOwner = weixinOwner
+		}
 		bot.WhatsAppOwner = whatsAppOwner
 	}
 	return &transport.ListInstanceBotsResponse{Items: profiles}, nil
@@ -778,19 +838,19 @@ func (l *logic) DeleteInstanceBot(ctx pctx.Context, instanceID, botID string) (*
 	if bot.IsDefault || bot.ProfileID == rootProfileID {
 		return nil, errcode.ErrInstanceBotDefaultDelete
 	}
-	weixinOwner, err := l.getChannelBindingResponse(ctx, instanceID, uniqueChannelWeixin)
+	weixinOwner, err := l.getChannelBindingResponse(ctx, instanceID, uniqueChannelWeixin, bot.ProfileID)
 	if err != nil {
 		return nil, err
 	}
 	if weixinOwner != nil && weixinOwner.BotID == bot.BotID {
-		return nil, errcode.Wrap(errcode.ErrChannelOccupied, "disconnect weixin before deleting bot %s", botID)
+		return nil, &BotChannelOccupiedError{Channel: uniqueChannelWeixin}
 	}
-	whatsAppOwner, err := l.getChannelBindingResponse(ctx, instanceID, uniqueChannelWhatsApp)
+	whatsAppOwner, err := l.getChannelBindingResponse(ctx, instanceID, uniqueChannelWhatsApp, "")
 	if err != nil {
 		return nil, err
 	}
 	if whatsAppOwner != nil && whatsAppOwner.BotID == bot.BotID {
-		return nil, errcode.Wrap(errcode.ErrChannelOccupied, "disconnect whatsapp before deleting bot %s", botID)
+		return nil, &BotChannelOccupiedError{Channel: uniqueChannelWhatsApp}
 	}
 	if _, err := l.execHermesProfileCommand(ctx, instanceID, buildHermesProfileDeleteCommand(bot.ProfileID)); err != nil {
 		return nil, errcode.Wrap(errcode.ErrInstanceBotProfileFailed, "delete Hermes profile %s: %v", bot.ProfileID, err)
@@ -906,7 +966,7 @@ func (l *logic) ClaimInstanceBotChannel(ctx pctx.Context, instanceID, botID, cha
 		if binding.Reason == "occupied" {
 			return nil, errcode.Wrap(errcode.ErrChannelOccupied, "%s is already connected to bot %s", channel, binding.BotID)
 		}
-		return nil, errcode.Wrap(errcode.ErrInstanceBotConflict, "claim channel: %s", binding.Reason)
+		return nil, l.channelBindingFailure(ctx, instanceID, binding)
 	}
 	return &transport.InstanceChannelBindingResponse{
 		Channel: binding.Channel, BotID: binding.BotID, ProfileID: binding.ProfileID,
@@ -919,7 +979,8 @@ func (l *logic) ReleaseInstanceBotChannel(ctx pctx.Context, instanceID, botID, c
 	if !isUniqueChannel(channel) {
 		return errcode.Wrap(errcode.ErrInstanceBotInvalidParam, "unsupported unique channel %q", channel)
 	}
-	if _, err := l.getInstanceBotResponse(ctx, instanceID, botID); err != nil {
+	bot, err := l.getInstanceBotResponse(ctx, instanceID, botID)
+	if err != nil {
 		return err
 	}
 	if channel == uniqueChannelWhatsApp && disconnect && reservationID != "" {
@@ -929,18 +990,18 @@ func (l *logic) ReleaseInstanceBotChannel(ctx pctx.Context, instanceID, botID, c
 	if disconnect {
 		action = "disconnect"
 	}
-	binding, err := l.runChannelBindingAction(ctx, instanceID, channel, action, botID, "", reservationID)
+	binding, err := l.runChannelBindingAction(ctx, instanceID, channel, action, botID, bot.ProfileID, reservationID)
 	if err != nil {
 		return err
 	}
 	if !binding.OK {
-		return errcode.Wrap(errcode.ErrInstanceBotConflict, "release channel: %s", binding.Reason)
+		return l.channelBindingFailure(ctx, instanceID, binding)
 	}
 	return nil
 }
 
-func (l *logic) releaseReservedInstanceBotChannel(ctx pctx.Context, instanceID, botID string) error {
-	_, err := l.runChannelBindingAction(ctx, instanceID, uniqueChannelWeixin, "release_reserved", botID, "")
+func (l *logic) releaseReservedInstanceBotChannel(ctx pctx.Context, instanceID, botID, profileID string) error {
+	_, err := l.runChannelBindingAction(ctx, instanceID, uniqueChannelWeixin, "release_reserved", botID, profileID)
 	return err
 }
 
@@ -949,25 +1010,26 @@ func (l *logic) ConfirmInstanceBotChannel(ctx pctx.Context, instanceID, botID, c
 	if !isUniqueChannel(channel) {
 		return errcode.Wrap(errcode.ErrInstanceBotInvalidParam, "unsupported unique channel %q", channel)
 	}
-	if _, err := l.getInstanceBotResponse(ctx, instanceID, botID); err != nil {
+	bot, err := l.getInstanceBotResponse(ctx, instanceID, botID)
+	if err != nil {
 		return err
 	}
-	binding, err := l.runChannelBindingAction(ctx, instanceID, channel, "confirm", botID, "", reservationID)
+	binding, err := l.runChannelBindingAction(ctx, instanceID, channel, "confirm", botID, bot.ProfileID, reservationID)
 	if err != nil {
 		return err
 	}
 	if !binding.OK {
-		return errcode.Wrap(errcode.ErrInstanceBotConflict, "confirm channel: %s", binding.Reason)
+		return l.channelBindingFailure(ctx, instanceID, binding)
 	}
 	return nil
 }
 
-func (l *logic) getChannelBindingResponse(ctx pctx.Context, instanceID, channel string) (*transport.InstanceChannelBindingResponse, error) {
+func (l *logic) getChannelBindingResponse(ctx pctx.Context, instanceID, channel, profileID string) (*transport.InstanceChannelBindingResponse, error) {
 	channel = strings.TrimSpace(channel)
 	if !isUniqueChannel(channel) {
 		return nil, errcode.Wrap(errcode.ErrInstanceBotInvalidParam, "unsupported unique channel %q", channel)
 	}
-	binding, err := l.runChannelBindingAction(ctx, instanceID, channel, "get", "", "")
+	binding, err := l.runChannelBindingAction(ctx, instanceID, channel, "get", "", profileID)
 	if err != nil {
 		return nil, err
 	}

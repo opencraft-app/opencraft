@@ -3,6 +3,7 @@ package instance
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -47,8 +48,18 @@ type desktopResourceBlockingAdapter struct {
 	once    sync.Once
 }
 
-func (s *desktopResourceBlockingAdapter) ExecCommand(_ context.Context, _ string, _ string, _ int) (*psandbox.ExecCommandResult, error) {
-	return &psandbox.ExecCommandResult{Status: "SUCCESS", ExitCode: 0}, nil
+func desktopPreparationCommandResult(command string) *psandbox.ExecCommandResult {
+	output := ""
+	if strings.Contains(command, "DESKTOP_TARGET_VERIFY") {
+		output = desktopVerifyOutput(desktopTestIncarnation)
+	} else if strings.HasSuffix(command, " --epoch") {
+		output = `{"generation":""}`
+	}
+	return &psandbox.ExecCommandResult{Status: "SUCCESS", ExitCode: 0, Output: output}
+}
+
+func (s *desktopResourceBlockingAdapter) ExecCommand(_ context.Context, _ string, command string, _ int) (*psandbox.ExecCommandResult, error) {
+	return desktopPreparationCommandResult(command), nil
 }
 
 type desktopObserverPreparationAdapter struct {
@@ -60,7 +71,7 @@ type desktopObserverPreparationAdapter struct {
 
 func (s *desktopObserverPreparationAdapter) ExecCommand(ctx context.Context, target, command string, _ int) (*psandbox.ExecCommandResult, error) {
 	if !strings.Contains(command, desktopObserverProxySource) {
-		return nil, errcode.ErrSandboxServiceError
+		return desktopPreparationCommandResult(command), nil
 	}
 	s.entered <- target
 	select {
@@ -165,6 +176,138 @@ func awaitDesktopWorker(t *testing.T, session *desktopSession) {
 	awaitDesktopResource(t, func() bool { session.mu.Lock(); defer session.mu.Unlock(); return !session.preparing })
 }
 
+// TestDesktopInputRecoversFromPhysicalDesktopRestart 观察进程重启后（unit 带
+// Restart=on-failure，崩溃即自动拉起）物理身份必然变化。网关刻意拒绝在同一代次下
+// 静默替换身份，因此必须换代重新激活：继续用同一代次重试，epoch 会永远停在已消失
+// 的进程上，写授权再也签不出来，键鼠永久不可用且不可自愈（现网 bj-7 复现）。
+func TestDesktopInputRecoversFromPhysicalDesktopRestart(t *testing.T) {
+	l, _, ctx, session := desktopViewerFixture(t)
+	session.mu.Lock()
+	stale := session.generation
+	session.inputPrepared, session.observerPrepared, session.preparing = false, false, true
+	session.mu.Unlock()
+	sb := l.sandboxAdapter.(*desktopSandboxStub)
+	activations := []string{}
+	sb.execFunc = func(command string) (*psandbox.ExecCommandResult, error) {
+		output := ""
+		if strings.Contains(command, "DESKTOP_TARGET_VERIFY") {
+			output = desktopVerifyOutput(desktopTestIncarnation)
+		}
+		if strings.HasSuffix(command, " --epoch") {
+			// 网关已记录本代次，但记录的是重启前那个已经消失的进程。
+			output = fmt.Sprintf(`{"generation":%q}`, stale)
+		}
+		if strings.Contains(command, " --activate ") {
+			activations = append(activations, command)
+			if strings.Contains(command, " --activate "+stale+" "+stale+" ") {
+				return &psandbox.ExecCommandResult{Status: "FAILED", ExitCode: 1}, nil
+			}
+		}
+		return &psandbox.ExecCommandResult{Status: "SUCCESS", ExitCode: 0, Output: output}, nil
+	}
+	l.prepareDesktopResource(ctx, session, func() {})
+	session.mu.Lock()
+	ready, current := session.inputPrepared, session.generation
+	session.mu.Unlock()
+	if !ready {
+		t.Fatal("a restarted desktop left input permanently unavailable")
+	}
+	if current == stale {
+		t.Fatal("recovery must retire the generation fenced to the vanished desktop")
+	}
+	if len(activations) != 2 {
+		t.Fatalf("expected one retry under a fresh generation, got %d activations", len(activations))
+	}
+	// 重试必须以旧代次作为 CAS 期望值，否则网关仍会拒绝。
+	if !strings.Contains(activations[1], " --activate "+current+" "+stale+" "+desktopTestIncarnation) {
+		t.Fatalf("retry lost the compare-and-swap expectation: %s", activations[1])
+	}
+}
+
+func TestDesktopResourceInputWaitsForEpochActivation(t *testing.T) {
+	for _, outcome := range []string{"success", "install-failed", "verify-failed", "epoch-invalid", "epoch-failed", "activate-failed", "owner-changed", "generation-changed", "late-activation", "incarnation-changed", "reverify-failed"} {
+		t.Run(outcome, func(t *testing.T) {
+			l, dao, ctx, session := desktopViewerFixture(t)
+			session.mu.Lock()
+			session.inputPrepared, session.observerPrepared, session.preparing = false, false, true
+			session.mu.Unlock()
+			sb := l.sandboxAdapter.(*desktopSandboxStub)
+			commands := []string{}
+			sb.execFunc = func(command string) (*psandbox.ExecCommandResult, error) {
+				commands = append(commands, command)
+				output := ""
+				if len(commands) == 2 && outcome == "install-failed" {
+					return nil, context.DeadlineExceeded
+				}
+				if strings.Contains(command, "DESKTOP_TARGET_VERIFY") {
+					if outcome == "verify-failed" {
+						return nil, context.DeadlineExceeded
+					}
+					output = desktopVerifyOutput(desktopTestIncarnation)
+					if len(commands) == 6 {
+						if outcome == "incarnation-changed" {
+							output = desktopVerifyOutput(strings.Repeat("b", 64))
+						}
+						if outcome == "reverify-failed" {
+							return nil, context.DeadlineExceeded
+						}
+					}
+				}
+				if strings.HasSuffix(command, " --epoch") {
+					output = `{"generation":""}`
+					if outcome == "epoch-invalid" {
+						output = `{}`
+					}
+					if outcome == "epoch-failed" {
+						return nil, context.DeadlineExceeded
+					}
+					if outcome == "generation-changed" {
+						session.mu.Lock()
+						session.generation = "22222222-2222-4222-8222-222222222222"
+						session.mu.Unlock()
+					}
+				}
+				if strings.Contains(command, " --activate ") {
+					if outcome == "generation-changed" {
+						t.Error("old generation dispatched activation after being fenced")
+					}
+					if l.desktopResourceResponse(session).State != transport.DesktopResourceStatePreparing {
+						t.Error("prepared published before activation completion")
+					}
+					if !strings.Contains(command, session.generation+" - "+desktopTestIncarnation) {
+						t.Error("activation missing generation or incarnation binding")
+					}
+					if outcome == "activate-failed" {
+						return &psandbox.ExecCommandResult{Status: "FAILED", ExitCode: 1}, nil
+					}
+					if outcome == "owner-changed" {
+						dao.change(session.sandboxID, "new-owner")
+					}
+					if outcome == "late-activation" {
+						session.mu.Lock()
+						session.generation = "22222222-2222-4222-8222-222222222222"
+						session.mu.Unlock()
+					}
+				}
+				return &psandbox.ExecCommandResult{Status: "SUCCESS", ExitCode: 0, Output: output}, nil
+			}
+			l.prepareDesktopResource(ctx, session, func() {})
+			session.mu.Lock()
+			ready := session.inputPrepared
+			session.mu.Unlock()
+			if ready != (outcome == "success") {
+				t.Fatalf("inputPrepared=%v after %s", ready, outcome)
+			}
+			if outcome != "success" && l.desktopResourceResponse(session).State != transport.DesktopResourceStateFailed {
+				t.Fatal("unknown epoch or stale activation published read-only Prepared")
+			}
+			if outcome == "success" && len(commands) != 6 {
+				t.Fatalf("expected observer/install/verify/epoch/activate/reverify, got %d", len(commands))
+			}
+		})
+	}
+}
+
 func TestDesktopResourceObservationHasNoSideEffects(t *testing.T) {
 	resetDesktopSessionsForTest()
 	sb := &desktopSandboxStub{}
@@ -250,6 +393,9 @@ func TestDesktopResourceInstallsAndStartsWithoutGET(t *testing.T) {
 		ptyFinishEvents(desktopMissingLayerMarker), ptyFinishEvents(desktopProbeOKMarker),
 	}}
 	sb.execFunc = func(command string) (*psandbox.ExecCommandResult, error) {
+		if strings.Contains(command, "DESKTOP_TARGET_VERIFY") || strings.HasSuffix(command, " --epoch") {
+			return desktopPreparationCommandResult(command), nil
+		}
 		out := "PROGRESS=100\n" + desktopInstallDoneMarker
 		if strings.Contains(command, "vela-desktop-install.sh") {
 			out = desktopInstallStartedMark
@@ -437,6 +583,7 @@ func TestDesktopLegacyReadyCannotSurviveSandboxReplacement(t *testing.T) {
 	if err != nil || next.Status != transport.DesktopSessionStatusReady {
 		t.Fatalf("legacy rebind: %+v %v", next, err)
 	}
+	// 过渡期仍回填旧字段：换机后必须是新机器的地址与新密码，绝不复用旧凭据。
 	if !strings.Contains(next.WsURL, "sb-new-machine") || next.WsURL == first.WsURL || next.Password == first.Password {
 		t.Fatal("legacy returned old Ready credentials after replacement")
 	}
@@ -460,10 +607,7 @@ func TestDesktopResourceObserverPrepareInheritsSessionAuth(t *testing.T) {
 		ptyFinishEvents(desktopProbeOKMarker),
 	}}
 	sb.execFunc = func(command string) (*psandbox.ExecCommandResult, error) {
-		if !strings.Contains(command, desktopObserverProxySource) {
-			return nil, errcode.ErrSandboxServiceError // 只认 observer 准备命令
-		}
-		return &psandbox.ExecCommandResult{Status: "SUCCESS", ExitCode: 0}, nil
+		return desktopPreparationCommandResult(command), nil
 	}
 
 	const wantAuth = "Bearer resource-session-token"

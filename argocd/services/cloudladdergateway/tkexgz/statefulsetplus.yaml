@@ -70,6 +70,10 @@ spec:
             secretKeyRef:
               key: CLOUDLADDER_PAYMENT_HMAC_SECRET
               name: cloudladdergateway-runtime-secrets
+        - name: CLOUDLADDERGATEWAY_BACKEND_DIANSHI_RENEW_PRICE_BASE_URL
+          value: http://opc-dianshi-activity.production.polaris:80
+        - name: CLOUDLADDERGATEWAY_BACKEND_DIANSHI_RENEW_ORDER_BASE_URL
+          value: http://opc-dianshi-activity.production.polaris:80
         # Enable strict caller authentication only on the Guangzhou production
         # ingress. Staging and testing migrate independently.
         - name: CLOUDLADDERGATEWAY_AUTH_MODE

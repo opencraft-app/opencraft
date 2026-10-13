@@ -30,9 +30,9 @@
 
 ## 1. LightVelaにサインインする
 
-訪問してください[lightvela.ai](https://lightvela.ai)そして右上隅の「ログイン」をクリックします。ログインダイアログでGoogleまたはGitHubを選択し、同意項目に同意して、認証を完了します。
+[lightvela.ai](https://lightvela.ai) を開き、右上の **ログイン** を選択します。ログイン画面で規約を読んで同意した後、**Google** または **GitHub** を選択して認証を完了してください。
 
-![](../images/2-1.webp)
+![Google と GitHub に対応した LightVela のログイン画面](../images/2-1.webp)
 
 ---
 
@@ -50,7 +50,7 @@
 
 ## 3. Hermes Agentを開く
 
-プランを有効にしたら[Agentコンソール](/agents/overview/)を開きます。LightVelaがプランのクラウドインスタンスを準備します。Agentの作成を求められた場合は画面の案内に従い、状態が**Running**になるまで待ちます。サイドバーには**Channels**、**Models**、**Skills**、**Scheduled Tasks**が表示されます。プランのモデルクレジットは自分のAPIキーなしで利用できます。
+Google または GitHub でログインし、利用可能なプランを有効にしたら、[Agent コンソール](/agents/overview/)を開きます。最初の Bot の設定では、必須の名前を入力し、必要に応じて説明を追加して外見を調整します。**作成**を選び、作成と初期設定の完了を待ちます。設定が完了したら **旅を始める** を選択し、その Bot の Web チャットを開きます。メッセージチャネルの接続は任意です。返信には利用可能なモデルクレジット、または設定済みのモデルが必要です。
 
 ---
 
@@ -68,11 +68,11 @@ Agentのサイドバーで**Channels**を開き、**WeChat**カードの**+ Conn
 
 追加されたボットアカウントをWeChatで見つけ、テストメッセージを送信してください:
 
-```
+```text
 Hi
 ```
 
-![](../images/2-7.webp)
+![WeChat のテストメッセージと Bot の返信](../images/2-7.webp)
 
 数秒以内にHermesから返信が届くはずです。Hermesは現在、WeChatを通じてチャットできます。
 

@@ -67,8 +67,9 @@ describe("Agent channel contextual notice", () => {
     expect(notice.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it("passes occupied channel notices through the channel description slot", () => {
-    expect(settingsSource).toContain("{weixinOccupiedByOther && activeBot.weixinOwner && (");
+  it("keeps Weixin available per Bot while preserving WhatsApp ownership", () => {
+    expect(settingsSource).toContain("weixinChannel: true");
+    expect(settingsSource).not.toContain("weixinOccupiedByOther");
     expect(settingsSource).toContain("{whatsAppOccupiedByOther && activeBot.whatsAppOwner && (");
     expect(settingsSource).toContain("whatsAppOccupiedByOther={whatsAppOccupiedByOther}");
     expect(settingsSource).toContain("afterDescription={channelAfterDescription}");

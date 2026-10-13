@@ -1,7 +1,6 @@
 import {
   ArrowLeft,
   ArrowRight,
-  Code2,
 } from "lucide-react";
 import { motion, useTransform } from "motion/react";
 import { useIntl } from "@opencraft/i18n/react";
@@ -188,9 +187,10 @@ export function AppShellNavigationControls({
 }
 
 export interface AppShellHeaderProps {
+  /** One route-owned action immediately before the right-panel toggle. */
+  readonly headerAction?: ReactNode;
   readonly title: string | null;
   readonly project: string | null;
-  readonly showProjectIcon?: boolean;
   readonly titleContent?: ReactNode;
   readonly routeHeaderActive?: boolean;
   readonly routeHeaderHostRef?: RefCallback<HTMLDivElement>;
@@ -215,9 +215,9 @@ export interface AppShellHeaderProps {
 
 /** Shared titlebar projection for every route hosted by AppShell. */
 export function AppShellHeader({
+  headerAction,
   title,
   project,
-  showProjectIcon = true,
   titleContent,
   routeHeaderActive = false,
   routeHeaderHostRef,
@@ -290,11 +290,12 @@ export function AppShellHeader({
           aria-hidden="true"
           className="app-shell-header__end-measure"
         >
-          {showRightPanelAction ? (
+          {showRightPanelAction || headerAction ? (
             <div className="app-shell-header__end-actions">
-              <span className="chrome-button app-shell-header__right-panel-toggle">
+              {headerAction ? <span className="chrome-button" /> : null}
+              {showRightPanelAction ? <span className="chrome-button app-shell-header__right-panel-toggle">
                 <RightPanelToggleIcon panelOpen={rightPanelOpen} />
-              </span>
+              </span> : null}
             </div>
           ) : null}
         </div>
@@ -310,9 +311,6 @@ export function AppShellHeader({
           />
           {!routeHeaderActive && title !== null ? (
             <div className="thread-header-title">
-              {showProjectIcon ? <span className="thread-header-project-icon">
-                <Code2 size={14} />
-              </span> : null}
               {titleContent ?? <span className="thread-header-copy">
                 <strong>{title}</strong>
                 {project === null ? null : <small>{project} · main</small>}
@@ -329,6 +327,7 @@ export function AppShellHeader({
           }}
         >
           <div className="app-shell-header__end-actions no-drag">
+            {headerAction}
             {showRightPanelAction ? (
               <button
                 className="chrome-button app-shell-header__right-panel-toggle"

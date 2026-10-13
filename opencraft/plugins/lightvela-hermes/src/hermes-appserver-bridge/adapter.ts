@@ -14,6 +14,7 @@ import type {
   HermesMessage,
   HermesModelOptionsPayload,
   HermesPendingClarify,
+  HermesPendingApproval,
   HermesProfileDescription,
   HermesProfileSummary,
   HermesSessionPayload,
@@ -31,7 +32,7 @@ import {
   type HermesComposerQueueService,
 } from "./composer-queue/service";
 import { throwIfSignalAborted } from "@opencraft/workbench-runtime";
-import type { AttachmentLocation, AttachmentRef } from "@opencraft/appserver-protocol";
+import type { AttachmentLocation, AttachmentRef, AppServerServerRequestParams } from "@opencraft/appserver-protocol";
 
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 const PROFILE_MODEL_OPTIONS_SETTLE_MS = 20_000;
@@ -755,7 +756,7 @@ export interface HermesTurnSubmission {
   readonly disposition: "running" | "queued";
 }
 
-export interface HermesAppServerInteractionRequest {
+interface HermesClarifyInteractionRequest {
   readonly id: string;
   readonly method: "item/tool/requestUserInput";
   readonly params: {
@@ -775,8 +776,24 @@ export interface HermesAppServerInteractionRequest {
   };
 }
 
+interface HermesApprovalInteractionRequest {
+  readonly id: string;
+  readonly method: "item/commandExecution/requestApproval";
+  readonly params: AppServerServerRequestParams<"item/commandExecution/requestApproval">;
+}
+
+export type HermesAppServerInteractionRequest = HermesClarifyInteractionRequest | HermesApprovalInteractionRequest;
+
+interface PendingApprovalOwnership {
+  readonly appServerRequest: HermesApprovalInteractionRequest;
+  readonly hermesRequestId: string;
+  readonly liveSessionId: string;
+  readonly choices: readonly ("once" | "session" | "always" | "deny")[];
+  responding: boolean;
+}
+
 interface PendingClarifyOwnership {
-  readonly appServerRequest: HermesAppServerInteractionRequest;
+  readonly appServerRequest: HermesClarifyInteractionRequest;
   readonly hermesRequestId: string;
   readonly liveSessionId: string;
   readonly payload: HermesPendingClarify;
@@ -885,6 +902,9 @@ export class HermesAppServerAdapter {
   private readonly notificationListeners = new Set<(method: string, params: unknown) => void>();
   private readonly serverRequestListeners = new Set<(request: HermesAppServerInteractionRequest) => void>();
   private readonly pendingClarifyByRequest = new Map<string, PendingClarifyOwnership>();
+  private readonly pendingApprovalByRequest = new Map<string, PendingApprovalOwnership>();
+  private readonly approvalRevisionByLive = new Map<string, number>();
+  private disposed = false;
   /** Concurrent agent/list and model/list share one ephemeral model.options snapshot. */
   private readonly modelCatalogReads = new Map<string, Promise<{
     payload: HermesModelOptionsPayload;
@@ -916,6 +936,7 @@ export class HermesAppServerAdapter {
   }
 
   dispose(): void {
+    this.disposed = true;
     for (const window of this.transcriptWindows.values()) window.invalidate();
     this.transcriptWindows.clear();
     this.preparedHistoryByStored.clear();
@@ -927,6 +948,8 @@ export class HermesAppServerAdapter {
     this.notificationListeners.clear();
     this.serverRequestListeners.clear();
     this.pendingClarifyByRequest.clear();
+    this.pendingApprovalByRequest.clear();
+    this.approvalRevisionByLive.clear();
     this.modelCatalogReads.clear();
     this.provisionalSummaryByStored.clear();
   }
@@ -940,10 +963,13 @@ export class HermesAppServerAdapter {
   subscribeServerRequest(listener: (request: HermesAppServerInteractionRequest) => void): () => void {
     this.serverRequestListeners.add(listener);
     for (const pending of this.pendingClarifyByRequest.values()) listener(pending.appServerRequest);
+    for (const pending of this.pendingApprovalByRequest.values()) listener(pending.appServerRequest);
     return () => this.serverRequestListeners.delete(listener);
   }
 
   async respondServerRequest(requestId: string, result: unknown): Promise<boolean> {
+    const approval = this.pendingApprovalByRequest.get(requestId);
+    if (approval !== undefined) return this.respondApproval(approval, result);
     const pending = this.pendingClarifyByRequest.get(requestId);
     if (pending === undefined) return false;
     const response = record(result);
@@ -987,6 +1013,11 @@ export class HermesAppServerAdapter {
   }
 
   rejectServerRequest(requestId: string, error: unknown): boolean {
+    const approval = this.pendingApprovalByRequest.get(requestId);
+    if (approval !== undefined) {
+      this.emit("error", { threadId: approval.appServerRequest.params.threadId, error: { message: "Could not present approval. Reconnect to retry." } });
+      return true;
+    }
     const pending = this.pendingClarifyByRequest.get(requestId);
     if (pending === undefined) return false;
     // A presentation failure does not answer the backend's blocking request.
@@ -1050,7 +1081,7 @@ export class HermesAppServerAdapter {
       session_id: live,
       omit_messages: true,
     });
-    if (snapshot.running !== false || snapshot.pending_clarify !== undefined) {
+    if (snapshot.running !== false || snapshot.pending_clarify !== undefined || snapshot.pending_approval != null) {
       await this.composerQueue.pauseAll(threadId, "Conversation is being deleted.");
       await this.gateway.call("session.interrupt", { session_id: live });
       const deadline = Date.now() + 15_000;
@@ -1060,7 +1091,7 @@ export class HermesAppServerAdapter {
           session_id: live,
           omit_messages: true,
         });
-        if (current.running === false && current.pending_clarify === undefined) {
+        if (current.running === false && current.pending_clarify === undefined && current.pending_approval == null) {
           stopped = true;
           break;
         }
@@ -1316,6 +1347,7 @@ export class HermesAppServerAdapter {
       turns.at(-1) ?? null,
       payload.pending_clarify,
     );
+    this.offerPendingApproval(live, threadId, turns.at(-1) ?? null, payload.pending_approval);
     const owned = this.activeByLive.get(live);
 
     // A locally-started Turn already owns this Hermes stream. Activation only
@@ -1348,7 +1380,7 @@ export class HermesAppServerAdapter {
     // snapshot. Like Desktop's cold activate, read the backend's live tail
     // after REST hydration; events before this response belong to that tail.
     this.gateway.discardReplay?.(live);
-    if (this.gateway.snapshotSession && (owned !== undefined || payload.running === true || payload.inflight || payload.pending_clarify)) {
+    if (this.gateway.snapshotSession && (owned !== undefined || payload.running === true || payload.inflight || payload.pending_clarify || payload.pending_approval)) {
       payload = await this.gateway.snapshotSession(live);
       this.payloadByStored.set(threadId, payload);
     }
@@ -1362,13 +1394,14 @@ export class HermesAppServerAdapter {
       }
     }
     this.offerPendingClarify(live, threadId, restored ?? turns.at(-1) ?? null, payload.pending_clarify);
+    this.reconcileApprovalSnapshot(live, threadId, restored ?? turns.at(-1) ?? null, payload);
 
     // An idle durable snapshot owns its own presentation. There is no live
     // Turn to adopt, so installing a projector on its last completed Turn
     // would incorrectly turn history into an active response during replay.
     // `pending_clarify` is the intentional exception: Hermes reports idle
     // while its physical Turn is blocked inside the clarify tool.
-    if (payload.running !== true && payload.pending_clarify === undefined) {
+    if (payload.running !== true && payload.pending_clarify === undefined && payload.pending_approval == null) {
       this.gateway.releaseSnapshot?.(live);
       return { replayComplete: true };
     }
@@ -2242,6 +2275,7 @@ export class HermesAppServerAdapter {
   private bindSession(storedId: string, payload: HermesSessionPayload, profile: string): void {
     const previousLive = this.liveByStored.get(storedId);
     if (previousLive !== undefined && previousLive !== payload.session_id) {
+      this.clearSessionApproval(previousLive);
       this.storedByLive.delete(previousLive);
       const owner = this.activeByLive.get(previousLive);
       if (owner !== undefined) {
@@ -2267,6 +2301,112 @@ export class HermesAppServerAdapter {
 
   private emit(method: string, params: unknown): void {
     for (const listener of this.notificationListeners) listener(method, params);
+  }
+
+  private offerPendingApproval(live: string, threadId: string, turn: AppServerTurn | null, candidate: HermesPendingApproval | null | undefined): void {
+    const source = record(candidate);
+    const nativeId = typeof source.request_id === "string" ? source.request_id.trim() : "";
+    if (!nativeId || this.disposed) return;
+    const requestId = `hermes-approval:${encodeURIComponent(threadId)}:${encodeURIComponent(nativeId)}`;
+    if (this.pendingApprovalByRequest.has(requestId)) return;
+    type Choice = PendingApprovalOwnership["choices"][number];
+    const offered = source.choices === undefined
+      ? source.smart_denied === true ? ["once", "deny"]
+        : ["once", ...(source.allow_session === false ? [] : ["session", ...(source.allow_permanent === false ? [] : ["always"])]), "deny"]
+      : Array.isArray(source.choices) ? source.choices : [];
+    const choices = [...new Set(offered.filter((choice): choice is Choice =>
+      (choice === "once" || choice === "session" || choice === "always" || choice === "deny")
+      && !(choice === "session" && (source.allow_session === false || source.smart_denied === true))
+      && !(choice === "always" && (source.allow_permanent === false || source.allow_session === false || source.smart_denied === true))))];
+    const owner = this.activeByLive.get(live)?.turn ?? turn;
+    const request: HermesApprovalInteractionRequest = {
+      id: requestId, method: "item/commandExecution/requestApproval",
+      params: {
+        kind: "command", threadId, turnId: owner?.id ?? `hermes-turn-${threadId}-approval`,
+        // Unique per native prompt: the response ledger must never replay another prompt's grant.
+        // Hermes supplies no creation timestamp. Keep the compatibility sentinel
+        // stable rather than changing the request fingerprint on reconnect.
+        itemId: requestId, approvalId: nativeId, startedAtMs: 0, environmentId: null,
+        command: typeof source.command === "string" ? source.command : null,
+        reason: typeof source.description === "string" ? source.description : "Allow this action?",
+        approvalScopes: choices,
+        availableDecisions: [
+          ...(choices.includes("once") ? ["accept" as const] : []),
+          ...(choices.includes("session") ? ["acceptForSession" as const] : []),
+          ...(choices.includes("deny") ? ["decline" as const, "cancel" as const] : []),
+        ],
+      },
+    };
+    this.pendingApprovalByRequest.set(requestId, { appServerRequest: request, hermesRequestId: nativeId, liveSessionId: live, choices, responding: false });
+    for (const listener of this.serverRequestListeners) listener(request);
+  }
+
+  private expirePendingApproval(pending: PendingApprovalOwnership): void {
+    if (this.pendingApprovalByRequest.get(pending.appServerRequest.id) !== pending) return;
+    this.pendingApprovalByRequest.delete(pending.appServerRequest.id);
+    this.approvalRevisionByLive.set(pending.liveSessionId, (this.approvalRevisionByLive.get(pending.liveSessionId) ?? 0) + 1);
+    const payload = this.payloadByStored.get(pending.appServerRequest.params.threadId);
+    if (payload?.session_id === pending.liveSessionId && payload.pending_approval?.request_id === pending.hermesRequestId) delete payload.pending_approval;
+    this.emit("serverRequest/resolved", { requestId: pending.appServerRequest.id, threadId: pending.appServerRequest.params.threadId });
+  }
+
+  private clearSessionApproval(live: string): void {
+    this.approvalRevisionByLive.set(live, (this.approvalRevisionByLive.get(live) ?? 0) + 1);
+    for (const pending of this.pendingApprovalByRequest.values()) if (pending.liveSessionId === live) this.expirePendingApproval(pending);
+  }
+
+  private hasPendingApproval(live: string): boolean {
+    return [...this.pendingApprovalByRequest.values()].some(pending => pending.liveSessionId === live);
+  }
+
+  private reconcileApprovalSnapshot(live: string, threadId: string, turn: AppServerTurn | null, payload: HermesSessionPayload): void {
+    const pending = [...this.pendingApprovalByRequest.values()].filter(item => item.liveSessionId === live);
+    // Native snapshots expose the oldest prompt, not the complete queue.
+    // Absence proves all gone; a different oldest proves replacement only if one was known.
+    if (!payload.pending_approval || pending.length === 1 && pending[0]!.hermesRequestId !== payload.pending_approval.request_id) {
+      for (const item of pending) this.expirePendingApproval(item);
+    }
+    this.offerPendingApproval(live, threadId, turn, payload.pending_approval);
+  }
+
+  private async refreshApprovalSnapshot(live: string, threadId: string): Promise<void> {
+    if (this.disposed || this.liveByStored.get(threadId) !== live) return;
+    const revision = this.approvalRevisionByLive.get(live) ?? 0;
+    try {
+      const snapshot = await this.gateway.call<HermesSessionPayload>("session.activate", { session_id: live, omit_messages: true });
+      if (this.disposed || this.liveByStored.get(threadId) !== live || (this.approvalRevisionByLive.get(live) ?? 0) !== revision) return;
+      this.reconcileApprovalSnapshot(live, threadId, this.activeByLive.get(live)?.turn ?? null, snapshot);
+      const payload = this.payloadByStored.get(threadId);
+      if (payload !== undefined) {
+        if (snapshot.pending_approval) payload.pending_approval = snapshot.pending_approval;
+        else delete payload.pending_approval;
+      }
+    } catch {
+      // An accepted decision must not be re-sent because follow-up discovery failed.
+      if (!this.disposed) this.emit("error", { threadId, error: { message: "Could not refresh approvals. Reconnect to retry." } });
+    }
+  }
+
+  private async respondApproval(pending: PendingApprovalOwnership, result: unknown): Promise<boolean> {
+    if (pending.responding) throw new Error("Approval response is already being sent");
+    const response = record(result);
+    const persist = record(response._meta).persist;
+    const choice = response.decision === "accept" ? persist === "always" ? "always" : persist === undefined ? "once" : null
+      : persist !== undefined ? null : response.decision === "acceptForSession" ? "session"
+      : response.decision === "decline" || response.decision === "cancel" ? "deny" : null;
+    if (choice === null || !pending.choices.includes(choice)) throw new Error("This approval choice is not offered");
+    const threadId = pending.appServerRequest.params.threadId;
+    if (this.disposed || this.liveByStored.get(threadId) !== pending.liveSessionId) throw new Error("Approval session is no longer attached");
+    pending.responding = true;
+    try {
+      const receipt = record(await this.gateway.call("approval.respond", {
+        session_id: pending.liveSessionId, request_id: pending.hermesRequestId, choice,
+      }));
+      if (receipt.resolved !== true) throw new Error("Approval was not resolved. Reconnect to refresh it.");
+      this.expirePendingApproval(pending);
+      await this.refreshApprovalSnapshot(pending.liveSessionId, threadId);
+      return true;
+    } finally { pending.responding = false; }
   }
 
   private offerPendingClarify(
@@ -2329,7 +2469,7 @@ export class HermesAppServerAdapter {
           && item.tool === "clarify"
           && item.status === "inProgress"
         ));
-    const request: HermesAppServerInteractionRequest = {
+    const request: HermesClarifyInteractionRequest = {
       id: appServerRequestId,
       method: "item/tool/requestUserInput",
       params: {
@@ -2405,6 +2545,7 @@ export class HermesAppServerAdapter {
       payload === undefined
       || payload.running === true
       || payload.pending_clarify !== undefined
+      || payload.pending_approval != null
       || (owner !== undefined && !owner.isCompleted)
     ) return;
     this.drainQueue(threadId);
@@ -2481,6 +2622,11 @@ export class HermesAppServerAdapter {
     if (threadId === undefined) return;
     const occurredAtMs = this.projectionScheduler.now();
     const eventPayload = record(event.payload);
+    if (event.type === "approval.request") {
+      this.approvalRevisionByLive.set(live, (this.approvalRevisionByLive.get(live) ?? 0) + 1);
+      this.offerPendingApproval(live, threadId, this.activeByLive.get(live)?.turn ?? this.admissionByLive.get(live)?.projection.turn ?? null,
+        eventPayload as unknown as HermesPendingApproval);
+    }
     if (event.type === "clarify.request") {
       this.offerPendingClarify(
         live,
@@ -2495,6 +2641,7 @@ export class HermesAppServerAdapter {
     }
     const payload = this.payloadByStored.get(threadId);
     if (payload !== undefined) {
+      if (event.type === "approval.request" && typeof eventPayload.request_id === "string") payload.pending_approval = eventPayload as unknown as HermesPendingApproval;
       if (event.type === "clarify.request") {
         payload.pending_clarify = eventPayload as unknown as HermesPendingClarify;
       }
@@ -2512,6 +2659,7 @@ export class HermesAppServerAdapter {
       }
     }
     if (event.type === "tool.complete" && typeof eventPayload.tool_id === "string") {
+      if (this.hasPendingApproval(live)) void this.refreshApprovalSnapshot(live, threadId);
       for (const pending of this.pendingClarifyByRequest.values()) {
         const ownerItem = this.activeByLive.get(live)?.turn.items.find(item => item.id === pending.appServerRequest.params.itemId);
         if (pending.liveSessionId === live && (ownerItem?.callId ?? pending.appServerRequest.params.itemId) === eventPayload.tool_id) {
@@ -2521,11 +2669,12 @@ export class HermesAppServerAdapter {
     }
     if (event.type === "message.complete" || event.type === "error") {
       this.clearSessionClarify(live);
+      this.clearSessionApproval(live);
     }
     if (
       event.type === "session.info"
       && eventPayload.running === false
-      && this.hasPendingClarify(live)
+      && (this.hasPendingClarify(live) || this.hasPendingApproval(live))
     ) {
       return;
     }

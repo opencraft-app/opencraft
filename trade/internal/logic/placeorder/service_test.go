@@ -2115,6 +2115,52 @@ func TestPlaceOrderAndPay_HappyPath(t *testing.T) {
 	}
 }
 
+func TestOrderOutcomeAfterPay(t *testing.T) {
+	dealName := "deal-1"
+	for _, tc := range []struct {
+		name       string
+		state      string
+		resourceID string
+		wantStatus string
+		wantID     string
+	}{
+		{name: "success", state: "0", resourceID: "pass-1", wantStatus: store.OrderStatusProvisioned, wantID: "pass-1"},
+		{name: "success without resource", state: "0", wantStatus: store.OrderStatusPaidPendingProvision},
+		{name: "permanent failure", state: "3", wantStatus: store.OrderStatusProvisionFailed},
+		{name: "retrying", state: "2", wantStatus: store.OrderStatusPaidPendingProvision},
+		{name: "partial failure", state: "4", wantStatus: store.OrderStatusPaidPendingProvision},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resp := &jifeiclient.GenerateDealsAndPayResponse{
+				DealDeliverResults: map[string]map[string]interface{}{dealName: {"state": tc.state}},
+				ResourceIDs:        map[string][]string{dealName: {tc.resourceID}},
+			}
+			status, resourceID := orderOutcomeAfterPay(resp, dealName)
+			if status != tc.wantStatus || resourceID != tc.wantID {
+				t.Fatalf("got (%s, %s), want (%s, %s)", status, resourceID, tc.wantStatus, tc.wantID)
+			}
+		})
+	}
+}
+
+func TestPlaceOrderAndPayRetainsFailedOrder(t *testing.T) {
+	d := newStdDeps()
+	d.jifei.generateDealsAndPayFn = func(context.Context, *jifeiclient.GenerateDealsAndPayRequest) (*jifeiclient.GenerateDealsAndPayResponse, error) {
+		return &jifeiclient.GenerateDealsAndPayResponse{
+			DealNames:          []string{"deal-failed"},
+			BigDealIDs:         []string{"big-failed"},
+			DealDeliverResults: map[string]map[string]interface{}{"deal-failed": {"state": "3"}},
+		}, nil
+	}
+	_, err := d.service.PlaceOrderAndPay(context.Background(), stdPlaceOrderReq())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.writer.createOrderCalls.Load() != 1 || d.writer.lastCreateOrderInput.Status != store.OrderStatusProvisionFailed {
+		t.Fatalf("order calls=%d status=%s", d.writer.createOrderCalls.Load(), d.writer.lastCreateOrderInput.Status)
+	}
+}
+
 func TestMoveInOrderAndPay_HappyPath(t *testing.T) {
 	d := newStdDeps()
 	d.jifei.generateDealsAndPayFn = func(ctx context.Context, req *jifeiclient.GenerateDealsAndPayRequest) (*jifeiclient.GenerateDealsAndPayResponse, error) {
@@ -2814,6 +2860,26 @@ func TestPlaceRenewOrderAndPay_HappyPath(t *testing.T) {
 	// 不应触发 PlaceRenewOrder 的两步式 generateDeals
 	if d.jifei.generateDealsCalls.Load() != 0 {
 		t.Errorf("一体化路径不应调 generateDeals, got %d calls", d.jifei.generateDealsCalls.Load())
+	}
+}
+
+func TestPlaceRenewOrderAndPayRetainsFailedOrder(t *testing.T) {
+	d := newStdDeps()
+	d.bundle.def = stdRenewDef()
+	d.jifei.generateDealsAndPayFn = func(context.Context, *jifeiclient.GenerateDealsAndPayRequest) (*jifeiclient.GenerateDealsAndPayResponse, error) {
+		return &jifeiclient.GenerateDealsAndPayResponse{
+			DealNames:          []string{"deal-renew-failed"},
+			BigDealIDs:         []string{"big-renew-failed"},
+			DealDeliverResults: map[string]map[string]interface{}{"deal-renew-failed": {"state": "3"}},
+		}, nil
+	}
+	_, err := d.service.PlaceRenewOrderAndPay(context.Background(), stdPlaceRenewOrderReq())
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := d.writer.lastCreateOrderInput
+	if d.writer.createOrderCalls.Load() != 1 || got.OrderType != store.OrderTypeRenew || got.Status != store.OrderStatusProvisionFailed {
+		t.Fatalf("calls=%d orderType=%s status=%s", d.writer.createOrderCalls.Load(), got.OrderType, got.Status)
 	}
 }
 

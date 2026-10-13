@@ -66,6 +66,7 @@ test("workspace file presentation derives stable roots, paths, and languages", (
   assert.equal(workspaceFileLanguage("/workspace/project/src/main.tsx"), "tsx");
   assert.equal(workspaceFileLanguage("/workspace/README.MD"), "markdown");
   assert.equal(workspaceFileLanguage("/workspace/notes.markdown"), "markdown");
+  assert.equal(workspaceFileLanguage("/workspace/report.htm"), "html");
 
   assert.equal(workspaceFileLanguage("/workspace/project/styles/site.scss"), "css");
   assert.equal(workspaceFileLanguage("/workspace/project/src/worker.mjs"), "javascript");

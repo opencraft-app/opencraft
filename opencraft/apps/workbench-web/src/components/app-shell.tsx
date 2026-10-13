@@ -243,7 +243,8 @@ export function AppShell({
   const [floatingExitOwnsContent, setFloatingExitOwnsContent] = useState(false);
   const [rightPanelRevealed, setRightPanelRevealed] = useState(false);
   const previousToolIntent = useRef({ layoutScope, open: requestedRightPanelOpen });
-  const contextAvailable = leftPanel != null;
+  const unifiedNavigation = navigation?.layout === "unified";
+  const contextAvailable = unifiedNavigation || leftPanel != null;
   const [dockedPrimaryHost, setDockedPrimaryHost] = useState<HTMLDivElement | null>(null);
   const [dockedContextHost, setDockedContextHost] = useState<HTMLDivElement | null>(null);
   const [dockedFooterHost, setDockedFooterHost] = useState<HTMLDivElement | null>(null);
@@ -255,6 +256,7 @@ export function AppShell({
     // geometry below use live MotionValues, never this saved width.
     viewportWidth, contextWidth: sidebarWidth, contextAvailable, sidecarOpen,
     enabled: navigation !== undefined, allowDock: navigation?.allowDock,
+    unified: unifiedNavigation,
     rightPanelOpen: requestedRightPanelOpen,
     rightPanelFullWidth: requestedRightPanelFullWidth,
     accountAvailable: navigation?.account != null && navigation.account.snapshot.phase !== "anonymous",
@@ -542,7 +544,7 @@ export function AppShell({
   }, [shellWidth, regularRightPanelAnimatedWidth, mainContentLayout, rightPanelFullWidth]);
 
   const floatingLayout = floatingSidebarLayout({ viewportWidth, contextWidth: sidebarWidth, primaryWidth: navigationController.width,
-    contextAvailable, navigationAvailable: !!navigation, expanded: navigationController.state.lastVisibleRailDetent === "expanded" });
+    contextAvailable, navigationAvailable: !!navigation && !unifiedNavigation, expanded: navigationController.state.lastVisibleRailDetent === "expanded" });
   const floatingPrimaryWidth = useMotionValue(floatingLayout.primaryWidth);
   useLayoutEffect(() => { floatingPrimaryWidth.set(floatingLayout.primaryWidth); }, [floatingPrimaryWidth, floatingLayout.primaryWidth]);
   const floatingWidth = useTransform([liveSidebarWidth, floatingPrimaryWidth, shellWidth], ([context, primary, viewport]) =>
@@ -674,7 +676,7 @@ export function AppShell({
     }}>
     <AppShellLayoutMotionContext.Provider value={layoutMotion}>
       <ApplicationShellRoot
-        className={navigation ? "has-shell-navigation" : undefined}
+        className={navigation ? `has-shell-navigation${unifiedNavigation ? " has-unified-sidebar" : ""}` : undefined}
         rootRef={shellRootRef}
         windowChrome={windowChrome}
         sidebarOpen={sidebarOpen}
@@ -711,8 +713,11 @@ export function AppShell({
             footer={navigation ? <div className="sidecar-content-slot" ref={setFloatingFooterHost} /> : null}
           >
             <div className="floating-sidebar-panes">
-              {navigation ? <motion.div className="floating-sidebar-primary" style={{ width: floatingNavigationWidth }}><div className="sidecar-content-slot" ref={setFloatingPrimaryHost} /></motion.div> : null}
-              {contextAvailable ? <div className="floating-sidebar-context"><motion.div className="floating-sidebar-context__viewport" style={{ width: floatingContextViewportWidth }}><div className="sidecar-content-slot" ref={setFloatingContextHost} /></motion.div></div> : null}
+              {navigation && !unifiedNavigation ? <motion.div className="floating-sidebar-primary" style={{ width: floatingNavigationWidth }}><div className="sidecar-content-slot" ref={setFloatingPrimaryHost} /></motion.div> : null}
+              {contextAvailable ? <div className="floating-sidebar-context"><motion.div className="floating-sidebar-context__viewport" style={{ width: floatingContextViewportWidth }}>{unifiedNavigation ? <div className="shell-sidebar__column">
+                <div className="shell-sidebar__navigation sidecar-content-slot" ref={setFloatingPrimaryHost} />
+                <div className="shell-sidebar__context sidecar-content-slot" ref={setFloatingContextHost} />
+              </div> : <div className="sidecar-content-slot" ref={setFloatingContextHost} />}</motion.div></div> : null}
             </div>
           </FloatingLeftPanel>
           </div>, document.body,
@@ -720,11 +725,13 @@ export function AppShell({
         <SharedSidebarContent
           primary={{ target: floatingOwnsContent ? floatingPrimaryHost : dockedPrimaryHost, content: navigation ? <ShellNavigationDock
             config={navigation} controller={floatingOwnsContent ? floatingController : navigationOpen ? navigationController : lastDockController.current}
+            onInvoke={action => { if (unifiedNavigation && floatingOwnsContent) dismissFloatingSidebar(); action(); }}
             expandedWidth={floatingOwnsContent ? floatingNavigationWidth : primaryMotion.viewportWidth}
             frameWidth={floatingOwnsContent ? floatingNavigationWidth : primaryMotion.frameWidth} /> : null }}
           context={{ target: floatingOwnsContent ? floatingContextHost : dockedContextHost, content: leftPanel }}
           footer={{ target: floatingOwnsContent ? floatingFooterHost : dockedFooterHost, content: navigation ? <ShellNavigationFooter
             config={navigation} controller={floatingOwnsContent ? floatingController : navigationController}
+            onInvoke={action => { if (unifiedNavigation && floatingOwnsContent) dismissFloatingSidebar(); action(); }}
             visible={floatingOwnsContent || navigationController.projection.footerVisible}
             entranceId="shared-shell-entrance"
             onTogglePrimaryNavigation={floatingOwnsContent ? toggleFloatingApplications : onSidebarCollapse} /> : null }}
@@ -784,7 +791,10 @@ export function AppShell({
                   onResizingChange={setLayoutResizing}
                 /> : null}
             >
-              <div className="sidecar-content-slot" ref={setDockedContextHost} />
+              {unifiedNavigation ? <div className="shell-sidebar__column">
+                <div className="shell-sidebar__navigation sidecar-content-slot" ref={setDockedPrimaryHost} />
+                <div className="shell-sidebar__context sidecar-content-slot" ref={setDockedContextHost} />
+              </div> : <div className="sidecar-content-slot" ref={setDockedContextHost} />}
             </SidecarPane>
           ) : null}
           </Sidecar>

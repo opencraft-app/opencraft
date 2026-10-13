@@ -2,7 +2,7 @@
 
 ## Ringkasan
 
-**Beralih Antar Bot memungkinkan satu Hermes Agent cloud LightVela memiliki beberapa Bot khusus. Anda dapat membuat Bot untuk riset, perencanaan, pemrograman, konten, dukungan, atau alur kerja berulang, lalu beralih di antara Bot tersebut dari menu profil Agent.**
+**Beralih Antar Bot memungkinkan satu Hermes Agent cloud LightVela memiliki beberapa Bot khusus. Anda dapat membuat Bot untuk riset, perencanaan, pemrograman, konten, dukungan, atau alur kerja berulang, lalu beralih di antara Bot tersebut dari deretan avatar Bot.**
 
 **Setiap Bot memiliki konteks ruang kerja sendiri. Saat membuat Bot kosong atau menggandakan Bot yang sudah ada, LightVela menerapkan aturan pewarisan yang berbeda untuk pengaturan model, memori, Skill, Soul, tugas terjadwal, dan koneksi kanal.**
 
@@ -14,38 +14,30 @@
 
 ## Membuat Bot
 
-Setelah memilih **Bot Baru**, pilih avatar, masukkan nama dan deskripsi, lalu pilih untuk membuat Bot kosong atau menggandakan Bot yang sudah ada.
+Setelah masuk dengan Google atau GitHub dan mengaktifkan paket yang tersedia, buka [konsol Agent](/agents/overview/). Selesaikan pengaturan Bot pertama: isi nama yang wajib, tambahkan deskripsi jika perlu, dan atur tampilannya. Pilih **Buat**, lalu tunggu pembuatan dan konfigurasi awal selesai. Setelah konfigurasi selesai, pilih **Mulai perjalanan**, lalu buka Chat web untuk Bot tersebut. Kanal pesan bersifat opsional; balasan memerlukan kredit model paket yang tersedia atau model yang telah dikonfigurasi.
 
-Jika Bot lain sudah ada, dialog pembuatan dapat menawarkan **Salin Bot saat ini**, **Salin Bot utama**, atau **Buat kosong**.
+Untuk membuat Bot berikutnya, pilih **Bot Baru** jika tombol tersedia dan kuota paket mencukupi. Isi **Nama** (wajib) dan **Deskripsi** (opsional), lalu sesuaikan tampilan jika perlu. Pilihan bawaan adalah **Buat Bot kosong**. Jika ada Bot yang valid untuk disalin, buka **Lanjutan** dan pilih Bot sumber tertentu. Untuk menyalin Bot yang sedang digunakan, buka **Kelola Bot → Salin Bot**; formulir akan memilih sumber itu. Periksa sumber, pilih **Buat**, lalu tunggu hingga selesai.
 
-Sebagai contoh, untuk membuat Bot Analis Keuangan, Anda dapat memasukkan:
+Tombol tutup dan opsi salin lanjutan hanya tersedia jika ada Bot sumber yang valid. Pengaturan pertama tanpa sumber harus diselesaikan. Kontrol tampilan mengubah warna, bentuk, dan aksesori, bukan memilih sumber salinan.
 
-> <strong>Nama:</strong> Alpha Analyst
->
-> <strong>Deskripsi:</strong> Alpha Analyst mengkhususkan diri dalam menganalisis laporan perusahaan, berita pasar, kinerja portofolio, valuasi, dan risiko keuangan. Bot ini menghasilkan analisis ringkas berbasis bukti, membedakan fakta dari asumsi dengan jelas, dan tidak menyajikan analisis sebagai nasihat keuangan yang terjamin.
+Tangkapan layar berikut menampilkan formulir pembuatan Bot tambahan dan templat rekomendasi pada UI saat ini. Tombol tutup dan bagian Lanjutan tersedia karena Agent ini sudah memiliki Bot; ini bukan layar pengaturan Bot pertama.
 
 ![Formulir pembuatan Bot LightVela dengan pemilih avatar, kolom nama, kolom deskripsi, dan tombol Buat](../../images/bots-switching-create.webp)
 
-Layar pembuatan juga dapat menampilkan template untuk peran tertentu, seperti Manajer Kesehatan, Pemantau Pasar, atau Teman Belajar AI.
-
-![Template pembuatan Bot LightVela, termasuk Manajer Kesehatan, Pemantau Pasar, dan Teman Belajar AI](../../images/bots-switching-templates.webp)
-
-Setelah mengisi detail, konfirmasikan pembuatan dan tunggu Bot baru selesai disediakan.
+![Templat rekomendasi pada formulir pembuatan Bot tambahan LightVela](../../images/bots-switching-templates.webp)
 
 ## Ruang kerja dan pengaturan Bot
 
-Setelah dibuat, Bot membuka ruang kerja pengaturannya sendiri.
+Pilih avatar Bot yang dituju pada deretan Bot. Pada layar sempit, buka panel navigasi terlebih dahulu. Pastikan namanya sebelum mengubah model, memori, Skill, kanal, atau tugas terjadwal. Chat web dan daftar percakapan mengikuti Bot yang dipilih; Bot tambahan juga dapat memakai Chat web. Chat web tidak memerlukan kanal pesan.
 
-Dari tab Bot di halaman Agent utama, Anda dapat memilih Bot dan mengelola pengaturan yang tersedia untuk Bot tersebut, termasuk memori, Skill, Soul, tugas terjadwal, dan kanal yang terhubung.
-
-![Halaman ringkasan Agent LightVela yang menampilkan kartu Bot di bagian My Bots](../../images/bots-switching-overview.webp)
+![Deretan avatar Bot LightVela di samping navigasi Kanal, Skill, dan Tugas Terjadwal](../../images/bots-switching-overview.webp)
 
 Mode pembuatan menentukan apa yang diwarisi Bot baru:
 
 | Mode pembuatan | Yang diwarisi | Yang dimulai terpisah |
 | --- | --- | --- |
-| Buat kosong | Model utama dan kredensial penyedianya, serta Skill yang disediakan sistem | Model cadangan, model lain yang telah dikonfigurasi, Soul, memori, Skill yang dipasang kemudian pada Bot utama, kanal, dan tugas terjadwal |
-| Salin Bot saat ini atau Salin Bot utama | Model, Soul, Skill, preferensi pengguna, dan memori jangka panjang | Percakapan saat ini, riwayat chat sebelumnya, tugas terjadwal, status runtime, dan koneksi kanal |
+| Buat Bot kosong | Model utama dan kredensial penyedianya, serta Skill yang disediakan sistem | Model cadangan, model lain yang telah dikonfigurasi, Soul, memori, Skill yang dipasang kemudian pada Bot utama, kanal, dan tugas terjadwal |
+| Salin Bot | Model, Soul, Skill, preferensi pengguna, dan memori jangka panjang | Percakapan saat ini, riwayat chat sebelumnya, tugas terjadwal, status runtime, dan koneksi kanal |
 
 Tinjau dialog pembuatan sebelum mengonfirmasi jika Anda perlu memisahkan pengaturan.
 
@@ -59,9 +51,9 @@ Bot khusus untuk riset, perencanaan perjalanan, analisis keuangan, atau pemeriks
 
 Bot mandiri juga memudahkan Anda mencoba gaya kerja lain tanpa mengubah Bot yang sudah digunakan untuk tugas lain.
 
-![Menu profil Bot LightVela yang menampilkan beberapa Bot yang dapat dipilih](../../images/bots-switching-selector.webp)
+![Deretan avatar Bot LightVela dengan dua Bot dan tombol Bot baru](../../images/bots-switching-selector.webp)
 
-Hasilnya adalah ruang kerja LightVela yang lebih teratur.
+Pilih avatar Bot yang dituju pada deretan Bot. Pada layar sempit, buka panel navigasi terlebih dahulu. Pastikan namanya sebelum mengubah model, memori, Skill, kanal, atau tugas terjadwal. Chat web dan daftar percakapan mengikuti Bot yang dipilih; Bot tambahan juga dapat memakai Chat web. Chat web tidak memerlukan kanal pesan.
 
 Untuk beralih antar-Bot, klik profil Bot aktif di area kiri atas ruang kerja Agent, lalu pilih Bot lain dari menu.
 
@@ -73,14 +65,9 @@ Kombinasi kanal yang tersedia bergantung pada wilayah LightVela:
 
 | Versi LightVela | Kanal yang mendukung integrasi multi-Bot |
 | --- | --- |
-| Versi China | QQ, WeCom, Lark, DingTalk |
-| Versi global | Telegram, Discord, Slack, QQ, WeCom, Lark |
+| Versi global | Telegram, Discord, WeChat, Slack, QQ, WeCom, Lark |
 
-Untuk kanal seperti WeChat dan WhatsApp, konfigurasi saat ini dapat mengizinkan hanya satu Bot per instans.
-
-Jika kanal sudah dimiliki Bot lain, LightVela menampilkan pemberitahuan dan menyediakan cara untuk mengelola Bot pemilik kanal tersebut.
-
-![Pemberitahuan LightVela bahwa WeChat sudah digunakan Bot lain dan hanya satu Bot yang dapat terhubung](../../images/bots-switching-wechat.webp)
+Bot yang berbeda pada satu instans dapat menghubungkan akun WeChat yang berbeda. Setiap Bot mengelola koneksi WeChat miliknya sendiri. WhatsApp tetap dibatasi ke satu Bot yang terhubung per instans; Bot lain akan melihat pemberitahuan kepemilikan dan tautan untuk mengelolanya.
 
 ## Memverifikasi peralihan Bot atau koneksi kanal
 
@@ -100,7 +87,7 @@ Konfirmasikan apakah Bot hanya dapat membaca konteks grup atau juga dapat membal
 | Masalah | Kemungkinan penyebab | Yang harus dilakukan |
 | --- | --- | --- |
 | **Bot Baru** tidak tersedia | Paket Anda telah mencapai batas Bot, atau Bot lain masih dibuat atau dihapus | Tunggu operasi saat ini selesai, hapus Bot yang tidak digunakan, atau tingkatkan ke paket dengan batas lebih tinggi |
-| Opsi penggandaan tidak tersedia | Tidak ada Bot saat ini atau Bot utama yang valid untuk disalin | Pilih **Buat kosong**, atau kembali ke Bot yang dimaksud sebelum membuka dialog pembuatan |
+| Opsi penggandaan tidak tersedia | Tidak ada Bot saat ini atau Bot utama yang valid untuk disalin | Pilih **Buat Bot kosong**, atau kembali ke Bot yang dimaksud sebelum membuka dialog pembuatan |
 | Daftar Bot sementara tidak tersedia | Instans Agent berhenti atau permintaan daftar Bot gagal | Mulai atau segarkan Agent, lalu muat ulang halaman pengaturan Bot |
 | Kanal sudah terhubung ke Bot lain | Kanal memiliki pembatasan kepemilikan satu Bot | Gunakan pemberitahuan untuk membuka Bot pemilik, atau putuskan lalu hubungkan kembali sesuai halaman konfigurasi kanal |
 | Pesan grup tidak menerima balasan | Izin grup Bot atau konfigurasi kanal belum lengkap | Tinjau halaman konfigurasi kanal yang relevan, lalu kirim pesan uji lain |

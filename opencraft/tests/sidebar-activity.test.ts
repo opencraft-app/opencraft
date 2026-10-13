@@ -146,7 +146,7 @@ test("Activity hover is mouse-only and touch retains a reachable independent men
   assert.match(styles, /\.sidebar-activity-item\s*\{\s*@include controls\.quiet-control\(\$hover: false\)/u);
   assert.match(controls, /@mixin quiet-control\(\$hover: true\)/u);
   assert.match(controls, /@if \$hover\s*\{\s*@include hover-capable/u);
-  assert.match(styles, /@media \(any-hover: hover\) and \(any-pointer: fine\)[\s\S]*?:root:not\(\[data-touch-interaction\]\) \.sidebar-activity-list \.sidebar-activity-row:hover > \.sidebar-activity-row__target > \.sidebar-activity-item:not\(\.is-selected\)/u);
+  assert.match(styles, /@media \(any-hover: hover\) and \(any-pointer: fine\)[\s\S]*?:root:not\(\[data-touch-interaction\]\) \.sidebar-activity-list \.sidebar-activity-row:hover > \.sidebar-activity-row__target \.sidebar-activity-item:not\(\.is-selected\)/u);
   const menuTriggerRule = styles.slice(styles.indexOf(".sidebar-activity-item__menu-trigger {"), styles.indexOf("@media (any-hover: hover) and (any-pointer: fine)"));
   assert.match(menuTriggerRule, /background: transparent;/u);
   assert.doesNotMatch(styles, /\.sidebar-activity-row:has\(> \.sidebar-activity-item\.is-selected\) \.sidebar-activity-item__menu-trigger/u);

@@ -841,7 +841,7 @@ describe("international v2 homepage artifact", () => {
       /#lightvela-intl-home \.nav__inner\s*\{[^}]*max-width:\s*min\(1440px,\s*calc\(100vw - 48px\)\);[^}]*min-height:\s*64px;[^}]*padding:\s*0;[^}]*border:\s*0;[^}]*border-radius:\s*0;[^}]*background:\s*transparent;/s,
     );
     expect(css).toMatch(
-      /\.international-home-header-actions-layer\s*\{[^}]*top:\s*14px;[^}]*right:\s*max\(24px,\s*calc\(\(100% - 1440px\) \/ 2\)\);/s,
+      /\.international-home-header-actions-layer\s*\{[^}]*top:\s*calc\(14px \+ var\(--lw-announcement-visible-height, 0px\)\);[^}]*right:\s*max\(24px,\s*calc\(\(100% - 1440px\) \/ 2\)\);/s,
     );
   });
 

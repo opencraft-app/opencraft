@@ -3,6 +3,7 @@ import { useAppearanceTheme } from "../appearance-theme";
 import { createAppServerMediaSourceLoader } from "../runtime/appserver-media-loader";
 import { useIntl } from "@opencraft/i18n/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { parse, serialize, type DefaultTreeAdapterTypes } from "parse5";
 import type { BlobProgress } from "@opencraft/blob-resources";
 import type { FuzzyFileSearchResult } from "@opencraft/appserver-protocol/generated";
 import type { FsReadDirectoryEntry } from "@opencraft/appserver-protocol/generated/v2";
@@ -11,6 +12,7 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronRight,
+  Download,
   Folder,
   FolderOpen,
   Image as ImageIcon,
@@ -54,8 +56,11 @@ import {
   type WorkspaceSaveTarget,
 } from "./workspace-resource-model";
 import { WorkspaceFileIcon } from "./workspace-file-icon";
+import { chatMediaKind } from "@opencraft/chat-render-react";
+import { WorkspaceMediaPreview } from "./workspace-media-preview";
 
 const WorkspaceCodeEditor = lazy(() => import("./workspace-code-editor").then((module) => ({ default: module.WorkspaceCodeEditor })));
+const WorkspacePdfPreview = lazy(() => import("./workspace-pdf-preview").then((module) => ({ default: module.WorkspacePdfPreview })));
 
 interface LoadedWorkspaceResource {
   readonly blob: Blob | null;
@@ -251,6 +256,37 @@ export function WorkspaceResourcePreviewPanel(props: PanelRendererProps) {
   return <WorkspaceResourcePanel {...props} previewOnly />;
 }
 
+const htmlPreviewPolicy = "default-src 'none'; img-src data: blob:; media-src data: blob:; font-src data:; style-src 'unsafe-inline'; script-src 'none'; connect-src 'none'; frame-src 'none'; object-src 'none'; form-action 'none'; base-uri 'none'";
+const htmlPreviewAnimationTags = new Set(["animate", "animateMotion", "animateTransform", "set", "discard"]);
+
+function removeHtmlPreviewNavigation(document: DefaultTreeAdapterTypes.Document): void {
+  const pending: DefaultTreeAdapterTypes.ParentNode[] = [document];
+  while (pending.length > 0) {
+    const parent = pending.pop()!;
+    parent.childNodes = parent.childNodes.filter((child) => {
+      if (!("tagName" in child)) return true;
+      if (child.tagName === "meta" && child.attrs.some((attr) => attr.name === "http-equiv" && attr.value.trim().toLowerCase() === "refresh")) return false;
+      // SVG animation can restore a stripped link destination without running script.
+      if (htmlPreviewAnimationTags.has(child.tagName)) return false;
+      if (child.tagName === "a" || child.tagName === "area") {
+        child.attrs = child.attrs.filter((attr) => attr.name !== "href" && attr.name !== "ping" && attr.name !== "target");
+      }
+      pending.push(child);
+      if ("content" in child) pending.push(child.content);
+      return true;
+    });
+  }
+}
+
+function htmlPreviewDocument(source: string): string {
+  const document = parse(source);
+  removeHtmlPreviewNavigation(document);
+  const sanitized = serialize(document);
+  const doctype = /^<!doctype[^>]*>/iu.exec(sanitized)?.[0] ?? "";
+  const policy = `<meta http-equiv="Content-Security-Policy" content="${htmlPreviewPolicy}">`;
+  return `${doctype}${policy}${sanitized.slice(doctype.length)}`;
+}
+
 export function WorkspaceResourcePanel({ tab, previewOnly = false }: PanelRendererProps & { readonly previewOnly?: boolean }) {
   const intl = useIntl();
   const blobs = useBlobResources();
@@ -313,7 +349,7 @@ export function WorkspaceResourcePanel({ tab, previewOnly = false }: PanelRender
       const unsubscribe = lease.subscribe(report);
       let blob: Blob;
       try { blob = await lease.promise; } finally { unsubscribe(); lease.release(); }
-      const bytes = blob.size > MAX_EDITABLE_FILE_BYTES || workspaceImageMime(selectedPath)
+      const bytes = blob.size > MAX_EDITABLE_FILE_BYTES || chatMediaKind(selectedPath) !== "file"
         ? null : new Uint8Array(await blob.arrayBuffer());
       return {
         blob,
@@ -330,15 +366,27 @@ export function WorkspaceResourcePanel({ tab, previewOnly = false }: PanelRender
     retry: false,
   });
 
-  const [imageSource, setImageSource] = useState<{ blob: Blob; url: string } | null>(null);
+  const [fileSource, setFileSource] = useState<{
+    blob: Blob;
+    url: string;
+    documentId: string;
+  } | null>(null);
   useEffect(() => {
     const blob = resource.data?.blob;
     const mime = workspaceImageMime(selectedPath);
-    if (!blob || !mime) { setImageSource(null); return; }
-    const handle = fileBlobUrls.acquire(blob.slice(0, blob.size, mime));
-    setImageSource({ blob, url: handle.source });
+    if (!blob) {
+      setFileSource(null);
+      return;
+    }
+    const handle = fileBlobUrls.acquire(mime ? blob.slice(0, blob.size, mime) : blob);
+    setFileSource({ blob, url: handle.source, documentId });
     return handle.release;
-  }, [resource.data?.blob, selectedPath]);
+  }, [resource.data?.blob, selectedPath, documentId]);
+  const canDownload =
+    !resource.isError &&
+    resource.data?.isFile === true &&
+    fileSource?.documentId === documentId &&
+    fileSource.blob === resource.data.blob;
 
   const fileKey = workspaceDraftKey(snapshot.hostId, selectedPath);
   const fileDraft = drafts[fileKey];
@@ -377,6 +425,7 @@ export function WorkspaceResourcePanel({ tab, previewOnly = false }: PanelRender
   });
   const imageMime = workspaceImageMime(selectedPath);
   const language = workspaceFileLanguage(selectedPath);
+  const htmlPreview = useMemo(() => language === "html" ? htmlPreviewDocument(text) : null, [language, text]);
 
   return (
     <div className="workspace-resource-panel" data-preview-only={previewOnly || undefined}>
@@ -434,7 +483,7 @@ export function WorkspaceResourcePanel({ tab, previewOnly = false }: PanelRender
             <strong>{workspaceResourceBasename(selectedPath)}</strong>
             <small>{selectedPath}</small>
           </span>
-          {language === "markdown" && resource.data?.text != null && !editing ? (
+          {(language === "markdown" || language === "html") && resource.data?.text != null && !editing ? (
             <div className="workspace-file-viewer__actions">
               <button aria-pressed={!showSource} onClick={() => setSourceView(null)} type="button">
                 {intl.formatMessage({ id: "panel.markdownPreview", defaultMessage: "Preview" })}
@@ -468,6 +517,17 @@ export function WorkspaceResourcePanel({ tab, previewOnly = false }: PanelRender
               )}
             </div>
           ) : null}
+          {!resource.data?.isDirectory ? <div className="workspace-file-viewer__actions">
+            <a
+              role="link"
+              aria-label={intl.formatMessage({ id: "panel.downloadFile", defaultMessage: "Download file" })}
+              title={intl.formatMessage({ id: "panel.downloadFile", defaultMessage: "Download file" })}
+              aria-disabled={!canDownload || undefined}
+              tabIndex={canDownload ? undefined : -1}
+              href={canDownload ? fileSource.url : undefined}
+              download={workspaceResourceBasename(selectedPath)}
+            ><Download size={14} aria-hidden="true" /></a>
+          </div> : null}
         </header>
         {resource.isPending ? (
           <div className="workspace-file-viewer__state"><LoaderCircle className="is-spinning" size={18} />
@@ -480,11 +540,17 @@ export function WorkspaceResourcePanel({ tab, previewOnly = false }: PanelRender
           <div className="workspace-file-viewer__state is-error"><AlertTriangle size={18} />{resource.error.message}</div>
         ) : resource.data?.isDirectory ? (
           <div className="workspace-file-viewer__state"><FolderOpen size={20} />{intl.formatMessage(previewOnly ? { id: "panel.directoryHint", defaultMessage: "Choose a file link in the conversation to preview its contents." } : { id: "panel.selectFile", defaultMessage: "Select a file from this directory." })}</div>
-        ) : imageMime !== null && resource.data?.blob && imageSource?.blob === resource.data.blob ? (
+        ) : imageMime !== null && resource.data?.blob && fileSource?.blob === resource.data.blob && fileSource.documentId === documentId ? (
           <div className="workspace-file-viewer__image">
-            <img alt={workspaceResourceBasename(selectedPath)} src={imageSource.url} />
+            <img alt={workspaceResourceBasename(selectedPath)} src={fileSource.url} />
             <small><ImageIcon size={12} /> {resource.data.size.toLocaleString()} bytes</small>
           </div>
+        ) : chatMediaKind(selectedPath) === "pdf" && resource.data?.blob ? (
+          <Suspense fallback={<div className="workspace-file-viewer__state"><LoaderCircle className="is-spinning" size={18} />{intl.formatMessage({ id: "pdf.loading", defaultMessage: "Loading PDF…" })}</div>}>
+            <WorkspacePdfPreview key={fileKey} blob={resource.data.blob} name={workspaceResourceBasename(selectedPath)} />
+          </Suspense>
+        ) : (chatMediaKind(selectedPath) === "audio" || chatMediaKind(selectedPath) === "video") && resource.data?.blob ? (
+          <WorkspaceMediaPreview key={fileKey} blob={resource.data.blob} name={workspaceResourceBasename(selectedPath)} kind={chatMediaKind(selectedPath) === "audio" ? "audio" : "video"} />
         ) : resource.data?.text !== null && resource.data?.text !== undefined ? (
           <Suspense fallback={<div className="workspace-file-viewer__state"><LoaderCircle className="is-spinning" size={18} />Loading editor…</div>}>
             {language === "markdown" && !showSource && !editing ? (
@@ -507,7 +573,16 @@ export function WorkspaceResourcePanel({ tab, previewOnly = false }: PanelRender
                   }}
                 />
               </div>
-            ) : previewOnly && language === "markdown" ? (
+            ) : language === "html" && !showSource && !editing && htmlPreview !== null ? (
+              <iframe
+                className="workspace-file-html"
+                key={documentId}
+                referrerPolicy="no-referrer"
+                sandbox=""
+                srcDoc={htmlPreview}
+                title={`${workspaceResourceBasename(selectedPath)} ${intl.formatMessage({ id: "panel.markdownPreview", defaultMessage: "Preview" })}`}
+              />
+            ) : previewOnly && (language === "markdown" || language === "html") ? (
               <pre
                 className="workspace-file-source"
                 tabIndex={0}
@@ -526,6 +601,8 @@ export function WorkspaceResourcePanel({ tab, previewOnly = false }: PanelRender
               />
             )}
           </Suspense>
+        ) : resource.data?.blob ? (
+          <WorkspaceMediaPreview key={fileKey} blob={resource.data.blob} name={workspaceResourceBasename(selectedPath)} kind="file" />
         ) : (
           <div className="workspace-file-viewer__state"><AlertTriangle size={18} />{intl.formatMessage({ id: "panel.unsupportedFile", defaultMessage: "Preview unavailable for this file type or size." })}</div>
         )}

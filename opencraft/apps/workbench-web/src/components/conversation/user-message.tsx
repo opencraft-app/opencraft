@@ -371,6 +371,9 @@ export function UserMessageBlock({ block, hookStatsAccessory }: {
   return (
     <div className="thread-user-message" data-message-kind={block.messageKind}>
       <h4 className="thread-role-heading"><FormattedMessage id="chat.message.youSaid" defaultMessage="You said:" /></h4>
+      {block.sender?.kind === "employee" && block.sender.loginName ? (
+        <div className="thread-user-message__sender">{block.sender.loginName}</div>
+      ) : null}
       <UserMessageAttachmentRows block={block} />
       {layout.showBody ? (
         <div className="thread-user-message__body" data-user-message-body="">

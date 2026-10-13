@@ -103,3 +103,14 @@ guards:
       - frontend/public/assets/skills/**
       - .ci/checks/opencraft_guard.sh
     command: .ci/checks/opencraft_guard.sh
+
+  - name: ctl-weixin
+    paths:
+      - ctl/pkg/instance/**
+      - ctl/pkg/errcode/channel.go
+      - ctl/main/api/**
+      - ctl/go.mod
+      - ctl/go.sum
+      - .ci/checks/ctl_weixin_guard.sh
+      - .ci/checks/ctl_weixin_test_requirements.txt
+    command: .ci/checks/ctl_weixin_guard.sh

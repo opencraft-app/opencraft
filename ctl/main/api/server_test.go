@@ -333,6 +333,18 @@ func (s *stubLogic) GetDesktopResource(_ pctx.Context, _ string) (*transport.Des
 	return nil, errors.New("unexpected call")
 }
 
+func (s *stubLogic) CreateDesktopViewer(_ pctx.Context, _ string) (*transport.DesktopViewerResponse, error) {
+	return nil, errors.New("unexpected call")
+}
+
+func (s *stubLogic) ClaimDesktopViewer(_ pctx.Context, _, _ string, _ *transport.DesktopViewerClaimRequest) (*transport.DesktopViewerClaimResponse, error) {
+	return nil, errors.New("unexpected call")
+}
+
+func (s *stubLogic) ReleaseDesktopViewer(_ pctx.Context, _, _ string) error {
+	return errors.New("unexpected call")
+}
+
 func (s *stubLogic) ListInstances(ctx pctx.Context, page, pageSize int) (*transport.ListInstancesResponse, error) {
 	return nil, errors.New("unexpected call")
 }

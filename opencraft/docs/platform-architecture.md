@@ -249,6 +249,12 @@ reconciles the draft. The extension registry in the resource model supplies
 both file-type cues and the CodeMirror language choice. The code editor owns
 only its document view and edit events; it does not write files or own drafts.
 Binary and oversized files remain outside the text-editor path.
+The file-preview header provides a download action for every successfully read
+file, including empty or non-previewable binary files. It exports the original
+Host-scoped Blob with the selected basename rather than editor text or rendered
+HTML. Read-only embedded previews retain download without allowing Host writes.
+The preview owns its Blob URL lease; Host/path/runtime generation changes remove
+the old download target before exposing the next resource.
 
 ### Typography ownership
 
@@ -720,7 +726,7 @@ Temporary interaction state such as peek, hover, drag projection and animation
 never enters the preference store.
 
 `chat.defaultFollowUpAction` is an installation-scoped `steer | queue`
-preference, defaulting to `steer`. Chat settings and the main conversation
+preference, defaulting to `queue`. Chat settings and the main conversation
 Composer consume the same runtime snapshot. The preference chooses the default
 intent only while a response is active; idle sends remain normal Turn starts.
 It neither creates a Host capability nor enables atomic queued-message steering.
@@ -1492,11 +1498,27 @@ and late restoration from undoing sign-out.
 
 ### Authentication ownership
 
-The optional `tencentoa.identity` plugin contributes a separate employee provider
-and settings page, not the singleton LightVela account footer. Its Node-only
+The optional `tencentoa.identity` plugin contributes a separate employee provider,
+settings page and the account entrance when its server endpoint is configured.
+The entrance displays the verified employee login name automatically and opens
+identity details/refresh without a fixed login URL. Account contributions have
+explicit presentation precedence (`entrancePriority`, default 0; Tencent OA 100);
+equal priorities remain exclusive, and unloading the higher-priority contribution
+restores the product entrance. Provider session/storage authority is unchanged.
+Gateway-owned identities omit `signOut` when no logout operation is supported.
+An anonymous employee entrance remains useful for identity details and refresh.
+Its Node-only
 verifier owns the private TAI application key and independently validates each
 request's signature, authenticated JWE and expiration. Browser projections are
 memory-only and generation-fenced. Recognition does not authorize shared resources.
+Verified employee message provenance is owned by the Codex Host, not the Turn
+or Renderer. The Web gateway derives a trusted connection context from signed
+WebSocket handshake headers; AppHost passes it through an in-process submission
+port. Each user message is keyed by stable Host + Thread + client message ID.
+Only the English login name is persisted in the existing Host queue SQLite; queue
+admission and provenance share a transaction. Queue dispatch never reattributes
+the original submitter. History/live/shared Chat projection carry hidden sender
+metadata; the native model input remains free of employee provenance.
 See [Tencent OA authentication](tencentoa-authentication.md).
 
 The application supervisor installs two renderer-neutral Cordis services before
@@ -1666,7 +1688,8 @@ the in-overlay rail (or opens the existing drawer on very narrow widths), never
 implicitly docks the entire Sidecar. Docking remains a separate header action.
 Escape/outside dismissal retires both explicit peek and pointer-hover intent.
 While floating, AppShell owns a transparent outside hit surface behind the
-sidebar and above the conversation. A tap dismisses the transient presentation
+sidebar and above the conversation. Its pointer hit testing explicitly overrides
+the non-interactive overlay host so blank-space taps reach it. A tap dismisses the transient presentation
 without dispatching the same activation to the covered conversation; it does
 not change the saved dock intent. Because this hit surface covers the viewport,
 its touch highlight must remain transparent rather than flashing the whole
@@ -1718,100 +1741,60 @@ Electron Main must consume this metric rather than maintaining a larger
 platform-local minimum. The 760px value used by Settings is a content maximum,
 not a minimum window width.
 
-`workbench-runtime/shell-navigation` owns the renderer-free reducer and responsive
-projection. The initial preference pins applications, not account. Width pressure
-temporarily suspends docking with hysteresis without overwriting the preference.
-Web owns persistence, measurement, Radix nonmodal surfaces and spring animation.
-Primary visibility progress and base resize geometry are separate owners: when
-the semantic projection becomes hidden, base Frame/Viewport geometry is retained
-until visibility reaches zero. It must not copy the hidden projection's zero into
-the base width and erase the exit animation. Outgoing navigation keeps its last
-content snapshot mounted until terminal zero, but is immediately inert. Reversal
-retargets the existing visibility progress; it does not remount or restart it.
-Primary expanded width is persisted separately from contextual pane width.
-Applications defaults to 137px (about 25% narrower than the former 182px), with a
-126px expanded minimum and 137px content-owned maximum shared by pointer and
-keyboard resizing, persisted-value normalization and projection. The pointer
-frame stops at that cap while held, not just on release. Context keeps its own
-240px minimum and independent maximum. Valid custom widths remain intact; legacy
-oversize values read as 137px without clearing other preferences. Double-clicking the
-primary divider restores the new default without changing the contextual width.
-Dedicated resize transaction owners handle the primary three-detent pane and the
-contextual two-state pane; the Shell limits primary width against available content
-space. Shared projection uses that width for docking pressure, without rewriting
-the saved preference when the viewport narrows. Resizing preserves the footer's
-left/bottom anchor and square entrance; the account item's trailing edge follows
-the live Footer width. Pin transitions interpolate the Sidecar's primary and
-contextual pane widths using existing motion values, without remounting items.
-Footer controls participate in normal flow inside their dedicated Sidecar track;
-they are not an absolute overlay and do not consume Primary's expanded-width
-animation. The track fills the aggregate Sidecar width. One square entrance and
-one `minmax(0, 1fr)` account cell share design-system group gap/padding tokens.
-Only menu surfaces are positioned overlays. Portal viewport-fill rules exclude
-the footer so width and insets cannot overconstrain it. The Applications entrance
-reuses the existing `SidebarToggleIcon` used by window chrome, not stacked app
-icons. Compact-only presentation stacks the same controls with the same gap.
-Its entrance survives pinned/unpinned transitions within the Sidecar. The primary
-and current contextual panes contribute to one aggregate left width consumed by
-header, timeline and right-panel geometry. Neither pane
-owns Host or conversation runtime lifetime.
+The main Web/Electron Workbench uses a unified sidebar topology. One physical
+left pane contains the global Start/extension destinations at the top, the
+current application's context below, and Settings/account in a normal-flow
+footer. Chat supplies the conversation list; device Settings supplies its
+category index; extension pages may omit context without adding a second
+navigation column. These destinations use the actual application router and
+extension projection. Start invokes the shared new-task action; there is no
+second Start row in the conversation list.
 
-`workbench-runtime/shell-space` arbitrates the complete window budget, including
-both Sidecar panes and the task panel. The desktop main viewport reserves 480px;
-ordinary right tools additionally reserve at least 320px. Under pressure, the
-application pane becomes compact, then transient; tools are then suspended, and
-finally context becomes floating. A 32px restoration margin avoids breakpoint
-chatter. Saved widths, pins, and explicit open/close intent are not resize output.
-Header controls consume the actual presentation. Explicitly revealing tools when
-split mode cannot fit uses the full work area; revealing a suppressed sidebar uses
-the existing floating owner, dismissible with Escape or an outside click. No
-responsive transition disposes a Host, tab, terminal, or conversation.
+`ShellNavigationConfig.layout=unified` selects this presentation in App. The
+shared `shell-navigation` projection excludes the former application rail from
+its geometry and docking decisions. Old application/account pins and compact
+rail preferences do not resurrect it and are not rewritten. There is no
+Applications drawer, rail Pin action or separate application resize handle in
+the main Workbench. Other explicit renderer presentations retain their existing
+contracts; an embedded shell without global navigation is unaffected.
 
-Thread-edge header eligibility consumes Shell width minus the live right-panel
-width from the layout owner. It must not add a rounded DOM viewport measurement
-to the left sidebar's animation value: these can represent different frames and
-toggle the divider at the 96rem threshold. Left navigation motion is not an input
-to this decision. A real right panel and route presentation remain inputs.
-The browser Header does not reserve a separate Vela/Home button. Sidebar Start
-owns the new-task entry while expanded; collapsed persistent Headers show Write
-after the Sidebar trigger, including in browsers. The off-layout Header clone
-must measure the same action count and geometry as the visible rail.
+The sidebar has one saved width (default 275px, minimum 240px, maximum 520px) and
+one open/closed intent. Its existing context resize transaction owns live frame
+and viewport width; all nested destination/context slots follow the same value
+while the pointer is held. Visibility clipping is separate and retains content
+through exit. Header, main and right-tool geometry consume that single animated
+left width. Neither the sidebar nor its presentation owns Host/Thread lifetimes.
 
-Sidecar is a physical layout boundary, not an application hierarchy. Its optional
-`leftPanel` slot contains application context: Chat supplies a conversation list,
-Settings supplies its index, and current extension pages omit the slot. With no
-context, application navigation becomes the single primary sidebar; no empty
-context column is reserved. The Sidecar toggle hides all its columns and footer
-without changing pin preferences. Returning to Chat restores its contextual layout.
-These are renderer-owned slots, not a new extension registration API or an
-assumption that every application has a conversation hierarchy.
-Device Settings follows this exact contract in both connected and zero-Host
-workbenches: its category navigation replaces `leftPanel`, its selected page
-replaces main content, and the global navigation/entrances stay mounted. There
-is no Settings-only docking ban, hidden global toolbar, width observer or
-index/content layout controller. The common Shell owns resizing, collapse and
-transient presentation for every contextual sidebar. With navigation expanded
-this yields three columns; with it collapsed Settings remains usable in two.
-The category view's `sidebar` presentation supplies content, not a Back-to-app
-shell. Target/Agent management remains a dialog; it is not device Settings.
-Controls reuse the shared quiet-control and menu treatments. Pin preference is
-shown by the entrance's pressed state, not repeated pin badges in every heading.
-Application rows and the existing sidebar reuse `controls.navigation-control`;
-the footer uses its compact `sidebar-entrance` variant with an xs avatar and square
-application entry. These are visually sidebar items: transparent at rest, without
-borders or shadows. Hover, transient open and persistent `aria-pressed` states
-reuse the navigation row's subtle fill; opening a menu does not change the pin
-preference. Semantic buttons and keyboard focus outlines remain for accessibility.
-The footer layout row, not a raised item surface, prevents overlap with content.
-The dock uses secondary typography and subtle separators without introducing
-another card around the footer. Content opacity remains independent
-of the sidebar material; a low-emphasis appearance must not make text unreadable.
+`shell-space` arbitrates the complete window budget: the desktop main reserves
+480px, and ordinary right tools reserve at least 320px. Under pressure the tools
+are suspended, then the whole sidebar becomes floating; there is no independent
+compact application rail. The existing 32px restoration margin avoids breakpoint
+chatter. Saved width and visibility intent are not resize output. The Header
+reveals a suppressed sidebar through the existing floating owner, dismissible
+with Escape or an outside click. Choosing a global destination or Settings from
+the floating sidebar dismisses it. Revealing suppressed tools uses full width.
 
-Expo can consume the same state/projection with native layout measurements and
-present transient content in its platform container. This change wires the Web
-vertical slice; the native visual adapter is not yet integrated and the contract
-is not frozen until that second adapter is exercised. It must not import DOM,
-Radix, localStorage or CSS geometry into shared state.
+Fixed and floating sidebars provide vertically stacked destination/context
+slots for the same `SharedSidebarContent` portals. Moving these slots preserves
+the DOM, filter, expanded sections, scroll and necessary focus. The footer spans
+the sidebar width, with a square Settings action and a filling account entrance;
+account menus remain Radix surfaces. The legacy viewport-fill rule excludes the
+footer, and only menus are positioned overlays. Controls use existing navigation,
+quiet-control and sidebar-entrance treatments rather than a separate visual
+system. Anonymous use and account-provider behavior remain unchanged.
+
+The browser Header does not reserve a separate Home button. The sidebar's global
+Start owns new tasks while expanded; collapsed persistent Headers show Write
+after the sidebar trigger. The off-layout Header clone measures the same action
+count and geometry as the visible rail. Thread-edge header eligibility consumes
+Shell width minus live right-panel width; left animation is not its input.
+
+The reference is the single `leftPanelSlot` topology in the recovered
+`ref/codex/terminal/use-app-shell-layout-motion-04358.ts`. This adapts the topology
+to OpenCraft's existing router, extensions, space budget and account providers;
+it does not copy its backend or introduce another sidebar business model. Expo
+keeps its existing native shell; this Web/Electron renderer change does not
+establish native parity.
 
 ## Expo Web's place
 
@@ -2041,3 +2024,7 @@ owned by one Application lifetime. Closing the panel parks its pages; switching
 conversations selects that conversation scope. Bot or account changes dispose the
 Application and do not restore the previous identity's browser metadata. This is
 presentation isolation, not an OS filesystem or browser-cookie security boundary.
+
+## 会话顶部信息
+
+手机宽度（不超过 640px）不展示会话标题旁的 Project/工作区附文，标题与操作按钮保留。桌面继续展示附文。已有“…”菜单的会话详情以只读方式展示实际项目名与工作目录：优先当前会话执行信息，目录尚未恢复时可用同一会话的规范 Thread 元数据；未知字段不伪造，不更改执行目录或启动会话。

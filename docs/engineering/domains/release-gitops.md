@@ -8,6 +8,13 @@ Pass 升配 Web checkout 在北京测试环境发布时，需协调前端、CTL�
 
 ## 交付链
 
+CTL 的生产 DB contract 在 `.ci/runtime/bundles/ctl.bundle` 按环境显式指定目标版本；
+它可以低于源码 migration 最大版本，不能把配置值当成源码文件的最大版本。
+上海与新加坡当前目标为 33，对应 `000033_add_channel_login_bot_target`。
+DB 已为 33 且 `dirty=false` 时跳过迁移；低于 33 时仍需逐区批准 pending SQL，
+高于 33 或 dirty 时继续阻断。修改 contract 后必须由包含修复的新源码构建运行检查，
+重试旧构建不能保证消费新配置；不修改 `schema_migrations` 来绕过门禁。
+
 OpenCraft DevCloud 第一方登录扩展需要配对交付 Auth 新镜像与
 `auth-platform.env` 中的显式子域回调注册，以及 Service Gateway 新镜像与全局 CORS 配置。
 旧 Auth 二进制只接受两个精确 Web 回调，不能先把第三条模式配置投放给旧进程；
@@ -32,6 +39,10 @@ master 源码
   → 服务健康、路由和业务 E2E
 ```
 
+## 北京渠道聊天记录测试门禁
+
+渠道记录的北京验收需要配对的 CTL 镜像、`ctl-api` 的 `CHANNEL_HISTORY_ENABLED` 环境开关，以及 Service Gateway 的两条只读 GET 白名单。北京 CTL 开关应保存在 master 的 `argocd/services/ctl/beijing-sandbox/kustomization.yaml`，由 CTL release bundle 投影到 `gitops`；只改 `gitops` 容易在下次镜像晋级时被 master 的旧配置覆盖。开关不扩散到生产或其他 CTL 工作负载。验收时核对 Argo revision、CTL 镜像、开关和网关配置，再用真实账号验证自身 Bot 的私聊、群聊及跨账号拒绝；MR 合并和本地前端构建均不能代替运行态证据。
+
 ## AI 建站后端隐藏发布绑定
 
 - 离线绑定生成器 `.ci/runtime/support/prepare_website_backend_release.py` 只生成最终 overlay
@@ -47,6 +58,27 @@ master 源码
 - 发布前读取真实地域 schema，migration32 仅在确实未应用时执行；不能因 Git 中存在该文件而重跑。
   详见 [发布绑定](../../../site-runtime/deploy/RELEASE-BINDINGS.md) 与
   [验收和回退契约](../../../site-runtime/deploy/RELEASE-CHECKLIST.md)。
+
+## EdgeOne 北京预发（2026-10-12，源码准备）
+
+默认 frontend Pages 预发从 Cloudflare 切换到 EO 项目 `lightvela-prerelease`。
+国内预发组合 `eo:cn-lightvela-prerelease` 使用项目 Production 稳定入口
+`https://lightvela-prerelease-tn2l7wnk.edgeone.dev`；国际预发组合
+`eo:global-lightvela-prerelease-preview` 仅创建同项目 Preview，避免覆盖国内稳定入口。
+两套预发都使用北京 API `https://lightclaw.tech`，沿用 Next Build Output、版本化静态资源、
+Embedded Workbench 归档和正式站相同的 artifact 校验/EO 发布脚本。国内预发先通过签名 Preview
+烟测再更新项目 Production；国际 Preview 同样必须通过烟测。`Production` 是 EO 项目内环境名，
+不意味着允许该自动步骤发布 `lightvela` / `lightvela-intl` 正式项目；入口仅允许两个预发组合。
+
+预发凭据使用 CI setting `EDGEONE_PRERELEASE_API_TOKEN` 或 runner 受保护文件
+`/etc/lightclaw-ci/edgeone_lightvela_prerelease_token`。未配置时失败，不能复用正式项目令牌
+或自动创建新项目。既有 CF 工具保留供历史制品读取，但默认工作流不再构建或发布 CF 预发。
+独立的 StaticPages 分支预览不属于本次 CF 预发替换，保持既有入口与发现方式。
+
+2026-10-12 只读核验显示 `lightvela-prerelease` 为 `overseas`，国内正式项目为 `global`。
+发布参数按已存在项目设置；地域差异仍需 owner 独立评估，不能将此预发验收视为国内全地域验证。
+北京公共 API 当前已对给定预发 Origin 返回 credentialed CORS；无需增加生产 API 的 Origin 授权。
+源码准备不代表流水线或站点已切换，仍须合入、配置专用凭据、运行构建并核对部署与公共路径。
 
 ## 权威分工
 
@@ -122,6 +154,27 @@ master 源码
   存量 VM 的 TAT 修补必须以 build ID 和环境为作用域持久化逐台派发 checkpoint；runner 重启或阶段
   重试时只跳过已有 `INVOKED` 的 cloud instance，继续失败和未处理项。checkpoint JSONL 的中断尾行
   可以忽略，但不得因读取失败退化成全量 `--force=true` 重复升级。
+  存量 TAT 的 backend 升级通过 ACLI bundle 中的 blueprint→COS 映射选择源码包；backend 命令
+  可用不代表映射已更新。升级前必须成功刷新 bundle，失败禁止使用旧映射继续。北京严格验收
+  `.ci/hermes-beijing-runtime.yml` 通过 `images/hermes-beijing-runtime-trigger` 固定镜像、蓝图、
+  COS 目录/归档 SHA256、展示版本和源码版本，不在运行中重新解析浮动 latest。等待 CLEAN
+  库存采用目标镜像，审批后先运行一台已分配 VM canary；通过后处理其余在线 VM。已正确的
+  版本只验证，PAUSED 保持暂停并暂缓；不刷新 Pool、不进入生产地域。旧版本经官方
+  `acli backend upgrade-start` 事务升级，显式传固定 `--cos-version` 与 `--display-version`，
+  避免未知蓝图回退默认包；使用官方用户数据备份和服务恢复流程，不自行替换用户源码树。
+  必须核对原来活跃的 gateway 仍活跃，并等待每个目标 TAT `SUCCESS/ExitCode=0` 且实际
+  CLI/import/distribution/identity 全部匹配。失败停止批量，不把派发 `INVOKED` 算验收；命令
+  内容及回执按 build ID 保存，重试只继续未接受目标并核对命令摘要。
+
+- 新加坡 Hermes 单机补救使用 `.ci/hermes-production-recovery.yml`，目标由
+  `images/hermes-production-recovery-targets.json` 显式声明（最多 5 台）。预检必须证明实例仍为
+  新加坡目标镜像 Pool 中的 ALLOCATED/RUNNING 机器，且原 TAT 已终态失败；不遍历重试暂停库存。
+  官方升级未写 COMPLETED 时，即使四处版本已一致也不得跳过。定向补救验证 identity 的
+  runtime、run_as 和 runtime_home 后，由 root TAT 直接调用 execution_user=root 的官方 ACLI
+  backend capability，保留 agentuser 身份和数据备份，使公网 npm 源参数无需穿越会过滤它的
+  sudo 环境白名单。TAT 超时 2400 秒覆盖官方 1800 秒升级及 bundle 刷新；日志保存在受保护的
+  机器文件，不把原始日志返回 CI。每台验收终态、完成标记、四处版本及网关后才处理下一台。
+  同一 CI build 保存 command 与计划，重试先按 command 对账，已接受但未完成任务不得重复派发。
 
 - Website Builder 的存量凭据补发与新购自动下发分开验收。逐实例凭据 TAT Command 的
   `website_key` 必须是 hidden parameter，不能写入 Command content、日志或 Git；默认安装器
@@ -572,6 +625,12 @@ sandbox-bj-7 继续使用独立 testing 入口。
 不改上海生产和新加坡生产的点石入口。ConfigMap 更新后应核对 Trade Pod 实际环境变量与镜像，
 并验证无续费活动配置时普通续费仍走计费。
 
+北京预发布 Trade 单独设置 `DIANSHI_RENEW_PRICE_BASE_URL` / `DIANSHI_RENEW_ORDER_BASE_URL`，
+经 tkexgz 生产 `dianshi-renew-price` / `dianshi-renew-order` 路由分别调用
+`get_price_renew` / `do_goods_renew`，两条后端都指向 `opc-dianshi-activity.production.polaris:80`。
+共享网关配置中的新后端默认不可达，仅 tkexgz 生产工作负载覆盖；先发布网关，再启用北京预发布 Trade。
+其他地域和点石新购维持原路由。发布后必须核对 Argo、Pod 环境变量和真实续费调用。
+
 ## OpenCraft 第一方 OIDC 配置与镜像门禁
 
 原生与 Web 客户端复用现有 OIDC 登录渠道，不是新增身份渠道。上海与新加坡生产环境登记
@@ -801,9 +860,58 @@ sgprod=`desktop.lightvela.site`（cert bAnD57eL / CLB lb-8kenwgvc）。该改动
 业务配置，不改变镜像构建、制品晋级、Argo Application 或同步模型；CLB 证书（SNI）、泛解析 DNS
 与含云桌面代码的 CTL 镜像仍是独立的发布前置，源配置 render 通过不等于 live 验收。
 
+## 云桌面专用工作负载的独立承载与发布顺序（2026-10-12）
+
+云桌面的会话、观看票据与输入授权是长连接、常驻状态，与普通 CTL API 混在同一组 `ctl-api`
+副本时会互相争抢连接与内存，因此新增独立工作负载 `ctl-desktop` 承载桌面请求。
+
+- `ctl-desktop` 在 `ctl/k8s/base/manifests.yaml` 中只声明 `replicas: 1`、`strategy: Recreate`
+  与空 `template.spec`，其 `spec.template.spec` 与 `metadata.annotations` 由
+  `ctl/k8s/base/kustomization.yaml` 的 `replacements` 从 `ctl-api` 整体继承（镜像、`envFrom`、
+  configMapKeyRef env、volume、probe 全部继承，逐环境 overlay 的 platform 值同样生效）；
+  差异仅来自 label `ctl.clawhub.dev/role`，`CTL_API_ROLE` 由该 label 经 fieldRef 注入。
+- 角色切换与路由必须配对：`ctl-api` 打 `role=api` 后拒收桌面路径，Service Gateway 的
+  `desktop_upstream` 把桌面请求投到 `ctl-desktop`。**发布顺序是硬约束：先确认 `ctl-desktop`
+  已 Ready，再切 `role=api` 与网关 `desktop_upstream`**；顺序颠倒会出现桌面功能短暂 404
+  （仅云桌面受影响，不影响聊天、订单、登录等其他能力）。
+- 环境矩阵（本轮合入状态）：`sandbox-bj-7`、`sandbox-kr-1`、`sgprod`、`shprod` 为完整隔离；
+  `beijing-sandbox`、`beijing-sandbox-2` 只建 `ctl-desktop` 未给 `ctl-api` 打 `role=api`，
+  空角色按兼容模式全放行，隔离不生效但不断链；`sandbox-jp-1` 未接入（`desktop_upstream`
+  缺省即沿用原 upstream）。半配与未接入环境均不得宣称多副本隔离可用。
+- `Recreate` 单副本意味着角色切换瞬间桌面连接本就会重建，发布应安排在桌面维护窗口并协调
+  角色切换与网关路由；源码 render 通过不等于 live 验收，仍需独立核对 Argo `Synced/Healthy`、
+  `CTL_API_ROLE` 实际取值与真实环境回归。
+- 回滚不依赖镜像：把目标环境 `desktop_upstream` 移除且 `role` 置空即回到兼容全放行，
+  已建立的桌面会话按空闲回收收敛。
+- 该配对已由 CI 门禁强制（`validate_desktop_role_upstream_pairing`，接在
+  `gitops_static_validation.validate` 上，promote 前置验收阶段 fail closed）：
+  任一环境的 `ctl` overlay 给 `ctl-api` 打上 `role=api` 时，同环境
+  `argocd/services/service-gateway/<env>/config.yaml` 的 `/v1/instances` 路由必须同时具备
+  `desktop_upstream`，且 allowlist 必须覆盖 `/desktop/session`、`/desktop/resource`、
+  `/desktop/viewer`。空角色（兼容模式）不触发该要求。
+- 2026-10-12 事故记录：MR !5165 合入 `master` 后，只有 ctl 侧 `role=api` 经
+  「进入上海/新加坡正式待同步状态：ctl」promote 进了 `gitops`，网关侧 `desktop_upstream`
+  与五条 `resource`/`viewer` 白名单没跟上，`shprod`/`sgprod` 云电脑全部 404
+  （`desktop/session` 被 `ctl-api` 以 `NOT_FOUND` 拒收，`resource`/`viewer` 被网关以
+  `route_not_allowed` 拒收）。此外 `desktop_upstream` 是 MR !5165 才引入的网关字段，
+  网关镜像未一并晋级时旧二进制会静默忽略它（非严格 `yaml.Unmarshal`），
+  因此补配置必须与网关镜像晋级同批发布，否则配置看似正确而运行态无效。
+
 ## MR 复用工作区源码一致性（2026-10-10）
 
 MR 占位检查在 checkout 后校验期望提交和该提交下的全部受跟踪文件（含 index）。
 提交号相同不能证明工作树正确：复用 runner 可能残留旧前端源码或旧 OpenCraft 生成副本。
 发现提交或受跟踪文件不一致时，对本次构建工作区执行既有 reset/clean，再核验 HEAD 和完整 tracked diff。
 这只恢复构建输入，不执行机械同步来掩盖源码中真实的生成漂移，也不修改 trusted guard 或发布权限。
+
+### CTL 微信 MR 回归门禁
+
+`ctl-weixin` changed guard 使用临时 Python venv，固定 python-dotenv / PyYAML 依赖，并显式传给 Go 脚本测试；缺依赖或任何所选用例 skip 均失败。聚焦实例/HTTP 契约测试与 vet 以 CGO=0 执行，不代替 SQLite/Docker 全量测试。MR 执行器使用 trusted base 的 guard 定义，新 guard 合入可信基座后才会自动选择；当前 MR 必须单独运行该 guard 留证。
+
+### frontend-next 平台构建机试验入口
+
+`.ci/frontend-next.yml` 使用 Stream v2 的公共 Docker 构建池（`self-hosted: false`、`pool-name: docker`），采用平台默认构建镜像，手动触发并独立排队。入口通过 `.ci/runtime/commands/build_frontend_next_artifacts.sh` 在当前 checkout 完整提交上构建 OpenCraft Embedded Workbench，再安装 frontend 冻结依赖、检查并构建四组静态 OCI artifact；默认保留原四组矩阵；后续新增预发组合可通过 FRONTEND_ARTIFACT_MATRIX 手动选择。仅归档到现有 frontend-pages 仓库并回读验证，已有同源码/组合 artifact 按既有 reuse 策略保留；不将该策略当作独立环境逐字节重现的证明。
+
+构建凭据仅由 settings.TCR_SHPROD_PASSWORD 注入 REGISTRY_PASSWORD，不能依赖自建机 /etc/lightclaw-ci。Node、pnpm、ORAS 使用现有版本 bootstrap，平台需具备 bash/git/python3/curl/tar/xz/flock，并能访问源码、Node/ORAS 下载源、包源和 TCR。此入口不启动 Cloudflare、EdgeOne 发布或 GitOps 晋级；实际平台调度、资源容量和网络需首次手动构建验收，不能只凭本地 YAML/测试宣布迁移完成。
+
+公共构建池语义依据[蓝盾上游 StreamDispatchUtils](https://github.com/Tencent/bk-ci/blob/67a7662f9cf8aad4af5ad42426df1ad44937e904/src/backend/ci/core/common/common-pipeline-yaml/src/main/kotlin/com/tencent/devops/process/yaml/v2/utils/StreamDispatchUtils.kt)的公共 Docker 分派。

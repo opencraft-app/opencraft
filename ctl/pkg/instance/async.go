@@ -1068,6 +1068,7 @@ func (l *logic) RunCreateInstanceTask(ctx pctx.Context, payload *CreateInstanceT
 	l.recordCreateSuccessEvent(ctx, entity.InstanceId)
 	l.deliverWebsiteSkillOnCreate(ctx, entity, sandboxResp.SandboxID)
 	l.deliverWebsiteCredentialOnCreate(ctx, entity, sandboxResp.SandboxID)
+	l.ensureDesktopBrowserOnCreate(ctx, sandboxResp.SandboxID)
 
 	return nil
 }
@@ -2690,6 +2691,11 @@ func renderHermesModelCommand(modelID, providerName, baseURL, apiKey, compat str
 		`  exit 127`,
 		`fi`,
 	)
+	// These commands configure a platform-owned route. Declare the gateway alias
+	// at model scope; Hermes cannot infer auto's vision capability from a catalog.
+	if providerName == hermesDefaultProviderName && modelID == "auto" {
+		lines = append(lines, renderHermesAutoVisionCommand())
+	}
 	if restart {
 		lines = append(lines,
 			`if command -v acli >/dev/null 2>&1; then`,
@@ -2700,6 +2706,39 @@ func renderHermesModelCommand(modelID, providerName, baseURL, apiKey, compat str
 		)
 	}
 	return strings.Join(lines, "\n")
+}
+
+func renderHermesAutoVisionCommand() string {
+	return `HERMES_MODEL_PYTHON="${HERMES_HOME:-$HOME/.hermes}/hermes-agent/venv/bin/python"
+if [ ! -x "$HERMES_MODEL_PYTHON" ]; then HERMES_MODEL_PYTHON=python3; fi
+"$HERMES_MODEL_PYTHON" - <<'PY'
+from hermes_cli.config import load_config, save_config
+
+config = load_config()
+providers = config.get("providers")
+provider = providers.get("custom") if isinstance(providers, dict) else None
+if not isinstance(provider, dict):
+    legacy = config.get("custom_providers")
+    matches = [entry for entry in legacy if isinstance(entry, dict) and entry.get("name") == "custom"] if isinstance(legacy, list) else []
+    if len(matches) != 1:
+        raise ValueError("platform custom provider was not saved")
+    provider = matches[0]
+models = provider.get("models")
+if isinstance(models, list):
+    models = {entry if isinstance(entry, str) else entry["id"]: {} if isinstance(entry, str) else {key: value for key, value in entry.items() if key not in ("id", "name")} for entry in models}
+elif not isinstance(models, dict):
+    models = {}
+metadata = models.get("auto")
+models["auto"] = {**(metadata if isinstance(metadata, dict) else {}), "supports_vision": True}
+provider["models"] = models
+save_config(config)
+saved = load_config()
+saved_provider = saved.get("providers", {}).get("custom")
+if not isinstance(saved_provider, dict):
+    saved_provider = next((entry for entry in saved.get("custom_providers", []) if isinstance(entry, dict) and entry.get("name") == "custom"), {})
+if saved_provider.get("models", {}).get("auto", {}).get("supports_vision") is not True:
+    raise ValueError("platform auto vision capability was not saved")
+PY`
 }
 
 func hermesModelName(modelID string) string {

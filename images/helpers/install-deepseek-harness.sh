@@ -7,11 +7,10 @@ readonly RUNTIME_USER="agentuser"
 readonly DSH_PORT="3080"
 readonly SERVICE_NAME="deepseek-harness.service"
 readonly NPM_REGISTRY="https://registry.npmjs.org/"
-# DSH 0.1.2 requires a process launch token that the LightVela reverse proxy
-# cannot exchange yet. Keep the last verified proxy-compatible package family
-# until that authentication handoff is implemented end to end.
-readonly DSH_COMPAT_VERSION="0.1.1-rc.2"
-readonly DSH_SPEC="@deepseek-ai/dsh@${DSH_COMPAT_VERSION}"
+# Resolve npm's official latest tag once per installation, then pin the entire
+# runtime and plugin dependency family to that integrity-checked snapshot.
+readonly DSH_REQUESTED_VERSION="latest"
+readonly DSH_SPEC="@deepseek-ai/dsh@${DSH_REQUESTED_VERSION}"
 readonly SKILLHUB_SPEC="@cocofhu/skillhub@latest"
 readonly QQBOT_SPEC="deepseek-harness-qqbot@latest"
 readonly WEIXIN_SPEC="deepseek-harness-weixin@latest"
@@ -188,6 +187,7 @@ run_as_runtime_user_in() {
     DSH_HOME="${dsh_home}" \
     PATH="${runtime_path}" \
     npm_config_registry="${NPM_REGISTRY}" \
+    CI=true \
     "$@"
 }
 
@@ -401,7 +401,7 @@ resolve_latest_snapshot() {
   python3 - "${dsh_metadata}" "${skillhub_metadata}" \
     "${qqbot_metadata}" "${weixin_metadata}" "${wecom_metadata}" \
     "${lark_metadata}" "${dingtalk_metadata}" "${manifest_path}" \
-    "${PNPM_VERSION}" "${TRUSTED_BROWSER_HOST}" "${DSH_COMPAT_VERSION}" <<'PY'
+    "${PNPM_VERSION}" "${TRUSTED_BROWSER_HOST}" "${DSH_REQUESTED_VERSION}" <<'PY'
 import json
 import re
 import sys
@@ -441,7 +441,7 @@ manifest = {
     "resolvedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
     "pnpmVersion": pnpm_version,
     "browserTrustPatch": {
-        "version": 1,
+        "version": 3,
         "hostname": trusted_browser_host,
     },
     "runtime": registry(dsh_path, "@deepseek-ai/dsh", dsh_requested_version),
@@ -676,6 +676,57 @@ for entry in os.scandir(source):
     else:
         raise SystemExit(f"unsupported file in DeepSeek Harness profile: {entry.name}")
 PY
+}
+
+# pnpm may purge an old store layout on reinstall. Keep missing build outputs
+# of unchanged user-installed bundles, never stale managed dependencies/metadata.
+restore_custom_plugin_payload() {
+  local source_profile="$1" destination_profile="$2" candidate_home="$3" runtime_dir="$4" manifest_path="$5"
+  [ -d "${source_profile}" ] || return 0
+  run_as_runtime_user_in "${candidate_home}" "${runtime_dir}" \
+    python3 - "${source_profile}" "${destination_profile}" "${manifest_path}" <<'PY_BUILDS'
+import json
+import os
+import pathlib
+import re
+import shutil
+import stat
+import sys
+source, destination, manifest_path = map(pathlib.Path, sys.argv[1:])
+with (source / "package.json").open() as handle:
+    previous = json.load(handle)
+with (destination / "package.json").open() as handle:
+    candidate = json.load(handle)
+with manifest_path.open() as handle:
+    managed = {item["package"] for item in json.load(handle)["profile"]["plugins"]}
+excluded = {"node_modules", "package.json", "pnpm-lock.yaml", ".pnpmfile.cjs", "pnpm-workspace.yaml"}
+def merge_missing(src, dst):
+    for entry in os.scandir(src):
+        if entry.name in excluded:
+            continue
+        target = dst / entry.name
+        mode = entry.stat(follow_symlinks=False).st_mode
+        if stat.S_ISDIR(mode):
+            if not os.path.lexists(target):
+                target.mkdir()
+            if stat.S_ISDIR(os.lstat(target).st_mode):
+                merge_missing(pathlib.Path(entry.path), target)
+        elif stat.S_ISREG(mode) and not os.path.lexists(target):
+            shutil.copy2(entry.path, target, follow_symlinks=False)
+for name in candidate.get("dsh", {}).get("profile", {}).get("bundles", []):
+    specification = candidate.get("dependencies", {}).get(name)
+    if name in managed or specification is None or previous.get("dependencies", {}).get(name) != specification:
+        continue
+    if not re.fullmatch(r"(?:@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*", name, re.I):
+        raise SystemExit("invalid custom bundle package name")
+    src, dst = (root / "node_modules" / name for root in (source, destination))
+    if not src.exists() or not dst.exists():
+        continue
+    # Only traverse actual package directories, not links outside the profile.
+    if not stat.S_ISDIR(os.lstat(src).st_mode) or not stat.S_ISDIR(os.lstat(dst).st_mode):
+        continue
+    merge_missing(src, dst)
+PY_BUILDS
 }
 
 require_atomic_profile_switch() {
@@ -993,12 +1044,12 @@ with open(manifest_path, encoding="utf-8") as handle:
     patch = json.load(handle)["browserTrustPatch"]
 hostname = patch["hostname"]
 version = patch["version"]
-if version != 1:
+if version != 3:
     raise SystemExit(f"unsupported browser trust patch version: {version}")
 
-old = "isLoopback: pageLocation === void 0 || isLoopbackHostname(pageLocation.hostname),"
+old = "isLoopback: transport?.ownsHost === true || pageLocation === void 0 || isLoopbackHostname(pageLocation.hostname),"
 new = (
-    "isLoopback: pageLocation === void 0 || isLoopbackHostname(pageLocation.hostname) "
+    "isLoopback: transport?.ownsHost === true || pageLocation === void 0 || isLoopbackHostname(pageLocation.hostname) "
     f'|| pageLocation.hostname === {json.dumps(hostname)},'
 )
 targets = sorted(
@@ -1034,6 +1085,62 @@ print(len(targets))
 PY
 }
 
+# The gateway completes Federation authorization before opening its loopback
+# TAT tunnel. Exchange that operator entry for DSH's native signed browser cookie
+# without sending a process token through the public URL or changing /api auth.
+patch_gateway_browser_bootstrap() {
+  python3 - "$1" "$2" <<'PY_AUTH'
+import json
+import pathlib
+import sys
+
+runtime_dir, manifest_path = sys.argv[1:]
+with open(manifest_path, encoding="utf-8") as handle:
+    hostname = json.load(handle)["browserTrustPatch"]["hostname"]
+marker = "// LightVela loopback Federation bootstrap v2"
+old = "\tauthorizeIndex(req, res) {"
+new = old + "\n" + marker + "\n" + f'''
+        const lvUrl = new URL(req.url ?? "/", "http://dsh.invalid");
+        const lvForwardedHost = header(req.headers, "x-forwarded-host");
+        const lvLocal = ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(req.socket?.remoteAddress);
+        const lvAuthority = requestAuthority(req.headers);
+        const lvGateway = lvForwardedHost === {json.dumps(hostname)} && header(req.headers, "x-forwarded-proto") === "https";
+        const lvProbe = lvForwardedHost === void 0 && header(req.headers, "x-forwarded-proto") === void 0;
+        // Federation can redirect between sites before the native cookie exists.
+        // Only the exact gateway's top-level document navigation may bootstrap;
+        // /api continues to use the unchanged native Host/Origin/Fetch fence.
+        const lvNavigation = header(req.headers, "sec-fetch-mode") === "navigate"
+            && header(req.headers, "sec-fetch-dest") === "document"
+            && header(req.headers, "origin") === void 0;
+        if (req.method === "GET" && lvUrl.pathname === "/" && !lvUrl.searchParams.has(TOKEN_QUERY)
+            && lvLocal && lvAuthority === "127.0.0.1:3080" && (lvGateway || lvProbe)
+            && (isTrustedApiRequest(req, []) || (lvGateway && lvNavigation)) && !this.isAuthenticated(req)) {{
+            const issuedAt = Date.now();
+            const expiresAt = issuedAt + this.maxAgeMilliseconds;
+            const value = encodeCookie({{version: COOKIE_PAYLOAD_VERSION, authority: lvAuthority, issuedAt, expiresAt}}, this.secret);
+            res.setHeader("cache-control", "no-store");
+            res.setHeader("referrer-policy", "no-referrer");
+            res.setHeader("set-cookie", sessionCookie(cookieName(lvAuthority), value, expiresAt, Math.floor(this.maxAgeMilliseconds / 1e3)) + (lvGateway ? "; Secure" : ""));
+            return true;
+        }}
+'''
+targets = sorted(path for path in pathlib.Path(runtime_dir, "node_modules").rglob("index.js")
+    if path.parts[-5:] == ("node_modules", "@deepseek-ai", "dsh-client-connection", "lib", "index.js"))
+if not targets:
+    raise SystemExit("DSH server browser authentication component was not found")
+for path in targets:
+    source = path.read_text(encoding="utf-8")
+    if source.count(marker) == 1:
+        continue
+    # Both BrowserAuth and HostConnectionService expose this method; only the
+    # first owns the native cookie and process-token exchange.
+    if source.count(old) != 1 or "const AUTH_RECORD_KEY" not in source:
+        raise SystemExit(f"unexpected DSH browser authentication source: {path}")
+    path.write_text(source.replace(old, new, 1), encoding="utf-8")
+print(len(targets))
+PY_AUTH
+}
+
 # DSH 0.1.1-rc.2 can finish creating the HMR plugin without providing its
 # service. The patch layers were applied during boot; only live reloading needs
 # HMR. Keep WebUI usable instead of crashing on every startup in that case.
@@ -1058,10 +1165,12 @@ if not targets:
     raise SystemExit("DeepSeek Harness app boot was not found")
 for path in targets:
     source = path.read_text(encoding="utf-8")
-    if source.count(old) != 1 or new in source:
+    if source.count(old) > 1:
         raise SystemExit(f"unexpected DeepSeek Harness app boot source: {path}")
 for path in targets:
     source = path.read_text(encoding="utf-8")
+    if old not in source:
+        continue
     fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
@@ -1225,6 +1334,7 @@ prepare_candidate() {
     write_task running browser_trust_patch 52 "正在配置 WebUI 访问" "" "${manifest_path}"
     patch_browser_connection "${runtime_dir}" "${manifest_path}" >/dev/null
     patch_missing_hmr_fallback "${runtime_dir}" >/dev/null
+    patch_gateway_browser_bootstrap "${runtime_dir}" "${manifest_path}" >/dev/null
   fi
   CURRENT_STAGE="profile_lockfile"
   write_task running profile_lockfile 56 "正在生成插件依赖锁" "" "${manifest_path}"
@@ -1236,6 +1346,7 @@ prepare_candidate() {
   run_as_runtime_user_in "${candidate_home}" "${CANDIDATE_RUNTIME}" \
     "${PNPM_BIN}" --dir "${profile_dir}" install --frozen-lockfile --prod --ignore-scripts \
       --fetch-retries 4 --fetch-timeout 300000
+  restore_custom_plugin_payload "${LIVE_PROFILE}" "${profile_dir}" "${candidate_home}" "${CANDIDATE_RUNTIME}" "${manifest_path}"
   validate_lockfiles "${CANDIDATE_RUNTIME}" "${profile_dir}" "${manifest_path}"
   validate_candidate "${CANDIDATE_RUNTIME}" "${candidate_home}" "${manifest_path}" "${work_dir}/candidate-validation"
   if [ "${TEST_MODE}" != "1" ] && [ "${RUNTIME_REUSED}" != true ]; then

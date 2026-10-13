@@ -53,6 +53,7 @@ process.env.VITE_INCLUDE_HYPERNODE_PLUGIN = includeHyperNodePlugin ? "true" : "f
 process.env.VITE_INCLUDE_BUILTIN_AGENTS_PLUGIN = includeBuiltinAgentsPlugin ? "true" : "false";
 process.env.VITE_INCLUDE_HEADLESS_MODEL_SERVICES = includeHeadlessModelServices ? "true" : "false";
 process.env.VITE_INCLUDE_HEADLESS_CODEX = includeHeadlessModelServices ? "true" : "false";
+process.env.VITE_INCLUDE_TASKS_PLUGIN = !isLightVelaWeb && !isEmbeddedWorkbenchBuild ? "true" : "false";
 
 interface WebReleaseMetadata {
   readonly schemaVersion: 1;
