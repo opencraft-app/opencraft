@@ -25,7 +25,12 @@ class FakeBase:
 sys.modules["gateway.config"].Platform = str
 sys.modules["gateway.platforms.base"].BasePlatformAdapter = FakeBase
 sys.modules["gateway.platforms.base"].SendResult = dict
-sys.modules["gateway.platforms.event"].MessageEvent = dict
+class FakeEvent(dict):
+    """Hermes' MessageEvent as a dict, advertising the per-turn fields current Hermes has."""
+    __dataclass_fields__ = {"channel_prompt": None, "reply_to_message_id": None, "reply_to_text": None, "reply_to_author_name": None}
+
+
+sys.modules["gateway.platforms.event"].MessageEvent = FakeEvent
 sys.modules["gateway.platforms.event"].MessageType = types.SimpleNamespace(
     TEXT="text", PHOTO="photo", VOICE="voice", VIDEO="video", DOCUMENT="document", LOCATION="location", STICKER="sticker")
 spec = importlib.util.spec_from_file_location("vela_test_plugin", ROOT / "__init__.py", submodule_search_locations=[str(ROOT)])
@@ -121,13 +126,22 @@ class AdapterTest(unittest.IsolatedAsyncioTestCase):
         async def handle(event): events.append(event)
         adapter.handle_message = handle
         policy = {"members": [{"userId": "u_owner", "kind": "human"}, {"userId": "a_self", "kind": "bot"}, {"userId": "a_peer", "kind": "bot"}]}
+        adapter._control["owners"] = {"u_owner", "a_sibling"}
+        members.append({"userID": "a_sibling", "nick": "伙伴2"})
         for message_id in ("m1", "m2"):
             await adapter._dispatch_event({'ID': message_id, 'from': 'u_owner', 'nick': '用户9259', 'type': 'TIMTextElem',
                                            'conversationID': 'GROUPvg_g', '_vela_policy': policy, 'payload': {'text': '@伙伴1 hi'}})
-        text = events[-1]["text"]
-        self.assertIn("Group members: 用户9259 (u_owner, human, your owner); 伙伴1 (a_self, agent, you); 健康管家 (a_peer, agent).", text)
-        self.assertIn("vela_im send --at <userID>", text)
+        self.assertEqual(events[-1]["text"], "@伙伴1 hi")  # the transcript keeps only what was said
+        prompt = events[-1]["channel_prompt"]
+        self.assertIn("Group members: 用户9259 (u_owner, human, your owner); 伙伴1 (a_self, agent, you); 健康管家 (a_peer, agent); 伙伴2 (a_sibling, agent, belongs to your owner).", prompt)
+        self.assertIn("vela_im send --at <userID>", prompt)
         self.assertEqual(calls, ["vg_g"])  # the roster is reused while membership is unchanged
+
+    async def test_hermes_status_lines_never_reach_the_chat(self):
+        adapter = self.adapter(Recorder())
+        result = await adapter.send_or_update_status("GROUPvg_g", "status", "Session is free; loading the latest transcript...")
+        self.assertTrue(result["success"])
+        self.assertEqual(adapter.client.calls, [])
 
     async def test_adapter_starts_its_worker_on_connect_and_stops_it_on_disconnect(self):
         events = []
@@ -239,7 +253,8 @@ class AdapterTest(unittest.IsolatedAsyncioTestCase):
         adapter = self.commanded('owner')
         await adapter._receive({'ID': '1', 'from': 'u_owner', 'nick': '主人', 'conversationID': 'C2Cu_owner', 'type': 'TIMTextElem', 'payload': {'text': '帮我看看'}})
         await adapter._receive({'ID': '2', 'from': 'u_other', 'nick': '路人', 'conversationID': 'C2Cu_other', 'type': 'TIMTextElem', 'payload': {'text': '你好'}})
-        self.assertIn('from your owner 主人 (u_owner)', adapter.handled[0]['text'])
+        self.assertIn('from your owner 主人 (u_owner)', adapter.handled[0]['channel_prompt'])
+        self.assertNotIn('from your owner', adapter.handled[0]['text'])
         self.assertNotIn('owner', adapter.handled[1]['text'])
 
     async def test_automatic_reply_carries_the_next_hop(self):
@@ -293,11 +308,13 @@ class AdapterTest(unittest.IsolatedAsyncioTestCase):
         reply = {'messageReply': {'messageID': 'm1', 'messageAbstract': '第一段。第一段…', 'messageSender': 'Alpha'}}
         await adapter._receive({'ID': 't', 'from': 'u_owner', 'conversationID': 'C2Cu_owner', 'type': 'TIMTextElem',
                                 'payload': {'text': '这段什么意思'}, 'cloudCustomData': json.dumps(reply)})
-        self.assertIn('第一段。' * 200, adapter.handled[0]['text'])
+        self.assertEqual(adapter.handled[0]['reply_to_text'], '第一段。' * 200)
+        self.assertEqual(adapter.handled[0]['reply_to_message_id'], 'm1')
+        self.assertEqual((adapter.handled[0]['text'], adapter.handled[0]['reply_to_author_name']), ('这段什么意思', 'Alpha'))
         adapter.client.message = lambda message_id: None
         await adapter._receive({'ID': 't2', 'from': 'u_owner', 'conversationID': 'C2Cu_owner', 'type': 'TIMTextElem',
                                 'payload': {'text': '这段呢'}, 'cloudCustomData': json.dumps(reply)})
-        self.assertIn('第一段。第一段…', adapter.handled[1]['text'], 'without the original the preview is still passed on')
+        self.assertEqual(adapter.handled[1]['reply_to_text'], '第一段。第一段…', 'without the original the preview is still passed on')
 
     async def test_agent_shows_it_is_working_until_processing_completes(self):
         client = Recorder(); adapter = self.adapter(client); adapter._heartbeats = {}

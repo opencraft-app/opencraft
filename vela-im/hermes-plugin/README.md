@@ -15,7 +15,7 @@
    和 sha256；上传到 COS（输出里的 `cosKey`），对实例公开可读。
 2. 配置 CTL 的 `[api.instance]`：`vela_im_plugin_url`（https 下载地址）与 `vela_im_plugin_sha256`。
 3. 新实例：Agent 第一次开通 IM 身份时，CTL 先执行安装命令（下载 → 校验 sha256 → 解压替换；同一版本已装就跳过，
-   失败不动现有插件，上一版本保留为 `vela-im.previous`），再交付凭据并链接到该 Profile。
+   失败不动现有插件，上一版本保留在 `$HERMES_HOME/.vela-im.previous`（不能放在 plugins/ 里，Hermes 会把它当成同名插件加载）），再交付凭据并链接到该 Profile。
 4. 存量实例：`bash vela-im/deploy/backfill-hermes-plugin.sh` 经 CTL `/internal/vela-im/plugin:backfill` 分批补装全部运行中实例，
    可重复执行；单台安装用 `/internal/vela-im/plugin:install`（`accountSubject`、`instanceId`）。换版本时改第 2 步的配置后再补装一次，
    换上新版本且已有 Agent 开通 IM 的实例会重启 gateway（结果里 `restarted: true`）。

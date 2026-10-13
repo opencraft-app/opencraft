@@ -21,6 +21,9 @@ except ImportError:  # Hermes older releases
 from .runtime import configured, setting, worker_for, outbound_lineage
 from .vela_im import VelaClient, VelaHTTPError, media_kind, reply_custom_data
 
+# Older Hermes has no per-turn channel prompt or reply fields; their notes then travel inside the message text.
+_EVENT_FIELDS = getattr(MessageEvent, "__dataclass_fields__", {})
+
 logger = logging.getLogger(__name__)
 SYSTEM_TYPES = ("TIMGroupTipElem", "TIMGroupSystemNoticeElem")
 STATUS_BUSINESS_ID = "vela_agent_status"
@@ -477,7 +480,7 @@ class VelaAdapter(BasePlatformAdapter):
             user_id = member.get("userID") or ""
             notes = ["agent" if kinds.get(user_id) == "bot" or user_id.startswith("a_") else "human"]
             if user_id == self.user_id: notes.append("you")
-            if user_id in owners: notes.append("your owner")
+            elif user_id in owners: notes.append("your owner" if notes[0] == "human" else "belongs to your owner")
             parts.append(f"{member.get('nick') or user_id} ({user_id}, {', '.join(notes)})")
         roster = "; ".join(parts)
         self._rosters[group_id] = (key, time.monotonic(), roster)
@@ -487,13 +490,20 @@ class VelaAdapter(BasePlatformAdapter):
         message_id = message["ID"]
         group, chat_id = self._chat(message)
         text, kind, media = normalized(message)
+        # Routing notes reach the model as this turn's channel prompt, so the stored transcript shows only what was said.
+        notes, extra = [], {}
         quote = quoted(message)
         if quote:
             quoted_text = message.get("_vela_quote_text") or quote["abstract"]
-            text = f"[Replying to a message from {quote['sender'] or 'someone'}: {json.dumps(quoted_text, ensure_ascii=False)}]\n" + text
+            if "reply_to_text" in _EVENT_FIELDS:
+                # Hermes passes the quote to the model only together with the quoted message ID.
+                extra.update(reply_to_message_id=quote["messageID"] or f"{message_id}:quote", reply_to_text=quoted_text,
+                             reply_to_author_name=quote["sender"] or None)
+            else:
+                text = f"[Replying to a message from {quote['sender'] or 'someone'}: {json.dumps(quoted_text, ensure_ascii=False)}]\n" + text
         sender = f"{message.get('nick') or message.get('from')} ({message.get('from')})"
         if message.get("_vela_from_owner") and not group:
-            text = f"[Vela IM: this message is from your owner {sender}, another identity of the person you belong to.]\n" + text
+            notes.append(f"[Vela IM: this message is from your owner {sender}, another identity of the person you belong to.]")
         if group:
             # 模型需要知道当前 IM userID 对应自己，否则会把 @ID 误认为另一个 Agent。
             target = chat_id[5:]
@@ -501,14 +511,20 @@ class VelaAdapter(BasePlatformAdapter):
             if message.get("_vela_policy", {}).get("contextMessages") == 10:
                 context = await self._history_context(message)
             roster = await self._roster(target, message.get("_vela_policy", {})) if self.client else ""
-            text = (f"[Vela IM routing: your identity={self.user_id}; groupID={target}; "
-                    f"conversationID={chat_id}; sender={sender}{', who is your owner' if message.get('_vela_from_owner') else ''}. "
-                    + (f"Group members: {roster}. " if roster else "")
-                    + "Everyone who mentions you in this group shares this conversation with you. "
-                    "Reply normally and the adapter delivers your answer here; do not also send it with `vela_im send`. "
-                    "Writing @name in your reply notifies nobody: to mention members run `vela_im send --at <userID> ... --text ...`. "
-                    "Use `vela_im` only for mentions, other recipients, files or group administration. Do not report tool status or internal IDs in your answer.]\n"
-                    + context + text)
+            notes.append(f"[Vela IM routing: your identity={self.user_id}; groupID={target}; "
+                         f"conversationID={chat_id}; sender={sender}{', who is your owner' if message.get('_vela_from_owner') else ''}. "
+                         + (f"Group members: {roster}. " if roster else "")
+                         + "Everyone who mentions you in this group shares this conversation with you. "
+                         "Reply normally and the adapter delivers your answer here; do not also send it with `vela_im send`. "
+                         "Writing @name in your reply notifies nobody: to mention members run `vela_im send --at <userID> ... --text ...`. "
+                         "Use `vela_im` only for mentions, other recipients, files or group administration. Do not report tool status or internal IDs in your answer.]")
+            if context:
+                notes.append(context.rstrip("\n"))
+        if notes:
+            if "channel_prompt" in _EVENT_FIELDS:
+                extra["channel_prompt"] = "\n".join(notes)
+            else:
+                text = "\n".join(notes) + "\n" + text
         for part in message.get("_vela_parts", []):
             media = media + normalized(part)[2]
         paths, mimes = [], []
@@ -516,7 +532,7 @@ class VelaAdapter(BasePlatformAdapter):
             path = await asyncio.to_thread(download, url, mime, name)
             if path: paths.append(path); mimes.append(mime)
         event = MessageEvent(text=text, message_type=getattr(MessageType, kind), source=self._source(message),
-                             message_id=message_id, raw_message=message, media_urls=paths, media_types=mimes)
+                             message_id=message_id, raw_message=message, media_urls=paths, media_types=mimes, **extra)
         if hasattr(event, "allow_gateway_control"): event.allow_gateway_control = False
         await self.handle_message(event)
         # 新版 Hermes 处理结束 hook 负责删除 pending。旧版无 hook 时保留，重启可恢复。
@@ -600,6 +616,11 @@ class VelaAdapter(BasePlatformAdapter):
             return SendResult(success=True, message_id=result["data"]["message"]["ID"])
         except Exception as error:
             return SendResult(success=False, error=str(error))
+
+    async def send_or_update_status(self, chat_id, status_key, content, metadata=None):
+        """Hermes status lines (session reloads, busy notices, warnings) are not messages anyone in the chat should see."""
+        logger.debug("Vela status %s for %s withheld", status_key, chat_id)
+        return SendResult(success=True)
 
     async def send_typing(self, chat_id):
         return None
