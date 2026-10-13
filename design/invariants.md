@@ -139,3 +139,11 @@ Connector 目录浏览不套用设置行：采用限宽品牌卡片，已配置�
 - 下载/启动失败不提交新网站；执行切换失败恢复旧执行版本，回退失败原位呈现真实状态。异步更新不强制刷新页面，操作不修改其他设置 draft。
 - 执行升级仅覆盖网关、daemon 与 capability adapter。Codex core/CLI 和 DSH 引擎独立维护；Codex 原 turn 经重连恢复，OpenCraft 活动任务可能中断，界面明确说明。
 - 验证入口：`test:server-updates`、`smoke:server-updates`、`smoke:server-updates:systemd` 和既有 `test:web-updates:e2e`。隔离真实 CLI/打包 gateway/生产 SPA 验证不等于线上迁移或发布完成。
+
+## UI 图标：共享视觉语言
+
+- Web/Electron 的 UI 线性图标采用 Lucide 24 单位画布、1.8 描边、圆端点和圆连接；品牌标识、内容插图与上游生成资源独立，不由通用 SVG 选择器改写。
+- `apps/workbench-web/src/components/ui/workbench-icon.tsx` 是导航、设置与面板扩展语义名到图形的唯一 Web 映射。扩展传递语义名；未知名称显示中性帮助图形，不误呈现为某个已知功能。
+- `icons.web.scss` 拥有描边和 18px 导航图标尺寸；导航前导槽位沿用 `--size-navigation-leading-slot`，直接 SVG 与包装槽位保持光学中心和文字起点对齐。紧凑工具按钮保留其宿主尺寸；不能将所有场景强制放大。
+- 同一操作在展开/收起入口使用相同图形；状态变化不改变按钮命中区、焦点或布局。图标继承控件颜色，不另设选中配色。
+- 验证：`npx tsx scripts/smoke-icons.ts` 使用真实导航组件检查浅/深色、DPR 1/2、选中与折叠按钮几何，生成图谱和结果 JSON。Web 构建与组件证据不代表 Electron 原生窗口验收。

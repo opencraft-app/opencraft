@@ -1,0 +1,23 @@
+// Lucide is the UI line-art family. Brand artwork and content SVGs are exempt.
+:root {
+  --size-icon-navigation: 18px;
+  --stroke-icon: 1.8;
+}
+svg.lucide {
+  stroke-width: var(--stroke-icon);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex-shrink: 0;
+}
+
+@mixin navigation-icon {
+  width: var(--size-icon-navigation);
+  height: var(--size-icon-navigation);
+  flex: 0 0 var(--size-icon-navigation);
+}
+
+// Direct glyphs align with rows that use a dedicated leading-slot wrapper.
+@mixin navigation-leading-icon {
+  @include navigation-icon;
+  margin-inline: calc((var(--size-navigation-leading-slot) - var(--size-icon-navigation)) / 2);
+}

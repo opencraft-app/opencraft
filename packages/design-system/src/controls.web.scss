@@ -1,3 +1,4 @@
+@use "./icons.web" as icons;
 @use "./typography.web" as typography;
 
 // State-only primitives: never own geometry or domain pending state.
@@ -38,6 +39,7 @@
 // Navigation rows share the sidebar's quiet typography and state treatment.
 // Menus keep their own denser geometry; consumers opt in only for sidebar rows.
 @mixin navigation-control {
+  > svg.lucide { @include icons.navigation-icon; }
   @include quiet-control;
   @include typography.role(navigation-action, primary);
   display: flex;

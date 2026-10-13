@@ -17,7 +17,8 @@
     "./toolbar.web": "./src/toolbar.web.scss",
     "./menu.web": "./src/menu.web.scss",
     "./selection.web": "./src/selection.web.scss",
-    "./controls.web": "./src/controls.web.scss"
+    "./controls.web": "./src/controls.web.scss",
+    "./icons.web": "./src/icons.web.scss"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

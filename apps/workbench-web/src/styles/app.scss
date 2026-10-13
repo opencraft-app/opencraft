@@ -1,3 +1,4 @@
+@use "@opencraft/design-system/icons.web" as icons;
 @use "@opencraft/design-system/tokens.web";
 @use "@opencraft/design-system/controls.web" as controls;
 @use "@opencraft/design-system/menu.web" as menu;
@@ -1247,7 +1248,7 @@ html[data-codex-window-type="browser"] .main-content-top-fade {
 
   > svg {
     display: block;
-    flex: 0 0 auto;
+    @include icons.navigation-icon;
   }
 }
 
@@ -2245,6 +2246,7 @@ html[data-codex-window-type="browser"] .main-content-top-fade {
   }
 
   button {
+    > svg.lucide { @include icons.navigation-icon; }
     display: flex;
     width: 100%;
     height: 38px;
@@ -2282,9 +2284,13 @@ html[data-codex-window-type="browser"] .main-content-top-fade {
 }
 
 .settings-page__navigation--sidebar {
+  padding-inline: 0;
   box-sizing: border-box;
   overflow: hidden auto;
-  button { @include controls.navigation-control; }
+  button {
+    @include controls.navigation-control;
+    > svg.lucide { @include icons.navigation-leading-icon; }
+  }
 }
 
 .settings-page__navigation--management {

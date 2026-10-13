@@ -3,7 +3,6 @@ import { useIntl } from "@opencraft/i18n/react";
 import {
   ChevronDown,
   Settings,
-  SquarePen,
 } from "lucide-react";
 import type { WorkbenchThread } from "@opencraft/workbench-runtime";
 import type {
@@ -137,7 +136,7 @@ export function Sidebar({
     <SidebarEntityDndCoordinator items={bots} layout={sidebarLayout}>
       <div className="sidebar-panel" data-app-shell-focus-area="left-panel">
       <nav className="sidebar-navigation" aria-label="Primary">
-        <SidebarNavigationItem icon={<SquarePen size={15} />} title={intl.formatMessage({ id: "sidebar.start", defaultMessage: "Start" })} onInvoke={onNewTask} />
+        <SidebarNavigationItem icon={<SidebarContributionIcon name="start" />} title={intl.formatMessage({ id: "sidebar.start", defaultMessage: "Start" })} onInvoke={onNewTask} />
         {primaryActions.map((action) => (
           <SidebarNavigationItem
             key={action.id}

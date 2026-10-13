@@ -25,7 +25,7 @@ export function createVoiceInputExtension(
       const native = nativeSpeechPort();
       if (native) {
         api.views.register({ id: "vela.voice-input.settings-view", title: "语音输入", viewType: "vela.voice-input.settings", platforms: ["electron"] });
-        api.settings.registerPage({ id: "vela.voice-input.settings", title: "语音输入", viewId: "vela.voice-input.settings-view", group: "通用", icon: "sliders", platforms: ["electron"], order: 40 });
+        api.settings.registerPage({ id: "vela.voice-input.settings", title: "语音输入", viewId: "vela.voice-input.settings-view", group: "通用", icon: "microphone", platforms: ["electron"], order: 40 });
         api.internal.register("platformViewRenderer", { viewType: "vela.voice-input.settings", Component: createVoiceSettingsView(native) });
       }
       api.internal.register("composerActionRenderer", {

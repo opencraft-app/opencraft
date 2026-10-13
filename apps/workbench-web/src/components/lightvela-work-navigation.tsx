@@ -1,4 +1,4 @@
-import { Cloud, Sparkles } from "lucide-react";
+import { WorkbenchIcon } from "./ui/workbench-icon";
 import { useMemo, useSyncExternalStore } from "react";
 
 import type { ExtensionContributionStore } from "@opencraft/extension-runtime";
@@ -11,11 +11,6 @@ const LIGHTVELA_WORK_PAGE_IDS = new Set([
   "lightvela.hermes.storage",
 ]);
 
-function pageIcon(pageId: string) {
-  return pageId.endsWith(".skills")
-    ? <Sparkles size={15} />
-    : <Cloud size={15} />;
-}
 
 export function LightVelaWorkNavigation({
   section,
@@ -54,7 +49,7 @@ export function LightVelaWorkNavigation({
           <SidebarNavigationItem
             key={page.id}
             active={section === page.id}
-            icon={pageIcon(page.id)}
+            icon={<WorkbenchIcon name={page.icon} />}
             title={page.title}
             onInvoke={() => onSectionChange(page.id)}
           />

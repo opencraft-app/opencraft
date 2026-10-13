@@ -1,3 +1,4 @@
+import { WorkbenchIcon } from "./ui/workbench-icon";
 import type {
   PanelAction,
   PanelToolbarActionContext,
@@ -65,10 +66,7 @@ interface RightPanelProps {
 }
 
 function ToolbarActionIcon({ icon }: { readonly icon: string }) {
-  if (icon === "chat") return <MessageSquare size={14} />;
-  if (icon === "terminal") return <TerminalSquare size={14} />;
-  if (icon === "browser") return <Globe2 size={14} />;
-  return <Plus size={14} />;
+  return <WorkbenchIcon name={icon} size={16} />;
 }
 
 function PanelToolbarAction({

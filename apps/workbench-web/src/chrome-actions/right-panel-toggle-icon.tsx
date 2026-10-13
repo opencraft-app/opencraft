@@ -8,7 +8,7 @@ interface RightPanelToggleIconProps {
  * A presentation-only projection of right-panel visibility.
  *
  * Both glyphs stay inside one fixed optical box. The owning toolbar action
- * remains mounted while CSS cross-fades the two Codex panel glyphs, so a
+ * remains mounted while CSS cross-fades the two panel glyphs, so a
  * visibility transition cannot change hit testing, focus, or header measure.
  */
 export function RightPanelToggleIcon({

@@ -54,7 +54,7 @@ test("LightVela collaboration contributes one routed Workspace without owning Ag
       id: "lightvela.collaboration.workspace-view",
       title: "Collaboration",
       viewType: "lightvela.collaboration.workspace",
-      icon: "message-circle",
+      icon: "collaboration",
       platforms: ["web"],
     }],
   );
@@ -66,7 +66,7 @@ test("LightVela collaboration contributes one routed Workspace without owning Ag
       surface: "sidebar-primary",
       target: { kind: "view", viewId: "lightvela.collaboration.workspace-view" },
       order: 200,
-      icon: "message-circle",
+      icon: "collaboration",
       platforms: ["web"],
     }],
   );

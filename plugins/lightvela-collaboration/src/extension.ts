@@ -53,7 +53,7 @@ export function createLightVelaCollaborationExtension(
         id: "lightvela.collaboration.workspace-view",
         title: "Collaboration",
         viewType: "lightvela.collaboration.workspace",
-        icon: "message-circle",
+        icon: "collaboration",
         platforms: ["web"],
       });
       api.navigation.register({
@@ -65,7 +65,7 @@ export function createLightVelaCollaborationExtension(
           viewId: "lightvela.collaboration.workspace-view",
         },
         order: 200,
-        icon: "message-circle",
+        icon: "collaboration",
         platforms: ["web"],
       });
       api.internal.register("platformViewRenderer", {

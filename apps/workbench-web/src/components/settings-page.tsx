@@ -1,26 +1,16 @@
+import { WorkbenchIcon } from "./ui/workbench-icon";
 import {
-  Activity,
   Archive,
   ArrowLeft,
   Blocks,
   Bot,
-  Brain,
-  CalendarClock,
-  Cloud,
-  Cpu,
   Database,
   FlaskConical,
-  MessageCircle,
   Monitor,
-  UserRound,
-  Plug,
-  Palette,
   Plus,
   RefreshCw,
   Search,
   Server,
-  SlidersHorizontal,
-  Sparkles,
   Trash2,
 } from "lucide-react";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
@@ -244,7 +234,7 @@ export function SettingsNavigation({
             aria-current={section === "appearance" ? "page" : undefined}
             onClick={() => onSectionChange("appearance")}
           >
-            <Palette size={16} />
+            <WorkbenchIcon name="appearance" />
             <span><FormattedMessage id="settings.appearance" defaultMessage="Appearance" /></span>
           </button>
           {currentPlatform() === "web" && hasManagedWebUpdates() ? <WebUpdatesNavigation selected={section === "updates"} onOpen={() => onSectionChange("updates")} /> : null}
@@ -287,7 +277,7 @@ export function SettingsNavigation({
               aria-current={section === page.id ? "page" : undefined}
               onClick={() => onSectionChange(page.id)}
             >
-              {settingsNavigationIcon(page.icon)}
+              <WorkbenchIcon name={page.icon} />
               <span>{page.title}</span>
             </button>
             </div>
@@ -295,7 +285,7 @@ export function SettingsNavigation({
           <div className="settings-page__navigation-heading"><FormattedMessage id="settings.machines.run" defaultMessage="Run" /></div>
           {runPages.map(page => <button key={page.id} type="button"
             aria-current={section === page.id ? "page" : undefined} onClick={() => onSectionChange(page.id)}>
-            {settingsNavigationIcon(page.icon)}<span>{page.title}</span>
+            <WorkbenchIcon name={page.icon} /><span>{page.title}</span>
           </button>)}
           <button type="button" aria-current={section === "machines" || section.startsWith("machine-") || (!selectedRunPage && selectedPage?.targetHostId !== undefined) ? "page" : undefined} onClick={() => onSectionChange("machines")}>
             <Server size={16} />
@@ -306,24 +296,6 @@ export function SettingsNavigation({
       </nav>
     </div>
   );
-}
-
-function settingsNavigationIcon(icon: string | undefined) {
-  const Icon = icon === "user-round-cog" || icon === "user-round" ? UserRound
-    : icon === "plug" ? Plug
-    : icon === "bot" ? Bot
-    : icon === "message-circle" ? MessageCircle
-      : icon === "brain" ? Brain
-        : icon === "sparkles" ? Sparkles
-          : icon === "calendar" ? CalendarClock
-            : icon === "database" ? Database
-              : icon === "activity" ? Activity
-                : icon === "cloud" ? Cloud
-                  : icon === "cpu" ? Cpu
-                    : icon === "sliders" ? SlidersHorizontal
-                      : icon === "server" ? Server
-                        : Blocks;
-  return <Icon size={16} />;
 }
 
 function ManagementNavigationGroup({
@@ -349,7 +321,7 @@ function ManagementNavigationGroup({
             aria-current={section === page.id ? "page" : undefined}
             onClick={() => onSectionChange(page.id)}
           >
-            {settingsNavigationIcon(page.icon)}
+            <WorkbenchIcon name={page.icon} />
             <span>{page.title}</span>
           </button>
         ))}
