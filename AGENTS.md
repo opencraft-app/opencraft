@@ -47,6 +47,11 @@
 - UI Preferences 统一消费 `UiPreferencesRuntime`；React 不直接选择 localStorage、IndexedDB、SQLite 或远端存储。scope、adapter、CAS 和正式 key 以 [UI preference authority](docs/platform-architecture.md#ui-preference-authority) 为准。
 - Desktop 路径必须消费 [Directory identity charter](docs/architecture/product-identity.md#directory-identity-charter) 的唯一 resolver：生产数据根不得含 `vela`，旧 `@vela/*` 只允许作为幂等迁移输入；Main/Daemon/DSH 显式使用 runtime cwd，Thread workspace cwd 必须来自 Project/Thread，禁止回退 `process.cwd()`。
 - `plugins/lightvela-hermes/src/upstream/mono2/` 是机械生成层，不得直接编辑。修改 `frontend/` 真源后运行 `npm run sync:mono2-agent-console`，并提交生成副本与 `UPSTREAM.json`；只读漂移检查使用 `npm run check:mono2-agent-console`。
+- SQLite 表结构变更只在该库 owner 的 migrations 列表追加连续 version N+1；不得改写已发布迁移的 SQL 原文、名称或版本。生命周期与恢复契约见 [sqlite-lifecycle](docs/sqlite-lifecycle.md)。
+- OpenCraft 自有 SQLite 的新增运行时 `CREATE TABLE` / `ALTER TABLE` 只由迁移执行；业务初始化与恢复不得另建表或按列探测补结构。测试 fixture 与下述保留的上游镜像不作为升级 authority。
+- 所有 OpenCraft 自有 SQLite 库必须经 `openManagedDatabase` 打开并暴露 outcome；owner 负责独占生命周期、关闭和处置摘要，不得吞掉迁移失败后继续宣称 ready。
+- 改表必须有从上一版本结构升级并保留业务数据的测试，以及已记录 checksum 不一致时拒绝打开的测试；空库测试不能替代升级测试。
+- hypernode 的 `initializeSchema` 原文保留，OpenCraft 不得依赖镜像建表或升级；改表同时维护 executions 基线迁移与参考源镜像的一致性，运行 `node scripts/check-dsh-source.mjs` 与 `tests/dsh-execution-authority.test.ts` 指纹等价测试。已发布基线仍不可改写，后续版本追加迁移并让等价测试覆盖完整迁移链。
 
 ## UI 与设计系统
 

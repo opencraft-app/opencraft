@@ -83,6 +83,8 @@ link 必须与执行 unit 的 `ExecStart` 一致，父目录已存在且网站�
 
 启用配置后，网站启动器以 `deployment.json` 为版本权威，自动创建/恢复 execution-current 并检查执行端健康。第一次启动指向带 payload 的初始包，再启用执行 unit；启动器在等待执行端健康期间可以重启该 unit。缺少 payload、平台不符、core 不可用或 unit 不独立时，不继续切换。
 
+daemon 在监听 IPC、报告 ready 前打开并迁移 Host 的五个 SQLite 库；失败则拒绝监听并非零退出，DSH 引擎仍懒启动。gateway `/health` 现在附带 `storage` 摘要（库名、打开处置 status、appliedVersion、可选 backupPath、movedAside），来自认证 `daemon/ready.storage`，不含业务记录或凭据。摘要不包含 Electron Main 或独立 codex-core 的 account-pool 库。存储失败由既有健康检查失败/执行版本回退逻辑处理，更新器的 `ok` 判定不变；完整语义见 [存储生命周期](sqlite-lifecycle.md)。
+
 更新页显示实际执行网关版本和「更新网站和执行服务」。一次安装先下载并校验精确归档、启动候选网站，再切换 execution-current、重启执行 unit；新版 gateway 通过 daemon IPC/core 健康检查、版本/buildId 一致且 core/CLI PID 未变后，才提交网站版本。失败恢复原执行版本与网站；若回退也失败，页面显示失败原因和执行端实际版本/就绪状态，不冒称成功。重启启动器时按已提交版本修复中断的切换。执行指针以及持久化 pins 文件引用的包不能被历史清理删除。重启或回退结果不确定时，保留所有可能运行的执行版本，直到健康检查确认替换成功。页面版本取实际 gateway 健康响应，不用指针目标冒充正在运行的版本；无法确认时显示未知。
 
 执行更新会断开网关连接；页面重连/resume 原 Codex 任务，不重发执行命令。OpenCraft/DSH 活动任务仍可能中断，更新页直接说明这个范围。回退使用同一切换流程，core 与账户数据保持独立。
@@ -165,6 +167,10 @@ gh workflow run release.yml --repo opencraft-app/opencraft --ref main -f tag=v0.
 初始网站会复制到可写状态目录；固定启动包可保持只读。安装失败保留原版；切换记录原子写入状态目录。服务重启读取上次已安装版本，未完成任务标记失败，不重发聊天或更新。回退同样先启动、检查上一版再切换。如持续磁盘错误导致状态恢复失败，页面明确提示，可能被状态引用的版本目录会保留；修复存储后重试更新或按 deployment.json 中 previous 恢复。保留状态目录和固定启动包可恢复部署；切勿删除正在运行的版本目录。
 
 默认更新范围是包内网站 worker 与 Web 代理；显式受管服务器模式还包含上文执行端 payload。稳定入口/更新器本身不在此次热更新范围；新包必须使用 worker protocol 1，不兼容版本拒绝安装。入口维护升级需要单独安排服务重启；执行进程仍独立，但入口连接会重连。执行端的 Codex 连续性依赖独立 core，不能扩展成 DSH 引擎或 core/CLI 自身升级不中断的承诺。
+
+SQLite 升级前备份由库 owner 用 `VACUUM INTO` 生成，Host 备份位于 `OPENCRAFT_EXECUTION_STATE/data/<库文件名>.pre-v<N>-<时间戳>.sqlite`，成功处置后默认保留 3 份。无账本旧库结构不一致时，先备份，再将原库及仍存在的同名 WAL/SHM 移到 `.legacy-<时间戳>`，移开文件保留、不自动清理。更新器不直接操作数据目录；回退只回退代码，不恢复数据，不承诺 N-1 旧二进制兼容。旧代码若不接受当前账本，回退也可能未就绪，不能用备份存在冒充自动回退成功。
+
+人工恢复 Host 库时：先停止执行 unit（例如 `systemctl stop opencraft-execution.service`）并确认 daemon 已退出；保留当前库与 sidecar，核对备份身份、拟启动代码及备份之后会丢失的写入；用选定备份覆盖目标库文件并删除目标同名 `-wal` / `-shm`，保持私有权限；再启动执行 unit，核对 `/health.storage` 和业务数据。不要删除其他库的 sidecar 或 `.legacy-*`。account-pool 的恢复必须另停独立 codex-core，不因停止执行 unit 就认为其 owner 已停止；详见 [备份与恢复](sqlite-lifecycle.md#备份与恢复)。
 
 ## 检查结果与浏览器回归
 

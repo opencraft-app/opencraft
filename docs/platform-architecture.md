@@ -346,11 +346,19 @@ in their original Host catalog, but never retarget a replacement draft.
 
 ### Read-only SQLite diagnostics
 
-The decided, not-yet-implemented lifecycle for OpenCraft-owned SQLite and
-IndexedDB stores is documented in [storage lifecycle](./sqlite-lifecycle.md)
-and [plugin persistence](./plugin-persistence.md). It retains node:sqlite and
-does not adopt Drizzle in this phase. Client-local and Host-owned data have
-separate authorities; engine-private databases retain their owners.
+The nine OpenCraft-owned Node SQLite databases now use the shared sqlite-node
+lifecycle: independent migration ledgers, pre-upgrade backups and explicit
+adoption or move-aside of unversioned legacy databases. The daemon opens its
+five Host databases before listening; authenticated daemon readiness carries
+storage outcomes to gateway health. Electron Main's three stores remain lazily
+opened, while account-pool is owned and upgraded by the independent Codex core.
+See [storage lifecycle](./sqlite-lifecycle.md) for implemented behavior, manual
+recovery and verification limits, and [plugin persistence](./plugin-persistence.md)
+for payload migration. This retains node:sqlite without Drizzle; Web retains
+IndexedDB and its existing adapter-specific upgrade coordination gaps.
+Client-local and Host-owned data have separate authorities; engine-private
+databases retain their owners. Code rollback does not restore database backups
+or promise N-1 binary compatibility.
 
 The first [Host document API](./host-document-storage.md) implementation exposes
 versioned capability discovery, read/CAS and content-free invalidation on the

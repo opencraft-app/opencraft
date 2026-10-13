@@ -1,6 +1,6 @@
 # 插件持久化契约
 
-状态：2026-09-18 client-local 与首个 [Host 通用文档 API](host-document-storage.md) 已实现。Native 适配、其他 Host 实现和所有旧数据库升级尚未交付；以下区分当前能力和后续边界。
+状态：2026-10-13 client-local 与首个 [Host 通用文档 API](host-document-storage.md) 已实现，九个自有 Node SQLite 库已接入 [共享生命周期](sqlite-lifecycle.md)。Native 适配、其他 Host 实现与历史所有 origin 找回仍未交付；无账本旧库可能备份后移开重建，不承诺所有历史数据无损升级。
 
 ## 当前最小 API
 

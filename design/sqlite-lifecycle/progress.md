@@ -33,3 +33,13 @@
 - 35项相关测试通过；完整OpenCraft gate第二次退出0；文档validator无errors/warnings，责任映射/平台边界/git diff --check通过。首轮gate的Metro转导出解析失败已通过直接导出纯contract修复，Expo Web/iOS均重验通过。
 - 真实浏览器Host报告：/tmp/oc-host-storage-web-xxm5DA/report.json；最终桌面共享存储回归：/tmp/oc-extension-desktop-DykO1s/report.json。引擎握手为隔离替身，Host/协议/SQLite/浏览器为真实链路。
 - 未提交、推送、部署、更新安装包或迁移真实用户数据。旧随机origin恢复、其他Host实现、Native验收和其他旧数据库全量迁移不在本切片完成范围内。
+
+## 2026-10-13 九库生命周期与启动门禁
+
+- [cb5fb91](https://github.com/opencraft-app/opencraft/commit/cb5fb9107534894184b46e0d0e2b4483010042a6)：共享 sqlite-node 生命周期，document-storage（extensions/host-documents）与 session-routing 接入。
+- [78805d0](https://github.com/opencraft-app/opencraft/commit/78805d0800c7f97a40e432f798fc019f32ce87b2)：thread-catalog、executions、managed-connectors、account-pool 接入；thread document 版本守卫与 hypernode 基线指纹测试。
+- [544d7b7](https://github.com/opencraft-app/opencraft/commit/544d7b760c165bffef6b87bda4c71f8a4f8d6661)：Electron Main UI preferences 与 connector configuration 接入，Main 三库仍懒打开。
+- [f16b25c](https://github.com/opencraft-app/opencraft/commit/f16b25c526038e025cb9049258bac4f463d37e2b)：daemon 启动期打开 Host 五库，短互斥 claim 与活 PID 守护，ready/storage 到 gateway health；DSH 懒启动不变。
+- 策略定稿：内部开发阶段不承诺 N-1 旧二进制兼容；无账本结构一致则备份后采纳，否则备份后移开重建；SQL 为 owner 源码 TS 常量，不另设 SQL 资产目录；owner 用 VACUUM INTO 备份，默认保留 3 份；代码回退不自动恢复数据。
+- smoke 证据 `.local/server-updates/proof.json`：routing moved-aside、threads/managed-connectors adopted，备份与 legacy 文件保留；升级/回退后五库 up-to-date，未知新版账本拒绝 daemon ready。两版 release 均由当前源码打包，真实 npm/SPA/gateway/daemon/Codex CLI，合成推理、隔离进程重启替代 systemd，不称为旧二进制回退验收。
+- 正式现状与未完成边界见 [sqlite-lifecycle](../../docs/sqlite-lifecycle.md)；早期「剩余旧库未接入」记录仅表示当时状态。工作簿不在本次文档回写中修改；整分支独立审查与本轮完整 gate 结果以本次交付报告为准。

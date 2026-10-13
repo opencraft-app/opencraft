@@ -60,6 +60,8 @@ extension-contract/runtime、Workbench Web 存储适配、Electron Main/Preload/
 ## handoff
 client-local 与 Host 文档切片完成：最小API、持久CAS、内容转换、稳定Electron存储、Web升级协调、Cordis生命周期及显式Host绑定。旧IndexedDB保留，仅迁移当前可访问来源。历史其他origin找回、其他既有数据库全量迁移及其他Host实现仍待后续，不宣称全部模块已完成。未提交/发行/覆盖安装版。
 
+2026-10-13：上述 handoff 是早期切片记录；九个自有 Node SQLite 库的账本、备份、旧库处置与 Host 启动门禁现已实现，当前状态与未覆盖边界以 [存储生命周期](../../docs/sqlite-lifecycle.md) 为准。
+
 ## 实施 evidence / checkpoint
 
 Host切片：4项专用测试、真实Chromium双标签→真实认证Host→SQLite及停机/重启报告 `/tmp/oc-host-storage-web-xxm5DA/report.json`。第一轮gate因Metro解析新包contract.js失败，已改为直接导出纯contract；随后完整gate退出0。共享存储的源码Electron回归报告 `/tmp/oc-extension-desktop-fCg9Pq/report.json`；最终桌面补验/文档检查记录于progress。
