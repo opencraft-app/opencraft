@@ -89,30 +89,37 @@ func configuredVelaIMPlugin() (velaIMPluginPackage, bool) {
 
 // renderVelaIMPluginInstallCommand 把插件安装到 $HERMES_HOME/plugins/vela-im，所有 Profile 共用。
 // 同一个包已安装时什么也不做；下载或校验失败不动现有插件，上一版本保留为 vela-im.previous。
+// 每条成功路径都自然结束、不调用 exit：CTL 用 bash -lc 执行，登录 shell 执行 exit 时会先跑 ~/.bash_logout，
+// 实例上它的最后一条命令返回非零，会把退出码改成失败。
 func renderVelaIMPluginInstallCommand(pkg velaIMPluginPackage) string {
 	return strings.Join([]string{
 		`set -eu`,
 		`home="${HERMES_HOME:-$HOME/.hermes}"`,
-		`if [ ! -x "$home/hermes-agent/venv/bin/python" ]; then echo ` + VelaIMPluginNoHermes + `; exit 0; fi`,
 		`target="$home/plugins/vela-im"`,
 		`want=` + shellQuoteArg(pkg.SHA256),
-		`if [ "$(cat "$target/.package-sha256" 2>/dev/null)" = "$want" ]; then echo ` + VelaIMPluginUpToDate + `; exit 0; fi`,
-		`if ! node -e 'const [a,b]=process.versions.node.split(".").map(Number);process.exit(a>22||(a===22&&b>=16)?0:1)' 2>/dev/null; then`,
-		`  echo "Node.js >= 22.16 is required for the Vela IM worker" >&2; exit 3`,
+		`if [ ! -x "$home/hermes-agent/venv/bin/python" ]; then`,
+		`  echo ` + VelaIMPluginNoHermes,
+		`elif [ "$(cat "$target/.package-sha256" 2>/dev/null)" = "$want" ]; then`,
+		`  echo ` + VelaIMPluginUpToDate,
+		`else`,
+		`  if ! node -e 'const [a,b]=process.versions.node.split(".").map(Number);process.exit(a>22||(a===22&&b>=16)?0:1)' 2>/dev/null; then`,
+		`    echo "Node.js >= 22.16 is required for the Vela IM worker" >&2`,
+		`    false`,
+		`  fi`,
+		`  mkdir -p "$home/plugins"`,
+		`  work=$(mktemp -d "$home/plugins/.vela-im-install.XXXXXX")`,
+		`  trap 'rm -rf "$work"' EXIT`,
+		`  curl -fsSL --retry 3 --connect-timeout 10 --max-time 120 -o "$work/plugin.tgz" ` + shellQuoteArg(pkg.URL),
+		`  echo "$want  $work/plugin.tgz" | sha256sum -c --status -`,
+		`  mkdir "$work/plugin"`,
+		`  tar -xzf "$work/plugin.tgz" -C "$work/plugin" --no-same-owner`,
+		`  test -f "$work/plugin/plugin.yaml" -a -f "$work/plugin/adapter.py" -a -f "$work/plugin/vela_im/_worker/vela-im-worker.mjs"`,
+		`  printf '%s\n' "$want" > "$work/plugin/.package-sha256"`,
+		`  rm -rf "$target.previous"`,
+		`  if [ -d "$target" ]; then mv "$target" "$target.previous"; fi`,
+		`  mv "$work/plugin" "$target"`,
+		`  echo ` + VelaIMPluginInstalled,
 		`fi`,
-		`mkdir -p "$home/plugins"`,
-		`work=$(mktemp -d "$home/plugins/.vela-im-install.XXXXXX")`,
-		`trap 'rm -rf "$work"' EXIT`,
-		`curl -fsSL --retry 3 --connect-timeout 10 --max-time 120 -o "$work/plugin.tgz" ` + shellQuoteArg(pkg.URL),
-		`echo "$want  $work/plugin.tgz" | sha256sum -c --status -`,
-		`mkdir "$work/plugin"`,
-		`tar -xzf "$work/plugin.tgz" -C "$work/plugin" --no-same-owner`,
-		`test -f "$work/plugin/plugin.yaml" -a -f "$work/plugin/adapter.py" -a -f "$work/plugin/vela_im/_worker/vela-im-worker.mjs"`,
-		`printf '%s\n' "$want" > "$work/plugin/.package-sha256"`,
-		`rm -rf "$target.previous"`,
-		`if [ -d "$target" ]; then mv "$target" "$target.previous"; fi`,
-		`mv "$work/plugin" "$target"`,
-		`echo ` + VelaIMPluginInstalled,
 	}, "\n")
 }
 

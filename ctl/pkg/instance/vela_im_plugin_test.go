@@ -55,8 +55,13 @@ func runVelaIMPluginInstall(t *testing.T, home string, archive []byte, pkg velaI
 			t.Fatal(err)
 		}
 	}
-	command := exec.Command("bash", "-c", renderVelaIMPluginInstallCommand(pkg))
-	command.Env = append(os.Environ(), "HERMES_HOME="+home, "PATH="+bin+":"+os.Getenv("PATH"))
+	// Same shape as CTL's TAT execution: a login shell whose ~/.bash_logout ends with a failing command, as on instances.
+	userHome := t.TempDir()
+	if err := os.WriteFile(filepath.Join(userHome, ".bash_logout"), []byte("false\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command("bash", "-lc", renderVelaIMPluginInstallCommand(pkg))
+	command.Env = append(os.Environ(), "HOME="+userHome, "HERMES_HOME="+home, "PATH="+bin+":"+os.Getenv("PATH"))
 	output, err := command.CombinedOutput()
 	return strings.TrimSpace(string(output)), err
 }
