@@ -297,6 +297,70 @@ func TestDesktopViewerPerInstanceCap(t *testing.T) {
 	}
 }
 
+// TestDesktopViewerReclaimsUnredeemedWriteLease 上一连接异常断开且未释放租约时，
+// 可写名额不能被一个从未兑换的废票占用整个 TTL，否则重连会一直降级为只读、
+// 键鼠不可用。
+func TestDesktopViewerReclaimsUnredeemedWriteLease(t *testing.T) {
+	l, _, ctx, session := desktopViewerFixture(t)
+	session.mu.Lock()
+	session.inputPrepared = true
+	session.mu.Unlock()
+
+	first, err := l.CreateDesktopViewer(ctx, "ins-desktop-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Access != transport.DesktopViewerAccessWrite {
+		t.Fatalf("expected the first lease to own the write slot, got %q", first.Access)
+	}
+	// 票据从未兑换且已过兑换窗口：这是一个死租约。
+	desktopViewerMu.Lock()
+	if attachment, ok := desktopViewers[first.AttachmentID]; ok {
+		attachment.createdAt = time.Now().Add(-desktopViewerClaimWindow - time.Second)
+	}
+	desktopViewerMu.Unlock()
+
+	next, err := l.CreateDesktopViewer(ctx, "ins-desktop-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Access != transport.DesktopViewerAccessWrite {
+		t.Fatalf("dead write lease must be reclaimed, got %q", next.Access)
+	}
+	if next.Tunnel.Path != "/desktop/input" {
+		t.Fatalf("reclaimed slot must target the writable gateway, got %+v", next.Tunnel)
+	}
+}
+
+// TestDesktopViewerKeepsLiveWriteLease 回收必须保守：已兑换且仍在有效期内、
+// 正在使用输入的租约不能被抢占，否则会打断正常会话的键鼠。
+func TestDesktopViewerKeepsLiveWriteLease(t *testing.T) {
+	l, _, ctx, session := desktopViewerFixture(t)
+	session.mu.Lock()
+	session.inputPrepared = true
+	session.mu.Unlock()
+
+	first, err := l.CreateDesktopViewer(ctx, "ins-desktop-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := l.ClaimDesktopViewer(ctx, "ins-desktop-1", first.AttachmentID,
+		&transport.DesktopViewerClaimRequest{Ticket: first.Ticket}); err != nil {
+		t.Fatal(err)
+	}
+
+	next, err := l.CreateDesktopViewer(ctx, "ins-desktop-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Access != transport.DesktopViewerAccessRead {
+		t.Fatalf("a live write lease must not be preempted, got %q", next.Access)
+	}
+	if next.Tunnel.Port != desktopViewerDefaultTunnelReadPort {
+		t.Fatalf("read lease must target the observer, got port %q", next.Tunnel.Port)
+	}
+}
+
 // TestDesktopViewerLeaseBlocksIdleReap desktop/resource 的准备态只读、没有心跳
 // 接口；存活的观看租约是唯一活跃信号，否则 reaper 会在用户观看时停掉桌面服务。
 func TestDesktopViewerLeaseBlocksIdleReap(t *testing.T) {

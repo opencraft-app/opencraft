@@ -119,6 +119,52 @@ class DrainInputTest(unittest.TestCase):
         proxy.drain_input(bytearray(message), upstream, True, set())
         self.assertEqual(bytes(upstream.written), message)
 
+    def test_extended_clipboard_cut_text_keeps_framing(self):
+        """RFB ExtendedClipboard 的 ClientCutText 用负 length 标记扩展消息，实际载荷
+        长度是 abs(length)（noVNC lib/rfb.js: toUnsigned32bit(-data.length)）。
+
+        x11vnc 的可写端点没有 -nosel，会主动发 ServerCutText 能力通告，noVNC 收到后
+        必然回一条这样的扩展消息。把 length 当无符号读会得到约 4GiB，被误判为流失序
+        并静默关闭连接，表现为画面刚协商好就断开、前端无限重连（现网 bj-7 复现）。
+        """
+        for payload_length in (8, 4, 24):
+            with self.subTest(payload_length=payload_length):
+                upstream = FakeUpstream()
+                payload = bytes(payload_length)
+                message = (bytes([proxy.CLIENT_CUT_TEXT, 0, 0, 0])
+                           + (-payload_length & 0xFFFFFFFF).to_bytes(4, "big") + payload)
+                remaining, _, ok = proxy.drain_input(bytearray(message), upstream, True, set())
+                self.assertTrue(ok, "extended clipboard must not be treated as desynchronized")
+                self.assertEqual(bytes(upstream.written), message)
+                self.assertEqual(bytes(remaining), b"")
+
+    def test_extended_clipboard_cut_text_is_input_and_reassembled(self):
+        payload = bytes(8)
+        message = (bytes([proxy.CLIENT_CUT_TEXT, 0, 0, 0])
+                   + (-len(payload) & 0xFFFFFFFF).to_bytes(4, "big") + payload)
+        # 剪贴板写入仍是输入：未授权时必须丢弃，而不是放行或断流。
+        upstream = FakeUpstream()
+        _, _, ok = proxy.drain_input(bytearray(message), upstream, False, set())
+        self.assertTrue(ok)
+        self.assertEqual(bytes(upstream.written), b"")
+        # 分片到达时按长度重组，不得提前判定失序。
+        upstream = FakeUpstream()
+        buf = bytearray()
+        for index in range(len(message)):
+            buf.append(message[index])
+            buf, _, ok = proxy.drain_input(buf, upstream, True, set())
+            self.assertTrue(ok)
+        self.assertEqual(bytes(upstream.written), message)
+
+    def test_extended_clipboard_oversized_still_fails_closed(self):
+        upstream = FakeUpstream()
+        # 负 length 不得成为绕过单条消息上限的通道。
+        header = (bytes([proxy.CLIENT_CUT_TEXT, 0, 0, 0])
+                  + (-proxy.MAX_MESSAGE & 0xFFFFFFFF).to_bytes(4, "big"))
+        _, _, ok = proxy.drain_input(bytearray(header), upstream, True, set())
+        self.assertFalse(ok)
+        self.assertEqual(bytes(upstream.written), b"")
+
 
 class GrantLifecycleTest(unittest.TestCase):
     def setUp(self):
@@ -188,6 +234,25 @@ class GrantLifecycleTest(unittest.TestCase):
             wall.return_value = 1000
             self.expiry = 1_010_000
             self.assertFalse(self.grant())
+
+    def test_unconsumed_grant_still_blocks_a_second_writer(self):
+        """未消费的授权仍独占写者名额：不能打断正在握手/使用的持有者。"""
+        self.assertTrue(self.grant())
+        self.assertFalse(self.grant(self.b), "pending grant must not be taken over")
+
+    def test_consumed_grant_is_taken_over_by_the_next_lease(self):
+        """重连场景：上一连接已消费授权后异常断开，后来者必须能重新拿到写权限，
+        否则整个 TTL 内都签不出授权，客户端一直降级为只读。"""
+        self.assertTrue(self.grant())
+        self.assertIsNotNone(proxy.consume_grant(self.a, self.ticket))
+        self.assertEqual(proxy.read_grant().get("used"), True)
+
+        self.assertTrue(self.grant(self.b), "consumed grant must not hold the write slot")
+        grant = proxy.read_grant()
+        self.assertEqual(grant["attachmentId"], self.b)
+        self.assertEqual(grant.get("used"), False)
+        # 旧持有者必须被 tombstone 围栏，迟到的授权不得复活它。
+        self.assertFalse(self.grant(), "retired attachment must stay fenced")
 
     def test_absolute_expiry_still_applies_before_monotonic_deadline(self):
         with mock.patch.object(proxy.time, "time", return_value=1000), \

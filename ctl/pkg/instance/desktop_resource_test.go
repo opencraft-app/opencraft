@@ -3,6 +3,7 @@ package instance
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -173,6 +174,54 @@ func awaitDesktopResource(t *testing.T, predicate func() bool) {
 func awaitDesktopWorker(t *testing.T, session *desktopSession) {
 	t.Helper()
 	awaitDesktopResource(t, func() bool { session.mu.Lock(); defer session.mu.Unlock(); return !session.preparing })
+}
+
+// TestDesktopInputRecoversFromPhysicalDesktopRestart 观察进程重启后（unit 带
+// Restart=on-failure，崩溃即自动拉起）物理身份必然变化。网关刻意拒绝在同一代次下
+// 静默替换身份，因此必须换代重新激活：继续用同一代次重试，epoch 会永远停在已消失
+// 的进程上，写授权再也签不出来，键鼠永久不可用且不可自愈（现网 bj-7 复现）。
+func TestDesktopInputRecoversFromPhysicalDesktopRestart(t *testing.T) {
+	l, _, ctx, session := desktopViewerFixture(t)
+	session.mu.Lock()
+	stale := session.generation
+	session.inputPrepared, session.observerPrepared, session.preparing = false, false, true
+	session.mu.Unlock()
+	sb := l.sandboxAdapter.(*desktopSandboxStub)
+	activations := []string{}
+	sb.execFunc = func(command string) (*psandbox.ExecCommandResult, error) {
+		output := ""
+		if strings.Contains(command, "DESKTOP_TARGET_VERIFY") {
+			output = desktopVerifyOutput(desktopTestIncarnation)
+		}
+		if strings.HasSuffix(command, " --epoch") {
+			// 网关已记录本代次，但记录的是重启前那个已经消失的进程。
+			output = fmt.Sprintf(`{"generation":%q}`, stale)
+		}
+		if strings.Contains(command, " --activate ") {
+			activations = append(activations, command)
+			if strings.Contains(command, " --activate "+stale+" "+stale+" ") {
+				return &psandbox.ExecCommandResult{Status: "FAILED", ExitCode: 1}, nil
+			}
+		}
+		return &psandbox.ExecCommandResult{Status: "SUCCESS", ExitCode: 0, Output: output}, nil
+	}
+	l.prepareDesktopResource(ctx, session, func() {})
+	session.mu.Lock()
+	ready, current := session.inputPrepared, session.generation
+	session.mu.Unlock()
+	if !ready {
+		t.Fatal("a restarted desktop left input permanently unavailable")
+	}
+	if current == stale {
+		t.Fatal("recovery must retire the generation fenced to the vanished desktop")
+	}
+	if len(activations) != 2 {
+		t.Fatalf("expected one retry under a fresh generation, got %d activations", len(activations))
+	}
+	// 重试必须以旧代次作为 CAS 期望值，否则网关仍会拒绝。
+	if !strings.Contains(activations[1], " --activate "+current+" "+stale+" "+desktopTestIncarnation) {
+		t.Fatalf("retry lost the compare-and-swap expectation: %s", activations[1])
+	}
 }
 
 func TestDesktopResourceInputWaitsForEpochActivation(t *testing.T) {

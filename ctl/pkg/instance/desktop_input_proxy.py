@@ -225,6 +225,13 @@ def update_grant(action, identity, expires_at, digest="", generation="", incarna
                 and record["incarnation"] == incarnation):
             return bool(current and record["expiresAt"] == expires_at
                         and hmac.compare_digest(record["ticketDigest"], digest))
+        # A consumed grant no longer holds the write slot. Its owner has already
+        # attached, so a successor may take over; the tombstone below fences the
+        # old attachment from any late command. Without this, a reconnect whose
+        # previous connection died holding a "used" grant could never be granted
+        # again within the same TTL and stayed read-only.
+        if current is not None and current.get("used") is True:
+            current = None
         if current:
             return False
         if record and record["expiresAt"] > now and record["attachmentId"] != identity:
@@ -362,7 +369,11 @@ def message_frame(buf, index):
     elif msg_type == CLIENT_CUT_TEXT:
         if available < 8:
             return None, True, True
-        length = int.from_bytes(buf[index + 4:index + 8], "big")
+        # RFB ExtendedClipboard 用负 length 标记扩展消息，实际载荷长度是 abs(length)
+        # （noVNC lib/rfb.js 的 clientCutText: toUnsigned32bit(-data.length)）。可写端点
+        # 没有 -nosel，x11vnc 会主动发能力通告，客户端必然回一条这样的消息；按无符号读
+        # 会得到约 4GiB 并被误判为流失序，连接刚协商好就被关闭。
+        length = abs(int.from_bytes(buf[index + 4:index + 8], "big", signed=True))
         size = 8 + length
     elif msg_type in FIXED_SIZE:
         size = FIXED_SIZE[msg_type]
