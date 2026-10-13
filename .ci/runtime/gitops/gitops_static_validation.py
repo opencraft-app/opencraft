@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
+import yaml
+
 RUNTIME_DIR = Path(__file__).resolve().parents[1]
 if str(RUNTIME_DIR) not in sys.path:
     sys.path.insert(0, str(RUNTIME_DIR))
@@ -50,6 +52,118 @@ REQUIRED_APPSET_CATALOG_GLOBS = {
 }
 SGPROD_CTL_SECRET_REL = "argocd/secrets/sgprod/ctl-runtime-secrets.sops.yaml"
 SGPROD_TRADE_SECRET_REL = "argocd/secrets/sgprod/trade-runtime-secrets.sops.yaml"
+
+# 云桌面角色隔离：ctl-api 打上 role=api 后会拒收 /v1/instances/*/desktop/*，
+# 桌面请求必须由网关的 desktop_upstream 投给 ctl-desktop。两者是配对约束，
+# 任一侧单独发布都会让云桌面整体 404（见 docs/engineering/domains/release-gitops.md）。
+CTL_ROLE_LABEL_PATH = "/spec/template/metadata/labels/ctl.clawhub.dev~1role"
+CTL_DESKTOP_ROLE_API = "api"
+# role=api 时必须随之放行的桌面路径后缀；缺任一条都会让新前端的租约流程断链。
+REQUIRED_DESKTOP_ALLOW_SUFFIXES = (
+    "/desktop/session",
+    "/desktop/resource",
+    "/desktop/viewer",
+)
+
+
+def ctl_desktop_role_value(repo_root: Path, env: str) -> str | None:
+    """返回目标环境 ctl overlay 给 ctl-api 打的 ctl.clawhub.dev/role 值。
+
+    未声明该 label 时返回 None，表示空角色兼容模式（全放行），此时不要求配对。
+    """
+    kustomization = repo_root / f"argocd/services/ctl/{env}/kustomization.yaml"
+    if not kustomization.is_file():
+        return None
+    try:
+        data = load_mapping(kustomization)
+    except Exception:
+        # 解析失败交给既有的 Kustomize 严格校验报错，这里不重复判定。
+        return None
+    for patch in data.get("patches") or []:
+        if not isinstance(patch, dict):
+            continue
+        target = patch.get("target")
+        if not isinstance(target, dict) or target.get("name") != "ctl-api":
+            continue
+        body = patch.get("patch")
+        if not isinstance(body, str) or CTL_ROLE_LABEL_PATH not in body:
+            continue
+        for op in load_patch_operations(body):
+            if op.get("path") == CTL_ROLE_LABEL_PATH:
+                value = op.get("value")
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+    return None
+
+
+def load_patch_operations(body: str) -> list[dict[str, Any]]:
+    """解析内联 JSON6902 patch 文本，失败时返回空列表。"""
+    try:
+        parsed = yaml.safe_load(body)
+    except yaml.YAMLError:
+        return []
+    if not isinstance(parsed, list):
+        return []
+    return [op for op in parsed if isinstance(op, dict)]
+
+
+def validate_desktop_role_upstream_pairing(repo_root: Path, env: str) -> list[str]:
+    """ctl role=api 必须与网关 desktop_upstream + 桌面白名单同时存在。
+
+    只发一侧会让云桌面整体 404：role=api 的 ctl-api 拒收 /desktop/*，
+    而缺少 desktop_upstream 的网关仍把桌面请求投给 ctl-api。
+    """
+    role = ctl_desktop_role_value(repo_root, env)
+    if role != CTL_DESKTOP_ROLE_API:
+        return []
+
+    gateway_rel = f"argocd/services/service-gateway/{env}/config.yaml"
+    gateway_cfg = repo_root / gateway_rel
+    if not gateway_cfg.is_file():
+        return [
+            f"argocd/services/ctl/{env}/kustomization.yaml: ctl-api 标记 role={CTL_DESKTOP_ROLE_API}"
+            f"（拒收 /desktop/*），但缺少 {gateway_rel}，桌面请求无处投递"
+        ]
+
+    try:
+        data = load_mapping(gateway_cfg)
+    except Exception as exc:
+        return [f"{gateway_rel}: failed to parse YAML: {exc}"]
+
+    errors: list[str] = []
+    instance_routes = [
+        route
+        for route in (data.get("routes") or [])
+        if isinstance(route, dict) and route.get("prefix") == "/v1/instances"
+    ]
+    if not instance_routes:
+        return [
+            f"{gateway_rel}: ctl-api 标记 role={CTL_DESKTOP_ROLE_API}，"
+            "但未找到 prefix=/v1/instances 的路由，无法投递桌面请求"
+        ]
+
+    for route in instance_routes:
+        name = route.get("name") or "<unnamed>"
+        if not str(route.get("desktop_upstream") or "").strip():
+            errors.append(
+                f"{gateway_rel}: route {name} 缺少 desktop_upstream，"
+                f"而 ctl-api 已标记 role={CTL_DESKTOP_ROLE_API} 并拒收 /desktop/*："
+                "桌面请求会被投给 ctl-api 并返回 404"
+            )
+        if route.get("path_policy") != "allowlist":
+            continue
+        allowed = {
+            str(entry.get("path") or "")
+            for entry in (route.get("path_allow") or [])
+            if isinstance(entry, dict)
+        }
+        for suffix in REQUIRED_DESKTOP_ALLOW_SUFFIXES:
+            if not any(path.endswith(suffix) for path in allowed):
+                errors.append(
+                    f"{gateway_rel}: route {name} 的 allowlist 缺少 {suffix}，"
+                    "云桌面链路不完整"
+                )
+    return errors
 
 
 def validate_sgprod_internal_service_token_values(
@@ -385,6 +499,7 @@ def validate_publish_closure(
 def validate(repo_root: Path, env: str, bundle_manifest: Path) -> list[str]:
     if env in SUPPORTED_DIRECT_APP_ENVS:
         errors = validate_direct_apps(repo_root, env)
+        errors.extend(validate_desktop_role_upstream_pairing(repo_root, env))
         if env == "sgprod" and all(
             (repo_root / f"argocd/apps/sgprod/{service}.yaml").is_file()
             for service in ("ctl", "trade")
@@ -400,6 +515,7 @@ def validate(repo_root: Path, env: str, bundle_manifest: Path) -> list[str]:
     errors.extend(validate_appset(repo_root))
     errors.extend(catalog_errors)
     errors.extend(validate_beijing_apps_dir(repo_root))
+    errors.extend(validate_desktop_role_upstream_pairing(repo_root, env))
     if env in SUPPORTED_SANDBOX_ENVS:
         errors.extend(validate_publish_closure(repo_root, bundle_manifest, catalogs, env))
     return errors
