@@ -90,7 +90,7 @@ vi.mock("@/contexts/repository-context", () => ({
       startRescueExport: vi.fn(),
       resetInstanceConfig: vi.fn(),
       getSettingsSnapshot: vi.fn().mockImplementation(async (id: string) => ({
-        bot: { ...buildBot(), id, status: "active" },
+        bot: { ...(bots.find((bot) => bot.id === id) ?? buildBot()), id, status: "active" },
       })),
       getDashboardSnapshot: vi.fn().mockResolvedValue({ bots }),
     },
@@ -112,18 +112,18 @@ vi.mock("@/pages/marketing/agent-skills-panel", () => ({
 }));
 
 vi.mock("@/pages/marketing/agent-deepseek-harness-panel", () => ({
-  AgentDeepSeekHarnessPanel: () => <div>DeepSeek Harness panel</div>,
+  AgentDeepSeekHarnessPanel: ({ botId }: { botId: string }) => <div data-testid="dsh-panel" data-instance-id={botId}>DeepSeek Harness panel</div>,
 }));
 
 // 导航测试不加载聊天/通道 SDK，避免动态依赖的浏览器 CSS 干扰 jsdom。
 vi.mock("@/pages/marketing/agent-chat-panel", () => ({ AgentChatPanel: () => null }));
 vi.mock("@/pages/marketing/agent-channel-panel", () => ({ ChannelPanel: () => null }));
 
-const createNavigation = (): AppNavigationValue => ({
+const createNavigation = (botId?: string): AppNavigationValue => ({
   Link: ({ to, children, ...props }) => <a href={to} {...props}>{children}</a>,
   navigate: vi.fn(),
   pathname: "/agents/labs/deepseek-harness",
-  search: "",
+  search: botId ? `?bot=${botId}` : "",
   setSearchParams: vi.fn(),
 });
 
@@ -154,13 +154,37 @@ const buildPass = (bundleType?: string): Pass & { bundle_type?: string } => ({
   credit_available: 900,
 });
 
-const renderLabPage = () => render(
-  <AppNavigationProvider value={createNavigation()}>
+const renderLabPage = (botId?: string) => render(
+  <AppNavigationProvider value={createNavigation(botId)}>
     <AgentSettingsPage sectionId="deepseek-harness" showHeader={false} />
   </AppNavigationProvider>,
 );
 
 describe("AgentSettingsPage 实验室导航", () => {
+  it.each([0, 1, 2, 3])("同实例的第 %i 个 Bot 使用实例 DSH 地址", async (index) => {
+    bots = Array.from({ length: 4 }, (_, i) => ({
+      ...buildBot(),
+      id: i === 0 ? "ins_shared_dsh" : `profile_dsh_${i}`,
+      instanceId: "ins_shared_dsh",
+      profileId: `profile_dsh_${i}`,
+      isDefault: i === 0,
+    }));
+    renderLabPage(bots[index]!.id);
+    await waitFor(() => expect(screen.getByTestId("dsh-panel")).toHaveAttribute("data-instance-id", "ins_shared_dsh"));
+  });
+
+  it("不同实例的 Bot 不复用主 Bot 的 DSH 地址", async () => {
+    bots = [buildBot(), { ...buildBot(), id: "profile_other", instanceId: "ins_other_dsh", isDefault: false }];
+    renderLabPage("profile_other");
+    await waitFor(() => expect(screen.getByTestId("dsh-panel")).toHaveAttribute("data-instance-id", "ins_other_dsh"));
+  });
+
+  it("旧 Bot 没有 instanceId 时回退使用 Bot ID", async () => {
+    bots = [{ ...buildBot(), instanceId: undefined }];
+    renderLabPage("bot_dsh_lab");
+    await waitFor(() => expect(screen.getByTestId("dsh-panel")).toHaveAttribute("data-instance-id", "bot_dsh_lab"));
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === "(min-width: 1024px)", addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} }));

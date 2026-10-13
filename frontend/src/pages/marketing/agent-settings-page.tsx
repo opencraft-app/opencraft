@@ -6822,8 +6822,9 @@ export const AgentSettingsPage = ({
                           {activeSection === "files" && (
                             <TatFileManagerPanel botId={activeBot.id} />
                           )}
+                          {/* DSH is instance-scoped; sibling profiles share its host and installer. */}
                           {activeSection === "deepseek-harness" && (
-                            <AgentDeepSeekHarnessPanel botId={activeBot.id} />
+                            <AgentDeepSeekHarnessPanel botId={activeBot.instanceId ?? activeBot.id} />
                           )}
                           {activeSection === "cloud-desktop" && cloudDesktopEnabled && (
                             <AgentCloudDesktopPanel botId={activeBot.id} />
