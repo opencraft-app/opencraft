@@ -1,7 +1,7 @@
 name: vela-im
 label: Vela IM
 kind: platform
-version: "0.3.0"
+version: "0.3.1"
 description: 腾讯 IM 普通账号连接；每个 Bot 一个本机 Node worker，按平台群规则回复，用 vela_im 命令行收发消息和管理群聊。
 author: Vela
 requires_env: []
