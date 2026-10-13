@@ -7,7 +7,17 @@
 
 ## 安装与开通
 
-生产实例镜像预装本插件（需要 Node.js ≥ 22.16）。用户在 LightVela 里开通 Bot 时，collaboration 经 CTL 往该 Bot 的 profile 写入：
+实例上的插件由 CTL 安装到 `$HERMES_HOME/plugins/vela-im`（所有 Profile 共用，需要 Node.js ≥ 22.16）：
+
+1. 打包：在 `vela-im/` 目录 `npm run package:hermes-plugin`，得到可复现的 `dist/vela-im-hermes-plugin-<版本>-<sha12>.tar.gz`
+   和 sha256；上传到 COS（输出里的 `cosKey`），对实例公开可读。
+2. 配置 CTL 的 `[api.instance]`：`vela_im_plugin_url`（https 下载地址）与 `vela_im_plugin_sha256`。
+3. 新实例：Agent 第一次开通 IM 身份时，CTL 先执行安装命令（下载 → 校验 sha256 → 解压替换；同一版本已装就跳过，
+   失败不动现有插件，上一版本保留为 `vela-im.previous`），再交付凭据。
+4. 存量实例：`bash vela-im/deploy/backfill-hermes-plugin.sh` 经 CTL `/internal/vela-im/plugin:backfill` 分批补装全部运行中实例，
+   可重复执行；单台安装用 `/internal/vela-im/plugin:install`（`accountSubject`、`instanceId`）。换版本时改第 2 步的配置后再补装一次。
+
+用户在 LightVela 里开通 Bot 时，collaboration 经 CTL 往该 Bot 的 profile 写入：
 
 - `plugin-data/vela-im/credential`：Bot 凭据（0600），只有 worker 读取；
 - `plugin-data/vela-im/config.json`：`apiBaseUrl`、`botAgentId`、`imUserId`、`sdkAppId`；
