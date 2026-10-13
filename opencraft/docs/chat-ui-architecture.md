@@ -520,8 +520,8 @@ produce neither a blank interval nor a duplicate row. This does not redefine
 steer as a hard interrupt: the current provider request and tool step remain
 owned by DSH and may finish before the next-step inbox is consumed.
 
-The standalone main conversation defaults fresh follow-up input to direct steering during
-an active response. Chat settings can persist `queue` instead through
+The standalone main conversation defaults fresh follow-up input to queueing during
+an active response. Chat settings can persist `steer` instead through
 `UiPreferencesRuntime` (`chat.defaultFollowUpAction`, installation scope). The
 LightVela embedded conversation defaults to `queue` while a response is active,
 independent of the standalone preference.
@@ -905,10 +905,21 @@ highlight state; they do not introduce a feature-owned focus color. Track,
 thumb, highlight and shadow consume the active Design System theme tokens.
 
 The Composer permissions menu contains only declared permission profiles, without
-an AppServer-default row or explanatory question. An absent or null draft choice
-inherits the runtime's effective profile for display only; rendering never writes
-that derived value into the draft. Until resolved, the trigger reads localized `Permissions` (`权限` in Chinese)
-and no profile is checked. Explicit choices still use the existing submit path. Standard Host-verified mode names, Chinese descriptions, menu status and pending-change hints use the application locale catalog. Native/custom profile names and descriptions remain engine-owned.
+an AppServer-default row or explanatory question. A new-thread draft with no explicit
+permission choice initializes to a Host-declared, enabled `full` profile when its
+catalog arrives; the real draft selection travels through the existing submit path.
+Existing threads, explicit choices (including null inheritance), and Hosts without
+an available full profile retain their policy. Inherited runtime profiles remain
+display-only. Until resolved, the trigger reads localized `Permissions` (`权限` in Chinese)
+and no profile is checked. Standard Host-verified mode names, Chinese descriptions,
+menu status and pending-change hints use the application locale catalog.
+Native/custom profile names and descriptions remain engine-owned.
+
+The empty Web Composer paints its placeholder from paragraph decoration attributes
+and a noninteractive CSS pseudo-element. It must not insert a noneditable inline
+widget or separator into the empty editing target, preserving native caret, selection
+and clipboard behavior. Browser clipboard and DOM checks do not establish iPhone
+system menu behavior.
 
 Temporary Side Chat forks are adopted by `ThreadResumeCoordinator.adoptFork` from
 the validated `thread/fork` response in its original connection generation. They
@@ -1533,3 +1544,10 @@ Popover from restoring focus into a newer one. Escape retains normal focus retur
 No IOA-specific query, count, identity or badge styling belongs to Sidebar.
 
 Chinese emphasis uses the standard Marked tokenizer first. If it rejects an asterisk delimiter at a Han/punctuation boundary, the compiler retries with a length-preserving delimiter mask and a relaxed Han opener boundary. This preserves canonical source, code/escape masking and standard English/underscore behavior. The Codex reference uses Marked 16.4.1 without this override and reproduces both reported completed-text cases.
+
+
+Mobile Web Composer ordinary Return inserts a paragraph on coarse primary-pointer devices, including iOS native paragraph changes routed back through ProseMirror Enter. Suggestion, code and list commands keep their own precedence. Desktop Enter and explicit Ctrl/Cmd+Enter submissions remain available. Standalone and LightVela embedded Composer consume the same placeholder message IDs: new conversations use `chat.companionPlaceholder`, and follow-ups use `chat.companionFollowupPlaceholder`.
+
+Standalone and embedded Web entry points share one minimum Composer editing height: 64px for desktop viewports (at least 768px), and 48px below that breakpoint regardless of pointer type. This applies to new-thread and narrower panel containers; embedded styles do not override the height. Document growth and the scroll cap retain their existing behavior.
+
+Sidebar remote Server-origin badges use the shared styled Radix Tooltip surface rather than native title text. Tooltips mount under the Workbench Presentation Root outside the scrolling Sidebar, permit hover transfer and text selection, and support focus/Escape. Their light surface, border, 6px radius, 11px medium text, padding, shadow and arrow follow frontend/DESIGN.md Hover Tooltip.

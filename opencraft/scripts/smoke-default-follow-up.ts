@@ -57,9 +57,9 @@ try {
     const editor = page.locator(".codex-composer-editor");
     const action = () => page.locator("[data-composer-primary-action]").getAttribute("data-composer-primary-action");
     await toggle.waitFor();
-    assert.equal(await toggle.getAttribute("aria-checked"), "true");
+    assert.equal(await toggle.getAttribute("aria-checked"), "false");
     await editor.fill("preserved draft");
-    assert.equal(await action(), "steer");
+    assert.equal(await action(), "queue");
     await page.evaluate(() => {
       (window as any).originalEditor = document.querySelector(".codex-composer-editor");
       const text = document.createTreeWalker(document.querySelector(".codex-composer-editor")!, NodeFilter.SHOW_TEXT).nextNode()!;
@@ -69,6 +69,8 @@ try {
     const second = await context.newPage();
     await second.goto(origin); await second.getByRole("switch").waitFor();
     // A second window mutates the actual IndexedDB/BroadcastChannel authority.
+    await second.getByRole("switch").click();
+    await page.waitForFunction(() => document.querySelector('[data-composer-primary-action]')?.getAttribute('data-composer-primary-action') === 'steer');
     await second.getByRole("switch").click();
     await page.waitForFunction(() => document.querySelector('[data-composer-primary-action]')?.getAttribute('data-composer-primary-action') === 'queue');
     assert.equal(await editor.innerText(), "preserved draft");
@@ -81,8 +83,15 @@ try {
     await toggle.click(); await page.evaluate(() => (window as any).fixture.flush());
     await editor.fill("steer click"); await page.locator("[data-composer-primary-action]").click();
     assert.equal(await page.evaluate(() => (window as any).fixture.calls.at(-1).action), "steer");
-    await editor.fill("steer enter"); await editor.press("Enter");
-    assert.equal(await page.evaluate(() => (window as any).fixture.calls.at(-1).action), "steer");
+    await editor.fill("steer enter");
+    const beforeEnter = await page.evaluate(() => (window as any).fixture.calls.length);
+    await editor.press("Enter");
+    if (mobile) {
+      assert.equal(await page.evaluate(() => (window as any).fixture.calls.length), beforeEnter);
+      assert.equal(await editor.locator("p").count(), 2);
+    } else {
+      assert.equal(await page.evaluate(() => (window as any).fixture.calls.at(-1).action), "steer");
+    }
     await editor.fill("queue override"); await editor.press("Control+Enter");
     assert.equal(await page.evaluate(() => (window as any).fixture.calls.at(-1).action), "queue");
     for (const mode of ["light", "dark"]) {
@@ -96,10 +105,10 @@ try {
     await page.evaluate(() => (window as any).fixture.setActive(false));
     await editor.fill("idle send");
     assert.equal(await action(), "send");
-    await editor.press("Enter");
+    await page.locator("[data-composer-primary-action]").click();
     assert.equal(await page.evaluate(() => (window as any).fixture.calls.at(-1).action), null);
     await second.close(); await context.close();
   }
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ passed: true, realHostWrites: false, cases: ["desktop and touch", "default steer click/Enter", "queue persistence and live multi-window change", "inverse shortcut", "idle normal send", "draft/editor/selection retained", "light/dark narrow settings"] }));
+  console.log(JSON.stringify({ passed: true, realHostWrites: false, cases: ["desktop and touch", "default queue click", "mobile Enter newline", "queue persistence and live multi-window change", "inverse shortcut", "idle normal send", "draft/editor/selection retained", "light/dark narrow settings"] }));
 } finally { await browser?.close(); await server.close(); }

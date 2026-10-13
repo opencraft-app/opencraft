@@ -351,7 +351,7 @@ Connector 目录浏览不套用设置行：采用限宽品牌卡片，已配置�
 - PDF 文档、Worker、当前页绘制与文字层属于资源 View；换文件或卸载取消旧任务，晚到结果不得写入新资源。每次只绘制当前页，限制高 DPI 画布像素，Worker、CMap、字体和编解码资源随构建提供，不依赖外部 CDN。
 - 文件预览不修改原附件、文件、会话或引擎能力。Web 的共享 Renderer 不宣称已完成 Expo 原生 PDF 阅读器。
 
-内嵌控制台主 Composer 的编辑区域最小高度为 74px；新会话与已有会话保持一致，增长由同一输入区域承担，工具栏继续位于底部。
+独立与内嵌入口共用 Composer 编辑区域高度规则；新会话与已有会话保持一致，增长由同一输入区域承担，工具栏继续位于底部。
 
 Markdown preview entry: explicit `.md` / `.markdown` paths in completed inline code are clickable and use the same resource policy and Host-scoped right panel as Markdown links. Bare names, commands, external URLs, streaming paths and code within an explicit link retain their original semantics. No file is read before clicking.
 
@@ -385,4 +385,6 @@ a swipe; icon adaptation must not introduce a parallel navigation state.
 - Sidebar owns one open Thread overlay. Badge buttons are independent of navigation;
   old close/focus callbacks cannot close or focus away from a newer overlay.
 
-宽屏 Composer 默认编辑区以容器自身宽度为准：达到 768px 时最小高度为 52px；低于该宽度保持 26px。内容继续自动增高至既有滚动上限。
+Composer 编辑区最低高度按 viewport 统一：达到 768px 时为 64px；低于该宽度为 48px，不依赖指针类型。独立与内嵌入口、新会话与已有会话以及窄面板均使用同一规则，内嵌入口不得另设高度覆盖。内容继续自动增高至既有滚动上限。
+
+Sidebar Server 来源小球提示使用可 hover 进入、可选中文案的 Radix Tooltip，通过 Workbench Presentation Root 脱离滚动裁剪；来源颜色、行点击和固定槽位不变。视觉复用符合 frontend/DESIGN.md 的浅色 Tooltip contract。

@@ -3743,7 +3743,7 @@ html[data-codex-window-type="browser"] .main-content-top-fade {
 }
 
 .new-thread-draft-composer-zone .codex-composer-editor {
-  min-height: 42px;
+  min-height: 48px;
 }
 
 @container new-thread-main (width <= 620px) {
@@ -9155,7 +9155,8 @@ html[data-codex-window-type="electron"] .thread-scroll {
   justify-content: center;
 }
 
-.codex-composer-queue-action-tooltip {
+.codex-composer-queue-action-tooltip,
+.sidebar-server-origin-tooltip {
   z-index: var(--layer-tooltip, 1000);
   max-width: min(320px, calc(100vw - 16px));
   padding: 6px 12px;
@@ -9170,9 +9171,11 @@ html[data-codex-window-type="electron"] .thread-scroll {
   overflow-wrap: anywhere;
   pointer-events: auto;
   user-select: text;
+  -webkit-user-select: text;
 }
 
-.codex-composer-queue-action-tooltip__arrow {
+.codex-composer-queue-action-tooltip__arrow,
+.sidebar-server-origin-tooltip__arrow {
   fill: #fff;
   stroke: var(--border-subtle, var(--color-border-subtle, rgb(15 23 42 / 12%)));
   stroke-width: 1px;
@@ -9293,7 +9296,7 @@ html[data-codex-window-type="electron"] .thread-scroll {
 }
 
 .codex-composer-editor {
-  min-height: 26px;
+  min-height: 48px;
   max-height: min(232px, 34vh);
   overflow: hidden auto;
   outline: none;
@@ -9336,13 +9339,15 @@ html[data-codex-window-type="electron"] .thread-scroll {
   }
 }
 
-@container codex-composer (min-width: 768px) {
-  .codex-composer-editor {
-    min-height: 52px;
+@media (min-width: 768px) {
+  .codex-composer-editor,
+  .new-thread-draft-composer-zone .codex-composer-editor {
+    min-height: 64px;
   }
 }
 
-.codex-composer-placeholder {
+.codex-composer-placeholder::before {
+  content: attr(data-placeholder);
   position: absolute;
   color: var(--color-text-tertiary);
   pointer-events: none;
@@ -11807,7 +11812,8 @@ html[data-codex-window-type="electron"] .thread-scroll {
     font-size: max(16px, 1rem) !important;
   }
 
-  .codex-composer-editor {
+  .codex-composer-editor,
+  .new-thread-draft-composer-zone .codex-composer-editor {
     line-height: 24px;
 
     p { min-height: 24px; }

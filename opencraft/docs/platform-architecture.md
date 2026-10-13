@@ -726,7 +726,7 @@ Temporary interaction state such as peek, hover, drag projection and animation
 never enters the preference store.
 
 `chat.defaultFollowUpAction` is an installation-scoped `steer | queue`
-preference, defaulting to `steer`. Chat settings and the main conversation
+preference, defaulting to `queue`. Chat settings and the main conversation
 Composer consume the same runtime snapshot. The preference chooses the default
 intent only while a response is active; idle sends remain normal Turn starts.
 It neither creates a Host capability nor enables atomic queued-message steering.

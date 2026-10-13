@@ -1292,3 +1292,6 @@ LightVela 复用镜像浏览器的专用 GUI 启动入口显式选择 `--passwor
 OpenCraft Composer 的权限菜单由客户端语言包翻译已验证的标准档位、中文说明、加载/错误状态和待生效提示；引擎自定义 profile 名称与说明仍由 Host 提供。翻译不改变 profile ID、权限绑定或提交策略。实现契约见 `opencraft/docs/chat-ui-architecture.md`。
 
 中文聊天 Markdown 在标准 Marked 强调解析失败时，仅对 Han 与标点相邻的星号边界重试，保留代码遮罩、源文与权限/执行策略。对应回归覆盖截图原句、英语、转义与代码。
+
+
+OpenCraft 独立与嵌入入口共用 Composer 高度规则：桌面 viewport >=768px 最低64px，其余最低48px。空输入区以属性和伪元素绘制占位，不插入不可编辑节点；手机普通 Return 换行，显式发送仍提交。新会话未显式选择权限时采用 Host 声明可用的 full profile；已有会话与显式选择保持原策略。独立入口执行中默认排队，保留显式 steer 偏好，与嵌入入口共用提示文案。Sidebar 来源图标使用 Portal Tooltip，文案可选择复制。详见 OpenCraft ChatUI 和设计不变量。

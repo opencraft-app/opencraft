@@ -41,7 +41,7 @@ export const uiPreferenceDefinitions = Object.freeze({
   "chat.defaultFollowUpAction": {
     key: "chat.defaultFollowUpAction",
     scope: "installation",
-    defaultValue: "steer",
+    defaultValue: "queue",
     parse: (value: unknown): "steer" | "queue" | null =>
       value === "steer" || value === "queue" ? value : null,
   },

@@ -550,17 +550,12 @@ function createPlaceholderPlugin(placeholder: () => string): Plugin {
         ) {
           return DecorationSet.empty;
         }
-        const widget = Decoration.widget(
-          1,
-          () => {
-            const span = document.createElement("span");
-            span.className = "codex-composer-placeholder";
-            span.textContent = placeholder();
-            return span;
-          },
-          { side: -1 },
-        );
-        return DecorationSet.create(state.doc, [widget]);
+        // Keep the empty paragraph natively editable. An inline noneditable
+        // widget adds a caret boundary where iOS needs its empty editing target.
+        return DecorationSet.create(state.doc, [Decoration.node(0, first.nodeSize, {
+          class: "codex-composer-placeholder",
+          "data-placeholder": placeholder(),
+        })]);
       },
     },
   });
@@ -813,7 +808,7 @@ export const CodexComposer = forwardRef<
   const admittedFollowUpAction = resolveComposerFollowUpAction(preferredFollowUpAction, availableFollowUpActions);
   const defaultFollowUpAction = admittedFollowUpAction ?? preferredFollowUpAction;
   const intl = useIntl();
-  const placeholder = suppliedPlaceholder ?? intl.formatMessage({ id: "chat.placeholder", defaultMessage: "Ask for follow-up changes", description: "Follow-up composer placeholder" });
+  const placeholder = suppliedPlaceholder ?? intl.formatMessage({ id: "chat.companionFollowupPlaceholder", defaultMessage: "Tell me what you'd like to do next", description: "Follow-up composer placeholder" });
   const placeholderRef = useRef(placeholder);
   placeholderRef.current = placeholder;
   const mountRef = useRef<HTMLDivElement>(null);
@@ -915,6 +910,18 @@ export const CodexComposer = forwardRef<
   const catalogModels = selectionCatalog?.models ?? [];
   const catalogPermissions = selectionCatalog?.permissionProfiles ?? [];
   const showPermissionPicker = hasPermissionProfileChoices(catalogPermissions);
+  const newThreadDefaultPermission = catalogPermissions.find(permission =>
+    permission.mode === "full" && !permission.disabled)?.value;
+  useLayoutEffect(() => {
+    const draft = controller.getSnapshot().draft;
+    if (draft.target.type !== "new-thread"
+      || draft.selections.permissionProfile !== undefined
+      || newThreadDefaultPermission === undefined) return;
+    controller.dispatch({
+      type: "set-selections",
+      patch: { permissionProfile: newThreadDefaultPermission },
+    });
+  }, [controller, composerSnapshot.draft.id, composerSnapshot.draft.target.type, newThreadDefaultPermission]);
   const catalogDefaultModel = resolveModelSelection(catalogModels, undefined);
   const selectedModelValue = modelSelectionPolicy === "host-default" ? catalogDefaultModel?.value ?? null :
     composerSnapshot.draft.selections.model ??
@@ -1405,6 +1412,11 @@ export const CodexComposer = forwardRef<
                 state,
                 dispatch,
               );
+            }
+            // Software keyboards expose Return as a newline. iOS may also
+            // route a native paragraph insertion through this Enter command.
+            if (view?.dom.ownerDocument.defaultView?.matchMedia("(pointer: coarse)").matches) {
+              return splitBlock(state, dispatch);
             }
             submitActionRef.current();
             return true;
