@@ -21,6 +21,8 @@ export type CommandPolicy = 'owner'|'anyone';
 export interface BotAgent {
   id:string; instanceId:string; botId:string; displayName:string; userId:string;
   state:'provisioning'|'ready'|'error'|'deleted'; lastErrorCode?:string|null; commandPolicy:CommandPolicy; revision:number;
+  /** An admin restricted this Agent's IM identity (only in the list). */
+  restricted?:boolean;
 }
 export interface ImGroupMember { userId:string; kind:IdentityKind; role:'owner'|'admin'|'member' }
 /** A platform group: membership and reply rules live in the LightVela backend, messages in Tencent IM. */

@@ -16,7 +16,7 @@ import (
 )
 
 type botAgentService interface {
-	List(context.Context, appbotagent.Human) ([]botimport.BotAgent, error)
+	List(context.Context, appbotagent.Human) ([]appbotagent.Listed, error)
 	Provision(context.Context, appbotagent.Human, appbotagent.ProvisionInput) (botimport.BotAgent, error)
 	UpdateCommandPolicy(context.Context, appbotagent.Human, string, string) (botimport.BotAgent, error)
 	Delete(context.Context, appbotagent.Human, string) error
@@ -71,10 +71,11 @@ func (h *BotIMHandler) ListBotAgents(
 	}
 	items := make([]openapi.BotAgent, 0, len(bots))
 	for _, bot := range bots {
-		item, err := botAgentDTO(bot)
+		item, err := botAgentDTO(bot.BotAgent)
 		if err != nil {
 			return nil, err
 		}
+		item.Restricted = &bot.Restricted
 		items = append(items, item)
 	}
 	return openapi.ListBotAgents200JSONResponse{Items: items}, nil

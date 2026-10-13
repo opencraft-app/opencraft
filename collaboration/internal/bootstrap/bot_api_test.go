@@ -553,6 +553,13 @@ func TestBotIMAPIMultiPersonGroupsAndAdminOperations(t *testing.T) {
 	if status, released := fixture.admin(http.MethodPost, "/v1/admin/im/identities/"+guestHuman+"/release", nil); status != http.StatusOK || released["restricted"] != false {
 		t.Fatalf("release = %d %#v", status, released)
 	}
+	if status, body := fixture.admin(http.MethodPost, "/v1/admin/im/identities/"+guestBot["userId"].(string)+"/restrict", nil); status != http.StatusOK {
+		t.Fatalf("restrict bot = %d %#v", status, body)
+	}
+	if status, list := fixture.other(http.MethodGet, "/v1/me/bots", nil); status != http.StatusOK ||
+		list["items"].([]any)[0].(map[string]any)["restricted"] != true {
+		t.Fatalf("owner sees the restricted bot = %d %#v", status, list)
+	}
 
 	accountID := ""
 	for _, item := range listed["items"].([]any) {

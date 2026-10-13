@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { platformGroupId, VelaHumanAPI, type BotAgent, type IMMessage } from "@vela/im-client";
+import { platformGroupId, VelaError, VelaHumanAPI, type BotAgent, type IMMessage } from "@vela/im-client";
 import type { VelaBrowserClient } from "@vela/im-client/browser";
 import { resolveVelaImApiBase } from "./vela-im-env";
 import {
@@ -20,6 +20,8 @@ import {
 export type VelaImStatus = "idle" | "connecting" | "ready" | "reconnecting" | "offline" | "error";
 /** A LightVela bot that has its own IM identity. */
 export type AgentItem = BotAgent;
+
+const isRestricted = (e: unknown) => e instanceof VelaError && e.code === "im_identity_restricted";
 
 export interface VelaImEvents {
   onMessages?: (messages: IMMessage[]) => void;
@@ -41,6 +43,8 @@ interface Connection {
 export function useVelaIm(lightvelaToken: string | null, lightvelaUserID: string | undefined, selfName = "") {
   const [status, setStatus] = useState<VelaImStatus>("idle");
   const [error, setError] = useState("");
+  /** An admin restricted this person's IM identity: no session is issued and group chat is unavailable. */
+  const [restricted, setRestricted] = useState(false);
   const [connection, setConnection] = useState<Connection | null>(null);
   const [conversations, setConversations] = useState<ConversationItem[]>([]);
   const [contacts, setContacts] = useState<ContactItem[]>([]);
@@ -66,6 +70,7 @@ export function useVelaIm(lightvelaToken: string | null, lightvelaUserID: string
     let cancelled = false;
     let local: VelaBrowserClient | undefined;
     setError("");
+    setRestricted(false);
     setConnection(null);
     setConversations([]);
     setContacts([]);
@@ -105,7 +110,11 @@ export function useVelaIm(lightvelaToken: string | null, lightvelaUserID: string
       observe("MESSAGE_MODIFIED", (e) => events.current.onModified?.(e.data as IMMessage[]));
       observe("MESSAGE_READ_BY_PEER", (e) => events.current.onModified?.(e.data as IMMessage[]));
       observe("MESSAGE_REVOKED", (e) => events.current.onRevoked?.(e.data as IMMessage[]));
-      observe("KICKED_OUT", () => setStatus("offline"));
+      observe("KICKED_OUT", () => {
+        setStatus("offline");
+        // Restricting someone signs them out at once; ask the backend whether that is why.
+        void api.imSession().catch((e: unknown) => { if (!cancelled && isRestricted(e)) setRestricted(true); });
+      });
       observe("SDK_NOT_READY", () => setStatus((s) => (s === "offline" ? s : "reconnecting")));
       observe("SDK_READY", () => setStatus("ready"));
       setConnection({ api, client, selfID: client.userID, selfName });
@@ -125,6 +134,7 @@ export function useVelaIm(lightvelaToken: string | null, lightvelaUserID: string
     lifecycle.current = run;
     void run.catch((e: unknown) => {
       if (cancelled) return;
+      if (isRestricted(e)) setRestricted(true);
       setStatus("error");
       setError(e instanceof Error ? e.message : String(e));
     });
@@ -138,6 +148,14 @@ export function useVelaIm(lightvelaToken: string | null, lightvelaUserID: string
     if (!connection) return;
     setAgents(await connection.api.bots());
   }, [connection]);
+
+  // A restriction applied while the page is open shows up when the person comes back to it.
+  useEffect(() => {
+    if (!connection) return;
+    const onVisible = () => { if (document.visibilityState === "visible") void refreshAgents().catch(() => undefined); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [connection, refreshAgents]);
 
   const provisioning = agents.some((a) => a.state === "provisioning");
   useEffect(() => {
@@ -185,6 +203,7 @@ export function useVelaIm(lightvelaToken: string | null, lightvelaUserID: string
   return {
     status,
     error,
+    restricted,
     connection,
     conversations,
     contacts,

@@ -119,13 +119,27 @@ func NewService(
 	}, nil
 }
 
+// Listed 是列表中的 Bot，附带管理员是否限制了它的 IM 身份，供主人在界面上看到原因。
+type Listed struct {
+	botimport.BotAgent
+	Restricted bool
+}
+
 // List 返回当前账号的 Bot IM 身份。
-func (s *Service) List(ctx context.Context, human Human) ([]botimport.BotAgent, error) {
+func (s *Service) List(ctx context.Context, human Human) ([]Listed, error) {
 	bots, err := s.repository.ListBots(ctx, human.AccountID, maxBotsPerAccount)
 	if err != nil {
 		return nil, internal("暂时无法读取 Bot 列表", err)
 	}
-	return bots, nil
+	listed := make([]Listed, 0, len(bots))
+	for _, bot := range bots {
+		route, err := s.repository.FindRoute(ctx, bot.IMUserID)
+		if err != nil && !errors.Is(err, botimport.ErrNotFound) {
+			return nil, internal("暂时无法读取 Bot IM 路由", err)
+		}
+		listed = append(listed, Listed{BotAgent: bot, Restricted: err == nil && route.RestrictedAt != nil})
+	}
+	return listed, nil
 }
 
 // Provision 幂等开通 Bot：确认归属、导入腾讯账号、签发并交付凭据。

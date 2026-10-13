@@ -3046,6 +3046,7 @@ components:
         lastErrorCode: {type: string, nullable: true}
         commandPolicy: {$ref: '#/components/schemas/CommandPolicy'}
         revision: {$ref: '#/components/schemas/Revision'}
+        restricted: {type: boolean, description: 管理员限制了这个 Bot 的 IM 身份；只在列表中返回}
 
     BotAgentList:
       type: object

@@ -6554,6 +6554,8 @@ export const AgentSettingsPage = ({
                                 )}
                                 <VelaImSessionItems
                                   items={velaImItems}
+                                  notice={velaIm.restricted ? t("你的账号已被限制使用 Agent 群聊，如有疑问请联系管理员。")
+                                    : activeImAgent?.restricted ? t("这个 Agent 已被限制使用群聊，如有疑问请联系管理员。") : undefined}
                                   selectedID={velaImChatActive ? velaImConversation.conversationID : null}
                                   onSelect={(conversation) => {
                                     setVelaImConversation(conversation);

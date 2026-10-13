@@ -372,16 +372,19 @@ export function VelaImConversationView({ im, bots, conversation, onOpen, onClose
 }
 
 /** Agent conversations listed under the chat page's sessions. */
-export function VelaImSessionItems({ items, selectedID, onSelect }: {
+export function VelaImSessionItems({ items, selectedID, onSelect, notice }: {
   items: ConversationItem[];
   selectedID: string | null;
   onSelect: (conversation: ConversationItem) => void;
+  /** Why Agent group chat is unavailable (e.g. restricted by an admin), shown as a quiet line under the heading. */
+  notice?: string;
 }) {
   const t = useT();
-  if (!items.length) return null;
+  if (!items.length && !notice) return null;
   return (
     <>
       <li className="lv-agents-session-group-label">{t("Agent 群聊")}</li>
+      {notice ? <li className="px-3 pb-1 text-xs leading-5 text-black/40">{notice}</li> : null}
       {items.map((c) => (
         <li key={c.conversationID} className="lv-agents-session-item-wrap">
           <button
