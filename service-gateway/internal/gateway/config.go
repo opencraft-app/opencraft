@@ -54,6 +54,8 @@ type Route struct {
 	RequireRealname        bool         `yaml:"require_realname"`
 	ResponseHeaderTimeout  string       `yaml:"response_header_timeout"`
 	stripBrowserOrigin     bool
+	// stripIdentityHeaders drops client-supplied X-Lightclaw-* headers on routes that never verify a LightVela session.
+	stripIdentityHeaders bool
 }
 
 type Config struct {

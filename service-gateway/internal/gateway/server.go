@@ -221,7 +221,7 @@ func NewHandler(cfg Config, opts ...Option) (http.Handler, error) {
 				cfg.Collaboration.UpstreamBearerTokenEnv,
 			)
 		}
-		configuredRoutes = append(configuredRoutes, collaborationRoute(*cfg.Collaboration))
+		configuredRoutes = append(configuredRoutes, collaborationRoute(*cfg.Collaboration), collaborationBotRuntimeRoute(*cfg.Collaboration))
 	}
 	routes := make([]compiledRoute, 0, len(configuredRoutes))
 	subscriptionServiceURL := ""
@@ -256,7 +256,7 @@ func NewHandler(cfg Config, opts ...Option) (http.Handler, error) {
 		}
 		routes = append(routes, compiledRoute{
 			route:          route,
-			proxy:          newSingleHostReverseProxy(target, newUpstreamTransport(responseHeaderTimeout), route.Prefix, route.RewritePrefix, route.UpstreamBearerTokenEnv, trustedProxyCIDRs, route.stripBrowserOrigin),
+			proxy:          newSingleHostReverseProxy(target, newUpstreamTransport(responseHeaderTimeout), route.Prefix, route.RewritePrefix, route.UpstreamBearerTokenEnv, trustedProxyCIDRs, route.stripBrowserOrigin, route.stripIdentityHeaders),
 			allowedOrigins: normalizeAllowedOrigins(routeAllowedOrigins),
 			corsAllow:      corsAllow,
 		})
@@ -459,12 +459,26 @@ func collaborationRoute(config CollaborationRouteConfig) Route {
 		{Method: http.MethodGet, Path: prefix + "/servers/{serverId}/direct-conversations/{directConversationId}"},
 		{Method: http.MethodPost, Path: prefix + "/servers/{serverId}/direct-conversations/{directConversationId}/retry"},
 		{Method: http.MethodPost, Path: prefix + "/callbacks/tencent-im/state"},
+		// Vela IM: a person's Agent IM identities, platform groups and invites.
+		{Method: http.MethodGet, Path: prefix + "/me/bots"},
+		{Method: http.MethodPost, Path: prefix + "/me/bots"},
+		{Method: http.MethodPatch, Path: prefix + "/me/bots/{botAgentId}"},
+		{Method: http.MethodDelete, Path: prefix + "/me/bots/{botAgentId}"},
+		{Method: http.MethodPost, Path: prefix + "/me/bots/{botAgentId}/credential"},
+		{Method: http.MethodPost, Path: prefix + "/me/groups"},
+		{Method: http.MethodGet, Path: prefix + "/me/groups/{groupId}"},
+		{Method: http.MethodPatch, Path: prefix + "/me/groups/{groupId}"},
+		{Method: http.MethodDelete, Path: prefix + "/me/groups/{groupId}"},
+		{Method: http.MethodPut, Path: prefix + "/me/groups/{groupId}/members/{userId}"},
+		{Method: http.MethodDelete, Path: prefix + "/me/groups/{groupId}/members/{userId}"},
+		{Method: http.MethodPost, Path: prefix + "/me/groups/{groupId}/invite-link"},
+		{Method: http.MethodPost, Path: prefix + "/me/group-invites/accept"},
 	}
 	return Route{
 		Name:                   "collaboration",
 		Prefix:                 prefix,
 		RewritePrefix:          "/v1",
-		Methods:                []string{http.MethodGet, http.MethodPost, http.MethodOptions},
+		Methods:                []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions},
 		Upstream:               config.Upstream,
 		UpstreamBearerTokenEnv: config.UpstreamBearerTokenEnv,
 		Access:                 AccessAuthenticated,
@@ -477,6 +491,35 @@ func collaborationRoute(config CollaborationRouteConfig) Route {
 		}},
 		ResponseHeaderTimeout: "30s",
 		stripBrowserOrigin:    true,
+	}
+}
+
+// collaborationBotRuntimeRoute publishes the Vela IM Agent runtime. Agents authenticate to collaboration with their own
+// Bot credential or runtime token, so this route checks no LightVela session and must not replace Authorization with
+// the internal bearer the human route injects; client-supplied identity headers are dropped.
+func collaborationBotRuntimeRoute(config CollaborationRouteConfig) Route {
+	const prefix = "/v1/collaboration/runtime/bot"
+	return Route{
+		Name:          "collaboration-bot-runtime",
+		Prefix:        prefix,
+		RewritePrefix: "/v1/runtime/bot",
+		Methods:       []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete},
+		Upstream:      config.Upstream,
+		Access:        AccessPublic,
+		PathPolicy:    PathPolicyAllowlist,
+		PathAllow: []PublicRule{
+			{Method: http.MethodPost, Path: prefix + "/session"},
+			{Method: http.MethodGet, Path: prefix + "/me"},
+			{Method: http.MethodPost, Path: prefix + "/groups"},
+			{Method: http.MethodGet, Path: prefix + "/groups/{groupId}"},
+			{Method: http.MethodPatch, Path: prefix + "/groups/{groupId}"},
+			{Method: http.MethodDelete, Path: prefix + "/groups/{groupId}"},
+			{Method: http.MethodPut, Path: prefix + "/groups/{groupId}/members/{userId}"},
+			{Method: http.MethodDelete, Path: prefix + "/groups/{groupId}/members/{userId}"},
+		},
+		ResponseHeaderTimeout: "30s",
+		stripBrowserOrigin:    true,
+		stripIdentityHeaders:  true,
 	}
 }
 
@@ -1472,7 +1515,7 @@ func (h *Handler) observeRequest(start time.Time, route string, r *http.Request,
 	h.metrics.ObserveRequest(r.Method, route, r.URL.Path, status, time.Since(start))
 }
 
-func newSingleHostReverseProxy(target *url.URL, transport http.RoundTripper, routePrefix string, rewritePrefix string, upstreamBearerTokenEnv string, trustedProxyCIDRs []netip.Prefix, stripBrowserOrigin bool) *httputil.ReverseProxy {
+func newSingleHostReverseProxy(target *url.URL, transport http.RoundTripper, routePrefix string, rewritePrefix string, upstreamBearerTokenEnv string, trustedProxyCIDRs []netip.Prefix, stripBrowserOrigin bool, stripIdentityHeaders bool) *httputil.ReverseProxy {
 	proxy := &httputil.ReverseProxy{}
 	proxy.Rewrite = func(req *httputil.ProxyRequest) {
 		clientIP := canonicalClientIP(req.In, trustedProxyCIDRs)
@@ -1484,6 +1527,9 @@ func newSingleHostReverseProxy(target *url.URL, transport http.RoundTripper, rou
 		setCanonicalClientIPHeaders(req.Out.Header, clientIP)
 		if stripBrowserOrigin {
 			req.Out.Header.Del("Origin")
+		}
+		if stripIdentityHeaders {
+			clearIdentityHeaders(req.Out.Header)
 		}
 	}
 	proxy.Transport = withUpstreamBearerToken(transport, upstreamBearerTokenEnv)

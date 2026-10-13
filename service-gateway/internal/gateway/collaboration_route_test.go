@@ -169,3 +169,97 @@ func TestCollaborationRoutePublishesMemberInvitesAndOperationStatus(t *testing.T
 		})
 	}
 }
+
+func TestCollaborationBotRuntimeKeepsTheAgentCredentialAndSkipsLightVelaLogin(t *testing.T) {
+	t.Setenv("COLLABORATION_GATEWAY_TOKEN", "test-collaboration-internal-token")
+	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("bot runtime must not consult LightVela auth: %s", r.URL.Path)
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer auth.Close()
+	var seen []string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = append(seen, r.Method+" "+r.URL.Path)
+		if got := r.Header.Get("Authorization"); got != "BotCredential bot-secret" {
+			t.Errorf("upstream authorization = %q, want the Agent's own credential", got)
+		}
+		if got := r.Header.Get("X-Lightclaw-User-ID"); got != "" {
+			t.Errorf("forged identity header reached collaboration: %q", got)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer upstream.Close()
+	handler, err := NewHandler(Config{
+		AuthServiceURL: auth.URL,
+		Collaboration: &CollaborationRouteConfig{
+			Upstream: upstream.URL, UpstreamBearerTokenEnv: "COLLABORATION_GATEWAY_TOKEN",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		method, path string
+		status       int
+	}{
+		{http.MethodPost, "/v1/collaboration/runtime/bot/session", http.StatusNoContent},
+		{http.MethodGet, "/v1/collaboration/runtime/bot/me", http.StatusNoContent},
+		{http.MethodPut, "/v1/collaboration/runtime/bot/groups/g1/members/a_peer", http.StatusNoContent},
+		{http.MethodDelete, "/v1/collaboration/runtime/bot/groups/g1", http.StatusNoContent},
+		{http.MethodGet, "/v1/collaboration/runtime/bot/unpublished", http.StatusNotFound},
+	} {
+		req := httptest.NewRequest(test.method, test.path, nil)
+		req.Header.Set("Authorization", "BotCredential bot-secret")
+		req.Header.Set("X-Lightclaw-User-ID", "usr_forged")
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != test.status {
+			t.Fatalf("%s %s status = %d body=%s", test.method, test.path, rec.Code, rec.Body)
+		}
+	}
+	if len(seen) != 4 || seen[0] != "POST /v1/runtime/bot/session" || seen[2] != "PUT /v1/runtime/bot/groups/g1/members/a_peer" {
+		t.Fatalf("upstream saw %v", seen)
+	}
+}
+
+func TestCollaborationRoutePublishesVelaIMHumanEndpoints(t *testing.T) {
+	const internalToken = "test-collaboration-internal-token"
+	t.Setenv("COLLABORATION_GATEWAY_TOKEN", internalToken)
+	auth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"session":{"user":{"id":"usr_0123456789abcdef","email":"human@example.test"}}}`))
+	}))
+	defer auth.Close()
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer "+internalToken || r.Header.Get("X-Lightclaw-User-ID") != "usr_0123456789abcdef" {
+			t.Errorf("%s %s reached collaboration without the verified human", r.Method, r.URL.Path)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer upstream.Close()
+	handler, err := NewHandler(Config{
+		AuthServiceURL: auth.URL,
+		Collaboration:  &CollaborationRouteConfig{Upstream: upstream.URL, UpstreamBearerTokenEnv: "COLLABORATION_GATEWAY_TOKEN"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct{ method, path string }{
+		{http.MethodGet, "/v1/collaboration/me/bots"},
+		{http.MethodPatch, "/v1/collaboration/me/bots/b1"},
+		{http.MethodDelete, "/v1/collaboration/me/bots/b1"},
+		{http.MethodPost, "/v1/collaboration/me/groups"},
+		{http.MethodPatch, "/v1/collaboration/me/groups/g1"},
+		{http.MethodPut, "/v1/collaboration/me/groups/g1/members/a_x"},
+		{http.MethodDelete, "/v1/collaboration/me/groups/g1/members/a_x"},
+		{http.MethodPost, "/v1/collaboration/me/groups/g1/invite-link"},
+		{http.MethodPost, "/v1/collaboration/me/group-invites/accept"},
+	} {
+		req := httptest.NewRequest(test.method, test.path, nil)
+		req.Header.Set("Authorization", "Bearer human-session")
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusNoContent {
+			t.Fatalf("%s %s status = %d body=%s", test.method, test.path, rec.Code, rec.Body)
+		}
+	}
+}

@@ -147,7 +147,7 @@ func TestReverseProxyFallsBackToRemoteAddress(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse upstream URL: %v", err)
 	}
-	proxy := newSingleHostReverseProxy(target, http.DefaultTransport, "/auth", "", "", nil, false)
+	proxy := newSingleHostReverseProxy(target, http.DefaultTransport, "/auth", "", "", nil, false, false)
 	req := httptest.NewRequest(http.MethodPost, "/auth/sms/send", nil)
 	req.RemoteAddr = "192.0.2.44:45123"
 	req.Header.Set("X-Real-IP", "198.51.100.78")
