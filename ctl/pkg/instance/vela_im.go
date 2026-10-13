@@ -3,7 +3,6 @@ package instance
 import (
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"regexp"
 	"strings"
 
@@ -87,7 +86,7 @@ func configuredVelaIMPlugin() (velaIMPluginPackage, bool) {
 	return pkg, true
 }
 
-// renderVelaIMPluginInstallCommand 把插件安装到 $HERMES_HOME/plugins/vela-im，所有 Profile 共用。
+// renderVelaIMPluginInstallCommand 把插件安装到 $HERMES_HOME/plugins/vela-im；其他 Profile 开通时软链接到这里。
 // 同一个包已安装时什么也不做；下载或校验失败不动现有插件，上一版本保留为 vela-im.previous。
 // 每条成功路径都自然结束、不调用 exit：CTL 用 bash -lc 执行，登录 shell 执行 exit 时会先跑 ~/.bash_logout，
 // 实例上它的最后一条命令返回非零，会把退出码改成失败。
@@ -121,6 +120,18 @@ func renderVelaIMPluginInstallCommand(pkg velaIMPluginPackage) string {
 		`  echo ` + VelaIMPluginInstalled,
 		`fi`,
 	}, "\n")
+}
+
+// velaIMPluginLinked 是交付脚本在 Profile 第一次链接到实例插件时输出的一行。
+const velaIMPluginLinked = "vela-im linked"
+
+func velaIMOutputHas(output, line string) bool {
+	for _, current := range strings.Split(output, "\n") {
+		if strings.TrimSpace(current) == line {
+			return true
+		}
+	}
+	return false
 }
 
 // InstallVelaIMPlugin 按配置的插件包在实例上安装 vela-im 插件，返回 installed / up_to_date / no_hermes。
@@ -194,7 +205,7 @@ func (l *logic) VerifyVelaIMBot(ctx pctx.Context, instanceID, botID string) (*Ve
 	return nil, errcode.ErrInstanceBotNotFound
 }
 
-// DeliverVelaIMBot 把 Bot 凭据与访问地址写入 Profile、启用 vela-im 插件并重启该 Bot 的 gateway。
+// DeliverVelaIMBot 把 Bot 凭据与访问地址写入 Profile、启用 vela-im 插件并重启 gateway。
 func (l *logic) DeliverVelaIMBot(ctx pctx.Context, delivery VelaIMDelivery) error {
 	if !velaIMCredentialPattern.MatchString(delivery.Credential) ||
 		!velaIMUserIDPattern.MatchString(delivery.IMUserID) ||
@@ -235,6 +246,10 @@ func (l *logic) DeliverVelaIMBot(ctx pctx.Context, delivery VelaIMDelivery) erro
 	if result == nil || result.ExitCode != 0 {
 		return errcode.Wrap(errcode.ErrInstanceBotProfileFailed, "deliver vela-im failed")
 	}
+	if velaIMOutputHas(result.Stdout+"\n"+result.Output, velaIMPluginLinked) {
+		// 一个主机 gateway 服务所有 Profile，只在启动时加载各 Profile 的插件；重启单个 Profile 不会加载新链接的插件。
+		return l.restartVelaIMGateway(ctx, delivery.InstanceID, "")
+	}
 	return l.restartVelaIMGateway(ctx, delivery.InstanceID, bot.ProfileID)
 }
 
@@ -256,10 +271,13 @@ func (l *logic) RevokeVelaIMBot(ctx pctx.Context, instanceID, botID string) erro
 	return l.restartVelaIMGateway(ctx, instanceID, bot.ProfileID)
 }
 
+// restartVelaIMGateway 重启 profileID 的 gateway；profileID 为空时重启主机 gateway（default Profile）。
 func (l *logic) restartVelaIMGateway(ctx pctx.Context, instanceID, profileID string) error {
-	result, err := l.execHermesProfileCommand(
-		ctx, instanceID, fmt.Sprintf("acli gateway restart --agent %s", shellQuoteArg(profileID)),
-	)
+	command := "acli gateway restart"
+	if profileID != "" {
+		command += " --agent " + shellQuoteArg(profileID)
+	}
+	result, err := l.execHermesProfileCommand(ctx, instanceID, command)
 	if err != nil {
 		return errcode.Wrap(errcode.ErrInstanceBotProfileFailed, "restart profile gateway: %v", err)
 	}
@@ -292,8 +310,18 @@ import yaml
 home, profile = profile_dir(sys.argv[1])
 if not profile.is_dir():
     raise SystemExit("profile not found")
-if not (profile / "plugins" / "vela-im").is_dir() and not (home / "plugins" / "vela-im").is_dir():
+shared = home / "plugins" / "vela-im"
+own = profile / "plugins" / "vela-im"
+if not own.is_dir() and not shared.is_dir():
     raise SystemExit("vela-im plugin is not installed on this instance")
+# Hermes loads a profile's plugins only from that profile's own plugins directory.
+linked = False
+if not own.is_dir():
+    if own.is_symlink():
+        own.unlink()
+    own.parent.mkdir(parents=True, exist_ok=True)
+    own.symlink_to(shared, target_is_directory=True)
+    linked = True
 payload = json.loads(base64.b64decode(sys.argv[2]).decode("utf-8"))
 
 data = profile / "plugin-data" / "vela-im"
@@ -330,6 +358,8 @@ if payload.get("owner"):
 env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 os.chmod(env_path, 0o600)
 print("vela-im delivered")
+if linked:
+    print("vela-im linked")
 `
 
 const revokeVelaIMScript = velaIMProfileDirFunction + `

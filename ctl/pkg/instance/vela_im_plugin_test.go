@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"os"
 	"os/exec"
@@ -130,5 +131,45 @@ func TestVelaIMPluginInstallCommandQuotesThePackageLocation(t *testing.T) {
 	command := renderVelaIMPluginInstallCommand(velaIMPluginPackage{URL: "https://example.test/a'b.tgz", SHA256: strings.Repeat("a", 64)})
 	if !strings.Contains(command, `'https://example.test/a'"'"'b.tgz'`) {
 		t.Fatalf("package URL is not shell-quoted:\n%s", command)
+	}
+}
+
+func TestDeliverVelaIMScriptLinksSharedPluginIntoProfile(t *testing.T) {
+	requireWeixinPython(t)
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, "plugins", "vela-im"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(home, "profiles", "profile-2"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	payload := base64.StdEncoding.EncodeToString([]byte(`{"credential":"cred","owner":"u_owner","config":{"apiBaseUrl":"https://example.test"}}`))
+	deliver := func(profileID string) string {
+		t.Helper()
+		command := exec.Command(weixinTestPython(), "-c", deliverVelaIMScript, profileID, payload)
+		command.Env = append(os.Environ(), "HERMES_HOME="+home)
+		output, err := command.CombinedOutput()
+		if err != nil {
+			t.Fatalf("deliver %s: %v\n%s", profileID, err, output)
+		}
+		return string(output)
+	}
+
+	if output := deliver("profile-2"); !velaIMOutputHas(output, velaIMPluginLinked) {
+		t.Fatalf("first delivery must link the shared plugin: %s", output)
+	}
+	link := filepath.Join(home, "profiles", "profile-2", "plugins", "vela-im")
+	if target, err := os.Readlink(link); err != nil || target != filepath.Join(home, "plugins", "vela-im") {
+		t.Fatalf("profile plugin link = %q, %v", target, err)
+	}
+	if output := deliver("profile-2"); velaIMOutputHas(output, velaIMPluginLinked) {
+		t.Fatalf("re-delivery must reuse the existing link: %s", output)
+	}
+	if output := deliver("default"); velaIMOutputHas(output, velaIMPluginLinked) {
+		t.Fatalf("the default profile owns the shared plugin directory: %s", output)
+	}
+	config, err := os.ReadFile(filepath.Join(home, "profiles", "profile-2", "config.yaml"))
+	if err != nil || !strings.Contains(string(config), "vela-im") {
+		t.Fatalf("profile config must enable vela-im: %s %v", config, err)
 	}
 }
