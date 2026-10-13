@@ -7,7 +7,7 @@
 正式设计见 [sqlite-lifecycle](../sqlite-lifecycle.md)；本目标按其第 4 阶段「其他权威库」落地，并把一键更新的回退语义补齐。
 
 - [x] 阶段 0：评估现状并选定方案。9 个库中 2 个有账本；更新器只回退代码（thr_7gi4fzwvkk）
-- [ ] 阶段 1：共享 node:sqlite 生命周期模块（账本、升级前备份、无账本旧库处置）+ 纵向切片：document-storage 换实现保持基线 hash、session-routing 接入 ← 进行中
+- [ ] 阶段 1：共享 node:sqlite 生命周期模块（账本、升级前备份、无账本旧库处置）+ 纵向切片：document-storage 换实现保持基线 hash、session-routing 接入 ← 进行中（最近线程 thr_ivpebcdpvw）
 - [ ] 阶段 2：Host 其余库接入：thread-catalog（document 加版本字段）、executions（合并 hypernode DDL 为单一 owner）、managed-connectors、account-pool（owner 是 codex-core 进程，升级路径独立）
 - [ ] 阶段 3：Electron Main 两库接入：ui-preferences、connector-configuration
 - [ ] 阶段 4：daemon 全部库就绪后才监听与报告健康；真实升级/回退门禁接入 `test:server-updates`
