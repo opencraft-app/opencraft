@@ -163,10 +163,42 @@ class CLITest(unittest.TestCase):
         code, calls = self.run_cli(["send", "--text", "收到"], {**qq, "HERMES_SESSION_PLATFORM": "vela_im", "HERMES_SESSION_CHAT_ID": "GROUPvg_x"})
         self.assertEqual(calls[0][1][:2], ("vg_x", "GROUP"))
 
-    def test_explicit_recipient_starts_a_new_chain(self):
+    def test_sends_within_an_im_turn_continue_its_chain(self):
         code, calls = self.run_cli(["send", "--to", "u_owner", "--text", "完成了"], {"HERMES_SESSION_CHAT_ID": "GROUPvg_x", "HERMES_SESSION_MESSAGE_ID": "m42"})
         self.assertEqual(calls[0][1][:2], ("u_owner", "C2C"))
-        self.assertIsNone(calls[0][2]["reply_to_message_id"])
+        self.assertEqual(calls[0][2]["reply_to_message_id"], "m42")
+
+    def mention(self, argv):
+        group = "vg_0198f4c27a357f1486ab2e57552e473f"
+        sent = []
+
+        class MembersClient:
+            def get_group_members(self, group_id):
+                return [{"userID": "a_peer", "nick": "我的 AI 伙伴2"}, {"userID": "u_owner", "nick": "用户9259"}]
+
+            def send(self, *args, **kwargs):
+                sent.append((args, kwargs))
+                return {}
+
+        env = {"HERMES_SESSION_PLATFORM": "vela_im", "HERMES_SESSION_CHAT_ID": "GROUP" + group, "HERMES_SESSION_MESSAGE_ID": "m42"}
+        with patch.dict(os.environ, env, clear=False), patch.object(cli.VelaClient, "for_profile", return_value=MembersClient()), \
+                redirect_stdout(io.StringIO()):
+            cli.main(["send", "--to", group, *argv])
+        return sent[0]
+
+    def test_mentions_add_the_member_name_the_text_lacks(self):
+        args, kwargs = self.mention(["--at", "a_peer", "--text", "在干嘛呢"])
+        self.assertEqual(args[2:], ("textAt", {"text": "@我的 AI 伙伴2 在干嘛呢", "atUserList": ["a_peer"]}))
+        self.assertEqual(kwargs["reply_to_message_id"], "m42")
+        args, _ = self.mention(["--at", "@all", "--text", "@所有人 开会"])
+        self.assertEqual(args[3]["text"], "@所有人 开会")
+
+    def test_mentions_are_refused_outside_the_group(self):
+        with self.assertRaises(SystemExit) as refused:
+            self.mention(["--at", "a_stranger", "--text", "hi"])
+        self.assertIn("group members", str(refused.exception))
+        with self.assertRaises(SystemExit):
+            self.run_cli(["send", "--to", "u_owner", "--at", "a_peer", "--text", "hi"])
 
     def test_group_commands_resolve_the_current_group(self):
         env = {"HERMES_SESSION_CHAT_ID": "GROUPvg_0198f4c27a357f1486ab2e57552e473f"}

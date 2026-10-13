@@ -108,8 +108,26 @@ class PluginTest(unittest.TestCase):
 class AdapterTest(unittest.IsolatedAsyncioTestCase):
     def adapter(self, client):
         adapter = object.__new__(VelaAdapter); adapter.client = client; adapter._lineage = {}; adapter.user_id = 'a_self'
-        adapter._turns, adapter._waiting, adapter._rechecked = {}, {}, set()
+        adapter._turns, adapter._waiting, adapter._rechecked, adapter._rosters = {}, {}, set(), {}
+        adapter._control = {"policy": "owner", "owners": set(), "at": 0.0}
         return adapter
+
+    async def test_group_turns_list_members_and_how_to_mention_them(self):
+        members = [{"userID": "u_owner", "nick": "用户9259"}, {"userID": "a_self", "nick": "伙伴1"}, {"userID": "a_peer", "nick": "健康管家"}]
+        calls = []
+        client = types.SimpleNamespace(get_group_members=lambda group: calls.append(group) or members)
+        adapter = self.adapter(client); adapter._control["owners"] = {"u_owner"}; events = []
+        adapter.build_source = lambda **kw: kw
+        async def handle(event): events.append(event)
+        adapter.handle_message = handle
+        policy = {"members": [{"userId": "u_owner", "kind": "human"}, {"userId": "a_self", "kind": "bot"}, {"userId": "a_peer", "kind": "bot"}]}
+        for message_id in ("m1", "m2"):
+            await adapter._dispatch_event({'ID': message_id, 'from': 'u_owner', 'nick': '用户9259', 'type': 'TIMTextElem',
+                                           'conversationID': 'GROUPvg_g', '_vela_policy': policy, 'payload': {'text': '@伙伴1 hi'}})
+        text = events[-1]["text"]
+        self.assertIn("Group members: 用户9259 (u_owner, human, your owner); 伙伴1 (a_self, agent, you); 健康管家 (a_peer, agent).", text)
+        self.assertIn("vela_im send --at <userID>", text)
+        self.assertEqual(calls, ["vg_g"])  # the roster is reused while membership is unchanged
 
     async def test_adapter_starts_its_worker_on_connect_and_stops_it_on_disconnect(self):
         events = []

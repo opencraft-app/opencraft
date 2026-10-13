@@ -62,9 +62,29 @@ def cmd_whoami(client, args):
             "ownerUserIds": control.get("owner", {}).get("userIds", [])})
 
 
+def _mention_text(client, group_id, users, text):
+    """Tencent clients show a mention through the @name in the text; prepend the ones the text lacks."""
+    names = {}
+    if any(user not in ("@all", "all") for user in users):
+        names = {member.get("userID"): member.get("nick") or member.get("userID") for member in client.get_group_members(group_id)}
+    missing = []
+    for user in users:
+        if user in ("@all", "all"):
+            label = "所有人"
+        elif user in names:
+            label = names[user]
+        else:
+            raise SystemExit(f"{user} 不在这个群里；用 vela_im group members 查看成员")
+        if f"@{label}" not in text:
+            missing.append(f"@{label}")
+    return " ".join(missing + [text])
+
+
 def cmd_send(client, args):
     to, kind = _target(args)
-    reply_to = None if args.to or not _in_vela_session() else os.getenv("HERMES_SESSION_MESSAGE_ID") or None
+    # Inside a Vela IM turn every send continues the current message's chain, so the agent hop limit also bounds
+    # mentions sent through this CLI.
+    reply_to = os.getenv("HERMES_SESSION_MESSAGE_ID") or None if _in_vela_session() else None
     if args.file:
         message_type = args.type if args.type in ("image", "audio", "video", "file") else media_kind(args.file)
         payload = json.loads(args.payload) if args.payload else {}
@@ -78,7 +98,9 @@ def cmd_send(client, args):
         payload = {"text": args.text}
         message_type = "textAt" if args.at else "text"
         if args.at:
-            payload["atUserList"] = args.at
+            if kind != "GROUP":
+                raise SystemExit("--at 只能用于群消息")
+            payload = {"text": _mention_text(client, to, args.at, args.text), "atUserList": args.at}
     _print(client.send(to, kind, message_type, payload, reply_to_message_id=reply_to))
 
 
@@ -173,7 +195,7 @@ def parser():
     send.add_argument("--to", help="接收方：IM userID（u_…/a_…）或群 ID（vg_…）；也接受 C2C…/GROUP… 会话 ID")
     send.add_argument("--group", action="store_true", help="--to 是非平台群的群 ID")
     send.add_argument("--text", help="文本内容")
-    send.add_argument("--at", nargs="*", metavar="USER", help="群里 @ 的 IM userID（@all 表示全体）")
+    send.add_argument("--at", nargs="*", metavar="USER", help="群里 @ 的 IM userID（@all 表示全体）；正文缺少的 @名字 会自动补上")
     send.add_argument("--type", default="text", choices=MESSAGE_TYPES, help="消息类型，配合 --payload 使用")
     send.add_argument("--payload", help="原生消息 payload（JSON）")
     send.add_argument("--file", help="本地图片/音频/视频/文件路径")
