@@ -24,7 +24,8 @@
           "id": "4e66EF5XoPEXx3y8lw",
           "hostUrl": "https://rumt-zh.com"
         }
-      }
+      },
+      "velaImApiBase": "https://lightclaw.tech/v1/collaboration"
     },
     {
       "id": "cf:global-lightvela-intl-staging",

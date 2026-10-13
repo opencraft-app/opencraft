@@ -687,11 +687,11 @@ describe("release matrix helpers", () => {
 });
 
 describe("Vela IM enablement", () => {
-  it("turns Agent group chat on only for the prerelease combos that point at the Beijing test backend", () => {
+  it("turns Agent group chat on only for the combos that use the Beijing test backend, never for production", () => {
     const { combos } = loadReleaseMatrix();
     for (const combo of combos) {
       const env = createComboEnvironment(combo, combo.projectName, { NEXT_PUBLIC_VELA_IM_API_BASE: "inherited" });
-      if (combo.id.includes("prerelease")) {
+      if (combo.authApiBaseUrl === "https://lightclaw.tech") {
         expect(env.NEXT_PUBLIC_VELA_IM_API_BASE, combo.id).toBe("https://lightclaw.tech/v1/collaboration");
       } else {
         expect(env.NEXT_PUBLIC_VELA_IM_API_BASE, combo.id).toBeUndefined();
