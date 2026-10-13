@@ -67,3 +67,40 @@ test("restart reconciles a committed checkpoint with a durable unpublished routi
     } finally { restored.close(); }
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+import { DatabaseSync } from "node:sqlite";
+import { readdir } from "node:fs/promises";
+for (const intent of [true, false]) {
+  test(`previous routing schema ${intent ? "is adopted" : "without intent is moved aside"}`, async () => {
+    const root = await mkdtemp(join(tmpdir(), "opencraft-routing-legacy-"));
+    const path = join(root, "routing.sqlite");
+    try {
+      const legacy = new DatabaseSync(path);
+      legacy.exec(`CREATE TABLE IF NOT EXISTS dsh_session_generations (
+        logical_id TEXT NOT NULL, native_id TEXT NOT NULL UNIQUE, generation INTEGER NOT NULL,
+        seed_seq INTEGER NOT NULL, seed_turn INTEGER NOT NULL, prior_seq INTEGER NOT NULL, prior_turn INTEGER NOT NULL,
+        PRIMARY KEY(logical_id,generation)
+      ); CREATE TABLE IF NOT EXISTS dsh_pending_generations (native_id TEXT PRIMARY KEY, logical_id TEXT NOT NULL)`);
+      if (intent) legacy.exec("ALTER TABLE dsh_pending_generations ADD COLUMN intent TEXT");
+      legacy.exec("INSERT INTO dsh_session_generations VALUES('s','s.g1',1,4,1,8,2); INSERT INTO dsh_pending_generations(native_id,logical_id) VALUES('pending','s')");
+      legacy.close();
+      const routing = new DshSessionRouting(path);
+      try {
+        assert.equal(routing.outcome.status, intent ? "adopted" : "moved-aside");
+        assert.ok(routing.outcome.backupPath);
+        assert.equal(routing.native("s"), intent ? "s.g1" : "s");
+        assert.equal(routing.pending().length, intent ? 1 : 0);
+        const files = await readdir(root);
+        assert.ok(files.some(name => name.includes(".pre-v1-")));
+        assert.equal(files.some(name => name.includes(".legacy-")), !intent);
+        if (!intent) {
+          for (const retained of [routing.outcome.backupPath!, routing.outcome.movedAsidePaths[0]!]) {
+            const check = new DatabaseSync(retained);
+            assert.equal(check.prepare("SELECT native_id FROM dsh_session_generations").get()?.native_id, "s.g1");
+            check.close();
+          }
+        }
+      } finally { routing.close(); }
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+}

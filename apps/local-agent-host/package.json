@@ -18,7 +18,8 @@
     "node-pty": "1.1.0",
     "proper-lockfile": "^4.1.2",
     "ws": "^8.21.0",
-    "yaml": "^2.8.3"
+    "yaml": "^2.8.3",
+    "@opencraft/sqlite-node": "0.1.0"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",

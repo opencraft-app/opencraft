@@ -149,7 +149,8 @@
     "smoke:server-self-upgrade": "OPENCRAFT_SERVER_SMOKE_SYSTEMD=1 OPENCRAFT_SERVER_SMOKE_SELF_UPGRADE=1 tsx scripts/smoke-server-updates.ts",
     "smoke:server-updates:systemd": "OPENCRAFT_SERVER_SMOKE_SYSTEMD=1 tsx scripts/smoke-server-updates.ts",
     "smoke:server-updates": "tsx scripts/smoke-server-updates.ts",
-    "test:codex-core": "tsx --test tests/codex-core.test.ts"
+    "test:codex-core": "tsx --test tests/codex-core.test.ts",
+    "test:sqlite-node": "tsx --test tests/sqlite-node.test.ts"
   },
   "dependencies": {
     "react": "19.2.3",

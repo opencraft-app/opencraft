@@ -2,7 +2,7 @@
 
 状态：2026-09-18 第一阶段 client-local 插件文档与设置/安装适配已实现；其余规则仍待逐库落实。保留 node:sqlite、不引入 ORM，没有迁移真实用户数据库。[插件持久化契约](plugin-persistence.md)记录实际能力及未覆盖范围。
 
-当前新增 `opencraft-extensions.sqlite`：版本1基线 SQL/hash 随代码交付，`schema_migrations` 与建表在事务中提交，拒绝未知旧结构和较新/冲突历史。既有其他 SQLite 库尚未全部接入，也没有通用备份/恢复入口。Web 对应实现有原生升级事务、持久 CAS、versionchange 关闭及明确 blocked 错误；尚未新增专门的全局升级提示 UI。
+`@opencraft/sqlite-node` 已为 document-storage（`opencraft-extensions.sqlite` / `host-documents.sqlite`）和 Host session-routing 提供共享账本、升级前备份与无账本旧库处置。document-storage 保持原 v1 SQL/hash；routing 的 v1 包含两张表及 intent 列。其余库尚未接入，不提供自动恢复入口。Web 对应实现有原生升级事务、持久 CAS、versionchange 关闭及明确 blocked 错误；尚未新增专门的全局升级提示 UI。
 
 ## 1. 设计结论
 
@@ -81,13 +81,13 @@ JSON payload 由领域 codec 负责前向迁移；遇到未知较新格式禁止
 
 ### 无版本旧库的首次接管
 
-空库走完整基线；已有库按有界结构指纹识别已知历史变体（表/列/约束/索引/STRICT 等实际语义），不只看某表是否存在。至少覆盖 routing 的无 intent / 有 intent 变体，以及 execution journal/queue 的完整表集。
+空库走完整迁移链。内部开发阶段按工作簿决策，不做逐库历史形态识别：共享模块在 `:memory:` 执行迁移链构建目标，比较用户表集合、每表 `PRAGMA table_info` 的 name/type/notnull/dflt_value/pk 和索引名。系统表（`sqlite_*`）不使空库成为旧库。这一有限比较不校验索引定义、CHECK、外键、触发器或 STRICT 标志，不是通用 schema diff。
 
-先备份，校验并补齐已知差异，再建立基线账本；不得对未知旧库直接盖“已迁移”标记，也不得重跑 CREATE TABLE 覆盖已有数据。新库与旧库接管后必须达到同一目标 schema；接管测试必须证明旧记录、CAS 和身份不变。
+完全一致的旧库先备份，然后在单个 `BEGIN IMMEDIATE` 事务中写入全部账本行，返回 adopted，保留原记录。不一致则备份、关闭连接、将数据库及仍存在的同名 WAL/SHM 文件逐个原子重命名到 `.legacy-<时间戳>` 后重建，返回 moved-aside；不会删除旧数据文件。文件集合不是跨文件原子操作，rename 失败时撤回本次已完成的 rename；调用方必须先保证唯一 owner，无其他活跃连接。routing 的无 intent 旧库因此移开，有 intent 的当前旧库采纳。
 
 ### 备份与恢复
 
-首次接管和之后变更权威 schema 前制作一致性备份，优先使用经验证的 SQLite backup API；不复制正在写入的单个 `.sqlite` 丢下 WAL。备份目录/文件继承私有权限，记录非敏感数据库身份、迁移前后摘要和校验信息；不得上传或把凭据内容写入日志。
+共享模块在非空库有待应用迁移，或旧库采纳/移开之前，使用 `VACUUM INTO` 制作一致性快照，包含已提交但尚未 checkpoint 的 WAL 数据；不直接复制正在写入的单个 `.sqlite`。快照命名为同目录 `<文件名>.pre-v<目标版本>-<ISO时间戳>.sqlite`，时间戳的冒号替换为连字符，文件权限 0600。`backup.keep` 默认 3，必须为正整数；本次处置全部成功后保留本次快照及其他最新 N-1 份（不因时钟回拨删除本次恢复点），失败不清理。备份目录/文件继承私有权限，记录非敏感数据库身份、迁移前后摘要和校验信息；不得上传或把凭据内容写入日志。
 
 有备份要求却无法完成时不执行迁移。备份保留至少本次升级前有效恢复点；清理不能发生在升级成功确认前。恢复只在所有 owner 停止后显式执行，说明会丢弃哪些备份后的数据；库损坏和版本不兼容不是同一个恢复分支。临时 OAuth 内容不因恢复旧备份自动复活。
 
@@ -101,20 +101,25 @@ Web 适配器必须处理 `upgradeneeded`、`blocked`、`versionchange` 和较�
 
 Web 没有桌面文件备份能力，不伪装一致：原生升级事务负责 abort 回滚；不兼容的破坏性变更若需要独立可恢复副本，先实现并验证浏览器适用的保留方案，否则阻止该迁移发布。客户端回滚也不能通过删库“修复” VersionError。
 
-拟议拓扑（不是新增现存文件）：
+已实现的 Node 共享模块拓扑：
 
 ```text
 packages/sqlite-node/src/
   connection.ts           Node 驱动、文件权限和关闭
   lifecycle.ts            open/migrate/ready 编排，不含业务表
   migrations.ts           小型 SQL 执行、单一账本及历史校验
-  backup.ts               一致性备份及恢复前置
+  backup.ts               VACUUM INTO 快照、成功后保留清理与旧库移开
   errors.ts               非敏感错误分类
-<各数据库 owner>/storage/<domain>/
-  migrations/            该库唯一的不可变 SQL schema 历史与 manifest
-  legacy-baseline.ts      有界旧库识别，仅首次接管使用
-  repository.ts           领域 codec、查询与 CAS
+  index.ts                最小公共 API
+<各数据库 owner>/
+  repository.ts           领域 codec、查询与 CAS；迁移 SQL 常量随 owner 源码交付
 ```
+
+`openManagedDatabase({ path, migrations, backup?: { keep?: number } })` 返回 `{ database: DatabaseSync, outcome }`，连接由调用方关闭。migrations 是 readonly 的 `{ version, name, sql }` 列表，版本从 1 连续递增，checksum 由模块按原文 SHA-256 计算；调用方不提供 checksum。outcome 包含 `status`（fresh / up-to-date / migrated / adopted / moved-aside）、`appliedVersion`、可选 `backupPath` 和 `movedAsidePaths`。根 workspaces 已有 `packages/*`，自动注册该包。
+
+账本沿用 STRICT 的 `schema_migrations(version INTEGER PRIMARY KEY, name TEXT NOT NULL, checksum TEXT NOT NULL, applied_at INTEGER NOT NULL)`。历史必须是代码迁移的连续前缀，version/name/checksum 均校验，未知更高版本拒绝。每个待应用迁移各用一个 `BEGIN IMMEDIATE` 事务执行 SQL 和账本写入，事务内再次校验历史；失败回滚该次迁移，先前已提交版本保持有效。没有第二份 schema 版本轴。
+
+连接设置 WAL 和 busy_timeout=5000，目录 0700、数据库 0600；不设置 foreign_keys，由 owner 在 ready 后自行设置。`:memory:` 跳过文件操作和备份。分类错误 `SqliteLifecycleError.kind` 包含 busy / history-mismatch / newer-schema / unsupported-legacy / io；另以 migration-failed 表示 SQL 语法/约束执行失败，保留 cause，避免把任意 SQL 错误称作损坏或磁盘故障。模块不管理进程锁、业务恢复、更新器或自动还原。
 
 共享包禁止导入 Feature/React、账户服务、DSH/Hermes；领域层禁止把连接对象传过 IPC。SQL 留在 repository、迁移、诊断和必要低层 adapter 中，不是插件修改核心表的后门。Web 升级代码共置于对应 IndexedDB adapter；共享的是语义/测试而不是数据库操作类型。一个物理库的 schema/migration 集合只有一个 owner。
 

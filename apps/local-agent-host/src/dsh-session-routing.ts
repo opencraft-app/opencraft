@@ -1,7 +1,13 @@
-import { DatabaseSync } from "node:sqlite";
-import { mkdirSync, chmodSync } from "node:fs";
-import { dirname } from "node:path";
+import type { DatabaseSync } from "node:sqlite";
+import { openManagedDatabase, type DatabaseOutcome } from "@opencraft/sqlite-node";
 import type { DshEvent, DshStreamEnvelope } from "./dsh-client.js";
+const BASELINE = `CREATE TABLE dsh_session_generations (
+      logical_id TEXT NOT NULL, native_id TEXT NOT NULL UNIQUE, generation INTEGER NOT NULL,
+      seed_seq INTEGER NOT NULL, seed_turn INTEGER NOT NULL, prior_seq INTEGER NOT NULL, prior_turn INTEGER NOT NULL,
+      PRIMARY KEY(logical_id,generation)
+    );
+    CREATE TABLE dsh_pending_generations (native_id TEXT PRIMARY KEY, logical_id TEXT NOT NULL, intent TEXT)`;
+
 export interface DshSessionGeneration {
   logicalId: string; nativeId: string; generation: number;
   seedThroughSeq: number; seedThroughTurn: number; previousLastSeq: number; previousLastTurn: number;
@@ -12,17 +18,11 @@ export interface DshSessionGeneration {
  */
 export class DshSessionRouting {
   private readonly db: DatabaseSync;
+  readonly outcome: DatabaseOutcome;
   constructor(path: string) {
-    if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-    this.db = new DatabaseSync(path);
-    if (path !== ":memory:") chmodSync(path, 0o600);
-    this.db.exec(`CREATE TABLE IF NOT EXISTS dsh_session_generations (
-      logical_id TEXT NOT NULL, native_id TEXT NOT NULL UNIQUE, generation INTEGER NOT NULL,
-      seed_seq INTEGER NOT NULL, seed_turn INTEGER NOT NULL, prior_seq INTEGER NOT NULL, prior_turn INTEGER NOT NULL,
-      PRIMARY KEY(logical_id,generation)
-    )`);
-    this.db.exec("CREATE TABLE IF NOT EXISTS dsh_pending_generations (native_id TEXT PRIMARY KEY, logical_id TEXT NOT NULL)");
-    if (!(this.db.prepare("PRAGMA table_info(dsh_pending_generations)").all() as any[]).some(row => row.name === "intent")) this.db.exec("ALTER TABLE dsh_pending_generations ADD COLUMN intent TEXT");
+    const managed = openManagedDatabase({ path, migrations: [{ version: 1, name: "session-routing", sql: BASELINE }] });
+    this.db = managed.database;
+    this.outcome = managed.outcome;
   }
   private decode(row: any): DshSessionGeneration {
     return { logicalId: row.logical_id, nativeId: row.native_id, generation: row.generation,
