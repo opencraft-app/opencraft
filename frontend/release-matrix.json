@@ -156,7 +156,8 @@
         "EDGEONE_PAGES_ENV": "production",
         "NEXT_VERSION_STATIC_ASSETS": "1"
       },
-      "siteUrl": "https://lightvela-prerelease-tn2l7wnk.edgeone.dev"
+      "siteUrl": "https://lightvela-prerelease-tn2l7wnk.edgeone.dev",
+      "velaImApiBase": "https://lightclaw.tech/v1/collaboration"
     },
     {
       "id": "eo:global-lightvela-prerelease-preview",
@@ -189,7 +190,8 @@
         "posthog": {
           "enabled": "false"
         }
-      }
+      },
+      "velaImApiBase": "https://lightclaw.tech/v1/collaboration"
     }
   ]
 }

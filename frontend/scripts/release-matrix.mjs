@@ -178,6 +178,8 @@ export function loadReleaseMatrix(matrixPath = process.env.FRONTEND_RELEASE_MATR
       deployEnv: ensureStringMap(combo.deployEnv, "deployEnv", id),
       observability: ensureObservabilityConfig(combo.observability, id),
       embeddedWorkbench: ensureEmbeddedWorkbenchConfig(combo.embeddedWorkbench, id),
+      // Vela IM backend (collaboration behind the gateway); combos without it keep Agent group chat hidden.
+      velaImApiBase: ensureOptionalString(combo.velaImApiBase, "velaImApiBase", id),
     };
 
     return normalized;
@@ -269,6 +271,12 @@ export function createComboEnvironment(combo, projectName, env = process.env) {
     NEXT_PUBLIC_APP_ENV: combo.appEnv ?? "production",
     VITE_APP_ENV: combo.appEnv ?? "production",
   };
+
+  if (combo.velaImApiBase) {
+    nextEnv.NEXT_PUBLIC_VELA_IM_API_BASE = combo.velaImApiBase;
+  } else {
+    delete nextEnv.NEXT_PUBLIC_VELA_IM_API_BASE;
+  }
 
   if (combo.embeddedWorkbench?.enabled) {
     nextEnv.NEXT_PUBLIC_OPENCRAFT_EMBED_SCRIPT_URL = combo.embeddedWorkbench.scriptPath;
