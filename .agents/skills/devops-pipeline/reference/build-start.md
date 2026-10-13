@@ -4,6 +4,14 @@
 
 手动触发流水线构建。
 
+mono2 Stream（`projectId=git_1731878`）不能用此蓝盾通用 `build_start` 代替
+Stream 手动触发；即使请求头为 `X-DEVOPS-CHANNEL: GIT`，也不能证明 Stream 事件已登记。
+客户端对 `git_*` 项目拒绝此命令。使用已核验且有正常认证的 Stream 手动入口，
+否则在用户授权范围内按目标 YAML `on.push` 的分支与路径过滤，通过 Git 事件触发。
+CTL 的既有替代方式是 `ctl/README.md` 中的最小 Trigger note 更新后正常合入 master。
+不要使用空提交、重复启动、回退 BS 或用输入 SOURCE_SHA 代替实际 checkout SHA。
+以 Stream 列表/详情确认构建；只有蓝盾结果时明确说明尚未核验 Stream 登记。
+
 ## ⚠️ 重要：必须先获得用户确认
 
 **在调用此命令前，必须向用户展示完整的构建参数并获得明确确认。未经确认禁止执行。**
