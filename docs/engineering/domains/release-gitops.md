@@ -883,6 +883,19 @@ sgprod=`desktop.lightvela.site`（cert bAnD57eL / CLB lb-8kenwgvc）。该改动
   `CTL_API_ROLE` 实际取值与真实环境回归。
 - 回滚不依赖镜像：把目标环境 `desktop_upstream` 移除且 `role` 置空即回到兼容全放行，
   已建立的桌面会话按空闲回收收敛。
+- 该配对已由 CI 门禁强制（`validate_desktop_role_upstream_pairing`，接在
+  `gitops_static_validation.validate` 上，promote 前置验收阶段 fail closed）：
+  任一环境的 `ctl` overlay 给 `ctl-api` 打上 `role=api` 时，同环境
+  `argocd/services/service-gateway/<env>/config.yaml` 的 `/v1/instances` 路由必须同时具备
+  `desktop_upstream`，且 allowlist 必须覆盖 `/desktop/session`、`/desktop/resource`、
+  `/desktop/viewer`。空角色（兼容模式）不触发该要求。
+- 2026-10-12 事故记录：MR !5165 合入 `master` 后，只有 ctl 侧 `role=api` 经
+  「进入上海/新加坡正式待同步状态：ctl」promote 进了 `gitops`，网关侧 `desktop_upstream`
+  与五条 `resource`/`viewer` 白名单没跟上，`shprod`/`sgprod` 云电脑全部 404
+  （`desktop/session` 被 `ctl-api` 以 `NOT_FOUND` 拒收，`resource`/`viewer` 被网关以
+  `route_not_allowed` 拒收）。此外 `desktop_upstream` 是 MR !5165 才引入的网关字段，
+  网关镜像未一并晋级时旧二进制会静默忽略它（非严格 `yaml.Unmarshal`），
+  因此补配置必须与网关镜像晋级同批发布，否则配置看似正确而运行态无效。
 
 ## MR 复用工作区源码一致性（2026-10-10）
 
