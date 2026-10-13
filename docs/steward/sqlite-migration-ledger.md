@@ -10,7 +10,7 @@
 - [x] 阶段 1：共享模块 `packages/sqlite-node`（账本、升级前备份、无账本旧库处置）+ 纵向切片 document-storage、session-routing；已独立审查（thr_ivpebcdpvw，rebase 后 commit cb5fb91）
 - [x] 阶段 2：其余六库接入：Host 的 thread-catalog（document 加版本字段）、executions（基线迁移为唯一 DDL 权威）、managed-connectors、account-pool（owner 是 codex-core 进程，升级路径独立）；Electron Main 的 ui-preferences、connector-configuration（thr_awp42y5zzb，commit 78805d0、544d7b7）
 - [x] 阶段 3：daemon 启动时打开并迁移全部 Host 库，未就绪不监听 IPC；处置结果经 `daemon/ready` 到 gateway `/health.storage`；单元测试 + 更新 smoke 预置旧库验证，proof 在 `.local/server-updates/proof.json`（thr_w9hu76q468，commit f16b25c，已独立复审）
-- [ ] 阶段 4a：文档回写（sqlite-lifecycle、platform-architecture、web-deployment、AGENTS 规则）、整条分支 autoreview、`npm run gate`；推送前停下 ← 进行中
+- [ ] 阶段 4a：文档回写（sqlite-lifecycle、platform-architecture、web-deployment、AGENTS 规则）、整条分支 autoreview、`npm run gate`；推送前停下 ← 进行中（最近线程 thr_szsu3diywa）
 - [ ] 阶段 4b：管家收尾工作簿后，推送分支、开 PR 到 main、CI 通过后按仓库惯例合并
 
 ## 关键决策
