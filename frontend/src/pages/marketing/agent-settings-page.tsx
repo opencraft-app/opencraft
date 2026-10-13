@@ -57,7 +57,7 @@ import { AgentSectionHeader } from "@/components/domain/agent-section-header";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { agentConversations, NewAgentChatDialog, useVelaImConsole, useVelaImInviteLink, VelaImConversationView, VelaImSessionItems } from "@/features/vela-im/vela-im-console";
+import { agentConversations, NewAgentChatDialog, useAgentIdentities, useVelaImConsole, useVelaImInviteLink, VelaImConversationView, VelaImSessionItems } from "@/features/vela-im/vela-im-console";
 import { isVelaImEnabled } from "@/features/vela-im/vela-im-env";
 import type { ConversationItem as VelaImConversation } from "@/features/vela-im/vela-im-model";
 import { useOpenClaw, type OpenClawBot } from "@/contexts/agent-context";
@@ -2860,6 +2860,7 @@ export const AgentSettingsPage = ({
     id: bot.id, instanceId: bot.instanceId ?? bot.id, name: bot.name,
     avatar: (size: number) => <AgentBotAvatar bot={bot} size={size} execDebugCommand={execBotCommand} />,
   })), [visibleBots, execBotCommand]);
+  useAgentIdentities(velaIm, velaImBots);
   // An Agent conversation (single or group) replaces the embedded chat while selected.
   const [velaImConversation, setVelaImConversation] = useState<VelaImConversation | null>(null);
   const [newAgentChatOpen, setNewAgentChatOpen] = useState(false);
@@ -6431,7 +6432,7 @@ export const AgentSettingsPage = ({
                                   </li>
                                 ) : (
                                   chatSessionPagination.visibleSessions.map((session, index) => {
-                                    const isSelected = selectedChatId === session.chatId;
+                                    const isSelected = !velaImChatActive && selectedChatId === session.chatId;
                                     const isUnread = unreadChatIds.includes(session.chatId);
                                     const isPinned = "pinned" in session && session.pinned === true;
                                     const isPinning = pinningChatIds.has(session.chatId);

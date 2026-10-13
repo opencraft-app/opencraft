@@ -37,14 +37,14 @@ const defaultGroupName = (names: string[]) => {
   return joined.length > 28 ? `${joined.slice(0, 27)}…` : joined;
 };
 
-function AgentStateBadge({ agent }: { agent: AgentItem }) {
+function AgentStateBadge({ agent }: { agent: AgentItem | undefined }) {
   const t = useT();
-  if (agent.state === "provisioning") return <Badge variant="warning" className="gap-1"><Loader2 className="size-3 animate-spin" />{t("启动中")}</Badge>;
+  if (!agent || agent.state === "provisioning") return <Badge variant="warning" className="gap-1"><Loader2 className="size-3 animate-spin" />{t("准备中")}</Badge>;
   if (agent.state === "error") return <Badge variant="danger">{t("启动失败")}</Badge>;
   return null;
 }
 
-/** A LightVela bot shown in the chat page; it joins IM with its own identity the first time it is picked. */
+/** A LightVela bot shown in the chat page; it gets its own IM identity in the background as soon as it exists. */
 export interface ConsoleBot {
   id: string;
   instanceId: string;
@@ -68,22 +68,46 @@ const agentOptions = (im: VelaImController, bots: ConsoleBot[]): AgentOption[] =
   return bots.map((bot) => ({ key: botKey(bot.instanceId, bot.id), name: bot.name, bot, agent: byBot.get(botKey(bot.instanceId, bot.id)) }));
 };
 
-/** Resolves picked bots to IM identities; the backend gives a bot its own identity the first time (idempotent). */
-async function resolveAgents(im: VelaImController, options: AgentOption[], keys: string[]): Promise<Array<{ id: string; name: string }>> {
-  const connection = im.connection;
-  if (!connection) throw new Error("IM 尚未连接");
-  const out: Array<{ id: string; name: string }> = [];
-  let provisioned = false;
-  for (const key of keys) {
+/** Resolves picked bots to their IM identities; only ready Agents can be picked (see useAgentIdentities). */
+function resolveAgents(options: AgentOption[], keys: string[]): Array<{ id: string; name: string }> {
+  return keys.flatMap((key) => {
     const option = options.find((o) => o.key === key);
-    if (!option) continue;
-    if (option.agent?.state === "ready") { out.push({ id: option.agent.userId, name: option.name }); continue; }
-    const agent = await connection.api.provisionBot({ instanceId: option.bot.instanceId, botId: option.bot.id, displayName: option.bot.name });
-    out.push({ id: agent.userId, name: option.name });
-    provisioned = true;
-  }
-  if (provisioned) await im.refreshAgents();
-  return out;
+    if (!option) return [];
+    if (option.agent?.state !== "ready") throw new Error(`${option.name} 还在准备群聊身份，请稍后再试`);
+    return [{ id: option.agent.userId, name: option.name }];
+  });
+}
+
+const IDENTITY_RETRY_MS = 60_000;
+
+/**
+ * Gives every Agent its IM identity in the background as soon as it exists, so starting a chat never waits for it.
+ * Identities are created one at a time per instance: the first one on a profile restarts that instance's gateway.
+ */
+export function useAgentIdentities(im: VelaImController, bots: ConsoleBot[]) {
+  const attempted = useRef(new Map<string, number>());
+  const api = im.connection?.api;
+  const { agents, agentsLoaded, restricted, refreshAgents } = im;
+  useEffect(() => {
+    if (!api || !agentsLoaded || restricted) return;
+    const known = new Set(agents.filter((a) => a.state === "ready" || a.state === "provisioning").map((a) => botKey(a.instanceId, a.botId)));
+    const now = Date.now();
+    const missing = bots.filter((bot) => {
+      const key = botKey(bot.instanceId, bot.id);
+      return !known.has(key) && now - (attempted.current.get(key) ?? 0) > IDENTITY_RETRY_MS;
+    });
+    if (!missing.length) return;
+    const byInstance = new Map<string, ConsoleBot[]>();
+    for (const bot of missing) {
+      attempted.current.set(botKey(bot.instanceId, bot.id), now);
+      byInstance.set(bot.instanceId, [...(byInstance.get(bot.instanceId) ?? []), bot]);
+    }
+    void Promise.allSettled([...byInstance.values()].map(async (instanceBots) => {
+      for (const bot of instanceBots) {
+        await api.provisionBot({ instanceId: bot.instanceId, botId: bot.id, displayName: bot.name }).catch(() => undefined);
+      }
+    })).then(() => refreshAgents().catch(() => undefined));
+  }, [api, agents, agentsLoaded, restricted, bots, refreshAgents]);
 }
 
 const groupConversation = (group: ImGroup, name: string): ConversationItem => ({
@@ -129,18 +153,20 @@ function AgentPicker({ options, selected, onChange, exclude = [] }: {
     <ul className="max-h-72 divide-y divide-black/[0.06] overflow-y-auto rounded-md border border-black/[0.08]">
       {visible.map((option) => {
         const checked = selected.includes(option.key);
+        const ready = option.agent?.state === "ready";
         return (
           <li key={option.key}>
             <button
               type="button"
               role="checkbox"
               aria-checked={checked}
+              disabled={!ready && !checked}
               onClick={() => toggle(option.key)}
-              className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-black/[0.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--ring)]"
+              className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-black/[0.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-60"
             >
               <span className="inline-flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#FCE0B5] text-black/70">{option.bot.avatar?.(28) ?? <Bot className="size-3.5" />}</span>
               <span className="min-w-0 flex-1 truncate text-sm font-medium text-black/80">{option.name}</span>
-              {option.agent ? <AgentStateBadge agent={option.agent} /> : null}
+              <AgentStateBadge agent={option.agent} />
               <span className={cn("inline-flex size-5 shrink-0 items-center justify-center rounded-md border",
                 checked ? "border-[var(--text-primary)] bg-[var(--text-primary)] text-white" : "border-black/15 bg-white text-transparent")}>
                 <Check className="size-3" />
@@ -173,7 +199,7 @@ export function NewAgentChatDialog({ im, bots, open, onOpenChange, onOpened }: {
     setBusy(true);
     setError("");
     try {
-      const agents = await resolveAgents(im, options, selected);
+      const agents = resolveAgents(options, selected);
       if (agents.length === 1) {
         const agent = agents[0]!;
         onOpened({ conversationID: `C2C${agent.id}`, kind: "C2C", targetID: agent.id, name: agent.name, lastText: "", lastTime: 0, unread: 0, isPinned: false });
@@ -252,11 +278,11 @@ function AddAgentsDialog({ im, bots, conversation, open, onOpenChange, onOpened,
       if (isGroup) {
         const groupId = platformGroupId(conversation.targetID);
         if (!groupId) throw new Error(t("这个群不是通过平台创建的，不能在这里拉人"));
-        const agents = await resolveAgents(im, options, selected);
+        const agents = resolveAgents(options, selected);
         for (const agent of agents) await connection.api.addGroupMember(groupId, agent.id);
         onInvited();
       } else {
-        const agents = await resolveAgents(im, options, selected);
+        const agents = resolveAgents(options, selected);
         const agentName = (id: string) => agents.find((a) => a.id === id)?.name ?? im.agents.find((a) => a.userId === id)?.displayName ?? (id === conversation.targetID ? conversation.name : id);
         const memberIDs = [conversation.targetID, ...agents.map((a) => a.id)];
         const name = defaultGroupName(memberIDs.map(agentName));

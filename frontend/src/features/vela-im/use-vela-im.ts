@@ -52,6 +52,8 @@ export function useVelaIm(lightvelaToken: string | null, lightvelaUserID: string
   const [contacts, setContacts] = useState<ContactItem[]>([]);
   const [applications, setApplications] = useState<ApplicationItem[]>([]);
   const [agents, setAgents] = useState<AgentItem[]>([]);
+  /** The backend's Agent list has arrived; until then an empty list says nothing about which Agents lack an identity. */
+  const [agentsLoaded, setAgentsLoaded] = useState(false);
   /** Kept per conversation for the whole session, so switching chats or devices never loses who is working. */
   const [working, setWorking] = useState<WorkingAgents>({});
   /** IM user IDs in each platform group, keyed by Tencent group ID; membership lives in the backend, not in Tencent. */
@@ -80,11 +82,12 @@ export function useVelaIm(lightvelaToken: string | null, lightvelaUserID: string
     setApplications([]);
     setWorking({});
     setGroupMembers({});
+    setAgentsLoaded(false);
     requestedGroups.current = new Set();
     const connect = async () => {
       setStatus("connecting");
       const api = new VelaHumanAPI(base, { headers: () => ({ Authorization: `Bearer ${lightvelaToken}` }) });
-      void api.bots().then((list) => { if (!cancelled) setAgents(list); }, () => undefined);
+      void api.bots().then((list) => { if (!cancelled) { setAgents(list); setAgentsLoaded(true); } }, () => undefined);
       const { VelaBrowserClient } = await import("@vela/im-client/browser");
       if (cancelled) return;
       local = new VelaBrowserClient();
@@ -155,6 +158,7 @@ export function useVelaIm(lightvelaToken: string | null, lightvelaUserID: string
   const refreshAgents = useCallback(async () => {
     if (!connection) return;
     setAgents(await connection.api.bots());
+    setAgentsLoaded(true);
   }, [connection]);
 
   // A restriction applied while the page is open shows up when the person comes back to it.
@@ -218,6 +222,7 @@ export function useVelaIm(lightvelaToken: string | null, lightvelaUserID: string
     contacts,
     applications,
     agents,
+    agentsLoaded,
     working,
     groupMembers,
     events,
