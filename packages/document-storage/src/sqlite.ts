@@ -1,5 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
-import { openManagedDatabase } from "@opencraft/sqlite-node";
+import { openManagedDatabase, type DatabaseOutcome } from "@opencraft/sqlite-node";
 import {
   serializeDocumentValue, validateDataRevision, validateDataScope, validateDataVersion, parseDocumentRecord, validateDocumentTransition,
   type DocumentRecord, type DocumentCommit, type DocumentValue,
@@ -10,8 +10,11 @@ const BASELINE = "CREATE TABLE extension_records (scope TEXT PRIMARY KEY NOT NUL
 /** Owner supplies a fixed private path; RPC callers never supply database paths. */
 export class SqliteDocumentStore {
   private readonly database: DatabaseSync;
+  readonly outcome: DatabaseOutcome;
   constructor(path: string) {
-    this.database = openManagedDatabase({ path, migrations: [{ version: 1, name: "extension-records", sql: BASELINE }] }).database;
+    const managed = openManagedDatabase({ path, migrations: [{ version: 1, name: "extension-records", sql: BASELINE }] });
+    this.database = managed.database;
+    this.outcome = managed.outcome;
     try {
       this.database.prepare("SELECT scope,revision,data_version,value_json FROM extension_records LIMIT 0").all();
     } catch (error) { this.database.close(); throw error; }

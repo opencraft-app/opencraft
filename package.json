@@ -145,6 +145,7 @@
     "update:server:local": "node scripts/update-server-local.mjs",
     "package:web:server:execution": "OPENCRAFT_PACKAGE_EXECUTION=1 npm run package:web:server",
     "gate:server-updates": "node scripts/gate-server-updates.mjs",
+    "test:local-agent-storage": "tsx --test tests/local-agent-storage.test.ts",
     "test:server-updates": "node --test tests/server-deployment.test.mjs",
     "smoke:server-self-upgrade": "OPENCRAFT_SERVER_SMOKE_SYSTEMD=1 OPENCRAFT_SERVER_SMOKE_SELF_UPGRADE=1 tsx scripts/smoke-server-updates.ts",
     "smoke:server-updates:systemd": "OPENCRAFT_SERVER_SMOKE_SYSTEMD=1 tsx scripts/smoke-server-updates.ts",

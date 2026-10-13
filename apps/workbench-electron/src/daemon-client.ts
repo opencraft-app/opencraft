@@ -9,9 +9,11 @@ import {
   OPENCRAFT_DAEMON_BUILD_ID,
   OPENCRAFT_DAEMON_PROTOCOL_VERSION,
   type DaemonServerMessage,
+  type DaemonStorageSummary,
 } from "@opencraft/daemon-ipc";
 
 export interface OpenCraftDaemonAppHostConnection {
+  readonly storage?: readonly DaemonStorageSummary[];
   send(payload: unknown): void;
   subscribeMessage(listener: (payload: unknown) => void): () => void;
   subscribeClose(listener: (error: Error | null) => void): () => void;
@@ -99,8 +101,22 @@ export function daemonLaunchSpec(
   };
 }
 
+function parseStorage(value: unknown): readonly DaemonStorageSummary[] | undefined {
+  if (value === undefined) return undefined;
+  const names = new Set(["session-routing", "threads", "executions", "host-documents", "managed-connectors"]);
+  const statuses = new Set(["fresh", "up-to-date", "migrated", "adopted", "moved-aside"]);
+  if (!Array.isArray(value)) throw new Error("Invalid daemon storage summary");
+  return value.map(raw => {
+    if (!raw || typeof raw !== "object" || !names.has(raw.name) || !statuses.has(raw.status)
+      || !Number.isSafeInteger(raw.appliedVersion) || raw.appliedVersion < 1 || typeof raw.movedAside !== "boolean"
+      || (raw.backupPath !== undefined && typeof raw.backupPath !== "string")) throw new Error("Invalid daemon storage summary");
+    return { name: raw.name, status: raw.status, appliedVersion: raw.appliedVersion,
+      movedAside: raw.movedAside, ...(raw.backupPath === undefined ? {} : { backupPath: raw.backupPath }) };
+  });
+}
+
 class ConnectedDaemonChannel {
-  constructor(readonly channel: DaemonJsonLineChannel) {}
+  constructor(readonly channel: DaemonJsonLineChannel, readonly storage?: readonly DaemonStorageSummary[]) {}
 
   close(): void { this.channel.close(); }
 }
@@ -140,6 +156,7 @@ export class OpenCraftDaemonClientManager {
     });
     let closed = false;
     return {
+      storage: connected.storage,
       send: (payload) => connected.channel.send({ type: "app-host/message", payload }),
       subscribeMessage(listener) {
         messageListeners.add(listener);
@@ -271,10 +288,13 @@ export class OpenCraftDaemonClientManager {
           fail(new Error("OpenCraft Daemon protocol/build mismatch"));
           return;
         }
+        let storage: readonly DaemonStorageSummary[] | undefined;
+        try { storage = parseStorage(message.storage); }
+        catch (error) { fail(error instanceof Error ? error : new Error(String(error))); return; }
         if (settled) return;
         settled = true;
         cleanup();
-        resolve(new ConnectedDaemonChannel(channel));
+        resolve(new ConnectedDaemonChannel(channel, storage));
       });
       const unsubscribeClose = channel.subscribeClose((error) => {
         fail(error ?? new Error("OpenCraft Daemon closed during handshake"));

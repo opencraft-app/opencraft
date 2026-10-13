@@ -16,7 +16,7 @@ async function until(read, condition) {
 }
 test('server update commits both versions, restores execution after failure and reconciles interrupted pointers', { timeout: 120_000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'opencraft-server-update-'));
-  let app, fixture, gatewayIdentity; let cookie = ''; let base; let failRestart = false; let failCommit = false; let failRollbackRestart = false;
+  let app, fixture, gatewayIdentity; let cookie = ''; let base; let failReadiness = false; let failRestart = false; let failCommit = false; let failRollbackRestart = false;
   const state = join(root, 'state'); await mkdir(state);
   const link = join(state, 'execution-current'); const tokenPath = join(root, 'token'); await writeFile(tokenPath, 'synthetic-token');
   const health = { protocolVersion: 1, pid: 123, codexPid: 456 };
@@ -25,7 +25,10 @@ test('server update commits both versions, restores execution after failure and 
     response.end(JSON.stringify(health));
   });
   const endpoint = join(root, 'core.sock'); await new Promise(done => core.listen(endpoint, done));
-  const gateway = createServer((request, response) => response.end(JSON.stringify({ ok: true, ...gatewayIdentity, core: health })));
+  const gateway = createServer((request, response) => {
+    if (gatewayIdentity === null) { response.destroy(); return; }
+    response.end(JSON.stringify({ ok: true, ...gatewayIdentity, core: health }));
+  });
   await new Promise(done => gateway.listen(0, '127.0.0.1', done));
   let restarts = [];
   const execution = createExecutionDeployment({ link, unit: 'execution.service', coreUnit: 'core.service', coreEndpoint: endpoint, tokenPath,
@@ -35,6 +38,7 @@ test('server update commits both versions, restores execution after failure and 
       restarts.push(manifest.version);
       if (failRollbackRestart && manifest.version === '1.0.0') throw new Error('Synthetic rollback restart denied');
       if (failRestart && manifest.version === '1.1.0') throw new Error('Synthetic execution startup failure');
+      if (failReadiness && manifest.version === '1.1.0') { gatewayIdentity = null; return; }
       gatewayIdentity = { version: manifest.version, buildId: manifest.opencraftWeb.buildId };
     } });
   const status = async () => parseWebUpdateStatus(await (await fetch(base + '/__opencraft_updates', { headers: { cookie } })).json());
@@ -61,6 +65,14 @@ test('server update commits both versions, restores execution after failure and 
     assert.equal(typeof plugin.apply, 'function');
     await open();
     assert.equal((await status()).execution.version, '1.0.0');
+    failReadiness = true;
+    const readinessFailure = await install('1.1.0');
+    assert.equal(readinessFailure.job.phase, 'failed');
+    assert.match(readinessFailure.job.error, /Execution release failed readiness/);
+    assert.equal(readinessFailure.current.version, '1.0.0');
+    assert.equal(gatewayIdentity.version, '1.0.0');
+    assert.deepEqual(restarts.slice(-2), ['1.1.0', '1.0.0']);
+    failReadiness = false;
     failRestart = true;
     const startup = await install('1.1.0');
     assert.equal(startup.job.phase, 'failed'); assert.match(startup.job.error, /startup failure/);

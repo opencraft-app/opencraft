@@ -5,6 +5,14 @@ export const OPENCRAFT_DAEMON_PROTOCOL_VERSION = 1 as const;
 export const OPENCRAFT_DAEMON_BUILD_ID = "opencraft-daemon-v2" as const;
 export const MAX_DAEMON_FRAME_BYTES = 64 * 1024 * 1024;
 
+export interface DaemonStorageSummary {
+  readonly name: "session-routing" | "threads" | "executions" | "host-documents" | "managed-connectors";
+  readonly status: "fresh" | "up-to-date" | "migrated" | "adopted" | "moved-aside";
+  readonly appliedVersion: number;
+  readonly backupPath?: string;
+  readonly movedAside: boolean;
+}
+
 export type DaemonClientMessage =
   | {
       readonly type: "daemon/hello";
@@ -23,6 +31,7 @@ export type DaemonServerMessage =
       readonly protocolVersion: typeof OPENCRAFT_DAEMON_PROTOCOL_VERSION;
       readonly buildId: typeof OPENCRAFT_DAEMON_BUILD_ID;
       readonly pid: number;
+      readonly storage?: readonly DaemonStorageSummary[];
     }
   | { readonly type: "app-host/message"; readonly payload: unknown }
   | {

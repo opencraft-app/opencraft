@@ -12,9 +12,8 @@ import { DshAppServerAdapter, decodeModel } from "./dsh-appserver-adapter.js";
 import { DshClient, DshClientError } from "./dsh-client.js";
 import { DshSupervisor } from "./dsh-supervisor.js";
 import { DshRestartBudget } from "./dsh-restart-budget.js";
-import { DshExecutionAuthority } from "./dsh-execution-authority.js";
+import { openLocalAgentStorage, type LocalAgentStorage } from "./storage/local-agent-storage.js";
 import { DshCapabilityBroker, normalizeCapabilities } from "./dsh-capability-broker.js";
-import { ManagedConnectorService } from "@opencraft/connector-host";
 import { HostDocumentService, HostDocumentFault } from "./storage/host-document-service.js";
 import { HOST_STORAGE } from "@opencraft/appserver-protocol/host-storage";
 import {
@@ -22,11 +21,9 @@ import {
   verifyDshCapabilityRegistration,
 } from "./dsh-capability-link.js";
 import { requestLoopback } from "./loopback-http.js";
-import { DshSessionRouting } from "./dsh-session-routing.js";
 import { DshRoutedClient } from "./dsh-routed-client.js";
 import { HostProcessService } from "./process-service.js";
 import { ProjectRepository } from "./project-repository.js";
-import { ThreadCatalog } from "./thread-catalog.js";
 import { ThreadLifecycle } from "./thread-lifecycle.js";
 import { LOGICAL_CLIENT_FIELD } from "@opencraft/app-host-protocol";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -35,6 +32,9 @@ import { DshProfileSkillsHandler } from "./dsh-profile-skills.js";
 import { SkillCatalogRefresh } from "./skills/catalog-refresh.js";
 import { OPENCRAFT_ATTACHMENT_STAGING_EXTENSION } from "@opencraft/appserver-protocol";
 import { LocalAttachmentStagingService } from "./attachments/local-attachment-staging.js";
+
+export { acquireLocalAgentStorageOwner } from "./storage/daemon-storage-owner.js";
+export { openLocalAgentStorage } from "./storage/local-agent-storage.js";
 
 type JsonRpcMessage = Record<string, unknown>;
 const PROFILE_SKILLS_METHODS = new Set<ProfileSkillsMethod>([
@@ -130,12 +130,26 @@ export async function startLocalAgentHost(options: {
   /** Explicit development/package path; the Agent Host never infers Electron's cwd. */
   readonly dshCapabilityPlugin?: string;
   readonly dataDirectory?: string;
+  readonly storage?: LocalAgentStorage;
   readonly machineIdentity?: RuntimeMachineIdentity;
   readonly modelStorageDirectory?: string;
   readonly projectStorageDirectory?: string;
   /** Test/embedding override; desktop defaults to ~/.opencraft/skills. */
   readonly skillsDirectory?: string;
 } = {}) {
+  const storage = options.storage ?? openLocalAgentStorage({ dataDirectory: options.dataDirectory });
+  const cleanup: (() => void | Promise<void>)[] = [() => storage.close()];
+  let stopAccepting: (() => Promise<void>) | undefined;
+  let drainThreads: (() => Promise<void>) | undefined;
+  const dispose = async () => {
+    let failure: unknown;
+    const releaseAll = [stopAccepting, drainThreads, ...[...cleanup].reverse()];
+    for (const release of releaseAll) {
+      try { await release?.(); } catch (error) { failure ??= error; }
+    }
+    if (failure !== undefined) throw failure;
+  };
+  try {
   let closing = false;
   let onEngineExit: ((error: Error) => void) | undefined;
   let engineStatus: "ready" | "restarting" | "failed" = "ready";
@@ -147,16 +161,12 @@ export async function startLocalAgentHost(options: {
   );
   let bridgeUrl: string | undefined;
   let capabilityLink: DshCapabilityLink | undefined;
-  let managedConnectors: ManagedConnectorService | undefined;
+  const managedConnectors = storage.connectors;
   const connectorListeners = new Set<(id: string) => void>();
-  const connectors = () => {
-    if (!managedConnectors) {
-      managedConnectors = new ManagedConnectorService(join(options.dataDirectory ?? join(homedir(), ".opencraft"), "opencraft-managed-connectors.sqlite"));
-      managedConnectors.subscribe(id => { for (const listener of connectorListeners) listener(id); });
-    }
-    return managedConnectors;
-  };
+  managedConnectors.subscribe(id => { for (const listener of connectorListeners) listener(id); });
+  const connectors = () => managedConnectors;
   let bridgeDirectory: string | undefined;
+  cleanup.push(async () => { if (bridgeDirectory) await rm(bridgeDirectory, { recursive: true, force: true }); });
   const patches: string[] = [];
   if (!options.dshUrl && !process.env.OPENCRAFT_DSH_URL?.trim()) {
     const executable = resolve(options.dshExecutable ?? process.env.OPENCRAFT_DSH_EXECUTABLE ?? "runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js");
@@ -198,13 +208,12 @@ export async function startLocalAgentHost(options: {
     patches,
     onCapabilityBridge: url => { bridgeUrl = url; capabilityLink?.attach(url); },
   });
-  let dshUrl: string;
-  try { dshUrl = options.dshUrl ?? await supervisor.start(); }
-  catch (error) { if (bridgeDirectory) await rm(bridgeDirectory, { recursive: true, force: true }); throw error; }
-  const routing = new DshSessionRouting(options.dataDirectory ? resolve(options.dataDirectory, "opencraft-session-routing.sqlite") : ":memory:");
+  cleanup.push(() => supervisor.stop());
+  const dshUrl = options.dshUrl ?? await supervisor.start();
+  const routing = storage.routing;
   const client = new DshRoutedClient(dshUrl, routing);
   const socketClients = new Map<WebSocket, Map<string, LogicalClient>>();
-  const lifecycle = new ThreadLifecycle(new ThreadCatalog(options.dataDirectory ? join(options.dataDirectory, "opencraft-threads.sqlite") : ":memory:"),
+  const lifecycle = new ThreadLifecycle(storage.threads,
     async id => {
       if (!capabilityLink) return { released: false };
       const result = await capabilityLink.thread("release", { sessionId: routing.native(id) });
@@ -217,8 +226,9 @@ export async function startLocalAgentHost(options: {
         if (global || !id || lifecycle.attachments.has(state.key, id)) sendClient(socket, state.clientId, { jsonrpc: "2.0", method, params });
       }
     });
+  drainThreads = () => lifecycle.close();
   let modelConfiguration: import('./model-config/dsh-adapter.js').DshModelConfigurationBridge | undefined;
-  try { if(options.modelStorageDirectory){
+  if(options.modelStorageDirectory){
     const {ModelConfigurationRepository,ModelCredentialRepository}=await import('./model-config/repository.js');
     const {ModelConfigurationService}=await import('./model-config/service.js');
     const {DshModelEngineAdapter,DshModelConfigurationBridge}=await import('./model-config/dsh-adapter.js');
@@ -227,8 +237,8 @@ export async function startLocalAgentHost(options: {
     if(options.dataDirectory)await migrateDshModels(repository,credentials,options.dataDirectory,await client.call('settings.describe'));
     modelConfiguration=new DshModelConfigurationBridge(client,new ModelConfigurationService(repository,credentials,new DshModelEngineAdapter(client)));
     await modelConfiguration.initialize();
-  } } catch(error) { await lifecycle.close(); routing.close(); await supervisor.stop(); if (bridgeDirectory) await rm(bridgeDirectory, { recursive: true, force: true }); throw error; }
-  const authority = new DshExecutionAuthority(options.dataDirectory ? resolve(options.dataDirectory, "opencraft-executions.sqlite") : ":memory:");
+  }
+  const authority = storage.executions;
   const adapter = new DshAppServerAdapter(client,modelConfiguration,authority,patches.length > 0, patches.length ? {
     read: async threadId => {
       if (!capabilityLink) throw new Error("DSH permission service is not ready");
@@ -239,8 +249,11 @@ export async function startLocalAgentHost(options: {
       return capabilityLink.permissions(threadId, preset);
     },
   } : undefined);
+  cleanup.push(() => adapter.close());
   const capabilities = new DshCapabilityBroker();
-  try { if (patches.length) {
+  cleanup.push(() => capabilities.close());
+  cleanup.push(() => capabilityLink?.close());
+  if (patches.length) {
     capabilityLink = new DshCapabilityLink(bridgeToken, capabilities, authority, routing, () => {
       for (const [socket, clients] of socketClients) for (const state of clients.values()) {
         sendClient(socket, state.clientId, { jsonrpc: "2.0", method: "skills/changed", params: {} });
@@ -248,13 +261,6 @@ export async function startLocalAgentHost(options: {
     });
     if (bridgeUrl) capabilityLink.attach(bridgeUrl);
     for (const pending of routing.pending()) routing.reconcile(pending.logicalId, await capabilityLink.resolveGeneration(pending.logicalId));
-  } } catch (error) {
-    await lifecycle.close();
-    await capabilityLink?.close();
-    capabilities.close(); adapter.close(); authority.close(); routing.close();
-    await supervisor.stop();
-    if (bridgeDirectory) await rm(bridgeDirectory, { recursive: true, force: true });
-    throw error;
   }
   if (capabilityLink) adapter.setModelInfoReader((provider, model) => capabilityLink!.modelInfo(provider, model));
   if (capabilityLink) adapter.setSkillInvocationValidator((threadId, skills) => capabilityLink!.validateSkillInvocations(threadId, skills));
@@ -388,7 +394,9 @@ export async function startLocalAgentHost(options: {
     void restartEngine(true).catch(() => { engineStatus = "failed"; });
   };
   const processes = new HostProcessService();
-  const hostDocuments = new HostDocumentService(options.dataDirectory ? join(options.dataDirectory, "opencraft-host-documents.sqlite") : null);
+  cleanup.push(() => processes.close());
+  const hostDocuments = new HostDocumentService(options.dataDirectory ? join(options.dataDirectory, "opencraft-host-documents.sqlite") : null, storage.documents);
+  cleanup.push(() => hostDocuments.close());
   const projects = new ProjectRepository(options.projectStorageDirectory ?? options.modelStorageDirectory ?? options.dataDirectory);
   const token = options.token ?? randomBytes(24).toString("base64url");
   const server = createServer((request, response) => {
@@ -397,13 +405,19 @@ export async function startLocalAgentHost(options: {
     response.setHeader("content-type", "application/json; charset=utf-8");
     if (url.pathname === "/health") {
       response.statusCode = engineStatus === "ready" ? 200 : 503;
-      response.end(`${JSON.stringify({ ok: engineStatus === "ready", engine: "dsh", status: engineStatus })}\n`);
+      response.end(`${JSON.stringify({ ok: engineStatus === "ready", engine: "dsh", status: engineStatus, storage: storage.summaries })}\n`);
       return;
     }
     response.statusCode = 404;
     response.end(`${JSON.stringify({ ok: false, error: "Not found" })}\n`);
   });
   const websocketServer = new WebSocketServer({ noServer: true });
+  stopAccepting = async () => {
+    closing = true;
+    for (const client of websocketServer.clients) client.close(1001, "OpenCraft is quitting");
+    websocketServer.close();
+    if (server.listening) await new Promise<void>(resolve => server.close(() => resolve()));
+  };
   server.on("upgrade", (request, socket, head) => {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
     if (url.pathname !== "/rpc" || url.searchParams.get("token") !== token) {
@@ -670,32 +684,13 @@ export async function startLocalAgentHost(options: {
       unsubscribe(); unsubscribeProcesses(); connectorListeners.delete(connectorChanged); unsubscribeDocuments();
     });
   });
-  try {
-    await new Promise<void>((resolvePromise, reject) => {
-      server.once("error", reject);
-      server.listen(options.port ?? 0, options.host ?? "127.0.0.1", () => {
-        server.off("error", reject);
-        resolvePromise();
-      });
+  await new Promise<void>((resolvePromise, reject) => {
+    server.once("error", reject);
+    server.listen(options.port ?? 0, options.host ?? "127.0.0.1", () => {
+      server.off("error", reject);
+      resolvePromise();
     });
-  } catch (error) {
-    closing = true;
-    managedConnectors?.close();
-    hostDocuments.close();
-    await lifecycle.close();
-    adapter.close();
-    capabilities.close();
-    await capabilityLink?.close();
-    authority.close();
-    routing.close();
-    processes.close();
-    for (const client of websocketServer.clients) client.terminate();
-    websocketServer.close();
-    if (server.listening) await new Promise<void>((resolvePromise) => server.close(() => resolvePromise()));
-    await supervisor.stop();
-    if (bridgeDirectory) await rm(bridgeDirectory, { recursive: true, force: true });
-    throw error;
-  }
+  });
   const address = server.address();
   if (address === null || typeof address === "string") throw new Error("Local Agent Host did not bind a TCP port");
   const websocketUrl = `ws://127.0.0.1:${address.port}/rpc?token=${encodeURIComponent(token)}`;
@@ -708,20 +703,12 @@ export async function startLocalAgentHost(options: {
     async close(): Promise<void> {
       if (closing) return;
       closing = true;
-      managedConnectors?.close();
-      hostDocuments.close();
-      await lifecycle.close();
-      adapter.close();
-      capabilities.close();
-      await capabilityLink?.close();
-      processes.close();
-      for (const client of websocketServer.clients) client.close(1001, "OpenCraft is quitting");
-      await new Promise<void>((resolvePromise) => server.close(() => resolvePromise()));
-      await supervisor.stop();
       await restartOperation?.catch(() => undefined);
-      authority.close();
-      routing.close();
-      if (bridgeDirectory) await rm(bridgeDirectory, { recursive: true, force: true });
+      await dispose();
     },
   };
+  } catch (error) {
+    try { await dispose(); } catch { /* Preserve the startup failure after releasing every resource. */ }
+    throw error;
+  }
 }

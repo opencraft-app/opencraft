@@ -1,7 +1,7 @@
 import { JsonRpcAppServerClient } from "@opencraft/appserver-client";
 import { startOpenCraftDaemon } from "../apps/opencraft-daemon/src/main.js";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { connect } from "node:net";
@@ -17,6 +17,9 @@ import {
   type DaemonServerMessage,
 } from "@opencraft/daemon-ipc";
 
+import { DshSessionRouting } from "../apps/local-agent-host/src/dsh-session-routing.js";
+import { seedLegacyHostStorage, seedNewerHostStorage } from "./local-agent-storage-fixture.js";
+import { OpenCraftDaemonClientManager } from "../apps/workbench-electron/src/daemon-client.js";
 import { readDaemonMachineIdentity } from "../apps/opencraft-daemon/src/machine-identity.js";
 import { startOpenCraftDaemonServer } from "../apps/opencraft-daemon/src/server.js";
 import { isDaemonEndpointUnavailable } from "../apps/workbench-electron/src/daemon-client.js";
@@ -214,4 +217,95 @@ test("one real daemon reports the same machine for DSH and Codex without an engi
     assert.deepEqual(identities.map(identity => identity.agent), ["OpenCraft", "Codex"]);
     appHost.close();
   } finally { await daemon.close(); process.chdir(previousCwd); await rm(directory, { recursive: true, force: true }); }
+});
+
+for (const failing of [true, false]) test(`daemon storage ${failing ? "failure prevents IPC" : "migration is visible before lazy engine startup"}`, async () => {
+  const directory = await mkdtemp(join(tmpdir(), "oc-daemon-storage-"));
+  const cwd = process.cwd();
+  let daemon: Awaited<ReturnType<typeof startOpenCraftDaemon>> | undefined;
+  try {
+    const dataDirectory = join(directory, "data");
+    if (failing) seedNewerHostStorage(dataDirectory); else seedLegacyHostStorage(dataDirectory);
+    const marker = join(directory, "engine-started");
+    const executable = join(directory, "fake-dsh.cjs");
+    await writeFile(executable, `require("node:fs").writeFileSync(${JSON.stringify(marker)}, "started");`);
+    const endpoint = join(directory, "daemon.sock");
+    const token = "synthetic-" + "x".repeat(48);
+    const options = { endpoint, runtimeDirectory: cwd, authToken: token, dshExecutable: executable,
+      dataDirectory, codexExecutable: "unused", codexDataDirectory: join(directory, "codex"), nativeCodexHomeDirectory: join(directory, "native") };
+    if (failing) {
+      await assert.rejects(startOpenCraftDaemon(options), /executions.*newer-schema/);
+      await assert.rejects(stat(endpoint), { code: "ENOENT" });
+    } else {
+      daemon = await startOpenCraftDaemon(options);
+      const tokenPath = join(directory, "token"); await writeFile(tokenPath, token);
+      const manager = new OpenCraftDaemonClientManager({ ...options, tokenPath, tokenMode: "existing", daemonEntry: "unused", executable: process.execPath });
+      const connection = await manager.connectAppHost("storage-summary");
+      try {
+        assert.deepEqual(connection.storage?.map(item => item.status), ["moved-aside", "adopted", "fresh", "fresh", "adopted"]);
+        for (const item of connection.storage ?? []) if (item.backupPath) assert.ok((await stat(item.backupPath)).size > 0);
+      } finally { connection.close(); }
+    }
+    await assert.rejects(stat(marker), { code: "ENOENT" });
+  } finally { await daemon?.close(); process.chdir(cwd); await rm(directory, { recursive: true, force: true }); }
+});
+
+test("competing daemon startup has exactly one storage owner before either can open databases", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "oc-daemon-owners-"));
+  const cwd = process.cwd();
+  const daemons: Awaited<ReturnType<typeof startOpenCraftDaemon>>[] = [];
+  try {
+    seedLegacyHostStorage(join(directory, "data"));
+    const opened = t.mock.method(DshSessionRouting.prototype, "close");
+    const options = { endpoint: join(directory, "daemon.sock"), runtimeDirectory: cwd, authToken: "x".repeat(48),
+      dshExecutable: "unused", dataDirectory: join(directory, "data"), codexExecutable: "unused",
+      codexDataDirectory: join(directory, "codex"), nativeCodexHomeDirectory: join(directory, "native") };
+    const results = await Promise.allSettled([startOpenCraftDaemon(options), startOpenCraftDaemon(options)]);
+    for (const result of results) if (result.status === "fulfilled") daemons.push(result.value);
+    assert.equal(daemons.length, 1);
+    const failure = results.find(result => result.status === "rejected");
+    assert.ok(failure && failure.status === "rejected"); assert.match(failure.reason.message, /already owned/);
+    assert.equal(opened.mock.callCount(), 0, "loser must not acquire and close stores");
+    await daemons[0].close(); daemons.length = 0;
+    assert.equal(opened.mock.callCount(), 1);
+    // The claim protects the data directory even with a different IPC endpoint.
+    const first = await startOpenCraftDaemon(options); daemons.push(first);
+    await assert.rejects(startOpenCraftDaemon({ ...options, endpoint: join(directory, "other.sock") }), /already owned/);
+  } finally { await Promise.all(daemons.map(daemon => daemon.close())); process.chdir(cwd); await rm(directory, { recursive: true, force: true }); }
+});
+
+test("lazy Host can retry after engine startup failure with reopened storage", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "oc-daemon-retry-"));
+  const cwd = process.cwd();
+  let daemon: Awaited<ReturnType<typeof startOpenCraftDaemon>> | undefined;
+  let appHost: MessagePortAppHostClient | undefined;
+  try {
+    const executable = join(directory, "fake-dsh.cjs");
+    await writeFile(executable, "process.exit(1)");
+    const endpoint = join(directory, "daemon.sock"), token = "x".repeat(48);
+    daemon = await startOpenCraftDaemon({ endpoint, runtimeDirectory: cwd, authToken: token, dshExecutable: executable,
+      dataDirectory: join(directory, "data"), codexExecutable: "unused", codexDataDirectory: join(directory, "codex"), nativeCodexHomeDirectory: join(directory, "native") });
+    const channel = await openDaemonChannel(endpoint, token, "retry-renderer");
+    const listeners = new Set<(event: MessageEvent<unknown>) => void>();
+    const stop = channel.subscribeMessage(value => {
+      const message = value as DaemonServerMessage;
+      if (message.type === "app-host/message") for (const listener of listeners) listener({ data: message.payload } as MessageEvent<unknown>);
+    });
+    appHost = new MessagePortAppHostClient({ postMessage: message => channel.send({ type: "app-host/message", payload: message }),
+      addEventListener: (_type, listener) => { listeners.add(listener); }, removeEventListener: (_type, listener) => { listeners.delete(listener); },
+      start() {}, close() { stop(); channel.close(); } }, "retry-renderer");
+    await appHost.waitUntilReady();
+    const firstTransport = appHost.createTransport("local");
+    const firstClient = new JsonRpcAppServerClient({ hostId: "local", transport: firstTransport });
+    await firstTransport.connect();
+    await assert.rejects(firstClient.request("project/list", {}), /DSH exited/);
+    await firstClient.close();
+    await writeFile(executable, 'console.log("dsh web: http://127.0.0.1:1"); setInterval(() => {}, 1000);');
+    const secondTransport = appHost.createTransport("local");
+    const secondClient = new JsonRpcAppServerClient({ hostId: "local", transport: secondTransport });
+    try {
+      await secondTransport.connect();
+      assert.deepEqual(await secondClient.request("project/list", {}), { data: [], nextCursor: null });
+    } finally { await secondClient.close(); }
+  } finally { appHost?.close(); await daemon?.close(); process.chdir(cwd); await rm(directory, { recursive: true, force: true }); }
 });

@@ -12,9 +12,11 @@ import {
   OPENCRAFT_DAEMON_PROTOCOL_VERSION,
   isDaemonClientHello,
   type DaemonClientMessage,
+  type DaemonStorageSummary,
 } from "@opencraft/daemon-ipc";
 
 export interface OpenCraftDaemonServerOptions {
+  readonly storage?: readonly DaemonStorageSummary[];
   readonly endpoint: string;
   readonly authToken: string;
   readonly appHost: AppHostServer;
@@ -95,6 +97,7 @@ export async function startOpenCraftDaemonServer(options: OpenCraftDaemonServerO
         }
         channel.send({
           type: "daemon/ready",
+          ...(options.storage === undefined ? {} : { storage: options.storage }),
           protocolVersion: OPENCRAFT_DAEMON_PROTOCOL_VERSION,
           buildId: OPENCRAFT_DAEMON_BUILD_ID,
           pid: process.pid,

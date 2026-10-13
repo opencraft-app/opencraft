@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import test from "node:test";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -9,7 +9,36 @@ import WebSocket from "ws";
 import { WebSocketServer } from "ws";
 
 import { startLocalAgentHost } from "../apps/local-agent-host/src/main.js";
+import { seedNewerHostStorage } from "./local-agent-storage-fixture.js";
 import { ThreadCatalog } from "../apps/local-agent-host/src/thread-catalog.js";
+
+test("Host storage failure neither listens nor starts the engine", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "oc-host-storage-failure-"));
+  const reserve = createServer();
+  await new Promise<void>(resolve => reserve.listen(0, "127.0.0.1", resolve));
+  const address = reserve.address(); assert.ok(address && typeof address !== "string");
+  await new Promise<void>(resolve => reserve.close(() => resolve()));
+  try {
+    seedNewerHostStorage(directory);
+    const marker = join(directory, "engine-started");
+    const executable = join(directory, "fake-dsh.cjs");
+    await writeFile(executable, `require("node:fs").writeFileSync(${JSON.stringify(marker)}, "started");`);
+    await assert.rejects(startLocalAgentHost({ dataDirectory: directory, port: address.port, dshExecutable: executable }), /executions.*newer-schema/);
+    await assert.rejects(stat(marker), { code: "ENOENT" });
+    await assert.rejects(fetch(`http://127.0.0.1:${address.port}/health`));
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test("Host health reports all eagerly opened stores", async () => {
+  const host = await startLocalAgentHost({ dshUrl: "http://127.0.0.1:1" });
+  try {
+    const url = new URL(host.websocketUrl); url.protocol = "http:"; url.pathname = "/health"; url.search = "";
+    const health = await (await fetch(url)).json();
+    assert.equal(health.ok, true);
+    assert.deepEqual(health.storage.map((item: { name: string; status: string }) => [item.name, item.status]),
+      ["session-routing", "threads", "executions", "host-documents", "managed-connectors"].map(name => [name, "fresh"]));
+  } finally { await host.close(); }
+});
 
 test("Host bind failure closes its thread catalog", async t => {
   const occupied = createServer();

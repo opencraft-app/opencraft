@@ -12,7 +12,7 @@ export class HostDocumentService {
   private database: SqliteDocumentStore | undefined;
   private closed = false;
   private readonly listeners = new Set<(change: HostDocumentChanged) => void>();
-  constructor(private readonly path: string | null) {}
+  constructor(private readonly path: string | null, database?: SqliteDocumentStore) { this.database = database; }
   subscribe(listener: (change: HostDocumentChanged) => void) { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; }
   handle(method: string, input: unknown): unknown {
     if (this.closed) throw new HostDocumentFault(-32040, "Host document storage unavailable");

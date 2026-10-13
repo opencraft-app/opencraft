@@ -57,7 +57,7 @@ const server = createServer(async (request, response) => {
     const connection = await daemon.connectAppHost('gateway-health');
     connection.close();
     const health = await core.health(AbortSignal.timeout(5000));
-    response.end(JSON.stringify({ ok: true, version: manifest.version, buildId: manifest.opencraftWeb.buildId, core: health }));
+    response.end(JSON.stringify({ ok: true, version: manifest.version, buildId: manifest.opencraftWeb.buildId, core: health, storage: connection.storage }));
   } catch { response.writeHead(503); response.end(JSON.stringify({ ok: false })); }
 });
 const sockets = new WebSocketServer({ noServer: true });

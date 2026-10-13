@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import { spawn, execFileSync } from 'node:child_process';
+import { spawn, spawnSync, execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
-import { mkdtemp, mkdir, readFile, writeFile, rm, readdir, readlink } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, rm, readdir, readlink, stat } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -12,6 +12,7 @@ import { startCodexCore } from '../apps/codex-core/src/main.ts';
 import { AccountPoolStore } from '../packages/account-pool-host/src/index.ts';
 import { createManagedWebServer } from './web-deployment/server.mjs';
 import { createExecutionDeployment, coreHealth } from './server-deployment/execution.mjs';
+import { seedLegacyHostStorage, seedNewerHostStorage } from '../tests/local-agent-storage-fixture.js';
 import { releaseFixture } from '../tests/web-deployment-fixture.mjs';
 
 let runAbort: AbortController | undefined;
@@ -40,6 +41,7 @@ if (process.argv[2] === 'core') {
   const data = join(root, 'core-data'), state = join(root, 'execution-state');
   await mkdir(join(data, 'runtime'), { recursive: true }); await mkdir(state); await mkdir(join(root, 'home')); await mkdir(join(root, 'native'));
   await writeFile(join(data, 'runtime/config.toml'), '[features]\nplugins = false\n');
+  seedLegacyHostStorage(join(state, 'data'));
   const token = 'synthetic-' + 'x'.repeat(48); const tokenPath = join(state, 'daemon.token'); await writeFile(tokenPath, token, { mode: 0o600 });
   const store = new AccountPoolStore({ databasePath: join(data, 'account-pool.sqlite'), secretsDirectory: join(data, 'secrets') });
   store.addAccount({ id: 'fixture', provider: 'codex', label: 'fixture', upstreamAccountId: 'fixture', priority: 1, enabled: true }, { accessToken: 'synthetic-only', refreshToken: null, expiresAt: null }); store.close();
@@ -76,6 +78,7 @@ if (process.argv[2] === 'core') {
     await writeFile(path, `[Unit]\nDescription=Isolated OpenCraft update acceptance\n[Service]\nType=simple\nWorkingDirectory=${root}\nEnvironmentFile=${environmentPath}\nExecStart=${command}\nKillMode=control-group\nTimeoutStopSec=150\n`);
     unitPaths.push(path);
   }
+  let rejectNextStorage = false;
   let core: any, gateway: any, fixture: any, app: any, browser: any; const sockets: WebSocket[] = [];
   const logs: string[] = []; let gatewayPort: number;
   async function stop(child: any) {
@@ -125,7 +128,25 @@ if (process.argv[2] === 'core') {
     const execution = createExecutionDeployment({ link, unit: executionUnit, coreUnit, coreEndpoint: endpoint, tokenPath,
       healthUrl: `http://127.0.0.1:${gatewayPort}/health`,
       ...(!systemd ? { validate: async () => {}, prepareAccess: async () => {}, restart: async () => {
-        await stop(gateway); gateway = launch([join(await readlink(link), 'execution/gateway.mjs')], gatewayEnv);
+        await stop(gateway);
+        const launchEnv = { ...gatewayEnv };
+        if (rejectNextStorage) {
+          rejectNextStorage = false;
+          const failedState = join(root, 'failed-storage-state'); await mkdir(failedState);
+          await writeFile(join(failedState, 'daemon.token'), token, { mode: 0o600 });
+          seedNewerHostStorage(join(failedState, 'data'));
+          const failedEndpoint = join(failedState, 'direct-check.sock');
+          const rejected = spawnSync(process.execPath, [join(await readlink(link), 'execution/daemon.cjs'),
+            '--endpoint', failedEndpoint, '--runtime-directory', root,
+            '--dsh-executable', gatewayEnv.OPENCRAFT_DSH_EXECUTABLE, '--data-directory', join(failedState, 'data'),
+            '--codex-executable', '/external-core-only', '--codex-data-directory', join(failedState, 'codex'),
+            '--native-codex-home-directory', join(failedState, 'native')],
+            { cwd: root, env: { ...env, OPENCRAFT_DAEMON_AUTH_TOKEN: token }, encoding: 'utf8', timeout: 10_000 });
+          assert.equal(rejected.status, 1); assert.match(rejected.stderr, /Host storage executions failed.*newer-schema/);
+          await assert.rejects(stat(failedEndpoint), { code: 'ENOENT' });
+          launchEnv.OPENCRAFT_EXECUTION_STATE = failedState;
+        }
+        gateway = launch([join(await readlink(link), 'execution/gateway.mjs')], launchEnv);
       } } : {}) });
     app = await createManagedWebServer({ initialRelease: fixture.releases.get('1.0.0').packageRoot, stateDirectory: join(root, 'web-state'), source: fixture.source, execution,
       codexServerTarget: `ws://127.0.0.1:${gatewayPort}/rpc/codex` });
@@ -134,6 +155,13 @@ if (process.argv[2] === 'core') {
       const quote = (value: string) => "'" + value.replaceAll("'", "'\"'\"'") + "'";
       toolCommand = `echo started >> shell-count && OPENCRAFT_WEB_STATE=${quote(join(root, 'web-state'))} OPENCRAFT_WEB_UPDATE_URL=${quote(base)} OPENCRAFT_WEB_PACKAGE_OUTPUT=${quote(join(root, 'self-built'))} ${quote(process.execPath)} ${quote(resolve('scripts/update-server-local.mjs'))} --version 1.1.0 && echo finished >> shell-count && echo UPDATE_TASK_FINISHED`;
     }
+    const initialHealth = await (await fetch(`http://127.0.0.1:${gatewayPort}/health`)).json();
+    assert.equal(initialHealth.ok, true);
+    assert.deepEqual(initialHealth.storage.map((item: any) => item.status), ['moved-aside', 'adopted', 'fresh', 'fresh', 'adopted']);
+    const backupFiles = (await readdir(join(state, 'data'))).filter(name => name.includes('.pre-v1-'));
+    const movedAsideFiles = (await readdir(join(state, 'data'))).filter(name => name.includes('.legacy-'));
+    assert.equal(backupFiles.length, 3); assert.ok(movedAsideFiles.length > 0);
+    for (const item of initialHealth.storage) if (item.backupPath) assert.ok((await stat(item.backupPath)).size > 0);
     const before = await coreHealth(endpoint, tokenPath);
     const A = await connect(base.replace('http:', 'ws:') + '/codex-appserver');
     const threadId = (await A.rpc('thread/start', { cwd: root, model: 'gpt-6-luna', approvalPolicy: 'never', sandbox: 'danger-full-access' })).thread.id;
@@ -151,6 +179,8 @@ if (process.argv[2] === 'core') {
     }
     await until(async () => { const s = await (await fetch(base + '/__opencraft_updates')).json(); if (s.job?.phase === 'failed') throw new Error(s.job.error); return s.job?.phase === 'completed'; }, 'update completion', 120_000);
     assert.notEqual(gatewayPid(), oldGatewayPid);
+    const upgradedHealth = await (await fetch(`http://127.0.0.1:${gatewayPort}/health`)).json();
+    assert.equal(upgradedHealth.ok, true); assert.ok(upgradedHealth.storage.every((item: any) => item.status === 'up-to-date'));
     const after = await coreHealth(endpoint, tokenPath); assert.deepEqual(after, before);
     const afterTree = await tree(before.pid);
     for (const pid of selfUpgrade ? runningTree.slice(0, 3) : runningTree) assert.ok(afterTree.includes(pid), `Running process ${pid} survived upgrade`);
@@ -169,10 +199,34 @@ if (process.argv[2] === 'core') {
     assert.deepEqual(await coreHealth(endpoint, tokenPath), before);
     const C = await connect(base.replace('http:', 'ws:') + '/codex-appserver');
     const restored = await C.rpc('thread/read', { threadId, includeTurns: true }); assert.match(JSON.stringify(restored), /UPDATE_TASK_FINISHED/);
-    const proof = { model: 'gpt-6-luna', at: new Date().toISOString(), cli: execFileSync('codex', ['--version'], { encoding: 'utf8' }).trim(), threadId, turnId,
+    const rolledBackHealth = await (await fetch(`http://127.0.0.1:${gatewayPort}/health`)).json();
+    assert.equal(rolledBackHealth.ok, true); assert.ok(rolledBackHealth.storage.every((item: any) => item.status === 'up-to-date'));
+    // Non-systemd acceptance also launches the real packaged daemon against a separate newer-schema fixture.
+    // Its failed startup leaves /health unreachable; the unchanged updater rolls code back to the healthy state.
+    let storageFailure: any = null;
+    if (!systemd) {
+      rejectNextStorage = true;
+      const response = await page.request.post(base + '/__opencraft_updates/install', { headers: { origin: base }, data: { version: '1.1.0' } });
+      assert.equal(response.status(), 202);
+      const failed = await until(async () => {
+        const status = await (await fetch(base + '/__opencraft_updates')).json();
+        return status.job?.phase === 'failed' ? status : null;
+      }, 'storage failure rollback', 120_000);
+      assert.match(failed.job.error, /Execution release failed readiness/);
+      assert.equal(failed.current.version, '1.0.0');
+      await assert.rejects(stat(join(root, 'failed-storage-state', 'daemon.sock')), { code: 'ENOENT' });
+      const recovered = await (await fetch(`http://127.0.0.1:${gatewayPort}/health`)).json();
+      assert.equal(recovered.ok, true); assert.equal(recovered.version, '1.0.0');
+      assert.ok(recovered.storage.every((item: any) => item.status === 'up-to-date'));
+      assert.deepEqual(await coreHealth(endpoint, tokenPath), before);
+      storageFailure = { error: failed.job.error, rolledBackVersion: recovered.version, storage: recovered.storage, daemonRejectedNewerSchema: true };
+    }
+    for (const file of [...backupFiles, ...movedAsideFiles]) assert.ok((await stat(join(state, 'data', file))).size > 0);
+    const proof = { storageBefore: initialHealth.storage, storageAfterUpgrade: upgradedHealth.storage, storageAfterRollback: rolledBackHealth.storage,
+      backupFiles, movedAsideFiles, storageFailure, model: 'gpt-6-luna', at: new Date().toISOString(), cli: execFileSync('codex', ['--version'], { encoding: 'utf8' }).trim(), threadId, turnId,
       before, after, runningPids: runningTree, afterPids: afterTree, oldGatewayPid, newGatewayPid: gatewayPid(),
       toolCalls: calls.filter(c => c.tool).length, shellExecutions: 1, browserInstall: !selfUpgrade, sourceSelfUpgrade: selfUpgrade, browserRollback: true,
-      boundary: `Real npm CLI, production SPA, packaged gateway/daemon and real Codex CLI; synthetic loopback inference; ${systemd ? 'real isolated systemd units and restart' : 'systemd restart replaced by isolated process restart'}` };
+      boundary: `Real npm CLI, production SPA, packaged gateway/daemon and real Codex CLI; synthetic loopback inference; both releases packaged from current source, no N-1 old-binary rollback claim; ${systemd ? 'real isolated systemd units and restart' : 'systemd restart replaced by isolated process restart'}` };
     const output = resolve(process.env.OPENCRAFT_SERVER_UPDATE_EVIDENCE_DIRECTORY || '.local/server-updates'); await mkdir(output, { recursive: true }); await writeFile(join(output, selfUpgrade ? 'self-upgrade-proof.json' : systemd ? 'systemd-proof.json' : 'proof.json'), JSON.stringify(proof, null, 2));
     console.log(JSON.stringify({ ok: true, shellExecutions: 1, originalTurnCompleted: true, corePidsUnchanged: true, browserInstall: !selfUpgrade, sourceSelfUpgrade: selfUpgrade, browserRollback: true, systemd }));
   } catch (error) {
