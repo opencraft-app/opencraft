@@ -8,6 +8,13 @@ Pass 升配 Web checkout 在北京测试环境发布时，需协调前端、CTL�
 
 ## 交付链
 
+CTL 的生产 DB contract 在 `.ci/runtime/bundles/ctl.bundle` 按环境显式指定目标版本；
+它可以低于源码 migration 最大版本，不能把配置值当成源码文件的最大版本。
+上海与新加坡当前目标为 33，对应 `000033_add_channel_login_bot_target`。
+DB 已为 33 且 `dirty=false` 时跳过迁移；低于 33 时仍需逐区批准 pending SQL，
+高于 33 或 dirty 时继续阻断。修改 contract 后必须由包含修复的新源码构建运行检查，
+重试旧构建不能保证消费新配置；不修改 `schema_migrations` 来绕过门禁。
+
 OpenCraft DevCloud 第一方登录扩展需要配对交付 Auth 新镜像与
 `auth-platform.env` 中的显式子域回调注册，以及 Service Gateway 新镜像与全局 CORS 配置。
 旧 Auth 二进制只接受两个精确 Web 回调，不能先把第三条模式配置投放给旧进程；

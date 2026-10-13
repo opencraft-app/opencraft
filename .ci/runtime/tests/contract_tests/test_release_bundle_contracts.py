@@ -26,6 +26,8 @@ from contracts.bundles import (  # noqa: E402
     require_build_metadata,
 )
 from contracts.release_bundle_manifest import dump_manifest, merge_bundle_sources  # noqa: E402
+from gates.db_contract_verifier import expected_migration_version  # noqa: E402
+from harness_ci.prod_db_migration import decide_migration  # noqa: E402
 
 
 SANDBOX_ENV = "beijing-sandbox-2"
@@ -230,8 +232,21 @@ class ReleaseBundleContractTests(unittest.TestCase):
                 contract = load_bundle(manifest, "ctl", env).db_contract
                 self.assertEqual(
                     contract.get("expected_migration_version_by_env"),
-                    {"shprod": 32, "sgprod": 32},
+                    {"shprod": 33, "sgprod": 33},
                 )
+                expected = expected_migration_version(REPO_ROOT, contract, env)
+                self.assertEqual(expected, 33)
+                for current, dirty, decision in (
+                    (32, False, "run_migration"),
+                    (33, False, "skip_migration"),
+                    (34, False, "block"),
+                    (33, True, "block"),
+                ):
+                    with self.subTest(current=current, dirty=dirty):
+                        self.assertEqual(
+                            decide_migration({"current": current, "expected": expected, "dirty": dirty})["decision"],
+                            decision,
+                        )
 
     def test_release_bundle_manifest_is_generated_from_split_sources(self) -> None:
         rendered = dump_manifest(merge_bundle_sources(RUNTIME_DIR / "bundles"))
