@@ -9,7 +9,7 @@
 - [x] 阶段 0：评估现状并选定方案。9 个库中 2 个有账本；更新器只回退代码（thr_7gi4fzwvkk）
 - [x] 阶段 1：共享模块 `packages/sqlite-node`（账本、升级前备份、无账本旧库处置）+ 纵向切片 document-storage、session-routing；已独立审查（thr_ivpebcdpvw，rebase 后 commit cb5fb91）
 - [x] 阶段 2：其余六库接入：Host 的 thread-catalog（document 加版本字段）、executions（基线迁移为唯一 DDL 权威）、managed-connectors、account-pool（owner 是 codex-core 进程，升级路径独立）；Electron Main 的 ui-preferences、connector-configuration（thr_awp42y5zzb，commit 78805d0、544d7b7）
-- [ ] 阶段 3：daemon 启动时打开并迁移全部 Host 库，未就绪不监听 IPC；处置结果经 `daemon/ready` 到 gateway `/health.storage`；单元测试 + 更新 smoke 预置旧库验证 ← 进行中
+- [ ] 阶段 3：daemon 启动时打开并迁移全部 Host 库，未就绪不监听 IPC；处置结果经 `daemon/ready` 到 gateway `/health.storage`；单元测试 + 更新 smoke 预置旧库验证 ← 进行中（最近线程 thr_w9hu76q468）
 - [ ] 阶段 4：文档回写（sqlite-lifecycle 现状、AGENTS 规则）、autoreview、合并 main
 
 ## 关键决策
