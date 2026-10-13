@@ -160,7 +160,7 @@ func TestRESTIdentityProvisionerClassifiesDeleteResultItem(t *testing.T) {
 		code      string
 	}{
 		{name: "already absent", result: 70107},
-		{name: "plan unsupported", result: 71000, wantError: true, code: "tencent_71000"},
+		{name: "paid plans keep accounts", result: 71000},
 		{name: "server timeout", result: 70169, wantError: true, retryable: true, code: "tencent_70169"},
 	}
 	for _, test := range tests {

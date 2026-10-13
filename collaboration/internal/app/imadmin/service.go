@@ -266,23 +266,12 @@ func (s *Service) CheckTencent(ctx context.Context) (Check, error) {
 	return check, nil
 }
 
-// compare 只判断平台明确知道状态的账号：就绪的应在腾讯，已删除的 Bot 不应在腾讯。
+// compare 只判断就绪账号是否在腾讯。已删除的 Bot 在体验版会被删掉，在付费版腾讯不允许删除而闲置，两种都正常。
 func compare(identity Identity, present bool) (Mismatch, bool) {
-	expected := ""
-	switch {
-	case identity.State == "ready":
-		expected = "present"
-	case identity.Kind == botimport.IdentityKindBot && identity.State == botimport.BotStateDeleted:
-		expected = "absent"
-	}
-	if expected == "present" && present || expected == "absent" && !present || expected == "" {
+	if identity.State != "ready" || present {
 		return Mismatch{}, false
 	}
-	tencent := "missing"
-	if present {
-		tencent = "imported"
-	}
-	return Mismatch{UserID: identity.UserID, Kind: identity.Kind, State: identity.State, Expected: expected, Tencent: tencent}, true
+	return Mismatch{UserID: identity.UserID, Kind: identity.Kind, State: identity.State, Expected: "present", Tencent: "missing"}, true
 }
 
 func pageBounds(limit, offset int) (int, int) {

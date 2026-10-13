@@ -39,7 +39,7 @@ step "build and start collaboration, dev gateway"
 HERMES_HOME=$T/hermes VELA_HERMES_BIN=$T/bin/hermes VELA_PLUGIN_DIR=$REPO/hermes-plugin \
   "$T/bin/chatserver" serve --collaboration-only --database "$T/collaboration.sqlite" --listen "$COLLAB" \
   --jwt-key-file "$T/secrets/jwt" --lightvela-gateway-token-file "$T/secrets/gateway" \
-  --im-sdk-app-id "${VELA_SDK_APP_ID:-1600166071}" --im-admin-user-id administrator \
+  --im-sdk-app-id "${VELA_SDK_APP_ID:-1600137234}" --im-admin-user-id administrator \
   --im-secret-key-file "$T/secrets/im-secret-key" --im-identity-key-file "$T/secrets/identity" \
   --bot-host-command "$ENV_DIR/bot-host.sh" --bot-runtime-api-url "http://$COLLAB/v1" > "$T/collaboration.log" 2>&1 &
 PIDS+=($!)
@@ -121,5 +121,5 @@ status=$(curl -sS -o /dev/null -w '%{http_code}' -X POST "http://$COLLAB/v1/runt
 
 step "platform inventory of Tencent accounts, checked against Tencent"
 CHATSERVER_DATABASE_PATH=$T/collaboration.sqlite "$T/bin/chatserver" im accounts --list --check \
-  --im-sdk-app-id "${VELA_SDK_APP_ID:-1600166071}" --im-admin-user-id administrator --im-secret-key-file "$T/secrets/im-secret-key"
+  --im-sdk-app-id "${VELA_SDK_APP_ID:-1600137234}" --im-admin-user-id administrator --im-secret-key-file "$T/secrets/im-secret-key"
 echo; echo "SMOKE OK"

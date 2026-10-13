@@ -117,7 +117,11 @@ func (client *RESTIdentityProvisioner) KickIdentity(
 	)
 }
 
-// DeleteIdentity 永久删除一个普通 IM 账号，并检查单账号 ResultItem。
+// accountDeleteUnsupported 是付费版应用删除账号时的错误：腾讯只允许体验版删除账号。
+// 付费版不按账号总数计费，账号已被下线、平台不再为它签发登录凭证，留在腾讯侧只是闲置。
+const accountDeleteUnsupported = 71000
+
+// DeleteIdentity 永久删除一个普通 IM 账号，并检查单账号 ResultItem；付费版不支持删除时视为完成。
 func (client *RESTIdentityProvisioner) DeleteIdentity(
 	ctx context.Context,
 	userID string,
@@ -146,7 +150,7 @@ func (client *RESTIdentityProvisioner) DeleteIdentity(
 		return err
 	}
 	if result.ErrorCode != 0 || result.ActionStatus != "OK" {
-		if result.ErrorCode == 70107 {
+		if result.ErrorCode == 70107 || result.ErrorCode == accountDeleteUnsupported {
 			return nil
 		}
 		return newRESTError(
@@ -158,7 +162,7 @@ func (client *RESTIdentityProvisioner) DeleteIdentity(
 		return newRESTError("tencent_response_invalid", true)
 	}
 	code := result.ResultItem[0].ResultCode
-	if code == 0 || code == 70107 {
+	if code == 0 || code == 70107 || code == accountDeleteUnsupported {
 		return nil
 	}
 	return newRESTError(

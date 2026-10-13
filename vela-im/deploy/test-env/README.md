@@ -90,7 +90,7 @@ docker logs vela-web-proxy
 # 封禁 / 解封某个 IM 身份（SQLite 需先停服务）
 sudo systemctl stop vela-collaboration
 CHATSERVER_DATABASE_PATH=$HOME/vela-test/collab-data/collaboration.sqlite $HOME/vela-test/bin/chatserver im restrict \
-  --im-user-id a_xxx --im-sdk-app-id 1600166071 --im-admin-user-id administrator \
+  --im-user-id a_xxx --im-sdk-app-id 1600137234 --im-admin-user-id administrator \
   --im-secret-key-file $HOME/vela-test/secrets/im-secret-key        # 加 --release 解封
 sudo systemctl start vela-collaboration
 ```
@@ -99,7 +99,7 @@ sudo systemctl start vela-collaboration
 
 ```bash
 CHATSERVER_DATABASE_PATH=$HOME/vela-test/collab-data/collaboration.sqlite $HOME/vela-test/bin/chatserver im accounts --list \
-  --check --im-sdk-app-id 1600166071 --im-admin-user-id administrator --im-secret-key-file $HOME/vela-test/secrets/im-secret-key
+  --check --im-sdk-app-id 1600137234 --im-admin-user-id administrator --im-secret-key-file $HOME/vela-test/secrets/im-secret-key
 ```
 
 腾讯 IM 回调（成员对账、发消息前封禁、建群拦截）需要公网可达的回调地址，开发机收不到；平台自己发起的操作不依赖回调。

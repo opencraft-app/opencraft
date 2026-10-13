@@ -16,18 +16,18 @@ func TestIMAccountReportCountsAndFlagsDrift(t *testing.T) {
 	var output bytes.Buffer
 	writeIMAccountReport(&output, records, true, false)
 	text := output.String()
-	for _, want := range []string{"平台记录 4 个账号，腾讯侧存在 2 个，与预期不符 2 个", "a_gone", "u_ready"} {
+	for _, want := range []string{"平台记录 4 个账号，腾讯侧存在 2 个，与预期不符 1 个", "u_ready"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("report missing %q:\n%s", want, text)
 		}
 	}
-	if strings.Contains(text, "a_ready") || strings.Contains(text, "u_new") {
-		t.Fatalf("report lists accounts that match expectations without --list:\n%s", text)
+	if strings.Contains(text, "a_ready") || strings.Contains(text, "u_new") || strings.Contains(text, "a_gone") {
+		t.Fatalf("report lists accounts that match expectations without --list (a deleted bot may stay in Tencent):\n%s", text)
 	}
 
 	output.Reset()
 	writeIMAccountReport(&output, records, false, false)
-	if !strings.Contains(output.String(), "平台记录 4 个账号，预计占用腾讯账号 3 个") {
+	if !strings.Contains(output.String(), "平台记录 4 个账号，占用腾讯账号 3 个") {
 		t.Fatalf("unchecked report:\n%s", output.String())
 	}
 }

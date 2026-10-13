@@ -38,7 +38,8 @@ POST /v1/me/bots {instanceId, botId, displayName}        Human（gateway）
 - 上限：每个账号同时开通的 Bot（未删除）不超过 `--max-im-bots-per-account`（默认 20，1–200），
   新开通或恢复已删除 Bot 时检查，超出返回 409 `bot_quota_exceeded`，不产生任何腾讯侧副作用。
 - `POST /v1/me/bots/{id}/credential` 轮换：`credential_version + 1` 并重新交付，旧凭据立即失效。
-- `DELETE /v1/me/bots/{id}`：踢下线、删除腾讯账号（释放名额）、吊销凭据（Host.Revoke 删除实例上的凭据文件）；
+- `DELETE /v1/me/bots/{id}`：踢下线、删除腾讯账号、吊销凭据（Host.Revoke 删除实例上的凭据文件）。腾讯只允许体验版删除账号
+  （释放 100 个账号的名额）；付费版返回 71000，账号下线后闲置，平台不再为它签发登录凭证；
   平台群成员记录保留。重新开通时以同一 UserID 再导入。
 - `PATCH /v1/me/bots/{id} {commandPolicy}`：Hermes 命令仅主人 / 任何人可用。主人 = 账号的人类 IM 身份 + 名下全部未删除 Bot。
 
@@ -98,11 +99,12 @@ Host 两种实现收发同一份 JSON：生产 `--bot-host-ctl-url` + `--bot-hos
 任何其他组件都不持有 SecretKey、不导入账号。
 
 ```text
-chatserver im accounts [--list] [--check --im-sdk-app-id ID --im-admin-user-id UserID --im-secret-key-file 文件]
+chatserver im accounts [--list] [--check|--repair --im-sdk-app-id ID --im-admin-user-id UserID --im-secret-key-file 文件]
 ```
 
-按类型和状态统计平台记录的账号；`--check` 用 `account_check` 逐批核对，报告“平台认为在但腾讯没有”和
-“平台已删除但腾讯还在”的账号。只读打开数据库，可与 `serve` 并存。各环境应使用独立 SDKAppID，
+按类型和状态统计平台记录的账号；`--check` 用 `account_check` 逐批核对，报告“平台认为在但腾讯没有”的账号
+（已删除的 Bot 在付费版仍在腾讯侧闲置，不算不一致）。`--repair` 在核对后补导入这些账号，并在腾讯侧补建进行中的平台群，
+用于更换 SDKAppID 或账号被绕过平台删除后的恢复。只读打开数据库，可与 `serve` 并存。各环境应使用独立 SDKAppID，
 并且不能丢弃数据库后复用同一个 SDKAppID，否则旧账号会成为无人记录的孤儿。
 
 ## 8. 管理后台接口
