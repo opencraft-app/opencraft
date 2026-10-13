@@ -9,6 +9,7 @@ import (
 
 	pctx "ctl/pkg/context"
 	"ctl/pkg/errcode"
+	modelinstance "ctl/pkg/model/instance"
 )
 
 // VelaIMBot 是 collaboration 开通 IM 身份时需要的 Bot 事实。
@@ -32,9 +33,142 @@ type VelaIMDelivery struct {
 }
 
 var (
-	velaIMCredentialPattern = regexp.MustCompile(`^vbc_[0-9a-f-]{36}\.[0-9a-f-]{36}\.[0-9]{1,18}\.[A-Za-z0-9_-]{43}$`)
-	velaIMUserIDPattern     = regexp.MustCompile(`^[A-Za-z0-9_-]{1,32}$`)
+	velaIMCredentialPattern   = regexp.MustCompile(`^vbc_[0-9a-f-]{36}\.[0-9a-f-]{36}\.[0-9]{1,18}\.[A-Za-z0-9_-]{43}$`)
+	velaIMUserIDPattern       = regexp.MustCompile(`^[A-Za-z0-9_-]{1,32}$`)
+	velaIMPluginSHA256Pattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 )
+
+// vela-im 插件安装结果，取自安装命令的最后一行输出。
+const (
+	VelaIMPluginInstalled = "installed"
+	VelaIMPluginUpToDate  = "up_to_date"
+	// VelaIMPluginNoHermes 表示实例不是 Hermes 实例，无需安装。
+	VelaIMPluginNoHermes = "no_hermes"
+)
+
+// velaIMPluginBackfillMaxBatch 限制一次补装的实例数：每台实例一次 TAT 调用，批次过大会拖长单个请求。
+const velaIMPluginBackfillMaxBatch = 20
+
+type velaIMPluginPackage struct {
+	URL    string
+	SHA256 string
+}
+
+// VelaIMPluginResult 是一台实例的补装结果；Error 只在失败时有值。
+type VelaIMPluginResult struct {
+	InstanceID string `json:"instanceId"`
+	Status     string `json:"status,omitempty"`
+	Error      string `json:"error,omitempty"`
+}
+
+// VelaIMPluginBackfill 是一批存量实例的补装结果；Done 为 false 时用 NextAfterID 继续下一批。
+type VelaIMPluginBackfill struct {
+	Results     []VelaIMPluginResult `json:"results"`
+	NextAfterID int64                `json:"nextAfterId"`
+	Done        bool                 `json:"done"`
+}
+
+type runningInstanceLister interface {
+	ListRunningAfter(afterID int64, limit int) ([]*modelinstance.Entity, error)
+}
+
+func configuredVelaIMPlugin() (velaIMPluginPackage, bool) {
+	conf := currentInstanceAPIConfig()
+	if conf == nil {
+		return velaIMPluginPackage{}, false
+	}
+	pkg := velaIMPluginPackage{
+		URL:    strings.TrimSpace(conf.VelaIMPluginURL),
+		SHA256: strings.ToLower(strings.TrimSpace(conf.VelaIMPluginSHA256)),
+	}
+	if !strings.HasPrefix(pkg.URL, "https://") || !velaIMPluginSHA256Pattern.MatchString(pkg.SHA256) {
+		return velaIMPluginPackage{}, false
+	}
+	return pkg, true
+}
+
+// renderVelaIMPluginInstallCommand 把插件安装到 $HERMES_HOME/plugins/vela-im，所有 Profile 共用。
+// 同一个包已安装时什么也不做；下载或校验失败不动现有插件，上一版本保留为 vela-im.previous。
+func renderVelaIMPluginInstallCommand(pkg velaIMPluginPackage) string {
+	return strings.Join([]string{
+		`set -eu`,
+		`home="${HERMES_HOME:-$HOME/.hermes}"`,
+		`if [ ! -x "$home/hermes-agent/venv/bin/python" ]; then echo ` + VelaIMPluginNoHermes + `; exit 0; fi`,
+		`target="$home/plugins/vela-im"`,
+		`want=` + shellQuoteArg(pkg.SHA256),
+		`if [ "$(cat "$target/.package-sha256" 2>/dev/null)" = "$want" ]; then echo ` + VelaIMPluginUpToDate + `; exit 0; fi`,
+		`if ! node -e 'const [a,b]=process.versions.node.split(".").map(Number);process.exit(a>22||(a===22&&b>=16)?0:1)' 2>/dev/null; then`,
+		`  echo "Node.js >= 22.16 is required for the Vela IM worker" >&2; exit 3`,
+		`fi`,
+		`mkdir -p "$home/plugins"`,
+		`work=$(mktemp -d "$home/plugins/.vela-im-install.XXXXXX")`,
+		`trap 'rm -rf "$work"' EXIT`,
+		`curl -fsSL --retry 3 --connect-timeout 10 --max-time 120 -o "$work/plugin.tgz" ` + shellQuoteArg(pkg.URL),
+		`echo "$want  $work/plugin.tgz" | sha256sum -c --status -`,
+		`mkdir "$work/plugin"`,
+		`tar -xzf "$work/plugin.tgz" -C "$work/plugin" --no-same-owner`,
+		`test -f "$work/plugin/plugin.yaml" -a -f "$work/plugin/adapter.py" -a -f "$work/plugin/vela_im/_worker/vela-im-worker.mjs"`,
+		`printf '%s\n' "$want" > "$work/plugin/.package-sha256"`,
+		`rm -rf "$target.previous"`,
+		`if [ -d "$target" ]; then mv "$target" "$target.previous"; fi`,
+		`mv "$work/plugin" "$target"`,
+		`echo ` + VelaIMPluginInstalled,
+	}, "\n")
+}
+
+// InstallVelaIMPlugin 按配置的插件包在实例上安装 vela-im 插件，返回 installed / up_to_date / no_hermes。
+func (l *logic) InstallVelaIMPlugin(ctx pctx.Context, instanceID string) (string, error) {
+	pkg, ok := configuredVelaIMPlugin()
+	if !ok {
+		return "", errcode.Wrap(errcode.ErrInstanceInvalidParam, "vela-im plugin package is not configured")
+	}
+	result, err := l.execHermesProfileCommand(ctx, instanceID, renderVelaIMPluginInstallCommand(pkg))
+	if err != nil {
+		return "", errcode.Wrap(errcode.ErrInstanceBotProfileFailed, "install vela-im plugin: %v", err)
+	}
+	if result == nil || result.ExitCode != 0 {
+		return "", errcode.Wrap(errcode.ErrInstanceBotProfileFailed, "install vela-im plugin failed")
+	}
+	lines := strings.Split(strings.TrimSpace(result.Stdout+"\n"+result.Output), "\n")
+	for index := len(lines) - 1; index >= 0; index-- {
+		switch status := strings.TrimSpace(lines[index]); status {
+		case VelaIMPluginInstalled, VelaIMPluginUpToDate, VelaIMPluginNoHermes:
+			return status, nil
+		}
+	}
+	return VelaIMPluginInstalled, nil
+}
+
+// BackfillVelaIMPlugin 给存量运行中实例补装插件：按 id 顺序取一批，以各自主人的身份执行安装命令。
+// 单台失败（如主人无有效套餐、实例缺 Node）只记录在结果里，不中断整批。
+func (l *logic) BackfillVelaIMPlugin(parent pctx.Context, afterID int64, limit int) (*VelaIMPluginBackfill, error) {
+	if _, ok := configuredVelaIMPlugin(); !ok {
+		return nil, errcode.Wrap(errcode.ErrInstanceInvalidParam, "vela-im plugin package is not configured")
+	}
+	lister, ok := l.instanceDao.(runningInstanceLister)
+	if !ok {
+		return nil, errcode.Wrap(errcode.ErrInstanceInvalidParam, "instance listing is not available")
+	}
+	if limit <= 0 || limit > velaIMPluginBackfillMaxBatch {
+		limit = velaIMPluginBackfillMaxBatch
+	}
+	entities, err := lister.ListRunningAfter(afterID, limit)
+	if err != nil {
+		return nil, err
+	}
+	batch := &VelaIMPluginBackfill{Results: make([]VelaIMPluginResult, 0, len(entities)), NextAfterID: afterID, Done: len(entities) < limit}
+	for _, entity := range entities {
+		batch.NextAfterID = entity.Id
+		ctx := pctx.NewContext(parent).WithUserID(entity.UserId)
+		status, err := l.InstallVelaIMPlugin(ctx, entity.InstanceId)
+		result := VelaIMPluginResult{InstanceID: entity.InstanceId, Status: status}
+		if err != nil {
+			result.Error = err.Error()
+		}
+		batch.Results = append(batch.Results, result)
+	}
+	return batch, nil
+}
 
 // VerifyVelaIMBot 只在 ctx 用户拥有该实例且实例上存在该 Bot 时返回成功。
 func (l *logic) VerifyVelaIMBot(ctx pctx.Context, instanceID, botID string) (*VelaIMBot, error) {
@@ -64,6 +198,12 @@ func (l *logic) DeliverVelaIMBot(ctx pctx.Context, delivery VelaIMDelivery) erro
 	bot, err := l.VerifyVelaIMBot(ctx, delivery.InstanceID, delivery.BotID)
 	if err != nil {
 		return err
+	}
+	// 新实例在第一个 Agent 加入 IM 时装上插件；已装同一版本时只是一次检查。
+	if _, configured := configuredVelaIMPlugin(); configured {
+		if _, err := l.InstallVelaIMPlugin(ctx, delivery.InstanceID); err != nil {
+			return err
+		}
 	}
 	payload, err := json.Marshal(map[string]any{
 		"credential": delivery.Credential,

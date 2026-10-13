@@ -149,6 +149,21 @@ func (d *dao) ListAllByUserIDForIsolate(userID string) ([]*Entity, error) {
 	return entities, nil
 }
 
+// ListRunningAfter 按 id 升序返回 id > afterID 的运行中实例。系统侧批处理（如补装插件）使用，不带用户维度。
+func (d *dao) ListRunningAfter(afterID int64, limit int) ([]*Entity, error) {
+	var entities []*Entity
+	if err := resource.GormDB.
+		Table(TableName).
+		Where(ColumnID+" > ?", afterID).
+		Where(ColumnStatus+" = ?", InstanceStatusRunning).
+		Order(ColumnID + " ASC").
+		Limit(limit).
+		Find(&entities).Error; err != nil {
+		return nil, fmt.Errorf("ListRunningAfter: %w", err)
+	}
+	return entities, nil
+}
+
 func (d *dao) UpdateStatus(ctx pctx.Context, id int64, newStatus string) error {
 	return d.updateByUser(ctx, id, map[string]interface{}{
 		ColumnStatus: newStatus,

@@ -87,26 +87,29 @@ type APIConfig struct {
 }
 
 type InstanceAPIConfig struct {
-	DefaultTemplateClassID    string   `toml:"default_template_class_id"`
-	DefaultTemplateID         string   `toml:"default_template_id"`
-	DefaultSKUID              string   `toml:"default_sku_id"`
-	CandidateTemplateIDs      []string `toml:"candidate_template_ids"`
-	CreatePoolMaxAttempts     int      `toml:"create_pool_max_attempts"`
-	SoulTemplateDir           string   `toml:"soul_template_dir"`
-	DefaultSoulTemplateID     string   `toml:"default_soul_template_id"`
-	ChurnGuardEnabled         *bool    `toml:"churn_guard_enabled"`
-	ChurnWindowSeconds        int      `toml:"churn_window_seconds"`
-	CreateThreshold           int      `toml:"churn_create_threshold"`
-	DestroyThreshold          int      `toml:"churn_destroy_threshold"`
-	UserAbuseGuardEnabled     *bool    `toml:"user_abuse_guard_enabled"`
-	UserAbuseCreateThreshold  int      `toml:"user_abuse_create_threshold"`
-	UserAbuseDestroyThreshold int      `toml:"user_abuse_destroy_threshold"`
-	UserAbuseCooldownSeconds  int      `toml:"user_abuse_cooldown_seconds"`
-	UserAbuseRefreshSeconds   int      `toml:"user_abuse_snapshot_refresh_seconds"`
-	PressureRefreshSec        int      `toml:"pressure_snapshot_refresh_seconds"`
-	PressureTTLSec            int      `toml:"pressure_snapshot_ttl_seconds"`
-	PressureCleanRatio        float64  `toml:"pressure_clean_ratio_threshold"`
-	PressureMinClean          int      `toml:"pressure_min_clean_floor"`
+	DefaultTemplateClassID string   `toml:"default_template_class_id"`
+	DefaultTemplateID      string   `toml:"default_template_id"`
+	DefaultSKUID           string   `toml:"default_sku_id"`
+	CandidateTemplateIDs   []string `toml:"candidate_template_ids"`
+	CreatePoolMaxAttempts  int      `toml:"create_pool_max_attempts"`
+	SoulTemplateDir        string   `toml:"soul_template_dir"`
+	// VelaIMPluginURL / VelaIMPluginSHA256 指向 vela-im Hermes 插件包（https）；开通 Agent IM 身份前按需安装到实例。
+	VelaIMPluginURL           string  `toml:"vela_im_plugin_url"`
+	VelaIMPluginSHA256        string  `toml:"vela_im_plugin_sha256"`
+	DefaultSoulTemplateID     string  `toml:"default_soul_template_id"`
+	ChurnGuardEnabled         *bool   `toml:"churn_guard_enabled"`
+	ChurnWindowSeconds        int     `toml:"churn_window_seconds"`
+	CreateThreshold           int     `toml:"churn_create_threshold"`
+	DestroyThreshold          int     `toml:"churn_destroy_threshold"`
+	UserAbuseGuardEnabled     *bool   `toml:"user_abuse_guard_enabled"`
+	UserAbuseCreateThreshold  int     `toml:"user_abuse_create_threshold"`
+	UserAbuseDestroyThreshold int     `toml:"user_abuse_destroy_threshold"`
+	UserAbuseCooldownSeconds  int     `toml:"user_abuse_cooldown_seconds"`
+	UserAbuseRefreshSeconds   int     `toml:"user_abuse_snapshot_refresh_seconds"`
+	PressureRefreshSec        int     `toml:"pressure_snapshot_refresh_seconds"`
+	PressureTTLSec            int     `toml:"pressure_snapshot_ttl_seconds"`
+	PressureCleanRatio        float64 `toml:"pressure_clean_ratio_threshold"`
+	PressureMinClean          int     `toml:"pressure_min_clean_floor"`
 
 	// SpecPools 实例规格 → 候选池子段（设计稿 §3.3 Q2=a 双轨）。
 	//

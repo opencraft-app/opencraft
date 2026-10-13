@@ -452,7 +452,8 @@ func normalizePath(path string) string {
 		return "/internal/ctl/bundles/{bundleId}"
 	}
 	switch path {
-	case "/internal/vela-im/bots:verify", "/internal/vela-im/bots:deliver", "/internal/vela-im/bots:revoke":
+	case "/internal/vela-im/bots:verify", "/internal/vela-im/bots:deliver", "/internal/vela-im/bots:revoke",
+		"/internal/vela-im/plugin:install", "/internal/vela-im/plugin:backfill":
 		return path
 	}
 	if strings.HasPrefix(path, "/internal/ctl/passes/") {

@@ -37,6 +37,53 @@ func (stub *velaIMLogicStub) RevokeVelaIMBot(ctx pctx.Context, instanceID, botID
 	return nil
 }
 
+func (stub *velaIMLogicStub) InstallVelaIMPlugin(ctx pctx.Context, instanceID string) (string, error) {
+	stub.users = append(stub.users, ctx.GetUserID())
+	return instancelogic.VelaIMPluginInstalled, nil
+}
+
+func (stub *velaIMLogicStub) BackfillVelaIMPlugin(_ pctx.Context, afterID int64, limit int) (*instancelogic.VelaIMPluginBackfill, error) {
+	return &instancelogic.VelaIMPluginBackfill{
+		Results:     []instancelogic.VelaIMPluginResult{{InstanceID: "ins-2", Status: instancelogic.VelaIMPluginUpToDate}},
+		NextAfterID: afterID + 1, Done: limit > 1,
+	}, nil
+}
+
+func TestInternalVelaIMInstallsThePluginAsTheInstanceOwnerAndBackfillsInBatches(t *testing.T) {
+	t.Setenv("LIGHTCLAW_INTERNAL_SERVICE_TOKEN", "internal-token-for-tests")
+	stub := &velaIMLogicStub{}
+	handler := &instanceHandler{logic: stub}
+
+	response := httptest.NewRecorder()
+	handler.handleInternalVelaIM(response, velaIMRequestFor("/internal/vela-im/plugin:install", "internal-token-for-tests",
+		`{"accountSubject":"usr_owner","instanceId":"ins-1"}`))
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"status":"installed"`) ||
+		len(stub.users) != 1 || stub.users[0] != "usr_owner" {
+		t.Fatalf("install = %d %s users=%v", response.Code, response.Body, stub.users)
+	}
+
+	response = httptest.NewRecorder()
+	handler.handleInternalVelaIM(response, velaIMRequestFor("/internal/vela-im/plugin:install", "internal-token-for-tests",
+		`{"instanceId":"ins-1"}`))
+	if response.Code == http.StatusOK {
+		t.Fatalf("install without the owner = %d", response.Code)
+	}
+
+	response = httptest.NewRecorder()
+	handler.handleInternalVelaIM(response, velaIMRequestFor("/internal/vela-im/plugin:backfill", "internal-token-for-tests",
+		`{"afterId":41,"limit":10}`))
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"nextAfterId":42`) ||
+		!strings.Contains(response.Body.String(), `"status":"up_to_date"`) {
+		t.Fatalf("backfill = %d %s", response.Code, response.Body)
+	}
+
+	response = httptest.NewRecorder()
+	handler.handleInternalVelaIM(response, velaIMRequestFor("/internal/vela-im/plugin:backfill", "wrong-token", `{}`))
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("backfill with a wrong token = %d", response.Code)
+	}
+}
+
 func velaIMRequestFor(path, token, body string) *http.Request {
 	request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
 	request.Header.Set("Content-Type", "application/json")
