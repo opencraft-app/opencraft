@@ -657,6 +657,9 @@ export function mapMessages(
   return mapMessageRanges(sessionId, messages, running, attachmentNames).map(({ turn }) => turn);
 }
 
+/** Agent-to-Agent IM conversations are shown in their own group chat list, never among a person's chats with the Agent. */
+const AGENT_IM_SESSION_SOURCES = new Set(["vela_im"]);
+
 function makeThread(summary: HermesSessionSummary, cwd: string, turns: AppServerTurn[] = [], running = false): AppServerThread {
   const when = timestamp(summary.started_at);
   const title = summary.title.trim() || summary.preview.trim() || "New chat";
@@ -1136,7 +1139,8 @@ export class HermesAppServerAdapter {
     }
     const query = params.searchTerm?.trim().toLocaleLowerCase();
     let rows = response.sessions.filter((row) => (
-      (!params.exactTitle?.trim()
+      !AGENT_IM_SESSION_SOURCES.has(row.source?.trim().toLowerCase() ?? "")
+      && (!params.exactTitle?.trim()
         || row.root_title?.trim() === params.exactTitle.trim()
         || (!row.root_title?.trim() && row.title.trim() === params.exactTitle.trim()))
       && (!query || `${row.title} ${row.preview}`.toLocaleLowerCase().includes(query))

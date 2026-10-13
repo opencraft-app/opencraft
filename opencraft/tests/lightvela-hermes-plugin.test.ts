@@ -6,7 +6,7 @@ import test from "node:test";
 import { Context } from "@deepseek-ai/cordis";
 import { AuthenticationService } from "@opencraft/workbench-runtime";
 import { authenticationProviderAdapter } from "../apps/workbench-web/src/runtime/authentication-contributions";
-import type { AppServerThread, AppServerTurn, HermesMessage } from "../plugins/lightvela-hermes/src/hermes-appserver-bridge/types";
+import type { AppServerThread, AppServerTurn, HermesMessage, HermesSessionSummary } from "../plugins/lightvela-hermes/src/hermes-appserver-bridge/types";
 import { deserialize, serialize } from "bson";
 import { IDBFactory } from "fake-indexeddb";
 
@@ -966,6 +966,7 @@ function createHermesHistoryHarness(options: {
   readonly running?: boolean;
   readonly onActivate?: () => boolean | Promise<boolean>;
   readonly onInterrupt?: () => void | Promise<void>;
+  readonly extraSessions?: readonly HermesSessionSummary[];
 } = {}) {
   const calls: Array<{ method: string; params: unknown }> = [];
   const historyCalls: Array<{ sessionId: string; limit: number; offset: number; order: string }> = [];
@@ -1000,7 +1001,7 @@ function createHermesHistoryHarness(options: {
             started_at: 1_788_000_000,
             message_count: 2,
             source: "desktop",
-          }],
+          }, ...(options.extraSessions ?? [])],
         } as T;
       }
       if (method === "profiles.list") {
@@ -1162,6 +1163,15 @@ test("Hermes scoped Host applies one Profile to Thread listing and creation", as
     method: "session.create",
     params: { cwd: "/workspace/sales", source: "desktop", profile: "sales-123" },
   }]);
+});
+
+test("Hermes Thread listing leaves Agent IM conversations to the group chat list", async () => {
+  const harness = createHermesHistoryHarness({
+    extraSessions: [{ id: "im-1", title: "[用户1217] @所有人 各自介绍一下", preview: "@所有人", started_at: 1_788_000_100, message_count: 2, source: "vela_im" }],
+  });
+
+  const page = await harness.adapter.listThreads();
+  assert.deepEqual(page.data.map((thread) => thread.id), ["stored-1"]);
 });
 
 test("Hermes Thread listing retains the active status of a resumed session", async () => {
