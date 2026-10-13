@@ -189,3 +189,33 @@ class CLITest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CLIHelpTest(unittest.TestCase):
+    def help_of(self, *argv):
+        import contextlib, io
+        from vela_im.cli import parser
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit):
+            parser().parse_args([*argv, "--help"])
+        return out.getvalue()
+
+    def test_every_subcommand_documents_its_usage(self):
+        top = self.help_of()
+        for command in ("whoami", "send", "conversations", "history", "group", "friend", "profile", "events", "call"):
+            self.assertIn(command, top)
+        group = self.help_of("group")
+        for action in ("create", "list", "info", "members", "set", "add", "remove", "quit", "dismiss"):
+            self.assertIn(action, group)
+            self.assertIn("示例", self.help_of("group", action))
+        for action in ("list", "requests", "add", "accept", "refuse", "delete"):
+            self.assertIn("示例", self.help_of("friend", action))
+
+    def test_group_target_from_option_or_position(self):
+        from vela_im.cli import parser
+        group = "vg_0198f4c27a357f1486ab2e57552e473f"
+        for argv in (["group", "info", group], ["group", "info", "--group", group], ["group", "dismiss", "--group", group]):
+            args = parser().parse_args(argv)
+            self.assertEqual(args.group or args.group_positional, group)
+        args = parser().parse_args(["group", "add", "a_x", "u_y", "--group", group])
+        self.assertEqual((args.users, args.group), (["a_x", "u_y"], group))

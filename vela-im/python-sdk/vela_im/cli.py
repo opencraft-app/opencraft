@@ -97,12 +97,16 @@ def cmd_group(client, args):
     action = args.action
     if action == "create":
         _print(client.create_group(args.name, args.members or [], args.reply_mode))
+    elif action == "list":
+        _print(client.get_groups())
     elif action == "info":
         group = _group_arg(args.group)
         _print(client.group(group) if platform_group_id(group) else client.get_group_profile(group))
     elif action == "members":
         _print(client.get_group_members(_group_arg(args.group)))
     elif action == "set":
+        if not args.name and not args.reply_mode:
+            raise SystemExit("需要 --name 或 --reply-mode")
         _print(client.update_group(_group_arg(args.group), name=args.name, reply_mode=args.reply_mode))
     elif action == "add":
         _print(client.add_group_members(_group_arg(args.group), args.users))
@@ -112,8 +116,6 @@ def cmd_group(client, args):
         _print(client.quit_group(_group_arg(args.group)))
     elif action == "dismiss":
         _print(client.dismiss_group(_group_arg(args.group)))
-    elif action == "list":
-        _print(client.get_groups())
 
 
 def cmd_friend(client, args):
@@ -122,8 +124,6 @@ def cmd_friend(client, args):
         _print(client.get_friends())
     elif action == "requests":
         _print(client.get_friend_applications())
-    elif not args.user:
-        raise SystemExit("需要用户 ID")
     elif action == "add":
         _print(client.add_friend(args.user, args.wording or ""))
     elif action == "accept":
@@ -146,65 +146,132 @@ def cmd_call(client, args):
     _print(client.call(args.method, *json.loads(args.args or "[]")))
 
 
+GROUP_HELP = "群 ID（vg_… 或 GROUPvg_…）；在群会话里省略时用当前群"
+
+
+def _command(parent, name, summary, examples, run=None, **kwargs):
+    """A subcommand whose --help shows what it does and how to call it."""
+    command = parent.add_parser(name, help=summary, description=summary, epilog="示例：\n" + "\n".join("  " + e for e in examples),
+                                formatter_class=argparse.RawDescriptionHelpFormatter, **kwargs)
+    if run:
+        command.set_defaults(run=run)
+    return command
+
+
+def _group_target(command):
+    command.add_argument("group_positional", nargs="?", metavar="GROUP", help=GROUP_HELP)
+    command.add_argument("--group", help=GROUP_HELP)
+
+
 def parser():
-    root = argparse.ArgumentParser(prog="vela_im", description="以当前 Agent 自己的 IM 身份收发消息、管理群聊。")
-    commands = root.add_subparsers(dest="command", required=True)
+    root = argparse.ArgumentParser(
+        prog="vela_im", description="以当前 Agent 自己的 IM 身份收发消息、管理群聊。身份由 HERMES_HOME 决定，不需要也不接受 ID 或 Token。",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=("常用：\n"
+                "  vela_im send --to <IM userID|群ID> --text 你好      # 省略 --to 时发到当前会话\n"
+                "  vela_im send --to vg_xxx --file ./report.pdf\n"
+                "  vela_im group create --name 周报 --members u_xxx a_yyy\n"
+                "  vela_im group add a_yyy                            # 当前群\n"
+                "  vela_im history --count 20                         # 当前会话\n"
+                "每个子命令都有自己的说明，例如 vela_im group --help、vela_im group add --help。\n"
+                "IM userID：人类以 u_ 开头，Agent 以 a_ 开头；平台群 ID 以 vg_ 开头。"))
+    commands = root.add_subparsers(dest="command", required=True, metavar="COMMAND")
 
-    commands.add_parser("whoami", help="当前身份、命令权限与主人").set_defaults(run=cmd_whoami)
+    _command(commands, "whoami", "当前身份、命令权限与主人的 IM 身份", ["vela_im whoami"], cmd_whoami)
 
-    send = commands.add_parser("send", help="发送消息（默认发到当前会话）")
-    send.add_argument("--to", help="对方 userID 或群 ID；省略时发到当前会话")
-    send.add_argument("--group", action="store_true", help="--to 是群 ID")
-    send.add_argument("--text")
-    send.add_argument("--at", nargs="*", help="群里 @ 的 userID（@all 表示全体）")
-    send.add_argument("--type", default="text", choices=MESSAGE_TYPES)
+    send = _command(commands, "send", "发送消息（省略 --to 时发到当前会话）", [
+        "vela_im send --text 收到                              # 当前会话",
+        "vela_im send --to u_xxx --text 你好                   # 单聊",
+        "vela_im send --to vg_xxx --text 大家好 --at a_yyy     # 群里 @ 某人（--at @all 表示全体）",
+        "vela_im send --to vg_xxx --file ./chart.png           # 图片/音频/视频/文件按类型发送",
+        "vela_im send --to u_xxx --type location --payload '{\"description\":\"公司\",\"longitude\":116.3,\"latitude\":39.9}'",
+    ], cmd_send)
+    send.add_argument("--to", help="接收方：IM userID（u_…/a_…）或群 ID（vg_…）；也接受 C2C…/GROUP… 会话 ID")
+    send.add_argument("--group", action="store_true", help="--to 是非平台群的群 ID")
+    send.add_argument("--text", help="文本内容")
+    send.add_argument("--at", nargs="*", metavar="USER", help="群里 @ 的 IM userID（@all 表示全体）")
+    send.add_argument("--type", default="text", choices=MESSAGE_TYPES, help="消息类型，配合 --payload 使用")
     send.add_argument("--payload", help="原生消息 payload（JSON）")
-    send.add_argument("--file", help="本地图片/语音/视频/文件路径")
-    send.set_defaults(run=cmd_send)
+    send.add_argument("--file", help="本地图片/音频/视频/文件路径")
 
-    commands.add_parser("conversations", help="会话列表与未读").set_defaults(run=cmd_conversations)
+    _command(commands, "conversations", "会话列表与未读数", ["vela_im conversations"], cmd_conversations)
 
-    history = commands.add_parser("history", help="会话历史（默认当前会话）")
-    history.add_argument("--conversation", help="C2C<userID> 或 GROUP<groupID>")
+    history = _command(commands, "history", "会话历史（省略 --conversation 时为当前会话）", [
+        "vela_im history --count 20",
+        "vela_im history --conversation GROUPvg_xxx --count 20",
+        "vela_im history --conversation C2Cu_xxx --next <上一页的 nextReqMessageID>",
+    ], cmd_history)
+    history.add_argument("--conversation", help="会话 ID：C2C<userID> 或 GROUP<群ID>")
     history.add_argument("--next", help="上一页返回的 nextReqMessageID")
-    history.add_argument("--count", type=int)
-    history.set_defaults(run=cmd_history)
+    history.add_argument("--count", type=int, help="每页条数")
 
-    group = commands.add_parser("group", help="群聊：建群、查看、改名/回复模式、拉人、踢人、退群、解散")
-    group.add_argument("action", choices=["create", "list", "info", "members", "set", "add", "remove", "quit", "dismiss"])
-    group.add_argument("group", nargs="?", help="群 ID（省略时用当前群）")
-    group.add_argument("users", nargs="*", help="add/remove 的 userID")
-    group.add_argument("--name")
-    group.add_argument("--members", nargs="*", help="create 的初始成员 userID")
-    group.add_argument("--reply-mode", choices=[mode.value for mode in GroupReplyMode])
-    group.set_defaults(run=cmd_group)
+    group = _command(commands, "group", "群聊：建群、查看、改名/回复模式、拉人、踢人、退群、解散", [
+        "vela_im group create --name 周报 --members u_xxx a_yyy --reply-mode mention",
+        "vela_im group list",
+        "vela_im group info                                    # 当前群",
+        "vela_im group set --name 新名字 --reply-mode mention_context",
+        "vela_im group add a_yyy u_zzz --group vg_xxx",
+        "vela_im group remove a_yyy",
+        "vela_im group quit",
+        "vela_im group dismiss --group vg_xxx",
+    ])
+    actions = group.add_subparsers(dest="action", required=True, metavar="ACTION")
+    create = _command(actions, "create", "建群（成员和回复规则由平台登记）", [
+        "vela_im group create --name 周报 --members u_xxx a_yyy",
+        "vela_im group create --name 讨论 --members a_yyy --reply-mode all",
+    ], cmd_group)
+    create.add_argument("--name", required=True, help="群名")
+    create.add_argument("--members", nargs="*", metavar="USER", help="初始成员的 IM userID")
+    create.add_argument("--reply-mode", choices=[mode.value for mode in GroupReplyMode],
+                        help="mention：@ 才回复（默认）；mention_context：@ 时附前 10 条上下文；all：无需 @")
+    _command(actions, "list", "我所在的群", ["vela_im group list"], cmd_group)
+    for name, summary in (("info", "群资料与回复规则"), ("members", "群成员")):
+        _group_target(_command(actions, name, summary, [f"vela_im group {name}", f"vela_im group {name} --group vg_xxx"], cmd_group))
+    update = _command(actions, "set", "改群名或回复模式（群主/管理员）", [
+        "vela_im group set --name 新名字", "vela_im group set --group vg_xxx --reply-mode mention_context"], cmd_group)
+    _group_target(update)
+    update.add_argument("--name", help="新群名")
+    update.add_argument("--reply-mode", choices=[mode.value for mode in GroupReplyMode], help="mention / mention_context / all")
+    for name, summary in (("add", "拉人进群（群主/管理员可拉任何人；普通成员只能拉自己的 Agent）"),
+                          ("remove", "把人移出群（群主/管理员；普通成员只能移出自己的 Agent）")):
+        members = _command(actions, name, summary, [f"vela_im group {name} a_yyy", f"vela_im group {name} a_yyy u_zzz --group vg_xxx"], cmd_group)
+        members.add_argument("users", nargs="+", metavar="USER", help="IM userID")
+        members.add_argument("--group", help=GROUP_HELP)
+    for name, summary in (("quit", "退出群"), ("dismiss", "解散群（只有群主）")):
+        _group_target(_command(actions, name, summary, [f"vela_im group {name}", f"vela_im group {name} --group vg_xxx"], cmd_group))
 
-    friend = commands.add_parser("friend", help="好友")
-    friend.add_argument("action", choices=["list", "requests", "add", "accept", "refuse", "delete"])
-    friend.add_argument("user", nargs="?")
-    friend.add_argument("--wording")
-    friend.set_defaults(run=cmd_friend)
+    friend = _command(commands, "friend", "好友", [
+        "vela_im friend list", "vela_im friend requests", "vela_im friend add u_xxx --wording 你好",
+        "vela_im friend accept u_xxx", "vela_im friend refuse u_xxx", "vela_im friend delete u_xxx"])
+    friend_actions = friend.add_subparsers(dest="action", required=True, metavar="ACTION")
+    _command(friend_actions, "list", "好友列表", ["vela_im friend list"], cmd_friend)
+    _command(friend_actions, "requests", "收到和发出的好友申请", ["vela_im friend requests"], cmd_friend)
+    for name, summary in (("add", "申请加好友"), ("accept", "同意好友申请"), ("refuse", "拒绝好友申请"), ("delete", "删除好友")):
+        command = _command(friend_actions, name, summary, [f"vela_im friend {name} u_xxx"], cmd_friend)
+        command.add_argument("user", metavar="USER", help="IM userID")
+        if name == "add":
+            command.add_argument("--wording", help="验证消息")
 
-    profile = commands.add_parser("profile", help="自己或他人的资料")
-    profile.add_argument("--users", nargs="*")
-    profile.set_defaults(run=cmd_profile)
+    profile = _command(commands, "profile", "自己或他人的资料", ["vela_im profile", "vela_im profile --users u_xxx a_yyy"], cmd_profile)
+    profile.add_argument("--users", nargs="*", metavar="USER", help="IM userID；省略时为自己")
 
-    events = commands.add_parser("events", help="持久化事件")
-    events.add_argument("--after", type=int, default=0)
-    events.set_defaults(run=cmd_events)
+    events = _command(commands, "events", "worker 记录的持久化事件（按序号增量读取）", ["vela_im events --after 0"], cmd_events)
+    events.add_argument("--after", type=int, default=0, help="只看序号大于它的事件")
 
-    call = commands.add_parser("call", help="其余用户级腾讯 SDK 方法")
-    call.add_argument("method")
+    call = _command(commands, "call", "调用其余用户级腾讯 SDK 方法（参数为官方位置参数）", [
+        "vela_im call getUserStatus '[{\"userIDList\":[\"u_xxx\"]}]'"], cmd_call)
+    call.add_argument("method", help="腾讯 SDK 方法名")
     call.add_argument("args", nargs="?", help="官方位置参数（JSON 数组）")
-    call.set_defaults(run=cmd_call)
     return root
 
 
 def main(argv=None):
     args = parser().parse_args(argv)
-    if args.command == "group" and args.action in ("add", "remove") and args.group and not args.users and not platform_group_id(args.group):
-        # `group add a_x` inside the current group: the positional is a user, not a group.
-        args.users, args.group = [args.group], None
+    if getattr(args, "group_positional", None) and not args.group:
+        args.group = args.group_positional
+    if args.command == "group" and args.action in ("add", "remove") and not args.group and len(args.users) > 1 and platform_group_id(args.users[0]):
+        # `group add vg_x a_y`: the first positional names the group.
+        args.group, args.users = args.users[0], args.users[1:]
     try:
         client = VelaClient.for_profile()
         args.run(client, args)
