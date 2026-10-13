@@ -3,33 +3,67 @@ name: build-matrix
 on:
   pull_request:
   workflow_dispatch:
+    inputs:
+      package_macos:
+        description: Build the macOS DMG in addition to full validation
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-matrix-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  plan:
+    uses: ./.github/workflows/ci-plan.yml
+
   portable:
+    needs: plan
+    if: needs.plan.outputs.has-builds == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        target: [web-browser, electron-renderer, electron-host, expo-web, expo-ios-bundle]
+        target: ${{ fromJSON(needs.plan.outputs.targets) }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: .nvmrc
           cache: npm
-      - run: npm ci
+      - run: npm ci --no-audit --no-fund
       - run: npm run matrix:check
       - run: npm run matrix:build -- ${{ matrix.target }}
 
-  macos-electron:
+  macos-native:
+    needs: plan
+    if: needs.plan.outputs.native == 'true' && !(github.event_name == 'workflow_dispatch' && inputs.package_macos)
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version-file: .nvmrc
           cache: npm
-      - run: npm ci
+      - run: npm ci --no-audit --no-fund
+      - run: npm run test:identity
+      - run: npm run build:electron:host
+      - run: npm run test:native-speech
+
+  macos-electron:
+    needs: plan
+    if: github.event_name == 'workflow_dispatch' && inputs.package_macos
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --no-audit --no-fund
       - run: npm run test:identity
       - run: npm run prepare:dsh-runtime
       - run: npm run smoke:local-agent
@@ -39,3 +73,20 @@ jobs:
         with:
           name: electron-macos-native
           path: apps/workbench-electron/release/OpenCraft-*
+
+  build-checks:
+    if: always()
+    needs: [plan, portable, macos-native, macos-electron]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require selected builds to succeed
+        env:
+          PLAN_RESULT: ${{ needs.plan.result }}
+          BUILD_RESULT: ${{ needs.portable.result }}
+          NATIVE_RESULT: ${{ needs.macos-native.result }}
+          PACKAGE_RESULT: ${{ needs.macos-electron.result }}
+        run: |
+          test "$PLAN_RESULT" = success
+          for result in "$BUILD_RESULT" "$NATIVE_RESULT" "$PACKAGE_RESULT"; do
+            case "$result" in success|skipped) ;; *) exit 1 ;; esac
+          done

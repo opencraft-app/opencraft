@@ -12,8 +12,11 @@ should be upgraded or assessed against the current code before reporting.
 
 ## Repository checks
 
-- The `security` workflow scans the checked-out source with Gitleaks, audits all
-  three npm lockfiles, and runs managed Web regression tests and Playwright.
+- The `security` workflow scans every PR and main push with Gitleaks. PR dependency
+  audits select changed npm installation roots; main pushes, weekly and manual
+  runs audit all three roots. Managed Web regression/Playwright runs when update
+  or deployment inputs change. The selection policy and stable aggregate checks
+  are documented in [Build Matrix](docs/build-matrix.md#pull-request-ci-selection).
 - Dependabot covers the root workspace, isolated DSH runtime, `hemesclient` and
   GitHub Actions. Credentials belong to a deployment user's private configuration.
 - The CodeQL workflow analyzes JavaScript/TypeScript when the repository is public.

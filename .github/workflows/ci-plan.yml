@@ -1,0 +1,42 @@
+name: Select CI work
+
+on:
+  workflow_call:
+    outputs:
+      targets:
+        value: ${{ jobs.plan.outputs.targets }}
+      audits:
+        value: ${{ jobs.plan.outputs.audits }}
+      has-builds:
+        value: ${{ jobs.plan.outputs.has-builds }}
+      has-audits:
+        value: ${{ jobs.plan.outputs.has-audits }}
+      managed-web:
+        value: ${{ jobs.plan.outputs.managed-web }}
+      native:
+        value: ${{ jobs.plan.outputs.native }}
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      targets: ${{ steps.select.outputs.targets }}
+      audits: ${{ steps.select.outputs.audits }}
+      has-builds: ${{ steps.select.outputs.has-builds }}
+      has-audits: ${{ steps.select.outputs.has-audits }}
+      managed-web: ${{ steps.select.outputs.managed-web }}
+      native: ${{ steps.select.outputs.native }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+      - run: node --test tests/ci-plan.test.mjs
+      - id: select
+        run: node scripts/ci-plan.mjs

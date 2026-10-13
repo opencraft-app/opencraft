@@ -22,6 +22,58 @@ so each surface is an explicit matrix target with its own artifact contract.
 | `expo-web` | Expo Router + Metro Web | Expo static export | Linux/macOS/Windows |
 | `expo-ios-bundle` | React Native + Metro | JS bundle and assets | Linux/macOS; native archive on macOS |
 
+## Pull-request CI selection
+
+`build-matrix` runs on every PR, but `scripts/ci-plan.mjs` chooses its jobs from
+Git's full merge-base diff. It includes deleted paths and both sides of a rename;
+it does not use GitHub's limited workflow path filter or a paginated file API.
+The reusable `ci-plan.yml` runs the selector tests without installing npm packages
+and records selected work in the Actions summary. A missing diff selects the full
+validation baseline instead of silently skipping checks.
+
+| Changed area | Automatic validation |
+| --- | --- |
+| Root Markdown, README/AGENTS, `docs/`, `design/`, `.agents/` | No build; secrets scan remains |
+| Web renderer source or shared CSS/SCSS | Web browser + Electron renderer |
+| Expo application | Expo Web + iOS JavaScript bundle |
+| Electron Main/Preload/native code | Linux host build + macOS native host compile/tests |
+| Daemon, local agent host, DSH runtime | Electron host build |
+| Shared package/plugin code | All five portable targets; managed Web regression |
+| Web update UI, Vite/static inputs, update/deployment scripts and tests | Managed Web regression and applicable builds |
+| Root manifests/lockfile/toolchain, CI configuration, selector changes, unknown build inputs | Broad portable/runtime validation; no DMG |
+
+These are conservative area rules, not a source-level dependency graph. Root
+`package.json` changes intentionally select the broad baseline even if only a
+script changed; workspace manifests also select their install-root audit. Shared
+TypeScript may serve more than one platform, so it retains portable coverage.
+A source-only visual PR needs two renderer builds, not Expo, host, macOS or DMG.
+
+A manual `build-matrix` dispatch runs the complete validation matrix. Set its
+`package_macos` checkbox to additionally build and upload the macOS DMG; the
+separate native compile job is then covered by the packaging job. Ordinary PRs
+never build a DMG. Signed/notarized release workflows and their tag/manual
+triggers are unchanged.
+
+New commits cancel superseded runs of the same PR. No workflow-level path filter
+leaves a required check pending: `build-checks` reports success when no build is
+needed and fails if planning or a selected job fails/cancels. Use this stable
+aggregate check rather than conditional matrix job names in branch protection.
+No repository protection settings are changed by this policy.
+
+The `security` workflow runs once per PR, on pushes to `main`, and weekly. PRs
+only audit the npm installation roots whose manifests/lockfiles changed; main,
+weekly and manual runs audit all three roots so newly disclosed vulnerabilities
+remain visible without a dependency change. Managed Web E2E is selected by the
+update/deployment inputs above, not every visual edit. `security-checks` is the
+corresponding aggregate check. Dependency findings retain the existing failure
+threshold; selection does not suppress findings in a job that runs.
+
+Validate policy changes with `node --test tests/ci-plan.test.mjs` and `actionlint`
+on the three CI workflows. Tests cover source-only UI, native, Expo, shared code,
+dependency roots, documentation, manual/weekly runs, unavailable diffs, advanced
+base branches, deleted/renamed files, and changes exceeding 300 paths. This tests
+the scheduling contract; it does not replace product builds or release checks.
+
 The browser and Electron targets intentionally do not share a built `index.html`.
 They share source and chunks, but have different origin contracts. Electron
 serves `electron-renderer` from a private, static-only loopback origin; loading

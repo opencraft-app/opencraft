@@ -2,13 +2,23 @@ name: security
 
 on:
   push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
+  schedule:
+    - cron: "41 4 * * 1"
 
 permissions:
   contents: read
 
+concurrency:
+  group: security-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  plan:
+    uses: ./.github/workflows/ci-plan.yml
+
   secrets:
     runs-on: ubuntu-latest
     steps:
@@ -30,11 +40,13 @@ jobs:
         run: '"${{ runner.temp }}/gitleaks" dir . --redact --no-banner --config .gitleaks.toml'
 
   dependency-audit:
+    needs: plan
+    if: needs.plan.outputs.has-audits == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        directory: [., runtime/dsh, hemesclient]
+        directory: ${{ fromJSON(needs.plan.outputs.audits) }}
     defaults:
       run:
         working-directory: ${{ matrix.directory }}
@@ -52,6 +64,8 @@ jobs:
       - run: npm audit --audit-level=high
 
   managed-web:
+    needs: plan
+    if: needs.plan.outputs.managed-web == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -61,10 +75,28 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: npm
-      - run: npm ci
+      - run: npm ci --no-audit --no-fund
       - run: git diff --exit-code -- package-lock.json
       - run: npm run typecheck --workspace @opencraft/workbench-web
       - run: npm run test:web-release
       - run: npm run test:web-updates
       - run: npx playwright install --with-deps chromium
       - run: npm run test:web-updates:e2e
+
+  security-checks:
+    if: always()
+    needs: [plan, secrets, dependency-audit, managed-web]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require selected security checks to succeed
+        env:
+          PLAN_RESULT: ${{ needs.plan.result }}
+          SECRETS_RESULT: ${{ needs.secrets.result }}
+          AUDIT_RESULT: ${{ needs.dependency-audit.result }}
+          WEB_RESULT: ${{ needs.managed-web.result }}
+        run: |
+          test "$PLAN_RESULT" = success
+          test "$SECRETS_RESULT" = success
+          for result in "$AUDIT_RESULT" "$WEB_RESULT"; do
+            case "$result" in success|skipped) ;; *) exit 1 ;; esac
+          done
