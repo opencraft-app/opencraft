@@ -89,7 +89,8 @@ func configuredVelaIMPlugin() (velaIMPluginPackage, bool) {
 }
 
 // renderVelaIMPluginInstallCommand 把插件安装到 $HERMES_HOME/plugins/vela-im；其他 Profile 开通时软链接到这里。
-// 同一个包已安装时什么也不做；下载或校验失败不动现有插件，上一版本保留为 vela-im.previous。
+// 同一个包已安装时什么也不做；下载或校验失败不动现有插件，上一版本保留在 $HERMES_HOME/.vela-im.previous：
+// Hermes 会把 plugins/ 下任何带 plugin.yaml 的目录当成插件加载，备份放在里面会和新版本同名竞争。
 // 每条成功路径都自然结束、不调用 exit：CTL 用 bash -lc 执行，登录 shell 执行 exit 时会先跑 ~/.bash_logout，
 // 实例上它的最后一条命令返回非零，会把退出码改成失败。
 func renderVelaIMPluginInstallCommand(pkg velaIMPluginPackage) string {
@@ -97,6 +98,8 @@ func renderVelaIMPluginInstallCommand(pkg velaIMPluginPackage) string {
 		`set -eu`,
 		`home="${HERMES_HOME:-$HOME/.hermes}"`,
 		`target="$home/plugins/vela-im"`,
+		`previous="$home/.vela-im.previous"`,
+		`if [ -d "$target.previous" ]; then rm -rf "$previous"; mv "$target.previous" "$previous"; fi`,
 		`want=` + shellQuoteArg(pkg.SHA256),
 		`if [ ! -x "$home/hermes-agent/venv/bin/python" ]; then`,
 		`  echo ` + VelaIMPluginNoHermes,
@@ -116,8 +119,8 @@ func renderVelaIMPluginInstallCommand(pkg velaIMPluginPackage) string {
 		`  tar -xzf "$work/plugin.tgz" -C "$work/plugin" --no-same-owner`,
 		`  test -f "$work/plugin/plugin.yaml" -a -f "$work/plugin/adapter.py" -a -f "$work/plugin/vela_im/_worker/vela-im-worker.mjs"`,
 		`  printf '%s\n' "$want" > "$work/plugin/.package-sha256"`,
-		`  rm -rf "$target.previous"`,
-		`  if [ -d "$target" ]; then mv "$target" "$target.previous"; fi`,
+		`  rm -rf "$previous"`,
+		`  if [ -d "$target" ]; then mv "$target" "$previous"; fi`,
 		`  mv "$work/plugin" "$target"`,
 		`  echo ` + VelaIMPluginInstalled,
 		`fi`,
@@ -295,14 +298,49 @@ func (l *logic) restartVelaIMGateway(ctx pctx.Context, instanceID, profileID str
 	return nil
 }
 
-// velaIMRestartIfServingCommand 在实例上有 Profile 已收到 Bot 凭据时重启主机 gateway，让它加载新版本插件。
-const velaIMRestartIfServingCommand = `set -eu
+// velaIMQuietDisplayFunction 让 IM 里只出现 Agent 的回复：工具进度、中间消息、长任务心跳、忙碌回执都不发到群里。
+// 写在 Profile 配置的 display.platforms.vela_im 下，优先于根配置里面向其他平台的全局 display 设置。
+const velaIMQuietDisplayFunction = `
+VELA_IM_QUIET_DISPLAY = {
+    "show_reasoning": False, "tool_progress": "off", "interim_assistant_messages": False,
+    "long_running_notifications": False, "busy_ack_detail": False, "busy_steer_ack_enabled": False,
+    "live_status": "off", "streaming": False,
+}
+
+def quiet_vela_im_display(config):
+    display = config.setdefault("display", {}).setdefault("platforms", {})
+    current = display.get("vela_im") if isinstance(display.get("vela_im"), dict) else {}
+    display["vela_im"] = {**current, **VELA_IM_QUIET_DISPLAY}
+`
+
+// velaIMQuietServedProfilesScript 给每个已收到 Bot 凭据的 Profile 补上 IM 静默显示设置（升级前开通的 Agent 没有）。
+const velaIMQuietServedProfilesScript = velaIMQuietDisplayFunction + `
+import os
+import sys
+from pathlib import Path
+
+import yaml
+
+home = Path(sys.argv[1])
+for profile in [home, *sorted(p for p in (home / "profiles").glob("*") if p.is_dir())]:
+    config_path = profile / "config.yaml"
+    if not (profile / "plugin-data" / "vela-im" / "credential").is_file() or not config_path.is_file():
+        continue
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    quiet_vela_im_display(config)
+    config_path.write_text(yaml.safe_dump(config, allow_unicode=True, sort_keys=False), encoding="utf-8")
+    os.chmod(config_path, 0o600)
+`
+
+// velaIMRestartIfServingCommand 在实例上有 Profile 已收到 Bot 凭据时补上静默显示设置并重启主机 gateway，让它加载新版本插件。
+var velaIMRestartIfServingCommand = `set -eu
 home="${HERMES_HOME:-$HOME/.hermes}"
 served=
 for credential in "$home/plugin-data/vela-im/credential" "$home"/profiles/*/plugin-data/vela-im/credential; do
   if [ -f "$credential" ]; then served=1; fi
 done
 if [ -n "$served" ]; then
+  "$home/hermes-agent/venv/bin/python" -c ` + shellQuoteArg(velaIMQuietServedProfilesScript) + ` "$home"
   acli gateway restart >/dev/null
   echo ` + velaIMGatewayRestarted + `
 fi`
@@ -333,7 +371,7 @@ def profile_dir(native_id):
     return home, home / "profiles" / native_id
 `
 
-const deliverVelaIMScript = velaIMProfileDirFunction + `
+const deliverVelaIMScript = velaIMProfileDirFunction + velaIMQuietDisplayFunction + `
 import base64
 import json
 import sys
@@ -375,8 +413,7 @@ if "vela-im" not in enabled:
 plugins["enabled"] = enabled
 config.setdefault("platforms", {})["vela_im"] = {"enabled": True}
 config.setdefault("platform_toolsets", {})["vela_im"] = ["all"]
-display = config.setdefault("display", {}).setdefault("platforms", {})
-display["vela_im"] = {"show_reasoning": False}
+quiet_vela_im_display(config)
 config_path.write_text(yaml.safe_dump(config, allow_unicode=True, sort_keys=False), encoding="utf-8")
 os.chmod(config_path, 0o600)
 

@@ -111,8 +111,26 @@ func TestVelaIMPluginInstallCommandInstallsOnceAndKeepsThePluginOnBadDownloads(t
 		!strings.HasSuffix(output, VelaIMPluginInstalled) {
 		t.Fatalf("upgrade = %q, %v", output, err)
 	}
-	if body, _ := os.ReadFile(filepath.Join(installed+".previous", "adapter.py")); string(body) != "# v1\n" {
+	previous := filepath.Join(home, ".vela-im.previous")
+	if body, _ := os.ReadFile(filepath.Join(previous, "adapter.py")); string(body) != "# v1\n" {
 		t.Fatalf("previous version not kept: %q", body)
+	}
+	if plugins, _ := filepath.Glob(filepath.Join(home, "plugins", "*")); len(plugins) != 1 {
+		t.Fatalf("Hermes loads every directory under plugins/ as a plugin, only vela-im may be there: %v", plugins)
+	}
+
+	// Instances upgraded before the backup moved out still have plugins/vela-im.previous; any run moves it.
+	if err := os.Rename(previous, installed+".previous"); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := runVelaIMPluginInstall(t, home, upgrade, velaIMPluginPackage{URL: pkg.URL, SHA256: upgradeSum}); err != nil || output != VelaIMPluginUpToDate {
+		t.Fatalf("re-check = %q, %v", output, err)
+	}
+	if _, err := os.Stat(installed + ".previous"); !os.IsNotExist(err) {
+		t.Fatalf("old in-plugins backup must be moved out: %v", err)
+	}
+	if body, _ := os.ReadFile(filepath.Join(previous, "adapter.py")); string(body) != "# v1\n" {
+		t.Fatalf("moved backup = %q", body)
 	}
 }
 
@@ -172,10 +190,26 @@ func TestDeliverVelaIMScriptLinksSharedPluginIntoProfile(t *testing.T) {
 	if err != nil || !strings.Contains(string(config), "vela-im") {
 		t.Fatalf("profile config must enable vela-im: %s %v", config, err)
 	}
+	for _, quiet := range []string{"tool_progress: 'off'", "long_running_notifications: false", "interim_assistant_messages: false"} {
+		if !strings.Contains(string(config), quiet) {
+			t.Fatalf("IM must only carry replies, missing %q:\n%s", quiet, config)
+		}
+	}
 }
 
 func TestVelaIMRestartIfServingRestartsOnlyInstancesWithIMAgents(t *testing.T) {
+	requireWeixinPython(t)
 	home, bin := t.TempDir(), t.TempDir()
+	python, err := exec.LookPath(weixinTestPython())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(home, "hermes-agent", "venv", "bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(python, filepath.Join(home, "hermes-agent", "venv", "bin", "python")); err != nil {
+		t.Fatal(err)
+	}
 	marker := filepath.Join(t.TempDir(), "restarted")
 	if err := os.WriteFile(filepath.Join(bin, "acli"), []byte("#!/bin/sh\necho \"$*\" >> "+marker+"\n"), 0o755); err != nil {
 		t.Fatal(err)
@@ -204,8 +238,14 @@ func TestVelaIMRestartIfServingRestartsOnlyInstancesWithIMAgents(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(data, "credential"), []byte("cred\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(home, "profiles", "profile-2", "config.yaml"), []byte("display:\n  platforms:\n    vela_im:\n      show_reasoning: false\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if output := run(); !velaIMOutputHas(output, velaIMGatewayRestarted) {
 		t.Fatalf("an IM Agent needs the new plugin loaded: %s", output)
+	}
+	if config, _ := os.ReadFile(filepath.Join(home, "profiles", "profile-2", "config.yaml")); !strings.Contains(string(config), "long_running_notifications: false") {
+		t.Fatalf("Agents delivered before the upgrade get the quiet IM display:\n%s", config)
 	}
 	if calls, _ := os.ReadFile(marker); strings.TrimSpace(string(calls)) != "gateway restart" {
 		t.Fatalf("acli calls = %q", calls)
