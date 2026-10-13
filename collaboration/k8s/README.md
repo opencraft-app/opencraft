@@ -75,8 +75,9 @@ Secret 里缺少对应文件时进程会拒绝启动。启用顺序：
    「功能配置 → 登录与消息 → 登录设置」：多端登录选「双平台登录」（Web + 一个移动/桌面端）或「多平台登录」
    （每种平台同时 1 台，同平台第二台会挤掉前一台）；「Web 端可同时在线个数」设为 3，允许同一人开 3 个标签页，
    第 4 个会挤掉最早的那个。被挤下线的网页显示「已在其他设备或页面登录」，可在原处重新连接。
-5. gateway-dashboard 的 overlay 设置 `GATEWAY_DASHBOARD_COLLABORATION_API_URL`
-   （beijing-sandbox 已配置为 `http://collaboration.lightvela-collaboration.svc.cluster.local`），
-   「IM 群聊」页即可使用。
+5. gateway-dashboard：在该环境 overlay 里给 `gateway-dashboard-config` 加 `COLLABORATION_API_URL`（beijing-sandbox 为
+   `http://collaboration.lightvela-collaboration.svc.cluster.local`，不改共享 base），并在
+   `gateway-dashboard-runtime-secrets` 加 `COLLABORATION_ADMIN_TOKEN`，「IM 群聊」页即可使用。
+
 
 接口与数据模型见 `collaboration/platform/v1/25-LightVela-Bot-IM身份与平台群.md`。

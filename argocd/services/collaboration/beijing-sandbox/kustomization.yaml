@@ -22,6 +22,30 @@ patches:
         path: /spec/template/metadata/annotations
         value:
           lightvela.dev/deployed-at: REPLACE_COLLABORATION_DEPLOYED_AT
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: --bot-host-ctl-url
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: http://ctl-api.ctl.svc.cluster.local
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: --bot-host-ctl-token-file
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: /var/run/secrets/collaboration/ctl.token
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: --bot-runtime-api-url
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: https://lightclaw.tech/v1/collaboration
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: --admin-token-file
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: /var/run/secrets/collaboration/admin.token
 replacements:
   - source:
       kind: ConfigMap
