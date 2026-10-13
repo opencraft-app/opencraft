@@ -366,15 +366,14 @@ func (s *Service) Update(ctx context.Context, actor Actor, groupID string, input
 	return s.Get(ctx, actor, groupID)
 }
 
-// AddMember 把平台已知的 IM 身份加入群；重复添加是幂等的。群主和管理员可以拉任何人，
-// 普通成员只能拉自己账号下的 Bot（多人群里每个人带自己的 Agent）。
+// AddMember 把操作者账号下的身份（主人或其 Bot）加入群；重复添加是幂等的。
+// 其他人只能凭邀请链接加入，这样没有人会被陌生人直接拉进群。
 func (s *Service) AddMember(ctx context.Context, actor Actor, groupID, userID string) (View, error) {
 	group, members, err := s.activeGroup(ctx, groupID)
 	if err != nil {
 		return View{}, err
 	}
-	actorRole, ok := activeRole(members, actor.IMUserID)
-	if !ok {
+	if _, ok := activeRole(members, actor.IMUserID); !ok {
 		return View{}, notFound(nil)
 	}
 	if _, ok := activeRole(members, userID); ok {
@@ -384,8 +383,8 @@ func (s *Service) AddMember(ctx context.Context, actor Actor, groupID, userID st
 	if err != nil {
 		return View{}, err
 	}
-	if actorRole == botimport.RoleMember && !ownBot(actor, route) {
-		return View{}, apperror.New("permission_denied", "普通成员只能拉入自己的 Agent", nil)
+	if !sameAccount(actor, route) {
+		return View{}, notOwnIdentity()
 	}
 	if countActive(members) >= MaxMembers {
 		return View{}, apperror.New("invalid_request", "群成员已达上限", nil)
@@ -549,6 +548,51 @@ func (s *Service) ObserveGroupDestroyed(ctx context.Context, tencentGroupID stri
 	return s.markDismissed(ctx, group, botimport.DismissedByTencent, "")
 }
 
+// ObserveGroupRenamed 用腾讯回调对账：群名被绕过平台修改时改回平台记录的群名。
+func (s *Service) ObserveGroupRenamed(ctx context.Context, tencentGroupID, name string) error {
+	groupID, ok := botimport.GroupIDFromTencent(tencentGroupID)
+	if !ok {
+		return nil
+	}
+	group, _, err := s.repository.FindGroup(ctx, groupID)
+	if errors.Is(err, botimport.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if group.State != botimport.GroupStateActive || name == group.Name {
+		return nil
+	}
+	return s.tencent.Rename(ctx, group.TencentGroupID, group.Name)
+}
+
+// MayMessage 判断单聊是否允许：同一账号下的身份之间（主人与自己的 Agent、Agent 之间），或同在一个进行中的平台群里。
+// 平台不认识的身份一律不允许。
+func (s *Service) MayMessage(ctx context.Context, from, to string) (bool, error) {
+	if from == to {
+		return true, nil
+	}
+	sender, err := s.repository.FindRoute(ctx, from)
+	if errors.Is(err, botimport.ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	receiver, err := s.repository.FindRoute(ctx, to)
+	if errors.Is(err, botimport.ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if sender.AccountID != "" && sender.AccountID == receiver.AccountID {
+		return true, nil
+	}
+	return s.repository.SharesActiveGroup(ctx, from, to)
+}
+
 // IsRestricted 供腾讯发消息前回调判断发送者是否被封禁。
 func (s *Service) IsRestricted(ctx context.Context, userID string) (bool, error) {
 	route, err := s.repository.FindRoute(ctx, userID)
@@ -591,6 +635,9 @@ func (s *Service) initialMembers(
 		route, err := s.memberRoute(ctx, userID)
 		if err != nil {
 			return nil, err
+		}
+		if !sameAccount(actor, route) {
+			return nil, notOwnIdentity()
 		}
 		members = append(members, botimport.GroupMember{
 			IMUserID: userID, Kind: route.Kind, Role: botimport.RoleMember,
@@ -673,6 +720,15 @@ func activeRole(members []botimport.GroupMember, userID string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// sameAccount 判断目标是不是操作者账号下的身份（主人或其 Bot）。只有这些身份可以被直接拉进群，其他人凭邀请链接加入。
+func sameAccount(actor Actor, route botimport.Route) bool {
+	return actor.AccountID != "" && route.AccountID == actor.AccountID
+}
+
+func notOwnIdentity() error {
+	return apperror.New("permission_denied", "只能直接拉入自己的 Agent；其他人请通过邀请链接加入", nil)
 }
 
 // ownBot 判断目标是不是操作者账号下的 Bot。

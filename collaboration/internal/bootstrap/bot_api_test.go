@@ -446,6 +446,12 @@ func TestBotIMAPIMultiPersonGroupsAndAdminOperations(t *testing.T) {
 	guestBot := provision(fixture.other, "guest-bot")
 	fixture.markHumansReady()
 
+	if status, body := fixture.human(http.MethodPost, "/v1/me/groups", map[string]any{
+		"groupId": uuid.Must(uuid.NewV7()).String(), "name": "拉陌生人", "memberUserIds": []string{guestBot["userId"].(string)},
+	}); status != http.StatusForbidden || errorCode(body) != "permission_denied" {
+		t.Fatalf("create a group with someone else's bot = %d %#v", status, body)
+	}
+
 	groupID := uuid.Must(uuid.NewV7()).String()
 	if status, body := fixture.human(http.MethodPost, "/v1/me/groups", map[string]any{
 		"groupId": groupID, "name": "多人", "memberUserIds": []string{ownerBot["userId"].(string)},
@@ -474,6 +480,16 @@ func TestBotIMAPIMultiPersonGroupsAndAdminOperations(t *testing.T) {
 	if status, body := fixture.other(http.MethodPut, memberPath+guestBot["userId"].(string), nil); status != http.StatusOK {
 		t.Fatalf("guest adds own bot = %d %#v", status, body)
 	}
+	mayMessage := func(from, to map[string]any) bool {
+		allowed, err := fixture.api.Groups.MayMessage(context.Background(), from["userId"].(string), to["userId"].(string))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return allowed
+	}
+	if !mayMessage(ownerBot, ownerSpare) || !mayMessage(guestBot, ownerBot) || mayMessage(guestBot, ownerSpare) {
+		t.Fatal("direct messages: same account and shared group allowed, strangers refused")
+	}
 	if status, body := fixture.other(http.MethodPut, memberPath+ownerSpare["userId"].(string), nil); status != http.StatusForbidden ||
 		errorCode(body) != "permission_denied" {
 		t.Fatalf("guest adds someone else's bot = %d %#v", status, body)
@@ -483,6 +499,10 @@ func TestBotIMAPIMultiPersonGroupsAndAdminOperations(t *testing.T) {
 	}
 	if status, body := fixture.other(http.MethodDelete, memberPath+guestBot["userId"].(string), nil); status != http.StatusOK {
 		t.Fatalf("guest removes own bot = %d %#v", status, body)
+	}
+	if status, body := fixture.human(http.MethodPut, memberPath+guestBot["userId"].(string), nil); status != http.StatusForbidden ||
+		errorCode(body) != "permission_denied" {
+		t.Fatalf("owner adds someone else's bot directly = %d %#v", status, body)
 	}
 
 	if status, _ := fixture.do(http.MethodGet, "/v1/admin/im/summary", "Bearer "+botTestGatewayToken, "", nil); status != http.StatusUnauthorized {

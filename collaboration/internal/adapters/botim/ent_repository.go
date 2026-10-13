@@ -385,6 +385,26 @@ func (r *EntRepository) MarkMemberRemoved(ctx context.Context, groupID, imUserID
 	})
 }
 
+// maxSharedGroupScan 限制判断“同群”时读取的群数；一个身份所在的平台群远少于此。
+const maxSharedGroupScan = 500
+
+func (r *EntRepository) SharesActiveGroup(ctx context.Context, a, b string) (bool, error) {
+	client := r.handle.Client()
+	groupIDs, err := client.IMGroupMember.Query().
+		Where(imgroupmember.ImUserIDEQ(a), imgroupmember.StateEQ(botimport.MemberStateActive)).
+		Limit(maxSharedGroupScan).Select(imgroupmember.FieldGroupID).Strings(ctx)
+	if err != nil || len(groupIDs) == 0 {
+		return false, err
+	}
+	shared, err := client.IMGroupMember.Query().
+		Where(imgroupmember.ImUserIDEQ(b), imgroupmember.StateEQ(botimport.MemberStateActive), imgroupmember.GroupIDIn(groupIDs...)).
+		Select(imgroupmember.FieldGroupID).Strings(ctx)
+	if err != nil || len(shared) == 0 {
+		return false, err
+	}
+	return client.IMGroup.Query().Where(imgroup.IDIn(shared...), imgroup.StateEQ(botimport.GroupStateActive)).Exist(ctx)
+}
+
 func bumpGroupRevision(ctx context.Context, tx *ent.Tx, groupID string, now time.Time) error {
 	return tx.IMGroup.Update().
 		Where(imgroup.IDEQ(groupID)).

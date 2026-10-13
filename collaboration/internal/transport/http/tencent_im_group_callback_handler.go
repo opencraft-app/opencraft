@@ -19,6 +19,10 @@ const (
 	groupAfterDestroyCommand = "Group.CallbackAfterGroupDestroyed"
 	groupBeforeSendCommand   = "Group.CallbackBeforeSendMsg"
 	c2cBeforeSendCommand     = "C2C.CallbackBeforeSendMsg"
+	// 群资料、入群只能经平台改变：客户端直接改名会被改回，申请入群和客户端拉人一律拒绝。
+	groupAfterInfoChangedCommand = "Group.CallbackAfterGroupInfoChanged"
+	groupBeforeApplyJoinCommand  = "Group.CallbackBeforeApplyJoinGroup"
+	groupBeforeInviteJoinCommand = "Group.CallbackBeforeInviteJoinGroup"
 )
 
 // TencentIMGroupCallbackConfig 配置平台群对账与封禁回调。
@@ -36,7 +40,11 @@ type imGroupCallbackObserver interface {
 	ObserveMembersJoined(ctx context.Context, tencentGroupID string, userIDs []string) error
 	ObserveMembersLeft(ctx context.Context, tencentGroupID string, userIDs []string) error
 	ObserveGroupDestroyed(ctx context.Context, tencentGroupID string) error
+	// ObserveGroupRenamed 在群名被绕过平台修改后恢复平台记录的群名。
+	ObserveGroupRenamed(ctx context.Context, tencentGroupID, name string) error
 	IsRestricted(ctx context.Context, userID string) (bool, error)
+	// MayMessage 判断 from 是否可以给 to 发单聊。
+	MayMessage(ctx context.Context, from, to string) (bool, error)
 }
 
 type tencentIMCallbackDispatcher struct {
@@ -68,7 +76,8 @@ func (dispatcher *tencentIMCallbackDispatcher) ServeHTTP(writer http.ResponseWri
 		dispatcher.state.ServeHTTP(writer, request)
 		return
 	case groupBeforeCreateCommand, groupAfterJoinCommand, groupAfterExitCommand,
-		groupAfterDestroyCommand, groupBeforeSendCommand, c2cBeforeSendCommand:
+		groupAfterDestroyCommand, groupBeforeSendCommand, c2cBeforeSendCommand,
+		groupAfterInfoChangedCommand, groupBeforeApplyJoinCommand, groupBeforeInviteJoinCommand:
 	default:
 		http.Error(writer, "unauthorized", http.StatusUnauthorized)
 		return
@@ -94,11 +103,14 @@ func (dispatcher *tencentIMCallbackDispatcher) ServeHTTP(writer http.ResponseWri
 		return
 	}
 	var callback struct {
-		CallbackCommand string `json:"CallbackCommand"`
-		GroupID         string `json:"GroupId"`
-		OperatorAccount string `json:"Operator_Account"`
-		FromAccount     string `json:"From_Account"`
-		NewMemberList   []struct {
+		CallbackCommand  string  `json:"CallbackCommand"`
+		GroupID          string  `json:"GroupId"`
+		OperatorAccount  string  `json:"Operator_Account"`
+		RequestorAccount string  `json:"Requestor_Account"`
+		FromAccount      string  `json:"From_Account"`
+		ToAccount        string  `json:"To_Account"`
+		Name             *string `json:"Name"`
+		NewMemberList    []struct {
 			MemberAccount string `json:"Member_Account"`
 		} `json:"NewMemberList"`
 		ExitMemberList []struct {
@@ -129,13 +141,39 @@ func (dispatcher *tencentIMCallbackDispatcher) ServeHTTP(writer http.ResponseWri
 			dispatcher.reject(writer, "该身份已被限制发言")
 			return
 		}
-		// 封禁检查暂不可用时放行，避免平台故障阻断全部聊天。
+		if command == c2cBeforeSendCommand && !dispatcher.fromAdmin(callback.FromAccount) {
+			allowed, checkErr := dispatcher.groups.MayMessage(ctx, callback.FromAccount, callback.ToAccount)
+			if checkErr == nil && !allowed {
+				dispatcher.reject(writer, "只能给自己账号下的身份或同群成员发消息")
+				return
+			}
+		}
+		// 平台检查暂不可用时放行，避免平台故障阻断全部聊天。
+	case groupBeforeApplyJoinCommand, groupBeforeInviteJoinCommand:
+		operator := callback.OperatorAccount
+		if command == groupBeforeApplyJoinCommand {
+			operator = callback.RequestorAccount
+		}
+		if !dispatcher.fromAdmin(operator) {
+			dispatcher.reject(writer, "请通过平台的邀请链接加入群聊")
+			return
+		}
+	case groupAfterInfoChangedCommand:
+		if callback.Name != nil && !dispatcher.fromAdmin(callback.OperatorAccount) {
+			err = dispatcher.groups.ObserveGroupRenamed(ctx, callback.GroupID, *callback.Name)
+		}
 	}
 	if err != nil {
 		http.Error(writer, "temporary failure", http.StatusInternalServerError)
 		return
 	}
 	writeTencentCallbackResult(writer, 0, "")
+}
+
+// fromAdmin 是平台自己（App 管理员）通过 REST 发起的操作；未配置管理员时不做来源限制。
+func (dispatcher *tencentIMCallbackDispatcher) fromAdmin(account string) bool {
+	admin := dispatcher.config.AdminUserID
+	return admin == "" || strings.TrimSpace(account) == admin
 }
 
 func (dispatcher *tencentIMCallbackDispatcher) reject(writer http.ResponseWriter, info string) {

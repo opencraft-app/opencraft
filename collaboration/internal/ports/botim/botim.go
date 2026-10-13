@@ -141,6 +141,8 @@ type Repository interface {
 	UpsertMember(context.Context, GroupMember) error
 	// MarkMemberRemoved 把成员标记为 removed；成员不存在时视为成功。
 	MarkMemberRemoved(ctx context.Context, groupID, imUserID string) error
+	// SharesActiveGroup 判断两个 IM 身份是否同为某个进行中平台群的成员。
+	SharesActiveGroup(ctx context.Context, a, b string) (bool, error)
 }
 
 // HostRequest 标识一个 LightVela 实例上的 Bot。

@@ -467,7 +467,7 @@ paths:
       summary: 创建平台群
       description: |
         当前 Human 成为群主。groupId 是客户端生成的 UUIDv7，重试时使用同一值返回同一个群。
-        成员只能是平台已知且未被封禁的 IM 身份。
+        成员只能是当前账号下未被封禁的 IM 身份（自己的 Bot）；其他人凭邀请链接加入。
       requestBody:
         required: true
         content:
@@ -530,7 +530,7 @@ paths:
       tags: [Groups]
       operationId: addImGroupMember
       summary: 把一个 Human 或 Bot 加入平台群
-      description: 群主和管理员可以拉任何平台已知身份；普通成员只能拉自己账号下的 Bot。重复添加是幂等的。
+      description: 只能拉操作者账号下的身份（主人或其 Bot），其他人凭邀请链接加入。重复添加是幂等的。
       responses:
         '200':
           description: 更新后的平台群

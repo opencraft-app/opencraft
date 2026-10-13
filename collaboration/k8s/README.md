@@ -66,9 +66,13 @@ Secret 里缺少对应文件时进程会拒绝启动。启用顺序：
    --admin-token-file /var/run/secrets/collaboration/admin.token
    ```
 
-3. service-gateway 的 `/v1/collaboration` 路由必须让 `/v1/collaboration/runtime/bot/**` 不经 LightVela 登录校验直达
-   collaboration：Bot worker 用自己的 `BotCredential` / Bot Runtime Token 认证。
-4. gateway-dashboard 的 overlay 设置 `GATEWAY_DASHBOARD_COLLABORATION_API_URL`
+3. service-gateway 需要包含本次的路由改动（代码内置，无需额外配置）：`/v1/collaboration` 放行 `/me/bots`、`/me/groups`、
+   `/me/group-invites` 及 PUT/PATCH/DELETE；独立路由 `/v1/collaboration/runtime/bot/**` 不经 LightVela 登录、不替换
+   `Authorization`，Bot worker 用自己的 `BotCredential` / Bot Runtime Token 认证。
+4. 腾讯 IM 控制台「回调配置」：URL 为 `https://<service-gateway 公网域名>/v1/collaboration/callbacks/tencent-im/state`，
+   Token 与 `im-callback.token` 一致；勾选建群前、申请入群前、拉人入群前、新成员入群后、成员退群后、群解散后、群资料修改后、
+   群内发言前、单聊发消息前以及状态变更回调。
+5. gateway-dashboard 的 overlay 设置 `GATEWAY_DASHBOARD_COLLABORATION_API_URL`
    （beijing-sandbox 已配置为 `http://collaboration.lightvela-collaboration.svc.cluster.local`），
    「IM 群聊」页即可使用。
 

@@ -15,7 +15,9 @@ import (
 type recordingGroupObserver struct {
 	joined, left []string
 	destroyed    []string
+	renamed      []string
 	restricted   map[string]bool
+	contacts     map[string]bool // "from>to" pairs allowed to message each other
 }
 
 func (observer *recordingGroupObserver) ObserveMembersJoined(_ context.Context, groupID string, userIDs []string) error {
@@ -33,8 +35,17 @@ func (observer *recordingGroupObserver) ObserveGroupDestroyed(_ context.Context,
 	return nil
 }
 
+func (observer *recordingGroupObserver) ObserveGroupRenamed(_ context.Context, groupID, name string) error {
+	observer.renamed = append(observer.renamed, groupID+":"+name)
+	return nil
+}
+
 func (observer *recordingGroupObserver) IsRestricted(_ context.Context, userID string) (bool, error) {
 	return observer.restricted[userID], nil
+}
+
+func (observer *recordingGroupObserver) MayMessage(_ context.Context, from, to string) (bool, error) {
+	return observer.contacts[from+">"+to], nil
 }
 
 func newTestCallbackDispatcher(t *testing.T, now time.Time, observer *recordingGroupObserver, restrictCreate bool) http.Handler {
@@ -91,7 +102,7 @@ func TestTencentIMCallbackDispatcherReconcilesGroupMembership(t *testing.T) {
 
 func TestTencentIMCallbackDispatcherRejectsRestrictedSenderAndClientGroupCreate(t *testing.T) {
 	now := time.Date(2026, 10, 12, 8, 0, 0, 0, time.UTC)
-	observer := &recordingGroupObserver{restricted: map[string]bool{"u_banned": true}}
+	observer := &recordingGroupObserver{restricted: map[string]bool{"u_banned": true}, contacts: map[string]bool{"u_ok>a_mine": true}}
 	handler := newTestCallbackDispatcher(t, now, observer, true)
 
 	response := httptest.NewRecorder()
@@ -102,7 +113,7 @@ func TestTencentIMCallbackDispatcherRejectsRestrictedSenderAndClientGroupCreate(
 	}
 	response = httptest.NewRecorder()
 	handler.ServeHTTP(response, signedCommandRequest(now, c2cBeforeSendCommand,
-		`{"CallbackCommand":"C2C.CallbackBeforeSendMsg","From_Account":"u_ok"}`))
+		`{"CallbackCommand":"C2C.CallbackBeforeSendMsg","From_Account":"u_ok","To_Account":"a_mine"}`))
 	if !strings.Contains(response.Body.String(), `"ErrorCode":0`) {
 		t.Fatalf("allowed sender response = %s", response.Body)
 	}
@@ -131,5 +142,39 @@ func TestTencentIMCallbackDispatcherRejectsBadSignature(t *testing.T) {
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusUnauthorized {
 		t.Fatalf("bad signature status = %d", response.Code)
+	}
+}
+
+func TestTencentIMCallbackDispatcherKeepsMessagingAndMembershipOnThePlatform(t *testing.T) {
+	now := time.Date(2026, 10, 12, 8, 0, 0, 0, time.UTC)
+	observer := &recordingGroupObserver{contacts: map[string]bool{"a_bot>u_owner": true}}
+	handler := newTestCallbackDispatcher(t, now, observer, false)
+	call := func(command, body string) string {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, signedCommandRequest(now, command, body))
+		if response.Code != http.StatusOK {
+			t.Fatalf("%s status = %d %s", command, response.Code, response.Body)
+		}
+		return response.Body.String()
+	}
+	for _, test := range []struct {
+		name, command, body, want string
+	}{
+		{"own bot to owner", c2cBeforeSendCommand, `{"CallbackCommand":"C2C.CallbackBeforeSendMsg","From_Account":"a_bot","To_Account":"u_owner"}`, `"ErrorCode":0`},
+		{"bot to a stranger", c2cBeforeSendCommand, `{"CallbackCommand":"C2C.CallbackBeforeSendMsg","From_Account":"a_bot","To_Account":"u_stranger"}`, `"ErrorCode":1`},
+		{"platform notice", c2cBeforeSendCommand, `{"CallbackCommand":"C2C.CallbackBeforeSendMsg","From_Account":"platform_admin","To_Account":"u_stranger"}`, `"ErrorCode":0`},
+		{"client invite", groupBeforeInviteJoinCommand, `{"CallbackCommand":"Group.CallbackBeforeInviteJoinGroup","GroupId":"vg_x","Operator_Account":"u_owner"}`, `"ErrorCode":1`},
+		{"platform invite", groupBeforeInviteJoinCommand, `{"CallbackCommand":"Group.CallbackBeforeInviteJoinGroup","GroupId":"vg_x","Operator_Account":"platform_admin"}`, `"ErrorCode":0`},
+		{"apply to join", groupBeforeApplyJoinCommand, `{"CallbackCommand":"Group.CallbackBeforeApplyJoinGroup","GroupId":"vg_x","Requestor_Account":"u_stranger"}`, `"ErrorCode":1`},
+		{"client rename", groupAfterInfoChangedCommand, `{"CallbackCommand":"Group.CallbackAfterGroupInfoChanged","GroupId":"vg_x","Operator_Account":"u_owner","Name":"hijacked"}`, `"ErrorCode":0`},
+		{"platform rename", groupAfterInfoChangedCommand, `{"CallbackCommand":"Group.CallbackAfterGroupInfoChanged","GroupId":"vg_x","Operator_Account":"platform_admin","Name":"周报"}`, `"ErrorCode":0`},
+		{"notification change", groupAfterInfoChangedCommand, `{"CallbackCommand":"Group.CallbackAfterGroupInfoChanged","GroupId":"vg_x","Operator_Account":"u_owner","Notification":"hi"}`, `"ErrorCode":0`},
+	} {
+		if body := call(test.command, test.body); !strings.Contains(body, test.want) {
+			t.Fatalf("%s: response = %s, want %s", test.name, body, test.want)
+		}
+	}
+	if len(observer.renamed) != 1 || observer.renamed[0] != "vg_x:hijacked" {
+		t.Fatalf("renamed = %v, want only the client rename to be restored", observer.renamed)
 	}
 }
