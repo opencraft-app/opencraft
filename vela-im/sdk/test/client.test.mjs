@@ -14,12 +14,20 @@ async function connected(answers) {
 const last=(calls,name)=>calls.filter(c=>c[0]===name).at(-1);
 const policy=(mode,members=[])=>({groupID:'vg_x',platformGroupId:'x',mode,effectiveMode:mode,contextMessages:mode==='mention_context'?10:0,members,canManage:false});
 
+test('clients cannot imitate the platform\'s system notices',async()=>{
+ const {client}=await connected({});
+ for(const businessID of ['vela_group_policy','group_create'])
+  await assert.rejects(client.send({to:'vg_x',conversationType:'GROUP',type:'custom',payload:{data:JSON.stringify({businessID})}}),e=>e.code==='RESERVED_NOTICE',businessID);
+});
+
 test('every high-level IM method is implemented by the shared client',()=>{
  for(const method of IM_METHODS)assert.equal(typeof VelaIMClient.prototype[method],'function',method);
 });
 
 test('group membership changes are not available through the raw SDK passthrough',()=>{
- for(const method of ['createGroup','addGroupMember','deleteGroupMember','quitGroup','dismissGroup','changeGroupOwner','setGroupMemberRole','joinGroup'])
+ for(const method of ['createGroup','addGroupMember','deleteGroupMember','quitGroup','dismissGroup','changeGroupOwner','setGroupMemberRole','joinGroup',
+  'updateGroupProfile','setGroupMemberMuteTime','setGroupAttributes','handleGroupApplication','addToBlacklist','clearHistoryMessage','invite',
+  'updateMyProfile','addFriend','searchCloudUsers','modifyMessage'])
   assert.throws(()=>assertMethod(method),e=>e.code==='METHOD_NOT_ALLOWED',method);
  for(const method of ['createGroup','addGroupMembers','removeGroupMembers','quitGroup','dismissGroup'])
   assert.equal(typeof VelaIMClient.prototype[method],'undefined',method);

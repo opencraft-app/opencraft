@@ -236,27 +236,22 @@ export function defaultGroupPolicy(groupID:string):GroupReplyPolicy {
   return {groupID:normalizeGroupID(groupID),platformGroupId:null,mode:'mention',effectiveMode:'mention',contextMessages:0,members:[],canManage:false};
 }
 
-// 用户级公开 SDK 方法；不包含管理员 REST。建群、拉人、踢人、退群、解散和转让群主只走平台接口，
-// 这样成员关系与回复规则始终以平台数据库为准。
+// `call` 透传的腾讯 SDK 方法：只读查询与少量不改变他人数据的消息操作（撤回自己的消息、已读、表情回应）。
+// 建群、拉人、改群资料、禁言、群属性、黑名单、加好友、改自己资料、音视频信令等写操作不开放：
+// 群的变更只走平台接口，这样成员关系、群名与回复规则始终以平台数据库为准。
 export const SDK_METHODS = [
- "getLoginUser","getServerTime","isReady","downloadMergerMessage","revokeMessage","resendMessage","deleteMessage","translateText","convertVoiceToText",
- "setMessageExtensions","getMessageExtensions","deleteMessageExtensions","modifyMessage","searchCloudMessages","searchCloudGroups","searchCloudUsers","searchCloudGroupMembers",
- "addMessageReaction","removeMessageReaction","getMessageReactions","getAllUserListOfMessageReaction","getMessageList","getMessageListHopping","setMessageRead",
- "sendMessageReadReceipt","getMessageReadReceiptList","getGroupMessageReadMemberList","findMessage","getConversationList","getConversationProfile","deleteConversation",
- "setConversationDraft","clearHistoryMessage","pinConversation","setAllMessageRead","setMessageRemindType","setAllReceiveMessageOpt","getAllReceiveMessageOpt",
- "getTotalUnreadMessageCount","setConversationCustomData","markConversation","getConversationGroupList","createConversationGroup","deleteConversationGroup",
- "renameConversationGroup","addConversationsToGroup","deleteConversationsFromGroup","getMyProfile","getUserProfile","updateMyProfile","getBlacklist","addToBlacklist",
- "removeFromBlacklist","setSelfStatus","getUserStatus","subscribeUserStatus","unsubscribeUserStatus","getFriendList","addFriend","deleteFriend","checkFriend",
- "getFriendProfile","updateFriend","getFriendApplicationList","acceptFriendApplication","refuseFriendApplication","deleteFriendApplication","setFriendApplicationRead",
- "getFriendGroupList","createFriendGroup","deleteFriendGroup","addToFriendGroup","removeFromFriendGroup","renameFriendGroup","followUser","unfollowUser",
- "getMyFollowersList","getMyFollowingList","getMutualFollowersList","getUserFollowInfo","checkFollowType","getGroupList","getGroupProfile",
- "updateGroupProfile","pinGroupMessage","getPinnedGroupMessageList","searchGroupByID","getGroupOnlineMemberCount",
- "getGroupApplicationList","handleGroupApplication","initGroupAttributes","setGroupAttributes","deleteGroupAttributes","getGroupAttributes",
- "setGroupCounters","increaseGroupCounter","decreaseGroupCounter","getGroupCounters","getGroupMemberList","getGroupMemberProfile",
- "setGroupMemberMuteTime","setGroupMemberNameCard","setGroupMemberCustomField","markGroupMemberList",
- "getJoinedCommunityList","createTopicInCommunity","deleteTopicFromCommunity","updateTopicProfile","getTopicList","invite","inviteSync","inviteInGroup",
- "inviteInGroupSync","cancel","accept","reject","getSignalingInfo","modifyInvitation"
+ "getLoginUser","getServerTime","isReady","downloadMergerMessage","revokeMessage","deleteMessage","translateText","convertVoiceToText",
+ "getMessageExtensions","searchCloudMessages","searchCloudGroupMembers",
+ "addMessageReaction","removeMessageReaction","getMessageReactions","getAllUserListOfMessageReaction",
+ "getMessageList","getMessageListHopping","setMessageRead","sendMessageReadReceipt","getMessageReadReceiptList","getGroupMessageReadMemberList","findMessage",
+ "getConversationList","getConversationProfile","deleteConversation","pinConversation","setAllMessageRead","getTotalUnreadMessageCount",
+ "getMyProfile","getUserProfile","getUserStatus",
+ "getFriendList","checkFriend","getFriendProfile","getFriendApplicationList",
+ "getGroupList","getGroupProfile","getGroupOnlineMemberCount","getGroupMemberList","getGroupMemberProfile","getGroupAttributes","getGroupCounters",
+ "getPinnedGroupMessageList",
 ] as const;
+/** Custom-message businessIDs only the platform sends; clients may not imitate them. */
+export const PLATFORM_NOTICE_BUSINESS_IDS = ['vela_group_policy','group_create'] as const;
 export const FACTORIES:Record<MessageKind,string>={
  text:'createTextMessage',textAt:'createTextAtMessage',image:'createImageMessage',audio:'createAudioMessage',video:'createVideoMessage',file:'createFileMessage',location:'createLocationMessage',face:'createFaceMessage',custom:'createCustomMessage',merger:'createMergerMessage',forward:'createForwardMessage'
 };

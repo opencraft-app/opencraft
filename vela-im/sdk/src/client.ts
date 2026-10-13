@@ -1,5 +1,5 @@
 import {
- VelaError,FACTORIES,SDK_METHODS,VELA_CAPABILITIES,assertMethod,normalizeGroupID,groupReplyReason,readLineage,isSystemMessage,DEFAULT_MAX_AGENT_HOPS,
+ VelaError,FACTORIES,SDK_METHODS,VELA_CAPABILITIES,PLATFORM_NOTICE_BUSINESS_IDS,assertMethod,normalizeGroupID,groupReplyReason,readLineage,isSystemMessage,DEFAULT_MAX_AGENT_HOPS,
  type Attachment,type MessageInput,type MessageKind,type Credentials,type GroupReplyInput,type GroupReplyPolicy,type IMMessage,
  type FriendApplication,type VelaCapabilities,
 } from './index.ts';
@@ -29,6 +29,10 @@ export const safeJSON=(value:any):any=>{
  };
  return plain(value);
 };
+
+function customBusinessID(payload:any):string {
+ try {const data=JSON.parse(String(payload?.data??'{}'));return typeof data?.businessID==='string'?data.businessID:''}catch{return ''}
+}
 
 /** With one-hour UserSigs this renews at the 45th minute. */
 const RENEW_BEFORE_MS=15*60000;
@@ -135,9 +139,13 @@ export class VelaIMClient {
  }
  private ref(message:string|IMMessage) {return this.hydrate(typeof message==='string'?{$messageID:message}:message)}
 
- /** Raw access to any user-level SDK method, with the official positional arguments. */
+ /** Raw access to the allowed user-level SDK methods (SDK_METHODS), with the official positional arguments. */
  async call(method:string,args:any[]=[]) {
   assertMethod(method);
+  return this.raw(method,args);
+ }
+ /** The high-level methods below call the SDK directly; only `call` is limited to SDK_METHODS. */
+ private async raw(method:string,args:any[]=[]) {
   if(this.renewing)await this.renewing;
   if(typeof this.native?.[method]!=='function')throw new VelaError(`当前 SDK 不支持 ${method}`,'UNSUPPORTED_METHOD');
   const result=await this.native[method](...this.hydrate(args));
@@ -151,6 +159,8 @@ export class VelaIMClient {
   if(this.renewing)await this.renewing;
   const to=input.conversationType==='GROUP'?normalizeGroupID(input.to):input.to;
   const payload:any={...input.payload};
+  if(input.type==='custom'&&(PLATFORM_NOTICE_BUSINESS_IDS as readonly string[]).includes(customBusinessID(payload)))
+   throw new VelaError('不能发送平台系统通知','RESERVED_NOTICE',400);
   if(input.type==='textAt'&&Array.isArray(payload.atUserList))payload.atUserList=payload.atUserList.map((id:string)=>id==='@all'||id==='all'?this.TYPES.MSG_AT_ALL:id);
   if(input.attachment)payload.file=await this.hooks.toFile(input.attachment);
   if(input.thumbnail)payload.snapshotFile=await this.hooks.toFile(input.thumbnail);
@@ -175,7 +185,7 @@ export class VelaIMClient {
  }
 
  // ── Conversations and messages ──
- async getConversations() {return (await this.call('getConversationList')).data.conversationList??[]}
+ async getConversations() {return (await this.raw('getConversationList')).data.conversationList??[]}
  /**
   * One page of cloud history, oldest first. nextReqMessageID is the next anchor: a sequence for groups, a timestamp for C2C.
   * Pages may overlap on the anchor; callers merge by message ID.
@@ -186,40 +196,40 @@ export class VelaIMClient {
   // roaming by anchor always reads Tencent's cloud history.
   const group=conversationID.startsWith('GROUP');
   const anchor=options.nextReqMessageID?{[group?'sequence':'time']:Number(options.nextReqMessageID)}:{};
-  const data=(await this.call('getMessageListHopping',[{conversationID,direction:0,count:Math.min(options.count??15,15),...anchor}])).data;
+  const data=(await this.raw('getMessageListHopping',[{conversationID,direction:0,count:Math.min(options.count??15,15),...anchor}])).data;
   const list:IMMessage[]=data.messageList??[];
   const next=String((group?data.nextMessageSeq||(list.length?Number(list[0]?.sequence)-1:''):data.nextMessageTime)||'');
   const isCompleted=!!data.isCompleted||!list.length||!next||next==='0'||next===options.nextReqMessageID;
   return {messageList:list,isCompleted,...(isCompleted?{}:{nextReqMessageID:next})};
  }
- markRead(conversationID:string) {return this.call('setMessageRead',[{conversationID}])}
- revokeMessage(message:string|IMMessage) {return this.call('revokeMessage',[this.ref(message)])}
- async downloadMergerMessage(message:string|IMMessage):Promise<IMMessage[]> {return (await this.call('downloadMergerMessage',[this.ref(message)])).data?.messageList??[]}
- pinConversation(conversationID:string,isPinned=true) {return this.call('pinConversation',[{conversationID,isPinned}])}
- deleteConversation(conversationID:string) {return this.call('deleteConversation',[{conversationID}])}
+ markRead(conversationID:string) {return this.raw('setMessageRead',[{conversationID}])}
+ revokeMessage(message:string|IMMessage) {return this.raw('revokeMessage',[this.ref(message)])}
+ async downloadMergerMessage(message:string|IMMessage):Promise<IMMessage[]> {return (await this.raw('downloadMergerMessage',[this.ref(message)])).data?.messageList??[]}
+ pinConversation(conversationID:string,isPinned=true) {return this.raw('pinConversation',[{conversationID,isPinned}])}
+ deleteConversation(conversationID:string) {return this.raw('deleteConversation',[{conversationID}])}
 
  // ── Friends: ordinary confirmation rules apply to humans and Agents alike ──
- async getFriends() {return (await this.call('getFriendList')).data??[]}
+ async getFriends() {return (await this.raw('getFriendList')).data??[]}
  async getFriendApplications():Promise<FriendApplication[]> {
-  const list=(await this.call('getFriendApplicationList')).data?.friendApplicationList??[];
+  const list=(await this.raw('getFriendApplicationList')).data?.friendApplicationList??[];
   return list.map((a:any)=>({...a,direction:a.type===this.TYPES.SNS_APPLICATION_SENT_TO_ME?'incoming':'outgoing'}));
  }
  async addFriend(userID:string,options:{wording?:string;remark?:string;source?:string}={}) {
-  return (await this.call('addFriend',[{to:userID,source:options.source??'AddSource_Type_Vela',wording:options.wording??'',remark:options.remark??'',type:this.TYPES.SNS_ADD_TYPE_BOTH}])).data;
+  return (await this.raw('addFriend',[{to:userID,source:options.source??'AddSource_Type_Vela',wording:options.wording??'',remark:options.remark??'',type:this.TYPES.SNS_ADD_TYPE_BOTH}])).data;
  }
  async acceptFriend(userID:string,options:{remark?:string}={}) {
-  return (await this.call('acceptFriendApplication',[{userID,type:this.TYPES.SNS_APPLICATION_AGREE_AND_ADD,...(options.remark?{remark:options.remark}:{})}])).data;
+  return (await this.raw('acceptFriendApplication',[{userID,type:this.TYPES.SNS_APPLICATION_AGREE_AND_ADD,...(options.remark?{remark:options.remark}:{})}])).data;
  }
- async refuseFriend(userID:string) {return (await this.call('refuseFriendApplication',[{userID}])).data}
- async deleteFriend(userID:string) {return (await this.call('deleteFriend',[{userIDList:[userID],type:this.TYPES.SNS_DELETE_TYPE_BOTH}])).data}
+ async refuseFriend(userID:string) {return (await this.raw('refuseFriendApplication',[{userID}])).data}
+ async deleteFriend(userID:string) {return (await this.raw('deleteFriend',[{userIDList:[userID],type:this.TYPES.SNS_DELETE_TYPE_BOTH}])).data}
 
  // ── Groups: reads only. Creating, membership changes, quitting and dismissing go through the platform API ──
- async getGroups() {return (await this.call('getGroupList')).data?.groupList??[]}
- async getGroupProfile(groupID:string) {return (await this.call('getGroupProfile',[{groupID:normalizeGroupID(groupID)}])).data.group}
+ async getGroups() {return (await this.raw('getGroupList')).data?.groupList??[]}
+ async getGroupProfile(groupID:string) {return (await this.raw('getGroupProfile',[{groupID:normalizeGroupID(groupID)}])).data.group}
  async getGroupMembers(groupID:string) {
   const members:any[]=[];let offset:any=0;
   for(let page=0;page<100;page++){
-   const r=await this.call('getGroupMemberList',[{groupID:normalizeGroupID(groupID),count:100,offset}]);
+   const r=await this.raw('getGroupMemberList',[{groupID:normalizeGroupID(groupID),count:100,offset}]);
    members.push(...(r.data.memberList??[]));offset=r.data.offset;
    if(!offset)break;
   }
@@ -227,9 +237,9 @@ export class VelaIMClient {
  }
 
  // ── Profiles ──
- async getMyProfile() {return (await this.call('getMyProfile')).data}
- async getUserProfiles(userIDs:string[]) {return (await this.call('getUserProfile',[{userIDList:userIDs}])).data??[]}
- async updateMyProfile(profile:Record<string,unknown>) {return (await this.call('updateMyProfile',[profile])).data}
+ async getMyProfile() {return (await this.raw('getMyProfile')).data}
+ async getUserProfiles(userIDs:string[]) {return (await this.raw('getUserProfile',[{userIDList:userIDs}])).data??[]}
+ async updateMyProfile(profile:Record<string,unknown>) {return (await this.raw('updateMyProfile',[profile])).data}
 
  /**
   * Decide whether this identity should answer a received group message under the group's platform rules, with up to

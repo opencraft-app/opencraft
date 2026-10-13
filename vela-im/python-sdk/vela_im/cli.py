@@ -119,27 +119,11 @@ def cmd_group(client, args):
 
 
 def cmd_friend(client, args):
-    action = args.action
-    if action == "list":
-        _print(client.get_friends())
-    elif action == "requests":
-        _print(client.get_friend_applications())
-    elif action == "add":
-        _print(client.add_friend(args.user, args.wording or ""))
-    elif action == "accept":
-        _print(client.accept_friend(args.user))
-    elif action == "refuse":
-        _print(client.refuse_friend(args.user))
-    elif action == "delete":
-        _print(client.delete_friend(args.user))
+    _print(client.get_friends() if args.action == "list" else client.get_friend_applications())
 
 
 def cmd_profile(client, args):
     _print(client.get_user_profiles(args.users) if args.users else client.get_my_profile())
-
-
-def cmd_events(client, args):
-    _print(client.events(args.after, 0))
 
 
 def cmd_call(client, args):
@@ -240,26 +224,18 @@ def parser():
     for name, summary in (("quit", "退出群"), ("dismiss", "解散群（只有群主）")):
         _group_target(_command(actions, name, summary, [f"vela_im group {name}", f"vela_im group {name} --group vg_xxx"], cmd_group))
 
-    friend = _command(commands, "friend", "好友", [
-        "vela_im friend list", "vela_im friend requests", "vela_im friend add u_xxx --wording 你好",
-        "vela_im friend accept u_xxx", "vela_im friend refuse u_xxx", "vela_im friend delete u_xxx"])
+    friend = _command(commands, "friend", "好友（只读；单聊不需要加好友）", ["vela_im friend list", "vela_im friend requests"])
     friend_actions = friend.add_subparsers(dest="action", required=True, metavar="ACTION")
     _command(friend_actions, "list", "好友列表", ["vela_im friend list"], cmd_friend)
     _command(friend_actions, "requests", "收到和发出的好友申请", ["vela_im friend requests"], cmd_friend)
-    for name, summary in (("add", "申请加好友"), ("accept", "同意好友申请"), ("refuse", "拒绝好友申请"), ("delete", "删除好友")):
-        command = _command(friend_actions, name, summary, [f"vela_im friend {name} u_xxx"], cmd_friend)
-        command.add_argument("user", metavar="USER", help="IM userID")
-        if name == "add":
-            command.add_argument("--wording", help="验证消息")
 
     profile = _command(commands, "profile", "自己或他人的资料", ["vela_im profile", "vela_im profile --users u_xxx a_yyy"], cmd_profile)
     profile.add_argument("--users", nargs="*", metavar="USER", help="IM userID；省略时为自己")
 
-    events = _command(commands, "events", "worker 记录的持久化事件（按序号增量读取）", ["vela_im events --after 0"], cmd_events)
-    events.add_argument("--after", type=int, default=0, help="只看序号大于它的事件")
-
-    call = _command(commands, "call", "调用其余用户级腾讯 SDK 方法（参数为官方位置参数）", [
-        "vela_im call getUserStatus '[{\"userIDList\":[\"u_xxx\"]}]'"], cmd_call)
+    call = _command(commands, "call", "调用腾讯 SDK 的只读查询与少量消息操作（参数为官方位置参数）。群的变更请用 vela_im group", [
+        "vela_im call getGroupMemberList '[{\"groupID\":\"vg_xxx\",\"count\":15,\"offset\":0}]'",
+        "vela_im call searchCloudMessages '[{\"keywordList\":[\"周报\"]}]'",
+        "vela_im call revokeMessage '[{\"$messageID\":\"<消息 ID>\"}]'"], cmd_call)
     call.add_argument("method", help="腾讯 SDK 方法名")
     call.add_argument("args", nargs="?", help="官方位置参数（JSON 数组）")
     return root

@@ -202,13 +202,13 @@ class CLIHelpTest(unittest.TestCase):
 
     def test_every_subcommand_documents_its_usage(self):
         top = self.help_of()
-        for command in ("whoami", "send", "conversations", "history", "group", "friend", "profile", "events", "call"):
+        for command in ("whoami", "send", "conversations", "history", "group", "friend", "profile", "call"):
             self.assertIn(command, top)
         group = self.help_of("group")
         for action in ("create", "list", "info", "members", "set", "add", "remove", "quit", "dismiss"):
             self.assertIn(action, group)
             self.assertIn("示例", self.help_of("group", action))
-        for action in ("list", "requests", "add", "accept", "refuse", "delete"):
+        for action in ("list", "requests"):
             self.assertIn("示例", self.help_of("friend", action))
 
     def test_group_target_from_option_or_position(self):

@@ -49,10 +49,13 @@ worker 状态在 `<Profile>/plugin-data/vela-im/`：`inbox.sqlite`（持久化�
 | `send` | 发消息（默认当前会话）：`--text`、`--at`、`--type`、`--payload`、`--file` |
 | `conversations` / `history` | 会话与未读、云端历史分页 |
 | `group` | `create`、`list`、`info`、`members`、`set`（改名 / `--reply-mode`）、`add`、`remove`、`quit`、`dismiss` |
-| `friend` | `list`、`requests`、`add`、`accept`、`refuse`、`delete` |
-| `profile` / `events` / `call` | 资料、持久化事件、其余用户级腾讯 SDK 方法 |
+| `friend` | `list`、`requests`（只读） |
+| `profile` / `call` | 资料；腾讯 SDK 的只读查询与少量消息操作（撤回、已读、表情回应、搜索） |
 
-群的写操作走 collaboration，权限与人类成员相同：群主和管理员能改规则、踢人、解散。
+每个子命令都有 `--help`（例如 `vela_im group add --help`）。群的写操作走 collaboration，权限与人类成员相同：
+群主和管理员能改规则、踢人、解散；拉人只能拉自己账号下的身份，其他人凭邀请链接加入。
+单聊只能发给自己账号下的身份或同群成员（腾讯单聊发送前回调校验）。`call` 不开放任何群写操作、黑名单、加好友、改资料与音视频信令，
+`send --type custom` 不能冒充平台的系统通知。
 
 ## Hermes 命令与主人
 
