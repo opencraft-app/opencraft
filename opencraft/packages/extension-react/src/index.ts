@@ -22,6 +22,8 @@ export interface PlatformViewHost {
   provisionHost(input: ProvisionHostInput): Promise<HostConnectionProfile>;
   removeHost(hostId: string): Promise<boolean>;
   openView(viewId: string, resourceUri?: string | null): void;
+  /** Resolve a stable Server/Thread identity through the application's current route directory. */
+  openConversation?(serverId: string, threadId: string): void | Promise<void>;
   openSettings?(section: string): void;
   /** Pushes a new deep-link entry for another resource owned by the active View. */
   pushViewResource(viewId: string, resourceUri: string): void;
@@ -84,6 +86,8 @@ export interface PlatformViewRendererContribution {
 
 export interface PlatformAccountSnapshot {
   readonly revision: number;
+  /** Provider-owned label when its identity is not yet authenticated. */
+  readonly anonymousLabel?: string;
   readonly phase: "anonymous" | "loading" | "authenticated" | "error";
   readonly name: string | null;
   readonly avatarUrl: string | null;
@@ -108,6 +112,8 @@ export interface PlatformAccountSnapshot {
  * by the contributing product extension.
  */
 export interface PlatformAccountContribution {
+  /** Explicit footer precedence; equal priorities remain exclusive. Default: 0. */
+  readonly entrancePriority?: number;
   readonly signInOptions?: readonly { readonly id: string; readonly label: string; readonly description: string }[];
   readonly authenticationProviderId?: string;
   readonly signInViewId?: string;
@@ -121,7 +127,8 @@ export interface PlatformAccountContribution {
   getSnapshot(): PlatformAccountSnapshot;
   subscribe(listener: () => void): () => void;
   refresh(): Promise<unknown>;
-  signOut(): Promise<void>;
+  /** Absent for gateway-owned identities without a supported logout operation. */
+  readonly signOut?: () => Promise<void>;
 }
 
 export interface OwnedPlatformViewRenderer extends PlatformViewRendererContribution {
@@ -173,3 +180,5 @@ export class PlatformViewRendererRegistry {
   }
 }
 import type { AuthenticationFlowPort } from "@opencraft/workbench-runtime";
+
+export * from "./thread-badges";

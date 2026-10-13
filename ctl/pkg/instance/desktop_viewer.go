@@ -308,6 +308,30 @@ func desktopViewerCountWithAccess(instanceID, access string) int {
 	return total
 }
 
+// reclaimDesktopWriteSlot drops write leases that can no longer be exercised,
+// so a reconnect does not stay read-only for the whole TTL just because a
+// previous connection died without releasing its lease.
+//
+// The only reclaimed case is a lease that was never redeemed: its ticket was
+// never exchanged for a grant, so no remote grant can exist for it and no
+// in-flight input session can be disturbed. Everything else is retained on
+// purpose — a claimed lease may still hold a live grant, and a revoked one may
+// still own an *unconfirmed* remote grant. Reclaiming either would hand the
+// exclusive write slot to a second writer while input authorization is still
+// outstanding, which is exactly what the write slot exists to prevent.
+//
+// Caller must hold desktopViewerMu.
+func reclaimDesktopWriteSlot(instanceID string, now time.Time) {
+	for id, attachment := range desktopViewers {
+		if attachment.instanceID != instanceID || attachment.access != transport.DesktopViewerAccessWrite {
+			continue
+		}
+		if attachment.claimedAt.IsZero() && now.Sub(attachment.createdAt) > desktopViewerClaimWindow {
+			delete(desktopViewers, id)
+		}
+	}
+}
+
 // CreateDesktopViewer mints a single-use viewer lease for a prepared desktop.
 // The response carries neither a VNC password nor a public URL.
 func (l *logic) CreateDesktopViewer(ctx pctx.Context, instanceID string) (*transport.DesktopViewerResponse, error) {
@@ -348,6 +372,10 @@ func (l *logic) CreateDesktopViewer(ctx pctx.Context, instanceID string) (*trans
 	desktopViewerMu.Lock()
 	defer desktopViewerMu.Unlock()
 	sweepDesktopViewers(now)
+	// A previous connection that died without releasing its lease must not keep
+	// the exclusive write slot for its full TTL, or every reconnect degrades to
+	// read-only and the keyboard/mouse stay unavailable.
+	reclaimDesktopWriteSlot(entity.InstanceId, now)
 	access := transport.DesktopViewerAccessRead
 	if binding.inputReady && desktopViewerCountWithAccess(entity.InstanceId, transport.DesktopViewerAccessWrite) < desktopViewerMaxWritePerInstance {
 		access = transport.DesktopViewerAccessWrite

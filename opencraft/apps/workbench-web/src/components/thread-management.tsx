@@ -30,10 +30,11 @@ export interface ThreadActionCallbacks {
   readonly onSetPinned?: (target: ThreadActionTarget, pinned: boolean) => Promise<void>;
 }
 
-export function ThreadRowMenu({ target, capabilities, children, openMenuKind, onOpenMenuChange, onRename, onFork, onArchive, onDelete, onSetPinned }: ThreadActionCallbacks & {
+export function ThreadRowMenu({ target, capabilities, children, openMenuKind, onOpenMenuChange, onCloseAutoFocus, onRename, onFork, onArchive, onDelete, onSetPinned }: ThreadActionCallbacks & {
   target: ThreadActionTarget; capabilities: ThreadActionCapabilities; children: ReactNode;
   openMenuKind: SidebarThreadMenuKind | null;
   onOpenMenuChange: (kind: SidebarThreadMenuKind, open: boolean) => void;
+  onCloseAutoFocus?: (event: Event) => void;
 }) {
   const portalContainer = useWorkbenchPresentationRoot();
   const [renaming, setRenaming] = useState(false), [draft, setDraft] = useState(""), [busy, setBusy] = useState(false), [forking, setForking] = useState(false), [error, setError] = useState<string | null>(null);
@@ -58,6 +59,7 @@ export function ThreadRowMenu({ target, capabilities, children, openMenuKind, on
   ].filter((item): item is NonNullable<typeof item> => item !== null);
   if (menuItems.length === 0) return children;
   const onMenuCloseAutoFocus = (event: Event) => {
+    onCloseAutoFocus?.(event);
     if (!modalHandoff.current) return;
     event.preventDefault();
     modalHandoff.current = false;

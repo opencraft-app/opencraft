@@ -19,6 +19,12 @@ OpenCraft 的共享会话标题栏仅呈现标题、项目说明与实际操作�
 
 ## 诊断顺序
 
+OpenCraft 的客户端流式展示分开记录通知接收、会话投影、Replica 应用、React 提交和文字可见。
+按帧批处理仅延迟 append-only 文本投影，保持原事件顺序；完成、交互、权威读取与恢复写入先
+追平此前文本。终态不等待逐字播放，完整快照仍拥有最终 Item 集合。淡入有真正的累计等待
+上限，Markdown 缓存按解析器容器边界复用并对跨块依赖保守兜底；不能把动画积压或客户端
+CPU 成本当成上游生成速度。详见 [流式投影与文档复用](../../../opencraft/docs/chat-ui-architecture.md#streaming-projection-and-document-reuse)。
+
 Hermes 普通会话的 `approval.request` 经 OpenCraft 转译为现有 AppServer
 命令审批请求，不经过群聊 Bot interaction 分支。用户选择转回拥有该请求的
 原生 `approval.respond`；只有 `resolved=true` 才作为成功。等待、关闭页面、

@@ -511,7 +511,7 @@ export function NewThreadDraftPage({
                   disabled={draftSubmissionOwnsNavigation(draft.phase)}
                   submissionDisabled={connectionPhase !== "ready"}
                   isStreaming={false}
-                  placeholder={placeholder ?? intl.formatMessage({ id: "chat.newPlaceholder", defaultMessage: "Ask OpenCraft to work on anything" })}
+                  placeholder={placeholder ?? intl.formatMessage({ id: "chat.companionPlaceholder", defaultMessage: "Share your thoughts, or ask me to help with something" })}
                   onResolveAttachment={onResolveAttachment}
                   onRemoveAttachment={onRemoveAttachment}
                   addMenuContent={composerAddMenuContent}

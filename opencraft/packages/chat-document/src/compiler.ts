@@ -1,5 +1,6 @@
 import {
   Marked,
+  Tokenizer,
   type Token,
   type Tokens,
   type TokenizerExtension,
@@ -279,7 +280,6 @@ function mapBlockTokens(
   entries: readonly MarkdownToken[],
   source: string,
   baseOffset: number,
-  openFenceStart: number | null,
 ): readonly ChatDocumentNode[] {
   const cursor = { value: 0 };
   const nodes: ChatDocumentNode[] = [];
@@ -318,7 +318,7 @@ function mapBlockTokens(
       case "blockquote":
         nodes.push({
           ...emptyBase("blockquote", sourceRange),
-          children: mapBlockTokens(tokens(token.tokens), raw, start, openFenceStart),
+          children: mapBlockTokens(tokens(token.tokens), raw, start),
         });
         break;
       case "list": {
@@ -327,7 +327,7 @@ function mapBlockTokens(
           return {
             ...emptyBase("list-item", range(start, itemRaw)),
             checked: typeof item.checked === "boolean" ? item.checked : null,
-            children: mapBlockTokens(tokens(item.tokens), itemRaw, start, openFenceStart),
+            children: mapBlockTokens(tokens(item.tokens), itemRaw, start),
           };
         });
         nodes.push({
@@ -341,7 +341,14 @@ function mapBlockTokens(
       case "code": {
         const languageInfo = typeof token.lang === "string" ? token.lang.trim() : "";
         const [language, ...meta] = languageInfo.split(/\s+/);
-        const open = openFenceStart !== null && sourceRange.start <= openFenceStart && sourceRange.end >= openFenceStart;
+        // Nested containers have their own de-indented token source; a global
+        // top-level fence offset cannot describe their completion state.
+        const fence = /^ {0,3}(`{3,}|~{3,})/u.exec(raw);
+        const end = raw.trimEnd().length;
+        const lastLineStart = raw.lastIndexOf("\n", end - 1) + 1;
+        const closing = /^ {0,3}(`{3,}|~{3,})[ \t]*$/u.exec(raw.slice(lastLineStart, end));
+        const open = fence !== null && (lastLineStart === 0 || closing === null
+          || closing[1]?.[0] !== fence[1]?.[0] || (closing[1]?.length ?? 0) < (fence[1]?.length ?? 0));
         nodes.push({
           ...emptyBase("code-fence", sourceRange, open ? "open" : "complete"),
           language: language ? language.toLowerCase() : null,
@@ -579,15 +586,34 @@ const mathInlineTokenizer: TokenizerExtension = {
   },
 };
 
+/** Keep Marked's delimiter matching/code masking, relaxing only Han/punctuation
+ * boundaries rejected by CommonMark (e.g. 是***“重点”*** and **句子。**后文).
+ * The mask keeps UTF-16 offsets; canonical source and token raw bytes are intact.
+ */
+const hanEmphasisTokenizer = {
+  emStrong(this: Tokenizer, source: string, maskedSource: string, previous = "") {
+    const standard = Tokenizer.prototype.emStrong.call(this, source, maskedSource, previous);
+    if (standard || !source.startsWith("*")) return standard ?? false;
+    const previousBoundary = /\p{Script=Han}$/u.test(previous) && /^\*+\p{P}/u.test(source)
+      ? "" : previous;
+    const relaxedMask = maskedSource.replace(/(\p{P})(\*+)(\p{Script=Han})/gu,
+      (match, punctuation: string, delimiter: string, han: string) => punctuation === "*" ? match : `${punctuation}${delimiter}${" ".repeat(han.length)}`);
+    if (previousBoundary === previous && relaxedMask === maskedSource) return false;
+    return Tokenizer.prototype.emStrong.call(this, source, relaxedMask, previousBoundary) ?? false;
+  },
+};
+
 const assistantMarked = new Marked({
   gfm: true,
   breaks: true,
+  tokenizer: hanEmphasisTokenizer,
   extensions: [mathBlockTokenizer, mathInlineTokenizer],
 });
 
 const userMessageMarked = new Marked({
   gfm: true,
   breaks: true,
+  tokenizer: hanEmphasisTokenizer,
   extensions: [mathBlockTokenizer, mathInlineTokenizer, userMessageImageTokenizer, composerLinkTokenizer],
 });
 
@@ -602,6 +628,7 @@ function lex(markdown: string, dialect: ChatDocumentDialect): readonly MarkdownT
 
 export class ChatDocumentCompiler {
   private readonly prefixCache = new Map<string, readonly ChatDocumentNode[]>();
+  private prefixCacheCharacters = 0;
 
   compile(source: string, options: ChatDocumentCompilerOptions = {}): ParsedChatDocument {
     const dialect = options.dialect ?? "assistant";
@@ -610,30 +637,57 @@ export class ChatDocumentCompiler {
       : source;
     const preprocessed = preprocessChatMarkdown(dialectSource, { streaming: options.streaming });
     const openFenceStart = preprocessed.openFence?.start ?? null;
-    const prefixEnd = options.streaming === true
-      ? findStableMarkdownPrefix(preprocessed.markdown, openFenceStart)
-      : 0;
-    if (prefixEnd === 0) {
+    // Reference definitions can reinterpret earlier blocks; unresolved shortcuts
+    // also matter. Conservative bracket fallback includes images/inline links.
+    // Marked normalizes CRLF internally, so raw offsets cannot be reused here.
+    if (options.streaming !== true || /[\[\r]/u.test(preprocessed.markdown)
+      || preprocessed.markdown.includes("$$")) {
       return {
         source,
-        nodes: mapBlockTokens(lex(preprocessed.markdown, dialect), preprocessed.markdown, 0, openFenceStart),
+        nodes: mapBlockTokens(lex(preprocessed.markdown, dialect), preprocessed.markdown, 0),
       };
     }
 
-    const prefix = preprocessed.markdown.slice(0, prefixEnd);
+    const namespace = `${dialect}\0`;
+    let prefixEnd = 0;
+    let prefixNodes: readonly ChatDocumentNode[] = [];
+    for (const [key, nodes] of this.prefixCache) {
+      if (!key.startsWith(namespace)) continue;
+      const prefix = key.slice(namespace.length);
+      if (prefix.length > prefixEnd && preprocessed.markdown.startsWith(prefix)) {
+        prefixEnd = prefix.length;
+        prefixNodes = nodes;
+      }
+    }
     const tail = preprocessed.markdown.slice(prefixEnd);
-    const prefixCacheKey = `${dialect}\0${prefix}`;
-    let prefixNodes = this.prefixCache.get(prefixCacheKey);
-    if (prefixNodes === undefined) {
-      prefixNodes = mapBlockTokens(lex(prefix, dialect), prefix, 0, null);
-      this.prefixCache.set(prefixCacheKey, prefixNodes);
-      if (this.prefixCache.size > 64) this.prefixCache.delete(this.prefixCache.keys().next().value ?? "");
+    const tailTokens = lex(tail, dialect);
+    const stable = findStableMarkdownPrefix(tailTokens);
+    const stableEnd = prefixEnd + stable.sourceEnd;
+    // Never promote repaired/open fenced source into a persistent prefix.
+    const promote = stable.sourceEnd > 0 && (openFenceStart === null || stableEnd <= openFenceStart);
+    const stableNodes = promote ? [
+      ...prefixNodes,
+      ...mapBlockTokens(tailTokens.slice(0, stable.tokenCount), tail, prefixEnd),
+    ] : prefixNodes;
+    if (promote) {
+      const key = `${namespace}${preprocessed.markdown.slice(0, stableEnd)}`;
+      if (!this.prefixCache.has(key)) {
+        this.prefixCache.set(key, stableNodes);
+        this.prefixCacheCharacters += key.length;
+        while (this.prefixCache.size > 64 || this.prefixCacheCharacters > 1_000_000) {
+          const oldest = this.prefixCache.keys().next().value;
+          if (oldest === undefined) break;
+          this.prefixCache.delete(oldest);
+          this.prefixCacheCharacters -= oldest.length;
+        }
+      }
     }
     return {
       source,
       nodes: [
-        ...prefixNodes,
-        ...mapBlockTokens(lex(tail, dialect), tail, prefixEnd, openFenceStart),
+        ...stableNodes,
+        ...mapBlockTokens(promote ? tailTokens.slice(stable.tokenCount) : tailTokens,
+          promote ? tail.slice(stable.sourceEnd) : tail, promote ? stableEnd : prefixEnd),
       ],
     };
   }

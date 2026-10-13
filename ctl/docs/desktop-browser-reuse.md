@@ -12,6 +12,8 @@ LightVela 在机器创建成功后，通过 `ensureDesktopBrowserOnCreate` best-
 - `/usr/local/lib/vela-desktop-browser-v2/chrome` 是原文件的硬链接，共享 inode/磁盘块；同目录资源用软链接。跨文件系统直接跳过，不复制或下载。
 - Ubuntu userns 限制启用时，仅为上述专用启动路径加载一个精确 AppArmor profile。**不改变原 `/opt/.../chrome` 路径的 profile、不改全局 sysctl、不放开用户可写缓存、不使用 no-sandbox。**
 - 桌面使用独立 user-data-dir，不配置 CDP/9222，不修改 Hermes/OpenClaw 配置，不重启已有进程。
+- GUI 启动器显式使用 `--password-store=basic`，避免无 PAM 密码登录的 XFCE 会话在首次启动时等待创建默认钥匙环。此安全取舍于 2026-10-12 经产品确认：不使用系统钥匙环保护该 GUI 浏览器的凭据存储；只作用于本能力入口，不修改 Agent 浏览器、钥匙环文件或已有 profile。关闭保存密码本身不能避免 OSCrypt 初始化提示。
+- 已登记的旧 v2 入口不会因重复 apply 自动升级；存量通过带 manifest 漂移校验的定向升级脚本补发，不删除浏览器数据，不强制关闭运行中的浏览器；参数在下次新启动进程时生效。
 - 发现系统浏览器、自定义 XFCE helper 或自定义 MIME 关联，保守跳过，保留用户原选择；这不代表既有浏览器的 GUI 已验收。
 - 配置文件以 agentuser 身份操作，拒绝符号链接配置及父目录。root 管理路径校验所有权与写权限；不覆盖未归本能力管理的路径。
 - 重复执行校验 manifest；配置漂移、缓存更换、冲突或缺依赖进入处理队列，不盲目重写。

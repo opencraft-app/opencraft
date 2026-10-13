@@ -1,8 +1,10 @@
 import argparse
 import importlib.util
+import json
 from pathlib import Path
 import unittest
 from unittest.mock import patch
+from unittest.mock import MagicMock
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "pipeline_client.py"
@@ -17,6 +19,61 @@ def status(state="RUNNING", channel="GIT", **extra):
             "variables": {"BK_CI_START_CHANNEL": channel}}
     data.update(extra)
     return {"status": 0, "data": data}
+
+
+class BuildStartTests(unittest.TestCase):
+    def setUp(self):
+        self.args = argparse.Namespace(access_token=None, project_id="git_1731878",
+                                       pipeline_id="p-target", build_no=None,
+                                       params='{"variables.PIPELINE_MODE":"build"}')
+        self.token = patch.object(client, "get_access_token", return_value="synthetic-token").start()
+        self.output = patch.object(client, "print_data").start()
+        self.addCleanup(patch.stopall)
+
+    def test_stream_cannot_start_through_generic_blueking_api(self):
+        for project in ("git_1731878", "git_999"):
+            self.args.project_id = project
+            with self.subTest(project=project), patch.object(client, "make_request") as request:
+                with self.assertRaises(SystemExit):
+                    client.cmd_start(self.args)
+                request.assert_not_called()
+                self.token.assert_not_called()
+
+    def test_non_stream_start_keeps_original_behavior(self):
+        self.args.project_id = "other_project"
+        created = {"status": 0, "data": {"id": "b-target"}}
+        with patch.object(client, "make_request", return_value=created) as request:
+            client.cmd_start(self.args)
+        self.assertEqual(request.call_count, 1)
+        self.assertEqual(request.call_args.kwargs["method"], "POST")
+        self.assertEqual(request.call_args.kwargs["data"], {"variables.PIPELINE_MODE": "build"})
+        self.assertEqual(self.output.call_args.args[0], created)
+
+
+class RequestRoutingTests(unittest.TestCase):
+    def test_stream_requests_default_to_git_and_keep_auth(self):
+        response = MagicMock()
+        response.__enter__.return_value.read.return_value = b'{"status":0}'
+        headers = {"X-Task-Trace": "trace"}
+        with patch.object(client.urllib.request, "urlopen", return_value=response) as urlopen:
+            client.make_request(client.BASE_URL + "/projects/git_1731878/build_histories",
+                                headers=headers, access_token="synthetic-token")
+        request = urlopen.call_args.args[0]
+        self.assertEqual(request.get_header("X-devops-channel"), "GIT")
+        self.assertEqual(json.loads(request.get_header("X-bkapi-authorization")),
+                         {"access_token": "synthetic-token"})
+        self.assertEqual(headers, {"X-Task-Trace": "trace"})
+
+    def test_explicit_historical_channel_and_other_projects_are_preserved(self):
+        response = MagicMock()
+        response.__enter__.return_value.read.return_value = b'{"status":0}'
+        for project, headers, expected in (
+            ("git_1731878", {"X-DEVOPS-CHANNEL": "BS"}, "BS"),
+            ("other_project", {}, None),
+        ):
+            with self.subTest(project=project), patch.object(client.urllib.request, "urlopen", return_value=response) as urlopen:
+                client.make_request(client.BASE_URL + f"/projects/{project}/build_status", headers=headers)
+            self.assertEqual(urlopen.call_args.args[0].get_header("X-devops-channel"), expected)
 
 
 class BuildStopTests(unittest.TestCase):

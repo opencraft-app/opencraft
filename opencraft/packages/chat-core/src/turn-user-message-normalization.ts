@@ -226,6 +226,7 @@ export function normalizeCodexTurnUserMessages(turn: TimelineSourceTurn): Timeli
         content: display.input,
         clientId: paramsClientId ?? itemClientId(serverItem ?? { id: syntheticId, type: "userMessage", payload: serverSource }),
         attachments: display.attachments,
+        sender: serverSource.sender ?? params.sender ?? null,
         commentAttachments,
         mcpAppModelContextAttachments: turn.mcpAppModelContextAttachments,
         __velaMessageKind: "user",
@@ -266,6 +267,7 @@ export function normalizeCodexTurnUserMessages(turn: TimelineSourceTurn): Timeli
       normalized.push(withProjectionMetadata(item, {
         input: display.input,
         attachments: display.attachments,
+        sender: record(server?.payload).sender ?? steeringSource.sender ?? null,
         __velaMessageKind: "steering",
         __velaSourceItemIds: sourceIds(item, server?.id),
         serverUserMessageId: string(steeringSource.serverUserMessageId) ?? server?.id ?? null,

@@ -1,6 +1,47 @@
 @use "@opencraft/design-system/controls.web" as controls;
 @use "@opencraft/design-system/menu.web" as menu;
 
+// Global destinations and application context share a single sidebar frame.
+.shell-sidebar__column {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+}
+.shell-sidebar__navigation.sidecar-content-slot {
+  flex: 0 0 auto;
+  height: auto;
+}
+.shell-sidebar__context.sidecar-content-slot {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto;
+  overflow: hidden;
+}
+.shell-sidebar-navigation {
+  padding: 1px 8px 8px;
+  .shell-navigation__items--applications {
+    gap: var(--gap-navigation-rows);
+    > button {
+      @include controls.navigation-control;
+      min-height: max(var(--height-navigation-row), var(--size-application-navigation-hit-min));
+    }
+  }
+}
+.shell-navigation__footer--unified {
+  grid-template-columns: var(--height-navigation-row) minmax(0, 1fr);
+  [data-surface="settings"] { justify-content: center; padding: 0; }
+}
+@media (any-pointer: coarse), (hover: none) {
+  .shell-sidebar-navigation { --size-application-navigation-hit-min: 44px; }
+  .shell-navigation__footer--unified { --height-navigation-row: 44px; }
+}
+:root[data-touch-interaction] {
+  .shell-sidebar-navigation { --size-application-navigation-hit-min: 44px; }
+  .shell-navigation__footer--unified { --height-navigation-row: 44px; }
+}
+
 .shell-navigation__dock {
   position: relative;
   overflow: visible;

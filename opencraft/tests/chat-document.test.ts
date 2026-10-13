@@ -13,6 +13,59 @@ import {
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
+function semanticDocument(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(semanticDocument);
+  if (value === null || typeof value !== "object") return value;
+  return Object.fromEntries(Object.entries(value).filter(([key]) => key !== "stableKey" && key !== "completeness")
+    .map(([key, entry]) => [key, semanticDocument(entry)]));
+}
+
+test("streaming prefix cache preserves full-parser semantics at every input split", () => {
+  const examples = [
+    "- a\n\n- b",
+    "- a\n\n  continuation\n\n  - nested\n\n- b\n\nnext",
+    "1. one\n\n2. two\n\nnext",
+    "    a\n\n    b\n\nnext",
+    "> a\n>\n> b\n\nlazy continuation\n\nnext",
+    "[x][id]\n\n[id]: https://example.com",
+    "[id]: https://example.com\n\n[x][id]",
+    "````\na\n```\n\nb\n````\n\nnext",
+    "~~~ts\na\n~~~ wrong closer\nb\n~~~\n\nnext",
+    "title\n---\n\n| a | b |\n| --- | --- |\n| x | y |\n\nnext",
+    "first **bold**\n\nsecond *italic*\n\nthird",
+    "$$\na+b\n$$\n\nnext",
+    "$$\na\n\nb\n$$\n\nnext",
+    "<div>\ninside\n\nmore\n</div>\n\nnext",
+    "same\n\nsame\n\nsame",
+  ];
+  for (const dialect of ["assistant", "user-message"] as const) {
+    for (const source of examples) {
+      const compiler = new ChatDocumentCompiler();
+      for (let end = 1; end <= source.length; end++) {
+        const input = source.slice(0, end);
+        const normalized = dialect === "user-message" ? preprocessUserMessageMarkdown(input) : input;
+        const repaired = preprocessChatMarkdown(normalized, { streaming: true }).markdown;
+        const expected = new ChatDocumentCompiler().compile(repaired).nodes;
+        assert.deepEqual(semanticDocument(compiler.compile(input, { dialect, streaming: true }).nodes),
+          semanticDocument(expected), `${dialect} split ${end}: ${JSON.stringify(input)}`);
+      }
+    }
+  }
+});
+
+test("stable nodes and segment identities are reused without replaying entering state", () => {
+  const session = new ChatDocumentStreamingSession("prefix-reuse");
+  const first = session.compile("稳定段落。\n\n正在", { streaming: true });
+  first.commit();
+  const second = session.compile("稳定段落。\n\n正在输出", { streaming: true });
+  second.commit();
+  const third = session.compile("稳定段落。\n\n正在输出更多", { streaming: true });
+  assert.equal(second.snapshot.nodes[0]?.stableKey, first.snapshot.nodes[0]?.stableKey);
+  assert.equal(third.snapshot.nodes[0], second.snapshot.nodes[0]);
+  assert.ok(flatten(third.snapshot.nodes.slice(0, 1)).every((node) =>
+    !("segments" in node) || node.segments.every((segment) => !segment.entering)));
+});
+
 const codeBlockStyles = readFileSync(
   resolve(process.cwd(), "packages/chat-render-web/src/renderers/code/code-block.scss"),
   "utf8",
@@ -133,6 +186,17 @@ test("an incomplete Mermaid fence remains an open source block", () => {
   assert.equal(code.language, "mer");
   assert.equal(code.completeness, "open");
   assert.match(code.code, /graph TD/);
+});
+
+test("nested and longer fences retain open state until their actual delimiter closes", () => {
+  const compiler = new ChatDocumentCompiler();
+  for (const source of ["> ```mermaid\n> graph TD\n> A-->B", "- code\n\n    ````mermaid\n    A-->B\n    ```"]) {
+    const node = flatten(compiler.compile(source, { streaming: true }).nodes).find(node => node.kind === "code-fence");
+    assert.equal(node?.completeness, "open");
+  }
+  const closed = flatten(compiler.compile("> ````mermaid\n> A-->B\n> ```\n> ````", { streaming: true }).nodes)
+    .find(node => node.kind === "code-fence");
+  assert.equal(closed?.completeness, "complete");
 });
 
 test("streaming markdown stabilizes incomplete Codex syntax without mutating canonical source", () => {
@@ -366,4 +430,36 @@ test("Codex user-message block preprocessing separates list kinds and protects f
     "- inside fence",
     "```",
   ].join("\n"));
+});
+
+
+test("Han-adjacent punctuation emphasis from the Capacitor reply renders without literal markers", () => {
+  const compiler = new ChatDocumentCompiler();
+  const source = '你找不到是正常的，**Capacitor 不是 App Store 里的应用，而是供开发者制作 App 的框架。**官网是 [capacitorjs.com](https://capacitorjs.com)。\n\n如果你要找的是***“下载一个现成的 iOS App，就能打开网页，并给网页提供额外原生能力”***，Capacitor 不符合。';
+  for (const dialect of ["assistant", "user-message"] as const) {
+    for (const streaming of [false, true]) {
+      const parsed = compiler.compile(source, { dialect, streaming });
+      assert.equal(parsed.source, source);
+      const nodes = flatten(parsed.nodes);
+      const strong = nodes.filter(node => node.kind === "strong");
+      assert.equal(strong.length, 2);
+      assert.ok(nodes.some(node => node.kind === "emphasis"));
+      assert.match(chatDocumentPlainText(strong[0].children), /Capacitor.*框架。/u);
+      assert.match(chatDocumentPlainText(strong[1].children), /“下载.*原生能力”/u);
+      assert.doesNotMatch(chatDocumentPlainText(parsed.nodes), /\*\*/u);
+      assert.ok(nodes.some(node => node.kind === "link" && node.href === "https://capacitorjs.com"));
+    }
+  }
+});
+
+test("Han emphasis relaxation preserves code, escaped delimiters and English punctuation rules", () => {
+  const compiler = new ChatDocumentCompiler();
+  for (const source of ['`是***“代码”***`', '```text\n**句子。**后文\n```', String.raw`是\*\*“原样”\*\*`, 'word**“quoted”**word', '** leading**', '**trailing **']) {
+    const parsed = compiler.compile(source);
+    assert.equal(flatten(parsed.nodes).filter(node => node.kind === "strong").length, 0, source);
+  }
+  const parsed = compiler.compile('**包含 `**。**后文` 的句子。**结束');
+  assert.equal(flatten(parsed.nodes).filter(node => node.kind === "strong").length, 1);
+  assert.ok(flatten(parsed.nodes).some(node => node.kind === "inline-code" && node.code === '**。**后文'));
+  assert.equal(chatDocumentPlainText(compiler.compile('是***“还在输出').nodes).trimEnd(), '是***“还在输出');
 });

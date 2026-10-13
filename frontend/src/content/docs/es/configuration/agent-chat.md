@@ -4,9 +4,11 @@
 
 **Después de iniciar sesión y activar un plan de LightVela, puede hablar con el Bot seleccionado desde Chat en la sección de uso diario de My Agent, sin conectar antes un canal de mensajería. La barra lateral muestra las conversaciones de ese Bot y permite iniciar una nueva o retomar una existente. Antes de enviar un mensaje, compruebe que el Bot esté en línea y que haya créditos de modelo disponibles o un modelo configurado.**
 
-![Nueva conversación en la consola internacional de LightVela, con la barra lateral contraída](../../images/chat-overview-en.webp)
+![Nueva conversación de Web Chat en la consola internacional de LightVela](../../images/chat-overview-en.webp)
 
 ## Iniciar una conversación
+
+Tras iniciar sesión con Google o GitHub y activar un plan disponible, abra la [consola del Agent](/agents/overview/). Complete la configuración del primer Bot: introduzca el nombre obligatorio, añada una descripción opcional y ajuste su apariencia. Seleccione **Crear** y espere a que terminen la creación y la configuración inicial. Cuando termine la configuración, seleccione **Empieza tu viaje** y abra el chat web de ese Bot. El canal de mensajería es opcional; las respuestas requieren créditos de modelo disponibles o un modelo configurado.
 
 1. Abra My Agent y seleccione el Bot en la parte superior de la barra lateral.
 2. Abra Chat en la sección de uso diario y elija crear una conversación nueva. También puede iniciar una conversación para un Bot desde su tarjeta en la página de resumen.

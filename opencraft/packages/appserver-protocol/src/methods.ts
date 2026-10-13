@@ -1,5 +1,7 @@
+import type { MessageSender } from "./message-sender";
 import type { AppServerProcessMethodMap } from "./process";
 import type { ThreadPinsMethodMap } from "./thread-pins";
+import type { TasksMethodMap } from "./tasks";
 import type { AppServerAttachmentMethodMap } from "./attachments";
 import type { HostDesktopCredential } from "./desktop";
 import type {
@@ -243,6 +245,7 @@ export type TurnInterruptParams = GeneratedTurnInterruptParams;
 export type TurnInterruptResponse = GeneratedTurnInterruptResponse;
 export type ThreadQueueAddParams = GeneratedThreadQueueAddParams;
 export interface QueuedSubmission {
+  readonly sender?: MessageSender | null;
   readonly id: string;
   readonly input: readonly UserInput[];
   readonly clientUserMessageId: string;
@@ -314,7 +317,7 @@ export interface ThreadArchiveParams {
  * packages can add protocol methods without introducing an untyped index
  * signature into the core client.
  */
-export interface AppServerMethodMap extends AppServerBotMethodMap, AppServerCodexAccountMethodMap, AppServerProcessMethodMap, AppServerAttachmentMethodMap, ProfileSkillsMethodMap, ThreadPinsMethodMap {
+export interface AppServerMethodMap extends AppServerBotMethodMap, AppServerCodexAccountMethodMap, AppServerProcessMethodMap, AppServerAttachmentMethodMap, ProfileSkillsMethodMap, ThreadPinsMethodMap, TasksMethodMap {
   "thread/goal/get": { params: ThreadGoalGetParams; result: ThreadGoalGetResponse };
   "thread/goal/set": { params: ThreadGoalSetParams; result: ThreadGoalSetResponse };
   "thread/goal/clear": { params: ThreadGoalClearParams; result: ThreadGoalClearResponse };

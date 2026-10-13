@@ -1,14 +1,10 @@
 # Membangun Asisten AI Pribadi dengan LightVela
 
-Sebagian besar percakapan AI berguna untuk satu jawaban, lalu menghilang ke tab berikutnya. Sebuah asisten pribadi menjadi berguna ketika ia dapat tetap tersedia di tempat Anda sudah biasa berkirim pesan, mengingat cara Anda bekerja, dan mengambil alih beberapa tugas yang berulang.
-
-LightVela adalah platform AI agent pribadi berbasis cloud: sebuah Hermes Agent dapat terus bekerja dengan model, kanal, memori, Skill, dan tugas terjadwal pilihan Anda. Panduan ini menunjukkan cara mengubah kumpulan komponen tersebut menjadi asisten yang sudah terasa berguna sejak pekan pertama, tanpa berusaha mengtugas terjadwalkan segalanya sekaligus.
-
-![Asisten AI pribadi dengan LightVela di berbagai kanal](../../images/use-case-personal-ai-assistant.webp)
-
 ## Ringkasan
 
-**Urutan yang tepat untuk membangun asisten AI pribadi bukan mengtugas terjadwalkan semuanya sekaligus. Mulailah dengan membuat Hermes Agent di cloud dapat dijangkau di aplikasi chat yang sudah Anda pakai, lalu tambahkan memori, Skill, dan tugas terjadwal secara berlapis.** Lima komponen masing-masing menyelesaikan satu masalah: model menentukan kualitas reasoning, kanal menentukan di mana Anda menjangkaunya, memori membuatnya dapat mempertahankan cara Anda bekerja, Skill memberinya metode yang dapat dipakai ulang, dan tugas terjadwal membuatnya menyelesaikan pekerjaan yang disepakati saat Anda tidak hadir. Untuk pekan pertama, lakukan hanya tiga hal: konfigurasikan satu model, hubungkan satu kanal, dan pastikan memorinya benar-benar bertahan lintas sesi. Begitu jalur itu andal, tambahkan Skill dan tugas terjadwal — dengan cara ini, ketika ada yang bermasalah, Anda dapat mengetahui lapisan mana penyebabnya.
+**Mulai asisten AI pribadi dengan membuat dan memilih satu Bot, lalu menguji balasan di Chat web memakai kredit model yang tersedia atau model yang sudah dikonfigurasi. Hubungkan kanal pesan hanya jika ingin memakai aplikasi tersebut. Selanjutnya, uji preferensi tetap di percakapan baru, tambahkan Skill untuk tugas tertentu, dan jadwalkan tugas setelah prompt-nya berhasil. Memori, Skill, kanal, dan tugas dikelola untuk Bot yang dipilih.**
+
+![Percakapan Web Chat baru di konsol internasional LightVela](../../images/use-case-personal-ai-assistant.webp)
 
 ## Untuk siapa ini
 
@@ -18,11 +14,11 @@ Ia sangat berguna ketika Anda mendapati diri Anda mengulang konteks seperti zona
 
 ## Prasyarat
 
-- Akun LightVela dan Hermes Agent yang sedang berjalan. Jika Anda belum membuatnya, mulai dari [Panduan Cepat](https://lightvela.ai/docs/quickstart).
+- Akun LightVela dan Hermes Agent yang sedang berjalan. Jika Anda belum membuatnya, mulai dari [Panduan Cepat](../02-quickstart.md).
 
-- Satu kanal percakapan. Telegram, WhatsApp, Discord, Slack, dan WeChat adalah titik awal yang umum; pilih yang paling mungkin Anda buka setiap hari.
+- Chat web sudah cukup untuk memulai. Jika lebih suka aplikasi pesan, hubungkan kanal sesuai petunjuk berikut.
 
-- Konfigurasi model yang berfungsi atau kredit uji coba yang tersedia. Lihat [Konfigurasi Model](https://lightvela.ai/docs/configuration/model) jika Hermes belum dapat membalas.
+- Konfigurasi model yang berfungsi atau kredit uji coba yang tersedia. Lihat [Konfigurasi Model](../configuration/model.md) jika Hermes belum dapat membalas.
 
 - Gambaran singkat tentang apa yang pertama-tama ingin Anda bantu. Satu rutinitas saja, seperti merencanakan hari Anda atau mengumpulkan tindak lanjut, sudah cukup.
 
@@ -30,7 +26,11 @@ Ia sangat berguna ketika Anda mendapati diri Anda mengulang konteks seperti zona
 
 ### 1. Beri Hermes tempat dalam rutinitas harian Anda
 
-Hubungkan satu kanal pesan, lalu kirim beberapa pesan pertama dari tempat yang biasa Anda pakai untuk menata hari Anda. Kanal bukan sekadar metode pengiriman — ia adalah kebiasaan yang membuat asisten tersebut mudah untuk kembali dipakai. Ikuti halaman penyiapan untuk [Telegram](https://lightvela.ai/docs/configuration/channel-telegram), [WhatsApp](https://lightvela.ai/docs/configuration/channel-whatsapp), [Discord](https://lightvela.ai/docs/configuration/channel-discord), [Slack](https://lightvela.ai/docs/configuration/channel-slack), atau [WeChat](https://lightvela.ai/docs/configuration/channel-wechat).
+Pilih avatar Bot yang dituju pada deretan Bot. Pada layar sempit, buka panel navigasi terlebih dahulu. Pastikan namanya sebelum mengubah model, memori, Skill, kanal, atau tugas terjadwal. Chat web dan daftar percakapan mengikuti Bot yang dipilih; Bot tambahan juga dapat memakai Chat web. Chat web tidak memerlukan kanal pesan.
+
+Chat web sudah cukup untuk memulai. Jika lebih suka aplikasi pesan, hubungkan kanal sesuai petunjuk berikut.
+
+Jika ingin memakai aplikasi pesan, hubungkan satu kanal dan pastikan Bot membalas di sana. Ikuti panduan untuk [Telegram](../configuration/channel-telegram.md), [WhatsApp](../configuration/channel-whatsapp.md), [Discord](../configuration/channel-discord.md), [WeChat](../configuration/channel-wechat.md), [Slack](../configuration/channel-slack.md).
 
 ![Halaman Channel di konsol LightVela](../../images/personal-ai-assistant-channel.webp)
 
@@ -52,7 +52,9 @@ Ingat bahwa saya lebih suka briefing hari kerja yang ringkas pukul 08.00,
 berisi rapat, tenggat waktu, dan tiga tindakan berikutnya yang paling penting.
 ```
 
-Gunakan halaman [Pengelolaan Memori](https://lightvela.ai/docs/configuration/memory) untuk meninjau memori dan informasi profil pengguna yang sudah dikumpulkan Hermes. Memori seharusnya mengurangi pengulangan, bukan menjadi tempat penampungan setiap detail yang lewat.
+Gunakan halaman [Pengelolaan Memori](../configuration/memory.md) untuk meninjau memori dan informasi profil pengguna yang sudah dikumpulkan Hermes. Memori seharusnya mengurangi pengulangan, bukan menjadi tempat penampungan setiap detail yang lewat.
+
+Mengingat preferensi ringkasan hari kerja pukul 08.00 tidak membuat tugas terjadwal. Atur jadwal secara terpisah, periksa eksekusi pertama, dan pastikan hasil terkirim ke kanal notifikasi yang dipilih.
 
 ### 3. Tambahkan Skill hanya ketika sebuah tugas nyata membutuhkannya
 
@@ -73,15 +75,27 @@ Setiap hari kerja pukul 08.00, siapkan rencana ringkas untuk hari ini.
 Mulai dengan tenggat waktu dan rapat, lalu sarankan tiga tindakan berikutnya yang terfokus.
 ```
 
-Atur jadwal dan kanal notifikasinya di [Tugas Terjadwal](https://lightvela.ai/docs/configuration/automation). Jaga tugas terjadwal pertama tetap kecil; Anda dapat memperhalus instruksinya setelah melihat beberapa hasil nyata.
+Atur jadwal dan kanal notifikasinya di [Tugas Terjadwal](../configuration/automation.md). Jaga tugas terjadwal pertama tetap kecil; Anda dapat memperhalus instruksinya setelah melihat beberapa hasil nyata.
 
-![Halaman Tugas Terjadwal di konsol LightVela](../../images/personal-ai-assistant-automations.webp)
+![Templat tugas resmi di halaman Tugas Terjadwal LightVela](../../images/personal-ai-assistant-automations.webp)
+
+## Periksa setiap lapisan
+
+| Lapisan | Pemeriksaan | Batasan |
+| --- | --- | --- |
+| Bot dan Chat web | Pilih Bot yang dituju dan kirim pesan singkat | Balasan memerlukan Bot daring serta kredit atau konfigurasi model yang dapat digunakan |
+| Memori | Sampaikan preferensi tetap, buka percakapan baru, lalu periksa | Percakapan baru tidak menghapus memori jangka panjang |
+| Tugas terjadwal | Periksa jadwal, kanal notifikasi, dan hasilnya | Pembuatan atau penyalinan Bot tidak menyalin tugas terjadwal maupun koneksi kanal |
+
+## Verifikasi hasil
+
+Pastikan Chat web membalas sebelum menghubungkan kanal. Uji preferensi yang diingat dalam percakapan baru dan periksa hasil tugas terjadwal pertama. Jika kanal atau tugas gagal, periksa Bot yang dipilih, konfigurasi, dan statusnya sebelum menambah fitur.
 
 ## FAQ
 
 ### Apakah saya perlu mengonfigurasi setiap fitur sebelum Hermes berguna?
 
-Tidak. Satu kanal dan satu model yang berfungsi sudah cukup untuk memulai. Tambahkan memori, Skill, dan tugas terjadwal secara bertahap sambil Anda menemukan tugas berulang mana yang layak dipertahankan.
+Chat web sudah cukup untuk memulai. Jika lebih suka aplikasi pesan, hubungkan kanal sesuai petunjuk berikut.
 
 ### Apakah Hermes akan mengingat setiap pesan yang saya kirim?
 
@@ -89,16 +103,12 @@ Tidak. Memori dimaksudkan untuk informasi yang tetap berguna lintas percakapan, 
 
 ### Bisakah saya memakai asisten yang sama dari lebih dari satu kanal?
 
-Bisa. Beberapa kanal terhubung dapat mengarah ke Hermes Agent yang sama, sehingga asisten tersebut dapat mempertahankan konteks yang sama saat Anda berpindah antar platform pesan yang didukung.
+Ya, jika kanal-kanal tersebut terhubung ke Bot yang sama. Memori jangka panjang dan preferensi dimiliki Bot tersebut. Bot lain punya ruang kerja sendiri: penyalinan hanya memberi salinan awal, bukan sinkronisasi perubahan berikutnya.
 
 ### Apa yang sebaiknya saya tugas terjadwalkan lebih dulu?
 
 Pilih tugas yang sudah Anda ulangi pada waktu yang dapat diprediksi. Perencanaan pagi, tinjauan harian singkat, atau pemeriksaan prioritas pekanan adalah kandidat pertama yang baik karena Anda dapat cepat menilai apakah keluarannya membantu.
 
-## Langkah berikutnya
+## Kesimpulan
 
-- [Chat](https://lightvela.ai/docs/configuration/agent-chat) — bekerja dengan Hermes langsung di konsol.
-
-- [Pengelolaan Memori](https://lightvela.ai/docs/configuration/memory) — tinjau apa yang dipertahankan asisten Anda lintas percakapan.
-
-- [Tugas Terjadwal](https://lightvela.ai/docs/configuration/automation) — jadwalkan rutinitas yang terbukti berguna.
+Fokuskan asisten pertama pada satu rutinitas. Setelah chat, memori, dan tugas terjadwal pertama berfungsi pada Bot yang dipilih, perluas tanggung jawabnya secara bertahap.

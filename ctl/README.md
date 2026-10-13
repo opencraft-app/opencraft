@@ -11,6 +11,7 @@ Trigger note:
 - 2026-05-07: README-only change to rerun Beijing ctl release after DB job image override fix
 - 2026-05-07: README-only change to verify dynamic SOPS DB secret resolution in Beijing ctl release
 - 2026-05-07: README-only change to rerun Beijing ctl release after DB gate tool env inheritance fix
+- 2026-10-13: Git push trigger for CTL rebuild after MR !5271 aligned both production DB contract targets with migration 33; use Stream's Git event instead of the generic BlueKing build-start API.
 
 ## 架构概览
 

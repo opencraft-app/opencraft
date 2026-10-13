@@ -1749,6 +1749,72 @@ test("Hermes model.options is projected as a provider-safe AppServer catalog", a
   assert.deepEqual(calls, [{ method: "model.options", params: { explicit_only: true } }]);
 });
 
+test("Hermes default model accepts declared provider aliases and keeps canonical routing", async () => {
+  for (const provider of ["custom", "custom:custom", " CUSTOM:CUSTOM "]) {
+    const payload = {
+      provider,
+      model: "auto",
+      providers: [
+        { slug: "custom", name: "Platform", aliases: ["custom", "custom:custom"], authenticated: true, models: ["auto", "other"] },
+        { slug: "other", name: "Other", authenticated: true, models: ["auto"] },
+      ],
+    };
+    const original = structuredClone(payload);
+    const rpc: HermesRpcClient = {
+      async call<T>(method: string): Promise<T> {
+        assert.equal(method, "model.options");
+        return payload as T;
+      },
+      onEvent: () => () => undefined,
+    };
+    const adapter = new HermesAppServerAdapter(rpc, "/workspace");
+    const catalog = await adapter.listModels({ includeHidden: false });
+    assert.deepEqual(catalog.data.filter(model => model.isDefault).map(model => model.model), [
+      encodeHermesModelSelection("custom", "auto"),
+    ], `default provider ${JSON.stringify(provider)} resolves to its canonical catalog entry`);
+    assert.deepEqual(payload, original, "catalog projection does not rewrite Hermes configuration");
+  }
+});
+
+test("Hermes default model does not infer undeclared provider aliases", async () => {
+  const rpc: HermesRpcClient = {
+    async call<T>(method: string): Promise<T> {
+      assert.equal(method, "model.options");
+      return {
+        provider: "custom:custom",
+        model: "auto",
+        providers: [{ slug: "custom", name: "Platform", authenticated: true, models: ["auto"] }],
+      } as T;
+    },
+    onEvent: () => () => undefined,
+  };
+  const adapter = new HermesAppServerAdapter(rpc, "/workspace");
+  const catalog = await adapter.listModels({ includeHidden: false });
+  assert.equal(catalog.data.length, 1);
+  assert.equal(catalog.data.some(model => model.isDefault), false);
+});
+
+test("Hermes default alias cannot make an unauthenticated provider available", async () => {
+  const rpc: HermesRpcClient = {
+    async call<T>(method: string): Promise<T> {
+      assert.equal(method, "model.options");
+      return {
+        provider: "custom:custom",
+        model: "auto",
+        providers: [
+          { slug: "custom", name: "Platform", aliases: ["custom:custom"], authenticated: false, models: ["auto"] },
+          { slug: "other", name: "Other", authenticated: true, models: ["auto"] },
+        ],
+      } as T;
+    },
+    onEvent: () => () => undefined,
+  };
+  const adapter = new HermesAppServerAdapter(rpc, "/workspace");
+  const catalog = await adapter.listModels({ includeHidden: false });
+  assert.deepEqual(catalog.data.map(model => model.model), [encodeHermesModelSelection("other", "auto")]);
+  assert.equal(catalog.data.some(model => model.isDefault), false);
+});
+
 test("Hermes session model aliases resolve against the same session-scoped catalog", async () => {
   const calls: Array<{ method: string; params: unknown }> = [];
   const rpc: HermesRpcClient = {

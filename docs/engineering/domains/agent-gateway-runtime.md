@@ -9,7 +9,67 @@ OpenCraft 内置本地 Codex 的 Web 与 Electron Host profile 默认启用自�
 侧栏读取会话目录时复用现有 HostRuntimeRegistry 建立连接，不切换当前聊天 Host；
 远端 SSH 连接仍由用户显式发起。该默认值由内置插件贡献，不需要迁移浏览器保存的数据。
 
+Headless OpenCraft 配置 Tencent OA 验证密钥后，从同源身份请求的 TAI/TOF
+网关头自动识别员工。员工插件以显式入口优先级在左下角显示已验证账号，点击
+查看员工编号和刷新；员工头像获取、同源代理和 Blob URL 生命周期也归 IOA 插件
+所有，头像不可用时保留默认图标与已验证名字。代理只允许获取当前员工的头像，
+不向上游转发身份凭据，不因头像失败改变身份状态。无身份时仍可打开详情，不配置固定登录 URL。入口选择仅
+改变 Shell 呈现，LightVela 会话、凭据和资源授权保持独立；员工插件卸载后恢复
+原账号入口。401 或身份过期清除员工展示，不提供未接通的网关退出操作，也不
+把员工身份注入模型上下文。验证密钥仍由服务端私有文件持有，不能仅凭未验证
+请求头建立身份。详见 [Tencent OA 身份接入](../../../opencraft/docs/tencentoa-authentication.md)。
+
+OpenCraft Codex 消息归属从验签后的 WebSocket 连接身份取得，按稳定 Host、
+Thread 和 clientUserMessageId 保存英文账号名，不保存员工编号。消息身份表
+复用现有 Host 队列 SQLite 和连接，入队与归属写入同一事务；重试不得覆盖
+原发送者。排队消息保留入队时的提交者，触发发送者和编辑者不替换它。
+实时和历史消息及共享 Chat 投影携带独立 sender 字段。Web/Electron 在每条
+用户消息上方以浅色小字显示其英文账号名，靠右对齐；附件消息复用同一标签。
+名字来自该条消息的服务端快照，未知身份不显示，不使用当前登录账号补齐历史
+归属。复制正文与模型输入均不携带员工身份。缺失身份或旧消息保持未知；连接身份过期后拒绝新的已认证提交，重连
+重新验证。部署网关需转发 WebSocket 握手的签名身份头。
+
+
 平台网关的 Hermes `custom/auto` 模型使用模型级 `supports_vision: true` 声明图片输入能力；`auto` 是网关别名，不能依赖公共模型目录推断。CTL 初始化（含 ACLI 与 harness 路径）在模型写入后补齐并回读该字段，前端恢复平台默认配置时在重建 provider 后声明并验证能力。恢复默认配置同时清除旧主模型的顶层 `model.supports_vision`，避免它覆盖新默认模型的声明；用户显式的图片路由策略仍保留。此契约不为其他模型声明能力，不要求重做 CVM 镜像，也不自动修改存量实例。相关实现与回归测试见 `ctl/pkg/instance/async.go`、`ctl/pkg/instance/auto_vision_test.go`、`frontend/src/pages/marketing/agent-model-config/hermes-model-config-command.ts`。
+
+## OpenCraft Tasks 与看板
+
+独立 Web/Electron 工作台通过内建 `opencraft.tasks` 扩展在外侧导航呈现任务。
+列表与看板读取同一批 `tasks` 行，关联存于 `task_conversations`；业务状态与
+原生会话执行活动分开。一个任务允许多个 Server/Thread，同一会话可关联多个任务。
+任务详情消费真实会话/项目目录，通过应用 Router 打开已有会话。卡片直接进入关联会话；
+新任务支持保存并关联已有会话，详情内调整状态保留其他编辑草稿。
+
+任务呈现分离为精简看板卡片、紧凑列表行和非模态详情工作页；卡片显示活动集合与一个会话快捷入口，完整关联和编辑动作位于详情。宽容器详情显示属性栏，窄容器堆叠同一内容。概览隐藏时保留节点/滚动，草稿和 CAS 写入沿用原 owner；呈现切换不启动执行、不改变 SQLite authority 或会话所有权。
+
+固定工作台后端拥有独立 `tasks.sqlite`（Headless Web 的 opencraft-server、
+Electron 的 local-codex），聊天 Host 切换不改变存储。Local Agent Host 与本地
+Codex adapter 打包 `opencraft/tasks/*`，提交后广播变更。事务内检查 revision，
+移动同时更新受影响行的排序和版本。写入未知结果先读取核对，冲突保留草稿。
+后端记录带校验和的 schema 基线，拒绝未知历史；不迁移或删除旧卡片数据库。
+
+看板按 View 容器宽度切换六列或共享状态按钮加单列；列表与编辑器复用同一数据
+和草稿。活动从原生 thread/read 读取，失联显示未知，不自动把空闲解释为完成。
+手动「新建会话」复用原生 Composer：保存任务、选择执行连接、预填任务说明，由用户发送。
+同 Server 项目提供原生工作目录，跨 Server 不复用另一机器的项目路径。应用在 thread/start
+确认回执时关联任务，首次 Turn 失败也保留关系。按产品/账号隔离的客户端交接记录只持有
+草稿身份与确认回执，任务内容和关系仍在 SQLite；关联失败读取核对和重试，不能重放执行。
+本阶段没有自动任务派工或工作流；不宣称已打包 Electron/手机真机验收。
+详见 [Tasks 模型](../../../opencraft/docs/tasks-model.md) 与
+[存储和验证入口](../../../opencraft/plugins/tasks/README.md)。
+已有会话顶部“…”菜单提供归属任务选择，入口位于右侧面板按钮左边；允许多任务关联、搜索和解除。会话 Server/Thread 与固定任务存储 authority 分开，每行按 revision 写入并重新读取结果。草稿不显示入口，关联变化不启动、停止或删除会话。
+
+同一顶部菜单按原生 Host 能力提供重命名、置顶/取消置顶，复用侧栏既有标题写入者和会话管理端口，刷新后由原生目录恢复。Tasks 可用性只控制归属任务入口，不控制会话管理动作；菜单按账号/Host/Thread 绑定，不添加另一份标题或置顶存储。
+
+手机顶部（不超过 640px）隐藏会话标题旁的项目附文；同一“…”菜单以共享只读详情展示项目及工作目录。目录来自当前执行信息或同一 Thread 的规范元数据，不新增 IO、执行或持久化，长路径完整换行。
+
+浮动侧栏由 Shell 的透明外侧命中层收起；该命中层显式允许指针事件，覆盖宿主的默认穿透设置。首次点击或触摸外部空白只收起侧栏，退出完成后正文恢复交互。
+
+## OpenCraft 文件预览下载
+
+文件预览标题栏提供下载原文件，复用当前 Host/path/runtime generation 的 Blob 读取结果与 URL lease，不以浏览器 `file://` 直接访问 Host 文件。空文件、图片与不可预览的二进制均可下载；读取中/失败时禁用。只读内嵌预览允许保存到用户设备，仍不允许 Host 写入；详情见 [文件面板所有权](../../../opencraft/docs/platform-architecture.md#workspace-file-explorer-ownership)。
+
+Hermes 默认模型目录投影与已有会话使用同一提供商身份匹配：接受目录的 `slug`、名称及明确声明的 `aliases`，不通过删除 `custom:` 前缀猜测身份。默认模型仍须属于该提供商且通过现有可用性过滤；例如配置 `custom:custom / auto`、目录 `slug=custom, aliases=[custom:custom]` 时，AppServer 默认模型应为目录规范身份 `custom / auto`。该投影不改写 Profile 配置、凭据或已有会话的模型选择。
 
 ## 渠道聊天记录只读接口（待启用）
 
@@ -658,6 +718,9 @@ Pages 制品对嵌入内容哈希资源声明 immutable，稳定 loader/version/
 - 键鼠由新增的可写回环端点 `vela-desktop-input`（5903，`-nopw -localhost -nevershared -dontdisconnect`）承载，但**浏览器绝不直连它**：可写租约的隧道目标固定为输入网关 `opencraft-desktop-input-gateway`（5904），网关再中继到 5903。端点只绑回环、只能经已鉴权的 TAT 隧道到达，因此不再有需要下发到浏览器的 RFB 密码——这与只读 observer（5901）的安全模型一致，差别只在去掉 `-viewonly`。`-nevershared` 作为纵深防御保留；`-dontdisconnect` 保证不踢掉既有的 5900/5901。旧可控端点 5900 与 websockify 6080 保持原样，仍使用 ingressproxy 的区域不受影响。
 - **租约状态在 CTL 进程内存**，因此「单次使用」依赖签发与兑换落在同一副本。当前 argocd 的 CTL 清单未设置 `replicas`（Kubernetes 默认 1），约束成立；**若后续扩容到多副本，必须先把租约挪到共享存储或改为自签名票据**，否则会出现副本 A 签发、副本 B 兑换不到的情况。这是本方案相较集中式 broker 唯一更脆弱的点，扩副本前必须先处理。
 - **输入默认拒绝**：网关按 RFB 成帧解析客户端→服务器的消息，只分类输入类（`KeyEvent`/`PointerEvent`/`ClientCutText`），其余原样中继。输入类消息在无有效授权时**一律丢弃**，因此「谁能控制」不依赖前端 viewOnly 开关，也不依赖连上端口这一事实本身。授权是一个 root-only 的有界文件（`/run/opencraft-desktop-input/grant`，含 `expiresAt` 与 `attachmentId`）：只在票据兑换成功后由 CTL 经 TAT 写入，释放或撤权时删除。网关每 0.5s 复验，一旦授权消失或到期就**释放仍按住的键与鼠标键后断开**，不会把桌面留在卡键状态。可写租约每实例限 1（服务端独占，不依赖 `-nevershared`），只读租约可共享；可写端点未就绪时降级为只读观看，不让桌面整体不可用。隧道目标被配置成绕过网关直连 5903 时，CTL 强制回退到网关端口——原始可写端口没有输入仲裁，不能作为下发目标。
+- **可写名额的回收只认「未兑换」**：可写租约每实例限 1，而前端释放是尽力而为，异常断开（刷新、断网、崩溃）的旧租约会占住唯一名额，期间新连接全部降级只读，直到 TTL 5min + 30s skew 自然过期。因此回收条件收紧为**从未兑换且已超兑换窗口**的租约；`used=true` 只说明票据已被连接消费，**不说明连接已断开**，不能作为可回收依据，否则会抢走活跃连接的输入权限。这决定了「异常断开后多久能重新拿到键鼠」的上界，不是纯实现细节。
+- **换代激活是撤权语义的一部分**：沙箱侧 `activate_epoch` 在同一代次内不覆写已激活身份，这是**有意的防降权设计**（避免旧请求把身份改回去）。相应地 CTL 侧在运行时身份变化（观察进程或 Xvfb 重启）时**必须推进代次**，否则新身份永远写不进去，键鼠将永久不可用且无自愈路径——即沙箱的拒绝覆写与 CTL 的推进代次是成对约束，单独看任一侧都正确，缺一侧则失效。
+- **成帧必须兼容扩展剪贴板**：`ClientCutText` 的 length 是**有符号**的，负值表示 RFB ExtendedClipboard 扩展消息，实际载荷长度取其绝对值（noVNC 以 `toUnsigned32bit(-data.length)` 编码）。可写端点的 x11vnc 没有 `-nosel`，会主动发 ServerCutText 能力通告，客户端协商扩展剪贴板伪编码（`0xc0a1e5ce`）后**必然回一条负 length 消息**；若按无符号解析会得到约 4GiB，触发单条消息上限后被判为流失序并关闭连接，表现为画面刚协商好就断开、前端在有限重建内循环直至黑屏失败。长度上限判定须排在符号还原**之后**，使负 length 不成为绕过上限的通道；扩展剪贴板消息仍按输入类处理，无授权时照旧丢弃。此处的教训是：**成帧解析的失败模式是整条连接不可用，而非单条消息被拒**，因此对协议可选扩展要按「客户端一定会发」来设计，而不是按「我们没启用」来假设。
 - 授权下发是**尽力而为**：TAT 命令失败时用户仍能看到画面，但网关继续拒绝输入（失败即降级为只读，fail safe），不会出现「以为有键鼠但静默失效」之外的更坏情况。
 - **发布顺序硬约束**：必须先完成部署与配置、确认新链路可用（网关 unit active、租约能签发、incarnation 能拿到），**再**下线 ingressproxy；反序会在切换窗口内造成云电脑全断且无回退。国内站与国际站应同批切换，避免两端行为不一致。
 - 单人浏览器使用场景下不挂载 Sandbox 的 viewer broker：`OpenVerified` 走强制只读的回环核验代理，而 5903 在沙箱内、Sandbox 服务侧没有任何能仲裁它输入的执行器，挂载后 `Control` 只能为 nil（等于用可写换只读）；鉴权与加密中继已由 TAT 隧道承担。因此第 610 行的「Handler 尚未挂载公共路由」维持现状，且属于刻意选择而非遗漏。已知代价（可写独占、主动撤权依赖 TAT 下发、集中管控弱、与 OpenCraft 契约分叉）与四条重新评估触发条件（多人同时观看、毫秒级撤权与集中熔断、独立扩展/SLO、接入 OpenCraft 生态）见任务记录。
@@ -1209,6 +1272,29 @@ CTL 的微信 claim 在实例本地保存私有扫码回滚快照，并返回 re
 
 ### 微信回滚失败与删除契约
 
-微信 Profile 的变更由独立操作锁串行化；实例元数据锁只保护绑定读写和账号查重，网关 stop/restart 在释放实例锁后执行，并在重新获取锁后重读绑定，保留其他 Profile 的并发更新。回滚先标记 `recovery_required`，即使网关命令失败也恢复微信配置和账号文件；失败保留私有快照和原账号身份，返回 `WEIXIN_RECOVERY_FAILED`，再次 claim/release 可重试恢复，成功后才撤销恢复标记。旧预约不能清理新的扫码。快照使用可选的 runtime status helper，版本不兼容时保守恢复网关，不依赖私有 CLI 函数。
+微信 Profile 的变更由独立操作锁串行化；实例元数据锁只保护绑定读写和账号查重，网关 stop/restart 在释放实例锁后执行，并在重新获取锁后重读绑定，保留其他 Profile 的并发更新。回滚先标记 `recovery_required`，使用 Hermes 原生 `gateway stop`（默认 Bot 不传 `-p`，子 Bot 显式传 `-p <profile>` 并设置目标 `HERMES_HOME`），停止后通过运行时 PID helper 确认目标网关已退出，才恢复微信配置和账号文件；共享多 Profile 网关暂不自动停止，返回恢复失败。停止失败不覆盖当前配置；失败保留私有快照和原账号身份，返回 `WEIXIN_RECOVERY_FAILED`，再次 claim/release 可重试恢复，成功后才撤销恢复标记。旧预约不能清理新的扫码。快照使用可选的 runtime status helper，版本不兼容时保守恢复网关，不依赖私有 CLI 函数。
 
 删除 Bot 的 `CHANNEL_OCCUPIED` 使用 `details.channel` 区分 `weixin` / `whatsapp`；前端不能依赖 HTTP 传输会丢弃的内部错误包装文本。
+
+### IOA conversation participants
+
+IOA owns a derived native-history participant index in the existing per-Host
+codex-host-queue.sqlite. Optional Host metadata hooks expose only native message IDs
+and immutable verified authors; optional sidebar badge slots expose presentation.
+Participants are distinct employee login names of retained user messages, not viewers
+or queued submissions. Capability-scoped IOA RPCs remain local to the Host adapter
+and never enter the execution engine/model. See OpenCraft Tencent OA authentication
+and ChatUI architecture for reconciliation, lifetime and overlay ownership.
+
+Participant reconciliation isolates failures per conversation in batched responses. Native retained-history pagination uses larger pages with a bounded cursor walk so long-running conversations do not invalidate every visible sidebar count. Verification copies the Host sender DB and bridges only native read requests in an isolated instance; publication remains gated on live RPC and rendered circle/popover acceptance with automatic rollback.
+
+### GUI 浏览器首次启动的凭据存储（2026-10-12）
+
+LightVela 复用镜像浏览器的专用 GUI 启动入口显式选择 `--password-store=basic`，避免未通过 PAM 密码登录的 XFCE 云桌面首次启动等待默认钥匙环。该凭据存储安全取舍已经产品确认，只作用于 GUI 入口，不更改 Agent 浏览器参数、不删除用户钥匙环或浏览器数据。存量旧入口需要校验 manifest 后单独升级；源码变更不能代替两地域发布与 GUI 验收。详见 `ctl/docs/desktop-browser-reuse.md`。
+
+OpenCraft Composer 的权限菜单由客户端语言包翻译已验证的标准档位、中文说明、加载/错误状态和待生效提示；引擎自定义 profile 名称与说明仍由 Host 提供。翻译不改变 profile ID、权限绑定或提交策略。实现契约见 `opencraft/docs/chat-ui-architecture.md`。
+
+中文聊天 Markdown 在标准 Marked 强调解析失败时，仅对 Han 与标点相邻的星号边界重试，保留代码遮罩、源文与权限/执行策略。对应回归覆盖截图原句、英语、转义与代码。
+
+
+OpenCraft 独立与嵌入入口共用 Composer 高度规则：桌面 viewport >=768px 最低64px，其余最低48px。空输入区以属性和伪元素绘制占位，不插入不可编辑节点；手机普通 Return 换行，显式发送仍提交。新会话未显式选择权限时采用 Host 声明可用的 full profile；已有会话与显式选择保持原策略。独立入口执行中默认排队，保留显式 steer 偏好，与嵌入入口共用提示文案。Sidebar 来源图标使用 Portal Tooltip，文案可选择复制。详见 OpenCraft ChatUI 和设计不变量。

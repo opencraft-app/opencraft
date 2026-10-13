@@ -32,8 +32,35 @@ func newWeixinFixture(t *testing.T) *weixinFixture {
 	t.Helper()
 	requireWeixinPython(t)
 	f := &weixinFixture{t: t, home: t.TempDir(), bin: t.TempDir()}
-	f.write(filepath.Join(f.bin, "acli"), "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$HERMES_HOME/.acli-calls\"\n", 0700)
+	f.write(filepath.Join(f.bin, "acli"), "#!/bin/sh\n[ \"$2\" != stop ] || exit 1\nprintf '%s\\n' \"$*\" >> \"$HERMES_HOME/.acli-calls\"\n", 0700)
+	f.write(filepath.Join(f.bin, "gateway", "__init__.py"), "", 0600)
+	f.write(filepath.Join(f.bin, "gateway", "status.py"), `import json
+
+def get_running_pid(path, cleanup_stale=False):
+    return 123 if path.exists() else None
+
+def read_runtime_status(path):
+    return json.loads(path.read_text()) if path.exists() else {}
+
+def get_runtime_status_running_pid(state, expected_home):
+    return state.get('pid')
+`, 0600)
+	f.nativeStop("exit 0\n")
 	return f
+}
+func (f *weixinFixture) nativeStop(body string) {
+	f.t.Helper()
+	f.write(filepath.Join(f.home, "hermes-agent", "venv", "bin", "hermes"), `#!/bin/sh
+if [ "$1" = -p ]; then
+  profile="$2"
+  [ "$HERMES_HOME" = "$TEST_HERMES_ROOT/profiles/$profile" ] || exit 1
+  shift 2
+else
+  [ "$HERMES_HOME" = "$TEST_HERMES_ROOT" ] || exit 1
+fi
+[ "$*" = "gateway stop" ] || exit 1
+printf '%s %s\n' "$HERMES_HOME" "$*" >> "$TEST_HERMES_ROOT/.hermes-calls"
+`+body, 0700)
 }
 func (f *weixinFixture) write(path, value string, mode os.FileMode) {
 	f.t.Helper()
@@ -58,7 +85,7 @@ func (f *weixinFixture) credentials(profile, account, user string) {
 func (f *weixinFixture) run(action, bot, profile, lease string) channelBindingPayload {
 	f.t.Helper()
 	cmd := exec.Command(weixinTestPython(), "-c", manageChannelBindingScript, action, "weixin", bot, profile, "instance-test", lease)
-	cmd.Env = append(os.Environ(), "HERMES_HOME="+f.home, "PATH="+f.bin+":"+os.Getenv("PATH"), "PYTHONPATH="+f.bin+":"+os.Getenv("PYTHONPATH"))
+	cmd.Env = append(os.Environ(), "HERMES_HOME="+f.home, "TEST_HERMES_ROOT="+f.home, "PATH="+f.bin+":"+os.Getenv("PATH"), "PYTHONPATH="+f.bin+":"+os.Getenv("PYTHONPATH"))
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		f.t.Fatalf("binding %s failed: %v (%s)", action, err, output)
@@ -107,8 +134,8 @@ func TestWeixinAccountRejectsDuplicateAndRollsBackOnlyScanningBot(t *testing.T) 
 			if strings.Contains(string(env), "WEIXIN_") || !strings.Contains(string(env), "OTHER_SETTING=keep") {
 				t.Fatal("profile env was not restored")
 			}
-			calls, _ := os.ReadFile(filepath.Join(f.home, ".acli-calls"))
-			if !strings.Contains(string(calls), "stop --agent profile-b") || strings.Contains(string(calls), "--agent main") {
+			calls, _ := os.ReadFile(filepath.Join(f.home, ".hermes-calls"))
+			if !strings.Contains(string(calls), f.profile("profile-b")+" gateway stop") || strings.Contains(string(calls), f.home+" gateway stop") {
 				t.Fatal("rollback manipulated wrong gateway")
 			}
 		})
@@ -158,7 +185,7 @@ func TestWeixinConcurrentConfirmOnlyOneOwnerWins(t *testing.T) {
 	commands := []*exec.Cmd{}
 	for _, target := range []struct{ bot, profile, lease string }{{"bot-a", "default", a.ReservationID}, {"bot-b", "profile-b", b.ReservationID}} {
 		cmd := exec.Command(weixinTestPython(), "-c", manageChannelBindingScript, "confirm", "weixin", target.bot, target.profile, "instance-test", target.lease)
-		cmd.Env = append(os.Environ(), "HERMES_HOME="+f.home, "PATH="+f.bin+":"+os.Getenv("PATH"), "PYTHONPATH="+f.bin+":"+os.Getenv("PYTHONPATH"))
+		cmd.Env = append(os.Environ(), "HERMES_HOME="+f.home, "TEST_HERMES_ROOT="+f.home, "PATH="+f.bin+":"+os.Getenv("PATH"), "PYTHONPATH="+f.bin+":"+os.Getenv("PYTHONPATH"))
 		commands = append(commands, cmd)
 	}
 	type outcome struct {
@@ -195,6 +222,7 @@ func TestWeixinRollbackPreservesOtherPlatformConfig(t *testing.T) {
 	f.write(filepath.Join(f.bin, "hermes_cli", "__init__.py"), "", 0600)
 	f.write(filepath.Join(f.bin, "hermes_cli", "profiles.py"), "def _check_gateway_running(home): return True\n", 0600)
 	f.write(filepath.Join(f.profile("profile-b"), "gateway.pid"), "synthetic", 0600)
+	f.nativeStop("rm -f \"$HERMES_HOME/gateway.pid\"\n")
 	path := filepath.Join(f.profile("profile-b"), "config.yaml")
 	f.write(path, "platforms:\n  feishu:\n    enabled: true\n", 0600)
 	claim := f.run("claim", "bot-b", "profile-b", "")
@@ -221,7 +249,11 @@ func TestWeixinRollbackGatewayFailuresRemainRetryable(t *testing.T) {
 			f.connect("bot-b", "profile-b", "account-b", "user-b")
 			lease := f.run("claim", "bot-b", "profile-b", "").ReservationID
 			f.credentials("profile-b", "account-a", "user-a")
-			f.write(filepath.Join(f.bin, "acli"), "#!/bin/sh\n[ \"$2\" != \""+command+"\" ]\n", 0700)
+			if command == "stop" {
+				f.nativeStop("exit 1\n")
+			} else {
+				f.write(filepath.Join(f.bin, "acli"), "#!/bin/sh\nexit 1\n", 0700)
+			}
 			if got := f.run("confirm", "bot-b", "profile-b", lease); got.Reason != "recovery_failed" {
 				t.Fatalf("failure: %+v", got)
 			}
@@ -229,14 +261,19 @@ func TestWeixinRollbackGatewayFailuresRemainRetryable(t *testing.T) {
 				t.Fatalf("stuck reservation: %+v", got)
 			}
 			env, _ := os.ReadFile(filepath.Join(f.profile("profile-b"), ".env"))
-			if !strings.Contains(string(env), "account-b") || strings.Contains(string(env), "account-a") {
-				t.Fatal("credentials were not restored despite CLI failure")
+			expected := "account-b"
+			if command == "stop" {
+				expected = "account-a"
+			}
+			if !strings.Contains(string(env), expected) {
+				t.Fatal("configuration changed before shutdown or was not restored after it")
 			}
 			f.run("release", "bot-b", "profile-b", "stale")
 			if got := f.run("claim", "bot-b", "profile-b", ""); got.Reason != "recovery_failed" {
 				t.Fatalf("unrecovered gateway allowed scan: %+v", got)
 			}
 			f.write(filepath.Join(f.bin, "acli"), "#!/bin/sh\nexit 0\n", 0700)
+			f.nativeStop("exit 0\n")
 			next := f.run("claim", "bot-b", "profile-b", "")
 			if !next.OK || next.ReservationID == lease {
 				t.Fatalf("cannot retry recovery: %+v", next)
@@ -254,10 +291,10 @@ func TestWeixinRollbackDoesNotBlockOtherProfiles(t *testing.T) {
 	f.connect("bot-a", "default", "account-a", "user-a")
 	lease := f.run("claim", "bot-b", "profile-b", "").ReservationID
 	f.credentials("profile-b", "account-a", "user-a")
-	f.write(filepath.Join(f.bin, "acli"), "#!/bin/sh\nif [ \"$2\" = stop ]; then touch \"$HERMES_HOME/stop-started\"; while [ ! -f \"$HERMES_HOME/stop-continue\" ]; do sleep 0.05; done; fi\n", 0700)
+	f.nativeStop("touch \"$TEST_HERMES_ROOT/stop-started\"; while [ ! -f \"$TEST_HERMES_ROOT/stop-continue\" ]; do sleep 0.05; done\n")
 	var output bytes.Buffer
 	cmd := exec.Command(weixinTestPython(), "-c", manageChannelBindingScript, "confirm", "weixin", "bot-b", "profile-b", "instance-test", lease)
-	cmd.Env = append(os.Environ(), "HERMES_HOME="+f.home, "PATH="+f.bin+":"+os.Getenv("PATH"))
+	cmd.Env = append(os.Environ(), "HERMES_HOME="+f.home, "TEST_HERMES_ROOT="+f.home, "PATH="+f.bin+":"+os.Getenv("PATH"), "PYTHONPATH="+f.bin)
 	cmd.Stdout = &output
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
@@ -303,6 +340,9 @@ func TestWeixinRollbackDoesNotBlockOtherProfiles(t *testing.T) {
 
 func TestWeixinSnapshotWithoutUpstreamStatusHelpers(t *testing.T) {
 	f := newWeixinFixture(t)
+	if err := os.RemoveAll(filepath.Join(f.bin, "gateway")); err != nil {
+		t.Fatal(err)
+	}
 	f.write(filepath.Join(f.profile("profile-b"), "gateway.pid"), "synthetic", 0600)
 	if got := f.run("claim", "bot-b", "profile-b", ""); !got.OK {
 		t.Fatal("optional helper blocked claim")
@@ -329,7 +369,7 @@ func TestWeixinReleaseAndExpiredReservationRecoverAfterStopFailure(t *testing.T)
 				data, _ = json.Marshal(payload)
 				f.write(path, string(data), 0600)
 			}
-			f.write(filepath.Join(f.bin, "acli"), "#!/bin/sh\nexit 1\n", 0700)
+			f.nativeStop("exit 1\n")
 			requestAction := action
 			if action == "expired_claim" {
 				requestAction = "claim"
@@ -338,13 +378,82 @@ func TestWeixinReleaseAndExpiredReservationRecoverAfterStopFailure(t *testing.T)
 				t.Fatalf("failure: %+v", got)
 			}
 			env, _ := os.ReadFile(filepath.Join(f.profile("profile-b"), ".env"))
-			if strings.Contains(string(env), "WEIXIN_") {
-				t.Fatal("cancel/expiry retained credentials")
+			if !strings.Contains(string(env), "account-b") {
+				t.Fatal("cancel/expiry changed credentials before shutdown")
 			}
 			f.write(filepath.Join(f.bin, "acli"), "#!/bin/sh\nexit 0\n", 0700)
+			f.nativeStop("exit 0\n")
 			if got := f.run("claim", "bot-b", "profile-b", ""); !got.OK || got.ReservationID == lease {
 				t.Fatalf("retry: %+v", got)
 			}
 		})
+	}
+}
+
+func TestWeixinNativeStopMustConfirmExitBeforeRestoring(t *testing.T) {
+	for _, profile := range []string{"default", "profile-b"} {
+		t.Run(profile, func(t *testing.T) {
+			f := newWeixinFixture(t)
+			f.connect("bot-b", profile, "old-account", "old-user")
+			lease := f.run("claim", "bot-b", profile, "").ReservationID
+			f.credentials(profile, "new-account", "new-user")
+			f.write(filepath.Join(f.profile(profile), "gateway.pid"), "synthetic", 0600)
+			// Native Hermes can exit zero while systemd is still stopping.
+			if got := f.run("release", "bot-b", profile, lease); got.Reason != "recovery_failed" {
+				t.Fatalf("unconfirmed shutdown accepted: %+v", got)
+			}
+			env, _ := os.ReadFile(filepath.Join(f.profile(profile), ".env"))
+			if !strings.Contains(string(env), "new-account") {
+				t.Fatal("configuration overwritten while gateway was running")
+			}
+			f.nativeStop("rm -f \"$HERMES_HOME/gateway.pid\"\n")
+			if got := f.run("release", "bot-b", profile, lease); !got.OK {
+				t.Fatalf("confirmed shutdown did not recover: %+v", got)
+			}
+			if got := f.run("get", "bot-b", profile, ""); got.Status != "connected" {
+				t.Fatalf("old binding not restored: %+v", got)
+			}
+			env, _ = os.ReadFile(filepath.Join(f.profile(profile), ".env"))
+			if !strings.Contains(string(env), "old-account") {
+				t.Fatal("old credentials not restored")
+			}
+		})
+	}
+}
+
+func TestWeixinRecoveryDoesNotStopMultiplexHost(t *testing.T) {
+	for _, profile := range []string{"default", "profile-b"} {
+		t.Run(profile, func(t *testing.T) {
+			f := newWeixinFixture(t)
+			lease := f.run("claim", "bot-b", profile, "").ReservationID
+			f.credentials(profile, "new-account", "new-user")
+			f.write(filepath.Join(f.home, "gateway_state.json"), `{"pid":123,"served_profiles":["profile-b","profile-c"]}`, 0600)
+			if got := f.run("release", "bot-b", profile, lease); got.Reason != "recovery_failed" {
+				t.Fatalf("shared host accepted: %+v", got)
+			}
+			if _, err := os.Stat(filepath.Join(f.home, ".hermes-calls")); !os.IsNotExist(err) {
+				t.Fatal("native stop called on shared host")
+			}
+			env, _ := os.ReadFile(filepath.Join(f.profile(profile), ".env"))
+			if !strings.Contains(string(env), "new-account") {
+				t.Fatal("active shared profile configuration overwritten")
+			}
+		})
+	}
+}
+
+func TestWeixinStandaloneRecoveryPreservesUnrelatedMultiplexHost(t *testing.T) {
+	f := newWeixinFixture(t)
+	lease := f.run("claim", "bot-b", "profile-b", "").ReservationID
+	f.credentials("profile-b", "new-account", "new-user")
+	f.write(filepath.Join(f.profile("profile-b"), "gateway.pid"), "synthetic", 0600)
+	f.write(filepath.Join(f.home, "gateway_state.json"), `{"pid":456,"served_profiles":["profile-c"]}`, 0600)
+	f.nativeStop("rm -f \"$HERMES_HOME/gateway.pid\"\n")
+	if got := f.run("release", "bot-b", "profile-b", lease); !got.OK {
+		t.Fatalf("standalone recovery blocked: %+v", got)
+	}
+	state, _ := os.ReadFile(filepath.Join(f.home, "gateway_state.json"))
+	if !strings.Contains(string(state), `"pid":456`) {
+		t.Fatal("unrelated host changed")
 	}
 }

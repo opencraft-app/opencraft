@@ -128,7 +128,7 @@ try:
   if restricted:
    POLICY.write_text(f'abi <abi/4.0>,\ninclude <tunables/global>\nprofile {NAME} {LIB}/chrome flags=(unconfined) {{\n  userns,\n}}\n');POLICY.chmod(0o644);created.append(POLICY)
    run(['apparmor_parser','-Q','-T',str(POLICY)]);run(['apparmor_parser','-r',str(POLICY)]);policy_loaded=True
-  BIN.write_text('#!/bin/bash\nset -euo pipefail\n[ "$(id -u)" != 0 ] || exit 1\nunset CHROME_DEVEL_SANDBOX\nexec '+str(LIB)+'/chrome --no-first-run --no-default-browser-check --disable-gpu --disable-dev-shm-usage --user-data-dir="$HOME/.local/share/'+NAME+'" "$@"\n');BIN.chmod(0o755);created.append(BIN)
+  BIN.write_text('#!/bin/bash\nset -euo pipefail\n[ "$(id -u)" != 0 ] || exit 1\nunset CHROME_DEVEL_SANDBOX\nexec '+str(LIB)+'/chrome --password-store=basic --no-first-run --no-default-browser-check --disable-gpu --disable-dev-shm-usage --user-data-dir="$HOME/.local/share/'+NAME+'" "$@"\n');BIN.chmod(0o755);created.append(BIN)
   # Detect user preference changes made since precheck, before modifying anything as the user.
   if user('read')['snapshot']!=before:raise RuntimeError('user config changed during apply')
   user_after=user('apply')['snapshot']

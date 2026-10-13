@@ -1,5 +1,46 @@
 # 工作区不变量
 
+## User message sender display
+
+Web/Electron show each user message's verified employee `loginName` above its
+content, in small muted text aligned to the end. Attachment-only messages use
+the same label. Unknown or absent senders leave no label. The label consumes
+the individual message snapshot, never the current footer account or Turn author,
+and is excluded from copied message text and native model input.
+
+## Tasks View
+
+- TSK-01：任务属于插件 View，Sidebar 与应用 Router 拥有呈现和会话导航。列表与看板读取同一批任务；两张业务表为 tasks/task_conversations，没有独立卡片/列权威。
+- TSK-02：六个业务状态由用户维护；原生会话活动单独读取，未知不等于空闲，空闲不等于完成。拖拽不触发执行或中断。
+- TSK-03：固定工作台后端拥有 SQLite；聊天 Host 切换不改变数据库。多会话关系引用稳定 Server/Thread，允许跨 Server 与多个任务共享会话。旧卡片不迁移、不删除。
+- TSK-04：插件激活拥有控制器和草稿，View 消失清理观察者，返回保留草稿。迟到读取不能覆盖写入；事务 revision 防止并发覆盖，冲突保留输入，明确载入最新内容。
+- TSK-05：容器宽度不超过 600px 时展示共享 SegmentedControl 与单列；宽屏六列。状态和视图按钮沿用共享 toolbar 外观，触摸区扩展至 44px。各列滚动位置保留，拖拽只从手柄开始。
+- TSK-06：详情是任务工作页，不使用模态遮罩；宽容器显示属性栏，窄容器堆叠同一组字段并在顶部保存，宽度变化保持输入节点。进入聚焦标题而不唤起手机键盘，返回概览恢复原节点/滚动及仍有效的入口焦点；不添加另一套浏览器历史。看板仅显示标题、活动摘要和一个会话捷径，列表使用独立紧凑行。写入期间禁用编辑和关闭，异步会话验证在 View 关闭后不能关联到新草稿。
+- TSK-07：任务进入原生聊天只准备草稿，用户发送才创建会话和执行；同 Server 项目进入执行位置，跨 Server 不复用项目/目录。确认 Thread 回执后关联，首次 Turn 失败不丢关系；关联未知结果只核对和重试关系，不能重新执行。客户端交接记录按产品/账号隔离，SQLite 始终拥有任务和关联；账号撤销、销毁或新导航隔离迟到工作。
+- 验证入口：`tests/tasks-*.test.ts`、`scripts/smoke-tasks-workbench.ts`。实际产物与平台验证状态见 Task Pack。
+- TSK-08：已有会话的顶部“…”位于右面板按钮左侧，通过固定任务 authority 设定多个归属任务；使用稳定 Server/Thread 身份，不把当前聊天 Host 当任务库。每个关联行单独反馈写入，冲突或未知结果重新读取而不重放。草稿不显示入口，切会话/账号关闭旧选择器，解除关系不改变会话执行。
+- TSK-09：会话顶部菜单的重命名与置顶操作消费已有 ThreadTitleWriter 和原生 thread management port，与侧栏共享持久状态。只显示 Host 支持的动作；不依赖 Tasks 插件可用性来授权会话管理。重命名使用共享 ModalSurface，失败保留输入、处理中禁用重复提交；置顶失败留在菜单可重试，不伪造已成功状态。菜单/编辑会话按账号、Host、Thread 隔离，切换撤销旧 UI。
+
+
+## Employee account entrance
+
+- The IOA plugin owns the employee footer photo, same-origin authenticated proxy
+  and revocable object URL. No employee photo is added to message labels. Photo
+  failure preserves the verified name and generic account icon; old account
+  responses cannot replace the current account's avatar.
+
+
+- A configured Tencent OA identity provider automatically projects the verified
+  request identity into the existing Sidecar footer. The label is the employee
+  login name, or “员工身份” when anonymous; clicking opens details and refresh.
+- Footer precedence changes presentation only. Product account credentials and
+  resource authority remain independently owned; equal precedence is rejected
+  and unloading an employee provider restores the product entrance.
+- No fixed employee login URL, synthetic identity or unsupported logout control
+  is presented. Authoritative 401/expiration clears the footer; details remain
+  available for refresh. Covered by `tests/tencentoa.test.ts` and the real footer
+  controls in `scripts/smoke-tencentoa.ts`; live gateway evidence is separate.
+
 ## Embedded panel host presentation
 
 - Embedded panel viewport and its complete DOM content reuse the current conversation's panel service,
@@ -119,7 +160,7 @@ Surface消费Shell的同一逻辑active投影：隐藏立即退出模拟光标�
 | WSP-08 | 已取消/已退出的 fork 结果不能重新挂载；释放原运行时订阅，不新建连接清理 | SideChatService 代次检查；聚焦单测 |
 | WSP-09 | Side Chat 关闭确认绑定准确 owner/tab；取消确认不影响任务 | Shell ModalRequest；UI smoke 待验证 |
 | WSP-10 | Browser 物理 slot 使用实际 region/visibility；旧 lease 不覆盖新 slot | BrowserPresentationCoordinator；迁移 smoke 待验证 |
-| WSP-11 | 右侧/侧栏拖动实时改变几何；显隐 target、progress、mounted 分离。浮动侧栏与外侧命中层由 AppShell 共同 Portal 到 body 级覆盖宿主，成为窄屏唯一交互前景，盖过独立 Browser Surface portal；关闭时直到退出动画结束，其内容 Portal、导航投影与外侧命中层仍归浮动呈现所有，首次外侧触摸只关闭侧栏、不点穿浏览器或正文。右面板状态不因遮盖而重建，侧栏关闭后恢复呈现 | usePanelAnimation、FloatingLeftPanel、AppShell、BrowserPresentation；侧栏模型/真实组件帧采样及手机触摸验证 |
+| WSP-11 | 右侧/侧栏拖动实时改变几何；显隐 target、progress、mounted 分离。浮动侧栏与外侧命中层由 AppShell 共同 Portal 到 body 级覆盖宿主，成为窄屏唯一交互前景，盖过独立 Browser Surface portal；关闭时直到退出动画结束，其内容 Portal、导航投影与外侧命中层仍归浮动呈现所有，外侧命中层显式恢复 pointer hit testing；首次外侧触摸（包括空白）只关闭侧栏、不点穿浏览器或正文。右面板状态不因遮盖而重建，侧栏关闭后恢复呈现 | usePanelAnimation、FloatingLeftPanel、AppShell、BrowserPresentation；侧栏模型/真实组件帧采样及手机触摸验证 |
 | WSP-12 | Thread 菜单与 Side Chat 只消费版本匹配、显式声明的 Host 生命周期能力；菜单 Fork 仅需 fork，Side Chat 须同时声明 fork/ephemeral/injectItems/unsubscribe。不支持时明确失败，不用空会话模拟或删除父历史。菜单 Fork 等待 Host 回执时有可见状态，收到 child ID 后不等待目录刷新即可打开；若用户已切换 route scope，迟到结果不得抢回导航 | 协议能力解析、Workbench 门控、forkAndOpenThread；Codex/DSH 真实 Host 与负例验证 |
 | WSP-13 | ephemeral fork 返回结果是 baseline，不请求持久 Resume/queue；旧连接代次不能被采用 | Session.adoptFork + HostRuntime；appserver-session.test.ts 与 smoke-side-chat-appserver.ts |
 | WSP-14 | 当前产品没有下方面板、移动到下方/Show bottom panel 入口或底部占位；旧标签无损归回右侧 | AppShell/RightPanel、restoreRightPanelTabs；类型、聚焦测试、Web/native smoke |
@@ -220,6 +261,8 @@ WSP-29/30 所有权补充：Renderer 的 capability 声明接受与 Engine 挂�
 
 ## Shell pane ownership（Codex 26.908.40834）
 
+2026-10-11 主工作台导航拓扑更新：Web/Electron 的应用入口与当前页面上下文合并为单列 Sidebar（`ShellNavigationConfig.layout=unified`），顶部 Start/扩展目的地，中部会话或设置列表，底部 Settings/账户。整个 Sidebar 只有一个宽度、一个显隐入口；不显示独立 Applications 抽屉、Pin 或 compact 应用栏。旧 rail 偏好不参与该布局的空间预算，也不改写它们。浮动/固定呈现移动同一组 portal 内容，不复制上下文、草稿或滚动 owner；窄屏选择目的地关闭浮层。此条替代主工作台原有并排 Primary/Context 呈现，嵌入产品无 Shell 导航时沿用原契约。借鉴的是命名参考 `ref/codex/terminal/use-app-shell-layout-motion-04358.ts` 的单一 leftPanelSlot 拓扑，保留 OpenCraft 的路由、扩展与空间策略。
+
 | ID | 不变量 | 实现责任与证据 |
 |---|---|---|
 | SHL-01 | Pane 几何只投影一次；内容面板宽度、占位、聊天 Frame 均从同一 paneGeometry 读取 | workspace-pane-geometry.ts；纯函数矩阵及帧采样 |
@@ -291,7 +334,13 @@ Connector 目录浏览不套用设置行：采用限宽品牌卡片，已配置�
 
 国内控制台隐藏发布允许右侧浏览器标签与对话文件只读预览，默认收起，复用 Shell resize owner。只读预览不提供目录树、搜索、编辑与终端入口；权限仍由 Host 决定。新草稿保留面板开关所在标题栏；面板元数据与会话绑定由本次 Bot 的 Application 内存持有，销毁时释放，不从其他账号或独立站点的 localStorage 恢复。
 
+## 会话顶部信息
+
+手机宽度（不超过 640px）不展示会话标题旁的 Project/工作区附文，标题与操作按钮保留。桌面继续展示附文。已有“…”菜单的会话详情以只读方式展示实际项目名与工作目录：优先当前会话执行信息，目录尚未恢复时可用同一会话的规范 Thread 元数据；未知字段不伪造，不更改执行目录或启动会话。
+
 ## Markdown 文件预览
+- 下载按钮沿用文件标题栏同排操作的尺寸、图标和反馈样式；不单独放大下载控件或为它撑高标题栏。
+- 文件预览标题栏右侧提供下载原文件；包括空文件、图片和不可预览的二进制。下载使用当前 Host/path/runtime generation 下已读取的 Blob 和文件名，不导出渲染 HTML 或未保存编辑草稿，不写回 Host。读取未完成、读取失败或旧资源 URL 尚未替换时禁用；切换身份/关闭释放 URL。只读内嵌预览同样允许下载。
 - 文件面板默认将 `.md` / `.markdown`（大小写不敏感）交给既有 WebChatDocument 排版，可切换到原始文本；不将原始 HTML 注入 DOM。相对文件链接与图片以当前文件目录解析，继续消费当前 Host 的资源接口和 Blob lease。
 - 内嵌模式维持只读、无目录/搜索/监听/写入；写入执行入口必须先检查只读状态，拒绝后不得调用 Host 写入或失效 Blob 缓存。预览/源码是文件身份下的局部状态，不修改会话或源文件。
 - HTML 预览在创建沙盒 iframe 前移除普通链接、图片热区及 SVG 链接的目标、自动刷新跳转和可恢复链接目标的 SVG 动画；点击预览正文不得将 iframe 导航到外部页面，避免离开初始 CSP 后加载外部资源。源码视图继续显示未经改写的文件内容。
@@ -302,7 +351,7 @@ Connector 目录浏览不套用设置行：采用限宽品牌卡片，已配置�
 - PDF 文档、Worker、当前页绘制与文字层属于资源 View；换文件或卸载取消旧任务，晚到结果不得写入新资源。每次只绘制当前页，限制高 DPI 画布像素，Worker、CMap、字体和编解码资源随构建提供，不依赖外部 CDN。
 - 文件预览不修改原附件、文件、会话或引擎能力。Web 的共享 Renderer 不宣称已完成 Expo 原生 PDF 阅读器。
 
-内嵌控制台主 Composer 的编辑区域最小高度为 74px；新会话与已有会话保持一致，增长由同一输入区域承担，工具栏继续位于底部。
+独立与内嵌入口共用 Composer 编辑区域高度规则；新会话与已有会话保持一致，增长由同一输入区域承担，工具栏继续位于底部。
 
 Markdown preview entry: explicit `.md` / `.markdown` paths in completed inline code are clickable and use the same resource policy and Host-scoped right panel as Markdown links. Bare names, commands, external URLs, streaming paths and code within an explicit link retain their original semantics. No file is read before clicking.
 
@@ -322,3 +371,20 @@ and platform hit testing; the 16-unit optical box does not dictate the touch
 target. Mobile keeps 44-point targets with neutral, transparent toolbar buttons.
 Panel visibility remains a projection of its existing owner, including after
 a swipe; icon adaptation must not introduce a parallel navigation state.
+
+### Plugin-owned conversation participant badges
+
+- IOA projects verified authors of retained user-message history, not viewers,
+  submitted identity bindings, queued input or Turn count. The same distinct set
+  supplies the circular `+N` badge and its login-name list.
+- Presence is a derived index in the existing Host SQLite file. First-read native
+  reconciliation, fork/rollback and live Item fences prevent stale or unused mappings
+  from creating participants. Model failure does not remove accepted user input.
+- The generic Thread metadata hook and badge slot carry no IOA domain policy. The
+  plugin is enabled by deployment and advertised capability, never a client switch.
+- Sidebar owns one open Thread overlay. Badge buttons are independent of navigation;
+  old close/focus callbacks cannot close or focus away from a newer overlay.
+
+Composer 编辑区最低高度按 viewport 统一：达到 768px 时为 64px；低于该宽度为 48px，不依赖指针类型。独立与内嵌入口、新会话与已有会话以及窄面板均使用同一规则，内嵌入口不得另设高度覆盖。内容继续自动增高至既有滚动上限。
+
+Sidebar Server 来源小球提示使用可 hover 进入、可选中文案的 Radix Tooltip，通过 Workbench Presentation Root 脱离滚动裁剪；来源颜色、行点击和固定槽位不变。视觉复用符合 frontend/DESIGN.md 的浅色 Tooltip contract。

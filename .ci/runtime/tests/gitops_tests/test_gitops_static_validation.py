@@ -591,5 +591,136 @@ class GitOpsStaticValidationTests(unittest.TestCase):
         )
 
 
+class DesktopRoleUpstreamPairingTests(unittest.TestCase):
+    """ctl role=api 与网关 desktop_upstream 的配对约束。
+
+    2026-10-12 事故：ctl 侧 role=api 先进 gitops，网关侧 desktop_upstream
+    与 resource/viewer 白名单没跟上，桌面请求被投给拒收 /desktop/* 的
+    ctl-api，shprod/sgprod 云电脑全部 404。
+    """
+
+    def setUp(self) -> None:
+        self.root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.root)
+
+    def write_ctl(self, env: str, role: str | None) -> None:
+        target = self.root / "argocd/services/ctl" / env
+        target.mkdir(parents=True, exist_ok=True)
+        if role is None:
+            (target / "kustomization.yaml").write_text(
+                "resources:\n  - ../../../../ctl/k8s/base\n", encoding="utf-8"
+            )
+            return
+        (target / "kustomization.yaml").write_text(
+            textwrap.dedent(
+                f"""\
+                resources:
+                  - ../../../../ctl/k8s/base
+                patches:
+                  - target:
+                      kind: Deployment
+                      name: ctl-api
+                    patch: |-
+                      - op: add
+                        path: /spec/template/metadata/labels/ctl.clawhub.dev~1role
+                        value: {role}
+                """
+            ),
+            encoding="utf-8",
+        )
+
+    def write_gateway(
+        self,
+        env: str,
+        *,
+        desktop_upstream: bool,
+        desktop_paths: tuple[str, ...],
+    ) -> None:
+        target = self.root / "argocd/services/service-gateway" / env
+        target.mkdir(parents=True, exist_ok=True)
+        lines = [
+            "routes:",
+            "  - name: ctl",
+            "    prefix: /v1/instances",
+            "    upstream: http://ctl-api.ctl.svc.cluster.local",
+        ]
+        if desktop_upstream:
+            lines.append("    desktop_upstream: http://ctl-desktop.ctl.svc.cluster.local")
+        lines.append("    path_policy: allowlist")
+        lines.append("    path_allow:")
+        lines.append('      - { method: GET, path: "/v1/instances" }')
+        for path in desktop_paths:
+            lines.append(
+                '      - { method: POST, path: "/v1/instances/{instance_id}' + path + '" }'
+            )
+        (target / "config.yaml").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    def test_role_api_without_desktop_upstream_fails(self) -> None:
+        self.write_ctl("shprod", "api")
+        self.write_gateway(
+            "shprod",
+            desktop_upstream=False,
+            desktop_paths=("/desktop/session", "/desktop/resource", "/desktop/viewer"),
+        )
+
+        errors = gitops_static_validation.validate_desktop_role_upstream_pairing(
+            self.root, "shprod"
+        )
+
+        self.assertEqual(len(errors), 1)
+        self.assertIn("desktop_upstream", errors[0])
+
+    def test_role_api_missing_desktop_allowlist_fails(self) -> None:
+        self.write_ctl("sgprod", "api")
+        self.write_gateway(
+            "sgprod", desktop_upstream=True, desktop_paths=("/desktop/session",)
+        )
+
+        errors = gitops_static_validation.validate_desktop_role_upstream_pairing(
+            self.root, "sgprod"
+        )
+
+        self.assertEqual(len(errors), 2)
+        self.assertTrue(any("/desktop/resource" in err for err in errors))
+        self.assertTrue(any("/desktop/viewer" in err for err in errors))
+
+    def test_paired_release_passes(self) -> None:
+        self.write_ctl("shprod", "api")
+        self.write_gateway(
+            "shprod",
+            desktop_upstream=True,
+            desktop_paths=("/desktop/session", "/desktop/resource", "/desktop/viewer"),
+        )
+
+        self.assertEqual(
+            gitops_static_validation.validate_desktop_role_upstream_pairing(
+                self.root, "shprod"
+            ),
+            [],
+        )
+
+    def test_empty_role_stays_compatible(self) -> None:
+        """空角色是兼容模式（ctl-api 全放行），不得强制要求网关配对。"""
+        self.write_ctl("beijing-sandbox", None)
+        self.write_gateway("beijing-sandbox", desktop_upstream=False, desktop_paths=())
+
+        self.assertEqual(
+            gitops_static_validation.validate_desktop_role_upstream_pairing(
+                self.root, "beijing-sandbox"
+            ),
+            [],
+        )
+
+    def test_role_api_without_gateway_config_fails(self) -> None:
+        self.write_ctl("shprod", "api")
+
+        errors = gitops_static_validation.validate_desktop_role_upstream_pairing(
+            self.root, "shprod"
+        )
+
+        self.assertEqual(len(errors), 1)
+        self.assertIn("桌面请求无处投递", errors[0])
+
+
 if __name__ == "__main__":
     unittest.main()

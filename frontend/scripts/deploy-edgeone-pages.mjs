@@ -4,9 +4,9 @@ import { homedir, tmpdir } from "node:os";
 import { join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const defaultProjectName = "lightvela-preview";
+const defaultProjectName = "lightvela-prerelease";
 const defaultEnvironment = "production";
-const defaultArea = "global";
+const defaultArea = "overseas";
 const defaultSmokeAttempts = 18;
 const defaultSmokeRetryDelayMs = 5_000;
 const smokeRequestTimeoutMs = 20_000;
@@ -118,6 +118,23 @@ async function verifyEdgeOneDeploymentOnce({ deployUrl, deployDir, fetchImpl }) 
   assertStatus(root, 200, "Preview root HTML");
   if (!root.response.headers.get("content-type")?.includes("text/html") || !/<html[\s>]/i.test(root.body.toString("utf8"))) {
     throw new Error("Preview root did not return HTML");
+  }
+  if (firstEntryScript(root.body.toString("utf8")) !== entryScript) {
+    throw new Error("Preview root HTML references a different release");
+  }
+
+  // Check both URL forms that diverged during the October 12 release incident.
+  for (const route of ["agents", "account"]) {
+    const localPagePath = join(assetsRoot, route, "index.html");
+    if (!existsSync(localPagePath)) continue;
+    const localPageScript = firstEntryScript(readFileSync(localPagePath, "utf8"));
+    for (const pathname of [`/${route}`, `/${route}/`]) {
+      const page = await readResponse(session, pathname, fetchImpl);
+      assertStatus(page, 200, `Preview page ${pathname}`);
+      if (!page.response.headers.get("content-type")?.includes("text/html") || firstEntryScript(page.body.toString("utf8")) !== localPageScript) {
+        throw new Error(`Preview page ${pathname} did not return HTML for the expected release`);
+      }
+    }
   }
 
   const entry = await readResponse(session, entryScript, fetchImpl);

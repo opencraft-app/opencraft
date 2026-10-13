@@ -1,23 +1,24 @@
-/**
- * Finds a prefix whose block structure cannot be changed by appended stream
- * text. The unstable tail always retains at least the final Markdown block.
+/** Marked owns container boundaries. Blank lines alone cannot close a list,
+ * quote or indented code block. Always retain the final non-space block.
+ * Callers must separately exclude document-global reference dependencies.
  */
-export function findStableMarkdownPrefix(source: string, openFenceStart: number | null): number {
-  const searchEnd = openFenceStart ?? source.length;
-  if (searchEnd <= 0) return 0;
-
-  let inFence: "`" | "~" | null = null;
-  let lastBlankBoundary = 0;
-  let offset = 0;
-  for (const line of source.slice(0, searchEnd).split(/(?<=\n)/)) {
-    const fence = /^\s*(`{3,}|~{3,})/.exec(line);
-    if (fence !== null) {
-      const kind = fence[1]?.[0] === "~" ? "~" : "`";
-      inFence = inFence === null ? kind : inFence === kind ? null : inFence;
-    } else if (inFence === null && /^\s*$/.test(line)) {
-      lastBlankBoundary = offset + line.length;
-    }
-    offset += line.length;
+export function findStableMarkdownPrefix(tokens: readonly Record<string, unknown>[]): {
+  readonly tokenCount: number;
+  readonly sourceEnd: number;
+} {
+  let tokenCount = tokens.length;
+  while (tokenCount > 0 && tokens[tokenCount - 1]?.type === "space") tokenCount -= 1;
+  tokenCount = Math.max(0, tokenCount - 1);
+  // A partial following block (e.g. "2" becoming "2. ") can rejoin a
+  // preceding list/quote/code container. Keep that container until another
+  // independent block separates it from the live tail.
+  while (tokenCount > 0 && ["space", "list", "blockquote", "code", "table", "html"]
+    .includes(String(tokens[tokenCount - 1]?.type))) tokenCount -= 1;
+  let sourceEnd = 0;
+  for (let index = 0; index < tokenCount; index++) {
+    const raw = tokens[index]?.raw;
+    if (typeof raw !== "string") return { tokenCount: 0, sourceEnd: 0 };
+    sourceEnd += raw.length;
   }
-  return Math.min(lastBlankBoundary, searchEnd);
+  return { tokenCount, sourceEnd };
 }

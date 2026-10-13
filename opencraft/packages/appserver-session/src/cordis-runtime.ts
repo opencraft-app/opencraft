@@ -45,7 +45,11 @@ export async function createCordisThreadSessionRuntime(
     await fiber;
   };
 
-  await install(ThreadViewStoreService, { hostId: config.client.hostId });
+  await install(ThreadViewStoreService, {
+    hostId: config.client.hostId,
+    connectionGeneration: () => config.client.connectionGeneration,
+    frameScheduler: config.frameScheduler,
+  });
   await installEmpty(ThreadHistoryStrategyRegistryService);
   await installEmpty(ThreadResumeProjectorRegistryService);
   await installEmpty(ThreadNotificationProjectorRegistryService);

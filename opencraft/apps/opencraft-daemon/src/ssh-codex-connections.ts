@@ -55,9 +55,9 @@ export async function readSshCodexServerBindings(path: string): Promise<readonly
   });
 }
 
-export function createSshCodexEngineAdapter(binding: SshCodexServerBinding, stateDirectory?: string): CodexEngineAdapter {
+export function createSshCodexEngineAdapter(binding: SshCodexServerBinding, stateDirectory?: string, createThreadMetadata?: import("./codex-engine-adapter").RemoteCodexEngineOptions["createThreadMetadata"]): CodexEngineAdapter {
   const connection = binding.connection;
   return new CodexEngineAdapter({ kind: "remote", transport: new SshCodexTransport(connection),
-    ...createSshAttachmentOptions(binding, stateDirectory),
+    ...createSshAttachmentOptions(binding, stateDirectory), createThreadMetadata,
   });
 }

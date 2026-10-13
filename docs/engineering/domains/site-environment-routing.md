@@ -47,6 +47,8 @@ OpenCraft iOS 的内置 Bot DOM runtime 同时包含国内与国际的 frontend 
 
 ## 产品文档区域
 
+国内 `/docs/user-feedback/` 为独立中文反馈指南，在国内侧栏、slug 映射和生成注册表同时登记，并与 `/docs/contact-us/` 互链；提交入口仍为国内 `/support`，文档链接同步不得添加 `/zh-cn` 前缀；国际反馈链接才使用对应语言前缀。国际文档不回退到该国内页面。反馈表单联系方式保持选填，展示邮箱示例，不再展示重复的联系提示句。
+
 国际站马来语使用 `ms-MY`（Bahasa Melayu），公开路径前缀为 `/ms-my/`，语言注册表 `frontend/src/i18n/locales.json` 同时控制语言切换与公开发布。马来语文档以 `src/content/docs/ms/` 为独立源，覆盖国际站英文文档清单，不跨区域或语言回退；标题、简介与分类来自同目录 `metadata.json`，生成 `/ms-my/docs/` 页面与独立搜索索引。国内站不生成马来语公开页面。
 
 马来语主界面和公共结构化词典均通过语言就绪流程按需装载；非马来语浏览器不下载公共词典，马来语资源与公共词典都准备完成后才渲染，服务端预载保证静态首帧完整。场景任务文案仅在马来语消费时翻译，避免模块加载时计算。公共结构化文案仅收录实际消费的英文文本，保留字段绑定、内部标识和链接值；字典读取只允许自身键，避免把对象原型属性当作译文。产品对话使用嵌入式 OpenCraft 工作台，`opencraft/apps/workbench-web/src/i18n/catalogs.ts` 的 embeddedLocaleCatalogs 注册 `ms-MY`，宿主语言更新由 WorkbenchLocaleController 消费；独立 OpenCraft 的语言列表仍由独立目录管理。马来语工作台目录须通过 ICU 参数和完整条目检查。
@@ -241,3 +243,10 @@ OpenCraft iOS 的内置 Bot DOM runtime 同时包含国内与国际的 frontend 
 文档复用 Fumadocs 移动导航与搜索，并以 `--fd-banner-height: 60px` 为公开站点顶部栏预留空间，防止搜索和侧栏入口被覆盖。桌面保留原有文档侧栏搜索。
 
 全局搜索弹窗挂载在文档页面的语言 Provider 之外，因此弹窗根据当前文档路径解析语言，并复用 `docs-ui-translations.ts` 的 UI 目录，避免泰语结果仍配英文搜索框和关闭按钮。
+
+
+### 微信账号冲突的 API 消费
+
+Bot 通道确认返回 `409 WEIXIN_ACCOUNT_OCCUPIED` 时，Repository 读取 `details.occupied_by_bot` 中的真实 `bot_id` / `bot_name`。前端保留现有实例与 Bot 归属解析，弹窗提供前往原 Bot 通道配置页的操作；用户手动断开后再扫码。Weixin 流式成功只表示扫码完成，须等 CTL confirm 成功才触发连接成功提示。旧后端/无有效 owner details 的错误仍走原失败提示。回滚和账号唯一性由 CTL 负责；双站代码共享不构成任何站点已发布证据。
+
+Bot 删除的 CHANNEL_OCCUPIED 从 details.channel 投影为 RepositoryError.occupiedChannel；微信与 WhatsApp 分别提示断开后再删除，未知通道使用既有错误兜底，避免依赖不会穿过 CTL HTTP 序列化的包装文本。

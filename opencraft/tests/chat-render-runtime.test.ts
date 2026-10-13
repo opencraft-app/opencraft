@@ -587,13 +587,16 @@ test("the Markdown root owns Codex capture-phase semantic copy", () => {
   assert.match(markdownCopySource, /data-markdown-copy-text/u);
 });
 
-test("Codex fade timeline schedules globally, tapers after 96ms, and remembers settled keys", () => {
+test("fade timeline caps cumulative waiting and does not replay delay on remount", () => {
   const timeline = new ChatFadeTimeline();
   const delays = Array.from({ length: 8 }, (_, index) =>
     timeline.delayFor(`segment-${index}`, 100),
   );
-  assert.deepEqual(delays, [0, 16, 32, 48, 64, 80, 96, 100]);
-  assert.equal(timeline.delayFor("segment-4", 999), 64);
+  assert.deepEqual(delays, [0, 16, 32, 48, 64, 80, 96, 96]);
+  for (let index = 8; index < 5_000; index++) assert.ok(timeline.delayFor(`segment-${index}`, 100) <= 96);
+  assert.equal(timeline.delayFor("segment-4", 150), 14);
+  assert.equal(timeline.delayFor("segment-4", 999), 0);
+  assert.equal(timeline.isSettled("segment-4999", 346), true);
   timeline.settle("segment-4");
   assert.equal(timeline.isSettled("segment-4"), true);
   assert.equal(timeline.delayFor("after-idle-gap", 1_000), 0);

@@ -2,6 +2,7 @@ export interface OpenCodeFence {
   readonly start: number;
   readonly marker: "```" | "~~~";
   readonly language: string | null;
+  readonly delimiterLength: number;
 }
 
 export interface PreprocessedChatMarkdown {
@@ -66,17 +67,20 @@ function locateOpenFence(source: string): OpenCodeFence | null {
   let offset = 0;
   let open: OpenCodeFence | null = null;
   for (const line of lines) {
-    const match = /^\s*(`{3,}|~{3,})([^\n]*)/u.exec(line);
+    const match = /^ {0,3}(`{3,}|~{3,})([^\n\r]*)/u.exec(line);
     if (match !== null && !isEscaped(line, match.index)) {
       const marker = match[1]?.startsWith("~") ? "~~~" : "```";
       if (open === null) {
         const info = match[2]?.trim() ?? "";
+        if (marker === "```" && info.includes("`")) { offset += line.length; continue; }
         open = {
           start: offset,
           marker,
           language: info.length === 0 ? null : info.split(/\s+/u, 1)[0] ?? null,
+          delimiterLength: match[1]?.length ?? 3,
         };
-      } else if (open.marker === marker) {
+      } else if (open.marker === marker && (match[1]?.length ?? 0) >= open.delimiterLength
+        && /^[ \t]*$/u.test(match[2] ?? "")) {
         open = null;
       }
     }
@@ -172,14 +176,13 @@ export function preprocessChatMarkdown(
   const openFence = locateOpenFence(markdown);
   if (options.streaming !== true || markdown.length === 0) return { markdown, openFence };
 
+  // Marked accepts an EOF-terminated fence; appending a synthetic triple fence
+  // corrupts longer delimiters and can turn code bytes into prose.
+  if (openFence !== null) return { markdown, openFence };
+
   if (markdown.includes("`") && hasOddInlineBackticks(markdown)) {
     return { markdown, openFence: null };
   }
-  if (openFence !== null && openFence.marker === "```") {
-    markdown = markdown.endsWith("\n") ? `${markdown}\`\`\`` : `${markdown}\n\`\`\``;
-    return { markdown, openFence };
-  }
-
   if (markdown.includes("![")) markdown = markdown.replace(incompleteImageLine, "$1");
   if (markdown.includes("](")) markdown = markdown.replace(incompleteLinkTarget, "$1");
   markdown = closeOddDelimiter(markdown, "**");

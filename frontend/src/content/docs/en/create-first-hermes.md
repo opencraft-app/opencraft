@@ -2,11 +2,11 @@
 
 ## Summary
 
-**Creating your first Hermes instance goes like this: sign in with Google or GitHub, choose an available plan, activate it under the current plan rules, let the platform create the instance automatically, then use Web Chat; connect a channel when you want to use a messaging app. Everything happens in the browser — no servers to buy, nothing to deploy locally. A Hermes instance is the cloud runtime your agent lives in, and once created it stays online 24/7. After it is ready, open My Agent to use Daily → Chat, then configure a model, messaging channel, or Skills as needed; if you do not have your own model API key yet, you can start talking right away using the model credits included with your plan.**
+**After signing in with Google or GitHub and activating an available plan, open the [Agent console](/agents/overview/). Complete the first Bot setup: enter a required name, optionally add a description, and adjust its appearance. Select Create and wait for creation and initial configuration to finish. Select Start your journey once configuration finishes, then open Web Chat for that Bot. A messaging channel is optional; available plan model credits or a configured model are required for replies.**
 
 ---
 
-A Hermes instance is the cloud runtime where your LightVela Agent lives. Activating your first instance follows five steps: **sign in with Google or GitHub → select an available plan → activate it through the current activation flow → let LightVela provision the instance → start in Web Chat, then connect a channel if needed**. Everything happens in the browser, with no server purchase or local deployment required. This page walks through the process in order.
+The close control and advanced copy options are provided only when valid existing copy sources are available. The first setup without a source must be completed. Appearance controls let you change color, shape, and accessories; they do not choose the copy source.
 
 ## What this page covers
 
@@ -42,9 +42,9 @@ There is no China real-name verification step on the international site. After s
 
 Choose an available plan on the [Subscribe page](/subscribe/) and follow the plan card to activate it. Check the page for current introductory offers and prices.
 
-### 4. Let LightVela provision the instance automatically
+### 4. Complete the first Bot setup
 
-After the plan is activated, LightVela **automatically assigns a dedicated cloud environment and creates your first Hermes instance**. You do not need to buy, deploy, or configure a server. Provisioning normally begins immediately, and you can open the console when the instance is ready.
+After signing in with Google or GitHub and activating an available plan, open the [Agent console](/agents/overview/). Complete the first Bot setup: enter a required name, optionally add a description, and adjust its appearance. Select **Create** and wait for creation and initial configuration to finish. Select **Start your journey** once configuration finishes, then open Web Chat for that Bot. A messaging channel is optional; available plan model credits or a configured model are required for replies.
 
 ### 5. Configure and wake up your Agent
 
@@ -66,7 +66,7 @@ Your first Hermes Agent is now ready to stay online in the cloud 24/7.
 
 ### How soon can I use the instance after activation?
 
-LightVela starts provisioning the Hermes instance automatically after plan activation. Once the Bot is ready and plan credits are available or a model is configured, send a message in Daily → Chat. Connect an external channel later if needed.
+After creation, confirm the new Bot name in the selector, open its Web Chat, and send a short test message. If creation or initial configuration reports a failure, follow the displayed retry action and inspect the Bot list before starting another creation. If no reply arrives, check the Bot status and model credits or model configuration.
 
 ### Where can I check current plans and offers?
 

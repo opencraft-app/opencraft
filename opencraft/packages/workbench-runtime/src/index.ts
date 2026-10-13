@@ -1,4 +1,5 @@
 export * from "./appserver-runtime";
+export { createThreadViewFrameScheduler } from "@opencraft/appserver-session";
 export * from "./agent-runtime";
 export * from "./appserver-terminal";
 export * from "./conversation-terminal";

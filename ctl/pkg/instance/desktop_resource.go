@@ -291,7 +291,38 @@ func (l *logic) prepareDesktopInput(ctx pctx.Context, session *desktopSession, s
 		return err
 	}
 	if !sandboxCommandSucceeded(result) || ctx.Err() != nil {
-		return errcode.ErrDesktopNotConfigured
+		// 激活失败且网关已记录本代次，说明物理身份在本代次内被换掉了（观察进程
+		// 带 Restart=on-failure，崩溃后自动拉起即改变身份）。网关刻意拒绝在同一
+		// 代次下静默替换身份，只有换代才会被接受；继续用同一代次重试会让 epoch
+		// 永远停在已消失的进程上，写授权再也签不出来，键鼠永久不可用且不可自愈。
+		if expected != generation || ctx.Err() != nil {
+			return errcode.ErrDesktopNotConfigured
+		}
+		fresh, uuidErr := uuid.NewRandom()
+		if uuidErr != nil {
+			return errcode.ErrSandboxServiceError
+		}
+		// 旧代次签出的观看租约绑定的是已消失的桌面，换代前必须先撤销。
+		if err := l.revokeDesktopViewersLocked(ctx, session); err != nil {
+			return err
+		}
+		session.mu.Lock()
+		if session.generation != generation {
+			session.mu.Unlock()
+			return errcode.ErrDesktopTargetChanged
+		}
+		generation = fresh.String()
+		session.generation = generation
+		session.mu.Unlock()
+		// 仍以旧代次作为 CAS 期望值，迟到的旧激活命令不会复活被淘汰的身份。
+		result, err = l.execDesktopInstallCommandLocked(ctx, session, sandboxID,
+			renderDesktopInputActivateCommand(generation, expected, incarnation))
+		if err != nil {
+			return err
+		}
+		if !sandboxCommandSucceeded(result) || ctx.Err() != nil {
+			return errcode.ErrDesktopNotConfigured
+		}
 	}
 	currentIncarnation, err := l.verifyDesktopIncarnationLocked(ctx, session, sandboxID)
 	if err != nil {
