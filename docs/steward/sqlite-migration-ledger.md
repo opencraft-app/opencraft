@@ -7,8 +7,8 @@
 正式设计见 [sqlite-lifecycle](../sqlite-lifecycle.md)；本目标按其第 4 阶段「其他权威库」落地，并把一键更新的回退语义补齐。
 
 - [x] 阶段 0：评估现状并选定方案。9 个库中 2 个有账本；更新器只回退代码（thr_7gi4fzwvkk）
-- [x] 阶段 1：共享模块 `packages/sqlite-node`（账本、升级前备份、无账本旧库处置）+ 纵向切片 document-storage、session-routing；已独立审查（thr_ivpebcdpvw，commit fee3313）
-- [ ] 阶段 2：其余六库接入：Host 的 thread-catalog（document 加版本字段）、executions（基线迁移为唯一 DDL 权威）、managed-connectors、account-pool（owner 是 codex-core 进程，升级路径独立）；Electron Main 的 ui-preferences、connector-configuration ← 进行中（最近线程 thr_7c5q9v62wf）
+- [x] 阶段 1：共享模块 `packages/sqlite-node`（账本、升级前备份、无账本旧库处置）+ 纵向切片 document-storage、session-routing；已独立审查（thr_ivpebcdpvw，rebase 后 commit cb5fb91）
+- [ ] 阶段 2：其余六库接入：Host 的 thread-catalog（document 加版本字段）、executions（基线迁移为唯一 DDL 权威）、managed-connectors、account-pool（owner 是 codex-core 进程，升级路径独立）；Electron Main 的 ui-preferences、connector-configuration ← 进行中（最近线程 thr_awp42y5zzb；thr_7c5q9v62wf 因分支落后 origin/main 未开工，已 rebase 后重派）
 - [ ] 阶段 3：daemon 全部库就绪后才监听与报告健康（含 main.ts 中 routing 在 supervisor 之后构造、打开失败不进入清理的问题）；真实升级/回退门禁接入 `test:server-updates`
 - [ ] 阶段 4：文档回写（sqlite-lifecycle 现状、AGENTS 规则）、autoreview、合并 main
 
