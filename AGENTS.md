@@ -2,8 +2,6 @@
 
 本文件只记录 `opencraft/` 相对 mono2 根规则的局部增量。先遵循仓库根 `AGENTS.md` 并运行其 Context Router；正式事实以当前源码、测试、生成契约和下列专题文档为准。
 
-管家工作簿在 `docs/steward/sqlite-migration-ledger.md`，存在时先读，只报未完成的用户待办。
-
 ## 完成标准
 
 - “分析、看看、先别改”只授权只读调查；行为修改必须完成实现、相关验证，并在用户可见结果依赖客户端时验证真实 Web/Electron/Expo 呈现。
