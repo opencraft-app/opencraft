@@ -6555,7 +6555,9 @@ export const AgentSettingsPage = ({
                                 <VelaImSessionItems
                                   items={velaImItems}
                                   notice={velaIm.restricted ? t("你的账号已被限制使用 Agent 群聊，如有疑问请联系管理员。")
-                                    : activeImAgent?.restricted ? t("这个 Agent 已被限制使用群聊，如有疑问请联系管理员。") : undefined}
+                                    : velaIm.signedInElsewhere ? t("已在其他设备或页面登录，这里已下线。")
+                                      : activeImAgent?.restricted ? t("这个 Agent 已被限制使用群聊，如有疑问请联系管理员。") : undefined}
+                                  noticeAction={velaIm.signedInElsewhere && !velaIm.restricted ? { label: t("重新连接"), onClick: velaIm.reconnect } : undefined}
                                   selectedID={velaImChatActive ? velaImConversation.conversationID : null}
                                   onSelect={(conversation) => {
                                     setVelaImConversation(conversation);

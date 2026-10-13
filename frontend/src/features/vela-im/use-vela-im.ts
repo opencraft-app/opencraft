@@ -45,6 +45,8 @@ export function useVelaIm(lightvelaToken: string | null, lightvelaUserID: string
   const [error, setError] = useState("");
   /** An admin restricted this person's IM identity: no session is issued and group chat is unavailable. */
   const [restricted, setRestricted] = useState(false);
+  /** The same person signed in on another device, or in more browser tabs than the IM app allows; this one is offline. */
+  const [signedInElsewhere, setSignedInElsewhere] = useState(false);
   const [connection, setConnection] = useState<Connection | null>(null);
   const [conversations, setConversations] = useState<ConversationItem[]>([]);
   const [contacts, setContacts] = useState<ContactItem[]>([]);
@@ -71,6 +73,7 @@ export function useVelaIm(lightvelaToken: string | null, lightvelaUserID: string
     let local: VelaBrowserClient | undefined;
     setError("");
     setRestricted(false);
+    setSignedInElsewhere(false);
     setConnection(null);
     setConversations([]);
     setContacts([]);
@@ -110,13 +113,18 @@ export function useVelaIm(lightvelaToken: string | null, lightvelaUserID: string
       observe("MESSAGE_MODIFIED", (e) => events.current.onModified?.(e.data as IMMessage[]));
       observe("MESSAGE_READ_BY_PEER", (e) => events.current.onModified?.(e.data as IMMessage[]));
       observe("MESSAGE_REVOKED", (e) => events.current.onRevoked?.(e.data as IMMessage[]));
-      observe("KICKED_OUT", () => {
+      observe("KICKED_OUT", (e) => {
         setStatus("offline");
+        const type = (e.data as { type?: string } | undefined)?.type;
+        if (type === client.TYPES.KICKED_OUT_MULT_ACCOUNT || type === client.TYPES.KICKED_OUT_MULT_DEVICE) {
+          setSignedInElsewhere(true);
+          return;
+        }
         // Restricting someone signs them out at once; ask the backend whether that is why.
         void api.imSession().catch((e: unknown) => { if (!cancelled && isRestricted(e)) setRestricted(true); });
       });
       observe("SDK_NOT_READY", () => setStatus((s) => (s === "offline" ? s : "reconnecting")));
-      observe("SDK_READY", () => { setStatus("ready"); setRestricted(false); });
+      observe("SDK_READY", () => { setStatus("ready"); setRestricted(false); setSignedInElsewhere(false); });
       setConnection({ api, client, selfID: client.userID, selfName });
       setStatus("ready");
       // Others see this person by their LightVela name, not the backend's placeholder.
@@ -204,6 +212,7 @@ export function useVelaIm(lightvelaToken: string | null, lightvelaUserID: string
     status,
     error,
     restricted,
+    signedInElsewhere,
     connection,
     conversations,
     contacts,

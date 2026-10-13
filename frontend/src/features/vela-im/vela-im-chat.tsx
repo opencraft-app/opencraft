@@ -46,6 +46,17 @@ const REVOKE_WINDOW_SECONDS = 120;
 const dismissalTitle = (dismissal: GroupDismissal, t: ReturnType<typeof useT>) =>
   dismissal.by === "admin" ? t("该群聊已被管理员解散") : dismissal.by === "owner" ? t("该群聊已被群主解散") : t("该群聊已解散");
 
+/** Takes the composer's place after another device or tab took over this person's IM session. */
+function SignedInElsewhereNotice({ onReconnect }: { onReconnect: () => void }) {
+  const t = useT();
+  return (
+    <div role="status" className="flex items-center gap-3 rounded-2xl border border-black/[0.08] bg-black/[0.02] px-4 py-3 text-sm">
+      <span className="min-w-0 flex-1 text-black/55">{t("已在其他设备或页面登录，这里已下线。")}</span>
+      <Button type="button" size="sm" variant="outline" className="shrink-0 rounded-lg" onClick={onReconnect}>{t("在此处重新连接")}</Button>
+    </div>
+  );
+}
+
 /** Takes the composer's place once the group is gone; an admin's reason is shown to every member. */
 function GroupDismissedNotice({ dismissal }: { dismissal: GroupDismissal }) {
   const t = useT();
@@ -573,7 +584,8 @@ export function VelaImChat({ controller, client, selfID, conversation, onBack, o
             {t("{{names}} 正在处理…", { names: Object.keys(working).map((id) => (isGroup ? memberName(id) : conversation.name)).join("、") })}
           </p>
         ) : null}
-        {dismissal ? <GroupDismissedNotice dismissal={dismissal} /> : (<>
+        {controller.signedInElsewhere ? <SignedInElsewhereNotice onReconnect={controller.reconnect} />
+          : dismissal ? <GroupDismissedNotice dismissal={dismissal} /> : (<>
         {isGroup && others.some((m) => isAgentID(m.userID)) ? (
           <div className="mb-2 flex flex-wrap gap-1.5" aria-label={t("快速 @ Agent")}>
             {others.length > 1 ? (

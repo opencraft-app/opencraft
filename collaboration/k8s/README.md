@@ -72,6 +72,9 @@ Secret 里缺少对应文件时进程会拒绝启动。启用顺序：
 4. 腾讯 IM 控制台「回调配置」：URL 为 `https://<service-gateway 公网域名>/v1/collaboration/callbacks/tencent-im/state`，
    Token 与 `im-callback.token` 一致；勾选建群前、申请入群前、拉人入群前、新成员入群后、成员退群后、群解散后、群资料修改后、
    群内发言前、单聊发消息前以及状态变更回调。
+   「功能配置 → 登录与消息 → 登录设置」：多端登录选「双平台登录」（Web + 一个移动/桌面端）或「多平台登录」
+   （每种平台同时 1 台，同平台第二台会挤掉前一台）；「Web 端可同时在线个数」设为 3，允许同一人开 3 个标签页，
+   第 4 个会挤掉最早的那个。被挤下线的网页显示「已在其他设备或页面登录」，可在原处重新连接。
 5. gateway-dashboard 的 overlay 设置 `GATEWAY_DASHBOARD_COLLABORATION_API_URL`
    （beijing-sandbox 已配置为 `http://collaboration.lightvela-collaboration.svc.cluster.local`），
    「IM 群聊」页即可使用。
