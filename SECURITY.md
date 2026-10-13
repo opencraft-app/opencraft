@@ -30,6 +30,19 @@ For local inspection, scan a clean export of the intended commit with Gitleaks
 `runtime/dsh` and `hemesclient`; retain the findings and verify each lockfile is
 unchanged. A failed audit is a finding, not a completed remediation.
 
+### Outstanding dependency findings (2026-10-13)
+
+Compatible dependency updates clear the isolated DSH runtime audit. The root
+workspace audit still reports high-severity findings from `braces@3.0.3`
+([GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm)) and
+`node-forge@1.4.0`
+([GHSA-86w9-cpqp-85rv](https://github.com/advisories/GHSA-86w9-cpqp-85rv)),
+including their dependent packages. Neither package has a patched release at
+the time of this check. npm's suggested Expo major downgrade is not a compatible
+fix for the current Expo/React Native stack. Lower-severity findings also remain;
+rerun `npm audit` for the current inventory. These findings are not exempted:
+the root audit and aggregate security check remain failing until remediated.
+
 ## Publication boundaries
 
 Public-release preparation includes source and Git-history secret scans,

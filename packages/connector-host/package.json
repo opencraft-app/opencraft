@@ -1,1 +1,1 @@
-{"name":"@opencraft/connector-host","version":"0.1.0","private":true,"type":"module","exports":{".":"./src/index.ts"},"scripts":{"typecheck":"tsc --noEmit"},"dependencies":{"@opencraft/connector-core":"0.1.0","@modelcontextprotocol/sdk":"1.30.0","undici":"^7.16.0"}}
+{"name":"@opencraft/connector-host","version":"0.1.0","private":true,"type":"module","exports":{".":"./src/index.ts"},"scripts":{"typecheck":"tsc --noEmit"},"dependencies":{"@opencraft/connector-core":"0.1.0","@modelcontextprotocol/sdk":"1.32.1","undici":"^7.16.0"}}
