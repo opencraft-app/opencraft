@@ -9,8 +9,8 @@ enable_inner_sign = true
 default_template_id = "openclaw-default"
 soul_template_dir = "/etc/ctl/souls"
 # vela-im Hermes 插件包（vela-im: npm run package:hermes-plugin）；Agent 开通 IM 身份前按需安装到实例。
-vela_im_plugin_url = "https://agentone-1388575217.cos.ap-guangzhou.myqcloud.com/vela-im/vela-im-hermes-plugin-0.3.0-dab3dad18a60.tar.gz"
-vela_im_plugin_sha256 = "dab3dad18a6009fa35b417f052ab9d7ce5d7ccf5c42af5c72b7f763f1438e190"
+vela_im_plugin_url = "https://agentone-1388575217.cos.ap-guangzhou.myqcloud.com/vela-im/vela-im-hermes-plugin-0.3.1-9c86a6817051.tar.gz"
+vela_im_plugin_sha256 = "9c86a6817051879412802141b796ec5eb4787c54ec54db7c8c99810e5c0afc4b"
 
 [bypass]
 specify_names = []
