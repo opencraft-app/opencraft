@@ -41,6 +41,7 @@ function AgentStateBadge({ agent }: { agent: AgentItem | undefined }) {
   const t = useT();
   if (!agent || agent.state === "provisioning") return <Badge variant="warning" className="gap-1"><Loader2 className="size-3 animate-spin" />{t("准备中")}</Badge>;
   if (agent.state === "error") return <Badge variant="danger">{t("启动失败")}</Badge>;
+  if (agent.state === "deleted") return <Badge variant="neutral">{t("已停用")}</Badge>;
   return null;
 }
 
@@ -64,7 +65,7 @@ const botKey = (instanceId: string, botId: string) => `${instanceId}/${botId}`;
 
 /** Your LightVela bots, each with its IM identity when it already has one. */
 const agentOptions = (im: VelaImController, bots: ConsoleBot[]): AgentOption[] => {
-  const byBot = new Map(im.agents.filter((a) => a.state !== "deleted").map((a) => [botKey(a.instanceId, a.botId), a]));
+  const byBot = new Map(im.agents.map((a) => [botKey(a.instanceId, a.botId), a]));
   return bots.map((bot) => ({ key: botKey(bot.instanceId, bot.id), name: bot.name, bot, agent: byBot.get(botKey(bot.instanceId, bot.id)) }));
 };
 
@@ -79,6 +80,38 @@ function resolveAgents(options: AgentOption[], keys: string[]): Array<{ id: stri
 }
 
 const IDENTITY_RETRY_MS = 60_000;
+/** A provisioning record older than this was left behind by an interrupted attempt and is started again. */
+const IDENTITY_STALE_MS = 3 * 60_000;
+
+/**
+ * Bots that still need an IM identity: none yet, a failed attempt, or a provisioning record left stale. A stopped
+ * Agent stays stopped (its owner or an admin did that). `provisioningSince` remembers when each record was first seen
+ * provisioning; `attempted` when this page last asked for it.
+ */
+export function botsNeedingIdentity(
+  agents: AgentItem[],
+  bots: ConsoleBot[],
+  now: number,
+  attempted: Map<string, number>,
+  provisioningSince: Map<string, number>,
+): ConsoleBot[] {
+  const settled = new Set<string>();
+  for (const agent of agents) {
+    const key = botKey(agent.instanceId, agent.botId);
+    if (agent.state === "provisioning") {
+      const since = provisioningSince.get(key) ?? now;
+      provisioningSince.set(key, since);
+      if (now - since < IDENTITY_STALE_MS) settled.add(key);
+      continue;
+    }
+    provisioningSince.delete(key);
+    if (agent.state !== "error") settled.add(key);
+  }
+  return bots.filter((bot) => {
+    const key = botKey(bot.instanceId, bot.id);
+    return !settled.has(key) && now - (attempted.get(key) ?? 0) > IDENTITY_RETRY_MS;
+  });
+}
 
 /**
  * Gives every Agent its IM identity in the background as soon as it exists, so starting a chat never waits for it.
@@ -86,16 +119,13 @@ const IDENTITY_RETRY_MS = 60_000;
  */
 export function useAgentIdentities(im: VelaImController, bots: ConsoleBot[]) {
   const attempted = useRef(new Map<string, number>());
+  const provisioningSince = useRef(new Map<string, number>());
   const api = im.connection?.api;
   const { agents, agentsLoaded, restricted, refreshAgents } = im;
   useEffect(() => {
     if (!api || !agentsLoaded || restricted) return;
-    const known = new Set(agents.filter((a) => a.state === "ready" || a.state === "provisioning").map((a) => botKey(a.instanceId, a.botId)));
     const now = Date.now();
-    const missing = bots.filter((bot) => {
-      const key = botKey(bot.instanceId, bot.id);
-      return !known.has(key) && now - (attempted.current.get(key) ?? 0) > IDENTITY_RETRY_MS;
-    });
+    const missing = botsNeedingIdentity(agents, bots, now, attempted.current, provisioningSince.current);
     if (!missing.length) return;
     const byInstance = new Map<string, ConsoleBot[]>();
     for (const bot of missing) {
