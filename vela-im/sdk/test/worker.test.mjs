@@ -114,6 +114,27 @@ test('worker serves over a private Unix socket, applies platform rules and forwa
  }
 });
 
+test('offline backfill hands the missed messages to the Agent oldest first across pages',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'vela-worker-'));
+ const now=Math.floor(Date.now()/1000);
+ const message=(id,seq)=>({ID:id,from:'u_owner',type:'TIMTextElem',conversationID:'GROUP'+groupID,time:now-60+seq,sequence:seq,payload:{text:id}});
+ // Cloud roaming returns the newest page first; each page lists its messages oldest first.
+ const pages=[{messageList:[message('m3',3),message('m4',4)],nextMessageSeq:2},{messageList:[message('m1',1),message('m2',2)],isCompleted:true}];
+ const fake=fakeChat({
+  getConversationList:{data:{conversationList:[{type:'GROUP',conversationID:'GROUP'+groupID,lastMessage:{lastTime:now}}],isSyncCompleted:true}},
+  getMessageListHopping:()=>({data:pages.shift()??{messageList:[],isCompleted:true}}),
+ });
+ const client=new VelaIMClient(fake.TencentCloudChat,hooks);
+ const worker=await startWorker({apiURL:'http://unused',credentialFile:join(dir,'credential'),dir,client,api:fakeBotAPI(),log:()=>{}});
+ try {
+  await worker.ready;
+  const inbox=new Inbox(join(dir,'inbox.sqlite'));
+  const received=inbox.events(0).filter(e=>e.event==='MESSAGE_RECEIVED').flatMap(e=>[e.data].flat().map(m=>m.ID));
+  inbox.close();
+  assert.deepEqual(received,['m1','m2','m3','m4']);
+ } finally {await worker.close();rmSync(dir,{recursive:true,force:true})}
+});
+
 test('worker stops when the platform rejects the Bot credential',async()=>{
  const dir=mkdtempSync(join(tmpdir(),'vela-worker-revoked-'));const fake=fakeChat();
  const api=fakeBotAPI({credentials:async()=>{throw new VelaError('Bot 凭据已失效','runtime_credential_revoked',401)}});

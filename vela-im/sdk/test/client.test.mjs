@@ -198,6 +198,23 @@ test('after the platform signs the identity out, the client keeps asking and is 
  await client.disconnect();
 });
 
+test('a failed UserSig renewal keeps retrying until the platform answers again',async(t)=>{
+ const fake=fakeChat();let down=false;let asked=0;
+ const client=new VelaIMClient(fake.TencentCloudChat,hooks);
+ await client.connect(async()=>{asked++;if(down)throw new VelaError('暂时无法签发 IM 会话','im_session_unavailable',503);return credentials()});
+ t.mock.timers.enable({apis:['setTimeout']});
+ const settle=()=>new Promise(resolve=>setImmediate(resolve));
+ down=true;fake.native.user=null;fake.native.emit('onKickedOut',{type:'userSigExpired'});await settle();
+ assert.equal(asked,2,'renews right after the UserSig expired');
+ t.mock.timers.tick(15000);await settle();
+ assert.equal(asked,3,'a failed renewal is retried');
+ down=false;
+ t.mock.timers.tick(30000);await settle();t.mock.timers.tick(0);await settle();
+ assert.equal(asked,4);
+ assert.deepEqual(fake.calls.filter(c=>c[0]==='login').map(c=>c[1]),['a_self','a_self'],'back online without a restart');
+ await client.disconnect();
+});
+
 test('UserSig renewal re-logs in with fresh credentials and keeps subscriptions; concurrent disconnects tear down once',async()=>{
  const fake=fakeChat();let issued=0;
  const client=new VelaIMClient(fake.TencentCloudChat,hooks);

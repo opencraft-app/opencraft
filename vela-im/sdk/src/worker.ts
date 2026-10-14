@@ -88,14 +88,16 @@ export async function startWorker(o:WorkerOptions):Promise<RunningWorker> {
   for(const c of conversations?.conversationList??[]) {
    if(c.type!=='C2C'&&c.type!=='GROUP')continue;
    if(c.lastMessage?.lastTime&&c.lastMessage.lastTime<since)continue;
-   let next:string|undefined;let complete=false;
+   let next:string|undefined;let complete=false;let missed:IMMessage[]=[];
    for(let page=0;page<100;page++) {
     const r=await client.getMessages(c.conversationID,{count:15,...(next?{nextReqMessageID:next}:{})});
     const list=r.messageList??[];
-    for(const m of list)if(m.time>=since&&m.from!==client.userID)inbox.save('MESSAGE_RECEIVED',[safeJSON(m)]);
+    // Pages go back from the newest and each page is oldest first: prepend, so the Agent gets the gap in order.
+    missed=[...list.filter((m:any)=>m.time>=since&&m.from!==client.userID),...missed];
     if(r.isCompleted||!list.length||list.some((m:any)=>m.time<since)){complete=true;break}
     next=r.nextReqMessageID;
    }
+   for(const m of missed)inbox.save('MESSAGE_RECEIVED',[safeJSON(m)]);
    // 达到分页上限时显式记录事件并保持水位，避免静默丢失。
    if(!complete){inbox.save('SYNC_INCOMPLETE',{conversationID:c.conversationID});return true}
   }

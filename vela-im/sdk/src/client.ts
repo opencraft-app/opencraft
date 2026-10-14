@@ -62,7 +62,7 @@ export class VelaIMClient {
   this.subscribe('MESSAGE_RECEIVED',({data}:any)=>{for(const m of data)this.cache(m)});
   this.subscribe('MESSAGE_MODIFIED',({data}:any)=>{for(const m of data)this.cache(m)});
   this.subscribe('KICKED_OUT',({data}:any)=>{
-   if(data?.type===this.TYPES.KICKED_OUT_USERSIG_EXPIRED)void this.renew().catch(()=>{});
+   if(data?.type===this.TYPES.KICKED_OUT_USERSIG_EXPIRED)void this.renew().catch(e=>this.retryRenewal(e));
    else if(data?.type===this.TYPES.KICKED_OUT_REST_API)this.relogin();
   });
   await this.login(c);
@@ -85,7 +85,7 @@ export class VelaIMClient {
   clearTimeout(this.renewTimer);
   if(!this.credentials)return;
   const delay=Math.max(60000,this.credentials.expiresAt-Date.now()-RENEW_BEFORE_MS);
-  this.renewTimer=setTimeout(()=>{void this.renew().catch(()=>{})},delay);
+  this.renewTimer=setTimeout(()=>{void this.renew().catch(e=>this.retryRenewal(e))},delay);
   (this.renewTimer as any).unref?.();
  }
  /** Re-login with a fresh UserSig before the old one expires. The SDK instance and event subscriptions are kept. */
@@ -97,6 +97,13 @@ export class VelaIMClient {
    await this.login(c);
   })().finally(()=>{this.renewing=undefined});
   return this.renewing;
+ }
+ /**
+  * A renewal the platform could not answer (a restart, a network blip) is retried like a sign-out; only a revoked
+  * credential (401) ends the session for good.
+  */
+ private retryRenewal(error:unknown) {
+  if(!(error instanceof VelaError&&error.status===401))this.relogin();
  }
  /**
   * A server-side kick is how the platform withdraws a session. Keep asking for a new one: while the identity stays
