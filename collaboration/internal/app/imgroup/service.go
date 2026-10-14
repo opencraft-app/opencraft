@@ -605,16 +605,36 @@ func (s *Service) IsRestricted(ctx context.Context, userID string) (bool, error)
 	return route.RestrictedAt != nil, nil
 }
 
+// dismissSaveAttempts 是解散落库遇到版本冲突时最多尝试的次数。
+const dismissSaveAttempts = 3
+
+// markDismissed 记录解散。腾讯的解散回调会与本次操作并发写入：版本冲突时按最新状态重试，
+// 平台侧的解散人和原因优先于回调记下的"腾讯侧解散"；始终冲突就如实返回，不报假成功。
 func (s *Service) markDismissed(ctx context.Context, group botimport.Group, by, reason string) error {
-	expected := group.Revision
-	group.State = botimport.GroupStateDismissed
-	group.DismissedBy = by
-	group.DismissReason = reason
-	group.UpdatedAt = s.clock.Now().UTC()
-	if _, err := s.repository.SaveGroup(ctx, group, expected); err != nil && !errors.Is(err, botimport.ErrConflict) {
-		return internal("暂时无法保存群聊", err)
+	for attempt := 1; ; attempt++ {
+		if group.State == botimport.GroupStateDismissed &&
+			(by == botimport.DismissedByTencent || group.DismissedBy != botimport.DismissedByTencent) {
+			return nil
+		}
+		expected := group.Revision
+		group.State = botimport.GroupStateDismissed
+		group.DismissedBy = by
+		group.DismissReason = reason
+		group.UpdatedAt = s.clock.Now().UTC()
+		_, err := s.repository.SaveGroup(ctx, group, expected)
+		if err == nil {
+			return nil
+		}
+		if !errors.Is(err, botimport.ErrConflict) {
+			return internal("暂时无法保存群聊", err)
+		}
+		if attempt == dismissSaveAttempts {
+			return apperror.New("revision_conflict", "群聊正在被修改，请稍后重试", err)
+		}
+		if group, _, err = s.repository.FindGroup(ctx, group.ID); err != nil {
+			return internal("暂时无法读取群聊", err)
+		}
 	}
-	return nil
 }
 
 func (s *Service) initialMembers(

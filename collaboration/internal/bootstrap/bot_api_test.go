@@ -27,6 +27,8 @@ type fakeBotHost struct {
 	owned       bool
 	deliveries  []botimport.Delivery
 	credentials []string
+	// onDeliver 在记录交付之后运行，模拟实例侧的结果。
+	onDeliver func(context.Context) error
 }
 
 func (host *fakeBotHost) Verify(context.Context, botimport.HostRequest) (botimport.HostVerification, error) {
@@ -36,11 +38,15 @@ func (host *fakeBotHost) Verify(context.Context, botimport.HostRequest) (botimpo
 	return botimport.HostVerification{DisplayName: "研究助手"}, nil
 }
 
-func (host *fakeBotHost) Deliver(_ context.Context, delivery botimport.Delivery) error {
+func (host *fakeBotHost) Deliver(ctx context.Context, delivery botimport.Delivery) error {
 	host.mu.Lock()
-	defer host.mu.Unlock()
 	host.deliveries = append(host.deliveries, delivery)
 	host.credentials = append(host.credentials, delivery.Credential.Reveal())
+	onDeliver := host.onDeliver
+	host.mu.Unlock()
+	if onDeliver != nil {
+		return onDeliver(ctx)
+	}
 	return nil
 }
 
@@ -80,6 +86,7 @@ func (identities *fakeIdentities) CheckIdentities(_ context.Context, userIDs []s
 const botTestAdminToken = "admin-token-for-tests-0123456789"
 
 type fakeTencentGroups struct {
+	onDestroy      func()
 	created        []botimport.TencentGroup
 	added          []string
 	removed        []string
@@ -111,6 +118,9 @@ func (groups *fakeTencentGroups) Rename(_ context.Context, _ string, name string
 
 func (groups *fakeTencentGroups) Destroy(_ context.Context, groupID string) error {
 	groups.destroys = append(groups.destroys, groupID)
+	if groups.onDestroy != nil {
+		groups.onDestroy()
+	}
 	return nil
 }
 
@@ -132,6 +142,8 @@ type botAPIFixture struct {
 	tencent    *fakeTencentGroups
 	// markHumansReady 模拟 Human IM 身份 worker 已完成导入。
 	markHumansReady func()
+	// tencentDismissed 模拟腾讯的解散回调先把群记成"腾讯侧解散"。
+	tencentDismissed func(groupID string)
 }
 
 func newBotAPIFixture(t *testing.T) *botAPIFixture {
@@ -169,6 +181,15 @@ func newBotAPIFixture(t *testing.T) *botAPIFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
+	fixture.tencentDismissed = func(groupID string) {
+		if err := handle.Client().IMGroup.UpdateOneID(groupID).
+			SetState(botimport.GroupStateDismissed).
+			SetDismissedBy(botimport.DismissedByTencent).
+			AddRevision(1).
+			Exec(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
 	fixture.markHumansReady = func() {
 		accounts, err := handle.Client().Account.Query().All(context.Background())
 		if err != nil {
@@ -188,6 +209,11 @@ func newBotAPIFixture(t *testing.T) *botAPIFixture {
 
 func (fixture *botAPIFixture) do(method, path, authorization, subject string, body any) (int, map[string]any) {
 	fixture.t.Helper()
+	return fixture.doContext(context.Background(), method, path, authorization, subject, body)
+}
+
+func (fixture *botAPIFixture) doContext(ctx context.Context, method, path, authorization, subject string, body any) (int, map[string]any) {
+	fixture.t.Helper()
 	var payload []byte
 	if body != nil {
 		var err error
@@ -195,7 +221,7 @@ func (fixture *botAPIFixture) do(method, path, authorization, subject string, bo
 			fixture.t.Fatal(err)
 		}
 	}
-	request := httptest.NewRequest(method, path, bytes.NewReader(payload))
+	request := httptest.NewRequest(method, path, bytes.NewReader(payload)).WithContext(ctx)
 	if body != nil {
 		request.Header.Set("Content-Type", "application/json")
 	}
@@ -600,10 +626,13 @@ func TestBotIMAPIMultiPersonGroupsAndAdminOperations(t *testing.T) {
 		len(fixture.tencent.destroys) != 0 {
 		t.Fatalf("dismiss without a reason = %d %#v", status, body)
 	}
+	// 腾讯的解散回调抢在这次请求之前落库：管理员的解散人和原因仍要保留，而不是被冲突吞掉。
+	fixture.tencent.onDestroy = func() { fixture.tencentDismissed(groupID) }
 	if status, body := fixture.admin(http.MethodPost, dismissPath, map[string]any{"reason": "违反社区规范"}); status != http.StatusNoContent ||
 		len(fixture.tencent.destroys) != 1 {
 		t.Fatalf("dismiss = %d %#v", status, body)
 	}
+	fixture.tencent.onDestroy = nil
 	if status, group := fixture.other(http.MethodGet, "/v1/me/groups/"+groupID, nil); status != http.StatusOK || group["state"] != "dismissed" ||
 		group["dismissedBy"] != "admin" || group["dismissReason"] != "违反社区规范" {
 		t.Fatalf("member sees the dismissal = %d %#v", status, group)
@@ -611,5 +640,39 @@ func TestBotIMAPIMultiPersonGroupsAndAdminOperations(t *testing.T) {
 	if status, detail := fixture.admin(http.MethodGet, "/v1/admin/im/groups/"+groupID, nil); status != http.StatusOK ||
 		detail["group"].(map[string]any)["dismissReason"] != "违反社区规范" {
 		t.Fatalf("admin sees the dismissal = %d %#v", status, detail)
+	}
+}
+
+func TestBotIMAPIProvisioningFinishesWhenTheCallerGoesAway(t *testing.T) {
+	fixture := newBotAPIFixture(t)
+	provision := func(ctx context.Context) {
+		fixture.t.Helper()
+		fixture.doContext(ctx, http.MethodPost, "/v1/me/bots", "Bearer "+botTestGatewayToken, "usr_0123456789abcdef01234567", map[string]any{
+			"instanceId": "ins-7c4bdf918ac0464fa2b8007afec371bd", "botId": "ins-7c4bdf918ac0464fa2b8007afec371bd",
+			"displayName": "助手",
+		})
+	}
+	state := func() string {
+		t.Helper()
+		status, listed := fixture.human(http.MethodGet, "/v1/me/bots", nil)
+		items, _ := listed["items"].([]any)
+		if status != http.StatusOK || len(items) != 1 {
+			t.Fatalf("bots = %d %#v", status, listed)
+		}
+		return items[0].(map[string]any)["state"].(string)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	fixture.host.onDeliver = func(context.Context) error { cancel(); return context.Canceled }
+	provision(ctx)
+	if got := state(); got != "error" {
+		t.Fatalf("a delivery that failed after the caller left must be recorded, state = %s", got)
+	}
+
+	ctx, cancel = context.WithCancel(context.Background())
+	fixture.host.onDeliver = func(deliveryCtx context.Context) error { cancel(); return deliveryCtx.Err() }
+	provision(ctx)
+	if got := state(); got != "ready" {
+		t.Fatalf("a delivery that completed after the caller left must finish, state = %s", got)
 	}
 }

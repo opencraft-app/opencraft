@@ -413,6 +413,9 @@ func (s *Service) issueAndDeliver(
 	if err != nil {
 		return botimport.BotAgent{}, err
 	}
+	// 状态已是 provisioning：调用方断开或超时也要把交付做完，并落到 ready 或 error，否则 Bot 会一直停在开通中。
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), deliveryFinishTimeout)
+	defer cancel()
 	owner := ""
 	if account, err := s.repository.FindAccount(ctx, bot.AccountID); err == nil && account.IMState == "ready" {
 		owner = account.IMUserID
@@ -434,6 +437,9 @@ func (s *Service) issueAndDeliver(
 	bot.UpdatedAt = s.clock.Now().UTC()
 	return s.save(ctx, bot, expected)
 }
+
+// deliveryFinishTimeout 限制调用方离开后交付与状态落库还能持续多久。
+const deliveryFinishTimeout = 2 * time.Minute
 
 func (s *Service) markError(ctx context.Context, bot botimport.BotAgent, code string) (botimport.BotAgent, error) {
 	expected := bot.Revision
