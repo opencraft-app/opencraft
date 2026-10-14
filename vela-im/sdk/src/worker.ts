@@ -61,6 +61,8 @@ export async function startWorker(o:WorkerOptions):Promise<RunningWorker> {
  const api=o.api??new VelaBotAPI(o.apiURL,()=>readFileSync(o.credentialFile,'utf8'));
  let online=false;let closing=false;
  let backfilling:Promise<boolean>|undefined;let backfillTimer:ReturnType<typeof setInterval>|undefined;let parentTimer:ReturnType<typeof setInterval>|undefined;
+ /** While true, live MESSAGE_RECEIVED is held until backfill merges it with history. */
+ let gateLive=false;const pendingLive:IMMessage[]=[];
 
  const policies=new Map<string,{policy:GroupReplyPolicy;at:number}>();
  /** Reply rules come from the platform; groups it did not create keep the mention-only default. */
@@ -80,30 +82,69 @@ export async function startWorker(o:WorkerOptions):Promise<RunningWorker> {
   return policy;
  };
 
+ const messageOrder=(a:IMMessage,b:IMMessage)=>{
+  const time=(a.time??0)-(b.time??0);if(time)return time;
+  const seq=(Number((a as any).sequence)||0)-(Number((b as any).sequence)||0);if(seq)return seq;
+  return String(a.ID??'').localeCompare(String(b.ID??''));
+ };
+ /** Oldest first, one copy per message ID (inbox also de-duplicates, but order must be fixed before save). */
+ const mergeMessages=(...batches:IMMessage[][])=>{
+  const byID=new Map<string,IMMessage>();
+  for(const batch of batches)for(const m of batch) {
+   const id=String(m.ID??'');
+   if(!id)continue;
+   if(!byID.has(id))byID.set(id,m);
+  }
+  return [...byID.values()].sort(messageOrder);
+ };
+ const deliverReceived=(messages:IMMessage[])=>{
+  for(const m of messages)inbox.save('MESSAGE_RECEIVED',[safeJSON(m)]);
+ };
+
  /** Resolves true once Tencent's conversation sync allowed a complete pass, false if it should be retried. */
  const backfill=()=>backfilling??=(async()=>{
-  const since=inbox.syncTime(Math.floor(Date.now()/1000)-FIRST_START_LOOKBACK_SECONDS);const started=Math.floor(Date.now()/1000);
-  const conversations=(await client.call('getConversationList')).data;
-  if(conversations?.isSyncCompleted===false)return false; // SDK 正在同步，不提前推进补拉水位。
-  for(const c of conversations?.conversationList??[]) {
-   if(c.type!=='C2C'&&c.type!=='GROUP')continue;
-   if(c.lastMessage?.lastTime&&c.lastMessage.lastTime<since)continue;
-   let next:string|undefined;let complete=false;let missed:IMMessage[]=[];
-   for(let page=0;page<100;page++) {
-    const r=await client.getMessages(c.conversationID,{count:15,...(next?{nextReqMessageID:next}:{})});
-    const list=r.messageList??[];
-    // Pages go back from the newest and each page is oldest first: prepend, so the Agent gets the gap in order.
-    missed=[...list.filter((m:any)=>m.time>=since&&m.from!==client.userID),...missed];
-    if(r.isCompleted||!list.length||list.some((m:any)=>m.time<since)){complete=true;break}
-    next=r.nextReqMessageID;
+  gateLive=true;
+  let releaseGate=true;
+  try {
+   const since=inbox.syncTime(Math.floor(Date.now()/1000)-FIRST_START_LOOKBACK_SECONDS);const started=Math.floor(Date.now()/1000);
+   const conversations=(await client.call('getConversationList')).data;
+   if(conversations?.isSyncCompleted===false){
+    // Keep buffering live messages until a later pass can merge them with history.
+    releaseGate=false;return false;
    }
-   for(const m of missed)inbox.save('MESSAGE_RECEIVED',[safeJSON(m)]);
-   // 达到分页上限时显式记录事件并保持水位，避免静默丢失。
-   if(!complete){inbox.save('SYNC_INCOMPLETE',{conversationID:c.conversationID});return true}
+   let missed:IMMessage[]=[];
+   for(const c of conversations?.conversationList??[]) {
+    if(c.type!=='C2C'&&c.type!=='GROUP')continue;
+    if(c.lastMessage?.lastTime&&c.lastMessage.lastTime<since)continue;
+    let next:string|undefined;let complete=false;let gap:IMMessage[]=[];
+    for(let page=0;page<100;page++) {
+     const r=await client.getMessages(c.conversationID,{count:15,...(next?{nextReqMessageID:next}:{})});
+     const list=r.messageList??[];
+     // Pages go back from the newest and each page is oldest first: prepend, so the Agent gets the gap in order.
+     gap=[...list.filter((m:any)=>m.time>=since&&m.from!==client.userID),...gap];
+     if(r.isCompleted||!list.length||list.some((m:any)=>m.time<since)){complete=true;break}
+     next=r.nextReqMessageID;
+    }
+    missed=missed.concat(gap);
+    // 达到分页上限时显式记录事件并保持水位，避免静默丢失。
+    if(!complete){
+     deliverReceived(mergeMessages(missed,pendingLive.splice(0)));
+     inbox.save('SYNC_INCOMPLETE',{conversationID:c.conversationID});
+     return true;
+    }
+   }
+   deliverReceived(mergeMessages(missed,pendingLive.splice(0)));
+   inbox.synced(started-5);
+   return true;
+  } finally {
+   if(releaseGate){
+    // Drain anything that arrived while merging, then open the gate (single-threaded between awaits).
+    while(pendingLive.length)deliverReceived(pendingLive.splice(0));
+    gateLive=false;
+   }
+   backfilling=undefined;
   }
-  inbox.synced(started-5);
-  return true;
- })().catch(e=>{log('backfill failed:',e?.message??e);return false}).finally(()=>{backfilling=undefined});
+ })().catch(e=>{log('backfill failed:',e?.message??e);return false});
 
  let markReady:()=>void;const ready=new Promise<void>(resolve=>{markReady=resolve});
  const connect=async()=>{
@@ -114,9 +155,10 @@ export async function startWorker(o:WorkerOptions):Promise<RunningWorker> {
      // Other Agents' "working" signals are transient; keeping them would only grow the inbox.
      const data=name==='MESSAGE_RECEIVED'&&Array.isArray(event.data)?event.data.filter((m:IMMessage)=>!isAgentStatus(m)):event.data;
      if(name==='MESSAGE_RECEIVED'&&!data.length)return;
+     if(name==='MESSAGE_RECEIVED')for(const m of event.data??[])if(isPolicyNotice(m))policies.delete(normalizeGroupID(String(m.conversationID??'').replace(/^GROUP/,'')));
+     if(name==='MESSAGE_RECEIVED'&&gateLive){pendingLive.push(...data as IMMessage[]);return}
      try{inbox.save(name,safeJSON(data))}catch(e:any){log('inbox write failed:',e?.message)}
      if(name==='SDK_READY')void backfill();
-     if(name==='MESSAGE_RECEIVED')for(const m of event.data??[])if(isPolicyNotice(m))policies.delete(normalizeGroupID(String(m.conversationID??'').replace(/^GROUP/,'')));
     });
     // Messages that arrived while no worker was online are in the inbox before the Agent is told we are ready.
     for(let i=0;i<30&&!closing&&!await backfill();i++)await new Promise(r=>setTimeout(r,1000));

@@ -86,7 +86,7 @@ const IDENTITY_STALE_MS = 3 * 60_000;
 /**
  * Bots that still need an IM identity: none yet, a failed attempt, or a provisioning record left stale. A stopped
  * Agent stays stopped (its owner or an admin did that). `provisioningSince` remembers when each record was first seen
- * provisioning; `attempted` when this page last asked for it.
+ * provisioning; `attempted` when this page last asked for it; `inFlight` skips bots whose request has not finished.
  */
 export function botsNeedingIdentity(
   agents: AgentItem[],
@@ -94,6 +94,7 @@ export function botsNeedingIdentity(
   now: number,
   attempted: Map<string, number>,
   provisioningSince: Map<string, number>,
+  inFlight: Set<string> = new Set(),
 ): ConsoleBot[] {
   const settled = new Set<string>();
   for (const agent of agents) {
@@ -109,6 +110,7 @@ export function botsNeedingIdentity(
   }
   return bots.filter((bot) => {
     const key = botKey(bot.instanceId, bot.id);
+    if (inFlight.has(key)) return false;
     return !settled.has(key) && now - (attempted.get(key) ?? 0) > IDENTITY_RETRY_MS;
   });
 }
@@ -120,21 +122,33 @@ export function botsNeedingIdentity(
 export function useAgentIdentities(im: VelaImController, bots: ConsoleBot[]) {
   const attempted = useRef(new Map<string, number>());
   const provisioningSince = useRef(new Map<string, number>());
+  const inFlight = useRef(new Set<string>());
   const api = im.connection?.api;
   const { agents, agentsLoaded, restricted, refreshAgents } = im;
   useEffect(() => {
     if (!api || !agentsLoaded || restricted) return;
     const now = Date.now();
-    const missing = botsNeedingIdentity(agents, bots, now, attempted.current, provisioningSince.current);
+    const missing = botsNeedingIdentity(
+      agents, bots, now, attempted.current, provisioningSince.current, inFlight.current,
+    );
     if (!missing.length) return;
     const byInstance = new Map<string, ConsoleBot[]>();
     for (const bot of missing) {
-      attempted.current.set(botKey(bot.instanceId, bot.id), now);
+      const key = botKey(bot.instanceId, bot.id);
+      attempted.current.set(key, now);
+      // A recover attempt restarts the stale clock so overlapping recovers cannot stack.
+      provisioningSince.current.set(key, now);
+      inFlight.current.add(key);
       byInstance.set(bot.instanceId, [...(byInstance.get(bot.instanceId) ?? []), bot]);
     }
     void Promise.allSettled([...byInstance.values()].map(async (instanceBots) => {
       for (const bot of instanceBots) {
-        await api.provisionBot({ instanceId: bot.instanceId, botId: bot.id, displayName: bot.name }).catch(() => undefined);
+        const key = botKey(bot.instanceId, bot.id);
+        try {
+          await api.provisionBot({ instanceId: bot.instanceId, botId: bot.id, displayName: bot.name }).catch(() => undefined);
+        } finally {
+          inFlight.current.delete(key);
+        }
       }
     })).then(() => refreshAgents().catch(() => undefined));
   }, [api, agents, agentsLoaded, restricted, bots, refreshAgents]);

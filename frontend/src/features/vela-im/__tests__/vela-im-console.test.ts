@@ -55,4 +55,10 @@ describe("botsNeedingIdentity", () => {
     const attempted = new Map([["ins-1/new", 1_000_000]]);
     expect(botsNeedingIdentity(agents, bots, 1_000_000 + 30_000, attempted, new Map()).map((b) => b.id)).toEqual(["failed"]);
   });
+
+  it("does not ask again for an Agent whose provision request is still in flight", () => {
+    const attempted = new Map([["ins-1/new", 1_000_000 - 120_000]]);
+    const inFlight = new Set(["ins-1/new"]);
+    expect(botsNeedingIdentity(agents, bots, 1_000_000, attempted, new Map(), inFlight).map((b) => b.id)).toEqual(["failed"]);
+  });
 });

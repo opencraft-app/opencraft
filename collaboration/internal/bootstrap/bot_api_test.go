@@ -643,6 +643,66 @@ func TestBotIMAPIMultiPersonGroupsAndAdminOperations(t *testing.T) {
 	}
 }
 
+func TestBotIMAPIConcurrentProvisionKeepsASingleCredential(t *testing.T) {
+	fixture := newBotAPIFixture(t)
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var once sync.Once
+	fixture.host.onDeliver = func(context.Context) error {
+		once.Do(func() { close(started) })
+		<-release
+		return nil
+	}
+
+	type result struct {
+		status int
+		body   map[string]any
+	}
+	results := make(chan result, 2)
+	provision := func() {
+		status, body := fixture.human(http.MethodPost, "/v1/me/bots", map[string]any{
+			"instanceId": "ins-7c4bdf918ac0464fa2b8007afec371bd", "botId": "ins-7c4bdf918ac0464fa2b8007afec371bd",
+			"displayName": "助手",
+		})
+		results <- result{status, body}
+	}
+
+	go provision()
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("first delivery did not start")
+	}
+	go provision()
+	// Give the second request time to reach the per-bot delivery lock.
+	time.Sleep(100 * time.Millisecond)
+	close(release)
+
+	first, second := <-results, <-results
+	if first.status != http.StatusOK || second.status != http.StatusOK {
+		t.Fatalf("concurrent provision = %d %#v / %d %#v", first.status, first.body, second.status, second.body)
+	}
+	fixture.host.mu.Lock()
+	deliveries := len(fixture.host.deliveries)
+	last := ""
+	if deliveries > 0 {
+		last = fixture.host.credentials[len(fixture.host.credentials)-1]
+	}
+	fixture.host.mu.Unlock()
+	if deliveries != 1 {
+		t.Fatalf("expected a single host delivery while one was in flight, got %d", deliveries)
+	}
+	status, listed := fixture.human(http.MethodGet, "/v1/me/bots", nil)
+	items, _ := listed["items"].([]any)
+	if status != http.StatusOK || len(items) != 1 || items[0].(map[string]any)["state"] != "ready" {
+		t.Fatalf("bots after concurrent provision = %d %#v", status, listed)
+	}
+	status, session := fixture.do(http.MethodPost, "/v1/runtime/bot/session", "BotCredential "+last, "", nil)
+	if status != http.StatusOK {
+		t.Fatalf("session with the delivered credential = %d %#v", status, session)
+	}
+}
+
 func TestBotIMAPIProvisioningFinishesWhenTheCallerGoesAway(t *testing.T) {
 	fixture := newBotAPIFixture(t)
 	provision := func(ctx context.Context) {

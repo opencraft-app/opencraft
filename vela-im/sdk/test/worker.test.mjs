@@ -135,6 +135,31 @@ test('offline backfill hands the missed messages to the Agent oldest first acros
  } finally {await worker.close();rmSync(dir,{recursive:true,force:true})}
 });
 
+test('live messages during backfill are merged in order with history',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'vela-worker-live-'));
+ const now=Math.floor(Date.now()/1000);
+ const message=(id,seq)=>({ID:id,from:'u_owner',type:'TIMTextElem',conversationID:'GROUP'+groupID,time:now-60+seq,sequence:seq,payload:{text:id}});
+ let releasePages;const pagesReady=new Promise(resolve=>{releasePages=resolve});
+ let sawHopping;const hoppingStarted=new Promise(resolve=>{sawHopping=resolve});
+ const pages=[{messageList:[message('m1',1),message('m2',2)],isCompleted:true}];
+ const fake=fakeChat({
+  getConversationList:{data:{conversationList:[{type:'GROUP',conversationID:'GROUP'+groupID,lastMessage:{lastTime:now}}],isSyncCompleted:true}},
+  getMessageListHopping:async()=>{sawHopping();await pagesReady;return {data:pages.shift()??{messageList:[],isCompleted:true}}},
+ });
+ const client=new VelaIMClient(fake.TencentCloudChat,hooks);
+ const worker=await startWorker({apiURL:'http://unused',credentialFile:join(dir,'credential'),dir,client,api:fakeBotAPI(),log:()=>{}});
+ try {
+  await hoppingStarted;
+  fake.native.emit('onMessageReceived',[message('m3',3)]);
+  releasePages();
+  await worker.ready;
+  const inbox=new Inbox(join(dir,'inbox.sqlite'));
+  const received=inbox.events(0).filter(e=>e.event==='MESSAGE_RECEIVED').flatMap(e=>[e.data].flat().map(m=>m.ID));
+  inbox.close();
+  assert.deepEqual(received,['m1','m2','m3']);
+ } finally {await worker.close();rmSync(dir,{recursive:true,force:true})}
+});
+
 test('worker stops when the platform rejects the Bot credential',async()=>{
  const dir=mkdtempSync(join(tmpdir(),'vela-worker-revoked-'));const fake=fakeChat();
  const api=fakeBotAPI({credentials:async()=>{throw new VelaError('Bot 凭据已失效','runtime_credential_revoked',401)}});

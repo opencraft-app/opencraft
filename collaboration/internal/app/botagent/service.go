@@ -10,6 +10,7 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"git.woa.com/wisp/mono2/collaboration/internal/apperror"
@@ -92,6 +93,8 @@ type Service struct {
 	clock      clockport.Clock
 	random     io.Reader
 	config     Config
+	// deliveries 按 Bot 串行化签发与交付，避免慢的一次覆盖更新的凭据。
+	deliveries sync.Map
 }
 
 func NewService(
@@ -211,7 +214,7 @@ func (s *Service) Provision(
 		bot, _ = s.markError(ctx, bot, "tencent_identity_failed")
 		return botimport.BotAgent{}, apperror.New("tencent_unavailable", "暂时无法创建 Bot 的 IM 账号", err)
 	}
-	return s.issueAndDeliver(ctx, bot, request, func(next *botimport.BotAgent) {
+	return s.issueAndDeliver(ctx, bot, request, false, func(next *botimport.BotAgent) {
 		next.DisplayName = request.DisplayName
 	})
 }
@@ -287,7 +290,7 @@ func (s *Service) Rotate(ctx context.Context, human Human, botAgentID string) (b
 	return s.issueAndDeliver(ctx, bot, botimport.HostRequest{
 		AccountSubject: human.Subject, InstanceID: bot.InstanceID, BotID: bot.BotID,
 		DisplayName: bot.DisplayName,
-	}, nil)
+	}, true, nil)
 }
 
 // CreateSession 为凭据对应的 Bot 签发短期运行 Token 与 UserSig。
@@ -381,12 +384,41 @@ func (s *Service) insert(
 	return bot, nil
 }
 
+func (s *Service) deliveryLock(botAgentID string) *sync.Mutex {
+	actual, _ := s.deliveries.LoadOrStore(botAgentID, &sync.Mutex{})
+	return actual.(*sync.Mutex)
+}
+
+// issueAndDeliver 签发新凭据并交付到实例。force 为 false 时，若锁内发现已是 ready 则直接返回（幂等开通）。
 func (s *Service) issueAndDeliver(
 	ctx context.Context,
 	bot botimport.BotAgent,
 	request botimport.HostRequest,
+	force bool,
 	mutate func(*botimport.BotAgent),
 ) (botimport.BotAgent, error) {
+	lock := s.deliveryLock(bot.ID)
+	lock.Lock()
+	defer lock.Unlock()
+	return s.issueAndDeliverLocked(ctx, bot, request, force, mutate)
+}
+
+func (s *Service) issueAndDeliverLocked(
+	ctx context.Context,
+	bot botimport.BotAgent,
+	request botimport.HostRequest,
+	force bool,
+	mutate func(*botimport.BotAgent),
+) (botimport.BotAgent, error) {
+	current, err := s.repository.FindBot(ctx, bot.AccountID, bot.ID)
+	if err != nil {
+		return botimport.BotAgent{}, internal("暂时无法读取 Bot", err)
+	}
+	if !force && current.State == botimport.BotStateReady {
+		return current, nil
+	}
+	bot = current
+
 	secret := make([]byte, 32)
 	if _, err := io.ReadFull(s.random, secret); err != nil {
 		return botimport.BotAgent{}, internal("无法生成 Bot 凭据", err)
@@ -432,10 +464,21 @@ func (s *Service) issueAndDeliver(
 		bot, _ = s.markError(ctx, bot, "bot_host_delivery_failed")
 		return botimport.BotAgent{}, hostError(err)
 	}
-	expected = bot.Revision
-	bot.State = botimport.BotStateReady
-	bot.UpdatedAt = s.clock.Now().UTC()
-	return s.save(ctx, bot, expected)
+	// 多副本下较慢的交付可能已把磁盘写成旧版本；若库中已是更新版本，再签发一次对齐实例。
+	latest, err := s.repository.FindBot(ctx, bot.AccountID, bot.ID)
+	if err != nil {
+		return botimport.BotAgent{}, internal("暂时无法读取 Bot", err)
+	}
+	if latest.CredentialVersion != version {
+		if latest.State == botimport.BotStateDeleted {
+			return botimport.BotAgent{}, apperror.New("bot_agent_not_ready", "Bot IM 身份已停用", nil)
+		}
+		return s.issueAndDeliverLocked(ctx, latest, request, true, mutate)
+	}
+	expected = latest.Revision
+	latest.State = botimport.BotStateReady
+	latest.UpdatedAt = s.clock.Now().UTC()
+	return s.save(ctx, latest, expected)
 }
 
 // deliveryFinishTimeout 限制调用方离开后交付与状态落库还能持续多久。
