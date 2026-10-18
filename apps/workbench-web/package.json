@@ -10,7 +10,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@opencraft/plugin-tasks": "0.1.0",
     "@codemirror/lang-css": "^6.3.1",
     "@codemirror/lang-javascript": "^6.2.5",
     "@codemirror/language": "^6.12.4",
@@ -40,6 +39,7 @@
     "@opencraft/chat-navigation": "0.1.0",
     "@opencraft/chat-render-react": "0.1.0",
     "@opencraft/chat-render-web": "0.1.0",
+    "@opencraft/client-product": "0.1.0",
     "@opencraft/codex-composer": "0.1.0",
     "@opencraft/composer-appserver": "0.1.0",
     "@opencraft/composer-core": "0.1.0",
@@ -48,12 +48,18 @@
     "@opencraft/extension-contract": "0.1.0",
     "@opencraft/extension-react": "0.1.0",
     "@opencraft/extension-runtime": "0.1.0",
+    "@opencraft/file-preview-web": "0.1.0",
+    "@opencraft/hub-network": "*",
     "@opencraft/i18n": "0.1.0",
     "@opencraft/image-processing": "0.1.0",
+    "@opencraft/mcp-apps": "0.1.0",
+    "@opencraft/mobile-bot-bridge": "0.1.0",
     "@opencraft/plugin-bot-chat": "0.1.0",
     "@opencraft/plugin-builtin-agents": "0.1.0",
     "@opencraft/plugin-cloud-desktop": "0.1.0",
     "@opencraft/plugin-hypernode": "0.1.0",
+    "@opencraft/plugin-office-preview": "0.1.0",
+    "@opencraft/plugin-tasks": "0.1.0",
     "@opencraft/plugin-terminal": "0.1.0",
     "@opencraft/plugin-voice-input": "0.1.0",
     "@opencraft/profile-skills-appserver": "0.1.0",
@@ -64,6 +70,7 @@
     "@opencraft/timeline-render-react": "0.1.0",
     "@opencraft/timeline-virtualizer": "0.1.0",
     "@opencraft/ui-preferences": "0.1.0",
+    "@opencraft/web-update-protocol": "0.1.0",
     "@opencraft/workbench-panels": "0.1.0",
     "@opencraft/workbench-panels-react": "0.1.0",
     "@opencraft/workbench-runtime": "0.1.0",
@@ -81,23 +88,16 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-router": "^7.13.1",
-    "@opencraft/mobile-bot-bridge": "0.1.0",
-    "@opencraft/web-update-protocol": "0.1.0",
-    "sonner": "2.0.8",
-    "@opencraft/hub-network": "*",
-    "@opencraft/file-preview-web": "0.1.0",
-    "@opencraft/plugin-office-preview": "0.1.0",
-    "@opencraft/client-product": "0.1.0",
-    "@opencraft/mcp-apps": "0.1.0"
+    "sonner": "2.0.8"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",
     "@types/react": "~19.2.2",
     "@types/react-dom": "~19.2.3",
-    "@vitejs/plugin-react": "latest",
-    "sass": "^1.83.4",
+    "@vitejs/plugin-react": "^6.1.2",
+    "sass": "^1.105.1",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.9.3",
-    "vite": "^8.2.2"
+    "vite": "^8.3.4"
   }
 }

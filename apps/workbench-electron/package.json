@@ -42,7 +42,7 @@
     "@electron/universal": "2.0.3",
     "@resvg/resvg-js": "2.6.2",
     "@types/ws": "^8.18.1",
-    "electron": "44.1.0",
+    "electron": "44.7.2",
     "electron-builder": "26.15.3",
     "esbuild": "0.28.2",
     "typescript": "^5.9.3"
