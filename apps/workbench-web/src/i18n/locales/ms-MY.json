@@ -891,6 +891,9 @@
   "browser.resources.saved": "Tersimpan · tiada halaman aktif",
   "browser.resources.pending": "Menunggu pengesahan masa jalan",
   "browser.resources.empty": "Tiada halaman pelayar tersimpan.",
+  "browser.resources.loadFailed": "Tidak dapat memuatkan halaman pelayar. Cuba muat semula.",
+  "browser.resources.openFailed": "Tidak dapat membuka halaman ini. Cuba lagi.",
+  "browser.resources.closeFailed": "Tidak dapat menutup halaman ini. Cuba lagi.",
   "browser.newTab": "Tab baharu",
   "common.refresh": "Muat semula",
   "common.loading": "Sedang memuatkan…"

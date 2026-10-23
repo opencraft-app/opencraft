@@ -1,0 +1,40 @@
+import assert from 'node:assert/strict';
+import {createServer} from 'vite';
+import {chromium} from 'playwright';
+import {mkdtemp,writeFile} from 'node:fs/promises';
+import {join} from 'node:path';
+const source=`import React from 'react';import {createIntlTestRoot} from '/tests/fixtures/intl-root.tsx';
+import {BrowserResourcesButton} from '/apps/workbench-web/src/browser/browser-resources-button.tsx';
+import {useAsyncNotices,AsyncNoticesContext} from '/apps/workbench-web/src/components/async-notices-context.ts';
+import {initializeAppearanceTheme,setThemePreference} from '/apps/workbench-web/src/appearance-theme.ts';import '/apps/workbench-web/src/styles/app.scss';
+initializeAppearanceTheme();setThemePreference(new URLSearchParams(location.search).get('theme')||'light');
+const resources={sessions:[{sessionId:'fixture-one',lease:'browser-fixture-one',lifecycle:'open',runtime:'live',url:'https://example.test/one',link:null,createdAt:1}],capacity:{used:1,limit:64,accountUsed:1,accountLimit:16}};
+window.probe={closeCalls:0,mode:'close-failure',forgotten:0,feedback:0};
+const surfaces={listResources:async()=>{if(window.probe.mode==='load-failure')throw Error('SYNTHETIC_INTERNAL /private/runtime/fixture');return resources},closeResource:async()=>{window.probe.closeCalls++;if(window.probe.mode==='held-close')return new Promise((_resolve,reject)=>{window.probe.rejectClose=reject});if(window.probe.mode==='success'){resources.sessions=[];return}throw Error('SYNTHETIC_INTERNAL /private/runtime/fixture: native operation rejected')}};
+const workbench={openResource(){throw Error('SYNTHETIC_INTERNAL /private/runtime/fixture')},forgetResource(){window.probe.forgotten++}};
+function Harness(){const notices=useAsyncNotices();const audited=React.useMemo(()=>({...notices,error(value){window.probe.feedback++;notices.error(value)}}),[notices]);return React.createElement(AsyncNoticesContext.Provider,{value:audited},React.createElement(BrowserResourcesButton,{surfaces,workbench,ownerId:'synthetic-owner'}))}
+createIntlTestRoot(document.getElementById('root')).render(React.createElement(Harness));`;
+const output=await mkdtemp('/tmp/opencraft-browser-resource-feedback-');
+const vite=await createServer({configFile:false,root:process.cwd(),logLevel:'error',resolve:{dedupe:['react','react-dom']},cacheDir:'node_modules/.vite-resource-feedback',esbuild:{jsx:'automatic'},server:{host:'127.0.0.1',port:0},plugins:[{name:'resource-feedback',configureServer(server){server.middlewares.use((req,res,next)=>{if(req.url?.startsWith('/__fixture.tsx')){res.setHeader('content-type','text/javascript');void server.transformRequest('/__fixture.tsx').then(result=>res.end(result?.code));return;}if(req.url!=='/'&&!req.url?.startsWith('/?'))return next();res.setHeader('content-type','text/html');res.end('<meta name="viewport" content="width=device-width,initial-scale=1"><div id="root"></div><script type="module" src="/__fixture.tsx"></script>');});},resolveId(id){if(id==='/__fixture.tsx')return '\0resource-fixture.tsx';},load(id){if(id==='\0resource-fixture.tsx')return source;}}]});
+let browser;const results=[];
+try {await vite.listen();browser=await chromium.launch({headless:true});
+for(const touch of [false,true])for(const theme of ['light','dark']){const page=await browser.newPage({viewport:{width:touch?390:1100,height:850},hasTouch:touch,isMobile:touch,deviceScaleFactor:touch?2:1});const errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto('http://127.0.0.1:'+vite.httpServer.address().port+'/?theme='+theme);const activate=t=>touch?t.tap():t.click();await activate(page.getByRole('button',{name:'Browser resources',exact:true}));const dialog=page.getByRole('dialog');await dialog.getByText('https://example.test/one',{exact:true}).waitFor();const before=await dialog.boundingBox();await activate(dialog.locator('.settings-control-list-item__actions button'));await page.waitForFunction(()=>window.probe.closeCalls===1);await page.waitForTimeout(150);const after=await dialog.boundingBox();const raw=await dialog.getByText(/SYNTHETIC_INTERNAL/).count();const localAlerts=await dialog.locator('[role=alert]').count();const notices=await page.locator('[data-sonner-toast]').count();const screenshot=join(output,(touch?'touch':'mouse')+'-'+theme+'.png');await page.screenshot({path:screenshot});results.push({touch,theme,before,after,raw,localAlerts,notices,errors,screenshot});assert.deepEqual(errors,[]);assert.equal(raw,0);assert.equal(localAlerts,0);assert.equal(notices,1);assert.equal(after.height,before.height);
+await page.getByText('Could not close this page. Try again.',{exact:true}).waitFor();
+await page.evaluate(()=>{window.probe.mode='load-failure'});await activate(dialog.getByRole('button',{name:'Refresh',exact:true}));
+await page.getByText('Could not load browser pages. Try refreshing.',{exact:true}).waitFor();
+assert.equal(await dialog.getByText('https://example.test/one',{exact:true}).count(),1);assert.equal((await dialog.boundingBox()).height,before.height);
+await activate(dialog.getByText('https://example.test/one',{exact:true}));await page.getByText('Could not open this page. Try again.',{exact:true}).waitFor();
+assert.equal((await dialog.boundingBox()).height,before.height);assert.equal(await dialog.locator('[role=alert]').count(),0);
+assert.equal(await page.getByText(/SYNTHETIC_INTERNAL/).count(),0);
+await page.evaluate(()=>{window.probe.mode='held-close'});await activate(dialog.locator('.settings-control-list-item__actions button'));
+await page.waitForFunction(()=>window.probe.closeCalls===2&&typeof window.probe.rejectClose==='function');
+await page.keyboard.press('Escape');await dialog.waitFor({state:'detached'});
+const noticeCount=await page.evaluate(()=>window.probe.feedback);
+await page.evaluate(()=>{window.probe.rejectClose(Error('SYNTHETIC_INTERNAL /private/runtime/late'))});await page.waitForTimeout(100);
+assert.equal(await page.evaluate(()=>window.probe.feedback),noticeCount,'dismissed operations cannot publish late feedback');
+await page.evaluate(()=>{window.probe.mode='success'});await activate(page.getByRole('button',{name:'Browser resources',exact:true}));
+await dialog.getByText('https://example.test/one',{exact:true}).waitFor();await activate(dialog.locator('.settings-control-list-item__actions button'));
+await dialog.getByText('No saved browser pages.',{exact:true}).waitFor();assert.equal(await page.evaluate(()=>window.probe.forgotten),1);
+assert.deepEqual(errors,[]);await page.close();}
+await writeFile(join(output,'result.json'),JSON.stringify(results,null,2));console.log(JSON.stringify({output,results}));
+}finally{await browser?.close();await vite.close();}

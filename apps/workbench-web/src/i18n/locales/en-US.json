@@ -889,6 +889,9 @@
   "browser.resources.saved": "Saved · no active page",
   "browser.resources.pending": "Awaiting runtime confirmation",
   "browser.resources.empty": "No saved browser pages.",
+  "browser.resources.loadFailed": "Could not load browser pages. Try refreshing.",
+  "browser.resources.openFailed": "Could not open this page. Try again.",
+  "browser.resources.closeFailed": "Could not close this page. Try again.",
   "browser.newTab": "New tab",
   "common.refresh": "Refresh",
   "common.loading": "Loading…"

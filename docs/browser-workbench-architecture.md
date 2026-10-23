@@ -1711,6 +1711,12 @@ idempotent so an uncertain acknowledgement can safely be retried. Cookie
 partitions retain the existing policy. Ordinary detach/park still preserves the
 live document. This fix does not introduce LRU or change tab limits.
 
+The account browser resource catalog reports load, reconnect and close failures
+through the existing Workbench notification owner, using localized task messages.
+A failed action retains the catalog and dialog geometry; raw native or transport
+errors never become list content. Dismissing the catalog retires late feedback
+without cancelling an already accepted server-side close.
+
 ### Browser layout and visibility aperture (2026-10-22)
 
 The presentation slot supplies the live content layout viewport. The intersection

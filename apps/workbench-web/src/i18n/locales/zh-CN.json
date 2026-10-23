@@ -913,6 +913,9 @@
   "browser.resources.saved": "已保留 · 无运行实例",
   "browser.resources.pending": "等待确认运行状态",
   "browser.resources.empty": "没有保留的浏览器页面。",
+  "browser.resources.loadFailed": "无法加载浏览器页面，请刷新重试。",
+  "browser.resources.openFailed": "无法打开此页面，请重试。",
+  "browser.resources.closeFailed": "无法关闭此页面，请重试。",
   "browser.newTab": "新标签页",
   "common.refresh": "刷新",
   "common.loading": "加载中…"

@@ -891,6 +891,9 @@
   "browser.resources.saved": "บันทึกไว้ · ไม่มีหน้าที่กำลังทำงาน",
   "browser.resources.pending": "รอยืนยันสถานะการทำงาน",
   "browser.resources.empty": "ไม่มีหน้าเบราว์เซอร์ที่บันทึกไว้",
+  "browser.resources.loadFailed": "ไม่สามารถโหลดหน้าเบราว์เซอร์ได้ โปรดลองรีเฟรช",
+  "browser.resources.openFailed": "ไม่สามารถเปิดหน้านี้ได้ โปรดลองอีกครั้ง",
+  "browser.resources.closeFailed": "ไม่สามารถปิดหน้านี้ได้ โปรดลองอีกครั้ง",
   "browser.newTab": "แท็บใหม่",
   "common.refresh": "รีเฟรช",
   "common.loading": "กำลังโหลด…"
