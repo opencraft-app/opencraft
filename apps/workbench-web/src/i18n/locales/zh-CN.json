@@ -902,5 +902,18 @@
   "preview.slide": "第 {page} 页幻灯片",
   "preview.slides": "幻灯片缩略图",
   "preview.fitSlide": "适合页面",
-  "sidebar.catalog.searchIncomplete": "暂未找到匹配项 · 会话列表尚未完整加载"
+  "sidebar.catalog.searchIncomplete": "暂未找到匹配项 · 会话列表尚未完整加载",
+  "browser.resources.title": "浏览器资源",
+  "browser.resources.description": "这里显示本账户所有保留的页面，包括未关联聊天的页面。关闭页面会丢弃其中未保存的内容。",
+  "browser.resources.capacity": "本账户占用：{used}/{limit} · 共享容量：{total}/{maximum}",
+  "browser.resources.linked": "已关联聊天",
+  "browser.resources.unassigned": "未关联页面 · 打开可重新关联",
+  "browser.resources.closing": "正在关闭…",
+  "browser.resources.live": "运行中",
+  "browser.resources.saved": "已保留 · 无运行实例",
+  "browser.resources.pending": "等待确认运行状态",
+  "browser.resources.empty": "没有保留的浏览器页面。",
+  "browser.newTab": "新标签页",
+  "common.refresh": "刷新",
+  "common.loading": "加载中…"
 }

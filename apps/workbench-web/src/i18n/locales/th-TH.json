@@ -880,5 +880,18 @@
   "preview.slide": "สไลด์ {page}",
   "preview.slides": "ภาพขนาดย่อของสไลด์",
   "preview.fitSlide": "ปรับสไลด์ให้พอดี",
-  "sidebar.catalog.searchIncomplete": "ยังไม่พบรายการที่ตรงกัน · รายการการสนทนายังโหลดไม่ครบ"
+  "sidebar.catalog.searchIncomplete": "ยังไม่พบรายการที่ตรงกัน · รายการการสนทนายังโหลดไม่ครบ",
+  "browser.resources.title": "ทรัพยากรเบราว์เซอร์",
+  "browser.resources.description": "หน้าที่บันทึกไว้ทั้งหมดในบัญชี รวมถึงหน้าที่ไม่ได้เชื่อมกับการสนทนา การปิดหน้าจะทิ้งเนื้อหาที่ยังไม่ได้บันทึก",
+  "browser.resources.capacity": "หน้าที่จองไว้: {used}/{limit} · ความจุที่ใช้ร่วมกัน: {total}/{maximum}",
+  "browser.resources.linked": "หน้าการสนทนา",
+  "browser.resources.unassigned": "หน้าที่ยังไม่เชื่อมโยง · เปิดเพื่อเชื่อมต่อใหม่",
+  "browser.resources.closing": "กำลังปิด…",
+  "browser.resources.live": "กำลังทำงาน",
+  "browser.resources.saved": "บันทึกไว้ · ไม่มีหน้าที่กำลังทำงาน",
+  "browser.resources.pending": "รอยืนยันสถานะการทำงาน",
+  "browser.resources.empty": "ไม่มีหน้าเบราว์เซอร์ที่บันทึกไว้",
+  "browser.newTab": "แท็บใหม่",
+  "common.refresh": "รีเฟรช",
+  "common.loading": "กำลังโหลด…"
 }

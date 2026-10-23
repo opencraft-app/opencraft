@@ -880,5 +880,18 @@
   "preview.slide": "Slaid {page}",
   "preview.slides": "Lakaran kecil slaid",
   "preview.fitSlide": "Muatkan slaid",
-  "sidebar.catalog.searchIncomplete": "Belum ada padanan · senarai perbualan belum lengkap"
+  "sidebar.catalog.searchIncomplete": "Belum ada padanan · senarai perbualan belum lengkap",
+  "browser.resources.title": "Sumber pelayar",
+  "browser.resources.description": "Semua halaman tersimpan dalam akaun anda, termasuk halaman tanpa perbualan. Menutup halaman membuang kandungan yang belum disimpan.",
+  "browser.resources.capacity": "Halaman diperuntukkan: {used}/{limit} · Kapasiti dikongsi: {total}/{maximum}",
+  "browser.resources.linked": "Halaman perbualan",
+  "browser.resources.unassigned": "Halaman tanpa perbualan · buka untuk sambung semula",
+  "browser.resources.closing": "Sedang menutup…",
+  "browser.resources.live": "Sedang berjalan",
+  "browser.resources.saved": "Tersimpan · tiada halaman aktif",
+  "browser.resources.pending": "Menunggu pengesahan masa jalan",
+  "browser.resources.empty": "Tiada halaman pelayar tersimpan.",
+  "browser.newTab": "Tab baharu",
+  "common.refresh": "Muat semula",
+  "common.loading": "Sedang memuatkan…"
 }

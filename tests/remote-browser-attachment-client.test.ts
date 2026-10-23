@@ -95,3 +95,19 @@ test('attaching a modern blank tab cannot replay stale client URL or acquire inp
   await Promise.resolve();await Promise.resolve();
   assert.equal(calls.length,0,'existing blank state belongs to server; initial metadata cannot navigate or claim control');
 });
+
+test('native connection waits for durable metadata and a failed or abandoned flush cannot start it', async () => {
+  const host: any = Object.create(RemoteBrowserSurfaceHost.prototype);
+  let finish!: () => void, attempts = 0;
+  host.storage = { flush: () => new Promise<void>(resolve => finish = resolve) };
+  host.inputFailed = false;
+  host.connectTransport = async () => { attempts++; };
+  const page: any = { closed: false };
+  const pending = host.connect(page); assert.equal(attempts, 0);
+  finish(); await pending; assert.equal(attempts, 1);
+  const abandoned = host.connect(page); page.closed = true; finish();
+  await assert.rejects(abandoned, /closed/); assert.equal(attempts, 1);
+  page.closed = false;
+  host.storage.flush = async () => { throw Object.assign(new Error('Metadata conflict'), { code: 'STATE_CONFLICT' }); };
+  await assert.rejects(host.connect(page), { code: 'STATE_CONFLICT' }); assert.equal(attempts, 1);
+});

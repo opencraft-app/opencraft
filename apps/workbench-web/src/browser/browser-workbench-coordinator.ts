@@ -208,6 +208,7 @@ export class BrowserWorkbenchCoordinator {
 
   open(ownerId: string, options: {
     readonly initialUrl?: string;
+    readonly storageId?: string;
     readonly tabId?: BrowserTabId;
     readonly panelOwnerId?: string;
     readonly hostId?: string;
@@ -230,6 +231,7 @@ export class BrowserWorkbenchCoordinator {
           ?? null,
         ...(normalizedUrl === undefined ? {} : { initialUrl: normalizedUrl }),
       });
+      if (options.storageId) this.pages.bindStorage(pageId, options.storageId);
       tab = {
         id: createTabId(),
         pageId,
@@ -270,6 +272,15 @@ export class BrowserWorkbenchCoordinator {
       if (this.bindings.resolve(scopeId) === null) continue;
       this.observeTab(tab.id);
     }
+  }
+
+  openResource(ownerId: string, lease: string, url: string | null) {
+    const existing = [...this.tabs.values()].find(tab => this.pages.storageId(tab.pageId)?.replace(':', '-') === lease);
+    if (existing) return this.open(existing.ownerId, { tabId: existing.id });
+    return this.open(ownerId, { storageId: lease, ...(url ? { initialUrl: url } : {}) });
+  }
+  forgetResource(lease: string) {
+    for (const tab of [...this.tabs.values()]) if (this.pages.storageId(tab.pageId)?.replace(':', '-') === lease) this.close(tab.ownerId, tab.id);
   }
 
   close(ownerId: string, tabId: BrowserTabId): void {

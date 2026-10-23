@@ -126,6 +126,8 @@ function createSnapshot(input: {
 /** Logical Page owner. It has no panel, iframe, WebContents or viewport state. */
 export class WebBrowserPageRuntime {
   private readonly zoom = new Map<BrowserPageId, number>();
+  bindStorage(pageId: BrowserPageId, storageId: string) { this.surfaces.bindStorageId?.(pageId, storageId); }
+  storageId(pageId: BrowserPageId) { return this.surfaces.existingStorageId?.(pageId) ?? null; }
   get supportsZoom() { return !!this.surfaces.setZoom; }
   getZoom(pageId:BrowserPageId) { return this.zoom.get(pageId)??100; }
   setZoom(pageId:BrowserPageId,percent:number) {

@@ -352,16 +352,47 @@ resident/executable。零个或部分注册是 readiness failure，不能让模�
 
 ## 7. Browser Domain 最小契约
 
+### Headless 文件目录与原生预留
+
+Headless 远程浏览器由 `RemoteBrowserService` 和 `BrowserStateFile` 单独拥有持久目录；
+继续使用 `remote-browser/tabs.json`，不引入数据库。文件的 `pages` 是已提交逻辑 Session，
+包含账户 owner、稳定 key/id、聊天 link（或 null）、逻辑 lifecycle、runtime 及操作身份。
+`states` 保留旧客户端 tabs/pages/storage/bindings 的兼容投影和按 key 的 CAS 版本/操作回执；
+它们的最后一个依赖提交时，把完整关联一并登记为 Session。缺关联的既有记录仍保留在账户目录，
+不能从消失的聊天 alias 推导关闭。输入、媒体、Viewer 和控制继续使用既有 owner。
+
+文件提交通过一个同步 reducer 修改隔离草稿，临时文件 fsync、rename 和目录 fsync 后才公布；
+checkpoint 只更新已提交 Session 的恢复参数，不从在途 Viewer Map 推断是否创建成功。
+Linux 抽象 Unix socket 是该目录的进程级写锁，进程退出由内核释放；所有文件写入共用队列，
+native 等待不持有文件队列。受管切换必须等待旧 Gateway 退出/释放 writer，再接管同一目录。
+
+逻辑 Session 为 open/closing/closed；原生状态为 absent/starting/live/stopping/unknown。
+Ensure 在同一提交中检查全局64/账户16的原生预留并登记 starting（代次及 operationId），
+随后才发送 native create；逻辑保留单独上限为每账户256，不把恢复记录数量当驻留容量。
+结果不明保持 unknown 和占用；仅 native ACK 或排空后的独占 owner inventory 可以确认状态。
+初始化失败经已确认 close 后回到 absent，逻辑 Session 仍在目录，可重试或显式关闭。
+目录读取从不启动原生页面。关闭先提交 tombstone/closing，再排空 create、ACK 原生 close，
+最后移除活跃目录记录，永久 retired key 阻止旧请求复活；失败意图在重启后继续收敛。
+同 key attachment 队列、native 通道屏障和 Gateway runtime epoch 阻止迟到 ACK 改写替代实例。
+当前保留 protocol1 活跃 owner，不声称已有完整跨任意原生进程的 generation ABI。
+
+新 Web 客户端在 open 前等待元数据 flush，并要求服务端验证已提交关联；失败不启动页面。
+metadata 使用对象 key 版本隔离无关字段的冲突；操作回执保留256项，GC 后旧请求的原 CAS
+版本已过期，不能重新执行。同一操作 ID 携带不同内容会被拒绝。兼容旧全账户 CAS 客户端，
+不悄悄合并同一 key 的并发整份替换。元数据失败仍明确要求刷新同步，不冒称自动合并。
+
+浏览器工具栏“Browser resources”读取认证账户的服务端目录，显示未关联/保留/运行/等待确认/关闭中，
+并提供显式关闭与未关联资源接回当前聊天。其他聊天的页面保留原 scope，不能借管理列表绕过 Agent
+的聊天隔离。资源清单保留最后成功结果，刷新失败原位显示；关闭弹窗不卸载原聊天或输入草稿。
+旧 tabs/storage 协议仅作有界迁移兼容，不能把本实现描述为所有平台已切到统一 Session API。
+
 ### 7.1 正交状态
 
 ```ts
-export type BrowserResourceStatus =
-  | "creating"
-  | "active"
-  | "suspended"
-  | "closing"
-  | "closed"
-  | "failed";
+export type BrowserResourceStatus = "open" | "closing" | "closed";
+// Logical retention and native residency are independent. Failure belongs to
+// the operation, never erases the accepted Session from its owner's catalog.
+export type BrowserRuntimeStatus = "absent" | "starting" | "live" | "stopping" | "unknown";
 
 export type BrowserConnectivity =
   | "online"
@@ -388,6 +419,7 @@ export interface BrowserSessionSnapshot {
   readonly revision: number;
   readonly id: BrowserSessionId;
   readonly status: BrowserResourceStatus;
+  readonly runtimeStatus: BrowserRuntimeStatus;
   readonly connectivity: BrowserConnectivity;
   readonly navigation: BrowserNavigationSnapshot;
   readonly title: string | null;

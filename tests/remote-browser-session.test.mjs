@@ -12,6 +12,7 @@ import { RemoteBrowserService } from '../scripts/remote-browser-service.mjs';
 // Replace only Electron process transport. Real admission-scoped service, WS,
 // persistence and reconnect behavior are exercised against a deterministic page.
 class FixtureService extends RemoteBrowserService {
+  constructor(options) { super({ ...options, ownerConnector: null }); }
   commands = []; physical = new Map(); pendingNavigation = false;
   async start() { await this.load(); }
   async request(id, method, input, control, document) {
@@ -22,6 +23,7 @@ class FixtureService extends RemoteBrowserService {
       Object.assign(p, input); return { ...p, navigation: { url: p.url, title: 'Fixture', isLoading: false } };
     }
     if (method === 'close') { this.physical.delete(id); return; }
+    if (!p) throw Object.assign(new Error('Browser page closed'), { code: 'BROWSER_ERROR' });
     if (method === 'navigate') { if (input.url && !['https:', 'http:'].includes(new URL(input.url).protocol)) throw new Error('Unsupported browser URL'); if (!this.pendingNavigation) p.url = input.url ?? 'about:blank'; this.receive({ type: 'navigation', page: id, state: { url: p.url, title: 'Fixture', isLoading: this.pendingNavigation } }); }
     if (method === 'snapshot') return { ...p, navigation: { url: p.url, title: 'Fixture', isLoading: false } };
   }
@@ -533,4 +535,113 @@ test('document-aware peers cannot send missing or old document input; legacy adm
     assert.equal(f.service.commands.at(-1).document,replacement,'legacy identity is captured at service admission');
     await legacy.detach();await a.detach();
   }finally{await f.close()}
+});
+
+test('file-backed reservations serialize 15 + 2 concurrent account opens', async () => {
+  const f = await fixture();
+  try {
+    for (let i = 0; i < 15; i++) { const c = await f.connect('owner'); await c.call('open', { lease: randomUUID() }); await c.detach(); }
+    const a = await f.connect('owner'), b = await f.connect('owner');
+    const results = await Promise.allSettled([a.call('open', { lease: randomUUID() }), b.call('open', { lease: randomUUID() })]);
+    assert.equal(results.filter(r => r.status === 'fulfilled').length, 1);
+    assert.equal(results.find(r => r.status === 'rejected').reason.code, 'ACCOUNT_CAPACITY');
+    assert.equal(f.service.physical.size, 16);
+    assert.equal((await a.call('catalog')).capacity.accountUsed, 16);
+    await a.detach(); await b.detach();
+  } finally { await f.close(); }
+});
+
+test('committed catalog survives failed create without phantom live occupancy or lost ownership', async () => {
+  const f = await fixture(); let finish;
+  try {
+    const a = await f.connect('owner-a'), b = await f.connect('owner-b');
+    let started; const waiting = new Promise(r => started = r), gate = new Promise(r => finish = r);
+    const request = f.service.request.bind(f.service); let badId;
+    f.service.request = async (id, method, ...rest) => {
+      if (method === 'create' && !badId) { badId = id; started(); await gate; throw new Error('Native initialization failed'); }
+      return request(id, method, ...rest);
+    };
+    const lease = randomUUID(), failed = a.call('open', { lease }).catch(e => e); await waiting;
+    const starting = await a.call('catalog');
+    assert.equal(starting.sessions[0].runtime, 'starting'); assert.equal(starting.sessions[0].link, null);
+    await b.call('open', { lease: randomUUID() });
+    const before = JSON.parse(await readFile(join(f.directory, 'remote-browser/tabs.json'), 'utf8'));
+    assert.equal(before.pages.find(p => p.ownerId === 'owner-a').runtime.kind, 'starting');
+    finish(); assert.match((await failed).message, /initialization failed/);
+    const committed = JSON.parse(await readFile(join(f.directory, 'remote-browser/tabs.json'), 'utf8'));
+    assert.equal(committed.pages.find(p => p.ownerId === 'owner-a').runtime.kind, 'absent');
+    assert.equal((await a.call('catalog')).capacity.accountUsed, 0);
+    assert.equal((await b.call('catalog')).sessions.length, 1, 'account isolation');
+    await a.detach(); await b.detach(); await f.restart();
+    const restored = await f.connect('owner-a');
+    assert.equal((await restored.call('catalog')).sessions[0].lease, lease);
+    await restored.call('discard', { lease });
+    assert.equal((await restored.call('catalog')).sessions.length, 0);
+    await assert.rejects(restored.call('open', { lease }), /closed/);
+    await restored.detach();
+  } finally { finish?.(); await f.close(); }
+});
+
+test('missing committed metadata cannot create native pages; per-key CAS and retained receipts survive intervening writes/restart', async () => {
+  const f = await fixture();
+  try {
+    const c = await f.connect('owner'), { scope } = await c.call('state');
+    await assert.rejects(c.call('open', { lease: randomUUID(), metadataRequired: true }), { code: 'STATE_CONFLICT' });
+    assert.equal(f.service.physical.size, 0); assert.equal((await c.call('catalog')).sessions.length, 0);
+    const first = { scope, key: 'tabs', value: '[]', expectedKeyRevision: 0, mutationId: randomUUID() };
+    assert.equal((await c.call('state', first)).keyRevision, 1);
+    await c.call('state', { scope, key: 'bindings', value: '[]', expectedKeyRevision: 0, mutationId: randomUUID() });
+    assert.equal((await c.call('state', first)).revision, 1);
+    await assert.rejects(c.call('state', { ...first, value: '[1]' }), { code: 'OPERATION_CONFLICT' });
+    await c.detach(); await f.restart();
+    const next = await f.connect('owner'); assert.equal((await next.call('state', first)).revision, 1); await next.detach();
+  } finally { await f.close(); }
+});
+
+test('unknown create keeps its slot until a positive native snapshot, without replaying create', async () => {
+  const f = await fixture();
+  try {
+    const request = f.service.request.bind(f.service); let fail = true;
+    f.service.request = async (id, method, ...args) => {
+      const value = await request(id, method, ...args);
+      if (method === 'create' && fail) { fail = false; throw Object.assign(new Error('Lost ACK'), { code: 'BROWSER_UNAVAILABLE' }); }
+      return value;
+    };
+    const c = await f.connect('owner'), lease = randomUUID();
+    await assert.rejects(c.call('open', { lease }), { code: 'BROWSER_UNAVAILABLE' });
+    const unknown = await c.call('catalog'); assert.equal(unknown.sessions[0].runtime, 'unknown'); assert.equal(unknown.capacity.accountUsed, 1);
+    assert.equal((await c.call('open', { lease, multiView: true })).resumed, true);
+    assert.equal(f.service.commands.filter(c => c.method === 'create').length, 1);
+    await c.detach();
+  } finally { await f.close(); }
+});
+
+test('failed file draft and rejected physical epoch never leak into a later committed snapshot', async () => {
+  const f = await fixture();
+  try {
+    await f.service.load();
+    await assert.rejects(f.service.commit(draft => { draft.pages.push({ id: 'uncommitted' }); throw Error('Abort draft'); }), /Abort draft/);
+    const c = await f.connect('owner'); await c.call('open', { lease: randomUUID() });
+    const saved = JSON.parse(await readFile(join(f.directory, 'remote-browser/tabs.json'), 'utf8'));
+    assert.equal(saved.pages.length, 1); assert.notEqual(saved.pages[0].id, 'uncommitted');
+    const page = [...f.service.pages.values()][0], epoch = page.runtimeEpoch ?? 0;
+    f.service.resetVisibility(page); await f.service.runtimeState(page, 'unknown');
+    await f.service.runtimeState(page, 'live', epoch);
+    assert.equal((await c.call('catalog')).sessions[0].runtime, 'unknown');
+    await c.detach();
+  } finally { await f.close(); }
+});
+
+test('complete metadata registers a dormant logical session in the same commit without starting native', async () => {
+  const f = await fixture();
+  try {
+    const c = await f.connect('owner'), { scope } = await c.call('state'), lease = 'browser-' + randomUUID();
+    const values = { pages: JSON.stringify([{ id: 'page-a', ownerId: 'scope-a', entries: [{url:'https://example.test/saved'}], index:0 }]),
+      tabs: JSON.stringify([{ id: 'tab-a', pageId: 'page-a', ownerId: 'scope-a' }]), storage: JSON.stringify({ 'page-a': lease }) };
+    for (const [key, value] of Object.entries(values)) await c.call('state', { scope, key, value, expectedKeyRevision: 0, mutationId: randomUUID() });
+    const catalog = await c.call('catalog');
+    assert.equal(catalog.sessions.length, 1); assert.equal(catalog.sessions[0].runtime, 'absent'); assert.equal(catalog.capacity.accountUsed, 0);
+    assert.equal(catalog.sessions[0].link.pageId, 'page-a'); assert.equal(f.service.commands.length, 0);
+    await c.detach();
+  } finally { await f.close(); }
 });

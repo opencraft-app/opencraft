@@ -24,6 +24,8 @@ export interface BrowserSurfaceEvents {
 export interface BrowserNewTabLabels { readonly title: string; readonly hint: string }
 
 export interface BrowserSurfaceHost {
+  listResources?(): Promise<import('./desktop-browser-storage').RemoteBrowserCatalog>;
+  closeResource?(lease: string): Promise<void>;
   readonly localMenu?: BrowserLocalMenuController;
   controlState?(id: BrowserPageId): 'unavailable' | 'viewing' | 'human' | 'agent' | 'elsewhere';
   onControlState?(listener: () => void): () => void;

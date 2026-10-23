@@ -1,4 +1,17 @@
-export type BrowserMetadataStorage = Pick<Storage, "getItem" | "setItem">;
+export interface RemoteBrowserResource {
+  sessionId: string; lease: string; lifecycle: string; runtime: string; url: string | null;
+  link: { pageId: string; tabId: string; scopeId: string; hostId: string | null } | null;
+  createdAt: number | null;
+}
+export interface RemoteBrowserCatalog {
+  sessions: RemoteBrowserResource[];
+  capacity: { used: number; limit: number; accountUsed: number; accountLimit: number };
+}
+export type BrowserMetadataStorage = Pick<Storage, "getItem" | "setItem"> & {
+  flush?(): Promise<void>;
+  listResources?(): Promise<RemoteBrowserCatalog>;
+  closeResource?(lease: string): Promise<void>;
+};
 interface DesktopStoragePort {
   read(): Promise<Record<string, string>>;
   write(key: string, value: string): Promise<void>;

@@ -878,5 +878,18 @@
   "preview.slide": "Slide {page}",
   "preview.slides": "Slide thumbnails",
   "preview.fitSlide": "Fit slide",
-  "sidebar.catalog.searchIncomplete": "No matches yet · conversation list is incomplete"
+  "sidebar.catalog.searchIncomplete": "No matches yet · conversation list is incomplete",
+  "browser.resources.title": "Browser resources",
+  "browser.resources.description": "All saved pages in your account, including pages without a conversation. Closing a page discards its unsaved content.",
+  "browser.resources.capacity": "Your reserved pages: {used}/{limit} · Shared capacity: {total}/{maximum}",
+  "browser.resources.linked": "Conversation page",
+  "browser.resources.unassigned": "Unassigned page · open to reconnect",
+  "browser.resources.closing": "Closing…",
+  "browser.resources.live": "Running",
+  "browser.resources.saved": "Saved · no active page",
+  "browser.resources.pending": "Awaiting runtime confirmation",
+  "browser.resources.empty": "No saved browser pages.",
+  "browser.newTab": "New tab",
+  "common.refresh": "Refresh",
+  "common.loading": "Loading…"
 }

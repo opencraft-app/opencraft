@@ -115,6 +115,8 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
     try { for (const [id, storage] of Object.entries(JSON.parse(this.storage.getItem(this.storageKey) || '{}')))
       if (typeof storage === 'string' && /^browser[:-][a-zA-Z0-9-]+$/.test(storage)) this.storageIds.set(id as BrowserPageId, storage); } catch {}
   }
+  get listResources() { return this.storage.listResources ? () => this.storage.listResources!() : undefined; }
+  get closeResource() { return this.storage.closeResource ? (lease: string) => this.storage.closeResource!(lease) : undefined; }
   existingStorageId(id: BrowserPageId) { return this.storageIds.get(id) ?? null; }
   bindStorageId(id: BrowserPageId, storage: string) {
     this.storageIds.set(id, storage); this.persistStorage();
@@ -296,6 +298,14 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
     p.ready = this.connect(p); void p.ready.catch(error => { if (!p.closed) p.events.onError(error.message); });
   }
   private connect(p: Page): Promise<void> {
+    // Native creation must follow the metadata commit, including reconnect.
+    if (this.storage.flush) return this.storage.flush().then(() => {
+      if (p.closed || this.inputFailed) throw this.storageError ?? new Error('Browser tab closed');
+      return this.connectTransport(p);
+    });
+    return this.connectTransport(p);
+  }
+  private connectTransport(p: Page): Promise<void> {
     p.disconnected = false;
     const generation = ++p.connection;
     return new Promise((resolve, reject) => {
@@ -306,7 +316,7 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
       const current = () => !p.closed && p.connection === generation;
       ws.onopen = () => { if (!current()) return; clearTimeout(timer);
         const viewport = p.viewportMeasured ? { ...p.viewport } : undefined;
-        void this.call(p, 'open', { lease: p.lease, multiView: true, documentInput: true, inputAcknowledgements: true, visible: this.isVisible(p), initialUrl: p.url ?? null, viewport, defaultDeviceProfile: remoteBrowserDeviceProfile() }).then(async config => {
+        void this.call(p, 'open', { lease: p.lease, metadataRequired: !!this.storage.flush, multiView: true, documentInput: true, inputAcknowledgements: true, visible: this.isVisible(p), initialUrl: p.url ?? null, viewport, defaultDeviceProfile: remoteBrowserDeviceProfile() }).then(async config => {
           if (!current()) return; this.applyDocument(p, config.document); p.inputAcknowledgements = config.inputAcknowledgements === true; p.serverInitialNavigation = config.multiView === true; this.setControl(p, config.control); p.resumed = config.resumed === true; p.restored = (config.resumed || config.restored) && !!config.navigation?.url && config.navigation.url !== 'about:blank'; p.nativeCopy = config.nativeCopy === true; p.nativeIme = config.nativeIme === true; p.multiTouch = config.multiTouch === true; this.keyboardChanged(); this.applyViewport(p, config);
           const effective = { width: config.width, height: config.height, deviceProfile: config.deviceProfile };
           if (!p.viewportMeasured) p.viewport = effective;

@@ -45,6 +45,7 @@ async function fixture(t) {
 test('a replacement Gateway adopts the same native document/form/scroll and retires old input control', async t => {
   const f = await fixture(t), first = f.service(); await first.start();
   const key = JSON.stringify(['synthetic-owner', 'browser-logical-tab']), id = createHash('sha256').update(key).digest('hex');
+  await first.commit(draft => { draft.pages.push({ id, key, ownerId: 'synthetic-owner', zoom: 100, lifecycle: 'open', runtime: { kind: 'starting', generation: 1 } }); });
   first.pages.set(key, { id, key, ownerId: 'synthetic-owner', zoom: 100, live: true });
   await first.request(id, 'create'); await first.request(id, 'control', { token: 'old-human' });
   // Accepted old writes finish once before the owner permits a new attachment.
