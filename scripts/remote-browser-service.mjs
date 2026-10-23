@@ -78,7 +78,14 @@ export class RemoteBrowserService {
       this.loaded = true;
       for (const page of this.pages.values()) if (page.closing) this.retryRetirement(page, 0);
     })();
-    return this.loading;
+    const attempt = this.loading;
+    try { return await attempt; }
+    catch (error) {
+      // A predecessor may still be flushing during managed handover. Busy is
+      // transient; corrupt state stays failed closed and is never replaced.
+      if (error.code === 'BROWSER_UNAVAILABLE' && this.loading === attempt) this.loading = null;
+      throw error;
+    }
   }
   commit(reduce) {
     if (this.closed) return Promise.reject(new Error('Browser service closed'));

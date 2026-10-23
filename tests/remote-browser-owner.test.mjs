@@ -87,6 +87,11 @@ test('an overlapping Gateway receives a retryable open failure while the prior o
     assert.equal(message.error?.code, 'BROWSER_UNAVAILABLE'); assert.equal(message.error?.retryable, true);
     assert.equal(first.child.workerPid, f.owner.child.pid);
     assert.deepEqual(await first.request(undefined, 'inventory'), []);
+    first.close(); await first.persistence;
+    const recovered = once(client, 'message');
+    client.send(JSON.stringify({ id: 'after-writer-exit', method: 'state' }));
+    const state = JSON.parse((await recovered)[0]);
+    assert.equal(state.error, undefined); assert.equal(state.value.revision, 0);
   } finally {
     client.terminate(); first.close(); second.close();
     await first.persistence; await second.persistence;

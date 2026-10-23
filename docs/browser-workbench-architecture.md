@@ -364,7 +364,8 @@ Headless 远程浏览器由 `RemoteBrowserService` 和 `BrowserStateFile` 单独
 文件提交通过一个同步 reducer 修改隔离草稿，临时文件 fsync、rename 和目录 fsync 后才公布；
 checkpoint 只更新已提交 Session 的恢复参数，不从在途 Viewer Map 推断是否创建成功。
 Linux 抽象 Unix socket 是该目录的进程级写锁，进程退出由内核释放；所有文件写入共用队列，
-native 等待不持有文件队列。受管切换必须等待旧 Gateway 退出/释放 writer，再接管同一目录。
+native 等待不持有文件队列。受管切换必须等待旧 Gateway 退出/释放 writer，再接管同一目录；暂忙的 load 可重新尝试，
+不能把一次 writer 争用永久缓存为初始化失败。损坏文件仍保持 fail closed。
 
 逻辑 Session 为 open/closing/closed；原生状态为 absent/starting/live/stopping/unknown。
 Ensure 在同一提交中检查全局64/账户16的原生预留并登记 starting（代次及 operationId），
