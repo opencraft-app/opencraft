@@ -29,6 +29,9 @@ export interface WindowAppearanceProjection {
   /** A DOM/meta/bridge write is not evidence of the system's displayed pixels. */
   readonly systemAppearance: "unobserved";
 }
+export interface WindowAppearanceProjector {
+  projectAppearance(requested: WindowAppearanceIntent, phase: WindowAppearanceProjection["phase"]): WindowAppearanceProjection;
+}
 export function projectWindowAppearance(
   document: Document, requested: WindowAppearanceIntent, presentation: WindowPresentation,
   phase: WindowAppearanceProjection["phase"],

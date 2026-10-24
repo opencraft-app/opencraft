@@ -8,7 +8,7 @@ import {
   type OpenCraftThemeDefinition, type ThemeCssProperties,
 } from "@opencraft/design-system/theme-engine";
 import { resolveBuiltinAppearanceCatalog, type AppearanceThemeDescriptor, type CatalogEntry } from "./appearance-catalog";
-import { resolveWindowAppearanceIntent, projectWindowAppearance, type WindowAppearanceProjection } from "./runtime/window-appearance";
+import { resolveWindowAppearanceIntent, projectWindowAppearance, type WindowAppearanceProjection, type WindowAppearanceProjector } from "./runtime/window-appearance";
 import { readWindowPresentation } from "./runtime/window-presentation";
 import type { ExtensionContributionSnapshot, ExtensionContributionStore } from "@opencraft/extension-runtime";
 import { applyWorkbenchProductPresentation, workbenchProductId, workbenchPresentation } from "./workbench-product";
@@ -41,6 +41,15 @@ const preferenceKey = "opencraft.appearance-theme";
 const selectionKey = "opencraft.appearance-theme-id";
 const systemAppearance = window.matchMedia("(prefers-color-scheme: dark)");
 let windowProjection: WindowAppearanceProjection | undefined;
+let windowProjector: WindowAppearanceProjector | undefined;
+/** Bootstrap binds one active host projector; theme preference stays here. */
+export function bindWindowAppearanceProjector(projector: WindowAppearanceProjector): () => void {
+  if (windowProjector) throw new Error("A window appearance projector is already bound");
+  windowProjector = projector;
+  try { if (initialized) projectDocument(); }
+  catch (error) { windowProjector = undefined; throw error; }
+  return () => { if (windowProjector === projector) windowProjector = undefined; };
+}
 /** Projection evidence only; native status-bar pixels cannot be read here. */
 export function getWindowAppearanceProjection(): WindowAppearanceProjection | undefined { return windowProjection; }
 let initialized = false;
@@ -131,7 +140,9 @@ function projectDocument(): void {
   const definition = resolveEntry(current.themeId).palettes[current.resolvedTheme];
   applyAppearanceThemeToElement(document.documentElement);
   applyWorkbenchProductPresentation(document.documentElement, workbenchProductId);
-  windowProjection = projectWindowAppearance(document, resolveWindowAppearanceIntent(current.preference, current.resolvedTheme, definition), readWindowPresentation(window), "resolved");
+  const intent = resolveWindowAppearanceIntent(current.preference, current.resolvedTheme, definition);
+  windowProjection = windowProjector ? windowProjector.projectAppearance(intent, "resolved")
+    : projectWindowAppearance(document, intent, readWindowPresentation(window), "resolved");
 }
 
 function publish(next: AppearanceThemeSnapshot): void {
