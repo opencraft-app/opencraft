@@ -222,7 +222,7 @@ try {
         if (state === 'warm-loading') {
           loadingTint = tint.alphas.slice(0, 2);
           assert.equal(loadingTint.length, 2, 'loading paints a real tint gradient');
-          assert.ok(!tint.shadow.includes(', '), 'loading has no outer warning glow');
+          assert.match(tint.shadow, /(?:rgba\(0, 0, 0, 0\)|color\(srgb[^)]*\/ 0\))/, 'loading outer glow stays transparent');
         }
         if (state === 'warm-reconnecting') {
           assert.equal(tint.alphas.length >= 2, true);
