@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import test from "node:test";
 
-import type * as DeveloperLogCore from "../../apps/workbench-expo/src/runtime/mobile-developer-log-core";
+import type * as DeveloperLogCore from "../../apps/mobile/src/runtime/mobile-developer-log-core";
 
 const { appendDeveloperLine } = createRequire(import.meta.url)(
-  "../../apps/workbench-expo/src/runtime/mobile-developer-log-core.ts",
+  "../../apps/mobile/src/runtime/mobile-developer-log-core.ts",
 ) as typeof DeveloperLogCore;
 
 test("developer log retains only the latest 100 lines and numeric facts", () => {

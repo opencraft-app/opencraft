@@ -83,7 +83,7 @@ try {
   const temporaryFork = await request("thread/fork", { threadId: parent, ephemeral: true });
   assert.equal(temporaryFork.model, text.model);
   await request("thread/unsubscribe", { threadId: temporaryFork.thread.id });
-  const image = await readFile(resolve("apps/workbench-expo/ios/OpenCraft/Images.xcassets/AppIcon.appiconset/App-Icon-1024x1024@1x.png"));
+  const image = await readFile(resolve("apps/mobile/ios/OpenCraft/Images.xcassets/AppIcon.appiconset/App-Icon-1024x1024@1x.png"));
   const input = [{ type: "image", url: "data:image/png;base64," + image.toString("base64") }];
   await assert.rejects(request("turn/start", { threadId: parent, input }), /does not support image|不支持 image 输入/);
   assert.equal(captured.length, 0);

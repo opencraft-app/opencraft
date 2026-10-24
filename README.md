@@ -145,7 +145,7 @@ build inputs and task records.
 
 - `apps/workbench-web`: React DOM + Vite renderer for browser and Electron.
 - `apps/workbench-electron`: Electron main/preload host without a second UI.
-- `apps/workbench-expo`: Expo Router host for native and Expo Web.
+- `apps/mobile`: Expo Router host for native and Expo Web.
 - `apps/bridges/hermes`: independently installed Bun bridge from Hermes to the AppServer protocol.
 - `packages/appserver-protocol`: Host-aware AppServer contracts and generated native Codex types.
 - `packages/chat-core`: typed `Turn -> DisplayItem` projection.
@@ -159,7 +159,7 @@ build inputs and task records.
 The Expo host uses React Native, HeroUI Native and Uniwind over one canonical
 React 19 instance. The public entry runs the shared native Workbench; downstream
 products select their own entry and configuration explicitly. See the
-[Expo guide](apps/workbench-expo/README.md) for Expo Go previews, native builds
+[Expo guide](apps/mobile/README.md) for Expo Go previews, native builds
 and their platform requirements. `npm run build:expo:ios` runs the
 Linux-compatible Metro iOS bundle gate; launching an Apple Simulator and
 compiling the native pods still require macOS and Xcode.

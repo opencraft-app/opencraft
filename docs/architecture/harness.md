@@ -320,7 +320,7 @@ packages/chat-document/harness/
 packages/chat-render-web/harness/
 packages/composer-editor/harness/
 apps/workbench-web/harness/
-apps/workbench-expo/harness/
+apps/mobile/harness/
 ```
 
 Scenario files use `*.scenario.ts` or `*.scenario.tsx`. Platform-only scenarios

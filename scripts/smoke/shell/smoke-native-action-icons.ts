@@ -14,7 +14,7 @@ const webRoot = resolve(output, "metro-export");
 const buildEnv = { ...process.env, CI: "1", EXPO_OFFLINE: "1", OPENCRAFT_EXPO_PRODUCT_ENTRY: resolve("tests/fixtures/native-action-icons.tsx") };
 for (const key of ["OPENCRAFT_EXPO_WORKBENCH", "OPENCRAFT_EXPO_PRODUCT_CONFIG", "OPENCRAFT_EXPO_ROUTER_CONTEXT_ENTRY", "OPENCRAFT_EXPO_PRODUCT_STYLES"]) delete (buildEnv as Record<string, string | undefined>)[key];
 const build = await promisify(execFile)(process.execPath, ["scripts/run-expo.cjs", "export", "--platform", "web", "--output-dir", webRoot], {
-  cwd: resolve("apps/workbench-expo"), env: buildEnv, maxBuffer: 16 * 1024 * 1024,
+  cwd: resolve("apps/mobile"), env: buildEnv, maxBuffer: 16 * 1024 * 1024,
 });
 await writeFile(join(output, "metro-build.log"), build.stdout + build.stderr);
 const mime: Record<string, string> = { ".html": "text/html", ".js": "application/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png", ".woff2": "font/woff2" };

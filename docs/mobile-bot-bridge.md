@@ -149,7 +149,7 @@ an actual Expo Web export at `/agents-next`; `/agents` retains its current
 controller and presentation. Build from `opencraft/`:
 
 ```sh
-npm run build:agents-next --workspace @opencraft/workbench-expo
+npm run build:agents-next --workspace @opencraft/mobile
 ```
 
 This exports shared navigation through Metro and emits a static manifest under

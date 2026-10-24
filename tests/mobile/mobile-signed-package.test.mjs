@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 
-const expoRoot = resolve(import.meta.dirname, "../../apps/workbench-expo");
+const expoRoot = resolve(import.meta.dirname, "../../apps/mobile");
 const require = createRequire(import.meta.url);
 const configureExpo = require(join(expoRoot, "app.config.js"));
 

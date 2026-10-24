@@ -604,7 +604,7 @@ packages/workbench-runtime/src/capabilities/appserver-adapter.ts
 packages/workbench-runtime/src/capabilities/mcp-adapter.ts
 apps/workbench-web/src/capabilities/sandbox-host.ts
 apps/workbench-desktop/src/capabilities/utility-host.ts
-apps/workbench-expo/src/capabilities/webview-host.tsx
+apps/mobile/src/capabilities/webview-host.tsx
 ```
 
 `capability-runtime` 对应用只暴露一个窄 Facade；UI、Agent Loop 和 Extension 不分别拼装

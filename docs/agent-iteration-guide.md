@@ -17,7 +17,7 @@ full gate.
 | daemon connection behavior | matching `appserver-transport-*` package | transport tests + Lab fault scenario |
 | shared commands and view state | `packages/workbench-runtime` | runtime tests + both renderer builds |
 | desktop frame or DOM editor | `apps/workbench-web`, `packages/composer-editor` | Vite build and browser review |
-| native/iPad view | `apps/workbench-expo` | Expo Web export + iOS Metro bundle |
+| native/iPad view | `apps/mobile` | Expo Web export + iOS Metro bundle |
 
 Do not add protocol, persistence, clocks, or daemon state directly to a React
 component. Define a renderer-neutral port first and inject the platform

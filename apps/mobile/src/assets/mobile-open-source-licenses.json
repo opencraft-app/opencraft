@@ -1,0 +1,217 @@
+[
+  {
+    "name": "@deepseek-ai/cordis",
+    "version": "4.0.4",
+    "license": "MIT"
+  },
+  {
+    "name": "@expo/metro-runtime",
+    "version": "57.0.17",
+    "license": "MIT"
+  },
+  {
+    "name": "@gorhom/bottom-sheet",
+    "version": "5.2.14",
+    "license": "MIT"
+  },
+  {
+    "name": "@tanstack/react-query",
+    "version": "5.104.3",
+    "license": "MIT"
+  },
+  {
+    "name": "@ungap/structured-clone",
+    "version": "1.4.0",
+    "license": "ISC"
+  },
+  {
+    "name": "expo",
+    "version": "57.0.18",
+    "license": "MIT"
+  },
+  {
+    "name": "expo-asset",
+    "version": "57.0.18",
+    "license": "MIT"
+  },
+  {
+    "name": "expo-audio",
+    "version": "57.0.5",
+    "license": "MIT"
+  },
+  {
+    "name": "expo-blur",
+    "version": "57.0.2",
+    "license": "MIT"
+  },
+  {
+    "name": "expo-clipboard",
+    "version": "57.0.1",
+    "license": "MIT"
+  },
+  {
+    "name": "expo-constants",
+    "version": "57.0.22",
+    "license": "MIT"
+  },
+  {
+    "name": "expo-crypto",
+    "version": "57.0.2",
+    "license": "MIT"
+  },
+  {
+    "name": "expo-document-picker",
+    "version": "57.0.3",
+    "license": "MIT"
+  },
+  {
+    "name": "expo-file-system",
+    "version": "57.0.7",
+    "license": "MIT"
+  },
+  {
+    "name": "expo-glass-effect",
+    "version": "57.0.4",
+    "license": "MIT"
+  },
+  {
+    "name": "expo-image",
+    "version": "57.0.5",
+    "license": "MIT"
+  },
+  {
+    "name": "expo-image-manipulator",
+    "version": "57.0.20",
+    "license": "MIT"
+  },
+  {
+    "name": "expo-image-picker",
+    "version": "57.0.20",
+    "license": "MIT"
+  },
+  {
+    "name": "expo-linking",
+    "version": "57.0.8",
+    "license": "MIT"
+  },
+  {
+    "name": "expo-network",
+    "version": "57.0.2",
+    "license": "MIT"
+  },
+  {
+    "name": "expo-router",
+    "version": "57.0.17",
+    "license": "MIT"
+  },
+  {
+    "name": "expo-secure-store",
+    "version": "57.0.3",
+    "license": "MIT"
+  },
+  {
+    "name": "expo-sqlite",
+    "version": "57.0.2",
+    "license": "MIT"
+  },
+  {
+    "name": "expo-status-bar",
+    "version": "57.0.1",
+    "license": "MIT"
+  },
+  {
+    "name": "expo-web-browser",
+    "version": "57.0.2",
+    "license": "MIT"
+  },
+  {
+    "name": "heroui-native",
+    "version": "1.0.10",
+    "license": "Apache-2.0"
+  },
+  {
+    "name": "katex",
+    "version": "0.18.10",
+    "license": "MIT"
+  },
+  {
+    "name": "react",
+    "version": "19.2.3",
+    "license": "MIT"
+  },
+  {
+    "name": "react-dom",
+    "version": "19.2.3",
+    "license": "MIT"
+  },
+  {
+    "name": "react-native",
+    "version": "0.86.3",
+    "license": "MIT"
+  },
+  {
+    "name": "react-native-gesture-handler",
+    "version": "2.32.0",
+    "license": "MIT"
+  },
+  {
+    "name": "react-native-keyboard-controller",
+    "version": "1.21.9",
+    "license": "MIT"
+  },
+  {
+    "name": "react-native-reanimated",
+    "version": "4.5.1",
+    "license": "MIT"
+  },
+  {
+    "name": "react-native-safe-area-context",
+    "version": "5.7.0",
+    "license": "MIT"
+  },
+  {
+    "name": "react-native-screens",
+    "version": "4.26.0",
+    "license": "MIT"
+  },
+  {
+    "name": "react-native-svg",
+    "version": "15.15.4",
+    "license": "MIT"
+  },
+  {
+    "name": "react-native-web",
+    "version": "0.21.2",
+    "license": "MIT"
+  },
+  {
+    "name": "react-native-webview",
+    "version": "13.16.1",
+    "license": "MIT"
+  },
+  {
+    "name": "react-native-worklets",
+    "version": "0.10.1",
+    "license": "MIT"
+  },
+  {
+    "name": "tailwind-merge",
+    "version": "3.6.0",
+    "license": "MIT"
+  },
+  {
+    "name": "tailwind-variants",
+    "version": "3.2.2",
+    "license": "MIT"
+  },
+  {
+    "name": "tailwindcss",
+    "version": "4.3.2",
+    "license": "MIT"
+  },
+  {
+    "name": "uniwind",
+    "version": "1.12.0",
+    "license": "MIT"
+  }
+]
