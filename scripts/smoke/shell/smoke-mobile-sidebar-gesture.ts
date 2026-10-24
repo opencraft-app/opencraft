@@ -183,8 +183,12 @@ try {
       const heldOpen=await hold(4,230);
       assert.equal(heldOpen>100,handed,'held edge input must reach the existing drawer');
       await touch('touchEnd');await wait();
-      if(handed)await opened();else{await closed();await page.evaluate(()=>(window as any).fixture.setOpen(true));await wait();}
+      if(handed)await opened();else{
+        await closed();await page.locator('.app-shell-header [data-app-shell-sidebar-trigger]').click();
+        await page.waitForFunction(()=>document.querySelector('.app-shell-row')!.getBoundingClientRect().x>200);await wait();
+      }
       const openX=await position();const heldClose=await hold(386,80);
+      assert(openX>200,'close starts with an actually visible drawer');
       assert.equal(heldClose<openX-100,handed,'opposite edge must drive existing close motion');
       await touch('touchEnd');await wait();
       // Unclaimed Web contacts retain native/DOM end handling, including clicks.
