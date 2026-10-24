@@ -15,7 +15,7 @@ import{initializeAppearanceTheme,setThemePreference}from'/apps/workbench-web/src
 import'/apps/workbench-web/src/styles/app.scss';
 initializeAppearanceTheme();
 const fixture=window.fixture={setThemePreference};const noop=()=>{};const client=new QueryClient();
-const navigation={layout:'unified',actions:[],onOpenSettings:noop,account:{snapshot:{phase:'authenticated',name:'Synthetic employee',avatarUrl:null},onOpen:noop,onRefresh:async()=>{}}};
+const navigation={layout:'unified',actions:[{id:'shell.home',title:'Home',icon:'home',active:true,onInvoke:noop}],onOpenSettings:noop,account:{snapshot:{phase:'authenticated',name:'Synthetic employee',avatarUrl:null},onOpen:noop,onRefresh:async()=>{}}};
 function App(){const[open,setOpen]=useState(false),[preview,setPreview]=useState(false),[conversation,setConversation]=useState(true);Object.assign(fixture,{setConversation});
 return <QueryClientProvider client={client}><AppShell layoutScope='measurement' navigation={navigation} mainContentLayout='thread-edge-scroll' sidebarOpen={open} sidebarWidth={335} windowChrome={{kind:'browser',platform:'linux',safeArea:{left:0,right:0}}} onSidebarCollapse={()=>setOpen(false)} onSidebarExpand={()=>setOpen(true)} onSidebarResizeEnd={noop} rightPanel={<div>Preview</div>} rightPanelOpen={preview} rightPanelFullWidth={false} onRightPanelOpenChange={setPreview}
 header={<AppShellHeader conversationHeader={conversation} headerAction={<ConversationTaskMenu scope="fixture" serverId="local" threadId="synthetic" title="Measurement" verifyConversation={async()=>{}} onOpenTasks={noop} onRename={async()=>{}}/>} navigationBrand={<span className="application-brand" data-probe-brand style={{whiteSpace:'nowrap',fontSize:14}}>OpenCraft</span>} title='Measurement' project={null} sidebarOpen={open} rightPanelOpen={preview} rightPanelFullWidth={false} showRightPanelAction={true} onToggleSidebar={()=>setOpen(!open)} onToggleRightPanel={()=>setPreview(v=>!v)} onHome={noop} canGoBack={false} canGoForward={false} onBack={noop} onForward={noop} navigationActions={['sidebar-toggle','back','forward']}/>}
@@ -95,6 +95,30 @@ try {
  await page.evaluate(()=>{document.documentElement.dataset.uiDensity='touch';(window as any).fixture.setConversation(false)});await page.waitForTimeout(100);assert.equal(await page.locator('.thread-header-title').isVisible(),true);
  assert.equal(await page.evaluate(()=>(window as any).editor===document.querySelector('input')),true);assert.equal(await page.getByLabel('Draft').inputValue(),'Retained draft');assert.deepEqual(errors,[]);
  evidence.push({width,theme,bounds,optics,fade,errors});await context.close();
+ }
+ // Desktop uses the same material at the existing compact action size.
+ // Exercise real hover: a root-prefixed caller of hover-capable would compile
+ // to an unreachable nested :root and silently lose this feedback.
+ for (const theme of ['light', 'dark']) {
+  const desktop=await browser.newContext({viewport:{width:1440,height:900},hasTouch:false});
+  const page=await desktop.newPage();await page.addInitScript(()=>{(window as any).__name=(v:unknown)=>v});
+  await page.goto(vite.resolvedUrls!.local[0]!);await page.getByLabel('Draft').waitFor({timeout:60000});
+  await page.evaluate(theme=>{(window as any).fixture.setThemePreference(theme);document.documentElement.dataset.uiDensity='compact'},theme);
+  const toggle=page.locator('[data-chrome-action-id="sidebar-toggle"]:visible').last();
+  const bounds=await toggle.boundingBox();assert.equal(bounds?.width,28);assert.equal(bounds?.height,28);
+  assert.equal(await toggle.locator('.ui-liquid-glass').evaluate(e=>getComputedStyle(e).display),'block');
+  const normal=await toggle.evaluate(e=>getComputedStyle(e).backgroundColor);await toggle.hover();
+  const hover=await toggle.evaluate(e=>getComputedStyle(e).backgroundColor);assert.notEqual(hover,normal,'desktop glass actions retain hover feedback');
+  await page.evaluate(()=>{document.documentElement.dataset.touchInteraction=''});
+  assert.equal(await toggle.evaluate(e=>getComputedStyle(e).backgroundColor),normal,'touch input suppresses sticky hover');
+  await page.evaluate(()=>{delete document.documentElement.dataset.touchInteraction});await page.mouse.move(700,450);
+  const group=page.locator('.app-shell-header__end-slot .app-shell-header__action-group > .ui-liquid-glass');
+  assert.equal((await group.boundingBox())?.height,28,'the backdrop must fit compact actions without moving the header group');
+  await toggle.click();await page.waitForTimeout(400);const current=page.locator('.shell-sidebar-navigation [data-action-id="shell.home"]:visible');assert.equal(await current.getAttribute('aria-current'),'page');assert.notEqual(await current.evaluate(e=>getComputedStyle(e).backgroundColor),'rgba(0, 0, 0, 0)','current navigation remains distinguishable above glass');
+  const account=page.locator('.shell-sidebar__rail-footer [data-surface="account"]:visible');await account.click();
+  assert.equal(await account.getAttribute('data-state'),'open');await page.waitForFunction((e:HTMLElement)=>getComputedStyle(e).backgroundColor!=='rgba(0, 0, 0, 0)',await account.elementHandle());assert.notEqual(await account.evaluate(e=>getComputedStyle(e).backgroundColor),'rgba(0, 0, 0, 0)','open account entrance remains distinguishable above glass');await page.keyboard.press('Escape');
+  await page.screenshot({path:output+'/1440-'+theme+'-desktop.png'});
+  evidence.push({desktop:{theme,width:1440,compactSize:28,hoverFeedback:true,touchHoverSuppressed:true}});await desktop.close();
  }
  const fallbackContext=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true});
  await fallbackContext.addInitScript(()=>{const supports=CSS.supports.bind(CSS);CSS.supports=((property:string,value?:string)=>property==='-webkit-backdrop-filter'?true:value===undefined?supports(property):supports(property,value)) as typeof CSS.supports});

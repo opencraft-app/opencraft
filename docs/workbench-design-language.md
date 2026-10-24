@@ -525,13 +525,36 @@ and actions while Modal/Radix retains window, dismissal and focus ownership.
 
 Touch Newera conversation chrome uses a leading circular sidebar control and one
 trailing capsule for the existing conversation menu and preview action. The two
-trailing targets remain independent, with no divider or nested glass. Other
-routes/densities keep their existing presentation. Shell owns placement and safe
+trailing targets remain independent, with no divider or nested glass. All Shell action densities use this same material; touch and pointer layouts
+retain their own hit-target sizes and grouping. Shell owns placement and safe
 areas; the design system owns LiquidGlassBackdrop, semantic material tokens and
 opaque accessibility fallbacks. A supported live backdrop lens uses a small
 geometry-dependent map updated on resize; it never captures content or runs a
 scroll/frame loop. Unsupported lens engines retain tint, softened transmission
 and curved highlights. Icons, focus rings and portalled menus are unfiltered.
+
+### Shared shell action material
+
+Phone, tablet, wide Web and Electron Shell actions share `LiquidGlassBackdrop`,
+`material.liquid` and the same `material-liquid-*` tokens. Sidebar top/compact rail
+icons, New chat, footer Settings/account/update entrances and navigation controls
+use one backdrop per independent action. The header trailing group keeps one
+shared backdrop, fitted to its existing compact action height on desktop and its
+existing Newera capsule on touch; never nest glass under each grouped action.
+The transcript return/working control and floating Composer change summary reuse
+this same material. The floating summary action consumes `controls.density-target`
+to retain a 44px touch hit area without enlarging its compact pointer target. New chat retains its existing text capsule for emphasis.
+
+Material does not branch by platform or density. Existing owners keep position,
+size, labels, icons, actions and keyboard focus; touch retains at least 44px hit
+targets while pointer layouts retain compact dimensions. Neutral hover/press
+states remain separate from the optical plane. Lists, inline conversation actions,
+Composer editing surfaces, dialogs, settings forms and menu items keep their own
+semantic styles. Those content-layer controls are outside this Shell unification.
+
+The shared tokens own light/dark tint, prefixed Safari CSS blur and readable opaque
+fallbacks for unsupported blur, reduced transparency and forced colors. Safari
+uses the existing CSS approximation; physical iOS rendering needs device evidence.
 
 ### Live navigation optics
 

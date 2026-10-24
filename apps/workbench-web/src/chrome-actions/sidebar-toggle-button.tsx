@@ -7,10 +7,9 @@ import { SidebarToggleIcon } from "./sidebar-toggle-icon";
 import { useChromeActionFocusRef } from "./use-chrome-action-focus";
 
 /** One visual/action contract for the sidebar and its collapsed entrance. */
-export function SidebarToggleButton({ open, onToggle, hostRole, stationary = false, liquidGlass = false, className = "chrome-button no-drag" }: {
+export function SidebarToggleButton({ open, onToggle, hostRole, stationary = false, className = "chrome-button no-drag" }: {
   open: boolean;
   stationary?: boolean;
-  liquidGlass?: boolean;
   onToggle(): void;
   hostRole: "persistent" | "transient";
   className?: string;
@@ -43,10 +42,10 @@ export function SidebarToggleButton({ open, onToggle, hostRole, stationary = fal
   }, [stationary]);
   const button = <button ref={ref} type="button" className={className}
     aria-label={label} aria-expanded={open} title={`${label} (${shortcutLabel("sidebar")})`} aria-keyshortcuts={shortcutAria("sidebar")}
-    data-app-shell-sidebar-trigger="true" data-chrome-action-id="sidebar-toggle"
+    data-app-shell-sidebar-trigger="true" data-liquid-action="" data-chrome-action-id="sidebar-toggle"
     data-sidebar-toggle-stationary={stationary || undefined}
     data-chrome-action-host-role={hostRole} onClick={onToggle}>
-    {liquidGlass ? <LiquidGlassBackdrop /> : null}
+    <LiquidGlassBackdrop />
     <SidebarToggleIcon sidebarOpen={open} />
   </button>;
   if (!stationary) return button;

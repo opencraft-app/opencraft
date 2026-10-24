@@ -1,3 +1,4 @@
+import { LiquidGlassBackdrop } from "@opencraft/design-system-web/liquid-glass";
 import { ArrowUpIcon } from "@opencraft/design-system-web/action-icons";
 import * as React from "react";
 
@@ -24,6 +25,7 @@ export function ScrollToBottomButton({
       tabIndex={show ? 0 : -1}
       type="button"
     >
+      <LiquidGlassBackdrop />
       {showWorkingDots ? (
         <span aria-hidden="true" className="thread-scroll-to-bottom-button__working">
           <i className="thread-scroll-to-bottom-button__dot" />

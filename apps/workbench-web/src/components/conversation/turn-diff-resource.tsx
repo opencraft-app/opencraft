@@ -1,3 +1,4 @@
+import { LiquidGlassBackdrop } from "@opencraft/design-system-web/liquid-glass";
 import { ChevronDownIcon as ChevronDown } from "@opencraft/design-system-web/action-icons";
 import type { TimelineSnapshot, TurnDiffTimelineBlock } from "@opencraft/chat-core";
 import { resolveStandardChatResource } from "@opencraft/chat-render-web";
@@ -30,7 +31,7 @@ export function ComposerTurnChangeSummary({ timeline, turnId, documentContext }:
   const block = turnId === null ? null : timeline?.frames.find((frame) => frame.turnId === turnId && frame.changeSummary != null)?.changeSummary;
   if (block == null || block.files.length === 0 || (block.status !== "pending" && block.status !== "running")) return null;
   return <ConversationDocumentContext.Provider value={documentContext}>
-    <div className="thread-live-changes" data-turn-resource-id={block.id}><TurnDiffBlock block={block} key={block.id} /></div>
+    <div className="thread-live-changes" data-turn-resource-id={block.id}><LiquidGlassBackdrop /><TurnDiffBlock block={block} key={block.id} /></div>
   </ConversationDocumentContext.Provider>;
 }
 
