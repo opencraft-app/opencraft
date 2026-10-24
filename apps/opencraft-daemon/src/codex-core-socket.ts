@@ -84,6 +84,14 @@ export class CodexCoreSocket {
     if (this.value.state !== "open" || this.socket?.readyState !== WebSocket.OPEN) throw new Error("Codex core native connection is closed");
     this.socket.send(frame);
   }
+  /** Discard an incarnation with unknown initialize state; the owner may reconnect. */
+  reset(): void {
+    if (this.closed) return;
+    ++this.generation;
+    this.controller?.abort(new Error("Codex core initialization failed"));
+    const socket = this.socket; this.socket = null; socket?.terminate();
+    this.publish({ state: "failed", reason: "Codex core initialization failed", failure: { code: "codex-core-initialize-failed", recovery: "automatic" } });
+  }
   close(): void {
     if (this.closed) return;
     this.closed = true;

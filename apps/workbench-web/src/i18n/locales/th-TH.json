@@ -928,5 +928,8 @@
   "browser.mobile.searchTabs": "ค้นหาแท็บ",
   "browser.mobile.closeTab": "ปิด {title}",
   "common.done": "เสร็จสิ้น",
-  "browser.agent.title": "Agent"
+  "browser.agent.title": "Agent",
+  "turnRecovery.unconfirmed": "ยืนยันผลการดำเนินต่ออัตโนมัติไม่ได้ โปรดตรวจสอบบทสนทนาก่อนดำเนินต่อ",
+  "turnRecovery.continued": "ดำเนินต่ออัตโนมัติหลังบริการเริ่มใหม่ ({attempts}/{limit})",
+  "turnRecovery.exhausted": "หยุดการดำเนินต่ออัตโนมัติหลังลอง {limit} ครั้ง ส่งข้อความเพื่อดำเนินต่อ"
 }

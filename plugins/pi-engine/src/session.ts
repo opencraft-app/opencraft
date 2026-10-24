@@ -212,6 +212,11 @@ export class PiDurableSession {
     return admitted;
   }
   resume() { this.harness.resume(); }
+  /** Host-only provenance; no model message and no human sender is fabricated. */
+  async recordRecovery(turnId: string, inputId: string) {
+    await this.root.commit(tx => tx.appendEntry(this.root.id, { kind: "opencraft.systemRecovery",
+      data: { turnId, inputId, sourceKind: "system", createdAtMs: Date.now() } }), context);
+  }
   async abort() { await this.root.abort(context); }
   async close() {
     if (this.closed) return; this.closed = true;

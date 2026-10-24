@@ -1,4 +1,6 @@
 import { executionEngineExtension } from "@opencraft/appserver-client";
+import { TURN_RECOVERY_EXTENSION } from "@opencraft/appserver-protocol";
+import { ThreadRecoveryResource } from "./thread-recovery-resource";
 import { SCOPED_SKILL_CATALOG_EXTENSION, SCOPED_SKILL_CATALOG_METHOD, type ScopedSkillsListParams } from "@opencraft/appserver-protocol";
 import type { HostComposerCommandPort } from "./host-composer-commands";
 import { MCP_APPS_NAMESPACE } from "@opencraft/appserver-protocol/mcp-apps";
@@ -391,6 +393,7 @@ export interface AppServerWorkbenchRuntime {
     readonly fileSystem: AppServerFileSystemResourcePort;
     readonly attachments: AppServerAttachmentResourcePort;
     readonly goals: ThreadGoalResource;
+    readonly turnRecovery: ThreadRecoveryResource;
     readonly composerCatalog: AppServerComposerCatalogResourcePort;
     readonly terminal: AppServerTerminalResourcePort;
   };
@@ -594,6 +597,10 @@ export function createAppServerWorkbenchRuntime(
     get: (threadId) => requireClient().request("thread/goal/get", { threadId }),
     set: (threadId, change) => requireClient().request("thread/goal/set", { threadId, ...change }),
     clear: (threadId) => requireClient().request("thread/goal/clear", { threadId }),
+  });
+  const turnRecovery = new ThreadRecoveryResource({
+    supported: threadId => executionEngineExtension(client?.initializeResult?.capabilities?.extensions, threadId, TURN_RECOVERY_EXTENSION)?.version === 1,
+    read: threadId => requireClient().request("opencraft/turn-recovery/read", { threadId }),
   });
   let fileSystemWatchSequence = 0;
   const fileSystemWatches = new Map<string, {
@@ -1501,6 +1508,10 @@ export function createAppServerWorkbenchRuntime(
         }
       });
       removeGoalNotificationListener = client.subscribeNotification((notification) => {
+        if (notification.method === "opencraft/turn-recovery/updated") {
+          const value = notification.params as { threadId: string; recovery: import("@opencraft/appserver-protocol").TurnRecoveryNotice | null };
+          turnRecovery.observe(value.threadId, value.recovery);
+        }
         const threadId = (notification.params as { threadId?: unknown } | null)?.threadId;
         if (typeof threadId === "string") {
           if (notification.method === "thread/archived") markThreadUnavailable(threadId, "archived");
@@ -1574,6 +1585,7 @@ export function createAppServerWorkbenchRuntime(
       await duringAttempt(connectPhysicalHost(generation, attempt), attempt, async () => {});
       ensureLifecycle(generation);
       goals.reset();
+      turnRecovery.reset();
       const historyModeHint = () => {
         const capability = client?.initializeResult?.capabilities?.extensions?.[
           OPENCRAFT_RESUME_HISTORY_EXTENSION
@@ -1730,6 +1742,7 @@ export function createAppServerWorkbenchRuntime(
         },
       },
       goals,
+      turnRecovery,
       host: {
         subscribeSchedulesChanged(listener) {
           if (disposed) throw new Error("AppServer Workbench is disposed");

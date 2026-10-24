@@ -950,5 +950,8 @@
   "browser.mobile.searchTabs": "搜索标签页",
   "browser.mobile.closeTab": "关闭 {title}",
   "common.done": "完成",
-  "browser.agent.title": "Agent"
+  "browser.agent.title": "Agent",
+  "turnRecovery.unconfirmed": "自动继续结果未确认，请检查会话后再继续。",
+  "turnRecovery.continued": "服务重启后已自动继续（{attempts}/{limit}）。",
+  "turnRecovery.exhausted": "自动继续已达 {limit} 次，已停止。发送消息可继续。"
 }

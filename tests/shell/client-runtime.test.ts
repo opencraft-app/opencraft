@@ -7,17 +7,17 @@ function fixture(options: { apple?: boolean; cssStandalone?: boolean; electron?:
   let fullscreen = false;
   let listener: ((value: boolean) => void) | undefined;
   let subscriptions = 0, releases = 0;
-  const view: any = { navigator: { standalone: options.apple }, innerWidth: 390,
+  const view: any = Object.assign(new EventTarget(), { navigator: { standalone: options.apple }, innerWidth: 390,
     matchMedia: (query: string) => ({ matches: options.cssStandalone === true && query === "(display-mode: standalone)" }),
     opencraftDesktop: options.electron ? { kind: "electron", getWindowFullscreen: () => fullscreen,
-      onWindowFullscreenChanged: (next: (value: boolean) => void) => { subscriptions++; listener = next; return () => { releases++; listener = undefined; }; } } : undefined };
+      onWindowFullscreenChanged: (next: (value: boolean) => void) => { subscriptions++; listener = next; return () => { releases++; listener = undefined; }; } } : undefined });
   view.top = options.embedded ? {} : view;
   const document = Object.assign(target, { defaultView: view, documentElement: { dataset: {}, clientWidth: 390 } }) as unknown as Document;
   const runtime = createClientRuntime(document);
   const touch = (clientX: number) => {
     const event = new Event("touchstart", { cancelable: true });
     Object.defineProperties(event, { touches: { value: [{ clientX }] }, changedTouches: { value: [{ clientX }] } });
-    target.dispatchEvent(event); return event.defaultPrevented;
+    view.dispatchEvent(event); return event.defaultPrevented;
   };
   return { document, runtime, view, touch,
     fullscreen(value: boolean) { fullscreen = value; listener?.(value); }, counts: () => ({ subscriptions, releases }) };

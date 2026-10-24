@@ -1,4 +1,6 @@
 import { nodeObserver } from "../../../packages/observability-contract/node.mjs";
+import { InterruptedTurnRecovery } from "@opencraft/host-recovery";
+import { TURN_RECOVERY_EXTENSION } from "@opencraft/appserver-protocol";
 import type { SessionCapabilityPort } from "@opencraft/session-capabilities";
 import type { HostInputPort } from "@opencraft/appserver-protocol/host-inputs";
 import { ConversationSchedules, ScheduleFault, type ScheduleExecutionPort } from "@opencraft/host-schedules";
@@ -31,6 +33,7 @@ interface Session {
   hostTools?: Value[];
   native?: PiDurableSession; starting?: Promise<PiDurableSession>; owner?: EngineClient; lease?: AbortController;
   active?: PiTurn; turns?: PiTurn[]; snapshot?: PiSnapshot; effort?: string; failed?: boolean;
+  needsResume?: boolean;
 }
 class ScheduleAdmissionDeferred extends Error {}
 const seconds = () => Math.floor(Date.now() / 1000);
@@ -65,9 +68,14 @@ export class PiEngine {
     [OPENCRAFT_PERMISSION_MODES_EXTENSION]: OPENCRAFT_PERMISSION_MODES_CAPABILITY,
     [CONVERSATION_SCHEDULES_EXTENSION]: { version: 1, target: "existing-thread", repeat: "fixed-interval", summary: true, calendar: true },
     "opencraft/thread-follow-up": { version: 1, queue: false, steer: false },
+    [TURN_RECOVERY_EXTENSION]: { version: 1 },
   });
   private scheduleService?: ConversationSchedules;
-  get storageOutcomes(): readonly unknown[] { return this.scheduleService ? [{ name: "pi-conversation-schedules", outcome: this.scheduleService.outcome }] : []; }
+  private recovery?: InterruptedTurnRecovery;
+  get storageOutcomes(): readonly unknown[] { return [
+    ...(this.scheduleService ? [{ name: "pi-conversation-schedules", outcome: this.scheduleService.outcome }] : []),
+    ...(this.recovery ? [{ name: "pi-interrupted-turn-recovery", outcome: this.recovery.outcome }] : []),
+  ]; }
   private permissionProfiles() { return [{ id: fullAccessProfile, description: "Pi Full access", allowed: true, openCraftMode: "full" as const, openCraftLabel: "Full access" }]; }
   private readonly sessions = new Map<string, Session>();
   private readonly listeners = new Set<(method: string, params: Value) => void>();
@@ -86,7 +94,11 @@ export class PiEngine {
   ownsThread(id: string) { return id.startsWith("pi_"); }
   ownsModel(id: string) { return id.startsWith("pi:"); }
   subscribe(listener: (method: string, params: Value) => void) { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; }
-  private notify(method: string, params: Value) { nodeObserver("pi").execution("pi", method, params); for (const listener of this.listeners) listener(method, params); }
+  private notify(method: string, params: Value) {
+    if (method === "turn/started" && !this.sessions.get(params.threadId)?.ephemeral) this.recovery?.started(params.threadId, params.turn.id);
+    if (method === "turn/completed") this.recovery?.finished(params.threadId, params.turn.id);
+    nodeObserver("pi").execution("pi", method, params); for (const listener of this.listeners) listener(method, params);
+  }
   private load() {
     return this.loading ??= (async () => {
       await mkdir(this.options.directory, { recursive: true, mode: 0o700 });
@@ -96,11 +108,41 @@ export class PiEngine {
           const record = JSON.parse(await readFile(join(this.options.directory, file), "utf8"));
           if (record.format !== "pi-durable-1" || `${record.id}.json` !== file || !Array.isArray(record.tools)) throw new Error("Invalid Pi session index");
           this.sessions.set(record.id, record);
+          record.needsResume = record.pendingRecovery === true;
         } catch {
           // Retain corrupt metadata and its ledger for repair; one record cannot disable all Pi sessions.
           this.notify("warning", { message: `Pi session index could not be loaded: ${file}` });
         }
       }
+      this.recovery = new InterruptedTurnRecovery(this.options.directory, {
+        serialize: (id, operation) => this.serialize(id, operation),
+        inspect: async turn => {
+          const session = this.sessions.get(turn.threadId);
+          if (!session || session.archived || session.ephemeral) return "handled";
+          await this.refresh(session);
+          const latest = session.turns?.at(-1);
+          if (!latest) return "unknown";
+          if (latest.id !== turn.turnId) return "handled";
+          if (latest.status !== "inProgress") return "finished";
+          return session.needsResume ? "lost" : "live";
+        },
+        continue: async (turn, current, admit) => {
+          const session = this.sessions.get(turn.threadId)!;
+          const native = await this.native(session);
+          if (!current() || !session.active) return null;
+          const turnId = session.active.id;
+          await native.recordRecovery(turnId, turn.inputId!);
+          if (!admit()) return null;
+          session.needsResume = false;
+          native.resume();
+          return turnId;
+        },
+        stop: async turn => {
+          const session = this.sessions.get(turn.threadId);
+          if (session?.native) { await session.native.abort(); await this.refresh(session); }
+        },
+        changed: (threadId, recovery) => this.notify("opencraft/turn-recovery/updated", { threadId, recovery }),
+      });
     })();
   }
   async start() {
@@ -108,14 +150,15 @@ export class PiEngine {
     this.schedules();
     for (const session of this.sessions.values()) {
       if (!session.pendingRecovery || session.archived) continue;
-      try { const native = await this.native(session); await this.refresh(session); if (session.active) native.resume(); }
+      try { await this.refresh(session); }
       catch { this.fail(session, "Pi session recovery failed"); }
     }
+    this.recovery?.wake();
   }
   private save(session: Session, pinState?: Pick<Session, "pinned" | "pinnedAt">): Promise<void> {
     if (session.ephemeral) return Promise.resolve();
     const { native: _native, starting: _starting, owner: _owner, lease: _lease, active: _active, turns: _turns,
-      snapshot: _snapshot, effort: _effort, failed: _failed, hostTools: _hostTools, ...record } = session;
+      snapshot: _snapshot, effort: _effort, failed: _failed, hostTools: _hostTools, needsResume: _needsResume, ...record } = session;
     const file = join(this.options.directory, `${session.id}.json`), temporary = `${file}.${randomUUID()}.tmp`;
     const operation = (this.writes.get(session.id) ?? Promise.resolve()).catch(() => {}).then(async () => {
       // Native snapshots can queue metadata while a pin write is pending. Read
@@ -184,7 +227,10 @@ export class PiEngine {
         },
         onExit: error => {
           const failed = session.native; session.native = undefined;
-          this.fail(session, error.message); void failed?.close();
+          session.needsResume = true;
+          this.recovery?.lost(session.id);
+          this.fail(session, error.message);
+          void (failed?.close() ?? Promise.resolve()).finally(() => this.recovery?.wake());
         },
       });
       try {
@@ -413,6 +459,7 @@ export class PiEngine {
     return this.scheduleService;
   }
   request(method: string, params: Value, client: EngineClient): Promise<any> {
+    if (["turn/start", "turn/interrupt", "thread/archive", "thread/delete"].includes(method) && typeof params.threadId === "string") this.recovery?.handled(params.threadId);
     // Schedule mutations must not wait behind the admission they need to cancel.
     const key = method.startsWith("opencraft/schedules/") ? undefined
       : typeof params.threadId === "string" ? params.threadId : method.startsWith("config/") ? "config" : undefined;
@@ -420,6 +467,7 @@ export class PiEngine {
   }
   private async handle(method: string, params: Value, client: EngineClient, canAdmit?: () => boolean | Promise<boolean>): Promise<any> {
     await this.load(); if (this.closed) throw new Error("Pi engine is closed");
+    if (method === "opencraft/turn-recovery/read") return { recovery: this.recovery?.notice(params.threadId) ?? null };
     if (method.startsWith("opencraft/schedules/")) {
       const schedules = this.schedules();
       return method === "opencraft/schedules/list" ? schedules.list() : schedules.handle(method, params, null);
@@ -513,7 +561,7 @@ export class PiEngine {
       if (params.path && params.path !== join(this.options.directory, `${session.id}.sqlite`)) throw new Error("Pi path must match this thread's native ledger");
       await this.refresh(session); const { native } = await this.configure(session, params);
       if (!session.owner || !session.active) this.attach(session, client);
-      native.resume();
+      this.recovery?.wake();
       const thread = this.thread(session, session.turns);
       const initial = params.initialTurnsPage ? projectedTurnsPage(thread, { ...params.initialTurnsPage, threadId: session.id }) : null;
       const cursors = projectedHistoryHeadCursors(thread);
@@ -562,6 +610,9 @@ export class PiEngine {
       if (clientId && clientId.length > 1000) throw new Error("Client message identity is too long");
       const turnId = clientId ? `${session.id}:turn:client:${clientId}` : `${session.id}:turn:${randomUUID()}`;
       await this.refresh(session);
+      if (session.needsResume && session.active) {
+        await (await this.native(session)).abort(); await this.refresh(session); session.needsResume = false;
+      }
       const existing = clientId && session.turns?.find(turn => turn.id === turnId); if (existing) return { turn: existing };
       if (session.active) throw new Error("Pi thread already has an active turn");
       if (session.archived) throw new Error("Unarchive the Pi thread before executing");
@@ -598,6 +649,7 @@ export class PiEngine {
       return { turn: session.turns?.find(turn => turn.id === turnId) ?? turn };
     }
     if (method === "turn/interrupt") {
+      this.recovery?.handled(session.id);
       if (params.turnId && session.active?.id !== params.turnId) throw new Error("Pi turn identity changed");
       if (!session.active) return {};
       await (await this.native(session)).abort(); await this.refresh(session); return {};
@@ -608,6 +660,7 @@ export class PiEngine {
   disconnect(client: EngineClient) { for (const session of this.sessions.values()) if (session.owner === client) this.detach(session); }
   async close() {
     this.closed = true;
+    await this.recovery?.close();
     await this.scheduleService?.close();
     await Promise.allSettled(this.operations.values());
     await Promise.allSettled([...this.sessions.values()].map(async session => {

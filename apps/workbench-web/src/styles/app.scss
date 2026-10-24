@@ -9074,22 +9074,28 @@ html[data-ui-density="touch"][data-timeline-keyboard-open="true"] .thread-scroll
   }
 }
 
-// Connection warning stays in the material; editable content never fades or pulses.
-.opencraft-composer-shell[data-warning="true"]::before {
+// Shared material rules keep routine loading quieter than reconnect/failure.
+.opencraft-composer-shell[data-loading]::before {
+  --recovery-start: 1%;
+  --recovery-end: 2.5%;
+  --recovery-rim: 7%;
+  --recovery-glow: 0%;
+}
+.opencraft-composer-shell:is([data-loading], [data-warning])::before {
   background:
     linear-gradient(
       180deg,
-      color-mix(in srgb, var(--color-text-danger) 2.5%, transparent),
-      color-mix(in srgb, var(--color-text-danger) 6.5%, transparent)
+      color-mix(in srgb, var(--color-text-danger) var(--recovery-start, 2.5%), transparent),
+      color-mix(in srgb, var(--color-text-danger) var(--recovery-end, 6.5%), transparent)
     ),
     var(--composer-surface-background);
   box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, var(--color-text-danger) 17%, transparent),
-    0 6px 24px color-mix(in srgb, var(--color-text-danger) 4%, transparent);
+    inset 0 0 0 1px color-mix(in srgb, var(--color-text-danger) var(--recovery-rim, 17%), transparent),
+    0 6px 24px color-mix(in srgb, var(--color-text-danger) var(--recovery-glow, 4%), transparent);
 }
 
 @media (forced-colors: active) {
-  :where(:root[data-ui-density="touch"]) .opencraft-composer-shell[data-warning="true"]::before {
+  :where(:root[data-ui-density="touch"]) .opencraft-composer-shell:is([data-loading], [data-warning])::before {
     background: Canvas;
     box-shadow: none;
     outline: 1px solid CanvasText;
@@ -9112,14 +9118,6 @@ html[data-ui-density="touch"][data-timeline-keyboard-open="true"] .thread-scroll
       transparent
     )
   );
-}
-
-@supports not (
-  (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))
-) {
-  .opencraft-composer-shell {
-    --composer-surface-background: var(--color-background-elevated-primary-opaque);
-  }
 }
 
 // One border/material owns all above-composer items. The editor covers the tuck.

@@ -12,7 +12,7 @@
 - `GET /health` 与 `POST /accounts` 位于独立 Unix HTTP 控制 socket；后者接受 `{method, params}`，仅转发 `opencraft/codex/accounts/*`。两者要求 `Authorization: Bearer <daemon token>`，与 daemon 共用私有 token 文件。无远程 shutdown 接口。
 - socket 目录必须为 0700，控制与原生 socket 均为 0600；原生 listener 依靠 Unix 文件权限限制访问。CLI 可能把原生路径建为符号链接，验收应使用 `stat -L` 检查实际 socket，不能把符号链接自身的 0777 当作目标权限。不要将原生 socket 通过公开网关暴露。
 - 健康检查返回协议版本、core PID、所选 Codex 子进程 PID 与原生 socket。官方 npm CLI 可能有 Node wrapper，部署验收还须记录其实际 native 子进程 PID，不能只比较 wrapper。
-- 核心服务不可用时 daemon 明确失败，不创建第二个 writer，不重放结果未知的 mutation。恢复后由既有客户端重连/resume 恢复会话。
+- 核心服务不可用时 daemon 明确失败，不创建第二个 writer，不重放结果未知的 mutation。Host overlay 主动重连并核对原生执行状态；已确认被打断的任务按[恢复策略](interrupted-turn-recovery.md)系统续跑，不依赖页面点击继续。
 - 设备码授权由核心服务的独立维护 CLI 等待上游结果；成功通知直接触发一次入池与额度刷新，不依赖网页继续 poll。网页返回或重载通过账户列表恢复已完成账号，原页面的短期完成回执可重复查询；pending 会话不跨 core 重启恢复；启动时先由同一账户owner恢复临时profile内原生已写出的可复用授权，全部提交后才清理，存储失败保留文件以便重试。授权完成中的入池先排空，再关闭用量维护和存储。
 - 兼容模式正常维护关闭时先结束 CLI；拆分模式不向 APP Server 发送信号。两种形态均等待账户 RPC、用量维护和代理已接收请求的异步处理结束，最后关闭存储并释放 writer 锁。HTTP 断连不等于其 OAuth 刷新已完成；刷新中的新凭据仍须落盘。
 

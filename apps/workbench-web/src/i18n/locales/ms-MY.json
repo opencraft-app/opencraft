@@ -928,5 +928,8 @@
   "browser.mobile.searchTabs": "Cari tab",
   "browser.mobile.closeTab": "Tutup {title}",
   "common.done": "Selesai",
-  "browser.agent.title": "Agent"
+  "browser.agent.title": "Agent",
+  "turnRecovery.unconfirmed": "Sambungan automatik tidak dapat disahkan. Semak perbualan sebelum meneruskan.",
+  "turnRecovery.continued": "Disambung secara automatik selepas perkhidmatan dimulakan semula ({attempts}/{limit}).",
+  "turnRecovery.exhausted": "Sambungan automatik dihentikan selepas {limit} percubaan. Hantar mesej untuk meneruskan."
 }

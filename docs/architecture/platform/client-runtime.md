@@ -35,12 +35,20 @@ same runtime and application state.
 
 PwaRuntime reserves native history contacts only when the Apple Home Screen
 capability is present. Its capture/non-passive listener cancels a single initial
-touch in either outermost 20 CSS pixels, using the current viewport width after
+touch in either outermost 24 CSS pixels, using the current viewport width after
 rotation. Center contacts, multi-touch and noncancelable events keep their normal
 handling. Cancellation does not stop propagation, invent history entries, rewrite
 URLs or trap popstate. Both reserved strips also consume edge-origin taps/scrolls;
-the Shell's existing 24px system-edge gutter remains separate from its gesture
-owner. Explicit Back/Forward continues through the application navigation owner.
+unclaimed Shell edge contacts retain their native owner. The adapter hands the
+original event to `edge-gesture-bridge` before document
+consumers run, using Window capture. Shell reads this normalized handoff without
+checking host identity; its existing gesture arbitration/progress/open state stays
+the only drawer writer. The bridge and sidebar share the same 24px gutter, so
+there is no unclaimed gap. No event is redispatched. Disposing the adapter revokes
+its handoffs, including retained events; rebinding after the consumer is mounted
+keeps the capture-phase ordering. Other host adapters can use the same input
+port without changing the sidebar. Explicit Back/Forward continues through the
+application navigation owner.
 Ordinary Web tabs, Electron, embedded views and non-Apple installed PWA input are
 unchanged. Native OS gesture cancellation still depends on delivery of a
 cancelable event and requires physical-device acceptance.

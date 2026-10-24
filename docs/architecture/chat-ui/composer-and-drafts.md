@@ -657,9 +657,12 @@ The shared Composer projects the host's read-only `isUnstable` state to its
 `data-warning` shell attribute. Workbench derives it from the existing active
 conversation recovery presentation and diagnostic: actual reconnection, an
 observed transport/history failure being retried, or terminal failure. Initial
-connection, ordinary history activation and cached-history refresh stay neutral,
-even while pending; entering a conversation must not briefly tint the editor.
-Normal AI execution, ready conversations and new drafts also stay neutral.
+connection, ordinary history activation and cached-history refresh project the
+existing `isRecovering` state to `data-loading` while no warning is present.
+This routine loading uses a much fainter static red wash (1–2.5% semantic danger
+color, 7% inset rim, no outer glow) than reconnect/failure (2.5–6.5%, 17% rim).
+Warnings take precedence; ready conversations and new drafts stay neutral.
+Normal AI execution does not activate either recovery tint.
 Only the existing material pseudo-element receives a static low-saturation red
 tint and faint inset rim using the semantic danger token. Background opacity is
 constant: no breathing, blinking or scaling. Text, caret, controls and geometry
