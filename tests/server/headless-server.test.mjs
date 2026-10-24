@@ -620,6 +620,11 @@ test("AppHost diagnostics correlate two browser sockets and reject payload field
     touchSequence: 1, touchScreenClientY: 100, touchPageClientY: 294 };
   assert.equal((await postViewport(focusedViewport)).status, 202);
   assert.deepEqual(diagnostics.at(-1), { serverProtocolVersion: 2, event: "client-viewport", ...focusedViewport });
+  const edgeViewport = { ...focusedViewport, screenHeight: 956, screenWidth: 440, standalone: 1,
+    rowTop: 0, rowHeight: 894, headerTop: 62, headerHeight: 44, shellPaddingTop: 0, rowPaddingTop: 62 };
+  assert.equal((await postViewport(edgeViewport)).status, 202);
+  assert.deepEqual(diagnostics.at(-1), { serverProtocolVersion: 2, event: "client-viewport", ...edgeViewport });
+  assert.equal((await postViewport({ ...edgeViewport, standalone: 2 })).status, 400);
   const missingRequiredViewport = { ...projectedViewport }; delete missingRequiredViewport.visualHeight;
   for (const invalid of [missingRequiredViewport, { ...projectedViewport, cssTop: 1e9 },
     { ...projectedViewport, bodyTop: "private" }, { ...focusedViewport, touchScreenClientY: "private" },

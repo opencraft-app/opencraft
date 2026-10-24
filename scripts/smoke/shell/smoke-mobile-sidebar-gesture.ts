@@ -506,6 +506,17 @@ try {
       await page.evaluate(() => (window as any).fixture.setDensity('on'));
       const entrance=page.locator('.app-shell-header [data-app-shell-sidebar-trigger]');
       const row=page.locator('.app-shell-row');
+      const paintGeometry = await row.evaluate(element => {
+        const root = element.closest('.app-shell-root')!;
+        const rect = element.getBoundingClientRect(), frame = root.getBoundingClientRect();
+        const header = element.querySelector('.app-shell-header')!.getBoundingClientRect();
+        return { top: rect.top, height: rect.height, rootTop: frame.top, rootHeight: frame.height,
+          contentInset: getComputedStyle(element).paddingTop, headerTop: header.top };
+      });
+      assert.equal(paintGeometry.top, paintGeometry.rootTop, 'page paint starts at the viewport edge');
+      assert.equal(paintGeometry.height, paintGeometry.rootHeight, 'page paint covers the complete viewport');
+      assert.equal(paintGeometry.contentInset, '47px', 'safe area insets content, not the page paint');
+      assert.ok(paintGeometry.headerTop >= paintGeometry.rootTop + 47, 'controls remain below the safe area');
       const edgePixels = async () => {
         const {data, info} = await sharp(await page.screenshot()).ensureAlpha().raw().toBuffer({resolveWithObject:true});
         // Sample inside the exposed sidebar's safe areas, away from content and
