@@ -1,0 +1,21 @@
+[Unit]
+Description=OpenCraft independent Pi execution Host
+After=network.target
+
+[Service]
+Type=simple
+User=opencraft
+WorkingDirectory=/srv/opencraft
+RuntimeDirectory=opencraft-engine-host
+RuntimeDirectoryMode=0700
+# Pin this payload independently of the versioned gateway. DSH stays in its own unit.
+EnvironmentFile=/etc/opencraft-engine-host/environment
+ExecStart=/usr/bin/node /opt/opencraft-engine-host/execution/engine-host.mjs
+Restart=on-failure
+RestartSec=3
+KillMode=control-group
+TimeoutStopSec=30
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

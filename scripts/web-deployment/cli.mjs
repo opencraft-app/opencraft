@@ -13,6 +13,8 @@ const execution = executionLink ? createExecutionDeployment({
   profile: process.env.OPENCRAFT_EXECUTION_PROFILE || 'daemon',
   dshDescriptor: process.env.OPENCRAFT_DSH_HOST_DESCRIPTOR,
   dshUnit: process.env.OPENCRAFT_DSH_HOST_UNIT,
+  engineDescriptor: process.env.OPENCRAFT_ENGINE_HOST_DESCRIPTOR,
+  engineUnit: process.env.OPENCRAFT_ENGINE_HOST_UNIT,
 }) : null;
 const port = Number(process.env.OPENCRAFT_WEB_PORT || 10000);
 if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('Invalid Web port');

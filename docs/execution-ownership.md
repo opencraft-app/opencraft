@@ -568,3 +568,25 @@ A native completion may resolve a failed or late inspection, but cannot substitu
 for a successful durable write. Failed occurrence writes retain the observation
 and use the normal 30-second failure backoff; slot release cannot spin an immediate
 retry loop. Recovery persists the same occurrence without resending its input.
+
+## Independent server Pi execution owner
+
+Managed deployments may set `OPENCRAFT_ENGINE_HOST_DESCRIPTOR` to attach the
+Headless gateway to a pinned, independent execution Host. That Host owns Pi
+native sessions, schedules, SQLite writers and native tool processes; it routes
+DSH operations to the already independent DSH Host. Gateway attachment shutdown
+only closes transport leases. It never closes either execution owner or replays
+accepted inputs. The default in-process Headless composition remains available
+for standalone deployments and does not promise gateway-restart continuity.
+
+The owner and in-process Pi composition share an exclusive `pi-owner` lock in
+the deployment data root. Migration from an older gateway requires a drained Pi
+writer handoff because old versions do not acquire that lock. Configuration
+validates the same machine identity, data directory, engine namespace and default
+engine; an unavailable or incompatible descriptor cannot trigger a local fallback.
+Native history remains the recovery authority. Browser-owned platform-tool
+leases still expire on disconnect and cannot authorize replay of unknown effects.
+
+See [server updates](web-deployment.md#独立-pi-执行-host) for configuration and the
+one-time migration. Updating the execution Host itself is separate from ordinary
+website/gateway/entry updates.

@@ -108,12 +108,38 @@ daemon 在监听 IPC、报告 ready 前打开并迁移 Host 的五个 SQLite 库
 
 更新页显示实际执行网关版本和「更新网站和执行服务」。一次安装先下载并校验精确归档、启动候选网站，再切换 execution-current。执行 payload 的归一化摘要变化时重启执行 unit；只有网站身份变化而后端相同时，先复用现有进程，健康失败才重启。健康版本从稳定执行指针对应的 manifest 读取；新版 gateway 通过 daemon IPC/core 健康检查、版本/buildId 一致且 core/CLI PID 未变后，才提交网站版本。失败恢复原执行版本与网站；若回退也失败，页面显示失败原因和执行端实际版本/就绪状态，不冒称成功。重启启动器时按已提交版本修复中断的切换。执行指针以及持久化 pins 文件引用的包不能被历史清理删除。重启或回退结果不确定时，保留所有可能运行的执行版本，直到健康检查确认替换成功。页面版本取实际 gateway 健康响应，不用指针目标冒充正在运行的版本；无法确认时显示未知。
 
-执行更新会断开网关连接；页面重连/resume 原 Codex 任务，不重发执行命令。OpenCraft/DSH 活动任务仍可能中断，更新页直接说明这个范围。回退使用同一切换流程，core 与账户数据保持独立。
+执行更新会断开网关连接；页面重连/resume 原任务，不重发执行命令。Codex 连续性依赖独立 core；DSH 连续性依赖独立 DSH Host；Pi 连续性依赖下述独立执行 Host。三者均已独立部署时，网站热更新、执行网关重启和固定入口重启不停止这些 owner，运行中的原生推理与工具继续执行，重连读取原 Turn 的历史与终态。回退使用同一切换流程，保留这些进程及其数据。仅有独立 DSH Host 并不表示 Pi 已独立：默认 Headless composition 的 Pi owner 仍属于 gateway，须先完成一次迁移。
+
+### 独立 Pi 执行 Host
+
+`opencraft-engine-host.service` 使用固定 payload 的 `execution/engine-host.mjs`，独立于 execution-current；它拥有 Pi 的原生会话、工具子进程和计划执行，并经原 descriptor 连接既有 DSH Host。这样无需为迁移 Pi 更新或重启 DSH 宿主。网站、gateway、DSH Host、Pi 执行 Host、Codex core 分属独立 unit/cgroup；彼此不得配置停止传播关系。服务配置 `OPENCRAFT_ENGINE_HOST_CONFIG` 指向 owned、0600 JSON：
+
+```json
+{
+  "descriptorPath": "/run/opencraft-engine-host/descriptor.json",
+  "dataDirectory": "/var/lib/opencraft",
+  "runtimeDirectory": "/srv/opencraft",
+  "dshDescriptorPath": "/run/opencraft-dsh-host/descriptor.json",
+  "engines": ["dsh", "pi"],
+  "defaultEngine": "dsh"
+}
+```
+
+`dataDirectory` 必须等于 Headless 的原数据根，保持 `machine-id`、`models/` 和 `pi/` 原位置；不得复制一份可写历史。私有 descriptor 验证机器、目录、引擎选择和实时 owner PID。网关环境设置 `OPENCRAFT_ENGINE_HOST_DESCRIPTOR`；固定更新入口另外设置相同 descriptor 和 `OPENCRAFT_ENGINE_HOST_UNIT=opencraft-engine-host.service`。配置独立 owner 后，连接失败直接报告不可用，不回退创建本地 Pi。健康响应的 `engineHost.pid` 与该 unit 的 MainPID 一致，日常更新前后保持；候选与回退包须声明 `independentEngineHost: 1`。启动入口自身需包含这份检查，旧 bootstrap 不会被网站 worker 自动替换。
+
+首次迁移属于一次执行归属交接：先安装包含独立 Host 的版本，再在 Pi 的活动 Turn、原生工具、待恢复输入和未决交互自然清空时停旧 gateway，启动固定 Pi Host，配置 gateway 与固定入口后重启 gateway；全过程保持 DSH Host 和 Core。不得在旧 gateway 仍持有 Pi writer 时启动新 owner。新 composition 以同一 `pi-owner` 锁阻止意外双开，旧版没有该锁，仍必须确认其退出。迁移前保存配置和在线一致备份；验证失败时先停止新 Pi owner，再恢复原 gateway 配置，不能双开或用旧快照覆盖新写入。
+
+此处承诺 owner 保持运行时的更新连续性。Pi/DSH 宿主自身更新、宿主崩溃和 Core/CLI 升级仍是独立维护事项。浏览器平台工具的访问租约仍按断线撤销，未确认的外部副作用不得自动重放；不能用网站重连冒充外部工具本身已执行成功。
 
 验证入口：
 
 ```sh
 npm run test:server-updates
+# Local synthetic DSH/Pi models, native bash, managed Web install/rollback and entry/gateway replacement
+npm run smoke:engine-update-continuity
+# With a previously built Headless SPA, validate real systemd cgroups and browser recovery
+CONTINUITY_SYSTEMD=1 CONTINUITY_BROWSER=1 CONTINUITY_SECONDS=30 \
+  CONTINUITY_WEB_ROOT="$PWD/apps/workbench-web/dist" npm run smoke:engine-update-continuity
 npm run build:web:release
 npm run smoke:server-updates
 # 具备 systemd 运维权限时，使用临时独立 unit 验证真实重启边界
@@ -193,7 +219,7 @@ gh workflow run release.yml --repo opencraft-app/opencraft --ref main -f tag=v0.
 
 稳定入口的安装和回退共用 execution profile 解释：带完整 v1 执行元数据（protocolVersion、platform、arch、nodeAbi）且包含非空 gateway、daemon、DSH capability payload 的旧包，未声明 profile 且没有 Headless 网站或独立 DSH Host 标识时按历史 daemon 契约识别。没有 execution 元数据的纯网站包仍是独立网站；显式未知或无效 profile 不按 daemon 回退。网站独立更新只核验发行 profile，不额外要求执行平台/ABI 与网站主机一致；显式启用受管执行后，原有平台/ABI、原生 payload、活动任务、数据和切换检查继续由执行部署负责。真正不同 profile 的迁移仍须单独安排。本兼容逻辑属于固定启动器，网站热更新不会替换已安装的旧启动器；已有入口须经后续修复版的入口维护才能生效。
 
-默认更新范围是包内网站 worker 与 Web 代理；显式受管服务器模式还包含上文执行端 payload。稳定入口/更新器本身不在此次热更新范围；新包必须使用 worker protocol 1，不兼容版本拒绝安装。入口维护升级需要单独安排服务重启；执行进程仍独立，但入口连接会重连。执行端的 Codex 连续性依赖独立 core，不能扩展成 DSH 引擎或 core/CLI 自身升级不中断的承诺。
+默认更新范围是包内网站 worker 与 Web 代理；显式受管服务器模式还包含上文执行端 payload。稳定入口/更新器本身不在此次热更新范围；新包必须使用 worker protocol 1，不兼容版本拒绝安装。入口维护升级需要单独安排服务重启；执行进程仍独立，但入口连接会重连。Codex、DSH 与 Pi 的执行连续性分别依赖独立 core、DSH Host 与 Pi 执行 Host；固定入口重启不关闭这些 owner。此保证不扩展到执行宿主或 core/CLI 自身升级。
 
 SQLite 升级前备份由库 owner 用 `VACUUM INTO` 生成，Host 备份位于 `OPENCRAFT_EXECUTION_STATE/data/<库文件名>.pre-v<N>-<时间戳>.sqlite`，成功处置后默认保留 3 份。无账本旧库结构不一致时，先备份，再将原库及仍存在的同名 WAL/SHM 移到 `.legacy-<时间戳>`，移开文件保留、不自动清理。更新器不直接操作数据目录；回退只回退代码，不恢复数据，不承诺 N-1 旧二进制兼容。旧代码若不接受当前账本，回退也可能未就绪，不能用备份存在冒充自动回退成功。
 

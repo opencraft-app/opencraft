@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { zstdDecompressSync } from 'node:zlib';
 import { spawn, spawnSync, execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { mkdtemp, mkdir, readFile, writeFile, rm, readdir, readlink, stat } from 'node:fs/promises';
@@ -50,8 +51,9 @@ if (process.argv[2] === 'core') {
   const selfUpgrade = process.env.OPENCRAFT_SERVER_SMOKE_SELF_UPGRADE === '1';
   let toolCommand = 'echo started >> shell-count; sleep 30; echo finished >> shell-count; echo UPDATE_TASK_FINISHED';
   const upstream = createServer(async (req, res) => {
-    let raw = ''; for await (const chunk of req) raw += chunk;
-    const input = JSON.parse(raw); const tool = !JSON.stringify(input.input).includes('function_call_output');
+    const chunks: Buffer[] = []; for await (const chunk of req) chunks.push(Buffer.from(chunk));
+    const body = Buffer.concat(chunks);
+    const input = JSON.parse((req.headers['content-encoding'] === 'zstd' ? zstdDecompressSync(body) : body).toString('utf8')); const tool = !JSON.stringify(input.input).includes('function_call_output');
     calls.push({ tool, path: req.url });
     res.writeHead(200, { 'content-type': 'text/event-stream' }); const id = `fixture-${++serial}`;
     const send = (event: any) => res.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);

@@ -3,18 +3,21 @@ import { basename, dirname, resolve, join, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startHeadlessServer, parseHeadlessArguments } from '../headless-application.mjs';
 import { coreHealth } from './execution.mjs';
+import { readEngineHostIdentity } from './engine-host-client.mjs';
 import { attachDshHost, readDshHostIdentity } from './dsh-host-client.mjs';
 
 /** Read dependencies concurrently and retain release identity even when one is
  * unavailable. A live gateway and a ready execution service are different facts. */
-export async function observeExecutionHealth({ version, buildId, core, dsh }) {
-  const [coreResult, dshResult] = await Promise.allSettled([core(), dsh?.()]);
+export async function observeExecutionHealth({ version, buildId, core, dsh, engineHost }) {
+  const [coreResult, dshResult, engineResult] = await Promise.allSettled([core(), dsh?.(), engineHost?.()]);
   const coreReady = coreResult.status === 'fulfilled';
   const dshReady = dshResult.status === 'fulfilled';
-  return { ok: coreReady && dshReady, profile: 'headless', version, buildId,
+  const engineReady = engineResult.status === 'fulfilled';
+  return { ok: coreReady && dshReady && engineReady, profile: 'headless', version, buildId,
     core: coreReady ? coreResult.value : { state: 'unavailable' },
     ...(dsh ? { dsh: dshReady ? dshResult.value : { state: 'unavailable' } } : {}),
-    dependencies: { core: coreReady ? 'ready' : 'unavailable', dsh: dsh ? dshReady ? 'ready' : 'unavailable' : 'disabled' } };
+    ...(engineHost ? { engineHost: engineReady ? engineResult.value : {state:'unavailable'} } : {}),
+    dependencies: { ...(engineHost ? {engineHost:engineReady ? 'ready' : 'unavailable'} : {}), core: coreReady ? 'ready' : 'unavailable', dsh: dsh ? dshReady ? 'ready' : 'unavailable' : 'disabled' } };
 }
 
 /** The stable execution pointer preserves its identity while web-only releases
@@ -53,7 +56,9 @@ export async function runHeadlessGateway({ parseArguments = parseHeadlessArgumen
   const endpoint = required('OPENCRAFT_CODEX_CORE_ENDPOINT');
   const health = () => coreHealth(endpoint, tokenPath);
   const dshDescriptor = process.env.OPENCRAFT_DSH_HOST_DESCRIPTOR;
-  const app = await startServer({ ...options, root: releaseRoot, webRoot: join(releaseRoot, 'web'),
+  const engineHostDescriptor = process.env.OPENCRAFT_ENGINE_HOST_DESCRIPTOR;
+  if (engineHostDescriptor && manifest.opencraftExecution.independentEngineHost !== 1) throw new Error('Release cannot attach an independent execution Host');
+  const app = await startServer({ ...options, ...(engineHostDescriptor ? {engineHostDescriptor} : {}), root: releaseRoot, webRoot: join(releaseRoot, 'web'),
     ...(dshDescriptor ? {
       startAgentHost: async agentOptions => {
         return attachDshHost(dshDescriptor, agentOptions.dataDirectory, agentOptions.machineIdentity.machineId);
@@ -71,6 +76,7 @@ export async function runHeadlessGateway({ parseArguments = parseHeadlessArgumen
       const observed = await observeExecutionHealth({ version: typeof current.version === 'string' ? current.version : null,
         buildId: typeof current.opencraftWeb?.buildId === 'string' ? current.opencraftWeb.buildId : null, core: health,
         ...(dshDescriptor ? { dsh: () => readDshHostIdentity(dshDescriptor) } : {}),
+        ...(engineHostDescriptor ? {engineHost:() => readEngineHostIdentity(engineHostDescriptor)} : {}),
       });
       return { ...observed, runtimeReleaseRoot: releaseRoot };
     },

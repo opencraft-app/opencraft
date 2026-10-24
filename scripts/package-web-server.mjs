@@ -86,6 +86,7 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
       ['apps/opencraft-daemon/src/token-usage-query-worker.ts', 'token-usage-query-worker.mjs', 'esm'],
       ['apps/local-agent-host/src/dsh-capability-plugin.mjs', 'dsh-capability-plugin.mjs', 'esm'],
       ['scripts/server-deployment/dsh-host.mjs', 'dsh-host.mjs', 'esm'],
+      ['scripts/server-deployment/engine-host.mjs', 'engine-host.mjs', 'esm'],
     ]) {
       await build({ nodePaths: [join(repositoryRoot, 'node_modules')], entryPoints: [resolve(repositoryRoot, entry)], outfile: join(packageRoot, 'execution', target),
         bundle: true, platform: 'node', format, target: 'node22', define:{'process.env.OPENCRAFT_OBSERVE_SOURCE_REVISION':JSON.stringify(web.sourceRevision??null),'process.env.OPENCRAFT_OBSERVE_BUILD_ID':JSON.stringify(web.buildId)}, external: ['bufferutil', 'utf-8-validate', 'cpu-features', '*.node', '@earendil-works/pi-*', '@earendil-works/chord'],
@@ -124,9 +125,10 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
     manifest.os = [process.platform];
     manifest.cpu = [process.arch];
     manifest.opencraftExecution = { protocolVersion: 1, platform: process.platform, arch: process.arch, nodeAbi: process.versions.modules, profile: executionProfile,
-      ...(executionProfile === 'headless' ? { independentDshHost: 1 } : {}) };
+      ...(executionProfile === 'headless' ? { independentDshHost: 1, independentEngineHost: 1 } : {}) };
     await writeFile(join(packageRoot, 'package.json'), JSON.stringify(manifest, null, 2));
     await cp(join(repositoryRoot, 'packaging/web-server/opencraft-execution.service'), join(packageRoot, 'opencraft-execution.service'));
+    await cp(join(repositoryRoot, 'packaging/web-server/opencraft-engine-host.service'), join(packageRoot, 'opencraft-engine-host.service'));
     await cp(join(repositoryRoot, 'packaging/web-server/opencraft-dsh-host.service'), join(packageRoot, 'opencraft-dsh-host.service'));
   }
   await chmod(join(packageRoot, 'runtime/cli.mjs'), 0o755);
