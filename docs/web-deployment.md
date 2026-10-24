@@ -146,7 +146,7 @@ npm run smoke:server-updates
 npm run smoke:server-updates:systemd
 ```
 
-`test:server-updates` 通过 `tsx` 加载真实 TypeScript headless composition 依赖，覆盖安装/回退、执行启动失败、持久化失败、网站启动失败、进程中断恢复及 systemd 生命周期配置。独立 DSH 兼容边界测试仍构建完整 execution 归档，仅查询指定 service 成员以限制子进程输出；其三分钟预算覆盖完整打包，不削弱指针、服务身份或拒绝旧包的断言。smoke 使用隔离 HOME、合成账户和本地 Responses 端点，运行真实 Codex CLI、归档内 gateway/daemon、生产 SPA 和真实 npm；浏览器点安装时 shell 已在运行，断线后原 turn 完成，shell 开始/结束各一次、core/CLI/运行中子进程 PID 不变，再从页面回退。默认 smoke 的 systemd 边界由隔离进程重启替代；`:systemd` 入口在 `/run/systemd/system` 创建随机命名的临时 core/执行 unit，通过实际 `systemctl restart` 验证同一链路并在结束时删除自己的 unit。两种入口都不修改线上 unit、不使用真实账户或付费推理；生产服务器仍需核对权限与首次迁移。
+`test:server-updates` 通过 `tsx` 加载真实 TypeScript headless composition 依赖，覆盖安装/回退、执行启动失败、持久化失败、网站启动失败、进程中断恢复及 systemd 生命周期配置。独立 DSH 兼容边界测试仍构建完整 execution 归档，仅查询指定 service 成员以限制子进程输出；其三分钟预算覆盖完整打包，不削弱指针、服务身份或拒绝旧包的断言。smoke 使用隔离 HOME、合成账户和本地 Responses 端点，运行真实 Codex CLI、归档内 gateway/daemon、生产 SPA 和真实 npm；浏览器点安装时 shell 已在运行，断线后原 turn 完成，shell 开始/结束各一次、core/CLI/运行中子进程 PID 不变，再从页面回退。默认 smoke 的 systemd 边界由隔离进程重启替代；`:systemd` 入口在 `/run/systemd/system` 创建随机命名的临时 core/执行 unit，通过实际 `systemctl restart` 验证同一链路并在结束时删除自己的 unit。两种入口都不修改线上 unit、不使用真实账户或付费推理；生产服务器仍需核对权限与首次迁移。普通安装场景由隔离夹具保持原生 shell 至进程身份检查后才释放，避免固定 sleep 自然结束造成 PID 误判；合成 Responses 端点按请求声明解码 zstd，并拒绝不含 JSON 的探测请求。
 
 ## 本地源码与 npm 复用更新事务
 
