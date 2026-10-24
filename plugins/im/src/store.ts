@@ -389,6 +389,15 @@ export class SwitchboardStore {
     return this.managed.database.prepare("UPDATE im_messages SET state='reply_attempting',reply_text=?,updated_at=? WHERE id=? AND reply_mode='tool' AND state IN ('accepted','submitted') AND reply_expires_at>?")
       .run(text, Date.now(), id, Date.now()).changes === 1;
   }
+  /** Filter the authority boundary before the retention bound, never scan other senders. */
+  readableMessages(reference: string, channelId: string, actorId: string): StoredMessage[] {
+    return this.managed.database.prepare("SELECT * FROM im_messages WHERE conversation_ref=? AND channel_id=? AND actor_id=? AND reply_mode='tool' AND created_at>=? AND state IN ('accepted','submitted','reply_pending','reply_attempting','delivered','reply_failed','reply_unknown') ORDER BY created_at DESC,id DESC LIMIT 10000")
+      .all(reference, channelId, actorId, Date.now() - 7 * 86_400_000) as unknown as StoredMessage[];
+  }
+  readableAnchor(reference: string): StoredMessage[] {
+    return this.managed.database.prepare("SELECT * FROM im_messages WHERE conversation_ref=? AND reply_mode='tool' AND reply_ref IS NOT NULL AND created_at>=? AND state IN ('accepted','submitted','reply_pending','reply_attempting','delivered','reply_failed','reply_unknown') ORDER BY created_at DESC,id DESC LIMIT 1024")
+      .all(reference, Date.now() - 7 * 86_400_000) as unknown as StoredMessage[];
+  }
   messages(id: string, limit = 100): StoredMessage[] {
     return this.managed.database
       .prepare(
