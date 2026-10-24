@@ -157,6 +157,12 @@ than filtering the currently paginated conversation rows. Opening a task uses it
 Host/thread identity; management reuses the existing per-conversation editor.
 The catalog owns neither execution timers nor a separate draft or mutation model.
 
+The editor retains unsaved text across polling and errors. A changed revision or
+unfinished run blocks stale saves until the user cancels and reviews current Host
+state; it never advances the draft revision or recreates a deleted task silently.
+Expired or minute-truncated run times receive a future default when editing starts.
+Known validation/conflict rejections remain distinct from unconfirmed transport results.
+
 ## Conversation task linking entrance
 
 Existing conversations with Tasks authority expose a rounded, outlined secondary

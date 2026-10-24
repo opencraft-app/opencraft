@@ -528,6 +528,8 @@
   "schedules.now": "立即执行",
   "schedules.history": "最近执行",
   "schedules.error": "未能确认修改结果，请刷新核对后重试。",
+  "schedules.conflict": "任务已变化或仍有未结束的执行。请取消编辑，核对最新任务后再保存。",
+  "schedules.invalid": "请检查任务设置，并将首次执行时间设在未来。",
   "schedules.loadError": "无法读取定时任务。",
   "schedules.retry": "重试",
   "schedules.loading": "加载中…",
