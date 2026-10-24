@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { InfiniteQueryObserver, notifyManager, useQueryClient,
   type InfiniteData, type DefaultedInfiniteQueryObserverOptions, type InfiniteQueryObserverOptions, type InfiniteQueryObserverResult } from "@tanstack/react-query";
 import type { ThreadListResponse } from "@opencraft/appserver-protocol/generated/v2";
@@ -6,6 +6,7 @@ import { isHostThreadCatalogUnavailableError, readHostThreadCatalog } from "./ho
 import { mergeThreadCatalogPages, sidebarThreadCatalogQueryKey } from "./thread-catalog-query";
 import { beginObservedOperation } from "./observability";
 import { retryQuery } from "./workbench-application-services";
+import { reportRuntimeError } from "../runtime-error-reporting";
 
 type CatalogQuery = Omit<Parameters<typeof readHostThreadCatalog>[0], "signal" | "onInitialPage" | "pageCursor"> & {
   readonly enabled: boolean;
@@ -98,6 +99,7 @@ export function useHostThreadCatalogQueries(inputs: readonly CatalogQuery[]) {
       }
     });
   });
+  const reportedCatalogErrors = useRef(new Set<string>());
   useEffect(() => {
     observers.forEach((observer, index) => {
       const result = optimistic[index]!;
@@ -108,6 +110,13 @@ export function useHostThreadCatalogQueries(inputs: readonly CatalogQuery[]) {
       if (finish && (!inputs[index]!.enabled || result.isError || (!result.isFetching && !result.hasNextPage && result.data))) {
         finish(!inputs[index]!.enabled ? "aborted" : result.isError ? "failed" : "ok", { count: result.data?.data.length ?? 0 });
         measures.delete(observer);
+      }
+      if (inputs[index]!.enabled && result.isError && !isHostThreadCatalogUnavailableError(result.error)) {
+        const token = `${JSON.stringify(inputs[index]!.queryKey)}:${result.error instanceof Error ? result.error.message : String(result.error)}`;
+        if (!reportedCatalogErrors.current.has(token)) {
+          reportedCatalogErrors.current.add(token);
+          reportRuntimeError(result.error, "thread-catalog-load");
+        }
       }
     });
     for (const [observer, finish] of measures) if (!observers.includes(observer)) { finish("aborted"); measures.delete(observer); }

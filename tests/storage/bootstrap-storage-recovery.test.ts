@@ -33,7 +33,10 @@ function fixture({ recoverySupported = false, recovered = false, latestBuildId =
       return { ok: true, json: async () => ({ buildId: latestBuildId }) };
     },
     URL,
-    location: { href: `https://example.test/local/thread?keep=1${recovered ? "&opencraft-resource-recovery=prior" : ""}`, reload: () => { ++reloads; }, replace: (url: string) => { navigations.push(url); } },
+    navigator: { userAgent: "Mozilla/5.0 (iPad; CPU OS 16_7_10 like Mac OS X) AppleWebKit/605.1.15 Version/16.6 Mobile/15E148 Safari/604.1" },
+    innerWidth: 1024,
+    innerHeight: 768,
+    location: { origin: "https://example.test", pathname: "/local/thread", href: `https://example.test/local/thread?keep=1${recovered ? "&opencraft-resource-recovery=prior" : ""}`, reload: () => { ++reloads; }, replace: (url: string) => { navigations.push(url); } },
     localStorage: { getItem: () => null },
     sessionStorage: { getItem: (key: string) => stored.get(key) ?? null, setItem: (key: string, value: string) => stored.set(key, value) },
     setTimeout() {},
@@ -66,6 +69,9 @@ test("pre-React storage recovery preserves data and never tries release reload",
   assert.deepEqual(f.reports.map(report => report.url), ["/__opencraft_runtime_error"]);
   assert.equal(f.reports[0].body.source, "browser-storage-bootstrap");
   assert.equal(f.reports[0].body.storageDiagnostics.stage, "opening");
+  assert.equal(f.reports[0].body.url, "https://example.test/local/thread");
+  assert.match(f.reports[0].body.userAgent, /iPad/);
+  assert.deepEqual(f.reports[0].body.viewport, { width: 1024, height: 768 });
 });
 
 test("actual resource failures still use the existing release recovery", async () => {

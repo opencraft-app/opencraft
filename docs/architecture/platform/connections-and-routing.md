@@ -316,8 +316,13 @@ application startup boundary; it must not swallow it or cover that boundary with
 a release recovery screen. Before React starts, the HTML recovery surface uses
 a storage-specific message without a release-version lookup or automatic reload.
 Opening diagnostics record only the store role, opening/upgrading phase, elapsed
-time, schema versions and DOMException name. Error reports retain those fields;
-they never include saved profiles, database contents, endpoints or credentials.
+time, schema versions and DOMException name. Runtime error reports retain those
+fields and add `userAgent`, layout viewport (`innerWidth`×`innerHeight`) and
+`sourceRevision` when the current document exposes them. The `url` is origin plus
+pathname only. Swallowed Sidebar layout persist failures and thread-catalog load
+failures use dedicated `sidebar-layout-persist` and `thread-catalog-load` sources
+so they reach the same report path and in-memory diagnostics ring. Reports never
+include saved profiles, database contents, endpoints, credentials or query strings.
 Timeout is not evidence of an upgrade lock: a request that emitted no events and
 a request stalled during migration remain distinguishable. No database deletion
 or silent memory-backed configuration saving is used.

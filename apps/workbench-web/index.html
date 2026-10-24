@@ -61,10 +61,17 @@
           || message === "ResizeObserver loop limit exceeded";
         const reportEarlyFailure = (report) => {
           if (isResizeObserverDeliveryWarning(report.message)) return;
+          const sourceRevision = document.querySelector('meta[name="opencraft-source-revision"]')?.getAttribute("content");
           fetch("/__opencraft_runtime_error", {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ ...report, url: location.href }),
+            body: JSON.stringify({
+              ...report,
+              url: `${location.origin}${location.pathname}`,
+              ...(typeof navigator !== "undefined" && navigator.userAgent ? { userAgent: navigator.userAgent } : {}),
+              ...(typeof innerWidth === "number" ? { viewport: { width: innerWidth, height: innerHeight } } : {}),
+              ...(sourceRevision ? { sourceRevision } : {}),
+            }),
             keepalive: true,
           }).catch(() => undefined);
         };
@@ -247,7 +254,12 @@
             name: error?.name,
             message: error?.message ?? String(error),
             stack: error?.stack,
-            url: location.href,
+            url: `${location.origin}${location.pathname}`,
+            ...(typeof navigator !== "undefined" && navigator.userAgent ? { userAgent: navigator.userAgent } : {}),
+            ...(typeof innerWidth === "number" ? { viewport: { width: innerWidth, height: innerHeight } } : {}),
+            ...(document.querySelector('meta[name="opencraft-source-revision"]')?.getAttribute("content")
+              ? { sourceRevision: document.querySelector('meta[name="opencraft-source-revision"]').getAttribute("content") }
+              : {}),
           }),
           keepalive: true,
         }).catch(() => undefined);

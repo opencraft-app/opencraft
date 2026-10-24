@@ -6,6 +6,7 @@ import { tokenUsageBuiltin } from "./token-usage-builtin";
 import { createHostComposerCommandPort } from "@opencraft/workbench-runtime";
 import { ThreadParticipationContributionRegistry } from "./thread-participation-contributions";
 import { createBrowserConversationOutbox } from "./browser-conversation-outbox";
+import { bindSidebarLayoutPersistReporting } from "../runtime-error-reporting";
 import { serverAdmissionOrigin, serverFetch, serverStorageKey } from "./server-context";
 import { displayTimingCounts } from "./display-timing-diagnostics";
 import { reportDisplayEvent, reportRecoveryEvent } from "./recovery-diagnostics";
@@ -316,7 +317,9 @@ export async function createWebWorkbenchApplicationSupervisor(
       formerDatabaseName: currentProductDatabaseName("vela-sidebar-layout-v2"),
     });
     const sidebarLayout = await SidebarLayoutStore.open(sidebarLayoutStorage);
+    const stopSidebarLayoutPersistReporting = bindSidebarLayoutPersistReporting(sidebarLayout);
     startupRollback.push(() => sidebarLayout.close());
+    startupRollback.push(stopSidebarLayoutPersistReporting);
     await extensions.activate(BuiltinWebSocketHostConnectionExtension);
     await extensions.activateOptional(BuiltinThemePackExtension);
     const loadPresentationExtension = async (
@@ -632,6 +635,7 @@ export async function createWebWorkbenchApplicationSupervisor(
     () => queryClient.clear(),
     () => extensionManager.dispose(),
     () => extensionSettings.close(),
+    stopSidebarLayoutPersistReporting,
     () => sidebarLayout.close(),
     () => extensionInstallationFiber.dispose(),
     () => authenticationFlowFiber.dispose(),

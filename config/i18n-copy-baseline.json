@@ -445,7 +445,6 @@
     {"file":"apps/workbench-web/src/components/hostless-workbench.tsx","kind":"jsx-text","text":"打开设置","count":1},
     {"file":"apps/workbench-web/src/components/hub-network-settings.tsx","kind":"placeholder","text":"https://hub.example.com","count":1},
     {"file":"apps/workbench-web/src/components/hub-network-settings.tsx","kind":"placeholder","text":"https://team.example.com","count":1},
-    {"file":"apps/workbench-web/src/components/internal-developer-mode-gate.tsx","kind":"jsx-text","text":"Internal developer mode","count":1},
     {"file":"apps/workbench-web/src/components/modal/confirmation-modal-surface.tsx","kind":"jsx-expression","text":"取消","count":1},
     {"file":"apps/workbench-web/src/components/modal/modal-surface.tsx","kind":"aria-label","text":"Close ${…}","count":1},
     {"file":"apps/workbench-web/src/components/pending-conversation-page.tsx","kind":"jsx-text","text":"Could not start this task","count":1},

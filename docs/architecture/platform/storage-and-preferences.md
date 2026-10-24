@@ -68,10 +68,17 @@ no mutation, import, export or delete operation. Developer-mode visibility is a
 presentation gate, not the security boundary. Row values stay on the device;
 Blob data is summarized and long cells are bounded for debug rendering.
 The Workbench-owned five-Escape gesture toggles internal developer mode for the
-current browser session. Plugins, Laboratory and the Electron SQLite inspector
-are internal Settings entrances. Disabling the mode removes them
-immediately; an active internal-only route returns to Appearance rather than
-leaving inaccessible content mounted.
+current browser session. Touch sessions can also open it with `?opencraft-dev=1`
+(or close it with `?opencraft-dev=0`) on the page URL, which writes the same
+sessionStorage flag and then drops the parameter from the address bar, or by
+tapping the Settings page heading seven times within three seconds. Plugins,
+Laboratory and the Electron SQLite inspector are internal Settings entrances.
+Disabling the mode removes them immediately; an active internal-only route
+returns to Appearance rather than leaving inaccessible content mounted.
+While the mode is on, Workbench Web shows a diagnostics overlay of in-memory
+runtime errors, failed requests, environment facts and CSS.supports probes.
+Collection starts at application bootstrap so earlier failures remain visible;
+closed mode does not change ordinary UI.
 
 Bot product surfaces are temporarily part of the same internal presentation
 audience. Normal mode does not project the Bots application, Bot sidebar

@@ -925,5 +925,21 @@
   "imageEditor.gestureHint": "Gunakan dua jari untuk zum dan alih.",
   "im.channels.back": "Saluran IM",
   "im.route.customize": "Sesuaikan laluan ini",
-  "sshConnections.removeDescription": "Mengalih keluar sambungan ini tidak memadamkan fail jauh atau menghentikan perkhidmatan jauh."
+  "sshConnections.removeDescription": "Mengalih keluar sambungan ini tidak memadamkan fail jauh atau menghentikan perkhidmatan jauh.",
+  "developerMode.enabled": "Internal developer mode enabled",
+  "developerMode.disabled": "Internal developer mode disabled",
+  "developerMode.diagnostics": "Diagnostics",
+  "developerMode.panelTitle": "Diagnostics",
+  "developerMode.close": "Close",
+  "developerMode.errors": "Errors",
+  "developerMode.emptyErrors": "No captured errors.",
+  "developerMode.showStack": "Show stack",
+  "developerMode.hideStack": "Hide stack",
+  "developerMode.network": "Network",
+  "developerMode.emptyNetwork": "No failed requests.",
+  "developerMode.environment": "Environment",
+  "developerMode.css": "CSS support",
+  "developerMode.copyAll": "Copy all",
+  "developerMode.clear": "Clear",
+  "developerMode.copyFallback": "Select and copy this report"
 }

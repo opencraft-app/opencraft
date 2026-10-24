@@ -947,5 +947,21 @@
   "imageEditor.gestureHint": "双指缩放和移动图片。",
   "im.channels.back": "IM 渠道",
   "im.route.customize": "在此基础上自定义",
-  "sshConnections.removeDescription": "仅移除这个连接，远端文件和服务不会删除或停止。"
+  "sshConnections.removeDescription": "仅移除这个连接，远端文件和服务不会删除或停止。",
+  "developerMode.enabled": "内部开发者模式已开启",
+  "developerMode.disabled": "内部开发者模式已关闭",
+  "developerMode.diagnostics": "诊断",
+  "developerMode.panelTitle": "诊断",
+  "developerMode.close": "关闭",
+  "developerMode.errors": "错误",
+  "developerMode.emptyErrors": "还没有捕获到错误。",
+  "developerMode.showStack": "显示堆栈",
+  "developerMode.hideStack": "隐藏堆栈",
+  "developerMode.network": "网络",
+  "developerMode.emptyNetwork": "还没有失败请求。",
+  "developerMode.environment": "环境",
+  "developerMode.css": "CSS 支持",
+  "developerMode.copyAll": "复制全部",
+  "developerMode.clear": "清空",
+  "developerMode.copyFallback": "请选择并复制这份报告"
 }

@@ -51,7 +51,9 @@ node examples/extensions/serve.mjs
 ```
 
 Open the local HTTP Workbench URL printed by Vite. Press Escape five times in
-quick succession to enable the existing tab-scoped developer mode. In Settings, open the plugin /
+quick succession, open the page with `?opencraft-dev=1`, or tap the Settings
+heading seven times within three seconds to enable the existing tab-scoped
+developer mode. In Settings, open the plugin /
 extension manager, install `http://127.0.0.1:5174/hello.mjs`, and enable it if
 necessary. Select **Hello extension** in the sidebar; an application-owned
 announcement opens. Disable the extension while it is open: both the entry and

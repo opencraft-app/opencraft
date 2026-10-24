@@ -8,6 +8,7 @@ import { initializeAppearanceTheme } from "./appearance-theme";
 import { RuntimeErrorBoundary } from "./components/runtime-error-boundary";
 import { HostProfileStorageNotice } from "./components/host-profile-storage-notice";
 import { LoadingSpinner } from "./components/ui/loading-spinner";
+import { startRuntimeDiagnosticCollection } from "./runtime-diagnostics";
 import { reportRuntimeError } from "./runtime-error-reporting";
 import { clientProductOptions } from "./runtime/client-product-entry";
 import { bindPageLifecycle } from "./runtime/page-lifecycle";
@@ -47,6 +48,7 @@ type BootstrapState =
   | { readonly phase: "error"; readonly error: Error };
 
 initializeAppearanceTheme();
+startRuntimeDiagnosticCollection();
 const disposeTouchInteractionMode = bindTouchInteractionMode(document);
 
 const desktopWindowBridge = (
