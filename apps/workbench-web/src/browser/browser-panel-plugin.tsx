@@ -40,6 +40,9 @@ import type { BrowserPresentationHandle } from "./browser-presentation-coordinat
 import type { BrowserWorkbenchCoordinator } from "./browser-workbench-coordinator";
 import type { WebBrowserPageRuntime } from "./web-browser-runtime";
 import { useWorkbenchPresentationRoot } from "../components/workbench-presentation-root";
+import { useShellPresentation } from '../components/shell-presentation';
+import { useNeweraBrowserLayout } from '../components/use-newera-browser-layout';
+import { BrowserMobileToolbar } from './browser-mobile-toolbar';
 
 const FIT_VIEWPORT = { type: "fit", width: 1440, height: 900 } as const;
 
@@ -50,6 +53,9 @@ function browserTabIdFromPanel(tab: PanelRendererProps["tab"]): BrowserTabId {
 
 function BrowserPanel({ tab: panelTab, presentationId }: PanelRendererProps) {
   const intl = useIntl();
+  const newera = useNeweraBrowserLayout();
+  const shell = useShellPresentation();
+  const mobile = newera && !!shell?.rightPanelFullWidth && panelTab.region === 'right';
   const portalContainer = useWorkbenchPresentationRoot();
   const tabId = browserTabIdFromPanel(panelTab);
   const pages = useWebBrowserPageRuntime();
@@ -66,11 +72,12 @@ function BrowserPanel({ tab: panelTab, presentationId }: PanelRendererProps) {
   const [zoom,setZoom]=useState(100);
   useEffect(()=>{setZoom(pages.getZoom(pageId));},[pageId,pages]);
   const [address, setAddress] = useState("");
+  const [editingAddress, setEditingAddress] = useState(false);
   const [inputError, setInputError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (page !== null) setAddress(browserUrlDisplayValue(page.navigation.currentUrl));
-  }, [page?.navigation.currentUrl]);
+    if (page !== null && !editingAddress) setAddress(browserUrlDisplayValue(page.navigation.currentUrl));
+  }, [page?.navigation.currentUrl, editingAddress]);
 
   useLayoutEffect(() => {
     const slot = slotRef.current;
@@ -126,15 +133,20 @@ function BrowserPanel({ tab: panelTab, presentationId }: PanelRendererProps) {
     try {
       if (pages.navigate(page.id, address) === null) setAddress(browserUrlDisplayValue(page.navigation.currentUrl));
       setInputError(null);
+      return true;
     } catch (error) {
       setInputError(error instanceof Error ? error.message : "Invalid address");
+      return false;
     }
   };
   const currentUrl = page.navigation.currentUrl;
 
   return (
-    <section className="browser-panel" data-viewport-mode={tab.viewportMode.type} aria-label={page.title}>
-      <form className="browser-panel__toolbar" onSubmit={submit}>
+    <section className="browser-panel" data-mobile-browser={mobile || undefined} data-viewport-mode={tab.viewportMode.type} aria-label={page.title}>
+      {mobile ? <BrowserMobileToolbar page={page} tab={tab} panelTabId={panelTab.id}
+        address={address} setAddress={setAddress} submit={submit}
+        editing={editingAddress} setEditing={setEditingAddress}
+        toggleDevice={() => workbench.setViewportMode(tab.id, tab.viewportMode.type === 'responsive' ? FIT_VIEWPORT : { type: 'responsive' })} /> : <form className="browser-panel__toolbar" onSubmit={submit}>
         <button type="button" className="browser-toolbar-button" disabled={!page.navigation.canGoBack}
           aria-label={intl.formatMessage({ id: "navigation.back", defaultMessage: "Back" })} title={intl.formatMessage({ id: "navigation.back", defaultMessage: "Back" })} onClick={() => pages.goBack(page.id)}>
           <ArrowLeft size={14} />
@@ -156,7 +168,8 @@ function BrowserPanel({ tab: panelTab, presentationId }: PanelRendererProps) {
           <input aria-label={intl.formatMessage({ id: "browser.address", defaultMessage: "Web address" })} autoCapitalize="none" autoCorrect="off"
             placeholder={intl.formatMessage({ id: "browser.address.placeholder", defaultMessage: "Enter a web address" })} spellCheck={false} value={address}
             onChange={(event) => setAddress(event.target.value)}
-            onFocus={(event) => event.currentTarget.select()} />
+            onFocus={(event) => { setEditingAddress(true); event.currentTarget.select(); }}
+            onBlur={() => setEditingAddress(false)} />
         </label>
         <button type="button" className="browser-toolbar-button" disabled={currentUrl === null}
           aria-label={intl.formatMessage({ id: "browser.external", defaultMessage: "Open in external browser" })} title={intl.formatMessage({ id: "browser.external", defaultMessage: "Open in external browser" })}
@@ -181,7 +194,7 @@ function BrowserPanel({ tab: panelTab, presentationId }: PanelRendererProps) {
             <DropdownMenu.Item className="new-thread-project-menu__item" onSelect={() => { void pages.clearClosedData().catch((error: Error) => setInputError(error.message)); }}>{intl.formatMessage({ id: "browser.clearClosed", defaultMessage: "Clear closed tab data" })}</DropdownMenu.Item>
           </DropdownMenu.Content></DropdownMenu.Portal>
         </DropdownMenu.Root> : null}
-      </form>
+      </form>}
       {tab.viewportMode.type!=="responsive"?<BrowserDeviceToolbar mode={tab.viewportMode}
         onChange={mode=>workbench.setViewportMode(tab.id,mode)}
         onClose={()=>workbench.setViewportMode(tab.id,{type:"responsive"})}

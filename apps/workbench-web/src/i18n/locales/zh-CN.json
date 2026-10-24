@@ -942,5 +942,13 @@
   "developerMode.clear": "清空",
   "developerMode.copyFallback": "请选择并复制这份报告",
   "overhome.description": "常用应用，触手可及。",
-  "overhome.empty": "应用将在这里显示。"
+  "overhome.empty": "应用将在这里显示。",
+  "browser.agent.close": "收起 Agent",
+  "browser.mobile.navigation": "浏览器操作",
+  "browser.mobile.workspace": "返回工作台",
+  "browser.mobile.more": "更多浏览器操作",
+  "browser.mobile.searchTabs": "搜索标签页",
+  "browser.mobile.closeTab": "关闭 {title}",
+  "common.done": "完成",
+  "browser.agent.title": "Agent"
 }

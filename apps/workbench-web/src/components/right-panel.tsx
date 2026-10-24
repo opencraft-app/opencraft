@@ -41,6 +41,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useAppShellLayoutMotion } from "./app-shell";
 import { useShellPresentation } from "./shell-presentation";
 import { PanelPresentationContext } from "./panel-presentation";
+import { PanelNavigationContext } from "./panel-navigation";
+import { useNeweraBrowserLayout } from "./use-newera-browser-layout";
 import {
   reorderPanelTabPreview,
   resolvePanelTabCommit,
@@ -351,6 +353,7 @@ export function RightPanel({
   const region = "right" as const;
   const regionState = state[region];
   const presentation = useShellPresentation();
+  const newera = useNeweraBrowserLayout();
   const fullWidth = hostPresentationActive === undefined
     ? presentation?.rightPanelFullWidth ?? state.rightPanelFullWidth
     : state.rightPanelFullWidth;
@@ -398,6 +401,7 @@ export function RightPanel({
       action.creationLabel !== undefined &&
       (action.isAvailable?.(toolbarActionContext) ?? true),
   );
+  const browserCreation = creationActions.find(action => action.id === 'opencraft.browser.new-tab');
   const ActivePanel =
     activeTab === null
       ? null
@@ -505,6 +509,12 @@ export function RightPanel({
 
   return (
     <PanelPresentationContext.Provider value={{ region, active: rightPanelPresentationActive }}>
+    <PanelNavigationContext.Provider value={{
+      tabs: regionState.tabs, activeTabId: regionState.activeTabId,
+      activate: tabId => onAction({ type: 'activate-tab', region, tabId }),
+      close: onCloseTab,
+      ...(browserCreation ? { createBrowser: () => browserCreation.run(toolbarActionContext) } : {}),
+    }}>
     <DndContext
       sensors={sensors}
       collisionDetection={panelTabCollisionDetection}
@@ -513,7 +523,8 @@ export function RightPanel({
       onDragCancel={resetDrag}
       onDragEnd={finishDrag}
     >
-      <div className="right-panel-content" data-app-shell-tabs="true" data-panel-region={region}>
+      <div className="right-panel-content" data-app-shell-tabs="true" data-panel-region={region}
+        data-mobile-browser={newera && fullWidth && activeTab?.kind === 'browser' && interactive || undefined}>
         <header className="right-panel-toolbar">
           <motion.div
             aria-hidden="true"
@@ -693,6 +704,7 @@ export function RightPanel({
             portalContainer ?? document.body,
           )}
     </DndContext>
+    </PanelNavigationContext.Provider>
     </PanelPresentationContext.Provider>
   );
 }

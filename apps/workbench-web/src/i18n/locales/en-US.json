@@ -918,5 +918,13 @@
   "developerMode.clear": "Clear",
   "developerMode.copyFallback": "Select and copy this report",
   "overhome.description": "Your apps, all in one place.",
-  "overhome.empty": "Your apps will appear here."
+  "overhome.empty": "Your apps will appear here.",
+  "browser.agent.close": "Close Agent",
+  "browser.mobile.navigation": "Browser controls",
+  "browser.mobile.workspace": "Back to workspace",
+  "browser.mobile.more": "More browser actions",
+  "browser.mobile.searchTabs": "Search tabs",
+  "browser.mobile.closeTab": "Close {title}",
+  "common.done": "Done",
+  "browser.agent.title": "Agent"
 }

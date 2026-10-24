@@ -23,6 +23,8 @@ import type { ComposerController } from "@opencraft/composer-core";
 import type { BrowserTabId } from "@opencraft/browser-core";
 import { useOptionalBrowserRuntime } from "../browser/browser-runtime-context";
 import { useShellPresentation } from "./shell-presentation";
+import { useNeweraBrowserLayout } from './use-newera-browser-layout';
+import { useIntl } from '@opencraft/i18n/react';
 import {
   ConversationTurn,
   type ConversationDocumentContextValue,
@@ -42,15 +44,9 @@ export const FloatingComposerRegistryContext =
   createContext<FloatingComposerRegistry | null>(null);
 export const FloatingComposerScopeContext = createContext<string | null>(null);
 
-export function FloatingComposerToggle({
-  activeTabId,
-}: {
-  activeTabId: string;
-}) {
+export function useFloatingComposerControls(activeTabId: string) {
   const registry = useContext(FloatingComposerRegistryContext);
   const scope = useContext(FloatingComposerScopeContext);
-  const reduced = Boolean(useReducedMotion());
-  const shell = useShellPresentation();
   if (!registry || scope === null)
     throw new Error("Missing floating composer scope");
   const store = registry.get(scope);
@@ -59,8 +55,18 @@ export function FloatingComposerToggle({
     store.getSnapshot,
     store.getSnapshot
   );
+  return { store, state, shown: state.enabled && !state.collapsedTabs.has(activeTabId) };
+}
+
+export function FloatingComposerToggle({ activeTabId, label }: {
+  activeTabId: string;
+  label?: string;
+}) {
+  const { store, shown } = useFloatingComposerControls(activeTabId);
+  const reduced = Boolean(useReducedMotion());
+  const shell = useShellPresentation();
+  const mobile = useNeweraBrowserLayout();
   if (!shell?.rightPanelFullWidth) return null;
-  const shown = state.enabled && !state.collapsedTabs.has(activeTabId);
   const toggleLabel = shown ? "Hide floating composer" : "Show floating composer";
   return (
     <button
@@ -69,9 +75,13 @@ export function FloatingComposerToggle({
       aria-label={toggleLabel}
       title={toggleLabel}
       aria-pressed={shown}
-      onClick={() => store.toggle(activeTabId, reduced)}
+      onClick={() => {
+        store.toggle(activeTabId, reduced);
+        if (mobile && !shown) store.focus(activeTabId);
+      }}
     >
       <MessageSquare size={14} aria-hidden="true" />
+      {label ? <span>{label}</span> : null}
     </button>
   );
 }
@@ -114,6 +124,8 @@ export function ThreadComposerPresentation({
   documentContext?: ConversationDocumentContextValue;
   forceExpanded?: boolean;
 }) {
+  const intl = useIntl();
+  const newera = useNeweraBrowserLayout();
   const shell = useShellPresentation();
   const shellAnchor = useContext(ComposerOverlayAnchorContext);
   const registry = useContext(FloatingComposerRegistryContext);
@@ -168,6 +180,10 @@ export function ThreadComposerPresentation({
     ? "loading"
     : "ready";
   const floating = overlay && browserTabId !== null;
+  const mobileBrowser = floating && newera;
+  useLayoutEffect(() => {
+    if (mobileBrowser && activeTabId) store.prepareMobileBrowser(activeTabId);
+  }, [mobileBrowser, activeTabId, store]);
   // Browser guests use a separate body-level presentation plane. Retain that
   // stacking contract; ordinary tools share the Shell's local overlay plane.
   const overlayContainer = floating ? document.body : shellAnchor;
@@ -176,8 +192,10 @@ export function ThreadComposerPresentation({
     tabId: activeTabId,
     readiness,
     forceExpanded,
+    onDemand: mobileBrowser,
   });
   const [expanded, setExpanded] = useState(false);
+  useEffect(() => { if (mobileBrowser && view.interactive) setExpanded(true); }, [mobileBrowser, view.interactive]);
   const [collapsed, setCollapsed] = useState<Readonly<Record<string, boolean>>>(
     {}
   );
@@ -505,6 +523,7 @@ export function ThreadComposerPresentation({
             <div
               ref={host}
               className="thread-composer-overlay-host"
+              data-mobile-browser={mobileBrowser || undefined}
               data-anchor={floating ? "viewport" : "shell"}
               data-testid="right-panel-composer-overlay-host"
             >
@@ -548,19 +567,25 @@ export function ThreadComposerPresentation({
                           event.preventDefault();
                       }}
                     >
+                      {mobileBrowser ? <header className="browser-agent-sheet__header">
+                        <span><MessageSquare size={18} />{intl.formatMessage({ id: 'browser.agent.title', defaultMessage: 'Agent' })}</span>
+                        <button type="button" aria-label={intl.formatMessage({ id: 'browser.agent.close', defaultMessage: 'Close Agent' })}
+                          onClick={() => hide(true)}><ChevronDown size={19} /></button>
+                      </header> : null}
+                      {mobileBrowser && page ? <div className="browser-agent-sheet__context">{page.title}</div> : null}
                       {latest && documentContext ? (
                         <div
                           ref={latestSurface}
                           className="thread-composer-overlay__latest"
                           data-visible={
-                            !floating || view.density === "expanded"
+                            mobileBrowser || !floating || view.density === "expanded"
                           }
                           inert={
-                            (floating && view.density !== "expanded") ||
+                            (floating && !mobileBrowser && view.density !== "expanded") ||
                             undefined
                           }
                           aria-hidden={
-                            (floating && view.density !== "expanded") ||
+                            (floating && !mobileBrowser && view.density !== "expanded") ||
                             undefined
                           }
                         >
@@ -632,7 +657,7 @@ export function ThreadComposerPresentation({
                         className="thread-composer-overlay__editor-slot"
                       />
                     </div>
-                    {view.handles ? (
+                    {view.handles && !mobileBrowser ? (
                       <button
                         type="button"
                         className="thread-composer-overlay__hide"
@@ -658,7 +683,7 @@ export function ThreadComposerPresentation({
                 </div>
               </div>
             </div>
-            {view.handles ? (
+            {view.handles && !mobileBrowser ? (
               <div ref={revealHost} className="thread-composer-reveal-host" data-anchor="viewport">
                 <div className="thread-composer-reveal-zone">
                   <button

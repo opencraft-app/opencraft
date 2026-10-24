@@ -62,6 +62,29 @@ Expo Layout/Navigation 拥有：
 
 ## 12. 平台策略
 
+### Newera mobile browser chrome
+
+The touch-density Newera Web presentation uses bottom browser chrome when a
+narrow window presents an active full-width browser panel. Desktop, Newera-off
+and non-browser panels retain their existing chrome. The installation's density
+projection and Shell's actual full-width state select presentation; neither
+changes the remote page's shared viewport or device profile.
+
+BrowserPanel owns local address editing and consumes the original Page commands.
+RightPanel projects its existing tabs/actions through PanelNavigationContext for
+the mobile overview, including non-browser tabs; overview cards display actual
+metadata rather than pretending to be live screenshots. Radix ModalSurface owns
+focus, dismissal and input exclusion. Opening the overview does not create a
+second browser page or close the active logical resource.
+
+The existing FloatingComposer owner initializes each Newera mobile browser to
+on-demand presentation once. Agent reveals the same editor and latest-turn
+renderer; hiding, resizing and switching chrome preserve drafts. A direct keyboard
+button consumes the existing native editing capability and invokes showKeyboard
+synchronously in its local gesture. No remote async notification forces a Web
+keyboard, takes control, or guesses an editable target. Device verification of
+the actual OS keyboard remains distinct from component/focus verification.
+
 ### 12.1 Vite Web
 
 Web Presentation Root 固定挂在应用根，与可卸载的 Panel content 是 sibling。iframe

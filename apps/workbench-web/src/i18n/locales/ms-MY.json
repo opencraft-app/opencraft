@@ -920,5 +920,13 @@
   "developerMode.clear": "Clear",
   "developerMode.copyFallback": "Select and copy this report",
   "overhome.description": "Semua aplikasi anda di satu tempat.",
-  "overhome.empty": "Aplikasi anda akan dipaparkan di sini."
+  "overhome.empty": "Aplikasi anda akan dipaparkan di sini.",
+  "browser.agent.close": "Tutup Agent",
+  "browser.mobile.navigation": "Kawalan pelayar",
+  "browser.mobile.workspace": "Kembali ke ruang kerja",
+  "browser.mobile.more": "Lagi tindakan pelayar",
+  "browser.mobile.searchTabs": "Cari tab",
+  "browser.mobile.closeTab": "Tutup {title}",
+  "common.done": "Selesai",
+  "browser.agent.title": "Agent"
 }

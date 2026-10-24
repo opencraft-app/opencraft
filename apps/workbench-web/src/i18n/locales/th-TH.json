@@ -920,5 +920,13 @@
   "developerMode.clear": "Clear",
   "developerMode.copyFallback": "Select and copy this report",
   "overhome.description": "แอปของคุณ รวมไว้ในที่เดียว",
-  "overhome.empty": "แอปของคุณจะแสดงที่นี่"
+  "overhome.empty": "แอปของคุณจะแสดงที่นี่",
+  "browser.agent.close": "ปิด Agent",
+  "browser.mobile.navigation": "ตัวควบคุมเบราว์เซอร์",
+  "browser.mobile.workspace": "กลับไปยังพื้นที่ทำงาน",
+  "browser.mobile.more": "การทำงานอื่นของเบราว์เซอร์",
+  "browser.mobile.searchTabs": "ค้นหาแท็บ",
+  "browser.mobile.closeTab": "ปิด {title}",
+  "common.done": "เสร็จสิ้น",
+  "browser.agent.title": "Agent"
 }

@@ -3,14 +3,14 @@ import { useIntl } from '@opencraft/i18n/react';
 import { GlobeIcon } from '@opencraft/design-system-web/action-icons';
 import { SettingsButton, SettingsGroup, SettingsListItem, SettingsPanel } from '@opencraft/extension-react';
 import { ModalSurface } from '../components/modal/modal-surface';
-import { useAsyncNotices } from '../components/async-notices';
+import { useAsyncNotices } from '../components/async-notices-context';
 import type { BrowserSurfaceHost } from './web-browser-surface-host';
 import type { BrowserWorkbenchCoordinator } from './browser-workbench-coordinator';
 import type { RemoteBrowserCatalog } from './desktop-browser-storage';
 
 /** Account catalog, independent of conversation aliases and native attachments. */
-export function BrowserResourcesButton({ surfaces, workbench, ownerId }: {
-  surfaces?: BrowserSurfaceHost; workbench: BrowserWorkbenchCoordinator; ownerId: string;
+export function BrowserResourcesButton({ surfaces, workbench, ownerId, showLabel = false }: {
+  surfaces?: BrowserSurfaceHost; workbench: BrowserWorkbenchCoordinator; ownerId: string; showLabel?: boolean;
 }) {
   const intl = useIntl();
   const notices = useAsyncNotices();
@@ -39,7 +39,7 @@ export function BrowserResourcesButton({ surfaces, workbench, ownerId }: {
   }, [open, surfaces]);
   if (!surfaces?.listResources || !surfaces.closeResource) return null;
   return <>
-    <button type="button" className="browser-toolbar-button" title={title} aria-label={title} onClick={() => setOpen(true)}><GlobeIcon size={15} /></button>
+    <button type="button" className="browser-toolbar-button" title={title} aria-label={title} onClick={() => setOpen(true)}><GlobeIcon size={15} />{showLabel ? <span>{title}</span> : null}</button>
     {open ? <ModalSurface label={title} size="wide" onDismiss={() => setOpen(false)} closeLabel={intl.formatMessage({ id: 'common.close', defaultMessage: 'Close' })}>
       <SettingsPanel title={title} actions={<SettingsButton variant="quiet" disabled={busy} onClick={() => void refresh()}>{intl.formatMessage({ id: 'common.refresh', defaultMessage: 'Refresh' })}</SettingsButton>}>
         <p>{intl.formatMessage({ id: 'browser.resources.description', defaultMessage: 'All saved pages in your account, including pages without a conversation. Closing a page discards its unsaved content.' })}</p>
