@@ -142,6 +142,11 @@ body {
   inset: 0;
 }
 
+// The overlay document must not inherit the status-bar-excluded percentage box.
+html[data-window-host="browser"][data-window-edge-strategy="legacy-overlay-requested"]:is([data-window-display-mode="standalone"], [data-window-display-mode="fullscreen"]) {
+  &, body { height: 100vh; }
+}
+
 .startup-shell {
   position: fixed;
   inset: 0;
@@ -326,6 +331,13 @@ html[data-timeline-tracks-visual-viewport="true"] :is(.app-shell-root, .app-shel
   left: var(--timeline-available-viewport-left, 0px);
   width: var(--timeline-available-viewport-width, 100%);
   height: var(--timeline-available-viewport-height, 100%);
+}
+
+// Native overlay paint capacity can exceed unoccluded VisualViewport metrics.
+// Any measured contraction restores the shared visual-frame projection, even
+// after blur. Focus is not evidence that the software keyboard has closed.
+html[data-window-host="browser"][data-window-edge-strategy="legacy-overlay-requested"]:is([data-window-display-mode="standalone"], [data-window-display-mode="fullscreen"])[data-timeline-tracks-visual-viewport="true"][data-timeline-viewport-occluded="false"] :is(.app-shell-root, .app-shell-floating-overlay-root) {
+  height: 100vh;
 }
 
 .app-shell-row {

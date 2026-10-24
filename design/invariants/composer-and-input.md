@@ -177,6 +177,13 @@ scroll, focus, selection or editor replacement. A browser reporting incorrect
 native geometry still requires device evidence; synthetic timing is not physical
 iOS/in-app verification.
 
+The overlay PWA's unoccluded paint extent is the CSS large viewport, which can
+exceed the host's reported unoccluded metrics. The existing Web viewport owner
+publishes geometric contraction separately from editable keyboard inference.
+Only its unoccluded projection selects this full CSS extent; a reduced visual
+viewport stays authoritative through blur, theme changes and navigation. The
+root/background and content safe-inset responsibilities remain separate.
+
 The Web viewport port is the only writer of the Shell viewport projection.
 The browser owns native coordinate movement; the application owns layout capacity.
 The shared snapshot retains raw visual offsets, sizes and focus observations.
