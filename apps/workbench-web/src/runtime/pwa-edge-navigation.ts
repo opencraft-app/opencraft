@@ -17,5 +17,5 @@ export function bindPwaEdgeNavigation(document: Document): () => void {
     if (x >= 0 && x < 20) event.preventDefault();
   };
   document.addEventListener("touchstart", start, { capture: true, passive: false });
-  return () => document.removeEventListener("touchstart", start, true);
+  return () => document.removeEventListener("touchstart", start, { capture: true });
 }
