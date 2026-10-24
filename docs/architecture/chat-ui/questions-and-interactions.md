@@ -245,6 +245,14 @@ focus. Coarse input retains 44px targets. Controls and feedback use the current
 locale. Sending, queued, disconnected and unconfirmed delivery remain distinct;
 selection and draft survive them, and only the existing answer port submits.
 
+The question itself leads the card; omit a repeated input-needed heading and
+permanent usage instructions. The footer keeps one explicit, compact send action
+and shows text only for real delivery or failure feedback. Quiet choice rows use
+the shared control appearance with independent selected, pressed and keyboard
+focus treatments. Freeform input starts with three readable lines, grows with
+the draft and available width, then scrolls within a viewport-bounded height.
+Theme changes preserve the same input node, draft, selection and focus.
+
 Confirmed answers collapse to a read-only result with the actual accepted reply
 and an accessible disclosure for the original question. The ordered Chat
 projection supplies both state and reply, including another client's accepted

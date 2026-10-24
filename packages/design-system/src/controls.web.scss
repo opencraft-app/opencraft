@@ -259,7 +259,7 @@
 }
 
 // Single-choice rows retain native radio semantics and one input-adaptive target.
-@mixin choice-control {
+@mixin choice-control($appearance: default) {
   @include typography.role(body, primary);
   display: flex;
   min-height: max(var(--height-choice-row), var(--size-control-hit-min));
@@ -298,6 +298,22 @@
     }
   }
   > span { min-width: 0; overflow-wrap: anywhere; }
+  @if $appearance == quiet {
+    @include typography.role(control, primary);
+    border-radius: var(--radius-2xl);
+    transition: background-color var(--transition-duration-basic), border-color var(--transition-duration-basic);
+    &:has(input:checked) {
+      background: color-mix(in srgb, var(--color-text) 6%, transparent);
+      border-color: transparent;
+    }
+    &:active:not(:has(input:disabled)) { background: var(--color-background-navigation-pressed); }
+    > input[type="radio"]:checked {
+      border-color: var(--color-background-button-primary);
+      background: var(--color-background-button-primary);
+      &::after { background: var(--color-text-button-primary); }
+    }
+    @media (prefers-reduced-motion: reduce) { transition: none; }
+  }
   @media (forced-colors: active) {
     &:has(input:checked) { border-color: Highlight; }
     > input[type="radio"] { appearance: auto; &:checked::after { display: none; } }
