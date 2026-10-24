@@ -127,9 +127,9 @@ try {
  }
  // Real sidebar consumers: scrolling paint bleeds through the bottom safe
  // region while both independently floating actions keep their old clearance.
- for (const theme of ['light', 'dark']) {
+ for (const materialPath of ['css','lens']) for (const theme of ['light', 'dark']) {
   const context=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true});
-  await context.addInitScript(()=>{const supports=CSS.supports.bind(CSS);CSS.supports=((p:string,v?:string)=>p==='-webkit-backdrop-filter'?true:v===undefined?supports(p):supports(p,v)) as typeof CSS.supports;});
+  if(materialPath==='css') await context.addInitScript(()=>{const supports=CSS.supports.bind(CSS);CSS.supports=((p:string,v?:string)=>p==='-webkit-backdrop-filter'?true:v===undefined?supports(p):supports(p,v)) as typeof CSS.supports;});
   const page=await context.newPage();await page.goto(vite.resolvedUrls!.local[0]!);await page.getByLabel('Draft').waitFor({timeout:60000});
   await page.evaluate(theme=>{(window as any).fixture.setThemePreference(theme);document.documentElement.dataset.uiDensity='touch';document.documentElement.style.setProperty('--safe-layout-inset-top','47px');document.documentElement.style.setProperty('--safe-layout-inset-bottom','34px');},theme);
   await page.getByRole('button',{name:'Show sidebar',exact:true}).click();await page.locator('.sidebar-new-chat:visible').waitFor();
@@ -148,13 +148,17 @@ try {
   const energy=async(data:Buffer)=>page.evaluate(async url=>{
    const image=new Image();image.src=url;await image.decode();const canvas=document.createElement('canvas');canvas.width=image.width;canvas.height=image.height;const ctx=canvas.getContext('2d')!;ctx.drawImage(image,0,0);const {data:p}=ctx.getImageData(0,0,image.width,image.height);let sum=0,count=0;for(let y=8;y<14;y++)for(let x=15;x<image.width-15;x++){const i=(y*image.width+x)*4,j=i-4;sum+=Math.abs(p[i]!-p[j]!);count++}return sum/count;
   },'data:image/png;base64,'+data.toString('base64'));
+  const hideForeground=await page.addStyleTag({content:'.shell-sidebar__floating-action .sidebar-new-chat > :not(.ui-liquid-glass), .shell-sidebar__rail-footer [data-surface=settings] > :not(.ui-liquid-glass){visibility:hidden!important}'});
   const samples=[];
   for(const selector of ['.sidebar-new-chat:visible','.shell-navigation__entrance[data-surface=settings]:visible']){
    const action=page.locator(selector);const lens=action.locator('.ui-liquid-glass');assert.equal(await lens.evaluate(e=>getComputedStyle(e).overflow),'visible','the optical background is not an ellipsis label');
    const softened=await action.screenshot();const remove=await page.addStyleTag({content:'.ui-liquid-glass::before{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}'});const clear=await action.screenshot();await remove.evaluate(e=>e.remove());
-   const before=await energy(clear),after=await energy(softened);assert(before>5);assert(after<before*.25,JSON.stringify({selector,before,after}));samples.push({selector,before,after});
+   const before=await energy(clear),after=await energy(softened);assert(before>5);assert(after<before*.1,JSON.stringify({selector,before,after}));if(materialPath==='lens'){
+    const frost=lens.locator('feGaussianBlur[result=frosted-glass]');assert.equal(Number(await frost.getAttribute('stdDeviation')),12);
+    await frost.evaluate(e=>e.setAttribute('stdDeviation','0'));const oldEnergy=await energy(await action.screenshot());await frost.evaluate(e=>e.setAttribute('stdDeviation','12'));assert(oldEnergy>before*.1,'removing SVG frost restores the nearly clear transmission');assert(oldEnergy>after*2);samples.push({selector,before,after,oldEnergy});
+   }else samples.push({selector,before,after});
   }
-  await page.evaluate(()=>document.querySelector('.glass-backdrop-probe')!.remove());await stripes.evaluate(e=>e.remove());
+  await hideForeground.evaluate(e=>e.remove());await page.evaluate(()=>document.querySelector('.glass-backdrop-probe')!.remove());await stripes.evaluate(e=>e.remove());
   // Real native scrolling can reach the last row above the existing action row.
   for(let n=0;n<5 && await page.getByRole('button',{name:'Show more',exact:true}).count();n++){
    const count=await page.locator('.sidebar-activity-item').count();
@@ -165,7 +169,7 @@ try {
    await page.waitForFunction(count=>document.querySelectorAll('.sidebar-activity-item').length>count||!document.querySelector('.sidebar-activity-more'),count);
   }assert.equal(await page.locator('.sidebar-activity-item').count(),60);
   const end=await page.locator('.shell-sidebar__scroll').evaluate(async e=>{e.scrollTop=e.scrollHeight;await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));const row=[...e.querySelectorAll('.sidebar-activity-item')].pop()!;return{rowBottom:row.getBoundingClientRect().bottom,newTop:document.querySelector('.sidebar-new-chat')!.getBoundingClientRect().top}});assert(end.rowBottom<=end.newTop,JSON.stringify(end));
-  await page.screenshot({path:output+'/sidebar-'+theme+'-safe-bottom.png'});assert.equal(await page.getByLabel('Draft').inputValue(),'Keep draft');evidence.push({sidebar:{theme,geometry,samples,end}});await context.close();
+  await page.screenshot({path:output+'/sidebar-'+theme+'-'+materialPath+'-safe-bottom.png'});assert.equal(await page.getByLabel('Draft').inputValue(),'Keep draft');evidence.push({sidebar:{theme,materialPath,geometry,samples,end}});await context.close();
  }
  const fallbackContext=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true});
  await fallbackContext.addInitScript(()=>{const supports=CSS.supports.bind(CSS);CSS.supports=((property:string,value?:string)=>property==='-webkit-backdrop-filter'?true:value===undefined?supports(property):supports(property,value)) as typeof CSS.supports});
