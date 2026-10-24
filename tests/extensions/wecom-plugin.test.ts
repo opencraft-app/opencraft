@@ -29,7 +29,7 @@ test('diagnostics distinguish no callback, ignored callback and completed handof
   f.callback('foreign', {...body, aibotid:'another-bot'});
   await f.until(() => f.plugin.diagnostics.ignored === 1);
   assert.equal(f.plugin.diagnostics.lastIgnoredReason, 'bot_mismatch');
-  f.callback('compat', {...body, compat_info:{}});
+  f.callback('compat', {...body, compat_info:{source:'ai_assistant'}});
   await f.until(() => f.plugin.diagnostics.ignored === 2);
   assert.equal(f.plugin.diagnostics.lastIgnoredReason, 'compatibility_callback');
   f.callback('image', {...body, msgtype:'image'});
@@ -112,4 +112,24 @@ test('group bot mentions permit binding commands while ordinary text and direct 
   f.callback('direct',{...body,msgid:'direct',chattype:'single',text:{content:'@RobotA /new'}});
   await f.until(()=>f.messages.length===4);
   assert.deepEqual(f.messages.map(message=>message.text),['/new','/switch opencraft://conversation/v1/server/thread','  @RobotA explain this  ','@RobotA /new']);
+});
+
+
+test('empty compatibility metadata retains canonical human identity; declared and malformed sources stay excluded', async t => {
+  const f = await fixture(t);
+  f.callback('null-compat', {...body, msgid:'null', compat_info:null});
+  f.callback('empty-compat', {...body, msgid:'empty', compat_info:{}});
+  await f.until(() => f.plugin.diagnostics.completed === 2);
+  assert.equal(f.plugin.diagnostics.lastCompatibilitySource, 'empty');
+  assert.deepEqual(f.messages.map(m => m.source.senderId), ['external','external']);
+  for (const [index, compat_info] of [{source:'ai_assistant'}, {source:'channel'}, {source:'private-unknown-source'}, {unrecognized:'private-value'}, [], '', false].entries()) {
+    f.callback('excluded-' + index, {...body, compat_info});
+    await f.until(() => f.plugin.diagnostics.ignored === index + 1);
+    assert.equal(f.plugin.diagnostics.lastCompatibilitySource, index === 0 ? 'ai_assistant' : index === 1 ? 'channel' : 'other');
+  }
+  assert.equal(f.messages.length, 2);
+  assert.equal(f.plugin.diagnostics.lastIgnoredReason, 'compatibility_callback');
+  const summary = JSON.stringify(f.plugin.diagnostics);
+  assert.equal(summary.includes('private-unknown-source'), false);
+  assert.equal(summary.includes('private-value'), false);
 });

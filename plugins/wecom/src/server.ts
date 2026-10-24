@@ -41,6 +41,7 @@ export class WeComPlugin {
   private readonly observations = {
     since: Date.now(), lastFrameAt: null as number | null, lastAcknowledgementAt: null as number | null,
     callbacks: 0, forwarded: 0, completed: 0, failed: 0, ignored: 0,
+    lastCompatibilitySource: null as 'empty' | 'ai_assistant' | 'channel' | 'other' | null,
     lastCallbackAt: null as number | null, lastIgnoredReason: null as IgnoredCallback | null,
     lastFailure: null as 'denied' | 'closed' | 'busy' | 'invalid_message' | 'invalid_command' | 'other' | null,
   };
@@ -104,7 +105,12 @@ export class WeComPlugin {
       const body = object(frame.body), sender = object(body?.from)?.userid;
       if (!body || typeof body.msgid !== 'string' || typeof sender !== 'string') { this.ignore('invalid_body'); return; }
       if (body.aibotid !== this.options.botId) { this.ignore('bot_mismatch'); return; }
-      if (body.compat_info !== undefined) { this.ignore('compatibility_callback'); return; }
+      if (body.compat_info !== undefined) {
+        const compat = object(body.compat_info);
+        const empty = body.compat_info === null || (compat !== null && Object.keys(compat).length === 0);
+        this.observations.lastCompatibilitySource = empty ? 'empty' : compat?.source === 'ai_assistant' ? 'ai_assistant' : compat?.source === 'channel' ? 'channel' : 'other';
+        if (!empty) { this.ignore('compatibility_callback'); return; }
+      }
       const chatType = body.chattype === 'single' ? 'direct' : body.chattype === 'group' ? 'group' : null;
       const chatId = chatType === 'direct' ? sender : body.chatid;
       const rawText = content(body);
