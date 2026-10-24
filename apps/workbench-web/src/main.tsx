@@ -11,6 +11,7 @@ import { LoadingSpinner } from "./components/ui/loading-spinner";
 import { startRuntimeDiagnosticCollection } from "./runtime-diagnostics";
 import { reportRuntimeError } from "./runtime-error-reporting";
 import { clientProductOptions } from "./runtime/client-product-entry";
+import { bindPwaEdgeNavigation } from "./runtime/pwa-edge-navigation";
 import { bindPageLifecycle } from "./runtime/page-lifecycle";
 import { bindMobileContainer, mobileContainer } from "./runtime/mobile-container";
 import { bindInteractionDensity } from "./runtime/interaction-density";
@@ -50,6 +51,7 @@ type BootstrapState =
 initializeAppearanceTheme();
 startRuntimeDiagnosticCollection();
 const disposeTouchInteractionMode = bindTouchInteractionMode(document);
+const disposePwaEdgeNavigation = bindPwaEdgeNavigation(document);
 
 const desktopWindowBridge = (
   globalThis as typeof globalThis & { readonly opencraftDesktop?: DesktopWindowBridge }
@@ -175,7 +177,10 @@ function ApplicationBootstrap() {
 }
 
 const reactRoot = ReactDOM.createRoot(rootElement);
-const retirePage = bindPageLifecycle(window, () => reactRoot.unmount());
+const retirePage = bindPageLifecycle(window, () => {
+  disposePwaEdgeNavigation();
+  reactRoot.unmount();
+});
 reactRoot.render(
   <RuntimeErrorBoundary>
     <ApplicationBootstrap />
