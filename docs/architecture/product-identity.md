@@ -3,7 +3,9 @@
 OpenCraft is the product name for the Web, Electron, and Expo hosts. Source
 packages use `@opencraft/*`; build environment variables use `OPENCRAFT_*`
 and `VITE_OPENCRAFT_*`. There are no old package aliases or dual environment
-variable readers. Electron remains pinned to 44.1.0.
+variable readers. The pinned Electron version is owned by the
+[desktop package manifest](../../apps/workbench-electron/package.json) and the
+[root lockfile](../../package-lock.json).
 
 ## Directory identity charter
 
