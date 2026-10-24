@@ -51,14 +51,25 @@ test("explicit retry wakes delayed history, applies the new policy and shares th
  f.owner.dispose();
 });
 
-test("transient history retries are bounded and explicit callers receive the final failure", async () => {
- const f=fixture();let reads=0;
- const done=assert.rejects(f.owner.recover({key:{},demand:()=>"visible",retryable:()=>true,propagateFailure:true,
-   run:async()=>{reads++;throw Error('still unavailable');}}),/still unavailable/);
+test("history retries continue beyond three failures, cap backoff and settle after recovery", async () => {
+ const f=fixture({jitter:false});let reads=0;
+ const done=f.owner.recover({key:{},demand:()=>"visible",retryable:()=>true,propagateFailure:true,
+   run:async()=>{if(++reads<=10)throw Error('still unavailable');}});
  await tick();
- for(const delay of [500,1000,2000])await f.advance(delay);
- await done;assert.equal(reads,4);assert.equal(f.timers.size,0);
- await f.advance(60_000);assert.equal(reads,4);f.owner.dispose();
+ for(const delay of [500,1000,2000,5000,15000,30000,60000,60000,60000,60000])await f.advance(delay);
+ await done;assert.equal(reads,11);assert.equal(f.timers.size,0);
+ await f.advance(60_000);assert.equal(reads,11);f.owner.dispose();
+});
+
+test("a cached or released conversation cancels persistent recovery and stale timers", async () => {
+ const f=fixture(),key={};let reads=0,demand:RecoveryDemand="visible";
+ const done=f.owner.recover({key,demand:()=>demand,retryable:()=>true,
+   run:async()=>{reads++;throw Error('unavailable');}});
+ await tick();for(const delay of [500,1000,2000,5000])await f.advance(delay);
+ const stale=[...f.timers.values()][0]!.run;
+ demand="cache";await f.advance(15000);await done;
+ stale();await tick();assert.equal(reads,5);assert.equal(f.timers.size,0);
+ f.owner.dispose();
 });
 
 test("a cancelled history timer cannot consume the replacement retry delay", async () => {

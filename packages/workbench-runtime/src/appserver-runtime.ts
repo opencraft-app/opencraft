@@ -1424,7 +1424,12 @@ export function createAppServerWorkbenchRuntime(
     && threadUnavailableReason(cause) === null
     && ((cause instanceof AppServerClientError
       && ["TIMEOUT", "QUEUE_FULL", "TRANSPORT_ERROR", "NOT_CONNECTED"].includes(cause.code))
-      || isRetryableAppServerRpcError(cause));
+      || isRetryableAppServerRpcError(cause)
+      // History recovery is read-only. Legacy providers use generic server/internal
+      // errors without a retry hint; explicit permanent failures still stop.
+      || (cause instanceof AppServerRpcError && [-32000, -32603].includes(cause.code)
+        && (cause.data == null || (typeof cause.data === "object"
+          && (!("retryable" in cause.data) || cause.data.retryable === true)))));
 
   // Resource restoration is not part of Host readiness. A missing Thread
   // must not reconnect the Host or delay another Thread's restoration.
@@ -1439,7 +1444,7 @@ export function createAppServerWorkbenchRuntime(
         run: async () => {
           if (!current()) return;
           requireSession().resume.markNeedsResume(binding.threadId);
-          await hydrateBinding(binding, true);
+          await hydrateBinding(binding, true, true);
         },
         retryable: cause => current() && retryableHistoryFailure(cause),
       }).catch(() => undefined);
@@ -2144,7 +2149,7 @@ export function createAppServerWorkbenchRuntime(
         // adapter must publish no persisted Timeline before Resume. The single
         // authoritative promotion happens after Resume + history settle.
         if (client?.status.state === "open") void recovery.recover({ key: binding, demand: () => recoveryDemand(binding),
-          run: () => hydrateBinding(binding, false), retryable: retryableHistoryFailure,
+          run: () => hydrateBinding(binding, false, true), retryable: retryableHistoryFailure,
         }).catch(() => undefined);
       }
       let released = false;
@@ -2158,7 +2163,7 @@ export function createAppServerWorkbenchRuntime(
             // Promote this binding's pending recovery without revalidating peer
             // Threads or restoring Host resources on ordinary navigation.
             void recovery.recover({ key: binding, demand: () => recoveryDemand(binding),
-              run: () => hydrateBinding(binding, false), retryable: retryableHistoryFailure,
+              run: () => hydrateBinding(binding, false, true), retryable: retryableHistoryFailure,
             }).catch(() => undefined);
           }
         },

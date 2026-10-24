@@ -132,7 +132,7 @@ export class ConversationRecoveryOwner {
     if (previous) {
       previous.propagateFailure ||= task.propagateFailure === true;
       if (immediate) {
-        // A user retry replaces the queued policy, but shares any active read.
+        // An explicit probe replaces the queued policy, but shares any active read.
         previous.task = task;
         previous.retryTicket++;
         const timer = this.timers.get(task.key);
@@ -185,9 +185,10 @@ export class ConversationRecoveryOwner {
         if (generation !== this.generation || this.work.get(key) !== work) return;
         this.stage("history-failed", { demand, durationMs: this.now() - started });
         this.observe("failed", key, { error });
-        if (work.attempt < 3 && work.task.retryable(error)) {
+        if (work.task.retryable(error)) {
           const schedule = this.input.delaysMs;
-          const base = (schedule ?? delays)[Math.min(work.attempt++, 6)] ?? 5_000;
+          const values = schedule ?? delays;
+          const base = values[Math.min(work.attempt++, values.length - 1)] ?? 5_000;
           const delayMs = this.jitteredDelay(base, schedule === undefined);
           this.observe("backoff", key, { retryAt: this.now() + delayMs });
           this.stage("history-backoff", { demand, delayMs, attempt: this.getProgress(key)!.attempt });

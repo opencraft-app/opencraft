@@ -127,8 +127,10 @@ automatic View reacquisition does not replay the same failed native request.
 An explicit user retry and a new physical generation may retry; transport
 failures are not memoized. A provider may explicitly declare a transient RPC
 failure with `error.data.retryable: true`; it is also not memoized and the
-Workbench's existing bounded history recovery may retry it. Missing, false or
-malformed retryability retains the rejection behavior. This does not enable
+Workbench's history recovery may retry it until its demand is released. Explicit false or malformed retryability retains the rejection behavior.
+For legacy generic server/internal history errors without a hint, the Workbench
+read-only recovery owner explicitly reissues Resume with capped backoff; Session
+still memoizes other rejections and never retries ordinary commands. This does not enable
 automatic replay of arbitrary commands. The shorter Host grace is an additional release
 policy, not a substitute for Codex's own idle-thread cleanup.
 
