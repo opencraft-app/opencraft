@@ -16,7 +16,7 @@ export function bindPwaEdgeNavigation(document: Document): () => void {
     // The rest of the viewport retains scrolling, selection and local gestures.
     const width = document.documentElement.clientWidth || view.innerWidth;
     if (!Number.isFinite(width) || width <= 0) return;
-    if (x >= 0 && x < width && (x < 20 || x >= width - 20)) event.preventDefault();
+    if (x >= 0 && x <= width && (x < 20 || x >= width - 20)) event.preventDefault();
   };
   document.addEventListener("touchstart", start, { capture: true, passive: false });
   return () => document.removeEventListener("touchstart", start, { capture: true });

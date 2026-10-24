@@ -28,7 +28,8 @@ test("iOS Home Screen contacts at both edges is cancelled before native history 
   assert.equal(touch([19]).defaultPrevented, true);
   assert.equal(touch([370]).defaultPrevented, true);
   assert.equal(touch([389]).defaultPrevented, true);
-  assert.equal(observed, 4, "local owners must still receive the event");
+  assert.equal(touch([390]).defaultPrevented, true);
+  assert.equal(observed, 5, "local owners must still receive the event");
   release();
   assert.equal(touch([0]).defaultPrevented, false, "retired page must release input");
   release();
@@ -45,7 +46,7 @@ test("normal tabs and embedded documents retain native handling", () => {
 
 test("center gestures, multiple contacts and noncancelable events remain native", () => {
   const { release, touch } = fixture(true);
-  for (const xs of [[20], [180], [369], [390], [-1], [1, 180], []]) {
+  for (const xs of [[20], [180], [369], [391], [-1], [1, 180], []]) {
     assert.equal(touch(xs).defaultPrevented, false, JSON.stringify(xs));
   }
   assert.equal(touch([1], false).defaultPrevented, false);
@@ -59,5 +60,7 @@ test("the right boundary follows the current viewport after rotation", () => {
   assert.equal(touch([389]).defaultPrevented, false);
   assert.equal(touch([823]).defaultPrevented, false);
   assert.equal(touch([824]).defaultPrevented, true);
+  assert.equal(touch([844]).defaultPrevented, true);
+  assert.equal(touch([845]).defaultPrevented, false);
   release(); assert.equal(touch([824]).defaultPrevented, false);
 });
