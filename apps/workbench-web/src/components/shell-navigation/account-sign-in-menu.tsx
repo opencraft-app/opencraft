@@ -1,3 +1,4 @@
+import { LiquidGlassBackdrop } from "@opencraft/design-system-web/liquid-glass";
 import { SettingsGearIcon } from "@opencraft/design-system-web/action-icons";
 import * as DropdownMenu from "@opencraft/design-system-web/dropdown-menu";
 import { useIntl } from "@opencraft/i18n/react";
@@ -22,7 +23,7 @@ export function AccountSignInMenu({ account, signIn, id, visible, container, onO
     <DropdownMenu.Trigger asChild>
       <button id={id} type="button" className="shell-navigation__entrance" data-surface="account"
         aria-label={label} title={label}>
-        <AccountLeadingVisual account={account} />
+        <LiquidGlassBackdrop /><AccountLeadingVisual account={account} />
         <span className="shell-navigation__name" aria-live="polite">{label}</span>
       </button>
     </DropdownMenu.Trigger>

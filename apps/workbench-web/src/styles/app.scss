@@ -12558,12 +12558,9 @@ html[data-ui-density="touch"] body {
   .thread-scroll-to-bottom-button {
     width: max(var(--size-transcript-float-touch), var(--size-control-hit-min));
     height: max(var(--size-transcript-float-touch), var(--size-control-hit-min));
-    clip-path: circle(50%);
-    background: var(--color-background-composer-newera);
-    border-color: var(--color-border-composer-newera);
-    -webkit-backdrop-filter: blur(var(--blur-composer-newera)) saturate(var(--saturation-composer-newera));
-    backdrop-filter: blur(var(--blur-composer-newera)) saturate(var(--saturation-composer-newera));
-    box-shadow: var(--shadow-composer-newera), inset 0 1px 0 var(--color-highlight-composer-newera);
+    @include material.liquid;
+    position: absolute;
+    border-color: transparent;
     &:focus-visible { outline-offset: -3px; }
   }
   .thread-scroll-to-bottom-button__icon {
@@ -12655,12 +12652,6 @@ html[data-ui-density="touch"] body {
   }
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  :root[data-ui-density="touch"][data-touch-newera="on"] .thread-scroll-to-bottom-button {
-    background: var(--color-background-elevated-primary-opaque);
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
-
   :root[data-ui-density] .opencraft-composer-stack .opencraft-composer-shell {
     --composer-surface-background: var(--color-background-elevated-primary-opaque);
   }
@@ -12669,12 +12660,6 @@ html[data-ui-density="touch"] body {
   }
 }
 @media (prefers-reduced-transparency: reduce), (forced-colors: active) {
-  :root[data-ui-density="touch"][data-touch-newera="on"] .thread-scroll-to-bottom-button {
-    background: var(--color-background-elevated-primary-opaque);
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
-
   :root[data-ui-density] .opencraft-composer-stack .opencraft-composer-shell {
     --composer-surface-background: var(--color-background-elevated-primary-opaque);
     --composer-surface-filter: none;
@@ -13026,4 +13011,19 @@ html[data-ui-density="touch"] body {
   .thread-generated-image-edit,
   .thread-shell-output__copy,
   .thread-tool-details__raw { opacity: 1; }
+}
+
+// Touch floating actions use the conversation navigation material. Geometry and
+// actions remain with Shell/Sidebar; the shared backdrop owns optics/fallbacks.
+:root[data-ui-density="touch"] {
+  .shell-sidebar__column:not([data-navigation-layout="mobile"]) .shell-sidebar-navigation .shell-navigation__items--applications > button,
+  [data-mobile-sidebar] .shell-sidebar__header > .shell-sidebar__action,
+  .shell-sidebar__column .sidebar-new-chat,
+  .shell-sidebar__column .shell-navigation__footer--unified .shell-navigation__entrance,
+  .app-shell-touch-sidebar-toggle > button {
+    @include material.liquid;
+    color: var(--color-text);
+    @include controls.hover-capable { &:hover { background: var(--color-background-navigation-hover); } }
+    &:active { background: var(--color-background-navigation-pressed); }
+  }
 }

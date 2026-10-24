@@ -1,3 +1,4 @@
+import { LiquidGlassBackdrop } from "@opencraft/design-system-web/liquid-glass";
 import { ChevronDownIcon as ChevronDown, LoadingRingIcon as LoaderCircle, ComposeIcon as SquarePen, SearchIcon as Search, CheckIcon as Check } from "@opencraft/design-system-web/action-icons";
 import { SettingsGearIcon } from "@opencraft/design-system-web/action-icons";
 import { shortcutLabel, shortcutAria } from "../workbench-shortcuts";
@@ -444,7 +445,7 @@ function SidebarNewChatButton({ onNewTask }: { onNewTask(): void }) {
   const button = <button type="button" className="sidebar-new-chat" title={`${intl.formatMessage({ id: "sidebar.newChat", defaultMessage: "New chat" })} (${shortcutLabel("newChat")})`} aria-keyshortcuts={shortcutAria("newChat")} onClick={() => {
     onNewTask();
     shell?.dismissSidebarAfterSelection();
-  }}><SquarePen size={16} aria-hidden="true" /><span>{intl.formatMessage({ id: "sidebar.newChat", defaultMessage: "New chat" })}</span></button>;
+  }}><LiquidGlassBackdrop /><SquarePen size={16} aria-hidden="true" /><span>{intl.formatMessage({ id: "sidebar.newChat", defaultMessage: "New chat" })}</span></button>;
 
   return shell?.mobileSidebar
     ? shell.sidebarActionHost ? createPortal(button, shell.sidebarActionHost) : null

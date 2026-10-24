@@ -1,6 +1,7 @@
 @use "@opencraft/design-system/interaction-mixins.web" as controls;
 @use "@opencraft/design-system/typography.web" as typography;
 @use "./mobile-glass" as glass;
+@use "@opencraft/design-system/material.web" as material;
 
 .modal-surface.conversation-search[data-appearance="utility"] {
   padding: 0;
@@ -108,7 +109,8 @@
       input { @include typography.role(mobile-input, primary); }
     }
     .modal-surface__close {
-      @include glass.surface;
+      @include material.liquid;
+      position: absolute;
       top: auto; right: max(12px, env(safe-area-inset-right, 0px)); bottom: var(--search-bottom);
       width: 48px; height: 48px; border-radius: 50%; color: var(--color-text);
       > svg { width: 22px; height: 22px; }

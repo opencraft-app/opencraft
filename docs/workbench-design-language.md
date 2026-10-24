@@ -526,12 +526,31 @@ and actions while Modal/Radix retains window, dismissal and focus ownership.
 Touch Newera conversation chrome uses a leading circular sidebar control and one
 trailing capsule for the existing conversation menu and preview action. The two
 trailing targets remain independent, with no divider or nested glass. Other
-routes/densities keep their existing presentation. Shell owns placement and safe
+routes/densities keep their existing presentation except for the touch floating
+actions described below. Shell owns placement and safe
 areas; the design system owns LiquidGlassBackdrop, semantic material tokens and
 opaque accessibility fallbacks. A supported live backdrop lens uses a small
 geometry-dependent map updated on resize; it never captures content or runs a
 scroll/frame loop. Unsupported lens engines retain tint, softened transmission
 and curved highlights. Icons, focus rings and portalled menus are unfiltered.
+
+### Touch floating action material
+
+Phone and tablet touch layouts reuse the conversation navigation material for
+sidebar Applications/Search and compact icon rail actions, New chat, footer Settings/account/update entrances,
+the floating sidebar toggle, the transcript return control and the search dialog
+close control. Each independent control owns one `LiquidGlassBackdrop`; the
+conversation trailing group keeps its single existing shared backdrop. Do not
+nest a second material or paint opaque primary/secondary button fills over it.
+New chat retains its existing text capsule and geometry for emphasis. Touch
+hover/press feedback uses the existing neutral navigation state tokens. Desktop density
+keeps its existing presentation, and list rows, inline actions, search inputs and
+Composer controls retain their own semantic materials.
+
+The original control owns position, size, action and keyboard focus. The existing
+liquid tokens own light/dark tint, prefixed Safari CSS blur and readable opaque
+fallbacks for unsupported blur, reduced transparency and forced colors. Safari
+CSS approximation is supported; physical iOS rendering still needs device evidence.
 
 ### Live navigation optics
 

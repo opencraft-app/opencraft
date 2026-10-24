@@ -46,7 +46,7 @@ export function SidebarToggleButton({ open, onToggle, hostRole, stationary = fal
     data-app-shell-sidebar-trigger="true" data-chrome-action-id="sidebar-toggle"
     data-sidebar-toggle-stationary={stationary || undefined}
     data-chrome-action-host-role={hostRole} onClick={onToggle}>
-    {liquidGlass ? <LiquidGlassBackdrop /> : null}
+    <LiquidGlassBackdrop />
     <SidebarToggleIcon sidebarOpen={open} />
   </button>;
   if (!stationary) return button;

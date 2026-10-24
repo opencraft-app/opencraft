@@ -1,3 +1,4 @@
+import { LiquidGlassBackdrop } from "@opencraft/design-system-web/liquid-glass";
 import * as Dialog from "@radix-ui/react-dialog";
 import { useIntl } from "@opencraft/i18n/react";
 import { NavigationIcon } from "./navigation-action";
@@ -255,7 +256,7 @@ export function ShellNavigationFooter({ config, controller, visible = true, mobi
           if (mobile) config.onOpenSettings();
           else onInvoke(config.onOpenSettings);
         }}>
-        <NavigationIcon name="settings" selected={config.settingsActive} />
+        <LiquidGlassBackdrop /><NavigationIcon name="settings" selected={config.settingsActive} />
       </button>
     </> : null}
     {availableSurfaces.map(surface => {
@@ -265,7 +266,7 @@ export function ShellNavigationFooter({ config, controller, visible = true, mobi
       if (applicationAction) return <button key={surface} id={`${entranceId}-${surface}`} type="button"
         className="shell-navigation__entrance" data-surface={surface} aria-label={surfaceLabel}
         aria-current={applicationAction.active ? "page" : undefined} title={surfaceLabel}
-        onClick={() => onInvoke(applicationAction.onInvoke)}><NavigationIcon name="grid" selected={applicationAction.active} /></button>;
+        onClick={() => onInvoke(applicationAction.onInvoke)}><LiquidGlassBackdrop /><NavigationIcon name="grid" selected={applicationAction.active} /></button>;
       if (directSignIn && config.account?.signIn) return <AccountSignInMenu key={surface}
         account={config.account} signIn={config.account.signIn} id={`${entranceId}-${surface}`}
         visible={visible} container={root.current} onOpenSettings={() => onInvoke(config.onOpenSettings)} />;
@@ -292,6 +293,7 @@ export function ShellNavigationFooter({ config, controller, visible = true, mobi
           aria-expanded={surface === "applications" ? projection.docked.applications || projection.peek === "applications" : undefined}
           data-pinned={surface === "applications" && projection.primaryNavigation ? visible : directSignIn ? false : state.pinned[surface]}
           title={surface === "applications" && projection.primaryNavigation ? intl.formatMessage(labels.applications) : `${surfaceLabel}${!directSignIn && state.pinned[surface] ? ` · ${intl.formatMessage({ id: "navigation.pinned", defaultMessage: "Pinned" })}` : ""}`}>
+          <LiquidGlassBackdrop />
           {surface === "applications" ? <NavigationIcon name="applications" selected={projection.docked.applications || projection.peek === "applications"} />
             : <><AccountLeadingVisual account={config.account} /><span className="shell-navigation__name">{surfaceLabel}</span></>}
         </button>
@@ -343,6 +345,7 @@ function ShellManagedUpdateEntrance({ selected, onInvoke = action => action(), o
       if (onOpenUpdates) onInvoke(onOpenUpdates);
       else onInvoke(onOpenSettings);
     }}>
+    <LiquidGlassBackdrop />
     <span className="shell-navigation__icon-wrapper">
       <NavigationIcon name={notice.updateAvailable ? "updates" : "refresh"} selected={selected} />
       <span className="shell-navigation__update-dot" aria-hidden="true" />

@@ -245,3 +245,9 @@ its route owns the scrollport, shared controls own focus/hover/touch feedback an
 the shared icon owner supplies glyphs. Returning to Chat preserves its draft,
 selection and running execution. The retired conversation-card overview and its
 Appearance setting are absent; task-board statistics remain independent.
+
+### Touch floating action material
+
+Touch sidebar and conversation floating actions share the existing liquid glass
+owner; control geometry, commands, focus, icons and labels remain unchanged.
+Desktop density keeps its prior surfaces. See [touch floating material](../docs/workbench-design-language.md#touch-floating-action-material).
