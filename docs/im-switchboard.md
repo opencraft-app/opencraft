@@ -160,8 +160,9 @@ No sender, request ID, message text, secret or arbitrary error is included.
 An authenticated socket with recent ACKs does not prove message delivery;
 zero callbacks only describes the current adapter lifetime. A completed handoff
 does not prove native execution or an IM reply. Use the durable message and
-delivery receipts for those later stages. Reconnecting creates a new snapshot;
-these observations never change authorization or retry a message.
+delivery receipts for those later stages. Recreating the adapter resets these
+observations; automatic socket reconnects retain them. These observations never
+change authorization or retry a message.
 
 ## Verification
 
