@@ -41,7 +41,7 @@
 
 - <a id="ios-home-screen-edge-navigation"></a>[iOS Home Screen edge navigation](invariants/shell-and-layout.md#ios-home-screen-edge-navigation) — PwaRuntime owns both reserved edges
 
-- [Shared safe layout container](invariants/shell-and-layout.md#shared-safe-layout-container)
+- [Shared safe layout container](invariants/shell-and-layout.md#shared-safe-layout-container) — host-owned edge allocation, independent of sidebar mode
 
 ### Navigation and sidebar
 

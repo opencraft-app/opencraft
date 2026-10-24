@@ -598,7 +598,8 @@ export function AppShell({
     navigationController.requestDock();
     onSidebarExpand();
   }, [navigationController.requestDock, onSidebarExpand]);
-  const mobileSidebarEnabled = windowChrome.kind === "browser" && unifiedNavigation && sidebarTransientEnabled
+  const browserSafeLayout = windowChrome.kind === "browser";
+  const mobileSidebarEnabled = browserSafeLayout && unifiedNavigation && sidebarTransientEnabled
     && !canDockSidebar;
   const primaryNavigation = useMemo(() => navigation && mobileSidebarEnabled
     ? { ...navigation, actions: navigation.actions.filter(action => action.id !== "shell.applications") }
@@ -791,7 +792,7 @@ export function AppShell({
     <SidebarDismissContext.Provider value={dismissSidebarAfterSelection}>
     <AppShellLayoutMotionContext.Provider value={layoutMotion}>
       <ApplicationShellRoot
-        className={navigation ? `has-shell-navigation${unifiedNavigation ? ` has-unified-sidebar${navigationOnly ? " has-icon-navigation-only" : ""}` : ""}${mobileSidebarEnabled ? " has-mobile-sidebar-gestures" : ""}` : undefined}
+        className={`${browserSafeLayout ? "has-browser-safe-layout " : ""}${navigation ? `has-shell-navigation${unifiedNavigation ? ` has-unified-sidebar${navigationOnly ? " has-icon-navigation-only" : ""}` : ""}${mobileSidebarEnabled ? " has-mobile-sidebar-gestures" : ""}` : ""}`}
         rootRef={shellRootRef}
         windowChrome={windowChrome}
         sidebarOpen={sidebarOpen}
@@ -874,7 +875,7 @@ export function AppShell({
             entranceId="shared-shell-entrance"
             onTogglePrimaryNavigation={floatingOwnsContent ? toggleFloatingApplications : onSidebarCollapse} /> : null }}
         />
-        <MotionSafeLayout edges={mobileSidebarEnabled ? ["top"] : []} className="app-shell-row" data-mobile-sidebar-present={mobileSidebarEnabled && mobileGesture.present || undefined}
+        <MotionSafeLayout edges={browserSafeLayout ? ["top"] : []} className="app-shell-row" data-mobile-sidebar-present={mobileSidebarEnabled && mobileGesture.present || undefined}
           style={mobileSidebarEnabled ? { x: mobilePageX } : undefined}>
           <Sidecar animatedWidth={totalLeftWidth} dividerProgress={titlebarDividerProgress} footer={navigation && !unifiedNavigation ? <motion.div
             className="app-shell-sidecar__footer"

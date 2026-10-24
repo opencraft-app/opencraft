@@ -162,7 +162,7 @@ test("unchanged reports cannot bypass the detailed measurement interval", t => {
 test("paint and safe content geometry are observed without inferring native status-bar pixels", t => {
   const f = fixture(t), report = createViewportDiagnostics();
   f.doc.activeElement.querySelector = selector => selector === ".app-shell-row"
-    ? { paddingTop: "47px", getBoundingClientRect: () => ({ top: 0, height: 844 }) }
+    ? { getAttribute: () => "top", paddingTop: "47px", getBoundingClientRect: () => ({ top: 0, height: 844 }) }
     : { getBoundingClientRect: () => ({ top: 47, height: 44 }) };
   report();
   const result = f.reports.at(-1)!;
@@ -170,5 +170,17 @@ test("paint and safe content geometry are observed without inferring native stat
   assert.equal(result.rowTop, 0); assert.equal(result.rowPaddingTop, 47);
   assert.equal(result.headerTop, 47); assert.equal(result.standalone, 0);
   assert.equal(result.shellPaddingTop, 0);
+  assert.equal(result.safeLayoutTop, 1);
   assert.ok(!("systemAppearance" in result));
+});
+
+
+test("enabled safe layout is distinguishable from a zero device inset", t => {
+  const f = fixture(t), report = createViewportDiagnostics();
+  f.doc.activeElement.querySelector = selector => selector === ".app-shell-row"
+    ? { getAttribute: () => "top", paddingTop: "0px", getBoundingClientRect: () => ({ top: 0, height: 812 }) }
+    : { getBoundingClientRect: () => ({ top: 0, height: 44 }) };
+  report();
+  assert.equal(f.reports.at(-1)!.safeLayoutTop, 1);
+  assert.equal(f.reports.at(-1)!.rowPaddingTop, 0);
 });

@@ -234,7 +234,7 @@ function validRecoveryDiagnostic(report) {
 }
 
 const viewportGeometryKeys = new Set(["layoutHeight", "layoutWidth", "visualHeight", "visualWidth", "visualTop", "visualLeft", "pageTop", "scrollY", "scale", "shellTop", "shellHeight", "editorTop", "sendBottom", "editing"]);
-const viewportOptionalGeometryKeys = new Set(["screenHeight", "screenWidth", "standalone", "rowTop", "rowHeight", "headerTop", "headerHeight", "shellPaddingTop", "rowPaddingTop", "cssTop", "cssHeight", "clientHeight", "rootTop", "rootHeight", "bodyTop", "bodyHeight", "fixedTop", "fixedLeft", "editorBottom", "composerTop", "composerBottom", "draftScroll", "editorScroll", "sendTop", "sendHit", "touchSequence", "touchScreenClientY", "touchPageClientY", "editorMinTop", "editorMaxTop", "shellMinTop", "shellMaxTop", "observedSamples"]);
+const viewportOptionalGeometryKeys = new Set(["screenHeight", "screenWidth", "standalone", "safeLayoutTop", "rowTop", "rowHeight", "headerTop", "headerHeight", "shellPaddingTop", "rowPaddingTop", "cssTop", "cssHeight", "clientHeight", "rootTop", "rootHeight", "bodyTop", "bodyHeight", "fixedTop", "fixedLeft", "editorBottom", "composerTop", "composerBottom", "draftScroll", "editorScroll", "sendTop", "sendHit", "touchSequence", "touchScreenClientY", "touchPageClientY", "editorMinTop", "editorMaxTop", "shellMinTop", "shellMaxTop", "observedSamples"]);
 function validViewportDiagnostic(report) {
   return report?.kind === "viewport"
     && typeof report.episode === "string" && /^viewport-[a-z0-9]{1,20}$/.test(report.episode)
@@ -243,6 +243,7 @@ function validViewportDiagnostic(report) {
     && Object.entries(report).every(([key, value]) => ["kind", "episode", "sourceRevision"].includes(key)
       || ((viewportGeometryKeys.has(key) || viewportOptionalGeometryKeys.has(key)) && Number.isFinite(value) && Math.abs(value) <= 100_000))
     && (report.standalone === undefined || [0, 1].includes(report.standalone))
+    && (report.safeLayoutTop === undefined || [0, 1].includes(report.safeLayoutTop))
     && [0, 1].includes(report.editing) && report.scale > 0 && report.scale <= 20;
 }
 

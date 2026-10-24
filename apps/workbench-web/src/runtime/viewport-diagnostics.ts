@@ -71,6 +71,7 @@ export function createViewportDiagnostics() {
       screenHeight: window.screen.height, screenWidth: window.screen.width,
       standalone: Number((window.navigator as Navigator & { standalone?: boolean }).standalone === true
         || window.matchMedia("(display-mode: standalone)").matches),
+      safeLayoutTop: Number(row?.getAttribute("data-safe-layout")?.split(" ").includes("top") === true),
       rowTop: rowRect?.top ?? 0, rowHeight: rowRect?.height ?? 0,
       headerTop: headerRect?.top ?? 0, headerHeight: headerRect?.height ?? 0,
       shellPaddingTop: Number.parseFloat(style.paddingTop) || 0,
