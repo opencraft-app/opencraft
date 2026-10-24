@@ -107,6 +107,18 @@ try {
     await page.reload();
     await page.getByRole("button", { name: `连接操作：${name}`, exact: true }).waitFor({ timeout: 30000 });
     const menu = page.getByRole("button", { name: `连接操作：${name}`, exact: true });
+    const activate = async (target: any) => touch ? target.tap() : target.click();
+    for (const action of ["删除", "设置", "删除"]) {
+      await activate(menu);
+      await activate(page.getByRole("menuitem", { name: action, exact: true }));
+      const cancelled = page.getByRole("dialog", { name: action === "删除" ? "删除连接" : "连接设置", exact: true });
+      await cancelled.waitFor();
+      await activate(cancelled.getByRole("button", { name: "取消", exact: true }));
+      await cancelled.waitFor({ state: "hidden" });
+      await page.waitForFunction(() => getComputedStyle(document.body).pointerEvents !== "none", null, { timeout: 3000 });
+      await page.waitForFunction(label => document.activeElement?.getAttribute("aria-label") === label, `连接操作：${name}`, { timeout: 3000 });
+      assert.equal(management.store.get(serverId).displayName, name, "Cancelled dialogs keep the saved recipe");
+    }
     await menu.click(); assert.equal(await page.getByRole("menu").count(), 1);
     await page.getByRole("menu").evaluate(async (surface: Element) => {
       await Promise.all(surface.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => undefined)));
