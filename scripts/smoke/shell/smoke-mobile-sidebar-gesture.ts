@@ -757,6 +757,9 @@ try {
         assert.equal(await button.count(),1,'one accessible creation action');
         assert.equal(await panel.locator('.sidebar-tasks > .sidebar-new-chat').count(),0,'mobile inline row removed');
         const before=await button.boundingBox();assert.ok(before);
+        const initialViewport=await panel.locator('.shell-sidebar__scroll').boundingBox();assert.ok(initialViewport);
+        assert.ok(initialViewport.y+initialViewport.height<=before.y,'initial list cannot paint behind the creation pill');
+        await expandScrollFixture();
         assert.ok(before.height>=48 && before.width>=100,'comfortable pill touch target');
         const scroll=panel.locator('.shell-sidebar__scroll');
         await scroll.evaluate(e=>{e.scrollTop=0});await page.waitForTimeout(100);
@@ -775,21 +778,10 @@ try {
         const settings=panel.getByRole('button',{name:'Settings',exact:true});
         assert.equal(await settings.count(),1,'one accessible settings action');
         const gear=await settings.boundingBox();assert.ok(gear);
-        // The overlay must occlude real list content in every interactive state.
-        await cdp.send('DOM.enable');await cdp.send('CSS.enable');
-        const {root}=await cdp.send('DOM.getDocument');
-        const {nodeId}=await cdp.send('DOM.querySelector',{nodeId:root.nodeId,selector:'.app-shell-floating-left-panel [data-surface="settings"]'});
-        for(const state of [[],['hover'],['hover','active'],['focus-visible']]) {
-          await cdp.send('CSS.forcePseudoState',{nodeId,forcedPseudoClasses:state});
-          const paint=await settings.evaluate(e=>{
-            const style=getComputedStyle(e),canvas=document.createElement('canvas');
-            canvas.width=canvas.height=1;
-            const ctx=canvas.getContext('2d')!;ctx.fillStyle=style.backgroundColor;ctx.fillRect(0,0,1,1);
-            return {alpha:ctx.getImageData(0,0,1,1).data[3],opacity:style.opacity};
-          });
-          assert.deepEqual(paint,{alpha:255,opacity:'1'},`floating settings is opaque in ${state.join('+')||'rest'}`);
-        }
-        await cdp.send('CSS.forcePseudoState',{nodeId,forcedPseudoClasses:[]});
+        // Translucent actions cannot hide text: the scrolling viewport itself
+        // must stop above them, including before the list reaches its end.
+        assert.ok(viewport.y+viewport.height<=Math.min(before.y,gear.y),
+          'native list viewport stays above floating glass: '+JSON.stringify({viewport,before,gear}));
         assert.ok(gear.width>=48&&gear.height>=48,'settings retains a comfortable touch target');
         assert.ok(gear.x>=after.x+after.width+8,'settings floats to the right without overlapping creation');
         assert.ok(Math.abs(gear.y-after.y)<1,'floating actions share a baseline');
@@ -799,6 +791,8 @@ try {
         assert.ok(gear.y+gear.height<=844-34,'settings respects the simulated bottom safe area');
         const last=await panel.locator('.sidebar-activity-item').last().boundingBox();assert.ok(last);
         assert.ok(last.y+last.height<=after.y,'last conversation scrolls fully above action');
+        const pagination=await panel.locator('.sidebar-activity-pagination').last().boundingBox();assert.ok(pagination);
+        assert.ok(pagination.y+pagination.height<=Math.min(after.y,gear.y),'final pagination remains fully above glass actions');
         assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
         await page.screenshot({path:`${output}/${theme}-${reducedMotion}-${width}-fab.png`});
         const prior=await page.evaluate(()=>(window as any).fixture.actions.length);
