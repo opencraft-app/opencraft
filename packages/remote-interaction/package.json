@@ -9,6 +9,10 @@
       "types": "./src/protocol.d.cts",
       "default": "./src/protocol.cjs"
     },
+    "./policy": {
+      "types": "./src/policy.d.cts",
+      "default": "./src/policy.cjs"
+    },
     "./websocket": "./src/websocket.ts",
     "./webrtc": "./src/webrtc.ts",
     "./server": {

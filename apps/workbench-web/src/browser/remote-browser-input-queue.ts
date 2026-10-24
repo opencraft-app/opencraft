@@ -22,7 +22,7 @@ export class RemoteBrowserInputQueue {
   private generation = 0;
   private waiters: ((drained: boolean) => void)[] = [];
   constructor(private readonly send: (input: any, current: () => boolean) => Promise<unknown>, private readonly overflow: () => void,
-    private readonly failed: (error: Error) => void = () => {}) {}
+    private readonly failed: (error: Error) => void = () => {}, private readonly limit: () => number = () => 2) {}
   get busy() { return this.active > 0 || this.queued.length > 0; }
   idle(): Promise<boolean> { return this.busy ? new Promise(resolve => this.waiters.push(resolve)) : Promise.resolve(true); }
   reset() {
@@ -45,7 +45,7 @@ export class RemoteBrowserInputQueue {
     return result;
   }
   private pump() {
-    while (!this.exclusive && this.active < 2 && this.queued.length) {
+    while (!this.exclusive && this.active < Math.max(2, Math.min(12, this.limit())) && this.queued.length) {
       const job = this.queued[0], generation = this.generation;
       if ('run' in job && this.active) break;
       this.queued.shift();

@@ -9,7 +9,8 @@ native worker retain all existing authentication, visibility, document and
 control checks. Reattaching transport does not navigate or replay input.
 
 Input is reliable ordered. Each acknowledged input reserves one exact request ID
-in a connection-local two-item/64-KiB credit window. Only its matching result
+in a connection-local 64-KiB credit window (two items for older peers,
+two to twelve with inputWindow:12). Only its matching result
 returns that credit. Caller timeout settles unknown and requests reconnection,
 while retaining the debt until this connection retires. Unknown is never success;
 there is no retry of the original operation. A retired local ledger is not
@@ -57,7 +58,8 @@ rendered ID whose order does not exceed a held received ID. The received
 profile refunds through held received IDs. Feedback is coalesced to 50 ms with
 a one-second heartbeat; duplicate or old IDs are harmless.
 
-Each viewer has at most six outstanding frames and 2 MiB ordinary payload.
+Each viewer has an adaptive working window with at most twelve outstanding
+frames and 2 MiB ordinary payload.
 One keyframe up to 4 MiB may use a separate burst allowance only when the window
 is empty. A frame larger than 4 MiB closes that viewer. These bounds cover
 application credits, not all browser/OS/kernel buffers; the WebSocket adapter
@@ -93,3 +95,32 @@ property assumes weak fairness for admission, reset, confirmation/timeout
 scheduling, visible receivers, and a receiver that makes no progress. Wall-clock
 deadlines and real socket/decoder implementations are exercised in tests rather
 than proved by TLC. The finite models are not an implementation refinement proof.
+
+## Demand-aware extension
+
+Two encoding buckets, fast and slow, are the complete set. Bucket fps and bitrate
+are adapted by the Gateway within fixed operator bounds; viewers do not create
+encoders or change the shared page viewport. Each bucket shares output but every
+attachment keeps its own credits, decoder generation and recovery. Changing bucket
+starts a fresh media-config/ready handshake and preserves old debt until ready.
+
+Media admission has an absolute 12-frame/2-MiB ordinary bound (one isolated
+4-MiB keyframe burst). Its working limit follows locally measured feedback
+turnaround including receiver batching/decoding, rather than claiming pure network
+RTT. This extension does not change H264 packet framing. Input peers advertising
+inputWindow:12 permit an adaptive two-to-twelve-item window, still 64 KiB; exact
+ACKs alone release debt. Old peers retain the two-item behavior.
+
+A native worker advertising productionDemand:1 and mediaBuckets:2 accepts a
+Gateway-owned epoch/revision production plan with exactly fast/slow entries,
+allowed/fps/bitrate, and a bounded renewable lease. Admission is checked before
+bitmap conversion/comparison/encoding. Only a bucket with an eligible visible
+consumer receives permission. Expired permission stops production; refresh and
+ready provide recovery without requiring a previously acknowledged frame. A new
+Gateway must first park the retained owner, which retires the old production
+epoch. No permission bypasses resource, document, visibility or control authority.
+
+Per-attachment diagnostics distinguish received, decoded and Canvas-submitted
+evidence, input ACK turnaround, outstanding bytes/items, resets and bucket. MSE
+remains received-credit only. All timing durations use the observing owner's
+monotonic clock; no physical-display or arbitrary input-to-visual causality claim.

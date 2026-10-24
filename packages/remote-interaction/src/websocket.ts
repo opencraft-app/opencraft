@@ -36,6 +36,7 @@ export class WebSocketMediaReceiver {
   private dirty = false;
   private timer: ReturnType<typeof setInterval> | null = null;
   private decodedCount = 0;
+  private totals = { received: 0, decoded: 0, submitted: 0, resets: 0 };
   private queueTotal = 0;
   private queuePeak = 0;
   private queueSamples = 0;
@@ -51,7 +52,7 @@ export class WebSocketMediaReceiver {
     const config = parseMediaConfig(value); if (!config) return false;
     // Repeated configuration is idempotent; it cannot erase a live receiver's work.
     if (this.config?.epoch === config.epoch) return true;
-    this.options.reset();
+    this.options.reset(); ++this.totals.resets;
     this.config = config; this.received = this.rendered = null; this.frames.clear();
     this.lastReceive = this.lastRender = this.measuredAt = this.now();
     this.lastSent = -Infinity; this.resetRequested = false; this.stable = 0;
@@ -65,7 +66,7 @@ export class WebSocketMediaReceiver {
     if (!this.config) return null;
     if (bytes.byteLength > this.config.maxFrameBytes) { this.requestReset(); return null; }
     const id = packetId(new Uint8Array(bytes)); if (id === null) return null;
-    this.received = id; this.lastReceive = this.now(); this.frames.set(id, this.lastReceive);
+    ++this.totals.received; this.received = id; this.lastReceive = this.now(); this.frames.set(id, this.lastReceive);
     // Evidence retention is bounded independently of bytes and decoder resources.
     while (this.frames.size > 64) this.frames.delete(this.frames.keys().next().value!);
     this.dirty = true; return id;
@@ -73,11 +74,11 @@ export class WebSocketMediaReceiver {
   observeQueue(queueSize: number) { this.queuePeak = Math.max(this.queuePeak, queueSize); }
   decoded(id: string, queueSize: number) {
     if (!this.frames.has(id)) return;
-    ++this.decodedCount; this.queueTotal += Math.max(0, queueSize); ++this.queueSamples;
+    ++this.totals.decoded; ++this.decodedCount; this.queueTotal += Math.max(0, queueSize); ++this.queueSamples;
   }
   renderedFrame(id: string) {
     const at = this.frames.get(id); if (at === undefined) return;
-    this.rendered = id; this.lastRender = this.now(); this.dirty = true;
+    ++this.totals.submitted; this.rendered = id; this.lastRender = this.now(); this.dirty = true;
     for (const key of this.frames.keys()) { this.frames.delete(key); if (key === id) break; }
   }
   private requestReset() {
@@ -112,6 +113,11 @@ export class WebSocketMediaReceiver {
     this.options.send({ version: 1, epoch: this.config.epoch, received: this.received,
       rendered: this.rendered, fps: this.fps });
     this.lastSent = now; this.dirty = false;
+  }
+  snapshot() {
+    return { ...this.totals, stage: this.config?.stage ?? null, bucket: this.config?.bucket ?? 'fast',
+      pendingEvidence: this.frames.size, fps: this.fps, lastReceiveAgeMs: Math.round(this.now() - this.lastReceive),
+      lastSubmitAgeMs: this.rendered === null ? null : Math.round(this.now() - this.lastRender) };
   }
   dispose() { if (this.timer) clearInterval(this.timer); this.timer = null; this.config = null; this.frames.clear(); }
 }

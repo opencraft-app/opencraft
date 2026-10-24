@@ -1,4 +1,6 @@
 export { CreditWindow, parseMediaConfig, parseMediaFeedback, packetId } from './protocol.cjs';
+export { AdaptiveInputWindow, EncodingBuckets, BUCKETS, DEFAULT_BOUNDS, bucketBounds } from './policy.cjs';
+export type { EncodingBucket, BucketBounds, ProductionPlan } from './policy.cjs';
 export type { MediaConfig, MediaFeedback, FeedbackStage, CreditOptions } from './protocol.cjs';
 export type { OrderedWire, SendResult } from './transport';
 export { bindOrderedTransport } from './transport';

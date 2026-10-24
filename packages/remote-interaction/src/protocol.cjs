@@ -11,9 +11,10 @@ function packetId(bytes) {
 function parseMediaConfig(value) {
   if (!record(value) || value.type !== 'media-config' || value.version !== 1 || !epoch(value.epoch)
     || !['received', 'rendered'].includes(value.stage) || value.profile !== 'h264-timestamp-v1'
+    || value.bucket !== undefined && !['fast', 'slow'].includes(value.bucket)
     || !positive(value.maxFrameBytes) || value.maxFrameBytes > 4 * 1024 * 1024) return null;
   return { type: 'media-config', version: 1, epoch: value.epoch, stage: value.stage,
-    profile: 'h264-timestamp-v1', maxFrameBytes: value.maxFrameBytes };
+    profile: 'h264-timestamp-v1', maxFrameBytes: value.maxFrameBytes, ...(value.bucket ? { bucket: value.bucket } : {}) };
 }
 function parseMediaFeedback(value) {
   if (!record(value) || value.version !== 1 || !epoch(value.epoch)
@@ -52,6 +53,7 @@ class CreditWindow {
   contains(id) { return this.items.has(id); }
   index(id) { let n = 0; for (const key of this.items.keys()) { if (key === id) return n; n++; } return -1; }
   oldestAge(now) { const first = this.items.values().next().value; return first ? Math.max(0, now - first.at) : 0; }
+  age(id, now) { const item = this.items.get(id); return item ? Math.max(0, now - item.at) : null; }
   /** Only after a confirmed receiver reset or retirement of this connection. */
   retire() { this.items.clear(); this.bytes = 0; }
 }
