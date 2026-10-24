@@ -534,3 +534,7 @@ proof of arbitrary-client scheduling fairness.
 The remote-interaction test entry includes producer/adaptation cases. Its real
 browser smoke checks the absolute twelve-frame bound, not a fixed working
 window; native ACK results and no-progress recovery remain required.
+
+A retained worker rejecting display-rate as unsupported is probed only once
+per native generation. Transport failures remain retryable; late old-worker
+rejections cannot change the replacement generation.

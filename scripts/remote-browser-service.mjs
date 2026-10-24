@@ -289,10 +289,16 @@ export class RemoteBrowserService {
   }
   displayPace(page) {
     if (page.productionDemand) { this.production(page); return; }
+    if (page.displayRateUnsupported) return;
+    const native = this.child;
     const fps = Math.max(5, ...[...this.viewers(page).values()].filter(viewer => viewer.visible).map(viewer => viewer.decodeFps ?? 30));
     if (page.closing || !page.live || page.displayFps === fps) return;
     page.displayFps = fps;
-    void this.request(page.id, 'display-rate', { fps }).catch(() => { page.displayFps = undefined; });
+    void this.request(page.id, 'display-rate', { fps }).catch(error => {
+      if (this.child !== native) return;
+      page.displayFps = undefined;
+      if (error.message === 'Unsupported browser command') page.displayRateUnsupported = true;
+    });
   }
   production(page) {
     if (page.closing || !page.live) return;
@@ -314,6 +320,7 @@ export class RemoteBrowserService {
       .finally(() => { page.productionJob = null; });
   }
   resetVisibility(page) {
+    page.displayRateUnsupported = false;
     page.productionPending = null; page.productionSignature = undefined; page.productionEpoch = undefined; page.productionRevision = 0;
     page.displayFps = undefined;
     page.paintRefresh = page.paintedRefresh = 0;
