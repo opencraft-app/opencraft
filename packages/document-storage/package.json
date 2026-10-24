@@ -1,0 +1,16 @@
+{
+  "name": "@opencraft/document-storage",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/contract.ts",
+    "./sqlite": "./src/sqlite.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@opencraft/sqlite-node": "0.1.0"
+  }
+}

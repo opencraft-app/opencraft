@@ -1,0 +1,265 @@
+{
+  "schemaVersion": 1,
+  "workload": {
+    "version": 3,
+    "sha256": "87a35e1f9d630b373e0ecc4f204484be27014142932ece6fd9927084d9c3e133",
+    "scenarios": {
+      "catalog-desktop": [
+        "firstPaintMs",
+        "completePaintMs"
+      ],
+      "catalog-narrow": [
+        "firstPaintMs",
+        "completePaintMs"
+      ],
+      "session-desktop": [
+        "firstPaintMs",
+        "readyMs"
+      ],
+      "session-warm-desktop": [
+        "firstPaintMs",
+        "readyMs"
+      ],
+      "session-narrow": [
+        "firstPaintMs",
+        "readyMs"
+      ],
+      "session-warm-narrow": [
+        "firstPaintMs",
+        "readyMs"
+      ],
+      "session-navigation-cold-desktop": [
+        "firstPaintMs"
+      ],
+      "session-navigation-cached-desktop": [
+        "firstPaintMs"
+      ],
+      "session-navigation-cold-narrow": [
+        "firstPaintMs"
+      ],
+      "session-navigation-cached-narrow": [
+        "firstPaintMs"
+      ],
+      "sidebar-update-30": [
+        "ms"
+      ],
+      "sidebar-update-200": [
+        "ms"
+      ],
+      "sidebar-menu-30": [
+        "ms"
+      ],
+      "sidebar-menu-200": [
+        "ms"
+      ]
+    },
+    "samples": 10,
+    "warmupWorkbench": 1,
+    "navigation": {
+      "workloadVersion": 5,
+      "rpcDelayMs": 40,
+      "cachedResources": "cold",
+      "initialize": "held-until-cached-paint",
+      "serve": "compressed-release",
+      "warmup": 1
+    },
+    "profiles": {
+      "desktop": {
+        "width": 1100,
+        "cpuRate": 1
+      },
+      "narrow": {
+        "width": 390,
+        "cpuRate": 4
+      },
+      "sidebar": {
+        "width": 1000,
+        "cpuRate": 4
+      }
+    }
+  },
+  "unit": "ms",
+  "calibration": {
+    "timestamp": "2026-10-19T10:42:44.905Z",
+    "sourceRevision": "86f859f61d5fb6aca473066e3b2b4668e5fabced",
+    "dirty": true,
+    "node": "v26.7.0",
+    "platform": "linux",
+    "arch": "x64",
+    "cpu": "Intel(R) Xeon(R) Platinum 8361HC CPU @ 2.60GHz",
+    "cpuCount": 64,
+    "browser": "156.0.8078.4",
+    "navigationExtension": {
+      "timestamp": "2026-10-19T11:42:42.321Z",
+      "sourceRevision": "c14c8789ec8716c49187ae27cbcb1d559917988f",
+      "dirty": true,
+      "node": "v26.7.0",
+      "platform": "linux",
+      "arch": "x64",
+      "cpu": "Intel(R) Xeon(R) Platinum 8361HC CPU @ 2.60GHz",
+      "cpuCount": 64,
+      "navigationBuild": {
+        "schemaVersion": 1,
+        "buildId": "20261019114243-b87ebbc7950a",
+        "builtAt": "2026-10-19T11:42:43.915Z",
+        "sourceRevision": null,
+        "appServerProtocolVersion": null,
+        "headlessServer": true,
+        "headlessHostId": "opencraft-server"
+      },
+      "navigationBrowser": "156.0.8078.4",
+      "browser": "156.0.8078.4",
+      "retainedPriorScenarioBaseline": "7d3becb3fc4d96f26c835eed9d291c8efe3b893f2a2d4d3e08555c7c08edd05a"
+    }
+  },
+  "scenarios": {
+    "session-desktop": {
+      "firstPaintMs": {
+        "p50": 165.54999995231628,
+        "p95": 186.29999995231628,
+        "relativeTolerance": 0.3,
+        "absoluteToleranceMs": 100
+      },
+      "readyMs": {
+        "p50": 132.55000001192093,
+        "p95": 155.39999997615814,
+        "relativeTolerance": 0.3,
+        "absoluteToleranceMs": 100
+      }
+    },
+    "session-warm-desktop": {
+      "firstPaintMs": {
+        "p50": 86.69999992847443,
+        "p95": 126.90000009536743,
+        "relativeTolerance": 0.3,
+        "absoluteToleranceMs": 100
+      },
+      "readyMs": {
+        "p50": 0.19999992847442627,
+        "p95": 0.20000004768371582,
+        "relativeTolerance": 0.3,
+        "absoluteToleranceMs": 100
+      }
+    },
+    "catalog-desktop": {
+      "firstPaintMs": {
+        "p50": 207.19999992847443,
+        "p95": 247.39999997615814,
+        "relativeTolerance": 0.3,
+        "absoluteToleranceMs": 100
+      },
+      "completePaintMs": {
+        "p50": 1220.1499999761581,
+        "p95": 1254.2999999523163,
+        "relativeTolerance": 0.3,
+        "absoluteToleranceMs": 150
+      }
+    },
+    "session-narrow": {
+      "firstPaintMs": {
+        "p50": 641.0499999523163,
+        "p95": 887.8999999761581,
+        "relativeTolerance": 0.3,
+        "absoluteToleranceMs": 100
+      },
+      "readyMs": {
+        "p50": 528.1500000357628,
+        "p95": 753.3999999761581,
+        "relativeTolerance": 0.3,
+        "absoluteToleranceMs": 100
+      }
+    },
+    "session-warm-narrow": {
+      "firstPaintMs": {
+        "p50": 337.1500000357628,
+        "p95": 363.39999997615814,
+        "relativeTolerance": 0.3,
+        "absoluteToleranceMs": 100
+      },
+      "readyMs": {
+        "p50": 0.6499999761581421,
+        "p95": 0.9000000953674316,
+        "relativeTolerance": 0.3,
+        "absoluteToleranceMs": 100
+      }
+    },
+    "catalog-narrow": {
+      "firstPaintMs": {
+        "p50": 616.8499999642372,
+        "p95": 704.6000000238419,
+        "relativeTolerance": 0.3,
+        "absoluteToleranceMs": 100
+      },
+      "completePaintMs": {
+        "p50": 1619.8500000238419,
+        "p95": 1709.6000000238419,
+        "relativeTolerance": 0.3,
+        "absoluteToleranceMs": 150
+      }
+    },
+    "sidebar-update-30": {
+      "ms": {
+        "p50": 30.94999998807907,
+        "p95": 31.700000047683716,
+        "relativeTolerance": 0.3,
+        "absoluteToleranceMs": 50
+      }
+    },
+    "sidebar-update-200": {
+      "ms": {
+        "p50": 30.800000071525574,
+        "p95": 31.299999952316284,
+        "relativeTolerance": 0.3,
+        "absoluteToleranceMs": 50
+      }
+    },
+    "sidebar-menu-30": {
+      "ms": {
+        "p50": 207.8499999642372,
+        "p95": 371.2999999523163,
+        "relativeTolerance": 0.3,
+        "absoluteToleranceMs": 50
+      }
+    },
+    "sidebar-menu-200": {
+      "ms": {
+        "p50": 393.3000000715256,
+        "p95": 541.7000000476837,
+        "relativeTolerance": 0.3,
+        "absoluteToleranceMs": 50
+      }
+    },
+    "session-navigation-cold-desktop": {
+      "firstPaintMs": {
+        "p50": 1023.75,
+        "p95": 1145.5,
+        "relativeTolerance": 0.3,
+        "absoluteToleranceMs": 100
+      }
+    },
+    "session-navigation-cached-desktop": {
+      "firstPaintMs": {
+        "p50": 513.9500000476837,
+        "p95": 668.1000000238419,
+        "relativeTolerance": 0.3,
+        "absoluteToleranceMs": 100
+      }
+    },
+    "session-navigation-cold-narrow": {
+      "firstPaintMs": {
+        "p50": 2870.599999964237,
+        "p95": 3269.1999999284744,
+        "relativeTolerance": 0.3,
+        "absoluteToleranceMs": 100
+      }
+    },
+    "session-navigation-cached-narrow": {
+      "firstPaintMs": {
+        "p50": 2081.899999976158,
+        "p95": 2267.600000023842,
+        "relativeTolerance": 0.3,
+        "absoluteToleranceMs": 100
+      }
+    }
+  }
+}

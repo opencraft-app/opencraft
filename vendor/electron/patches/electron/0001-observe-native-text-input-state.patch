@@ -1,0 +1,169 @@
+diff --git a/docs/api/web-contents.md b/docs/api/web-contents.md
+index dbc494a..c924d58 100644
+--- a/docs/api/web-contents.md
++++ b/docs/api/web-contents.md
+@@ -2247,6 +2247,32 @@ win.webContents.on('did-finish-load', async () => {
+ 
+ Shows pop-up dictionary that searches the selected word on the page.
+ 
++#### `contents.getNativeTextInputState()`
++
++Returns `Object` - An experimental, observation-only snapshot of Chromium's
++cached native editing state. This OpenCraft fork method is not an input
++authorization token or an atomic renderer snapshot.
++
++* `observationOnly` boolean - Always true.
++* `coordinateSpace` string - Always `root-viewport-dip`.
++* `active` boolean - Whether a native text input target is active.
++* `nodeId` Integer (optional) - Document-local node identity, not globally unique.
++* `type` Integer (optional) - Native text input type.
++* `mode` Integer (optional) - Native text input mode.
++* `password` boolean (optional) - Whether the native target is a password field.
++* `selection` Object (optional) - UTF-16 offsets in the native editing context.
++  * `start` number
++  * `end` number
++* `composition` Object (optional) - Current native composition's UTF-16 offsets.
++  * `start` number
++  * `end` number
++* `caretBounds` Rectangle (optional) - Native selection focus edge or EditContext
++  selection bounds, in root viewport DIPs. An insertion edge may have zero width.
++
++No field text is returned. Missing `caretBounds` means geometry is unavailable;
++callers must not substitute guessed character or control bounds. State and
++geometry arrive through separate Chromium updates and may be temporarily stale.
++
+ #### `contents.isOffscreen()`
+ 
+ Returns `boolean` - Indicates whether _offscreen rendering_ is enabled.
+diff --git a/shell/browser/api/electron_api_web_contents.cc b/shell/browser/api/electron_api_web_contents.cc
+index 91683b6..7f7930c 100644
+--- a/shell/browser/api/electron_api_web_contents.cc
++++ b/shell/browser/api/electron_api_web_contents.cc
+@@ -53,7 +53,8 @@
+ #include "content/browser/renderer_host/render_frame_host_manager.h"  // nogncheck
+ #include "content/browser/renderer_host/render_widget_host_impl.h"  // nogncheck
+ #include "content/browser/renderer_host/render_widget_host_view_base.h"  // nogncheck
+-#include "content/browser/web_contents/web_contents_impl.h"  // nogncheck
++#include "content/browser/renderer_host/text_input_manager.h"  // nogncheck
++#include "content/browser/web_contents/web_contents_impl.h"    // nogncheck
+ #include "content/public/browser/browser_thread.h"
+ #include "content/public/browser/child_process_security_policy.h"
+ #include "content/public/browser/context_menu_params.h"
+@@ -4293,6 +4294,56 @@ bool WebContents::IsOffScreen() const {
+   return type_ == Type::kOffScreen;
+ }
+ 
++base::DictValue WebContents::GetNativeTextInputState() {
++  base::DictValue result;
++  result.Set("observationOnly", true);
++  result.Set("coordinateSpace", "root-viewport-dip");
++  result.Set("active", false);
++  if (!web_contents())
++    return result;
++
++  auto* view = static_cast<content::RenderWidgetHostViewBase*>(
++      web_contents()->GetRenderWidgetHostView());
++  auto* manager = view ? view->GetTextInputManager() : nullptr;
++  const auto* state = manager ? manager->GetTextInputState() : nullptr;
++  if (!state)
++    return result;
++
++  auto range_value = [](const gfx::Range& range) {
++    base::DictValue value;
++    value.Set("start", static_cast<double>(range.start()));
++    value.Set("end", static_cast<double>(range.end()));
++    return value;
++  };
++  result.Set("active", state->type != ui::TEXT_INPUT_TYPE_NONE);
++  result.Set("nodeId", state->node_id);
++  result.Set("type", static_cast<int>(state->type));
++  result.Set("mode", static_cast<int>(state->mode));
++  result.Set("password", state->type == ui::TEXT_INPUT_TYPE_PASSWORD);
++  result.Set("selection", range_value(state->selection));
++  if (state->composition)
++    result.Set("composition", range_value(*state->composition));
++
++  std::optional<gfx::Rect> caret = manager->GetTextSelectionBounds();
++  if (!caret) {
++    const auto* region = manager->GetSelectionRegion();
++    if (region && region->focus.GetHeight() > 0) {
++      caret = gfx::Rect(region->focus.edge_start_rounded().x(),
++                        region->focus.edge_start_rounded().y(), 0,
++                        region->focus.GetHeight());
++    }
++  }
++  if (caret) {
++    base::DictValue bounds;
++    bounds.Set("x", caret->x());
++    bounds.Set("y", caret->y());
++    bounds.Set("width", caret->width());
++    bounds.Set("height", caret->height());
++    result.Set("caretBounds", std::move(bounds));
++  }
++  return result;
++}
++
+ void WebContents::OnPaint(const gfx::Rect& dirty_rect,
+                           const SkBitmap& bitmap,
+                           const OffscreenSharedTexture& tex) {
+@@ -5280,6 +5331,8 @@ void WebContents::FillObjectTemplate(v8::Isolate* isolate,
+       .SetMethod("attachToIframe", &WebContents::AttachToIframe)
+       .SetMethod("detachFromOuterFrame", &WebContents::DetachFromOuterFrame)
+       .SetMethod("isOffscreen", &WebContents::IsOffScreen)
++      .SetMethod("getNativeTextInputState",
++                 &WebContents::GetNativeTextInputState)
+       .SetMethod("startPainting", &WebContents::StartPainting)
+       .SetMethod("stopPainting", &WebContents::StopPainting)
+       .SetMethod("isPainting", &WebContents::IsPainting)
+diff --git a/shell/browser/api/electron_api_web_contents.h b/shell/browser/api/electron_api_web_contents.h
+index 9570250..01f5176 100644
+--- a/shell/browser/api/electron_api_web_contents.h
++++ b/shell/browser/api/electron_api_web_contents.h
+@@ -18,6 +18,7 @@
+ #include "base/memory/weak_ptr.h"
+ #include "base/observer_list.h"
+ #include "base/task/thread_pool.h"
++#include "base/values.h"
+ #include "chrome/browser/devtools/devtools_file_system_indexer.h"
+ #include "chrome/browser/ui/exclusive_access/exclusive_access_context.h"  // nogncheck
+ #include "chrome/browser/ui/exclusive_access/exclusive_access_manager.h"
+@@ -730,6 +731,8 @@ class WebContents final : public ExclusiveAccessContext,
+   OffScreenWebContentsView* GetOffScreenWebContentsView() const;
+   OffScreenRenderWidgetHostView* GetOffScreenRenderWidgetHostView() const;
+ 
++  base::DictValue GetNativeTextInputState();
++
+   // Called when received a synchronous message from renderer to
+   // get the zoom level.
+   void OnGetZoomLevel(content::RenderFrameHost* frame_host,
+diff --git a/shell/browser/osr/osr_render_widget_host_view.h b/shell/browser/osr/osr_render_widget_host_view.h
+index 485eeff..b085cf4 100644
+--- a/shell/browser/osr/osr_render_widget_host_view.h
++++ b/shell/browser/osr/osr_render_widget_host_view.h
+@@ -132,8 +132,11 @@ class OffScreenRenderWidgetHostView
+   void UpdateCursor(const ui::Cursor&) override {}
+   void SetIsLoading(bool is_loading) override {}
+   void TextInputStateChanged(const ui::mojom::TextInputState& params) override {
++    content::RenderWidgetHostViewBase::TextInputStateChanged(params);
++  }
++  void ImeCancelComposition() override {
++    content::RenderWidgetHostViewBase::ImeCancelComposition();
+   }
+-  void ImeCancelComposition() override {}
+   void RenderProcessGone() override;
+   void ShowWithVisibility(content::PageVisibilityState page_visibility) final;
+   void Destroy() override;
+@@ -163,8 +166,11 @@ class OffScreenRenderWidgetHostView
+   std::unique_ptr<content::SyntheticGestureTarget>
+   CreateSyntheticGestureTarget() override;
+   void ImeCompositionRangeChanged(
+-      const gfx::Range&,
+-      const std::optional<std::vector<gfx::Rect>>& character_bounds) override {}
++      const gfx::Range& range,
++      const std::optional<std::vector<gfx::Rect>>& character_bounds) override {
++    content::RenderWidgetHostViewBase::ImeCompositionRangeChanged(
++        range, character_bounds);
++  }
+   gfx::Size GetCompositorViewportPixelSize() override;
+   ui::Compositor* GetCompositor() override;
+   display::ScreenInfos GetNewScreenInfosForUpdate() override;

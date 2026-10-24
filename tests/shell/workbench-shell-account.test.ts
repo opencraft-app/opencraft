@@ -1,0 +1,96 @@
+import assert from "node:assert/strict";
+
+import { readFileSync } from "node:fs";
+
+import test from "node:test";
+
+import { LocaleRuntime } from "@opencraft/i18n";
+
+const intl = new LocaleRuntime([]).getSnapshot().intl;
+
+
+import {
+  isAnonymousShellAccount,
+  shellAccountEntranceLabel,
+  type ShellAccount,
+} from "../../apps/workbench-web/src/components/shell-navigation/navigation-content";
+
+
+function account(phase: "anonymous" | "authenticated", name: string | null = null): ShellAccount {
+  return {
+    snapshot: {
+      revision: 1,
+      phase,
+      name,
+      avatarUrl: null,
+      planLabel: null,
+      usageRemainingPercent: null,
+      error: null,
+
+    },
+    onOpen: () => undefined,
+    onRefresh: async () => undefined,
+    onSignOut: async () => undefined,
+  };
+}
+
+
+test("anonymous identity is an explicit Sign in action, not an Account identity", () => {
+  const anonymous = account("anonymous");
+  assert.equal(isAnonymousShellAccount(anonymous), true);
+  assert.equal(shellAccountEntranceLabel(anonymous, intl), "Sign in");
+  assert.equal(shellAccountEntranceLabel(null, intl), null);
+  assert.equal(shellAccountEntranceLabel(account("authenticated", "Ada"), intl), "Ada");
+  assert.equal(shellAccountEntranceLabel(account("authenticated"), intl), "Account");
+});
+
+
+test("anonymous sign in uses an action glyph while authenticated accounts retain identity avatars", () => {
+  const source = readFileSync(
+    new URL("../../apps/workbench-web/src/components/shell-navigation/navigation-content.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /function AccountLeadingVisual[\s\S]*?isAnonymousShellAccount\(account\)[\s\S]*?<LogIn[\s\S]*?: <AccountAvatar/u);
+});
+
+
+test("menu login progress and recoverable failure stay visible at the account entrance", () => {
+  const anonymous = account("anonymous");
+  const signIn = { options: [], pending: true, error: null, select() {}, cancel() {}, retry() {} };
+  assert.equal(shellAccountEntranceLabel({ ...anonymous, signIn }, intl), "Signing in…");
+  assert.equal(shellAccountEntranceLabel({ ...anonymous, signIn: { ...signIn, pending: false, error: "Retry" } }, intl), "Sign-in incomplete");
+});
+
+
+test("anonymous sign-in menu exposes Settings without selecting a login provider", () => {
+  const menu = readFileSync(
+    new URL("../../apps/workbench-web/src/components/shell-navigation/account-sign-in-menu.tsx", import.meta.url),
+    "utf8",
+  );
+  const navigation = readFileSync(
+    new URL("../../apps/workbench-web/src/components/shell-navigation/index.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(menu, /<DropdownMenu\.Separator className="shell-sign-in-menu__separator" \/>/u);
+  assert.match(menu, /textValue="设置"/u);
+  assert.match(menu, /onOpenSettings\(\)/u);
+  assert.match(navigation, /onOpenSettings=\{config\.onOpenSettings\}/u);
+});
+
+
+test("both Workbench shells preserve the anonymous provider for user-initiated sign in", () => {
+  for (const path of [
+    "../apps/workbench-web/src/app.tsx",
+    "../apps/workbench-web/src/components/hostless-workbench.tsx",
+  ]) {
+    const source = readFileSync(new URL(path, new URL("../", import.meta.url)), "utf8");
+    assert.doesNotMatch(source, /account\.snapshot\.phase === "anonymous" \? null/u);
+  }
+});
+
+
+
+test("cloud account availability cannot replace the selected workspace or force Bot creation", () => {
+  const app = readFileSync(new URL("../../apps/workbench-web/src/app.tsx", import.meta.url), "utf8");
+  assert.match(app, /hostConnectionIntervention\?\.providerId === activeHostProviderId/);
+});

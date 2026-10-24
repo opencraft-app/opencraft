@@ -1,0 +1,287 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import test from "node:test";
+import { workbenchWindowMetrics } from "@opencraft/workbench-runtime/window-metrics";
+
+test("pane resize hit targets start below window navigation chrome", () => {
+  const styles = readFileSync(new URL("../../apps/workbench-web/src/styles/app.scss", import.meta.url), "utf8");
+  const hitTarget = styles.slice(styles.indexOf(".app-shell-left-panel__resize {"));
+  const rule = hitTarget.slice(0, hitTarget.indexOf("> span"));
+  assert.match(rule, /top: var\(--height-toolbar\)/);
+});
+
+test("Electron consumes the shared narrow-window geometry instead of a platform-local width", () => {
+  const desktopMain = readFileSync(
+    new URL("../../apps/workbench-electron/src/main.ts", import.meta.url),
+    "utf8",
+  );
+  assert.equal(workbenchWindowMetrics.minimumWidth, 480);
+  assert.match(desktopMain, /@opencraft\/workbench-runtime\/window-metrics/u);
+  assert.match(desktopMain, /minWidth:\s*workbenchWindowMetrics\.minimumWidth/u);
+  assert.match(desktopMain, /minHeight:\s*workbenchWindowMetrics\.minimumHeight/u);
+  assert.doesNotMatch(desktopMain, /minWidth:\s*760/u);
+});
+
+test("narrow route chrome keeps Skills tabs scrollable and compresses the Host selector", () => {
+  const styles = readFileSync(
+    new URL("../../apps/workbench-web/src/styles/app.scss", import.meta.url),
+    "utf8",
+  );
+  const narrow = styles.slice(styles.indexOf("@media (max-width: 620px)"));
+  assert.match(narrow, /\.app-shell-header__route \.lv-skills-route-toolbar/u);
+  assert.match(narrow, /\.segmented-control[\s\S]*?overflow-x:\s*auto/u);
+  assert.match(narrow, /\.app-shell-toolbar-select[\s\S]*?width:\s*44px/u);
+  assert.match(narrow, /\.app-shell-toolbar-select__label[\s\S]*?display:\s*none/u);
+});
+
+import {
+  applyWindowChromeDocumentAttributes,
+  getHeaderStartMinimumWidth,
+  getWindowChromePolicy,
+  resolveWindowChrome,
+} from "../../apps/workbench-web/src/window-chrome";
+
+test("management modal preserves panel geometry while launchers follow conversation interaction ownership", () => {
+  const app = readFileSync(new URL("../../apps/workbench-web/src/app.tsx", import.meta.url), "utf8");
+  assert.match(app, /toolbarActions=\{conversationRouteOpen \? panelToolbarActions : \[\]\}/);
+  assert.match(
+    app,
+    /const conversationSurfaceVisible = conversationRouteOpen\s+\|\| \(managementSettingsOpen && !standaloneManagementOpen\);/,
+  );
+  assert.match(app, /const conversationRightPanelAvailable = conversationSurfaceVisible\s+&& \(embedded === undefined \|\| \(draft === null && activeThreadId !== null\)\);/);
+  assert.match(app, /rightPanelOpen=\{conversationRightPanelAvailable && presentedRightPanelOpen\}/);
+});
+
+test("renderer host identity is installed above body for the viewport contract", () => {
+  const root = { dataset: {} as DOMStringMap };
+
+  applyWindowChromeDocumentAttributes(root, {
+    kind: "browser",
+    platform: "darwin",
+  });
+
+  assert.equal(root.dataset.opencraftWindowType, "browser");
+  assert.equal(root.dataset.opencraftPlatform, "darwin");
+});
+
+test("ordinary browsers do not inherit a macOS renderer safe area", () => {
+  const snapshot = resolveWindowChrome({
+    userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+    navigatorPlatform: "MacIntel",
+    viewportWidth: 1440,
+  });
+
+  assert.deepEqual(snapshot, {
+    kind: "browser",
+    platform: "darwin",
+    safeArea: { left: 0, right: 0 },
+  });
+  assert.equal(getHeaderStartMinimumWidth(snapshot), 44);
+  assert.deepEqual(getWindowChromePolicy(snapshot).leadingNavigationActions, [
+    "sidebar-toggle",
+  ]);
+  assert.equal(getHeaderStartMinimumWidth(snapshot, false), 76);
+});
+
+test("macOS Electron reserves the native traffic-light interaction space", () => {
+  const snapshot = resolveWindowChrome({
+    userAgent: "Mozilla/5.0 Electron/40.0.0",
+    navigatorPlatform: "MacIntel",
+    viewportWidth: 1440,
+  });
+
+  assert.equal(snapshot.kind, "electron");
+  assert.equal(snapshot.platform, "darwin");
+  assert.deepEqual(snapshot.safeArea, { left: 78, right: 0 });
+  assert.equal(getHeaderStartMinimumWidth(snapshot), 122);
+  assert.deepEqual(getWindowChromePolicy(snapshot).leadingNavigationActions, [
+    "sidebar-toggle",
+  ]);
+  assert.equal(
+    getHeaderStartMinimumWidth(snapshot, false),
+    154,
+    "the collapsed-sidebar Write action participates in first-paint rail geometry",
+  );
+});
+
+test("persistent browser and Electron headers keep Write behind floating sidebars", () => {
+  const header = readFileSync(
+    new URL("../../apps/workbench-web/src/components/app-shell-header.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(header, /hostRole !== "persistent" \|\| sidebarDocked/u);
+  assert.match(header, /action === "sidebar-toggle"[\s\S]*?"new-task" as const/u);
+  assert.match(header, /aria-label=\{intl\.formatMessage\(\{ id: "navigation\.newTask", defaultMessage: "Start new task" \}\)\}/u);
+  assert.match(header, /data-app-shell-new-task-trigger="true"/u);
+  assert.match(header, /onClick=\{onHome\}/u);
+  assert.doesNotMatch(header, /data-app-shell-home-trigger|app-shell-wordmark|OpenCraft · Home/u);
+});
+
+test("native fullscreen atomically removes the macOS traffic-light safe area", () => {
+  const snapshot = resolveWindowChrome({
+    userAgent: "Mozilla/5.0 Electron/40.0.0",
+    navigatorPlatform: "MacIntel",
+    viewportWidth: 1440,
+    fullscreenOverride: true,
+    safeAreaOverride: { left: 92, right: 0 },
+  });
+
+  assert.deepEqual(snapshot.safeArea, { left: 0, right: 0 });
+  assert.equal(getHeaderStartMinimumWidth(snapshot), 44);
+});
+
+test("Windows and Linux renderers have no implicit left safe area", () => {
+  const windows = resolveWindowChrome({
+    userAgent: "Mozilla/5.0 Electron/40.0.0",
+    navigatorPlatform: "Win32",
+    viewportWidth: 1440,
+  });
+  const linux = resolveWindowChrome({
+    userAgent: "Mozilla/5.0 Electron/40.0.0",
+    navigatorPlatform: "Linux x86_64",
+    viewportWidth: 1440,
+  });
+
+  assert.deepEqual(windows.safeArea, { left: 0, right: 0 });
+  assert.deepEqual(linux.safeArea, { left: 0, right: 0 });
+});
+
+test("Window Controls Overlay geometry wins over platform defaults", () => {
+  const overlay = new EventTarget() as EventTarget & {
+    visible: boolean;
+    getTitlebarAreaRect(): DOMRect;
+  };
+  overlay.visible = true;
+  overlay.getTitlebarAreaRect = () => ({ x: 72, width: 1268 }) as DOMRect;
+
+  const snapshot = resolveWindowChrome({
+    userAgent: "Mozilla/5.0 Electron/40.0.0",
+    navigatorPlatform: "MacIntel",
+    viewportWidth: 1440,
+    overlay,
+  });
+
+  assert.deepEqual(snapshot.safeArea, { left: 72, right: 100 });
+});
+
+test("Electron preload can inject exact cross-platform window chrome insets", () => {
+  const snapshot = resolveWindowChrome({
+    userAgent: "Mozilla/5.0 Electron/40.0.0",
+    navigatorPlatform: "Win32",
+    viewportWidth: 1440,
+    safeAreaOverride: { left: "0", right: "138" },
+  });
+
+  assert.deepEqual(snapshot, {
+    kind: "electron",
+    platform: "win32",
+    safeArea: { left: 0, right: 138 },
+  });
+});
+
+test("ordinary browsers ignore Electron preload-only inset attributes", () => {
+  const snapshot = resolveWindowChrome({
+    userAgent: "Mozilla/5.0",
+    navigatorPlatform: "Linux x86_64",
+    viewportWidth: 1440,
+    safeAreaOverride: { left: 80, right: 120 },
+  });
+
+  assert.deepEqual(snapshot.safeArea, { left: 0, right: 0 });
+});
+
+test("macOS desktop uses a snapshot-safe focus-driven native surface", () => {
+  const desktopMain = readFileSync(
+    new URL("../../apps/workbench-electron/src/main.ts", import.meta.url),
+    "utf8",
+  );
+  const desktopPreload = readFileSync(
+    new URL("../../apps/workbench-electron/src/preload.ts", import.meta.url),
+    "utf8",
+  );
+  const rendererMain = readFileSync(
+    new URL("../../apps/workbench-web/src/main.tsx", import.meta.url),
+    "utf8",
+  );
+  const appStyles = readFileSync(
+    new URL("../../apps/workbench-web/src/styles/app.scss", import.meta.url),
+    "utf8",
+  );
+  const appShellHeader = readFileSync(
+    new URL("../../apps/workbench-web/src/components/app-shell-header.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(desktopMain, /backgroundColor:\s*initialBackgroundColor/u);
+  assert.doesNotMatch(desktopMain, /transparent:\s*false/u);
+  assert.doesNotMatch(desktopMain, /isSystemBackdropSupported/u);
+  assert.doesNotMatch(desktopMain, /opacity:\s*1/u);
+  assert.doesNotMatch(desktopMain, /roundedCorners:\s*true/u);
+  assert.doesNotMatch(desktopMain, /hasShadow:\s*true/u);
+  assert.match(desktopMain, /vibrancy:\s*process\.platform === "darwin" \? "menu"/u);
+  assert.doesNotMatch(desktopMain, /^\s*visualEffectState\s*:/mu);
+  assert.match(desktopMain, /function applyWindowAppearance/u);
+  assert.match(desktopMain, /nativeTheme\.themeSource = appearance\.themeSource/u);
+  assert.match(desktopMain, /applyNativeWindowAppearance\(window, appearance, process\.platform\)/u);
+  assert.doesNotMatch(desktopMain, /setWindowButtonVisibility/u);
+  assert.match(desktopMain, /const APP_SHELL_HEADER_HEIGHT = 46/u);
+  assert.match(desktopMain, /const MACOS_WINDOW_BUTTON_SIZE = 14/u);
+  assert.match(desktopMain, /const MACOS_WINDOW_BUTTON_X = 16/u);
+  assert.match(desktopMain, /function getMacWindowButtonPosition/u);
+  assert.match(desktopMain, /trafficLightPosition:\s*process\.platform === "darwin"/u);
+  assert.match(desktopMain, /acceptFirstMouse:\s*process\.platform === "darwin"/u);
+  assert.match(desktopMain, /scrollBounce:\s*process\.platform === "darwin"/u);
+  assert.match(desktopMain, /webContents\.setZoomLevel\(0\)/u);
+  assert.match(desktopMain, /show:\s*true/u);
+  assert.doesNotMatch(desktopMain, /once\("ready-to-show"/u);
+  assert.match(desktopMain, /window\.on\("blur", refreshWindowAppearance\)/u);
+  assert.match(desktopMain, /window\.on\("focus", refreshWindowAppearance\)/u);
+  assert.match(desktopMain, /window\.on\("show", refreshWindowAppearance\)/u);
+  assert.match(desktopMain, /window\.on\("hide", refreshWindowAppearance\)/u);
+  assert.doesNotMatch(desktopMain, /window\.on\("minimize"/u);
+  assert.match(
+    desktopMain,
+    /window\.once\("closed", \(\) => \{[\s\S]*?if \(mainWindow === window\) mainWindow = null;[\s\S]*?if \(mainWebContents === webContents\) mainWebContents = null;/u,
+  );
+  assert.doesNotMatch(
+    desktopMain,
+    /return \(\) => \{[\s\S]{0,900}?window\.webContents/u,
+  );
+  assert.match(desktopMain, /ipcMain\.on\("opencraft:set-window-appearance"/u);
+  assert.match(desktopPreload, /setWindowAppearance/u);
+  assert.match(desktopMain, /ipcMain\.on\("opencraft:get-window-fullscreen"/u);
+  assert.match(desktopMain, /window\.on\("enter-full-screen", publishEnteredFullscreen\)/u);
+  assert.match(desktopMain, /window\.on\("leave-full-screen", publishLeftFullscreen\)/u);
+  assert.match(desktopPreload, /getWindowFullscreen/u);
+  assert.match(desktopPreload, /onWindowFullscreenChanged/u);
+  assert.match(rendererMain, /data(?:set)?\.opencraftWindowFullscreen/u);
+  assert.doesNotMatch(rendererMain, /electron-opaque/u);
+  assert.doesNotMatch(appStyles, /electron-opaque/u);
+  assert.doesNotMatch(appShellHeader, /traffic-light-snapshot/u);
+  assert.doesNotMatch(appStyles, /traffic-light-snapshot/u);
+});
+
+
+test("window chrome projection settles without rewriting observed identity", () => {
+  const writes: string[] = [];
+  const dataset = new Proxy({} as DOMStringMap, {
+    set(target, key, value) {
+      writes.push(String(key));
+      return Reflect.set(target, key, value);
+    },
+  });
+  const root = { dataset };
+  applyWindowChromeDocumentAttributes(root, { kind: "browser", platform: "darwin" });
+  assert.deepEqual(writes, ["opencraftWindowType", "opencraftPlatform"]);
+  writes.length = 0;
+  // MutationObserver callbacks and repeated resize events must reach a fixed point.
+  for (let index = 0; index < 20; index += 1) {
+    applyWindowChromeDocumentAttributes(root, { kind: "browser", platform: "darwin" });
+  }
+  assert.deepEqual(writes, []);
+  applyWindowChromeDocumentAttributes(root, { kind: "electron", platform: "darwin" });
+  assert.deepEqual(writes, ["opencraftWindowType"]);
+  writes.length = 0;
+  applyWindowChromeDocumentAttributes(root, { kind: "electron", platform: "win32" });
+  assert.deepEqual(writes, ["opencraftPlatform"]);
+});

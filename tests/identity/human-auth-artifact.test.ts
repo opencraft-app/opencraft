@@ -1,0 +1,94 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { createServer } from 'node:net';
+import { once } from 'node:events';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { build } from 'esbuild';
+import { buildHeadlessBundle } from '../../scripts/package-headless-linux.mjs';
+import { createManagedWebServer } from '../../scripts/web-deployment/server.mjs';
+import { releaseFixture } from '../support/web-deployment-fixture.mjs';
+import { humanAuthFixture, AuthBrowser } from '../support/human-auth-fixture';
+
+test('real Headless and operator CLI bundles provision local login, preserve Actor across restart and require explicit admin', async t => {
+  const runtime = fileURLToPath(new URL('../../.runtime/', import.meta.url)); await mkdir(runtime, { recursive: true });
+  const dir = await mkdtemp(join(runtime, 'human-login-artifact-'));
+  const data = join(dir, 'data'), webRoot = join(dir, 'web'); await mkdir(webRoot);
+  await writeFile(join(webRoot, 'index.html'), '<!doctype html><title>Headless fixture</title>');
+  await writeFile(join(webRoot, 'version.json'), JSON.stringify({ schemaVersion: 1, buildId: 'human-test', headlessServer: true, headlessHostId: 'opencraft-server' }));
+  const serverBundle = join(dir, 'server.mjs'), accountBundle = join(dir, 'human-account.mjs');
+  await buildHeadlessBundle(serverBundle);
+  await build({ entryPoints: [fileURLToPath(new URL('../../scripts/human-account.ts', import.meta.url))], outfile: accountBundle, bundle: true, platform: 'node', format: 'esm', target: 'node26' });
+  const passwordFile = join(dir, 'password.json'), password = 'artifact-fixture-passphrase';
+  await writeFile(passwordFile, JSON.stringify({ password }), { mode: 0o600 });
+  const run = async (...args: string[]) => {
+    const result = await promisify(execFile)(process.execPath, [accountBundle, data, ...args]);
+    assert.equal((result.stdout + result.stderr).includes(password), false); return result;
+  };
+  await run('create', 'admin', passwordFile);
+  const reserve = createServer(); reserve.listen(0, '127.0.0.1'); await once(reserve, 'listening');
+  const port = (reserve.address() as any).port; await new Promise<void>(resolve => reserve.close(() => resolve()));
+  const origin = `http://127.0.0.1:${port}`, configPath = join(dir, 'auth.json');
+  await writeFile(configPath, JSON.stringify({ origin, local: true, oidc: [] }), { mode: 0o600 });
+  const { startHeadlessServer, parseHeadlessArguments } = await import(pathToFileURL(serverBundle).href);
+  assert.throws(() => parseHeadlessArguments(['--human-auth-config', 'relative']));
+  assert.equal(parseHeadlessArguments(['--human-auth-config', configPath]).humanAuthConfig, configPath);
+  const options = { root: dir, webRoot, dataDirectory: data, port, humanAuthConfig: configPath, accessControl: true,
+    startAgentHost: async () => ({ websocketUrl: 'ws://127.0.0.1:9/rpc', async close() {} }) };
+  let app: any;
+  t.after(async () => { await app?.close(); await rm(dir, { recursive: true, force: true }); });
+  app = await startHeadlessServer(options);
+  const browser = new AuthBrowser(origin);
+  assert.equal((await browser.call('/__opencraft_auth/')).status, 200);
+  assert.equal((await browser.call('/__opencraft_auth/local', { username: 'admin', password, mode: 'login' })).status, 200);
+  assert.equal((await browser.call('/')).status, 403);
+  await run('grant', 'admin', 'admin');
+  const first = await (await browser.call('/__opencraft_actors/me')).json() as any;
+  assert.ok(first.actor.id);
+  await app.close(); app = await startHeadlessServer(options);
+  const after = await (await browser.call('/__opencraft_actors/me')).json() as any;
+  assert.equal(after.actor.id, first.actor.id);
+  const health = await (await browser.call('/__opencraft_health')).json() as any;
+  assert.equal(health.ok, true);
+  assert.deepEqual((await (await browser.call('/__opencraft_auth/session')).json() as any).localPlugin, { id: 'opencraft.account', label: '本地账号' });
+  await app.close();
+  // OIDC discovery is lazy; toggling the local plugin needs no external identity service.
+  await writeFile(configPath, JSON.stringify({ origin, local: false, oidc: [{ id: 'unconfigured', label: 'OIDC', issuer: 'https://identity.invalid', clientId: 'fixture' }] }), { mode: 0o600 });
+  app = await startHeadlessServer(options);
+  assert.equal((await browser.call('/__opencraft_actors/me')).status, 401);
+  assert.equal((await (await browser.call('/__opencraft_auth/session')).json() as any).localPlugin, null);
+  assert.equal((await browser.call('/__opencraft_auth/local', { username: 'admin', password, mode: 'login' })).status, 404);
+  await app.close();
+  await writeFile(configPath, JSON.stringify({ origin, local: true, oidc: [] }), { mode: 0o600 });
+  app = await startHeadlessServer(options);
+  assert.equal((await browser.call('/__opencraft_actors/me')).status, 401, 're-enabling plugin never resurrects revoked cookies');
+  assert.equal((await browser.call('/__opencraft_auth/local', { username: 'admin', password, mode: 'login' })).status, 200);
+  assert.equal((await (await browser.call('/__opencraft_actors/me')).json() as any).actor.id, first.actor.id);
+  await run('revoke', 'admin'); assert.equal((await browser.call('/')).status, 403);
+});
+
+test('old fixed launcher fallback reaches packaged login worker, forwards cookies and retains update/health authority', async t => {
+  const disposals: Array<() => Promise<void>> = [];
+  t.after(async () => { for (const dispose of disposals.reverse()) await dispose(); });
+  const f = await humanAuthFixture({ after(dispose: () => Promise<void>) { disposals.push(dispose); } }), p = await f.localAccounts.create('alice', 'Alice', 'fixture-packaged-passphrase');
+  const id = f.actors.resolveHuman(p)!.actorId; f.members.setActor(id, 'admin', true, 'operator');
+  const fixture = await releaseFixture(join(f.directory, 'releases'));
+  const previous = process.env.OPENCRAFT_HEADLESS_BACKEND_URL;
+  process.env.OPENCRAFT_HEADLESS_BACKEND_URL = f.origin;
+  const managed = await createManagedWebServer({ initialRelease: fixture.releases.get('1.0.0').packageRoot,
+    stateDirectory: join(f.directory, 'managed') });
+  disposals.push(async () => { await managed.close(); await fixture.close(); if (previous === undefined) delete process.env.OPENCRAFT_HEADLESS_BACKEND_URL; else process.env.OPENCRAFT_HEADLESS_BACKEND_URL = previous; });
+  const address = await managed.listen({ port: 0 }), origin = `http://127.0.0.1:${address.port}`;
+  (f.auth.configuration as { origin: string }).origin = origin;
+  const browser = new AuthBrowser(origin);
+  assert.equal((await browser.call('/__opencraft_auth/')).status, 200);
+  assert.equal((await browser.call('/__opencraft_auth/local', { username: 'alice', password: 'fixture-packaged-passphrase', mode: 'login' })).status, 200);
+  assert.equal((await (await browser.call('/__opencraft_actors/me')).json() as any).actor.id, id);
+  assert.equal((await browser.call('/version.json')).status, 200);
+  assert.equal((await browser.call('/__opencraft_health')).status, 200);
+  await browser.call('/__opencraft_auth/logout', {});
+  assert.equal((await browser.call('/__opencraft_actors/me')).status, 401);
+});

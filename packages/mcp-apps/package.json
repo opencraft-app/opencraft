@@ -1,0 +1,23 @@
+{
+  "name": "@opencraft/mcp-apps",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    "./server": "./src/server.ts",
+    "./transport": "./src/transport.ts",
+    "./history-access": "./src/history-access.ts",
+    "./dynamic-tools": "./src/dynamic-tools.ts"
+  },
+  "dependencies": {
+    "@opencraft/sqlite-node": "0.1.0",
+    "ajv": "8.20.0",
+    "@opencraft/appserver-protocol": "0.1.0",
+    "@opencraft/appserver-client": "0.1.0",
+    "@opencraft/app-host-protocol": "0.1.0",
+    "@opencraft/javascript-runtime": "0.1.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
+}

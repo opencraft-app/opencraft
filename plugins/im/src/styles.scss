@@ -1,0 +1,210 @@
+@use "@opencraft/design-system/typography-mixins.web" as typography;
+.im-settings {
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+  overflow-wrap: anywhere;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-token-settings-sections);
+  .im-heading { display: grid; justify-items: start; gap: calc(var(--spacing) * 2); }
+  .im-hint {
+    @include typography.role(metadata, secondary);
+  }
+  .im-break {
+    overflow-wrap: anywhere;
+  }
+  .im-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .im-object-link {
+    border: 0;
+    background: none;
+    color: var(--color-text-accent);
+    text-align: start;
+    overflow-wrap: anywhere;
+    padding: 0;
+    cursor: pointer;
+    font: inherit;
+  }
+  .im-status {
+    @include typography.role(metadata, secondary);
+    display: inline-flex;
+    gap: 6px;
+    align-items: center;
+    &::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+    &[data-state="ready"] {
+      color: var(--color-status-success);
+    }
+  }
+  .im-tabs {
+    min-width: 0;
+    max-width: 100%;
+    display: flex;
+    gap: 22px;
+    border-bottom: 1px solid var(--color-border-subtle);
+    margin: 0;
+    overflow-x: auto;
+    button {
+      min-height: 42px;
+      border: 0;
+      border-bottom: 2px solid transparent;
+      background: none;
+      white-space: nowrap;
+      cursor: pointer;
+      @include typography.role(control, secondary);
+      &[aria-selected="true"] {
+        border-bottom-color: var(--color-text);
+        color: var(--color-text);
+      }
+    }
+  }
+  .im-presets {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    button {
+      text-align: start;
+      border: 1px solid var(--color-border-default);
+      border-radius: var(--radius-md);
+      padding: 14px;
+      background: var(--color-background-panel);
+      cursor: pointer;
+      @include typography.role(body);
+      strong {
+        @include typography.role(settings-label);
+      }
+      small {
+        display: block;
+        margin-top: 5px;
+        @include typography.role(metadata, secondary);
+      }
+      &[aria-pressed="true"] {
+        border-color: var(--color-text);
+        background: var(--color-background-panel);
+      }
+    }
+  }
+  .im-route-workspace {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+    gap: 16px;
+    margin: 22px 0;
+  }
+  .im-route-workspace > section {
+    min-width: 0;
+  }
+  .im-editor,
+  .im-preview {
+    min-width: 0;
+    box-sizing: border-box;
+    border: 1px solid var(--color-border-default);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+  }
+  .im-editor-heading {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--color-border-subtle);
+    background: var(--color-background-panel);
+    @include typography.role(metadata, secondary);
+  }
+  .im-code {
+    width: 100%;
+    display: block;
+    min-height: 290px;
+    padding: 15px;
+    border: 0;
+    resize: vertical;
+    background: var(--color-background-input);
+    color: var(--color-text);
+    @include typography.role(code);
+    white-space: pre;
+    overflow: auto;
+  }
+  .im-preview {
+    padding: 16px;
+    label {
+      display: block;
+      margin: 15px 0 6px;
+      @include typography.role(metadata, secondary);
+    }
+    h3 {
+      @include typography.role(panel-title);
+    }
+    pre {
+      @include typography.role(code);
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+  }
+  .im-preview-result {
+    min-height: 120px;
+    margin-top: 16px;
+    border-top: 1px solid var(--color-border-subtle);
+    padding-top: 12px;
+    @include typography.role(metadata, secondary);
+  }
+  .im-history {
+    margin-top: 22px;
+    border-top: 1px solid var(--color-border-subtle);
+    padding-top: 14px;
+    summary {
+      cursor: pointer;
+      @include typography.role(metadata, secondary);
+    }
+  }
+  .im-empty {
+    text-align: center;
+    padding: calc(var(--spacing) * 8) calc(var(--spacing) * 4);
+    display: grid;
+    gap: calc(var(--spacing) * 2);
+    @include typography.role(body, secondary);
+    h3 { margin: 0; @include typography.role(empty-title); }
+    p { margin: 0; max-width: 40ch; justify-self: center; }
+  }
+  > .im-hint { margin: 0; }
+  .settings-control-section__heading { flex-wrap: wrap; align-items: center; }
+}
+.im-dialog {
+  .im-reference {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    @include typography.role(code);
+    padding: 12px;
+    background: var(--color-background-panel);
+    border-radius: var(--radius-sm);
+    user-select: all;
+  }
+  .im-validation {
+    min-height: var(--typography-metadata-line-height);
+    @include typography.role(metadata, danger);
+    display: block;
+    color: var(--color-text-danger);
+  }
+}
+@media (max-width: 760px) {
+  .im-settings .im-route-workspace {
+    grid-template-columns: 1fr;
+  }
+  .im-settings .im-presets {
+    grid-template-columns: 1fr;
+  }
+  .im-settings .im-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+  .im-dialog input {
+    @include typography.role(mobile-input);
+  }
+}

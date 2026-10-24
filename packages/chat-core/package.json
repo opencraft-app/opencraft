@@ -1,0 +1,16 @@
+{
+  "name": "@opencraft/chat-core",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@opencraft/chat-document": "0.1.0",
+    "@opencraft/appserver-protocol": "0.1.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
+}

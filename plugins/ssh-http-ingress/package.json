@@ -1,0 +1,12 @@
+{
+  "name": "@opencraft/ssh-http-ingress",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./server": "./src/index.mjs"
+  },
+  "dependencies": {
+    "ssh2": "1.17.0"
+  }
+}

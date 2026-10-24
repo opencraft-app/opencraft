@@ -1,0 +1,55 @@
+@use "@opencraft/design-system/typography.web" as type;
+
+.tasks-ai-follow-up {
+  flex: 1; min-height: 0; min-width: 0; overflow: auto; overscroll-behavior: contain;
+  padding-bottom: calc(var(--spacing) * 5); @include type.role(body);
+  &__toolbar, &__filters { display: flex; flex-wrap: wrap; align-items: center; gap: calc(var(--spacing) * 3); }
+  &__toolbar { justify-content: space-between; }
+  &__filters { min-width: 0; }
+  &__filters input { width: calc(var(--spacing) * 56); min-width: 0; max-width: 100%; }
+  &__filters label { display: flex; flex-direction: row; align-items: center; gap: calc(var(--spacing) * 2); min-width: 0; }
+  &__filters label > span { @include type.role(metadata); color: var(--color-text-secondary); }
+  &__filters select { max-width: calc(var(--spacing) * 45); min-width: 0; }
+  &__summary { display: flex; flex-wrap: wrap; justify-content: space-between; gap: calc(var(--spacing) * 2); margin-top: calc(var(--spacing) * 4); @include type.role(metadata); color: var(--color-text-secondary); }
+  &__feedback { min-height: calc(var(--spacing) * 9); display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing); @include type.role(metadata); color: var(--color-text-secondary); }
+  &__board-scroll { overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; padding: var(--spacing) var(--spacing) calc(var(--spacing) * 3); }
+  &__board { display: grid; grid-template-columns: repeat(5, minmax(calc(var(--spacing) * 65), 1fr)); align-items: start; gap: calc(var(--spacing) * 6); }
+  &__column { min-width: 0; --follow-up-accent: var(--color-text-secondary); }
+  &__column--working { --follow-up-accent: var(--color-badge-blue-foreground); }
+  &__column--needs { --follow-up-accent: var(--color-text-warning); }
+  &__column--review { --follow-up-accent: var(--color-badge-orange-foreground); }
+  &__column--ready { --follow-up-accent: var(--color-status-success); }
+  &__column header { padding: var(--spacing) 0 calc(var(--spacing) * 5); }
+  &__column header > div { display: flex; align-items: center; gap: calc(var(--spacing) * 2); }
+  &__column h3 { @include type.role(sidebar-section); margin: 0; }
+  &__count { @include type.role(metadata); color: var(--color-text-secondary); font-variant-numeric: tabular-nums; }
+  &__dot { width: calc(var(--spacing) * 1.5); height: calc(var(--spacing) * 1.5); border-radius: var(--radius-full); background: var(--follow-up-accent); flex-shrink: 0; }
+  &__column header p { @include type.role(metadata); color: var(--color-text-secondary); margin: calc(var(--spacing) * 2) 0 0 calc(var(--spacing) * 3.5); }
+  &__column ul { display: flex; flex-direction: column; gap: calc(var(--spacing) * 3); list-style: none; padding: 0; margin: 0; }
+  &__empty { @include type.role(metadata); color: var(--color-text-secondary); padding: calc(var(--spacing) * 4) var(--spacing); margin: 0; }
+  &__item { min-width: 0; border: 1px solid var(--color-border-subtle); border-radius: var(--radius-lg); background: var(--color-background-elevated-primary-opaque); }
+  &__content { cursor: auto; user-select: text; -webkit-user-select: text; display: flex; flex-direction: column; align-items: stretch; gap: calc(var(--spacing) * 3); padding: calc(var(--spacing) * 4) calc(var(--spacing) * 4) 0; text-align: start; }
+  &__content h4 { @include type.role(settings-label); color: var(--color-text); margin: 0; overflow-wrap: anywhere; }
+  &__decision > span { @include type.role(metadata); color: var(--color-text-warning); }
+  &__decision p { @include type.role(body); margin: var(--spacing) 0 0; color: var(--color-text); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+  &__state { display: flex; flex-wrap: wrap; align-items: start; justify-content: space-between; gap: calc(var(--spacing) * 2); @include type.role(metadata); color: var(--color-text-secondary); }
+  &__state > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+  &__state > span:last-child { display: inline-flex; align-items: center; gap: var(--spacing); white-space: nowrap; }
+  &__wait { color: var(--color-text-warning); font-variant-numeric: tabular-nums; }
+  &__unknown, &__judge { @include type.role(metadata); color: var(--color-text-secondary); overflow-wrap: anywhere; }
+  &__item footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: calc(var(--spacing) * 2); padding: calc(var(--spacing) * 3) calc(var(--spacing) * 4); }
+  &__owner { cursor: auto; user-select: text; -webkit-user-select: text; display: inline-flex; align-items: center; gap: var(--spacing); min-width: 0; max-width: 100%; flex: 1; @include type.role(metadata); color: var(--color-text-secondary); }
+  &__owner > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  &__owner .tasks-avatar { width: calc(var(--spacing) * 5); height: calc(var(--spacing) * 5); flex-shrink: 0; }
+  &__item .settings-control-button.tasks-ai-follow-up__chat { color: var(--color-text-accent); margin-inline-start: auto; }
+  &__footnote { @include type.role(metadata); color: var(--color-text-secondary); margin: calc(var(--spacing) * 5) 0 0; }
+}
+@container tasks (max-width: 580px) {
+  .tasks-ai-follow-up__board { gap: calc(var(--spacing) * 4); }
+  .tasks-ai-follow-up__toolbar { align-items: stretch; }
+  .tasks-ai-follow-up__filters { width: 100%; }
+  .tasks-ai-follow-up__filters input { flex: 1; width: 0; min-width: calc(var(--spacing) * 25); }
+  .tasks-ai-follow-up__filters label { flex: 1; }
+  .tasks-ai-follow-up__filters label > span:first-child { display: none; }
+  .tasks-ai-follow-up__filters select { width: 100%; max-width: 100%; }
+}

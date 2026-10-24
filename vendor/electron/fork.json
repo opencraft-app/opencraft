@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "repository": "https://github.com/electron/electron.git",
+  "tag": "v44.8.0",
+  "version": "44.8.0",
+  "revision": "60169b45c12488c6fda237af7f6425526a7ce5f0",
+  "chromiumVersion": "152.0.7977.167",
+  "patchDate": "2026-10-21T06:00:00Z",
+  "patches": [
+    {
+      "path": "patches/electron/0001-observe-native-text-input-state.patch",
+      "sha256": "6803467eb8ecd7300b21ba4f50cc31705770b4c5d1b44e2f07ddd25f7d37c7f4"
+    },
+    {
+      "path": "patches/electron/0002-target-bound-native-ime-poc.patch",
+      "sha256": "619b46df7b1d5e4d06169346e387b424a5ce7882b6b43f61fbb3381c45ef129f"
+    },
+    {
+      "path": "patches/electron/0003-target-bound-native-clipboard.patch",
+      "sha256": "a7a34ad717b52a9b46770d201191ec79b34451cd70d7f08928352058ffd47ca5"
+    },
+    {
+      "path": "patches/electron/0004-component-audio-boundary.patch",
+      "sha256": "1956b7eb09429e4363d618a92dcf3b5480ceb1751b7e3c3f5caacaba6f2c0219"
+    },
+    {
+      "path": "patches/electron/0005-gtk-dialog-dynamic-symbols.patch",
+      "sha256": "2c39e7146a2b678f7ad6f1bec0a2ba19989048951b980cb0e86dc7ff56f5507d"
+    },
+    {
+      "path": "patches/electron/0006-single-native-object-counter.patch",
+      "sha256": "a4f86b8e026ba2d201bbeddf19ab193eb30a719438ce270ef8c9cc2898fcba21"
+    },
+    {
+      "path": "patches/electron/0007-offscreen-input-callback-definitions.patch",
+      "sha256": "0e7d3737500001c28f521567b6855d96243746ff86729a2eeb1e5b2f02a28297"
+    },
+    {
+      "path": "patches/electron/0008-service-worker-native-commands.patch",
+      "sha256": "c6a91c7d49907be56345b29c7b2bd06ed36b67333de4da6c9f1ca01830c542d9"
+    },
+    {
+      "path": "patches/electron/0009-component-libuv-link.patch",
+      "sha256": "4b003e82b184bd336861c11acca91cb27520c267db20c4e25873ffda882d5865"
+    },
+    {
+      "path": "patches/electron/0010-component-api-exports.patch",
+      "sha256": "a7c07a5792520bbd0ed387ec342b790f310ed68cfb32e99fd64f9284b4cc1801"
+    },
+    {
+      "path": "patches/electron/0011-explicit-gtk-component-dependency.patch",
+      "sha256": "1159d0911788e537ca2fb9044b3f54694e69559abc33261587777138d239ae34"
+    },
+    {
+      "path": "patches/electron/0012-atomic-offscreen-visual-properties.patch",
+      "sha256": "470b09e43bba56fb0f43aefab638e87c88b773fd428de6f128bc7a09e12f5457"
+    },
+    {
+      "path": "patches/electron/0013-native-form-input-identity.patch",
+      "sha256": "6504cd7b3409ab36e8f8ec796f9895b980f9cdf6e465e286f18799e6cf0a622b"
+    }
+  ]
+}

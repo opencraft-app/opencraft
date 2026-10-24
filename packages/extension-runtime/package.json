@@ -1,0 +1,19 @@
+{
+  "name": "@opencraft/extension-runtime",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./persistence": "./src/persistence.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@opencraft/design-system": "0.1.0",
+    "@opencraft/document-storage": "0.1.0",
+    "@deepseek-ai/cordis": "4.0.4",
+    "@opencraft/extension-contract": "0.1.0"
+  }
+}

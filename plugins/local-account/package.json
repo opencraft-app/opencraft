@@ -1,0 +1,9 @@
+{
+  "name": "@opencraft/plugin-local-account",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { "./server": "./src/server.ts" },
+  "dependencies": { "@opencraft/identity-core": "*" },
+  "scripts": { "typecheck": "tsc --noEmit" }
+}

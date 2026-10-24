@@ -1,0 +1,15 @@
+@use "@opencraft/design-system/typography.web" as typography;
+.modal-surface.workbench-shortcut-help[data-appearance="utility"] {
+  display: flex; flex-direction: column; padding: 24px; overflow-y: auto;
+  max-height: calc(100dvh - 48px);
+  h2, p { margin: 0; }
+  h2 { @include typography.role(body, primary); padding-inline-end: 32px; }
+}
+.workbench-shortcut-list {
+  dl { margin-block: 16px; }
+  dl > div { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-block: 10px; border-bottom: 1px solid var(--color-border); }
+  dt { @include typography.role(body, primary); }
+  dd { @include typography.role(metadata, secondary); margin: 0; flex-shrink: 0; }
+  kbd { font: inherit; }
+  p { @include typography.role(metadata, secondary); }
+}

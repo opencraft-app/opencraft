@@ -1,0 +1,16 @@
+OpenCraft
+
+The project has selected the Apache License, Version 2.0 for original
+OpenCraft contributions. Third-party components retain their own licenses
+and attribution. Trademarks and product artwork are not licensed merely by
+the presence of LICENSE.
+
+Migration status: redistribution review is incomplete. LICENSE does not grant
+rights that the OpenCraft contributors do not hold. Do not represent this
+mixed migration tree as a cleared Apache-2.0 release.
+
+Existing third-party notices:
+- vendor/lucide/LICENSE (lucide-react 1.58.0, ISC and Feather-derived MIT notices)
+- packages/connector-core/NOTICE.md
+- packages/react-runtime/NOTICE.json (react-use-event-hook 0.9.6, MIT;
+  includes the complete copyright and permission notice)

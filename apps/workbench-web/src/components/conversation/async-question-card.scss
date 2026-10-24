@@ -1,0 +1,82 @@
+@use "@opencraft/design-system/typography-mixins.web" as typography;
+@use "@opencraft/design-system/controls.web" as controls;
+
+.thread-async-question {
+  max-width: min(100%, 620px);
+  margin-block: calc(var(--spacing) * 3);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--color-background-panel);
+  color: var(--color-text);
+
+  fieldset {
+    display: grid;
+    min-width: 0;
+    gap: calc(var(--spacing) * 3);
+    margin: 0;
+    padding: calc(var(--spacing) * 4);
+    border: 0;
+  }
+  &__eyebrow, &__hint, &__status, &__disclosure {
+    @include typography.role(metadata, secondary);
+  }
+  &__eyebrow { display: flex; align-items: center; gap: calc(var(--spacing) * 2); }
+  &__eyebrow > svg { width: 15px; height: 15px; flex: 0 0 auto; }
+  &__title {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    > .opencraft-chat-document {
+      @include typography.role(chat, primary);
+      font-family: var(--font-family-ui);
+    }
+  }
+  &__options {
+    display: grid;
+    gap: var(--spacing);
+    label { @include controls.choice-control; }
+  }
+  textarea {
+    @include typography.role(body, primary);
+    width: 100%;
+    min-height: 74px;
+    resize: vertical;
+    padding: calc(var(--spacing) * 2.5) calc(var(--spacing) * 3);
+    border: 1px solid var(--color-border-default);
+    border-radius: var(--radius-choice-control);
+    background: var(--color-background-input);
+    :root:not([data-touch-interaction]) &:focus-visible { @include controls.focus-indicator; }
+  }
+  &__footer { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: calc(var(--spacing) * 3); }
+  &__hint { min-width: 0; overflow-wrap: anywhere; }
+  &__send { flex: 0 0 auto; }
+  &__send .ui-button__label { display: inline-flex; align-items: center; gap: calc(var(--spacing) * 2); }
+  &__send svg { width: 15px; height: 15px; }
+  &__status { margin: 0; }
+  &[data-state="answered"] {
+    margin-block: calc(var(--spacing) * 2);
+    border-color: transparent;
+    background: var(--color-background-button-secondary);
+  }
+  &__result {
+    padding-inline: calc(var(--spacing) * 3);
+    > summary {
+      display: flex;
+      min-width: 0;
+      min-height: max(36px, var(--size-control-hit-min));
+      align-items: center;
+      gap: calc(var(--spacing) * 2);
+      list-style: none;
+      cursor: pointer;
+      &::-webkit-details-marker { display: none; }
+      :root:not([data-touch-interaction]) &:focus-visible { @include controls.focus-indicator; }
+      flex-wrap: wrap;
+      > svg { width: 16px; height: 16px; flex: 0 0 auto; color: var(--color-status-success); }
+    }
+    &[open] { padding-bottom: calc(var(--spacing) * 3); }
+    > .thread-async-question__title { margin-top: calc(var(--spacing) * 3); }
+    &[open] .thread-async-question__disclosure > svg { transform: rotate(180deg); }
+  }
+  &__answer { @include typography.role(body, primary); min-width: 0; flex: 1; overflow-wrap: anywhere; white-space: pre-wrap; }
+  &__disclosure { display: inline-flex; flex: 0 0 auto; align-items: center; gap: var(--spacing); margin-inline-start: auto; }
+  &__disclosure > svg { width: 14px; height: 14px; }
+}

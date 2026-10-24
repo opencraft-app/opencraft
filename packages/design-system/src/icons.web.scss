@@ -1,0 +1,56 @@
+// UI glyphs share rounded line-art; dedicated Composer/process artwork has its own owner.
+// Brand artwork and content SVGs retain their identity.
+:root {
+  --size-icon-navigation: 14px;
+  --stroke-icon-navigation: 2;
+}
+svg.ui-action-glyph {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex-shrink: 0;
+}
+
+// Input acquisition actions need a legible glyph inside the existing hit area.
+.ui-composer-input-icon {
+  width: var(--size-icon-composer-input);
+  height: var(--size-icon-composer-input);
+}
+
+@mixin navigation-icon {
+  width: var(--size-icon-navigation);
+  height: var(--size-icon-navigation);
+  flex: 0 0 var(--size-icon-navigation);
+  :where([data-workbench-icon-style="standard"]) & {
+    stroke-width: var(--stroke-icon-navigation);
+  }
+}
+
+// Direct glyphs align with rows that use a dedicated leading-slot wrapper.
+@mixin navigation-leading-icon {
+  @include navigation-icon;
+  margin-inline: var(--space-icon-leading-inset, calc((var(--size-navigation-leading-slot) - var(--size-icon-navigation)) / 2));
+}
+
+// A pursuing Goal is quietly alive, including between Turns. Consumers own
+// whether the Goal is active; the glyph never spins, scales or moves its slot.
+@mixin goal-motion {
+  @media (prefers-reduced-motion: no-preference) {
+    -webkit-mask-image: linear-gradient(90deg, rgb(0 0 0 / 65%), #000, rgb(0 0 0 / 65%));
+    mask-image: linear-gradient(90deg, rgb(0 0 0 / 65%), #000, rgb(0 0 0 / 65%));
+    -webkit-mask-size: 200% 100%;
+    mask-size: 200% 100%;
+    // These 15/16px glyphs move a 200% mask through 64 positions per cycle
+    // (about one CSS pixel per step). Avoid repainting the mask/ancestor paint
+    // chunks every display frame for visually redundant subpixel changes.
+    // This is decorative sampling, not a clock for Goal state or drawer motion.
+    animation: ui-goal-shimmer 3.2s steps(64) infinite;
+
+    // Match every ancestor, including one inside a consumer's compound selector.
+    &:where([inert] *, [hidden] *, [aria-hidden="true"] *) { animation-play-state: paused; }
+  }
+}
+
+@keyframes ui-goal-shimmer {
+  from { -webkit-mask-position: 100% 0; mask-position: 100% 0; }
+  to { -webkit-mask-position: -100% 0; mask-position: -100% 0; }
+}

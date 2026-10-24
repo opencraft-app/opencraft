@@ -1,0 +1,65 @@
+From: OpenCraft <dev@opencraft.app>
+Subject: Explicitly reject native editor commands on service workers
+
+diff --git a/shell/renderer/service_worker_data.cc b/shell/renderer/service_worker_data.cc
+--- a/shell/renderer/service_worker_data.cc
++++ b/shell/renderer/service_worker_data.cc
+@@ -29,6 +29,38 @@
+       .AddInterface<mojom::ElectronRenderer>(
+           base::BindRepeating(&ServiceWorkerData::OnElectronRendererRequest,
+                               weak_ptr_factory_.GetWeakPtr()));
++}
++
++// Service workers have no frame, focused editor or native selection. Complete
++// every request explicitly, without dispatching edits or touching a clipboard.
++void ServiceWorkerData::GetNativeClipboardContextForTesting(
++    GetNativeClipboardContextForTestingCallback callback) {
++  std::move(callback).Run(mojom::NativeClipboardContext::New());
++}
++
++void ServiceWorkerData::CopyNativeClipboardForTesting(
++    const std::string&,
++    CopyNativeClipboardForTestingCallback callback) {
++  auto result = mojom::NativeCopyResult::New();
++  result->status = "unsupported-target";
++  std::move(callback).Run(std::move(result));
++}
++
++void ServiceWorkerData::GetNativeImeContextForTesting(
++    GetNativeImeContextForTestingCallback callback) {
++  auto context = mojom::NativeImeContext::New();
++  context->reason = "service-worker-has-no-editor";
++  std::move(callback).Run(std::move(context));
++}
++
++void ServiceWorkerData::ApplyNativeImeForTesting(
++    mojom::NativeImeOperationPtr,
++    ApplyNativeImeForTestingCallback callback) {
++  auto result = mojom::NativeImeResult::New();
++  result->status = "unsupported-target";
++  result->context = mojom::NativeImeContext::New();
++  result->context->reason = "service-worker-has-no-editor";
++  std::move(callback).Run(std::move(result));
+ }
+ 
+ void ServiceWorkerData::OnElectronRendererRequest(
+diff --git a/shell/renderer/service_worker_data.h b/shell/renderer/service_worker_data.h
+--- a/shell/renderer/service_worker_data.h
++++ b/shell/renderer/service_worker_data.h
+@@ -51,6 +51,16 @@
+   }
+ 
+   // mojom::ElectronRenderer
++  void GetNativeClipboardContextForTesting(
++      GetNativeClipboardContextForTestingCallback callback) override;
++  void CopyNativeClipboardForTesting(
++      const std::string& token,
++      CopyNativeClipboardForTestingCallback callback) override;
++  void GetNativeImeContextForTesting(
++      GetNativeImeContextForTestingCallback callback) override;
++  void ApplyNativeImeForTesting(
++      mojom::NativeImeOperationPtr operation,
++      ApplyNativeImeForTestingCallback callback) override;
+   void Message(bool internal,
+                const std::string& channel,
+                electron::SerializedValue arguments) override;

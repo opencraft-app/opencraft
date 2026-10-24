@@ -1,0 +1,56 @@
+diff --git a/shell/browser/osr/osr_render_widget_host_view.cc b/shell/browser/osr/osr_render_widget_host_view.cc
+index afd7276..1dd3731 100644
+--- a/shell/browser/osr/osr_render_widget_host_view.cc
++++ b/shell/browser/osr/osr_render_widget_host_view.cc
+@@ -9,6 +9,7 @@
+ #include <optional>
+ #include <utility>
+ 
++#include "base/auto_reset.h"
+ #include "base/functional/callback_helpers.h"
+ #include "base/location.h"
+ #include "base/memory/ptr_util.h"
+@@ -963,7 +964,12 @@ OffScreenRenderWidgetHostView::GetNewScreenInfosForUpdate() {
+   return screen_infos;
+ }
+ 
++bool OffScreenRenderWidgetHostView::CanSynchronizeVisualProperties() {
++  return !updating_visual_properties_;
++}
++
+ void OffScreenRenderWidgetHostView::ResizeRootLayer(bool force) {
++  base::AutoReset<bool> updating(&updating_visual_properties_, true);
+   SetupFrameRate(false);
+ 
+   auto old_screen_info = screen_infos_.current();
+@@ -1000,6 +1006,10 @@ void OffScreenRenderWidgetHostView::ResizeRootLayer(bool force) {
+   // DelegatedFrameHost, so it must have SynchronizeVisualProperties called
+   // after.
+   if (render_widget_host_) {
++    // UpdateScreenInfo synchronizes through NotifyScreenInfoChanged. Suppress
++    // that intermediate update until both the new size and surface ID are
++    // installed; a renderer must never receive a new size with the old ID.
++    base::AutoReset<bool> ready(&updating_visual_properties_, false);
+     render_widget_host_->SynchronizeVisualProperties();
+   }
+ }
+diff --git a/shell/browser/osr/osr_render_widget_host_view.h b/shell/browser/osr/osr_render_widget_host_view.h
+index 0bb98f1..caee9cb 100644
+--- a/shell/browser/osr/osr_render_widget_host_view.h
++++ b/shell/browser/osr/osr_render_widget_host_view.h
+@@ -167,6 +167,7 @@ class OffScreenRenderWidgetHostView
+   gfx::Size GetCompositorViewportPixelSize() override;
+   ui::Compositor* GetCompositor() override;
+   display::ScreenInfos GetNewScreenInfosForUpdate() override;
++  bool CanSynchronizeVisualProperties() override;
+ 
+   const viz::LocalSurfaceId& GetLocalSurfaceId() const override;
+   const viz::FrameSinkId& GetFrameSinkId() const override;
+@@ -301,6 +302,7 @@ class OffScreenRenderWidgetHostView
+ 
+   bool hold_resize_ = false;
+   bool pending_resize_ = false;
++  bool updating_visual_properties_ = false;
+ 
+   viz::LocalSurfaceId delegated_frame_host_surface_id_;
+   viz::ParentLocalSurfaceIdAllocator delegated_frame_host_allocator_;

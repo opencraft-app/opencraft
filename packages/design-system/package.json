@@ -1,0 +1,39 @@
+{
+  "name": "@opencraft/design-system",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    "./button": "./src/button.shared.ts",
+    "./progress": "./src/progress.shared.ts",
+    "./modal": "./src/modal.shared.ts",
+    "./information-panel.web": "./src/information-panel.web.scss",
+    "./theme": "./src/theme.ts",
+    "./theme-options": "./src/theme-options.ts",
+    "./theme-engine": "./src/theme-engine.ts",
+    "./typography": "./src/typography/typography.shared.ts",
+    "./count-font.web": "./assets/rounded-count/font.css",
+    "./typography.web": "./src/typography.web.scss",
+    "./tokens": "./src/tokens.shared.ts",
+    "./tokens.native": "./src/tokens.native.ts",
+    "./tokens.web": "./src/tokens.web.scss",
+    "./toolbar.web": "./src/toolbar.web.scss",
+    "./material.web": "./src/material.web.scss",
+    "./menu.web": "./src/menu.web.scss",
+    "./selection.web": "./src/selection.web.scss",
+    "./controls.web": "./src/controls.web.scss",
+    "./focus.web": "./src/focus.web.scss",
+    "./empty-state.web": "./src/empty-state.web.scss",
+    "./panel-controls.web": "./src/panel-controls.web.scss",
+    "./desktop-view.web": "./src/desktop-view.web.scss",
+    "./desktop-trackpad.web": "./src/desktop-trackpad.web.scss",
+    "./sidebar-toggle-glyphs": "./src/sidebar-toggle-glyphs.ts",
+    "./icons.web": "./src/icons.web.scss",
+    "./typography-mixins.web": "./src/typography-mixins.web.scss",
+    "./interaction-mixins.web": "./src/interaction-mixins.web.scss",
+    "./action-artwork": "./src/action-artwork.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
+}

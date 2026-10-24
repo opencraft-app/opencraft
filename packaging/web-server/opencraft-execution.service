@@ -1,0 +1,19 @@
+[Unit]
+Description=OpenCraft managed execution gateway
+After=network.target opencraft-codex-core.service
+Wants=opencraft-codex-core.service
+
+[Service]
+Type=simple
+User=opencraft
+EnvironmentFile=/etc/opencraft-execution.env
+WorkingDirectory=/srv/opencraft
+ExecStart=/usr/bin/node /var/lib/opencraft-web/execution-current/execution/gateway.mjs
+Restart=on-failure
+RestartSec=3
+KillMode=control-group
+TimeoutStopSec=30
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,56 @@
+@use "@opencraft/design-system/typography.web" as typography;
+@use "@opencraft/design-system/controls.web" as controls;
+
+.structured-preview-host, .structured-preview {
+  display: flex; flex: 1; flex-direction: column; width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: hidden;
+}
+.structured-preview { background: var(--color-background-surface); color: var(--color-text); }
+.structured-preview__toolbar {
+  @include typography.role(metadata, secondary);
+  display: flex; flex: none; flex-wrap: wrap; align-items: center; gap: calc(var(--spacing) * 1); padding: calc(var(--spacing) * 1) calc(var(--spacing) * 2);
+  border-bottom: 1px solid var(--color-border-subtle);
+  button, select { @include controls.quiet-control; min-height: 28px; }
+  button { padding-inline: calc(var(--spacing) * 2); }
+  button[aria-pressed="true"] { background: var(--color-background-navigation-current); color: var(--color-text); }
+  span { margin-inline-start: auto; }
+}
+.structured-preview__source { @include typography.role(body); flex: 1; min-height: 0; margin: 0; padding: calc(var(--spacing) * 3); overflow: auto; white-space: pre; }
+.structured-preview [hidden] { display: none; }
+.structured-preview__table-scroll { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; }
+.structured-preview__table-header {
+  @include typography.role(metadata, secondary);
+  position: sticky; top: 0; z-index: 2; height: 32px; background: var(--color-background-elevated-primary-opaque);
+}
+.structured-preview__table-row { @include typography.role(body); position: absolute; width: 100%; }
+.structured-preview__table-header > div, .structured-preview__table-row > div {
+  box-sizing: border-box; position: absolute; top: 0; height: 32px; overflow: hidden; text-overflow: ellipsis; white-space: pre;
+  padding: 6px 8px; border-inline-end: 1px solid var(--color-border-subtle); border-bottom: 1px solid var(--color-border-subtle);
+}
+.structured-preview__table-header > div { text-align: center; }
+.structured-preview__row-number {
+  @include typography.role(metadata, secondary);
+  position: sticky !important; left: 0; width: 48px; z-index: 1; text-align: end; background: var(--color-background-elevated-primary-opaque);
+}
+.structured-preview__diagram { position: relative; flex: 1; min-height: 0; overflow: hidden; touch-action: none; cursor: grab; }
+.structured-preview__diagram:active { cursor: grabbing; }
+.structured-preview__diagram-content { position: absolute; transform-origin: 0 0; }
+.structured-preview__diagram-content > svg { display: block; max-width: none; }
+.structured-preview__drawio { flex: 1; min-height: 0; width: 100%; border: 0; }
+
+@media (pointer: coarse) { .structured-preview__toolbar button, .structured-preview__toolbar select { min-height: 44px; } }
+
+.structured-preview__search {
+  display: flex; align-items: center; gap: var(--spacing); padding: var(--spacing) calc(var(--spacing) * 2);
+  border-bottom: 1px solid var(--color-border-subtle);
+  input { @include typography.role(body); color: var(--color-text); background: var(--color-background-input); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-sm); padding: calc(var(--spacing) * 1); min-width: 0; width: 100%; }
+  button { @include controls.quiet-control; padding-inline: calc(var(--spacing) * 2); }
+  span { @include typography.role(metadata, secondary); flex: none; }
+}
+.structured-preview__column-resize { position: absolute; right: 0; top: 0; width: 12px; height: 100%; cursor: col-resize; touch-action: none; }
+.structured-preview__table-row [data-selected="true"] { background: var(--color-background-navigation-current); }
+.structured-preview__cell-detail {
+  display: flex; flex: none; flex-direction: column; gap: var(--spacing); padding: calc(var(--spacing) * 2); border-top: 1px solid var(--color-border-subtle);
+  span { @include typography.role(metadata, secondary); }
+  textarea { @include typography.role(body); color: var(--color-text); background: var(--color-background-input); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-sm); padding: calc(var(--spacing) * 1); box-sizing: border-box; width: 100%; height: 96px; max-height: 25vh; resize: none; white-space: pre-wrap; }
+}
+@media (pointer: coarse) { .structured-preview__search button { min-height: 44px; } }

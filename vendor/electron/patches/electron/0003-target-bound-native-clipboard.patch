@@ -1,0 +1,954 @@
+From: OpenCraft <dev@opencraft.app>
+Subject: Target-bound native clipboard capture for remote tabs
+
+diff --git a/patches/chromium/.patches b/patches/chromium/.patches
+--- a/patches/chromium/.patches
++++ b/patches/chromium/.patches
+@@ -255,3 +255,4 @@
+ cherry-pick-3f6b73b9e0b3.patch
+ cherry-pick-e98f6e2e4f23.patch
+ feat_target_bound_native_ime.patch
++feat_remote_tab_native_clipboard.patch
+diff --git a/patches/chromium/feat_remote_tab_native_clipboard.patch b/patches/chromium/feat_remote_tab_native_clipboard.patch
+new file mode 100644
+--- /dev/null
++++ b/patches/chromium/feat_remote_tab_native_clipboard.patch
+@@ -0,0 +1,651 @@
++From: OpenCraft <dev@opencraft.app>
++Subject: Remote tab native copy capture and selection epochs
++
++diff --git a/content/browser/renderer_host/clipboard_host_impl.cc b/content/browser/renderer_host/clipboard_host_impl.cc
++--- a/content/browser/renderer_host/clipboard_host_impl.cc
+++++ b/content/browser/renderer_host/clipboard_host_impl.cc
++@@ -75,6 +75,59 @@
++   ResetClipboardWriter();
++ }
++
+++bool ClipboardHostImpl::RemoteClipboard() const {
+++  return GetContentClient()->browser()->IsRemoteClipboard(&render_frame_host());
+++}
+++
+++void ClipboardHostImpl::BeginRemoteCopy(BeginRemoteCopyCallback callback) {
+++  if (!RemoteClipboard() || remote_copy_ || pending_writes_ != 0 ||
+++      render_frame_host().IsInactiveAndDisallowActivation(
+++          DisallowActivationReasonId::kClipboard)) {
+++    std::move(callback).Run(false);
+++    return;
+++  }
+++  clipboard_writer_->Reset();
+++  pending_commit_write_ = false;
+++  remote_copy_commits_ = 0;
+++  remote_copy_ = blink::mojom::RemoteCopyResult::New();
+++  std::move(callback).Run(true);
+++}
+++
+++void ClipboardHostImpl::EndRemoteCopy(EndRemoteCopyCallback callback) {
+++  if (!remote_copy_ || remote_copy_end_) {
+++    auto result = blink::mojom::RemoteCopyResult::New();
+++    result->unsupported = true;
+++    std::move(callback).Run(std::move(result));
+++    return;
+++  }
+++  remote_copy_end_ = std::move(callback);
+++  FinishRemoteCopyIfReady();
+++}
+++
+++void ClipboardHostImpl::FinishRemoteCopyIfReady() {
+++  if (!remote_copy_end_ || pending_writes_ != 0) {
+++    return;
+++  }
+++  clipboard_writer_->Reset();
+++  pending_commit_write_ = false;
+++  if (remote_copy_->text.size() + remote_copy_->html.size() > 65536 ||
+++      remote_copy_commits_ > 1) {
+++    remote_copy_->unsupported = true;
+++  }
+++  if (remote_copy_->unsupported || !remote_copy_->committed) {
+++    remote_copy_->text.clear();
+++    remote_copy_->html.clear();
+++    remote_copy_->has_text = remote_copy_->has_html = false;
+++  }
+++  std::move(remote_copy_end_).Run(std::move(remote_copy_));
+++}
+++
+++bool ClipboardHostImpl::RejectLateRemoteWrite() {
+++  // End closes the command's write interval. Only policy replies already
+++  // pending on this document may complete it; later script writes are excluded.
+++  return remote_copy_end_ || (RemoteClipboard() && !remote_copy_);
+++}
+++
++ void ClipboardHostImpl::Create(
++     RenderFrameHost* render_frame_host,
++     mojo::PendingReceiver<blink::mojom::ClipboardHost> receiver) {
++@@ -117,6 +170,10 @@
++
++ void ClipboardHostImpl::GetSequenceNumber(ui::ClipboardBuffer clipboard_buffer,
++                                           GetSequenceNumberCallback callback) {
+++  if (RemoteClipboard()) {
+++    std::move(callback).Run(absl::uint128());
+++    return;
+++  }
++   if (render_frame_host().IsInactiveAndDisallowActivation(
++           DisallowActivationReasonId::kClipboard)) {
++     std::move(callback).Run(absl::uint128());
++@@ -128,6 +185,10 @@
++ void ClipboardHostImpl::ReadAvailableTypes(
++     ui::ClipboardBuffer clipboard_buffer,
++     ReadAvailableTypesCallback callback) {
+++  if (RemoteClipboard()) {
+++    std::move(callback).Run({});
+++    return;
+++  }
++   if (render_frame_host().IsInactiveAndDisallowActivation(
++           DisallowActivationReasonId::kClipboard)) {
++     std::move(callback).Run({});
++@@ -200,6 +261,10 @@
++ void ClipboardHostImpl::IsFormatAvailable(blink::mojom::ClipboardFormat format,
++                                           ui::ClipboardBuffer clipboard_buffer,
++                                           IsFormatAvailableCallback callback) {
+++  if (RemoteClipboard()) {
+++    std::move(callback).Run(false);
+++    return;
+++  }
++   if (render_frame_host().IsInactiveAndDisallowActivation(
++           DisallowActivationReasonId::kClipboard)) {
++     std::move(callback).Run(false);
++@@ -607,6 +672,9 @@
++ }
++
++ void ClipboardHostImpl::WriteText(const std::u16string& text) {
+++  if (RejectLateRemoteWrite()) {
+++    return;
+++  }
++   if (render_frame_host().IsInactiveAndDisallowActivation(
++           DisallowActivationReasonId::kClipboard)) {
++     return;
++@@ -627,6 +695,9 @@
++
++ void ClipboardHostImpl::WriteHtml(const std::u16string& markup,
++                                   const GURL& url) {
+++  if (RejectLateRemoteWrite()) {
+++    return;
+++  }
++   if (render_frame_host().IsInactiveAndDisallowActivation(
++           DisallowActivationReasonId::kClipboard)) {
++     return;
++@@ -646,6 +717,12 @@
++ }
++
++ void ClipboardHostImpl::WriteSvg(const std::u16string& markup) {
+++  if (RejectLateRemoteWrite()) {
+++    return;
+++  }
+++  if (remote_copy_) {
+++    remote_copy_->unsupported = true;
+++  }
++   if (render_frame_host().IsInactiveAndDisallowActivation(
++           DisallowActivationReasonId::kClipboard)) {
++     return;
++@@ -665,6 +742,9 @@
++ }
++
++ void ClipboardHostImpl::WriteSmartPasteMarker() {
+++  if (RejectLateRemoteWrite()) {
+++    return;
+++  }
++   if (render_frame_host().IsInactiveAndDisallowActivation(
++           DisallowActivationReasonId::kClipboard)) {
++     return;
++@@ -674,6 +754,12 @@
++
++ void ClipboardHostImpl::WriteDataTransferCustomData(
++     const base::flat_map<std::u16string, std::u16string>& data) {
+++  if (RejectLateRemoteWrite()) {
+++    return;
+++  }
+++  if (remote_copy_) {
+++    remote_copy_->unsupported = true;
+++  }
++   if (render_frame_host().IsInactiveAndDisallowActivation(
++           DisallowActivationReasonId::kClipboard)) {
++     return;
++@@ -702,6 +788,12 @@
++
++ void ClipboardHostImpl::WriteBookmark(const std::string& url,
++                                       const std::u16string& title) {
+++  if (RejectLateRemoteWrite()) {
+++    return;
+++  }
+++  if (remote_copy_) {
+++    remote_copy_->unsupported = true;
+++  }
++   if (render_frame_host().IsInactiveAndDisallowActivation(
++           DisallowActivationReasonId::kClipboard)) {
++     return;
++@@ -711,6 +803,12 @@
++ }
++
++ void ClipboardHostImpl::WriteImage(const SkBitmap& bitmap) {
+++  if (RejectLateRemoteWrite()) {
+++    return;
+++  }
+++  if (remote_copy_) {
+++    remote_copy_->unsupported = true;
+++  }
++   if (render_frame_host().IsInactiveAndDisallowActivation(
++           DisallowActivationReasonId::kClipboard)) {
++     return;
++@@ -745,16 +843,24 @@
++     return;
++   }
++   pending_commit_write_ = false;
+++  if (remote_copy_) {
+++    remote_copy_->committed = true;
+++    ++remote_copy_commits_;
+++  }
++
++   if (render_frame_host().GetBrowserContext()->IsOffTheRecord()) {
++     clipboard_writer_->MarkAsOffTheRecord();
++   }
++   ResetClipboardWriter();
+++  FinishRemoteCopyIfReady();
++ }
++
++ bool ClipboardHostImpl::IsRendererPasteAllowed(
++     ui::ClipboardBuffer clipboard_buffer,
++     RenderFrameHost& render_frame_host) {
+++  if (GetContentClient()->browser()->IsRemoteClipboard(&render_frame_host)) {
+++    return false;
+++  }
++   return GetContentClient()->browser()->IsClipboardPasteAllowed(
++       &render_frame_host);
++ }
++@@ -874,6 +980,12 @@
++ void ClipboardHostImpl::WriteUnsanitizedCustomFormat(
++     const std::u16string& format,
++     mojo_base::BigBuffer data) {
+++  if (RemoteClipboard()) {
+++    if (remote_copy_) {
+++      remote_copy_->unsupported = true;
+++    }
+++    return;
+++  }
++   if (render_frame_host().IsInactiveAndDisallowActivation(
++           DisallowActivationReasonId::kClipboard)) {
++     return;
++@@ -976,6 +1088,17 @@
++   CHECK_GT(pending_writes_, 0, base::NotFatalUntil::M152);
++   --pending_writes_;
++
+++  if (remote_copy_) {
+++    if (replacement_data) {
+++      remote_copy_->has_text = true;
+++      remote_copy_->text = *replacement_data;
+++      remote_copy_->has_html = false;
+++      remote_copy_->html.clear();
+++    } else {
+++      remote_copy_->has_html = true;
+++      remote_copy_->html = data.html;
+++    }
+++  }
++   AddSourceDataToClipboardWriter(*clipboard_writer_, render_frame_host());
++
++   if (replacement_data) {
++@@ -995,6 +1118,15 @@
++   CHECK_GT(pending_writes_, 0, base::NotFatalUntil::M152);
++   --pending_writes_;
++
+++  if (remote_copy_) {
+++    if (replacement_data ||
+++        data_type == ui::ClipboardFormatType::PlainTextType()) {
+++      remote_copy_->has_text = true;
+++      remote_copy_->text = replacement_data ? *replacement_data : data.text;
+++    } else {
+++      remote_copy_->unsupported = true;
+++    }
+++  }
++   AddSourceDataToClipboardWriter(*clipboard_writer_, render_frame_host());
++
++   // If `replacement_data` is empty, only one of these fields should be
++@@ -1036,6 +1168,9 @@
++ }
++
++ void ClipboardHostImpl::ResetClipboardWriter() {
+++  if (clipboard_writer_ && RemoteClipboard()) {
+++    clipboard_writer_->Reset();
+++  }
++   auto data_endpoint = CreateDataEndpoint(render_frame_host());
++   std::unique_ptr<ui::DataTransferEndpoint> data_endpoint_ptr;
++   if (data_endpoint) {
++@@ -1125,6 +1260,9 @@
++
++ void ClipboardHostImpl::RegisterClipboardListener(
++     mojo::PendingRemote<blink::mojom::ClipboardListener> listener) {
+++  if (RemoteClipboard()) {
+++    return;
+++  }
++   if (render_frame_host().IsInactiveAndDisallowActivation(
++           DisallowActivationReasonId::kClipboard)) {
++     return;
++diff --git a/content/browser/renderer_host/clipboard_host_impl.h b/content/browser/renderer_host/clipboard_host_impl.h
++--- a/content/browser/renderer_host/clipboard_host_impl.h
+++++ b/content/browser/renderer_host/clipboard_host_impl.h
++@@ -41,6 +41,9 @@
++       public ui::ClipboardObserver {
++  public:
++   ~ClipboardHostImpl() override;
+++
+++  void BeginRemoteCopy(BeginRemoteCopyCallback callback) override;
+++  void EndRemoteCopy(EndRemoteCopyCallback callback) override;
++
++   // Override for ui::ClipboardObserver
++   void OnClipboardDataChanged() override;
++@@ -300,6 +303,12 @@
++   // Stops observing clipboard changes and resets the listener.
++   void StopObservingClipboard();
++
+++  void FinishRemoteCopyIfReady();
+++  bool RemoteClipboard() const;
+++  bool RejectLateRemoteWrite();
+++  blink::mojom::RemoteCopyResultPtr remote_copy_;
+++  EndRemoteCopyCallback remote_copy_end_;
+++  unsigned remote_copy_commits_ = 0;
++   std::unique_ptr<ui::ScopedClipboardWriter> clipboard_writer_;
++
++   // Counts the number of expected `Write*` calls to be made to the current
++diff --git a/content/public/browser/content_browser_client.cc b/content/public/browser/content_browser_client.cc
++--- a/content/public/browser/content_browser_client.cc
+++++ b/content/public/browser/content_browser_client.cc
++@@ -1540,6 +1540,10 @@
++   return std::nullopt;
++ }
++
+++bool ContentBrowserClient::IsRemoteClipboard(RenderFrameHost*) {
+++  return false;
+++}
+++
++ bool ContentBrowserClient::IsClipboardPasteAllowed(
++     content::RenderFrameHost* render_frame_host) {
++   return true;
++diff --git a/content/public/browser/content_browser_client.h b/content/public/browser/content_browser_client.h
++--- a/content/public/browser/content_browser_client.h
+++++ b/content/public/browser/content_browser_client.h
++@@ -2649,6 +2649,10 @@
++   // uncompromised renderers. For example, a permission may be granted when
++   // checked in the renderer, but the permission may be revoked by the time
++   // this check starts.
+++  // Remote browser embedders can isolate clipboard writes from the host OS.
+++  // Policy decisions still run; a scoped native copy returns its own result.
+++  virtual bool IsRemoteClipboard(RenderFrameHost* render_frame_host);
+++
++   virtual bool IsClipboardPasteAllowed(
++       content::RenderFrameHost* render_frame_host);
++
++diff --git a/third_party/blink/public/mojom/clipboard/clipboard.mojom b/third_party/blink/public/mojom/clipboard/clipboard.mojom
++--- a/third_party/blink/public/mojom/clipboard/clipboard.mojom
+++++ b/third_party/blink/public/mojom/clipboard/clipboard.mojom
++@@ -93,7 +93,22 @@
++ // content that users may not reasonably expect to be on their clipboard.
++ // Failure to do so may lead to users leaking sensitive information,
++ // that may for example be held in metadata.
+++struct RemoteCopyResult {
+++  bool committed;
+++  bool unsupported;
+++  bool has_text;
+++  bool has_html;
+++  mojo_base.mojom.BigString16 text;
+++  mojo_base.mojom.BigString16 html;
+++};
+++
++ interface ClipboardHost {
+++  // Ordered on the same pipe as native clipboard writes and CommitWrite.
+++  // Available only when the browser embedder explicitly isolates clipboard.
+++  [Sync]
+++  BeginRemoteCopy() => (bool accepted);
+++  EndRemoteCopy() => (RemoteCopyResult result);
+++
++   // Conservative limits to maximum format name and data sizes, to avoid
++   // potential attacks with long strings. These limits are only applied to
++   // unsanitized custom formats. The size limit includes the null terminator.
++diff --git a/third_party/blink/public/web/web_input_method_controller.h b/third_party/blink/public/web/web_input_method_controller.h
++--- a/third_party/blink/public/web/web_input_method_controller.h
+++++ b/third_party/blink/public/web/web_input_method_controller.h
++@@ -8,7 +8,9 @@
++ #include <cstdint>
++ #include <vector>
++
+++#include "base/functional/callback.h"
++ #include "third_party/blink/public/mojom/input/input_handler.mojom-forward.h"
+++#include "third_party/blink/public/platform/web_string.h"
++ #include "third_party/blink/public/platform/web_text_input_info.h"
++ #include "third_party/blink/public/web/web_range.h"
++ #include "third_party/blink/public/web/web_widget.h"
++@@ -24,6 +26,32 @@
++
++ class WebInputMethodController {
++  public:
+++  struct NativeClipboardStateForTesting {
+++    bool available = false;
+++    uint64_t focus_generation = 0;
+++    uint64_t selection_generation = 0;
+++  };
+++  struct NativeCopyResultForTesting {
+++    bool dispatched = false;
+++    bool target_valid = false;
+++    bool committed = false;
+++    bool unsupported = false;
+++    bool has_text = false;
+++    bool has_html = false;
+++    WebString text;
+++    WebString html;
+++  };
+++  virtual NativeClipboardStateForTesting GetNativeClipboardStateForTesting()
+++      const {
+++    return {};
+++  }
+++  virtual void CopyNativeClipboardForTesting(
+++      uint64_t focus,
+++      uint64_t selection,
+++      base::OnceCallback<void(NativeCopyResultForTesting)> callback) {
+++    std::move(callback).Run({});
+++  }
+++
++   enum ConfirmCompositionBehavior {
++     kDoNotKeepSelection,
++     kKeepSelection,
++diff --git a/third_party/blink/renderer/core/clipboard/system_clipboard.cc b/third_party/blink/renderer/core/clipboard/system_clipboard.cc
++--- a/third_party/blink/renderer/core/clipboard/system_clipboard.cc
+++++ b/third_party/blink/renderer/core/clipboard/system_clipboard.cc
++@@ -415,6 +415,21 @@
++   }
++ }
++
+++bool SystemClipboard::BeginRemoteCopy() {
+++  bool accepted = false;
+++  return clipboard_.is_bound() && clipboard_->BeginRemoteCopy(&accepted) &&
+++         accepted;
+++}
+++
+++void SystemClipboard::EndRemoteCopy(
+++    mojom::blink::ClipboardHost::EndRemoteCopyCallback callback) {
+++  if (!clipboard_.is_bound()) {
+++    std::move(callback).Run(mojom::blink::RemoteCopyResult::New());
+++    return;
+++  }
+++  clipboard_->EndRemoteCopy(std::move(callback));
+++}
+++
++ void SystemClipboard::CommitWrite() {
++   ResetSnapshot();
++
++diff --git a/third_party/blink/renderer/core/clipboard/system_clipboard.h b/third_party/blink/renderer/core/clipboard/system_clipboard.h
++--- a/third_party/blink/renderer/core/clipboard/system_clipboard.h
+++++ b/third_party/blink/renderer/core/clipboard/system_clipboard.h
++@@ -124,6 +124,9 @@
++
++   // Clipboard write functions must use CommitWrite for changes to reach
++   // the OS clipboard.
+++  bool BeginRemoteCopy();
+++  void EndRemoteCopy(
+++      mojom::blink::ClipboardHost::EndRemoteCopyCallback callback);
++   void CommitWrite();
++
++   void CopyToFindPboard(const String& text);
++diff --git a/third_party/blink/renderer/core/editing/frame_selection.cc b/third_party/blink/renderer/core/editing/frame_selection.cc
++--- a/third_party/blink/renderer/core/editing/frame_selection.cc
+++++ b/third_party/blink/renderer/core/editing/frame_selection.cc
++@@ -172,6 +172,10 @@
++   return selection_editor_->ComputeVisibleSelectionInFlatTree();
++ }
++
+++uint64_t FrameSelection::NativeSelectionGeneration() const {
+++  return selection_editor_->NativeSelectionGeneration();
+++}
+++
++ const SelectionInDomTree& FrameSelection::GetSelectionInDomTree() const {
++   return selection_editor_->GetSelectionInDomTree();
++ }
++diff --git a/third_party/blink/renderer/core/editing/frame_selection.h b/third_party/blink/renderer/core/editing/frame_selection.h
++--- a/third_party/blink/renderer/core/editing/frame_selection.h
+++++ b/third_party/blink/renderer/core/editing/frame_selection.h
++@@ -232,6 +232,7 @@
++   // the feature flag (see SelectionEditor::SetContainsSelectionFocusFlag()).
++   void UpdateTextOverflowOfSelectionFocus(const Element& element, bool focused);
++
+++  uint64_t NativeSelectionGeneration() const;
++   const SelectionInDomTree& GetSelectionInDomTree() const;
++   bool IsDirectional() const;
++
++diff --git a/third_party/blink/renderer/core/editing/selection_editor.cc b/third_party/blink/renderer/core/editing/selection_editor.cc
++--- a/third_party/blink/renderer/core/editing/selection_editor.cc
+++++ b/third_party/blink/renderer/core/editing/selection_editor.cc
++@@ -63,6 +63,7 @@
++ }
++
++ void SelectionEditor::ClearVisibleSelection() {
+++  ++native_selection_generation_;
++   selection_ = SelectionInDomTree();
++   cached_visible_selection_in_dom_tree_ = VisibleSelection();
++   cached_visible_selection_in_flat_tree_ = VisibleSelectionInFlatTree();
++@@ -146,6 +147,7 @@
++
++   ClearDocumentCachedRange();
++   MarkCacheDirty();
+++  ++native_selection_generation_;
++   selection_ = new_selection;
++
++   if (RuntimeEnabledFeatures::TextOverflowClipWithSelectionEnabled()) {
++@@ -229,6 +231,7 @@
++     DidFinishDomMutation();
++     return;
++   }
+++  ++native_selection_generation_;
++   selection_.anchor_ = new_anchor;
++   selection_.focus_ = new_focus;
++   selection_.ResetDirectionCache();
++@@ -281,6 +284,7 @@
++   if (new_anchor == old_anchor && new_focus == old_focus) {
++     return;
++   }
+++  ++native_selection_generation_;
++   selection_ = SelectionInDomTree::Builder()
++                    .SetBaseAndExtent(new_anchor, new_focus)
++                    .Build();
++@@ -304,6 +308,7 @@
++   style_version_for_flat_tree_ = static_cast<uint64_t>(-1);
++   style_version_for_absolute_bounds_ = static_cast<uint64_t>(-1);
++ #endif
+++  ++native_selection_generation_;
++   selection_ = SelectionInDomTree();
++   cached_visible_selection_in_dom_tree_ = VisibleSelection();
++   cached_visible_selection_in_flat_tree_ = VisibleSelectionInFlatTree();
++@@ -352,6 +357,7 @@
++   if (new_anchor == old_anchor && new_focus == old_focus) {
++     return;
++   }
+++  ++native_selection_generation_;
++   selection_ = SelectionInDomTree::Builder()
++                    .SetBaseAndExtent(new_anchor, new_focus)
++                    .Build();
++@@ -380,6 +386,7 @@
++     return;
++   }
++
+++  ++native_selection_generation_;
++   selection_ = SelectionInDomTree::Builder()
++                    .SetBaseAndExtent(new_anchor, new_focus)
++                    .Build();
++diff --git a/third_party/blink/renderer/core/editing/selection_editor.h b/third_party/blink/renderer/core/editing/selection_editor.h
++--- a/third_party/blink/renderer/core/editing/selection_editor.h
+++++ b/third_party/blink/renderer/core/editing/selection_editor.h
++@@ -44,6 +44,9 @@
++   SelectionEditor(const SelectionEditor&) = delete;
++   SelectionEditor& operator=(const SelectionEditor&) = delete;
++   void Dispose();
+++  uint64_t NativeSelectionGeneration() const {
+++    return native_selection_generation_;
+++  }
++
++   const SelectionInDomTree& GetSelectionInDomTree() const;
++
++@@ -112,6 +115,7 @@
++   WeakMember<Document> document_;
++   Member<LocalFrame> frame_;
++
+++  uint64_t native_selection_generation_ = 0;
++   SelectionInDomTree selection_;
++
++   // If document is root, document.getSelection().addRange(range) is cached on
++diff --git a/third_party/blink/renderer/core/exported/web_input_method_controller_impl.cc b/third_party/blink/renderer/core/exported/web_input_method_controller_impl.cc
++--- a/third_party/blink/renderer/core/exported/web_input_method_controller_impl.cc
+++++ b/third_party/blink/renderer/core/exported/web_input_method_controller_impl.cc
++@@ -6,9 +6,11 @@
++
++ #include <vector>
++
+++#include "base/functional/bind.h"
++ #include "third_party/blink/public/platform/web_string.h"
++ #include "third_party/blink/public/web/web_plugin.h"
++ #include "third_party/blink/public/web/web_range.h"
+++#include "third_party/blink/renderer/core/clipboard/system_clipboard.h"
++ #include "third_party/blink/renderer/core/dom/document.h"
++ #include "third_party/blink/renderer/core/editing/editing_utilities.h"
++ #include "third_party/blink/renderer/core/editing/editor.h"
++@@ -89,6 +91,61 @@
++   return result;
++ }
++
+++WebInputMethodController::NativeClipboardStateForTesting
+++WebInputMethodControllerImpl::GetNativeClipboardStateForTesting() const {
+++  auto* frame = GetFrame();
+++  if (!frame || !frame->GetDocument() || !frame->GetPage() ||
+++      frame->GetPage()->GetFocusController().FocusedFrame() != frame ||
+++      !frame->GetPage()->GetFocusController().IsFocused() ||
+++      IsEditContextActive() ||
+++      GetInputMethodController().TextInputType() == kWebTextInputTypePassword ||
+++      !frame->GetEditor().CanCopy()) {
+++    return {};
+++  }
+++  return {
+++      .available = true,
+++      .focus_generation = GetInputMethodController().NativeImeFocusGeneration(),
+++      .selection_generation = frame->Selection().NativeSelectionGeneration()};
+++}
+++
+++void WebInputMethodControllerImpl::CopyNativeClipboardForTesting(
+++    uint64_t focus,
+++    uint64_t selection,
+++    base::OnceCallback<void(NativeCopyResultForTesting)> callback) {
+++  const auto before = GetNativeClipboardStateForTesting();
+++  auto* frame = GetFrame();
+++  if (!before.available || before.focus_generation != focus ||
+++      before.selection_generation != selection ||
+++      !frame->GetSystemClipboard()->BeginRemoteCopy()) {
+++    std::move(callback).Run({});
+++    return;
+++  }
+++  Persistent<WebLocalFrameImpl> keep_web_frame(web_frame_);
+++  Persistent<LocalFrame> keep_frame(frame);
+++  Persistent<SystemClipboard> clipboard(frame->GetSystemClipboard());
+++  frame->GetEditor().ExecuteCommand("Copy");
+++  const auto after = GetNativeClipboardStateForTesting();
+++  const bool valid = after.available && after.focus_generation == focus &&
+++                     after.selection_generation == selection;
+++  clipboard->EndRemoteCopy(base::BindOnce(
+++      [](base::OnceCallback<void(NativeCopyResultForTesting)> done, bool valid,
+++         mojom::blink::RemoteCopyResultPtr captured) {
+++        NativeCopyResultForTesting result;
+++        result.dispatched = true;
+++        result.target_valid = valid;
+++        result.committed = captured->committed;
+++        result.unsupported = captured->unsupported;
+++        if (valid && !captured->unsupported && captured->committed) {
+++          result.has_text = captured->has_text;
+++          result.has_html = captured->has_html;
+++          result.text = captured->text;
+++          result.html = captured->html;
+++        }
+++        std::move(done).Run(std::move(result));
+++      },
+++      std::move(callback), valid));
+++}
+++
++ bool WebInputMethodControllerImpl::IsEditContextActive() const {
++   return GetInputMethodController().GetActiveEditContext();
++ }
++diff --git a/third_party/blink/renderer/core/exported/web_input_method_controller_impl.h b/third_party/blink/renderer/core/exported/web_input_method_controller_impl.h
++--- a/third_party/blink/renderer/core/exported/web_input_method_controller_impl.h
+++++ b/third_party/blink/renderer/core/exported/web_input_method_controller_impl.h
++@@ -36,6 +36,12 @@
++       delete;
++   ~WebInputMethodControllerImpl() override;
++
+++  NativeClipboardStateForTesting GetNativeClipboardStateForTesting()
+++      const override;
+++  void CopyNativeClipboardForTesting(
+++      uint64_t focus,
+++      uint64_t selection,
+++      base::OnceCallback<void(NativeCopyResultForTesting)> callback) override;
++   // WebInputMethodController overrides.
++   NativeImeStateForTesting GetNativeImeStateForTesting() const override;
++   NativeImeResultForTesting ApplyNativeImeForTesting(
++diff --git a/third_party/blink/renderer/core/testing/mock_clipboard_host.h b/third_party/blink/renderer/core/testing/mock_clipboard_host.h
++--- a/third_party/blink/renderer/core/testing/mock_clipboard_host.h
+++++ b/third_party/blink/renderer/core/testing/mock_clipboard_host.h
++@@ -19,6 +19,12 @@
++
++ class MockClipboardHost : public mojom::blink::ClipboardHost {
++  public:
+++  void BeginRemoteCopy(BeginRemoteCopyCallback callback) override {
+++    std::move(callback).Run(false);
+++  }
+++  void EndRemoteCopy(EndRemoteCopyCallback callback) override {
+++    std::move(callback).Run(mojom::blink::RemoteCopyResult::New());
+++  }
++   MockClipboardHost();
++   MockClipboardHost(const MockClipboardHost&) = delete;
++   MockClipboardHost& operator=(const MockClipboardHost&) = delete;
+diff --git a/shell/browser/api/electron_api_web_frame_main.cc b/shell/browser/api/electron_api_web_frame_main.cc
+--- a/shell/browser/api/electron_api_web_frame_main.cc
++++ b/shell/browser/api/electron_api_web_frame_main.cc
+@@ -286,6 +286,66 @@
+     return false;
+   }
+   return true;
++}
++
++v8::Local<v8::Promise> WebFrameMain::GetNativeClipboardContextForTesting(
++    v8::Isolate* isolate) {
++  gin_helper::Promise<base::Value> promise(isolate);
++  auto handle = promise.GetHandle();
++  if (!HasRenderFrame() || Detached()) {
++    promise.RejectWithErrorMessage("Copy frame unavailable");
++    return handle;
++  }
++  GetRendererApi()->GetNativeClipboardContextForTesting(
++      mojo::WrapCallbackWithDefaultInvokeIfNotRun(
++          base::BindOnce(
++              [](gin_helper::Promise<base::Value> promise,
++                 mojom::NativeClipboardContextPtr context) {
++                if (!context) {
++                  promise.RejectWithErrorMessage("Copy renderer disconnected");
++                  return;
++                }
++                base::DictValue value;
++                value.Set("available", context->available);
++                value.Set("token", context->token);
++                promise.Resolve(base::Value(std::move(value)));
++              },
++              std::move(promise)),
++          mojom::NativeClipboardContextPtr()));
++  return handle;
++}
++
++v8::Local<v8::Promise> WebFrameMain::CopyNativeClipboardForTesting(
++    v8::Isolate* isolate,
++    const std::string& token) {
++  gin_helper::Promise<base::Value> promise(isolate);
++  auto handle = promise.GetHandle();
++  if (!HasRenderFrame() || Detached() || token.empty() || token.size() > 128) {
++    promise.RejectWithErrorMessage("Copy context unavailable");
++    return handle;
++  }
++  GetRendererApi()->CopyNativeClipboardForTesting(
++      token, mojo::WrapCallbackWithDefaultInvokeIfNotRun(
++                 base::BindOnce(
++                     [](gin_helper::Promise<base::Value> promise,
++                        mojom::NativeCopyResultPtr result) {
++                       if (!result) {
++                         promise.RejectWithErrorMessage(
++                             "Copy renderer disconnected; result unknown");
++                         return;
++                       }
++                       base::DictValue value;
++                       value.Set("status", result->status);
++                       value.Set("dispatched", result->dispatched);
++                       if (result->has_text)
++                         value.Set("text", base::UTF16ToUTF8(result->text));
++                       if (result->has_html)
++                         value.Set("html", base::UTF16ToUTF8(result->html));
++                       promise.Resolve(base::Value(std::move(value)));
++                     },
++                     std::move(promise)),
++                 mojom::NativeCopyResultPtr()));
++  return handle;
+ }
+
+ v8::Local<v8::Promise> WebFrameMain::GetNativeImeContextForTesting(
+@@ -799,6 +859,10 @@
+ void WebFrameMain::FillObjectTemplate(v8::Isolate* isolate,
+                                       v8::Local<v8::ObjectTemplate> templ) {
+   gin_helper::ObjectTemplateBuilder(isolate, templ)
++      .SetMethod("getNativeClipboardContextForTesting",
++                 &WebFrameMain::GetNativeClipboardContextForTesting)
++      .SetMethod("copyNativeClipboardForTesting",
++                 &WebFrameMain::CopyNativeClipboardForTesting)
+       .SetMethod("getNativeImeContextForTesting",
+                  &WebFrameMain::GetNativeImeContextForTesting)
+       .SetMethod("applyNativeImeForTesting",
+diff --git a/shell/browser/api/electron_api_web_frame_main.h b/shell/browser/api/electron_api_web_frame_main.h
+--- a/shell/browser/api/electron_api_web_frame_main.h
++++ b/shell/browser/api/electron_api_web_frame_main.h
+@@ -132,6 +132,10 @@
+                    v8::Local<v8::Value> message_value,
+                    std::optional<v8::Local<v8::Value>> transfer);
+
++  v8::Local<v8::Promise> GetNativeClipboardContextForTesting(v8::Isolate*);
++  v8::Local<v8::Promise> CopyNativeClipboardForTesting(
++      v8::Isolate*,
++      const std::string& token);
+   v8::Local<v8::Promise> GetNativeImeContextForTesting(v8::Isolate*);
+   v8::Local<v8::Promise> ApplyNativeImeForTesting(v8::Isolate*,
+                                                   const base::DictValue&);
+diff --git a/shell/browser/electron_browser_client.cc b/shell/browser/electron_browser_client.cc
+--- a/shell/browser/electron_browser_client.cc
++++ b/shell/browser/electron_browser_client.cc
+@@ -245,6 +245,11 @@
+
+ namespace electron {
+
++bool ElectronBrowserClient::IsRemoteClipboard(content::RenderFrameHost*) {
++  return base::CommandLine::ForCurrentProcess()->HasSwitch(
++      "opencraft-remote-clipboard");
++}
++
+ namespace {
+
+ // A GPU cache directory under sessionData, or empty when that path is not
+diff --git a/shell/browser/electron_browser_client.h b/shell/browser/electron_browser_client.h
+--- a/shell/browser/electron_browser_client.h
++++ b/shell/browser/electron_browser_client.h
+@@ -53,6 +53,7 @@
+ class ElectronBrowserClient : public content::ContentBrowserClient,
+                               private content::RenderProcessHostObserver {
+  public:
++  bool IsRemoteClipboard(content::RenderFrameHost*) override;
+   static ElectronBrowserClient* Get();
+   static void SetApplicationLocale(const std::string& locale);
+
+diff --git a/shell/browser/native_window.cc b/shell/browser/native_window.cc
+--- a/shell/browser/native_window.cc
++++ b/shell/browser/native_window.cc
+@@ -80,6 +80,8 @@
+ }  // namespace gin
+
+ namespace electron {
++
++int32_t NativeWindow::next_id_ = 0;
+
+ namespace {
+ // Check if display is fake (default display ID) or has invalid dimensions
+diff --git a/shell/browser/native_window.h b/shell/browser/native_window.h
+--- a/shell/browser/native_window.h
++++ b/shell/browser/native_window.h
+@@ -526,7 +526,7 @@
+
+   std::unique_ptr<views::Widget> widget_ = std::make_unique<views::Widget>();
+
+-  static inline int32_t next_id_ = 0;
++  static int32_t next_id_;
+   const int32_t window_id_ = ++next_id_;
+
+   // ID of the api::BaseWindow that owns this NativeWindow.
+diff --git a/shell/common/api/api.mojom b/shell/common/api/api.mojom
+--- a/shell/common/api/api.mojom
++++ b/shell/common/api/api.mojom
+@@ -73,7 +73,23 @@
+   NativeImeContext context;
+ };
+
++struct NativeClipboardContext {
++  bool available;
++  string token;
++};
++struct NativeCopyResult {
++  string status;
++  bool dispatched;
++  bool has_text;
++  bool has_html;
++  mojo_base.mojom.String16 text;
++  mojo_base.mojom.String16 html;
++};
++
+ interface ElectronRenderer {
++  GetNativeClipboardContextForTesting() => (NativeClipboardContext context);
++  CopyNativeClipboardForTesting(string token) => (NativeCopyResult result);
++
+   GetNativeImeContextForTesting() => (NativeImeContext context);
+   ApplyNativeImeForTesting(NativeImeOperation operation) => (NativeImeResult result);
+
+diff --git a/shell/renderer/electron_api_service_impl.cc b/shell/renderer/electron_api_service_impl.cc
+--- a/shell/renderer/electron_api_service_impl.cc
++++ b/shell/renderer/electron_api_service_impl.cc
+@@ -126,6 +126,90 @@
+     receiver_.set_disconnect_handler(base::BindOnce(
+         &ElectronApiServiceImpl::OnConnectionError, GetWeakPtr()));
+   }
++}
++
++void ElectronApiServiceImpl::GetNativeClipboardContextForTesting(
++    GetNativeClipboardContextForTestingCallback callback) {
++  auto result = mojom::NativeClipboardContext::New();
++  native_clipboard_token_.clear();
++  auto* frame = render_frame()->GetWebFrame();
++  if (!native_copy_busy_ && frame && frame->View() &&
++      frame->View()->FocusedFrame() == frame) {
++    auto* input = frame->GetInputMethodController();
++    const auto state = input->GetNativeClipboardStateForTesting();
++    if (state.available) {
++      native_clipboard_document_ = frame->GetDocument().Token().ToString();
++      native_clipboard_focus_ = state.focus_generation;
++      native_clipboard_selection_ = state.selection_generation;
++      result->available = true;
++      result->token = native_clipboard_token_ =
++          base::UnguessableToken::Create().ToString();
++    }
++  }
++  std::move(callback).Run(std::move(result));
++}
++
++void ElectronApiServiceImpl::CopyNativeClipboardForTesting(
++    const std::string& token,
++    CopyNativeClipboardForTestingCallback callback) {
++  auto result = mojom::NativeCopyResult::New();
++  result->status = "stale-context";
++  auto* frame = render_frame()->GetWebFrame();
++  const bool valid =
++      !native_copy_busy_ && !token.empty() && token.size() <= 128 &&
++      token == native_clipboard_token_ && frame && frame->View() &&
++      frame->View()->FocusedFrame() == frame &&
++      native_clipboard_document_ == frame->GetDocument().Token().ToString();
++  native_clipboard_token_.clear();
++  if (!valid) {
++    std::move(callback).Run(std::move(result));
++    return;
++  }
++  native_copy_busy_ = true;
++  const auto document = native_clipboard_document_;
++  const auto focus = native_clipboard_focus_;
++  const auto selection = native_clipboard_selection_;
++  frame->GetInputMethodController()->CopyNativeClipboardForTesting(
++      focus, selection,
++      base::BindOnce(
++          [](base::WeakPtr<ElectronApiServiceImpl> self, std::string document,
++             uint64_t focus, uint64_t selection,
++             CopyNativeClipboardForTestingCallback done,
++             blink::WebInputMethodController::NativeCopyResultForTesting
++                 captured) {
++            auto result = mojom::NativeCopyResult::New();
++            result->dispatched = captured.dispatched;
++            result->status = "stale-context";
++            if (self) {
++              self->native_copy_busy_ = false;
++              auto* frame = self->render_frame()->GetWebFrame();
++              const auto state = frame
++                                     ? frame->GetInputMethodController()
++                                           ->GetNativeClipboardStateForTesting()
++                                     : blink::WebInputMethodController::
++                                           NativeClipboardStateForTesting{};
++              const bool valid =
++                  frame && captured.target_valid && state.available &&
++                  frame->GetDocument().Token().ToString() == document &&
++                  state.focus_generation == focus &&
++                  state.selection_generation == selection;
++              if (valid) {
++                result->status = captured.unsupported ? "unsupported-format"
++                                 : !captured.committed || (!captured.has_text &&
++                                                           !captured.has_html)
++                                     ? "no-data"
++                                     : "ok";
++                if (result->status == "ok") {
++                  result->has_text = captured.has_text;
++                  result->has_html = captured.has_html;
++                  result->text = captured.text.Utf16();
++                  result->html = captured.html.Utf16();
++                }
++              }
++            }
++            std::move(done).Run(std::move(result));
++          },
++          GetWeakPtr(), document, focus, selection, std::move(callback)));
+ }
+
+ mojom::NativeImeContextPtr ElectronApiServiceImpl::CaptureNativeImeContext() {
+diff --git a/shell/renderer/electron_api_service_impl.h b/shell/renderer/electron_api_service_impl.h
+--- a/shell/renderer/electron_api_service_impl.h
++++ b/shell/renderer/electron_api_service_impl.h
+@@ -41,6 +41,17 @@
+   void BindTo(mojo::PendingReceiver<mojom::ElectronRenderer> receiver);
+   void BindFrameStartupReceiver(
+       mojo::PendingAssociatedReceiver<mojom::ElectronFrameStartup> receiver);
++
++  void GetNativeClipboardContextForTesting(
++      GetNativeClipboardContextForTestingCallback) override;
++  void CopyNativeClipboardForTesting(
++      const std::string& token,
++      CopyNativeClipboardForTestingCallback) override;
++  std::string native_clipboard_token_;
++  std::string native_clipboard_document_;
++  uint64_t native_clipboard_focus_ = 0;
++  uint64_t native_clipboard_selection_ = 0;
++  bool native_copy_busy_ = false;
+
+   // mojom::ElectronRenderer
+   void GetNativeImeContextForTesting(

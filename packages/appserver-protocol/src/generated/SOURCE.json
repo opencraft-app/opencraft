@@ -1,0 +1,4 @@
+{
+  "generator": "codex-cli 0.156.1",
+  "command": "codex app-server generate-ts --experimental"
+}

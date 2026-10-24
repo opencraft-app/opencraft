@@ -1,0 +1,9 @@
+@forward "./typography-mixins.web";
+@use "./typography-mixins.web" as typography;
+@use "./typography/generated.web" as generated;
+
+// Semantic text utilities for owned JSX/CSS consumers (including plain CSS).
+// Layout utilities remain independent; no per-feature font utility scale.
+@each $name in generated.$typography-role-names {
+  .ui-text--#{$name} { @include typography.role($name, null); }
+}

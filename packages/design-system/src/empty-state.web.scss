@@ -1,0 +1,49 @@
+@use "./typography.web" as typography;
+
+// Compact panel feedback, shared geometry rather than feature-local pixels.
+@mixin compact {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  padding: calc(var(--spacing) * 8) calc(var(--spacing) * 4);
+  text-align: center;
+  user-select: none;
+
+  .ui-empty-state__content {
+    display: flex;
+    width: 100%;
+    max-width: calc(var(--spacing) * 72);
+    min-width: 0;
+    flex-direction: column;
+    align-items: center;
+    gap: calc(var(--spacing) * 3);
+  }
+  .ui-empty-state__icon {
+    display: flex;
+    // Only direct empty-state glyphs get the larger, secondary treatment.
+    // A wrapped progress primitive owns its own geometry and inherited tone.
+    > svg {
+      color: var(--color-text-secondary);
+      width: calc(var(--spacing) * 8);
+      height: calc(var(--spacing) * 8);
+    }
+  }
+  .ui-empty-state__copy {
+    display: flex;
+    width: 100%;
+    min-width: 0;
+    flex-direction: column;
+    gap: var(--gap-control-group);
+    overflow-wrap: anywhere;
+  }
+  .ui-empty-state__title { @include typography.role(panel-empty-title, primary); margin: 0; }
+  .ui-empty-state__description { @include typography.role(body, secondary); margin: 0; }
+  .ui-empty-state__actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: var(--gap-control-group);
+  }
+}

@@ -1,0 +1,50 @@
+@use "@opencraft/design-system/typography-mixins.web" as typography;
+
+.im-sources {
+  display: grid;
+  gap: calc(var(--spacing) * 4);
+  min-width: 0;
+  padding-block: calc(var(--spacing) * 5);
+  overflow-wrap: anywhere;
+
+  p { margin: 0; }
+  &__intro { @include typography.role(body, secondary); }
+  &__help { @include typography.role(metadata, secondary); }
+
+  &__records {
+    min-width: 0;
+    .settings-control-notice { margin: 0; }
+  }
+
+  &__empty {
+    display: grid;
+    justify-items: center;
+    gap: calc(var(--spacing) * 2);
+    padding: calc(var(--spacing) * 7) calc(var(--spacing) * 4);
+    text-align: center;
+    strong { @include typography.role(empty-title); }
+    p { max-width: 36ch; @include typography.role(metadata, secondary); }
+  }
+
+  &__advanced {
+    border-top: 1px solid var(--color-border-subtle);
+    padding-top: calc(var(--spacing) * 3);
+    @include typography.role(metadata, secondary);
+    summary {
+      cursor: pointer;
+      padding-block: calc(var(--spacing) * 2);
+      @include typography.role(control, secondary);
+    }
+    p { margin-top: calc(var(--spacing) * 3); }
+    pre {
+      @include typography.role(code);
+      color: var(--color-text-secondary);
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      background: var(--color-background-panel);
+      border-radius: var(--radius-sm);
+      padding: calc(var(--spacing) * 3);
+      user-select: all;
+    }
+  }
+}

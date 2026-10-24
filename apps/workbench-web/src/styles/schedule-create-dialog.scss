@@ -1,0 +1,23 @@
+@use "@opencraft/design-system/typography.web" as typography;
+.schedule-create {
+  display: grid;
+  gap: calc(var(--spacing) * 4);
+  min-width: 0;
+  &__fields { display: grid; gap: calc(var(--spacing) * 4); min-width: 0; padding: 0; margin: 0; border: 0; }
+  &__fields > label { display: grid; gap: calc(var(--spacing) * 2); min-width: 0; @include typography.role(body); }
+  fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+  legend { @include typography.role(body); padding: 0; margin-bottom: calc(var(--spacing) * 2); }
+  textarea { resize: vertical; min-height: 6em; }
+  input, select, textarea { min-width: 0; max-width: 100%; }
+  &__frequency, &__days { display: flex; flex-wrap: wrap; gap: calc(var(--spacing) * 2); }
+  &__days label { display: inline-flex; align-items: center; min-height: var(--size-control-hit-min); gap: var(--spacing); @include typography.role(body); }
+  &__times { display: grid; gap: calc(var(--spacing) * 2); > div { display: flex; gap: calc(var(--spacing) * 2); } }
+  &__row { display: flex; gap: calc(var(--spacing) * 3); > label { display: grid; flex: 1; gap: calc(var(--spacing) * 2); min-width: 0; } }
+  &__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: calc(var(--spacing) * 2); }
+  &__skills { display: grid; gap: calc(var(--spacing) * 2); max-height: 12em; overflow: auto; > label { display: flex; gap: calc(var(--spacing) * 2); overflow-wrap: anywhere; @include typography.role(body); } }
+  summary { cursor: pointer; @include typography.role(body); min-height: var(--size-control-hit-min); }
+}
+.scheduled-tasks-page__header {
+  flex-wrap: wrap;
+  > :first-child { flex-basis: 20rem; }
+}

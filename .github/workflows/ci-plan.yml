@@ -1,0 +1,58 @@
+name: Select CI work
+
+on:
+  workflow_call:
+    inputs:
+      full-matrix:
+        type: boolean
+        default: false
+    outputs:
+      targets:
+        value: ${{ jobs.plan.outputs.targets }}
+      audits:
+        value: ${{ jobs.plan.outputs.audits }}
+      has-builds:
+        value: ${{ jobs.plan.outputs.has-builds }}
+      has-audits:
+        value: ${{ jobs.plan.outputs.has-audits }}
+      managed-web:
+        value: ${{ jobs.plan.outputs.managed-web }}
+      native:
+        value: ${{ jobs.plan.outputs.native }}
+      extensions:
+        value: ${{ jobs.plan.outputs.extensions }}
+      headless-tests:
+        value: ${{ jobs.plan.outputs.headless-tests }}
+      headless-package:
+        value: ${{ jobs.plan.outputs.headless-package }}
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      targets: ${{ steps.select.outputs.targets }}
+      audits: ${{ steps.select.outputs.audits }}
+      has-builds: ${{ steps.select.outputs.has-builds }}
+      has-audits: ${{ steps.select.outputs.has-audits }}
+      managed-web: ${{ steps.select.outputs.managed-web }}
+      native: ${{ steps.select.outputs.native }}
+      extensions: ${{ steps.select.outputs.extensions }}
+      headless-tests: ${{ steps.select.outputs.headless-tests }}
+      headless-package: ${{ steps.select.outputs.headless-package }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - run: node --test tests/tooling/ci-plan.test.mjs tests/tooling/ci-workflows.test.mjs
+      - id: select
+        env:
+          CI_FULL_MATRIX: ${{ inputs.full-matrix }}
+        run: node scripts/ci-plan.mjs

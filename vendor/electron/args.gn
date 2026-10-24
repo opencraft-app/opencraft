@@ -1,0 +1,4 @@
+import("//electron/build/args/testing.gn")
+
+use_remoteexec = false
+use_siso = false

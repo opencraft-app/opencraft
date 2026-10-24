@@ -1,0 +1,32 @@
+{
+  "name": "@opencraft/opencraft-daemon",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/main.cjs",
+  "scripts": {
+    "build": "esbuild src/bin.ts --bundle --platform=node --format=cjs --external:node-pty --outfile=dist/main.cjs",
+    "start": "tsx src/bin.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@opencraft/plugin-tasks": "0.1.0",
+    "@opencraft/account-pool-host": "0.1.0",
+    "@opencraft/app-host-server": "0.1.0",
+    "@opencraft/app-host-protocol": "0.1.0",
+    "@opencraft/appserver-client": "0.1.0",
+    "@opencraft/appserver-protocol": "0.1.0",
+    "@opencraft/appserver-transport-websocket": "0.1.0",
+    "@opencraft/daemon-ipc": "0.1.0",
+    "@opencraft/local-agent-host": "0.1.0",
+    "ws": "^8.22.0",
+    "@opencraft/sqlite-node": "0.1.0",
+    "@opencraft/host-schedules": "0.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "@types/ws": "^8.18.2",
+    "esbuild": "0.28.2",
+    "typescript": "^5.9.3"
+  }
+}

@@ -1,0 +1,28 @@
+name: Electron fork source
+
+on:
+  pull_request:
+    paths:
+      - vendor/electron/**
+      - .github/workflows/electron-fork.yml
+  push:
+    branches: [main]
+    paths:
+      - vendor/electron/**
+      - .github/workflows/electron-fork.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: python3 -m unittest discover -s vendor/electron/tests -v
+      - run: python3 vendor/electron/manage.py checkout
+      - run: python3 vendor/electron/manage.py verify

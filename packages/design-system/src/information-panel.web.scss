@@ -1,0 +1,73 @@
+@use "./typography.web" as typography;
+
+.information-panel {
+  width: 100%;
+  min-width: 0;
+  padding: 20px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+
+  h2 {
+    @include typography.role(panel-title);
+    margin: 0 0 12px;
+    padding-inline-end: 44px;
+  }
+}
+
+.information-panel__rows { margin: 0; }
+.information-panel__row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 20px;
+  min-height: 48px;
+  padding-block: 10px;
+  & + & { border-top: 1px solid var(--color-border-subtle); }
+
+  dt {
+    @include typography.role(body);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding-block: 4px;
+    color: var(--color-text-secondary);
+    > span { display: flex; }
+    svg { width: 18px; height: 18px; }
+  }
+  dd {
+    @include typography.role(body);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 4px;
+    min-width: 0;
+    margin: 0;
+    padding-block: 4px;
+    text-align: end;
+  }
+  dd[data-monospace] > .information-panel__value { @include typography.role(code); }
+  .information-panel__value { min-width: 0; overflow-wrap: anywhere; user-select: text; }
+  dd:has(.settings-copy-control) { padding-block: 0; }
+  dd:has(.settings-copy-control) > .information-panel__value { flex: 1; }
+  .settings-copy-control { display: contents; }
+  .settings-copy-control__icon-button.settings-control-button {
+    width: 36px;
+    min-height: 36px;
+    height: 36px;
+    flex: 0 0 36px;
+    padding: 0;
+    svg { width: 16px; height: 16px; }
+  }
+  .settings-copy-control__status {
+    @include typography.role(metadata);
+    flex-basis: 100%;
+    color: var(--color-text-secondary);
+    overflow-wrap: anywhere;
+    &:empty { display: none; }
+  }
+}
+
+@media (pointer: coarse) {
+  .information-panel__row .settings-copy-control__icon-button.settings-control-button { width: 44px; min-height: 44px; height: 44px; flex-basis: 44px; }
+}

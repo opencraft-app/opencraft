@@ -1,0 +1,8 @@
+{
+  "extends": "../apps/workbench-web/tsconfig.json",
+  "compilerOptions": {
+    "composite": false,
+    "lib": ["ESNext", "DOM", "DOM.Iterable"]
+  },
+  "include": ["../apps/workbench-web/src", "../plugins/*/src"]
+}

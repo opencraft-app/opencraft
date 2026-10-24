@@ -1,0 +1,28 @@
+@use "@opencraft/design-system/interaction-mixins.web" as controls;
+
+.bot-management {
+  width: 100%; height: 100%; min-height: 0; overflow: auto;
+  color: var(--color-text); background: var(--color-background-surface);
+  .settings-panel { max-width: 960px; margin-inline: auto; }
+  .settings-panel__header h2 { text-wrap: balance; }
+  p { text-wrap: pretty; }
+  &__list { list-style: none; padding: 0; margin: 0; }
+  &__row { display: flex; align-items: center; justify-content: space-between; gap: var(--gap-control-group); padding-block: var(--gap-control-group); border-bottom: 1px solid var(--color-border-subtle); }
+  &__row > button:first-child { min-width: 0; flex: 1; justify-content: flex-start; }
+  &__row > button:first-child span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  &__empty { color: var(--color-text-secondary); padding-block: calc(var(--gap-control-group) * 2); }
+  &__loading { padding-block: calc(var(--gap-control-group) * 2); color: var(--color-text-secondary); }
+  &__loading-line { display: block; width: min(280px, 70%); height: 12px; border-radius: var(--radius-control); background: var(--color-background-primary-ghost-hover); }
+  &__group-form { display: grid; gap: var(--gap-control-group); }
+  &__group-form fieldset { display: grid; gap: 4px; margin: 0; padding: 0; border: 0; }
+  &__group-form legend { margin-block-end: 4px; color: var(--color-text-secondary); font: var(--typography-control-compact-font); letter-spacing: var(--typography-control-compact-tracking); }
+  &__group-member { display: flex; min-height: 36px; align-items: center; gap: 8px; border-radius: var(--radius-control); padding-inline: 8px; }
+  @include controls.hover-capable {
+    &__group-member:hover { background: var(--color-background-primary-ghost-hover); }
+  }
+  &__configuration-status { display: grid; width: 28px; height: 28px; flex: 0 0 28px; place-items: center; color: var(--color-icon-secondary); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bot-management__configuration-status .is-spinning { animation: none; }
+}

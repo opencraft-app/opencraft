@@ -1,0 +1,41 @@
+From: OpenCraft <dev@opencraft.app>
+Subject: Explicitly link the dynamically loaded GTK component
+
+diff --git a/BUILD.gn b/BUILD.gn
+--- a/BUILD.gn
++++ b/BUILD.gn
+@@ -761,6 +761,7 @@
+       "//ui/base/ime/linux",
+       "//ui/events/devices/x11",
+       "//ui/events/platform/x11",
++      "//ui/gtk:gtk",
+       "//ui/gtk:gtk_config",
+       "//ui/linux:display_server_utils",
+       "//ui/linux:linux_ui",
+diff --git a/patches/chromium/.patches b/patches/chromium/.patches
+--- a/patches/chromium/.patches
++++ b/patches/chromium/.patches
+@@ -259,3 +259,4 @@
+ fix_component_pulseaudio_embedder_boundary.patch
+ fix_gtk_dialog_dynamic_symbols.patch
+ fix_electron_component_exports.patch
++fix_electron_gtk_component_dependency.patch
+diff --git a/patches/chromium/fix_electron_gtk_component_dependency.patch b/patches/chromium/fix_electron_gtk_component_dependency.patch
+new file mode 100644
+--- /dev/null
++++ b/patches/chromium/fix_electron_gtk_component_dependency.patch
+@@ -0,0 +1,14 @@
++From: OpenCraft <dev@opencraft.app>
++Subject: Allow the Electron consumer of exported GTK component APIs
++
++diff --git a/ui/gtk/BUILD.gn b/ui/gtk/BUILD.gn
++--- a/ui/gtk/BUILD.gn
+++++ b/ui/gtk/BUILD.gn
++@@ -78,6 +78,7 @@
++
++ component("gtk") {
++   visibility = [
+++    "//electron:electron_lib",
++     ":gtk_unittests",
++     "//ui/linux:linux_ui_factory",
++   ]

@@ -1,0 +1,15 @@
+{
+  "name": "@opencraft/identity-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./node": "./src/node.ts",
+    "./actors": "./src/actors.ts",
+    "./local-account": "./src/local-account.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
+}

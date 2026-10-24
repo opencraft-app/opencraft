@@ -1,0 +1,15 @@
+{
+  "production": {
+    "displayName": "OpenCraft",
+    "profileDirectoryName": "OpenCraft",
+    "legacyProfileDirectoryNames": [],
+    "applicationId": "dev.opencraft.workbench",
+    "speechHelperId": "dev.opencraft.workbench.speech"
+  },
+  "preview": {
+    "displayName": "OpenCraft Preview",
+    "profileDirectoryName": "OpenCraft Preview",
+    "legacyProfileDirectoryNames": [],
+    "applicationId": "dev.opencraft.workbench.preview"
+  }
+}

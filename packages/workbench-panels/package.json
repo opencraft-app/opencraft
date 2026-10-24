@@ -1,0 +1,16 @@
+{
+  "name": "@opencraft/workbench-panels",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./host-presentation": "./src/host-presentation.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@deepseek-ai/cordis": "4.0.4"
+  }
+}

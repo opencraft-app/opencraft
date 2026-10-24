@@ -1,0 +1,321 @@
+@use "@opencraft/design-system/interaction-mixins.web" as controls;
+
+// Width/height transitions are local to this surface; Shell owns pane motion.
+.thread-composer-overlay-host,
+.thread-composer-reveal-host {
+  position: absolute;
+  inset: 0;
+  z-index: var(--layer-workspace-composer);
+  pointer-events: none;
+  // Clipping is not scrolling: focus/selection must not move this viewport.
+  overflow: clip;
+  // Browser guests live outside the Shell's stacking context.
+  &[data-anchor="viewport"] {
+    position: fixed;
+    inset: auto;
+  }
+}
+.thread-composer-overlay-host {
+  container: composer-overlay / size;
+}
+.thread-composer-overlay {
+  pointer-events: none;
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  transition: opacity var(--transition-duration-basic) var(--ease-enter-snappy),
+    transform var(--transition-duration-basic) var(--ease-enter-snappy);
+  &[data-transition-state="exiting"][data-composer-peeked="false"],
+  &[data-transition-state="hidden"][data-composer-peeked="false"] {
+    opacity: 0;
+  }
+  .thread-composer-region {
+    padding: 0;
+  }
+}
+.thread-composer-overlay__padding {
+  margin-inline: auto;
+  width: 100%;
+  max-width: var(--thread-content-max-width, 48rem);
+  padding: 0 calc(var(--spacing) * 4)
+    max(calc(var(--spacing) * 8), env(safe-area-inset-bottom));
+  box-sizing: border-box;
+}
+.thread-composer-overlay__content {
+  position: relative;
+  isolation: isolate;
+  margin-inline: auto;
+  width: 100%;
+  max-width: 100%;
+  pointer-events: auto;
+  &[data-animate="true"] {
+    transition: max-width var(--transition-duration-basic)
+        var(--ease-enter-snappy),
+      opacity var(--transition-duration-basic) var(--ease-enter-snappy);
+  }
+  &[data-density="compact"],
+  &[data-peeked="true"] {
+    max-width: 14rem;
+  }
+  &[data-peeked="true"] {
+    opacity: 0;
+    pointer-events: none;
+  }
+}
+.thread-composer-overlay__interactive {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+}
+.thread-composer-overlay__editor-slot {
+  position: relative;
+  z-index: 1;
+}
+.thread-composer-overlay__latest {
+  position: absolute;
+  inset-inline: calc(var(--spacing) * 10);
+  bottom: 100%;
+  z-index: 0;
+  margin-bottom: calc(var(--spacing) * -3);
+  padding-bottom: calc(var(--spacing) * 3);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: calc(var(--spacing) * 4);
+  background: var(--color-background-elevated-primary-opaque);
+  box-shadow: var(--opencraft-main-surface-elevation);
+  transition: opacity var(--transition-duration-basic) var(--ease-enter-snappy),
+    translate var(--transition-duration-basic) var(--ease-enter-snappy);
+  &[data-visible="false"] {
+    pointer-events: none;
+    translate: 0 100%;
+    opacity: 0;
+    transition-delay: 75ms;
+  }
+}
+.thread-composer-overlay__summary {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--spacing) * 2);
+  width: 100%;
+  padding: calc(var(--spacing) * 2) calc(var(--spacing) * 3);
+  border-radius: inherit;
+  color: var(--color-text-secondary);
+  background: transparent;
+  border: 0;
+  font: inherit;
+  text-align: start;
+  span {
+    flex: 1;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  svg {
+    transition: rotate var(--transition-duration-basic);
+  }
+  &[aria-expanded="true"] svg {
+    rotate: 180deg;
+  }
+}
+.thread-composer-overlay__response-motion {
+  overflow: hidden;
+}
+.thread-composer-overlay__response {
+  // A compact reply is an independent reading surface, even when its ancestor
+  // conversation has wide-block space available.
+  container: latest-turn-preview / inline-size;
+  --chat-wide-content-available-width: 100%;
+  --wide-block-panel-max-width: 100%;
+  max-height: min(22.5rem, 40vh, var(--right-panel-composer-preview-max-height, 22.5rem));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 calc(var(--spacing) * 3) calc(var(--spacing) * 3);
+  .thread-turn {
+    gap: 0;
+  }
+}
+.thread-composer-overlay__hide,
+.thread-composer-overlay__reveal {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  padding: 0;
+  color: var(--color-text-secondary);
+  background: var(--color-background-elevated-primary-opaque);
+  box-shadow: var(--opencraft-main-surface-elevation);
+  cursor: pointer;
+  transition: color var(--transition-duration-basic),
+    scale var(--transition-duration-basic),
+    translate var(--transition-duration-basic) var(--ease-enter-snappy);
+  &:active {
+    scale: 0.95;
+  }
+}
+.thread-composer-overlay__hide {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  z-index: 0;
+  margin-top: calc(var(--spacing) * 0.5);
+  width: calc(var(--spacing) * 8);
+  height: calc(var(--spacing) * 3);
+  border-radius: 999px;
+  translate: -50% calc(var(--spacing) * -4);
+  pointer-events: none;
+  &::before {
+    content: "";
+    position: absolute;
+    inset-inline: calc(var(--spacing) * -2);
+    top: calc(var(--spacing) * -1);
+    height: calc(var(--spacing) * 8);
+  }
+  @include controls.hover-capable {
+    &:hover {
+      scale: 1.05;
+      color: var(--color-text);
+    }
+  }
+}
+.thread-composer-overlay__content:focus-within .thread-composer-overlay__hide,
+.thread-composer-overlay__hide:focus-visible {
+  translate: -50% 0;
+  pointer-events: auto;
+}
+@include controls.hover-capable {
+  .thread-composer-overlay__content:not([data-peeked="true"]):hover
+    .thread-composer-overlay__hide {
+    translate: -50% 0;
+    pointer-events: auto;
+  }
+}
+@include controls.hover-capable {
+  .thread-composer-overlay__content:hover .thread-composer-overlay__hide {
+    transition-delay: 75ms;
+  }
+}
+.thread-composer-overlay__content:focus-within .thread-composer-overlay__hide {
+  transition-delay: 0ms;
+}
+.thread-composer-reveal-zone {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  height: calc(var(--spacing) * 12);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  overflow: hidden;
+  pointer-events: none;
+}
+.thread-composer-overlay__reveal {
+  position: relative;
+  height: calc(var(--spacing) * 7);
+  width: calc(var(--spacing) * 15);
+  border-radius: calc(var(--spacing) * 4) calc(var(--spacing) * 4) 0 0;
+  translate: 0 100%;
+  pointer-events: none;
+  &[data-visible="true"][data-active="true"],
+  &[data-visible="true"]:focus-visible {
+    translate: 0 0;
+    pointer-events: auto;
+  }
+  &:focus-visible {
+    height: calc(var(--spacing) * 8);
+  }
+  @include controls.hover-capable {
+    &:hover {
+      height: calc(var(--spacing) * 8);
+    }
+  }
+  svg {
+    opacity: 0.6;
+    transition: rotate var(--transition-duration-basic);
+  }
+  &:focus-visible svg {
+    rotate: 90deg;
+    opacity: 1;
+  }
+  @include controls.hover-capable {
+    &:hover svg {
+      rotate: 90deg;
+      opacity: 1;
+    }
+  }
+}
+.thread-composer-overlay button:focus-visible,
+.thread-composer-overlay__reveal:focus-visible {
+  outline: 2px solid var(--color-text);
+  outline-offset: -2px;
+}
+.thread-composer-overlay__content[data-density="compact"] {
+  .opencraft-composer-chrome-header,
+  .opencraft-composer-footer__controls,
+  .opencraft-composer-footer__end {
+    display: none;
+  }
+  .opencraft-composer-shell {
+    display: flex;
+    align-items: center;
+    min-height: calc(var(--spacing) * 12);
+  }
+  .opencraft-composer-input-row {
+    flex: 1;
+    min-width: 0;
+    padding: calc(var(--spacing) * 3);
+  }
+  .opencraft-composer-editor {
+    min-height: 0;
+    max-height: 1.5em;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+  .opencraft-composer-footer {
+    flex: 0 0 auto;
+    padding: 0 calc(var(--spacing) * 2) 0 0;
+  }
+}
+.thread-composer-overlay__content[data-expanding="true"] {
+  .opencraft-composer-footer__controls {
+    visibility: hidden;
+    pointer-events: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .thread-composer-overlay,
+  .thread-composer-overlay__content,
+  .thread-composer-overlay__latest,
+  .thread-composer-overlay__hide,
+  .thread-composer-overlay__reveal {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+.side-chat-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.side-chat-panel__notice {
+  color: var(--color-text-tertiary);
+  padding: var(--spacing) calc(var(--spacing) * 3);
+  font-size: var(--typography-metadata-size);
+}
+
+// Keyboard chrome already occupies the visual viewport's lower edge. Avoid
+// adding the Home-indicator padding again above a docked software keyboard.
+html[data-timeline-keyboard-open="true"] .thread-composer-overlay[data-presentation="default"] .thread-composer-overlay__padding {
+  padding-bottom: calc(var(--spacing) * 2);
+}
+:root[data-ui-density="touch"] .thread-composer-overlay[data-active-tab^="terminal:"] {
+  --color-background-composer-newera: var(--color-background-composer-terminal);
+}
+
+// A short landscape keyboard leaves too little space for history plus the
+// terminal. Keep the same editor and controls; its text remains scrollable.
+@container composer-overlay (max-height: 320px) {
+  :root[data-ui-density="touch"] .thread-composer-overlay[data-active-tab^="terminal:"] {
+    .thread-composer-overlay__latest { display: none; }
+    .opencraft-composer-editor { min-height: 1lh; max-height: 1lh; }
+  }
+}

@@ -1,0 +1,2467 @@
+import { serializeHistoryReply } from "@opencraft/appserver-client";
+import { nodeObserver } from "../../../packages/observability-contract/node.mjs";
+import { labelUsagePeople } from "./token-usage-people.js";
+import { TokenUsageStateDatabase } from "./token-usage-state-database.js";
+import { TokenUsageTelemetry } from "./token-usage-telemetry.js";
+import { TokenUsageQueryService } from "./token-usage-query-service.js";
+import { TokenUsageQueryError } from "./token-usage-query.js";
+import { COLLABORATION_METHOD, CONVERSATION_TOOLS } from "@opencraft/appserver-protocol/collaboration";
+import { ConversationSchedules, ScheduleFault, type ScheduleExecutionPort, type ScheduleExecutionEvent } from "./conversation-schedules.js";
+import { CONVERSATION_SCHEDULES, CONVERSATION_SCHEDULES_EXTENSION, type ConversationScheduleRun } from "@opencraft/appserver-protocol";
+import type { DatabaseOutcome } from "@opencraft/sqlite-node";
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
+import { existsSync } from "node:fs";
+import { mkdir } from "node:fs/promises";
+import { createInterface, type Interface as ReadLineInterface } from "node:readline";
+import { join } from "node:path";
+import { OpenCraftHostQueue, type HostQueuedSubmission } from "./opencraft-host-queue.js";
+import { OpenCraftHostStateDatabase } from "./opencraft-host-state-database.js";
+import { OpenCraftTokenUsageLedger, type UsageSubmission } from "./token-usage-ledger.js";
+import { CodexTokenUsageRuntime } from "./token-usage-runtime.js";
+import { CodexThreadTitles } from "./codex-thread-titles.js";
+import { DurableThreadCatalog } from "./durable-thread-catalog.js";
+import { ThreadIdentity, assertSubmissionIdentity, readThreadMessageIds } from "./thread-identity.js";
+import { projectThreadMessageResult, projectThreadMessageNotification } from "./thread-message-projection.js";
+import { OpenCraftMessageAttachments } from "./opencraft-message-attachments.js";
+import { CodexThreadPins } from "./codex-thread-pins.js";
+import { CodexCoreBridge } from "./codex-core-bridge.js";
+import { CodexNativeCoreTransport } from "./codex-native-core-transport.js";
+import { TasksService, TasksFault } from "@opencraft/plugin-tasks/server";
+import { CODEX_NATIVE_SHARED_METHODS, discoverNativeCodexGoalCapability, projectSharedNativeCodexInitialize } from "./codex-native-surface.js";
+import { projectThreadAttachmentNotification, projectThreadAttachmentResult } from "./thread-message-attachment-projection.js";
+
+import type { DuplexTransport, TransportStatus, TransportSubmissionContext } from "@opencraft/appserver-client/transport";
+import { LOGICAL_CLIENT_FIELD } from "@opencraft/app-host-protocol";
+import { LocalAttachmentStagingService } from "@opencraft/local-agent-host/attachments/local-staging";
+import { SshAttachmentStagingService, type SshAttachmentStorage } from "./ssh-attachment-staging.js";
+import type { LocalDesktopService, LocalDesktopOwner } from "@opencraft/local-agent-host/desktop";
+import { OPENCRAFT_DESKTOP_ATTACH, OPENCRAFT_DESKTOP_RELEASE, OPENCRAFT_DESKTOP_EXTENSION, type HostDesktopCapability } from "@opencraft/appserver-protocol/desktop";
+import {
+  OPENCRAFT_ATTACHMENT_STAGING_EXTENSION,
+  OPENCRAFT_METHOD_ACCESS_EXTENSION,
+  OPENCRAFT_FIRST_TURN_DURABILITY_CAPABILITY,
+  OPENCRAFT_THREAD_LIFECYCLE_EXTENSION,
+  OPENCRAFT_THREAD_PINS_EXTENSION,
+  OPENCRAFT_THREAD_PINS_CAPABILITY,
+  OPENCRAFT_THREAD_QUEUE_EXTENSION,
+  OPENCRAFT_THREAD_GOAL_EXTENSION,
+  OPENCRAFT_THREAD_START_DURABILITY_EXTENSION,
+  type OpenCraftThreadLifecycleCapability,
+  type OpenCraftThreadQueueCapability,
+  type OpenCraftThreadGoalCapability,
+  type CodexAccountView,
+  codexPermissionMode,
+  parsePermissionModeProfileId,
+  projectPermissionProfileCatalog,
+  OPENCRAFT_PERMISSION_MODES_CAPABILITY,
+  OPENCRAFT_PERMISSION_MODES_EXTENSION,
+  type OpenCraftPermissionProfile,
+  type AttachmentStagingCapability,
+  type AttachmentRef,
+} from "@opencraft/appserver-protocol";
+import {
+  AccountPoolStore,
+  CodexAccountPoolProxy,
+  AccountCredentialRefreshManager,
+  CodexDeviceLoginService,
+  CodexSubscriptionService,
+  createCodexAccountPoolLaunch,
+  createCodexMaintenanceClient,
+  createManagedCodexRefresh,
+  startCodexAccountPoolServer,
+  acquireCodexWriter,
+  type CodexMaintenanceClientFactory,
+} from "@opencraft/account-pool-host";
+
+type RpcRecord = Record<string, unknown>;
+
+interface PendingRequest {
+  usageAttemptId?: string;
+  readonly metadataSender?: import("@opencraft/appserver-protocol").MessageSender | null;
+  readonly clientId: string;
+  readonly clientEpoch: number;
+  readonly originalId: string | number;
+  readonly method: string;
+  readonly params: RpcRecord;
+  invalidated?: boolean;
+  timer?: ReturnType<typeof setTimeout>;
+}
+
+interface PendingServerRequest {
+  readonly message: RpcRecord;
+  readonly threadId: string;
+  ownerClientId: string | null;
+}
+
+const MAX_PENDING_SERVER_REQUESTS = 256;
+const CAPACITY_RETRY_BASE_MS = 1_000;
+const CAPACITY_RETRY_MAX_MS = 120_000;
+
+export function capacityRetryDelayMs(attempt: number): number {
+  return Math.min(CAPACITY_RETRY_BASE_MS * 2 ** Math.min(attempt, 7), CAPACITY_RETRY_MAX_MS);
+}
+
+interface CapacityRetry {
+  attempt: number;
+  failedTurnId: string;
+  timer: ReturnType<typeof setTimeout> | null;
+  inFlight: boolean;
+  autoTurnId: string | null;
+}
+
+interface SharedCodexRoutingOptions {
+  /** Trusted Host composition. Never accepted from renderer requests. */
+  readonly sessionMcp?: (threadId: string) => Record<string, unknown> | null | Promise<Record<string, unknown> | null>;
+  readonly observationComponent?: 'core' | 'gateway';
+  readonly tokenUsage?: {
+    readonly queryWorkerEntry?: string;
+    readonly serverId: string;
+    readonly actor: (context: NonNullable<TransportSubmissionContext["actorContext"]>) => {id:string;kind:"human"|"session"} | null;
+    readonly submission?: (threadId:string,inputId:string) => UsageSubmission | null;
+    readonly person?: (actorId:string) => {kind:string;displayName:string} | null;
+  };
+  readonly collaboration?: {
+    queuedContext?(threadId: string, inputId: string, input: readonly unknown[]): Promise<unknown>;
+    continued?(threadId: string, fromTurnId: string, turnId: string): void;
+    prepare?(context: NonNullable<TransportSubmissionContext["actorContext"]>, input: readonly unknown[]): Promise<unknown>;
+    command(context: NonNullable<TransportSubmissionContext["actorContext"]>, body: Record<string, unknown>): Promise<unknown>;
+    authorize(context: NonNullable<TransportSubmissionContext["actorContext"]>, threadId: string, inputId: string): void;
+    started(threadId: string, inputId: string, turnId: string): void;
+    tool(threadId: string, turnId: string, name: string, args: Record<string, unknown>): Promise<unknown>;
+  };
+  readonly onStorageOpened?: (outcomes: readonly { name: string; outcome: DatabaseOutcome }[]) => void;
+  readonly createThreadMetadata?: (database: import("node:sqlite").DatabaseSync, context: import("@opencraft/appserver-client").ThreadMetadataContext) => import("@opencraft/appserver-client").ThreadMetadataExtension;
+  readonly logDiagnostic?: (event: Record<string, unknown>) => void;
+  readonly nativeSubscriptionGraceMs?: number;
+  /** Trusted core authority for reserved collaboration inputs; absent means reject. */
+  readonly collaborationInput?: {
+    readonly available: () => boolean;
+    mode(clientUserMessageId: string): 'queue' | 'steer' | null;
+    authorize(threadId: string, clientUserMessageId: string, mode: 'queue' | 'steer', expectedTurnId?: string): boolean;
+  };
+}
+
+interface LocalCodexEngineOptions extends SharedCodexRoutingOptions {
+  readonly desktop?: LocalDesktopService;
+  readonly kind?: "local";
+  /** Explicit opt-in to the independently owned native core; never falls back to stdio. */
+  readonly coreEndpoint?: string;
+  readonly coreAuthToken?: string;
+  /** Headless owns downstream overlays while the independent core owns only native/accounts. */
+  readonly coreHostOverlays?: boolean;
+  /** Trusted in-process native transport decoration; never supplied by an RPC. */
+  readonly decorateNativeTransport?: (transport: DuplexTransport) => DuplexTransport;
+  /** Opt in before migrating a legacy embedded writer to independently owned core storage. */
+  readonly writerOwnership?: boolean;
+  readonly executable: string;
+  readonly runtimeDirectory: string;
+  readonly dataDirectory: string;
+  readonly nativeCodexHomeDirectory: string;
+  readonly upstreamBaseUrl?: string;
+  readonly fetch?: typeof fetch;
+  readonly createMaintenanceClient?: CodexMaintenanceClientFactory;
+  readonly spawnAppServer?: (input: { readonly args: readonly string[]; readonly cwd: string; readonly env: NodeJS.ProcessEnv }) => ChildProcessWithoutNullStreams;
+}
+
+export interface RemoteCodexEngineOptions extends SharedCodexRoutingOptions {
+  readonly kind: "remote";
+  readonly transport: DuplexTransport;
+  readonly attachments?: Omit<SshAttachmentStorage, "request">;
+  readonly attachmentHistoryDirectory?: string;
+}
+
+const SHARED_NATIVE_METHODS: ReadonlySet<string> = new Set(CODEX_NATIVE_SHARED_METHODS);
+
+function record(value: unknown): RpcRecord {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as RpcRecord : {};
+}
+
+function string(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function responseId(value: unknown): string | number | null {
+  return typeof value === "string" || typeof value === "number" ? value : null;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Codex account operation failed";
+}
+
+class OpenCraftQueueRpcError extends Error {
+  constructor(readonly code: number, message: string, readonly data?: unknown) { super(message); }
+}
+
+function withCodexHostCapabilities(value: unknown, attachmentStaging: AttachmentStagingCapability, desktop?: HostDesktopCapability, collaboration = false): RpcRecord {
+  const result = record(value);
+  const capabilities = record(result.capabilities);
+  const extensions = { ...record(capabilities.extensions) };
+  delete extensions[OPENCRAFT_DESKTOP_EXTENSION]; // This extension belongs to this Host, not native Codex.
+  return {
+    ...result,
+    capabilities: {
+      ...capabilities,
+      extensions: {
+        ...extensions,
+        ...(collaboration ? {"opencraft/collaboration": {version:1,read:true,queue:true,steer:true}} : {}),
+        [OPENCRAFT_THREAD_PINS_EXTENSION]: OPENCRAFT_THREAD_PINS_CAPABILITY,
+        [OPENCRAFT_ATTACHMENT_STAGING_EXTENSION]: attachmentStaging,
+        ...(desktop ? { [OPENCRAFT_DESKTOP_EXTENSION]: desktop } : {}),
+        [OPENCRAFT_THREAD_START_DURABILITY_EXTENSION]:
+          OPENCRAFT_FIRST_TURN_DURABILITY_CAPABILITY,
+        [OPENCRAFT_THREAD_LIFECYCLE_EXTENSION]: {
+          version: 1,
+          fork: true,
+          ephemeral: true,
+          injectItems: true,
+          rename: true,
+          archive: true,
+          unsubscribe: true,
+        } satisfies OpenCraftThreadLifecycleCapability,
+        [OPENCRAFT_THREAD_QUEUE_EXTENSION]: {
+          version: 2,
+          reorder: true,
+          atomicSteer: true,
+          unconfirmedSteerDiscard: true,
+          perItemPause: false,
+        } satisfies OpenCraftThreadQueueCapability,
+        [OPENCRAFT_THREAD_GOAL_EXTENSION]: { version: 1, read: true, write: true },
+        "opencraft/capacity-retry": { version: 1 },
+        [OPENCRAFT_PERMISSION_MODES_EXTENSION]: OPENCRAFT_PERMISSION_MODES_CAPABILITY,
+      },
+    },
+  };
+}
+
+export class CodexEngineAdapter implements DuplexTransport {
+  private readonly attachmentStaging: LocalAttachmentStagingService | SshAttachmentStagingService | null;
+  private remoteAttachmentsReady = false;
+  private readonly listeners = new Set<(frame: string) => void>();
+  private readonly statusListeners = new Set<(status: TransportStatus) => void>();
+  private readonly pending = new Map<string, PendingRequest>();
+  private readonly initializeWaiters: PendingRequest[] = [];
+  private readonly initializedClients = new Set<string>();
+  private readonly clientEpochs = new Map<string, number>();
+  private readonly threadClients = new Map<string, Set<string>>();
+  /** The one native stdio connection is not one subscription per logical Client. */
+  private readonly nativeSubscribedThreads = new Set<string>();
+  private readonly ephemeralThreads = new Set<string>();
+  private readonly nativeReleaseTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly nativeReleases = new Map<string, Promise<void>>();
+  private readonly threadInteractionOwners = new Map<string, string>();
+  private readonly collaborationCalls = new Map<string, symbol>();
+  private readonly serverRequests = new Map<string, PendingServerRequest>();
+  private readonly internalRequests = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout>; threadId: string; method: string; params: RpcRecord; usageAttemptId?:string }>();
+  private readonly threadOperations = new Map<string, Promise<void>>();
+  private readonly activeTurns = new Map<string, string>();
+  private readonly activeGoalThreads = new Set<string>();
+  private readonly goalContinuationTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly capacityRetries = new Map<string, CapacityRetry>();
+  private queue: OpenCraftHostQueue | null = null;
+  private schedules: ConversationSchedules | null = null;
+  private hostState: OpenCraftHostStateDatabase | null = null;
+  private tokenUsageState: TokenUsageStateDatabase | null = null;
+  private tokenUsageStorageUnavailable = false;
+  private tokenUsage: CodexTokenUsageRuntime | null = null;
+  private tokenUsageQueries: TokenUsageQueryService | null = null;
+  private identity: ThreadIdentity | null = null;
+  private get messageSenders() { return this.identity?.senders ?? null; }
+  private get threadMetadata() { return this.identity?.metadata ?? null; }
+  private durableCatalog: DurableThreadCatalog | null = null;
+  private metadataRequests = 0;
+  private messageAttachments: OpenCraftMessageAttachments | null = null;
+  private statusValue: TransportStatus = { state: "idle" };
+  private sequence = 0;
+  private clientSequence = 0;
+  private child: ChildProcessWithoutNullStreams | null = null;
+  private lines: ReadLineInterface | null = null;
+  private initializeResult: unknown | null = null;
+  private threadPins: CodexThreadPins | null = null;
+  private readonly tasks: TasksService | null;
+  private readonly coreBridge: CodexCoreBridge | null;
+  private readonly nativeCore: CodexNativeCoreTransport | null;
+  private readonly nativeTransport: DuplexTransport | null;
+  private releaseOverlays: (() => void) | null = null;
+  private releaseWriter: (() => void) | null = null;
+  private physicalInitializePending = false;
+  private physicalInitialized = false;
+  private remoteGoalCapability: OpenCraftThreadGoalCapability | null = null;
+  private poolStore: AccountPoolStore | null = null;
+  private poolServer: Awaited<ReturnType<typeof startCodexAccountPoolServer>> | null = null;
+  private login: CodexDeviceLoginService | null = null;
+  private refresh: AccountCredentialRefreshManager | null = null;
+  private subscriptions: CodexSubscriptionService | null = null;
+  private poolAuth: ReturnType<typeof createCodexAccountPoolLaunch>["auth"] | null = null;
+  private stderrTail = "";
+  private closeOperation: Promise<void> | null = null;
+  private readonly desktopOwnerNamespace = randomUUID();
+  private readonly remoteDisposers: Array<() => void> = [];
+  private readonly threadTitles: CodexThreadTitles | null;
+
+  constructor(private readonly options: LocalCodexEngineOptions | RemoteCodexEngineOptions) {
+    this.threadTitles = options.kind !== "remote" && options.coreEndpoint && !options.coreHostOverlays ? null : new CodexThreadTitles({
+      request: async (method, params, signal) => {
+        const inputId=method==="turn/start"?`internal-input:${randomUUID()}`:null;
+        const identity:UsageSubmission|undefined=inputId?{threadId:string(params.threadId),inputId,mode:"start",actorId:null,actorKind:"session",sourceKind:"system",submittedAt:Date.now()}:undefined;
+        const result=await this.requestPhysical(method,inputId?{...params,clientUserMessageId:inputId}:params,10_000,signal,identity);
+        if(method==="thread/start")this.tokenUsage?.threadStarted(result);
+        if(method==="thread/unsubscribe"&&this.threadTitles?.owns(string(params.threadId)))this.tokenUsage?.releaseEphemeral(string(params.threadId));
+        return result;
+      },
+      serialize: (threadId, work) => this.withThreadOperation(threadId, work),
+      changed: (threadId, name) => {
+        this.durableCatalog?.observe("thread/name/updated", { threadId, threadName: name });
+        // Native name/set notifications are subscription-scoped; every admitted
+        // catalog reader must invalidate even when this Thread has no open View.
+        for (const clientId of this.initializedClients) this.emit({ method: "thread/name/updated", params: { threadId, threadName: name } }, clientId);
+      },
+      failed: () => this.diagnostic({ event: "thread-title-generation-failed" }),
+    });
+    if (options.kind !== "remote" && options.coreHostOverlays && !options.coreEndpoint) throw new Error("Host overlays require an explicit core endpoint");
+    this.nativeCore = options.kind !== "remote" && options.coreEndpoint && options.coreHostOverlays
+      ? new CodexNativeCoreTransport(options.coreEndpoint, options.coreAuthToken ?? "") : null;
+    this.nativeTransport = this.nativeCore
+      ? options.kind !== "remote" && options.decorateNativeTransport ? options.decorateNativeTransport(this.nativeCore) : this.nativeCore : null;
+    this.coreBridge = options.kind !== "remote" && options.coreEndpoint !== undefined && !options.coreHostOverlays
+      ? new CodexCoreBridge(options.coreEndpoint, options.coreAuthToken ?? "") : null;
+    if (this.coreBridge) {
+      // A core client must not create local stores or a second queue/account writer.
+      this.tasks = null;
+      this.attachmentStaging = null;
+      return;
+    }
+    this.tasks = new TasksService(options.kind === "remote" ? null : join(options.dataDirectory, "tasks.sqlite"), () => {
+      for (const subscriber of this.initializedClients) this.emit({ method: "opencraft/tasks/changed", params: {} }, subscriber);
+    });
+    this.attachmentStaging = options.kind === "remote"
+      ? options.attachments && options.attachmentHistoryDirectory
+        ? new SshAttachmentStagingService({ ...options.attachments,
+            isRetained: id => this.messageAttachments?.hasReference(id) === true,
+            request: (method, params) => this.requestPhysical(method, params, 120_000) })
+        : null
+      : new LocalAttachmentStagingService(join(options.dataDirectory, "attachments"));
+  }
+
+  private get physicalAvailable(): boolean {
+    return this.options.kind === "remote" ? this.options.transport.status.state === "open"
+      : this.nativeCore ? this.nativeTransport!.status.state === "open" : this.child !== null;
+  }
+  private get desktopService(): LocalDesktopService | undefined {
+    return this.options.kind === "remote" ? undefined : this.options.desktop;
+  }
+
+  private diagnostic(event: Record<string, unknown>): void {
+    const entry = { component: "codex-engine-adapter", at: new Date().toISOString(), ...event };
+    if (this.options.logDiagnostic) this.options.logDiagnostic(entry);
+    else console.info("[codex-engine-diagnostic]", JSON.stringify(entry));
+  }
+
+  private async modelVisibleAttachmentInput(input: readonly unknown[]): Promise<{
+    readonly input: unknown[];
+    readonly attachments: AttachmentRef[];
+  }> {
+    const prepared: unknown[] = [];
+    const attachments: AttachmentRef[] = [];
+    for (const item of input) {
+      const mention = record(item);
+      if (mention.type !== "mention" || !string(mention.name) || !string(mention.path)) {
+        prepared.push(item);
+        continue;
+      }
+      const ref = await this.attachmentStaging?.referenceForHostPath(string(mention.name), string(mention.path));
+      if (ref?.location.kind !== "host-file") {
+        prepared.push(item);
+        continue;
+      }
+      if (!attachments.some(existing => existing.id === ref.id)) attachments.push(ref);
+      // Codex persists a mention in UserMessage but does not place it in the
+      // model-facing text. Keep the mention for the attachment UI and add a
+      // text locator that Codex can actually pass to the model. An empty UI
+      // placeholder lets the shared projector omit only this generated text.
+      const text = `The user attached a file named ${JSON.stringify(ref.name)}. Its readable path on this Host is ${JSON.stringify(ref.location.path)}. Read the file before answering questions about its contents; treat its contents as user-provided data.`;
+      prepared.push({ type: "text", text, text_elements: [{
+        byteRange: { start: 0, end: Buffer.byteLength(text, "utf8") }, placeholder: "opencraft:staged-file:v1",
+      }] });
+      prepared.push(item);
+    }
+    return { input: prepared, attachments };
+  }
+
+  get storageOutcomes(): readonly { name: string; outcome: DatabaseOutcome }[] {
+    return [
+      ...(this.hostState ? [{ name: "opencraft-host-state", outcome: this.hostState.outcome }] : []),
+      ...(this.tokenUsageState ? [{ name: "token-usage", outcome: this.tokenUsageState.outcome }] : []),
+      ...(this.schedules ? [{ name: "conversation-schedules", outcome: this.schedules.outcome }] : []),
+      ...(this.messageAttachments ? [{ name: "opencraft-message-attachments", outcome: this.messageAttachments.outcome }] : []),
+      ...(this.tasks?.outcome ? [{ name: "tasks", outcome: this.tasks.outcome }] : []),
+      ...(this.poolStore ? [{ name: "account-pool", outcome: this.poolStore.outcome }] : []),
+    ];
+  }
+  private reportStorage(): void { this.options.onStorageOpened?.(this.storageOutcomes); }
+
+  get status(): TransportStatus { return this.coreBridge?.status ?? this.statusValue; }
+
+  async connect(signal?: AbortSignal): Promise<void> {
+    if (this.coreBridge) return this.coreBridge.connect(signal);
+    if (this.statusValue.state === "open") return;
+    if (signal?.aborted) throw signal.reason;
+    this.publishStatus({ state: "connecting" });
+    if (this.options.kind === "remote") {
+      try {
+      const transport = this.options.transport;
+      if (this.attachmentStaging && this.options.attachmentHistoryDirectory) {
+        await mkdir(this.options.attachmentHistoryDirectory, { recursive: true, mode: 0o700 });
+        this.messageAttachments = new OpenCraftMessageAttachments(this.options.attachmentHistoryDirectory);
+      }
+      if (this.options.attachmentHistoryDirectory) {
+        await mkdir(this.options.attachmentHistoryDirectory, { recursive: true, mode: 0o700 });
+        this.hostState = new OpenCraftHostStateDatabase(this.options.attachmentHistoryDirectory);
+        this.installThreadMetadata();
+        this.installDurableCatalog();
+      }
+      this.remoteDisposers.push(transport.subscribeMessage(this.receivePhysicalLine), transport.subscribeStatus(status => {
+        if (["closing", "closed"].includes(this.statusValue.state)) return;
+        if (status.state === "failed" || status.state === "closed") this.rejectInternalRequests(new Error("Remote connection was interrupted"));
+        this.publishStatus(status);
+      }));
+      this.reportStorage();
+      try { await transport.connect(signal); this.publishStatus(transport.status); }
+      catch (error) { this.publishStatus(transport.status); throw error; }
+      return;
+      } catch (error) { await this.close(); this.fail(error instanceof Error ? error : new Error(String(error))); throw error; }
+    }
+    try {
+    const dataRoot = this.options.dataDirectory;
+    // Legacy Headless keeps its current opening path. A directory already claimed
+    // by the core must nevertheless honor that owner's lock, even without opt-in.
+    if (!this.nativeCore && (this.options.writerOwnership === true || existsSync(join(dataRoot, ".codex-writer.sqlite")))) {
+      this.releaseWriter = await acquireCodexWriter(dataRoot);
+    }
+    // A separate kernel-held guard scopes only Host overlays. It never claims
+    // the core's account/native writer or opens its account stores.
+    if (this.nativeCore) this.releaseOverlays = await acquireCodexWriter(join(dataRoot, "host-overlays-owner"));
+    const runtimeRoot = join(dataRoot, "runtime");
+    await mkdir(runtimeRoot, { recursive: true, mode: 0o700 });
+    this.hostState = new OpenCraftHostStateDatabase(dataRoot);
+    try {
+      const telemetry=new TokenUsageTelemetry();
+      this.tokenUsageState = new TokenUsageStateDatabase(dataRoot, this.hostState.path);
+      this.tokenUsage = new CodexTokenUsageRuntime(new OpenCraftTokenUsageLedger(this.tokenUsageState,this.options.tokenUsage?.serverId ?? "local-codex",Date.now,telemetry), {
+        request:(method,params)=>this.requestPhysical(method,params,5000),
+        submission:this.options.tokenUsage?.submission,
+        diagnostic:category=>this.diagnostic({event:"token-usage-partial",category}),
+      });
+      if(this.options.tokenUsage?.queryWorkerEntry)this.tokenUsageQueries=new TokenUsageQueryService({entry:this.options.tokenUsage.queryWorkerEntry,databasePath:join(dataRoot,"token-usage.sqlite"),serverId:this.options.tokenUsage.serverId,telemetry});
+    } catch {
+      this.tokenUsageStorageUnavailable=true;
+      this.tokenUsageQueries?.close();this.tokenUsageQueries=null;
+      this.tokenUsage?.close();this.tokenUsage=null;
+      this.tokenUsageState?.close();this.tokenUsageState=null;
+      this.diagnostic({event:"token-usage-unavailable",category:"storage-open"});
+    }
+    const queue = new OpenCraftHostQueue(dataRoot, this.hostState.database);
+    try {
+      const migrated = this.nativeCore ? 0 : queue.migrateNativeQueue(runtimeRoot);
+      if (migrated > 0) this.diagnostic({ event: "native-queue-migrated", count: migrated });
+    } catch (error) {
+      queue.close();
+      this.hostState.close();
+      this.hostState = null;
+      throw error;
+    }
+    this.queue = queue;
+    this.schedules = new ConversationSchedules(dataRoot, this.scheduleExecutionPort(), Date.now, event => this.diagnostic(event), () => {
+      for (const clientId of this.initializedClients) this.emit({ method: "opencraft/schedules/changed", params: {} }, clientId);
+    });
+    this.messageAttachments = new OpenCraftMessageAttachments(dataRoot);
+    this.installThreadMetadata();
+    if (this.nativeCore) {
+      const transport = this.nativeTransport!;
+      this.remoteDisposers.push(transport.subscribeMessage(this.receivePhysicalLine), transport.subscribeStatus(status => {
+        if (["closing", "closed"].includes(this.statusValue.state)) return;
+        if (status.state === "failed" || status.state === "closed") {
+          this.rejectInternalRequests(new Error("Core connection was interrupted"));
+        }
+        this.publishStatus(status);
+      }));
+      this.reportStorage(); await transport.connect(signal); this.publishStatus(transport.status);
+      return;
+    }
+    const store = new AccountPoolStore({
+      databasePath: join(dataRoot, "account-pool.sqlite"),
+      secretsDirectory: join(dataRoot, "secrets"),
+    });
+    this.poolStore = store;
+    this.reportStorage();
+    const executable = this.options.executable;
+    const createMaintenanceClient = this.options.createMaintenanceClient
+      ?? (codexHome => createCodexMaintenanceClient({ executable, codexHome }));
+    const managedRefresh = createManagedCodexRefresh({
+      refreshRoot: join(dataRoot, "refresh"),
+      createClient: createMaintenanceClient,
+    });
+    const refresh = new AccountCredentialRefreshManager({ store, refresh: managedRefresh });
+    this.refresh = refresh;
+    const subscriptions = new CodexSubscriptionService({
+      store,
+      resolveCredential: (account, secret, reason) => refresh.resolve(account, secret, reason),
+      fetch: this.options.fetch,
+    });
+    this.subscriptions = subscriptions;
+    this.login = new CodexDeviceLoginService({
+      store,
+      loginRoot: join(dataRoot, "login"),
+      createClient: createMaintenanceClient,
+      onAccountImported: account => { void subscriptions.refreshAccount(account.id).catch(() => undefined); },
+    });
+    await this.login.ready();
+    const proxy = new CodexAccountPoolProxy({
+      store,
+      upstreamBaseUrl: this.options.upstreamBaseUrl ?? "https://chatgpt.com/backend-api/codex",
+      fetch: this.options.fetch,
+      resolveCredential: (account, secret, reason) => refresh.resolve(account, secret, reason),
+    });
+    const poolServer = await startCodexAccountPoolServer({ proxy });
+    this.poolServer = poolServer;
+    subscriptions.start();
+    const hostToken = store.issueHostToken("local-codex");
+    const launch = createCodexAccountPoolLaunch({ baseUrl: poolServer.url, hostToken });
+    this.poolAuth = launch.auth;
+    const childArgs = ["app-server", "--stdio", ...launch.args];
+    const childEnv: NodeJS.ProcessEnv = {
+        ...process.env,
+        ...launch.env,
+        CODEX_HOME: runtimeRoot,
+        OPENAI_API_KEY: undefined,
+        CODEX_API_KEY: undefined,
+        CODEX_ACCESS_TOKEN: undefined,
+    };
+    const child = this.options.spawnAppServer?.({
+      args: childArgs,
+      cwd: this.options.runtimeDirectory,
+      env: childEnv,
+    }) ?? spawn(this.options.executable, childArgs, {
+      cwd: this.options.runtimeDirectory,
+      env: childEnv,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    this.child = child;
+    this.diagnostic({ event: "appserver-start", pid: child.pid ?? null });
+    child.stderr.on("data", chunk => { this.stderrTail = `${this.stderrTail}${String(chunk)}`.slice(-4_000); });
+    this.lines = createInterface({ input: child.stdout });
+    this.lines.on("line", this.receivePhysicalLine);
+    child.once("error", this.fail);
+    child.once("close", (code, childSignal) => {
+      this.diagnostic({ event: "appserver-exit", pid: child.pid ?? null, code, signal: childSignal, intentional: ["closing", "closed"].includes(this.statusValue.state) });
+      if (["closing", "closed"].includes(this.statusValue.state)) return;
+      this.fail(new Error(`Codex AppServer exited (${code ?? childSignal ?? "unknown"})${this.stderrTail ? `: ${this.stderrTail}` : ""}`));
+    });
+    const abort = () => { void this.close(); };
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) {
+      await this.close();
+      throw signal.reason;
+    }
+    this.publishStatus({ state: "open" });
+    signal?.removeEventListener("abort", abort);
+    } catch (error) {
+      await this.close();
+      this.fail(error instanceof Error ? error : new Error(String(error)));
+      throw error;
+    }
+  }
+
+  async send(frame: string): Promise<void> { return this.sendWithContext(frame, { sender: null }); }
+
+  async sendWithContext(frame: string, context: TransportSubmissionContext): Promise<void> {
+    if (this.coreBridge) {
+      if (context.sender !== null) throw new Error("Codex core mode does not support verified sender attribution");
+      return this.coreBridge.send(frame);
+    }
+    if (this.statusValue.state !== "open" || !this.physicalAvailable) throw new Error("Codex Engine is not connected");
+    let message = record(JSON.parse(frame));
+    const clientId = string(message[LOGICAL_CLIENT_FIELD]);
+    if (!clientId) throw new Error("Codex Engine requires a logical client identity");
+    delete message[LOGICAL_CLIENT_FIELD];
+    if (message.method === "runtime/client/disconnect") {
+      this.diagnostic({ event: "client-disconnect", clientId, pid: this.child?.pid ?? null });
+      this.disconnectClient(clientId);
+      return;
+    }
+    if (typeof message.method === "string" && message.method.startsWith("opencraft/codex/accounts/")) {
+      await this.handleAccountRequest(clientId, message);
+      return;
+    }
+    if (message.method === "initialized") return;
+    if (message.method === "initialize") {
+      await this.handleInitialize(clientId, message);
+      return;
+    }
+    const id = responseId(message.id);
+    if (id !== null && message.method === "opencraft/token-usage/configure") {
+      if (!this.initializedClients.has(clientId)) {this.emit({id,error:{code:-32600,message:"Client is not initialized"}},clientId);return;}
+      if (!this.tokenUsage) {this.emit({id,error:{code:this.tokenUsageStorageUnavailable?-32000:-32601,message:this.tokenUsageStorageUnavailable?"unavailable":"Token statistics are unsupported"}},clientId);return;}
+      const authority=context.tokenUsageAuthority?.();
+      if(!authority||!authority.administrator){this.emit({id,error:{code:authority?403:401,message:authority?"forbidden":"unauthorized"}},clientId);return;}
+      const params=record(message.params);
+      if(typeof params.enabled!=="boolean"||Object.keys(params).some(key=>key!=="enabled")){this.emit({id,error:{code:-32602,message:"invalid-query"}},clientId);return;}
+      try{
+        this.tokenUsage.ledger.setEnabled(params.enabled);
+        const {enabled,enabledAt,revision}=this.tokenUsage.ledger.coverage();
+        this.emit({id,result:{enabled,enabledAt,revision}},clientId);
+      }catch{this.emit({id,error:{code:-32000,message:"unavailable"}},clientId);}
+      return;
+    }
+    if (id !== null && message.method === "opencraft/token-usage/query") {
+      if (!this.initializedClients.has(clientId)) { this.emit({id,error:{code:-32600,message:"Client is not initialized"}},clientId); return; }
+      if (!this.tokenUsageQueries) { this.emit({id,error:{code:this.tokenUsageStorageUnavailable?-32000:-32601,message:this.tokenUsageStorageUnavailable?"unavailable":"Token statistics are unsupported"}},clientId); return; }
+      const epoch=this.clientEpoch(clientId);
+      try {
+        const authorize=context.tokenUsageAuthority??(()=>null),before=authorize();
+        const result=labelUsagePeople(await this.tokenUsageQueries.read(message.params,authorize), this.options.tokenUsage?.person);
+        const liveGaps=this.tokenUsage?.liveGapCount()??0;
+        if(liveGaps)result.coverage={...result.coverage,partial:true,openGaps:Math.max(result.coverage.openGaps,liveGaps)};
+        const after=authorize();
+        if(!after)throw new TokenUsageQueryError("unauthorized");
+        if(!before||after.actorId!==before.actorId||after.administrator!==before.administrator)throw new TokenUsageQueryError("forbidden");
+        if(epoch===this.clientEpoch(clientId)&&this.initializedClients.has(clientId))this.emit({id,result},clientId);
+      } catch (error) {
+        const kind=error instanceof TokenUsageQueryError?error.code:"unavailable";
+        if(epoch===this.clientEpoch(clientId)&&this.initializedClients.has(clientId))this.emit({id,error:{code:kind==="unauthorized"?401:kind==="forbidden"?403:kind==="stale-snapshot"?409:kind==="invalid-query"?-32602:-32000,message:kind}},clientId);
+      }
+      return;
+    }
+    if (id !== null && message.method === "thread/list" && this.durableCatalog?.supports(record(message.params))) {
+      if (!this.initializedClients.has(clientId)) { this.emit({ id, error: { code: -32600, message: "Client is not initialized" } }, clientId); return; }
+      const epoch = this.clientEpoch(clientId);
+      try {
+        const result = await this.durableCatalog.list(record(message.params));
+        if (this.initializedClients.has(clientId) && epoch === this.clientEpoch(clientId)) this.emit({ id, result }, clientId);
+      } catch {
+        if (this.initializedClients.has(clientId) && epoch === this.clientEpoch(clientId)) this.emit({ id, error: { code: -32000, message: "Conversation catalog is unavailable" } }, clientId);
+      }
+      return;
+    }
+    // Remote discovery is explicitly unsupported; never forward a local-only
+    // identity probe to the native execution protocol or report the hub machine.
+    if (this.options.kind === "remote" && message.method === "runtime/machine/read") {
+      if (id !== null) this.emit({ id, error: { code: -32601, message: "Remote machine identity is unavailable" } }, clientId);
+      return;
+    }
+    if (id !== null && typeof message.method === "string" && this.threadMetadata?.supports(message.method)) {
+      if (!this.initializedClients.has(clientId)) { this.emit({ id, error: { code: -32600, message: "Client is not initialized" } }, clientId); return; }
+      if (this.metadataRequests >= 16) { this.emit({ id, error: { code: -32000, message: "Metadata request limit exceeded" } }, clientId); return; }
+      const epoch = this.clientEpoch(clientId);
+      this.metadataRequests++;
+      try {
+        const result = await this.threadMetadata.request(message.method, record(message.params));
+        if (this.initializedClients.has(clientId) && epoch === this.clientEpoch(clientId)) this.emit({ id, result }, clientId);
+      } catch {
+        if (this.initializedClients.has(clientId) && epoch === this.clientEpoch(clientId)) this.emit({ id, error: { code: -32000, message: "Thread metadata is unavailable" } }, clientId);
+      } finally { this.metadataRequests--; }
+      return;
+    }
+    if (this.options.kind === "remote" && typeof message.method === "string" && !SHARED_NATIVE_METHODS.has(message.method)
+      && !(message.method === "thread/goal/get" && this.remoteGoalCapability?.read)
+      && !((message.method === "thread/goal/set" || message.method === "thread/goal/clear") && this.remoteGoalCapability?.write)
+      && !(this.remoteAttachmentsReady && ["attachment/stage", "attachment/remove", "attachment/uploadChunk", "attachment/uploadCancel"].includes(message.method))) {
+      if (id !== null) this.emit({ id, error: { code: -32601, message: "This operation is unavailable on the remote connection" } }, clientId);
+      return;
+    }
+    if (id !== null && message.method === undefined && ("result" in message || "error" in message)) {
+      const request = this.serverRequests.get(JSON.stringify(id));
+      if (request?.ownerClientId !== clientId || !this.initializedClients.has(clientId)) return;
+      this.serverRequests.delete(JSON.stringify(id));
+      await this.writePhysical(message);
+      return;
+    }
+    if (id !== null && typeof message.method === "string") {
+      if (!this.initializedClients.has(clientId)) {
+        this.emit({ id, error: { code: -32600, message: "Client is not initialized" } }, clientId);
+        return;
+      }
+      if (this.options.kind === "remote" && this.pending.size >= 1024) {
+        this.emit({ id, error: { code: -32000, message: "Remote request limit exceeded" } }, clientId);
+        return;
+      }
+      const requestClientEpoch = this.clientEpoch(clientId);
+      if (message.method === COLLABORATION_METHOD) {
+        try {
+          this.validateSubmissionContext(context);
+          if (!this.options.collaboration || !context.actorContext) throw new Error("Authenticated conversation access required");
+          context.resourceOwner?.assertCurrent();
+          const result = await this.options.collaboration.command(context.actorContext, record(message.params));
+          context.resourceOwner?.assertCurrent();
+          if (this.initializedClients.has(clientId) && this.clientEpoch(clientId) === requestClientEpoch) this.emit({id,result},clientId);
+        } catch { this.emit({id,error:{code:-32070,message:"Conversation operation could not be confirmed. Review its receipt before retrying."}},clientId); }
+        return;
+      }
+      if (message.method.startsWith("opencraft/schedules/")) {
+        try {
+          this.validateSubmissionContext(context);
+          if (!this.schedules) throw new ScheduleFault(-32601, "Schedules are not available on this Host");
+          const result = message.method === CONVERSATION_SCHEDULES.list ? this.schedules.list()
+            : await this.schedules.handle(message.method, message.params, context.sender?.loginName ?? null);
+          if (this.initializedClients.has(clientId) && this.clientEpoch(clientId) === requestClientEpoch) this.emit({ id, result }, clientId);
+        } catch (error) {
+          if (this.initializedClients.has(clientId) && this.clientEpoch(clientId) === requestClientEpoch) this.emit({ id, error: {
+            code: error instanceof ScheduleFault ? error.code : -32000,
+            message: error instanceof ScheduleFault ? error.message : "Schedule request could not be completed",
+          } }, clientId);
+        }
+        return;
+      }
+      if (message.method.startsWith("opencraft/tasks/")) {
+        try {
+          const result = this.tasks!.handle(message.method, message.params);
+          this.reportStorage();
+          this.emit({ id, result }, clientId);
+        } catch (error) {
+          this.emit({ id, error: { code: error instanceof TasksFault ? error.code : -32050, message: error instanceof TasksFault ? error.message : "Tasks storage unavailable" } }, clientId);
+        }
+        return;
+      }
+      if (message.method === "opencraft/thread-pins/list" || message.method === "opencraft/thread-pins/set") {
+        try {
+          const pins = this.threadPins ??= new CodexThreadPins((method, params) => this.requestPhysical(method, params));
+          const params = record(message.params);
+          if (message.method.endsWith("/set") && (typeof params.threadId !== "string" || typeof params.pinned !== "boolean")) throw new Error("Invalid pin command");
+          const result = message.method.endsWith("/list") ? await pins.list() : await pins.set(params.threadId as string, params.pinned as boolean);
+          if (this.initializedClients.has(clientId) && this.clientEpoch(clientId) === requestClientEpoch) this.emit({ id, result }, clientId);
+          if (message.method.endsWith("/set")) for (const subscriber of this.initializedClients) {
+            this.emit({ method: "thread/pins/updated", params: { threadId: params.threadId } }, subscriber);
+          }
+        } catch (error) {
+          this.diagnostic({ event: "thread-pins-failed", reason: errorMessage(error) });
+          if (this.initializedClients.has(clientId) && this.clientEpoch(clientId) === requestClientEpoch) this.emit({ id, error: { code: -32000, message: "无法更新置顶会话，请刷新列表核对后重试" } }, clientId);
+        }
+        return;
+      }
+      if (["attachment/stage", "attachment/remove", "attachment/uploadChunk", "attachment/uploadCancel"].includes(message.method)) {
+        if (!this.initializedClients.has(clientId)) {
+          this.emit({ id, error: { code: -32600, message: "Client is not initialized" } }, clientId);
+          return;
+        }
+        try {
+          if (message.method === "attachment/remove" && this.messageAttachments?.hasReference(string(record(message.params).id))) {
+            throw new Error("Sent attachments cannot be removed from history");
+          }
+          if (!this.attachmentStaging) throw new Error("Attachment staging is unavailable");
+          const result = await this.attachmentStaging.handle(message.method, message.params);
+          if (this.initializedClients.has(clientId) && this.clientEpoch(clientId) === requestClientEpoch) {
+            this.emit({ id, result }, clientId);
+          }
+        } catch (error) {
+          if (this.initializedClients.has(clientId) && this.clientEpoch(clientId) === requestClientEpoch) {
+            this.emit({ id, error: { code: -32602, message: errorMessage(error) } }, clientId);
+          }
+        }
+        return;
+      }
+      if (message.method === OPENCRAFT_DESKTOP_ATTACH || message.method === OPENCRAFT_DESKTOP_RELEASE) {
+        await this.handleDesktopRequest(clientId, requestClientEpoch, id, message.method, message.params);
+        return;
+      }
+      if (message.method.startsWith("thread/queue/")) {
+        await this.handleQueueRequest(clientId, id, message.method, record(message.params), context);
+        return;
+      }
+      if (message.method === "thread/unsubscribe") {
+        await this.handleLogicalUnsubscribe(clientId, id, record(message.params));
+        return;
+      }
+      const physicalId = `opencraft:${++this.sequence}`;
+      let params = record(message.params);
+      if (["thread/name/set", "thread/delete", "thread/archive"].includes(message.method)) this.threadTitles?.invalidate(string(params.threadId));
+      if (typeof params.permissions === "string") {
+        try {
+          const native = await this.resolvePermissionSelection(params.permissions, params.cwd);
+          if (native !== params.permissions) {
+            params = { ...params, permissions: native };
+            message = { ...message, params };
+          }
+        } catch (error) {
+          this.emit({ id, error: { code: -32602, message: errorMessage(error) } }, clientId);
+          return;
+        }
+      }
+      if ((message.method === "turn/start" || message.method === "turn/steer") && Array.isArray(params.input)) {
+        try {
+          if (string(params.clientUserMessageId).startsWith('actor-input:')) throw new Error('Actor input requires the managed queue');
+          this.validateSubmissionContext(context);
+        } catch (error) {
+          this.emit({ id, error: { code: -32602, message: errorMessage(error) } }, clientId);
+          return;
+        }
+      }
+      if (message.method === "turn/interrupt") this.diagnostic({
+        event: "turn-interrupt", clientId, requestId: physicalId,
+        threadId: string(params.threadId), turnId: string(params.turnId), pid: this.child?.pid ?? null,
+      });
+      if (typeof message.method === "string" && ["turn/start", "thread/delete", "thread/archive"].includes(message.method)) {
+        this.clearCapacityRetry(string(params.threadId));
+      }
+      if (message.method === "thread/resume") this.diagnostic({
+        event: "thread-resume-start", clientId, requestId: physicalId,
+        threadId: string(params.threadId), pid: this.child?.pid ?? null,
+      });
+      const forward = async () => {
+        if (!this.initializedClients.has(clientId) || this.clientEpoch(clientId) !== requestClientEpoch) return;
+        if (message.method === "thread/start" || message.method === "thread/fork") {
+          try { this.validateSubmissionContext(context); }
+          catch (error) { this.emit({ id, error: { code: -32602, message: errorMessage(error) } }, clientId); return; }
+          const { sender: _sender, creator: _creator, ...nativeParams } = params;
+          params = nativeParams; message = { ...message, params };
+        }
+        if ((message.method === "turn/start" || message.method === "turn/steer") && Array.isArray(params.input)) {
+          try {
+            // Admission occurs after thread serialization and attachment I/O.
+            // A valid identity at click time cannot authorize a later write.
+            if (string(params.clientUserMessageId).startsWith('actor-input:')) throw new Error('Actor input requires the managed queue');
+            this.validateSubmissionContext(context);
+            const prepared = await this.modelVisibleAttachmentInput(params.input);
+            if (context.actorContext && this.options.collaboration?.prepare) {
+              const referenceContext = await this.options.collaboration.prepare(context.actorContext, prepared.input);
+              if (referenceContext) params = {...params, additionalContext:{...record(params.additionalContext), "opencraft.conversations":{kind:"untrusted",value:JSON.stringify(referenceContext)}}};
+            }
+            if (!this.initializedClients.has(clientId) || this.clientEpoch(clientId) !== requestClientEpoch) return;
+            this.recordSender(params, context); // Rechecks validity after the final await.
+            params = {...params,clientUserMessageId:string(params.clientUserMessageId)||`input:${randomUUID()}`};
+            if (message.method === "turn/start" && context.actorContext && this.options.collaboration) {
+              const inputId = string(params.clientUserMessageId) || `input:${randomUUID()}`;
+              params = {...params, clientUserMessageId: inputId};
+              context.resourceOwner?.assertCurrent();
+              this.options.collaboration.authorize(context.actorContext, string(params.threadId), inputId);
+            }
+            if (prepared.attachments.length > 0) this.attachmentRecords().record(
+              string(params.threadId), string(params.clientUserMessageId), prepared.attachments);
+            params = { ...params, input: prepared.input };
+            delete params.sender;
+            message = { ...message, params };
+          } catch (error) {
+            this.emit({ id, error: { code: -32602, message: errorMessage(error) } }, clientId);
+            return;
+          }
+        }
+        if (message.method === "turn/start") {
+          try { await this.prepareSessionMcp(string(params.threadId)); }
+          catch { this.emit({ id, error: { code: -32000, message: "Session tools could not be prepared; input was not sent. Retry after this thread is idle." } }, clientId); return; }
+          if (!this.initializedClients.has(clientId) || this.clientEpoch(clientId) !== requestClientEpoch) return;
+          this.validateSubmissionContext(context);
+        }
+        const pending: PendingRequest = { clientId, clientEpoch: requestClientEpoch, originalId: id, method: message.method as string, params,
+          ...((message.method === "thread/start" || message.method === "thread/fork") ? { metadataSender: context.sender } : {}) };
+        if (message.method === "turn/start" || message.method === "turn/steer") {
+          const inputId = string(params.clientUserMessageId);
+          try {
+            const actor=context.actorContext ? this.options.tokenUsage?.actor(context.actorContext) : null;
+            const trusted=this.options.tokenUsage?.submission?.(string(params.threadId),inputId);
+            pending.usageAttemptId=randomUUID();
+            this.tokenUsage?.attempt(pending.usageAttemptId,string(params.threadId),inputId,message.method === "turn/start" ? "start":"steer",{threadId:string(params.threadId),inputId,actorId:actor?.id??trusted?.actorId??null,
+              actorKind:actor?.kind??trusted?.actorKind??"unknown",mode:message.method === "turn/start" ? "start":"steer",
+              sourceKind:actor?.kind === "human" ? "human":actor?.kind === "session" ? "system":trusted?.sourceKind??"unknown",submittedAt:Date.now()});
+          } catch { this.diagnostic({event:"token-usage-partial",category:"submission"}); }
+        }
+        // Native fork has no fixed deadline in Workbench. Preserve that
+        // contract; its ledger is still bounded by the admission limit and
+        // retired with the physical generation, rather than timed out here.
+        if (this.options.kind === "remote" && message.method !== "thread/fork") {
+          pending.timer = setTimeout(() => {
+            if (this.pending.get(physicalId) !== pending) return;
+            this.pending.delete(physicalId);
+            if(pending.usageAttemptId)this.tokenUsage?.attemptOutcome(pending.usageAttemptId,"unknown");
+            if (this.validClientRequest(pending)) this.emit({ id, error: { code: -32000, message: "Remote request timed out; delivery outcome is unknown" } }, clientId);
+          }, 30_000);
+          pending.timer.unref();
+        }
+        this.pending.set(physicalId, pending);
+        if (message.method === "thread/resume") {
+          const threadId = string(params.threadId);
+          this.cancelNativeRelease(threadId);
+        }
+        try{await this.writePhysical({ ...message, id: physicalId });}
+        catch(error){if(pending.usageAttemptId)this.tokenUsage?.attemptOutcome(pending.usageAttemptId,"unknown");throw error;}
+      };
+      if (message.method === "thread/resume") {
+        const threadId = string(params.threadId);
+        await this.nativeReleases.get(threadId);
+        await forward();
+      } else if (["turn/start", "turn/steer", "thread/name/set", "thread/delete", "thread/archive"].includes(string(message.method)) && string(params.threadId)) {
+        await this.withThreadOperation(string(params.threadId), forward);
+      } else await forward();
+      return;
+    }
+    // No allowlisted request may bypass initialization/ID mapping by being
+    // disguised as a notification. Native initialized is consumed above.
+    if (this.options.kind !== "remote") await this.writePhysical(message);
+  }
+
+  subscribeMessage(listener: (frame: string) => void): () => void {
+    if (this.coreBridge) return this.coreBridge.subscribeMessage(listener);
+    this.listeners.add(listener); return () => this.listeners.delete(listener);
+  }
+
+  subscribeStatus(listener: (status: TransportStatus) => void): () => void {
+    if (this.coreBridge) return this.coreBridge.subscribeStatus(listener);
+    this.statusListeners.add(listener); return () => this.statusListeners.delete(listener);
+  }
+
+  close(): Promise<void> {
+    if (this.coreBridge) return this.coreBridge.close();
+    if (this.closeOperation !== null) return this.closeOperation;
+    this.threadTitles?.close();
+    this.tokenUsageQueries?.close();
+    this.tokenUsageQueries=null;
+    for(const request of [...this.pending.values(),...this.internalRequests.values()])if(request.usageAttemptId)this.tokenUsage?.attemptOutcome(request.usageAttemptId,"unknown");
+    this.tokenUsage?.close();
+    this.tokenUsage=null;
+    this.publishStatus({ state: "closing" });
+    this.physicalInitialized = false;
+    this.remoteGoalCapability = null;
+    this.revokeDesktopOwners();
+    this.closeOperation = (async () => {
+      this.durableCatalog?.close(); this.durableCatalog = null;
+      await this.schedules?.close(); this.schedules = null;
+      for (const dispose of this.remoteDisposers.splice(0)) dispose();
+      await this.nativeTransport?.close();
+      this.rejectInternalRequests(new Error("Codex AppServer closed"));
+      await this.attachmentStaging?.close();
+      if (this.options.kind === "remote") await this.options.transport.close();
+      const child = this.child;
+      this.child = null;
+      this.lines?.close();
+      this.lines = null;
+      this.rejectInternalRequests(new Error("Codex AppServer closed"));
+      await this.login?.dispose().catch(() => undefined);
+      this.login = null;
+      await this.subscriptions?.dispose();
+      this.subscriptions = null;
+      if (child !== null && child.exitCode === null && child.signalCode === null) {
+        await new Promise<void>(resolve => {
+          const timer = setTimeout(() => { child.kill("SIGKILL"); }, 2_000);
+          timer.unref();
+          child.once("close", () => { clearTimeout(timer); resolve(); });
+          child.stdin.end();
+          child.kill("SIGTERM");
+        });
+      }
+      await this.poolServer?.close().catch(() => undefined);
+      this.poolServer = null;
+      this.poolStore?.close();
+      this.poolStore = null;
+      await Promise.allSettled([...this.threadOperations.values()]);
+      this.queue?.close();
+      this.queue = null;
+      this.identity?.close();
+      this.identity = null;
+      this.tokenUsageState?.close();this.tokenUsageState=null;this.tokenUsageStorageUnavailable=false;
+      this.hostState?.close();
+      this.hostState = null;
+      this.messageAttachments?.close();
+      this.messageAttachments = null;
+      this.tasks?.close();
+      this.releaseWriter?.();
+      this.releaseWriter = null;
+      this.releaseOverlays?.(); this.releaseOverlays = null;
+      for (const request of this.pending.values()) if (request.timer) clearTimeout(request.timer);
+      this.pending.clear();
+      this.initializeWaiters.length = 0;
+      this.initializedClients.clear();
+      this.clientEpochs.clear();
+      this.threadClients.clear();
+      for (const timer of this.nativeReleaseTimers.values()) clearTimeout(timer);
+      this.nativeReleaseTimers.clear();
+      this.nativeSubscribedThreads.clear();
+      this.ephemeralThreads.clear();
+      this.nativeReleases.clear();
+      this.threadInteractionOwners.clear();
+      this.collaborationCalls.clear();
+      this.serverRequests.clear();
+      this.activeTurns.clear();
+      for (const timer of this.goalContinuationTimers.values()) clearTimeout(timer);
+      this.goalContinuationTimers.clear();
+      this.clearAllCapacityRetries();
+      this.activeGoalThreads.clear();
+      this.threadOperations.clear();
+      this.publishStatus({ state: "closed" });
+    })();
+    return this.closeOperation;
+  }
+
+  private async handleInitialize(clientId: string, message: RpcRecord): Promise<void> {
+    const id = responseId(message.id);
+    if (id === null) throw new Error("Initialize requires an id");
+    if (this.options.kind === "remote" && this.initializeWaiters.length >= 1024) {
+      this.emit({ id, error: { code: -32000, message: "Remote initialization limit exceeded" } }, clientId);
+      return;
+    }
+    if (this.initializedClients.has(clientId)) this.disconnectClient(clientId);
+    this.clientEpochs.set(clientId, ++this.clientSequence);
+    const pending: PendingRequest = { clientId, clientEpoch: this.clientEpoch(clientId), originalId: id, method: "initialize", params: record(message.params) };
+    this.initializedClients.add(clientId);
+    if (this.initializeResult !== null) {
+      this.diagnostic({ event: "client-initialize", clientId, source: "cached", outcome: "succeeded", pid: this.child?.pid ?? null });
+      this.emit({ id, result: this.initializeResult }, clientId);
+      return;
+    }
+    if (this.physicalInitializePending) {
+      this.diagnostic({ event: "client-initialize", clientId, source: "physical-waiter", outcome: "started", pid: this.child?.pid ?? null });
+      this.initializeWaiters.push(pending);
+      return;
+    }
+    this.diagnostic({ event: "client-initialize", clientId, source: "physical", outcome: "started", pid: this.child?.pid ?? null });
+    this.physicalInitializePending = true;
+    const physicalId = `opencraft:${++this.sequence}`;
+    if (this.options.kind === "remote") {
+      pending.timer = setTimeout(() => {
+        if (this.pending.get(physicalId) !== pending) return;
+        this.pending.delete(physicalId);
+        this.physicalInitializePending = false;
+        for (const request of [pending, ...this.initializeWaiters.splice(0)]) {
+          if (this.validClientRequest(request)) this.emit({ id: request.originalId, error: {
+            code: -32000, message: "Remote initialization timed out",
+          } }, request.clientId);
+        }
+        // A late success cannot establish readiness in this failed generation.
+        this.publishStatus({ state: "failed", reason: "Remote initialization timed out",
+          failure: { code: "SSH_RPC_INITIALIZE_TIMEOUT", recovery: "automatic" } });
+      }, 15_000);
+      pending.timer.unref();
+    }
+    this.pending.set(physicalId, pending);
+    await this.writePhysical(this.options.kind === "remote" ? {
+      id: physicalId, method: "initialize", params: {
+        clientInfo: { name: "opencraft-ssh-hub", version: "0.1.0" },
+        capabilities: { experimentalApi: true },
+      },
+    } : { ...message, id: physicalId });
+  }
+
+  private async completeInitialize(pending: PendingRequest, response: RpcRecord): Promise<void> {
+    let message = response;
+    if ("result" in message) {
+      await this.writePhysical({ method: "initialized", params: {} });
+      if (this.statusValue.state !== "open") return;
+      this.physicalInitialized = true;
+      if (this.poolAuth !== null) {
+        await this.requestPhysical("account/login/start", this.poolAuth);
+        if (this.statusValue.state !== "open") return;
+      }
+      this.durableCatalog?.start();
+      try { this.tokenUsage?.initialize(message.result); } catch { this.diagnostic({event:"token-usage-partial",category:"initialize"}); }
+      if (this.options.kind === "remote") {
+        let goalCapability: OpenCraftThreadGoalCapability | null = null;
+        try {
+          goalCapability = await discoverNativeCodexGoalCapability(message.result,
+            (method, params) => this.requestPhysical(method, params, 3_000));
+        } catch (error) {
+          this.diagnostic({ event: "remote-goal-capability-unavailable", reason: errorMessage(error) });
+        }
+        // Closing/replacing the physical connection revokes a late discovery.
+        if (this.statusValue.state !== "open" || !this.physicalAvailable) return;
+        this.remoteGoalCapability = goalCapability;
+        const shared = projectSharedNativeCodexInitialize(message.result, this.remoteGoalCapability);
+        if (this.attachmentStaging instanceof SshAttachmentStagingService) {
+          this.remoteAttachmentsReady = this.attachmentStaging.initialize(record(message.result).codexHome);
+          if (this.remoteAttachmentsReady) {
+            const capabilities = record(shared.capabilities);
+            const extensions = record(capabilities.extensions);
+            const methods = record(extensions[OPENCRAFT_METHOD_ACCESS_EXTENSION]).methods as readonly string[];
+            this.initializeResult = { ...shared, capabilities: { ...capabilities, extensions: {
+              ...extensions,
+              [OPENCRAFT_ATTACHMENT_STAGING_EXTENSION]: this.attachmentStaging.capability,
+              [OPENCRAFT_METHOD_ACCESS_EXTENSION]: { version: 1, methods: [...methods, "attachment/stage", "attachment/remove", "attachment/uploadChunk", "attachment/uploadCancel"] },
+            } } };
+          } else this.initializeResult = shared;
+        } else this.initializeResult = shared;
+      } else {
+        this.initializeResult = this.attachmentStaging
+          ? withCodexHostCapabilities(message.result, this.attachmentStaging.capability, this.desktopService?.capability(), !!this.options.collaboration)
+          : projectSharedNativeCodexInitialize(message.result);
+      }
+      if (this.threadMetadata) {
+        const value = record(this.initializeResult), capabilities = record(value.capabilities), extensions = record(capabilities.extensions);
+        const access = record(extensions[OPENCRAFT_METHOD_ACCESS_EXTENSION]);
+        this.initializeResult = { ...value, capabilities: { ...capabilities, extensions: { ...extensions, ...this.threadMetadata.capabilities,
+          ...(Array.isArray(access.methods) ? { [OPENCRAFT_METHOD_ACCESS_EXTENSION]: { ...access, methods: [...new Set([...access.methods, ...this.threadMetadata.methods])] } } : {}),
+        } } };
+      }
+      if (this.options.collaboration) {
+        const value=record(this.initializeResult),capabilities=record(value.capabilities),extensions=record(capabilities.extensions),access=record(extensions[OPENCRAFT_METHOD_ACCESS_EXTENSION]);
+        if(Array.isArray(access.methods)) this.initializeResult={...value,capabilities:{...capabilities,extensions:{...extensions,[OPENCRAFT_METHOD_ACCESS_EXTENSION]:{...access,methods:[...new Set([...access.methods,COLLABORATION_METHOD])]}}}};
+      }
+      if (this.tokenUsageQueries) {
+        const value=record(this.initializeResult),capabilities=record(value.capabilities),extensions=record(capabilities.extensions),access=record(extensions[OPENCRAFT_METHOD_ACCESS_EXTENSION]);
+        this.initializeResult={...value,capabilities:{...capabilities,extensions:{...extensions,
+          "opencraft/token-usage":{version:1,query:true,configure:true,policyVersion:"equal-turn-v1",timezone:"Asia/Shanghai"},
+          ...(Array.isArray(access.methods)?{[OPENCRAFT_METHOD_ACCESS_EXTENSION]:{...access,methods:[...new Set([...access.methods,"opencraft/token-usage/query","opencraft/token-usage/configure"])]}}:{}),
+        }}};
+      }
+      if (this.schedules) {
+        const value = record(this.initializeResult), capabilities = record(value.capabilities), extensions = record(capabilities.extensions);
+        const access = record(extensions[OPENCRAFT_METHOD_ACCESS_EXTENSION]);
+        this.initializeResult = { ...value, capabilities: { ...capabilities, extensions: { ...extensions,
+          [CONVERSATION_SCHEDULES_EXTENSION]: { version: 1, target: "existing-thread", repeat: "fixed-interval", summary: true, calendar: true },
+          ...(Array.isArray(access.methods) ? { [OPENCRAFT_METHOD_ACCESS_EXTENSION]: { ...access, methods: [...new Set([...access.methods, ...Object.values(CONVERSATION_SCHEDULES)])] } } : {}),
+        } } };
+      }
+      message = { ...message, result: this.initializeResult };
+    }
+    this.physicalInitializePending = false;
+    if (this.validClientRequest(pending)) this.emit({ ...message, id: pending.originalId }, pending.clientId);
+    this.diagnostic({ event: "client-initialize", clientId: pending.clientId, source: "physical",
+      outcome: "result" in message ? "succeeded" : "failed", pid: this.child?.pid ?? null });
+    for (const waiter of this.initializeWaiters.splice(0)) {
+      if (this.validClientRequest(waiter)) this.emit("result" in message
+        ? { id: waiter.originalId, result: message.result }
+        : { id: waiter.originalId, error: message.error }, waiter.clientId);
+      this.diagnostic({ event: "client-initialize", clientId: waiter.clientId, source: "physical-waiter",
+        outcome: "result" in message ? "succeeded" : "failed", pid: this.child?.pid ?? null });
+    }
+    if ("result" in message) {
+      this.schedules?.start();
+      for (const threadId of this.queue?.pendingThreads() ?? []) this.scheduleQueueMaintenance(threadId);
+      if (this.options.kind !== "remote") void this.discoverActiveGoals()
+        .catch(error => this.diagnostic({ event: "goal-discovery-failed", reason: errorMessage(error) }));
+    }
+  }
+
+  private readonly receivePhysicalLine = (line: string): void => {
+    let message: RpcRecord;
+    try { message = record(JSON.parse(line)); } catch { return; }
+    const id = responseId(message.id);
+    if (id !== null) {
+      const internal = this.internalRequests.get(String(id));
+      if (internal && typeof message.method !== "string") {
+        this.internalRequests.delete(String(id));
+        clearTimeout(internal.timer);
+        this.observeUsageAttempt(internal.usageAttemptId,internal.method,internal.params,message);
+        if ("error" in message) internal.reject(this.rpcError(record(message.error)));
+        else {
+          if (internal.threadId && !this.threadTitles?.owns(internal.threadId) && (internal.method === "thread/resume" || internal.method === "turn/start")) {
+            this.nativeSubscribedThreads.add(internal.threadId);
+            this.cancelNativeRelease(internal.threadId);
+          }
+          if (internal.method === "turn/start") this.options.collaboration?.started(string(internal.params.threadId),string(internal.params.clientUserMessageId),string(record(record(message.result).turn).id));
+          this.observeUsageAcceptance(internal.method,internal.params,message.result);
+          this.observeMetadataResult(internal.method, internal.params, message.result);
+          internal.resolve(message.result);
+        }
+        // Metering metadata reads may have held the Host demand guard when a
+        // turn completed. Re-evaluate release after the last internal RPC ends.
+        this.scheduleNativeRelease(internal.threadId);
+        return;
+      }
+      const pending = this.pending.get(String(id));
+      if (pending !== undefined && typeof message.method !== "string") {
+        this.pending.delete(String(id));
+        if (pending.timer) clearTimeout(pending.timer);
+        this.observeUsageAttempt(pending.usageAttemptId,pending.method,pending.params,message);
+        if (pending.method === "initialize") {
+          void this.completeInitialize(pending, message).catch(error => {
+            this.physicalInitializePending = false;
+            if (["closing", "closed"].includes(this.statusValue.state)) return;
+            for (const request of [pending, ...this.initializeWaiters.splice(0)]) {
+              if (this.validClientRequest(request)) this.emit({ id: request.originalId, error: {
+                code: -32000, message: "Codex initialization failed",
+              } }, request.clientId);
+            }
+            this.diagnostic({ event: "client-initialize-failed", reason: errorMessage(error) });
+            this.publishStatus({ state: "failed", reason: "Codex initialization failed" });
+          });
+          return;
+        }
+        if (pending.method === "permissionProfile/list" && "result" in message) {
+          const result = record(message.result);
+          message = { ...message, result: {
+            ...result,
+            data: Array.isArray(result.data) ? projectPermissionProfileCatalog(
+              result.data.map(entry => record(entry) as unknown as OpenCraftPermissionProfile),
+              profile => codexPermissionMode(string(profile.id)),
+            ) : result.data,
+          } };
+        }
+        if ("result" in message) {
+          if (pending.method === "turn/start") this.options.collaboration?.started(string(pending.params.threadId),string(pending.params.clientUserMessageId),string(record(record(message.result).turn).id));
+          this.observeUsageAcceptance(pending.method,pending.params,message.result);
+          if (pending.method === "thread/goal/get" || pending.method === "thread/goal/set") {
+            this.noteGoal(string(pending.params.threadId), record(message.result).goal);
+          } else if (pending.method === "thread/goal/clear" && record(message.result).cleared === true) {
+            this.noteGoal(string(pending.params.threadId), null);
+          }
+          if (pending.method === "thread/fork") this.messageAttachments?.cloneThread(
+            string(pending.params.threadId), string(record(record(message.result).thread).id));
+          this.noteNativeSubscription(pending, message.result);
+          this.commitThreadSubscription(pending, message.result);
+          if (pending.method === "thread/archive" || pending.method === "thread/delete") this.schedules?.suspend(string(pending.params.threadId));
+          if (pending.method === "thread/delete") {
+            const threadId = string(pending.params.threadId);
+            if (this.queue?.discardThread(threadId)) this.emitQueueChanged(threadId);
+            this.activeTurns.delete(threadId);
+            this.noteGoal(threadId, null);
+          }
+          if (pending.method === "thread/resume" || pending.method === "thread/start" || pending.method === "turn/start") {
+            const threadId = pending.method === "thread/start"
+              ? string(record(record(message.result).thread).id)
+              : string(pending.params.threadId);
+            if (threadId) this.scheduleQueueMaintenance(threadId);
+          }
+        }
+        if (pending.method === "thread/resume") this.diagnostic({
+          event: "thread-resume-finish", clientId: pending.clientId,
+          threadId: string(pending.params.threadId),
+          outcome: "result" in message ? "succeeded" : "failed", pid: this.child?.pid ?? null,
+        });
+        if ("result" in message) this.observeMetadataResult(pending.method, pending.params, message.result, pending.metadataSender);
+        if (this.messageSenders && "result" in message) message = { ...message, result: projectThreadMessageResult(
+          this.projectSender, pending.method, pending.params, message.result) };
+        if (this.validClientRequest(pending)) this.emit({
+          ...message,
+          ...(this.messageAttachments && "result" in message ? {
+            result: projectThreadAttachmentResult(this.messageAttachments, pending.method, pending.params, message.result),
+          } : {}),
+          id: pending.originalId,
+        }, pending.clientId, pending.method);
+        if (["thread/start", "thread/fork", "thread/resume", "turn/start"].includes(pending.method)) {
+          const threadId = pending.method === "thread/start" || pending.method === "thread/fork"
+            ? string(record(record(message.result).thread).id) : string(pending.params.threadId);
+          this.scheduleNativeRelease(threadId);
+        }
+        return;
+      }
+      if (typeof message.method === "string") this.receiveServerRequest(id, message);
+      return;
+    }
+    nodeObserver(this.options.observationComponent ?? 'gateway').execution('codex', String(message.method), message.params);
+    const threadId = string(record(message.params).threadId) || string(record(record(message.params).thread).id);
+    try { this.tokenUsage?.notification(string(message.method),record(message.params)); } catch { this.diagnostic({event:"token-usage-partial",category:"notification"}); }
+    if (this.threadTitles?.notification(string(message.method), record(message.params))) return;
+    this.durableCatalog?.observe(string(message.method), message.params);
+    if (message.method === "thread/archived" || message.method === "thread/deleted") this.schedules?.suspend(threadId);
+    if (message.method === "turn/started" && threadId) {
+      const turnId = string(record(record(message.params).turn).id);
+      if (turnId) this.activeTurns.set(threadId, turnId);
+      const retry = this.capacityRetries.get(threadId);
+      if (retry && !retry.inFlight && retry.autoTurnId !== turnId) this.clearCapacityRetry(threadId);
+    }
+    if (message.method === "turn/completed" && threadId) {
+      this.activeTurns.delete(threadId);
+      const turn = record(record(message.params).turn);
+      if (["completed", "failed", "interrupted"].includes(string(turn.status))) for (const listener of this.scheduleObservers) listener({
+        threadId, turnId: string(turn.id), state: turn.status === "completed" && !turn.error ? "completed" : "failed",
+      });
+      if (turn.status === "failed" && record(turn.error).codexErrorInfo === "serverOverloaded") {
+        this.scheduleCapacityRetry(threadId, string(turn.id));
+      } else this.clearCapacityRetry(threadId);
+      this.scheduleQueueMaintenance(threadId);
+      if (!record(record(message.params).turn).error) this.scheduleGoalContinuation(threadId);
+      this.scheduleNativeRelease(threadId);
+    }
+    if (message.method === "thread/status/changed" && threadId && record(record(message.params).status).type === "idle") {
+      this.activeTurns.delete(threadId);
+      this.scheduleQueueMaintenance(threadId);
+      this.scheduleNativeRelease(threadId);
+    }
+    if ((message.method === "thread/archived" || message.method === "thread/deleted") && threadId) this.clearCapacityRetry(threadId);
+    if (message.method === "serverRequest/resolved") {
+      const requestId = responseId(record(message.params).requestId);
+      if (requestId !== null) {
+        const key = JSON.stringify(requestId);
+        if (this.serverRequests.get(key)?.threadId === threadId) {
+          this.serverRequests.delete(key);
+          this.scheduleNativeRelease(threadId);
+        }
+      }
+    }
+    if (message.method === "thread/closed" && threadId) {
+      this.nativeSubscribedThreads.delete(threadId);
+      this.ephemeralThreads.delete(threadId);
+      this.cancelNativeRelease(threadId);
+    }
+    if (message.method === "thread/goal/updated" && threadId) this.noteGoal(threadId, record(message.params).goal);
+    if (message.method === "thread/goal/cleared" && threadId) this.noteGoal(threadId, null);
+    try { this.threadMetadata?.observeNotification(message); }
+    catch { this.diagnostic({ event: "thread-metadata-observation-failed" }); }
+    if (this.messageSenders) message = projectThreadMessageNotification(this.projectSender, message);
+    if (this.messageAttachments) message = projectThreadAttachmentNotification(this.messageAttachments, message);
+    const targets = threadId ? this.threadTargets(threadId) : [];
+    if (threadId && targets.length === 0) return;
+    if (targets.length === 0) this.emit(message);
+    else for (const target of targets) this.emit(message, target);
+  };
+
+  private observeUsageAttempt(attemptId:string|undefined,method:string,params:RpcRecord,message:RpcRecord):void {
+    if(!attemptId)return;
+    if("error" in message){
+      const error=this.rpcError(record(message.error));
+      const rejected=method==="turn/steer"?this.definitiveSteerRejection(error):[-32600,-32601,-32602].includes(error.code);
+      this.tokenUsage?.attemptOutcome(attemptId,rejected?"rejected":"unknown");
+      return;
+    }
+    const result=record(message.result),turnId=method==="turn/start"?string(record(result.turn).id):string(result.turnId)||string(record(result.turn).id);
+    const accepted=turnId&&(method!=="turn/steer"||turnId===string(params.expectedTurnId));
+    this.tokenUsage?.attemptOutcome(attemptId,accepted?"accepted":"unknown",accepted?turnId:null);
+  }
+  private observeUsageAcceptance(method: string, params: RpcRecord, result: unknown): void {
+    if (method !== "turn/start" && method !== "turn/steer") return;
+    const turnId=method === "turn/start" ? string(record(record(result).turn).id) : string(record(result).turnId)||string(record(record(result).turn).id);
+    if (!turnId || (method === "turn/steer" && turnId !== string(params.expectedTurnId))) return;
+    try { this.tokenUsage?.admission({threadId:string(params.threadId),turnId},string(params.clientUserMessageId)); }
+    catch { this.diagnostic({event:"token-usage-partial",category:"acceptance"}); }
+  }
+
+  private commitThreadSubscription(pending: PendingRequest, result: unknown): void {
+    if (!this.validClientRequest(pending)) return;
+    if (pending.method === "thread/start" || pending.method === "thread/fork") {
+      const threadId = string(record(record(result).thread).id);
+      this.subscribeThread(threadId, pending.clientId);
+      this.claimInteractionOwner(threadId, pending.clientId);
+    } else if (pending.method === "thread/resume") {
+      const threadId = string(pending.params.threadId);
+      if (string(record(record(result).thread).id) !== threadId) return;
+      this.subscribeThread(threadId, pending.clientId);
+      this.claimInteractionOwner(threadId, pending.clientId);
+    } else if (pending.method === "turn/start") {
+      this.subscribeThread(string(pending.params.threadId), pending.clientId);
+    }
+  }
+
+  private noteNativeSubscription(pending: PendingRequest, result: unknown): void {
+    const threadId = pending.method === "thread/start" || pending.method === "thread/fork"
+      ? string(record(record(result).thread).id) : string(pending.params.threadId);
+    if (!threadId || !["thread/start", "thread/fork", "thread/resume", "turn/start"].includes(pending.method)) return;
+    this.nativeSubscribedThreads.add(threadId);
+    if (record(record(result).thread).ephemeral === true) this.ephemeralThreads.add(threadId);
+    if(pending.method==="thread/start")try{this.tokenUsage?.threadStarted(result);}catch{this.diagnostic({event:"token-usage-partial",category:"ephemeral-baseline"});}
+    this.cancelNativeRelease(threadId);
+  }
+
+  private receiveServerRequest(id: string | number, message: RpcRecord): void {
+    nodeObserver(this.options.observationComponent??'gateway').execution('codex',String(message.method),message.params);
+    if (message.method === "account/chatgptAuthTokens/refresh" && this.poolAuth !== null) {
+      const { type: _type, ...result } = this.poolAuth;
+      void this.writePhysical({ id, result })?.catch(() => undefined);
+      return;
+    }
+    if (this.threadTitles?.owns(string(record(message.params).threadId))) {
+      void this.writePhysical({ id, error: { code: -32601, message: "Title generation does not support tools or user interaction" } })?.catch(() => undefined);
+      return;
+    }
+    const params = record(message.params);
+    if (message.method === "item/tool/call" && CONVERSATION_TOOLS.some(t=>t.name===params.tool) && (params.namespace === undefined || params.namespace === null || params.namespace === "")) {
+      const key=String(id),token=Symbol(key);
+      if(this.collaborationCalls.has(key)) return;
+      if(this.collaborationCalls.size>=16) {void this.writePhysical({id,result:{success:false,contentItems:[{type:"inputText",text:"Conversation tool limit exceeded"}]}})?.catch(()=>{});return;}
+      this.collaborationCalls.set(key,token);
+      const respond = (success: boolean, value: unknown) => {
+        if(this.collaborationCalls.get(key)!==token || this.statusValue.state!=="open")return;
+        return this.writePhysical({id,result:{success,contentItems:[{type:"inputText",text:JSON.stringify(value)}]}});
+      };
+      void Promise.resolve().then(()=>{
+        if (!this.options.collaboration) throw new Error("Conversation tools unavailable");
+        return this.options.collaboration.tool(string(params.threadId),string(params.turnId),string(params.tool),record(params.arguments));
+      }).then(value=>respond(true,value),()=>respond(false,{error:"Conversation operation unavailable or unauthorized. Inspect the original receipt before retrying."})).catch(()=>{}).finally(()=>{if(this.collaborationCalls.get(key)===token)this.collaborationCalls.delete(key);});
+      return;
+    }
+    const key = JSON.stringify(id);
+    if (this.serverRequests.has(key)) return;
+    const threadId = string(record(message.params).threadId);
+    if (!threadId || this.serverRequests.size >= MAX_PENDING_SERVER_REQUESTS) {
+      void this.writePhysical({ id, error: {
+        code: !threadId ? -32602 : -32000,
+        message: !threadId ? "Server request has no Thread identity" : "Too many pending server requests",
+      } })?.catch(() => undefined);
+      return;
+    }
+    const candidate = this.threadInteractionOwners.get(threadId) ?? null;
+    const ownerClientId = candidate !== null && this.initializedClients.has(candidate) ? candidate : null;
+    this.serverRequests.set(key, { message, threadId, ownerClientId });
+    if (ownerClientId !== null) this.emit(message, ownerClientId);
+  }
+
+  private claimInteractionOwner(threadId: string, clientId: string): void {
+    if (!threadId) return;
+    const current = this.threadInteractionOwners.get(threadId);
+    if (current && current !== clientId && this.initializedClients.has(current)) return;
+    this.threadInteractionOwners.set(threadId, clientId);
+    for (const request of this.serverRequests.values()) {
+      if (request.threadId !== threadId || request.ownerClientId !== null) continue;
+      request.ownerClientId = clientId;
+      this.emit(request.message, clientId);
+    }
+  }
+
+  private releaseServerRequests(clientId: string, threadId?: string): void {
+    for (const request of this.serverRequests.values()) {
+      if (request.ownerClientId === clientId && (threadId === undefined || request.threadId === threadId)) {
+        request.ownerClientId = null;
+      }
+    }
+  }
+
+  private clientEpoch(clientId: string): number { return this.clientEpochs.get(clientId) ?? 0; }
+
+  private validClientRequest(request: PendingRequest): boolean {
+    return !request.invalidated && this.initializedClients.has(request.clientId)
+      && this.clientEpoch(request.clientId) === request.clientEpoch;
+  }
+
+  private threadTargets(threadId: string): string[] {
+    const targets = new Set(this.threadClients.get(threadId) ?? []);
+    // A join begins before native resume is sent. The Client's resume buffer
+    // holds these events until its authoritative snapshot has been committed.
+    for (const request of this.pending.values()) {
+      if ((request.method === "thread/resume" || request.method === "turn/start")
+        && request.params.threadId === threadId && this.validClientRequest(request)) targets.add(request.clientId);
+    }
+    return [...targets];
+  }
+
+  private async handleLogicalUnsubscribe(clientId: string, id: string | number, params: RpcRecord): Promise<void> {
+    if (!this.initializedClients.has(clientId)) {
+      this.emit({ id, error: { code: -32600, message: "Client is not initialized" } }, clientId);
+      return;
+    }
+    const requestClientEpoch = this.clientEpoch(clientId);
+    const threadId = string(params.threadId);
+    if (!threadId) {
+      this.emit({ id, error: { code: -32602, message: "Unsubscribe requires threadId" } }, clientId);
+      return;
+    }
+    const clients = this.threadClients.get(threadId);
+    const wasSubscribed = clients?.delete(clientId) ?? false;
+    if (clients?.size === 0) this.threadClients.delete(threadId);
+    for (const request of this.pending.values()) {
+      if (request.clientId === clientId && (request.method === "thread/resume" || request.method === "turn/start")
+        && request.params.threadId === threadId) {
+        request.invalidated = true;
+      }
+    }
+    if (this.threadInteractionOwners.get(threadId) === clientId) {
+      this.threadInteractionOwners.delete(threadId);
+      this.releaseServerRequests(clientId, threadId);
+    }
+    this.scheduleNativeRelease(threadId);
+    if (wasSubscribed) {
+      this.emit({ id, result: { status: "unsubscribed" } }, clientId);
+      return;
+    }
+    try {
+      const status = await this.threadStatus(threadId) === "notLoaded" ? "notLoaded" : "notSubscribed";
+      if (this.initializedClients.has(clientId) && this.clientEpoch(clientId) === requestClientEpoch) {
+        this.emit({ id, result: { status } }, clientId);
+      }
+    } catch (error) {
+      if (this.initializedClients.has(clientId) && this.clientEpoch(clientId) === requestClientEpoch) {
+        this.emit({ id, error: { code: -32000, message: errorMessage(error) } }, clientId);
+      }
+    }
+  }
+
+  private cancelNativeRelease(threadId: string): void {
+    const timer = this.nativeReleaseTimers.get(threadId);
+    if (timer !== undefined) clearTimeout(timer);
+    this.nativeReleaseTimers.delete(threadId);
+  }
+
+  private hasHostThreadDemand(threadId: string): boolean {
+    if (this.activeGoalThreads.has(threadId)) return true;
+    if (this.capacityRetries.has(threadId)) return true;
+    if (this.activeTurns.has(threadId) || this.queue?.firstUnsettled(threadId) != null) return true;
+    if ([...this.serverRequests.values()].some(request => request.threadId === threadId)) return true;
+    if ([...this.pending.values()].some(request => request.params.threadId === threadId
+      && (request.method === "turn/start" || request.method === "turn/steer"))) return true;
+    return [...this.internalRequests.values()].some(request => request.threadId === threadId);
+  }
+
+  private canReleaseNativeSubscription(threadId: string): boolean {
+    return this.statusValue.state === "open" && this.nativeSubscribedThreads.has(threadId)
+      && this.threadTargets(threadId).length === 0 && !this.hasHostThreadDemand(threadId);
+  }
+
+  private scheduleNativeRelease(threadId: string, minimumDelayMs = 0): void {
+    if (!threadId) return;
+    this.cancelNativeRelease(threadId);
+    if (this.nativeReleases.has(threadId) || !this.canReleaseNativeSubscription(threadId)) return;
+    // A logical detach never directly issues native unsubscribe: the Host may
+    // still need completion/queue/interaction events after the last View closes.
+    const delay = Math.max(minimumDelayMs, this.ephemeralThreads.has(threadId) ? 0 : this.options.nativeSubscriptionGraceMs ?? 2 * 60 * 1_000);
+    const timer = setTimeout(() => {
+      this.nativeReleaseTimers.delete(threadId);
+      this.releaseNativeSubscription(threadId);
+    }, delay);
+    timer.unref();
+    this.nativeReleaseTimers.set(threadId, timer);
+  }
+
+  private releaseNativeSubscription(threadId: string): void {
+    if (this.nativeReleases.has(threadId)) return;
+    const operation = this.withThreadOperation(threadId, async () => {
+      if (!this.canReleaseNativeSubscription(threadId)) return;
+      const status = await this.threadStatus(threadId);
+      if (!this.canReleaseNativeSubscription(threadId)) return;
+      if (status === "notLoaded") {
+        this.nativeSubscribedThreads.delete(threadId);
+        this.ephemeralThreads.delete(threadId);
+        return;
+      }
+      if (status !== "idle") return;
+      const result = record(await this.requestPhysical("thread/unsubscribe", { threadId }));
+      if (!["unsubscribed", "notSubscribed", "notLoaded"].includes(string(result.status))) {
+        throw new Error("Codex returned an invalid thread/unsubscribe result");
+      }
+      this.nativeSubscribedThreads.delete(threadId);
+      this.ephemeralThreads.delete(threadId);
+    });
+    this.nativeReleases.set(threadId, operation);
+    void operation.catch(error => this.diagnostic({ event: "native-thread-release-failed", threadId, reason: errorMessage(error) }))
+      .finally(() => {
+        if (this.nativeReleases.get(threadId) === operation) this.nativeReleases.delete(threadId);
+        this.scheduleNativeRelease(threadId, 1_000);
+      });
+  }
+
+  private subscribeThread(threadId: string, clientId: string): void {
+    if (!threadId) return;
+    this.cancelNativeRelease(threadId);
+    let clients = this.threadClients.get(threadId);
+    if (clients === undefined) { clients = new Set(); this.threadClients.set(threadId, clients); }
+    clients.add(clientId);
+  }
+
+  private disconnectClient(clientId: string): void {
+    this.desktopService?.revoke(this.desktopOwnerKey(clientId, this.clientEpoch(clientId)));
+    this.clientEpochs.delete(clientId);
+    this.initializedClients.delete(clientId);
+    const affected = new Set<string>();
+    for (const [threadId, clients] of this.threadClients) {
+      if (clients.delete(clientId)) affected.add(threadId);
+      if (clients.size === 0) this.threadClients.delete(threadId);
+    }
+    for (const pending of this.pending.values()) {
+      if (pending.clientId !== clientId || (pending.method !== "thread/resume" && pending.method !== "turn/start")) continue;
+      pending.invalidated = true;
+      affected.add(string(pending.params.threadId));
+    }
+    for (const [threadId, owner] of this.threadInteractionOwners) {
+      if (owner === clientId) this.threadInteractionOwners.delete(threadId);
+    }
+    this.releaseServerRequests(clientId);
+    for (const threadId of affected) this.scheduleNativeRelease(threadId);
+  }
+
+  private desktopOwnerKey(clientId: string, epoch: number): string {
+    return JSON.stringify([this.desktopOwnerNamespace, clientId, epoch]);
+  }
+
+  private revokeDesktopOwners(): void {
+    for (const [clientId, epoch] of this.clientEpochs) this.desktopService?.revoke(this.desktopOwnerKey(clientId, epoch));
+  }
+
+  private async handleDesktopRequest(clientId: string, epoch: number, id: string | number, method: string, rawParams: unknown): Promise<void> {
+    const service = this.desktopService;
+    const current = () => this.statusValue.state === "open" && this.initializedClients.has(clientId)
+      && this.clientEpoch(clientId) === epoch;
+    const key = this.desktopOwnerKey(clientId, epoch);
+    try {
+      if (!service || !current() || !rawParams || typeof rawParams !== "object" || Array.isArray(rawParams)) throw new Error();
+      const params = record(rawParams);
+      let result: unknown;
+      if (method === OPENCRAFT_DESKTOP_ATTACH) {
+        if (Object.keys(params).length !== 1 || typeof params.threadId !== "string") throw new Error();
+        const owner: LocalDesktopOwner = { key, isCurrent: current, readThread: async threadId => {
+          const response = record(await this.requestPhysical("thread/read", { threadId, includeTurns: false }, 5_000));
+          const thread = record(response.thread);
+          if (thread.id !== threadId || typeof thread.path !== "string" || typeof thread.createdAt !== "number") throw new Error();
+          return { id: threadId, path: thread.path, createdAt: thread.createdAt };
+        } };
+        const credential = await service.prepare(owner, params.threadId);
+        if (!current()) { service.release(key, credential.attachmentId); return; }
+        result = credential;
+      } else {
+        if (Object.keys(params).length !== 1 || typeof params.attachmentId !== "string") throw new Error();
+        service.release(key, params.attachmentId);
+        result = {};
+      }
+      if (current()) this.emit({ id, result }, clientId);
+    } catch {
+      if (current()) this.emit({ id, error: { code: -32600, message: "Desktop is unavailable" } }, clientId);
+    }
+  }
+
+  private async handleAccountRequest(clientId: string, message: RpcRecord): Promise<void> {
+    const id = responseId(message.id);
+    if (id === null) return;
+    const epoch = this.clientEpoch(clientId);
+    try {
+      if (this.nativeCore) {
+        const result = await this.nativeCore.control.accountRequest(string(message.method), record(message.params));
+        if (this.statusValue.state === "open" && epoch === this.clientEpoch(clientId)) this.emit({ id, result }, clientId);
+        return;
+      }
+      const store = this.poolStore;
+      const login = this.login;
+      const refresh = this.refresh;
+      const subscriptions = this.subscriptions;
+      if (store === null || login === null || refresh === null || subscriptions === null) throw new Error("Codex account service is unavailable");
+      const params = record(message.params);
+      let result: unknown;
+      switch (message.method) {
+        case "opencraft/codex/accounts/list": result = { accounts: this.accountViews(store) }; break;
+        case "opencraft/codex/accounts/setEnabled":
+          store.setEnabled(string(params.accountId), params.enabled === true);
+          if (params.enabled === true) void subscriptions.refreshAccount(string(params.accountId)).catch(() => undefined);
+          result = { accounts: this.accountViews(store) }; break;
+        case "opencraft/codex/accounts/reorder":
+          if (!Array.isArray(params.accountIds)) throw new Error("Invalid account order");
+          store.reorder("codex", params.accountIds.map(string));
+          result = { accounts: this.accountViews(store) }; break;
+        case "opencraft/codex/accounts/remove":
+          store.removeAccount(string(params.accountId));
+          result = { accounts: this.accountViews(store) }; break;
+        case "opencraft/codex/accounts/refresh": {
+          await subscriptions.refreshAccount(string(params.accountId));
+          result = { accounts: this.accountViews(store) }; break;
+        }
+        case "opencraft/codex/accounts/import": {
+          if (this.options.kind === "remote") throw new Error("Local account import is unavailable");
+          const imported = await login.importFrom(this.options.nativeCodexHomeDirectory);
+          void subscriptions.refreshAccount(imported.id).catch(() => undefined);
+          const account = this.accountViews(store).find(candidate => candidate.id === imported.id);
+          if (account === undefined) throw new Error("Imported Codex account was not found");
+          result = { account };
+          break;
+        }
+        case "opencraft/codex/accounts/deviceLogin/start": result = await login.start(); break;
+        case "opencraft/codex/accounts/deviceLogin/poll": {
+          const polled = await login.poll(string(params.sessionId));
+          if (polled.status !== "complete") result = polled;
+          else {
+            const account = this.accountViews(store).find(candidate => candidate.id === polled.account.id);
+            if (account === undefined) throw new Error("Codex account was not found after login");
+            result = { status: "complete", account };
+          }
+          break;
+        }
+        case "opencraft/codex/accounts/deviceLogin/cancel": result = { cancelled: await login.cancel(string(params.sessionId)) }; break;
+        default: throw new Error("Unsupported Codex account method");
+      }
+      this.emit({ id, result }, clientId);
+    } catch (error) {
+      this.emit({ id, error: { code: -32020, message: errorMessage(error) } }, clientId);
+    }
+  }
+
+  private accountViews(store: AccountPoolStore): CodexAccountView[] {
+    const states = new Map(store.listAccountStates().map(state => [state.accountId, state]));
+    return store.listAccounts().map(account => {
+      const state = states.get(account.id);
+      if (state === undefined) throw new Error("Codex account state is unavailable");
+      return {
+        id: account.id,
+        label: account.label,
+        priority: account.priority,
+        enabled: account.enabled,
+        credentialConfigured: account.credentialConfigured,
+        email: state.email,
+        subscriptionType: state.subscriptionType,
+        rateLimitTier: state.rateLimitTier,
+        resetCredits: state.resetCredits,
+        status: state.status,
+        observedAt: state.observedAt,
+        heldUntil: state.heldUntil,
+        lastUsedAt: state.lastUsedAt,
+        lastUsedHostId: state.lastUsedHostId,
+        limitWindows: state.limitWindows.map(window => ({
+          slot: window.slot,
+          windowMinutes: window.windowMinutes,
+          utilization: window.utilization,
+          resetAt: window.resetAt,
+          observedAt: window.observedAt,
+        })),
+      };
+    });
+  }
+
+  private rpcError(error: RpcRecord): OpenCraftQueueRpcError {
+    return new OpenCraftQueueRpcError(typeof error.code === "number" ? error.code : -32000,
+      string(error.message) || "Codex AppServer request failed", error.data);
+  }
+
+  private async resolvePermissionSelection(selection: string, cwd: unknown): Promise<string> {
+    const mode = parsePermissionModeProfileId(selection);
+    if (mode === null) return selection;
+    let cursor: string | null = null;
+    for (let page = 0; page < 10; page += 1) {
+      const result = record(await this.requestPhysical("permissionProfile/list", {
+        cursor, limit: 100, ...(typeof cwd === "string" ? { cwd } : {}),
+      }));
+      if (!Array.isArray(result.data)) throw new Error("Codex permission catalog is unavailable");
+      for (const entry of result.data) {
+        const profile = record(entry);
+        if (codexPermissionMode(string(profile.id)) !== mode) continue;
+        if (profile.allowed !== true) throw new Error(`Permission mode is disabled by Codex requirements: ${mode}`);
+        return string(profile.id);
+      }
+      if (result.nextCursor == null) break;
+      if (typeof result.nextCursor !== "string" || result.nextCursor === cursor) throw new Error("Codex permission catalog did not advance");
+      cursor = result.nextCursor;
+    }
+    throw new Error(`Permission mode is unavailable on this Codex Host: ${mode}`);
+  }
+
+  private requestPhysical(method: string, params: RpcRecord, timeoutMs = 30_000, signal?: AbortSignal, usageIdentity?:UsageSubmission): Promise<unknown> {
+    if (this.statusValue.state !== "open" || !this.physicalAvailable || !this.physicalInitialized) {
+      return Promise.reject(new Error("Codex AppServer is not initialized"));
+    }
+    if (signal?.aborted) return Promise.reject(new Error("Codex request cancelled"));
+    const id = `opencraft:host:${++this.sequence}`;
+    const usageAttemptId=method==="turn/start"||method==="turn/steer"?randomUUID():undefined;
+    if(usageAttemptId)this.tokenUsage?.attempt(usageAttemptId,string(params.threadId),string(params.clientUserMessageId),method==="turn/start"?"start":"steer",usageIdentity);
+    const unknown=()=>{if(usageAttemptId)this.tokenUsage?.attemptOutcome(usageAttemptId,"unknown");};
+    return new Promise((resolve, reject) => {
+      const cleanup = () => signal?.removeEventListener("abort", cancel);
+      const cancel = () => {
+        this.internalRequests.delete(id); clearTimeout(timer); cleanup();
+        unknown();reject(new Error("Codex request cancelled"));
+      };
+      const timer = setTimeout(() => {
+        this.internalRequests.delete(id); cleanup();
+        unknown();reject(new Error(`Codex ${method} delivery outcome is unknown after timeout`));
+      }, timeoutMs);
+      signal?.addEventListener("abort", cancel, { once: true });
+      this.internalRequests.set(id, { resolve: value => { cleanup(); resolve(value); }, reject: error => { cleanup(); reject(error); }, timer, threadId: string(params.threadId), method, params,usageAttemptId });
+      try {
+        const write = this.writePhysical({ id, method, params });
+        void write?.catch(error => {
+          if (!this.internalRequests.delete(id)) return;
+          clearTimeout(timer); cleanup(); unknown();reject(error);
+        });
+      }
+      catch (error) {
+        clearTimeout(timer); cleanup();
+        this.internalRequests.delete(id);
+        unknown();reject(error);
+      }
+    });
+  }
+
+  private rejectInternalRequests(error: Error): void {
+    for (const request of this.internalRequests.values()) {
+      clearTimeout(request.timer);
+      if(request.usageAttemptId)this.tokenUsage?.attemptOutcome(request.usageAttemptId,"unknown");
+      request.reject(error);
+    }
+    this.internalRequests.clear();
+  }
+
+  private queueStore(): OpenCraftHostQueue {
+    if (!this.queue) throw new Error("Host queue is unavailable");
+    return this.queue;
+  }
+
+  private attachmentRecords(): OpenCraftMessageAttachments {
+    if (!this.messageAttachments) throw new Error("Message attachment storage is unavailable");
+    return this.messageAttachments;
+  }
+
+  private installThreadMetadata(): void {
+    if (!this.hostState) return;
+    this.identity = new ThreadIdentity(this.hostState.database, {
+      createMetadata: this.options.createThreadMetadata,
+      readMessageIds: (threadId, turnId, signal) => readThreadMessageIds(
+        (method, params, signal) => this.requestPhysical(method, params, 30_000, signal), threadId, turnId, signal),
+      notify: (method, params) => {
+        for (const clientId of this.initializedClients) this.emit({ method, params }, clientId);
+      },
+    });
+  }
+
+  private observeMetadataResult(method: string, params: RpcRecord, result: unknown, sender?: import("@opencraft/appserver-protocol").MessageSender | null): void {
+    if (params.threadSource === "thread_title" || this.threadTitles?.owns(string(params.threadId))) return;
+    if (method === "thread/start") {
+      const configuration = record(params.config)["mcp_servers.opencraft_session"];
+      const threadId = string(record(record(result).thread).id);
+      if (configuration && threadId) this.sessionMcpConfigurations.set(threadId, structuredClone(configuration));
+    }
+    this.threadTitles?.observeResult(method, params, result);
+    this.durableCatalog?.observe(method, params, result);
+    try { this.identity?.observeResult(method, params, result, sender); }
+    catch { this.diagnostic({ event: "thread-metadata-observation-failed" }); }
+  }
+
+  private installDurableCatalog(): void {
+    if (this.options.kind !== "remote" || !this.hostState) return;
+    this.durableCatalog = new DurableThreadCatalog(this.hostState.database, {
+      list: (params, signal) => this.requestPhysical("thread/list", params as RpcRecord, 30_000, signal),
+      observed: threadIds => this.threadMetadata?.observeCatalog?.(threadIds),
+      changed: () => {
+        for (const clientId of this.initializedClients) this.emit({ method: "opencraft/thread-catalog/changed", params: {} }, clientId);
+      },
+    });
+  }
+
+  private readonly projectSender = (threadId: string, clientId: string, value: RpcRecord): RpcRecord => {
+    const { sender: _untrusted, ...rest } = value;
+    return { ...rest, sender: this.messageSenders?.get(threadId, clientId) ?? null };
+  };
+
+  private validateSubmissionContext(context: TransportSubmissionContext): void {
+    assertSubmissionIdentity(context);
+  }
+
+  private recordSender(params: RpcRecord, context: TransportSubmissionContext): void {
+    this.validateSubmissionContext(context);
+    const messageId = string(params.clientUserMessageId);
+    // Legacy native clients without message IDs remain unattributed.
+    if (!messageId && !context.sender) return;
+    // A native remote connection without an attribution owner can still forward
+    // anonymous input; verified attribution must never silently lose its owner.
+    if (this.options.kind === "remote" && !this.messageSenders && !context.sender) return;
+    if (!this.messageSenders) throw new Error("Message sender storage is unavailable");
+    this.identity!.recordSubmission(params, context);
+  }
+
+  private queueProjection(row: HostQueuedSubmission): RpcRecord {
+    return {
+      id: row.id,
+      input: row.input,
+      clientUserMessageId: row.clientUserMessageId,
+      sender: this.messageSenders?.get(row.threadId, row.clientUserMessageId) ?? null,
+      createdAt: row.createdAt,
+      pausedReason: row.pausedReason,
+    };
+  }
+
+  private emitQueueChanged(threadId: string): void {
+    if(process.env.OPENCRAFT_OBSERVE_SOCKET&&this.queue)try{nodeObserver(this.options.observationComponent??'gateway').queue('codex',threadId,this.queue.observationCount(threadId));}catch{/* Observation cannot break the queue owner. */}
+    const clients = this.threadClients.get(threadId);
+    if (!clients || clients.size === 0) return;
+    for (const clientId of clients) this.emit({ method: "thread/queue/changed", params: { threadId } }, clientId);
+  }
+
+  private withThreadOperation<T>(threadId: string, work: () => Promise<T>): Promise<T> {
+    const previous = this.threadOperations.get(threadId) ?? Promise.resolve();
+    const running = previous.catch(() => undefined).then(work);
+    const tail = running.then(() => undefined, () => undefined);
+    this.threadOperations.set(threadId, tail);
+    void tail.then(() => {
+      if (this.threadOperations.get(threadId) === tail) this.threadOperations.delete(threadId);
+      this.scheduleNativeRelease(threadId);
+    });
+    return running;
+  }
+
+  private noteGoal(threadId: string, value: unknown): void {
+    if (!threadId) return;
+    if (record(value).status === "active") {
+      this.activeGoalThreads.add(threadId);
+      this.cancelNativeRelease(threadId);
+    } else {
+      this.activeGoalThreads.delete(threadId);
+      const timer = this.goalContinuationTimers.get(threadId);
+      if (timer) clearTimeout(timer);
+      this.goalContinuationTimers.delete(threadId);
+      this.scheduleNativeRelease(threadId);
+    }
+  }
+
+  /** Goal continuation belongs to the Host, not a browser View or websocket lease. */
+  private scheduleGoalContinuation(threadId: string): void {
+    if (this.options.kind === "remote" || !this.activeGoalThreads.has(threadId) || this.goalContinuationTimers.has(threadId)) return;
+    const timer = setTimeout(() => {
+      this.goalContinuationTimers.delete(threadId);
+      void this.withThreadOperation(threadId, async () => {
+        if (!this.activeGoalThreads.has(threadId) || this.activeTurns.has(threadId)) return;
+        if (this.queue?.firstAwaitingAdmission(threadId)) return;
+        if (!(await this.queueThreadIsIdle(threadId))) return;
+        const result = record(await this.requestPhysical("thread/goal/get", { threadId }));
+        this.noteGoal(threadId, result.goal);
+        if (!this.activeGoalThreads.has(threadId) || this.activeTurns.has(threadId)) return;
+        await this.requestPhysical("thread/goal/set", { threadId, status: "active" });
+      }).catch(error => this.diagnostic({ event: "goal-continuation-failed", threadId, reason: errorMessage(error) }));
+    }, 150);
+    timer.unref();
+    this.goalContinuationTimers.set(threadId, timer);
+  }
+
+  private clearCapacityRetry(threadId: string): void {
+    const retry = this.capacityRetries.get(threadId);
+    if (retry?.timer) clearTimeout(retry.timer);
+    this.capacityRetries.delete(threadId);
+    if (retry) this.scheduleNativeRelease(threadId);
+  }
+
+  private clearAllCapacityRetries(): void {
+    for (const threadId of this.capacityRetries.keys()) this.clearCapacityRetry(threadId);
+  }
+
+  private scheduleCapacityRetry(threadId: string, failedTurnId: string): void {
+    if (!threadId || !failedTurnId) return;
+    const previous = this.capacityRetries.get(threadId);
+    if (previous?.failedTurnId === failedTurnId) return;
+    if (previous?.timer) clearTimeout(previous.timer);
+    const attempt = previous ? previous.attempt + 1 : 0;
+    const retry: CapacityRetry = { attempt, failedTurnId, timer: null, inFlight: false, autoTurnId: null };
+    const delayMs = capacityRetryDelayMs(attempt);
+    retry.timer = setTimeout(() => {
+      retry.timer = null;
+      void this.withThreadOperation(threadId, async () => {
+        if (this.capacityRetries.get(threadId) !== retry) return;
+        if (this.activeTurns.has(threadId) || this.queue?.firstAwaitingAdmission(threadId)
+          || !(await this.queueThreadIsIdle(threadId))) {
+          this.clearCapacityRetry(threadId);
+          return;
+        }
+        const response = record(await this.requestPhysical("thread/turns/list", { threadId, limit: 1, sortDirection: "desc", itemsView: "notLoaded" }));
+        const latest = Array.isArray(response.data) ? record(response.data[0]) : {};
+        if (latest.id !== failedTurnId || latest.status !== "failed"
+          || record(latest.error).codexErrorInfo !== "serverOverloaded") {
+          this.clearCapacityRetry(threadId);
+          return;
+        }
+        retry.inFlight = true;
+        const retryInputId=`capacity-retry:${randomUUID()}`;
+        // This owned continuation has no new human input. Record its origin at
+        // creation; a textual prefix in native history never grants this status.
+        this.tokenUsage?.submission({threadId,inputId:retryInputId,actorId:null,actorKind:"session",mode:"start",sourceKind:"system",submittedAt:Date.now()});
+        const started = record(await this.requestPhysical("turn/start", {
+          threadId, input: [], clientUserMessageId: retryInputId,
+        }));
+        retry.autoTurnId = string(record(started.turn).id);
+        if (retry.autoTurnId) this.options.collaboration?.continued?.(threadId, failedTurnId, retry.autoTurnId);
+        retry.inFlight = false;
+        if (!retry.autoTurnId) throw new Error("Codex returned an invalid capacity retry acknowledgement");
+      }).catch(error => {
+        if (this.capacityRetries.get(threadId) === retry) this.clearCapacityRetry(threadId);
+        this.diagnostic({ event: "capacity-retry-failed", threadId, reason: errorMessage(error) });
+      });
+    }, delayMs);
+    retry.timer.unref();
+    this.capacityRetries.set(threadId, retry);
+    this.diagnostic({ event: "capacity-retry-scheduled", threadId, attempt: attempt + 1, delayMs });
+  }
+
+  /** Rebuild the Host's active Goal index from Codex's durable Thread state. */
+  private async discoverActiveGoals(): Promise<void> {
+    let cursor: string | null = null;
+    for (let page = 0; page < 1_000 && this.statusValue.state === "open"; page++) {
+      const response = record(await this.requestPhysical("thread/list", {
+        limit: 100, useStateDbOnly: true, ...(cursor ? { cursor } : {}),
+      }));
+      if (!Array.isArray(response.data)) throw new Error("Codex Thread list has no data");
+      for (const thread of response.data) {
+        const threadId = string(record(thread).id);
+        if (!threadId || this.ephemeralThreads.has(threadId)) continue;
+        const result = record(await this.requestPhysical("thread/goal/get", { threadId }));
+        this.noteGoal(threadId, result.goal);
+        if (this.activeGoalThreads.has(threadId)) this.scheduleGoalContinuation(threadId);
+      }
+      if (response.nextCursor === null) return;
+      if (typeof response.nextCursor !== "string" || response.nextCursor === cursor) throw new Error("Codex Thread list did not advance");
+      cursor = response.nextCursor;
+    }
+    if (cursor !== null) throw new Error("Codex Goal discovery exceeded its safety bound");
+  }
+
+  private scheduleQueueMaintenance(threadId: string): void {
+    if (!threadId || this.queue === null || this.initializeResult === null) return;
+    void this.withThreadOperation(threadId, () => this.maintainQueue(threadId)).catch(error => {
+      this.diagnostic({ event: "queue-maintenance-failed", threadId, reason: errorMessage(error) });
+    });
+  }
+
+  /** Adapter only: scheduling policy and persistence live outside Codex. */
+  private readonly scheduleObservers = new Set<(event: ScheduleExecutionEvent) => void>();
+  private scheduleExecutionPort(): ScheduleExecutionPort {
+    return {
+      subscribe: listener => { this.scheduleObservers.add(listener); return () => { this.scheduleObservers.delete(listener); }; },
+      validate: threadId => this.assertDurableQueueThread(threadId),
+      permissionProfiles: async threadId => {
+        const { thread } = record(await this.requestPhysical("thread/read", { threadId, includeTurns: false }));
+        const profiles: OpenCraftPermissionProfile[] = [];
+        let cursor: string | null = null;
+        for (let page = 0; page < 10; page++) {
+          const response = record(await this.requestPhysical("permissionProfile/list", { limit: 100, cwd: record(thread).cwd, cursor }));
+          if (!Array.isArray(response.data)) throw new Error("Codex permission catalog is unavailable");
+          profiles.push(...response.data as OpenCraftPermissionProfile[]);
+          if (response.nextCursor == null) return projectPermissionProfileCatalog(profiles, profile => codexPermissionMode(profile.id));
+          if (typeof response.nextCursor !== "string" || response.nextCursor === cursor) throw new Error("Codex permission catalog did not advance");
+          cursor = response.nextCursor;
+        }
+        throw new Error("Codex permission catalog is too long");
+      },
+      submit: (run, prompt, canAdmit) => this.withThreadOperation(run.threadId, async () => {
+        const queue = this.queueStore();
+        const prior = queue.findByClientId(run.threadId, run.id);
+        if (prior) {
+          if (prior.state === "delivered") return { state: "running", turnId: prior.targetTurnId ?? undefined };
+          if (prior.state === "discarded") return { state: "failed" };
+          if (prior.state !== "queued") return { state: "unknown" };
+          // Durable handoff already exists: its ordinary queue owner will resume it.
+          this.scheduleQueueMaintenance(run.threadId);
+          return { state: "running" };
+        }
+        await this.assertDurableQueueThread(run.threadId);
+        if (queue.firstUnsettled(run.threadId) || this.activeTurns.has(run.threadId) || !await this.queueThreadIsIdle(run.threadId)) return { state: "waiting" };
+        if (!canAdmit()) return { state: "waiting" };
+        // Scheduled provenance is explicit text, never forged employee credentials.
+        const row = queue.add(run.threadId, run.id, [{ type: "text", text: `[Scheduled task]\n${prompt}` }]);
+        this.emitQueueChanged(run.threadId);
+        try {
+          const response = await this.dispatchQueuedStart(run.threadId, row.id);
+          return { state: "running", turnId: string(record(response.turn).id) };
+        } catch {
+          return { state: "unknown" };
+        }
+      }),
+      inspect: async run => this.inspectScheduledRun(run),
+    };
+  }
+
+  private async inspectScheduledRun(run: ConversationScheduleRun): Promise<{ state: "running" | "completed" | "failed" | "unknown" }> {
+    const row = this.queueStore().findByClientId(run.threadId, run.id);
+    if (!row || row.state === "unknown" || row.state === "dispatching" || row.state === "steering") return { state: "unknown" };
+    if (row.state === "discarded") return { state: "failed" };
+    if (row.state === "queued") { this.scheduleQueueMaintenance(run.threadId); return { state: "running" }; }
+    const turnId = row.targetTurnId;
+    if (!turnId || turnId === "unknown") return { state: "unknown" };
+    const turn = await this.findScheduledTurn(run.threadId, turnId);
+    if (!turn) return { state: "unknown" };
+    if (turn.status === "completed") return { state: "completed" };
+    if (turn.status === "failed" || turn.status === "interrupted" || turn.error) return { state: "failed" };
+    return { state: "running" };
+  }
+
+  private async findScheduledTurn(threadId: string, turnId: string): Promise<RpcRecord | undefined> {
+    let cursor: string | undefined;
+    const seen = new Set<string>();
+    for (let page = 0; page < 100; page += 1) {
+      const response = record(await this.requestPhysical("thread/turns/list", {
+        threadId, limit: 100, sortDirection: "desc", itemsView: "notLoaded", ...(cursor ? { cursor } : {}),
+      }));
+      if (!Array.isArray(response.data)) throw new Error("Codex turn history has no page");
+      const turn = response.data.map(record).find(value => value.id === turnId);
+      if (turn) return turn;
+      if (response.nextCursor == null) return undefined;
+      if (typeof response.nextCursor !== "string" || seen.has(response.nextCursor)) throw new Error("Codex turn history did not advance");
+      cursor = response.nextCursor; seen.add(cursor);
+    }
+    return undefined; // Old/unobserved schedules stay unknown; never fetch the full transcript.
+  }
+
+  private async threadStatus(threadId: string): Promise<string> {
+    const response = record(await this.requestPhysical("thread/read", { threadId, includeTurns: false }));
+    return string(record(record(response.thread).status).type);
+  }
+
+  private async assertDurableQueueThread(threadId: string): Promise<void> {
+    const response = record(await this.requestPhysical("thread/read", { threadId, includeTurns: false }));
+    const thread = record(response.thread);
+    if (string(thread.id) !== threadId) throw new OpenCraftQueueRpcError(-32600, "Queued Thread was not found");
+    if (thread.ephemeral === true) throw new OpenCraftQueueRpcError(-32600, "Ephemeral Thread cannot own durable queued input");
+    if (thread.canAcceptDirectInput === false) throw new OpenCraftQueueRpcError(-32600, "Thread does not accept direct user input");
+  }
+
+  private async queueThreadIsIdle(threadId: string): Promise<boolean> {
+    let status = await this.threadStatus(threadId);
+    if (status === "notLoaded" || this.nativeCore && !this.nativeSubscribedThreads.has(threadId)) {
+      // A core-kept active thread is loaded, but this new physical connection
+      // still needs completion events for queue and Goal continuation.
+      await this.requestPhysical("thread/resume", { threadId, excludeTurns: true });
+      status = await this.threadStatus(threadId);
+    }
+    return status === "idle";
+  }
+
+  private async historyHasClientMessage(threadId: string, clientId: string, turnId: string | null): Promise<boolean> {
+    let cursor: string | null = null;
+    for (let page = 0; page < 100; page += 1) {
+      const response = record(await this.requestPhysical("thread/items/list", {
+        threadId, ...(turnId ? { turnId } : {}), ...(cursor ? { cursor } : {}), limit: 100,
+      }));
+      const entries = response.data;
+      if (!Array.isArray(entries)) throw new Error("Codex history response has no items");
+      for (const entry of entries) {
+        const item = record(record(entry).item);
+        if (item.type === "userMessage" && item.clientId === clientId) return true;
+      }
+      const next = response.nextCursor;
+      if (next === null || next === undefined) return false;
+      if (typeof next !== "string" || next === cursor) throw new Error("Codex history pagination did not advance");
+      cursor = next;
+    }
+    throw new Error("Codex history is too long to reconcile safely");
+  }
+
+  private async reconcileQueue(threadId: string): Promise<void> {
+    const queue = this.queueStore();
+    const unsettled = queue.list(threadId).filter(row => row.state === "unknown" || row.state === "steering");
+    for (const row of unsettled) {
+      if (await this.historyHasClientMessage(threadId, row.clientUserMessageId,
+        row.targetTurnId === "unknown" ? null : row.targetTurnId)) {
+        queue.settle(threadId, row.id, "delivered");
+        this.emitQueueChanged(threadId);
+      } else if (row.state === "steering" && await this.queueThreadIsIdle(threadId)) {
+        queue.settle(threadId, row.id, "unknown", "steer-delivery-unconfirmed");
+        this.emitQueueChanged(threadId);
+      }
+    }
+  }
+
+  private actorInput(row: HostQueuedSubmission, mode: 'queue' | 'steer', expectedTurnId?: string): void {
+    if (!row.clientUserMessageId.startsWith('actor-input:')) return;
+    if (!this.options.collaborationInput?.authorize(row.threadId, row.clientUserMessageId, mode, expectedTurnId)) {
+      throw new OpenCraftQueueRpcError(-32600, 'Actor execution authorization changed');
+    }
+  }
+
+  private async maintainQueue(threadId: string): Promise<void> {
+    const queue = this.queueStore();
+    await this.reconcileQueue(threadId);
+    const first = queue.firstAwaitingAdmission(threadId);
+    if (!first || first.state !== "queued") return;
+    if (first.clientUserMessageId.startsWith('actor-input:')) {
+      if (this.options.collaborationInput?.available() === false) return;
+      const mode = this.options.collaborationInput?.mode(first.clientUserMessageId);
+      if (!mode || !this.options.collaborationInput?.authorize(threadId, first.clientUserMessageId, mode, first.targetTurnId ?? undefined)) {
+        // Steer carries its expected Turn in the collaboration authority, not in an unclaimed queue row.
+        if (mode === 'steer') return;
+        if (!this.options.collaborationInput) return;
+        queue.delete(threadId, first.id); this.emitQueueChanged(threadId); this.scheduleQueueMaintenance(threadId); return;
+      }
+      if (mode === 'steer') return;
+    }
+    if ([...this.pending.values()].some(pending => pending.method === "turn/start" && pending.params.threadId === threadId)) return;
+    if (this.activeTurns.has(threadId) || !(await this.queueThreadIsIdle(threadId))) return;
+    await this.dispatchQueuedStart(threadId, first.id);
+  }
+
+  private queuedUsageIdentity(context:TransportSubmissionContext|undefined,threadId:string,inputId:string,mode:"start"|"steer"):UsageSubmission|undefined {
+    if(!context)return undefined;
+    let actor:{id:string;kind:"human"|"session"}|null=null;
+    try{actor=context.actorContext?this.options.tokenUsage?.actor(context.actorContext)??null:null;}
+    catch{try{this.diagnostic({event:"token-usage-partial",category:"dispatch-identity"});}catch{}}
+    return {threadId,inputId,mode,actorId:actor?.id??null,actorKind:actor?.kind??"unknown",sourceKind:actor?.kind==="human"?"human":actor?.kind==="session"?"system":"unknown",submittedAt:Date.now()};
+  }
+  private async dispatchQueuedStart(threadId: string, id: string, context?:TransportSubmissionContext): Promise<RpcRecord> {
+    const queue = this.queueStore();
+    const head = queue.firstAwaitingAdmission(threadId);
+    if (head?.state === "unknown") throw new OpenCraftQueueRpcError(-32600, "Earlier delivery is unconfirmed; review it before sending another message");
+    if (head?.state === "dispatching") throw new OpenCraftQueueRpcError(-32600, "Earlier delivery is still being sent");
+    const queued = queue.find(threadId, id);
+    if (!queued) throw new OpenCraftQueueRpcError(-32600, "Queued message is unavailable");
+    const prepared = await this.modelVisibleAttachmentInput(queued.input);
+    if (prepared.attachments.length > 0) this.attachmentRecords().record(
+      threadId, queued.clientUserMessageId, prepared.attachments);
+    const referenceContext = await this.options.collaboration?.queuedContext?.(threadId, queued.clientUserMessageId, prepared.input);
+    this.actorInput(queued, 'queue');
+    const selection = this.schedules?.executionPermissions(threadId, queued.clientUserMessageId);
+    const thread = selection ? record(record(await this.requestPhysical("thread/read", { threadId, includeTurns: false })).thread) : null;
+    const permissions = selection ? await this.resolvePermissionSelection(selection, thread?.cwd) : null;
+    const row = queue.claim(threadId, id, "unknown");
+    if (!row) throw new OpenCraftQueueRpcError(-32600, "Queued message is already being dispatched");
+    this.emitQueueChanged(threadId);
+    try {
+      const response = record(await this.requestPhysical("turn/start", {
+        threadId, input: prepared.input, clientUserMessageId: row.clientUserMessageId,
+        ...(permissions ? { permissions } : {}),
+        ...(referenceContext ? {additionalContext:{"opencraft.conversations":{kind:"untrusted",value:JSON.stringify(referenceContext)}}} : {}),
+      },30_000,undefined,this.queuedUsageIdentity(context,threadId,row.clientUserMessageId,"start")));
+      if (!string(record(response.turn).id)) throw new Error("Codex returned an invalid turn/start acknowledgement");
+      queue.settle(threadId, id, "delivered", null, string(record(response.turn).id));
+      this.emitQueueChanged(threadId);
+      return response;
+    } catch (error) {
+      queue.settle(threadId, id, "unknown", "steer-delivery-unconfirmed");
+      this.emitQueueChanged(threadId);
+      throw error;
+    }
+  }
+
+  private definitiveSteerRejection(error: unknown): boolean {
+    if (!(error instanceof OpenCraftQueueRpcError)) return false;
+    if (error.code === -32601) return true;
+    if (error.code !== -32600) return false;
+    const info = record(record(error.data).codexErrorInfo);
+    return Boolean(info.activeTurnNotSteerable) || error.message === "no active turn to steer"
+      || /^expected active turn id `[^`]+` but found `[^`]+`$/.test(error.message)
+      || error.message === "active turn uses a different output schema";
+  }
+
+  private async dispatchQueuedSteer(threadId: string, id: string, expectedTurnId: string, context?:TransportSubmissionContext): Promise<RpcRecord> {
+    const queue = this.queueStore();
+    if (queue.firstAwaitingAdmission(threadId)?.state === "unknown") await this.reconcileQueue(threadId);
+    const head = queue.firstAwaitingAdmission(threadId);
+    if (head?.state === "unknown") throw new OpenCraftQueueRpcError(-32600, "Earlier delivery is unconfirmed; review it before sending another message");
+    if (head?.state === "dispatching") throw new OpenCraftQueueRpcError(-32600, "Earlier delivery is still being sent");
+    const queued = queue.find(threadId, id);
+    if (!queued) throw new OpenCraftQueueRpcError(-32600, "Queued message is unavailable");
+    const prepared = await this.modelVisibleAttachmentInput(queued.input);
+    if (prepared.attachments.length > 0) this.attachmentRecords().record(
+      threadId, queued.clientUserMessageId, prepared.attachments);
+    this.actorInput(queued, 'steer', expectedTurnId);
+    const row = queue.claim(threadId, id, expectedTurnId);
+    if (!row) throw new OpenCraftQueueRpcError(-32600, "Queued message is already being dispatched");
+    this.emitQueueChanged(threadId);
+    try {
+      const response = record(await this.requestPhysical("turn/steer", {
+        threadId, expectedTurnId, input: prepared.input, clientUserMessageId: row.clientUserMessageId,
+      },30_000,undefined,this.queuedUsageIdentity(context,threadId,row.clientUserMessageId,"steer")));
+      const turnId = string(response.turnId) || string(record(response.turn).id);
+      if (turnId !== expectedTurnId) throw new Error("Codex returned an invalid steer acknowledgement");
+      queue.settle(threadId, id, "steering");
+      this.emitQueueChanged(threadId);
+      return { turnId };
+    } catch (error) {
+      const rejected = this.definitiveSteerRejection(error);
+      queue.settle(threadId, id, rejected ? "queued" : "unknown",
+        rejected ? null : "steer-delivery-unconfirmed");
+      this.emitQueueChanged(threadId);
+      throw error;
+    }
+  }
+
+  private async handleQueueRequest(clientId: string, id: string | number, method: string, params: RpcRecord, context: TransportSubmissionContext): Promise<void> {
+    const threadId = string(params.threadId);
+    try {
+      if (!this.initializedClients.has(clientId)) throw new OpenCraftQueueRpcError(-32600, "Client is not initialized");
+      if (!threadId) throw new OpenCraftQueueRpcError(-32602, "Queue request requires threadId");
+      const queue = this.queueStore();
+      let result: RpcRecord;
+      const actorRequest = context.collaborationRequestId;
+      const selected = string(params.queuedSubmissionId) ? queue.find(threadId, string(params.queuedSubmissionId)) : null;
+      const actorClientId = selected?.clientUserMessageId ?? string(params.clientUserMessageId);
+      if (actorClientId.startsWith('actor-input:') && actorClientId !== `actor-input:${actorRequest}`) {
+        throw new OpenCraftQueueRpcError(-32600, 'Actor input requires its trusted admission');
+      }
+      if (selected?.clientUserMessageId.startsWith('actor-input:') && method === 'thread/queue/update') throw new OpenCraftQueueRpcError(-32600, 'Actor messages are immutable');
+      if (method === "thread/queue/collaborationReceipt") {
+        if (!actorRequest) throw new OpenCraftQueueRpcError(-32600, 'Trusted Actor admission required');
+        const row = queue.findByClientId(threadId, `actor-input:${actorRequest}`);
+        result = { receipt: row ? { id: row.id, state: row.state, targetTurnId: row.targetTurnId } : null };
+      } else if (method === "thread/queue/list") {
+        const cursor = params.cursor == null ? 0 : Number(params.cursor);
+        const limit = params.limit == null ? 50 : Number(params.limit);
+        if (!Number.isSafeInteger(cursor) || cursor < 0 || !Number.isSafeInteger(limit) || limit < 1) throw new OpenCraftQueueRpcError(-32602, "Invalid queue pagination");
+        const rows = queue.list(threadId);
+        const queued = rows.filter(row => row.state === "queued");
+        const page = queued.slice(cursor, cursor + Math.min(limit, 100));
+        result = {
+          data: page.map(row => this.queueProjection(row)),
+          nextCursor: cursor + page.length < queued.length ? String(cursor + page.length) : null,
+          ...(cursor === 0 ? { steering: rows.filter(row => row.state === "steering" || row.state === "unknown" || row.state === "dispatching")
+            .map(row => ({ ...this.queueProjection(row), targetTurnId: row.targetTurnId ?? "unknown" })) } : {}),
+        };
+      } else if (method === "thread/queue/add") {
+        await this.assertDurableQueueThread(threadId);
+        if (actorClientId.startsWith('actor-input:')) {
+          const mode = this.options.collaborationInput?.mode(actorClientId);
+          if (!mode) throw new OpenCraftQueueRpcError(-32600, 'Actor request unavailable');
+          // Steer is checked again against its exact Turn at dispatch; add itself never executes it.
+          if (mode === 'queue' && !this.options.collaborationInput?.authorize(threadId, actorClientId, mode)) throw new OpenCraftQueueRpcError(-32600, 'Actor execution authorization changed');
+        }
+        const row = this.hostState!.transaction(() => {
+          this.recordSender(params, context);
+          if (context.actorContext && this.options.collaboration && !actorClientId.startsWith('actor-input:')) {context.resourceOwner?.assertCurrent();this.options.collaboration.authorize(context.actorContext, threadId, string(params.clientUserMessageId));}
+          return queue.add(threadId, string(params.clientUserMessageId), params.input as readonly unknown[]);
+        });
+        result = { queuedSubmission: this.queueProjection(row) };
+        this.emitQueueChanged(threadId);
+        this.scheduleQueueMaintenance(threadId);
+      } else if (method === "thread/queue/update") {
+        const row = queue.update(threadId, string(params.queuedSubmissionId), params.input as readonly unknown[]);
+        if (!row) throw new OpenCraftQueueRpcError(-32600, "Queued message is not editable");
+        result = { queuedSubmission: this.queueProjection(row) };
+        this.emitQueueChanged(threadId);
+      } else if (method === "thread/queue/delete") {
+        const itemId = string(params.queuedSubmissionId);
+        if (params.acknowledgeUnknownDelivery === true) {
+          const target = string(params.expectedTurnId);
+          const row = queue.find(threadId, itemId);
+          if (!target || !row || row.state !== "unknown" || row.targetTurnId !== target) {
+            throw new OpenCraftQueueRpcError(-32600, "Unknown delivery claim does not match the target turn");
+          }
+          await this.withThreadOperation(threadId, async () => {
+            if (!(await this.queueThreadIsIdle(threadId))) throw new OpenCraftQueueRpcError(-32600, "Turn is still active");
+            if (await this.historyHasClientMessage(threadId, row.clientUserMessageId, target === "unknown" ? null : target)) {
+              queue.settle(threadId, itemId, "delivered");
+              this.emitQueueChanged(threadId);
+              throw new OpenCraftQueueRpcError(-32600, "Steered input is present in Codex history");
+            }
+            if (!queue.discardUnknown(threadId, itemId, target)) throw new OpenCraftQueueRpcError(-32600, "Delivery claim changed before discard");
+          });
+          result = { deleted: true };
+        } else {
+          result = { deleted: queue.delete(threadId, itemId) };
+        }
+        this.emitQueueChanged(threadId);
+        this.scheduleQueueMaintenance(threadId);
+      } else if (method === "thread/queue/reorder") {
+        if (!Array.isArray(params.queuedSubmissionIds)) throw new OpenCraftQueueRpcError(-32602, "Queue order must be an array");
+        if (queue.list(threadId).some(row => row.clientUserMessageId.startsWith('actor-input:'))) throw new OpenCraftQueueRpcError(-32600, 'Actor inputs retain authority ordering');
+        queue.reorder(threadId, params.queuedSubmissionIds as string[]);
+        result = {};
+        this.emitQueueChanged(threadId);
+      } else if (method === "thread/queue/start") {
+        result = await this.withThreadOperation(threadId, async () => {
+          if (!(await this.queueThreadIsIdle(threadId))) throw new OpenCraftQueueRpcError(-32600, "Thread is not idle");
+          await this.reconcileQueue(threadId);
+          const row = string(params.queuedSubmissionId)
+            ? queue.find(threadId, string(params.queuedSubmissionId))
+            : queue.firstAwaitingAdmission(threadId);
+          if (row?.state === "unknown") throw new OpenCraftQueueRpcError(-32600, "Earlier delivery is unconfirmed; review it before sending another message");
+          if (!row || row.state !== "queued") throw new OpenCraftQueueRpcError(-32600, "Queued message is unavailable");
+          if (row.clientUserMessageId.startsWith('actor-input:') && row.clientUserMessageId !== `actor-input:${actorRequest}`) throw new OpenCraftQueueRpcError(-32600, 'Actor input requires its trusted admission');
+          return this.dispatchQueuedStart(threadId, row.id,context);
+        });
+      } else if (method === "thread/queue/steer") {
+        const target = string(params.expectedTurnId);
+        if (!target) throw new OpenCraftQueueRpcError(-32602, "Steer requires expectedTurnId");
+        result = await this.withThreadOperation(threadId, () => this.dispatchQueuedSteer(threadId, string(params.queuedSubmissionId), target,context));
+      } else throw new OpenCraftQueueRpcError(-32601, `Unknown queue method ${method}`);
+      this.emit({ id, result }, clientId);
+    } catch (error) {
+      this.emit({ id, error: { code: error instanceof OpenCraftQueueRpcError ? error.code : -32000,
+        message: errorMessage(error), ...(error instanceof OpenCraftQueueRpcError && error.data !== undefined ? { data: error.data } : {}) } }, clientId);
+    }
+  }
+
+  // Confirmed configuration belongs to this physical connection. The in-flight
+  // map only coalesces preparation; neither map is a configuration authority.
+  private readonly sessionMcpConfigurations = new Map<string, unknown>();
+  private readonly sessionMcpRefreshes = new Map<string, Promise<void>>();
+  private sessionMcpGeneration = 0;
+  private async prepareSessionMcp(threadId: string): Promise<void> {
+    if (!threadId || !this.options.sessionMcp) return;
+    for (;;) {
+      const pending = this.sessionMcpRefreshes.get(threadId);
+      if (pending) {
+        await pending;
+        // The provider may have changed while this caller waited. Resolve its
+        // current value rather than applying a captured, possibly older value.
+        continue;
+      }
+      const generation = this.sessionMcpGeneration;
+      const operation = Promise.resolve().then(() => this.refreshSessionMcp(threadId, generation)).finally(() => {
+        if (this.sessionMcpRefreshes.get(threadId) === operation) this.sessionMcpRefreshes.delete(threadId);
+      });
+      this.sessionMcpRefreshes.set(threadId, operation);
+      return operation;
+    }
+  }
+
+  private async refreshSessionMcp(threadId: string, generation: number): Promise<void> {
+    const current = () => {
+      if (generation !== this.sessionMcpGeneration) throw new Error("Session tool preparation belongs to an expired connection");
+    };
+    const configuration = structuredClone(await this.options.sessionMcp!(threadId));
+    current();
+    const previous = this.sessionMcpConfigurations.get(threadId);
+    if (isDeepStrictEqual(previous, configuration) || (configuration === null && previous === undefined)) return;
+    const request = async (method: string, params: RpcRecord): Promise<unknown> => {
+      current();
+      const result = await this.requestPhysical(method, params);
+      current();
+      return result;
+    };
+    const read = record(await request("thread/read", { threadId, includeTurns: false }));
+    const thread = record(read.thread);
+    if (thread.ephemeral === true) {
+      if (configuration) throw new Error("Session capabilities require a durable Codex thread");
+      return;
+    }
+    const status = string(record(thread.status).type);
+    if (!["idle", "notLoaded"].includes(status)) throw new Error("Wait until the Codex thread is idle before changing its tools");
+    this.cancelNativeRelease(threadId);
+    const live = status === "notLoaded" ? {} : record(await request("thread/resume", { threadId, excludeTurns: true }));
+    const resume: RpcRecord = {};
+    for (const key of ["model", "modelProvider", "serviceTier", "cwd", "runtimeWorkspaceRoots", "approvalPolicy", "approvalsReviewer"])
+      if (live[key] !== undefined) resume[key] = live[key];
+    const profile = string(record(live.activePermissionProfile).id);
+    if (profile) resume.permissions = profile;
+    else {
+      const sandbox = record(live.sandbox), modes: Record<string, string> = { dangerFullAccess: "danger-full-access", readOnly: "read-only", workspaceWrite: "workspace-write" };
+      if (sandbox.type && !modes[string(sandbox.type)]) throw new Error("Cannot preserve this Codex sandbox while refreshing tools");
+      if (sandbox.type) resume.sandbox = modes[string(sandbox.type)];
+    }
+    // Once native configuration can change, the old confirmation is no longer
+    // valid either. A partial failure must not make a later rollback look applied.
+    this.sessionMcpConfigurations.delete(threadId);
+    if (status !== "notLoaded") {
+      await request("thread/unsubscribe", { threadId });
+      // Native keeps durable threads in its catalog after unsubscribe. The
+      // idle resume boundary rebuilds the session configuration without relying
+      // on thread/read or loaded/list as an unloading acknowledgement.
+    }
+    await request("thread/resume", { ...resume, threadId, excludeTurns: true, config: {
+      "mcp_servers.opencraft_session": configuration ?? { enabled: false, url: "http://127.0.0.1:1/mcp" },
+    } });
+    if (Object.keys(live).length) {
+      const settings: RpcRecord = { threadId };
+      if (profile) settings.permissions = profile;
+      else if (live.sandbox) settings.sandboxPolicy = live.sandbox;
+      for (const key of ["approvalPolicy", "approvalsReviewer", "model", "serviceTier", "collaborationMode"])
+        if (live[key] !== undefined && live[key] !== null) settings[key] = live[key];
+      if (live.reasoningEffort) settings.effort = live.reasoningEffort;
+      await request("thread/settings/update", settings);
+    }
+    this.sessionMcpConfigurations.set(threadId, configuration);
+  }
+  private async writePhysical(message: RpcRecord): Promise<void> {
+    if (message.method === "turn/start") await this.prepareSessionMcp(string(record(message.params).threadId));
+    if (this.options.collaboration && message.method === "thread/start") {
+      const params = record(message.params), tools = Array.isArray(params.dynamicTools) ? params.dynamicTools : [];
+      const names = new Set<string>(CONVERSATION_TOOLS.map(t=>t.name));
+      message = {...message, params:{...params,dynamicTools:[...tools.filter(t=>!names.has(string(record(t).name))),...CONVERSATION_TOOLS.map(t=>({type:"function",...t}))]}};
+    }
+    // Product default, not a second reasoning owner: all native starts (also
+    // Host queue delivery) request returned summaries. Explicit null keeps
+    // native inheritance; explicit modes and invalid values remain native's
+    // responsibility. Never put this option on steer or another engine.
+    if (message.method === "turn/start" && responseId(message.id) !== null) {
+      const params = record(message.params);
+      if (!Object.hasOwn(params, "summary")) {
+        message = { ...message, params: { ...params, summary: "auto" } };
+      }
+    }
+    if (this.options.kind === "remote") {
+      return this.options.transport.send(JSON.stringify(message)).catch(() => {
+        this.rejectInternalRequests(new Error("Remote delivery outcome is unknown"));
+        this.publishStatus({ state: "failed", reason: "Remote delivery outcome is unknown", failure: { code: "SSH_DELIVERY_UNKNOWN", recovery: "automatic" } });
+        throw new Error("Remote delivery outcome is unknown");
+      });
+    }
+    if (this.nativeCore) return this.nativeTransport!.send(JSON.stringify(message));
+    if (this.child === null || this.child.stdin.destroyed) throw new Error("Codex AppServer stdin is closed");
+    this.child.stdin.write(`${JSON.stringify(message)}\n`);
+  }
+
+  private emit(message: RpcRecord, clientId?: string, method = ""): void {
+    const frame = serializeHistoryReply(clientId ? { ...message, [LOGICAL_CLIENT_FIELD]: clientId } : message, method);
+    for (const listener of this.listeners) listener(frame);
+  }
+
+  private readonly fail = (error: Error): void => {
+    this.revokeDesktopOwners();
+    this.rejectInternalRequests(error);
+    for(const request of this.pending.values())if(request.usageAttemptId)this.tokenUsage?.attemptOutcome(request.usageAttemptId,"unknown");
+    for (const timer of this.goalContinuationTimers.values()) clearTimeout(timer);
+    this.goalContinuationTimers.clear();
+    this.clearAllCapacityRetries();
+    this.publishStatus({ state: "failed", reason: error.message, failure: { code: "codex-appserver-exited", recovery: "automatic" } });
+  };
+
+  private publishStatus(status: TransportStatus): void {
+    this.statusValue = status;
+    if (["failed", "closing", "closed"].includes(status.state)) {
+      this.threadTitles?.reset();
+      this.sessionMcpGeneration += 1;
+      this.sessionMcpConfigurations.clear();
+      this.sessionMcpRefreshes.clear();
+    }
+    for (const listener of this.statusListeners) listener(status);
+  }
+}

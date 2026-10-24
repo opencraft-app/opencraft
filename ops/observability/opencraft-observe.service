@@ -1,0 +1,19 @@
+[Unit]
+Description=OpenCraft optional observation query and evidence service
+After=network.target
+[Service]
+Type=simple
+EnvironmentFile=/etc/opencraft/observe.env
+ExecStart=/usr/bin/env node ${OPENCRAFT_OBSERVE_SERVICE}
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/opencraft-observe
+MemoryMax=256M
+CPUQuota=25%
+[Install]
+WantedBy=multi-user.target

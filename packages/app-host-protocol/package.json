@@ -1,0 +1,20 @@
+{
+  "name": "@opencraft/app-host-protocol",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./version": {
+      "types": "./src/version.d.mts",
+      "default": "./src/version.mjs"
+    },
+    "./routing": {
+      "types": "./src/routing.d.mts",
+      "default": "./src/routing.mjs"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
+}
