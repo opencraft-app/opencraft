@@ -26,6 +26,8 @@ export interface WindowAppearanceProjection {
   readonly requested: WindowAppearanceIntent;
   readonly presentation: WindowPresentation;
   readonly phase: "bootstrap" | "fallback" | "resolved";
+  /** Document policy only; acceptance by the native host is unobserved. */
+  readonly edgeStrategy: "legacy-overlay-requested" | "system-color-extension" | "host-owned";
   /** A DOM/meta/bridge write is not evidence of the system's displayed pixels. */
   readonly systemAppearance: "unobserved";
 }
@@ -37,12 +39,17 @@ export function projectWindowAppearance(
   phase: WindowAppearanceProjection["phase"],
 ): WindowAppearanceProjection {
   const root = document.documentElement;
+  const edgeStrategy: WindowAppearanceProjection["edgeStrategy"] = presentation.appearanceControl !== "document-and-hint"
+    ? "host-owned"
+    : presentation.displayMode !== "tab" && document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"][content="black-translucent"]')
+      ? "legacy-overlay-requested" : "system-color-extension";
   root.style.colorScheme = requested.resolvedTheme;
   root.style.setProperty("--shell-window-edge-background", requested.edgeBackgroundColor);
   root.dataset.windowHost = presentation.host;
   root.dataset.windowDisplayMode = presentation.displayMode;
   root.dataset.windowAppearanceStrategy = presentation.appearanceControl;
   root.dataset.windowAppearancePhase = phase;
+  root.dataset.windowEdgeStrategy = edgeStrategy;
   // A native container still owns its system bars, but this document owns its
   // edge pixels. Electron retains its existing transparent window material.
   if (presentation.host !== "electron") root.style.backgroundColor = requested.edgeBackgroundColor;
@@ -54,5 +61,5 @@ export function projectWindowAppearance(
     const { themeSource, resolvedTheme, opaqueWindows, backgroundColor } = requested;
     bridge?.opencraftDesktop?.setWindowAppearance?.({ themeSource, resolvedTheme, opaqueWindows, backgroundColor });
   }
-  return { requested, presentation, phase, systemAppearance: "unobserved" };
+  return { requested, presentation, phase, edgeStrategy, systemAppearance: "unobserved" };
 }

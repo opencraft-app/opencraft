@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content" />
     <meta name="theme-color" content="#ffffff" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <link rel="icon" href="/opencraft-icon.svg" />
     <title>OpenCraft</title>
     <script>
@@ -38,7 +39,7 @@
       }
       #opencraft-host-edge-color { display: none; }
       @supports (-webkit-touch-callout: none) and (background-clip: text) {
-        html[data-window-host="browser"]:is([data-window-display-mode="standalone"], [data-window-display-mode="fullscreen"]) #opencraft-host-edge-color {
+        html[data-window-host="browser"][data-window-edge-strategy="system-color-extension"]:is([data-window-display-mode="standalone"], [data-window-display-mode="fullscreen"]) #opencraft-host-edge-color {
           display: block;
           position: fixed;
           inset: 0 0 auto;

@@ -1,6 +1,6 @@
 import { serverFetch } from "./server-context";
 
-/** Geometry only. No content, route, account, input value or user agent. */
+/** Geometry and requested edge policy only. No content, route, account, input or user agent. */
 export function createViewportDiagnostics() {
   // A page may stay open through many keyboard cycles. Bound traffic without
   // making later interactions permanently invisible after the first 64 samples.
@@ -66,11 +66,14 @@ export function createViewportDiagnostics() {
     const header = shell.querySelector<HTMLElement>(".app-shell-header");
     const rowRect = row?.getBoundingClientRect();
     const headerRect = header?.getBoundingClientRect();
+    const edgeSampler = document.querySelector<HTMLElement>("#opencraft-host-edge-color");
     const geometry = {
       layoutHeight: innerHeight, layoutWidth: innerWidth,
       screenHeight: window.screen.height, screenWidth: window.screen.width,
       standalone: Number((window.navigator as Navigator & { standalone?: boolean }).standalone === true
         || window.matchMedia("(display-mode: standalone)").matches),
+      statusBarOverlayRequested: Number(document.documentElement.dataset.windowEdgeStrategy === "legacy-overlay-requested"),
+      edgeSamplingActive: Number(Boolean(edgeSampler && window.getComputedStyle(edgeSampler).display !== "none")),
       safeLayoutTop: Number(row?.getAttribute("data-safe-layout")?.split(" ").includes("top") === true),
       rowTop: rowRect?.top ?? 0, rowHeight: rowRect?.height ?? 0,
       headerTop: headerRect?.top ?? 0, headerHeight: headerRect?.height ?? 0,

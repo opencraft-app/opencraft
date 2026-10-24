@@ -6,9 +6,11 @@ function fixture(t: test.TestContext) {
   let now = 0;
   let top = 0;
   let revision = "a".repeat(40);
+  let edgeSampler: Element | null = null;
   const reads = { rect: 0, style: 0, hit: 0 };
   const reports: Record<string, number | string>[] = [];
   class Element {
+    display = "none";
     isContentEditable = true;
     scrollTop = 0;
     closest(_selector: string): unknown { return null; }
@@ -18,10 +20,11 @@ function fixture(t: test.TestContext) {
   const shell = new Element();
   const doc = {
     visibilityState: "visible",
-    documentElement: Object.assign(new Element(), { clientHeight: 688 }),
+    documentElement: Object.assign(new Element(), { clientHeight: 688, dataset: { windowEdgeStrategy: "system-color-extension" } }),
     body: new Element(), activeElement: shell,
     elementFromPoint(_x: number, _y: number): unknown { reads.hit++; return null; },
     querySelector(selector: string) {
+      if (selector === "#opencraft-host-edge-color") return edgeSampler;
       return selector.startsWith("meta") ? { content: revision } : shell;
     },
   };
@@ -31,7 +34,7 @@ function fixture(t: test.TestContext) {
       screen: { height: 844, width: 390 }, navigator: { standalone: false },
       matchMedia: () => ({ matches: false }),
       visualViewport: { height: 394, width: 390, offsetTop: 294, offsetLeft: 0, pageTop: 294, scale: 1 },
-      getComputedStyle: (element?: { paddingTop?: string }) => { reads.style++; return { top: "294px", height: "394px", paddingTop: element?.paddingTop ?? "0px" }; },
+      getComputedStyle: (element?: { paddingTop?: string; display?: string }) => { reads.style++; return { top: "294px", height: "394px", paddingTop: element?.paddingTop ?? "0px", display: element?.display ?? "block" }; },
     },
   };
   for (const [key, value] of Object.entries(values)) {
@@ -44,7 +47,7 @@ function fixture(t: test.TestContext) {
     reports.push(JSON.parse(String(init.body)));
     return new Response("{}", { status: 202 });
   });
-  return { reports, doc, reads, top(value: number) { top = value; }, advance(ms: number) { now += ms; top++; }, revision(value: string) { revision = value; } };
+  return { reports, doc, reads, sampler(visible: boolean) { edgeSampler = new Element(); edgeSampler.display = visible ? "block" : "none"; }, top(value: number) { top = value; }, advance(ms: number) { now += ms; top++; }, revision(value: string) { revision = value; } };
 }
 
 test("long-lived pages retain evidence after the first 64 keyboard observations", t => {
@@ -183,4 +186,17 @@ test("enabled safe layout is distinguishable from a zero device inset", t => {
   report();
   assert.equal(f.reports.at(-1)!.safeLayoutTop, 1);
   assert.equal(f.reports.at(-1)!.rowPaddingTop, 0);
+});
+
+test("requested overlay and active sampling are reported without claiming native acceptance", t => {
+  const f = fixture(t), report = createViewportDiagnostics();
+  f.doc.documentElement.dataset.windowEdgeStrategy = "legacy-overlay-requested";
+  f.sampler(false); report();
+  assert.equal(f.reports.at(-1)!.statusBarOverlayRequested, 1);
+  assert.equal(f.reports.at(-1)!.edgeSamplingActive, 0);
+  f.doc.documentElement.dataset.windowEdgeStrategy = "system-color-extension";
+  f.sampler(true); f.advance(100); report();
+  assert.equal(f.reports.at(-1)!.statusBarOverlayRequested, 0);
+  assert.equal(f.reports.at(-1)!.edgeSamplingActive, 1);
+  assert.ok(!("systemAppearance" in f.reports.at(-1)!));
 });

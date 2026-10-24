@@ -7,7 +7,7 @@ import { resolveWorkbenchPresentation } from "../../apps/workbench-web/src/workb
 import { readWindowPresentation, resolveWindowPresentation } from "../../apps/workbench-web/src/runtime/window-presentation";
 import { projectWindowAppearance, resolveWindowAppearanceIntent } from "../../apps/workbench-web/src/runtime/window-appearance";
 
-function fixture(values: Record<string, string> = {}, dark = false) {
+function fixture(values: Record<string, string> = {}, dark = false, overlay = true) {
   const properties = new Map<string, string>();
   const style = { colorScheme: "", backgroundColor: "", setProperty: (key: string, value: string) => properties.set(key, value) };
   let meta = "initial";
@@ -15,7 +15,9 @@ function fixture(values: Record<string, string> = {}, dark = false) {
     localStorage: { getItem: (key: string) => values[key] ?? null, setItem: () => { throw Error("bootstrap must not write preferences"); } } };
   view.top = view;
   const document: any = { defaultView: view, documentElement: { style, dataset: {}, classList: { add() {} } },
-    querySelector: () => ({ setAttribute: (_key: string, value: string) => { meta = value; } }) };
+    querySelector: (selector: string) => selector.includes("apple-mobile-web-app-status-bar-style")
+      ? overlay ? {} : null
+      : ({ setAttribute: (_key: string, value: string) => { meta = value; } }) };
   return { document, view, properties, meta: () => meta };
 }
 function bootstrap(policy = {}) {
@@ -84,6 +86,20 @@ test("host-owned system bars still permit painting our document", () => {
   projectWindowAppearance(f.document, intent, resolveWindowPresentation({ host: "native-container" }), "resolved");
   assert.equal(f.document.documentElement.style.backgroundColor, intent.edgeBackgroundColor);
   assert.equal(f.meta(), "initial", "no invented native appearance capability");
+});
+
+test("overlay requests and system color extension are mutually exclusive document policies", () => {
+  const f = fixture(); f.view.navigator.standalone = true;
+  const intent = resolveWindowAppearanceIntent("light", "light", builtinAppearanceThemes[0]!.palettes.light);
+  const overlay = projectWindowAppearance(f.document, intent, readWindowPresentation(f.view), "resolved");
+  assert.equal(overlay.edgeStrategy, "legacy-overlay-requested");
+  assert.equal(f.document.documentElement.dataset.windowEdgeStrategy, overlay.edgeStrategy);
+  assert.equal(overlay.systemAppearance, "unobserved");
+  const ordinary = projectWindowAppearance(f.document, intent, resolveWindowPresentation({}), "resolved");
+  assert.equal(ordinary.edgeStrategy, "system-color-extension", "the iOS-only request does not turn an ordinary tab into an overlay");
+  const fallback = fixture({}, false, false); fallback.view.navigator.standalone = true;
+  assert.equal(projectWindowAppearance(fallback.document, intent, readWindowPresentation(fallback.view), "resolved").edgeStrategy, "system-color-extension");
+  assert.equal(projectWindowAppearance(f.document, intent, resolveWindowPresentation({ host: "native-container", standalone: true }), "resolved").edgeStrategy, "host-owned");
 });
 
 
