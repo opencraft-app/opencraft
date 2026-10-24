@@ -4257,6 +4257,13 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   content: none;
 }
 
+:root[data-ui-density="touch"] .thread-scroll-footer {
+  padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+}
+html[data-ui-density="touch"][data-timeline-keyboard-open="true"] .thread-scroll-footer {
+  padding-bottom: 16px;
+}
+
 .thread-scroll-footer__gradient {
   position: absolute;
   z-index: 0;
@@ -12273,6 +12280,12 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   --shell-mobile-safe-bottom: env(safe-area-inset-bottom, 0px);
   --shell-mobile-safe-left: env(safe-area-inset-left, 0px);
   --shell-mobile-safe-right: env(safe-area-inset-right, 0px);
+}
+html[data-ui-density="touch"],
+html[data-ui-density="touch"] body {
+  // The transparent mobile Shell leaves the status-bar inset to the document.
+  // Use the same theme surface that appearance-theme projects to theme-color.
+  background-color: var(--color-surface);
 }
 .app-shell-root.has-mobile-sidebar-gestures {
   box-sizing: border-box;

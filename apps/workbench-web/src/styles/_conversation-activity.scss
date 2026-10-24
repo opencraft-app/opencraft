@@ -5,6 +5,10 @@
 .thread-activity-item__header,
 .thread-subagent-activity__status {
   @include typography.role(body);
+  // Long single-line commands must use the shared role at its declared size,
+  // rather than receiving a separate mobile text-inflation factor.
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 .thread-thinking-placeholder {
