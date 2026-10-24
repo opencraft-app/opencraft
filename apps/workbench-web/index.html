@@ -6,7 +6,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content" />
     <meta name="theme-color" content="#ffffff" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <link rel="icon" href="/opencraft-icon.svg" />
     <title>OpenCraft</title>
     <script>
@@ -42,7 +41,7 @@
         inset: 0;
         display: grid;
         place-items: center;
-        background: #ffffff;
+        background: var(--shell-window-edge-background, #ffffff);
       }
       #opencraft-bootstrap i {
         width: 18px;
@@ -53,7 +52,7 @@
         border-radius: 50%;
         animation: opencraft-bootstrap-spin .72s linear infinite;
       }
-      .electron-dark #opencraft-bootstrap { background: #181818; }
+      .electron-dark #opencraft-bootstrap { background: var(--shell-window-edge-background, #181818); }
       .electron-dark #opencraft-bootstrap i {
         border-color: rgba(255, 255, 255, .16);
         border-top-color: rgba(255, 255, 255, .68);
@@ -227,22 +226,7 @@
           }
         }, 15000);
 
-        const storageKey = "opencraft.appearance-theme";
-        let preference = "light";
-        try {
-          const stored = localStorage.getItem(storageKey) ?? localStorage.getItem("vela.appearance-theme");
-          if (stored === "light" || stored === "dark" || stored === "system") preference = stored;
-        } catch {}
-        const theme = preference === "system"
-          ? (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
-          : preference;
-        const root = document.documentElement;
-        root.dataset.theme = theme;
-        root.dataset.themePreference = preference;
-        root.classList.add(theme, `electron-${theme}`);
-        root.style.colorScheme = theme;
-        document.querySelector('meta[name="theme-color"]')
-          ?.setAttribute("content", theme === "dark" ? "#181818" : "#ffffff");
+        /* OPENCRAFT_BOOTSTRAP_APPEARANCE */
       })();
     </script>
   </head>

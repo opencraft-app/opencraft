@@ -12290,7 +12290,7 @@ html[data-ui-density="touch"],
 html[data-ui-density="touch"] body {
   // The transparent mobile Shell leaves the status-bar inset to the document.
   // Use the same theme surface that appearance-theme projects to theme-color.
-  background-color: var(--color-surface);
+  background-color: var(--shell-window-edge-background, var(--color-surface));
 }
 .app-shell-root.has-mobile-sidebar-gestures {
   box-sizing: border-box;

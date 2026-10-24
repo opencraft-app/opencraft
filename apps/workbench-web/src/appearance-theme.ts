@@ -4,10 +4,12 @@ import {
   type ResolvedTheme, type ThemePreference,
 } from "@opencraft/design-system/theme";
 import {
-  buildOpenCraftThemeCssProperties, opencraftNeutralThemePalette, frostThemePalette,
-  lavenderThemePalette, longingThemePalette, mistThemePalette, opencraftCanvasThemePalette, graphiteThemePalette,
+  buildOpenCraftThemeCssProperties,
   type OpenCraftThemeDefinition, type ThemeCssProperties,
 } from "@opencraft/design-system/theme-engine";
+import { resolveBuiltinAppearanceCatalog, type AppearanceThemeDescriptor, type CatalogEntry } from "./appearance-catalog";
+import { resolveWindowAppearanceIntent, projectWindowAppearance, type WindowAppearanceProjection } from "./runtime/window-appearance";
+import { readWindowPresentation } from "./runtime/window-presentation";
 import type { ExtensionContributionSnapshot, ExtensionContributionStore } from "@opencraft/extension-runtime";
 import { applyWorkbenchProductPresentation, workbenchProductId, workbenchPresentation } from "./workbench-product";
 import { builtinThemeIds, normalizeBuiltinThemeId, type WorkbenchPresentation } from "./workbench-presentation";
@@ -21,13 +23,7 @@ export const longingThemeId = builtinThemeIds.longing;
 export const mistThemeId = builtinThemeIds.mist;
 export const graphiteThemeId = builtinThemeIds.graphite;
 
-export interface AppearanceThemeDescriptor {
-  readonly id: string;
-  readonly label: string;
-  readonly description?: string;
-  readonly source: "core" | "extension";
-}
-
+export type { AppearanceThemeDescriptor } from "./appearance-catalog";
 export interface AppearanceThemeSnapshot {
   readonly preference: ThemePreference;
   readonly resolvedTheme: ResolvedTheme;
@@ -36,28 +32,7 @@ export interface AppearanceThemeSnapshot {
   readonly availableThemes: readonly AppearanceThemeDescriptor[];
 }
 
-type PalettePair = Readonly<Record<ResolvedTheme, OpenCraftThemeDefinition>>;
-type CatalogEntry = Readonly<{ descriptor: AppearanceThemeDescriptor; palettes: PalettePair }>;
-
-function builtin(id: string, label: string, description: string, palettes: PalettePair): CatalogEntry {
-  return { descriptor: Object.freeze({ id, label, description, source: "core" }), palettes };
-}
-
-const builtins: readonly CatalogEntry[] = [
-  builtin(coreThemeId, "Neutral", "A neutral palette with light and dark appearances.", opencraftNeutralThemePalette),
-  builtin(canvasThemeId, "Canvas", "A quiet, web-native canvas.", opencraftCanvasThemePalette),
-  builtin(frostThemeId, "Frost", "A cool translucent Sidebar with a lighter fixed material.", frostThemePalette),
-  builtin(longingThemeId, "Longing", "Blue glass with translucent navigation and soft surface transitions.", longingThemePalette),
-  builtin(lavenderThemeId, "Lavender", "A soft lavender workspace with a quiet UI palette.", lavenderThemePalette),
-  builtin(graphiteThemeId, "Graphite", "Quiet grayscale layers, crisp controls, and an opaque workspace.", graphiteThemePalette),
-  builtin(mistThemeId, "Mist", "Close neutral surfaces with a quiet, unified canvas.", mistThemePalette),
-];
-const visibleBuiltins = builtins.filter(entry => !workbenchPresentation.hiddenBuiltinThemeIds.includes(entry.descriptor.id));
-const defaultBuiltin = visibleBuiltins.find(entry => entry.descriptor.id === defaultAppearanceThemeId());
-// Even a policy that hides every built-in needs an executable fallback.
-const baseCatalog = defaultBuiltin
-  ? [defaultBuiltin, ...visibleBuiltins.filter(entry => entry !== defaultBuiltin)]
-  : visibleBuiltins.length ? visibleBuiltins : [builtins[0]!];
+const baseCatalog = resolveBuiltinAppearanceCatalog(workbenchPresentation);
 let catalog = new Map(baseCatalog.map(entry => [entry.descriptor.id, entry]));
 let availableThemes = Object.freeze([...catalog.values()].map(entry => entry.descriptor));
 const subscribers = new Set<() => void>();
@@ -65,6 +40,9 @@ const projectedProperties = new WeakMap<HTMLElement, readonly string[]>();
 const preferenceKey = "opencraft.appearance-theme";
 const selectionKey = "opencraft.appearance-theme-id";
 const systemAppearance = window.matchMedia("(prefers-color-scheme: dark)");
+let windowProjection: WindowAppearanceProjection | undefined;
+/** Projection evidence only; native status-bar pixels cannot be read here. */
+export function getWindowAppearanceProjection(): WindowAppearanceProjection | undefined { return windowProjection; }
 let initialized = false;
 let disconnectSource: (() => void) | undefined;
 
@@ -153,16 +131,7 @@ function projectDocument(): void {
   const definition = resolveEntry(current.themeId).palettes[current.resolvedTheme];
   applyAppearanceThemeToElement(document.documentElement);
   applyWorkbenchProductPresentation(document.documentElement, workbenchProductId);
-  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", definition.surface);
-  const desktop = (globalThis as typeof globalThis & {
-    opencraftDesktop?: { setWindowAppearance?: (appearance: import("@opencraft/design-system/theme-options").ThemeWindowAppearance) => void };
-  }).opencraftDesktop;
-  desktop?.setWindowAppearance?.({
-    themeSource: current.preference,
-    resolvedTheme: current.resolvedTheme,
-    opaqueWindows: definition.material?.window === "opaque" || definition.opaqueWindows,
-    backgroundColor: definition.surfaces?.window ?? definition.surface,
-  });
+  windowProjection = projectWindowAppearance(document, resolveWindowAppearanceIntent(current.preference, current.resolvedTheme, definition), readWindowPresentation(window), "resolved");
 }
 
 function publish(next: AppearanceThemeSnapshot): void {
