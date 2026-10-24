@@ -13,13 +13,19 @@ export class TokenUsageQueryService {
   private waiters=0;
   private readonly inFlight=new Map<string,Promise<TokenUsageSnapshot>>();
   private readonly pending=new Map<number,{resolve:(value:TokenUsageSnapshot)=>void;reject:(error:Error)=>void;timer:ReturnType<typeof setTimeout>}>();
-  constructor(private readonly options:{entry:string;databasePath:string;serverId:string;telemetry?:TokenUsageTelemetry}) {}
+  constructor(private readonly options:{entry:string;databasePath:string;serverId:string;telemetry?:TokenUsageTelemetry;rollout?:{nativeHome:string;directory?:string}}) {
+    if (options.rollout) this.start();
+  }
+  invalidate(threadId:string,path?:string):void {
+    if(this.closed||!this.options.rollout)return;
+    try{this.start().postMessage({invalidate:threadId,path});}catch{/* a later read/recovery restarts the worker */}
+  }
   private start():Worker {
     if(this.worker)return this.worker;
     const worker=new Worker(`const {workerData}=require('node:worker_threads');
       if(workerData.entry.endsWith('.ts')) {require('tsx/cjs');require(workerData.entry);}
       else {import(require('node:url').pathToFileURL(workerData.entry).href).catch(()=>process.exit(1));}`,
-      {eval:true,resourceLimits:{maxOldGenerationSizeMb:64,maxYoungGenerationSizeMb:4},workerData:{entry:this.options.entry,databasePath:this.options.databasePath,serverId:this.options.serverId,timezone:"Asia/Shanghai",secret:this.secret}});
+      {eval:true,resourceLimits:{maxOldGenerationSizeMb:64,maxYoungGenerationSizeMb:4},workerData:{entry:this.options.entry,databasePath:this.options.databasePath,serverId:this.options.serverId,timezone:"Asia/Shanghai",secret:this.secret,rollout:this.options.rollout}});
     this.worker=worker;
     worker.on("message",message=>{
       if(this.worker!==worker)return;

@@ -405,6 +405,22 @@ export class OpenCraftTokenUsageLedger {
   }
   /** Synchronous internal replay only: never hold a transaction over I/O. */
   commitReplayBatch<T>(callback: () => T): T { return this.write(callback); }
+  /** Recompute a disposable projection after its trusted receipt copy changes. */
+  rebuildProjection(key:UsageTurnKey):void { if(this.readTurn(key))this.write(()=>this.rebuild(this.key(key))); }
+  participationCursor(threadId:string,path:string):number|null {
+    const value=this.checkpoint(`participation-rollout:${requiredId(threadId)}`);
+    if(!value)return null;
+    const saved=JSON.parse(value) as {path?:unknown;cursor?:unknown};
+    return saved.path===path&&typeof saved.cursor==="number"&&Number.isSafeInteger(saved.cursor)&&saved.cursor>=0?saved.cursor:null;
+  }
+  advanceParticipationCursor(threadId:string,path:string,cursor:number):void {
+    requiredId(threadId);if(!Number.isSafeInteger(cursor)||cursor<0)throw new TypeError("Invalid participation cursor");
+    this.write(()=>{
+      if(this.rollout(threadId)?.path!==path)throw new Error("Participation rollout changed");
+      this.statement("INSERT INTO token_usage_checkpoints VALUES(?,?,?) ON CONFLICT(server_id,lineage) DO UPDATE SET cursor=excluded.cursor")
+        .run(this.serverId,`participation-rollout:${threadId}`,JSON.stringify({path,cursor}));
+    });
+  }
   rememberRollout(threadId: string, path: string): void {
     requiredId(threadId);
     if (typeof path !== "string" || !path || path.length > 32768) throw new TypeError("Invalid native rollout reference");
@@ -523,6 +539,10 @@ export class OpenCraftTokenUsageLedger {
     const responses = this.statement("SELECT counts_json FROM token_usage_sources WHERE server_id=? AND thread_id=? AND turn_id=? AND source_kind='response'").all(...ids);
     const exact = responses.reduce((n, row) => n + BigInt((JSON.parse(String(row.counts_json)) as UsageCounts).totalTokens!), 0n);
     return { usageComplete: true, responsesComplete: responses.length > 0 && exact === reported };
+  }
+  recordedSettlement(key:UsageTurnKey):{usageComplete:boolean;responsesComplete:boolean}{
+    const row=this.statement("SELECT usage_complete,responses_complete FROM token_usage_turns WHERE server_id=? AND thread_id=? AND turn_id=?").get(...this.key(key));
+    return {usageComplete:row?.usage_complete===1,responsesComplete:row?.responses_complete===1};
   }
   coverage(): { enabledAt: number; enabled: boolean; revision: number; intervals: {startsAt: number; endsAt: number | null}[] } {
     const row = this.statement("SELECT * FROM token_usage_scopes WHERE server_id=?").get(this.serverId)!;

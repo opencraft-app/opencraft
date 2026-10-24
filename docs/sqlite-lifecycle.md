@@ -418,6 +418,89 @@ personal non-admin responses contain no diagnostics. No source IDs, prompt conte
 or credentials become metric labels. The optional Settings view exposes the
 same bounded diagnostic snapshot with an explicit process-lifetime explanation.
 
+### Rollout-derived token statistics
+
+Headless now derives token counts and model buckets incrementally from the
+server's Codex rollout files. Trusted server-confirmed initiation and successful
+steer receipts remain the participation authority. Queries, pagination,
+self/team authorization and `equal-turn-v1` allocation retain their existing
+contract; the dashboard does not change. This supersedes the live-token-authority
+and read-only-worker descriptions below for this Headless mode. Other engines
+still do not acquire metering adapters.
+
+One deployment query worker owns `token-usage-derived.sqlite`, a disposable
+projection, and `token-usage-retained.sqlite`, a durable minimal source archive.
+The latter retains only native timestamps, counters, session/turn/model/provider
+routing metadata and a one-time numeric baseline of pre-cutover history. It
+contains no prompts, messages, tool results, identity authentication payloads or
+credentials. The archive and trusted participation database are **not** caches.
+Their immutable migration histories remain validated normally. The derived
+file has an explicit semantic/schema version; incompatible versions are closed
+and discarded, then recreated through the managed migrations. This exception is
+limited to that exact disposable file and never applies to accounts, receipts,
+old metering data or retained source evidence. Deleting the derived file rebuilds
+the same totals, model buckets and allocations from retained/native evidence and
+confirmed receipts; wall-clock timestamps and snapshot revision numbers may differ.
+
+The reader saves a byte cursor and file identity, consumes at most one MiB and
+128 metadata events per batch, and retries incomplete tails. Counts and cursor
+commit atomically to the source archive. Parser context, exact integer model
+sums, allocations and archive position commit together in the projection.
+A late source error revises the current turn in that transaction and enqueues a
+durable, 32-turn-per-batch refresh of affected historical projections. Coverage
+changes, including enabled state with no active turns, advance the query revision.
+Stable `token_usage_record` response IDs are the preferred count source, including
+compaction responses omitted by native cumulative counters. Duplicate response
+IDs are idempotent; conflicting counts remain partial. A turn without exact
+response records may use verified `token_count` deltas instead. These sources
+are alternatives and never added together. The cumulative thread counter detects
+duplicates and discontinuities; first counter observations use last-response
+counts rather than inherited cumulative history. Explicit native thread IDs
+exclude inherited fork responses.
+Provider comes from `session_meta`, model from `turn_context`; absent identities
+remain unknown. No extra model call or write to a native rollout is introduced.
+
+Only trusted metering threads are discovered. Relocated/archived rollouts may be
+found by filename under the native home, then their native session identity is
+verified. Removed/replaced sources never erase retained observations. Coverage
+uses the existing partial/gap fields for missing files, retained-only history,
+invalid/discontinuous counts and cache rebuilding. If a missing/invalid source
+would reduce an already-known historical total, the retained pre-cutover
+baseline preserves that total instead of presenting an unexplained zero.
+No-rollout ephemeral history keeps its old numeric evidence with partial
+coverage; new unavailable consumption remains missing, not fabricated zero.
+
+After warm-up the worker checks idle sources every **1000 ms** and is notified
+of active native events/confirmed participation. Running turns keep provisional
+allocation. Acceptance uses the unchanged freshness p95 <=2 s / p99 <=5 s and
+settlement <=5 s targets; the unchanged dashboard may add its next <=5 s refresh.
+The one-second scheduling interval is a configuration value, not a claim that
+these percentiles passed. Initial source import is reported as partial until
+caught up. Query work remains isolated from model execution and retains the
+1500 ms worker timeout and current bounded request queue.
+
+Cutover uses a clean fixed application build. Before installation, take a
+read-only online backup of the existing `token-usage.sqlite`, preserve both it
+and `codex-host-queue.sqlite`, and compare each covered turn's old/new totals and
+model buckets. Default Headless composition shares one derived query owner
+across native `/appserver`, logical `/apphost` and the Codex adapter. The adapter
+continues trusted submission/admission recovery and execution metadata, while
+its rollout replay and ephemeral counter paths stop writing new token sources.
+Participation replay uses its own `participation-rollout:` checkpoint; the old
+Token cursor stays fixed so rollback can replay every skipped native response.
+It never deletes the former sources. After deployment verify sourceRevision,
+health, new source-archive progress, unchanged old token-source rows and query
+results. Authenticated employee dashboard validation is separate evidence.
+
+For rollback set `OPENCRAFT_TOKEN_USAGE_SOURCE=ledger` in the existing managed
+Headless environment and restart through its normal installation transaction.
+This restores the former collector/query composition and its normal native
+replay, retaining participant facts written after cutover. Keep all three data
+files; never restore an old database over newer participation, and never delete
+the retained archive to roll back. Re-enabling derived mode can rebuild its
+projection from the retained events and existing receipts. No schema downgrade,
+forced Git update or change to account/queue ownership is required.
+
 ### Dedicated Token metering owner
 
 Headless deployment reads are independent of the active execution engine. The
