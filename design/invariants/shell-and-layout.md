@@ -22,6 +22,9 @@ Touch Composer spacing retains the normal floating gap above the bottom safe
 area. With an open software keyboard, existing keyboard gaps apply without
 adding the Home-indicator inset. The overlay also respects landscape cutouts.
 This padding leaves the timeline visible below the floating touch Composer.
+The new-thread draft route likewise adds its device inset to its existing route
+gap, and uses the original route gap above an open keyboard. Route-owned
+available Composer height subtracts that same inset once.
 
 The explicit public Expo Web-container entry packages the same complete Web
 Workbench application/UI graph. Native owns safe area, lifecycle, back and
