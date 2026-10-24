@@ -16,6 +16,8 @@ export interface CodexAccountServiceOptions {
   readonly dataDirectory: string;
   readonly nativeCodexHomeDirectory: string;
   readonly upstreamBaseUrl?: string;
+  /** Fixed loopback port for an independently running AppServer. */
+  readonly proxyPort?: number;
   readonly fetch?: typeof fetch;
   readonly createMaintenanceClient?: CodexMaintenanceClientFactory;
 }
@@ -55,7 +57,7 @@ export class CodexAccountService {
     const service = new CodexAccountService(options);
     try {
       await service.login.ready();
-      service.server = await startCodexAccountPoolServer({ proxy: service.proxy });
+      service.server = await startCodexAccountPoolServer({ proxy: service.proxy, port: options.proxyPort });
       service.subscriptions.start();
       return service;
     } catch (error) { await service.close(); throw error; }
@@ -77,9 +79,10 @@ export class CodexAccountService {
   close(): Promise<void> {
     return this.closing ??= (async () => {
       await Promise.allSettled(this.requests);
+      // Stop background jobs while inference still listens. Inference's own
+      // credential resolver remains available until its idle-point drain ends.
       await this.login.dispose();
       await this.subscriptions.dispose();
-      // CLI stops first; drain proxy requests (including refresh) before closing storage.
       await this.server?.close();
       this.store.close();
     })();

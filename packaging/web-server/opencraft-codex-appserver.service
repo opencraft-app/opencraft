@@ -1,0 +1,21 @@
+[Unit]
+Description=OpenCraft independent Codex AppServer owner
+After=network.target opencraft-codex-core.service
+Wants=opencraft-codex-core.service
+
+[Service]
+Type=simple
+User=opencraft
+RuntimeDirectory=opencraft-codex-appserver
+RuntimeDirectoryMode=0700
+UMask=0077
+WorkingDirectory=/srv/opencraft
+# Fixed, separately installed payload: never execution-current or the Core bundle link.
+ExecStart=/usr/bin/node /opt/opencraft/codex-appserver/app-server.cjs --endpoint /run/opencraft-codex-appserver/control.sock --core-endpoint /run/opencraft-codex-core/control.sock --token-file /var/lib/opencraft/daemon.token --codex-executable /usr/local/bin/codex --runtime-directory /srv/opencraft --data-directory /var/lib/opencraft/codex
+Restart=on-failure
+RestartSec=1
+KillMode=control-group
+TimeoutStopSec=150
+
+[Install]
+WantedBy=multi-user.target

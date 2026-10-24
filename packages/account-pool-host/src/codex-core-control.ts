@@ -1,5 +1,6 @@
 import { request } from "node:http";
 import { isAbsolute } from "node:path";
+import type { createCodexAccountPoolLaunch } from "./codex-launch.js";
 
 export const CODEX_CORE_PROTOCOL_VERSION = 1;
 export interface CodexCoreHealth {
@@ -7,7 +8,22 @@ export interface CodexCoreHealth {
   readonly pid: number;
   readonly codexPid: number;
   readonly nativeSocket: string;
+  /** Present only when a separate runtime owner is configured. */
+  readonly appServerPid?: number;
 }
+
+export interface CodexAppServerLaunch {
+  readonly dataDirectory: string;
+  readonly launch: ReturnType<typeof createCodexAccountPoolLaunch>;
+}
+
+export interface CodexAppServerHealth extends CodexCoreHealth {
+  readonly dataDirectory: string;
+  readonly proxyBaseUrl: string;
+}
+
+/** Temporary control-plane outage; callers may wait before starting execution. */
+export class CodexCoreUnavailableError extends Error {}
 
 /** Local authenticated control plane. Requests are never retried: mutations may have committed. */
 export class CodexCoreControlClient {
@@ -20,6 +36,7 @@ export class CodexCoreControlClient {
     const value = await this.request("GET", "/health", undefined, signal) as Partial<CodexCoreHealth> | null;
     if (!value || value.protocolVersion !== CODEX_CORE_PROTOCOL_VERSION
       || !Number.isSafeInteger(value.pid) || !Number.isSafeInteger(value.codexPid)
+      || (value.appServerPid !== undefined && (!Number.isSafeInteger(value.appServerPid) || value.appServerPid < 1))
       || typeof value.nativeSocket !== "string" || !isAbsolute(value.nativeSocket)) {
       throw new Error("Codex core returned an incompatible health response");
     }
@@ -30,12 +47,31 @@ export class CodexCoreControlClient {
     return this.request("POST", "/accounts", { method, params });
   }
 
+  /** Private, synthetic broker credentials only; never returned by the gateway. */
+  async appServerLaunch(signal?: AbortSignal): Promise<CodexAppServerLaunch> {
+    const value = await this.request("GET", "/launch", undefined, signal) as CodexAppServerLaunch;
+    if (!value || !isAbsolute(value.dataDirectory ?? "") || !value.launch
+      || !Array.isArray(value.launch.args) || !value.launch.args.every(arg => typeof arg === "string")
+      || typeof value.launch.env?.OPENCRAFT_CODEX_POOL_AUTH_TOKEN !== "string"
+      || value.launch.auth?.type !== "chatgptAuthTokens"
+      || typeof value.launch.auth.accessToken !== "string") throw new Error("Invalid Codex AppServer launch configuration");
+    return value;
+  }
+
+  async appServerHealth(): Promise<CodexAppServerHealth> {
+    const value = await this.health() as CodexAppServerHealth;
+    if (!isAbsolute(value.dataDirectory ?? "") || typeof value.proxyBaseUrl !== "string") {
+      throw new Error("Incompatible Codex AppServer owner");
+    }
+    return value;
+  }
+
   private request(method: string, path: string, payload?: unknown, signal?: AbortSignal): Promise<unknown> {
     return new Promise((resolve, reject) => {
       const body = payload === undefined ? undefined : JSON.stringify(payload);
       const req = request({ socketPath: this.endpoint, method, path,
         headers: { authorization: `Bearer ${this.authToken}`, "content-type": "application/json" },
-        signal: AbortSignal.any([AbortSignal.timeout(path === "/health" ? 5_000 : 120_000), ...(signal ? [signal] : [])]),
+        signal: AbortSignal.any([AbortSignal.timeout(path === "/health" || path === "/launch" ? 5_000 : 120_000), ...(signal ? [signal] : [])]),
       }, res => {
         let response = "";
         res.on("error", reject);
@@ -46,12 +82,14 @@ export class CodexCoreControlClient {
         res.on("end", () => {
           try {
             const value = JSON.parse(response);
+            if (res.statusCode === 503) throw new CodexCoreUnavailableError("Codex core is temporarily unavailable");
             if (res.statusCode !== 200) throw new Error(typeof value?.error === "string" ? value.error : `HTTP ${res.statusCode}`);
             resolve(value);
-          } catch (error) { reject(new Error(`Codex core request failed: ${error instanceof Error ? error.message : String(error)}`, { cause: error })); }
+          } catch (error) { reject(error instanceof CodexCoreUnavailableError ? error
+            : new Error(`Codex core request failed: ${error instanceof Error ? error.message : String(error)}`, { cause: error })); }
         });
       });
-      req.on("error", error => reject(new Error(`Codex core unavailable at ${this.endpoint}: ${error.message}`, { cause: error })));
+      req.on("error", error => reject(new CodexCoreUnavailableError(`Codex core unavailable at ${this.endpoint}: ${error.message}`, { cause: error })));
       req.end(body);
     });
   }
