@@ -62,8 +62,19 @@ export function createViewportDiagnostics() {
     const sendHit = send && send.width > 0 && send.height > 0
       ? sendElement?.contains(document.elementFromPoint(send.left + send.width / 2, send.top + send.height / 2))
       : false;
+    const row = shell.querySelector<HTMLElement>(".app-shell-row");
+    const header = shell.querySelector<HTMLElement>(".app-shell-header");
+    const rowRect = row?.getBoundingClientRect();
+    const headerRect = header?.getBoundingClientRect();
     const geometry = {
       layoutHeight: innerHeight, layoutWidth: innerWidth,
+      screenHeight: window.screen.height, screenWidth: window.screen.width,
+      standalone: Number((window.navigator as Navigator & { standalone?: boolean }).standalone === true
+        || window.matchMedia("(display-mode: standalone)").matches),
+      rowTop: rowRect?.top ?? 0, rowHeight: rowRect?.height ?? 0,
+      headerTop: headerRect?.top ?? 0, headerHeight: headerRect?.height ?? 0,
+      shellPaddingTop: Number.parseFloat(style.paddingTop) || 0,
+      rowPaddingTop: row ? Number.parseFloat(window.getComputedStyle(row).paddingTop) || 0 : 0,
       visualHeight: visual.height, visualWidth: visual.width,
       visualTop: visual.offsetTop, visualLeft: visual.offsetLeft,
       pageTop: visual.pageTop, scrollY, scale: visual.scale,

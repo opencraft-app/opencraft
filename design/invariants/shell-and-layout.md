@@ -13,8 +13,12 @@ native engine protocol, persisted identities or glyph geometry.
 
 The browser/PWA document paints its exposed edge from the appearance owner's
 `edgeBackgroundColor` (theme surface), also projected as a system color hint.
-The touch body consumes the same edge token; the mobile drawer root stays
-transparent. Generated head bootstrap and runtime share the visible builtin
+The touch body consumes the same fallback edge token; the mobile drawer root stays
+transparent. The translated foreground row paints the full viewport; its own
+content padding reserves the top safe area and its header/dismiss hit region
+starts below that inset. Do not pad the entire Shell root and thereby move its
+background/rounding/shadow below the status-area boundary. The drawer's stationary
+material plane is also full-bleed; only its content receives safe padding. Generated head bootstrap and runtime share the visible builtin
 catalog and product fallback policy. A contributed theme unavailable at bootstrap
 uses an explicit fallback until its provider loads, without persisting a new
 selection. Manifest colors remain static installation defaults, not live theme
