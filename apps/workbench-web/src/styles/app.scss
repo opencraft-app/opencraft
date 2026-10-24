@@ -13013,7 +13013,7 @@ html[data-ui-density="touch"] body {
   [data-liquid-action],
   .app-shell-header__action-group,
   .thread-live-changes,
-  .shell-sidebar__column:not([data-navigation-layout="mobile"]) .shell-navigation__items--applications > button
+  .shell-sidebar__column:not([data-navigation-layout="mobile"]) .shell-sidebar-navigation .shell-navigation__items--applications > button
 ) {
   @include material.liquid;
   color: var(--color-text);
