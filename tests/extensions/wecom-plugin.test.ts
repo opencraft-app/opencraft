@@ -115,19 +115,19 @@ test('group bot mentions permit binding commands while ordinary text and direct 
 });
 
 
-test('empty compatibility metadata retains canonical human identity; assistant, unknown and malformed sources stay excluded', async t => {
+test('only absent compatibility metadata uses ordinary sender admission; unrecognized sources stay excluded', async t => {
   const f = await fixture(t);
-  f.callback('null-compat', {...body, msgid:'null', compat_info:null});
-  f.callback('empty-compat', {...body, msgid:'empty', compat_info:{}});
-  await f.until(() => f.plugin.diagnostics.completed === 2);
-  assert.equal(f.plugin.diagnostics.lastCompatibilitySource, 'empty');
-  assert.deepEqual(f.messages.map(m => m.source.senderId), ['external','external']);
-  for (const [index, compat_info] of [{source:'ai_assistant'}, {source:'private-unknown-source'}, {unrecognized:'private-value'}, [], '', false].entries()) {
+  f.callback('ordinary', body);
+  await f.until(() => f.plugin.diagnostics.completed === 1);
+  assert.equal(f.plugin.diagnostics.lastCompatibilitySource, null);
+  assert.deepEqual(f.messages.map(m => m.source.senderId), ['external']);
+  for (const [index, compat_info] of [null, {}, {source:'ai_assistant'}, {source:'private-unknown-source'}, {unrecognized:'private-value'}, [], '', false].entries()) {
     f.callback('excluded-' + index, {...body, compat_info});
     await f.until(() => f.plugin.diagnostics.ignored === index + 1);
-    assert.equal(f.plugin.diagnostics.lastCompatibilitySource, index === 0 ? 'ai_assistant' : 'other');
+    assert.equal(f.plugin.diagnostics.lastCompatibilitySource, index < 2 ? 'empty' : index === 2 ? 'ai_assistant' : 'other');
   }
-  assert.equal(f.messages.length, 2);
+  assert.equal(f.messages.length, 1);
+  assert.equal(f.plugin.diagnostics.forwarded, 1);
   assert.equal(f.plugin.diagnostics.lastIgnoredReason, 'compatibility_callback');
   const summary = JSON.stringify(f.plugin.diagnostics);
   assert.equal(summary.includes('private-unknown-source'), false);

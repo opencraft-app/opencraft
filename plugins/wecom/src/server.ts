@@ -110,7 +110,7 @@ export class WeComPlugin {
       if (body.compat_info !== undefined) {
         const empty = body.compat_info === null || (compat !== null && Object.keys(compat).length === 0);
         this.observations.lastCompatibilitySource = empty ? 'empty' : compat?.source === 'ai_assistant' ? 'ai_assistant' : compat?.source === 'channel' ? 'channel' : 'other';
-        if (!empty && !channelSource) { this.ignore('compatibility_callback'); return; }
+        if (!channelSource) { this.ignore('compatibility_callback'); return; }
       }
       const chatType = channelSource ? 'group' : body.chattype === 'single' ? 'direct' : body.chattype === 'group' ? 'group' : null;
       const chatId = channelSource ? (typeof body.chatid === 'string' && body.chatid ? 'wecom-channel:' + body.chatid : null) : chatType === 'direct' ? sender : body.chatid;

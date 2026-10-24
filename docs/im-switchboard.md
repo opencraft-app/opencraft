@@ -136,7 +136,7 @@ upgrade described in [session capabilities](session-capabilities.md).
 WeCom follows the [official long-connection contract](https://developer.work.weixin.qq.com/document/path/101463):
 fixed WSS endpoint, Bot ID/Secret subscription, 30-second heartbeat and bounded
 reconnect. Normal human text, recognized voice and mixed text are supported;
-The exact `compat_info.source=channel` source is normalized as a group with a `wecom-channel:` chat ID namespace, retaining canonical `from.userid` and the same sender authorization. Replies keep the original callback request/stream IDs. Channel callbacks require a nonempty `chatid`. Assistant, unknown and malformed compatibility sources remain excluded; absent, null or empty metadata uses only the canonical `from.userid` and the existing sender authorization. Safe `lastCompatibilitySource` classifies observed metadata as `empty`, `ai_assistant`, `channel` or `other`, without publishing arbitrary values. New tool-mode messages send only a final stream protocol frame using the
+The exact `compat_info.source=channel` source is normalized as a group with a `wecom-channel:` chat ID namespace, retaining canonical `from.userid` and the same sender authorization. Replies keep the original callback request/stream IDs. Channel callbacks require a nonempty `chatid`. Only absent compatibility metadata follows ordinary-user admission. Assistant, unknown and malformed compatibility sources, including null or empty metadata, remain excluded. Safe `lastCompatibilitySource` classifies observed metadata as `empty`, `ai_assistant`, `channel` or `other`, without publishing arbitrary values. New tool-mode messages send only a final stream protocol frame using the
 original request and stream IDs. Processing/final feedback remains only for
 legacy final-mode admissions. Active connection takeover stops
 reconnect. The adapter refuses expired replies and waits for ACKs.
@@ -166,10 +166,10 @@ change authorization or retry a message.
 
 ## Verification
 
-`tests/im-switchboard.test.ts`, `im-programmable.test.ts`, `wecom-plugin.test.ts`
+`tests/extensions/im-switchboard.test.ts`, `im-programmable.test.ts`, `wecom-plugin.test.ts`
 and `slack-plugin.test.ts` cover migration/checksum, CAS, sandbox limits,
 identity/revocation, duplicate and restart behavior, connection ACKs and original
-reply destinations. `scripts/smoke-im-channels.ts` runs the actual Settings,
+reply destinations. `scripts/smoke/execution/smoke-im-channels.ts` runs the actual Settings,
 HTTP service, SQLite and QuickJS with synthetic human admission and external
 transports, including draft navigation, light/dark and narrow DOM. These are
 not evidence that real WeCom/Slack credentials or external delivery work.
