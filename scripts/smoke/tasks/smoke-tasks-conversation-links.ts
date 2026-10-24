@@ -74,7 +74,7 @@ try {
       await page.goto(server.url + "/views/opencraft.tasks.board");
       await page.locator('.tasks-card[data-task-id="multiple"]').waitFor({ state: "attached" });
       if (width === 390) {
-        const labels: Record<string, RegExp> = { backlog: /^Backlog /, todo: /^To do /, in_progress: /^In progress / };
+        const labels: Record<string, RegExp> = { backlog: /^Product backlog /, todo: /^To do /, in_progress: /^In progress / };
         await page.getByRole("radio", { name: labels[status] }).click();
       }
     };

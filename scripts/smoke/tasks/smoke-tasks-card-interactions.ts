@@ -104,8 +104,8 @@ try {
   }
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   const page = await context.newPage(); page.setDefaultTimeout(10000); page.on('pageerror', e => errors.push(e.message));
-  await page.goto(server.url + '/views/opencraft.tasks.board'); await page.getByRole('radio', { name: /^Backlog / }).click();
-  const column = page.locator('.tasks-column[data-status="backlog"]'), first = column.locator('.tasks-card').first(); await first.waitFor();
+  await page.goto(server.url + '/views/opencraft.tasks.board'); await page.getByRole('radio', { name: /^Product backlog / }).click();
+  const column = page.locator('.tasks-column[data-column="product_backlog"]'), first = column.locator('.tasks-card').first(); await first.waitFor();
   const beforeTouch = JSON.stringify(snapshot());
   await first.locator('.tasks-kind').tap(); await page.locator('.tasks-editor').waitFor(); await page.keyboard.press('Escape');
   await first.locator('[aria-haspopup="menu"]').tap(); await page.getByRole('menuitem', { name: 'Quick edit', exact: true }).tap();
@@ -119,7 +119,7 @@ try {
   await new Promise(r => setTimeout(r, 350)); // Exceeds the removed long-press activation threshold.
   for (let i = 1; i <= 8; i++) await touch('touchMove', b.x + 8, b.y + b.height - 10 - 12 * i);
   await touch('touchEnd', 0, 0);
-  await page.waitForFunction(() => document.querySelector('.tasks-column[data-status="backlog"]')!.scrollTop > 0);
+  await page.waitForFunction(() => document.querySelector('.tasks-column[data-column="product_backlog"]')!.scrollTop > 0);
   assert.equal(await page.locator('.tasks-card__handle, .tasks-card--overlay, .tasks-card--dragging').count(), 0);
   assert.equal(JSON.stringify(snapshot()), beforeTouch, 'Touch long press and scrolling do not write tasks');
   assert.equal(await page.locator('.tasks-editor').count(), 0);
