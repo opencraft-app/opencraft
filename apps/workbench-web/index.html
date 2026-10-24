@@ -37,6 +37,10 @@
         html { background-color: #ffffff; }
         html.electron-dark { background-color: #181818; }
       }
+      html[data-window-host="browser"][data-window-edge-strategy="legacy-overlay-requested"]:is([data-window-display-mode="standalone"], [data-window-display-mode="fullscreen"]),
+      html[data-window-host="browser"][data-window-edge-strategy="legacy-overlay-requested"]:is([data-window-display-mode="standalone"], [data-window-display-mode="fullscreen"]) body {
+        height: 100vh;
+      }
       #opencraft-host-edge-color { display: none; }
       @supports (-webkit-touch-callout: none) and (background-clip: text) {
         html[data-window-host="browser"][data-window-edge-strategy="system-color-extension"]:is([data-window-display-mode="standalone"], [data-window-display-mode="fullscreen"]) #opencraft-host-edge-color {

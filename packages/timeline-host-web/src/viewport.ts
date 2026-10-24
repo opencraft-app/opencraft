@@ -116,6 +116,7 @@ function applyTimelineViewportDocumentExtent(
     timelineOverscroll: policy.threadOverscroll,
     timelineElasticEffect: String(policy.localElasticEffect),
     timelineTracksVisualViewport: String(policy.tracksVisualViewport),
+    timelineViewportOccluded: String(layout.occludedBottomPx > 0),
     timelineKeyboardOpen: String(snapshot.keyboardInsetBottomPx > 0),
   };
   for (const [key, value] of Object.entries(attributes)) {

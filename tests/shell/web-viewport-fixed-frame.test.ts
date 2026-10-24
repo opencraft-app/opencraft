@@ -45,6 +45,25 @@ function fixture(onGeometryObserved?: (event?: Event) => void) {
   };
 }
 
+test("viewport contraction stays distinct from editable keyboard inference", () => {
+  const f = fixture();
+  try {
+    const root = f.win.document.documentElement;
+    assert.equal(root.dataset.timelineViewportOccluded, "true");
+    assert.equal(root.dataset.timelineKeyboardOpen, "false");
+    f.visual.height = 688;
+    f.visual.dispatchEvent(new f.win.Event("resize"));
+    assert.equal(root.dataset.timelineViewportOccluded, "false");
+    f.input.focus();
+    f.visual.height = 394;
+    f.visual.dispatchEvent(new f.win.Event("resize"));
+    f.input.blur(); f.frame(10);
+    assert.equal(root.dataset.timelineKeyboardOpen, "false");
+    assert.equal(root.dataset.timelineViewportOccluded, "true");
+    assert.equal(root.style.getPropertyValue("--timeline-available-viewport-height"), "394px");
+  } finally { f.close(); }
+});
+
 test("fixed frame separates native fixed basis from reported visual offset in either update order", () => {
   const f = fixture();
   try {
