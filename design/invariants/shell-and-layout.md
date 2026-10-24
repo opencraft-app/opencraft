@@ -31,7 +31,12 @@ Requested standalone/fullscreen browser overlay documents size html/body with
 the CSS large viewport (`100vh`), rather than an inherited percentage rectangle.
 When the viewport owner reports no geometric contraction, the foreground and
 stationary drawer plane use that same CSS paint extent. Raw native metrics can
-exclude the status area even when CSS can paint it. Any measured contraction
+exclude the status area even when CSS can paint it. Paint capacity is not usable
+content capacity: the foreground row reserves any excess paint tail inside its
+border box, while the drawer content frame retains the measured available height.
+Top SafeLayout and route/drawer bottom safe spacing remain allocated once inside
+that content frame. Background, card silhouette and stationary material still
+reach the CSS canvas edge. Any measured contraction
 restores the existing VisualViewport extent and origin, independently of focus;
 blur does not establish keyboard dismissal. Ordinary tabs and host-owned windows
 retain their existing sizing. No screen-height arithmetic or fixed cutout size

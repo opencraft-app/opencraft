@@ -182,7 +182,12 @@ exceed the host's reported unoccluded metrics. The existing Web viewport owner
 publishes geometric contraction separately from editable keyboard inference.
 Only its unoccluded projection selects this full CSS extent; a reduced visual
 viewport stays authoritative through blur, theme changes and navigation. The
-root/background and content safe-inset responsibilities remain separate.
+root/background and content safe-inset responsibilities remain separate. The
+unoccluded paint extension must never increase Composer or navigation-footer
+capacity: controls remain within the measured visual frame with their existing
+bottom safe spacing. A full-canvas layout with a control beyond that frame is a
+failure even if a desktop browser renders the control below the simulated native
+clip boundary.
 
 The Web viewport port is the only writer of the Shell viewport projection.
 The browser owns native coordinate movement; the application owns layout capacity.
