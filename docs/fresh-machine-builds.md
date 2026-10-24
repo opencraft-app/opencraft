@@ -7,7 +7,9 @@ The Git checkout plus public, locked dependencies is the complete build input.
 - Root `package-lock.json`: application workspace dependencies; install with `npm ci`.
 - `runtime/dsh/package-lock.json`: independently installed Local Agent runtime.
   Only its manifest/lockfile are committed, never its dependencies or user data.
-- `.nvmrc`: tested build Node version; Electron stays pinned to 44.1.0.
+- `.nvmrc`: tested build Node version.
+- [Desktop package manifest](../apps/workbench-electron/package.json): pinned
+  Electron version, resolved by the [root lockfile](../package-lock.json).
 - Native toolchains: provided by the target OS. Native binaries must not be
   copied from a different OS/CPU. Desktop packaging checks this before packing.
 - Credentials and endpoints: configured by each user at runtime. Web/Expo need
