@@ -106,13 +106,24 @@ does not upgrade their execution owner. Host inputs preserve the live browser
 contribution and its reply owner; browser disconnection revokes only those tools.
 Actor run bindings and conversation delegation source remain Codex-scoped.
 
-## IM reply provider
+## IM reply and received-message read provider
 
 IM contributes `im_reply(replyRef, text)` only to a conversation with a current,
 authorized IM reply record. Each admitted arrival captures its own opaque
 reference, source, sender, target, expiry and reply mode in SQLite migration v3.
 The model cannot choose a channel or destination. Owner, human, sender linkage,
 channel state and conversation permissions are checked again at invocation.
+
+The same provider contributes `im_read_context` and `im_search_messages` only
+where a current, authorized retained arrival exists. Each call uses its opaque
+replyRef as an anchor to the same bot, sender and canonical conversation; context
+additionally restricts the source. They read only content already admitted to
+that conversation, with explicit received-only coverage and bounded excerpts.
+No model-selected topic/actor/conversation scope or provider-wide history is
+exposed. Reads may outlive the transport reply deadline within retention, but
+always recheck current policy. See [received-message tools](im-switchboard.md#received-message-read-tools).
+Trusted read declarations are also preauthorized per tool, including creation
+reservations; the hint never replaces domain checks or changes global approvals.
 
 The trusted reply declaration marks this bounded effect as preauthorized by the
 admitted incoming message. The Codex adapter configuration projects that choice

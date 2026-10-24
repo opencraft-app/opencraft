@@ -2,6 +2,7 @@ import { join } from "node:path";
 import { randomBytes, randomUUID, createHash } from "node:crypto";
 import { SwitchboardStore } from "../plugins/im/src/store.ts";
 import { IM_REPLY_TOOL } from "../plugins/im/src/reply-tool.ts";
+import { IM_READ_TOOLS } from "../plugins/im/src/read-tools.ts";
 import { ImPlugin } from "../plugins/im/src/server.ts";
 import {
   compileRoute,
@@ -105,8 +106,12 @@ export class ImChannelService {
     this.im = new ImPlugin(this.store, this.execution, 1024, !!dependencies.capabilities);
     this.unregisterCapabilities = dependencies.capabilities?.register({
       id: 'im.reply',
-      tools: session => this.im.replyAvailable(session) ? [IM_REPLY_TOOL] : [],
+      tools: session => [
+        ...(this.im.replyAvailable(session) ? [IM_REPLY_TOOL] : []),
+        ...(this.im.readAvailable(session) ? IM_READ_TOOLS : []),
+      ],
       call: (session, name, args, signal) => {
+        if (IM_READ_TOOLS.some(tool => tool.name === name)) return this.im.read(session, name, args, signal);
         if (name !== 'im_reply') throw Error('capability_denied');
         return this.im.reply(session, args, signal);
       },

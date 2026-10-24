@@ -114,6 +114,37 @@ and delivered are distinct facts; no exactly-once delivery guarantee is made.
 Terminal records are retained for seven days with a 10,000-record cap; pending
 admissions have a separate 1,024 cap. Reply content and addresses stay server-side.
 
+## Received-message read tools
+
+`im_read_context(replyRef, limit?, cursor?, from?, until?)` reads received messages
+from the same source, sender, bot and canonical conversation as an admitted arrival.
+`im_search_messages(replyRef, query, limit?, cursor?, from?, until?)` searches the
+same sender's retained received text and reply text in the same bot/conversation;
+it can include another source only when already routed to that exact conversation.
+The keyword is literal and case insensitive. Times are inclusive receive-time
+Unix milliseconds, not the platform's original posting time. Pages are newest
+first with deterministic ID ordering at equal timestamps; at most twenty records
+are returned with 1,024-byte Unicode-safe excerpts per incoming/reply text.
+Truncation is explicit; references point to the actual workbench conversation
+and local message receipt, never a fabricated platform post URL.
+
+These tools return `received_only` coverage, `platformHistory: false`, seven-day
+retention and the existing global 10,000 terminal-record cap. A zero-result search
+does not establish absence from the platform. They do not fetch unmentioned
+posts/comments, historical content before reception, other people's messages, other
+conversations or other bot installations. Full native channel history needs its
+own trusted channel/post identifiers, provider API access and current permissions;
+a compatibility `chatid` is not assumed to be a native `topic_id`.
+
+The signed session determines the caller. Model arguments cannot select a bot,
+actor or conversation. An expired reply deadline does not expire authorized reads
+of a retained arrival, while owner/human/sender/channel/conversation revocation
+still rejects both discovery and calls immediately. Read calls do not modify
+message states, claim/send replies or expose callback addresses/credentials.
+Only the already admitted content is preauthorized per tool. Returned content is
+untrusted data. Both declaration reservations and existing-session refresh use
+the same Host capability owner; active native turns are not cancelled.
+
 ## Legacy installations and platform behavior
 
 Existing `--im-config` / `OPENCRAFT_IM_CONFIG_FILE` owner-only configuration is
