@@ -33,6 +33,8 @@ const messages = {
   now: { id: "schedules.now", defaultMessage: "Run now" },
   history: { id: "schedules.history", defaultMessage: "Recent runs" },
   error: { id: "schedules.error", defaultMessage: "Could not confirm the change. Reload the schedule before trying again." },
+  conflict: { id: "schedules.conflict", defaultMessage: "The schedule changed or has an unfinished run. Cancel editing and review the latest schedule before saving." },
+  invalid: { id: "schedules.invalid", defaultMessage: "Check the schedule settings and choose a first run in the future." },
   loadError: { id: "schedules.loadError", defaultMessage: "Could not load the schedule." },
   retry: { id: "schedules.retry", defaultMessage: "Retry" },
   loading: { id: "schedules.loading", defaultMessage: "Loading…" },
@@ -57,8 +59,14 @@ function localDate(value: number) {
 }
 interface Draft { permissions: string; prompt: string; when: string; minutes: string; repeating: boolean; revision: number; calendar: ScheduleCalendar | null; zone: string; }
 function draftFor(plan: ConversationSchedule | null): Draft {
-  return { permissions: plan?.permissions ?? "", prompt: plan?.prompt ?? "", when: localDate(plan?.nextRunAt ?? Date.now() + 300000),
+  const now = Date.now();
+  const next = plan?.nextRunAt;
+  return { permissions: plan?.permissions ?? "", prompt: plan?.prompt ?? "", when: localDate(next != null && Math.floor(next / 60000) * 60000 > now ? next : now + 300000),
     minutes: String(plan?.intervalMinutes ?? 60), repeating: plan?.intervalMinutes != null, revision: plan?.revision ?? 0, calendar: plan?.calendar ?? null, zone: plan?.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC" };
+}
+function errorMessage(error: unknown): "conflict" | "invalid" | "error" {
+  const code = error && typeof error === "object" && "code" in error ? error.code : null;
+  return code === -32009 ? "conflict" : code === -32602 ? "invalid" : "error";
 }
 export function ConversationSchedulesPanel(props: {
   port: ConversationSchedulesRequestPort; scope: string; hostId: string; threadId: string;
@@ -73,20 +81,26 @@ export function ConversationSchedulesPanel(props: {
   const zone = draft?.zone ?? query.data?.schedule?.timeZone ?? (detectedZone && detectedZone !== "Etc/Unknown" ? detectedZone : "UTC");
   const mutation = useMutation({
     mutationFn: async (command: { type: "save"; value: Draft } | { type: "action"; action: "pause" | "resume" | "delete" | "run-now" | "review"; revision: number }) => {
-      if (command.type === "save") return props.port.request(METHODS.save, { threadId: props.threadId,
+      if (command.type === "save") {
+        const nextRunAt = new Date(command.value.when).getTime();
+        if (!Number.isFinite(nextRunAt) || nextRunAt <= Date.now()) throw Object.assign(new Error("Invalid schedule time"), { code: -32602 });
+        return props.port.request(METHODS.save, { threadId: props.threadId,
         permissions: command.value.permissions || null, expectedRevision: command.value.revision, prompt: command.value.prompt,
-        nextRunAt: new Date(command.value.when).getTime(), intervalMinutes: command.value.repeating ? Number(command.value.minutes) : null, timeZone: command.value.zone, calendar: command.value.calendar });
+        nextRunAt, intervalMinutes: command.value.repeating ? Number(command.value.minutes) : null, timeZone: command.value.zone, calendar: command.value.calendar });
+      }
       return props.port.request(METHODS.action, { threadId: props.threadId, expectedRevision: command.revision, action: command.action });
     },
     retry: false,
     onSuccess: data => { cache.setQueryData(key, data); setDraft(null); },
-    onError: () => notices.error({ key: `schedules:${props.scope}:${props.hostId}:${props.threadId}`, message: text("error") }),
+    onError: error => notices.error({ key: `schedules:${props.scope}:${props.hostId}:${props.threadId}`, message: text(errorMessage(error)) }),
     onSettled: () => { void cache.invalidateQueries({ queryKey: key }).catch(() => undefined); },
   });
   const plan = query.data?.schedule ?? null, exists = plan && plan.status !== "deleted";
   const profiles = query.data?.permissionProfiles;
   const permissionLabel = (id: string | null | undefined) => profiles?.find(profile => profile.id === id)?.openCraftLabel ?? profiles?.find(profile => profile.id === id)?.id ?? id ?? text("defaultPermissions");
   const inFlight = query.data?.runs.some(run => ["waiting", "submitting", "running", "unknown"].includes(run.state));
+  const staleDraft = Boolean(draft && (query.data && draft.revision !== (plan?.revision ?? 0)
+    || mutation.isError && errorMessage(mutation.error) === "conflict"));
   const action = (value: "pause" | "resume" | "delete" | "run-now" | "review") => { if (plan) mutation.mutate({ type: "action", action: value, revision: plan.revision }); };
   const update = (value: Partial<Draft>) => setDraft(prior => prior ? { ...prior, ...value } : prior);
   const stateLabel = (state: ConversationScheduleRun["state"] | ConversationSchedule["status"]) => text(state);
@@ -102,7 +116,7 @@ export function ConversationSchedulesPanel(props: {
             metadata={plan.status === "active" ? `${permissionLabel(plan.permissions)} · ${plan.calendar ? `${intl.formatMessage(createMessages[plan.calendar.period])} ${plan.calendar.times.join(", ")}` : plan.intervalMinutes ? intl.formatMessage(messages.every, { minutes: plan.intervalMinutes }) : text("once")} · ${new Date(plan.nextRunAt).toLocaleString(intl.locale, { timeZone: plan.timeZone })} · ${plan.timeZone}` : undefined} />
             : <SettingsNotice>{text("empty")}</SettingsNotice>}
           <div className="conversation-schedules__actions">
-            <SettingsButton disabled={mutation.isPending || inFlight} onClick={() => setDraft(draftFor(plan))}>{text(exists ? "edit" : "create")}</SettingsButton>
+            <SettingsButton disabled={mutation.isPending || inFlight} onClick={() => { mutation.reset(); setDraft(draftFor(plan)); }}>{text(exists ? "edit" : "create")}</SettingsButton>
             {exists ? <>
               {plan.status === "active" ? <SettingsButton disabled={mutation.isPending} onClick={() => action("pause")}>{text("pause")}</SettingsButton> : <SettingsButton disabled={mutation.isPending || inFlight} onClick={() => action("resume")}>{text("resume")}</SettingsButton>}
               <SettingsButton disabled={mutation.isPending || inFlight || plan.status !== "active"} onClick={() => action("run-now")}>{text("now")}</SettingsButton>
@@ -110,7 +124,8 @@ export function ConversationSchedulesPanel(props: {
             </> : null}
           </div>
         </> : null}
-        {draft ? <form className="conversation-schedules__form" onSubmit={event => { event.preventDefault(); if (!mutation.isPending) mutation.mutate({ type: "save", value: draft }); }}>
+        {draft ? <form className="conversation-schedules__form" onSubmit={event => { event.preventDefault(); if (!mutation.isPending && !staleDraft && !inFlight) mutation.mutate({ type: "save", value: draft }); }}>
+          {staleDraft ? <SettingsNotice role="status">{text("conflict")}</SettingsNotice> : null}
           <label>{text("prompt")}<textarea aria-label={text("prompt")} className="settings-control-input" required maxLength={32000} rows={4} value={draft.prompt} disabled={mutation.isPending} onChange={event => update({ prompt: event.target.value })} /></label>
           {profiles ? <label>{text("permissions")}<SettingsSelect aria-label={text("permissions")} value={draft.permissions} disabled={mutation.isPending} onChange={event => update({ permissions: event.target.value })}>
             <option value="">{text("defaultPermissions")}</option>
@@ -129,7 +144,7 @@ export function ConversationSchedulesPanel(props: {
             {draft.calendar.period !== "daily" ? <label>{intl.formatMessage(createMessages[draft.calendar.period === "monthly" ? "monthdays" : "days"])}<SettingsTextInput required value={draft.calendar.days.join(",")} onChange={event => update({ calendar: { ...draft.calendar!, days: event.target.value.split(/[,，]/).map(Number) } })} /></label> : null}
           </> : null}
           {draft.repeating ? <label>{text("minutes")}<SettingsTextInput aria-label={text("minutes")} type="number" min={1} max={525600} required value={draft.minutes} disabled={mutation.isPending} onChange={event => update({ minutes: event.target.value })} /></label> : null}
-          <div className="conversation-schedules__actions"><SettingsButton type="button" disabled={mutation.isPending} onClick={() => setDraft(null)}>{text("cancel")}</SettingsButton><SettingsButton type="submit" variant="primary" loading={mutation.isPending}>{mutation.isPending ? intl.formatMessage({ id: "sidebar.thread.saving", defaultMessage: "Saving…" }) : text("save")}</SettingsButton></div>
+          <div className="conversation-schedules__actions"><SettingsButton type="button" disabled={mutation.isPending} onClick={() => { mutation.reset(); setDraft(null); }}>{text("cancel")}</SettingsButton><SettingsButton type="submit" variant="primary" disabled={staleDraft || Boolean(inFlight)} loading={mutation.isPending}>{mutation.isPending ? intl.formatMessage({ id: "sidebar.thread.saving", defaultMessage: "Saving…" }) : text("save")}</SettingsButton></div>
         </form> : null}
         {inFlight ? <SettingsNotice>{text("pendingHint")}</SettingsNotice> : null}
         {query.data?.runs.some(run => run.state === "unknown") ? <SettingsNotice>{text("unknownHint")} <SettingsButton disabled={mutation.isPending} onClick={() => action("review")}>{text("review")}</SettingsButton></SettingsNotice> : null}

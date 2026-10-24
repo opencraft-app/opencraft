@@ -504,6 +504,8 @@
   "schedules.now": "Run now",
   "schedules.history": "Recent runs",
   "schedules.error": "Could not confirm the change. Reload the schedule before trying again.",
+  "schedules.conflict": "The schedule changed or has an unfinished run. Cancel editing and review the latest schedule before saving.",
+  "schedules.invalid": "Check the schedule settings and choose a first run in the future.",
   "schedules.loadError": "Could not load the schedule.",
   "schedules.retry": "Retry",
   "schedules.loading": "Loading…",

@@ -506,6 +506,8 @@
   "schedules.now": "Run now",
   "schedules.history": "Recent runs",
   "schedules.error": "Could not confirm the change. Reload the schedule before trying again.",
+  "schedules.conflict": "Jadual telah berubah atau masih mempunyai pelaksanaan yang belum selesai. Batalkan pengeditan dan semak jadual terkini sebelum menyimpan.",
+  "schedules.invalid": "Semak tetapan jadual dan pilih masa pelaksanaan pertama pada masa hadapan.",
   "schedules.loadError": "Could not load the schedule.",
   "schedules.retry": "Retry",
   "schedules.loading": "Loading…",

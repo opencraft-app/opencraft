@@ -506,6 +506,8 @@
   "schedules.now": "Run now",
   "schedules.history": "Recent runs",
   "schedules.error": "Could not confirm the change. Reload the schedule before trying again.",
+  "schedules.conflict": "กำหนดการเปลี่ยนแปลงหรือยังมีงานที่ทำไม่เสร็จ ยกเลิกการแก้ไขและตรวจสอบกำหนดการล่าสุดก่อนบันทึก",
+  "schedules.invalid": "ตรวจสอบการตั้งค่ากำหนดการและเลือกเวลาเริ่มครั้งแรกในอนาคต",
   "schedules.loadError": "Could not load the schedule.",
   "schedules.retry": "Retry",
   "schedules.loading": "Loading…",
