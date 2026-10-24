@@ -85,3 +85,14 @@ test("host-owned system bars still permit painting our document", () => {
   assert.equal(f.document.documentElement.style.backgroundColor, intent.edgeBackgroundColor);
   assert.equal(f.meta(), "initial", "no invented native appearance capability");
 });
+
+
+test("an unreadable mode key does not discard a readable saved palette", () => {
+  const f = fixture();
+  f.view.localStorage.getItem = (key: string) => {
+    if (key === "opencraft.appearance-theme") throw Error("denied key");
+    return key === "vela.appearance-theme" ? "dark" : key === "opencraft.appearance-theme-id" ? "opencraft.core.lavender" : null;
+  };
+  vm.runInNewContext(bootstrap(), { document: f.document });
+  assert.equal(f.meta(), builtinAppearanceThemes.find(e => e.descriptor.id.endsWith(".lavender"))!.palettes.dark.surface);
+});

@@ -14,11 +14,13 @@ export function initializeBootstrapAppearance(document: Document, themes: readon
   if (!view || !themes.length) return;
   let preference: ThemePreference = defaultThemePreference;
   let requested = "";
-  try {
-    const stored = view.localStorage.getItem("opencraft.appearance-theme") ?? view.localStorage.getItem("vela.appearance-theme");
-    if (isThemePreference(stored)) preference = stored;
-    requested = normalizeBuiltinThemeId((view.localStorage.getItem("opencraft.appearance-theme-id") ?? view.localStorage.getItem("vela.appearance-theme-id") ?? "").trim());
-  } catch { /* A denied read leaves a presentation fallback, never a new preference. */ }
+  const read = (key: string): string | null | undefined => {
+    try { return view.localStorage.getItem(key); }
+    catch { return undefined; }
+  };
+  const stored = read("opencraft.appearance-theme") ?? read("vela.appearance-theme");
+  if (isThemePreference(stored)) preference = stored;
+  requested = normalizeBuiltinThemeId((read("opencraft.appearance-theme-id") ?? read("vela.appearance-theme-id") ?? "").trim());
   const mode = resolveThemePreference(preference, view.matchMedia("(prefers-color-scheme: dark)").matches);
   const theme = themes.find(entry => entry.id === requested) ?? themes[0]!;
   const root = document.documentElement;
