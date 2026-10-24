@@ -110,11 +110,12 @@ for (const mode of ["acquire", "retry"] as const) {
 for (const [label, data, persistent, expected] of [
   ["transient", { retryable: true }, false, 2],
   ["permanent", { retryable: false }, false, 1],
-  ["unknown", undefined, false, 1],
+  ["legacy server error", undefined, false, 2],
+  ["persistent legacy error", undefined, true, 7],
   ["malformed", { retryable: "true" }, false, 1],
-  ["persistent transient", { retryable: true }, true, 4],
+  ["persistent transient", { retryable: true }, true, 7],
 ] as const) {
-  test(`${label}: RPC history recovery respects explicit retryability and the existing bound`, async () => {
+  test(`${label}: RPC history recovery retries legacy/transient reads until success and respects permanent failures`, async () => {
     let resumes = 0, initializes = 0;
     const methods: string[] = [];
     const transport = new MemoryTransport({ receive(frame, peer) {
@@ -125,7 +126,7 @@ for (const [label, data, persistent, expected] of [
       else if (request.method === "thread/read") send({ thread: thread("history") });
       else if (request.method === "thread/resume") {
         resumes++;
-        if (persistent || resumes === 1) {
+        if ((persistent && resumes < expected) || resumes === 1) {
           peer.send(JSON.stringify({ id: request.id, error: { code: -32000, message: "history unavailable", data } }));
         } else send({ thread: thread("history"), model: "test", modelProvider: "test", cwd: "/workspace",
           approvalPolicy: "on-request", approvalsReviewer: "user", runtimeWorkspaceRoots: ["/workspace"],
@@ -140,13 +141,13 @@ for (const [label, data, persistent, expected] of [
       await runtime.connect();
       const lease = await runtime.acquireThread("history");
       const deadline = Date.now() + 1000;
-      while (resumes < expected || (expected === 2 && !lease.getSnapshot().authoritative)) {
+      while (resumes < expected || (expected > 1 && !lease.getSnapshot().authoritative)) {
         assert.ok(Date.now() < deadline, "recovery must reach its expected outcome");
         await new Promise(resolve => setTimeout(resolve, 5));
       }
       await new Promise(resolve => setTimeout(resolve, 60));
       assert.equal(resumes, expected);
-      assert.equal(lease.getSnapshot().authoritative, expected === 2);
+      assert.equal(lease.getSnapshot().authoritative, expected > 1);
       assert.equal(runtime.getSnapshot().phase, "ready");
       assert.equal(initializes, 1, "Thread failures must not reconnect the Host");
       assert.equal(methods.some(method => ["turn/start", "turn/steer", "thread/start"].includes(method)), false);
@@ -211,4 +212,52 @@ test("making a cold Thread visible does not resume a healthy peer; connection lo
     assert.equal(watchRequests, 2);
     await healthy.release(); await cold.release();
   } finally { await runtime.dispose(); }
+});
+
+
+test("a channel stuck in history backoff cannot reconnect or delay a healthy channel", async () => {
+  const counts = { failed: 0, healthy: 0, failedInit: 0, healthyInit: 0 };
+  let failing = true;
+  const create = (failed: boolean) => createAppServerWorkbenchRuntime({
+    hostId: failed ? "failed-channel" : "healthy-channel", autoReconnect: false,
+    reconnectDelaysMs: [5, 10], requestTimeoutMs: 100,
+    transport: new MemoryTransport({ receive(frame, peer) {
+      const request = JSON.parse(frame); if (request.id === undefined) return;
+      const send = (result: unknown) => peer.send(JSON.stringify({ id: request.id, result }));
+      if (request.method === "initialize") {
+        counts[failed ? "failedInit" : "healthyInit"]++;
+        send({ codexHome: "/tmp", platformFamily: "unix", platformOs: "linux", userAgent: "channel-isolation" });
+      } else if (request.method === "thread/read") send({ thread: thread("history") });
+      else if (request.method === "thread/resume") {
+        counts[failed ? "failed" : "healthy"]++;
+        if (failed && failing) peer.send(JSON.stringify({ id: request.id, error: { code: -32000, message: "unavailable" } }));
+        else send({ thread: thread("history"), model: "test", modelProvider: "test", cwd: "/workspace",
+          approvalPolicy: "on-request", approvalsReviewer: "user", runtimeWorkspaceRoots: ["/workspace"],
+          sandbox: { type: "workspaceWrite", writableRoots: ["/workspace"] },
+          initialTurnsPage: { data: [], nextCursor: null }, turnsBackwardsCursor: null, itemsBackwardsCursor: null });
+      } else if (request.method.endsWith("/list")) send({ data: [], nextCursor: null });
+      else send({});
+    } }),
+  });
+  const bad = create(true), good = create(false);
+  try {
+    await bad.connect(); await good.connect();
+    const failed = await bad.acquireThread("history"); failed.setRecoveryVisibility(true);
+    const healthy = await good.acquireThread("history"); healthy.setRecoveryVisibility(true);
+    const until = async (condition: () => boolean) => {
+      const deadline = Date.now() + 2000;
+      while (!condition()) { assert.ok(Date.now() < deadline); await new Promise(resolve => setTimeout(resolve, 5)); }
+    };
+    await until(() => counts.failed >= 6 && healthy.getSnapshot().authoritative);
+    const snapshot = healthy.getSnapshot();
+    assert.equal(counts.healthy, 1);
+    assert.equal(good.getSnapshot().phase, "ready");
+    assert.equal(healthy.getSnapshot().error, null);
+    failing = false;
+    await until(() => failed.getSnapshot().authoritative);
+    assert.equal(healthy.getSnapshot(), snapshot, "other channel history is never revoked or rehydrated");
+    assert.equal(counts.healthy, 1);
+    assert.equal(counts.failedInit, 1); assert.equal(counts.healthyInit, 1);
+    failed.release(); healthy.release();
+  } finally { await bad.dispose(); await good.dispose(); }
 });

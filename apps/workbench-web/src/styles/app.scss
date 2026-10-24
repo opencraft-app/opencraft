@@ -177,28 +177,6 @@ html[data-window-host="browser"][data-window-edge-strategy="legacy-overlay-reque
   p { margin: 0; }
 }
 
-.conversation-recovery-empty-error button,
-.conversation-recovery-notice button {
-  min-height: 32px;
-  padding: 4px 10px;
-  border: 1px solid var(--color-border-default);
-  border-radius: 8px;
-  background: var(--color-background-elevated-primary-opaque);
-  color: var(--color-text);
-  cursor: pointer;
-
-  @include controls.hover-capable {
-    &:hover { background: var(--color-background-secondary); }
-  }
-
-  &:focus-visible { outline: 2px solid var(--color-border-focus); outline-offset: 2px; }
-}
-
-@media (any-pointer: coarse), (hover: none) {
-  .conversation-recovery-empty-error button,
-  .conversation-recovery-notice button { min-height: 44px; }
-}
-
 .conversation-recovery-notice {
   display: flex;
   flex-wrap: wrap;
@@ -212,40 +190,6 @@ html[data-window-host="browser"][data-window-edge-strategy="legacy-overlay-reque
   font: var(--typography-metadata-font);
   letter-spacing: var(--typography-metadata-tracking);
   overflow-wrap: anywhere;
-}
-
-.conversation-recovery-progress {
-  display: flex;
-  flex-direction: column;
-  flex-basis: 100%;
-  min-width: 0;
-  gap: 4px;
-  white-space: normal;
-  overflow-wrap: anywhere;
-  font: var(--typography-metadata-font);
-  letter-spacing: var(--typography-metadata-tracking);
-}
-.conversation-recovery-progress__time,
-.conversation-recovery-progress__failure { color: var(--color-text-secondary); }
-
-.conversation-recovery-details {
-  flex-basis: 100%;
-  min-width: 0;
-  max-width: 100%;
-  white-space: normal;
-  font: var(--typography-metadata-font);
-  letter-spacing: var(--typography-metadata-tracking);
-
-  &[open] { max-height: min(50dvh, 420px); overflow-y: auto; overscroll-behavior: contain; }
-  summary { cursor: pointer; padding-block: 6px; }
-  summary:focus-visible { outline: 2px solid var(--color-border-focus); }
-  pre { margin: 8px 0; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; user-select: text; }
-  p { margin: 4px 0; }
-  [role="status"] { margin-inline-start: 8px; }
-}
-
-@keyframes conversation-recovery-appear {
-  to { opacity: 1; }
 }
 
 body {

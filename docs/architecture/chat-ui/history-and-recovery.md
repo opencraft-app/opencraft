@@ -251,21 +251,20 @@ not merely because a conversation is retained in the cache.
 
 ### Recovery technical details
 
-Cold and retained-history recovery errors expose a collapsed native details
-panel. Runtime composition projects the existing transport/activation/history
-owners into an allowlisted presentation snapshot; it does not schedule retries.
-Connection failures carry the same local attempt ID as the server diagnostic
-report, a fixed occurrence time, socket phase/cause and optional close code.
-History/activation errors expose only a bounded machine code (or UNCLASSIFIED)
-and local observation time, never an error message, stack or payload. Runtime
-and transport states report current observations; recoveryPolicy describes the
-transport's existing automatic/manual classification, not proof a retry ran.
-Navigation fences expanded/copy state; successful authoritative recovery removes
-the panel. Copy uses the shared clipboard helper with legacy fallback and an
-announced failure. Narrow and themed layouts wrap technical fields while retaining
-history, scroll and drafts. Protocol mismatch still requires an update rather
-than a retry loop. The clipboard-only package export avoids importing renderers
-and their styles for this utility.
+Cold and retained-history recovery keep failure codes and progress in the
+allowlisted console/diagnostic snapshot. The conversation renders no reconnect
+failure notice, retry button, technical disclosure or copy action. A client
+protocol mismatch still shows the required update/reload instruction because
+retrying cannot repair an incompatible client.
+
+The Host-owned history scheduler continues retrying transient read failures while
+the conversation has visible/open demand. Backoff grows to sixty seconds with
+jitter; failures do not exhaust an attempt budget. Generic legacy server/internal
+RPC errors are retryable for history reads unless marked permanent. Missing or
+archived conversations, permission/validation errors and explicit non-retryable
+failures retain their existing handling. This policy never replays writes,
+reconnects a healthy Host or grants authority to cached history. Disposal, cache-only
+demand and connection replacement cancel pending work and fence late results.
 
 ## External conversation presentation and history reads
 
@@ -304,23 +303,18 @@ projection is independent of Turn streaming and does not authorize commands. It
 appears after 600ms, fades out in 350ms, uses theme colors, intercepts no input and
 preserves the mounted editor, draft, focus and selection. Reduced motion retains
 a static faint edge. Cold history uses the same Composer feedback instead of a
-central spinner; activation failures retain their retry action. The empty Composer placeholder shows “Reconnecting…” while its Host connects or
+central spinner. The empty Composer placeholder shows “Reconnecting…” while its Host connects or
 retries, and “Loading…” while the connected conversation is being restored. The
 existing recovery owner decides whether work is pending; stopped recovery and
-required updates keep their existing actions. The editor owns emptiness, so a
+required updates keep their update/reload instruction. The editor owns emptiness, so a
 draft (including transient IME text) hides this placeholder. Changing the
 placeholder preserves the same editor, focus, selection and draft; readiness
 restores the normal prompt. The border scan also retains its screen-reader label. No syncing/reconnecting notice is inserted into the transcript.
-Only a stopped/blocked recovery or required client update presents
-an actionable instruction in normal flow above the Composer, never over the
-transcript. Its diagnostic report stays collapsed. Elapsed time, attempts, retry
-deadlines and machine failure codes remain in the existing diagnostic snapshot;
-they do not add visible progress chrome or schedule work. Both cold and retained-history
-terminal failures render only the collapsed technical report and retry/update action;
-no progress presentation clock is mounted after recovery stops. Opening or copying
-the report consumes the existing allowlisted snapshot and never starts recovery.
-Authoritative recovery removes any manual action row; invalidation fences late observations.
-No remote error text, content, endpoint or credentials enter this report.
+Routine failures remain silent in both cold and retained-history layouts. Progress,
+elapsed time, attempts and machine codes remain diagnostic observations without
+visible controls or a presentation clock. Only a required client update appears
+above the Composer. Recovery and revalidation keep the same editor and transcript
+mounted, preserving draft, focus, selection and reading position.
 A fresh work item after a terminal failure starts a new history observation;
 its correlation ID and attempt count cannot inherit the completed report.
 Coalesced retries of an active work item still share the original observation.
@@ -329,7 +323,7 @@ Coalesced retries of an active work item still share the original observation.
 
 Recovery observations carry the local physical `attemptId` and `eventAtMs`; the server receipt time is not the client event time. `history-started`, `history-backoff`, and allowlisted slow/failed history RPC metadata are accepted by the diagnostic endpoint. A rejected metadata record is discarded instead of blocking later reports. No request params, conversation text, credentials, URLs or Thread IDs are added.
 
-The renderer logs the full allowlisted clipboard diagnostic to `console.log` on recovery state transitions, without an elapsed-time logging timer. Copying details logs the exact copied snapshot. Loading UI stays concise and retains existing messages and drafts.
+The renderer logs the full allowlisted diagnostic to `console.log` on recovery state transitions, without an elapsed-time logging timer. Loading UI stays concise and retains existing messages and drafts.
 
 A WebSocket Ping queued behind a large frame does not start a peer response deadline. The full heartbeat interval starts when the Ping write callback succeeds. Queued writes with decreasing buffered bytes retain the connection; four heartbeat intervals without write progress terminate as `heartbeat-write-stalled`. Delayed write, actual send, recovery and peer timeout diagnostics include the attempt ID, queued duration, buffered bytes and relevant timing; healthy idle heartbeats stay quiet. Closing a socket fences late write callbacks. This mitigates a demonstrated disconnect mechanism without claiming all reconnect failures have the same cause.
 

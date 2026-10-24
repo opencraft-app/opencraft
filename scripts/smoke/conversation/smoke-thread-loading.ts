@@ -46,13 +46,12 @@ function Demo(){
  const requiresUpdate=state.endsWith('update-error');
  const diagnostic=useConversationRecoveryDiagnostic({scope,failed,active:state!=='ready',stage:warm?'history':'connection',error:null,runtime:state==='warm-reconnecting'?'reconnecting':failed?'error':'ready',transport:{state:failed?'failed':'open'}});
  const presentation=conversationRecoveryPresentation({authoritative:state==='ready',hasVisibleHistory:warm,failed});
- const retry=()=>setState('cold-view');
  return <main className="local-conversation-page" style={{height:'100vh','--thread-content-top-inset':'0px',background:'var(--color-background-surface)',overflow:'hidden'}}>
   <TimelineBlockRendererProvider registry={ctx.timelineBlockRenderers}>
    <Conversation scrollPolicy="natural" timeline={warm?history:null}
-     emptyState={<ConversationRecoveryEmptyState failed={failed} diagnostic={diagnostic} requiresUpdate={requiresUpdate} onRetry={retry}/>}
+     emptyState={<ConversationRecoveryEmptyState failed={failed} requiresUpdate={requiresUpdate}/>}
      footer={<footer style={{padding:8}}>
-      {presentation==='warm-error'?<ConversationRecoveryNotice failed diagnostic={diagnostic} requiresUpdate={requiresUpdate} onRetry={()=>setState('warm-loading')}/>:null}
+      {presentation==='warm-error'?<ConversationRecoveryNotice failed requiresUpdate={requiresUpdate}/>:null}
       <OpenCraftComposer controller={controller} isStreaming={false} isUnstable={conversationRecoveryIsUnstable(presentation,diagnostic)} isRecovering={conversationRecoveryIsPending(presentation,diagnostic,requiresUpdate)} onSubmit={()=>false} onCancel={()=>{}}/>
      </footer>}/>
   </TimelineBlockRendererProvider>
@@ -138,33 +137,12 @@ try {
       await page.emulateMedia({ forcedColors: "none" });
       if (evidenceDir) await page.screenshot({ path: join(evidenceDir, `${width}-${family}-${mode}.png`) });
       await setState("cold-error");
-      await page.getByRole("alert").waitFor();
-      assert.equal(await scan.getAttribute("data-active"), "false", "terminal failure stops scanning");
-      const details = page.locator(".conversation-recovery-details");
-      assert.equal(await details.getAttribute("open"), null);
-      await details.locator("summary").click();
-      const technicalText = await details.locator("pre").innerText();
-      assert.match(technicalText, /stage: connection/);
-      await page.evaluate(() => (window as any).loadingFixture.render());
-      assert.equal(await details.locator("pre").innerText(), technicalText, "same failure keeps its timestamp");
-      await details.getByRole("button", { name: "Copy details" }).click();
-      await details.getByText("Copied", { exact: true }).waitFor();
-      assert.equal(await page.evaluate(() => navigator.clipboard.readText()), technicalText);
-      await page.evaluate(() => {
-        Object.defineProperty(navigator.clipboard, "writeText", { configurable: true, value: () => Promise.reject(new Error("denied")) });
-        document.execCommand = () => false;
-      });
-      await details.getByRole("button", { name: "Copy details" }).click();
-      await details.getByText("Could not copy. Select the details to copy manually.", { exact: true }).waitFor();
-      const rect = await details.boundingBox();
-      assert.ok(rect && rect.x >= 0 && rect.x + rect.width <= width);
-      if (evidenceDir) await page.screenshot({ path: join(evidenceDir, `details-${width}-${family}-${mode}.png`) });
-      await page.evaluate(() => (window as any).loadingFixture.setScope('b'));
-      await details.locator("summary").waitFor();
-      assert.equal(await details.getAttribute("open"), null, "navigation clears expanded/copy state");
+      assert.equal(await page.getByRole("alert").count(),0);
+      assert.equal(await page.locator('.conversation-recovery-details').count(),0);
       const retry = page.getByRole("button", { name: "Try again" });
-      if (touch) await retry.tap(); else await retry.click();
-      await expectActive();
+      assert.equal(await retry.count(),0);
+      assert.equal(await scan.getAttribute("data-active"), "false", "terminal failure stops scanning");
+      if (evidenceDir) await page.screenshot({ path: join(evidenceDir, `silent-cold-error-${width}-${family}-${mode}.png`) });
       await setState("cold-update-error");
       await page.getByRole("alert").waitFor();
       assert.match(await page.getByRole("alert").innerText(), /Update or reload to reconnect/);
@@ -203,7 +181,7 @@ try {
       let loadingTint: number[] = [];
       for (const state of ["warm-loading", "warm-syncing", "warm-reconnecting", "warm-error", "warm-update-error", "ready"]) {
         await setState(state);
-        if (state === "warm-error" || state === "warm-update-error") await page.locator(".conversation-recovery-notice").waitFor();
+        if (state === "warm-update-error") await page.locator(".conversation-recovery-notice").waitFor();
         else await page.locator(".conversation-recovery-notice").waitFor({ state: "detached" });
         assert.equal(await scan.getAttribute("data-active"), state === "warm-loading" || state === "warm-syncing" || state === "warm-reconnecting" ? "true" : "false");
         await page.evaluate(async () => {
@@ -246,7 +224,7 @@ try {
           assert.equal(await page.locator(".conversation-recovery-notice").count(), 0, "background recovery adds no floating chrome");
           if (evidenceDir) await page.screenshot({ path: join(evidenceDir, `sync-${width}-${family}-${mode}.png`) });
         }
-        if (state === "warm-error" || state === "warm-update-error") {
+        if (state === "warm-update-error") {
           const geometry = await page.locator(".conversation-recovery-notice").evaluate(el => {
             const rect = el.getBoundingClientRect();
             const input = document.querySelector(".ProseMirror")!.getBoundingClientRect();
@@ -260,8 +238,7 @@ try {
           const notice = page.locator(".conversation-recovery-notice");
           assert.match(await notice.innerText(), /Update or reload to reconnect/);
           assert.equal(await notice.getByRole("button", { name: "Try again" }).count(), 0);
-          await notice.locator("summary").click();
-          assert.match(await notice.locator("pre").innerText(), /stage: history/);
+          assert.equal(await notice.locator("details, pre, button").count(),0);
           const rect = await notice.boundingBox();
           assert.ok(rect && rect.y >= 0 && rect.y + rect.height <= 800 && rect.x >= 0
             && rect.x + rect.width <= width, "update instruction must be inside the viewport");
@@ -269,7 +246,7 @@ try {
         }
       }
       assert.deepEqual(errors, []);
-      results.push({ width, touch, family, mode, coldSlots: 2, warmHistoryPreserved: true, reducedMotion: true, retry: true, updateInstruction: true });
+      results.push({ width, touch, family, mode, coldSlots: 2, warmHistoryPreserved: true, reducedMotion: true, silentErrors: true, updateInstruction: true });
     } finally { await context.close(); }
   }
   console.log(JSON.stringify({ passed: true, cases: results.length, externalWrites: false, results }, null, 2));

@@ -813,24 +813,6 @@ export function App({
       activationPhase: conversationViewActivation.phase,
     });
   }, [recoveryPresentation, snapshot.hostId, activeThreadId, snapshot.phase, conversationViewActivation.phase]);
-  const retryConversationRecovery = () => {
-    const operation = snapshot.phase === "error"
-      ? runtime.reconnect()
-      : activeThreadLease?.retryRestore();
-    void operation?.catch(() => undefined);
-  };
-  const retryColdActivation = (snapshot.phase === "error" || conversationViewActivation.phase === "error")
-    && hostCatalog.currentLocation.kind === "thread"
-    ? () => {
-        const location = hostCatalog.currentLocation;
-        const reconnect = snapshot.phase === "error" ? runtime.reconnect() : Promise.resolve();
-        void reconnect.then(() => {
-          if (equalWorkbenchLocation(hostCatalog.currentLocation, location)) {
-            return hostCatalog.navigate(location, "replace");
-          }
-        }).catch(() => undefined);
-      }
-    : undefined;
   const navigationSource = activeThreadLease?.getNavigation() ?? null;
   const pendingInteraction = useMemo(
     () => findPendingInteraction(timeline),
@@ -2116,8 +2098,6 @@ export function App({
                     ? <ConversationRecoveryEmptyState
                         failed={recoveryPresentation === "cold-error"}
                         requiresUpdate={recoveryRequiresUpdate}
-                        diagnostic={recoveryDiagnostic}
-                        onRetry={activeThreadLease === null ? retryColdActivation : retryConversationRecovery}
                       />
                     : undefined}
                   key={activeConversationRestoreKey ?? "empty"}
@@ -2197,8 +2177,7 @@ export function App({
                       data-thread-find-composer="true"
                     >
                     {draft === null && recoveryPresentation === "warm-error" ? <ConversationRecoveryNotice
-                      failed requiresUpdate={recoveryRequiresUpdate} diagnostic={recoveryDiagnostic}
-                      onRetry={retryConversationRecovery}
+                      failed requiresUpdate={recoveryRequiresUpdate}
                     /> : null}
                     {conversationContribution?.beforeComposer}
                     {snapshot.conversation?.continuation.error ? (
