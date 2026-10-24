@@ -530,3 +530,7 @@ healthy demand and strongly fair planning/production. Its negative controls
 remove the lease gate or refund the other consumer. CreditWindow/MediaRecovery
 remain separate models; this is not an implementation refinement proof or a
 proof of arbitrary-client scheduling fairness.
+
+The remote-interaction test entry includes producer/adaptation cases. Its real
+browser smoke checks the absolute twelve-frame bound, not a fixed working
+window; native ACK results and no-progress recovery remain required.

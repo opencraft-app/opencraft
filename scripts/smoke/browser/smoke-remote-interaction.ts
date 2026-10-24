@@ -81,7 +81,7 @@ try {
       return {max,writes,held:s.inputCredits.size,control:p.surfaces.controlState(p.page)};
     } finally {s.socket.send=send;}
   });
-  assert(wheel.max<=2&&wheel.max>0);assert(wheel.writes<10);assert.equal(wheel.held,0);assert.equal(wheel.control,'human');
+  assert(wheel.max<=12&&wheel.max>0);assert(wheel.writes<10);assert.equal(wheel.held,0);assert.equal(wheel.control,'human');
   await view.evaluate(async ()=>(window as any).poc.use({action:'wait',text:'Scroll 1000',timeout_ms:5000}));
   const initial = await view.evaluate(() => {const p=(window as any).poc,s=p.surfaces.pages.get(p.page);return {lease:s.lease,rendered:s.mediaReceiver.rendered};});
   slow = new WebSocket(origin.replace('http:','ws:')+'/__opencraft_browser/stream',{origin});
@@ -99,16 +99,16 @@ try {
   await once(slow,'open');
   slow.send(JSON.stringify({id:'open',method:'open',input:{lease:initial.lease,multiView:true,visible:true,mediaFeedback:1,mediaStage:'rendered'}}));
   // This peer receives real H264 chunks but never acknowledges rendering.
-  await new Promise<void>((resolve,reject)=>{const end=Date.now()+10000;const timer=setInterval(()=>{if([...epochs.values()].some(n=>n===6)){clearInterval(timer);resolve();}else if(Date.now()>end){clearInterval(timer);reject(new Error('No bounded six-frame window'));}},50);});
+  await new Promise<void>((resolve,reject)=>{const end=Date.now()+10000;const timer=setInterval(()=>{if([...epochs.values()].some(n=>n===12)){clearInterval(timer);resolve();}else if(Date.now()>end){clearInterval(timer);reject(new Error('No bounded twelve-frame window'));}},50);});
   slow.send(JSON.stringify({id:'capture',method:'capture'}));
   const timeout=setTimeout(()=>slow!.terminate(),15000);
   const closeCode=await closed;clearTimeout(timeout);
   assert.equal(closeCode,1013);assert(control,'control replies bypass media credits');
   assert.equal(ready,4,'three recovery attempts after initial handshake');
-  assert([...epochs.values()].every(n=>n<=6),'every media generation obeys actual frame credits');
+  assert([...epochs.values()].every(n=>n<=12),'every media generation obeys actual frame credits');
   await view.waitForFunction(previous=>{const p=(window as any).poc;return p.surfaces.pages.get(p.page).mediaReceiver.rendered!==previous;},initial.rendered);
   const screenshot=await view.screenshot({path:join(temporary,'healthy-receiver.png')});assert(screenshot.length>1000);
   assert.deepEqual(errors,[]);
   await view.evaluate(async ()=>(window as any).poc.use({action:'close'}));
-  console.log(JSON.stringify({ok:true,evidence:temporary,epochs:[...epochs.values()],wheel,checks:['actual-electron-h264','actual-chromium-webcodecs-render','1000-wheel-samples-native-distance','slow-input-ack-two-credits','six-frame-window','control-bypasses-media-gate','bounded-recovery-close','same-tab-healthy-viewer-continues'],frames,streamBytes}));
+  console.log(JSON.stringify({ok:true,evidence:temporary,epochs:[...epochs.values()],wheel,checks:['actual-electron-h264','actual-chromium-webcodecs-render','1000-wheel-samples-native-distance','bounded-adaptive-input-credits','twelve-frame-window','control-bypasses-media-gate','bounded-recovery-close','same-tab-healthy-viewer-continues'],frames,streamBytes}));
 } finally {slow?.terminate();await browser?.close();service.close();await gateway.close();}
