@@ -2,6 +2,8 @@ import { MOBILE_CONTAINER_ORIGIN, MOBILE_CONTAINER_VERSION, externalMobileUrl, m
 import { useIntl } from "@opencraft/i18n/react";
 import { nativeThemes } from "@opencraft/design-system/tokens.native";
 import { Asset } from "expo-asset";
+import Constants, { ExecutionEnvironment } from "expo-constants";
+import { mobilePreviewAssetUri } from "../runtime/mobile-preview-asset";
 import { File } from "expo-file-system";
 import { randomUUID } from "expo-crypto";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -26,7 +28,12 @@ export function WorkspaceSurface({ source: content, dark, onAppearance }: { sour
     active.current = true; ready.current = false; canGoBack.current = false; setFailed(false); setHtml(null);
     let current = true;
     if (bundled) {
-      const asset = Asset.fromModule(require("../../assets/mobile-workbench.html") as number);
+      const packaged = Asset.fromModule(require("../../assets/mobile-workbench.html") as number);
+      const uri = Constants.executionEnvironment === ExecutionEnvironment.StoreClient && !packaged.localUri
+        ? mobilePreviewAssetUri(packaged.uri, Constants.experienceUrl) : packaged.uri;
+      const asset = uri === packaged.uri ? packaged : new Asset({
+        name: packaged.name, type: packaged.type, hash: packaged.hash, uri,
+      });
       void asset.downloadAsync().then(async () => {
         if (!asset.localUri) throw new Error("asset.missing");
         const document = await new File(asset.localUri).text();

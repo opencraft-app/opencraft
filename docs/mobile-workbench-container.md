@@ -117,3 +117,5 @@ shared semantic surfaces. This container material never creates a second
 Workbench navigation state or duplicates Web controls. External website mode
 is a technical capability for user-operated services, not an App Store acceptance
 guarantee or a mechanism for unreviewed native-code updates.
+
+Expo Go previews behind a path proxy preserve the manifest directory when resolving the bundled HTML asset. Only same-origin Metro asset URLs are relocated; root previews, installed local assets and unrelated origins retain their existing resolution. This changes preview transport, not the packaged-code or self-hosted source policy.
