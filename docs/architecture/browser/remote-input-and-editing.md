@@ -185,3 +185,28 @@ Transient owner attachment failures, including a still-attached prior Gateway,
 are retryable browser-unavailable errors. Protocol incompatibility remains
 terminal without replacing live tabs. Rejected private sockets drain their short
 status reply and then close, without retaining unread attachment data.
+
+
+### Touch sample time and bounded velocity history
+
+Touch gesture recognition remains native Chromium-owned. The viewer carries each
+actual PointerEvent sample's monotonic millisecond time, including coalesced
+pointer samples; RAF and both input queues retain at most three single-contact
+samples from the latest 48ms. Samples never merge across contact, modifier,
+document or control boundaries. Multi-contact pinch remains latest-position
+input with per-dispatch native geometry; no local fling, zoom or wheel substitute
+is synthesized. Identical release geometry adds no stationary movement.
+
+The native adapter anchors relative viewer time to its own monotonic epoch once
+per gesture, preserving intervals across native ACK and transport jitter. It
+validates finite, ordered times, bounds future time to 1s and age to 25s, and
+validates the entire bounded history before native effects. Each historical
+sample still awaits native acknowledgement and rechecks document identity;
+failed or retired gestures cancel without retrying a press. A real stationary
+pause remains present at touchEnd so Chromium can suppress inertia. Legacy
+untimed senders keep their previous path. The isolated worker bundles the shared
+policy closure rather than relying on source workspace module resolution.
+
+A running persistent owner retains its immutable runtime while it has pages;
+input fixes activate in new owners after the last page is explicitly closed.
+Neither deploying the client nor opening another tab upgrades an old live owner.

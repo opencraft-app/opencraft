@@ -128,3 +128,16 @@ test('document identity is captured at admission and checked before native dispa
   document='new';release();await Promise.all([held,old]);assert.equal(seen.length,1);
   await dispatch(input('char'));assert.equal(seen.at(-1).document,'new');
 });
+
+test('native coalescing preserves only the real bounded single-finger tail and its release time', async () => {
+ const {createTouchInput}=createRequire(import.meta.url)('../../scripts/remote-browser/touch.cjs');
+ let release;const gate=new Promise(r=>release=r),seen=[];
+ const touch=createTouchInput(async input=>{seen.push(input);if(seen.length===1)await gate},()=>1700000000000);
+ const dispatch=createControls(message=>touch.apply(message.input));
+ const sample=(type,time)=>({page:'timed',method:'input',input:{type,time,touchPoints:type==='touchEnd'?[]:[{id:0,x:time,y:50}]}});
+ const results=[dispatch(sample('touchStart',0))];await tick();
+ for(let time=16;time<=480;time+=16)results.push(dispatch(sample('touchMove',time)));
+ results.push(dispatch(sample('touchEnd',496)));release();await Promise.all(results);
+ assert.deepEqual(seen.map(v=>Math.round((v.timestamp-1700000000)*1000)),[0,448,464,480,496]);
+ assert.deepEqual(seen.slice(1,-1).map(v=>v.touchPoints[0].x),[448,464,480]);
+});
