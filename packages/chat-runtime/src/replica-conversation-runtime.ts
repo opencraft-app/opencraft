@@ -1277,6 +1277,7 @@ export function createReplicaConversationRuntime(
   // not every remote/interrupted Turn. Never persist it as a server fact.
   const interruptedByThisClient = new Set<string>();
   const interruptedTurns = new WeakMap<TimelineSourceTurn, TimelineSourceTurn>();
+  const recoveredHistoryTurns = new WeakMap<TimelineSourceTurn, TimelineSourceTurn>();
   let disposed = false;
   let snapshot: ConversationRuntimeSnapshot;
   let continuationPending = false;
@@ -1358,7 +1359,21 @@ export function createReplicaConversationRuntime(
     const pendingInteractions = sourcePendingInteractions(
       view.pendingInteractions,
     );
-    const source = sourceTurns(view.turns ?? thread.turns, sourceTurnCache).map((turn) => {
+    const history = sourceTurns(view.turns ?? thread.turns, sourceTurnCache);
+    const source = history.map((original, index) => {
+      let turn = original;
+      // Native history may retain inProgress across a process restart. Only
+      // a later authoritative Turn proves it has been superseded. Thread status
+      // travels independently and may still be idle when a new Turn starts.
+      if (replica.authoritative && turn.status === "streaming" &&
+        index < history.length - 1) {
+        let recovered = recoveredHistoryTurns.get(original);
+        if (!recovered) {
+          recovered = { ...original, status: "interrupted", items: original.items.filter(item => !isAutomaticError(item)) };
+          recoveredHistoryTurns.set(original, recovered);
+        }
+        turn = recovered;
+      }
       if (!interruptedByThisClient.has(turn.id)) return turn;
       let interrupted = interruptedTurns.get(turn);
       if (!interrupted) { interrupted = { ...turn, interruptedByThisClient: true }; interruptedTurns.set(turn, interrupted); }

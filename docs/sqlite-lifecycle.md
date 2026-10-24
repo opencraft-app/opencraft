@@ -449,9 +449,25 @@ recovery state in one destination transaction. It copies no queue, sender, body
 or credential tables. Failure rolls back all copied rows and the receipt; retry
 uses the same managed destination. The former tables remain an inactive recovery
 source and are never updated by the new collector. Reopen verifies the recorded
-legacy scope revisions, skips copying and preserves new data. If an old binary
-has written a divergent legacy history after cutover, statistics fail closed and
-both histories remain intact; no automatic downgrade or guessed merge is offered.
+legacy scope revisions, skips copying and preserves new data. A changed legacy revision is checked against the dedicated store before collection.
+A covered subset of trusted admission/input/counter facts, preserved coverage and Turn
+identities and terminal states, and already-covered versioned sources can reopen
+without copying or changing either history or the original import receipt. A
+newer dedicated source version supersedes its older legacy version; equal versions
+with different counts, conflicting known model identities, missing evidence, or a
+legacy terminal state absent from the dedicated store still fail closed. Derived
+projections and the dedicated owner's own replay coordinates are not copied back
+from the former owner. Current collection settings, resolved coverage ends,
+projection flags and recovery cursors remain with the dedicated owner; they do
+not have to equal its inactive predecessor. Pending attempts may recover to unknown
+or settle through a late outcome, but settled outcomes and immutable ingress
+identity must match. Unknown pending input/submission identities may be completed
+by the existing owner rules; known identities cannot change. Native counters keep
+their epoch, monotonic source version and cumulative counts; advancing a baseline
+requires the previous Turn to be settled and the next Turn to exist. Equal counter
+versions cannot change cumulative counts. A legacy frozen Turn cannot be thawed.
+Both files remain intact; no downgrade or guessed merge
+is offered.
 No account/session data is removed and no published migration is rewritten.
 
 The Host reports both managed outcomes and closes the collector/read worker
