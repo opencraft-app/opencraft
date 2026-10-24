@@ -12281,10 +12281,10 @@ html[data-ui-density="touch"][data-timeline-keyboard-open="true"] .thread-scroll
 
 // Browser mobile drawer: safe areas belong to Shell, not individual destinations.
 :root {
-  --shell-mobile-safe-top: env(safe-area-inset-top, 0px);
-  --shell-mobile-safe-bottom: env(safe-area-inset-bottom, 0px);
-  --shell-mobile-safe-left: env(safe-area-inset-left, 0px);
-  --shell-mobile-safe-right: env(safe-area-inset-right, 0px);
+  --shell-mobile-safe-top: var(--safe-layout-inset-top, env(safe-area-inset-top, 0px));
+  --shell-mobile-safe-bottom: var(--safe-layout-inset-bottom, env(safe-area-inset-bottom, 0px));
+  --shell-mobile-safe-left: var(--safe-layout-inset-left, env(safe-area-inset-left, 0px));
+  --shell-mobile-safe-right: var(--safe-layout-inset-right, env(safe-area-inset-right, 0px));
 }
 html[data-ui-density="touch"],
 html[data-ui-density="touch"] body {
@@ -12300,7 +12300,6 @@ html[data-ui-density="touch"] body {
   &:has(.app-shell-row[data-mobile-sidebar-present]) { z-index: var(--layer-shell-sidebar-control); }
   .app-shell-row {
     position: relative;
-    padding-top: var(--shell-mobile-safe-top);
     pointer-events: auto;
     overflow: clip;
     // The moving page, including gaps around floating chrome, must occlude
@@ -12386,9 +12385,6 @@ html[data-ui-density="touch"] body {
   }
   .app-shell-floating-sidebar-dismiss { background: var(--color-dialog-scrim); }
   .app-shell-floating-left-panel__surface {
-    padding-top: var(--shell-mobile-safe-top);
-    padding-bottom: max(var(--gap-control-group), var(--shell-mobile-safe-bottom));
-    padding-left: var(--shell-mobile-safe-left);
     border-radius: 0;
     box-shadow: none;
     // Only content participates in depth; a second scaled material would leave

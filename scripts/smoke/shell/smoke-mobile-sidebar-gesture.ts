@@ -101,7 +101,7 @@ try {
     await page.waitForFunction(() => !!(window as any).fixture, null, { timeout: 30000 });
     await page.evaluate(theme => (window as any).fixture.setThemePreference(theme), theme);
     // Simulate notch/Home Indicator CSS env projections, which Chromium's mobile emulation leaves at zero.
-    await page.evaluate(() => { document.documentElement.style.setProperty('--shell-mobile-safe-top','47px'); document.documentElement.style.setProperty('--shell-mobile-safe-bottom','34px'); });
+    await page.evaluate(() => { document.documentElement.style.setProperty('--safe-layout-inset-top','47px'); document.documentElement.style.setProperty('--safe-layout-inset-bottom','34px'); });
     await page.waitForTimeout(250);
     if (process.env.OPENCRAFT_GESTURE_COMPOSITING_ONLY !== '1') await page.evaluate(()=>{(window as any).touchReceipts=[];for(const type of ['touchstart','touchmove','touchend','touchcancel'])document.addEventListener(type,(e:Event)=>{const t=e as TouchEvent;const list=document.querySelector<HTMLElement>('.app-shell-floating-left-panel .shell-sidebar__scroll');if(list&&list.scrollTop>0)(window as any).lastSidebarScroll=list.scrollTop;(window as any).touchReceipts.push({type,cancelable:t.cancelable,prevented:t.defaultPrevented,target:(t.target as Element)?.className,x:t.touches[0]?.clientX,y:t.touches[0]?.clientY,open:document.querySelector('.app-shell-floating-left-panel')?.getBoundingClientRect().x,selection:window.getSelection()?.toString()});},false);});
     const cdp = await context.newCDPSession(page);
@@ -515,6 +515,7 @@ try {
       });
       assert.equal(paintGeometry.top, paintGeometry.rootTop, 'page paint starts at the viewport edge');
       assert.equal(paintGeometry.height, paintGeometry.rootHeight, 'page paint covers the complete viewport');
+      assert.equal(await page.locator('.app-shell-row').getAttribute('data-safe-layout'), 'top');
       assert.equal(paintGeometry.contentInset, '47px', 'safe area insets content, not the page paint');
       assert.ok(paintGeometry.headerTop >= paintGeometry.rootTop + 47, 'controls remain below the safe area');
       const edgePixels = async () => {
