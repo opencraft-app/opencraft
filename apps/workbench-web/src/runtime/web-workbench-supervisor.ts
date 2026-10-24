@@ -760,7 +760,9 @@ export async function createWebWorkbenchApplicationSupervisor(
     ? requestedHostId
     : profiles.some((host) => host.hostId === persistedHostId)
       ? persistedHostId!
-      : profiles.find((host) => host.hostId === "local")?.hostId ?? profiles[0]!.hostId;
+      : profiles.find((host) => host.hostId === "local")?.hostId
+        ?? profiles.find((host) => host.hostKind === "local" || host.hostKind === "durable")?.hostId
+        ?? profiles[0]!.hostId;
   const initialWorkspaceRoot = profiles.find((host) => host.hostId === initialHostId)
     ?.workspaceBrowseRoots[0] ?? null;
   let forgetUnavailableThread: ((hostId: string, threadId: string) => void) | undefined;
