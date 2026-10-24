@@ -76,6 +76,16 @@ source-item key as message projections.
 
 ## Floating material ownership
 
+Newera narrow full-width browser chrome groups address/navigation at the bottom.
+The active browser supplies the mobile chrome projection; Shell retains drawer,
+safe-area and visual viewport ownership. Its duplicate top controls are hidden
+only while that active mobile browser provides workspace, tab and utility
+actions. Native Safari controls remain outside the document's ownership.
+The dock reserves a stable content area; software-keyboard state reuses the
+existing viewport projection rather than adding another resize observer.
+Agent is on demand in this presentation, retaining the original Composer node,
+draft and conversation owner. Overview dialogs use the shared modal adapter.
+
 Shared floating surfaces consume design-system `material.web` and theme-owned
 neutral frost roles. Backdrop color may show softly through the panel; a brand
 fill or page-wide blur cannot substitute for glass. Menus/search are denser

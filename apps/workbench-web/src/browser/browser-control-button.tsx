@@ -4,7 +4,7 @@ import { useIntl } from '@opencraft/i18n/react';
 import type { BrowserPageId } from '@opencraft/browser-core';
 import type { BrowserSurfaceHost } from './web-browser-surface-host';
 
-export function BrowserControlButton({ surfaces, pageId }: { surfaces?: BrowserSurfaceHost; pageId: BrowserPageId }) {
+export function BrowserControlButton({ surfaces, pageId, showLabel = false }: { surfaces?: BrowserSurfaceHost; pageId: BrowserPageId; showLabel?: boolean }) {
   const intl = useIntl();
   const subscribe = useCallback((listener: () => void) => surfaces?.onControlState?.(listener) ?? (() => {}), [surfaces]);
   const snapshot = useCallback(() => surfaces?.controlState?.(pageId) ?? 'unavailable', [surfaces, pageId]);
@@ -22,5 +22,6 @@ export function BrowserControlButton({ surfaces, pageId }: { surfaces?: BrowserS
   return <button type="button" className="browser-toolbar-button"
     aria-label={label} title={hint} onClick={() => own ? surfaces?.releaseControl?.(pageId) : surfaces?.takeControl?.(pageId)}>
     {own ? <PointerOffIcon size={15} /> : <PointerIcon size={15} />}
+    {showLabel ? <span>{label}</span> : null}
   </button>;
 }

@@ -126,6 +126,7 @@
   "chat.workingFor": "Working for {time}",
   "common.cancel": "Cancel",
   "common.close": "Close",
+  "common.done": "Done",
   "common.copied": "Copied",
   "common.rename": "Rename",
   "common.retry": "Try again",
@@ -660,6 +661,13 @@
   "browser.control.releaseHint": "Release input control so another client or Agent can operate",
   "browser.control.takeoverHint": "Another client or Agent is controlling this page. Take control",
   "browser.control.viewingHint": "Viewing shared page. Take input control",
+  "browser.agent.close": "Close Agent",
+  "browser.agent.title": "Agent",
+  "browser.mobile.navigation": "Browser controls",
+  "browser.mobile.workspace": "Back to workspace",
+  "browser.mobile.more": "More browser actions",
+  "browser.mobile.searchTabs": "Search tabs",
+  "browser.mobile.closeTab": "Close {title}",
   "browser.keyboard": "Keyboard",
   "browser.keyboard.hint": "Select a text field, then open the keyboard",
   "browser.menu.copy": "Copy",
@@ -918,9 +926,8 @@
   "developerMode.clear": "Clear",
   "developerMode.copyFallback": "Select and copy this report",
   "overhome.description": "Your apps, all in one place.",
-  "overhome.empty": "Your apps will appear here."
-,
+  "overhome.empty": "Your apps will appear here.",
+  "turnRecovery.unconfirmed": "Automatic continuation could not be confirmed. Check this conversation before continuing.",
   "turnRecovery.continued": "Automatically continued after a service restart ({attempts}/{limit}).",
-  "turnRecovery.exhausted": "Automatic continuation stopped after {limit} attempts. Send a message to continue.",
-  "turnRecovery.unconfirmed": "Automatic continuation could not be confirmed. Check this conversation before continuing."
+  "turnRecovery.exhausted": "Automatic continuation stopped after {limit} attempts. Send a message to continue."
 }

@@ -300,6 +300,7 @@
   "chat.details.project": "Projek",
   "chat.details.directory": "Direktori kerja",
   "common.close": "Tutup",
+  "common.done": "Selesai",
   "navigation.chat": "Sembang",
   "machine.resource.creating": "Mencipta sumber",
   "machine.resource.active": "Sumber aktif",
@@ -662,6 +663,13 @@
   "browser.control.releaseHint": "Lepaskan kawalan input supaya klien lain atau Ejen boleh beroperasi",
   "browser.control.takeoverHint": "Klien lain atau Ejen sedang mengawal halaman ini. Ambil kawalan",
   "browser.control.viewingHint": "Melihat halaman dikongsi. Ambil kawalan input",
+  "browser.agent.close": "Tutup Agent",
+  "browser.agent.title": "Agent",
+  "browser.mobile.navigation": "Kawalan pelayar",
+  "browser.mobile.workspace": "Kembali ke ruang kerja",
+  "browser.mobile.more": "Lagi tindakan pelayar",
+  "browser.mobile.searchTabs": "Cari tab",
+  "browser.mobile.closeTab": "Tutup {title}",
   "browser.keyboard": "Papan kekunci",
   "browser.keyboard.hint": "Pilih medan teks, kemudian buka papan kekunci",
   "browser.menu.copy": "Salin",
@@ -920,9 +928,8 @@
   "developerMode.clear": "Clear",
   "developerMode.copyFallback": "Select and copy this report",
   "overhome.description": "Semua aplikasi anda di satu tempat.",
-  "overhome.empty": "Aplikasi anda akan dipaparkan di sini."
-,
+  "overhome.empty": "Aplikasi anda akan dipaparkan di sini.",
+  "turnRecovery.unconfirmed": "Sambungan automatik tidak dapat disahkan. Semak perbualan sebelum meneruskan.",
   "turnRecovery.continued": "Disambung secara automatik selepas perkhidmatan dimulakan semula ({attempts}/{limit}).",
-  "turnRecovery.exhausted": "Sambungan automatik dihentikan selepas {limit} percubaan. Hantar mesej untuk meneruskan.",
-  "turnRecovery.unconfirmed": "Sambungan automatik tidak dapat disahkan. Semak perbualan sebelum meneruskan."
+  "turnRecovery.exhausted": "Sambungan automatik dihentikan selepas {limit} percubaan. Hantar mesej untuk meneruskan."
 }

@@ -154,8 +154,6 @@
     {"file":"apps/workbench-web/src/browser/browser-device-toolbar.tsx","kind":"title","text":"Close device toolbar","count":1},
     {"file":"apps/workbench-web/src/browser/browser-device-toolbar.tsx","kind":"aria-label","text":"Resize viewport ${…}","count":1},
     {"file":"apps/workbench-web/src/browser/browser-device-toolbar.tsx","kind":"title","text":"Resize viewport ${…}","count":1},
-    {"file":"apps/workbench-web/src/browser/browser-panel-plugin.tsx","kind":"jsx-text","text":"重新加载页面","count":1},
-    {"file":"apps/workbench-web/src/browser/browser-panel-plugin.tsx","kind":"jsx-text","text":"Open externally","count":1},
     {"file":"apps/workbench-web/src/components/app-shell-header.tsx","kind":"jsx-text","text":"· main","count":1},
     {"file":"apps/workbench-web/src/components/app-shell.tsx","kind":"aria-label","text":"Close sidebar","count":2},
     {"file":"apps/workbench-web/src/components/app-shell.tsx","kind":"label","text":"Pinned navigation","count":1},
