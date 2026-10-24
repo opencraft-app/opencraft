@@ -291,6 +291,8 @@ export class RemoteBrowserService {
   }
   resetVisibility(page) {
     page.displayFps = undefined;
+    page.paintRefresh = page.paintedRefresh = 0;
+    page.snapshotDocument = undefined;
     page.runtimeEpoch = (page.runtimeEpoch ?? 0) + 1;
     page.visibilityGeneration = (page.visibilityGeneration ?? 0) + 1;
     page.visibilityWake?.(); page.visibilityWake = null; page.visibilityJob = null;
@@ -305,11 +307,12 @@ export class RemoteBrowserService {
       let failures = 0;
       while (current()) {
         const visible = [...this.viewers(page).values()].some(viewer => viewer.visible);
-        if (page.painted === visible) return;
+        const refresh = page.paintRefresh ?? 0;
+        if (page.painted === visible && (!visible || (page.paintedRefresh ?? 0) === refresh)) return;
         try {
           await this.request(page.id, 'visible', { visible });
           if (!current()) return;
-          page.painted = visible; failures = 0;
+          page.painted = visible; page.paintedRefresh = refresh; failures = 0;
         } catch (error) {
           if (!current()) return;
           // A failed/unknown outcome cannot be cached as applied. These setters
@@ -329,6 +332,16 @@ export class RemoteBrowserService {
     page.visibilityJob = job;
     void job.finally(() => { if (page.visibilityJob === job) page.visibilityJob = null; }).catch(() => {});
     return job;
+  }
+  refreshDocumentFrame(page) {
+    if (!page.live || !page.document || page.snapshotDocument === page.document) return;
+    page.snapshotDocument = page.document;
+    if (![...this.viewers(page).values()].some(viewer => viewer.visible)) return;
+    // A document loaded while OSR was parked can leave its old blank bitmap
+    // cached. The existing idempotent setter captures the current compositor,
+    // including on retained owners; do not restart them or grant input.
+    page.paintRefresh = (page.paintRefresh ?? 0) + 1;
+    void this.visibility(page).catch(() => this.diagnose('display_refresh_failed'));
   }
   detach(page, ws) {
     this.display.detach(ws);
@@ -551,6 +564,7 @@ export class RemoteBrowserService {
     }
     if (message.type === 'error' && message.message === 'Browser renderer exited; reload this tab') this.diagnose('renderer_exited');
     if (p && !p.recovering && message.type === 'navigation' && !message.state.isLoading) { p.url = checkpointUrl(message.state.url); this.checkpoint(); }
+    if (p && message.type === 'navigation' && !message.state.isLoading) this.refreshDocumentFrame(p);
     if (p && message.type === 'viewport') { p.viewport = { width: message.width, height: message.height, deviceProfile: message.deviceProfile }; this.checkpoint(); }
     if (!p) return;
     if (message.type === 'input-reset' && typeof message.document === 'string') p.document = message.document;
