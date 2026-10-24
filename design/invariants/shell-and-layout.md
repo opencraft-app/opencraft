@@ -38,7 +38,11 @@ extra copy of the device inset. Unselected edges retain consumer styles.
 CSS env is the geometry authority; a host may project `--safe-layout-inset-*`
 at its viewport boundary. The container does not measure screens, guess cutouts,
 observe keyboard geometry, or own theme/scroll/motion state. Shell's stable Motion
-adapter uses the same DOM box; the mobile row owns top, drawer content owns
+adapter uses the same DOM box. Browser hosts allocate the row's top edge regardless
+of sidebar docking/transient presentation; a zero device inset is not a disabled
+container. The fixed header consumes the same host top source. Electron keeps its
+native window control reservations. Bounded diagnostics report the top-allocation
+flag separately from resolved padding. Drawer content owns
 top/bottom/left, fixed header/hit-region offsets consume the same inset source.
 Composer keeps its existing route/keyboard bottom owner. Document geometry and
 physical host drawing acceptance are separate: this primitive cannot promise

@@ -12291,6 +12291,7 @@ html[data-ui-density="touch"] body {
   // Document fallback behind Shell paint; native system pixels remain host-owned.
   background-color: var(--shell-window-edge-background, var(--color-surface));
 }
+.app-shell-root.has-browser-safe-layout .app-shell-header { top: var(--shell-mobile-safe-top); }
 .app-shell-root.has-mobile-sidebar-gestures {
   // Paint remains full-bleed. Only the row content consumes the top inset.
   // The drawer portal sits behind the translated page. This root must remain
@@ -12329,7 +12330,6 @@ html[data-ui-density="touch"] body {
     will-change: opacity;
   }
   .app-shell-header {
-    top: var(--shell-mobile-safe-top);
     padding-left: max(var(--padding-toolbar), var(--shell-mobile-safe-left));
     padding-right: max(var(--padding-toolbar), var(--shell-mobile-safe-right));
   }
