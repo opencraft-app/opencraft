@@ -86,18 +86,18 @@
   .sidebar-activity-list { flex: 0 0 auto; overflow: visible; }
 }
 
-// Both actions overlay the scroll track, with space for the last conversation.
+// Keep the native scrollport above floating glass actions at every scroll offset.
+// Padding only clears the final row at the end; it still lets text scroll behind
+// translucent actions. The existing action geometry owns this reserved space.
 .shell-sidebar__column[data-navigation-layout="mobile"] {
   .shell-sidebar__scroll {
-    padding-block-end: 88px;
-    scroll-padding-block-end: 88px;
+    margin-block-end: 88px;
   }
   &:has(.shell-navigation__footer--unified [data-surface="updates"]) .shell-sidebar__scroll {
     // The update entrance stacks a second 48px button above the first one (8px
     // gap) while a notice is visible; reserve both so the last row and its
     // actions scroll clear of the two floating actions.
-    padding-block-end: 144px;
-    scroll-padding-block-end: 144px;
+    margin-block-end: 144px;
   }
   .shell-sidebar__floating-action {
     grid-column: 1; grid-row: 1;
