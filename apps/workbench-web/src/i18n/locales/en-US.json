@@ -929,5 +929,7 @@
   "overhome.empty": "Your apps will appear here.",
   "turnRecovery.unconfirmed": "Automatic continuation could not be confirmed. Check this conversation before continuing.",
   "turnRecovery.continued": "Automatically continued after a service restart ({attempts}/{limit}).",
-  "turnRecovery.exhausted": "Automatic continuation stopped after {limit} attempts. Send a message to continue."
+  "turnRecovery.exhausted": "Automatic continuation stopped after {limit} attempts. Send a message to continue.",
+  "overhome.search": "Search",
+  "overhome.noMatches": "No apps found."
 }

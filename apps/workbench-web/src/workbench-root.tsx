@@ -2,6 +2,7 @@ import { TimelineBlockRendererProvider } from "@opencraft/timeline-render-react"
 import { WebChatRenderRuntimeProvider } from "@opencraft/chat-render-web";
 
 import { AsyncNoticesProvider } from "./components/async-notices";
+import { ApplicationDesktopProvider } from "./components/application-desktop-motion";
 import { App } from "./app";
 import { HostlessWorkbench } from "./components/hostless-workbench";
 import {
@@ -52,5 +53,7 @@ function WorkbenchContent({
 }
 
 export function WorkbenchRoot({ application }: { readonly application: WebWorkbenchApplication }) {
-  return <AsyncNoticesProvider><WorkbenchContent application={application} /></AsyncNoticesProvider>;
+  return <AsyncNoticesProvider><ApplicationDesktopProvider navigation={application.supervisor.navigation}>
+    <WorkbenchContent application={application} />
+  </ApplicationDesktopProvider></AsyncNoticesProvider>;
 }

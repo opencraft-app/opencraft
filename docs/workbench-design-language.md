@@ -574,7 +574,10 @@ Navigation glass keeps a directional edge: a softened upper-leading light and a 
 
 Overhome is the default Applications destination. Its responsive icon grid uses
 rounded icon surfaces and localized labels, with one ordinary launch action per
-app. Follow the existing neutral page and theme semantics; supply no store
-ratings, downloads, promotional rows or placeholder apps. The first catalog
+app. Use the shared application-desktop wallpaper, squircle artwork, white labels
+and glass Dock, including opaque/forced-color fallbacks. Keep document themes
+inside launched windows. Icon press, launch expansion and reverse return use the
+shared spring with measured icon/aperture geometry; reduced motion is immediate.
+Supply no store ratings, downloads, promotional rows or placeholder apps. The first catalog
 contains Scheduled tasks. Catalog/launch ownership and the retained Chat lifecycle
 are defined in [Shell navigation](architecture/platform/shell-and-navigation.md#overhome-and-miniapps).

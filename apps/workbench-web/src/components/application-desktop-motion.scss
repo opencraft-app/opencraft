@@ -1,0 +1,36 @@
+@use "@opencraft/design-system/controls.web" as controls;
+
+.application-route-stage {
+  position: absolute;
+  inset: 0;
+  isolation: isolate;
+  overflow: clip;
+  pointer-events: none;
+}
+.application-route-scene {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: clip;
+  pointer-events: auto;
+  &[inert] { pointer-events: none; }
+  &--app { z-index: 2; padding-bottom: calc(var(--spacing) * 13); background: var(--color-background-surface); }
+  &--desktop { z-index: 1; }
+  &__content { width: 100%; height: 100%; min-height: 0; }
+  &__home {
+    @include controls.quiet-control;
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    display: grid;
+    place-items: center;
+    width: calc(var(--spacing) * 34);
+    height: var(--size-control-hit-min);
+    border-radius: var(--radius-full);
+    > span { display: block; width: calc(var(--spacing) * 22); height: var(--spacing); border-radius: var(--radius-full); background: var(--color-text-secondary); }
+  }
+}

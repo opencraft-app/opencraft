@@ -23,6 +23,7 @@ import { WorkbenchShortcutHelp } from "./components/workbench-shortcut-help";
 import { WorkbenchPresentationActivityProvider } from "./components/workbench-presentation-activity";
 import { ConversationSearch, type ConversationSearchTarget } from "./components/conversation-search";
 import { OVERHOME_VIEW_ID } from "./runtime/mini-apps";
+import { ApplicationRouteMotion, useApplicationDesktopBackdrop } from "./components/application-desktop-motion";
 import { ImageEditorContext } from "@opencraft/extension-react";
 import { IdentityAvatarContext } from "@opencraft/extension-react";
 import { submitEmbeddedPrompt } from "./embedded-chat/embedded-prompt-submission";
@@ -487,6 +488,7 @@ export function App({
   const routeHeader = useAppShellRouteHeader(
     workbenchNavigationSnapshot.routeScopeId,
   );
+  const desktopBackdrop = useApplicationDesktopBackdrop(workbenchNavigationSnapshot.applicationRoute);
   const canGoBack = workbenchNavigationSnapshot.canGoBack;
   const canGoForward = workbenchNavigationSnapshot.canGoForward;
   const settingsOpen =
@@ -1904,7 +1906,8 @@ export function App({
         controller={routeHeader.controller}
         target={routeHeader.target}
       >
-      <AppShell
+        <AppShell
+          surface={desktopBackdrop ? "application-desktop" : "default"}
           navigation={!presentation.shellNavigation ? undefined : {
             layout: "unified",
             settingsActive: routeSettingsOpen,
@@ -2306,6 +2309,7 @@ export function App({
         )}
           </div>
           </WorkbenchPresentationActivityProvider>
+          <ApplicationRouteMotion route={workbenchNavigationSnapshot.applicationRoute}>
           {standaloneManagementOpen ? (
             <section className="workbench-tool-route" aria-label="Account management">
               {settingsContent}
@@ -2317,6 +2321,7 @@ export function App({
               {extensionProjection.activeViewNode}
             </section>
           ) : null}
+          </ApplicationRouteMotion>
         </div>
         {shortcutHelpOpen ? <WorkbenchShortcutHelp onClose={() => setShortcutHelpOpen(false)} /> : null}
         <ConversationSearch enabled={presentation.shellNavigation} open={conversationSearchOpen} onOpenChange={setConversationSearchOpen}
