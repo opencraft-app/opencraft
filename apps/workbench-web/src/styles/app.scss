@@ -5067,7 +5067,7 @@ html[data-ui-density="touch"][data-timeline-keyboard-open="true"] .thread-scroll
   }
 }
 
-// Pending interactions share the elevated card surface and rounded corners.
+// PanelContainer is rounded-3xl, primary-soft and electron elevation-prominent.
 .thread-pending-request-panel {
   position: relative;
   z-index: 1;
@@ -9043,6 +9043,26 @@ html[data-ui-density="touch"][data-timeline-keyboard-open="true"] .thread-scroll
   letter-spacing: var(--typography-metadata-tracking);
 }
 
+// The sticky footer covers the gutter below the shell. These two complementary
+// corners complete that exterior cover up to the shell's rounded lower edge.
+// A sibling keeps the shell's own shadow above the cover and its glass intact.
+.opencraft-composer-bottom-contour {
+  display: none;
+}
+
+.thread-scroll-footer .opencraft-composer-bottom-contour {
+  position: relative;
+  z-index: 0;
+  display: block;
+  flex: 0 0 auto;
+  height: var(--radius-composer-shell);
+  margin-top: calc(-1 * var(--radius-composer-shell));
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 100% 0, transparent var(--radius-composer-shell), var(--color-surface) var(--radius-composer-shell)) left bottom / var(--radius-composer-shell) 100% no-repeat,
+    radial-gradient(circle at 0 0, transparent var(--radius-composer-shell), var(--color-surface) var(--radius-composer-shell)) right bottom / var(--radius-composer-shell) 100% no-repeat;
+}
+
 .opencraft-composer-shell {
   --composer-surface-filter: none;
   position: relative;
@@ -12292,7 +12312,6 @@ html[data-ui-density="touch"] body {
   background-color: var(--shell-window-edge-background, var(--color-surface));
 }
 .app-shell-root.has-mobile-sidebar-gestures {
-  box-sizing: border-box;
   // Paint remains full-bleed. Only the row content consumes the top inset.
   // The drawer portal sits behind the translated page. This root must remain
   // untransformed and transparent so its physical viewport stays authoritative.
@@ -12301,8 +12320,7 @@ html[data-ui-density="touch"] body {
   &:has(.app-shell-row[data-mobile-sidebar-present]) { z-index: var(--layer-shell-sidebar-control); }
   .app-shell-row {
     position: relative;
-    box-sizing: border-box;
-    padding-top: var(--shell-mobile-safe-top);
+      padding-top: var(--shell-mobile-safe-top);
     pointer-events: auto;
     overflow: clip;
     // The moving page, including gaps around floating chrome, must occlude
@@ -12388,8 +12406,7 @@ html[data-ui-density="touch"] body {
   }
   .app-shell-floating-sidebar-dismiss { background: var(--color-dialog-scrim); }
   .app-shell-floating-left-panel__surface {
-    box-sizing: border-box;
-    padding-top: var(--shell-mobile-safe-top);
+      padding-top: var(--shell-mobile-safe-top);
     padding-bottom: max(var(--gap-control-group), var(--shell-mobile-safe-bottom));
     padding-left: var(--shell-mobile-safe-left);
     border-radius: 0;
@@ -12402,7 +12419,6 @@ html[data-ui-density="touch"] body {
 .app-shell-mobile-page-dismiss {
   position: absolute; inset: var(--shell-mobile-safe-top) 0 0; z-index: 3;
   border: 0; padding: 0; background: transparent; cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
 }
 
 .sidebar-list-toolbar {
@@ -12560,6 +12576,12 @@ html[data-ui-density="touch"] body {
   .thread-scroll-to-bottom-button {
     width: max(var(--size-transcript-float-touch), var(--size-control-hit-min));
     height: max(var(--size-transcript-float-touch), var(--size-control-hit-min));
+    clip-path: circle(50%);
+    background: var(--color-background-composer-newera);
+    border-color: var(--color-border-composer-newera);
+    -webkit-backdrop-filter: blur(var(--blur-composer-newera)) saturate(var(--saturation-composer-newera));
+    backdrop-filter: blur(var(--blur-composer-newera)) saturate(var(--saturation-composer-newera));
+    box-shadow: var(--shadow-composer-newera), inset 0 1px 0 var(--color-highlight-composer-newera);
     &:focus-visible { outline-offset: -3px; }
   }
   .thread-scroll-to-bottom-button__icon {
@@ -12651,6 +12673,12 @@ html[data-ui-density="touch"] body {
   }
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root[data-ui-density="touch"][data-touch-newera="on"] .thread-scroll-to-bottom-button {
+    background: var(--color-background-elevated-primary-opaque);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
   :root[data-ui-density] .opencraft-composer-stack .opencraft-composer-shell {
     --composer-surface-background: var(--color-background-elevated-primary-opaque);
   }
@@ -12659,6 +12687,12 @@ html[data-ui-density="touch"] body {
   }
 }
 @media (prefers-reduced-transparency: reduce), (forced-colors: active) {
+  :root[data-ui-density="touch"][data-touch-newera="on"] .thread-scroll-to-bottom-button {
+    background: var(--color-background-elevated-primary-opaque);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
   :root[data-ui-density] .opencraft-composer-stack .opencraft-composer-shell {
     --composer-surface-background: var(--color-background-elevated-primary-opaque);
     --composer-surface-filter: none;
@@ -12735,6 +12769,7 @@ html[data-ui-density="touch"] body {
 
   // Wide touch layouts portal this existing control above drawer motion.
   .app-shell-touch-sidebar-toggle .app-shell-conversation-sidebar-toggle {
+    @include material.liquid;
     width: var(--size-material-liquid-control);
     height: var(--size-material-liquid-control);
   }
@@ -12750,6 +12785,7 @@ html[data-ui-density="touch"] body {
       padding-right: max(var(--spacing-token-safe-header-right), var(--shell-mobile-safe-right, 0px), calc(var(--spacing) * 3));
     }
     .app-shell-header__action-group {
+      @include material.liquid;
       height: var(--size-material-liquid-control);
       gap: var(--gap-material-liquid-group);
       padding: var(--padding-material-liquid-group);
@@ -12766,6 +12802,7 @@ html[data-ui-density="touch"] body {
       border-radius: var(--radius-full);
     }
     .app-shell-conversation-sidebar-toggle {
+      @include material.liquid;
       width: var(--size-material-liquid-control);
       height: var(--size-material-liquid-control);
     }
@@ -13008,39 +13045,3 @@ html[data-ui-density="touch"] body {
   .thread-shell-output__copy,
   .thread-tool-details__raw { opacity: 1; }
 }
-
-// Shell actions share one material across pointer, touch, Web and Electron.
-// Existing owners retain dimensions, placement, focus and interaction behavior.
-$shell-liquid-actions: ':is([data-liquid-action], .app-shell-header__action-group, .thread-live-changes, .shell-sidebar__column:not([data-navigation-layout="mobile"]) .shell-sidebar-navigation .shell-navigation__items--applications > button)';
-:root[data-ui-density] #{$shell-liquid-actions} {
-  @include material.liquid;
-  color: var(--color-text);
-  &:is(.is-selected, [aria-current="page"]) { background: var(--color-background-navigation-current); }
-  &[aria-pressed="true"], &[data-state="open"] { background: var(--color-background-button-tertiary-hover); }
-  &:is(button):active:not(:disabled) { background: var(--color-background-navigation-pressed); }
-}
-// hover-capable owns the root input-modality guard. Invoke it at module scope,
-// so it cannot prepend a second :root ancestor to a root-prefixed selector.
-@include controls.hover-capable {
-  &[data-ui-density] #{$shell-liquid-actions}:is(button):hover:not(:disabled):not(:is(.is-selected, [aria-current="page"], [aria-pressed="true"], [data-state="open"])) {
-    background: var(--color-background-navigation-hover);
-  }
-}
-
-// The header's existing full-height group keeps its layout box. Only its
-// background fits the existing compact action size; touch Newera stays 48px.
-.app-shell-header__action-group > .ui-liquid-glass {
-  top: 50%; bottom: auto; height: var(--size-toolbar-dock-action);
-  transform: translateY(-50%);
-}
-:root[data-ui-density="touch"][data-touch-newera="on"] .app-shell-header[data-app-shell-conversation-header="true"] .app-shell-header__action-group > .ui-liquid-glass { height: 100%; }
-
-.thread-scroll-to-bottom-button {
-  @include material.liquid;
-  position: absolute;
-  border-color: transparent;
-}
-
-.thread-live-changes { border-color: transparent; }
-
-.thread-live-changes .thread-turn-diff-live { @include controls.density-target; }
