@@ -51,9 +51,12 @@ if (process.argv[2] === 'core') {
   const selfUpgrade = process.env.OPENCRAFT_SERVER_SMOKE_SELF_UPGRADE === '1';
   let toolCommand = 'echo started >> shell-count; sleep 30; echo finished >> shell-count; echo UPDATE_TASK_FINISHED';
   const upstream = createServer(async (req, res) => {
+    if (req.method !== 'POST') { res.writeHead(405); res.end(); return; }
     const chunks: Buffer[] = []; for await (const chunk of req) chunks.push(Buffer.from(chunk));
     const body = Buffer.concat(chunks);
-    const input = JSON.parse((req.headers['content-encoding'] === 'zstd' ? zstdDecompressSync(body) : body).toString('utf8')); const tool = !JSON.stringify(input.input).includes('function_call_output');
+    const decoded = req.headers['content-encoding'] === 'zstd' ? zstdDecompressSync(body) : body;
+    if (!decoded.length) { res.writeHead(400); res.end(); return; }
+    const input = JSON.parse(decoded.toString('utf8')); const tool = !JSON.stringify(input.input).includes('function_call_output');
     calls.push({ tool, path: req.url });
     res.writeHead(200, { 'content-type': 'text/event-stream' }); const id = `fixture-${++serial}`;
     const send = (event: any) => res.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
