@@ -92,8 +92,12 @@ export class H264MediaSource {
     const end = this.buffer.buffered.end(this.buffer.buffered.length - 1);
     // On sparse/VFR updates MSE may wait for additional future samples. A seek
     // to the last complete sample presents the update without periodic frames.
-    if (this.video.readyState < 3 || end - this.video.currentTime > .2 || !this.primed) {
-      this.primed = true; this.video.currentTime = Math.max(this.buffer.buffered.start(0), end - .025);
+    const target = Math.max(this.buffer.buffered.start(0), end - .025);
+    // A waiting event also follows a seek. Repeating that same seek can keep
+    // the native decoder in HAVE_METADATA forever, even with buffered data.
+    if (!this.video.seeking && Math.abs(this.video.currentTime - target) > .001
+      && (this.video.readyState < 3 || end - this.video.currentTime > .2 || !this.primed)) {
+      this.primed = true; this.video.currentTime = target;
     }
     void this.video.play().catch(() => {});
   }
