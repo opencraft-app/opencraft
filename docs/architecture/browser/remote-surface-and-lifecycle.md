@@ -473,3 +473,12 @@ The independent WebRTC input adapter accepts an existing reliable ordered
 DataChannel and the same authorized attachment contract. Browser signaling,
 RTP video and automatic transport switching are not supplied by that adapter.
 MSE viewers only acknowledge receipt until reliable render evidence is available.
+
+### Sparse MSE seek progress
+
+The MSE receiver catches up to a complete buffered sample on sparse updates.
+A `waiting` event can itself be caused by a seek. Do not seek while a previous
+seek is pending, or repeat an unchanged target (within 1 ms); otherwise the
+video can remain in HAVE_METADATA despite a complete decoded page in its
+buffer. A later waiting/update event may advance to a new buffered target.
+This does not change the received-stage media credit contract for MSE.
