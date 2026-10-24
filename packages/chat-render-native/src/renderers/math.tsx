@@ -43,7 +43,7 @@ function DisplayMath({ props, loadHtml }: {
   const [bridgeReady, setBridgeReady] = useState(false);
   const [failedKey, setFailedKey] = useState<string | null>(null);
   const [rendered, setRendered] = useState<{ key: string; height: number } | null>(null);
-  const webView = useRef<WebView>(null);
+  const webView = useRef<WebView<object>>(null);
   const revision = useRef(0);
   const expected = useRef<{ key: string; revision: number } | null>(null);
   const currentKey = useRef(key);
@@ -89,7 +89,7 @@ function DisplayMath({ props, loadHtml }: {
   return <View style={styles.mathSurface} onLayout={event => horizontalScrollOwner.setViewportWidth(event.nativeEvent.layout.width)}
     onTouchStart={horizontalScrollOwner.beginTouch} onTouchEnd={horizontalScrollOwner.endTouch} onTouchCancel={horizontalScrollOwner.endTouch}>
     {visible === null ? <View style={styles.placeholder}><ActivityIndicator color={nativeThemes.light.color.text.secondary} /></View> : null}
-    {webSource !== null ? <WebView
+    {webSource !== null ? <WebView<object>
       ref={webView}
       source={webSource}
       originWhitelist={["*"]}

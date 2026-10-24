@@ -30,7 +30,7 @@ function MermaidWebView({ html, source, theme, interactive, onRendered, onFailed
   readonly onRendered: (width: number, height: number) => void;
   readonly onFailed: () => void;
 }) {
-  const webView = useRef<WebView>(null);
+  const webView = useRef<WebView<object>>(null);
   const revision = useRef(0);
   const expected = useRef<{ key: string; revision: number } | null>(null);
   const key = `${theme}\u0000${source}\u0000${interactive}`;
@@ -56,7 +56,7 @@ function MermaidWebView({ html, source, theme, interactive, onRendered, onFailed
     else onRendered(message.width, message.height);
   };
 
-  return <WebView
+  return <WebView<object>
     ref={webView}
     source={webSource}
     originWhitelist={["*"]}

@@ -49,7 +49,11 @@ function withProductEntryResolver(appRoot, entry, delegate, routerContext = null
     const packageName = moduleName.startsWith("@") ? moduleName.split("/").slice(0, 2).join("/") : moduleName.split("/")[0];
     const relativeOrigin = path.relative(path.resolve(appRoot, "../.."), context.originModulePath);
     const isDownstreamOrigin = relativeOrigin === ".." || relativeOrigin.startsWith(`..${path.sep}`) || path.isAbsolute(relativeOrigin);
-    const origin = entry && isDownstreamOrigin && hostDependencies.includes(packageName)
+    // A workspace can use a different React patch for its Web renderer. Native
+    // components, shared hooks and RN's renderer must all use this app's React.
+    // Keep other SDK caller identities intact (Uniwind inspects its origin).
+    const isHostReact = (packageName === "react" || packageName === "react-dom") && hostDependencies.includes(packageName);
+    const origin = (isHostReact || (entry && isDownstreamOrigin && hostDependencies.includes(packageName)))
       ? { ...context, originModulePath: path.join(appRoot, "index.ts") } : context;
     return delegate ? delegate(origin, moduleName, platform) : origin.resolveRequest(origin, moduleName, platform);
   };
