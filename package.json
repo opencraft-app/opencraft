@@ -19,7 +19,8 @@
     "cpu-features@0.0.10": false,
     "ssh2@1.17.0": false,
     "protobufjs@7.6.6": false,
-    "@google/genai@2.21.0": false
+    "@google/genai@2.21.0": false,
+    "electron-winstaller@5.4.0": false
   },
   "scripts": {
     "gate:performance": "node scripts/performance/run.mjs",
