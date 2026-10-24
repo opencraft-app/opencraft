@@ -31,7 +31,8 @@ try {
     const send = card.getByRole("button", { name: "发送回答" });
     await send.waitFor();
     await card.locator(".opencraft-chat-document").waitFor();
-    if (mobile) await card.getByText("需要你确认", { exact: true }).tap();
+    if (mobile) await card.locator(".thread-async-question__title").tap();
+    assert.equal(await card.locator(".thread-async-question__eyebrow, .thread-async-question__hint").count(), 0);
     const metrics = await card.evaluate((node: HTMLElement) => {
       const choices = [...node.querySelectorAll("label")];
       const title = node.querySelector(".opencraft-chat-document")!;
@@ -48,6 +49,11 @@ try {
     await page.screenshot({ path: resolve(output, `${mobile ? "touch" : "desktop"}-${palette}-${theme}.png`) });
     await card.getByText("自定义回答", { exact: true }).click();
     const input = card.getByRole("textbox", { name: "你的回答" });
+    const initialInputHeight = await input.evaluate((el: HTMLElement) => el.getBoundingClientRect().height);
+    await input.fill("多行回答，保留完整信息。\n".repeat(16));
+    await page.waitForFunction((height) => document.querySelector("textarea")!.getBoundingClientRect().height > height, initialInputHeight);
+    assert.ok(await input.evaluate((el: HTMLElement) => el.getBoundingClientRect().height) > initialInputHeight);
+    assert.ok(await input.evaluate((el: HTMLElement) => el.getBoundingClientRect().height) <= 240);
     await input.fill("保持这段草稿");
     await input.focus();
     await input.evaluate((el: HTMLTextAreaElement) => { el.setSelectionRange(2, 5); });

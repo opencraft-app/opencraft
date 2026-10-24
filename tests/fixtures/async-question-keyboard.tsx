@@ -20,8 +20,9 @@ const registry = createDefaultTimelineProjectorRegistry();
 const params = new URLSearchParams(location.search);
 const locale = params.get("locale") ?? "en-US";
 const design = params.has("design");
-const question: AsyncQuestion = { id: JSON.stringify(["request_user_input_async", "question", 0]), title: design ? "这次提交需要确认发言人身份。确认后才能沿用对应姓名和邮箱；我会先继续修复和验证。请选择本次提交使用的身份。" : "How should we proceed?",
-  options: design ? ["是，沿用当前提交身份", "使用其他提交身份"] : params.has("suggested") ? ["Suggested answer"] : [] };
+const polish = params.has("polish");
+const question: AsyncQuestion = { id: JSON.stringify(["request_user_input_async", "question", 0]), title: polish ? params.has("free") ? "远端操作所需的登录配置在哪个入口？我会继续本地实现准备，远端操作等正确身份可用后再执行。" : "这次优先调整哪一端？" : design ? "这次提交需要确认发言人身份。确认后才能沿用对应姓名和邮箱；我会先继续修复和验证。请选择本次提交使用的身份。" : "How should we proceed?",
+  options: polish ? params.has("free") ? [] : ["优先调整手机端", "手机和桌面一起调整"] : design ? ["是，沿用当前提交身份", "使用其他提交身份"] : params.has("suggested") ? ["Suggested answer"] : [] };
 type Mode = "pending" | "queued" | "disconnected" | "answered" | "dismissed" | "unconfirmed";
 let settle: ((failed: boolean) => void) | undefined;
 const probe = window as typeof window & {
