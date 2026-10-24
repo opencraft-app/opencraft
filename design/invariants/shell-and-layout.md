@@ -11,6 +11,18 @@ native engine protocol, persisted identities or glyph geometry.
 
 ## Experimental mobile Web container
 
+The browser/PWA touch document paints its top safe area with `color-surface`,
+matching the existing `theme-color` projection. HTML and body provide an opaque
+backing while the mobile drawer root remains transparent. Standalone bootstrap
+uses the default Neutral light/dark surface before theme startup; the product's
+manifest supplies the same default light surface. Device acceptance remains
+necessary; desktop window transparency and the shared viewport owner remain.
+
+Touch Composer spacing retains the normal floating gap above the bottom safe
+area. With an open software keyboard, existing keyboard gaps apply without
+adding the Home-indicator inset. The overlay also respects landscape cutouts.
+This padding leaves the timeline visible below the floating touch Composer.
+
 The explicit public Expo Web-container entry packages the same complete Web
 Workbench application/UI graph. Native owns safe area, lifecycle, back and
 external navigation only; it must not duplicate Scope/View, drafts, navigation

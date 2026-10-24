@@ -64,6 +64,11 @@ may differ; generic fallbacks apply only to missing or unsupported names.
 
 ## Appearance runtime ownership
 
+Process summary headers and subagent status retain the shared body role. Their
+mobile text-size adjustment is 100%, including running shimmer descendants, so
+long commands cannot receive a separate automatic inflation factor. This does
+not change the reading preference or introduce a separate process font scale.
+
 The application appearance owner publishes one immutable snapshot for preference,
 resolved system mode, retained requested ID, applied fallback and catalog. Settings
 and React consumers subscribe to that owner; palette changes do not remount drafts.

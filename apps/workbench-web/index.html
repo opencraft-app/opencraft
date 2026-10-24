@@ -4,7 +4,9 @@
     <base href="/" />
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content" />
-    <meta name="theme-color" content="#f9f9f9" />
+    <meta name="theme-color" content="#ffffff" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <link rel="icon" href="/opencraft-icon.svg" />
     <title>OpenCraft</title>
     <script>
@@ -31,12 +33,16 @@
         overflow: hidden;
         overscroll-behavior: none;
       }
+      @media (display-mode: standalone) {
+        html { background-color: #ffffff; }
+        html.electron-dark { background-color: #181818; }
+      }
       #opencraft-bootstrap {
         position: fixed;
         inset: 0;
         display: grid;
         place-items: center;
-        background: #f9f9f9;
+        background: #ffffff;
       }
       #opencraft-bootstrap i {
         width: 18px;
@@ -47,7 +53,7 @@
         border-radius: 50%;
         animation: opencraft-bootstrap-spin .72s linear infinite;
       }
-      .electron-dark #opencraft-bootstrap { background: #000; }
+      .electron-dark #opencraft-bootstrap { background: #181818; }
       .electron-dark #opencraft-bootstrap i {
         border-color: rgba(255, 255, 255, .16);
         border-top-color: rgba(255, 255, 255, .68);
@@ -236,7 +242,7 @@
         root.classList.add(theme, `electron-${theme}`);
         root.style.colorScheme = theme;
         document.querySelector('meta[name="theme-color"]')
-          ?.setAttribute("content", theme === "dark" ? "#000000" : "#f9f9f9");
+          ?.setAttribute("content", theme === "dark" ? "#181818" : "#ffffff");
       })();
     </script>
   </head>
