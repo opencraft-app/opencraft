@@ -378,6 +378,7 @@
   --padding-material-liquid-group: calc(var(--spacing) * .5);
   --gap-material-liquid-group: var(--spacing);
   --material-liquid-background: var(--color-background-elevated-primary-opaque);
+  --material-liquid-blur: 12px;
   --material-liquid-filter: none;
   --material-liquid-reflection: none;
   // Directional light and shade give the edge thickness without a uniform ring.
@@ -390,7 +391,7 @@
 @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   :root {
     --material-liquid-background: var(--material-glass-floating);
-    --material-liquid-filter: blur(12px) saturate(1.15);
+    --material-liquid-filter: blur(var(--material-liquid-blur)) saturate(1.15);
     --material-liquid-reflection: linear-gradient(155deg, rgb(255 255 255 / 6%), transparent 55%);
   }
 }

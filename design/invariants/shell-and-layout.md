@@ -118,6 +118,9 @@ filter fallbacks and explicit extension popover surfaces remain readable.
 Independent Shell buttons and grouped conversation chrome share the same neutral
 floating veil and effective blur, including the SVG enhancement path. Footer
 geometry must not replace that material or clip its background as a text label.
+The existing lens resize owner reads the shared scattering length for an explicit
+SVG Gaussian stage; icons and focus remain outside it. Verify the optical path
+as well as its CSS approximation against changing backdrop pixels.
 See the workbench language and `scripts/smoke/shell/smoke-frosted-materials.ts` for real
 consumer, backdrop and fallback verification. Native appearance is unchanged.
 
