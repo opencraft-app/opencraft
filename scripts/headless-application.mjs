@@ -52,7 +52,8 @@ import { MembershipStore, InstanceAccess } from '../packages/access-control/src/
 import { ActorStore } from '../packages/access-control/src/actors.ts';
 import { ActorAccess } from '../packages/access-control/src/actor-access.ts';
 import { Collaboration, CollaborationHttpApi } from '../packages/access-control/src/collaboration.ts';
-import { createRoutedConversationExecution } from './conversation-execution.mjs';
+import { createRoutedConversationExecution, callConversationHost } from './conversation-execution.mjs';
+import { PushStore, TurnPushService, PushObservationTransport } from '../packages/web-push-node/src/index.ts';
 import { readImConfiguration, startImPlugins } from './im-plugins.mjs';
 import { HumanAccounts } from '../packages/access-control/src/human-accounts.ts';
 import { LocalAccountServerPlugin } from '../plugins/local-account/src/server.ts';
@@ -267,6 +268,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   let usageQueries;
   let remoteBrowser;
   let observability;
+  let turnPush;
   let closing = null;
   const close = () => {
     if (closing !== null) return closing;
@@ -279,6 +281,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       hubController?.close();
       remoteBrowser?.close();
       desktop?.close(); // Retire viewers before the execution provider; never stop the desktop.
+      await turnPush?.close();
       // Retire admitted ingress clients before their Host provider.
       const entryResults = await Promise.allSettled([ingress?.close(), sshNativeRpc?.close(), imPlugins?.close()]);
       entryResults.push(...await Promise.allSettled([connectorService?.close(), actorCollaboration?.close()]));
@@ -456,6 +459,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       logicalClientRouting: true,
       physicalHostLifetime: "server",
       createTransport(hostId) {
+        const transport = (() => {
         if (hostId === 'opencraft-server') return new TokenUsageQueryTransport(new MachineIdentityTransport(machineIdentity,'OpenCraft',async () =>
           new WebSocketTransport({url:agent.resolveWebsocketUrl?await agent.resolveWebsocketUrl():agent.websocketUrl,createSocket:url=>new WebSocket(url)})), usageQueries, actorId => actorStore.get(actorId));
         const remote = remoteServers.get(hostId);
@@ -504,7 +508,25 @@ export async function startHeadlessServer(options = {}, composition = {}) {
           nativeCodexHomeDirectory: join(dataDirectory, "native-codex"),
           desktop,
         })), mcpApps);
+        })();
+        return ['local-codex', 'opencraft-server'].includes(hostId) ? new PushObservationTransport(transport, value => {
+          if (!turnPush || actorStore.get(value.actorId)?.kind !== 'human') return;
+          turnPush.store.watch(value.actorId, conversationExecution.serverForHost(hostId, value.threadId), hostId, value.threadId, value.inputId);
+        }) : transport;
       },
+    });
+    turnPush = new TurnPushService(new PushStore(join(dataDirectory, 'web-push.sqlite')), {
+      hosts: ['local-codex', 'opencraft-server'],
+      authenticate: request => {
+        const context = actorAccess.authenticate(request);
+        return context && actorStore.get(context.actorId)?.kind === 'human'
+          ? { context, loginDigest: humanAuth?.notificationLoginDigest(request) } : null;
+      },
+      current: binding => actorStore.isCurrent(binding.context) && actorStore.get(binding.context.actorId)?.kind === 'human'
+        && (!instanceAccess || instanceAccess.admitsActor(binding.context.actorId))
+        && (!binding.loginDigest || !!humanAccounts?.byDigest(binding.loginDigest)),
+      trustedOrigin: request => actorAccess.options.trustedOrigin?.(request) ?? null,
+      read: (hostId, method, params) => callConversationHost(appHostServer, {hostId, threadId:params.threadId}, 'push-history', method, params, undefined, 10_000),
     });
     // Local anonymous features remain usable. Public remote access is enabled
     // only with explicit operator opt-in; all remote sockets require a session.
@@ -538,13 +560,14 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       appHostServer,
       sshServerDescriptors: sshServers.map(binding => binding.descriptor),
       sshManagement,
-      getPluginHealth: () => imPlugins ? {'opencraft.im':imPlugins.states()} : {},
+      getPluginHealth: () => ({...(imPlugins ? {'opencraft.im':imPlugins.states()} : {}),...(turnPush ? {'opencraft.push':turnPush.health} : {})}),
       getStorageOutcomes: () => [
         ...(capabilityBindings ? [{name:'session-capabilities',status:capabilityBindings.outcome.status,appliedVersion:capabilityBindings.outcome.appliedVersion,movedAside:capabilityBindings.outcome.movedAsidePaths.length>0}] : []),
         ...(imPlugins ? [{name:'im-switchboard',status:imPlugins.outcome.status,appliedVersion:imPlugins.outcome.appliedVersion,movedAside:imPlugins.outcome.movedAsidePaths.length>0}] : []),
         ...(imPlugins ? [{name:'im-posts',status:imPlugins.postOutcome.status,appliedVersion:imPlugins.postOutcome.appliedVersion,movedAside:imPlugins.postOutcome.movedAsidePaths.length>0}] : []),
         ...(agent.storageOutcomes ?? []),
         ...(connectorService?.outcomes() ?? []),
+        ...(turnPush ? [{name:'web-push',status:turnPush.store.outcome.status,appliedVersion:turnPush.store.outcome.appliedVersion,movedAside:turnPush.store.outcome.movedAsidePaths.length>0}] : []),
         {name:"mcp-apps",status:mcpApps.outcome.status,appliedVersion:mcpApps.outcome.appliedVersion,movedAside:mcpApps.outcome.movedAsidePaths.length>0},
         ...(agentIdentity ? [{ name: "thread-identity", hostId: "opencraft-server", status: agentIdentity.store.outcome.status,
           appliedVersion: agentIdentity.store.outcome.appliedVersion, backupPath: agentIdentity.store.outcome.backupPath,
@@ -568,6 +591,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       accessService: instanceAccess ?? null,
       actorService: actorAccess,
       actorCollaborationService: actorCollaborationApi,
+      turnPushService: turnPush,
       authService: humanAuth ?? null,
       hubService: hubController,
       remoteBrowserService: remoteBrowser = new RemoteBrowserService({ root, dataDirectory,

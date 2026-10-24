@@ -1,3 +1,4 @@
+import { useTurnNotifications } from "./runtime/turn-notifications-context";
 import { resolveHostModelSettingsPage } from "@opencraft/extension-runtime";
 import { ConversationSummaryButton, ConversationSummarySurface, useConversationSummary, useSummaryGoal } from "./components/conversation-summary";
 import { ConversationToolbarSizing } from "./components/toolbar-dock-state";
@@ -296,6 +297,7 @@ export function App({
   readonly presentation?: WorkbenchPresentationPolicy;
 } = {}) {
   const intl = useIntl();
+  const turnNotifications = useTurnNotifications();
   const notices = useAsyncNotices();
   const modelSelectionPolicy = embedded?.modelSelectionPolicy ?? (embedded ? "host-default" : "user");
   const internalDeveloperMode = useInternalDeveloperMode();
@@ -1910,7 +1912,10 @@ export function App({
               signIn: authenticationPresentation.signIn,
               onOpen: () => extensionProjection.account?.snapshot.phase === "anonymous" && extensionProjection.account.provider.signInViewId ? authenticationPresentation.open() : setAccountOpen(true),
               onRefresh: extensionProjection.account.provider.refresh,
-              onSignOut: extensionProjection.account.provider.signOut,
+              onSignOut: extensionProjection.account.provider.signOut ? async () => {
+                await turnNotifications?.push?.beforeSignOut();
+                await extensionProjection.account?.provider.signOut?.();
+              } : undefined,
             },
             onOpenSettings: () => openSettingsFromConversation(),
             onOpenUpdates: () => openSettingsFromConversation('updates'),

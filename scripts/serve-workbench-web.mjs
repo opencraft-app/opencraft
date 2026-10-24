@@ -393,6 +393,7 @@ export async function createWorkbenchWebServer({
   accessService = null,
   actorService = null,
   actorCollaborationService = null,
+  turnPushService = null,
   authService = null,
   observability = null,
   mcpAppsService = null,
@@ -486,6 +487,10 @@ export async function createWorkbenchWebServer({
       if (url.pathname === "/__opencraft_connectors") {
         if (connectorService && await connectorService.handle(request, response)) return;
         sendJson(response, 404, { error: "missing" }); return;
+      }
+      if (url.pathname === '/__opencraft_push') {
+        if (turnPushService && await turnPushService.handle(request, response)) return;
+        sendJson(response, 404, { error: 'missing' }); return;
       }
       if (actorService?.isSessionRequest(request)) {
         sendJson(response, 403, { error: 'actor_resource_interface_required' }); return;

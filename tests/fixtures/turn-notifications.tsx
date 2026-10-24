@@ -1,3 +1,4 @@
+import { initializeAppearanceTheme, setThemePreference, setAppearanceThemeId } from "../../apps/workbench-web/src/appearance-theme";
 import { StrictMode, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { AppServerClientRegistry } from "@opencraft/appserver-client";
@@ -16,12 +17,20 @@ import "../../apps/workbench-web/src/styles/app.scss";
 
 // Only the remote execution boundary is synthetic; Client, observer, Settings,
 // preference storage, Intl and browser Notification/ServiceWorker APIs are real.
+initializeAppearanceTheme();
 const preferences = await UiPreferencesRuntime.open({ installation: await IndexedDbUiPreferenceStore.open({ databaseName: "opencraft-turn-notification-smoke" }) });
 const locale = new WorkbenchLocaleController(preferences, { ideLocale: "zh-CN" });
 await locale.initialize();
 const registry = new AppServerClientRegistry();
 const source = new TurnCompletionObserver(registry);
-const notifications = new BrowserTurnNotifications();
+const pushFixture = new URLSearchParams(location.search).has("push");
+let pushSubscription: any = null;
+const notifications = new BrowserTurnNotifications(undefined, pushFixture ? {
+  supported: true, permission: () => "granted",
+  getSubscription: async () => pushSubscription,
+  subscribe: async () => (pushSubscription = { endpoint: "https://web.push.apple.com/fixture", keys: { p256dh: "fixture", auth: "fixture" } }),
+  unsubscribe: async () => { pushSubscription = null; }, dispose() {},
+} : undefined);
 const clients = new Map<string, any>();
 const threads = new Map<string, { id: string; name: string; preview: string; turns: unknown[] }>();
 async function connect(hostId: string) {
@@ -48,7 +57,7 @@ function Probe() {
     <WorkbenchIntlProvider controller={locale} target={document.documentElement}>
       <AsyncNoticesProvider>
       <TurnNotificationsProvider source={source} notifications={notifications} openConversation={async location => { opened.push(location); return true; }}>
-        <main style={{ padding: 32 }}>{settings ? <ChatSettings /> : <div data-conversation>对话内容</div>}</main>
+        <main className="settings-page__content">{settings ? <ChatSettings /> : <div data-conversation>对话内容</div>}</main>
       </TurnNotificationsProvider>
       </AsyncNoticesProvider>
     </WorkbenchIntlProvider>
@@ -64,6 +73,8 @@ function Probe() {
   emit: (hostId: string, turnId: string, status = "completed", method = "turn/completed") => clients.get(hostId).request("fixture/notify", { method, params: { threadId: "thread", turn: { id: turnId, status } } }),
   reconnect: async () => { await registry.remove("host-a"); await connect("host-a"); },
   settings: () => toggleSettings(),
+  notificationState: notifications.getSnapshot,
+  theme: (mode: "light" | "dark", id?: string) => { setThemePreference(mode); if (id) setAppearanceThemeId(id); },
   preference: () => preferences.get("chat.turnNotifications"),
   opened,
 };

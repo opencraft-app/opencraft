@@ -1,5 +1,7 @@
 import { bindTouchInteractionMode } from "./pointer-modality";
 import { bindPwaEdgeNavigation } from "./pwa-edge-navigation";
+import { ApplePwaPushDevice, type PushDevicePort } from "./push-device";
+import { serverUrl } from "./server-context";
 import { readWindowPresentation, resolveWindowPresentation, type WindowPresentation } from "./window-presentation";
 import { projectWindowAppearance, type WindowAppearanceIntent, type WindowAppearanceProjection, type WindowAppearanceProjector } from "./window-appearance";
 
@@ -9,6 +11,7 @@ export type ClientRuntimeKind = "web" | "pwa" | "electron";
 export interface ClientRuntime extends WindowAppearanceProjector {
   readonly kind: ClientRuntimeKind;
   readonly presentation: WindowPresentation;
+  readonly pushDevice: PushDevicePort | null;
   start(): void;
   dispose(): void;
 }
@@ -29,6 +32,7 @@ export class WebRuntime implements ClientRuntime {
   private readonly cleanups: Array<() => void> = [];
   constructor(document: Document) { this.document = document; }
   get kind(): ClientRuntimeKind { return "web"; }
+  get pushDevice(): PushDevicePort | null { return null; }
   get presentation(): WindowPresentation {
     return this.document.defaultView ? readWindowPresentation(this.document.defaultView) : resolveWindowPresentation({});
   }
@@ -64,12 +68,15 @@ export class WebRuntime implements ClientRuntime {
 }
 
 export class PwaRuntime extends WebRuntime {
+  private readonly device = new ApplePwaPushDevice(this.document, serverUrl('/opencraft-push-worker.js'), serverUrl('/__opencraft_push/legacy/'));
   override get kind(): ClientRuntimeKind { return "pwa"; }
+  override get pushDevice(): PushDevicePort | null { return this.device.supported ? this.device : null; }
   protected override onStart(): void {
     super.onStart();
     // Only the Apple Home Screen capability enables this native-history guard.
     // Other PWA hosts retain their native gestures; no fake history entries.
     this.own(bindPwaEdgeNavigation(this.document));
+    this.own(() => this.device.dispose());
   }
 }
 

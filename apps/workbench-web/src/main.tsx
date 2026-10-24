@@ -108,6 +108,7 @@ function ApplicationBootstrap() {
           ...productOptions,
           ...(mobileContainer() ? { navigationMode: "memory", hostProfileMode: "configured", isPresentationActive: () => mobileBinding?.active() ?? true } : {}),
           serverExtensions: serverWorkbenchExtensions,
+          pushDevice: clientRuntime.pushDevice ?? undefined,
           deferOptionalFeatures: true,
         });
         application = created;

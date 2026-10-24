@@ -4,6 +4,7 @@ import { SettingsGroup, SettingsNotice, SettingsPageHeader, SettingsRow, Setting
 import { useUiPreferencesRuntime } from "../runtime/ui-preferences-runtime";
 import { useDefaultFollowUpAction } from "../runtime/use-default-follow-up-action";
 import { useAsyncNotices } from "./async-notices";
+import { PwaPushSettings } from "./pwa-push-settings";
 import { useTurnNotifications } from "../runtime/turn-notifications-context";
 
 const unavailableNotifications = { supported: false, permission: "denied" as const, error: false };
@@ -80,6 +81,7 @@ export function ChatSettings() {
           }} />
       </SettingsRow>
     </SettingsGroup>
+    {notifications?.push ? <PwaPushSettings controller={notifications.push} /> : null}
     {permissionError ? <SettingsNotice tone="error">{intl.formatMessage({ id: "settings.chat.turnNotifications.permissionRequired", defaultMessage: "Notification permission was not granted. You can enable it again when ready." })}</SettingsNotice> : null}
     {notificationState.error ? <SettingsNotice tone="error">{intl.formatMessage({ id: "settings.chat.turnNotifications.showError", defaultMessage: "The browser could not display a notification. Check your browser and system notification settings." })}</SettingsNotice> : null}
     {saveError ? <SettingsNotice tone="error">{intl.formatMessage({ id: "settings.chat.saveError", defaultMessage: "Could not save your preference. Please try again." })}</SettingsNotice> : null}

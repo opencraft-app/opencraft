@@ -35,16 +35,30 @@ export function TurnNotificationsProvider({ source, notifications, openConversat
       () => preferences.get("chat.turnNotifications"), () => open(completion));
   });
   useEffect(() => {
+    notifications.push?.configure(intl.locale, {
+      completed: intl.formatMessage({ id: "notifications.turn.completed", defaultMessage: "OpenCraft · Response complete" }),
+      failed: intl.formatMessage({ id: "notifications.turn.failed", defaultMessage: "OpenCraft · Response failed" }),
+      interrupted: intl.formatMessage({ id: "notifications.turn.interrupted", defaultMessage: "OpenCraft · Response stopped" }),
+      body: intl.formatMessage({ id: "notifications.turn.body", defaultMessage: "Click to return to the conversation." }),
+      test: intl.formatMessage({ id: "notifications.push.test", defaultMessage: "OpenCraft · Notifications enabled" }),
+    });
+  }, [notifications, intl]);
+  useEffect(() => {
     const prepare = () => { if (preferences.get("chat.turnNotifications")) notifications.prepare(); };
     const stopPreferences = preferences.subscribe(prepare);
     prepare();
     const stopSource = source.subscribe(completed);
     const stopClicks = notifications.observeClicks(open);
     window.addEventListener("focus", notifications.refresh);
+    const refreshPush = () => { if (document.visibilityState === 'visible') void notifications.push?.refresh(); };
+    window.addEventListener("focus", refreshPush);
+    document.addEventListener("visibilitychange", refreshPush);
     document.addEventListener("visibilitychange", notifications.refresh);
     return () => {
       stopPreferences(); stopSource(); stopClicks();
       window.removeEventListener("focus", notifications.refresh);
+      window.removeEventListener("focus", refreshPush);
+      document.removeEventListener("visibilitychange", refreshPush);
       document.removeEventListener("visibilitychange", notifications.refresh);
     };
   }, [source, preferences, notifications, open, completed]);
