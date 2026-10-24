@@ -36,6 +36,20 @@
         html { background-color: #ffffff; }
         html.electron-dark { background-color: #181818; }
       }
+      #opencraft-host-edge-color { display: none; }
+      @supports (-webkit-touch-callout: none) and (background-clip: text) {
+        html[data-window-host="browser"]:is([data-window-display-mode="standalone"], [data-window-display-mode="fullscreen"]) #opencraft-host-edge-color {
+          display: block;
+          position: fixed;
+          inset: 0 0 auto;
+          height: 11px; /* Exceed the host's thin-border sampling threshold. */
+          z-index: 2147483646;
+          pointer-events: none;
+          background-color: var(--shell-window-edge-background);
+          -webkit-background-clip: text;
+          background-clip: text;
+        }
+      }
       #opencraft-bootstrap {
         position: fixed;
         inset: 0;
@@ -231,6 +245,7 @@
     </script>
   </head>
   <body>
+    <div id="opencraft-host-edge-color" aria-hidden="true"></div>
     <div id="opencraft-bootstrap" role="status" aria-label="正在加载"><i aria-hidden="true"></i></div>
     <div id="root"></div>
     <script type="module">

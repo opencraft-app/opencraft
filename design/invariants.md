@@ -208,7 +208,7 @@
 ### Appearance and controls
 
 - [Mobile paint and content boundaries](invariants/shell-and-layout.md#experimental-mobile-web-container) — full viewport backgrounds with safe-area content insets.
-- [Window appearance projection](invariants/appearance-and-controls.md#window-appearance-projection) — theme intent, host/display mode, startup and native evidence boundaries.
+- [Window appearance projection](invariants/appearance-and-controls.md#window-appearance-projection) — theme intent, host/display mode, startup, standalone WebKit edge-color compatibility and native evidence boundaries.
 
 - <a id="discrete-slider-fill"></a>[Discrete slider fill](invariants/appearance-and-controls.md#discrete-slider-fill)
 - <a id="ui-图标共享视觉语言"></a>[UI 图标：共享视觉语言](invariants/appearance-and-controls.md#ui-图标共享视觉语言)
