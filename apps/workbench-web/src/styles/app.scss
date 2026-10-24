@@ -3743,6 +3743,11 @@ html[data-opencraft-window-type="browser"] .main-content-top-fade {
   gap: 8px;
 }
 
+:root[data-ui-density="touch"]:not([data-timeline-keyboard-open="true"]) .new-thread-draft-layout {
+  // The draft route owns the same device inset before a conversation exists.
+  --draft-block-end: calc(16px + env(safe-area-inset-bottom, 0px));
+}
+
 // Mobile input has the same bottom anchor before and after thread promotion.
 // The welcome region yields spare space. Its title has a stable block-start
 // inset instead of recentering after focus expansion or keyboard resize.
