@@ -234,7 +234,7 @@
     "smoke:desktop-toolbar-feedback": "tsx scripts/smoke/desktop/smoke-desktop-toolbar-feedback.ts",
     "smoke:conversation-activity-metrics": "tsx scripts/smoke/conversation/smoke-conversation-activity-metrics.ts",
     "check:startup:cache": "node scripts/check-startup-cache.mjs",
-    "test:startup": "tsx --test tests/mobile/mobile-workbench-container.test.ts tests/mobile/mobile-packaged-resources.test.mjs tests/protocol/deferred-transport.test.ts tests/server/web-asset-encoding.test.mjs tests/server/startup-resource-policy.test.ts tests/server/startup-resource-composition.test.ts tests/shell/developer-tool-inputs.test.ts tests/mobile/embedded-product-build.test.mjs tests/mobile/expo-product-entry.test.cjs tests/mobile/expo-native-build.test.cjs tests/browser/browser-process-env.test.ts",
+    "test:startup": "tsx --test tests/mobile/mobile-workbench-container.test.ts tests/mobile/mobile-packaged-resources.test.mjs tests/protocol/deferred-transport.test.ts tests/server/web-asset-encoding.test.mjs tests/server/startup-resource-policy.test.ts tests/server/startup-resource-composition.test.ts tests/shell/developer-tool-inputs.test.ts tests/mobile/embedded-product-build.test.mjs tests/mobile/expo-product-entry.test.cjs tests/mobile/expo-native-build.test.cjs tests/mobile/native-intl-polyfills.test.cjs tests/browser/browser-process-env.test.ts",
     "smoke:tasks:v1": "tsx scripts/smoke/tasks/smoke-tasks-v1.ts",
     "smoke:browser-bootstrap": "tsx scripts/smoke/browser/smoke-browser-bootstrap.ts",
     "lint:browser": "node scripts/check-browser-compatibility.mjs",

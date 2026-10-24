@@ -10,6 +10,11 @@
     "license": "MIT"
   },
   {
+    "name": "@formatjs/intl-locale",
+    "version": "5.3.12",
+    "license": "MIT"
+  },
+  {
     "name": "@gorhom/bottom-sheet",
     "version": "5.2.14",
     "license": "MIT"
