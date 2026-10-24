@@ -10,7 +10,7 @@ import { TokenUsageQueryService } from '../../apps/opencraft-daemon/src/token-us
 import { TokenUsageQueryTransport } from '../../apps/opencraft-daemon/src/token-usage-query-transport.js';
 import type { DuplexTransport } from '@opencraft/appserver-client/transport';
 const params = { from: '2026-10-21', through: '2026-10-21' };
-for (const engine of ['dsh', 'pi']) test(`${engine}: existing statistics retain self/team authorization`, async t => {
+for (const entry of ['logical', 'native']) for (const engine of ['dsh', 'pi']) test(`${engine} ${entry}: existing statistics retain self/team authorization`, async t => {
   const directory = await mkdtemp(join(tmpdir(), 'usage-routing-'));
   const state = new TokenUsageStateDatabase(directory), ledger = new OpenCraftTokenUsageLedger(state, 'server', () => Date.parse('2026-10-21T00:00:00Z'));
   const key = { threadId: 'thread', turnId: 'turn' };
@@ -35,7 +35,7 @@ for (const engine of ['dsh', 'pi']) test(`${engine}: existing statistics retain 
   let authority: { actorId: string; administrator: boolean } | null = { actorId: 'alice', administrator: false }, sequence = 0;
   const request = async (method: string, parameters: unknown = {}) => {
     const id = ++sequence;
-    const frame = JSON.stringify({ id, method, params: parameters, [CLIENT]: 'client' });
+    const frame = JSON.stringify({ id, method, params: parameters, ...(entry === 'logical' ? { [CLIENT]: 'client' } : {}) });
     if (transport.sendWithContext) await transport.sendWithContext(frame, { sender: null, tokenUsageAuthority: () => authority });
     else await transport.send(frame);
     return replies.find(value => value.id === id);

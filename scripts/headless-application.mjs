@@ -23,7 +23,7 @@ import { McpAppsService } from "../packages/mcp-apps/src/server.ts";
 import { McpAppsTransport } from "../packages/mcp-apps/src/transport.ts";
 import { AppHostServer } from "../packages/app-host-server/src/index.ts";
 import { AppServerIdentityOverlay } from "../apps/opencraft-daemon/src/appserver-identity-overlay.ts";
-import { TokenUsageQueryTransport } from "../apps/opencraft-daemon/src/token-usage-query-transport.ts";
+import { TokenUsageQuerySession, TokenUsageQueryTransport } from "../apps/opencraft-daemon/src/token-usage-query-transport.ts";
 import { TokenUsageQueryService } from "../apps/opencraft-daemon/src/token-usage-query-service.ts";
 import { CodexEngineAdapter } from "../apps/opencraft-daemon/src/codex-engine-adapter.ts";
 import { MachineIdentityTransport } from "../apps/opencraft-daemon/src/machine-transport.ts";
@@ -514,6 +514,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       observability,
       getExecutionHealth: options.getExecutionHealth,
       getHostReadiness: () => codexReadiness ? { "local-codex": codexReadiness.snapshot() } : {},
+      createAppServerQuerySession: emit => new TokenUsageQuerySession(usageQueries, emit, actorId => actorStore.get(actorId)),
       appServerTarget: agent.websocketUrl,
       resolveAppServerTarget: agent.resolveWebsocketUrl,
       appServerIdentity: agentIdentity ?? null,
