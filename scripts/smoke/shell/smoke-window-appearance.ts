@@ -11,9 +11,18 @@ const server = await createServer({ root, configFile: resolve(root, "vite.config
 let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
 try {
   await server.listen();
-  const html = await server.transformIndexHtml("/", await readFile(resolve(root, "index.html"), "utf8"));
+  let html = await server.transformIndexHtml("/", await readFile(resolve(root, "index.html"), "utf8"));
   assert.ok(!html.includes("OPENCRAFT_BOOTSTRAP_APPEARANCE"));
   const engine = process.env.OPENCRAFT_APPEARANCE_BROWSER === "webkit" ? webkit : chromium;
+  // Linux WebKit does not expose iOS's touch-callout property. Project only that
+  // platform predicate when exercising the enabled CSS; never call it native iOS.
+  const iosCssProbe = process.env.OPENCRAFT_APPEARANCE_IOS_CSS_PROBE === "1";
+  if (iosCssProbe) {
+    assert.equal(engine, webkit);
+    const projected = html.replace("@supports (-webkit-touch-callout: none)", "@supports (color: red)");
+    assert.notEqual(projected, html, "the platform predicate must be present");
+    html = projected;
+  }
   browser = await engine.launch();
   for (const id of ["neutral", "canvas", "frost", "longing", "lavender", "graphite", "mist"]) for (const mode of ["light", "dark"]) {
     const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
@@ -42,7 +51,7 @@ try {
     assert.equal(await surface.count(), 1, "startup must provide one document-owned sampling surface");
     assert.equal(await surface.textContent(), "");
     assert.equal(await surface.getAttribute("aria-hidden"), "true");
-    const supported = await page.evaluate(() => CSS.supports("-webkit-touch-callout", "none") && CSS.supports("background-clip", "text"));
+    const supported = iosCssProbe || await page.evaluate(() => CSS.supports("-webkit-touch-callout", "none") && CSS.supports("background-clip", "text"));
     assert.equal(await surface.evaluate(e => getComputedStyle(e).display), supported ? "block" : "none");
     if (supported) {
       const sample = await surface.evaluate(e => { const s = getComputedStyle(e), r = e.getBoundingClientRect();
@@ -69,5 +78,5 @@ try {
     }
     await context.close();
   }
-  console.log("14 actual HTML startup layers and host edge-color scope/pixels match; native iOS system compositing unobserved.");
+  console.log(`14 actual HTML startup layers and host edge-color scope/pixels match; iOS CSS predicate projected: ${iosCssProbe}; native iOS system compositing unobserved.`);
 } finally { await browser?.close(); await server.close(); }

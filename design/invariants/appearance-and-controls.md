@@ -171,9 +171,10 @@ receives no pointer/focus input. It does not reserve an inset, create a safe-are
 value, move controls, animate or alter viewport/status-bar metadata. SafeLayout,
 keyboard geometry and native system rendering retain their respective owners.
 
-The existing window-appearance smoke verifies actual document startup, supported
-WebKit and unsupported Chromium scope, theme inheritance, hit testing and unchanged
-page pixels. Complete-application checks cover navigation and draft continuity.
+The existing window-appearance smoke verifies actual document startup and exclusion
+on Chromium and desktop WebKit. Its explicit iOS CSS predicate projection exercises
+the enabled WebKit styles, theme inheritance, hit testing and unchanged page pixels.
+Complete-application checks separately cover navigation and draft continuity.
 Native status-bar color/blur and physical full-bleed remain unobserved until
 separately verified on the installed target device; a smaller layout viewport is
 not repaired or hidden by this surface.
