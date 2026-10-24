@@ -172,7 +172,7 @@ export async function createWebWorkbenchApplicationSupervisor(
     startupRollback.push(() => appServerRegistry.dispose());
     const turnCompletions = new TurnCompletionObserver(appServerRegistry.clients);
     startupRollback.push(() => turnCompletions.dispose());
-    const turnNotifications = new BrowserTurnNotifications();
+    const turnNotifications = new BrowserTurnNotifications(undefined, options.pushDevice);
     startupRollback.push(() => turnNotifications.dispose());
     const agentRuntimes = new AgentRuntimeDirectory();
     const botConversations = await createCordisBotConversationRuntime(cordis);

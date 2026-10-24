@@ -1,3 +1,4 @@
+import { useTurnNotifications } from "../runtime/turn-notifications-context";
 import { OVERHOME_VIEW_ID } from "../runtime/mini-apps";
 import { ApplicationRouteMotion, useApplicationDesktopBackdrop } from "./application-desktop-motion";
 import { ScheduledTaskCatalogContext, type ScheduledTaskCatalog } from "../runtime/scheduled-task-catalog-context";
@@ -73,6 +74,7 @@ export function HostlessWorkbench({
   const internalDeveloperMode = useInternalDeveloperMode();
   const [accountOpen, setAccountOpen] = useState(false);
   const appearance = useAppearanceTheme();
+  const turnNotifications = useTurnNotifications();
   const windowChrome = useWindowChrome();
   const chromePolicy = getWindowChromePolicy(windowChrome);
   const { sidebarOpen, setSidebarOpen } = useResponsiveSidebarDock();
@@ -326,7 +328,10 @@ export function HostlessWorkbench({
             signIn: authenticationPresentation.signIn,
             onOpen: () => extensionProjection.account?.snapshot.phase === "anonymous" && extensionProjection.account.provider.signInViewId ? authenticationPresentation.open() : setAccountOpen(true),
             onRefresh: extensionProjection.account.provider.refresh,
-            onSignOut: extensionProjection.account.provider.signOut,
+            onSignOut: extensionProjection.account.provider.signOut ? async () => {
+                await turnNotifications?.push?.beforeSignOut();
+                await extensionProjection.account?.provider.signOut?.();
+              } : undefined,
           },
           onOpenSettings: () => openSettings(),
           onOpenUpdates: () => openSettings('updates'),

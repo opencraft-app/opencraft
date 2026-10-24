@@ -56,3 +56,16 @@ cancelable event and requires physical-device acceptance.
 This boundary does not prove arbitrary iOS status-bar drawing, live system tint
 adoption, installation metadata refresh or a specific OS regression. The existing
 window projection keeps native system appearance unobserved.
+
+## Apple Home Screen push device capability
+
+PwaRuntime composes a PushDevicePort only for a secure, top-level Apple Home
+Screen document exposing notification/push APIs. Ordinary Web, Electron,
+embedded/native-container and other installed-app hosts expose no such port in
+this implementation. The port owns browser permission and subscription mechanics;
+its disposal releases document ownership without cancelling persistent consent.
+PwaTurnPushController belongs to the Application and coordinates the current
+server/Actor registration. React consumes its snapshot and invokes explicit
+user actions. The server alone observes execution and owns notification delivery.
+See [Web Push](../../web-push.md) for the subscription, authorization and outbox
+contract. Runtime or DOM identity never authorizes a push subscription on the server.

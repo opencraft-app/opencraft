@@ -972,5 +972,14 @@
   "mobile.invalid": "请输入 HTTPS 地址，不包含账号密码、查询参数或片段。",
   "mobile.saveFailed": "无法保存选择，当前工作台未切换。",
   "mobile.readFailed": "无法读取已保存的来源，请重试或主动选择内置工作台。",
-  "mobile.brand": "OpenCraft"
+  "mobile.brand": "OpenCraft",
+  "notifications.push.test": "OpenCraft · 通知已开启",
+  "settings.push.label": "后台轮次通知",
+  "settings.push.unavailable": "请登录支持推送通知的服务器。",
+  "settings.push.description": "你在本服务器提交的轮次结束后，即使已关闭此应用，也能收到通知。",
+  "settings.push.testLabel": "检查通知送达",
+  "settings.push.test": "发送测试通知",
+  "settings.push.error": "未能更新推送通知。请检查网络连接和通知权限后重试。",
+  "settings.push.testSent": "测试通知已提交推送服务，请查看设备通知。",
+  "settings.push.retry": "重新连接"
 }

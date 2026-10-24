@@ -496,6 +496,7 @@ export type WebWorkbenchApplicationSupervisor =
   | ActiveWebWorkbenchApplicationSupervisor;
 
 export interface WebWorkbenchSupervisorOptions {
+  readonly pushDevice?: import("./push-device").PushDevicePort;
   /** Trusted product assembly; active only for a server-backed Web workbench. */
   readonly serverExtensions?: readonly import("./server-product-extensions").ServerWorkbenchExtension[];
   readonly isPresentationActive?: () => boolean;

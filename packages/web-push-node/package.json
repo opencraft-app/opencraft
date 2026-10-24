@@ -1,0 +1,16 @@
+{
+  "name": "@opencraft/web-push-node",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": { "typecheck": "tsc --noEmit" },
+  "dependencies": {
+    "@opencraft/sqlite-node": "0.1.0",
+    "@opencraft/appserver-client": "0.1.0",
+    "@opencraft/app-host-protocol": "0.1.0",
+    "@opencraft/identity-core": "0.1.0",
+    "web-push": "3.6.7"
+  },
+  "devDependencies": { "@types/web-push": "3.6.4" }
+}

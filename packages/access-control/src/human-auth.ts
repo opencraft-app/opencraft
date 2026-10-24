@@ -87,6 +87,11 @@ export class HumanAuth implements IdentityProvider {
     const login = this.#proofs.get(principal);
     return !!login && this.accounts.byDigest(login.digest) !== null;
   }
+  /** Private, non-bearer reference for durable device consent. Never sent to a browser. */
+  notificationLoginDigest(request: IdentityRequest): string | undefined {
+    const token = cookie(request, SESSION);
+    return token ? this.accounts.authenticate(token)?.digest : undefined;
+  }
   trustedOrigin(request: IdentityRequest): string | null { return this.authenticate(request) ? this.configuration.origin : null; }
   #owner(request: IdentityRequest): Owner | null {
     if (request.headers.authorization !== undefined) return null;

@@ -950,5 +950,14 @@
   "mobile.invalid": "Masukkan alamat HTTPS tanpa kelayakan, parameter pertanyaan atau fragmen.",
   "mobile.saveFailed": "Pilihan tidak dapat disimpan. Ruang kerja semasa tidak berubah.",
   "mobile.readFailed": "Sumber tersimpan tidak dapat dibaca. Cuba lagi atau pilih ruang kerja terbina dalam.",
-  "mobile.brand": "OpenCraft"
+  "mobile.brand": "OpenCraft",
+  "notifications.push.test": "OpenCraft · Pemberitahuan diaktifkan",
+  "settings.push.label": "Pemberitahuan respons latar belakang",
+  "settings.push.unavailable": "Log masuk ke pelayan yang menyokong pemberitahuan tolak.",
+  "settings.push.description": "Terima pemberitahuan untuk respons yang anda hantar pada pelayan ini, walaupun selepas menutup aplikasi.",
+  "settings.push.testLabel": "Semak penghantaran pemberitahuan",
+  "settings.push.test": "Hantar pemberitahuan ujian",
+  "settings.push.error": "Tidak dapat mengemas kini pemberitahuan tolak. Semak sambungan dan kebenaran pemberitahuan anda, kemudian cuba lagi.",
+  "settings.push.testSent": "Ujian dihantar ke perkhidmatan tolak. Semak pemberitahuan peranti anda.",
+  "settings.push.retry": "Cuba sambungan semula"
 }

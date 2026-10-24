@@ -948,5 +948,14 @@
   "mobile.invalid": "Enter an HTTPS address without credentials, query parameters or a fragment.",
   "mobile.saveFailed": "The selection could not be saved. Your current workspace has not changed.",
   "mobile.readFailed": "The saved source could not be read. Retry or explicitly choose the built-in workspace.",
-  "mobile.brand": "OpenCraft"
+  "mobile.brand": "OpenCraft",
+  "notifications.push.test": "OpenCraft · Notifications enabled",
+  "settings.push.label": "Background response notifications",
+  "settings.push.unavailable": "Sign in to a server that supports push notifications.",
+  "settings.push.description": "Receive notifications for responses you submit on this server, even after closing this app.",
+  "settings.push.testLabel": "Check notification delivery",
+  "settings.push.test": "Send test notification",
+  "settings.push.error": "Could not update push notifications. Check your connection and notification permission, then try again.",
+  "settings.push.testSent": "Test sent to the push service. Check your device notifications.",
+  "settings.push.retry": "Retry connection"
 }
