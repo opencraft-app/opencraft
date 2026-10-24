@@ -1,3 +1,5 @@
+import { OVERHOME_VIEW_ID } from "../runtime/mini-apps";
+import { ScheduledTaskCatalogContext, type ScheduledTaskCatalog } from "../runtime/scheduled-task-catalog-context";
 import { useIntl } from "@opencraft/i18n/react";
 import { groupWorkInMachines } from "../runtime/work-in-presentation";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -55,6 +57,10 @@ const SettingsNavigation = lazy(async () => {
   const module = await import("./settings-page");
   return { default: module.SettingsNavigation };
 });
+
+const EMPTY_SCHEDULE_CATALOG: ScheduledTaskCatalog = {
+  scheduleCatalogs: [], threads: [], discovery: null, retryDiscovery: async () => {}, openConversation: async () => false,
+};
 
 /** Valid zero-Host projection: no fake Composer and no built-in connection prompt. */
 export function HostlessWorkbench({
@@ -295,6 +301,7 @@ export function HostlessWorkbench({
 
   return (
     <QueryClientProvider client={supervisor.queryClient}>
+      <ScheduledTaskCatalogContext.Provider value={EMPTY_SCHEDULE_CATALOG}>
       <InternalDeveloperModeGate />
       <AppShellRouteRegionsProvider
         controller={routeHeader.controller}
@@ -305,6 +312,9 @@ export function HostlessWorkbench({
           settingsActive: routeSettingsOpen,
           updatesActive: routeSettingsOpen && applicationRoute.kind === 'settings' && applicationRoute.slug === 'updates',
           actions: [
+            { id: "shell.applications", title: intl.formatMessage({ id: "navigation.applications", defaultMessage: "Applications" }),
+              icon: "grid", active: applicationRoute.kind === "extension-view" && applicationRoute.viewId === OVERHOME_VIEW_ID,
+              onInvoke: () => openExtensionView(OVERHOME_VIEW_ID) },
             { id: "shell.chat", title: intl.formatMessage({ id: "navigation.chat", defaultMessage: "Chat" }), icon: "chat", active: applicationRoute.kind === "conversation", onInvoke: closeApplicationRoute },
             ...extensionProjection.primaryActions, ...extensionProjection.footerActions,
           ],
@@ -383,6 +393,7 @@ export function HostlessWorkbench({
       </AppShell>
       </AppShellRouteRegionsProvider>
       <ModalHost requests={modalRequests} />
+      </ScheduledTaskCatalogContext.Provider>
     </QueryClientProvider>
   );
 }

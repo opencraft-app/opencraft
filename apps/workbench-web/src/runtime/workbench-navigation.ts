@@ -11,6 +11,8 @@ import {
 } from "@opencraft/workbench-runtime";
 import { createBrowserRouter, createMemoryRouter } from "react-router";
 
+import { OVERHOME_VIEW_ID } from "./mini-apps";
+
 // Read-only input from the former Router. All current entries use v8 below.
 const LEGACY_HISTORY_NAMESPACE = "vela.application.route.v7";
 
@@ -118,6 +120,9 @@ export function parseApplicationRouteUrl(url: URL): ApplicationRoute {
         : "appearance",
     };
   }
+  if (url.pathname === "/overhome" || url.pathname === "/overhome/") {
+    return { kind: "extension-view", viewId: OVERHOME_VIEW_ID, resourceUri: null };
+  }
   const settingsMatch = /^\/settings\/([^/]+)\/?$/u.exec(url.pathname);
   if (settingsMatch !== null) try {
     const slug = decodeURIComponent(settingsMatch[1]!);
@@ -174,7 +179,8 @@ export function workbenchLocationUrl(
   if (applicationRoute.kind === "settings")
     return `/settings/${encodeURIComponent(applicationRoute.slug)}`;
   if (applicationRoute.kind === "extension-view") {
-    const path = `/views/${encodeURIComponent(applicationRoute.viewId)}`;
+    const path = applicationRoute.viewId === OVERHOME_VIEW_ID && applicationRoute.resourceUri === null
+      ? "/overhome" : `/views/${encodeURIComponent(applicationRoute.viewId)}`;
     if (applicationRoute.resourceUri === null) return path;
     const parameters = new URLSearchParams({ resource: applicationRoute.resourceUri });
     return `${path}?${parameters}`;
@@ -343,6 +349,7 @@ export function createApplicationNavigation<TLocation extends WorkbenchLocation 
   const pathFor = (location: TLocation, route: ApplicationRoute) =>
     location === null && route.kind === "conversation" ? "/"
       : route.kind === "settings" ? "/settings/" + encodeURIComponent(route.slug)
+      : route.kind === "extension-view" && route.viewId === OVERHOME_VIEW_ID && route.resourceUri === null ? "/overhome"
       : route.kind === "extension-view" ? "/views/" + encodeURIComponent(route.viewId)
         + (route.resourceUri === null ? "" : "?" + new URLSearchParams({ resource: route.resourceUri }))
       : workbenchLocationUrl(location!);

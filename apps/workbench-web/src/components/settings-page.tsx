@@ -3,7 +3,6 @@ import "../styles/settings-page.scss";
 import { useOptionalAsyncNotices } from "./async-notices";
 import { WorkbenchIcon } from "./ui/workbench-icon";
 import { useDismissSidebarAfterSelection } from "./shell-presentation";
-import { ConversationOverviewSetting } from "../features/conversation-overview/setting";
 import { ArchiveIcon as Archive, ArrowLeftIcon as ArrowLeft, ExtensionsIcon as Blocks, AgentIcon as Bot, DatabaseIcon as Database, LabIcon as FlaskConical, ServerIcon as Server } from "@opencraft/design-system-web/action-icons";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { FormattedMessage, useIntl } from "@opencraft/i18n/react";
@@ -509,7 +508,6 @@ export function SettingsContent({
                     <SettingsGroup>
                       <LanguageSetting />
                       <TouchDensitySetting />
-                      <ConversationOverviewSetting />
                       <SettingsRow
                         label={intl.formatMessage({ id: "settings.appearance", defaultMessage: "Appearance" })}
                         description={intl.formatMessage({ id: "settings.appearance.follow", defaultMessage: "Follow the system or keep one appearance." })}

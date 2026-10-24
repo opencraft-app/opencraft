@@ -92,22 +92,11 @@ result when its metadata index is partial, failed or unavailable. Message search
 keeps its own provider/capability/cursor state and does not depend on sidebar row
 limits. Goal enrichment and unread catch-up wait for the final metadata page.
 
-The optional conversation overview is isolated in
-`apps/workbench-web/src/features/conversation-overview`. Appearance controls its
-installation preference (off by default). It reuses this same admitted catalog
-and source-incarnation checks; each visible card reads only the latest two
-`thread/turns/list` summaries. Reads have two lanes per Host, are fenced before
-and after the reply, and stop queuing when the card or document is hidden.
-Running/goal cards catch up every four seconds in the foreground; metadata
-changes and foreground recovery also refresh previews. No Thread is resumed,
-no interaction/execution lease or read receipt is acquired, and preview text is
-discarded with the overview's Query observers. There is no full-history fallback
-on unsupported Servers. Catalog errors remain scoped and retryable, separate
-from an empty successful directory. Opening a card uses the existing committed
-navigation transaction and keeps the overview on failure. While the overview
-covers the current conversation, its underlying result visibility cannot
-acknowledge unread results. Removing the feature requires only its documented
-UI/setting/source integration points and no account or execution migration.
+The former optional conversation-card overview and its preview readers have been
+removed. Overhome is an application route and reads only the extension catalog;
+it does not read conversation previews, resume Threads or acknowledge results.
+The existing task-board statistics adapter remains independent.
+
 Automatic reconnect uses 500ms/1s/2s/5s/15s/30s/60s delays, capped at 60s.
 Connection attempts and inbound server requests have separate owners. A WebSocket
 attempt installs its promise and cancellation before publishing `connecting`;

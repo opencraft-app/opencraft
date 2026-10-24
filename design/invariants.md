@@ -234,3 +234,12 @@
 - <a id="presentation-power-ownership"></a>[Presentation power ownership](invariants/lifecycle-and-verification.md#presentation-power-ownership)
 - <a id="startup-and-deferred-presentation"></a>[Startup and deferred presentation](invariants/lifecycle-and-verification.md#startup-and-deferred-presentation)
 - <a id="shared-measurement-transaction-ownership"></a>[Shared measurement transaction ownership](invariants/lifecycle-and-verification.md#shared-measurement-transaction-ownership)
+
+### Overhome desktop
+
+Applications opens the [miniapp desktop](../docs/architecture/platform/shell-and-navigation.md#overhome-and-miniapps)
+through the existing Router. Its grid consumes extension-owned launch declarations;
+its route owns the scrollport, shared controls own focus/hover/touch feedback and
+the shared icon owner supplies glyphs. Returning to Chat preserves its draft,
+selection and running execution. The retired conversation-card overview and its
+Appearance setting are absent; task-board statistics remain independent.

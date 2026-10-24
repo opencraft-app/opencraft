@@ -22,7 +22,7 @@ import { canHandleWorkbenchShortcut, matchesWorkbenchShortcut, shortcutLabel } f
 import { WorkbenchShortcutHelp } from "./components/workbench-shortcut-help";
 import { WorkbenchPresentationActivityProvider } from "./components/workbench-presentation-activity";
 import { ConversationSearch, type ConversationSearchTarget } from "./components/conversation-search";
-import { ConversationOverview, useConversationOverview } from "./features/conversation-overview";
+import { OVERHOME_VIEW_ID } from "./runtime/mini-apps";
 import { ImageEditorContext } from "@opencraft/extension-react";
 import { IdentityAvatarContext } from "@opencraft/extension-react";
 import { submitEmbeddedPrompt } from "./embedded-chat/embedded-prompt-submission";
@@ -299,7 +299,6 @@ export function App({
   const internalDeveloperMode = useInternalDeveloperMode();
   const [accountOpen, setAccountOpen] = useState(false);
   const [conversationSearchOpen, setConversationSearchOpen] = useState(false);
-  const conversationOverview = useConversationOverview();
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
   const [conversationSearchTarget, setConversationSearchTarget] = useState<(ConversationSearchTarget & { hostId: string; threadId: string }) | null>(null);
   const [closingSideChat, setClosingSideChat] = useState<{ ownerId: string; tab: PanelTabDescriptor } | null>(null);
@@ -503,9 +502,9 @@ export function App({
   }, [composerController, pendingFirstSubmission, conversationRouteOpen]);
 
   useEffect(() => {
-    hostCatalog.setConversationPresentationActive?.(conversationRouteOpen && !conversationOverview.open);
+    hostCatalog.setConversationPresentationActive?.(conversationRouteOpen);
     return () => hostCatalog.setConversationPresentationActive?.(false);
-  }, [hostCatalog.setConversationPresentationActive, conversationRouteOpen, conversationOverview.open]);
+  }, [hostCatalog.setConversationPresentationActive, conversationRouteOpen]);
   const settingsSection =
     workbenchNavigationSnapshot.applicationRoute.kind === "settings"
       ? workbenchNavigationSnapshot.applicationRoute.slug
@@ -1692,7 +1691,8 @@ export function App({
   const pageTitle = routeSettingsOpen
     ? null
     : extensionViewOpen
-      ? (extensionProjection.activeView?.title ?? null)
+      ? (workbenchNavigationSnapshot.applicationRoute.kind === "extension-view" && workbenchNavigationSnapshot.applicationRoute.viewId === OVERHOME_VIEW_ID
+        ? intl.formatMessage({ id: "navigation.applications", defaultMessage: "Applications" }) : extensionProjection.activeView?.title ?? null)
       : draft === null
         ? (activeThread?.title ?? "Untitled task")
         : null;
@@ -1912,7 +1912,10 @@ export function App({
               { id: "shell.home", title: intl.formatMessage({ id: "navigation.home", defaultMessage: "Home" }), icon: "home", active: conversationRouteOpen,
                 onInvoke: workbenchNavigation.openChat },
               ...extensionProjection.primaryActions, ...extensionProjection.footerActions, ...workNavigationActions,
-              ...(conversationOverview.action ? [conversationOverview.action] : []),
+              { id: "shell.applications", title: intl.formatMessage({ id: "navigation.applications", defaultMessage: "Applications" }),
+                icon: "grid", active: extensionViewOpen && workbenchNavigationSnapshot.applicationRoute.kind === "extension-view"
+                  && workbenchNavigationSnapshot.applicationRoute.viewId === OVERHOME_VIEW_ID,
+                onInvoke: () => workbenchNavigation.openExtensionView(OVERHOME_VIEW_ID) },
               { id: "shell.search", title: intl.formatMessage({ id: "sidebar.search", defaultMessage: "Search conversations" }) + ` (${shortcutLabel("search")})`, icon: "search", onInvoke: () => setConversationSearchOpen(true) },
             ],
             account: extensionProjection.account === null ? null : {
@@ -2005,7 +2008,7 @@ export function App({
         >
         {panelHost ? createPortal(rightPanelView, panelHost.target) : null}
         <div className="workbench-route-stage">
-          <WorkbenchPresentationActivityProvider active={conversationRouteOpen && !conversationOverview.open}>
+          <WorkbenchPresentationActivityProvider active={conversationRouteOpen}>
           <div
             aria-hidden={!conversationRouteOpen || undefined}
             className="workbench-conversation-route"
@@ -2094,7 +2097,7 @@ export function App({
                       || target.key.threadId !== activeThreadId) return false;
                     return composerController.appendQuote(text);
                   } : undefined}
-                  onTerminalResultVisible={showingDisplayCache || conversationOverview.open ? undefined : (turnId) => {
+                  onTerminalResultVisible={showingDisplayCache ? undefined : (turnId) => {
                     if (activeThreadId !== null) hostCatalog.threadAttention.acknowledge(
                       attentionScope, snapshot.hostId, activeThreadId, turnId);
                   }}
@@ -2313,11 +2316,6 @@ export function App({
           ) : null}
         </div>
         {shortcutHelpOpen ? <WorkbenchShortcutHelp onClose={() => setShortcutHelpOpen(false)} /> : null}
-        <ConversationOverview open={presentation.shellNavigation && conversationOverview.open} onClose={conversationOverview.close}
-          threads={multiHostCatalog.threads} sources={multiHostCatalog.overviewSources} catalogs={multiHostCatalog.catalogs}
-          loading={multiHostCatalog.discovery === "loading" || multiHostCatalog.catalogs.some(catalog => catalog.phase === "loading")}
-          discovery={multiHostCatalog.discovery} onRetryDiscovery={multiHostCatalog.retryDiscovery} onRetry={multiHostCatalog.retry}
-          onSelect={(hostId, threadId) => hostCatalog.selectConversation(createWorkbenchThreadLocation(hostId, threadId))} />
         <ConversationSearch enabled={presentation.shellNavigation} open={conversationSearchOpen} onOpenChange={setConversationSearchOpen}
           sources={multiHostCatalog.searchSources}
           incomplete={multiHostCatalog.discovery === "error" || multiHostCatalog.catalogs.some(catalog => catalog.phase === "error" || catalog.phase === "unavailable" || catalog.partial)}

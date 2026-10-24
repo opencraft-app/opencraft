@@ -45,7 +45,6 @@ test("IndexedDB installation preferences survive runtime recreation", async () =
     first.set("shell.navigationWidth", 132),
     first.set("shell.contextSidebarWidth", 360),
     first.set("sidebar.serverFilter", { serverId: "ssh:fixture", label: "Remote fixture" }),
-    first.set("sidebar.conversationOverview", true),
   ]);
   await first.close();
 
@@ -62,7 +61,6 @@ test("IndexedDB installation preferences survive runtime recreation", async () =
   assert.equal(second.get("shell.navigationWidth"), 132);
   assert.equal(second.get("shell.contextSidebarWidth"), 360);
   assert.deepEqual(second.get("sidebar.serverFilter"), { serverId: "ssh:fixture", label: "Remote fixture" });
-  assert.equal(second.get("sidebar.conversationOverview"), true);
   assert.equal(second.storedRevision("shell.applicationsPinned"), 1);
   await second.close();
 });

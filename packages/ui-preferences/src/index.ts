@@ -18,7 +18,6 @@ export interface UiPreferenceValues {
   readonly "shell.navigationWidth": number;
   readonly "shell.contextSidebarWidth": number;
   readonly "sidebar.serverFilter": { readonly serverId: string; readonly label: string };
-  readonly "sidebar.conversationOverview": boolean;
 }
 
 export type UiPreferenceKey = keyof UiPreferenceValues;
@@ -53,9 +52,6 @@ export const uiPreferenceDefinitions = Object.freeze({
       }
       return Object.fromEntries(entries.map(([key, ids]) => [key, [...ids]]));
     },
-  },
-  "sidebar.conversationOverview": {
-    key: "sidebar.conversationOverview", scope: "installation", defaultValue: false, parse: booleanValue,
   },
   "chat.modelSelections": {
     key: "chat.modelSelections", scope: "installation", defaultValue: {},

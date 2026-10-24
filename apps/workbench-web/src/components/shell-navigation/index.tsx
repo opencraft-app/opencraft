@@ -261,6 +261,11 @@ export function ShellNavigationFooter({ config, controller, visible = true, mobi
     {availableSurfaces.map(surface => {
       const surfaceLabel = surface === "account" ? accountLabel! : intl.formatMessage(labels.applications);
       const directSignIn = surface === "account" && anonymousAccount;
+      const applicationAction = surface === "applications" ? config.actions.find(action => action.id === "shell.applications") : undefined;
+      if (applicationAction) return <button key={surface} id={`${entranceId}-${surface}`} type="button"
+        className="shell-navigation__entrance" data-surface={surface} aria-label={surfaceLabel}
+        aria-current={applicationAction.active ? "page" : undefined} title={surfaceLabel}
+        onClick={() => onInvoke(applicationAction.onInvoke)}><NavigationIcon name="grid" selected={applicationAction.active} /></button>;
       if (directSignIn && config.account?.signIn) return <AccountSignInMenu key={surface}
         account={config.account} signIn={config.account.signIn} id={`${entranceId}-${surface}`}
         visible={visible} container={root.current} onOpenSettings={() => onInvoke(config.onOpenSettings)} />;

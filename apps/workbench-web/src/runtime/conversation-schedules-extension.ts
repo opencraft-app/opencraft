@@ -10,6 +10,10 @@ export const conversationSchedulesExtension: TrustedExtensionDefinition = {
     api.settings.registerPage({ id, title: "Scheduled tasks", titleMessage: { id: "schedules.catalog.title", defaultMessage: "Scheduled tasks" },
       shortTitleMessage: { id: "schedules.catalog.title", defaultMessage: "Scheduled tasks" }, viewId: `${id}.view`, icon: "calendar", order: 304,
       layout: "document", platforms: ["web", "electron"], management: { familyId: id, scope: "host", entryPoint: "workbench" } });
+    api.navigation.register({ id: `${id}.app`, title: "Scheduled tasks",
+      titleMessage: { id: "schedules.catalog.title", defaultMessage: "Scheduled tasks" },
+      surface: "applications", target: { kind: "settings", pageId: id }, icon: "calendar", order: 100,
+      platforms: ["web", "electron"] });
     api.internal.register("platformViewRenderer", { viewType: id, Component: createDeferredView(async () => (await import("../components/scheduled-tasks-page")).ScheduledTasksPage) });
   },
 };

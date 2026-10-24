@@ -135,3 +135,24 @@ equal orders use page ID order. Pages without this declaration remain ordinary
 Settings pages. A declaration without a target Host is rejected atomically.
 Run navigation lists enabled Hosts' declared configuration pages in their normal
 page order. The extension remains responsible for its page and model credentials.
+
+### Miniapp desktop entries
+
+A trusted extension can expose an existing View or Settings page on Overhome by
+registering a navigation entry with `surface: "applications"`:
+
+```ts
+api.navigation.register({
+  id: "example.clock.app", title: "Clock", icon: "calendar",
+  surface: "applications", target: { kind: "view", viewId: "example.clock.view" },
+  platforms: ["web", "electron"],
+});
+```
+
+Register the target View and its renderer through the existing extension boundary
+before publication. `MiniAppContribution` names this launch declaration; the
+original registry owns activation, identity and retirement. The desktop filters
+platform/audience and renderable targets, then uses the normal application Router.
+A miniapp entry grants no resource permission and cannot invoke an execution
+command. This adds no downloaded-code runtime or public renderer ABI; see
+[Overhome ownership](architecture/platform/shell-and-navigation.md#overhome-and-miniapps).

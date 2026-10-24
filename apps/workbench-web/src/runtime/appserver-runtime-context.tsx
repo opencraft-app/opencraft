@@ -4,7 +4,6 @@ import type { HostScheduleCatalog } from "./scheduled-task-catalog-context";
 import type { ConversationScheduleSummary, ConversationSchedulesRequestPort } from "@opencraft/appserver-protocol";
 import { ApplicationBrandingRegistry } from "./application-branding";
 import { createAppServerContentSearchSource, type ConversationSearchSource } from "./conversation-content-search";
-import { createConversationOverviewSource, type ConversationOverviewSource } from "../features/conversation-overview/source";
 import { IdentityAvatarContributionRegistry } from "./identity-avatar-contributions";
 import { useAccountModelDefaults } from "./use-account-model-defaults";
 import { readModelSelection, rememberModelSelection } from "./model-selection-preferences";
@@ -576,7 +575,6 @@ export function useMultiHostThreadCatalog(): {
   readonly scheduleCatalogs: readonly HostScheduleCatalog[];
   readonly threads: readonly MultiHostWorkbenchThread[];
   readonly searchSources: readonly ConversationSearchSource[];
-  readonly overviewSources: readonly ConversationOverviewSource[];
   readonly isFetching: boolean;
   readonly catalogs: readonly HostThreadCatalogState[];
   readonly retry: (hostId: string) => Promise<void>;
@@ -801,12 +799,9 @@ export function useMultiHostThreadCatalog(): {
       project: thread => ({ ...projectAppServerThread(thread),
         ...legacyDirectServerProjectionFromHost({ hostId: host.hostId, hostKind: host.kind, label: host.label }),
         connectionHostId: host.hostId, interactionAvailable: true }),
-    }), overview: createConversationOverviewSource({
-      ...scope, supported: runtime?.resources.host.canRequest?.("thread/turns/list") !== false,
     }) };
   }), [application, hosts, searchScope]);
   const searchSources = useMemo(() => conversationSources.map(source => source.search), [conversationSources]);
-  const overviewSources = useMemo(() => conversationSources.map(source => source.overview), [conversationSources]);
   const catalogs = useMemo(() => hosts.map((host, index) => ({
       hostId: host.hostId,
       label: host.label,
@@ -875,7 +870,6 @@ export function useMultiHostThreadCatalog(): {
     }),
     threads,
     searchSources,
-    overviewSources,
     discovery: managedCatalogDiscoveryPhase(management),
     retryDiscovery: () => application.managedHostCatalog?.refresh() ?? Promise.resolve(),
     isFetching: queries.some((query) => query.isFetching),
