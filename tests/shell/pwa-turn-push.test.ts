@@ -8,8 +8,8 @@ const subscription={endpoint:'https://web.push.apple.com/Q',keys:{p256dh:'key',a
 const messages={completed:'Complete',failed:'Failed',interrupted:'Stopped',body:'Open',test:'Test'};
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
 function setup() {
- const operations:string[]=[],order:string[]=[];let has=false,enabled=false,fail=false;let testGate:Promise<void>|null=null;
- const device={supported:true,permission:()=>'granted' as const,getSubscription:async()=>has?subscription:null,subscribe:async()=>{order.push('permission');has=true;return subscription;},unsubscribe:async()=>{has=false;},dispose(){}};
+ const operations:string[]=[],order:string[]=[];let has=false,enabled=false,fail=false;let permission:'granted'|'denied'='granted';let testGate:Promise<void>|null=null;
+ const device={supported:true,permission:()=>permission,getSubscription:async()=>has?subscription:null,subscribe:async()=>{order.push('permission');has=true;return subscription;},unsubscribe:async()=>{has=false;},dispose(){}};
  const fetcher=(async (_input:any,init:any)=>{
   if(!init?.body)return Response.json({available:true,publicKey:'public',actorId:'actor',hosts:['local-codex']});
   const input=JSON.parse(init.body);operations.push(input.operation);order.push(input.operation);
@@ -19,7 +19,7 @@ function setup() {
   return Response.json({enabled,sent:input.operation==='test'});
  }) as typeof fetch;
  const controller=new PwaTurnPushController(device,fetcher);controller.configure('en-US',messages);
- return {controller,operations,order,setFail:()=>{fail=true;},has:()=>has,holdTest:()=>{let release=()=>{};testGate=new Promise<void>(resolve=>{release=resolve;});return release;}};
+ return {controller,operations,order,setFail:()=>{fail=true;},has:()=>has,deny:()=>{permission="denied";},holdTest:()=>{let release=()=>{};testGate=new Promise<void>(resolve=>{release=resolve;});return release;}};
 }
 test('permission stays in user gesture; server acknowledgement owns enabled state and local notification routing',async()=>{
  const f=setup();await settle();assert.equal(f.controller.getSnapshot().phase,'disabled');
@@ -63,4 +63,11 @@ test('a late test acknowledgement cannot re-enable a signed-out device',async()=
  const f=setup();await settle();await f.controller.enable();const release=f.holdTest();
  const pending=f.controller.test();await f.controller.beforeSignOut();assert.equal(f.has(),false);
  release();await pending;assert.equal(f.controller.getSnapshot().enabled,false);assert.equal(f.controller.getSnapshot().testSent,false);f.controller.dispose();
+});
+
+
+test('revoked notification permission clears consent and exposes an OS-settings state',async()=>{
+ const f=setup();await settle();await f.controller.enable();f.deny();await f.controller.refresh();
+ assert.equal(f.controller.getSnapshot().phase,'blocked');assert.equal(f.controller.getSnapshot().enabled,false);assert.equal(f.has(),false);
+ const count=f.order.filter(value=>value==='permission').length;await f.controller.enable();assert.equal(f.order.filter(value=>value==='permission').length,count);f.controller.dispose();
 });

@@ -3,7 +3,7 @@ import { browserServerContext, serverFetch } from './server-context';
 
 export interface PushMessages { completed:string;failed:string;interrupted:string;body:string;test:string }
 export interface TurnPushSnapshot {
-  readonly phase:'loading'|'unavailable'|'disabled'|'enabling'|'enabled'|'disabling'|'testing'|'error';
+  readonly phase:'loading'|'unavailable'|'blocked'|'disabled'|'enabling'|'enabled'|'disabling'|'testing'|'error';
   readonly enabled:boolean;
   readonly testSent:boolean;
 }
@@ -52,6 +52,11 @@ export class PwaTurnPushController {
       const subscription=await this.device.getSubscription();
       if(this.disposed || generation!==this.generation)return;
       this.subscription=subscription;
+      if(this.device.permission()!=='granted') {
+        if(subscription) {await this.operation('unsubscribe',subscription);await this.device.unsubscribe();this.subscription=null;}
+        if(generation===this.generation)this.publish(this.device.permission()==='denied'?'blocked':'disabled',false);
+        return;
+      }
       const result=this.subscription ? await this.operation('status',this.subscription) : {enabled:false};
       if(this.disposed || generation!==this.generation)return;
       if (!result.enabled && this.subscription) {
@@ -63,6 +68,7 @@ export class PwaTurnPushController {
   };
   async enable() {
     if(this.disposed || this.busy || !this.configuration || !this.messages)return;
+    if(this.device.permission()==='denied'){this.publish('blocked',false);return;}
     this.busy=true;const generation=++this.generation;this.publish('enabling',false);
     this.revoking=false;
     try {

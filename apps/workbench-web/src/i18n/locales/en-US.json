@@ -957,5 +957,6 @@
   "settings.push.test": "Send test notification",
   "settings.push.error": "Could not update push notifications. Check your connection and notification permission, then try again.",
   "settings.push.testSent": "Test sent to the push service. Check your device notifications.",
-  "settings.push.retry": "Retry connection"
+  "settings.push.retry": "Retry connection",
+  "settings.push.blocked": "Allow notifications for this app in iOS Settings, then return here."
 }

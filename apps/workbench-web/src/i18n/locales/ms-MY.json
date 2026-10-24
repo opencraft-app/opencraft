@@ -959,5 +959,6 @@
   "settings.push.test": "Hantar pemberitahuan ujian",
   "settings.push.error": "Tidak dapat mengemas kini pemberitahuan tolak. Semak sambungan dan kebenaran pemberitahuan anda, kemudian cuba lagi.",
   "settings.push.testSent": "Ujian dihantar ke perkhidmatan tolak. Semak pemberitahuan peranti anda.",
-  "settings.push.retry": "Cuba sambungan semula"
+  "settings.push.retry": "Cuba sambungan semula",
+  "settings.push.blocked": "Benarkan pemberitahuan untuk aplikasi ini dalam Tetapan iOS, kemudian kembali ke sini."
 }

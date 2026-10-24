@@ -13,8 +13,10 @@ export function PwaPushSettings({controller}:{controller:PwaTurnPushController})
     <SettingsGroup>
     <SettingsRow label={label} controlWidth="compact" description={snapshot.phase==='unavailable'
       ? intl.formatMessage({id:'settings.push.unavailable',defaultMessage:'Sign in to a server that supports push notifications.'})
+      : snapshot.phase==='blocked'
+      ? intl.formatMessage({id:'settings.push.blocked',defaultMessage:'Allow notifications for this app in iOS Settings, then return here.'})
       : intl.formatMessage({id:'settings.push.description',defaultMessage:'Receive notifications for responses you submit on this server, even after closing this app.'})}>
-      <SettingsSwitch label={label} checked={snapshot.enabled} disabled={busy || snapshot.phase==='unavailable'}
+      <SettingsSwitch label={label} checked={snapshot.enabled} disabled={busy || snapshot.phase==='unavailable' || snapshot.phase==='blocked'}
         onCheckedChange={enabled=>{void (enabled?controller.enable():controller.disable());}} />
     </SettingsRow>
     {snapshot.enabled ? <SettingsRow label={intl.formatMessage({id:'settings.push.testLabel',defaultMessage:'Check notification delivery'})} controlWidth="compact">
