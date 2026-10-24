@@ -29,10 +29,8 @@
     letter-spacing: var(--typography-metadata-tracking);
   }
 
-  // 2910064124), not an intrinsic property of a code fence. Its negative
-  // offset cancels the thread scrollport's retained sticky-header padding;
-  // the generic floating-content inset belongs to PIP/rails and is not this
-  // coordinate system.
+  // Sticky captions compensate for the thread scrollport's retained header
+  // padding; the generic floating-content inset uses a different coordinate space.
   &[data-code-sticky-header="true"] figcaption {
     position: sticky;
     z-index: 10;

@@ -389,14 +389,12 @@ apps/workbench-desktop/src/browser/
 
 ### Browser Host registry contract (2026-10-20)
 
-The explicitly copied manager class is independently expressed from frozen
-consumer contracts and opaque execution. It owns stable storage modes, Host
+`BrowserHostRegistry` owns stable storage modes, Host
 registration attempts, mount claims, browser-use projection, transfer/prewarm
 and cleanup; the existing independent transition continues to own paint handoff.
 Current Host reference and registration-attempt identity fence asynchronous
 results. A presentation release does not close its logical Page or backing.
 The real Web consumer baseline preserves iframe/document/draft identity across
 remount, rapid switching, live resize and a device/floating presentation.
-Historical hashes and the current module lock remain separate. Native teardown
-policy was observed through an explicit synthetic port, not a new Web Host
-capability.
+Native teardown policy was observed through an explicit synthetic port, not a
+new Web Host capability.

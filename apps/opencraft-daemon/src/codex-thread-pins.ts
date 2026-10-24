@@ -1,6 +1,6 @@
 import { parseThreadPinsSnapshot, type ThreadPinsSnapshot } from "@opencraft/appserver-protocol";
 
-// Native reserved section used by Codex 26.930.31428. Never match its translated name.
+// Match the reserved pinned section by stable ID, never its translated name.
 export const CODEX_PINNED_SECTION_ID = "01984de2-8f74-7c91-a3b2-5c5e937cf318";
 type Request = (method: string, params: Record<string, unknown>) => Promise<unknown>;
 const record = (v: unknown): Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v) ? v as Record<string, unknown> : {};

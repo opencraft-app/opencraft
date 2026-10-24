@@ -166,7 +166,7 @@ export class WebConversationViewportOwner {
   };
 
   /**
-   * ThreadScrollLayout owns footer geometry. React only attaches the element;
+   * This viewport owner manages footer geometry. React only attaches the element;
    * no footer height is mirrored through component state or the virtualizer.
    */
   readonly attachFooterElement = (element: HTMLElement | null): void => {

@@ -22,9 +22,9 @@ import {
 const PanelRuntimeContext = createContext<WorkbenchPanelReactRuntime | null>(null);
 
 export async function createWorkbenchPanelRuntime(context?: Context) {
-  // only lets an explicit panel route/action take width from the thread.
-  // Keeping the service default (closed) also prevents an empty initial tab
-  // from changing the measured MainContentViewport and its edge-scroll mode.
+  // Keep the panel closed until an explicit route or action requests width,
+  // so an empty initial tab cannot change conversation viewport measurements
+  // or edge scrolling.
   return createWorkbenchPanelReactRuntime({}, context);
 }
 
