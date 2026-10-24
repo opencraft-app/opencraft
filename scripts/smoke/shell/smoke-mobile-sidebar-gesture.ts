@@ -22,8 +22,21 @@ const arbitrationMarkdown = [
   "| " + Array.from({length:8},()=>"---").join(" | ") + " |",
   ...Array.from({length:4},(_,row)=>"| "+Array.from({length:8},(_,i)=>"Cell_"+row+"_"+i+"_readable_value").join(" | ")+" |"),
 ].join("\n");
+const edgeProbe = process.env.OPENCRAFT_GESTURE_EDGE_ONLY === "1";
 const source = `
 import{bindInteractionDensity}from'/apps/workbench-web/src/runtime/interaction-density';
+import{createClientRuntime}from'/apps/workbench-web/src/runtime/client-runtime';
+import{createEdgeGestureBridge}from'/apps/workbench-web/src/runtime/edge-gesture-bridge';
+let inputRuntime=createClientRuntime(document);inputRuntime.start();
+let releaseInjectedBridge=()=>{};
+if(new URLSearchParams(location.search).has('bridged')){
+  const bridge=createEdgeGestureBridge();
+  const forward=event=>{event.preventDefault();bridge.handoff(event,event.touches[0]?.clientX<innerWidth/2?'left':'right')};
+  window.addEventListener('touchstart',forward,{capture:true,passive:false});
+  releaseInjectedBridge=()=>{bridge.dispose();window.removeEventListener('touchstart',forward,true)};
+}
+window.retireInputRuntime=()=>{releaseInjectedBridge();inputRuntime.dispose()};
+window.rebindInputRuntime=()=>{inputRuntime=createClientRuntime(document);inputRuntime.start()};
 import React,{useState,useEffect,useSyncExternalStore} from 'react';
 import {CommandBlock} from '/apps/workbench-web/src/components/conversation-renderers/activity/command-and-review-renderers.tsx';
 import {WebChatDocument} from '@opencraft/chat-render-web';
@@ -90,14 +103,15 @@ const evidence: any[] = [];
 try {
   await mkdir(output, { recursive: true }); await vite.listen();
   browser = await chromium.launch({ executablePath: process.env.OPENCRAFT_CHROMIUM_EXECUTABLE, args: ["--no-sandbox"] });
-  for (const reducedMotion of (process.env.OPENCRAFT_GESTURE_MOTION ? [process.env.OPENCRAFT_GESTURE_MOTION] : ["no-preference", "reduce"])) for (const theme of ["light", "dark"]) for (const shadow of (process.env.OPENCRAFT_GESTURE_MODAL_ONLY === '1' ? [false,true] : [false])) {
+  for (const reducedMotion of (process.env.OPENCRAFT_GESTURE_MOTION ? [process.env.OPENCRAFT_GESTURE_MOTION] : ["no-preference", "reduce"])) for (const theme of ["light", "dark"]) for (const shadow of (process.env.OPENCRAFT_GESTURE_MODAL_ONLY === '1' ? [false,true] : [false])) for (const inputHost of (edgeProbe ? ["web", "pwa", "bridge"] : ["web"])) {
     const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, reducedMotion });
+    await context.addInitScript(host => { if(host === "pwa") Object.defineProperty(navigator,"standalone",{value:true}); }, inputHost);
     const page = await context.newPage(); page.setDefaultTimeout(8000);
     const errors: string[] = []; page.on("pageerror", (e: Error) => { errors.push(e.message); console.error(e.stack); });
     page.on("requestfailed", request => console.error("fixture request failed", request.url(), request.failure()));
     page.on("console", message => { if (message.type() === "error") console.error("fixture console", message.text()); });
     await page.addInitScript("window.__name=value=>value");
-    await page.goto(`http://127.0.0.1:${(vite.httpServer!.address() as any).port}${shadow?"?shadow=1":""}`, {timeout:60000});
+    await page.goto(`http://127.0.0.1:${(vite.httpServer!.address() as any).port}${shadow?"?shadow=1":inputHost==="bridge"?"?bridged=1":""}`, {timeout:60000});
     await page.waitForFunction(() => !!(window as any).fixture, null, { timeout: 30000 });
     await page.evaluate(theme => (window as any).fixture.setThemePreference(theme), theme);
     // Simulate notch/Home Indicator CSS env projections, which Chromium's mobile emulation leaves at zero.
@@ -154,6 +168,58 @@ try {
       }
     };
     await closed();
+    if (edgeProbe) {
+      const row = page.locator('.app-shell-row');
+      const position = () => row.evaluate(e => e.getBoundingClientRect().x);
+      const wait = () => page.waitForTimeout(reducedMotion === 'reduce' ? 70 : 650);
+      const handed = inputHost !== 'web';
+      const hold = async (from: number, to: number, y = 250) => {
+        await touch('touchStart',from,y);
+        for(let i=1;i<=8;i++){await touch('touchMove',from+(to-from)*i/8,y);await page.waitForTimeout(20);}
+        return position();
+      };
+      const draft=page.getByRole('textbox',{name:'Draft',exact:true});
+      const draftNode=await draft.elementHandle();await draft.fill('Keep edge bridge draft');
+      const heldOpen=await hold(4,230);
+      assert.equal(heldOpen>100,handed,'held edge input must reach the existing drawer');
+      await touch('touchEnd');await wait();
+      if(handed)await opened();else{
+        await closed();await page.locator('.app-shell-header [data-app-shell-sidebar-trigger]').click();
+        await page.waitForFunction(()=>document.querySelector('.app-shell-row')!.getBoundingClientRect().x>200);await wait();
+      }
+      const openX=await position();const heldClose=await hold(386,80);
+      assert(openX>200,'close starts with an actually visible drawer');
+      assert.equal(heldClose<openX-100,handed,'opposite edge must drive existing close motion');
+      await touch('touchEnd');await wait();
+      // Unclaimed Web contacts retain native/DOM end handling, including clicks.
+      if(handed)await closed();else{await page.evaluate(()=>(window as any).fixture.setOpen(false));await wait();}
+      if(handed){
+        assert(await hold(4,140)>50);await touch('touchCancel');await wait();await closed();
+        assert(await hold(4,170)>50);await touch('touchMove',4,250);await touch('touchEnd');await wait();await closed();
+        // The full shared24px gutter has no native/application dead band.
+        await drag(22,270);await opened();await drag(386,80);await closed();
+        const input=await draft.boundingBox();assert(input);
+        await drag(input.x+4,240,input.y+input.height/2);await closed();
+        await page.evaluate(()=>(window as any).fixture.setModal(true));await page.waitForTimeout(120);
+        await drag(4,230);assert(Math.abs(await position())<1,'foreground modal retains input');
+        await page.keyboard.press('Escape');await page.waitForTimeout(120);
+        await page.setViewportSize({width:430,height:844});await wait();
+        await drag(4,260);await opened();await drag(426,70);await closed();
+        await page.setViewportSize({width:390,height:844});await wait();
+        await page.evaluate(()=>(window as any).retireInputRuntime());
+        await drag(4,230);await closed();
+        if(inputHost==='pwa'){
+          // Rebind after consumer mount: bridge capture order stays authoritative.
+          await page.evaluate(()=>(window as any).rebindInputRuntime());
+          await drag(4,260);await opened();await drag(386,70);await closed();
+        }
+      }
+      assert.equal(await draft.inputValue(),'Keep edge bridge draft');
+      assert(await draftNode!.evaluate(e=>e===document.querySelector('input[aria-label="Draft"]')));
+      assert.deepEqual(errors,[]);evidence.push({theme,reducedMotion,inputHost,heldOpen,heldClose,openX,handoff:handed,draftRetained:true});
+      await page.screenshot({path:`${output}/edge-${inputHost}-${theme}-${reducedMotion}.png`});
+      await context.close();continue;
+    }
     if (process.env.OPENCRAFT_GESTURE_MODAL_ONLY === '1') {
       const preview=page.getByRole('button',{name:'Boundary preview',exact:true});
       const dialog=page.locator('dialog[open]');

@@ -272,9 +272,14 @@ physical compositor painting or device acceptance.
 
 PwaRuntime suppresses native history traversal in iOS Home Screen apps
 (`navigator.standalone === true`). A non-passive capture listener cancels
-single-finger `touchstart` in either outermost 20 CSS pixels, before WebKit admits
-its history recognizer. The right boundary follows current viewport width. This strip remains inside the sidebar's reserved 24px edge;
-it does not become a second sidebar gesture owner. Cancelling the initial contact
+single-finger `touchstart` in either outermost 24 CSS pixels, before WebKit admits
+its history recognizer. The right boundary follows current viewport width. The
+adapter hands the original contact through the shared edge-input bridge, with
+Window capture preceding document consumers even after rebind. Shell accepts the
+handoff without host detection and retains its original gesture/progress/open
+owner. The bridge and Shell use one 24px gutter; no synthetic event replay or
+second sidebar state machine is introduced. Adapter disposal revokes handoffs.
+Cancelling the initial contact
 also reserves edge-origin taps/scrolls; normal content and controls are inset.
 Middle contacts and simultaneous multi-touch retain native handling.
 Ordinary browser tabs, embedded documents and Electron are unaffected. History

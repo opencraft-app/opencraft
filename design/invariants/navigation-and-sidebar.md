@@ -61,8 +61,10 @@ The Shell owns one progress MotionValue for direct manipulation, reversal and
 settling. Short slow gestures return to the starting intent; distance or a
 horizontal flick commits. Cancellation, multitouch and resize return to the
 starting intent. Vertical scrolling, editors, exclusive gesture regions,
-selection, menus and dialogs keep their own input; the outer 24px remains reserved for
-browser/OS gestures. Ordinary buttons, links and clickable content (including
+selection, menus and dialogs keep their own input. Unclaimed outer 24px contacts
+remain reserved for browser/OS gestures. A Runtime adapter may hand the original
+contact through the shared edge-input bridge; the same sidebar arbitration then
+accepts it without checking PWA, Web, Electron or presentation markers. Ordinary buttons, links and clickable content (including
 reasoning/tool disclosures and image previews) do not own horizontal input merely
 because they are clickable. They may start a sidebar gesture; taps and small
 unrecognized movement still activate the original control. A recognized swipe
@@ -102,7 +104,7 @@ sidebar wins never write content offsets. A non-cancelable stream remains with
 the browser instead of being seized or frozen. Desktop/standalone Chat stays native.
 Content momentum is bounded, respects reduced motion and is revoked by a new
 contact, modal, resize or unmount. Foreground layers, editors and explicit ignore
-regions retain native behavior; the outer 24px never acquires the sidebar.
+regions retain native behavior; unclaimed edge contacts never acquire the sidebar.
 An image lightbox retains its own input. An ordinary horizontal gallery is reading
 content; a gallery with custom gestures declares an exclusive owner at its boundary.
 The entire foreground input layer owns the sequence, including image-preview
@@ -550,3 +552,5 @@ through the shared coarse-pointer/no-hover/current-touch policy. Desktop pointer
 clocks remain hidden at rest and reveal on existing message hover/focus. Keep
 time metadata, slot geometry, history cache and action-button availability;
 elapsed work duration is separate.
+
+Edge bridge acceptance: `OPENCRAFT_GESTURE_EDGE_ONLY=1 npx tsx scripts/smoke/shell/smoke-mobile-sidebar-gesture.ts` exercises the actual ClientRuntime and AppShell: Web native gutter, Apple PWA handoff and an injected host-neutral adapter, held open/close, cancel/reversal, full 24px boundary, resize, exclusions, disposal/rebind and draft identity. Synthetic host capabilities do not establish physical iOS native gesture acceptance.
