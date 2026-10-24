@@ -281,8 +281,8 @@ export function AppShell({
   const [dockedFooterHost, setDockedFooterHost] = useState<HTMLDivElement | null>(null);
   const [floatingPrimaryHost, setFloatingPrimaryHost] = useState<HTMLDivElement | null>(null);
   const [floatingContextHost, setFloatingContextHost] = useState<HTMLDivElement | null>(null);
-  const [mobileSidebarActionHost, setMobileSidebarActionHost] = useState<HTMLDivElement | null>(null);
-  const [floatingFooterHost, setFloatingFooterHost] = useState<HTMLDivElement | null>(null);
+  const [mobileSidebarActionHost, setMobileSidebarActionHost] = useState<HTMLElement | null>(null);
+  const [floatingFooterHost, setFloatingFooterHost] = useState<HTMLElement | null>(null);
   const navigationController = useShellNavigation({
     // Dock/visibility policy is stable for the gesture. Actual pane and main
     // geometry below use live MotionValues, never this saved width.
@@ -854,8 +854,8 @@ export function AppShell({
                   <div className="shell-sidebar__navigation sidecar-content-slot" ref={setFloatingPrimaryHost} />
                   <div className="shell-sidebar__context sidecar-content-slot" ref={setFloatingContextHost} />
                 </div>
-                {mobileSidebarEnabled ? <div className="shell-sidebar__floating-action" ref={setMobileSidebarActionHost} /> : null}
-                <div className="shell-sidebar__rail-footer sidecar-content-slot" ref={setFloatingFooterHost} />
+                {mobileSidebarEnabled ? <SafeLayout edges={["bottom"]} minimumInsets={{ bottom: "var(--shell-mobile-actions-bottom-reserve)" }} className="shell-sidebar__floating-action" ref={setMobileSidebarActionHost} /> : null}
+                <SafeLayout edges={mobileSidebarEnabled ? ["bottom"] : []} minimumInsets={{ bottom: "var(--shell-mobile-actions-bottom-reserve)" }} className="shell-sidebar__rail-footer sidecar-content-slot" ref={setFloatingFooterHost} />
               </div> : <div className="sidecar-content-slot" ref={setFloatingContextHost} />}</motion.div></div> : null}
             </div>
           </FloatingLeftPanel>

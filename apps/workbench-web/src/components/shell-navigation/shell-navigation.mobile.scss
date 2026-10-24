@@ -7,6 +7,9 @@
   // Share the compact leading edge with group/date/thread text.
   --space-icon-leading-inset: 0px;
   --padding-navigation-row-inline: var(--padding-sidebar-activity-row-inline);
+  // Scroll paint reaches the bottom edge; only the floating controls consume
+  // its safe inset. Retain their existing ordinary 16px clearance as well.
+  --shell-mobile-actions-bottom-reserve: calc(16px + var(--shell-mobile-safe-bottom));
   grid-template-columns: minmax(0, 1fr) auto;
   grid-template-rows: minmax(0, 1fr);
 
@@ -47,7 +50,7 @@
     background: transparent;
   }
   // Settings shares the floating action row; no account strip or bottom plate.
-  // The mobile panel surface already owns the safe-area inset.
+  // SafeLayout owns the action row's bottom inset independently of scroll paint.
   .shell-sidebar__rail-footer.sidecar-content-slot {
     grid-column: 2; grid-row: 1;
     align-self: end; z-index: 2;
@@ -62,14 +65,7 @@
       justify-content: center; padding: 0;
       width: 48px; height: 48px; min-height: 48px;
       border-radius: 999px;
-      // Secondary state colors have alpha; composite over the theme
-      // opaque surface so scrolling conversations never show through.
-      background: linear-gradient(var(--color-background-button-secondary), var(--color-background-button-secondary)), var(--color-background-elevated-primary-opaque);
-      color: var(--color-text);
-      box-shadow: var(--elevation-prominent);
       > svg, .shell-navigation__icon-wrapper > svg { width: 20px; height: 20px; }
-      @include controls.hover-capable { &:hover { background: linear-gradient(var(--color-background-button-secondary-hover), var(--color-background-button-secondary-hover)), var(--color-background-elevated-primary-opaque); } }
-      &:active { background: linear-gradient(var(--color-background-button-secondary-active), var(--color-background-button-secondary-active)), var(--color-background-elevated-primary-opaque); }
     }
     .shell-navigation__name { display: none; }
   }
@@ -86,18 +82,18 @@
   .sidebar-activity-list { flex: 0 0 auto; overflow: visible; }
 }
 
-// Keep the native scrollport above floating glass actions at every scroll offset.
-// Padding only clears the final row at the end; it still lets text scroll behind
-// translucent actions. The existing action geometry owns this reserved space.
+// Both actions overlay the scroll track, with space for the last conversation.
 .shell-sidebar__column[data-navigation-layout="mobile"] {
   .shell-sidebar__scroll {
-    margin-block-end: 88px;
+    padding-block-end: calc(88px + var(--shell-mobile-safe-bottom));
+    scroll-padding-block-end: calc(88px + var(--shell-mobile-safe-bottom));
   }
   &:has(.shell-navigation__footer--unified [data-surface="updates"]) .shell-sidebar__scroll {
     // The update entrance stacks a second 48px button above the first one (8px
     // gap) while a notice is visible; reserve both so the last row and its
     // actions scroll clear of the two floating actions.
-    margin-block-end: 144px;
+    padding-block-end: calc(144px + var(--shell-mobile-safe-bottom));
+    scroll-padding-block-end: calc(144px + var(--shell-mobile-safe-bottom));
   }
   .shell-sidebar__floating-action {
     grid-column: 1; grid-row: 1;
@@ -110,12 +106,8 @@
       pointer-events: auto;
       width: auto; max-width: 100%; min-height: 48px; margin: 0; padding-inline: 20px;
       border-radius: 999px; gap: 10px;
-      background: var(--color-background-button-primary);
-      color: var(--color-text-button-primary);
-      box-shadow: var(--elevation-prominent);
       > svg { width: 20px; height: 20px; flex-shrink: 0; }
-      > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      @include controls.hover-capable { &:hover { background: var(--color-background-button-primary-hover); } }
+      > span:not(.ui-liquid-glass) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     }
   }
 }

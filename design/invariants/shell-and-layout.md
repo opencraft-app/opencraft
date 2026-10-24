@@ -60,8 +60,13 @@ adapter uses the same DOM box. Browser hosts allocate the row's top edge regardl
 of sidebar docking/transient presentation; a zero device inset is not a disabled
 container. The fixed header consumes the same host top source. Electron keeps its
 native window control reservations. Bounded diagnostics report the top-allocation
-flag separately from resolved padding. Drawer content owns
-top/bottom/left, fixed header/hit-region offsets consume the same inset source.
+flag separately from resolved padding. The drawer frame owns top/left; its native
+scrollport paints to the bottom edge, with end padding that lets the final row
+scroll above the floating actions and device inset. Only the floating action
+hosts allocate the bottom safe edge; moving that inset back to the whole drawer
+would hard-clip the scrolling list above the physical bottom. The existing 16px
+action clearance is retained in the hosts' minimum reserve, not duplicated by
+an ancestor. Fixed header/hit-region offsets consume the same inset source.
 Composer keeps its existing route/keyboard bottom owner. Document geometry and
 physical host drawing acceptance are separate: this primitive cannot promise
 that an opaque system status strip becomes part of the document viewport.
@@ -110,6 +115,9 @@ fill or page-wide blur cannot substitute for glass. Menus/search are denser
 than panels; circular touch chrome has inset-only shading. Geometry, Radix
 focus and modal lifetime retain their owners. Solid accessibility/unsupported
 filter fallbacks and explicit extension popover surfaces remain readable.
+Independent Shell buttons and grouped conversation chrome share the same neutral
+floating veil and effective blur, including the SVG enhancement path. Footer
+geometry must not replace that material or clip its background as a text label.
 See the workbench language and `scripts/smoke/shell/smoke-frosted-materials.ts` for real
 consumer, backdrop and fallback verification. Native appearance is unchanged.
 
