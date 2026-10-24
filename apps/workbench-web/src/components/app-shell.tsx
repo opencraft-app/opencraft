@@ -1,3 +1,4 @@
+import { SafeLayout } from "@opencraft/design-system-web/safe-layout";
 import { LiquidGlassBackdrop } from "@opencraft/design-system-web/liquid-glass";
 import { SearchIcon as Search } from "@opencraft/design-system-web/action-icons";
 import { canHandleWorkbenchShortcut, matchesWorkbenchShortcut } from "../workbench-shortcuts";
@@ -79,6 +80,8 @@ import { useSidebarDockIntent } from "./use-sidebar-dock-intent";
 import { shellNavigationMetrics, shellSpaceMetrics } from "@opencraft/workbench-runtime";
 import { ShellPresentationContext, SidebarDismissContext } from "./shell-presentation";
 import { ShellNavigationDock, ShellNavigationFooter, useShellNavigation, type ShellNavigationConfig } from "./shell-navigation";
+
+const MotionSafeLayout = motion.create(SafeLayout);
 
 interface AppShellProps {
   navigation?: ShellNavigationConfig;
@@ -871,7 +874,7 @@ export function AppShell({
             entranceId="shared-shell-entrance"
             onTogglePrimaryNavigation={floatingOwnsContent ? toggleFloatingApplications : onSidebarCollapse} /> : null }}
         />
-        <motion.div className="app-shell-row" data-mobile-sidebar-present={mobileSidebarEnabled && mobileGesture.present || undefined}
+        <MotionSafeLayout edges={mobileSidebarEnabled ? ["top"] : []} className="app-shell-row" data-mobile-sidebar-present={mobileSidebarEnabled && mobileGesture.present || undefined}
           style={mobileSidebarEnabled ? { x: mobilePageX } : undefined}>
           <Sidecar animatedWidth={totalLeftWidth} dividerProgress={titlebarDividerProgress} footer={navigation && !unifiedNavigation ? <motion.div
             className="app-shell-sidecar__footer"
@@ -1014,7 +1017,7 @@ export function AppShell({
           {mobilePageBlocked ? <button
             type="button" className="app-shell-mobile-page-dismiss"
             aria-label="Close sidebar" onClick={() => { sidebarToggleFocusPending.current = true; dismissFloatingSidebar(); }} /> : null}
-        </motion.div>
+        </MotionSafeLayout>
       </ApplicationShellRoot>
     </AppShellLayoutMotionContext.Provider>
     </SidebarDismissContext.Provider>

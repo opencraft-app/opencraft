@@ -27,6 +27,23 @@ state. Native system pixels still require device acceptance. See
 Desktop native-control reservations remain separate from CSS device safe-area
 insets. The existing viewport owner and single content-inset application remain.
 
+### Shared safe layout container
+
+`@opencraft/design-system-web/safe-layout` owns device inset consumption inside
+the surface border-box. Background/material remains on that same full-bleed box;
+safe content does not move the paint origin or create a separate color strip.
+Callers explicitly allocate `edges`; nested containers omit edges already consumed
+by their ancestor. `minimumInsets` preserves ordinary spacing using max, not an
+extra copy of the device inset. Unselected edges retain consumer styles.
+CSS env is the geometry authority; a host may project `--safe-layout-inset-*`
+at its viewport boundary. The container does not measure screens, guess cutouts,
+observe keyboard geometry, or own theme/scroll/motion state. Shell's stable Motion
+adapter uses the same DOM box; the mobile row owns top, drawer content owns
+top/bottom/left, fixed header/hit-region offsets consume the same inset source.
+Composer keeps its existing route/keyboard bottom owner. Document geometry and
+physical host drawing acceptance are separate: this primitive cannot promise
+that an opaque system status strip becomes part of the document viewport.
+
 Touch Composer spacing retains the normal floating gap above the bottom safe
 area. With an open software keyboard, existing keyboard gaps apply without
 adding the Home-indicator inset. The overlay also respects landscape cutouts.

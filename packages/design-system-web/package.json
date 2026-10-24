@@ -12,7 +12,8 @@
     "./timeline-icons": "./src/timeline-icons.tsx",
     "./native-controls.web": "./src/native-controls.web.scss",
     "./task-link-icon": "./src/task-link-icon.tsx",
-    "./dropdown-menu": "./src/dropdown-menu.tsx"
+    "./dropdown-menu": "./src/dropdown-menu.tsx",
+    "./safe-layout": "./src/safe-layout.tsx"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
