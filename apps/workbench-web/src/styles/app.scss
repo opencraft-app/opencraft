@@ -13009,16 +13009,20 @@ html[data-ui-density="touch"] body {
 
 // Shell actions share one material across pointer, touch, Web and Electron.
 // Existing owners retain dimensions, placement, focus and interaction behavior.
-:root[data-ui-density] :is(
-  [data-liquid-action],
-  .app-shell-header__action-group,
-  .thread-live-changes,
-  .shell-sidebar__column:not([data-navigation-layout="mobile"]) .shell-sidebar-navigation .shell-navigation__items--applications > button
-) {
+$shell-liquid-actions: ':is([data-liquid-action], .app-shell-header__action-group, .thread-live-changes, .shell-sidebar__column:not([data-navigation-layout="mobile"]) .shell-sidebar-navigation .shell-navigation__items--applications > button)';
+:root[data-ui-density] #{$shell-liquid-actions} {
   @include material.liquid;
   color: var(--color-text);
-  @include controls.hover-capable { &:is(button):hover:not(:disabled) { background: var(--color-background-navigation-hover); } }
+  &:is(.is-selected, [aria-current="page"]) { background: var(--color-background-navigation-current); }
+  &[aria-pressed="true"], &[data-state="open"] { background: var(--color-background-button-tertiary-hover); }
   &:is(button):active:not(:disabled) { background: var(--color-background-navigation-pressed); }
+}
+// hover-capable owns the root input-modality guard. Invoke it at module scope,
+// so it cannot prepend a second :root ancestor to a root-prefixed selector.
+@include controls.hover-capable {
+  &[data-ui-density] #{$shell-liquid-actions}:is(button):hover:not(:disabled):not(:is(.is-selected, [aria-current="page"], [aria-pressed="true"], [data-state="open"])) {
+    background: var(--color-background-navigation-hover);
+  }
 }
 
 // The header's existing full-height group keeps its layout box. Only its
