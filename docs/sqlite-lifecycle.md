@@ -446,6 +446,9 @@ The reader saves a byte cursor and file identity, consumes at most one MiB and
 128 metadata events per batch, and retries incomplete tails. Counts and cursor
 commit atomically to the source archive. Parser context, exact integer model
 sums, allocations and archive position commit together in the projection.
+Derived cache migration 4 adds a `(server_id, thread_id, ends_ms)` gap index.
+It preserves the preceding cache schema and avoids repeatedly scanning all
+retained-history gaps during large rebuilds and active-turn refresh.
 A late source error revises the current turn in that transaction and enqueues a
 durable, 32-turn-per-batch refresh of affected historical projections. Coverage
 changes, including enabled state with no active turns, advance the query revision.

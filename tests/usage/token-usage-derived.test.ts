@@ -188,3 +188,9 @@ test("a late error revises more than one batch of settled history across restart
  assert.ok(snapshot(d).rows.every(row=>'executionState'in row&&row.executionState==='completed'));
  d.close();await rm(join(f.directory,'token-usage-derived.sqlite'));d=f.open();await drain(d);assert.deepEqual(values(d),expected);
 }));
+
+test("the preceding cache schema upgrades without changing derived usage or retained source evidence",()=>fixture(async f=>{
+ await writeFile(f.path,start()+count('11','11')+line('event_msg',{type:'task_complete',turn_id:turn},2));let d=f.open();await drain(d);const expected=values(d);d.close();
+ const cache=new DatabaseSync(join(f.directory,'token-usage-derived.sqlite'));cache.exec('DROP INDEX derived_usage_gaps_thread; DELETE FROM schema_migrations WHERE version=4');cache.close();
+ d=f.open();await drain(d);assert.deepEqual(values(d),expected);
+}));

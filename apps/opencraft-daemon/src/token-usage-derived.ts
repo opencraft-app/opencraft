@@ -27,7 +27,10 @@ INSERT INTO usage_position VALUES(1,0);
 CREATE TABLE usage_reproject(thread_id TEXT PRIMARY KEY,after_turn TEXT NOT NULL) STRICT;
 `;
 export const DERIVED_CACHE_VERSION = "rollout-counts-3/equal-turn-v1";
-const CACHE_MIGRATIONS = [...TOKEN_USAGE_STATE_MIGRATIONS, { version: TOKEN_USAGE_STATE_MIGRATIONS.at(-1)!.version+1, name: "rollout-derived-cache-v1", sql: CACHE_SQL }];
+const CACHE_MIGRATIONS = [...TOKEN_USAGE_STATE_MIGRATIONS,
+  { version: TOKEN_USAGE_STATE_MIGRATIONS.at(-1)!.version+1, name: "rollout-derived-cache-v1", sql: CACHE_SQL },
+  { version: TOKEN_USAGE_STATE_MIGRATIONS.at(-1)!.version+2, name: "rollout-derived-gap-index", sql: "CREATE INDEX derived_usage_gaps_thread ON token_usage_gaps(server_id,thread_id,ends_ms);" },
+];
 type Row = Record<string, any>;
 type LegacyTurn = { tokens: string | null; buckets: { provider: string | null; model: string | null; tokens: string }[] };
 function transaction<T>(db: DatabaseSync, body: () => T): T { db.exec("BEGIN IMMEDIATE"); try { const result = body(); db.exec("COMMIT"); return result; } catch (error) { db.exec("ROLLBACK"); throw error; } }
