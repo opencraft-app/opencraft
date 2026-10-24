@@ -15,7 +15,8 @@
     "proper-lockfile": "^4.1.2",
     "@opencraft/appserver-protocol": "0.1.0",
     "@opencraft/session-capabilities": "0.1.0",
-    "@opencraft/host-schedules": "0.1.0"
+    "@opencraft/host-schedules": "0.1.0",
+    "@opencraft/host-recovery": "0.1.0"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

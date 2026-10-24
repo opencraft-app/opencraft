@@ -921,4 +921,8 @@
   "developerMode.copyFallback": "Select and copy this report",
   "overhome.description": "Semua aplikasi anda di satu tempat.",
   "overhome.empty": "Aplikasi anda akan dipaparkan di sini."
+,
+  "turnRecovery.continued": "Disambung secara automatik selepas perkhidmatan dimulakan semula ({attempts}/{limit}).",
+  "turnRecovery.exhausted": "Sambungan automatik dihentikan selepas {limit} percubaan. Hantar mesej untuk meneruskan.",
+  "turnRecovery.unconfirmed": "Sambungan automatik tidak dapat disahkan. Semak perbualan sebelum meneruskan."
 }

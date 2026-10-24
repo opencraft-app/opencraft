@@ -919,4 +919,8 @@
   "developerMode.copyFallback": "Select and copy this report",
   "overhome.description": "Your apps, all in one place.",
   "overhome.empty": "Your apps will appear here."
+,
+  "turnRecovery.continued": "Automatically continued after a service restart ({attempts}/{limit}).",
+  "turnRecovery.exhausted": "Automatic continuation stopped after {limit} attempts. Send a message to continue.",
+  "turnRecovery.unconfirmed": "Automatic continuation could not be confirmed. Check this conversation before continuing."
 }

@@ -28,6 +28,9 @@ queue/Goal 恢复不依赖浏览器首次重连；初始化失败时就绪检查
 该检查不拥有队列、账户、core 进程或额外存储。首次切换检查旧 CLI/任务；旧二进制未使用新 guard 不能当作自动排空。关闭 overlay 只关闭
 其原生连接与 stores，不关闭 core。复用数据/项目 cwd，不从包目录推导身份。
 
+执行进程真的中断后，Host 通过[被打断轮次恢复](interrupted-turn-recovery.md)自动继续已跟踪的任务；
+活跃原生轮次、用户已处理的任务及未知提交不会被盲目重发。恢复次数、系统来源与界面提示由同一持久策略管理。
+
 ## Codex 原生会话与保留数据
 
 Codex 使用原生 Thread/Turn 协议。旧 Codex Bot bridge 已删除；Headless 不再启用或

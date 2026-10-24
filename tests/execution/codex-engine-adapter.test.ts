@@ -10,6 +10,7 @@ import { LOGICAL_CLIENT_FIELD } from "@opencraft/app-host-protocol";
 import { AccountPoolStore } from "@opencraft/account-pool-host";
 import { OPENCRAFT_ATTACHMENT_STAGING_EXTENSION, OPENCRAFT_THREAD_LIFECYCLE_EXTENSION, OPENCRAFT_THREAD_QUEUE_EXTENSION, OPENCRAFT_THREAD_START_DURABILITY_EXTENSION, OPENCRAFT_PERMISSION_MODES_EXTENSION } from "@opencraft/appserver-protocol";
 import { CodexEngineAdapter, capacityRetryDelayMs } from "../../apps/opencraft-daemon/src/codex-engine-adapter.js";
+import { InterruptedTurnRecovery } from "@opencraft/host-recovery";
 import { OpenCraftHostQueue } from "../../apps/opencraft-daemon/src/opencraft-host-queue.js";
 import { LocalDesktopService } from "../../apps/local-agent-host/src/desktop/local-desktop-service.js";
 import { OPENCRAFT_DESKTOP_ATTACH, OPENCRAFT_DESKTOP_RELEASE, OPENCRAFT_DESKTOP_EXTENSION } from "@opencraft/appserver-protocol/desktop";
@@ -30,7 +31,7 @@ function waitFor(frames: Array<Record<string, unknown>>, predicate: (frame: Reco
   });
 }
 
-function createRoutingAdapter(root: string, frames: Array<Record<string, unknown>>, nativeQueueSteerVersion: 0 | 1 | 2 = 0, steerResponse?: string, nativeSubscriptionGraceMs?: number, desktop?: LocalDesktopService, autoTitles = false, tokenUsage?:ConstructorParameters<typeof CodexEngineAdapter>[0]["tokenUsage"]): CodexEngineAdapter {
+function createRoutingAdapter(root: string, frames: Array<Record<string, unknown>>, nativeQueueSteerVersion: 0 | 1 | 2 = 0, steerResponse?: string, nativeSubscriptionGraceMs?: number, desktop?: LocalDesktopService, autoTitles = false, tokenUsage?:ConstructorParameters<typeof CodexEngineAdapter>[0]["tokenUsage"], sessionMcp?: ConstructorParameters<typeof CodexEngineAdapter>[0]["sessionMcp"]): CodexEngineAdapter {
   const adapter = new CodexEngineAdapter({
     executable: process.execPath,
     runtimeDirectory: root,
@@ -43,11 +44,44 @@ function createRoutingAdapter(root: string, frames: Array<Record<string, unknown
     logDiagnostic: () => undefined,
     nativeSubscriptionGraceMs,
     tokenUsage,
+    sessionMcp,
     desktop,
   });
   adapter.subscribeMessage(frame => frames.push(JSON.parse(frame)));
   return adapter;
 }
+
+test("a stop during the final asynchronous tool preparation prevents the automatic native send", async () => {
+  const root = await mkdtemp(join(tmpdir(), "opencraft-final-recovery-admission-"));
+  await mkdir(join(root, "data"));
+  const seed = new InterruptedTurnRecovery(join(root, "data"), { serialize: async (_id, work) => work(), inspect: async () => "lost", continue: async () => null, changed() {} });
+  seed.started("recovery-thread", "old-turn"); await seed.close();
+  let prepares = 0, release!: () => void, entered!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const preparing = new Promise<void>(resolve => { entered = resolve; });
+  const frames: Array<Record<string, unknown>> = [];
+  const adapter = createRoutingAdapter(root, frames, 0, undefined, undefined, undefined, false, undefined, async () => {
+    if (++prepares === 2) { entered(); await gate; }
+    return null;
+  });
+  const rpc = async (id: string, method: string, params: object) => {
+    await adapter.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: "writer" }));
+    return waitFor(frames, frame => frame.id === id);
+  };
+  try {
+    await adapter.connect(); await initializeClient(adapter, frames, "writer");
+    await rpc("seed-history", "test/setHistory", { threadId: "recovery-thread", turns: [{ id: "old-turn", status: "interrupted", items: [] }] });
+    let timeout: ReturnType<typeof setTimeout>;
+    await Promise.race([preparing, new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error("Recovery did not reach final preparation")), 5000); })]).finally(() => clearTimeout(timeout!));
+    await rpc("user-stop", "turn/interrupt", { threadId: "recovery-thread", turnId: "old-turn" });
+    release();
+    await new Promise(resolve => setTimeout(resolve, 50));
+    const response = await rpc("accepted", "test/readAcceptedInputs", {});
+    assert.deepEqual((response.result as any).data, []);
+    const notice = await rpc("notice", "opencraft/turn-recovery/read", { threadId: "recovery-thread" });
+    assert.equal((notice.result as any).recovery, null);
+  } finally { release(); await adapter.close(); await rm(root, { recursive: true, force: true }); }
+});
 
 async function initializeClient(adapter: CodexEngineAdapter, frames: Array<Record<string, unknown>>, clientId: string): Promise<void> {
   await adapter.send(JSON.stringify({ id: `${clientId}:init`, method: "initialize", params: {}, [LOGICAL_CLIENT_FIELD]: clientId }));

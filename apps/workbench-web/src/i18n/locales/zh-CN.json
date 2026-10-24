@@ -943,4 +943,8 @@
   "developerMode.copyFallback": "请选择并复制这份报告",
   "overhome.description": "常用应用，触手可及。",
   "overhome.empty": "应用将在这里显示。"
+,
+  "turnRecovery.continued": "服务重启后已自动继续（{attempts}/{limit}）。",
+  "turnRecovery.exhausted": "自动继续已达 {limit} 次，已停止。发送消息可继续。",
+  "turnRecovery.unconfirmed": "自动继续结果未确认，请检查会话后再继续。"
 }

@@ -24,3 +24,5 @@ export * from "./machine";
 
 export * from "./conversation-schedules";
 export * from "./schedule-time";
+
+export * from "./turn-recovery";

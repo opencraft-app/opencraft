@@ -921,4 +921,8 @@
   "developerMode.copyFallback": "Select and copy this report",
   "overhome.description": "แอปของคุณ รวมไว้ในที่เดียว",
   "overhome.empty": "แอปของคุณจะแสดงที่นี่"
+,
+  "turnRecovery.continued": "ดำเนินต่ออัตโนมัติหลังบริการเริ่มใหม่ ({attempts}/{limit})",
+  "turnRecovery.exhausted": "หยุดการดำเนินต่ออัตโนมัติหลังลอง {limit} ครั้ง ส่งข้อความเพื่อดำเนินต่อ",
+  "turnRecovery.unconfirmed": "ยืนยันผลการดำเนินต่ออัตโนมัติไม่ได้ โปรดตรวจสอบบทสนทนาก่อนดำเนินต่อ"
 }
