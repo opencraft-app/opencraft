@@ -169,3 +169,22 @@ test("switching receipt-only collection back to ledger replays every skipped nat
   assert.equal(f.ledger.readTurn({threadId:thread,turnId:turn})!.observedTokens,'200');
  }finally{runtime.close();}
 }));
+
+test("a late error revises more than one batch of settled history across restart and cache rebuild",()=>fixture(async f=>{
+ let text=line('session_meta',{id:thread,model_provider:'provider'});
+ for(let n=0;n<40;n++){
+  const id=n===0?turn:'turn-'+String(n).padStart(2,'0'),key={threadId:thread,turnId:id};
+  if(n>0){f.ledger.startTurn(key,at,'human',true);f.ledger.recordInput(key,{inputId:'A-'+n,actorId:'A',actorKind:'human',mode:'start',admission:'confirmed'});}
+  text+=line('event_msg',{type:'task_started',turn_id:id},n*4)+line('turn_context',{turn_id:id,model:'model-a'},n*4+1)+count(String(n+1),'1',n*4+2)+line('event_msg',{type:'task_complete',turn_id:id},n*4+3);
+ }
+ await writeFile(f.path,text);let d=f.open();await drain(d);assert.equal(snapshot(d).summary.categories.settled,'40');
+ await appendFile(f.path,count('0','0',200));let partialHistoricalPass=false;
+ for(let i=0;i<100;i++){
+  await d.step();const settled=BigInt(snapshot(d).summary.categories.settled??'0');
+  if(settled>0n&&settled<39n){partialHistoricalPass=true;break;}
+ }
+ assert.ok(partialHistoricalPass,'older settled turns must change before the bounded historical refresh finishes');
+ d.close();d=f.open();await drain(d);const expected=values(d);assert.equal(snapshot(d).summary.categories.provisional,'40');assert.equal(snapshot(d).summary.settledTurns,0);
+ assert.ok(snapshot(d).rows.every(row=>'executionState'in row&&row.executionState==='completed'));
+ d.close();await rm(join(f.directory,'token-usage-derived.sqlite'));d=f.open();await drain(d);assert.deepEqual(values(d),expected);
+}));
