@@ -6,7 +6,7 @@
   },
   {
     "name": "@expo/metro-runtime",
-    "version": "57.0.17",
+    "version": "58.0.15",
     "license": "MIT"
   },
   {
@@ -26,107 +26,107 @@
   },
   {
     "name": "expo",
-    "version": "57.0.18",
+    "version": "58.0.19",
     "license": "MIT"
   },
   {
     "name": "expo-asset",
-    "version": "57.0.18",
+    "version": "58.0.18",
     "license": "MIT"
   },
   {
     "name": "expo-audio",
-    "version": "57.0.5",
+    "version": "58.0.10",
     "license": "MIT"
   },
   {
     "name": "expo-blur",
-    "version": "57.0.2",
+    "version": "58.0.5",
     "license": "MIT"
   },
   {
     "name": "expo-clipboard",
-    "version": "57.0.1",
+    "version": "58.0.4",
     "license": "MIT"
   },
   {
     "name": "expo-constants",
-    "version": "57.0.22",
+    "version": "58.0.13",
     "license": "MIT"
   },
   {
     "name": "expo-crypto",
-    "version": "57.0.2",
+    "version": "58.0.7",
     "license": "MIT"
   },
   {
     "name": "expo-document-picker",
-    "version": "57.0.3",
+    "version": "58.0.4",
     "license": "MIT"
   },
   {
     "name": "expo-file-system",
-    "version": "57.0.7",
+    "version": "58.0.11",
     "license": "MIT"
   },
   {
     "name": "expo-glass-effect",
-    "version": "57.0.4",
+    "version": "58.0.5",
     "license": "MIT"
   },
   {
     "name": "expo-image",
-    "version": "57.0.5",
+    "version": "58.0.17",
     "license": "MIT"
   },
   {
     "name": "expo-image-manipulator",
-    "version": "57.0.20",
+    "version": "58.0.15",
     "license": "MIT"
   },
   {
     "name": "expo-image-picker",
-    "version": "57.0.20",
+    "version": "58.0.10",
     "license": "MIT"
   },
   {
     "name": "expo-linking",
-    "version": "57.0.8",
+    "version": "58.0.14",
     "license": "MIT"
   },
   {
     "name": "expo-network",
-    "version": "57.0.2",
+    "version": "58.0.4",
     "license": "MIT"
   },
   {
     "name": "expo-router",
-    "version": "57.0.17",
+    "version": "58.0.26",
     "license": "MIT"
   },
   {
     "name": "expo-secure-store",
-    "version": "57.0.3",
+    "version": "58.0.2",
     "license": "MIT"
   },
   {
     "name": "expo-sqlite",
-    "version": "57.0.2",
+    "version": "58.0.14",
     "license": "MIT"
   },
   {
     "name": "expo-status-bar",
-    "version": "57.0.1",
+    "version": "58.0.4",
     "license": "MIT"
   },
   {
     "name": "expo-web-browser",
-    "version": "57.0.2",
+    "version": "58.0.6",
     "license": "MIT"
   },
   {
     "name": "heroui-native",
-    "version": "1.0.10",
+    "version": "1.0.11",
     "license": "Apache-2.0"
   },
   {
@@ -136,62 +136,62 @@
   },
   {
     "name": "react",
-    "version": "19.2.3",
+    "version": "19.3.0",
     "license": "MIT"
   },
   {
     "name": "react-dom",
-    "version": "19.2.3",
+    "version": "19.3.0",
     "license": "MIT"
   },
   {
     "name": "react-native",
-    "version": "0.86.3",
+    "version": "0.88.0",
     "license": "MIT"
   },
   {
     "name": "react-native-gesture-handler",
-    "version": "2.32.0",
+    "version": "3.3.0",
     "license": "MIT"
   },
   {
     "name": "react-native-keyboard-controller",
-    "version": "1.21.9",
+    "version": "1.22.7",
     "license": "MIT"
   },
   {
     "name": "react-native-reanimated",
-    "version": "4.5.1",
+    "version": "4.7.1",
     "license": "MIT"
   },
   {
     "name": "react-native-safe-area-context",
-    "version": "5.7.0",
+    "version": "5.10.1",
     "license": "MIT"
   },
   {
     "name": "react-native-screens",
-    "version": "4.26.0",
+    "version": "4.30.0",
     "license": "MIT"
   },
   {
     "name": "react-native-svg",
-    "version": "15.15.4",
+    "version": "15.16.0",
     "license": "MIT"
   },
   {
     "name": "react-native-web",
-    "version": "0.21.2",
+    "version": "0.21.4",
     "license": "MIT"
   },
   {
     "name": "react-native-webview",
-    "version": "13.16.1",
+    "version": "14.0.1",
     "license": "MIT"
   },
   {
     "name": "react-native-worklets",
-    "version": "0.10.1",
+    "version": "0.13.0",
     "license": "MIT"
   },
   {

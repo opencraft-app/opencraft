@@ -53,7 +53,7 @@ test("downstream routes retain Router entry and share one host SDK without redir
   assert.equal(context.originModulePath, "/product/view.tsx");
   const publicResolve = withProductEntryResolver(appRoot, null, delegate, "/product/routes.js", ["react"]);
   publicResolve(context, "react", "ios");
-  assert.equal(calls.at(-1).context, context);
+  assert.equal(calls.at(-1).context.originModulePath, path.join(appRoot, "index.ts"));
   publicResolve(context, "expo-router/_ctx", "ios");
   assert.equal(calls.at(-1).name, "expo-router/_ctx");
 });
@@ -88,4 +88,20 @@ test("Metro replaces only the root entry and delegates the existing resolver on 
   assert.equal(calls.length, 6);
   const fallback = withProductEntryResolver(appRoot, null, null);
   assert.equal(fallback({ ...context, resolveRequest: delegate }, "./src/runtime/app-entry", "web").filePath, "original");
+});
+
+// Multiple workspace React versions must not split hooks from the native renderer.
+test("shared hooks and the native renderer resolve React from the mobile host", () => {
+  const calls = [];
+  const delegate = (context, name) => { calls.push({ context, name }); return { type: "sourceFile", filePath: "delegated" }; };
+  const resolve = withProductEntryResolver(appRoot, null, delegate, null, ["react", "react-dom", "react-native"]);
+  for (const relative of ["../../packages/i18n/src/react.tsx", "../../node_modules/react-native/Libraries/Renderer/ReactFabric.js"]) {
+    const context = { originModulePath: path.resolve(appRoot, relative) };
+    for (const name of ["react", "react/jsx-runtime", "react-dom"]) {
+      resolve(context, name, "ios");
+      assert.equal(calls.at(-1).context.originModulePath, path.join(appRoot, "index.ts"));
+    }
+    resolve(context, "./local-helper", "ios");
+    assert.equal(calls.at(-1).context, context);
+  }
 });

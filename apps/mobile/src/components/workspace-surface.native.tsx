@@ -18,7 +18,7 @@ export function WorkspaceSurface({ source: content, dark, onAppearance }: { sour
   const bundled = content.kind === "bundled";
   const [attempt, setAttempt] = useState(0);
   const runtimeId = useMemo(() => randomUUID(), [attempt]);
-  const webView = useRef<WebView>(null);
+  const webView = useRef<WebView<object>>(null);
   const canGoBack = useRef(false);
   const ready = useRef(false);
   const active = useRef(true);
@@ -73,7 +73,7 @@ export function WorkspaceSurface({ source: content, dark, onAppearance }: { sour
         <Text style={{ color: theme.color.accent.blue }}>{intl.formatMessage(m.retry)}</Text>
       </Pressable>
     </View> : source === null ? <View style={styles.status}><ActivityIndicator color={theme.color.text.secondary} /><Text style={{ color: theme.color.text.primary }}>{intl.formatMessage(m.loading)}</Text></View>
-      : <WebView key={runtimeId} ref={webView} source={source} style={[styles.root, { backgroundColor: theme.material.content }]}
+      : <WebView<object> key={runtimeId} ref={webView} source={source} style={[styles.root, { backgroundColor: theme.material.content }]}
         originWhitelist={["*"]} javaScriptEnabled domStorageEnabled
         incognito={!bundled} sharedCookiesEnabled={false} thirdPartyCookiesEnabled={false}
         automaticallyAdjustContentInsets={false} contentInsetAdjustmentBehavior="never"

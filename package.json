@@ -52,7 +52,7 @@
     "check:i18n": "node scripts/check-i18n.mjs",
     "test:i18n": "node --test tests/tooling/i18n-source.test.mjs && tsx --test tests/shell/i18n-runtime.test.ts tests/shell/i18n-controller.test.ts tests/shell/settings-menu-messages.test.ts tests/shell/web-voice-settings-i18n.test.tsx",
     "smoke:i18n": "tsx scripts/smoke/shell/smoke-i18n.ts",
-    "postinstall": "node scripts/patch-expo-modules-jsi.mjs && node scripts/patch-novnc-desktop-events.mjs && node scripts/patch-heroui-menu-measurement.mjs",
+    "postinstall": "node scripts/patch-novnc-desktop-events.mjs && node scripts/patch-heroui-menu-measurement.mjs",
     "protocol:refresh": "node scripts/refresh-codex-protocol.mjs",
     "generate:typography": "node scripts/generate-typography.mjs",
     "check:typography": "node scripts/generate-typography.mjs --check && node scripts/check-ui-typography.mjs && node scripts/check-conversation-activity.mjs",
@@ -288,7 +288,7 @@
     "eslint": "10.12.0",
     "eslint-plugin-compat": "7.0.2",
     "eslint-plugin-es-x": "9.7.0",
-    "expo": "57.0.18",
+    "expo": "58.0.19",
     "fake-indexeddb": "^6.2.4",
     "graceful-fs": "4.2.11",
     "jsdom": "^28.1.0",
@@ -303,10 +303,8 @@
     "ws": "^8.22.0"
   },
   "overrides": {
-    "expo": "57.0.18",
-    "expo-modules-core": "57.0.14",
-    "expo-modules-jsi": "57.0.6",
-    "react-native-reanimated": "4.5.1",
-    "react-native-worklets": "0.10.1"
+    "expo": "58.0.19",
+    "react-native-reanimated": "4.7.1",
+    "react-native-worklets": "0.13.0"
   }
 }

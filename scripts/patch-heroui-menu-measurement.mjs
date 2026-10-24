@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-// HeroUI Native 1.0.10 waits for a second onLayout with a new y coordinate.
+// HeroUI Native 1.0.10–1.0.11 waits for a second onLayout with a new y coordinate.
 // RN Web uses ResizeObserver, which does not report a position-only change.
 // Once dimensions are known, Menu's own positioning primitive computes the
 // position in that render. Readiness must depend on dimensions, not the old
@@ -13,7 +13,7 @@ const require = createRequire(resolve(root, "apps/mobile/package.json"));
 const packageJsonPath = require.resolve("heroui-native/package.json");
 const packageRoot = dirname(packageJsonPath);
 const { version } = JSON.parse(readFileSync(packageJsonPath, "utf8"));
-if (version !== "1.0.10") throw new Error("Review the HeroUI Menu measurement patch for this library version.");
+if (!["1.0.10", "1.0.11"].includes(version)) throw new Error("Review the HeroUI Menu measurement patch for this library version.");
 
 const before = "const isReady = Boolean(contentLayout?.y && contentLayout.y < screenHeight);";
 const after = "const isReady = Boolean(contentLayout && contentLayout.width > 0 && contentLayout.height > 0);";

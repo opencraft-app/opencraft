@@ -119,3 +119,13 @@ is a technical capability for user-operated services, not an App Store acceptanc
 guarantee or a mechanism for unreviewed native-code updates.
 
 Expo Go previews behind a path proxy preserve the manifest directory when resolving the bundled HTML asset. Only same-origin Metro asset URLs are relocated; root previews, installed local assets and unrelated origins retain their existing resolution. This changes preview transport, not the packaged-code or self-hosted source policy.
+
+## Expo Go runtime compatibility
+
+The mobile host targets Expo SDK 58, React Native 0.88 and the native module
+versions shipped in Expo's `bundledNativeModules.json`. Keep the root Expo CLI,
+mobile host and native storage/rendering adapters on that SDK together. Run
+`expo install --check` from `apps/mobile` after dependency changes. A valid
+manifest alone does not certify compatibility with the Expo Go installed on a
+physical phone. Workspace React hooks and the native renderer resolve React
+from the mobile host; the Web renderer may use its own compatible patch.
