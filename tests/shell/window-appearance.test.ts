@@ -96,3 +96,11 @@ test("an unreadable mode key does not discard a readable saved palette", () => {
   vm.runInNewContext(bootstrap(), { document: f.document });
   assert.equal(f.meta(), builtinAppearanceThemes.find(e => e.descriptor.id.endsWith(".lavender"))!.palettes.dark.surface);
 });
+
+test("Vite configuration loads in plain Node without a TypeScript loader", async () => {
+  const { spawnSync } = await import("node:child_process");
+  const result = spawnSync(process.execPath, ["--input-type=module", "-e",
+    "import {loadConfigFromFile} from 'vite'; const config=await loadConfigFromFile({command:'serve',mode:'development'},'apps/workbench-web/vite.config.ts'); if(!config)throw Error('configuration missing');"],
+    { cwd: process.cwd(), encoding: "utf8", env: { ...process.env, NODE_OPTIONS: "" }, timeout: 60_000 });
+  assert.equal(result.status, 0, result.stderr);
+});
