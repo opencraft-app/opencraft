@@ -161,3 +161,16 @@
 - <a id="reading-expanded-file-diffs-in-a-retained-view"></a>[Reading expanded file diffs in a retained View](architecture/chat-ui/files-and-resources.md#reading-expanded-file-diffs-in-a-retained-view)
 - <a id="code-and-table-reading-positions-in-a-retained-view"></a>[Code and table reading positions in a retained View](architecture/chat-ui/files-and-resources.md#code-and-table-reading-positions-in-a-retained-view)
 - <a id="plan-preview-natural-height"></a>[Plan preview natural height](architecture/chat-ui/files-and-resources.md#plan-preview-natural-height)
+
+### Recovered native Turn activity
+
+Native history may retain `inProgress` for a Turn whose process ended. Shared
+Chat Runtime projects that historical Turn as interrupted only after an
+authoritative history proves a later Turn exists. Thread status arrives on an
+independent stream: even an authoritative `idle` / `notLoaded` notification can
+predate a new Turn start, so it cannot end the latest Turn. A cached status or a
+lost connection cannot interrupt remote work. The latest genuinely active Turn remains active. This projection
+removes automatic-retry indicators from the recovered historical Turn without
+changing native history, sending an interrupt, or claiming this client stopped it.
+Composer and all timeline consumers use this same projection so an old status
+cannot leave the Stop action or working indicator active after later work ends.

@@ -185,3 +185,116 @@ test("a legacy writer after cutover is rejected without overwriting either histo
   finally { raw.close(); }
   assert.equal(new OpenCraftTokenUsageLedger(legacy, "server", () => 1000).readTurn(key)?.observedTokens, "900");
 }));
+
+test("a fully superseded legacy revision reopens read-only without replacing either history or its import receipt", () => fixture((directory, legacy) => {
+  seed(legacy);
+  legacy.database.prepare("INSERT INTO token_usage_metadata_scans VALUES(?,?,NULL)").run("server", key.threadId);
+  const isolated = new TokenUsageStateDatabase(directory, legacy.path);
+  const ledger = new OpenCraftTokenUsageLedger(isolated, "server", () => 2000);
+  ledger.recordSource({ ...key, lineage: "native", sourceId: "response", kind: "response", version: 1, provider: "provider", model: "model", counts: { totalTokens: "900" } });
+  ledger.recordSource({ ...key, lineage: "native", sourceId: "new-unknown-model", kind: "response", version: 0, provider: null, model: null, counts: { totalTokens: "200" } });
+  ledger.advanceMetadataCursor(key.threadId, "later-page");
+  const before = isolated.database.prepare("SELECT * FROM token_usage_sources").all();
+  const imported = isolated.database.prepare("SELECT * FROM token_usage_legacy_import").all();
+  isolated.close();
+  legacy.database.prepare("UPDATE token_usage_scopes SET revision=revision+1").run();
+  const legacyBefore = legacy.database.prepare("SELECT * FROM token_usage_sources").all();
+  const reopened = new TokenUsageStateDatabase(directory, legacy.path);
+  try {
+    assert.deepEqual(reopened.database.prepare("SELECT * FROM token_usage_sources").all(), before);
+    assert.deepEqual(reopened.database.prepare("SELECT * FROM token_usage_legacy_import").all(), imported);
+    assert.deepEqual(legacy.database.prepare("SELECT * FROM token_usage_sources").all(), legacyBefore);
+  } finally { reopened.close(); }
+}));
+
+for (const scenario of ["new-source", "newer-source", "equal-version-conflict", "new-input", "different-scope", "terminal-conflict", "new-terminal"] as const) {
+  test(`diverged legacy ${scenario} is still rejected without modifying the destination`, () => fixture((directory, legacy) => {
+    const old = seed(legacy);
+    const isolated = new TokenUsageStateDatabase(directory, legacy.path);
+    const before = isolated.database.prepare("SELECT * FROM token_usage_sources").all();
+    isolated.close();
+    if (scenario === "new-source") old.recordSource({ ...key, lineage: "native", sourceId: "missing", kind: "response", version: 0, provider: "provider", model: "model", counts: { totalTokens: "100" } });
+    if (scenario === "newer-source") old.recordSource({ ...key, lineage: "native", sourceId: "response", kind: "response", version: 1, provider: "provider", model: "model", counts: { totalTokens: "100" } });
+    if (scenario === "equal-version-conflict") legacy.database.prepare("UPDATE token_usage_sources SET counts_json=?").run('{"totalTokens":"999"}');
+    if (scenario === "new-input") old.recordInput(key, { inputId: "new", actorId: "C", actorKind: "human", mode: "steer", admission: "confirmed" });
+    if (scenario === "terminal-conflict") legacy.database.prepare("UPDATE token_usage_turns SET execution_state='failed'").run();
+    if (scenario === "new-terminal") legacy.database.prepare("INSERT INTO token_usage_native_terminals VALUES(?,?,?)").run("server", key.threadId, key.turnId);
+    if (scenario === "different-scope") legacy.database.prepare("INSERT INTO token_usage_scopes VALUES(?,?,1,0)").run("missing-scope",1000);
+    legacy.database.prepare("UPDATE token_usage_scopes SET revision=revision+1").run();
+    assert.throws(() => new TokenUsageStateDatabase(directory, legacy.path), /changed after cutover/);
+    const verify = new DatabaseSync(join(directory, "token-usage.sqlite"), { readOnly: true });
+    try { assert.deepEqual(verify.prepare("SELECT * FROM token_usage_sources").all(), before); }
+    finally { verify.close(); }
+  }));
+}
+
+
+test("dedicated collection settings and freezing remain authoritative after covered legacy revision drift", () => fixture((directory, legacy) => {
+  const old = new OpenCraftTokenUsageLedger(legacy, "server", () => 1000);
+  old.startTurn(key, 1000, "human");
+  old.recordSource({ ...key, lineage: "native", sourceId: "response", kind: "response", version: 0, provider: null, model: null, counts: { totalTokens: "600" } });
+  let state = new TokenUsageStateDatabase(directory, legacy.path);
+  new OpenCraftTokenUsageLedger(state, "server", () => 2000).setEnabled(false);
+  state.close();
+  legacy.database.prepare("UPDATE token_usage_scopes SET revision=revision+1").run();
+  state = new TokenUsageStateDatabase(directory, legacy.path);
+  try {
+    const ledger = new OpenCraftTokenUsageLedger(state, "server", () => 3000);
+    assert.equal(ledger.coverage().enabled, false);
+    assert.equal(ledger.readTurn(key)?.frozen, true);
+    assert.equal(ledger.readTurn(key)?.observedTokens, "600");
+    ledger.setEnabled(true);
+    assert.equal(ledger.coverage().enabled, true);
+  } finally { state.close(); }
+}));
+
+
+test("normal pending-attempt recovery and identity completion survive repeated covered-legacy reopens", () => fixture((directory, legacy) => {
+  const old = seed(legacy);
+  old.recordAttempt("pending", { threadId:key.threadId,inputId:"dispatch",actorId:"A",actorKind:"human",mode:"steer",sourceKind:"human",submittedAt:1000 });
+  old.recordSubmission({threadId:key.threadId,inputId:"late",actorId:null,actorKind:"unknown",mode:"steer",sourceKind:"unknown",submittedAt:1000});
+  old.recordAdmission(key,"late");
+  legacy.database.prepare("UPDATE token_usage_scopes SET revision=revision+1").run();
+  let state = new TokenUsageStateDatabase(directory, legacy.path);
+  const ledger = new OpenCraftTokenUsageLedger(state,"server",()=>2000);
+  ledger.recoverSubmission({threadId:key.threadId,inputId:"late",actorId:"C",actorKind:"human",mode:"steer",sourceKind:"human",submittedAt:1000});
+  state.close();
+  legacy.database.prepare("UPDATE token_usage_scopes SET revision=revision+1").run();
+  state = new TokenUsageStateDatabase(directory,legacy.path);
+  try {
+    assert.equal(state.database.prepare("SELECT outcome FROM token_usage_attempts WHERE attempt_id='pending'").get()!.outcome,"unknown");
+    assert.equal(state.database.prepare("SELECT actor_id FROM token_usage_inputs WHERE input_id='late'").get()!.actor_id,"C");
+  } finally {state.close();}
+  state = new TokenUsageStateDatabase(directory,legacy.path);state.close();
+}));
+
+test("native counter version and next-turn baseline progress survive covered-legacy reopen", () => fixture((directory,legacy) => {
+  const old=seed(legacy);old.registerNativeCounter("ephemeral","epoch");old.startNativeCounterTurn({threadId:"ephemeral",turnId:"first"},1000,"epoch");
+  let state=new TokenUsageStateDatabase(directory,legacy.path);
+  const ledger=new OpenCraftTokenUsageLedger(state,"server",()=>2000);
+  ledger.recordNativeCounter({threadId:"ephemeral",turnId:"first"},"epoch",{totalTokens:"120",inputTokens:"100",cachedInputTokens:"80",cacheWriteInputTokens:"0",outputTokens:"20",reasoningOutputTokens:"10"});
+  ledger.completeNativeCounterTurn({threadId:"ephemeral",turnId:"first"},"epoch","completed");
+  ledger.startNativeCounterTurn({threadId:"ephemeral",turnId:"second"},2000,"epoch");
+  state.close();legacy.database.prepare("UPDATE token_usage_scopes SET revision=revision+1").run();
+  state=new TokenUsageStateDatabase(directory,legacy.path);
+  try {assert.equal(state.database.prepare("SELECT turn_id FROM token_usage_native_counters WHERE thread_id='ephemeral'").get()!.turn_id,"second");}
+  finally{state.close();}
+}));
+
+for (const conflict of ["settled-attempt", "known-input", "counter-epoch", "counter-same-version", "counter-regression"] as const) {
+  test(`covered legacy reopen still rejects ${conflict} conflicts`, () => fixture((directory, legacy) => {
+    const old = seed(legacy);
+    old.recordAttempt("attempt", { threadId: key.threadId, inputId: "dispatch", actorId: "A", actorKind: "human", mode: "steer", sourceKind: "human", submittedAt: 1000 });
+    old.recordAttemptOutcome("attempt", "accepted", key.turnId);
+    old.registerNativeCounter("counter", "epoch");
+    const state = new TokenUsageStateDatabase(directory, legacy.path);
+    if (conflict === "settled-attempt") state.database.exec("UPDATE token_usage_attempts SET outcome='rejected',turn_id=NULL");
+    if (conflict === "known-input") state.database.exec("UPDATE token_usage_inputs SET actor_id='different'");
+    if (conflict === "counter-epoch") state.database.exec("UPDATE token_usage_native_counters SET epoch='different'");
+    if (conflict === "counter-same-version") state.database.exec(`UPDATE token_usage_native_counters SET cumulative_json='{"totalTokens":"100"}'`);
+    if (conflict === "counter-regression") state.database.exec("UPDATE token_usage_native_counters SET source_version=-1");
+    state.close();
+    legacy.database.exec("UPDATE token_usage_scopes SET revision=revision+1");
+    assert.throws(() => new TokenUsageStateDatabase(directory, legacy.path), /changed after cutover/);
+  }));
+}
