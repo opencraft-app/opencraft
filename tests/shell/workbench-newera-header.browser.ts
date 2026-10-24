@@ -156,7 +156,14 @@ try {
   }
   await page.evaluate(()=>document.querySelector('.glass-backdrop-probe')!.remove());await stripes.evaluate(e=>e.remove());
   // Real native scrolling can reach the last row above the existing action row.
-  while(await page.getByRole('button',{name:'Show more',exact:true}).count())await page.getByRole('button',{name:'Show more',exact:true}).click();
+  for(let n=0;n<5 && await page.getByRole('button',{name:'Show more',exact:true}).count();n++){
+   const count=await page.locator('.sidebar-activity-item').count();
+   // Playwright scrolling the pager into view can itself trigger native end-pull
+   // and retire the button. Invoke the mounted handler without a second scroll;
+   // the actual scroll-to-end and last-row reachability are checked below.
+   await page.getByRole('button',{name:'Show more',exact:true}).evaluate((e:HTMLButtonElement)=>e.click());
+   await page.waitForFunction(count=>document.querySelectorAll('.sidebar-activity-item').length>count||!document.querySelector('.sidebar-activity-more'),count);
+  }assert.equal(await page.locator('.sidebar-activity-item').count(),60);
   const end=await page.locator('.shell-sidebar__scroll').evaluate(async e=>{e.scrollTop=e.scrollHeight;await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));const row=[...e.querySelectorAll('.sidebar-activity-item')].pop()!;return{rowBottom:row.getBoundingClientRect().bottom,newTop:document.querySelector('.sidebar-new-chat')!.getBoundingClientRect().top}});assert(end.rowBottom<=end.newTop,JSON.stringify(end));
   await page.screenshot({path:output+'/sidebar-'+theme+'-safe-bottom.png'});assert.equal(await page.getByLabel('Draft').inputValue(),'Keep draft');evidence.push({sidebar:{theme,geometry,samples,end}});await context.close();
  }
