@@ -32,7 +32,7 @@ export function OverhomeDesktop({ host, contributions, renderers }: ExtensionSet
               if (app.target.kind === "settings") host.openSettings?.(app.target.pageId);
               else host.openView(app.target.viewId);
             }}>
-              <span className="overhome__icon" aria-hidden="true"><WorkbenchIcon name={app.icon} size={36} purpose="work" /></span>
+              <span className="overhome__icon" aria-hidden="true"><WorkbenchIcon name={app.icon} size={36} purpose="navigation" /></span>
               <span className="overhome__label">{label}</span>
             </button>
           </li>;

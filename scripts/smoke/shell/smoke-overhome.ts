@@ -27,7 +27,7 @@ longLabel:async()=>supervisor.extensions.activate({manifest:{manifestVersion:1,i
 document.body.dataset.ready='true';
 `;
 const vite = await createServer({ configFile: false, root: process.cwd(), cacheDir: output + "/vite-cache", publicDir: "apps/workbench-web/public", logLevel: "error",
-  define: { "process.env.NEXT_PUBLIC_REGION": '"cn"', "process.env.NEXT_PUBLIC_PREVIEW_LOCALES": '""',
+  define: { "import.meta.env.VITE_OPENCRAFT_PRESENTATION": JSON.stringify(JSON.stringify({ iconStyle: "classic" })), "process.env.NEXT_PUBLIC_REGION": '"cn"', "process.env.NEXT_PUBLIC_PREVIEW_LOCALES": '""',
     "import.meta.env.VITE_INCLUDE_HYPERNODE_PLUGIN": '"false"', "import.meta.env.VITE_INCLUDE_BUILTIN_AGENTS_PLUGIN": '"false"' },
   esbuild: { jsx: "automatic" }, resolve: { dedupe: ["react", "react-dom"] }, server: { host: "127.0.0.1", port: 0, hmr: false },
   plugins: [{ name: "overhome-smoke", resolveId: id => id === "/proof.tsx" ? id : null, load: id => id === "/proof.tsx" ? source : null,
@@ -66,6 +66,7 @@ try {
   await launch();
   await page.locator(".overhome").waitFor();
   assert.equal(await page.locator("[data-miniapp-id]").count(), 1);
+  assert.equal(await page.locator('[data-miniapp-id="opencraft.schedules.app"] svg circle').count(), 1, "calendar clock artwork survives classic product presentation");
   assert.equal(await page.locator('[data-action-id="opencraft.schedules"]').count(), 0, "no duplicate sidebar launch");
   await page.getByRole("button", { name: "定时任务", exact: true }).click();
   await page.locator(".scheduled-tasks-page").waitFor();
