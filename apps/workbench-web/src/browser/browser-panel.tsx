@@ -201,9 +201,9 @@ export default function BrowserPanel({ tab: panelTab, presentationId }: PanelRen
       {inputError ?? page.error ? (
         <div className="browser-panel__notice" role="status">
           <span>{inputError ?? page.error}</span>
-          <button type="button" onClick={() => { pages.reload(page.id); setInputError(null); }}>重新加载页面</button>
+          <button type="button" onClick={() => { pages.reload(page.id); setInputError(null); }}>{intl.formatMessage({ id: "browser.reload", defaultMessage: "Reload" })}</button>
           {currentUrl !== null ? <button type="button"
-            onClick={() => window.open(currentUrl, "_blank", "noopener,noreferrer")}>Open externally</button> : null}
+            onClick={() => window.open(currentUrl, "_blank", "noopener,noreferrer")}>{intl.formatMessage({ id: "browser.external", defaultMessage: "Open in external browser" })}</button> : null}
         </div>
       ) : null}
       <div ref={slotRef} className="browser-viewport-slot"
