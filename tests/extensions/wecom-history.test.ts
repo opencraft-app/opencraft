@@ -1,4 +1,5 @@
 import test from "node:test";
+import { DatabaseSync } from "node:sqlite";
 import assert from "node:assert/strict";
 import { createHash, randomBytes } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -8,6 +9,7 @@ import {
   WeComHistoryApi,
   WECOM_HISTORY_TOOLS,
 } from "../../plugins/wecom/src/history.js";
+import { ImPostReceipts } from "../../plugins/im/src/post-receipts.js";
 import { ImChannelService } from "../../scripts/im-channel-service.mjs";
 import { SessionCapabilities } from "../../packages/session-capabilities/src/index.js";
 import { SessionCapabilityMcp } from "../../packages/session-capabilities/src/mcp.js";
@@ -86,6 +88,7 @@ async function fixture(t: test.TestContext) {
     member = true,
     tokens = 0,
     hook: ((path: string) => void) | undefined;
+  let sendResponse = async () => json({ post_id: "created-post" });
   const requests: { path: string; body: any }[] = [];
   const post = {
     post_id: "post-1",
@@ -188,6 +191,10 @@ async function fixture(t: test.TestContext) {
           has_more: !body.cursor,
           next_cursor: "search-page-2",
         };
+      else if (path === "topic/send_post") {
+        hook?.(path);
+        return sendResponse();
+      }
       else throw Error("unexpected endpoint");
       hook?.(path);
       return json(response);
@@ -255,6 +262,8 @@ async function fixture(t: test.TestContext) {
       hook = v;
     },
     tokens: () => tokens,
+    setSendResponse: (value: typeof sendResponse) => { sendResponse = value; },
+    send: (values: object = {}) => service.wecomPosts.call(ref, { ...args, text: "独立频道帖", requestId: "intent-1", ...values }, signal()),
   };
 }
 
@@ -391,6 +400,7 @@ test("production signed MCP exposes and invokes all four native read tools preau
   await mcp.listen();
   t.after(() => mcp.close());
   const config = mcp.config(ref) as any;
+  assert.equal(config.tools.wecom_send_post.approval_mode, "approve");
   assert.ok(
     WECOM_HISTORY_TOOLS.every(
       (tool) => config.tools[tool.name].approval_mode === "approve",
@@ -415,6 +425,11 @@ test("production signed MCP exposes and invokes all four native read tools preau
   });
   assert.equal(discovery.isError, false);
   assert.match(JSON.stringify(discovery.content), /selected/);
+  const posted = await client.callTool({ name: "wecom_send_post", arguments: {
+    ...f.args, text: "通过正式MCP独立发帖", requestId: "signed-intent" } });
+  assert.equal(posted.isError, false);
+  assert.match(JSON.stringify(posted.content), /created-post/);
+  assert.equal(f.requests.filter(r => r.path === "topic/send_post").length, 1);
   f.unregister();
   assert.deepEqual((await client.listTools()).tools, []);
   assert.equal(
@@ -448,4 +463,87 @@ test("channel configuration changes during a read invalidate both the result and
     f.call("wecom_read_channel", { cursor: page.nextCursor }),
     /denied_or_invalid/,
   );
+});
+
+
+test("standalone posting uses only the official endpoint and selected topic; identical retries deduplicate without consuming callback replies", async (t) => {
+  const f = await fixture(t), before = f.service.store.message("a".repeat(64));
+  const result = await f.send();
+  assert.deepEqual(result, { status: "delivered", topicId: "selected", postId: "created-post", requestId: "intent-1", deduplicated: false });
+  assert.deepEqual(f.requests.find(r => r.path === "topic/send_post")?.body, { topic_id: "selected", content: "独立频道帖" });
+  assert.equal((await f.send()).deduplicated, true);
+  assert.equal(f.requests.filter(r => r.path === "topic/send_post").length, 1);
+  await assert.rejects(f.send({ text: "changed" }), /request_conflict/);
+  await assert.rejects(f.send({ topicId: "different" }), /request_conflict/);
+  assert.deepEqual(f.service.store.message("a".repeat(64)), before);
+  assert.doesNotMatch(JSON.stringify(result), /private-token|fixture-secret|独立频道帖/);
+});
+test("post validation and current authority prevent sends after injected selectors, byte overflow, revocation, changed config and lost membership", async (t) => {
+  const f = await fixture(t);
+  for (const args of [{ actorId: "other" }, { url: "https://other" }, { text: "中".repeat(6827) },
+    { text: "${inline_mention_all}" }, { text: " " }, { requestId: "a/b" }, { topicId: "x\n" }])
+    await assert.rejects(f.send(args), /invalid/);
+  f.membership(false);
+  await assert.rejects(f.send(), /denied_or_invalid/);
+  f.membership(true);
+  f.hook(path => { if (path === "topic/get_topic_member_list") f.revoke(); });
+  await assert.rejects(f.send(), /denied/);
+  assert.equal(f.requests.filter(r => r.path === "topic/send_post").length, 0);
+  const g = await fixture(t);
+  g.hook(path => { if (path === "topic/get_topic_member_list") {
+    const c = g.service.store.channel("bot");
+    g.service.store.saveChannel({ ...c, botId: "replacement" }, true, c.revision);
+  }});
+  await assert.rejects(g.send(), /denied_or_invalid/);
+  assert.equal(g.requests.filter(r => r.path === "topic/send_post").length, 0);
+});
+test("lost or invalid acknowledgements remain unknown, explicit rejections remain rejected, and neither is retried", async (t) => {
+  for (const [response, code] of [
+    [async () => { throw Error("private signed URL and token"); }, /delivery_unknown/],
+    [async () => json({}), /delivery_unknown/],
+    [async () => json({ errcode: 40014, errmsg: "private provider rejection" }), /delivery_rejected/],
+  ] as const) {
+    const f = await fixture(t);
+    f.setSendResponse(response);
+    await assert.rejects(f.send(), code);
+    await assert.rejects(f.send(), code);
+    assert.equal(f.requests.filter(r => r.path === "topic/send_post").length, 1);
+  }
+});
+test("concurrent same-intent sends claim only one effect; permission loss after ACK preserves a delivered receipt", async (t) => {
+  const f = await fixture(t);
+  let release!: () => void;
+  const wait = new Promise<void>(resolve => { release = resolve; });
+  f.setSendResponse(async () => { await wait; return json({ post_id: "created-post" }); });
+  const first = f.send();
+  while (!f.requests.some(r => r.path === "topic/send_post")) await new Promise(resolve => setImmediate(resolve));
+  await assert.rejects(f.send(), /delivery_unknown/);
+  release();
+  await first;
+  assert.equal(f.requests.filter(r => r.path === "topic/send_post").length, 1);
+  const g = await fixture(t);
+  g.hook(path => { if (path === "topic/send_post") g.revoke(); });
+  await assert.rejects(g.send(), /denied/);
+  g.hook(undefined);
+  assert.equal(g.requests.filter(r => r.path === "topic/send_post").length, 1);
+});
+test("post receipts survive restart; interrupted claims become unknown and cannot be re-claimed", async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "im-post-receipts-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const file = join(dir, "posts.sqlite");
+  let receipts = new ImPostReceipts(file);
+  assert.equal(receipts.claim("scope", "done", "fingerprint"), true);
+  receipts.finish("scope", "done", "delivered", "official-post");
+  assert.equal(receipts.claim("scope", "interrupted", "other"), true);
+  receipts.close();
+  receipts = new ImPostReceipts(file);
+  assert.equal(receipts.get("scope", "done")?.postId, "official-post");
+  assert.equal(receipts.get("scope", "interrupted")?.state, "unknown");
+  assert.equal(receipts.claim("scope", "interrupted", "other"), false);
+  assert.equal(receipts.outcome.appliedVersion, 1);
+  receipts.close();
+  const db = new DatabaseSync(file);
+  db.prepare("UPDATE schema_migrations SET checksum=? WHERE version=1").run("tampered");
+  db.close();
+  assert.throws(() => new ImPostReceipts(file), /history/i);
 });

@@ -1,6 +1,7 @@
 import { setTimeout as delay } from 'node:timers/promises';
 import { readPrivateJson } from '../packages/identity-core/src/node.ts';
 import { IM_REPLY_TOOL } from '../plugins/im/src/reply-tool.ts';
+import { WECOM_POST_TOOL } from '../plugins/wecom/src/post-tool.ts';
 import { WECOM_HISTORY_TOOLS } from '../plugins/wecom/src/history.ts';
 import { IM_READ_TOOLS } from '../plugins/im/src/read-tools.ts';
 import { ImFault } from '../plugins/im/src/server.ts';
@@ -54,7 +55,7 @@ export function createImExecution({actors,collaboration,getAppHost,prepareCapabi
   return {
     human, authorize,
     async create(context,signal) {
-      const reservation = prepareCapabilities?.([IM_REPLY_TOOL, ...IM_READ_TOOLS, ...WECOM_HISTORY_TOOLS]);
+      const reservation = prepareCapabilities?.([IM_REPLY_TOOL, ...IM_READ_TOOLS, ...WECOM_HISTORY_TOOLS, WECOM_POST_TOOL]);
       try {
         const result = await invoke(context,null,'thread/start',{experimentalRawEvents:false,
           ...(reservation ? {config:{'mcp_servers.opencraft_session':reservation.configuration}} : {})},signal);

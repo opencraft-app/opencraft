@@ -89,6 +89,26 @@ export class WeComHistoryApi {
       if (this.acquiring === pending) this.acquiring = undefined;
     }
   }
+  /** A write is attempted once. A lost/malformed acknowledgement is unknown, never replayed. */
+  async sendPost(topicId: string, content: string, signal: AbortSignal, beforeSend: () => Promise<void>) {
+    const token = await this.token(signal);
+    await beforeSend();
+    signal.throwIfAborted();
+    let data;
+    try {
+      data = await this.json("topic/send_post", { topic_id: topicId, content }, signal, token);
+    } catch {
+      throw new WeComHistoryError("wecom_post_delivery_unknown");
+    }
+    if (Number.isSafeInteger(data.errcode) && data.errcode !== 0) {
+      if ([40014, 42001].includes(data.errcode) && this.cached?.value === token) this.cached = undefined;
+      throw new WeComHistoryError("wecom_post_provider_rejected");
+    }
+    if (data.errcode !== 0 || typeof data.post_id !== "string" || !data.post_id ||
+        Buffer.byteLength(data.post_id) > 128 || /[\x00-\x1f\x7f]/u.test(data.post_id))
+      throw new WeComHistoryError("wecom_post_delivery_unknown");
+    return data.post_id as string;
+  }
   async call(
     path:
       | "topic/get_topic_list"

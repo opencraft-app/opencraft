@@ -18,6 +18,7 @@
 
 | 文件名 | Owner 进程与源码 | 数据目录 | 数据职责 |
 |---|---|---|---|
+| `im-posts.sqlite` | Headless IM composition：[ImPostReceipts](../plugins/im/src/post-receipts.ts) | IM data directory | Standalone native channel post claims/receipts; schema v1, hashes and official IDs only, interrupted claims become unknown without resend |
 | `thread-identity.sqlite` | Headless Hub：[ThreadIdentityDatabase](../apps/opencraft-daemon/src/thread-identity-database.ts) / AppServerIdentityOverlay | Headless `thread-identities/opencraft-server` | DSH trusted sender/creator, fork origins and derived 企业身份 presence/completion; no native messages or execution state |
 | `thread-read-receipts.sqlite` | Headless installation：[ThreadReadReceiptStore](../scripts/thread-read-receipt-store.ts) | Headless server data directory | Verified-account exact read receipts; existing document-store migrations/CAS, independent of selected Host |
 | `opencraft-ui.sqlite` | Electron Main：[ui-preferences-store](../apps/workbench-electron/src/ui-preferences-store.ts) | Electron `userDataDirectory` | UI 偏好与 CAS |
