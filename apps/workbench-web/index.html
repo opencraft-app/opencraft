@@ -39,7 +39,12 @@
       }
       html[data-window-host="browser"][data-window-edge-strategy="legacy-overlay-requested"]:is([data-window-display-mode="standalone"], [data-window-display-mode="fullscreen"]),
       html[data-window-host="browser"][data-window-edge-strategy="legacy-overlay-requested"]:is([data-window-display-mode="standalone"], [data-window-display-mode="fullscreen"]) body {
+        position: static;
+        inset: auto;
         height: 100vh;
+      }
+      html[data-window-host="browser"][data-window-edge-strategy="legacy-overlay-requested"]:is([data-window-display-mode="standalone"], [data-window-display-mode="fullscreen"]) body {
+        position: relative;
       }
       #opencraft-host-edge-color { display: none; }
       @supports (-webkit-touch-callout: none) and (background-clip: text) {

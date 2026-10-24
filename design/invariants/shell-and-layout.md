@@ -27,20 +27,23 @@ state. Native system pixels still require device acceptance. See
 Desktop native-control reservations remain separate from CSS device safe-area
 insets. The existing viewport owner and single content-inset application remain.
 
-Requested standalone/fullscreen browser overlay documents size html/body with
-the CSS large viewport (`100vh`), rather than an inherited percentage rectangle.
-When the viewport owner reports no geometric contraction, the foreground and
-stationary drawer plane use that same CSS paint extent. Raw native metrics can
-exclude the status area even when CSS can paint it. Paint capacity is not usable
-content capacity: the foreground row reserves any excess paint tail inside its
-border box, while the drawer content frame retains the measured available height.
-Top SafeLayout and route/drawer bottom safe spacing remain allocated once inside
-that content frame. Background, card silhouette and stationary material still
-reach the CSS canvas edge. Any measured contraction
-restores the existing VisualViewport extent and origin, independently of focus;
-blur does not establish keyboard dismissal. Ordinary tabs and host-owned windows
-retain their existing sizing. No screen-height arithmetic or fixed cutout size
-is used, and content still consumes SafeLayout insets within the painted box.
+Requested standalone/fullscreen browser overlay documents keep html/body and the
+main Shell in document flow, sized by the CSS large viewport (`100vh`) at rest.
+The body-relative drawer portal uses an absolute document frame. Do not fix the
+document roots or main Shell: a full CSS rectangle can still be clipped by the
+native fixed viewport. SafeLayout and route/drawer safe spacing remain allocated
+once inside that frame; a CSS/native height difference is not an extra bottom
+inset and does not reduce the content frame at rest.
+
+Any geometric contraction uses the existing VisualViewport capacity through
+blur, independently of focus. The single Web viewport port projects origins for
+both coordinate bases: document frames use the visible page origin; fixed
+consumers keep the independent native fixed-reference correction. Neither may
+consume the other's offset. Document scrolling, focus, draft and native selection
+are preserved rather than force-reset. Ordinary tabs and native hosts retain
+their fixed geometry. No screen arithmetic, fixed cutout size or new observation
+clock is used. DOM dimensions and browser simulation do not prove physical native
+painting; device acceptance remains explicit.
 
 ### Shared safe layout container
 

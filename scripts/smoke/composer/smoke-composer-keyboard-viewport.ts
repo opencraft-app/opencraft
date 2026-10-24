@@ -173,20 +173,21 @@ try{for(const theme of ['light','dark']) for(const newera of [false,true]){
   (window as any).setViewport(782,0);
  });
  await page.waitForFunction(()=>document.querySelector('.app-shell-root')!.getBoundingClientRect().height===844);
- const assertVisibleContent=async()=>{
+ const assertDocumentFlow=async()=>{
   const frame=await page.evaluate(()=>{
    const row=document.querySelector('.app-shell-row')!,r=row.getBoundingClientRect();
    const send=document.querySelector('.opencraft-composer-submit')!.getBoundingClientRect();
-   return {paintHeight:r.height,contentBottom:r.bottom-parseFloat(getComputedStyle(row).paddingBottom),sendBottom:send.bottom};
+   return {paintHeight:r.height,contentBottom:r.bottom-parseFloat(getComputedStyle(row).paddingBottom),sendBottom:send.bottom,
+     html:getComputedStyle(document.documentElement).position,body:getComputedStyle(document.body).position,shell:getComputedStyle(document.querySelector('.app-shell-root')!).position};
   });
-  assert.equal(frame.paintHeight,844);
-  assert.equal(frame.contentBottom,782,'paint tail cannot enlarge the usable content frame');
-  assert(frame.sendBottom<=782,JSON.stringify(frame));
+  assert.equal(frame.paintHeight,844);assert.equal(frame.contentBottom,844,'native height delta is not a second safe inset');
+  assert.equal(frame.html,'static');assert.equal(frame.body,'relative');assert.equal(frame.shell,'relative');
+  assert(frame.sendBottom<=844,JSON.stringify(frame));
  };
- await assertVisibleContent();
- const oldContent=await page.addStyleTag({content:'.app-shell-root > .app-shell-row{padding-bottom:0!important}'});
- await assert.rejects(assertVisibleContent,'old full-canvas content must fail visibility acceptance');
- await oldContent.evaluate(e=>e.remove());await assertVisibleContent();
+ await assertDocumentFlow();
+ const oldContent=await page.addStyleTag({content:'html,body,.app-shell-root{position:fixed!important}'});
+ await assert.rejects(assertDocumentFlow,'old fixed roots must fail the document-flow contract even at the same CSS height');
+ await oldContent.evaluate(e=>e.remove());await assertDocumentFlow();
  const overlayEditor=await editor.elementHandle();const overlayDraft=await editor.innerText();
  assert.equal(await page.evaluate(()=>document.documentElement.dataset.timelineViewportOccluded),'false');
  await page.evaluate(()=>(window as any).setViewport(360,120));
@@ -200,7 +201,7 @@ try{for(const theme of ['light','dark']) for(const newera of [false,true]){
  assert.equal(await editor.innerText(),overlayDraft);assert(await overlayEditor!.evaluate(e=>e.isConnected));
  await page.evaluate(()=>{document.documentElement.dataset.windowDisplayMode='tab';document.documentElement.dataset.windowEdgeStrategy='system-color-extension'});
  await page.waitForFunction(()=>document.querySelector('.app-shell-root')!.getBoundingClientRect().height===782);
- evidence.push({theme,newera,overlay:{cssCanvasHeight:844,rawViewportHeight:782,keyboardHeight:360,blurRetainsOcclusion:true,contentFitsRawViewport:true,oldContentRejected:true,draftAndEditorRetained:true,tabExcluded:true}});
+ evidence.push({theme,newera,overlay:{cssCanvasHeight:844,rawViewportHeight:782,keyboardHeight:360,blurRetainsOcclusion:true,documentFlowCapacity:true,fixedRootsRejected:true,draftAndEditorRetained:true,tabExcluded:true}});
  await context.close();
 
  }

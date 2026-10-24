@@ -241,3 +241,29 @@ test("hidden hosts cancel the shared observation window and resume from actual g
     assert.equal(observations, 2);
   } finally { f.close(); }
 });
+
+
+test("document and fixed frames map the same visible origin through independent bases", () => {
+  const f = fixture();
+  try {
+    for (const [page, scroll, native] of [[294, 0, 0], [294, 294, -294], [310, 294, 0], [0, 0, 0]]) {
+      f.scroll(scroll);f.native.top = native;f.visual.pageTop = page;f.visual.offsetTop = page-scroll;
+      f.visual.dispatchEvent(new f.win.Event("scroll"));
+      const documentTop = Number.parseFloat(f.win.document.documentElement.style.getPropertyValue("--timeline-document-viewport-top"));
+      const visibleClientTop = page-scroll;
+      assert.equal(documentTop-scroll,visibleClientTop,"flow frame is positioned in document coordinates");
+      assert.equal(f.css("top")+native,visibleClientTop,"fixed frame retains the independent native reference");
+    }
+  } finally { f.close(); }
+});
+
+test("document-origin changes publish even when fixed-client geometry stays unchanged", () => {
+  const f = fixture();
+  try {
+    f.frame(20);const revision=f.port.getSnapshot().revision;
+    f.scroll(100);f.visual.pageTop=100;f.visual.dispatchEvent(new f.win.Event("scroll"));
+    assert.equal(f.css("top"),0);
+    assert.equal(f.win.document.documentElement.style.getPropertyValue("--timeline-document-viewport-top"),"100px");
+    assert.equal(f.port.getSnapshot().revision,revision+1);
+  } finally { f.close(); }
+});

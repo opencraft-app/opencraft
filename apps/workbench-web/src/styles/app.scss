@@ -142,9 +142,19 @@ body {
   inset: 0;
 }
 
-// The overlay document must not inherit the status-bar-excluded percentage box.
+// The installed overlay is a document-flow canvas. Fixed document roots can
+// clip native painting even when their reported border boxes are full-height.
 html[data-window-host="browser"][data-window-edge-strategy="legacy-overlay-requested"]:is([data-window-display-mode="standalone"], [data-window-display-mode="fullscreen"]) {
-  &, body { height: 100vh; }
+  &, body { position: static; inset: auto; height: 100vh; }
+  body { position: relative; }
+  .app-shell-root { position: relative; }
+  .app-shell-floating-overlay-root { position: absolute; }
+  :is(.app-shell-root, .app-shell-floating-overlay-root) {
+    right: auto;
+    bottom: auto;
+    top: var(--timeline-document-viewport-top, 0px);
+    left: var(--timeline-document-viewport-left, 0px);
+  }
 }
 
 .startup-shell {
@@ -277,24 +287,11 @@ html[data-timeline-tracks-visual-viewport="true"] :is(.app-shell-root, .app-shel
   height: var(--timeline-available-viewport-height, 100%);
 }
 
-// Overlay paint can exceed the native visible frame. Extend material only:
-// foreground content and the drawer's controls still fit the measured capacity.
-// A contraction restores the shared frame, even after editor blur.
-html[data-window-host="browser"][data-window-edge-strategy="legacy-overlay-requested"]:is([data-window-display-mode="standalone"], [data-window-display-mode="fullscreen"])[data-timeline-tracks-visual-viewport="true"][data-timeline-viewport-occluded="false"] {
-  :is(.app-shell-root, .app-shell-floating-overlay-root) { height: 100vh; }
-
-  .app-shell-root > .app-shell-row {
-    // SafeLayout owns the top inset. Reserve the unexposed paint tail inside
-    // that same border box; route-owned bottom safe spacing is applied once.
-    padding-bottom: max(0px, calc(100vh - var(--timeline-available-viewport-height, 100vh)));
-  }
-
-  .app-shell-floating-overlay-root > .app-shell-floating-left-panel {
-    // The stationary portal paints through the tail; its scaled content does
-    // not use that paint-only space for the navigation footer.
-    bottom: auto;
-    height: var(--timeline-available-viewport-height, 100%);
-  }
+// At rest the CSS viewport owns both the canvas and its safe content frame.
+// A native metric/status-area delta is not an extra inset. Any contraction uses
+// the existing reduced capacity, independently of editable focus or blur.
+html[data-window-host="browser"][data-window-edge-strategy="legacy-overlay-requested"]:is([data-window-display-mode="standalone"], [data-window-display-mode="fullscreen"])[data-timeline-tracks-visual-viewport="true"][data-timeline-viewport-occluded="false"] :is(.app-shell-root, .app-shell-floating-overlay-root) {
+  height: 100vh;
 }
 
 .app-shell-row {
