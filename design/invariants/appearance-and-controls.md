@@ -156,9 +156,27 @@ projection remains pure and native system pixels remain unobserved. See
 
 ### Standalone WebKit edge-color compatibility
 
+The document declares the legacy iOS `black-translucent` status-bar request and
+`viewport-fit=cover`. The presentation projector records
+`legacy-overlay-requested` only for a standalone/fullscreen browser document;
+this names an intent, not native acceptance or a measured full-screen viewport.
+Shell and drawer backgrounds keep their full painted boxes. SafeLayout consumes
+the top inset inside those boxes so controls stay clear of system content.
+The existing viewport owner retains keyboard geometry. No screen-height subtraction
+or guessed inset is introduced when the platform returns zero.
+
+Overlay requests and system-color sampling are exclusive document strategies.
+The sampling surface below is enabled only for `system-color-extension` (when the
+overlay request is absent). Host-owned native chrome does not select either web
+strategy. Bootstrap and live projection read the same declaration and report the
+same strategy; existing bounded viewport diagnostics separately report the request,
+sampling visibility and actual screen/layout/safe-content geometry. Those observations
+do not assert that the system painted the requested area.
+
 A single empty, aria-hidden document surface lives outside the application root,
 route lifetimes and transformed panels. The HTML head's existing presentation
-projection admits only a browser host in standalone/fullscreen display mode; CSS
+projection admits only the system-color-extension browser strategy in
+standalone/fullscreen display mode; CSS
 capability checks exclude engines without WebKit touch-callout/text clipping.
 Ordinary tabs, Electron, embedded and native-container hosts keep it disabled.
 This is a rendering compatibility hint, not an iOS version detector or promised
@@ -168,10 +186,11 @@ bootstrap through runtime/plugin theme changes, without a second color writer.
 The fixed surface exceeds the host's thin-border sampling threshold, carries a
 background style and clips it to empty text. It paints no strip over the page and
 receives no pointer/focus input. It does not reserve an inset, create a safe-area
-value, move controls, animate or alter viewport/status-bar metadata. SafeLayout,
+value, move controls, animate or write viewport/status-bar metadata. SafeLayout,
 keyboard geometry and native system rendering retain their respective owners.
 
-The existing window-appearance smoke verifies actual document startup and exclusion
+The existing window-appearance smoke verifies both declared policies at actual
+document startup and exclusion
 on Chromium and desktop WebKit. Its explicit iOS CSS predicate projection exercises
 the enabled WebKit styles, theme inheritance, hit testing and unchanged page pixels.
 Complete-application checks separately cover navigation and draft continuity.
