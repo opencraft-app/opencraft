@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "exports": {
+    "./application-desktop.web": "./src/application-desktop.web.scss",
     "./button": "./src/button.shared.ts",
     "./progress": "./src/progress.shared.ts",
     "./modal": "./src/modal.shared.ts",

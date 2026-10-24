@@ -1,3 +1,4 @@
+import { useShellPresentation } from "../components/shell-presentation";
 import { LiquidGlassBackdrop } from "@opencraft/design-system-web/liquid-glass";
 import { shortcutLabel, shortcutAria } from "../workbench-shortcuts";
 import { useLayoutEffect, useRef, useState } from "react";
@@ -15,6 +16,8 @@ export function SidebarToggleButton({ open, onToggle, hostRole, stationary = fal
   className?: string;
 }) {
   const intl = useIntl();
+  const presentation = useShellPresentation();
+  const wallpaper = hostRole === "persistent" && presentation?.surface === "application-desktop";
   const ref = useChromeActionFocusRef("sidebar-toggle", hostRole);
   const label = intl.formatMessage(open
     ? { id: "navigation.hideSidebar", defaultMessage: "Hide sidebar" }
@@ -42,6 +45,7 @@ export function SidebarToggleButton({ open, onToggle, hostRole, stationary = fal
   }, [stationary]);
   const button = <button ref={ref} type="button" className={className}
     aria-label={label} aria-expanded={open} title={`${label} (${shortcutLabel("sidebar")})`} aria-keyshortcuts={shortcutAria("sidebar")}
+    data-header-surface={wallpaper ? "application-desktop" : undefined}
     data-app-shell-sidebar-trigger="true" data-liquid-action="" data-chrome-action-id="sidebar-toggle"
     data-sidebar-toggle-stationary={stationary || undefined}
     data-chrome-action-host-role={hostRole} onClick={onToggle}>

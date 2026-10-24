@@ -1,4 +1,5 @@
 import { OVERHOME_VIEW_ID } from "../runtime/mini-apps";
+import { ApplicationRouteMotion, useApplicationDesktopBackdrop } from "./application-desktop-motion";
 import { ScheduledTaskCatalogContext, type ScheduledTaskCatalog } from "../runtime/scheduled-task-catalog-context";
 import { useIntl } from "@opencraft/i18n/react";
 import { groupWorkInMachines } from "../runtime/work-in-presentation";
@@ -79,6 +80,7 @@ export function HostlessWorkbench({
   const navigation = supervisor.navigation;
   const navigationSnapshot = useSyncExternalStore(navigation.subscribe, navigation.getSnapshot, navigation.getSnapshot);
   const applicationRoute = navigationSnapshot.applicationRoute;
+  const desktopBackdrop = useApplicationDesktopBackdrop(applicationRoute);
   const routeHeader = useAppShellRouteHeader(JSON.stringify(applicationRoute));
   const settingsSection = applicationRoute.kind === "settings" ? applicationRoute.slug : null;
   const settingsOpen = settingsSection !== null;
@@ -308,6 +310,7 @@ export function HostlessWorkbench({
         target={routeHeader.target}
       >
       <AppShell
+        surface={desktopBackdrop ? "application-desktop" : "default"}
         navigation={{
           settingsActive: routeSettingsOpen,
           updatesActive: routeSettingsOpen && applicationRoute.kind === 'settings' && applicationRoute.slug === 'updates',
@@ -368,6 +371,7 @@ export function HostlessWorkbench({
               : "hostless-workbench__main"
           }
         >
+            <ApplicationRouteMotion route={applicationRoute} includeConversation>
             {routeSettingsOpen ? (
               <section className="settings-page" aria-label="Settings">
                 {settingsContent}
@@ -389,6 +393,7 @@ export function HostlessWorkbench({
                 </section>}
               </div>
             )}
+            </ApplicationRouteMotion>
         </div>
       </AppShell>
       </AppShellRouteRegionsProvider>

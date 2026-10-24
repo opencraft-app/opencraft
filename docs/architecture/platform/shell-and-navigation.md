@@ -492,3 +492,27 @@ The Shell's normal navigation retains other contributed destinations; a Settings
 page explicitly registered as a miniapp is launched from Overhome instead of
 being duplicated in the primary tool list. Backend authorization and existing
 Settings deep links remain unchanged.
+
+#### Desktop presentation and launch motion
+
+The application desktop is a wallpaper-backed launcher, with white app labels,
+raised squircle artwork and a glass Dock. Its search filters the live miniapp
+projection; Dock shortcuts use existing Chat, app search and Appearance actions.
+The document page's large title/description is not part of this presentation.
+The Design System owns desktop artwork, material/accessibility fallbacks, icon
+geometry and spring parameters. Shell's `surface` projects that backdrop into
+both desktop chrome and the moving mobile page; one paint plane spans safe
+areas and content. Document themes remain authoritative inside app windows.
+
+`ApplicationDesktopProvider` owns only the most recent launch target and measured
+icon/aperture geometry. It invokes the existing Router immediately and performs
+no delayed navigation. `ApplicationRouteMotion` observes committed routes in both
+Host and zero-Host shells. A launched app expands from its actual icon; returning
+to Overhome contracts it to that origin. Reversing a transition retargets the same
+spring. Resized apertures use a fade instead of stale geometry. Exiting surfaces
+are inert and hidden from assistive technology; the retained Chat subtree and
+its execution/draft owners stay outside this transition plane. Focus returns to
+the launcher only when the desktop is still current and no other control took it.
+Reduced motion removes zoom/stagger/press movement; reduced transparency and
+forced colors use the shared opaque material. Animation never supplies permission,
+changes a catalog entry, creates a task or writes another history implementation.

@@ -84,6 +84,8 @@ import { ShellNavigationDock, ShellNavigationFooter, useShellNavigation, type Sh
 const MotionSafeLayout = motion.create(SafeLayout);
 
 interface AppShellProps {
+  /** Route-selected backdrop; geometry and safe areas stay owned by Shell. */
+  surface?: "default" | "application-desktop";
   navigation?: ShellNavigationConfig;
   layoutScope: string;
   mainContentLayout: AppShellMainContentLayout;
@@ -227,6 +229,7 @@ export function useAppShellLayoutMotion(): AppShellLayoutMotion {
 }
 
 export function AppShell({
+  surface = "default",
   navigation,
   layoutScope,
   mainContentLayout,
@@ -779,6 +782,7 @@ export function AppShell({
 
   return (
     <ShellPresentationContext.Provider value={{
+      surface,
       sidebarControlsInSidebar: unifiedNavigation,
       // Control ownership follows intent, not the retained exit/gesture surface.
       // Otherwise the collapsed entrance disappears until the spring settles.
@@ -792,7 +796,7 @@ export function AppShell({
     <SidebarDismissContext.Provider value={dismissSidebarAfterSelection}>
     <AppShellLayoutMotionContext.Provider value={layoutMotion}>
       <ApplicationShellRoot
-        className={`${browserSafeLayout ? "has-browser-safe-layout " : ""}${navigation ? `has-shell-navigation${unifiedNavigation ? ` has-unified-sidebar${navigationOnly ? " has-icon-navigation-only" : ""}` : ""}${mobileSidebarEnabled ? " has-mobile-sidebar-gestures" : ""}` : ""}`}
+        className={`${surface === "application-desktop" ? "has-application-desktop " : ""}${browserSafeLayout ? "has-browser-safe-layout " : ""}${navigation ? `has-shell-navigation${unifiedNavigation ? ` has-unified-sidebar${navigationOnly ? " has-icon-navigation-only" : ""}` : ""}${mobileSidebarEnabled ? " has-mobile-sidebar-gestures" : ""}` : ""}`}
         rootRef={shellRootRef}
         windowChrome={windowChrome}
         sidebarOpen={sidebarOpen}

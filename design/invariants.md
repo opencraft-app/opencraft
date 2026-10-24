@@ -250,6 +250,10 @@ its route owns the scrollport, shared controls own focus/hover/touch feedback an
 the shared icon owner supplies glyphs. Returning to Chat preserves its draft,
 selection and running execution. The retired conversation-card overview and its
 Appearance setting are absent; task-board statistics remain independent.
+The shared desktop material spans Shell chrome and the moving mobile page.
+Icon-to-window motion holds transient geometry, keeps outgoing surfaces inert,
+and obeys the latest Router intent and reduced-motion setting; it cannot reset
+a retained Chat or write another route/history state.
 
 ### Shared shell action material
 

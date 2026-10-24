@@ -19,6 +19,7 @@
 @use "./conversation-activity";
 @use "./thread-workspace";
 @use "../components/mobile-glass" as mobile-glass;
+@use "@opencraft/design-system/application-desktop.web" as application-desktop;
 
 :root {
   // Shared Web title/timeline axis, relative to the main conversation pane.
@@ -293,6 +294,27 @@ button {
     cursor: col-resize;
     user-select: none;
   }
+}
+
+.app-shell-root.has-application-desktop {
+  @include application-desktop.roles;
+  @include application-desktop.wallpaper;
+  --app-shell-page-paint: var(--application-desktop-paint);
+  --opencraft-header-surface-paint: transparent;
+  --background-shell-compact-titlebar: transparent;
+  --opencraft-main-surface-elevation: none;
+  .app-shell-row { background: var(--app-shell-page-paint); }
+  .main-content-surface, .main-content-frame, .main-content-viewport, .main-content-slot, .extension-view-route { background: transparent; }
+  .main-content-top-fade { display: none; }
+  .app-shell-header { --color-icon-primary: var(--desktop-foreground); --color-icon-secondary: var(--desktop-foreground); --color-text: var(--desktop-foreground); --color-text-secondary: var(--desktop-foreground); --color-text-tertiary: var(--desktop-foreground); color: var(--desktop-foreground); background: transparent; }
+  .app-shell-header::after { opacity: 0; }
+  @media (forced-colors: active) { --app-shell-page-paint: Canvas; background: Canvas; .app-shell-header { color: CanvasText; } }
+}
+
+.chrome-button[data-header-surface="application-desktop"] {
+  @include application-desktop.roles;
+  --color-icon-primary: var(--desktop-foreground);
+  --color-icon-secondary: var(--desktop-foreground);
 }
 
 // The Web adapter converts the visible frame into the measured fixed basis.
@@ -2334,6 +2356,8 @@ html[data-opencraft-window-type="browser"] .main-content-top-fade {
   min-height: 0;
 }
 
+.workbench-route-stage { position: relative; }
+
 // Settings is a route-level layout, not a conversation overlay. It owns one
 // bounded detail viewport; contributed pages remain ordinary flow content and
 // must never invent a second page scroll owner.
@@ -2369,6 +2393,7 @@ html[data-opencraft-window-type="browser"] .main-content-top-fade {
 }
 
 .hostless-workbench__main {
+  position: relative;
   width: 100%;
   height: 100%;
   min-width: 0;
@@ -12303,7 +12328,7 @@ html[data-ui-density="touch"] body {
     overflow: clip;
     // The moving page, including gaps around floating chrome, must occlude
     // the stationary drawer throughout a swipe and its settling frames.
-    background: var(--color-surface);
+    background: var(--app-shell-page-paint, var(--color-surface));
     // MotionValues own direct manipulation. The global reduced-motion duration
     // must not create a CSS transition for every transform write.
     transition-property: none;
