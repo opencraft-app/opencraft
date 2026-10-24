@@ -285,6 +285,10 @@ for (const kind of ["local", "remote"] as const) {
       threadId: "summary-stream-thread", input: [], clientUserMessageId: "summary-stream",
     });
     const turnId = (resultOf(started).turn as Frame).id;
+    // The stdio fixture publishes turn/started after its RPC response. Establish
+    // the stream boundary before asserting the exact reasoning event sequence.
+    if (kind === "local") await waitFor(harness.frames, frame => frame.method === "turn/started"
+      && (paramsOf(frame).turn as Frame).id === turnId);
     const events = [
       { method: "item/started", params: { threadId: "summary-stream-thread", turnId,
         item: { id: "reasoning-stream", type: "reasoning", summary: [], content: [] } } },

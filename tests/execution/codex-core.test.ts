@@ -4,14 +4,111 @@ import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createServer as createTcpServer } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
 import test from "node:test";
 import { AccountPoolStore, acquireCodexWriter, CodexCoreControlClient } from "@opencraft/account-pool-host";
 import { LOGICAL_CLIENT_FIELD } from "@opencraft/app-host-protocol";
 import { startCodexCore, type CodexCoreOptions } from "../../apps/codex-core/src/main.js";
+import { startCodexAppServer } from "../../apps/codex-core/src/app-server.js";
 import { CodexEngineAdapter } from "../../apps/opencraft-daemon/src/codex-engine-adapter.js";
 
 const token = "synthetic-core-token-".repeat(3);
+
+test("split account Core restarts with stable launch credentials while the independent runtime survives", async () => {
+  const root = await mkdtemp(join(tmpdir(), "oc-core-split-"));
+  const reservation = createTcpServer();
+  await new Promise<void>(resolve => reservation.listen(0, "127.0.0.1", resolve));
+  const port = (reservation.address() as import("node:net").AddressInfo).port;
+  await new Promise<void>(resolve => reservation.close(() => resolve()));
+  const options: CodexCoreOptions = { endpoint: join(root, "accounts/control.sock"), appServerEndpoint: join(root, "execution/control.sock"),
+    authToken: token, executable: process.execPath, runtimeDirectory: root, dataDirectory: join(root, "data"),
+    nativeCodexHomeDirectory: join(root, "native"), proxyPort: port, fetch: async () => Response.json({ plan_type: "pro" }) };
+  let core = await startCodexCore(options);
+  const client = new CodexCoreControlClient(options.endpoint, token);
+  let runtime: Awaited<ReturnType<typeof startCodexAppServer>> | undefined;
+  try {
+    const launch = await client.appServerLaunch();
+    await assert.rejects(new CodexCoreControlClient(options.endpoint, "wrong").appServerLaunch(), /authentication failed/);
+    await assert.rejects(client.health(), /unavailable/);
+    runtime = await startCodexAppServer({ ...options, endpoint: options.appServerEndpoint!, coreEndpoint: options.endpoint,
+      spawnAppServer: ({ args, cwd, env }) => spawn(process.execPath,
+        [new URL("../fixtures/fake-codex-unix-appserver.mjs", import.meta.url).pathname, args[2]!.slice("unix://".length)],
+        { cwd, env, stdio: ["pipe", "pipe", "pipe"] }) });
+    const before = await client.health();
+    await assert.rejects(acquireCodexWriter(options.dataDirectory), /already owned/);
+    await core.close();
+    // Account failure must not own, signal or remove the native runtime/socket.
+    assert.equal((await new CodexCoreControlClient(options.appServerEndpoint!, token).health()).codexPid, before.codexPid);
+    await assert.rejects(acquireCodexWriter(options.dataDirectory), /already owned/);
+    core = await startCodexCore(options);
+    assert.equal((await client.health()).codexPid, before.codexPid);
+    assert.deepEqual(await client.appServerLaunch(), launch);
+    assert.deepEqual(await client.accountRequest("opencraft/codex/accounts/list", {}), { accounts: [] });
+    await runtime.close(); runtime = undefined;
+    await assert.rejects(client.health(), /unavailable/);
+  } finally { await runtime?.close(); await core.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+test("proxy drain continues serving other Turns until its long response reaches an idle point", async () => {
+  let stream!: ReadableStreamDefaultController<Uint8Array>;
+  let baseUrl = "", hostToken = "", modelRequests = 0;
+  const f = await fixture(async options => {
+    const store = new AccountPoolStore({ databasePath: join(options.dataDirectory, "account-pool.sqlite"), secretsDirectory: join(options.dataDirectory, "secrets") });
+    store.addAccount({ id: "drain", provider: "codex", label: "drain", upstreamAccountId: "drain", priority: 0, enabled: true },
+      { accessToken: "synthetic-drain", refreshToken: null, expiresAt: null }); store.close();
+    return { ...options, fetch: async input => {
+      if (String(input).includes("/wham/usage")) return Response.json({ plan_type: "pro" });
+      if (++modelRequests > 1) return new Response("other Turn completed");
+      return new Response(new ReadableStream<Uint8Array>({ start(controller) {
+        stream = controller; controller.enqueue(new TextEncoder().encode("long response"));
+      } }));
+    }, spawnAppServer(input) {
+      const setting = input.args.find(arg => arg.startsWith("model_providers.opencraft-account-pool.base_url="))!;
+      baseUrl = JSON.parse(setting.slice(setting.indexOf("=") + 1)); hostToken = input.env.OPENCRAFT_CODEX_POOL_AUTH_TOKEN!;
+      return options.spawnAppServer!(input);
+    } };
+  });
+  const request = () => fetch(`${baseUrl}/responses`, { method: "POST", headers: {
+    "x-opencraft-account-pool-token": hostToken, "content-type": "application/json",
+  }, body: '{"model":"synthetic","input":[]}' });
+  try {
+    const first = await request(), body = first.text();
+    let closed = false; const closing = f.core.close().then(() => { closed = true; });
+    await delay(80);
+    assert.equal(await (await request()).text(), "other Turn completed");
+    assert.equal(closed, false);
+    stream.close(); assert.equal(await body, "long response"); await closing;
+    assert.equal(modelRequests, 2);
+  } finally { try { stream.close(); } catch {} await f.close(); }
+});
+
+test("runtime bootstrap waits for delayed Core, cancels cleanly and fails permanent authentication errors", async () => {
+  const root = await mkdtemp(join(tmpdir(), "oc-core-bootstrap-"));
+  const endpoint = join(root, "accounts/control.sock"), appServerEndpoint = join(root, "execution/control.sock");
+  const options = { endpoint: appServerEndpoint, coreEndpoint: endpoint, authToken: token, dataDirectory: join(root, "data"),
+    runtimeDirectory: root, executable: process.execPath, waitForCore: true,
+    spawnAppServer: ({ args, cwd, env }: Parameters<NonNullable<CodexCoreOptions["spawnAppServer"]>>[0]) => spawn(process.execPath,
+      [new URL("../fixtures/fake-codex-unix-appserver.mjs", import.meta.url).pathname, args[2]!.slice("unix://".length)],
+      { cwd, env, stdio: ["pipe", "pipe", "pipe"] }) };
+  let core: Awaited<ReturnType<typeof startCodexCore>> | undefined, runtime: Awaited<ReturnType<typeof startCodexAppServer>> | undefined;
+  const abort = new AbortController();
+  try {
+    const cancelled = assert.rejects(startCodexAppServer({ ...options, signal: abort.signal }), /abort/i);
+    await delay(50); abort.abort(); await cancelled;
+    const reservation = createTcpServer(); await new Promise<void>(resolve => reservation.listen(0, "127.0.0.1", resolve));
+    const port = (reservation.address() as import("node:net").AddressInfo).port;
+    await new Promise<void>(resolve => reservation.close(() => resolve()));
+    const waiting = startCodexAppServer(options);
+    await delay(800);
+    core = await startCodexCore({ ...options, endpoint, appServerEndpoint, proxyPort: port,
+      nativeCodexHomeDirectory: join(root, "native"), fetch: async () => Response.json({ plan_type: "pro" }) });
+    runtime = await waiting;
+    assert.ok((await new CodexCoreControlClient(endpoint, token).health()).codexPid);
+    await runtime.close(); runtime = undefined;
+    await assert.rejects(startCodexAppServer({ ...options, authToken: "wrong-private-token".repeat(3) }), /authentication failed/);
+  } finally { abort.abort(); await runtime?.close(); await core?.close(); await rm(root, { recursive: true, force: true }); }
+});
 async function fixture(configure?: (options: CodexCoreOptions) => Promise<CodexCoreOptions>) {
   const root = await mkdtemp(join(tmpdir(), "oc-core-test-"));
   let options: CodexCoreOptions = {
@@ -204,6 +301,7 @@ test("Headless core mode retains overlay stores, sender and unique owner across 
     const a = await f.adapter(true);
     const initialized = await a.rpc("a", "initialize");
     assert.equal(initialized.capabilities.extensions["opencraft/bot-conversations"], undefined);
+    assert.equal(initialized.capabilities.extensions["vela/bot-conversations"], undefined);
     assert.ok(a.engine.storageOutcomes.some(row => row.name === "opencraft-host-state" && row.outcome.appliedVersion === 14));
     assert.ok(!a.engine.storageOutcomes.some(row => row.name === "account-pool"), "core is the sole account owner");
     const { thread } = await a.rpc("a", "thread/start", { cwd: "/synthetic" });

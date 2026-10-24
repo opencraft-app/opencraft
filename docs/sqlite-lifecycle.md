@@ -38,7 +38,7 @@
 
 Electron Main 三库仍按消费入口懒打开。Local Agent 基础五库及配置目录时的 Tasks 统一由 [local-agent-storage](../apps/local-agent-host/src/storage/local-agent-storage.ts) 打开；未配置目录的嵌入/测试入口使用内存库，不提供持久 Host 文档能力。服务器 Host 目录为 `OPENCRAFT_EXECUTION_STATE/data`。account-pool 由所选 Codex owner 管理；独立 [codex-core](codex-core.md) 仍独立启动/升级，默认下游 Codex adapter 在连接时打开并报告 outcome，不被 Local Agent owner 二次打开。
 
-Web preferences、Connector configuration 与插件文档继续使用各自 IndexedDB adapter；Web/Expo replica 保持原有平台语义。SQLite debug reader 是只读消费者，不建表、不迁移。DSH/Hermes/Codex 引擎私有存储、JSON 项目/模型配置不由本 runner 接管。`codex-thread-pins` 经原生 reserved section 协议操作，不是另一份本地自有 SQLite；Hermes pins 同样由远端协议 owner 持有。原生 `queue_1.sqlite` 只沿既有队列搬运语义读取/删除已确认导入记录，不接管其 schema；`.codex-writer.sqlite` 只承担 writer lock，排除于业务库清单。类名中的 DSH 不改变 routing/executions 的 OpenCraft 所有权。
+Web preferences、Connector configuration 与插件文档继续使用各自 IndexedDB adapter；Web/Expo replica 保持原有平台语义。SQLite debug reader 是只读消费者，不建表、不迁移。DSH/Hermes/Codex 引擎私有存储、JSON 项目/模型配置不由本 runner 接管。`codex-thread-pins` 经原生 reserved section 协议操作，不是另一份本地自有 SQLite；Hermes pins 同样由远端协议 owner 持有。原生 `queue_1.sqlite` 只沿既有队列搬运语义读取/删除已确认导入记录，不接管其 schema；`.codex-writer.sqlite` 只承担账号 writer lock，`.codex-runtime.sqlite` 保护 native runtime；兼容/内嵌模式获取两把，显式拆分的账号 Core 与 APP Server owner 分别持有，均排除于业务库清单。账号 Core 不打开 native 数据库；APP Server 不打开 account-pool。不同代次必须使用独立可写 CODEX_HOME，见 [三步平滑升级](codex-core.md#执行侧平滑升级三步方案)。类名中的 DSH 不改变 routing/executions 的 OpenCraft 所有权。
 
 ### 两个 Host 自有文件的离线改名
 
