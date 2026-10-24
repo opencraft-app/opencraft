@@ -277,11 +277,24 @@ html[data-timeline-tracks-visual-viewport="true"] :is(.app-shell-root, .app-shel
   height: var(--timeline-available-viewport-height, 100%);
 }
 
-// Native overlay paint capacity can exceed unoccluded VisualViewport metrics.
-// Any measured contraction restores the shared visual-frame projection, even
-// after blur. Focus is not evidence that the software keyboard has closed.
-html[data-window-host="browser"][data-window-edge-strategy="legacy-overlay-requested"]:is([data-window-display-mode="standalone"], [data-window-display-mode="fullscreen"])[data-timeline-tracks-visual-viewport="true"][data-timeline-viewport-occluded="false"] :is(.app-shell-root, .app-shell-floating-overlay-root) {
-  height: 100vh;
+// Overlay paint can exceed the native visible frame. Extend material only:
+// foreground content and the drawer's controls still fit the measured capacity.
+// A contraction restores the shared frame, even after editor blur.
+html[data-window-host="browser"][data-window-edge-strategy="legacy-overlay-requested"]:is([data-window-display-mode="standalone"], [data-window-display-mode="fullscreen"])[data-timeline-tracks-visual-viewport="true"][data-timeline-viewport-occluded="false"] {
+  :is(.app-shell-root, .app-shell-floating-overlay-root) { height: 100vh; }
+
+  .app-shell-root > .app-shell-row {
+    // SafeLayout owns the top inset. Reserve the unexposed paint tail inside
+    // that same border box; route-owned bottom safe spacing is applied once.
+    padding-bottom: max(0px, calc(100vh - var(--timeline-available-viewport-height, 100vh)));
+  }
+
+  .app-shell-floating-overlay-root > .app-shell-floating-left-panel {
+    // The stationary portal paints through the tail; its scaled content does
+    // not use that paint-only space for the navigation footer.
+    bottom: auto;
+    height: var(--timeline-available-viewport-height, 100%);
+  }
 }
 
 .app-shell-row {
