@@ -259,6 +259,12 @@ navigation/loading/failure events remain authoritative. A stalled subresource
 must not prevent video attachment, stop, replacement navigation or reconnect.
 During process recovery, the saved remote URL remains authoritative before the
 first document commits; a viewer's stale initial target cannot replace it.
+Metadata may register a logical tab before its first native creation. A
+generation-zero reservation still consumes the first viewer's initial URL when
+there is no saved recovery target; metadata presence alone must not suppress
+that navigation. Once creation has started, later viewers and reconnects cannot
+replace even a blank native document with their local initial URL. A saved
+recovery target takes precedence over the viewer's initial URL.
 The WebSocket handshake deadline ends at transport open. The separate open RPC
 allows bounded worker startup and creation; timeout messages identify the
 operation without exposing the target URL or page content.

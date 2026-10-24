@@ -662,6 +662,10 @@ export class RemoteBrowserService {
                 await this.request(existing.id, 'close'); await this.runtimeState(existing, 'absent');
               }
             }
+            // Metadata can register a logical tab before it has ever owned a
+            // native page. Only generation zero may consume an initial URL;
+            // existing blank documents still belong to their native session.
+            const firstCreation = !existing || !existing.live && existing.runtime?.generation === 0;
             const reserved = await this.reserve(ownerId, key, message.input, authorize);
             page = existing ?? { ...reserved, controller: null, live: false };
             page.runtime = reserved.runtime;
@@ -691,7 +695,7 @@ export class RemoteBrowserService {
                   config.navigation = { ...config.navigation, url: recoveryUrl, isLoading: true };
                 }
               }
-              if (!existing && modern && message.input.initialUrl) {
+              if (firstCreation && modern && message.input.initialUrl && (!existing || !recoveryUrl)) {
                 await this.visibility(page); requireNative();
                 await this.request(page.id, 'navigate', { url: message.input.initialUrl }); requireNative();
                 config = await this.request(page.id, 'snapshot'); requireNative();
@@ -704,7 +708,7 @@ export class RemoteBrowserService {
               if (ws.readyState !== WebSocket.OPEN) { this.detach(page, ws); return; }
               if (!modern) await this.control(page, ws, { action: 'human', takeover: true }, authorize);
               this.controlChanged(page);
-              reply(message.id, { ...config, document: page.document ?? config.document, documentInput: typeof (page.document ?? config.document) === 'string', inputAcknowledgements: message.input.inputAcknowledgements === true, resumed, restored: !!existing && !resumed, multiView: true, initialized: modern && !existing, control: this.controlState(page, ws) });
+              reply(message.id, { ...config, document: page.document ?? config.document, documentInput: typeof (page.document ?? config.document) === 'string', inputAcknowledgements: message.input.inputAcknowledgements === true, resumed, restored: !!existing && !resumed, multiView: true, initialized: modern && firstCreation, control: this.controlState(page, ws) });
               const attached = this.viewers(page).get(ws); if (attached) {
                 attached.ready = true; this.displayPace(page);
                 if (message.input.mediaFeedback === 1) this.display.attach(page, ws, attached, message.input.mediaStage === 'rendered' ? 'rendered' : 'received');

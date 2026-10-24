@@ -375,6 +375,63 @@ test('missing or malformed historical mappings never trigger a sweep of unwatche
 
 
 const settle = () => new Promise(resolve => setTimeout(resolve, 20));
+test('metadata committed before first native creation still navigates once and later viewers preserve the page', async () => {
+  const f = await fixture();
+  try {
+    const a = await f.connect('owner'), lease = 'browser-' + randomUUID();
+    const { scope } = await a.call('state');
+    const values = {
+      pages: [{ id:'page', ownerId:'thread', entries:[], index:-1 }],
+      tabs: [{ id:'tab', pageId:'page', ownerId:'thread' }],
+      storage: { page:lease },
+    };
+    let expectedRevision = 0;
+    for (const [key, value] of Object.entries(values)) {
+      await a.call('state', { scope, key, value:JSON.stringify(value), expectedRevision:expectedRevision++, mutationId:randomUUID() });
+    }
+    assert.equal([...f.service.pages.values()][0].runtime.generation, 0);
+    const first = await a.call('open', { lease, multiView:true, metadataRequired:true, initialUrl:'https://example.test/first' });
+    assert.equal(first.navigation.url, 'https://example.test/first');
+    assert.equal(first.initialized, true);
+    assert.equal(first.control.controller, false);
+    const b = await f.connect('owner');
+    const second = await b.call('open', { lease, multiView:true, initialUrl:'https://example.test/stale' });
+    assert.equal(second.navigation.url, 'https://example.test/first');
+    assert.equal(second.memory, first.memory);
+    assert.equal(second.initialized, false);
+    assert.equal(f.service.commands.filter(c => c.method === 'navigate').length, 1);
+    assert.equal([...f.service.pages.values()][0].controller, null);
+    await a.detach(); await b.detach();
+    await f.restart();
+    const c = await f.connect('owner');
+    const restored = await c.call('open', { lease, multiView:true, initialUrl:'https://example.test/stale-after-restart' });
+    assert.equal(restored.navigation.url, 'https://example.test/first');
+    assert.equal(restored.initialized, false);
+    await c.detach();
+  } finally { await f.close(); }
+});
+
+test('a later viewer cannot initialize an already created blank native page', async () => {
+  const f = await fixture();
+  try {
+    const lease = randomUUID(), a = await f.connect('owner');
+    await a.call('open', { lease, multiView:true });
+    await a.detach();
+    const b = await f.connect('owner');
+    const resumed = await b.call('open', { lease, multiView:true, initialUrl:'https://example.test/stale' });
+    assert.equal(resumed.navigation.url, 'about:blank');
+    assert.equal(resumed.initialized, false);
+    assert.equal(f.service.commands.filter(c => c.method === 'navigate').length, 0);
+    await b.detach(); await f.restart();
+    const c = await f.connect('owner');
+    const restored = await c.call('open', { lease, multiView:true, initialUrl:'https://example.test/stale-after-restart' });
+    assert.equal(restored.navigation.url, 'about:blank');
+    assert.equal(restored.initialized, false);
+    assert.equal(f.service.commands.filter(c => c.method === 'navigate').length, 0);
+    await c.detach();
+  } finally { await f.close(); }
+});
+
 test('modern viewers share one document/stream, keep viewport authority and aggregate visibility', async () => {
   const f = await fixture();
   try {
