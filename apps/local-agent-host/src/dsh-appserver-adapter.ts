@@ -328,6 +328,13 @@ function mapModels(catalog: RuntimeModelsListResponse, current?: { provider: str
 export type NotificationSink = (method: string, params: unknown) => void;
 
 export class DshAppServerAdapter {
+  recovery?: import("@opencraft/host-recovery").InterruptedTurnRecovery;
+  recoveryOwner?: DshExecutionOwner;
+  observeRecoveryExecution?: NotificationSink;
+  get runtimeReady(): boolean { return this.engineReady; }
+  publishRecovery(threadId: string, recovery: import("@opencraft/appserver-protocol").TurnRecoveryNotice | null): void {
+    this.emit("opencraft/turn-recovery/updated", { threadId, recovery });
+  }
   private workspaceResolver?: {
     resolve(input: LocalWorkspaceResolutionInput): Promise<LocalWorkspaceResolution>;
   };
@@ -525,6 +532,7 @@ export class DshAppServerAdapter {
   close(): void { this.admission?.failAll(new Error("Local host closed")); this.abort.abort(); this.presentation.close(); this.interactions.close(); this.liveTools.clear(); this.latestTurns.clear(); this.sinks.clear(); }
 
   engineUnavailable(error: Error): void {
+    this.recovery?.lost();
     this.historyEpoch = randomUUID(); // Native recovery invalidates volatile projection/control state.
     this.admission?.failAll(error);
     this.engineReady = false;
@@ -536,7 +544,7 @@ export class DshAppServerAdapter {
     this.livePosition.clear();
     for (const [id, summary] of this.summaries) this.summaries.set(id, { ...summary, running: false });
   }
-  engineRecovered(): void { this.engineReady = true; }
+  engineRecovered(): void { this.engineReady = true; this.recovery?.wake(); }
   async reconnectStreams(): Promise<void> {
     if (!this.streamsStarted) return this.startStreams();
     await new Promise<void>((resolve, reject) => {
@@ -595,6 +603,8 @@ export class DshAppServerAdapter {
   }
 
   private emit(method: string, params: unknown): void {
+    // Durable execution facts cannot wait behind paced presentation text.
+    if (method === "turn/started" || method === "turn/completed") this.observeRecoveryExecution?.(method, params);
     nodeObserver('dsh').execution('dsh', method, params);
     this.presentation.emit(method, params);
   }
@@ -1234,6 +1244,7 @@ export class DshAppServerAdapter {
     if (!this.engineReady) throw new Error("DSH runtime is unavailable");
     const value = object(params);
     const sessionId = string(value.threadId);
+    if (!canAdmit && ["turn/start", "turn/steer", "turn/interrupt", "thread/goal/set", "thread/goal/clear", "thread/queue/add"].includes(method)) this.recovery?.handled(sessionId);
     if (method === "thread/resume") {
       const result = await this.dispatch(method, params);
       this.admission.reconnect(sessionId, owner);
@@ -1285,6 +1296,11 @@ export class DshAppServerAdapter {
       }
     }
     if (method === "turn/interrupt" || method === "turn/steer") {
+      if (method === "turn/interrupt" && this.recoveryOwner && this.authority.table.get(sessionId)?.connection === this.recoveryOwner) {
+        await this.dispatch(method, params);
+        this.admission.finish(sessionId, "interrupted", "userInterrupted");
+        return {};
+      }
       this.authority.assertOwner(sessionId, owner, string(value.turnId ?? value.expectedTurnId) || undefined);
       if (method === "turn/steer") return this.dispatch(method, params);
       const settling = (async () => {

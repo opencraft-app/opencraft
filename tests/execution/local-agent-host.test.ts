@@ -42,7 +42,7 @@ test("Host health reports all eagerly opened stores", async () => {
     const health = await (await fetch(url)).json();
     assert.equal(health.ok, true);
     assert.deepEqual(health.storage.map((item: { name: string; status: string }) => [item.name, item.status]),
-      ["session-routing", "threads", "executions", "host-documents", "managed-connectors", "conversation-schedules"].map(name => [name, "fresh"]));
+      ["session-routing", "threads", "executions", "host-documents", "managed-connectors", "interrupted-turn-recovery", "conversation-schedules"].map(name => [name, "fresh"]));
   } finally { await host.close(); }
 });
 

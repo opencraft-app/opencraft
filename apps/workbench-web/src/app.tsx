@@ -134,6 +134,7 @@ import { useConversationRecoveryDiagnostic } from "./runtime/conversation-recove
 import { RightPanel } from "./components/right-panel";
 import { ThreadComposerPresentation } from "./components/thread-composer-presentation";
 import { ThreadGoalSurface } from "./components/thread-goal-surface";
+import { ThreadRecoveryNotice } from "./components/thread-recovery-notice";
 import { TurnDiffReviewDialog } from "./components/conversation/turn-diff-review-dialog";
 import { ComposerTurnChangeSummary } from "./components/conversation/turn-diff-resource";
 import { Button } from "./components/ui/button";
@@ -2206,8 +2207,9 @@ export function App({
                         goals={runtime.resources.goals}
                         portalContainer={portalContainer}
                       >{(goalMenuItem, _goalBusy, goalContent) => (
+                      <ThreadRecoveryNotice threadId={snapshot.phase === "ready" ? activeThreadId : null} resource={runtime.resources.turnRecovery}>{recoveryContent => (
                       <OpenCraftComposer
-                        attachedContent={goalContent}
+                        attachedContent={goalContent || recoveryContent ? <>{goalContent}{recoveryContent}</> : null}
                         floatingContent={composerChangeSummary}
                         controller={composerController}
                         defaultFollowUpAction={embedded ? "queue" : defaultFollowUpAction}
@@ -2275,6 +2277,7 @@ export function App({
                         onSubmit={sendMessage}
                         onCancel={cancelStream}
                       />
+                      )}</ThreadRecoveryNotice>
                       )}</ThreadGoalSurface>
                     ) : (
                       <div className="opencraft-composer-stack">

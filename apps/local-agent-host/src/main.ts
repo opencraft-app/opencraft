@@ -7,6 +7,8 @@ import { fileRequest } from "./host-resources.js";
 import { ConversationSchedules, ScheduleFault } from "@opencraft/host-schedules";
 import { CONVERSATION_SCHEDULES_EXTENSION } from "@opencraft/appserver-protocol";
 import { dshScheduleExecutionPort } from "./dsh-schedules.js";
+import { dshInterruptedTurns } from "./dsh-interrupted-turns.js";
+import { TURN_RECOVERY_EXTENSION } from "@opencraft/appserver-protocol";
 import type { RuntimeMachineIdentity } from "@opencraft/appserver-protocol";
 import { randomBytes, randomUUID } from "node:crypto";
 import { readFile, readdir, stat, lstat, writeFile, mkdtemp, rm, access } from "node:fs/promises";
@@ -348,12 +350,17 @@ export async function startLocalAgentHost(options: {
       for (const [socket, clients] of socketClients) for (const state of clients.values())
         sendClient(socket, state.clientId, { jsonrpc: "2.0", method: "opencraft/schedules/changed", params: {} });
     });
+  const recoveryOwner: DshExecutionOwner = { connectionId: "opencraft-recovery", identity: { id: "opencraft-recovery", username: "System recovery" } };
+  capabilities.allowHostExecution(recoveryOwner);
+  const interrupted = dshInterruptedTurns(scheduleDirectory, adapter, authority, lifecycle, prepareThreadExecution, recoveryOwner);
+  cleanup.push(() => interrupted.close());
   cleanup.push(() => schedules.close());
-  const storageSummaries = [...storage.summaries, { name: "conversation-schedules", status: schedules.outcome.status,
+  const storageSummaries = [...storage.summaries, { name: "interrupted-turn-recovery", status: interrupted.recovery.outcome.status,
+    appliedVersion: interrupted.recovery.outcome.appliedVersion, movedAside: interrupted.recovery.outcome.movedAsidePaths.length > 0 }, { name: "conversation-schedules", status: schedules.outcome.status,
     appliedVersion: schedules.outcome.appliedVersion, movedAside: schedules.outcome.movedAsidePaths.length > 0 }];
   // Stop scheduling before draining native runtimes during Host shutdown.
   const drainLifecycle = drainThreads;
-  drainThreads = async () => { await schedules.close(); await drainLifecycle?.(); };
+  drainThreads = async () => { await interrupted.close(); await schedules.close(); await drainLifecycle?.(); };
   const restartBudget = new DshRestartBudget();
   restartBudget.ready();
   let restartOperation: Promise<void> | null = null;
@@ -365,7 +372,7 @@ export async function startLocalAgentHost(options: {
     engineStatus = "restarting";
     for (const id of lifecycle.catalog.temporaryIds()) client.forgetVolatile(id);
     lifecycle.expireTemporaryThreads();
-    adapter.engineUnavailable(new Error("DSH runtime stopped; the interrupted request will not be replayed"));
+    adapter.engineUnavailable(new Error("DSH runtime stopped"));
     restartOperation = (async () => {
       for (let attempt = 0; attempt < 3; attempt++) {
         try {
@@ -540,6 +547,10 @@ export async function startLocalAgentHost(options: {
         return;
       }
       try {
+        if (request.method === "opencraft/turn-recovery/read") {
+          send(socket, { jsonrpc: "2.0", id: request.id, result: { recovery: interrupted.recovery.notice(String((request.params as any)?.threadId ?? "")) } }); return;
+        }
+        if (["turn/start", "turn/steer", "turn/interrupt", "thread/archive", "thread/delete", "thread/goal/set", "thread/goal/clear", "thread/queue/add", "thread/queue/start"].includes(request.method)) interrupted.recovery.handled(String((request.params as any)?.threadId ?? ""));
         if (request.method.startsWith("opencraft/schedules/")) {
           const result = request.method === "opencraft/schedules/list" ? schedules.list()
             : await schedules.handle(request.method, request.params, owner.identity.id);
@@ -692,6 +703,7 @@ export async function startLocalAgentHost(options: {
                 ...initialized.capabilities?.extensions,
                 [OPENCRAFT_ATTACHMENT_STAGING_EXTENSION]: attachmentStaging.capability,
                 [CONVERSATION_SCHEDULES_EXTENSION]: { version: 1, target: "existing-thread", repeat: "fixed-interval", summary: true, calendar: true },
+                [TURN_RECOVERY_EXTENSION]: { version: 1 },
               },
             },
           };
@@ -756,6 +768,7 @@ export async function startLocalAgentHost(options: {
     await skillRefresh.changed().catch(() => undefined);
   }
   schedules.start();
+  interrupted.recovery.wake();
   const websocketUrl = `ws://127.0.0.1:${address.port}/rpc?token=${encodeURIComponent(token)}`;
   return {
     websocketUrl,

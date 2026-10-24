@@ -15,6 +15,86 @@ import { CodexEngineAdapter } from "../../apps/opencraft-daemon/src/codex-engine
 
 const token = "synthetic-core-token-".repeat(3);
 
+test("Core reconnect publishes ready only after the new native initialize finishes", async () => {
+  const f = await fixture();
+  let hold = false, entered = false, release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const engine = new CodexEngineAdapter({ ...f.options, coreEndpoint: f.core.endpoint, coreAuthToken: token,
+    coreHostOverlays: true, logDiagnostic: () => {}, decorateNativeTransport: native => ({
+      get status() { return native.status; },
+      connect: signal => native.connect(signal), close: () => native.close(),
+      subscribeMessage: listener => native.subscribeMessage(listener),
+      subscribeStatus: listener => native.subscribeStatus(listener),
+      send: async frame => {
+        if (hold && JSON.parse(frame).method === "initialize") { entered = true; await gate; }
+        await native.send(frame);
+      },
+    }) });
+  let replacement: Awaited<ReturnType<typeof startCodexCore>> | undefined;
+  const frames: any[] = [];
+  const states: string[] = [];
+  engine.subscribeMessage(frame => frames.push(JSON.parse(frame)));
+  engine.subscribeStatus(status => states.push(status.state));
+  try {
+    await engine.connect();
+    await engine.send(JSON.stringify({ id: "first", method: "initialize", params: {}, [LOGICAL_CLIENT_FIELD]: "view" }));
+    for (let n = 0; n < 300 && !frames.some(frame => frame.id === "first"); n++) await delay(10);
+    assert.ok(frames.some(frame => frame.id === "first"));
+    hold = true;
+    await f.core.close();
+    replacement = await startCodexCore(f.options);
+    for (let n = 0; n < 400 && !entered; n++) await delay(10);
+    assert.equal(entered, true);
+    assert.equal(engine.status.state, "connecting");
+    assert.notEqual(states.at(-1), "open");
+    await assert.rejects(engine.send(JSON.stringify({ id: "early", method: "initialize", params: {}, [LOGICAL_CLIENT_FIELD]: "next" })), /not connected/);
+    release();
+    for (let n = 0; n < 300 && engine.status.state !== "open"; n++) await delay(10);
+    assert.equal(engine.status.state, "open");
+    await engine.send(JSON.stringify({ id: "after", method: "initialize", params: {}, [LOGICAL_CLIENT_FIELD]: "next" }));
+    assert.ok(frames.some(frame => frame.id === "after" && frame.result));
+  } finally { release(); await engine.close(); await replacement?.close(); await f.close(); }
+});
+test("failed Core initialize discards that connection and remains unavailable until a fresh handshake", async () => {
+  const f = await fixture();
+  let recovery = false, rejected = false, entered = false, release!: () => void, nativeOpens = 0;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const listeners = new Set<(frame: string) => void>();
+  const engine = new CodexEngineAdapter({ ...f.options, coreEndpoint: f.core.endpoint, coreAuthToken: token,
+    coreHostOverlays: true, logDiagnostic: () => {}, decorateNativeTransport: native => ({
+      get status() { return native.status; }, connect: signal => native.connect(signal), close: () => native.close(),
+      subscribeMessage: listener => { listeners.add(listener); const stop = native.subscribeMessage(listener); return () => { listeners.delete(listener); stop(); }; },
+      subscribeStatus: listener => native.subscribeStatus(status => { if (status.state === "open") nativeOpens++; listener(status); }),
+      send: async frame => {
+        const message = JSON.parse(frame);
+        if (recovery && message.method === "initialize") {
+          if (!rejected) {
+            rejected = true;
+            for (const listener of listeners) listener(JSON.stringify({ id: message.id, error: { code: -32000, message: "Synthetic initialize failure" } }));
+            return;
+          }
+          entered = true; await gate;
+        }
+        await native.send(frame);
+      },
+    }) });
+  let replacement: Awaited<ReturnType<typeof startCodexCore>> | undefined;
+  const frames: any[] = []; engine.subscribeMessage(frame => frames.push(JSON.parse(frame)));
+  try {
+    await engine.connect();
+    await engine.send(JSON.stringify({ id: "first", method: "initialize", params: {}, [LOGICAL_CLIENT_FIELD]: "view" }));
+    for (let n = 0; n < 300 && !frames.some(frame => frame.id === "first"); n++) await delay(10);
+    recovery = true; await f.core.close(); replacement = await startCodexCore(f.options);
+    for (let n = 0; n < 600 && !entered; n++) await delay(10);
+    assert.equal(rejected, true); assert.equal(entered, true);
+    assert.equal(nativeOpens, 3, "initial connection, rejected connection, then a fresh connection");
+    assert.notEqual(engine.status.state, "open");
+    await assert.rejects(engine.send(JSON.stringify({ id: "early", method: "initialize", params: {}, [LOGICAL_CLIENT_FIELD]: "next" })), /not connected/);
+    release(); for (let n = 0; n < 300 && engine.status.state !== "open"; n++) await delay(10);
+    assert.equal(engine.status.state, "open");
+  } finally { release(); await engine.close(); await replacement?.close(); await f.close(); }
+});
+
 test("split account Core restarts with stable launch credentials while the independent runtime survives", async () => {
   const root = await mkdtemp(join(tmpdir(), "oc-core-split-"));
   const reservation = createTcpServer();
