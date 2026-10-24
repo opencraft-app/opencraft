@@ -115,21 +115,52 @@ test('group bot mentions permit binding commands while ordinary text and direct 
 });
 
 
-test('empty compatibility metadata retains canonical human identity; declared and malformed sources stay excluded', async t => {
+test('empty compatibility metadata retains canonical human identity; assistant, unknown and malformed sources stay excluded', async t => {
   const f = await fixture(t);
   f.callback('null-compat', {...body, msgid:'null', compat_info:null});
   f.callback('empty-compat', {...body, msgid:'empty', compat_info:{}});
   await f.until(() => f.plugin.diagnostics.completed === 2);
   assert.equal(f.plugin.diagnostics.lastCompatibilitySource, 'empty');
   assert.deepEqual(f.messages.map(m => m.source.senderId), ['external','external']);
-  for (const [index, compat_info] of [{source:'ai_assistant'}, {source:'channel'}, {source:'private-unknown-source'}, {unrecognized:'private-value'}, [], '', false].entries()) {
+  for (const [index, compat_info] of [{source:'ai_assistant'}, {source:'private-unknown-source'}, {unrecognized:'private-value'}, [], '', false].entries()) {
     f.callback('excluded-' + index, {...body, compat_info});
     await f.until(() => f.plugin.diagnostics.ignored === index + 1);
-    assert.equal(f.plugin.diagnostics.lastCompatibilitySource, index === 0 ? 'ai_assistant' : index === 1 ? 'channel' : 'other');
+    assert.equal(f.plugin.diagnostics.lastCompatibilitySource, index === 0 ? 'ai_assistant' : 'other');
   }
   assert.equal(f.messages.length, 2);
   assert.equal(f.plugin.diagnostics.lastIgnoredReason, 'compatibility_callback');
   const summary = JSON.stringify(f.plugin.diagnostics);
   assert.equal(summary.includes('private-unknown-source'), false);
   assert.equal(summary.includes('private-value'), false);
+});
+
+
+test('channel callbacks retain verified sender and reply request while routing separately from ordinary groups', async t => {
+  const f = await fixture(t);
+  f.callback('channel-req', {...body, compat_info:{source:'channel'}, text:{content:'@RUI /new'}});
+  await f.until(() => f.plugin.diagnostics.completed === 1);
+  assert.equal(f.plugin.diagnostics.lastCompatibilitySource, 'channel');
+  assert.deepEqual(f.messages[0].source, {chatId:'wecom-channel:chat',chatType:'group',senderId:'external'});
+  assert.equal(f.messages[0].text, '/new');
+  await f.messages[0].reply('channel answer');
+  const reply = f.frames.find(frame => frame.cmd === 'aibot_respond_msg');
+  assert.equal(reply.headers.req_id, 'channel-req');
+  assert.equal(reply.body.stream.content, 'channel answer');
+  assert.equal(reply.body.stream.finish, true);
+  f.callback('ordinary-group', body);
+  await f.until(() => f.plugin.diagnostics.completed === 2);
+  assert.equal(f.messages[1].source.chatId, 'chat');
+  f.callback('channel-missing-chat', {...body,chatid:undefined,compat_info:{source:'channel'}});
+  await f.until(() => f.plugin.diagnostics.ignored === 1);
+  assert.equal(f.plugin.diagnostics.lastIgnoredReason, 'unsupported_content');
+  assert.equal(f.messages.length, 2);
+});
+
+test('channel callback admission still propagates a denied sender without fallback identity', async t => {
+  const f = await fixture(t, async () => {throw Object.assign(new Error('denied'), {code:'denied'});});
+  f.callback('channel-denied', {...body,compat_info:{source:'channel'}});
+  await f.until(() => f.plugin.diagnostics.failed === 1);
+  assert.equal(f.plugin.diagnostics.lastFailure, 'denied');
+  assert.equal(f.messages[0].source.senderId, 'external');
+  assert.equal(f.frames.filter(frame => frame.cmd === 'aibot_respond_msg').length, 0);
 });

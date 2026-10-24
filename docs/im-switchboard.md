@@ -136,7 +136,7 @@ upgrade described in [session capabilities](session-capabilities.md).
 WeCom follows the [official long-connection contract](https://developer.work.weixin.qq.com/document/path/101463):
 fixed WSS endpoint, Bot ID/Secret subscription, 30-second heartbeat and bounded
 reconnect. Normal human text, recognized voice and mixed text are supported;
-Declared or nonempty `compat_info` sources remain excluded; absent, null or empty metadata uses only the canonical `from.userid` and the existing sender authorization. Safe `lastCompatibilitySource` classifies observed metadata as `empty`, `ai_assistant`, `channel` or `other`, without publishing arbitrary values. New tool-mode messages send only a final stream protocol frame using the
+The exact `compat_info.source=channel` source is normalized as a group with a `wecom-channel:` chat ID namespace, retaining canonical `from.userid` and the same sender authorization. Replies keep the original callback request/stream IDs. Channel callbacks require a nonempty `chatid`. Assistant, unknown and malformed compatibility sources remain excluded; absent, null or empty metadata uses only the canonical `from.userid` and the existing sender authorization. Safe `lastCompatibilitySource` classifies observed metadata as `empty`, `ai_assistant`, `channel` or `other`, without publishing arbitrary values. New tool-mode messages send only a final stream protocol frame using the
 original request and stream IDs. Processing/final feedback remains only for
 legacy final-mode admissions. Active connection takeover stops
 reconnect. The adapter refuses expired replies and waits for ACKs.

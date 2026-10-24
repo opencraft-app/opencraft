@@ -105,14 +105,15 @@ export class WeComPlugin {
       const body = object(frame.body), sender = object(body?.from)?.userid;
       if (!body || typeof body.msgid !== 'string' || typeof sender !== 'string') { this.ignore('invalid_body'); return; }
       if (body.aibotid !== this.options.botId) { this.ignore('bot_mismatch'); return; }
+      const compat = object(body.compat_info);
+      const channelSource = compat?.source === 'channel';
       if (body.compat_info !== undefined) {
-        const compat = object(body.compat_info);
         const empty = body.compat_info === null || (compat !== null && Object.keys(compat).length === 0);
         this.observations.lastCompatibilitySource = empty ? 'empty' : compat?.source === 'ai_assistant' ? 'ai_assistant' : compat?.source === 'channel' ? 'channel' : 'other';
-        if (!empty) { this.ignore('compatibility_callback'); return; }
+        if (!empty && !channelSource) { this.ignore('compatibility_callback'); return; }
       }
-      const chatType = body.chattype === 'single' ? 'direct' : body.chattype === 'group' ? 'group' : null;
-      const chatId = chatType === 'direct' ? sender : body.chatid;
+      const chatType = channelSource ? 'group' : body.chattype === 'single' ? 'direct' : body.chattype === 'group' ? 'group' : null;
+      const chatId = channelSource ? (typeof body.chatid === 'string' && body.chatid ? 'wecom-channel:' + body.chatid : null) : chatType === 'direct' ? sender : body.chatid;
       const rawText = content(body);
       // Group callbacks retain the bot mention. Only recognize a command after
       // that transport decoration; ordinary prose remains the original input.
