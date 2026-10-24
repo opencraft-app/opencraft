@@ -419,6 +419,18 @@ same bounded diagnostic snapshot with an explicit process-lifetime explanation.
 
 ### Dedicated Token metering owner
 
+Headless deployment reads are independent of the active execution engine. The
+`opencraft-server` entry intercepts `opencraft/token-usage/query` before DSH/Pi
+dispatch and uses the existing read-only query worker against the deployment's
+Codex ledger and stable Codex server ID. It neither starts a Codex connection nor
+opens, imports, migrates or writes the ledger. Missing/unreadable statistics stay
+unavailable; this is not DSH/Pi collection support or an empty replacement store.
+The trusted ingress authority is checked before and after the read; self/team,
+cursor binding, current membership and client retirement retain their existing
+semantics. Remote Host queries retain their original owner; no cross-node merge
+is performed. Collection and configure remain with their existing writer owner.
+
+
 `TokenUsageStateDatabase` owns `token-usage.sqlite` per physical Codex Host. Its
 independent v1 migration contains the existing metering schema and an atomic
 legacy-import receipt. Published Host v1–v12 migrations and their checksums stay

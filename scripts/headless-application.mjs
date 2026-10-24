@@ -23,6 +23,8 @@ import { McpAppsService } from "../packages/mcp-apps/src/server.ts";
 import { McpAppsTransport } from "../packages/mcp-apps/src/transport.ts";
 import { AppHostServer } from "../packages/app-host-server/src/index.ts";
 import { AppServerIdentityOverlay } from "../apps/opencraft-daemon/src/appserver-identity-overlay.ts";
+import { TokenUsageQueryTransport } from "../apps/opencraft-daemon/src/token-usage-query-transport.ts";
+import { TokenUsageQueryService } from "../apps/opencraft-daemon/src/token-usage-query-service.ts";
 import { CodexEngineAdapter } from "../apps/opencraft-daemon/src/codex-engine-adapter.ts";
 import { MachineIdentityTransport } from "../apps/opencraft-daemon/src/machine-transport.ts";
 import { WebSocketTransport } from "../packages/appserver-transport-websocket/src/index.ts";
@@ -259,6 +261,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   let hubController;
   let sshNativeRpc;
   let codexReadiness;
+  let usageQueries;
   let remoteBrowser;
   let observability;
   let closing = null;
@@ -266,6 +269,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     if (closing !== null) return closing;
     capabilitiesReadyResolve();
     codexReadiness?.close();
+    usageQueries?.close();
     observability?.close();
     closing = (async () => {
       relay?.close();
@@ -428,12 +432,21 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       createMetadata: createThreadMetadata,
     });
     mcpApps = new McpAppsService(join(dataDirectory, "mcp-apps.sqlite"));
+    // Reuse the deployment's existing Codex ledger without starting a Codex
+    // transport or opening/migrating its writer from the DSH/Pi entry.
+    usageQueries = new TokenUsageQueryService({
+      entry: existsSync(fileURLToPath(new URL('./token-usage-query-worker.mjs', import.meta.url)))
+        ? fileURLToPath(new URL('./token-usage-query-worker.mjs', import.meta.url))
+        : fileURLToPath(new URL('../apps/opencraft-daemon/src/token-usage-query-worker.ts', import.meta.url)),
+      databasePath: join(dataDirectory, 'codex', 'token-usage.sqlite'),
+      serverId: `server:${machineIdentity.machineId}:codex`,
+    });
     appHostServer = new AppHostServer({
       logicalClientRouting: true,
       physicalHostLifetime: "server",
       createTransport(hostId) {
-        if (hostId === 'opencraft-server') return new MachineIdentityTransport(machineIdentity,'OpenCraft',async () =>
-          new WebSocketTransport({url:agent.resolveWebsocketUrl?await agent.resolveWebsocketUrl():agent.websocketUrl,createSocket:url=>new WebSocket(url)}));
+        if (hostId === 'opencraft-server') return new TokenUsageQueryTransport(new MachineIdentityTransport(machineIdentity,'OpenCraft',async () =>
+          new WebSocketTransport({url:agent.resolveWebsocketUrl?await agent.resolveWebsocketUrl():agent.websocketUrl,createSocket:url=>new WebSocket(url)})), usageQueries, actorId => actorStore.get(actorId));
         const remote = remoteServers.get(hostId);
         if (remote) return new MachineIdentityTransport(null, "Codex", () => createSshCodexEngineAdapter(remote, dataDirectory, createThreadMetadata, storageOpened(hostId)));
         if (hostId.startsWith("ssh:")) {
