@@ -12,6 +12,7 @@ function fixture(t: test.TestContext) {
     isContentEditable = true;
     scrollTop = 0;
     closest(_selector: string): unknown { return null; }
+    querySelector(_selector: string): unknown { return null; }
     getBoundingClientRect() { reads.rect++; return { top, height: 394, bottom: top + 394 }; }
   }
   const shell = new Element();
@@ -27,8 +28,10 @@ function fixture(t: test.TestContext) {
   const values = {
     document: doc, HTMLElement: Element, innerHeight: 394, innerWidth: 390, scrollY: 294,
     window: {
+      screen: { height: 844, width: 390 }, navigator: { standalone: false },
+      matchMedia: () => ({ matches: false }),
       visualViewport: { height: 394, width: 390, offsetTop: 294, offsetLeft: 0, pageTop: 294, scale: 1 },
-      getComputedStyle: () => { reads.style++; return { top: "294px", height: "394px" }; },
+      getComputedStyle: (element?: { paddingTop?: string }) => { reads.style++; return { top: "294px", height: "394px", paddingTop: element?.paddingTop ?? "0px" }; },
     },
   };
   for (const [key, value] of Object.entries(values)) {
@@ -153,4 +156,19 @@ test("unchanged reports cannot bypass the detailed measurement interval", t => {
   for (let i = 0; i < 30; i++) { f.advance(16); f.top(0); report(); }
   assert.equal(f.reports.length, 1, "Identical geometry stays deduplicated");
   assert.equal(f.reads.style, 7, "Detailed reads occur at 0, 80, 160, 240, 320, 400 and 480ms");
+});
+
+
+test("paint and safe content geometry are observed without inferring native status-bar pixels", t => {
+  const f = fixture(t), report = createViewportDiagnostics();
+  f.doc.activeElement.querySelector = selector => selector === ".app-shell-row"
+    ? { paddingTop: "47px", getBoundingClientRect: () => ({ top: 0, height: 844 }) }
+    : { getBoundingClientRect: () => ({ top: 47, height: 44 }) };
+  report();
+  const result = f.reports.at(-1)!;
+  assert.equal(result.screenHeight, 844); assert.equal(result.screenWidth, 390);
+  assert.equal(result.rowTop, 0); assert.equal(result.rowPaddingTop, 47);
+  assert.equal(result.headerTop, 47); assert.equal(result.standalone, 0);
+  assert.equal(result.shellPaddingTop, 0);
+  assert.ok(!("systemAppearance" in result));
 });
