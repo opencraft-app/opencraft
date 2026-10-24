@@ -138,6 +138,6 @@ test('native coalescing preserves only the real bounded single-finger tail and i
  const results=[dispatch(sample('touchStart',0))];await tick();
  for(let time=16;time<=480;time+=16)results.push(dispatch(sample('touchMove',time)));
  results.push(dispatch(sample('touchEnd',496)));release();await Promise.all(results);
- assert.deepEqual(seen.map(v=>Math.round((v.timestamp-1700000000)*1000)),[0,448,464,480,496]);
- assert.deepEqual(seen.slice(1,-1).map(v=>v.touchPoints[0].x),[448,464,480]);
+ assert.deepEqual(seen.map(v=>Math.round((v.timestamp-1700000000)*1000)),[0,464,480,496]);
+ assert.deepEqual(seen.slice(1,-1).map(v=>v.touchPoints[0].x),[464,480]);
 });

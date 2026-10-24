@@ -142,13 +142,17 @@ function createTouchInput(dispatch, now = () => performance.timeOrigin + perform
       timestamp = nativeTime / 1000;
     }
     try {
-      // Only the two most recent genuine single-contact samples precede the
-      // latest position. No old gesture replay, guessed velocity or wheel.
+      // A bounded real tail is available to restore native velocity after
+      // coalescing. No old gesture replay, guessed velocity or wheel.
       const checkedDispatch = event => {
         if (document !== getDocument()) throw Object.assign(new Error('Browser document changed'), { code: 'DOCUMENT_CHANGED', retryable: true });
         return dispatch(event);
       };
-      for (const sample of samples) await checkedDispatch(sample);
+      // Dense delivered samples already define native velocity. Only bridge a
+      // coalescing gap that would reset Chromium's 40ms movement history, using
+      // the newest genuine predecessor. Never replay every retained sample.
+      if (timed && input.type === 'touchMove' && input.time - nextClock.last >= 40 && samples.length)
+        await checkedDispatch(samples.at(-1));
       await checkedDispatch({ type: input.type, touchPoints, modifiers, ...(timed ? { timestamp } : {}) });
       active = new Map(next.map(p => [p.id, p]));
       clock = active.size && timed ? { ...nextClock, last: input.time } : null;

@@ -122,7 +122,7 @@ test('gesture sample time survives slow native ACKs and resets on final release'
  await touch.apply({...frame('touchStart',p(1)),time:500});
  await touch.apply({...frame('touchMove',p(1,90)),time:548,history:[{time:516,touchPoints:[p(1,50)]},{time:532,touchPoints:[p(1,70)]}]});
  await touch.apply({...frame('touchEnd'),time:556});
- assert.deepEqual(seen.map(v=>Math.round((v.timestamp-1700000000)*1000)),[0,16,32,48,56]);
+ assert.deepEqual(seen.map(v=>Math.round((v.timestamp-1700000000)*1000)),[0,32,48,56]);
  await touch.apply({...frame('touchStart',p(3)),time:10});
  assert.equal(Math.round(seen.at(-1).timestamp*1000),wall-70,'new gesture owns a new clock anchor');
  await touch.reset();await touch.apply({...frame('touchStart',p(4)),time:0});assert(touch.active);
@@ -144,7 +144,7 @@ test('a real stationary release preserves its pause and overlapping history is n
  await touch.apply({...frame('touchMove',p(1,40)),time:116});
  await touch.apply({...frame('touchMove',p(1,60)),time:148,history:[{time:116,touchPoints:[p(1,40)]},{time:132,touchPoints:[p(1,50)]}]});
  await touch.apply({...frame('touchEnd'),time:268});
- assert.deepEqual(seen.map(v=>v.type),['touchStart','touchMove','touchMove','touchMove','touchEnd']);
+ assert.deepEqual(seen.map(v=>v.type),['touchStart','touchMove','touchMove','touchEnd']);
  assert.equal(Math.round((seen.at(-1).timestamp-seen.at(-2).timestamp)*1000),120);
 });
 
@@ -163,4 +163,12 @@ test('navigation during a timed tail cannot inject its remaining samples into th
  await touch.apply({...frame('touchStart',p(1)),time:0});
  await assert.rejects(touch.apply({...frame('touchMove',p(1,70)),time:48,history:[{time:16,touchPoints:[p(1,40)]},{time:32,touchPoints:[p(1,50)]}]}),{code:'DOCUMENT_CHANGED'});
  assert.deepEqual(seen.map(v=>v.type),['touchStart','touchMove','touchCancel']);assert(!touch.active);
+});
+
+test('dense delivered motion never adds historical native ACK work',async()=>{
+ const seen=[],touch=createTouchInput(async event=>seen.push(event),()=>1700000000000);
+ await touch.apply({...frame('touchStart',p(1)),time:0});
+ await touch.apply({...frame('touchMove',p(1,40)),time:16});
+ await touch.apply({...frame('touchMove',p(1,60)),time:48,history:[{time:32,touchPoints:[p(1,50)]}]});
+ assert.deepEqual(seen.map(v=>Math.round((v.timestamp-1700000000)*1000)),[0,16,48]);
 });

@@ -200,8 +200,10 @@ is synthesized. Identical release geometry adds no stationary movement.
 The native adapter anchors relative viewer time to its own monotonic epoch once
 per gesture, preserving intervals across native ACK and transport jitter. It
 validates finite, ordered times, bounds future time to 1s and age to 25s, and
-validates the entire bounded history before native effects. Each historical
-sample still awaits native acknowledgement and rechecks document identity;
+validates the entire bounded history before native effects. Dense delivered samples need no historical dispatch. When coalescing would
+reset the pinned Chromium 40ms velocity history, only the newest genuine
+predecessor is injected before the latest position, at most one extra native
+ACK. Each injected sample still rechecks document identity;
 failed or retired gestures cancel without retrying a press. A real stationary
 pause remains present at touchEnd so Chromium can suppress inertia. Legacy
 untimed senders keep their previous path. The isolated worker bundles the shared
