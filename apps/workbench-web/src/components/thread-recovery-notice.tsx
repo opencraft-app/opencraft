@@ -14,7 +14,9 @@ export function ThreadRecoveryNotice({ threadId, resource, children }: { threadI
   const read = useCallback(() => threadId ? resource.getSnapshot(threadId) : null, [resource, threadId]);
   const notice = useSyncExternalStore(subscribe, read, read);
   useEffect(() => { if (threadId) void resource.refresh(threadId); }, [resource, threadId]);
-  const content = notice ? <p className="thread-recovery-notice" role="status" data-state={notice.state}>
+  const content = notice ? <p className="thread-recovery-notice ui-text--metadata" role="status" data-state={notice.state}
+    style={{ margin: 0, padding: "calc(var(--spacing) * 2) calc(var(--spacing) * 3)", overflowWrap: "anywhere",
+      color: notice.state === "continued" ? "var(--color-text-secondary)" : "var(--color-text-warning)" }}>
     {intl.formatMessage(messages[notice.state], { attempts: notice.attempts, limit: notice.limit })}
   </p> : null;
   return children ? children(content) : content;
