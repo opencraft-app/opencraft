@@ -46,7 +46,7 @@ try {
   initializeAppearanceTheme();
 } catch (error) {
   releaseAppearanceProjector();
-  try { clientRuntime.dispose(); } catch (cleanup) { reportRuntimeError(cleanup, "client-runtime-disposal"); }
+  try { clientRuntime.dispose(); } catch (cleanup) { reportRuntimeError(cleanup, "application-disposal"); }
   throw error;
 }
 startRuntimeDiagnosticCollection();
@@ -102,7 +102,7 @@ function ApplicationBootstrap() {
           await preferences.close();
           return;
         }
-        const productOptions = await clientProductOptions(import.meta.env, desktopWindowBridge?.kind);
+        const productOptions = await clientProductOptions(import.meta.env, clientRuntime.kind === "electron" ? "electron" : undefined);
         if (disposed) return;
         const created = await module.a({
           ...productOptions,
