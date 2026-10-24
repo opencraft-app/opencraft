@@ -473,3 +473,14 @@ The independent WebRTC input adapter accepts an existing reliable ordered
 DataChannel and the same authorized attachment contract. Browser signaling,
 RTP video and automatic transport switching are not supplied by that adapter.
 MSE viewers only acknowledge receipt until reliable render evidence is available.
+
+### Capturing a document loaded while painting was parked
+
+A completed visible document requests one fresh native capture through the
+existing visibility setter, independently of decoder receipt/render ACKs. An OSR
+bitmap cached before the hidden navigation is not evidence of the new document's
+pixels. Repeated idle/title events for the same native document do not repeat the
+capture. Refresh revisions share the visibility single writer: demands coalesce
+behind an in-flight setter, and a late ACK cannot resume a page whose last viewer
+has parked. The existing setter also works on retained native owners, preserving
+their documents and control leases without a runtime restart.
