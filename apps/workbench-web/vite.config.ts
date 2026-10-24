@@ -14,6 +14,7 @@ import path from "node:path";
 import { fileURLToPath, URL } from "node:url";
 
 import react from "@vitejs/plugin-react";
+import { appearanceBootstrap } from "./appearance-bootstrap.vite";
 import { pluginBranding } from "./plugin-branding.vite";
 import { loadEnv, defineConfig, type ConfigEnv, type Connect, type Plugin, type UserConfig } from "vite";
 
@@ -365,6 +366,7 @@ export function createWorkbenchWebConfig(
     base: isEmbeddedWorkbenchBuild ? "/__opencraft/" : process.env.VITE_INCLUDE_HEADLESS_APPHOST === "true" ? "./" : "/",
     define: { "process.env.NODE_ENV": JSON.stringify(mode), "process.env.PROD": JSON.stringify(mode === "production") },
     plugins: [
+      appearanceBootstrap(resolveWorkbenchPresentation(features.presentation)),
       ...(!isElectronRenderer && !isEmbeddedWorkbenchBuild && (features.pluginBranding ?? true) ? [pluginBranding(workspaceRoot,
         (process.env.VITE_WEB_EXTENSIONS ?? loadEnv(mode, process.cwd()).VITE_WEB_EXTENSIONS ?? "").split(",").map(id => id.trim()).filter(Boolean),
       )] : []),

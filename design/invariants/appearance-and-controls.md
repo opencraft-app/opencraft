@@ -110,3 +110,37 @@ handlers admit mouse input before effects; pointer drag movement requires its
 existing matching owner. Token usage heatmap preview follows mouse or keyboard,
 while explicit tap/keyboard selection is persistent and accessible through
 native buttons and aria-pressed. The daily table remains available.
+
+
+## Window appearance projection
+
+The existing appearance owner resolves one `WindowAppearanceIntent`: source and
+resolved mode, native window material/background, and Shell edge background.
+The edge uses the theme surface; native window background may use
+`surfaces.window`. These are different semantic roles, especially for Longing.
+Theme providers contribute palettes rather than status-bar controls or offsets.
+
+`WindowPresentation` separates host (browser, Electron, native container, embedded)
+from display mode (tab, standalone, fullscreen). The browser paints the document
+edge and sends `theme-color` as a hint; Electron uses its existing validated bridge
+and retains window transparency. Embedded/native-container documents paint their
+own edges but have no new system-appearance API. Host-owned means system bars, not
+ownership of another document. Native-container recognition validates the existing
+identity contract. WindowChrome remains the owner of titlebar controls/reservations;
+it does not turn its desktop left/right reservation into physical safe-area insets.
+
+The HTML head uses generated palette data from the same catalog and product policy
+as runtime. It shares mode resolution and preference-key priority, normalizes old
+builtin aliases, never writes preferences, and marks unknown/hidden selections as
+fallback. Runtime projection takes over when themes load, including late plugin
+contributions. No persistent palette cache or parallel theme catalog is introduced.
+The legacy Apple status-bar-style meta is omitted; deprecated black-translucent is
+not used to claim arbitrary drawing beneath the status bar.
+
+Projection reports requested colors, chosen host strategy and bootstrap/fallback/
+resolved phase. `systemAppearance: unobserved` is deliberate: DOM/meta/bridge writes
+cannot verify native status-bar pixels. Safe-area and keyboard geometry remain with
+the existing viewport owner; no negative-position status strip or duplicate inset.
+On current iOS, installed metadata and WebKit top-color sampling can affect native
+results. Device acceptance covers cold start, theme/system changes, SPA conversation
+navigation, foreground return and rotation, for both existing and fresh installs.

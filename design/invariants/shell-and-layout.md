@@ -11,12 +11,17 @@ native engine protocol, persisted identities or glyph geometry.
 
 ## Experimental mobile Web container
 
-The browser/PWA touch document paints its top safe area with `color-surface`,
-matching the existing `theme-color` projection. HTML and body provide an opaque
-backing while the mobile drawer root remains transparent. Standalone bootstrap
-uses the default Neutral light/dark surface before theme startup; the product's
-manifest supplies the same default light surface. Device acceptance remains
-necessary; desktop window transparency and the shared viewport owner remain.
+The browser/PWA document paints its exposed edge from the appearance owner's
+`edgeBackgroundColor` (theme surface), also projected as a system color hint.
+The touch body consumes the same edge token; the mobile drawer root stays
+transparent. Generated head bootstrap and runtime share the visible builtin
+catalog and product fallback policy. A contributed theme unavailable at bootstrap
+uses an explicit fallback until its provider loads, without persisting a new
+selection. Manifest colors remain static installation defaults, not live theme
+state. Native system pixels still require device acceptance. See
+[Window appearance projection](appearance-and-controls.md#window-appearance-projection).
+Desktop native-control reservations remain separate from CSS device safe-area
+insets. The existing viewport owner and single content-inset application remain.
 
 Touch Composer spacing retains the normal floating gap above the bottom safe
 area. With an open software keyboard, existing keyboard gaps apply without

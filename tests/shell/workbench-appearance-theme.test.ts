@@ -236,6 +236,11 @@ test("extension theme selection is root-owned and unload falls back atomically",
     },
   });
 
+  Object.assign(window, { top: window, navigator: {}, opencraftDesktop: {
+    kind: "electron", setWindowAppearance: (appearance: unknown) => desktopAppearances.push(appearance),
+  } });
+  Object.assign(document, { defaultView: window });
+
   try {
     const appearance = await import("../../apps/workbench-web/src/appearance-theme.ts");
     assert.equal(stored.get("opencraft.appearance-theme-id"), appearance.coreThemeId);
