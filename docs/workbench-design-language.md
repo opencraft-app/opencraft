@@ -544,6 +544,12 @@ existing Newera capsule on touch; never nest glass under each grouped action.
 The transcript return/working control and floating Composer change summary reuse
 this same material. The floating summary action consumes `controls.density-target`
 to retain a 44px touch hit area without enlarging its compact pointer target. New chat retains its existing text capsule for emphasis.
+The mobile drawer reserves the floating action band's existing height outside its
+native scrollport. A bottom content padding alone cannot keep intermediate rows
+from painting through translucent actions. The scrollport ends above the action
+band, including a stacked update entrance; final rows and pagination can scroll
+fully into view. Docked tablet/desktop lists retain their existing geometry.
+
 
 Material does not branch by platform or density. Existing owners keep position,
 size, labels, icons, actions and keyboard focus; touch retains at least 44px hit

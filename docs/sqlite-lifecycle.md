@@ -38,7 +38,7 @@
 
 Electron Main 三库仍按消费入口懒打开。Local Agent 基础五库及配置目录时的 Tasks 统一由 [local-agent-storage](../apps/local-agent-host/src/storage/local-agent-storage.ts) 打开；未配置目录的嵌入/测试入口使用内存库，不提供持久 Host 文档能力。服务器 Host 目录为 `OPENCRAFT_EXECUTION_STATE/data`。account-pool 由所选 Codex owner 管理；独立 [codex-core](codex-core.md) 仍独立启动/升级，默认下游 Codex adapter 在连接时打开并报告 outcome，不被 Local Agent owner 二次打开。
 
-Web preferences、Connector configuration 与插件文档继续使用各自 IndexedDB adapter；Web/Expo replica 保持原有平台语义。SQLite debug reader 是只读消费者，不建表、不迁移。DSH/Hermes/Codex 引擎私有存储、JSON 项目/模型配置不由本 runner 接管。`codex-thread-pins` 经原生 reserved section 协议操作，不是另一份本地自有 SQLite；Hermes pins 同样由远端协议 owner 持有。原生 `queue_1.sqlite` 只沿既有队列搬运语义读取/删除已确认导入记录，不接管其 schema；`.codex-writer.sqlite` 只承担 writer lock，排除于业务库清单。类名中的 DSH 不改变 routing/executions 的 OpenCraft 所有权。
+Web preferences、Connector configuration 与插件文档继续使用各自 IndexedDB adapter；Web/Expo replica 保持原有平台语义。SQLite debug reader 是只读消费者，不建表、不迁移。DSH/Hermes/Codex 引擎私有存储、JSON 项目/模型配置不由本 runner 接管。`codex-thread-pins` 经原生 reserved section 协议操作，不是另一份本地自有 SQLite；Hermes pins 同样由远端协议 owner 持有。原生 `queue_1.sqlite` 只沿既有队列搬运语义读取/删除已确认导入记录，不接管其 schema；`.codex-writer.sqlite` 只承担账号 writer lock，`.codex-runtime.sqlite` 保护 native runtime；兼容/内嵌模式获取两把，显式拆分的账号 Core 与 APP Server owner 分别持有，均排除于业务库清单。账号 Core 不打开 native 数据库；APP Server 不打开 account-pool。不同代次必须使用独立可写 CODEX_HOME，见 [三步平滑升级](codex-core.md#执行侧平滑升级三步方案)。类名中的 DSH 不改变 routing/executions 的 OpenCraft 所有权。
 
 ### 两个 Host 自有文件的离线改名
 
@@ -449,9 +449,25 @@ recovery state in one destination transaction. It copies no queue, sender, body
 or credential tables. Failure rolls back all copied rows and the receipt; retry
 uses the same managed destination. The former tables remain an inactive recovery
 source and are never updated by the new collector. Reopen verifies the recorded
-legacy scope revisions, skips copying and preserves new data. If an old binary
-has written a divergent legacy history after cutover, statistics fail closed and
-both histories remain intact; no automatic downgrade or guessed merge is offered.
+legacy scope revisions, skips copying and preserves new data. A changed legacy revision is checked against the dedicated store before collection.
+A covered subset of trusted admission/input/counter facts, preserved coverage and Turn
+identities and terminal states, and already-covered versioned sources can reopen
+without copying or changing either history or the original import receipt. A
+newer dedicated source version supersedes its older legacy version; equal versions
+with different counts, conflicting known model identities, missing evidence, or a
+legacy terminal state absent from the dedicated store still fail closed. Derived
+projections and the dedicated owner's own replay coordinates are not copied back
+from the former owner. Current collection settings, resolved coverage ends,
+projection flags and recovery cursors remain with the dedicated owner; they do
+not have to equal its inactive predecessor. Pending attempts may recover to unknown
+or settle through a late outcome, but settled outcomes and immutable ingress
+identity must match. Unknown pending input/submission identities may be completed
+by the existing owner rules; known identities cannot change. Native counters keep
+their epoch, monotonic source version and cumulative counts; advancing a baseline
+requires the previous Turn to be settled and the next Turn to exist. Equal counter
+versions cannot change cumulative counts. A legacy frozen Turn cannot be thawed.
+Both files remain intact; no downgrade or guessed merge
+is offered.
 No account/session data is removed and no published migration is rewritten.
 
 The Host reports both managed outcomes and closes the collector/read worker

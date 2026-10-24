@@ -267,7 +267,9 @@
     "smoke:touch-hover": "tsx scripts/smoke/shell/smoke-touch-hover.ts",
     "smoke:structured-preview": "tsx scripts/smoke/resources/smoke-structured-preview.ts",
     "smoke:headless-connectors": "tsx scripts/smoke/server/smoke-headless-connectors.ts",
-    "test:turn-recovery": "tsx --test tests/execution/interrupted-turn-recovery.test.ts tests/chat/thread-recovery-resource.test.ts"
+    "test:turn-recovery": "tsx --test tests/execution/interrupted-turn-recovery.test.ts tests/chat/thread-recovery-resource.test.ts",
+    "smoke:safe-layout": "tsx scripts/smoke/shell/smoke-safe-layout.ts",
+    "smoke:safe-layout-host": "OPENCRAFT_GESTURE_SAFE_LAYOUT_ONLY=1 tsx scripts/smoke/shell/smoke-mobile-sidebar-gesture.ts"
   },
   "dependencies": {
     "react": "19.3.1",

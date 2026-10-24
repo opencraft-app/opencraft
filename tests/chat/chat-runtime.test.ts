@@ -2648,3 +2648,41 @@ test("queue-only confirmation of an outbox timeout automatically releases the ne
   assert.equal(runtime.getSnapshot().queuedSubmissions.some(row => row.local), false);
   runtime.dispose();
 });
+
+test("a superseded inProgress history turn cannot keep the composer running after a later turn completes", () => {
+  const replica = new FakeReplica(threadView({ thread: { id: "thread-one", status: { type: "idle" } }, pendingInteractions: [], turns: [
+    { id: "before-restart", status: "inProgress", items: [{ id: "old-answer", type: "agentMessage", text: "Old progress" }, { id: "old-retry", type: "error", message: "Retrying", willRetry: true }] },
+    { id: "after-restart", status: "completed", items: [{ id: "new-answer", type: "agentMessage", text: "Done" }] },
+  ] }));
+  const runtime = createReplicaConversationRuntime({ key: createConversationKey("local", "thread-one"), replica, commands: commands(), history: { async loadOlder() {} } });
+  try {
+    const snapshot = runtime.getSnapshot();
+    assert.equal(snapshot.activeTurn, null);
+    const previous = groupTimelineFramesByTurn(snapshot.timeline).find(turn => turn.turnId === "before-restart");
+    assert.equal(previous?.status, "interrupted");
+    assert.equal(previous?.frames.some(frame => frame.blocks.some(block => block.type === "error")), false);
+  }
+  finally { runtime.dispose(); }
+});
+
+test("an idle Thread notification cannot cancel a newer Turn start from an independent stream", () => {
+  const replica = new FakeReplica(threadView({ thread: { id: "thread-one", status: { type: "idle" } }, pendingInteractions: [] }), false);
+  const runtime = createReplicaConversationRuntime({ key: createConversationKey("local", "thread-one"), replica, commands: commands(), history: { async loadOlder() {} } });
+  try {
+    assert.equal(runtime.getSnapshot().activeTurn?.turnId, "turn-one");
+    replica.setAuthority(true);
+    assert.equal(runtime.getSnapshot().activeTurn?.turnId, "turn-one");
+    replica.setEntity(threadView({ pendingInteractions: [] }));
+    assert.equal(runtime.getSnapshot().activeTurn?.turnId, "turn-one");
+  } finally { runtime.dispose(); }
+});
+
+test("a later running turn remains the active turn when earlier inProgress history is superseded", () => {
+  const replica = new FakeReplica(threadView({ pendingInteractions: [], turns: [
+    { id: "before-restart", status: "inProgress", items: [] },
+    { id: "after-restart", status: "inProgress", items: [] },
+  ] }));
+  const runtime = createReplicaConversationRuntime({ key: createConversationKey("local", "thread-one"), replica, commands: commands(), history: { async loadOlder() {} } });
+  try { assert.equal(runtime.getSnapshot().activeTurn?.turnId, "after-restart"); }
+  finally { runtime.dispose(); }
+});

@@ -211,6 +211,11 @@ export async function startCodexAccountPoolServer(options: {
   return {
     url: `http://${displayHost}:${address.port}`,
     close: () => closing ??= (async () => {
+      // Existing native Turns may need another model request while a different
+      // Turn is still streaming. Keep accepting until the proxy is idle; then
+      // stop listening synchronously at that idle point. Persistent traffic
+      // delays this maintenance rather than consuming native retry budgets.
+      while (active.size > 0) await Promise.allSettled([...active]);
       await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
       // An aborted socket can close before OAuth refresh finishes. Its handler
       // must finish persisting credentials before the owner closes storage.
