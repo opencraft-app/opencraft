@@ -1,9 +1,12 @@
 'use strict';
+const { randomUUID } = require('node:crypto');
+const { MediaFlow } = require('@opencraft/remote-interaction/server');
 
 // A gap belongs to one viewer, never to the shared prediction stream. Do not
 // queue stale pictures or send deltas whose reference pictures were skipped.
-function createDisplayFlow({ keyframe, diagnose, now = Date.now }) {
+function createDisplayFlow({ keyframe, diagnose, pace = () => {}, now = () => performance.now() }) {
   const flows = new Map();
+  const receivers = new Map();
   const low = 64 * 1024, high = 128 * 1024, hard = 4 * 1024 * 1024;
   const clear = ws => { const flow = flows.get(ws); clearTimeout(flow?.timer); flows.delete(ws); };
   const close = ws => {
@@ -24,6 +27,24 @@ function createDisplayFlow({ keyframe, diagnose, now = Date.now }) {
     flow.timer = setTimeout(() => poll(ws, flow), 100); flow.timer.unref();
   }
   return {
+    attach(page, ws, viewer, stage) {
+      if (!['received', 'rendered'].includes(stage) || receivers.has(ws)) return;
+      const media = new MediaFlow({ stage, epoch: randomUUID, now,
+        configure: config => { if (ws.readyState === 1) ws.send(JSON.stringify(config)); },
+        keyframe: () => { if (viewer.visible) keyframe(page); },
+        close: () => close(ws),
+        pace: fps => { if (viewer.decodeFps !== fps) { viewer.decodeFps = fps; pace(page); } } });
+      const timer = setInterval(() => {
+        if (ws.readyState !== 1) return;
+        try {
+          viewer.authorize?.();
+          if (ws.bufferedAmount > hard) { close(ws); return; }
+          if (viewer.visible) media.tick();
+        } catch { ws.close(1008, 'Browser admission expired'); }
+      }, 250); timer.unref();
+      receivers.set(ws, { media, timer });
+    },
+    feedback(ws, input) { return receivers.get(ws)?.media.feedback(input) ?? false; },
     send(page, ws, viewer, packet, event) {
       if (ws.bufferedAmount > hard) { close(ws); return; }
       let flow = flows.get(ws);
@@ -35,10 +56,19 @@ function createDisplayFlow({ keyframe, diagnose, now = Date.now }) {
         if (packet[0] !== 1 || ws.bufferedAmount > low) return;
         clear(ws); diagnose('display_resumed');
       }
+      if (packet && receivers.has(ws) && !receivers.get(ws).media.admit(packet)) return;
       ws.send(packet ?? JSON.stringify(event), { binary: !!packet });
     },
-    detach: clear,
-    close() { for (const ws of flows.keys()) clear(ws); },
+    detach(ws) {
+      clear(ws);
+      const receiver = receivers.get(ws);
+      if (receiver) { clearInterval(receiver.timer); receiver.media.dispose(); receivers.delete(ws); }
+    },
+    close() {
+      for (const ws of flows.keys()) clear(ws);
+      for (const { media, timer } of receivers.values()) { clearInterval(timer); media.dispose(); }
+      receivers.clear();
+    },
   };
 }
 module.exports = { createDisplayFlow };
