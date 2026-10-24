@@ -74,3 +74,7 @@ backend callback. No paid Apple Developer Program membership is required.
 Validation must distinguish synthetic device/provider boundaries, real HTTP and
 AppHost behavior, packaged UI and actual iPhone/APNs delivery. A build, provider
 2xx or desktop simulation is not physical-device acceptance.
+
+Managed Headless installations forward the exact `/__opencraft_push` HTTP route
+from the static Web worker to Headless, preserving authentication, Origin and body.
+Static serving alone cannot handle subscription operations.

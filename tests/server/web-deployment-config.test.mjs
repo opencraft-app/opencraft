@@ -105,3 +105,32 @@ test('resource recovery gives entry and relative imports fresh URLs without movi
   const invalid = await (await fetch(base + '/?opencraft-resource-recovery=%3Cscript%3E')).text();
   assert.doesNotMatch(invalid, /assets\/recovery-/);
 });
+
+
+test('managed Web forwards push enrollment to Headless with authentication and body intact', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'web-push-forward-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const requests = [];
+  const backend = createServer(async (request, response) => {
+    const chunks = []; for await (const chunk of request) chunks.push(chunk);
+    requests.push({ path: request.url, method: request.method, cookie: request.headers.cookie,
+      origin: request.headers.origin, body: Buffer.concat(chunks).toString() });
+    response.writeHead(request.headers.cookie ? 200 : 401, { 'content-type': 'application/json' });
+    response.end(JSON.stringify({ enabled: !!request.headers.cookie }));
+  });
+  await new Promise(resolve => backend.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise(resolve => backend.close(resolve)));
+  const worker = await createWorkbenchWebServer({ root, appServerTarget: null,
+    headlessBackendTarget: `http://127.0.0.1:${backend.address().port}` });
+  t.after(() => worker.close());
+  const base = `http://127.0.0.1:${(await worker.listen({ host: '127.0.0.1', port: 0 })).port}`;
+  assert.equal((await fetch(base + '/__opencraft_push')).status, 401);
+  const body = JSON.stringify({ operation: 'subscribe', expectedActorId: 'fixture-human' });
+  const response = await fetch(base + '/__opencraft_push', { method: 'POST',
+    headers: { cookie: 'fixture-session=synthetic', origin: 'https://workbench.test', 'content-type': 'application/json' }, body });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { enabled: true });
+  assert.deepEqual(requests[1], { path: '/__opencraft_push', method: 'POST', cookie: 'fixture-session=synthetic', origin: 'https://workbench.test', body });
+  assert.equal((await fetch(base + '/__opencraft_push-extra')).status, 404);
+  assert.equal(requests.length, 2, 'similarly named static paths never reach Headless');
+});
