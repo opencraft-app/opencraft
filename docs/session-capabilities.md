@@ -139,7 +139,10 @@ New tool-mode arrivals skip processing stream feedback and automatic final
 forwarding. A normal final remains in the workbench. The explicit tool sends one
 complete text response within the original transport deadline and a 20,000-byte
 budget. WeCom still uses its required final stream protocol frame, without
-incremental content updates. No new proactive send path is introduced.
+incremental content updates. The separate native WeCom `wecom_send_post` tool can publish a standalone post
+when explicitly requested by the current authorized human. It uses native channel
+discovery/membership and an IM-owned durable effect journal, not the callback
+reply stream; see [standalone posts](im-switchboard.md#native-wecom-standalone-posts).
 
 Claiming an unsent reply and persisting its text occur before transport I/O.
 An identical retry after success returns the stored delivered receipt; a

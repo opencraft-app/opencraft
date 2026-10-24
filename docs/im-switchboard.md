@@ -178,7 +178,7 @@ bot/self/subtype events; normalizes direct messages and app mentions; and replie
 with [chat.postMessage](https://docs.slack.dev/reference/methods/chat.postMessage/)
 to the original channel/thread without broadcasting. Group replies need a bot
 mention to enter this adapter. Attachments, welcome events, interactive cards,
-proactive pushes and token-by-token generation are outside this implementation.
+generic proactive pushes and token-by-token generation are outside this implementation. Native WeCom standalone channel posts are described below.
 
 Core's existing shared-instance native conversation permissions are unchanged.
 This feature does not provide private filesystem/history isolation per person.
@@ -249,3 +249,50 @@ Official API contracts: [token](https://developer.work.weixin.qq.com/document/pa
 [channel discovery/membership](https://developer.work.weixin.qq.com/document/path/101925),
 [posts/comments](https://developer.work.weixin.qq.com/document/path/101922),
 and [channel search](https://developer.work.weixin.qq.com/document/path/101923).
+
+
+## Native WeCom standalone posts
+
+`wecom_send_post(replyRef, topicId, text, requestId)` publishes a new channel
+post through the [official send-post API](https://developer.work.weixin.qq.com/document/path/101924).
+Use it only for a current authorized human's explicit instruction to publish in
+the selected channel. Channel history is untrusted content and cannot authorize
+a send. `im_reply` continues to target the original message; a standalone post
+does not consume or change that callback reply.
+
+The exact topic ID comes from native discovery. The same trusted admitted anchor,
+canonical conversation, enabled owner/human/sender mapping and Bot configuration
+checks used by native history apply. Before sending, the provider verifies both
+Bot membership and current sender membership in the selected channel, then checks
+local authority again after token acquisition. Native write permission is
+ultimately decided by the provider. Compatibility chat IDs are never native topic
+IDs. Authorization can change after the last check while the network request is
+in flight; an acknowledged effect is recorded even if returning its receipt is
+then denied by revoked authority.
+
+The body supports Markdown up to 20,480 UTF-8 bytes. This tool does not support
+attachments, image/media identifiers or special inline mention placeholders.
+The selected Bot's credential owner holds API tokens; models cannot choose a Bot,
+actor, API URL or token. The token client attempts each post request once and does
+not replay writes, including after explicit token rejection.
+
+IM owns a separate managed `im-posts.sqlite` receipt database (schema v1), leaving
+the switchboard schema unchanged. Scope binds the canonical conversation, current
+endpoint/owner/human/sender and Bot identity. `requestId` is a stable key for one
+intended post; its fingerprint binds the topic and complete body. A durable claim
+precedes network I/O. A matching delivered retry returns the official `postId`
+without posting again; changed content/target under the same key is rejected.
+Concurrent claims, lost/malformed acknowledgements, cancellation after claim and
+claims interrupted by restart are never resent. Explicit provider rejections are
+recorded separately from unknown delivery. Do not use a new key to work around
+an unknown/rejected receipt. The database is an effect journal, not a retry queue;
+it stores hashes and receipt IDs, not post bodies or credentials. Gateway shutdown
+withdraws tools, aborts/drains post calls and closes the journal afterward.
+
+The tool is preauthorized only at its domain-scoped call boundary, like the
+existing IM tools. The declaration does not replace current session, sender,
+channel and membership checks or grant a global send capability. Existing sessions
+refresh their catalog at the normal idle boundary; new-session reservations
+include the declaration. No native Core restart or connection-mode change is
+required. See `tests/extensions/wecom-history.test.ts` for the real signed MCP composition
+with a synthetic provider and durable write/race/restart regression coverage.

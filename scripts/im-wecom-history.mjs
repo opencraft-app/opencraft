@@ -120,60 +120,19 @@ export class ImWeComHistory {
       fail();
     return decoded.state;
   }
-  async call(ref, name, args, outerSignal) {
-    if (
-      !WECOM_HISTORY_TOOLS.some((t) => t.name === name) ||
-      !args ||
-      typeof args !== "object" ||
-      Array.isArray(args)
-    )
-      fail();
-    const definition = WECOM_HISTORY_TOOLS.find((t) => t.name === name);
-    if (
-      Object.keys(args).some(
-        (k) => !Object.hasOwn(definition.inputSchema.properties, k),
-      )
-    )
-      fail();
-    for (const k of definition.inputSchema.required)
-      if (!Object.hasOwn(args, k)) fail();
-    const limit = args.limit ?? 10;
-    if (!Number.isInteger(limit) || limit < 1 || limit > 20) fail();
-    if (
-      (name !== "wecom_list_channels" && !id(args.topicId)) ||
-      (name === "wecom_read_post" && !id(args.postId))
-    )
-      fail();
-    for (const k of ["from", "until"])
-      if (
-        args[k] !== undefined &&
-        (!Number.isSafeInteger(args[k]) || args[k] < 0)
-      )
-        fail();
-    if (
-      args.from !== undefined &&
-      args.until !== undefined &&
-      args.from > args.until
-    )
-      fail();
-    if (
-      name === "wecom_search_channel" &&
-      (typeof args.query !== "string" ||
-        !args.query.trim() ||
-        Buffer.byteLength(args.query) > 32)
-    )
-      fail();
+  async scope(ref, replyRef, outerSignal) {
     const signal = AbortSignal.any([
       ...(outerSignal ? [outerSignal] : []),
       AbortSignal.timeout(45_000),
     ]);
     signal.throwIfAborted();
-    const initial = this.im.readScope(ref, args.replyRef);
+    const initial = this.im.readScope(ref, replyRef);
     let configuration;
     const identity = (c) => JSON.stringify([c.botId, c.ownerId, c.revision]);
     const authorize = () => {
       signal.throwIfAborted();
-      const current = this.im.readScope(ref, args.replyRef);
+      if (this.closed) fail();
+      const current = this.im.readScope(ref, replyRef);
       if (JSON.stringify(current) !== JSON.stringify(initial)) fail();
       const c = this.store
         .channels()
@@ -238,17 +197,64 @@ export class ImWeComHistory {
       }
       throw Error("wecom_history_membership_incomplete");
     };
-    const allowed = async () => {
+    const allowed = async (topicId) => {
       const d = await call("topic/get_topic_list", {
         type: 0,
-        topic_id_list: [args.topicId],
+        topic_id_list: [topicId],
       });
       if (
-        !list(d.topic_list, 100).some((t) => t.topic_id === args.topicId) ||
-        !(await member(args.topicId))
+        !list(d.topic_list, 100).some((t) => t.topic_id === topicId) ||
+        !(await member(topicId))
       )
         fail();
     };
+    return { signal, initial, configuration, channel, api, authorize, call, member, allowed };
+  }
+  async call(ref, name, args, outerSignal) {
+    if (
+      !WECOM_HISTORY_TOOLS.some((t) => t.name === name) ||
+      !args ||
+      typeof args !== "object" ||
+      Array.isArray(args)
+    )
+      fail();
+    const definition = WECOM_HISTORY_TOOLS.find((t) => t.name === name);
+    if (
+      Object.keys(args).some(
+        (k) => !Object.hasOwn(definition.inputSchema.properties, k),
+      )
+    )
+      fail();
+    for (const k of definition.inputSchema.required)
+      if (!Object.hasOwn(args, k)) fail();
+    const limit = args.limit ?? 10;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 20) fail();
+    if (
+      (name !== "wecom_list_channels" && !id(args.topicId)) ||
+      (name === "wecom_read_post" && !id(args.postId))
+    )
+      fail();
+    for (const k of ["from", "until"])
+      if (
+        args[k] !== undefined &&
+        (!Number.isSafeInteger(args[k]) || args[k] < 0)
+      )
+        fail();
+    if (
+      args.from !== undefined &&
+      args.until !== undefined &&
+      args.from > args.until
+    )
+      fail();
+    if (
+      name === "wecom_search_channel" &&
+      (typeof args.query !== "string" ||
+        !args.query.trim() ||
+        Buffer.byteLength(args.query) > 32)
+    )
+      fail();
+    const { signal, initial, configuration, authorize, call, member, allowed } =
+      await this.scope(ref, args.replyRef, outerSignal);
     const context = createHash("sha256")
       .update(
         JSON.stringify([
@@ -303,7 +309,7 @@ export class ImWeComHistory {
       for (const t of topics) if (!(await member(t.topicId))) fail();
       result = { topics, nextCursor: continuation(data) };
     } else {
-      await allowed();
+      await allowed(args.topicId);
       if (name === "wecom_read_channel") {
         const data = await call("topic/get_post_list", {
           topic_id: args.topicId,
@@ -407,7 +413,7 @@ export class ImWeComHistory {
           result = { topicId: args.topicId, posts, nextCursor };
         }
       }
-      await allowed();
+      await allowed(args.topicId);
     }
     authorize();
     return {
@@ -424,6 +430,7 @@ export class ImWeComHistory {
     };
   }
   close() {
+    this.closed = true;
     this.clients.clear();
     this.key.fill(0);
   }

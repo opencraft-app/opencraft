@@ -3,6 +3,9 @@ import { randomBytes, randomUUID, createHash } from "node:crypto";
 import { SwitchboardStore } from "../plugins/im/src/store.ts";
 import { IM_REPLY_TOOL } from "../plugins/im/src/reply-tool.ts";
 import { IM_READ_TOOLS } from "../plugins/im/src/read-tools.ts";
+import { ImPostReceipts } from "../plugins/im/src/post-receipts.ts";
+import { ImWeComPosts } from "./im-wecom-posts.mjs";
+import { WECOM_POST_TOOL } from "../plugins/wecom/src/post-tool.ts";
 import { ImWeComHistory } from "./im-wecom-history.mjs";
 import { WECOM_HISTORY_TOOLS } from "../plugins/wecom/src/history.ts";
 import { ImPlugin } from "../plugins/im/src/server.ts";
@@ -107,14 +110,22 @@ export class ImChannelService {
     this.execution = createImExecution(dependencies);
     this.im = new ImPlugin(this.store, this.execution, 1024, !!dependencies.capabilities);
     this.wecomHistory = new ImWeComHistory(this.im, this.store, this.credentials, dependencies.wecomHistoryFetch);
+    try {
+      this.wecomPosts = new ImWeComPosts(this.wecomHistory, new ImPostReceipts(join(dependencies.dataDirectory, "im-posts.sqlite")));
+    } catch (error) {
+      this.wecomHistory.close();
+      this.store.close();
+      throw error;
+    }
     this.unregisterCapabilities = dependencies.capabilities?.register({
       id: 'im.reply',
       tools: session => [
         ...(this.im.replyAvailable(session) ? [IM_REPLY_TOOL] : []),
         ...(this.im.readAvailable(session) ? IM_READ_TOOLS : []),
-        ...(this.wecomHistory.available(session) ? WECOM_HISTORY_TOOLS : []),
+        ...(this.wecomHistory.available(session) ? [...WECOM_HISTORY_TOOLS, WECOM_POST_TOOL] : []),
       ],
       call: (session, name, args, signal) => {
+        if (name === WECOM_POST_TOOL.name) return this.wecomPosts.call(session, args, signal);
         if (WECOM_HISTORY_TOOLS.some(tool => tool.name === name)) return this.wecomHistory.call(session, name, args, signal);
         if (IM_READ_TOOLS.some(tool => tool.name === name)) return this.im.read(session, name, args, signal);
         if (name !== 'im_reply') throw Error('capability_denied');
@@ -125,6 +136,7 @@ export class ImChannelService {
     this.serial = Promise.resolve();
     this.closed = false;
   }
+  get postOutcome() { return this.wecomPosts.receipts.outcome; }
   get outcome() {
     return this.store.outcome;
   }
@@ -670,6 +682,7 @@ export class ImChannelService {
     this.unregisterCapabilities?.();
     await this.serial.catch(() => {});
     for (const id of this.adapters.keys()) this.disconnect(id);
+    await this.wecomPosts.close();
     this.wecomHistory.close();
     await this.im.close();
   }
