@@ -320,6 +320,7 @@ export async function startEngineHost(options: {
   await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
   return {
     websocketUrl: `ws://127.0.0.1:${(server.address() as AddressInfo).port}/rpc?token=${token}`,
+    get ready() { return [...readiness.values()].every(state => state === "ready"); },
     get storageOutcomes() { return options.providers.flatMap(provider => [...provider.storageOutcomes ?? []]); },
     async close() {
       closing = true;

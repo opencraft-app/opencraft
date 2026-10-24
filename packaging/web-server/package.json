@@ -14,7 +14,8 @@
     "opencraft-web.service",
     "execution",
     "opencraft-execution.service",
-    "opencraft-dsh-host.service"
+    "opencraft-dsh-host.service",
+    "opencraft-engine-host.service"
   ],
   "engines": {
     "node": ">=22"

@@ -35,6 +35,7 @@ import { SshManagement } from "../apps/opencraft-daemon/src/ssh-management.ts";
 import { startLocalAgentHost } from "../apps/local-agent-host/src/main.ts";
 import { startEngineHost } from "../apps/local-agent-host/src/engine-host.ts";
 import { createPiModelConfiguration } from "../apps/local-agent-host/src/model-config/pi-adapter.ts";
+import { attachEngineHost } from './server-deployment/engine-host-client.mjs';
 import { PiEngine } from "../plugins/pi-engine/src/index.ts";
 import { createWorkbenchWebServer } from "./serve-workbench-web.mjs";
 import { loadLocalMachineAccess } from './local-machine-access.mjs';
@@ -93,6 +94,7 @@ export function parseHeadlessArguments(argv, env = process.env, getHomeDirectory
   let relayConnectFile;
   let humanAuthConfig;
   let localAccessFile = env.OPENCRAFT_LOCAL_ACCESS_FILE;
+  const engineHostDescriptor = env.OPENCRAFT_ENGINE_HOST_DESCRIPTOR;
   let imConfigFile = env.OPENCRAFT_IM_CONFIG_FILE;
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
@@ -180,7 +182,7 @@ export function parseHeadlessArguments(argv, env = process.env, getHomeDirectory
   if (localDesktop && host !== "127.0.0.1") throw new Error("Local desktop requires a loopback-only listener");
   defaultEngine ??= engines[0];
   if (!engines.includes(defaultEngine)) throw new Error("Default engine must be enabled");
-  return { help: false, host, port, ...(engines.length !== 1 || engines[0] !== "dsh" ? { engines, defaultEngine } : {}), dataDirectory: resolve(dataDirectory), allowUnauthenticatedPublic,
+  return { help: false, host, port, ...(engineHostDescriptor ? {engineHostDescriptor} : {}), ...(engines.length !== 1 || engines[0] !== "dsh" ? { engines, defaultEngine } : {}), dataDirectory: resolve(dataDirectory), allowUnauthenticatedPublic,
     ...(machineName ? { machineName } : {}),
     ...(sshConfig ? { sshConfig } : {}),
     ...(accessControl ? { accessControl } : {}), ...(relayConnectFile ? { relayConnectFile } : {}),
@@ -234,6 +236,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   const releaseLock = await lockfile.lock(join(dataDirectory, "server"), { realpath: false, retries: 0 });
   let agent;
   let dshAgent;
+  let releasePiOwner;
   let web;
   let appHostServer;
   let sshManagement;
@@ -280,6 +283,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       const entryResults = await Promise.allSettled([ingress?.close(), sshNativeRpc?.close(), imPlugins?.close()]);
       entryResults.push(...await Promise.allSettled([connectorService?.close(), actorCollaboration?.close()]));
       const results = [...entryResults, ...await Promise.allSettled([web?.close(), appHostServer?.close(), agent?.close()])];
+      if (releasePiOwner) results.push(...await Promise.allSettled([releasePiOwner()]));
       results.push(...await Promise.allSettled([(await dshAgent?.catch(() => undefined))?.close()]));
       results.push(...await Promise.allSettled([capabilityMcp?.close()]));
       results.push(...await Promise.allSettled([agentIdentity?.close()]));
@@ -358,8 +362,9 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     });
     const engines = options.engines ?? ["dsh"];
     let piEngine;
+    let independentEngine;
     const conversationExecution = createRoutedConversationExecution(() => appHostServer, {machineId:machineIdentity.machineId,engines,
-      getInputs:async engine => engine === 'pi' ? piEngine?.inputs : (await startDsh()).inputs});
+      getInputs:async engine => engine === 'pi' ? (independentEngine?.inputs ?? piEngine?.inputs) : (await startDsh()).inputs});
     actorCollaboration = new Collaboration(join(dataDirectory, 'actor-collaboration.sqlite'), actorStore,
       conversationExecution, Date.now, actorId => !instanceAccess || instanceAccess.admitsActor(actorId));
     actorCollaborationApi = new CollaborationHttpApi(actorCollaboration, actorAccess);
@@ -410,7 +415,12 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       },
       machineIdentity,
     }).catch(error => {dshAgent=undefined;throw error;});
-    if (engines.includes("pi")) {
+    if (options.engineHostDescriptor) {
+      independentEngine = await attachEngineHost(options.engineHostDescriptor, dataDirectory, machineIdentity.machineId,
+        engines, options.defaultEngine ?? (engines.includes("dsh") ? "dsh" : "pi"));
+      agent = independentEngine;
+    } else if (engines.includes("pi")) {
+      releasePiOwner = await lockfile.lock(join(dataDirectory, "pi-owner"), {realpath:false,retries:0});
       const piModels = await createPiModelConfiguration(join(dataDirectory, "models"), join(dataDirectory, "pi"));
       piEngine = new PiEngine({ ...piModels, sessionCapabilities: capabilities.scoped(`server:${machineIdentity.machineId}:pi`), directory: join(dataDirectory, "pi"), cwd: options.runtimeDirectory ?? join(root, "runtime") });
       agent = await startEngineHost({

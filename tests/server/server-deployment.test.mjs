@@ -27,13 +27,14 @@ test('independent DSH rejects legacy candidates and rollback baselines before ch
     await writeFile(join(webRoot, 'version.json'), JSON.stringify({ schemaVersion: 1, buildId: 'fixture', headlessServer: true, headlessHostId: 'opencraft-server' }));
     const packed = await packageWebServer({ version: '1.0.0', webRoot, output: join(root, 'packed'), execution: true, executionProfile: 'headless' });
     // Query the required member instead of buffering the entire execution payload listing.
-    const files = execFileSync('tar', ['-tzf', packed.archive, 'package/opencraft-dsh-host.service'], { encoding: 'utf8' }).split('\n');
+    const files = execFileSync('tar', ['-tzf', packed.archive, 'package/opencraft-dsh-host.service', 'package/opencraft-engine-host.service'], { encoding: 'utf8' }).split('\n');
     assert.ok(files.includes('package/opencraft-dsh-host.service'), 'npm archive must carry the independent Host unit');
-    const users = ['web', 'execution', 'dsh-host'].map(name => {
+    assert.ok(files.includes('package/opencraft-engine-host.service'), 'npm archive must carry the independent Pi owner unit');
+    const users = ['web', 'execution', 'dsh-host', 'engine-host'].map(name => {
       const unit = execFileSync('tar', ['-xOf', packed.archive, `package/opencraft-${name}.service`], { encoding: 'utf8' });
       return /^User=(.+)$/m.exec(unit)?.[1] ?? 'root';
     });
-    assert.deepEqual(users, ['opencraft', 'opencraft', 'opencraft'], 'packaged services must share the descriptor owner');
+    assert.deepEqual(users, ['opencraft', 'opencraft', 'opencraft', 'opencraft'], 'packaged services must share the descriptor owner');
     const legacyRoot = join(root, 'legacy'); await cp(packed.packageRoot, legacyRoot, { recursive: true });
     const manifestPath = join(legacyRoot, 'package.json');
     const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
@@ -55,6 +56,14 @@ test('independent DSH rejects legacy candidates and rollback baselines before ch
     await assert.rejects(readFile(`${link}.pins.json`), { code: 'ENOENT' });
     // Embedded deployments can still inspect existing profile-v1 packages.
     await createExecutionDeployment(settings).inspect({ releaseRoot: legacyRoot });
+    manifest.opencraftExecution.independentDshHost = 1;
+    delete manifest.opencraftExecution.independentEngineHost;
+    await writeFile(manifestPath, JSON.stringify(manifest));
+    const piOwner = createExecutionDeployment({ ...settings, engineDescriptor: join(root, 'pi-descriptor'), engineUnit: 'pi.service' });
+    await assert.rejects(piOwner.inspect({ releaseRoot: legacyRoot }), /independent execution Host/);
+    await assert.rejects(piOwner.apply({ releaseRoot: packed.packageRoot }), /independent execution Host/);
+    assert.equal(await readlink(link), legacyRoot);
+    assert.equal(restarts, 0, 'an incompatible Pi rollback baseline cannot restart the gateway');
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 test('server update commits both versions, restores execution after failure and reconciles interrupted pointers', { timeout: 120_000 }, async () => {
@@ -521,4 +530,14 @@ test('daemon gateway health tracks IPC lifetime, shares recovery and fences shut
     core.closeAllConnections(); if (core.listening) await new Promise(done => core.close(done));
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test('independent Pi owner contributes readiness without exposing dependency errors', async () => {
+  const {observeExecutionHealth}=await import('../../scripts/server-deployment/headless-gateway-application.mjs');
+  const options={version:'fixture',buildId:'fixture-build',core:async()=>({pid:11,codexPid:12}),dsh:async()=>({pid:21,enginePid:22})};
+  const ready=await observeExecutionHealth({...options,engineHost:async()=>({pid:31})});
+  assert.equal(ready.ok,true);assert.deepEqual(ready.engineHost,{pid:31});assert.equal(ready.dependencies.engineHost,'ready');
+  const missing=await observeExecutionHealth({...options,engineHost:async()=>{throw new Error('private descriptor details');}});
+  assert.equal(missing.ok,false);assert.deepEqual(missing.engineHost,{state:'unavailable'});
+  assert.equal(missing.dependencies.engineHost,'unavailable');assert.doesNotMatch(JSON.stringify(missing),/private descriptor/);
 });

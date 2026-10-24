@@ -7,6 +7,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 
 import { assertExecutionNativePayload } from './native-preflight.mjs';
+import { readEngineHostIdentity } from './engine-host-client.mjs';
 import { attachDshHost, readPrivateJson } from './dsh-host-client.mjs';
 import { browserRuntimeIdentity } from '../browser-runtime-identity.mjs';
 
@@ -145,7 +146,7 @@ export async function grantExecutionAccess(releaseRoot, user, deploymentDirector
   await exec('setfacl', ['-R', '-m', `u:${uid}:rX`, '--', releaseRoot], { timeout: 30_000 });
 }
 export function createExecutionDeployment({ link, unit, coreUnit, coreEndpoint, tokenPath, healthUrl, profile = 'daemon',
-  dshDescriptor, dshUnit,
+  dshDescriptor, dshUnit, engineDescriptor, engineUnit,
   validate = health => assertIndependentUnits(unit, coreUnit, link, unitProperties, health),
   prepareAccess = async release => {
     const properties = await unitProperties(unit);
@@ -158,6 +159,9 @@ export function createExecutionDeployment({ link, unit, coreUnit, coreEndpoint, 
   if ((dshDescriptor || dshUnit) && (profile !== 'headless' || !isAbsolute(dshDescriptor || '')
     || !/^[A-Za-z0-9_.@-]+\.service$/.test(dshUnit || '') || [unit, coreUnit].includes(dshUnit)))
     throw new Error('Invalid independent DSH Host configuration');
+  if ((engineDescriptor || engineUnit) && (profile !== 'headless' || !isAbsolute(engineDescriptor || '')
+    || !/^[A-Za-z0-9_.@-]+\.service$/.test(engineUnit || '') || [unit, coreUnit, dshUnit].includes(engineUnit)))
+    throw new Error('Invalid independent execution Host configuration');
   if (![link, coreEndpoint, tokenPath].every(isAbsolute) || !/^[A-Za-z0-9_.@-]+\.service$/.test(unit)
     || !/^[A-Za-z0-9_.@-]+\.service$/.test(coreUnit) || unit === coreUnit) throw new Error('Invalid managed execution configuration');
   const url = new URL(healthUrl);
@@ -169,6 +173,12 @@ export function createExecutionDeployment({ link, unit, coreUnit, coreEndpoint, 
     const attachment = await attachDshHost(dshDescriptor, descriptor.dataDirectory);
     await assertIndependentUnits(unit, dshUnit, link, unitProperties, attachment.identity);
     return attachment.identity;
+  }
+  async function engineHealth() {
+    if (!engineDescriptor) return null;
+    const identity = await readEngineHostIdentity(engineDescriptor);
+    await assertIndependentUnits(unit, engineUnit, link, unitProperties, identity);
+    return identity;
   }
   async function pinnedRoots() {
     try {
@@ -190,6 +200,7 @@ export function createExecutionDeployment({ link, unit, coreUnit, coreEndpoint, 
       throw new Error('Release has no compatible execution payload');
     if (dshDescriptor && metadata.independentDshHost !== 1)
       throw new Error('Release cannot attach an independent DSH Host; crossing this migration boundary requires drained maintenance');
+    if (engineDescriptor && metadata.independentEngineHost !== 1) throw new Error('Release cannot attach an independent execution Host');
     for (const file of [...daemonPayloadFiles, ...(profile === 'headless' ? ['dsh-thread-persistence-plugin.mjs', 'dsh-thread-projection-plugin.mjs'] : [])]) await readFile(join(release.releaseRoot, 'execution', file));
     await assertExecutionNativePayload(release.releaseRoot);
     await validate();
@@ -199,7 +210,7 @@ export function createExecutionDeployment({ link, unit, coreUnit, coreEndpoint, 
     try { await symlink(root, temporary); await rename(temporary, link); }
     finally { await rm(temporary, { force: true }); }
   }
-  async function ready(release, before, dshBefore = null) {
+  async function ready(release, before, dshBefore = null, engineBefore = null) {
     const deadline = Date.now() + timeout;
     while (Date.now() < deadline) {
       try {
@@ -215,9 +226,14 @@ export function createExecutionDeployment({ link, unit, coreUnit, coreEndpoint, 
               || health.dsh?.pid !== dshBefore.pid || health.dsh?.enginePid !== dshBefore.enginePid)
               throw new Error('DSH Host changed during execution update');
           }
+          if (engineBefore) {
+            const current = await engineHealth();
+            if (current.pid !== engineBefore.pid || health.engineHost?.pid !== engineBefore.pid)
+              throw new Error('Execution Host changed during execution update');
+          }
           return health;
         }
-      } catch (error) { if (['Codex core changed during execution update', 'DSH Host changed during execution update'].includes(error.message)) throw error; }
+      } catch (error) { if (['Codex core changed during execution update', 'DSH Host changed during execution update', 'Execution Host changed during execution update'].includes(error.message)) throw error; }
       await delay(100);
     }
     throw new Error('Execution release failed readiness');
@@ -278,9 +294,10 @@ export function createExecutionDeployment({ link, unit, coreUnit, coreEndpoint, 
       let oldRoot;
       try { oldRoot = resolve(link, '..', await readlink(link)); } catch (error) { if (error.code !== 'ENOENT') throw error; }
       // Automatic recovery must be compatible before any candidate can be activated.
-      if (dshDescriptor && oldRoot && oldRoot !== release.releaseRoot) await inspect({ releaseRoot: oldRoot });
+      if ((dshDescriptor || engineDescriptor) && oldRoot && oldRoot !== release.releaseRoot) await inspect({ releaseRoot: oldRoot });
       const before = await coreHealth(coreEndpoint, tokenPath);
       const dshBefore = await dshHealth();
+      const engineBefore = await engineHealth();
       await validate(before);
       await prepareAccess(release);
       await pin([...(await pinnedRoots()), ...(oldRoot ? [oldRoot] : []), release.releaseRoot]);
@@ -298,14 +315,14 @@ export function createExecutionDeployment({ link, unit, coreUnit, coreEndpoint, 
       if (oldRoot !== release.releaseRoot) {
         await point(release.releaseRoot);
         if (!runtimeChanged) {
-          try { await retainRuntime(release, await ready(release, before, dshBefore)); return; }
+          try { await retainRuntime(release, await ready(release, before, dshBefore, engineBefore)); return; }
           catch { await restart(); }
         } else await restart();
       } else {
-        try { await retainRuntime(release, await ready(release, before, dshBefore)); return; }
+        try { await retainRuntime(release, await ready(release, before, dshBefore, engineBefore)); return; }
         catch { await restart(); }
       }
-      await retainRuntime(release, await ready(release, before, dshBefore), true);
+      await retainRuntime(release, await ready(release, before, dshBefore, engineBefore), true);
     },
   };
 }

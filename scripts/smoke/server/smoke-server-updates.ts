@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { zstdDecompressSync } from 'node:zlib';
 import { spawn, spawnSync, execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { mkdtemp, mkdir, readFile, writeFile, rm, readdir, readlink, stat } from 'node:fs/promises';
@@ -48,11 +49,20 @@ if (process.argv[2] === 'core') {
   store.addAccount({ id: 'fixture', provider: 'codex', label: 'fixture', upstreamAccountId: 'fixture', priority: 1, enabled: true }, { accessToken: 'synthetic-only', refreshToken: null, expiresAt: null }); store.close();
   const calls: any[] = []; let serial = 0;
   const selfUpgrade = process.env.OPENCRAFT_SERVER_SMOKE_SELF_UPGRADE === '1';
-  let toolCommand = 'echo started >> shell-count; sleep 30; echo finished >> shell-count; echo UPDATE_TASK_FINISHED';
+  if (!selfUpgrade) execFileSync('mkfifo', [join(root, 'continue-shell')]);
+  let toolCommand = 'echo started >> shell-count; read -r continuation < continue-shell; echo finished >> shell-count; echo UPDATE_TASK_FINISHED';
   const upstream = createServer(async (req, res) => {
-    let raw = ''; for await (const chunk of req) raw += chunk;
-    const input = JSON.parse(raw); const tool = !JSON.stringify(input.input).includes('function_call_output');
+    if (req.method !== 'POST') { res.writeHead(405); res.end(); return; }
+    const chunks: Buffer[] = []; for await (const chunk of req) chunks.push(Buffer.from(chunk));
+    const body = Buffer.concat(chunks);
+    const decoded = req.headers['content-encoding'] === 'zstd' ? zstdDecompressSync(body) : body;
+    if (!decoded.length) { res.writeHead(400); res.end(); return; }
+    const input = JSON.parse(decoded.toString('utf8')); const tool = !JSON.stringify(input.input).includes('function_call_output');
     calls.push({ tool, path: req.url });
+    if (!tool && !selfUpgrade) {
+      await until(async () => res.destroyed || (await readFile(join(root, 'shell-count'), 'utf8').catch(() => '')).includes('finished'), 'held native shell release', 120_000);
+      if (res.destroyed) return;
+    }
     res.writeHead(200, { 'content-type': 'text/event-stream' }); const id = `fixture-${++serial}`;
     const send = (event: any) => res.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
     send({ type: 'response.created', response: { id, object: 'response', status: 'in_progress', output: [] } });
@@ -176,6 +186,7 @@ if (process.argv[2] === 'core') {
     const threadId = (await A.rpc('thread/start', { cwd: root, model: 'gpt-6-luna', approvalPolicy: 'never', sandbox: 'danger-full-access' })).thread.id;
     const turnId = (await A.rpc('turn/start', { threadId, input: [{ type: 'text', text: 'TOOL', text_elements: [] }] })).turn.id;
     await until(async () => (await readFile(join(root, 'shell-count'), 'utf8').catch(() => '')).includes('started'), 'running shell');
+    if (!selfUpgrade) await delay(30_000); // Prove a long-running native tool, not a race with sleep expiry.
     const runningTree = await tree(before.pid); const oldGatewayPid = gatewayPid();
     browser = await chromium.launch({ headless: true, ...(process.env.OPENCRAFT_CHROMIUM_EXECUTABLE ? { executablePath: process.env.OPENCRAFT_CHROMIUM_EXECUTABLE } : {}) });
     const page = await browser.newPage(); await page.goto(base + '/settings/updates');
@@ -193,6 +204,7 @@ if (process.argv[2] === 'core') {
     const after = await coreHealth(endpoint, tokenPath); assert.deepEqual(after, before);
     const afterTree = await tree(before.pid);
     for (const pid of selfUpgrade ? runningTree.slice(0, 3) : runningTree) assert.ok(afterTree.includes(pid), `Running process ${pid} survived upgrade`);
+    if (!selfUpgrade) await writeFile(join(root, 'continue-shell'), 'continue\n');
     const B = await connect(base.replace('http:', 'ws:') + '/codex-appserver');
     await B.rpc('thread/resume', { threadId });
     const history = await until(async () => { const h = await B.rpc('thread/read', { threadId, includeTurns: true }); return h.thread.turns.some((t: any) => t.id === turnId && t.status === 'completed') ? h : null; }, 'original turn completion', 90_000); assert.match(JSON.stringify(history), /UPDATE_TASK_FINISHED/);
