@@ -86,11 +86,12 @@ export function AppShellNavigationControls({
 
   const controls = {
     "sidebar-toggle": (
-      <SidebarToggleButton liquidGlass={conversationHeader} key="sidebar-toggle" className={conversationHeader ? "chrome-button no-drag app-shell-conversation-sidebar-toggle" : undefined} stationary={hostRole === "persistent" && presentation?.sidebarControlsInSidebar && !presentation.mobileSidebar} open={sidebarOpen} hostRole={hostRole} onToggle={toggleSidebar} />
+      <SidebarToggleButton key="sidebar-toggle" className={conversationHeader ? "chrome-button no-drag app-shell-conversation-sidebar-toggle" : undefined} stationary={hostRole === "persistent" && presentation?.sidebarControlsInSidebar && !presentation.mobileSidebar} open={sidebarOpen} hostRole={hostRole} onToggle={toggleSidebar} />
     ),
     "new-task": (
       <button
         key="new-task"
+        data-liquid-action=""
         className="chrome-button no-drag"
         type="button"
         aria-label={intl.formatMessage({ id: "navigation.newTask", defaultMessage: "Start new task" })}
@@ -98,31 +99,33 @@ export function AppShellNavigationControls({
         onClick={onHome}
         title={intl.formatMessage({ id: "navigation.newTask", defaultMessage: "Start new task" })}
       >
-        <NewTaskIcon />
+        <LiquidGlassBackdrop /><NewTaskIcon />
       </button>
     ),
     back: (
       <button
         key="back"
+        data-liquid-action=""
         className="chrome-button no-drag history-button"
         type="button"
         disabled={!canGoBack}
         onClick={onBack}
         title={intl.formatMessage({ id: "navigation.back", defaultMessage: "Back" })}
       >
-        <ArrowLeft size={15} />
+        <LiquidGlassBackdrop /><ArrowLeft size={15} />
       </button>
     ),
     forward: (
       <button
         key="forward"
+        data-liquid-action=""
         className="chrome-button no-drag history-button"
         type="button"
         disabled={!canGoForward}
         onClick={onForward}
         title={intl.formatMessage({ id: "navigation.forward", defaultMessage: "Forward" })}
       >
-        <ArrowRight size={15} />
+        <LiquidGlassBackdrop /><ArrowRight size={15} />
       </button>
     ),
   } satisfies Record<HeaderNavigationAction, ReactNode>;
@@ -378,7 +381,7 @@ export function AppShellHeader({
         >
           <div className="app-shell-header__end-actions no-drag">
             <div className="app-shell-header__action-group">
-            {conversationHeader ? <LiquidGlassBackdrop /> : null}
+            <LiquidGlassBackdrop />
             {headerAction}
             {showRightPanelAction ? (
               <button

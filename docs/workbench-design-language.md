@@ -525,32 +525,35 @@ and actions while Modal/Radix retains window, dismissal and focus ownership.
 
 Touch Newera conversation chrome uses a leading circular sidebar control and one
 trailing capsule for the existing conversation menu and preview action. The two
-trailing targets remain independent, with no divider or nested glass. Other
-routes/densities keep their existing presentation except for the touch floating
-actions described below. Shell owns placement and safe
+trailing targets remain independent, with no divider or nested glass. All Shell action densities use this same material; touch and pointer layouts
+retain their own hit-target sizes and grouping. Shell owns placement and safe
 areas; the design system owns LiquidGlassBackdrop, semantic material tokens and
 opaque accessibility fallbacks. A supported live backdrop lens uses a small
 geometry-dependent map updated on resize; it never captures content or runs a
 scroll/frame loop. Unsupported lens engines retain tint, softened transmission
 and curved highlights. Icons, focus rings and portalled menus are unfiltered.
 
-### Touch floating action material
+### Shared shell action material
 
-Phone and tablet touch layouts reuse the conversation navigation material for
-sidebar Applications/Search and compact icon rail actions, New chat, footer Settings/account/update entrances,
-the floating sidebar toggle, the transcript return control and the search dialog
-close control. Each independent control owns one `LiquidGlassBackdrop`; the
-conversation trailing group keeps its single existing shared backdrop. Do not
-nest a second material or paint opaque primary/secondary button fills over it.
-New chat retains its existing text capsule and geometry for emphasis. Touch
-hover/press feedback uses the existing neutral navigation state tokens. Desktop density
-keeps its existing presentation, and list rows, inline actions, search inputs and
-Composer controls retain their own semantic materials.
+Phone, tablet, wide Web and Electron Shell actions share `LiquidGlassBackdrop`,
+`material.liquid` and the same `material-liquid-*` tokens. Sidebar top/compact rail
+icons, New chat, footer Settings/account/update entrances and navigation controls
+use one backdrop per independent action. The header trailing group keeps one
+shared backdrop, fitted to its existing compact action height on desktop and its
+existing Newera capsule on touch; never nest glass under each grouped action.
+The transcript return/working control and floating Composer change summary reuse
+this same material. New chat retains its existing text capsule for emphasis.
 
-The original control owns position, size, action and keyboard focus. The existing
-liquid tokens own light/dark tint, prefixed Safari CSS blur and readable opaque
+Material does not branch by platform or density. Existing owners keep position,
+size, labels, icons, actions and keyboard focus; touch retains at least 44px hit
+targets while pointer layouts retain compact dimensions. Neutral hover/press
+states remain separate from the optical plane. Lists, inline conversation actions,
+Composer editing surfaces, dialogs, settings forms and menu items keep their own
+semantic styles. Those content-layer controls are outside this Shell unification.
+
+The shared tokens own light/dark tint, prefixed Safari CSS blur and readable opaque
 fallbacks for unsupported blur, reduced transparency and forced colors. Safari
-CSS approximation is supported; physical iOS rendering still needs device evidence.
+uses the existing CSS approximation; physical iOS rendering needs device evidence.
 
 ### Live navigation optics
 

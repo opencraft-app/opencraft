@@ -1,4 +1,3 @@
-import { LiquidGlassBackdrop } from "@opencraft/design-system-web/liquid-glass";
 import { CloseIcon as X } from "@opencraft/design-system-web/action-icons";
 import type {
   ModalDescriptor,
@@ -111,7 +110,7 @@ export function ModalSurface({
                   dismissReason.current = "close-button";
                 }}
               >
-                <LiquidGlassBackdrop /><X aria-hidden="true" size={18} />
+                <X aria-hidden="true" size={18} />
               </button>
             </Dialog.Close>
           ) : null}

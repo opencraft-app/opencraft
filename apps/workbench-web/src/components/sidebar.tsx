@@ -442,7 +442,7 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
 function SidebarNewChatButton({ onNewTask }: { onNewTask(): void }) {
   const intl = useIntl();
   const shell = useShellPresentation();
-  const button = <button type="button" data-touch-glass="" className="sidebar-new-chat" title={`${intl.formatMessage({ id: "sidebar.newChat", defaultMessage: "New chat" })} (${shortcutLabel("newChat")})`} aria-keyshortcuts={shortcutAria("newChat")} onClick={() => {
+  const button = <button type="button" data-liquid-action="" className="sidebar-new-chat" title={`${intl.formatMessage({ id: "sidebar.newChat", defaultMessage: "New chat" })} (${shortcutLabel("newChat")})`} aria-keyshortcuts={shortcutAria("newChat")} onClick={() => {
     onNewTask();
     shell?.dismissSidebarAfterSelection();
   }}><LiquidGlassBackdrop /><SquarePen size={16} aria-hidden="true" /><span>{intl.formatMessage({ id: "sidebar.newChat", defaultMessage: "New chat" })}</span></button>;

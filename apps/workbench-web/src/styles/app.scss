@@ -12558,9 +12558,6 @@ html[data-ui-density="touch"] body {
   .thread-scroll-to-bottom-button {
     width: max(var(--size-transcript-float-touch), var(--size-control-hit-min));
     height: max(var(--size-transcript-float-touch), var(--size-control-hit-min));
-    @include material.liquid;
-    position: absolute;
-    border-color: transparent;
     &:focus-visible { outline-offset: -3px; }
   }
   .thread-scroll-to-bottom-button__icon {
@@ -12736,7 +12733,6 @@ html[data-ui-density="touch"] body {
 
   // Wide touch layouts portal this existing control above drawer motion.
   .app-shell-touch-sidebar-toggle .app-shell-conversation-sidebar-toggle {
-    @include material.liquid;
     width: var(--size-material-liquid-control);
     height: var(--size-material-liquid-control);
   }
@@ -12752,7 +12748,6 @@ html[data-ui-density="touch"] body {
       padding-right: max(var(--spacing-token-safe-header-right), var(--shell-mobile-safe-right, 0px), calc(var(--spacing) * 3));
     }
     .app-shell-header__action-group {
-      @include material.liquid;
       height: var(--size-material-liquid-control);
       gap: var(--gap-material-liquid-group);
       padding: var(--padding-material-liquid-group);
@@ -12769,7 +12764,6 @@ html[data-ui-density="touch"] body {
       border-radius: var(--radius-full);
     }
     .app-shell-conversation-sidebar-toggle {
-      @include material.liquid;
       width: var(--size-material-liquid-control);
       height: var(--size-material-liquid-control);
     }
@@ -13013,15 +13007,32 @@ html[data-ui-density="touch"] body {
   .thread-tool-details__raw { opacity: 1; }
 }
 
-// Touch floating actions use the conversation navigation material. Geometry and
-// actions remain with Shell/Sidebar; the shared backdrop owns optics/fallbacks.
-// The attribute marks the existing action, without a second button component.
-:root[data-ui-density="touch"] :is(
-  [data-touch-glass],
+// Shell actions share one material across pointer, touch, Web and Electron.
+// Existing owners retain dimensions, placement, focus and interaction behavior.
+:root[data-ui-density] :is(
+  [data-liquid-action],
+  .app-shell-header__action-group,
+  .thread-live-changes,
   .shell-sidebar__column:not([data-navigation-layout="mobile"]) .shell-navigation__items--applications > button
 ) {
   @include material.liquid;
   color: var(--color-text);
-  @include controls.hover-capable { &:hover { background: var(--color-background-navigation-hover); } }
-  &:active { background: var(--color-background-navigation-pressed); }
+  @include controls.hover-capable { &:is(button):hover:not(:disabled) { background: var(--color-background-navigation-hover); } }
+  &:is(button):active:not(:disabled) { background: var(--color-background-navigation-pressed); }
 }
+
+// The header's existing full-height group keeps its layout box. Only its
+// background fits the existing compact action size; touch Newera stays 48px.
+.app-shell-header__action-group > .ui-liquid-glass {
+  top: 50%; bottom: auto; height: var(--size-toolbar-dock-action);
+  transform: translateY(-50%);
+}
+:root[data-ui-density="touch"][data-touch-newera="on"] .app-shell-header[data-app-shell-conversation-header="true"] .app-shell-header__action-group > .ui-liquid-glass { height: 100%; }
+
+.thread-scroll-to-bottom-button {
+  @include material.liquid;
+  position: absolute;
+  border-color: transparent;
+}
+
+.thread-live-changes { border-color: transparent; }

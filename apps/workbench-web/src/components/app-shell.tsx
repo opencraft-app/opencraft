@@ -815,12 +815,12 @@ export function AppShell({
             header={unifiedNavigation ? <div className="shell-sidebar__header">
               {floatingSidebarHeader(dockFloatingSidebar)}
               {mobileSidebarEnabled && applicationsAction ? <button
-                type="button" data-touch-glass="" className="shell-sidebar__applications shell-sidebar__action" data-action-id="shell.applications.header"
+                type="button" data-liquid-action="" className="shell-sidebar__applications shell-sidebar__action" data-action-id="shell.applications.header"
                 aria-label={applicationsAction.title} onClick={() => { dismissFloatingSidebar(); applicationsAction.onInvoke(); }}>
                 <LiquidGlassBackdrop /><NavigationIcon name={applicationsAction.icon} size={20} />
               </button> : null}
               {mobileSidebarEnabled && searchAction ? <button
-                type="button" data-touch-glass="" className="shell-sidebar__search shell-sidebar__action" data-action-id="shell.search.header"
+                type="button" data-liquid-action="" className="shell-sidebar__search shell-sidebar__action" data-action-id="shell.search.header"
                 aria-label={searchAction.title}
                 onClick={() => searchAction.onInvoke()}>
                 <LiquidGlassBackdrop /><Search aria-hidden="true" size={20} />
