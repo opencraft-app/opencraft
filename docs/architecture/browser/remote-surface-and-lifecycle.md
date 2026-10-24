@@ -439,3 +439,31 @@ under its exclusive transport; active inventory always preserves the process. Th
 last explicit close releases a stale idle transport so the next open can upgrade.
 An unknown script identity preserves the owner. This is not native binary hot swap:
 existing live Tabs adopt native helper fixes after draining, not through DOM reload.
+
+
+### Negotiated media credits and independent adapters
+
+The remote interaction package owns credit accounting, media feedback and
+bounded transport primitives. Resource creation, Server attachment, native
+incarnation, controller/document fences and presentation ownership remain in
+their existing owners. The wire contract and finite-model boundary are
+[remote interaction protocol v1](../../../packages/remote-interaction/spec/protocol.md).
+
+Negotiated WSS viewers distinguish received from Canvas rendered submission.
+Each viewer has six media credits, 2 MiB ordinary bytes and a single empty-window
+keyframe burst up to 4 MiB. Control replies/events bypass media admission. A
+reset pauses output and retains old debt until the matching new-epoch ready
+confirms decoder retirement. Old watermarks and duplicate ready cannot refund
+new work. Three attempts without acknowledged frame progress terminate that
+attachment; quiet screens and hidden viewers do not count as stalled. Viewer
+capture requests are combined using the fastest visible consumer's rate.
+
+Input credits track exact outstanding request IDs separately from caller
+promises. Timing out an input returns unknown and starts reconnection without
+refunding capacity or replaying the operation. Existing native authority remains
+the execution boundary; disconnect does not undo dispatched input.
+
+The independent WebRTC input adapter accepts an existing reliable ordered
+DataChannel and the same authorized attachment contract. Browser signaling,
+RTP video and automatic transport switching are not supplied by that adapter.
+MSE viewers only acknowledge receipt until reliable render evidence is available.

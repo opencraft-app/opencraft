@@ -46,7 +46,7 @@ export class RemoteBrowserService {
     this.states = new Map(); this.retiredLeases = new Set(); this.persistence = Promise.resolve();
     this.diagnosticCount = 0;
     this.diagnosticCounts = new Map();
-    this.display = displayFlow.createDisplayFlow({ keyframe: page => this.keyframe(page), diagnose: event => this.diagnose(event) });
+    this.display = displayFlow.createDisplayFlow({ keyframe: page => this.keyframe(page), diagnose: event => this.diagnose(event), pace: page => this.displayPace(page) });
     this.server = new WebSocketServer({ noServer: true, perMessageDeflate: false, maxPayload: 128 * 1024 });
   }
   async load() {
@@ -283,7 +283,14 @@ export class RemoteBrowserService {
       page.keyTimer.unref();
     }
   }
+  displayPace(page) {
+    const fps = Math.max(5, ...[...this.viewers(page).values()].filter(viewer => viewer.visible).map(viewer => viewer.decodeFps ?? 30));
+    if (page.closing || !page.live || page.displayFps === fps) return;
+    page.displayFps = fps;
+    void this.request(page.id, 'display-rate', { fps }).catch(() => { page.displayFps = undefined; });
+  }
   resetVisibility(page) {
+    page.displayFps = undefined;
     page.runtimeEpoch = (page.runtimeEpoch ?? 0) + 1;
     page.visibilityGeneration = (page.visibilityGeneration ?? 0) + 1;
     page.visibilityWake?.(); page.visibilityWake = null; page.visibilityJob = null;
@@ -326,6 +333,7 @@ export class RemoteBrowserService {
   detach(page, ws) {
     this.display.detach(ws);
     if (!this.viewers(page).delete(ws)) return;
+    this.displayPace(page);
     if (page.controller === ws) {
       page.controller = null; page.controlToken = null; page.controlKind = null; page.controlEpoch = (page.controlEpoch ?? 0) + 1;
       if (!page.closing) void this.controlQueue(page, () => this.request(page.id, 'control', { token: null })).catch(() => {});
@@ -697,7 +705,11 @@ export class RemoteBrowserService {
               if (!modern) await this.control(page, ws, { action: 'human', takeover: true }, authorize);
               this.controlChanged(page);
               reply(message.id, { ...config, document: page.document ?? config.document, documentInput: typeof (page.document ?? config.document) === 'string', inputAcknowledgements: message.input.inputAcknowledgements === true, resumed, restored: !!existing && !resumed, multiView: true, initialized: modern && !existing, control: this.controlState(page, ws) });
-              const attached = this.viewers(page).get(ws); if (attached) { attached.ready = true; if (attached.visible) this.keyframe(page); }
+              const attached = this.viewers(page).get(ws); if (attached) {
+                attached.ready = true; this.displayPace(page);
+                if (message.input.mediaFeedback === 1) this.display.attach(page, ws, attached, message.input.mediaStage === 'rendered' ? 'rendered' : 'received');
+                if (attached.visible) this.keyframe(page);
+              }
             } catch (error) {
               page.recovering = false;
               if (page.closing) { page = null; throw error; }
@@ -722,6 +734,7 @@ export class RemoteBrowserService {
           }
           if (!page || this.pages.get(page.key) !== page || !this.viewers(page).has(ws)) throw new Error('Browser page not opened');
           authorize(); const target = page, viewer = this.viewers(target).get(ws);
+          if (message.method === 'mediaFeedback') { this.display.feedback(ws, message.input); return; }
           if (message.method === 'control') { reply(message.id, await this.control(target, ws, message.input, authorize)); return; }
           if (!methods.has(message.method)) throw new Error('Unsupported browser command');
           if (message.method === 'close') {
@@ -734,7 +747,7 @@ export class RemoteBrowserService {
             if (!viewer.visible) viewer.visibilityEpoch = (viewer.visibilityEpoch ?? 0) + 1;
             if (!viewer.visible && target.controller === ws && target.controlKind === 'human')
               await this.control(target, ws, { action: 'release', token: target.controlToken }, authorize);
-            await this.visibility(target);
+            await this.visibility(target); this.displayPace(target);
             if (viewer.visible) this.keyframe(target);
             return;
           }

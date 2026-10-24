@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { RemoteBrowserInputQueue } from '../../apps/workbench-web/src/browser/remote-browser-input-queue';
 import { RemoteBrowserSurfaceHost } from '../../apps/workbench-web/src/browser/remote-browser-surface-host';
+import { CreditWindow } from '@opencraft/remote-interaction';
 
 const tick = () => new Promise<void>(resolve => setImmediate(resolve));
 const wheel = (deltaY = -1, x = 20, modifiers: string[] = []) => ({ type: 'mouseWheel', x, y: 30, deltaX: 0, deltaY, modifiers });
@@ -56,8 +57,9 @@ test('negotiated input waits for a real result and editing waits for the input b
   Object.defineProperty(globalThis, 'WebSocket', { configurable: true, value: { OPEN: 1 } });
   const sent: any[] = [], host: any = new RemoteBrowserSurfaceHost({ getItem: () => null, setItem() {} }, 'input-proof');
   const p: any = { closed: false, connection: 1, controlGeneration: 1, control: { controller: true, token: 'grant' }, pending: new Map(), inputAcknowledgements: true,
+    inputCredits: new CreditWindow({ maxItems: 2, maxBytes: 65536 }),
     socket: { readyState: 1, send(value: string) { sent.push(JSON.parse(value)); } } };
-  const ack = () => { const [id, request] = p.pending.entries().next().value; p.pending.delete(id); clearTimeout(request.timer); request.resolve(); };
+  const ack = () => { const [id, request] = p.pending.entries().next().value; p.inputCredits.release(id); p.pending.delete(id); clearTimeout(request.timer); request.resolve(); };
   try {
     p.inputQueue = new RemoteBrowserInputQueue((input: any) => host.call(p, 'input', input), () => {});
     p.inputQueue.push(wheel()); await tick();

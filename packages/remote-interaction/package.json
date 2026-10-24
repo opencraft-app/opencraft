@@ -1,0 +1,20 @@
+{
+  "name": "@opencraft/remote-interaction",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./protocol": {
+      "types": "./src/protocol.d.cts",
+      "default": "./src/protocol.cjs"
+    },
+    "./websocket": "./src/websocket.ts",
+    "./webrtc": "./src/webrtc.ts",
+    "./server": {
+      "types": "./src/media-flow.d.cts",
+      "default": "./src/media-flow.cjs"
+    }
+  },
+  "scripts": { "typecheck": "tsc --noEmit" }
+}

@@ -127,8 +127,8 @@ function diffArea(a, b, width, height) {
 }
 function activity(p) {
   clearTimeout(p.activityTimer); clearTimeout(p.mergeTimer); p.mergeUntil = 0;
-  p.interactive = true; p.window.webContents.setFrameRate(30); pump(p);
-  p.activityTimer = setTimeout(() => { p.interactive = false; p.window.webContents.setFrameRate(10);
+  p.interactive = true; p.window.webContents.setFrameRate(Math.min(30, p.displayRate ?? 30)); pump(p);
+  p.activityTimer = setTimeout(() => { p.interactive = false; p.window.webContents.setFrameRate(Math.min(10, p.displayRate ?? 30));
     p.activityTimer = setTimeout(() => { if (!p.closed) p.window.webContents.setFrameRate(2); }, 2800);
   }, 1200);
 }
@@ -297,6 +297,10 @@ async function command(message) {
     throw Object.assign(new Error('Browser control changed'), { code: 'CONTROL_LOST', retryable: true });
   if (method === 'observe') { p.ime.observe(); return; }
   if (method === 'snapshot') return configuration(p);
+  if (method === 'display-rate') {
+    if (!Number.isInteger(input.fps) || input.fps < 5 || input.fps > 30) throw new Error('Invalid display rate');
+    p.displayRate = input.fps; wc.setFrameRate(p.interactive ? input.fps : Math.min(10, input.fps)); return;
+  }
   if (method === 'copy') {
     if (input.context !== undefined && (typeof input.context !== 'string' || !/^[a-zA-Z0-9-]{20,100}$/.test(input.context))) throw new Error('Invalid copy context');
     return p.clipboard.copy(input.context);

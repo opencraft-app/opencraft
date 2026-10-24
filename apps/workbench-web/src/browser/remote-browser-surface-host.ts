@@ -1,3 +1,5 @@
+import { CreditWindow } from '@opencraft/remote-interaction';
+import { WebSocketMediaReceiver } from '@opencraft/remote-interaction/websocket';
 import { browserPresentationClipPath } from "./browser-presentation-geometry";
 import type { BrowserMetadataStorage } from './desktop-browser-storage';
 import { H264MediaSource, onFirstVideoFrame } from './h264-media-source';
@@ -15,6 +17,7 @@ interface RemoteKeyboardPolicy { kind: string; secure: boolean; inputMode: strin
 type Pending = { resolve(value: any): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> };
 interface Control { epoch: number; active: boolean; controller: boolean; kind: 'human' | 'agent' | null; token?: string; }
 interface Page {
+  mediaReceiver: WebSocketMediaReceiver | null; inputCredits: CreditWindow;
   document: string | undefined;
   inputAcknowledgements: boolean; inputQueue: RemoteBrowserInputQueue | null;
   control: Control; controlGeneration: number; acquiring: { kind: 'human' | 'agent'; promise: Promise<string>; generation: number } | null; agentQueue: Promise<unknown>; serverInitialNavigation: boolean; gestureActive: boolean;
@@ -199,7 +202,7 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
     this.retireMenu(p);
     if (destroy) this.discard(p.lease);
     p.closed = true; if (p.reconnect) clearTimeout(p.reconnect); if (p.resizeTimer) clearTimeout(p.resizeTimer);
-    p.inputDispose(); p.socket?.close(); this.resetDecoder(p);
+    p.inputDispose(); p.mediaReceiver?.dispose(); p.socket?.close(); this.resetDecoder(p);
     this.rejectPending(p); p.container.remove(); this.pages.delete(id); this.hostIdentities.delete(id);
     if (destroy) for (const listener of this.closeListeners) listener(id);
   }
@@ -257,7 +260,7 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
     // inside the new shorter slot would briefly shrink the entire document.
     Object.assign(canvas.style, { display: 'block', width: '100%', height: 'auto', outline: 'none', touchAction: 'none' });
     container.append(canvas, receiver); this.root?.prepend(container);
-    const p: Page = { document: undefined, inputAcknowledgements: false, inputQueue: null, control: { epoch: 0, active: false, controller: false, kind: null }, controlGeneration: 0, acquiring: null, agentQueue: Promise.resolve(), serverInitialNavigation: false, gestureActive: false, media: null, video: null, cancelVideoReady: null, id, lease: (this.storageIds.get(id) ?? ('browser-' + crypto.randomUUID())).replace(':', '-'), container, canvas, receiver, ime: null, editor: null, keyboard: null, keyboardIntent: null, editable: false, nativeIme: false, multiTouch: false, events, navigation: 0, url: undefined, socket: null,
+    const p: Page = { mediaReceiver: null, inputCredits: new CreditWindow({ maxItems: 2, maxBytes: 65536 }), document: undefined, inputAcknowledgements: false, inputQueue: null, control: { epoch: 0, active: false, controller: false, kind: null }, controlGeneration: 0, acquiring: null, agentQueue: Promise.resolve(), serverInitialNavigation: false, gestureActive: false, media: null, video: null, cancelVideoReady: null, id, lease: (this.storageIds.get(id) ?? ('browser-' + crypto.randomUUID())).replace(':', '-'), container, canvas, receiver, ime: null, editor: null, keyboard: null, keyboardIntent: null, editable: false, nativeIme: false, multiTouch: false, events, navigation: 0, url: undefined, socket: null,
       nativeCopy: false, interaction: 0, menuIntent: null, restored: false, resumed: false, ready: Promise.resolve(), opened: false, disconnected: false, displaced: false, closed: false, visible: false, blocked: false, pending: new Map(), decoder: null,
       viewportMeasured: false, width: 1280, height: 720, viewport: { width: 1280, height: 720 }, sentViewport: '', resizeTimer: null, resizing: false,
       latest: null, raf: 0, reconnect: null, connection: 0, retries: 0, needsKey: true, automation: null!, resetPointers: () => {}, resetInput: () => {}, inputDispose: () => {} };
@@ -283,6 +286,7 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
   }
   private rejectPending(p: Page) { for (const request of p.pending.values()) { clearTimeout(request.timer); request.reject(new BrowserAutomationError('PAGE_CLOSED', 'Browser disconnected', true)); } p.pending.clear(); }
   private resetTransport(p: Page) {
+    p.mediaReceiver?.dispose(); p.mediaReceiver = null; p.inputCredits.retire();
     p.opened = false; p.document = undefined; p.inputAcknowledgements = false; ++p.controlGeneration; p.acquiring = null; p.control = { epoch: 0, active: false, controller: false, kind: null };
     for (const listener of this.controlListeners) listener();
     this.retireMenu(p); p.resetInput(); this.resetKeyboard(p); p.opened = false;
@@ -307,6 +311,7 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
   }
   private connectTransport(p: Page): Promise<void> {
     p.disconnected = false;
+    p.inputCredits = new CreditWindow({ maxItems: 2, maxBytes: 65536 });
     const generation = ++p.connection;
     return new Promise((resolve, reject) => {
       const url = new URL(serverUrl('/__opencraft_browser/stream'), location.href); url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -314,9 +319,18 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
       let terminalError: Error | null = null;
       const timer = setTimeout(() => { reject(new Error('Browser connection timed out')); ws.close(); }, 20000);
       const current = () => !p.closed && p.connection === generation;
+      p.mediaReceiver?.dispose();
+      p.mediaReceiver = new WebSocketMediaReceiver({
+        visible: () => this.isVisible(p),
+        reset: () => this.resetDecoder(p, true),
+        send: input => {
+          if (current() && ws.readyState === WebSocket.OPEN && ws.bufferedAmount < 65536)
+            ws.send(JSON.stringify({ id: crypto.randomUUID(), method: 'mediaFeedback', input }));
+        },
+      });
       ws.onopen = () => { if (!current()) return; clearTimeout(timer);
         const viewport = p.viewportMeasured ? { ...p.viewport } : undefined;
-        void this.call(p, 'open', { lease: p.lease, metadataRequired: !!this.storage.flush, multiView: true, documentInput: true, inputAcknowledgements: true, visible: this.isVisible(p), initialUrl: p.url ?? null, viewport, defaultDeviceProfile: remoteBrowserDeviceProfile() }).then(async config => {
+        void this.call(p, 'open', { lease: p.lease, metadataRequired: !!this.storage.flush, multiView: true, documentInput: true, inputAcknowledgements: true, mediaFeedback: 1, mediaStage: typeof VideoDecoder !== 'undefined' && typeof EncodedVideoChunk !== 'undefined' ? 'rendered' : 'received', visible: this.isVisible(p), initialUrl: p.url ?? null, viewport, defaultDeviceProfile: remoteBrowserDeviceProfile() }).then(async config => {
           if (!current()) return; this.applyDocument(p, config.document); p.inputAcknowledgements = config.inputAcknowledgements === true; p.serverInitialNavigation = config.multiView === true; this.setControl(p, config.control); p.resumed = config.resumed === true; p.restored = (config.resumed || config.restored) && !!config.navigation?.url && config.navigation.url !== 'about:blank'; p.nativeCopy = config.nativeCopy === true; p.nativeIme = config.nativeIme === true; p.multiTouch = config.multiTouch === true; this.keyboardChanged(); this.applyViewport(p, config);
           const effective = { width: config.width, height: config.height, deviceProfile: config.deviceProfile };
           if (!p.viewportMeasured) p.viewport = effective;
@@ -333,9 +347,17 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
       };
       ws.onmessage = event => {
         if (!current()) return;
-        if (typeof event.data !== 'string') { this.decode(p, event.data); return; }
+        if (typeof event.data !== 'string') {
+          if (p.mediaReceiver?.negotiated && p.mediaReceiver.receive(event.data) === null) return;
+          this.decode(p, event.data); return;
+        }
         const message = JSON.parse(event.data);
+        if (message.type === 'media-config') {
+          if (!p.mediaReceiver?.configure(message)) ws.close(1002, 'Unsupported browser media configuration');
+          return;
+        }
         if (message.type === 'result') {
+          p.inputCredits.release(message.id);
           const request = p.pending.get(message.id); if (!request) return;
           p.pending.delete(message.id); clearTimeout(request.timer);
           message.error ? request.reject(new BrowserAutomationError(message.error.code, message.error.message, message.error.retryable)) : request.resolve(message.value);
@@ -498,21 +520,34 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
   }
   private rawCall(p: Page, method: string, input?: unknown, control?: string, document = p.document): Promise<any> {
     if (p.closed || p.socket?.readyState !== WebSocket.OPEN) return Promise.reject(new BrowserAutomationError('PAGE_CLOSED', 'Browser disconnected', true));
-    const id = crypto.randomUUID();
-    if (['text','visible','keyframe'].includes(method) || method === 'input' && !p.inputAcknowledgements) { p.socket.send(JSON.stringify({ id, method, input, control, document })); return Promise.resolve(); }
+    const id = crypto.randomUUID(), payload = JSON.stringify({ id, method, input, control, document });
+    const trackedInput = method === 'input' && p.inputAcknowledgements;
+    if (trackedInput && !p.inputCredits.reserve(id, new TextEncoder().encode(payload).byteLength))
+      return Promise.reject(new BrowserAutomationError('TIMEOUT', 'Browser input is waiting for confirmation', true));
+    if (['text','visible','keyframe'].includes(method) || method === 'input' && !p.inputAcknowledgements) { p.socket.send(payload); return Promise.resolve(); }
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { p.pending.delete(id); reject(new BrowserAutomationError('TIMEOUT', `Browser operation timed out (${method})`, true)); }, method === 'open' ? 45000 : 25000);
-      p.pending.set(id, { resolve, reject, timer }); p.socket!.send(JSON.stringify({ id, method, input, control, document }));
+      const connection = p.connection, socket = p.socket!;
+      const timer = setTimeout(() => {
+        p.pending.delete(id);
+        // Settling unknown never returns credits or replays this operation.
+        if (trackedInput && connection === p.connection) socket.close(1013, 'Input result unknown; reconnecting');
+        reject(new BrowserAutomationError('TIMEOUT', `Browser operation timed out (${method})`, true));
+      }, method === 'open' ? 45000 : 25000);
+      p.pending.set(id, { resolve, reject, timer });
+      try { socket.send(payload); } catch (error) {
+        clearTimeout(timer); p.pending.delete(id); socket.close(); reject(error as Error);
+      }
     });
   }
   private run(p: Page, method: string, input?: unknown) { void p.ready.then(() => ['zoom', 'stop', 'back', 'forward'].includes(method) ? this.humanCall(p, method, input) : this.call(p, method, input)).catch(error => { if (!p.closed) p.events.onError(error.message); }); }
-  private paintFrame(p: Page, frame: CanvasImageSource, width: number, height: number) {
+  private paintFrame(p: Page, frame: CanvasImageSource, width: number, height: number, frameId?: string) {
     // Resizing a canvas clears it. Resize and draw in this same rendering task,
     // never in the earlier viewport-notification task.
     if (p.canvas.width !== width) p.canvas.width = width;
     if (p.canvas.height !== height) p.canvas.height = height;
     const context = p.canvas.getContext('2d', { alpha: false }); if (!context) return;
     context.drawImage(frame, 0, 0, width, height);
+    if (frameId) p.mediaReceiver?.renderedFrame(frameId);
     if (width === p.width && height === p.height) p.awaitingFrame = false;
   }
   private snapshotVideo(p: Page, video: HTMLVideoElement) {
@@ -555,14 +590,16 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
     } else {
       const data = new Uint8Array(bytes), key = data[0] === 1;
       const recover = () => { this.resetDecoder(p, true); this.run(p, 'keyframe'); };
+      p.mediaReceiver?.observeQueue(p.decoder?.decodeQueueSize ?? 0);
       if (p.decoder && p.decoder.decodeQueueSize > 2) { recover(); return; }
       if (p.needsKey && !key) return;
       if (!p.decoder) {
         const decoder = new VideoDecoder({ output: frame => {
           if (p.closed || p.decoder !== decoder) { frame.close(); return; }
+          p.mediaReceiver?.decoded(String(frame.timestamp), decoder.decodeQueueSize);
           p.latest?.close(); p.latest = frame;
           if (!p.raf) p.raf = requestAnimationFrame(() => { p.raf = 0; const latest = p.latest; p.latest = null;
-            if (latest) { this.paintFrame(p, latest, p.width, p.height); latest.close(); } });
+            if (latest) { this.paintFrame(p, latest, p.width, p.height, String(latest.timestamp)); latest.close(); } });
         }, error: () => { if (p.decoder === decoder) recover(); } });
         p.decoder = decoder;
         p.decoder.configure({ codec: 'avc1.42E028', optimizeForLatency: true });
