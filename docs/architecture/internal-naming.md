@@ -85,8 +85,10 @@ Hosted Web startup rewrites matching profiles with an incremented revision;
 Host IDs, recipes and machine observations stay intact. Exact former settings and
 View bookmarks are read-only aliases supplied by the Web composition and replaced through the application Router, including
 hostless startup and POP. Unrelated extension IDs are never prefix-rewritten.
-The old literals live only in that compatibility reader and its negative/recovery
-tests; they are not current registrations or defaults.
+The old literals remain in that compatibility reader; they are not current
+registrations or defaults. Dedicated former-brand test cases and fixture branches
+have been removed. The reader remains available for saved profiles and bookmarks,
+with less historical-format regression coverage.
 
 Current built-in agents, WebSocket, HyperNode, voice input, Bot views and the
 optional theme pack register under `opencraft.*`. Their exact old provider and
