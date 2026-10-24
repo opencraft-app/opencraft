@@ -154,6 +154,18 @@ try {
     await page.close();
   }
   console.log(JSON.stringify({ passed: results }));
+  for (const width of [390, 1440]) for (const theme of ["light", "dark"]) {
+    const page = await browser.newPage({ viewport: { width, height: 1600 }, hasTouch: width < 768, reducedMotion: "reduce" });
+    await page.addInitScript("window.__name=value=>value");
+    await page.goto(`http://127.0.0.1:${(vite.httpServer!.address() as { port: number }).port}/?floatingSummary=1&theme=${theme}`);
+    const action=page.locator('.thread-live-changes .thread-turn-diff-live');await action.waitFor();
+    await page.evaluate(width=>{document.documentElement.dataset.uiDensity=width<768?'touch':'compact'},width);
+    const box=await action.boundingBox();assert.ok(box);
+    if(width<768) assert.ok(box.height>=44&&box.width>=44,'floating summary keeps a 44px touch target');
+    else assert.equal(box.height,20,'pointer density keeps the existing compact summary target');
+    assert.equal(await page.locator('.thread-live-changes > .ui-liquid-glass').evaluate(e=>getComputedStyle(e).display),'block');
+    await action.click();await page.getByRole('dialog').waitFor();await page.keyboard.press('Escape');await page.close();
+  }
 } finally {
   await browser?.close();
   await vite.close();

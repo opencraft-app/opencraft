@@ -542,7 +542,8 @@ use one backdrop per independent action. The header trailing group keeps one
 shared backdrop, fitted to its existing compact action height on desktop and its
 existing Newera capsule on touch; never nest glass under each grouped action.
 The transcript return/working control and floating Composer change summary reuse
-this same material. New chat retains its existing text capsule for emphasis.
+this same material. The floating summary action consumes `controls.density-target`
+to retain a 44px touch hit area without enlarging its compact pointer target. New chat retains its existing text capsule for emphasis.
 
 Material does not branch by platform or density. Existing owners keep position,
 size, labels, icons, actions and keyboard focus; touch retains at least 44px hit

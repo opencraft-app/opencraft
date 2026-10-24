@@ -13040,3 +13040,5 @@ $shell-liquid-actions: ':is([data-liquid-action], .app-shell-header__action-grou
 }
 
 .thread-live-changes { border-color: transparent; }
+
+.thread-live-changes .thread-turn-diff-live { @include controls.density-target; }

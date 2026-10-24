@@ -1,3 +1,4 @@
+import { ComposerTurnChangeSummary } from "../../apps/workbench-web/src/components/conversation/turn-diff-resource";
 import React, { useState } from "react";
 import type { TimelineStatus, TurnDiffTimelineBlock } from "@opencraft/chat-core";
 import { TurnDiffReviewDialog } from "../../apps/workbench-web/src/components/conversation/turn-diff-review-dialog";
@@ -28,8 +29,9 @@ const layoutDiff = files.map(([path, added, removed]) => [
 const selectedCase = new URLSearchParams(location.search).get("gitCase");
 const diff = selectedCase === "all" ? gitCases.map(entry => entry.diff).join("")
   : gitCases.find(entry => entry.name === selectedCase)?.diff ?? layoutDiff;
+const floatingSummary = new URLSearchParams(location.search).has("floatingSummary");
 const requestedStatus = new URLSearchParams(location.search).get("turnStatus");
-const status: TimelineStatus = requestedStatus === "failed" || requestedStatus === "interrupted" ? requestedStatus : "complete";
+const status: TimelineStatus = floatingSummary ? "streaming" : requestedStatus === "failed" || requestedStatus === "interrupted" ? requestedStatus : "complete";
 const withoutAssistant = new URLSearchParams(location.search).has("withoutAssistant");
 const ctx = new Context();
 await ctx.plugin(TimelineBlockRendererRegistryService);
@@ -50,14 +52,16 @@ function Fixture() {
   const [review, setReview] = useState<{ block: TurnDiffTimelineBlock; path: string | null } | null>(null);
   return (
   <TimelineBlockRendererProvider registry={ctx.timelineBlockRenderers}>
-    <Conversation timeline={timeline} scrollPolicy="natural" threadDetailLevel="STEPS_PROSE"
+    {!floatingSummary ? <Conversation timeline={timeline} scrollPolicy="natural" threadDetailLevel="STEPS_PROSE"
       documentContext={{ conversationId: "diff-layout", hostId: "fixture", cwd: "/workspace", theme,
         onReviewTurnDiff: (block, path) => {
           document.documentElement.dataset.reviewPath = path ?? "";
           document.documentElement.dataset.reviewDiff = reviewDiffForFile(block.unifiedDiff, path ?? null);
           if (new URLSearchParams(location.search).has("review")) setReview({ block, path: path ?? null });
         } }}
-      onVisibleContentReady={() => { document.documentElement.dataset.conversationReady = "true"; }} />
+      onVisibleContentReady={() => { document.documentElement.dataset.conversationReady = "true"; }} /> : null}
+    {floatingSummary ? <ComposerTurnChangeSummary timeline={timeline} turnId="turn" documentContext={{ conversationId: "fixture", cwd: "/workspace", theme,
+      onReviewTurnDiff: (block, path) => setReview({ block, path: path ?? null }) }} /> : null}
     {review !== null ? <TurnDiffReviewDialog block={review.block} initialPath={review.path} onClose={() => setReview(null)} /> : null}
   </TimelineBlockRendererProvider>
   );
