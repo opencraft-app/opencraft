@@ -561,6 +561,10 @@ semantic styles. Those content-layer controls are outside this Shell unification
 The shared tokens own light/dark tint, prefixed Safari CSS blur and readable opaque
 fallbacks for unsupported blur, reduced transparency and forced colors. Safari
 uses the existing CSS approximation; physical iOS rendering needs device evidence.
+All paths retain the same readable frost beneath the optical enhancement: the
+theme's floating veil and shared liquid blur also apply after a supported SVG
+lens. A lens must not replace scattering with a nearly clear transmission. Mobile
+footer styles own geometry only; label truncation must exclude the backdrop span.
 
 ### Live navigation optics
 

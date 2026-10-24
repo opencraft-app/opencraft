@@ -258,6 +258,8 @@ a retained Chat or write another route/history state.
 ### Shared shell action material
 
 Shell buttons on Web/Electron and phone/tablet share the same liquid glass owner.
+The optical enhancement retains the shared readable frost; mobile sidebar scroll
+paint reaches the bottom while floating action hosts own its safe inset.
 Only existing size/density/grouping differ; commands, placement, icons, labels and
 focus remain with controls. Dialog/form/menu content buttons keep their semantic
 surfaces. See [shared Shell material](../docs/workbench-design-language.md#shared-shell-action-material).

@@ -51,7 +51,7 @@ export function LiquidGlassBackdrop() {
     return () => observer.disconnect();
   }, []);
   return <span ref={ref} aria-hidden="true" className="ui-liquid-glass"
-    style={map ? { "--material-liquid-lens": `url("#${id}") saturate(1.15)` } as CSSProperties : undefined}>
+    style={map ? { "--material-liquid-lens": `url("#${id}") var(--material-liquid-filter)` } as CSSProperties : undefined}>
     {map ? <svg className="ui-liquid-glass__filters" width="0" height="0" focusable="false">
       <defs><filter id={id} x="0" y="0" width="100%" height="100%" colorInterpolationFilters="sRGB">
         <feImage href={map.href} width={map.width} height={map.height} result="lens-map" preserveAspectRatio="none" />

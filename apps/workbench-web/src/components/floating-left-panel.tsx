@@ -97,7 +97,7 @@ function FloatingLeftPanelContent({
           } : {}),
         }}
       >
-        <SafeLayout as="aside" edges={mobile ? ["top", "bottom", "left"] : []}
+        <SafeLayout as="aside" edges={mobile ? ["top", "left"] : []}
           minimumInsets={{ bottom: "var(--gap-control-group)" }}
           className="app-shell-floating-left-panel__surface"
           data-testid="app-shell-floating-left-panel"

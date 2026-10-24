@@ -10,16 +10,21 @@ import{QueryClient,QueryClientProvider}from'@tanstack/react-query';
 import{ConversationTaskMenu}from'/apps/workbench-web/src/components/conversation-task-menu.tsx';
 import{createIntlTestRoot}from'/tests/fixtures/intl-root.tsx';
 import{AppShell}from'/apps/workbench-web/src/components/app-shell.tsx';
+import{Sidebar}from'/apps/workbench-web/src/components/sidebar.tsx';
+import{SidebarLayoutStore}from'@opencraft/sidebar-layout';
+import{legacyDirectServerProjectionFromHost}from'@opencraft/workbench-runtime';
 import{AppShellHeader}from'/apps/workbench-web/src/components/app-shell-header.tsx';
 import{initializeAppearanceTheme,setThemePreference}from'/apps/workbench-web/src/appearance-theme.ts';
 import'/apps/workbench-web/src/styles/app.scss';
 initializeAppearanceTheme();
+const sidebarLayout=await SidebarLayoutStore.open({load:async()=>null,save:async()=>{}});
+const threads=Array.from({length:60},(_,i)=>({id:'t'+i,title:'Scrolling conversation '+i,project:'workspace',status:'ready',updatedAt:Date.now()/1000-i,connectionHostId:'local',connectionHostLabel:'Local',...legacyDirectServerProjectionFromHost({hostId:'local',hostKind:'local',label:'Local'})}));
 const fixture=window.fixture={setThemePreference};const noop=()=>{};const client=new QueryClient();
 const navigation={layout:'unified',actions:[{id:'shell.home',title:'Home',icon:'home',active:true,onInvoke:noop}],onOpenSettings:noop,account:{snapshot:{phase:'authenticated',name:'Synthetic employee',avatarUrl:null},onOpen:noop,onRefresh:async()=>{}}};
 function App(){const[open,setOpen]=useState(false),[preview,setPreview]=useState(false),[conversation,setConversation]=useState(true);Object.assign(fixture,{setConversation});
 return <QueryClientProvider client={client}><AppShell layoutScope='measurement' navigation={navigation} mainContentLayout='thread-edge-scroll' sidebarOpen={open} sidebarWidth={335} windowChrome={{kind:'browser',platform:'linux',safeArea:{left:0,right:0}}} onSidebarCollapse={()=>setOpen(false)} onSidebarExpand={()=>setOpen(true)} onSidebarResizeEnd={noop} rightPanel={<div>Preview</div>} rightPanelOpen={preview} rightPanelFullWidth={false} onRightPanelOpenChange={setPreview}
 header={<AppShellHeader conversationHeader={conversation} headerAction={<ConversationTaskMenu scope="fixture" serverId="local" threadId="synthetic" title="Measurement" verifyConversation={async()=>{}} onOpenTasks={noop} onRename={async()=>{}}/>} navigationBrand={<span className="application-brand" data-probe-brand style={{whiteSpace:'nowrap',fontSize:14}}>OpenCraft</span>} title='Measurement' project={null} sidebarOpen={open} rightPanelOpen={preview} rightPanelFullWidth={false} showRightPanelAction={true} onToggleSidebar={()=>setOpen(!open)} onToggleRightPanel={()=>setPreview(v=>!v)} onHome={noop} canGoBack={false} canGoForward={false} onBack={noop} onForward={noop} navigationActions={['sidebar-toggle','back','forward']}/>}
-floatingSidebarHeader={()=>null} leftPanel={<div>Sidebar</div>}><div data-scroll style={{height:'100%',overflowY:'auto'}}><div style={{padding:'90px 20px 20px'}}><input aria-label='Draft' defaultValue='Keep draft'/>{Array.from({length:80},(_,i)=><p key={i}>Conversation content {i}</p>)}</div></div></AppShell></QueryClientProvider>}
+floatingSidebarHeader={()=>null} leftPanel={<Sidebar threads={threads} activeHostId='local' activeThreadId='t0' sidebarLayout={sidebarLayout} onSelectThread={noop} onNewTask={noop} onOpenSettings={noop} showFooter={false} showStart={false} showNewChat/>}><div data-scroll style={{height:'100%',overflowY:'auto'}}><div style={{padding:'90px 20px 20px'}}><input aria-label='Draft' defaultValue='Keep draft'/>{Array.from({length:80},(_,i)=><p key={i}>Conversation content {i}</p>)}</div></div></AppShell></QueryClientProvider>}
 createIntlTestRoot(document.getElementById('root')).render(<App/>);
 `;
 const vite = await createServer({ configFile: false, root: process.cwd(), logLevel: "error", resolve: { dedupe: ["react", "react-dom"] }, cacheDir: "node_modules/.vite-newera-header", esbuild: { jsx: "automatic", target: "esnext" }, optimizeDeps: { entries: [], include: ["react", "react-dom/client", "react-intl", "@radix-ui/react-tooltip", "@radix-ui/react-dialog", "@radix-ui/react-dropdown-menu", "@radix-ui/react-popover", "@radix-ui/react-alert-dialog", "@deepseek-ai/cordis", "@radix-ui/react-context-menu", "marked", "mermaid", "motion/react", "react-dom", "sonner", "tslib"] }, server: { host: "127.0.0.1", port: 0, hmr: false }, plugins: [pluginBranding(process.cwd(), ["join.server"]), { name: "header-measurement-fixture", resolveId: id => id === "/header-fixture.tsx" ? id : null, load: id => id === "/header-fixture.tsx" ? source : null, configureServer(server) { server.middlewares.use((req,res,next) => { if (req.url !== "/") return next(); res.setHeader("content-type","text/html"); res.end('<meta name="viewport" content="width=device-width,initial-scale=1"><div id="root"></div><script type="module" src="/header-fixture.tsx"></script>'); }); } }] });
@@ -30,7 +35,7 @@ try {
  for(const width of [320,390,820,1280])for(const theme of ['light','dark']){
  const context=await browser.newContext({viewport:{width,height:844},hasTouch:true,isMobile:width<640});
  await context.addInitScript(()=>{(window as any).__name=(v:unknown)=>v});
- const page=await context.newPage(),errors:string[]=[];page.on('pageerror',(e:Error)=>errors.push(e.message));
+ const page=await context.newPage(),errors:string[]=[];page.on('pageerror',(e:Error)=>{errors.push(e.message);console.error(e.stack)});
  await page.goto(vite.resolvedUrls!.local[0]!);await page.getByLabel('Draft').waitFor({timeout:60000});await page.evaluate(()=>{document.documentElement.dataset.uiDensity='touch';document.documentElement.dataset.touchNewera='on'});await page.evaluate(theme=>(window as any).fixture.setThemePreference(theme),theme);await page.waitForTimeout(350);
  const controls=page.locator('.app-shell-header__window-controls button:visible, .app-shell-header__end-actions button:visible, .app-shell-touch-sidebar-toggle button:visible');
  assert.equal(await controls.count(),3,'sidebar, menu and preview');assert.equal(await page.locator('.thread-header-title').isVisible(),false);assert.equal(await page.locator('.app-shell-header__right-panel-toggle').last().isVisible(),true);
@@ -120,13 +125,48 @@ try {
   await page.screenshot({path:output+'/1440-'+theme+'-desktop.png'});
   evidence.push({desktop:{theme,width:1440,compactSize:28,hoverFeedback:true,touchHoverSuppressed:true}});await desktop.close();
  }
+ // Real sidebar consumers: scrolling paint bleeds through the bottom safe
+ // region while both independently floating actions keep their old clearance.
+ for (const theme of ['light', 'dark']) {
+  const context=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true});
+  await context.addInitScript(()=>{const supports=CSS.supports.bind(CSS);CSS.supports=((p:string,v?:string)=>p==='-webkit-backdrop-filter'?true:v===undefined?supports(p):supports(p,v)) as typeof CSS.supports;});
+  const page=await context.newPage();await page.goto(vite.resolvedUrls!.local[0]!);await page.getByLabel('Draft').waitFor({timeout:60000});
+  await page.evaluate(theme=>{(window as any).fixture.setThemePreference(theme);document.documentElement.dataset.uiDensity='touch';document.documentElement.style.setProperty('--safe-layout-inset-top','47px');document.documentElement.style.setProperty('--safe-layout-inset-bottom','34px');},theme);
+  await page.getByRole('button',{name:'Show sidebar',exact:true}).click();await page.locator('.sidebar-new-chat:visible').waitFor();
+  await page.waitForFunction(()=>getComputedStyle(document.querySelector('.app-shell-floating-left-panel')!).opacity==='1');
+  const geometry=await page.evaluate(()=>{
+   const panel=document.querySelector('.app-shell-floating-left-panel__surface')!,track=document.querySelector('.shell-sidebar__scroll')!,create=document.querySelector('.shell-sidebar__floating-action .sidebar-new-chat')!,settings=document.querySelector('.shell-sidebar__rail-footer [data-surface=settings]')!;
+   return{panelBottom:panel.getBoundingClientRect().bottom,trackBottom:track.getBoundingClientRect().bottom,newBottom:create.getBoundingClientRect().bottom,settingsBottom:settings.getBoundingClientRect().bottom,trackPadding:parseFloat(getComputedStyle(track).paddingBottom),frameEdges:panel.getAttribute('data-safe-layout'),actionEdges:create.parentElement!.getAttribute('data-safe-layout')};
+  });
+  assert.equal(geometry.panelBottom,844);assert.equal(geometry.trackBottom,844,'scroll paint must not stop at the safe inset');assert.equal(geometry.newBottom,844-34-16);assert.equal(geometry.settingsBottom,geometry.newBottom);assert.equal(geometry.trackPadding,88+34);assert.equal(geometry.frameEdges,'top left');assert.equal(geometry.actionEdges,'bottom');
+  const oldInset=await page.addStyleTag({content:'.app-shell-floating-left-panel__surface{padding-bottom:34px!important}'});
+  assert.equal(await page.locator('.shell-sidebar__scroll').evaluate(e=>e.getBoundingClientRect().bottom),844-34,'old frame inset negative recreates hard cutoff');await oldInset.evaluate(e=>e.remove());
+  // Sample 8px stripes behind the actual controls, not a synthetic glass div.
+  // Both the CSS approximation and live optics must soften background detail.
+  const stripes=await page.addStyleTag({content:'.shell-sidebar__column[data-navigation-layout=mobile]{position:relative}.glass-backdrop-probe{position:absolute;bottom:0;inset-inline:0;height:150px;z-index:1;pointer-events:none;background:repeating-linear-gradient(90deg,#fff 0 8px,#000 8px 16px)}'});
+  await page.evaluate(()=>{const e=document.createElement('div');e.className='glass-backdrop-probe';document.querySelector('.shell-sidebar__column[data-navigation-layout=mobile]')!.append(e)});
+  const energy=async(data:Buffer)=>page.evaluate(async url=>{
+   const image=new Image();image.src=url;await image.decode();const canvas=document.createElement('canvas');canvas.width=image.width;canvas.height=image.height;const ctx=canvas.getContext('2d')!;ctx.drawImage(image,0,0);const {data:p}=ctx.getImageData(0,0,image.width,image.height);let sum=0,count=0;for(let y=8;y<14;y++)for(let x=15;x<image.width-15;x++){const i=(y*image.width+x)*4,j=i-4;sum+=Math.abs(p[i]!-p[j]!);count++}return sum/count;
+  },'data:image/png;base64,'+data.toString('base64'));
+  const samples=[];
+  for(const selector of ['.sidebar-new-chat:visible','.shell-navigation__entrance[data-surface=settings]:visible']){
+   const action=page.locator(selector);const lens=action.locator('.ui-liquid-glass');assert.equal(await lens.evaluate(e=>getComputedStyle(e).overflow),'visible','the optical background is not an ellipsis label');
+   const softened=await action.screenshot();const remove=await page.addStyleTag({content:'.ui-liquid-glass::before{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}'});const clear=await action.screenshot();await remove.evaluate(e=>e.remove());
+   const before=await energy(clear),after=await energy(softened);assert(before>5);assert(after<before*.25,JSON.stringify({selector,before,after}));samples.push({selector,before,after});
+  }
+  await page.evaluate(()=>document.querySelector('.glass-backdrop-probe')!.remove());await stripes.evaluate(e=>e.remove());
+  // Real native scrolling can reach the last row above the existing action row.
+  while(await page.getByRole('button',{name:'Show more',exact:true}).count())await page.getByRole('button',{name:'Show more',exact:true}).click();
+  const end=await page.locator('.shell-sidebar__scroll').evaluate(async e=>{e.scrollTop=e.scrollHeight;await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));const row=[...e.querySelectorAll('.sidebar-activity-item')].pop()!;return{rowBottom:row.getBoundingClientRect().bottom,newTop:document.querySelector('.sidebar-new-chat')!.getBoundingClientRect().top}});assert(end.rowBottom<=end.newTop,JSON.stringify(end));
+  await page.screenshot({path:output+'/sidebar-'+theme+'-safe-bottom.png'});assert.equal(await page.getByLabel('Draft').inputValue(),'Keep draft');evidence.push({sidebar:{theme,geometry,samples,end}});await context.close();
+ }
  const fallbackContext=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true});
  await fallbackContext.addInitScript(()=>{const supports=CSS.supports.bind(CSS);CSS.supports=((property:string,value?:string)=>property==='-webkit-backdrop-filter'?true:value===undefined?supports(property):supports(property,value)) as typeof CSS.supports});
  const fallbackPage=await fallbackContext.newPage();await fallbackPage.goto(vite.resolvedUrls!.local[0]!);await fallbackPage.getByLabel('Draft').waitFor({timeout:60000});
  await fallbackPage.evaluate(()=>{document.documentElement.dataset.uiDensity='touch';document.documentElement.dataset.touchNewera='on'});
  const fallbackLenses=fallbackPage.locator('.app-shell-header .ui-liquid-glass:visible, .app-shell-touch-sidebar-toggle .ui-liquid-glass:visible');
  const fallback=await fallbackLenses.evaluateAll(es=>es.map(e=>({map:!!e.querySelector('feImage'),filter:getComputedStyle(e,'::before').backdropFilter,shadow:getComputedStyle(e).boxShadow,rim:getComputedStyle(e,'::before').boxShadow})));
- assert.equal(fallback.length,2);assert.ok(fallback.every(e=>!e.map&&e.filter.includes('blur(4px)')&&!e.filter.includes('url(')),'syntax-only URL engines must retain the working CSS fallback');
+ assert.equal(fallback.length,2);assert.ok(fallback.every(e=>!e.map&&e.filter.includes('blur(12px)')&&!e.filter.includes('url(')),'syntax-only URL engines must retain the working CSS fallback');
  assert.ok(fallback.every(e=>e.shadow!=='none'&&e.rim!=='none'),'CSS approximation keeps directional edge light and a soft contact shadow');
  await fallbackPage.screenshot({path:output+'/syntax-only-engine-fallback.png'});evidence.push({simulatedPrefixedEngineFallback:fallback});await fallbackContext.close();
  console.log(JSON.stringify({ok:true,evidence}));await writeFile(output+'/result.json',JSON.stringify({ok:true,evidence},null,2));
