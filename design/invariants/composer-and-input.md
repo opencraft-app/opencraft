@@ -177,17 +177,16 @@ scroll, focus, selection or editor replacement. A browser reporting incorrect
 native geometry still requires device evidence; synthetic timing is not physical
 iOS/in-app verification.
 
-The overlay PWA's unoccluded paint extent is the CSS large viewport, which can
-exceed the host's reported unoccluded metrics. The existing Web viewport owner
-publishes geometric contraction separately from editable keyboard inference.
-Only its unoccluded projection selects this full CSS extent; a reduced visual
-viewport stays authoritative through blur, theme changes and navigation. The
-root/background and content safe-inset responsibilities remain separate. The
-unoccluded paint extension must never increase Composer or navigation-footer
-capacity: controls remain within the measured visual frame with their existing
-bottom safe spacing. A full-canvas layout with a control beyond that frame is a
-failure even if a desktop browser renders the control below the simulated native
-clip boundary.
+The overlay PWA uses the CSS large viewport for its unoccluded document-flow
+Shell. Its reported native height can exclude the status area; that difference
+must not become additional Composer padding or a second content-height reduction.
+SafeLayout and the existing route bottom spacing consume safe insets once.
+The existing viewport owner publishes geometric contraction separately from
+editable keyboard inference. A reduced visual viewport stays authoritative
+through blur, theme changes and navigation. Document frames consume page-origin
+coordinates; fixed overlays consume the existing measured fixed-reference basis.
+Do not apply fixed-plane compensation to a document-flow surface or force-reset
+window scroll to hide the mismatch. Preserve drafts, editor DOM and selection.
 
 The Web viewport port is the only writer of the Shell viewport projection.
 The browser owns native coordinate movement; the application owns layout capacity.
