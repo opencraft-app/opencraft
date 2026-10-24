@@ -196,7 +196,11 @@ try{for(const theme of ['light','dark']) for(const newera of [false,true]){
  const nativePage=await nativeContext.newPage();await nativePage.goto(`http://127.0.0.1:${(vite.httpServer!.address() as any).port}`);
  const nativeEditor=nativePage.locator('.opencraft-composer-editor');await nativeEditor.fill('Native viewport draft');
  for(const height of [844,540,280,440,844]){
-  await nativePage.setViewportSize({width:390,height});await nativePage.waitForTimeout(100);
+  await nativePage.setViewportSize({width:390,height});
+  await nativePage.waitForFunction(()=>{
+   const r=document.querySelector('.app-shell-root')!.getBoundingClientRect(),vv=visualViewport!;
+   return Math.abs(r.height-vv.height)<=1&&Math.abs(r.width-vv.width)<=1;
+  },undefined,{timeout:10_000});
   const measured=await nativePage.evaluate(()=>{const shell=document.querySelector('.app-shell-root')!,r=shell.getBoundingClientRect(),vv=visualViewport!;return {top:r.top+scrollY,left:r.left+scrollX,height:r.height,width:r.width,pageTop:vv.pageTop,pageLeft:vv.pageLeft,visualHeight:vv.height,visualWidth:vv.width,scrollY}});
   assert(Math.abs(measured.top-measured.pageTop)<=1);assert(Math.abs(measured.left-measured.pageLeft)<=1);
   assert(Math.abs(measured.height-measured.visualHeight)<=1);assert(Math.abs(measured.width-measured.visualWidth)<=1);
