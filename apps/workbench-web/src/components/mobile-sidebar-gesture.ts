@@ -2,7 +2,7 @@ import { frame } from "@opencraft/design-system/tokens";
 
 /** Swipe right to reveal the left sidebar; swipe left to dismiss. */
 export const MOBILE_SIDEBAR_REVEAL_DIRECTION = 1;
-export const MOBILE_SIDEBAR_EDGE_RESERVE = 24;
+export { EDGE_GESTURE_GUTTER as MOBILE_SIDEBAR_EDGE_RESERVE } from "../runtime/edge-gesture-bridge";
 export const MOBILE_GESTURE_DEADZONE = 8;
 // A visible front-page strip remains large enough to dismiss by touch.
 export const MOBILE_SIDEBAR_PAGE_PEEK = 64;

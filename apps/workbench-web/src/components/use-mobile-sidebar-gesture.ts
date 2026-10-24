@@ -1,6 +1,7 @@
 import { animate, useMotionValue, useReducedMotion, type MotionValue } from "motion/react";
 import { useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { PANEL_SPRING_TRANSITION } from "./use-panel-animation";
+import { readEdgeGestureHandoff } from "../runtime/edge-gesture-bridge";
 import { MOBILE_SIDEBAR_EDGE_RESERVE, MOBILE_SIDEBAR_REVEAL_DIRECTION, MOBILE_GESTURE_COMPETITION, MOBILE_GESTURE_DEADZONE, arbitrateMobileGesture, mobileGestureAdmissionVelocity, mobileGestureVelocity, sidebarReleaseVelocity, sidebarGestureAxis, sidebarGestureProgress, sidebarGestureTarget, type GestureSample, type MobileGestureOwner } from "./mobile-sidebar-gesture";
 
 interface HorizontalScroll {
@@ -125,9 +126,11 @@ export function useMobileSidebarGesture({ enabled, open, width, root, overlay, o
       // the recognized drag suppresses its click in end/cancel below.
       const touch = event.touches[0]!;
       const viewport = shell.getBoundingClientRect();
-      // Keep the screen-edge gutter out of sidebar arbitration. Ordinary tabs
-      // retain OS navigation; PwaRuntime reserves native history on both edges.
-      const sidebarAllowed = touch.clientX >= viewport.left + MOBILE_SIDEBAR_EDGE_RESERVE && touch.clientX <= viewport.right - MOBILE_SIDEBAR_EDGE_RESERVE;
+      // Host adapters may hand their reserved contact to this existing owner.
+      // Unclaimed screen edges remain native; no host detection belongs here.
+      const inside = touch.clientX >= viewport.left && touch.clientX <= viewport.right;
+      const sidebarAllowed = inside && (readEdgeGestureHandoff(event) !== undefined
+        || (touch.clientX >= viewport.left + MOBILE_SIDEBAR_EDGE_RESERVE && touch.clientX <= viewport.right - MOBILE_SIDEBAR_EDGE_RESERVE));
       if (!sidebarAllowed && !horizontal) return;
       gesture.current = { id: touch.identifier, x: touch.clientX, y: touch.clientY, width: width.get(), start: progress.get(), initiallyOpen: latest.current.open, owner: "pending", sidebarAllowed, horizontal, scrollports, motionStartedAt: null, samples: [{ x: touch.clientX, time: event.timeStamp }] };
     };
