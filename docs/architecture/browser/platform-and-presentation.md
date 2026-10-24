@@ -77,6 +77,10 @@ metadata rather than pretending to be live screenshots. Radix ModalSurface owns
 focus, dismissal and input exclusion. Opening the overview does not create a
 second browser page or close the active logical resource.
 
+The browser renderer and mobile-specific chrome/styles load on demand from the
+registered panel type; registering navigation must not eagerly load its UI into
+the startup graph. Existing startup resource budgets remain unchanged.
+
 The existing FloatingComposer owner initializes each Newera mobile browser to
 on-demand presentation once. Agent reveals the same editor and latest-turn
 renderer; hiding, resizing and switching chrome preserve drafts. A direct keyboard

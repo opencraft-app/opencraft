@@ -1,4 +1,4 @@
-@use "@opencraft/design-system/typography.web" as typography;
+@use "@opencraft/design-system/typography-mixins.web" as typography;
 .modal-surface.workbench-shortcut-help[data-appearance="utility"] {
   display: flex; flex-direction: column; padding: 24px; overflow-y: auto;
   max-height: calc(100dvh - 48px);
