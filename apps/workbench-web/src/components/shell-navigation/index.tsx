@@ -247,7 +247,7 @@ export function ShellNavigationFooter({ config, controller, visible = true, mobi
   return <div ref={root} className={`shell-navigation__footer${unified ? " shell-navigation__footer--unified" : ""}`} aria-label="Application entrances">
     {unified ? <>
       {managedUpdateEntrance}
-      <button type="button" className="shell-navigation__entrance" data-surface="settings"
+      <button type="button" data-touch-glass="" className="shell-navigation__entrance" data-surface="settings"
         aria-label={intl.formatMessage({ id: "settings.title", defaultMessage: "Settings" })}
         title={intl.formatMessage({ id: "settings.title", defaultMessage: "Settings" })}
         aria-current={config.settingsActive ? "page" : undefined} onClick={() => {
@@ -264,7 +264,7 @@ export function ShellNavigationFooter({ config, controller, visible = true, mobi
       const directSignIn = surface === "account" && anonymousAccount;
       const applicationAction = surface === "applications" ? config.actions.find(action => action.id === "shell.applications") : undefined;
       if (applicationAction) return <button key={surface} id={`${entranceId}-${surface}`} type="button"
-        className="shell-navigation__entrance" data-surface={surface} aria-label={surfaceLabel}
+        data-touch-glass="" className="shell-navigation__entrance" data-surface={surface} aria-label={surfaceLabel}
         aria-current={applicationAction.active ? "page" : undefined} title={surfaceLabel}
         onClick={() => onInvoke(applicationAction.onInvoke)}><LiquidGlassBackdrop /><NavigationIcon name="grid" selected={applicationAction.active} /></button>;
       if (directSignIn && config.account?.signIn) return <AccountSignInMenu key={surface}
@@ -287,7 +287,7 @@ export function ShellNavigationFooter({ config, controller, visible = true, mobi
       }}>
       <Dialog.Trigger asChild>
         <button id={`${entranceId}-${surface}`} type="button"
-          className="shell-navigation__entrance" aria-label={surfaceLabel}
+          data-touch-glass="" className="shell-navigation__entrance" aria-label={surfaceLabel}
           data-surface={surface}
           aria-pressed={surface === "applications" ? projection.docked.applications || projection.peek === "applications" : directSignIn ? false : state.pinned[surface]}
           aria-expanded={surface === "applications" ? projection.docked.applications || projection.peek === "applications" : undefined}
@@ -335,7 +335,7 @@ function ShellManagedUpdateEntrance({ selected, onInvoke = action => action(), o
       )
     : intl.formatMessage({ id: "webUpdates.noticeRefreshAction", defaultMessage: "Refresh update" });
   return <button type="button"
-    className="shell-navigation__entrance shell-navigation__entrance--update"
+    data-touch-glass="" className="shell-navigation__entrance shell-navigation__entrance--update"
     data-surface="updates"
     data-update-version={notice.latestVersion ?? undefined}
     aria-label={updateTitle}

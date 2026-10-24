@@ -43,7 +43,7 @@ export function SidebarToggleButton({ open, onToggle, hostRole, stationary = fal
   }, [stationary]);
   const button = <button ref={ref} type="button" className={className}
     aria-label={label} aria-expanded={open} title={`${label} (${shortcutLabel("sidebar")})`} aria-keyshortcuts={shortcutAria("sidebar")}
-    data-app-shell-sidebar-trigger="true" data-chrome-action-id="sidebar-toggle"
+    data-app-shell-sidebar-trigger="true" data-touch-glass="" data-chrome-action-id="sidebar-toggle"
     data-sidebar-toggle-stationary={stationary || undefined}
     data-chrome-action-host-role={hostRole} onClick={onToggle}>
     <LiquidGlassBackdrop />

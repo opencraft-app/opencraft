@@ -13015,15 +13015,13 @@ html[data-ui-density="touch"] body {
 
 // Touch floating actions use the conversation navigation material. Geometry and
 // actions remain with Shell/Sidebar; the shared backdrop owns optics/fallbacks.
-:root[data-ui-density="touch"] {
-  .shell-sidebar__column:not([data-navigation-layout="mobile"]) .shell-sidebar-navigation .shell-navigation__items--applications > button,
-  [data-mobile-sidebar] .shell-sidebar__header > .shell-sidebar__action,
-  .shell-sidebar__column .sidebar-new-chat,
-  .shell-sidebar__column .shell-navigation__footer--unified .shell-navigation__entrance,
-  .app-shell-touch-sidebar-toggle > button {
-    @include material.liquid;
-    color: var(--color-text);
-    @include controls.hover-capable { &:hover { background: var(--color-background-navigation-hover); } }
-    &:active { background: var(--color-background-navigation-pressed); }
-  }
+// The attribute marks the existing action, without a second button component.
+:root[data-ui-density="touch"] :is(
+  [data-touch-glass],
+  .shell-sidebar__column:not([data-navigation-layout="mobile"]) .shell-navigation__items--applications > button
+) {
+  @include material.liquid;
+  color: var(--color-text);
+  @include controls.hover-capable { &:hover { background: var(--color-background-navigation-hover); } }
+  &:active { background: var(--color-background-navigation-pressed); }
 }
