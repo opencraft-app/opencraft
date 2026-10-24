@@ -9074,6 +9074,18 @@ html[data-ui-density="touch"][data-timeline-keyboard-open="true"] .thread-scroll
   }
 }
 
+// Routine loading is quieter than reconnection and never adds a warning glow.
+.opencraft-composer-shell[data-loading="true"]::before {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--color-text-danger) 1%, transparent),
+      color-mix(in srgb, var(--color-text-danger) 2.5%, transparent)
+    ),
+    var(--composer-surface-background);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-text-danger) 7%, transparent);
+}
+
 // Connection warning stays in the material; editable content never fades or pulses.
 .opencraft-composer-shell[data-warning="true"]::before {
   background:
@@ -9089,7 +9101,7 @@ html[data-ui-density="touch"][data-timeline-keyboard-open="true"] .thread-scroll
 }
 
 @media (forced-colors: active) {
-  :where(:root[data-ui-density="touch"]) .opencraft-composer-shell[data-warning="true"]::before {
+  :where(:root[data-ui-density="touch"]) .opencraft-composer-shell:is([data-loading="true"], [data-warning="true"])::before {
     background: Canvas;
     box-shadow: none;
     outline: 1px solid CanvasText;

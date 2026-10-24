@@ -106,7 +106,8 @@ try {
       for (const stage of ["cold-stage", "cold-view"]) {
         await setState(stage);
         await expectActive();
-        assert.equal(await page.locator('.opencraft-composer-shell').getAttribute('data-warning'), null, 'ordinary entry loading stays neutral');
+        assert.equal(await page.locator('.opencraft-composer-shell').getAttribute('data-warning'), null, 'ordinary entry is not a reconnect warning');
+        assert.equal(await page.locator('.opencraft-composer-shell').getAttribute('data-loading'), 'true', 'ordinary loading gets the faint tint');
         const rendered = await scan.evaluate(el => {
           const svg = el.querySelector("svg")!;
           const rect = el.getBoundingClientRect();
@@ -199,6 +200,7 @@ try {
         (window as any).retainedDraft = document.querySelector(".ProseMirror");
         return { scroll: scroll.scrollTop, anchor: [...document.querySelectorAll("[data-turn-key]")].at(-1)!.getBoundingClientRect().top };
       });
+      let loadingTint: number[] = [];
       for (const state of ["warm-loading", "warm-syncing", "warm-reconnecting", "warm-error", "warm-update-error", "ready"]) {
         await setState(state);
         if (state === "warm-error" || state === "warm-update-error") await page.locator(".conversation-recovery-notice").waitFor();
@@ -209,7 +211,25 @@ try {
         });
         assert.equal(await page.locator('.opencraft-composer-shell').getAttribute('data-warning'),
           state === 'warm-reconnecting' || state.endsWith('error') ? 'true' : null,
-          'only actual reconnect/failure warns; ready and routine history loading stay neutral');
+          'only actual reconnect/failure warns');
+        assert.equal(await page.locator('.opencraft-composer-shell').getAttribute('data-loading'),
+          state === 'warm-loading' || state === 'warm-syncing' ? 'true' : null,
+          'loading is faint, warning takes precedence, ready clears all tint');
+        const tint = await page.locator('.opencraft-composer-shell').evaluate(el => {
+          const style = getComputedStyle(el, '::before');
+          return { alphas: [...style.backgroundImage.matchAll(/color\(srgb[^)]*?\/\s*([\d.]+)\)/g)].map(m => Number(m[1])), shadow: style.boxShadow };
+        });
+        if (state === 'warm-loading') {
+          loadingTint = tint.alphas.slice(0, 2);
+          assert.equal(loadingTint.length, 2, 'loading paints a real tint gradient');
+          assert.ok(!tint.shadow.includes(', '), 'loading has no outer warning glow');
+        }
+        if (state === 'warm-reconnecting') {
+          assert.equal(tint.alphas.length >= 2, true);
+          assert.ok(loadingTint.every((alpha, i) => alpha > 0 && alpha < tint.alphas[i]),
+            'loading gradient is visibly quieter than reconnect');
+          if (evidenceDir) await page.screenshot({ path: join(evidenceDir, `reconnecting-${width}-${family}-${mode}.png`) });
+        }
         const retained = await page.evaluate(() => ({
           sameScroll: (window as any).retainedScroll === document.querySelector(".thread-scroll"),
           scroll: (document.querySelector(".thread-scroll")! as HTMLElement).scrollTop,

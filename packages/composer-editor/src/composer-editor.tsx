@@ -2159,7 +2159,9 @@ export const OpenCraftComposer = forwardRef<
         />
         {attachedContent}
       </ComposerAttachedRail>
-      <div className="opencraft-composer-shell" data-warning={isUnstable ? "true" : undefined}>
+      <div className="opencraft-composer-shell"
+        data-loading={isRecovering && !isUnstable ? "true" : undefined}
+        data-warning={isUnstable ? "true" : undefined}>
         <ComposerRecoveryScan active={isRecovering} />
         {chromeHeader === undefined ? null : (
           <div className="opencraft-composer-chrome-header">{chromeHeader}</div>
