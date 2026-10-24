@@ -132,8 +132,8 @@ These tools return `received_only` coverage, `platformHistory: false`, seven-day
 retention and the existing global 10,000 terminal-record cap. A zero-result search
 does not establish absence from the platform. They do not fetch unmentioned
 posts/comments, historical content before reception, other people's messages, other
-conversations or other bot installations. Full native channel history needs its
-own trusted channel/post identifiers, provider API access and current permissions;
+conversations or other bot installations. These received-only tools do not provide native channel history. Native tools below use their own
+trusted channel/post identifiers, provider API access and current permissions;
 a compatibility `chatid` is not assumed to be a native `topic_id`.
 
 The signed session determines the caller. Model arguments cannot select a bot,
@@ -204,3 +204,48 @@ reply destinations. `scripts/smoke/execution/smoke-im-channels.ts` runs the actu
 HTTP service, SQLite and QuickJS with synthetic human admission and external
 transports, including draft navigation, light/dark and narrow DOM. These are
 not evidence that real WeCom/Slack credentials or external delivery work.
+
+
+## Native WeCom channel history
+
+The WeCom adapter also contributes four preauthorized session tools when a
+current admitted WeCom anchor is available: `wecom_list_channels(replyRef,
+limit?, cursor?)`, `wecom_read_channel(replyRef, topicId, limit?, cursor?, from?,
+until?)`, `wecom_read_post(replyRef, topicId, postId, limit?, cursor?)`, and
+`wecom_search_channel(replyRef, topicId, query, limit?, cursor?, from?, until?)`.
+Time bounds are inclusive Unix seconds, unlike the received-only tools'
+workbench timestamps. Pages contain at most20 items. Search accepts one keyword
+of at most32 UTF-8 bytes and follows provider matching semantics.
+
+Official channel discovery requires no user-supplied channel link. A compatibility
+callback's chat ID does not identify a native topic. Discovery returns only
+channels joined by the selected Bot where the currently admitted external sender
+is a member; an ambiguous channel name requires an explicit channel choice.
+Native reads/search target exactly one selected topic ID, never all Bot channels.
+They may include other members' posts/comments predating workbench receipt.
+
+The IM owner derives endpoint, canonical conversation, current human and sender
+from the retained opaque replyRef. Composition checks current IM authority after
+every asynchronous step and verifies both Bot and sender membership before and
+after content retrieval. Provider permissions/retention remain authoritative;
+channel public/private visibility is not a read-permission grant. Membership
+pagination fails closed on invalid or exhausted bounds. No model arguments select
+actor, Bot credential, API origin or global search scope.
+
+The WeCom provider client obtains signed official API tokens at the existing
+credential execution boundary, coalesces/cache refreshes, uses fixed read-only
+endpoints with redirect rejection, response/time/request bounds and cancellation.
+No credential, attachment URL/cookie metadata or arbitrary provider error enters tool output.
+Posts/comments have exact IDs, provider author IDs, parent-reply IDs, timestamps, recall flags and Unicode-safe excerpts
+(up to4096 bytes); search previews are capped at1024 bytes and five replies per
+post with explicit truncation. Channel names and content are untrusted data.
+`provider_history` coverage indicates remote data, not proof of complete channel
+retrieval: a posts page excludes comments, paging may remain, and provider retention
+applies. Native cursors are signed, process-local, and bound to the caller's anchor,
+tool, selected topic and query/time scope. Restart invalidates them. No new message
+archive, schema migration, transport-mode change, replay or IM send is introduced.
+
+Official API contracts: [token](https://developer.work.weixin.qq.com/document/path/101910),
+[channel discovery/membership](https://developer.work.weixin.qq.com/document/path/101925),
+[posts/comments](https://developer.work.weixin.qq.com/document/path/101922),
+and [channel search](https://developer.work.weixin.qq.com/document/path/101923).
