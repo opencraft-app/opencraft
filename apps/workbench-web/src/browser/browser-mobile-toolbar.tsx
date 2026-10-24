@@ -1,3 +1,4 @@
+import './browser-mobile-toolbar.scss';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { BrowserPageSnapshot, BrowserTabSnapshot } from '@opencraft/browser-core';
 import { AddIcon, ChevronLeftIcon, CloseIcon, ExternalLinkIcon, GlobeIcon, MoreIcon, RefreshIcon, SidebarLayoutIcon, SquareIcon } from '@opencraft/design-system-web/action-icons';
@@ -126,3 +127,5 @@ export function BrowserMobileToolbar({ page, tab, panelTabId, address, setAddres
     </ModalSurface> : null}
   </>;
 }
+
+export default BrowserMobileToolbar;

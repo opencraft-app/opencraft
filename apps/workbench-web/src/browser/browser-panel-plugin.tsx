@@ -19,6 +19,8 @@ import type { PanelRendererProps } from "@opencraft/workbench-panels-react";
 import { usePanelPresentation } from "../components/panel-presentation";
 import { ArrowLeftIcon as ArrowLeft, ArrowRightIcon as ArrowRight, ExternalLinkIcon as ExternalLink, GlobeIcon as Globe2, DevicesIcon as MonitorSmartphone, RedoIcon as RotateCw } from "@opencraft/design-system-web/action-icons";
 import {
+  lazy,
+  Suspense,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -42,7 +44,7 @@ import type { WebBrowserPageRuntime } from "./web-browser-runtime";
 import { useWorkbenchPresentationRoot } from "../components/workbench-presentation-root";
 import { useShellPresentation } from '../components/shell-presentation';
 import { useNeweraBrowserLayout } from '../components/use-newera-browser-layout';
-import { BrowserMobileToolbar } from './browser-mobile-toolbar';
+const BrowserMobileToolbar = lazy(() => import('./browser-mobile-toolbar'));
 
 const FIT_VIEWPORT = { type: "fit", width: 1440, height: 900 } as const;
 
@@ -143,10 +145,10 @@ function BrowserPanel({ tab: panelTab, presentationId }: PanelRendererProps) {
 
   return (
     <section className="browser-panel" data-mobile-browser={mobile || undefined} data-viewport-mode={tab.viewportMode.type} aria-label={page.title}>
-      {mobile ? <BrowserMobileToolbar page={page} tab={tab} panelTabId={panelTab.id}
+      {mobile ? <Suspense fallback={null}><BrowserMobileToolbar page={page} tab={tab} panelTabId={panelTab.id}
         address={address} setAddress={setAddress} submit={submit}
         editing={editingAddress} setEditing={setEditingAddress}
-        toggleDevice={() => workbench.setViewportMode(tab.id, tab.viewportMode.type === 'responsive' ? FIT_VIEWPORT : { type: 'responsive' })} /> : <form className="browser-panel__toolbar" onSubmit={submit}>
+        toggleDevice={() => workbench.setViewportMode(tab.id, tab.viewportMode.type === 'responsive' ? FIT_VIEWPORT : { type: 'responsive' })} /></Suspense> : <form className="browser-panel__toolbar" onSubmit={submit}>
         <button type="button" className="browser-toolbar-button" disabled={!page.navigation.canGoBack}
           aria-label={intl.formatMessage({ id: "navigation.back", defaultMessage: "Back" })} title={intl.formatMessage({ id: "navigation.back", defaultMessage: "Back" })} onClick={() => pages.goBack(page.id)}>
           <ArrowLeft size={14} />

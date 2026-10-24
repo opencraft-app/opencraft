@@ -1,5 +1,5 @@
 @use '@opencraft/design-system/material.web' as material;
-@use '@opencraft/design-system/typography.web' as typography;
+@use '@opencraft/design-system/typography-mixins.web' as typography;
 
 .right-panel-content[data-mobile-browser='true'] > .right-panel-toolbar { display: none; }
 .app-shell-root:has(.right-panel-content[data-mobile-browser='true']) {
