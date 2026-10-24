@@ -191,6 +191,16 @@ test("a late error revises more than one batch of settled history across restart
 
 test("the preceding cache schema upgrades without changing derived usage or retained source evidence",()=>fixture(async f=>{
  await writeFile(f.path,start()+count('11','11')+line('event_msg',{type:'task_complete',turn_id:turn},2));let d=f.open();await drain(d);const expected=values(d);d.close();
- const cache=new DatabaseSync(join(f.directory,'token-usage-derived.sqlite'));cache.exec('DROP INDEX derived_usage_gaps_thread; DELETE FROM schema_migrations WHERE version=4');cache.close();
+ const cache=new DatabaseSync(join(f.directory,'token-usage-derived.sqlite'));cache.exec('DROP INDEX derived_usage_gaps_thread; DELETE FROM schema_migrations WHERE version>=4');cache.close();
  d=f.open();await drain(d);assert.deepEqual(values(d),expected);
+}));
+
+test("retained history reports one source incident per thread and upgrades prior per-turn gap registrations",()=>fixture(async f=>{
+ const second={threadId:thread,turnId:'second'};f.ledger.startTurn(second,at,'human',true);f.ledger.recordInput(second,{inputId:'A-second',actorId:'A',actorKind:'human',mode:'start',admission:'confirmed'});
+ for(const [key,tokens]of [[{threadId:thread,turnId:turn},'77'],[second,'23']]as const)f.ledger.recordSource({...key,lineage:'old',sourceId:key.turnId,kind:'response',version:0,provider:'provider',model:'model-a',counts:{totalTokens:tokens}});
+ let d=f.open();await drain(d);const expected=values(d);assert.equal(snapshot(d).summary.tokens,'100');assert.equal(snapshot(d).coverage.openGapIncidents,2);d.close();
+ const cache=new DatabaseSync(join(f.directory,'token-usage-derived.sqlite'));cache.prepare("DELETE FROM token_usage_gaps WHERE gap_key=?").run('retained:'+thread);
+ for(const id of [turn,'second'])cache.prepare('INSERT INTO token_usage_gaps VALUES(?,?,?,?,?,?,NULL)').run('server','retained:'+thread+':'+id,thread,null,'unreplayable',at);
+ cache.exec('DELETE FROM schema_migrations WHERE version=5');cache.close();
+ d=f.open();await drain(d);assert.deepEqual(values(d),expected);assert.equal(snapshot(d).coverage.openGaps,2);assert.equal(snapshot(d).coverage.openGapIncidents,2);
 }));

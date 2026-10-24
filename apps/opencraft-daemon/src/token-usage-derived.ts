@@ -30,6 +30,15 @@ export const DERIVED_CACHE_VERSION = "rollout-counts-3/equal-turn-v1";
 const CACHE_MIGRATIONS = [...TOKEN_USAGE_STATE_MIGRATIONS,
   { version: TOKEN_USAGE_STATE_MIGRATIONS.at(-1)!.version+1, name: "rollout-derived-cache-v1", sql: CACHE_SQL },
   { version: TOKEN_USAGE_STATE_MIGRATIONS.at(-1)!.version+2, name: "rollout-derived-gap-index", sql: "CREATE INDEX derived_usage_gaps_thread ON token_usage_gaps(server_id,thread_id,ends_ms);" },
+  { version: TOKEN_USAGE_STATE_MIGRATIONS.at(-1)!.version+3, name: "rollout-retained-gap-incidents", sql: `
+INSERT INTO token_usage_gaps(server_id,gap_key,thread_id,turn_id,reason,starts_ms,ends_ms)
+SELECT server_id,'retained:'||thread_id,thread_id,NULL,'unreplayable',min(starts_ms),
+  CASE WHEN count(*) FILTER(WHERE ends_ms IS NULL)>0 THEN NULL ELSE max(ends_ms) END
+FROM token_usage_gaps WHERE gap_key LIKE 'retained:%' AND thread_id IS NOT NULL GROUP BY server_id,thread_id
+ON CONFLICT(server_id,gap_key) DO UPDATE SET starts_ms=min(starts_ms,excluded.starts_ms),ends_ms=excluded.ends_ms;
+DELETE FROM token_usage_gaps WHERE gap_key LIKE 'retained:%' AND gap_key!='retained:'||thread_id;
+UPDATE token_usage_scopes SET revision=revision+1;
+` },
 ];
 type Row = Record<string, any>;
 type LegacyTurn = { tokens: string | null; buckets: { provider: string | null; model: string | null; tokens: string }[] };
@@ -193,15 +202,15 @@ export class RolloutDerivedTokenUsage {
     const useRetained = (!totals.length && (!file || file.error !== null || file.complete === 1)) || (!!legacy?.tokens&&(file?.error||incomplete)&&BigInt(legacy.tokens)>derivedTotal);
     let removed=false;
     if (totals.length&&!useRetained) {
-      this.clearGap(`retained:${threadId}:${turnId}`);
       removed=!!this.statement(this.database, "DELETE FROM token_usage_sources WHERE server_id=? AND thread_id=? AND turn_id=? AND lineage='retained-legacy'").run(this.options.serverId, ...params).changes;
+      if(!this.statement(this.database,"SELECT 1 FROM token_usage_sources WHERE server_id=? AND thread_id=? AND lineage='retained-legacy' LIMIT 1").get(this.options.serverId,threadId))this.clearGap(`retained:${threadId}`);
       removed=!!this.statement(this.database,"DELETE FROM token_usage_sources WHERE server_id=? AND thread_id=? AND turn_id=? AND lineage='rollout-derived' AND source_id NOT IN (SELECT model_key FROM usage_totals WHERE thread_id=? AND turn_id=? AND evidence=?)").run(this.options.serverId,...params,...params,exact?"exact":"counter").changes||removed;
       for (const row of totals) this.ledger.recordSource({ ...key, lineage: "rollout-derived", sourceId: String(row.model_key), kind: "response", version: Number(row.version), provider: row.provider as string | null, model: row.model as string | null, counts: JSON.parse(String(row.counts_json)), observedAt: Number(row.at_ms) });
     } else if (useRetained) {
       if (legacy?.tokens !== null && legacy) {
         removed=!!this.statement(this.database,"DELETE FROM token_usage_sources WHERE server_id=? AND thread_id=? AND turn_id=? AND lineage='rollout-derived'").run(this.options.serverId,...params).changes;
         for (const bucket of legacy.buckets) this.ledger.recordSource({ ...key, lineage: "retained-legacy", sourceId: tokenModelKey(bucket.provider, bucket.model), kind: "response", version: 0, provider: bucket.provider, model: bucket.model, counts: { totalTokens: bucket.tokens } });
-        this.gap(`retained:${threadId}:${turnId}`, threadId, "unreplayable");
+        this.gap(`retained:${threadId}`, threadId, "unreplayable");
       }
     }
     const status = execution ?? turn.executionState;

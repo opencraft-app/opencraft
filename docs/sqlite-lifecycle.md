@@ -449,6 +449,9 @@ sums, allocations and archive position commit together in the projection.
 Derived cache migration 4 adds a `(server_id, thread_id, ends_ms)` gap index.
 It preserves the preceding cache schema and avoids repeatedly scanning all
 retained-history gaps during large rebuilds and active-turn refresh.
+Migration 5 coalesces retained-only history into one source incident per thread;
+only the last retained turn recovering closes that incident. This avoids one
+coverage registration per historical turn without changing counts or shares.
 A late source error revises the current turn in that transaction and enqueues a
 durable, 32-turn-per-batch refresh of affected historical projections. Coverage
 changes, including enabled state with no active turns, advance the query revision.
