@@ -39,6 +39,8 @@
 - <a id="shell-right-panel-host-replacement-2026-10-19"></a>[Shell right-panel host replacement (2026-10-19)](invariants/shell-and-layout.md#shell-right-panel-host-replacement-2026-10-19)
 - <a id="personal-toolbardock"></a>[Personal ToolbarDock](invariants/shell-and-layout.md#personal-toolbardock)
 
+- <a id="ios-home-screen-edge-navigation"></a>[iOS Home Screen edge navigation](invariants/shell-and-layout.md#ios-home-screen-edge-navigation)
+
 ### Navigation and sidebar
 
 - <a id="persistent-sidebar-control-beside-the-brand"></a>[Persistent sidebar control beside the brand](invariants/navigation-and-sidebar.md#persistent-sidebar-control-beside-the-brand)

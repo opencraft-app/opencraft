@@ -237,3 +237,19 @@ touch screen/client and page/client differences remain separate numeric
 observations. Reports contain no content or route, never drive layout, and all
 listeners/frames are released with the host. These measurements do not establish
 physical compositor painting or device acceptance.
+
+### iOS Home Screen edge navigation
+
+The Web bootstrap suppresses native history-back gestures in iOS Home Screen
+apps (`navigator.standalone === true`). A non-passive capture listener cancels
+single-finger `touchstart` in the leftmost 20 CSS pixels, before WebKit admits its
+history recognizer. This strip remains inside the sidebar's reserved 24px edge;
+it does not become a second sidebar gesture owner. Cancelling the initial contact
+also reserves edge-origin taps/scrolls; normal content and controls are inset.
+Middle/right contacts and simultaneous multi-touch retain native handling.
+Ordinary browser tabs, embedded documents and Electron are unaffected. History
+entries and URL changes remain real; explicit Back/Forward uses the original
+router. Do not trap `popstate`, add dummy history entries or cancel every touch.
+The bootstrap releases the listener on retirement/HMR and retains it across
+persisted pagehide. Native Safari gesture acceptance requires a physical-device
+check; synthetic DOM touch events only prove cancellation and routing isolation.
