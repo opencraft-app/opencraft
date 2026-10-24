@@ -152,3 +152,29 @@ WebRuntime/PwaRuntime/ElectronRuntime share the existing intent codec. Native
 fullscreen/input subscriptions retire with the runtime, while bootstrap head
 projection remains pure and native system pixels remain unobserved. See
 [ClientRuntime](../../docs/architecture/platform/client-runtime.md).
+
+
+### Standalone WebKit edge-color compatibility
+
+A single empty, aria-hidden document surface lives outside the application root,
+route lifetimes and transformed panels. The HTML head's existing presentation
+projection admits only a browser host in standalone/fullscreen display mode; CSS
+capability checks exclude engines without WebKit touch-callout/text clipping.
+Ordinary tabs, Electron, embedded and native-container hosts keep it disabled.
+This is a rendering compatibility hint, not an iOS version detector or promised
+system capability. It consumes the existing semantic Shell edge background from
+bootstrap through runtime/plugin theme changes, without a second color writer.
+
+The fixed surface exceeds the host's thin-border sampling threshold, carries a
+background style and clips it to empty text. It paints no strip over the page and
+receives no pointer/focus input. It does not reserve an inset, create a safe-area
+value, move controls, animate or alter viewport/status-bar metadata. SafeLayout,
+keyboard geometry and native system rendering retain their respective owners.
+
+The existing window-appearance smoke verifies actual document startup and exclusion
+on Chromium and desktop WebKit. Its explicit iOS CSS predicate projection exercises
+the enabled WebKit styles, theme inheritance, hit testing and unchanged page pixels.
+Complete-application checks separately cover navigation and draft continuity.
+Native status-bar color/blur and physical full-bleed remain unobserved until
+separately verified on the installed target device; a smaller layout viewport is
+not repaired or hidden by this surface.
