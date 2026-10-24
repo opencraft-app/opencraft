@@ -123,6 +123,8 @@ interface SharedCodexRoutingOptions {
     readonly actor: (context: NonNullable<TransportSubmissionContext["actorContext"]>) => {id:string;kind:"human"|"session"} | null;
     readonly submission?: (threadId:string,inputId:string) => UsageSubmission | null;
     readonly person?: (actorId:string) => {kind:string;displayName:string} | null;
+    /** Shared deployment owner; its lifetime belongs to Headless, not a transport. */
+    readonly derivedQueries?: TokenUsageQueryService;
   };
   readonly collaboration?: {
     queuedContext?(threadId: string, inputId: string, input: readonly unknown[]): Promise<unknown>;
@@ -458,11 +460,13 @@ export class CodexEngineAdapter implements DuplexTransport {
         request:(method,params)=>this.requestPhysical(method,params,5000),
         submission:this.options.tokenUsage?.submission,
         diagnostic:category=>this.diagnostic({event:"token-usage-partial",category}),
+        derived:this.options.tokenUsage?.derivedQueries,
       });
-      if(this.options.tokenUsage?.queryWorkerEntry)this.tokenUsageQueries=new TokenUsageQueryService({entry:this.options.tokenUsage.queryWorkerEntry,databasePath:join(dataRoot,"token-usage.sqlite"),serverId:this.options.tokenUsage.serverId,telemetry});
+      if(this.options.tokenUsage?.derivedQueries)this.tokenUsageQueries=this.options.tokenUsage.derivedQueries;
+      else if(this.options.tokenUsage?.queryWorkerEntry)this.tokenUsageQueries=new TokenUsageQueryService({entry:this.options.tokenUsage.queryWorkerEntry,databasePath:join(dataRoot,"token-usage.sqlite"),serverId:this.options.tokenUsage.serverId,telemetry});
     } catch {
       this.tokenUsageStorageUnavailable=true;
-      this.tokenUsageQueries?.close();this.tokenUsageQueries=null;
+      if(!this.options.tokenUsage?.derivedQueries)this.tokenUsageQueries?.close();this.tokenUsageQueries=null;
       this.tokenUsage?.close();this.tokenUsage=null;
       this.tokenUsageState?.close();this.tokenUsageState=null;
       this.diagnostic({event:"token-usage-unavailable",category:"storage-open"});
@@ -638,6 +642,7 @@ export class CodexEngineAdapter implements DuplexTransport {
       if(typeof params.enabled!=="boolean"||Object.keys(params).some(key=>key!=="enabled")){this.emit({id,error:{code:-32602,message:"invalid-query"}},clientId);return;}
       try{
         this.tokenUsage.ledger.setEnabled(params.enabled);
+        this.options.tokenUsage?.derivedQueries?.invalidate("*");
         const {enabled,enabledAt,revision}=this.tokenUsage.ledger.coverage();
         this.emit({id,result:{enabled,enabledAt,revision}},clientId);
       }catch{this.emit({id,error:{code:-32000,message:"unavailable"}},clientId);}
@@ -949,7 +954,7 @@ export class CodexEngineAdapter implements DuplexTransport {
     if (this.coreBridge) return this.coreBridge.close();
     if (this.closeOperation !== null) return this.closeOperation;
     this.threadTitles?.close();
-    this.tokenUsageQueries?.close();
+    if(!this.options.tokenUsage?.derivedQueries)this.tokenUsageQueries?.close();
     this.tokenUsageQueries=null;
     for(const request of [...this.pending.values(),...this.internalRequests.values()])if(request.usageAttemptId)this.tokenUsage?.attemptOutcome(request.usageAttemptId,"unknown");
     this.tokenUsage?.close();

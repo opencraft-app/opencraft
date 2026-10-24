@@ -199,6 +199,8 @@ export async function replayRolloutUsage(options: {
   readonly onSourceTurn?: (key: {threadId:string;turnId:string}) => boolean;
   readonly onOversizedLine?: (mayContainFact: boolean, bytes: number) => void;
   readonly identity?: RolloutTurnIdentity;
+  /** Receipt-only cutover keeps native admission recovery without token writes. */
+  readonly counts?: boolean;
 }): Promise<RolloutUsageResult> {
   options.signal?.throwIfAborted();
   const root = await realpath(options.nativeHome);
@@ -265,7 +267,7 @@ export async function replayRolloutUsage(options: {
             provider: currentProvider,
             model: (turnId ? turnModels.get(turnId) : null) ?? (options.identity && options.identity.turnId === turnId ? options.identity.model : options.identity?.model) ?? null,
           };
-          const fact = nativeUsageFact(value, options.threadId, identity);
+          const fact = options.counts === false ? null : nativeUsageFact(value, options.threadId, identity);
           if (fact?.kind === "missing") { missing++; handled++; }
           if (fact?.kind === "source") {
             if (options.excludedTurnIds?.has(fact.source.turnId)) { committed = end; continue; }

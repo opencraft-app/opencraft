@@ -450,6 +450,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         : fileURLToPath(new URL('../apps/opencraft-daemon/src/token-usage-query-worker.ts', import.meta.url)),
       databasePath: join(dataDirectory, 'codex', 'token-usage.sqlite'),
       serverId: `server:${machineIdentity.machineId}:codex`,
+      ...(process.env.OPENCRAFT_TOKEN_USAGE_SOURCE === 'ledger' ? {} : {rollout:{nativeHome:join(dataDirectory,'codex','runtime')}}),
     });
     appHostServer = new AppHostServer({
       logicalClientRouting: true,
@@ -472,6 +473,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
               ? fileURLToPath(new URL('./token-usage-query-worker.mjs',import.meta.url))
               : fileURLToPath(new URL('../apps/opencraft-daemon/src/token-usage-query-worker.ts',import.meta.url)),
             serverId: `server:${machineIdentity.machineId}:codex`,
+            ...(process.env.OPENCRAFT_TOKEN_USAGE_SOURCE === 'ledger' ? {} : {derivedQueries:usageQueries}),
             actor: context => actorStore.isCurrent(context) ? actorStore.get(context.actorId) : null,
             person: actorId => actorStore.get(actorId),
             submission: (threadId,inputId) => actorCollaboration.usageSubmission(threadId,inputId),
