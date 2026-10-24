@@ -35,16 +35,16 @@ test('unknown settlement cannot return capacity; exact input replies may arrive 
 test('rendered profile cannot turn receipt or a future ID into presentation credit', () => {
   const f = fixture(); assert(f.feedback({ ready: true }));
   assert(f.flow.admit(frame(1, true)));
-  for (let i = 2; i <= 6; i++) assert(f.flow.admit(frame(i)));
-  assert.equal(f.flow.admit(frame(7)), false);
-  f.feedback({ received: '6', rendered: null });
-  assert.equal(f.flow.credits.size, 6);
-  f.feedback({ received: '2', rendered: '6' });
-  assert.equal(f.flow.credits.size, 6, 'presentation cannot exceed receipt');
-  f.feedback({ received: '9999', rendered: '9999' }); assert.equal(f.flow.credits.size, 6);
-  f.feedback({ received: '6', rendered: '6' }); assert.equal(f.flow.credits.size, 0);
-  assert.equal(f.flow.admit(frame(8)), false, 'a dropped delta requires resynchronization');
-  assert(f.flow.admit(frame(9, true)));
+  for (let i = 2; i <= 12; i++) assert(f.flow.admit(frame(i)));
+  assert.equal(f.flow.admit(frame(13)), false);
+  f.feedback({ received: '12', rendered: null });
+  assert.equal(f.flow.credits.size, 12);
+  f.feedback({ received: '2', rendered: '12' });
+  assert.equal(f.flow.credits.size, 12, 'presentation cannot exceed receipt');
+  f.feedback({ received: '9999', rendered: '9999' }); assert.equal(f.flow.credits.size, 12);
+  f.feedback({ received: '12', rendered: '12' }); assert.equal(f.flow.credits.size, 0);
+  assert.equal(f.flow.admit(frame(14)), false, 'a dropped delta requires resynchronization');
+  assert(f.flow.admit(frame(15, true)));
 });
 
 test('reset requires a new receiver confirmation; stale feedback and duplicate ready do not erase new work', () => {
@@ -110,15 +110,15 @@ test('real WebSocket gate passes control, holds old capacity through reset and r
   try {
     let next = receive(); flow.attach(page, socket, viewer, 'rendered'); config = await next;
     assert.equal(config.type, 'media-config'); assert(feedback({ ready: true }));
-    for (let i = 1; i <= 6; i++) { next = receive(); flow.send(page, socket, viewer, frame(i, i === 1)); await next; }
-    flow.send(page, socket, viewer, frame(7));
+    for (let i = 1; i <= 12; i++) { next = receive(); flow.send(page, socket, viewer, frame(i, i === 1)); await next; }
+    flow.send(page, socket, viewer, frame(13));
     next = receive(); flow.send(page, socket, viewer, null, { type: 'control' });
     assert.equal((await next).type, 'control', 'media gate does not gate the control plane');
     now = 2000; next = receive(); feedback({ requestReset: true }); const old = config; config = await next;
     assert.notEqual(config.epoch, old.epoch);
-    assert.equal(flow.feedback(socket, { version: 1, epoch: old.epoch, received: '6', rendered: '6' }), false);
+    assert.equal(flow.feedback(socket, { version: 1, epoch: old.epoch, received: '12', rendered: '12' }), false);
     assert(feedback({ ready: true }));
-    next = receive(); flow.send(page, socket, viewer, frame(8, true)); assert.equal((await next).readBigUInt64BE(1), 8n);
+    next = receive(); flow.send(page, socket, viewer, frame(14, true)); assert.equal((await next).readBigUInt64BE(1), 14n);
     assert(keys >= 2);
   } finally { flow.close(); client.terminate(); socket.terminate(); await new Promise(resolve => server.close(resolve)); }
 });

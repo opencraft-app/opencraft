@@ -13,7 +13,11 @@ export class MediaFlow {
   readonly credits: CreditWindow;
   readonly epoch: string;
   readonly ready: boolean;
-  reset(): void;
+  reset(): boolean;
+  readonly bucket: 'fast' | 'slow';
+  capacity(): boolean;
+  switchBucket(bucket: 'fast' | 'slow'): boolean;
+  snapshot(): { bucket: 'fast' | 'slow'; stage: FeedbackStage; ready: boolean; gap: boolean; window: number; pending: number; bytes: number; oldestMs: number; feedbackDelayMs: number | null; fps: number; requestedFps: number; sent: number; acknowledged: number; dropped: number; resets: number; pressure: boolean; recentProgress: boolean };
   feedback(value: unknown): boolean;
   requestKey(): void;
   admit(packet: Uint8Array): boolean;

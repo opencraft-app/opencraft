@@ -1,4 +1,4 @@
-import { CreditWindow } from '@opencraft/remote-interaction';
+import { AdaptiveInputWindow, CreditWindow } from '@opencraft/remote-interaction';
 import { WebSocketMediaReceiver } from '@opencraft/remote-interaction/websocket';
 import { browserPresentationClipPath } from "./browser-presentation-geometry";
 import type { BrowserMetadataStorage } from './desktop-browser-storage';
@@ -17,7 +17,7 @@ interface RemoteKeyboardPolicy { kind: string; secure: boolean; inputMode: strin
 type Pending = { resolve(value: any): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> };
 interface Control { epoch: number; active: boolean; controller: boolean; kind: 'human' | 'agent' | null; token?: string; }
 interface Page {
-  mediaReceiver: WebSocketMediaReceiver | null; inputCredits: CreditWindow;
+  mediaReceiver: WebSocketMediaReceiver | null; inputCredits: CreditWindow; inputPolicy: AdaptiveInputWindow; adaptiveInput: boolean;
   document: string | undefined;
   inputAcknowledgements: boolean; inputQueue: RemoteBrowserInputQueue | null;
   control: Control; controlGeneration: number; acquiring: { kind: 'human' | 'agent'; promise: Promise<string>; generation: number } | null; agentQueue: Promise<unknown>; serverInitialNavigation: boolean; gestureActive: boolean;
@@ -260,7 +260,7 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
     // inside the new shorter slot would briefly shrink the entire document.
     Object.assign(canvas.style, { display: 'block', width: '100%', height: 'auto', outline: 'none', touchAction: 'none' });
     container.append(canvas, receiver); this.root?.prepend(container);
-    const p: Page = { mediaReceiver: null, inputCredits: new CreditWindow({ maxItems: 2, maxBytes: 65536 }), document: undefined, inputAcknowledgements: false, inputQueue: null, control: { epoch: 0, active: false, controller: false, kind: null }, controlGeneration: 0, acquiring: null, agentQueue: Promise.resolve(), serverInitialNavigation: false, gestureActive: false, media: null, video: null, cancelVideoReady: null, id, lease: (this.storageIds.get(id) ?? ('browser-' + crypto.randomUUID())).replace(':', '-'), container, canvas, receiver, ime: null, editor: null, keyboard: null, keyboardIntent: null, editable: false, nativeIme: false, multiTouch: false, events, navigation: 0, url: undefined, socket: null,
+    const p: Page = { mediaReceiver: null, inputPolicy: new AdaptiveInputWindow(), adaptiveInput: false, inputCredits: new CreditWindow({ maxItems: 12, maxBytes: 65536 }), document: undefined, inputAcknowledgements: false, inputQueue: null, control: { epoch: 0, active: false, controller: false, kind: null }, controlGeneration: 0, acquiring: null, agentQueue: Promise.resolve(), serverInitialNavigation: false, gestureActive: false, media: null, video: null, cancelVideoReady: null, id, lease: (this.storageIds.get(id) ?? ('browser-' + crypto.randomUUID())).replace(':', '-'), container, canvas, receiver, ime: null, editor: null, keyboard: null, keyboardIntent: null, editable: false, nativeIme: false, multiTouch: false, events, navigation: 0, url: undefined, socket: null,
       nativeCopy: false, interaction: 0, menuIntent: null, restored: false, resumed: false, ready: Promise.resolve(), opened: false, disconnected: false, displaced: false, closed: false, visible: false, blocked: false, pending: new Map(), decoder: null,
       viewportMeasured: false, width: 1280, height: 720, viewport: { width: 1280, height: 720 }, sentViewport: '', resizeTimer: null, resizing: false,
       latest: null, raf: 0, reconnect: null, connection: 0, retries: 0, needsKey: true, automation: null!, resetPointers: () => {}, resetInput: () => {}, inputDispose: () => {} };
@@ -311,7 +311,8 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
   }
   private connectTransport(p: Page): Promise<void> {
     p.disconnected = false;
-    p.inputCredits = new CreditWindow({ maxItems: 2, maxBytes: 65536 });
+    p.inputCredits = new CreditWindow({ maxItems: 12, maxBytes: 65536 });
+    p.inputPolicy.reset(); p.adaptiveInput = false;
     const generation = ++p.connection;
     return new Promise((resolve, reject) => {
       const url = new URL(serverUrl('/__opencraft_browser/stream'), location.href); url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -331,7 +332,7 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
       ws.onopen = () => { if (!current()) return; clearTimeout(timer);
         const viewport = p.viewportMeasured ? { ...p.viewport } : undefined;
         void this.call(p, 'open', { lease: p.lease, metadataRequired: !!this.storage.flush, multiView: true, documentInput: true, inputAcknowledgements: true, mediaFeedback: 1, mediaStage: typeof VideoDecoder !== 'undefined' && typeof EncodedVideoChunk !== 'undefined' ? 'rendered' : 'received', visible: this.isVisible(p), initialUrl: p.url ?? null, viewport, defaultDeviceProfile: remoteBrowserDeviceProfile() }).then(async config => {
-          if (!current()) return; this.applyDocument(p, config.document); p.inputAcknowledgements = config.inputAcknowledgements === true; p.serverInitialNavigation = config.multiView === true; this.setControl(p, config.control); p.resumed = config.resumed === true; p.restored = (config.resumed || config.restored) && !!config.navigation?.url && config.navigation.url !== 'about:blank'; p.nativeCopy = config.nativeCopy === true; p.nativeIme = config.nativeIme === true; p.multiTouch = config.multiTouch === true; this.keyboardChanged(); this.applyViewport(p, config);
+          if (!current()) return; this.applyDocument(p, config.document); p.inputAcknowledgements = config.inputAcknowledgements === true; p.adaptiveInput = config.inputWindow === 12; p.serverInitialNavigation = config.multiView === true; this.setControl(p, config.control); p.resumed = config.resumed === true; p.restored = (config.resumed || config.restored) && !!config.navigation?.url && config.navigation.url !== 'about:blank'; p.nativeCopy = config.nativeCopy === true; p.nativeIme = config.nativeIme === true; p.multiTouch = config.multiTouch === true; this.keyboardChanged(); this.applyViewport(p, config);
           const effective = { width: config.width, height: config.height, deviceProfile: config.deviceProfile };
           if (!p.viewportMeasured) p.viewport = effective;
           p.sentViewport = JSON.stringify(effective); p.opened = true; for (const listener of this.controlListeners) listener(); p.retries = 0; clearTimeout(timer); resolve();
@@ -357,6 +358,8 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
           return;
         }
         if (message.type === 'result') {
+          const inputDelay = p.inputCredits.age(message.id, performance.now());
+          if (inputDelay !== null && p.adaptiveInput) p.inputPolicy.observe(inputDelay);
           p.inputCredits.release(message.id);
           const request = p.pending.get(message.id); if (!request) return;
           p.pending.delete(message.id); clearTimeout(request.timer);
@@ -522,7 +525,7 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
     if (p.closed || p.socket?.readyState !== WebSocket.OPEN) return Promise.reject(new BrowserAutomationError('PAGE_CLOSED', 'Browser disconnected', true));
     const id = crypto.randomUUID(), payload = JSON.stringify({ id, method, input, control, document });
     const trackedInput = method === 'input' && p.inputAcknowledgements;
-    if (trackedInput && !p.inputCredits.reserve(id, new TextEncoder().encode(payload).byteLength))
+    if (trackedInput && !p.inputCredits.reserve(id, new TextEncoder().encode(payload).byteLength, false, performance.now()))
       return Promise.reject(new BrowserAutomationError('TIMEOUT', 'Browser input is waiting for confirmation', true));
     if (['text','visible','keyframe'].includes(method) || method === 'input' && !p.inputAcknowledgements) { p.socket.send(payload); return Promise.resolve(); }
     return new Promise((resolve, reject) => {
@@ -633,7 +636,7 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
         void this.call(p, 'input', { type: 'touchCancel' }).catch(() => {});
       if (!['DOCUMENT_CHANGED', 'CONTROL_LOST', 'PAGE_CLOSED'].includes((error as BrowserAutomationError).code))
         p.events.onError('Browser input failed; try the interaction again');
-    });
+    }, () => p.adaptiveInput ? p.inputPolicy.limit : 2);
     const send = (input: any) => {
       if (this.acceptsInput(p) && (p.control.controller && p.control.kind === 'human' || p.acquiring?.kind === 'human')) inputQueue.push({ ...input, document: p.document });
     };

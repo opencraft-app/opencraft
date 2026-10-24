@@ -10,23 +10,24 @@ const { ipcRenderer } = require('electron');
     encoders.delete(id); try { expected.encoder.close(); } catch {} return true;
   };
   ipcRenderer.on('release-encoder', (_event, id) => release(id));
-  ipcRenderer.on('encode-frame', (_event, { id, epoch, width, height, bytes, timestamp, key }) => {
+  ipcRenderer.on('encode-frame', (_event, { id, page, bucket, epoch, width, height, bytes, timestamp, key, fps = 30, bitrate = 2500000 }) => {
     let entry = encoders.get(id);
+    const signature = fps + ':' + bitrate;
     try {
-      if (entry && entry.epoch !== epoch) { release(id, entry); entry = undefined; }
+      if (entry && (entry.epoch !== epoch || entry.signature !== signature)) { release(id, entry); entry = undefined; }
       if (!entry) {
-        const owned = entry = { epoch };
+        const owned = entry = { epoch, signature };
         owned.encoder = new VideoEncoder({ output: chunk => {
           if (encoders.get(id) !== owned) return;
           const bytes = new Uint8Array(chunk.byteLength); chunk.copyTo(bytes);
-          ipcRenderer.send('encoded-packet', { id, epoch, bytes, key: chunk.type === 'key', timestamp: chunk.timestamp }); },
-          error: () => { if (release(id, owned)) ipcRenderer.send('encoder-error', { id, epoch }); } });
+          ipcRenderer.send('encoded-packet', { id, page, bucket, epoch, bytes, key: chunk.type === 'key', timestamp: chunk.timestamp }); },
+          error: () => { if (release(id, owned)) ipcRenderer.send('encoder-error', { id, page, bucket, epoch }); } });
         encoders.set(id, owned);
-        owned.encoder.configure({ ...config, width, height, bitrate: Math.max(250000, Math.min(5000000, Math.round(2500000 * width * height / (1280 * 720)))) });
+        owned.encoder.configure({ ...config, width, height, framerate: fps, bitrate: Math.max(250000, Math.min(5000000, Math.round(bitrate * width * height / (1280 * 720)))) });
       }
       const frame = new VideoFrame(bytes, { format: 'BGRA', codedWidth: width, codedHeight: height, timestamp, transfer: [bytes.buffer] });
       try { entry.encoder.encode(frame, { keyFrame: key }); } finally { frame.close(); }
-    } catch { if (release(id, entry) || !encoders.has(id)) ipcRenderer.send('encoder-error', { id, epoch }); }
+    } catch { if (release(id, entry) || !encoders.has(id)) ipcRenderer.send('encoder-error', { id, page, bucket, epoch }); }
   });
   ipcRenderer.send('encoder-ready');
 })().catch(() => ipcRenderer.send('encoder-error'));

@@ -39,5 +39,12 @@ python3 packages/remote-interaction/spec/verify.py \
 ~~~
 
 The verifier pins the official TLC binary hash. It checks finite credit and
-recovery models and requires four deliberate mutants to fail. These model
+recovery models and requires six deliberate mutants to fail. These model
 checks do not establish implementation refinement or unrestricted correctness.
+
+The /policy entry provides bounded input adaptation and exactly two adaptive
+encoding buckets; the browser Gateway negotiates renewable native production
+permits. Per-viewer and receiver diagnostics distinguish feedback evidence.
+The absolute media window is twelve frames, with an adaptive working window.
+ProducerDemand adds a finite two-consumer/two-bucket permit model with explicit
+strong fairness assumptions and two more deliberate mutants (six total).

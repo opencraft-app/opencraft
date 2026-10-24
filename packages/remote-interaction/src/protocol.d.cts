@@ -2,7 +2,7 @@ export type FeedbackStage = 'received' | 'rendered';
 export interface CreditOptions { maxItems: number; maxBytes: number; maxItemBytes?: number; }
 export interface MediaConfig {
   type: 'media-config'; version: 1; epoch: string; stage: FeedbackStage;
-  profile: 'h264-timestamp-v1'; maxFrameBytes: number;
+  profile: 'h264-timestamp-v1'; maxFrameBytes: number; bucket?: 'fast' | 'slow';
 }
 export interface MediaFeedback {
   version: 1; epoch: string; received: string | null; rendered: string | null;
@@ -21,5 +21,6 @@ export class CreditWindow {
   contains(id: string): boolean;
   index(id: string): number;
   oldestAge(now: number): number;
+  age(id: string, now: number): number | null;
   retire(): void;
 }

@@ -19,6 +19,9 @@ spec = Path(__file__).resolve().parent
 output = args.output.resolve()
 output.mkdir(parents=True, exist_ok=True)
 cases = [
+    ("ProducerDemand", "ProducerDemand", None),
+    ("ProducerDemand", "ProducerDemand-Expired", "NoExpiredProduction"),
+    ("ProducerDemand", "ProducerDemand-Cross", "HealthyCreditIsolation"),
     ("CreditWindow", "CreditWindow", None),
     ("CreditWindow", "CreditWindow-Bad", "ActualWindowBound"),
     ("MediaRecovery", "MediaRecovery", None),

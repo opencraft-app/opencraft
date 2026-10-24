@@ -32,7 +32,7 @@ function deviceProfile(input = {}) {
   if (!deviceProfiles.has(profile)) throw new Error('Invalid device profile');
   return profile;
 }
-const configuration = p => ({ document: p.document, navigation: navigation(p), width: p.width, height: p.height, zoom: Math.round(p.window.webContents.getZoomFactor() * 100), dpr: 1, deviceProfile: p.deviceProfile, codec: 'avc1.42E028', nativeCopy: p.clipboard?.available() === true, nativeIme: p.ime?.available() === true, multiTouch: true });
+const configuration = p => ({ document: p.document, navigation: navigation(p), width: p.width, height: p.height, zoom: Math.round(p.window.webContents.getZoomFactor() * 100), dpr: 1, deviceProfile: p.deviceProfile, codec: 'avc1.42E028', nativeCopy: p.clipboard?.available() === true, nativeIme: p.ime?.available() === true, multiTouch: true, productionDemand: 1, mediaBuckets: 2, production: p.productionStats ?? null });
 function userAgent(p, profile) {
   const chrome = process.versions.chrome;
   if (profile === 'iphone') return 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
@@ -79,7 +79,7 @@ function resize(p, input = {}) {
     const previous = {width:p.width,height:p.height}, previousProfile = p.deviceProfile;
     p.reconfiguring = true; p.epoch = randomUUID(); p.inFlight = false; p.key = true;
     clearTimeout(p.mergeTimer); p.mergeUntil = 0; p.pending = p.previous = p.latest = null;
-    encoderWindow.webContents.send('release-encoder', p.id);
+    releaseStreams(p);
     try {
       p.window.setContentSize(size.width, size.height);
       await emulateDevice(p, size, profile);
@@ -127,27 +127,64 @@ function diffArea(a, b, width, height) {
 }
 function activity(p) {
   clearTimeout(p.activityTimer); clearTimeout(p.mergeTimer); p.mergeUntil = 0;
-  p.interactive = true; p.window.webContents.setFrameRate(Math.min(30, p.displayRate ?? 30)); pump(p);
-  p.activityTimer = setTimeout(() => { p.interactive = false; p.window.webContents.setFrameRate(Math.min(10, p.displayRate ?? 30));
+  p.interactive = true; captureRate(p); pump(p); pump(p, 'slow');
+  p.activityTimer = setTimeout(() => { p.interactive = false; captureRate(p);
     p.activityTimer = setTimeout(() => { if (!p.closed) p.window.webContents.setFrameRate(2); }, 2800);
   }, 1200);
 }
-function pump(p) {
-  if (p.closed || p.reconfiguring || !p.visible || !encoderReady || p.inFlight || !p.pending || p.mergeUntil > performance.now()) return;
-  const frame = p.pending, bytes = frame.bytes || frame.image.toBitmap();
-  const area = diffArea(p.previous, bytes, p.width, p.height);
-  if (!area && !p.key) { p.pending = null; return; }
-  if (!p.key && !p.interactive && area <= p.width * p.height * .08 && !frame.merged) {
-    frame.bytes = bytes; p.mergeUntil = performance.now() + 150;
-    p.mergeTimer = setTimeout(() => { p.mergeUntil = 0; if (p.pending) p.pending.merged = true; pump(p); }, 150); return;
-  }
-  p.pending = null; p.previous = bytes; p.inFlight = true;
-  encoderWindow.webContents.send('encode-frame', { id: p.id, epoch: p.epoch, width: p.width, height: p.height, bytes, timestamp: frame.timestamp, key: p.key }); p.key = false;
+function stream(p, bucket) {
+  return bucket === 'fast' ? p : (p.slow ??= { key: true, inFlight: false, mergeUntil: 0 });
 }
-function refresh(p) {
-  p.key = true; p.previous = null;
-  if (p.latest) p.pending = { image: p.latest, timestamp: Math.round(performance.now() * 1000) };
-  p.window.webContents.invalidate(); pump(p);
+const encoderId = (p, bucket) => bucket === 'fast' ? p.id : p.id + '/slow';
+function permitted(p, bucket) {
+  if (!p.productionPlan) return !p.productionGated && bucket === 'fast';
+  return performance.now() < p.productionExpires && p.productionPlan[bucket].allowed;
+}
+function captureRate(p) {
+  const rate = p.productionPlan ? Math.max(2, ...['fast', 'slow'].filter(b => permitted(p, b)).map(b => p.productionPlan[b].fps)) : p.productionGated ? 2 : p.displayRate ?? 30;
+  p.window.webContents.setFrameRate(Math.min(rate, p.interactive ? 30 : 10));
+}
+function queueFrame(p, image) {
+  p.latest = image;
+  const raw = { image }, timestamp = Math.round(performance.now() * 1000);
+  p.productionStats ??= { captured: 0, bitmap: 0, encoded: 0, fast: 0, slow: 0 };
+  p.productionStats.captured++;
+  for (const bucket of ['fast', 'slow']) { stream(p, bucket).pending = { raw, timestamp }; pump(p, bucket); }
+}
+function releaseStreams(p) {
+  for (const bucket of ['fast', 'slow']) {
+    const st = stream(p, bucket);
+    clearTimeout(st.mergeTimer); clearTimeout(st.rateTimer);
+    st.inFlight = false; st.pending = st.previous = null; st.key = true; st.mergeUntil = 0; st.nextAt = 0;
+    encoderWindow.webContents.send('release-encoder', encoderId(p, bucket));
+  }
+}
+function pump(p, bucket = 'fast') {
+  const st = stream(p, bucket), now = performance.now();
+  if (p.closed || p.reconfiguring || !p.visible || !encoderReady || st.inFlight || !st.pending || !permitted(p, bucket) || st.mergeUntil > now) return;
+  const parameters = p.productionPlan?.[bucket] ?? { fps: 30, bitrate: 2500000 };
+  if (now < (st.nextAt ?? 0)) {
+    if (!st.rateTimer) st.rateTimer = setTimeout(() => { st.rateTimer = null; pump(p, bucket); }, st.nextAt - now);
+    return;
+  }
+  const signature = parameters.fps + ':' + parameters.bitrate;
+  if (st.encodingSignature !== signature) { st.encodingSignature = signature; st.key = true; st.previous = null; }
+  const frame = st.pending;
+  if (!frame.raw.bytes) { frame.raw.bytes = frame.raw.image.toBitmap(); p.productionStats.bitmap++; }
+  const bytes = frame.raw.bytes, area = diffArea(st.previous, bytes, p.width, p.height);
+  if (!area && !st.key) { st.pending = null; return; }
+  if (!st.key && !p.interactive && area <= p.width * p.height * .08 && !frame.merged) {
+    st.mergeUntil = now + 150;
+    st.mergeTimer = setTimeout(() => { st.mergeUntil = 0; if (st.pending) st.pending.merged = true; pump(p, bucket); }, 150); return;
+  }
+  st.pending = null; st.previous = bytes; st.inFlight = true; st.nextAt = now + 1000 / parameters.fps;
+  encoderWindow.webContents.send('encode-frame', { id: encoderId(p, bucket), page: p.id, bucket, epoch: p.epoch,
+    width: p.width, height: p.height, bytes, timestamp: frame.timestamp, key: st.key, ...parameters }); st.key = false;
+}
+function refresh(p, bucket = 'fast') {
+  const st = stream(p, bucket); st.key = true; st.previous = null;
+  if (p.latest) st.pending = { raw: { image: p.latest }, timestamp: Math.round(performance.now() * 1000) };
+  p.window.webContents.invalidate(); pump(p, bucket);
 }
 function navigation(p) {
   const wc = p.window.webContents;
@@ -176,7 +213,7 @@ function closePage(id) {
   p.focusDispose?.();
   clearTimeout(p.activityTimer); clearTimeout(p.mergeTimer);
   p.pending = p.previous = p.latest = null;
-  encoderWindow.webContents.send('release-encoder', id); p.window.destroy();
+  releaseStreams(p); p.window.destroy();
 }
 async function createPage(id, input) {
   if (pages.has(id)) return resize(pages.get(id), input);
@@ -192,7 +229,7 @@ async function createPage(id, input) {
     webPreferences: { partition, offscreen: true, sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false } });
   const p = { id, window, width, height, deviceProfile:'desktop', deviceConfigured:false,
     desktopUserAgent:window.webContents.getUserAgent(), desktopPlatform:process.platform === 'darwin'?'MacIntel':process.platform === 'win32'?'Win32':'Linux x86_64',
-    desktopPlatformName:process.platform === 'darwin'?'macOS':process.platform === 'win32'?'Windows':'Linux', epoch: randomUUID(), visible: false, closed: false, key: true, encoderReady: false, document: randomUUID(), bridgeInstalled: null, interactive: false };
+    desktopPlatformName:process.platform === 'darwin'?'macOS':process.platform === 'win32'?'Windows':'Linux', epoch: randomUUID(), visible: false, closed: false, key: true, encoderReady: false, document: randomUUID(), bridgeInstalled: null, interactive: false, productionGated: input.productionDemand === true };
   pages.set(id, p);
   const wc = window.webContents;
   p.touch = createTouchInput(createWidgetTouchDispatcher(wc.debugger, () => wc.getZoomFactor(), () => p.document));
@@ -218,8 +255,7 @@ async function createPage(id, input) {
   wc.on('did-fail-load', (_e, code, _description, _url, mainFrame) => { if (!p.closed && mainFrame && code !== -3) send({ type: 'error', page: id, message: 'Browser navigation failed' }); });
   wc.on('paint', (_event, _dirty, image) => {
     if (p.closed || p.reconfiguring || image.getSize().width !== p.width || image.getSize().height !== p.height) return;
-    p.latest = image;
-    p.pending = { image, timestamp: Math.round(performance.now() * 1000) }; pump(p);
+    queueFrame(p, image);
   });
   wc.on('cursor-changed', (_event, cursor) => {
     const aliases = { pointer: 'default', hand: 'pointer', nodrop: 'no-drop', null: 'default' };
@@ -297,6 +333,21 @@ async function command(message) {
     throw Object.assign(new Error('Browser control changed'), { code: 'CONTROL_LOST', retryable: true });
   if (method === 'observe') { p.ime.observe(); return; }
   if (method === 'snapshot') return configuration(p);
+  if (method === 'production') {
+    if (!input || !/^[a-zA-Z0-9-]{20,100}$/.test(input.epoch ?? '') || !Number.isSafeInteger(input.revision) || input.revision < 1
+      || !Number.isInteger(input.ttlMs) || input.ttlMs < 250 || input.ttlMs > 2000
+      || !input.buckets || Object.keys(input.buckets).sort().join(',') !== 'fast,slow') throw new Error('Invalid production plan');
+    for (const bucket of ['fast', 'slow']) {
+      const b = input.buckets[bucket];
+      if (!b || typeof b.allowed !== 'boolean' || !Number.isInteger(b.fps) || b.fps < 5 || b.fps > 30
+        || !Number.isInteger(b.bitrate) || b.bitrate < 250000 || b.bitrate > 5000000) throw new Error('Invalid production budget');
+    }
+    if (p.productionEpoch && p.productionEpoch !== input.epoch) throw new Error('Production epoch changed without parking');
+    if (input.revision <= (p.productionRevision ?? 0)) return;
+    p.productionEpoch = input.epoch; p.productionRevision = input.revision; p.productionGated = true;
+    p.productionPlan = input.buckets; p.productionExpires = performance.now() + input.ttlMs;
+    captureRate(p); pump(p); pump(p, 'slow'); return;
+  }
   if (method === 'display-rate') {
     if (!Number.isInteger(input.fps) || input.fps < 5 || input.fps > 30) throw new Error('Invalid display rate');
     p.displayRate = input.fps; wc.setFrameRate(p.interactive ? input.fps : Math.min(10, input.fps)); return;
@@ -326,12 +377,12 @@ async function command(message) {
       // Paint may initially return the surface cached before parking. Capture
       // once on reveal so changes made while parked reach the viewer too.
       const epoch = p.epoch, image = await wc.capturePage();
-      if (!p.closed && p.visible && p.epoch === epoch && image.getSize().width === p.width && image.getSize().height === p.height) { p.latest = image; p.pending = { image, timestamp: Math.round(performance.now() * 1000) }; pump(p); }
+      if (!p.closed && p.visible && p.epoch === epoch && image.getSize().width === p.width && image.getSize().height === p.height) { queueFrame(p, image); }
     }
-    else { await resetInput(p); wc.stopPainting(); p.epoch = randomUUID(); p.inFlight = false; encoderWindow.webContents.send('release-encoder', id); p.key = true; clearTimeout(p.activityTimer); clearTimeout(p.mergeTimer); p.mergeUntil = 0; p.pending = p.previous = p.latest = null; }
+    else { await resetInput(p); wc.stopPainting(); p.epoch = randomUUID(); releaseStreams(p); p.productionPlan = null; p.productionEpoch = null; p.productionRevision = 0; p.key = true; clearTimeout(p.activityTimer); clearTimeout(p.mergeTimer); p.mergeUntil = 0; p.pending = p.previous = p.latest = null; }
     return;
   }
-  if (method === 'keyframe') { if (performance.now() - (p.lastKey || -1000) >= 500) { p.lastKey = performance.now(); refresh(p); } return; }
+  if (method === 'keyframe') { const bucket = input?.bucket === 'slow' ? 'slow' : 'fast', st = stream(p, bucket); if (performance.now() - (st.lastKey || -1000) >= 500) { st.lastKey = performance.now(); refresh(p, bucket); } return; }
   if (method === 'capture') return (await wc.capturePage()).toDataURL();
   if (method === 'zoom') { const percent = Number(input.percent); if (!Number.isFinite(percent) || percent < 25 || percent > 500) throw new Error('Invalid zoom'); wc.setZoomFactor(percent / 100); return; }
   if (method === 'ime') { activity(p); return p.ime.apply(input); }
@@ -371,15 +422,23 @@ async function command(message) {
   if (method === 'automation') { activity(p); return automation(p, input.method, input.input); }
   throw new Error('Unsupported browser command');
 }
-ipcMain.on('encoder-ready', event => { if (encoderWindow?.webContents === event.sender) { encoderReady = true; for (const p of pages.values()) pump(p); } });
-ipcMain.on('encoder-error', (event, packet) => { const p = pages.get(packet?.id); if (p && packet.epoch === p.epoch && encoderWindow?.webContents === event.sender) { p.inFlight = false; p.key = true; send({ type: 'error', page: p.id, message: 'H.264 encoder unavailable' }); } });
+ipcMain.on('encoder-ready', event => { if (encoderWindow?.webContents === event.sender) { encoderReady = true; for (const p of pages.values()) { pump(p); pump(p, 'slow'); } } });
+ipcMain.on('encoder-error', (event, packet) => {
+  const p = pages.get(packet?.page ?? packet?.id);
+  if (p && packet.epoch === p.epoch && encoderWindow?.webContents === event.sender) {
+    const st = stream(p, packet.bucket ?? 'fast'); st.inFlight = false; st.key = true;
+    send({ type: 'error', page: p.id, message: 'H.264 encoder unavailable' });
+  }
+});
 ipcMain.on('encoded-packet', (event, packet) => {
-  const p = pages.get(packet.id);
-  if (!p || packet.epoch !== p.epoch || encoderWindow?.webContents !== event.sender) return;
+  const p = pages.get(packet.page ?? packet.id), bucket = packet.bucket ?? 'fast';
+  if (!p || packet.epoch !== p.epoch || encoderWindow?.webContents !== event.sender || !['fast', 'slow'].includes(bucket)) return;
+  const st = stream(p, bucket);
   const header = Buffer.alloc(9); header[0] = packet.key ? 1 : 0; header.writeBigUInt64BE(BigInt(packet.timestamp), 1);
   const bytes = Buffer.concat([header, Buffer.from(packet.bytes)]);
-  if (connected()) send({ type: 'frame', page: p.id, bytes: bytes.toString('base64') }, error => { if (packet.epoch === p.epoch) { p.inFlight = false; if (!error) pump(p); } });
-  else p.inFlight = false;
+  p.productionStats.encoded++; p.productionStats[bucket]++;
+  if (connected()) send({ type: 'frame', page: p.id, bucket, bytes: bytes.toString('base64') }, error => { if (packet.epoch === p.epoch) { st.inFlight = false; if (!error) pump(p, bucket); } });
+  else st.inFlight = false;
 });
 app.whenReady().then(async () => {
   encoderWindow = new BrowserWindow({ show: false, width: 1, height: 1,

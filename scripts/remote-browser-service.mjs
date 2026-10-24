@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { WebSocketServer, WebSocket } from 'ws';
 import nativeDiagnostics from './remote-browser/diagnostics.cjs';
 import displayFlow from './remote-browser/display.cjs';
+import mediaPolicy from '@opencraft/remote-interaction/policy';
 import { BrowserStateFile, acquireBrowserStateWriter, sessionError, sessionLink, linkedSessions, occupied } from './remote-browser-state-file.mjs';
 import { startBrowserOwner } from './remote-browser-owner.mjs';
 
@@ -33,7 +34,7 @@ function removedStorageLeases(previous, next) {
  * A client gets only its own page port,
  * never a CDP endpoint, filesystem path or arbitrary JavaScript evaluator. */
 export class RemoteBrowserService {
-  constructor({ root, dataDirectory, executable, allowNoSandbox = false, spawnImpl = spawn,
+  constructor({ root, dataDirectory, executable, allowNoSandbox = false, spawnImpl = spawn, mediaBuckets,
     ownerConnector = process.platform === 'linux' && process.getuid?.() === 0 && !allowNoSandbox && spawnImpl === spawn ? startBrowserOwner : null }) {
     this.directory = join(root, 'runtime/browser');
     this.executable = executable ?? join(this.directory, 'electron/electron');
@@ -44,9 +45,10 @@ export class RemoteBrowserService {
     this.pages = new Map(); this.requests = new Map(); this.sockets = new Set();
     this.attachments = new Map();
     this.states = new Map(); this.retiredLeases = new Set(); this.persistence = Promise.resolve();
+    this.mediaBuckets = mediaPolicy.bucketBounds(mediaBuckets);
     this.diagnosticCount = 0;
     this.diagnosticCounts = new Map();
-    this.display = displayFlow.createDisplayFlow({ keyframe: page => this.keyframe(page), diagnose: event => this.diagnose(event), pace: page => this.displayPace(page) });
+    this.display = displayFlow.createDisplayFlow({ bounds: this.mediaBuckets, keyframe: (page, bucket) => this.keyframe(page, bucket), diagnose: event => this.diagnose(event), pace: page => this.displayPace(page) });
     this.server = new WebSocketServer({ noServer: true, perMessageDeflate: false, maxPayload: 128 * 1024 });
   }
   async load() {
@@ -274,22 +276,45 @@ export class RemoteBrowserService {
       return { ...this.controlState(page, ws), epoch };
     });
   }
-  keyframe(page) {
-    void this.request(page.id, 'keyframe').catch(() => {});
+  keyframe(page, bucket = 'fast') {
+    const input = page.productionDemand ? { bucket } : undefined;
+    void this.request(page.id, 'keyframe', input).catch(() => {});
     // The native keyframe limiter may ignore a new viewer's immediate request.
     // One shared delayed refresh guarantees a decodable keyframe even at idle.
-    if (!page.keyTimer) {
-      page.keyTimer = setTimeout(() => { page.keyTimer = null; if (!page.closing && page.painted) void this.request(page.id, 'keyframe').catch(() => {}); }, 550);
-      page.keyTimer.unref();
+    const timer = bucket === 'slow' ? 'slowKeyTimer' : 'keyTimer';
+    if (!page[timer]) {
+      page[timer] = setTimeout(() => { page[timer] = null; if (!page.closing && page.painted) void this.request(page.id, 'keyframe', input).catch(() => {}); }, 550);
+      page[timer].unref();
     }
   }
   displayPace(page) {
+    if (page.productionDemand) { this.production(page); return; }
     const fps = Math.max(5, ...[...this.viewers(page).values()].filter(viewer => viewer.visible).map(viewer => viewer.decodeFps ?? 30));
     if (page.closing || !page.live || page.displayFps === fps) return;
     page.displayFps = fps;
     void this.request(page.id, 'display-rate', { fps }).catch(() => { page.displayFps = undefined; });
   }
+  production(page) {
+    if (page.closing || !page.live) return;
+    const plan = this.display.production(page), signature = JSON.stringify(plan), now = performance.now();
+    if (page.productionSignature === signature && now - (page.productionSent ?? -Infinity) < 500) return;
+    page.productionPending = { plan, signature };
+    if (page.productionJob) return;
+    const generation = page.visibilityGeneration ?? 0, native = this.child;
+    const current = () => !page.closing && page.live && this.child === native && (page.visibilityGeneration ?? 0) === generation;
+    page.productionJob = (async () => {
+      while (current() && page.productionPending) {
+        const next = page.productionPending; page.productionPending = null;
+        page.productionEpoch ??= randomUUID();
+        await this.request(page.id, 'production', { epoch: page.productionEpoch, revision: (page.productionRevision = (page.productionRevision ?? 0) + 1), ttlMs: 1250, buckets: next.plan });
+        if (!current()) return;
+        page.productionSignature = next.signature; page.productionSent = performance.now();
+      }
+    })().catch(() => { page.productionSignature = undefined; this.diagnose('production_update_failed'); })
+      .finally(() => { page.productionJob = null; });
+  }
   resetVisibility(page) {
+    page.productionPending = null; page.productionSignature = undefined; page.productionEpoch = undefined; page.productionRevision = 0;
     page.displayFps = undefined;
     page.paintRefresh = page.paintedRefresh = 0;
     page.snapshotDocument = undefined;
@@ -357,7 +382,7 @@ export class RemoteBrowserService {
   retire(page, replying) {
     if (page.retirement) return page.retirement;
     page.closing = true; this.resetVisibility(page);
-    clearTimeout(page.keyTimer); page.keyTimer = null;
+    clearTimeout(page.keyTimer); clearTimeout(page.slowKeyTimer); page.keyTimer = page.slowKeyTimer = null;
     for (const ws of this.viewers(page).keys()) if (ws !== replying) ws.close(1000, 'Browser tab closed');
     this.retiredLeases.add(page.key);
     clearTimeout(page.retirementTimer); page.retirementTimer = null;
@@ -572,7 +597,7 @@ export class RemoteBrowserService {
     const packet = message.type === 'frame' ? Buffer.from(message.bytes, 'base64') : null;
     const { page, ...event } = message;
     for (const [ws, viewer] of this.viewers(p)) {
-      if (ws.readyState !== WebSocket.OPEN || privateEvent && ws !== p.controller || packet && (!viewer.visible || !viewer.ready)) continue;
+      if (ws.readyState !== WebSocket.OPEN || privateEvent && ws !== p.controller || packet && (!viewer.visible || !viewer.ready || (message.bucket ?? 'fast') !== (viewer.bucket ?? 'fast'))) continue;
       try { viewer.authorize(); } catch { ws.close(1008, 'Browser admission expired'); continue; }
       this.display.send(p, ws, viewer, packet, event);
     }
@@ -693,9 +718,10 @@ export class RemoteBrowserService {
             const requireNative = () => { if (!currentNative()) throw unavailable('Browser runtime changed; reconnecting'); };
             try {
               page.creating = resumed && modern ? this.request(page.id, 'snapshot')
-                : this.request(page.id, 'create', (modern && existing ? page.viewport : message.input?.viewport) ?? page.viewport
-                  ?? { deviceProfile: message.input?.defaultDeviceProfile ?? 'desktop' });
+                : this.request(page.id, 'create', { ...((modern && existing ? page.viewport : message.input?.viewport) ?? page.viewport
+                  ?? { deviceProfile: message.input?.defaultDeviceProfile ?? 'desktop' }), productionDemand: true });
               config = await page.creating; requireNative(); page.live = true;
+              page.productionDemand = config.productionDemand === 1 && config.mediaBuckets === 2;
               if ((!resumed || !page.document) && typeof config.document === 'string') page.document = config.document;
               if (page.closing) throw new Error('Browser tab closed');
               if (!resumed && existing) {
@@ -722,11 +748,11 @@ export class RemoteBrowserService {
               if (ws.readyState !== WebSocket.OPEN) { this.detach(page, ws); return; }
               if (!modern) await this.control(page, ws, { action: 'human', takeover: true }, authorize);
               this.controlChanged(page);
-              reply(message.id, { ...config, document: page.document ?? config.document, documentInput: typeof (page.document ?? config.document) === 'string', inputAcknowledgements: message.input.inputAcknowledgements === true, resumed, restored: !!existing && !resumed, multiView: true, initialized: modern && firstCreation, control: this.controlState(page, ws) });
+              reply(message.id, { ...config, document: page.document ?? config.document, documentInput: typeof (page.document ?? config.document) === 'string', inputAcknowledgements: message.input.inputAcknowledgements === true, inputWindow: 12, resumed, restored: !!existing && !resumed, multiView: true, initialized: modern && firstCreation, control: this.controlState(page, ws) });
               const attached = this.viewers(page).get(ws); if (attached) {
                 attached.ready = true; this.displayPace(page);
                 if (message.input.mediaFeedback === 1) this.display.attach(page, ws, attached, message.input.mediaStage === 'rendered' ? 'rendered' : 'received');
-                if (attached.visible) this.keyframe(page);
+                this.displayPace(page); if (attached.visible) this.keyframe(page);
               }
             } catch (error) {
               page.recovering = false;
@@ -752,6 +778,10 @@ export class RemoteBrowserService {
           }
           if (!page || this.pages.get(page.key) !== page || !this.viewers(page).has(ws)) throw new Error('Browser page not opened');
           authorize(); const target = page, viewer = this.viewers(target).get(ws);
+          if (message.method === 'mediaDiagnostics') {
+            const config = await this.request(target.id, 'snapshot'); authorize();
+            reply(message.id, { media: this.display.snapshot(ws), productionDemand: !!target.productionDemand, native: config.production ?? null }); return;
+          }
           if (message.method === 'mediaFeedback') { this.display.feedback(ws, message.input); return; }
           if (message.method === 'control') { reply(message.id, await this.control(target, ws, message.input, authorize)); return; }
           if (!methods.has(message.method)) throw new Error('Unsupported browser command');
@@ -769,7 +799,7 @@ export class RemoteBrowserService {
             if (viewer.visible) this.keyframe(target);
             return;
           }
-          if (message.method === 'keyframe') { this.keyframe(target); return; }
+          if (message.method === 'keyframe') { this.keyframe(target, viewer.bucket ?? 'fast'); return; }
           const readOnly = ['capture', 'copy'].includes(message.method) || message.method === 'automation' && ['inspect', 'readContext', 'wait'].includes(message.input?.method);
           const control = viewer.modern ? message.control : target.controlToken;
           if (!readOnly && (target.controller !== ws || !control || control !== target.controlToken))

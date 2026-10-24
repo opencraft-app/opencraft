@@ -105,3 +105,24 @@ test('coalescing cannot replace an event from another document', () => {
   queue.push({...wheel(),document:'old'});queue.push({...wheel(),document:'new'});
   return queue.idle().then(() => assert.deepEqual(seen.slice(2).map(e=>[e.document,e.deltaY]),[['old',-1],['new',-1]]));
 });
+
+test('adaptive ACK window keeps 100ms continuous motion flowing while edges stay ordered', async () => {
+  const { AdaptiveInputWindow } = await import('@opencraft/remote-interaction');
+  const policy = new AdaptiveInputWindow(); let now = 0, produced = 0;
+  let due: { at: number; resolve(): void }[] = []; const seen: { at: number; type: string }[] = [];
+  const queue = new RemoteBrowserInputQueue(async event => {
+    const sent = now; seen.push({ at: now, type: event.type });
+    await new Promise<void>(resolve => due.push({ at: now + 100, resolve })); policy.observe(now - sent);
+  }, () => assert.fail('overflow'), error => assert.fail(error.message), () => policy.limit);
+  queue.push({ type: 'touchStart' });
+  for (; now <= 1400; now++) {
+    const ready = due.filter(d => d.at <= now); due = due.filter(d => d.at > now); ready.forEach(d => d.resolve());
+    for (let i = 0; i < 12; i++) await Promise.resolve();
+    if (now < 1000 && now >= produced * 1000 / 60) { queue.push({ type: 'touchMove', x: produced++ }); }
+    if (now === 1000) queue.push({ type: 'touchEnd' });
+    for (let i = 0; i < 12; i++) await Promise.resolve();
+  }
+  assert(seen.filter(e => e.type === 'touchMove' && e.at < 1000).length >= 50);
+  assert.equal(seen[0].type, 'touchStart'); assert.equal(seen.at(-1)!.type, 'touchEnd');
+  assert(policy.limit <= 12); assert.equal(await queue.idle(), true);
+});

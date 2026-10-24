@@ -492,3 +492,41 @@ seek is pending, or repeat an unchanged target (within 1 ms); otherwise the
 video can remain in HAVE_METADATA despite a complete decoded page in its
 buffer. A later waiting/update event may advance to a new buffered target.
 This does not change the received-stage media credit contract for MSE.
+
+
+### Demand-aware two-bucket production
+
+The shared remote-interaction policy owns bounded feedback turnaround and
+exactly two encoding buckets. Fast/slow are topology, not immutable codec
+settings: both FPS and bitrate adapt within operator bounds, and attachments
+move down on sustained pressure/decoder demand and recover only after stable
+progress. Idle time is not capacity evidence. A single delayed feedback sample
+does not change bucket. Per-attachment windows have a twelve-frame absolute
+limit, a working limit derived from feedback delay, and the existing byte bounds.
+Input peers explicitly advertising inputWindow:12 use two-to-twelve exact-ACK
+credits, with editing barriers and unknown outcomes unchanged.
+
+A productionDemand:1/mediaBuckets:2 native worker accepts an epoch/revision
+plan with a renewable lease. The Gateway aggregates eligible visible consumers
+per bucket; one slow viewer cannot revoke another bucket's permit. The native
+worker checks permission and expiry before toBitmap, full-frame comparison and
+encode. At most two encoders exist per page, with one in flight and one latest
+raw frame per bucket. Both can reuse a captured bitmap. Rate/bitrate changes
+start with a keyframe; bucket moves use the receiver reset/ready handshake.
+Viewport and input authority stay with the shared page and original control
+lease; changing bitrate/FPS never resizes the page.
+
+Retained owners without these capabilities remain on the existing single-stream
+path; they are not restarted merely to enable the new producer. Gateway window
+adaptation and new-client input behavior remain compatible. Per-viewer
+mediaDiagnostics returns only bounded counters/durations for that authorized
+attachment plus native production counts. Receiver snapshots distinguish
+received, decoded and Canvas-submitted counts; MSE claims received only. These
+are diagnostic stages, not physical display or exact input-effect proof.
+
+The ProducerDemand finite model composes two consumers and two bucket permits,
+lease expiry and an isolated slow reset; healthy progress assumes persistent
+healthy demand and strongly fair planning/production. Its negative controls
+remove the lease gate or refund the other consumer. CreditWindow/MediaRecovery
+remain separate models; this is not an implementation refinement proof or a
+proof of arbitrary-client scheduling fairness.
