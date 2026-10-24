@@ -26,7 +26,7 @@ CREATE TABLE usage_position(singleton INTEGER PRIMARY KEY,seq INTEGER NOT NULL) 
 INSERT INTO usage_position VALUES(1,0);
 CREATE TABLE usage_reproject(thread_id TEXT PRIMARY KEY,after_turn TEXT NOT NULL) STRICT;
 `;
-export const DERIVED_CACHE_VERSION = "rollout-counts-3/equal-turn-v1";
+export const DERIVED_CACHE_VERSION = "rollout-counts-4/equal-turn-v1";
 const CACHE_MIGRATIONS = [...TOKEN_USAGE_STATE_MIGRATIONS,
   { version: TOKEN_USAGE_STATE_MIGRATIONS.at(-1)!.version+1, name: "rollout-derived-cache-v1", sql: CACHE_SQL },
   { version: TOKEN_USAGE_STATE_MIGRATIONS.at(-1)!.version+2, name: "rollout-derived-gap-index", sql: "CREATE INDEX derived_usage_gaps_thread ON token_usage_gaps(server_id,thread_id,ends_ms);" },
@@ -39,11 +39,19 @@ ON CONFLICT(server_id,gap_key) DO UPDATE SET starts_ms=min(starts_ms,excluded.st
 DELETE FROM token_usage_gaps WHERE gap_key LIKE 'retained:%' AND gap_key!='retained:'||thread_id;
 UPDATE token_usage_scopes SET revision=revision+1;
 ` },
+  { version: TOKEN_USAGE_STATE_MIGRATIONS.at(-1)!.version+4, name: "rollout-retained-settlement-evidence", sql: "UPDATE usage_cache_version SET version='rollout-counts-4/equal-turn-v1';" },
 ];
 type Row = Record<string, any>;
-type LegacyTurn = { tokens: string | null; buckets: { provider: string | null; model: string | null; tokens: string }[] };
+type LegacyTurn = { tokens: string | null; complete?:boolean; buckets: { provider: string | null; model: string | null; tokens: string }[] };
 function transaction<T>(db: DatabaseSync, body: () => T): T { db.exec("BEGIN IMMEDIATE"); try { const result = body(); db.exec("COMMIT"); return result; } catch (error) { db.exec("ROLLBACK"); throw error; } }
 function openCache(path: string): DatabaseSync {
+  if(existsSync(path)){
+    const probe=new DatabaseSync(path,{readOnly:true});let incompatible=false;
+    try{
+      if(probe.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name='usage_cache_version'").get())incompatible=probe.prepare("SELECT version FROM usage_cache_version").get()?.version!==DERIVED_CACHE_VERSION;
+    }finally{probe.close();}
+    if(incompatible)for(const suffix of ["","-wal","-shm"])rmSync(path+suffix,{force:true});
+  }
   const options = { path, legacyPolicy: "reject-unknown" as const, migrations: CACHE_MIGRATIONS,
     validateSchema: createSchemaValidator(CACHE_MIGRATIONS.map(m => m.sql).join("\n")) };
   try {
@@ -146,7 +154,7 @@ export class RolloutDerivedTokenUsage {
   }
   private gap(id: string, thread: string | null, reason: string) {
     this.ledger.commitReplayBatch(()=>{
-      const changed=this.statement(this.database, "INSERT INTO token_usage_gaps VALUES(?,?,?,?,?,?,NULL) ON CONFLICT(server_id,gap_key) DO UPDATE SET ends_ms=NULL WHERE ends_ms IS NOT NULL").run(this.options.serverId, id, thread, null, reason, Date.now());
+      const changed=this.statement(this.database, "INSERT INTO token_usage_gaps VALUES(?,?,?,?,?,?,NULL) ON CONFLICT(server_id,gap_key) DO UPDATE SET ends_ms=NULL,reason=excluded.reason WHERE ends_ms IS NOT NULL OR reason!=excluded.reason").run(this.options.serverId, id, thread, null, reason, Date.now());
       if(changed.changes){this.statement(this.database, "UPDATE token_usage_scopes SET revision=revision+1 WHERE server_id=?").run(this.options.serverId);if(thread&&!id.startsWith("retained:"))this.enqueueProjection(thread);}
     });
   }
@@ -172,7 +180,7 @@ export class RolloutDerivedTokenUsage {
     const before = this.statement(this.database, "SELECT fingerprint FROM usage_receipts WHERE thread_id=? AND turn_id=?").get(thread, turnId);
     if (before?.fingerprint === fingerprint) return;
     const buckets = this.statement(this.source, "SELECT provider,model,tokens FROM token_usage_buckets WHERE server_id=? AND thread_id=? AND turn_id=? ORDER BY model_key").all(...params);
-    this.statement(this.retained, "INSERT OR IGNORE INTO usage_legacy VALUES(?,?,?)").run(thread, turnId, JSON.stringify({ tokens: turn.observed_tokens, buckets }));
+    this.statement(this.retained, "INSERT OR IGNORE INTO usage_legacy VALUES(?,?,?)").run(thread, turnId, JSON.stringify({ tokens: turn.observed_tokens, complete:turn.usage_complete===1, buckets }));
     this.ledger.commitReplayBatch(() => {
       this.statement(this.database, "UPDATE token_usage_scopes SET enabled=1 WHERE server_id=?").run(server);
       this.ledger.startTurn(key, Number(turn.started_ms), turn.source_kind, turn.participants_complete === 1);
@@ -215,9 +223,10 @@ export class RolloutDerivedTokenUsage {
     }
     const status = execution ?? turn.executionState;
     const nativeTerminal = !!this.statement(this.database, "SELECT 1 FROM token_usage_native_terminals WHERE server_id=? AND thread_id=? AND turn_id=?").get(this.options.serverId, ...params);
-    const missing = !!this.statement(this.database, "SELECT 1 FROM token_usage_gaps WHERE server_id=? AND ends_ms IS NULL AND thread_id=? AND gap_key NOT LIKE 'retained:%' LIMIT 1").get(this.options.serverId, threadId);
-    const frozen=this.statement(this.source,"SELECT frozen FROM token_usage_turns WHERE server_id=? AND thread_id=? AND turn_id=?").get(this.options.serverId,...params)?.frozen===1;
-    this.ledger.reconcile(key, { executionState: status as "running" | "completed" | "failed" | "interrupted", participantsComplete: this.statement(this.database, "SELECT participants_complete FROM token_usage_turns WHERE server_id=? AND thread_id=? AND turn_id=?").get(this.options.serverId, ...params)!.participants_complete === 1, usageComplete: status !== "running" && nativeTerminal && !missing&&!frozen, responsesComplete: true });
+    const missing = !!this.statement(this.database, "SELECT 1 FROM token_usage_gaps WHERE server_id=? AND ends_ms IS NULL AND thread_id=? AND gap_key NOT LIKE 'retained:%' AND NOT(gap_key LIKE 'file:%' AND reason='source-replaced') LIMIT 1").get(this.options.serverId, threadId);
+    const trusted=this.statement(this.source,"SELECT frozen,usage_complete FROM token_usage_turns WHERE server_id=? AND thread_id=? AND turn_id=?").get(this.options.serverId,...params),frozen=trusted?.frozen===1;
+    const retainedComplete=!!useRetained&&(legacy?.complete??(trusted?.usage_complete===1));
+    this.ledger.reconcile(key, { executionState: status as "running" | "completed" | "failed" | "interrupted", participantsComplete: this.statement(this.database, "SELECT participants_complete FROM token_usage_turns WHERE server_id=? AND thread_id=? AND turn_id=?").get(this.options.serverId, ...params)!.participants_complete === 1, usageComplete: status !== "running" && (nativeTerminal||retainedComplete) && !missing&&!frozen, responsesComplete: true });
     if(frozen)this.statement(this.database,"UPDATE token_usage_turns SET frozen=1 WHERE server_id=? AND thread_id=? AND turn_id=?").run(this.options.serverId,...params);
     if(frozen||receiptsChanged||removed)this.ledger.rebuildProjection(key);
   }
@@ -301,7 +310,8 @@ export class RolloutDerivedTokenUsage {
         const result = await readUsageIncrement({ path: String(file.path), nativeHome: this.options.nativeHome, threadId: thread, cursor: Number(file.cursor), identity: file.identity as string | null });
         if (this.closed) return false;
         if(result.events.some(row=>row.event.kind==="session"&&row.event.data[0]!==thread))throw new Error("Usage session identity mismatch");
-        const changed=result.cursor!==Number(file.cursor)||result.identity!==file.identity||result.missing||file.complete!==(result.more?0:1);
+        const recoveredAvailability=file.error==="source-replaced"&&!result.more&&!result.missing;
+        const changed=result.cursor!==Number(file.cursor)||result.identity!==file.identity||result.missing||file.complete!==(result.more?0:1)||recoveredAvailability;
         let sourceMissing=result.missing;
         if(changed)transaction(this.retained, () => {
           const put = this.statement(this.retained, "INSERT OR IGNORE INTO usage_events(thread_id,event_key,at_ms,kind,data_json) VALUES(?,?,?,?,?)");
@@ -309,10 +319,11 @@ export class RolloutDerivedTokenUsage {
             const json=JSON.stringify(row.event.data),inserted=put.run(thread,row.key,row.at,row.event.kind,json);
             if(!inserted.changes&&this.statement(this.retained,"SELECT data_json FROM usage_events WHERE event_key=?").get(row.key)?.data_json!==json)sourceMissing=true;
           }
-          this.statement(this.retained, "UPDATE usage_files SET cursor=?,identity=?,error=?,complete=? WHERE thread_id=?").run(result.cursor, result.identity, sourceMissing ? "invalid-source" : file.error, result.more ? 0 : 1, thread);
+          this.statement(this.retained, "UPDATE usage_files SET cursor=?,identity=?,error=?,complete=? WHERE thread_id=?").run(result.cursor, result.identity, sourceMissing ? "invalid-source" : recoveredAvailability?null:file.error, result.more ? 0 : 1, thread);
         });
-        if (sourceMissing||file.error) this.gap(`file:${thread}`, thread, "invalid-source");
-        else if (!file.error) this.clearGap(`file:${thread}`);
+        const error=sourceMissing?"invalid-source":recoveredAvailability?null:file.error;
+        if(error)this.gap(`file:${thread}`,thread,String(error));
+        else this.clearGap(`file:${thread}`);
         if(!result.more&&file.complete!==1)this.ledger.commitReplayBatch(()=>{
           this.statement(this.database, "UPDATE token_usage_scopes SET enabled=1 WHERE server_id=?").run(this.options.serverId);
           for(const turn of this.statement(this.source, "SELECT turn_id FROM token_usage_turns WHERE server_id=? AND thread_id=?").all(this.options.serverId,thread))this.project(thread,String(turn.turn_id));

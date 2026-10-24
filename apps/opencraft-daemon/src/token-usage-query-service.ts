@@ -1,6 +1,7 @@
 import { TokenUsageTelemetry } from "./token-usage-telemetry.js";
 import { Worker } from "node:worker_threads";
 import { createHmac, timingSafeEqual, randomBytes } from "node:crypto";
+import { existsSync } from "node:fs";
 import { TokenUsageQueryError, type TokenUsageAuthority } from "./token-usage-query.js";
 import type { TokenUsageSnapshot } from "@opencraft/appserver-protocol/token-usage";
 /** One bounded read worker per physical Host. All SQLite scans and BigInt
@@ -14,7 +15,7 @@ export class TokenUsageQueryService {
   private readonly inFlight=new Map<string,Promise<TokenUsageSnapshot>>();
   private readonly pending=new Map<number,{resolve:(value:TokenUsageSnapshot)=>void;reject:(error:Error)=>void;timer:ReturnType<typeof setTimeout>}>();
   constructor(private readonly options:{entry:string;databasePath:string;serverId:string;telemetry?:TokenUsageTelemetry;rollout?:{nativeHome:string;directory?:string}}) {
-    if (options.rollout) this.start();
+    if (options.rollout&&existsSync(options.databasePath)) this.start();
   }
   invalidate(threadId:string,path?:string):void {
     if(this.closed||!this.options.rollout)return;

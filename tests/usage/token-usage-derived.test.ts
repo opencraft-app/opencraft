@@ -57,7 +57,7 @@ test("cache deletion and cache semantic/schema mismatch rebuild exactly from ret
 test("deleted or missing rollout retains historical counts across a complete cache rebuild and declares partial coverage",()=>fixture(async f=>{
  await writeFile(f.path,start()+count("123","123")+line("event_msg",{type:"task_complete",turn_id:turn},2));
  let d=f.open();await drain(d);d.close();await rm(f.path);await rm(join(f.directory,"token-usage-derived.sqlite"));
- d=f.open();await drain(d);const s=snapshot(d);assert.equal(s.summary.tokens,"123");assert.equal(s.coverage.partial,true);assert.ok(s.coverage.openGaps>0);
+ d=f.open();await drain(d);const s=snapshot(d);assert.equal(s.summary.tokens,"123");assert.equal(s.summary.categories.settled,"123");assert.equal(s.coverage.partial,true);assert.ok(s.coverage.openGaps>0);
 }));
 
 test("legacy-only unavailable history survives migration/rebuild without fabricating a rollout or identity",()=>fixture(async f=>{
@@ -201,6 +201,28 @@ test("retained history reports one source incident per thread and upgrades prior
  let d=f.open();await drain(d);const expected=values(d);assert.equal(snapshot(d).summary.tokens,'100');assert.equal(snapshot(d).coverage.openGapIncidents,2);d.close();
  const cache=new DatabaseSync(join(f.directory,'token-usage-derived.sqlite'));cache.prepare("DELETE FROM token_usage_gaps WHERE gap_key=?").run('retained:'+thread);
  for(const id of [turn,'second'])cache.prepare('INSERT INTO token_usage_gaps VALUES(?,?,?,?,?,?,NULL)').run('server','retained:'+thread+':'+id,thread,null,'unreplayable',at);
- cache.exec('DELETE FROM schema_migrations WHERE version=5');cache.close();
+ cache.exec('DELETE FROM schema_migrations WHERE version>=5');cache.close();
  d=f.open();await drain(d);assert.deepEqual(values(d),expected);assert.equal(snapshot(d).coverage.openGaps,2);assert.equal(snapshot(d).coverage.openGapIncidents,2);
 }));
+
+test("retained pre-cutover settled history stays settled when its original rollout is unavailable",()=>fixture(async f=>{
+ const key={threadId:thread,turnId:turn};f.ledger.recordSource({...key,lineage:'old',sourceId:'old',kind:'response',version:0,provider:'provider',model:'model-a',counts:{totalTokens:'77'}});f.ledger.reconcile(key,{executionState:'completed',participantsComplete:true,usageComplete:true,responsesComplete:true});
+ let d=f.open();await drain(d);const expected=values(d);assert.equal(snapshot(d).summary.categories.settled,'77');assert.equal(snapshot(d).coverage.partial,true);d.close();await rm(join(f.directory,'token-usage-derived.sqlite'));
+ d=f.open();await drain(d);assert.deepEqual(values(d),expected);assert.equal(snapshot(d).summary.categories.settled,'77');
+}));
+
+test("a temporarily unavailable rollout clears its availability gap after verified catch-up",()=>fixture(async f=>{
+ const d=f.open();await drain(d);assert.equal(snapshot(d).coverage.partial,true);
+ await writeFile(f.path,start()+count('11','11')+line('event_msg',{type:'task_complete',turn_id:turn},2));await drain(d);
+ const s=snapshot(d);assert.equal(s.summary.categories.settled,'11');assert.equal(s.coverage.partial,false);assert.equal(s.coverage.openGaps,0);
+}));
+
+test("a deployment without a usage source can start collection later and answer its first ready query",async()=>{
+ const {TokenUsageQueryService}=await import('../../apps/opencraft-daemon/src/token-usage-query-service.js');const directory=await mkdtemp(join(tmpdir(),'oc-derived-late-source-'));
+ const service=new TokenUsageQueryService({entry:new URL('../../apps/opencraft-daemon/src/token-usage-query-worker.ts',import.meta.url).pathname,databasePath:join(directory,'token-usage.sqlite'),serverId:'server',rollout:{nativeHome:join(directory,'runtime')}});
+ let source:TokenUsageStateDatabase|undefined;
+ try{
+  await new Promise(r=>setTimeout(r,30));source=new TokenUsageStateDatabase(directory);const ledger=new OpenCraftTokenUsageLedger(source,'server',()=>at),key={threadId:thread,turnId:turn};ledger.startTurn(key,at,'human',true);ledger.recordInput(key,{inputId:'A',actorId:'A',actorKind:'human',mode:'start',admission:'confirmed'});ledger.recordSource({...key,lineage:'old',sourceId:'old',kind:'response',version:0,provider:'provider',model:'model-a',counts:{totalTokens:'77'}});
+  assert.equal((await service.read(params,admin)).summary.tokens,'77');
+ }finally{service.close();source?.close();await rm(directory,{recursive:true,force:true});}
+});

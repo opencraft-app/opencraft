@@ -468,7 +468,11 @@ remain unknown. No extra model call or write to a native rollout is introduced.
 
 Only trusted metering threads are discovered. Relocated/archived rollouts may be
 found by filename under the native home, then their native session identity is
-verified. Removed/replaced sources never erase retained observations. Coverage
+verified. Removed/replaced sources never erase retained observations. Source availability is separate from usage
+completeness: an archived terminal with verified counts, or a retained pre-cutover
+settlement, keeps its settled allocation when the original file is missing.
+Malformed/discontinuous count evidence still revokes completeness. Semantic
+cache version 4 rebuilds older projections under this rule. Coverage
 uses the existing partial/gap fields for missing files, retained-only history,
 invalid/discontinuous counts and cache rebuilding. If a missing/invalid source
 would reduce an already-known historical total, the retained pre-cutover
