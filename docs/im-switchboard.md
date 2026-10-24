@@ -153,6 +153,15 @@ Core's existing shared-instance native conversation permissions are unchanged.
 This feature does not provide private filesystem/history isolation per person.
 Health exposes safe connection phases and managed storage outcomes, never
 credentials, identity maps or message content.
+WeCom health also exposes an adapter-lifetime diagnostic snapshot: start time,
+last frame/ACK/callback times, callback/handoff/completion/failure/ignore counts,
+the last fixed ignore reason and an allowlisted admission error category.
+No sender, request ID, message text, secret or arbitrary error is included.
+An authenticated socket with recent ACKs does not prove message delivery;
+zero callbacks only describes the current adapter lifetime. A completed handoff
+does not prove native execution or an IM reply. Use the durable message and
+delivery receipts for those later stages. Reconnecting creates a new snapshot;
+these observations never change authorization or retry a message.
 
 ## Verification
 

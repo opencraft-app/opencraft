@@ -6,12 +6,12 @@ import WebSocket, { WebSocketServer } from 'ws';
 import { WeComPlugin } from '../../plugins/wecom/src/server';
 import type { ImMessage } from '../../plugins/im/src/server';
 
-async function fixture(t:any) {
+async function fixture(t:any, receive?: (message: ImMessage) => Promise<void>) {
   const server=new WebSocketServer({port:0,host:'127.0.0.1'}); await once(server,'listening');
   const frames:any[]=[], messages:ImMessage[]=[], errors:string[]=[]; let peer:WebSocket;
   server.on('connection',socket => { peer=socket; socket.on('message',raw => {const frame=JSON.parse(raw.toString()); frames.push(frame); socket.send(JSON.stringify({headers:frame.headers,errcode:0}));}); });
   const address=server.address() as {port:number};
-  const plugin=new WeComPlugin({botId:'fixture-bot',secret:'fixture-secret',receive:async m => {messages.push(m);},onError:code=>errors.push(code)},() => new WebSocket(`ws://127.0.0.1:${address.port}`));
+  const plugin=new WeComPlugin({botId:'fixture-bot',secret:'fixture-secret',receive:async m => {messages.push(m); await receive?.(m);},onError:code=>errors.push(code)},() => new WebSocket(`ws://127.0.0.1:${address.port}`));
   t.after(async () => { plugin.close(); for(const socket of server.clients) socket.terminate(); await new Promise<void>(r=>server.close(()=>r())); });
   const until=async (check:()=>boolean) => {for(let n=0;n<100 && !check();n++) await delay(10); assert.ok(check());};
   plugin.start(); await until(()=>plugin.state==='ready');
@@ -19,6 +19,47 @@ async function fixture(t:any) {
   return {plugin,frames,messages,errors,until,callback,disconnect:()=>peer.terminate()};
 }
 const body={msgid:'m1',aibotid:'fixture-bot',chattype:'group',chatid:'chat',from:{userid:'external'},msgtype:'text',text:{content:'hello'}};
+
+test('diagnostics distinguish no callback, ignored callback and completed handoff without exposing input', async t => {
+  const f = await fixture(t);
+  const empty = f.plugin.diagnostics;
+  assert.equal(empty.callbacks, 0);
+  assert.equal(empty.lastCallbackAt, null);
+  assert.ok(empty.lastAcknowledgementAt! >= empty.since);
+  f.callback('foreign', {...body, aibotid:'another-bot'});
+  await f.until(() => f.plugin.diagnostics.ignored === 1);
+  assert.equal(f.plugin.diagnostics.lastIgnoredReason, 'bot_mismatch');
+  f.callback('compat', {...body, compat_info:{}});
+  await f.until(() => f.plugin.diagnostics.ignored === 2);
+  assert.equal(f.plugin.diagnostics.lastIgnoredReason, 'compatibility_callback');
+  f.callback('image', {...body, msgtype:'image'});
+  await f.until(() => f.plugin.diagnostics.ignored === 3);
+  assert.equal(f.plugin.diagnostics.lastIgnoredReason, 'unsupported_content');
+  f.callback('accepted-private-req', {...body,text:{content:'private-message-body'}});
+  await f.until(() => f.plugin.diagnostics.completed === 1);
+  assert.equal(f.plugin.diagnostics.callbacks, 4);
+  assert.equal(f.plugin.diagnostics.forwarded, 1);
+  assert.equal(f.plugin.diagnostics.failed, 0);
+  assert.equal(empty.callbacks, 0, 'earlier snapshots remain immutable');
+  const summary = JSON.stringify(f.plugin.diagnostics);
+  for (const value of ['fixture-secret','fixture-bot','external','private-message-body','accepted-private-req']) assert.equal(summary.includes(value), false);
+});
+
+test('diagnostics retain a safe admission failure category without logging arbitrary errors', async t => {
+  let failure: Error = Object.assign(new Error('private-token-in-error'), {code:'denied'});
+  const f = await fixture(t, async () => { throw failure; });
+  f.callback('denied',body);
+  await f.until(() => f.plugin.diagnostics.failed === 1);
+  assert.equal(f.plugin.diagnostics.lastFailure,'denied');
+  failure = Object.assign(new Error('private-message-in-error'), {code:'untrusted-arbitrary-code'});
+  f.callback('other',body);
+  await f.until(() => f.plugin.diagnostics.failed === 2);
+  assert.equal(f.plugin.diagnostics.lastFailure,'other');
+  assert.equal(f.plugin.diagnostics.completed,0);
+  assert.deepEqual(f.errors,['message','message']);
+  const summary = JSON.stringify(f.plugin.diagnostics);
+  for (const value of ['private-token-in-error','private-message-in-error','untrusted-arbitrary-code']) assert.equal(summary.includes(value),false);
+});
 
 test('a callback immediately following the subscription ACK in one receive batch is admitted',async t => {
   const frames:any[]=[], messages:ImMessage[]=[];

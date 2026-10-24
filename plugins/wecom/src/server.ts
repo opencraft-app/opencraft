@@ -3,6 +3,7 @@ import WebSocket from 'ws';
 import type { ImMessage } from '@opencraft/plugin-im/server';
 
 export type WeComState = 'connecting' | 'authenticating' | 'ready' | 'disconnected' | 'closed';
+type IgnoredCallback = 'missing_request_id' | 'ack_frame' | 'not_ready' | 'invalid_body' | 'bot_mismatch' | 'compatibility_callback' | 'unsupported_content';
 export interface WeComOptions {
   readonly botId: string;
   readonly secret: string;
@@ -37,10 +38,19 @@ export class WeComPlugin {
   private started = false;
   private attempts = 0;
   private phase: WeComState = 'disconnected';
+  private readonly observations = {
+    since: Date.now(), lastFrameAt: null as number | null, lastAcknowledgementAt: null as number | null,
+    callbacks: 0, forwarded: 0, completed: 0, failed: 0, ignored: 0,
+    lastCallbackAt: null as number | null, lastIgnoredReason: null as IgnoredCallback | null,
+    lastFailure: null as 'denied' | 'closed' | 'busy' | 'invalid_message' | 'invalid_command' | 'other' | null,
+  };
   constructor(readonly options: WeComOptions, private readonly connect: () => WebSocket = () => new WebSocket(GATEWAY,{maxPayload:1_048_576,handshakeTimeout:10_000,perMessageDeflate:false})) {
     if (!options.botId?.trim() || options.botId.length > 512 || !options.secret?.trim() || options.secret.length > 4096) throw new Error('Invalid WeCom credentials');
   }
   get state() { return this.phase; }
+  /** Bounded transport observations, never message contents, identities or credentials. */
+  get diagnostics() { return Object.freeze({ ...this.observations }); }
+  private ignore(reason: IgnoredCallback) { this.observations.ignored++; this.observations.lastIgnoredReason = reason; }
   private stateChanged(state: WeComState) { this.phase = state; this.options.onState?.(state); }
   start() { if (!this.started && !this.stopped) { this.started = true; this.open(); } }
   private open() {
@@ -71,29 +81,37 @@ export class WeComPlugin {
     });
     socket.on('message', bytes => {
       if (this.stopped || this.socket !== socket) return;
+      this.observations.lastFrameAt = Date.now();
       let frame: Frame;
       try { const decoded: unknown = JSON.parse(bytes.toString()); if (!object(decoded)) throw new Error(); frame = decoded as Frame; }
       catch { this.options.onError?.('protocol'); return; }
+      const callback = frame.cmd === 'aibot_msg_callback';
+      if (callback) { this.observations.callbacks++; this.observations.lastCallbackAt = Date.now(); }
       const reqId = object(frame.headers)?.req_id;
-      if (typeof reqId !== 'string' || !reqId || reqId.length > 512) return;
+      if (typeof reqId !== 'string' || !reqId || reqId.length > 512) { if (callback) this.ignore('missing_request_id'); return; }
       if (typeof frame.errcode === 'number') {
+        if (callback) this.ignore('ack_frame');
         const entry = this.pending.get(reqId);
         if (!entry || entry.socket !== socket) return;
         this.pending.delete(reqId); clearTimeout(entry.timer);
-        frame.errcode === 0 ? entry.resolve() : entry.reject(new Error('WeCom request rejected'));
+        if (frame.errcode === 0) { this.observations.lastAcknowledgementAt = Date.now(); entry.resolve(); }
+        else entry.reject(new Error('WeCom request rejected'));
         return;
       }
       if(frame.cmd === 'aibot_event_callback' && (object(frame.body)?.eventtype === 'disconnected_event' || object(object(frame.body)?.event)?.eventtype === 'disconnected_event')) { this.close();this.stateChanged('disconnected');return; }
-      if (frame.cmd !== 'aibot_msg_callback' || this.phase !== 'ready') return;
+      if (!callback) return;
+      if (this.phase !== 'ready') { this.ignore('not_ready'); return; }
       const body = object(frame.body), sender = object(body?.from)?.userid;
-      if (!body || body.aibotid !== this.options.botId || body.compat_info !== undefined || typeof body.msgid !== 'string' || typeof sender !== 'string') return;
+      if (!body || typeof body.msgid !== 'string' || typeof sender !== 'string') { this.ignore('invalid_body'); return; }
+      if (body.aibotid !== this.options.botId) { this.ignore('bot_mismatch'); return; }
+      if (body.compat_info !== undefined) { this.ignore('compatibility_callback'); return; }
       const chatType = body.chattype === 'single' ? 'direct' : body.chattype === 'group' ? 'group' : null;
       const chatId = chatType === 'direct' ? sender : body.chatid;
       const rawText = content(body);
       // Group callbacks retain the bot mention. Only recognize a command after
       // that transport decoration; ordinary prose remains the original input.
       const text = chatType === 'group' && rawText ? rawText.replace(/^[ \t]*@\S+[ \t]+(?=\/(?:new|switch|identify)(?:[ \t]|$))/u,'') : rawText;
-      if (!chatType || typeof chatId !== 'string' || !text?.trim()) return;
+      if (!chatType || typeof chatId !== 'string' || !text?.trim()) { this.ignore('unsupported_content'); return; }
       const streamId = randomUUID();
       let replied = false;
       const message: ImMessage = Object.freeze({id:body.msgid,source:Object.freeze({chatId,chatType,senderId:sender}),text,
@@ -108,7 +126,15 @@ export class WeComPlugin {
           replied = true;
           await this.send(socket,{cmd:'aibot_respond_msg',headers:{req_id:reqId},body:{msgtype:'stream',stream:{id:streamId,finish:true,content:answer}}});
         }});
-      this.track(Promise.resolve().then(() => this.options.receive(message)).catch(() => { this.options.onError?.('message'); }));
+      this.observations.forwarded++;
+      this.track(Promise.resolve().then(() => this.options.receive(message)).then(() => {
+        this.observations.completed++;
+      }).catch((error: unknown) => {
+        this.observations.failed++;
+        const code = error instanceof Error && 'code' in error ? error.code : null;
+        this.observations.lastFailure = code === 'denied' || code === 'closed' || code === 'busy' || code === 'invalid_message' || code === 'invalid_command' ? code : 'other';
+        this.options.onError?.('message');
+      }));
     });
   }
   async deliver(address: Record<string, unknown>, answer: string) {

@@ -125,6 +125,8 @@ export class ImChannelService {
       state: !c.enabled
         ? "disabled"
         : (this.adapters.get(c.id)?.adapter.state ?? "disconnected"),
+      ...(c.provider === "wecom" && this.adapters.get(c.id)?.adapter.diagnostics
+        ? { diagnostics: this.adapters.get(c.id).adapter.diagnostics } : {}),
     }));
   }
   async connect(c) {
