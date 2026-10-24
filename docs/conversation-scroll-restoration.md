@@ -150,8 +150,8 @@ Activity 展开采用统一时序：`opacity 0 → 1`、`translateY(-8px) → 0`
 | 单 Turn 错误隔离 | [turn-render-error-boundary.tsx](../apps/workbench-web/src/components/turn-render-error-boundary.tsx) |
 | 倒置容器和 sticky Composer | [app.scss](../apps/workbench-web/src/styles/app.scss) |
 | 发送前 placement 接线 | [app.tsx](../apps/workbench-web/src/app.tsx) |
-| Expo ScrollView 坐标/测量适配 | [workbench-conversation.tsx](../apps/workbench-expo/src/components/workbench-conversation.tsx) |
-| Expo Composer overlay 与共享 API | [workbench-frame.shared.tsx](../apps/workbench-expo/src/components/workbench-frame.shared.tsx) |
+| Expo ScrollView 坐标/测量适配 | [workbench-conversation.tsx](../apps/mobile/src/components/workbench-conversation.tsx) |
+| Expo Composer overlay 与共享 API | [workbench-frame.shared.tsx](../apps/mobile/src/components/workbench-frame.shared.tsx) |
 
 共享层拥有输入、状态转移、时序、滚动位置和动画语义；React 组件按现有包边界组织。
 

@@ -389,7 +389,7 @@ apps/workbench-web/src/extensions/
 apps/workbench-desktop/src/extensions/
   utility-extension-host.ts
 
-apps/workbench-expo/src/extensions/
+apps/mobile/src/extensions/
   sandbox-webview-host.tsx
   native-contribution-renderers.tsx
 ```

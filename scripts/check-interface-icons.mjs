@@ -104,7 +104,7 @@ function sources(directory) {
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const directories = process.argv.slice(2);
-  const files = (directories.length ? directories : ["apps/workbench-web/src", "apps/workbench-expo/src", "packages", "plugins"]).flatMap(directory => sources(resolve(root, directory)));
+  const files = (directories.length ? directories : ["apps/workbench-web/src", "apps/mobile/src", "packages", "plugins"]).flatMap(directory => sources(resolve(root, directory)));
   const errors = files.flatMap(file => /\.s?css$/.test(file)
     ? inspectInterfaceIconStyles(readFileSync(file, "utf8"), relative(root, file).replaceAll("\\", "/"))
     : inspectInterfaceIcons(readFileSync(file, "utf8"), relative(root, file).replaceAll("\\", "/")));

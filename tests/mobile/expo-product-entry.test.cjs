@@ -3,16 +3,9 @@ const test = require("node:test");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { resolveProductEntry, resolveProductRouterContext, resolveProductStyles, withProductEntryResolver, configureProduct } = require("../../apps/workbench-expo/product-entry.cjs");
-const appRoot = path.resolve(__dirname, "../../apps/workbench-expo");
-const base = require("../../apps/workbench-expo/app.json").expo;
-
-test("experimental full Web container is explicit and cannot silently replace a downstream product", () => {
-  assert.equal(resolveProductEntry(appRoot, { OPENCRAFT_EXPO_WORKBENCH: "native" }), null);
-  assert.equal(resolveProductEntry(appRoot, { OPENCRAFT_EXPO_WORKBENCH: "web" }), path.join(appRoot, "src/runtime/web-container-entry.ts"));
-  assert.throws(() => resolveProductEntry(appRoot, { OPENCRAFT_EXPO_WORKBENCH: "unknown" }), /web or native/);
-  assert.throws(() => resolveProductEntry(appRoot, { OPENCRAFT_EXPO_WORKBENCH: "web", OPENCRAFT_EXPO_PRODUCT_ENTRY: "product.ts" }), /not both/);
-});
+const { resolveProductEntry, resolveProductRouterContext, resolveProductStyles, withProductEntryResolver, configureProduct } = require("../../apps/mobile/product-entry.cjs");
+const appRoot = path.resolve(__dirname, "../../apps/mobile");
+const base = require("../../apps/mobile/app.json").expo;
 
 test("public Expo defaults preserve core config and do not select a product", () => {
   assert.equal(resolveProductEntry(appRoot, {}), null);

@@ -4,6 +4,13 @@ import { externalMobileUrl, isMobileContainerEvent, mobileNavigationDisposition,
 import { bindMobileContainer, mobileContainer } from "../../apps/workbench-web/src/runtime/mobile-container";
 
 const identity = { version: 1, runtimeId: "current-document" };
+test("native appearance is a typed projection from the current packaged document", () => {
+  const appearance = { ...identity, type: "appearance", resolvedTheme: "dark", edgeBackgroundColor: "#171717" };
+  assert.deepEqual(parseMobileContainerRequest(JSON.stringify(appearance), identity.runtimeId), appearance);
+  for (const changed of [{ resolvedTheme: "automatic" }, { edgeBackgroundColor: "url(https://example.org)" }, { edgeBackgroundColor: "#12345" }, { runtimeId: "retired" }]) {
+    assert.equal(parseMobileContainerRequest(JSON.stringify({ ...appearance, ...changed }), identity.runtimeId), null);
+  }
+});
 test("normal browser startup ignores an absent or malformed native bridge", () => {
   for (const ReactNativeWebView of [undefined, {}, { postMessage: "invalid" }]) {
     assert.equal(mobileContainer({ opencraftMobile: identity, ReactNativeWebView } as unknown as Window), null);

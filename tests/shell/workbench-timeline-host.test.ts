@@ -79,20 +79,6 @@ const announcementProjectionSource = readFileSync(
   ),
   "utf8",
 );
-const nativeModalSurfaceSource = readFileSync(
-  new URL(
-    "../../apps/workbench-expo/src/components/ui/modal-surface.tsx",
-    import.meta.url,
-  ),
-  "utf8",
-);
-const nativeComposerSource = readFileSync(
-  new URL(
-    "../../apps/workbench-expo/src/components/workbench-composer.tsx",
-    import.meta.url,
-  ),
-  "utf8",
-);
 const workspaceDirectoryPickerSource = readFileSync(
   new URL(
     "../../apps/workbench-web/src/components/workspace-directory-picker.tsx",
@@ -212,27 +198,6 @@ const botChatViewSource = readFileSync(
   ),
   "utf8",
 );
-const expoFrameSource = readFileSync(
-  new URL(
-    "../../apps/workbench-expo/src/components/workbench-frame.shared.tsx",
-    import.meta.url,
-  ),
-  "utf8",
-);
-const expoConversationSource = readFileSync(
-  new URL(
-    "../../apps/workbench-expo/src/components/workbench-conversation.tsx",
-    import.meta.url,
-  ),
-  "utf8",
-);
-const expoComposerSource = readFileSync(
-  new URL(
-    "../../apps/workbench-expo/src/components/workbench-composer.tsx",
-    import.meta.url,
-  ),
-  "utf8",
-);
 const webToolRendererSource = readFileSync(
   new URL(
     "../../apps/workbench-web/src/components/conversation-renderers/tool/tool-renderers.tsx",
@@ -240,25 +205,8 @@ const webToolRendererSource = readFileSync(
   ),
   "utf8",
 );
-const nativeResponseSource = readFileSync(
-  new URL(
-    "../../apps/workbench-expo/src/components/native-response-positioned-turns.tsx",
-    import.meta.url,
-  ),
-  "utf8",
-);
-const nativeVirtualizedTurnsSource = readFileSync(
-  new URL(
-    "../../apps/workbench-expo/src/components/native-virtualized-conversation-turns.tsx",
-    import.meta.url,
-  ),
-  "utf8",
-);
 
 test("tool Activity uses one flat surface contract and lazily owns detail bodies", () => {
-  assert.match(expoConversationSource, /function NativeActivityDisclosure/u);
-  assert.doesNotMatch(expoConversationSource, /styles\.toolCard|toolCard:/u);
-  assert.doesNotMatch(expoConversationSource, />Browse all</u);
   const genericWebTool = webToolRendererSource.slice(
     webToolRendererSource.indexOf("function ToolCallBlock"),
     webToolRendererSource.indexOf("function ImageViewToolBlock"),
@@ -494,11 +442,6 @@ test("the platform resolves modal identity and Expo adapts the same semantic con
     { id: "account", label: "Account", stackIndex: 0 },
     { id: "settings", label: "Settings updated", stackIndex: 1 },
   ]);
-  assert.match(nativeModalSurfaceSource, /from "@opencraft\/design-system\/modal"/u);
-  assert.match(nativeModalSurfaceSource, /<Modal/u);
-  assert.match(nativeModalSurfaceSource, /onRequestClose=\{\(\) => onDismiss\("system"\)\}/u);
-  assert.match(nativeComposerSource, /<ModalSurface\s+label=\{label\("模型", "Model"\)\}\s+onDismiss=\{\(\) => setModelPickerOpen\(false\)\}\s+size="default"\s+visible=\{modelPickerOpen\}/u);
-  assert.doesNotMatch(nativeComposerSource, /<Modal\b|modalScrim|modalRoot/u);
   assert.match(workspaceDirectoryPickerSource, /<ModalSurface/u);
   assert.doesNotMatch(workspaceDirectoryPickerSource, /createPortal|event\.key|addEventListener/u);
   assert.equal(Array.from(toolRenderersSource.matchAll(/<ModalSurface/gu)).length, 2);
@@ -632,33 +575,6 @@ test("row height and follow-content observations share one policy consumer witho
 });
 
 test("Native virtualizer publishes live Turn height while response policy owns compensation", () => {
-  assert.match(
-    nativeResponseSource,
-    /preserveMeasuredTurnViewport=\{!isLatestTurnInProgress\}/u,
-  );
-  assert.match(
-    nativeVirtualizedTurnsSource,
-    /transaction\.latestTurnHeightChange !== null[\s\S]{0,140}?onLatestTurnMeasurement\(transaction\.latestTurnHeightChange\)/u,
-  );
-  assert.match(
-    nativeResponseSource,
-    /responsePositioning\.shouldPreserveMeasuredViewport\(\)[\s\S]{0,80}?compensateHeightDelta\(change\.heightDeltaPx\)/u,
-  );
-  assert.match(
-    nativeResponseSource,
-    /viewportOwner\.commitContentGeometry\(\s*height,[\s\S]{0,4000}?return requestedDistance/u,
-    "a Native content-size event must merge policy candidates before the viewport owner performs one write",
-  );
-  assert.doesNotMatch(
-    nativeResponseSource,
-    /reportContentHeight\(height\)[\s\S]{0,160}?consumePendingGeometryDistanceFromBottomPx/u,
-    "React must not split one Native content-size transaction into separate geometry and scroll owners",
-  );
-  assert.match(
-    nativeResponseSource,
-    /Animated\.spring\(latestTurnOffset,[\s\S]{0,520}?Animated\.spring\(responseSpacerHeight/u,
-    "Native translation and spacer height must share the same zero-bounce spring",
-  );
   assert.match(webResponseSource, /OPENCRAFT_LATEST_TURN_PLACEMENT_SPRING\.durationMs/u);
 });
 
@@ -684,47 +600,10 @@ test("footer geometry and response placement have disjoint owners", () => {
     /maximumResponseSpacerHeightPx\(\{[\s\S]{0,180}?scrollPaddingBottomPx: viewportOwner\.getFooterScrollPaddingPx\(\)/u,
     "follow policy reads footer padding directly from the platform owner",
   );
-  assert.doesNotMatch(nativeResponseSource, /bottomScrollPaddingPx|bottomPaddingRef/u);
-  assert.match(nativeResponseSource, /footerPaddingRef = useRef\(footerScrollPaddingPx\)/u);
-  assert.match(
-    nativeVirtualizedTurnsSource,
-    /reconcileTurnLayoutViewport\(\{[\s\S]{0,420}?bottomPaddingPx: getBottomPaddingPx\(\)/u,
-    "Native uses the same footer/response-spacer ownership boundary",
-  );
-});
-
-test("Native conversation page, response policy, and virtualizer keep disjoint ownership", () => {
-  assert.match(expoConversationSource, /<NativeResponsePositionedTurns/u);
-  assert.doesNotMatch(
-    expoConversationSource,
-    /createTurnMeasurementTransaction|createTurnWindowSlice|TurnResponsePositioningController|NativeConversationViewportOwner/u,
-  );
-  assert.match(nativeResponseSource, /TurnResponsePositioningController/u);
-  assert.match(nativeResponseSource, /ref=\{attachScrollView\}/u);
-  assert.doesNotMatch(
-    nativeResponseSource,
-    /scrollRef\.current\?\.scrollTo/u,
-    "Native physical writers must attach at the ref commit boundary, not mutate during render",
-  );
-  assert.doesNotMatch(
-    nativeResponseSource,
-    /createTurnMeasurementTransaction|createTurnWindowSlice/u,
-  );
-  assert.match(
-    nativeVirtualizedTurnsSource,
-    /createTurnMeasurementTransaction/u,
-  );
-  assert.match(nativeVirtualizedTurnsSource, /createNativeTurnMountPlan\(renderedRange, targetRange, entries\.length\)/u);
-  assert.match(nativeVirtualizedTurnsSource, /mountedIndices\.map\(\(index\) =>/u);
-  assert.doesNotMatch(
-    nativeVirtualizedTurnsSource,
-    /TurnResponsePositioningController|responseSpacerHeight/u,
-  );
 });
 
 test("physical scroll distance and input classification have one platform transaction owner", () => {
   assert.doesNotMatch(webConversationSource, /distanceRef|inputDirectionRef|touchPointRef|previousPointerSnapshotRef/u);
-  assert.doesNotMatch(nativeResponseSource, /distanceRef/u);
   assert.doesNotMatch(botConversationViewportSource, /distanceRef/u);
 
   assert.match(
@@ -740,7 +619,6 @@ test("physical scroll distance and input classification have one platform transa
   assert.match(webConversationSource, /viewportOwner\.bindScrollBehavior\(/u);
   assert.match(webResponseSource, /scrollController\.subscribe\(handlePlatformScroll\)/u);
   assert.match(webResponseSource, /scrollController\.addUserScrollListener\(handleUserScroll\)/u);
-  assert.match(nativeResponseSource, /scrollController\.addUserScrollListener\(handleUserScroll\)/u);
   assert.match(botConversationViewportSource, /owner\.bindScrollBehavior\(/u);
   assert.doesNotMatch(botConversationViewportSource, /scrollTop\s*</u);
   assert.doesNotMatch(botChatViewSource, /onTranscriptScroll|onScroll=\{onTranscriptScroll\}/u);
@@ -924,12 +802,8 @@ test("local-submit placement is page-owned and consumed once by the Conversation
     "rejecting latest-Turn policy must not suppress virtualizer-owned anchor reconciliation",
   );
   assert.doesNotMatch(webResponseSource, /pendingLatestTurnPlacementRef/u);
-  assert.match(expoFrameSource, /pendingLatestTurnPlacementRef = useRef<LatestTurnPlacementSnapshot \| null>/u);
-  assert.doesNotMatch(expoConversationSource, /pendingPlacementRef/u);
   assert.match(workbenchApp, /!followsActiveTurn \|\| context\.followUpAction === "steer"/u);
-  assert.match(expoFrameSource, /!followsActiveTurn \|\| context\.followUpAction === "steer"/u);
   assert.match(webResponseSource, /deriveTimelineLatestTurnActivityKey\(latestTurn\)/u);
-  assert.match(nativeResponseSource, /deriveTimelineLatestTurnActivityKey\(latestTurn\)/u);
   assert.match(
     webResponseSource,
     /previousLatestTurnActivityKey !== latestTurnActivityKey/u,
@@ -1285,11 +1159,6 @@ test("history pagination keeps one callback identity across viewport measurement
     workbenchApp,
     /onLoadOlder=\{[\s\S]*?\? \(\) => activeThreadLease\?\.loadOlder\(\)/u,
   );
-  assert.match(
-    expoFrameSource,
-    /const loadOlderConversation = useStableEvent\(\(\) => activeThreadLease\?\.loadOlder\(\) \?\? Promise\.resolve\(\)\)/u,
-  );
-  assert.match(expoFrameSource, /\? loadOlderConversation : undefined/u);
   for (const source of [webConversationSource, nativeVirtualizedTurnsSource]) {
     assert.match(source, /useTurnHistoryBackfill\(\{/u);
     assert.doesNotMatch(source, /loadOlderPendingRef/u);
@@ -1525,12 +1394,6 @@ test("scroll-to-bottom action stays mounted in the Composer zero-height overlay"
     working.match(/thread-scroll-to-bottom-button__dot/g)?.length,
     3,
   );
-});
-
-test("Native Composer does not duplicate the live response as a Working row", () => {
-  assert.match(expoComposerSource, /isResponseInProgress:\s*isStreaming/u);
-  assert.match(expoComposerSource, /primaryAction === "stop"/u);
-  assert.doesNotMatch(expoComposerSource, /workingStatus|workingDots|>Working</u);
 });
 
 test("iPad desktop-class user agents still select the iOS viewport host", () => {

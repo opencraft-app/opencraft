@@ -931,5 +931,22 @@
   "turnRecovery.continued": "Automatically continued after a service restart ({attempts}/{limit}).",
   "turnRecovery.exhausted": "Automatic continuation stopped after {limit} attempts. Send a message to continue.",
   "overhome.search": "Search",
-  "overhome.noMatches": "No apps found."
+  "overhome.noMatches": "No apps found.",
+  "mobile.source": "Workspace source",
+  "mobile.bundled": "Built-in workspace",
+  "mobile.remote": "Self-hosted workspace",
+  "mobile.description": "Use the built-in workspace or open your own OpenCraft website.",
+  "mobile.consent": "Load my self-hosted website",
+  "mobile.url": "HTTPS address",
+  "mobile.privacy": "Sign in on your server. This mode uses a private browsing session and does not receive the built-in workspace's credentials or native bridge. Switching workspaces closes the current view.",
+  "mobile.apply": "Open workspace",
+  "mobile.cancel": "Cancel",
+  "mobile.restore": "Use built-in workspace",
+  "mobile.retry": "Retry",
+  "mobile.loading": "Opening OpenCraft…",
+  "mobile.failed": "The workspace could not open. Retry or choose another source.",
+  "mobile.invalid": "Enter an HTTPS address without credentials, query parameters or a fragment.",
+  "mobile.saveFailed": "The selection could not be saved. Your current workspace has not changed.",
+  "mobile.readFailed": "The saved source could not be read. Retry or explicitly choose the built-in workspace.",
+  "mobile.brand": "OpenCraft"
 }

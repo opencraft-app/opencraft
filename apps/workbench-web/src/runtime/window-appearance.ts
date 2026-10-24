@@ -1,5 +1,6 @@
 import type { ThemeWindowAppearance } from "@opencraft/design-system/theme-options";
 import type { WindowPresentation } from "./window-presentation";
+import { isMobileContainerIdentity } from "@opencraft/client-product/mobile-container";
 
 /** Shell's exposed edge surface is separate from an Electron window's material. */
 export interface WindowAppearanceIntent extends ThemeWindowAppearance {
@@ -50,6 +51,13 @@ export function projectWindowAppearance(
   root.dataset.windowAppearanceStrategy = presentation.appearanceControl;
   root.dataset.windowAppearancePhase = phase;
   root.dataset.windowEdgeStrategy = edgeStrategy;
+  const view = document.defaultView as (Window & { opencraftMobile?: unknown; ReactNativeWebView?: { postMessage(raw: string): void } }) | null;
+  const appearance = { resolvedTheme: requested.resolvedTheme, edgeBackgroundColor: requested.edgeBackgroundColor };
+  if (view && isMobileContainerIdentity(view.opencraftMobile) && typeof view.ReactNativeWebView?.postMessage === "function") {
+    view.ReactNativeWebView.postMessage(JSON.stringify({ ...view.opencraftMobile, type: "appearance", ...appearance }));
+  } else if (view?.name === "opencraft-mobile-preview" && view.parent !== view) {
+    view.parent.postMessage({ type: "opencraft-mobile-appearance", ...appearance }, view.location.origin);
+  }
   // A native container still owns its system bars, but this document owns its
   // edge pixels. Electron retains its existing transparent window material.
   if (presentation.host !== "electron") root.style.backgroundColor = requested.edgeBackgroundColor;

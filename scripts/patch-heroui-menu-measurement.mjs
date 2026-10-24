@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 // position in that render. Readiness must depend on dimensions, not the old
 // off-screen probe coordinate (and y=0 is a legitimate native position).
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const require = createRequire(resolve(root, "apps/workbench-expo/package.json"));
+const require = createRequire(resolve(root, "apps/mobile/package.json"));
 const packageJsonPath = require.resolve("heroui-native/package.json");
 const packageRoot = dirname(packageJsonPath);
 const { version } = JSON.parse(readFileSync(packageJsonPath, "utf8"));

@@ -55,7 +55,7 @@ export function planChanges(paths, { event = 'pull_request', unknownDiff = false
       if (!path.startsWith('apps/workbench-web/src/') || /\/web-updates[^/]*\./.test(path)) managedWeb = true;
       continue;
     }
-    if (/^apps\/workbench-expo\//.test(path)) { web(); continue; }
+    if (/^apps\/mobile\//.test(path)) { web(); continue; }
     if (/^apps\/(workbench-electron|opencraft-daemon|local-agent-host)\//.test(path) || path.startsWith('runtime/dsh/')) {
       headlessTests = true;
       continue;

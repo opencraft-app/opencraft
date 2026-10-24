@@ -37,10 +37,10 @@ Installation IDs are owned by each build configuration:
 |---|---|---|
 | Desktop installed app | `dev.opencraft.workbench` | `apps/workbench-electron/package.json` |
 | macOS local Preview | `dev.opencraft.workbench.preview` | `scripts/package-macos-preview.mjs` |
-| Standalone Expo Android and iOS | `dev.opencraft.workbench` | `apps/workbench-expo/app.json` |
+| Standalone Expo Android and iOS | `dev.opencraft.workbench` | `apps/mobile/app.json` |
 | Explicit downstream Expo product | Defined by the selected product | Local config selected by `OPENCRAFT_EXPO_PRODUCT_CONFIG` |
 
-`apps/workbench-expo/app.config.js` delegates product configuration through
+`apps/mobile/app.config.js` delegates product configuration through
 `product-entry.cjs` and preserves the public open-source notices in the final
 manifest. The standalone core does not select a product from
 `OPENCRAFT_ANDROID_RELEASE` or `OPENCRAFT_IOS_RELEASE`; a selected downstream

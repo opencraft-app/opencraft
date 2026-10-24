@@ -41,7 +41,7 @@ test("all workspace packages use the OpenCraft scope", () => {
 
 test("three public hosts agree on OpenCraft branding and identity", () => {
   const electron = json("apps/workbench-electron/package.json");
-  const expo = json("apps/workbench-expo/app.json").expo;
+  const expo = json("apps/mobile/app.json").expo;
   assert.equal(electron.build.productName, desktopProduct.displayName);
   assert.equal(electron.build.appId, desktopProduct.applicationId);
   assert.equal(

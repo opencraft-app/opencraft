@@ -68,7 +68,7 @@ test("inline controls and former layout-library exemptions are rejected; shared 
 
 
 test("native glyph imports and font substitutes follow shared ownership", () => {
-  for (const file of ["packages/chat-render-native/src/example.tsx", "apps/workbench-expo/src/example.tsx"]) {
+  for (const file of ["packages/chat-render-native/src/example.tsx", "apps/mobile/src/example.tsx"]) {
     assert.equal(inspectInterfaceIcons('const x = <Text>↵</Text>;', file).length, 1);
     assert.equal(inspectInterfaceIcons('import { Check } from "lucide-react-native";', file).length, 1);
     assert.deepEqual(inspectInterfaceIcons('import { CheckIcon } from "@opencraft/design-system-native/action-icons"; const x = <CheckIcon/>;', file), []);

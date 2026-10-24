@@ -68,7 +68,7 @@ test("native sidebar states use existing desktop contours and their 20-unit canv
   }
 });
 test("both native consumers resolve only the shared icon owner after a clean install", () => {
-  for (const workspace of ["apps/workbench-expo", "packages/chat-render-native"]) {
+  for (const workspace of ["apps/mobile", "packages/chat-render-native"]) {
     const req = createRequire(new URL(`../../${workspace}/package.json`, import.meta.url));
     assert.ok(req.resolve("@opencraft/design-system-native/action-icons"));
     assert.throws(() => req.resolve("lucide-react-native"), /Cannot find module/);

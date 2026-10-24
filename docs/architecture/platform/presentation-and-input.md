@@ -435,7 +435,7 @@ continues to own longer retention and reconnect truncation.
 
 ## Expo Web's place
 
-Expo Web is a first-class output of `apps/workbench-expo`, not a compatibility
+Expo Web is a first-class output of `apps/mobile`, not a compatibility
 mode hidden inside the Vite app. It is appropriate for mobile-width browsers,
 PWA distribution, and validating universal routes. The Vite app remains the
 desktop browser/Electron target where precise Workbench layout and mature chunk

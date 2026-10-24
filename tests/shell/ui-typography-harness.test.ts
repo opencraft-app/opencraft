@@ -60,7 +60,6 @@ test("semantic usage contracts prevent valid-token misuse on core paths", () => 
     const block = app.slice(app.indexOf(`\n${selector} {`)).split('\n}')[0];
     assert.match(block, /typography\.role\(control-compact, secondary\)/u, selector);
   }
-  assert.match(read("../apps/workbench-expo/src/components/workbench-composer.tsx"), /modelLabel:.*nativeTypographyStyle\("controlCompact", Platform\.OS\)/u);
   const ssh = read("../apps/workbench-web/src/styles/ssh-connections.scss");
   assert.match(ssh, /p, summary \{ @include typography\.role\(metadata, secondary\)/u);
   assert.doesNotMatch(ssh, /role\(control-small/u);

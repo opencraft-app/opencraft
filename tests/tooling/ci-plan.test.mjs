@@ -27,7 +27,7 @@ test('docs-only and empty diffs need no build; main and weekly runs still audit 
   }
 });
 test('platform source never starts Electron, Expo or macOS builds automatically', () => {
-  assert.deepEqual(planChanges(['apps/workbench-expo/src/app.tsx']), { ...emptyPlan, targets: webTargets });
+  assert.deepEqual(planChanges(['apps/mobile/src/app.tsx']), { ...emptyPlan, targets: webTargets });
   for (const path of ['apps/local-agent-host/src/main.ts', 'apps/opencraft-daemon/src/index.ts',
     'runtime/dsh/src/index.ts', 'apps/workbench-electron/native/speech.swift']) {
     assert.deepEqual(planChanges([path]), { ...emptyPlan, headlessTests: true }, path);
@@ -109,8 +109,8 @@ test('real Git diff covers merge-base semantics, deletions, renames, and more th
     put('apps/workbench-web/old.ts', 'old'); git('add', '.'); git('commit', '-m', 'base');
     const base = git('rev-parse', 'HEAD');
     git('checkout', '-b', 'feature');
-    put('apps/workbench-expo/new.ts', 'new');
-    renameSync(join(cwd, 'apps/workbench-web/old.ts'), join(cwd, 'apps/workbench-expo/moved.ts'));
+    put('apps/mobile/new.ts', 'new');
+    renameSync(join(cwd, 'apps/workbench-web/old.ts'), join(cwd, 'apps/mobile/moved.ts'));
     for (let i = 0; i < 350; i++) put(`docs/file-${i}.md`, 'docs');
     git('add', '.'); git('commit', '-m', 'changes'); const head = git('rev-parse', 'HEAD');
     git('checkout', 'main'); put('unrelated.config.js', 'base advanced'); git('add', '.'); git('commit', '-m', 'advance main');
@@ -118,7 +118,7 @@ test('real Git diff covers merge-base semantics, deletions, renames, and more th
     const paths = changedPaths('pull_request', { pull_request: { base: { sha: advanced }, head: { sha: head } } }, cwd);
     assert.equal(paths.length, 353);
     assert(paths.includes('apps/workbench-web/old.ts'));
-    assert(paths.includes('apps/workbench-expo/moved.ts'));
+    assert(paths.includes('apps/mobile/moved.ts'));
     assert(!paths.includes('unrelated.config.js'));
     assert.deepEqual(planChanges(paths).targets, webTargets);
     assert.deepEqual(new Set(changedPaths('push', { before: base, after: head }, cwd)), new Set(paths));

@@ -22,7 +22,7 @@ window.__mobileResourcePolicyProbe = (async () => {
   } finally { URL.revokeObjectURL(url); }
 })();
 </script>`;
-const html = (await readFile("apps/workbench-expo/assets/mobile-workbench.html", "utf8"))
+const html = (await readFile("apps/mobile/assets/mobile-workbench.html", "utf8"))
   .replace("/*OPENCRAFT_MOBILE_IDENTITY*/", `window.opencraftMobile=${JSON.stringify(identity)};`)
   .replace(/<\/body><\/html>$/u, resourcePolicyProbe + "</body></html>");
 const output = process.env.OPENCRAFT_SMOKE_OUTPUT ?? path.join(os.tmpdir(), "opencraft-mobile-web-workbench");

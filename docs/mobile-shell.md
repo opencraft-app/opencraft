@@ -1,6 +1,6 @@
 # iOS mobile shell
 
-本文描述显式下游产品产品的 Shell。公开默认 Expo 使用既有 RN Workbench 与直连 Host；下游产品通过下游产品 runner 选择原入口，见 [Expo README](../apps/workbench-expo/README.md#public-and-downstream-product-entries)。入口拆分不改变本文的导航、账号、Bot 或几何所有权。
+本文描述显式下游产品的 Shell。公开默认 Expo 在 apps/mobile 中承载同一套随包 Web Workbench，独立 RN 工作台已退役；下游产品通过下游产品 runner 选择原入口，见 [Expo README](../apps/mobile/README.md#public-and-downstream-product-entries)。入口拆分不改变本文的导航、账号、Bot 或几何所有权。
 
 ## Ownership
 
@@ -162,9 +162,8 @@ The Bot host applies the bottom safe-area inset once to all embedded pages,
 including Chat; WKWebView automatic content-inset adjustment is disabled. The
 packaged Web Chat manages composer/list capacity via its measured viewport and
 Web visualViewport contract. Do not layer a native keyboard translation or a
-second keyboard-avoiding wrapper onto this DOM Chat. The independent RN
-Workbench keeps its existing native keyboard-controller model; this separate
-renderer is not mounted in the Agent Console. Hardware keyboard and iPad
+second keyboard-avoiding wrapper onto this DOM Chat. The public mobile container uses the same packaged Web viewport contract;
+the retired independent RN workbench is no longer a keyboard owner. Hardware keyboard and iPad
 floating-keyboard acceptance remains device work, not proof from bundle tests.
 Real-name, complete
 account management, and subscription/payment remain first-party web routes.
@@ -199,7 +198,7 @@ during scroll momentum. Check a WebView horizontal control separately.
 
 ## 平台入口与路由扫描
 
-`src/app/index.tsx` 与 `_layout` 系列是薄路由，委托给 `mobile-home-route` 和 `workbench-route-layout` 的平台实现。Expo Router 的基础路由可能和平台 override 一起进入扫描；模块边界由 Metro 平台解析隔离，不能依靠 JSX 分支阻止导入。iOS 的 DOM 容器、账号 SQLite 与原生导航不进入 Web 模块图；Android/Web 沿用各自 Workbench 运行时。验证覆盖 Expo Web 导出与 iOS bundle。
+`src/app/index.tsx` 与 `_layout` 系列是薄路由，委托给 `mobile-home-route` 和 `workbench-route-layout` 的平台实现。Expo Router 的基础路由可能和平台 override 一起进入扫描；模块边界由 Metro 平台解析隔离，不能依靠 JSX 分支阻止导入。iOS 的 DOM 容器、账号 SQLite 与原生导航不进入 Web 模块图；Android/Web 同样消费产品的随包 DOM 控制台，平台仅适配宿主能力。验证覆盖 Expo Web 导出与 iOS bundle。
 
 ### Unified console and folding geometry
 

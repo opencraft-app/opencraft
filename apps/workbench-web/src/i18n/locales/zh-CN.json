@@ -955,5 +955,22 @@
   "turnRecovery.continued": "服务重启后已自动继续（{attempts}/{limit}）。",
   "turnRecovery.exhausted": "自动继续已达 {limit} 次，已停止。发送消息可继续。",
   "overhome.search": "搜索",
-  "overhome.noMatches": "未找到应用"
+  "overhome.noMatches": "未找到应用",
+  "mobile.source": "工作台来源",
+  "mobile.bundled": "内置工作台",
+  "mobile.remote": "自托管工作台",
+  "mobile.description": "使用内置工作台，或打开你自己的 OpenCraft 网站。",
+  "mobile.consent": "加载我的自托管网站",
+  "mobile.url": "HTTPS 地址",
+  "mobile.privacy": "请在自己的服务器上登录。此模式使用独立的临时浏览会话，不获取内置工作台的凭据或原生能力桥。切换工作台会关闭当前视图。",
+  "mobile.apply": "打开工作台",
+  "mobile.cancel": "取消",
+  "mobile.restore": "使用内置工作台",
+  "mobile.retry": "重试",
+  "mobile.loading": "正在打开 OpenCraft…",
+  "mobile.failed": "工作台无法打开，请重试或选择其他来源。",
+  "mobile.invalid": "请输入 HTTPS 地址，不包含账号密码、查询参数或片段。",
+  "mobile.saveFailed": "无法保存选择，当前工作台未切换。",
+  "mobile.readFailed": "无法读取已保存的来源，请重试或主动选择内置工作台。",
+  "mobile.brand": "OpenCraft"
 }
