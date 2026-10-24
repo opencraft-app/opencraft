@@ -421,14 +421,18 @@ same bounded diagnostic snapshot with an explicit process-lifetime explanation.
 ### Dedicated Token metering owner
 
 Headless deployment reads are independent of the active execution engine. The
-`opencraft-server` entry intercepts `opencraft/token-usage/query` before DSH/Pi
-dispatch and uses the existing read-only query worker against the deployment's
+`opencraft-server` entry intercepts `opencraft/token-usage/query` on both the
+`/apphost` multiplexed transport and the `/appserver` native WebSocket bridge
+before DSH/Pi dispatch and uses the existing read-only query worker against the deployment's
 Codex ledger and stable Codex server ID. It neither starts a Codex connection nor
 opens, imports, migrates or writes the ledger. Missing/unreadable statistics stay
 unavailable; this is not DSH/Pi collection support or an empty replacement store.
 The trusted ingress authority is checked before and after the read; self/team,
 cursor binding, current membership and client retirement retain their existing
-semantics. Remote Host queries retain their original owner; no cross-node merge
+semantics. Both ingress paths use the same query protocol session implementation;
+the native bridge has one untagged client per socket and the multiplexed path
+retains its logical-client identities. Non-query RPC and identity/MCP projection
+remain on their original bridge path. Remote Host queries retain their original owner; no cross-node merge
 is performed. Collection and configure remain with their existing writer owner.
 
 

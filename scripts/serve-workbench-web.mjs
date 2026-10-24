@@ -113,10 +113,15 @@ function bridgeAppServerSocket(client, request, options) {
   const appSession = options.mcpAppsService ? new McpAppsRpcSession(options.mcpAppsService, frame => {
     if (client.readyState === WebSocket.OPEN && options.authorize?.() !== false) client.send(frame);
   }) : null;
-  const forward = (data, isBinary) => {
+  const querySession = options.createAppServerQuerySession?.(frame => {
+    if (client.readyState === WebSocket.OPEN && options.authorize?.() !== false) client.send(frame);
+  });
+  const forward = async (data, isBinary) => {
     if (options.authorize?.() === false) { client.close(1008, 'Instance access revoked'); return; }
     if (identitySession && isBinary) { client.close(1003, "Text frames only"); return; }
     try {
+      if (!isBinary && await querySession?.receive(data.toString("utf8"), options.submissionContext)) return;
+      if (clientClosed || options.authorize?.() === false) return;
       if (!isBinary && appSession?.receive(data.toString("utf8"), options.submissionContext)) return;
       const frame = identitySession ? identitySession.toNative(data.toString("utf8"), options.submissionContext) : data;
       if (frame !== null) upstream.send(frame, { binary: isBinary });
@@ -153,7 +158,9 @@ function bridgeAppServerSocket(client, request, options) {
     if (options.authorize?.() === false) { client.close(1008, 'Instance access revoked'); return; }
     try {
       if (identitySession && isBinary) throw new Error("Binary identity frame");
-      const frame = identitySession ? identitySession.fromNative(data.toString("utf8")) : data;
+      // Identity restores rewritten request IDs before query initialization is correlated.
+      const restored = identitySession ? identitySession.fromNative(data.toString("utf8")) : data;
+      const frame = restored !== null && !isBinary && querySession ? querySession.project(String(restored)) : restored;
       if (frame !== null) client.send(appSession && !isBinary ? appSession.project(String(frame), options.submissionContext) : frame, { binary: isBinary });
     } catch {
       client.close(1011, "Thread identity service unavailable"); upstream.close();
@@ -172,6 +179,7 @@ function bridgeAppServerSocket(client, request, options) {
   });
   client.on("close", (code, reason) => {
     clientClosed = true;
+    querySession?.close();
     appSession?.close();
     identitySession?.close();
     if (upstream.readyState === WebSocket.CONNECTING) upstream.terminate();
@@ -362,6 +370,7 @@ export async function createWorkbenchWebServer({
   appServerTarget = "ws://127.0.0.1:9988/rpc",
   resolveAppServerTarget,
   appServerIdentity = null,
+  createAppServerQuerySession = null,
   hyperNodeUser = "",
   loopbackOnly = false,
   appHostServer = null,
@@ -854,6 +863,7 @@ export async function createWorkbenchWebServer({
         mcpAppsService,
         hyperNodeUser,
         identity: appServerIdentity,
+        createAppServerQuerySession,
         submissionContext,
         authorize: () => actorAllowed() && admissionDeadline > Date.now() && (!principal || !!accessService.role(principal)),
       });
