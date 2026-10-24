@@ -588,7 +588,7 @@ export function AppShell({
   // One capacity decision drives commands, mobile layout and pinning. Automatic
   // space hysteresis affects resize only; an explicit expand resets that history.
   const searchAction = navigation?.actions.find(action => action.id === "shell.search");
-  const overviewAction = navigation?.actions.find(action => action.id === "shell.overview");
+  const applicationsAction = navigation?.actions.find(action => action.id === "shell.applications");
   const canDockSidebar = viewportWidth >= (contextAvailable ? sidebarWidth : shellSpaceMetrics.compact) + shellSpaceMetrics.mainMinimum;
   const expandSidebar = useCallback(() => {
     navigationController.requestDock();
@@ -597,7 +597,7 @@ export function AppShell({
   const mobileSidebarEnabled = windowChrome.kind === "browser" && unifiedNavigation && sidebarTransientEnabled
     && !canDockSidebar;
   const primaryNavigation = useMemo(() => navigation && mobileSidebarEnabled
-    ? { ...navigation, actions: navigation.actions.filter(action => action.id !== "shell.overview") }
+    ? { ...navigation, actions: navigation.actions.filter(action => action.id !== "shell.applications") }
     : navigation, [navigation, mobileSidebarEnabled]);
   const floatingWidth = useTransform([liveSidebarWidth, floatingPrimaryWidth, shellWidth], ([context, primary, viewport]) =>
     Math.min(Math.max(0, Number(viewport) - 24), mobileSidebarEnabled
@@ -813,10 +813,10 @@ export function AppShell({
           <FloatingLeftPanel
             header={unifiedNavigation ? <div className="shell-sidebar__header">
               {floatingSidebarHeader(dockFloatingSidebar)}
-              {mobileSidebarEnabled && overviewAction ? <button
-                type="button" className="shell-sidebar__overview shell-sidebar__action" data-action-id="shell.overview.header"
-                aria-label={overviewAction.title} onClick={() => overviewAction.onInvoke()}>
-                <NavigationIcon name={overviewAction.icon} size={20} />
+              {mobileSidebarEnabled && applicationsAction ? <button
+                type="button" className="shell-sidebar__applications shell-sidebar__action" data-action-id="shell.applications.header"
+                aria-label={applicationsAction.title} onClick={() => { dismissFloatingSidebar(); applicationsAction.onInvoke(); }}>
+                <NavigationIcon name={applicationsAction.icon} size={20} />
               </button> : null}
               {mobileSidebarEnabled && searchAction ? <button
                 type="button" className="shell-sidebar__search shell-sidebar__action" data-action-id="shell.search.header"
@@ -855,7 +855,7 @@ export function AppShell({
         <SharedSidebarContent
           primary={{ target: floatingOwnsContent ? floatingPrimaryHost : dockedPrimaryHost, content: navigation ? <ShellNavigationDock
             config={primaryNavigation!} controller={floatingOwnsContent ? floatingController : navigationOpen ? navigationController : lastDockController.current}
-            onInvoke={action => { if (unifiedNavigation && floatingOwnsContent) dismissFloatingSidebar(); action(); }}
+            onInvoke={action => { if (floatingOwnsContent && (unifiedNavigation || action === applicationsAction?.onInvoke)) dismissFloatingSidebar(); action(); }}
             expandedWidth={floatingOwnsContent ? floatingNavigationWidth : primaryMotion.viewportWidth}
             frameWidth={floatingOwnsContent ? floatingNavigationWidth : primaryMotion.frameWidth} /> : null }}
           context={{ target: floatingOwnsContent ? floatingContextHost : dockedContextHost, content: leftPanel,
@@ -865,7 +865,7 @@ export function AppShell({
           footer={{ target: floatingOwnsContent ? floatingFooterHost : dockedFooterHost, content: navigation ? <ShellNavigationFooter
             mobile={mobileSidebarEnabled}
             config={navigation} controller={floatingOwnsContent ? floatingController : navigationController}
-            onInvoke={action => { if (unifiedNavigation && floatingOwnsContent) dismissFloatingSidebar(); action(); }}
+            onInvoke={action => { if (floatingOwnsContent && (unifiedNavigation || action === applicationsAction?.onInvoke)) dismissFloatingSidebar(); action(); }}
             visible={floatingOwnsContent || navigationController.projection.footerVisible}
             entranceId="shared-shell-entrance"
             onTogglePrimaryNavigation={floatingOwnsContent ? toggleFloatingApplications : onSidebarCollapse} /> : null }}

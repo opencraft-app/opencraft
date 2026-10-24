@@ -540,3 +540,12 @@ Floating navigation glass uses a rounded shoulder height field. Its normals and 
 Prefixed backdrop engines retain the CSS blur/tint path even if a URL passes syntax checking; syntax alone does not establish SVG backdrop rendering support.
 
 Navigation glass keeps a directional edge: a softened upper-leading light and a much weaker lower-trailing shade, without a uniform perimeter stroke. A short neutral contact shadow separates the surface from content, instead of a broad elevated oval halo. Live backdrop softening, neutral tint and a faint reflection across the face complete the material in ordinary and reduced-transparency appearance. Safari uses the CSS treatment as the supported approximation; it does not promise optical refraction. Forced colors retains a system-color boundary without the decorative shadow, and keyboard focus remains owned by the original controls.
+
+### Application desktop
+
+Overhome is the default Applications destination. Its responsive icon grid uses
+rounded icon surfaces and localized labels, with one ordinary launch action per
+app. Follow the existing neutral page and theme semantics; supply no store
+ratings, downloads, promotional rows or placeholder apps. The first catalog
+contains Scheduled tasks. Catalog/launch ownership and the retained Chat lifecycle
+are defined in [Shell navigation](architecture/platform/shell-and-navigation.md#overhome-and-miniapps).

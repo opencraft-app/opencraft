@@ -31,6 +31,9 @@ export function useWorkbenchToolActions({
     () => contributionSnapshot.settingsPages
       .map(({ contribution }) => contribution)
       .filter(isWorkbenchToolPage)
+      .filter(page => !contributionSnapshot.navigation.some(({ contribution: app }) => app.surface === "applications"
+        && app.target.kind === "settings" && app.target.pageId === page.id
+        && (app.platforms?.includes(platform) ?? true) && (app.audience !== "internal" || internalDeveloperMode)))
       .filter((page) => page.platforms?.includes(platform) ?? true)
       .filter((page) => page.audience !== "internal" || internalDeveloperMode)
       .sort((left, right) => (left.order ?? 0) - (right.order ?? 0))

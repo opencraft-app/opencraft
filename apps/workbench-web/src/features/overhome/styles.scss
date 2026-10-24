@@ -1,0 +1,62 @@
+@use "@opencraft/design-system/typography.web" as typography;
+@use "@opencraft/design-system/controls.web" as controls;
+
+.overhome {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  container-type: inline-size;
+  overflow: auto;
+  background: var(--color-background-surface);
+  color: var(--color-text);
+
+  &__content {
+    max-width: 64rem;
+    margin-inline: auto;
+    padding: clamp(calc(var(--spacing) * 6), 6cqi, calc(var(--spacing) * 16));
+  }
+  &__heading {
+    margin-bottom: calc(var(--spacing) * 10);
+    h1 { @include typography.role(large-title); margin: 0; }
+    p { @include typography.role(body, secondary); margin: calc(var(--spacing) * 2) 0 0; }
+  }
+  &__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 4.5rem), 1fr));
+    gap: calc(var(--spacing) * 7) calc(var(--spacing) * 4);
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    > li { min-width: 0; }
+  }
+  &__app {
+    @include controls.quiet-control;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    gap: calc(var(--spacing) * 3);
+    width: 100%;
+    min-height: var(--size-control-hit-min);
+    padding: calc(var(--spacing) * 3) var(--spacing);
+    border-radius: var(--radius-xl);
+    &:active:not(:disabled) { background: var(--color-background-navigation-pressed); }
+  }
+  &__icon {
+    display: grid;
+    place-items: center;
+    width: calc(var(--spacing) * 18);
+    aspect-ratio: 1;
+    border-radius: var(--radius-2xl);
+    background: var(--color-badge-blue-background);
+    color: var(--color-badge-blue-foreground);
+    border: 1px solid var(--color-border-subtle);
+  }
+  &__label {
+    @include typography.role(body);
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    text-align: center;
+  }
+  &__empty { @include typography.role(body, secondary); margin: 0; }
+}

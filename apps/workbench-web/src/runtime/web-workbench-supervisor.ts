@@ -353,6 +353,10 @@ export async function createWebWorkbenchApplicationSupervisor(
         await activate();
       }
     };
+    await extensions.loadOptional("opencraft.overhome", async () => {
+      const { createOverhomeExtension } = await import("./overhome-extension");
+      return createOverhomeExtension(extensions.contributions, platformViewRenderers);
+    });
     await extensions.loadOptional("opencraft.schedules", async () => {
       const { conversationSchedulesExtension } = await import("./conversation-schedules-extension");
       return conversationSchedulesExtension;

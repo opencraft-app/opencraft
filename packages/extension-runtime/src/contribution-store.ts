@@ -142,10 +142,11 @@ function validateNavigation(owner: ExtensionActivationIdentity, value: Navigatio
   if (value.audience !== undefined && value.audience !== "public" && value.audience !== "internal") {
     throw new RangeError(`Navigation ${value.id} has an invalid audience`);
   }
-  if (!(["sidebar-primary", "sidebar-footer"] as const).includes(value.surface)) {
+  if (!(["sidebar-primary", "sidebar-footer", "applications"] as const).includes(value.surface)) {
     throw new RangeError(`Navigation ${value.id} has an invalid surface`);
   }
   if (value.target.kind === "command") {
+    if (value.surface === "applications") throw new RangeError(`Miniapp ${value.id} requires a View or Settings target`);
     assertOwnedContributionId(owner.extensionId, value.target.commandId);
   } else if (value.target.kind === "settings") {
     assertOwnedContributionId(owner.extensionId, value.target.pageId);

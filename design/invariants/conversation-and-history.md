@@ -4,36 +4,11 @@
 
 ## Optional conversation overview
 
-`features/conversation-overview` owns the removable Appearance setting, entry,
-attention ordering and latest-two-turn cards. A local read-only MiniChat projects
-shared ChatDocument syntax into static miniature message bubbles and assistant
-prose. Links are inert labels, media are text placeholders, and code/math stay
-static; no HTML, media loading, full chat runtime or Composer is mounted. Only
-the preview canvas is scaled; the separate card title/status and touch targets
-retain normal UI metrics. The outer card owns navigation and retry remains an
-independent action above it. Thumbnail clipping is bounded and does not create
-nested scrollports. Its installation preference is
-off by default. The entry uses a lightweight preference hook; Settings, grid
-and card styles remain demand-loaded. Shared typography utilities and the
-Shell's header action appearance avoid adding another initial style owner.
-Overview notification consumers import the stylesheet-free context port;
-the existing provider remains the only notification/history presentation owner.
-Consumer imports must not duplicate typography CSS in either Headless or
-independent website release startup graphs.
-Mobile renders one entry immediately before sidebar search;
-compact navigation projects that same action. The directory and its Host/auth
-admission remain authoritative. Cards are keyed by Host and Thread, never title.
-Review/error, unread, running/active-goal, pin and recency determine the default
-order; an explicit recency sort is available. Only visible foreground previews
-read summary history, at most two concurrent requests per Host; active previews
-catch up every four seconds. A hidden/closed/revoked surface cannot publish a
-late reply or queue further reads. The overview never resumes Threads or
-acknowledges their results. The covered conversation suspends presentation
-activity, preserving its DOM, draft, scroll and remote execution. Selection
-uses the existing navigation owner and dismisses only after successful commit;
-failure leaves the grid and preview intact. Browser validation uses the actual
-Shell/setting/overview and synthetic admitted preview sources, without claiming
-real employee or iPhone acceptance.
+The former optional conversation-card overview has been removed. Its Appearance
+preference and preview readers are retired; stored preference values are ignored.
+The Applications entrance now opens [Overhome](../../docs/architecture/platform/shell-and-navigation.md#overhome-and-miniapps).
+Chat state and history retain their original owners. The independent task-board
+statistics view and its read adapter remain available.
 
 ## User message sender display
 

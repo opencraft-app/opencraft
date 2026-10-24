@@ -459,3 +459,36 @@ A content plane is distinct from the animated reveal aperture and the tool's
 layout viewport. Its shape never changes the viewport dimensions, surface
 identity, scroll owner or control lease. Main/preview and regular/maximized modes
 consume the same theme token; themes without that capability keep zero radius.
+
+### Overhome and miniapps
+
+The Applications action always opens `/overhome`, a stable URL for the registered
+`opencraft.overhome.view` extension view. The existing Application Router owns its
+history and retained Chat return reference. Opening the desktop or a miniapp
+hides Chat presentation without recreating its draft, Host or execution owner.
+Mobile projects the same action before sidebar search and dismisses the drawer
+on launch. It does not depend on the former overview preference.
+
+A miniapp is a trusted extension's declarative navigation contribution with
+`surface: "applications"`. `MiniAppContribution` has a stable extension-owned ID,
+name/localized name, semantic icon, order, platform/audience and a View or Settings
+target. Extensions register through `api.navigation.register`; the existing
+activation transaction, immutable registry and owner disposal govern publication
+and withdrawal. Overhome projects only currently registered, renderable targets
+for its platform and audience; a catalog entry grants no Host/data permission.
+A command is not a miniapp launch target. Missing renderers/targets are omitted,
+and an empty catalog has a real empty state rather than fabricated apps.
+
+Overhome owns the icon grid, labels, focus and scroll. Miniapps own their content,
+data and lifecycle through existing Views/Settings. This first version registers
+Scheduled tasks as the single built-in miniapp, opening its existing Host-scoped
+catalog and editor. It neither creates a sample schedule nor introduces another
+scheduler, install/download service, remote-code runtime, or app permission model.
+The miniapp surface describes launch, not a sandbox ABI; existing MCP Apps keep
+their independent iframe/security lifecycle until explicitly adapted.
+
+Future miniapps use the same registration instead of adding desktop branches.
+The Shell's normal navigation retains other contributed destinations; a Settings
+page explicitly registered as a miniapp is launched from Overhome instead of
+being duplicated in the primary tool list. Backend authorization and existing
+Settings deep links remain unchanged.

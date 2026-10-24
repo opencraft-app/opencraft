@@ -165,7 +165,8 @@ export interface ViewContribution {
   readonly audience?: "public" | "internal";
 }
 
-export type NavigationSurface = "sidebar-primary" | "sidebar-footer";
+/** `applications` is the Overhome miniapp catalog, rendered by the host desktop. */
+export type NavigationSurface = "sidebar-primary" | "sidebar-footer" | "applications";
 
 export type NavigationTarget =
   | { readonly kind: "command"; readonly commandId: string }
@@ -188,6 +189,12 @@ export interface NavigationContribution {
   /** Presentation audience only; this is not an authorization boundary. */
   readonly audience?: "public" | "internal";
 }
+
+/** A launchable miniapp uses the existing View/Settings owner, never an implicit execution command. */
+export type MiniAppContribution = NavigationContribution & {
+  readonly surface: "applications";
+  readonly target: Exclude<NavigationTarget, { readonly kind: "command" }>;
+};
 
 /**
  * A host-owned collapsible sidebar section whose body resolves a registered
