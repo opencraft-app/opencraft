@@ -1,6 +1,6 @@
 import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { onFirstVideoFrame } from '../../apps/workbench-web/src/browser/h264-media-source';
+import { H264MediaSource, onFirstVideoFrame } from '../../apps/workbench-web/src/browser/h264-media-source';
 
 function fixture(t: TestContext, native = true) {
   const frames = new Map<number, FrameRequestCallback>(); let serial = 0;
@@ -46,4 +46,23 @@ test('replacement cancels event fallback even if its RAF callback was already qu
   const cancel = onFirstVideoFrame(f.video, () => presented++);
   Object.assign(f.video, { readyState: 2 }); cancel(); f.raf();
   f.video.dispatchEvent(new Event('loadeddata')); assert.equal(presented, 0); assert.equal(f.queued, 0);
+});
+
+
+test('sparse MSE waiting cannot restart a pending or unchanged seek', () => {
+  let currentTime = 0, seeking = false, end = 1, writes = 0, plays = 0;
+  const video = { readyState: 1, get currentTime() { return currentTime; },
+    set currentTime(value: number) { currentTime = value; seeking = true; writes++; },
+    get seeking() { return seeking; }, play() { plays++; return Promise.resolve(); } };
+  // Drive the actual waiting handler without native MediaSource dependencies.
+  const media = Object.create(H264MediaSource.prototype) as any;
+  Object.assign(media, { video, disposed: false, primed: false,
+    buffer: { buffered: { length: 1, start: () => 0, end: () => end } } });
+  media.catchUp(); assert.equal(writes, 1); assert.equal(currentTime, .975);
+  media.catchUp(); assert.equal(writes, 1, 'waiting during a seek must not restart it');
+  seeking = false; media.catchUp(); assert.equal(writes, 1, 'waiting at the same target must make progress');
+  end = 2; media.catchUp(); assert.equal(writes, 2); assert.equal(currentTime, 1.975);
+  seeking = false; currentTime += .0005; media.catchUp(); assert.equal(writes, 2, 'sub-millisecond media rounding does not repeat the seek');
+  assert.equal(plays, 5);
+  media.disposed = true; media.catchUp(); assert.equal(plays, 5);
 });

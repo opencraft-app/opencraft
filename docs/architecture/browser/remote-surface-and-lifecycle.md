@@ -484,3 +484,11 @@ capture. Refresh revisions share the visibility single writer: demands coalesce
 behind an in-flight setter, and a late ACK cannot resume a page whose last viewer
 has parked. The existing setter also works on retained native owners, preserving
 their documents and control leases without a runtime restart.
+### Sparse MSE seek progress
+
+The MSE receiver catches up to a complete buffered sample on sparse updates.
+A `waiting` event can itself be caused by a seek. Do not seek while a previous
+seek is pending, or repeat an unchanged target (within 1 ms); otherwise the
+video can remain in HAVE_METADATA despite a complete decoded page in its
+buffer. A later waiting/update event may advance to a new buffered target.
+This does not change the received-stage media credit contract for MSE.
