@@ -249,16 +249,23 @@ physical compositor painting or device acceptance.
 
 ### iOS Home Screen edge navigation
 
-The Web bootstrap suppresses native history-back gestures in iOS Home Screen
-apps (`navigator.standalone === true`). A non-passive capture listener cancels
-single-finger `touchstart` in the leftmost 20 CSS pixels, before WebKit admits its
-history recognizer. This strip remains inside the sidebar's reserved 24px edge;
+PwaRuntime suppresses native history traversal in iOS Home Screen apps
+(`navigator.standalone === true`). A non-passive capture listener cancels
+single-finger `touchstart` in either outermost 20 CSS pixels, before WebKit admits
+its history recognizer. The right boundary follows current viewport width. This strip remains inside the sidebar's reserved 24px edge;
 it does not become a second sidebar gesture owner. Cancelling the initial contact
 also reserves edge-origin taps/scrolls; normal content and controls are inset.
-Middle/right contacts and simultaneous multi-touch retain native handling.
+Middle contacts and simultaneous multi-touch retain native handling.
 Ordinary browser tabs, embedded documents and Electron are unaffected. History
 entries and URL changes remain real; explicit Back/Forward uses the original
 router. Do not trap `popstate`, add dummy history entries or cancel every touch.
-The bootstrap releases the listener on retirement/HMR and retains it across
+The owning ClientRuntime releases the listener on retirement/HMR and retains it across
 persisted pagehide. Native Safari gesture acceptance requires a physical-device
 check; synthetic DOM touch events only prove cancellation and routing isolation.
+
+
+Client presentation is selected at bootstrap through WebRuntime, PwaRuntime or
+ElectronRuntime. Shell consumes their document projection instead of owning PWA
+or preload listeners. Shared appearance preference/catalog, real navigation and
+viewport geometry retain their existing owners. See
+[ClientRuntime](../../docs/architecture/platform/client-runtime.md).

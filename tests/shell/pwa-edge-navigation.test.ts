@@ -4,9 +4,9 @@ import { bindPwaEdgeNavigation } from "../../apps/workbench-web/src/runtime/pwa-
 
 function fixture(standalone?: boolean, embedded = false) {
   const target = new EventTarget();
-  const view = { navigator: { standalone }, top: null as unknown };
+  const view = { navigator: { standalone }, innerWidth: 390, top: null as unknown };
   view.top = embedded ? {} : view;
-  const document = Object.assign(target, { defaultView: view }) as unknown as Document;
+  const document = Object.assign(target, { defaultView: view, documentElement: { clientWidth: 390 } }) as unknown as Document;
   const release = bindPwaEdgeNavigation(document);
   const touch = (xs: number[], cancelable = true) => {
     const event = new Event("touchstart", { cancelable, bubbles: true });
@@ -17,16 +17,19 @@ function fixture(standalone?: boolean, embedded = false) {
     target.dispatchEvent(event);
     return event;
   };
-  return { target, release, touch };
+  return { target, release, touch, document };
 }
 
-test("iOS Home Screen left-edge contact is cancelled before native history admission", () => {
+test("iOS Home Screen contacts at both edges is cancelled before native history admission", () => {
   const { target, release, touch } = fixture(true);
   let observed = 0;
   target.addEventListener("touchstart", () => observed++);
   assert.equal(touch([0]).defaultPrevented, true);
   assert.equal(touch([19]).defaultPrevented, true);
-  assert.equal(observed, 2, "local owners must still receive the event");
+  assert.equal(touch([370]).defaultPrevented, true);
+  assert.equal(touch([389]).defaultPrevented, true);
+  assert.equal(touch([390]).defaultPrevented, true);
+  assert.equal(observed, 5, "local owners must still receive the event");
   release();
   assert.equal(touch([0]).defaultPrevented, false, "retired page must release input");
   release();
@@ -41,11 +44,23 @@ test("normal tabs and embedded documents retain native handling", () => {
   assert.doesNotThrow(() => bindPwaEdgeNavigation({ defaultView: null } as Document)());
 });
 
-test("center/right gestures, multiple contacts and noncancelable events remain native", () => {
+test("center gestures, multiple contacts and noncancelable events remain native", () => {
   const { release, touch } = fixture(true);
-  for (const xs of [[20], [180], [389], [-1], [1, 180], []]) {
+  for (const xs of [[20], [180], [369], [391], [-1], [1, 180], []]) {
     assert.equal(touch(xs).defaultPrevented, false, JSON.stringify(xs));
   }
   assert.equal(touch([1], false).defaultPrevented, false);
   release();
+});
+
+
+test("the right boundary follows the current viewport after rotation", () => {
+  const { release, touch, document } = fixture(true);
+  Object.assign(document.documentElement, { clientWidth: 844 });
+  assert.equal(touch([389]).defaultPrevented, false);
+  assert.equal(touch([823]).defaultPrevented, false);
+  assert.equal(touch([824]).defaultPrevented, true);
+  assert.equal(touch([844]).defaultPrevented, true);
+  assert.equal(touch([845]).defaultPrevented, false);
+  release(); assert.equal(touch([824]).defaultPrevented, false);
 });

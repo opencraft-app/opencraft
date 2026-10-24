@@ -12292,7 +12292,6 @@ html[data-ui-density="touch"] body {
   background-color: var(--shell-window-edge-background, var(--color-surface));
 }
 .app-shell-root.has-mobile-sidebar-gestures {
-  box-sizing: border-box;
   // Paint remains full-bleed. Only the row content consumes the top inset.
   // The drawer portal sits behind the translated page. This root must remain
   // untransformed and transparent so its physical viewport stays authoritative.
@@ -12301,7 +12300,6 @@ html[data-ui-density="touch"] body {
   &:has(.app-shell-row[data-mobile-sidebar-present]) { z-index: var(--layer-shell-sidebar-control); }
   .app-shell-row {
     position: relative;
-    box-sizing: border-box;
     padding-top: var(--shell-mobile-safe-top);
     pointer-events: auto;
     overflow: clip;
@@ -12388,7 +12386,6 @@ html[data-ui-density="touch"] body {
   }
   .app-shell-floating-sidebar-dismiss { background: var(--color-dialog-scrim); }
   .app-shell-floating-left-panel__surface {
-    box-sizing: border-box;
     padding-top: var(--shell-mobile-safe-top);
     padding-bottom: max(var(--gap-control-group), var(--shell-mobile-safe-bottom));
     padding-left: var(--shell-mobile-safe-left);
@@ -12402,7 +12399,6 @@ html[data-ui-density="touch"] body {
 .app-shell-mobile-page-dismiss {
   position: absolute; inset: var(--shell-mobile-safe-top) 0 0; z-index: 3;
   border: 0; padding: 0; background: transparent; cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
 }
 
 .sidebar-list-toolbar {

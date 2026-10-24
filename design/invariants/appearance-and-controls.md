@@ -144,3 +144,11 @@ the existing viewport owner; no negative-position status strip or duplicate inse
 On current iOS, installed metadata and WebKit top-color sampling can affect native
 results. Device acceptance covers cold start, theme/system changes, SPA conversation
 navigation, foreground return and rotation, for both existing and fresh installs.
+
+
+The page's active ClientRuntime implements the narrow window-appearance projector;
+the appearance owner binds/unbinds this port without transferring theme state.
+WebRuntime/PwaRuntime/ElectronRuntime share the existing intent codec. Native
+fullscreen/input subscriptions retire with the runtime, while bootstrap head
+projection remains pure and native system pixels remain unobserved. See
+[ClientRuntime](../../docs/architecture/platform/client-runtime.md).

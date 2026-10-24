@@ -4,18 +4,17 @@ import "./runtime/web-crypto-compat";
 import ReactDOM from "react-dom/client";
 import { useEffect, useState } from "react";
 
-import { initializeAppearanceTheme } from "./appearance-theme";
+import { initializeAppearanceTheme, bindWindowAppearanceProjector } from "./appearance-theme";
 import { RuntimeErrorBoundary } from "./components/runtime-error-boundary";
 import { HostProfileStorageNotice } from "./components/host-profile-storage-notice";
 import { LoadingSpinner } from "./components/ui/loading-spinner";
 import { startRuntimeDiagnosticCollection } from "./runtime-diagnostics";
 import { reportRuntimeError } from "./runtime-error-reporting";
 import { clientProductOptions } from "./runtime/client-product-entry";
-import { bindPwaEdgeNavigation } from "./runtime/pwa-edge-navigation";
+import { createClientRuntime } from "./runtime/client-runtime";
 import { bindPageLifecycle } from "./runtime/page-lifecycle";
 import { bindMobileContainer, mobileContainer } from "./runtime/mobile-container";
 import { bindInteractionDensity } from "./runtime/interaction-density";
-import { bindTouchInteractionMode } from "./runtime/pointer-modality";
 import {
   openWorkbenchUiPreferences,
   UiPreferencesProvider,
@@ -28,15 +27,6 @@ import "./styles/app.scss";
 type WorkbenchModule = typeof import("./workbench-entry");
 type WebWorkbenchApplication = Awaited<ReturnType<WorkbenchModule["a"]>>;
 
-interface DesktopWindowBridge {
-  readonly kind?: string;
-  readonly getWindowFullscreen?: () => boolean;
-  readonly onWindowFullscreenChanged?: (
-    listener: (isFullScreen: boolean) => void,
-  ) => () => void;
-  readonly setWindowAppearance?: (appearance: import("@opencraft/design-system/theme-options").ThemeWindowAppearance) => void;
-}
-
 type BootstrapState =
   | { readonly phase: "loading" }
   | {
@@ -48,23 +38,18 @@ type BootstrapState =
     }
   | { readonly phase: "error"; readonly error: Error };
 
-initializeAppearanceTheme();
+const clientRuntime = createClientRuntime(document);
+let releaseAppearanceProjector = () => {};
+try {
+  clientRuntime.start();
+  releaseAppearanceProjector = bindWindowAppearanceProjector(clientRuntime);
+  initializeAppearanceTheme();
+} catch (error) {
+  releaseAppearanceProjector();
+  try { clientRuntime.dispose(); } catch (cleanup) { reportRuntimeError(cleanup, "application-disposal"); }
+  throw error;
+}
 startRuntimeDiagnosticCollection();
-const disposeTouchInteractionMode = bindTouchInteractionMode(document);
-const disposePwaEdgeNavigation = bindPwaEdgeNavigation(document);
-
-const desktopWindowBridge = (
-  globalThis as typeof globalThis & { readonly opencraftDesktop?: DesktopWindowBridge }
-).opencraftDesktop;
-const applyDesktopFullscreen = (isFullScreen: boolean) => {
-  document.documentElement.dataset.opencraftWindowFullscreen = String(isFullScreen);
-};
-const disposeDesktopFullscreenSubscription = desktopWindowBridge?.onWindowFullscreenChanged?.(
-  applyDesktopFullscreen,
-);
-// Subscribe before reading the synchronous snapshot so an enter/leave event
-// cannot fall into the bootstrap gap between the initial read and listener.
-applyDesktopFullscreen(desktopWindowBridge?.getWindowFullscreen?.() ?? false);
 
 window.addEventListener("error", (event) => {
   reportRuntimeError(
@@ -117,7 +102,7 @@ function ApplicationBootstrap() {
           await preferences.close();
           return;
         }
-        const productOptions = await clientProductOptions(import.meta.env, desktopWindowBridge?.kind);
+        const productOptions = await clientProductOptions(import.meta.env, clientRuntime.kind === "electron" ? "electron" : undefined);
         if (disposed) return;
         const created = await module.a({
           ...productOptions,
@@ -178,8 +163,8 @@ function ApplicationBootstrap() {
 
 const reactRoot = ReactDOM.createRoot(rootElement);
 const retirePage = bindPageLifecycle(window, () => {
-  disposePwaEdgeNavigation();
-  reactRoot.unmount();
+  releaseAppearanceProjector();
+  try { clientRuntime.dispose(); } finally { reactRoot.unmount(); }
 });
 reactRoot.render(
   <RuntimeErrorBoundary>
@@ -191,8 +176,6 @@ window.requestAnimationFrame(() => {
 });
 
 if (import.meta.hot !== undefined) {
-  import.meta.hot.dispose(() => disposeDesktopFullscreenSubscription?.());
-  import.meta.hot.dispose(disposeTouchInteractionMode);
   import.meta.hot.dispose(() => {
     retirePage();
   });

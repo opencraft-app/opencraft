@@ -126,7 +126,7 @@ export function useMobileSidebarGesture({ enabled, open, width, root, overlay, o
       const touch = event.touches[0]!;
       const viewport = shell.getBoundingClientRect();
       // Keep the screen-edge gutter out of sidebar arbitration. Ordinary tabs
-      // retain OS navigation; the iOS PWA bootstrap suppresses native back there.
+      // retain OS navigation; PwaRuntime reserves native history on both edges.
       const sidebarAllowed = touch.clientX >= viewport.left + MOBILE_SIDEBAR_EDGE_RESERVE && touch.clientX <= viewport.right - MOBILE_SIDEBAR_EDGE_RESERVE;
       if (!sidebarAllowed && !horizontal) return;
       gesture.current = { id: touch.identifier, x: touch.clientX, y: touch.clientY, width: width.get(), start: progress.get(), initiallyOpen: latest.current.open, owner: "pending", sidebarAllowed, horizontal, scrollports, motionStartedAt: null, samples: [{ x: touch.clientX, time: event.timeStamp }] };

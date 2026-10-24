@@ -1,4 +1,4 @@
-/** iOS reserves the left edge for native history traversal even when the
+/** iOS reserves screen edges for native history traversal even when the
  * document already disables overscroll. Cancel the starting contact before
  * WebKit admits that recognizer; waiting for touchmove is too late.
  */
@@ -14,7 +14,9 @@ export function bindPwaEdgeNavigation(document: Document): () => void {
     const x = event.touches[0]!.clientX;
     // Keep the interception inside the sidebar's reserved screen-edge gutter.
     // The rest of the viewport retains scrolling, selection and local gestures.
-    if (x >= 0 && x < 20) event.preventDefault();
+    const width = document.documentElement.clientWidth || view.innerWidth;
+    if (!Number.isFinite(width) || width <= 0) return;
+    if (x >= 0 && x <= width && (x < 20 || x >= width - 20)) event.preventDefault();
   };
   document.addEventListener("touchstart", start, { capture: true, passive: false });
   return () => document.removeEventListener("touchstart", start, { capture: true });
