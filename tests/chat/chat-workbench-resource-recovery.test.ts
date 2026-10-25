@@ -257,3 +257,35 @@ test("a channel stuck in history backoff cannot reconnect or delay a healthy cha
     failed.release(); healthy.release();
   } finally { await bad.dispose(); await good.dispose(); }
 });
+
+for (const readHistory of [false, true]) test(`message-window bootstrap preserves provider readiness (read history=${readHistory})`, async () => {
+  const requests: string[] = [];
+  const page = { data: [{ id: "window", itemsView: "full", status: "completed", items: [{ id: "answer", type: "agentMessage", text: "History remains visible" }] }], nextCursor: null };
+  const metadata = { ...thread("window-thread"), historyMode: "message-window" };
+  const transport = new MemoryTransport({ receive(raw, peer) {
+    const request = JSON.parse(raw); if (request.id === undefined) return;
+    requests.push(request.method);
+    let result: unknown = {};
+    if (request.method === "initialize") result = { capabilities: { extensions: {
+      "opencraft/message-window-history": { version: 1 },
+      "opencraft/resume-history": { version: 1, mode: "message-window" },
+      ...(readHistory ? { "opencraft/read-history": { version: 1, initialTurnsPage: true } } : {}),
+    } } };
+    else if (request.method === "thread/read") result = { thread: metadata, ...(readHistory ? { initialTurnsPage: page } : {}) };
+    else if (request.method === "thread/resume") result = { thread: metadata, initialTurnsPage: page,
+      model: "fixture", modelProvider: "fixture", cwd: "/workspace", approvalPolicy: "on-request",
+      approvalsReviewer: null, sandbox: {}, runtimeWorkspaceRoots: ["/workspace"] };
+    else if (request.method.endsWith("/list")) result = { data: [], nextCursor: null };
+    peer.send(JSON.stringify({ id: request.id, result }));
+  } });
+  const runtime = createAppServerWorkbenchRuntime({ hostId: "window-provider", transport, autoReconnect: false });
+  try {
+    await runtime.connect(); const lease = await runtime.acquireThread("window-thread");
+    for (let n = 0; n < 100 && !lease.getSnapshot().authoritative; n++) await new Promise(resolve => setTimeout(resolve, 5));
+    assert.equal(lease.getSnapshot().authoritative, true, lease.getSnapshot().error?.message);
+    assert.ok(JSON.stringify(lease.getSnapshot().timeline).includes("History remains visible"));
+    assert.equal(requests.filter(method => method === "thread/resume").length, readHistory ? 0 : 1);
+    assert.equal(requests.some(method => method === "turn/start"), false);
+    lease.release();
+  } finally { await runtime.dispose(); }
+});
