@@ -85,7 +85,7 @@ app.whenReady().then(async () => {
         await wc.debugger.sendCommand('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ id: 0, ...point }] });
         await wc.debugger.sendCommand('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
       } else if (type === 'electron-mouse') {
-        wc.sendInputEvent({ type: 'mouseDown', button: 'left', clickCount: 1, ...point });
+        wc.sendInputEvent({ type: 'mouseDown', button: 'left', clickCount: 1, modifiers: ['leftButtonDown'], ...point });
         wc.sendInputEvent({ type: 'mouseUp', button: 'left', clickCount: 1, ...point });
       } else {
         await wc.debugger.sendCommand('Input.dispatchMouseEvent', { type: 'mousePressed', button: 'left', clickCount: 1, ...point });
@@ -125,10 +125,10 @@ app.whenReady().then(async () => {
   // Keep the displayed transform from the final case: child (380,60) maps
   // to root (335,300). Capture must retain this child after leaving its surface.
   await read('events=[]');
-  wc.sendInputEvent({ type: 'mouseDown', button: 'left', clickCount: 1, x: 335, y: 300 });
+  wc.sendInputEvent({ type: 'mouseDown', button: 'left', clickCount: 1, modifiers: ['leftButtonDown'], x: 335, y: 300 });
   await until(() => read("events.some(event=>event.type==='pointerdown'&&event.target==='drag'&&drag.hasPointerCapture(event.pointerId))"),
     Boolean, 'Native child pointer capture was not established');
-  wc.sendInputEvent({ type: 'mouseMove', button: 'left', x: 680, y: 480 });
+  wc.sendInputEvent({ type: 'mouseMove', button: 'left', modifiers: ['leftButtonDown'], x: 680, y: 480 });
   wc.sendInputEvent({ type: 'mouseUp', button: 'left', clickCount: 1, x: 680, y: 480 });
   const captured = await until(() => read("events.find(event=>event.type==='pointerup'&&event.target==='drag')"),
     Boolean, 'Mouse release outside iframe must reach the captured child');
@@ -139,7 +139,7 @@ app.whenReady().then(async () => {
   cases.push({ type: 'wheel', childScrollY: scrollY });
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ passed: true, cases, errors, physicalOsIme: false }));
-}).catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {
+}).catch(error => { console.error(JSON.stringify({ completedCases: cases, errors })); console.error(error); process.exitCode = 1; }).finally(async () => {
   clearTimeout(deadline);
   disposeFocus?.();
   window?.destroy();
