@@ -53,19 +53,24 @@ try {
     if (width === 390) {
       assert.equal(await timestamp.evaluate(element => getComputedStyle(element).opacity), "1", "touch timestamps retain their policy");
       await example("goal").locator("[data-user-message-bubble]").tap();
+      await page.waitForFunction(element => getComputedStyle(element).opacity === "1", await copy.elementHandle());
       assert.equal(await opacity(), "1", "touch tap reveals copy");
       await example("empty").locator(".thread-user-message__no-content").tap();
+      await page.waitForFunction(element => getComputedStyle(element).opacity === "0", await copy.elementHandle());
       assert.equal(await opacity(), "0", "outside tap dismisses copy");
       await example("goal").locator("[data-user-message-bubble]").tap();
       await copy.tap();
     } else {
       assert.equal(await timestamp.evaluate(element => getComputedStyle(element).opacity), "0");
       await example("goal").locator("[data-user-message-bubble]").hover();
+      await page.waitForFunction(element => getComputedStyle(element).opacity === "1", await copy.elementHandle());
       assert.equal(await opacity(), "1", "hover reveals copy");
       assert.equal(await timestamp.evaluate(element => getComputedStyle(element).opacity), "1");
       await example("empty").hover();
+      await page.waitForFunction(element => getComputedStyle(element).opacity === "0", await copy.elementHandle());
       assert.equal(await opacity(), "0", "leaving hides copy");
       await copy.focus();
+      await page.waitForFunction(element => getComputedStyle(element).opacity === "1", await copy.elementHandle());
       assert.equal(await opacity(), "1", "keyboard focus reveals copy");
       await page.keyboard.press("Enter");
     }
