@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { McpAppsRpcSession } from "../packages/mcp-apps/src/transport.ts";
+import { serveNotModified } from "./web-asset-cache.mjs";
 import { APP_HOST_PROTOCOL_VERSION } from "@opencraft/app-host-protocol/version";
 
 import { createReadStream } from "node:fs";
@@ -360,6 +361,7 @@ async function serveFile(request, response, path, pathname) {
   } else {
     response.setHeader("cache-control", "no-cache");
   }
+  if (serveNotModified(request, response)) return true;
   if (request.method === "HEAD") {
     response.end();
     return true;

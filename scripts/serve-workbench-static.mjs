@@ -1,4 +1,5 @@
 import { createReadStream } from "node:fs";
+import { serveNotModified } from "./web-asset-cache.mjs";
 import { realpath, stat } from "node:fs/promises";
 import { createServer } from "node:http";
 import { extname, join, resolve, sep } from "node:path";
@@ -72,6 +73,7 @@ async function serveFile(request, response, path, pathname) {
   } else {
     response.setHeader("cache-control", "no-cache");
   }
+  if (serveNotModified(request, response)) return true;
   if (request.method === "HEAD") response.end();
   else createReadStream(path).pipe(response);
   return true;

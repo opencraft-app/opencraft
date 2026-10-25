@@ -89,7 +89,7 @@ export function NavigationContent({ config, surface, compact = false, includeSet
         </span>
       </button></Tooltip.Trigger>{compact ? <Tooltip.Portal><Tooltip.Content className="shell-navigation-tooltip" side="right" sideOffset={8}>{title}</Tooltip.Content></Tooltip.Portal> : null}</Tooltip.Root>;
     })}
-    {includeSettings ? <button type="button" aria-current={config.settingsActive ? "page" : undefined} title={compact ? intl.formatMessage({ id: "settings.title", defaultMessage: "Settings" }) : undefined} onClick={() => onInvoke(config.onOpenSettings)}><NavigationIcon name="settings" selected={config.settingsActive} /><span className="shell-navigation__item-label"><FormattedMessage id="settings.title" defaultMessage="Settings" /></span></button> : null}
+    {includeSettings ? <button type="button" data-resource-intent="settings" aria-current={config.settingsActive ? "page" : undefined} title={compact ? intl.formatMessage({ id: "settings.title", defaultMessage: "Settings" }) : undefined} onClick={() => onInvoke(config.onOpenSettings)}><NavigationIcon name="settings" selected={config.settingsActive} /><span className="shell-navigation__item-label"><FormattedMessage id="settings.title" defaultMessage="Settings" /></span></button> : null}
   </nav></Tooltip.Provider> : <AccountContent compact={compact} config={config} onInvoke={onInvoke} />;
 }
 
@@ -126,7 +126,7 @@ function AccountContent({ config, compact, onInvoke }: {
       </button>}
       <button type="button" onClick={() => onInvoke(account.onOpen)}><User size={16} /><span><FormattedMessage id="account.title" defaultMessage="Account" /></span></button>
     </>
-    <button type="button" onClick={() => onInvoke(config.onOpenSettings)}><SettingsGearIcon size={16} /><span><FormattedMessage id="settings.title" defaultMessage="Settings" /></span></button>
+    <button type="button" data-resource-intent="settings" onClick={() => onInvoke(config.onOpenSettings)}><SettingsGearIcon size={16} /><span><FormattedMessage id="settings.title" defaultMessage="Settings" /></span></button>
     {account.onSignOut ? <button type="button" disabled={signingOut} onClick={async () => {
       setSigningOut(true);
       setError(null);

@@ -1,0 +1,38 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { build } from "vite";
+import { startupResourceHints } from "../../apps/workbench-web/startup-resource-hints.vite";
+
+test("built HTML discovers mandatory dynamic roots/CSS without forcing optional fonts and bounds static settings URLs", async t => {
+  const root = await mkdtemp(join(tmpdir(), "opencraft-resource-hints-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const src = join(root, "apps/workbench-web/src");
+  await mkdir(join(src, "components"), { recursive: true });
+  await writeFile(join(root, "index.html"), '<html><head></head><body><script type="module">import("./apps/workbench-web/src/main-bootstrap.ts")</script></body></html>');
+  await writeFile(join(src, "main-bootstrap.ts"), 'globalThis.compatibilityReady=true; await import("./main");');
+  await writeFile(join(src, "main.tsx"), 'import "./main.css"; globalThis.openSettings=()=>import("./components/settings-page");');
+  await writeFile(join(src, "main.css"), '@font-face{font-family:Inter;src:url("./inter-latin-wght-normal.woff2")}@font-face{font-family:Unused;src:url("./inter-cyrillic-wght-normal.woff2")}body{font-family:Inter}');
+  await writeFile(join(src, "inter-latin-wght-normal.woff2"), "fixture-font");
+  await writeFile(join(src, "inter-cyrillic-wght-normal.woff2"), "other-fixture-font");
+  await writeFile(join(src, "components/settings-page.tsx"), 'globalThis.settingsActivated=true; globalThis.loadPreview=()=>import("./heavy-preview");');
+  await writeFile(join(src, "components/heavy-preview.ts"), 'globalThis.previewActivated=true;');
+  await build({ root, configFile: false, logLevel: "silent", plugins: [startupResourceHints()], build: { manifest: true, assetsInlineLimit: 0 } });
+  const html = await readFile(join(root, "dist/index.html"), "utf8");
+  const manifest = JSON.parse(await readFile(join(root, "dist/.vite/manifest.json"), "utf8"));
+  const main = manifest["apps/workbench-web/src/main.tsx"];
+  const settings = manifest["apps/workbench-web/src/components/settings-page.tsx"];
+  const preview = manifest["apps/workbench-web/src/components/heavy-preview.ts"];
+  assert.ok(html.includes(`rel="modulepreload" crossorigin href="/${main.file}"`));
+  assert.ok(html.includes(`rel="preload" as="style" href="/${main.css[0]}"`));
+  const fontTags = html.match(/<link rel="preload" as="font"[^>]*>/g) ?? [];
+  assert.equal(fontTags.length, 0, "CSS font declarations do not prove the current theme uses a font");
+  const data = JSON.parse(html.match(/id="opencraft-resource-hints" type="application\/json">([^<]+)/)![1]!);
+  assert.ok(data.intents.settings.includes(`/${settings.file}`));
+  assert.ok(!data.intents.settings.includes(`/${preview.file}`));
+  assert.ok(!html.includes(`rel="modulepreload" crossorigin href="/${settings.file}"`));
+  assert.ok(!JSON.stringify(data).includes("components/"));
+  assert.ok(data.intents.settings.length <= 12);
+});

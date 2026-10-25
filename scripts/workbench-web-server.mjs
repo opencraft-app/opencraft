@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { selectAssetEncoding } from "./web-asset-encoding.mjs";
+import { serveNotModified } from "./web-asset-cache.mjs";
 
 import { createReadStream } from "node:fs";
 import { readFile, realpath, stat } from "node:fs/promises";
@@ -189,6 +190,7 @@ async function serveFile(request, response, path, pathname, deploymentConfig) {
   } else {
     response.setHeader("cache-control", "no-cache");
   }
+  if (serveNotModified(request, response)) return true;
   if (request.method === "HEAD") {
     response.end();
     return true;

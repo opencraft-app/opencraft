@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import type { Plugin } from "vite";
 import { isApplicationBranding } from "../../packages/extension-contract/src/application-branding";
 import { applicationBrandingMetadata } from "./src/runtime/application-branding-metadata";
@@ -27,6 +28,17 @@ export function pluginBranding(workspaceRoot: string, enabled: readonly string[]
     });
     return walk(pkg.assets);
   });
+  // Initial icons use immutable aliases; declared URLs remain available to
+  // runtime providers and already installed application manifests.
+  const iconUrls = new Map<string, string>();
+  for (const url of [brand?.faviconUrl, brand?.appleTouchIconUrl]) {
+    const file = files.find(file => `/${file.fileName}` === url);
+    if (!file) continue;
+    const digest = createHash("sha256").update(file.source).digest("hex").slice(0, 20);
+    const fileName = `assets/brand-${digest}${path.extname(file.fileName)}`;
+    iconUrls.set(url!, `/${fileName}`);
+    if (!files.some(file => file.fileName === fileName)) files.push({ fileName, source: file.source });
+  }
   return {
     name: "application-plugin-branding",
     transformIndexHtml(html) {
@@ -37,7 +49,7 @@ export function pluginBranding(workspaceRoot: string, enabled: readonly string[]
         tags: [
           ...[["icon", brand.faviconUrl], ["manifest", brand.manifestUrl], ["apple-touch-icon", brand.appleTouchIconUrl],
             ["image_src", brand.share && new URL(brand.share.imageUrl, brand.share.publicOrigin).href]]
-            .flatMap(([rel, href]) => href ? [{ tag: "link", attrs: { rel: rel!, href, ...(rel === "manifest" ? { crossorigin: "use-credentials" } : {}) }, injectTo: "head" as const }] : []),
+            .flatMap(([rel, href]) => href ? [{ tag: "link", attrs: { rel: rel!, href: iconUrls.get(href) ?? href, ...(rel === "manifest" ? { crossorigin: "use-credentials" } : {}) }, injectTo: "head" as const }] : []),
           ...applicationBrandingMetadata(brand).map(({ attribute, key, content }) => ({
             tag: "meta", attrs: { [attribute]: key, content }, injectTo: "head" as const,
           })),
