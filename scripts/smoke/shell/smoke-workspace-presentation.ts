@@ -148,8 +148,51 @@ try {
       await editor.fill('Keep this mobile draft');
       await page.evaluate(() => document.documentElement.style.setProperty('--safe-layout-inset-bottom','34px'));
       const browserComposerPadding=page.locator('.thread-composer-overlay-host[data-mobile-browser="true"] .thread-composer-overlay__padding');
-      assert.equal(await browserComposerPadding.evaluate(e=>getComputedStyle(e).paddingBottom),'8px','body portal measures the protected Shell anchor and keeps only its ordinary gap');
+      assert.equal(await browserComposerPadding.evaluate(e=>getComputedStyle(e).paddingBottom),'8px','body portal retains only its ordinary gap');
+      const assertPortalGeometry = async (inset: number, timeout = 5000) => {
+        try { await page.waitForFunction(inset => {
+          const anchor = document.querySelector('.main-content-body');
+          const host = document.querySelector('.thread-composer-overlay-host[data-mobile-browser="true"]');
+          const surface = host?.querySelector('.thread-composer-overlay__interactive');
+          const composer = host?.querySelector('.opencraft-composer-shell');
+          if (!anchor || !host || !surface || !composer) return false;
+          const a = anchor.getBoundingClientRect(), h = host.getBoundingClientRect(), b = surface.getBoundingClientRect(), c = composer.getBoundingClientRect();
+          // The sheet surface has the outer 8px gap; its unchanged 12px padding
+          // and 1px border put the nested Composer another 13px inside it.
+          return a.bottom === innerHeight - inset && h.bottom === a.bottom && b.bottom === h.bottom - 8 && c.bottom === b.bottom - 13;
+        }, inset, { timeout }); } catch (error) {
+          await writeFile(output + '/portal-failure-' + theme + '.json', JSON.stringify(await page.evaluate(() => ({ anchor:document.querySelector('.main-content-body')?.getBoundingClientRect().toJSON(), host:document.querySelector('.thread-composer-overlay-host[data-mobile-browser="true"]')?.getBoundingClientRect().toJSON(), composer:document.querySelector('.thread-composer-overlay-host[data-mobile-browser="true"] .opencraft-composer-shell')?.getBoundingClientRect().toJSON(), height:innerHeight, html:document.querySelector('.thread-composer-overlay-host[data-mobile-browser="true"]')?.outerHTML.slice(0,700) })), null, 2));
+          throw error;
+        }
+        const geometry = await page.evaluate(() => ({
+          anchorBottom: document.querySelector('.main-content-body')!.getBoundingClientRect().bottom,
+          hostBottom: document.querySelector('.thread-composer-overlay-host[data-mobile-browser="true"]')!.getBoundingClientRect().bottom,
+          surfaceBottom: document.querySelector('.thread-composer-overlay-host[data-mobile-browser="true"] .thread-composer-overlay__interactive')!.getBoundingClientRect().bottom,
+          composerBottom: document.querySelector('.thread-composer-overlay-host[data-mobile-browser="true"] .opencraft-composer-shell')!.getBoundingClientRect().bottom,
+          height: innerHeight,
+        }));
+        assert.equal(geometry.anchorBottom, geometry.height - inset);
+        assert.equal(geometry.hostBottom, geometry.anchorBottom, 'body portal measures the protected content anchor');
+        assert.equal(geometry.surfaceBottom, geometry.hostBottom - 8, 'effective painted sheet gap is exactly 8px');
+        assert.equal(geometry.composerBottom, geometry.surfaceBottom - 13, 'nested Composer preserves existing 12px padding and 1px border');
+        assert.ok(geometry.composerBottom <= geometry.hostBottom - 8);
+        return geometry;
+      };
+      const portalSafe = await assertPortalGeometry(34);
+      await page.evaluate(() => { document.documentElement.dataset.timelineKeyboardOpen = 'true'; });
+      const portalKeyboard = await assertPortalGeometry(0);
+      await page.evaluate(() => { delete document.documentElement.dataset.timelineKeyboardOpen; });
+      const portalRestored = await assertPortalGeometry(34);
+      await page.screenshot({ path: output + '/portal-safe-34-' + theme + '.png' });
+      const wrongAnchor = await page.addStyleTag({ content: '.thread-composer-overlay-host[data-mobile-browser="true"] { top: 0 !important; height: 100vh !important; }' });
+      await page.waitForFunction(() => document.querySelector('.thread-composer-overlay-host[data-mobile-browser="true"]')!.getBoundingClientRect().bottom === innerHeight);
+      assert.equal(await browserComposerPadding.evaluate(e=>getComputedStyle(e).paddingBottom),'8px');
+      await assert.rejects(assertPortalGeometry(34, 300), 'viewport-sized portal must fail even when CSS padding remains 8px');
+      await wrongAnchor.evaluate(e => e.remove());
+      await assertPortalGeometry(34);
+      await writeFile(output + '/portal-geometry-' + theme + '.json', JSON.stringify({ portalSafe, portalKeyboard, portalRestored, wrongAnchorRejected: true }, null, 2));
       await page.evaluate(() => document.documentElement.style.removeProperty('--safe-layout-inset-bottom'));
+      await assertPortalGeometry(0);
       assert.equal(await editor.evaluate(e => e === (window as any).originalEditor), true);
       await page.screenshot({ path: output + '/mobile-' + theme + '-agent.png' });
       await page.getByRole('button', { name: 'Close Agent', exact: true }).tap();
