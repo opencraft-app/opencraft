@@ -1,9 +1,12 @@
 import * as DropdownMenu from "@opencraft/design-system-web/dropdown-menu";
-import { DiscreteSlider, type DiscreteSliderOption } from "@opencraft/design-system-web/discrete-slider";
+import type { DiscreteSliderOption } from "@opencraft/design-system-web/discrete-slider";
 import { useIntl } from "@opencraft/i18n/react";
 import { ModelIcon as BrainCircuit, ChevronRightIcon as ChevronRight, ResetIcon as RotateCcw, LightningIcon as Zap } from "@opencraft/design-system-web/action-icons";
-import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { useInputAuxiliaryMenuFocus } from "./use-input-auxiliary-menu-focus";
+
+const loadPanel = () => import("./composer-model-panel");
+const ComposerModelPanel = lazy(loadPanel);
 
 /** Presentation only. Catalog, selection and remembered defaults retain their owners. */
 export function ComposerModelPicker({ label, modelLabel, fullLabel, effortLabel, disabled, open, onOpenChange, portalContainer, focus,
@@ -55,7 +58,7 @@ export function ComposerModelPicker({ label, modelLabel, fullLabel, effortLabel,
         </DropdownMenu.CheckboxItem> : null}
       </div>
       <div className="opencraft-composer-model-quick__labels">
-        {current ? <div className="opencraft-composer-model-quick__effort" title={current}>{current}</div> : null}
+        {current ? <div className="opencraft-composer-model-quick__effort" title={current}><span key={current} className="opencraft-composer-model-quick__value">{current}</span></div> : null}
         <DropdownMenu.Item className="opencraft-composer-model-quick__title" title={modelLabel}
           onSelect={event => { event.preventDefault(); setModelsOpen(true); }}
           onKeyDown={event => {
@@ -81,6 +84,7 @@ export function ComposerModelPicker({ label, modelLabel, fullLabel, effortLabel,
       <div className="opencraft-composer-picker opencraft-composer-picker--intelligence">
         <DropdownMenu.Trigger asChild>
           <button {...focus.triggerProps} className="opencraft-composer-mode opencraft-composer-mode--intelligence opencraft-composer-mode--depth"
+            onPointerEnter={event => { if (event.pointerType !== "mouse") return; void loadPanel().catch(() => {}); }} onFocus={() => { void loadPanel().catch(() => {}); }}
             type="button" disabled={disabled} aria-label={triggerLabel} title={triggerLabel}>
             <BrainCircuit className="opencraft-composer-mode__model-icon" size={16} aria-hidden="true" />
             <span className="opencraft-composer-mode__model-label">{label}</span>
@@ -90,13 +94,22 @@ export function ComposerModelPicker({ label, modelLabel, fullLabel, effortLabel,
         </DropdownMenu.Trigger>
       </div>
       <DropdownMenu.Portal container={portalContainer}>
-        <DropdownMenu.Content {...focus.contentProps} ref={node => { quick.current = node; focus.contentProps.ref(node); }} className={modelsOpen ? "opencraft-composer-selection-menu opencraft-composer-selection-menu--model-select" : "opencraft-composer-model-quick"} aria-label={modelsOpen ? modelMenuLabel : fullLabel}
+        <DropdownMenu.Content {...focus.contentProps} ref={node => { quick.current = node; focus.contentProps.ref(node); }} className={`opencraft-composer-model-surface ${modelsOpen ? "opencraft-composer-selection-menu opencraft-composer-selection-menu--model-select" : "opencraft-composer-model-quick"}`} aria-label={modelsOpen ? modelMenuLabel : fullLabel}
           side="top" align="start" sideOffset={12} collisionPadding={12}>
-          {modelsOpen ? children : efforts.length ? <div role="group" aria-label={reasoningLabel}>
-              <DiscreteSlider key={JSON.stringify(efforts.map(option => option.value))} appearance="capsule"
-                renderValue={title} options={efforts} value={effort} label={reasoningLabel} unsetLabel={effortLabel ?? reasoningLabel}
-                preservePointerFocus={focus.preservesEditorFocus} onValueChange={onEffortChange} />
-          </div> : title(effortLabel)}
+          <Suspense fallback={<div aria-hidden="true">
+            <div className="opencraft-composer-model-quick__header">
+              <div className="opencraft-composer-model-quick__action-slot" />
+              <div className="opencraft-composer-model-quick__labels">
+                {effortLabel ? <div className="opencraft-composer-model-quick__effort">{effortLabel}</div> : null}
+                <span className="opencraft-composer-model-quick__title">{modelLabel}</span>
+              </div>
+              <div className="opencraft-composer-model-quick__action-slot" />
+            </div>
+            {efforts.length ? <div className="opencraft-composer-model-quick__placeholder" /> : null}
+          </div>}>
+            <ComposerModelPanel modelsOpen={modelsOpen} efforts={efforts} effort={effort} defaultLabel={effortLabel} reasoningLabel={reasoningLabel}
+              renderHeader={title} preservesEditorFocus={focus.preservesEditorFocus} onEffortChange={onEffortChange}>{children}</ComposerModelPanel>
+          </Suspense>
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>

@@ -19,14 +19,14 @@ const controller=createComposerController({type:'existing-thread',key:{hostId:'f
 const counts=[6,3,1,0,3],values=['low','medium','high','xhigh','max','ultra'];
 const models=counts.map((count,i)=>({id:'model'+i,value:'model'+i,label:i===0?'GPT-6.1-Sol':'Model '+i,description:null,isDefault:i===0,defaultEffort:count&&i!==4?values[Math.min(1,count-1)]:null,serviceTiers:i===0?[{id:'fast',name:'Fast',description:'Host-declared fast tier'}]:[],efforts:values.slice(0,count).map(value=>({value,label:value[0].toUpperCase()+value.slice(1),description:null}))}));
 window.fixture={controller,remembered:[]};
-function App(){const [frame,setFrame]=useState(0);window.fixture.rerender=()=>setFrame(f=>f+1);return <main data-frame={frame} style={{padding:16,paddingTop:200,maxWidth:800,margin:'auto'}}><OpenCraftComposer controller={controller} effectiveSelections={{model:"model0",effort:"medium"}} selectionCatalog={{models,permissionProfiles:[],onRememberModelDefaults:value=>window.fixture.remembered.push(value)}} onSubmit={()=>false} onCancel={()=>{}} /></main>}
+function App(){const [frame,setFrame]=useState(0);window.fixture.rerender=()=>setFrame(f=>f+1);return <main data-frame={frame} style={{padding:16,paddingTop:200,maxWidth:800,margin:'auto'}}><OpenCraftComposer controller={controller} effectiveSelections={{model:params.has("no-effort")?"model3":"model0",effort:params.has("no-effort")?undefined:"medium"}} selectionCatalog={{models,permissionProfiles:[],onRememberModelDefaults:value=>window.fixture.remembered.push(value)}} onSubmit={()=>false} onCancel={()=>{}} /></main>}
 createIntlTestRoot(document.getElementById('root'),undefined,'zh-CN').render(<App/>);`;
 const workbenchOptimizeDeps=createWorkbenchWebConfig({mode:'development',command:'serve'},{pluginBranding:false}).optimizeDeps;
 const vite=await createServer({configFile:false,root:process.cwd(),logLevel:'error',cacheDir:'node_modules/.vite-reasoning-slider',optimizeDeps:{...workbenchOptimizeDeps,entries:[],exclude:[...(workbenchOptimizeDeps?.exclude??[]),'@opencraft/composer-editor','@opencraft/design-system-web/discrete-slider']},resolve:{dedupe:['react','react-dom']},esbuild:{jsx:'automatic'},server:{host:'127.0.0.1',port:0},plugins:[{name:'fixture',resolveId:id=>id==='/reasoning-slider.tsx'?id:null,load:id=>id==='/reasoning-slider.tsx'?source:null,configureServer(server){server.middlewares.use((req,res,next)=>{if(!req.url?.startsWith('/?'))return next();res.setHeader('content-type','text/html');res.end('<meta name="viewport" content="width=device-width,initial-scale=1"><div id="root"></div><script type="module" src="/reasoning-slider.tsx"></script>');});}}]});
 await mkdir('.local/reasoning-slider',{recursive:true});await vite.listen();
 const browser=await chromium.launch({executablePath:process.env.OPENCRAFT_CHROMIUM_EXECUTABLE,args:['--no-sandbox']});const results=[];
 try {
- for(const palette of ['opencraftNeutral','lavender']) for(const mode of ['light','dark']) for(const touch of [false,true]){
+ if(!process.env.OPENCRAFT_SMOKE_FIRST_OPEN_ONLY) for(const palette of ['opencraftNeutral','lavender']) for(const mode of ['light','dark']) for(const touch of [false,true]){
   const context=await browser.newContext({viewport:{width:touch?390:1280,height:844},hasTouch:touch,isMobile:touch,deviceScaleFactor:touch?2:1,reducedMotion:"no-preference"});
   const page=await context.newPage(),errors:string[]=[];page.setDefaultTimeout(15000);page.setDefaultNavigationTimeout(90000);page.on('pageerror',e=>errors.push(e.message));
   await page.addInitScript('window.__name=v=>v');
@@ -50,11 +50,24 @@ try {
       assert.equal(await trigger.locator('.opencraft-composer-mode__fast').count(),0);
       await fast.click();
     }
+    const oldHeight=(await menu.locator('.ui-animated-content').boundingBox())!.height;
+    await menu.evaluate(el=>{
+      const state={frames:[] as {height:number;target:number}[],frame:0};(window as any).surfaceProbe=state;
+      const sample=()=>{if(el.classList.contains('opencraft-composer-selection-menu--model-select')){
+        const viewport=el.querySelector('.ui-animated-content'),content=el.querySelector('.ui-animated-content__view');
+        if(viewport&&content)state.frames.push({height:viewport.getBoundingClientRect().height,target:content.getBoundingClientRect().height});
+      }state.frame=requestAnimationFrame(sample);};state.frame=requestAnimationFrame(sample);
+    });
     await menu.locator('.opencraft-composer-model-quick__title').click();
     const models=page.locator('.opencraft-composer-selection-menu--model-select');await models.waitFor();
     assert.equal(await page.locator('.opencraft-composer-intelligence-detail').count(),0);
     await page.evaluate(()=>new Promise<void>(done=>requestAnimationFrame(()=>requestAnimationFrame(()=>done()))));
+    const transition=await models.evaluate(el=>({height:el.querySelector('.ui-animated-content')!.getBoundingClientRect().height,target:el.querySelector('.ui-animated-content__view')!.getBoundingClientRect().height}));
+    assert(transition.height>=Math.min(oldHeight,transition.target)-1 && transition.height<=Math.max(oldHeight,transition.target)+1,'surface stays between its natural sizes');
     const box=(await models.boundingBox())!;assert(box.width<=300.5&&box.height<=320.5,JSON.stringify(box));
+    await page.waitForFunction(()=>{const el=document.querySelector('.opencraft-composer-selection-menu--model-select')!;return Math.abs(el.querySelector('.ui-animated-content')!.getBoundingClientRect().height-el.querySelector('.ui-animated-content__view')!.getBoundingClientRect().height)<.5;});
+    const surfaceFrames=await page.evaluate(()=>{const state=(window as any).surfaceProbe;cancelAnimationFrame(state.frame);return state.frames as {height:number;target:number}[];});
+    if(Math.abs(oldHeight-transition.target)>20)assert(surfaceFrames.some(x=>Math.abs(x.height-oldHeight)>.5&&Math.abs(x.height-x.target)>.5),'second view includes intermediate heights: '+JSON.stringify({oldHeight,transition,surfaceFrames}));
     await page.screenshot({path:'.local/reasoning-slider/configure-'+palette+'-'+mode+'-'+touch+'.png'});
     await models.getByRole('menuitem',{name,exact:true}).click();
     await page.keyboard.press('Escape');
@@ -69,7 +82,9 @@ try {
     }
   };
   const slider=menu.getByRole('slider'),control=menu.locator('.ui-discrete-slider__control');
-  await slider.waitFor();assert.equal(await slider.getAttribute('aria-valuemax'),'5');assert.equal(await slider.getAttribute('aria-valuetext'),'Medium');
+  await slider.waitFor();
+  if(!touch)assert(await menu.evaluate(el=>el.contains(document.activeElement)),'loaded choices keep native menu keyboard focus');
+  assert.equal(await slider.getAttribute('aria-valuemax'),'5');assert.equal(await slider.getAttribute('aria-valuetext'),'Medium');
   await page.evaluate(()=>document.fonts.ready);await control.screenshot();
   const rect=await control.boundingBox();assert(rect);assert(rect.height>=44,JSON.stringify(await control.evaluate(el=>({rect:el.getBoundingClientRect().toJSON(),height:getComputedStyle(el).height,token:getComputedStyle(el).getPropertyValue("--height-discrete-slider-hit")}))));
   const popup=(await menu.boundingBox())!;
@@ -87,7 +102,7 @@ try {
    await page.evaluate(()=>new Promise<void>(done=>requestAnimationFrame(()=>requestAnimationFrame(()=>done()))));
    const sample=await control.evaluate(el=>{
     const range=el.querySelector('.ui-discrete-slider__range')!.getBoundingClientRect();
-    const thumb=el.querySelector('.ui-discrete-slider__thumb')!.getBoundingClientRect();
+    const thumb=el.querySelector('.ui-discrete-slider__visual-thumb, .ui-discrete-slider__thumb')!.getBoundingClientRect();
     return {value:el.querySelector('[role=slider]')!.getAttribute('aria-valuetext'),fillEnd:range.right,thumbCenter:thumb.x+thumb.width/2,thumbWidth:thumb.width,thumbHeight:thumb.height,paint:getComputedStyle(el.querySelector('.ui-discrete-slider__range')!,'::after').backgroundColor};
    });
    geometry.push(sample);
@@ -96,10 +111,37 @@ try {
    assert(Math.abs(sample.fillEnd-sample.thumbCenter)<=0.5,'selected fill must reach the actual thumb center: '+JSON.stringify(sample));
   };
   await assertFillMeetsThumb();
+  // Sample the actual moving paint: changing a stop must interpolate, and the
+  // fill must remain joined to the visible knob throughout that transition.
+  if(!touch){
+  await slider.focus(); await page.keyboard.press('Home');
+  const visualCenter=()=>control.evaluate(el=>{const thumb=el.querySelector('.ui-discrete-slider__visual-thumb, .ui-discrete-slider__thumb')!.getBoundingClientRect();return thumb.x+thumb.width/2;});
+  await page.waitForFunction(()=>{const root=document.querySelector('.ui-discrete-slider__control')!,native=root.querySelector('[role=slider]')!.getBoundingClientRect(),paint=root.querySelector('.ui-discrete-slider__visual-thumb, .ui-discrete-slider__thumb')!.getBoundingClientRect();return Math.abs(native.x+native.width/2-paint.x-paint.width/2)<.5;});
+  const startCenter=await visualCenter();
+  await page.keyboard.press('End');
+  await page.evaluate(()=>new Promise<void>(done=>requestAnimationFrame(()=>requestAnimationFrame(()=>done()))));
+  const movingCenter=await visualCenter();
+  const finalCenter=await slider.evaluate(el=>{const box=el.getBoundingClientRect();return box.x+box.width/2;});
+  assert(movingCenter>startCenter+.5 && movingCenter<finalCenter-.5,'stop changes interpolate instead of jumping: '+JSON.stringify({startCenter,movingCenter,finalCenter}));
+  await assertFillMeetsThumb();
+  // A reversal starts from current paint, never from the previous target.
+  const beforeReverse=await visualCenter(); await page.keyboard.press('Home');
+  const afterReverse=await visualCenter();
+  assert(afterReverse<=beforeReverse+2 && afterReverse>startCenter,'reversal keeps the current visual position');
+  await page.waitForFunction(()=>{const root=document.querySelector('.ui-discrete-slider__control')!,native=root.querySelector('[role=slider]')!.getBoundingClientRect(),paint=root.querySelector('.ui-discrete-slider__visual-thumb')!.getBoundingClientRect();return Math.abs(native.x+native.width/2-paint.x-paint.width/2)<.5;});
+  await menu.locator('.opencraft-composer-model-quick__reset').click();
+  // Remove choices made by the motion probe so the held-input test retains its
+  // original no-write-before-release baseline.
+  await page.evaluate(()=>{(window as any).fixture.controller.dispatch({type:'set-selections',patch:{effort:undefined}});(window as any).fixture.remembered.length=0;});
+  await page.waitForFunction(()=>document.querySelector('[role=slider]')?.getAttribute('aria-valuetext')==='Medium');
+  }
   const committed=()=>page.evaluate(()=>(window as any).fixture.controller.getSnapshot().draft.selections.effort);
   // Drag through stops while held: label previews but no domain/default write.
   if(!touch){
    await page.mouse.move(rect.x+rect.width*.3,rect.y+rect.height/2);await page.mouse.down();
+   await page.waitForFunction(()=>document.querySelector('.ui-discrete-slider')?.hasAttribute('data-pressed'));
+   await page.waitForFunction(()=>{const knob=document.querySelector('.ui-discrete-slider__knob')!;return knob.getBoundingClientRect().width>32;});
+   await page.screenshot({path:'.local/reasoning-slider/held-'+palette+'-'+mode+'.png'});
    for(const fraction of [.55,.95,.72]){await page.mouse.move(rect.x+rect.width*fraction,rect.y+rect.height/2,{steps:3});assert.equal(await committed(),undefined);assert.equal(await page.evaluate(()=>(window as any).fixture.remembered.length),0);await assertFillMeetsThumb();}
    await page.evaluate(()=>(window as any).fixture.rerender());
    await page.waitForFunction(()=>document.querySelector('main')?.getAttribute('data-frame')==='1');
@@ -108,6 +150,7 @@ try {
   }else{
    const cdp=await context.newCDPSession(page);
    await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:rect.x+5,y:rect.y+rect.height/2}]});
+   await page.waitForFunction(()=>document.querySelector('.ui-discrete-slider')?.hasAttribute('data-pressed'));
    for(const fraction of [.4,.6,.95])await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:rect.x+rect.width*fraction,y:rect.y+rect.height/2}]});
    assert.equal(await committed(),undefined);
    await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});assert.equal(await committed(),'ultra');
@@ -155,7 +198,7 @@ try {
    await control.screenshot({path:'.local/reasoning-slider/'+palette+'-'+mode+'-'+(touch?'touch':'desktop')+'-'+effort+'.png'});
   }
   if(touch)for(const width of [320,430,390]){await page.setViewportSize({width,height:844});await assertFillMeetsThumb();const bounds=(await menu.boundingBox())!;assert(bounds.x>=0&&bounds.x+bounds.width<=width+1,'menu remains inside resized viewport');}
-  const metrics=await control.evaluate(el=>{const q=(s:string)=>getComputedStyle(el.querySelector(s)!);return {height:el.getBoundingClientRect().height,track:q('.ui-discrete-slider__track').backgroundColor,fill:getComputedStyle(el.querySelector('.ui-discrete-slider__range')!,'::after').backgroundColor,thumb:q('.ui-discrete-slider__thumb').backgroundColor};});
+  const metrics=await control.evaluate(el=>{const q=(s:string)=>getComputedStyle(el.querySelector(s)!);return {height:el.getBoundingClientRect().height,track:q('.ui-discrete-slider__track').backgroundColor,fill:getComputedStyle(el.querySelector('.ui-discrete-slider__range')!,'::after').backgroundColor,thumb:q(el.querySelector('.ui-discrete-slider__knob')?'.ui-discrete-slider__knob':'.ui-discrete-slider__thumb').backgroundColor};});
   assert.notEqual(metrics.track,'rgba(0, 0, 0, 0)');assert.notEqual(metrics.fill,metrics.track);assert.notEqual(metrics.thumb,'rgba(0, 0, 0, 0)');
   await page.screenshot({path:'.local/reasoning-slider/'+palette+'-'+mode+'-'+(touch?'touch':'desktop')+'.png'});
   for(const [name,count] of [['Model 1',3],['Model 2',1],['Model 3',0]] as const){
@@ -184,8 +227,34 @@ try {
   await page.keyboard.press('Escape');await keyboardModels.waitFor({state:'hidden'});
   if(touch)await trigger.tap();else await trigger.click();await menu.waitFor();
   assert.equal(await page.locator('.opencraft-composer-selection-menu--model-select').count(),0,'next opening returns to depth');
+  if(!touch && palette==='opencraftNeutral' && mode==='light'){
+    await page.emulateMedia({reducedMotion:'reduce'});
+    await slider.focus();await page.keyboard.press('Home');await page.keyboard.press('End');
+    await page.evaluate(()=>new Promise<void>(done=>requestAnimationFrame(()=>requestAnimationFrame(()=>done()))));
+    const reduced=await control.evaluate(el=>{const native=el.querySelector('[role=slider]')!.getBoundingClientRect(),paint=el.querySelector('.ui-discrete-slider__visual-thumb')!.getBoundingClientRect();return Math.abs(native.x+native.width/2-paint.x-paint.width/2);});
+    assert(reduced<.5,'reduced motion snaps to the same chosen stop');
+  }
   await page.keyboard.press('Escape');await menu.waitFor({state:'hidden'});assert.deepEqual(errors,[]);
   results.push({palette,mode,touch,popup,metrics,geometry});await context.close();
  }
- await writeFile('.local/reasoning-slider/results.json',JSON.stringify(results,null,2));console.log('PASS '+results.length+' real Composer slider scenes: held drag/commit, touch focus/selection, cancel, keys, dynamic 6/3/1/0 options, themes, per-stop fill/thumb geometry and draft.');
+ const cold=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true});
+ try{
+  const page=await cold.newPage();await page.addInitScript('window.__name=v=>v');
+  let release!:()=>void;const held=new Promise<void>(resolve=>{release=resolve;});
+  await page.route('**/composer-model-panel.tsx*',async route=>{await held;await route.continue();});
+  await page.goto(vite.resolvedUrls!.local[0]+'?mode=light&palette=opencraftNeutral&touch&no-effort');
+  const editor=page.locator('.opencraft-composer-editor');await editor.fill('First opening keeps this draft');
+  await page.evaluate(()=>document.fonts.ready);
+  await page.locator('.opencraft-composer-mode--intelligence').tap();
+  const menu=page.locator('.opencraft-composer-model-quick');await menu.waitFor();
+  const pending=(await menu.boundingBox())!;assert.equal(await menu.getByRole('menuitem').count(),0,'loading choices are not interactive');
+  release();await menu.getByRole('menuitem',{name:'Model 3',exact:true}).waitFor();
+  const ready=(await menu.boundingBox())!;
+  assert(Math.abs(pending.height-ready.height)<1,'a model without effort keeps the first-open surface height: '+JSON.stringify({pending,ready}));
+  assert.equal(await menu.getByRole('slider').count(),0,'loading never invents unsupported effort');
+  assert(await editor.evaluate(el=>el===document.activeElement),'deferred touch opening keeps editor focus');
+  assert.equal(await editor.innerText(),'First opening keeps this draft');
+  await writeFile('.local/reasoning-slider/first-open.json',JSON.stringify({pending,ready,focusRetained:true},null,2));
+ }finally{await cold.close();}
+ if(results.length)await writeFile('.local/reasoning-slider/results.json',JSON.stringify(results,null,2));console.log('PASS '+results.length+' real Composer slider scenes: held drag/commit, touch focus/selection, cancel, keys, dynamic 6/3/1/0 options, themes, per-stop fill/thumb geometry and draft; deferred first-open geometry/focus.');
 }finally{await browser.close();await vite.close();}

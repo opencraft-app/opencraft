@@ -211,6 +211,7 @@
     border-radius: var(--radius-full);
     background: var(--color-text-tertiary);
     &[data-filled] { background: var(--color-discrete-slider-thumb); opacity: 0.55; }
+    @media (prefers-reduced-motion: no-preference) { transition: background-color 120ms ease, opacity 120ms ease; }
   }
 }
 .ui-discrete-slider__thumb {
@@ -245,6 +246,7 @@
   }
   .ui-discrete-slider__track { overflow: visible; background: var(--color-discrete-slider-track); box-shadow: inset 0 0 0 0.5px var(--color-border-default); height: var(--height-discrete-slider-track); }
   .ui-discrete-slider__range {
+    inset-inline-start: 0;
     background: transparent;
     // One rounded paint box; joining a narrow range and a circle distorts the first stops.
     &::after {
@@ -252,10 +254,53 @@
       inset-inline-start: calc((var(--size-discrete-slider-thumb) - var(--height-discrete-slider-track)) / 2);
       inset-inline-end: calc(var(--height-discrete-slider-track) / -2);
       border-radius: var(--radius-full); background: var(--color-discrete-slider-fill);
+      background-image: linear-gradient(100deg, color-mix(in srgb, var(--color-discrete-slider-thumb) 12%, transparent), transparent);
     }
   }
-  .ui-discrete-slider__thumb { flex: none; aspect-ratio: 1; box-sizing: border-box; }
+  // The Radix target remains at the actual stop and keeps its native focus ring.
+  // Only paint interpolates; hit areas and committed values never wait for it.
+  .ui-discrete-slider__thumb { flex: none; aspect-ratio: 1; box-sizing: border-box; background: transparent; box-shadow: none; }
+  .ui-discrete-slider__visual-rail {
+    position: absolute;
+    inset: 0 calc(var(--size-discrete-slider-thumb) / 2);
+    pointer-events: none;
+  }
+  .ui-discrete-slider__visual-thumb {
+    position: absolute;
+    top: 50%;
+    width: var(--size-discrete-slider-thumb);
+    height: var(--size-discrete-slider-thumb);
+    margin-block-start: calc(var(--size-discrete-slider-thumb) / -2);
+    margin-inline-start: calc(var(--size-discrete-slider-thumb) / -2);
+  }
+  .ui-discrete-slider__knob {
+    display: block;
+    width: 100%; height: 100%;
+    border-radius: var(--radius-full);
+    background: var(--color-discrete-slider-thumb);
+    box-shadow: var(--shadow-discrete-slider-thumb), inset 0 0 0 0.5px var(--color-border-default);
+  }
+  &[data-pressed] .ui-discrete-slider__knob {
+    box-shadow: var(--shadow-discrete-slider-thumb), 0 0 0 3px color-mix(in srgb, var(--color-discrete-slider-fill) 13%, transparent);
+  }
   .ui-discrete-slider__limits { display: none; }
+}
+
+.ui-animated-content { overflow: hidden; }
+.ui-animated-content__view { display: flow-root; }
+@media (prefers-reduced-motion: no-preference) {
+  .ui-animated-content__view { animation: ui-choice-view-enter 160ms ease-out; }
+}
+@keyframes ui-choice-view-enter {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (forced-colors: active) {
+  .ui-discrete-slider[data-appearance="capsule"] {
+    .ui-discrete-slider__range::after { background: Highlight; }
+    .ui-discrete-slider__knob { background: Canvas; outline: 1px solid CanvasText; }
+    &[data-pressed] .ui-discrete-slider__knob { box-shadow: none; }
+  }
 }
 
 // Single-choice rows retain native radio semantics and one input-adaptive target.

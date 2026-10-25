@@ -41,6 +41,17 @@ export const applicationDesktopMotion = {
   closedRadiusRatio: 0.32,
 } as const;
 
+/** Discrete choices: short held tracking, quiet settling and reversible surfaces. */
+export const selectionMotion = {
+  drag: { duration: 0.08, ease: [0.2, 0.7, 0.2, 1] },
+  settle: { duration: 0.22, ease: [0.2, 0.8, 0.2, 1] },
+  press: { type: "spring", stiffness: 480, damping: 34, mass: 0.8 },
+  release: { type: "spring", stiffness: 280, damping: 28, mass: 0.9 },
+  surface: { duration: 0.2, ease: [0.2, 0.8, 0.2, 1] },
+  pressedScale: 1.1,
+  hoveredScale: 1.04,
+} as const;
+
 /**
  * Cross-platform menu geometry. The platform overlay owns collision and
  * placement mechanics; product surfaces only choose an anchor alignment.
