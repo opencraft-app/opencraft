@@ -34,14 +34,14 @@ try {
                 await page.screenshot({ path: `${output}/${width}-${theme}-${inset}.png` });
                 results.push({ width, theme, inset, ...geometry });
                 await writeFile(`${output}/result.json`, JSON.stringify(results, null, 2));
-                assert.equal(geometry.contentBottom, 812 - inset, 'content capacity is independent of canvas height');
+                assert.equal(geometry.contentBottom, 874 - inset, 'document-flow content and paint share the unoccluded CSS capacity');
                 assert.equal(geometry.paintBottom, 874, 'paint still fills the document canvas');
                 assert.equal(geometry.keyboard, 'false');
-                assert.equal(geometry.footerPadding, "16px", "route does not claim the Shell-owned inset again");
-                assert.ok(geometry.composerBottom <= 812 - inset, `Composer enters native safe region: ${JSON.stringify(results.at(-1))}`);
-                assert.equal(geometry.composerBottom, 812 - inset - 16, 'preserve original gutter for 0px and 34px');
-                const oldFrame = await page.addStyleTag({ content: '.app-shell-root > .app-shell-row { padding-bottom: 0 !important; }' });
-                assert.ok(await page.locator('.opencraft-composer-shell').evaluate(e => e.getBoundingClientRect().bottom) > 812 - inset, 'negative control: the removed content constraint reproduces clipping');
+                assert.equal(geometry.footerPadding, "16px");
+                assert.ok(geometry.composerBottom <= 874 - inset, `Composer enters device inset: ${JSON.stringify(results.at(-1))}`);
+                assert.equal(geometry.composerBottom, 874 - inset - 16, 'preserve original gutter for 0px and 34px');
+                const oldFrame = await page.addStyleTag({ content: '.app-shell-root > .app-shell-row { padding-bottom: calc(62px + var(--shell-content-safe-bottom)) !important; }' });
+                assert.equal(await page.locator('.opencraft-composer-shell').evaluate(e => e.getBoundingClientRect().bottom), 812 - inset - 16, 'negative control: status metric delta removes the same 62px a second time');
                 await oldFrame.evaluate(e => e.remove());
                 await page.evaluate(() => { Object.defineProperty(document.documentElement, 'clientHeight', { configurable: true, value: 874 }); Object.assign(window.visualViewport!, { height: 874 }); window.visualViewport!.dispatchEvent(new Event('resize')); });
                 await page.waitForTimeout(100);
@@ -56,7 +56,7 @@ try {
                 assert.equal(await page.locator('.opencraft-composer-shell').evaluate(e=>e.getBoundingClientRect().bottom),874-inset-16,'keyboard close restores one inset and ordinary gap');
                 await page.close();
             }
-    console.log('PASS: full-screen native frame, 390/402, light/dark, 0/34px, original gutter');
+    console.log('PASS: document-flow canvas (native compositor unverified), 390/402, light/dark, 0/34px, original gutter');
 }
 finally {
     await browser?.close();

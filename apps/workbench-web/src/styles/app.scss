@@ -287,14 +287,11 @@ html[data-timeline-tracks-visual-viewport="true"] :is(.app-shell-root, .app-shel
   height: var(--timeline-available-viewport-height, 100%);
 }
 
-// The document canvas may paint beyond the native visible frame. Keep that
-// paint full-bleed while content fits the viewport port's measured capacity.
-// Route-owned device insets remain separate and are consumed once.
-html[data-window-host="browser"][data-window-edge-strategy="legacy-overlay-requested"]:is([data-window-display-mode="standalone"], [data-window-display-mode="fullscreen"])[data-timeline-tracks-visual-viewport="true"][data-timeline-viewport-occluded="false"] {
-  :is(.app-shell-root, .app-shell-floating-overlay-root) { height: 100vh; }
-  .app-shell-root > .app-shell-row {
-    --shell-paint-only-bottom: max(0px, calc(100vh - var(--timeline-available-viewport-height, 100vh)));
-  }
+// At rest the CSS viewport owns both the canvas and its safe content frame.
+// A native metric/status-area delta is not an extra inset. Any contraction uses
+// the existing reduced capacity, independently of editable focus or blur.
+html[data-window-host="browser"][data-window-edge-strategy="legacy-overlay-requested"]:is([data-window-display-mode="standalone"], [data-window-display-mode="fullscreen"])[data-timeline-tracks-visual-viewport="true"][data-timeline-viewport-occluded="false"] :is(.app-shell-root, .app-shell-floating-overlay-root) {
+  height: 100vh;
 }
 
 .app-shell-row {
@@ -12280,7 +12277,7 @@ html[data-ui-density="touch"][data-timeline-keyboard-open="true"] {
 .app-shell-root.has-browser-safe-layout > .app-shell-row {
   // SafeLayout applies this combined budget once inside the full-bleed box.
   // Sidebar action surfaces are outside this row and retain their own edge.
-  --safe-layout-inset-bottom: calc(var(--shell-content-safe-bottom) + var(--shell-paint-only-bottom, 0px));
+  --safe-layout-inset-bottom: var(--shell-content-safe-bottom);
 }
 html[data-window-host="browser"],
 html[data-window-host="browser"] body {

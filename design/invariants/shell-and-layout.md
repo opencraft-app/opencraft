@@ -31,10 +31,9 @@ Requested standalone/fullscreen browser overlay documents keep html/body and the
 main Shell in document flow, sized by the CSS large viewport (`100vh`) at rest.
 The body-relative drawer portal uses an absolute document frame. Do not fix the
 document roots or main Shell: a full CSS rectangle can still be clipped by the
-native fixed viewport. SafeLayout allocates the main content bottom once; independent drawer action
-surfaces keep their own allocation inside that frame; the canvas/native height difference is paint-only capacity, reserved inside
-the foreground row so content ends at the measured visible bottom. It is not
-a second device safe inset; Shell-owned Home-indicator spacing remains once.
+native fixed viewport. SafeLayout allocates the main content bottom once; independent
+drawer action surfaces keep their own allocation. A CSS/native height difference
+is not an extra bottom inset and does not reduce the content frame at rest.
 
 Any geometric contraction uses the existing VisualViewport capacity through
 blur, independently of focus. The single Web viewport port projects origins for
@@ -84,9 +83,8 @@ hosts allocate the bottom safe edge; moving that inset back to the whole drawer
 would hard-clip the scrolling list above the physical bottom. The existing 16px
 action clearance is retained in the hosts' minimum reserve, not duplicated by
 an ancestor. Fixed header/hit-region offsets consume the same inset source.
-The Shell row is the main content bottom owner. Its resolved inset combines
-`--shell-content-safe-bottom` with the paint-only capacity tail once through
-SafeLayout. Routes and their measured body-level Composer portals retain ordinary
+The Shell row is the main content bottom owner. It consumes
+`--shell-content-safe-bottom` once through SafeLayout. Routes and their measured body-level Composer portals retain ordinary
 spacing only. The existing viewport keyboard signal makes the content device inset
 zero while the software keyboard occupies the bottom edge. Drawer action surfaces
 remain independent; full-screen modal surfaces allocate their own edges. Document geometry and
