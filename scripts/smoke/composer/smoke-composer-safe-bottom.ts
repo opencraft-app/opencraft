@@ -47,7 +47,8 @@ try {
             document.activeElement instanceof HTMLElement && document.activeElement.blur();
             window.visualViewport!.dispatchEvent(new Event('resize'));
         }, { theme, inset, status });
-        const canvasHeight = status === 'black-translucent' ? 874 : visibleHeight;
+        // Ordinary non-overlay surfaces retain the existing layout/visual capacity.
+        const canvasHeight = status === 'black-translucent' ? 874 : Math.min(812, visibleHeight);
         await page.waitForFunction(height => document.querySelector('.app-shell-root')!.getBoundingClientRect().height === height, canvasHeight);
         const geometry = await page.evaluate(() => {
             const shell = document.querySelector('.app-shell-root')!, row = document.querySelector('.app-shell-row')!, composer = document.querySelector('.opencraft-composer-shell')!;
