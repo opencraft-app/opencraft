@@ -179,7 +179,8 @@ iOS/in-app verification.
 
 The overlay PWA uses the CSS large viewport for its unoccluded document-flow
 Shell. Its reported native height can exclude the status area; that difference
-must not become additional Composer padding or a second content-height reduction.
+is paint-only capacity reserved once in the Shell row, so Composer content
+remains inside the measured native visible frame. It is not a device safe inset.
 SafeLayout and the existing route bottom spacing consume safe insets once.
 The existing viewport owner publishes geometric contraction separately from
 editable keyboard inference. A reduced visual viewport stays authoritative

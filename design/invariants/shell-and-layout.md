@@ -32,8 +32,9 @@ main Shell in document flow, sized by the CSS large viewport (`100vh`) at rest.
 The body-relative drawer portal uses an absolute document frame. Do not fix the
 document roots or main Shell: a full CSS rectangle can still be clipped by the
 native fixed viewport. SafeLayout and route/drawer safe spacing remain allocated
-once inside that frame; a CSS/native height difference is not an extra bottom
-inset and does not reduce the content frame at rest.
+once inside that frame; the canvas/native height difference is paint-only capacity, reserved inside
+the foreground row so content ends at the measured visible bottom. It is not
+a second device safe inset; route-owned Home-indicator spacing remains once.
 
 Any geometric contraction uses the existing VisualViewport capacity through
 blur, independently of focus. The single Web viewport port projects origins for
