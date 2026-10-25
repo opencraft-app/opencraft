@@ -1,8 +1,10 @@
 # Packaged Web Workbench in Expo
 
 The public mobile container builds the complete existing Web
-Workbench bootstrap, application, components and styles into one packaged HTML
-document. Sidebar, Composer, settings and tool panels retain their Web owners.
+Workbench bootstrap, application, components and styles into a packaged local
+module graph. A small HTML bootstrap loads required modules; editors and
+previewers retain their dynamic import boundaries. Sidebar, Composer, settings
+and tool panels retain their Web owners.
 The independent RN workbench has been retired. Downstream product entrypoints remain independent; device acceptance is reported separately.
 
 ## Ownership
@@ -33,9 +35,13 @@ npm run build:expo:ios
 npm run build:expo:web
 ```
 
-The runner builds before Metro reads the static asset. The standalone build
+The runner builds before Metro reads the static assets. The standalone build
 emits `apps/mobile/assets/mobile-workbench.html` and an identical
-`public/mobile-workbench.html` for Expo Web validation; both are ignored.
+`public/mobile-workbench.html` for Expo Web validation. Generated
+`assets/mobile-resources.cjs` statically requires every hashed `.ocasset` module,
+so native exports include the complete graph. Resource directories, require map
+and manifest are ignored build outputs. Browser validation reads the matching
+public resource directory; native never falls back to it.
 `apps/mobile` always selects the bundled Web Workbench for public builds. There
 is no RN fallback or native workbench selector. Trusted product entry selection
 remains a separate build-time contract.
@@ -43,6 +49,8 @@ remains a separate build-time contract.
 Optional `EXPO_PUBLIC_APPSERVER_WS_URL` and `EXPO_PUBLIC_APPSERVER_HOST_ID` seed a
 public Host recipe at build time. The URL must be ws/wss without credentials,
 query or fragment. Without a seed, use existing Web connection settings.
+An unconfigured mobile package does not create an implicit HyperNode at the
+synthetic document origin; configure a real connection through Web settings.
 Use a reachable TLS endpoint on devices; plain ws/http transport depends on OS
 cleartext policy and is not validated by the browser smoke.
 Never put secrets in public environment variables or build configuration.
@@ -51,9 +59,18 @@ Never put secrets in public environment variables or build configuration.
 
 The compiler reuses canonical Web Vite configuration, aliases, React and browser
 compatibility transforms. It packages the module graph, styles, fonts, images
-and Workers. Missing resources or a separate module graph fail the build.
-Normal Web startup/lazy-download budgets are unchanged; the complete mobile
-document's startup and memory cost must be measured before default use.
+and Workers. Missing modules, unclosed worker resources and static chunk cycles
+fail the build. Shared static imports resolve to cached Blob module URLs; dynamic
+imports enter the same fixed registry on demand. Computed imports cannot execute
+URLs or Blob scripts outside that registry. Normal Web startup budgets are unchanged.
+Embedded binary/worker payloads can still occupy optional chunks; total package
+size and native transport/parse cost remain separate measurements.
+
+Native accepts opaque SHA-256 resource IDs through the runtime-scoped bridge.
+It reads only the matching generated static require entry. IDs never become paths,
+URLs or native commands. Retired runtime replies are ignored; failed reads reject
+module loading, and startup has bounded recovery. No local HTTP server, custom
+native client or remote code fallback is required.
 
 In bundled mode, native admits only the initial local document at the stable synthetic origin
 `https://opencraft.invalid/`. No automatic remote executable-page fallback exists. CSP
@@ -112,7 +129,13 @@ mode. Built-in content continues to use the original Web memory navigation.
 Retries create a fresh document/runtime, rejecting late messages from retired
 views. Failed documents never automatically select another source.
 
-Native toolbar surfaces use Expo GlassEffect when available and fall back to
+Built-in content opens source selection from the existing Web Appearance
+settings. Once ready it uses the full safe-area viewport without a permanent
+native source toolbar. Startup, failure and self-hosted mode retain a native
+source control independent of Web content. Saving an unchanged source preserves
+the document, draft and appearance.
+
+Native recovery toolbar surfaces use Expo GlassEffect when available and fall back to
 shared semantic surfaces. This container material never creates a second
 Workbench navigation state or duplicates Web controls. External website mode
 is a technical capability for user-operated services, not an App Store acceptance

@@ -1012,5 +1012,9 @@
   "codex.resetCredits.noCredit": "这张券已不可用，请刷新详情。",
   "codex.resetCredits.alreadyRedeemed": "这张券已兑换。",
   "codex.resetCredits.unknown": "无法确认结果。请先刷新券详情；系统没有自动重试。",
-  "codex.resetCredits.refreshNeeded": "额度已重置，但无法获取最新用量。请刷新账户用量。"
+  "codex.resetCredits.refreshNeeded": "额度已重置，但无法获取最新用量。请刷新账户用量。",
+  "mobile.connection.title": "连接服务器",
+  "mobile.connection.description": "连接你的 OpenCraft 服务器，开始工作。登录和访问权限由服务器管理。",
+  "mobile.connection.address": "安全 WebSocket 地址",
+  "mobile.connection.failed": "连接未能保存，请检查地址后重试。"
 }

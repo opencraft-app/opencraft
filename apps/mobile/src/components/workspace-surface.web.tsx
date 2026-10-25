@@ -3,7 +3,7 @@ import { mobileMessages } from "../runtime/mobile-messages";
 import { useEffect, useRef } from "react";
 import { parseMobileContainerRequest } from "@opencraft/client-product/mobile-container";
 import type { MobileContentSource } from "../runtime/content-source";
-export function WorkspaceSurface({ source, onAppearance }: { source: MobileContentSource; dark: boolean; onAppearance(value: { resolvedTheme: "light" | "dark"; edgeBackgroundColor: string }): void }) {
+export function WorkspaceSurface({ source, onAppearance, onReady }: { source: MobileContentSource; dark: boolean; onAppearance(value: { resolvedTheme: "light" | "dark"; edgeBackgroundColor: string }): void; onReady(value: boolean): void; onSourceSettings(): void }) {
   const intl = useIntl();
   const frame = useRef<HTMLIFrameElement>(null);
   useEffect(() => {

@@ -988,5 +988,9 @@
   "codex.resetCredits.noCredit": "This credit is no longer available. Refresh its details.",
   "codex.resetCredits.alreadyRedeemed": "This credit was already redeemed.",
   "codex.resetCredits.unknown": "The result could not be confirmed. Refresh credit details before continuing; the request was not retried automatically.",
-  "codex.resetCredits.refreshNeeded": "Quota was reset, but its latest usage could not be loaded. Refresh account usage."
+  "codex.resetCredits.refreshNeeded": "Quota was reset, but its latest usage could not be loaded. Refresh account usage.",
+  "mobile.connection.title": "Connect a server",
+  "mobile.connection.description": "Connect to your OpenCraft server to start working. Your server manages sign-in and access.",
+  "mobile.connection.address": "Secure WebSocket address",
+  "mobile.connection.failed": "The connection could not be saved. Check the address and try again."
 }

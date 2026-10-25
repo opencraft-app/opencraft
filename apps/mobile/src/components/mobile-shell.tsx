@@ -19,6 +19,7 @@ function Shell() {
   const dark = source?.kind === "bundled" && appearance ? appearance.resolvedTheme === "dark" : systemDark;
   const theme = nativeThemes[dark ? "dark" : "light"];
   const [settings, setSettings] = useState(false);
+  const [ready, setReady] = useState(false);
   const [readError, setReadError] = useState(false);
   const [readAttempt, setReadAttempt] = useState(0);
   const readGeneration = useRef(0);
@@ -32,21 +33,22 @@ function Shell() {
   }, [readAttempt]);
   const save = async (next: MobileContentSource) => {
     await sourceStorage.write(encodeContentSource(next));
+    if (source && encodeContentSource(next) === encodeContentSource(source)) { setSettings(false); return; }
     ++readGeneration.current;
-    setSource(next); setAppearance(null); setReadError(false); setSettings(false);
+    setSource(next); setAppearance(null); setReadError(false); setSettings(false); setReady(false);
   };
   const identity = source?.kind === "self-hosted" ? source.url : "bundled";
   return <SafeAreaView style={[styles.root, { backgroundColor: source?.kind === "bundled" && appearance ? appearance.edgeBackgroundColor : theme.material.content }]}>
     <StatusBar style={dark ? "light" : "dark"} />
-    <MobileMaterial backgroundColor={theme.material.raised} style={styles.toolbar}>
+    {(!ready || source?.kind !== "bundled") && <MobileMaterial backgroundColor={theme.material.raised} style={styles.toolbar}>
       <Text numberOfLines={1} style={[styles.title, theme.platformTypography.label, { color: theme.color.text.primary }]}>
-        {intl.formatMessage(source?.kind === "self-hosted" ? m.remote : m.bundled)}
+        {intl.formatMessage(source?.kind === "self-hosted" ? m.remote : m.brand)}
       </Text>
       <Pressable accessibilityRole="button" accessibilityLabel={intl.formatMessage(m.source)} onPress={() => setSettings(true)} style={styles.control}>
         <Text style={[theme.platformTypography.label, { color: theme.color.accent.blue }]}>{intl.formatMessage(m.source)}</Text>
       </Pressable>
-    </MobileMaterial>
-    {source ? <WorkspaceSurface key={identity} source={source} dark={dark} onAppearance={setAppearance} />
+    </MobileMaterial>}
+    {source ? <WorkspaceSurface key={identity} source={source} dark={dark} onAppearance={setAppearance} onReady={setReady} onSourceSettings={() => setSettings(true)} />
       : <View style={styles.center}>
         {readError ? <>
           <Text style={{ color: theme.color.text.primary }}>{intl.formatMessage(m.readFailed)}</Text>

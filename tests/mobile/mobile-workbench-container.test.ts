@@ -1,9 +1,25 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { externalMobileUrl, isMobileContainerEvent, mobileNavigationDisposition, parseMobileContainerRequest } from "@opencraft/client-product/mobile-container";
-import { bindMobileContainer, mobileContainer } from "../../apps/workbench-web/src/runtime/mobile-container";
+import { bindMobileContainer, mobileContainer, openMobileSourceSettings, reloadMobileWorkbench } from "../../apps/workbench-web/src/runtime/mobile-container";
 
 const identity = { version: 1, runtimeId: "current-document" };
+test("source settings and onboarding reload use only the current native bridge", () => {
+  const messages: unknown[] = [];
+  const target = { opencraftMobile: identity, ReactNativeWebView: { postMessage(raw: string) { messages.push(JSON.parse(raw)); } } } as unknown as Window;
+  openMobileSourceSettings(target);
+  assert.equal(reloadMobileWorkbench(target), true);
+  assert.deepEqual(messages, [{ ...identity, type: "source-settings" }, { ...identity, type: "reload" }]);
+  assert.equal(reloadMobileWorkbench({} as Window), false);
+});
+test("packaged resources require active identities and fixed opaque IDs", () => {
+  const request = { ...identity, type: "resource", requestId: "1", resourceId: "a".repeat(64) };
+  assert.deepEqual(parseMobileContainerRequest(JSON.stringify(request), identity.runtimeId), request);
+  for (const changed of [{ resourceId: "../../private" }, { resourceId: "https://example.org" }, { requestId: "constructor" }, { runtimeId: "retired" }]) {
+    assert.equal(parseMobileContainerRequest(JSON.stringify({ ...request, ...changed }), identity.runtimeId), null);
+  }
+  assert.equal(parseMobileContainerRequest(JSON.stringify({ ...identity, type: "source-settings" }), identity.runtimeId)?.type, "source-settings");
+});
 test("native appearance is a typed projection from the current packaged document", () => {
   const appearance = { ...identity, type: "appearance", resolvedTheme: "dark", edgeBackgroundColor: "#171717" };
   assert.deepEqual(parseMobileContainerRequest(JSON.stringify(appearance), identity.runtimeId), appearance);

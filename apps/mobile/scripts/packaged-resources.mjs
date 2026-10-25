@@ -2,7 +2,7 @@ import { parse } from "acorn";
 import path from "node:path";
 
 /** Close Vite's emitted worker/asset graph; never substitute remote code. */
-export function packageResourceGraph(code, assets) {
+export function packageResourceGraph(code, assets, options = {}) {
   const byUrl = new Map();
   for (const asset of assets) {
     for (const name of [asset.fileName, `/${asset.fileName}`, `./${asset.fileName}`, `./${path.basename(asset.fileName)}`, path.basename(asset.fileName)]) {
@@ -10,7 +10,7 @@ export function packageResourceGraph(code, assets) {
       byUrl.set(name, asset);
     }
   }
-  const used = new Set();
+  const used = options.used ?? new Set();
   const visiting = new Set();
   const memo = new Map();
   function replacement(asset) {
@@ -33,7 +33,7 @@ export function packageResourceGraph(code, assets) {
     memo.set(asset.fileName, result);
     return result;
   }
-  function rewrite(source) {
+  function rewrite(source, allowModuleImports = false) {
     const tree = parse(source, { ecmaVersion: "latest", sourceType: "module" });
     const edits = [];
     function visit(node) {
@@ -46,7 +46,7 @@ export function packageResourceGraph(code, assets) {
         edits.push({ start: node.start, end: node.end, value: replacement(byUrl.get(node.quasis[0].value.cooked)) });
         return;
       }
-      if ((node.type === "ImportDeclaration" || node.type === "ExportNamedDeclaration" || node.type === "ExportAllDeclaration") && node.source) {
+      if (!allowModuleImports && (node.type === "ImportDeclaration" || node.type === "ExportNamedDeclaration" || node.type === "ExportAllDeclaration") && node.source) {
         throw new Error("Worker contains an unpackaged module dependency");
       }
       for (const value of Object.values(node)) {
@@ -58,8 +58,8 @@ export function packageResourceGraph(code, assets) {
     for (const edit of edits.sort((a, b) => b.start - a.start)) source = source.slice(0, edit.start) + edit.value + source.slice(edit.end);
     return source;
   }
-  const result = rewrite(code);
+  const result = rewrite(code, options.allowModuleImports);
   const unused = assets.filter(asset => !used.has(asset.fileName));
-  if (unused.length) throw new Error(`Unpackaged mobile resources: ${unused.map(asset => asset.fileName).join(", ")}`);
+  if (unused.length && !options.allowUnused) throw new Error(`Unpackaged mobile resources: ${unused.map(asset => asset.fileName).join(", ")}`);
   return result;
 }

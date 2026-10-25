@@ -11,6 +11,16 @@ export function mobileContainer(target: Window = window): MobileContainerIdentit
   return isMobileContainerIdentity(host.opencraftMobile) && typeof host.ReactNativeWebView?.postMessage === "function"
     ? host.opencraftMobile! : null;
 }
+export function openMobileSourceSettings(target: Window = window): void {
+  const identity = mobileContainer(target);
+  if (identity) (target as MobileWindow).ReactNativeWebView!.postMessage(JSON.stringify({ ...identity, type: "source-settings" }));
+}
+export function reloadMobileWorkbench(target: Window = window): boolean {
+  const identity = mobileContainer(target);
+  if (!identity) return false;
+  (target as MobileWindow).ReactNativeWebView!.postMessage(JSON.stringify({ ...identity, type: "reload" }));
+  return true;
+}
 /** Application/navigation remain in this realm. Native owns only device events. */
 export function bindMobileContainer(
   navigation: ApplicationNavigation<WorkbenchLocation | null>,

@@ -7,6 +7,10 @@ export interface MobileContainerIdentity {
 }
 export type MobileContainerRequest = MobileContainerIdentity & (
   | { readonly type: "ready" }
+  | { readonly type: "source-settings" }
+  | { readonly type: "startup-error" }
+  | { readonly type: "reload" }
+  | { readonly type: "resource"; readonly requestId: string; readonly resourceId: string }
   | { readonly type: "navigation"; readonly canGoBack: boolean }
   | { readonly type: "external"; readonly url: string }
   | { readonly type: "appearance"; readonly resolvedTheme: "light" | "dark"; readonly edgeBackgroundColor: string }
@@ -39,6 +43,11 @@ export function parseMobileContainerRequest(raw: string, runtimeId: string): Mob
     const value: unknown = JSON.parse(raw);
     if (!isMobileContainerIdentity(value) || value.runtimeId !== runtimeId || !record(value)) return null;
     if (value.type === "ready") return { version: value.version, runtimeId: value.runtimeId, type: "ready" };
+    if (value.type === "source-settings" || value.type === "startup-error" || value.type === "reload") return { version: value.version, runtimeId: value.runtimeId, type: value.type };
+    if (value.type === "resource" && typeof value.requestId === "string" && /^[1-9][0-9]{0,8}$/.test(value.requestId)
+      && typeof value.resourceId === "string" && /^[a-f0-9]{64}$/.test(value.resourceId)) {
+      return { version: value.version, runtimeId: value.runtimeId, type: "resource", requestId: value.requestId, resourceId: value.resourceId };
+    }
     if (value.type === "navigation" && typeof value.canGoBack === "boolean") return { version: value.version, runtimeId: value.runtimeId, type: "navigation", canGoBack: value.canGoBack };
     if (value.type === "external" && typeof value.url === "string" && externalMobileUrl(value.url)) return { version: value.version, runtimeId: value.runtimeId, type: "external", url: value.url };
     if (value.type === "appearance" && (value.resolvedTheme === "light" || value.resolvedTheme === "dark") && typeof value.edgeBackgroundColor === "string"

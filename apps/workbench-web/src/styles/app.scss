@@ -2411,6 +2411,12 @@ html[data-opencraft-window-type="browser"] .main-content-top-fade {
   background: var(--color-background-surface);
   box-shadow: 0 8px 24px color-mix(in srgb, var(--color-text) 7%, transparent);
 }
+.hostless-empty-view__connection-actions {
+  display: grid;
+  gap: calc(var(--spacing) * 2);
+  width: min(280px, 100%);
+  margin-block-start: calc(var(--spacing) * 5);
+}
 
 .hostless-empty-view__actions {
   width: 100%;

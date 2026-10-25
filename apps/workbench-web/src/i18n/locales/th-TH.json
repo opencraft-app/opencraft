@@ -990,5 +990,9 @@
   "codex.resetCredits.noCredit": "เครดิตนี้ใช้ไม่ได้แล้ว โปรดรีเฟรชรายละเอียด",
   "codex.resetCredits.alreadyRedeemed": "เครดิตนี้ถูกแลกแล้ว",
   "codex.resetCredits.unknown": "ยืนยันผลลัพธ์ไม่ได้ โปรดรีเฟรชรายละเอียดเครดิตก่อนดำเนินการต่อ ระบบไม่ได้ลองส่งคำขอใหม่โดยอัตโนมัติ",
-  "codex.resetCredits.refreshNeeded": "รีเซ็ตโควตาแล้ว แต่โหลดการใช้งานล่าสุดไม่ได้ โปรดรีเฟรชการใช้งานบัญชี"
+  "codex.resetCredits.refreshNeeded": "รีเซ็ตโควตาแล้ว แต่โหลดการใช้งานล่าสุดไม่ได้ โปรดรีเฟรชการใช้งานบัญชี",
+  "mobile.connection.title": "เชื่อมต่อเซิร์ฟเวอร์",
+  "mobile.connection.description": "เชื่อมต่อเซิร์ฟเวอร์ OpenCraft ของคุณเพื่อเริ่มทำงาน เซิร์ฟเวอร์ของคุณเป็นผู้จัดการการลงชื่อเข้าใช้และสิทธิ์การเข้าถึง",
+  "mobile.connection.address": "ที่อยู่ WebSocket ที่ปลอดภัย",
+  "mobile.connection.failed": "บันทึกการเชื่อมต่อไม่ได้ ตรวจสอบที่อยู่แล้วลองอีกครั้ง"
 }
