@@ -79,7 +79,7 @@ test("v1 dedicated store upgrades its thread index without changing facts, alloc
   old.database.close();
   let upgraded = new TokenUsageStateDatabase(directory);
   try {
-    assert.equal(upgraded.outcome.appliedVersion, 2);
+    assert.equal(upgraded.outcome.appliedVersion, 3);
     assert.equal(upgraded.outcome.status, "migrated");
     assert.ok(upgraded.outcome.backupPath);
     assert.deepEqual(upgraded.database.prepare("SELECT * FROM schema_migrations WHERE version=1").get(), migration);
@@ -298,3 +298,19 @@ for (const conflict of ["settled-attempt", "known-input", "counter-epoch", "coun
     assert.throws(() => new TokenUsageStateDatabase(directory, legacy.path), /changed after cutover/);
   }));
 }
+
+test("v2 source recency upgrade preserves facts and installed history and avoids a full source scan",()=>fixture(directory=>{
+ const path=join(directory,'token-usage.sqlite'),migrations=TOKEN_USAGE_STATE_MIGRATIONS.slice(0,2);
+ const old=openManagedDatabase({path,legacyPolicy:'reject-unknown',migrations,validateSchema:createSchemaValidator(migrations.map(m=>m.sql).join('\n'))});
+ const owner={database:old.database,transaction<T>(body:()=>T):T{old.database.exec('BEGIN IMMEDIATE');try{const value=body();old.database.exec('COMMIT');return value;}catch(error){old.database.exec('ROLLBACK');throw error;}}};
+ seed(owner);const facts=old.database.prepare('SELECT * FROM token_usage_sources').all(),history=old.database.prepare('SELECT * FROM schema_migrations ORDER BY version').all();old.database.close();
+ const state=new TokenUsageStateDatabase(directory);
+ try{
+  assert.equal(state.outcome.appliedVersion,3);assert.deepEqual(state.database.prepare('SELECT * FROM token_usage_sources').all(),facts);
+  assert.deepEqual(state.database.prepare('SELECT * FROM schema_migrations WHERE version<=2 ORDER BY version').all(),history);
+  const sql='SELECT max(observed_ms) AS at FROM token_usage_sources WHERE server_id=?';
+  assert.equal(state.database.prepare(sql).get('server')!.at,1000);
+  const plan=state.database.prepare('EXPLAIN QUERY PLAN '+sql).all('server');
+  assert.ok(plan.some(row=>String(row.detail).includes('token_usage_sources_observed_query')),JSON.stringify(plan));
+ }finally{state.close();}
+}));

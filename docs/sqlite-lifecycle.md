@@ -512,6 +512,30 @@ the retained archive to roll back. Re-enabling derived mode can rebuild its
 projection from the retained events and existing receipts. No schema downgrade,
 forced Git update or change to account/queue ownership is required.
 
+### Query cost and worker initialization
+
+Personal coverage starts with the authenticated Actor's confirmed admissions,
+using the Actor covering index to materialize the matching threads for the date
+range. One grouped scan returns both the raw open-gap count and the distinct
+thread/reason incident count. Deployment isolation, global incidents, admitted
+Actor kinds and period-wide coverage retain their previous semantics, including
+when detail filters select no turns. Source recency uses a covering
+`(server_id, observed_ms)` index instead of scanning all known responses.
+
+The dedicated source appends migration v3 for recency. The derived cache freezes
+its installed migrations v1–v6 and appends its own v7 index migration; a new source
+migration never renumbers the independent cache history. These indexes preserve
+all counts, participation facts and already-ready projections.
+
+The Host holds at most sixteen distinct live read requests until the worker has
+opened its owner. Each request still expires after 1500ms, including startup
+time. Expiration while opening rejects that request and removes it from the
+bounded waiting set, letting a slow migration finish. Only live requests are sent
+after the worker is ready, with parameters captured at ingress. After opening,
+a scan timeout still terminates the worker and its queued work; closing still
+rejects outstanding requests. Ingress rechecks identity and authorization before
+returning a snapshot. No connection pool or second usage authority is introduced.
+
 ### Dedicated Token metering owner
 
 Headless deployment reads are independent of the active execution engine. The
