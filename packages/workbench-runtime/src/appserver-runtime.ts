@@ -1009,16 +1009,19 @@ export function createAppServerWorkbenchRuntime(
           throw new Error(`Thread ${threadId} is unavailable`);
         }
         // A local optimistic Item may paint immediately, but no AppServer
-        // mutation may overtake the Thread's initial Resume. Otherwise a
+        // mutation may overtake the Thread's initial read baseline. Otherwise a
         // concurrently completing snapshot and the live notification stream
         // can each publish the first user message, and a backend such as
         // Hermes cannot reconcile them because durable history has no client
-        // message identity. Session owns the baseline: Resume for persisted
+        // message identity. Session owns the baseline: Read for persisted
         // threads, adopted fork response for ephemeral side conversations.
         if (!owner.runtime.getSnapshot().authoritative) {
           await hydrateBinding(owner, false);
         }
-        if (requiresCapabilities) await ensureBindingCapabilities(owner);
+        if (requiresCapabilities) {
+          await requireSession().resume.resume({ threadId, retryRejected: true });
+          await ensureBindingCapabilities(owner);
+        }
         return operation();
       };
       const baselineGatedCommands: ConversationCommandPort = {
@@ -1316,11 +1319,11 @@ export function createAppServerWorkbenchRuntime(
       .then(async () => {
         if (!current()) throw new AppServerClientError("ABORTED", "Thread recovery was superseded");
         const currentSession = requireSession();
-        // Entering sync revokes authority. Capture eligibility from the attached
-        // transcript first; active Turns and replacement connections still reload.
         const captured = checkpointCapture ?? captureHistoryCheckpoint(binding);
         const historyCheckpoint = force && captured.session === currentSession && captured.revision === connectionRevision
           ? captured.checkpoint : null;
+        // Entering sync revokes authority. Capture eligibility from the attached
+        // transcript first; active Turns and replacement connections still reload.
         binding.phase = force ? "reconnecting" : "hydrating";
         binding.replica.reportSyncStarted();
         touchBinding(binding);
@@ -1340,13 +1343,9 @@ export function createAppServerWorkbenchRuntime(
               throw new Error("This temporary side chat expired after disconnect. Start a new side chat.");
             }
           } else {
-            await currentSession.resume.resume({ threadId: binding.threadId, force, retryRejected,
-              unresolvedTurnIds: [...binding.acceptedTurnIds], ...(force ? { historyCheckpoint } : {}) });
+            await currentSession.resume.read(binding.threadId, { historyCheckpoint, unresolvedTurnIds: [...binding.acceptedTurnIds] });
           }
           if (!current()) throw new AppServerClientError("ABORTED", "Thread recovery was superseded");
-          // Prewarm execution readiness, but do not keep already-restored
-          // history behind a slow connector/tool registration request.
-          void recovery.span("capability-ready", () => ensureBindingCapabilities(binding)).catch(() => undefined);
         } finally { stopPreview(); }
         const source = createThreadViewReplicaSource(
           currentSession.views,
@@ -1853,8 +1852,7 @@ export function createAppServerWorkbenchRuntime(
             // The unsubscribe won on the wire; the new consumer must actually
             // reattach, not merely retain a stale local projection.
             requireSession().resume.markNeedsResume(threadId);
-            await requireSession().resume.resume({ threadId, force: true });
-            await hydrateBinding(current, false);
+            await hydrateBinding(current, true);
             return;
           }
           if (current) disposeBinding(current);

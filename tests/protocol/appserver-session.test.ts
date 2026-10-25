@@ -28,6 +28,7 @@ interface WireRequest {
 }
 
 interface HarnessOptions {
+  readHistory?: boolean;
   frameScheduler?: ThreadViewFrameScheduler;
   historyMode?: "legacy" | "paginated";
   historyRecovery?: import("@opencraft/appserver-protocol").ThreadHistoryRecovery;
@@ -126,10 +127,13 @@ async function createHarness(options: HarnessOptions = {}): Promise<{
       const params = message.params as Record<string, unknown>;
       requests.push({ method: message.method, params });
       if (message.method === "initialize") {
-        peer.send(encodeJsonRpcMessage({ id: message.id, result: { ...initializeResult, ...(options.historyRecovery ? { capabilities: { extensions: { "opencraft/resume-history": { version: 1, mode: "paginated", initialTurnsPage: true, boundedRecovery: true } } } } : {}) } }));
+        peer.send(encodeJsonRpcMessage({ id: message.id, result: { ...initializeResult, ...(options.readHistory ? { capabilities: { extensions: { "opencraft/read-history": { version: 1, initialTurnsPage: true } } } } : options.historyRecovery ? { capabilities: { extensions: { "opencraft/resume-history": { version: 1, mode: "paginated", initialTurnsPage: true, boundedRecovery: true } } } } : {}) } }));
         return;
       }
       if (message.method === "thread/read") {
+        if (params.initialTurnsPage && options.oversizedResumePage) {
+          peer.send(encodeJsonRpcMessage({ id: message.id, error: options.historySizeError! })); return;
+        }
         const turns = params.includeTurns === true ? options.fallbackTurns ?? [] : [];
         peer.send(encodeJsonRpcMessage({
           id: message.id,
@@ -1897,4 +1901,110 @@ test("a single oversized history Item fails finitely without repeatedly resuming
     assert.equal(h.requests.filter(r => r.method === "thread/resume").length, 2);
     const reads = h.requests.filter(r => r.method === "thread/items/list"); assert.equal(reads.at(-1)?.params.limit, 1); assert(reads.length <= 8);
   } finally { await h.close(); }
+});
+
+test("Read opens historical Turns and older pages without Resume; explicit continuation can Resume", async () => {
+  const harness = await createHarness({ historyMode: "paginated", turnsPages: {
+    null: { data: [{ id: "newer", items: [] }], nextCursor: "older" },
+    older: { data: [{ id: "older", items: [] }], nextCursor: null },
+  } });
+  try {
+    const read = await harness.runtime.resume.read("thread-one");
+    assert.equal(read.resumeState, "needs_resume");
+    assert.equal(read.streamRole, null);
+    assert.equal(harness.requests.filter(r => r.method === "thread/resume").length, 0);
+    assert.equal(harness.requests.filter(r => r.method === "model/list").length, 0);
+    const older = await harness.runtime.resume.loadOlder("thread-one");
+    assert.deepEqual(older.turns.map(t => t.id), ["older", "newer"]);
+    assert.equal(harness.requests.filter(r => r.method === "thread/resume").length, 0);
+    const resumed = await harness.runtime.resume.resume({ threadId: "thread-one" });
+    assert.equal(resumed.resumeState, "resumed");
+    assert.equal(harness.requests.filter(r => r.method === "thread/resume").length, 1);
+  } finally { await harness.close(); }
+});
+
+test("live completions arriving during a read baseline replay after that snapshot without Resume", async () => {
+  let release: (() => void) | undefined;
+  const h = await createHarness({ historyMode: "paginated", holdTurnsResponse: respond => { release = respond; },
+    turnsPages: { null: { data: [{ id: "live-read", status: "inProgress", items: [{ id: "answer", type: "agentMessage", text: "old" }] }], nextCursor: null } } });
+  try {
+    const reading = h.runtime.resume.read("thread-one");
+    for (let n = 0; n < 50 && !release; n++) await new Promise(resolve => setImmediate(resolve));
+    assert.ok(release);
+    await h.emit("item/completed", { threadId: "thread-one", turnId: "live-read", item: { id: "answer", type: "agentMessage", text: "new final" } });
+    release();
+    const view = await reading;
+    assert.equal(view.turns[0]?.items?.[0]?.text, "new final");
+    assert.equal(h.requests.some(r => r.method === "thread/resume"), false);
+  } finally { await h.close(); }
+});
+
+for (const included of [false, true]) test(`Read obtains a quiet snapshot instead of duplicating buffered deltas (already included=${included})`, async () => {
+  let release!: () => void, pages = 0;
+  const turnsPages = { null: { data: [{ id: "live-read", status: "inProgress", itemsView:"full", items: [{ id: "answer", type: "agentMessage", text: included ? "AB" : "A" }] }], nextCursor: null } };
+  const h = await createHarness({ historyMode: "paginated", turnsPages,
+    holdTurnsResponse: respond => { if (++pages === 1) release = respond; else respond(); } });
+  try {
+    const reading = h.runtime.resume.read("thread-one");
+    for (let n = 0; n < 100 && !release; n++) await new Promise(resolve => setImmediate(resolve));
+    assert.ok(release);
+    await h.emit("item/agentMessage/delta", { threadId: "thread-one", turnId: "live-read", itemId: "answer", delta: "B" });
+    release();
+    turnsPages.null = { data: [{ id: "live-read", status: "completed", itemsView:"full", items: [{ id: "answer", type: "agentMessage", text: "AB" }] }], nextCursor: null };
+    const view = await reading;
+    assert.equal(view.turns[0]?.items[0]?.text, "AB");
+    assert.equal(view.turns[0]?.status, "completed");
+    assert.equal(pages, 2);
+    assert.equal(h.requests.some(r => r.method === "thread/resume"), false);
+  } finally { await h.close(); }
+});
+
+test("Read and older history adapt full-page and Item budgets without Resume", async () => {
+  const h = await createHarness({ historyMode: "paginated", readHistory: true, oversizedResumePage: true,
+    oversizedFullPage: true, historySizeError: typedHistoryBudgetError, maxItemsLimit: 1,
+    turnsPages: {
+      null: { data: [{ id: "tail", itemsView: "notLoaded", items: [] }], nextCursor: "older" },
+      older: { data: [{ id: "old", itemsView: "notLoaded", items: [] }], nextCursor: null },
+    },
+    itemsByTurnId: Object.fromEntries(["tail", "old"].map(turn => [turn, ["a", "b", "c"].map(id => ({ id: `${turn}-${id}`, type: "agentMessage", text: id }))])),
+  });
+  try {
+    await h.runtime.resume.read("thread-one");
+    const view = await h.runtime.resume.loadOlder("thread-one");
+    assert.deepEqual(view.turns.map(t => t.id), ["old", "tail"]);
+    assert.deepEqual(view.turns.map(t => t.items.length), [3, 3]);
+    assert.equal(h.requests.filter(r => r.method === "thread/resume").length, 0);
+    assert.deepEqual(h.requests.filter(r => r.method === "thread/read").map(r => Boolean(r.params.initialTurnsPage)), [true, false]);
+    assert.equal(h.requests.filter(r => r.method === "thread/turns/list" && r.params.itemsView === "notLoaded").length, 2);
+    assert.equal(h.requests.filter(r => r.method === "thread/items/list").at(-1)?.params.limit, 1);
+  } finally { await h.close(); }
+});
+
+for (const [method, type, field, extra] of [
+  ["item/plan/delta", "plan", "text", {}],
+  ["item/commandExecution/outputDelta", "commandExecution", "aggregatedOutput", {}],
+  ["item/reasoning/summaryTextDelta", "reasoning", "summary", { summaryIndex: 0 }],
+  ["item/reasoning/textDelta", "reasoning", "content", { contentIndex: 0 }],
+] as const) test(`Read supersedes overlapping ${method} and preserves request resolution`, async () => {
+  let release!: () => void, pages = 0;
+  const resolutions: unknown[] = [];
+  const value = type === "reasoning" ? ["AB"] : "AB";
+  const h = await createHarness({ historyMode: "paginated",
+    turnsPages: { null: { data: [{ id: "live", itemsView: "full", status: "completed", items: [{ id: "item", type, [field]: value }] }], nextCursor: null } },
+    holdTurnsResponse: respond => { if (++pages === 1) release = respond; else respond(); } });
+  const unsubscribe = h.client.subscribeNotification(notification => { if (notification.method === "serverRequest/resolved") resolutions.push(notification.params); });
+  try {
+    const reading = h.runtime.resume.read("thread-one");
+    for (let n = 0; n < 100 && !release; n++) await new Promise(resolve => setImmediate(resolve));
+    assert.ok(release);
+    await h.emit("serverRequest/resolved", { threadId: "thread-one", requestId: "approval-one" });
+    await h.emit(method, { threadId: "thread-one", turnId: "live", itemId: "item", delta: "B", ...extra });
+    release();
+    const view = await reading;
+    assert.deepEqual(view.turns[0]?.items[0]?.[field], value);
+    assert.equal(view.turns[0]?.status, "completed");
+    assert.equal(pages, 2);
+    assert.deepEqual(resolutions, [{ threadId: "thread-one", requestId: "approval-one" }]);
+    assert.equal(h.requests.filter(r => r.method === "thread/resume").length, 0);
+  } finally { unsubscribe(); await h.close(); }
 });

@@ -656,3 +656,45 @@ retry, refusal by older readers, and both old and new checksum tampering.
 reopen/data preservation, refusal without writes when both stores exist or
 sidecars are orphaned, unchanged active legacy WAL during path selection, and
 metering import from both selected paths.
+
+## Transcript read cache
+
+`TranscriptReadCache` owns `<dataDirectory>/cache/transcript-index.sqlite`,
+`cache/transcripts/<threadId>.turns.jsonl`, and per-Thread `.blobs/` directories.
+The index opens through `openManagedDatabase` with its own migration chain;
+`projection_schema_version` is separate from that physical migration version.
+Native history and trusted sender/attachment records remain authoritative.
+Removing the entire cache, just its transcript directory, or a Thread projection
+reconstructs from native reads. A schema mismatch, replaced/truncated/rewritten
+source, malformed projection, checksum mismatch or absent blob invalidates only
+this derived data. Source stat and committed newline byte cursors reconcile
+append-only changes, including incomplete native tails.
+
+Token statistics and transcript reconciliation use `codex-rollout-reader.ts`.
+The native AppServer read-only paginator owns Turn projection semantics; the
+shared reader identifies the dirty suffix, so there is no second Codex message
+or tool parser. Warm reads use the native file stat and indexed positional reads.
+Output fields larger than 1 KiB live in SHA-256 blobs on disk and are restored
+for the requested full-items response. This keeps the existing clients lossless;
+introducing a separate preview/blob-fetch wire protocol is outside Stage 0.
+Blob references are Thread/Turn scoped. Overwrite removes unreferenced bodies;
+archive/delete clear the Thread files and index. Host directories are private
+`0700`, transcript/blob/index files `0600`. Reading can observe an existing live
+stream but never acquires interaction ownership or creates a native subscription.
+
+The Node cache owner lives in `packages/native-history-node`; Stage 0 connects
+Codex only. DSH and Pi keep their native read-only history paths; consuming this
+disk cache is deferred. Pi takes a read-only SQLite backup
+into a private, short-lived directory below the managed cache and lets native
+Storage materialize entries/documents. It uses the existing Pi projector without
+opening a Harness, writer lease, execution owner, or event watcher. The snapshot
+is removed after reading; the native ledger is never migrated by a history read.
+Corrupt disposable SQLite indexes rebuild, while busy, permission and migration
+failures retain their cause. Authoritative databases are never discarded.
+
+Invalidation advances a per-Thread revision synchronously before queued cleanup.
+An in-flight read with an older revision cannot publish its result. Successful
+archive/delete replies wait for cleanup; native archived/deleted notifications
+also invalidate the derived files, including changes made by another client.
+Native paginators that return `notLoaded` despite a full request are hydrated
+through read-only Item pages before any Turn enters this cache.

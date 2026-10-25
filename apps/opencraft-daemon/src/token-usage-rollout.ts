@@ -3,33 +3,8 @@ import { relative, isAbsolute } from "node:path";
 import { nativeUsageFact, nativeAcceptedInputFact, type NativeAcceptedInputFact } from "./token-usage-native-facts.js";
 import type { OpenCraftTokenUsageLedger } from "./token-usage-ledger.js";
 
-export class OversizedRolloutLineError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "OversizedRolloutLineError";
-  }
-}
-
-export async function findNextNewline(
-  file: import("node:fs/promises").FileHandle,
-  from: number,
-  limit = 64 * 1024 * 1024,
-): Promise<number | null> {
-  const chunkSize = 64 * 1024;
-  const chunk = Buffer.alloc(chunkSize);
-  let offset = 0;
-  while (offset < limit) {
-    const toRead = Math.min(chunkSize, limit - offset);
-    const { bytesRead } = await file.read(chunk, 0, toRead, from + offset);
-    if (bytesRead === 0) return null;
-    const nl = chunk.subarray(0, bytesRead).indexOf(10);
-    if (nl !== -1) {
-      return from + offset + nl + 1;
-    }
-    offset += bytesRead;
-  }
-  throw new OversizedRolloutLineError("Usage rollout line exceeds 64 MiB limit without newline");
-}
+import { findNextNewline, OversizedRolloutLineError } from "@opencraft/native-history-node/codex-rollout-reader";
+export { findNextNewline, OversizedRolloutLineError } from "@opencraft/native-history-node/codex-rollout-reader";
 
 export interface RolloutTurnIdentity {
   readonly provider: string | null;

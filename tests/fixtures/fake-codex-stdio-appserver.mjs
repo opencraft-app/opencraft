@@ -1,3 +1,5 @@
+const legacyItems = new Set();
+const smallHistoryBudgets = new Set();
 import readline from "node:readline";
 
 const input = readline.createInterface({ input: process.stdin });
@@ -6,6 +8,8 @@ let nextServerRequestId = 901;
 let nextTurnId = 1;
 const turns = new Map();
 const threadTurns = new Map();
+const threadPaths = new Map();
+const methodCounts = {};
 const history = new Map();
 const acceptedInputs = [];
 const testTools = new Map();
@@ -21,11 +25,13 @@ let nextTitleThread = 0;
 const send = value => process.stdout.write(`${JSON.stringify(value)}\n`);
 input.on("line", line => {
   const message = JSON.parse(line);
+  if (message.method) methodCounts[message.method] = (methodCounts[message.method] ?? 0) + 1;
+  if (message.method === "test/readMethodCounts") { send({ id: message.id, result: methodCounts }); return; }
   if (message.method === undefined && testTools.has(String(message.id))) {
     toolResults.push({id:message.id,...testTools.get(String(message.id)),result:message.result,error:message.error});testTools.delete(String(message.id));return;
   }
   if (message.method === "test/readToolResults") {send({id:message.id,result:{data:toolResults}});return;}
-  if (message.method === "test/setHistory") {threadTurns.set(message.params.threadId,message.params.turns);send({id:message.id,result:{}});return;}
+  if (message.method === "test/setHistory") {threadTurns.set(message.params.threadId,message.params.turns);if(message.params.path)threadPaths.set(message.params.threadId,message.params.path);if(message.params.legacyItems)legacyItems.add(message.params.threadId);if(message.params.smallHistoryBudget)smallHistoryBudgets.add(message.params.threadId);send({id:message.id,result:{}});return;}
   if (message.method === "test/emitTool") {
     const id=nextServerRequestId++;testTools.set(String(id),message.params);send({id,method:"item/tool/call",params:{...message.params,callId:String(id)}});send({id:message.id,result:{requestId:id}});return;
   }
@@ -80,18 +86,24 @@ input.on("line", line => {
   if (message.method === "thread/read") {
     const active = turns.get(message.params.threadId);
     const type = !loadedThreads.has(message.params.threadId) ? "notLoaded" : active ? "active" : "idle";
-    send({ id: message.id, result: { thread: { id: message.params.threadId, path: loadedThreads.has(message.params.threadId) ? `/synthetic/${message.params.threadId}.jsonl` : null, createdAt: 123, name: threadNames.get(message.params.threadId) ?? null, status: { type, ...(active ? { activeFlags: [] } : {}) }, turns: message.params.includeTurns ? threadTurns.get(message.params.threadId) ?? [] : [] } } });
+    send({ id: message.id, result: { thread: { id: message.params.threadId, path: threadPaths.get(message.params.threadId) ?? (loadedThreads.has(message.params.threadId) ? `/synthetic/${message.params.threadId}.jsonl` : null), createdAt: 123, name: threadNames.get(message.params.threadId) ?? null, status: { type, ...(active ? { activeFlags: [] } : {}) }, turns: message.params.includeTurns ? threadTurns.get(message.params.threadId) ?? [] : [] } } });
     return;
   }
   if (message.method === "thread/turns/list") {
+    if (smallHistoryBudgets.has(message.params.threadId) && message.params.itemsView === "full") {
+      send({id:message.id,error:{code:-32072,message:"budget exceeded",data:{code:"HISTORY_RESPONSE_TOO_LARGE"}}});return;
+    }
     const rows = [...(threadTurns.get(message.params.threadId) ?? [])];
     if (message.params.sortDirection !== "asc") rows.reverse();
     const offset = Number(message.params.cursor ?? 0), limit = message.params.limit ?? 100;
-    send({ id: message.id, result: { data: rows.slice(offset, offset + limit).map(turn => ({ ...turn, items: [] })),
+    send({ id: message.id, result: { data: rows.slice(offset, offset + limit).map(turn => ({ ...turn, items: message.params.itemsView === "full" && !legacyItems.has(message.params.threadId) ? turn.items : [], ...(legacyItems.has(message.params.threadId) ? {itemsView:"notLoaded"} : {}) })),
       nextCursor: offset + limit < rows.length ? String(offset + limit) : null } }); return;
   }
   if (message.method === "thread/items/list") {
-    const items = (history.get(message.params.threadId) ?? []).filter(entry => !message.params.turnId || entry.turnId === message.params.turnId);
+    if (smallHistoryBudgets.has(message.params.threadId) && message.params.limit > 1) {
+      send({id:message.id,error:{code:-32072,message:"budget exceeded",data:{code:"HISTORY_RESPONSE_TOO_LARGE"}}});return;
+    }
+    const items = (legacyItems.has(message.params.threadId) ? (threadTurns.get(message.params.threadId) ?? []).flatMap(turn => turn.items.map(item => ({turnId:turn.id,item}))) : history.get(message.params.threadId) ?? []).filter(entry => !message.params.turnId || entry.turnId === message.params.turnId);
     const offset = message.params.cursor ? Number(message.params.cursor) : 0;
     const limit = message.params.limit ?? 100;
     send({ id: message.id, result: { data: items.slice(offset, offset + limit), nextCursor: offset + limit < items.length ? String(offset + limit) : null } });
@@ -169,6 +181,7 @@ input.on("line", line => {
   if (message.method === "test/emitThreadNotification") {
     const threadId = message.params.threadId;
     send({ id: message.id, result: { nativeSubscribed: subscribedThreads.has(threadId) } });
+    if (message.params.method) send({ method: message.params.method, params: {threadId} });
     if (subscribedThreads.has(threadId)) send({ method: "thread/status/changed", params: { threadId, status: { type: "active" } } });
     return;
   }

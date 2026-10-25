@@ -65,8 +65,7 @@ function fixture(failure?: { code: number; message: string }) {
     const send = (result: unknown) => reply.send(JSON.stringify({ id: request.id, result }));
     if (request.method === "initialize") send({ codexHome: "/tmp", platformFamily: "unix", platformOs: "linux", userAgent: "unavailable-test" });
     else if (request.method === "thread/unarchive") { rejected = undefined; send({ thread: thread(id) }); }
-    else if (request.method === "thread/read") send({ thread: thread(id) });
-    else if (request.method === "thread/resume") {
+    else if (request.method === "thread/read") {
       if (rejected && id === "old") { reply.send(JSON.stringify({ id: request.id, error: { ...rejected, data: { retryable: true } } })); return; }
       const complete = () => send({ thread: thread(id), model: "test", modelProvider: "test", cwd: "/workspace",
         approvalPolicy: "on-request", approvalsReviewer: "user", runtimeWorkspaceRoots: ["/workspace"],
@@ -88,12 +87,12 @@ for (const failure of [{ code: -32071, message: "Thread is archived" }, { code: 
     try {
       await f.runtime.connect(); const lease = await f.runtime.acquireThread("old"); lease.setRecoveryVisibility(true);
       await settle();
-      assert.equal(f.requests.filter(r => r.method === "thread/resume").length, 1);
+      assert.equal(f.requests.filter(r => r.method === "thread/read").length, 1);
       assert.equal(events.length, 1);
       assert.equal(lease.getSnapshot().authoritative, false);
       await lease.retryRestore(); await settle();
       f.disconnect(); await f.runtime.reconnect(); await settle();
-      assert.equal(f.requests.filter(r => r.method === "thread/resume").length, 1);
+      assert.equal(f.requests.filter(r => r.method === "thread/read").length, 1);
       const healthy = await f.runtime.acquireThread("healthy"); await settle();
       assert.equal(healthy.getSnapshot().authoritative, true);
       assert.equal(f.runtime.getSnapshot().phase, "ready");
@@ -111,14 +110,14 @@ test("archive acknowledgement stops restoration without notification; unarchive 
     assert.equal(f.runtime.resources.threads.getUnavailableReason!("old"), "archived");
     assert.equal(lease.getSnapshot().authoritative, false);
     f.disconnect(); await f.runtime.reconnect(); await settle();
-    assert.equal(f.requests.filter(r => r.method === "thread/resume").length, 1);
+    assert.equal(f.requests.filter(r => r.method === "thread/read").length, 1);
     await f.runtime.resources.threads.unarchive!("old"); await lease.retryRestore(); await settle();
     assert.equal(lease.getSnapshot().authoritative, true);
-    assert.equal(f.requests.filter(r => r.method === "thread/resume").length, 2);
+    assert.equal(f.requests.filter(r => r.method === "thread/read").length, 2);
     lease.release();
   } finally { await f.runtime.dispose(); }
 });
-test("archive notification fences a late successful resume", async () => {
+test("archive notification fences a late successful read", async () => {
   const f = fixture(); f.hold();
   try {
     await f.runtime.connect(); const lease = await f.runtime.acquireThread("old"); await settle();
@@ -139,7 +138,7 @@ test("confirmed unarchive clears a cached rejection before ordinary acquire in t
     const reopened = await f.runtime.acquireThread("old"); await settle();
     assert.equal(reopened.getSnapshot().authoritative, true);
     assert.equal(f.requests.filter(r => r.method === "initialize").length, 1);
-    assert.equal(f.requests.filter(r => r.method === "thread/resume").length, 2);
+    assert.equal(f.requests.filter(r => r.method === "thread/read").length, 2);
     reopened.release(); lease.release();
   } finally { await f.runtime.dispose(); }
 });
