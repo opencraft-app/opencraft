@@ -135,3 +135,30 @@ test("ephemeral and deleted Threads retain routing identity without becoming col
     assert.equal(f.registry.route("temporary")!.generationId, "old"); assert.deepEqual(f.registry.durableThreadIds("old"), ["kept"]);
   } finally { await f.close(); }
 });
+
+test('orchestration replay retains its admitted generation across promotion and registry restart, then fences replacement',async()=>{
+  const f=await fixture();
+  try{
+    const ticket=f.registry.acceptCreation(undefined,'stable-operation');f.registry.markSent(ticket);
+    f.registry.activate('new',1);
+    assert.equal(f.registry.acceptCreation(undefined,'stable-operation').generationId,'old');
+    f.reopen();const replay=f.registry.acceptCreation(undefined,'stable-operation');
+    assert.equal(replay.generationId,'old');assert.equal(replay.admissionEpoch,ticket.admissionEpoch);
+    f.registry.resolveCreation(replay,'only-child');assert.equal(f.registry.route('only-child')?.generationId,'old');
+    f.registry.retire('old',1);f.registry.replaceRetired('old',{executable:'/replacement/codex',bundle:'/replacement/app-server.cjs',node:process.execPath});f.registry.ready('old');
+    assert.throws(()=>f.registry.acceptCreation(undefined,'stable-operation'),/unconfirmed/);
+  }finally{await f.close();}
+});
+
+test('registry v1 upgrade preserves old routing data and checksums and appends the incarnation fence',async()=>{
+  const {openManagedDatabase}=await import('../../packages/sqlite-node/src/index');
+  const {CODEX_GENERATION_MIGRATIONS}=await import('../../apps/codex-core/src/generation-registry');
+  const root=await mkdtemp(join(tmpdir(),'oc-generation-upgrade-')),path=join(root,'codex-generations.sqlite');
+  try{
+    const before=openManagedDatabase({path,migrations:CODEX_GENERATION_MIGRATIONS.slice(0,1)}).database;
+    before.prepare("INSERT INTO routing_metadata VALUES('kept',?)").run(JSON.stringify("value"));const hashes=before.prepare('SELECT version,checksum FROM schema_migrations').all();before.close();
+    const registry=new CodexGenerationRegistry(root);assert.equal(registry.metadata('kept'),'value');registry.close();
+    const after=openManagedDatabase({path,migrations:CODEX_GENERATION_MIGRATIONS}).database;
+    assert.deepEqual(after.prepare('SELECT version,checksum FROM schema_migrations WHERE version=1').all(),hashes);after.close();
+  }finally{await rm(root,{recursive:true,force:true});}
+});

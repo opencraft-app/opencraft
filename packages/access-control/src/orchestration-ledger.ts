@@ -154,7 +154,7 @@ export class ThreadOrchestrationLedger {
         return operation(prior[0]!);
       }
       const id = randomUUID(), now = this.now();
-      this.db.prepare("INSERT INTO opencraft_orchestration_operations VALUES(?,?,?,?,?,?,?,?,?,?,?,?,'accepted',NULL,NULL,?,?)").run(
+      this.db.prepare("INSERT INTO opencraft_orchestration_operations(operation_id,tool_call_key,idempotency_key,fingerprint,arguments_json,delegation_id,issuer_actor_id,kind,sender_thread_id,target_thread_id,client_message_id,mode,state,waiting_on,result_json,created_at_ms,updated_at_ms) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,'accepted',NULL,NULL,?,?)").run(
         id,toolCallKey,scopedKey,fingerprint,JSON.stringify(args),value.delegationId,value.issuerActorId,value.kind,value.senderThreadId,value.targetThreadId,value.clientMessageId,value.mode,now,now);
       this.db.prepare('INSERT INTO opencraft_orchestration_tool_calls VALUES(?,?)').run(toolCallKey,id);
       return this.operation(toolCallKey)!;
@@ -175,6 +175,7 @@ export class ThreadOrchestrationLedger {
       return this.operation(toolCallKey)!;
     });
   }
+  operationById(id:string):ToolOperation|null {const row=this.db.prepare('SELECT * FROM opencraft_orchestration_operations WHERE operation_id=?').get(id);return row?operation(row):null;}
   pendingOperations(): ToolOperation[] { return this.db.prepare('SELECT * FROM opencraft_orchestration_operations WHERE result_json IS NULL ORDER BY created_at_ms').all().map(operation); }
   createWait(value: Omit<WaitTicket,'state'>): WaitTicket {
     return this.transaction(() => {

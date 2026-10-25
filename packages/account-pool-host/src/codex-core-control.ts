@@ -14,6 +14,11 @@ export interface CodexCoreHealth {
   readonly routingEpoch?: string;
   readonly generationId?: string;
   readonly admissionEpoch?: number;
+  readonly callbackProtocolVersion?: 1;
+  readonly orchestrationRoutingVersion?: 1;
+  readonly callbackIncarnation?: string;
+  readonly pendingCallbacks?: number;
+  readonly pendingOrchestrationMutations?: number;
 }
 
 export interface CodexAppServerLaunch {
@@ -71,6 +76,10 @@ export class CodexCoreControlClient {
     if (!value || value.protocolVersion !== CODEX_CORE_PROTOCOL_VERSION
       || !Number.isSafeInteger(value.pid) || !Number.isSafeInteger(value.codexPid)
       || (value.appServerPid !== undefined && (!Number.isSafeInteger(value.appServerPid) || value.appServerPid < 1))
+      || value.orchestrationRoutingVersion !== undefined && value.orchestrationRoutingVersion !== 1
+      || value.callbackIncarnation !== undefined && (typeof value.callbackIncarnation !== "string" || !value.callbackIncarnation)
+      || value.callbackProtocolVersion !== undefined && (value.callbackProtocolVersion !== 1 || !Number.isSafeInteger(value.pendingCallbacks) || value.pendingCallbacks! < 0
+        || !Number.isSafeInteger(value.pendingOrchestrationMutations) || value.pendingOrchestrationMutations! < 0)
       || typeof value.nativeSocket !== "string" || !isAbsolute(value.nativeSocket)) {
       throw new Error("Codex core returned an incompatible health response");
     }

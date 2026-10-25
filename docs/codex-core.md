@@ -153,7 +153,7 @@ Core 对网关仍返回 protocolVersion 1 的 `pid/codexPid/nativeSocket`；拆�
 
 共享 socket 父目录由 routing service 显式创建，不设为路由 unit 的 `RuntimeDirectory`：systemd 停止或重启路由 unit 时不能递归删除仍属于 sibling APP 的 socket，也不能递归改写执行 UID 的目录。路由只清理自己的 facade/control socket，各代只清理自己的入口。系统重启后由各服务重新创建 `/run` 路径。
 
-registry schema v1 只记录不可变代定义、当前默认代/接纳 epoch、Thread 归属、未知创建提交、runtime incarnation 与维护回执。独立 SQLite EXCLUSIVE lease 拒绝第二 routing writer。每代使用私有 socket 目录与独立可写 HOME，拒绝别名与嵌套 HOME。固定 bundle、CLI、node 的绝对路径不得指向自动更新链接；unit MainPID/start ticks、执行 UID 与 native 二进制 hash 经核对后才 ready，不隐式提升既有执行身份。初始 bootstrap 注册后中断会在 epoch=0 时继续就绪与首次激活；已建立的默认代不覆盖。
+registry schema v1 记录不可变代定义、当前默认代/接纳 epoch、Thread 归属、未知创建提交、runtime incarnation 与维护回执。独立 SQLite EXCLUSIVE lease 拒绝第二 routing writer。每代使用私有 socket 目录与独立可写 HOME，拒绝别名与嵌套 HOME。固定 bundle、CLI、node 的绝对路径不得指向自动更新链接；unit MainPID/start ticks、执行 UID 与 native 二进制 hash 经核对后才 ready，不隐式提升既有执行身份。初始 bootstrap 注册后中断会在 epoch=0 时继续就绪与首次激活；已建立的默认代不覆盖。
 
 执行 UID/GID 固定为账号数据目录的 owner，注册定义不能改变该身份；systemd 显式传入两者，接入既有 external unit 时同时核对 APP/native 的身份，不要求它与具有 unit 管理权限的 routing owner 相同。跨 UID 启动只继承基本语言/PATH 环境和 Core 提供的合成 broker，不继承 routing owner 的私有 HOME 或凭据环境。registry 放在 routing owner 的可信目录（模板为 `/var/lib/opencraft-codex-routing`），不能放在执行用户可替换的父目录中。
 
@@ -167,7 +167,7 @@ registry schema v1 只记录不可变代定义、当前默认代/接纳 epoch、
 
 所有原生文件消费者消费同一份 HOME 归属。历史缓存与实时 collector 按 Thread 解析来源；Headless 用量 worker 只枚举 registry 已登记的 HOME，并对每个 rollout 按 Thread 复核来源，历史文件尚无执行路由时也只允许登记 HOME 内的原生 session identity。读后 owner/incarnation 复核通过才提交计量或缓存水位；默认接纳 epoch 的 CAS 不改变旧 Thread 的来源。目录不可用、登记 HOME 丢失或来源变化明确返回不可用/部分覆盖，保留既有证据，不能报告完整零用量。combined/单 APP 的 null 目录仍沿原单 HOME 边界；collector 后续 initialize 可更新兼容 HOME。不可用共同父目录放宽路径边界，也不可复制 rollout 到旧 HOME；统计规则、计量 writer 和异步 attempt writer 保持不变。
 
-`thread/start` 在发送前持久接纳票据，响应即使迟到仍只能绑定其原代。送达未知的创建不自动重发并阻止该代退休。`thread/fork` 在源 HOME 内执行，因此新 fork 跟随源代；没有验证跨 HOME 导入前不搬会话。目录按 native 排序合并、去重并分页，切默认代后旧游标明确失效。路径 resume 仅允许已知 HOME 内真实 rollout 的 `session_meta.id`；不接受任意 history 导入。Thread/Turn、owner epoch、runtime incarnation 及连接 ID 分别校验，旧结果不能满足新请求。原生审批请求使用连接私有映射回原代。`process/spawn` 的 handle 与 `command/exec` 的 processId 都由客户端指定且属于连接，后续 write/resize/terminate 固定原代，活动 ID 不能覆盖。审批结束通知反向转换为公开请求 ID。全局迟到查询可明确要求重读；已经接纳的 mutation 保留原代票据与结果，不能因默认 epoch 改变将已执行副作用伪装成可安全重试。
+普通新 root `thread/start` 跟随默认代，在发送前持久接纳票据，响应即使迟到仍只能绑定其原代。受信委托子创建是明确例外：prepared settings 保存授权的 canonical source Thread 与实际 callback Host incarnation，routing owner 从源 Thread 的唯一归属解析目标代，复用 `acceptCreation(targetGeneration, operationId)`，如同 fork 跟源代；默认 CAS 或回退不会改变该子创建归属。客户端不能指定或伪造该来源；目标代不能接纳、已被退休 fence 或 incarnation 已变时明确失败/未知，不换代、不盲重发。四工具定义在多代连接上提供受信 superset，再按实际目标 APP 能力过滤。送达未知的创建不自动重发并阻止该代退休。`thread/fork` 在源 HOME 内执行，因此新 fork 跟随源代；没有验证跨 HOME 导入前不搬会话。目录按 native 排序合并、去重并分页，切默认代后旧游标明确失效。路径 resume 仅允许已知 HOME 内真实 rollout 的 `session_meta.id`；不接受任意 history 导入。Thread/Turn、owner epoch、runtime incarnation 及连接 ID 分别校验，旧结果不能满足新请求。原生审批请求使用连接私有映射回原代。`process/spawn` 的 handle 与 `command/exec` 的 processId 都由客户端指定且属于连接，后续 write/resize/terminate 固定原代，活动 ID 不能覆盖。审批结束通知反向转换为公开请求 ID。全局迟到查询可明确要求重读；已经接纳的 mutation 保留原代票据与结果，不能因默认 epoch 改变将已执行副作用伪装成可安全重试。
 
 旧代先转 `draining`，继续接既有会话工作。退休先检查 Native 已加载 Thread 的实际状态、goal、未决 RPC/审批与 OS 子进程。Host 以认证 `/generation-host` 报告同一 routing epoch 下的 queue、goal、schedule、恢复意图、标题工作、在途接纳及未知工作；唯一 Host lease 与单调序号拒绝旧回执。Host 初始化/goal 目录扫描未完成、观测超时或未知工作均保留旧代。只有已核对为原生透传、没有 Host overlay writer 的部署才显式使用 `--native-only`，此时 Native/RPC/OS 仍全部参与排空。具有 Host queue/goal/recovery 数据的 Headless 部署必须保留 Host ACK，不能用该选项跳过未知工作。
 
@@ -231,3 +231,17 @@ npx tsx scripts/smoke/execution/smoke-codex-core-split.ts
 Linux 上可额外设置 `OPENCRAFT_CORE_DRILL_SYSTEMD=1`，使用自动清理的独立测试 unit/cgroup 执行同一演练，不安装或修改正式 unit。
 
 该脚本只使用合成账号、私有 HOME/数据根和本地 Responses/usage 服务；不从用户 profile 导入凭据。它记录固定 CLI 版本、Core/owner/native PID、原 Thread/Turn、Core 延迟 12 秒启动时的同进程等待、35 秒流与并发 8 秒 shell 在排空期间的后续请求、36 秒 shell 的 start/done 次数、Core crash 后模型重试次数、APP Server crash 后只读恢复，以及保留当前数据退回合并形态。报告留在私有证据目录，进程与 listener 在结束时停止；合成模型不证明真实 OAuth/外部模型可用。
+
+
+Stage 1 appends registry schema v2 for immutable creation incarnation. Explicit
+orchestration claims replay confirmed success or rejection from the same APP
+Host; ordinary Native mutations retain their original no-retry contract.
+Callback attachment uses the routing identity even when the default APP is a
+legacy payload, so a capable historical generation retains its own callback lane
+through default rollback. Pending callbacks and unacknowledged creation receipts
+block retirement; retirement rechecks fresh Host health before its final fence.
+
+The routing facade advertises `orchestrationRoutingVersion: 1` independently of
+the default APP callback capability. A gateway requires this version before
+using the mixed-generation tool superset or callback attachment fallback; an
+older router with only `routingEpoch` cannot accidentally advertise Stage 1.

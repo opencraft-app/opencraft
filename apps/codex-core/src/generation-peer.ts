@@ -34,8 +34,9 @@ export class GenerationPeer {
     };
     socket.on("error", failed); socket.on("close", failed);
   }
-  static async open(path: string, initialize: RpcRecord, input: { message(message: RpcRecord): void; disconnected(): void }): Promise<{ peer: GenerationPeer; result: RpcRecord }> {
-    const socket = new WebSocket(`ws+unix://${path}:/`, { handshakeTimeout: 5_000 });
+  static async open(path: string, initialize: RpcRecord, input: { message(message: RpcRecord): void; disconnected(): void }, callbackLaneId?: string): Promise<{ peer: GenerationPeer; result: RpcRecord }> {
+    const query = callbackLaneId ? `?opencraftLane=${encodeURIComponent(callbackLaneId)}` : "";
+    const socket = new WebSocket(`ws+unix://${path}:/${query}`, { handshakeTimeout: 5_000 });
     try {
       await new Promise<void>((resolve, reject) => { socket.once("open", resolve); socket.once("error", reject); socket.once("close", () => reject(new Error("Native generation closed during connection"))); });
       const peer = new GenerationPeer(socket, input);

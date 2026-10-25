@@ -74,7 +74,8 @@ export async function startCodexGenerationService(options: {
         const current = runtime.registry.current(), execution = await runtime.ensure(current.generation.id);
         return { status: 200, value: { protocolVersion: CODEX_CORE_PROTOCOL_VERSION, pid: process.pid, routingPid: process.pid,
           appServerPid: execution.pid, codexPid: execution.codexPid, nativeSocket, dataDirectory, proxyBaseUrl,
-          routingEpoch: runtime.registry.ownerEpoch, generationId: current.generation.id, admissionEpoch: current.epoch } satisfies CodexAppServerHealth };
+          orchestrationRoutingVersion: 1, routingEpoch: runtime.registry.ownerEpoch, generationId: current.generation.id, admissionEpoch: current.epoch,
+          ...(execution.callbackProtocolVersion === 1 ? { callbackProtocolVersion: 1 as const, pendingCallbacks: execution.pendingCallbacks, pendingOrchestrationMutations: execution.pendingOrchestrationMutations } : {}) } satisfies CodexAppServerHealth };
       }
       if (request.method === "GET" && request.url === "/generations") return { status: 200, value: state() };
       if (request.method !== "POST" || !["/generations", "/generation-host"].includes(request.url ?? "")) return { status: 404, value: { error: "Unknown generation operation" } };

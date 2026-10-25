@@ -52,6 +52,8 @@ import { MembershipStore, InstanceAccess } from '../packages/access-control/src/
 import { ActorStore } from '../packages/access-control/src/actors.ts';
 import { ActorAccess } from '../packages/access-control/src/actor-access.ts';
 import { Collaboration, CollaborationHttpApi } from '../packages/access-control/src/collaboration.ts';
+import { ThreadOrchestrationBroker } from '../packages/access-control/src/thread-orchestration-broker.ts';
+import { createThreadOrchestrationExecution } from './thread-orchestration-execution.mjs';
 import { createRoutedConversationExecution, callConversationHost } from './conversation-execution.mjs';
 import { PushStore, TurnPushService, PushObservationTransport } from '../packages/web-push-node/src/index.ts';
 import { readImConfiguration, startImPlugins } from './im-plugins.mjs';
@@ -250,6 +252,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   let membership;
   let actorStore;
   let actorCollaboration;
+  let threadOrchestration;
   let actorCollaborationApi;
   let actorAccess;
   let humanAccounts;
@@ -284,6 +287,9 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       await turnPush?.close();
       // Retire admitted ingress clients before their Host provider.
       const entryResults = await Promise.allSettled([ingress?.close(), sshNativeRpc?.close(), imPlugins?.close()]);
+      threadOrchestration?.stop();
+      await appHostServer?.close();
+      await threadOrchestration?.close();
       entryResults.push(...await Promise.allSettled([connectorService?.close(), actorCollaboration?.close()]));
       const results = [...entryResults, ...await Promise.allSettled([web?.close(), appHostServer?.close(), agent?.close()])];
       if (releasePiOwner) results.push(...await Promise.allSettled([releasePiOwner()]));
@@ -372,6 +378,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       conversationExecution, Date.now, actorId => !instanceAccess || instanceAccess.admitsActor(actorId));
     actorCollaborationApi = new CollaborationHttpApi(actorCollaboration, actorAccess);
     actorCollaboration.start();
+    threadOrchestration = new ThreadOrchestrationBroker(actorCollaboration, createThreadOrchestrationExecution(() => appHostServer));
+    threadOrchestration.start();
     if (options.localDesktop === true) {
       const observer = createNativeObserver();
       const incarnation = await observer.inspect(AbortSignal.timeout(5_000));
@@ -486,11 +494,14 @@ export async function startHeadlessServer(options = {}, composition = {}) {
           collaboration: {
             queuedContext: (thread,inputId,input) => actorCollaboration.queuedReferenceContext(thread,inputId,input),
             continued: (thread,previous,turn) => actorCollaboration.executionContinued(thread,previous,turn),
+            continuing: (thread,previous,inputId) => actorCollaboration.executionContinuing(thread,previous,inputId),
+            inputDelegation: (thread,inputId,expected) => actorCollaboration.inputDelegation(thread,inputId,expected),
             prepare: (context,input) => actorCollaboration.referenceContext(context,input),
             command: (context, body) => actorCollaboration.command(context, body),
-            authorize: (context, threadId, inputId) => actorCollaboration.authorizeExecution(context, threadId, inputId),
+            authorize: (context, threadId, inputId, input) => actorCollaboration.authorizeExecution(context, threadId, inputId, input),
             started: (threadId, inputId, turnId) => actorCollaboration.executionStarted(threadId, inputId, turnId),
             tool: (threadId, turnId, name, args) => actorCollaboration.tool(threadId, turnId, name, args),
+            orchestration: { available: () => threadOrchestration.available, tool: (threadId,turnId,key,name,args,delegationId,callbackIncarnation) => threadOrchestration.invoke(threadId,turnId,key,name,args,delegationId,callbackIncarnation), observed: snapshot => threadOrchestration.observe(snapshot) },
           },
           collaborationInput: {
             available: () => actorCollaboration.available,

@@ -12,6 +12,7 @@ export interface RecoveryTurn {
   threadId: string; rootTurnId: string; turnId: string; attempts: number;
   state: "running" | "interrupted" | "preparing" | "dispatching" | "complete" | "handled" | "exhausted" | "unconfirmed";
   inputId: string | null;
+  handledReason?: "user_stop" | "user_input";
 }
 export interface TurnRecoveryPort {
   /** lost requires positive evidence that the execution is no longer live. */
@@ -48,6 +49,8 @@ export class InterruptedTurnRecovery {
       .run(turn.threadId, JSON.stringify(turn));
     this.port.changed(turn.threadId, this.notice(turn.threadId));
   }
+  /** Read-only authoritative root lifecycle; notices deliberately omit several live states. */
+  snapshot(threadId: string): Readonly<RecoveryTurn> | null { return this.get(threadId); }
   notice(threadId: string): TurnRecoveryNotice | null {
     const row = this.get(threadId);
     if (!row || row.state === "handled" || row.attempts === 0) return null;
@@ -73,10 +76,10 @@ export class InterruptedTurnRecovery {
     // Synthetic failure on connection/process loss is not a native completion.
     if (row?.turnId === turnId && row.state === "running") this.put({ ...row, state: "complete" });
   }
-  handled(threadId: string): void {
+  handled(threadId: string, reason: "user_stop" | "user_input" = "user_input"): void {
     if (this.closed) return;
     const row = this.get(threadId);
-    if (row) this.put({ ...row, state: "handled" });
+    if (row) this.put({ ...row, state: "handled", handledReason: reason });
   }
   lost(threadId?: string): void {
     if (this.closed) return;

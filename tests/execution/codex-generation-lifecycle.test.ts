@@ -15,7 +15,7 @@ async function fixture() {
   const root = await mkdtemp(join(tmpdir(), "oc-gen-life-"));
   const running = new Map<string, { close(): Promise<void>; serial: number }>(), serials = new Map<string, number>();
   const stopped: string[] = [], cold: string[] = [];
-  const native = new Map<string, { status: "idle" | "active"; goal: boolean }>([["old", { status: "idle", goal: false }], ["new", { status: "idle", goal: false }]]);
+  const native = new Map<string, { status: "idle" | "active"; goal: boolean; pendingCallbacks?:number; pendingOrchestrationMutations?:number }>([["old", { status: "idle", goal: false }], ["new", { status: "idle", goal: false }]]);
   let quiet = true, failStop = false;
   const supervisor: GenerationSupervisor = {
     async start(g) {
@@ -35,7 +35,7 @@ async function fixture() {
         running.set(g.id, { serial, async close() { for (const socket of sockets) socket.terminate(); ws.close(); await new Promise<void>(resolve => server.close(() => resolve())); } });
       }
       return { protocolVersion: 1, pid: 100, codexPid: 200 + running.get(g.id)!.serial, dataDirectory: root,
-        proxyBaseUrl: "http://127.0.0.1:1234", codexHome: join(g.runtimeDataDirectory, "runtime"), nativeSocket: join(root, g.id + ".sock") };
+        proxyBaseUrl: "http://127.0.0.1:1234", codexHome: join(g.runtimeDataDirectory, "runtime"), nativeSocket: join(root, g.id + ".sock"),pendingCallbacks:native.get(g.id)!.pendingCallbacks,pendingOrchestrationMutations:native.get(g.id)!.pendingOrchestrationMutations };
     },
     async identify(g, h) { return { ownerPid: h.pid, nativePid: h.codexPid, ownerStart: "1", nativeStart: String(running.get(g.id)!.serial), cliSha256: g.executable, cliVersion: g.executable.includes("/old/") ? "codex-cli 0.162.0" : "codex-cli 0.162.1", unit: g.id }; },
     async stop(g, _identity) { if (failStop) { failStop = false; throw new Error("synthetic stop lost"); } const process = running.get(g.id); if (process) { await process.close(); running.delete(g.id); } stopped.push(g.id); },
@@ -170,4 +170,15 @@ test("automatic historical reads never downgrade a newer HOME after default roll
     await f.runtime.ensure("new"); assert.equal(f.runtime.registry.get("new")!.executable, "/fixed/new/codex");
     assert.equal(f.runtime.registry.current().generation.id, "old");
   } finally { await f.close(); }
+});
+
+
+test("pending owned callbacks and unacknowledged creation receipts block retirement before fencing",async()=>{
+  const f=await fixture();
+  try{
+    for(const field of ["pendingCallbacks","pendingOrchestrationMutations"] as const){
+      f.native.get("old")![field]=1;assert.deepEqual((await f.runtime.retire("old")).reasons,["native-orchestration-callback"]);assert.deepEqual(f.runtime.fences().fencedGenerationIds,[]);f.native.get("old")![field]=0;
+    }
+    assert.equal(f.running.has("old"),true);
+  }finally{await f.close();}
 });

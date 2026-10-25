@@ -44,6 +44,9 @@ CREATE TABLE creation_claims (id TEXT PRIMARY KEY, generation_id TEXT NOT NULL R
 CREATE TABLE routing_metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT;
 `;
 
+export const CODEX_GENERATION_MIGRATIONS = [{ version: 1, name: "codex-generation-routing", sql: SCHEMA },
+  { version: 2, name: "orchestration-creation-incarnation", sql: "ALTER TABLE creation_claims ADD COLUMN incarnation INTEGER" }];
+
 /** One durable routing writer. It stores identities and fences, never user input. */
 export class CodexGenerationRegistry {
   readonly ownerEpoch = randomUUID();
@@ -58,7 +61,7 @@ export class CodexGenerationRegistry {
     try {
       this.lock.exec("PRAGMA busy_timeout=0; BEGIN EXCLUSIVE");
       const managed = openManagedDatabase({ path: join(directory, "codex-generations.sqlite"),
-        legacyPolicy: "reject", migrations: [{ version: 1, name: "codex-generation-routing", sql: SCHEMA }] });
+        legacyPolicy: "reject", migrations: CODEX_GENERATION_MIGRATIONS });
       this.database = managed.database; this.outcome = managed.outcome;
       this.database.exec("PRAGMA foreign_keys=ON");
       chmodSync(join(directory, ".codex-routing-owner.sqlite"), 0o600);
@@ -132,12 +135,24 @@ export class CodexGenerationRegistry {
     });
   }
   epoch(): number { return Number(this.database.prepare("SELECT epoch FROM admission WHERE singleton=1").get()!.epoch); }
-  acceptCreation(generationId?: string): GenerationTicket {
+  creationTicket(operationId: string, allowRejected = false): GenerationTicket | null {
+    const row = this.database.prepare("SELECT * FROM creation_claims WHERE id=?").get(`orchestration:${operationId}`);
+    if (!row) return null;
+    const generation = this.get(String(row.generation_id));
+    if (!generation || row.incarnation !== generation.incarnation || row.state === "rejected" && !allowRejected) throw new Error("Orchestration creation outcome is unconfirmed in this incarnation");
+    return { ownerEpoch: this.ownerEpoch, generationId: generation.id, incarnation: generation.incarnation, admissionEpoch: Number(row.epoch), claimId: String(row.id) };
+  }
+  acceptCreation(generationId?: string, operationId?: string): GenerationTicket {
     return this.transaction(() => {
+      if (operationId) {
+        if (operationId.length > 256 || /[\x00-\x20]/u.test(operationId)) throw new Error("Invalid orchestration creation identity");
+        const prior = this.creationTicket(operationId,true);
+        if (prior) { if (generationId && generationId !== prior.generationId) throw new Error("Orchestration creation belongs to another generation"); return prior; }
+      }
       const current = this.current(), generation = generationId ? this.get(generationId) : current.generation;
       if (!generation || !["active", "ready", "draining"].includes(generation.state)) throw new Error("Generation is not accepting execution");
-      const claimId = randomUUID();
-      this.database.prepare("INSERT INTO creation_claims VALUES(?,?,?,'accepted',NULL)").run(claimId, generation.id, current.epoch);
+      const claimId = operationId ? `orchestration:${operationId}` : randomUUID();
+      this.database.prepare("INSERT INTO creation_claims(id,generation_id,epoch,state,thread_id,incarnation) VALUES(?,?,?,'accepted',NULL,?)").run(claimId, generation.id, current.epoch, generation.incarnation);
       return { ownerEpoch: this.ownerEpoch, generationId: generation.id, incarnation: generation.incarnation, admissionEpoch: current.epoch, claimId };
     });
   }

@@ -17,11 +17,18 @@ export class CodexNativeCoreTransport implements DuplexTransport {
   private readonly reads: CodexCoreReadIsolation;
   private readonly messages = new Set<(frame: string) => void>();
   private readonly statuses = new Set<(status: TransportStatus) => void>();
-  constructor(endpoint: string, token: string) {
+  private callbackReady = false;
+  private ownerIncarnation: string|null = null;
+  private routed = false;
+  get supportsOrchestrationRouting():boolean{return this.routed;}
+  get callbackIncarnation(): string|null {return this.ownerIncarnation;}
+  get supportsOrchestration(): boolean { return this.callbackReady; }
+  constructor(endpoint: string, token: string, callbackLaneId?: string) {
     this.control = new CodexCoreControlClient(endpoint, token);
     this.reads = new CodexCoreReadIsolation(() => this.control.health());
     this.connection = new CodexCoreSocket({
-      health: signal => this.control.health(signal),
+      callbackLaneId,
+      health: async signal => { const health = await this.control.health(signal); this.callbackReady = health.callbackProtocolVersion === 1 && !!callbackLaneId && (!health.routingEpoch || health.orchestrationRoutingVersion === 1); this.routed=health.orchestrationRoutingVersion===1; this.ownerIncarnation = health.routingEpoch ? null : health.callbackIncarnation ?? null; return health; },
       message: frame => { for (const listener of this.messages) listener(frame); },
       status: value => { for (const listener of this.statuses) listener(value); },
     });
