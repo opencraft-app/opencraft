@@ -544,11 +544,13 @@ existing Newera capsule on touch; never nest glass under each grouped action.
 The transcript return/working control and floating Composer change summary reuse
 this same material. The floating summary action consumes `controls.density-target`
 to retain a 44px touch hit area without enlarging its compact pointer target. New chat retains its existing text capsule for emphasis.
-The mobile drawer reserves the floating action band's existing height outside its
-native scrollport. A bottom content padding alone cannot keep intermediate rows
-from painting through translucent actions. The scrollport ends above the action
-band, including a stacked update entrance; final rows and pagination can scroll
-fully into view. Docked tablet/desktop lists retain their existing geometry.
+The mobile drawer's native scrollport extends to the physical bottom edge,
+behind the floating New chat and Settings actions. Their hosts remain transparent
+and allocate the controls' bottom safe inset. End content padding, including a
+stacked update entrance, lets final rows and pagination scroll fully above the
+actions without shortening the scrollport. Do not reserve an external bottom
+margin or paint a full-width action plate. Docked tablet/desktop lists retain
+their existing geometry.
 
 
 Material does not branch by platform or density. Existing owners keep position,

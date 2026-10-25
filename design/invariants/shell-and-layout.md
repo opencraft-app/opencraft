@@ -83,7 +83,9 @@ container. The fixed header consumes the same host top source. Electron keeps it
 native window control reservations. Bounded diagnostics report the top-allocation
 flag separately from resolved padding. The drawer frame owns top/left; its native
 scrollport paints to the bottom edge, with end padding that lets the final row
-scroll above the floating actions and device inset. Only the floating action
+scroll above the floating actions and device inset. Intermediate rows may scroll
+behind those actions; their transparent hosts must not reserve an external margin
+or a full-width bottom plate. Only the floating action
 hosts allocate the bottom safe edge; moving that inset back to the whole drawer
 would hard-clip the scrolling list above the physical bottom. The existing 16px
 action clearance is retained in the hosts' minimum reserve, not duplicated by
