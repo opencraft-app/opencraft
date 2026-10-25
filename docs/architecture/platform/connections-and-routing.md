@@ -361,6 +361,11 @@ ID without creating another retry policy owner.
 
 ### Connection conformance and external waits
 
+The proposed [recovery transition contract](connection-recovery-contract.md)
+adds executable lifecycle-signal, progress and expiry cases. It is design/test
+work, not a change to the current retry policy. Its real-owner TODO assertions
+and strict failing mode explicitly track the remaining implementation gaps.
+
 An independent observable specification replays deterministic event traces through
 ConnectionLifecycleOwner, Runtime/RPC and Runtime/RPC/AppHost. Compare phase,
 error presence and timer ownership after every event, including suspended clocks,
